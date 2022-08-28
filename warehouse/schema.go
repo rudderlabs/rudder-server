@@ -9,7 +9,7 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
 	"github.com/rudderlabs/rudder-server/warehouse/manager"
-	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
+	"github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
 type SchemaHandleT struct {
@@ -81,16 +81,16 @@ func (sHandle *SchemaHandleT) getLocalSchema() (currentSchema warehouseutils.Sch
 	var schemaMapInterface map[string]interface{}
 	err = json.Unmarshal(rawSchema, &schemaMapInterface)
 	if err != nil {
-		panic(fmt.Errorf("Unmarshalling: %s failed with Error : %w", rawSchema, err))
+		panic(fmt.Errorf("unmarshalling: %s failed with Error : %w", rawSchema, err))
 	}
 	currentSchema = warehouseutils.SchemaT{}
-	for tname, columnMapInterface := range schemaMapInterface {
+	for tName, columnMapInterface := range schemaMapInterface {
 		columnMap := make(map[string]string)
 		columns := columnMapInterface.(map[string]interface{})
 		for cName, cTypeInterface := range columns {
 			columnMap[cName] = cTypeInterface.(string)
 		}
-		currentSchema[tname] = columnMap
+		currentSchema[tName] = columnMap
 	}
 	return currentSchema
 }
@@ -200,59 +200,59 @@ func (sHandle *SchemaHandleT) safeName(columnName string) string {
 	return warehouseutils.ToProviderCase(sHandle.warehouse.Type, columnName)
 }
 
-func (sh *SchemaHandleT) getDiscardsSchema() map[string]string {
+func (sHandle *SchemaHandleT) getDiscardsSchema() map[string]string {
 	discards := map[string]string{}
 	for colName, colType := range warehouseutils.DiscardsSchema {
-		discards[sh.safeName(colName)] = colType
+		discards[sHandle.safeName(colName)] = colType
 	}
 
 	// add loaded_at for bq to be segment compatible
-	if sh.warehouse.Type == warehouseutils.BQ {
-		discards[sh.safeName("loaded_at")] = "datetime"
+	if sHandle.warehouse.Type == warehouseutils.BQ {
+		discards[sHandle.safeName("loaded_at")] = "datetime"
 	}
 	return discards
 }
 
-func (sh *SchemaHandleT) getMergeRulesSchema() map[string]string {
+func (sHandle *SchemaHandleT) getMergeRulesSchema() map[string]string {
 	return map[string]string{
-		sh.safeName("merge_property_1_type"):  "string",
-		sh.safeName("merge_property_1_value"): "string",
-		sh.safeName("merge_property_2_type"):  "string",
-		sh.safeName("merge_property_2_value"): "string",
+		sHandle.safeName("merge_property_1_type"):  "string",
+		sHandle.safeName("merge_property_1_value"): "string",
+		sHandle.safeName("merge_property_2_type"):  "string",
+		sHandle.safeName("merge_property_2_value"): "string",
 	}
 }
 
-func (sh *SchemaHandleT) getIdentitiesMappingsSchema() map[string]string {
+func (sHandle *SchemaHandleT) getIdentitiesMappingsSchema() map[string]string {
 	return map[string]string{
-		sh.safeName("merge_property_type"):  "string",
-		sh.safeName("merge_property_value"): "string",
-		sh.safeName("rudder_id"):            "string",
-		sh.safeName("updated_at"):           "datetime",
+		sHandle.safeName("merge_property_type"):  "string",
+		sHandle.safeName("merge_property_value"): "string",
+		sHandle.safeName("rudder_id"):            "string",
+		sHandle.safeName("updated_at"):           "datetime",
 	}
 }
 
-func (sh *SchemaHandleT) isIDResolutionEnabled() bool {
-	return warehouseutils.IDResolutionEnabled() && misc.ContainsString(warehouseutils.IdentityEnabledWarehouses, sh.warehouse.Type)
+func (sHandle *SchemaHandleT) isIDResolutionEnabled() bool {
+	return warehouseutils.IDResolutionEnabled() && misc.ContainsString(warehouseutils.IdentityEnabledWarehouses, sHandle.warehouse.Type)
 }
 
-func (sh *SchemaHandleT) consolidateStagingFilesSchemaUsingWarehouseSchema() warehouseutils.SchemaT {
-	schemaInLocalDB := sh.localSchema
+func (sHandle *SchemaHandleT) consolidateStagingFilesSchemaUsingWarehouseSchema() warehouseutils.SchemaT {
+	schemaInLocalDB := sHandle.localSchema
 
 	consolidatedSchema := warehouseutils.SchemaT{}
 	count := 0
 	for {
 		lastIndex := count + stagingFilesSchemaPaginationSize
-		if lastIndex >= len(sh.stagingFiles) {
-			lastIndex = len(sh.stagingFiles)
+		if lastIndex >= len(sHandle.stagingFiles) {
+			lastIndex = len(sHandle.stagingFiles)
 		}
 
 		var ids []int64
-		for _, stagingFile := range sh.stagingFiles[count:lastIndex] {
+		for _, stagingFile := range sHandle.stagingFiles[count:lastIndex] {
 			ids = append(ids, stagingFile.ID)
 		}
 
 		sqlStatement := fmt.Sprintf(`SELECT schema FROM %s WHERE id IN (%s)`, warehouseutils.WarehouseStagingFilesTable, misc.IntArrayToString(ids, ","))
-		rows, err := sh.dbHandle.Query(sqlStatement)
+		rows, err := sHandle.dbHandle.Query(sqlStatement)
 		if err != nil && err != sql.ErrNoRows {
 			panic(fmt.Errorf("Query: %s\nfailed with Error : %w", sqlStatement, err))
 		}
@@ -267,29 +267,29 @@ func (sh *SchemaHandleT) consolidateStagingFilesSchemaUsingWarehouseSchema() war
 			var schema warehouseutils.SchemaT
 			err = json.Unmarshal(s, &schema)
 			if err != nil {
-				panic(fmt.Errorf("Unmarshalling: %s failed with Error : %w", string(s), err))
+				panic(fmt.Errorf("unmarshalling: %s failed with Error : %w", string(s), err))
 			}
 
 			schemas = append(schemas, schema)
 		}
-		rows.Close()
+		_ = rows.Close()
 
-		consolidatedSchema = mergeSchema(schemaInLocalDB, schemas, consolidatedSchema, sh.warehouse.Type)
+		consolidatedSchema = mergeSchema(schemaInLocalDB, schemas, consolidatedSchema, sHandle.warehouse.Type)
 
 		count += stagingFilesSchemaPaginationSize
-		if count >= len(sh.stagingFiles) {
+		if count >= len(sHandle.stagingFiles) {
 			break
 		}
 	}
 
 	// add rudder_discards Schema
-	consolidatedSchema[sh.safeName(warehouseutils.DiscardsTable)] = sh.getDiscardsSchema()
+	consolidatedSchema[sHandle.safeName(warehouseutils.DiscardsTable)] = sHandle.getDiscardsSchema()
 
 	// add rudder_identity_mappings Schema
-	if sh.isIDResolutionEnabled() {
-		if _, ok := consolidatedSchema[sh.safeName(warehouseutils.IdentityMergeRulesTable)]; ok {
-			consolidatedSchema[sh.safeName(warehouseutils.IdentityMergeRulesTable)] = sh.getMergeRulesSchema()
-			consolidatedSchema[sh.safeName(warehouseutils.IdentityMappingsTable)] = sh.getIdentitiesMappingsSchema()
+	if sHandle.isIDResolutionEnabled() {
+		if _, ok := consolidatedSchema[sHandle.safeName(warehouseutils.IdentityMergeRulesTable)]; ok {
+			consolidatedSchema[sHandle.safeName(warehouseutils.IdentityMergeRulesTable)] = sHandle.getMergeRulesSchema()
+			consolidatedSchema[sHandle.safeName(warehouseutils.IdentityMappingsTable)] = sHandle.getIdentitiesMappingsSchema()
 		}
 	}
 

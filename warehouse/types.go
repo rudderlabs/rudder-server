@@ -6,13 +6,8 @@ import (
 	"time"
 
 	"github.com/rudderlabs/rudder-server/utils/misc"
-	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
+	"github.com/rudderlabs/rudder-server/warehouse/utils"
 )
-
-// type StagingFileEntryT struct {
-// 	ID       int64
-// 	Location string
-// }
 
 type PayloadT struct {
 	BatchID                      string

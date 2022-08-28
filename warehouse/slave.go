@@ -14,22 +14,22 @@ import (
 	"strings"
 	"time"
 
-	uuid "github.com/gofrs/uuid"
+	"github.com/gofrs/uuid"
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/services/filemanager"
 	"github.com/rudderlabs/rudder-server/services/pgnotifier"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
-	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
+	"github.com/rudderlabs/rudder-server/warehouse/utils"
 	"golang.org/x/sync/errgroup"
 )
 
 const (
-	STATS_WORKER_IDLE_TIME                  = "worker_idle_time"
-	STATS_WORKER_CLAIM_PROCESSING_TIME      = "worker_claim_processing_time"
-	STATS_WORKER_CLAIM_PROCESSING_FAILED    = "worker_claim_processing_failed"
-	STATS_WORKER_CLAIM_PROCESSING_SUCCEEDED = "worker_claim_processing_succeeded"
-	TAG_WORKERID                            = "workerId"
+	StatsWorkerIdleTime                 = "worker_idle_time"
+	StatsWorkerClaimProcessingTime      = "worker_claim_processing_time"
+	StatsWorkerClaimProcessingFailed    = "worker_claim_processing_failed"
+	StatsWorkerClaimProcessingSucceeded = "worker_claim_processing_succeeded"
+	TagWorkerId                         = "workerId"
 )
 
 const (
@@ -50,12 +50,12 @@ type JobRunT struct {
 func (jobRun *JobRunT) setStagingFileReader() (reader *gzip.Reader, endOfFile bool) {
 	job := jobRun.job
 	pkgLogger.Debugf("Starting read from downloaded staging file: %s", job.StagingFileLocation)
-	rawf, err := os.Open(jobRun.stagingFilePath)
+	stagingFile, err := os.Open(jobRun.stagingFilePath)
 	if err != nil {
 		pkgLogger.Errorf("[WH]: Error opening file using os.Open at path:%s downloaded from %s", jobRun.stagingFilePath, job.StagingFileLocation)
 		panic(err)
 	}
-	reader, err = gzip.NewReader(rawf)
+	reader, err = gzip.NewReader(stagingFile)
 	if err != nil {
 		if err.Error() == "EOF" {
 			return nil, true
@@ -145,7 +145,7 @@ func (jobRun *JobRunT) downloadStagingFile() error {
 			pkgLogger.Errorf("[WH]: Failed to download file")
 			return err
 		}
-		file.Close()
+		_ = file.Close()
 		timer.End()
 
 		fi, err := os.Stat(filePath)
@@ -281,7 +281,7 @@ func (jobRun *JobRunT) uploadLoadFilesToObjectStorage() ([]loadFileUploadOutputT
 			pkgLogger.Errorf("received error while uploading load file to bucket for staging file ids %s, cancelling the context: err %v", stagingFileId, err)
 			return []loadFileUploadOutputT{}, err
 		case <-time.After(slaveUploadTimeout):
-			return []loadFileUploadOutputT{}, fmt.Errorf("Load files upload timed out for staging file idsx: %v", stagingFileId)
+			return []loadFileUploadOutputT{}, fmt.Errorf("load files upload timed out for staging file idsx: %v", stagingFileId)
 		}
 	}
 }
@@ -293,7 +293,7 @@ func (jobRun *JobRunT) uploadLoadFileToObjectStorage(uploader filemanager.FileMa
 		pkgLogger.Errorf("[WH]: Failed to Open File: %s", uploadFile.GetLoadFile().Name())
 		return filemanager.UploadOutput{}, err
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 	pkgLogger.Debugf("[WH]: %s: Uploading load_file to %s for table: %s with staging_file id: %v", job.DestinationType, warehouseutils.ObjectStorageType(job.DestinationType, job.DestinationConfig, job.UseRudderStorage), tableName, job.StagingFileID)
 	var uploadLocation filemanager.UploadOutput
 	if misc.ContainsString(warehouseutils.TimeWindowDestinations, job.DestinationType) {
@@ -420,7 +420,7 @@ func processStagingFile(job PayloadT, workerIndex int) (loadFileUploadOutputs []
 	jobRun.tableEventCountMap = make(map[string]int)
 	jobRun.uuidTS = timeutil.Now()
 
-	// Initilize Discards Table
+	// Initialize Discards Table
 	discardsTable := job.getDiscardsTable()
 	jobRun.tableEventCountMap[discardsTable] = 0
 
@@ -444,7 +444,7 @@ func processStagingFile(job PayloadT, workerIndex int) (loadFileUploadOutputs []
 		var batchRouterEvent BatchRouterEventT
 		err := json.Unmarshal(lineBytes, &batchRouterEvent)
 		if err != nil {
-			pkgLogger.Errorf("[WH]: Failed to unmarshal JSON line to batchrouter event: %+v", batchRouterEvent)
+			pkgLogger.Errorf("[WH]: Failed to unmarshal JSON line to batchRouter event: %+v", batchRouterEvent)
 			continue
 		}
 
@@ -554,28 +554,28 @@ func processStagingFile(job PayloadT, workerIndex int) (loadFileUploadOutputs []
 func processClaimedJob(claimedJob pgnotifier.ClaimT, workerIndex int) {
 	claimProcessTimeStart := time.Now()
 	defer func() {
-		warehouseutils.NewTimerStat(STATS_WORKER_CLAIM_PROCESSING_TIME, warehouseutils.Tag{Name: TAG_WORKERID, Value: fmt.Sprintf("%d", workerIndex)}).Since(claimProcessTimeStart)
+		warehouseutils.NewTimerStat(StatsWorkerClaimProcessingTime, warehouseutils.Tag{Name: TagWorkerId, Value: fmt.Sprintf("%d", workerIndex)}).Since(claimProcessTimeStart)
 	}()
-	handleErr := func(err error, claim pgnotifier.ClaimT) {
+	handleErr := func(err error) {
 		pkgLogger.Errorf("[WH]: Error processing claim: %v", err)
 		response := pgnotifier.ClaimResponseT{
 			Err: err,
 		}
-		warehouseutils.NewCounterStat(STATS_WORKER_CLAIM_PROCESSING_FAILED, warehouseutils.Tag{Name: TAG_WORKERID, Value: strconv.Itoa(workerIndex)}).Increment()
+		warehouseutils.NewCounterStat(StatsWorkerClaimProcessingFailed, warehouseutils.Tag{Name: TagWorkerId, Value: strconv.Itoa(workerIndex)}).Increment()
 		notifier.UpdateClaimedEvent(&claimedJob, &response)
 	}
 
 	var job PayloadT
 	err := json.Unmarshal(claimedJob.Payload, &job)
 	if err != nil {
-		handleErr(err, claimedJob)
+		handleErr(err)
 		return
 	}
 	job.BatchID = claimedJob.BatchID
 	pkgLogger.Infof(`Starting processing staging-file:%v from claim:%v`, job.StagingFileID, claimedJob.ID)
 	loadFileOutputs, err := processStagingFile(job, workerIndex)
 	if err != nil {
-		handleErr(err, claimedJob)
+		handleErr(err)
 		return
 	}
 	job.Output = loadFileOutputs
@@ -585,9 +585,9 @@ func processClaimedJob(claimedJob pgnotifier.ClaimT, workerIndex int) {
 		Payload: output,
 	}
 	if response.Err != nil {
-		warehouseutils.NewCounterStat(STATS_WORKER_CLAIM_PROCESSING_FAILED, warehouseutils.Tag{Name: TAG_WORKERID, Value: strconv.Itoa(workerIndex)}).Increment()
+		warehouseutils.NewCounterStat(StatsWorkerClaimProcessingFailed, warehouseutils.Tag{Name: TagWorkerId, Value: strconv.Itoa(workerIndex)}).Increment()
 	} else {
-		warehouseutils.NewCounterStat(STATS_WORKER_CLAIM_PROCESSING_SUCCEEDED, warehouseutils.Tag{Name: TAG_WORKERID, Value: strconv.Itoa(workerIndex)}).Increment()
+		warehouseutils.NewCounterStat(StatsWorkerClaimProcessingSucceeded, warehouseutils.Tag{Name: TagWorkerId, Value: strconv.Itoa(workerIndex)}).Increment()
 	}
 	notifier.UpdateClaimedEvent(&claimedJob, &response)
 }
@@ -601,7 +601,7 @@ func setupSlave(ctx context.Context) error {
 		idx := workerIdx
 		g.Go(misc.WithBugsnagForWarehouse(func() error {
 			// create tags and timers
-			workerIdleTimer := warehouseutils.NewTimerStat(STATS_WORKER_IDLE_TIME, warehouseutils.Tag{Name: TAG_WORKERID, Value: fmt.Sprintf("%d", idx)})
+			workerIdleTimer := warehouseutils.NewTimerStat(StatsWorkerIdleTime, warehouseutils.Tag{Name: TagWorkerId, Value: fmt.Sprintf("%d", idx)})
 			workerIdleTimeStart := time.Now()
 			for claimedJob := range jobNotificationChannel {
 				workerIdleTimer.Since(workerIdleTimeStart)

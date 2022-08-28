@@ -5,7 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 
-	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
+	"github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
 // DB encapsulate interactions of warehouse operations

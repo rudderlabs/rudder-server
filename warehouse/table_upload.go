@@ -7,7 +7,7 @@ import (
 
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
-	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
+	"github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
 const (
@@ -88,7 +88,7 @@ func (tableUpload *TableUploadT) setStatus(status string) (err error) {
 	execValues := []interface{}{status, timeutil.Now(), tableUpload.uploadID, tableUpload.tableName}
 	var lastExec string
 	if status == TableUploadExecuting {
-		// setting values using syntax $n since Exec can correctlt format time.Time strings
+		// setting values using syntax $n since Exec can correctly format time.Time strings
 		lastExec = fmt.Sprintf(`, last_exec_time=$%d`, len(execValues)+1)
 		execValues = append(execValues, timeutil.Now())
 	}

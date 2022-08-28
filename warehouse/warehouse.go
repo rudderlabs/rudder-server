@@ -26,13 +26,13 @@ import (
 
 	"github.com/rudderlabs/rudder-server/app"
 	"github.com/rudderlabs/rudder-server/config"
-	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
+	"github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/services/db"
-	destinationdebugger "github.com/rudderlabs/rudder-server/services/debugger/destination"
+	"github.com/rudderlabs/rudder-server/services/debugger/destination"
 	"github.com/rudderlabs/rudder-server/services/pgnotifier"
-	migrator "github.com/rudderlabs/rudder-server/services/sql-migrator"
+	"github.com/rudderlabs/rudder-server/services/sql-migrator"
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/services/validators"
 	"github.com/rudderlabs/rudder-server/utils/logger"
@@ -43,7 +43,7 @@ import (
 	"github.com/rudderlabs/rudder-server/warehouse/configuration_testing"
 	"github.com/rudderlabs/rudder-server/warehouse/deltalake"
 	"github.com/rudderlabs/rudder-server/warehouse/manager"
-	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
+	"github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
 var (
@@ -90,7 +90,7 @@ var (
 )
 
 var (
-	host, user, password, dbname, sslmode, appName string
+	host, user, password, dbname, sslMode, appName string
 	port                                           int
 )
 
@@ -163,7 +163,7 @@ func loadConfig() {
 	dbname = config.GetEnv("WAREHOUSE_JOBS_DB_DB_NAME", "ubuntu")
 	port, _ = strconv.Atoi(config.GetEnv("WAREHOUSE_JOBS_DB_PORT", "5432"))
 	password = config.GetEnv("WAREHOUSE_JOBS_DB_PASSWORD", "ubuntu") // Reading secrets from
-	sslmode = config.GetEnv("WAREHOUSE_JOBS_DB_SSL_MODE", "disable")
+	sslMode = config.GetEnv("WAREHOUSE_JOBS_DB_SSL_MODE", "disable")
 	config.RegisterIntConfigVariable(10, &warehouseSyncPreFetchCount, true, 1, "Warehouse.warehouseSyncPreFetchCount")
 	config.RegisterIntConfigVariable(100, &stagingFilesSchemaPaginationSize, true, 1, "Warehouse.stagingFilesSchemaPaginationSize")
 	config.RegisterBoolConfigVariable(false, &warehouseSyncFreqIgnore, true, "Warehouse.warehouseSyncFreqIgnore")
@@ -304,7 +304,7 @@ func (wh *HandleT) backendConfigSubscriber() {
 				if warehouseutils.IDResolutionEnabled() && misc.ContainsString(warehouseutils.IdentityEnabledWarehouses, warehouse.Type) {
 					wh.setupIdentityTables(warehouse)
 					if shouldPopulateHistoricIdentities && warehouse.Destination.Enabled {
-						// non blocking populate historic identities
+						// non-blocking populate historic identities
 						wh.populateHistoricIdentities(warehouse)
 					}
 				}
@@ -354,9 +354,9 @@ func (wh *HandleT) getStagingFiles(warehouse warehouseutils.WarehouseT, startID,
 		warehouseutils.WarehouseStagingFilesTable, startID, endID, warehouse.Source.ID, warehouse.Destination.ID)
 	rows, err := wh.dbHandle.Query(sqlStatement)
 	if err != nil && err != sql.ErrNoRows {
-		panic(fmt.Errorf("Query: %s failed with Error : %w", sqlStatement, err))
+		panic(fmt.Errorf("query: %s failed with Error : %w", sqlStatement, err))
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var stagingFilesList []*StagingFileT
 	for rows.Next() {
@@ -383,7 +383,7 @@ func (wh *HandleT) getPendingStagingFiles(warehouse warehouseutils.WarehouseT) (
 
 	err := wh.dbHandle.QueryRow(sqlStatement).Scan(&lastStagingFileID)
 	if err != nil && err != sql.ErrNoRows {
-		panic(fmt.Errorf("Query: %s failed with Error : %w", sqlStatement, err))
+		panic(fmt.Errorf("query: %s failed with Error : %w", sqlStatement, err))
 	}
 
 	sqlStatement = fmt.Sprintf(`SELECT id, location, status, first_event_at, last_event_at, metadata->>'source_batch_id', metadata->>'source_task_id', metadata->>'source_task_run_id', metadata->>'source_job_id', metadata->>'source_job_run_id', metadata->>'use_rudder_storage', metadata->>'time_window_year', metadata->>'time_window_month', metadata->>'time_window_day', metadata->>'time_window_hour', metadata->>'destination_revision_id'
@@ -393,9 +393,9 @@ func (wh *HandleT) getPendingStagingFiles(warehouse warehouseutils.WarehouseT) (
 		warehouseutils.WarehouseStagingFilesTable, lastStagingFileID, warehouse.Source.ID, warehouse.Destination.ID)
 	rows, err := wh.dbHandle.Query(sqlStatement)
 	if err != nil && err != sql.ErrNoRows {
-		panic(fmt.Errorf("Query: %s failed with Error : %w", sqlStatement, err))
+		panic(fmt.Errorf("query: %s failed with Error : %w", sqlStatement, err))
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var stagingFilesList []*StagingFileT
 	var firstEventAt, lastEventAt sql.NullTime
@@ -433,7 +433,7 @@ func (wh *HandleT) initUpload(warehouse warehouseutils.WarehouseT, jsonUploadsLi
 	if err != nil {
 		panic(err)
 	}
-	defer stmt.Close()
+	defer func() { _ = stmt.Close() }()
 
 	startJSONID := jsonUploadsList[0].ID
 	endJSONID := jsonUploadsList[len(jsonUploadsList)-1].ID
@@ -488,7 +488,7 @@ func (wh *HandleT) setDestInProgress(warehouse warehouseutils.WarehouseT, jobID 
 func (wh *HandleT) removeDestInProgress(warehouse warehouseutils.WarehouseT, jobID int64) {
 	wh.inProgressMapLock.Lock()
 	defer wh.inProgressMapLock.Unlock()
-	if idx, inProgess := wh.isUploadJobInProgress(warehouse, jobID); inProgess {
+	if idx, inProgress := wh.isUploadJobInProgress(warehouse, jobID); inProgress {
 		identifier := wh.workerIdentifier(warehouse)
 		wh.inProgressMap[WorkerIdentifierT(identifier)] = removeFromJobsIDT(wh.inProgressMap[WorkerIdentifierT(identifier)], idx)
 	}
@@ -535,10 +535,10 @@ func setLastProcessedMarker(warehouse warehouseutils.WarehouseT, lastProcessedTi
 	lastProcessedMarkerMap[warehouse.Identifier] = lastProcessedTime.Unix()
 }
 
-func (wh *HandleT) createUploadJobsFromStagingFiles(warehouse warehouseutils.WarehouseT, whManager manager.ManagerI, stagingFilesList []*StagingFileT, priority int, uploadStartAfter time.Time) {
+func (wh *HandleT) createUploadJobsFromStagingFiles(warehouse warehouseutils.WarehouseT, stagingFilesList []*StagingFileT, priority int, uploadStartAfter time.Time) {
 	// count := 0
 	// Process staging files in batches of stagingFilesBatchSize
-	// Eg. If there are 1000 pending staging files and stagingFilesBatchSize is 100,
+	// E.g. If there are 1000 pending staging files and stagingFilesBatchSize is 100,
 	// Then we create 10 new entries in wh_uploads table each with 100 staging files
 	var stagingFilesInUpload []*StagingFileT
 	var counter int
@@ -624,7 +624,7 @@ func (wh *HandleT) createJobs(warehouse warehouseutils.WarehouseT) (err error) {
 	uploadID, uploadStatus, uploadPriority := wh.getLatestUploadStatus(&warehouse)
 	if uploadStatus == Waiting {
 		// If it is present do nothing else delete it
-		if _, inProgess := wh.isUploadJobInProgress(warehouse, uploadID); !inProgess {
+		if _, inProgress := wh.isUploadJobInProgress(warehouse, uploadID); !inProgress {
 			wh.deleteWaitingUploadJob(uploadID)
 			priority = uploadPriority // copy the priority from the latest upload job.
 		}
@@ -656,7 +656,7 @@ func (wh *HandleT) createJobs(warehouse warehouseutils.WarehouseT) (err error) {
 	uploadJobCreationStat.Start()
 
 	uploadStartAfter := getUploadStartAfterTime()
-	wh.createUploadJobsFromStagingFiles(warehouse, whManager, stagingFilesList, priority, uploadStartAfter)
+	wh.createUploadJobsFromStagingFiles(warehouse, stagingFilesList, priority, uploadStartAfter)
 	setLastProcessedMarker(warehouse, uploadStartAfter)
 
 	uploadJobCreationStat.End()
@@ -686,7 +686,7 @@ func (wh *HandleT) sortWarehousesByOldestUnSyncedEventAt() (err error) {
 	if err != nil && err != sql.ErrNoRows {
 		return err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	oldestEventAtMap := map[string]time.Time{}
 
@@ -817,7 +817,7 @@ func (wh *HandleT) getUploadsToProcess(availableWorkers int, skipIdentifiers []s
 	if err == sql.ErrNoRows {
 		return []*UploadJobT{}, nil
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var uploadJobs []*UploadJobT
 	for rows.Next() {
@@ -862,8 +862,8 @@ func (wh *HandleT) getUploadsToProcess(availableWorkers int, skipIdentifiers []s
 				upload:   &upload,
 				dbHandle: wh.dbHandle,
 			}
-			err := fmt.Errorf("Unable to find source : %s or destination : %s, both or the connection between them", upload.SourceID, upload.DestinationID)
-			uploadJob.setUploadError(err, Aborted)
+			err := fmt.Errorf("unable to find source : %s or destination : %s, both or the connection between them", upload.SourceID, upload.DestinationID)
+			_, _ = uploadJob.setUploadError(err, Aborted)
 			pkgLogger.Errorf("%v", err)
 			continue
 		}
@@ -1063,9 +1063,9 @@ func (wh *HandleT) setInterruptedDestinations() {
 	sqlStatement := fmt.Sprintf(`SELECT destination_id FROM %s WHERE destination_type='%s' AND (status='%s' OR status='%s') and in_progress=%t`, warehouseutils.WarehouseUploadsTable, wh.destType, getInProgressState(ExportedData), getFailedState(ExportedData), true)
 	rows, err := wh.dbHandle.Query(sqlStatement)
 	if err != nil {
-		panic(fmt.Errorf("Query: %s failed with Error : %w", sqlStatement, err))
+		panic(fmt.Errorf("query: %s failed with Error : %w", sqlStatement, err))
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	for rows.Next() {
 		var destID string
@@ -1131,7 +1131,7 @@ func (wh *HandleT) resetInProgressJobs() {
 	sqlStatement := fmt.Sprintf(`UPDATE %s SET in_progress=%t WHERE destination_type='%s' AND in_progress=%t`, warehouseutils.WarehouseUploadsTable, false, wh.destType, true)
 	_, err := wh.dbHandle.Query(sqlStatement)
 	if err != nil {
-		panic(fmt.Errorf("Query: %s failed with Error : %w", sqlStatement, err))
+		panic(fmt.Errorf("query: %s failed with Error : %w", sqlStatement, err))
 	}
 }
 
@@ -1178,7 +1178,7 @@ func minimalConfigSubscriber() {
 	}
 }
 
-// Gets the config from config backend and extracts enabled writekeys
+// Gets the config from config backend and extracts enabled writeKeys
 func monitorDestRouters(ctx context.Context) {
 	ch := backendconfig.DefaultBackendConfig.Subscribe(ctx, backendconfig.TopicBackendConfig)
 	dstToWhRouter := make(map[string]*HandleT)
@@ -1341,7 +1341,7 @@ func setConfigHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "can't read body", http.StatusBadRequest)
 		return
 	}
-	defer r.Body.Close()
+	defer func() { _ = r.Body.Close() }()
 
 	var kvs []warehouseutils.KeyValue
 	err = json.Unmarshal(body, &kvs)
@@ -1396,7 +1396,7 @@ func pendingEventsHandler(w http.ResponseWriter, r *http.Request) {
 	// get pending staging files
 	pendingStagingFileCount, err = getPendingStagingFileCount(sourceID, true)
 	if err != nil {
-		err := fmt.Errorf("Error getting pending staging file count : %v", err)
+		err := fmt.Errorf("error getting pending staging file count : %v", err)
 		pkgLogger.Errorf("[WH]: %v", err)
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
@@ -1406,7 +1406,7 @@ func pendingEventsHandler(w http.ResponseWriter, r *http.Request) {
 	if pendingStagingFileCount == 0 {
 		pendingUploadCount, err = getPendingUploadCount(sourceID, true)
 		if err != nil {
-			err := fmt.Errorf("Error getting pending uploads : %v", err)
+			err := fmt.Errorf("error getting pending uploads : %v", err)
 			pkgLogger.Errorf("[WH]: %v", err)
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
@@ -1443,7 +1443,7 @@ func pendingEventsHandler(w http.ResponseWriter, r *http.Request) {
 
 		// return error if no such destinations found
 		if len(wh) == 0 {
-			err := fmt.Errorf("No warehouse destinations found for source id '%s'", sourceID)
+			err := fmt.Errorf("no warehouse destinations found for source id '%s'", sourceID)
 			pkgLogger.Errorf("[WH]: %v", err)
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
@@ -1463,7 +1463,7 @@ func pendingEventsHandler(w http.ResponseWriter, r *http.Request) {
 
 	resBody, err := json.Marshal(res)
 	if err != nil {
-		err := fmt.Errorf("Failed to marshall pending events response : %v", err)
+		err := fmt.Errorf("failed to marshall pending events response : %v", err)
 		pkgLogger.Errorf("[WH]: %v", err)
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
@@ -1484,7 +1484,7 @@ func getPendingStagingFileCount(sourceOrDestId string, isSourceId bool) (fileCou
 
 	err = dbHandle.QueryRow(sqlStatement).Scan(&lastStagingFileIDRes)
 	if err != nil && err != sql.ErrNoRows {
-		err = fmt.Errorf("Query: %s failed with Error : %w", sqlStatement, err)
+		err = fmt.Errorf("query: %s failed with Error : %w", sqlStatement, err)
 		return
 	}
 	lastStagingFileID := int64(0)
@@ -1499,7 +1499,7 @@ func getPendingStagingFileCount(sourceOrDestId string, isSourceId bool) (fileCou
 
 	err = dbHandle.QueryRow(sqlStatement).Scan(&fileCount)
 	if err != nil && err != sql.ErrNoRows {
-		err = fmt.Errorf("Query: %s failed with Error : %w", sqlStatement, err)
+		err = fmt.Errorf("query: %s failed with Error : %w", sqlStatement, err)
 		return
 	}
 
@@ -1520,7 +1520,7 @@ func getPendingUploadCount(sourceOrDestId string, isSourceId bool) (uploadCount 
 
 	err = dbHandle.QueryRow(sqlStatement).Scan(&uploadCount)
 	if err != nil && err != sql.ErrNoRows {
-		err = fmt.Errorf("Query: %s failed with Error : %w", sqlStatement, err)
+		err = fmt.Errorf("query: %s failed with Error : %w", sqlStatement, err)
 		return
 	}
 
@@ -1538,7 +1538,7 @@ func triggerUploadHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "can't read body", http.StatusBadRequest)
 		return
 	}
-	defer r.Body.Close()
+	defer func() { _ = r.Body.Close() }()
 
 	// unmarshall body
 	var triggerUploadReq warehouseutils.TriggerUploadRequestT
@@ -1560,7 +1560,7 @@ func triggerUploadHandler(w http.ResponseWriter, r *http.Request) {
 func TriggerUploadHandler(sourceID, destID string) error {
 	// return error if source id and dest id is empty
 	if sourceID == "" && destID == "" {
-		err := fmt.Errorf("Empty source and destination id")
+		err := fmt.Errorf("empty source and destination id")
 		pkgLogger.Errorf("[WH]: trigger upload : %v", err)
 		return err
 	}
@@ -1593,7 +1593,7 @@ func TriggerUploadHandler(sourceID, destID string) error {
 
 	// return error if no such destinations found
 	if len(wh) == 0 {
-		err := fmt.Errorf("No warehouse destinations found for source id '%s'", sourceID)
+		err := fmt.Errorf("no warehouse destinations found for source id '%s'", sourceID)
 		pkgLogger.Errorf("[WH]: %v", err)
 		return err
 	}
@@ -1605,7 +1605,7 @@ func TriggerUploadHandler(sourceID, destID string) error {
 	return nil
 }
 
-func databricksVersionHandler(w http.ResponseWriter, r *http.Request) {
+func databricksVersionHandler(w http.ResponseWriter, _ *http.Request) {
 	w.WriteHeader(http.StatusOK)
 	w.Write([]byte(deltalake.GetDatabricksVersion()))
 }
@@ -1630,7 +1630,7 @@ func clearTriggeredUpload(wh warehouseutils.WarehouseT) {
 	triggerUploadsMapLock.Unlock()
 }
 
-func healthHandler(w http.ResponseWriter, r *http.Request) {
+func healthHandler(w http.ResponseWriter, _ *http.Request) {
 	dbService := ""
 	pgNotifierService := ""
 	if runningMode != DegradedMode {
@@ -1662,7 +1662,7 @@ func getConnectionString() string {
 	}
 	return fmt.Sprintf("host=%s port=%d user=%s "+
 		"password=%s dbname=%s sslmode=%s application_name=%s",
-		host, port, user, password, dbname, sslmode, appName)
+		host, port, user, password, dbname, sslMode, appName)
 }
 
 func startWebHandler(ctx context.Context) error {
@@ -1677,7 +1677,7 @@ func startWebHandler(ctx context.Context) error {
 			pkgLogger.Infof("WH: Warehouse master service waiting for BackendConfig before starting on %d", webPort)
 			backendconfig.DefaultBackendConfig.WaitForConfig(ctx)
 			mux.HandleFunc("/v1/process", processHandler)
-			// triggers uploads only when there are pending events and triggerUpload is sent for a sourceId
+			// trigger uploads only when there are pending events and triggerUpload is sent for a sourceId
 			mux.HandleFunc("/v1/warehouse/pending-events", pendingEventsHandler)
 			// triggers uploads for a source
 			mux.HandleFunc("/v1/warehouse/trigger-upload", triggerUploadHandler)
@@ -1718,18 +1718,18 @@ func isStandAlone() bool {
 }
 
 func isMaster() bool {
-	return warehouseMode == config.MasterMode ||
-		warehouseMode == config.MasterSlaveMode ||
-		warehouseMode == config.EmbeddedMode ||
-		warehouseMode == config.PooledWHSlaveMode
+	return warehouseMode == MasterMode ||
+		warehouseMode == MasterSlaveMode ||
+		warehouseMode == EmbeddedMode ||
+		warehouseMode == PooledWHSlaveMode
 }
 
 func isSlave() bool {
-	return warehouseMode == config.SlaveMode || warehouseMode == config.MasterSlaveMode || warehouseMode == config.EmbeddedMode
+	return warehouseMode == SlaveMode || warehouseMode == MasterSlaveMode || warehouseMode == EmbeddedMode
 }
 
 func isStandAloneSlave() bool {
-	return warehouseMode == config.SlaveMode
+	return warehouseMode == SlaveMode
 }
 
 func setupDB(ctx context.Context, connInfo string) error {
@@ -1749,7 +1749,7 @@ func setupDB(ctx context.Context, connInfo string) error {
 	}
 
 	if !isDBCompatible {
-		err := errors.New("Rudder Warehouse Service needs postgres version >= 10. Exiting")
+		err := errors.New("rudder Warehouse Service needs postgres version >= 10. Exiting")
 		pkgLogger.Error(err)
 		return err
 	}

@@ -11,7 +11,7 @@ import (
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
-	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
+	"github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
 var (
@@ -33,7 +33,7 @@ func loadConfigScheduling() {
 }
 
 // ScheduledTimes returns all possible start times (minutes from start of day) as per schedule
-// eg. Syncing every 3hrs starting at 13:00 (scheduled times: 13:00, 16:00, 19:00, 22:00, 01:00, 04:00, 07:00, 10:00)
+// e.g. Syncing every 3hrs starting at 13:00 (scheduled times: 13:00, 16:00, 19:00, 22:00, 01:00, 04:00, 07:00, 10:00)
 func ScheduledTimes(syncFrequency, syncStartAt string) []int {
 	scheduledTimesCacheLock.RLock()
 	cachedTimes, ok := scheduledTimesCache[fmt.Sprintf(`%s-%s`, syncFrequency, syncStartAt)]
@@ -54,7 +54,7 @@ func ScheduledTimes(syncFrequency, syncStartAt string) []int {
 		counter++
 	}
 
-	prependTimes := []int{}
+	var prependTimes []int
 	counter = 1
 	for {
 		mins := syncStartAtInMin - counter*syncFrequencyInMin
@@ -71,9 +71,9 @@ func ScheduledTimes(syncFrequency, syncStartAt string) []int {
 	return times
 }
 
-// GetPrevScheduledTime returns closest previous scheduled time
-// eg. Syncing every 3hrs starting at 13:00 (scheduled times: 13:00, 16:00, 19:00, 22:00, 01:00, 04:00, 07:00, 10:00)
-// prev scheduled time for current time (eg. 18:00 -> 16:00 same day, 00:30 -> 22:00 prev day)
+// GetPrevScheduledTime returns the closest previous scheduled time
+// e.g. Syncing every 3hrs starting at 13:00 (scheduled times: 13:00, 16:00, 19:00, 22:00, 01:00, 04:00, 07:00, 10:00)
+// prev scheduled time for current time (e.g. 18:00 -> 16:00 same day, 00:30 -> 22:00 prev day)
 func GetPrevScheduledTime(syncFrequency, syncStartAt string, currTime time.Time) time.Time {
 	allStartTimes := ScheduledTimes(syncFrequency, syncStartAt)
 
@@ -86,13 +86,13 @@ func GetPrevScheduledTime(syncFrequency, syncStartAt string, currTime time.Time)
 	pos := 0
 	for idx, t := range allStartTimes {
 		if currMins >= t {
-			// case when currTime is greater than all of the day's start time
+			// case when currTime is greater than all the day's start time
 			if idx == len(allStartTimes)-1 {
 				pos = idx
 			}
 			continue
 		}
-		// case when currTime is less than all of the day's start time
+		// case when currTime is less than all the day's start time
 		pos = idx - 1
 		break
 	}
@@ -118,13 +118,13 @@ func (wh *HandleT) getLastUploadCreatedAt(warehouse warehouseutils.WarehouseT) t
 	return t.Time
 }
 
-func GetExludeWindowStartEndTimes(excludeWindow map[string]interface{}) (string, string) {
+func GetExcludeWindowStartEndTimes(excludeWindow map[string]interface{}) (string, string) {
 	var startTime, endTime string
-	if time, ok := excludeWindow[warehouseutils.ExcludeWindowStartTime].(string); ok {
-		startTime = time
+	if sTime, ok := excludeWindow[warehouseutils.ExcludeWindowStartTime].(string); ok {
+		startTime = sTime
 	}
-	if time, ok := excludeWindow[warehouseutils.ExcludeWindowEndTime].(string); ok {
-		endTime = time
+	if eTime, ok := excludeWindow[warehouseutils.ExcludeWindowEndTime].(string); ok {
+		endTime = eTime
 	}
 	return startTime, endTime
 }
@@ -151,7 +151,7 @@ func CheckCurrentTimeExistsInExcludeWindow(currentTime time.Time, windowStartTim
 	return false
 }
 
-// canCreateUpload indicates if a upload can be started now for the warehouse based on its configured schedule
+// canCreateUpload indicates if an upload can be started now for the warehouse based on its configured schedule
 func (wh *HandleT) canCreateUpload(warehouse warehouseutils.WarehouseT) bool {
 	// can be set from rudder-cli to force uploads always
 	if startUploadAlways {
@@ -166,7 +166,7 @@ func (wh *HandleT) canCreateUpload(warehouse warehouseutils.WarehouseT) bool {
 	}
 	// gets exclude window start time and end time
 	excludeWindow := warehouseutils.GetConfigValueAsMap(warehouseutils.ExcludeWindow, warehouse.Destination.Config)
-	excludeWindowStartTime, excludeWindowEndTime := GetExludeWindowStartEndTimes(excludeWindow)
+	excludeWindowStartTime, excludeWindowEndTime := GetExcludeWindowStartEndTimes(excludeWindow)
 	if CheckCurrentTimeExistsInExcludeWindow(timeutil.Now(), excludeWindowStartTime, excludeWindowEndTime) {
 		return false
 	}
@@ -178,11 +178,11 @@ func (wh *HandleT) canCreateUpload(warehouse warehouseutils.WarehouseT) bool {
 	prevScheduledTime := GetPrevScheduledTime(syncFrequency, syncStartAt, time.Now())
 	lastUploadCreatedAt := wh.getLastUploadCreatedAt(warehouse)
 	// start upload only if no upload has started in current window
-	// eg. with prev scheduled time 14:00 and current time 15:00, start only if prev upload hasn't started after 14:00
+	// e.g. with prev scheduled time 14:00 and current time 15:00, start only if prev upload hasn't started after 14:00
 	return lastUploadCreatedAt.Before(prevScheduledTime)
 }
 
-func durationBeforeNextAttempt(attempt int64) time.Duration { // Add state(retryable/non-retryable) as an argument to decide backoff etc)
+func durationBeforeNextAttempt(attempt int64) time.Duration { // Add state(retryable/non-retryable) as an argument to decide backoff etc.)
 	var d time.Duration
 	b := backoff.NewExponentialBackOff()
 	b.InitialInterval = minUploadBackoff

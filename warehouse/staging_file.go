@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"time"
 
-	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
+	"github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
 func getFirstStagedEventAt(stagingFileID int64) (time.Time, error) {

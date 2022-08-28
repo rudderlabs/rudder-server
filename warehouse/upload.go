@@ -722,7 +722,7 @@ func (job *UploadJobT) fetchPendingUploadTableStatus() []*TableUploadStatusT {
 	if err != nil && err != sql.ErrNoRows {
 		panic(err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	tableUploadStatuses := make([]*TableUploadStatusT, 0)
 
@@ -1612,7 +1612,7 @@ func (job *UploadJobT) getLoadFilesTableMap() (loadFilesMap map[tableNameT]bool,
 		err = fmt.Errorf("error occurred while executing distinct table name query for jobId: %d, sourceId: %s, destinationId: %s, err: %w", job.upload.ID, job.warehouse.Source.ID, job.warehouse.Destination.ID, err)
 		return
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	for rows.Next() {
 		var tableName string
@@ -1908,7 +1908,7 @@ func (job *UploadJobT) bulkInsertLoadFileRecords(loadFiles []loadFileUploadOutpu
 		pkgLogger.Errorf(`[WH]: Error starting bulk copy using CopyIn: %v`, err)
 		return
 	}
-	defer stmt.Close()
+	defer func() { _ = stmt.Close() }()
 
 	for _, loadFile := range loadFiles {
 		metadata := fmt.Sprintf(`{"content_length": %d, "destination_revision_id": %q, "use_rudder_storage": %t}`, loadFile.ContentLength, loadFile.DestinationRevisionID, loadFile.UseRudderStorage)
@@ -1964,13 +1964,6 @@ func (job *UploadJobT) GetLoadFilesMetadata(options warehouseutils.GetLoadFilesO
 	var tableFilterSQL string
 	if options.Table != "" {
 		tableFilterSQL = fmt.Sprintf(` AND table_name='%s'`, options.Table)
-	}
-
-	startID := options.StartID
-	endID := options.EndID
-	if startID == 0 || endID == 0 {
-		startID = job.upload.StartLoadFileID
-		endID = job.upload.EndLoadFileID
 	}
 
 	var limitSQL string

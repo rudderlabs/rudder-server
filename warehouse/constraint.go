@@ -6,7 +6,7 @@ import (
 	"github.com/gofrs/uuid"
 	"github.com/iancoleman/strcase"
 	"github.com/rudderlabs/rudder-server/config"
-	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
+	"github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
 var (

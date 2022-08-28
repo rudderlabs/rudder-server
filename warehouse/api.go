@@ -13,7 +13,7 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
-	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
+	"github.com/rudderlabs/rudder-server/warehouse/utils"
 	"github.com/tidwall/gjson"
 	"google.golang.org/grpc"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -113,7 +113,7 @@ func InitWarehouseAPI(dbHandle *sql.DB, log logger.LoggerI) {
 			UseTLS:        config.GetEnvAsBool("CP_ROUTER_USE_TLS", true),
 			Logger:        log,
 			RegisterService: func(srv *grpc.Server) {
-				proto.RegisterWarehouseServer(srv, &warehousegrpc{})
+				proto.RegisterWarehouseServer(srv, &warehouseGrpc{})
 			},
 		},
 	}
@@ -130,13 +130,6 @@ func (uploadsReq *UploadsReqT) validateReq() error {
 		uploadsReq.Offset = 0
 	}
 	return nil
-}
-
-func (uploadsReq *UploadsReqT) getUploadsCount() (int32, error) {
-	var count sql.NullInt32
-	row := uploadsReq.API.dbHandle.QueryRow(fmt.Sprintf(`select count(*) from %s`, warehouseutils.WarehouseUploadsTable))
-	err := row.Scan(&count)
-	return count.Int32, err
 }
 
 var statusMap = map[string]string{
@@ -170,7 +163,7 @@ func (uploadsReq *UploadsReqT) GetWhUploads() (uploadsRes *proto.WHUploadsRespon
 		return
 	}
 
-	uploadsRes, err = uploadsReq.getWhUploads(authorizedSourceIDs, `id, source_id, destination_id, destination_type, namespace, status, error, first_event_at, last_event_at, last_exec_at, updated_at, timings, metadata->>'nextRetryTime', metadata->>'archivedStagingAndLoadFiles'`)
+	uploadsRes, err = uploadsReq.getWhUploads(`id, source_id, destination_id, destination_type, namespace, status, error, first_event_at, last_event_at, last_exec_at, updated_at, timings, metadata->>'nextRetryTime', metadata->>'archivedStagingAndLoadFiles'`)
 	return
 }
 
@@ -190,11 +183,11 @@ func (uploadsReq *UploadsReqT) TriggerWhUploads() (response *proto.TriggerWhUplo
 	}
 	authorizedSourceIDs := uploadsReq.authorizedSources()
 	if len(authorizedSourceIDs) == 0 {
-		err = fmt.Errorf("No authorized sourceId's")
+		err = fmt.Errorf("no authorized sourceId's")
 		return
 	}
 	if uploadsReq.DestinationID == "" {
-		err = fmt.Errorf("Valid destinationId must be provided")
+		err = fmt.Errorf("valid destinationId must be provided")
 		return
 	}
 	var pendingStagingFileCount int64
@@ -248,7 +241,7 @@ func (uploadReq UploadReqT) GetWHUpload() (*proto.WHUploadResponse, error) {
 	}
 	if !uploadReq.authorizeSource(upload.SourceId) {
 		pkgLogger.Errorf(`Unauthorized request for upload:%d with sourceId:%s in workspaceId:%s`, uploadReq.UploadId, upload.SourceId, uploadReq.WorkspaceID)
-		return &proto.WHUploadResponse{}, errors.New("Unauthorized request")
+		return &proto.WHUploadResponse{}, errors.New("unauthorized request")
 	}
 	upload.CreatedAt = timestamppb.New(createdAt.Time)
 	upload.FirstEventAt = timestamppb.New(firstEventAt.Time)
@@ -320,7 +313,7 @@ func (uploadReq UploadReqT) TriggerWHUpload() (response *proto.TriggerWhUploadsR
 	}
 	if !uploadReq.authorizeSource(upload.SourceID) {
 		pkgLogger.Errorf(`Unauthorized request for upload:%d with sourceId:%s in workspaceId:%s`, uploadReq.UploadId, upload.SourceID, uploadReq.WorkspaceID)
-		err = errors.New("Unauthorized request")
+		err = errors.New("unauthorized request")
 		return
 	}
 	uploadJobT.upload = &upload
@@ -481,9 +474,9 @@ func (uploadsReq *UploadsReqT) getUploadsFromDb(isHosted bool, query string) ([]
 		if upload.Status != ExportedData {
 			lastFailedStatus := warehouseutils.GetLastFailedStatus(timingsObject)
 			errorPath := fmt.Sprintf("%s.errors", lastFailedStatus)
-			errors := gjson.Get(uploadError, errorPath).Array()
-			if len(errors) > 0 {
-				upload.Error = errors[len(errors)-1].String()
+			lastFailedStatusErrors := gjson.Get(uploadError, errorPath).Array()
+			if len(lastFailedStatusErrors) > 0 {
+				upload.Error = lastFailedStatusErrors[len(lastFailedStatusErrors)-1].String()
 			}
 		}
 		// set nextRetryTime for non-aborted failed uploads
@@ -563,7 +556,7 @@ func (uploadsReq *UploadsReqT) getWhUploadsForHosted(authorizedSourceIDs []strin
 }
 
 // for non hosted workspaces - we get the uploads and the total upload count using separate queries
-func (uploadsReq *UploadsReqT) getWhUploads(authorizedSourceIDs []string, selectFields string) (uploadsRes *proto.WHUploadsResponse, err error) {
+func (uploadsReq *UploadsReqT) getWhUploads(selectFields string) (uploadsRes *proto.WHUploadsResponse, err error) {
 	var uploads []*proto.WHUploadResponse
 	var totalUploadCount int32
 
