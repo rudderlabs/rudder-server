@@ -182,13 +182,13 @@ func setMaxParallelLoads() {
 		warehouseutils.DELTALAKE:  config.GetInt("Warehouse.deltalake.maxParallelLoads", 3),
 	}
 	columnCountLimitMap = map[string]ColumnCount{
-		warehouseutils.AZURE_SYNAPSE: ColumnCount{Limit: config.GetInt("Warehouse.azure_synapse.columnCountLimit", 1024), Temporary: false},
-		warehouseutils.BQ:            ColumnCount{Limit: config.GetInt("Warehouse.bigquery.columnCountLimit", 10000), Temporary: false},
-		warehouseutils.CLICKHOUSE:    ColumnCount{Limit: config.GetInt("Warehouse.clickhouse.columnCountLimit", 1000), Temporary: false},
-		warehouseutils.MSSQL:         ColumnCount{Limit: config.GetInt("Warehouse.mssql.columnCountLimit", 1024), Temporary: false},
-		warehouseutils.POSTGRES:      ColumnCount{Limit: config.GetInt("Warehouse.postgres.columnCountLimit", 1600), Temporary: false},
-		warehouseutils.RS:            ColumnCount{Limit: config.GetInt("Warehouse.redshift.columnCountLimit", 1600), Temporary: false},
-		warehouseutils.SNOWFLAKE:     ColumnCount{Limit: config.GetInt("Warehouse.snowflake.columnCountLimit", 5000), Temporary: true},
+		warehouseutils.AZURE_SYNAPSE: {Limit: config.GetInt("Warehouse.azure_synapse.columnCountLimit", 1024), Temporary: false},
+		warehouseutils.BQ:            {Limit: config.GetInt("Warehouse.bigquery.columnCountLimit", 10000), Temporary: false},
+		warehouseutils.CLICKHOUSE:    {Limit: config.GetInt("Warehouse.clickhouse.columnCountLimit", 1000), Temporary: false},
+		warehouseutils.MSSQL:         {Limit: config.GetInt("Warehouse.mssql.columnCountLimit", 1024), Temporary: false},
+		warehouseutils.POSTGRES:      {Limit: config.GetInt("Warehouse.postgres.columnCountLimit", 1600), Temporary: false},
+		warehouseutils.RS:            {Limit: config.GetInt("Warehouse.redshift.columnCountLimit", 1600), Temporary: false},
+		warehouseutils.SNOWFLAKE:     {Limit: config.GetInt("Warehouse.snowflake.columnCountLimit", 5000), Temporary: true},
 	}
 }
 
