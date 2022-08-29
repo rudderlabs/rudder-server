@@ -16,8 +16,8 @@ import (
 
 func suppressMinorErrors(err error) error {
 	if err != nil {
-		if serr, ok := err.(azblob.StorageError); ok { // This error is a Service-specific
-			switch serr.ServiceCode() { // Compare serviceCode to ServiceCodeXxx constants
+		if storageError, ok := err.(azblob.StorageError); ok { // This error is a Service-specific
+			switch storageError.ServiceCode() { // Compare serviceCode to ServiceCodeXxx constants
 			case azblob.ServiceCodeContainerAlreadyExists:
 				pkgLogger.Debug("Received 409. Container already exists")
 				return nil
@@ -127,23 +127,20 @@ func (manager *AzureBlobStorageManager) Upload(ctx context.Context, file *os.Fil
 }
 
 func (manager *AzureBlobStorageManager) skipCreationOfContainers() bool {
-	if manager.useSASTokens() {
-		return true
-	}
-	return false
+	return manager.useSASTokens()
 }
 
 func (manager *AzureBlobStorageManager) blobLocation(blobURL *azblob.BlockBlobURL) string {
-	if manager.useSASTokens() {
-		blobURLParts := azblob.NewBlobURLParts(blobURL.URL())
-		blobURLParts.SAS = azblob.SASQueryParameters{}
-		newBlobURL := blobURLParts.URL()
-		return newBlobURL.String()
+	if !manager.useSASTokens() {
+		return blobURL.String()
 	}
-	return blobURL.String()
+	blobURLParts := azblob.NewBlobURLParts(blobURL.URL())
+	blobURLParts.SAS = azblob.SASQueryParameters{}
+	newBlobURL := blobURLParts.URL()
+	return newBlobURL.String()
 }
 
-func (manager *AzureBlobStorageManager) ListFilesWithPrefix(ctx context.Context, startAfter, prefix string, maxItems int64) (fileObjects []*FileObject, err error) {
+func (manager *AzureBlobStorageManager) ListFilesWithPrefix(ctx context.Context, _, prefix string, maxItems int64) (fileObjects []*FileObject, err error) {
 	containerURL, err := manager.getContainerURL()
 	if err != nil {
 		return []*FileObject{}, err
