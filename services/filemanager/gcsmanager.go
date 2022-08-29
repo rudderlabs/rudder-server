@@ -164,7 +164,7 @@ func (manager *GCSManager) getTimeout() time.Duration {
 		return manager.timeout
 	}
 
-	return getBatchRouterTimeoutConfig("GCS", 120, time.Second)
+	return getBatchRouterTimeoutConfig("GCS")
 }
 
 func GetGCSConfig(config map[string]interface{}) *GCSConfig {
