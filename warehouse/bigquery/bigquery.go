@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"cloud.google.com/go/bigquery"
-	"github.com/gofrs/uuid"
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/utils/googleutils"
 	"github.com/rudderlabs/rudder-server/utils/logger"
@@ -26,7 +25,6 @@ var (
 	partitionExpiryUpdatedLock            sync.RWMutex
 	pkgLogger                             logger.LoggerI
 	setUsersLoadPartitionFirstEventFilter bool
-	stagingTablePrefix                    string
 	customPartitionsEnabled               bool
 	isUsersTableDedupEnabled              bool
 	isDedupEnabled                        bool
@@ -51,6 +49,10 @@ const (
 	GCPProjectID   = "project"
 	GCPCredentials = "credentials"
 	GCPLocation    = "location"
+)
+
+const (
+	provider = warehouseutils.BQ
 )
 
 // maps datatype stored in rudder to datatype in bigquery
@@ -303,7 +305,7 @@ func (bq *HandleT) loadTable(tableName string, forceLoad, getLoadFileLocFromTabl
 	}
 
 	loadTableByMerge := func() (err error) {
-		stagingTableName := misc.TruncateStr(fmt.Sprintf(`%s%s_%s`, stagingTablePrefix, strings.ReplaceAll(uuid.Must(uuid.NewV4()).String(), "-", ""), tableName), 127)
+		stagingTableName := warehouseutils.StagingTableName(provider, tableName)
 		stagingLoadTable.stagingTableName = stagingTableName
 		pkgLogger.Infof("BQ: Loading data into temporary table: %s in bigquery dataset: %s in project: %s", stagingTableName, bq.Namespace, bq.ProjectID)
 		stagingTableColMap := bq.Uploader.GetTableSchemaInWarehouse(tableName)
@@ -519,7 +521,7 @@ func (bq *HandleT) LoadUserTables() (errorMap map[string]error) {
 	}
 
 	loadUserTableByMerge := func() {
-		stagingTableName := misc.TruncateStr(fmt.Sprintf(`%s%s_%s`, stagingTablePrefix, strings.ReplaceAll(uuid.Must(uuid.NewV4()).String(), "-", ""), warehouseutils.UsersTable), 127)
+		stagingTableName := warehouseutils.StagingTableName(provider, warehouseutils.UsersTable)
 		pkgLogger.Infof(`BQ: Creating staging table for users: %v`, sqlStatement)
 		query := bq.Db.Query(sqlStatement)
 		query.QueryConfig.Dst = bq.Db.Dataset(bq.Namespace).Table(stagingTableName)
@@ -627,7 +629,6 @@ func (bq *HandleT) connect(cred BQCredentialsT) (*bigquery.Client, error) {
 
 func loadConfig() {
 	partitionExpiryUpdated = make(map[string]bool)
-	stagingTablePrefix = "RUDDER_STAGING_"
 	config.RegisterBoolConfigVariable(true, &setUsersLoadPartitionFirstEventFilter, true, "Warehouse.bigquery.setUsersLoadPartitionFirstEventFilter")
 	config.RegisterBoolConfigVariable(false, &customPartitionsEnabled, true, "Warehouse.bigquery.customPartitionsEnabled")
 	config.RegisterBoolConfigVariable(false, &isUsersTableDedupEnabled, true, "Warehouse.bigquery.isUsersTableDedupEnabled") // TODO: Depricate with respect to isDedupEnabled
@@ -687,9 +688,7 @@ func (bq *HandleT) CrashRecover(warehouse warehouseutils.WarehouseT) (err error)
 }
 
 func (bq *HandleT) dropDanglingStagingTables() bool {
-	sqlStatement := fmt.Sprintf(`SELECT table_name
-								 FROM %[1]s.INFORMATION_SCHEMA.TABLES
-								 WHERE table_schema = '%[1]s' AND table_name LIKE '%[2]s'`, bq.Namespace, fmt.Sprintf("%s%s", stagingTablePrefix, "%"))
+	sqlStatement := dropDanglingTablesSQLStatement(bq.Namespace)
 	query := bq.Db.Query(sqlStatement)
 	it, err := query.Read(bq.BQContext)
 	if err != nil {
@@ -828,9 +827,7 @@ func (bq *HandleT) FetchSchema(warehouse warehouseutils.WarehouseT) (schema ware
 	defer dbClient.Close()
 
 	schema = make(warehouseutils.SchemaT)
-	query := dbClient.Query(fmt.Sprintf(`SELECT t.table_name, c.column_name, c.data_type
-							 FROM %[1]s.INFORMATION_SCHEMA.TABLES as t LEFT JOIN %[1]s.INFORMATION_SCHEMA.COLUMNS as c
-							 ON (t.table_name = c.table_name) and (t.table_type != 'VIEW') and (c.column_name != '_PARTITIONTIME' OR c.column_name IS NULL)`, bq.Namespace))
+	query := dbClient.Query(fetchSchemaSQLStatement(bq.Namespace))
 
 	it, err := query.Read(bq.BQContext)
 	if err != nil {

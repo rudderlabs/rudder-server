@@ -3,6 +3,7 @@ package postgres
 import (
 	"database/sql"
 	"fmt"
+	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 	"strings"
 )
 
@@ -65,4 +66,42 @@ func handleExec(e *QueryParams) (err error) {
 		_, err = e.db.Exec(sqlStatement)
 	}
 	return
+}
+
+func dropDanglingTablesSQLStatement(namespace string) string {
+	return fmt.Sprintf(`
+		select
+		  table_name
+		from
+		  information_schema.tables
+		where
+		  table_schema = '%s'
+		  AND table_name like '%s%s';
+	`,
+		namespace,
+		warehouseutils.StagingTablePrefix(provider),
+		"%",
+	)
+}
+
+func fetchSchemaSQLStatement(namespace string) string {
+	return fmt.Sprintf(`
+		select
+		  t.table_name,
+		  c.column_name,
+		  c.data_type
+		from
+		  INFORMATION_SCHEMA.TABLES t
+		  LEFT JOIN INFORMATION_SCHEMA.COLUMNS c ON (
+			t.table_name = c.table_name
+			and t.table_schema = c.table_schema
+		  )
+		WHERE
+		  t.table_schema = '%s'
+		  and t.table_name not like '%s%s'
+	`,
+		namespace,
+		warehouseutils.StagingTablePrefix(provider),
+		"%",
+	)
 }

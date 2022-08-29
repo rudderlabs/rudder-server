@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/gofrs/uuid"
 	"io"
 	"net/http"
 	"net/url"
@@ -97,6 +98,10 @@ const (
 	RUDDER_MISSING_DATATYPE = "warehouse_rudder_missing_datatype"
 )
 
+const (
+	stagingTablePrefix = "rudder_staging_"
+)
+
 var (
 	IdentityEnabledWarehouses []string
 	enableIDResolution        bool
@@ -160,6 +165,11 @@ var (
 	S3VirtualHostedRegex = regexp.MustCompile(`https?://(?P<bucket>[^/]+).s3([.-](?P<region>[^.]+))?.amazonaws\.com/(?P<keyname>.*)`)
 )
 
+var (
+	tableNameLimitMap     map[string]int
+	defaultTableNameLimit = 127
+)
+
 func Init() {
 	loadConfig()
 	pkgLogger = logger.NewLogger().Child("warehouse").Child("utils")
@@ -169,6 +179,9 @@ func loadConfig() {
 	IdentityEnabledWarehouses = []string{SNOWFLAKE, BQ}
 	TimeWindowDestinations = []string{S3_DATALAKE, GCS_DATALAKE, AZURE_DATALAKE}
 	WarehouseDestinations = []string{RS, BQ, SNOWFLAKE, POSTGRES, CLICKHOUSE, MSSQL, AZURE_SYNAPSE, S3_DATALAKE, GCS_DATALAKE, AZURE_DATALAKE, DELTALAKE}
+	tableNameLimitMap = map[string]int{
+		POSTGRES: 63,
+	}
 	config.RegisterBoolConfigVariable(false, &enableIDResolution, false, "Warehouse.enableIDResolution")
 	config.RegisterInt64ConfigVariable(3600, &AWSCredsExpiryInS, true, 1, "Warehouse.awsCredsExpiryInS")
 	config.RegisterIntConfigVariable(10240, &maxStagingFileReadBufferCapacityInK, false, 1, "Warehouse.maxStagingFileReadBufferCapacityInK")
@@ -962,4 +975,19 @@ func GetDateRangeList(start, end time.Time, dateFormat string) (dateRange []stri
 		dateRange = append(dateRange, d.Format(dateFormat))
 	}
 	return
+}
+
+func StagingTablePrefix(provider string) string {
+	return ToProviderCase(provider, stagingTablePrefix)
+}
+
+func StagingTableName(provider, tableName string) string {
+	randomNess := strings.ReplaceAll(uuid.Must(uuid.NewV4()).String(), "-", "")
+	tableNameLimit := defaultTableNameLimit
+	if limit, ok := tableNameLimitMap[provider]; ok {
+		tableNameLimit = limit
+	}
+	prefix := StagingTablePrefix(provider)
+	stagingTableName := fmt.Sprintf(`%s%s_%s`, prefix, tableName, randomNess)
+	return misc.TruncateStr(stagingTableName, tableNameLimit)
 }

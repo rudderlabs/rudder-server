@@ -1188,19 +1188,60 @@ func TestGetWarehouseIdentifier(t *testing.T) {
 
 var _ = Describe("Utils", func() {
 	DescribeTable("JSON schema to Map", func(rawMsg json.RawMessage, expected map[string]map[string]string) {
-		got := JSONSchemaToMap(rawMsg)
-		Expect(got).To(Equal(expected))
+		Expect(JSONSchemaToMap(rawMsg)).To(Equal(expected))
 	},
 		Entry(nil, json.RawMessage(`{"k1": { "k2": "v2" }}`), map[string]map[string]string{"k1": {"k2": "v2"}}),
 	)
 
 	DescribeTable("Get date range list", func(start, end time.Time, format string, expected []string) {
-		got := GetDateRangeList(start, end, format)
-		Expect(got).To(Equal(expected))
+		Expect(GetDateRangeList(start, end, format)).To(Equal(expected))
 	},
 		Entry("Same day", time.Now(), time.Now(), "2006-01-02", []string{time.Now().Format("2006-01-02")}),
 		Entry("Multiple days", time.Now(), time.Now().AddDate(0, 0, 1), "2006-01-02", []string{time.Now().Format("2006-01-02"), time.Now().AddDate(0, 0, 1).Format("2006-01-02")}),
 		Entry("No days", nil, nil, "2006-01-02", nil),
+	)
+
+	DescribeTable("Staging table prefix", func(provider, expected string) {
+		Expect(StagingTablePrefix(provider)).To(Equal(expected))
+	},
+		Entry(nil, BQ, "rudder_staging_"),
+		Entry(nil, RS, "rudder_staging_"),
+		Entry(nil, SNOWFLAKE, "RUDDER_STAGING_"),
+		Entry(nil, POSTGRES, "rudder_staging_"),
+		Entry(nil, CLICKHOUSE, "rudder_staging_"),
+		Entry(nil, MSSQL, "rudder_staging_"),
+		Entry(nil, AZURE_SYNAPSE, "rudder_staging_"),
+		Entry(nil, DELTALAKE, "rudder_staging_"),
+		Entry(nil, S3_DATALAKE, "rudder_staging_"),
+		Entry(nil, GCS_DATALAKE, "rudder_staging_"),
+		Entry(nil, AZURE_DATALAKE, "rudder_staging_"),
+	)
+
+	DescribeTable("Staging table prefix", func(provider, tableName, expected string) {
+		Expect(StagingTableName(provider, tableName)).To(HavePrefix(expected))
+	},
+		Entry(nil, BQ, "demo", "rudder_staging_demo_"),
+		Entry(nil, BQ, "abcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyz", "rudder_staging_abcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyz"),
+		Entry(nil, RS, "demo", "rudder_staging_demo_"),
+		Entry(nil, RS, "abcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyz", "rudder_staging_abcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyz"),
+		Entry(nil, SNOWFLAKE, "DEMO", "RUDDER_STAGING_DEMO_"),
+		Entry(nil, SNOWFLAKE, "ABCDEFGHIJLKMNOPQRSTUVWXYZABCDEFGHIJLKMNOPQRSTUVWXYZABCDEFGHIJLKMNOPQRSTUVWXYZABCDEFGHIJLKMNOPQRSTUVWXYZABCDEFGHIJLKMNOPQRSTUVWXYZ", "RUDDER_STAGING_ABCDEFGHIJLKMNOPQRSTUVWXYZABCDEFGHIJLKMNOPQRSTUVWXYZABCDEFGHIJLKMNOPQRSTUVWXYZABCDEFGHIJLKMNOPQRSTUVWXYZ"),
+		Entry(nil, POSTGRES, "demo", "rudder_staging_demo_"),
+		Entry(nil, POSTGRES, "abcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyz", "rudder_staging_abcdefghijlkmnopqrstuvwxyz"),
+		Entry(nil, CLICKHOUSE, "demo", "rudder_staging_demo_"),
+		Entry(nil, CLICKHOUSE, "abcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyz", "rudder_staging_abcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyz"),
+		Entry(nil, MSSQL, "demo", "rudder_staging_demo_"),
+		Entry(nil, MSSQL, "abcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyz", "rudder_staging_abcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyz"),
+		Entry(nil, AZURE_SYNAPSE, "demo", "rudder_staging_demo_"),
+		Entry(nil, AZURE_SYNAPSE, "abcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyz", "rudder_staging_abcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyz"),
+		Entry(nil, DELTALAKE, "demo", "rudder_staging_demo_"),
+		Entry(nil, DELTALAKE, "abcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyz", "rudder_staging_abcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyz"),
+		Entry(nil, S3_DATALAKE, "demo", "rudder_staging_demo_"),
+		Entry(nil, S3_DATALAKE, "abcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyz", "rudder_staging_abcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyz"),
+		Entry(nil, GCS_DATALAKE, "demo", "rudder_staging_demo_"),
+		Entry(nil, GCS_DATALAKE, "abcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyz", "rudder_staging_abcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyz"),
+		Entry(nil, AZURE_DATALAKE, "demo", "rudder_staging_demo_"),
+		Entry(nil, AZURE_DATALAKE, "abcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyz", "rudder_staging_abcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyz"),
 	)
 })
 

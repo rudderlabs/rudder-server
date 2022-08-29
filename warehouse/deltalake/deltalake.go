@@ -35,6 +35,10 @@ const (
 	ExternalLocation       = "externalLocation"
 )
 
+const (
+	provider = warehouseutils.DELTALAKE
+)
+
 // Reference: https://docs.oracle.com/cd/E17952_01/connector-odbc-en/connector-odbc-reference-errorcodes.html
 const (
 	tableOrViewNotFound = "42S02"
@@ -43,7 +47,6 @@ const (
 )
 
 var (
-	stagingTablePrefix     string
 	pkgLogger              logger.LoggerI
 	schema                 string
 	sparkServerType        string
@@ -127,7 +130,6 @@ func Init() {
 
 // loadConfig loads config
 func loadConfig() {
-	stagingTablePrefix = "rudder_staging_"
 	config.RegisterStringConfigVariable("default", &schema, false, "Warehouse.deltalake.schema")
 	config.RegisterStringConfigVariable("3", &sparkServerType, false, "Warehouse.deltalake.sparkServerType")
 	config.RegisterStringConfigVariable("3", &authMech, false, "Warehouse.deltalake.authMech")
@@ -535,7 +537,7 @@ func (dl *HandleT) loadTable(tableName string, tableSchemaInUpload, tableSchemaA
 	sortedColumnKeys := warehouseutils.SortColumnKeysFromColumnMap(tableSchemaInUpload)
 
 	// Creating staging table
-	stagingTableName = misc.TruncateStr(fmt.Sprintf(`%s%s_%s`, stagingTablePrefix, strings.ReplaceAll(uuid.Must(uuid.NewV4()).String(), "-", ""), tableName), 127)
+	stagingTableName = warehouseutils.StagingTableName(provider, tableName)
 	err = dl.CreateTable(stagingTableName, tableSchemaAfterUpload)
 	if err != nil {
 		return
@@ -671,7 +673,7 @@ func (dl *HandleT) loadUserTables() (errorMap map[string]error) {
 		userColNames = append(userColNames, colName)
 		firstValProps = append(firstValProps, fmt.Sprintf(`FIRST_VALUE(%[1]s , TRUE) OVER (PARTITION BY id ORDER BY received_at DESC ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) AS %[1]s`, colName))
 	}
-	stagingTableName := misc.TruncateStr(fmt.Sprintf(`%s%s_%s`, stagingTablePrefix, strings.ReplaceAll(uuid.Must(uuid.NewV4()).String(), "-", ""), warehouseutils.UsersTable), 127)
+	stagingTableName := warehouseutils.StagingTableName(provider, warehouseutils.UsersTable)
 
 	tableLocationSql := dl.getTableLocationSql(stagingTableName)
 
@@ -782,7 +784,7 @@ func (dl *HandleT) dropDanglingStagingTables() {
 	var filteredTablesNames []string
 	for _, tableName := range tableNames {
 		// Ignoring the staging tables
-		if !strings.HasPrefix(tableName, stagingTablePrefix) {
+		if !strings.HasPrefix(tableName, warehouseutils.StagingTablePrefix(provider)) {
 			continue
 		}
 		filteredTablesNames = append(filteredTablesNames, tableName)
@@ -923,7 +925,7 @@ func (dl *HandleT) FetchSchema(warehouse warehouseutils.WarehouseT) (schema ware
 	var filteredTablesNames []string
 	for _, tableName := range tableNames {
 		// Ignoring the staging tables
-		if strings.HasPrefix(tableName, stagingTablePrefix) {
+		if strings.HasPrefix(tableName, warehouseutils.StagingTablePrefix(provider)) {
 			continue
 		}
 		filteredTablesNames = append(filteredTablesNames, tableName)

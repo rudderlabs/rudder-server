@@ -11,7 +11,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/gofrs/uuid"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/warehouse/client"
@@ -19,18 +18,16 @@ import (
 	snowflake "github.com/snowflakedb/gosnowflake" // blank comment
 )
 
+const (
+	provider = warehouseutils.SNOWFLAKE
+)
+
 var (
-	stagingTablePrefix string
-	pkgLogger          logger.LoggerI
+	pkgLogger logger.LoggerI
 )
 
 func Init() {
-	loadConfig()
 	pkgLogger = logger.NewLogger().Child("warehouse").Child("snowflake")
-}
-
-func loadConfig() {
-	stagingTablePrefix = "RUDDER_STAGING_"
 }
 
 type HandleT struct {
@@ -254,7 +251,7 @@ func (sf *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 	}
 
 	schemaIdentifier := sf.schemaIdentifier()
-	stagingTableName := misc.TruncateStr(fmt.Sprintf(`%s%s_%s`, stagingTablePrefix, strings.ReplaceAll(uuid.Must(uuid.NewV4()).String(), "-", ""), tableName), 127)
+	stagingTableName := warehouseutils.StagingTableName(provider, tableName)
 	sqlStatement := fmt.Sprintf(`CREATE TEMPORARY TABLE %[1]s."%[2]s" LIKE %[1]s."%[3]s"`, schemaIdentifier, stagingTableName, tableName)
 
 	pkgLogger.Debugf("SF: Creating temporary table for table:%s at %s\n", tableName, sqlStatement)
@@ -411,7 +408,7 @@ func (sf *HandleT) LoadIdentityMappingsTable() (err error) {
 	}
 
 	schemaIdentifier := sf.schemaIdentifier()
-	stagingTableName := misc.TruncateStr(fmt.Sprintf(`%s%s_%s`, stagingTablePrefix, strings.ReplaceAll(uuid.Must(uuid.NewV4()).String(), "-", ""), identityMappingsTable), 127)
+	stagingTableName := warehouseutils.StagingTableName(provider, identityMappingsTable)
 	sqlStatement := fmt.Sprintf(`CREATE TEMPORARY TABLE %[1]s."%[2]s" LIKE %[1]s."%[3]s"`, schemaIdentifier, stagingTableName, identityMappingsTable)
 
 	pkgLogger.Infof("SF: Creating temporary table for table:%s at %s\n", identityMappingsTable, sqlStatement)
@@ -497,7 +494,8 @@ func (sf *HandleT) loadUserTables() (errorMap map[string]error) {
 		firstValProps = append(firstValProps, fmt.Sprintf(`FIRST_VALUE("%[1]s" IGNORE NULLS) OVER (PARTITION BY ID ORDER BY RECEIVED_AT DESC ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) AS "%[1]s"`, colName))
 	}
 	schemaIdentifier := sf.schemaIdentifier()
-	stagingTableName := misc.TruncateStr(fmt.Sprintf(`%s%s_%s`, stagingTablePrefix, strings.ReplaceAll(uuid.Must(uuid.NewV4()).String(), "-", ""), usersTable), 127)
+
+	stagingTableName := warehouseutils.StagingTableName(provider, usersTable)
 	sqlStatement := fmt.Sprintf(`CREATE TEMPORARY TABLE %[1]s."%[2]s" AS (SELECT DISTINCT * FROM
 										(
 											SELECT
@@ -844,11 +842,7 @@ func (sf *HandleT) FetchSchema(warehouse warehouseutils.WarehouseT) (schema ware
 	defer dbHandle.Close()
 
 	schema = make(warehouseutils.SchemaT)
-	sqlStatement := fmt.Sprintf(`SELECT t.table_name, c.column_name, c.data_type
-									FROM INFORMATION_SCHEMA.TABLES as t
-									JOIN INFORMATION_SCHEMA.COLUMNS as c
-									ON t.table_schema = c.table_schema and t.table_name = c.table_name
-									WHERE t.table_schema = '%s'`, sf.Namespace)
+	sqlStatement := fetchSchemaSQLStatement(sf.Namespace)
 
 	rows, err := dbHandle.Query(sqlStatement)
 	if err != nil && err != sql.ErrNoRows {
