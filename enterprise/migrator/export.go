@@ -43,6 +43,7 @@ type exporterT struct {
 var (
 	dbReadBatchSize              int
 	exportDoneCheckSleepDuration time.Duration
+	ReadHeaderTimeout            time.Duration
 )
 
 const (

@@ -73,11 +73,6 @@ func run(m *testing.M) int {
 	if err != nil {
 		log.Fatalf("Could not start resource: %s", err)
 	}
-	defer func() {
-		if err := pool.Purge(resourcePostgres); err != nil {
-			log.Printf("Could not purge resource: %s \n", err)
-		}
-	}()
 
 	DB_DSN = fmt.Sprintf("postgres://rudder:password@localhost:%s/%s?sslmode=disable", resourcePostgres.GetPort("5432/tcp"), database)
 	fmt.Println("DB_DSN:", DB_DSN)
@@ -99,6 +94,12 @@ func run(m *testing.M) int {
 	}); err != nil {
 		log.Fatalf("Could not connect to docker: %s", err)
 	}
+
+	defer func() {
+		if err := pool.Purge(resourcePostgres); err != nil {
+			log.Printf("Could not purge resource: %s \n", err)
+		}
+	}()
 
 	code := m.Run()
 	blockOnHold()
@@ -122,13 +123,13 @@ func blockOnHold() {
 
 type reportingNOOP struct{}
 
-func (*reportingNOOP) WaitForSetup(ctx context.Context, clientName string) {
+func (*reportingNOOP) WaitForSetup(_ context.Context, _ string) {
 }
 
-func (*reportingNOOP) Report(metrics []*utilTypes.PUReportedMetric, txn *sql.Tx) {
+func (*reportingNOOP) Report(_ []*utilTypes.PUReportedMetric, _ *sql.Tx) {
 }
 
-func (*reportingNOOP) AddClient(ctx context.Context, c utilTypes.Config) {
+func (*reportingNOOP) AddClient(_ context.Context, _ utilTypes.Config) {
 }
 
 const (
