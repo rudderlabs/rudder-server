@@ -602,7 +602,7 @@ func (dl *HandleT) loadTable(tableName string, tableSchemaInUpload, tableSchemaA
 	}
 
 	if loadTableStrategy == "APPEND" {
-		sqlStatement = appendableLTSQLStatement(
+		sqlStatement = appendLoadTableSQLStatement(
 			dl.Namespace,
 			tableName,
 			stagingTableName,
@@ -617,7 +617,7 @@ func (dl *HandleT) loadTable(tableName string, tableSchemaInUpload, tableSchemaA
 			return
 		}
 
-		sqlStatement = mergeableLTSQLStatement(
+		sqlStatement = mergeLoadTableSQLStatement(
 			dl.Namespace,
 			tableName,
 			stagingTableName,
@@ -715,7 +715,7 @@ func (dl *HandleT) loadUserTables() (errorMap map[string]error) {
 	columnKeys := append([]string{`id`}, userColNames...)
 
 	if loadTableStrategy == "APPEND" {
-		sqlStatement = appendableLTSQLStatement(
+		sqlStatement = appendLoadTableSQLStatement(
 			dl.Namespace,
 			warehouseutils.UsersTable,
 			stagingTableName,
@@ -731,7 +731,7 @@ func (dl *HandleT) loadUserTables() (errorMap map[string]error) {
 			return
 		}
 
-		sqlStatement = mergeableLTSQLStatement(
+		sqlStatement = mergeLoadTableSQLStatement(
 			dl.Namespace,
 			warehouseutils.UsersTable,
 			stagingTableName,
