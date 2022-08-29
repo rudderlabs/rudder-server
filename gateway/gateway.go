@@ -69,6 +69,7 @@ type webRequestT struct {
 	requestPayload []byte
 	writeKey       string
 	ipAddr         string
+	userIDHeader   string
 }
 
 type batchWebRequestT struct {
@@ -160,7 +161,8 @@ type HandleT struct {
 	dbWorkersBufferFullStat, dbWorkersTimeOutStat stats.RudderStats
 	bodyReadTimeStat                              stats.RudderStats
 	addToWebRequestQWaitTime                      stats.RudderStats
-	ProcessRequestTime                            stats.RudderStats
+	processRequestTime                            stats.RudderStats
+	emptyAnonIdHeaderStat                         stats.RudderStats
 	addToBatchRequestQWaitTime                    stats.RudderStats
 
 	diagnosisTicker   *time.Ticker
@@ -295,10 +297,10 @@ func (gateway *HandleT) userWorkerRequestBatcher() {
 	}
 }
 
-// goes over the batches of jobslist, and stores each job in every jobList into gw_db
+// goes over the batches of jobs-list, and stores each job in every jobList into gw_db
 // sends a map of errors if any(errors mapped to the job.uuid) over the responseQ channel of the webRequestWorker.
 // userWebRequestWorkerProcess method of the webRequestWorker is waiting for this errorMessageMap.
-// This in turn sends the error over the done channel of each respcetive webRequest.
+// This in turn sends the error over the done channel of each respective webRequest.
 func (gateway *HandleT) dbWriterWorkerProcess() {
 	for breq := range gateway.batchUserWorkerBatchRequestQ {
 		jobList := make([]*jobsdb.JobT, 0)
@@ -435,6 +437,7 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 			sourceTag := gateway.getSourceTagFromWriteKey(writeKey)
 			sourceTagMap[sourceTag] = writeKey
 			sourceTagMap["reqType"] = req.reqType
+			userIDHeader := req.userIDHeader
 			misc.IncrementMapByKey(sourceStats, sourceTag, 1)
 			// Should be function of body
 			configSubscriberLock.RLock()
@@ -495,7 +498,7 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 			}
 
 			if enableRateLimit {
-				// In case of "batch" requests, if ratelimiter returns true for LimitReached, just drop the event batch and continue.
+				// In case of "batch" requests, if rate-limiter returns true for LimitReached, just drop the event batch and continue.
 				restrictorKey := gateway.backendConfig.GetWorkspaceIDForWriteKey(writeKey)
 				if gateway.rateLimiter.LimitReached(restrictorKey) {
 					req.done <- response.GetStatus(response.TooManyRequests)
@@ -515,10 +518,10 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 				userIDFromReq := strings.TrimSpace(vjson.Get("userId").String())
 				if builtUserID == "" {
 					if anonIDFromReq != "" {
-						builtUserID = anonIDFromReq + DELIMITER + userIDFromReq
+						builtUserID = userIDHeader + DELIMITER + anonIDFromReq + DELIMITER + userIDFromReq
 					} else {
 						// Proxy gets the userID from body if there is no anonymousId in body/header
-						builtUserID = userIDFromReq + DELIMITER + userIDFromReq
+						builtUserID = userIDHeader + DELIMITER + userIDFromReq + DELIMITER + userIDFromReq
 					}
 				}
 
@@ -1042,7 +1045,7 @@ func (rrh *RegularRequestHandler) ProcessRequest(gateway *HandleT, w *http.Respo
 	start := time.Now()
 	gateway.addToWebRequestQ(w, r, done, reqType, payload, writeKey)
 	gateway.addToWebRequestQWaitTime.SendTiming(time.Since(start))
-	defer gateway.ProcessRequestTime.Since(start)
+	defer gateway.processRequestTime.Since(start)
 	errorMessage := <-done
 	return errorMessage
 }
@@ -1504,14 +1507,13 @@ They are further batched together in userWebRequestBatcher
 */
 func (gateway *HandleT) addToWebRequestQ(_ *http.ResponseWriter, req *http.Request, done chan string, reqType string, requestPayload []byte, writeKey string) {
 	userIDHeader := req.Header.Get("AnonymousId")
-	// If necessary fetch userID from request body.
 	if userIDHeader == "" {
 		// If the request comes through proxy, proxy would already send this. So this shouldn't be happening in that case
-		userIDHeader = uuid.Must(uuid.NewV4()).String()
+		gateway.emptyAnonIdHeaderStat.Increment()
 	}
-	userWebRequestWorker := gateway.findUserWebRequestWorker(userIDHeader)
+	userWebRequestWorker := gateway.findUserWebRequestWorker(uuid.Must(uuid.NewV4()).String())
 	ipAddr := misc.GetIPFromReq(req)
-	webReq := webRequestT{done: done, reqType: reqType, requestPayload: requestPayload, writeKey: writeKey, ipAddr: ipAddr}
+	webReq := webRequestT{done: done, reqType: reqType, requestPayload: requestPayload, writeKey: writeKey, ipAddr: ipAddr, userIDHeader: userIDHeader}
 	userWebRequestWorker.webRequestQ <- &webReq
 }
 
@@ -1584,11 +1586,12 @@ func (gateway *HandleT) Setup(
 	gateway.bodyReadTimeStat = gateway.stats.NewStat("gateway.http_body_read_time", stats.TimerType)
 	gateway.addToWebRequestQWaitTime = gateway.stats.NewStat("gateway.web_request_queue_wait_time", stats.TimerType)
 	gateway.addToBatchRequestQWaitTime = gateway.stats.NewStat("gateway.batch_request_queue_wait_time", stats.TimerType)
-	gateway.ProcessRequestTime = gateway.stats.NewStat("gateway.process_request_time", stats.TimerType)
+	gateway.processRequestTime = gateway.stats.NewStat("gateway.process_request_time", stats.TimerType)
 	gateway.backendConfig = backendConfig
 	gateway.rateLimiter = rateLimiter
 	gateway.userWorkerBatchRequestQ = make(chan *userWorkerBatchRequestT, maxDBBatchSize)
 	gateway.batchUserWorkerBatchRequestQ = make(chan *batchUserWorkerBatchRequestT, maxDBWriterProcess)
+	gateway.emptyAnonIdHeaderStat = gateway.stats.NewStat("gateway.empty_anonymous_id_header", stats.CountType)
 	gateway.jobsDB = jobsDB
 
 	gateway.versionHandler = versionHandler
