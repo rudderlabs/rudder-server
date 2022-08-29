@@ -1,5 +1,7 @@
 package rsources
 
+import "sort"
+
 func statusFromQueryResult(jobRunId string, statMap map[JobTargetKey]Stats) JobStatus {
 	status := JobStatus{
 		ID: jobRunId,
@@ -7,9 +9,15 @@ func statusFromQueryResult(jobRunId string, statMap map[JobTargetKey]Stats) JobS
 
 	taskRunIdIndex := make(map[string]int)           // task run id -> index
 	sourceIdIndex := make(map[string]map[string]int) // task run id -> source id -> index
-
-	for key, stat := range statMap {
-
+	sortedKeys := make([]JobTargetKey, 0, len(statMap))
+	for key := range statMap {
+		sortedKeys = append(sortedKeys, key)
+	}
+	sort.Slice(sortedKeys, func(i, j int) bool {
+		return sortedKeys[i].String() < sortedKeys[j].String()
+	})
+	for _, key := range sortedKeys {
+		stat := statMap[key]
 		var idx int
 		var ok bool
 		if idx, ok = taskRunIdIndex[key.TaskRunID]; !ok {
@@ -60,8 +68,15 @@ func failedRecordsFromQueryResult(jobRunId string, recordsMap map[JobTargetKey]F
 
 	taskRunIdIndex := make(map[string]int)           // task run id -> index
 	sourceIdIndex := make(map[string]map[string]int) // task run id -> source id -> index
-	for key, records := range recordsMap {
-
+	sortedKeys := make([]JobTargetKey, 0, len(recordsMap))
+	for key := range recordsMap {
+		sortedKeys = append(sortedKeys, key)
+	}
+	sort.Slice(sortedKeys, func(i, j int) bool {
+		return sortedKeys[i].String() < sortedKeys[j].String()
+	})
+	for _, key := range sortedKeys {
+		records := recordsMap[key]
 		var taskIdx, sourceIdx int
 		var ok bool
 		if taskIdx, ok = taskRunIdIndex[key.TaskRunID]; !ok {

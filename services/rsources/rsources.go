@@ -21,6 +21,10 @@ type JobTargetKey struct {
 	DestinationID string `json:"destination_id"`
 }
 
+func (k JobTargetKey) String() string {
+	return fmt.Sprintf("%s:%s:%s", k.TaskRunID, k.SourceID, k.DestinationID)
+}
+
 type Stats struct {
 	In     uint `json:"in"`
 	Out    uint `json:"out"`

@@ -53,7 +53,7 @@ func (sh *sourcesHandler) GetStatus(ctx context.Context, jobRunId string, filter
 			sum(out_count),
 			sum(failed_count) FROM "rsources_stats" %s
 			GROUP BY task_run_id, source_id, destination_id
-			ORDER BY task_run_id, source_id, destination_id DESC`,
+			ORDER BY task_run_id, source_id, destination_id ASC`,
 		filters)
 
 	rows, err := sh.readDB().QueryContext(ctx, sqlStatement, filterParams...)
@@ -168,7 +168,7 @@ func (sh *sourcesHandler) GetFailedRecords(ctx context.Context, jobRunId string,
 			source_id,
 			destination_id,
 			record_id  FROM "rsources_failed_keys" %s
-			ORDER BY task_run_id, source_id, destination_id DESC`,
+			ORDER BY task_run_id, source_id, destination_id ASC`,
 		filters)
 
 	failedRecordsMap := map[JobTargetKey]FailedRecords{}
