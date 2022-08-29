@@ -77,7 +77,7 @@ func EnvETCDConfig() *ETCDConfig {
 		config.RegisterDurationConfigVariable(15, &ackTimeout, false, time.Second, "etcd.ackTimeout")
 		config.RegisterDurationConfigVariable(30, &keepaliveTime, false, time.Second, "etcd.keepaliveTime")
 		config.RegisterDurationConfigVariable(10, &keepaliveTimeout, false, time.Second, "etcd.keepaliveTimeout")
-		config.RegisterDurationConfigVariable(20, &dialTimeout, false, time.Second, "etcd.dialTimeout")
+		config.RegisterDurationConfigVariable(30, &dialTimeout, false, time.Second, "etcd.dialTimeout")
 	})
 
 	return &ETCDConfig{
@@ -112,7 +112,8 @@ func (manager *ETCDManager) init() error {
 			},
 		})
 		if err != nil {
-			manager.initErr = err
+			endpoints := strings.Join(manager.Config.Endpoints, `,`)
+			manager.initErr = fmt.Errorf("create etcd client (%s): %w", endpoints, err)
 			return
 		}
 		manager.Client = cli
