@@ -274,8 +274,7 @@ var _ = Describe("Router", func() {
 				})
 
 			<-router.backendConfigInitialized
-			count := router.readAndProcess()
-			Expect(count).To(Equal(2))
+			router.readAndProcess()
 			<-done
 		})
 
@@ -360,8 +359,7 @@ var _ = Describe("Router", func() {
 				})
 
 			<-router.backendConfigInitialized
-			count := router.readAndProcess()
-			Expect(count).To(Equal(1))
+			router.readAndProcess()
 			<-done
 		})
 
@@ -441,8 +439,7 @@ var _ = Describe("Router", func() {
 				})
 
 			<-router.backendConfigInitialized
-			count := router.readAndProcess()
-			Expect(count).To(Equal(0))
+			router.readAndProcess()
 		})
 
 		It("can fail jobs if time is more than router timeout", func() {
@@ -566,8 +563,7 @@ var _ = Describe("Router", func() {
 			c.mockRouterJobsDB.EXPECT().UpdateJobStatusInTx(gomock.Any(), gomock.Any(), gomock.Any(), []string{customVal["GA"]}, nil).Times(1)
 
 			<-router.backendConfigInitialized
-			count := router.readAndProcess()
-			Expect(count).To(Equal(5))
+			router.readAndProcess()
 			<-done
 		})
 	})
@@ -716,8 +712,7 @@ var _ = Describe("Router", func() {
 				})
 
 			<-router.backendConfigInitialized
-			count := router.readAndProcess()
-			Expect(count).To(Equal(3))
+			router.readAndProcess()
 			<-done
 		})
 
@@ -867,8 +862,7 @@ var _ = Describe("Router", func() {
 				})
 
 			<-router.backendConfigInitialized
-			count := router.readAndProcess()
-			Expect(count).To(Equal(3))
+			router.readAndProcess()
 			<-done
 		})
 	})
@@ -1094,8 +1088,7 @@ var _ = Describe("Router", func() {
 			c.mockRouterJobsDB.EXPECT().UpdateJobStatusInTx(gomock.Any(), gomock.Any(), gomock.Any(), []string{customVal["GA"]}, nil).Times(1)
 
 			<-router.backendConfigInitialized
-			count := router.readAndProcess()
-			Expect(count).To(Equal(5))
+			router.readAndProcess()
 			<-done
 		})
 
@@ -1253,8 +1246,7 @@ var _ = Describe("Router", func() {
 			c.mockRouterJobsDB.EXPECT().UpdateJobStatusInTx(gomock.Any(), gomock.Any(), gomock.Any(), []string{customVal["GA"]}, nil).Times(1)
 
 			<-router.backendConfigInitialized
-			count := router.readAndProcess()
-			Expect(count).To(Equal(3))
+			router.readAndProcess()
 			<-done
 		})
 	})

@@ -99,6 +99,8 @@ type HandleT struct {
 	jobsDBCommandTimeout                   time.Duration
 	jobdDBMaxRetries                       int
 	enableBatching                         bool
+	isolateDestID                          bool
+	queryFilters                           jobsdb.QueryFiltersT
 	transformer                            transformer.Transformer
 	configSubscriberLock                   sync.RWMutex
 	destinationsMap                        map[string]*routerutils.BatchDestinationT // destinationID -> destination
@@ -211,13 +213,14 @@ var (
 	jobQueryBatchSize, updateStatusBatchSize, noOfJobsPerChannel  int
 	failedEventsCacheSize                                         int
 	readSleep, minSleep, maxStatusUpdateWait, diagnosisTickerTime time.Duration
+	QueryFilters                                                  jobsdb.QueryFiltersT
 	minRetryBackoff, maxRetryBackoff, jobsBatchTimeout            time.Duration
 	pkgLogger                                                     logger.LoggerI
 	Diagnostics                                                   diagnostics.DiagnosticsI
 	fixedLoopSleep                                                time.Duration
 	toAbortDestinationIDs                                         string
-	QueryFilters                                                  jobsdb.QueryFiltersT
 	disableEgress                                                 bool
+	readPerDestination                                            bool
 )
 
 var jsonfast = jsoniter.ConfigCompatibleWithStandardLibrary
@@ -260,6 +263,8 @@ func loadConfig() {
 	config.RegisterDurationConfigVariable(48, &failedKeysExpire, true, time.Hour, "Router.failedKeysExpire")
 	config.RegisterDurationConfigVariable(24, &failedKeysCleanUpSleep, true, time.Hour, "Router.failedKeysCleanUpSleep")
 	failedKeysEnabled = config.GetBool("Router.failedKeysEnabled", false)
+
+	config.RegisterBoolConfigVariable(true, &readPerDestination, false, "Router.readPerDestination")
 }
 
 func (worker *workerT) trackStuckDelivery() chan struct{} {
@@ -1230,7 +1235,6 @@ func (rt *HandleT) initWorkers() {
 		rt.logger.Debugf("[%v Router] :: closing responseQ", rt.destName)
 		close(rt.failedEventsChan)
 		rt.logger.Debugf("[%v Router] :: closing failedEventsChan", rt.destName)
-
 		return err
 	})
 }
@@ -1729,7 +1733,6 @@ func (rt *HandleT) generatorLoop(ctx context.Context) {
 	rt.logger.Info("Generator started")
 
 	generatorStat := stats.NewTaggedStat("router_generator_loop", stats.TimerType, stats.Tags{"destType": rt.destName})
-	countStat := stats.NewTaggedStat("router_generator_events", stats.CountType, stats.Tags{"destType": rt.destName})
 
 	timeout := time.After(10 * time.Millisecond)
 	for {
@@ -1742,9 +1745,8 @@ func (rt *HandleT) generatorLoop(ctx context.Context) {
 
 			generatorStat.Start()
 
-			processCount := rt.readAndProcess()
-
-			countStat.Count(processCount)
+			rt.cleanUp()
+			rt.readAndProcess()
 			generatorStat.End()
 
 			timeToSleep := 0 * time.Nanosecond
@@ -1760,7 +1762,56 @@ func (rt *HandleT) generatorLoop(ctx context.Context) {
 	}
 }
 
-func (rt *HandleT) readAndProcess() int {
+func (rt *HandleT) getValueForParameter(destination backendconfig.DestinationT, parameter string) string {
+	switch {
+	case parameter == "destination_id":
+		return destination.ID
+	default:
+		panic(fmt.Errorf("rt: %s: Unknown parameter(%s) to find value from router destination %+v", rt.destName, parameter, destination))
+	}
+}
+
+func (rt *HandleT) constructParameterFilters(batchDest backendconfig.DestinationT) []jobsdb.ParameterFilterT {
+	parameterFilters := make([]jobsdb.ParameterFilterT, 0)
+	for _, key := range rt.queryFilters.ParameterFilters {
+		parameterFilter := jobsdb.ParameterFilterT{
+			Name:     key,
+			Value:    rt.getValueForParameter(batchDest, key),
+			Optional: false,
+		}
+		parameterFilters = append(parameterFilters, parameterFilter)
+	}
+
+	return parameterFilters
+}
+
+func (rt *HandleT) constructQueryFilters(destination ...backendconfig.DestinationT) jobsdb.GetQueryParamsT {
+	if rt.isolateDestID {
+		parameterFilters := rt.constructParameterFilters(destination[0])
+		return jobsdb.GetQueryParamsT{
+			CustomValFilters:              []string{rt.destName},
+			ParameterFilters:              parameterFilters,
+			IgnoreCustomValFiltersInQuery: true,
+			PayloadSizeLimit:              rt.payloadLimit,
+		}
+	}
+	return jobsdb.GetQueryParamsT{
+		CustomValFilters: []string{rt.destName},
+		PayloadSizeLimit: rt.payloadLimit,
+	}
+}
+
+func (rt *HandleT) readAndProcess() {
+	if rt.isolateDestID {
+		for _, destination := range rt.destinationsMap {
+			rt.getRouterJobs(rt.constructQueryFilters(destination.Destination))
+		}
+		return
+	}
+	rt.getRouterJobs(rt.constructQueryFilters())
+}
+
+func (rt *HandleT) cleanUp() {
 	if rt.guaranteeUserEventOrder {
 		//#JobOrder (See comment marked #JobOrder
 		rt.eventOrderSyncMu.Lock()
@@ -1806,7 +1857,9 @@ func (rt *HandleT) readAndProcess() int {
 		rt.eventOrderSyncMu.Unlock()
 		// End of #JobOrder
 	}
+}
 
+func (rt *HandleT) getRouterJobs(queryFilters jobsdb.GetQueryParamsT) {
 	timeOut := rt.routerTimeout
 
 	timeElapsed := time.Since(rt.lastQueryRunTime)
@@ -1826,15 +1879,12 @@ func (rt *HandleT) readAndProcess() int {
 	}
 	rt.timeGained = 0
 	rt.logger.Debugf("[%v Router] :: pickupMap: %+v", rt.destName, pickupMap)
+	queryFilters.JobsLimit = totalPickupCount
 	combinedList, err := jobsdb.QueryJobsWithRetries(context.Background(), rt.jobdDBQueryRequestTimeout, rt.jobdDBMaxRetries, func(ctx context.Context) ([]*jobsdb.JobT, error) {
 		return rt.jobsDB.GetAllJobs(
 			ctx,
 			pickupMap,
-			jobsdb.GetQueryParamsT{
-				CustomValFilters: []string{rt.destName},
-				PayloadSizeLimit: rt.payloadLimit,
-				JobsLimit:        totalPickupCount,
-			},
+			queryFilters,
 			rt.maxDSQuerySize,
 		)
 	})
@@ -1846,19 +1896,14 @@ func (rt *HandleT) readAndProcess() int {
 	if len(combinedList) == 0 {
 		rt.logger.Debugf("RT: DB Read Complete. No RT Jobs to process for destination: %s", rt.destName)
 		time.Sleep(readSleep)
-		return 0
 	}
 
 	sort.Slice(combinedList, func(i, j int) bool {
 		return combinedList[i].JobID < combinedList[j].JobID
 	})
 
-	if len(combinedList) > 0 {
-		rt.logger.Debugf("[%v Router] :: router is enabled", rt.destName)
-		rt.logger.Debugf("[%v Router] ===== len to be processed==== : %v", rt.destName, len(combinedList))
-	}
-
-	// List of jobs which can be processed mapped per channel
+	rt.logger.Debugf("[%v Router] :: router is enabled", rt.destName)
+	rt.logger.Debugf("[%v Router] ===== len to be processed==== : %v", rt.destName, len(combinedList))
 	type workerJobT struct {
 		worker *workerT
 		job    *jobsdb.JobT
@@ -1876,7 +1921,6 @@ func (rt *HandleT) readAndProcess() int {
 	connectionDetailsMap := make(map[string]*utilTypes.ConnectionDetails)
 	statusDetailsMap := make(map[string]*utilTypes.StatusDetail)
 	transformedAtMap := make(map[string]string)
-	// Identify jobs which can be processed
 	for _, job := range combinedList {
 		destID := destinationID(job)
 		rt.configSubscriberLock.RLock()
@@ -2058,7 +2102,6 @@ func (rt *HandleT) readAndProcess() int {
 	if len(toProcess) == 0 {
 		rt.logger.Debugf("RT: No workers found for the jobs. Sleeping. Destination: %s", rt.destName)
 		time.Sleep(readSleep)
-		return 0
 	}
 
 	workerAssignedTime := time.Now()
@@ -2066,8 +2109,8 @@ func (rt *HandleT) readAndProcess() int {
 	for _, wrkJob := range toProcess {
 		wrkJob.worker.channel <- workerMessageT{job: wrkJob.job, throttledAtTime: throttledAtTime, workerAssignedTime: workerAssignedTime}
 	}
-
-	return len(toProcess)
+	countStat := stats.NewTaggedStat("router_generator_events", stats.CountType, stats.Tags{"destType": rt.destName})
+	countStat.Count(len(toProcess))
 }
 
 func destinationID(job *jobsdb.JobT) string {
@@ -2080,9 +2123,17 @@ func (*HandleT) crashRecover() {
 
 func Init() {
 	loadConfig()
+	setQueryFilters()
 	pkgLogger = logger.NewLogger().Child("router")
-	QueryFilters = jobsdb.QueryFiltersT{CustomVal: true}
 	Diagnostics = diagnostics.Diagnostics
+}
+
+func setQueryFilters() {
+	if readPerDestination {
+		QueryFilters = jobsdb.QueryFiltersT{CustomVal: true, ParameterFilters: []string{"destination_id"}}
+	} else {
+		QueryFilters = jobsdb.QueryFiltersT{CustomVal: true}
+	}
 }
 
 // Setup initializes this module
@@ -2110,6 +2161,7 @@ func (rt *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB jobsd
 	config.RegisterDurationConfigVariable(60, &rt.jobdDBQueryRequestTimeout, true, time.Second, []string{"JobsDB.Router.QueryRequestTimeout", "JobsDB.QueryRequestTimeout"}...)
 	config.RegisterDurationConfigVariable(90, &rt.jobsDBCommandTimeout, true, time.Second, []string{"JobsDB.Router.CommandRequestTimeout", "JobsDB.CommandRequestTimeout"}...)
 	config.RegisterIntConfigVariable(3, &rt.jobdDBMaxRetries, true, 1, []string{"JobsDB." + "Router." + "MaxRetries", "JobsDB." + "MaxRetries"}...)
+	config.RegisterBoolConfigVariable(false, &rt.isolateDestID, false, []string{"Router." + rt.destName + "." + "isolateDestID"}...)
 	rt.crashRecover()
 	rt.responseQ = make(chan jobResponseT, jobQueryBatchSize)
 	rt.toClearFailJobIDMap = make(map[int][]string)
@@ -2184,6 +2236,12 @@ func (rt *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB jobsd
 
 	rt.oauth = oauth.NewOAuthErrorHandler(backendConfig)
 	rt.oauth.Setup()
+
+	if rt.isolateDestID {
+		rt.queryFilters = jobsdb.QueryFiltersT{CustomVal: true, ParameterFilters: []string{"destination_id"}}
+	} else {
+		rt.queryFilters = jobsdb.QueryFiltersT{CustomVal: true}
+	}
 
 	var t throttler.HandleT
 	t.SetUp(rt.destName)
