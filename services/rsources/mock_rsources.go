@@ -116,10 +116,10 @@ func (mr *MockJobServiceMockRecorder) Delete(ctx, jobRunId interface{}) *gomock.
 }
 
 // GetFailedRecords mocks base method.
-func (m *MockJobService) GetFailedRecords(ctx context.Context, jobRunId string, filter JobFilter) (FailedRecords, error) {
+func (m *MockJobService) GetFailedRecords(ctx context.Context, jobRunId string, filter JobFilter) (JobFailedRecords, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "GetFailedRecords", ctx, jobRunId, filter)
-	ret0, _ := ret[0].(FailedRecords)
+	ret0, _ := ret[0].(JobFailedRecords)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }

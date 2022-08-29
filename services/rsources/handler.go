@@ -144,9 +144,9 @@ func (sh *sourcesHandler) AddFailedRecords(ctx context.Context, tx *sql.Tx, jobR
 	return
 }
 
-func (sh *sourcesHandler) GetFailedRecords(ctx context.Context, jobRunId string, filter JobFilter) (FailedRecords, error) {
+func (sh *sourcesHandler) GetFailedRecords(ctx context.Context, jobRunId string, filter JobFilter) (JobFailedRecords, error) {
 	if sh.config.SkipFailedRecordsCollection {
-		return nil, ErrOperationNotSupported
+		return JobFailedRecords{ID: jobRunId}, ErrOperationNotSupported
 	}
 	filterParams := []interface{}{}
 	filters := `WHERE job_run_id = $1`
@@ -164,7 +164,6 @@ func (sh *sourcesHandler) GetFailedRecords(ctx context.Context, jobRunId string,
 
 	sqlStatement := fmt.Sprintf(
 		`SELECT
-			job_run_id,
 			task_run_id,
 			source_id,
 			destination_id,
@@ -172,31 +171,31 @@ func (sh *sourcesHandler) GetFailedRecords(ctx context.Context, jobRunId string,
 			ORDER BY task_run_id, source_id, destination_id DESC`,
 		filters)
 
-	failedRecords := make([]FailedRecord, 0)
+	failedRecordsMap := map[JobTargetKey]FailedRecords{}
 	rows, err := sh.readDB().QueryContext(ctx, sqlStatement, filterParams...)
 	if err != nil {
-		return FailedRecords{}, err
+		return JobFailedRecords{ID: jobRunId}, err
 	}
 	defer func() { _ = rows.Close() }()
 	for rows.Next() {
-		var failedRecord FailedRecord
+		var key JobTargetKey
+		var record json.RawMessage
 		err := rows.Scan(
-			&failedRecord.JobRunID,
-			&failedRecord.TaskRunID,
-			&failedRecord.SourceID,
-			&failedRecord.DestinationID,
-			&failedRecord.RecordID,
+			&key.TaskRunID,
+			&key.SourceID,
+			&key.DestinationID,
+			&record,
 		)
 		if err != nil {
-			return FailedRecords{}, err
+			return JobFailedRecords{ID: jobRunId}, err
 		}
-		failedRecords = append(failedRecords, failedRecord)
+		failedRecordsMap[key] = append(failedRecordsMap[key], record)
 	}
 	if err := rows.Err(); err != nil {
-		return FailedRecords{}, err
+		return JobFailedRecords{ID: jobRunId}, err
 	}
 
-	return failedRecords, nil
+	return failedRecordsFromQueryResult(jobRunId, failedRecordsMap), nil
 }
 
 func (sh *sourcesHandler) Delete(ctx context.Context, jobRunId string) error {
