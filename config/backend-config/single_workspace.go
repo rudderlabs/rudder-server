@@ -7,7 +7,6 @@ import (
 	"io"
 	"net/http"
 	"net/url"
-	"os"
 	"sync"
 	"time"
 
@@ -18,6 +17,7 @@ import (
 )
 
 type singleWorkspaceConfig struct {
+	logOnce          sync.Once
 	Token            string
 	workspaceID      string
 	configBackendURL *url.URL
@@ -130,8 +130,10 @@ func (wc *singleWorkspaceConfig) getFromAPI(ctx context.Context, _ string) (Conf
 
 // getFromFile reads the workspace config from JSON file
 func (wc *singleWorkspaceConfig) getFromFile() (ConfigT, error) {
-	pkgLogger.Info("Reading workspace config from JSON file")
-	data, err := os.ReadFile(wc.configJSONPath)
+	wc.logOnce.Do(func() {
+		pkgLogger.Info("Reading workspace config from JSON file")
+	})
+	data, err := IoUtil.ReadFile(wc.configJSONPath)
 	if err != nil {
 		pkgLogger.Errorf("Unable to read backend config from file: %s with error : %s", wc.configJSONPath, err.Error())
 		return ConfigT{}, err

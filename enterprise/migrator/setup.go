@@ -110,10 +110,10 @@ type StatusResponseT struct {
 func (m *Migrator) StartWebHandler(ctx context.Context, gatewayMigrator, routerMigrator, batchRouterMigrator *MigratorT, failedKeysMigrator *FailedKeysMigratorT, startProcessor, startRouter func()) {
 	pkgLogger.Infof("Migrator: Starting migrationWebHandler on port %d", migratorPort)
 	srvMux := http.NewServeMux()
-	srvMux.HandleFunc("/gw"+notificationURI, m.importRequestHandler((*gatewayMigrator).importer.importHandler))
-	srvMux.HandleFunc("/rt"+notificationURI, m.importRequestHandler((*routerMigrator).importer.importHandler))
-	srvMux.HandleFunc("/batch_rt"+notificationURI, m.importRequestHandler((*batchRouterMigrator).importer.importHandler))
-	srvMux.HandleFunc("/failed_keys"+notificationURI, m.importRequestHandler((*failedKeysMigrator).importer.importHandler))
+	srvMux.HandleFunc("/gw"+notificationURI, m.importRequestHandler(gatewayMigrator.importer.importHandler))
+	srvMux.HandleFunc("/rt"+notificationURI, m.importRequestHandler(routerMigrator.importer.importHandler))
+	srvMux.HandleFunc("/batch_rt"+notificationURI, m.importRequestHandler(batchRouterMigrator.importer.importHandler))
+	srvMux.HandleFunc("/failed_keys"+notificationURI, m.importRequestHandler(failedKeysMigrator.importer.importHandler))
 
 	srvMux.HandleFunc("/postImport", func(w http.ResponseWriter, r *http.Request) {
 		startProcessor()
@@ -121,10 +121,10 @@ func (m *Migrator) StartWebHandler(ctx context.Context, gatewayMigrator, routerM
 	})
 
 	srvMux.HandleFunc("/export/status", func(w http.ResponseWriter, r *http.Request) {
-		gwCompleted := (*gatewayMigrator).exporter.exportStatusHandler()
-		rtCompleted := (*routerMigrator).exporter.exportStatusHandler()
-		brtCompleted := (*batchRouterMigrator).exporter.exportStatusHandler()
-		fkCompleted := (*failedKeysMigrator).exporter.exportStatusHandler()
+		gwCompleted := gatewayMigrator.exporter.exportStatusHandler()
+		rtCompleted := routerMigrator.exporter.exportStatusHandler()
+		brtCompleted := batchRouterMigrator.exporter.exportStatusHandler()
+		fkCompleted := failedKeysMigrator.exporter.exportStatusHandler()
 		completed := gwCompleted && rtCompleted && brtCompleted && fkCompleted
 		mode := m.migrationMode
 
@@ -145,10 +145,10 @@ func (m *Migrator) StartWebHandler(ctx context.Context, gatewayMigrator, routerM
 	})
 
 	srvMux.HandleFunc("/import/status", func(w http.ResponseWriter, r *http.Request) {
-		gwCompleted := (*gatewayMigrator).importer.importStatusHandler()
-		rtCompleted := (*routerMigrator).importer.importStatusHandler()
-		brtCompleted := (*batchRouterMigrator).importer.importStatusHandler()
-		fkCompleted := (*failedKeysMigrator).importer.importStatusHandler()
+		gwCompleted := gatewayMigrator.importer.importStatusHandler()
+		rtCompleted := routerMigrator.importer.importStatusHandler()
+		brtCompleted := batchRouterMigrator.importer.importStatusHandler()
+		fkCompleted := failedKeysMigrator.importer.importStatusHandler()
 		completed := gwCompleted && rtCompleted && brtCompleted && fkCompleted
 		mode := m.migrationMode
 

@@ -457,7 +457,7 @@ func (exp *failedKeysExporterT) uploadWorkerProcess(uploadWorkerT *fkUploadWorke
 		contentSlice[idx] = m
 	}
 
-	content := bytes.Join(contentSlice[:], []byte("\n"))
+	content := bytes.Join(contentSlice, []byte("\n"))
 
 	// fileName only contains the taskRunID because anyway the tables are shifted to one node only
 	// and all the records can be aggregated together.

@@ -1695,9 +1695,7 @@ func startWebHandler(ctx context.Context) error {
 	}
 
 	g, ctx := errgroup.WithContext(ctx)
-	g.Go(func() error {
-		return srv.ListenAndServe()
-	})
+	g.Go(srv.ListenAndServe)
 	g.Go(func() error {
 		<-ctx.Done()
 		return srv.Shutdown(context.Background())
