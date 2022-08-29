@@ -103,7 +103,7 @@ func (manager *AzureBlobStorageManager) Upload(ctx context.Context, file *os.Fil
 	ctx, cancel := context.WithTimeout(ctx, manager.getTimeout())
 	defer cancel()
 
-	if !manager.skipCreationOfContainers() {
+	if manager.shouldCreateContainer() {
 		_, err = containerURL.Create(ctx, azblob.Metadata{}, azblob.PublicAccessNone)
 		err = suppressMinorErrors(err)
 		if err != nil {
@@ -126,14 +126,16 @@ func (manager *AzureBlobStorageManager) Upload(ctx context.Context, file *os.Fil
 	return UploadOutput{Location: manager.blobLocation(&blobURL), ObjectName: fileName}, nil
 }
 
-func (manager *AzureBlobStorageManager) skipCreationOfContainers() bool {
-	return manager.useSASTokens()
+func (manager *AzureBlobStorageManager) shouldCreateContainer() bool {
+	return !manager.useSASTokens()
 }
 
 func (manager *AzureBlobStorageManager) blobLocation(blobURL *azblob.BlockBlobURL) string {
 	if !manager.useSASTokens() {
 		return blobURL.String()
 	}
+
+	// Reset SAS Query parameters
 	blobURLParts := azblob.NewBlobURLParts(blobURL.URL())
 	blobURLParts.SAS = azblob.SASQueryParameters{}
 	newBlobURL := blobURLParts.URL()
