@@ -89,7 +89,7 @@ func (producer *BQStreamProducer) Produce(jsonData json.RawMessage, _ interface{
 	tblId := parsedJSON.Get("tableId").String()
 	props := parsedJSON.Get("properties").String()
 
-	var genericRec *genericRecord
+	var genericRec []*genericRecord
 	err := json.Unmarshal([]byte(props), &genericRec)
 	if err != nil {
 		return http.StatusBadRequest, "Failure", createErr(err, "error in unmarshalling data").Error()
