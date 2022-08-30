@@ -164,14 +164,13 @@ func checkValidJobState(jd assertInterface, stateFilters []string) {
 	}
 }
 
-// constructQuery construct and return query
-func constructQuery(jd assertInterface, paramKey string, paramList []string, queryType string) string {
-	jd.assert(queryType == "OR" || queryType == "AND", fmt.Sprintf("queryType:%s is neither OR nor AND", queryType))
+// constructQueryOR construct a query were paramKey is any of the values in paramValues
+func constructQueryOR(paramKey string, paramList []string) string {
 	var queryList []string
 	for _, p := range paramList {
 		queryList = append(queryList, "("+paramKey+"='"+p+"')")
 	}
-	return "(" + strings.Join(queryList, " "+queryType+" ") + ")"
+	return "(" + strings.Join(queryList, " OR ") + ")"
 }
 
 // constructStateQuery construct query from provided state filters

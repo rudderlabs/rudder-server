@@ -30,9 +30,9 @@ func Test_mustRenameDS(t *testing.T) {
 
 		// And I have jobs and job status tables with events from 3 sources
 		createTables(t, dbHandle, jobsTable, jobStatusTable)
-		addJob(t, dbHandle, jobsTable, jobStatusTable, "one", "succeeded")
-		addJob(t, dbHandle, jobsTable, jobStatusTable, "two", "failed")
-		addJob(t, dbHandle, jobsTable, jobStatusTable, "three", "aborted")
+		addJob(t, dbHandle, "one", "succeeded")
+		addJob(t, dbHandle, "two", "failed")
+		addJob(t, dbHandle, "three", "aborted")
 
 		requireRowsCount(t, dbHandle, jobsTable, 3)
 		requireRowsCount(t, dbHandle, jobStatusTable, 3)
@@ -68,8 +68,8 @@ func Test_mustRenameDS_drops_table_if_left_empty(t *testing.T) {
 
 		// And I have jobs and job status tables with events from 2 sources
 		createTables(t, dbHandle, jobsTable, jobStatusTable)
-		addJob(t, dbHandle, jobsTable, jobStatusTable, "one", "succeeded")
-		addJob(t, dbHandle, jobsTable, jobStatusTable, "two", "failed")
+		addJob(t, dbHandle, "one", "succeeded")
+		addJob(t, dbHandle, "two", "failed")
 
 		requireRowsCount(t, dbHandle, jobsTable, 2)
 		requireRowsCount(t, dbHandle, jobStatusTable, 2)
@@ -143,9 +143,12 @@ func createTables(t *testing.T, db *sql.DB, jobsTable, jobStatusTable string) {
 	require.NoError(t, txn.Commit())
 }
 
-func addJob(t *testing.T, db *sql.DB, jobsTable, jobStatusTable, sourceId, state string) {
+func addJob(t *testing.T, db *sql.DB, sourceId, state string) {
 	txn, err := db.Begin()
 	require.NoError(t, err)
+
+	jobsTable := "jobs"
+	jobStatusTable := "job_status"
 
 	sqlStatement := fmt.Sprintf(`INSERT INTO "%s" (workspace_id, uuid, user_id, parameters, custom_val, event_payload, event_count) VALUES(
 		'workspace_id',

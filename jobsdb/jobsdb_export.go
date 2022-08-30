@@ -75,6 +75,7 @@ func (jd *HandleT) GetNonMigratedAndMarkMigrating(count int) []*JobT {
 		var jobs []*JobT
 		jobs, err = jd.getNonMigratedJobsFromDS(ds, count)
 		if err != nil {
+			jd.logger.Warnf("fail getting migrated jobs: %v", err)
 			break
 		}
 		pkgLogger.Debugf("[[ %s-JobsDB export ]] Inside GetNonMigrated - len(jobs): %d", jd.tablePrefix, len(jobs))
@@ -182,6 +183,9 @@ func (jd *HandleT) getNonMigratedJobsFromDS(ds dataSetT, count int) ([]*JobT, er
 
 	jd.logger.Info(sqlStatement)
 	rows, err = jd.dbHandle.Query(sqlStatement)
+	if err != nil {
+		return nil, fmt.Errorf("query: %w", err)
+	}
 	jd.assertError(err)
 	defer rows.Close()
 
@@ -196,9 +200,9 @@ func (jd *HandleT) getNonMigratedJobsFromDS(ds dataSetT, count int) ([]*JobT, er
 			&sqlJobStatusT.ExecTime, &sqlJobStatusT.RetryTime,
 			&sqlJobStatusT.ErrorCode, &sqlJobStatusT.ErrorResponse)
 		if err != nil {
-			jd.logger.Info(err)
+			return nil, fmt.Errorf("scan rows: %w", err)
 		}
-		jd.assertError(err)
+
 		if sqlJobStatusT.JobState.Valid {
 			err = rows.Scan(&job.JobID, &job.UUID, &job.UserID,
 				&job.Parameters, &job.CustomVal,
@@ -207,7 +211,9 @@ func (jd *HandleT) getNonMigratedJobsFromDS(ds dataSetT, count int) ([]*JobT, er
 				&job.LastJobStatus.ExecTime, &job.LastJobStatus.RetryTime,
 				&job.LastJobStatus.ErrorCode, &job.LastJobStatus.ErrorResponse)
 			job.LastJobStatus.JobID = job.JobID
-			jd.assertError(err)
+			if err != nil {
+				return nil, fmt.Errorf("scan rows: %w", err)
+			}
 		}
 		jobList = append(jobList, &job)
 	}

@@ -243,8 +243,7 @@ func (jd *ReadonlyHandleT) getUnprocessedJobsDSCount(ctx context.Context, ds dat
 											 WHERE %[2]s.job_id is NULL`, ds.JobTable, ds.JobStatusTable, selectColumn)
 
 	if len(customValFilters) > 0 {
-		sqlStatement += " AND " + constructQuery(jd, fmt.Sprintf("%s.custom_val", ds.JobTable),
-			customValFilters, "OR")
+		sqlStatement += " AND " + constructQueryOR(fmt.Sprintf("%s.custom_val", ds.JobTable), customValFilters)
 	}
 
 	if len(parameterFilters) > 0 {
@@ -341,14 +340,13 @@ func (jd *ReadonlyHandleT) getProcessedJobsDSCount(ctx context.Context, ds dataS
 	var stateQuery, customValQuery, sourceQuery string
 
 	if len(stateFilters) > 0 {
-		stateQuery = " AND " + constructQuery(jd, "job_state", stateFilters, "OR")
+		stateQuery = " AND " + constructQueryOR("job_state", stateFilters)
 	} else {
 		stateQuery = ""
 	}
 	if len(customValFilters) > 0 {
 		customValQuery = " AND " +
-			constructQuery(jd, fmt.Sprintf("%s.custom_val", ds.JobTable),
-				customValFilters, "OR")
+			constructQueryOR(fmt.Sprintf("%s.custom_val", ds.JobTable), customValFilters)
 	} else {
 		customValQuery = ""
 	}

@@ -277,7 +277,7 @@ func (mj *MultiTenantHandleT) getInitialSingleWorkspaceQueryString(ds dataSetT, 
 	if len(customValFilters) > 0 && !conditions.IgnoreCustomValFiltersInQuery {
 		// mj.assert(!getAll, "getAll is true")
 		customValQuery = " AND " +
-			constructQuery(mj, "jobs.custom_val", customValFilters, "OR")
+			constructQueryOR("jobs.custom_val", customValFilters)
 	} else {
 		customValQuery = ""
 	}
