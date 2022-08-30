@@ -153,7 +153,7 @@ var _ = Describe("Using sources handler", Ordered, func() {
 			})
 			tx, err := resource.db.Begin()
 			Expect(err).NotTo(HaveOccurred(), "it should be able to begin the transaction")
-			err = sh.Delete(context.Background(), jobRunId)
+			err = sh.Delete(context.Background(), jobRunId, JobFilter{})
 			Expect(err).NotTo(HaveOccurred(), "it should be able to delete stats, failed keys for the jobrunid")
 			err = tx.Commit()
 			Expect(err).NotTo(HaveOccurred(), "it should be able to commit the transaction")

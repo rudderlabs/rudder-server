@@ -51,7 +51,7 @@ func TestDelete(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Log("endpoint tested:", tt.endpoint)
-			service.EXPECT().Delete(gomock.Any(), tt.jobRunId).Return(tt.serviceReturnError).Times(1)
+			service.EXPECT().Delete(gomock.Any(), tt.jobRunId, rsources.JobFilter{}).Return(tt.serviceReturnError).Times(1)
 
 			url := fmt.Sprintf("http://localhost:8080%s", tt.endpoint)
 			req, err := http.NewRequest(tt.method, url, http.NoBody)

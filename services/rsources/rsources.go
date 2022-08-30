@@ -117,7 +117,7 @@ type JobService interface {
 	StatsIncrementer
 
 	// Delete deletes all relevant information for a given jobRunId
-	Delete(ctx context.Context, jobRunId string) error
+	Delete(ctx context.Context, jobRunId string, filter JobFilter) error
 
 	// GetStatus gets the current status of a job
 	GetStatus(ctx context.Context, jobRunId string, filter JobFilter) (JobStatus, error)
@@ -165,7 +165,7 @@ func NewNoOpService() JobService {
 
 type noopService struct{}
 
-func (*noopService) Delete(_ context.Context, _ string) error {
+func (*noopService) Delete(_ context.Context, _ string, _ JobFilter) error {
 	return nil
 }
 
