@@ -199,13 +199,13 @@ func monitorDestRouters(ctx context.Context, routerFactory *router.Factory, batc
 						dstToBatchRouter[destination.DestinationDefinition.Name] = brt
 					}
 				} else {
-					_, ok := dstToRouter[destination.DestinationDefinition.Name]
+					_, ok := dstToRouter[misc.GetRouterIdentifier(destination.ID, destination.DestinationDefinition.Name)]
 					if !ok {
-						pkgLogger.Info("Starting a new Destination ", destination.DestinationDefinition.Name)
-						router := routerFactory.New(destination.DestinationDefinition)
-						router.Start()
-						cleanup = append(cleanup, router.Shutdown)
-						dstToRouter[destination.DestinationDefinition.Name] = router
+						pkgLogger.Infof("Starting a new Destination: %s", destination.DestinationDefinition.Name)
+						rt, identifier := routerFactory.New(destination)
+						rt.Start()
+						cleanup = append(cleanup, rt.Shutdown)
+						dstToRouter[identifier] = rt
 					}
 				}
 			}

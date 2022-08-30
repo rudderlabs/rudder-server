@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	uuid "github.com/gofrs/uuid"
+	"github.com/gofrs/uuid"
 	"github.com/golang/mock/gomock"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -125,7 +125,7 @@ func (c *testContext) Finish() {
 }
 
 var (
-	CustomVal           map[string]string = map[string]string{"S3": "S3"}
+	CustomVal           = map[string]string{"S3": "S3"}
 	emptyJournalEntries []jobsdb.JournalEntryT
 )
 
@@ -177,7 +177,6 @@ var _ = Describe("BatchRouter", func() {
 
 			batchrouter.Setup(c.mockBackendConfig, c.mockBatchRouterJobsDB, c.mockProcErrorsDB, s3DestinationDefinition.Name, nil, c.mockMultitenantI, transientsource.NewEmptyService(), rsources.NewNoOpService())
 			readPerDestination = false
-			setQueryFilters()
 			batchrouter.fileManagerFactory = c.mockFileManagerFactory
 
 			c.mockFileManagerFactory.EXPECT().New(gomock.Any()).Times(1).Return(c.mockFileManager, nil)
@@ -201,7 +200,7 @@ var _ = Describe("BatchRouter", func() {
 			  }`
 			parameters := fmt.Sprintf(`{"source_id": "%s", "destination_id": "%s", "message_id": "2f548e6d-60f6-44af-a1f4-62b3272445c3", "received_at": "2021-06-28T10:04:48.527+05:30", "transform_at": "none"}`, SourceIDEnabled, S3DestinationID)
 
-			var toRetryJobsList []*jobsdb.JobT = []*jobsdb.JobT{
+			toRetryJobsList := []*jobsdb.JobT{
 				{
 					UUID:         uuid.Must(uuid.NewV4()),
 					UserID:       "u1",
@@ -218,7 +217,7 @@ var _ = Describe("BatchRouter", func() {
 				},
 			}
 
-			var unprocessedJobsList []*jobsdb.JobT = []*jobsdb.JobT{
+			unprocessedJobsList := []*jobsdb.JobT{
 				{
 					UUID:         uuid.Must(uuid.NewV4()),
 					UserID:       "u1",

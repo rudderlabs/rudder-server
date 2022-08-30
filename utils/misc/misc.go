@@ -1426,3 +1426,10 @@ func CopyStringMap(originalMap map[string]string) map[string]string {
 	}
 	return newMap
 }
+
+func GetRouterIdentifier(id, name string) string {
+	if config.GetBool(fmt.Sprintf("Router.%s.isolateDestID", name), false) {
+		return id
+	}
+	return name
+}

@@ -72,6 +72,7 @@ type HandleT struct {
 	netHandle             NetHandleI
 	MultitenantI          tenantStats
 	destName              string
+	destinationId         string
 	workers               []*workerT
 	perfStats             *misc.PerfStats
 	successCount          uint64
@@ -126,6 +127,7 @@ type HandleT struct {
 	oauth                                  oauth.Authorizer
 	transformerProxy                       bool
 	saveDestinationResponseOverride        bool
+	isolateDestID                          bool
 	workspaceSet                           map[string]struct{}
 	sourceIDWorkspaceMap                   map[string]string
 	maxDSQuerySize                         int
@@ -216,7 +218,6 @@ var (
 	Diagnostics                                                   diagnostics.DiagnosticsI
 	fixedLoopSleep                                                time.Duration
 	toAbortDestinationIDs                                         string
-	QueryFilters                                                  jobsdb.QueryFiltersT
 	disableEgress                                                 bool
 )
 
@@ -1726,7 +1727,7 @@ func (rt *HandleT) collectMetrics(ctx context.Context) {
 // C. Finally, we want for generatorLoop buffer to be fully processed.
 
 func (rt *HandleT) generatorLoop(ctx context.Context) {
-	rt.logger.Info("Generator started")
+	rt.logger.Infof("Generator started for %s and destinationID %s", rt.destName, rt.destinationId)
 
 	generatorStat := stats.NewTaggedStat("router_generator_loop", stats.TimerType, stats.Tags{"destType": rt.destName})
 	countStat := stats.NewTaggedStat("router_generator_events", stats.CountType, stats.Tags{"destType": rt.destName})
@@ -1757,6 +1758,32 @@ func (rt *HandleT) generatorLoop(ctx context.Context) {
 			}
 			time.Sleep(timeToSleep)
 		}
+	}
+}
+
+func getParameterFilters(destinationID string) []jobsdb.ParameterFilterT {
+	return []jobsdb.ParameterFilterT{{
+		Name:     "destination_id",
+		Value:    destinationID,
+		Optional: false,
+	}}
+}
+
+func (rt *HandleT) getQueryParams(pickUpCount int) jobsdb.GetQueryParamsT {
+	if rt.destinationId != rt.destName {
+		parameterFilters := getParameterFilters(rt.destinationId)
+		return jobsdb.GetQueryParamsT{
+			CustomValFilters:              []string{rt.destName},
+			ParameterFilters:              parameterFilters,
+			IgnoreCustomValFiltersInQuery: true,
+			PayloadSizeLimit:              rt.payloadLimit,
+			JobsLimit:                     pickUpCount,
+		}
+	}
+	return jobsdb.GetQueryParamsT{
+		CustomValFilters: []string{rt.destName},
+		PayloadSizeLimit: rt.payloadLimit,
+		JobsLimit:        pickUpCount,
 	}
 }
 
@@ -1830,11 +1857,7 @@ func (rt *HandleT) readAndProcess() int {
 		return rt.jobsDB.GetAllJobs(
 			ctx,
 			pickupMap,
-			jobsdb.GetQueryParamsT{
-				CustomValFilters: []string{rt.destName},
-				PayloadSizeLimit: rt.payloadLimit,
-				JobsLimit:        totalPickupCount,
-			},
+			rt.getQueryParams(totalPickupCount),
 			rt.maxDSQuerySize,
 		)
 	})
@@ -2081,16 +2104,15 @@ func (*HandleT) crashRecover() {
 func Init() {
 	loadConfig()
 	pkgLogger = logger.NewLogger().Child("router")
-	QueryFilters = jobsdb.QueryFiltersT{CustomVal: true}
 	Diagnostics = diagnostics.Diagnostics
 }
 
 // Setup initializes this module
-func (rt *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB jobsdb.MultiTenantJobsDB, errorDB jobsdb.JobsDB, destinationDefinition backendconfig.DestinationDefinitionT, transientSources transientsource.Service, rsourcesService rsources.JobService) {
+func (rt *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB jobsdb.MultiTenantJobsDB, errorDB jobsdb.JobsDB, destinationConfig destinationConfig, transientSources transientsource.Service, rsourcesService rsources.JobService) {
 	rt.backendConfig = backendConfig
 	rt.workspaceSet = make(map[string]struct{})
 
-	destName := destinationDefinition.Name
+	destName := destinationConfig.Name
 	rt.logger = pkgLogger.Child(destName)
 	rt.logger.Info("Router started: ", destName)
 
@@ -2104,6 +2126,7 @@ func (rt *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB jobsd
 	rt.jobsDB = jobsDB
 	rt.errorDB = errorDB
 	rt.destName = destName
+	rt.destinationId = destinationConfig.DestinationID
 	netClientTimeoutKeys := []string{"Router." + rt.destName + "." + "httpTimeout", "Router." + rt.destName + "." + "httpTimeoutInS", "Router." + "httpTimeout", "Router." + "httpTimeoutInS"}
 	config.RegisterDurationConfigVariable(10, &rt.netClientTimeout, false, time.Second, netClientTimeoutKeys...)
 	config.RegisterDurationConfigVariable(30, &rt.backendProxyTimeout, false, time.Second, "HttpClient.backendProxy.timeout")
@@ -2133,8 +2156,8 @@ func (rt *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB jobsd
 	})
 	rt.failuresMetric = make(map[string]map[string]int)
 
-	rt.destinationResponseHandler = New(destinationDefinition.ResponseRules)
-	if value, ok := destinationDefinition.Config["saveDestinationResponse"].(bool); ok {
+	rt.destinationResponseHandler = New(destinationConfig.ResponseRules)
+	if value, ok := destinationConfig.Config["saveDestinationResponse"].(bool); ok {
 		rt.saveDestinationResponse = value
 	}
 	rt.guaranteeUserEventOrder = getRouterConfigBool("guaranteeUserEventOrder", rt.destName, true)
@@ -2159,6 +2182,7 @@ func (rt *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB jobsd
 	config.RegisterBoolConfigVariable(false, &rt.transformerProxy, true, transformerProxyKeys...)
 	config.RegisterBoolConfigVariable(false, &rt.saveDestinationResponseOverride, true, saveDestinationResponseOverrideKeys...)
 	rt.allowAbortedUserJobsCountForProcessing = getRouterConfigInt("allowAbortedUserJobsCountForProcessing", destName, 1)
+	config.RegisterBoolConfigVariable(false, &rt.isolateDestID, false, []string{"Router." + rt.destName + "." + "isolateDestID", "Router.isolateDestID"}...)
 
 	rt.batchInputCountStat = stats.NewTaggedStat("router_batch_num_input_jobs", stats.CountType, stats.Tags{
 		"destType": rt.destName,
@@ -2253,7 +2277,7 @@ func (rt *HandleT) Shutdown() {
 		// router is not started
 		return
 	}
-	rt.logger.Infof("Shutting down router: %s", rt.destName)
+	rt.logger.Infof("Shutting down router: %s destinationId: %s", rt.destName, rt.destinationId)
 	rt.backgroundCancel()
 
 	<-rt.startEnded

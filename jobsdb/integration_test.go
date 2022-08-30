@@ -15,7 +15,7 @@ import (
 	"testing"
 	"time"
 
-	uuid "github.com/gofrs/uuid"
+	"github.com/gofrs/uuid"
 	"github.com/ory/dockertest/v3"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sync/errgroup"
@@ -174,11 +174,8 @@ func TestJobsDB(t *testing.T) {
 			return triggerAddNewDS
 		},
 	}
-	queryFilters := jobsdb.QueryFiltersT{
-		CustomVal: true,
-	}
 
-	err := jobDB.Setup(jobsdb.ReadWrite, false, "batch_rt", migrationMode, true, queryFilters, []prebackup.Handler{})
+	err := jobDB.Setup(jobsdb.ReadWrite, false, "batch_rt", migrationMode, true, []prebackup.Handler{})
 	require.NoError(t, err)
 	defer jobDB.TearDown()
 
@@ -199,6 +196,7 @@ func TestJobsDB(t *testing.T) {
 	require.NoError(t, err, "GetUnprocessed failed")
 	unprocessedListEmpty := unprocessedJobEmpty.Jobs
 	require.Equal(t, 0, len(unprocessedListEmpty))
+
 	err = jobDB.Store(context.Background(), []*jobsdb.JobT{&sampleTestJob})
 	require.NoError(t, err)
 
@@ -339,7 +337,7 @@ func TestJobsDB(t *testing.T) {
 			},
 		}
 
-		err := jobDB.Setup(jobsdb.ReadWrite, true, "gw", migrationMode, true, queryFilters, []prebackup.Handler{})
+		err := jobDB.Setup(jobsdb.ReadWrite, true, "gw", migrationMode, true, []prebackup.Handler{})
 		require.NoError(t, err)
 		defer jobDB.TearDown()
 
@@ -425,7 +423,7 @@ func TestJobsDB(t *testing.T) {
 			},
 		}
 
-		err := jobDB.Setup(jobsdb.ReadWrite, true, "gw", migrationMode, true, queryFilters, []prebackup.Handler{})
+		err := jobDB.Setup(jobsdb.ReadWrite, true, "gw", migrationMode, true, []prebackup.Handler{})
 		require.NoError(t, err)
 		defer jobDB.TearDown()
 
@@ -464,7 +462,7 @@ func TestJobsDB(t *testing.T) {
 				return triggerAddNewDS
 			},
 		}
-		err := jobDB.Setup(jobsdb.ReadWrite, false, "gw", migrationMode, true, queryFilters, []prebackup.Handler{})
+		err := jobDB.Setup(jobsdb.ReadWrite, false, "gw", migrationMode, true, []prebackup.Handler{})
 		require.NoError(t, err)
 		defer jobDB.TearDown()
 
@@ -497,7 +495,7 @@ func TestJobsDB(t *testing.T) {
 				return triggerAddNewDS
 			},
 		}
-		err := jobDB.Setup(jobsdb.ReadWrite, true, "gw", migrationMode, true, queryFilters, []prebackup.Handler{})
+		err := jobDB.Setup(jobsdb.ReadWrite, true, "gw", migrationMode, true, []prebackup.Handler{})
 		require.NoError(t, err)
 		defer jobDB.TearDown()
 
@@ -529,7 +527,7 @@ func TestJobsDB(t *testing.T) {
 			},
 		}
 
-		err := jobDB.Setup(jobsdb.ReadWrite, true, "gw", migrationMode, true, queryFilters, []prebackup.Handler{})
+		err := jobDB.Setup(jobsdb.ReadWrite, true, "gw", migrationMode, true, []prebackup.Handler{})
 		require.NoError(t, err)
 		defer jobDB.TearDown()
 
@@ -568,7 +566,7 @@ func TestJobsDB(t *testing.T) {
 			},
 		}
 
-		err := jobDB.Setup(jobsdb.ReadWrite, true, "gw", migrationMode, true, queryFilters, []prebackup.Handler{})
+		err := jobDB.Setup(jobsdb.ReadWrite, true, "gw", migrationMode, true, []prebackup.Handler{})
 		require.NoError(t, err)
 		defer jobDB.TearDown()
 
@@ -600,7 +598,7 @@ func TestJobsDB(t *testing.T) {
 			},
 		}
 
-		err := jobDB.Setup(jobsdb.ReadWrite, true, "gw", migrationMode, true, queryFilters, []prebackup.Handler{})
+		err := jobDB.Setup(jobsdb.ReadWrite, true, "gw", migrationMode, true, []prebackup.Handler{})
 		require.NoError(t, err)
 		defer jobDB.TearDown()
 
@@ -665,10 +663,7 @@ func TestMultiTenantLegacyGetAllJobs(t *testing.T) {
 	}
 
 	customVal := "MTL"
-	queryFilters := jobsdb.QueryFiltersT{
-		CustomVal: true,
-	}
-	err := jobDB.Setup(jobsdb.ReadWrite, false, strings.ToLower(customVal), migrationMode, true, queryFilters, []prebackup.Handler{})
+	err := jobDB.Setup(jobsdb.ReadWrite, false, strings.ToLower(customVal), migrationMode, true, []prebackup.Handler{})
 	require.NoError(t, err)
 	defer jobDB.TearDown()
 
@@ -754,10 +749,7 @@ func TestMultiTenantGetAllJobs(t *testing.T) {
 	}
 
 	customVal := "MT"
-	queryFilters := jobsdb.QueryFiltersT{
-		CustomVal: true,
-	}
-	err := jobDB.Setup(jobsdb.ReadWrite, false, strings.ToLower(customVal), migrationMode, true, queryFilters, []prebackup.Handler{})
+	err := jobDB.Setup(jobsdb.ReadWrite, false, strings.ToLower(customVal), migrationMode, true, []prebackup.Handler{})
 	require.NoError(t, err)
 	defer jobDB.TearDown()
 
@@ -857,12 +849,9 @@ func TestStoreAndUpdateStatusExceedingAnalyzeThreshold(t *testing.T) {
 	jobDB := jobsdb.HandleT{
 		MaxDSSize: &maxDSSize,
 	}
-	queryFilters := jobsdb.QueryFiltersT{
-		CustomVal: true,
-	}
 
 	customVal := "MOCKDS"
-	err := jobDB.Setup(jobsdb.ReadWrite, false, customVal, "", true, queryFilters, []prebackup.Handler{})
+	err := jobDB.Setup(jobsdb.ReadWrite, false, customVal, "", true, []prebackup.Handler{})
 	require.NoError(t, err)
 	defer jobDB.TearDown()
 	sampleTestJob := jobsdb.JobT{
@@ -955,11 +944,8 @@ func TestCreateDS(t *testing.T) {
 					return triggerAddNewDS
 				},
 			}
-			queryFilters := jobsdb.QueryFiltersT{
-				CustomVal: true,
-			}
 
-			err = jobDB.Setup(jobsdb.ReadWrite, false, customVal, migrationMode, true, queryFilters, []prebackup.Handler{})
+			err = jobDB.Setup(jobsdb.ReadWrite, false, customVal, migrationMode, true, []prebackup.Handler{})
 			require.NoError(t, err)
 			defer jobDB.TearDown()
 
@@ -1023,11 +1009,8 @@ func TestJobsDB_IncompatiblePayload(t *testing.T) {
 			return triggerAddNewDS
 		},
 	}
-	queryFilters := jobsdb.QueryFiltersT{
-		CustomVal: true,
-	}
 
-	err := jobDB.Setup(jobsdb.ReadWrite, false, "gw", migrationMode, true, queryFilters, []prebackup.Handler{})
+	err := jobDB.Setup(jobsdb.ReadWrite, false, "gw", migrationMode, true, []prebackup.Handler{})
 	require.NoError(t, err)
 	defer jobDB.TearDown()
 	customVal := "MOCKDS"
@@ -1081,15 +1064,11 @@ func BenchmarkJobsdb(b *testing.B) {
 
 	migrationMode := ""
 
-	queryFilters := jobsdb.QueryFiltersT{
-		CustomVal: true,
-	}
-
 	for _, concurrency := range concurrencies {
 		jobsDb1 := jobsdb.HandleT{}
 		b.Setenv("RSERVER_JOBS_DB_ENABLE_WRITER_QUEUE", "true")
 		b.Setenv("RSERVER_JOBS_DB_ENABLE_READER_QUEUE", "true")
-		err := jobsDb1.Setup(jobsdb.ReadWrite, true, "batch_rt", migrationMode, true, queryFilters, []prebackup.Handler{})
+		err := jobsDb1.Setup(jobsdb.ReadWrite, true, "batch_rt", migrationMode, true, []prebackup.Handler{})
 		require.NoError(b, err)
 
 		b.Run(fmt.Sprintf("store and consume %d jobs using %d stream(s) with reader writer queues", totalJobs, concurrency), func(b *testing.B) {
@@ -1101,7 +1080,7 @@ func BenchmarkJobsdb(b *testing.B) {
 		b.Setenv("RSERVER_JOBS_DB_ENABLE_WRITER_QUEUE", "false")
 		b.Setenv("RSERVER_JOBS_DB_ENABLE_READER_QUEUE", "false")
 		b.Setenv("RSERVER_JOBS_DB_GW_MAX_OPEN_CONNECTIONS", "64")
-		err = jobsDb2.Setup(jobsdb.ReadWrite, true, "batch_rt", migrationMode, true, queryFilters, []prebackup.Handler{})
+		err = jobsDb2.Setup(jobsdb.ReadWrite, true, "batch_rt", migrationMode, true, []prebackup.Handler{})
 		require.NoError(b, err)
 
 		b.Run(fmt.Sprintf("store and consume %d jobs using %d stream(s) without reader writer queues", totalJobs, concurrency), func(b *testing.B) {

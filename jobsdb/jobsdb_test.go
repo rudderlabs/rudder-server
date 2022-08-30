@@ -14,7 +14,7 @@ import (
 	"testing"
 	"time"
 
-	uuid "github.com/gofrs/uuid"
+	"github.com/gofrs/uuid"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/ory/dockertest/v3"
@@ -342,7 +342,7 @@ var _ = Describe("jobsdb", func() {
 			jd = &HandleT{}
 
 			jd.skipSetupDBSetup = true
-			err := jd.Setup(ReadWrite, false, "tt", "", false, QueryFiltersT{}, []prebackup.Handler{})
+			err := jd.Setup(ReadWrite, false, "tt", "", false, []prebackup.Handler{})
 			Expect(err).To(BeNil())
 		})
 
@@ -363,7 +363,7 @@ var _ = Describe("jobsdb", func() {
 		BeforeEach(func() {
 			jd = &HandleT{}
 			jd.skipSetupDBSetup = true
-			err := jd.Setup(ReadWrite, false, "tt", "", false, QueryFiltersT{}, []prebackup.Handler{})
+			err := jd.Setup(ReadWrite, false, "tt", "", false, []prebackup.Handler{})
 			Expect(err).To(BeNil())
 		})
 
@@ -580,10 +580,7 @@ func TestRefreshDSList(t *testing.T) {
 			return triggerAddNewDS
 		},
 	}
-	queryFilters := QueryFiltersT{
-		CustomVal: true,
-	}
-	err = jobsDB.Setup(ReadWrite, false, "batch_rt", migrationMode, true, queryFilters, []prebackup.Handler{})
+	err = jobsDB.Setup(ReadWrite, false, "batch_rt", migrationMode, true, []prebackup.Handler{})
 	require.NoError(t, err)
 
 	require.Equal(t, 1, len(jobsDB.getDSList()), "jobsDB should start with a ds list size of 1")
@@ -605,12 +602,9 @@ func TestJobsDBTimeout(t *testing.T) {
 	jobDB := HandleT{
 		MaxDSSize: &maxDSSize,
 	}
-	queryFilters := QueryFiltersT{
-		CustomVal: true,
-	}
 
 	customVal := "MOCKDS"
-	err := jobDB.Setup(ReadWrite, false, customVal, "", true, queryFilters, []prebackup.Handler{})
+	err := jobDB.Setup(ReadWrite, false, customVal, "", true, []prebackup.Handler{})
 	require.NoError(t, err)
 	defer jobDB.TearDown()
 

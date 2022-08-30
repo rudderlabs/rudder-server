@@ -93,8 +93,10 @@ loop:
 			}
 			sources := config.Data.(backendconfig.ConfigT)
 			enabledDestinations := make(map[string]bool)
-			for _, source := range sources.Sources {
-				for _, destination := range source.Destinations { // TODO skipcq: CRT-P0006
+			for i := range sources.Sources {
+				source := &sources.Sources[i]
+				for k := range source.Destinations { // TODO skipcq: CRT-P0006
+					destination := &source.Destinations[k] // Copy of large value inside loop: CRT-P0006
 					enabledDestinations[destination.DestinationDefinition.Name] = true
 					// For batch router destinations
 					if misc.ContainsString(objectStorageDestinations, destination.DestinationDefinition.Name) ||
@@ -109,13 +111,13 @@ loop:
 							dstToBatchRouter[destination.DestinationDefinition.Name] = brt
 						}
 					} else {
-						_, ok := dstToRouter[destination.DestinationDefinition.Name]
+						_, ok := dstToRouter[misc.GetRouterIdentifier(destination.ID, destination.DestinationDefinition.Name)]
 						if !ok {
 							pkgLogger.Infof("Starting a new Destination: %s", destination.DestinationDefinition.Name)
-							rt := routerFactory.New(destination.DestinationDefinition)
+							rt, identifier := routerFactory.New(destination)
 							rt.Start()
 							cleanup = append(cleanup, rt.Shutdown)
-							dstToRouter[destination.DestinationDefinition.Name] = rt
+							dstToRouter[identifier] = rt
 						}
 					}
 				}

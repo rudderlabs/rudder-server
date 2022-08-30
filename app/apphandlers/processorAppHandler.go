@@ -112,7 +112,6 @@ func (processor *ProcessorApp) StartRudderCore(ctx context.Context, options *app
 		jobsdb.WithClearDB(options.ClearDB),
 		jobsdb.WithMigrationMode(migrationMode),
 		jobsdb.WithStatusHandler(),
-		jobsdb.WithQueryFilterKeys(jobsdb.QueryFiltersT{}),
 		jobsdb.WithPreBackupHandlers(prebackupHandlers),
 	)
 	defer gwDBForProcessor.Close()
@@ -122,7 +121,6 @@ func (processor *ProcessorApp) StartRudderCore(ctx context.Context, options *app
 		jobsdb.WithClearDB(options.ClearDB),
 		jobsdb.WithMigrationMode(migrationMode),
 		jobsdb.WithStatusHandler(),
-		jobsdb.WithQueryFilterKeys(router.QueryFilters),
 		jobsdb.WithPreBackupHandlers(prebackupHandlers),
 	)
 	defer routerDB.Close()
@@ -131,7 +129,6 @@ func (processor *ProcessorApp) StartRudderCore(ctx context.Context, options *app
 		jobsdb.WithClearDB(options.ClearDB),
 		jobsdb.WithMigrationMode(migrationMode),
 		jobsdb.WithStatusHandler(),
-		jobsdb.WithQueryFilterKeys(batchrouter.QueryFilters),
 		jobsdb.WithPreBackupHandlers(prebackupHandlers),
 	)
 	defer batchRouterDB.Close()
@@ -140,7 +137,6 @@ func (processor *ProcessorApp) StartRudderCore(ctx context.Context, options *app
 		jobsdb.WithClearDB(options.ClearDB),
 		jobsdb.WithMigrationMode(migrationMode),
 		jobsdb.WithStatusHandler(),
-		jobsdb.WithQueryFilterKeys(jobsdb.QueryFiltersT{}),
 		jobsdb.WithPreBackupHandlers(prebackupHandlers),
 	)
 	var tenantRouterDB jobsdb.MultiTenantJobsDB
