@@ -379,6 +379,8 @@ func (job *UploadJobT) run() (err error) {
 		nextUploadState = stateTransitions[GeneratedUploadSchema]
 	}
 
+	var loadFilesTableEventCountMap map[tableNameT]int
+
 	for {
 		stateStartTime := time.Now()
 		err = nil
@@ -458,7 +460,7 @@ func (job *UploadJobT) run() (err error) {
 			var loadErrorLock sync.Mutex
 			var loadFilesTableMap map[tableNameT]bool
 
-			loadFilesTableMap, err = job.getLoadFilesTableMap()
+			loadFilesTableMap, loadFilesTableEventCountMap, err = job.getLoadFilesTablePresenceAndEventCountMaps()
 			if err != nil {
 				err = fmt.Errorf("unable to get load files table map: %w", err)
 				break
@@ -545,30 +547,39 @@ func (job *UploadJobT) run() (err error) {
 
 		uploadStatusOpts := UploadStatusOpts{Status: newStatus}
 		if newStatus == ExportedData {
-			reportingMetric := types.PUReportedMetric{
-				ConnectionDetails: types.ConnectionDetails{
-					SourceID:           job.upload.SourceID,
-					DestinationID:      job.upload.DestinationID,
-					SourceBatchID:      job.upload.SourceBatchID,
-					SourceTaskID:       job.upload.SourceTaskID,
-					SourceTaskRunID:    job.upload.SourceTaskRunID,
-					SourceJobID:        job.upload.SourceJobID,
-					SourceJobRunID:     job.upload.SourceJobRunID,
-					SourceDefinitionId: job.warehouse.Source.SourceDefinition.ID,
-				},
-				PUDetails: types.PUDetails{
-					InPU:       types.BATCH_ROUTER,
-					PU:         types.WAREHOUSE,
-					TerminalPU: true,
-				},
-				StatusDetail: &types.StatusDetail{
-					Status:      jobsdb.Succeeded.State,
-					StatusCode:  200,
-					Count:       job.getTotalRowsInStagingFiles(),
-					SampleEvent: []byte("{}"),
-				},
+			reportingMetrics := make([]types.PUReportedMetric, len(loadFilesTableEventCountMap))
+
+			for table, eventCount := range loadFilesTableEventCountMap {
+				reportingMetric := types.PUReportedMetric{
+					ConnectionDetails: types.ConnectionDetails{
+						SourceID:           job.upload.SourceID,
+						DestinationID:      job.upload.DestinationID,
+						SourceBatchID:      job.upload.SourceBatchID,
+						SourceTaskID:       job.upload.SourceTaskID,
+						SourceTaskRunID:    job.upload.SourceTaskRunID,
+						SourceJobID:        job.upload.SourceJobID,
+						SourceJobRunID:     job.upload.SourceJobRunID,
+						SourceDefinitionId: job.warehouse.Source.SourceDefinition.ID,
+					},
+					PUDetails: types.PUDetails{
+						InPU:       types.BATCH_ROUTER,
+						PU:         types.WAREHOUSE,
+						TerminalPU: true,
+					},
+					StatusDetail: &types.StatusDetail{
+						Status:     jobsdb.Succeeded.State,
+						StatusCode: 200,
+						// Count:       job.getTotalRowsInStagingFiles(),
+						Count:       int64(eventCount),
+						EventName:   string(table),
+						SampleEvent: []byte("{}"),
+					},
+				}
+
+				reportingMetrics = append(reportingMetrics, reportingMetric)
 			}
-			uploadStatusOpts.ReportingMetric = reportingMetric
+
+			uploadStatusOpts.ReportingMetrics = reportingMetrics
 		}
 		job.setUploadStatus(uploadStatusOpts)
 
@@ -1210,7 +1221,7 @@ func (job *UploadJobT) getUploadFirstAttemptTime() (timing time.Time) {
 type UploadStatusOpts struct {
 	Status           string
 	AdditionalFields []UploadColumnT
-	ReportingMetric  types.PUReportedMetric
+	ReportingMetrics []types.PUReportedMetric
 }
 
 func (job *UploadJobT) setUploadStatus(statusOpts UploadStatusOpts) (err error) {
@@ -1228,7 +1239,7 @@ func (job *UploadJobT) setUploadStatus(statusOpts UploadStatusOpts) (err error) 
 
 	uploadColumnOpts := UploadColumnsOpts{Fields: additionalFields}
 
-	if statusOpts.ReportingMetric != (types.PUReportedMetric{}) {
+	if statusOpts.ReportingMetrics != nil && len(statusOpts.ReportingMetrics) > 0 {
 		txn, err := dbHandle.Begin()
 		if err != nil {
 			return err
@@ -1240,7 +1251,13 @@ func (job *UploadJobT) setUploadStatus(statusOpts UploadStatusOpts) (err error) 
 		}
 
 		if config.GetBool("Reporting.enabled", types.DEFAULT_REPORTING_ENABLED) {
-			application.Features().Reporting.GetReportingInstance().Report([]*types.PUReportedMetric{&statusOpts.ReportingMetric}, txn)
+			metricsArr := make([]*types.PUReportedMetric, len(statusOpts.ReportingMetrics))
+
+			for _, reportingMetric := range statusOpts.ReportingMetrics {
+				metricsArr = append(metricsArr, &reportingMetric)
+			}
+
+			application.Features().Reporting.GetReportingInstance().Report(metricsArr, txn)
 		}
 		err = txn.Commit()
 		return err
@@ -1592,13 +1609,14 @@ func (job *UploadJobT) setStagingFilesStatus(stagingFiles []*StagingFileT, statu
 	return
 }
 
-func (job *UploadJobT) getLoadFilesTableMap() (loadFilesMap map[tableNameT]bool, err error) {
+func (job *UploadJobT) getLoadFilesTablePresenceAndEventCountMaps() (loadFilesMap map[tableNameT]bool, loadFilesEventCountMaps map[tableNameT]int, err error) {
 	loadFilesMap = make(map[tableNameT]bool)
+	loadFilesEventCountMaps = make(map[tableNameT]int)
 
 	sourceID := job.warehouse.Source.ID
 	destID := job.warehouse.Destination.ID
 
-	sqlStatement := fmt.Sprintf(`SELECT distinct table_name FROM %s WHERE ( source_id = $1 AND destination_id = $2 AND id >= $3 AND id <= $4 );`,
+	sqlStatement := fmt.Sprintf(`SELECT table_name, sum(total_events) FROM %s WHERE ( source_id = $1 AND destination_id = $2 AND id >= $3 AND id <= $4 ) group by table_name;`,
 		warehouseutils.WarehouseLoadFilesTable,
 	)
 	sqlStatementArgs := []interface{}{
@@ -1620,12 +1638,14 @@ func (job *UploadJobT) getLoadFilesTableMap() (loadFilesMap map[tableNameT]bool,
 
 	for rows.Next() {
 		var tableName string
-		err = rows.Scan(&tableName)
+		var eventCount int
+		err = rows.Scan(&tableName, &eventCount)
 		if err != nil {
 			err = fmt.Errorf("error occurred while processing distinct table name query for jobId: %d, sourceId: %s, destinationId: %s, err: %w", job.upload.ID, job.warehouse.Source.ID, job.warehouse.Destination.ID, err)
 			return
 		}
 		loadFilesMap[tableNameT(tableName)] = true
+		loadFilesEventCountMaps[tableNameT(tableName)] = eventCount
 	}
 	return
 }
