@@ -1477,40 +1477,23 @@ func (job *UploadJobT) setUploadError(statusError error, state string) (string, 
 		return "", fmt.Errorf("unable to change upload columns: %w", err)
 	}
 
-	inputCount := job.getTotalRowsInStagingFiles()
-	outputCount, _ := job.getTotalEventsUploaded(false)
-	failCount := inputCount - outputCount
-	reportingStatus := jobsdb.Failed.State
-	if state == Aborted {
-		reportingStatus = jobsdb.Aborted.State
+	failedTableMap, _ := job.getTablesToSkip()
+	_, loadFilesTableEventCountMap, err := job.getLoadFilesTablePresenceAndEventCountMaps()
+
+	if err != nil {
+		err = fmt.Errorf("unable to get load files table map: %w", err)
+		loadFilesTableEventCountMap = make(map[tableNameT]int)
 	}
 
-	reportingMetrics := []*types.PUReportedMetric{{
-		ConnectionDetails: types.ConnectionDetails{
-			SourceID:           job.upload.SourceID,
-			DestinationID:      job.upload.DestinationID,
-			SourceBatchID:      job.upload.SourceBatchID,
-			SourceTaskID:       job.upload.SourceTaskID,
-			SourceTaskRunID:    job.upload.SourceTaskRunID,
-			SourceJobID:        job.upload.SourceJobID,
-			SourceJobRunID:     job.upload.SourceJobRunID,
-			SourceDefinitionId: job.warehouse.Source.SourceDefinition.ID,
-		},
-		PUDetails: types.PUDetails{
-			InPU:       types.BATCH_ROUTER,
-			PU:         types.WAREHOUSE,
-			TerminalPU: true,
-		},
-		StatusDetail: &types.StatusDetail{
-			Status:         reportingStatus,
-			StatusCode:     400, // TODO: Change this to error specific code
-			Count:          failCount,
-			SampleEvent:    []byte("{}"),
-			SampleResponse: string(serializedErr),
-		},
-	}}
-	if outputCount > 0 {
-		reportingMetrics = append(reportingMetrics, &types.PUReportedMetric{
+	for tableName, _ := range failedTableMap {
+		failCount := int64(loadFilesTableEventCountMap[tableNameT(tableName)])
+
+		reportingStatus := jobsdb.Failed.State
+		if state == Aborted {
+			reportingStatus = jobsdb.Aborted.State
+		}
+
+		reportingMetrics := []*types.PUReportedMetric{{
 			ConnectionDetails: types.ConnectionDetails{
 				SourceID:           job.upload.SourceID,
 				DestinationID:      job.upload.DestinationID,
@@ -1527,18 +1510,20 @@ func (job *UploadJobT) setUploadError(statusError error, state string) (string, 
 				TerminalPU: true,
 			},
 			StatusDetail: &types.StatusDetail{
-				Status:         jobsdb.Succeeded.State,
+				Status:         reportingStatus,
 				StatusCode:     400, // TODO: Change this to error specific code
 				Count:          failCount,
+				EventName:      string(tableName),
 				SampleEvent:    []byte("{}"),
 				SampleResponse: string(serializedErr),
 			},
-		})
+		}}
+
+		if config.GetBool("Reporting.enabled", types.DEFAULT_REPORTING_ENABLED) {
+			application.Features().Reporting.GetReportingInstance().Report(reportingMetrics, txn)
+		}
+		err = txn.Commit()
 	}
-	if config.GetBool("Reporting.enabled", types.DEFAULT_REPORTING_ENABLED) {
-		application.Features().Reporting.GetReportingInstance().Report(reportingMetrics, txn)
-	}
-	err = txn.Commit()
 
 	// TODO: Add reporting metrics in txn
 	// _, err = job.dbHandle.Exec(sqlStatement, state, serializedErr, metadataJSON, timeutil.Now(), upload.ID)
