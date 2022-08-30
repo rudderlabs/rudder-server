@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"regexp"
+	"strings"
 	"testing"
 
 	gomock "github.com/golang/mock/gomock"
@@ -26,6 +27,7 @@ func TestDelete(t *testing.T) {
 	tests := []struct {
 		name                 string
 		jobRunId             string
+		jobFilter            rsources.JobFilter
 		endpoint             string
 		method               string
 		expectedResponseCode int
@@ -34,6 +36,7 @@ func TestDelete(t *testing.T) {
 		{
 			name:                 "basic test",
 			jobRunId:             "123",
+			jobFilter:            rsources.JobFilter{},
 			endpoint:             prepURL("/v1/job-status/{job_run_id}", "123"),
 			method:               "DELETE",
 			expectedResponseCode: 204,
@@ -41,6 +44,7 @@ func TestDelete(t *testing.T) {
 		{
 			name:                 "service returns error test",
 			jobRunId:             "123",
+			jobFilter:            rsources.JobFilter{},
 			endpoint:             prepURL("/v1/job-status/{job_run_id}", "123"),
 			method:               "DELETE",
 			expectedResponseCode: 500,
@@ -49,11 +53,25 @@ func TestDelete(t *testing.T) {
 	}
 
 	for _, tt := range tests {
+		toQueryParams := func(jobFilter rsources.JobFilter) string {
+			var params []string
+			for _, v := range jobFilter.TaskRunID {
+				params = append(params, fmt.Sprintf("task_run_id=%s", v))
+			}
+			for _, v := range jobFilter.SourceID {
+				params = append(params, fmt.Sprintf("source_id=%s", v))
+			}
+			if len(params) == 0 {
+				return ""
+			}
+			return "?" + strings.Join(params, "&")
+		}
 		t.Run(tt.name, func(t *testing.T) {
-			t.Log("endpoint tested:", tt.endpoint)
-			service.EXPECT().Delete(gomock.Any(), tt.jobRunId, rsources.JobFilter{}).Return(tt.serviceReturnError).Times(1)
+			queryParams := toQueryParams(tt.jobFilter)
+			t.Log("endpoint tested:", tt.endpoint+queryParams)
+			service.EXPECT().Delete(gomock.Any(), tt.jobRunId, tt.jobFilter).Return(tt.serviceReturnError).Times(1)
 
-			url := fmt.Sprintf("http://localhost:8080%s", tt.endpoint)
+			url := fmt.Sprintf("http://localhost:8080%s%s", tt.endpoint, queryParams)
 			req, err := http.NewRequest(tt.method, url, http.NoBody)
 			require.NoError(t, err)
 			req.Header.Set("Content-Type", "application/json")

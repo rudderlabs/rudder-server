@@ -170,6 +170,48 @@ var _ = Describe("Using sources handler", Ordered, func() {
 			Expect(failedRecords).To(Equal(JobFailedRecords{ID: jobRunId}))
 		})
 
+		It("should be able to delete stats and failed keys partially", func() {
+			otherJobTargetKey := defaultJobTargetKey
+			otherJobTargetKey.SourceID = "other_source_id"
+			jobRunId := newJobRunId()
+			increment(resource.db, jobRunId, defaultJobTargetKey, stats, sh, nil)
+			increment(resource.db, jobRunId, otherJobTargetKey, stats, sh, nil)
+
+			addFailedRecords(resource.db, jobRunId, defaultJobTargetKey, sh, []json.RawMessage{
+				[]byte(`{"record-1": "id-1"}`),
+				[]byte(`{"record-2": "id-2"}`),
+			})
+			addFailedRecords(resource.db, jobRunId, otherJobTargetKey, sh, []json.RawMessage{
+				[]byte(`{"record-1": "id-1"}`),
+				[]byte(`{"record-2": "id-2"}`),
+			})
+			tx, err := resource.db.Begin()
+			Expect(err).NotTo(HaveOccurred(), "it should be able to begin the transaction")
+			err = sh.Delete(context.Background(), jobRunId, JobFilter{SourceID: []string{"other_source_id"}})
+			Expect(err).NotTo(HaveOccurred(), "it should be able to delete stats, failed keys for the jobrunid")
+			err = tx.Commit()
+			Expect(err).NotTo(HaveOccurred(), "it should be able to commit the transaction")
+
+			jobFilters := JobFilter{
+				SourceID:  []string{"other_source_id"},
+				TaskRunID: []string{"task_run_id"},
+			}
+			status, err := sh.GetStatus(context.Background(), jobRunId, jobFilters)
+			Expect(err).To(HaveOccurred())
+			Expect(status).To(Equal(JobStatus{}))
+			Expect(errors.Is(err, StatusNotFoundError)).To(BeTrue(), "it should return a StatusNotFoundError")
+			failedRecords, err := sh.GetFailedRecords(context.Background(), jobRunId, jobFilters)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(failedRecords).To(Equal(JobFailedRecords{ID: jobRunId}))
+
+			jobFilters.SourceID = []string{defaultJobTargetKey.SourceID}
+			_, err = sh.GetStatus(context.Background(), jobRunId, jobFilters)
+			Expect(err).ToNot(HaveOccurred())
+			failedRecords, err = sh.GetFailedRecords(context.Background(), jobRunId, jobFilters)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(failedRecords).ToNot(Equal(JobFailedRecords{ID: jobRunId}))
+		})
+
 		It("should be able to get failed records by filtering", func() {
 			jobRunId := newJobRunId()
 
