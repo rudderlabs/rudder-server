@@ -116,7 +116,10 @@ type statTags struct {
 	StateFilters     []string
 }
 
-var getTimeNowFunc = time.Now
+var (
+	getTimeNowFunc        = time.Now
+	storeJobsAdvisoryLock = 12
+)
 
 // StoreSafeTx sealed interface
 type StoreSafeTx interface {
@@ -2299,6 +2302,13 @@ func (jd *HandleT) doStoreJobsInTx(ctx context.Context, tx *sql.Tx, ds dataSetT,
 		var stmt *sql.Stmt
 		var err error
 
+		// acquire a advisory transaction level blocking lock, which cancels once the transaction ends.
+		sqlStatement := fmt.Sprintf(`SELECT pg_advisory_xact_lock(%d);`, storeJobsAdvisoryLock)
+		_, err = tx.ExecContext(context.TODO(), sqlStatement)
+		if err != nil {
+			return err
+		}
+
 		stmt, err = tx.PrepareContext(ctx, pq.CopyIn(ds.JobTable, "uuid", "user_id", "custom_val", "parameters", "event_payload", "event_count", "workspace_id"))
 		if err != nil {
 			return err
@@ -2348,7 +2358,14 @@ func (jd *HandleT) doStoreJobsInTx(ctx context.Context, tx *sql.Tx, ds dataSetT,
 }
 
 func (jd *HandleT) storeJob(ctx context.Context, tx *sql.Tx, ds dataSetT, job *JobT) (err error) {
-	sqlStatement := fmt.Sprintf(`INSERT INTO %q (uuid, user_id, custom_val, parameters, event_payload, workspace_id)
+	// acquire a advisory transaction level blocking lock, which cancels once the transaction ends.
+	sqlStatement := fmt.Sprintf(`SELECT pg_advisory_xact_lock(%d);`, storeJobsAdvisoryLock)
+	_, err = tx.ExecContext(context.TODO(), sqlStatement)
+	if err != nil {
+		return err
+	}
+
+	sqlStatement = fmt.Sprintf(`INSERT INTO %q (uuid, user_id, custom_val, parameters, event_payload, workspace_id)
 	                                   VALUES ($1, $2, $3, $4, $5, $6) RETURNING job_id`, ds.JobTable)
 	stmt, err := tx.PrepareContext(ctx, sqlStatement)
 	jd.assertError(err)
@@ -2366,7 +2383,7 @@ func (jd *HandleT) storeJob(ctx context.Context, tx *sql.Tx, ds dataSetT, job *J
 	if ok {
 		errCode := string(pqErr.Code)
 		if _, ok := dbInvalidJsonErrors[errCode]; ok {
-			return errors.New("Invalid JSON")
+			return errors.New("invalid JSON")
 		}
 	}
 	return
@@ -2928,6 +2945,13 @@ func (jd *HandleT) updateJobStatusDSInTx(ctx context.Context, tx *sql.Tx, ds dat
 	defer queryStat.End()
 	updatedStatesMap := map[string]map[string]bool{}
 	store := func() error {
+		// acquire a advisory transaction level blocking lock, which cancels once the transaction ends.
+		sqlStatement := fmt.Sprintf(`SELECT pg_advisory_xact_lock(%d);`, storeJobsAdvisoryLock)
+		_, err := tx.ExecContext(context.TODO(), sqlStatement)
+		if err != nil {
+			return err
+		}
+
 		stmt, err := tx.PrepareContext(ctx, pq.CopyIn(ds.JobStatusTable, "job_id", "job_state", "attempt", "exec_time",
 			"retry_time", "error_code", "error_response", "parameters"))
 		if err != nil {
@@ -3990,9 +4014,15 @@ func (jd *HandleT) doUpdateJobStatusInTx(ctx context.Context, tx *sql.Tx, status
 		return statusList[i].JobID < statusList[j].JobID
 	})
 
-	// We scan through the list of jobs and map them to DS
+	var dsRangeList []dataSetRangeT
+	jd.dsListLock.WithLock(func(l lock.DSListLockToken) {
+		// since, we create New DS can happen from multiple instances of jobsDB.
+		// So, we need to make sure that we have an updated list of DS.
+		dsRangeList = jd.refreshDSRangeList(l)
+	})
+
 	var lastPos int
-	dsRangeList := jd.getDSRangeList()
+	// We scan through the list of jobs and map them to DS
 	updatedStatesByDS = make(map[dataSetT]map[string][]string)
 	for _, ds := range dsRangeList {
 		minID := ds.minJobID
@@ -4072,7 +4102,12 @@ func (jd *HandleT) Store(ctx context.Context, jobList []*JobT) error {
 func (jd *HandleT) StoreInTx(ctx context.Context, tx StoreSafeTx, jobList []*JobT) error {
 	storeCmd := func() error {
 		command := func() interface{} {
-			dsList := jd.getDSList()
+			var dsList []dataSetT
+			jd.dsListLock.WithLock(func(l lock.DSListLockToken) {
+				// since, we create New DS can happen from multiple instances of jobsDB.
+				// So, we need to make sure that we have an updated list of DS.
+				dsList = jd.refreshDSList(l)
+			})
 			err := jd.internalStoreJobsInTx(ctx, tx.Tx(), dsList[len(dsList)-1], jobList)
 			return err
 		}
@@ -4099,7 +4134,12 @@ func (jd *HandleT) StoreWithRetryEachInTx(ctx context.Context, tx StoreSafeTx, j
 	var res map[uuid.UUID]string
 	storeCmd := func() error {
 		command := func() interface{} {
-			dsList := jd.getDSList()
+			var dsList []dataSetT
+			jd.dsListLock.WithLock(func(l lock.DSListLockToken) {
+				// since, we create New DS can happen from multiple instances of jobsDB.
+				// So, we need to make sure that we have an updated list of DS.
+				dsList = jd.refreshDSList(l)
+			})
 			res = jd.internalStoreWithRetryEachInTx(ctx, tx.Tx(), dsList[len(dsList)-1], jobList)
 			return res
 		}
