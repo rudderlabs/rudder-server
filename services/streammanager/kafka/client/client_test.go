@@ -168,7 +168,7 @@ func TestProducerBatchConsumerGroup(t *testing.T) {
 	}
 	closeConsumer := func(c *Consumer, id string) func() {
 		return func() {
-			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 			defer cancel()
 			if err := c.Close(ctx); err != nil {
 				t.Logf("Error closing %s: %v", id, err)
@@ -298,7 +298,7 @@ func TestConsumer_Partition(t *testing.T) {
 	}
 	closeConsumer := func(c *Consumer, id string) func() {
 		return func() {
-			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 			defer cancel()
 			if err := c.Close(ctx); err != nil {
 				t.Logf("Error closing %s: %v", id, err)
@@ -406,7 +406,7 @@ func TestWithSASL(t *testing.T) {
 			p, err := c.NewProducer("some-topic", producerConf)
 			require.NoError(t, err)
 			t.Cleanup(func() {
-				ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+				ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 				defer cancel()
 				if err := p.Close(ctx); err != nil {
 					t.Logf("Error closing producer: %v", err)
@@ -523,14 +523,14 @@ func TestProducer_Timeout(t *testing.T) {
 	p, err := c.NewProducer(t.Name(), producerConf)
 	require.NoError(t, err)
 	t.Cleanup(func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
 		if err := p.Close(ctx); err != nil {
 			t.Logf("Error closing producer: %v", err)
 		}
 	})
 
-	pubCtx, pubCancel := context.WithTimeout(ctx, 10*time.Second)
+	pubCtx, pubCancel := context.WithTimeout(ctx, 30*time.Second)
 	err = p.Publish(pubCtx, Message{
 		Key:   []byte("hello"),
 		Value: []byte("world"),
@@ -591,7 +591,7 @@ func TestIsProducerErrTemporary(t *testing.T) {
 	p, err := c.NewProducer("non-existent-topic", producerConf)
 	require.NoError(t, err)
 	t.Cleanup(func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
 		if err := p.Close(ctx); err != nil {
 			t.Logf("Error closing producer: %v", err)
@@ -600,7 +600,7 @@ func TestIsProducerErrTemporary(t *testing.T) {
 
 	p.writer.AllowAutoTopicCreation = false // important to cause side effects needed next
 
-	pubCtx, pubCancel := context.WithTimeout(ctx, 10*time.Second)
+	pubCtx, pubCancel := context.WithTimeout(ctx, 30*time.Second)
 	err = p.Publish(pubCtx, Message{
 		Key:   []byte("key-01"),
 		Value: []byte("value-01"),
@@ -650,7 +650,7 @@ func TestConfluentAzureCloud(t *testing.T) {
 	)
 	require.NoError(t, err)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	err = p.Publish(ctx, Message{Key: []byte("key-01"), Value: []byte("value-01")})
 	cancel()
 	require.NoError(t, err)
@@ -692,7 +692,7 @@ func TestAzureEventHubsCloud(t *testing.T) {
 	p, err := c.NewProducer(azureEventHubName, producerConf)
 	require.NoError(t, err)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	err = p.Publish(ctx, Message{Key: []byte("key-01"), Value: []byte("value-01")})
 	cancel()
 	require.NoError(t, err)
@@ -710,7 +710,7 @@ func TestAzureEventHubsCloud(t *testing.T) {
 func publishMessages(ctx context.Context, t *testing.T, p *Producer, noOfMessages int) {
 	t.Helper()
 	t.Cleanup(func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
 		if err := p.Close(ctx); err != nil {
 			t.Logf("Error closing producer: %v", err)
@@ -727,7 +727,7 @@ func publishMessages(ctx context.Context, t *testing.T, p *Producer, noOfMessage
 
 	start, end := time.Now(), time.Duration(0)
 	require.Eventually(t, func() bool {
-		pubCtx, pubCancel := context.WithTimeout(ctx, 10*time.Second)
+		pubCtx, pubCancel := context.WithTimeout(ctx, 30*time.Second)
 		err := p.Publish(pubCtx, messages...)
 		end = time.Since(start)
 		pubCancel()
