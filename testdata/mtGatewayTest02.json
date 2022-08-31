@@ -1,5 +1,4 @@
 {
-  "{{.workspaceId}}": {
     "enableMetrics": false,
     "workspaceId": "{{.workspaceId}}",
     "sources": [
@@ -55,5 +54,4 @@
         ]
       }
     ]
-  }
 }
