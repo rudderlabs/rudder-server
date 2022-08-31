@@ -661,7 +661,7 @@ func (jd *ReadonlyHandleT) GetJobByID(job_id, prefix string) (string, error) {
 	return string(response), nil
 }
 
-func (jd *ReadonlyHandleT) GetJobIDStatus(jobID, prefix string) (string, error) {
+func (jd *ReadonlyHandleT) GetJobIDStatus(jobID, _ string) (string, error) {
 	dsListTotal := jd.getDSList()
 	for _, dsPair := range dsListTotal {
 		var min, max sql.NullInt32
