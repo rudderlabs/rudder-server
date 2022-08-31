@@ -173,7 +173,7 @@ func Test_GracefulListenAndServe(t *testing.T) {
 		require.ErrorIs(t, <-srvErrCh, context.DeadlineExceeded)
 
 		cancelClient()
-		require.NoError(t, <-clientErrCh, context.Canceled)
+		require.ErrorIs(t, <-clientErrCh, context.Canceled)
 	})
 }
 
