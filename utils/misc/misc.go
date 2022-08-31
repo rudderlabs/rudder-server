@@ -657,7 +657,13 @@ func MakeHTTPRequestWithTimeout(url string, payload io.Reader, timeout time.Dura
 		return []byte{}, 400, err
 	}
 
+	// TODO: Added this only for testing purpose.
+	// Need to check with CP team on why we are asking for ADMIN credentials.
+	adminUser := config.GetEnv("RUDDER_ADMIN_USER", "rudder")
+	adminPassword := config.GetEnv("RUDDER_ADMIN_PASSWORD", "rudderstack")
+
 	req.Header.Set("Content-Type", "application/json")
+	req.SetBasicAuth(adminUser, adminPassword)
 
 	client := &http.Client{
 		Timeout: timeout,

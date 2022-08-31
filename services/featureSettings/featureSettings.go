@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/utils/misc"
+	"time"
 )
 
 type FeatureFlags interface {
@@ -39,8 +40,9 @@ func (f *FeatureFlagsImpl) Register(name string, featureList []string) error {
 		return fmt.Errorf("failed to construct register payload with error: %s", err.Error())
 	}
 
-	_, statusCode := misc.HTTPCallWithRetryWithTimeout(url, payload, 60)
-	if statusCode != 200 {
+	timeout := time.Second * time.Duration(config.GetEnvAsInt("FeatureSettings.HTTPTimeout", 60))
+	_, statusCode := misc.HTTPCallWithRetryWithTimeout(url, payload, timeout)
+	if !isSuccessStatus(statusCode) {
 		return fmt.Errorf("failed to register features for: %s with featuresList: %v", name, featureList)
 	}
 	return nil
@@ -58,4 +60,8 @@ func registerPayload(name string, featureList []string) ([]byte, error) {
 	featureComponent := FeatureComponents{[]Feature{feature}}
 
 	return json.Marshal(featureComponent)
+}
+
+func isSuccessStatus(status int) bool {
+	return status >= 200 && status < 300
 }
