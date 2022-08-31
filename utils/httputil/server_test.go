@@ -20,7 +20,8 @@ import (
 func Test_ListenAndServe(t *testing.T) {
 	t.Run("no error when context gets canceled", func(t *testing.T) {
 		srv := &http.Server{
-			Addr: fmt.Sprintf(":%d", freeport.GetPort()),
+			ReadHeaderTimeout: time.Second,
+			Addr:              fmt.Sprintf(":%d", freeport.GetPort()),
 		}
 
 		ctx, cancel := context.WithCancel(context.Background())
@@ -36,7 +37,8 @@ func Test_ListenAndServe(t *testing.T) {
 
 		t.Log("running server on the same port")
 		srv2 := &http.Server{
-			Addr: strings.TrimPrefix(srv1.URL, "http://"),
+			ReadHeaderTimeout: time.Second,
+			Addr:              strings.TrimPrefix(srv1.URL, "http://"),
 		}
 
 		ctx, cancel := context.WithCancel(context.Background())
@@ -54,7 +56,8 @@ func Test_ListenAndServe(t *testing.T) {
 		addr := fmt.Sprintf("127.0.0.1:%d", freeport.GetPort())
 
 		srv := &http.Server{
-			Addr: addr,
+			ReadHeaderTimeout: time.Second,
+			Addr:              addr,
 			Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				t.Log(r.URL)
 				switch r.URL.Path {
@@ -123,6 +126,8 @@ func Test_ListenAndServe(t *testing.T) {
 		firstCall := make(chan struct{})
 
 		srv := &http.Server{
+			ReadHeaderTimeout: time.Second,
+
 			Addr: addr,
 			Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				t.Log(r.URL)
@@ -180,7 +185,9 @@ func Test_ListenAndServe(t *testing.T) {
 
 func Test_Serve(t *testing.T) {
 	t.Run("no error when context gets canceled", func(t *testing.T) {
-		srv := &http.Server{}
+		srv := &http.Server{
+			ReadHeaderTimeout: time.Second,
+		}
 
 		ctx, cancel := context.WithCancel(context.Background())
 		cancel()
