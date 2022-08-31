@@ -26,13 +26,13 @@ jobs:
 
     - name: Integration test for enterprise
       if: matrix.FEATURES == 'enterprise'
-      run: go test -v ./docker_test.go -count 1
+      run: go test -v ./integration_test/docker_test/docker_test.go -count 1
       env:
         ENTERPRISE_TOKEN: ${{ secrets.ENTERPRISE_TOKEN }}
 
     - name: Integration test for oss
       if: matrix.FEATURES == 'oss'
-      run: go test -v ./docker_test.go -count 1
+      run: go test -v ./integration_test/docker_test/docker_test.go -count 1
       env:
         RSERVER_ENABLE_MULTITENANCY: ${{ matrix.MULTITENANCY }}
 
