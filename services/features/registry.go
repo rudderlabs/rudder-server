@@ -12,8 +12,8 @@ type item struct {
 }
 
 type Registry struct {
-	store []item
 	mu    sync.RWMutex
+	store []item
 }
 
 func (r *Registry) Register(name string, features []string) {

@@ -10,7 +10,7 @@ import (
 )
 
 type NamespaceClient struct {
-	client      http.Client
+	client      *http.Client
 	URL         string
 	NamespaceID string
 	Auth        string
