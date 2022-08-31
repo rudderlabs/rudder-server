@@ -182,12 +182,12 @@ func setMaxParallelLoads() {
 		warehouseutils.DELTALAKE:  config.GetInt("Warehouse.deltalake.maxParallelLoads", 3),
 	}
 	columnCountInfoMap = map[string]ColumnCountInfo{
-		warehouseutils.AZURE_SYNAPSE: {Limit: config.GetInt("Warehouse.azure_synapse.columnCountLimit", 1024), Temporary: false},
-		warehouseutils.BQ:            {Limit: config.GetInt("Warehouse.bigquery.columnCountLimit", 10000), Temporary: false},
-		warehouseutils.CLICKHOUSE:    {Limit: config.GetInt("Warehouse.clickhouse.columnCountLimit", 1000), Temporary: false},
-		warehouseutils.MSSQL:         {Limit: config.GetInt("Warehouse.mssql.columnCountLimit", 1024), Temporary: false},
-		warehouseutils.POSTGRES:      {Limit: config.GetInt("Warehouse.postgres.columnCountLimit", 1600), Temporary: false},
-		warehouseutils.RS:            {Limit: config.GetInt("Warehouse.redshift.columnCountLimit", 1600), Temporary: false},
+		warehouseutils.AZURE_SYNAPSE: {Limit: config.GetInt("Warehouse.azure_synapse.columnCountLimit", 1024)},
+		warehouseutils.BQ:            {Limit: config.GetInt("Warehouse.bigquery.columnCountLimit", 10000)},
+		warehouseutils.CLICKHOUSE:    {Limit: config.GetInt("Warehouse.clickhouse.columnCountLimit", 1000)},
+		warehouseutils.MSSQL:         {Limit: config.GetInt("Warehouse.mssql.columnCountLimit", 1024)},
+		warehouseutils.POSTGRES:      {Limit: config.GetInt("Warehouse.postgres.columnCountLimit", 1600)},
+		warehouseutils.RS:            {Limit: config.GetInt("Warehouse.redshift.columnCountLimit", 1600)},
 		warehouseutils.SNOWFLAKE:     {Limit: config.GetInt("Warehouse.snowflake.columnCountLimit", 5000), Temporary: true},
 	}
 }
@@ -1012,6 +1012,7 @@ func (job *UploadJobT) columnCountStat(tableName string) {
 	if columnCountInfo, ok := columnCountInfoMap[job.warehouse.Type]; ok {
 		currentColumnsCount := len(job.schemaHandle.schemaInWarehouse[tableName])
 		columnCountLimit := columnCountInfo.Limit
+		isTemporary := columnCountInfo.Temporary
 		if currentColumnsCount > int(float64(columnCountLimit)*columnCountLimitThreshold) {
 			tags := []tag{
 				{
@@ -1021,7 +1022,7 @@ func (job *UploadJobT) columnCountStat(tableName string) {
 					name: "columnCountLimit", value: strconv.Itoa(columnCountLimit),
 				},
 				{
-					name: "temporary", value: strconv.FormatBool(columnCountInfo.Temporary),
+					name: "temporary", value: strconv.FormatBool(isTemporary),
 				},
 			}
 			job.counterStat(`warehouse_load_table_column_count`, tags...).Count(currentColumnsCount)
