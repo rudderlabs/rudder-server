@@ -2,18 +2,30 @@ package httputil
 
 import (
 	"context"
+	"net"
+	"net/http"
 	"time"
 )
 
-type server interface {
-	ListenAndServe() error
+type grace interface {
 	Shutdown(context.Context) error
 }
 
-func GracefulListenAndServe(ctx context.Context, server server, shutdownTimeout ...time.Duration) error {
+func GracefulListenAndServe(ctx context.Context, server *http.Server, shutdownTimeout ...time.Duration) error {
+	return gracefulFunc(ctx, server, server.ListenAndServe, shutdownTimeout...)
+}
+
+func GracefulServe(ctx context.Context, server *http.Server, l net.Listener, shutdownTimeout ...time.Duration) error {
+	fn := func() error {
+		return server.Serve(l)
+	}
+	return gracefulFunc(ctx, server, fn, shutdownTimeout...)
+}
+
+func gracefulFunc(ctx context.Context, g grace, fn func() error, shutdownTimeout ...time.Duration) error {
 	errCh := make(chan error, 1)
 	go func() {
-		errCh <- server.ListenAndServe()
+		errCh <- fn()
 	}()
 	select {
 	case err := <-errCh:
@@ -30,7 +42,7 @@ func GracefulListenAndServe(ctx context.Context, server server, shutdownTimeout 
 		}
 		defer cancel()
 
-		if err := server.Shutdown(shutdownCtx); err != nil {
+		if err := g.Shutdown(shutdownCtx); err != nil {
 			return err
 		}
 	}

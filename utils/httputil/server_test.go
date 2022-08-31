@@ -4,8 +4,10 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -174,6 +176,27 @@ func Test_GracefulListenAndServe(t *testing.T) {
 
 		cancelClient()
 		require.ErrorIs(t, <-clientErrCh, context.Canceled)
+	})
+}
+
+func Test_GracefulServe(t *testing.T) {
+	t.Run("no error when context gets canceled", func(t *testing.T) {
+		srv := &http.Server{}
+
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+
+		dir, err := os.MkdirTemp("", "test-graceful-serve")
+		require.NoError(t, err)
+
+		l, err := net.Listen("unix", dir+"/unix.socket")
+		require.NoError(t, err)
+		defer l.Close()
+
+		{
+			err := GracefulServe(ctx, srv, l, time.Second)
+			require.NoError(t, err)
+		}
 	})
 }
 
