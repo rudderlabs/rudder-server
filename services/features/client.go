@@ -1,16 +1,17 @@
 package features
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
 
-	"github.com/rudderlabs/rudder-server/utils/misc"
+	"github.com/cenkalti/backoff"
 )
 
 type NamespaceClient struct {
-	client      *http.Client
+	Client      *http.Client
 	URL         string
 	NamespaceID string
 	Auth        string
@@ -45,10 +46,22 @@ func (c *NamespaceClient) Send(ctx context.Context, registry *Registry) error {
 		return err
 	}
 
-	_, statusCode := misc.HTTPCallWithRetryWithTimeout(url, body, 60)
-	if statusCode != 200 {
-		return fmt.Errorf("unexpected status code %d", statusCode)
-	}
+	backoffWithMaxRetry := backoff.WithContext(backoff.WithMaxRetries(backoff.NewExponentialBackOff(), 3), ctx)
+	return backoff.Retry(func() error {
+		req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
+		if err != nil {
+			return err
+		}
 
-	return nil
+		resp, err := c.Client.Do(req)
+		if err != nil {
+			return err
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != http.StatusOK {
+			return fmt.Errorf("unexpected status code: %d", req.Response.StatusCode)
+		}
+		return err
+	}, backoffWithMaxRetry)
 }
