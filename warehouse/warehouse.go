@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	features "github.com/rudderlabs/rudder-server/services/featureSettings"
 	"io"
 	"math/rand"
 	"net/http"
@@ -1761,6 +1762,14 @@ func setupDB(ctx context.Context, connInfo string) error {
 	return setupTables(dbHandle)
 }
 
+func registerFeatureSettings(ctx context.Context) error {
+	return features.NewFeatureFlags(ctx).Register("warehouse", []string{
+		"retryUI",
+		"configurationTests",
+		"azureSASTokens",
+	})
+}
+
 func Start(ctx context.Context, app app.Interface) error {
 	application = app
 
@@ -1838,6 +1847,9 @@ func Start(ctx context.Context, app app.Interface) error {
 		g.Go(misc.WithBugsnagForWarehouse(func() error {
 			runArchiver(ctx, dbHandle)
 			return nil
+		}))
+		g.Go(misc.WithBugsnagForWarehouse(func() error {
+			return registerFeatureSettings(ctx)
 		}))
 		InitWarehouseAPI(dbHandle, pkgLogger.Child("upload_api"))
 	}
