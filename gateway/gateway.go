@@ -43,6 +43,7 @@ import (
 	"github.com/rudderlabs/rudder-server/services/rsources"
 	rsources_http "github.com/rudderlabs/rudder-server/services/rsources/http"
 	"github.com/rudderlabs/rudder-server/services/stats"
+	"github.com/rudderlabs/rudder-server/utils/httputil"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/types"
@@ -1427,16 +1428,8 @@ func (gateway *HandleT) StartWebHandler(ctx context.Context) error {
 		MaxHeaderBytes:    maxHeaderBytes,
 	}
 
-	g, ctx := errgroup.WithContext(ctx)
-	g.Go(func() error {
-		<-ctx.Done()
-		return gateway.httpWebServer.Shutdown(context.Background())
-	})
-	g.Go(func() error {
-		return gateway.httpWebServer.ListenAndServe()
-	})
+	return httputil.GracefulListenAndServe(ctx, gateway.httpWebServer)
 
-	return g.Wait()
 }
 
 // StartAdminHandler for Admin Operations
@@ -1458,16 +1451,7 @@ func (gateway *HandleT) StartAdminHandler(ctx context.Context) error {
 		Handler: bugsnag.Handler(srvMux),
 	}
 
-	g, ctx := errgroup.WithContext(ctx)
-	g.Go(func() error {
-		<-ctx.Done()
-		return srv.Shutdown(context.Background())
-	})
-	g.Go(func() error {
-		return srv.ListenAndServe()
-	})
-
-	return g.Wait()
+	return httputil.GracefulListenAndServe(ctx, srv)
 }
 
 // Gets the config from config backend and extracts enabled writekeys
