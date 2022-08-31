@@ -279,5 +279,5 @@ func StartServer(ctx context.Context) error {
 		_ = srv.Shutdown(context.Background()) // @TODO no wait nor timeout on shutdown
 	}()
 
-	return httputil.GracefulServe(ctx, srv, l, time.Second)
+	return httputil.Serve(ctx, srv, l, time.Second)
 }

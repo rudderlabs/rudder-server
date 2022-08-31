@@ -282,5 +282,5 @@ func startHealthWebHandler(ctx context.Context) error {
 		MaxHeaderBytes:    MaxHeaderBytes,
 	}
 
-	return httputil.GracefulListenAndServe(ctx, srv)
+	return httputil.ListenAndServe(ctx, srv)
 }

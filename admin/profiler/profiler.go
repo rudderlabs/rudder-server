@@ -80,7 +80,7 @@ func (p *Profiler) StartServer(ctx context.Context) error {
 	}
 
 	pkgLogger.Infof("Starting server on port %d", p.port)
-	if err := httputil.GracefulListenAndServe(ctx, srv, 3*time.Second); err != nil {
+	if err := httputil.ListenAndServe(ctx, srv, 3*time.Second); err != nil {
 		return fmt.Errorf("debug server: %w", err)
 	}
 

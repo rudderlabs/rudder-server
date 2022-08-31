@@ -174,7 +174,7 @@ func (m *Migrator) StartWebHandler(ctx context.Context, gatewayMigrator, routerM
 		Handler: bugsnag.Handler(srvMux),
 	}
 
-	err := httputil.GracefulListenAndServe(ctx, srv)
+	err := httputil.ListenAndServe(ctx, srv)
 	if err != nil {
 		pkgLogger.Fatal(err)
 	}

@@ -1695,7 +1695,7 @@ func startWebHandler(ctx context.Context) error {
 		Handler: bugsnag.Handler(mux),
 	}
 
-	return httputil.GracefulListenAndServe(ctx, srv)
+	return httputil.ListenAndServe(ctx, srv)
 }
 
 // CheckForWarehouseEnvVars Checks if all the required Env Variables for Warehouse are present

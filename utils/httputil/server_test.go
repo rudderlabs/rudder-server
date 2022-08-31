@@ -17,7 +17,7 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
-func Test_GracefulListenAndServe(t *testing.T) {
+func Test_ListenAndServe(t *testing.T) {
 	t.Run("no error when context gets canceled", func(t *testing.T) {
 		srv := &http.Server{
 			Addr: fmt.Sprintf(":%d", freeport.GetPort()),
@@ -26,7 +26,7 @@ func Test_GracefulListenAndServe(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 		cancel()
 
-		err := GracefulListenAndServe(ctx, srv)
+		err := ListenAndServe(ctx, srv)
 		require.NoError(t, err)
 	})
 
@@ -42,7 +42,7 @@ func Test_GracefulListenAndServe(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
 
-		err := GracefulListenAndServe(ctx, srv2)
+		err := ListenAndServe(ctx, srv2)
 		require.ErrorContains(t, err, "bind: address already in use")
 	})
 
@@ -73,7 +73,7 @@ func Test_GracefulListenAndServe(t *testing.T) {
 
 		g, _ := errgroup.WithContext(context.Background())
 		g.Go(func() error {
-			return GracefulListenAndServe(ctx, srv)
+			return ListenAndServe(ctx, srv)
 		})
 
 		g.Go(func() error {
@@ -116,7 +116,6 @@ func Test_GracefulListenAndServe(t *testing.T) {
 
 		err := g.Wait()
 		require.NoError(t, err, "both server and client should with no error")
-
 	})
 
 	t.Run("timeout if connections are not closed", func(t *testing.T) {
@@ -144,7 +143,7 @@ func Test_GracefulListenAndServe(t *testing.T) {
 		clientErrCh := make(chan error)
 
 		go func() {
-			srvErrCh <- GracefulListenAndServe(srvCtx, srv, time.Millisecond)
+			srvErrCh <- ListenAndServe(srvCtx, srv, time.Millisecond)
 		}()
 
 		go func() {
@@ -179,7 +178,7 @@ func Test_GracefulListenAndServe(t *testing.T) {
 	})
 }
 
-func Test_GracefulServe(t *testing.T) {
+func Test_Serve(t *testing.T) {
 	t.Run("no error when context gets canceled", func(t *testing.T) {
 		srv := &http.Server{}
 
@@ -193,10 +192,7 @@ func Test_GracefulServe(t *testing.T) {
 		require.NoError(t, err)
 		defer l.Close()
 
-		{
-			err := GracefulServe(ctx, srv, l, time.Second)
-			require.NoError(t, err)
-		}
+		require.NoError(t, Serve(ctx, srv, l, time.Second))
 	})
 }
 

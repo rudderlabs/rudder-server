@@ -1428,8 +1428,7 @@ func (gateway *HandleT) StartWebHandler(ctx context.Context) error {
 		MaxHeaderBytes:    maxHeaderBytes,
 	}
 
-	return httputil.GracefulListenAndServe(ctx, gateway.httpWebServer)
-
+	return httputil.ListenAndServe(ctx, gateway.httpWebServer)
 }
 
 // StartAdminHandler for Admin Operations
@@ -1451,7 +1450,7 @@ func (gateway *HandleT) StartAdminHandler(ctx context.Context) error {
 		Handler: bugsnag.Handler(srvMux),
 	}
 
-	return httputil.GracefulListenAndServe(ctx, srv)
+	return httputil.ListenAndServe(ctx, srv)
 }
 
 // Gets the config from config backend and extracts enabled writekeys
