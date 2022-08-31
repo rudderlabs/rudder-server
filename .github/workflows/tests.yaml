@@ -32,7 +32,7 @@ jobs:
 
     - name: Integration test for enterprise
       if: matrix.FEATURES == 'enterprise'
-      run: go test -v ./docker_test.go -count 1
+      run: for i in {1..2}; make run-rudder-server-integration && break; done  
       env:
         ENTERPRISE_TOKEN: ${{ secrets.ENTERPRISE_TOKEN }}
 
@@ -66,7 +66,7 @@ jobs:
           username: rudderlabs
           password: ${{ secrets.DOCKERHUB_TOKEN }}
       - name: Warehouse Integration Test
-        run: make run-warehouse-integration
+        run: for i in {1..2}; make run-warehouse-integration && break; done
         env:
           BIGQUERY_INTEGRATION_TEST_CREDENTIALS: ${{ secrets.BIGQUERY_INTEGRATION_TEST_CREDENTIALS }}
           REDSHIFT_INTEGRATION_TEST_CREDENTIALS: ${{ secrets.REDSHIFT_INTEGRATION_TEST_CREDENTIALS }}

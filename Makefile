@@ -90,3 +90,6 @@ run-warehouse-integration: setup-warehouse-integration
       	make cleanup-warehouse-integration; \
       	exit 1; \
  	fi
+
+run-rudder-server-integration:
+	go test -v ./docker_test.go -count 1
