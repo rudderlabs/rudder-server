@@ -185,7 +185,7 @@ func (trans *handle) Transform(transformType string, transformMessage *types.Tra
 			invalidResponseError = fmt.Sprintf("Transformer returned invalid response: %s for input: %s", string(respData), string(rawJSON))
 		} else if len(in) != len(out) {
 			invalidResponseReason = "in out mismatch"
-			invalidResponseError = fmt.Sprintf("Transformer returned invalid output size: %d for input size: %d", len(out), len(in))
+			invalidResponseError = fmt.Sprintf("Transformer returned invalid output size: %d for input size: %d. input: %s", len(out), len(in), string(rawJSON))
 		} else if len(invalid) > 0 {
 			var invalidSlice []int64
 			for k := range invalid {
@@ -196,7 +196,6 @@ func (trans *handle) Transform(transformType string, transformMessage *types.Tra
 		}
 
 		if invalidResponseReason != "" {
-
 			trans.logger.Error(invalidResponseError)
 			stats.DefaultStats.NewTaggedStat(`router.transformer.invalid.response`, stats.CountType, stats.Tags{
 				"destType": transformMessage.DestType,
