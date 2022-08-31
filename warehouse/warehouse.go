@@ -1763,15 +1763,11 @@ func setupDB(ctx context.Context, connInfo string) error {
 }
 
 func registerFeatureSettings(ctx context.Context) error {
-	err := features.NewFeatureFlags(ctx).Register("warehouse", []string{
+	return features.NewFeatureFlags(ctx).Register("warehouse", []string{
 		"retryUI",
 		"configurationTests",
 		"azureSASTokens",
 	})
-	if err != nil {
-		pkgLogger.Errorf("Failed to register feature settings with error: %s", err.Error())
-	}
-	return err
 }
 
 func Start(ctx context.Context, app app.Interface) error {

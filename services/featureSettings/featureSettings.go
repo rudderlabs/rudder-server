@@ -33,7 +33,7 @@ func NewFeatureFlags(context context.Context) FeatureFlags {
 
 func (f *FeatureFlagsImpl) Register(name string, featureList []string) error {
 	configBackendURL := config.GetEnv("CONFIG_BACKEND_URL", "https://api.rudderlabs.com")
-	registerURL := fmt.Sprintf("%s/data-plane/namespaces/%s/settings", configBackendURL, config.GetNamespaceIdentifier())
+	url := fmt.Sprintf("%s/data-plane/namespaces/%s/settings", configBackendURL, config.GetNamespaceIdentifier())
 
 	payload, err := registerPayload(name, featureList)
 	if err != nil {
@@ -41,7 +41,7 @@ func (f *FeatureFlagsImpl) Register(name string, featureList []string) error {
 	}
 
 	timeout := time.Second * time.Duration(config.GetEnvAsInt("FeatureSettings.HTTPTimeout", 60))
-	_, statusCode := misc.HTTPCallWithRetryWithTimeout(registerURL, payload, timeout)
+	_, statusCode := misc.HTTPCallWithRetryWithTimeout(url, payload, timeout)
 	if !isSuccessStatus(statusCode) {
 		return fmt.Errorf("failed to register features for: %s with featuresList: %v", name, featureList)
 	}
