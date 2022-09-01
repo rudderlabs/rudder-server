@@ -10,11 +10,20 @@ import (
 	"time"
 
 	"github.com/cenkalti/backoff"
+	jsoniter "github.com/json-iterator/go"
 
 	"github.com/rudderlabs/rudder-server/config"
+	"github.com/rudderlabs/rudder-server/services/controlplane/identity"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/types"
 )
+
+var jsonfast = jsoniter.ConfigCompatibleWithStandardLibrary
+
+// WorkspacesT holds sources of workspaces
+type WorkspacesT struct {
+	WorkspaceSourcesMap map[string]ConfigT `json:"-"`
+}
 
 type namespaceConfig struct {
 	configEnvHandler          types.ConfigEnvI
@@ -176,7 +185,8 @@ func (nc *namespaceConfig) makeHTTPRequest(ctx context.Context, url string) ([]b
 		return nil, err
 	}
 
-	req.SetBasicAuth(nc.HostedServiceSecret, "")
+	nc.Identity().HTTPAuth(req)
+
 	resp, err := nc.Client.Do(req)
 	if err != nil {
 		return nil, err
@@ -198,4 +208,11 @@ func (nc *namespaceConfig) makeHTTPRequest(ctx context.Context, url string) ([]b
 
 func (nc *namespaceConfig) AccessToken() string {
 	return nc.HostedServiceSecret
+}
+
+func (nc *namespaceConfig) Identity() identity.Identifier {
+	return &identity.Namespace{
+		Namespace:    nc.Namespace,
+		HostedSecret: nc.HostedServiceSecret,
+	}
 }

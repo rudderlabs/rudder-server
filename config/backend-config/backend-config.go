@@ -15,6 +15,7 @@ import (
 	adminpkg "github.com/rudderlabs/rudder-server/admin"
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/rruntime"
+	"github.com/rudderlabs/rudder-server/services/controlplane/identity"
 	"github.com/rudderlabs/rudder-server/services/diagnostics"
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/logger"
@@ -46,16 +47,19 @@ var (
 
 type workspaceConfig interface {
 	SetUp() error
+	// AccessToken: DEPRECATED
 	AccessToken() string
 	Get(context.Context, string) (ConfigT, error)
 	GetWorkspaceIDForWriteKey(string) string
 	GetWorkspaceIDForSourceID(string) string
 	GetWorkspaceLibrariesForWorkspaceID(string) LibrariesT
+	Identity() identity.Identifier
 }
 
 type BackendConfig interface {
 	workspaceConfig
 	WaitForConfig(ctx context.Context)
+	Identity() identity.Identifier
 	Subscribe(ctx context.Context, topic Topic) pubsub.DataChannel
 	Stop()
 	StartWithIDs(ctx context.Context, workspaces string)
@@ -217,20 +221,10 @@ func newForDeployment(deploymentType deployment.Type, configEnvHandler types.Con
 			configEnvHandler: configEnvHandler,
 		}
 	case deployment.MultiTenantType:
-		isNamespaced := config.IsEnvSet("WORKSPACE_NAMESPACE")
-		if isNamespaced {
-			backendConfig.workspaceConfig = &namespaceConfig{
-				ConfigBackendURL: parsedConfigBackendURL,
-				configEnvHandler: configEnvHandler,
-				cpRouterURL:      cpRouterURL,
-			}
-		} else {
-			// DEPRECATED: This is the old way of configuring multi-tenant.
-			backendConfig.workspaceConfig = &multiTenantWorkspacesConfig{
-				configBackendURL: parsedConfigBackendURL,
-				configEnvHandler: configEnvHandler,
-				cpRouterURL:      cpRouterURL,
-			}
+		backendConfig.workspaceConfig = &namespaceConfig{
+			ConfigBackendURL: parsedConfigBackendURL,
+			configEnvHandler: configEnvHandler,
+			cpRouterURL:      cpRouterURL,
 		}
 	default:
 		return nil, fmt.Errorf("deployment type %q not supported", deploymentType)
