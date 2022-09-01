@@ -10,11 +10,10 @@ import (
 	"github.com/cenkalti/backoff"
 )
 
-type NamespaceClient struct {
-	Client      *http.Client
-	URL         string
-	NamespaceID string
-	Auth        string
+type Client struct {
+	Client   *http.Client
+	URL      string
+	Identity identity
 }
 
 type payload struct {
@@ -26,9 +25,8 @@ type component struct {
 	Features []string `json:"features"`
 }
 
-func (c *NamespaceClient) Send(ctx context.Context, registry *Registry) error {
-
-	url := fmt.Sprintf("%s/data-plane/namespaces/%s/settings", c.URL, c.NamespaceID)
+func (c *Client) Send(ctx context.Context, registry *Registry) error {
+	url := fmt.Sprintf("%s/data-plane/%s/%s/settings", c.URL, c.Identity.Resource(), c.Identity.ID())
 
 	payload := payload{
 		Components: []component{},
@@ -52,6 +50,8 @@ func (c *NamespaceClient) Send(ctx context.Context, registry *Registry) error {
 		if err != nil {
 			return err
 		}
+
+		c.Identity.HTTPAuth(req)
 
 		resp, err := c.Client.Do(req)
 		if err != nil {
