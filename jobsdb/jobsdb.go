@@ -1520,7 +1520,6 @@ func (jd *HandleT) createDS(newDS dataSetT, l lock.DSListLockToken) {
 	// In case of a migration, we don't yet update the in-memory list till we finish the migration
 	if l != nil {
 		// to get the updated DS list in the cache after createDS transaction has been committed.
-		_ = jd.refreshDSList(l)
 		jd.refreshDSRangeList(l)
 	}
 }
