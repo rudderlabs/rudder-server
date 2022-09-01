@@ -2,12 +2,13 @@ package asyncdestinationmanager
 
 import (
 	"bufio"
-	"encoding/json"
+	stdjson "encoding/json"
 	"os"
 	"strings"
 	"sync"
 	"time"
 
+	jsoniter "github.com/json-iterator/go"
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/services/rsources"
@@ -20,7 +21,7 @@ import (
 type AsyncUploadOutput struct {
 	Key                 string
 	ImportingJobIDs     []int64
-	ImportingParameters json.RawMessage
+	ImportingParameters stdjson.RawMessage
 	SuccessJobIDs       []int64
 	FailedJobIDs        []int64
 	SucceededJobIDs     []int64
@@ -82,6 +83,8 @@ type Parameters struct {
 	PollUrl  string    `json:"pollURL"`
 	MetaData MetaDataT `json:"metadata"`
 }
+
+var json = jsoniter.ConfigCompatibleWithStandardLibrary
 
 var (
 	HTTPTimeout time.Duration
@@ -207,7 +210,7 @@ func Upload(url, filePath string, config map[string]interface{}, destType string
 			ImportingJobIDs:     successfulJobIDs,
 			FailedJobIDs:        append(failedJobIDs, failedJobIDsTrans...),
 			FailedReason:        `{"error":"Jobs flowed over the prescribed limit"}`,
-			ImportingParameters: json.RawMessage(importParameters),
+			ImportingParameters: stdjson.RawMessage(importParameters),
 			importingCount:      len(importingJobIDs),
 			FailedCount:         len(failedJobIDs) + len(failedJobIDsTrans),
 			DestinationID:       destinationID,
@@ -244,7 +247,7 @@ func Upload(url, filePath string, config map[string]interface{}, destType string
 	return uploadResponse
 }
 
-func GetTransformedData(payload json.RawMessage) string {
+func GetTransformedData(payload stdjson.RawMessage) string {
 	return gjson.Get(string(payload), "body.JSON").String()
 }
 
