@@ -24,11 +24,20 @@ type RouterJobT struct {
 // and metadata of all the router jobs from which this job is cooked up
 type DestinationJobT struct {
 	Message          json.RawMessage            `json:"batchedRequest"`
-	JobMetadataArray []JobMetadataT             `json:"metadata"`
+	JobMetadataArray []JobMetadataT             `json:"metadata"` // multiple jobs may be batched in a single message
 	Destination      backendconfig.DestinationT `json:"destination"`
 	Batched          bool                       `json:"batched"`
 	StatusCode       int                        `json:"statusCode"`
 	Error            string                     `json:"error"`
+}
+
+// JobIDs returns the set of all job ids contained in the message
+func (dj *DestinationJobT) JobIDs() map[int64]struct{} {
+	jobIDs := make(map[int64]struct{})
+	for i := range dj.JobMetadataArray {
+		jobIDs[dj.JobMetadataArray[i].JobID] = struct{}{}
+	}
+	return jobIDs
 }
 
 // JobMetadataT holds the job metadata
@@ -45,11 +54,20 @@ type JobMetadataT struct {
 	WorkspaceID        string          `json:"workspaceId"`
 	Secret             json.RawMessage `json:"secret"`
 	JobT               *jobsdb.JobT    `json:"jobsT"`
-	WorkerAssignedTime time.Time       `json:"-"`
+	WorkerAssignedTime time.Time       `json:"workerAssignedTime"`
 }
 
 // TransformMessageT is used to pass message to the transformer workers
 type TransformMessageT struct {
 	Data     []RouterJobT `json:"input"`
 	DestType string       `json:"destType"`
+}
+
+// JobIDs returns the set of all job ids of the jobs in the message
+func (tm *TransformMessageT) JobIDs() map[int64]struct{} {
+	jobIDs := make(map[int64]struct{})
+	for i := range tm.Data {
+		jobIDs[tm.Data[i].JobMetadata.JobID] = struct{}{}
+	}
+	return jobIDs
 }

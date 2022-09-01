@@ -3,7 +3,6 @@ package bigquery
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"strings"
 	"sync"
@@ -509,7 +508,7 @@ func (bq *HandleT) LoadUserTables() (errorMap map[string]error) {
 		status, err := job.Wait(bq.BQContext)
 		if err != nil {
 			pkgLogger.Errorf("BQ: Error running load job: %v\n", err)
-			errorMap[warehouseutils.UsersTable] = errors.New(fmt.Sprintf(`append: %v`, err.Error()))
+			errorMap[warehouseutils.UsersTable] = fmt.Errorf(`append: %v`, err.Error())
 			return
 		}
 
@@ -535,7 +534,7 @@ func (bq *HandleT) LoadUserTables() (errorMap map[string]error) {
 		status, err := job.Wait(bq.BQContext)
 		if err != nil {
 			pkgLogger.Errorf("BQ: Error initiating staging table for users %v\n", err)
-			errorMap[warehouseutils.UsersTable] = errors.New(fmt.Sprintf(`merge: %v`, err.Error()))
+			errorMap[warehouseutils.UsersTable] = fmt.Errorf(`merge: %v`, err.Error())
 			return
 		}
 
@@ -582,7 +581,7 @@ func (bq *HandleT) LoadUserTables() (errorMap map[string]error) {
 		status, err = job.Wait(bq.BQContext)
 		if err != nil {
 			pkgLogger.Errorf("BQ: Error running merge load job: %v\n", err)
-			errorMap[warehouseutils.UsersTable] = errors.New(fmt.Sprintf(`merge: %v`, err.Error()))
+			errorMap[warehouseutils.UsersTable] = fmt.Errorf(`merge: %v`, err.Error())
 			return
 		}
 
@@ -1008,7 +1007,7 @@ func (bq *HandleT) DownloadIdentityRules(gzWriter *misc.GZipWriter) (err error) 
 					MergeProperty2Type:  "user_id",
 					MergeProperty2Value: userId,
 				}
-				if len(identityRule.MergeProperty1Value) == 0 && len(identityRule.MergeProperty2Value) == 0 {
+				if identityRule.MergeProperty1Value == "" && identityRule.MergeProperty2Value == "" {
 					continue
 				}
 				bytes, err := json.Marshal(identityRule)

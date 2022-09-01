@@ -38,7 +38,7 @@ type multiTenantWorkspacesConfig struct {
 func (wc *multiTenantWorkspacesConfig) SetUp() error {
 	wc.writeKeyToWorkspaceIDMap = make(map[string]string)
 	if wc.Token == "" {
-		wc.Token = config.GetEnv("HOSTED_MULTITENANT_SERVICE_SECRET", "")
+		wc.Token = config.GetEnv("HOSTED_SERVICE_SECRET", "")
 	}
 	if wc.Token == "" {
 		return fmt.Errorf("multi tenant workspace: empty workspace config token")
@@ -171,7 +171,7 @@ func (wc *multiTenantWorkspacesConfig) makeHTTPRequest(ctx context.Context, url 
 
 	req.Header.Set("Content-Type", "application/json")
 
-	client := &http.Client{Timeout: config.GetDuration("HttpClient.timeout", 30, time.Second)}
+	client := &http.Client{Timeout: config.GetDuration("HttpClient.backendConfig.timeout", 30, time.Second)}
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, err

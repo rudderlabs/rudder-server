@@ -511,7 +511,7 @@ func GetIPFromReq(req *http.Request) string {
 		return strings.Join(splits[:len(splits)-1], ":") // When there is no load-balancer
 	}
 
-	return strings.Replace(addresses[0], " ", "", -1)
+	return strings.ReplaceAll(addresses[0], " ", "")
 }
 
 func ContainsString(slice []string, str string) bool {
@@ -551,8 +551,8 @@ func IncrementMapByKey(m map[string]int, key string, increment int) {
 	}
 }
 
-// Returns chronological timestamp of the event using the formula
-// timestamp = receivedAt - (sentAt - originalTimestamp)
+//  Returns chronological timestamp of the event using the formula
+//  timestamp = receivedAt - (sentAt - originalTimestamp)
 func GetChronologicalTimeStamp(receivedAt, sentAt, originalTimestamp time.Time) time.Time {
 	return receivedAt.Add(-sentAt.Sub(originalTimestamp))
 }
@@ -710,7 +710,7 @@ func HTTPCallWithRetryWithTimeout(url string, payload []byte, timeout time.Durat
 }
 
 func IntArrayToString(a []int64, delim string) string {
-	return strings.Trim(strings.Replace(fmt.Sprint(a), " ", delim, -1), "[]")
+	return strings.Trim(strings.ReplaceAll(fmt.Sprint(a), " ", delim), "[]")
 }
 
 func MakeJSONArray(bytesArray [][]byte) []byte {
@@ -1214,7 +1214,14 @@ func GetWarehouseURL() (url string) {
 
 func GetDatabricksVersion() (version string) {
 	url := fmt.Sprintf(`%s/databricksVersion`, GetWarehouseURL())
-	resp, err := http.Get(url)
+	req, err := http.NewRequest(http.MethodGet, url, http.NoBody)
+	if err != nil {
+		return
+	}
+	client := &http.Client{
+		Timeout: config.GetDuration("HttpClient.timeout", 30, time.Second),
+	}
+	resp, err := client.Do(req)
 	if err != nil {
 		pkgLogger.Errorf("Unable to make a warehouse databricks build version call with error : %s", err.Error())
 		return
@@ -1307,7 +1314,6 @@ func MergeMaps(maps ...map[string]interface{}) map[string]interface{} {
 // Returns: (Exactly one of these will be nil)
 // rval: the target node (if found)
 // err:  an error created by fmt.Errorf
-//
 func NestedMapLookup(m map[string]interface{}, ks ...string) (rval interface{}, err error) {
 	var ok bool
 

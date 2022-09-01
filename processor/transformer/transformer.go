@@ -117,7 +117,7 @@ func loadConfig() {
 
 	config.RegisterIntConfigVariable(30, &maxRetry, true, 1, "Processor.maxRetry")
 	config.RegisterDurationConfigVariable(100, &retrySleep, true, time.Millisecond, []string{"Processor.retrySleep", "Processor.retrySleepInMS"}...)
-	config.RegisterDurationConfigVariable(30, &timeoutDuration, false, time.Second, []string{"HttpClient.timeout"}...)
+	config.RegisterDurationConfigVariable(30, &timeoutDuration, false, time.Second, "HttpClient.procTransformer.timeout")
 }
 
 type TransformerResponseT struct {
@@ -270,7 +270,7 @@ func (trans *HandleT) Validate(clientEvents []TransformerEventT,
 	return trans.Transform(context.TODO(), clientEvents, url, batchSize)
 }
 
-func (_ *HandleT) requestTime(s stats.Tags, d time.Duration) {
+func (*HandleT) requestTime(s stats.Tags, d time.Duration) {
 	stats.NewTaggedStat("processor.transformer_request_time", stats.TimerType, s).SendTiming(d)
 }
 

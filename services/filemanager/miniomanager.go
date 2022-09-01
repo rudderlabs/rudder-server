@@ -66,6 +66,7 @@ func (manager *MinioManager) Download(ctx context.Context, file *os.File, key st
 
 /*
 GetObjectNameFromLocation gets the object name/key name from the object location url
+
 	https://minio-endpoint/bucket-name/key1 - >> key1
 	http://minio-endpoint/bucket-name/key2 - >> key2
 */
@@ -109,7 +110,7 @@ func (manager *MinioManager) DeleteObjects(ctx context.Context, keys []string) (
 	return tmp.Err
 }
 
-func (manager *MinioManager) ListFilesWithPrefix(ctx context.Context, prefix string, maxItems int64) (fileObjects []*FileObject, err error) {
+func (manager *MinioManager) ListFilesWithPrefix(ctx context.Context, startAfter, prefix string, maxItems int64) (fileObjects []*FileObject, err error) {
 	fileObjects = make([]*FileObject, 0)
 
 	// Created minio core

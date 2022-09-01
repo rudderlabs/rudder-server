@@ -132,11 +132,11 @@ func ColumnsWithDataTypes(columns map[string]string, prefix string) string {
 	for _, name := range keys {
 		arr = append(arr, fmt.Sprintf(`"%s%s" %s`, prefix, name, getRSDataType(columns[name])))
 	}
-	return strings.Join(arr[:], ",")
+	return strings.Join(arr, ",")
 }
 
 func (rs *HandleT) CreateTable(tableName string, columns map[string]string) (err error) {
-	name := fmt.Sprintf(`"%s"."%s"`, rs.Namespace, tableName)
+	name := fmt.Sprintf(`%q.%q`, rs.Namespace, tableName)
 	sortKeyField := "received_at"
 	if _, ok := columns["received_at"]; !ok {
 		sortKeyField = "uuid_ts"
@@ -148,7 +148,7 @@ func (rs *HandleT) CreateTable(tableName string, columns map[string]string) (err
 	if _, ok := columns["id"]; ok {
 		distKeySql = `DISTSTYLE KEY DISTKEY("id")`
 	}
-	sqlStatement := fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s ( %v ) %s SORTKEY("%s") `, name, ColumnsWithDataTypes(columns, ""), distKeySql, sortKeyField)
+	sqlStatement := fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s ( %v ) %s SORTKEY(%q) `, name, ColumnsWithDataTypes(columns, ""), distKeySql, sortKeyField)
 	pkgLogger.Infof("Creating table in redshift for RS:%s : %v", rs.Warehouse.Destination.ID, sqlStatement)
 	_, err = rs.Db.Exec(sqlStatement)
 	return
@@ -168,8 +168,8 @@ func (rs *HandleT) schemaExists(schemaname string) (exists bool, err error) {
 }
 
 func (rs *HandleT) AddColumn(name, columnName, columnType string) (err error) {
-	tableName := fmt.Sprintf(`"%s"."%s"`, rs.Namespace, name)
-	sqlStatement := fmt.Sprintf(`ALTER TABLE %v ADD COLUMN "%s" %s`, tableName, columnName, getRSDataType(columnType))
+	tableName := fmt.Sprintf(`%q.%q`, rs.Namespace, name)
+	sqlStatement := fmt.Sprintf(`ALTER TABLE %v ADD COLUMN %q %s`, tableName, columnName, getRSDataType(columnType))
 	pkgLogger.Infof("Adding column in redshift for RS:%s : %v", rs.Warehouse.Destination.ID, sqlStatement)
 	_, err = rs.Db.Exec(sqlStatement)
 	return
@@ -177,14 +177,14 @@ func (rs *HandleT) AddColumn(name, columnName, columnType string) (err error) {
 
 // alterStringToText alters column data type string(varchar(512)) to text which is varchar(max) in redshift
 func (rs *HandleT) alterStringToText(tableName, columnName string) (err error) {
-	sqlStatement := fmt.Sprintf(`ALTER TABLE %v ALTER COLUMN "%s" TYPE %s`, tableName, columnName, getRSDataType("text"))
+	sqlStatement := fmt.Sprintf(`ALTER TABLE %v ALTER COLUMN %q TYPE %s`, tableName, columnName, getRSDataType("text"))
 	pkgLogger.Infof("Altering column type in redshift from string to text(varchar(max)) RS:%s : %v", rs.Warehouse.Destination.ID, sqlStatement)
 	_, err = rs.Db.Exec(sqlStatement)
 	return
 }
 
 func (rs *HandleT) createSchema() (err error) {
-	sqlStatement := fmt.Sprintf(`CREATE SCHEMA IF NOT EXISTS "%s"`, rs.Namespace)
+	sqlStatement := fmt.Sprintf(`CREATE SCHEMA IF NOT EXISTS %q`, rs.Namespace)
 	pkgLogger.Infof("Creating schemaname in redshift for RS:%s : %v", rs.Warehouse.Destination.ID, sqlStatement)
 	_, err = rs.Db.Exec(sqlStatement)
 	return
@@ -289,7 +289,7 @@ func (rs *HandleT) loadTable(tableName string, tableSchemaInUpload, tableSchemaA
 		if index > 0 {
 			sortedColumnNames += `, `
 		}
-		sortedColumnNames += fmt.Sprintf(`"%s"`, key)
+		sortedColumnNames += fmt.Sprintf(`%q`, key)
 	}
 
 	stagingTableName = misc.TruncateStr(fmt.Sprintf(`%s%s_%s`, stagingTablePrefix, strings.ReplaceAll(uuid.Must(uuid.NewV4()).String(), "-", ""), tableName), 127)
@@ -322,11 +322,11 @@ func (rs *HandleT) loadTable(tableName string, tableSchemaInUpload, tableSchemaA
 	var sqlStatement string
 	if rs.Uploader.GetLoadFileType() == warehouseutils.LOAD_FILE_TYPE_PARQUET {
 		// copy statement for parquet load files
-		sqlStatement = fmt.Sprintf(`COPY %v FROM '%s' ACCESS_KEY_ID '%s' SECRET_ACCESS_KEY '%s' SESSION_TOKEN '%s' MANIFEST FORMAT PARQUET`, fmt.Sprintf(`"%s"."%s"`, rs.Namespace, stagingTableName), manifestS3Location, tempAccessKeyId, tempSecretAccessKey, token)
+		sqlStatement = fmt.Sprintf(`COPY %v FROM '%s' ACCESS_KEY_ID '%s' SECRET_ACCESS_KEY '%s' SESSION_TOKEN '%s' MANIFEST FORMAT PARQUET`, fmt.Sprintf(`%q.%q`, rs.Namespace, stagingTableName), manifestS3Location, tempAccessKeyId, tempSecretAccessKey, token)
 	} else {
 		// copy statement for csv load files
 		sqlStatement = fmt.Sprintf(`COPY %v(%v) FROM '%v' CSV GZIP ACCESS_KEY_ID '%s' SECRET_ACCESS_KEY '%s' SESSION_TOKEN '%s' REGION '%s'  DATEFORMAT 'auto' TIMEFORMAT 'auto' MANIFEST TRUNCATECOLUMNS EMPTYASNULL BLANKSASNULL FILLRECORD ACCEPTANYDATE TRIMBLANKS ACCEPTINVCHARS COMPUPDATE OFF STATUPDATE OFF`,
-			fmt.Sprintf(`"%s"."%s"`, rs.Namespace, stagingTableName), sortedColumnNames, manifestS3Location, tempAccessKeyId, tempSecretAccessKey, token, region)
+			fmt.Sprintf(`%q.%q`, rs.Namespace, stagingTableName), sortedColumnNames, manifestS3Location, tempAccessKeyId, tempSecretAccessKey, token, region)
 	}
 
 	sanitisedSQLStmt, regexErr := misc.ReplaceMultiRegex(sqlStatement, map[string]string{
@@ -608,7 +608,7 @@ func (rs *HandleT) CreateSchema() (err error) {
 
 func (rs *HandleT) AlterColumn(tableName, columnName, columnType string) (err error) {
 	if setVarCharMax && columnType == "text" {
-		err = rs.alterStringToText(fmt.Sprintf(`"%s"."%s"`, rs.Namespace, tableName), columnName)
+		err = rs.alterStringToText(fmt.Sprintf(`%q.%q`, rs.Namespace, tableName), columnName)
 	}
 	return
 }
@@ -784,7 +784,7 @@ func (rs *HandleT) LoadTestTable(location, tableName string, payloadMap map[stri
 	if format == warehouseutils.LOAD_FILE_TYPE_PARQUET {
 		// copy statement for parquet load files
 		sqlStatement = fmt.Sprintf(`COPY %v FROM '%s' ACCESS_KEY_ID '%s' SECRET_ACCESS_KEY '%s' SESSION_TOKEN '%s' FORMAT PARQUET`,
-			fmt.Sprintf(`"%s"."%s"`, rs.Namespace, tableName),
+			fmt.Sprintf(`%q.%q`, rs.Namespace, tableName),
 			manifestS3Location,
 			tempAccessKeyId,
 			tempSecretAccessKey,
@@ -793,8 +793,8 @@ func (rs *HandleT) LoadTestTable(location, tableName string, payloadMap map[stri
 	} else {
 		// copy statement for csv load files
 		sqlStatement = fmt.Sprintf(`COPY %v(%v) FROM '%v' CSV GZIP ACCESS_KEY_ID '%s' SECRET_ACCESS_KEY '%s' SESSION_TOKEN '%s' REGION '%s'  DATEFORMAT 'auto' TIMEFORMAT 'auto' TRUNCATECOLUMNS EMPTYASNULL BLANKSASNULL FILLRECORD ACCEPTANYDATE TRIMBLANKS ACCEPTINVCHARS COMPUPDATE OFF STATUPDATE OFF`,
-			fmt.Sprintf(`"%s"."%s"`, rs.Namespace, tableName),
-			fmt.Sprintf(`"%s", "%s"`, "id", "val"),
+			fmt.Sprintf(`%q.%q`, rs.Namespace, tableName),
+			fmt.Sprintf(`%q, %q`, "id", "val"),
 			manifestS3Location,
 			tempAccessKeyId,
 			tempSecretAccessKey,

@@ -27,7 +27,7 @@ func Init() {
 }
 
 /*
-	Validation Facade: Global invoking function for validation
+Validation Facade: Global invoking function for validation
 */
 func (ct *CTHandleT) Validating(req *proto.WHValidationRequest) (response *proto.WHValidationResponse, err error) {
 	f, ok := ct.validationFunctions()[req.Path]

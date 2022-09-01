@@ -59,7 +59,7 @@ func (uploader *Uploader) Setup() {
 func New(url string, transformer Transformer) UploaderI {
 	eventBatchChannel := make(chan interface{})
 	eventBuffer := make([]interface{}, 0)
-	client := &http.Client{Timeout: config.GetDuration("HttpClient.timeout", 30, time.Second)}
+	client := &http.Client{Timeout: config.GetDuration("HttpClient.debugger.timeout", 30, time.Second)}
 
 	uploader := &Uploader{url: url, transformer: transformer, eventBatchChannel: eventBatchChannel, eventBuffer: eventBuffer, Client: client, bgWaitGroup: sync.WaitGroup{}}
 	uploader.Setup()

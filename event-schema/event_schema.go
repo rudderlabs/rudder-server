@@ -277,7 +277,8 @@ func (manager *EventSchemaManagerT) updateSchemaVersionCache(schemaVersion *Sche
 }
 
 /*
- *
+	*
+
 | Event Type | event_type | event_model_identfier |
 | ---------- | ---------- | --------------------- |
 | track      | track      | event["event"]        |
@@ -1089,11 +1090,9 @@ func getSchema(flattenedEvent map[string]interface{}) map[string]string {
 		reflectType := reflect.TypeOf(v)
 		if reflectType != nil {
 			schema[k] = reflectType.String()
-		} else {
-			if !(v == nil && !shouldCaptureNilAsUnknowns) {
-				schema[k] = "unknown"
-				pkgLogger.Errorf("[EventSchemas] Got invalid reflectType %+v", v)
-			}
+		} else if !(v == nil && !shouldCaptureNilAsUnknowns) {
+			schema[k] = "unknown"
+			pkgLogger.Errorf("[EventSchemas] Got invalid reflectType %+v", v)
 		}
 	}
 	return schema

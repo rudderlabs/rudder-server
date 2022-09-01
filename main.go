@@ -13,6 +13,8 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/warehouse/datalake"
+
 	"github.com/bugsnag/bugsnag-go/v2"
 	_ "go.uber.org/automaxprocs"
 	"golang.org/x/sync/errgroup"
@@ -161,6 +163,7 @@ func runAllInit() {
 	warehouse.Init5()
 	warehouse.Init6()
 	configuration_testing.Init()
+	datalake.Init()
 	azuresynapse.Init()
 	mssql.Init()
 	postgres.Init()
@@ -249,41 +252,50 @@ func Run(ctx context.Context) int {
 
 	g, ctx := errgroup.WithContext(ctx)
 	g.Go(func() error {
-		return admin.StartServer(ctx)
+		if err := admin.StartServer(ctx); err != nil {
+			return fmt.Errorf("admin server routine: %w", err)
+		}
+		return nil
 	})
 
 	g.Go(func() error {
 		p := &profiler.Profiler{}
-		return p.StartServer(ctx)
+		if err := p.StartServer(ctx); err != nil {
+			return fmt.Errorf("profiler server routine: %w", err)
+		}
+		return nil
 	})
 
 	misc.AppStartTime = time.Now().Unix()
 	if canStartServer() {
 		appHandler.HandleRecovery(options)
-		g.Go(misc.WithBugsnag(func() error {
-			return appHandler.StartRudderCore(ctx, options)
+		g.Go(misc.WithBugsnag(func() (err error) {
+			if err := appHandler.StartRudderCore(ctx, options); err != nil {
+				return fmt.Errorf("rudder core: %w", err)
+			}
+			return nil
 		}))
 	}
 
 	// initialize warehouse service after core to handle non-normal recovery modes
 	if appTypeStr != app.GATEWAY && canStartWarehouse() {
 		g.Go(misc.WithBugsnagForWarehouse(func() error {
-			return startWarehouseService(ctx, application)
+			if err := startWarehouseService(ctx, application); err != nil {
+				return fmt.Errorf("warehouse service routine: %w", err)
+			}
+			return nil
 		}))
 	}
-
-	g.Go(func() error {
-		<-ctx.Done()
-		backendconfig.DefaultBackendConfig.Stop()
-		return nil
-	})
 
 	shutdownDone := make(chan struct{})
 	go func() {
 		err := g.Wait()
-		if err != nil && err != context.Canceled {
-			pkgLogger.Error(err)
+		if err != nil {
+			pkgLogger.Errorf("Terminal error: %v", err)
 		}
+
+		pkgLogger.Info("Attempting to shutdown gracefully")
+		backendconfig.DefaultBackendConfig.Stop()
 		close(shutdownDone)
 	}()
 

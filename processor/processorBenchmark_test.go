@@ -12,7 +12,7 @@ import (
 func Benchmark_makeCommonMetadataFromSingularEvent(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		_ = makeCommonMetadataFromSingularEvent(
-			dummySingularEvent, &dummyBatchEvent, time.Now(), backendconfig.SourceT{
+			dummySingularEvent, &dummyBatchEvent, time.Now(), &backendconfig.SourceT{
 				WorkspaceID: "test",
 				SourceDefinition: backendconfig.SourceDefinitionT{
 					Name:     "test_def",

@@ -145,7 +145,12 @@ func (bc *backendConfigImpl) configUpdate(ctx context.Context, statConfigBackend
 
 	bc.curSourceJSONLock.Lock()
 	if !reflect.DeepEqual(bc.curSourceJSON, sourceJSON) {
-		pkgLogger.Infof("Workspace Config changed: %s", workspaces)
+		if len(workspaces) > 0 {
+			pkgLogger.Infof("Workspace Config changed: %d", len(workspaces))
+		} else {
+			pkgLogger.Infof("Workspace Config changed")
+		}
+
 		trackConfig(bc.curSourceJSON, sourceJSON)
 		filteredSourcesJSON := filterProcessorEnabledDestinations(sourceJSON)
 		bc.curSourceJSON = sourceJSON

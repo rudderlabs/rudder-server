@@ -6,7 +6,6 @@ import (
 	"context"
 	"database/sql"
 	"io"
-	"io/ioutil"
 	"os"
 	"strings"
 	"testing"
@@ -111,7 +110,7 @@ func TestBackupTable(t *testing.T) {
 	// wait for the backup to finish
 	var file []*filemanager.FileObject
 	require.Eventually(t, func() bool {
-		file, err = fm.ListFilesWithPrefix(context.Background(), prefix, 5)
+		file, err = fm.ListFilesWithPrefix(context.Background(), "", prefix, 5)
 
 		if len(file) != 3 {
 			t.Log("file list: ", file, " err: ", err)
@@ -178,7 +177,7 @@ func (*backupTestCase) insertRTData(t *testing.T, jobs []*JobT, statusList []*Jo
 			return err
 		}
 
-		return jobsDB.copyJobStatusDS(context.Background(), tx, rtDS, statusList, []string{}, nil)
+		return jobsDB.copyJobStatusDS(context.Background(), tx, rtDS, statusList, []string{})
 	})
 	require.NoError(t, err)
 
@@ -190,7 +189,7 @@ func (*backupTestCase) insertRTData(t *testing.T, jobs []*JobT, statusList []*Jo
 		if err := jobsDB.copyJobsDS(tx, rtDS2, jobs); err != nil {
 			return err
 		}
-		return jobsDB.copyJobStatusDS(context.Background(), tx, rtDS2, statusList, []string{}, nil)
+		return jobsDB.copyJobStatusDS(context.Background(), tx, rtDS2, statusList, []string{})
 	})
 	require.NoError(t, err)
 	cleanup.Cleanup(func() {
@@ -220,7 +219,7 @@ func (*backupTestCase) insertBatchRTData(t *testing.T, jobs []*JobT, statusList 
 			t.Log("error while copying jobs to ds: ", err)
 			return err
 		}
-		return jobsDB.copyJobStatusDS(context.Background(), tx, ds, statusList, []string{}, nil)
+		return jobsDB.copyJobStatusDS(context.Background(), tx, ds, statusList, []string{})
 	})
 	require.NoError(t, err)
 
@@ -234,7 +233,7 @@ func (*backupTestCase) insertBatchRTData(t *testing.T, jobs []*JobT, statusList 
 			return err
 		}
 
-		return jobsDB.copyJobStatusDS(context.Background(), tx, ds2, statusList, []string{}, nil)
+		return jobsDB.copyJobStatusDS(context.Background(), tx, ds2, statusList, []string{})
 	})
 	require.NoError(t, err)
 	cleanup.Cleanup(func() {
@@ -288,7 +287,7 @@ func (*backupTestCase) getJobsFromAbortedJobs(t *testing.T, file *os.File) ([]*J
 }
 
 func (*backupTestCase) downloadFile(t *testing.T, fm filemanager.FileManager, fileToDownload string, cleanup *testhelper.Cleanup) *os.File {
-	file, err := ioutil.TempFile("", "backedupfile")
+	file, err := os.CreateTemp("", "backedupfile")
 	require.NoError(t, err, "expected no error while creating temporary file")
 
 	err = fm.Download(context.Background(), file, fileToDownload)

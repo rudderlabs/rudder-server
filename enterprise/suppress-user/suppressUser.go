@@ -172,7 +172,7 @@ func (suppressUser *SuppressRegulationHandler) getSourceRegulationsFromRegulatio
 
 	operation := func() error {
 		var err error
-		req, err := http.NewRequest("GET", urlStr, nil)
+		req, err := http.NewRequest("GET", urlStr, http.NoBody)
 		pkgLogger.Debugf("regulation service URL: %s", urlStr)
 		if err != nil {
 			return err
@@ -242,7 +242,7 @@ func (suppressUser *SuppressRegulationHandler) init() {
 			suppressUser.userSpecificSuppressedSourceMap = map[string]sourceFilter{}
 		}
 		if suppressUser.Client == nil {
-			suppressUser.Client = &http.Client{Timeout: config.GetDuration("HttpClient.timeout", 30, time.Second)}
+			suppressUser.Client = &http.Client{Timeout: config.GetDuration("HttpClient.suppressUser.timeout", 30, time.Second)}
 		}
 	})
 }

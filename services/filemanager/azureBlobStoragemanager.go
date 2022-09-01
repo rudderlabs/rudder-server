@@ -12,14 +12,7 @@ import (
 	"time"
 
 	"github.com/Azure/azure-storage-blob-go/azblob"
-	"github.com/rudderlabs/rudder-server/utils/logger"
 )
-
-var pkgLogger logger.LoggerI
-
-func init() {
-	pkgLogger = logger.NewLogger().Child("filemanager").Child("azureBlobStorage")
-}
 
 func supressMinorErrors(err error) error {
 	if err != nil {
@@ -64,7 +57,7 @@ func (manager *AzureBlobStorageManager) getContainerURL() (azblob.ContainerURL, 
 	}
 
 	accountName, accountKey := manager.Config.AccountName, manager.Config.AccountKey
-	if len(accountName) == 0 || len(accountKey) == 0 {
+	if accountName == "" || accountKey == "" {
 		return azblob.ContainerURL{}, errors.New("either the AccountName or AccountKey is not correct")
 	}
 
@@ -115,7 +108,7 @@ func (manager *AzureBlobStorageManager) Upload(ctx context.Context, file *os.Fil
 	return UploadOutput{Location: blobURL.String(), ObjectName: fileName}, nil
 }
 
-func (manager *AzureBlobStorageManager) ListFilesWithPrefix(ctx context.Context, prefix string, maxItems int64) (fileObjects []*FileObject, err error) {
+func (manager *AzureBlobStorageManager) ListFilesWithPrefix(ctx context.Context, startAfter, prefix string, maxItems int64) (fileObjects []*FileObject, err error) {
 	containerURL, err := manager.getContainerURL()
 	if err != nil {
 		return []*FileObject{}, err
@@ -180,6 +173,7 @@ func (manager *AzureBlobStorageManager) Download(ctx context.Context, output *os
 
 /*
 GetObjectNameFromLocation gets the object name/key name from the object location url
+
 	https://account-name.blob.core.windows.net/container-name/key - >> key
 */
 func (manager *AzureBlobStorageManager) GetObjectNameFromLocation(location string) (string, error) {

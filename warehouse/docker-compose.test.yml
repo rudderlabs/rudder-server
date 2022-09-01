@@ -24,7 +24,7 @@ services:
       interval: 1s
       retries: 25
   wh-databricks-connector:
-    image: rudderstack/rudder-databricks-connector:v1.2.0
+    image: rudderstack/rudder-databricks-connector:v1.3.0
     container_name: wh-databricks-connector
     ports:
       - "50051"

@@ -151,21 +151,17 @@ func generateJsonSchFromEM(eventModels []*EventModelT) ([]byte, error) {
 func getETSchProp(eventType string, eventModelSch map[string]interface{}) (map[string]interface{}, error) {
 	switch eventType {
 	case "track", "screen", "page":
-		{
-			filtered, ok := eventModelSch["properties"].(map[string]interface{})
-			if ok {
-				return filtered, nil
-			}
-			return nil, fmt.Errorf("invalid properties")
+		filtered, ok := eventModelSch["properties"].(map[string]interface{})
+		if ok {
+			return filtered, nil
 		}
+		return nil, fmt.Errorf("invalid properties")
 	case "identify", "group":
-		{
-			filtered, ok := eventModelSch["traits"].(map[string]interface{})
-			if ok {
-				return filtered, nil
-			}
-			return nil, fmt.Errorf("invalid traits")
+		filtered, ok := eventModelSch["traits"].(map[string]interface{})
+		if ok {
+			return filtered, nil
 		}
+		return nil, fmt.Errorf("invalid traits")
 	}
 	return nil, fmt.Errorf("invalid eventType")
 }
@@ -382,7 +378,7 @@ func (manager *EventSchemaManagerT) GetEventModelMetadata(w http.ResponseWriter,
 	vars := mux.Vars(r)
 	eventID, ok := vars["EventID"]
 	if !ok {
-		http.Error(w, response.MakeResponse("Mandatory field: VersionID missing"), 400)
+		http.Error(w, response.MakeResponse("Mandatory field: EventID missing"), 400)
 		return
 	}
 

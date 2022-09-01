@@ -23,8 +23,7 @@ type ClusterStateT struct {
 
 // New Gives a new pathfinder
 func New(nextClusterBackendCount, nextClusterVersion, migratorPort int, dnsPattern, instanceIDPattern string) ClusterStateT {
-	var cs ClusterStateT
-	cs = ClusterStateT{}
+	cs := ClusterStateT{}
 
 	// nodeList should reflect the nodes of the new cluster. If moving to inplace migrations, this should be appropriately changed
 	nodeList := buildNodeList(nextClusterBackendCount, nextClusterVersion, dnsPattern, instanceIDPattern, migratorPort)

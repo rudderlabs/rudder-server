@@ -17,11 +17,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/rudderlabs/rudder-server/warehouse/deltalake"
-
-	"github.com/rudderlabs/rudder-server/warehouse/configuration_testing"
-
 	"github.com/bugsnag/bugsnag-go/v2"
+	"github.com/cenkalti/backoff/v4"
 	"github.com/lib/pq"
 	"github.com/thoas/go-funk"
 	"github.com/tidwall/gjson"
@@ -38,11 +35,14 @@ import (
 	migrator "github.com/rudderlabs/rudder-server/services/sql-migrator"
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/services/validators"
+	"github.com/rudderlabs/rudder-server/utils/httputil"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/pubsub"
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
 	"github.com/rudderlabs/rudder-server/utils/types"
+	"github.com/rudderlabs/rudder-server/warehouse/configuration_testing"
+	"github.com/rudderlabs/rudder-server/warehouse/deltalake"
 	"github.com/rudderlabs/rudder-server/warehouse/manager"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
@@ -284,7 +284,7 @@ func (wh *HandleT) backendConfigSubscriber() {
 				wh.workerChannelMapLock.Lock()
 				// spawn one worker for each unique destID_namespace
 				// check this commit to https://github.com/rudderlabs/rudder-server/pull/476/commits/fbfddf167aa9fc63485fe006d34e6881f5019667
-				// to avoid creating goroutine for disabled sources/destiantions
+				// to avoid creating goroutine for disabled sources/destinations
 				if _, ok := wh.workerChannelMap[workerName]; !ok {
 					workerChan := wh.initWorker()
 					wh.workerChannelMap[workerName] = workerChan
@@ -321,9 +321,9 @@ func (wh *HandleT) backendConfigSubscriber() {
 }
 
 // getNamespace sets namespace name in the following order
-// 	1. user set name from destinationConfig
-// 	2. from existing record in wh_schemas with same source + dest combo
-// 	3. convert source name
+//  1. user set name from destinationConfig
+//  2. from existing record in wh_schemas with same source + dest combo
+//  3. convert source name
 func (wh *HandleT) getNamespace(configI interface{}, source backendconfig.SourceT, destination backendconfig.DestinationT, destType string) string {
 	configMap := configI.(map[string]interface{})
 	var namespace string
@@ -622,13 +622,17 @@ func (wh *HandleT) createJobs(warehouse warehouseutils.WarehouseT) (err error) {
 	}
 
 	wh.areBeingEnqueuedLock.Lock()
-	uploadID, uploadStatus, priority := wh.getLatestUploadStatus(&warehouse)
+
+	priority := 0
+	uploadID, uploadStatus, uploadPriority := wh.getLatestUploadStatus(&warehouse)
 	if uploadStatus == Waiting {
 		// If it is present do nothing else delete it
 		if _, inProgess := wh.isUploadJobInProgress(warehouse, uploadID); !inProgess {
 			wh.deleteWaitingUploadJob(uploadID)
+			priority = uploadPriority // copy the priority from the latest upload job.
 		}
 	}
+
 	wh.areBeingEnqueuedLock.Unlock()
 
 	stagingFilesFetchStat := stats.DefaultStats.NewTaggedStat("wh_scheduler.pending_staging_files", stats.TimerType, stats.Tags{
@@ -783,7 +787,7 @@ func (wh *HandleT) getUploadsToProcess(availableWorkers int, skipIdentifiers []s
 
 	sqlStatement := fmt.Sprintf(`
 			SELECT
-					id, status, schema, mergedSchema, namespace, source_id, destination_id, destination_type, start_staging_file_id, end_staging_file_id, start_load_file_id, end_load_file_id, error, metadata, timings->0 as firstTiming, timings->-1 as lastTiming, timings, COALESCE(metadata->>'priority', '100')::int
+					id, status, schema, mergedSchema, namespace, source_id, destination_id, destination_type, start_staging_file_id, end_staging_file_id, start_load_file_id, end_load_file_id, error, metadata, timings->0 as firstTiming, timings->-1 as lastTiming, timings, COALESCE(metadata->>'priority', '100')::int, first_event_at, last_event_at
 				FROM (
 					SELECT
 						ROW_NUMBER() OVER (PARTITION BY %s ORDER BY COALESCE(metadata->>'priority', '100')::int ASC, id ASC) AS row_number,
@@ -792,9 +796,9 @@ func (wh *HandleT) getUploadsToProcess(availableWorkers int, skipIdentifiers []s
 						%s t
 					WHERE
 						t.destination_type = '%s' and t.in_progress=%t and t.status != '%s' and t.status != '%s' %s and COALESCE(metadata->>'nextRetryTime', now()::text)::timestamptz <= now()
-				) grouped_uplaods
+				) grouped_uploads
 				WHERE
-					grouped_uplaods.row_number = 1
+					grouped_uploads.row_number = 1
 				ORDER BY
 					COALESCE(metadata->>'priority', '100')::int ASC, id ASC
 				LIMIT %d;
@@ -825,10 +829,13 @@ func (wh *HandleT) getUploadsToProcess(availableWorkers int, skipIdentifiers []s
 		var mergedSchema json.RawMessage
 		var firstTiming sql.NullString
 		var lastTiming sql.NullString
-		err := rows.Scan(&upload.ID, &upload.Status, &schema, &mergedSchema, &upload.Namespace, &upload.SourceID, &upload.DestinationID, &upload.DestinationType, &upload.StartStagingFileID, &upload.EndStagingFileID, &upload.StartLoadFileID, &upload.EndLoadFileID, &upload.Error, &upload.Metadata, &firstTiming, &lastTiming, &upload.TimingsObj, &upload.Priority)
+		var firstEventAt, lastEventAt sql.NullTime
+		err := rows.Scan(&upload.ID, &upload.Status, &schema, &mergedSchema, &upload.Namespace, &upload.SourceID, &upload.DestinationID, &upload.DestinationType, &upload.StartStagingFileID, &upload.EndStagingFileID, &upload.StartLoadFileID, &upload.EndLoadFileID, &upload.Error, &upload.Metadata, &firstTiming, &lastTiming, &upload.TimingsObj, &upload.Priority, &firstEventAt, &lastEventAt)
 		if err != nil {
 			panic(fmt.Errorf("Failed to scan result from query: %s\nwith Error : %w", sqlStatement, err))
 		}
+		upload.FirstEventAt = firstEventAt.Time
+		upload.LastEventAt = lastEventAt.Time
 		upload.UploadSchema = warehouseutils.JSONSchemaToMap(schema)
 		upload.MergedSchema = warehouseutils.JSONSchemaToMap(mergedSchema)
 		// cloud sources info
@@ -1238,17 +1245,25 @@ func onConfigDataEvent(config pubsub.DataEvent, dstToWhRouter map[string]*Handle
 	}
 }
 
-func setupTables(dbHandle *sql.DB) {
+func setupTables(dbHandle *sql.DB) error {
 	m := &migrator.Migrator{
 		Handle:                     dbHandle,
 		MigrationsTable:            "wh_schema_migrations",
 		ShouldForceSetLowerVersion: ShouldForceSetLowerVersion,
 	}
 
-	err := m.Migrate("warehouse")
-	if err != nil {
-		panic(fmt.Errorf("Could not run warehouse database migrations: %w", err))
+	operation := func() error {
+		return m.Migrate("warehouse")
 	}
+
+	backoffWithMaxRetry := backoff.WithMaxRetries(backoff.NewExponentialBackOff(), 3)
+	err := backoff.RetryNotify(operation, backoffWithMaxRetry, func(err error, t time.Duration) {
+		pkgLogger.Warnf("Failed to setup WH db tables: %v, retrying after %v", err, t)
+	})
+	if err != nil {
+		return fmt.Errorf("could not run warehouse database migrations: %w", err)
+	}
+	return nil
 }
 
 func CheckPGHealth(dbHandle *sql.DB) bool {
@@ -1677,21 +1692,12 @@ func startWebHandler(ctx context.Context) error {
 		}
 	}
 
-	srv := http.Server{
+	srv := &http.Server{
 		Addr:    fmt.Sprintf(":%d", webPort),
 		Handler: bugsnag.Handler(mux),
 	}
 
-	g, ctx := errgroup.WithContext(ctx)
-	g.Go(func() error {
-		return srv.ListenAndServe()
-	})
-	g.Go(func() error {
-		<-ctx.Done()
-		return srv.Shutdown(context.Background())
-	})
-
-	return g.Wait()
+	return httputil.ListenAndServe(ctx, srv)
 }
 
 // CheckForWarehouseEnvVars Checks if all the required Env Variables for Warehouse are present
@@ -1722,33 +1728,38 @@ func isStandAloneSlave() bool {
 	return warehouseMode == config.SlaveMode
 }
 
-func setupDB(connInfo string) {
+func setupDB(ctx context.Context, connInfo string) error {
 	if isStandAloneSlave() {
-		return
+		return nil
 	}
 
 	var err error
 	dbHandle, err = sql.Open("postgres", connInfo)
 	if err != nil {
-		panic(err)
+		return err
 	}
 
-	isDBCompatible, err := validators.IsPostgresCompatible(dbHandle)
+	isDBCompatible, err := validators.IsPostgresCompatible(ctx, dbHandle)
 	if err != nil {
-		panic(err)
+		return err
 	}
 
 	if !isDBCompatible {
 		err := errors.New("Rudder Warehouse Service needs postgres version >= 10. Exiting")
 		pkgLogger.Error(err)
-		panic(err)
+		return err
 	}
-	setupTables(dbHandle)
+
+	if err = dbHandle.PingContext(ctx); err != nil {
+		return fmt.Errorf("could not ping WH db: %w", err)
+	}
+
+	return setupTables(dbHandle)
 }
 
 func Start(ctx context.Context, app app.Interface) error {
 	application = app
-	time.Sleep(1 * time.Second)
+
 	// do not start warehouse service if rudder core is not in normal mode and warehouse is running in same process as rudder core
 	if !isStandAlone() && !db.IsNormalMode() {
 		pkgLogger.Infof("Skipping start of warehouse service...")
@@ -1758,7 +1769,9 @@ func Start(ctx context.Context, app app.Interface) error {
 	pkgLogger.Infof("WH: Starting Warehouse service...")
 	psqlInfo := getConnectionString()
 
-	setupDB(psqlInfo)
+	if err := setupDB(ctx, psqlInfo); err != nil {
+		return fmt.Errorf("cannot setup warehouse db: %w", err)
+	}
 	defer func() {
 		if r := recover(); r != nil {
 			pkgLogger.Fatal(r)

@@ -52,14 +52,15 @@ type StoreErrorOutputT struct {
 }
 
 type HandleT struct {
-	errorDB              jobsdb.JobsDB
-	errProcessQ          chan []*jobsdb.JobT
-	errFileUploader      filemanager.FileManager
-	statErrDBR           stats.RudderStats
-	logger               logger.LoggerI
-	transientSource      transientsource.Service
-	jobsDBCommandTimeout time.Duration
-	jobdDBMaxRetries     int
+	errorDB                   jobsdb.JobsDB
+	errProcessQ               chan []*jobsdb.JobT
+	errFileUploader           filemanager.FileManager
+	statErrDBR                stats.RudderStats
+	logger                    logger.LoggerI
+	transientSource           transientsource.Service
+	jobsDBCommandTimeout      time.Duration
+	jobdDBQueryRequestTimeout time.Duration
+	jobdDBMaxRetries          int
 }
 
 func New() *HandleT {
@@ -71,8 +72,9 @@ func (st *HandleT) Setup(errorDB jobsdb.JobsDB, transientSource transientsource.
 	st.errorDB = errorDB
 	st.statErrDBR = stats.DefaultStats.NewStat("processor.err_db_read_time", stats.TimerType)
 	st.transientSource = transientSource
-	config.RegisterDurationConfigVariable(90, &st.jobsDBCommandTimeout, true, time.Second, []string{"JobsDB.Processor.CommandRequestTimeout", "JobsDB.CommandRequestTimeout"}...)
 	config.RegisterIntConfigVariable(3, &st.jobdDBMaxRetries, true, 1, []string{"JobsDB.Processor.MaxRetries", "JobsDB.MaxRetries"}...)
+	config.RegisterDurationConfigVariable(60, &st.jobdDBQueryRequestTimeout, true, time.Second, []string{"JobsDB.Processor.QueryRequestTimeout", "JobsDB.QueryRequestTimeout"}...)
+	config.RegisterDurationConfigVariable(90, &st.jobsDBCommandTimeout, true, time.Second, []string{"JobsDB.Processor.CommandRequestTimeout", "JobsDB.CommandRequestTimeout"}...)
 	st.crashRecover()
 }
 
@@ -81,7 +83,7 @@ func (st *HandleT) crashRecover() {
 }
 
 func (st *HandleT) Start(ctx context.Context) {
-	st.setupFileUploader()
+	st.setupFileUploader(ctx)
 	st.errProcessQ = make(chan []*jobsdb.JobT)
 
 	g, ctx := errgroup.WithContext(ctx)
@@ -98,9 +100,9 @@ func (st *HandleT) Start(ctx context.Context) {
 	_ = g.Wait()
 }
 
-func (st *HandleT) getFileUploader() filemanager.FileManager {
+func (st *HandleT) getFileUploader(ctx context.Context) filemanager.FileManager {
 	if st.errFileUploader == nil && backupEnabled() {
-		st.setupFileUploader()
+		st.setupFileUploader(ctx)
 	}
 	return st.errFileUploader
 }
@@ -109,7 +111,7 @@ func backupEnabled() bool {
 	return errorStashEnabled && jobsdb.IsMasterBackupEnabled()
 }
 
-func (st *HandleT) setupFileUploader() {
+func (st *HandleT) setupFileUploader(ctx context.Context) {
 	if backupEnabled() {
 		provider := config.GetEnv("JOBS_BACKUP_STORAGE_PROVIDER", "")
 		bucket := config.GetEnv("JOBS_BACKUP_BUCKET", "")
@@ -117,7 +119,7 @@ func (st *HandleT) setupFileUploader() {
 			var err error
 			st.errFileUploader, err = filemanager.DefaultFileManagerFactory.New(&filemanager.SettingsT{
 				Provider: provider,
-				Config:   filemanager.GetProviderConfigFromEnv(),
+				Config:   filemanager.GetProviderConfigForBackupsFromEnv(ctx),
 			})
 			if err != nil {
 				panic(err)
@@ -255,14 +257,27 @@ func (st *HandleT) readErrJobsLoop(ctx context.Context) {
 				JobsLimit:                     errDBReadBatchSize,
 				PayloadSizeLimit:              payloadLimit,
 			}
-			toRetry := st.errorDB.GetToRetry(queryParams)
+			toRetry, err := jobsdb.QueryJobsResultWithRetries(ctx, st.jobdDBQueryRequestTimeout, st.jobdDBMaxRetries, func(ctx context.Context) (jobsdb.JobsResult, error) {
+				return st.errorDB.GetToRetry(ctx, queryParams)
+			})
+			if err != nil {
+				st.logger.Errorf("Error occurred while reading proc error jobs. Err: %v", err)
+				panic(err)
+			}
+
 			combinedList := toRetry.Jobs
 			if !toRetry.LimitsReached {
 				queryParams.JobsLimit -= len(toRetry.Jobs)
 				if queryParams.PayloadSizeLimit > 0 {
 					queryParams.PayloadSizeLimit -= toRetry.PayloadSize
 				}
-				unprocessed := st.errorDB.GetUnprocessed(queryParams)
+				unprocessed, err := jobsdb.QueryJobsResultWithRetries(ctx, st.jobdDBQueryRequestTimeout, st.jobdDBMaxRetries, func(ctx context.Context) (jobsdb.JobsResult, error) {
+					return st.errorDB.GetUnprocessed(ctx, queryParams)
+				})
+				if err != nil {
+					st.logger.Errorf("Error occurred while reading proc error jobs. Err: %v", err)
+					panic(err)
+				}
 				combinedList = append(combinedList, unprocessed.Jobs...)
 			}
 
@@ -273,7 +288,7 @@ func (st *HandleT) readErrJobsLoop(ctx context.Context) {
 				continue
 			}
 
-			canUpload := backupEnabled() && st.getFileUploader() != nil
+			canUpload := backupEnabled() && st.getFileUploader(ctx) != nil
 
 			jobState := jobsdb.Executing.State
 
@@ -311,7 +326,7 @@ func (st *HandleT) readErrJobsLoop(ctx context.Context) {
 				}
 				statusList = append(statusList, &status)
 			}
-			err := misc.RetryWith(context.Background(), st.jobsDBCommandTimeout, st.jobdDBMaxRetries, func(ctx context.Context) error {
+			err = misc.RetryWith(context.Background(), st.jobsDBCommandTimeout, st.jobdDBMaxRetries, func(ctx context.Context) error {
 				return st.errorDB.UpdateJobStatus(ctx, statusList, nil, nil)
 			})
 			if err != nil {
