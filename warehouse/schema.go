@@ -425,44 +425,44 @@ func GetExcludedSchema(uploadSchema, schemaInWarehouse warehouseutils.SchemaT, m
 	for tableName, columnMap := range uploadSchema {
 		// To avoid computational cost, comparing each schema to half of maxColumnCount. Most cases fall under this category.
 		// If upload schema columns + schema in warehouse columns < max columns , it is definitely a case of no exceeded columns.
-		if len(columnMap)+len(schemaInWarehouse[tableName]) < maxColumnCount {
+		if len(columnMap)+len(schemaInWarehouse[tableName]) <= maxColumnCount {
 			continue
 		}
 
 		// Get distinct columns from schema in warehouse
-		newTableColumns := []string{}
+		additionalColumns := []string{}
 		var currTableColumnCount int
 
 		_, tableExists := schemaInWarehouse[tableName]
 		if tableExists {
 			for k := range columnMap {
 				if _, ok := schemaInWarehouse[tableName][k]; !ok {
-					newTableColumns = append(newTableColumns, k)
+					additionalColumns = append(additionalColumns, k)
 				}
 			}
 			currTableColumnCount = len(schemaInWarehouse[tableName])
 		} else {
-			reservedColumnscount := 0
+			reservedColumnCount := 0
 			for k := range columnMap {
 				if misc.ContainsString(warehouseutils.RudderReservedColumns, k) {
-					reservedColumnscount++
+					reservedColumnCount++
 				} else {
-					newTableColumns = append(newTableColumns, k)
+					additionalColumns = append(additionalColumns, k)
 				}
 			}
 			// considering mandatory rudder reserved columns to be already in warehouse for this calculation
-			currTableColumnCount = reservedColumnscount
+			currTableColumnCount = reservedColumnCount
 		}
 
 		// return if columns does not exceed max limit
-		if len(newTableColumns)+currTableColumnCount <= maxColumnCount {
+		if len(additionalColumns)+currTableColumnCount <= maxColumnCount {
 			continue
 		}
 
-		sort.Strings(newTableColumns)
+		sort.Strings(additionalColumns)
 		includedColumnCount := maxColumnCount - currTableColumnCount
 		// Add exceeded columns in excluded schema
-		for _, col := range newTableColumns[includedColumnCount:] {
+		for _, col := range additionalColumns[includedColumnCount:] {
 			// init map if not exists
 			if _, ok := excludedSchema[tableName]; !ok {
 				excludedSchema[tableName] = map[string]string{}
