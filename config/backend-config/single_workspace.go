@@ -98,12 +98,14 @@ func (wc *singleWorkspaceConfig) getFromAPI(ctx context.Context, _ string) (Conf
 		return fetchError
 	}
 
-	backoffWithMaxRetry := backoff.WithMaxRetries(backoff.NewExponentialBackOff(), 3)
+	backoffWithMaxRetry := backoff.WithContext(backoff.WithMaxRetries(backoff.NewExponentialBackOff(), 3), ctx)
 	err := backoff.RetryNotify(operation, backoffWithMaxRetry, func(err error, t time.Duration) {
 		pkgLogger.Warnf("Failed to fetch config from API with error: %v, retrying after %v", err, t)
 	})
 	if err != nil {
-		pkgLogger.Errorf("Error sending request to the server: %v", err)
+		if ctx.Err() == nil {
+			pkgLogger.Errorf("Error sending request to the server: %v", err)
+		}
 		return ConfigT{}, err
 	}
 

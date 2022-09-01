@@ -1229,12 +1229,13 @@ monotonically when added  to end. So, with just add to end, numbers would be
 like 1,2,3,4, and so on. These are called level0 datasets. And the Index is
 called level0 Index
 During internal migration, we add datasets in between. In the example above, if we migrate
-1 & 2, we would need to create a new DS between 2 & 3. This is assigned the
-the number 2_1. This is called a level1 dataset and the Index (2_1) is called level1
+1 & 2, we would need to create a new DS between 2 & 3. This is assigned the number 2_1.
+This is called a level1 dataset and the Index (2_1) is called level1
 Index. We may migrate 2_1 into 2_2 and so on so there may be multiple level 1 datasets.
 
 Immediately after creating a level_1 dataset (2_1 above), everything prior to it is
-deleted. Hence there should NEVER be any requirement for having more than two levels.
+deleted.
+Hence, there should NEVER be any requirement for having more than two levels.
 
 There is an exception to this. In case of cross node migration during a scale up/down,
 we continue to accept new events in level0 datasets. To maintain the ordering guarantee,
@@ -2421,6 +2422,8 @@ func (jd *HandleT) markClearEmptyResult(ds dataSetT, workspace string, stateFilt
 		if !ok {
 			jd.dsEmptyResultCache[ds][workspace][cVal][pVal] = map[string]cacheEntry{}
 		}
+
+		// Always populating a customVal entry in parameterFilter key
 		_, ok = jd.dsEmptyResultCache[ds][workspace][cVal][fmt.Sprintf(`%s_%s`, cVal, cVal)]
 		if !ok {
 			jd.dsEmptyResultCache[ds][workspace][cVal][fmt.Sprintf(`%s_%s`, cVal, cVal)] = map[string]cacheEntry{}
@@ -2474,6 +2477,8 @@ func (jd *HandleT) isEmptyResult(ds dataSetT, workspace string, stateFilters, cu
 		}
 
 		var pVal string
+		// We want to check dynamically in the cache map either for parameterFilters or customVal
+		// If parameterFilters is empty, we check for customVal
 		if len(parameterFilters) > 0 {
 			var pVals []string
 			for _, parameterFilter := range parameterFilters {

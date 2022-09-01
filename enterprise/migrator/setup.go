@@ -17,6 +17,7 @@ import (
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/router"
 	"github.com/rudderlabs/rudder-server/services/db"
+	"github.com/rudderlabs/rudder-server/utils/httputil"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 )
 
@@ -173,16 +174,7 @@ func (m *Migrator) StartWebHandler(ctx context.Context, gatewayMigrator, routerM
 		Handler: bugsnag.Handler(srvMux),
 	}
 
-	g, ctx := errgroup.WithContext(ctx)
-	g.Go(func() error {
-		<-ctx.Done()
-		return srv.Shutdown(context.Background())
-	})
-	g.Go(func() error {
-		return srv.ListenAndServe()
-	})
-
-	err := g.Wait()
+	err := httputil.ListenAndServe(ctx, srv)
 	if err != nil {
 		pkgLogger.Fatal(err)
 	}

@@ -50,6 +50,7 @@ import (
 
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/services/db"
+	"github.com/rudderlabs/rudder-server/utils/httputil"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
@@ -273,10 +274,6 @@ func StartServer(ctx context.Context) error {
 	srvMux.Handle(rpc.DefaultRPCPath, instance.rpcServer)
 
 	srv := &http.Server{Handler: srvMux, ReadHeaderTimeout: 3 * time.Second}
-	go func() {
-		<-ctx.Done()
-		_ = srv.Shutdown(context.Background()) // @TODO no wait nor timeout on shutdown
-	}()
 
-	return srv.Serve(l)
+	return httputil.Serve(ctx, srv, l, time.Second)
 }
