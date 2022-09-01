@@ -1251,7 +1251,6 @@ func (rt *HandleT) findWorker(job *jobsdb.JobT, throttledAtTime time.Time) (toSe
 	// checking if this job can be throttled
 	var parameters JobParametersT
 	userID := job.UserID
-
 	// checking if the user is in throttledMap. If yes, returning nil.
 	// this check is done to maintain order.
 	if _, ok := rt.throttledUserMap[userID]; ok {
@@ -1878,7 +1877,7 @@ func (rt *HandleT) readAndProcess() int {
 
 	if len(combinedList) > 0 {
 		rt.logger.Debugf("[%v Router] :: router is enabled", rt.destName)
-		rt.logger.Debugf("[%v Router] ===== len to be processed==== : %v", rt.destName, len(combinedList))
+		rt.logger.Debugf("[%v Router] ===== len to be processed==== %v: %v", rt.destName, rt.destinationId, len(combinedList))
 	}
 
 	// List of jobs which can be processed mapped per channel

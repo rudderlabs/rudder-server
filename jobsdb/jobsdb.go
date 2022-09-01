@@ -2432,10 +2432,12 @@ func (jd *HandleT) markClearEmptyResult(ds dataSetT, workspace string, stateFilt
 		for _, st := range stateFilters {
 			previous := jd.dsEmptyResultCache[ds][workspace][cVal][pVal][st]
 			if checkAndSet == nil || *checkAndSet == previous.Value {
-				jd.dsEmptyResultCache[ds][workspace][cVal][pVal][st] = cacheEntry{
+				cache := cacheEntry{
 					Value: value,
 					T:     time.Now(),
 				}
+				jd.dsEmptyResultCache[ds][workspace][cVal][pVal][st] = cache
+				jd.dsEmptyResultCache[ds][workspace][cVal][fmt.Sprintf(`%s_%s`, cVal, cVal)][st] = cache
 			}
 		}
 	}
@@ -2625,7 +2627,7 @@ func (jd *HandleT) getProcessedJobsDS(ctx context.Context, ds dataSetT, getAll b
 			// If there is a single job in the dataset containing more events than the EventsLimit, we should return it,
 			// otherwise processing will halt.
 			// Therefore, we always retrieve one more job from the database than our limit dictates.
-			// This job will only be returned in the result in case of the aforementioned scenario, otherwise it gets filtered out
+			// This job will only be returned to the result in case of the aforementioned scenario, otherwise it gets filtered out
 			// later, during row scanning
 			wrapQuery = append(wrapQuery, fmt.Sprintf(`running_event_counts - t.event_count <= $%d`, len(args)+1))
 			args = append(args, params.EventsLimit)
@@ -2645,7 +2647,7 @@ func (jd *HandleT) getProcessedJobsDS(ctx context.Context, ds dataSetT, getAll b
 			return JobsResult{}, err
 		}
 		defer func() { _ = stmt.Close() }()
-
+		jd.logger.Debugf("Executing query: %s with args: %v", sqlStatement, args)
 		rows, err = stmt.QueryContext(ctx, args...)
 		if err != nil {
 			return JobsResult{}, err

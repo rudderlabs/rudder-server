@@ -30,19 +30,7 @@ type sourcesHandler struct {
 }
 
 func (sh *sourcesHandler) GetStatus(ctx context.Context, jobRunId string, filter JobFilter) (JobStatus, error) {
-	filterParams := []interface{}{}
-	filters := `WHERE job_run_id = $1`
-	filterParams = append(filterParams, jobRunId)
-
-	if len(filter.TaskRunID) > 0 {
-		filters += fmt.Sprintf(` AND task_run_id  = ANY ($%d)`, len(filterParams)+1)
-		filterParams = append(filterParams, pq.Array(filter.TaskRunID))
-	}
-
-	if len(filter.SourceID) > 0 {
-		filters += fmt.Sprintf(` AND source_id = ANY ($%d)`, len(filterParams)+1)
-		filterParams = append(filterParams, pq.Array(filter.SourceID))
-	}
+	filters, filterParams := sqlFilters(jobRunId, filter)
 
 	sqlStatement := fmt.Sprintf(
 		`SELECT 
@@ -53,7 +41,7 @@ func (sh *sourcesHandler) GetStatus(ctx context.Context, jobRunId string, filter
 			sum(out_count),
 			sum(failed_count) FROM "rsources_stats" %s
 			GROUP BY task_run_id, source_id, destination_id
-			ORDER BY task_run_id, source_id, destination_id DESC`,
+			ORDER BY task_run_id, source_id, destination_id ASC`,
 		filters)
 
 	rows, err := sh.readDB().QueryContext(ctx, sqlStatement, filterParams...)
@@ -144,75 +132,65 @@ func (sh *sourcesHandler) AddFailedRecords(ctx context.Context, tx *sql.Tx, jobR
 	return
 }
 
-func (sh *sourcesHandler) GetFailedRecords(ctx context.Context, jobRunId string, filter JobFilter) (FailedRecords, error) {
+func (sh *sourcesHandler) GetFailedRecords(ctx context.Context, jobRunId string, filter JobFilter) (JobFailedRecords, error) {
 	if sh.config.SkipFailedRecordsCollection {
-		return nil, ErrOperationNotSupported
+		return JobFailedRecords{ID: jobRunId}, ErrOperationNotSupported
 	}
-	filterParams := []interface{}{}
-	filters := `WHERE job_run_id = $1`
-	filterParams = append(filterParams, jobRunId)
-
-	if len(filter.TaskRunID) > 0 {
-		filters += fmt.Sprintf(` AND task_run_id  = ANY ($%d)`, len(filterParams)+1)
-		filterParams = append(filterParams, pq.Array(filter.TaskRunID))
-	}
-
-	if len(filter.SourceID) > 0 {
-		filters += fmt.Sprintf(` AND source_id = ANY ($%d)`, len(filterParams)+1)
-		filterParams = append(filterParams, pq.Array(filter.SourceID))
-	}
+	filters, filterParams := sqlFilters(jobRunId, filter)
 
 	sqlStatement := fmt.Sprintf(
 		`SELECT
-			job_run_id,
 			task_run_id,
 			source_id,
 			destination_id,
 			record_id  FROM "rsources_failed_keys" %s
-			ORDER BY task_run_id, source_id, destination_id DESC`,
+			ORDER BY task_run_id, source_id, destination_id ASC`,
 		filters)
 
-	failedRecords := make([]FailedRecord, 0)
+	failedRecordsMap := map[JobTargetKey]FailedRecords{}
 	rows, err := sh.readDB().QueryContext(ctx, sqlStatement, filterParams...)
 	if err != nil {
-		return FailedRecords{}, err
+		return JobFailedRecords{ID: jobRunId}, err
 	}
 	defer func() { _ = rows.Close() }()
 	for rows.Next() {
-		var failedRecord FailedRecord
+		var key JobTargetKey
+		var record json.RawMessage
 		err := rows.Scan(
-			&failedRecord.JobRunID,
-			&failedRecord.TaskRunID,
-			&failedRecord.SourceID,
-			&failedRecord.DestinationID,
-			&failedRecord.RecordID,
+			&key.TaskRunID,
+			&key.SourceID,
+			&key.DestinationID,
+			&record,
 		)
 		if err != nil {
-			return FailedRecords{}, err
+			return JobFailedRecords{ID: jobRunId}, err
 		}
-		failedRecords = append(failedRecords, failedRecord)
+		failedRecordsMap[key] = append(failedRecordsMap[key], record)
 	}
 	if err := rows.Err(); err != nil {
-		return FailedRecords{}, err
+		return JobFailedRecords{ID: jobRunId}, err
 	}
 
-	return failedRecords, nil
+	return failedRecordsFromQueryResult(jobRunId, failedRecordsMap), nil
 }
 
-func (sh *sourcesHandler) Delete(ctx context.Context, jobRunId string) error {
+func (sh *sourcesHandler) Delete(ctx context.Context, jobRunId string, filter JobFilter) error {
 	tx, err := sh.localDB.Begin()
 	if err != nil {
 		return err
 	}
-	sqlStatement := `delete from "rsources_stats" where job_run_id = $1`
-	_, err = tx.ExecContext(ctx, sqlStatement, jobRunId)
+
+	filters, filterParams := sqlFilters(jobRunId, filter)
+
+	sqlStatement := fmt.Sprintf(`delete from "rsources_stats" %s`, filters)
+	_, err = tx.ExecContext(ctx, sqlStatement, filterParams...)
 	if err != nil {
 		_ = tx.Rollback()
 		return err
 	}
 
-	sqlStatement = `delete from "rsources_failed_keys" where job_run_id = $1`
-	_, err = tx.ExecContext(ctx, sqlStatement, jobRunId)
+	sqlStatement = fmt.Sprintf(`delete from "rsources_failed_keys" %s`, filters)
+	_, err = tx.ExecContext(ctx, sqlStatement, filterParams...)
 	if err != nil {
 		_ = tx.Rollback()
 		return err
@@ -408,4 +386,21 @@ func (sh *sourcesHandler) setupLogicalReplication(ctx context.Context) error {
 	}
 
 	return nil
+}
+
+func sqlFilters(jobRunId string, filter JobFilter) (fragment string, params []interface{}) {
+	filterParams := []interface{}{}
+	filters := `WHERE job_run_id = $1`
+	filterParams = append(filterParams, jobRunId)
+
+	if len(filter.TaskRunID) > 0 {
+		filters += fmt.Sprintf(` AND task_run_id  = ANY ($%d)`, len(filterParams)+1)
+		filterParams = append(filterParams, pq.Array(filter.TaskRunID))
+	}
+
+	if len(filter.SourceID) > 0 {
+		filters += fmt.Sprintf(` AND source_id = ANY ($%d)`, len(filterParams)+1)
+		filterParams = append(filterParams, pq.Array(filter.SourceID))
+	}
+	return filters, filterParams
 }
