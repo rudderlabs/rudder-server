@@ -453,7 +453,7 @@ func processStagingFile(ctx context.Context, job *PayloadT, jobRun *JobRunT, wor
 		var batchRouterEvent BatchRouterEventT
 		err := json.Unmarshal(lineBytes, &batchRouterEvent)
 		if err != nil {
-			pkgLogger.Errorf("[WH]: Failed to unmarshal JSON line to batchrouter event: %+v", batchRouterEvent)
+			pkgLogger.Errorf("[WH]: Failed to unmarshal JSON line to batchrouter event: %+v, err: %s", batchRouterEvent, err.Error())
 			continue
 		}
 
