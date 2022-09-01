@@ -160,7 +160,7 @@ var (
 var (
 	maxParallelLoads      map[string]int
 	columnCountThresholds map[string]int
-	maxColumnCounts       map[string]int
+	maxColumnCount        map[string]int
 )
 
 func init() {
@@ -186,7 +186,7 @@ func setMaxParallelLoads() {
 		warehouseutils.RS:            config.GetInt("Warehouse.redshift.columnCountThreshold", 1200),
 		warehouseutils.SNOWFLAKE:     config.GetInt("Warehouse.snowflake.columnCountThreshold", 1600),
 	}
-	maxColumnCounts = map[string]int{
+	maxColumnCount = map[string]int{
 		warehouseutils.AZURE_SYNAPSE: config.GetInt("Warehouse.azure_synapse.maxColumnCount", 1024),
 		warehouseutils.BQ:            config.GetInt("Warehouse.bigquery.maxColumnCount", 10000),
 		warehouseutils.CLICKHOUSE:    config.GetInt("Warehouse.clickhouse.maxColumnCount", 1000),
@@ -242,8 +242,8 @@ func (job *UploadJobT) generateUploadSchema(schemaHandle *SchemaHandleT) error {
 }
 
 // excess columns are included in excluded schema
-func (job *UploadJobT) generateExcludedSchema() {
-	if !enableExcludedSchema {
+func (job *UploadJobT) generateExcludedSchema(maxColumnCount int) {
+	if !enableExcludedSchema || maxColumnCount == 0 {
 		return
 	}
 	uploadSchema := job.upload.UploadSchema
@@ -251,13 +251,9 @@ func (job *UploadJobT) generateExcludedSchema() {
 		uploadSchema = job.upload.MergedSchema
 	}
 
-	var excludedSchema warehouseutils.SchemaT
-	if maxColumnCount, ok := maxColumnCounts[job.upload.DestinationType]; ok {
-		excludedSchema = GetExcludedSchema(uploadSchema, job.schemaHandle.localSchema, maxColumnCount)
-	}
-
+	excludedSchema := GetExcludedSchema(uploadSchema, job.schemaHandle.localSchema, maxColumnCount)
 	if len(excludedSchema) > 0 {
-		pkgLogger.Infof("Exclude schema for upload id %d: %v", job.upload.ID, excludedSchema)
+		pkgLogger.Debugf("Exclude schema for upload id %d: %v", job.upload.ID, excludedSchema)
 		for tName, columnMap := range excludedSchema {
 			job.counterStat(`warehouse_excluded_schema_columns`, tag{name: "tableName", value: strings.ToLower(tName)}).Count(len(columnMap))
 		}
@@ -400,7 +396,8 @@ func (job *UploadJobT) run() (err error) {
 	schemaHandle := job.schemaHandle
 	schemaHandle.uploadSchema = job.upload.UploadSchema
 	// set excluded schema
-	job.generateExcludedSchema()
+	getMaxColumnCount := func() int { return maxColumnCount[job.upload.DestinationType] }
+	job.generateExcludedSchema(getMaxColumnCount())
 
 	userTables := []string{job.identifiesTableName(), job.usersTableName()}
 	identityTables := []string{job.identityMergeRulesTableName(), job.identityMappingsTableName()}
@@ -431,7 +428,7 @@ func (job *UploadJobT) run() (err error) {
 			if err != nil {
 				break
 			}
-			job.generateExcludedSchema()
+			job.generateExcludedSchema(getMaxColumnCount())
 			newStatus = nextUploadState.completed
 
 		case CreatedTableUploads:
