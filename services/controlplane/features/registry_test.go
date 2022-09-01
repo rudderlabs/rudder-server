@@ -3,7 +3,7 @@ package features_test
 import (
 	"testing"
 
-	"github.com/rudderlabs/rudder-server/services/features"
+	"github.com/rudderlabs/rudder-server/services/controlplane/features"
 	"github.com/stretchr/testify/require"
 )
 
