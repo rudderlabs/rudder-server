@@ -547,7 +547,7 @@ func (job *UploadJobT) run() (err error) {
 
 		uploadStatusOpts := UploadStatusOpts{Status: newStatus}
 		if newStatus == ExportedData {
-			reportingMetrics := make([]types.PUReportedMetric, len(loadFilesTableEventCountMap))
+			reportingMetrics := make([]types.PUReportedMetric, 0, len(loadFilesTableEventCountMap))
 
 			for table, eventCount := range loadFilesTableEventCountMap {
 				reportingMetric := types.PUReportedMetric{
@@ -1251,10 +1251,10 @@ func (job *UploadJobT) setUploadStatus(statusOpts UploadStatusOpts) (err error) 
 		}
 
 		if config.GetBool("Reporting.enabled", types.DEFAULT_REPORTING_ENABLED) {
-			metricsArr := make([]*types.PUReportedMetric, len(statusOpts.ReportingMetrics))
+			metricsArr := make([]*types.PUReportedMetric, 0, len(statusOpts.ReportingMetrics))
 
-			for _, reportingMetric := range statusOpts.ReportingMetrics {
-				metricsArr = append(metricsArr, &reportingMetric)
+			for i := range statusOpts.ReportingMetrics {
+				metricsArr = append(metricsArr, &statusOpts.ReportingMetrics[i])
 			}
 
 			application.Features().Reporting.GetReportingInstance().Report(metricsArr, txn)
@@ -1477,7 +1477,7 @@ func (job *UploadJobT) setUploadError(statusError error, state string) (string, 
 		return "", fmt.Errorf("unable to change upload columns: %w", err)
 	}
 
-	failedTableMap, _ := job.getTablesToSkip()
+	_, currentJobSucceededTables := job.getTablesToSkip()
 	_, loadFilesTableEventCountMap, err := job.getLoadFilesTablePresenceAndEventCountMaps()
 
 	if err != nil {
@@ -1485,7 +1485,13 @@ func (job *UploadJobT) setUploadError(statusError error, state string) (string, 
 		loadFilesTableEventCountMap = make(map[tableNameT]int)
 	}
 
-	for tableName, _ := range failedTableMap {
+	for tableName, _ := range job.upload.UploadSchema {
+		_, ok := currentJobSucceededTables[string(tableName)]
+
+		if ok {
+			continue
+		}
+
 		failCount := int64(loadFilesTableEventCountMap[tableNameT(tableName)])
 
 		reportingStatus := jobsdb.Failed.State
