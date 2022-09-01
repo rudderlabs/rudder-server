@@ -1597,7 +1597,11 @@ func (jd *HandleT) createDSInTx(tx *sql.Tx, newDS dataSetT, l lock.DSListLockTok
 	return nil
 }
 
-func (jd *HandleT) setSequenceNumberInTx(tx *sql.Tx, _ lock.DSListLockToken, newDSIdx string) error {
+func (jd *HandleT) setSequenceNumberInTx(tx *sql.Tx, l lock.DSListLockToken, newDSIdx string) error {
+	if l == nil {
+		return fmt.Errorf("ds list lock cannot be nil")
+	}
+
 	dList := jd.getDSList()
 	var maxID sql.NullInt64
 

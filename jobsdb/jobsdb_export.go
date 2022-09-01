@@ -72,11 +72,9 @@ func (jd *HandleT) GetNonMigratedAndMarkMigrating(count int) []*JobT {
 			continue
 		}
 
-		var jobs []*JobT
-		jobs, err = jd.getNonMigratedJobsFromDS(ds, count)
+		jobs, err := jd.getNonMigratedJobsFromDS(ds, count)
 		if err != nil {
-			jd.logger.Warnf("fail getting migrated jobs: %v", err)
-			break
+			jd.logger.Fatalf("fail getting migrated jobs: %v", err)
 		}
 		pkgLogger.Debugf("[[ %s-JobsDB export ]] Inside GetNonMigrated - len(jobs): %d", jd.tablePrefix, len(jobs))
 
@@ -161,12 +159,11 @@ func (jd *HandleT) getNonMigratedJobsFromDS(ds dataSetT, count int) ([]*JobT, er
 	queryStat.Start()
 	defer queryStat.End()
 
-	var rows *sql.Rows
-	var err error
+	if count <= 0 {
+		return nil, fmt.Errorf("count should be greater than 0, got = %d", count)
+	}
 
-	var sqlStatement string
-
-	sqlStatement = fmt.Sprintf(`
+	sqlStatement := fmt.Sprintf(`
 		SELECT * FROM (
 			SELECT DISTINCT ON (%[1]s.job_id)
 				%[1]s.job_id, %[1]s.uuid, %[1]s.user_id, %[1]s.parameters, %[1]s.custom_val,
@@ -178,15 +175,13 @@ func (jd *HandleT) getNonMigratedJobsFromDS(ds dataSetT, count int) ([]*JobT, er
 			order by %[1]s.job_id asc, %[2]s.id desc
 		) as temp WHERE job_state IS NULL OR (job_state != 'migrating' AND job_state != 'migrated' AND job_state != 'wont_migrate')`, ds.JobTable, ds.JobStatusTable)
 
-	jd.assert(count > 0, fmt.Sprintf("count should be greater than 0, but count = %d", count))
 	sqlStatement += fmt.Sprintf(" LIMIT %d", count)
 
 	jd.logger.Info(sqlStatement)
-	rows, err = jd.dbHandle.Query(sqlStatement)
+	rows, err := jd.dbHandle.Query(sqlStatement)
 	if err != nil {
 		return nil, fmt.Errorf("query: %w", err)
 	}
-	jd.assertError(err)
 	defer rows.Close()
 
 	var jobList []*JobT
