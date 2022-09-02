@@ -1,3 +1,5 @@
+//go:build warehouse_integration
+
 package clickhouse_test
 
 import (
