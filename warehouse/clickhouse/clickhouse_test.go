@@ -1,19 +1,17 @@
-//go:build warehouse_integration
-
 package clickhouse_test
 
 import (
 	"database/sql"
 	"fmt"
+	"github.com/rudderlabs/rudder-server/warehouse/client"
+	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 	"log"
 	"os"
 	"strings"
 	"testing"
 
 	"github.com/rudderlabs/rudder-server/warehouse/clickhouse"
-	"github.com/rudderlabs/rudder-server/warehouse/client"
 	"github.com/rudderlabs/rudder-server/warehouse/testhelper"
-	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 	"github.com/stretchr/testify/require"
 )
 
@@ -292,166 +290,346 @@ func initializeClickhouseClusterMode(t *testing.T) {
 }
 
 func TestClickHouseIntegration(t *testing.T) {
-	t.Run("Single Setup", func(t *testing.T) {
-		t.Parallel()
-
-		// Setting up the warehouseTest
-		warehouseTest := &testhelper.WareHouseTest{
-			Client: &client.Client{
-				SQL:  handle.DB,
-				Type: client.SQLClient,
+	t.Run("Load tables via download strategy", func(t *testing.T) {
+		// Setting up the test configuration
+		require.NoError(t, testhelper.SetConfig([]warehouseutils.KeyValue{
+			{
+				Key:   "Warehouse.clickhouse.enabledS3EngineForLoading",
+				Value: false,
 			},
-			WriteKey:             handle.WriteKey,
-			Schema:               handle.Schema,
-			Tables:               handle.Tables,
-			EventsCountMap:       testhelper.DefaultEventMap(),
-			TablesQueryFrequency: testhelper.DefaultQueryFrequency,
-			UserId:               testhelper.GetUserId(warehouseutils.CLICKHOUSE),
-			Provider:             warehouseutils.CLICKHOUSE,
-		}
+		}))
 
-		// Scenario 1
-		// Sending the first set of events.
-		// Since we are sending unique message Ids. These should result in
-		// These should result in events count will be equal to the number of events being sent
-		testhelper.SendEvents(t, warehouseTest)
-		testhelper.SendEvents(t, warehouseTest)
-		testhelper.SendEvents(t, warehouseTest)
-		testhelper.SendIntegratedEvents(t, warehouseTest)
+		t.Run("Single Setup", func(t *testing.T) {
+			t.Parallel()
 
-		// Setting up the events map
-		// Checking for Gateway and Batch router events
-		// Checking for the events count for each table
-		warehouseTest.EventsCountMap = testhelper.EventsCountMap{
-			"identifies":    4,
-			"users":         1,
-			"tracks":        4,
-			"product_track": 4,
-			"pages":         4,
-			"screens":       4,
-			"aliases":       4,
-			"groups":        4,
-			"gateway":       24,
-			"batchRT":       32,
-		}
-		testhelper.VerifyingGatewayEvents(t, warehouseTest)
-		testhelper.VerifyingBatchRouterEvents(t, warehouseTest)
-		testhelper.VerifyingTablesEventCount(t, warehouseTest)
+			// Setting up the warehouseTest
+			warehouseTest := &testhelper.WareHouseTest{
+				Client: &client.Client{
+					SQL:  handle.DB,
+					Type: client.SQLClient,
+				},
+				WriteKey:             handle.WriteKey,
+				Schema:               handle.Schema,
+				Tables:               handle.Tables,
+				EventsCountMap:       testhelper.DefaultEventMap(),
+				TablesQueryFrequency: testhelper.DefaultQueryFrequency,
+				UserId:               testhelper.GetUserId(warehouseutils.CLICKHOUSE),
+				Provider:             warehouseutils.CLICKHOUSE,
+			}
 
-		// Scenario 2
-		// Sending the second set of modified events.
-		// Since we are sending unique message Ids.
-		// These should result in events count will be equal to the number of events being sent
-		warehouseTest.EventsCountMap = testhelper.DefaultEventMap()
-		warehouseTest.UserId = testhelper.GetUserId(warehouseutils.CLICKHOUSE)
-		testhelper.SendModifiedEvents(t, warehouseTest)
-		testhelper.SendModifiedEvents(t, warehouseTest)
-		testhelper.SendModifiedEvents(t, warehouseTest)
-		testhelper.SendIntegratedEvents(t, warehouseTest)
+			// Scenario 1
+			// Sending the first set of events.
+			// Since we are sending unique message Ids. These should result in
+			// These should result in events count will be equal to the number of events being sent
+			testhelper.SendEvents(t, warehouseTest)
+			testhelper.SendEvents(t, warehouseTest)
+			testhelper.SendEvents(t, warehouseTest)
+			testhelper.SendIntegratedEvents(t, warehouseTest)
 
-		// Setting up the events map
-		// Checking for Gateway and Batch router events
-		// Checking for the events count for each table
-		warehouseTest.EventsCountMap = testhelper.EventsCountMap{
-			"identifies":    4,
-			"users":         1,
-			"tracks":        4,
-			"product_track": 4,
-			"pages":         4,
-			"screens":       4,
-			"aliases":       4,
-			"groups":        4,
-			"gateway":       24,
-			"batchRT":       32,
-		}
-		testhelper.VerifyingGatewayEvents(t, warehouseTest)
-		testhelper.VerifyingBatchRouterEvents(t, warehouseTest)
-		testhelper.VerifyingTablesEventCount(t, warehouseTest)
+			// Setting up the events map
+			// Checking for Gateway and Batch router events
+			// Checking for the events count for each table
+			warehouseTest.EventsCountMap = testhelper.EventsCountMap{
+				"identifies":    4,
+				"users":         1,
+				"tracks":        4,
+				"product_track": 4,
+				"pages":         4,
+				"screens":       4,
+				"aliases":       4,
+				"groups":        4,
+				"gateway":       24,
+				"batchRT":       32,
+			}
+			testhelper.VerifyingGatewayEvents(t, warehouseTest)
+			testhelper.VerifyingBatchRouterEvents(t, warehouseTest)
+			testhelper.VerifyingTablesEventCount(t, warehouseTest)
+
+			// Scenario 2
+			// Sending the second set of modified events.
+			// Since we are sending unique message Ids.
+			// These should result in events count will be equal to the number of events being sent
+			warehouseTest.EventsCountMap = testhelper.DefaultEventMap()
+			warehouseTest.UserId = testhelper.GetUserId(warehouseutils.CLICKHOUSE)
+			testhelper.SendModifiedEvents(t, warehouseTest)
+			testhelper.SendModifiedEvents(t, warehouseTest)
+			testhelper.SendModifiedEvents(t, warehouseTest)
+			testhelper.SendIntegratedEvents(t, warehouseTest)
+
+			// Setting up the events map
+			// Checking for Gateway and Batch router events
+			// Checking for the events count for each table
+			warehouseTest.EventsCountMap = testhelper.EventsCountMap{
+				"identifies":    4,
+				"users":         1,
+				"tracks":        4,
+				"product_track": 4,
+				"pages":         4,
+				"screens":       4,
+				"aliases":       4,
+				"groups":        4,
+				"gateway":       24,
+				"batchRT":       32,
+			}
+			testhelper.VerifyingGatewayEvents(t, warehouseTest)
+			testhelper.VerifyingBatchRouterEvents(t, warehouseTest)
+			testhelper.VerifyingTablesEventCount(t, warehouseTest)
+		})
+		t.Run("Cluster Mode Setup", func(t *testing.T) {
+			t.Parallel()
+
+			require.NotNil(t, handle.ClusterDBs)
+			require.NotNil(t, handle.ClusterDBs[0])
+
+			// Setting up the warehouseTest
+			warehouseTest := &testhelper.WareHouseTest{
+				Client: &client.Client{
+					SQL:  handle.ClusterDBs[0],
+					Type: client.SQLClient,
+				},
+				WriteKey:             handle.ClusterWriteKey,
+				Schema:               handle.Schema,
+				Tables:               handle.Tables,
+				EventsCountMap:       testhelper.DefaultEventMap(),
+				TablesQueryFrequency: testhelper.DefaultQueryFrequency,
+				UserId:               testhelper.GetUserId(fmt.Sprintf("%s_%s", warehouseutils.CLICKHOUSE, "CLUSTER")),
+				Provider:             warehouseutils.CLICKHOUSE,
+			}
+
+			// Scenario 1
+			// Sending the first set of events.
+			// Since we are sending unique message Ids.
+			// These should result in events count will be equal to the number of events being sent
+			testhelper.SendEvents(t, warehouseTest)
+			testhelper.SendEvents(t, warehouseTest)
+			testhelper.SendEvents(t, warehouseTest)
+			testhelper.SendIntegratedEvents(t, warehouseTest)
+
+			// Setting up the events map
+			// Checking for Gateway and Batch router events
+			// Checking for the events count for each table
+			warehouseTest.EventsCountMap = testhelper.EventsCountMap{
+				"identifies":    4,
+				"users":         1,
+				"tracks":        4,
+				"product_track": 4,
+				"pages":         4,
+				"screens":       4,
+				"aliases":       4,
+				"groups":        4,
+				"gateway":       24,
+				"batchRT":       32,
+			}
+			testhelper.VerifyingGatewayEvents(t, warehouseTest)
+			testhelper.VerifyingBatchRouterEvents(t, warehouseTest)
+			testhelper.VerifyingTablesEventCount(t, warehouseTest)
+
+			// Scenario 2
+			// Setting up events count map
+			// Setting up the UserID
+			// Initializing cluster mode setup
+			// Sending the second set of modified events.
+			// Since we are sending unique message Ids.
+			// These should result in events count will be equal to the number of events being sent
+			warehouseTest.EventsCountMap = testhelper.DefaultEventMap()
+			warehouseTest.UserId = testhelper.GetUserId(fmt.Sprintf("%s_%s", warehouseutils.CLICKHOUSE, "CLUSTER"))
+			initializeClickhouseClusterMode(t)
+			testhelper.SendModifiedEvents(t, warehouseTest)
+			testhelper.SendModifiedEvents(t, warehouseTest)
+			testhelper.SendModifiedEvents(t, warehouseTest)
+			testhelper.SendIntegratedEvents(t, warehouseTest)
+
+			// Setting up the events map
+			// Checking for Gateway and Batch router events
+			// Checking for the events count for each table
+			// With the cluster mode setup, events are getting duplicated.
+			warehouseTest.EventsCountMap = testhelper.EventsCountMap{
+				"identifies":    8,
+				"users":         2,
+				"tracks":        8,
+				"product_track": 8,
+				"pages":         8,
+				"screens":       8,
+				"aliases":       8,
+				"groups":        8,
+				"gateway":       24,
+				"batchRT":       32,
+			}
+			testhelper.VerifyingGatewayEvents(t, warehouseTest)
+			testhelper.VerifyingBatchRouterEvents(t, warehouseTest)
+			testhelper.VerifyingTablesEventCount(t, warehouseTest)
+		})
 	})
 
-	t.Run("Cluster Mode Setup", func(t *testing.T) {
-		t.Parallel()
-
-		require.NotNil(t, handle.ClusterDBs)
-		require.NotNil(t, handle.ClusterDBs[0])
-
-		// Setting up the warehouseTest
-		warehouseTest := &testhelper.WareHouseTest{
-			Client: &client.Client{
-				SQL:  handle.ClusterDBs[0],
-				Type: client.SQLClient,
+	t.Run("Load tables via copy strategy", func(t *testing.T) {
+		// Setting up the test configuration
+		require.NoError(t, testhelper.SetConfig([]warehouseutils.KeyValue{
+			{
+				Key:   "Warehouse.clickhouse.enabledS3EngineForLoading",
+				Value: true,
 			},
-			WriteKey:             handle.ClusterWriteKey,
-			Schema:               handle.Schema,
-			Tables:               handle.Tables,
-			EventsCountMap:       testhelper.DefaultEventMap(),
-			TablesQueryFrequency: testhelper.DefaultQueryFrequency,
-			UserId:               testhelper.GetUserId(fmt.Sprintf("%s_%s", warehouseutils.CLICKHOUSE, "CLUSTER")),
-			Provider:             warehouseutils.CLICKHOUSE,
-		}
+		}))
 
-		// Scenario 1
-		// Sending the first set of events.
-		// Since we are sending unique message Ids.
-		// These should result in events count will be equal to the number of events being sent
-		testhelper.SendEvents(t, warehouseTest)
-		testhelper.SendEvents(t, warehouseTest)
-		testhelper.SendEvents(t, warehouseTest)
-		testhelper.SendIntegratedEvents(t, warehouseTest)
+		t.Run("Single Setup", func(t *testing.T) {
+			t.Parallel()
 
-		// Setting up the events map
-		// Checking for Gateway and Batch router events
-		// Checking for the events count for each table
-		warehouseTest.EventsCountMap = testhelper.EventsCountMap{
-			"identifies":    4,
-			"users":         1,
-			"tracks":        4,
-			"product_track": 4,
-			"pages":         4,
-			"screens":       4,
-			"aliases":       4,
-			"groups":        4,
-			"gateway":       24,
-			"batchRT":       32,
-		}
-		testhelper.VerifyingGatewayEvents(t, warehouseTest)
-		testhelper.VerifyingBatchRouterEvents(t, warehouseTest)
-		testhelper.VerifyingTablesEventCount(t, warehouseTest)
+			// Setting up the warehouseTest
+			warehouseTest := &testhelper.WareHouseTest{
+				Client: &client.Client{
+					SQL:  handle.DB,
+					Type: client.SQLClient,
+				},
+				WriteKey:             handle.WriteKey,
+				Schema:               handle.Schema,
+				Tables:               handle.Tables,
+				EventsCountMap:       testhelper.DefaultEventMap(),
+				TablesQueryFrequency: testhelper.DefaultQueryFrequency,
+				UserId:               testhelper.GetUserId(warehouseutils.CLICKHOUSE),
+				Provider:             warehouseutils.CLICKHOUSE,
+			}
 
-		// Scenario 2
-		// Setting up events count map
-		// Setting up the UserID
-		// Initializing cluster mode setup
-		// Sending the second set of modified events.
-		// Since we are sending unique message Ids.
-		// These should result in events count will be equal to the number of events being sent
-		warehouseTest.EventsCountMap = testhelper.DefaultEventMap()
-		warehouseTest.UserId = testhelper.GetUserId(fmt.Sprintf("%s_%s", warehouseutils.CLICKHOUSE, "CLUSTER"))
-		initializeClickhouseClusterMode(t)
-		testhelper.SendModifiedEvents(t, warehouseTest)
-		testhelper.SendModifiedEvents(t, warehouseTest)
-		testhelper.SendModifiedEvents(t, warehouseTest)
-		testhelper.SendIntegratedEvents(t, warehouseTest)
+			// Scenario 1
+			// Sending the first set of events.
+			// Since we are sending unique message Ids. These should result in
+			// These should result in events count will be equal to the number of events being sent
+			testhelper.SendEvents(t, warehouseTest)
+			testhelper.SendEvents(t, warehouseTest)
+			testhelper.SendEvents(t, warehouseTest)
+			testhelper.SendIntegratedEvents(t, warehouseTest)
 
-		// Setting up the events map
-		// Checking for Gateway and Batch router events
-		// Checking for the events count for each table
-		// With the cluster mode setup, events are getting duplicated.
-		warehouseTest.EventsCountMap = testhelper.EventsCountMap{
-			"identifies":    8,
-			"users":         2,
-			"tracks":        8,
-			"product_track": 8,
-			"pages":         8,
-			"screens":       8,
-			"aliases":       8,
-			"groups":        8,
-			"gateway":       24,
-			"batchRT":       32,
-		}
-		testhelper.VerifyingGatewayEvents(t, warehouseTest)
-		testhelper.VerifyingBatchRouterEvents(t, warehouseTest)
-		testhelper.VerifyingTablesEventCount(t, warehouseTest)
+			// Setting up the events map
+			// Checking for Gateway and Batch router events
+			// Checking for the events count for each table
+			warehouseTest.EventsCountMap = testhelper.EventsCountMap{
+				"identifies":    4,
+				"users":         1,
+				"tracks":        4,
+				"product_track": 4,
+				"pages":         4,
+				"screens":       4,
+				"aliases":       4,
+				"groups":        4,
+				"gateway":       24,
+				"batchRT":       32,
+			}
+			testhelper.VerifyingGatewayEvents(t, warehouseTest)
+			testhelper.VerifyingBatchRouterEvents(t, warehouseTest)
+			testhelper.VerifyingTablesEventCount(t, warehouseTest)
+
+			// Scenario 2
+			// Sending the second set of modified events.
+			// Since we are sending unique message Ids.
+			// These should result in events count will be equal to the number of events being sent
+			warehouseTest.EventsCountMap = testhelper.DefaultEventMap()
+			warehouseTest.UserId = testhelper.GetUserId(warehouseutils.CLICKHOUSE)
+			testhelper.SendModifiedEvents(t, warehouseTest)
+			testhelper.SendModifiedEvents(t, warehouseTest)
+			testhelper.SendModifiedEvents(t, warehouseTest)
+			testhelper.SendIntegratedEvents(t, warehouseTest)
+
+			// Setting up the events map
+			// Checking for Gateway and Batch router events
+			// Checking for the events count for each table
+			warehouseTest.EventsCountMap = testhelper.EventsCountMap{
+				"identifies":    4,
+				"users":         1,
+				"tracks":        4,
+				"product_track": 4,
+				"pages":         4,
+				"screens":       4,
+				"aliases":       4,
+				"groups":        4,
+				"gateway":       24,
+				"batchRT":       32,
+			}
+			testhelper.VerifyingGatewayEvents(t, warehouseTest)
+			testhelper.VerifyingBatchRouterEvents(t, warehouseTest)
+			testhelper.VerifyingTablesEventCount(t, warehouseTest)
+		})
+		t.Run("Cluster Mode Setup", func(t *testing.T) {
+			t.Parallel()
+
+			require.NotNil(t, handle.ClusterDBs)
+			require.NotNil(t, handle.ClusterDBs[0])
+
+			// Setting up the warehouseTest
+			warehouseTest := &testhelper.WareHouseTest{
+				Client: &client.Client{
+					SQL:  handle.ClusterDBs[0],
+					Type: client.SQLClient,
+				},
+				WriteKey:             handle.ClusterWriteKey,
+				Schema:               handle.Schema,
+				Tables:               handle.Tables,
+				EventsCountMap:       testhelper.DefaultEventMap(),
+				TablesQueryFrequency: testhelper.DefaultQueryFrequency,
+				UserId:               testhelper.GetUserId(fmt.Sprintf("%s_%s", warehouseutils.CLICKHOUSE, "CLUSTER")),
+				Provider:             warehouseutils.CLICKHOUSE,
+			}
+
+			// Scenario 1
+			// Sending the first set of events.
+			// Since we are sending unique message Ids.
+			// These should result in events count will be equal to the number of events being sent
+			testhelper.SendEvents(t, warehouseTest)
+			testhelper.SendEvents(t, warehouseTest)
+			testhelper.SendEvents(t, warehouseTest)
+			testhelper.SendIntegratedEvents(t, warehouseTest)
+
+			// Setting up the events map
+			// Checking for Gateway and Batch router events
+			// Checking for the events count for each table
+			warehouseTest.EventsCountMap = testhelper.EventsCountMap{
+				"identifies":    4,
+				"users":         1,
+				"tracks":        4,
+				"product_track": 4,
+				"pages":         4,
+				"screens":       4,
+				"aliases":       4,
+				"groups":        4,
+				"gateway":       24,
+				"batchRT":       32,
+			}
+			testhelper.VerifyingGatewayEvents(t, warehouseTest)
+			testhelper.VerifyingBatchRouterEvents(t, warehouseTest)
+			testhelper.VerifyingTablesEventCount(t, warehouseTest)
+
+			// Scenario 2
+			// Setting up events count map
+			// Setting up the UserID
+			// Initializing cluster mode setup
+			// Sending the second set of modified events.
+			// Since we are sending unique message Ids.
+			// These should result in events count will be equal to the number of events being sent
+			warehouseTest.EventsCountMap = testhelper.DefaultEventMap()
+			warehouseTest.UserId = testhelper.GetUserId(fmt.Sprintf("%s_%s", warehouseutils.CLICKHOUSE, "CLUSTER"))
+			initializeClickhouseClusterMode(t)
+			testhelper.SendModifiedEvents(t, warehouseTest)
+			testhelper.SendModifiedEvents(t, warehouseTest)
+			testhelper.SendModifiedEvents(t, warehouseTest)
+			testhelper.SendIntegratedEvents(t, warehouseTest)
+
+			// Setting up the events map
+			// Checking for Gateway and Batch router events
+			// Checking for the events count for each table
+			// With the cluster mode setup, events are getting duplicated.
+			warehouseTest.EventsCountMap = testhelper.EventsCountMap{
+				"identifies":    8,
+				"users":         2,
+				"tracks":        8,
+				"product_track": 8,
+				"pages":         8,
+				"screens":       8,
+				"aliases":       8,
+				"groups":        8,
+				"gateway":       24,
+				"batchRT":       32,
+			}
+			testhelper.VerifyingGatewayEvents(t, warehouseTest)
+			testhelper.VerifyingBatchRouterEvents(t, warehouseTest)
+			testhelper.VerifyingTablesEventCount(t, warehouseTest)
+		})
 	})
 }
 

@@ -8,6 +8,7 @@ import (
 	"database/sql"
 	"encoding/csv"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -46,6 +47,7 @@ var (
 	commitTimeOutInSeconds      time.Duration
 	loadTableFailureRetries     int
 	numWorkersDownloadLoadFiles int
+	enabledS3EngineForLoading   bool
 )
 var clickhouseDefaultDateTime, _ = time.Parse(time.RFC3339, "1970-01-01 00:00:00")
 
@@ -70,8 +72,10 @@ const (
 )
 
 const (
-	AWSAccessKey    = "accessKey"
-	AWSAccessSecret = "accessKeyID"
+	AWSAccessKeyID       = "accessKeyID"
+	AWSAccessKey         = "accessKey"
+	MinioAccessKeyID     = "accessKeyID"
+	MinioSecretAccessKey = "secretAccessKey"
 )
 
 // clickhouse doesn't support bool, they recommend to use Uint8 and set 1,0
@@ -260,6 +264,7 @@ func loadConfig() {
 	config.RegisterDurationConfigVariable(600, &commitTimeOutInSeconds, true, time.Second, "Warehouse.clickhouse.commitTimeOutInSeconds")
 	config.RegisterIntConfigVariable(3, &loadTableFailureRetries, true, 1, "Warehouse.clickhouse.loadTableFailureRetries")
 	config.RegisterIntConfigVariable(8, &numWorkersDownloadLoadFiles, true, 1, "Warehouse.clickhouse.numWorkersDownloadLoadFiles")
+	config.RegisterBoolConfigVariable(false, &enabledS3EngineForLoading, true, "Warehouse.clickhouse.enabledS3EngineForLoading")
 }
 
 /*
@@ -539,7 +544,20 @@ func typecastDataFromType(data, dataType string) interface{} {
 
 // loadTable loads table to clickhouse from the load files
 func (ch *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutils.TableSchemaT) (err error) {
-	return ch.loadByCopyCommand(tableName, tableSchemaInUpload)
+	if ch.useS3CopyEngineForLoading() {
+		return ch.loadByCopyCommand(tableName, tableSchemaInUpload)
+	}
+	return ch.loadByDownloadingLoadFiles(tableName, tableSchemaInUpload)
+}
+
+func (ch *HandleT) useS3CopyEngineForLoading() bool {
+	if !enabledS3EngineForLoading {
+		return false
+	}
+	if ch.ObjectStorage != "S3" && ch.ObjectStorage != "MINIO" {
+		return false
+	}
+	return true
 }
 
 func (ch *HandleT) loadByDownloadingLoadFiles(tableName string, tableSchemaInUpload warehouseutils.TableSchemaT) (err error) {
@@ -578,8 +596,14 @@ func (ch *HandleT) loadByDownloadingLoadFiles(tableName string, tableSchemaInUpl
 	return
 }
 
-func (ch *HandleT) s3Credentials() (accessKeyID string, secretAccessKey string) {
-	return warehouseutils.GetConfigValue(AWSAccessSecret, ch.Warehouse), warehouseutils.GetConfigValue(AWSAccessKey, ch.Warehouse)
+func (ch *HandleT) credentials() (accessKeyID, secretAccessKey string, err error) {
+	if ch.ObjectStorage == "S3" {
+		return warehouseutils.GetConfigValue(AWSAccessKeyID, ch.Warehouse), warehouseutils.GetConfigValue(AWSAccessKey, ch.Warehouse), nil
+	}
+	if ch.ObjectStorage == "MINIO" {
+		return warehouseutils.GetConfigValue(MinioAccessKeyID, ch.Warehouse), warehouseutils.GetConfigValue(MinioSecretAccessKey, ch.Warehouse), nil
+	}
+	return "", "", errors.New("objectStorage not supported for loading using S3 engine")
 }
 
 func (ch *HandleT) loadByCopyCommand(tableName string, tableSchemaInUpload warehouseutils.TableSchemaT) (err error) {
@@ -614,7 +638,11 @@ func (ch *HandleT) loadByCopyCommand(tableName string, tableSchemaInUpload wareh
 	loadFolder = loadFolder + "/*.csv.gz"
 
 	stagingTableName := warehouseutils.StagingTableName(provider, tableName)
-	accessKeyID, secretAccessKey := ch.s3Credentials()
+	accessKeyID, secretAccessKey, err := ch.credentials()
+	if err != nil {
+		return
+	}
+
 	sqlStatement := createTemporaryTableWithS3EngineSQLStatement(ch.Namespace, stagingTableName, loadFolder, accessKeyID, secretAccessKey, sortedColumnNamesWithDataTypes)
 
 	_, err = ch.Db.Exec(sqlStatement)
