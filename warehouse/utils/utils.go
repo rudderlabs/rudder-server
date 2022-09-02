@@ -8,7 +8,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/gofrs/uuid"
 	"io"
 	"net/http"
 	"net/url"
@@ -17,6 +16,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/gofrs/uuid"
 
 	"github.com/Azure/azure-storage-blob-go/azblob"
 	"github.com/aws/aws-sdk-go/aws"

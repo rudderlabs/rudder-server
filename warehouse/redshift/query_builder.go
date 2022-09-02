@@ -2,6 +2,7 @@ package redshift
 
 import (
 	"fmt"
+
 	"github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 

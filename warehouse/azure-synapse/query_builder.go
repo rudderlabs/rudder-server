@@ -2,6 +2,7 @@ package azuresynapse
 
 import (
 	"fmt"
+
 	"github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 

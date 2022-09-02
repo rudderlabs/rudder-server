@@ -2,6 +2,7 @@ package bigquery
 
 import (
 	"fmt"
+
 	"github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 

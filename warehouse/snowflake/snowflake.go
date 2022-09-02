@@ -22,9 +22,7 @@ const (
 	provider = warehouseutils.SNOWFLAKE
 )
 
-var (
-	pkgLogger logger.LoggerI
-)
+var pkgLogger logger.LoggerI
 
 func Init() {
 	pkgLogger = logger.NewLogger().Child("warehouse").Child("snowflake")

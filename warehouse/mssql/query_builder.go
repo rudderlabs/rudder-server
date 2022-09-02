@@ -2,6 +2,7 @@ package mssql
 
 import (
 	"fmt"
+
 	"github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 

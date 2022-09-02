@@ -3,8 +3,9 @@ package postgres
 import (
 	"database/sql"
 	"fmt"
-	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 	"strings"
+
+	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
 type QueryParams struct {
