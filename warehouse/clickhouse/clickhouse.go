@@ -69,6 +69,11 @@ const (
 	provider = warehouseutils.CLICKHOUSE
 )
 
+const (
+	AWSAccessKey    = "accessKey"
+	AWSAccessSecret = "accessKeyID"
+)
+
 // clickhouse doesn't support bool, they recommend to use Uint8 and set 1,0
 
 var rudderDataTypesMapToClickHouse = map[string]string{
@@ -534,7 +539,7 @@ func typecastDataFromType(data, dataType string) interface{} {
 
 // loadTable loads table to clickhouse from the load files
 func (ch *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutils.TableSchemaT) (err error) {
-	return
+	return ch.loadByCopyCommand(tableName, tableSchemaInUpload)
 }
 
 func (ch *HandleT) loadByDownloadingLoadFiles(tableName string, tableSchemaInUpload warehouseutils.TableSchemaT) (err error) {
@@ -573,132 +578,55 @@ func (ch *HandleT) loadByDownloadingLoadFiles(tableName string, tableSchemaInUpl
 	return
 }
 
-func (ch *HandleT) loadByCopyCommand(tableName string, tableSchemaInUpload warehouseutils.TableSchemaT, dbHandle *sql.DB, skipClosingDBSession bool) (tableLoadResp tableLoadRespT, err error) {
-	pkgLogger.Infof("%s LoadTable Started", ch.GetLogIdentifier(tableName))
-	defer pkgLogger.Infof("%s LoadTable Completed", ch.GetLogIdentifier(tableName))
+func (ch *HandleT) s3Credentials() (accessKeyID string, secretAccessKey string) {
+	return warehouseutils.GetConfigValue(AWSAccessSecret, ch.Warehouse), warehouseutils.GetConfigValue(AWSAccessKey, ch.Warehouse)
+}
 
-	if dbHandle == nil {
-		dbHandle, err = Connect(sf.getConnectionCredentials(OptionalCredsT{schemaName: sf.Namespace}))
-		if err != nil {
-			pkgLogger.Errorf("SF: Error establishing connection for copying table:%s: %v\n", tableName, err)
-			return
-		}
-	}
-	tableLoadResp.dbHandle = dbHandle
-	if !skipClosingDBSession {
-		defer dbHandle.Close()
-	}
+func (ch *HandleT) loadByCopyCommand(tableName string, tableSchemaInUpload warehouseutils.TableSchemaT) (err error) {
+	pkgLogger.Infof("%s LoadTable By COPY command Started", ch.GetLogIdentifier(tableName))
+	defer pkgLogger.Infof("%s LoadTable By COPY command Completed", ch.GetLogIdentifier(tableName))
 
 	// sort column names
 	keys := reflect.ValueOf(tableSchemaInUpload).MapKeys()
-	strkeys := make([]string, len(keys))
+	strKeys := make([]string, len(keys))
 	for i := 0; i < len(keys); i++ {
-		strkeys[i] = keys[i].String()
+		strKeys[i] = keys[i].String()
 	}
-	sort.Strings(strkeys)
+	sort.Strings(strKeys)
+	var sortedColumnNamesWithDataTypes string
 	var sortedColumnNames string
-	// TODO: use strings.Join() instead
-	for index, key := range strkeys {
+	for index, key := range strKeys {
 		if index > 0 {
+			sortedColumnNamesWithDataTypes += `, `
 			sortedColumnNames += `, `
 		}
-		sortedColumnNames += fmt.Sprintf(`"%s"`, key)
+		dataType := tableSchemaInUpload[key]
+		sortedColumnNamesWithDataTypes += fmt.Sprintf(`%s %s`, key, rudderDataTypesMapToClickHouse[dataType])
+		sortedColumnNames += fmt.Sprintf(`%s`, key)
 	}
+
+	csvObjectLocation, err := ch.Uploader.GetSampleLoadFileLocation(tableName)
+	if err != nil {
+		return
+	}
+	loadFolder := csvObjectLocation
+	loadFolder = loadFolder[:strings.LastIndex(loadFolder, "/")]
+	loadFolder = loadFolder + "/*.csv.gz"
 
 	stagingTableName := warehouseutils.StagingTableName(provider, tableName)
-	sqlStatement := fmt.Sprintf(`CREATE TABLE %[1]q.%[2]q AS %[1]s.%[3]s`, ch.Namespace, stagingTableName, tableName)
+	accessKeyID, secretAccessKey := ch.s3Credentials()
+	sqlStatement := createTemporaryTableWithS3EngineSQLStatement(ch.Namespace, stagingTableName, loadFolder, accessKeyID, secretAccessKey, sortedColumnNamesWithDataTypes)
 
-	pkgLogger.Debugf("SF: Creating temporary table for table:%s at %s\n", tableName, sqlStatement)
-	_, err = dbHandle.Exec(sqlStatement)
+	_, err = ch.Db.Exec(sqlStatement)
 	if err != nil {
-		pkgLogger.Errorf("SF: Error creating temporary table for table:%s: %v\n", tableName, err)
-		return
-	}
-	tableLoadResp.stagingTable = stagingTableName
-
-	csvObjectLocation, err := sf.Uploader.GetSampleLoadFileLocation(tableName)
-	if err != nil {
-		return
-	}
-	loadFolder := warehouseutils.GetObjectFolder(sf.ObjectStorage, csvObjectLocation)
-	// Truncating the columns by default so as to avoid size limitation errors
-	// https://docs.snowflake.com/en/sql-reference/sql/copy-into-table.html#copy-options-copyoptions
-	sqlStatement = fmt.Sprintf(`COPY INTO %v(%v) FROM '%v' %s PATTERN = '.*\.csv\.gz'
-		FILE_FORMAT = ( TYPE = csv FIELD_OPTIONALLY_ENCLOSED_BY = '"' ESCAPE_UNENCLOSED_FIELD = NONE ) TRUNCATECOLUMNS = TRUE`, fmt.Sprintf(`%s."%s"`, schemaIdentifier, stagingTableName), sortedColumnNames, loadFolder, sf.authString())
-
-	sanitisedSQLStmt, regexErr := misc.ReplaceMultiRegex(sqlStatement, map[string]string{
-		"AWS_KEY_ID='[^']*'":     "AWS_KEY_ID='***'",
-		"AWS_SECRET_KEY='[^']*'": "AWS_SECRET_KEY='***'",
-		"AWS_TOKEN='[^']*'":      "AWS_TOKEN='***'",
-	})
-	if regexErr == nil {
-		pkgLogger.Infof("SF: Running COPY command for table:%s at %s\n", tableName, sanitisedSQLStmt)
-	}
-
-	_, err = dbHandle.Exec(sqlStatement)
-	if err != nil {
-		pkgLogger.Errorf("SF: Error running COPY command: %v\n", err)
+		pkgLogger.Errorf("Failed to create temporary table for table:%s: error: %s", tableName, err.Error())
 		return
 	}
 
-	primaryKey := "ID"
-	if column, ok := primaryKeyMap[tableName]; ok {
-		primaryKey = column
-	}
-
-	partitionKey := `"ID"`
-	if column, ok := partitionKeyMap[tableName]; ok {
-		partitionKey = column
-	}
-
-	var columnNames, stagingColumnNames, columnsWithValues string
-	// TODO: use strings.Join() instead
-	for idx, str := range strkeys {
-		columnNames += fmt.Sprintf(`"%s"`, str)
-		stagingColumnNames += fmt.Sprintf(`staging."%s"`, str)
-		columnsWithValues += fmt.Sprintf(`original."%[1]s" = staging."%[1]s"`, str)
-		if idx != len(strkeys)-1 {
-			columnNames += `,`
-			stagingColumnNames += `,`
-			columnsWithValues += `,`
-		}
-	}
-
-	var additionalJoinClause string
-	if tableName == discardsTable {
-		additionalJoinClause = fmt.Sprintf(`AND original."%[1]s" = staging."%[1]s" AND original."%[2]s" = staging."%[2]s"`, "TABLE_NAME", "COLUMN_NAME")
-	}
-
-	keepLatestRecordOnDedup := sf.Uploader.ShouldOnDedupUseNewRecord()
-
-	if keepLatestRecordOnDedup {
-		sqlStatement = fmt.Sprintf(`MERGE INTO %[9]s."%[1]s" AS original
-									USING (
-										SELECT * FROM (
-											SELECT *, row_number() OVER (PARTITION BY %[8]s ORDER BY RECEIVED_AT DESC) AS _rudder_staging_row_number FROM %[9]s."%[2]s"
-										) AS q WHERE _rudder_staging_row_number = 1
-									) AS staging
-									ON (original."%[3]s" = staging."%[3]s" %[7]s)
-									WHEN MATCHED THEN
-									UPDATE SET %[6]s
-									WHEN NOT MATCHED THEN
-									INSERT (%[4]s) VALUES (%[5]s)`, tableName, stagingTableName, primaryKey, columnNames, stagingColumnNames, columnsWithValues, additionalJoinClause, partitionKey, schemaIdentifier)
-	} else {
-		sqlStatement = fmt.Sprintf(`MERGE INTO %[8]s."%[1]s" AS original
-										USING (
-											SELECT * FROM (
-												SELECT *, row_number() OVER (PARTITION BY %[7]s ORDER BY RECEIVED_AT DESC) AS _rudder_staging_row_number FROM %[8]s."%[2]s"
-											) AS q WHERE _rudder_staging_row_number = 1
-										) AS staging
-										ON (original."%[3]s" = staging."%[3]s" %[6]s)
-										WHEN NOT MATCHED THEN
-										INSERT (%[4]s) VALUES (%[5]s)`, tableName, stagingTableName, primaryKey, columnNames, stagingColumnNames, additionalJoinClause, partitionKey, schemaIdentifier)
-	}
-
-	pkgLogger.Infof("SF: Dedup records for table:%s using staging table: %s\n", tableName, sqlStatement)
-	_, err = dbHandle.Exec(sqlStatement)
+	sqlStatement = insertIntoTemporaryTableSQLStatement(ch.Namespace, tableName, stagingTableName, sortedColumnNames)
+	_, err = ch.Db.Exec(sqlStatement)
 	if err != nil {
-		pkgLogger.Errorf("SF: Error running MERGE for dedup: %v\n", err)
+		pkgLogger.Errorf("Failed to insert data into table for table:%s: error: %s", tableName, err.Error())
 		return
 	}
 
