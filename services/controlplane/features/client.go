@@ -70,7 +70,6 @@ func New(identity identity.Identifier, fns ...optFn) *client {
 }
 
 func (c *client) Send(ctx context.Context, registry *Registry) error {
-
 	url := fmt.Sprintf("%s/data-plane/%s/%s/settings", c.url, c.identity.Resource(), c.identity.ID())
 
 	payload := payload{
@@ -105,7 +104,7 @@ func (c *client) Send(ctx context.Context, registry *Registry) error {
 		defer resp.Body.Close()
 
 		if resp.StatusCode != http.StatusOK {
-			return fmt.Errorf("unexpected status code: %d", req.Response.StatusCode)
+			return fmt.Errorf("unexpected status code: %d", resp.StatusCode)
 		}
 		return err
 	}, backoffWithMaxRetry)
