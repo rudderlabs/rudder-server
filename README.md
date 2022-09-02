@@ -1,5 +1,5 @@
 <p align="center">
-  <a href="https://rudderstack.com/">
+  <a href="https://www.rudderstack.com/">
     <img src="resources/logo.png">
   </a>
 </p>
@@ -16,7 +16,7 @@
   <a href="https://github.com/rudderlabs/rudder-server/releases">
     <img src="https://img.shields.io/github/v/release/rudderlabs/rudder-server?color=blue&sort=semver">
   </a>
-  <a href="https://rudderstack.com/docs/get-started/installing-and-setting-up-rudderstack/docker/">
+  <a href="https://www.rudderstack.com/docs/get-started/installing-and-setting-up-rudderstack/docker/">
     <img src="https://img.shields.io/docker/pulls/rudderlabs/rudder-server">
   </a>
   <a href="https://goreportcard.com/report/github.com/rudderlabs/rudder-server">
@@ -29,15 +29,15 @@
 
 <p align="center">
   <b>
-    <a href="https://rudderstack.com">Website</a>
+    <a href="https://www.rudderstack.com/">Website</a>
     ·
-    <a href="https://rudderstack.com/docs">Documentation</a>
+    <a href="https://www.rudderstack.com/docs/">Documentation</a>
     ·
     <a href="https://github.com/rudderlabs/rudder-server/blob/master/CHANGELOG.md">Changelog</a>
     ·
-    <a href="https://rudderstack.com/blog">Blog</a>
+    <a href="https://www.rudderstack.com/blog/">Blog</a>
     ·
-    <a href="https://rudderstack.com/join-rudderstack-slack-community">Slack</a>
+    <a href="https://www.rudderstack.com/join-rudderstack-slack-community/">Slack</a>
     ·
     <a href="https://twitter.com/rudderstack">Twitter</a>
   </b>
@@ -45,17 +45,17 @@
 
 ---
 
-As the leading open source Customer Data Platform (CDP), [**RudderStack**](https://rudderstack.com/) provides data pipelines that make it easy to collect data from every application, website and SaaS platform, then activate it in your warehouse and business tools.
+As the leading open source Customer Data Platform (CDP), [**RudderStack**](https://www.rudderstack.com/) provides data pipelines that make it easy to collect data from every application, website and SaaS platform, then activate it in your warehouse and business tools.
 
 With RudderStack, you can build customer data pipelines that connect your whole customer data stack and then make them smarter by triggering enrichment and activation in customer tools based on analysis in your data warehouse. It's easy-to-use SDKs and event source integrations, Cloud Extract integrations, transformations, and expansive library of destination and warehouse integrations makes building customer data pipelines for both event streaming and cloud-to-warehouse ELT simple.
 
 <p align="center">
-  <a href="https://rudderstack.com">
+  <a href="https://www.rudderstack.com/">
     <img src="https://user-images.githubusercontent.com/59817155/121468374-4ef91e00-c9d8-11eb-8611-28bea18f609d.gif" alt="RudderStack">
   </a>
 </p>
 
-| Try **RudderStack Cloud Free** - a free tier of [**RudderStack Cloud**](https://rudderstack.com/cloud). Click [**here**](https://app.rudderlabs.com/signup?type=freetrial) to start building a smarter customer data pipeline today, with RudderStack Cloud. |
+| Try **RudderStack Cloud Free** - a free tier of [**RudderStack Cloud**](https://www.rudderstack.com/cloud/). Click [**here**](https://app.rudderlabs.com/signup?type=freetrial) to start building a smarter customer data pipeline today, with RudderStack Cloud. |
 |:------|
 
 ## Key features
@@ -74,13 +74,13 @@ With RudderStack, you can build customer data pipelines that connect your whole 
 
 - **Production-ready**: Companies like Mattermost, IFTTT, Torpedo, Grofers, 1mg, Nana, OnceHub, and dozens of large companies use RudderStack for collecting their events.
 
-- **Seamless Integration**: RudderStack currently supports integration with over 90 popular [**tool**](https://rudderstack.com/docs/destinations/) and [**warehouse**](https://rudderstack.com/docs/data-warehouse-integrations/) destinations.
+- **Seamless Integration**: RudderStack currently supports integration with over 90 popular [**tool**](https://www.rudderstack.com/docs/destinations/) and [**warehouse**](https://www.rudderstack.com/docs/data-warehouse-integrations/) destinations.
 
 - **User-specified Transformation**: RudderStack offers a powerful JavaScript-based event transformation framework which lets you enhance or transform your event data by combining it with your other internal data. Furthermore, as RudderStack runs inside your cloud or on-premise environment, you can easily access your production data to join with the event data.
 
 ## Get started
 
-The easiest way to experience RudderStack is to [**sign up**](https://app.rudderlabs.com/signup?type=freetrial) for **RudderStack Cloud Free** - a completely free tier of [**RudderStack Cloud**](https://rudderstack.com/cloud).
+The easiest way to experience RudderStack is to [**sign up**](https://app.rudderlabs.com/signup?type=freetrial) for **RudderStack Cloud Free** - a completely free tier of [**RudderStack Cloud**](https://www.rudderstack.com/cloud/).
 
 You can also set up RudderStack on your platform of choice with these two easy steps:
 
@@ -94,7 +94,7 @@ You can also set up RudderStack on your platform of choice with these two easy s
 
 ### Step 2: Verify the installation
 
-Once you have installed RudderStack, [**send test events**](https://rudderstack.com/docs/get-started/installing-and-setting-up-rudderstack/sending-test-events/) to verify the setup.
+Once you have installed RudderStack, [**send test events**](https://www.rudderstack.com/docs/get-started/installing-and-setting-up-rudderstack/sending-test-events/) to verify the setup.
 
 ## Architecture
 
@@ -104,7 +104,7 @@ A high-level view of RudderStack’s architecture is shown below:
 
 ![Architecture](resources/rudder-server-architecture.png)
 
-For more details on the various architectural components, refer to our [**documentation**](https://rudderstack.com/docs/get-started/rudderstack-architecture/).
+For more details on the various architectural components, refer to our [**documentation**](https://www.rudderstack.com/docs/get-started/rudderstack-architecture/).
 
 ## Contribute
 
@@ -114,4 +114,4 @@ We would love to see you contribute to RudderStack. Get more information on how 
 
 RudderStack server is released under the [**AGPLv3 License**](https://github.com/rudderlabs/rudder-server/blob/master/LICENSE).
 
-Read [**our blog**](https://rudderstack.com/blog/rudderstacks-licensing-explained) to know more about how our software is licensed.
+Read [**our blog**](https://www.rudderstack.com/blog/rudderstacks-licensing-explained/) to know more about how our software is licensed.

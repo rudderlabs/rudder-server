@@ -102,24 +102,24 @@ func (mr *MockJobServiceMockRecorder) CleanupLoop(ctx interface{}) *gomock.Call 
 }
 
 // Delete mocks base method.
-func (m *MockJobService) Delete(ctx context.Context, jobRunId string) error {
+func (m *MockJobService) Delete(ctx context.Context, jobRunId string, filter JobFilter) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "Delete", ctx, jobRunId)
+	ret := m.ctrl.Call(m, "Delete", ctx, jobRunId, filter)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
 // Delete indicates an expected call of Delete.
-func (mr *MockJobServiceMockRecorder) Delete(ctx, jobRunId interface{}) *gomock.Call {
+func (mr *MockJobServiceMockRecorder) Delete(ctx, jobRunId, filter interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Delete", reflect.TypeOf((*MockJobService)(nil).Delete), ctx, jobRunId)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Delete", reflect.TypeOf((*MockJobService)(nil).Delete), ctx, jobRunId, filter)
 }
 
 // GetFailedRecords mocks base method.
-func (m *MockJobService) GetFailedRecords(ctx context.Context, jobRunId string, filter JobFilter) (FailedRecords, error) {
+func (m *MockJobService) GetFailedRecords(ctx context.Context, jobRunId string, filter JobFilter) (JobFailedRecords, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "GetFailedRecords", ctx, jobRunId, filter)
-	ret0, _ := ret[0].(FailedRecords)
+	ret0, _ := ret[0].(JobFailedRecords)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
