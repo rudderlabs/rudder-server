@@ -95,7 +95,7 @@ type UploadAPIT struct {
 var UploadAPI UploadAPIT
 
 func InitWarehouseAPI(dbHandle *sql.DB, log logger.LoggerI) error {
-	connectionIdentifier, isMultiWorkspace, err := deployment.GetConnectionIdentifier()
+	connectionToken, isMultiWorkspace, err := deployment.GetConnectionToken()
 	if err != nil {
 		return err
 	}
@@ -106,9 +106,9 @@ func InitWarehouseAPI(dbHandle *sql.DB, log logger.LoggerI) error {
 		isMultiWorkspace: isMultiWorkspace,
 		connectionManager: &controlplane.ConnectionManager{
 			AuthInfo: controlplane.AuthInfo{
-				Service:              "warehouse",
-				ConnectionIdentifier: connectionIdentifier,
-				InstanceID:           config.GetEnv("instance_id", "1"),
+				Service:         "warehouse",
+				ConnectionToken: connectionToken,
+				InstanceID:      config.GetEnv("instance_id", "1"),
 			},
 			RetryInterval: 0,
 			UseTLS:        config.GetEnvAsBool("CP_ROUTER_USE_TLS", true),

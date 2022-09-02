@@ -90,7 +90,7 @@ func Test_GetFromEnv(t *testing.T) {
 	}
 }
 
-func Test_GetConnectionIdentifier(t *testing.T) {
+func Test_GetConnectionToken(t *testing.T) {
 	config.Load()
 	admin.Init()
 	logger.Init()
@@ -147,7 +147,7 @@ func Test_GetConnectionIdentifier(t *testing.T) {
 			t.Setenv("HOSTED_SERVICE_SECRET", tt.secret)
 			t.Setenv("WORKSPACE_NAMESPACE", tt.namespace)
 			t.Setenv("WORKSPACE_TOKEN", tt.workspaceToken)
-			identifier, isMultiWorkspace, err := deployment.GetConnectionIdentifier()
+			identifier, isMultiWorkspace, err := deployment.GetConnectionToken()
 			require.Equal(t, tt.err, err)
 			require.Equal(t, tt.expectedIdentifier, identifier)
 			require.Equal(t, tt.expectedBool, isMultiWorkspace)

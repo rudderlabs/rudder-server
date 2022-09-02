@@ -39,38 +39,38 @@ func (t Type) Valid() bool {
 	return false
 }
 
-func GetConnectionIdentifier() (string, bool, error) {
+func GetConnectionToken() (string, bool, error) {
 	deploymentType, err := GetFromEnv()
 	if err != nil {
 		pkgLogger.Errorf("error getting deployment type: %s", err.Error())
 		return "", false, err
 	}
-	var connectionIdentifier string
+	var connectionToken string
 	var isMultiWorkspace bool
 	switch deploymentType {
 	case DedicatedType:
-		connectionIdentifier = config.GetWorkspaceToken()
+		connectionToken = config.GetWorkspaceToken()
 	case MultiTenantType:
 		isMultiWorkspace = true
 		isNamespaced := config.IsEnvSet("WORKSPACE_NAMESPACE")
 		if isNamespaced {
-			connectionIdentifier, err = config.GetEnvErr("WORKSPACE_NAMESPACE")
+			connectionToken, err = config.GetEnvErr("WORKSPACE_NAMESPACE")
 			if err != nil {
 				pkgLogger.Errorf("error getting workspace namespace: %s", err.Error())
 				return "", false, err
 			}
-			if connectionIdentifier == HostedNamespace {
+			if connectionToken == HostedNamespace {
 				// CP Router still has some things hardcoded for hosted
 				// which needs to be supported
-				connectionIdentifier = config.GetEnv("HOSTED_SERVICE_SECRET", "")
+				connectionToken = config.GetEnv("HOSTED_SERVICE_SECRET", "")
 			}
 		} else {
-			connectionIdentifier, err = config.GetEnvErr("HOSTED_SERVICE_SECRET")
+			connectionToken, err = config.GetEnvErr("HOSTED_SERVICE_SECRET")
 			if err != nil {
 				pkgLogger.Errorf("error getting hosted service secret: %s", err.Error())
 				return "", false, err
 			}
 		}
 	}
-	return connectionIdentifier, isMultiWorkspace, nil
+	return connectionToken, isMultiWorkspace, nil
 }
