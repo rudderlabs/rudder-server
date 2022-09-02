@@ -757,6 +757,10 @@ func (job *UploadJobT) fetchPendingUploadTableStatus() []*TableUploadStatusT {
 	return tableUploadStatuses
 }
 
+func (job *UploadJobT) resetTableUploadStatuses() {
+	job.tableUploadStatuses = nil
+}
+
 func getTableUploadStatusMap(tableUploadStatuses []*TableUploadStatusT) map[int64]map[string]*TableUploadStatusInfoT {
 	tableUploadStatus := make(map[int64]map[string]*TableUploadStatusInfoT)
 	for _, tUploadStatus := range tableUploadStatuses {
@@ -1477,6 +1481,7 @@ func (job *UploadJobT) setUploadError(statusError error, state string) (string, 
 		return "", fmt.Errorf("unable to change upload columns: %w", err)
 	}
 
+	job.resetTableUploadStatuses()
 	_, currentJobSucceededTables := job.getTablesToSkip()
 	_, loadFilesTableEventCountMap, err := job.getLoadFilesTablePresenceAndEventCountMaps()
 
@@ -1528,8 +1533,9 @@ func (job *UploadJobT) setUploadError(statusError error, state string) (string, 
 		if config.GetBool("Reporting.enabled", types.DEFAULT_REPORTING_ENABLED) {
 			application.Features().Reporting.GetReportingInstance().Report(reportingMetrics, txn)
 		}
-		err = txn.Commit()
 	}
+
+	err = txn.Commit()
 
 	// TODO: Add reporting metrics in txn
 	// _, err = job.dbHandle.Exec(sqlStatement, state, serializedErr, metadataJSON, timeutil.Now(), upload.ID)
