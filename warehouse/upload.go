@@ -1484,9 +1484,7 @@ func (job *UploadJobT) setUploadError(statusError error, state string) (string, 
 	job.resetTableUploadStatuses()
 	_, currentJobSucceededTables := job.getTablesToSkip()
 	_, loadFilesTableEventCountMap, err := job.getLoadFilesTablePresenceAndEventCountMaps()
-
 	if err != nil {
-		err = fmt.Errorf("unable to get load files table map: %w", err)
 		loadFilesTableEventCountMap = make(map[tableNameT]int)
 	}
 
