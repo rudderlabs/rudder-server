@@ -14,6 +14,7 @@ import (
 	"github.com/aws/aws-sdk-go/aws/ec2metadata"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/mitchellh/mapstructure"
+	"github.com/rudderlabs/rudder-server/config"
 )
 
 // Some AWS destinations are using SecretAccessKey instead of accessKey
@@ -110,5 +111,13 @@ func NewSessionConfig(destinationConfig map[string]interface{}, timeout time.Dur
 	}
 	sessionConfig.Timeout = timeout
 	sessionConfig.Service = serviceName
+	if sessionConfig.IAMRoleARN != "" {
+		/**
+		In order prevent confused deputy problem, we are using
+		workspace token as external ID.
+		Ref: https://docs.aws.amazon.com/IAM/latest/UserGuide/confused-deputy.html
+		*/
+		sessionConfig.ExternalID = config.GetWorkspaceToken()
+	}
 	return &sessionConfig, nil
 }

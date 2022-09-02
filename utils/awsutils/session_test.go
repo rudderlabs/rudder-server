@@ -23,7 +23,8 @@ var (
 		"accessKeyID":     "AccessKeyID",
 		"secretAccessKey": "AccessKey",
 	}
-	timeOut time.Duration = 10 * time.Second
+	timeOut              time.Duration = 10 * time.Second
+	sampleWorkspaceToken string        = "someWorkspaceToken"
 )
 
 func TestNewSessionConfigWithAccessKey(t *testing.T) {
@@ -56,6 +57,7 @@ func TestNewSessionConfigWithSecretAccessKey(t *testing.T) {
 }
 
 func TestNewSessionConfigWithRole(t *testing.T) {
+	t.Setenv("WORKSPACE_TOKEN", sampleWorkspaceToken)
 	serviceName := "s3"
 	sessionConfig, err := NewSessionConfig(destinationConfigWithRole, timeOut, serviceName)
 	assert.Nil(t, err)
@@ -63,7 +65,7 @@ func TestNewSessionConfigWithRole(t *testing.T) {
 	assert.Equal(t, *sessionConfig, SessionConfig{
 		Region:     destinationConfigWithRole["region"].(string),
 		IAMRoleARN: destinationConfigWithRole["iamRoleARN"].(string),
-		ExternalID: destinationConfigWithRole["externalID"].(string),
+		ExternalID: sampleWorkspaceToken,
 		Timeout:    timeOut,
 		Service:    serviceName,
 	})
