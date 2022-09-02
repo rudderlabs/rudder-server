@@ -75,11 +75,6 @@ func run(m *testing.M) int {
 		log.Printf("Could not start resource: %s", err)
 		return 1
 	}
-	defer func() {
-		if err := pool.Purge(resourcePostgres); err != nil {
-			log.Printf("Could not purge resource: %s \n", err)
-		}
-	}()
 
 	DB_DSN = fmt.Sprintf("postgres://rudder:password@localhost:%s/%s?sslmode=disable", resourcePostgres.GetPort("5432/tcp"), database)
 	fmt.Println("DB_DSN:", DB_DSN)
@@ -102,6 +97,12 @@ func run(m *testing.M) int {
 		log.Printf("Could not connect to docker: %s", err)
 		return 1
 	}
+
+	defer func() {
+		if err := pool.Purge(resourcePostgres); err != nil {
+			log.Printf("Could not purge resource: %s \n", err)
+		}
+	}()
 
 	code := m.Run()
 	blockOnHold()

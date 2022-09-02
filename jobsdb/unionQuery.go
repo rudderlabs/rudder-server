@@ -253,7 +253,7 @@ func (mj *MultiTenantHandleT) getUnionQuerystring(workspaceCount map[string]int,
 	return queryInitial + `(` + strings.Join(queries, `) UNION (`) + `)`, workspacesToQuery
 }
 
-func (mj *MultiTenantHandleT) getInitialSingleWorkspaceQueryString(ds dataSetT, conditions QueryConditions, workspaceCount map[string]int) string {
+func (*MultiTenantHandleT) getInitialSingleWorkspaceQueryString(ds dataSetT, conditions QueryConditions, workspaceCount map[string]int) string {
 	customValFilters := conditions.CustomValFilters
 	parameterFilters := conditions.ParameterFilters
 	stateFilters := conditions.StateFilters
@@ -277,7 +277,7 @@ func (mj *MultiTenantHandleT) getInitialSingleWorkspaceQueryString(ds dataSetT, 
 	if len(customValFilters) > 0 && !conditions.IgnoreCustomValFiltersInQuery {
 		// mj.assert(!getAll, "getAll is true")
 		customValQuery = " AND " +
-			constructQuery(mj, "jobs.custom_val", customValFilters, "OR")
+			constructQueryOR("jobs.custom_val", customValFilters)
 	} else {
 		customValQuery = ""
 	}

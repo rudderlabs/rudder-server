@@ -592,7 +592,7 @@ func (brt *HandleT) pollAsyncStatus(ctx context.Context) {
 	}
 }
 
-func (brt *HandleT) copyJobsToStorage(provider string, batchJobs *BatchJobsT, makeJournalEntry, isWarehouse bool) StorageUploadOutput {
+func (brt *HandleT) copyJobsToStorage(provider string, batchJobs *BatchJobsT, isWarehouse bool) StorageUploadOutput {
 	if disableEgress {
 		return StorageUploadOutput{Error: rterror.DisabledEgress}
 	}
@@ -1799,7 +1799,7 @@ func (worker *workerT) workerProcess() {
 				case misc.ContainsString(objectStorageDestinations, brt.destType):
 					destUploadStat := stats.DefaultStats.NewStat(fmt.Sprintf(`batch_router.%s_dest_upload_time`, brt.destType), stats.TimerType)
 					destUploadStat.Start()
-					output := brt.copyJobsToStorage(brt.destType, &batchJobs, true, false)
+					output := brt.copyJobsToStorage(brt.destType, &batchJobs, false)
 					brt.recordDeliveryStatus(*batchJobs.BatchDestination, output, false)
 					brt.setJobStatus(&batchJobs, false, output.Error, false)
 					misc.RemoveFilePaths(output.LocalFilePaths...)
@@ -1818,7 +1818,7 @@ func (worker *workerT) workerProcess() {
 					destUploadStat.Start()
 					splitBatchJobs := brt.splitBatchJobsOnTimeWindow(batchJobs)
 					for _, batchJob := range splitBatchJobs {
-						output := brt.copyJobsToStorage(objectStorageType, batchJob, true, true)
+						output := brt.copyJobsToStorage(objectStorageType, batchJob, true)
 						postToWarehouseErr := false
 						if output.Error == nil && output.Key != "" {
 							output.Error = brt.postToWarehouse(batchJob, output)
