@@ -160,7 +160,7 @@ var (
 var (
 	maxParallelLoads      map[string]int
 	columnCountThresholds map[string]int
-	maxColumnCount        map[string]int
+	columnCountLimits     map[string]int
 )
 
 func init() {
@@ -186,7 +186,7 @@ func setMaxParallelLoads() {
 		warehouseutils.RS:            config.GetInt("Warehouse.redshift.columnCountThreshold", 1200),
 		warehouseutils.SNOWFLAKE:     config.GetInt("Warehouse.snowflake.columnCountThreshold", 1600),
 	}
-	maxColumnCount = map[string]int{
+	columnCountLimits = map[string]int{
 		warehouseutils.AZURE_SYNAPSE: config.GetInt("Warehouse.azure_synapse.maxColumnCount", 1024),
 		warehouseutils.BQ:            config.GetInt("Warehouse.bigquery.maxColumnCount", 10000),
 		warehouseutils.CLICKHOUSE:    config.GetInt("Warehouse.clickhouse.maxColumnCount", 1000),
@@ -396,7 +396,7 @@ func (job *UploadJobT) run() (err error) {
 	schemaHandle := job.schemaHandle
 	schemaHandle.uploadSchema = job.upload.UploadSchema
 	// set excluded schema
-	getMaxColumnCount := func() int { return maxColumnCount[job.upload.DestinationType] }
+	getMaxColumnCount := func() int { return columnCountLimits[job.upload.DestinationType] }
 	job.generateExcludedSchema(getMaxColumnCount())
 
 	userTables := []string{job.identifiesTableName(), job.usersTableName()}
