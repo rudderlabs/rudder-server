@@ -18,7 +18,7 @@ func Test_Client_Send(t *testing.T) {
 	validSecret := "valid-secret"
 
 	r := &features.Registry{}
-	r.Register("test", []string{"feature1", "feature2"})
+	r.Register("test", "feature1", "feature2")
 
 	wantBody := `{"components":[{"name":"test","features":["feature1","feature2"]}]}`
 

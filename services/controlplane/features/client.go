@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"time"
 
@@ -103,7 +104,13 @@ func (c *client) Send(ctx context.Context, registry *Registry) error {
 		}
 		defer resp.Body.Close()
 
+		b, err := io.ReadAll(resp.Body)
+		if err != nil {
+			return err
+		}
+
 		if resp.StatusCode != http.StatusOK {
+			fmt.Println(string(b))
 			return fmt.Errorf("unexpected status code: %d", resp.StatusCode)
 		}
 		return err

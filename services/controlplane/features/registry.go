@@ -6,32 +6,31 @@ var (
 	DefaultRegistry = &Registry{}
 )
 
-type item struct {
-	Name     string
-	Features []string
-}
-
 type Registry struct {
 	mu    sync.RWMutex
-	store []item
+	store map[string][]string // component -> features
 }
 
-func (r *Registry) Register(name string, features []string) {
+func (r *Registry) Register(component string, features ...string) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	r.store = append(r.store, item{Name: name, Features: features})
+	if r.store == nil {
+		r.store = make(map[string][]string)
+	}
+
+	r.store[component] = append(r.store[component], features...)
 }
 
-func (r *Registry) Each(fn func(name string, features []string)) {
+func (r *Registry) Each(fn func(component string, features []string)) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	for _, item := range r.store {
-		fn(item.Name, item.Features)
+	for component, features := range r.store {
+		fn(component, features)
 	}
 }
 
-func Register(name string, features []string) {
-	DefaultRegistry.Register(name, features)
+func Register(component string, features ...string) {
+	DefaultRegistry.Register(component, features...)
 }

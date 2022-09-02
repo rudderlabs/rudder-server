@@ -9,8 +9,9 @@ import (
 
 func TestRegistry(t *testing.T) {
 	reg := features.Registry{}
-	reg.Register("test", []string{"feature1", "feature2"})
-	reg.Register("test2", []string{"feature3", "feature4"})
+	reg.Register("test", "feature1", "feature2")
+	reg.Register("test2", "feature3", "feature4")
+	reg.Register("test", "feature5")
 
 	type component struct {
 		name     string
@@ -23,7 +24,7 @@ func TestRegistry(t *testing.T) {
 	})
 
 	require.Equal(t, []component{
-		{name: "test", features: []string{"feature1", "feature2"}},
+		{name: "test", features: []string{"feature1", "feature2", "feature5"}},
 		{name: "test2", features: []string{"feature3", "feature4"}},
 	}, cc)
 }

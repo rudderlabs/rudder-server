@@ -13,12 +13,17 @@ import (
 	jsoniter "github.com/json-iterator/go"
 
 	"github.com/rudderlabs/rudder-server/config"
+	"github.com/rudderlabs/rudder-server/services/controlplane/features"
 	"github.com/rudderlabs/rudder-server/services/controlplane/identity"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/types"
 )
 
 var jsonfast = jsoniter.ConfigCompatibleWithStandardLibrary
+
+func init() {
+	features.Register("backend-config", "namespace")
+}
 
 // WorkspacesT holds sources of workspaces
 type WorkspacesT struct {

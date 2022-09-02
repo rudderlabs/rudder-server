@@ -15,6 +15,7 @@ import (
 	"github.com/rudderlabs/rudder-server/processor"
 	"github.com/rudderlabs/rudder-server/router"
 	"github.com/rudderlabs/rudder-server/router/batchrouter"
+	"github.com/rudderlabs/rudder-server/services/controlplane/features"
 	"github.com/rudderlabs/rudder-server/services/diagnostics"
 	"github.com/rudderlabs/rudder-server/services/multitenant"
 	"github.com/rudderlabs/rudder-server/services/rsources"
@@ -107,6 +108,17 @@ func rudderCoreBaseSetup() {
 
 	processor.RegisterAdminHandlers(&readonlyProcErrorDB)
 	router.RegisterAdminHandlers(&readonlyRouterDB, &readonlyBatchRouterDB)
+
+	go func() {
+		features.Register("backend-config", "namespace")
+
+		backendconfig.DefaultBackendConfig.WaitForConfig(context.Background())
+		err := features.New(backendconfig.DefaultBackendConfig.Identity()).Send(context.Background(), features.DefaultRegistry)
+		if err != nil {
+			pkgLogger.Errorf("error sending features: %v", err)
+		}
+	}()
+
 }
 
 // StartProcessor atomically starts processor process if not already started
