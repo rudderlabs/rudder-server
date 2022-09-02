@@ -626,7 +626,7 @@ func (ch *HandleT) loadByCopyCommand(tableName string, tableSchemaInUpload wareh
 		}
 		dataType := tableSchemaInUpload[key]
 		sortedColumnNamesWithDataTypes += fmt.Sprintf(`%s %s`, key, rudderDataTypesMapToClickHouse[dataType])
-		sortedColumnNames += fmt.Sprintf(`%s`, key)
+		sortedColumnNames += key
 	}
 
 	csvObjectLocation, err := ch.Uploader.GetSampleLoadFileLocation(tableName)
@@ -637,24 +637,15 @@ func (ch *HandleT) loadByCopyCommand(tableName string, tableSchemaInUpload wareh
 	loadFolder = loadFolder[:strings.LastIndex(loadFolder, "/")]
 	loadFolder = loadFolder + "/*.csv.gz"
 
-	stagingTableName := warehouseutils.StagingTableName(provider, tableName)
 	accessKeyID, secretAccessKey, err := ch.credentials()
 	if err != nil {
 		return
 	}
 
-	sqlStatement := createTemporaryTableWithS3EngineSQLStatement(ch.Namespace, stagingTableName, loadFolder, accessKeyID, secretAccessKey, sortedColumnNamesWithDataTypes)
-
+	sqlStatement := loadTableWithS3EngineSQLStatement(ch.Namespace, tableName, loadFolder, accessKeyID, secretAccessKey, sortedColumnNames, sortedColumnNamesWithDataTypes)
 	_, err = ch.Db.Exec(sqlStatement)
 	if err != nil {
-		pkgLogger.Errorf("Failed to create temporary table for table:%s: error: %s", tableName, err.Error())
-		return
-	}
-
-	sqlStatement = insertIntoTemporaryTableSQLStatement(ch.Namespace, tableName, stagingTableName, sortedColumnNames)
-	_, err = ch.Db.Exec(sqlStatement)
-	if err != nil {
-		pkgLogger.Errorf("Failed to insert data into table for table:%s: error: %s", tableName, err.Error())
+		pkgLogger.Errorf("Failed to load table for table:%s: error: %s", tableName, err.Error())
 		return
 	}
 
@@ -1081,10 +1072,7 @@ func (ch *HandleT) LoadTable(tableName string) error {
 
 func (ch *HandleT) Cleanup() {
 	if ch.Db != nil {
-		err := ch.Db.Close()
-		if err != nil {
-			return
-		}
+		_ = ch.Db.Close()
 	}
 }
 
