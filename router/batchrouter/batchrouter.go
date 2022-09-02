@@ -5,7 +5,7 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
-	"encoding/json"
+	stdjson "encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -17,6 +17,7 @@ import (
 	"sync"
 	"time"
 
+	jsoniter "github.com/json-iterator/go"
 	"github.com/rudderlabs/rudder-server/router"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager"
 	"github.com/rudderlabs/rudder-server/router/rterror"
@@ -47,6 +48,8 @@ import (
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
 )
+
+var json = jsoniter.ConfigCompatibleWithStandardLibrary
 
 var (
 	mainLoopSleep, diagnosisTickerTime time.Duration
@@ -739,7 +742,7 @@ func (brt *HandleT) copyJobsToStorage(provider string, batchJobs *BatchJobsT, ma
 	_, fileName := filepath.Split(gzipFilePath)
 	var (
 		opID      int64
-		opPayload json.RawMessage
+		opPayload stdjson.RawMessage
 	)
 	if !isWarehouse {
 		opPayload, _ = json.Marshal(&ObjectStorageT{
@@ -1412,7 +1415,7 @@ func (brt *HandleT) setMultipleJobStatus(asyncOutput asyncdestinationmanager.Asy
 				ExecTime:      time.Now(),
 				RetryTime:     time.Now(),
 				ErrorCode:     "200",
-				ErrorResponse: json.RawMessage(asyncOutput.SuccessResponse),
+				ErrorResponse: stdjson.RawMessage(asyncOutput.SuccessResponse),
 				Parameters:    []byte(`{}`),
 				WorkspaceId:   workspace,
 			}
@@ -1427,7 +1430,7 @@ func (brt *HandleT) setMultipleJobStatus(asyncOutput asyncdestinationmanager.Asy
 				ExecTime:      time.Now(),
 				RetryTime:     time.Now(),
 				ErrorCode:     "500",
-				ErrorResponse: json.RawMessage(asyncOutput.FailedReason),
+				ErrorResponse: stdjson.RawMessage(asyncOutput.FailedReason),
 				Parameters:    []byte(`{}`),
 				WorkspaceId:   workspace,
 			}
@@ -1442,7 +1445,7 @@ func (brt *HandleT) setMultipleJobStatus(asyncOutput asyncdestinationmanager.Asy
 				ExecTime:      time.Now(),
 				RetryTime:     time.Now(),
 				ErrorCode:     "400",
-				ErrorResponse: json.RawMessage(asyncOutput.AbortReason),
+				ErrorResponse: stdjson.RawMessage(asyncOutput.AbortReason),
 				Parameters:    []byte(`{}`),
 				WorkspaceId:   workspace,
 			}
