@@ -1490,7 +1490,7 @@ func (job *UploadJobT) setUploadError(statusError error, state string) (string, 
 		loadFilesTableEventCountMap = make(map[tableNameT]int)
 	}
 
-	for tableName, _ := range job.upload.UploadSchema {
+	for tableName := range job.upload.UploadSchema {
 		_, ok := currentJobSucceededTables[string(tableName)]
 
 		if ok {
