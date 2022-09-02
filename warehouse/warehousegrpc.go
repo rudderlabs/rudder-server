@@ -88,3 +88,15 @@ func (w *warehousegrpc) RetryWHUploads(ctx context.Context, req *proto.RetryWHUp
 	}
 	return
 }
+func (w *warehousegrpc) ValidateObjectStorage(context context.Context, request *proto.ValidateObjectStorageRequest) (response *proto.ValidateObjectStorageResponse, err error) {
+	validateObjectReq := &ValidateObjectRequestT{
+		body: request.Body,
+	}
+	r, err := validateObjectReq.validateObjectStorage()
+	response = &proto.ValidateObjectStorageResponse{
+		StatusCode: r.StatusCode,
+		IsValid:    r.IsValid,
+		Error:      r.Error,
+	}
+	return r, err
+}

@@ -1,9 +1,15 @@
 package warehouse
 
 import (
+	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/rudderlabs/rudder-server/services/filemanager"
+	"os"
+	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 
@@ -88,6 +94,10 @@ type UploadAPIT struct {
 	log               logger.LoggerI
 	connectionManager *controlplane.ConnectionManager
 	isHosted          bool
+}
+
+type ValidateObjectRequestT struct {
+	body string
 }
 
 var UploadAPI UploadAPIT
@@ -615,4 +625,47 @@ func (uploadsReq *UploadsReqT) getWhUploads(authorizedSourceIDs []string, select
 		},
 	}
 	return
+}
+func (validateObjectStorageRequest *ValidateObjectRequestT) validateObjectStorage() (validateObjectStorageResp *proto.ValidateObjectStorageResponse, err error) {
+	var requestMap, configMap map[string]interface{}
+
+	err = json.Unmarshal([]byte(validateObjectStorageRequest.body), &requestMap)
+	if err != nil {
+		return
+	}
+	typeOfObjectStorage := fmt.Sprint(requestMap["type"])
+	configValue := requestMap["config"].(string)
+	err = json.Unmarshal([]byte(configValue), &configMap)
+	if err != nil {
+		return
+	}
+
+	settings := filemanager.SettingsT{
+		Provider: typeOfObjectStorage,
+		Config:   configMap,
+	}
+	fileManagerFactory := filemanager.FileManagerFactoryT{}
+	fileManager, err := fileManagerFactory.New(&settings)
+
+	searchDir := "../services/filemanager/goldenDirectory"
+	regexRequiredSuffix := regexp.MustCompile(".json.gz$")
+	var fileList []string
+
+	err = filepath.Walk(searchDir, func(path string, f os.FileInfo, err error) error {
+		if regexRequiredSuffix.MatchString(path) {
+			fileList = append(fileList, path)
+		}
+		return nil
+	})
+	if err != nil {
+		panic(err)
+	}
+	if len(fileList) == 0 {
+		panic("file list empty, no data to test.")
+	}
+
+	filePtr, err := os.Open(fileList[0])
+	fileManager.Upload(context.TODO(), filePtr, "test-prefix-1")
+
+	return nil, err
 }
