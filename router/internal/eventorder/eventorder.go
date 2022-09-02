@@ -33,7 +33,7 @@ func NewBarrier(abortConcurrencyLimit int) *Barrier {
 // processed asynchronously through buffered channels by separate goroutine(s) aka workers.
 type Barrier struct {
 	concurrencyLimit int
-	mu               sync.RWMutex
+	mu               sync.RWMutex // mutex to synchronize concurrent access to the barrier's methods
 	queue            []command
 	barriers         map[string]*barrierInfo
 }
