@@ -124,7 +124,7 @@ func Test_Job_Abort_then_Fail(t *testing.T) {
 	require.True(t, enter, "job 1 for user1 should be accepted since no barrier exists")
 	require.Nil(t, previousFailedJobID)
 
-	require.False(t, firstBool(barrier.Wait("user1", 1)), "job 3 for user1 shouldn't wait")
+	require.False(t, firstBool(barrier.Wait("user1", 1)), "job 1 for user1 shouldn't wait")
 	require.NoError(t, barrier.StateChanged("user1", 1, jobsdb.Aborted.State))
 
 	require.Equal(t, 0, barrier.Sync())
