@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"github.com/rudderlabs/rudder-server/utils/logger"
 	"os"
 	"reflect"
 	"regexp"
@@ -14,6 +15,8 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+
+	"github.com/gofrs/uuid"
 
 	"github.com/stretchr/testify/require"
 
@@ -1306,7 +1309,7 @@ var _ = Describe("Utils", func() {
 		Entry(nil, AZURE_DATALAKE),
 	)
 
-	DescribeTable("Get object name", func(location string, config interface{}, objectProvider string, objectName string) {
+	DescribeTable("Get object name", func(location string, config interface{}, objectProvider, objectName string) {
 		Expect(GetObjectName(location, config, objectProvider)).To(Equal(objectName))
 	},
 		Entry(GCS, "https://storage.googleapis.com/bucket-name/key", map[string]interface{}{"bucketName": "bucket-name"}, GCS, "key"),
@@ -1314,10 +1317,27 @@ var _ = Describe("Utils", func() {
 		Entry(AZURE_BLOB, "https://account-name.blob.core.windows.net/container-name/key", map[string]interface{}{"containerName": "container-name"}, AZURE_BLOB, "key"),
 		Entry(MINIO, "https://minio-endpoint/bucket-name/key", map[string]interface{}{"bucketName": "bucket-name", "useSSL": true, "endPoint": "minio-endpoint"}, MINIO, "key"),
 	)
+
+	It("SSL keys", func() {
+		destinationID := "destID"
+		clientKey := uuid.Must(uuid.NewV4()).String()
+		clientCert := uuid.Must(uuid.NewV4()).String()
+		serverCA := uuid.Must(uuid.NewV4()).String()
+
+		err := WriteSSLKeys(backendconfig.DestinationT{ID: destinationID, Config: map[string]interface{}{"clientKey": clientKey, "clientCert": clientCert, "serverCA": serverCA}})
+		Expect(err).To(Equal(WriteSSLKeyError{}))
+
+		path := GetSSLKeyDirPath(destinationID)
+		Expect(path).NotTo(BeEmpty())
+
+		Expect(os.RemoveAll(path)).NotTo(HaveOccurred())
+	})
 })
 
 func TestMain(m *testing.M) {
 	config.Load()
+	logger.Init()
+	misc.Init()
 	Init()
 	os.Exit(m.Run())
 }
