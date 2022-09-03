@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"reflect"
 	"regexp"
 	"sort"
 	"strings"
@@ -416,6 +417,15 @@ func GetObjectFolderForDeltalake(provider, location string) (folder string) {
 		folder = blobLocation[:lastPos]
 	}
 	return
+}
+
+func GetColumnsFromTableSchema(schema TableSchemaT) []string {
+	keys := reflect.ValueOf(schema).MapKeys()
+	strKeys := make([]string, len(keys))
+	for i := 0; i < len(keys); i++ {
+		strKeys[i] = keys[i].String()
+	}
+	return strKeys
 }
 
 // GetObjectLocation returns the folder path for the storage object based on the storage provider

@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"reflect"
 	"sort"
 	"strings"
 	"time"
@@ -275,21 +274,11 @@ func (rs *HandleT) loadTable(tableName string, tableSchemaInUpload, tableSchemaA
 	}
 	pkgLogger.Infof("RS: Generated and stored manifest for table:%s at %s\n", tableName, manifestLocation)
 
-	// sort columnnames
-	keys := reflect.ValueOf(tableSchemaInUpload).MapKeys()
-	strkeys := make([]string, len(keys))
-	for i := 0; i < len(keys); i++ {
-		strkeys[i] = keys[i].String()
-	}
-	sort.Strings(strkeys)
-	var sortedColumnNames string
-	// TODO: use strings.Join() instead
-	for index, key := range strkeys {
-		if index > 0 {
-			sortedColumnNames += `, `
-		}
-		sortedColumnNames += fmt.Sprintf(`%q`, key)
-	}
+	strKeys := warehouseutils.GetColumnsFromTableSchema(tableSchemaInUpload)
+	sort.Strings(strKeys)
+	sortedColumnNames := warehouseutils.JoinWithFormatting(strKeys, func(idx int, name string) string {
+		return fmt.Sprintf(`%q`, name)
+	}, ",")
 
 	stagingTableName = warehouseutils.StagingTableName(provider, tableName)
 	err = rs.CreateTable(stagingTableName, tableSchemaAfterUpload)

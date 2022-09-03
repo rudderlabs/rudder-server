@@ -6,7 +6,6 @@ import (
 	"database/sql"
 	"encoding/csv"
 	"fmt"
-	"reflect"
 	"sort"
 	"strings"
 	"time"
@@ -230,21 +229,11 @@ func (sf *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 		defer dbHandle.Close()
 	}
 
-	// sort column names
-	keys := reflect.ValueOf(tableSchemaInUpload).MapKeys()
-	strkeys := make([]string, len(keys))
-	for i := 0; i < len(keys); i++ {
-		strkeys[i] = keys[i].String()
-	}
-	sort.Strings(strkeys)
-	var sortedColumnNames string
-	// TODO: use strings.Join() instead
-	for index, key := range strkeys {
-		if index > 0 {
-			sortedColumnNames += `, `
-		}
-		sortedColumnNames += fmt.Sprintf(`"%s"`, key)
-	}
+	strKeys := warehouseutils.GetColumnsFromTableSchema(tableSchemaInUpload)
+	sort.Strings(strKeys)
+	sortedColumnNames := warehouseutils.JoinWithFormatting(strKeys, func(idx int, name string) string {
+		return fmt.Sprintf(`%q`, name)
+	}, ",")
 
 	schemaIdentifier := sf.schemaIdentifier()
 	stagingTableName := warehouseutils.StagingTableName(provider, tableName)
@@ -293,18 +282,12 @@ func (sf *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 		partitionKey = column
 	}
 
-	var columnNames, stagingColumnNames, columnsWithValues string
-	// TODO: use strings.Join() instead
-	for idx, str := range strkeys {
-		columnNames += fmt.Sprintf(`"%s"`, str)
-		stagingColumnNames += fmt.Sprintf(`staging."%s"`, str)
-		columnsWithValues += fmt.Sprintf(`original."%[1]s" = staging."%[1]s"`, str)
-		if idx != len(strkeys)-1 {
-			columnNames += `,`
-			stagingColumnNames += `,`
-			columnsWithValues += `,`
-		}
-	}
+	stagingColumnNames := warehouseutils.JoinWithFormatting(strKeys, func(idx int, name string) string {
+		return fmt.Sprintf(`staging."%s"`, name)
+	}, ",")
+	columnsWithValues := warehouseutils.JoinWithFormatting(strKeys, func(idx int, name string) string {
+		return fmt.Sprintf(`original."%[1]s" = staging."%[1]s"`, name)
+	}, ",")
 
 	var additionalJoinClause string
 	if tableName == discardsTable {
@@ -324,7 +307,7 @@ func (sf *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 									WHEN MATCHED THEN
 									UPDATE SET %[6]s
 									WHEN NOT MATCHED THEN
-									INSERT (%[4]s) VALUES (%[5]s)`, tableName, stagingTableName, primaryKey, columnNames, stagingColumnNames, columnsWithValues, additionalJoinClause, partitionKey, schemaIdentifier)
+									INSERT (%[4]s) VALUES (%[5]s)`, tableName, stagingTableName, primaryKey, sortedColumnNames, stagingColumnNames, columnsWithValues, additionalJoinClause, partitionKey, schemaIdentifier)
 	} else {
 		sqlStatement = fmt.Sprintf(`MERGE INTO %[8]s."%[1]s" AS original
 										USING (
@@ -334,7 +317,7 @@ func (sf *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 										) AS staging
 										ON (original."%[3]s" = staging."%[3]s" %[6]s)
 										WHEN NOT MATCHED THEN
-										INSERT (%[4]s) VALUES (%[5]s)`, tableName, stagingTableName, primaryKey, columnNames, stagingColumnNames, additionalJoinClause, partitionKey, schemaIdentifier)
+										INSERT (%[4]s) VALUES (%[5]s)`, tableName, stagingTableName, primaryKey, sortedColumnNames, stagingColumnNames, additionalJoinClause, partitionKey, schemaIdentifier)
 	}
 
 	pkgLogger.Infof("SF: Dedup records for table:%s using staging table: %s\n", tableName, sqlStatement)

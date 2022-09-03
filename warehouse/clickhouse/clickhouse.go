@@ -13,7 +13,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"reflect"
 	"sort"
 	"strconv"
 	"strings"
@@ -31,7 +30,8 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/warehouse/client"
-	"github.com/rudderlabs/rudder-server/warehouse/utils"
+
+	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
 var (
@@ -596,30 +596,18 @@ func (ch *HandleT) credentials() (accessKeyID, secretAccessKey string, err error
 }
 
 func (ch *HandleT) loadByCopyCommand(tableName string, tableSchemaInUpload warehouseutils.TableSchemaT) (err error) {
-	pkgLogger.Infof("%s LoadTable By COPY command Started", ch.GetLogIdentifier(tableName))
-	defer pkgLogger.Infof("%s LoadTable By COPY command Completed", ch.GetLogIdentifier(tableName))
+	pkgLogger.Infof("LoadTable By COPY command Started for table: %s", tableName)
 
-	// sort column names
-	keys := reflect.ValueOf(tableSchemaInUpload).MapKeys()
-	strKeys := make([]string, len(keys))
-	for i := 0; i < len(keys); i++ {
-		strKeys[i] = keys[i].String()
-	}
+	strKeys := warehouseutils.GetColumnsFromTableSchema(tableSchemaInUpload)
 	sort.Strings(strKeys)
-	var sortedColumnNamesWithDataTypes string
-	var sortedColumnNames string
-	for index, key := range strKeys {
-		if index > 0 {
-			sortedColumnNamesWithDataTypes += `, `
-			sortedColumnNames += `, `
-		}
-		dataType := tableSchemaInUpload[key]
-		sortedColumnNamesWithDataTypes += fmt.Sprintf(`%s %s`, key, rudderDataTypesMapToClickHouse[dataType])
-		sortedColumnNames += key
-	}
+	sortedColumnNames := strings.Join(strKeys, ",")
+	sortedColumnNamesWithDataTypes := warehouseutils.JoinWithFormatting(strKeys, func(idx int, name string) string {
+		return fmt.Sprintf(`%s %s`, name, rudderDataTypesMapToClickHouse[tableSchemaInUpload[name]])
+	}, ",")
 
 	csvObjectLocation, err := ch.Uploader.GetSampleLoadFileLocation(tableName)
 	if err != nil {
+		err = fmt.Errorf("failed to get sample load file location with error: %s", err.Error())
 		return
 	}
 	loadFolder := csvObjectLocation
@@ -628,13 +616,14 @@ func (ch *HandleT) loadByCopyCommand(tableName string, tableSchemaInUpload wareh
 
 	accessKeyID, secretAccessKey, err := ch.credentials()
 	if err != nil {
+		err = fmt.Errorf("failed to get credentials during load for copy with error: %s", err.Error())
 		return
 	}
 
 	sqlStatement := loadTableWithS3EngineSQLStatement(ch.Namespace, tableName, loadFolder, accessKeyID, secretAccessKey, sortedColumnNames, sortedColumnNamesWithDataTypes)
 	_, err = ch.Db.Exec(sqlStatement)
 	if err != nil {
-		pkgLogger.Errorf("Failed to load table for table:%s: error: %s", tableName, err.Error())
+		pkgLogger.Errorf("Failed to load table: %s: with error: %s", tableName, err.Error())
 		return
 	}
 
