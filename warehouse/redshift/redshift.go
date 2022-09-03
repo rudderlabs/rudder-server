@@ -53,15 +53,12 @@ type HandleT struct {
 
 // String constants for redshift destination config
 const (
-	AWSAccessKey        = "accessKey"
-	AWSAccessKeyID      = "accessKeyID"
-	AWSBucketNameConfig = "bucketName"
-	RSHost              = "host"
-	RSPort              = "port"
-	RSDbName            = "database"
-	RSUserName          = "user"
-	RSPassword          = "password"
-	rudderStringLength  = 512
+	RSHost             = "host"
+	RSPort             = "port"
+	RSDbName           = "database"
+	RSUserName         = "user"
+	RSPassword         = "password"
+	rudderStringLength = 512
 )
 
 const (
@@ -242,9 +239,9 @@ func (rs *HandleT) generateManifest(tableName string, columnMap map[string]strin
 	}
 	defer file.Close()
 	uploader, err := filemanager.DefaultFileManagerFactory.New(&filemanager.SettingsT{
-		Provider: "S3",
+		Provider: warehouseutils.S3,
 		Config: misc.GetObjectStorageConfig(misc.ObjectStorageOptsT{
-			Provider:         "S3",
+			Provider:         warehouseutils.S3,
 			Config:           rs.Warehouse.Destination.Config,
 			UseRudderStorage: rs.Uploader.UseRudderStorage(),
 		}),
@@ -506,8 +503,8 @@ func (rs *HandleT) loadUserTables() (errorMap map[string]error) {
 func (rs *HandleT) getTemporaryCredForCopy() (string, string, string, error) {
 	var accessKey, accessKeyID string
 	if misc.HasAWSKeysInConfig(rs.Warehouse.Destination.Config) && !misc.IsConfiguredToUseRudderObjectStorage(rs.Warehouse.Destination.Config) {
-		accessKey = warehouseutils.GetConfigValue(AWSAccessKey, rs.Warehouse)
-		accessKeyID = warehouseutils.GetConfigValue(AWSAccessKeyID, rs.Warehouse)
+		accessKey = warehouseutils.GetConfigValue(warehouseutils.AWSAccessKey, rs.Warehouse)
+		accessKeyID = warehouseutils.GetConfigValue(warehouseutils.AWSAccessSecret, rs.Warehouse)
 	} else {
 		accessKeyID = config.GetEnv("RUDDER_AWS_S3_COPY_USER_ACCESS_KEY_ID", "")
 		accessKey = config.GetEnv("RUDDER_AWS_S3_COPY_USER_ACCESS_KEY", "")

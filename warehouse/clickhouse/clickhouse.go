@@ -67,17 +67,6 @@ const (
 	partitionField = "received_at"
 )
 
-const (
-	provider = warehouseutils.CLICKHOUSE
-)
-
-const (
-	AWSAccessKeyID       = "accessKeyID"
-	AWSAccessKey         = "accessKey"
-	MinioAccessKeyID     = "accessKeyID"
-	MinioSecretAccessKey = "secretAccessKey"
-)
-
 // clickhouse doesn't support bool, they recommend to use Uint8 and set 1,0
 
 var rudderDataTypesMapToClickHouse = map[string]string{
@@ -554,7 +543,7 @@ func (ch *HandleT) useS3CopyEngineForLoading() bool {
 	if !enabledS3EngineForLoading {
 		return false
 	}
-	if ch.ObjectStorage != "S3" && ch.ObjectStorage != "MINIO" {
+	if ch.ObjectStorage != warehouseutils.S3 && ch.ObjectStorage != warehouseutils.MINIO {
 		return false
 	}
 	return true
@@ -597,11 +586,11 @@ func (ch *HandleT) loadByDownloadingLoadFiles(tableName string, tableSchemaInUpl
 }
 
 func (ch *HandleT) credentials() (accessKeyID, secretAccessKey string, err error) {
-	if ch.ObjectStorage == "S3" {
-		return warehouseutils.GetConfigValue(AWSAccessKeyID, ch.Warehouse), warehouseutils.GetConfigValue(AWSAccessKey, ch.Warehouse), nil
+	if ch.ObjectStorage == warehouseutils.S3 {
+		return warehouseutils.GetConfigValue(warehouseutils.AWSAccessSecret, ch.Warehouse), warehouseutils.GetConfigValue(warehouseutils.AWSAccessKey, ch.Warehouse), nil
 	}
-	if ch.ObjectStorage == "MINIO" {
-		return warehouseutils.GetConfigValue(MinioAccessKeyID, ch.Warehouse), warehouseutils.GetConfigValue(MinioSecretAccessKey, ch.Warehouse), nil
+	if ch.ObjectStorage == warehouseutils.MINIO {
+		return warehouseutils.GetConfigValue(warehouseutils.MinioAccessKeyID, ch.Warehouse), warehouseutils.GetConfigValue(warehouseutils.MinioSecretAccessKey, ch.Warehouse), nil
 	}
 	return "", "", errors.New("objectStorage not supported for loading using S3 engine")
 }

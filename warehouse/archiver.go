@@ -80,11 +80,11 @@ func backupRecords(args backupRecordsArgs) (backupLocation string, err error) {
 	defer misc.RemoveFilePaths(path)
 
 	fManager, err := filemanager.DefaultFileManagerFactory.New(&filemanager.SettingsT{
-		Provider: config.GetEnv("JOBS_BACKUP_STORAGE_PROVIDER", "S3"),
+		Provider: config.GetEnv("JOBS_BACKUP_STORAGE_PROVIDER", warehouseutils.S3),
 		Config:   filemanager.GetProviderConfigForBackupsFromEnv(context.TODO()),
 	})
 	if err != nil {
-		err = fmt.Errorf("Error in creating a file manager for:%s. Error: %w", config.GetEnv("JOBS_BACKUP_STORAGE_PROVIDER", "S3"), err)
+		err = fmt.Errorf("Error in creating a file manager for:%s. Error: %w", config.GetEnv("JOBS_BACKUP_STORAGE_PROVIDER", warehouseutils.S3), err)
 		return
 	}
 
@@ -104,7 +104,7 @@ func backupRecords(args backupRecordsArgs) (backupLocation string, err error) {
 
 func deleteFilesInStorage(locations []string) error {
 	fManager, err := filemanager.DefaultFileManagerFactory.New(&filemanager.SettingsT{
-		Provider: "S3",
+		Provider: warehouseutils.S3,
 		Config:   misc.GetRudderObjectStorageConfig(""),
 	})
 	if err != nil {

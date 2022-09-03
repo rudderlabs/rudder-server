@@ -11,7 +11,7 @@ import (
 	"testing"
 
 	"github.com/rudderlabs/rudder-server/warehouse/client"
-	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
+	"github.com/rudderlabs/rudder-server/warehouse/utils"
 
 	"github.com/rudderlabs/rudder-server/warehouse/clickhouse"
 	"github.com/rudderlabs/rudder-server/warehouse/testhelper"

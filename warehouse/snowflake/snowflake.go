@@ -40,8 +40,6 @@ type HandleT struct {
 
 // String constants for snowflake destination config
 const (
-	AWSAccessKey       = "accessKey"
-	AWSAccessSecret    = "accessKeyID"
 	StorageIntegration = "storageIntegration"
 	SFAccount          = "account"
 	SFWarehouse        = "warehouse"
@@ -208,8 +206,8 @@ func (sf *HandleT) authString() string {
 	if misc.IsConfiguredToUseRudderObjectStorage(sf.Warehouse.Destination.Config) {
 		tempAccessKeyId, tempSecretAccessKey, token, _ := warehouseutils.GetTemporaryS3Cred(misc.GetRudderObjectStorageAccessKeys())
 		auth = fmt.Sprintf(`CREDENTIALS = (AWS_KEY_ID='%s' AWS_SECRET_KEY='%s' AWS_TOKEN='%s')`, tempAccessKeyId, tempSecretAccessKey, token)
-	} else if sf.CloudProvider == "AWS" && warehouseutils.GetConfigValue(StorageIntegration, sf.Warehouse) == "" {
-		tempAccessKeyId, tempSecretAccessKey, token, _ := warehouseutils.GetTemporaryS3Cred(warehouseutils.GetConfigValue(AWSAccessSecret, sf.Warehouse), warehouseutils.GetConfigValue(AWSAccessKey, sf.Warehouse))
+	} else if sf.CloudProvider == warehouseutils.AWS && warehouseutils.GetConfigValue(StorageIntegration, sf.Warehouse) == "" {
+		tempAccessKeyId, tempSecretAccessKey, token, _ := warehouseutils.GetTemporaryS3Cred(warehouseutils.GetConfigValue(warehouseutils.AWSAccessSecret, sf.Warehouse), warehouseutils.GetConfigValue(warehouseutils.AWSAccessKey, sf.Warehouse))
 		auth = fmt.Sprintf(`CREDENTIALS = (AWS_KEY_ID='%s' AWS_SECRET_KEY='%s' AWS_TOKEN='%s')`, tempAccessKeyId, tempSecretAccessKey, token)
 	} else {
 		auth = fmt.Sprintf(`STORAGE_INTEGRATION = %s`, warehouseutils.GetConfigValue(StorageIntegration, sf.Warehouse))

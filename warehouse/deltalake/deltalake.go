@@ -29,8 +29,6 @@ const (
 	DLPath                 = "path"
 	DLToken                = "token"
 	AWSTokens              = "useSTSTokens"
-	AWSAccessKey           = "accessKey"
-	AWSAccessSecret        = "accessKeyID"
 	EnableExternalLocation = "enableExternalLocation"
 	ExternalLocation       = "externalLocation"
 )
@@ -487,11 +485,11 @@ func (dl *HandleT) sortedColumnNames(tableSchemaInUpload warehouseutils.TableSch
 // STS authentication is only supported with S3A client.
 func (dl *HandleT) credentialsStr() (auth string, err error) {
 	switch dl.ObjectStorage {
-	case "S3":
+	case warehouseutils.S3:
 		useSTSTokens := warehouseutils.GetConfigValueBoolString(AWSTokens, dl.Warehouse)
 		if useSTSTokens == "true" {
-			awsAccessKey := warehouseutils.GetConfigValue(AWSAccessKey, dl.Warehouse)
-			awsSecretKey := warehouseutils.GetConfigValue(AWSAccessSecret, dl.Warehouse)
+			awsAccessKey := warehouseutils.GetConfigValue(warehouseutils.AWSAccessKey, dl.Warehouse)
+			awsSecretKey := warehouseutils.GetConfigValue(warehouseutils.AWSAccessSecret, dl.Warehouse)
 			if awsAccessKey != "" && awsSecretKey != "" {
 				var tempAccessKeyId, tempSecretAccessKey, token string
 				tempAccessKeyId, tempSecretAccessKey, token, err = warehouseutils.GetTemporaryS3Cred(awsSecretKey, awsAccessKey)
@@ -508,9 +506,9 @@ func (dl *HandleT) credentialsStr() (auth string, err error) {
 // getLoadFolder return the load folder where the load files are present
 func (dl *HandleT) getLoadFolder(location string) (loadFolder string, err error) {
 	loadFolder = warehouseutils.GetObjectFolderForDeltalake(dl.ObjectStorage, location)
-	if dl.ObjectStorage == "S3" {
-		awsAccessKey := warehouseutils.GetConfigValue(AWSAccessKey, dl.Warehouse)
-		awsSecretKey := warehouseutils.GetConfigValue(AWSAccessSecret, dl.Warehouse)
+	if dl.ObjectStorage == warehouseutils.S3 {
+		awsAccessKey := warehouseutils.GetConfigValue(warehouseutils.AWSAccessKey, dl.Warehouse)
+		awsSecretKey := warehouseutils.GetConfigValue(warehouseutils.AWSAccessSecret, dl.Warehouse)
 		if awsAccessKey != "" && awsSecretKey != "" {
 			loadFolder = strings.Replace(loadFolder, "s3://", "s3a://", 1)
 		}

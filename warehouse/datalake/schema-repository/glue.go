@@ -13,12 +13,7 @@ import (
 
 var (
 	// config
-	AWSAccessKey        = "accessKey"
-	AWSAccessKeyID      = "accessKeyID"
-	AWSBucketNameConfig = "bucketName"
-	AWSS3Prefix         = "prefix"
-	AWSRegion           = "region"
-	UseGlueConfig       = "useGlue"
+	UseGlueConfig = "useGlue"
 
 	// glue
 	glueSerdeName             = "ParquetHiveSerDe"
@@ -37,8 +32,8 @@ type GlueSchemaRepository struct {
 
 func NewGlueSchemaRepository(wh warehouseutils.WarehouseT) (*GlueSchemaRepository, error) {
 	gl := GlueSchemaRepository{
-		s3bucket:  warehouseutils.GetConfigValue(AWSBucketNameConfig, wh),
-		s3prefix:  warehouseutils.GetConfigValue(AWSS3Prefix, wh),
+		s3bucket:  warehouseutils.GetConfigValue(warehouseutils.AWSBucketNameConfig, wh),
+		s3prefix:  warehouseutils.GetConfigValue(warehouseutils.AWSS3Prefix, wh),
 		Warehouse: wh,
 		Namespace: wh.Namespace,
 	}
@@ -185,14 +180,14 @@ func getGlueClient(wh warehouseutils.WarehouseT) (*glue.Glue, error) {
 
 	// read credentials from config if they exist
 	if misc.HasAWSKeysInConfig(wh.Destination.Config) {
-		accessKey = warehouseutils.GetConfigValue(AWSAccessKey, wh)
-		accessKeyID = warehouseutils.GetConfigValue(AWSAccessKeyID, wh)
+		accessKey = warehouseutils.GetConfigValue(warehouseutils.AWSAccessKey, wh)
+		accessKeyID = warehouseutils.GetConfigValue(warehouseutils.AWSAccessSecret, wh)
 		config = config.WithCredentials(credentials.NewStaticCredentials(accessKeyID, accessKey, ""))
 	}
 
 	// read region from config
 	if misc.HasAWSRegionInConfig(wh.Destination.Config) {
-		region := warehouseutils.GetConfigValue(AWSRegion, wh)
+		region := warehouseutils.GetConfigValue(warehouseutils.AWSRegion, wh)
 		config = config.WithRegion(region)
 	}
 
