@@ -486,9 +486,9 @@ func castStringToArray(data, dataType string) interface{} {
 		dataInt := make([]int32, len(dataBool))
 		for _, val := range dataBool {
 			if val {
-				dataInt = append(dataInt, int32(1))
+				dataInt = append(dataInt, 1)
 			} else {
-				dataInt = append(dataInt, int32(0))
+				dataInt = append(dataInt, 0)
 			}
 		}
 		return dataBool

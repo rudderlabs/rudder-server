@@ -1187,6 +1187,13 @@ func TestGetWarehouseIdentifier(t *testing.T) {
 }
 
 var _ = Describe("Utils", func() {
+	DescribeTable("Get columns from table schema", func(schema TableSchemaT, expected []string) {
+		Expect(GetColumnsFromTableSchema(schema)).To(Equal(expected))
+	},
+		Entry(nil, TableSchemaT{"k1": "v1", "k2": "v2"}, []string{"k1", "k2"}),
+		Entry(nil, TableSchemaT{"k2": "v1", "k1": "v2"}, []string{"k2", "k1"}),
+	)
+
 	DescribeTable("JSON schema to Map", func(rawMsg json.RawMessage, expected map[string]map[string]string) {
 		Expect(JSONSchemaToMap(rawMsg)).To(Equal(expected))
 	},
@@ -1201,23 +1208,24 @@ var _ = Describe("Utils", func() {
 		Entry("No days", nil, nil, "2006-01-02", nil),
 	)
 
-	DescribeTable("Staging table prefix", func(provider, expected string) {
-		Expect(StagingTablePrefix(provider)).To(Equal(expected))
+	DescribeTable("Staging table prefix", func(provider string) {
+		Expect(StagingTablePrefix(provider)).To(Equal(ToProviderCase(provider, "rudder_staging_")))
 	},
-		Entry(nil, BQ, "rudder_staging_"),
-		Entry(nil, RS, "rudder_staging_"),
-		Entry(nil, SNOWFLAKE, "RUDDER_STAGING_"),
-		Entry(nil, POSTGRES, "rudder_staging_"),
-		Entry(nil, CLICKHOUSE, "rudder_staging_"),
-		Entry(nil, MSSQL, "rudder_staging_"),
-		Entry(nil, AZURE_SYNAPSE, "rudder_staging_"),
-		Entry(nil, DELTALAKE, "rudder_staging_"),
-		Entry(nil, S3_DATALAKE, "rudder_staging_"),
-		Entry(nil, GCS_DATALAKE, "rudder_staging_"),
-		Entry(nil, AZURE_DATALAKE, "rudder_staging_"),
+		Entry(nil, BQ),
+		Entry(nil, RS),
+		Entry(nil, SNOWFLAKE),
+		Entry(nil, POSTGRES),
+		Entry(nil, CLICKHOUSE),
+		Entry(nil, MSSQL),
+		Entry(nil, AZURE_SYNAPSE),
+		Entry(nil, DELTALAKE),
+		Entry(nil, S3_DATALAKE),
+		Entry(nil, GCS_DATALAKE),
+		Entry(nil, AZURE_DATALAKE),
 	)
 
-	DescribeTable("Staging table prefix", func(provider, tableName, expected string) {
+	DescribeTable("Staging table name", func(provider, tableName, expected string) {
+		Expect(StagingTableName(provider, tableName)).To(HavePrefix(expected))
 		Expect(StagingTableName(provider, tableName)).To(HavePrefix(expected))
 	},
 		Entry(nil, BQ, "demo", "rudder_staging_demo_"),
