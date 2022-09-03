@@ -7,6 +7,7 @@ import (
 	"os"
 	"reflect"
 	"regexp"
+	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -1188,7 +1189,10 @@ func TestGetWarehouseIdentifier(t *testing.T) {
 
 var _ = Describe("Utils", func() {
 	DescribeTable("Get columns from table schema", func(schema TableSchemaT, expected []string) {
-		Expect(GetColumnsFromTableSchema(schema)).To(Equal(expected))
+		columns := GetColumnsFromTableSchema(schema)
+		sort.Strings(columns)
+		sort.Strings(expected)
+		Expect(columns).To(Equal(expected))
 	},
 		Entry(nil, TableSchemaT{"k1": "v1", "k2": "v2"}, []string{"k1", "k2"}),
 		Entry(nil, TableSchemaT{"k2": "v1", "k1": "v2"}, []string{"k2", "k1"}),
@@ -1250,6 +1254,65 @@ var _ = Describe("Utils", func() {
 		Entry(nil, GCS_DATALAKE, "abcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyz", "rudder_staging_abcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyz"),
 		Entry(nil, AZURE_DATALAKE, "demo", "rudder_staging_demo_"),
 		Entry(nil, AZURE_DATALAKE, "abcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyz", "rudder_staging_abcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyz"),
+	)
+
+	DescribeTable("Identity mapping unique mapping constraints name", func(warehouse WarehouseT, expected string) {
+		Expect(IdentityMappingsUniqueMappingConstraintName(warehouse)).To(Equal(expected))
+	},
+		Entry(nil, WarehouseT{Namespace: "namespace", Destination: backendconfig.DestinationT{ID: "id"}}, "unique_merge_property_namespace_id"),
+	)
+
+	DescribeTable("Identity mapping table name", func(warehouse WarehouseT, expected string) {
+		Expect(IdentityMappingsTableName(warehouse)).To(Equal(expected))
+	},
+		Entry(nil, WarehouseT{Namespace: "namespace", Destination: backendconfig.DestinationT{ID: "id"}}, "rudder_identity_mappings_namespace_id"),
+	)
+
+	DescribeTable("Identity merge rules table name", func(warehouse WarehouseT, expected string) {
+		Expect(IdentityMergeRulesTableName(warehouse)).To(Equal(expected))
+	},
+		Entry(nil, WarehouseT{Namespace: "namespace", Destination: backendconfig.DestinationT{ID: "id"}}, "rudder_identity_merge_rules_namespace_id"),
+	)
+
+	DescribeTable("Identity merge rules warehouse table name", func(provider string) {
+		Expect(IdentityMergeRulesWarehouseTableName(provider)).To(Equal(ToProviderCase(provider, IdentityMergeRulesTable)))
+	},
+		Entry(nil, BQ),
+		Entry(nil, RS),
+		Entry(nil, SNOWFLAKE),
+		Entry(nil, POSTGRES),
+		Entry(nil, CLICKHOUSE),
+		Entry(nil, MSSQL),
+		Entry(nil, AZURE_SYNAPSE),
+		Entry(nil, DELTALAKE),
+		Entry(nil, S3_DATALAKE),
+		Entry(nil, GCS_DATALAKE),
+		Entry(nil, AZURE_DATALAKE),
+	)
+
+	DescribeTable("Identity mappings warehouse table name", func(provider string) {
+		Expect(IdentityMappingsWarehouseTableName(provider)).To(Equal(ToProviderCase(provider, IdentityMappingsTable)))
+	},
+		Entry(nil, BQ),
+		Entry(nil, RS),
+		Entry(nil, SNOWFLAKE),
+		Entry(nil, POSTGRES),
+		Entry(nil, CLICKHOUSE),
+		Entry(nil, MSSQL),
+		Entry(nil, AZURE_SYNAPSE),
+		Entry(nil, DELTALAKE),
+		Entry(nil, S3_DATALAKE),
+		Entry(nil, GCS_DATALAKE),
+		Entry(nil, AZURE_DATALAKE),
+	)
+
+	DescribeTable("Get object name", func(location string, config interface{}, objectProvider string, objectName string) {
+		Expect(GetObjectName(location, config, objectProvider)).To(Equal(objectName))
+	},
+		Entry(GCS, "https://storage.googleapis.com/bucket-name/key", map[string]interface{}{"bucketName": "bucket-name"}, GCS, "key"),
+		Entry(S3, "https://bucket-name.s3.amazonaws.com/key", map[string]interface{}{"bucketName": "bucket-name"}, S3, "key"),
+		Entry(AZURE_BLOB, "https://account-name.blob.core.windows.net/container-name/key", map[string]interface{}{"containerName": "container-name"}, AZURE_BLOB, "key"),
+		Entry(MINIO, "https://minio-endpoint/bucket-name/key", map[string]interface{}{"bucketName": "bucket-name", "useSSL": true, "endPoint": "minio-endpoint"}, MINIO, "key"),
 	)
 })
 
