@@ -266,7 +266,7 @@ func (manager *S3Manager) getTimeout() time.Duration {
 		return manager.timeout
 	}
 
-	return getBatchRouterDurationConfig("timeout", "S3", 120, time.Second)
+	return getBatchRouterTimeoutConfig("S3")
 }
 
 func GetS3Config(config map[string]interface{}) *S3Config {

@@ -133,7 +133,11 @@ func GetProviderConfigForBackupsFromEnv(ctx context.Context) map[string]interfac
 	return providerConfig
 }
 
-func getBatchRouterDurationConfig(key, destType string, defaultValueInTimescaleUnits int64, timeScale time.Duration) time.Duration {
+func getBatchRouterTimeoutConfig(destType string) time.Duration {
+	key := "timeout"
+	defaultValueInTimescaleUnits := int64(120)
+	timeScale := time.Second
+
 	destOverrideFound := config.IsSet("BatchRouter." + destType + "." + key)
 	if destOverrideFound {
 		return config.GetDuration("BatchRouter."+destType+"."+key, defaultValueInTimescaleUnits, timeScale)

@@ -2,6 +2,7 @@ package customdestinationmanager
 
 import (
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -17,7 +18,7 @@ import (
 func TestCircuitBreaker(t *testing.T) {
 	const (
 		normalError  = "could not ping: could not dial any of the addresses"
-		breakerError = "circuit breaker is open"
+		breakerError = "circuit breaker is open, last error: could not ping: could not dial any of the addresses"
 	)
 
 	// init various packages
@@ -75,12 +76,14 @@ func TestCircuitBreaker(t *testing.T) {
 
 func newDestination(t *testing.T, manager *CustomManagerT, dest backendconfig.DestinationT, attempt int, errorString string) { // skipcq: CRT-P0003
 	err := manager.onNewDestination(dest)
-	assert.ErrorContains(t, err, errorString, fmt.Sprintf("wrong error for attempt no %d", attempt))
+	assert.NotNil(t, err, "it should return an error for attempt no %d", attempt)
+	assert.True(t, strings.HasPrefix(err.Error(), errorString), fmt.Sprintf("error %s should start with %s for attempt no %d", err.Error(), errorString, attempt))
 }
 
 func newClientAttempt(t *testing.T, manager *CustomManagerT, destId string, attempt int, errorString string) {
 	err := manager.newClient(destId)
-	assert.ErrorContains(t, err, errorString, fmt.Sprintf("wrong error for attempt no %d", attempt))
+	assert.NotNil(t, err, "it should return an error for attempt no %d", attempt)
+	assert.True(t, strings.HasPrefix(err.Error(), errorString), fmt.Sprintf("error %s should start with %s for attempt no %d", err.Error(), errorString, attempt))
 }
 
 func getDestConfig() backendconfig.DestinationT {

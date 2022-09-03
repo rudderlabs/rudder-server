@@ -1079,7 +1079,7 @@ func (jd *HandleT) getDSRangeList() []dataSetRangeT {
 }
 
 // refreshDSRangeList first refreshes the DS list and then calculate the DS range list
-func (jd *HandleT) refreshDSRangeList(l lock.DSListLockToken) []dataSetRangeT {
+func (jd *HandleT) refreshDSRangeList(l lock.DSListLockToken) {
 	var minID, maxID sql.NullInt64
 	var prevMax int64
 
@@ -1127,7 +1127,6 @@ func (jd *HandleT) refreshDSRangeList(l lock.DSListLockToken) []dataSetRangeT {
 			prevMax = maxID.Int64
 		}
 	}
-	return jd.datasetRangeList
 }
 
 /*
@@ -1521,8 +1520,7 @@ func (jd *HandleT) createDS(newDS dataSetT, l lock.DSListLockToken) {
 	// In case of a migration, we don't yet update the in-memory list till we finish the migration
 	if l != nil {
 		// to get the updated DS list in the cache after createDS transaction has been committed.
-		_ = jd.refreshDSList(l)
-		_ = jd.refreshDSRangeList(l)
+		jd.refreshDSRangeList(l)
 	}
 }
 
@@ -1599,6 +1597,10 @@ func (jd *HandleT) createDSInTx(tx *sql.Tx, newDS dataSetT, l lock.DSListLockTok
 }
 
 func (jd *HandleT) setSequenceNumberInTx(tx *sql.Tx, l lock.DSListLockToken, newDSIdx string) error {
+	if l == nil {
+		return fmt.Errorf("ds list lock cannot be nil")
+	}
+
 	dList := jd.getDSList()
 	var maxID sql.NullInt64
 
@@ -2564,14 +2566,14 @@ func (jd *HandleT) getProcessedJobsDS(ctx context.Context, ds dataSetT, getAll b
 	var stateQuery, customValQuery, limitQuery, sourceQuery string
 
 	if len(stateFilters) > 0 {
-		stateQuery = " AND " + constructQuery(jd, "job_state", stateFilters, "OR")
+		stateQuery = " AND " + constructQueryOR("job_state", stateFilters)
 	} else {
 		stateQuery = ""
 	}
 	if len(customValFilters) > 0 && !params.IgnoreCustomValFiltersInQuery {
 		jd.assert(!getAll, "getAll is true")
 		customValQuery = " AND " +
-			constructQuery(jd, "jobs.custom_val", customValFilters, "OR")
+			constructQueryOR("jobs.custom_val", customValFilters)
 	} else {
 		customValQuery = ""
 	}
@@ -2786,7 +2788,7 @@ func (jd *HandleT) getUnprocessedJobsDS(ctx context.Context, ds dataSetT, order 
 	}
 
 	if len(customValFilters) > 0 && !params.IgnoreCustomValFiltersInQuery {
-		sqlStatement += " AND " + constructQuery(jd, "jobs.custom_val", customValFilters, "OR")
+		sqlStatement += " AND " + constructQueryOR("jobs.custom_val", customValFilters)
 	}
 
 	if len(parameterFilters) > 0 {
@@ -4298,14 +4300,13 @@ func (jd *HandleT) deleteJobStatusDSInTx(txHandler transactionHandler, ds dataSe
 	var stateQuery, customValQuery, sourceQuery string
 
 	if len(stateFilters) > 0 {
-		stateQuery = " AND " + constructQuery(jd, "job_state", stateFilters, "OR")
+		stateQuery = " AND " + constructQueryOR("job_state", stateFilters)
 	} else {
 		stateQuery = ""
 	}
 	if len(customValFilters) > 0 {
 		customValQuery = " WHERE " +
-			constructQuery(jd, fmt.Sprintf(`%q.custom_val`, ds.JobTable),
-				customValFilters, "OR")
+			constructQueryOR(fmt.Sprintf(`%q.custom_val`, ds.JobTable), customValFilters)
 	} else {
 		customValQuery = ""
 	}

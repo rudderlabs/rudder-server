@@ -59,7 +59,7 @@ install-tools:
 
 .PHONY: lint
 lint: fmt
-	docker run --rm -v $(shell pwd):/app:ro -w /app golangci/golangci-lint:v1.46.2 bash -e -c \
+	docker run --rm -v $(shell pwd):/app:ro -w /app golangci/golangci-lint:v1.49.0 bash -e -c \
 		'golangci-lint run -v --timeout 5m'
 
 .PHONY: fmt

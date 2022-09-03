@@ -755,7 +755,7 @@ func consume(t *testing.T, client *kafkaClient.Client, topics []testutil.TopicPa
 		})
 
 		t.Logf("Start consuming topic %s:%d", topic.Topic, topic.Partition)
-		go func(topic testutil.TopicPartition, consumer *kafkaClient.Consumer) {
+		go func(consumer *kafkaClient.Consumer) {
 			for {
 				msg, err := consumer.Receive(context.TODO())
 				if err != nil {
@@ -764,7 +764,7 @@ func consume(t *testing.T, client *kafkaClient.Client, topics []testutil.TopicPa
 					messages <- msg
 				}
 			}
-		}(topic, consumer)
+		}(consumer)
 	}
 
 	return messages, errors

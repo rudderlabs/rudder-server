@@ -61,6 +61,7 @@ func New(mode string, jobsDB *jobsdb.HandleT, pf pathfinder.ClusterStateT) Migra
 
 func loadConfig() {
 	dbReadBatchSize = config.GetInt("Migrator.dbReadBatchSize", 10000)
+	config.RegisterDurationConfigVariable(2, &ReadHeaderTimeout, false, time.Second, "Migrator.ReadHeaderTimeout")
 	config.RegisterDurationConfigVariable(20, &exportDoneCheckSleepDuration, false, time.Second, []string{"Migrator.exportDoneCheckSleepDuration", "Migrator.exportDoneCheckSleepDurationIns"}...)
 	config.RegisterDurationConfigVariable(1, &workLoopSleepDuration, false, time.Second, []string{"Migrator.workLoopSleepDuration,Migrator.workLoopSleepDurationIns"}...)
 }
