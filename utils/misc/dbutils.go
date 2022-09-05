@@ -13,7 +13,7 @@ import (
 type AdvisoryLock int
 
 const (
-	JobsDBAddDsAdvisoryLock = 11
+	JobsDBAddDsAdvisoryLock AdvisoryLock = 11
 )
 
 var (
