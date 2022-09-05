@@ -23,7 +23,7 @@ func TestRegistry(t *testing.T) {
 		cc = append(cc, component{name: name, features: features})
 	})
 
-	require.Equal(t, []component{
+	require.ElementsMatch(t, []component{
 		{name: "test", features: []string{"feature1", "feature2", "feature5"}},
 		{name: "test2", features: []string{"feature3", "feature4"}},
 	}, cc)
