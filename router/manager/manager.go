@@ -95,8 +95,8 @@ loop:
 			enabledDestinations := make(map[string]bool)
 			for i := range sources.Sources {
 				source := &sources.Sources[i]
-				for k := range source.Destinations { // TODO skipcq: CRT-P0006
-					destination := &source.Destinations[k] // Copy of large value inside loop: CRT-P0006
+				for k := range source.Destinations {
+					destination := &source.Destinations[k]
 					enabledDestinations[destination.DestinationDefinition.Name] = true
 					// For batch router destinations
 					if misc.ContainsString(objectStorageDestinations, destination.DestinationDefinition.Name) ||

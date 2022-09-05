@@ -127,7 +127,6 @@ type HandleT struct {
 	oauth                                  oauth.Authorizer
 	transformerProxy                       bool
 	saveDestinationResponseOverride        bool
-	isolateDestID                          bool
 	workspaceSet                           map[string]struct{}
 	sourceIDWorkspaceMap                   map[string]string
 	maxDSQuerySize                         int
@@ -1299,7 +1298,7 @@ func (rt *HandleT) findWorker(job *jobsdb.JobT, throttledAtTime time.Time) (toSe
 			}
 
 			rt.logger.Debugf("[%v Router] :: userID found in abortedUserIDtoJobMap: %s. Allowing jobID: %d. returning worker", rt.destName, userID, job.JobID)
-			// adding job to abortedUserIDMap after all checks of backoff, throttle etc are made
+			// adding job to abortedUserIDMap after all checks of backoff, throttle etc. are made
 			// We don't need lock inside this defer func, because we already hold the lock above and this
 			// defer is called before defer Unlock
 			defer func() {
@@ -1760,20 +1759,15 @@ func (rt *HandleT) generatorLoop(ctx context.Context) {
 	}
 }
 
-func getParameterFilters(destinationID string) []jobsdb.ParameterFilterT {
-	return []jobsdb.ParameterFilterT{{
-		Name:     "destination_id",
-		Value:    destinationID,
-		Optional: false,
-	}}
-}
-
 func (rt *HandleT) getQueryParams(pickUpCount int) jobsdb.GetQueryParamsT {
 	if rt.destinationId != rt.destName {
-		parameterFilters := getParameterFilters(rt.destinationId)
 		return jobsdb.GetQueryParamsT{
-			CustomValFilters:              []string{rt.destName},
-			ParameterFilters:              parameterFilters,
+			CustomValFilters: []string{rt.destName},
+			ParameterFilters: []jobsdb.ParameterFilterT{{
+				Name:     "destination_id",
+				Value:    rt.destinationId,
+				Optional: false,
+			}},
 			IgnoreCustomValFiltersInQuery: true,
 			PayloadSizeLimit:              rt.payloadLimit,
 			JobsLimit:                     pickUpCount,
@@ -2113,7 +2107,7 @@ func (rt *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB jobsd
 
 	destName := destinationConfig.Name
 	rt.logger = pkgLogger.Child(destName)
-	rt.logger.Info("Router started: ", destName)
+	rt.logger.Info("Router started: ", destinationConfig.DestinationID)
 
 	rt.transientSources = transientSources
 	rt.rsourcesService = rsourcesService
@@ -2181,7 +2175,6 @@ func (rt *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB jobsd
 	config.RegisterBoolConfigVariable(false, &rt.transformerProxy, true, transformerProxyKeys...)
 	config.RegisterBoolConfigVariable(false, &rt.saveDestinationResponseOverride, true, saveDestinationResponseOverrideKeys...)
 	rt.allowAbortedUserJobsCountForProcessing = getRouterConfigInt("allowAbortedUserJobsCountForProcessing", destName, 1)
-	config.RegisterBoolConfigVariable(false, &rt.isolateDestID, false, []string{"Router." + rt.destName + "." + "isolateDestID", "Router.isolateDestID"}...)
 
 	rt.batchInputCountStat = stats.NewTaggedStat("router_batch_num_input_jobs", stats.CountType, stats.Tags{
 		"destType": rt.destName,

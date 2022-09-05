@@ -3,7 +3,7 @@ package client_test
 import (
 	"context"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -100,7 +100,7 @@ func TestUpdateStatus(t *testing.T) {
 			var body []byte
 			svr := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				w.WriteHeader(tt.respCode)
-				body, _ = ioutil.ReadAll(r.Body)
+				body, _ = io.ReadAll(r.Body)
 			}))
 			defer svr.Close()
 
