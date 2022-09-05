@@ -263,7 +263,7 @@ func (l *LoggerT) Warn(args ...interface{}) {
 	}
 
 	if len(l.withArgs) > 0 {
-		Log.With(l.withArgs).Warn(args...)
+		Log.With(l.withArgs...).Warn(args...)
 		return
 	}
 
