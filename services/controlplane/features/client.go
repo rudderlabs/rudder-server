@@ -19,21 +19,21 @@ var (
 	MaxRetries     = uint64(3)
 )
 
-type optFn func(c *client)
+type OptFn func(c *client)
 
-func WithURL(url string) optFn {
+func WithURL(url string) OptFn {
 	return func(c *client) {
 		c.url = url
 	}
 }
 
-func WithHTTPClient(httpClient *http.Client) optFn {
+func WithHTTPClient(httpClient *http.Client) OptFn {
 	return func(c *client) {
 		c.client = httpClient
 	}
 }
 
-func WithTimeout(timeout time.Duration) optFn {
+func WithTimeout(timeout time.Duration) OptFn {
 	return func(c *client) {
 		c.client.Timeout = timeout
 	}
@@ -54,7 +54,7 @@ type component struct {
 	Features []string `json:"features"`
 }
 
-func New(identity identity.Identifier, fns ...optFn) *client {
+func New(identity identity.Identifier, fns ...OptFn) *client {
 	c := &client{
 		client: &http.Client{
 			Timeout: DefaultTimeout,

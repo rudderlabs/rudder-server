@@ -45,11 +45,11 @@ func (w *Workspace) Resource() string {
 
 type NOOP struct{}
 
-func (c *NOOP) ID() string {
+func (*NOOP) ID() string {
 	return ""
 }
-func (c *NOOP) HTTPAuth(req *http.Request) {
+func (*NOOP) HTTPAuth(_ *http.Request) {
 }
-func (c *NOOP) Resource() string {
+func (*NOOP) Resource() string {
 	return ""
 }
