@@ -40,7 +40,7 @@ func (w *Workspace) HTTPAuth(req *http.Request) {
 	req.SetBasicAuth(w.WorkspaceToken, "")
 }
 func (w *Workspace) Resource() string {
-	return "workspaces"
+	return "workspace"
 }
 
 type NOOP struct{}

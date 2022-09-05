@@ -96,6 +96,8 @@ func (c *client) Send(ctx context.Context, registry *Registry) error {
 			return err
 		}
 
+		req.Header.Set("Content-Type", "application/json")
+
 		c.identity.HTTPAuth(req)
 
 		resp, err := c.client.Do(req)
@@ -109,9 +111,8 @@ func (c *client) Send(ctx context.Context, registry *Registry) error {
 			return err
 		}
 
-		if resp.StatusCode != http.StatusOK {
-			fmt.Println(string(b))
-			return fmt.Errorf("unexpected status code: %d", resp.StatusCode)
+		if resp.StatusCode != http.StatusNoContent {
+			return fmt.Errorf("unexpected status code %d: %s", resp.StatusCode, string(b))
 		}
 		return err
 	}, backoffWithMaxRetry)

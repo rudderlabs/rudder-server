@@ -36,7 +36,7 @@ func Test_Client_Send(t *testing.T) {
 				WorkspaceToken: validSecret,
 			},
 
-			wantPath: "/data-plane/workspaces/valid-workspace-id/settings",
+			wantPath: "/data-plane/workspace/valid-workspace-id/settings",
 			wantErr:  nil,
 		},
 		{
@@ -55,6 +55,7 @@ func Test_Client_Send(t *testing.T) {
 			s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				u, _, _ := r.BasicAuth()
 
+				require.Equal(t, r.Header.Get("Content-Type"), "application/json")
 				require.Equal(t, validSecret, u)
 				require.Equal(t, http.MethodPost, r.Method)
 				require.Equal(t, tc.wantPath, r.URL.Path)
