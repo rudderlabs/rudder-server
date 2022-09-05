@@ -3229,6 +3229,7 @@ func (jd *HandleT) backupDSLoop(ctx context.Context) {
 			opID = jd.JournalMarkStart(backupDSOperation, opPayload)
 			err := jd.backupDS(ctx, backupDSRange)
 			if err != nil {
+				stats.NewTaggedStat("backup_ds_failed", stats.CountType, stats.Tags{"customVal": jd.tablePrefix, "provider": config.GetEnv("JOBS_BACKUP_STORAGE_PROVIDER", "S3")}).Increment()
 				jd.logger.Errorf("[JobsDB] :: Failed to backup jobs table %v. Err: %v", backupDSRange.ds.JobStatusTable, err)
 			}
 			jd.JournalMarkDone(opID)
