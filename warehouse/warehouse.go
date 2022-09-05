@@ -307,6 +307,7 @@ func (wh *HandleT) backendConfigSubscriber() {
 				}
 			}
 		}
+		pkgLogger.Infof("sourceIDsByWorkspace: %v", sourceIDsByWorkspace)
 		pkgLogger.Infof("Releasing config subscriber lock: %s", wh.destType)
 		sourceIDsByWorkspaceLock.Unlock()
 		wh.configSubscriberLock.Unlock()
