@@ -64,7 +64,7 @@ func Test_Client_Send(t *testing.T) {
 				require.NoError(t, err)
 				require.Equal(t, wantBody, string(body))
 
-				w.WriteHeader(http.StatusOK)
+				w.WriteHeader(http.StatusNoContent)
 			}))
 			defer s.Close()
 

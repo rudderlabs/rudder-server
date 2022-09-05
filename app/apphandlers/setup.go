@@ -110,8 +110,6 @@ func rudderCoreBaseSetup() {
 	router.RegisterAdminHandlers(&readonlyRouterDB, &readonlyBatchRouterDB)
 
 	go func() {
-		features.Register("backend-config", "namespace")
-
 		backendconfig.DefaultBackendConfig.WaitForConfig(context.Background())
 		err := features.New(backendconfig.DefaultBackendConfig.Identity()).Send(context.Background(), features.DefaultRegistry)
 		if err != nil {
