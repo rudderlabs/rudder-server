@@ -86,12 +86,12 @@ loop:
 		case <-ctx.Done():
 			pkgLogger.Infof("Router monitor stopped Context Cancelled")
 			break loop
-		case config, open := <-ch:
+		case workspaceConfig, open := <-ch:
 			if !open {
 				pkgLogger.Infof("Router monitor stopped, Config Channel Closed")
 				break loop
 			}
-			sources := config.Data.(backendconfig.ConfigT)
+			sources := workspaceConfig.Data.(backendconfig.ConfigT)
 			enabledDestinations := make(map[string]bool)
 			for i := range sources.Sources {
 				source := &sources.Sources[i]
@@ -111,13 +111,14 @@ loop:
 							dstToBatchRouter[destination.DestinationDefinition.Name] = brt
 						}
 					} else {
-						_, ok := dstToRouter[misc.GetRouterIdentifier(destination.ID, destination.DestinationDefinition.Name)]
+						routerIdentifier := destination.GetRouterIdentifier()
+						_, ok := dstToRouter[routerIdentifier]
 						if !ok {
 							pkgLogger.Infof("Starting a new Destination: %s", destination.DestinationDefinition.Name)
-							rt, identifier := routerFactory.New(destination)
+							rt := routerFactory.New(destination, routerIdentifier)
 							rt.Start()
 							cleanup = append(cleanup, rt.Shutdown)
-							dstToRouter[identifier] = rt
+							dstToRouter[routerIdentifier] = rt
 						}
 					}
 				}

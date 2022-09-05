@@ -11,11 +11,15 @@ import (
 	"github.com/rudderlabs/rudder-server/services/stats"
 )
 
+type sqlDbOrTx interface {
+	Query(query string, args ...any) (*sql.Rows, error)
+}
+
 /*
 Function to return an ordered list of datasets and datasetRanges
 Most callers use the in-memory list of dataset and datasetRanges
 */
-func getDSList(jd assertInterface, dbHandle *sql.DB, tablePrefix string) []dataSetT {
+func getDSList(jd assertInterface, dbHandle sqlDbOrTx, tablePrefix string) []dataSetT {
 	datasetList := []dataSetT{}
 
 	// Read the table names from PG
@@ -123,14 +127,14 @@ var dsComparitor = func(src, dst []string) (bool, error) {
 }
 
 // mustGetAllTableNames gets all table names from Postgres and panics in case of an error
-func mustGetAllTableNames(jd assertInterface, dbHandle *sql.DB) []string {
+func mustGetAllTableNames(jd assertInterface, dbHandle sqlDbOrTx) []string {
 	tableNames, err := getAllTableNames(dbHandle)
 	jd.assertError(err)
 	return tableNames
 }
 
 // getAllTableNames gets all table names from Postgres
-func getAllTableNames(dbHandle *sql.DB) ([]string, error) {
+func getAllTableNames(dbHandle sqlDbOrTx) ([]string, error) {
 	var tableNames []string
 	rows, err := dbHandle.Query(`SELECT tablename
 									FROM pg_catalog.pg_tables

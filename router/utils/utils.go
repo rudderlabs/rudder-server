@@ -1,7 +1,7 @@
 package utils
 
 import (
-	"encoding/base64"
+	"fmt"
 	"strings"
 	"time"
 
@@ -110,11 +110,6 @@ func GetAuthType(dest backendconfig.DestinationT) (authType string) {
 	return authType
 }
 
-func BasicAuth(username, password string) string {
-	auth := username + ":" + password
-	return base64.StdEncoding.EncodeToString([]byte(auth))
-}
-
 func GetRudderAccountId(destination *backendconfig.DestinationT) string {
 	if rudderAccountIdInterface, found := destination.Config["rudderAccountId"]; found {
 		if rudderAccountId, ok := rudderAccountIdInterface.(string); ok {
@@ -122,4 +117,11 @@ func GetRudderAccountId(destination *backendconfig.DestinationT) string {
 		}
 	}
 	return ""
+}
+
+func PopulateIsolateMap(isolateMap map[string]bool, destination *backendconfig.DestinationT) {
+	_, ok := isolateMap[destination.DestinationDefinition.Name]
+	if !ok {
+		isolateMap[destination.DestinationDefinition.Name] = config.GetBool(fmt.Sprintf("Router.%s.isolateDestID", destination.DestinationDefinition.Name), false)
+	}
 }

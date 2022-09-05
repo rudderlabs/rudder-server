@@ -87,8 +87,8 @@ var (
 		DisplayName: "Google Analytics",
 	}
 	gaDestinationConfig = destinationConfig{
-		Name:          "GA",
-		DestinationID: "GA",
+		name:          "GA",
+		destinationID: "GA",
 	}
 	collectMetricsErrorMap = map[string]int{
 		"Error Response 1":  1,

@@ -5,23 +5,22 @@ import (
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/services/rsources"
 	"github.com/rudderlabs/rudder-server/services/transientsource"
-	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
 type destinationConfig struct {
-	Name          string
-	ResponseRules map[string]interface{}
-	Config        map[string]interface{}
-	DestinationID string
+	name          string
+	responseRules map[string]interface{}
+	config        map[string]interface{}
+	destinationID string
 }
 
-func getRouterConfig(destination *backendconfig.DestinationT) destinationConfig {
+func getRouterConfig(destination *backendconfig.DestinationT, identifier string) destinationConfig {
 	var destConfig destinationConfig
 
-	destConfig.Name = destination.DestinationDefinition.Name
-	destConfig.DestinationID = misc.GetRouterIdentifier(destination.ID, destination.DestinationDefinition.Name)
-	destConfig.Config = destination.DestinationDefinition.Config
-	destConfig.ResponseRules = destination.DestinationDefinition.ResponseRules
+	destConfig.name = destination.DestinationDefinition.Name
+	destConfig.destinationID = identifier
+	destConfig.config = destination.DestinationDefinition.Config
+	destConfig.responseRules = destination.DestinationDefinition.ResponseRules
 	return destConfig
 }
 
@@ -35,12 +34,12 @@ type Factory struct {
 	RsourcesService  rsources.JobService
 }
 
-func (f *Factory) New(destination *backendconfig.DestinationT) (*HandleT, string) {
+func (f *Factory) New(destination *backendconfig.DestinationT, identifier string) *HandleT {
 	r := &HandleT{
 		Reporting:    f.Reporting,
 		MultitenantI: f.Multitenant,
 	}
-	destConfig := getRouterConfig(destination)
+	destConfig := getRouterConfig(destination, identifier)
 	r.Setup(f.BackendConfig, f.RouterDB, f.ProcErrorDB, destConfig, f.TransientSources, f.RsourcesService)
-	return r, destConfig.DestinationID
+	return r
 }
