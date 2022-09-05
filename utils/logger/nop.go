@@ -19,3 +19,4 @@ func (NOP) Fatalf(_ string, _ ...interface{}) {}
 func (NOP) LogRequest(_ *http.Request)        {}
 func (NOP) Child(_ string) LoggerI            { return &NOP{} }
 func (NOP) IsDebugLevel() bool                { return false }
+func (NOP) With(_ ...interface{}) LoggerI     { return nil }

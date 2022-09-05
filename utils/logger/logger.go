@@ -55,11 +55,13 @@ type LoggerI interface {
 	Fatalf(format string, args ...interface{})
 	LogRequest(req *http.Request)
 	Child(s string) LoggerI
+	With(args ...interface{}) LoggerI
 }
 
 type LoggerT struct {
-	name   string
-	parent *LoggerT
+	name     string
+	parent   *LoggerT
+	withArgs []interface{}
 }
 
 const (
@@ -143,7 +145,9 @@ func loadConfig() {
 var options []zap.Option
 
 func NewLogger() *LoggerT {
-	return &LoggerT{}
+	return &LoggerT{
+		withArgs: make([]interface{}, 0), // start with empty withArgs
+	}
 }
 
 // Setup sets up the logger initially
@@ -223,33 +227,62 @@ func (l *LoggerT) IsDebugLevel() bool {
 // Debug level logging.
 // Most verbose logging level.
 func (l *LoggerT) Debug(args ...interface{}) {
-	if levelDebug >= l.getLoggingLevel() {
-		Log.Debug(args...)
+
+	if levelDebug < l.getLoggingLevel() {
+		return
 	}
+
+	if len(l.withArgs) > 0 {
+		Log.With(l.withArgs...).Debug(args...)
+		return
+	}
+
+	Log.Debug(args...)
 }
 
 // Info level logging.
 // Use this to log the state of the application. Dont use Logger.Info in the flow of individual events. Use Logger.Debug instead.
 func (l *LoggerT) Info(args ...interface{}) {
-	if levelInfo >= l.getLoggingLevel() {
-		Log.Info(args...)
+	if levelInfo < l.getLoggingLevel() {
+		return
 	}
+
+	if len(l.withArgs) > 0 {
+		Log.With(l.withArgs...).Info(args...)
+		return
+	}
+
+	Log.Info(args...)
 }
 
 // Warn level logging.
 // Use this to log warnings
 func (l *LoggerT) Warn(args ...interface{}) {
-	if levelWarn >= l.getLoggingLevel() {
-		Log.Warn(args...)
+	if levelWarn < l.getLoggingLevel() {
+		return
 	}
+
+	if len(l.withArgs) > 0 {
+		Log.With(l.withArgs).Warn(args...)
+		return
+	}
+
+	Log.Warn(args...)
 }
 
 // Error level logging.
 // Use this to log errors which dont immediately halt the application.
 func (l *LoggerT) Error(args ...interface{}) {
-	if levelError >= l.getLoggingLevel() {
-		Log.Error(args...)
+	if levelError < l.getLoggingLevel() {
+		return
 	}
+
+	if len(l.withArgs) > 0 {
+		Log.With(l.withArgs...).Error(args...)
+		return
+	}
+
+	Log.Error(args...)
 }
 
 // Fatal level logging.
@@ -270,36 +303,72 @@ func (l *LoggerT) Fatal(args ...interface{}) {
 	}
 }
 
+func (l *LoggerT) With(args ...interface{}) LoggerI {
+	return &LoggerT{
+		name:     l.name,
+		withArgs: append(l.withArgs, args...),
+		parent:   l.parent,
+	}
+}
+
 // Debugf does debug level logging similar to fmt.Printf.
 // Most verbose logging level
 func (l *LoggerT) Debugf(format string, args ...interface{}) {
-	if levelDebug >= l.getLoggingLevel() {
-		Log.Debugf(format, args...)
+	if levelDebug < l.getLoggingLevel() {
+		return
 	}
+
+	if len(l.withArgs) > 0 {
+		Log.With(l.withArgs...).Debugf(format, args...)
+		return
+	}
+
+	Log.Debugf(format, args...)
 }
 
 // Infof does info level logging similar to fmt.Printf.
 // Use this to log the state of the application. Dont use Logger.Info in the flow of individual events. Use Logger.Debug instead.
 func (l *LoggerT) Infof(format string, args ...interface{}) {
-	if levelInfo >= l.getLoggingLevel() {
-		Log.Infof(format, args...)
+	if levelInfo < l.getLoggingLevel() {
+		return
 	}
+
+	if len(l.withArgs) > 0 {
+		Log.With(l.withArgs...).Infof(format, args...)
+		return
+	}
+
+	Log.Infof(format, args...)
 }
 
 // Warnf does warn level logging similar to fmt.Printf.
 // Use this to log warnings
 func (l *LoggerT) Warnf(format string, args ...interface{}) {
-	if levelWarn >= l.getLoggingLevel() {
-		Log.Warnf(format, args...)
+	if levelWarn < l.getLoggingLevel() {
+		return
 	}
+
+	if len(l.withArgs) > 0 {
+		Log.With(l.withArgs...).Warnf(format, args...)
+		return
+	}
+
+	Log.Warnf(format, args...)
 }
 
 // Errorf does error level logging similar to fmt.Printf.
 // Use this to log errors which dont immediately halt the application.
 func (l *LoggerT) Errorf(format string, args ...interface{}) {
-	if levelError >= l.getLoggingLevel() {
-		Log.Errorf(format, args...)
+	if levelError < l.getLoggingLevel() {
+		return
 	}
+
+	if len(l.withArgs) > 0 {
+		Log.With(l.withArgs...).Errorf(format, args...)
+		return
+	}
+
+	Log.Errorf(format, args...)
 }
 
 // Fatalf does fatal level logging similar to fmt.Printf.
