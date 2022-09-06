@@ -18,10 +18,23 @@ type authService struct {
 }
 
 func (a *authService) GetConnectionToken(ctx context.Context, request *proto.GetConnectionTokenRequest) (*proto.GetConnectionTokenResponse, error) {
+	if a.authInfo.ConnectionToken != "" {
+		return &proto.GetConnectionTokenResponse{
+			Response: &proto.GetConnectionTokenResponse_ErrorResponse{
+				ErrorResponse: &proto.ErrorResponse{
+					Error: "connection token is empty",
+				},
+			},
+		}, nil
+	}
 	return &proto.GetConnectionTokenResponse{
-		ConnectionToken: a.authInfo.ConnectionToken,
-		Service:         a.authInfo.Service,
-		InstanceID:      a.authInfo.InstanceID,
+		Response: &proto.GetConnectionTokenResponse_SuccessResponse{
+			SuccessResponse: &proto.SuccessResponse{
+				ConnectionToken: a.authInfo.ConnectionToken,
+				Service:         a.authInfo.Service,
+				InstanceID:      a.authInfo.InstanceID,
+			},
+		},
 	}, nil
 }
 

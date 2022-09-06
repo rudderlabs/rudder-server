@@ -13,7 +13,7 @@ type Type string // skipcq: RVV-B0009
 const (
 	DedicatedType   Type   = "DEDICATED"
 	MultiTenantType Type   = "MULTITENANT"
-	HostedNamespace string = "free-us-1" // Having it here to support legacy cp-router hosted
+	hostedNamespace string = "free-us-1" // Having it here to support legacy cp-router hosted
 )
 
 const defaultClusterType = DedicatedType
@@ -42,7 +42,7 @@ func (t Type) Valid() bool {
 func GetConnectionToken() (string, bool, error) {
 	deploymentType, err := GetFromEnv()
 	if err != nil {
-		pkgLogger.Errorf("error getting deployment type: %s", err.Error())
+		pkgLogger.Errorf("error getting deployment type: %v", err)
 		return "", false, err
 	}
 	var connectionToken string
@@ -56,10 +56,10 @@ func GetConnectionToken() (string, bool, error) {
 		if isNamespaced {
 			connectionToken, err = config.GetEnvErr("WORKSPACE_NAMESPACE")
 			if err != nil {
-				pkgLogger.Errorf("error getting workspace namespace: %s", err.Error())
+				pkgLogger.Errorf("error getting workspace namespace: %v", err)
 				return "", false, err
 			}
-			if connectionToken == HostedNamespace {
+			if connectionToken == hostedNamespace {
 				// CP Router still has some things hardcoded for hosted
 				// which needs to be supported
 				connectionToken = config.GetEnv("HOSTED_SERVICE_SECRET", "")
@@ -67,7 +67,7 @@ func GetConnectionToken() (string, bool, error) {
 		} else {
 			connectionToken, err = config.GetEnvErr("HOSTED_SERVICE_SECRET")
 			if err != nil {
-				pkgLogger.Errorf("error getting hosted service secret: %s", err.Error())
+				pkgLogger.Errorf("error getting hosted service secret: %v", err)
 				return "", false, err
 			}
 		}

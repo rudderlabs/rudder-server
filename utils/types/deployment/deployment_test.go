@@ -137,7 +137,7 @@ func Test_GetConnectionToken(t *testing.T) {
 			namespace:          "free-us-1",
 			expectedIdentifier: "",
 			expectedBool:       false,
-			err:                fmt.Errorf("invalid deployment type: \"badType\""),
+			err:                fmt.Errorf(`invalid deployment type: \"badType\"`),
 		},
 	}
 
