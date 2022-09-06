@@ -111,5 +111,4 @@ func Test_Client_Send(t *testing.T) {
 
 		require.Equalf(t, int64(4), atomic.LoadInt64(&count), "retry %d times", features.MaxRetries)
 	})
-
 }

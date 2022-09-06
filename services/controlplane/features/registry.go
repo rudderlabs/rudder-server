@@ -2,9 +2,7 @@ package features
 
 import "sync"
 
-var (
-	DefaultRegistry = &Registry{}
-)
+var DefaultRegistry = &Registry{}
 
 type Registry struct {
 	mu    sync.RWMutex

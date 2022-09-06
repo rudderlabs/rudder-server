@@ -21,10 +21,12 @@ type Namespace struct {
 func (n *Namespace) ID() string {
 	return n.Namespace
 }
+
 func (n *Namespace) HTTPAuth(req *http.Request) {
 	req.SetBasicAuth(n.HostedSecret, "")
 }
-func (c *Namespace) Resource() string {
+
+func (*Namespace) Resource() string {
 	return "namespaces"
 }
 
@@ -36,10 +38,12 @@ type Workspace struct {
 func (w *Workspace) ID() string {
 	return w.WorkspaceID
 }
+
 func (w *Workspace) HTTPAuth(req *http.Request) {
 	req.SetBasicAuth(w.WorkspaceToken, "")
 }
-func (w *Workspace) Resource() string {
+
+func (*Workspace) Resource() string {
 	return "workspace"
 }
 
@@ -48,8 +52,10 @@ type NOOP struct{}
 func (*NOOP) ID() string {
 	return ""
 }
+
 func (*NOOP) HTTPAuth(_ *http.Request) {
 }
+
 func (*NOOP) Resource() string {
 	return ""
 }

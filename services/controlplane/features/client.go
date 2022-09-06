@@ -19,27 +19,27 @@ var (
 	MaxRetries     = uint64(3)
 )
 
-type OptFn func(c *client)
+type OptFn func(c *Client)
 
 func WithURL(url string) OptFn {
-	return func(c *client) {
+	return func(c *Client) {
 		c.url = url
 	}
 }
 
 func WithHTTPClient(httpClient *http.Client) OptFn {
-	return func(c *client) {
+	return func(c *Client) {
 		c.client = httpClient
 	}
 }
 
 func WithTimeout(timeout time.Duration) OptFn {
-	return func(c *client) {
+	return func(c *Client) {
 		c.client.Timeout = timeout
 	}
 }
 
-type client struct {
+type Client struct {
 	client   *http.Client
 	url      string
 	identity identity.Identifier
@@ -54,8 +54,8 @@ type component struct {
 	Features []string `json:"features"`
 }
 
-func New(identity identity.Identifier, fns ...OptFn) *client {
-	c := &client{
+func New(identity identity.Identifier, fns ...OptFn) *Client {
+	c := &Client{
 		client: &http.Client{
 			Timeout: DefaultTimeout,
 		},
@@ -70,7 +70,7 @@ func New(identity identity.Identifier, fns ...OptFn) *client {
 	return c
 }
 
-func (c *client) Send(ctx context.Context, registry *Registry) error {
+func (c *Client) Send(ctx context.Context, registry *Registry) error {
 	url := fmt.Sprintf("%s/data-plane/%s/%s/settings", c.url, c.identity.Resource(), c.identity.ID())
 
 	payload := payload{

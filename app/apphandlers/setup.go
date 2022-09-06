@@ -116,7 +116,6 @@ func rudderCoreBaseSetup() {
 			pkgLogger.Errorf("error sending features: %v", err)
 		}
 	}()
-
 }
 
 // StartProcessor atomically starts processor process if not already started
