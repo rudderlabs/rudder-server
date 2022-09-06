@@ -11,10 +11,10 @@ mocks: install-tools ## Generate all mocks
 
 test: ## Run all unit tests
 ifdef package
-	SLOW=0 $(GINKGO) -p --randomize-all --randomize-suites --fail-on-pending --cover -tags=integration \
+	SLOW=0 $(GINKGO) -p --randomize-all --randomize-suites --fail-on-pending --cover  \
 		-coverprofile=profile.out -covermode=atomic --trace -keep-separate-coverprofiles $(package)
 else
-	SLOW=0 $(GINKGO) -p --randomize-all --randomize-suites --fail-on-pending --cover -tags=integration \
+	SLOW=0 $(GINKGO) -p --randomize-all --randomize-suites --fail-on-pending --cover  \
 		-coverprofile=profile.out -covermode=atomic --trace -keep-separate-coverprofiles ./...
 endif
 	echo "mode: atomic" > coverage.txt
@@ -59,7 +59,7 @@ install-tools:
 
 .PHONY: lint
 lint: fmt
-	docker run --rm -v $(shell pwd):/app:ro -w /app golangci/golangci-lint:v1.46.2 bash -e -c \
+	docker run --rm -v $(shell pwd):/app:ro -w /app golangci/golangci-lint:v1.49.0 bash -e -c \
 		'golangci-lint run -v --timeout 5m'
 
 .PHONY: fmt

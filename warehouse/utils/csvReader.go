@@ -5,15 +5,15 @@ import (
 	"io"
 )
 
-type csvReader struct {
+type CsvReader struct {
 	reader *csv.Reader
 }
 
-func (csv *csvReader) Read(columnNames []string) (record []string, err error) {
+func (csv *CsvReader) Read(columnNames []string) (record []string, err error) {
 	record, err = csv.reader.Read()
 	return
 }
 
-func NewCsvReader(r io.Reader) *csvReader {
-	return &csvReader{reader: csv.NewReader(r)}
+func NewCsvReader(r io.Reader) *CsvReader {
+	return &CsvReader{reader: csv.NewReader(r)}
 }

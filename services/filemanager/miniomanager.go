@@ -210,7 +210,7 @@ func (manager *MinioManager) getTimeout() time.Duration {
 		return manager.timeout
 	}
 
-	return getBatchRouterDurationConfig("timeout", "MINIO", 120, time.Second)
+	return getBatchRouterTimeoutConfig("MINIO")
 }
 
 type MinioConfig struct {

@@ -39,19 +39,31 @@ func (handle *Handler) generatorLoop(ctx context.Context) {
 			CustomValFilters: []string{"replay"},
 			JobsLimit:        handle.dbReadSize,
 		}
-		toRetry := handle.db.GetToRetry(queryParams)
+		toRetry, err := handle.db.GetToRetry(context.TODO(), queryParams)
+		if err != nil {
+			pkgLogger.Errorf("Error getting to retry jobs: %v", err)
+			panic(err)
+		}
 		combinedList := toRetry.Jobs
 
 		if !toRetry.LimitsReached {
 			queryParams.JobsLimit -= len(combinedList)
-			unprocessed := handle.db.GetUnprocessed(queryParams)
+			unprocessed, err := handle.db.GetUnprocessed(context.TODO(), queryParams)
+			if err != nil {
+				pkgLogger.Errorf("Error getting unprocessed jobs: %v", err)
+				panic(err)
+			}
 			combinedList = append(combinedList, unprocessed.Jobs...)
 		}
 		pkgLogger.Infof("length of combinedList : %d", len(combinedList))
 
 		if len(combinedList) == 0 {
 			if breakLoop {
-				executingList := handle.db.GetExecuting(jobsdb.GetQueryParamsT{CustomValFilters: []string{"replay"}, JobsLimit: handle.dbReadSize})
+				executingList, err := handle.db.GetExecuting(context.TODO(), jobsdb.GetQueryParamsT{CustomValFilters: []string{"replay"}, JobsLimit: handle.dbReadSize})
+				if err != nil {
+					pkgLogger.Errorf("Error getting executing jobs: %v", err)
+					panic(err)
+				}
 				pkgLogger.Infof("breakLoop is set. Pending executing: %d", len(executingList.Jobs))
 				if len(executingList.Jobs) == 0 {
 					break
@@ -96,7 +108,7 @@ func (handle *Handler) generatorLoop(ctx context.Context) {
 		}
 
 		// Mark the jobs as executing
-		err := handle.db.UpdateJobStatus(ctx, statusList, []string{"replay"}, nil)
+		err = handle.db.UpdateJobStatus(ctx, statusList, []string{"replay"}, nil)
 		if err != nil {
 			panic(err)
 		}

@@ -216,7 +216,7 @@ func (jd *HandleT) createSetupCheckpointAndGetDs(migrationType MigrationOp) data
 		case ExportOp:
 			ds = jd.getLastDsForExport(dsList)
 		case AcceptNewEventsOp:
-			ds = jd.getDsForNewEvents(dsList)
+			ds = jd.getDsForNewEvents()
 		case ImportOp:
 			ds = jd.getDsForImport(l)
 		}
