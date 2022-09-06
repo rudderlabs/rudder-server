@@ -23,6 +23,7 @@ import (
 )
 
 var sampleBackendConfig = ConfigT{
+	WorkspaceID: "sampleWorkspaceID",
 	Sources: []SourceT{
 		{
 			ID:       "1",

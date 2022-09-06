@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"sort"
 	"time"
 
 	"github.com/cenkalti/backoff"
@@ -83,6 +84,9 @@ func (c *Client) Send(ctx context.Context, registry *Registry) error {
 			Features: features,
 		})
 	})
+
+	// sort by name, so that the order of components is always the same in every call
+	sort.Slice(payload.Components, func(i, j int) bool { return payload.Components[i].Name < payload.Components[j].Name })
 
 	body, err := json.Marshal(payload)
 	if err != nil {
