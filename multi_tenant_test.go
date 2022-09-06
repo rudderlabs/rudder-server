@@ -41,13 +41,15 @@ func TestMultiTenant(t *testing.T) {
 	}
 }
 
-func requireAuth(t *testing.T, secret string, hander func(w http.ResponseWriter, r *http.Request)) func(w http.ResponseWriter, r *http.Request) {
+func requireAuth(t *testing.T, secret string, hander http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		u, _, ok := r.BasicAuth()
 		require.True(t, ok, "Auth should be present")
 		require.Equalf(t, secret, u,
 			"Expected HTTP basic authentication to be %q, got %q instead",
 			secret, u)
+
+		hander(w, r)
 	}
 }
 
@@ -114,7 +116,7 @@ func testMultiTenantByAppType(t *testing.T, appType string) {
 		})).
 		Methods("GET")
 	backendConfRouter.
-		HandleFunc("/data-plane/v1/namespaces/"+workspaceNamespace+"/settings", requireAuth(t, hostedServiceSecret, func(w http.ResponseWriter, r *http.Request) {
+		HandleFunc("/data-plane/namespaces/"+workspaceNamespace+"/settings", requireAuth(t, hostedServiceSecret, func(w http.ResponseWriter, r *http.Request) {
 			expectBody, err := os.ReadFile("testdata/expected_features.json")
 			require.NoError(t, err)
 
@@ -210,6 +212,9 @@ func testMultiTenantByAppType(t *testing.T, appType string) {
 	resp, err := http.Get(healthEndpoint)
 	require.ErrorContains(t, err, "connection refused")
 	require.Nil(t, resp)
+	if err == nil {
+		defer resp.Body.Close()
+	}
 
 	// Pushing valid configuration via ETCD
 	etcdReqKey := getETCDWorkspacesReqKey(releaseName, serverInstanceID, appType)
