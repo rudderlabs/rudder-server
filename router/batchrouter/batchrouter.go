@@ -30,7 +30,7 @@ import (
 	"github.com/thoas/go-funk"
 	"golang.org/x/sync/errgroup"
 
-	uuid "github.com/gofrs/uuid"
+	"github.com/gofrs/uuid"
 	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
@@ -1249,7 +1249,7 @@ func (brt *HandleT) setJobStatus(batchJobs *BatchJobsT, isWarehouse bool, errOcc
 			// Update metrics maps
 			errorCode := getBRTErrorCode(jobState)
 			var cd *types.ConnectionDetails
-			workspaceID := brt.backendConfig.GetWorkspaceIDForSourceID((parameters.SourceID))
+			workspaceID := brt.backendConfig.GetWorkspaceIDForSourceID(parameters.SourceID)
 			_, ok := batchRouterWorkspaceJobStatusCount[workspaceID]
 			if !ok {
 				batchRouterWorkspaceJobStatusCount[workspaceID] = make(map[string]int)
@@ -1797,7 +1797,7 @@ func (worker *workerT) workerProcess() {
 			rruntime.Go(func() {
 				switch {
 				case misc.ContainsString(objectStorageDestinations, brt.destType):
-					destUploadStat := stats.DefaultStats.NewStat(fmt.Sprintf(`batch_router.%s_dest_upload_time`, brt.destType), stats.TimerType)
+					destUploadStat := stats.NewTaggedStat(`batch_router.dest_upload_time`, stats.TimerType, map[string]string{"destType": brt.destType})
 					destUploadStat.Start()
 					output := brt.copyJobsToStorage(brt.destType, &batchJobs, false)
 					brt.recordDeliveryStatus(*batchJobs.BatchDestination, output, false)
@@ -1814,7 +1814,7 @@ func (worker *workerT) workerProcess() {
 				case misc.ContainsString(warehouseutils.WarehouseDestinations, brt.destType):
 					useRudderStorage := misc.IsConfiguredToUseRudderObjectStorage(batchJobs.BatchDestination.Destination.Config)
 					objectStorageType := warehouseutils.ObjectStorageType(brt.destType, batchJobs.BatchDestination.Destination.Config, useRudderStorage)
-					destUploadStat := stats.DefaultStats.NewStat(fmt.Sprintf(`batch_router.%s_%s_dest_upload_time`, brt.destType, objectStorageType), stats.TimerType)
+					destUploadStat := stats.NewTaggedStat(`batch_router.dest_upload_time`, stats.TimerType, map[string]string{"destType": brt.destType, "objectStorageType": objectStorageType})
 					destUploadStat.Start()
 					splitBatchJobs := brt.splitBatchJobsOnTimeWindow(batchJobs)
 					for _, batchJob := range splitBatchJobs {
@@ -1834,7 +1834,7 @@ func (worker *workerT) workerProcess() {
 					}
 					destUploadStat.End()
 				case misc.ContainsString(asyncDestinations, brt.destType):
-					destUploadStat := stats.DefaultStats.NewStat(fmt.Sprintf(`batch_router.%s_dest_upload_time`, brt.destType), stats.TimerType)
+					destUploadStat := stats.NewTaggedStat(`batch_router.dest_upload_time`, stats.TimerType, map[string]string{"destType": brt.destType})
 					destUploadStat.Start()
 					brt.sendJobsToStorage(batchJobs)
 					destUploadStat.End()

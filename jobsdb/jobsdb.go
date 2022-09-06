@@ -408,8 +408,8 @@ type HandleT struct {
 	dsCacheLock                   sync.Mutex
 	BackupSettings                *backupSettings
 	jobsFileUploader              filemanager.FileManager
-	statTableCount                stats.RudderStats
 	statDSCount                   stats.RudderStats
+	statTableCount                stats.RudderStats
 	statNewDSPeriod               stats.RudderStats
 	invalidCacheKeyStat           stats.RudderStats
 	isStatNewDSPeriodInitialized  bool
@@ -861,6 +861,7 @@ func (jd *HandleT) workersAndAuxSetup() {
 
 	jd.logger.Infof("Connected to %s DB", jd.tablePrefix)
 
+	// TODO: Get rid of statTableCount after changing the alerts appropriately
 	jd.statTableCount = stats.DefaultStats.NewStat(fmt.Sprintf("jobsdb.%s_tables_count", jd.tablePrefix), stats.GaugeType)
 	jd.statDSCount = stats.NewTaggedStat("jobsdb.tables_count", stats.GaugeType, stats.Tags{"customVal": jd.tablePrefix})
 	jd.tablesQueriedStat = stats.NewTaggedStat("tables_queried_gauge", stats.GaugeType, stats.Tags{
