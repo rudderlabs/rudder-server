@@ -31,7 +31,7 @@ func (*NOOP) GetWorkspaceIDForWriteKey(string) string {
 	return ""
 }
 
-func (noop *NOOP) GetWorkspaceIDForSourceID(_ string) string {
+func (*NOOP) GetWorkspaceIDForSourceID(_ string) string {
 	return ""
 }
 

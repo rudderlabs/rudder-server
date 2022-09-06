@@ -136,7 +136,7 @@ func TestSingleWorkspaceGetFromFile(t *testing.T) {
 		t.Cleanup(func() { require.NoError(t, tmpFile.Close()) })
 		t.Cleanup(func() { require.NoError(t, os.Remove(tmpFile.Name())) })
 
-		err = os.WriteFile(tmpFile.Name(), data, 0o644)
+		err = os.WriteFile(tmpFile.Name(), data, 0o600)
 		require.NoError(t, err)
 
 		wc := &singleWorkspaceConfig{
