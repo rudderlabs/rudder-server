@@ -1,0 +1,57 @@
+{
+    "enableMetrics": false,
+    "workspaceId": "{{.workspaceId}}",
+    "sources": [
+      {
+        "id": "xxxyyyzzEaEurW247ad9WYZLUyk",
+        "name": "Dev Integration Test 1",
+        "writeKey": "{{.writeKey}}",
+        "workspaceId": "{{.workspaceId}}",
+        "enabled": true,
+        "sourceDefinition": {
+          "id": "xxxyyyzzpWDzNxgGUYzq9sZdZZB",
+          "name": "HTTP"
+        },
+        "destinations": [
+          {
+            "id": "xxxyyyzzP9kQfzOoKd1tuxchYAG",
+            "name": "Dev WebHook Integration Test 1",
+            "enabled": true,
+            "isProcessorEnabled": true,
+            "config": {
+              "webhookUrl": "{{.webhookUrl}}",
+              "webhookMethod": "POST"
+            },
+            "destinationDefinition": {
+              "id": "xxxyyyzzSOU9pLRavMf0GuVnWV3",
+              "name": "WEBHOOK",
+              "displayName": "Webhook",
+              "config": {
+                "destConfig": {
+                  "defaultConfig": [
+                    "webhookUrl",
+                    "webhookMethod",
+                    "headers"
+                  ]
+                },
+                "secretKeys": [
+                  "headers.to"
+                ],
+                "supportedSourceTypes": [
+                  "web"
+                ],
+                "supportedMessageTypes": [
+                  "alias",
+                  "group",
+                  "identify",
+                  "page",
+                  "screen",
+                  "track"
+                ]
+              }
+            }
+          }
+        ]
+      }
+    ]
+}

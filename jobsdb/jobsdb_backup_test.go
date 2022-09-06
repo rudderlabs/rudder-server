@@ -177,7 +177,7 @@ func (*backupTestCase) insertRTData(t *testing.T, jobs []*JobT, statusList []*Jo
 			return err
 		}
 
-		return jobsDB.copyJobStatusDS(context.Background(), tx, rtDS, statusList, []string{}, nil)
+		return jobsDB.copyJobStatusDS(context.Background(), tx, rtDS, statusList, []string{})
 	})
 	require.NoError(t, err)
 
@@ -189,7 +189,7 @@ func (*backupTestCase) insertRTData(t *testing.T, jobs []*JobT, statusList []*Jo
 		if err := jobsDB.copyJobsDS(tx, rtDS2, jobs); err != nil {
 			return err
 		}
-		return jobsDB.copyJobStatusDS(context.Background(), tx, rtDS2, statusList, []string{}, nil)
+		return jobsDB.copyJobStatusDS(context.Background(), tx, rtDS2, statusList, []string{})
 	})
 	require.NoError(t, err)
 	cleanup.Cleanup(func() {
@@ -219,7 +219,7 @@ func (*backupTestCase) insertBatchRTData(t *testing.T, jobs []*JobT, statusList 
 			t.Log("error while copying jobs to ds: ", err)
 			return err
 		}
-		return jobsDB.copyJobStatusDS(context.Background(), tx, ds, statusList, []string{}, nil)
+		return jobsDB.copyJobStatusDS(context.Background(), tx, ds, statusList, []string{})
 	})
 	require.NoError(t, err)
 
@@ -233,7 +233,7 @@ func (*backupTestCase) insertBatchRTData(t *testing.T, jobs []*JobT, statusList 
 			return err
 		}
 
-		return jobsDB.copyJobStatusDS(context.Background(), tx, ds2, statusList, []string{}, nil)
+		return jobsDB.copyJobStatusDS(context.Background(), tx, ds2, statusList, []string{})
 	})
 	require.NoError(t, err)
 	cleanup.Cleanup(func() {
