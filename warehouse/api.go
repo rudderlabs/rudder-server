@@ -631,12 +631,18 @@ func (validateObjectStorageRequest *ValidateObjectRequestT) validateObjectStorag
 
 	err = json.Unmarshal([]byte(validateObjectStorageRequest.body), &requestMap)
 	if err != nil {
+		validateObjectStorageResp.StatusCode = 400
+		validateObjectStorageResp.Error = fmt.Sprintf("Invalid request body")
+		validateObjectStorageResp.IsValid = false
 		return
 	}
 	typeOfObjectStorage := fmt.Sprint(requestMap["type"])
 	configValue := requestMap["config"].(string)
 	err = json.Unmarshal([]byte(configValue), &configMap)
 	if err != nil {
+		validateObjectStorageResp.StatusCode = 400
+		validateObjectStorageResp.Error = fmt.Sprintf("Invalid request body")
+		validateObjectStorageResp.IsValid = false
 		return
 	}
 
@@ -665,7 +671,15 @@ func (validateObjectStorageRequest *ValidateObjectRequestT) validateObjectStorag
 	}
 
 	filePtr, err := os.Open(fileList[0])
-	fileManager.Upload(context.TODO(), filePtr, "test-prefix-1")
-
-	return nil, err
+	_, err = fileManager.Upload(context.TODO(), filePtr, "test-prefix-1")
+	if err != nil {
+		validateObjectStorageResp.StatusCode = 200
+		validateObjectStorageResp.Error = fmt.Sprintf("INVALID CREDS")
+		validateObjectStorageResp.IsValid = false
+		return
+	}
+	validateObjectStorageResp.StatusCode = 200
+	validateObjectStorageResp.Error = fmt.Sprintf("")
+	validateObjectStorageResp.IsValid = true
+	return
 }

@@ -112,6 +112,6 @@ message validateObjectStorageRequest{
 
 message validateObjectStorageResponse{
   int32 status_code=1;
-  string isValid=2;
+  bool isValid=2;
   string error=3;
 }
