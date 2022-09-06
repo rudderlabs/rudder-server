@@ -33,7 +33,6 @@ var (
 	configFromFile                        bool
 	maxRegulationsPerRequest              int
 	configEnvReplacementEnabled           bool
-	isolateRouterMap                      map[string]bool
 	isolateRouterMapLock                  sync.RWMutex
 
 	LastSync           string
@@ -43,6 +42,7 @@ var (
 	DefaultBackendConfig BackendConfig
 	pkgLogger            = logger.NewLogger().Child("backend-config")
 	IoUtil               = sysUtils.NewIoUtil()
+	isolateRouterMap     = make(map[string]bool)
 	Diagnostics          diagnostics.DiagnosticsI
 )
 
@@ -76,7 +76,6 @@ type backendConfigImpl struct {
 }
 
 func loadConfig() {
-	isolateRouterMap = make(map[string]bool)
 	configBackendURL = config.GetEnv("CONFIG_BACKEND_URL", "https://api.rudderlabs.com")
 	cpRouterURL = config.GetEnv("CP_ROUTER_URL", "https://cp-router.rudderlabs.com")
 	config.RegisterDurationConfigVariable(5, &pollInterval, true, time.Second, []string{"BackendConfig.pollInterval", "BackendConfig.pollIntervalInS"}...)
@@ -312,7 +311,7 @@ func getNotOKError(respBody []byte, statusCode int) error {
 	return fmt.Errorf("backend config request failed with %d%s", statusCode, errMsg)
 }
 
-func (d *DestinationT) GetRouterIdentifier() string {
+func (d *DestinationT) RouterIdentifier() string {
 	isolateRouterMapLock.Lock()
 	defer isolateRouterMapLock.Unlock()
 	_, ok := isolateRouterMap[d.DestinationDefinition.Name]

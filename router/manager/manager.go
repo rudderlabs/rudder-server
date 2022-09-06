@@ -111,7 +111,7 @@ loop:
 							dstToBatchRouter[destination.DestinationDefinition.Name] = brt
 						}
 					} else {
-						routerIdentifier := destination.GetRouterIdentifier()
+						routerIdentifier := destination.RouterIdentifier()
 						_, ok := dstToRouter[routerIdentifier]
 						if !ok {
 							pkgLogger.Infof("Starting a new Destination: %s", destination.DestinationDefinition.Name)
