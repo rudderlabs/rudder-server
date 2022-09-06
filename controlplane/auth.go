@@ -17,7 +17,7 @@ type authService struct {
 	proto.UnimplementedDPAuthServiceServer
 }
 
-func (a *authService) GetConnectionToken(ctx context.Context, request *proto.GetConnectionTokenRequest) (*proto.GetConnectionTokenResponse, error) {
+func (a *authService) GetConnectionToken(_ context.Context, _ *proto.GetConnectionTokenRequest) (*proto.GetConnectionTokenResponse, error) {
 	if a.authInfo.ConnectionToken != "" {
 		return &proto.GetConnectionTokenResponse{
 			Response: &proto.GetConnectionTokenResponse_ErrorResponse{
