@@ -7,6 +7,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/utils/types/deployment"
+
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/controlplane"
 	proto "github.com/rudderlabs/rudder-server/proto/warehouse"
@@ -87,27 +89,26 @@ type UploadAPIT struct {
 	dbHandle          *sql.DB
 	log               logger.LoggerI
 	connectionManager *controlplane.ConnectionManager
-	isHosted          bool
+	isMultiWorkspace  bool
 }
 
 var UploadAPI UploadAPIT
 
-func InitWarehouseAPI(dbHandle *sql.DB, log logger.LoggerI) {
-	workspaceToken := config.GetWorkspaceToken()
-	isMultiWorkspace := config.GetEnvAsBool("HOSTED_SERVICE", false)
-	if isMultiWorkspace {
-		workspaceToken = config.GetEnv("HOSTED_SERVICE_SECRET", "password")
+func InitWarehouseAPI(dbHandle *sql.DB, log logger.LoggerI) error {
+	connectionToken, isMultiWorkspace, err := deployment.GetConnectionToken()
+	if err != nil {
+		return err
 	}
 	UploadAPI = UploadAPIT{
-		enabled:  true,
-		dbHandle: dbHandle,
-		log:      log,
-		isHosted: isMultiWorkspace,
+		enabled:          true,
+		dbHandle:         dbHandle,
+		log:              log,
+		isMultiWorkspace: isMultiWorkspace,
 		connectionManager: &controlplane.ConnectionManager{
 			AuthInfo: controlplane.AuthInfo{
-				Service:        "warehouse",
-				WorkspaceToken: workspaceToken,
-				InstanceID:     config.GetEnv("instance_id", "1"),
+				Service:         "warehouse",
+				ConnectionToken: connectionToken,
+				InstanceID:      config.GetEnv("instance_id", "1"),
 			},
 			RetryInterval: 0,
 			UseTLS:        config.GetEnvAsBool("CP_ROUTER_USE_TLS", true),
@@ -117,6 +118,7 @@ func InitWarehouseAPI(dbHandle *sql.DB, log logger.LoggerI) {
 			},
 		},
 	}
+	return nil
 }
 
 func (uploadsReq *UploadsReqT) validateReq() error {
@@ -158,7 +160,7 @@ func (uploadsReq *UploadsReqT) GetWhUploads() (uploadsRes *proto.WHUploadsRespon
 		return uploadsRes, nil
 	}
 
-	if UploadAPI.isHosted {
+	if UploadAPI.isMultiWorkspace {
 		uploadsRes, err = uploadsReq.getWhUploadsForHosted(authorizedSourceIDs, `id, source_id, destination_id, destination_type, namespace, status, error, first_event_at, last_event_at, last_exec_at, updated_at, timings, metadata->>'nextRetryTime', metadata->>'archivedStagingAndLoadFiles'`)
 		return
 	}
@@ -472,7 +474,7 @@ func (uploadsReq UploadsReqT) authorizedSources() (sourceIDs []string) {
 	return sourceIDs
 }
 
-func (uploadsReq *UploadsReqT) getUploadsFromDb(isHosted bool, query string) ([]*proto.WHUploadResponse, int32, error) {
+func (uploadsReq *UploadsReqT) getUploadsFromDb(isMultiWorkspace bool, query string) ([]*proto.WHUploadResponse, int32, error) {
 	var totalUploadCount int32
 	var err error
 	uploads := make([]*proto.WHUploadResponse, 0)
@@ -493,7 +495,7 @@ func (uploadsReq *UploadsReqT) getUploadsFromDb(isHosted bool, query string) ([]
 		var isUploadArchived sql.NullBool
 
 		// total upload count is also a part of these rows if the query was made for a hosted workspace
-		if isHosted {
+		if isMultiWorkspace {
 			err = rows.Scan(&upload.Id, &upload.SourceId, &upload.DestinationId, &upload.DestinationType, &upload.Namespace, &upload.Status, &uploadError, &firstEventAt, &lastEventAt, &lastExecAt, &updatedAt, &timingsObject, &nextRetryTimeStr, &isUploadArchived, &totalUploads)
 			if err != nil {
 				uploadsReq.API.log.Errorf(err.Error())
@@ -519,9 +521,9 @@ func (uploadsReq *UploadsReqT) getUploadsFromDb(isHosted bool, query string) ([]
 		if upload.Status != ExportedData {
 			lastFailedStatus := warehouseutils.GetLastFailedStatus(timingsObject)
 			errorPath := fmt.Sprintf("%s.errors", lastFailedStatus)
-			pathErrors := gjson.Get(uploadError, errorPath).Array()
-			if len(pathErrors) > 0 {
-				upload.Error = pathErrors[len(pathErrors)-1].String()
+			errs := gjson.Get(uploadError, errorPath).Array()
+			if len(errs) > 0 {
+				upload.Error = errs[len(errs)-1].String()
 			}
 		}
 		// set nextRetryTime for non-aborted failed uploads

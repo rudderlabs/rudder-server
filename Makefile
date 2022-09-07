@@ -12,10 +12,10 @@ mocks: install-tools ## Generate all mocks
 test: ## Run all unit tests
 ifdef package
 	SLOW=0 $(GINKGO) -p --randomize-all --randomize-suites --fail-on-pending --cover  \
-		-coverprofile=profile.out -covermode=atomic --trace -keep-separate-coverprofiles $(package)
+		-coverprofile=profile.out -covermode=atomic --trace -keep-separate-coverprofiles $(package) ;
 else
 	SLOW=0 $(GINKGO) -p --randomize-all --randomize-suites --fail-on-pending --cover  \
-		-coverprofile=profile.out -covermode=atomic --trace -keep-separate-coverprofiles ./...
+		-coverprofile=profile.out -covermode=atomic --trace -keep-separate-coverprofiles ./... ;
 endif
 	echo "mode: atomic" > coverage.txt
 	find . -name "profile.out" | while read file;do grep -v 'mode: atomic' $${file} >> coverage.txt; rm $${file};done
