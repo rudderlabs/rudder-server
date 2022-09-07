@@ -163,7 +163,7 @@ type JobParametersT struct {
 	RecordID                interface{} `json:"record_id"`
 	MessageID               string      `json:"message_id"`
 	WorkspaceID             string      `json:"workspaceId"`
-	RudderAccountId         string      `json:"rudderAccountId"`
+	RudderAccountID         string      `json:"rudderAccountId"`
 }
 
 type workerMessageT struct {
@@ -924,7 +924,7 @@ func (worker *workerT) decrementInThrottleMap(apiCallsCount map[string]*destJobC
 				if diff > 0 {
 					// decrement only half to account for api call to be made again in router transform
 					if worker.encounteredRouterTransform {
-						diff = diff / 2
+						diff /= 2
 					}
 					pkgLogger.Debugf(`Decrementing user level throttle map by %d for dest:%s, user:%s`, diff, destID, userID)
 					worker.rt.throttler.Dec(destID, userID, diff, worker.throttledAtTime, throttler.USER_LEVEL)
@@ -941,7 +941,7 @@ func (worker *workerT) decrementInThrottleMap(apiCallsCount map[string]*destJobC
 			if diff > 0 {
 				// decrement only half to account for api call to be made again in router transform
 				if worker.encounteredRouterTransform {
-					diff = diff / 2
+					diff /= 2
 				}
 				pkgLogger.Debugf(`Decrementing destination level throttle map by %d for dest:%s`, diff, destID)
 				worker.rt.throttler.Dec(destID, "", diff, worker.throttledAtTime, throttler.DESTINATION_LEVEL)
@@ -954,9 +954,9 @@ func (worker *workerT) updateReqMetrics(respStatusCode int, diagnosisStartTime *
 	var reqMetric requestMetric
 
 	if isSuccessStatus(respStatusCode) {
-		reqMetric.RequestSuccess = reqMetric.RequestSuccess + 1
+		reqMetric.RequestSuccess++
 	} else {
-		reqMetric.RequestRetries = reqMetric.RequestRetries + 1
+		reqMetric.RequestRetries++
 	}
 	reqMetric.RequestCompletedTime = time.Since(*diagnosisStartTime)
 	worker.rt.trackRequestMetrics(reqMetric)
@@ -1344,16 +1344,16 @@ func (rt *HandleT) commitStatusList(responseList *[]jobResponseT) {
 				}
 			}
 		case jobsdb.Succeeded.State:
-			routerWorkspaceJobStatusCount[workspaceID] += 1
+			routerWorkspaceJobStatusCount[workspaceID]++
 			sd.Count++
 			rt.MultitenantI.CalculateSuccessFailureCounts(workspaceID, rt.destName, true, false)
 			completedJobsList = append(completedJobsList, resp.JobT)
 		case jobsdb.Aborted.State:
-			routerWorkspaceJobStatusCount[workspaceID] += 1
+			routerWorkspaceJobStatusCount[workspaceID]++
 			sd.Count++
 			rt.MultitenantI.CalculateSuccessFailureCounts(workspaceID, rt.destName, false, true)
 			routerAbortedJobs = append(routerAbortedJobs, resp.JobT)
-			PrepareJobRunIdAbortedEventsMap(resp.JobT.Parameters, jobRunIDAbortedEventsMap)
+			PrepareJobRunIDAbortedEventsMap(resp.JobT.Parameters, jobRunIDAbortedEventsMap)
 			completedJobsList = append(completedJobsList, resp.JobT)
 		}
 
@@ -2208,14 +2208,14 @@ func (rt *HandleT) HandleOAuthDestResponse(params *HandleDestOAuthRespParamsT) (
 	return trRespStatusCode, trRespBody
 }
 
-func (rt *HandleT) ExecDisableDestination(destination *backendconfig.DestinationT, workspaceId, destResBody, rudderAccountId string) (int, string) {
+func (rt *HandleT) ExecDisableDestination(destination *backendconfig.DestinationT, workspaceID, destResBody, rudderAccountId string) (int, string) {
 	disableDestStatTags := stats.Tags{
 		"id":          destination.ID,
 		"destType":    destination.DestinationDefinition.Name,
-		"workspaceId": workspaceId,
+		"workspaceId": workspaceID,
 		"success":     "true",
 	}
-	errCatStatusCode, errCatResponse := rt.oauth.DisableDestination(destination, workspaceId, rudderAccountId)
+	errCatStatusCode, errCatResponse := rt.oauth.DisableDestination(destination, workspaceID, rudderAccountId)
 	if errCatStatusCode != http.StatusOK {
 		// Error while disabling a destination
 		// High-Priority notification to rudderstack needs to be sent
@@ -2229,7 +2229,7 @@ func (rt *HandleT) ExecDisableDestination(destination *backendconfig.Destination
 	return http.StatusBadRequest, destResBody
 }
 
-func PrepareJobRunIdAbortedEventsMap(parameters json.RawMessage, jobRunIDAbortedEventsMap map[string][]*FailedEventRowT) {
+func PrepareJobRunIDAbortedEventsMap(parameters json.RawMessage, jobRunIDAbortedEventsMap map[string][]*FailedEventRowT) {
 	taskRunID := gjson.GetBytes(parameters, "source_task_run_id").String()
 	destinationID := gjson.GetBytes(parameters, "destination_id").String()
 	recordID := json.RawMessage(gjson.GetBytes(parameters, "record_id").Raw)

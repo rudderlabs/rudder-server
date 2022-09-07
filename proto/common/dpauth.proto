@@ -5,10 +5,31 @@ package proto;
 option go_package = ".;proto";
 
 service DPAuthService{
+  rpc GetConnectionToken( GetConnectionTokenRequest ) returns ( GetConnectionTokenResponse );
   rpc GetWorkspaceToken( GetWorkspaceTokenRequest ) returns ( GetWorkspaceTokenResponse );
 }
 
+message GetConnectionTokenRequest {
+}
+
 message GetWorkspaceTokenRequest {
+}
+
+message SuccessResponse {
+  string connectionToken = 1;
+  string service = 2;
+  string instanceID = 3;
+}
+
+message ErrorResponse {
+  string error = 1;
+}
+
+message GetConnectionTokenResponse {
+  oneof response {
+    SuccessResponse success_response = 1;
+    ErrorResponse error_response = 2;
+  }
 }
 
 message GetWorkspaceTokenResponse {

@@ -97,15 +97,15 @@ func (manager *S3Manager) GetObjectNameFromLocation(location string) (string, er
 }
 
 func (manager *S3Manager) GetDownloadKeyFromFileLocation(location string) string {
-	parsedUrl, err := url.Parse(location)
+	parsedURL, err := url.Parse(location)
 	if err != nil {
 		fmt.Println("error while parsing location url: ", err)
 	}
-	trimedUrl := strings.TrimLeft(parsedUrl.Path, "/")
-	if (manager.Config.S3ForcePathStyle != nil && *manager.Config.S3ForcePathStyle) || (!strings.Contains(parsedUrl.Host, manager.Config.Bucket)) {
-		return strings.TrimPrefix(trimedUrl, fmt.Sprintf(`%s/`, manager.Config.Bucket))
+	trimmedURL := strings.TrimLeft(parsedURL.Path, "/")
+	if (manager.Config.S3ForcePathStyle != nil && *manager.Config.S3ForcePathStyle) || (!strings.Contains(parsedURL.Host, manager.Config.Bucket)) {
+		return strings.TrimPrefix(trimmedURL, fmt.Sprintf(`%s/`, manager.Config.Bucket))
 	}
-	return trimedUrl
+	return trimmedURL
 }
 
 func (manager *S3Manager) DeleteObjects(ctx context.Context, keys []string) (err error) {
