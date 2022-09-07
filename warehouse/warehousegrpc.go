@@ -2,7 +2,6 @@ package warehouse
 
 import (
 	"context"
-
 	"github.com/rudderlabs/rudder-server/warehouse/configuration_testing"
 
 	"google.golang.org/protobuf/types/known/emptypb"
@@ -88,15 +87,16 @@ func (w *warehousegrpc) RetryWHUploads(ctx context.Context, req *proto.RetryWHUp
 	}
 	return
 }
-func (w *warehousegrpc) ValidateObjectStorage(context context.Context, request *proto.ValidateObjectStorageRequest) (response *proto.ValidateObjectStorageResponse, err error) {
+func (w *warehousegrpc) ValidateObjectStorageDestination(context context.Context, request *proto.ValidateObjectStorageRequest) (response *proto.ValidateObjectStorageResponse, err error) {
 	validateObjectReq := &ValidateObjectRequestT{
 		body: request.Body,
 	}
 	r, err := validateObjectReq.validateObjectStorage()
 	response = &proto.ValidateObjectStorageResponse{
-		StatusCode: r.StatusCode,
-		IsValid:    r.IsValid,
-		Error:      r.Error,
+		Status:  r.Status,
+		IsValid: r.IsValid,
+		Error:   r.Error,
 	}
-	return r, err
+
+	return r, nil
 }

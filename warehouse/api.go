@@ -631,18 +631,27 @@ func (validateObjectStorageRequest *ValidateObjectRequestT) validateObjectStorag
 
 	err = json.Unmarshal([]byte(validateObjectStorageRequest.body), &requestMap)
 	if err != nil {
-		validateObjectStorageResp.StatusCode = 400
-		validateObjectStorageResp.Error = fmt.Sprintf("Invalid request body")
-		validateObjectStorageResp.IsValid = false
+		validateObjectStorageResp = &proto.ValidateObjectStorageResponse{
+			Status:  400,
+			IsValid: false,
+			Error:   fmt.Sprintf("Invalid request body"),
+		}
 		return
 	}
 	typeOfObjectStorage := fmt.Sprint(requestMap["type"])
-	configValue := requestMap["config"].(string)
+
+	configValue, err := json.Marshal(requestMap["config"])
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
 	err = json.Unmarshal([]byte(configValue), &configMap)
 	if err != nil {
-		validateObjectStorageResp.StatusCode = 400
-		validateObjectStorageResp.Error = fmt.Sprintf("Invalid request body")
-		validateObjectStorageResp.IsValid = false
+		validateObjectStorageResp = &proto.ValidateObjectStorageResponse{
+			Status:  400,
+			Error:   fmt.Sprintf("Invalid request body"),
+			IsValid: false,
+		}
 		return
 	}
 
@@ -653,7 +662,7 @@ func (validateObjectStorageRequest *ValidateObjectRequestT) validateObjectStorag
 	fileManagerFactory := filemanager.FileManagerFactoryT{}
 	fileManager, err := fileManagerFactory.New(&settings)
 
-	searchDir := "../services/filemanager/goldenDirectory"
+	searchDir := "/Users/rudderstack/GolandProjects/rudder-server/services/filemanager/silverDirectory"
 	regexRequiredSuffix := regexp.MustCompile(".json.gz$")
 	var fileList []string
 
@@ -669,17 +678,20 @@ func (validateObjectStorageRequest *ValidateObjectRequestT) validateObjectStorag
 	if len(fileList) == 0 {
 		panic("file list empty, no data to test.")
 	}
-
 	filePtr, err := os.Open(fileList[0])
 	_, err = fileManager.Upload(context.TODO(), filePtr, "test-prefix-1")
 	if err != nil {
-		validateObjectStorageResp.StatusCode = 200
-		validateObjectStorageResp.Error = fmt.Sprintf("INVALID CREDS")
-		validateObjectStorageResp.IsValid = false
+		validateObjectStorageResp = &proto.ValidateObjectStorageResponse{
+			Status:  200,
+			Error:   fmt.Sprintf("INVALID CREDS"),
+			IsValid: false,
+		}
 		return
 	}
-	validateObjectStorageResp.StatusCode = 200
-	validateObjectStorageResp.Error = fmt.Sprintf("")
-	validateObjectStorageResp.IsValid = true
+	validateObjectStorageResp = &proto.ValidateObjectStorageResponse{
+		Status:  200,
+		Error:   fmt.Sprintf(""),
+		IsValid: true,
+	}
 	return
 }

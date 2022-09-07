@@ -14,7 +14,7 @@ service Warehouse {
   rpc TriggerWHUploads (WHUploadsRequest) returns (TriggerWhUploadsResponse);
   rpc Validate (WHValidationRequest) returns (WHValidationResponse);
   rpc RetryWHUploads (RetryWHUploadsRequest) returns (RetryWHUploadsResponse);
-  rpc ValidateObjectStorage (validateObjectStorageRequest) returns (validateObjectStorageResponse);
+  rpc ValidateObjectStorageDestination (validateObjectStorageRequest) returns (validateObjectStorageResponse);
 
 }
 
@@ -111,7 +111,7 @@ message validateObjectStorageRequest{
 }
 
 message validateObjectStorageResponse{
-  int32 status_code=1;
+  int32 status=1;
   bool isValid=2;
   string error=3;
 }
