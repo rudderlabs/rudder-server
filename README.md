@@ -1,4 +1,9 @@
 <p align="center">
+  🔥 <b>New: Just launched <a href="https://github.com/rudderlabs/rudder-server/releases">RudderStack v1.0</a><br/>
+      <a href="https://app.livestorm.co/rudderstack/rudderstack-office-hours-september-7th">Join live event today</a> to learn more</b>
+ </p>
+ 
+<p align="center">
   <a href="https://www.rudderstack.com/">
     <img src="resources/logo.png">
   </a>
