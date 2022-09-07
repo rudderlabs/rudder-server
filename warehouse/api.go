@@ -662,7 +662,7 @@ func (validateObjectStorageRequest *ValidateObjectRequestT) validateObjectStorag
 	fileManagerFactory := filemanager.FileManagerFactoryT{}
 	fileManager, err := fileManagerFactory.New(&settings)
 
-	searchDir := "/Users/rudderstack/GolandProjects/rudder-server/services/filemanager/silverDirectory"
+	searchDir := "./warehouse/testdata/objectStorageValidationData"
 	regexRequiredSuffix := regexp.MustCompile(".json.gz$")
 	var fileList []string
 
