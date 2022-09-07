@@ -26,6 +26,7 @@ func (w *warehousegrpc) GetWHUploads(context context.Context, request *proto.WHU
 		Offset:          request.Offset,
 		API:             UploadAPI,
 	}
+	uploadsReq.API.log.Info("[GetWHUploads] Fetching warehouse uploads for WorkspaceId: %s, SourceId: %s, DestinationId: %s", uploadsReq.WorkspaceID, uploadsReq.SourceID, uploadsReq.DestinationID)
 	res, err := uploadsReq.GetWhUploads()
 	return res, err
 }
@@ -37,6 +38,7 @@ func (w *warehousegrpc) TriggerWHUploads(context context.Context, request *proto
 		DestinationID: request.DestinationId,
 		API:           UploadAPI,
 	}
+	uploadsReq.API.log.Info("[TriggerWHUploads] Triggering warehouse uploads for WorkspaceId: %s, SourceId: %s, DestinationId: %s", uploadsReq.WorkspaceID, uploadsReq.SourceID, uploadsReq.DestinationID)
 	res, err := uploadsReq.TriggerWhUploads()
 	return res, err
 }
@@ -47,6 +49,7 @@ func (w *warehousegrpc) GetWHUpload(context context.Context, request *proto.WHUp
 		WorkspaceID: request.WorkspaceId,
 		API:         UploadAPI,
 	}
+	uploadReq.API.log.Info("[GetWHUpload] Fetching warehouse upload for WorkspaceId: %s, UploadId: %d", uploadReq.WorkspaceID, uploadReq.UploadId)
 	res, err := uploadReq.GetWHUpload()
 	return res, err
 }
@@ -61,6 +64,7 @@ func (w *warehousegrpc) TriggerWHUpload(context context.Context, request *proto.
 		WorkspaceID: request.WorkspaceId,
 		API:         UploadAPI,
 	}
+	uploadReq.API.log.Info("[TriggerWHUpload] Triggering warehouse upload for WorkspaceId: %s, UploadId: %d", uploadReq.WorkspaceID, uploadReq.UploadId)
 	res, err := uploadReq.TriggerWHUpload()
 	return res, err
 }
@@ -81,6 +85,7 @@ func (w *warehousegrpc) RetryWHUploads(ctx context.Context, req *proto.RetryWHUp
 		UploadIds:       req.UploadIds,
 		API:             UploadAPI,
 	}
+	retryReq.API.log.Info("[RetryWHUploads] Retrying warehouse uploads for WorkspaceId: %s, SourceId: %s, DestinationId: %s, IntervalInHours: %d", retryReq.WorkspaceID, retryReq.SourceID, retryReq.DestinationID, retryReq.IntervalInHours)
 	r, err := retryReq.RetryWHUploads()
 	response = &proto.RetryWHUploadsResponse{
 		Message:    r.Message,

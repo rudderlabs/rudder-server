@@ -121,7 +121,7 @@ func InitWarehouseAPI(dbHandle *sql.DB, log logger.LoggerI) {
 
 func (uploadsReq *UploadsReqT) validateReq() error {
 	if !uploadsReq.API.enabled || uploadsReq.API.log == nil || uploadsReq.API.dbHandle == nil {
-		return errors.New(`warehouse api's are not initialized`)
+		return errors.New(`warehouse api are not initialized`)
 	}
 	if uploadsReq.Limit < 1 {
 		uploadsReq.Limit = 10
@@ -130,13 +130,6 @@ func (uploadsReq *UploadsReqT) validateReq() error {
 		uploadsReq.Offset = 0
 	}
 	return nil
-}
-
-func (uploadsReq *UploadsReqT) getUploadsCount() (int32, error) {
-	var count sql.NullInt32
-	row := uploadsReq.API.dbHandle.QueryRow(fmt.Sprintf(`select count(*) from %s`, warehouseutils.WarehouseUploadsTable))
-	err := row.Scan(&count)
-	return count.Int32, err
 }
 
 var statusMap = map[string]string{
@@ -170,7 +163,7 @@ func (uploadsReq *UploadsReqT) GetWhUploads() (uploadsRes *proto.WHUploadsRespon
 		return
 	}
 
-	uploadsRes, err = uploadsReq.getWhUploads(authorizedSourceIDs, `id, source_id, destination_id, destination_type, namespace, status, error, first_event_at, last_event_at, last_exec_at, updated_at, timings, metadata->>'nextRetryTime', metadata->>'archivedStagingAndLoadFiles'`)
+	uploadsRes, err = uploadsReq.getWhUploads(`id, source_id, destination_id, destination_type, namespace, status, error, first_event_at, last_event_at, last_exec_at, updated_at, timings, metadata->>'nextRetryTime', metadata->>'archivedStagingAndLoadFiles'`)
 	return
 }
 
@@ -190,11 +183,11 @@ func (uploadsReq *UploadsReqT) TriggerWhUploads() (response *proto.TriggerWhUplo
 	}
 	authorizedSourceIDs := uploadsReq.authorizedSources()
 	if len(authorizedSourceIDs) == 0 {
-		err = fmt.Errorf("No authorized sourceId's")
+		err = fmt.Errorf("no authorized sourceId's")
 		return
 	}
 	if uploadsReq.DestinationID == "" {
-		err = fmt.Errorf("Valid destinationId must be provided")
+		err = fmt.Errorf("valid destinationId must be provided")
 		return
 	}
 	var pendingStagingFileCount int64
@@ -227,29 +220,52 @@ func (uploadsReq *UploadsReqT) TriggerWhUploads() (response *proto.TriggerWhUplo
 	return
 }
 
-func (uploadReq UploadReqT) GetWHUpload() (*proto.WHUploadResponse, error) {
-	err := uploadReq.validateReq()
+func (uploadReq UploadReqT) GetWHUpload() (response *proto.WHUploadResponse, err error) {
+	err = uploadReq.validateReq()
+	defer func() {
+		if err != nil {
+			response = &proto.WHUploadResponse{
+				StatusCode: 400,
+			}
+		}
+	}()
+
 	if err != nil {
-		return &proto.WHUploadResponse{}, err
+		return
 	}
+
 	query := uploadReq.generateQuery(`id, source_id, destination_id, destination_type, namespace, status, error, created_at, first_event_at, last_event_at, last_exec_at, updated_at, timings, metadata->>'nextRetryTime', metadata->>'archivedStagingAndLoadFiles'`)
 	uploadReq.API.log.Debug(query)
-	var upload proto.WHUploadResponse
-	var nextRetryTimeStr sql.NullString
-	var firstEventAt, lastEventAt, createdAt, lastExecAt, updatedAt sql.NullTime
-	var timingsObject sql.NullString
-	var uploadError string
-	var isUploadArchived sql.NullBool
+
+	var (
+		nextRetryTimeStr                                            sql.NullString
+		firstEventAt, lastEventAt, createdAt, lastExecAt, updatedAt sql.NullTime
+		timingsObject                                               sql.NullString
+		uploadError                                                 string
+		isUploadArchived                                            sql.NullBool
+		upload                                                      proto.WHUploadResponse
+	)
+
 	row := uploadReq.API.dbHandle.QueryRow(query)
 	err = row.Scan(&upload.Id, &upload.SourceId, &upload.DestinationId, &upload.DestinationType, &upload.Namespace, &upload.Status, &uploadError, &createdAt, &firstEventAt, &lastEventAt, &lastExecAt, &updatedAt, &timingsObject, &nextRetryTimeStr, &isUploadArchived)
+	if err == sql.ErrNoRows {
+		err = nil
+		response = &proto.WHUploadResponse{
+			StatusCode: 204,
+		}
+		return
+	}
 	if err != nil {
 		uploadReq.API.log.Errorf(err.Error())
-		return &proto.WHUploadResponse{}, err
+		return
 	}
+
 	if !uploadReq.authorizeSource(upload.SourceId) {
 		pkgLogger.Errorf(`Unauthorized request for upload:%d with sourceId:%s in workspaceId:%s`, uploadReq.UploadId, upload.SourceId, uploadReq.WorkspaceID)
-		return &proto.WHUploadResponse{}, errors.New("Unauthorized request")
+		err = errors.New("unauthorized request")
+		return
 	}
+
 	upload.CreatedAt = timestamppb.New(createdAt.Time)
 	upload.FirstEventAt = timestamppb.New(firstEventAt.Time)
 	upload.LastEventAt = timestamppb.New(lastEventAt.Time)
@@ -281,17 +297,20 @@ func (uploadReq UploadReqT) GetWHUpload() (*proto.WHUploadResponse, error) {
 	} else {
 		upload.Duration = int32(timeutil.Now().Sub(lastExecAt.Time) / time.Second)
 	}
+
 	tableUploadReq := TableUploadReqT{
 		UploadID: upload.Id,
 		Name:     "",
 		API:      uploadReq.API,
 	}
-	tables, err := tableUploadReq.GetWhTableUploads()
+	upload.Tables, err = tableUploadReq.GetWhTableUploads()
 	if err != nil {
-		return &proto.WHUploadResponse{}, err
+		return
 	}
-	upload.Tables = tables
-	return &upload, nil
+
+	response = &upload
+	response.StatusCode = 200
+	return
 }
 
 func (uploadReq UploadReqT) TriggerWHUpload() (response *proto.TriggerWhUploadsResponse, err error) {
@@ -307,28 +326,44 @@ func (uploadReq UploadReqT) TriggerWHUpload() (response *proto.TriggerWhUploadsR
 	if err != nil {
 		return
 	}
+
+	var (
+		uploadJobT UploadJobT
+		upload     UploadT
+	)
+
 	query := uploadReq.generateQuery(`id, source_id, destination_id, metadata`)
 	uploadReq.API.log.Debug(query)
-	var uploadJobT UploadJobT
-	var upload UploadT
 
 	row := uploadReq.API.dbHandle.QueryRow(query)
 	err = row.Scan(&upload.ID, &upload.SourceID, &upload.DestinationID, &upload.Metadata)
+	if err == sql.ErrNoRows {
+		err = nil
+		response = &proto.TriggerWhUploadsResponse{
+			Message:    "No such sync exist",
+			StatusCode: 200,
+		}
+		return
+	}
 	if err != nil {
 		uploadReq.API.log.Errorf(err.Error())
 		return
 	}
+
 	if !uploadReq.authorizeSource(upload.SourceID) {
 		pkgLogger.Errorf(`Unauthorized request for upload:%d with sourceId:%s in workspaceId:%s`, uploadReq.UploadId, upload.SourceID, uploadReq.WorkspaceID)
-		err = errors.New("Unauthorized request")
+		err = errors.New("unauthorized request")
 		return
 	}
+
 	uploadJobT.upload = &upload
 	uploadJobT.dbHandle = uploadReq.API.dbHandle
+
 	err = uploadJobT.triggerUploadNow()
 	if err != nil {
 		return
 	}
+
 	response = &proto.TriggerWhUploadsResponse{
 		Message:    "Triggered successfully",
 		StatusCode: 200,
@@ -341,13 +376,16 @@ func (tableUploadReq TableUploadReqT) GetWhTableUploads() ([]*proto.WHTable, err
 	if err != nil {
 		return []*proto.WHTable{}, err
 	}
+
 	query := tableUploadReq.generateQuery(`id, wh_upload_id, table_name, total_events, status, error, last_exec_time, updated_at`)
 	tableUploadReq.API.log.Debug(query)
+
 	rows, err := tableUploadReq.API.dbHandle.Query(query)
 	if err != nil {
 		tableUploadReq.API.log.Errorf(err.Error())
 		return []*proto.WHTable{}, err
 	}
+
 	var tableUploads []*proto.WHTable
 	for rows.Next() {
 		var tableUpload proto.WHTable
@@ -388,7 +426,7 @@ func (tableUploadReq TableUploadReqT) generateQuery(selectFields string) string 
 
 func (tableUploadReq TableUploadReqT) validateReq() error {
 	if !tableUploadReq.API.enabled || tableUploadReq.API.log == nil || tableUploadReq.API.dbHandle == nil {
-		return errors.New("warehouse api's are not initialized")
+		return errors.New("warehouse api are not initialized")
 	}
 	if tableUploadReq.UploadID == 0 {
 		return errors.New("upload_id is empty or should be greater than 0")
@@ -402,7 +440,7 @@ func (uploadReq UploadReqT) generateQuery(selectedFields string) string {
 
 func (uploadReq UploadReqT) validateReq() error {
 	if !uploadReq.API.enabled || uploadReq.API.log == nil || uploadReq.API.dbHandle == nil {
-		return errors.New("warehouse api's are not initialized")
+		return errors.New("warehouse api are not initialized")
 	}
 	if uploadReq.UploadId < 1 {
 		return errors.New(`upload_id is empty or should be greater than 0 `)
@@ -481,9 +519,9 @@ func (uploadsReq *UploadsReqT) getUploadsFromDb(isHosted bool, query string) ([]
 		if upload.Status != ExportedData {
 			lastFailedStatus := warehouseutils.GetLastFailedStatus(timingsObject)
 			errorPath := fmt.Sprintf("%s.errors", lastFailedStatus)
-			errors := gjson.Get(uploadError, errorPath).Array()
-			if len(errors) > 0 {
-				upload.Error = errors[len(errors)-1].String()
+			pathErrors := gjson.Get(uploadError, errorPath).Array()
+			if len(pathErrors) > 0 {
+				upload.Error = pathErrors[len(pathErrors)-1].String()
 			}
 		}
 		// set nextRetryTime for non-aborted failed uploads
@@ -518,12 +556,16 @@ func (uploadsReq *UploadsReqT) getTotalUploadCount(whereClause string) (int32, e
 
 // for hosted workspaces - we get the uploads and the total upload count using the same query
 func (uploadsReq *UploadsReqT) getWhUploadsForHosted(authorizedSourceIDs []string, selectFields string) (uploadsRes *proto.WHUploadsResponse, err error) {
-	var uploads []*proto.WHUploadResponse
-	var totalUploadCount int32
+	var (
+		uploads          []*proto.WHUploadResponse
+		totalUploadCount int32
+		whereClauses     []string
+		subQuery         string
+		query            string
+	)
 
 	// create query
-	subQuery := fmt.Sprintf(`select %s, count(*) OVER() AS total_uploads from %s WHERE `, selectFields, warehouseutils.WarehouseUploadsTable)
-	var whereClauses []string
+	subQuery = fmt.Sprintf(`select %s, count(*) OVER() AS total_uploads from %s WHERE `, selectFields, warehouseutils.WarehouseUploadsTable)
 	if uploadsReq.SourceID == "" {
 		whereClauses = append(whereClauses, fmt.Sprintf(`source_id IN (%v)`, misc.SingleQuoteLiteralJoin(authorizedSourceIDs)))
 	} else if misc.ContainsString(authorizedSourceIDs, uploadsReq.SourceID) {
@@ -540,7 +582,7 @@ func (uploadsReq *UploadsReqT) getWhUploadsForHosted(authorizedSourceIDs []strin
 	}
 
 	subQuery = subQuery + strings.Join(whereClauses, " AND ")
-	query := fmt.Sprintf(`select * from (%s)p order by id desc limit %d offset %d`, subQuery, uploadsReq.Limit, uploadsReq.Offset)
+	query = fmt.Sprintf(`select * from (%s)p order by id desc limit %d offset %d`, subQuery, uploadsReq.Limit, uploadsReq.Offset)
 	uploadsReq.API.log.Info(query)
 
 	// get uploads from db
@@ -563,14 +605,17 @@ func (uploadsReq *UploadsReqT) getWhUploadsForHosted(authorizedSourceIDs []strin
 }
 
 // for non hosted workspaces - we get the uploads and the total upload count using separate queries
-func (uploadsReq *UploadsReqT) getWhUploads(authorizedSourceIDs []string, selectFields string) (uploadsRes *proto.WHUploadsResponse, err error) {
-	var uploads []*proto.WHUploadResponse
-	var totalUploadCount int32
+func (uploadsReq *UploadsReqT) getWhUploads(selectFields string) (uploadsRes *proto.WHUploadsResponse, err error) {
+	var (
+		uploads          []*proto.WHUploadResponse
+		totalUploadCount int32
+		query            string
+		whereClause      string
+		whereClauses     []string
+	)
 
 	// create query
-	query := fmt.Sprintf(`select %s from %s`, selectFields, warehouseutils.WarehouseUploadsTable)
-	whereClause := ""
-	var whereClauses []string
+	query = fmt.Sprintf(`select %s from %s`, selectFields, warehouseutils.WarehouseUploadsTable)
 	if uploadsReq.SourceID != "" {
 		whereClauses = append(whereClauses, fmt.Sprintf(`source_id = '%s'`, uploadsReq.SourceID))
 	}
