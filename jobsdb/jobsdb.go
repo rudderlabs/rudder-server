@@ -2086,7 +2086,7 @@ func (jd *HandleT) clearCache(ds dataSetT, jobList []*JobT) {
 	customValParamMap := make(map[string]map[string]map[string]struct{})
 	var workspaces []string // for bursting old cache
 	for _, job := range jobList {
-		if !misc.ContainsString(workspaces, job.WorkspaceId) {
+		if !misc.Contains(workspaces, job.WorkspaceId) {
 			workspaces = append(workspaces, job.WorkspaceId)
 		}
 		jd.populateCustomValParamMap(customValParamMap, job.CustomVal, job.Parameters, job.WorkspaceId)

@@ -232,7 +232,7 @@ func (sh *SchemaHandleT) getIdentitiesMappingsSchema() map[string]string {
 }
 
 func (sh *SchemaHandleT) isIDResolutionEnabled() bool {
-	return warehouseutils.IDResolutionEnabled() && misc.ContainsString(warehouseutils.IdentityEnabledWarehouses, sh.warehouse.Type)
+	return warehouseutils.IDResolutionEnabled() && misc.Contains(warehouseutils.IdentityEnabledWarehouses, sh.warehouse.Type)
 }
 
 func (sh *SchemaHandleT) consolidateStagingFilesSchemaUsingWarehouseSchema() warehouseutils.SchemaT {

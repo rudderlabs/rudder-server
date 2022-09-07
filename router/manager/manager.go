@@ -27,10 +27,6 @@ type LifecycleManager struct {
 	waitGroup     *errgroup.Group
 }
 
-func (*LifecycleManager) Run(ctx context.Context) error {
-	return ctx.Err()
-}
-
 // Start starts a Router, this is not a blocking call.
 // If the router is not completely started and the data started coming then also it will not be problematic as we
 // are assuming that the DBs will be up.
@@ -97,9 +93,9 @@ loop:
 				for _, destination := range source.Destinations { // TODO skipcq: CRT-P0006
 					enabledDestinations[destination.DestinationDefinition.Name] = true
 					// For batch router destinations
-					if misc.ContainsString(objectStorageDestinations, destination.DestinationDefinition.Name) ||
-						misc.ContainsString(warehouseDestinations, destination.DestinationDefinition.Name) ||
-						misc.ContainsString(asyncDestinations, destination.DestinationDefinition.Name) {
+					if misc.Contains(objectStorageDestinations, destination.DestinationDefinition.Name) ||
+						misc.Contains(warehouseDestinations, destination.DestinationDefinition.Name) ||
+						misc.Contains(asyncDestinations, destination.DestinationDefinition.Name) {
 						_, ok := dstToBatchRouter[destination.DestinationDefinition.Name]
 						if !ok {
 							pkgLogger.Infof("Starting a new Batch Destination Router: %s", destination.DestinationDefinition.Name)

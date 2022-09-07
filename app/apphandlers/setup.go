@@ -187,9 +187,9 @@ func monitorDestRouters(ctx context.Context, routerFactory *router.Factory, batc
 				destination := &source.Destinations[k] // Copy of large value inside loop: CRT-P0006
 				enabledDestinations[destination.DestinationDefinition.Name] = true
 				// For batch router destinations
-				if misc.ContainsString(objectStorageDestinations, destination.DestinationDefinition.Name) ||
-					misc.ContainsString(warehouseutils.WarehouseDestinations, destination.DestinationDefinition.Name) ||
-					misc.ContainsString(asyncDestinations, destination.DestinationDefinition.Name) {
+				if misc.Contains(objectStorageDestinations, destination.DestinationDefinition.Name) ||
+					misc.Contains(warehouseutils.WarehouseDestinations, destination.DestinationDefinition.Name) ||
+					misc.Contains(asyncDestinations, destination.DestinationDefinition.Name) {
 					_, ok := dstToBatchRouter[destination.DestinationDefinition.Name]
 					if !ok {
 						pkgLogger.Info("Starting a new Batch Destination Router ", destination.DestinationDefinition.Name)
