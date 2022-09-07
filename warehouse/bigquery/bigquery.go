@@ -252,39 +252,40 @@ func (bq *HandleT) dropStagingTable(stagingTableName string) {
 }
 
 //Need to create a structure with delete parameters instead of simply adding a long list of params
-func (bq *HandleT) DeleteBy(tableNames []string, jobRunID string, sourceID string, taskRunID string) (success bool, err error) {
+func (bq *HandleT) DeleteBy(tableNames []string, jobRunID string, sourceID string, taskRunID string) error {
 	pkgLogger.Infof("BQ: Cleaning up the followng tables in bigquery for BQ:%s : %v", tableNames)
 	for _, tb := range tableNames {
-		if tb != "rudder_discards" {
-			sqlStatement := fmt.Sprintf(`DELETE FROM "%[1]s"."%[2]s" WHERE %[3]s <> '%[4]s' AND %[5]s = '%[6]s' AND %[7]s <> '%[8]s'`,
-				bq.Namespace,
-				tb,
-				"context_sources_job_run_id",
-				jobRunID,
-				"context_source_id",
-				sourceID,
-				"context_sources_task_rund_id",
-				taskRunID,
-			)
-			pkgLogger.Infof("PG: Deleting rows in table in bigquery for BQ:%s : %v", bq.Warehouse.Destination.ID, sqlStatement)
-			job, err1 := bq.Db.Query(sqlStatement).Run(bq.BQContext)
-			if err1 != nil {
-				pkgLogger.Errorf("BQ: Error initiating load job: %v\n", err)
-				return false, err1
-			}
-			status, err1 := job.Wait(bq.BQContext)
-			if err1 != nil {
-				pkgLogger.Errorf("BQ: Error running job: %v\n", err)
-				return false, err1
-			}
-			if status.Err() != nil {
-				return false, status.Err()
-			}
+		if tb == "rudder_discards" {
+			continue
+		}
 
+		sqlStatement := fmt.Sprintf(`DELETE FROM "%[1]s"."%[2]s" WHERE %[3]s <> '%[4]s' AND %[5]s = '%[6]s' AND %[7]s <> '%[8]s'`,
+			bq.Namespace,
+			tb,
+			"context_sources_job_run_id",
+			jobRunID,
+			"context_source_id",
+			sourceID,
+			"context_sources_task_rund_id",
+			taskRunID,
+		)
+		pkgLogger.Infof("PG: Deleting rows in table in bigquery for BQ:%s : %v", bq.Warehouse.Destination.ID, sqlStatement)
+		job, err := bq.Db.Query(sqlStatement).Run(bq.BQContext)
+		if err != nil {
+			pkgLogger.Errorf("BQ: Error initiating load job: %v\n", err)
+			return err
+		}
+		status, err := job.Wait(bq.BQContext)
+		if err != nil {
+			pkgLogger.Errorf("BQ: Error running job: %v\n", err)
+			return err
+		}
+		if status.Err() != nil {
+			return status.Err()
 		}
 
 	}
-	return true, nil
+	return nil
 }
 
 func partitionedTable(tableName, partitionDate string) string {

@@ -15,10 +15,13 @@ import (
 )
 
 type TestHandle struct {
-	DB       *sql.DB
-	WriteKey string
-	Schema   string
-	Tables   []string
+	DB             *sql.DB
+	WriteKey       string
+	SourceWriteKey string
+	SourceId       string
+	DestinationId  string
+	Schema         string
+	Tables         []string
 }
 
 var handle *TestHandle
@@ -58,13 +61,17 @@ func TestMSSQLIntegration(t *testing.T) {
 			Type: client.SQLClient,
 		},
 
-		WriteKey:             handle.WriteKey,
-		Schema:               handle.Schema,
-		Tables:               handle.Tables,
-		EventsCountMap:       testhelper.DefaultEventMap(),
-		TablesQueryFrequency: testhelper.DefaultQueryFrequency,
-		UserId:               testhelper.GetUserId(warehouseutils.MSSQL),
-		Provider:             warehouseutils.MSSQL,
+		WriteKey:              handle.WriteKey,
+		SourceWriteKey:        handle.SourceWriteKey,
+		SourceId:              handle.SourceId,
+		DestinationId:         handle.DestinationId,
+		Schema:                handle.Schema,
+		Tables:                handle.Tables,
+		EventsCountMap:        testhelper.DefaultEventMap(true),
+		TablesQueryFrequency:  testhelper.DefaultQueryFrequency,
+		UserId:                testhelper.GetUserId(warehouseutils.MSSQL),
+		Provider:              warehouseutils.MSSQL,
+		LatestSourceRunConfig: testhelper.DefaultSourceRunConfig(),
 	}
 
 	// Scenario 1
@@ -74,22 +81,25 @@ func TestMSSQLIntegration(t *testing.T) {
 	testhelper.SendEvents(t, warehouseTest)
 	testhelper.SendEvents(t, warehouseTest)
 	testhelper.SendEvents(t, warehouseTest)
+	testhelper.SendAsyncRequest(t, warehouseTest)
 	testhelper.SendIntegratedEvents(t, warehouseTest)
 
 	// Setting up the events map
 	// Checking for Gateway and Batch router events
 	// Checking for the events count for each table
 	warehouseTest.EventsCountMap = testhelper.EventsCountMap{
-		"identifies":    4,
-		"users":         1,
-		"tracks":        4,
-		"product_track": 4,
-		"pages":         4,
-		"screens":       4,
-		"aliases":       4,
-		"groups":        4,
-		"gateway":       24,
-		"batchRT":       32,
+		"google_sheet":    3,
+		"wh_google_sheet": 1,
+		"identifies":      4,
+		"users":           1,
+		"tracks":          5,
+		"product_track":   4,
+		"pages":           4,
+		"screens":         4,
+		"aliases":         4,
+		"groups":          4,
+		"gateway":         27,
+		"batchRT":         38,
 	}
 	testhelper.VerifyingGatewayEvents(t, warehouseTest)
 	testhelper.VerifyingBatchRouterEvents(t, warehouseTest)
@@ -101,7 +111,7 @@ func TestMSSQLIntegration(t *testing.T) {
 	// Sending the second set of modified events.
 	// Since we are sending unique message Ids.
 	// These should result in events count will be equal to the number of events being sent
-	warehouseTest.EventsCountMap = testhelper.DefaultEventMap()
+	warehouseTest.EventsCountMap = testhelper.DefaultEventMap(true)
 	warehouseTest.UserId = testhelper.GetUserId(warehouseutils.MSSQL)
 	testhelper.SendModifiedEvents(t, warehouseTest)
 	testhelper.SendModifiedEvents(t, warehouseTest)
@@ -112,16 +122,18 @@ func TestMSSQLIntegration(t *testing.T) {
 	// Checking for Gateway and Batch router events
 	// Checking for the events count for each table
 	warehouseTest.EventsCountMap = testhelper.EventsCountMap{
-		"identifies":    4,
-		"users":         1,
-		"tracks":        4,
-		"product_track": 4,
-		"pages":         4,
-		"screens":       4,
-		"aliases":       4,
-		"groups":        4,
-		"gateway":       24,
-		"batchRT":       32,
+		"google_sheet":    0,
+		"wh_google_sheet": 0,
+		"identifies":      4,
+		"users":           1,
+		"tracks":          4,
+		"product_track":   4,
+		"pages":           4,
+		"screens":         4,
+		"aliases":         4,
+		"groups":          4,
+		"gateway":         24,
+		"batchRT":         32,
 	}
 	testhelper.VerifyingGatewayEvents(t, warehouseTest)
 	testhelper.VerifyingBatchRouterEvents(t, warehouseTest)
@@ -130,9 +142,12 @@ func TestMSSQLIntegration(t *testing.T) {
 
 func TestMain(m *testing.M) {
 	handle = &TestHandle{
-		WriteKey: "YSQ3n267l1VQKGNbSuJE9fQbzON",
-		Schema:   "mssql_wh_integration",
-		Tables:   []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"},
+		WriteKey:       "YSQ3n267l1VQKGNbSuJE9fQbzON",
+		SourceWriteKey: "2DkCpXZcEvKM2fcpUD3LmjPI7J6",
+		SourceId:       "2DkCpXZcEvLM2fcpUD3LmjPI7J6",
+		DestinationId:  "21Ezdq58khNMj07VJB0VJmxLvgu",
+		Schema:         "mssql_wh_integration",
+		Tables:         []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups", "google_sheet"},
 	}
 	os.Exit(testhelper.Run(m, handle))
 }

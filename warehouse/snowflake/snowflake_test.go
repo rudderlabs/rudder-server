@@ -10,7 +10,7 @@ import (
 	"os"
 	"testing"
 
-	"github.com/stretchr/testify/require"
+	// "github.com/stretchr/testify/require"
 
 	"github.com/gofrs/uuid"
 
@@ -21,10 +21,13 @@ import (
 )
 
 type TestHandle struct {
-	DB       *sql.DB
-	WriteKey string
-	Schema   string
-	Tables   []string
+	DB             *sql.DB
+	WriteKey       string
+	Schema         string
+	Tables         []string
+	SourceId       string
+	DestinationId  string
+	SourceWriteKey string
 }
 
 var handle *TestHandle
@@ -74,12 +77,12 @@ func (t *TestHandle) VerifyConnection() (err error) {
 func TestSnowflakeIntegration(t *testing.T) {
 	// Cleanup resources
 	// Dropping temporary schema
-	t.Cleanup(func() {
-		require.NoError(t, testhelper.WithConstantBackoff(func() (err error) {
-			_, err = handle.DB.Exec(fmt.Sprintf(`DROP SCHEMA "%s" CASCADE;`, handle.Schema))
-			return
-		}), fmt.Sprintf("Failed dropping schema %s for Snowflake", handle.Schema))
-	})
+	// t.Cleanup(func() {
+	// 	require.NoError(t, testhelper.WithConstantBackoff(func() (err error) {
+	// 		_, err = handle.DB.Exec(fmt.Sprintf(`DROP SCHEMA "%s" CASCADE;`, handle.Schema))
+	// 		return
+	// 	}), fmt.Sprintf("Failed dropping schema %s for Snowflake", handle.Schema))
+	// })
 
 	// Setting up the test configuration
 	warehouseTest := &testhelper.WareHouseTest{
@@ -87,14 +90,18 @@ func TestSnowflakeIntegration(t *testing.T) {
 			SQL:  handle.DB,
 			Type: client.SQLClient,
 		},
-		WriteKey:             handle.WriteKey,
-		Schema:               handle.Schema,
-		Tables:               handle.Tables,
-		TablesQueryFrequency: testhelper.LongRunningQueryFrequency,
-		EventsCountMap:       testhelper.DefaultEventMap(),
-		MessageId:            uuid.Must(uuid.NewV4()).String(),
-		UserId:               testhelper.GetUserId(warehouseutils.SNOWFLAKE),
-		Provider:             warehouseutils.SNOWFLAKE,
+		WriteKey:              handle.WriteKey,
+		Schema:                handle.Schema,
+		Tables:                handle.Tables,
+		TablesQueryFrequency:  testhelper.LongRunningQueryFrequency,
+		EventsCountMap:        testhelper.DefaultEventMap(true),
+		MessageId:             uuid.Must(uuid.NewV4()).String(),
+		UserId:                testhelper.GetUserId(warehouseutils.SNOWFLAKE),
+		Provider:              warehouseutils.SNOWFLAKE,
+		SourceId:              handle.SourceId,
+		DestinationId:         handle.DestinationId,
+		SourceWriteKey:        handle.SourceWriteKey,
+		LatestSourceRunConfig: testhelper.DefaultSourceRunConfig(),
 	}
 
 	// Scenario 1
@@ -103,22 +110,25 @@ func TestSnowflakeIntegration(t *testing.T) {
 	testhelper.SendEvents(t, warehouseTest)
 	testhelper.SendEvents(t, warehouseTest)
 	testhelper.SendEvents(t, warehouseTest)
+	testhelper.SendAsyncRequest(t, warehouseTest)
 	testhelper.SendIntegratedEvents(t, warehouseTest)
 
 	// Setting up the events map
 	// Checking for Gateway and Batch router events
 	// Checking for the events count for each table
 	warehouseTest.EventsCountMap = testhelper.EventsCountMap{
-		"identifies":    1,
-		"users":         1,
-		"tracks":        1,
-		"product_track": 1,
-		"pages":         1,
-		"screens":       1,
-		"aliases":       1,
-		"groups":        1,
-		"gateway":       24,
-		"batchRT":       32,
+		"google_sheet":    3,
+		"wh_google_sheet": 1,
+		"identifies":      1,
+		"users":           1,
+		"tracks":          2,
+		"product_track":   1,
+		"pages":           1,
+		"screens":         1,
+		"aliases":         1,
+		"groups":          1,
+		"gateway":         27,
+		"batchRT":         38,
 	}
 	testhelper.VerifyingGatewayEvents(t, warehouseTest)
 	testhelper.VerifyingBatchRouterEvents(t, warehouseTest)
@@ -128,7 +138,7 @@ func TestSnowflakeIntegration(t *testing.T) {
 	// Re-Setting up the events map
 	// Sending the second set of events.
 	// This time we will not be resetting the MessageID. We will be using the same one to check for the dedupe.
-	warehouseTest.EventsCountMap = testhelper.DefaultEventMap()
+	warehouseTest.EventsCountMap = testhelper.DefaultEventMap(true)
 	testhelper.SendModifiedEvents(t, warehouseTest)
 	testhelper.SendModifiedEvents(t, warehouseTest)
 	testhelper.SendModifiedEvents(t, warehouseTest)
@@ -139,16 +149,18 @@ func TestSnowflakeIntegration(t *testing.T) {
 	// Checking for the events count for each table
 	// Since because of merge everything comes down to a single event in warehouse
 	warehouseTest.EventsCountMap = testhelper.EventsCountMap{
-		"identifies":    1,
-		"users":         1,
-		"tracks":        1,
-		"product_track": 1,
-		"pages":         1,
-		"screens":       1,
-		"aliases":       1,
-		"groups":        1,
-		"gateway":       48,
-		"batchRT":       64,
+		"google_sheet":    3,
+		"wh_google_sheet": 1,
+		"identifies":      1,
+		"users":           1,
+		"tracks":          2,
+		"product_track":   1,
+		"pages":           1,
+		"screens":         1,
+		"aliases":         1,
+		"groups":          1,
+		"gateway":         51,
+		"batchRT":         70,
 	}
 	testhelper.VerifyingGatewayEvents(t, warehouseTest)
 	testhelper.VerifyingBatchRouterEvents(t, warehouseTest)
@@ -163,9 +175,12 @@ func TestMain(m *testing.M) {
 	}
 
 	handle = &TestHandle{
-		WriteKey: "2eSJyYtqwcFiUILzXv2fcNIrWO7",
-		Schema:   testhelper.GetSchema(warehouseutils.SNOWFLAKE, TestSchemaKey),
-		Tables:   []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"},
+		WriteKey:       "2eSJyYtqwcFiUILzXv2fcNIrWO7",
+		Schema:         testhelper.GetSchema(warehouseutils.SNOWFLAKE, TestSchemaKey),
+		SourceId:       "2DkCpXZcFJkiu2fcpUD3LmjPI7J6",
+		DestinationId:  "24qeADObp6eIhjjDnEppO6P1SNc",
+		SourceWriteKey: "2DkCpJkiuxKM2fcpUD3LmjPI7J6",
+		Tables:         []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups", "google_sheet"},
 	}
 	os.Exit(testhelper.Run(m, handle))
 }

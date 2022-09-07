@@ -41,12 +41,18 @@ func AddWarehouseJobHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "can't unmarshall body", http.StatusBadRequest)
 		return
 	}
+	if startJobPayload.SourceID == "" || startJobPayload.JobRunID == "" || startJobPayload.TaskRunID == "" || startJobPayload.DestinationID == "" {
+		pkgLogger.Errorf("[WH-Jobs]: Invalid Payload %v", err)
+		http.Error(w, "invalid Payload", http.StatusBadRequest)
+		return
+	}
 	if !AsyncJobWH.enabled {
 		pkgLogger.Errorf("[WH-Jobs]: Error Warehouse Jobs API not initialized %v", err)
 		http.Error(w, "warehouse jobs api not initialized", http.StatusBadRequest)
 		return
 	}
-	tableNames, err := AsyncJobWH.getTableNamesBy(startJobPayload.JobRunID, startJobPayload.TaskRunID)
+	tableNames, err := AsyncJobWH.getTableNamesBy(startJobPayload.SourceID, startJobPayload.DestinationID, startJobPayload.JobRunID, startJobPayload.TaskRunID)
+
 	if err != nil {
 		pkgLogger.Errorf("[WH-Jobs]: Error extracting tableNames for the job run id: %v", err)
 		http.Error(w, "Error extracting tableNames", http.StatusBadRequest)
@@ -55,7 +61,7 @@ func AddWarehouseJobHandler(w http.ResponseWriter, r *http.Request) {
 
 	//Add to wh_async_job queue each of the tables
 	for _, th := range tableNames {
-		if th != "RUDDER_DISCARDS" {
+		if th != "RUDDER_DISCARDS" && th != "rudder_discards" {
 			destType := (*AsyncJobWH.connectionsMap)[startJobPayload.DestinationID][startJobPayload.SourceID].Destination.DestinationDefinition.Name
 			payload := AsyncJobPayloadT{
 				SourceID:      startJobPayload.SourceID,

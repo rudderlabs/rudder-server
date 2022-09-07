@@ -111,7 +111,7 @@ func TestDeltalakeIntegration(t *testing.T) {
 			Schema:               handle.Schema,
 			Tables:               handle.Tables,
 			TablesQueryFrequency: testhelper.LongRunningQueryFrequency,
-			EventsCountMap:       testhelper.DefaultEventMap(),
+			EventsCountMap:       testhelper.DefaultEventMap(false),
 			MessageId:            uuid.Must(uuid.NewV4()).String(),
 			UserId:               testhelper.GetUserId(warehouseutils.DELTALAKE),
 			Provider:             warehouseutils.DELTALAKE,
@@ -149,7 +149,7 @@ func TestDeltalakeIntegration(t *testing.T) {
 		// Re-Setting up the events map
 		// Sending the second set of events.
 		// This time we will not be resetting the MessageID. We will be using the same one to check for the dedupe.
-		warehouseTest.EventsCountMap = testhelper.DefaultEventMap()
+		warehouseTest.EventsCountMap = testhelper.DefaultEventMap(false)
 		testhelper.SendModifiedEvents(t, warehouseTest)
 		testhelper.SendModifiedEvents(t, warehouseTest)
 		testhelper.SendModifiedEvents(t, warehouseTest)
@@ -195,7 +195,7 @@ func TestDeltalakeIntegration(t *testing.T) {
 			Schema:               handle.Schema,
 			Tables:               handle.Tables,
 			TablesQueryFrequency: testhelper.LongRunningQueryFrequency,
-			EventsCountMap:       testhelper.DefaultEventMap(),
+			EventsCountMap:       testhelper.DefaultEventMap(false),
 			MessageId:            uuid.Must(uuid.NewV4()).String(),
 			UserId:               testhelper.GetUserId(warehouseutils.DELTALAKE),
 			Provider:             warehouseutils.DELTALAKE,
@@ -232,7 +232,7 @@ func TestDeltalakeIntegration(t *testing.T) {
 		// Re-Setting up the events map
 		// Sending the second set of events.
 		// This time we will not be resetting the MessageID. We will be using the same one to check for the dedupe.
-		warehouseTest.EventsCountMap = testhelper.DefaultEventMap()
+		warehouseTest.EventsCountMap = testhelper.DefaultEventMap(false)
 		testhelper.SendModifiedEvents(t, warehouseTest)
 		testhelper.SendModifiedEvents(t, warehouseTest)
 		testhelper.SendModifiedEvents(t, warehouseTest)

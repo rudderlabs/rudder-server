@@ -176,32 +176,33 @@ func (rs *HandleT) AddColumn(name, columnName, columnType string) (err error) {
 }
 
 //Need to create a structure with delete parameters instead of simply adding a long list of params
-func (rs *HandleT) DeleteBy(tableNames []string, jobRunID string, sourceID string, taskRunID string) (success bool, err error) {
+func (rs *HandleT) DeleteBy(tableNames []string, jobRunID string, sourceID string, taskRunID string) (err error) {
 	pkgLogger.Infof("RS: Cleaning up the followng tables in redshift for RS:%s : %v", tableNames)
 	for _, tb := range tableNames {
-		if tb != "rudder_discards" {
-			sqlStatement := fmt.Sprintf(`DELETE FROM "%[1]s"."%[2]s" WHERE 
-			%[3]s <> '%[4]s' AND
-			%[5]s <> '%[6]s' AND
-			%[7]s = '%[8]s'`,
-				rs.Namespace,
-				tb,
-				"context_sources_job_run_id",
-				jobRunID,
-				"context_sources_task_run_id",
-				taskRunID,
-				"context_source_id",
-				sourceID,
-			)
-			pkgLogger.Infof("RS: Deleting rows in table in redshift for RS:%s : %v", rs.Warehouse.Destination.ID, sqlStatement)
-			_, err = rs.Db.Exec(sqlStatement)
-			if err != nil {
-				pkgLogger.Errorf("Error in executing the query %s", err.Error)
-				return false, err
-			}
+		if tb == "rudder_discards" {
+			continue
+		}
+		sqlStatement := fmt.Sprintf(`DELETE FROM "%[1]s"."%[2]s" WHERE 
+		%[3]s <> '%[4]s' AND
+		%[5]s <> '%[6]s' AND
+		%[7]s = '%[8]s'`,
+			rs.Namespace,
+			tb,
+			"context_sources_job_run_id",
+			jobRunID,
+			"context_sources_task_run_id",
+			taskRunID,
+			"context_source_id",
+			sourceID,
+		)
+		pkgLogger.Infof("RS: Deleting rows in table in redshift for RS:%s : %v", rs.Warehouse.Destination.ID, sqlStatement)
+		_, err = rs.Db.Exec(sqlStatement)
+		if err != nil {
+			pkgLogger.Errorf("Error in executing the query %s", err.Error)
+			return err
 		}
 	}
-	return true, nil
+	return nil
 }
 
 // alterStringToText alters column data type string(varchar(512)) to text which is varchar(max) in redshift

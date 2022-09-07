@@ -23,10 +23,13 @@ import (
 )
 
 type TestHandle struct {
-	DB       *bigquery.Client
-	WriteKey string
-	Schema   string
-	Tables   []string
+	DB             *bigquery.Client
+	WriteKey       string
+	Schema         string
+	Tables         []string
+	SourceId       string
+	DestinationId  string
+	SourceWriteKey string
 }
 
 var handle *TestHandle
@@ -39,6 +42,7 @@ const (
 // bigqueryCredentials extracting big query credentials
 func bigqueryCredentials() (bqCredentials bigquery2.BQCredentialsT, err error) {
 	cred, exists := os.LookupEnv(TestCredentialsKey)
+
 	if !exists {
 		err = fmt.Errorf("following %s does not exists while running the Bigquery test", TestCredentialsKey)
 		return
@@ -97,14 +101,18 @@ func TestBigQueryIntegration(t *testing.T) {
 				BQ:   handle.DB,
 				Type: client.BQClient,
 			},
-			WriteKey:             handle.WriteKey,
-			Schema:               handle.Schema,
-			Tables:               handle.Tables,
-			TablesQueryFrequency: testhelper.LongRunningQueryFrequency,
-			EventsCountMap:       testhelper.DefaultEventMap(),
-			MessageId:            uuid.Must(uuid.NewV4()).String(),
-			UserId:               testhelper.GetUserId(warehouseutils.BQ),
-			Provider:             warehouseutils.BQ,
+			WriteKey:              handle.WriteKey,
+			SourceWriteKey:        handle.SourceWriteKey,
+			SourceId:              handle.SourceId,
+			DestinationId:         handle.DestinationId,
+			Schema:                handle.Schema,
+			Tables:                handle.Tables,
+			TablesQueryFrequency:  testhelper.LongRunningQueryFrequency,
+			EventsCountMap:        testhelper.DefaultEventMap(true),
+			MessageId:             uuid.Must(uuid.NewV4()).String(),
+			UserId:                testhelper.GetUserId(warehouseutils.BQ),
+			Provider:              warehouseutils.BQ,
+			LatestSourceRunConfig: testhelper.DefaultSourceRunConfig(),
 		}
 
 		// Scenario 1
@@ -113,6 +121,7 @@ func TestBigQueryIntegration(t *testing.T) {
 		testhelper.SendEvents(t, warehouseTest)
 		testhelper.SendEvents(t, warehouseTest)
 		testhelper.SendEvents(t, warehouseTest)
+		// testhelper.SendAsyncRequest(t, warehouseTest)
 		// Integrated events has events set to skipReservedKeywordsEscaping to True
 		// Eg: Since groups is reserved keyword in BQ, table populated will be groups if true else _groups
 		testhelper.SendIntegratedEvents(t, warehouseTest)
@@ -121,17 +130,19 @@ func TestBigQueryIntegration(t *testing.T) {
 		// Checking for Gateway and Batch router events
 		// Checking for the events count for each table
 		warehouseTest.EventsCountMap = testhelper.EventsCountMap{
-			"identifies":    1,
-			"users":         1,
-			"tracks":        1,
-			"product_track": 1,
-			"pages":         1,
-			"screens":       1,
-			"aliases":       1,
-			"groups":        1,
-			"_groups":       1,
-			"gateway":       24,
-			"batchRT":       32,
+			"google_sheet":    3,
+			"wh_google_sheet": 1,
+			"identifies":      1,
+			"users":           1,
+			"tracks":          2,
+			"product_track":   1,
+			"pages":           1,
+			"screens":         1,
+			"aliases":         1,
+			"groups":          1,
+			"_groups":         1,
+			"gateway":         27,
+			"batchRT":         38,
 		}
 		testhelper.VerifyingGatewayEvents(t, warehouseTest)
 		testhelper.VerifyingBatchRouterEvents(t, warehouseTest)
@@ -141,7 +152,7 @@ func TestBigQueryIntegration(t *testing.T) {
 		// Re-Setting up the events map
 		// Sending the second set of events.
 		// This time we will not be resetting the MessageID. We will be using the same one to check for the dedupe.
-		warehouseTest.EventsCountMap = testhelper.DefaultEventMap()
+		warehouseTest.EventsCountMap = testhelper.DefaultEventMap(true)
 		testhelper.SendModifiedEvents(t, warehouseTest)
 		testhelper.SendModifiedEvents(t, warehouseTest)
 		testhelper.SendModifiedEvents(t, warehouseTest)
@@ -152,17 +163,19 @@ func TestBigQueryIntegration(t *testing.T) {
 		// Checking for the events count for each table
 		// Since because of merge everything comes down to a single event in warehouse
 		warehouseTest.EventsCountMap = testhelper.EventsCountMap{
-			"identifies":    1,
-			"users":         1,
-			"tracks":        1,
-			"product_track": 1,
-			"pages":         1,
-			"screens":       1,
-			"aliases":       1,
-			"groups":        1,
-			"_groups":       1,
-			"gateway":       48,
-			"batchRT":       64,
+			"google_sheet":    3,
+			"wh_google_sheet": 1,
+			"identifies":      1,
+			"users":           1,
+			"tracks":          2,
+			"product_track":   1,
+			"pages":           1,
+			"screens":         1,
+			"aliases":         1,
+			"groups":          1,
+			"_groups":         1,
+			"gateway":         51,
+			"batchRT":         70,
 		}
 		testhelper.VerifyingGatewayEvents(t, warehouseTest)
 		testhelper.VerifyingBatchRouterEvents(t, warehouseTest)
@@ -184,14 +197,18 @@ func TestBigQueryIntegration(t *testing.T) {
 				BQ:   handle.DB,
 				Type: client.BQClient,
 			},
-			WriteKey:             handle.WriteKey,
-			Schema:               handle.Schema,
-			Tables:               handle.Tables,
-			TablesQueryFrequency: testhelper.LongRunningQueryFrequency,
-			EventsCountMap:       testhelper.DefaultEventMap(),
-			MessageId:            uuid.Must(uuid.NewV4()).String(),
-			UserId:               testhelper.GetUserId(warehouseutils.BQ),
-			Provider:             warehouseutils.BQ,
+			WriteKey:              handle.WriteKey,
+			SourceWriteKey:        handle.SourceWriteKey,
+			SourceId:              handle.SourceId,
+			DestinationId:         handle.DestinationId,
+			Schema:                handle.Schema,
+			Tables:                handle.Tables,
+			TablesQueryFrequency:  testhelper.LongRunningQueryFrequency,
+			EventsCountMap:        testhelper.DefaultEventMap(true),
+			MessageId:             uuid.Must(uuid.NewV4()).String(),
+			UserId:                testhelper.GetUserId(warehouseutils.BQ),
+			Provider:              warehouseutils.BQ,
+			LatestSourceRunConfig: testhelper.DefaultSourceRunConfig(),
 		}
 
 		// Scenario 1
@@ -205,23 +222,25 @@ func TestBigQueryIntegration(t *testing.T) {
 		testhelper.SendIntegratedEvents(t, warehouseTest)
 		testhelper.SendModifiedEvents(t, warehouseTest)
 		testhelper.SendModifiedEvents(t, warehouseTest)
-
+		// testhelper.SendAsyncRequest(t, warehouseTest)
 		// Setting up the events map
 		// Checking for Gateway and Batch router events
 		// Checking for the events count for each table
 		// Since because of append events count will be equal to the number of events being sent
 		warehouseTest.EventsCountMap = testhelper.EventsCountMap{
-			"identifies":    4,
-			"users":         1,
-			"tracks":        4,
-			"product_track": 4,
-			"pages":         4,
-			"screens":       4,
-			"aliases":       4,
-			"groups":        1,
-			"_groups":       3,
-			"gateway":       24,
-			"batchRT":       32,
+			"google_sheet":    1,
+			"wh_google_sheet": 1,
+			"identifies":      4,
+			"users":           1,
+			"tracks":          6,
+			"product_track":   4,
+			"pages":           4,
+			"screens":         4,
+			"aliases":         4,
+			"groups":          1,
+			"_groups":         3,
+			"gateway":         25,
+			"batchRT":         34,
 		}
 		testhelper.VerifyingGatewayEvents(t, warehouseTest)
 		testhelper.VerifyingBatchRouterEvents(t, warehouseTest)
@@ -248,9 +267,12 @@ func TestMain(m *testing.M) {
 	}
 
 	handle = &TestHandle{
-		WriteKey: "J77aX7tLFJ84qYU6UrN8ctecwZt",
-		Schema:   testhelper.GetSchema(warehouseutils.BQ, TestSchemaKey),
-		Tables:   []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "_groups", "groups"},
+		WriteKey:       "J77aX7tLFJ84qYU6UrN8ctecwZt",
+		SourceWriteKey: "2DkCpXZcExKM2fcpUD3LmjPI7J6",
+		SourceId:       "2DkCpXZcEvLN2fcpUD3LmjPI7J6",
+		DestinationId:  "26Bgm9FrQDZjvadSwAlpd35atwn",
+		Schema:         testhelper.GetSchema(warehouseutils.BQ, TestSchemaKey),
+		Tables:         []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "_groups", "groups", "google_sheet"},
 	}
 	os.Exit(testhelper.Run(m, handle))
 }

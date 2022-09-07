@@ -2,14 +2,58 @@ package testhelper
 
 import (
 	b64 "encoding/base64"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"strings"
 	"testing"
+	"time"
 )
 
 const (
+	GoogleSheetsPayload = `{
+		"batch":[
+			{
+				"messageId":"cc66fvubc58rb4d1u7pg",
+				"userId":"%s",
+				"recordId":"%s",
+				"context":{
+					"sources":
+					{
+						"batch_id":"e84d84e1-be39-41cb-85e6-66874b6a4730",
+						"job_id":"2DkCpUr0xfiGBPJxIwqyqfyHdq4",
+						"job_run_id":"%s",
+						"task_id":"Sheet1",
+						"task_run_id":"%s",
+						"version":"v2.1.1"
+					}
+				},
+				"properties":
+					{
+						"HEADER":"HBD5",
+						"HEADER4":"esgseg78"
+					},
+				"event":"google_sheet",
+				"type":"track",
+				"channel":"sources"
+			}
+		]
+
+	}`
+	AsyncWhPayload = `{
+		"sourceid":"%s",
+		"jobrunid":"%s",
+		"taskrunid":"%s",
+		"channel":"sources",
+		"async_job_type":"deletebyjobrunid",
+		"destinationid":"%s",
+		"starttime":"2022-08-31 02:54:38.842+00"
+	}`
+	PendingEventsPayload = `{
+		"source_id": "%s",
+		"job_run_id": "%s"
+	}`
 	IdentifyPayload = `{
 	  "userId": "%s",
 	  "messageId": "%s",
@@ -319,6 +363,26 @@ func SendEvents(t testing.TB, wareHouseTest *WareHouseTest) {
 			send(t, payloadGroup, "group", wareHouseTest.WriteKey)
 		}
 	}
+
+	if count, exists := wareHouseTest.EventsCountMap["google_sheet"]; exists {
+		t.Logf("Sending sources events")
+		for i := 0; i < count; i++ {
+			job_run_id := wareHouseTest.MsgId()
+			task_run_id := wareHouseTest.MsgId()
+			payloadGroup := strings.NewReader(fmt.Sprintf(GoogleSheetsPayload, wareHouseTest.UserId, wareHouseTest.MsgId(), job_run_id, task_run_id))
+			send(t, payloadGroup, "import", wareHouseTest.SourceWriteKey)
+			wareHouseTest.LatestSourceRunConfig["jobrunid"] = job_run_id
+			wareHouseTest.LatestSourceRunConfig["taskrunid"] = task_run_id
+			for {
+				pendingEventsPayload := strings.NewReader(fmt.Sprintf(PendingEventsPayload, wareHouseTest.SourceId, job_run_id))
+				count := blockByPendingEvents(t, pendingEventsPayload, wareHouseTest.SourceWriteKey)
+				if count == 0 {
+					break
+				}
+				time.Sleep(2 * time.Second)
+			}
+		}
+	}
 }
 
 func SendModifiedEvents(t testing.TB, wareHouseTest *WareHouseTest) {
@@ -464,4 +528,63 @@ func send(t testing.TB, payload *strings.Reader, eventType, writeKey string) {
 	}
 
 	t.Logf("Send successfully for event: %s and writeKey: %s", eventType, writeKey)
+}
+
+func SendAsyncRequest(t testing.TB, wareHouseTest *WareHouseTest) {
+	asyncwhpayload := strings.NewReader(fmt.Sprintf(AsyncWhPayload, wareHouseTest.SourceId, wareHouseTest.LatestSourceRunConfig["jobrunid"], wareHouseTest.LatestSourceRunConfig["taskrunid"], wareHouseTest.DestinationId))
+	send(t, asyncwhpayload, "wh-jobs/add", wareHouseTest.SourceWriteKey)
+}
+
+func blockByPendingEvents(t testing.TB, payload *strings.Reader, writeKey string) uint {
+
+	t.Helper()
+	t.Logf("Sending event: %s for writeKey: %s", "pending-events", writeKey)
+	url := fmt.Sprintf("http://localhost:%s/v1/%s", "8080", "pending-events")
+	method := "POST"
+	httpClient := &http.Client{}
+
+	req, err := http.NewRequest(method, url, payload)
+	if err != nil {
+		t.Errorf("Error occurred while creating new http request for sending event with error: %s", err.Error())
+		return 1
+	}
+
+	req.Header.Add("Content-Type", "application/json")
+	req.Header.Add("Authorization",
+		fmt.Sprintf("Basic %s", b64.StdEncoding.EncodeToString(
+			[]byte(fmt.Sprintf("%s:", writeKey)),
+		)),
+	)
+	// requestDump, err := httputil.DumpRequest(req, true)
+	// if err != nil {
+	// 	fmt.Println(err)
+	// }
+	// fmt.Println(string(requestDump))
+
+	res, err := httpClient.Do(req)
+	if err != nil {
+		t.Errorf("Error occurred while making http request for sending event with error: %s", err.Error())
+		return 1
+	}
+	defer func() { _ = res.Body.Close() }()
+	response, err := io.ReadAll(res.Body)
+	if err != nil {
+		t.Errorf("Error occurred while reading http response for sending event with error: %s", err.Error())
+		return 1
+	}
+	if res.Status != "200 OK" {
+		return 1
+	}
+
+	t.Logf("Send successfully for event: %s and writeKey: %s", "pending-events", writeKey)
+	type PendingEventsPayload struct {
+		PendingEventsCount int `json:"pending_events"`
+	}
+	var gatewayResponse PendingEventsPayload
+	err = json.Unmarshal(response, &gatewayResponse)
+	t.Logf("Pending events response is %v\n", gatewayResponse)
+	if err != nil {
+		return 1
+	}
+	return uint(gatewayResponse.PendingEventsCount)
 }

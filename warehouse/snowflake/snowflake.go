@@ -223,30 +223,31 @@ func (sf *HandleT) authString() string {
 }
 
 //Need to create a structure with delete parameters instead of simply adding a long list of params
-func (sf *HandleT) DeleteBy(tableNames []string, jobRunID string, sourceID string, taskRunID string) (success bool, err error) {
+func (sf *HandleT) DeleteBy(tableNames []string, jobRunID string, sourceID string, taskRunID string) (err error) {
 	pkgLogger.Infof("SF: Cleaning up the followng tables in snowflake for SF:%s : %v", tableNames)
 	for _, tb := range tableNames {
-		if tb != "rudder_discards" {
-			sqlStatement := fmt.Sprintf(`DELETE FROM "%[1]s"."%[2]s" WHERE %[3]s <> '%[4]s' AND %[5]s = '%[6]s' AND %[7]s <> '%[8]s'`,
-				sf.Namespace,
-				tb,
-				"context_sources_job_run_id",
-				jobRunID,
-				"context_source_id",
-				sourceID,
-				"context_sources_task_run_id",
-				taskRunID,
-			)
-			pkgLogger.Infof("SF: Deleting rows in table in snowflake for SF:%s : %v", sf.Warehouse.Destination.ID, sqlStatement)
-			_, err = sf.Db.Exec(sqlStatement)
-			if err != nil {
-				pkgLogger.Errorf("Error %s", err)
-				return false, err
-			}
+		if tb == "rudder_discards" {
+			continue
+		}
+		sqlStatement := `DELETE FROM "?"."?" WHERE ? <> '?' AND ? = '?' AND ? <> '?'`
+
+		pkgLogger.Infof("SF: Deleting rows in table in snowflake for SF:%s : %v", sf.Warehouse.Destination.ID, sqlStatement)
+		_, err = sf.Db.Exec(sqlStatement,
+			sf.Namespace,
+			tb,
+			"context_sources_job_run_id",
+			jobRunID,
+			"context_source_id",
+			sourceID,
+			"context_sources_task_run_id",
+			taskRunID)
+		if err != nil {
+			pkgLogger.Errorf("Error %s", err)
+			return err
 		}
 	}
 	// time.Sleep(60 * time.Second)
-	return true, nil
+	return nil
 }
 
 func (sf *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutils.TableSchemaT, dbHandle *sql.DB, skipClosingDBSession bool) (tableLoadResp tableLoadRespT, err error) {

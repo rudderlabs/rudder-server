@@ -69,8 +69,8 @@ func (wh *HandleT) LoadTable(tableName string) error {
 }
 
 //Need to create a structure with delete parameters instead of simply adding a long list of params
-func (wh *HandleT) DeleteBy(tableNames []string, jobRunID string, sourceID string, taskRunID string) (success bool, err error) {
-	return false, fmt.Errorf("datalake err :not implemented")
+func (wh *HandleT) DeleteBy(tableNames []string, jobRunID string, sourceID string, taskRunID string) (err error) {
+	return fmt.Errorf(warehouseutils.NotImplementedErrorCode)
 }
 
 func (wh *HandleT) LoadUserTables() map[string]error {

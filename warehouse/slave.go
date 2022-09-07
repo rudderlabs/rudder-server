@@ -604,7 +604,7 @@ func runAsyncJob(asyncjob warehouse_jobs.AsyncJobPayloadT, workerIndex int) (Asy
 	warehouse := connectionsMap[asyncjob.DestinationID][asyncjob.SourceID]
 	whManager, err := manager.NewWarehouseOperations(asyncjob.DestType)
 	if err != nil {
-		panic(err)
+		return AsyncJobRunResult{JobRunID: "", TableName: "", Result: false}, err
 	}
 	whasyncjob := new(warehouse_jobs.WhAsyncJob)
 
@@ -615,9 +615,11 @@ func runAsyncJob(asyncjob warehouse_jobs.AsyncJobPayloadT, workerIndex int) (Asy
 	switch asyncjob.AsyncJobType {
 	case "deletebyjobrunid":
 		pkgLogger.Info("[WH-Jobs]: Running DeleteByJobRunID on slave worker")
-		success, err = whManager.DeleteBy(tableNames, asyncjob.JobRunID, asyncjob.SourceID, asyncjob.TaskRunID)
+		err = whManager.DeleteBy(tableNames, asyncjob.JobRunID, asyncjob.SourceID, asyncjob.TaskRunID)
 	}
-
+	if err == nil {
+		success = true
+	}
 	var asyncJobRunResult = AsyncJobRunResult{
 		JobRunID:  asyncjob.JobRunID,
 		TableName: asyncjob.TableName,
@@ -628,7 +630,7 @@ func runAsyncJob(asyncjob warehouse_jobs.AsyncJobPayloadT, workerIndex int) (Asy
 }
 
 func processClaimedAsyncJob(claimedJob pgnotifier.ClaimT, workerIndex int) {
-	pkgLogger.Infof("[WH-Jobs]: Got request for processing Async Job with Batch ID", claimedJob.BatchID)
+	pkgLogger.Infof("[WH-Jobs]: Got request for processing Async Job with Batch ID %s", claimedJob.BatchID)
 	handleErr := func(err error, claim pgnotifier.ClaimT) {
 		pkgLogger.Errorf("[WH]: Error processing claim: %v", err)
 		response := pgnotifier.ClaimResponseT{
@@ -643,9 +645,13 @@ func processClaimedAsyncJob(claimedJob pgnotifier.ClaimT, workerIndex int) {
 		handleErr(err, claimedJob)
 	}
 	result, err := runAsyncJob(job, workerIndex)
-	marshalled_result, err1 := json.Marshal(result)
-	if err1 != nil {
-		panic(err1)
+	if err != nil {
+		handleErr(err, claimedJob)
+	}
+
+	marshalled_result, err := json.Marshal(result)
+	if err != nil {
+		handleErr(err, claimedJob)
 	}
 	response := pgnotifier.ClaimResponseT{
 		Err:     err,

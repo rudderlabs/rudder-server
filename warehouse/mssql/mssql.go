@@ -235,32 +235,32 @@ func (ms *HandleT) DownloadLoadFiles(tableName string) ([]string, error) {
 	return fileNames, nil
 }
 
-func (ms *HandleT) DeleteBy(tableNames []string, jobRunID string, sourceID string, taskRunID string) (success bool, err error) {
+func (ms *HandleT) DeleteBy(tableNames []string, jobRunID string, sourceID string, taskRunID string) error {
 	pkgLogger.Infof("PG: Cleaning up the followng tables in mysql for MS:%s : %v", tableNames)
 	for _, tb := range tableNames {
-		if tb != "rudder_discards" {
-			sqlStatement := fmt.Sprintf(`DELETE FROM "%[1]s"."%[2]s" WHERE 
-			%[3]s <> '%[4]s' AND
-			%[5]s <> '%[6]s' AND
-			%[7]s = '%[8]s'`,
-				ms.Namespace,
-				tb,
-				"context_sources_job_run_id",
-				jobRunID,
-				"context_sources_task_run_id",
-				taskRunID,
-				"context_source_id",
-				sourceID,
-			)
-			pkgLogger.Infof("MYSQL: Deleting rows in table in mysql for MS:%s : %v", ms.Warehouse.Destination.ID, sqlStatement)
-			_, err = ms.Db.Exec(sqlStatement)
-			if err != nil {
-				pkgLogger.Errorf("Error %s", err)
-				return false, err
-			}
+		if tb == "rudder_discards" {
+			continue
+		}
+		sqlStatement := `DELETE FROM "$1"."$2" WHERE 
+		$3 <> '$4' AND
+		$5 <> '$6' AND
+		$7 = '$8'`
+		pkgLogger.Infof("MYSQL: Deleting rows in table in mysql for MS:%s : %v", ms.Warehouse.Destination.ID, sqlStatement)
+		_, err := ms.Db.Exec(sqlStatement,
+			ms.Namespace,
+			tb,
+			"context_sources_job_run_id",
+			jobRunID,
+			"context_sources_task_run_id",
+			taskRunID,
+			"context_source_id",
+			sourceID)
+		if err != nil {
+			pkgLogger.Errorf("Error %s", err)
+			return err
 		}
 	}
-	return true, nil
+	return nil
 }
 
 func (ms *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutils.TableSchemaT, skipTempTableDelete bool) (stagingTableName string, err error) {

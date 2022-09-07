@@ -46,15 +46,19 @@ type JobsDBResource struct {
 type EventsCountMap map[string]int
 
 type WareHouseTest struct {
-	Client               *client.Client
-	WriteKey             string
-	Schema               string
-	TablesQueryFrequency time.Duration
-	EventsCountMap       EventsCountMap
-	UserId               string
-	MessageId            string
-	Tables               []string
-	Provider             string
+	Client                *client.Client
+	WriteKey              string
+	SourceWriteKey        string
+	SourceId              string
+	DestinationId         string
+	Schema                string
+	TablesQueryFrequency  time.Duration
+	EventsCountMap        EventsCountMap
+	UserId                string
+	MessageId             string
+	Tables                []string
+	Provider              string
+	LatestSourceRunConfig map[string]string
 }
 
 type WarehouseTestSetup interface {
@@ -108,6 +112,7 @@ func Run(m *testing.M, setup WarehouseTestSetup) int {
 }
 
 func loadEnv() {
+	fmt.Println("Hey I am LoadEnv")
 	if err := godotenv.Load("../testhelper/.env"); err != nil {
 		fmt.Printf("Error occurred while loading env for warehouse integration test with error: %s", err.Error())
 	}
@@ -190,6 +195,7 @@ func VerifyingGatewayEvents(t testing.TB, wareHouseTest *WareHouseTest) {
 
 	require.Contains(t, wareHouseTest.EventsCountMap, "gateway")
 	gwEvents := wareHouseTest.EventsCountMap["gateway"]
+	// gsEvents := wareHouseTest.EventsCountMap["google_sheet"]
 
 	var (
 		count        int64
@@ -201,29 +207,32 @@ func VerifyingGatewayEvents(t testing.TB, wareHouseTest *WareHouseTest) {
 		rows         *sql.Rows
 	)
 
+	//Pulling other events from gateway jobs first
 	sqlStatement = fmt.Sprintf(`
 		select
 		  count(*)
 		from
-		  gw_jobs_for_user_id_and_write_key('%s', '%s') as job_ids;`,
+		  gw_jobs_for_user_id_and_write_key('%s', '%s', '%s') as job_ids;`,
 		wareHouseTest.UserId,
 		wareHouseTest.WriteKey,
+		wareHouseTest.SourceWriteKey,
 	)
-	t.Logf("Checking for the gateway jobs for sqlStatement: %s", sqlStatement)
+	t.Logf("Checking for the gateway source jobs for sqlStatement: %s", sqlStatement)
 	operation = func() bool {
 		err = jobsDB.DB.QueryRow(sqlStatement).Scan(&count)
 		require.NoError(t, err)
 		return count == int64(gwEvents)
 	}
-	require.Eventually(t, operation, WaitFor2Minute, DefaultQueryFrequency, fmt.Sprintf("GW events count is %d and GW Jobs count is %d", gwEvents, count))
+	require.Eventually(t, operation, WaitFor2Minute, DefaultQueryFrequency, fmt.Sprintf("GW google sheet events count is %d and GW Jobs count is %d", gwEvents, count))
 
 	sqlStatement = fmt.Sprintf(`
 		select
 		  *
 		from
-		  gw_jobs_for_user_id_and_write_key('%s', '%s') as job_ids;`,
+		  gw_jobs_for_user_id_and_write_key('%s', '%s' ,'%s') as job_ids;`,
 		wareHouseTest.UserId,
 		wareHouseTest.WriteKey,
+		wareHouseTest.SourceWriteKey,
 	)
 	t.Logf("Checking for gateway job ids for sqlStatement: %s", sqlStatement)
 	operation = func() bool {
@@ -362,12 +371,12 @@ func VerifyingTablesEventCount(t testing.TB, wareHouseTest *WareHouseTest) {
 
 	for _, table := range wareHouseTest.Tables {
 		sqlStatement = fmt.Sprintf(`
-			select
-			  count(*)
-			from
-			  %s.%s
-			where
-			  %s = '%s';`,
+		select
+		  count(*)
+		from
+		  %s.%s
+		where
+		  %s = '%s';`,
 			wareHouseTest.Schema,
 			table,
 			primaryKey(table),
@@ -376,13 +385,20 @@ func VerifyingTablesEventCount(t testing.TB, wareHouseTest *WareHouseTest) {
 		t.Logf("Verifying tables event count for sqlStatement: %s", sqlStatement)
 
 		require.Contains(t, wareHouseTest.EventsCountMap, table)
-		tableCount := wareHouseTest.EventsCountMap[table]
+		var tableCount int
+		if table == "google_sheet" {
+			require.Contains(t, wareHouseTest.EventsCountMap, "wh_google_sheet")
+			tableCount = wareHouseTest.EventsCountMap["wh_google_sheet"]
+		} else {
+			tableCount = wareHouseTest.EventsCountMap[table]
+		}
 
 		condition = func() bool {
 			count, _ = queryCount(wareHouseTest.Client, sqlStatement)
 			return count == int64(tableCount)
 		}
 		require.Eventually(t, condition, WaitFor10Minute, wareHouseTest.TablesQueryFrequency, fmt.Sprintf("Table %s Count is %d and Events Count is %d", table, tableCount, count))
+
 	}
 
 	t.Logf("Completed verifying tables events")
@@ -405,7 +421,7 @@ func GWJobsForUserIdWriteKey() string {
 	return `
 		CREATE
 		OR REPLACE FUNCTION gw_jobs_for_user_id_and_write_key(
-		  user_id varchar, write_key varchar
+		  user_id varchar, write_key_1 varchar,write_key_2 varchar
 		) RETURNS TABLE (job_id varchar) AS $$ DECLARE table_record RECORD;
 		batch_record jsonb;
 		BEGIN FOR table_record IN
@@ -414,7 +430,7 @@ func GWJobsForUserIdWriteKey() string {
 		FROM
 		  gw_jobs_1
 		where
-		  (event_payload ->> 'writeKey') = write_key LOOP FOR batch_record IN
+		  (event_payload ->> 'writeKey') = write_key_1 OR (event_payload ->> 'writeKey') = write_key_2 LOOP FOR batch_record IN
 		SELECT
 		  *
 		FROM
@@ -458,20 +474,49 @@ func BRTJobsForUserId() string {
 `
 }
 
-func DefaultEventMap() EventsCountMap {
-	return EventsCountMap{
-		"identifies":    1,
-		"users":         1,
-		"tracks":        1,
-		"pages":         1,
-		"product_track": 1,
-		"screens":       1,
-		"aliases":       1,
-		"groups":        1,
-		"_groups":       1,
-		"gateway":       6,
-		"batchRT":       8,
+func DefaultEventMap(withSources bool) EventsCountMap {
+	if withSources {
+		return EventsCountMap{
+			"identifies":      1,
+			"users":           1,
+			"tracks":          1,
+			"pages":           1,
+			"product_track":   1,
+			"screens":         1,
+			"aliases":         1,
+			"groups":          1,
+			"google_sheet":    1,
+			"wh_google_sheet": 1,
+			"_groups":         1,
+			"gateway":         6,
+			"batchRT":         8,
+		}
+	} else {
+		return EventsCountMap{
+			"identifies":      1,
+			"users":           1,
+			"tracks":          1,
+			"pages":           1,
+			"product_track":   1,
+			"screens":         1,
+			"aliases":         1,
+			"groups":          1,
+			"google_sheet":    0,
+			"wh_google_sheet": 0,
+			"_groups":         1,
+			"gateway":         6,
+			"batchRT":         8,
+		}
 	}
+
+}
+
+func DefaultSourceRunConfig() map[string]string {
+	srcrunconfig := make(map[string]string)
+	srcrunconfig["jobrunid"] = ""
+	srcrunconfig["taskrunid"] = ""
+
+	return srcrunconfig
 }
 
 func GetUserId(userType string) string {

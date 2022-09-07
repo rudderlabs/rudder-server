@@ -15,10 +15,11 @@ import (
 )
 
 type TestHandle struct {
-	DB       *sql.DB
-	WriteKey string
-	Schema   string
-	Tables   []string
+	DB             *sql.DB
+	WriteKey       string
+	SourceWriteKey string
+	Schema         string
+	Tables         []string
 }
 
 var handle *TestHandle
@@ -57,13 +58,17 @@ func TestPostgresIntegration(t *testing.T) {
 			SQL:  handle.DB,
 			Type: client.SQLClient,
 		},
-		WriteKey:             handle.WriteKey,
-		Schema:               handle.Schema,
-		Tables:               handle.Tables,
-		EventsCountMap:       testhelper.DefaultEventMap(),
-		TablesQueryFrequency: testhelper.DefaultQueryFrequency,
-		UserId:               testhelper.GetUserId(warehouseutils.POSTGRES),
-		Provider:             warehouseutils.POSTGRES,
+		WriteKey:              handle.WriteKey,
+		SourceWriteKey:        handle.SourceWriteKey,
+		SourceId:              "2DkCpUr0xfiGBPJxIwqyqfyHdq4",
+		DestinationId:         "216ZvbavR21Um6eGKQCagZHqLGZ",
+		Schema:                handle.Schema,
+		Tables:                handle.Tables,
+		EventsCountMap:        testhelper.DefaultEventMap(true),
+		TablesQueryFrequency:  testhelper.DefaultQueryFrequency,
+		UserId:                testhelper.GetUserId(warehouseutils.POSTGRES),
+		Provider:              warehouseutils.POSTGRES,
+		LatestSourceRunConfig: testhelper.DefaultSourceRunConfig(),
 	}
 
 	// Scenario 1
@@ -73,22 +78,25 @@ func TestPostgresIntegration(t *testing.T) {
 	testhelper.SendEvents(t, warehouseTest)
 	testhelper.SendEvents(t, warehouseTest)
 	testhelper.SendEvents(t, warehouseTest)
+	testhelper.SendAsyncRequest(t, warehouseTest)
 	testhelper.SendIntegratedEvents(t, warehouseTest)
 
 	// Setting up the events map
 	// Checking for Gateway and Batch router events
 	// Checking for the events count for each table
 	warehouseTest.EventsCountMap = testhelper.EventsCountMap{
-		"identifies":    4,
-		"users":         1,
-		"tracks":        4,
-		"product_track": 4,
-		"pages":         4,
-		"screens":       4,
-		"aliases":       4,
-		"groups":        4,
-		"gateway":       24,
-		"batchRT":       32,
+		"google_sheet":    3,
+		"wh_google_sheet": 1,
+		"identifies":      4,
+		"users":           1,
+		"tracks":          5,
+		"product_track":   4,
+		"pages":           4,
+		"screens":         4,
+		"aliases":         4,
+		"groups":          4,
+		"gateway":         27,
+		"batchRT":         38,
 	}
 	testhelper.VerifyingGatewayEvents(t, warehouseTest)
 	testhelper.VerifyingBatchRouterEvents(t, warehouseTest)
@@ -111,16 +119,18 @@ func TestPostgresIntegration(t *testing.T) {
 	// Checking for Gateway and Batch router events
 	// Checking for the events count for each table
 	warehouseTest.EventsCountMap = testhelper.EventsCountMap{
-		"identifies":    4,
-		"users":         1,
-		"tracks":        4,
-		"product_track": 4,
-		"pages":         4,
-		"screens":       4,
-		"aliases":       4,
-		"groups":        4,
-		"gateway":       24,
-		"batchRT":       32,
+		"google_sheet":    0,
+		"wh_google_sheet": 0,
+		"identifies":      4,
+		"users":           1,
+		"tracks":          4,
+		"product_track":   4,
+		"pages":           4,
+		"screens":         4,
+		"aliases":         4,
+		"groups":          4,
+		"gateway":         24,
+		"batchRT":         32,
 	}
 	testhelper.VerifyingGatewayEvents(t, warehouseTest)
 	testhelper.VerifyingBatchRouterEvents(t, warehouseTest)
@@ -129,9 +139,10 @@ func TestPostgresIntegration(t *testing.T) {
 
 func TestMain(m *testing.M) {
 	handle = &TestHandle{
-		WriteKey: "kwzDkh9h2fhfUVuS9jZ8uVbhV3v",
-		Schema:   "postgres_wh_integration",
-		Tables:   []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"},
+		WriteKey:       "kwzDkh9h2fhfUVuS9jZ8uVbhV3v",
+		SourceWriteKey: "2DkCpXZcEvJK2fcpUD3LmjPI7J6",
+		Schema:         "postgres_wh_integration",
+		Tables:         []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups", "google_sheet"},
 	}
 	os.Exit(testhelper.Run(m, handle))
 }

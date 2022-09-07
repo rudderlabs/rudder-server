@@ -36,10 +36,11 @@ Gets Table names from the jobrunid.
 Should not belong here but need to create separate package for deletebyjobs or
 refactor to a more generic getTableName with jobrundid and taskrunid as params
 */
-func (asyncWhJob *AsyncJobWhT) getTableNamesBy(jobrunid string, taskrunid string) ([]string, error) {
+func (asyncWhJob *AsyncJobWhT) getTableNamesBy(sourceid string, destinationid string, jobrunid string, taskrunid string) ([]string, error) {
 	asyncWhJob.log.Infof("Extracting tablenames for the job run id %s", jobrunid)
 	var tableNames []string
-	query := fmt.Sprintf(`select id from %s where metadata->>'%s'='%s' and metadata->>'%s'='%s'`, warehouseutils.WarehouseUploadsTable, "source_job_run_id", jobrunid, "source_task_run_id", taskrunid)
+	query := fmt.Sprintf(`SELECT id from %s where metadata->>'%s'='%s' and metadata->>'%s'='%s' and metadata in (SELECT metadata FROM wh_uploads where source_id='%s' and destination_id='%s')`, warehouseutils.WarehouseUploadsTable, "source_job_run_id", jobrunid, "source_task_run_id", taskrunid, sourceid, destinationid)
+	// query := fmt.Sprintf(`select id from %s where metadata->>'%s'='%s' and metadata->>'%s'='%s'`, warehouseutils.WarehouseUploadsTable, "source_job_run_id", jobrunid, "source_task_run_id", taskrunid)
 	asyncWhJob.log.Infof("Query is %s\n", query)
 	rows, err := asyncWhJob.dbHandle.Query(query)
 	if err != nil {
@@ -189,6 +190,7 @@ func (asyncWhJob *AsyncJobWhT) startAsyncJobRunner(ctx context.Context) {
 //Queries the jobsDB and gets active async job and returns it in a
 func (asyncWhJob *AsyncJobWhT) getPendingAsyncJobs(ctx context.Context) ([]AsyncJobPayloadT, error) {
 	var asyncjobpayloads = make([]AsyncJobPayloadT, 0)
+	//Filter to get most recent row for the sourceId/destinationID combo and remaining ones should relegated to aborted.
 	query := fmt.Sprintf(
 		`select 
 	id,
