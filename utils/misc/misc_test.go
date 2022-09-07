@@ -503,7 +503,6 @@ var _ = Describe("Misc", func() {
 })
 
 func TestContains(t *testing.T) {
-
 	t.Run("strings", func(t *testing.T) {
 		list := []string{"a", "b", "c"}
 
@@ -512,11 +511,9 @@ func TestContains(t *testing.T) {
 		}
 
 		require.False(t, Contains(list, "0"))
-
 	})
 
 	t.Run("int", func(t *testing.T) {
-
 		list := []int{1, 2, 3}
 
 		for _, item := range list {
@@ -525,7 +522,6 @@ func TestContains(t *testing.T) {
 
 		require.False(t, Contains(list, -1))
 	})
-
 }
 
 func TestReplaceMultiRegex(t *testing.T) {
