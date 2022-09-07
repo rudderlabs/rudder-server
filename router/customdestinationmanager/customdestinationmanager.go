@@ -3,6 +3,7 @@ package customdestinationmanager
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"reflect"
 	"sync"
@@ -48,7 +49,7 @@ type CustomManagerT struct {
 
 	stateMu  sync.RWMutex // protecting all 4 maps below
 	config   map[string]backendconfig.DestinationT
-	breaker  map[string]breakerHolder
+	breaker  map[string]*breakerHolder
 	clientMu map[string]*sync.RWMutex
 	client   map[string]*clientHolder
 
@@ -64,8 +65,9 @@ type clientHolder struct {
 }
 
 type breakerHolder struct {
-	config  map[string]interface{}
-	breaker *gobreaker.CircuitBreaker
+	config    map[string]interface{}
+	breaker   *gobreaker.CircuitBreaker
+	lastError error
 }
 
 func Init() {
@@ -110,8 +112,12 @@ func (customManager *CustomManagerT) newClient(destID string) error {
 		default:
 			return nil, fmt.Errorf("no provider configured for Custom Destination Manager")
 		}
+		customManager.breaker[destID].lastError = err
 		return nil, err
 	})
+	if errors.Is(err, gobreaker.ErrOpenState) && customManager.breaker[destID].lastError != nil {
+		return fmt.Errorf("%s, last error: %w", err, customManager.breaker[destID].lastError)
+	}
 	return err
 }
 
@@ -254,7 +260,7 @@ func (customManager *CustomManagerT) onConfigChange(destID string, newDestConfig
 			customManager.close(destID)
 		}
 	}
-	customManager.breaker[destID] = breakerHolder{
+	customManager.breaker[destID] = &breakerHolder{
 		config: newDestConfig,
 		breaker: gobreaker.NewCircuitBreaker(gobreaker.Settings{
 			Name:    destID,
@@ -289,7 +295,7 @@ func New(destType string, o Opts) DestinationManager {
 			client:                   make(map[string]*clientHolder),
 			clientMu:                 make(map[string]*sync.RWMutex),
 			config:                   make(map[string]backendconfig.DestinationT),
-			breaker:                  make(map[string]breakerHolder),
+			breaker:                  make(map[string]*breakerHolder),
 			backendConfigInitialized: make(chan struct{}),
 		}
 

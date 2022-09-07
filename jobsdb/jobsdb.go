@@ -1079,7 +1079,7 @@ func (jd *HandleT) getDSRangeList() []dataSetRangeT {
 }
 
 // refreshDSRangeList first refreshes the DS list and then calculate the DS range list
-func (jd *HandleT) refreshDSRangeList(l lock.DSListLockToken) []dataSetRangeT {
+func (jd *HandleT) refreshDSRangeList(l lock.DSListLockToken) {
 	var minID, maxID sql.NullInt64
 	var prevMax int64
 
@@ -1127,7 +1127,6 @@ func (jd *HandleT) refreshDSRangeList(l lock.DSListLockToken) []dataSetRangeT {
 			prevMax = maxID.Int64
 		}
 	}
-	return jd.datasetRangeList
 }
 
 /*
@@ -1211,30 +1210,43 @@ func (jd *HandleT) getTableSize(jobTable string) int64 {
 }
 
 func (jd *HandleT) checkIfFullDS(ds dataSetT) bool {
+	var full bool
+	jd.assertError(jd.WithTx(func(tx *sql.Tx) error {
+		var err error
+		full, err = jd.checkIfFullDSInTx(tx, ds)
+		if err != nil {
+			return err
+		}
+		return nil
+	}))
+	return full
+}
+
+func (jd *HandleT) checkIfFullDSInTx(tx *sql.Tx, ds dataSetT) (bool, error) {
 	var minJobCreatedAt sql.NullTime
 	sqlStatement := fmt.Sprintf(`SELECT MIN(created_at) FROM %q`, ds.JobTable)
-	row := jd.dbHandle.QueryRow(sqlStatement)
+	row := tx.QueryRow(sqlStatement)
 	err := row.Scan(&minJobCreatedAt)
 	if err != nil && err != sql.ErrNoRows {
-		jd.assertError(err)
+		return false, err
 	}
 	if err == nil && minJobCreatedAt.Valid && time.Since(minJobCreatedAt.Time) > jd.MaxDSRetentionPeriod {
-		return true
+		return true, nil
 	}
 
 	tableSize := jd.getTableSize(ds.JobTable)
 	if tableSize > maxTableSize {
 		jd.logger.Infof("[JobsDB] %s is full in size. Count: %v, Size: %v", ds.JobTable, jd.getTableRowCount(ds.JobTable), tableSize)
-		return true
+		return true, nil
 	}
 
 	totalCount := jd.getTableRowCount(ds.JobTable)
 	if totalCount > *jd.MaxDSSize {
 		jd.logger.Infof("[JobsDB] %s is full by rows. Count: %v, Size: %v", ds.JobTable, totalCount, jd.getTableSize(ds.JobTable))
-		return true
+		return true, nil
 	}
 
-	return false
+	return false, nil
 }
 
 /*
@@ -1290,17 +1302,38 @@ func newDataSet(tablePrefix, dsIdx string) dataSetT {
 }
 
 func (jd *HandleT) addNewDS(l lock.DSListLockToken, ds dataSetT) {
+	err := jd.WithTx(func(tx *sql.Tx) error {
+		return jd.addNewDSInTx(tx, l, jd.refreshDSList(l), ds)
+	})
+	jd.assertError(err)
+	jd.refreshDSRangeList(l)
+}
+
+// NOTE: If addNewDSInTx is directly called, make sure to explicitly call refreshDSRangeList(l) to update the DS list in cache, once transaction has completed.
+func (jd *HandleT) addNewDSInTx(tx *sql.Tx, l lock.DSListLockToken, dsList []dataSetT, ds dataSetT) error {
+	if l == nil {
+		return errors.New("nil ds list lock token provided")
+	}
 	jd.logger.Infof("Creating new DS %+v", ds)
 	queryStat := stats.NewTaggedStat("add_new_ds", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix})
 	queryStat.Start()
 	defer queryStat.End()
-	jd.createDS(ds, l)
+	err := jd.createDSInTx(tx, ds)
+	if err != nil {
+		return err
+	}
+	err = jd.setSequenceNumberInTx(tx, l, dsList, ds.Index)
+	if err != nil {
+		return err
+	}
 	// Tracking time interval between new ds creations. Hence calling end before start
 	if jd.isStatNewDSPeriodInitialized {
 		jd.statNewDSPeriod.End()
 	}
 	jd.statNewDSPeriod.Start()
 	jd.isStatNewDSPeriodInitialized = true
+
+	return nil
 }
 
 func (jd *HandleT) addDS(ds dataSetT) {
@@ -1308,11 +1341,17 @@ func (jd *HandleT) addDS(ds dataSetT) {
 	queryStat := stats.NewTaggedStat("add_new_ds", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix})
 	queryStat.Start()
 	defer queryStat.End()
-	jd.createDS(ds, nil)
+	jd.assertError(jd.WithTx(func(tx *sql.Tx) error {
+		return jd.createDSInTx(tx, ds)
+	}))
 }
 
 func (jd *HandleT) computeNewIdxForAppend(l lock.DSListLockToken) string {
 	dList := jd.refreshDSList(l)
+	return jd.doComputeNewIdxForAppend(dList)
+}
+
+func (jd *HandleT) doComputeNewIdxForAppend(dList []dataSetT) string {
 	newDSIdx := ""
 	if len(dList) == 0 {
 		newDSIdx = "1"
@@ -1512,21 +1551,7 @@ type transactionHandler interface {
 	// Only the function that passes *sql.Tx should do the commit or rollback based on the error it receives
 }
 
-func (jd *HandleT) createDS(newDS dataSetT, l lock.DSListLockToken) {
-	err := jd.WithTx(func(tx *sql.Tx) error {
-		return jd.createDSInTx(tx, newDS, l)
-	})
-	jd.assertError(err)
-
-	// In case of a migration, we don't yet update the in-memory list till we finish the migration
-	if l != nil {
-		// to get the updated DS list in the cache after createDS transaction has been committed.
-		_ = jd.refreshDSList(l)
-		_ = jd.refreshDSRangeList(l)
-	}
-}
-
-func (jd *HandleT) createDSInTx(tx *sql.Tx, newDS dataSetT, l lock.DSListLockToken) error {
+func (jd *HandleT) createDSInTx(tx *sql.Tx, newDS dataSetT) error {
 	// Mark the start of operation. If we crash somewhere here, we delete the
 	// DS being added
 	opPayload, err := json.Marshal(&journalOpPayloadT{To: newDS})
@@ -1583,13 +1608,6 @@ func (jd *HandleT) createDSInTx(tx *sql.Tx, newDS dataSetT, l lock.DSListLockTok
 		return err
 	}
 
-	if l != nil {
-		err = jd.setSequenceNumberInTx(tx, l, newDS.Index)
-		if err != nil {
-			return err
-		}
-	}
-
 	err = jd.journalMarkDoneInTx(tx, opID)
 	if err != nil {
 		return err
@@ -1598,13 +1616,16 @@ func (jd *HandleT) createDSInTx(tx *sql.Tx, newDS dataSetT, l lock.DSListLockTok
 	return nil
 }
 
-func (jd *HandleT) setSequenceNumberInTx(tx *sql.Tx, l lock.DSListLockToken, newDSIdx string) error {
-	dList := jd.getDSList()
+func (jd *HandleT) setSequenceNumberInTx(tx *sql.Tx, l lock.DSListLockToken, dsList []dataSetT, newDSIdx string) error {
+	if l == nil {
+		return errors.New("nil ds list lock token provided")
+	}
+
 	var maxID sql.NullInt64
 
 	// Now set the min JobID for the new DS just added to be 1 more than previous max
-	if len(dList) > 0 {
-		sqlStatement := fmt.Sprintf(`SELECT MAX(job_id) FROM %q`, dList[len(dList)-1].JobTable)
+	if len(dsList) > 0 {
+		sqlStatement := fmt.Sprintf(`SELECT MAX(job_id) FROM %q`, dsList[len(dsList)-1].JobTable)
 		err := tx.QueryRowContext(context.TODO(), sqlStatement).Scan(&maxID)
 		if err != nil {
 			return err
@@ -2564,14 +2585,14 @@ func (jd *HandleT) getProcessedJobsDS(ctx context.Context, ds dataSetT, getAll b
 	var stateQuery, customValQuery, limitQuery, sourceQuery string
 
 	if len(stateFilters) > 0 {
-		stateQuery = " AND " + constructQuery(jd, "job_state", stateFilters, "OR")
+		stateQuery = " AND " + constructQueryOR("job_state", stateFilters)
 	} else {
 		stateQuery = ""
 	}
 	if len(customValFilters) > 0 && !params.IgnoreCustomValFiltersInQuery {
 		jd.assert(!getAll, "getAll is true")
 		customValQuery = " AND " +
-			constructQuery(jd, "jobs.custom_val", customValFilters, "OR")
+			constructQueryOR("jobs.custom_val", customValFilters)
 	} else {
 		customValQuery = ""
 	}
@@ -2786,7 +2807,7 @@ func (jd *HandleT) getUnprocessedJobsDS(ctx context.Context, ds dataSetT, order 
 	}
 
 	if len(customValFilters) > 0 && !params.IgnoreCustomValFiltersInQuery {
-		sqlStatement += " AND " + constructQuery(jd, "jobs.custom_val", customValFilters, "OR")
+		sqlStatement += " AND " + constructQueryOR("jobs.custom_val", customValFilters)
 	}
 
 	if len(parameterFilters) > 0 {
@@ -3025,20 +3046,46 @@ func (jd *HandleT) addNewDSLoop(ctx context.Context) {
 		case <-jd.TriggerAddNewDS():
 		}
 
-		jd.logger.Debugf("[[ %s : addNewDSLoop ]]: Start", jd.tablePrefix)
-		jd.dsListLock.RLock()
-		dsList := jd.getDSList()
-		jd.dsListLock.RUnlock()
-		latestDS := dsList[len(dsList)-1]
-		if jd.checkIfFullDS(latestDS) {
-			// Adding a new DS updates the list
-			// Doesn't move any data so we only
-			// take the list lock
-			jd.dsListLock.WithLock(func(l lock.DSListLockToken) {
+		// Adding a new DS only creates a new DS & updates the cache. It doesn't move any data so we only take the list lock.
+		var dsListLock lock.DSListLockToken
+		var releaseDsListLock chan<- lock.DSListLockToken
+		// start a transaction
+		err := jd.WithTx(func(tx *sql.Tx) error {
+			// acquire a advisory transaction level blocking lock, which is released once the transaction ends.
+			sqlStatement := fmt.Sprintf(`SELECT pg_advisory_xact_lock(%d);`, misc.JobsDBAddDsAdvisoryLock)
+			_, err := tx.ExecContext(context.TODO(), sqlStatement)
+			if err != nil {
+				return err
+			}
+
+			// We acquire the list lock only after we have acquired the advisory lock.
+			// We will release the list lock after the transaction ends, that's why we need to use an async lock
+			dsListLock, releaseDsListLock = jd.dsListLock.AsyncLock()
+			// refresh ds list
+			var dsList []dataSetT
+			var nextDSIdx string
+			// make sure we are operating on the latest version of the list
+			dsList = getDSList(jd, tx, jd.tablePrefix)
+			latestDS := dsList[len(dsList)-1]
+			full, err := jd.checkIfFullDSInTx(tx, latestDS)
+			if err != nil {
+				return err
+			}
+			// checkIfFullDS is true for last DS in the list
+			if full {
+				nextDSIdx = jd.doComputeNewIdxForAppend(dsList)
 				jd.logger.Infof("[[ %s : addNewDSLoop ]]: NewDS", jd.tablePrefix)
-				jd.addNewDS(l, newDataSet(jd.tablePrefix, jd.computeNewIdxForAppend(l)))
-			})
-		}
+				if err := jd.addNewDSInTx(tx, dsListLock, dsList, newDataSet(jd.tablePrefix, nextDSIdx)); err != nil {
+					return err
+				}
+			}
+			return nil
+		})
+		jd.assertError(err)
+
+		// to get the updated DS list in the cache after createDS transaction has been committed.
+		jd.refreshDSRangeList(dsListLock)
+		releaseDsListLock <- dsListLock
 	}
 }
 
@@ -3229,6 +3276,7 @@ func (jd *HandleT) backupDSLoop(ctx context.Context) {
 			opID = jd.JournalMarkStart(backupDSOperation, opPayload)
 			err := jd.backupDS(ctx, backupDSRange)
 			if err != nil {
+				stats.NewTaggedStat("backup_ds_failed", stats.CountType, stats.Tags{"customVal": jd.tablePrefix, "provider": config.GetEnv("JOBS_BACKUP_STORAGE_PROVIDER", "S3")}).Increment()
 				jd.logger.Errorf("[JobsDB] :: Failed to backup jobs table %v. Err: %v", backupDSRange.ds.JobStatusTable, err)
 			}
 			jd.JournalMarkDone(opID)
@@ -4298,14 +4346,13 @@ func (jd *HandleT) deleteJobStatusDSInTx(txHandler transactionHandler, ds dataSe
 	var stateQuery, customValQuery, sourceQuery string
 
 	if len(stateFilters) > 0 {
-		stateQuery = " AND " + constructQuery(jd, "job_state", stateFilters, "OR")
+		stateQuery = " AND " + constructQueryOR("job_state", stateFilters)
 	} else {
 		stateQuery = ""
 	}
 	if len(customValFilters) > 0 {
 		customValQuery = " WHERE " +
-			constructQuery(jd, fmt.Sprintf(`%q.custom_val`, ds.JobTable),
-				customValFilters, "OR")
+			constructQueryOR(fmt.Sprintf(`%q.custom_val`, ds.JobTable), customValFilters)
 	} else {
 		customValQuery = ""
 	}

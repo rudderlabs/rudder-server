@@ -195,6 +195,9 @@ func testMultiTenantByAppType(t *testing.T, appType string) {
 	resp, err := http.Get(healthEndpoint)
 	require.ErrorContains(t, err, "connection refused")
 	require.Nil(t, resp)
+	if err == nil {
+		defer resp.Body.Close()
+	}
 
 	// Pushing valid configuration via ETCD
 	etcdReqKey := getETCDWorkspacesReqKey(releaseName, serverInstanceID, appType)
