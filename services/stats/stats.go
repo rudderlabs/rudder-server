@@ -12,7 +12,6 @@ import (
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/utils/logger"
-	"github.com/rudderlabs/rudder-server/utils/types/deployment"
 	"gopkg.in/alexcesaro/statsd.v2"
 )
 
@@ -211,23 +210,6 @@ func (s *HandleT) NewSampledTaggedStat(Name, StatType string, tags Tags) (rStats
 	return newTaggedStat(Name, StatType, tags, statsSamplingRate)
 }
 
-func CleanupTagsBasedOnDeploymentType(tags Tags, key string) Tags {
-	deploymentType, err := deployment.GetFromEnv()
-	if err != nil {
-		pkgLogger.Errorf("error while getting deployment type: %w", err)
-		return tags
-	}
-
-	if deploymentType == deployment.MultiTenantType {
-		isNamespaced := config.IsEnvSet("WORKSPACE_NAMESPACE")
-		if !isNamespaced || (isNamespaced && strings.Contains(config.GetEnv("WORKSPACE_NAMESPACE", ""), "free")) {
-			delete(tags, key)
-		}
-	}
-
-	return tags
-}
-
 func newTaggedStat(Name, StatType string, tags Tags, samplingRate float32) (rStats RudderStats) {
 	// If stats is not enabled, returning a dummy struct
 	if !statsEnabled {
@@ -239,13 +221,10 @@ func newTaggedStat(Name, StatType string, tags Tags, samplingRate float32) (rSta
 		}
 	}
 
-	// Clean up tags based on deployment type. No need to send workspace id tag for free tier customers.
-	tags = CleanupTagsBasedOnDeploymentType(tags, "workspaceId")
-
 	if tags == nil {
 		tags = make(Tags)
 	}
-	// key comprises of the measurement name plus all tag-value pairs
+	// key comprises the measurement name plus all tag-value pairs
 	taggedClientKey := StatType + tags.String()
 
 	taggedClientsMapLock.RLock()
