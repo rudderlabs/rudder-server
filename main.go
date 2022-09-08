@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"net/http"
 	"os"
@@ -252,51 +251,50 @@ func Run(ctx context.Context) int {
 	}
 
 	g, ctx := errgroup.WithContext(ctx)
-	g.Go(func() (err error) {
-		if err = admin.StartServer(ctx); err != nil && ctx.Err() == nil {
-			if !errors.Is(err, context.Canceled) {
-				pkgLogger.Errorf("Error in Admin server routine: %v", err)
-			}
+	g.Go(func() error {
+		if err := admin.StartServer(ctx); err != nil {
+			return fmt.Errorf("admin server routine: %w", err)
 		}
-		return err
+		return nil
 	})
 
-	g.Go(func() (err error) {
+	g.Go(func() error {
 		p := &profiler.Profiler{}
-		if err = p.StartServer(ctx); err != nil && ctx.Err() == nil {
-			pkgLogger.Errorf("Error in Profiler server routine: %v", err)
+		if err := p.StartServer(ctx); err != nil {
+			return fmt.Errorf("profiler server routine: %w", err)
 		}
-		return err
+		return nil
 	})
 
 	misc.AppStartTime = time.Now().Unix()
 	if canStartServer() {
 		appHandler.HandleRecovery(options)
 		g.Go(misc.WithBugsnag(func() (err error) {
-			if err = appHandler.StartRudderCore(ctx, options); err != nil && ctx.Err() == nil {
-				pkgLogger.Errorf("Error in Rudder Core routine: %v", err)
+			if err := appHandler.StartRudderCore(ctx, options); err != nil {
+				return fmt.Errorf("rudder core: %w", err)
 			}
-			return err
+			return nil
 		}))
 	}
 
 	// initialize warehouse service after core to handle non-normal recovery modes
 	if appTypeStr != app.GATEWAY && canStartWarehouse() {
-		g.Go(misc.WithBugsnagForWarehouse(func() (err error) {
-			if err = startWarehouseService(ctx, application); err != nil {
-				pkgLogger.Errorf("Error in Warehouse Service routine: %v", err)
+		g.Go(misc.WithBugsnagForWarehouse(func() error {
+			if err := startWarehouseService(ctx, application); err != nil {
+				return fmt.Errorf("warehouse service routine: %w", err)
 			}
-			return err
+			return nil
 		}))
 	}
 
 	shutdownDone := make(chan struct{})
 	go func() {
 		err := g.Wait()
-		if err != nil && ctx.Err() == nil {
-			pkgLogger.Error(err)
+		if err != nil {
+			pkgLogger.Errorf("Terminal error: %v", err)
 		}
 
+		pkgLogger.Info("Attempting to shutdown gracefully")
 		backendconfig.DefaultBackendConfig.Stop()
 		close(shutdownDone)
 	}()

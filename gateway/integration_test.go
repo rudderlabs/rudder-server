@@ -183,6 +183,7 @@ func testGatewayByAppType(t *testing.T, appType string) {
 	resp, err := http.Get(healthEndpoint)
 	require.ErrorContains(t, err, "connection refused")
 	require.Nil(t, resp)
+	defer resp.Body.Close()
 
 	// Checking now that the configuration has been processed and the server can start
 	t.Log("Checking health endpoint at", healthEndpoint)

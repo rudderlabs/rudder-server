@@ -35,6 +35,7 @@ import (
 	migrator "github.com/rudderlabs/rudder-server/services/sql-migrator"
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/services/validators"
+	"github.com/rudderlabs/rudder-server/utils/httputil"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/pubsub"
@@ -683,7 +684,7 @@ func (wh *HandleT) sortWarehousesByOldestUnSyncedEventAt() (err error) {
 		wh.destType)
 
 	rows, err := wh.dbHandle.Query(sqlStatement)
-	if err != nil && err != sql.ErrNoRows {
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return err
 	}
 	defer rows.Close()
@@ -763,7 +764,6 @@ func (wh *HandleT) mainLoop(ctx context.Context) {
 			return
 		case <-time.After(mainLoopSleep):
 		}
-
 	}
 }
 
@@ -810,11 +810,11 @@ func (wh *HandleT) getUploadsToProcess(availableWorkers int, skipIdentifiers []s
 		rows, err = wh.dbHandle.Query(sqlStatement)
 	}
 
-	if err != nil && err != sql.ErrNoRows {
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return []*UploadJobT{}, err
 	}
 
-	if err == sql.ErrNoRows {
+	if errors.Is(err, sql.ErrNoRows) {
 		return []*UploadJobT{}, nil
 	}
 	defer rows.Close()
@@ -863,7 +863,7 @@ func (wh *HandleT) getUploadsToProcess(availableWorkers int, skipIdentifiers []s
 				dbHandle: wh.dbHandle,
 			}
 			err := fmt.Errorf("Unable to find source : %s or destination : %s, both or the connection between them", upload.SourceID, upload.DestinationID)
-			uploadJob.setUploadError(err, Aborted)
+			_, _ = uploadJob.setUploadError(err, Aborted)
 			pkgLogger.Errorf("%v", err)
 			continue
 		}
@@ -1689,19 +1689,12 @@ func startWebHandler(ctx context.Context) error {
 		}
 	}
 
-	srv := http.Server{
+	srv := &http.Server{
 		Addr:    fmt.Sprintf(":%d", webPort),
 		Handler: bugsnag.Handler(mux),
 	}
 
-	g, ctx := errgroup.WithContext(ctx)
-	g.Go(srv.ListenAndServe)
-	g.Go(func() error {
-		<-ctx.Done()
-		return srv.Shutdown(context.Background())
-	})
-
-	return g.Wait()
+	return httputil.ListenAndServe(ctx, srv)
 }
 
 // CheckForWarehouseEnvVars Checks if all the required Env Variables for Warehouse are present
@@ -1790,7 +1783,11 @@ func Start(ctx context.Context, app app.Interface) error {
 			rruntime.GoForWarehouse(func() {
 				minimalConfigSubscriber()
 			})
-			InitWarehouseAPI(dbHandle, pkgLogger.Child("upload_api"))
+			err := InitWarehouseAPI(dbHandle, pkgLogger.Child("upload_api"))
+			if err != nil {
+				pkgLogger.Errorf("WH: Failed to start warehouse api: %v", err)
+				return err
+			}
 		}
 		return startWebHandler(ctx)
 	}
@@ -1839,7 +1836,11 @@ func Start(ctx context.Context, app app.Interface) error {
 			runArchiver(ctx, dbHandle)
 			return nil
 		}))
-		InitWarehouseAPI(dbHandle, pkgLogger.Child("upload_api"))
+		err := InitWarehouseAPI(dbHandle, pkgLogger.Child("upload_api"))
+		if err != nil {
+			pkgLogger.Errorf("WH: Failed to start warehouse api: %v", err)
+			return err
+		}
 	}
 
 	g.Go(func() error {

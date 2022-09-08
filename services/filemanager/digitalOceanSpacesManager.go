@@ -206,7 +206,7 @@ func (manager *DOSpacesManager) getTimeout() time.Duration {
 		return manager.timeout
 	}
 
-	return getBatchRouterDurationConfig("timeout", "DIGITAL_OCEAN_SPACES", 120, time.Second)
+	return getBatchRouterTimeoutConfig("DIGITAL_OCEAN_SPACES")
 }
 
 func GetDOSpacesConfig(config map[string]interface{}) *DOSpacesConfig {

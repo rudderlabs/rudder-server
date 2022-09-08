@@ -112,7 +112,8 @@ func (manager *ETCDManager) init() error {
 			},
 		})
 		if err != nil {
-			manager.initErr = err
+			endpoints := strings.Join(manager.Config.Endpoints, `,`)
+			manager.initErr = fmt.Errorf("etcd client connect (%q): %w", endpoints, err)
 			return
 		}
 		manager.Client = cli

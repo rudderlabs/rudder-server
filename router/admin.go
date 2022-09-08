@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"strconv"
 
 	"github.com/rudderlabs/rudder-server/admin"
 	"github.com/rudderlabs/rudder-server/jobsdb"
@@ -53,16 +54,14 @@ func (ra *Admin) Status() interface{} {
 		if len(routerFailedList) > 0 {
 			routerStatus["recent-failedstatuses"] = routerFailedList
 		}
-		abortedUsersMap := make(map[string]int, 0)
-		for _, worker := range router.workers {
-			worker.abortedUserMutex.RLock()
-			for k, v := range worker.abortedUserIDMap {
-				abortedUsersMap[k] = len(v)
+		barriersMap := make(map[string]string, 0)
+		for i, worker := range router.workers {
+			if worker.barrier.Size() > 0 {
+				barriersMap[strconv.Itoa(i)] = worker.barrier.String()
 			}
-			worker.abortedUserMutex.RUnlock()
 		}
-		if len(abortedUsersMap) > 0 {
-			routerStatus["aborted-usersmap"] = abortedUsersMap
+		if len(barriersMap) > 0 {
+			routerStatus["worker-barriers"] = barriersMap
 		}
 
 		statusList = append(statusList, routerStatus)
