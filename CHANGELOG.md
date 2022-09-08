@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.1.0](https://github.com/rudderlabs/rudder-server/compare/v1.0.2...v1.1.0) (2022-09-08)
+
+
+### Features
+
+* add support for sending custom payload to webhook source  ([#2315](https://github.com/rudderlabs/rudder-server/issues/2315)) ([8e93e8a](https://github.com/rudderlabs/rudder-server/commit/8e93e8ab7261efa17af103e91d0d1a9f5eec253a))
+
 ## [1.0.2](https://github.com/rudderlabs/rudder-server/compare/v1.0.0...v1.0.2) (2022-08-25)
 
 
