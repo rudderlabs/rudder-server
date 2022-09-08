@@ -22,7 +22,7 @@ else
 endif
 
 test-teardown:
-	if [ -f "$(TESTFILE)" ]; then \
+	@if [ -f "$(TESTFILE)" ]; then \
     	echo "Tests passed, tearing down..." ;\
 		rm -f $(TESTFILE) ;\
 		echo "mode: atomic" > coverage.txt ;\
