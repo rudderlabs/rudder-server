@@ -2,6 +2,10 @@ package manager
 
 import (
 	"context"
+	"fmt"
+	"sync"
+
+	"github.com/rudderlabs/rudder-server/config"
 
 	"golang.org/x/sync/errgroup"
 
@@ -20,11 +24,13 @@ var (
 )
 
 type LifecycleManager struct {
-	rt            *router.Factory
-	brt           *batchrouter.Factory
-	BackendConfig backendconfig.BackendConfig
-	currentCancel context.CancelFunc
-	waitGroup     *errgroup.Group
+	rt                   *router.Factory
+	brt                  *batchrouter.Factory
+	BackendConfig        backendconfig.BackendConfig
+	currentCancel        context.CancelFunc
+	waitGroup            *errgroup.Group
+	isolateRouterMap     map[string]bool
+	isolateRouterMapLock sync.RWMutex
 }
 
 func (*LifecycleManager) Run(ctx context.Context) error {
@@ -56,11 +62,27 @@ func (r *LifecycleManager) Stop() {
 func New(rtFactory *router.Factory, brtFactory *batchrouter.Factory,
 	backendConfig backendconfig.BackendConfig,
 ) *LifecycleManager {
+	isolateMap := make(map[string]bool)
 	return &LifecycleManager{
-		rt:            rtFactory,
-		brt:           brtFactory,
-		BackendConfig: backendConfig,
+		rt:               rtFactory,
+		brt:              brtFactory,
+		BackendConfig:    backendConfig,
+		isolateRouterMap: isolateMap,
 	}
+}
+
+func (r *LifecycleManager) RouterIdentifier(destinationID, destinationType string) string {
+	r.isolateRouterMapLock.Lock()
+	defer r.isolateRouterMapLock.Unlock()
+	_, ok := r.isolateRouterMap[destinationType]
+	if !ok {
+		r.isolateRouterMap[destinationType] = config.GetBool(fmt.Sprintf("Router.%s.isolateDestID", destinationType), false)
+	}
+
+	if r.isolateRouterMap[destinationType] {
+		return destinationID
+	}
+	return destinationType
 }
 
 // Gets the config from config backend and extracts enabled write-keys
@@ -111,7 +133,7 @@ loop:
 							dstToBatchRouter[destination.DestinationDefinition.Name] = brt
 						}
 					} else {
-						routerIdentifier := destination.RouterIdentifier()
+						routerIdentifier := r.RouterIdentifier(destination.DestinationDefinition.Name, destination.ID)
 						_, ok := dstToRouter[routerIdentifier]
 						if !ok {
 							pkgLogger.Infof("Starting a new Destination: %s", destination.DestinationDefinition.Name)

@@ -1,7 +1,6 @@
 package utils
 
 import (
-	"fmt"
 	"strings"
 	"time"
 
@@ -117,11 +116,4 @@ func GetRudderAccountId(destination *backendconfig.DestinationT) string {
 		}
 	}
 	return ""
-}
-
-func PopulateIsolateMap(isolateMap map[string]bool, destination *backendconfig.DestinationT) {
-	_, ok := isolateMap[destination.DestinationDefinition.Name]
-	if !ok {
-		isolateMap[destination.DestinationDefinition.Name] = config.GetBool(fmt.Sprintf("Router.%s.isolateDestID", destination.DestinationDefinition.Name), false)
-	}
 }

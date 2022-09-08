@@ -33,7 +33,6 @@ var (
 	configFromFile                        bool
 	maxRegulationsPerRequest              int
 	configEnvReplacementEnabled           bool
-	isolateRouterMapLock                  sync.RWMutex
 
 	LastSync           string
 	LastRegulationSync string
@@ -42,7 +41,6 @@ var (
 	DefaultBackendConfig BackendConfig
 	pkgLogger            = logger.NewLogger().Child("backend-config")
 	IoUtil               = sysUtils.NewIoUtil()
-	isolateRouterMap     = make(map[string]bool)
 	Diagnostics          diagnostics.DiagnosticsI
 )
 
@@ -309,18 +307,4 @@ func getNotOKError(respBody []byte, statusCode int) error {
 		errMsg = fmt.Sprintf(": %s", respBody)
 	}
 	return fmt.Errorf("backend config request failed with %d%s", statusCode, errMsg)
-}
-
-func (d *DestinationT) RouterIdentifier() string {
-	isolateRouterMapLock.Lock()
-	defer isolateRouterMapLock.Unlock()
-	_, ok := isolateRouterMap[d.DestinationDefinition.Name]
-	if !ok {
-		isolateRouterMap[d.DestinationDefinition.Name] = config.GetBool(fmt.Sprintf("Router.%s.isolateDestID", d.DestinationDefinition.Name), false)
-	}
-
-	if isolateRouterMap[d.DestinationDefinition.Name] {
-		return d.ID
-	}
-	return d.DestinationDefinition.Name
 }

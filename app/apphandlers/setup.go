@@ -199,7 +199,7 @@ func monitorDestRouters(ctx context.Context, routerFactory *router.Factory, batc
 						dstToBatchRouter[destination.DestinationDefinition.Name] = brt
 					}
 				} else {
-					routerIdentifier := destination.RouterIdentifier()
+					routerIdentifier := destination.DestinationDefinition.Name
 					_, ok := dstToRouter[routerIdentifier]
 					if !ok {
 						pkgLogger.Infof("Starting a new Destination: %s", routerIdentifier)
