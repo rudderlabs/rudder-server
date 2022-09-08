@@ -3,9 +3,15 @@ package warehouse
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
+	"strings"
 
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
+)
+
+const (
+	queryPlaceHolder = "<noop>"
 )
 
 // DB encapsulate interactions of warehouse operations
@@ -49,9 +55,19 @@ func (db *DB) GetLatestUploadStatus(ctx context.Context, destType, sourceID, des
 	return uploadID, status, priority, nil
 }
 
-func (db *DB) RetryUploads(ctx context.Context, clausesQuery string, clausesArgs []interface{}) (rowsAffected int64, err error) {
-	// Preparing the prepared statement
-	preparedStatement := fmt.Sprintf(`
+func (db *DB) RetryUploads(ctx context.Context, filterClauses ...FilterClause) (rowsAffected int64, err error) {
+	if len(filterClauses) == 0 {
+		return 0, errors.New("no filter clauses are present to retry uploads")
+	}
+
+	var (
+		clausesQuery      string
+		clausesArgs       []interface{}
+		preparedStatement string
+	)
+
+	clausesQuery, clausesArgs = ClauseQueryArgs(filterClauses...)
+	preparedStatement = fmt.Sprintf(`
 		UPDATE wh_uploads
 		SET
 			metadata = metadata || '{"retried": true, "priority": 50}' || jsonb_build_object('nextRetryTime', NOW() - INTERVAL '1 HOUR'),
@@ -62,30 +78,56 @@ func (db *DB) RetryUploads(ctx context.Context, clausesQuery string, clausesArgs
 	)
 	pkgLogger.Debugf("[RetryUploads] sqlStatement: %s", preparedStatement)
 
-	// Executing the statement
 	result, err := db.handle.ExecContext(ctx, preparedStatement, clausesArgs...)
 	if err != nil {
 		return
 	}
 
-	// Getting rows affected
 	rowsAffected, err = result.RowsAffected()
 	return
 }
 
-func (db *DB) CountUploadsToRetry(ctx context.Context, clausesQuery string, clausesArgs []interface{}) (count int64, err error) {
-	// Preparing the prepared statement
-	preparedStatement := fmt.Sprintf(`
+func (db *DB) GetUploadsCount(ctx context.Context, filterClauses ...FilterClause) (count int64, err error) {
+	var (
+		clausesQuery      string
+		clausesArgs       []interface{}
+		whereClausesQuery string
+		preparedStatement string
+	)
+
+	clausesQuery, clausesArgs = ClauseQueryArgs(filterClauses...)
+	if len(clausesArgs) > 0 {
+		whereClausesQuery = fmt.Sprintf(`
+			WHERE %[1]s`,
+			clausesQuery,
+		)
+	}
+
+	preparedStatement = fmt.Sprintf(`
 		SELECT
 		  count(*)
 		FROM
 		  wh_uploads
-		WHERE %[1]s`,
-		clausesQuery,
+		%[1]s`,
+		whereClausesQuery,
 	)
-	pkgLogger.Debugf("[CountUploadsToRetry] sqlStatement: %s", preparedStatement)
+	pkgLogger.Debugf("[GetUploadsCount] sqlStatement: %s", preparedStatement)
 
-	// Executing the statement
 	err = db.handle.QueryRowContext(ctx, preparedStatement, clausesArgs...).Scan(&count)
 	return
+}
+
+func ClauseQueryArgs(filterClauses ...FilterClause) (string, []interface{}) {
+	var (
+		clausesQuery string
+		clausesArgs  []interface{}
+	)
+	for i, fc := range filterClauses {
+		clausesArgs = append(clausesArgs, fc.ClauseArg)
+		clausesQuery = clausesQuery + strings.Replace(fc.Clause, queryPlaceHolder, fmt.Sprintf("$%d", i+1), 1)
+		if i != len(filterClauses)-1 {
+			clausesQuery += " AND "
+		}
+	}
+	return clausesQuery, clausesArgs
 }
