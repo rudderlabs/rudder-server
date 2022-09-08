@@ -200,7 +200,7 @@ func (manager *AzureBlobStorageManager) getTimeout() time.Duration {
 		return manager.timeout
 	}
 
-	return getBatchRouterDurationConfig("timeout", "AZURE_BLOB", 120, time.Second)
+	return getBatchRouterTimeoutConfig("AZURE_BLOB")
 }
 
 func GetAzureBlogStorageConfig(config map[string]interface{}) *AzureBlobStorageConfig {

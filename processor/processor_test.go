@@ -558,7 +558,7 @@ var _ = Describe("Processor", func() {
 				Do(func(ctx context.Context, txn jobsdb.UpdateSafeTx, statuses []*jobsdb.JobStatusT, _, _ interface{}) {
 					// jobs should be sorted by jobid, so order of statuses is different than order of jobs
 					for i := range unprocessedJobsList {
-						assertJobStatus(unprocessedJobsList[i], statuses[i], jobsdb.Succeeded.State, "200", `{"success":"OK"}`, 1)
+						assertJobStatus(unprocessedJobsList[i], statuses[i], jobsdb.Succeeded.State)
 					}
 				})
 			processor := &HandleT{
@@ -567,7 +567,7 @@ var _ = Describe("Processor", func() {
 			c.mockBackendConfig.EXPECT().GetWorkspaceIDForWriteKey(WriteKeyEnabledNoUT).Return(WorkspaceID).AnyTimes()
 			c.mockBackendConfig.EXPECT().GetWorkspaceLibrariesForWorkspaceID(WorkspaceID).Return(backendconfig.LibrariesT{}).AnyTimes()
 
-			processorSetupAndAssertJobHandling(processor, c, false, false)
+			processorSetupAndAssertJobHandling(processor, c)
 		})
 
 		It("should process unprocessed jobs to destination with only user transformation", func() {
@@ -756,7 +756,7 @@ var _ = Describe("Processor", func() {
 			c.mockGatewayJobsDB.EXPECT().UpdateJobStatusInTx(gomock.Any(), gomock.Any(), gomock.Len(len(unprocessedJobsList)), gatewayCustomVal, nil).Times(1).After(callStoreBatchRouter).
 				Do(func(ctx context.Context, txn jobsdb.UpdateSafeTx, statuses []*jobsdb.JobStatusT, _, _ interface{}) {
 					for i := range unprocessedJobsList {
-						assertJobStatus(unprocessedJobsList[i], statuses[i], jobsdb.Succeeded.State, "200", `{"success":"OK"}`, 1)
+						assertJobStatus(unprocessedJobsList[i], statuses[i], jobsdb.Succeeded.State)
 					}
 				})
 			c.mockBackendConfig.EXPECT().GetWorkspaceIDForWriteKey(WriteKeyEnabledOnlyUT).Return(WorkspaceID).AnyTimes()
@@ -766,7 +766,7 @@ var _ = Describe("Processor", func() {
 				transformer: mockTransformer,
 			}
 
-			processorSetupAndAssertJobHandling(processor, c, false, false)
+			processorSetupAndAssertJobHandling(processor, c)
 		})
 
 		It("should process unprocessed jobs to destination without user transformation with enabled Dedup", func() {
@@ -920,7 +920,7 @@ var _ = Describe("Processor", func() {
 				},
 			}
 
-			assertErrStoreJob := func(job *jobsdb.JobT, i int, destination string) {
+			assertErrStoreJob := func(job *jobsdb.JobT, i int) {
 				Expect(job.UUID.String()).To(testutils.BeValidUUID())
 				Expect(job.JobID).To(Equal(int64(0)))
 				Expect(job.CreatedAt).To(BeTemporally("~", time.Now(), 200*time.Millisecond))
@@ -975,7 +975,7 @@ var _ = Describe("Processor", func() {
 			c.mockGatewayJobsDB.EXPECT().UpdateJobStatusInTx(gomock.Any(), gomock.Any(), gomock.Len(len(unprocessedJobsList)), gatewayCustomVal, nil).Times(1).
 				Do(func(ctx context.Context, txn jobsdb.UpdateSafeTx, statuses []*jobsdb.JobStatusT, _, _ interface{}) {
 					// job should be marked as successful regardless of transformer response
-					assertJobStatus(unprocessedJobsList[0], statuses[0], jobsdb.Succeeded.State, "200", `{"success":"OK"}`, 1)
+					assertJobStatus(unprocessedJobsList[0], statuses[0], jobsdb.Succeeded.State)
 				})
 
 			// will be used to save failed events to failed keys table
@@ -988,7 +988,7 @@ var _ = Describe("Processor", func() {
 				Do(func(ctx context.Context, jobs []*jobsdb.JobT) {
 					Expect(jobs).To(HaveLen(2))
 					for i, job := range jobs {
-						assertErrStoreJob(job, i, "value-enabled-destination-a")
+						assertErrStoreJob(job, i)
 					}
 				})
 			c.mockBackendConfig.EXPECT().GetWorkspaceIDForWriteKey(WriteKeyEnabled).Return(WorkspaceID).AnyTimes()
@@ -998,7 +998,7 @@ var _ = Describe("Processor", func() {
 				transformer: mockTransformer,
 			}
 
-			processorSetupAndAssertJobHandling(processor, c, false, false)
+			processorSetupAndAssertJobHandling(processor, c)
 		})
 
 		It("messages should be skipped on user transform failures, without failing the job", func() {
@@ -1110,7 +1110,7 @@ var _ = Describe("Processor", func() {
 			c.mockGatewayJobsDB.EXPECT().UpdateJobStatusInTx(gomock.Any(), gomock.Any(), gomock.Len(len(toRetryJobsList)+len(unprocessedJobsList)), gatewayCustomVal, nil).Times(1).
 				Do(func(ctx context.Context, txn jobsdb.UpdateSafeTx, statuses []*jobsdb.JobStatusT, _, _ interface{}) {
 					// job should be marked as successful regardless of transformer response
-					assertJobStatus(unprocessedJobsList[0], statuses[0], jobsdb.Succeeded.State, "200", `{"success":"OK"}`, 1)
+					assertJobStatus(unprocessedJobsList[0], statuses[0], jobsdb.Succeeded.State)
 				})
 
 			c.mockProcErrorsDB.EXPECT().WithTx(gomock.Any()).Do(func(f func(tx *sql.Tx) error) {
@@ -1132,7 +1132,7 @@ var _ = Describe("Processor", func() {
 				transformer: mockTransformer,
 			}
 
-			processorSetupAndAssertJobHandling(processor, c, false, false)
+			processorSetupAndAssertJobHandling(processor, c)
 		})
 
 		It("should drop messages that the destination doesn't support", func() {
@@ -1190,7 +1190,7 @@ var _ = Describe("Processor", func() {
 			c.mockGatewayJobsDB.EXPECT().UpdateJobStatusInTx(gomock.Any(), gomock.Any(), gomock.Len(len(toRetryJobsList)+len(unprocessedJobsList)), gatewayCustomVal, nil).Times(1).
 				Do(func(ctx context.Context, txn jobsdb.UpdateSafeTx, statuses []*jobsdb.JobStatusT, _, _ interface{}) {
 					// job should be marked as successful regardless of transformer response
-					assertJobStatus(unprocessedJobsList[0], statuses[0], jobsdb.Succeeded.State, "200", `{"success":"OK"}`, 1)
+					assertJobStatus(unprocessedJobsList[0], statuses[0], jobsdb.Succeeded.State)
 				})
 
 			c.mockProcErrorsDB.EXPECT().WithTx(gomock.Any()).Do(func(f func(tx *sql.Tx) error) {
@@ -1207,7 +1207,7 @@ var _ = Describe("Processor", func() {
 				transformer: mockTransformer,
 			}
 
-			processorSetupAndAssertJobHandling(processor, c, false, false)
+			processorSetupAndAssertJobHandling(processor, c)
 		})
 	})
 
@@ -1877,14 +1877,11 @@ func createBatchParameters(sourceId string) []byte {
 	return []byte(fmt.Sprintf(`{"source_id":%q}`, sourceId))
 }
 
-func assertJobStatus(job *jobsdb.JobT, status *jobsdb.JobStatusT, expectedState, errorCode, errorResponse string, attemptNum int) {
+func assertJobStatus(job *jobsdb.JobT, status *jobsdb.JobStatusT, expectedState string) {
 	Expect(status.JobID).To(Equal(job.JobID))
 	Expect(status.JobState).To(Equal(expectedState))
-	Expect(status.ErrorCode).To(Equal(errorCode))
-	Expect(status.ErrorResponse).To(MatchJSON(errorResponse))
 	Expect(status.RetryTime).To(BeTemporally("~", time.Now(), 200*time.Millisecond))
 	Expect(status.ExecTime).To(BeTemporally("~", time.Now(), 200*time.Millisecond))
-	Expect(status.AttemptNum).To(Equal(attemptNum))
 }
 
 func assertReportMetric(expectedMetric, actualMetric []*types.PUReportedMetric) {
@@ -2031,8 +2028,8 @@ func assertDestinationTransform(messages map[string]mockEventData, sourceId, des
 	}
 }
 
-func processorSetupAndAssertJobHandling(processor *HandleT, c *testContext, enableDedup, enableReporting bool) {
-	Setup(processor, c, enableDedup, enableReporting)
+func processorSetupAndAssertJobHandling(processor *HandleT, c *testContext) {
+	Setup(processor, c, false, false)
 	processor.multitenantI = c.MockMultitenantHandle
 	handlePendingGatewayJobs(processor)
 }

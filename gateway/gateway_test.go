@@ -504,7 +504,7 @@ var _ = Describe("Gateway", func() {
 			})
 		}
 
-		assertHandler = func(handlerType string, handler http.HandlerFunc) {
+		assertHandler = func(_ string, handler http.HandlerFunc) {
 			It("should reject requests with 500 if jobsdb store returns an error", func() {
 				validBody := createJSONBody("custom-property", "custom-value")
 

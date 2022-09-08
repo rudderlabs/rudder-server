@@ -243,8 +243,7 @@ func (jd *ReadonlyHandleT) getUnprocessedJobsDSCount(ctx context.Context, ds dat
 											 WHERE %[2]s.job_id is NULL`, ds.JobTable, ds.JobStatusTable, selectColumn)
 
 	if len(customValFilters) > 0 {
-		sqlStatement += " AND " + constructQuery(jd, fmt.Sprintf("%s.custom_val", ds.JobTable),
-			customValFilters, "OR")
+		sqlStatement += " AND " + constructQueryOR(fmt.Sprintf("%s.custom_val", ds.JobTable), customValFilters)
 	}
 
 	if len(parameterFilters) > 0 {
@@ -341,14 +340,13 @@ func (jd *ReadonlyHandleT) getProcessedJobsDSCount(ctx context.Context, ds dataS
 	var stateQuery, customValQuery, sourceQuery string
 
 	if len(stateFilters) > 0 {
-		stateQuery = " AND " + constructQuery(jd, "job_state", stateFilters, "OR")
+		stateQuery = " AND " + constructQueryOR("job_state", stateFilters)
 	} else {
 		stateQuery = ""
 	}
 	if len(customValFilters) > 0 {
 		customValQuery = " AND " +
-			constructQuery(jd, fmt.Sprintf("%s.custom_val", ds.JobTable),
-				customValFilters, "OR")
+			constructQueryOR(fmt.Sprintf("%s.custom_val", ds.JobTable), customValFilters)
 	} else {
 		customValQuery = ""
 	}
@@ -663,9 +661,8 @@ func (jd *ReadonlyHandleT) GetJobByID(job_id, prefix string) (string, error) {
 	return string(response), nil
 }
 
-func (jd *ReadonlyHandleT) GetJobIDStatus(job_id, prefix string) (string, error) {
+func (jd *ReadonlyHandleT) GetJobIDStatus(jobID, _ string) (string, error) {
 	dsListTotal := jd.getDSList()
-	var response []byte
 	for _, dsPair := range dsListTotal {
 		var min, max sql.NullInt32
 		sqlStatement := fmt.Sprintf(`SELECT MIN(job_id), MAX(job_id) FROM %s`, dsPair.JobTable)
@@ -677,14 +674,14 @@ func (jd *ReadonlyHandleT) GetJobIDStatus(job_id, prefix string) (string, error)
 		if !min.Valid || !max.Valid {
 			continue
 		}
-		jobId, err := strconv.Atoi(job_id)
+		jobId, err := strconv.Atoi(jobID)
 		if err != nil {
 			return "", err
 		}
 		if jobId < int(min.Int32) || jobId > int(max.Int32) {
 			continue
 		}
-		sqlStatement = fmt.Sprintf(`SELECT job_id, job_state, attempt, exec_time, retry_time,error_code, error_response FROM %[1]s WHERE job_id = %[2]s;`, dsPair.JobStatusTable, job_id)
+		sqlStatement = fmt.Sprintf(`SELECT job_id, job_state, attempt, exec_time, retry_time,error_code, error_response FROM %[1]s WHERE job_id = %[2]s;`, dsPair.JobStatusTable, jobID)
 		var statusCode sql.NullString
 		eventList := []JobStatusT{}
 		rows, err := jd.DbHandle.Query(sqlStatement)
@@ -694,21 +691,27 @@ func (jd *ReadonlyHandleT) GetJobIDStatus(job_id, prefix string) (string, error)
 		defer rows.Close()
 		for rows.Next() {
 			event := JobStatusT{}
-			err = rows.Scan(&event.JobID, &event.JobState, &event.AttemptNum, &event.ExecTime, &event.RetryTime, &statusCode, &event.ErrorResponse)
+			err := rows.Scan(&event.JobID, &event.JobState, &event.AttemptNum, &event.ExecTime, &event.RetryTime, &statusCode, &event.ErrorResponse)
 			if err != nil {
-				return "", nil
+				return "", err
 			}
 			if statusCode.Valid {
 				event.ErrorCode = statusCode.String
 			}
 			eventList = append(eventList, event)
 		}
-		response, err = json.MarshalIndent(FailedStatusStats{FailedStatusStats: eventList}, "", " ")
-		if err != nil {
-			return "", err
+
+		{
+			response, err := json.MarshalIndent(FailedStatusStats{FailedStatusStats: eventList}, "", " ")
+			if err != nil {
+				return "", err
+			}
+			return string(response), nil
 		}
 	}
-	return string(response), nil
+
+	// jobID not found
+	return "", nil
 }
 
 func (jd *ReadonlyHandleT) GetJobIDsForUser(args []string) (string, error) {

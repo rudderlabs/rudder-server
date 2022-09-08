@@ -587,7 +587,6 @@ func TestRefreshDSList(t *testing.T) {
 	require.NoError(t, err)
 
 	require.Equal(t, 1, len(jobsDB.getDSList()), "jobsDB should start with a ds list size of 1")
-	// this will throw error if refreshDSList is called without lock
 	jobsDB.addDS(newDataSet("batch_rt", "2"))
 	require.Equal(t, 1, len(jobsDB.getDSList()), "addDS should not refresh the ds list")
 	jobsDB.dsListLock.WithLock(func(l lock.DSListLockToken) {
@@ -680,4 +679,121 @@ func TestJobsDBTimeout(t *testing.T) {
 		require.True(t, errors.Is(ctx.Err(), context.DeadlineExceeded))
 		require.Equal(t, expectedRetries, errorsCount)
 	})
+}
+
+func TestThreadSafeAddNewDSLoop(t *testing.T) {
+	pool, err := dockertest.NewPool("")
+	require.NoError(t, err, "Failed to create docker pool")
+	cleanup := &testhelper.Cleanup{}
+	defer cleanup.Run()
+
+	postgresResource, err := destination.SetupPostgres(pool, cleanup)
+	require.NoError(t, err)
+
+	{
+		t.Setenv("JOBS_DB_DB_NAME", postgresResource.Database)
+		t.Setenv("JOBS_DB_NAME", postgresResource.Database)
+		t.Setenv("JOBS_DB_HOST", postgresResource.Host)
+		t.Setenv("JOBS_DB_PORT", postgresResource.Port)
+		t.Setenv("JOBS_DB_USER", postgresResource.User)
+		t.Setenv("JOBS_DB_PASSWORD", postgresResource.Password)
+		initJobsDB()
+		stats.Setup()
+	}
+
+	migrationMode := ""
+	maxDSSize := 1
+	triggerAddNewDS1 := make(chan time.Time)
+	queryFilters := QueryFiltersT{
+		CustomVal: true,
+	}
+
+	// jobsDB-1 setup
+	jobsDB1 := &HandleT{
+		TriggerAddNewDS: func() <-chan time.Time {
+			return triggerAddNewDS1
+		},
+		MaxDSSize: &maxDSSize,
+	}
+	err = jobsDB1.Setup(ReadWrite, false, "test", migrationMode, true, queryFilters, []prebackup.Handler{})
+	require.NoError(t, err)
+	require.Equal(t, 1, len(jobsDB1.getDSList()), "expected cache to be auto-updated with DS list length 1")
+
+	// jobsDB-2 setup
+	triggerAddNewDS2 := make(chan time.Time)
+	jobsDB2 := &HandleT{
+		TriggerAddNewDS: func() <-chan time.Time {
+			return triggerAddNewDS2
+		},
+		MaxDSSize: &maxDSSize,
+	}
+	err = jobsDB2.Setup(ReadWrite, false, "test", migrationMode, true, queryFilters, []prebackup.Handler{})
+	require.NoError(t, err)
+	require.Equal(t, 1, len(jobsDB2.getDSList()), "expected cache to be auto-updated with DS list length 1")
+
+	generateJobs := func(numOfJob int) []*JobT {
+		customVal := "MOCKDS"
+		js := make([]*JobT, numOfJob)
+		for i := 0; i < numOfJob; i++ {
+			js[i] = &JobT{
+				Parameters:   []byte(`{"batch_id":1,"source_id":"sourceID","source_job_run_id":""}`),
+				EventPayload: []byte(`{"testKey":"testValue"}`),
+				UserID:       "a-292e-4e79-9880-f8009e0ae4a3",
+				UUID:         uuid.Must(uuid.NewV4()),
+				CustomVal:    customVal,
+				EventCount:   1,
+			}
+		}
+		return js
+	}
+
+	// adding mock jobs to jobsDB-1
+	err = jobsDB1.Store(context.Background(), generateJobs(2))
+	require.NoError(t, err)
+
+	// triggerAddNewDS1 to trigger jobsDB-1 to add new DS
+	triggerAddNewDS1 <- time.Now()
+	require.Eventually(
+		t,
+		func() bool {
+			return len(jobsDB1.getDSList()) == 2
+		},
+		time.Second, time.Millisecond,
+		"expected cache to be auto-updated with DS list length 2")
+
+	// adding mock jobs to jobsDB-1
+	// TODO: we should add them to jobsDB-2, but currently it is not possible to do that until we implement the next phase
+	err = jobsDB1.Store(context.Background(), generateJobs(2))
+	require.NoError(t, err)
+
+	// triggerAddNewDS2 to trigger jobsDB-2 to add new DS after refreshing cache
+	triggerAddNewDS2 <- time.Now()
+	require.Eventually(
+		t,
+		func() bool {
+			return len(jobsDB2.getDSList()) == 3
+		},
+		10*time.Second, time.Millisecond,
+		"expected jobsDB2 to be refresh the cache before adding new DS, to get to know about the DS-2 already present & hence add DS-3")
+
+	// adding mock jobs to jobsDB-2
+	err = jobsDB2.Store(context.Background(), generateJobs(2))
+	require.NoError(t, err)
+
+	go func() {
+		triggerAddNewDS1 <- time.Now()
+	}()
+	go func() {
+		triggerAddNewDS2 <- time.Now()
+	}()
+	var dsLen1, dsLen2 int
+	require.Eventually(
+		t,
+		func() bool {
+			dsLen1 = len(jobsDB1.getDSList())
+			dsLen2 = len(jobsDB2.getDSList())
+			return dsLen1 == 4 && dsLen2 == 4
+		},
+		time.Second, time.Millisecond,
+		"expected only one DS to be added, even though both jobsDB-1 & jobsDB-2 are triggered to add new DS (dsLen1: %d, dsLen2: %d)", dsLen1, dsLen2)
 }

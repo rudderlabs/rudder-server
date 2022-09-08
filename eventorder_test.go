@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path"
 	"strconv"
 	"strings"
 	"sync"
@@ -100,6 +101,7 @@ func TestEventOrderGuarantee(t *testing.T) {
 
 	t.Logf("Starting rudder-server")
 	t.Setenv("DEPLOYMENT_TYPE", string(deployment.DedicatedType))
+	t.Setenv("RSERVER_RECOVERY_STORAGE_PATH", path.Join(t.TempDir(), "/recovery_data.json"))
 
 	t.Setenv("JOBS_DB_PORT", postgresContainer.Port)
 	t.Setenv("JOBS_DB_USER", postgresContainer.User)
@@ -192,7 +194,7 @@ func TestEventOrderGuarantee(t *testing.T) {
 			t.Logf("%d/%d done", done, total)
 		}
 		return done == total
-	}, 180*time.Second, 2*time.Second, "webhook should receive all events and process them till the end")
+	}, 300*time.Second, 2*time.Second, "webhook should receive all events and process them till the end")
 
 	require.False(t, t.Failed(), "webhook shouldn't have failed")
 
@@ -253,7 +255,7 @@ func (m eventOrderMethods) newTestSpec(users, jobsPerUser int) *eventOrderSpec {
 func (eventOrderMethods) randomStatus() (status int, terminal bool) {
 	// playing with probabilities: 50% HTTP 500, 40% HTTP 200, 10% HTTP 400
 	statuses := []int{
-		http.StatusBadRequest, http.StatusBadRequest, http.StatusBadRequest, http.StatusBadRequest, http.StatusBadRequest,
+		http.StatusBadRequest, http.StatusBadRequest, http.StatusBadRequest, http.StatusBadRequest,
 		http.StatusOK, http.StatusOK, http.StatusOK, http.StatusOK,
 		http.StatusInternalServerError,
 	}
@@ -299,7 +301,7 @@ func (eventOrderMethods) newWebhook(t *testing.T, spec *eventOrderSpec) *eventOr
 			if len(wh.spec.doneOrdered[userID]) > 0 {
 				lastDoneId = wh.spec.doneOrdered[userID][len(wh.spec.doneOrdered[userID])-1]
 			}
-			require.Greater(t, jobID, lastDoneId, "received out-of-order event for job %d after job %d", jobID, lastDoneId)
+			require.Greater(t, jobID, lastDoneId, "received out-of-order event for user %s: job %d after jobs %+v", userID, jobID, wh.spec.doneOrdered[userID])
 			wh.spec.done[jobID] = struct{}{}
 			wh.spec.doneOrdered[userID] = append(wh.spec.doneOrdered[userID], jobID)
 			// t.Logf("job %d done", jobID)
