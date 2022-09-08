@@ -94,13 +94,13 @@ func TestStagingFileCreatesLoadObjects(t *testing.T) {
 		BatchID:                      "ff139f07-5948-4220-a019-0e660a05cda5",
 		UploadID:                     1,
 		StagingFileID:                1,
-		StagingFileLocation:          "rudder-warehouse-staging-logs/26PluxPPBJ3sCWw4un7iJTm1VkE/2022-08-23/1661253062.26PluxPPBJ3sCWw4un7iJTm1VkE.181b4f7b-cc4c-48dd-88c0-a2cb3bb98544.json.gz",
+		StagingFileLocation:          "rudder-warehouse-staging-logs/26PluxPPBJ3sCWw4un7iJTm1VkE/2022-09-08/1661253062.26PluxPPBJ3sCWw4un7iJTm1VkE.181b4f7b-cc4c-48dd-88c0-a2cb3bb98544.csv.gz",
 		UploadSchema:                 map[string]map[string]string{"demo_track": {"anonymous_id": "string", "category": "string", "channel": "string", "context_app_build": "string", "context_app_name": "string", "context_app_namespace": "string", "context_app_version": "string", "context_destination_id": "string", "context_destination_type": "string", "context_device_id": "string", "context_device_manufacturer": "string", "context_device_model": "string", "context_device_name": "string", "context_ip": "string", "context_library_name": "string", "context_locale": "string", "context_network_carrier": "string", "context_request_ip": "string", "context_screen_density": "int", "context_screen_height": "int", "context_screen_width": "int", "context_source_id": "string", "context_source_type": "string", "context_traits_anonymous_id": "string", "context_user_agent": "string", "event": "string", "event_text": "string", "float_val": "float", "id": "string", "label": "string", "original_timestamp": "datetime", "received_at": "datetime", "sent_at": "datetime", "test_array": "string", "test_map_t_1": "string", "test_map_t_2": "int", "timestamp": "datetime", "uuid_ts": "datetime", "value": "int"}, "rudder_discards": {"column_name": "string", "column_value": "string", "received_at": "datetime", "row_id": "string", "table_name": "string", "uuid_ts": "datetime"}, "tracks": {"anonymous_id": "string", "channel": "string", "context_app_build": "string", "context_app_name": "string", "context_app_namespace": "string", "context_app_version": "string", "context_destination_id": "string", "context_destination_type": "string", "context_device_id": "string", "context_device_manufacturer": "string", "context_device_model": "string", "context_device_name": "string", "context_ip": "string", "context_library_name": "string", "context_locale": "string", "context_network_carrier": "string", "context_request_ip": "string", "context_screen_density": "int", "context_screen_height": "int", "context_screen_width": "int", "context_source_id": "string", "context_source_type": "string", "context_traits_anonymous_id": "string", "context_user_agent": "string", "event": "string", "event_text": "string", "id": "string", "original_timestamp": "datetime", "received_at": "datetime", "sent_at": "datetime", "timestamp": "datetime", "uuid_ts": "datetime"}},
 		SourceID:                     "26PluxPPBJ3sCWw4un7iJTm1VkE",
 		SourceName:                   "dummy rudder source",
 		DestinationID:                "26Q1xNtdz2ADK76UpNBiMw09PLo",
 		DestinationName:              "postgres-dev",
-		DestinationType:              "POSTGRES",
+		DestinationType:              "S3_DATALAKE",
 		DestinationNamespace:         "rudder-schema",
 		DestinationRevisionID:        "",
 		StagingDestinationRevisionID: "",
@@ -111,18 +111,18 @@ func TestStagingFileCreatesLoadObjects(t *testing.T) {
 		UniqueLoadGenID:              "",
 		RudderStoragePrefix:          "none",
 		LoadFilePrefix:               "",
-		LoadFileType:                 "csv",
+		LoadFileType:                 "parquet",
 		FileManagerFactory: &TestFileManagerFactory{
-			stagingFileLocation: "testdata/slave/output.json.gz",
+			stagingFileLocation: "testdata/slave/staging_file.json.gz",
 		},
 	}
 
 	jobRun := JobRunT{
 		job:            &job,
-		stagingFileDIR: "testdata/slave/download",
+		stagingFileDIR: "slave/download",
 		whIdentifier:   warehouseutils.GetWarehouseIdentifier(job.DestinationType, job.SourceID, job.DestinationID),
 	}
-	defer jobRun.cleanup()
+	//defer jobRun.cleanup()
 
 	loadObjects, err := processStagingFile(context.TODO(), &job, &jobRun, 0)
 	require.Nil(t, err)
@@ -133,9 +133,11 @@ func setup() {
 	config.Load()
 	logger.Init()
 	Init4()
+	Init()
 	misc.Init()
 	stats.Init()
 	stats.Setup()
+	warehouseutils.Init()
 }
 
 func BenchmarkEventLoaders(b *testing.B) {
@@ -153,7 +155,7 @@ func BenchmarkEventLoaders(b *testing.B) {
 		SourceName:                   "dummy rudder source",
 		DestinationID:                "26Q1xNtdz2ADK76UpNBiMw09PLo",
 		DestinationName:              "postgres-dev",
-		DestinationType:              "POSTGRES",
+		DestinationType:              "S3_DATALAKE",
 		DestinationNamespace:         "rudder-schema",
 		DestinationRevisionID:        "",
 		StagingDestinationRevisionID: "",
@@ -164,7 +166,7 @@ func BenchmarkEventLoaders(b *testing.B) {
 		UniqueLoadGenID:              "",
 		RudderStoragePrefix:          "none",
 		LoadFilePrefix:               "",
-		LoadFileType:                 "csv",
+		LoadFileType:                 "parquet",
 		FileManagerFactory:           &TestFileManagerFactory{stagingFileLocation: "testdata/slave/staging_file_large.json.gz"},
 	}
 

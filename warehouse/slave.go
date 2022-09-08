@@ -320,21 +320,33 @@ func (job *PayloadT) getSortedColumnMapForAllTables() map[string][]string {
 }
 
 func (jobRun *JobRunT) GetWriter(tableName string) (warehouseutils.LoadFileWriterI, error) {
+
 	writer, ok := jobRun.outputFileWritersMap[tableName]
-	if !ok {
-		var err error
-		outputFilePath := jobRun.getLoadFilePath(tableName)
-		if jobRun.job.LoadFileType == warehouseutils.LOAD_FILE_TYPE_PARQUET {
-			writer, err = warehouseutils.CreateParquetWriter(jobRun.job.UploadSchema[tableName], outputFilePath, jobRun.job.DestinationType)
-		} else {
-			writer, err = misc.CreateGZ(outputFilePath)
-		}
-		if err != nil {
-			return nil, err
-		}
-		jobRun.outputFileWritersMap[tableName] = writer
-		jobRun.tableEventCountMap[tableName] = 0
+	if ok {
+		return writer, nil
 	}
+
+	var err error
+	outputFilePath := jobRun.getLoadFilePath(tableName)
+
+	switch jobRun.job.LoadFileType {
+
+	case warehouseutils.LOAD_FILE_TYPE_PARQUET:
+		writer, err = warehouseutils.CreateParquetWriter(
+			jobRun.job.UploadSchema[tableName],
+			outputFilePath,
+			jobRun.job.DestinationType)
+
+	default:
+		writer, err = misc.CreateGZ(outputFilePath)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("unable to create writer object for tablename: %s, err: %w", tableName, err)
+	}
+
+	jobRun.outputFileWritersMap[tableName] = writer
+	jobRun.tableEventCountMap[tableName] = 0
+
 	return writer, nil
 }
 
@@ -426,6 +438,8 @@ func processStagingFile(ctx context.Context, job *PayloadT, jobRun *JobRunT, wor
 	timer := jobRun.timerStat("process_staging_file_time")
 	timer.Start()
 
+	// eventLoaderTableMap := make(map[string]warehouseutils.EventLoader)
+
 	lineBytesCounter := 0
 	var interfaceSliceSample []interface{}
 	for {
@@ -440,7 +454,7 @@ func processStagingFile(ctx context.Context, job *PayloadT, jobRun *JobRunT, wor
 
 		lineBytes := scanner.Bytes()
 		lineBytesCounter += len(lineBytes)
-		if lineBytesCounter > 10*maxStagingFileReadBufferCapacityInK*1024 {
+		if lineBytesCounter > 50*maxStagingFileReadBufferCapacityInK*1024 {
 			pkgLogger.Errorf("[WH]: Huge staging file alert : size in bytes: %v for staging file id %v at %s for %s",
 				lineBytesCounter,
 				job.StagingFileID,
@@ -462,7 +476,7 @@ func processStagingFile(ctx context.Context, job *PayloadT, jobRun *JobRunT, wor
 
 		if job.DestinationType == warehouseutils.S3_DATALAKE && len(sortedTableColumnMap[tableName]) > columnCountThresholds[warehouseutils.S3_DATALAKE] {
 			err = fmt.Errorf("WH: Staging file schema column limit exceeded")
-			pkgLogger.Errorf("[WH]: Huge staging file columns : columns in upload schema: %v for staging file id %v at %s for %s", len(sortedTableColumnMap[tableName]), job.StagingFileID, job.StagingFileLocation, jobRun.whIdentifier)
+			pkgLogger.Errorf("[WH]: Huge staging file columns : columns in upload schema for table name: %s, upload schema: %v for staging file id %v at %s for %s", tableName, len(sortedTableColumnMap[tableName]), job.StagingFileID, job.StagingFileLocation, jobRun.whIdentifier)
 			return nil, err
 		}
 
@@ -472,7 +486,26 @@ func processStagingFile(ctx context.Context, job *PayloadT, jobRun *JobRunT, wor
 			return nil, err
 		}
 
-		eventLoader := warehouseutils.GetNewEventLoader(job.DestinationType, job.LoadFileType, writer)
+		var eventLoader warehouseutils.EventLoader
+		// if job.LoadFileType == warehouseutils.LOAD_FILE_TYPE_PARQUET {
+
+		// 	if loader, ok := eventLoaderTableMap[tableName]; ok {
+		// 		eventLoader = loader
+		// 	} else {
+		// 		loader := parquet.NewReusableParquetLoader(writer, job.DestinationType, len(sortedTableColumnMap[tableName]))
+		// 		eventLoaderTableMap[tableName] = loader
+
+		// 		eventLoader = loader
+		// 	}
+
+		// } else {
+		// Reusable Parquet Writer Stats:
+		// Before the change: 784.44MB, after change: 158.5MB
+		// Change ~ 625MB
+		// Reduction: 80%
+		eventLoader = warehouseutils.GetNewEventLoader(job.DestinationType, job.LoadFileType, writer)
+		// }
+
 		for _, columnName := range sortedTableColumnMap[tableName] {
 			if eventLoader.IsLoadTimeColumn(columnName) {
 				timestampFormat := eventLoader.GetLoadTimeFomat(columnName)
@@ -551,6 +584,8 @@ func processStagingFile(ctx context.Context, job *PayloadT, jobRun *JobRunT, wor
 			return loadFileUploadOutputs, err
 		}
 
+		// For a reusable event loader, this is indication to clean up the array
+		eventLoader.Reset()
 		jobRun.tableEventCountMap[tableName]++
 	}
 	timer.End()
@@ -597,9 +632,6 @@ func processClaimedJob(ctx context.Context, claimedJob pgnotifier.ClaimT, worker
 		stagingFileDIR: misc.RudderWarehouseJsonUploadsTmp,
 		whIdentifier:   warehouseutils.GetWarehouseIdentifier(job.DestinationType, job.SourceID, job.DestinationID),
 	}
-
-	pkgLogger.Info("$$$$$$$$$ My Print $$$$$$$")
-	pkgLogger.Infof("%#v", job)
 
 	defer jobRun.cleanup()
 

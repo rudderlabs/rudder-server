@@ -26,6 +26,9 @@ func NewCSVLoader(destType string, writer LoadFileWriterI) *CsvLoader {
 	return loader
 }
 
+func (loader *CsvLoader) Reset() {
+}
+
 func (loader *CsvLoader) IsLoadTimeColumn(columnName string) bool {
 	return columnName == ToProviderCase(loader.destType, UUID_TS_COLUMN)
 }
