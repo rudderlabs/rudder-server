@@ -734,7 +734,7 @@ func (pg *HandleT) FetchSchema(warehouse warehouseutils.WarehouseT) (schema ware
 
 	schema = make(warehouseutils.SchemaT)
 	sqlStatement := fmt.Sprintf(`
-		select
+		SELECT
 		  table_name,
 		  column_name,
 		  data_type
