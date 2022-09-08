@@ -18,8 +18,8 @@ const (
 
 // Types of tokens that can be used to authenticate with CP router
 const (
-	WorkspaceToken = "WORKSPACE_TOKEN"
-	Namespace      = "NAMESPACE"
+	workspaceToken = "WORKSPACE_TOKEN"
+	namespace      = "NAMESPACE"
 )
 
 const defaultClusterType = DedicatedType
@@ -56,10 +56,10 @@ func GetConnectionToken() (string, string, bool, error) {
 	switch deploymentType {
 	case DedicatedType:
 		connectionToken = config.GetWorkspaceToken()
-		tokenType = WorkspaceToken
+		tokenType = workspaceToken
 	case MultiTenantType:
 		isMultiWorkspace = true
-		tokenType = Namespace
+		tokenType = namespace
 		isNamespaced := config.IsEnvSet("WORKSPACE_NAMESPACE")
 		if isNamespaced {
 			connectionToken, err = config.GetEnvErr("WORKSPACE_NAMESPACE")
