@@ -923,4 +923,26 @@ func TestCacheScenarios(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, 2, len(res.Jobs), "jobsDB should report 2 unprocessed jobs when using both destination_id and source_id as filters, after we added 2 jobs")
 	})
+
+	t.Run("Test cache with two less parameter filters (destination_id & source_id)", func(t *testing.T) {
+		previousParameterFilters := CacheKeyParameterFilters
+		CacheKeyParameterFilters = []string{"destination_id", "source_id"}
+		defer func() {
+			CacheKeyParameterFilters = previousParameterFilters
+		}()
+		jobsDB := NewForReadWrite("two_params_cache_query_less")
+		require.NoError(t, jobsDB.Start())
+		defer jobsDB.TearDown()
+
+		destinationID := "destinationID"
+
+		res, err := jobsDB.getUnprocessed(context.Background(), GetQueryParamsT{CustomValFilters: []string{customVal}, ParameterFilters: []ParameterFilterT{{Name: "destination_id", Value: destinationID}}, JobsLimit: 100})
+		require.NoError(t, err)
+		require.Equal(t, 0, len(res.Jobs), "jobsDB should report 0 unprocessed jobs when using destination_id as filter")
+
+		require.NoError(t, jobsDB.Store(context.Background(), generateJobs(2, destinationID)))
+		res, err = jobsDB.getUnprocessed(context.Background(), GetQueryParamsT{CustomValFilters: []string{customVal}, ParameterFilters: []ParameterFilterT{{Name: "destination_id", Value: destinationID}}, JobsLimit: 100})
+		require.NoError(t, err)
+		require.Equal(t, 2, len(res.Jobs), "jobsDB should report 2 unprocessed jobs when using destination_id as filter, after we added 2 jobs")
+	})
 }

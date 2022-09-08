@@ -2138,7 +2138,7 @@ func (jd *HandleT) internalStoreWithRetryEachInTx(ctx context.Context, tx *sql.T
 	return
 }
 
-var ParameterFilters = []string{"destination_id"}
+var CacheKeyParameterFilters = []string{"destination_id"}
 
 // Creates a map of workspace:customVal:Params(Dest_type: []Dest_ids for brt and Dest_type: [] for rt)
 // and then loop over them to selectively clear cache instead of clearing the cache for the entire dataset
@@ -2151,7 +2151,7 @@ func (*HandleT) populateCustomValParamMap(CVPMap map[string]map[string]map[strin
 	}
 
 	var vals []string
-	for _, key := range ParameterFilters {
+	for _, key := range CacheKeyParameterFilters {
 		val := gjson.GetBytes(job.Parameters, key).String()
 		vals = append(vals, fmt.Sprintf("%s##%s", key, val))
 	}
@@ -2420,8 +2420,14 @@ func (jd *HandleT) markClearEmptyResult(ds dataSetT, workspace string, stateFilt
 		jd.invalidCacheKeyStat.Increment()
 	}
 
+	// Safe Check , All parameter filters must be provided explicitly
+	if len(parameterFilters) != len(CacheKeyParameterFilters) {
+		return
+	}
+
+	// Skip the cache if a parameter filter is provided that does not belong to the caching key
 	for _, parameterFilter := range parameterFilters {
-		if !misc.ContainsString(ParameterFilters, parameterFilter.Name) {
+		if !misc.ContainsString(CacheKeyParameterFilters, parameterFilter.Name) {
 			return
 		}
 	}
@@ -2525,8 +2531,13 @@ func (jd *HandleT) isEmptyResult(ds dataSetT, workspace string, stateFilters, cu
 		// If parameterFilters is empty, we check for customVal
 		if len(parameterFilters) > 0 {
 			var pVals []string
+
+			if len(parameterFilters) != len(CacheKeyParameterFilters) {
+				return false
+			}
+
 			for _, parameterFilter := range parameterFilters {
-				if !misc.ContainsString(ParameterFilters, parameterFilter.Name) {
+				if !misc.ContainsString(CacheKeyParameterFilters, parameterFilter.Name) {
 					jd.logger.Debugf("[%s] Invalid parameter filter %s value %s", jd.tablePrefix, parameterFilter.Name, parameterFilter.Value)
 					return false
 				}

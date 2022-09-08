@@ -15,13 +15,12 @@ type destinationConfig struct {
 }
 
 func getRouterConfig(destination *backendconfig.DestinationT, identifier string) destinationConfig {
-	var destConfig destinationConfig
-
-	destConfig.name = destination.DestinationDefinition.Name
-	destConfig.destinationID = identifier
-	destConfig.config = destination.DestinationDefinition.Config
-	destConfig.responseRules = destination.DestinationDefinition.ResponseRules
-	return destConfig
+	return destinationConfig{
+		name:          destination.DestinationDefinition.Name,
+		destinationID: identifier,
+		config:        destination.DestinationDefinition.Config,
+		responseRules: destination.DestinationDefinition.ResponseRules,
+	}
 }
 
 type Factory struct {
