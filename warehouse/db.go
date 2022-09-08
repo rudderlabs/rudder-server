@@ -48,3 +48,44 @@ func (db *DB) GetLatestUploadStatus(ctx context.Context, destType, sourceID, des
 
 	return uploadID, status, priority, nil
 }
+
+func (db *DB) RetryUploads(ctx context.Context, clausesQuery string, clausesArgs []interface{}) (rowsAffected int64, err error) {
+	// Preparing the prepared statement
+	preparedStatement := fmt.Sprintf(`
+		UPDATE wh_uploads
+		SET
+			metadata = metadata || '{"retried": true, "priority": 50}' || jsonb_build_object('nextRetryTime', NOW() - INTERVAL '1 HOUR'),
+			status = 'waiting',
+			updated_at = NOW()
+		WHERE %[1]s`,
+		clausesQuery,
+	)
+	pkgLogger.Debugf("[RetryUploads] sqlStatement: %s", preparedStatement)
+
+	// Executing the statement
+	result, err := db.handle.ExecContext(ctx, preparedStatement, clausesArgs...)
+	if err != nil {
+		return
+	}
+
+	// Getting rows affected
+	rowsAffected, err = result.RowsAffected()
+	return
+}
+
+func (db *DB) CountUploadsToRetry(ctx context.Context, clausesQuery string, clausesArgs []interface{}) (count int64, err error) {
+	// Preparing the prepared statement
+	preparedStatement := fmt.Sprintf(`
+		SELECT
+		  count(*)
+		FROM
+		  wh_uploads
+		WHERE %[1]s`,
+		clausesQuery,
+	)
+	pkgLogger.Debugf("[CountUploadsToRetry] sqlStatement: %s", preparedStatement)
+
+	// Executing the statement
+	err = db.handle.QueryRowContext(ctx, preparedStatement, clausesArgs...).Scan(&count)
+	return
+}

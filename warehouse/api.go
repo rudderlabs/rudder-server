@@ -85,6 +85,7 @@ type TableUploadResT struct {
 type UploadAPIT struct {
 	enabled           bool
 	dbHandle          *sql.DB
+	warehouseDBHandle *DB
 	log               logger.LoggerI
 	connectionManager *controlplane.ConnectionManager
 	isHosted          bool
@@ -99,10 +100,11 @@ func InitWarehouseAPI(dbHandle *sql.DB, log logger.LoggerI) {
 		workspaceToken = config.GetEnv("HOSTED_SERVICE_SECRET", "password")
 	}
 	UploadAPI = UploadAPIT{
-		enabled:  true,
-		dbHandle: dbHandle,
-		log:      log,
-		isHosted: isMultiWorkspace,
+		enabled:           true,
+		dbHandle:          dbHandle,
+		warehouseDBHandle: NewWarehouseDB(dbHandle),
+		log:               log,
+		isHosted:          isMultiWorkspace,
 		connectionManager: &controlplane.ConnectionManager{
 			AuthInfo: controlplane.AuthInfo{
 				Service:        "warehouse",

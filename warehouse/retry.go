@@ -10,7 +10,9 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
-var retryQueryPlaceHolder = "<retry>"
+const (
+	retryQueryPlaceHolder = "<retry>"
+)
 
 type RetryRequest struct {
 	WorkspaceID     string
@@ -67,7 +69,8 @@ func (retryReq *RetryRequest) RetryWHUploads(ctx context.Context) (response Retr
 	// Retry request should trigger on these cases.
 	// 1. Either provide the retry interval.
 	// 2. Or provide the List of Upload id's that needs to be re-triggered.
-	uploadsRetried, err := retryReq.retryUploads(ctx, sourceIDs)
+	clausesQuery, clausesArgs := retryReq.clausesQuery(sourceIDs)
+	uploadsRetried, err := retryReq.API.warehouseDBHandle.RetryUploads(ctx, clausesQuery, clausesArgs)
 	if err != nil {
 		err = fmt.Errorf("failed retrying uploads, error: %s", err.Error())
 		return
@@ -118,7 +121,8 @@ func (retryReq *RetryRequest) UploadsToRetry(ctx context.Context) (response Retr
 	// Retry request should trigger on these cases.
 	// 1. Either provide the retry interval.
 	// 2. Or provide the List of Upload id's that needs to be re-triggered.
-	count, err := retryReq.countUploadsToRetry(ctx, sourceIDs)
+	clausesQuery, clausesArgs := retryReq.clausesQuery(sourceIDs)
+	count, err := retryReq.API.warehouseDBHandle.CountUploadsToRetry(ctx, clausesQuery, clausesArgs)
 	if err != nil {
 		err = fmt.Errorf("failed counting uploads to retry, error: %s", err.Error())
 		return
@@ -141,72 +145,13 @@ func (retryReq *RetryRequest) getSourceIDs() (sourceIDs []string) {
 	return sourceIDs
 }
 
-func (retryReq *RetryRequest) retryUploads(ctx context.Context, sourceIDs []string) (rowsAffected int64, err error) {
-	var clausesQuery string
-	var clauses []string
-	var clausesArgs []interface{}
-
-	// Preparing clauses query
-	clauses, clausesArgs = retryReq.whereClauses(sourceIDs)
-	for i, clause := range clauses {
-		clausesQuery = clausesQuery + strings.Replace(clause, retryQueryPlaceHolder, fmt.Sprintf("$%d", i+1), 1)
-		if i != len(clauses)-1 {
-			clausesQuery += " AND "
-		}
-	}
-
-	// Preparing the prepared statement
-	preparedStatement := fmt.Sprintf(`
-		UPDATE wh_uploads
-		SET
-			metadata = metadata || '{"retried": true, "priority": 50}' || jsonb_build_object('nextRetryTime', NOW() - INTERVAL '1 HOUR'),
-			status = 'waiting',
-			updated_at = NOW()
-		WHERE %[1]s`,
-		clausesQuery,
+func (retryReq *RetryRequest) clausesQuery(sourceIDs []string) (string, []interface{}) {
+	var (
+		clauses      []string
+		clausesArgs  []interface{}
+		clausesQuery string
 	)
 
-	// Executing the statement
-	result, err := retryReq.API.dbHandle.ExecContext(ctx, preparedStatement, clausesArgs...)
-	if err != nil {
-		return
-	}
-
-	// Getting rows affected
-	rowsAffected, err = result.RowsAffected()
-	return
-}
-
-func (retryReq *RetryRequest) countUploadsToRetry(ctx context.Context, sourceIDs []string) (count int64, err error) {
-	var clausesQuery string
-	var clauses []string
-	var clausesArgs []interface{}
-
-	// Preparing clauses query
-	clauses, clausesArgs = retryReq.whereClauses(sourceIDs)
-	for i, clause := range clauses {
-		clausesQuery = clausesQuery + strings.Replace(clause, retryQueryPlaceHolder, fmt.Sprintf("$%d", i+1), 1)
-		if i != len(clauses)-1 {
-			clausesQuery += " AND "
-		}
-	}
-
-	// Preparing the prepared statement
-	preparedStatement := fmt.Sprintf(`
-		SELECT
-		  count(*)
-		FROM
-		  wh_uploads
-		WHERE %[1]s`,
-		clausesQuery,
-	)
-
-	// Executing the statement
-	err = retryReq.API.dbHandle.QueryRowContext(ctx, preparedStatement, clausesArgs...).Scan(&count)
-	return
-}
-
-func (retryReq *RetryRequest) whereClauses(sourceIDs []string) (clauses []string, clausesArgs []interface{}) {
 	// SourceID
 	if retryReq.SourceID != "" {
 		clauses = append(clauses, fmt.Sprintf(`source_id = %s`, retryQueryPlaceHolder))
@@ -242,7 +187,14 @@ func (retryReq *RetryRequest) whereClauses(sourceIDs []string) (clauses []string
 		clauses = append(clauses, fmt.Sprintf("created_at > NOW() - %s * INTERVAL '1 HOUR'", retryQueryPlaceHolder))
 		clausesArgs = append(clausesArgs, retryReq.IntervalInHours)
 	}
-	return
+
+	for i, clause := range clauses {
+		clausesQuery = clausesQuery + strings.Replace(clause, retryQueryPlaceHolder, fmt.Sprintf("$%d", i+1), 1)
+		if i != len(clauses)-1 {
+			clausesQuery += " AND "
+		}
+	}
+	return clausesQuery, clausesArgs
 }
 
 func (retryReq *RetryRequest) validateReq() (err error) {
