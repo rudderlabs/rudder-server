@@ -742,7 +742,7 @@ func TestSendMessage(t *testing.T) {
 			"some-topic",
 		)
 		require.Equal(t, 400, sc)
-		require.Equal(t, "something bad error occurred.", res)
+		require.Contains(t, res, "something bad error occurred.")
 		require.Equal(t, "something bad", err)
 		require.Len(t, p.calls, 1)
 		require.Len(t, p.calls[0], 1)
