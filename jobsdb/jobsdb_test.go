@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"math/rand"
+	"os"
 	"regexp"
 	"sort"
 	"strings"
@@ -25,8 +26,8 @@ import (
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/jobsdb/internal/lock"
 	"github.com/rudderlabs/rudder-server/jobsdb/prebackup"
+	"github.com/rudderlabs/rudder-server/services/archiver"
 	"github.com/rudderlabs/rudder-server/services/stats"
-	"github.com/rudderlabs/rudder-server/testhelper"
 	"github.com/rudderlabs/rudder-server/testhelper/destination"
 	rsRand "github.com/rudderlabs/rudder-server/testhelper/rand"
 	"github.com/rudderlabs/rudder-server/utils/logger"
@@ -34,9 +35,7 @@ import (
 )
 
 var _ = Describe("Calculate newDSIdx for internal migrations", func() {
-	initJobsDB()
-
-	_ = DescribeTable("newDSIdx tests",
+	DescribeTable("newDSIdx tests",
 		func(before, after, expected string) {
 			computedIdx, err := computeInsertIdx(before, after)
 			Expect(computedIdx).To(Equal(expected))
@@ -117,7 +116,7 @@ var _ = Describe("Calculate newDSIdx for internal migrations", func() {
 		})
 	})
 
-	_ = DescribeTable("newDSIdx tests with skipZeroAssertionForMultitenant",
+	DescribeTable("newDSIdx tests with skipZeroAssertionForMultitenant",
 		func(before, after, expected string) {
 			setSkipZeroAssertionForMultitenant(true)
 			computedIdx, err := computeInsertIdx(before, after)
@@ -200,9 +199,7 @@ var _ = Describe("Calculate newDSIdx for internal migrations", func() {
 })
 
 var _ = Describe("Calculate newDSIdx for cluster migrations", func() {
-	initJobsDB()
-
-	_ = DescribeTable("newDSIdx tests",
+	DescribeTable("newDSIdx tests",
 		func(dList []dataSetT, after dataSetT, expected string) {
 			computedIdx, err := computeIdxForClusterMigration("table_prefix", dList, after)
 			Expect(computedIdx).To(Equal(expected))
@@ -248,7 +245,7 @@ var _ = Describe("Calculate newDSIdx for cluster migrations", func() {
 			}, "0_2"),
 	)
 
-	_ = DescribeTable("Error cases",
+	DescribeTable("Error cases",
 		func(dList []dataSetT, after dataSetT) {
 			_, err := computeIdxForClusterMigration("table_prefix", dList, after)
 			Expect(err != nil).Should(BeTrue())
@@ -318,59 +315,56 @@ var _ = Describe("Calculate newDSIdx for cluster migrations", func() {
 	)
 })
 
-func initJobsDB() {
-	config.Load()
-	logger.Init()
-	admin.Init()
-	Init()
-	Init2()
-	Init3()
-}
-
 var _ = Describe("jobsdb", func() {
-	initJobsDB()
-
-	BeforeEach(func() {
-		// setup static requirements of dependencies
-		stats.Setup()
-	})
-
 	Context("getDSList", func() {
+		var t *ginkgoTestingT
 		var jd *HandleT
+		var prefix string
 
 		BeforeEach(func() {
+			t = &ginkgoTestingT{}
+			_ = startPostgres(t)
+			prefix = strings.ToLower(rsRand.String(5))
 			jd = &HandleT{}
 
 			jd.skipSetupDBSetup = true
-			err := jd.Setup(ReadWrite, false, "tt", "", false, []prebackup.Handler{})
+			err := jd.Setup(ReadWrite, false, prefix, "", false, []prebackup.Handler{})
 			Expect(err).To(BeNil())
 		})
 
 		AfterEach(func() {
 			jd.TearDown()
+			t.Teardown()
 		})
 
 		It("doesn't make db calls if !refreshFromDB", func() {
 			jd.datasetList = dsListInMemory
-
 			Expect(jd.getDSList()).To(Equal(dsListInMemory))
 		})
 	})
 
 	Context("Start & Stop", Ordered, func() {
+		var t *ginkgoTestingT
 		var jd *HandleT
+		var prefix string
 
+		BeforeAll(func() {
+			t = &ginkgoTestingT{}
+			_ = startPostgres(t)
+		})
 		BeforeEach(func() {
+			prefix = strings.ToLower(rsRand.String(5))
 			jd = &HandleT{}
 			jd.skipSetupDBSetup = true
-			err := jd.Setup(ReadWrite, false, "tt", "", false, []prebackup.Handler{})
+			err := jd.Setup(ReadWrite, false, prefix, "", false, []prebackup.Handler{})
 			Expect(err).To(BeNil())
 		})
-
 		AfterEach(func() {
 			jd.TearDown()
 		})
-
+		AfterAll(func() {
+			t.Teardown()
+		})
 		It("can call Stop before Start without side-effects", func() {
 			jd.Stop()
 			Expect(jd.Start()).To(BeNil())
@@ -553,24 +547,7 @@ func setSkipZeroAssertionForMultitenant(b bool) {
 }
 
 func TestRefreshDSList(t *testing.T) {
-	pool, err := dockertest.NewPool("")
-	require.NoError(t, err, "Failed to create docker pool")
-	cleanup := &testhelper.Cleanup{}
-	defer cleanup.Run()
-
-	postgresResource, err := destination.SetupPostgres(pool, cleanup)
-	require.NoError(t, err)
-
-	{
-		t.Setenv("JOBS_DB_DB_NAME", postgresResource.Database)
-		t.Setenv("JOBS_DB_NAME", postgresResource.Database)
-		t.Setenv("JOBS_DB_HOST", postgresResource.Host)
-		t.Setenv("JOBS_DB_PORT", postgresResource.Port)
-		t.Setenv("JOBS_DB_USER", postgresResource.User)
-		t.Setenv("JOBS_DB_PASSWORD", postgresResource.Password)
-		initJobsDB()
-		stats.Setup()
-	}
+	_ = startPostgres(t)
 
 	migrationMode := ""
 
@@ -581,11 +558,13 @@ func TestRefreshDSList(t *testing.T) {
 		},
 	}
 
-	err = jobsDB.Setup(ReadWrite, false, "batch_rt", migrationMode, true, []prebackup.Handler{})
+	prefix := strings.ToLower(rsRand.String(5))
+	err := jobsDB.Setup(ReadWrite, false, prefix, migrationMode, true, []prebackup.Handler{})
 	require.NoError(t, err)
+	defer jobsDB.TearDown()
 
 	require.Equal(t, 1, len(jobsDB.getDSList()), "jobsDB should start with a ds list size of 1")
-	jobsDB.addDS(newDataSet("batch_rt", "2"))
+	jobsDB.addDS(newDataSet(prefix, "2"))
 	require.Equal(t, 1, len(jobsDB.getDSList()), "addDS should not refresh the ds list")
 	jobsDB.dsListLock.WithLock(func(l lock.DSListLockToken) {
 		require.Equal(t, 2, len(jobsDB.refreshDSList(l)), "after refreshing the ds list jobsDB should have a ds list size of 2")
@@ -593,10 +572,8 @@ func TestRefreshDSList(t *testing.T) {
 }
 
 func TestJobsDBTimeout(t *testing.T) {
+	_ = startPostgres(t)
 	defaultWorkspaceID := "workspaceId"
-
-	initJobsDB()
-	stats.Setup()
 
 	maxDSSize := 10
 	jobDB := HandleT{
@@ -604,7 +581,8 @@ func TestJobsDBTimeout(t *testing.T) {
 	}
 
 	customVal := "MOCKDS"
-	err := jobDB.Setup(ReadWrite, false, customVal, "", true, []prebackup.Handler{})
+	prefix := strings.ToLower(rsRand.String(5))
+	err := jobDB.Setup(ReadWrite, false, prefix, "", true, []prebackup.Handler{})
 	require.NoError(t, err)
 	defer jobDB.TearDown()
 
@@ -624,7 +602,7 @@ func TestJobsDBTimeout(t *testing.T) {
 	t.Run("Test jobsDB GET request context timeout & retry ", func(t *testing.T) {
 		tx, err := jobDB.dbHandle.Begin()
 		require.NoError(t, err, "Error in starting transaction to lock the table")
-		_, err = tx.Exec(`LOCK TABLE "MOCKDS_jobs_1" IN ACCESS EXCLUSIVE MODE;`)
+		_, err = tx.Exec(fmt.Sprintf(`LOCK TABLE "%s_jobs_1" IN ACCESS EXCLUSIVE MODE;`, prefix))
 		require.NoError(t, err, "Error in locking the table")
 		defer func() { _ = tx.Rollback() }()
 
@@ -654,9 +632,9 @@ func TestJobsDBTimeout(t *testing.T) {
 	t.Run("Test jobsDB STORE request context timeout & retry ", func(t *testing.T) {
 		tx, err := jobDB.dbHandle.Begin()
 		require.NoError(t, err, "Error in starting transaction to lock the table")
-		_, err = tx.Exec(`LOCK TABLE "MOCKDS_jobs_1" IN ACCESS EXCLUSIVE MODE;`)
-		require.NoError(t, err, "Error in locking the table")
 		defer func() { _ = tx.Rollback() }()
+		_, err = tx.Exec(fmt.Sprintf(`LOCK TABLE "%s_jobs_1" IN ACCESS EXCLUSIVE MODE;`, prefix))
+		require.NoError(t, err, "Error in locking the table")
 
 		ctx, cancelCtx := context.WithTimeout(context.Background(), time.Millisecond*10)
 		defer cancelCtx()
@@ -677,24 +655,7 @@ func TestJobsDBTimeout(t *testing.T) {
 }
 
 func TestThreadSafeAddNewDSLoop(t *testing.T) {
-	pool, err := dockertest.NewPool("")
-	require.NoError(t, err, "Failed to create docker pool")
-	cleanup := &testhelper.Cleanup{}
-	defer cleanup.Run()
-
-	postgresResource, err := destination.SetupPostgres(pool, cleanup)
-	require.NoError(t, err)
-
-	{
-		t.Setenv("JOBS_DB_DB_NAME", postgresResource.Database)
-		t.Setenv("JOBS_DB_NAME", postgresResource.Database)
-		t.Setenv("JOBS_DB_HOST", postgresResource.Host)
-		t.Setenv("JOBS_DB_PORT", postgresResource.Port)
-		t.Setenv("JOBS_DB_USER", postgresResource.User)
-		t.Setenv("JOBS_DB_PASSWORD", postgresResource.Password)
-		initJobsDB()
-		stats.Setup()
-	}
+	_ = startPostgres(t)
 
 	migrationMode := ""
 	maxDSSize := 1
@@ -706,9 +667,11 @@ func TestThreadSafeAddNewDSLoop(t *testing.T) {
 		},
 		MaxDSSize: &maxDSSize,
 	}
-	err = jobsDB1.Setup(ReadWrite, false, "test", migrationMode, true, []prebackup.Handler{})
+	prefix := strings.ToLower(rsRand.String(5))
+	err := jobsDB1.Setup(ReadWrite, false, prefix, migrationMode, true, []prebackup.Handler{})
 	require.NoError(t, err)
 	require.Equal(t, 1, len(jobsDB1.getDSList()), "expected cache to be auto-updated with DS list length 1")
+	defer jobsDB1.TearDown()
 
 	// jobsDB-2 setup
 	triggerAddNewDS2 := make(chan time.Time)
@@ -718,8 +681,9 @@ func TestThreadSafeAddNewDSLoop(t *testing.T) {
 		},
 		MaxDSSize: &maxDSSize,
 	}
-	err = jobsDB2.Setup(ReadWrite, false, "test", migrationMode, true, []prebackup.Handler{})
+	err = jobsDB2.Setup(ReadWrite, false, prefix, migrationMode, true, []prebackup.Handler{})
 	require.NoError(t, err)
+	defer jobsDB2.TearDown()
 	require.Equal(t, 1, len(jobsDB2.getDSList()), "expected cache to be auto-updated with DS list length 1")
 
 	generateJobs := func(numOfJob int) []*JobT {
@@ -790,19 +754,7 @@ func TestThreadSafeAddNewDSLoop(t *testing.T) {
 }
 
 func TestCacheScenarios(t *testing.T) {
-	pool, err := dockertest.NewPool("")
-	require.NoError(t, err)
-	postgresResource, err := destination.SetupPostgres(pool, t)
-	require.NoError(t, err)
-
-	t.Setenv("JOBS_DB_DB_NAME", postgresResource.Database)
-	t.Setenv("JOBS_DB_NAME", postgresResource.Database)
-	t.Setenv("JOBS_DB_HOST", postgresResource.Host)
-	t.Setenv("JOBS_DB_PORT", postgresResource.Port)
-	t.Setenv("JOBS_DB_USER", postgresResource.User)
-	t.Setenv("JOBS_DB_PASSWORD", postgresResource.Password)
-	initJobsDB()
-	stats.Setup()
+	_ = startPostgres(t)
 
 	customVal := "CUSTOMVAL"
 	generateJobs := func(numOfJob int, destinationID string) []*JobT {
@@ -945,4 +897,72 @@ func TestCacheScenarios(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, 2, len(res.Jobs), "jobsDB should report 2 unprocessed jobs when using destination_id as filter, after we added 2 jobs")
 	})
+}
+
+type testingT interface {
+	Errorf(format string, args ...interface{})
+	FailNow()
+	Setenv(key, value string)
+	Log(...interface{})
+	Cleanup(func())
+}
+
+type ginkgoTestingT struct {
+	cleanups []func()
+}
+
+func (t *ginkgoTestingT) Teardown() {
+	for _, f := range t.cleanups {
+		f()
+	}
+}
+
+func (*ginkgoTestingT) Errorf(format string, args ...interface{}) {
+	Fail(fmt.Sprintf(format, args...))
+}
+
+func (*ginkgoTestingT) FailNow() {
+	Fail("FailNow called")
+}
+
+func (*ginkgoTestingT) Setenv(key, value string) {
+	os.Setenv(key, value)
+}
+
+func (*ginkgoTestingT) Log(args ...interface{}) {
+	fmt.Print(args...)
+}
+
+func (t *ginkgoTestingT) Cleanup(f func()) {
+	t.cleanups = append(t.cleanups, f)
+}
+
+// startPostgres starts a postgres container and (re)initializes global vars
+func startPostgres(t testingT) *destination.PostgresResource {
+	pool, err := dockertest.NewPool("")
+	require.NoError(t, err)
+	postgresContainer, err := destination.SetupPostgres(pool, t)
+	require.NoError(t, err)
+	t.Setenv("LOG_LEVEL", "DEBUG")
+	t.Setenv("JOBS_DB_DB_NAME", postgresContainer.Database)
+	t.Setenv("JOBS_DB_NAME", postgresContainer.Database)
+	t.Setenv("JOBS_DB_HOST", postgresContainer.Host)
+	t.Setenv("JOBS_DB_USER", postgresContainer.User)
+	t.Setenv("JOBS_DB_PASSWORD", postgresContainer.Password)
+	t.Setenv("JOBS_DB_PORT", postgresContainer.Port)
+	initJobsDB()
+	return postgresContainer
+}
+
+func initJobsDB() {
+	config.Load()
+	logger.Init()
+	admin.Init()
+	misc.Init()
+	Init()
+	Init2()
+	Init3()
+	archiver.Init()
+	stats.Init()
+	stats.Setup()
 }

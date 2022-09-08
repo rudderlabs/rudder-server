@@ -3,112 +3,23 @@ package jobsdb
 import (
 	"context"
 	"database/sql"
-	"flag"
 	"fmt"
-	"log"
-	"os"
-	"os/signal"
 	"strings"
 	"sync"
-	"syscall"
 	"testing"
 	"time"
 
 	"github.com/gofrs/uuid"
-	"github.com/ory/dockertest/v3"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/rudderlabs/rudder-server/jobsdb/prebackup"
-	"github.com/rudderlabs/rudder-server/services/archiver"
-	"github.com/rudderlabs/rudder-server/services/stats"
+	"github.com/rudderlabs/rudder-server/testhelper/rand"
 )
 
 const (
 	defaultWorkspaceID = "workspaceId"
 )
-
-var (
-	hold   bool
-	dbDSN  = "root@tcp(127.0.0.1:3306)/service"
-	testDB *sql.DB
-)
-
-func TestMain(m *testing.M) {
-	flag.BoolVar(&hold, "hold", false, "hold environment clean-up after test execution until Ctrl+C is provided")
-	flag.Parse()
-
-	// hack to make defer work, without being affected by the os.Exit in TestMain
-	os.Exit(run(m))
-}
-
-func run(m *testing.M) int {
-	// uses a sensible default on windows (tcp/http) and linux/osx (socket)
-	pool, err := dockertest.NewPool("")
-	if err != nil {
-		log.Printf("Could not connect to docker: %s\n", err)
-		return 1
-	}
-
-	database := "jobsdb"
-	// pulls an image, creates a container based on it and runs it
-	resourcePostgres, err := pool.Run("postgres", "11-alpine", []string{
-		"POSTGRES_PASSWORD=password",
-		"POSTGRES_DB=" + database,
-		"POSTGRES_USER=rudder",
-	})
-	if err != nil {
-		log.Printf("Could not start resource: %s\n", err)
-		return 1
-	}
-	defer func() {
-		if err := pool.Purge(resourcePostgres); err != nil {
-			log.Printf("Could not purge resource: %s \n", err)
-		}
-	}()
-
-	dbDSN = fmt.Sprintf("postgres://rudder:password@localhost:%s/%s?sslmode=disable", resourcePostgres.GetPort("5432/tcp"), database)
-	fmt.Println("DB_DSN:", dbDSN)
-	_ = os.Setenv("LOG_LEVEL", "DEBUG")
-	_ = os.Setenv("JOBS_DB_DB_NAME", database)
-	_ = os.Setenv("JOBS_DB_HOST", "localhost")
-	_ = os.Setenv("JOBS_DB_NAME", "jobsdb")
-	_ = os.Setenv("JOBS_DB_USER", "rudder")
-	_ = os.Setenv("JOBS_DB_PASSWORD", "password")
-	_ = os.Setenv("JOBS_DB_PORT", resourcePostgres.GetPort("5432/tcp"))
-
-	// exponential backoff-retry, because the application in the container might not be ready to accept connections yet
-	if err := pool.Retry(func() error {
-		var err error
-		testDB, err = sql.Open("postgres", dbDSN)
-		if err != nil {
-			return err
-		}
-		return testDB.Ping()
-	}); err != nil {
-		log.Printf("Could not connect to docker: %s\n", err)
-		return 1
-	}
-
-	code := m.Run()
-	blockOnHold()
-
-	return code
-}
-
-func blockOnHold() {
-	if !hold {
-		return
-	}
-
-	fmt.Println("Test on hold, before cleanup")
-	fmt.Println("Press Ctrl+C to exit")
-
-	c := make(chan os.Signal, 1)
-	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
-
-	<-c
-}
 
 func genJobs(workspaceId, customVal string, jobCount, eventsPerJob int) []*JobT {
 	js := make([]*JobT, jobCount)
@@ -146,9 +57,7 @@ func genJobStatuses(jobs []*JobT, state string) []*JobStatusT {
 }
 
 func TestJobsDB(t *testing.T) {
-	initJobsDB()
-	archiver.Init()
-	stats.Setup()
+	_ = startPostgres(t)
 
 	migrationMode := ""
 
@@ -160,7 +69,7 @@ func TestJobsDB(t *testing.T) {
 			return triggerAddNewDS
 		},
 	}
-	err := jobDB.Setup(ReadWrite, false, "batch_rt", migrationMode, true, []prebackup.Handler{})
+	err := jobDB.Setup(ReadWrite, false, strings.ToLower(rand.String(5)), migrationMode, true, []prebackup.Handler{})
 	require.NoError(t, err)
 	defer jobDB.TearDown()
 
@@ -321,7 +230,7 @@ func TestJobsDB(t *testing.T) {
 			},
 		}
 
-		err := jobDB.Setup(ReadWrite, true, "gw", migrationMode, true, []prebackup.Handler{})
+		err := jobDB.Setup(ReadWrite, true, strings.ToLower(rand.String(5)), migrationMode, true, []prebackup.Handler{})
 		require.NoError(t, err)
 		defer jobDB.TearDown()
 
@@ -407,7 +316,7 @@ func TestJobsDB(t *testing.T) {
 			},
 		}
 
-		err := jobDB.Setup(ReadWrite, true, "gw", migrationMode, true, []prebackup.Handler{})
+		err := jobDB.Setup(ReadWrite, true, strings.ToLower(rand.String(5)), migrationMode, true, []prebackup.Handler{})
 		require.NoError(t, err)
 		defer jobDB.TearDown()
 
@@ -446,7 +355,7 @@ func TestJobsDB(t *testing.T) {
 				return triggerAddNewDS
 			},
 		}
-		err := jobDB.Setup(ReadWrite, false, "gw", migrationMode, true, []prebackup.Handler{})
+		err := jobDB.Setup(ReadWrite, false, strings.ToLower(rand.String(5)), migrationMode, true, []prebackup.Handler{})
 		require.NoError(t, err)
 		defer jobDB.TearDown()
 
@@ -479,7 +388,7 @@ func TestJobsDB(t *testing.T) {
 				return triggerAddNewDS
 			},
 		}
-		err := jobDB.Setup(ReadWrite, true, "gw", migrationMode, true, []prebackup.Handler{})
+		err := jobDB.Setup(ReadWrite, true, strings.ToLower(rand.String(5)), migrationMode, true, []prebackup.Handler{})
 		require.NoError(t, err)
 		defer jobDB.TearDown()
 
@@ -511,7 +420,7 @@ func TestJobsDB(t *testing.T) {
 			},
 		}
 
-		err := jobDB.Setup(ReadWrite, true, "gw", migrationMode, true, []prebackup.Handler{})
+		err := jobDB.Setup(ReadWrite, true, strings.ToLower(rand.String(5)), migrationMode, true, []prebackup.Handler{})
 		require.NoError(t, err)
 		defer jobDB.TearDown()
 
@@ -540,6 +449,7 @@ func TestJobsDB(t *testing.T) {
 		requireSequential(t, eventLimitList.Jobs)
 		require.Equal(t, 3, len(eventLimitList.Jobs))
 	})
+
 	t.Run("should create a new dataset after maxDSRetentionPeriod", func(t *testing.T) {
 		customVal := "MOCKDS"
 		triggerAddNewDS := make(chan time.Time)
@@ -550,7 +460,7 @@ func TestJobsDB(t *testing.T) {
 			},
 		}
 
-		err := jobDB.Setup(ReadWrite, true, "gw", migrationMode, true, []prebackup.Handler{})
+		err := jobDB.Setup(ReadWrite, true, strings.ToLower(rand.String(5)), migrationMode, true, []prebackup.Handler{})
 		require.NoError(t, err)
 		defer jobDB.TearDown()
 
@@ -581,7 +491,7 @@ func TestJobsDB(t *testing.T) {
 			},
 		}
 
-		err := jobDB.Setup(ReadWrite, true, "gw", migrationMode, true, []prebackup.Handler{})
+		err := jobDB.Setup(ReadWrite, true, strings.ToLower(rand.String(5)), migrationMode, true, []prebackup.Handler{})
 		require.NoError(t, err)
 		defer jobDB.TearDown()
 
@@ -652,8 +562,8 @@ func TestJobsDB(t *testing.T) {
 				return triggerMigrateDS
 			},
 		}
-
-		err := jobDB.Setup(ReadWrite, true, "gw", migrationMode, true, []prebackup.Handler{})
+		prefix := strings.ToLower(rand.String(5))
+		err := jobDB.Setup(ReadWrite, true, prefix, migrationMode, true, []prebackup.Handler{})
 		require.NoError(t, err)
 		defer jobDB.TearDown()
 
@@ -669,14 +579,13 @@ func TestJobsDB(t *testing.T) {
 		jobs = genJobs(defaultWorkspaceID, customVal, 11, 1)
 		require.NoError(t, jobDB.Store(context.Background(), jobs))
 		trigger()
-
 		dsList := jobDB.getDSList()
 		require.Lenf(t, dsList, 5, "dsList length is not 5, got %+v", dsList)
-		require.Equal(t, "gw_jobs_1", dsList[0].JobTable)
-		require.Equal(t, "gw_jobs_2", dsList[1].JobTable)
-		require.Equal(t, "gw_jobs_3", dsList[2].JobTable)
-		require.Equal(t, "gw_jobs_4", dsList[3].JobTable)
-		require.Equal(t, "gw_jobs_5", dsList[4].JobTable)
+		require.Equal(t, prefix+"_jobs_1", dsList[0].JobTable)
+		require.Equal(t, prefix+"_jobs_2", dsList[1].JobTable)
+		require.Equal(t, prefix+"_jobs_3", dsList[2].JobTable)
+		require.Equal(t, prefix+"_jobs_4", dsList[3].JobTable)
+		require.Equal(t, prefix+"_jobs_5", dsList[4].JobTable)
 
 		jobsResult, err := jobDB.GetUnprocessed(context.Background(), GetQueryParamsT{
 			CustomValFilters: []string{customVal},
@@ -701,23 +610,23 @@ func TestJobsDB(t *testing.T) {
 			require.NoError(t, err)
 		}
 
-		trigger() // gw_jobs_1 will be migrated to gw_jobs_1_1 due to the completed threshold (15/20 > 0.7)
+		trigger() // jobs_1 will be migrated to jobs_1_1 due to the completed threshold (15/20 > 0.7)
 		dsList = jobDB.getDSList()
 		require.Lenf(t, dsList, 5, "dsList length is not 5, got %+v", dsList)
-		require.Equal(t, "gw_jobs_1_1", dsList[0].JobTable)
-		require.Equal(t, "gw_jobs_2", dsList[1].JobTable)
-		require.Equal(t, "gw_jobs_3", dsList[2].JobTable)
-		require.Equal(t, "gw_jobs_4", dsList[3].JobTable)
-		require.Equal(t, "gw_jobs_5", dsList[4].JobTable)
+		require.Equal(t, prefix+"_jobs_1_1", dsList[0].JobTable)
+		require.Equal(t, prefix+"_jobs_2", dsList[1].JobTable)
+		require.Equal(t, prefix+"_jobs_3", dsList[2].JobTable)
+		require.Equal(t, prefix+"_jobs_4", dsList[3].JobTable)
+		require.Equal(t, prefix+"_jobs_5", dsList[4].JobTable)
 
-		trigger() // gw_jobs_1_1 will remain as is even though it is now a small table (5 < 10*0.6)
+		trigger() // jobs_1_1 will remain as is even though it is now a small table (5 < 10*0.6)
 		dsList = jobDB.getDSList()
 		require.Lenf(t, dsList, 5, "dsList length is not 5, got %+v", dsList)
-		require.Equal(t, "gw_jobs_1_1", dsList[0].JobTable)
-		require.Equal(t, "gw_jobs_2", dsList[1].JobTable)
-		require.Equal(t, "gw_jobs_3", dsList[2].JobTable)
-		require.Equal(t, "gw_jobs_4", dsList[3].JobTable)
-		require.Equal(t, "gw_jobs_5", dsList[4].JobTable)
+		require.Equal(t, prefix+"_jobs_1_1", dsList[0].JobTable)
+		require.Equal(t, prefix+"_jobs_2", dsList[1].JobTable)
+		require.Equal(t, prefix+"_jobs_3", dsList[2].JobTable)
+		require.Equal(t, prefix+"_jobs_4", dsList[3].JobTable)
+		require.Equal(t, prefix+"_jobs_5", dsList[4].JobTable)
 
 		// process some jobs
 		jobsResult, err = jobDB.GetUnprocessed(context.Background(), GetQueryParamsT{
@@ -741,20 +650,18 @@ func TestJobsDB(t *testing.T) {
 			require.NoError(t, err)
 		}
 
-		trigger() // both gw_jobs_1_1 and gw_jobs_2 would be migrated to gw_jobs_2_1
+		trigger() // both jobs_1_1 and jobs_2 would be migrated to jobs_2_1
 		dsList = jobDB.getDSList()
 		require.Lenf(t, dsList, 4, "dsList length is not 4, got %+v", dsList)
-		require.Equal(t, "gw_jobs_2_1", dsList[0].JobTable)
-		require.Equal(t, "gw_jobs_3", dsList[1].JobTable)
-		require.Equal(t, "gw_jobs_4", dsList[2].JobTable)
-		require.Equal(t, "gw_jobs_5", dsList[3].JobTable)
+		require.Equal(t, prefix+"_jobs_2_1", dsList[0].JobTable)
+		require.Equal(t, prefix+"_jobs_3", dsList[1].JobTable)
+		require.Equal(t, prefix+"_jobs_4", dsList[2].JobTable)
+		require.Equal(t, prefix+"_jobs_5", dsList[3].JobTable)
 	})
 }
 
 func TestMultiTenantLegacyGetAllJobs(t *testing.T) {
-	initJobsDB()
-	archiver.Init()
-	stats.Setup()
+	_ = startPostgres(t)
 	migrationMode := ""
 
 	triggerAddNewDS := make(chan time.Time)
@@ -767,7 +674,7 @@ func TestMultiTenantLegacyGetAllJobs(t *testing.T) {
 	}
 
 	customVal := "MTL"
-	err := jobDB.Setup(ReadWrite, false, strings.ToLower(customVal), migrationMode, true, []prebackup.Handler{})
+	err := jobDB.Setup(ReadWrite, false, strings.ToLower(rand.String(5)), migrationMode, true, []prebackup.Handler{})
 	require.NoError(t, err)
 	defer jobDB.TearDown()
 
@@ -839,9 +746,7 @@ func TestMultiTenantLegacyGetAllJobs(t *testing.T) {
 }
 
 func TestMultiTenantGetAllJobs(t *testing.T) {
-	initJobsDB()
-	archiver.Init()
-	stats.Setup()
+	_ = startPostgres(t)
 	migrationMode := ""
 
 	triggerAddNewDS := make(chan time.Time)
@@ -854,7 +759,7 @@ func TestMultiTenantGetAllJobs(t *testing.T) {
 	}
 
 	customVal := "MT"
-	err := jobDB.Setup(ReadWrite, false, strings.ToLower(customVal), migrationMode, true, []prebackup.Handler{})
+	err := jobDB.Setup(ReadWrite, false, strings.ToLower(rand.String(5)), migrationMode, true, []prebackup.Handler{})
 	require.NoError(t, err)
 	defer jobDB.TearDown()
 
@@ -947,16 +852,14 @@ func TestMultiTenantGetAllJobs(t *testing.T) {
 
 func TestStoreAndUpdateStatusExceedingAnalyzeThreshold(t *testing.T) {
 	t.Setenv("RSERVER_JOBS_DB_ANALYZE_THRESHOLD", "0")
-	initJobsDB()
-	archiver.Init()
-	stats.Setup()
+	_ = startPostgres(t)
 
 	maxDSSize := 10
 	jobDB := HandleT{
 		MaxDSSize: &maxDSSize,
 	}
 	customVal := "MOCKDS"
-	err := jobDB.Setup(ReadWrite, false, customVal, "", true, []prebackup.Handler{})
+	err := jobDB.Setup(ReadWrite, false, strings.ToLower(rand.String(5)), "", true, []prebackup.Handler{})
 	require.NoError(t, err)
 	defer jobDB.TearDown()
 	sampleTestJob := JobT{
@@ -995,16 +898,12 @@ func TestStoreAndUpdateStatusExceedingAnalyzeThreshold(t *testing.T) {
 }
 
 func TestCreateDS(t *testing.T) {
+	postgresql := startPostgres(t)
 	t.Run("CreateDS in case of negative job_indices in the previous", func(t *testing.T) {
+		prefix := strings.ToLower(rand.String(5))
 		// create -ve index table
 		func() {
-			psqlInfo := GetConnectionString()
-			_, err := sql.Open("postgres", psqlInfo)
-			require.NoError(t, err)
-			defer func() { _ = testDB.Close() }()
-			customVal := "mockgw"
-
-			_, err = testDB.Exec(fmt.Sprintf(`CREATE TABLE "%[1]s_jobs_-2" (
+			_, err := postgresql.DB.Exec(fmt.Sprintf(`CREATE TABLE "%[1]s_jobs_-2" (
 				job_id BIGSERIAL PRIMARY KEY,
 			workspace_id TEXT NOT NULL DEFAULT '',
 			uuid UUID NOT NULL,
@@ -1014,9 +913,9 @@ func TestCreateDS(t *testing.T) {
 			event_payload JSONB NOT NULL,
 			event_count INTEGER NOT NULL DEFAULT 1,
 			created_at TIMESTAMP NOT NULL DEFAULT NOW(),
-			expire_at TIMESTAMP NOT NULL DEFAULT NOW());`, customVal))
+			expire_at TIMESTAMP NOT NULL DEFAULT NOW());`, prefix))
 			require.NoError(t, err)
-			_, err = testDB.Exec(fmt.Sprintf(`CREATE TABLE "%[1]s_job_status_-2" (
+			_, err = postgresql.DB.Exec(fmt.Sprintf(`CREATE TABLE "%[1]s_job_status_-2" (
 				id BIGSERIAL,
 				job_id BIGINT REFERENCES "%[1]s_jobs_-2"(job_id),
 				job_state VARCHAR(64),
@@ -1026,38 +925,36 @@ func TestCreateDS(t *testing.T) {
 				error_code VARCHAR(32),
 				error_response JSONB DEFAULT '{}'::JSONB,
 				parameters JSONB DEFAULT '{}'::JSONB,
-				PRIMARY KEY (job_id, job_state, id));`, customVal))
+				PRIMARY KEY (job_id, job_state, id));`, prefix))
 			require.NoError(t, err)
 			negativeJobID := -100
-			_, err = testDB.Exec(fmt.Sprintf(`ALTER SEQUENCE "%[2]s_jobs_-2_job_id_seq" MINVALUE %[1]d START %[1]d RESTART %[1]d;`, negativeJobID, customVal))
+			_, err = postgresql.DB.Exec(fmt.Sprintf(`ALTER SEQUENCE "%[2]s_jobs_-2_job_id_seq" MINVALUE %[1]d START %[1]d RESTART %[1]d;`, negativeJobID, prefix))
 			require.NoError(t, err)
 
-			_, err = testDB.Exec(fmt.Sprintf(`INSERT INTO "%[1]s_jobs_-2" (uuid, user_id, custom_val, parameters, event_payload) values ('c2d29867-3d0b-d497-9191-18a9d8ee7869', 'someuserid', 'GW', '{}', '{}');`, customVal))
+			_, err = postgresql.DB.Exec(fmt.Sprintf(`INSERT INTO "%[1]s_jobs_-2" (uuid, user_id, custom_val, parameters, event_payload) values ('c2d29867-3d0b-d497-9191-18a9d8ee7869', 'someuserid', 'GW', '{}', '{}');`, prefix))
 			require.NoError(t, err)
-			_, err = testDB.Exec(fmt.Sprintf(`INSERT INTO "%[1]s_jobs_-2" (uuid, user_id, custom_val, parameters, event_payload) values ('c2d29867-3d0b-d497-9191-18a9d8ee7860', 'someuserid', 'GW', '{}', '{}');`, customVal))
+			_, err = postgresql.DB.Exec(fmt.Sprintf(`INSERT INTO "%[1]s_jobs_-2" (uuid, user_id, custom_val, parameters, event_payload) values ('c2d29867-3d0b-d497-9191-18a9d8ee7860', 'someuserid', 'GW', '{}', '{}');`, prefix))
 			require.NoError(t, err)
 
-			initJobsDB()
-			archiver.Init()
-			stats.Setup()
 			migrationMode := ""
 
 			triggerAddNewDS := make(chan time.Time)
 			maxDSSize := 1
 			jobDB := HandleT{
+				dbHandle:  postgresql.DB,
 				MaxDSSize: &maxDSSize,
 				TriggerAddNewDS: func() <-chan time.Time {
 					return triggerAddNewDS
 				},
 			}
-			err = jobDB.Setup(ReadWrite, false, customVal, migrationMode, true, []prebackup.Handler{})
+			err = jobDB.Setup(ReadWrite, false, prefix, migrationMode, true, []prebackup.Handler{})
 			require.NoError(t, err)
 			defer jobDB.TearDown()
 
 			triggerAddNewDS <- time.Now()
 			triggerAddNewDS <- time.Now() // Second time, waits for the first loop to finish
 
-			tables, err := testDB.Query(fmt.Sprintf(`SELECT table_name FROM information_schema.tables WHERE table_name LIKE '%[1]s_jobs_`, customVal) + `%' order by table_name desc;`)
+			tables, err := postgresql.DB.Query(fmt.Sprintf(`SELECT table_name FROM information_schema.tables WHERE table_name LIKE '%[1]s_jobs_`, prefix) + `%' order by table_name desc;`)
 			require.NoError(t, err)
 			defer func() { _ = tables.Close() }()
 			var tableName string
@@ -1068,11 +965,11 @@ func TestCreateDS(t *testing.T) {
 				tableNames = append(tableNames, tableName)
 			}
 			require.Equal(t, len(tableNames), 2, `should find two tables`)
-			require.Equal(t, tableNames[0], customVal+"_jobs_-2")
-			require.Equal(t, tableNames[1], customVal+"_jobs_-1")
+			require.Equal(t, tableNames[0], prefix+"_jobs_-2")
+			require.Equal(t, tableNames[1], prefix+"_jobs_-1")
 			expectedNextVal := negativeJobID + 2
 
-			nextVal := testDB.QueryRow(fmt.Sprintf(`select nextval('"%s_job_id_seq"');`, tableNames[1]))
+			nextVal := postgresql.DB.QueryRow(fmt.Sprintf(`select nextval('"%s_job_id_seq"');`, tableNames[1]))
 			var nextValInt int
 			err = nextVal.Scan(&nextValInt)
 			require.NoError(t, err)
@@ -1101,9 +998,7 @@ func requireSequential(t *testing.T, jobs []*JobT) {
 }
 
 func TestJobsDB_IncompatiblePayload(t *testing.T) {
-	initJobsDB()
-	archiver.Init()
-	stats.Setup()
+	_ = startPostgres(t)
 
 	migrationMode := ""
 
@@ -1115,7 +1010,7 @@ func TestJobsDB_IncompatiblePayload(t *testing.T) {
 			return triggerAddNewDS
 		},
 	}
-	err := jobDB.Setup(ReadWrite, false, "gw", migrationMode, true, []prebackup.Handler{})
+	err := jobDB.Setup(ReadWrite, false, strings.ToLower(rand.String(5)), migrationMode, true, []prebackup.Handler{})
 	require.NoError(t, err)
 	defer jobDB.TearDown()
 	customVal := "MOCKDS"
@@ -1159,14 +1054,9 @@ func BenchmarkJobsdb(b *testing.B) {
 		// pageSize is the batch size for appending and retrieving jobs within each worker
 		pageSize = 10
 	)
-
-	concurrencies := []int{16, 64, 256, 512}
-
 	b.Setenv("RSERVER_JOBS_DB_MAX_DSSIZE", fmt.Sprintf("%d", maxDsSize))
-
-	initJobsDB()
-	archiver.Init()
-	stats.Setup()
+	_ = startPostgres(b)
+	concurrencies := []int{16, 64, 256, 512}
 
 	migrationMode := ""
 	for _, concurrency := range concurrencies {
@@ -1312,12 +1202,9 @@ func chunkJobs(slice []JobT, chunkSize int) [][]*JobT {
 }
 
 func BenchmarkLifecycle(b *testing.B) {
-	initJobsDB()
-	archiver.Init()
-	stats.Setup()
-
+	_ = startPostgres(b)
 	jobDB := NewForReadWrite("test")
-	defer jobDB.Close()
+	defer jobDB.TearDown()
 
 	const writeConcurrency = 10
 	const newJobs = 100
