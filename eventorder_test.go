@@ -16,8 +16,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/testhelper/health"
+
+	"github.com/rudderlabs/rudder-server/testhelper"
+
 	"github.com/ory/dockertest/v3"
-	"github.com/phayes/freeport"
 	main "github.com/rudderlabs/rudder-server"
 	"github.com/rudderlabs/rudder-server/testhelper/destination"
 	trand "github.com/rudderlabs/rudder-server/testhelper/rand"
@@ -44,7 +47,7 @@ import (
 // correct order. We also verify that the server has not sent any job twice.
 func TestEventOrderGuarantee(t *testing.T) {
 	const (
-		users         = 50                   // how many different userIDs we will send jobs for
+		users         = 50                   // how many userIDs we will send jobs for
 		jobsPerUser   = 40                   // how many jobs per user we will send
 		batchSize     = 10                   // how many jobs for the same user we will send in each batch request
 		responseDelay = 0 * time.Millisecond // how long we will the webhook wait before sending a response
@@ -132,7 +135,7 @@ func TestEventOrderGuarantee(t *testing.T) {
 	// t.Setenv("RSERVER_ROUTER_GUARANTEE_USER_EVENT_ORDER", "false")
 
 	// find free port for gateway http server to listen on
-	httpPortInt, err := freeport.GetFreePort()
+	httpPortInt, err := testhelper.GetFreePort()
 	require.NoError(t, err)
 	gatewayPort = strconv.Itoa(httpPortInt)
 
@@ -156,14 +159,12 @@ func TestEventOrderGuarantee(t *testing.T) {
 	}()
 
 	t.Logf("waiting rudder-server to start properly")
-	require.Eventually(t, func() bool {
-		url := fmt.Sprintf("http://localhost:%s/health", gatewayPort)
-		if resp, err := http.Get(url); err == nil {
-			resp.Body.Close()
-			return resp.StatusCode == 200
-		}
-		return false
-	}, 20*time.Second, 100*time.Millisecond, "server should be able to start")
+	health.WaitUntilReady(ctx, t,
+		fmt.Sprintf("http://localhost:%s/health", gatewayPort),
+		200*time.Second,
+		100*time.Millisecond,
+		t.Name(),
+	)
 
 	t.Logf("rudder-server started")
 
@@ -321,7 +322,7 @@ func (eventOrderMethods) newWebhook(t *testing.T, spec *eventOrderSpec) *eventOr
 // for the same user do not appear one after the other. The shuffling algorithm respects ordering of
 // batches at user level
 func (eventOrderMethods) splitInBatches(jobs []*eventOrderJobSpec, batchSize int) [][]byte {
-	var payloads map[string][]string = map[string][]string{}
+	payloads := map[string][]string{}
 	for _, job := range jobs {
 		payloads[job.userID] = append(payloads[job.userID], job.payload())
 	}

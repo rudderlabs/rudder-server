@@ -14,7 +14,7 @@ import (
 	"testing"
 	"time"
 
-	uuid "github.com/gofrs/uuid"
+	"github.com/gofrs/uuid"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/ory/dockertest/v3"
@@ -342,7 +342,7 @@ var _ = Describe("jobsdb", func() {
 			jd = &HandleT{}
 
 			jd.skipSetupDBSetup = true
-			err := jd.Setup(ReadWrite, false, "tt", "", false, QueryFiltersT{}, []prebackup.Handler{})
+			err := jd.Setup(ReadWrite, false, "tt", "", false, []prebackup.Handler{})
 			Expect(err).To(BeNil())
 		})
 
@@ -363,7 +363,7 @@ var _ = Describe("jobsdb", func() {
 		BeforeEach(func() {
 			jd = &HandleT{}
 			jd.skipSetupDBSetup = true
-			err := jd.Setup(ReadWrite, false, "tt", "", false, QueryFiltersT{}, []prebackup.Handler{})
+			err := jd.Setup(ReadWrite, false, "tt", "", false, []prebackup.Handler{})
 			Expect(err).To(BeNil())
 		})
 
@@ -580,10 +580,8 @@ func TestRefreshDSList(t *testing.T) {
 			return triggerAddNewDS
 		},
 	}
-	queryFilters := QueryFiltersT{
-		CustomVal: true,
-	}
-	err = jobsDB.Setup(ReadWrite, false, "batch_rt", migrationMode, true, queryFilters, []prebackup.Handler{})
+
+	err = jobsDB.Setup(ReadWrite, false, "batch_rt", migrationMode, true, []prebackup.Handler{})
 	require.NoError(t, err)
 
 	require.Equal(t, 1, len(jobsDB.getDSList()), "jobsDB should start with a ds list size of 1")
@@ -604,12 +602,9 @@ func TestJobsDBTimeout(t *testing.T) {
 	jobDB := HandleT{
 		MaxDSSize: &maxDSSize,
 	}
-	queryFilters := QueryFiltersT{
-		CustomVal: true,
-	}
 
 	customVal := "MOCKDS"
-	err := jobDB.Setup(ReadWrite, false, customVal, "", true, queryFilters, []prebackup.Handler{})
+	err := jobDB.Setup(ReadWrite, false, customVal, "", true, []prebackup.Handler{})
 	require.NoError(t, err)
 	defer jobDB.TearDown()
 
@@ -704,10 +699,6 @@ func TestThreadSafeAddNewDSLoop(t *testing.T) {
 	migrationMode := ""
 	maxDSSize := 1
 	triggerAddNewDS1 := make(chan time.Time)
-	queryFilters := QueryFiltersT{
-		CustomVal: true,
-	}
-
 	// jobsDB-1 setup
 	jobsDB1 := &HandleT{
 		TriggerAddNewDS: func() <-chan time.Time {
@@ -715,7 +706,7 @@ func TestThreadSafeAddNewDSLoop(t *testing.T) {
 		},
 		MaxDSSize: &maxDSSize,
 	}
-	err = jobsDB1.Setup(ReadWrite, false, "test", migrationMode, true, queryFilters, []prebackup.Handler{})
+	err = jobsDB1.Setup(ReadWrite, false, "test", migrationMode, true, []prebackup.Handler{})
 	require.NoError(t, err)
 	require.Equal(t, 1, len(jobsDB1.getDSList()), "expected cache to be auto-updated with DS list length 1")
 
@@ -727,7 +718,7 @@ func TestThreadSafeAddNewDSLoop(t *testing.T) {
 		},
 		MaxDSSize: &maxDSSize,
 	}
-	err = jobsDB2.Setup(ReadWrite, false, "test", migrationMode, true, queryFilters, []prebackup.Handler{})
+	err = jobsDB2.Setup(ReadWrite, false, "test", migrationMode, true, []prebackup.Handler{})
 	require.NoError(t, err)
 	require.Equal(t, 1, len(jobsDB2.getDSList()), "expected cache to be auto-updated with DS list length 1")
 
@@ -796,4 +787,162 @@ func TestThreadSafeAddNewDSLoop(t *testing.T) {
 		},
 		time.Second, time.Millisecond,
 		"expected only one DS to be added, even though both jobsDB-1 & jobsDB-2 are triggered to add new DS (dsLen1: %d, dsLen2: %d)", dsLen1, dsLen2)
+}
+
+func TestCacheScenarios(t *testing.T) {
+	pool, err := dockertest.NewPool("")
+	require.NoError(t, err)
+	postgresResource, err := destination.SetupPostgres(pool, t)
+	require.NoError(t, err)
+
+	t.Setenv("JOBS_DB_DB_NAME", postgresResource.Database)
+	t.Setenv("JOBS_DB_NAME", postgresResource.Database)
+	t.Setenv("JOBS_DB_HOST", postgresResource.Host)
+	t.Setenv("JOBS_DB_PORT", postgresResource.Port)
+	t.Setenv("JOBS_DB_USER", postgresResource.User)
+	t.Setenv("JOBS_DB_PASSWORD", postgresResource.Password)
+	initJobsDB()
+	stats.Setup()
+
+	customVal := "CUSTOMVAL"
+	generateJobs := func(numOfJob int, destinationID string) []*JobT {
+		js := make([]*JobT, numOfJob)
+		for i := 0; i < numOfJob; i++ {
+			js[i] = &JobT{
+				Parameters:   []byte(fmt.Sprintf(`{"batch_id":1,"source_id":"sourceID","destination_id":"%s"}`, destinationID)),
+				EventPayload: []byte(`{"testKey":"testValue"}`),
+				UserID:       "a-292e-4e79-9880-f8009e0ae4a3",
+				UUID:         uuid.Must(uuid.NewV4()),
+				CustomVal:    customVal,
+				EventCount:   1,
+			}
+		}
+		return js
+	}
+
+	t.Run("Test cache with 1 writer and 1 reader jobsdb (gateway, processor scenario)", func(t *testing.T) {
+		gwDB := NewForWrite("gw_cache")
+		require.NoError(t, gwDB.Start())
+		defer gwDB.TearDown()
+
+		gwDBForProcessor := NewForRead("gw_cache")
+		require.NoError(t, gwDBForProcessor.Start())
+		defer gwDBForProcessor.TearDown()
+
+		res, err := gwDB.getUnprocessed(context.Background(), GetQueryParamsT{CustomValFilters: []string{customVal}, JobsLimit: 100})
+		require.NoError(t, err)
+		require.Equal(t, 0, len(res.Jobs), "gwDB should report 0 unprocessed jobs")
+		res, err = gwDBForProcessor.getUnprocessed(context.Background(), GetQueryParamsT{CustomValFilters: []string{customVal}, JobsLimit: 100})
+		require.NoError(t, err)
+		require.Equal(t, 0, len(res.Jobs), "gwDBForProcessor should report 0 unprocessed jobs")
+
+		require.NoError(t, gwDB.Store(context.Background(), generateJobs(2, "")))
+
+		res, err = gwDBForProcessor.getUnprocessed(context.Background(), GetQueryParamsT{CustomValFilters: []string{customVal}, JobsLimit: 100})
+		require.NoError(t, err)
+		require.Equal(t, 2, len(res.Jobs), "gwDBForProcessor should report 2 unprocessed jobs since we added 2 jobs through gwDB")
+		res, err = gwDB.getUnprocessed(context.Background(), GetQueryParamsT{CustomValFilters: []string{customVal}, JobsLimit: 100})
+		require.NoError(t, err)
+		require.Equal(t, 2, len(res.Jobs), "gwDB should report 2 unprocessed jobs since we added 2 jobs through gwDB")
+	})
+
+	t.Run("Test readonly jobsdb", func(t *testing.T) {
+		jobsDB := NewForReadWrite("readonly_cache")
+		require.NoError(t, jobsDB.Start())
+		defer jobsDB.TearDown()
+
+		readOnlyDB := &ReadonlyHandleT{}
+		readOnlyDB.Setup("readonly_cache")
+
+		destinationID := "destinationID"
+
+		pending, err := readOnlyDB.HavePendingJobs(context.Background(), []string{customVal}, 100, []ParameterFilterT{{Name: "source_id", Value: "sourceID"}})
+		require.NoError(t, err)
+		require.False(t, pending, "readOnlyDB should report no pending jobs when using source_id as filter")
+
+		pending, err = readOnlyDB.HavePendingJobs(context.Background(), []string{customVal}, 100, []ParameterFilterT{{Name: "destination_id", Value: destinationID}, {Name: "source_id", Value: "sourceID"}})
+		require.NoError(t, err)
+		require.False(t, pending, "readOnlyDB should report no pending jobs when using both destination_id and source_id as filters")
+
+		// store jobs
+		require.NoError(t, jobsDB.Store(context.Background(), generateJobs(2, destinationID)))
+
+		pending, err = readOnlyDB.HavePendingJobs(context.Background(), []string{customVal}, 100, []ParameterFilterT{{Name: "source_id", Value: "sourceID"}})
+		require.NoError(t, err)
+		require.True(t, pending, "readOnlyDB should report it has pending jobs when using source_id as filter")
+
+		pending, err = readOnlyDB.HavePendingJobs(context.Background(), []string{customVal}, 100, []ParameterFilterT{{Name: "destination_id", Value: destinationID}, {Name: "source_id", Value: "sourceID"}})
+		require.NoError(t, err)
+		require.True(t, pending, "readOnlyDB should report it has pending jobs when using both destination_id and source_id as filters")
+	})
+
+	t.Run("Test cache with and without using parameter filters", func(t *testing.T) {
+		jobsDB := NewForReadWrite("params_cache")
+		require.NoError(t, jobsDB.Start())
+		defer jobsDB.TearDown()
+
+		destinationID := "destinationID"
+
+		res, err := jobsDB.getUnprocessed(context.Background(), GetQueryParamsT{CustomValFilters: []string{customVal}, JobsLimit: 100})
+		require.NoError(t, err)
+		require.Equal(t, 0, len(res.Jobs), "jobsDB should report 0 unprocessed jobs when not using parameter filters")
+		res, err = jobsDB.getUnprocessed(context.Background(), GetQueryParamsT{CustomValFilters: []string{customVal}, ParameterFilters: []ParameterFilterT{{Name: "destination_id", Value: destinationID}}, JobsLimit: 100})
+		require.NoError(t, err)
+		require.Equal(t, 0, len(res.Jobs), "jobsDB should report 0 unprocessed jobs when using destination_id in parameter filters")
+
+		require.NoError(t, jobsDB.Store(context.Background(), generateJobs(2, "")))
+		res, err = jobsDB.getUnprocessed(context.Background(), GetQueryParamsT{CustomValFilters: []string{customVal}, JobsLimit: 100})
+		require.NoError(t, err)
+		require.Equal(t, 2, len(res.Jobs), "jobsDB should report 2 unprocessed jobs when not using parameter filters, after we added 2 jobs")
+		res, err = jobsDB.getUnprocessed(context.Background(), GetQueryParamsT{CustomValFilters: []string{customVal}, ParameterFilters: []ParameterFilterT{{Name: "destination_id", Value: destinationID}}, JobsLimit: 100})
+		require.NoError(t, err)
+		require.Equal(t, 0, len(res.Jobs), "jobsDB should report 0 unprocessed jobs when using destination_id in parameter filters, after we added 2 jobs but for another destination_id")
+
+		require.NoError(t, jobsDB.Store(context.Background(), generateJobs(2, destinationID)))
+		res, err = jobsDB.getUnprocessed(context.Background(), GetQueryParamsT{CustomValFilters: []string{customVal}, JobsLimit: 100})
+		require.NoError(t, err)
+		require.Equal(t, 4, len(res.Jobs), "jobsDB should report 4 unprocessed jobs when not using parameter filters, after we added 2 more jobs")
+		res, err = jobsDB.getUnprocessed(context.Background(), GetQueryParamsT{CustomValFilters: []string{customVal}, ParameterFilters: []ParameterFilterT{{Name: "destination_id", Value: destinationID}}, JobsLimit: 100})
+		require.NoError(t, err)
+		require.Equal(t, 2, len(res.Jobs), "jobsDB should report 2 unprocessed jobs when using destination_id in parameter filters, after we added 2 jobs for this destination_id")
+	})
+
+	t.Run("Test cache with two parameter filters (destination_id & source_id)", func(t *testing.T) {
+		jobsDB := NewForReadWrite("two_params_cache")
+		require.NoError(t, jobsDB.Start())
+		defer jobsDB.TearDown()
+
+		destinationID := "destinationID"
+
+		res, err := jobsDB.getUnprocessed(context.Background(), GetQueryParamsT{CustomValFilters: []string{customVal}, ParameterFilters: []ParameterFilterT{{Name: "destination_id", Value: destinationID}, {Name: "source_id", Value: "sourceID"}}, JobsLimit: 100})
+		require.NoError(t, err)
+		require.Equal(t, 0, len(res.Jobs), "jobsDB should report 0 unprocessed jobs when using both destination_id and source_id as filters")
+
+		require.NoError(t, jobsDB.Store(context.Background(), generateJobs(2, destinationID)))
+		res, err = jobsDB.getUnprocessed(context.Background(), GetQueryParamsT{CustomValFilters: []string{customVal}, ParameterFilters: []ParameterFilterT{{Name: "destination_id", Value: destinationID}, {Name: "source_id", Value: "sourceID"}}, JobsLimit: 100})
+		require.NoError(t, err)
+		require.Equal(t, 2, len(res.Jobs), "jobsDB should report 2 unprocessed jobs when using both destination_id and source_id as filters, after we added 2 jobs")
+	})
+
+	t.Run("Test cache with two less parameter filters (destination_id & source_id)", func(t *testing.T) {
+		previousParameterFilters := CacheKeyParameterFilters
+		CacheKeyParameterFilters = []string{"destination_id", "source_id"}
+		defer func() {
+			CacheKeyParameterFilters = previousParameterFilters
+		}()
+		jobsDB := NewForReadWrite("two_params_cache_query_less")
+		require.NoError(t, jobsDB.Start())
+		defer jobsDB.TearDown()
+
+		destinationID := "destinationID"
+
+		res, err := jobsDB.getUnprocessed(context.Background(), GetQueryParamsT{CustomValFilters: []string{customVal}, ParameterFilters: []ParameterFilterT{{Name: "destination_id", Value: destinationID}}, JobsLimit: 100})
+		require.NoError(t, err)
+		require.Equal(t, 0, len(res.Jobs), "jobsDB should report 0 unprocessed jobs when using destination_id as filter")
+
+		require.NoError(t, jobsDB.Store(context.Background(), generateJobs(2, destinationID)))
+		res, err = jobsDB.getUnprocessed(context.Background(), GetQueryParamsT{CustomValFilters: []string{customVal}, ParameterFilters: []ParameterFilterT{{Name: "destination_id", Value: destinationID}}, JobsLimit: 100})
+		require.NoError(t, err)
+		require.Equal(t, 2, len(res.Jobs), "jobsDB should report 2 unprocessed jobs when using destination_id as filter, after we added 2 jobs")
+	})
 }
