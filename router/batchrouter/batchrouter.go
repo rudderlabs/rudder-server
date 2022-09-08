@@ -292,7 +292,7 @@ func (brt *HandleT) pollAsyncStatus(ctx context.Context) {
 				if IsAsyncDestination(brt.destType) {
 					pkgLogger.Debugf("pollAsyncStatus Started for Dest type: %s", brt.destType)
 					parameterFilters := make([]jobsdb.ParameterFilterT, 0)
-					for _, param := range jobsdb.ParameterFilters {
+					for _, param := range jobsdb.CacheKeyParameterFilters {
 						parameterFilter := jobsdb.ParameterFilterT{
 							Name:     param,
 							Value:    key,
@@ -1586,7 +1586,7 @@ func (worker *workerT) getValueForParameter(batchDest router_utils.BatchDestinat
 
 func (worker *workerT) constructParameterFilters(batchDest router_utils.BatchDestinationT) []jobsdb.ParameterFilterT {
 	parameterFilters := make([]jobsdb.ParameterFilterT, 0)
-	for _, key := range jobsdb.ParameterFilters {
+	for _, key := range jobsdb.CacheKeyParameterFilters {
 		parameterFilter := jobsdb.ParameterFilterT{
 			Name:     key,
 			Value:    worker.getValueForParameter(batchDest, key),
