@@ -6,10 +6,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/services/filemanager"
+	"github.com/rudderlabs/rudder-server/warehouse/configuration_testing"
 	"os"
-	"path/filepath"
-	"regexp"
 	"strings"
 	"time"
 
@@ -645,11 +645,11 @@ func (validateObjectStorageRequest *ValidateObjectRequestT) validateObjectStorag
 		fmt.Println(err)
 		return
 	}
-	err = json.Unmarshal([]byte(configValue), &configMap)
+	err = json.Unmarshal(configValue, &configMap)
 	if err != nil {
 		validateObjectStorageResp = &proto.ValidateObjectStorageResponse{
 			Status:  400,
-			Error:   fmt.Sprintf("Invalid request body"),
+			Error:   fmt.Sprintf("invalid request body"),
 			IsValid: false,
 		}
 		return
@@ -659,31 +659,24 @@ func (validateObjectStorageRequest *ValidateObjectRequestT) validateObjectStorag
 		Provider: typeOfObjectStorage,
 		Config:   configMap,
 	}
+
 	fileManagerFactory := filemanager.FileManagerFactoryT{}
 	fileManager, err := fileManagerFactory.New(&settings)
 
-	searchDir := "./warehouse/testdata/objectStorageValidationData"
-	regexRequiredSuffix := regexp.MustCompile(".json.gz$")
-	var fileList []string
+	req := configuration_testing.DestinationValidationRequest{
+		Destination: backendconfig.DestinationT{
+			DestinationDefinition: backendconfig.DestinationDefinitionT{Name: typeOfObjectStorage},
+		},
+	}
+	filePath, err := configuration_testing.CreateTempLoadFile(&req)
+	defer misc.RemoveFilePaths(filePath)
 
-	err = filepath.Walk(searchDir, func(path string, f os.FileInfo, err error) error {
-		if regexRequiredSuffix.MatchString(path) {
-			fileList = append(fileList, path)
-		}
-		return nil
-	})
-	if err != nil {
-		panic(err)
-	}
-	if len(fileList) == 0 {
-		panic("file list empty, no data to test.")
-	}
-	filePtr, err := os.Open(fileList[0])
+	filePtr, err := os.Open(filePath)
 	_, err = fileManager.Upload(context.TODO(), filePtr, "test-prefix-1")
 	if err != nil {
 		validateObjectStorageResp = &proto.ValidateObjectStorageResponse{
 			Status:  200,
-			Error:   fmt.Sprintf("INVALID CREDS"),
+			Error:   fmt.Sprintf("invalid creds"),
 			IsValid: false,
 		}
 		return
