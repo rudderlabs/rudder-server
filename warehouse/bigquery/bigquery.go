@@ -258,31 +258,37 @@ func (bq *HandleT) DeleteBy(tableNames []string, jobRunID string, sourceID strin
 		if tb == "rudder_discards" {
 			continue
 		}
-
-		sqlStatement := fmt.Sprintf(`DELETE FROM "%[1]s"."%[2]s" WHERE %[3]s <> '%[4]s' AND %[5]s = '%[6]s' AND %[7]s <> '%[8]s'`,
+		sqlStatement := fmt.Sprintf(`DELETE FROM "%[1]s"."%[2]s" WHERE 
+		%[3]s <> @jobrunid AND
+		%[4]s <> @taskrunid AND
+		%[5]s = @sourceid`,
 			bq.Namespace,
 			tb,
 			"context_sources_job_run_id",
-			jobRunID,
+			"context_sources_task_run_id",
 			"context_source_id",
-			sourceID,
-			"context_sources_task_rund_id",
-			taskRunID,
 		)
+
 		pkgLogger.Infof("PG: Deleting rows in table in bigquery for BQ:%s : %v", bq.Warehouse.Destination.ID, sqlStatement)
-		job, err := bq.Db.Query(sqlStatement).Run(bq.BQContext)
-		if err != nil {
-			pkgLogger.Errorf("BQ: Error initiating load job: %v\n", err)
-			return err
+		query := bq.Db.Query(sqlStatement)
+		query.Parameters = []bigquery.QueryParameter{
+			{Name: "jobrunid", Value: jobRunID},
+			{Name: "taskrunid", Value: taskRunID},
+			{Name: "sourceid", Value: sourceID},
 		}
-		status, err := job.Wait(bq.BQContext)
-		if err != nil {
-			pkgLogger.Errorf("BQ: Error running job: %v\n", err)
-			return err
-		}
-		if status.Err() != nil {
-			return status.Err()
-		}
+		// job, err := query.Run(bq.BQContext)
+		// if err != nil {
+		// 	pkgLogger.Errorf("BQ: Error initiating load job: %v\n", err)
+		// 	return err
+		// }
+		// status, err := job.Wait(bq.BQContext)
+		// if err != nil {
+		// 	pkgLogger.Errorf("BQ: Error running job: %v\n", err)
+		// 	return err
+		// }
+		// if status.Err() != nil {
+		// 	return status.Err()
+		// }
 
 	}
 	return nil

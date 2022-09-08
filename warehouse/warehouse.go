@@ -17,8 +17,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/rudderlabs/rudder-server/warehouse/warehouse_jobs"
-
 	"github.com/bugsnag/bugsnag-go/v2"
 	"github.com/cenkalti/backoff/v4"
 	"github.com/lib/pq"
@@ -46,6 +44,7 @@ import (
 	"github.com/rudderlabs/rudder-server/warehouse/deltalake"
 	"github.com/rudderlabs/rudder-server/warehouse/manager"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
+	"github.com/rudderlabs/rudder-server/warehouse/whjobs"
 )
 
 var (
@@ -1130,7 +1129,7 @@ func (wh *HandleT) Setup(whType string) {
 func (wh *HandleT) Shutdown() {
 	wh.backgroundCancel()
 	wh.backgroundWait()
-	warehouse_jobs.AsyncJobWH.Cancel()
+	whjobs.AsyncJobWH.Cancel()
 }
 
 func (wh *HandleT) resetInProgressJobs() {
@@ -1691,11 +1690,11 @@ func startWebHandler(ctx context.Context) error {
 			mux.HandleFunc("/v1/setConfig", setConfigHandler)
 
 			//Warehouse Async Job end-points
-			mux.HandleFunc("/v1/warehouse/wh-jobs/add", warehouse_jobs.AddWarehouseJobHandler)
-			mux.HandleFunc("/v1/warehouse/wh-jobs/status", warehouse_jobs.StatusWarehouseJobHandler)
+			mux.HandleFunc("/v1/warehouse/wh-jobs/add", whjobs.AddWarehouseJobHandler)
+			mux.HandleFunc("/v1/warehouse/wh-jobs/status", whjobs.StatusWarehouseJobHandler)
 			//To be added
-			// mux.HandleFunc("/v1/warehouse/wh-jobs/stop", warehouse_jobs.StopWarehouseJobHandler)
-			// mux.HandleFunc("/v1/warehouse/wh-jobs/get", warehouse_jobs.GetWarehouseJobHandler)
+			// mux.HandleFunc("/v1/warehouse/wh-jobs/stop", whjobs.StopWarehouseJobHandler)
+			// mux.HandleFunc("/v1/warehouse/wh-jobs/get", whjobs.GetWarehouseJobHandler)
 
 			pkgLogger.Infof("WH: Starting warehouse master service in %d", webPort)
 		} else {
@@ -1857,10 +1856,10 @@ func Start(ctx context.Context, app app.Interface) error {
 		}))
 
 		InitWarehouseAPI(dbHandle, pkgLogger.Child("upload_api"))
-		warehouse_jobs.InitWarehouseJobsAPI(dbHandle, &notifier, pkgLogger.Child("warehouse_jobs"), &connectionsMap)
+		whjobs.InitWarehouseJobsAPI(dbHandle, &notifier, pkgLogger.Child("whjobs"), &connectionsMap)
 
 		g.Go(misc.WithBugsnagForWarehouse(func() error {
-			warehouse_jobs.AsyncJobWH.InitAsyncJobRunner()
+			whjobs.AsyncJobWH.InitAsyncJobRunner()
 			return nil
 		}))
 	}

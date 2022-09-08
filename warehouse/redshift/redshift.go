@@ -183,20 +183,22 @@ func (rs *HandleT) DeleteBy(tableNames []string, jobRunID string, sourceID strin
 			continue
 		}
 		sqlStatement := fmt.Sprintf(`DELETE FROM "%[1]s"."%[2]s" WHERE 
-		%[3]s <> '%[4]s' AND
-		%[5]s <> '%[6]s' AND
-		%[7]s = '%[8]s'`,
+		%[3]s <> $1 AND
+		%[4]s <> $2 AND
+		%[5]s = $3`,
 			rs.Namespace,
 			tb,
 			"context_sources_job_run_id",
-			jobRunID,
 			"context_sources_task_run_id",
-			taskRunID,
 			"context_source_id",
-			sourceID,
 		)
+
 		pkgLogger.Infof("RS: Deleting rows in table in redshift for RS:%s : %v", rs.Warehouse.Destination.ID, sqlStatement)
-		_, err = rs.Db.Exec(sqlStatement)
+		// Uncomment below 4 lines when we are ready to launch async job on redshift warehouse
+		// _, err = rs.Db.Exec(sqlStatement,
+		// 	jobRunID,
+		// 	taskRunID,
+		// 	sourceID)
 		if err != nil {
 			pkgLogger.Errorf("Error in executing the query %s", err.Error)
 			return err

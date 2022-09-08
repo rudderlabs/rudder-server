@@ -229,18 +229,23 @@ func (sf *HandleT) DeleteBy(tableNames []string, jobRunID string, sourceID strin
 		if tb == "rudder_discards" {
 			continue
 		}
-		sqlStatement := `DELETE FROM "?"."?" WHERE ? <> '?' AND ? = '?' AND ? <> '?'`
-
-		pkgLogger.Infof("SF: Deleting rows in table in snowflake for SF:%s : %v", sf.Warehouse.Destination.ID, sqlStatement)
-		_, err = sf.Db.Exec(sqlStatement,
+		sqlStatement := fmt.Sprintf(`DELETE FROM "%[1]s"."%[2]s" WHERE 
+		%[3]s <> ? AND
+		%[4]s <> ? AND
+		%[5]s = ?`,
 			sf.Namespace,
 			tb,
 			"context_sources_job_run_id",
-			jobRunID,
-			"context_source_id",
-			sourceID,
 			"context_sources_task_run_id",
-			taskRunID)
+			"context_source_id",
+		)
+
+		pkgLogger.Infof("SF: Deleting rows in table in snowflake for SF:%s : %v", sf.Warehouse.Destination.ID, sqlStatement)
+		// Uncomment below 4 lines when we are ready to launch async job on snowflake warehouse
+		// _, err = sf.Db.Exec(sqlStatement,
+		// 	jobRunID,
+		// 	taskRunID,
+		// 	sourceID)
 		if err != nil {
 			pkgLogger.Errorf("Error %s", err)
 			return err

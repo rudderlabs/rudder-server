@@ -235,26 +235,29 @@ func (ms *HandleT) DownloadLoadFiles(tableName string) ([]string, error) {
 	return fileNames, nil
 }
 
-func (ms *HandleT) DeleteBy(tableNames []string, jobRunID string, sourceID string, taskRunID string) error {
+func (ms *HandleT) DeleteBy(tableNames []string, jobRunID string, sourceID string, taskRunID string) (err error) {
 	pkgLogger.Infof("PG: Cleaning up the followng tables in mysql for MS:%s : %v", tableNames)
 	for _, tb := range tableNames {
 		if tb == "rudder_discards" {
 			continue
 		}
-		sqlStatement := `DELETE FROM "$1"."$2" WHERE 
-		$3 <> '$4' AND
-		$5 <> '$6' AND
-		$7 = '$8'`
-		pkgLogger.Infof("MYSQL: Deleting rows in table in mysql for MS:%s : %v", ms.Warehouse.Destination.ID, sqlStatement)
-		_, err := ms.Db.Exec(sqlStatement,
+		sqlStatement := fmt.Sprintf(`DELETE FROM "%[1]s"."%[2]s" WHERE 
+		%[3]s <> ? AND
+		%[4]s <> ? AND
+		%[5]s = ?`,
 			ms.Namespace,
 			tb,
 			"context_sources_job_run_id",
-			jobRunID,
 			"context_sources_task_run_id",
-			taskRunID,
 			"context_source_id",
-			sourceID)
+		)
+
+		pkgLogger.Infof("MYSQL: Deleting rows in table in mysql for MS:%s : %v", ms.Warehouse.Destination.ID, sqlStatement)
+		// Uncomment below 4 lines when we are ready to launch async job on MsSQL warehouse
+		// _, err = ms.Db.Exec(sqlStatement,
+		// 	jobRunID,
+		// 	taskRunID,
+		// 	sourceID)
 		if err != nil {
 			pkgLogger.Errorf("Error %s", err)
 			return err

@@ -22,7 +22,7 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
 	"github.com/rudderlabs/rudder-server/warehouse/manager"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
-	"github.com/rudderlabs/rudder-server/warehouse/warehouse_jobs"
+	"github.com/rudderlabs/rudder-server/warehouse/whjobs"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -600,13 +600,13 @@ type AsyncJobRunResult struct {
 	Result    bool
 }
 
-func runAsyncJob(asyncjob warehouse_jobs.AsyncJobPayloadT, workerIndex int) (AsyncJobRunResult, error) {
+func runAsyncJob(asyncjob whjobs.AsyncJobPayloadT, workerIndex int) (AsyncJobRunResult, error) {
 	warehouse := connectionsMap[asyncjob.DestinationID][asyncjob.SourceID]
 	whManager, err := manager.NewWarehouseOperations(asyncjob.DestType)
 	if err != nil {
 		return AsyncJobRunResult{JobRunID: "", TableName: "", Result: false}, err
 	}
-	whasyncjob := new(warehouse_jobs.WhAsyncJob)
+	whasyncjob := new(whjobs.WhAsyncJob)
 
 	whManager.Setup(warehouse, whasyncjob)
 	defer whManager.Cleanup()
@@ -639,7 +639,7 @@ func processClaimedAsyncJob(claimedJob pgnotifier.ClaimT, workerIndex int) {
 		// warehouseutils.NewCounterStat(STATS_WORKER_CLAIM_PROCESSING_FAILED, warehouseutils.Tag{Name: TAG_WORKERID, Value: strconv.Itoa(workerIndex)}).Increment()
 		notifier.UpdateClaimedEvent(&claimedJob, &response)
 	}
-	var job warehouse_jobs.AsyncJobPayloadT
+	var job whjobs.AsyncJobPayloadT
 	err := json.Unmarshal(claimedJob.Payload, &job)
 	if err != nil {
 		handleErr(err, claimedJob)
