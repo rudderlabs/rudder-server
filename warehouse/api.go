@@ -672,8 +672,9 @@ func (validateObjectStorageRequest *ValidateObjectRequestT) validateObjectStorag
 	defer misc.RemoveFilePaths(filePath)
 
 	filePtr, err := os.Open(filePath)
-	_, err = fileManager.Upload(context.TODO(), filePtr, "test-prefix-1")
+	_, err = fileManager.Upload(context.TODO(), filePtr)
 	if err != nil {
+		fmt.Println(err)
 		validateObjectStorageResp = &proto.ValidateObjectStorageResponse{
 			Status:  200,
 			Error:   fmt.Sprintf("invalid creds"),
