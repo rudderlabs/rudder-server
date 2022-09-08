@@ -6,7 +6,6 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
-	"log"
 	"os"
 	"testing"
 
@@ -72,6 +71,8 @@ func (t *TestHandle) VerifyConnection() (err error) {
 }
 
 func TestSnowflakeIntegration(t *testing.T) {
+	t.Skip()
+
 	// Cleanup resources
 	// Dropping temporary schema
 	t.Cleanup(func() {
@@ -156,16 +157,16 @@ func TestSnowflakeIntegration(t *testing.T) {
 }
 
 func TestMain(m *testing.M) {
-	_, exists := os.LookupEnv(TestCredentialsKey)
-	if !exists {
-		log.Println("Skipping Snowflake Test as the Test credentials does not exits.")
-		return
-	}
-
-	handle = &TestHandle{
-		WriteKey: "2eSJyYtqwcFiUILzXv2fcNIrWO7",
-		Schema:   testhelper.GetSchema(warehouseutils.SNOWFLAKE, TestSchemaKey),
-		Tables:   []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"},
-	}
-	os.Exit(testhelper.Run(m, handle))
+	//_, exists := os.LookupEnv(TestCredentialsKey)
+	//if !exists {
+	//	log.Println("Skipping Snowflake Test as the Test credentials does not exits.")
+	//	return
+	//}
+	//
+	//handle = &TestHandle{
+	//	WriteKey: "2eSJyYtqwcFiUILzXv2fcNIrWO7",
+	//	Schema:   testhelper.GetSchema(warehouseutils.SNOWFLAKE, TestSchemaKey),
+	//	Tables:   []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"},
+	//}
+	//os.Exit(testhelper.Run(m, handle))
 }
