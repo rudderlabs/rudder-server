@@ -1,3 +1,5 @@
+//go:generate mockgen --build_flags=--mod=mod -destination=../../../mocks/gateway/webhook/mock_webhook.go -package mock_webhook github.com/rudderlabs/rudder-server/gateway/webhook GatewayI
+
 package webhook
 
 import (
@@ -26,7 +28,17 @@ type WebHookI interface {
 	Register(name string)
 }
 
-func Setup(gwHandle GatewayI) *HandleT {
+func newWebhookStats() *webhookStatsT {
+	wStats := webhookStatsT{}
+	wStats.sentStat = stats.DefaultStats.NewStat("webhook.transformer_sent", stats.CountType)
+	wStats.receivedStat = stats.DefaultStats.NewStat("webhook.transformer_received", stats.CountType)
+	wStats.failedStat = stats.DefaultStats.NewStat("webhook.transformer_failed", stats.CountType)
+	wStats.transformTimerStat = stats.DefaultStats.NewStat("webhook.transformation_time", stats.TimerType)
+	wStats.sourceStats = make(map[string]*webhookSourceStatT)
+	return &wStats
+}
+
+func Setup(gwHandle GatewayI, opts ...batchTransformerOption) *HandleT {
 	webhook := &HandleT{gwHandle: gwHandle}
 	webhook.requestQ = make(map[string](chan *webhookT))
 	webhook.batchRequestQ = make(chan *batchWebhookT)
@@ -43,15 +55,13 @@ func Setup(gwHandle GatewayI) *HandleT {
 	g, _ := errgroup.WithContext(ctx)
 	for i := 0; i < maxTransformerProcess; i++ {
 		g.Go(misc.WithBugsnag(func() error {
-			wStats := webhookStatsT{}
-			wStats.sentStat = stats.DefaultStats.NewStat("webhook.transformer_sent", stats.CountType)
-			wStats.receivedStat = stats.DefaultStats.NewStat("webhook.transformer_received", stats.CountType)
-			wStats.failedStat = stats.DefaultStats.NewStat("webhook.transformer_failed", stats.CountType)
-			wStats.transformTimerStat = stats.DefaultStats.NewStat("webhook.transformation_time", stats.TimerType)
-			wStats.sourceStats = make(map[string]*webhookSourceStatT)
 			bt := batchWebhookTransformerT{
-				webhook: webhook,
-				stats:   &wStats,
+				webhook:              webhook,
+				stats:                newWebhookStats(),
+				sourceTransformerURL: sourceTransformerURL,
+			}
+			for _, opt := range opts {
+				opt(&bt)
 			}
 			bt.batchTransformLoop()
 			return nil

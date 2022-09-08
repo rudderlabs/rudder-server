@@ -19,4 +19,5 @@ jobs:
           release-type: go
           package-name: rudder-server
           default-branch: ${{ steps.extract_branch.outputs.branch }}
+          changelog-types: '[{"type":"feat","section":"Features","hidden":false},{"type":"fix","section":"Bug Fixes","hidden":false},{"type":"chore","section":"Miscellaneous","hidden":false},{"type":"refactor","section":"Miscellaneous","hidden":false},{"type":"test","section":"Miscellaneous","hidden":false},{"type":"doc","section":"Documentation","hidden":false}]'
           bump-minor-pre-major: true

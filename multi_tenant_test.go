@@ -195,6 +195,9 @@ func testMultiTenantByAppType(t *testing.T, appType string) {
 	resp, err := http.Get(healthEndpoint)
 	require.ErrorContains(t, err, "connection refused")
 	require.Nil(t, resp)
+	if err == nil {
+		defer resp.Body.Close()
+	}
 
 	// Pushing valid configuration via ETCD
 	etcdReqKey := getETCDWorkspacesReqKey(releaseName, serverInstanceID, appType)
@@ -383,6 +386,7 @@ func sendEvent(t *testing.T, httpPort int, payload *strings.Reader, callType, wr
 	req.Header.Add("Authorization", fmt.Sprintf("Basic %s", b64.StdEncoding.EncodeToString(
 		[]byte(fmt.Sprintf("%s:", writeKey)),
 	)))
+	req.Header.Add("AnonymousId", "anonymousId_header")
 
 	res, err := httpClient.Do(req)
 	require.NoError(t, err)

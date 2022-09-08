@@ -26,11 +26,9 @@ func HandleNullRecovery(forceNormal, forceDegraded bool, forceMigrationMode stri
 	recoveryData := getRecoveryData()
 	if forceMode != "" {
 		recoveryData.Mode = forceMode
-	} else {
+	} else if recoveryData.Mode != normalMode {
 		// If no mode is forced (through env or cli) and if previous mode is migration then setting server mode to normal.
-		if recoveryData.Mode != normalMode {
-			recoveryData.Mode = normalMode
-		}
+		recoveryData.Mode = normalMode
 	}
 	recoveryHandler := NewRecoveryHandler(&recoveryData)
 

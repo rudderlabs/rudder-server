@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -1549,6 +1550,9 @@ func (job *UploadJobT) setUploadError(statusError error, state string) (string, 
 }
 
 func (job *UploadJobT) validateDestinationCredentials() (bool, error) {
+	if job.destinationValidator == nil {
+		return false, errors.New("failed to validate as destinationValidator is not set")
+	}
 	validationResult, err := job.destinationValidator.ValidateCredentials(&configuration_testing.DestinationValidationRequest{Destination: job.warehouse.Destination})
 	if err != nil {
 		pkgLogger.Errorf("Unable to successfully validate destination: %s credentials, err: %v", job.warehouse.Destination.ID, err)
@@ -2044,10 +2048,7 @@ func (job *UploadJobT) GetSingleLoadFile(tableName string) (warehouseutils.LoadF
 }
 
 func (job *UploadJobT) ShouldOnDedupUseNewRecord() bool {
-	if job.upload.SourceCategory == CloudSourceCateogry {
-		return true
-	}
-	return false
+	return job.upload.SourceCategory == CloudSourceCateogry
 }
 
 func (job *UploadJobT) UseRudderStorage() bool {
