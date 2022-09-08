@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+
 	"github.com/lib/pq"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
@@ -138,9 +139,7 @@ func (retryReq *RetryRequest) getSourceIDs() (sourceIDs []string) {
 }
 
 func (retryReq *RetryRequest) clausesQuery(sourceIDs []string) []FilterClause {
-	var (
-		clauses []FilterClause
-	)
+	var clauses []FilterClause
 
 	// SourceID
 	if retryReq.SourceID != "" {

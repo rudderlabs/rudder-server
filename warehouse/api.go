@@ -105,7 +105,7 @@ func InitWarehouseAPI(dbHandle *sql.DB, log logger.LoggerI) error {
 		dbHandle:          dbHandle,
 		warehouseDBHandle: NewWarehouseDB(dbHandle),
 		log:               log,
-		isMultiWorkspace: isMultiWorkspace,
+		isMultiWorkspace:  isMultiWorkspace,
 		connectionManager: &controlplane.ConnectionManager{
 			AuthInfo: controlplane.AuthInfo{
 				Service:         "warehouse",
