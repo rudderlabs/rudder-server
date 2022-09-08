@@ -2420,6 +2420,7 @@ func (jd *HandleT) markClearEmptyResult(ds dataSetT, workspace string, stateFilt
 		jd.invalidCacheKeyStat.Increment()
 	}
 
+	// Skip the cache if a parameter filter is provided that does not belong to the caching key
 	for _, parameterFilter := range parameterFilters {
 		if !misc.ContainsString(ParameterFilters, parameterFilter.Name) {
 			return

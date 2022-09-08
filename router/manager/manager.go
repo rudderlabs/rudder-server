@@ -74,8 +74,7 @@ func New(rtFactory *router.Factory, brtFactory *batchrouter.Factory,
 func (r *LifecycleManager) RouterIdentifier(destinationID, destinationType string) string {
 	r.isolateRouterMapLock.Lock()
 	defer r.isolateRouterMapLock.Unlock()
-	_, ok := r.isolateRouterMap[destinationType]
-	if !ok {
+	if _, ok := r.isolateRouterMap[destinationType]; !ok {
 		r.isolateRouterMap[destinationType] = config.GetBool(fmt.Sprintf("Router.%s.isolateDestID", destinationType), false)
 	}
 
