@@ -103,6 +103,7 @@ func Test_GetConnectionToken(t *testing.T) {
 		namespace          string
 		workspaceToken     string
 		expectedIdentifier string
+		tokenType          string
 		err                error
 	}{
 		{
@@ -113,6 +114,7 @@ func Test_GetConnectionToken(t *testing.T) {
 			expectedIdentifier: "dedicated",
 			expectedBool:       false,
 			workspaceToken:     "dedicated",
+			tokenType:          "WORKSPACE_TOKEN",
 		},
 		{
 			name:               "MultiTenantType",
@@ -121,6 +123,7 @@ func Test_GetConnectionToken(t *testing.T) {
 			namespace:          "namespace",
 			expectedIdentifier: "namespace",
 			expectedBool:       true,
+			tokenType:          "NAMESPACE",
 		},
 		{
 			name:               "MultiTenantType",
@@ -129,6 +132,7 @@ func Test_GetConnectionToken(t *testing.T) {
 			namespace:          "free-us-1",
 			expectedIdentifier: "secret",
 			expectedBool:       true,
+			tokenType:          "NAMESPACE",
 		},
 		{
 			name:               "MultiTenantType",
@@ -147,10 +151,11 @@ func Test_GetConnectionToken(t *testing.T) {
 			t.Setenv("HOSTED_SERVICE_SECRET", tt.secret)
 			t.Setenv("WORKSPACE_NAMESPACE", tt.namespace)
 			t.Setenv("WORKSPACE_TOKEN", tt.workspaceToken)
-			identifier, isMultiWorkspace, err := deployment.GetConnectionToken()
+			identifier, tokenType, isMultiWorkspace, err := deployment.GetConnectionToken()
 			require.Equal(t, tt.err, err)
 			require.Equal(t, tt.expectedIdentifier, identifier)
 			require.Equal(t, tt.expectedBool, isMultiWorkspace)
+			require.Equal(t, tt.tokenType, tokenType)
 		})
 	}
 }
