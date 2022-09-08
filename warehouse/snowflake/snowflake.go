@@ -380,6 +380,7 @@ func (sf *HandleT) LoadIdentityMergeRulesTable() (err error) {
 	sanitisedSQLStmt, regexErr := misc.ReplaceMultiRegex(sqlStatement, map[string]string{
 		"AWS_KEY_ID='[^']*'":     "AWS_KEY_ID='***'",
 		"AWS_SECRET_KEY='[^']*'": "AWS_SECRET_KEY='***'",
+		"AWS_TOKEN='[^']*'":      "AWS_TOKEN='***'",
 	})
 	if regexErr == nil {
 		pkgLogger.Infof("SF: Dedup records for table:%s using staging table: %s\n", identityMergeRulesTable, sanitisedSQLStmt)
