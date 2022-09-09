@@ -56,7 +56,13 @@ import (
 	"github.com/lib/pq"
 )
 
-const preDropTablePrefix = "pre_drop_"
+var errStaleDsList = errors.New("stale dataset list")
+
+const (
+	preDropTablePrefix               = "pre_drop_"
+	pgReadonlyTableExceptionFuncName = "readonly_table_exception()"
+	pgErrorCodeTableReadonly         = "RS001"
+)
 
 // backupSettings is for capturing the backup
 // configuration from the config/env files to
@@ -211,7 +217,7 @@ type JobsDB interface {
 	//    jobsdb.WithStoreSafeTx(func(tx StoreSafeTx) error {
 	//	      jobsdb.StoreWithRetryEachInTx(ctx, tx, jobList)
 	//    })
-	StoreWithRetryEachInTx(ctx context.Context, tx StoreSafeTx, jobList []*JobT) map[uuid.UUID]string
+	StoreWithRetryEachInTx(ctx context.Context, tx StoreSafeTx, jobList []*JobT) (map[uuid.UUID]string, error)
 
 	// WithUpdateSafeTx prepares an update-safe environment and then starts a transaction
 	// that can be used by the provided function. An update-safe transaction shall be used if the provided function
@@ -435,7 +441,6 @@ type HandleT struct {
 	backgroundGroup               *errgroup.Group
 	maxBackupRetryTime            time.Duration
 	preBackupHandlers             []prebackup.Handler
-
 	// skipSetupDBSetup is useful for testing as we mock the database client
 	// TODO: Remove this flag once we have test setup that uses real database
 	skipSetupDBSetup bool
@@ -444,6 +449,7 @@ type HandleT struct {
 	// TODO: Ideally we should refactor the code to not use this override.
 	TriggerAddNewDS  func() <-chan time.Time
 	TriggerMigrateDS func() <-chan time.Time
+	TriggerRefreshDS func() <-chan time.Time
 
 	lifecycle struct {
 		mu      sync.Mutex
@@ -795,6 +801,12 @@ func (jd *HandleT) init() {
 	if jd.TriggerMigrateDS == nil {
 		jd.TriggerMigrateDS = func() <-chan time.Time {
 			return time.After(migrateDSLoopSleepDuration)
+		}
+	}
+
+	if jd.TriggerRefreshDS == nil {
+		jd.TriggerRefreshDS = func() <-chan time.Time {
+			return time.After(refreshDSListLoopSleepDuration)
 		}
 	}
 
@@ -2031,9 +2043,23 @@ func (jd *HandleT) WithStoreSafeTx(f func(tx StoreSafeTx) error) error {
 
 func (jd *HandleT) inStoreSafeCtx(f func() error) error {
 	// Only locks the list
-	jd.dsListLock.RLock()
-	defer jd.dsListLock.RUnlock()
-	return f()
+	op := func() error {
+		jd.dsListLock.RLock()
+		defer jd.dsListLock.RUnlock()
+		return f()
+	}
+	var err error
+	for {
+		err = op()
+		if err != nil && errors.Is(err, errStaleDsList) {
+			jd.logger.Errorf("[JobsDB] :: Store failed: %v. Retrying after refreshing DS cache", errStaleDsList)
+			jd.dsListLock.WithLock(func(l lock.DSListLockToken) {
+				_ = jd.refreshDSList(l)
+			})
+		} else {
+			return err
+		}
+	}
 }
 
 func (jd *HandleT) WithUpdateSafeTx(f func(tx UpdateSafeTx) error) error {
@@ -2077,7 +2103,7 @@ func (jd *HandleT) clearCache(ds dataSetT, jobList []*JobT) {
 	jd.doClearCache(ds, customValParamMap)
 }
 
-func (jd *HandleT) internalStoreWithRetryEachInTx(ctx context.Context, tx *sql.Tx, ds dataSetT, jobList []*JobT) (errorMessagesMap map[uuid.UUID]string) {
+func (jd *HandleT) internalStoreWithRetryEachInTx(ctx context.Context, tx *sql.Tx, ds dataSetT, jobList []*JobT) (errorMessagesMap map[uuid.UUID]string, staleDs error) {
 	const (
 		savepointSql = "SAVEPOINT storeWithRetryEach"
 		rollbackSql  = "ROLLBACK TO " + savepointSql
@@ -2097,15 +2123,18 @@ func (jd *HandleT) internalStoreWithRetryEachInTx(ctx context.Context, tx *sql.T
 
 	_, err := tx.ExecContext(ctx, savepointSql)
 	if err != nil {
-		return failAll(err)
+		return failAll(err), nil
 	}
 	err = jd.internalStoreJobsInTx(ctx, tx, ds, jobList)
 	if err == nil {
 		return
 	}
+	if errors.Is(err, errStaleDsList) {
+		return nil, err
+	}
 	_, err = tx.ExecContext(ctx, rollbackSql)
 	if err != nil {
-		return failAll(err)
+		return failAll(err), nil
 	}
 	jd.logger.Errorf("Copy In command failed with error %v", err)
 	errorMessagesMap = make(map[uuid.UUID]string)
@@ -2128,6 +2157,9 @@ func (jd *HandleT) internalStoreWithRetryEachInTx(ctx context.Context, tx *sql.T
 		// try to store
 		err := jd.storeJob(ctx, tx, ds, job)
 		if err != nil {
+			if errors.Is(err, errStaleDsList) {
+				return nil, err
+			}
 			errorMessagesMap[job.UUID] = err.Error()
 			// rollback to savepoint
 			_, txErr = tx.ExecContext(ctx, rollbackSql)
@@ -2336,8 +2368,12 @@ func (jd *HandleT) doStoreJobsInTx(ctx context.Context, tx *sql.Tx, ds dataSetT,
 		return err
 	}
 	err := store()
+
 	var e *pq.Error
 	if err != nil && errors.As(err, &e) {
+		if e.Code == pgErrorCodeTableReadonly {
+			return errStaleDsList
+		}
 		if _, ok := dbInvalidJsonErrors[string(e.Code)]; ok {
 			if _, err := tx.ExecContext(ctx, rollbackSql); err != nil {
 				return err
@@ -2353,9 +2389,11 @@ func (jd *HandleT) doStoreJobsInTx(ctx context.Context, tx *sql.Tx, ds dataSetT,
 
 func (jd *HandleT) storeJob(ctx context.Context, tx *sql.Tx, ds dataSetT, job *JobT) (err error) {
 	sqlStatement := fmt.Sprintf(`INSERT INTO %q (uuid, user_id, custom_val, parameters, event_payload, workspace_id)
-	                                   VALUES ($1, $2, $3, $4, $5, $6) RETURNING job_id`, ds.JobTable)
+		VALUES ($1, $2, $3, $4, $5, $6) RETURNING job_id`, ds.JobTable)
 	stmt, err := tx.PrepareContext(ctx, sqlStatement)
-	jd.assertError(err)
+	if err != nil {
+		return err
+	}
 	defer func() { _ = stmt.Close() }()
 	job.sanitizeJson()
 	_, err = stmt.ExecContext(ctx, job.UUID, job.UserID, job.CustomVal, string(job.Parameters), string(job.EventPayload), job.WorkspaceId)
@@ -2368,10 +2406,14 @@ func (jd *HandleT) storeJob(ctx context.Context, tx *sql.Tx, ds dataSetT, job *J
 	pqErr, ok := err.(*pq.Error)
 	if ok {
 		errCode := string(pqErr.Code)
+		if errCode == pgErrorCodeTableReadonly {
+			return errStaleDsList
+		}
 		if _, ok := dbInvalidJsonErrors[errCode]; ok {
 			return errors.New("invalid JSON")
 		}
 	}
+
 	return
 }
 
@@ -3029,7 +3071,7 @@ func (jd *HandleT) updateJobStatusDSInTx(ctx context.Context, tx *sql.Tx, ds dat
 	return
 }
 
-/**
+/*
 The next set of functions are the user visible functions to get/set job status.
 For reading jobs, it scans from the oldest DS to the latest till it has found
 enough jobs. For updating status, it finds the DS to which the job belongs
@@ -3052,9 +3094,7 @@ Store() only needs to access the last element of dsList and is not
 impacted by movement of data across ds so it only takes the dsListLock.
 Other functions are impacted by movement of data across DS in background
 so take both the list and data lock
-
 */
-
 func (jd *HandleT) addNewDSLoop(ctx context.Context) {
 	for {
 		select {
@@ -3072,7 +3112,7 @@ func (jd *HandleT) addNewDSLoop(ctx context.Context) {
 			sqlStatement := fmt.Sprintf(`SELECT pg_advisory_xact_lock(%d);`, misc.JobsDBAddDsAdvisoryLock)
 			_, err := tx.ExecContext(context.TODO(), sqlStatement)
 			if err != nil {
-				return err
+				return fmt.Errorf("error while acquiring advisory lock %d: %w", misc.JobsDBAddDsAdvisoryLock, err)
 			}
 
 			// We acquire the list lock only after we have acquired the advisory lock.
@@ -3086,14 +3126,23 @@ func (jd *HandleT) addNewDSLoop(ctx context.Context) {
 			latestDS := dsList[len(dsList)-1]
 			full, err := jd.checkIfFullDSInTx(tx, latestDS)
 			if err != nil {
-				return err
+				return fmt.Errorf("error while checking if DS is full: %w", err)
 			}
 			// checkIfFullDS is true for last DS in the list
 			if full {
+				if _, err = tx.Exec(fmt.Sprintf(`LOCK TABLE %q IN EXCLUSIVE MODE;`, latestDS.JobTable)); err != nil {
+					return fmt.Errorf("error locking table %s: %w", latestDS.JobTable, err)
+				}
+
 				nextDSIdx = jd.doComputeNewIdxForAppend(dsList)
 				jd.logger.Infof("[[ %s : addNewDSLoop ]]: NewDS", jd.tablePrefix)
-				if err := jd.addNewDSInTx(tx, dsListLock, dsList, newDataSet(jd.tablePrefix, nextDSIdx)); err != nil {
-					return err
+				if err = jd.addNewDSInTx(tx, dsListLock, dsList, newDataSet(jd.tablePrefix, nextDSIdx)); err != nil {
+					return fmt.Errorf("error adding new DS: %w", err)
+				}
+
+				// previous DS should become read only
+				if err = setReadonlyDsInTx(tx, latestDS); err != nil {
+					return fmt.Errorf("error making dataset read only: %w", err)
 				}
 			}
 			return nil
@@ -3106,10 +3155,21 @@ func (jd *HandleT) addNewDSLoop(ctx context.Context) {
 	}
 }
 
+func setReadonlyDsInTx(tx *sql.Tx, latestDS dataSetT) error {
+	sqlStatement := fmt.Sprintf(
+		`CREATE TRIGGER readonlyTableTrg
+		BEFORE INSERT
+		ON %q
+		FOR EACH STATEMENT
+		EXECUTE PROCEDURE %s;`, latestDS.JobTable, pgReadonlyTableExceptionFuncName)
+	_, err := tx.Exec(sqlStatement)
+	return err
+}
+
 func (jd *HandleT) refreshDSListLoop(ctx context.Context) {
 	for {
 		select {
-		case <-time.After(refreshDSListLoopSleepDuration):
+		case <-jd.TriggerRefreshDS():
 		case <-ctx.Done():
 			return
 		}
@@ -4173,30 +4233,32 @@ func (jd *HandleT) StoreInTx(ctx context.Context, tx StoreSafeTx, jobList []*Job
 func (jd *HandleT) StoreWithRetryEach(ctx context.Context, jobList []*JobT) map[uuid.UUID]string {
 	var res map[uuid.UUID]string
 	_ = jd.WithStoreSafeTx(func(tx StoreSafeTx) error {
-		res = jd.StoreWithRetryEachInTx(ctx, tx, jobList)
-		return nil
+		var err error
+		res, err = jd.StoreWithRetryEachInTx(ctx, tx, jobList)
+		return err
 	})
 	return res
 }
 
-func (jd *HandleT) StoreWithRetryEachInTx(ctx context.Context, tx StoreSafeTx, jobList []*JobT) map[uuid.UUID]string {
+func (jd *HandleT) StoreWithRetryEachInTx(ctx context.Context, tx StoreSafeTx, jobList []*JobT) (map[uuid.UUID]string, error) {
 	var res map[uuid.UUID]string
+	var err error
 	storeCmd := func() error {
 		command := func() interface{} {
 			dsList := jd.getDSList()
-			res = jd.internalStoreWithRetryEachInTx(ctx, tx.Tx(), dsList[len(dsList)-1], jobList)
+			res, err = jd.internalStoreWithRetryEachInTx(ctx, tx.Tx(), dsList[len(dsList)-1], jobList)
 			return res
 		}
 		res, _ = jd.executeDbRequest(newWriteDbRequest("store_retry_each", nil, command)).(map[uuid.UUID]string)
-		return nil
+		return err
 	}
 
 	if tx.storeSafeTxIdentifier() != jd.Identifier() {
 		_ = jd.inStoreSafeCtx(storeCmd)
-		return res
+		return res, err
 	}
 	_ = storeCmd()
-	return res
+	return res, err
 }
 
 /*
