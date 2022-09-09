@@ -34,7 +34,7 @@ import (
 )
 
 func TestMultiTenant(t *testing.T) {
-	for _, appType := range []string{app.EMBEDDED, app.GATEWAY} {
+	for _, appType := range []string{app.GATEWAY, app.EMBEDDED} {
 		t.Run(appType, func(t *testing.T) {
 			testMultiTenantByAppType(t, appType)
 		})
