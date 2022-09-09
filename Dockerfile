@@ -23,6 +23,8 @@ RUN BUILD_DATE=$(date "+%F,%T") \
     LDFLAGS="-s -w -X main.version=${VERSION} -X main.commit=${COMMIT_HASH} -X main.buildDate=$BUILD_DATE -X main.builtBy=${REVISION} -X main.builtBy=${REVISION} -X main.enterpriseToken=${ENTERPRISE_TOKEN} " \
     make build
 
+RUN go build -o devtool ./cmd/devtool/
+
 FROM frolvlad/alpine-glibc:alpine-3.15_glibc-2.34
 
 RUN apk update && apk add tzdata
@@ -32,6 +34,7 @@ RUN apk -U --no-cache upgrade && \
 COPY --from=builder rudder-server/rudder-server .
 COPY --from=builder rudder-server/build/wait-for-go/wait-for-go .
 COPY --from=builder rudder-server/build/regulation-worker .
+COPY --from=builder rudder-server/devtool .
 
 COPY build/docker-entrypoint.sh /
 COPY build/wait-for /

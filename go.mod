@@ -179,7 +179,7 @@ require (
 )
 
 require (
-	github.com/alexeyco/simpletable v1.0.0 // indirect
+	github.com/alexeyco/simpletable v1.0.0
 	github.com/buger/jsonparser v1.1.1
 	github.com/cpuguy83/go-md2man/v2 v2.0.2 // indirect
 	github.com/mattn/go-runewidth v0.0.12 // indirect

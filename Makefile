@@ -1,4 +1,4 @@
-.PHONY: help default build run run-dev test mocks prepare-build
+.PHONY: help default build run run-mt test mocks prepare-build
 
 GO=go
 GINKGO=ginkgo
@@ -44,8 +44,10 @@ endif
 run: prepare-build ## Run rudder-server using go run
 	$(GO) run main.go
 
-run-dev: prepare-build ## Run rudder-server using go run with 'dev' build tag
-	$(GO) run -tags=dev main.go
+run-mt: prepare-build ## Run rudder-server in multi-tenant deployment type
+	$(GO) run ./cmd/devtool etcd mode --no-wait normal 
+	$(GO) run ./cmd/devtool etcd workspaces --no-wait none
+	DEPLOYMENT_TYPE=MULTITENANT $(GO) run main.go
 
 help: ## Show the available commands
 	@grep -E '^[0-9a-zA-Z_-]+:.*?## .*$$' ./Makefile | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-30s\033[0m %s\n", $$1, $$2}'
