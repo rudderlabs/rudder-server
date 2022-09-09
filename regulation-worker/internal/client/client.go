@@ -5,7 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"net/http"
 	"regexp"
 	"strconv"
@@ -87,7 +87,7 @@ func (j *JobAPI) Get(ctx context.Context) (model.Job, error) {
 		return model.Job{}, model.ErrNoRunnableJob
 	} else {
 
-		body, err := ioutil.ReadAll(resp.Body)
+		body, err := io.ReadAll(resp.Body)
 		if err != nil {
 			pkgLogger.Errorf("error while reading response body: %v", err)
 			return model.Job{}, fmt.Errorf("error while reading response body: %w", err)

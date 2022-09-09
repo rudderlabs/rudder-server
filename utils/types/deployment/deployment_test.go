@@ -4,6 +4,11 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/rudderlabs/rudder-server/admin"
+	"github.com/rudderlabs/rudder-server/config"
+
+	"github.com/rudderlabs/rudder-server/utils/logger"
+
 	"github.com/stretchr/testify/require"
 
 	"github.com/rudderlabs/rudder-server/utils/types/deployment"
@@ -68,7 +73,7 @@ func Test_GetFromEnv(t *testing.T) {
 			envs: map[string]string{
 				"DEPLOYMENT_TYPE": "A_NOT_VALID_TYPE",
 			},
-			err: fmt.Errorf("Invalid deployment type: \"A_NOT_VALID_TYPE\""),
+			err: fmt.Errorf("invalid deployment type: \"A_NOT_VALID_TYPE\""),
 		},
 	}
 
@@ -81,6 +86,71 @@ func Test_GetFromEnv(t *testing.T) {
 			dType, err := deployment.GetFromEnv()
 			require.Equal(t, tt.expectedType, dType)
 			require.Equal(t, tt.err, err)
+		})
+	}
+}
+
+func Test_GetConnectionToken(t *testing.T) {
+	config.Load()
+	admin.Init()
+	logger.Init()
+	logger.Init()
+	testcases := []struct {
+		name               string
+		dType              string
+		expectedBool       bool
+		secret             string
+		namespace          string
+		workspaceToken     string
+		expectedIdentifier string
+		err                error
+	}{
+		{
+			name:               "DedicatedType",
+			dType:              "DEDICATED",
+			secret:             "",
+			namespace:          "",
+			expectedIdentifier: "dedicated",
+			expectedBool:       false,
+			workspaceToken:     "dedicated",
+		},
+		{
+			name:               "MultiTenantType",
+			dType:              "MULTITENANT",
+			secret:             "secret",
+			namespace:          "namespace",
+			expectedIdentifier: "namespace",
+			expectedBool:       true,
+		},
+		{
+			name:               "MultiTenantType",
+			dType:              "MULTITENANT",
+			secret:             "secret",
+			namespace:          "free-us-1",
+			expectedIdentifier: "secret",
+			expectedBool:       true,
+		},
+		{
+			name:               "MultiTenantType",
+			dType:              "badType",
+			secret:             "secret",
+			namespace:          "free-us-1",
+			expectedIdentifier: "",
+			expectedBool:       false,
+			err:                fmt.Errorf(`invalid deployment type: "badType"`),
+		},
+	}
+
+	for _, tt := range testcases {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv("DEPLOYMENT_TYPE", tt.dType)
+			t.Setenv("HOSTED_SERVICE_SECRET", tt.secret)
+			t.Setenv("WORKSPACE_NAMESPACE", tt.namespace)
+			t.Setenv("WORKSPACE_TOKEN", tt.workspaceToken)
+			identifier, isMultiWorkspace, err := deployment.GetConnectionToken()
+			require.Equal(t, tt.err, err)
+			require.Equal(t, tt.expectedIdentifier, identifier)
+			require.Equal(t, tt.expectedBool, isMultiWorkspace)
 		})
 	}
 }

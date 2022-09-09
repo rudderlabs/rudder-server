@@ -170,8 +170,9 @@ func (m *Migrator) StartWebHandler(ctx context.Context, gatewayMigrator, routerM
 	})
 
 	srv := &http.Server{
-		Addr:    ":" + strconv.Itoa(migratorPort),
-		Handler: bugsnag.Handler(srvMux),
+		Addr:              ":" + strconv.Itoa(migratorPort),
+		Handler:           bugsnag.Handler(srvMux),
+		ReadHeaderTimeout: ReadHeaderTimeout,
 	}
 
 	err := httputil.ListenAndServe(ctx, srv)

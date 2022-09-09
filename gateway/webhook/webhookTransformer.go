@@ -57,7 +57,7 @@ func (bt *batchWebhookTransformerT) transform(events [][]byte, sourceType string
 	}
 
 	respBody, err := io.ReadAll(resp.Body)
-	resp.Body.Close()
+	_ = resp.Body.Close()
 
 	if err != nil {
 		bt.stats.failedStat.Count(len(events))
@@ -137,7 +137,6 @@ func (bt *batchWebhookTransformerT) transform(events [][]byte, sourceType string
 	}
 
 	batchResponse := transformerBatchResponseT{responses: make([]transformerResponse, len(events))}
-
 	for idx, resp := range responses {
 		if resp.Err != "" {
 			batchResponse.responses[idx] = resp
