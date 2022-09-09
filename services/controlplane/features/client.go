@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
+	"runtime"
 	"sort"
 	"time"
 
@@ -42,6 +44,7 @@ func WithTimeout(timeout time.Duration) OptFn {
 
 type Client struct {
 	client   *http.Client
+	ua       string
 	url      string
 	identity identity.Identifier
 }
@@ -55,6 +58,14 @@ type component struct {
 	Features []string `json:"features"`
 }
 
+func hostname() string {
+	hostname, err := os.Hostname()
+	if err != nil {
+		hostname = "unknown"
+	}
+	return hostname
+}
+
 func New(identity identity.Identifier, fns ...OptFn) *Client {
 	c := &Client{
 		client: &http.Client{
@@ -62,6 +73,7 @@ func New(identity identity.Identifier, fns ...OptFn) *Client {
 		},
 		url:      config.GetEnv("CONFIG_BACKEND_URL", "https://api.rudderlabs.com"),
 		identity: identity,
+		ua:       fmt.Sprintf("Go-http-client/1.1; %s; control-plane/features; %s", runtime.Version(), hostname()),
 	}
 
 	for _, fn := range fns {
@@ -112,6 +124,7 @@ func (c *Client) Send(ctx context.Context, components PerComponent) error {
 		}
 
 		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("User-Agent", c.ua)
 
 		req.SetBasicAuth(c.identity.BasicAuth())
 
