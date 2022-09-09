@@ -1,4 +1,4 @@
-package integrations_test
+package warehouse_test
 
 import (
 	"testing"
@@ -7,7 +7,7 @@ import (
 	. "github.com/onsi/gomega"
 )
 
-func TestIntegrations(t *testing.T) {
+func TestWarehouse(t *testing.T) {
 	RegisterFailHandler(Fail)
-	RunSpecs(t, "Integrations Suite")
+	RunSpecs(t, "Warehouse Suite")
 }

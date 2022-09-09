@@ -35,7 +35,11 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
-var _ = Describe("Calculate newDSIdx for internal migrations", func() {
+var _ = Describe("Calculate newDSIdx for internal migrations", Ordered, func() {
+	BeforeAll(func() {
+		pkgLogger = &logger.NOP{}
+	})
+
 	DescribeTable("newDSIdx tests",
 		func(before, after, expected string) {
 			computedIdx, err := computeInsertIdx(before, after)
@@ -199,7 +203,11 @@ var _ = Describe("Calculate newDSIdx for internal migrations", func() {
 	})
 })
 
-var _ = Describe("Calculate newDSIdx for cluster migrations", func() {
+var _ = Describe("Calculate newDSIdx for cluster migrations", Ordered, func() {
+	BeforeAll(func() {
+		pkgLogger = &logger.NOP{}
+	})
+
 	DescribeTable("newDSIdx tests",
 		func(dList []dataSetT, after dataSetT, expected string) {
 			computedIdx, err := computeIdxForClusterMigration("table_prefix", dList, after)
@@ -316,7 +324,11 @@ var _ = Describe("Calculate newDSIdx for cluster migrations", func() {
 	)
 })
 
-var _ = Describe("jobsdb", func() {
+var _ = Describe("jobsdb", Ordered, func() {
+	BeforeAll(func() {
+		pkgLogger = &logger.NOP{}
+	})
+
 	Context("getDSList", func() {
 		var t *ginkgoTestingT
 		var jd *HandleT
