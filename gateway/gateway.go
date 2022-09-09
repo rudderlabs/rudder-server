@@ -10,6 +10,7 @@ import (
 	"io/ioutil"
 	"math"
 	"net/http"
+	"net/http/httputil"
 	"net/url"
 	"regexp"
 	"strconv"
@@ -48,7 +49,7 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/types"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
-	"github.com/rudderlabs/rudder-server/warehouse/warehouse_jobs"
+	"github.com/rudderlabs/rudder-server/warehouse/whjobs"
 )
 
 /*
@@ -931,6 +932,17 @@ func (gateway *HandleT) pendingEventsHandler(w http.ResponseWriter, r *http.Requ
 	_, _ = w.Write([]byte(fmt.Sprintf("{ \"pending_events\": %d }", getIntResponseFromBool(gateway.getWarehousePending(payload)))))
 }
 
+func warehouseHandler(w http.ResponseWriter, r *http.Request) {
+	origin, _ := url.Parse(misc.GetWarehouseURL())
+	// gateway.logger.LogRequest(r)
+	director := func(req *http.Request) {
+		req.URL.Scheme = "http"
+		req.URL.Host = origin.Host
+	}
+	proxy := &httputil.ReverseProxy{Director: director}
+	proxy.ServeHTTP(w, r)
+}
+
 //Warehouse Async Job Handlers
 func (gateway *HandleT) warehouseJobAddHandler(w http.ResponseWriter, r *http.Request) {
 	gateway.logger.LogRequest(r)
@@ -990,13 +1002,15 @@ func (gateway *HandleT) addWarehouseAsyncJob(payload []byte) error {
 func (gateway *HandleT) warehouseJobStatusHandler(w http.ResponseWriter, r *http.Request) {
 	gateway.logger.LogRequest(r)
 	gateway.logger.Info("[GW] Warehouse Job Status Handler")
-	payload, err := io.ReadAll(r.Body)
-	if err != nil {
-		gateway.logger.Error("[GW] Error in reading payload in warehouseJobStatusHandler")
-		return
-	}
-	val, errMessage := gateway.statusWarehouseAsyncJob(payload)
-	_, _ = w.Write([]byte(fmt.Sprintf("{ \"status\": \"%s\",\"error\":\"%s\" }", val, errMessage)))
+	gateway.logger.Info(" query params %s", r.URL.Query())
+	// payload, err := io.ReadAll(r.Body)
+	// if err != nil {
+	// 	gateway.logger.Error("[GW] Error in reading payload in warehouseJobStatusHandler")
+	// 	return
+	// }
+	// val, errMessage := gateway.statusWarehouseAsyncJob(payload)
+	// _, _ = w.Write([]byte(fmt.Sprintf("{ \"status\": \"%s\",\"error\":\"%s\" }", val, errMessage)))
+	_, _ = w.Write([]byte(fmt.Sprintf("{ \"status\": \"%s\",\"error\":\"%s\" }", "completed", "")))
 }
 
 func (gateway *HandleT) statusWarehouseAsyncJob(payload []byte) (string, string) {
@@ -1006,7 +1020,7 @@ func (gateway *HandleT) statusWarehouseAsyncJob(payload []byte) (string, string)
 		return "error", err.Error()
 	}
 	defer resp.Body.Close()
-	var whStatusResponse warehouse_jobs.WhStatusResponse
+	var whStatusResponse whjobs.WhStatusResponse
 	respData, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return "error", err.Error()
@@ -1475,8 +1489,11 @@ func (gateway *HandleT) StartWebHandler(ctx context.Context) error {
 	srvMux.HandleFunc("/beacon/v1/batch", gateway.beaconBatchHandler).Methods("POST")
 
 	//Warehouse Async Jobs API
-	srvMux.HandleFunc("/v1/wh-jobs/add", gateway.warehouseJobAddHandler).Methods("POST")
-	srvMux.HandleFunc("/v1/wh-jobs/status", gateway.warehouseJobStatusHandler).Methods("POST")
+	srvMux.PathPrefix("/v1/warehouse").Handler(http.HandlerFunc(warehouseHandler)).Methods("GET", "POST")
+	// whproxy.HandleFunc("/", gateway.warehouseHandler).Methods("GET", "POST")
+	// srvMux.HandleFunc("/v1/warehouse/*", gateway.warehouseHandler).Methods("GET", "POST")
+	// srvMux.HandleFunc("/v1/warehouse/jobs", gateway.warehouseJobAddHandler).Methods("POST")
+	// srvMux.HandleFunc("/v1/warehouse/jobs/status", gateway.warehouseJobStatusHandler).Methods("GET")
 	//To be added endpoints
 	// srvMux.HandleFunc("/v1/wh-jobs/stop", gateway.warehouseJobStopHandler).Methods("POST")
 	// srvMux.HandleFunc("/v1/wh-jobs/get", gateway.warehouseJobGetHandler).Methods("GET")

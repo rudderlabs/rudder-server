@@ -1690,8 +1690,8 @@ func startWebHandler(ctx context.Context) error {
 			mux.HandleFunc("/v1/setConfig", setConfigHandler)
 
 			//Warehouse Async Job end-points
-			mux.HandleFunc("/v1/warehouse/wh-jobs/add", whjobs.AddWarehouseJobHandler)
-			mux.HandleFunc("/v1/warehouse/wh-jobs/status", whjobs.StatusWarehouseJobHandler)
+			mux.HandleFunc("/v1/warehouse/jobs", whjobs.AddWarehouseJobHandler)
+			mux.HandleFunc("/v1/warehouse/jobs/status", whjobs.StatusWarehouseJobHandler)
 			//To be added
 			// mux.HandleFunc("/v1/warehouse/wh-jobs/stop", whjobs.StopWarehouseJobHandler)
 			// mux.HandleFunc("/v1/warehouse/wh-jobs/get", whjobs.GetWarehouseJobHandler)

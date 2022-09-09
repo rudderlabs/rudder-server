@@ -246,8 +246,8 @@ func (notifier *PgNotifierT) trackAsyncBatch(batchID string, ch *chan []Response
 			var count int
 			err := notifier.dbHandle.QueryRow(stmt).Scan(&count)
 			if err != nil {
-				pkgLogger.Errorf("PgNotifier: Failed to query for tracking jobs by batch_id: %s, connInfo: %s", stmt, notifier.URI)
-				panic(err)
+				pkgLogger.Errorf("PgNotifier: Failed to query for tracking jobs by batch_id: %s, connInfo: %s, error : %s", stmt, notifier.URI, err.Error())
+				continue
 			}
 
 			if count == 0 {
@@ -270,7 +270,7 @@ func (notifier *PgNotifierT) trackAsyncBatch(batchID string, ch *chan []Response
 						panic(fmt.Errorf("failed to marshal async Output with Error : %w", err))
 					}
 					responses = append(responses, ResponseT{
-						JobID:  0,
+						JobID:  0, //Not required for this as there is no concept of BatchFileId
 						Output: payload,
 						Status: status.String,
 						Error:  jobError.String,

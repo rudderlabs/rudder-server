@@ -50,11 +50,18 @@ type AsyncJobPayloadT struct {
 }
 
 const (
-	asyncJobWaiting    string = "waiting"
-	asyncJobProcessing string = "processing"
-	asyncJobCompleted  string = "completed"
-	asyncJobError      string = "error"
+	WhJobWaiting   string = "waiting"
+	WhJobExecuting string = "executing"
+	WhJobSucceeded string = "succeeded"
+	WhJobAborted   string = "aborted"
+	WhJobFailed    string = "failed"
+	WhJobError     string = "error"
 )
+
+type WhAddJobResponse struct {
+	JobIds []int64 `json:"jobids"`
+	Err    error   `json:"error"`
+}
 
 type WhStatusResponse struct {
 	Status string

@@ -9,7 +9,7 @@
 	The following handlers file is the entry point for the handlers.
 */
 
-package jobs
+package whjobs
 
 import (
 	"encoding/json"
@@ -58,7 +58,7 @@ func AddWarehouseJobHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Error extracting tableNames", http.StatusBadRequest)
 		return
 	}
-
+	var jobIds []int64
 	//Add to wh_async_job queue each of the tables
 	for _, th := range tableNames {
 		if th != "RUDDER_DISCARDS" && th != "rudder_discards" {
@@ -74,58 +74,82 @@ func AddWarehouseJobHandler(w http.ResponseWriter, r *http.Request) {
 				StartTime:     startJobPayload.StartTime,
 				AsyncJobType:  startJobPayload.AsyncJobType,
 			}
-			AsyncJobWH.addJobstoDB(&payload)
+			id, err := AsyncJobWH.addJobstoDB(&payload)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+			jobIds = append(jobIds, id)
 		}
 	}
-	_, _ = w.Write([]byte(`{ "error":"" }`))
+	whAddJobResponse := WhAddJobResponse{
+		JobIds: jobIds,
+		Err:    nil,
+	}
+	response, err := json.Marshal(whAddJobResponse)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	_, _ = w.Write(response)
 
 }
 
 func StatusWarehouseJobHandler(w http.ResponseWriter, r *http.Request) {
-	pkgLogger.Info("Got Async Job Status Request")
-	pkgLogger.LogRequest(r)
-	body, err := io.ReadAll(r.Body)
-	if err != nil {
-		pkgLogger.Errorf("[WH-Jobs]: Error reading body: %v", err)
-		http.Error(w, "can't read body", http.StatusBadRequest)
-		return
-	}
-	defer r.Body.Close()
-	var startJobPayload StartJobReqPayload
-	err = json.Unmarshal(body, &startJobPayload)
-	pkgLogger.Infof("Got Payload jobrunid %s, taskrunid %s \n", startJobPayload.JobRunID, startJobPayload.TaskRunID)
-	if err != nil {
-		pkgLogger.Errorf("[WH]: Error unmarshalling body: %v", err)
-		http.Error(w, "can't unmarshall body", http.StatusBadRequest)
-		return
-	}
-	if !AsyncJobWH.enabled {
-		pkgLogger.Errorf("[WH]: Error Warehouse Jobs API not initialized %v", err)
-		http.Error(w, "warehouse jobs api not initialized", http.StatusBadRequest)
-		return
-	}
+	if r.Method == http.MethodGet {
+		pkgLogger.Info("Got Async Job Status Request")
+		pkgLogger.LogRequest(r)
+		jobRunId := r.URL.Query().Get("job_run_id")
+		taskRunId := r.URL.Query().Get("task_run_id")
 
-	status, err := AsyncJobWH.getStatusAsyncJob(&startJobPayload)
+		sourceId := r.URL.Query().Get("source_id")
+		destinationId := r.URL.Query().Get("destination_id")
+		if taskRunId == "" || jobRunId == "" || sourceId == "" || destinationId == "" {
 
-	var statusresponse WhStatusResponse
-	if err != nil {
-		statusresponse = WhStatusResponse{
-			Status: status,
-			Err:    err.Error(),
+			pkgLogger.Errorf("[WH]: Error Invalid Status Parameters")
+			http.Error(w, "invalid request", http.StatusBadRequest)
+			return
 		}
-	} else {
-		statusresponse = WhStatusResponse{
-			Status: status,
-			Err:    "",
+		var startJobPayload = StartJobReqPayload{
+			JobRunID:      jobRunId,
+			TaskRunID:     taskRunId,
+			SourceID:      sourceId,
+			DestinationID: destinationId,
 		}
-	}
+		pkgLogger.Infof("Got Payload jobrunid %s, taskrunid %s \n", startJobPayload.JobRunID, startJobPayload.TaskRunID)
 
-	writeResponse, err := json.Marshal(statusresponse)
+		if !AsyncJobWH.enabled {
+			pkgLogger.Errorf("[WH]: Error Warehouse Jobs API not initialized")
+			http.Error(w, "warehouse jobs api not initialized", http.StatusBadRequest)
+			return
+		}
 
-	if err != nil {
+		status, err := AsyncJobWH.getStatusAsyncJob(&startJobPayload)
+
+		var statusresponse WhStatusResponse
+		if err != nil {
+			statusresponse = WhStatusResponse{
+				Status: status,
+				Err:    err.Error(),
+			}
+		} else {
+			statusresponse = WhStatusResponse{
+				Status: status,
+				Err:    "",
+			}
+		}
+
+		writeResponse, err := json.Marshal(statusresponse)
+
+		if err != nil {
+			w.Write(writeResponse)
+		}
 		w.Write(writeResponse)
+	} else {
+		pkgLogger.Errorf("[WH]: Error Invalid Status Parameters")
+		http.Error(w, "invalid request", http.StatusBadRequest)
+		return
 	}
-	w.Write(writeResponse)
 
 }
 

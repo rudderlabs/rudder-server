@@ -442,10 +442,10 @@ func (pq *HandleT) DeleteBy(tableNames []string, jobRunID string, sourceID strin
 		)
 		pkgLogger.Infof("PG: Deleting rows in table in postgres for PG:%s : %v", pq.Warehouse.Destination.ID, sqlStatement)
 		// Uncomment below 4 lines when we are ready to launch async job on postgres warehouse
-		// _, err = pq.Db.Exec(sqlStatement,
-		// 	jobRunID,
-		// 	taskRunID,
-		// 	sourceID)
+		_, err = pq.Db.Exec(sqlStatement,
+			jobRunID,
+			taskRunID,
+			sourceID)
 		if err != nil {
 			pkgLogger.Errorf("Error %s", err)
 			return err
