@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/gofrs/uuid"
+	"github.com/lib/pq"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/ory/dockertest/v3"
@@ -512,7 +513,7 @@ func insertStringInString(input, c string, times int) string {
 	}
 	pos := map[int]struct{}{}
 	for len(pos) < times {
-		newPos := rand.Intn(len(input))
+		newPos := rand.Intn(len(input)) // skipcq: GSC-G404
 		pos[newPos] = struct{}{}
 	}
 	keys := make([]int, 0, len(pos))
@@ -751,6 +752,178 @@ func TestThreadSafeAddNewDSLoop(t *testing.T) {
 		},
 		time.Second, time.Millisecond,
 		"expected only one DS to be added, even though both jobsDB-1 & jobsDB-2 are triggered to add new DS (dsLen1: %d, dsLen2: %d)", dsLen1, dsLen2)
+}
+
+func TestThreadSafeJobStorage(t *testing.T) {
+	_ = startPostgres(t)
+
+	t.Run("verify that `pgErrorCodeTableReadonly` exception is triggered, if we try to insert in any DS other than latest.", func(t *testing.T) {
+		migrationMode := ""
+		maxDSSize := 1
+		triggerAddNewDS := make(chan time.Time)
+		jobsDB := &HandleT{
+			TriggerAddNewDS: func() <-chan time.Time {
+				return triggerAddNewDS
+			},
+			MaxDSSize: &maxDSSize,
+		}
+		err := jobsDB.Setup(ReadWrite, true, strings.ToLower(rsRand.String(5)), migrationMode, true, []prebackup.Handler{})
+		require.NoError(t, err)
+		defer jobsDB.TearDown()
+		require.Equal(t, 1, len(jobsDB.getDSList()), "expected cache to be auto-updated with DS list length 1")
+
+		generateJobs := func(numOfJob int) []*JobT {
+			customVal := "MOCKDS"
+			js := make([]*JobT, numOfJob)
+			for i := 0; i < numOfJob; i++ {
+				js[i] = &JobT{
+					Parameters:   []byte(`{"batch_id":1,"source_id":"sourceID","source_job_run_id":""}`),
+					EventPayload: []byte(`{"testKey":"testValue"}`),
+					UserID:       "a-292e-4e79-9880-f8009e0ae4a3",
+					UUID:         uuid.Must(uuid.NewV4()),
+					CustomVal:    customVal,
+					EventCount:   1,
+				}
+			}
+			return js
+		}
+
+		// adding mock jobs to jobsDB
+		jobs := generateJobs(2)
+		err = jobsDB.Store(context.Background(), jobs)
+		require.NoError(t, err)
+
+		// triggerAddNewDS to trigger jobsDB to add new DS
+		triggerAddNewDS <- time.Now()
+		require.Eventually(
+			t,
+			func() bool {
+				return len(jobsDB.getDSList()) == 2
+			},
+			time.Second*5, time.Millisecond,
+			"expected number of tables to be 2")
+		ds := jobsDB.getDSList()
+		sqlStatement := fmt.Sprintf(`INSERT INTO %q (uuid, user_id, custom_val, parameters, event_payload, workspace_id)
+										   VALUES ($1, $2, $3, $4, $5, $6) RETURNING job_id`, ds[0].JobTable)
+		stmt, err := jobsDB.dbHandle.Prepare(sqlStatement)
+		require.NoError(t, err)
+		defer stmt.Close()
+		_, err = stmt.Exec(jobs[0].UUID, jobs[0].UserID, jobs[0].CustomVal, string(jobs[0].Parameters), string(jobs[0].EventPayload), jobs[0].WorkspaceId)
+		require.Error(t, err, "expected error as trigger is set on DS")
+		require.Equal(t, "pq: table is readonly", err.Error())
+		var e *pq.Error
+		errors.As(err, &e)
+		require.EqualValues(t, e.Code, pgErrorCodeTableReadonly)
+	})
+
+	t.Run(`verify that even if jobsDB instance is unaware of new DS addition by other jobsDB instance.
+	 And, it tries to Store() in postgres, then the exception thrown is handled properly & DS cache is refreshed`, func(t *testing.T) {
+		migrationMode := ""
+		maxDSSize := 1
+
+		triggerRefreshDS := make(chan time.Time)
+		triggerAddNewDS1 := make(chan time.Time)
+
+		// jobsDB-1 setup
+		jobsDB1 := &HandleT{
+			TriggerAddNewDS: func() <-chan time.Time {
+				return triggerAddNewDS1
+			},
+			MaxDSSize: &maxDSSize,
+		}
+		clearAllDS := true
+		prefix := strings.ToLower(rsRand.String(5))
+		// setting clearAllDS to true to clear all DS, since we are using the same postgres as previous test.
+		err := jobsDB1.Setup(ReadWrite, true, prefix, migrationMode, true, []prebackup.Handler{})
+		require.NoError(t, err)
+		defer jobsDB1.TearDown()
+		require.Equal(t, 1, len(jobsDB1.getDSList()), "expected cache to be auto-updated with DS list length 1")
+
+		// jobsDB-2 setup
+		triggerAddNewDS2 := make(chan time.Time)
+		jobsDB2 := &HandleT{
+			TriggerAddNewDS: func() <-chan time.Time {
+				return triggerAddNewDS2
+			},
+			TriggerRefreshDS: func() <-chan time.Time {
+				return triggerRefreshDS
+			},
+			MaxDSSize: &maxDSSize,
+		}
+		err = jobsDB2.Setup(ReadWrite, !clearAllDS, prefix, migrationMode, true, []prebackup.Handler{})
+		require.NoError(t, err)
+		defer jobsDB2.TearDown()
+		require.Equal(t, 1, len(jobsDB2.getDSList()), "expected cache to be auto-updated with DS list length 1")
+
+		// jobsDB-3 setup
+		triggerAddNewDS3 := make(chan time.Time)
+		jobsDB3 := &HandleT{
+			TriggerAddNewDS: func() <-chan time.Time {
+				return triggerAddNewDS3
+			},
+			TriggerRefreshDS: func() <-chan time.Time {
+				return triggerRefreshDS
+			},
+			MaxDSSize: &maxDSSize,
+		}
+		err = jobsDB3.Setup(ReadWrite, !clearAllDS, prefix, migrationMode, true, []prebackup.Handler{})
+		require.NoError(t, err)
+		defer jobsDB3.TearDown()
+		require.Equal(t, 1, len(jobsDB3.getDSList()), "expected cache to be auto-updated with DS list length 1")
+
+		generateJobs := func(numOfJob int) []*JobT {
+			customVal := "MOCKDS"
+			js := make([]*JobT, numOfJob)
+			for i := 0; i < numOfJob; i++ {
+				js[i] = &JobT{
+					Parameters:   []byte(`{"batch_id":1,"source_id":"sourceID","source_job_run_id":""}`),
+					EventPayload: []byte(`{"testKey":"testValue"}`),
+					UserID:       "a-292e-4e79-9880-f8009e0ae4a3",
+					UUID:         uuid.Must(uuid.NewV4()),
+					CustomVal:    customVal,
+					EventCount:   1,
+				}
+			}
+			return js
+		}
+
+		// adding mock jobs to jobsDB-1
+		err = jobsDB1.Store(context.Background(), generateJobs(2))
+		require.NoError(t, err)
+
+		// triggerAddNewDS1 to trigger jobsDB-1 to add new DS
+		triggerAddNewDS1 <- time.Now()
+		require.Eventually(
+			t,
+			func() bool {
+				return len(jobsDB1.getDSList()) == 2
+			},
+			10*time.Second, time.Millisecond,
+			"expected cache to be auto-updated with DS list length 2")
+
+		require.Equal(t, 1, len(jobsDB2.getDSList()), "expected jobsDB2 to still have a list length of 1")
+		err = jobsDB2.Store(context.Background(), generateJobs(2))
+		require.NoError(t, err)
+		require.Equal(t, 2, len(jobsDB2.getDSList()), "expected jobsDB2 to have refreshed its ds list")
+
+		require.Equal(t, 1, len(jobsDB3.getDSList()), "expected jobsDB3 to still have a list length of 1")
+		errorsMap := jobsDB3.StoreWithRetryEach(context.Background(), generateJobs(2))
+		require.Equal(t, 0, len(errorsMap))
+
+		require.Equal(t, 2, len(jobsDB3.getDSList()), "expected jobsDB3 to have refreshed its ds list")
+
+		// since DS-2 is added, if storing jobs from jobsDB-2, should automatically add DS-2. So, both DS-1 and DS-2 should have 2 jobs
+		row := jobsDB2.dbHandle.QueryRow(fmt.Sprintf("select count(*) from %q", jobsDB2.getDSList()[0].JobTable))
+		var count int
+		err = row.Scan(&count)
+		require.NoError(t, err, "expected no error while scanning rows")
+		require.Equal(t, 2, count, "expected 2 jobs in DS-1")
+
+		row = jobsDB1.dbHandle.QueryRow(fmt.Sprintf("select count(*) from %q", jobsDB1.getDSList()[1].JobTable))
+		err = row.Scan(&count)
+		require.NoError(t, err, "expected no error while scanning rows")
+		require.Equal(t, 4, count, "expected 4 jobs in DS-2")
+	})
 }
 
 func TestCacheScenarios(t *testing.T) {
