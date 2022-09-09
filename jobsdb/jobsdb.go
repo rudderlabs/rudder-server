@@ -2464,6 +2464,7 @@ func (jd *HandleT) markClearEmptyResult(ds dataSetT, workspace string, stateFilt
 		}
 		sort.Strings(pVals)
 		pVal := strings.Join(pVals, "_")
+		pvalArr := []string{pVal, cValDefaultFilter}
 
 		_, ok = jd.dsEmptyResultCache[ds][workspace][cVal][pVal]
 		if !ok {
@@ -2476,15 +2477,16 @@ func (jd *HandleT) markClearEmptyResult(ds dataSetT, workspace string, stateFilt
 			jd.dsEmptyResultCache[ds][workspace][cVal][cValDefaultFilter] = map[string]cacheEntry{}
 		}
 
-		for _, st := range stateFilters {
-			previous := jd.dsEmptyResultCache[ds][workspace][cVal][cValDefaultFilter][st]
-			if checkAndSet == nil || *checkAndSet == previous.Value {
-				cache := cacheEntry{
-					Value: value,
-					T:     time.Now(),
+		for _, pf := range pvalArr {
+			for _, st := range stateFilters {
+				previous := jd.dsEmptyResultCache[ds][workspace][cVal][pf][st]
+				if checkAndSet == nil || *checkAndSet == previous.Value {
+					cache := cacheEntry{
+						Value: value,
+						T:     time.Now(),
+					}
+					jd.dsEmptyResultCache[ds][workspace][cVal][pf][st] = cache
 				}
-				jd.dsEmptyResultCache[ds][workspace][cVal][pVal][st] = cache
-				jd.dsEmptyResultCache[ds][workspace][cVal][cValDefaultFilter][st] = cache
 			}
 		}
 	}
