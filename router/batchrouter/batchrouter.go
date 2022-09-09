@@ -62,7 +62,6 @@ var (
 	asyncDestinations                  []string
 	pkgLogger                          logger.LoggerI
 	Diagnostics                        diagnostics.DiagnosticsI
-	QueryFilters                       jobsdb.QueryFiltersT
 	readPerDestination                 bool
 	disableEgress                      bool
 	toAbortDestinationIDs              string
@@ -293,7 +292,7 @@ func (brt *HandleT) pollAsyncStatus(ctx context.Context) {
 				if IsAsyncDestination(brt.destType) {
 					pkgLogger.Debugf("pollAsyncStatus Started for Dest type: %s", brt.destType)
 					parameterFilters := make([]jobsdb.ParameterFilterT, 0)
-					for _, param := range QueryFilters.ParameterFilters {
+					for _, param := range jobsdb.CacheKeyParameterFilters {
 						parameterFilter := jobsdb.ParameterFilterT{
 							Name:     param,
 							Value:    key,
@@ -1587,7 +1586,7 @@ func (worker *workerT) getValueForParameter(batchDest router_utils.BatchDestinat
 
 func (worker *workerT) constructParameterFilters(batchDest router_utils.BatchDestinationT) []jobsdb.ParameterFilterT {
 	parameterFilters := make([]jobsdb.ParameterFilterT, 0)
-	for _, key := range QueryFilters.ParameterFilters {
+	for _, key := range jobsdb.CacheKeyParameterFilters {
 		parameterFilter := jobsdb.ParameterFilterT{
 			Name:     key,
 			Value:    worker.getValueForParameter(batchDest, key),
@@ -2263,17 +2262,7 @@ func loadConfig() {
 func Init() {
 	loadConfig()
 	pkgLogger = logger.NewLogger().Child("batchrouter")
-
-	setQueryFilters()
 	Diagnostics = diagnostics.Diagnostics
-}
-
-func setQueryFilters() {
-	if readPerDestination {
-		QueryFilters = jobsdb.QueryFiltersT{CustomVal: true, ParameterFilters: []string{"destination_id"}}
-	} else {
-		QueryFilters = jobsdb.QueryFiltersT{CustomVal: true}
-	}
 }
 
 // Setup initializes this module

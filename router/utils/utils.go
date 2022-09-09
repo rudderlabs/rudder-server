@@ -1,7 +1,6 @@
 package utils
 
 import (
-	"encoding/base64"
 	"strings"
 	"time"
 
@@ -108,11 +107,6 @@ func GetAuthType(dest backendconfig.DestinationT) (authType string) {
 		return ""
 	}
 	return authType
-}
-
-func BasicAuth(username, password string) string {
-	auth := username + ":" + password
-	return base64.StdEncoding.EncodeToString([]byte(auth))
 }
 
 func GetRudderAccountId(destination *backendconfig.DestinationT) string {

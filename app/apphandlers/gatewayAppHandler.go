@@ -55,7 +55,6 @@ func (gatewayApp *GatewayApp) StartRudderCore(ctx context.Context, options *app.
 		jobsdb.WithClearDB(options.ClearDB),
 		jobsdb.WithMigrationMode(migrationMode),
 		jobsdb.WithStatusHandler(),
-		jobsdb.WithQueryFilterKeys(jobsdb.QueryFiltersT{}),
 	)
 	defer gatewayDB.Close()
 	if err := gatewayDB.Start(); err != nil {

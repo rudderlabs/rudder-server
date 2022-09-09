@@ -73,6 +73,7 @@ type HandleT struct {
 	netHandle             NetHandleI
 	MultitenantI          tenantStats
 	destName              string
+	destinationId         string
 	workers               []*workerT
 	perfStats             *misc.PerfStats
 	successCount          uint64
@@ -209,7 +210,6 @@ var (
 	Diagnostics                                                   diagnostics.DiagnosticsI
 	fixedLoopSleep                                                time.Duration
 	toAbortDestinationIDs                                         string
-	QueryFilters                                                  jobsdb.QueryFiltersT
 	disableEgress                                                 bool
 )
 
@@ -1212,7 +1212,6 @@ func (rt *HandleT) findWorker(job *jobsdb.JobT, throttledAtTime time.Time) (toSe
 	// checking if this job can be throttled
 	var parameters JobParametersT
 	userID := job.UserID
-
 	// checking if the user is in throttledMap. If yes, returning nil.
 	// this check is done to maintain order.
 	if _, ok := rt.throttledUserMap[userID]; ok {
@@ -1616,7 +1615,7 @@ func (rt *HandleT) collectMetrics(ctx context.Context) {
 // C. Finally, we want for generatorLoop buffer to be fully processed.
 
 func (rt *HandleT) generatorLoop(ctx context.Context) {
-	rt.logger.Info("Generator started")
+	rt.logger.Infof("Generator started for %s and destinationID %s", rt.destName, rt.destinationId)
 
 	generatorStat := stats.NewTaggedStat("router_generator_loop", stats.TimerType, stats.Tags{"destType": rt.destName})
 	countStat := stats.NewTaggedStat("router_generator_events", stats.CountType, stats.Tags{"destType": rt.destName})
@@ -1647,6 +1646,27 @@ func (rt *HandleT) generatorLoop(ctx context.Context) {
 			}
 			time.Sleep(timeToSleep)
 		}
+	}
+}
+
+func (rt *HandleT) getQueryParams(pickUpCount int) jobsdb.GetQueryParamsT {
+	if rt.destinationId != rt.destName {
+		return jobsdb.GetQueryParamsT{
+			CustomValFilters: []string{rt.destName},
+			ParameterFilters: []jobsdb.ParameterFilterT{{
+				Name:     "destination_id",
+				Value:    rt.destinationId,
+				Optional: false,
+			}},
+			IgnoreCustomValFiltersInQuery: true,
+			PayloadSizeLimit:              rt.payloadLimit,
+			JobsLimit:                     pickUpCount,
+		}
+	}
+	return jobsdb.GetQueryParamsT{
+		CustomValFilters: []string{rt.destName},
+		PayloadSizeLimit: rt.payloadLimit,
+		JobsLimit:        pickUpCount,
 	}
 }
 
@@ -1681,11 +1701,7 @@ func (rt *HandleT) readAndProcess() int {
 		return rt.jobsDB.GetAllJobs(
 			ctx,
 			pickupMap,
-			jobsdb.GetQueryParamsT{
-				CustomValFilters: []string{rt.destName},
-				PayloadSizeLimit: rt.payloadLimit,
-				JobsLimit:        totalPickupCount,
-			},
+			rt.getQueryParams(totalPickupCount),
 			rt.maxDSQuerySize,
 		)
 	})
@@ -1706,7 +1722,7 @@ func (rt *HandleT) readAndProcess() int {
 
 	if len(combinedList) > 0 {
 		rt.logger.Debugf("[%v Router] :: router is enabled", rt.destName)
-		rt.logger.Debugf("[%v Router] ===== len to be processed==== : %v", rt.destName, len(combinedList))
+		rt.logger.Debugf("[%v Router] ===== len to be processed==== %v: %v", rt.destName, rt.destinationId, len(combinedList))
 	}
 
 	// List of jobs which can be processed mapped per channel
@@ -1929,18 +1945,17 @@ func (*HandleT) crashRecover() {
 func Init() {
 	loadConfig()
 	pkgLogger = logger.NewLogger().Child("router")
-	QueryFilters = jobsdb.QueryFiltersT{CustomVal: true}
 	Diagnostics = diagnostics.Diagnostics
 }
 
 // Setup initializes this module
-func (rt *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB jobsdb.MultiTenantJobsDB, errorDB jobsdb.JobsDB, destinationDefinition backendconfig.DestinationDefinitionT, transientSources transientsource.Service, rsourcesService rsources.JobService) {
+func (rt *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB jobsdb.MultiTenantJobsDB, errorDB jobsdb.JobsDB, destinationConfig destinationConfig, transientSources transientsource.Service, rsourcesService rsources.JobService) {
 	rt.backendConfig = backendConfig
 	rt.workspaceSet = make(map[string]struct{})
 
-	destName := destinationDefinition.Name
+	destName := destinationConfig.name
 	rt.logger = pkgLogger.Child(destName)
-	rt.logger.Info("Router started: ", destName)
+	rt.logger.Info("Router started: ", destinationConfig.destinationID)
 
 	rt.transientSources = transientSources
 	rt.rsourcesService = rsourcesService
@@ -1952,6 +1967,7 @@ func (rt *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB jobsd
 	rt.jobsDB = jobsDB
 	rt.errorDB = errorDB
 	rt.destName = destName
+	rt.destinationId = destinationConfig.destinationID
 	netClientTimeoutKeys := []string{"Router." + rt.destName + "." + "httpTimeout", "Router." + rt.destName + "." + "httpTimeoutInS", "Router." + "httpTimeout", "Router." + "httpTimeoutInS"}
 	config.RegisterDurationConfigVariable(10, &rt.netClientTimeout, false, time.Second, netClientTimeoutKeys...)
 	config.RegisterDurationConfigVariable(30, &rt.backendProxyTimeout, false, time.Second, "HttpClient.backendProxy.timeout")
@@ -1978,8 +1994,8 @@ func (rt *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB jobsd
 	})
 	rt.failuresMetric = make(map[string]map[string]int)
 
-	rt.destinationResponseHandler = New(destinationDefinition.ResponseRules)
-	if value, ok := destinationDefinition.Config["saveDestinationResponse"].(bool); ok {
+	rt.destinationResponseHandler = New(destinationConfig.responseRules)
+	if value, ok := destinationConfig.config["saveDestinationResponse"].(bool); ok {
 		rt.saveDestinationResponse = value
 	}
 	rt.guaranteeUserEventOrder = getRouterConfigBool("guaranteeUserEventOrder", rt.destName, true)
@@ -2098,7 +2114,7 @@ func (rt *HandleT) Shutdown() {
 		// router is not started
 		return
 	}
-	rt.logger.Infof("Shutting down router: %s", rt.destName)
+	rt.logger.Infof("Shutting down router: %s destinationId: %s", rt.destName, rt.destinationId)
 	rt.backgroundCancel()
 
 	<-rt.startEnded
