@@ -2048,9 +2048,8 @@ func (jd *HandleT) inStoreSafeCtx(f func() error) error {
 		defer jd.dsListLock.RUnlock()
 		return f()
 	}
-	var err error
 	for {
-		err = op()
+		err := op()
 		if err != nil && errors.Is(err, errStaleDsList) {
 			jd.logger.Errorf("[JobsDB] :: Store failed: %v. Retrying after refreshing DS cache", errStaleDsList)
 			jd.dsListLock.WithLock(func(l lock.DSListLockToken) {
