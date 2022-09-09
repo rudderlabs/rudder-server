@@ -245,7 +245,7 @@ func (as *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 
 	extraColumns := []string{}
 	for _, column := range previousColumnKeys {
-		if !misc.ContainsString(sortedColumnKeys, column) {
+		if !misc.Contains(sortedColumnKeys, column) {
 			extraColumns = append(extraColumns, column)
 		}
 	}

@@ -454,11 +454,11 @@ var _ = Describe("Using sources handler", Ordered, func() {
 			Expect(err).NotTo(HaveOccurred())
 			_, err = stmt.Exec(ts)
 			Expect(err).NotTo(HaveOccurred())
-			defer stmt.Close()
+			defer func() { _ = stmt.Close() }()
 			stmt2, err := resource.db.Prepare(`update "rsources_failed_keys" set ts = $1`)
 			Expect(err).NotTo(HaveOccurred())
 			_, err = stmt2.Exec(ts)
-			defer stmt2.Close()
+			defer func() { _ = stmt2.Close() }()
 			Expect(err).NotTo(HaveOccurred())
 
 			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Minute)
@@ -744,11 +744,11 @@ var _ = Describe("Using sources handler", Ordered, func() {
 			// Setting up previous environment before adding failedkeys table to the publication
 			// setup databases
 			databaseA := getDB(configA.LocalConn, configA.MaxPoolSize)
-			defer databaseA.Close()
+			defer func() { _ = databaseA.Close() }()
 			databaseB := getDB(configB.LocalConn, configB.MaxPoolSize)
-			defer databaseB.Close()
+			defer func() { _ = databaseB.Close() }()
 			databaseC := getDB(configB.SharedConn, configB.MaxPoolSize) // shared
-			defer databaseC.Close()
+			defer func() { _ = databaseC.Close() }()
 
 			// create tables
 			err = setupStatsTable(context.Background(), databaseA, configA.LocalHostname)
@@ -889,19 +889,19 @@ func newDBResource(pool *dockertest.Pool, networkId, hostname string, params ...
 	port := resource.GetPort("5432/tcp")
 	externalDSN := fmt.Sprintf("postgres://rudder:password@localhost:%s/%s?sslmode=disable", port, database)
 	internalDSN := fmt.Sprintf("postgres://rudder:password@%s:5432/%s?sslmode=disable", hostname, database)
-	var db *sql.DB
+	var (
+		db  *sql.DB
+		dsn = fmt.Sprintf("host=localhost port=%s user=rudder password=password dbname=jobsdb sslmode=disable", port)
+	)
 	// exponential backoff-retry, because the application in the container might not be ready to accept connections yet
-	if err := pool.Retry(func() error {
-		var err error
-		db, err = sql.Open("postgres", fmt.Sprintf(
-			"host=localhost port=%s user=rudder password=password dbname=jobsdb sslmode=disable",
-			port))
+	if err := pool.Retry(func() (err error) {
+		db, err = sql.Open("postgres", dsn)
 		if err != nil {
 			return err
 		}
 		return db.Ping()
 	}); err != nil {
-		Expect(err).NotTo(HaveOccurred())
+		Expect(err).NotTo(HaveOccurred(), dsn)
 	}
 	return postgresResource{
 		db:          db,

@@ -257,7 +257,7 @@ func (bt *batchWebhookTransformerT) batchTransformLoop() {
 				continue
 			}
 
-			if misc.ContainsString(sourceListForParsingParams, strings.ToLower(breq.sourceType)) {
+			if misc.Contains(sourceListForParsingParams, strings.ToLower(breq.sourceType)) {
 				queryParams := req.request.URL.Query()
 				paramsBytes, err := json.Marshal(queryParams)
 				if err != nil {

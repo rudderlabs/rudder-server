@@ -335,7 +335,7 @@ var _ = Describe("Gateway", func() {
 				}).Return(nil)
 				c.mockJobsDB.
 					EXPECT().StoreWithRetryEachInTx(gomock.Any(), gomock.Any(), gomock.Any()).
-					DoAndReturn(func(ctx context.Context, tx jobsdb.StoreSafeTx, jobs []*jobsdb.JobT) map[uuid.UUID]string {
+					DoAndReturn(func(ctx context.Context, tx jobsdb.StoreSafeTx, jobs []*jobsdb.JobT) (map[uuid.UUID]string, error) {
 						for _, job := range jobs {
 							// each call should be included in a separate batch, with a separate batch_id
 							expectedBatchID := nextBatchID()
@@ -592,16 +592,16 @@ func allHandlers(gateway *HandleT) map[string]http.HandlerFunc {
 }
 
 // converts a job list to a map of empty errors, to emulate a successful jobsdb.Store response
-func jobsToEmptyErrors(_ context.Context, _ jobsdb.StoreSafeTx, _ []*jobsdb.JobT) map[uuid.UUID]string {
-	return make(map[uuid.UUID]string)
+func jobsToEmptyErrors(_ context.Context, _ jobsdb.StoreSafeTx, _ []*jobsdb.JobT) (map[uuid.UUID]string, error) {
+	return make(map[uuid.UUID]string), nil
 }
 
 // converts a job list to a map of empty errors, to emulate a successful jobsdb.Store response
-func jobsToJobsdbErrors(_ context.Context, _ jobsdb.StoreSafeTx, jobs []*jobsdb.JobT) map[uuid.UUID]string {
+func jobsToJobsdbErrors(_ context.Context, _ jobsdb.StoreSafeTx, jobs []*jobsdb.JobT) (map[uuid.UUID]string, error) {
 	errorsMap := make(map[uuid.UUID]string, len(jobs))
 	for _, job := range jobs {
 		errorsMap[job.UUID] = "tx error"
 	}
 
-	return errorsMap
+	return errorsMap, nil
 }
