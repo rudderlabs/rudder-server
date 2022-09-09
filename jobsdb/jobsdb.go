@@ -4129,7 +4129,7 @@ func (jd *HandleT) doUpdateJobStatusInTx(ctx context.Context, tx *sql.Tx, status
 		dsList := jd.getDSList()
 		jd.assert(len(dsRangeList) >= len(dsList)-2, fmt.Sprintf("len(dsRangeList):%d < len(dsList):%d-2", len(dsRangeList), len(dsList)))
 		// Update status in the last element
-		jd.logger.Debug("RangeEnd", statusList[lastPos].JobID, lastPos, len(statusList))
+		jd.logger.Debug("RangeEnd ", statusList[lastPos].JobID, lastPos, len(statusList))
 		var updatedStates map[string][]string
 		updatedStates, err = jd.updateJobStatusDSInTx(ctx, tx, dsList[len(dsList)-1], statusList[lastPos:], tags)
 		if err != nil {

@@ -29,7 +29,6 @@ func TestBackupTable(t *testing.T) {
 	var (
 		tc                       backupTestCase
 		prefix                   = "some-prefix"
-		postgresResource         *destination.PostgresResource
 		minioResource            *destination.MINIOResource
 		goldenFileJobsFileName   = "testdata/backupJobs.json.gz"
 		goldenFileStatusFileName = "testdata/backupStatus.json.gz"
@@ -41,7 +40,7 @@ func TestBackupTable(t *testing.T) {
 	cleanup := &testhelper.Cleanup{}
 	defer cleanup.Run()
 
-	postgresResource, err = destination.SetupPostgres(pool, cleanup)
+	postgresResource, err := destination.SetupPostgres(pool, cleanup)
 	require.NoError(t, err)
 
 	minioResource, err = destination.SetupMINIO(pool, cleanup)
@@ -74,6 +73,7 @@ func TestBackupTable(t *testing.T) {
 		t.Setenv("JOBS_DB_PORT", postgresResource.Port)
 		t.Setenv("JOBS_DB_USER", postgresResource.User)
 		t.Setenv("JOBS_DB_PASSWORD", postgresResource.Password)
+
 		initJobsDB()
 		stats.Setup()
 	}
