@@ -197,7 +197,7 @@ func testMultiTenantByAppType(t *testing.T, appType string) {
 	require.ErrorContains(t, err, "connection refused")
 	require.Nil(t, resp)
 	if err == nil {
-		defer th.IgnoreErr(resp.Body.Close)
+		defer func() { _ = resp.Body.Close() }()
 	}
 
 	// Pushing valid configuration via ETCD
