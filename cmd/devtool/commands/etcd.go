@@ -111,7 +111,6 @@ func Mode(c *cli.Context) error {
 	fmt.Printf("%s\n", resp.Events[0].Kv.Value)
 
 	return nil
-
 }
 
 func Workspace(c *cli.Context) error {
@@ -174,11 +173,9 @@ func Workspace(c *cli.Context) error {
 	fmt.Printf("%s\n", resp.Events[0].Kv.Value)
 
 	return nil
-
 }
 
 func List(c *cli.Context) error {
-
 	endpoints := strings.Split(config.GetEnv("ETCD_HOSTS", "127.0.0.1:2379"), `,`)
 	etcdClient, err := etcd.New(etcd.Config{
 		Endpoints: endpoints,
@@ -216,5 +213,4 @@ func List(c *cli.Context) error {
 	fmt.Println(table.String())
 
 	return nil
-
 }
