@@ -1215,7 +1215,7 @@ func (proc *HandleT) processJobsForDest(subJobs subJob, parsedEventList [][]type
 			// Iterate through all the events in the batch
 			for eventIndex, singularEvent := range singularEvents {
 				messageId := misc.GetStringifiedData(singularEvent["messageId"])
-				if enableDedup && misc.ContainsInt(duplicateIndexes, eventIndex) {
+				if enableDedup && misc.Contains(duplicateIndexes, eventIndex) {
 					proc.logger.Debugf("Dropping event with duplicate messageId: %s", messageId)
 					misc.IncrementMapByKey(sourceDupStats, writeKey, 1)
 					continue
@@ -1394,7 +1394,7 @@ func (proc *HandleT) processJobsForDest(subJobs subJob, parsedEventList [][]type
 					certificate chain. So, that will make the payload huge while sending a batch of events to transformer,
 					it may result into payload larger than accepted by transformer. So, discarding destination config from being
 					sent to transformer for such destination. */
-					if misc.ContainsString(customDestinations, *destType) {
+					if misc.Contains(customDestinations, *destType) {
 						shallowEventCopy.Destination.Config = nil
 					}
 
@@ -2068,7 +2068,7 @@ func (proc *HandleT) transformSrcDest(
 				EventPayload: destEventJSON,
 				WorkspaceId:  workspaceId,
 			}
-			if misc.ContainsString(batchDestinations, newJob.CustomVal) {
+			if misc.Contains(batchDestinations, newJob.CustomVal) {
 				batchDestJobs = append(batchDestJobs, &newJob)
 			} else {
 				destJobs = append(destJobs, &newJob)
@@ -2136,7 +2136,7 @@ func ConvertToFilteredTransformerResponse(events []transformer.TransformerEventT
 					continue
 				}
 				messageType = strings.TrimSpace(strings.ToLower(messageType))
-				if !misc.ContainsString(supportedTypes.values, messageType) {
+				if !misc.Contains(supportedTypes.values, messageType) {
 					continue
 				}
 			}
@@ -2157,7 +2157,7 @@ func ConvertToFilteredTransformerResponse(events []transformer.TransformerEventT
 					failedEvents = append(failedEvents, resp)
 					continue
 				}
-				if !misc.ContainsString(supportedEvents.values, messageEvent) {
+				if !misc.Contains(supportedEvents.values, messageEvent) {
 					continue
 				}
 			}
