@@ -24,7 +24,6 @@ func GetFreePort() (int, error) {
 			usedPorts = make(map[int]struct{})
 		}
 		if _, used := usedPorts[port]; used {
-			usedPortsMu.Unlock()
 			continue
 		}
 		usedPorts[port] = struct{}{}
