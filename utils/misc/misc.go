@@ -514,27 +514,9 @@ func GetIPFromReq(req *http.Request) string {
 	return strings.ReplaceAll(addresses[0], " ", "")
 }
 
-func ContainsString(slice []string, str string) bool {
+func Contains[K comparable](slice []K, item K) bool {
 	for _, s := range slice {
-		if s == str {
-			return true
-		}
-	}
-	return false
-}
-
-func ContainsInt64(slice []int64, val int64) bool {
-	for _, s := range slice {
-		if s == val {
-			return true
-		}
-	}
-	return false
-}
-
-func ContainsInt(slice []int, val int) bool {
-	for _, s := range slice {
-		if s == val {
+		if s == item {
 			return true
 		}
 	}

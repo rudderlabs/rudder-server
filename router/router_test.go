@@ -1,13 +1,39 @@
 package router
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"io"
 	"math"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"os/exec"
+	"os/signal"
+	"strconv"
+	"sync/atomic"
+	"syscall"
 	"testing"
 	"time"
+
+	"github.com/rudderlabs/rudder-server/testhelper/health"
+
+	trand "github.com/rudderlabs/rudder-server/testhelper/rand"
+	"github.com/rudderlabs/rudder-server/testhelper/workspaceConfig"
+
+	"github.com/gorilla/mux"
+
+	"github.com/rudderlabs/rudder-server/testhelper"
+
+	"golang.org/x/sync/errgroup"
+
+	"github.com/rudderlabs/rudder-server/testhelper/destination"
+
+	"github.com/ory/dockertest/v3"
+	"github.com/stretchr/testify/require"
 
 	jsoniter "github.com/json-iterator/go"
 
@@ -59,6 +85,10 @@ var (
 		ID:          gaDestinationDefinitionID,
 		Name:        "GA",
 		DisplayName: "Google Analytics",
+	}
+	gaDestinationConfig = destinationConfig{
+		name:          "GA",
+		destinationID: "GA",
 	}
 	collectMetricsErrorMap = map[string]int{
 		"Error Response 1":  1,
@@ -180,7 +210,7 @@ var _ = Describe("Router", func() {
 			}
 			mockMultitenantHandle.EXPECT().UpdateWorkspaceLatencyMap(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
 			c.mockBackendConfig.EXPECT().AccessToken().AnyTimes()
-			router.Setup(c.mockBackendConfig, c.mockRouterJobsDB, c.mockProcErrorsDB, gaDestinationDefinition, transientsource.NewEmptyService(), rsources.NewNoOpService())
+			router.Setup(c.mockBackendConfig, c.mockRouterJobsDB, c.mockProcErrorsDB, gaDestinationConfig, transientsource.NewEmptyService(), rsources.NewNoOpService())
 		})
 	})
 
@@ -200,7 +230,7 @@ var _ = Describe("Router", func() {
 			mockMultitenantHandle.EXPECT().UpdateWorkspaceLatencyMap(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
 			c.mockBackendConfig.EXPECT().AccessToken().AnyTimes()
 
-			router.Setup(c.mockBackendConfig, c.mockRouterJobsDB, c.mockProcErrorsDB, gaDestinationDefinition, transientsource.NewEmptyService(), rsources.NewNoOpService())
+			router.Setup(c.mockBackendConfig, c.mockRouterJobsDB, c.mockProcErrorsDB, gaDestinationConfig, transientsource.NewEmptyService(), rsources.NewNoOpService())
 
 			gaPayload := `{"body": {"XML": {}, "FORM": {}, "JSON": {}}, "type": "REST", "files": {}, "method": "POST", "params": {"t": "event", "v": "1", "an": "RudderAndroidClient", "av": "1.0", "ds": "android-sdk", "ea": "Demo Track", "ec": "Demo Category", "el": "Demo Label", "ni": 0, "qt": 59268380964, "ul": "en-US", "cid": "anon_id", "tid": "UA-185645846-1", "uip": "[::1]", "aiid": "com.rudderlabs.android.sdk"}, "userId": "anon_id", "headers": {}, "version": "1", "endpoint": "https://www.google-analytics.com/collect"}`
 			parameters := fmt.Sprintf(`{"source_id": "1fMCVYZboDlYlauh4GFsEo2JU77", "destination_id": "%s", "message_id": "2f548e6d-60f6-44af-a1f4-62b3272445c3", "received_at": "2021-06-28T10:04:48.527+05:30", "transform_at": "processor"}`, gaDestinationID)
@@ -289,7 +319,7 @@ var _ = Describe("Router", func() {
 			mockMultitenantHandle.EXPECT().UpdateWorkspaceLatencyMap(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
 			c.mockBackendConfig.EXPECT().AccessToken().AnyTimes()
 
-			router.Setup(c.mockBackendConfig, c.mockRouterJobsDB, c.mockProcErrorsDB, gaDestinationDefinition, transientsource.NewEmptyService(), rsources.NewNoOpService())
+			router.Setup(c.mockBackendConfig, c.mockRouterJobsDB, c.mockProcErrorsDB, gaDestinationConfig, transientsource.NewEmptyService(), rsources.NewNoOpService())
 
 			mockNetHandle := mocksRouter.NewMockNetHandleI(c.mockCtrl)
 			router.netHandle = mockNetHandle
@@ -375,7 +405,7 @@ var _ = Describe("Router", func() {
 			mockMultitenantHandle.EXPECT().UpdateWorkspaceLatencyMap(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
 			c.mockBackendConfig.EXPECT().AccessToken().AnyTimes()
 
-			router.Setup(c.mockBackendConfig, c.mockRouterJobsDB, c.mockProcErrorsDB, gaDestinationDefinition, transientsource.NewEmptyService(), rsources.NewNoOpService())
+			router.Setup(c.mockBackendConfig, c.mockRouterJobsDB, c.mockProcErrorsDB, gaDestinationConfig, transientsource.NewEmptyService(), rsources.NewNoOpService())
 			mockNetHandle := mocksRouter.NewMockNetHandleI(c.mockCtrl)
 			router.netHandle = mockNetHandle
 			router.MultitenantI = mockMultitenantHandle
@@ -456,7 +486,7 @@ var _ = Describe("Router", func() {
 			}
 			mockMultitenantHandle.EXPECT().UpdateWorkspaceLatencyMap(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
 			c.mockBackendConfig.EXPECT().AccessToken().AnyTimes()
-			router.Setup(c.mockBackendConfig, c.mockRouterJobsDB, c.mockProcErrorsDB, gaDestinationDefinition, transientsource.NewEmptyService(), rsources.NewNoOpService())
+			router.Setup(c.mockBackendConfig, c.mockRouterJobsDB, c.mockProcErrorsDB, gaDestinationConfig, transientsource.NewEmptyService(), rsources.NewNoOpService())
 			router.transformer = mockTransformer
 			router.noOfWorkers = 1
 			router.noOfJobsToBatchInAWorker = 5
@@ -588,7 +618,7 @@ var _ = Describe("Router", func() {
 			}
 			mockMultitenantHandle.EXPECT().UpdateWorkspaceLatencyMap(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
 			c.mockBackendConfig.EXPECT().AccessToken().AnyTimes()
-			router.Setup(c.mockBackendConfig, c.mockRouterJobsDB, c.mockProcErrorsDB, gaDestinationDefinition, transientsource.NewEmptyService(), rsources.NewNoOpService())
+			router.Setup(c.mockBackendConfig, c.mockRouterJobsDB, c.mockProcErrorsDB, gaDestinationConfig, transientsource.NewEmptyService(), rsources.NewNoOpService())
 
 			router.transformer = mockTransformer
 
@@ -732,7 +762,7 @@ var _ = Describe("Router", func() {
 			}
 			mockMultitenantHandle.EXPECT().UpdateWorkspaceLatencyMap(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
 			c.mockBackendConfig.EXPECT().AccessToken().AnyTimes()
-			router.Setup(c.mockBackendConfig, c.mockRouterJobsDB, c.mockProcErrorsDB, gaDestinationDefinition, transientsource.NewEmptyService(), rsources.NewNoOpService())
+			router.Setup(c.mockBackendConfig, c.mockRouterJobsDB, c.mockProcErrorsDB, gaDestinationConfig, transientsource.NewEmptyService(), rsources.NewNoOpService())
 
 			// we have a job that has failed once(toRetryJobsList), it should abort when picked up next
 			// Because we only allow one failure per job with this
@@ -904,7 +934,7 @@ var _ = Describe("Router", func() {
 			}
 			mockMultitenantHandle.EXPECT().UpdateWorkspaceLatencyMap(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
 			c.mockBackendConfig.EXPECT().AccessToken().AnyTimes()
-			router.Setup(c.mockBackendConfig, c.mockRouterJobsDB, c.mockProcErrorsDB, gaDestinationDefinition, transientsource.NewEmptyService(), rsources.NewNoOpService())
+			router.Setup(c.mockBackendConfig, c.mockRouterJobsDB, c.mockProcErrorsDB, gaDestinationConfig, transientsource.NewEmptyService(), rsources.NewNoOpService())
 			router.transformer = mockTransformer
 			router.noOfWorkers = 1
 			router.noOfJobsToBatchInAWorker = 5
@@ -1119,7 +1149,7 @@ var _ = Describe("Router", func() {
 			}
 			mockMultitenantHandle.EXPECT().UpdateWorkspaceLatencyMap(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
 			c.mockBackendConfig.EXPECT().AccessToken().AnyTimes()
-			router.Setup(c.mockBackendConfig, c.mockRouterJobsDB, c.mockProcErrorsDB, gaDestinationDefinition, transientsource.NewEmptyService(), rsources.NewNoOpService())
+			router.Setup(c.mockBackendConfig, c.mockRouterJobsDB, c.mockProcErrorsDB, gaDestinationConfig, transientsource.NewEmptyService(), rsources.NewNoOpService())
 			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
 			router.transformer = mockTransformer
 
@@ -1286,6 +1316,36 @@ func assertTransformJobStatuses(job *jobsdb.JobT, status *jobsdb.JobStatusT, exp
 	Expect(status.AttemptNum).To(Equal(attemptNum))
 }
 
+type webhookCount struct {
+	count   *uint64
+	webhook *httptest.Server
+}
+
+func generatePayloads(t *testing.T, count int) [][]byte {
+	payloads := make([][]byte, count)
+	for i := 0; i < count; i++ {
+		testBody, err := os.ReadFile("../scripts/batch.json")
+		require.NoError(t, err)
+		payloads[i] = testBody
+	}
+	return payloads
+}
+
+func createNewWebhook(t *testing.T, statusCode int) webhookCount {
+	var count uint64 = 0
+	webhook := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(statusCode)
+		_, err := w.Write([]byte(`{"message": "some transformed message"}`))
+
+		atomic.AddUint64(&count, 1)
+		require.NoError(t, err)
+	}))
+	return webhookCount{
+		&count,
+		webhook,
+	}
+}
+
 func Benchmark_SJSON_SET(b *testing.B) {
 	var stringValue string
 	var err error
@@ -1313,4 +1373,140 @@ func Benchmark_FASTJSON_MARSHAL(b *testing.B) {
 		val, _ := jsonfast.Marshal(collectMetricsErrorMap)
 		_ = string(val)
 	}
+}
+
+func Test_RouterDestIsolation(t *testing.T) {
+	ctx, _ := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
+	ctx, cancel := context.WithTimeout(ctx, 3*time.Minute)
+	defer cancel()
+
+	pool, err := dockertest.NewPool("")
+	require.NoError(t, err)
+	var (
+		group                errgroup.Group
+		postgresContainer    *destination.PostgresResource
+		transformerContainer *destination.TransformerResource
+	)
+
+	group.Go(func() (err error) {
+		postgresContainer, err = destination.SetupPostgres(pool, t)
+		return err
+	})
+
+	group.Go(func() (err error) {
+		transformerContainer, err = destination.SetupTransformer(pool, t)
+		return err
+	})
+	require.NoError(t, group.Wait())
+
+	backendConfRouter := mux.NewRouter()
+	if testing.Verbose() {
+		backendConfRouter.Use(func(next http.Handler) http.Handler {
+			return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				t.Logf("BackendConfig server call: %+v", r)
+				next.ServeHTTP(w, r)
+			})
+		})
+	}
+
+	writeKey := trand.String(27)
+	workspaceID := trand.String(27)
+	webhook1 := createNewWebhook(t, 500)
+	defer webhook1.webhook.Close()
+	webhook2 := createNewWebhook(t, 200)
+	defer webhook2.webhook.Close()
+
+	templateCtx := map[string]string{
+		"webhookUrl1": webhook1.webhook.URL,
+		"webhookUrl2": webhook2.webhook.URL,
+		"writeKey":    writeKey,
+		"workspaceId": workspaceID,
+	}
+	configJsonPath := workspaceConfig.CreateTempFile(t, "../testdata/destIdIsolationTestTemplate.json", templateCtx)
+
+	httpPort, err := testhelper.GetFreePort()
+	require.NoError(t, err)
+	httpAdminPort, err := testhelper.GetFreePort()
+	require.NoError(t, err)
+	debugPort, err := testhelper.GetFreePort()
+	require.NoError(t, err)
+	rudderTmpDir, err := os.MkdirTemp("", "rudder_server_*_test")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = os.RemoveAll(rudderTmpDir) })
+
+	t.Setenv("JOBS_DB_PORT", postgresContainer.Port)
+	t.Setenv("JOBS_DB_USER", postgresContainer.User)
+	t.Setenv("JOBS_DB_DB_NAME", postgresContainer.Database)
+	t.Setenv("JOBS_DB_PASSWORD", postgresContainer.Password)
+	t.Setenv("RSERVER_GATEWAY_WEB_PORT", strconv.Itoa(httpPort))
+	t.Setenv("RSERVER_GATEWAY_ADMIN_WEB_PORT", strconv.Itoa(httpAdminPort))
+	t.Setenv("RSERVER_PROFILER_PORT", strconv.Itoa(debugPort))
+	t.Setenv("RSERVER_WAREHOUSE_MODE", "off")
+	t.Setenv("RSERVER_ENABLE_STATS", "false")
+	t.Setenv("RSERVER_JOBS_DB_BACKUP_ENABLED", "false")
+	t.Setenv("RUDDER_TMPDIR", rudderTmpDir)
+	t.Setenv("DEST_TRANSFORM_URL", transformerContainer.TransformURL)
+	t.Setenv("RSERVER_BACKEND_CONFIG_CONFIG_FROM_FILE", "true")
+	t.Setenv("RSERVER_BACKEND_CONFIG_CONFIG_JSONPATH", configJsonPath)
+	t.Setenv("RSERVER_ROUTER_WEBHOOK_ISOLATE_DEST_ID", "true")
+	t.Setenv("RSERVER_ROUTER_JOB_QUERY_BATCH_SIZE", "10")
+
+	if testing.Verbose() {
+		require.NoError(t, os.Setenv("LOG_LEVEL", "DEBUG"))
+	}
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		defer cancel()
+		cmd := exec.CommandContext(ctx, "go", "run", "../main.go")
+		cmd.Env = os.Environ()
+
+		stdout, err := cmd.StdoutPipe()
+		require.NoError(t, err)
+		stderr, err := cmd.StderrPipe()
+		require.NoError(t, err)
+
+		defer func() {
+			_ = stdout.Close()
+			_ = stderr.Close()
+		}()
+		require.NoError(t, cmd.Start())
+		if testing.Verbose() {
+			go func() { _, _ = io.Copy(os.Stdout, stdout) }()
+			go func() { _, _ = io.Copy(os.Stderr, stderr) }()
+		}
+
+		if err = cmd.Wait(); err != nil {
+			if err.Error() != "signal: killed" {
+				t.Errorf("Error running main.go: %v", err)
+				return
+			}
+		}
+		t.Log("main.go exited")
+	}()
+	t.Cleanup(func() { cancel(); <-done })
+
+	healthEndpoint := fmt.Sprintf("http://localhost:%d/health", httpPort)
+	health.WaitUntilReady(ctx, t,
+		healthEndpoint,
+		200*time.Second,
+		100*time.Millisecond,
+		t.Name(),
+	)
+	batches := generatePayloads(t, 100)
+	client := &http.Client{}
+	for _, payload := range batches {
+		url := fmt.Sprintf("http://localhost:%d/v1/batch", httpPort)
+		req, err := http.NewRequest("POST", url, bytes.NewReader(payload))
+		require.NoError(t, err, "should be able to create a new request")
+		req.SetBasicAuth(writeKey, "password")
+		resp, err := client.Do(req)
+		require.NoError(t, err, "should be able to send the request to gateway")
+		require.Equal(t, http.StatusOK, resp.StatusCode)
+		resp.Body.Close()
+	}
+	require.Eventually(t, func() bool {
+		return atomic.LoadUint64(webhook2.count) == 100 && atomic.LoadUint64(webhook1.count) < 100
+	}, 30*time.Second, 1*time.Second, "should have received all the events")
 }

@@ -314,7 +314,7 @@ func (dl *HandleT) fetchPartitionColumns(dbT *databricks.DBHandleT, tableName st
 }
 
 func isPartitionedByEventDate(partitionedColumns []string) bool {
-	return misc.ContainsString(partitionedColumns, "event_date")
+	return misc.Contains(partitionedColumns, "event_date")
 }
 
 // partitionQuery

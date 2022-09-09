@@ -19,6 +19,7 @@ message GetConnectionTokenSuccessResponse {
   string connectionToken = 1;
   string service = 2;
   string instanceID = 3;
+  string tokenType = 4;
 }
 
 message ErrorResponse {
