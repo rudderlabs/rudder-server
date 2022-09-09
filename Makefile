@@ -14,7 +14,7 @@ test: test-run test-teardown
 
 test-run: ## Run all unit tests
 	$(eval TEST_CMD = SLOW=0 go test)
-	$(eval TEST_OPTIONS = -v -failfast -shuffle=on -coverprofile=profile.out -covermode=atomic -vet=all --timeout=15m)
+	$(eval TEST_OPTIONS = -p=1 -v -failfast -shuffle=on -coverprofile=profile.out -covermode=atomic -vet=all --timeout=15m)
 ifdef package
 	$(TEST_CMD) $(TEST_OPTIONS) $(package) && touch $(TESTFILE) || true
 else
