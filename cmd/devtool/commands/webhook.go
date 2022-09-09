@@ -67,7 +67,7 @@ type webhook struct {
 	Verbose bool
 }
 
-func (wh *webhook) computeTime(b []byte) {
+func (*webhook) computeTime(b []byte) {
 	v, err := jsonparser.GetString(b, "sentAt")
 	if err != nil {
 		return
