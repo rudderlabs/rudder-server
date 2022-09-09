@@ -18,8 +18,6 @@ import (
 	. "github.com/onsi/gomega"
 	"github.com/ory/dockertest/v3"
 	"github.com/ory/dockertest/v3/docker"
-
-	th "github.com/rudderlabs/rudder-server/testhelper"
 )
 
 type postgresResource struct {
@@ -456,11 +454,11 @@ var _ = Describe("Using sources handler", Ordered, func() {
 			Expect(err).NotTo(HaveOccurred())
 			_, err = stmt.Exec(ts)
 			Expect(err).NotTo(HaveOccurred())
-			defer th.IgnoreErr(stmt.Close)
+			defer func() { _ = stmt.Close() }()
 			stmt2, err := resource.db.Prepare(`update "rsources_failed_keys" set ts = $1`)
 			Expect(err).NotTo(HaveOccurred())
 			_, err = stmt2.Exec(ts)
-			defer th.IgnoreErr(stmt2.Close)
+			defer func() { _ = stmt2.Close() }()
 			Expect(err).NotTo(HaveOccurred())
 
 			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Minute)
@@ -746,11 +744,11 @@ var _ = Describe("Using sources handler", Ordered, func() {
 			// Setting up previous environment before adding failedkeys table to the publication
 			// setup databases
 			databaseA := getDB(configA.LocalConn, configA.MaxPoolSize)
-			defer th.IgnoreErr(databaseA.Close)
+			defer func() { _ = databaseA.Close() }()
 			databaseB := getDB(configB.LocalConn, configB.MaxPoolSize)
-			defer th.IgnoreErr(databaseB.Close)
+			defer func() { _ = databaseB.Close() }()
 			databaseC := getDB(configB.SharedConn, configB.MaxPoolSize) // shared
-			defer th.IgnoreErr(databaseC.Close)
+			defer func() { _ = databaseC.Close() }()
 
 			// create tables
 			err = setupStatsTable(context.Background(), databaseA, configA.LocalHostname)
