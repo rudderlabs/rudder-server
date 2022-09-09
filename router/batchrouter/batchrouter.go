@@ -188,7 +188,7 @@ func (brt *HandleT) backendConfigSubscriber() {
 						brt.destinationsMap[destination.ID].Sources = append(brt.destinationsMap[destination.ID].Sources, source)
 
 						// initialize map to track encountered anonymousIds for a warehouse destination
-						if warehouseutils.IDResolutionEnabled() && misc.ContainsString(warehouseutils.IdentityEnabledWarehouses, brt.destType) {
+						if warehouseutils.IDResolutionEnabled() && misc.Contains(warehouseutils.IdentityEnabledWarehouses, brt.destType) {
 							connIdentifier := connectionIdentifier(DestinationT{Destination: destination, Source: source})
 							warehouseConnIdentifier := brt.warehouseConnectionIdentifier(connIdentifier, source, destination)
 							brt.connectionWHNamespaceMap[connIdentifier] = warehouseConnIdentifier
@@ -200,7 +200,7 @@ func (brt *HandleT) backendConfigSubscriber() {
 							brt.encounteredMergeRuleMapLock.Unlock()
 						}
 
-						if val, ok := destination.Config["testConnection"].(bool); ok && val && misc.ContainsString(objectStorageDestinations, destination.DestinationDefinition.Name) {
+						if val, ok := destination.Config["testConnection"].(bool); ok && val && misc.Contains(objectStorageDestinations, destination.DestinationDefinition.Name) {
 							destination := destination
 							rruntime.Go(func() {
 								testResponse := destinationConnectionTester.TestBatchDestinationConnection(destination)
@@ -450,7 +450,7 @@ func (brt *HandleT) pollAsyncStatus(ctx context.Context) {
 									}
 									for _, job := range importingList {
 										jobID := job.JobID
-										if misc.ContainsInt64(append(succeededKeys, warningKeys...), jobID) {
+										if misc.Contains(append(succeededKeys, warningKeys...), jobID) {
 											status = &jobsdb.JobStatusT{
 												JobID:         jobID,
 												JobState:      jobsdb.Succeeded.State,
@@ -461,7 +461,7 @@ func (brt *HandleT) pollAsyncStatus(ctx context.Context) {
 												Parameters:    []byte(`{}`),
 												WorkspaceId:   job.WorkspaceId,
 											}
-										} else if misc.ContainsInt64(failedKeys, job.JobID) {
+										} else if misc.Contains(failedKeys, job.JobID) {
 											errorResp, _ := json.Marshal(ErrorResponseT{Error: gjson.GetBytes(failedBodyBytes, fmt.Sprintf("metadata.failedReasons.%v", job.JobID)).String()})
 											status = &jobsdb.JobStatusT{
 												JobID:         jobID,
@@ -1094,7 +1094,7 @@ func (brt *HandleT) postToWarehouse(batchJobs *BatchJobsT, output StorageUploadO
 		DestinationRevisionID: batchJobs.BatchDestination.Destination.RevisionID,
 	}
 
-	if misc.ContainsString(warehouseutils.TimeWindowDestinations, brt.destType) {
+	if misc.Contains(warehouseutils.TimeWindowDestinations, brt.destType) {
 		payload.TimeWindow = batchJobs.TimeWindow
 	}
 
@@ -1704,7 +1704,7 @@ func (worker *workerT) workerProcess() {
 					}
 				}
 				drainStatsbyDest[batchDest.Destination.ID].Count = drainStatsbyDest[batchDest.Destination.ID].Count + 1
-				if !misc.ContainsString(drainStatsbyDest[batchDest.Destination.ID].Reasons, reason) {
+				if !misc.Contains(drainStatsbyDest[batchDest.Destination.ID].Reasons, reason) {
 					drainStatsbyDest[batchDest.Destination.ID].Reasons = append(drainStatsbyDest[batchDest.Destination.ID].Reasons, reason)
 				}
 			} else {
@@ -1795,7 +1795,7 @@ func (worker *workerT) workerProcess() {
 			}
 			rruntime.Go(func() {
 				switch {
-				case misc.ContainsString(objectStorageDestinations, brt.destType):
+				case misc.Contains(objectStorageDestinations, brt.destType):
 					destUploadStat := stats.DefaultStats.NewStat(fmt.Sprintf(`batch_router.%s_dest_upload_time`, brt.destType), stats.TimerType)
 					destUploadStat.Start()
 					output := brt.copyJobsToStorage(brt.destType, &batchJobs, false)
@@ -1810,7 +1810,7 @@ func (worker *workerT) workerProcess() {
 					}
 
 					destUploadStat.End()
-				case misc.ContainsString(warehouseutils.WarehouseDestinations, brt.destType):
+				case misc.Contains(warehouseutils.WarehouseDestinations, brt.destType):
 					useRudderStorage := misc.IsConfiguredToUseRudderObjectStorage(batchJobs.BatchDestination.Destination.Config)
 					objectStorageType := warehouseutils.ObjectStorageType(brt.destType, batchJobs.BatchDestination.Destination.Config, useRudderStorage)
 					destUploadStat := stats.DefaultStats.NewStat(fmt.Sprintf(`batch_router.%s_%s_dest_upload_time`, brt.destType, objectStorageType), stats.TimerType)
@@ -1832,7 +1832,7 @@ func (worker *workerT) workerProcess() {
 						misc.RemoveFilePaths(output.LocalFilePaths...)
 					}
 					destUploadStat.End()
-				case misc.ContainsString(asyncDestinations, brt.destType):
+				case misc.Contains(asyncDestinations, brt.destType):
 					destUploadStat := stats.DefaultStats.NewStat(fmt.Sprintf(`batch_router.%s_dest_upload_time`, brt.destType), stats.TimerType)
 					destUploadStat.Start()
 					brt.sendJobsToStorage(batchJobs)
@@ -2150,26 +2150,26 @@ func (brt *HandleT) holdFetchingJobs(parameterFilters []jobsdb.ParameterFilterT)
 }
 
 func IsAsyncDestination(destType string) bool {
-	return misc.ContainsString(asyncDestinations, destType)
+	return misc.Contains(asyncDestinations, destType)
 }
 
 func (brt *HandleT) crashRecover() {
-	if misc.ContainsString(objectStorageDestinations, brt.destType) {
+	if misc.Contains(objectStorageDestinations, brt.destType) {
 		brt.dedupRawDataDestJobsOnCrash()
 	}
 }
 
 func IsObjectStorageDestination(destType string) bool {
-	return misc.ContainsString(objectStorageDestinations, destType)
+	return misc.Contains(objectStorageDestinations, destType)
 }
 
 func IsWarehouseDestination(destType string) bool {
-	return misc.ContainsString(warehouseutils.WarehouseDestinations, destType)
+	return misc.Contains(warehouseutils.WarehouseDestinations, destType)
 }
 
 func (brt *HandleT) splitBatchJobsOnTimeWindow(batchJobs BatchJobsT) map[time.Time]*BatchJobsT {
 	splitBatches := map[time.Time]*BatchJobsT{}
-	if !misc.ContainsString(warehouseutils.TimeWindowDestinations, brt.destType) {
+	if !misc.Contains(warehouseutils.TimeWindowDestinations, brt.destType) {
 		// return only one batchJob if the destination type is not time window destinations
 		splitBatches[time.Time{}] = &batchJobs
 		return splitBatches

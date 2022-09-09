@@ -56,7 +56,7 @@ func (retryReq *RetryRequest) RetryWHUploads() (response RetryResponse, err erro
 		err = fmt.Errorf("unauthorized request")
 		return
 	}
-	if retryReq.SourceID != "" && !misc.ContainsString(sourceIDs, retryReq.SourceID) {
+	if retryReq.SourceID != "" && !misc.Contains(sourceIDs, retryReq.SourceID) {
 		err = fmt.Errorf("no such sourceID exists")
 		return
 	}

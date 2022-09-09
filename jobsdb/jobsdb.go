@@ -2468,7 +2468,7 @@ func (jd *HandleT) markClearEmptyResult(ds dataSetT, workspace string, stateFilt
 
 	// Skip the cache if a parameter filter is provided that does not belong to the caching key
 	for _, parameterFilter := range parameterFilters {
-		if !misc.ContainsString(CacheKeyParameterFilters, parameterFilter.Name) {
+		if !misc.Contains(CacheKeyParameterFilters, parameterFilter.Name) {
 			return
 		}
 	}
@@ -2578,7 +2578,7 @@ func (jd *HandleT) isEmptyResult(ds dataSetT, workspace string, stateFilters, cu
 			}
 
 			for _, parameterFilter := range parameterFilters {
-				if !misc.ContainsString(CacheKeyParameterFilters, parameterFilter.Name) {
+				if !misc.Contains(CacheKeyParameterFilters, parameterFilter.Name) {
 					jd.logger.Debugf("[%s] Invalid parameter filter %s value %s", jd.tablePrefix, parameterFilter.Name, parameterFilter.Value)
 					return false
 				}

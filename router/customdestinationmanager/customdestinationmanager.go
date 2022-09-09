@@ -281,10 +281,10 @@ type Opts struct {
 
 // New returns CustomdestinationManager
 func New(destType string, o Opts) DestinationManager {
-	if misc.ContainsString(Destinations, destType) {
+	if misc.Contains(Destinations, destType) {
 
 		managerType := STREAM
-		if misc.ContainsString(KVStoreDestinations, destType) {
+		if misc.Contains(KVStoreDestinations, destType) {
 			managerType = KV
 		}
 
