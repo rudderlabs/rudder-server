@@ -1,8 +1,8 @@
 {
     "components": [
         {
-            "name": "backend-config",
-            "features": ["namespace"]
+            "name": "server",
+            "features": ["features"]
         }
     ]
 }
