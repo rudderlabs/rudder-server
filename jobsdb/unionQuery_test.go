@@ -7,14 +7,12 @@ import (
 
 	"github.com/gofrs/uuid"
 	"github.com/rudderlabs/rudder-server/jobsdb/prebackup"
-	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/bytesize"
 	"github.com/stretchr/testify/require"
 )
 
 func TestMultiTenantHandleT_GetAllJobs(t *testing.T) {
-	initJobsDB()
-	stats.Setup()
+	_ = startPostgres(t)
 
 	migrationMode := ""
 

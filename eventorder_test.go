@@ -18,10 +18,9 @@ import (
 
 	"github.com/rudderlabs/rudder-server/testhelper/health"
 
-	"github.com/rudderlabs/rudder-server/testhelper"
-
 	"github.com/ory/dockertest/v3"
 	main "github.com/rudderlabs/rudder-server"
+	"github.com/rudderlabs/rudder-server/testhelper"
 	"github.com/rudderlabs/rudder-server/testhelper/destination"
 	trand "github.com/rudderlabs/rudder-server/testhelper/rand"
 	"github.com/rudderlabs/rudder-server/testhelper/workspaceConfig"
