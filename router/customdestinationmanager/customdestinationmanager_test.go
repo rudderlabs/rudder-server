@@ -103,6 +103,9 @@ func getDestConfig() backendconfig.DestinationT {
 	return backendconfig.DestinationT{
 		ID:   "test",
 		Name: "test",
+		DestinationDefinition: backendconfig.DestinationDefinitionT{
+			Name: "KAFKA",
+		},
 		Config: map[string]interface{}{
 			"hostName":      "unknown.example.com",
 			"port":          "9999",
