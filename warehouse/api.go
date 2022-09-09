@@ -416,7 +416,7 @@ func (uploadReq UploadReqT) authorizeSource(sourceID string) bool {
 		return false
 	}
 	pkgLogger.Debugf(`Authorized sourceId's for workspace:%s - %v`, uploadReq.WorkspaceID, authorizedSourceIDs)
-	return misc.ContainsString(authorizedSourceIDs, sourceID)
+	return misc.Contains(authorizedSourceIDs, sourceID)
 }
 
 func (uploadsReq UploadsReqT) authorizedSources() (sourceIDs []string) {
@@ -522,7 +522,7 @@ func (uploadsReq *UploadsReqT) getWhUploadsForHosted(authorizedSourceIDs []strin
 	var whereClauses []string
 	if uploadsReq.SourceID == "" {
 		whereClauses = append(whereClauses, fmt.Sprintf(`source_id IN (%v)`, misc.SingleQuoteLiteralJoin(authorizedSourceIDs)))
-	} else if misc.ContainsString(authorizedSourceIDs, uploadsReq.SourceID) {
+	} else if misc.Contains(authorizedSourceIDs, uploadsReq.SourceID) {
 		whereClauses = append(whereClauses, fmt.Sprintf(`source_id = '%s'`, uploadsReq.SourceID))
 	}
 	if uploadsReq.DestinationID != "" {
