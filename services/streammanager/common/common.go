@@ -1,3 +1,5 @@
+//go:generate mockgen --build_flags=--mod=mod -destination=../../../mocks/services/streammanager/common/mock_streammanager.go -package mock_streammanager github.com/rudderlabs/rudder-server/services/streammanager/common StreamProducer,ClosableStreamProducer
+
 package common
 
 import (

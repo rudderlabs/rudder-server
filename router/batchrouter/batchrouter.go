@@ -701,6 +701,7 @@ func (brt *HandleT) copyJobsToStorage(provider string, batchJobs *BatchJobsT, is
 			Config:           batchJobs.BatchDestination.Destination.Config,
 			UseRudderStorage: useRudderStorage,
 		}),
+		WorkspaceID: batchJobs.BatchDestination.Destination.WorkspaceID,
 	})
 	if err != nil {
 		return StorageUploadOutput{

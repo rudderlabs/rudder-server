@@ -7,6 +7,7 @@ import (
 	"fmt"
 
 	"github.com/aws/aws-sdk-go/service/personalizeevents"
+	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/services/streammanager/common"
 	"github.com/rudderlabs/rudder-server/utils/awsutils"
 	"github.com/rudderlabs/rudder-server/utils/logger"
@@ -29,8 +30,8 @@ type PersonalizeClient interface {
 	PutItems(input *personalizeevents.PutItemsInput) (*personalizeevents.PutItemsOutput, error)
 }
 
-func NewProducer(destinationConfig map[string]interface{}, o common.Opts) (*PersonalizeProducer, error) {
-	sessionConfig, err := awsutils.NewSessionConfig(destinationConfig, o.Timeout, personalizeevents.ServiceName)
+func NewProducer(destination *backendconfig.DestinationT, o common.Opts) (*PersonalizeProducer, error) {
+	sessionConfig, err := awsutils.NewSessionConfigForDestination(destination, o.Timeout, personalizeevents.ServiceName)
 	if err != nil {
 		return nil, err
 	}

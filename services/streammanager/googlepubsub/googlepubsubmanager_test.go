@@ -13,6 +13,7 @@ import (
 
 	"cloud.google.com/go/pubsub"
 	"github.com/ory/dockertest/v3"
+	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/services/streammanager/common"
 	"github.com/rudderlabs/rudder-server/testhelper"
 	"github.com/stretchr/testify/assert"
@@ -32,15 +33,16 @@ const (
 )
 
 func Test_Timeout(t *testing.T) {
-	config := Config{
-		ProjectId: projectId,
-		EventToTopicMap: []map[string]string{
+	config := map[string]interface{}{
+		"ProjectId": projectId,
+		"EventToTopicMap": []map[string]string{
 			{"to": topic},
 		},
-		TestConfig: testConfig,
+		"TestConfig": testConfig,
 	}
+	destination := backendconfig.DestinationT{Config: config}
 
-	producer, err := NewProducer(config, common.Opts{Timeout: 1 * time.Microsecond})
+	producer, err := NewProducer(&destination, common.Opts{Timeout: 1 * time.Microsecond})
 	if err != nil {
 		t.Fatalf("Expected no error, got: %s.", err)
 	}
@@ -64,15 +66,16 @@ func Test_Timeout(t *testing.T) {
 }
 
 func TestUnsupportedCredentials(t *testing.T) {
-	config := Config{
-		ProjectId: projectId,
-		EventToTopicMap: []map[string]string{
+	config := map[string]interface{}{
+		"ProjectId": projectId,
+		"EventToTopicMap": []map[string]string{
 			{"to": topic},
 		},
-		Credentials: "{\"installed\":{\"client_id\":\"1234.apps.googleusercontent.com\",\"project_id\":\"project_id\",\"auth_uri\":\"https://accounts.google.com/o/oauth2/auth\",\"token_uri\":\"https://oauth2.googleapis.com/token\",\"auth_provider_x509_cert_url\":\"https://www.googleapis.com/oauth2/v1/certs\",\"client_secret\":\"client_secret\",\"redirect_uris\":[\"urn:ietf:wg:oauth:2.0:oob\",\"http://localhost\"]}}",
+		"Credentials": "{\"installed\":{\"client_id\":\"1234.apps.googleusercontent.com\",\"project_id\":\"project_id\",\"auth_uri\":\"https://accounts.google.com/o/oauth2/auth\",\"token_uri\":\"https://oauth2.googleapis.com/token\",\"auth_provider_x509_cert_url\":\"https://www.googleapis.com/oauth2/v1/certs\",\"client_secret\":\"client_secret\",\"redirect_uris\":[\"urn:ietf:wg:oauth:2.0:oob\",\"http://localhost\"]}}",
 	}
+	destination := backendconfig.DestinationT{Config: config}
 
-	_, err := NewProducer(config, common.Opts{})
+	_, err := NewProducer(&destination, common.Opts{})
 
 	assert.NotNil(t, err)
 	assert.Contains(t, err.Error(), "client_credentials.json file is not supported")

@@ -60,7 +60,7 @@ type CustomManagerT struct {
 
 // clientHolder keeps the config of a destination and corresponding producer for a stream destination
 type clientHolder struct {
-	config interface{}
+	config map[string]interface{}
 	client interface{}
 }
 
@@ -84,7 +84,8 @@ func loadConfig() {
 
 // newClient delegates the call to the appropriate manager
 func (customManager *CustomManagerT) newClient(destID string) error {
-	destConfig := customManager.config[destID].Config
+	destination := customManager.config[destID]
+	destConfig := destination.Config
 	_, err := customManager.breaker[destID].breaker.Execute(func() (interface{}, error) {
 		var customDestination *clientHolder
 		var err error
@@ -92,7 +93,7 @@ func (customManager *CustomManagerT) newClient(destID string) error {
 		switch customManager.managerType {
 		case STREAM:
 			var producer interface{}
-			producer, err = streammanager.NewProducer(destConfig, customManager.destType, common.Opts{
+			producer, err = streammanager.NewProducer(&destination, common.Opts{
 				Timeout: customManager.timeout,
 			})
 			if err == nil {
@@ -121,12 +122,13 @@ func (customManager *CustomManagerT) newClient(destID string) error {
 	return err
 }
 
-func (customManager *CustomManagerT) send(jsonData json.RawMessage, destType string, client, config interface{}) (int, string) {
+func (customManager *CustomManagerT) send(jsonData json.RawMessage, destType string, client interface{}, config map[string]interface{}) (int, string) {
 	var statusCode int
 	var respBody string
 	switch customManager.managerType {
 	case STREAM:
-		statusCode, _, respBody = streammanager.Produce(jsonData, destType, client, config)
+		streamProducer, _ := client.(common.StreamProducer)
+		statusCode, _, respBody = streammanager.Produce(jsonData, destType, streamProducer, config)
 	case KV:
 		kvManager, _ := client.(kvstoremanager.KVStoreManager)
 

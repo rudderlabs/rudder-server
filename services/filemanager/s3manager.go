@@ -156,7 +156,7 @@ func (manager *S3Manager) DeleteObjects(ctx context.Context, keys []string) (err
 }
 
 func (manager *S3Manager) getSessionConfig() *awsutils.SessionConfig {
-	return &awsutils.SessionConfig{
+	sessionConfig := &awsutils.SessionConfig{
 		Region:           *manager.Config.Region,
 		Endpoint:         manager.Config.Endpoint,
 		S3ForcePathStyle: manager.Config.S3ForcePathStyle,
@@ -166,6 +166,10 @@ func (manager *S3Manager) getSessionConfig() *awsutils.SessionConfig {
 		IAMRoleARN:       manager.Config.IAMRoleARN,
 		ExternalID:       manager.Config.ExternalID,
 	}
+	if manager.WorkspaceID != "" {
+		sessionConfig.ExternalID = manager.WorkspaceID
+	}
+	return sessionConfig
 }
 
 func (manager *S3Manager) getSession(ctx context.Context) (*session.Session, error) {
@@ -193,7 +197,12 @@ func (manager *S3Manager) getSession(ctx context.Context) (*session.Session, err
 		manager.Config.Region = aws.String(region)
 	}
 
-	return awsutils.CreateSession(manager.getSessionConfig())
+	var err error
+	manager.session, err = awsutils.CreateSession(manager.getSessionConfig())
+	if err != nil {
+		return nil, err
+	}
+	return manager.session, err
 }
 
 // IMPT NOTE: `ListFilesWithPrefix` support Continuation Token. So, if you want same set of files (says 1st 1000 again)
@@ -252,9 +261,10 @@ func (manager *S3Manager) GetConfiguredPrefix() string {
 }
 
 type S3Manager struct {
-	Config  *S3Config
-	session *session.Session
-	timeout time.Duration
+	Config      *S3Config
+	WorkspaceID string
+	session     *session.Session
+	timeout     time.Duration
 }
 
 func (manager *S3Manager) SetTimeout(timeout time.Duration) {
