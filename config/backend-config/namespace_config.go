@@ -13,17 +13,12 @@ import (
 	jsoniter "github.com/json-iterator/go"
 
 	"github.com/rudderlabs/rudder-server/config"
-	"github.com/rudderlabs/rudder-server/services/controlplane/features"
 	"github.com/rudderlabs/rudder-server/services/controlplane/identity"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/types"
 )
 
 var jsonfast = jsoniter.ConfigCompatibleWithStandardLibrary
-
-func init() {
-	features.Register("backend-config", "namespace")
-}
 
 // WorkspacesT holds sources of workspaces
 type WorkspacesT struct {
@@ -190,7 +185,7 @@ func (nc *namespaceConfig) makeHTTPRequest(ctx context.Context, url string) ([]b
 		return nil, err
 	}
 
-	nc.Identity().HTTPAuth(req)
+	req.SetBasicAuth(nc.Identity().BasicAuth())
 
 	resp, err := nc.Client.Do(req)
 	if err != nil {

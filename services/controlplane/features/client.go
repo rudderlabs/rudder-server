@@ -71,19 +71,30 @@ func New(identity identity.Identifier, fns ...OptFn) *Client {
 	return c
 }
 
-func (c *Client) Send(ctx context.Context, registry *Registry) error {
-	url := fmt.Sprintf("%s/data-plane/%s/%s/settings", c.url, c.identity.Resource(), c.identity.ID())
+type PerComponent map[string][]string
+
+func (c *Client) Send(ctx context.Context, components PerComponent) error {
+	var url string
+
+	switch t := c.identity.(type) {
+	case *identity.Namespace:
+		url = fmt.Sprintf("%s/data-plane/v1/namespaces/%s/settings", c.url, c.identity.ID())
+	case *identity.Workspace:
+		url = fmt.Sprintf("%s/data-plane/v1/workspaces/%s/settings", c.url, c.identity.ID())
+	default:
+		return fmt.Errorf("identity not supported %T", t)
+	}
 
 	payload := payload{
 		Components: []component{},
 	}
 
-	registry.Each(func(name string, features []string) {
+	for name, features := range components {
 		payload.Components = append(payload.Components, component{
 			Name:     name,
 			Features: features,
 		})
-	})
+	}
 
 	// sort by name, so that the order of components is always the same in every call
 	sort.Slice(payload.Components, func(i, j int) bool { return payload.Components[i].Name < payload.Components[j].Name })
@@ -102,7 +113,7 @@ func (c *Client) Send(ctx context.Context, registry *Registry) error {
 
 		req.Header.Set("Content-Type", "application/json")
 
-		c.identity.HTTPAuth(req)
+		req.SetBasicAuth(c.identity.BasicAuth())
 
 		resp, err := c.client.Do(req)
 		if err != nil {

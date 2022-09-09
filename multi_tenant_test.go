@@ -116,7 +116,7 @@ func testMultiTenantByAppType(t *testing.T, appType string) {
 		})).
 		Methods("GET")
 	backendConfRouter.
-		HandleFunc("/data-plane/namespaces/"+workspaceNamespace+"/settings", requireAuth(t, hostedServiceSecret, func(w http.ResponseWriter, r *http.Request) {
+		HandleFunc("/data-plane/v1/namespaces/"+workspaceNamespace+"/settings", requireAuth(t, hostedServiceSecret, func(w http.ResponseWriter, r *http.Request) {
 			expectBody, err := os.ReadFile("testdata/expected_features.json")
 			require.NoError(t, err)
 

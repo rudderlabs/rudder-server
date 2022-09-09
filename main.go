@@ -13,6 +13,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/info"
 	"github.com/rudderlabs/rudder-server/warehouse/datalake"
 
 	"github.com/bugsnag/bugsnag-go/v2"
@@ -43,6 +44,7 @@ import (
 	batchrouterutils "github.com/rudderlabs/rudder-server/router/utils"
 	"github.com/rudderlabs/rudder-server/services/alert"
 	"github.com/rudderlabs/rudder-server/services/archiver"
+	"github.com/rudderlabs/rudder-server/services/controlplane/features"
 	"github.com/rudderlabs/rudder-server/services/db"
 	destinationdebugger "github.com/rudderlabs/rudder-server/services/debugger/destination"
 	sourcedebugger "github.com/rudderlabs/rudder-server/services/debugger/source"
@@ -275,6 +277,13 @@ func Run(ctx context.Context) int {
 			}
 			return nil
 		}))
+		go func() {
+			backendconfig.DefaultBackendConfig.WaitForConfig(context.Background())
+			err := features.New(backendconfig.DefaultBackendConfig.Identity()).Send(context.Background(), info.ServerFeatures)
+			if err != nil {
+				pkgLogger.Errorf("error sending server features: %v", err)
+			}
+		}()
 	}
 
 	// initialize warehouse service after core to handle non-normal recovery modes

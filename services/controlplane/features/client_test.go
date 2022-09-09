@@ -17,9 +17,6 @@ import (
 func Test_Client_Send(t *testing.T) {
 	validSecret := "valid-secret"
 
-	r := &features.Registry{}
-	r.Register("test", "feature1", "feature2")
-
 	wantBody := `{"components":[{"name":"test","features":["feature1","feature2"]}]}`
 
 	testcases := []struct {
@@ -36,7 +33,7 @@ func Test_Client_Send(t *testing.T) {
 				WorkspaceToken: validSecret,
 			},
 
-			wantPath: "/data-plane/workspace/valid-workspace-id/settings",
+			wantPath: "/data-plane/v1/workspaces/valid-workspace-id/settings",
 			wantErr:  nil,
 		},
 		{
@@ -45,7 +42,7 @@ func Test_Client_Send(t *testing.T) {
 				Namespace:    "valid-namespace",
 				HostedSecret: validSecret,
 			},
-			wantPath: "/data-plane/namespaces/valid-namespace/settings",
+			wantPath: "/data-plane/v1/namespaces/valid-namespace/settings",
 			wantErr:  nil,
 		},
 	}
@@ -70,7 +67,9 @@ func Test_Client_Send(t *testing.T) {
 
 			c := features.New(tc.identity, features.WithHTTPClient(s.Client()), features.WithURL(s.URL))
 
-			err := c.Send(context.Background(), r)
+			err := c.Send(context.Background(), features.PerComponent{
+				"test": {"feature1", "feature2"},
+			})
 			require.NoError(t, err)
 		})
 	}
@@ -85,7 +84,9 @@ func Test_Client_Send(t *testing.T) {
 
 		c := features.New(&identity.Namespace{}, features.WithHTTPClient(s.Client()), features.WithURL(s.URL))
 
-		err := c.Send(context.Background(), r)
+		err := c.Send(context.Background(), features.PerComponent{
+			"test": {"feature1", "feature2"},
+		})
 		require.Error(t, err)
 
 		require.Equalf(t, int64(4), atomic.LoadInt64(&count), "retry %d times", features.MaxRetries)
@@ -106,7 +107,9 @@ func Test_Client_Send(t *testing.T) {
 
 		c := features.New(&identity.Namespace{}, features.WithHTTPClient(s.Client()), features.WithURL(s.URL), features.WithTimeout(time.Millisecond))
 
-		err := c.Send(context.Background(), r)
+		err := c.Send(context.Background(), features.PerComponent{
+			"test": {"feature1", "feature2"},
+		})
 		require.Error(t, err)
 
 		require.Equalf(t, int64(4), atomic.LoadInt64(&count), "retry %d times", features.MaxRetries)
