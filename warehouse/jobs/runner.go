@@ -1,4 +1,4 @@
-package whjobs
+package jobs
 
 import (
 	"context"

@@ -9,7 +9,7 @@
 	The following handlers file is the entry point for the handlers.
 */
 
-package whjobs
+package jobs
 
 import (
 	"encoding/json"

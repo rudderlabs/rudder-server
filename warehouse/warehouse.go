@@ -42,9 +42,9 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/types"
 	"github.com/rudderlabs/rudder-server/warehouse/configuration_testing"
 	"github.com/rudderlabs/rudder-server/warehouse/deltalake"
+	"github.com/rudderlabs/rudder-server/warehouse/jobs"
 	"github.com/rudderlabs/rudder-server/warehouse/manager"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
-	"github.com/rudderlabs/rudder-server/warehouse/whjobs"
 )
 
 var (
@@ -1129,7 +1129,7 @@ func (wh *HandleT) Setup(whType string) {
 func (wh *HandleT) Shutdown() {
 	wh.backgroundCancel()
 	wh.backgroundWait()
-	whjobs.AsyncJobWH.Cancel()
+	jobs.AsyncJobWH.Cancel()
 }
 
 func (wh *HandleT) resetInProgressJobs() {
@@ -1690,11 +1690,11 @@ func startWebHandler(ctx context.Context) error {
 			mux.HandleFunc("/v1/setConfig", setConfigHandler)
 
 			//Warehouse Async Job end-points
-			mux.HandleFunc("/v1/warehouse/jobs", whjobs.AddWarehouseJobHandler)
-			mux.HandleFunc("/v1/warehouse/jobs/status", whjobs.StatusWarehouseJobHandler)
+			mux.HandleFunc("/v1/warehouse/jobs", jobs.AddWarehouseJobHandler)
+			mux.HandleFunc("/v1/warehouse/jobs/status", jobs.StatusWarehouseJobHandler)
 			//To be added
-			// mux.HandleFunc("/v1/warehouse/wh-jobs/stop", whjobs.StopWarehouseJobHandler)
-			// mux.HandleFunc("/v1/warehouse/wh-jobs/get", whjobs.GetWarehouseJobHandler)
+			// mux.HandleFunc("/v1/warehouse/wh-jobs/stop", jobs.StopWarehouseJobHandler)
+			// mux.HandleFunc("/v1/warehouse/wh-jobs/get", jobs.GetWarehouseJobHandler)
 
 			pkgLogger.Infof("WH: Starting warehouse master service in %d", webPort)
 		} else {
@@ -1856,10 +1856,10 @@ func Start(ctx context.Context, app app.Interface) error {
 		}))
 
 		InitWarehouseAPI(dbHandle, pkgLogger.Child("upload_api"))
-		whjobs.InitWarehouseJobsAPI(dbHandle, &notifier, pkgLogger.Child("whjobs"), &connectionsMap)
+		jobs.InitWarehouseJobsAPI(dbHandle, &notifier, pkgLogger.Child("jobs"), &connectionsMap)
 
 		g.Go(misc.WithBugsnagForWarehouse(func() error {
-			whjobs.AsyncJobWH.InitAsyncJobRunner()
+			jobs.AsyncJobWH.InitAsyncJobRunner()
 			return nil
 		}))
 	}
