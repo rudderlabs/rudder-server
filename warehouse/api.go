@@ -640,19 +640,28 @@ func (validateObjectStorageRequest *ValidateObjectRequestT) validateObjectStorag
 	}
 	typeOfObjectStorage := fmt.Sprint(requestMap["type"])
 
-	configValue, err := json.Marshal(requestMap["config"])
-	if err != nil {
-		fmt.Println(err)
-		return
-	}
-	err = json.Unmarshal(configValue, &configMap)
-	if err != nil {
+	if cMap, ok := requestMap["config"].(map[string]interface{}); !ok {
 		validateObjectStorageResp = &proto.ValidateObjectStorageResponse{
 			Status:  400,
-			Error:   fmt.Sprintf("invalid request body"),
 			IsValid: false,
+			Error:   fmt.Sprintf("Invalid request body"),
 		}
+		pkgLogger.Errorf("Unable to convert  value for key:config in request body")
 		return
+
+	} else {
+		configMap = cMap
+		bucketName, ok := configMap["bucketName"]
+		if name, bucketNameCheck := bucketName.(string); !ok || !bucketNameCheck || len(name) == 0 {
+			validateObjectStorageResp = &proto.ValidateObjectStorageResponse{
+				Status:  400,
+				IsValid: false,
+				Error:   fmt.Sprintf("Invalid request body"),
+			}
+			pkgLogger.Errorf("Bucket name invalid or not present ")
+			return
+		}
+
 	}
 
 	settings := filemanager.SettingsT{
@@ -662,6 +671,16 @@ func (validateObjectStorageRequest *ValidateObjectRequestT) validateObjectStorag
 
 	fileManagerFactory := filemanager.FileManagerFactoryT{}
 	fileManager, err := fileManagerFactory.New(&settings)
+
+	if err != nil {
+		fmt.Println(err)
+		validateObjectStorageResp = &proto.ValidateObjectStorageResponse{
+			Status:  400,
+			IsValid: false,
+			Error:   fmt.Sprintf("Invalid request body"),
+		}
+		return
+	}
 
 	req := configuration_testing.DestinationValidationRequest{
 		Destination: backendconfig.DestinationT{
