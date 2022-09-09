@@ -2087,7 +2087,7 @@ func (proc *HandleT) saveFailedJobs(failedJobs []*jobsdb.JobT) {
 	if len(failedJobs) > 0 {
 		jobRunIDAbortedEventsMap := make(map[string][]*router.FailedEventRowT)
 		for _, failedJob := range failedJobs {
-			router.PrepareJobRunIdAbortedEventsMap(failedJob.Parameters, jobRunIDAbortedEventsMap)
+			router.PrepareJobRunIDAbortedEventsMap(failedJob.Parameters, jobRunIDAbortedEventsMap)
 		}
 
 		rsourcesStats := rsources.NewFailedJobsCollector(proc.rsourcesService)

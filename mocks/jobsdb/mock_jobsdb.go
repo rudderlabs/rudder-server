@@ -280,11 +280,12 @@ func (mr *MockJobsDBMockRecorder) StoreWithRetryEach(arg0, arg1 interface{}) *go
 }
 
 // StoreWithRetryEachInTx mocks base method.
-func (m *MockJobsDB) StoreWithRetryEachInTx(arg0 context.Context, arg1 jobsdb.StoreSafeTx, arg2 []*jobsdb.JobT) map[uuid.UUID]string {
+func (m *MockJobsDB) StoreWithRetryEachInTx(arg0 context.Context, arg1 jobsdb.StoreSafeTx, arg2 []*jobsdb.JobT) (map[uuid.UUID]string, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "StoreWithRetryEachInTx", arg0, arg1, arg2)
 	ret0, _ := ret[0].(map[uuid.UUID]string)
-	return ret0
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
 }
 
 // StoreWithRetryEachInTx indicates an expected call of StoreWithRetryEachInTx.
