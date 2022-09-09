@@ -2,6 +2,10 @@ package manager
 
 import (
 	"context"
+	"fmt"
+	"sync"
+
+	"github.com/rudderlabs/rudder-server/config"
 
 	"golang.org/x/sync/errgroup"
 
@@ -20,11 +24,13 @@ var (
 )
 
 type LifecycleManager struct {
-	rt            *router.Factory
-	brt           *batchrouter.Factory
-	BackendConfig backendconfig.BackendConfig
-	currentCancel context.CancelFunc
-	waitGroup     *errgroup.Group
+	rt                   *router.Factory
+	brt                  *batchrouter.Factory
+	BackendConfig        backendconfig.BackendConfig
+	currentCancel        context.CancelFunc
+	waitGroup            *errgroup.Group
+	isolateRouterMap     map[string]bool
+	isolateRouterMapLock sync.RWMutex
 }
 
 func (*LifecycleManager) Run(ctx context.Context) error {
@@ -56,11 +62,26 @@ func (r *LifecycleManager) Stop() {
 func New(rtFactory *router.Factory, brtFactory *batchrouter.Factory,
 	backendConfig backendconfig.BackendConfig,
 ) *LifecycleManager {
+	isolateMap := make(map[string]bool)
 	return &LifecycleManager{
-		rt:            rtFactory,
-		brt:           brtFactory,
-		BackendConfig: backendConfig,
+		rt:               rtFactory,
+		brt:              brtFactory,
+		BackendConfig:    backendConfig,
+		isolateRouterMap: isolateMap,
 	}
+}
+
+func (r *LifecycleManager) RouterIdentifier(destinationID, destinationType string) string {
+	r.isolateRouterMapLock.Lock()
+	defer r.isolateRouterMapLock.Unlock()
+	if _, ok := r.isolateRouterMap[destinationType]; !ok {
+		r.isolateRouterMap[destinationType] = config.GetBool(fmt.Sprintf("Router.%s.isolateDestID", destinationType), false)
+	}
+
+	if r.isolateRouterMap[destinationType] {
+		return destinationID
+	}
+	return destinationType
 }
 
 // Gets the config from config backend and extracts enabled write-keys
@@ -86,15 +107,17 @@ loop:
 		case <-ctx.Done():
 			pkgLogger.Infof("Router monitor stopped Context Cancelled")
 			break loop
-		case config, open := <-ch:
+		case workspaceConfig, open := <-ch:
 			if !open {
 				pkgLogger.Infof("Router monitor stopped, Config Channel Closed")
 				break loop
 			}
-			sources := config.Data.(backendconfig.ConfigT)
+			sources := workspaceConfig.Data.(backendconfig.ConfigT)
 			enabledDestinations := make(map[string]bool)
-			for _, source := range sources.Sources {
-				for _, destination := range source.Destinations { // TODO skipcq: CRT-P0006
+			for i := range sources.Sources {
+				source := &sources.Sources[i]
+				for k := range source.Destinations {
+					destination := &source.Destinations[k]
 					enabledDestinations[destination.DestinationDefinition.Name] = true
 					// For batch router destinations
 					if misc.ContainsString(objectStorageDestinations, destination.DestinationDefinition.Name) ||
@@ -109,13 +132,14 @@ loop:
 							dstToBatchRouter[destination.DestinationDefinition.Name] = brt
 						}
 					} else {
-						_, ok := dstToRouter[destination.DestinationDefinition.Name]
+						routerIdentifier := r.RouterIdentifier(destination.ID, destination.DestinationDefinition.Name)
+						_, ok := dstToRouter[routerIdentifier]
 						if !ok {
 							pkgLogger.Infof("Starting a new Destination: %s", destination.DestinationDefinition.Name)
-							rt := routerFactory.New(destination.DestinationDefinition)
+							rt := routerFactory.New(destination, routerIdentifier)
 							rt.Start()
 							cleanup = append(cleanup, rt.Shutdown)
-							dstToRouter[destination.DestinationDefinition.Name] = rt
+							dstToRouter[routerIdentifier] = rt
 						}
 					}
 				}

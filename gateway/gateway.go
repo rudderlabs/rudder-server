@@ -1490,11 +1490,13 @@ They are further batched together in userWebRequestBatcher
 */
 func (gateway *HandleT) addToWebRequestQ(_ *http.ResponseWriter, req *http.Request, done chan string, reqType string, requestPayload []byte, writeKey string) {
 	userIDHeader := req.Header.Get("AnonymousId")
+	workerKey := userIDHeader
 	if userIDHeader == "" {
 		// If the request comes through proxy, proxy would already send this. So this shouldn't be happening in that case
+		workerKey = uuid.Must(uuid.NewV4()).String()
 		gateway.emptyAnonIdHeaderStat.Increment()
 	}
-	userWebRequestWorker := gateway.findUserWebRequestWorker(uuid.Must(uuid.NewV4()).String())
+	userWebRequestWorker := gateway.findUserWebRequestWorker(workerKey)
 	ipAddr := misc.GetIPFromReq(req)
 	webReq := webRequestT{done: done, reqType: reqType, requestPayload: requestPayload, writeKey: writeKey, ipAddr: ipAddr, userIDHeader: userIDHeader}
 	userWebRequestWorker.webRequestQ <- &webReq

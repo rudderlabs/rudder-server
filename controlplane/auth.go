@@ -10,6 +10,7 @@ type AuthInfo struct {
 	Service         string
 	ConnectionToken string
 	InstanceID      string
+	TokenType       string
 }
 
 type authService struct {
@@ -18,7 +19,7 @@ type authService struct {
 }
 
 func (a *authService) GetConnectionToken(_ context.Context, _ *proto.GetConnectionTokenRequest) (*proto.GetConnectionTokenResponse, error) {
-	if a.authInfo.ConnectionToken != "" {
+	if a.authInfo.ConnectionToken == "" {
 		return &proto.GetConnectionTokenResponse{
 			Response: &proto.GetConnectionTokenResponse_ErrorResponse{
 				ErrorResponse: &proto.ErrorResponse{
@@ -29,10 +30,11 @@ func (a *authService) GetConnectionToken(_ context.Context, _ *proto.GetConnecti
 	}
 	return &proto.GetConnectionTokenResponse{
 		Response: &proto.GetConnectionTokenResponse_SuccessResponse{
-			SuccessResponse: &proto.SuccessResponse{
+			SuccessResponse: &proto.GetConnectionTokenSuccessResponse{
 				ConnectionToken: a.authInfo.ConnectionToken,
 				Service:         a.authInfo.Service,
 				InstanceID:      a.authInfo.InstanceID,
+				TokenType:       a.authInfo.TokenType,
 			},
 		},
 	}, nil

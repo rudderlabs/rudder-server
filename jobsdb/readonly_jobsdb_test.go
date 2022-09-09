@@ -3,29 +3,9 @@ package jobsdb
 import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-
-	"github.com/rudderlabs/rudder-server/admin"
-	"github.com/rudderlabs/rudder-server/config"
-	"github.com/rudderlabs/rudder-server/services/stats"
-	"github.com/rudderlabs/rudder-server/utils/logger"
 )
 
-func initReadonlyJobsDB() {
-	config.Load()
-	logger.Init()
-	admin.Init()
-	Init()
-	Init2()
-	Init3()
-}
-
 var _ = Describe("readonly_jobsdb", func() {
-	initReadonlyJobsDB()
-
-	BeforeEach(func() {
-		stats.Setup()
-	})
-
 	Context("getJobPrefix", func() {
 		It("should return prefix for job tables", func() {
 			Expect(getJobPrefix("gw")).To(Equal("gw_jobs_"))

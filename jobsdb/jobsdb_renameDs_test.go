@@ -3,106 +3,92 @@ package jobsdb
 import (
 	"database/sql"
 	"fmt"
+	"strings"
 	"testing"
 
-	"github.com/ory/dockertest/v3"
 	"github.com/stretchr/testify/require"
 
 	"github.com/rudderlabs/rudder-server/jobsdb/prebackup"
-	"github.com/rudderlabs/rudder-server/testhelper"
-	"github.com/rudderlabs/rudder-server/testhelper/destination"
+	rsRand "github.com/rudderlabs/rudder-server/testhelper/rand"
 )
 
 func Test_mustRenameDS(t *testing.T) {
-	withPostgreSQL(t, func(postgresql *destination.PostgresResource) {
-		// Given I have a jobsdb with dropSourceIds prebackup handler for 2 sources
-		dbHandle := postgresql.DB
-		jobsdb := &HandleT{
-			dbHandle: dbHandle,
-			preBackupHandlers: []prebackup.Handler{
-				prebackup.DropSourceIds(func() []string { return []string{"one", "two"} }),
-			},
-		}
-		const (
-			jobsTable      = "jobs"
-			jobStatusTable = "job_status"
-		)
+	prefix := strings.ToLower(rsRand.String(5))
+	postgresql := startPostgres(t)
+	// Given I have a jobsdb with dropSourceIds prebackup handler for 2 sources
+	dbHandle := postgresql.DB
+	jobsdb := &HandleT{
+		tablePrefix: prefix,
+		dbHandle:    dbHandle,
+		preBackupHandlers: []prebackup.Handler{
+			prebackup.DropSourceIds(func() []string { return []string{"one", "two"} }),
+		},
+	}
+	var (
+		jobsTable      = prefix + "_jobs"
+		jobStatusTable = prefix + "job_status"
+	)
 
-		// And I have jobs and job status tables with events from 3 sources
-		createTables(t, dbHandle, jobsTable, jobStatusTable)
-		addJob(t, dbHandle, "one", "succeeded")
-		addJob(t, dbHandle, "two", "failed")
-		addJob(t, dbHandle, "three", "aborted")
+	// And I have jobs and job status tables with events from 3 sources
+	createTables(t, dbHandle, jobsTable, jobStatusTable)
+	addJob(t, dbHandle, "one", "succeeded", jobsTable, jobStatusTable)
+	addJob(t, dbHandle, "two", "failed", jobsTable, jobStatusTable)
+	addJob(t, dbHandle, "three", "aborted", jobsTable, jobStatusTable)
 
-		requireRowsCount(t, dbHandle, jobsTable, 3)
-		requireRowsCount(t, dbHandle, jobStatusTable, 3)
+	requireRowsCount(t, dbHandle, jobsTable, 3)
+	requireRowsCount(t, dbHandle, jobStatusTable, 3)
 
-		// when I execute the renameDs method
-		err := jobsdb.mustRenameDS(dataSetT{
-			JobTable:       jobsTable,
-			JobStatusTable: jobStatusTable,
-		})
-		require.NoError(t, err)
-
-		// then I end up with one event on each pre_drop table
-		requireRowsCount(t, dbHandle, fmt.Sprintf("%s%s", preDropTablePrefix, jobsTable), 1)
-		requireRowsCount(t, dbHandle, fmt.Sprintf("%s%s", preDropTablePrefix, jobStatusTable), 1)
+	// when I execute the renameDs method
+	err := jobsdb.mustRenameDS(dataSetT{
+		JobTable:       jobsTable,
+		JobStatusTable: jobStatusTable,
 	})
+	require.NoError(t, err)
+
+	// then I end up with one event on each pre_drop table
+	requireRowsCount(t, dbHandle, fmt.Sprintf("%s%s", preDropTablePrefix, jobsTable), 1)
+	requireRowsCount(t, dbHandle, fmt.Sprintf("%s%s", preDropTablePrefix, jobStatusTable), 1)
 }
 
 func Test_mustRenameDS_drops_table_if_left_empty(t *testing.T) {
-	withPostgreSQL(t, func(postgresql *destination.PostgresResource) {
-		dbHandle := postgresql.DB
+	prefix := strings.ToLower(rsRand.String(5))
+	postgresql := startPostgres(t)
 
-		// Given I have a jobsdb with dropSourceIds prebackup handler for 2 sources
-		jobsdb := &HandleT{
-			dbHandle: dbHandle,
-			preBackupHandlers: []prebackup.Handler{
-				prebackup.DropSourceIds(func() []string { return []string{"one", "two"} }),
-			},
-		}
-		const (
-			jobsTable      = "jobs"
-			jobStatusTable = "job_status"
-		)
+	dbHandle := postgresql.DB
 
-		// And I have jobs and job status tables with events from 2 sources
-		createTables(t, dbHandle, jobsTable, jobStatusTable)
-		addJob(t, dbHandle, "one", "succeeded")
-		addJob(t, dbHandle, "two", "failed")
+	// Given I have a jobsdb with dropSourceIds prebackup handler for 2 sources
+	jobsdb := &HandleT{
+		tablePrefix: prefix,
+		dbHandle:    dbHandle,
+		preBackupHandlers: []prebackup.Handler{
+			prebackup.DropSourceIds(func() []string { return []string{"one", "two"} }),
+		},
+	}
+	var (
+		jobsTable      = prefix + "_jobs"
+		jobStatusTable = prefix + "job_status"
+	)
 
-		requireRowsCount(t, dbHandle, jobsTable, 2)
-		requireRowsCount(t, dbHandle, jobStatusTable, 2)
+	// And I have jobs and job status tables with events from 2 sources
+	createTables(t, dbHandle, jobsTable, jobStatusTable)
+	addJob(t, dbHandle, "one", "succeeded", jobsTable, jobStatusTable)
+	addJob(t, dbHandle, "two", "failed", jobsTable, jobStatusTable)
 
-		// when I execute the renameDs method
-		err := jobsdb.mustRenameDS(dataSetT{
-			JobTable:       jobsTable,
-			JobStatusTable: jobStatusTable,
-		})
-		require.NoError(t, err)
+	requireRowsCount(t, dbHandle, jobsTable, 2)
+	requireRowsCount(t, dbHandle, jobStatusTable, 2)
 
-		// then I end up with no pre_drop tables
-		requireTableNotExists(t, dbHandle, fmt.Sprintf("%s%s", preDropTablePrefix, jobsTable))
-		requireTableNotExists(t, dbHandle, fmt.Sprintf("%s%s", preDropTablePrefix, jobStatusTable))
-		requireTableNotExists(t, dbHandle, jobsTable)
-		requireTableNotExists(t, dbHandle, jobStatusTable)
+	// when I execute the renameDs method
+	err := jobsdb.mustRenameDS(dataSetT{
+		JobTable:       jobsTable,
+		JobStatusTable: jobStatusTable,
 	})
-}
+	require.NoError(t, err)
 
-func withPostgreSQL(t *testing.T, f func(postgresql *destination.PostgresResource)) {
-	pool, err := dockertest.NewPool("")
-	if err != nil {
-		t.Fatalf("Could not connect to docker: %s", err)
-	}
-	cleanup := &testhelper.Cleanup{}
-	defer cleanup.Run()
-	postgresql, err := destination.SetupPostgres(pool, cleanup)
-	if err != nil {
-		t.Fatalf("Could not start postgres: %s", err)
-	}
-
-	fmt.Println("DB_DSN:", postgresql.DBDsn)
-	f(postgresql)
+	// then I end up with no pre_drop tables
+	requireTableNotExists(t, dbHandle, fmt.Sprintf("%s%s", preDropTablePrefix, jobsTable))
+	requireTableNotExists(t, dbHandle, fmt.Sprintf("%s%s", preDropTablePrefix, jobStatusTable))
+	requireTableNotExists(t, dbHandle, jobsTable)
+	requireTableNotExists(t, dbHandle, jobStatusTable)
 }
 
 func createTables(t *testing.T, db *sql.DB, jobsTable, jobStatusTable string) {
@@ -143,12 +129,9 @@ func createTables(t *testing.T, db *sql.DB, jobsTable, jobStatusTable string) {
 	require.NoError(t, txn.Commit())
 }
 
-func addJob(t *testing.T, db *sql.DB, sourceId, state string) {
+func addJob(t *testing.T, db *sql.DB, sourceId, state, jobsTable, jobStatusTable string) {
 	txn, err := db.Begin()
 	require.NoError(t, err)
-
-	jobsTable := "jobs"
-	jobStatusTable := "job_status"
 
 	sqlStatement := fmt.Sprintf(`INSERT INTO "%s" (workspace_id, uuid, user_id, parameters, custom_val, event_payload, event_count) VALUES(
 		'workspace_id',

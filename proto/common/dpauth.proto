@@ -15,10 +15,11 @@ message GetConnectionTokenRequest {
 message GetWorkspaceTokenRequest {
 }
 
-message SuccessResponse {
+message GetConnectionTokenSuccessResponse {
   string connectionToken = 1;
   string service = 2;
   string instanceID = 3;
+  string tokenType = 4;
 }
 
 message ErrorResponse {
@@ -27,7 +28,7 @@ message ErrorResponse {
 
 message GetConnectionTokenResponse {
   oneof response {
-    SuccessResponse success_response = 1;
+    GetConnectionTokenSuccessResponse success_response = 1;
     ErrorResponse error_response = 2;
   }
 }
