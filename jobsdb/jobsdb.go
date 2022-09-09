@@ -1089,8 +1089,6 @@ func (jd *HandleT) refreshDSRangeList(l lock.DSListLockToken) {
 		}
 		_ = rows.Close()
 		jd.logger.Debug(sqlStatement, minID, maxID)
-
-		_ = rows.Close()
 		// We store ranges EXCEPT for
 		// 1. the last element (which is being actively written to)
 		// 2. Migration target ds
@@ -2421,7 +2419,7 @@ func (jd *HandleT) markClearEmptyResult(ds dataSetT, workspace string, stateFilt
 	}
 
 	// Safe Check , All parameter filters must be provided explicitly
-	if len(parameterFilters) != len(CacheKeyParameterFilters) {
+	if len(parameterFilters) != len(CacheKeyParameterFilters) && len(parameterFilters) != 0 {
 		return
 	}
 
@@ -2532,7 +2530,7 @@ func (jd *HandleT) isEmptyResult(ds dataSetT, workspace string, stateFilters, cu
 		if len(parameterFilters) > 0 {
 			var pVals []string
 
-			if len(parameterFilters) != len(CacheKeyParameterFilters) {
+			if len(parameterFilters) != len(CacheKeyParameterFilters) && len(parameterFilters) != 0 {
 				return false
 			}
 
