@@ -57,6 +57,7 @@ func TestStreammanager(t *testing.T) {
 }
 
 func TestNewProducerWithNilDestination(t *testing.T) {
+	initStreamManager()
 	producer, err := streammanager.NewProducer(nil, common.Opts{})
 	assert.NotNil(t, err)
 	assert.Nil(t, producer)
@@ -64,6 +65,7 @@ func TestNewProducerWithNilDestination(t *testing.T) {
 }
 
 func TestNewProducerWithEmptyDestination(t *testing.T) {
+	initStreamManager()
 	producer, err := streammanager.NewProducer(&backendconfig.DestinationT{}, common.Opts{})
 	assert.NotNil(t, err)
 	assert.Nil(t, producer)
@@ -71,6 +73,7 @@ func TestNewProducerWithEmptyDestination(t *testing.T) {
 }
 
 func TestNewProducerWithNonStreamingDestinationType(t *testing.T) {
+	initStreamManager()
 	producer, err := streammanager.NewProducer(&backendconfig.DestinationT{
 		DestinationDefinition: backendconfig.DestinationDefinitionT{Name: "someDest"},
 	}, common.Opts{})
@@ -120,6 +123,7 @@ func TestNewProducerWithKafkaDestination(t *testing.T) {
 }
 
 func TestNewProducerWithEventBridgeDestination(t *testing.T) {
+	initStreamManager()
 	producer, err := streammanager.NewProducer(
 		&backendconfig.DestinationT{
 			DestinationDefinition: backendconfig.DestinationDefinitionT{Name: "EVENTBRIDGE"},
@@ -134,6 +138,7 @@ func TestNewProducerWithEventBridgeDestination(t *testing.T) {
 }
 
 func TestNewProducerWithFirehoseDestination(t *testing.T) {
+	initStreamManager()
 	producer, err := streammanager.NewProducer(
 		&backendconfig.DestinationT{
 			DestinationDefinition: backendconfig.DestinationDefinitionT{Name: "FIREHOSE"},
@@ -148,6 +153,7 @@ func TestNewProducerWithFirehoseDestination(t *testing.T) {
 }
 
 func TestNewProducerWithKinesisDestination(t *testing.T) {
+	initStreamManager()
 	producer, err := streammanager.NewProducer(
 		&backendconfig.DestinationT{
 			DestinationDefinition: backendconfig.DestinationDefinitionT{Name: "KINESIS"},
@@ -162,6 +168,7 @@ func TestNewProducerWithKinesisDestination(t *testing.T) {
 }
 
 func TestNewProducerWithLambdaDestination(t *testing.T) {
+	initStreamManager()
 	producer, err := streammanager.NewProducer(
 		&backendconfig.DestinationT{
 			DestinationDefinition: backendconfig.DestinationDefinitionT{Name: "LAMBDA"},
@@ -176,6 +183,7 @@ func TestNewProducerWithLambdaDestination(t *testing.T) {
 }
 
 func TestNewProducerWithPersonalizeDestination(t *testing.T) {
+	initStreamManager()
 	producer, err := streammanager.NewProducer(
 		&backendconfig.DestinationT{
 			DestinationDefinition: backendconfig.DestinationDefinitionT{Name: "PERSONALIZE"},
@@ -190,6 +198,7 @@ func TestNewProducerWithPersonalizeDestination(t *testing.T) {
 }
 
 func TestNewProducerWithBQStreamDestination(t *testing.T) {
+	initStreamManager()
 	producer, err := streammanager.NewProducer(
 		&backendconfig.DestinationT{
 			DestinationDefinition: backendconfig.DestinationDefinitionT{Name: "BQSTREAM"},
@@ -218,6 +227,7 @@ func TestNewProducerWithBQStreamDestination(t *testing.T) {
 }
 
 func TestNewProducerWithGooglePubsubDestination(t *testing.T) {
+	initStreamManager()
 	producer, err := streammanager.NewProducer(
 		&backendconfig.DestinationT{
 			DestinationDefinition: backendconfig.DestinationDefinitionT{Name: "GOOGLEPUBSUB"},
@@ -246,6 +256,7 @@ func TestNewProducerWithGooglePubsubDestination(t *testing.T) {
 }
 
 func TestNewProducerWithGoogleSheetsDestination(t *testing.T) {
+	initStreamManager()
 	_, err := streammanager.NewProducer(
 		&backendconfig.DestinationT{
 			DestinationDefinition: backendconfig.DestinationDefinitionT{Name: "GOOGLESHEETS"},
@@ -258,6 +269,7 @@ func TestNewProducerWithGoogleSheetsDestination(t *testing.T) {
 }
 
 func TestProduceWithInvalidDestinationType(t *testing.T) {
+	initStreamManager()
 	statusCode, statusMsg, respMsg := streammanager.Produce(json.RawMessage{}, "notAStreamingDestination", nil, nil)
 	assert.Equal(t, 404, statusCode)
 	assert.Equal(t, "No provider configured for StreamManager", statusMsg)
@@ -265,6 +277,7 @@ func TestProduceWithInvalidDestinationType(t *testing.T) {
 }
 
 func TestProduceWithNilProducer(t *testing.T) {
+	initStreamManager()
 	for _, streamProducer := range streamProducers {
 		statusCode, statusMsg, respMsg := streammanager.Produce(json.RawMessage{}, streamProducer, nil, nil)
 		assert.Equal(t, 500, statusCode)
@@ -274,6 +287,7 @@ func TestProduceWithNilProducer(t *testing.T) {
 }
 
 func TestProduceWithValidProducer(t *testing.T) {
+	initStreamManager()
 	ctrl := gomock.NewController(t)
 	mockProducer := mock_streammanager.NewMockStreamProducer(ctrl)
 	message := json.RawMessage{}
@@ -285,11 +299,13 @@ func TestProduceWithValidProducer(t *testing.T) {
 }
 
 func TestCloseWithInvalidDestinationType(t *testing.T) {
+	initStreamManager()
 	err := streammanager.Close(nil, "notAStreamingDestination")
 	assert.EqualError(t, err, "no provider configured for StreamManager")
 }
 
 func TestCloseWithNilProducer(t *testing.T) {
+	initStreamManager()
 	for _, streamProducer := range closableStreamProducers {
 		err := streammanager.Close(nil, streamProducer)
 		assert.EqualError(t, err, "producer is not closable")
@@ -300,6 +316,7 @@ func TestCloseWithNilProducer(t *testing.T) {
 }
 
 func TestCloseWithValidProducer(t *testing.T) {
+	initStreamManager()
 	ctrl := gomock.NewController(t)
 	mockProducer := mock_streammanager.NewMockClosableStreamProducer(ctrl)
 	for _, streamProducer := range closableStreamProducers {
