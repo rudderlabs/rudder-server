@@ -8,7 +8,7 @@ import (
 )
 
 func Test_Job_Failed_Scenario(t *testing.T) {
-	barrier := NewBarrier()
+	barrier := NewBarrier(WithMetadata(map[string]string{"key1": "value1"}))
 
 	enter, previousFailedJobID := barrier.Enter("user1", 1)
 	require.True(t, enter, "job 1 for user1 should be accepted since no barrier exists")
@@ -25,7 +25,7 @@ func Test_Job_Failed_Scenario(t *testing.T) {
 
 	require.True(t, firstBool(barrier.Wait("user1", 2)), "job 2 for user1 should wait after job 1 has failed")
 	require.Equal(t, 1, barrier.Size(), "barrier should have size of 1")
-	require.Equal(t, `Barrier{map[][{userID: user1, failedJobID: 1, concurrentJobs: map[]}]}`, barrier.String(), "the barrier's string representation should be human readable")
+	require.Equal(t, `Barrier{map[key1:value1][{userID: user1, failedJobID: 1, concurrentJobs: map[]}]}`, barrier.String(), "the barrier's string representation should be human readable")
 	require.NoError(t, barrier.StateChanged("user1", 2, jobsdb.Waiting.State))
 
 	barrier.Sync()
