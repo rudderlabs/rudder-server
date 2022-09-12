@@ -57,7 +57,6 @@ func TestDeltalakeIntegration(t *testing.T) {
 				Identifier:   handle.DB.CredIdentifier,
 				SqlStatement: fmt.Sprintf(`DROP SCHEMA %[1]s CASCADE;`, handle.Schema),
 			})
-
 			if err != nil {
 				return fmt.Errorf("failed dropping schema %s for Deltalake, error: %s", handle.Schema, err.Error())
 			}
