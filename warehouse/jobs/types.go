@@ -75,3 +75,9 @@ type WhAsyncJobRunnerI interface {
 	getStatusAsyncJob(*StartJobReqPayload) (string, error)
 	updateMultipleAsyncJobs(*[]AsyncJobPayloadT, string, string)
 }
+
+const (
+	MaxBatchSizeToProcess int = 10
+	MaxCleanUpRetries     int = 5
+	MaxQueryRetries       int = 3
+)

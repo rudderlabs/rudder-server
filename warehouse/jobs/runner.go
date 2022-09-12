@@ -20,13 +20,15 @@ import (
 var AsyncJobWH AsyncJobWhT
 
 func InitWarehouseJobsAPI(dbHandle *sql.DB, notifier *pgnotifier.PgNotifierT, log logger.LoggerI, connectionsMap *map[string]map[string]warehouseutils.WarehouseT) {
+
 	AsyncJobWH = AsyncJobWhT{
 		dbHandle:       dbHandle,
 		log:            log,
-		enabled:        true,
+		enabled:        false,
 		pgnotifier:     notifier,
 		connectionsMap: connectionsMap,
 	}
+
 }
 
 const AsyncTableName string = "wh_async_jobs"
@@ -98,18 +100,41 @@ func (asyncWhJob *AsyncJobWhT) addJobstoDB(payload *AsyncJobPayloadT) (jobId int
 Async Job runner's main job is to
 1) Scan the database for entries into wh_async_jobs
 2) Publish data to pg_notifier queue
+3) Move any executing jobs to waiting
 */
 func (asyncWhJob *AsyncJobWhT) InitAsyncJobRunner() {
 	//Start the asyncJobRunner
 	asyncWhJob.log.Info("WH-Jobs: Initializing async job runner")
-	ctx, cancel := context.WithCancel(context.Background())
-	asyncWhJob.Cancel = cancel
-	g, ctx := errgroup.WithContext(ctx)
-	g.Go(func() error {
-		asyncWhJob.startAsyncJobRunner(ctx)
-		return nil
-	})
-	g.Wait()
+
+	for retry := 0; retry < MaxCleanUpRetries; retry++ {
+		err := AsyncJobWH.cleanUpAsyncTable()
+		if err == nil {
+			AsyncJobWH.enabled = true
+			break
+		}
+		asyncWhJob.log.Infof("WH-Jobs: Cleanup asynctable failed with error %s", err.Error())
+	}
+
+	if asyncWhJob.enabled {
+		ctx, cancel := context.WithCancel(context.Background())
+		asyncWhJob.Cancel = cancel
+		g, ctx := errgroup.WithContext(ctx)
+		//How does threading policy work here? Should we have one thread per customer/namespace?
+		g.Go(func() error {
+			asyncWhJob.startAsyncJobRunner(ctx)
+			return nil
+		})
+		g.Wait()
+	}
+
+}
+
+func (asyncWhJob *AsyncJobWhT) cleanUpAsyncTable() error {
+	asyncWhJob.log.Info("WH-Jobs: Cleaning up the zombie asyncjobs")
+	sqlStatement := fmt.Sprintf(`UPDATE %s SET status='%s' WHERE status='%s'`, warehouseutils.WarehouseAsyncJobTable, WhJobWaiting, WhJobExecuting)
+	asyncWhJob.log.Infof("WH-Jobs: resetting up async jobs table query %s", sqlStatement)
+	_, err := asyncWhJob.dbHandle.Query(sqlStatement)
+	return err
 }
 
 /*
@@ -160,6 +185,7 @@ func (asyncWhJob *AsyncJobWhT) startAsyncJobRunner(ctx context.Context) {
 			var wg sync.WaitGroup
 			wg.Add(1)
 			go func() {
+				//Is this correct or should I be passing ch as a variable to the anonymous go routine instead?
 				responses := <-ch
 				asyncWhJob.log.Info("Response recieved from the pgnotifier track batch")
 				var successfulAsyncJobs []AsyncJobPayloadT
@@ -168,13 +194,15 @@ func (asyncWhJob *AsyncJobWhT) startAsyncJobRunner(ctx context.Context) {
 					err = json.Unmarshal(resp.Output, &jobID)
 					if err != nil {
 						asyncWhJob.log.Errorf("Unable unmarshal output %s", err)
-						//Need to fix this panic
-						panic(err)
+						//Will skip to next response, leaving the table row in executing stage.
+						// We need to program retry strategy, timeout strategy for each row in the asyncJobtable
+						continue
 					}
 					ind := getSinglePayloadFromBatchPayloadByTableName(&asyncjobpayloads, jobID.TableName)
 					if ind == -1 {
-						//Need to fix this panic
-						panic(fmt.Errorf("tableName is not found while updating the response after completing the trackasyncJob %s", jobID.TableName))
+						//Continues with the next payload leaving this row in the executing stage
+						asyncWhJob.log.Errorf("tableName is not found while updating the response after completing the trackasyncJob %s", jobID.TableName)
+						continue
 					}
 					if resp.Status == pgnotifier.AbortedState {
 						pkgLogger.Errorf("[WH]: Error in running async task %v", resp.Error)
@@ -218,7 +246,7 @@ func (asyncWhJob *AsyncJobWhT) getPendingAsyncJobs(ctx context.Context) ([]Async
 	tablename,
 	jobtype,
 	async_job_type,
-	namespace from %s where status='%s'`, warehouseutils.WarehouseAsyncJobTable, WhJobWaiting)
+	namespace from %s where status='%s' LIMIT %d`, warehouseutils.WarehouseAsyncJobTable, WhJobWaiting, MaxBatchSizeToProcess)
 	rows, err := asyncWhJob.dbHandle.Query(query)
 	if err != nil {
 		return asyncjobpayloads, err
@@ -257,26 +285,24 @@ func (asyncWhJob *AsyncJobWhT) getPendingAsyncJobs(ctx context.Context) ([]Async
 func (asyncWhJob *AsyncJobWhT) updateMultipleAsyncJobs(payloads *[]AsyncJobPayloadT, status string, errMessage string) {
 	asyncWhJob.log.Info("WH-Jobs: Updating pending wh async jobs to Executing")
 	for _, payload := range *payloads {
-		sqlStatement := fmt.Sprintf(`UPDATE %s SET status='%s' , error='%s' WHERE id=%s`, warehouseutils.WarehouseAsyncJobTable, status, errMessage, payload.Id)
-		asyncWhJob.log.Infof("WH-Jobs: updating async jobs table query %s", sqlStatement)
-		_, err := asyncWhJob.dbHandle.Query(sqlStatement)
-		if err != nil {
-			//Need a solution for this
-			panic(fmt.Errorf("query: %s failed with Error : %w", sqlStatement, err))
-		}
+		asyncWhJob.updateSingleAsyncJob(&payload, status, errMessage)
 	}
 }
 
 //The above function and the following function can be merged into one. This can be part of future work
 func (asyncWhJob *AsyncJobWhT) updateSingleAsyncJob(payload *AsyncJobPayloadT, status string, errMessage string) {
-	asyncWhJob.log.Info("WH-Jobs: Updating pending wh async jobs to Aborted")
+	asyncWhJob.log.Infof("WH-Jobs: Updating pending wh async jobs to %s", status)
 	sqlStatement := fmt.Sprintf(`UPDATE %s SET status='%s' , error='%s' WHERE id=%s`, warehouseutils.WarehouseAsyncJobTable, status, errMessage, payload.Id)
-	asyncWhJob.log.Infof("WH-Jobs: updating async jobs table query %s", sqlStatement)
-	_, err := asyncWhJob.dbHandle.Query(sqlStatement)
-	if err != nil {
-		//Need a solution for this
-		panic(fmt.Errorf("query: %s failed with Error : %w", sqlStatement, err))
+	var err error
+	for queryretry := 0; queryretry < MaxQueryRetries; queryretry++ {
+		asyncWhJob.log.Infof("WH-Jobs: updating async jobs table query %s, retry no : %d", sqlStatement, queryretry)
+		_, err := asyncWhJob.dbHandle.Query(sqlStatement)
+		if err == nil {
+			pkgLogger.Errorf("query: %s successfully executed", sqlStatement)
+			return
+		}
 	}
+	pkgLogger.Errorf("query: %s failed with Error : %s", sqlStatement, err.Error())
 }
 
 //returns status and errMessage
