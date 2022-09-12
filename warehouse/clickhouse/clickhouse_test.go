@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
 
 	"github.com/rudderlabs/rudder-server/warehouse/clickhouse"
@@ -321,16 +322,16 @@ func TestClickHouseIntegration(t *testing.T) {
 		testhelper.SendIntegratedEvents(t, warehouseTest)
 
 		warehouseTest.EventsCountMap = testhelper.StagingFilesEventsMap()
-		testhelper.VerifyingEventsInStagingFiles(t, warehouseTest)
+		testhelper.VerifyEventsInStagingFiles(t, warehouseTest)
 
 		warehouseTest.EventsCountMap = testhelper.LoadFilesEventsMap()
-		testhelper.VerifyingEventsInLoadFiles(t, warehouseTest)
+		testhelper.VerifyEventsInLoadFiles(t, warehouseTest)
 
 		warehouseTest.EventsCountMap = testhelper.TableUploadsEventsMap()
-		testhelper.VerifyingEventsInTableUploads(t, warehouseTest)
+		testhelper.VerifyEventsInTableUploads(t, warehouseTest)
 
 		warehouseTest.EventsCountMap = testhelper.WarehouseEventsMap()
-		testhelper.VerifyingEventsInWareHouse(t, warehouseTest)
+		testhelper.VerifyEventsInWareHouse(t, warehouseTest)
 
 		// Scenario 2
 		warehouseTest.TimestampBeforeSendingEvents = timeutil.Now()
@@ -343,16 +344,16 @@ func TestClickHouseIntegration(t *testing.T) {
 		testhelper.SendIntegratedEvents(t, warehouseTest)
 
 		warehouseTest.EventsCountMap = testhelper.StagingFilesEventsMap()
-		testhelper.VerifyingEventsInStagingFiles(t, warehouseTest)
+		testhelper.VerifyEventsInStagingFiles(t, warehouseTest)
 
 		warehouseTest.EventsCountMap = testhelper.LoadFilesEventsMap()
-		testhelper.VerifyingEventsInLoadFiles(t, warehouseTest)
+		testhelper.VerifyEventsInLoadFiles(t, warehouseTest)
 
 		warehouseTest.EventsCountMap = testhelper.TableUploadsEventsMap()
-		testhelper.VerifyingEventsInTableUploads(t, warehouseTest)
+		testhelper.VerifyEventsInTableUploads(t, warehouseTest)
 
 		warehouseTest.EventsCountMap = testhelper.WarehouseEventsMap()
-		testhelper.VerifyingEventsInWareHouse(t, warehouseTest)
+		testhelper.VerifyEventsInWareHouse(t, warehouseTest)
 	})
 
 	t.Run("Cluster Mode Setup", func(t *testing.T) {
@@ -385,16 +386,16 @@ func TestClickHouseIntegration(t *testing.T) {
 		testhelper.SendIntegratedEvents(t, warehouseTest)
 
 		warehouseTest.EventsCountMap = testhelper.StagingFilesEventsMap()
-		testhelper.VerifyingEventsInStagingFiles(t, warehouseTest)
+		testhelper.VerifyEventsInStagingFiles(t, warehouseTest)
 
 		warehouseTest.EventsCountMap = testhelper.LoadFilesEventsMap()
-		testhelper.VerifyingEventsInLoadFiles(t, warehouseTest)
+		testhelper.VerifyEventsInLoadFiles(t, warehouseTest)
 
 		warehouseTest.EventsCountMap = testhelper.TableUploadsEventsMap()
-		testhelper.VerifyingEventsInTableUploads(t, warehouseTest)
+		testhelper.VerifyEventsInTableUploads(t, warehouseTest)
 
 		warehouseTest.EventsCountMap = testhelper.WarehouseEventsMap()
-		testhelper.VerifyingEventsInWareHouse(t, warehouseTest)
+		testhelper.VerifyEventsInWareHouse(t, warehouseTest)
 
 		// Scenario 2
 		warehouseTest.TimestampBeforeSendingEvents = timeutil.Now()
@@ -409,17 +410,52 @@ func TestClickHouseIntegration(t *testing.T) {
 		testhelper.SendIntegratedEvents(t, warehouseTest)
 
 		warehouseTest.EventsCountMap = testhelper.StagingFilesEventsMap()
-		testhelper.VerifyingEventsInStagingFiles(t, warehouseTest)
+		testhelper.VerifyEventsInStagingFiles(t, warehouseTest)
 
 		warehouseTest.EventsCountMap = testhelper.LoadFilesEventsMap()
-		testhelper.VerifyingEventsInLoadFiles(t, warehouseTest)
+		testhelper.VerifyEventsInLoadFiles(t, warehouseTest)
 
 		warehouseTest.EventsCountMap = testhelper.TableUploadsEventsMap()
-		testhelper.VerifyingEventsInTableUploads(t, warehouseTest)
+		testhelper.VerifyEventsInTableUploads(t, warehouseTest)
 
 		warehouseTest.EventsCountMap = clusterWarehoseEventsMap()
-		testhelper.VerifyingEventsInWareHouse(t, warehouseTest)
+		testhelper.VerifyEventsInWareHouse(t, warehouseTest)
 	})
+}
+
+func TestClickhouseConfigurationValidation(t *testing.T) {
+	configurations := testhelper.PopulateTemplateConfigurations()
+
+	destination := backendconfig.DestinationT{
+		ID: "21Ev6TI6emCFDKph2Zn6XfTP7PI",
+		Config: map[string]interface{}{
+			"host":             configurations["clickHouseHost"],
+			"database":         configurations["clickHouseDatabase"],
+			"cluster":          "",
+			"user":             configurations["clickHouseUser"],
+			"password":         configurations["clickHousePassword"],
+			"port":             configurations["clickHousePort"],
+			"secure":           false,
+			"namespace":        "",
+			"bucketProvider":   "MINIO",
+			"bucketName":       configurations["minioBucketName"],
+			"accessKeyID":      configurations["minioAccesskeyID"],
+			"secretAccessKey":  configurations["minioSecretAccessKey"],
+			"useSSL":           false,
+			"endPoint":         configurations["minioEndpoint"],
+			"syncFrequency":    "30",
+			"useRudderStorage": false,
+		},
+		DestinationDefinition: backendconfig.DestinationDefinitionT{
+			ID:          "1eBvkIRSwc2ESGMK9dj6OXq2G12",
+			Name:        "CLICKHOUSE",
+			DisplayName: "ClickHouse",
+		},
+		Name:       "clickhouse-demo",
+		Enabled:    true,
+		RevisionID: "29eeuTnqbBKn0XVTj5z9XQIbaru",
+	}
+	testhelper.VerifyingConfigurationTest(t, destination)
 }
 
 func clusterWarehoseEventsMap() testhelper.EventsCountMap {

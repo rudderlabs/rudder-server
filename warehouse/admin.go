@@ -3,9 +3,8 @@ package warehouse
 import (
 	"errors"
 	"fmt"
-	"strings"
-
 	"github.com/rudderlabs/rudder-server/warehouse/configuration_testing"
+	"strings"
 
 	"github.com/rudderlabs/rudder-server/admin"
 	"github.com/rudderlabs/rudder-server/warehouse/manager"

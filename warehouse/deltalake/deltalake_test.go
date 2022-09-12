@@ -5,6 +5,7 @@ package deltalake_test
 import (
 	"encoding/json"
 	"fmt"
+	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"log"
 	"os"
 	"testing"
@@ -128,16 +129,16 @@ func TestDeltalakeIntegration(t *testing.T) {
 		testhelper.SendIntegratedEvents(t, warehouseTest)
 
 		warehouseTest.EventsCountMap = testhelper.StagingFilesEventsMap()
-		testhelper.VerifyingEventsInStagingFiles(t, warehouseTest)
+		testhelper.VerifyEventsInStagingFiles(t, warehouseTest)
 
 		warehouseTest.EventsCountMap = testhelper.LoadFilesEventsMap()
-		testhelper.VerifyingEventsInLoadFiles(t, warehouseTest)
+		testhelper.VerifyEventsInLoadFiles(t, warehouseTest)
 
 		warehouseTest.EventsCountMap = testhelper.TableUploadsEventsMap()
-		testhelper.VerifyingEventsInTableUploads(t, warehouseTest)
+		testhelper.VerifyEventsInTableUploads(t, warehouseTest)
 
 		warehouseTest.EventsCountMap = mergeEventsMap()
-		testhelper.VerifyingEventsInWareHouse(t, warehouseTest)
+		testhelper.VerifyEventsInWareHouse(t, warehouseTest)
 
 		// Scenario 2
 		warehouseTest.TimestampBeforeSendingEvents = timeutil.Now()
@@ -150,16 +151,16 @@ func TestDeltalakeIntegration(t *testing.T) {
 		testhelper.SendIntegratedEvents(t, warehouseTest)
 
 		warehouseTest.EventsCountMap = testhelper.StagingFilesEventsMap()
-		testhelper.VerifyingEventsInStagingFiles(t, warehouseTest)
+		testhelper.VerifyEventsInStagingFiles(t, warehouseTest)
 
 		warehouseTest.EventsCountMap = testhelper.LoadFilesEventsMap()
-		testhelper.VerifyingEventsInLoadFiles(t, warehouseTest)
+		testhelper.VerifyEventsInLoadFiles(t, warehouseTest)
 
 		warehouseTest.EventsCountMap = testhelper.TableUploadsEventsMap()
-		testhelper.VerifyingEventsInTableUploads(t, warehouseTest)
+		testhelper.VerifyEventsInTableUploads(t, warehouseTest)
 
 		warehouseTest.EventsCountMap = mergeEventsMap()
-		testhelper.VerifyingEventsInWareHouse(t, warehouseTest)
+		testhelper.VerifyEventsInWareHouse(t, warehouseTest)
 	})
 
 	t.Run("Append Mode", func(t *testing.T) {
@@ -196,16 +197,16 @@ func TestDeltalakeIntegration(t *testing.T) {
 		testhelper.SendIntegratedEvents(t, warehouseTest)
 
 		warehouseTest.EventsCountMap = testhelper.StagingFilesEventsMap()
-		testhelper.VerifyingEventsInStagingFiles(t, warehouseTest)
+		testhelper.VerifyEventsInStagingFiles(t, warehouseTest)
 
 		warehouseTest.EventsCountMap = testhelper.LoadFilesEventsMap()
-		testhelper.VerifyingEventsInLoadFiles(t, warehouseTest)
+		testhelper.VerifyEventsInLoadFiles(t, warehouseTest)
 
 		warehouseTest.EventsCountMap = testhelper.TableUploadsEventsMap()
-		testhelper.VerifyingEventsInTableUploads(t, warehouseTest)
+		testhelper.VerifyEventsInTableUploads(t, warehouseTest)
 
 		warehouseTest.EventsCountMap = mergeEventsMap()
-		testhelper.VerifyingEventsInWareHouse(t, warehouseTest)
+		testhelper.VerifyEventsInWareHouse(t, warehouseTest)
 
 		// Scenario 2
 		warehouseTest.TimestampBeforeSendingEvents = timeutil.Now()
@@ -217,17 +218,51 @@ func TestDeltalakeIntegration(t *testing.T) {
 		testhelper.SendIntegratedEvents(t, warehouseTest)
 
 		warehouseTest.EventsCountMap = testhelper.StagingFilesEventsMap()
-		testhelper.VerifyingEventsInStagingFiles(t, warehouseTest)
+		testhelper.VerifyEventsInStagingFiles(t, warehouseTest)
 
 		warehouseTest.EventsCountMap = testhelper.LoadFilesEventsMap()
-		testhelper.VerifyingEventsInLoadFiles(t, warehouseTest)
+		testhelper.VerifyEventsInLoadFiles(t, warehouseTest)
 
 		warehouseTest.EventsCountMap = testhelper.TableUploadsEventsMap()
-		testhelper.VerifyingEventsInTableUploads(t, warehouseTest)
+		testhelper.VerifyEventsInTableUploads(t, warehouseTest)
 
 		warehouseTest.EventsCountMap = appendEventsMap()
-		testhelper.VerifyingEventsInWareHouse(t, warehouseTest)
+		testhelper.VerifyEventsInWareHouse(t, warehouseTest)
 	})
+}
+
+func TestDeltalakeConfigurationValidation(t *testing.T) {
+	configurations := testhelper.PopulateTemplateConfigurations()
+
+	destination := backendconfig.DestinationT{
+		ID: "25IDjdnoEus6DDNrth3SWO1FOpu",
+		Config: map[string]interface{}{
+			"host":            configurations["deltalakeHost"],
+			"port":            configurations["deltalakePort"],
+			"path":            configurations["deltalakePath"],
+			"token":           configurations["deltalakeToken"],
+			"namespace":       configurations["deltalakeNamespace"],
+			"bucketProvider":  "AZURE_BLOB",
+			"containerName":   configurations["deltalakeContainerName"],
+			"prefix":          "",
+			"useSTSTokens":    false,
+			"enableSSE":       false,
+			"accountName":     configurations["deltalakeAccountName"],
+			"accountKey":      configurations["deltalakeAccountKey"],
+			"syncFrequency":   "30",
+			"eventDelivery":   false,
+			"eventDeliveryTS": 1648195480174,
+		},
+		DestinationDefinition: backendconfig.DestinationDefinitionT{
+			ID:          "23HLpnDJnIg7DsBvDWGU6DQzFEo",
+			Name:        "DELTALAKE",
+			DisplayName: "Databricks (Delta Lake)",
+		},
+		Name:       "deltalake-demo",
+		Enabled:    true,
+		RevisionID: "29eClxJQQlaWzMWyqnQctFDP5T2",
+	}
+	testhelper.VerifyingConfigurationTest(t, destination)
 }
 
 func mergeEventsMap() testhelper.EventsCountMap {

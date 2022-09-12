@@ -5,7 +5,13 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"github.com/rudderlabs/rudder-server/admin"
+	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
+	"github.com/rudderlabs/rudder-server/services/pgnotifier"
+	"github.com/rudderlabs/rudder-server/warehouse"
+	"github.com/rudderlabs/rudder-server/warehouse/configuration_testing"
 	"log"
+	"os"
 	"strconv"
 	"strings"
 	"testing"
@@ -119,10 +125,24 @@ func initialize() {
 	loadEnv()
 
 	config.Load()
+	admin.Init()
 	logger.Init()
-
+	misc.Init()
 	stats.Init()
 	stats.Setup()
+
+	backendconfig.Init()
+	warehouseutils.Init()
+
+	warehouse.Init()
+	warehouse.Init2()
+	warehouse.Init3()
+	warehouse.Init4()
+	warehouse.Init5()
+	warehouse.Init6()
+
+	pgnotifier.Init()
+	configuration_testing.Init()
 
 	azuresynapse.Init()
 	bigquery.Init()
@@ -161,7 +181,7 @@ func setUpJobsDB() (jobsDB *JobsDBResource) {
 	return
 }
 
-func VerifyingEventsInStagingFiles(t testing.TB, wareHouseTest *WareHouseTest) {
+func VerifyEventsInStagingFiles(t testing.TB, wareHouseTest *WareHouseTest) {
 	t.Helper()
 	t.Logf("Started verifying events in staging files")
 
@@ -214,7 +234,7 @@ func VerifyingEventsInStagingFiles(t testing.TB, wareHouseTest *WareHouseTest) {
 	t.Logf("Completed verifying events in staging files")
 }
 
-func VerifyingEventsInLoadFiles(t testing.TB, wareHouseTest *WareHouseTest) {
+func VerifyEventsInLoadFiles(t testing.TB, wareHouseTest *WareHouseTest) {
 	t.Helper()
 	t.Logf("Started verifying events in load file")
 
@@ -272,7 +292,7 @@ func VerifyingEventsInLoadFiles(t testing.TB, wareHouseTest *WareHouseTest) {
 	t.Logf("Completed verifying events in load files")
 }
 
-func VerifyingEventsInTableUploads(t testing.TB, wareHouseTest *WareHouseTest) {
+func VerifyEventsInTableUploads(t testing.TB, wareHouseTest *WareHouseTest) {
 	t.Helper()
 	t.Logf("Started verifying events in table uploads")
 
@@ -334,7 +354,7 @@ func VerifyingEventsInTableUploads(t testing.TB, wareHouseTest *WareHouseTest) {
 	t.Logf("Completed verifying events in table uploads")
 }
 
-func VerifyingEventsInWareHouse(t testing.TB, wareHouseTest *WareHouseTest) {
+func VerifyEventsInWareHouse(t testing.TB, wareHouseTest *WareHouseTest) {
 	t.Helper()
 	t.Logf("Started verifying events in warehouse")
 
@@ -397,6 +417,23 @@ func VerifyingEventsInWareHouse(t testing.TB, wareHouseTest *WareHouseTest) {
 	}
 
 	t.Logf("Completed verifying events in warehouse")
+}
+
+func VerifyingConfigurationTest(t *testing.T, destination backendconfig.DestinationT) {
+	t.Helper()
+	t.Logf("Started configuration tests for destination type: %s", destination.DestinationDefinition.Name)
+
+	require.NoError(t, WithConstantBackoff(func() error {
+		destinationValidator := configuration_testing.NewDestinationValidator()
+		req := &configuration_testing.DestinationValidationRequest{Destination: destination}
+		response, err := destinationValidator.ValidateCredentials(req)
+		if err != nil || response.Error != "" {
+			return fmt.Errorf("failed to validate credentials for destination: %s with error: %s", destination.DestinationDefinition.Name, response.Error)
+		}
+		return nil
+	}))
+
+	t.Logf("Completed configuration tests for destination type: %s", destination.DestinationDefinition.Name)
 }
 
 func queryCount(cl *client.Client, statement string) (int64, error) {
@@ -494,4 +531,110 @@ func GetSchema(provider, schemaKey string) string {
 			config.GetRequiredEnv(schemaKey),
 		),
 	)
+}
+
+func PopulateTemplateConfigurations() map[string]string {
+	values := map[string]string{
+		"workspaceId": "BpLnfgDsc2WD8F2qNfHK5a84jjJ",
+
+		"postgresWriteKey": "kwzDkh9h2fhfUVuS9jZ8uVbhV3v",
+		"postgresHost":     "wh-postgres",
+		"postgresDatabase": "rudderdb",
+		"postgresUser":     "rudder",
+		"postgresPassword": "rudder-password",
+		"postgresPort":     "5432",
+
+		"clickHouseWriteKey": "C5AWX39IVUWSP2NcHciWvqZTa2N",
+		"clickHouseHost":     "wh-clickhouse",
+		"clickHouseDatabase": "rudderdb",
+		"clickHouseUser":     "rudder",
+		"clickHousePassword": "rudder-password",
+		"clickHousePort":     "9000",
+
+		"clickhouseClusterWriteKey": "95RxRTZHWUsaD6HEdz0ThbXfQ6p",
+		"clickhouseClusterHost":     "wh-clickhouse01",
+		"clickhouseClusterDatabase": "rudderdb",
+		"clickhouseClusterCluster":  "rudder_cluster",
+		"clickhouseClusterUser":     "rudder",
+		"clickhouseClusterPassword": "rudder-password",
+		"clickhouseClusterPort":     "9000",
+
+		"mssqlWriteKey": "YSQ3n267l1VQKGNbSuJE9fQbzON",
+		"mssqlHost":     "wh-mssql",
+		"mssqlDatabase": "master",
+		"mssqlUser":     "SA",
+		"mssqlPassword": "reallyStrongPwd123",
+		"mssqlPort":     "1433",
+
+		"azureDatalakeWriteKey":      "Hf4GTz4OiufmUqR1cq6KIeguOdC",
+		"azureDatalakeContainerName": "azure-datalake-test",
+		"azureDatalakeAccountName":   "MYACCESSKEY",
+		"azureDatalakeAccountKey":    "TVlTRUNSRVRLRVk=",
+		"azureDatalakeEndPoint":      "wh-azure:10000",
+
+		"s3DatalakeWriteKey":   "ZapZJHfSxUN96GTIuShnz6bv0zi",
+		"s3DatalakeBucketName": "s3-datalake-test",
+		"s3DatalakeRegion":     "us-east-1",
+
+		"gcsDatalakeWriteKey": "9zZFfcRqr2LpwerxICilhQmMybn",
+
+		"bigqueryWriteKey":  "J77aX7tLFJ84qYU6UrN8ctecwZt",
+		"snowflakeWriteKey": "2eSJyYtqwcFiUILzXv2fcNIrWO7",
+		"redshiftWriteKey":  "JAAwdCxmM8BIabKERsUhPNmMmdf",
+		"deltalakeWriteKey": "sToFgoilA0U1WxNeW1gdgUVDsEW",
+
+		"minioBucketName":      "devintegrationtest",
+		"minioAccesskeyID":     "MYACCESSKEY",
+		"minioSecretAccessKey": "MYSECRETKEY",
+		"minioEndpoint":        "wh-minio:9000",
+	}
+
+	for k, v := range credentialsFromKey(SnowflakeIntegrationTestCredentials) {
+		values[fmt.Sprintf("snowflake%s", k)] = v
+	}
+	for k, v := range credentialsFromKey(RedshiftIntegrationTestCredentials) {
+		values[fmt.Sprintf("redshift%s", k)] = v
+	}
+	for k, v := range credentialsFromKey(DeltalakeIntegrationTestCredentials) {
+		values[fmt.Sprintf("deltalake%s", k)] = v
+	}
+	for k, v := range credentialsFromKey(BigqueryIntegrationTestCredentials) {
+		values[fmt.Sprintf("bigquery%s", k)] = v
+	}
+	enhanceBQCredentials(values)
+	enhanceNamespace(values)
+	return values
+}
+
+func enhanceNamespace(values map[string]string) {
+	values["snowflakeNamespace"] = GetSchema(warehouseutils.SNOWFLAKE, SnowflakeIntegrationTestSchema)
+	values["redshiftNamespace"] = GetSchema(warehouseutils.RS, RedshiftIntegrationTestSchema)
+	values["bigqueryNamespace"] = GetSchema(warehouseutils.BQ, BigqueryIntegrationTestSchema)
+	values["deltalakeNamespace"] = GetSchema(warehouseutils.DELTALAKE, DeltalakeIntegrationTestSchema)
+}
+
+func enhanceBQCredentials(values map[string]string) {
+	key := "bigqueryCredentials"
+	if credentials, exists := values[key]; exists {
+		escapedCredentials, err := json.Marshal(credentials)
+		if err != nil {
+			log.Panicf("error escaping big query JSON credentials while setting up the workspace config with error: %s", err.Error())
+		}
+		values[key] = strings.Trim(string(escapedCredentials), `"`)
+	}
+}
+
+func credentialsFromKey(key string) (credentials map[string]string) {
+	cred, exists := os.LookupEnv(key)
+	if !exists {
+		log.Print(fmt.Errorf("env %s does not exists while setting up the workspace config", key))
+		return
+	}
+
+	err := json.Unmarshal([]byte(cred), &credentials)
+	if err != nil {
+		log.Panicf("error occurred while unmarshalling %s for setting up the workspace config", key)
+		return
+	}
+	return
 }

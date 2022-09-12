@@ -5,10 +5,10 @@ package postgres_test
 import (
 	"database/sql"
 	"fmt"
+	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
+	"github.com/rudderlabs/rudder-server/utils/timeutil"
 	"os"
 	"testing"
-
-	"github.com/rudderlabs/rudder-server/utils/timeutil"
 
 	"github.com/rudderlabs/rudder-server/warehouse/client"
 	"github.com/rudderlabs/rudder-server/warehouse/postgres"
@@ -77,16 +77,16 @@ func TestPostgresIntegration(t *testing.T) {
 	testhelper.SendIntegratedEvents(t, warehouseTest)
 
 	warehouseTest.EventsCountMap = testhelper.StagingFilesEventsMap()
-	testhelper.VerifyingEventsInStagingFiles(t, warehouseTest)
+	testhelper.VerifyEventsInStagingFiles(t, warehouseTest)
 
 	warehouseTest.EventsCountMap = testhelper.LoadFilesEventsMap()
-	testhelper.VerifyingEventsInLoadFiles(t, warehouseTest)
+	testhelper.VerifyEventsInLoadFiles(t, warehouseTest)
 
 	warehouseTest.EventsCountMap = testhelper.TableUploadsEventsMap()
-	testhelper.VerifyingEventsInTableUploads(t, warehouseTest)
+	testhelper.VerifyEventsInTableUploads(t, warehouseTest)
 
 	warehouseTest.EventsCountMap = testhelper.WarehouseEventsMap()
-	testhelper.VerifyingEventsInWareHouse(t, warehouseTest)
+	testhelper.VerifyEventsInWareHouse(t, warehouseTest)
 
 	// Scenario 2
 	warehouseTest.TimestampBeforeSendingEvents = timeutil.Now()
@@ -99,16 +99,49 @@ func TestPostgresIntegration(t *testing.T) {
 	testhelper.SendIntegratedEvents(t, warehouseTest)
 
 	warehouseTest.EventsCountMap = testhelper.StagingFilesEventsMap()
-	testhelper.VerifyingEventsInStagingFiles(t, warehouseTest)
+	testhelper.VerifyEventsInStagingFiles(t, warehouseTest)
 
 	warehouseTest.EventsCountMap = testhelper.LoadFilesEventsMap()
-	testhelper.VerifyingEventsInLoadFiles(t, warehouseTest)
+	testhelper.VerifyEventsInLoadFiles(t, warehouseTest)
 
 	warehouseTest.EventsCountMap = testhelper.TableUploadsEventsMap()
-	testhelper.VerifyingEventsInTableUploads(t, warehouseTest)
+	testhelper.VerifyEventsInTableUploads(t, warehouseTest)
 
 	warehouseTest.EventsCountMap = testhelper.WarehouseEventsMap()
-	testhelper.VerifyingEventsInWareHouse(t, warehouseTest)
+	testhelper.VerifyEventsInWareHouse(t, warehouseTest)
+}
+
+func TestPostgresConfigurationValidation(t *testing.T) {
+	configurations := testhelper.PopulateTemplateConfigurations()
+	destination := backendconfig.DestinationT{
+		ID: "216ZvbavR21Um6eGKQCagZHqLGZ",
+		Config: map[string]interface{}{
+			"host":             configurations["postgresHost"],
+			"database":         configurations["postgresDatabase"],
+			"user":             configurations["postgresUser"],
+			"password":         configurations["postgresPassword"],
+			"port":             configurations["postgresPort"],
+			"sslMode":          "disable",
+			"namespace":        "",
+			"bucketProvider":   "MINIO",
+			"bucketName":       configurations["minioBucketName"],
+			"accessKeyID":      configurations["minioAccesskeyID"],
+			"secretAccessKey":  configurations["minioSecretAccessKey"],
+			"useSSL":           false,
+			"endPoint":         configurations["minioEndpoint"],
+			"syncFrequency":    "30",
+			"useRudderStorage": false,
+		},
+		DestinationDefinition: backendconfig.DestinationDefinitionT{
+			ID:          "1bJ4YC7INdkvBTzotNh0zta5jDm",
+			Name:        "POSTGRES",
+			DisplayName: "Postgres",
+		},
+		Name:       "postgres-demo",
+		Enabled:    true,
+		RevisionID: "29eeuu9kywWsRAybaXcxcnTVEl8",
+	}
+	testhelper.VerifyingConfigurationTest(t, destination)
 }
 
 func TestMain(m *testing.M) {

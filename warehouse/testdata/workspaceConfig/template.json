@@ -998,7 +998,7 @@
             "endPoint": "{{.azureDatalakeEndPoint}}",
             "syncFrequency": "30",
             "forcePathStyle": true,
-            "disableSSL":     true
+            "disableSSL": true
           },
           "liveEventsConfig": {},
           "secretConfig": {},

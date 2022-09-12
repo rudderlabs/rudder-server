@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"log"
 	"os"
 	"testing"
@@ -117,16 +118,16 @@ func TestBigQueryIntegration(t *testing.T) {
 		testhelper.SendIntegratedEvents(t, warehouseTest)
 
 		warehouseTest.EventsCountMap = testhelper.StagingFilesEventsMap()
-		testhelper.VerifyingEventsInStagingFiles(t, warehouseTest)
+		testhelper.VerifyEventsInStagingFiles(t, warehouseTest)
 
 		warehouseTest.EventsCountMap = loadFilesEventsMap()
-		testhelper.VerifyingEventsInLoadFiles(t, warehouseTest)
+		testhelper.VerifyEventsInLoadFiles(t, warehouseTest)
 
 		warehouseTest.EventsCountMap = tableUploadsEventsMap()
-		testhelper.VerifyingEventsInTableUploads(t, warehouseTest)
+		testhelper.VerifyEventsInTableUploads(t, warehouseTest)
 
 		warehouseTest.EventsCountMap = mergeEventsMap()
-		testhelper.VerifyingEventsInWareHouse(t, warehouseTest)
+		testhelper.VerifyEventsInWareHouse(t, warehouseTest)
 
 		// Scenario 2
 		warehouseTest.TimestampBeforeSendingEvents = timeutil.Now()
@@ -139,16 +140,16 @@ func TestBigQueryIntegration(t *testing.T) {
 		testhelper.SendIntegratedEvents(t, warehouseTest)
 
 		warehouseTest.EventsCountMap = testhelper.StagingFilesEventsMap()
-		testhelper.VerifyingEventsInStagingFiles(t, warehouseTest)
+		testhelper.VerifyEventsInStagingFiles(t, warehouseTest)
 
 		warehouseTest.EventsCountMap = loadFilesEventsMap()
-		testhelper.VerifyingEventsInLoadFiles(t, warehouseTest)
+		testhelper.VerifyEventsInLoadFiles(t, warehouseTest)
 
 		warehouseTest.EventsCountMap = tableUploadsEventsMap()
-		testhelper.VerifyingEventsInTableUploads(t, warehouseTest)
+		testhelper.VerifyEventsInTableUploads(t, warehouseTest)
 
 		warehouseTest.EventsCountMap = mergeEventsMap()
-		testhelper.VerifyingEventsInWareHouse(t, warehouseTest)
+		testhelper.VerifyEventsInWareHouse(t, warehouseTest)
 	})
 
 	t.Run("Append Mode", func(t *testing.T) {
@@ -186,17 +187,45 @@ func TestBigQueryIntegration(t *testing.T) {
 		testhelper.SendModifiedEvents(t, warehouseTest)
 
 		warehouseTest.EventsCountMap = testhelper.StagingFilesEventsMap()
-		testhelper.VerifyingEventsInStagingFiles(t, warehouseTest)
+		testhelper.VerifyEventsInStagingFiles(t, warehouseTest)
 
 		warehouseTest.EventsCountMap = loadFilesEventsMap()
-		testhelper.VerifyingEventsInLoadFiles(t, warehouseTest)
+		testhelper.VerifyEventsInLoadFiles(t, warehouseTest)
 
 		warehouseTest.EventsCountMap = tableUploadsEventsMap()
-		testhelper.VerifyingEventsInTableUploads(t, warehouseTest)
+		testhelper.VerifyEventsInTableUploads(t, warehouseTest)
 
 		warehouseTest.EventsCountMap = appendEventsMap()
-		testhelper.VerifyingEventsInWareHouse(t, warehouseTest)
+		testhelper.VerifyEventsInWareHouse(t, warehouseTest)
 	})
+}
+
+func TestBigQueryConfigurationValidation(t *testing.T) {
+	configurations := testhelper.PopulateTemplateConfigurations()
+	bqCredentials, err := bigqueryCredentials()
+	require.NoError(t, err)
+
+	destination := backendconfig.DestinationT{
+		ID: "26Bgm9FrQDZjvadSwAlpd35atwn",
+		Config: map[string]interface{}{
+			"project":       configurations["bigqueryProjectID"],
+			"location":      configurations["bigqueryLocation"],
+			"bucketName":    configurations["bigqueryBucketName"],
+			"credentials":   bqCredentials.Credentials,
+			"prefix":        "",
+			"namespace":     configurations["bigqueryNamespace"],
+			"syncFrequency": "30",
+		},
+		DestinationDefinition: backendconfig.DestinationDefinitionT{
+			ID:          "1UmeD7xhVGHsPDEHoCiSPEGytS3",
+			Name:        "BQ",
+			DisplayName: "BigQuery",
+		},
+		Name:       "bigquery-wh-integration",
+		Enabled:    true,
+		RevisionID: "29eejWUH80lK1abiB766fzv5Iba",
+	}
+	testhelper.VerifyingConfigurationTest(t, destination)
 }
 
 func loadFilesEventsMap() testhelper.EventsCountMap {

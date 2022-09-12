@@ -5,6 +5,7 @@ package mssql_test
 import (
 	"database/sql"
 	"fmt"
+	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"os"
 	"testing"
 
@@ -79,16 +80,16 @@ func TestMSSQLIntegration(t *testing.T) {
 	testhelper.SendIntegratedEvents(t, warehouseTest)
 
 	warehouseTest.EventsCountMap = testhelper.StagingFilesEventsMap()
-	testhelper.VerifyingEventsInStagingFiles(t, warehouseTest)
+	testhelper.VerifyEventsInStagingFiles(t, warehouseTest)
 
 	warehouseTest.EventsCountMap = testhelper.LoadFilesEventsMap()
-	testhelper.VerifyingEventsInLoadFiles(t, warehouseTest)
+	testhelper.VerifyEventsInLoadFiles(t, warehouseTest)
 
 	warehouseTest.EventsCountMap = testhelper.TableUploadsEventsMap()
-	testhelper.VerifyingEventsInTableUploads(t, warehouseTest)
+	testhelper.VerifyEventsInTableUploads(t, warehouseTest)
 
 	warehouseTest.EventsCountMap = testhelper.WarehouseEventsMap()
-	testhelper.VerifyingEventsInWareHouse(t, warehouseTest)
+	testhelper.VerifyEventsInWareHouse(t, warehouseTest)
 
 	// Scenario 2
 	warehouseTest.TimestampBeforeSendingEvents = timeutil.Now()
@@ -101,16 +102,49 @@ func TestMSSQLIntegration(t *testing.T) {
 	testhelper.SendIntegratedEvents(t, warehouseTest)
 
 	warehouseTest.EventsCountMap = testhelper.StagingFilesEventsMap()
-	testhelper.VerifyingEventsInStagingFiles(t, warehouseTest)
+	testhelper.VerifyEventsInStagingFiles(t, warehouseTest)
 
 	warehouseTest.EventsCountMap = testhelper.LoadFilesEventsMap()
-	testhelper.VerifyingEventsInLoadFiles(t, warehouseTest)
+	testhelper.VerifyEventsInLoadFiles(t, warehouseTest)
 
 	warehouseTest.EventsCountMap = testhelper.TableUploadsEventsMap()
-	testhelper.VerifyingEventsInTableUploads(t, warehouseTest)
+	testhelper.VerifyEventsInTableUploads(t, warehouseTest)
 
 	warehouseTest.EventsCountMap = testhelper.WarehouseEventsMap()
-	testhelper.VerifyingEventsInWareHouse(t, warehouseTest)
+	testhelper.VerifyEventsInWareHouse(t, warehouseTest)
+}
+
+func TestMSSQLConfigurationValidation(t *testing.T) {
+	configurations := testhelper.PopulateTemplateConfigurations()
+	destination := backendconfig.DestinationT{
+		ID: "21Ezdq58khNMj07VJB0VJmxLvgu",
+		Config: map[string]interface{}{
+			"host":             configurations["mssqlHost"],
+			"database":         configurations["mssqlDatabase"],
+			"user":             configurations["mssqlUser"],
+			"password":         configurations["mssqlPassword"],
+			"port":             configurations["mssqlPort"],
+			"sslMode":          "disable",
+			"namespace":        "",
+			"bucketProvider":   "MINIO",
+			"bucketName":       configurations["minioBucketName"],
+			"accessKeyID":      configurations["minioAccesskeyID"],
+			"secretAccessKey":  configurations["minioSecretAccessKey"],
+			"useSSL":           false,
+			"endPoint":         configurations["minioEndpoint"],
+			"syncFrequency":    "30",
+			"useRudderStorage": false,
+		},
+		DestinationDefinition: backendconfig.DestinationDefinitionT{
+			ID:          "1qvbUYC2xVQ7lvI9UUYkkM4IBt9",
+			Name:        "MSSQL",
+			DisplayName: "Microsoft SQL Server",
+		},
+		Name:       "mssql-demo",
+		Enabled:    true,
+		RevisionID: "29eeuUb21cuDBeFKPTUA9GaQ9Aq",
+	}
+	testhelper.VerifyingConfigurationTest(t, destination)
 }
 
 func TestMain(m *testing.M) {

@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"log"
 	"os"
 	"testing"
@@ -103,16 +104,16 @@ func TestSnowflakeIntegration(t *testing.T) {
 	testhelper.SendIntegratedEvents(t, warehouseTest)
 
 	warehouseTest.EventsCountMap = testhelper.StagingFilesEventsMap()
-	testhelper.VerifyingEventsInStagingFiles(t, warehouseTest)
+	testhelper.VerifyEventsInStagingFiles(t, warehouseTest)
 
 	warehouseTest.EventsCountMap = testhelper.LoadFilesEventsMap()
-	testhelper.VerifyingEventsInLoadFiles(t, warehouseTest)
+	testhelper.VerifyEventsInLoadFiles(t, warehouseTest)
 
 	warehouseTest.EventsCountMap = testhelper.TableUploadsEventsMap()
-	testhelper.VerifyingEventsInTableUploads(t, warehouseTest)
+	testhelper.VerifyEventsInTableUploads(t, warehouseTest)
 
 	warehouseTest.EventsCountMap = testhelper.WarehouseEventsMap()
-	testhelper.VerifyingEventsInWareHouse(t, warehouseTest)
+	testhelper.VerifyEventsInWareHouse(t, warehouseTest)
 
 	// Scenario 2
 	warehouseTest.TimestampBeforeSendingEvents = timeutil.Now()
@@ -125,16 +126,50 @@ func TestSnowflakeIntegration(t *testing.T) {
 	testhelper.SendIntegratedEvents(t, warehouseTest)
 
 	warehouseTest.EventsCountMap = testhelper.StagingFilesEventsMap()
-	testhelper.VerifyingEventsInStagingFiles(t, warehouseTest)
+	testhelper.VerifyEventsInStagingFiles(t, warehouseTest)
 
 	warehouseTest.EventsCountMap = testhelper.LoadFilesEventsMap()
-	testhelper.VerifyingEventsInLoadFiles(t, warehouseTest)
+	testhelper.VerifyEventsInLoadFiles(t, warehouseTest)
 
 	warehouseTest.EventsCountMap = testhelper.TableUploadsEventsMap()
-	testhelper.VerifyingEventsInTableUploads(t, warehouseTest)
+	testhelper.VerifyEventsInTableUploads(t, warehouseTest)
 
 	warehouseTest.EventsCountMap = testhelper.WarehouseEventsMap()
-	testhelper.VerifyingEventsInWareHouse(t, warehouseTest)
+	testhelper.VerifyEventsInWareHouse(t, warehouseTest)
+}
+
+func TestSnowflakeConfigurationValidation(t *testing.T) {
+	configurations := testhelper.PopulateTemplateConfigurations()
+
+	destination := backendconfig.DestinationT{
+		ID: "24qeADObp6eIhjjDnEppO6P1SNc",
+		Config: map[string]interface{}{
+			"account":            configurations["snowflakeAccount"],
+			"database":           configurations["snowflakeDBName"],
+			"warehouse":          configurations["snowflakeWHName"],
+			"user":               configurations["snowflakeUsername"],
+			"password":           configurations["snowflakePassword"],
+			"cloudProvider":      "AWS",
+			"bucketName":         configurations["snowflakeBucketName"],
+			"storageIntegration": "",
+			"accessKeyID":        configurations["snowflakeAccessKeyID"],
+			"accessKey":          configurations["snowflakeAccessKey"],
+			"namespace":          configurations["snowflakeNamespace"],
+			"prefix":             "snowflake-prefix",
+			"syncFrequency":      "30",
+			"enableSSE":          false,
+			"useRudderStorage":   false,
+		},
+		DestinationDefinition: backendconfig.DestinationDefinitionT{
+			ID:          "1XjvXnzw34UMAz1YOuKqL1kwzh6",
+			Name:        "SNOWFLAKE",
+			DisplayName: "Snowflake",
+		},
+		Name:       "snowflake-demo",
+		Enabled:    true,
+		RevisionID: "29HgdgvNPwqFDMONSgmIZ3YSehV",
+	}
+	testhelper.VerifyingConfigurationTest(t, destination)
 }
 
 func TestMain(m *testing.M) {

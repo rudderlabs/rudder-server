@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"log"
 	"os"
 	"testing"
@@ -103,16 +104,16 @@ func TestRedshiftIntegration(t *testing.T) {
 	testhelper.SendIntegratedEvents(t, warehouseTest)
 
 	warehouseTest.EventsCountMap = testhelper.StagingFilesEventsMap()
-	testhelper.VerifyingEventsInStagingFiles(t, warehouseTest)
+	testhelper.VerifyEventsInStagingFiles(t, warehouseTest)
 
 	warehouseTest.EventsCountMap = testhelper.LoadFilesEventsMap()
-	testhelper.VerifyingEventsInLoadFiles(t, warehouseTest)
+	testhelper.VerifyEventsInLoadFiles(t, warehouseTest)
 
 	warehouseTest.EventsCountMap = testhelper.TableUploadsEventsMap()
-	testhelper.VerifyingEventsInTableUploads(t, warehouseTest)
+	testhelper.VerifyEventsInTableUploads(t, warehouseTest)
 
 	warehouseTest.EventsCountMap = testhelper.WarehouseEventsMap()
-	testhelper.VerifyingEventsInWareHouse(t, warehouseTest)
+	testhelper.VerifyEventsInWareHouse(t, warehouseTest)
 
 	// Scenario 2
 	warehouseTest.TimestampBeforeSendingEvents = timeutil.Now()
@@ -125,16 +126,48 @@ func TestRedshiftIntegration(t *testing.T) {
 	testhelper.SendIntegratedEvents(t, warehouseTest)
 
 	warehouseTest.EventsCountMap = testhelper.StagingFilesEventsMap()
-	testhelper.VerifyingEventsInStagingFiles(t, warehouseTest)
+	testhelper.VerifyEventsInStagingFiles(t, warehouseTest)
 
 	warehouseTest.EventsCountMap = testhelper.LoadFilesEventsMap()
-	testhelper.VerifyingEventsInLoadFiles(t, warehouseTest)
+	testhelper.VerifyEventsInLoadFiles(t, warehouseTest)
 
 	warehouseTest.EventsCountMap = testhelper.TableUploadsEventsMap()
-	testhelper.VerifyingEventsInTableUploads(t, warehouseTest)
+	testhelper.VerifyEventsInTableUploads(t, warehouseTest)
 
 	warehouseTest.EventsCountMap = testhelper.WarehouseEventsMap()
-	testhelper.VerifyingEventsInWareHouse(t, warehouseTest)
+	testhelper.VerifyEventsInWareHouse(t, warehouseTest)
+}
+
+func TestRedshiftConfigurationValidation(t *testing.T) {
+	configurations := testhelper.PopulateTemplateConfigurations()
+
+	destination := backendconfig.DestinationT{
+		ID: "27SthahyhhqZE74HT4NTtNPl06V",
+		Config: map[string]interface{}{
+			"host":             configurations["redshiftHost"],
+			"port":             configurations["redshiftPort"],
+			"database":         configurations["redshiftDbName"],
+			"user":             configurations["redshiftUsername"],
+			"password":         configurations["redshiftPassword"],
+			"bucketName":       configurations["redshiftBucketName"],
+			"accessKeyID":      configurations["redshiftAccessKeyID"],
+			"accessKey":        configurations["redshiftAccessKey"],
+			"prefix":           "",
+			"namespace":        configurations["redshiftNamespace"],
+			"syncFrequency":    "30",
+			"enableSSE":        false,
+			"useRudderStorage": false,
+		},
+		DestinationDefinition: backendconfig.DestinationDefinitionT{
+			ID:          "1UVZiJF7OgLaiIY2Jts8XOQE3M6",
+			Name:        "RS",
+			DisplayName: "Redshift",
+		},
+		Name:       "redshift-demo",
+		Enabled:    true,
+		RevisionID: "29HgOWobrn0RYZLpaSwPIbN2987",
+	}
+	testhelper.VerifyingConfigurationTest(t, destination)
 }
 
 func TestMain(m *testing.M) {
