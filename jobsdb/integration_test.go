@@ -569,7 +569,7 @@ func TestJobsDB(t *testing.T) {
 
 		getDSList := func() []dataSetT {
 			jobDB.dsListLock.RLock()
-			defer jobDB.dsListLock.RLock()
+			defer jobDB.dsListLock.RUnlock()
 			return jobDB.getDSList()
 		}
 
