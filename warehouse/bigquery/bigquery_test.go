@@ -10,6 +10,8 @@ import (
 	"os"
 	"testing"
 
+	"github.com/rudderlabs/rudder-server/utils/timeutil"
+
 	"github.com/stretchr/testify/require"
 
 	"cloud.google.com/go/bigquery"
@@ -75,7 +77,6 @@ func (*TestHandle) VerifyConnection() error {
 
 func TestBigQueryIntegration(t *testing.T) {
 	// Cleanup resources
-	// Dropping temporary dataset
 	t.Cleanup(func() {
 		require.NoError(t, testhelper.WithConstantBackoff(func() (err error) {
 			return handle.DB.Dataset(handle.Schema).DeleteWithContents(context.TODO())
@@ -91,82 +92,63 @@ func TestBigQueryIntegration(t *testing.T) {
 			},
 		}))
 
-		// Setting up the warehouseTest
 		warehouseTest := &testhelper.WareHouseTest{
 			Client: &client.Client{
 				BQ:   handle.DB,
 				Type: client.BQClient,
 			},
-			WriteKey:             handle.WriteKey,
-			Schema:               handle.Schema,
-			Tables:               handle.Tables,
-			TablesQueryFrequency: testhelper.LongRunningQueryFrequency,
-			EventsCountMap:       testhelper.DefaultEventMap(),
-			MessageId:            uuid.Must(uuid.NewV4()).String(),
-			UserId:               testhelper.GetUserId(warehouseutils.BQ),
-			Provider:             warehouseutils.BQ,
+			WriteKey:      handle.WriteKey,
+			Schema:        handle.Schema,
+			Tables:        handle.Tables,
+			MessageId:     uuid.Must(uuid.NewV4()).String(),
+			Provider:      warehouseutils.BQ,
+			SourceID:      "24p1HhPk09FW25Kuzxv7GshCLKR",
+			DestinationID: "26Bgm9FrQDZjvadSwAlpd35atwn",
 		}
 
 		// Scenario 1
-		// Sending the first set of events.
-		// Since we handle dedupe on the staging table, we need to check if the first set of events reached the destination.
+		warehouseTest.TimestampBeforeSendingEvents = timeutil.Now()
+		warehouseTest.UserId = testhelper.GetUserId(warehouseutils.BQ)
+
+		warehouseTest.EventsCountMap = testhelper.SendEventsMap()
 		testhelper.SendEvents(t, warehouseTest)
 		testhelper.SendEvents(t, warehouseTest)
 		testhelper.SendEvents(t, warehouseTest)
-		// Integrated events has events set to skipReservedKeywordsEscaping to True
-		// Eg: Since groups is reserved keyword in BQ, table populated will be groups if true else _groups
 		testhelper.SendIntegratedEvents(t, warehouseTest)
 
-		// Setting up the events map
-		// Checking for Gateway and Batch router events
-		// Checking for the events count for each table
-		warehouseTest.EventsCountMap = testhelper.EventsCountMap{
-			"identifies":    1,
-			"users":         1,
-			"tracks":        1,
-			"product_track": 1,
-			"pages":         1,
-			"screens":       1,
-			"aliases":       1,
-			"groups":        1,
-			"_groups":       1,
-			"gateway":       24,
-			"batchRT":       32,
-		}
-		testhelper.VerifyingGatewayEvents(t, warehouseTest)
-		testhelper.VerifyingBatchRouterEvents(t, warehouseTest)
-		testhelper.VerifyingTablesEventCount(t, warehouseTest)
+		warehouseTest.EventsCountMap = testhelper.StagingFilesEventsMap()
+		testhelper.VerifyingEventsInStagingFiles(t, warehouseTest)
+
+		warehouseTest.EventsCountMap = loadFilesEventsMap()
+		testhelper.VerifyingEventsInLoadFiles(t, warehouseTest)
+
+		warehouseTest.EventsCountMap = tableUploadsEventsMap()
+		testhelper.VerifyingEventsInTableUploads(t, warehouseTest)
+
+		warehouseTest.EventsCountMap = mergeEventsMap()
+		testhelper.VerifyingEventsInWareHouse(t, warehouseTest)
 
 		// Scenario 2
-		// Re-Setting up the events map
-		// Sending the second set of events.
-		// This time we will not be resetting the MessageID. We will be using the same one to check for the dedupe.
-		warehouseTest.EventsCountMap = testhelper.DefaultEventMap()
+		warehouseTest.TimestampBeforeSendingEvents = timeutil.Now()
+		warehouseTest.UserId = testhelper.GetUserId(warehouseutils.BQ)
+
+		warehouseTest.EventsCountMap = testhelper.SendEventsMap()
 		testhelper.SendModifiedEvents(t, warehouseTest)
 		testhelper.SendModifiedEvents(t, warehouseTest)
 		testhelper.SendModifiedEvents(t, warehouseTest)
 		testhelper.SendIntegratedEvents(t, warehouseTest)
 
-		// Setting up the events map
-		// Checking for Gateway and Batch router events
-		// Checking for the events count for each table
-		// Since because of merge everything comes down to a single event in warehouse
-		warehouseTest.EventsCountMap = testhelper.EventsCountMap{
-			"identifies":    1,
-			"users":         1,
-			"tracks":        1,
-			"product_track": 1,
-			"pages":         1,
-			"screens":       1,
-			"aliases":       1,
-			"groups":        1,
-			"_groups":       1,
-			"gateway":       48,
-			"batchRT":       64,
-		}
-		testhelper.VerifyingGatewayEvents(t, warehouseTest)
-		testhelper.VerifyingBatchRouterEvents(t, warehouseTest)
-		testhelper.VerifyingTablesEventCount(t, warehouseTest)
+		warehouseTest.EventsCountMap = testhelper.StagingFilesEventsMap()
+		testhelper.VerifyingEventsInStagingFiles(t, warehouseTest)
+
+		warehouseTest.EventsCountMap = loadFilesEventsMap()
+		testhelper.VerifyingEventsInLoadFiles(t, warehouseTest)
+
+		warehouseTest.EventsCountMap = tableUploadsEventsMap()
+		testhelper.VerifyingEventsInTableUploads(t, warehouseTest)
+
+		warehouseTest.EventsCountMap = mergeEventsMap()
+		testhelper.VerifyingEventsInWareHouse(t, warehouseTest)
 	})
 
 	t.Run("Append Mode", func(t *testing.T) {
@@ -184,49 +166,72 @@ func TestBigQueryIntegration(t *testing.T) {
 				BQ:   handle.DB,
 				Type: client.BQClient,
 			},
-			WriteKey:             handle.WriteKey,
-			Schema:               handle.Schema,
-			Tables:               handle.Tables,
-			TablesQueryFrequency: testhelper.LongRunningQueryFrequency,
-			EventsCountMap:       testhelper.DefaultEventMap(),
-			MessageId:            uuid.Must(uuid.NewV4()).String(),
-			UserId:               testhelper.GetUserId(warehouseutils.BQ),
-			Provider:             warehouseutils.BQ,
+			WriteKey:      handle.WriteKey,
+			Schema:        handle.Schema,
+			Tables:        handle.Tables,
+			MessageId:     uuid.Must(uuid.NewV4()).String(),
+			Provider:      warehouseutils.BQ,
+			SourceID:      "24p1HhPk09FW25Kuzxv7GshCLKR",
+			DestinationID: "26Bgm9FrQDZjvadSwAlpd35atwn",
 		}
 
 		// Scenario 1
-		// Sending the first set of events.
-		// Since we don't handle dedupe on the staging table, we can just send the events.
-		// And then verify the count on the warehouse.
-		// Sending 1 event to groups and 3 to _groups
+		warehouseTest.TimestampBeforeSendingEvents = timeutil.Now()
+		warehouseTest.UserId = testhelper.GetUserId(warehouseutils.BQ)
+
+		warehouseTest.EventsCountMap = testhelper.SendEventsMap()
 		testhelper.SendEvents(t, warehouseTest)
-		// Integrated events has events set to skipReservedKeywordsEscaping to True
-		// Eg: Since groups is reserved keyword in BQ, table populated will be groups if true else _groups
 		testhelper.SendIntegratedEvents(t, warehouseTest)
 		testhelper.SendModifiedEvents(t, warehouseTest)
 		testhelper.SendModifiedEvents(t, warehouseTest)
 
-		// Setting up the events map
-		// Checking for Gateway and Batch router events
-		// Checking for the events count for each table
-		// Since because of append events count will be equal to the number of events being sent
-		warehouseTest.EventsCountMap = testhelper.EventsCountMap{
-			"identifies":    4,
-			"users":         1,
-			"tracks":        4,
-			"product_track": 4,
-			"pages":         4,
-			"screens":       4,
-			"aliases":       4,
-			"groups":        1,
-			"_groups":       3,
-			"gateway":       24,
-			"batchRT":       32,
-		}
-		testhelper.VerifyingGatewayEvents(t, warehouseTest)
-		testhelper.VerifyingBatchRouterEvents(t, warehouseTest)
-		testhelper.VerifyingTablesEventCount(t, warehouseTest)
+		warehouseTest.EventsCountMap = testhelper.StagingFilesEventsMap()
+		testhelper.VerifyingEventsInStagingFiles(t, warehouseTest)
+
+		warehouseTest.EventsCountMap = loadFilesEventsMap()
+		testhelper.VerifyingEventsInLoadFiles(t, warehouseTest)
+
+		warehouseTest.EventsCountMap = tableUploadsEventsMap()
+		testhelper.VerifyingEventsInTableUploads(t, warehouseTest)
+
+		warehouseTest.EventsCountMap = appendEventsMap()
+		testhelper.VerifyingEventsInWareHouse(t, warehouseTest)
 	})
+}
+
+func loadFilesEventsMap() testhelper.EventsCountMap {
+	eventsMap := testhelper.LoadFilesEventsMap()
+	eventsMap["groups"] = 1
+	eventsMap["_groups"] = 3
+	return eventsMap
+}
+
+func tableUploadsEventsMap() testhelper.EventsCountMap {
+	eventsMap := testhelper.TableUploadsEventsMap()
+	eventsMap["groups"] = 1
+	eventsMap["_groups"] = 3
+	return eventsMap
+}
+
+func mergeEventsMap() testhelper.EventsCountMap {
+	return testhelper.EventsCountMap{
+		"identifies":    1,
+		"users":         1,
+		"tracks":        1,
+		"product_track": 1,
+		"pages":         1,
+		"screens":       1,
+		"aliases":       1,
+		"groups":        1,
+		"_groups":       1,
+	}
+}
+
+func appendEventsMap() testhelper.EventsCountMap {
+	eventsMap := testhelper.WarehouseEventsMap()
+	eventsMap["groups"] = 1
+	eventsMap["_groups"] = 3
+	return eventsMap
 }
 
 func TestUnsupportedCredentials(t *testing.T) {
@@ -243,7 +248,7 @@ func TestUnsupportedCredentials(t *testing.T) {
 func TestMain(m *testing.M) {
 	_, exists := os.LookupEnv(TestCredentialsKey)
 	if !exists {
-		log.Println("Skipping Bigquery Test as the Test credentials does not exits.")
+		log.Println("Skipping Bigquery Test as the Test credentials does not exists.")
 		return
 	}
 

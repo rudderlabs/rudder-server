@@ -75,6 +75,18 @@ func populateTemplateConfigurations() map[string]string {
 		"mssqlPassword": "reallyStrongPwd123",
 		"mssqlPort":     "1433",
 
+		"azureDatalakeWriteKey":      "Hf4GTz4OiufmUqR1cq6KIeguOdC",
+		"azureDatalakeContainerName": "azure-datalake-test",
+		"azureDatalakeAccountName":   "MYACCESSKEY",
+		"azureDatalakeAccountKey":    "TVlTRUNSRVRLRVk=",
+		"azureDatalakeEndPoint":      "wh-azure:10000",
+
+		"s3DatalakeWriteKey":   "ZapZJHfSxUN96GTIuShnz6bv0zi",
+		"s3DatalakeBucketName": "s3-datalake-test",
+		"s3DatalakeRegion":     "us-east-1",
+
+		"gcsDatalakeWriteKey": "9zZFfcRqr2LpwerxICilhQmMybn",
+
 		"bigqueryWriteKey":  "J77aX7tLFJ84qYU6UrN8ctecwZt",
 		"snowflakeWriteKey": "2eSJyYtqwcFiUILzXv2fcNIrWO7",
 		"redshiftWriteKey":  "JAAwdCxmM8BIabKERsUhPNmMmdf",

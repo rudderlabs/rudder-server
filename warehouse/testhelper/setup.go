@@ -46,15 +46,18 @@ type JobsDBResource struct {
 type EventsCountMap map[string]int
 
 type WareHouseTest struct {
-	Client               *client.Client
-	WriteKey             string
-	Schema               string
-	TablesQueryFrequency time.Duration
-	EventsCountMap       EventsCountMap
-	UserId               string
-	MessageId            string
-	Tables               []string
-	Provider             string
+	Client                       *client.Client
+	WriteKey                     string
+	Schema                       string
+	TablesQueryFrequency         time.Duration
+	EventsCountMap               EventsCountMap
+	UserId                       string
+	SourceID                     string
+	DestinationID                string
+	TimestampBeforeSendingEvents time.Time
+	MessageId                    string
+	Tables                       []string
+	Provider                     string
 }
 
 type WarehouseTestSetup interface {
@@ -62,10 +65,9 @@ type WarehouseTestSetup interface {
 }
 
 const (
-	WaitFor2Minute            = 2 * time.Minute
-	WaitFor10Minute           = 10 * time.Minute
-	DefaultQueryFrequency     = 100 * time.Millisecond
-	LongRunningQueryFrequency = 10000 * time.Millisecond
+	WaitFor2Minute        = 2 * time.Minute
+	WaitFor10Minute       = 10 * time.Minute
+	DefaultQueryFrequency = 100 * time.Millisecond
 )
 
 const (
@@ -135,7 +137,6 @@ func initialize() {
 
 func initJobsDB() {
 	jobsDB = setUpJobsDB()
-	enhanceJobsDBWithSQLFunctions()
 }
 
 func setUpJobsDB() (jobsDB *JobsDBResource) {
@@ -160,192 +161,187 @@ func setUpJobsDB() (jobsDB *JobsDBResource) {
 	return
 }
 
-func enhanceJobsDBWithSQLFunctions() {
-	var err error
-
-	txn, err := jobsDB.DB.Begin()
-	if err != nil {
-		log.Panicf("error occurred with creating transactions for jobs function with err %v", err.Error())
-	}
-
-	_, err = txn.Exec(GWJobsForUserIdWriteKey())
-	if err != nil {
-		log.Panicf("error occurred with executing gw jobs function with err %v", err.Error())
-	}
-
-	_, err = txn.Exec(BRTJobsForUserId())
-	if err != nil {
-		log.Panicf("error occurred with executing brt jobs function with err %s", err.Error())
-	}
-
-	err = txn.Commit()
-	if err != nil {
-		log.Panicf("error occurred with committing txn with err %s", err.Error())
-	}
-}
-
-func VerifyingGatewayEvents(t testing.TB, wareHouseTest *WareHouseTest) {
+func VerifyingEventsInStagingFiles(t testing.TB, wareHouseTest *WareHouseTest) {
 	t.Helper()
-	t.Logf("Started verifying gateway events")
-
-	require.Contains(t, wareHouseTest.EventsCountMap, "gateway")
-	gwEvents := wareHouseTest.EventsCountMap["gateway"]
+	t.Logf("Started verifying events in staging files")
 
 	var (
-		count        int64
-		jobId        int64
-		jobIds       []string
-		sqlStatement string
-		operation    func() bool
-		err          error
-		rows         *sql.Rows
+		count             sql.NullInt64
+		stagingFileEvents int
+		sqlStatement      string
+		operation         func() bool
+		err               error
+		tableName         = "wh_staging_files"
 	)
 
-	sqlStatement = fmt.Sprintf(`
-		select
-		  count(*)
-		from
-		  gw_jobs_for_user_id_and_write_key('%s', '%s') as job_ids;`,
-		wareHouseTest.UserId,
-		wareHouseTest.WriteKey,
+	require.NotEmpty(t, wareHouseTest.SourceID)
+	require.NotEmpty(t, wareHouseTest.DestinationID)
+	require.NotEmpty(t, wareHouseTest.EventsCountMap)
+	require.NotEmpty(t, wareHouseTest.EventsCountMap[tableName])
+
+	require.NotNil(t, jobsDB.DB)
+
+	stagingFileEvents = wareHouseTest.EventsCountMap[tableName]
+
+	sqlStatement = `
+		SELECT
+		   COALESCE(SUM(total_events)) AS sum
+		FROM
+		   wh_staging_files
+		WHERE
+		   source_id = $1
+		   AND destination_id = $2
+		   AND created_at > $3;
+	`
+	t.Logf("Checking events in staging files for sourceID: %s, DestinationID: %s, TimestampBeforeSendingEvents: %s, sqlStatement: %s",
+		wareHouseTest.SourceID,
+		wareHouseTest.DestinationID,
+		wareHouseTest.TimestampBeforeSendingEvents,
+		sqlStatement,
 	)
-	t.Logf("Checking for the gateway jobs for sqlStatement: %s", sqlStatement)
 	operation = func() bool {
-		err = jobsDB.DB.QueryRow(sqlStatement).Scan(&count)
+		err = jobsDB.DB.QueryRow(
+			sqlStatement,
+			wareHouseTest.SourceID,
+			wareHouseTest.DestinationID,
+			wareHouseTest.TimestampBeforeSendingEvents,
+		).Scan(&count)
 		require.NoError(t, err)
-		return count == int64(gwEvents)
+		return count.Int64 == int64(stagingFileEvents)
 	}
-	require.Eventually(t, operation, WaitFor2Minute, DefaultQueryFrequency, fmt.Sprintf("GW events count is %d and GW Jobs count is %d", gwEvents, count))
+	require.Eventually(t, operation, WaitFor2Minute, DefaultQueryFrequency, fmt.Sprintf("Expected staging files events count is %d and Actual staging files events count is %d", stagingFileEvents, count.Int64))
 
-	sqlStatement = fmt.Sprintf(`
-		select
-		  *
-		from
-		  gw_jobs_for_user_id_and_write_key('%s', '%s') as job_ids;`,
-		wareHouseTest.UserId,
-		wareHouseTest.WriteKey,
-	)
-	t.Logf("Checking for gateway job ids for sqlStatement: %s", sqlStatement)
-	operation = func() bool {
-		jobIds = make([]string, 0)
-
-		rows, err = jobsDB.DB.Query(sqlStatement)
-		require.NoError(t, err)
-
-		defer func() { _ = rows.Close() }()
-
-		for rows.Next() {
-			err = rows.Scan(&jobId)
-			require.NoError(t, err)
-			jobIds = append(jobIds, fmt.Sprint(jobId))
-		}
-		return gwEvents == len(jobIds)
-	}
-	require.Eventually(t, operation, WaitFor2Minute, DefaultQueryFrequency, fmt.Sprintf("GW events count is %d and GW Jobs status count is %d", gwEvents, count))
-
-	sqlStatement = fmt.Sprintf(`
-		select
-		  count(*)
-		from
-		  gw_job_status_1
-		where
-		  job_id in (%s)
-		  and job_state = 'succeeded';`,
-		strings.Join(jobIds, ","),
-	)
-	t.Logf("Checking for gateway jobs state for sqlStatement: %s", sqlStatement)
-	operation = func() bool {
-		err = jobsDB.DB.QueryRow(sqlStatement).Scan(&count)
-		require.NoError(t, err)
-		return count == int64(gwEvents)
-	}
-	require.Eventually(t, operation, WaitFor2Minute, DefaultQueryFrequency, fmt.Sprintf("GW events count is %d and GW Jobs succeeded count is %d", gwEvents, count))
-
-	t.Logf("Completed verifying gateway events")
+	t.Logf("Completed verifying events in staging files")
 }
 
-func VerifyingBatchRouterEvents(t testing.TB, wareHouseTest *WareHouseTest) {
+func VerifyingEventsInLoadFiles(t testing.TB, wareHouseTest *WareHouseTest) {
 	t.Helper()
-	t.Logf("Started verifying batch router events")
-
-	require.Contains(t, wareHouseTest.EventsCountMap, "batchRT")
-	brtEvents := wareHouseTest.EventsCountMap["batchRT"]
+	t.Logf("Started verifying events in load file")
 
 	var (
-		count        int64
-		jobId        int64
-		jobIds       []string
-		sqlStatement string
-		operation    func() bool
-		err          error
-		rows         *sql.Rows
+		count          sql.NullInt64
+		loadFileEvents int
+		sqlStatement   string
+		operation      func() bool
+		err            error
 	)
 
-	sqlStatement = fmt.Sprintf(`
-		select
-		  count(*)
-		from
-		  brt_jobs_for_user_id('%s') as job_ids;`,
-		wareHouseTest.UserId,
-	)
-	t.Logf("Checking for batch router jobs for sqlStatement: %s", sqlStatement)
-	operation = func() bool {
-		err = jobsDB.DB.QueryRow(sqlStatement).Scan(&count)
-		require.NoError(t, err)
-		return count == int64(brtEvents)
-	}
-	require.Eventually(t, operation, WaitFor2Minute, DefaultQueryFrequency, fmt.Sprintf("BRT events count is %d and BRT Jobs count is %d", brtEvents, count))
+	require.NotEmpty(t, wareHouseTest.SourceID)
+	require.NotEmpty(t, wareHouseTest.DestinationID)
+	require.NotEmpty(t, wareHouseTest.EventsCountMap)
 
-	sqlStatement = fmt.Sprintf(`
-		select
-		  *
-		from
-		  brt_jobs_for_user_id('%s') as job_ids;`,
-		wareHouseTest.UserId,
-	)
-	t.Logf("Checking for batch router job ids for sqlStatement: %s", sqlStatement)
-	operation = func() bool {
-		jobIds = make([]string, 0)
+	require.NotNil(t, jobsDB.DB)
 
-		rows, err = jobsDB.DB.Query(sqlStatement)
-		require.NoError(t, err)
+	for _, table := range wareHouseTest.Tables {
+		require.NotEmpty(t, wareHouseTest.EventsCountMap[table])
 
-		defer func() { _ = rows.Close() }()
+		loadFileEvents = wareHouseTest.EventsCountMap[table]
 
-		for rows.Next() {
-			err = rows.Scan(&jobId)
+		sqlStatement = `
+			SELECT
+			   COALESCE(SUM(total_events)) AS sum
+			FROM
+			   wh_load_files
+			WHERE
+			   source_id = $1
+			   AND destination_id = $2
+			   AND created_at > $3
+			   AND table_name = $4;
+		`
+		t.Logf("Checking events in load files for sourceID: %s, DestinationID: %s, TimestampBeforeSendingEvents: %s, table: %s, sqlStatement: %s",
+			wareHouseTest.SourceID,
+			wareHouseTest.DestinationID,
+			wareHouseTest.TimestampBeforeSendingEvents,
+			warehouseutils.ToProviderCase(wareHouseTest.Provider, table),
+			sqlStatement,
+		)
+		operation = func() bool {
+			err = jobsDB.DB.QueryRow(
+				sqlStatement,
+				wareHouseTest.SourceID,
+				wareHouseTest.DestinationID,
+				wareHouseTest.TimestampBeforeSendingEvents,
+				warehouseutils.ToProviderCase(wareHouseTest.Provider, table),
+			).Scan(&count)
 			require.NoError(t, err)
-			jobIds = append(jobIds, fmt.Sprint(jobId))
+			return count.Int64 == int64(loadFileEvents)
 		}
-		return brtEvents == len(jobIds)
+		require.Eventually(t, operation, WaitFor10Minute, DefaultQueryFrequency, fmt.Sprintf("Expected load files events count is %d and Actual load files events count is %d for table %s", loadFileEvents, count.Int64, table))
 	}
-	require.Eventually(t, operation, WaitFor2Minute, DefaultQueryFrequency, fmt.Sprintf("BRT events count is %d and BRT Jobs status count is %d", brtEvents, count))
 
-	// Checking for the batch router jobs state
-	sqlStatement = fmt.Sprintf(`
-		select
-		  count(*)
-		from
-		  batch_rt_job_status_1
-		where
-		  job_id in (%s)
-		  and job_state = 'succeeded';`,
-		strings.Join(jobIds, ","),
-	)
-	t.Logf("Checking for batch router jobs state for sqlStatement: %s", sqlStatement)
-	operation = func() bool {
-		err = jobsDB.DB.QueryRow(sqlStatement).Scan(&count)
-		require.NoError(t, err)
-		return count == int64(brtEvents)
-	}
-	require.Eventually(t, operation, WaitFor2Minute, DefaultQueryFrequency, fmt.Sprintf("BRT events count is %d and BRT Jobs succeeded count is %d", brtEvents, count))
-
-	t.Logf("Completed verifying batch router events")
+	t.Logf("Completed verifying events in load files")
 }
 
-func VerifyingTablesEventCount(t testing.TB, wareHouseTest *WareHouseTest) {
+func VerifyingEventsInTableUploads(t testing.TB, wareHouseTest *WareHouseTest) {
 	t.Helper()
-	t.Logf("Started verifying tables events")
+	t.Logf("Started verifying events in table uploads")
+
+	var (
+		count             sql.NullInt64
+		tableUploadEvents int
+		sqlStatement      string
+		operation         func() bool
+		err               error
+	)
+
+	require.NotEmpty(t, wareHouseTest.SourceID)
+	require.NotEmpty(t, wareHouseTest.DestinationID)
+	require.NotEmpty(t, wareHouseTest.EventsCountMap)
+
+	require.NotNil(t, jobsDB.DB)
+
+	for _, table := range wareHouseTest.Tables {
+		require.NotEmpty(t, wareHouseTest.EventsCountMap[table])
+
+		tableUploadEvents = wareHouseTest.EventsCountMap[table]
+
+		sqlStatement = `
+			SELECT
+			   COALESCE(SUM(total_events)) AS sum
+			FROM
+			   wh_table_uploads
+			   LEFT JOIN
+				  wh_uploads
+				  ON wh_uploads.id = wh_table_uploads.wh_upload_id
+			WHERE
+			   wh_uploads.source_id = $1
+			   AND wh_uploads.destination_id = $2
+			   AND wh_uploads.created_at > $3
+			   AND wh_table_uploads.table_name = $4
+			   AND wh_table_uploads.status = 'exported_data';
+		`
+		t.Logf("Checking events in table uploads for sourceID: %s, DestinationID: %s, TimestampBeforeSendingEvents: %s, table: %s, sqlStatement: %s",
+			wareHouseTest.SourceID,
+			wareHouseTest.DestinationID,
+			wareHouseTest.TimestampBeforeSendingEvents,
+			warehouseutils.ToProviderCase(wareHouseTest.Provider, table),
+			sqlStatement,
+		)
+		operation = func() bool {
+			err = jobsDB.DB.QueryRow(
+				sqlStatement,
+				wareHouseTest.SourceID,
+				wareHouseTest.DestinationID,
+				wareHouseTest.TimestampBeforeSendingEvents,
+				warehouseutils.ToProviderCase(wareHouseTest.Provider, table),
+			).Scan(&count)
+			require.NoError(t, err)
+			return count.Int64 == int64(tableUploadEvents)
+		}
+		require.Eventually(t, operation, WaitFor10Minute, DefaultQueryFrequency, fmt.Sprintf("Expected table uploads events count is %d and Actual table uploads events count is %d for table %s", tableUploadEvents, count.Int64, table))
+	}
+
+	t.Logf("Completed verifying events in table uploads")
+}
+
+func VerifyingEventsInWareHouse(t testing.TB, wareHouseTest *WareHouseTest) {
+	t.Helper()
+	t.Logf("Started verifying events in warehouse")
+
+	require.NotEmpty(t, wareHouseTest.Schema)
+	require.NotEmpty(t, wareHouseTest.UserId)
+
+	require.NotNil(t, wareHouseTest.Client)
 
 	primaryKey := func(tableName string) string {
 		if tableName == "users" {
@@ -355,13 +351,16 @@ func VerifyingTablesEventCount(t testing.TB, wareHouseTest *WareHouseTest) {
 	}
 
 	var (
-		count        int64
-		sqlStatement string
-		condition    func() bool
+		count    int64
+		countErr error
 	)
 
 	for _, table := range wareHouseTest.Tables {
-		sqlStatement = fmt.Sprintf(`
+		require.Contains(t, wareHouseTest.EventsCountMap, table)
+
+		tableCount := wareHouseTest.EventsCountMap[table]
+
+		sqlStatement := fmt.Sprintf(`
 			select
 			  count(*)
 			from
@@ -369,23 +368,35 @@ func VerifyingTablesEventCount(t testing.TB, wareHouseTest *WareHouseTest) {
 			where
 			  %s = '%s';`,
 			wareHouseTest.Schema,
-			table,
+			warehouseutils.ToProviderCase(wareHouseTest.Provider, table),
 			primaryKey(table),
 			wareHouseTest.UserId,
 		)
-		t.Logf("Verifying tables event count for sqlStatement: %s", sqlStatement)
+		t.Logf("Checking events in warehouse for schema: %s, table: %s, primaryKey: %s, UserId: %s, sqlStatement: %s",
+			wareHouseTest.Schema,
+			warehouseutils.ToProviderCase(wareHouseTest.Provider, table),
+			primaryKey(table),
+			wareHouseTest.UserId,
+			sqlStatement,
+		)
 
-		require.Contains(t, wareHouseTest.EventsCountMap, table)
-		tableCount := wareHouseTest.EventsCountMap[table]
-
-		condition = func() bool {
-			count, _ = queryCount(wareHouseTest.Client, sqlStatement)
-			return count == int64(tableCount)
-		}
-		require.Eventually(t, condition, WaitFor10Minute, wareHouseTest.TablesQueryFrequency, fmt.Sprintf("Table %s Count is %d and Events Count is %d", table, tableCount, count))
+		require.NoError(t, WithConstantBackoff(func() error {
+			count, countErr = queryCount(wareHouseTest.Client, sqlStatement)
+			if countErr != nil {
+				return countErr
+			}
+			if count != int64(tableCount) {
+				return fmt.Errorf("error in counting events in warehouse for schema: %s, table: %s,UserId: %s",
+					wareHouseTest.Schema,
+					warehouseutils.ToProviderCase(wareHouseTest.Provider, table),
+					wareHouseTest.UserId,
+				)
+			}
+			return nil
+		}))
 	}
 
-	t.Logf("Completed verifying tables events")
+	t.Logf("Completed verifying events in warehouse")
 }
 
 func queryCount(cl *client.Client, statement string) (int64, error) {
@@ -401,76 +412,59 @@ func WithConstantBackoff(operation func() error) error {
 	return backoff.Retry(operation, backoffWithMaxRetry)
 }
 
-func GWJobsForUserIdWriteKey() string {
-	return `
-		CREATE
-		OR REPLACE FUNCTION gw_jobs_for_user_id_and_write_key(
-		  user_id varchar, write_key varchar
-		) RETURNS TABLE (job_id varchar) AS $$ DECLARE table_record RECORD;
-		batch_record jsonb;
-		BEGIN FOR table_record IN
-		SELECT
-		  *
-		FROM
-		  gw_jobs_1
-		where
-		  (event_payload ->> 'writeKey') = write_key LOOP FOR batch_record IN
-		SELECT
-		  *
-		FROM
-		  jsonb_array_elements(
-			(
-			  table_record.event_payload ->> 'batch'
-			):: jsonb
-		  ) LOOP if batch_record ->> 'userId' != user_id THEN CONTINUE;
-		END IF;
-		job_id := table_record.job_id;
-		RETURN NEXT;
-		EXIT;
-		END LOOP;
-		END LOOP;
-		END;
-		$$ LANGUAGE plpgsql;
-`
-}
-
-func BRTJobsForUserId() string {
-	return `
-		CREATE
-		OR REPLACE FUNCTION brt_jobs_for_user_id(user_id varchar) RETURNS TABLE (job_id varchar) AS $$ DECLARE table_record RECORD;
-		event_payload jsonb;
-		BEGIN FOR table_record IN
-		SELECT
-		  *
-		FROM
-		  batch_rt_jobs_1 LOOP event_payload = (
-			table_record.event_payload ->> 'data'
-		  ):: jsonb;
-		if event_payload ->> 'user_id' = user_id
-		Or event_payload ->> 'id' = user_id
-		Or event_payload ->> 'USER_ID' = user_id
-		Or event_payload ->> 'ID' = user_id THEN job_id := table_record.job_id;
-		RETURN NEXT;
-		END IF;
-		END LOOP;
-		END;
-		$$ LANGUAGE plpgsql;
-`
-}
-
-func DefaultEventMap() EventsCountMap {
+func SendEventsMap() EventsCountMap {
 	return EventsCountMap{
-		"identifies":    1,
+		"identifies": 1,
+		"tracks":     1,
+		"pages":      1,
+		"screens":    1,
+		"aliases":    1,
+		"groups":     1,
+	}
+}
+
+func StagingFilesEventsMap() EventsCountMap {
+	return EventsCountMap{
+		"wh_staging_files": 32,
+	}
+}
+
+func LoadFilesEventsMap() EventsCountMap {
+	return EventsCountMap{
+		"identifies":    4,
+		"users":         4,
+		"tracks":        4,
+		"product_track": 4,
+		"pages":         4,
+		"screens":       4,
+		"aliases":       4,
+		"groups":        4,
+	}
+}
+
+func TableUploadsEventsMap() EventsCountMap {
+	return EventsCountMap{
+		"identifies":    4,
+		"users":         4,
+		"tracks":        4,
+		"product_track": 4,
+		"pages":         4,
+		"screens":       4,
+		"aliases":       4,
+		"groups":        4,
+	}
+}
+
+func WarehouseEventsMap() EventsCountMap {
+	return EventsCountMap{
+		"identifies":    4,
 		"users":         1,
-		"tracks":        1,
-		"pages":         1,
-		"product_track": 1,
-		"screens":       1,
-		"aliases":       1,
-		"groups":        1,
-		"_groups":       1,
-		"gateway":       6,
-		"batchRT":       8,
+		"tracks":        4,
+		"product_track": 4,
+		"pages":         4,
+		"screens":       4,
+		"aliases":       4,
+		"groups":        4,
 	}
 }
 

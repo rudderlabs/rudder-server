@@ -8,6 +8,8 @@ import (
 	"os"
 	"testing"
 
+	"github.com/rudderlabs/rudder-server/utils/timeutil"
+
 	"github.com/rudderlabs/rudder-server/warehouse/client"
 	"github.com/rudderlabs/rudder-server/warehouse/postgres"
 	"github.com/rudderlabs/rudder-server/warehouse/testhelper"
@@ -51,80 +53,62 @@ func (*TestHandle) VerifyConnection() error {
 }
 
 func TestPostgresIntegration(t *testing.T) {
-	// Setting up the warehouseTest
 	warehouseTest := &testhelper.WareHouseTest{
 		Client: &client.Client{
 			SQL:  handle.DB,
 			Type: client.SQLClient,
 		},
-		WriteKey:             handle.WriteKey,
-		Schema:               handle.Schema,
-		Tables:               handle.Tables,
-		EventsCountMap:       testhelper.DefaultEventMap(),
-		TablesQueryFrequency: testhelper.DefaultQueryFrequency,
-		UserId:               testhelper.GetUserId(warehouseutils.POSTGRES),
-		Provider:             warehouseutils.POSTGRES,
+		WriteKey:      handle.WriteKey,
+		Schema:        handle.Schema,
+		Tables:        handle.Tables,
+		Provider:      warehouseutils.POSTGRES,
+		SourceID:      "1wRvLmEnMOOxSQD9pwaZhyCqXRE",
+		DestinationID: "216ZvbavR21Um6eGKQCagZHqLGZ",
 	}
 
 	// Scenario 1
-	// Sending the first set of events.
-	// Since we are sending unique message Ids.
-	// These should result in events count will be equal to the number of events being sent
+	warehouseTest.TimestampBeforeSendingEvents = timeutil.Now()
+	warehouseTest.UserId = testhelper.GetUserId(warehouseutils.POSTGRES)
+
+	warehouseTest.EventsCountMap = testhelper.SendEventsMap()
 	testhelper.SendEvents(t, warehouseTest)
 	testhelper.SendEvents(t, warehouseTest)
 	testhelper.SendEvents(t, warehouseTest)
 	testhelper.SendIntegratedEvents(t, warehouseTest)
 
-	// Setting up the events map
-	// Checking for Gateway and Batch router events
-	// Checking for the events count for each table
-	warehouseTest.EventsCountMap = testhelper.EventsCountMap{
-		"identifies":    4,
-		"users":         1,
-		"tracks":        4,
-		"product_track": 4,
-		"pages":         4,
-		"screens":       4,
-		"aliases":       4,
-		"groups":        4,
-		"gateway":       24,
-		"batchRT":       32,
-	}
-	testhelper.VerifyingGatewayEvents(t, warehouseTest)
-	testhelper.VerifyingBatchRouterEvents(t, warehouseTest)
-	testhelper.VerifyingTablesEventCount(t, warehouseTest)
+	warehouseTest.EventsCountMap = testhelper.StagingFilesEventsMap()
+	testhelper.VerifyingEventsInStagingFiles(t, warehouseTest)
+
+	warehouseTest.EventsCountMap = testhelper.LoadFilesEventsMap()
+	testhelper.VerifyingEventsInLoadFiles(t, warehouseTest)
+
+	warehouseTest.EventsCountMap = testhelper.TableUploadsEventsMap()
+	testhelper.VerifyingEventsInTableUploads(t, warehouseTest)
+
+	warehouseTest.EventsCountMap = testhelper.WarehouseEventsMap()
+	testhelper.VerifyingEventsInWareHouse(t, warehouseTest)
 
 	// Scenario 2
-	// Setting up events count map
-	// Setting up the UserID
-	// Sending the second set of modified events
-	// Since we are sending unique message Ids
-	// These should result in events count will be equal to the number of events being sent
-	warehouseTest.EventsCountMap = testhelper.DefaultEventMap()
+	warehouseTest.TimestampBeforeSendingEvents = timeutil.Now()
 	warehouseTest.UserId = testhelper.GetUserId(warehouseutils.POSTGRES)
+
+	warehouseTest.EventsCountMap = testhelper.SendEventsMap()
 	testhelper.SendModifiedEvents(t, warehouseTest)
 	testhelper.SendModifiedEvents(t, warehouseTest)
 	testhelper.SendModifiedEvents(t, warehouseTest)
 	testhelper.SendIntegratedEvents(t, warehouseTest)
 
-	// Setting up the events map
-	// Checking for Gateway and Batch router events
-	// Checking for the events count for each table
-	warehouseTest.EventsCountMap = testhelper.EventsCountMap{
-		"identifies":    4,
-		"users":         1,
-		"tracks":        4,
-		"product_track": 4,
-		"pages":         4,
-		"screens":       4,
-		"aliases":       4,
-		"groups":        4,
-		"gateway":       24,
-		"batchRT":       32,
-	}
-	testhelper.VerifyingGatewayEvents(t, warehouseTest)
-	testhelper.VerifyingBatchRouterEvents(t, warehouseTest)
-	testhelper.VerifyingTablesEventCount(t, warehouseTest)
+	warehouseTest.EventsCountMap = testhelper.StagingFilesEventsMap()
+	testhelper.VerifyingEventsInStagingFiles(t, warehouseTest)
+
+	warehouseTest.EventsCountMap = testhelper.LoadFilesEventsMap()
+	testhelper.VerifyingEventsInLoadFiles(t, warehouseTest)
+
+	warehouseTest.EventsCountMap = testhelper.TableUploadsEventsMap()
+	testhelper.VerifyingEventsInTableUploads(t, warehouseTest)
+
+	warehouseTest.EventsCountMap = testhelper.WarehouseEventsMap()
+	testhelper.VerifyingEventsInWareHouse(t, warehouseTest)
 }
 
 func TestMain(m *testing.M) {
