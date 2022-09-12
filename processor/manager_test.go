@@ -179,10 +179,8 @@ func TestProcessorManager(t *testing.T) {
 			return triggerAddNewDS
 		},
 	}
-	queryFilters := jobsdb.QueryFiltersT{
-		CustomVal: true,
-	}
-	err := tempDB.Setup(jobsdb.Write, true, "gw", migrationMode, true, queryFilters, []prebackup.Handler{})
+
+	err := tempDB.Setup(jobsdb.Write, true, "gw", migrationMode, true, []prebackup.Handler{})
 	require.NoError(t, err)
 	defer tempDB.TearDown()
 

@@ -12,22 +12,21 @@ var (
 )
 
 func GetFreePort() (int, error) {
+	usedPortsMu.Lock()
+	defer usedPortsMu.Unlock()
 	for {
 		port, err := freeport.GetFreePort()
 		if err != nil {
 			return 0, err
 		}
 
-		usedPortsMu.Lock()
 		if usedPorts == nil {
 			usedPorts = make(map[int]struct{})
 		}
 		if _, used := usedPorts[port]; used {
-			usedPortsMu.Unlock()
 			continue
 		}
 		usedPorts[port] = struct{}{}
-		usedPortsMu.Unlock()
 		return port, nil
 	}
 }

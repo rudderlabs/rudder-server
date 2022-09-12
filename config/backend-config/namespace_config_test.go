@@ -16,7 +16,9 @@ import (
 
 func Test_Namespace_SetUp(t *testing.T) {
 	var (
-		client           = &namespaceConfig{}
+		client = &namespaceConfig{
+			Logger: &logger.NOP{},
+		}
 		configBackendURL = "https://api.test.rudderlabs.com"
 	)
 	parsedConfigBackendURL, err := url.Parse(configBackendURL)

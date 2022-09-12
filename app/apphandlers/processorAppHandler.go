@@ -52,7 +52,7 @@ var (
 	MaxHeaderBytes    int
 )
 
-func (processor *ProcessorApp) GetAppType() string {
+func (*ProcessorApp) GetAppType() string {
 	return fmt.Sprintf("rudder-server-%s", app.PROCESSOR)
 }
 
@@ -113,7 +113,6 @@ func (processor *ProcessorApp) StartRudderCore(ctx context.Context, options *app
 		jobsdb.WithClearDB(options.ClearDB),
 		jobsdb.WithMigrationMode(migrationMode),
 		jobsdb.WithStatusHandler(),
-		jobsdb.WithQueryFilterKeys(jobsdb.QueryFiltersT{}),
 		jobsdb.WithPreBackupHandlers(prebackupHandlers),
 	)
 	defer gwDBForProcessor.Close()
@@ -123,7 +122,6 @@ func (processor *ProcessorApp) StartRudderCore(ctx context.Context, options *app
 		jobsdb.WithClearDB(options.ClearDB),
 		jobsdb.WithMigrationMode(migrationMode),
 		jobsdb.WithStatusHandler(),
-		jobsdb.WithQueryFilterKeys(router.QueryFilters),
 		jobsdb.WithPreBackupHandlers(prebackupHandlers),
 	)
 	defer routerDB.Close()
@@ -132,7 +130,6 @@ func (processor *ProcessorApp) StartRudderCore(ctx context.Context, options *app
 		jobsdb.WithClearDB(options.ClearDB),
 		jobsdb.WithMigrationMode(migrationMode),
 		jobsdb.WithStatusHandler(),
-		jobsdb.WithQueryFilterKeys(batchrouter.QueryFilters),
 		jobsdb.WithPreBackupHandlers(prebackupHandlers),
 	)
 	defer batchRouterDB.Close()
@@ -141,7 +138,6 @@ func (processor *ProcessorApp) StartRudderCore(ctx context.Context, options *app
 		jobsdb.WithClearDB(options.ClearDB),
 		jobsdb.WithMigrationMode(migrationMode),
 		jobsdb.WithStatusHandler(),
-		jobsdb.WithQueryFilterKeys(jobsdb.QueryFiltersT{}),
 		jobsdb.WithPreBackupHandlers(prebackupHandlers),
 	)
 	var tenantRouterDB jobsdb.MultiTenantJobsDB
@@ -262,7 +258,7 @@ func (processor *ProcessorApp) StartRudderCore(ctx context.Context, options *app
 	return g.Wait()
 }
 
-func (processor *ProcessorApp) HandleRecovery(options *app.Options) {
+func (*ProcessorApp) HandleRecovery(options *app.Options) {
 	db.HandleNullRecovery(options.NormalMode, options.DegradedMode, options.MigrationMode, misc.AppStartTime, app.PROCESSOR)
 }
 
