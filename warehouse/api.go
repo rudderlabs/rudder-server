@@ -6,12 +6,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/rudderlabs/rudder-server/config/backend-config"
-	"github.com/rudderlabs/rudder-server/services/filemanager"
-	"github.com/rudderlabs/rudder-server/warehouse/configuration_testing"
 	"os"
 	"strings"
 	"time"
+
+	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
+	"github.com/rudderlabs/rudder-server/services/filemanager"
+	"github.com/rudderlabs/rudder-server/warehouse/configuration_testing"
 
 	"github.com/rudderlabs/rudder-server/utils/types/deployment"
 
@@ -633,7 +634,7 @@ func (validateObjectStorageRequest *ValidateObjectRequestT) validateObjectStorag
 		}
 		return
 	}
-	typeOfObjectStorage := fmt.Sprint(requestMap["type"])
+	objectStorageType := fmt.Sprint(requestMap["type"])
 
 	if cMap, ok := requestMap["config"].(map[string]interface{}); !ok {
 		validateObjectStorageResp = &proto.ValidateObjectStorageResponse{
@@ -659,13 +660,9 @@ func (validateObjectStorageRequest *ValidateObjectRequestT) validateObjectStorag
 
 	}
 
-	settings := filemanager.SettingsT{
-		Provider: typeOfObjectStorage,
-		Config:   configMap,
-	}
-
+	settings := getFileManagerSettings(objectStorageType, configMap)
 	fileManagerFactory := filemanager.FileManagerFactoryT{}
-	fileManager, err := fileManagerFactory.New(&settings)
+	fileManager, err := fileManagerFactory.New(settings)
 
 	if err != nil {
 		fmt.Println(err)
@@ -679,7 +676,7 @@ func (validateObjectStorageRequest *ValidateObjectRequestT) validateObjectStorag
 
 	req := configuration_testing.DestinationValidationRequest{
 		Destination: backendconfig.DestinationT{
-			DestinationDefinition: backendconfig.DestinationDefinitionT{Name: typeOfObjectStorage},
+			DestinationDefinition: backendconfig.DestinationDefinitionT{Name: objectStorageType},
 		},
 	}
 	filePath, err := configuration_testing.CreateTempLoadFile(&req)
@@ -702,4 +699,39 @@ func (validateObjectStorageRequest *ValidateObjectRequestT) validateObjectStorag
 		IsValid: true,
 	}
 	return
+}
+
+func getFileManagerSettings(provider string, inputConfig map[string]interface{}) *filemanager.SettingsT {
+	settings := &filemanager.SettingsT{
+		Provider: provider,
+		Config:   inputConfig,
+	}
+	overrideWithEnv(settings)
+	return settings
+}
+
+// overrideWithEnv overrides the config keys in the filemanager settings
+// with fallback values pulled from env. Only supported for S3 for now.
+func overrideWithEnv(settings *filemanager.SettingsT) {
+	envConfig := filemanager.GetProviderConfigFromEnv(context.TODO(), settings.Provider)
+
+	switch settings.Provider {
+	case "S3":
+		ifNotExistThenSet("prefix", envConfig["prefix"], settings.Config)
+		ifNotExistThenSet("accessKeyID", envConfig["accessKeyID"], settings.Config)
+		ifNotExistThenSet("accessKey", envConfig["accessKey"], settings.Config)
+		ifNotExistThenSet("enableSSE", envConfig["enableSSE"], settings.Config)
+		ifNotExistThenSet("iamRoleARN", envConfig["iamRoleArn"], settings.Config)
+		ifNotExistThenSet("externalID", envConfig["externalId"], settings.Config)
+		ifNotExistThenSet("regionHint", envConfig["regionHint"], settings.Config)
+	}
+}
+
+//
+func ifNotExistThenSet(keyToReplace string, replaceWith interface{}, configMap map[string]interface{}) {
+
+	if _, ok := configMap[keyToReplace]; !ok {
+		// In case we don't have the key, simply replace it with replaceWith
+		configMap[keyToReplace] = replaceWith
+	}
 }

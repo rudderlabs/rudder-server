@@ -2,12 +2,11 @@ package warehouse
 
 import (
 	"context"
-	"github.com/rudderlabs/rudder-server/warehouse/configuration_testing"
-
-	"google.golang.org/protobuf/types/known/emptypb"
-	"google.golang.org/protobuf/types/known/wrapperspb"
 
 	proto "github.com/rudderlabs/rudder-server/proto/warehouse"
+	"github.com/rudderlabs/rudder-server/warehouse/configuration_testing"
+	"google.golang.org/protobuf/types/known/emptypb"
+	"google.golang.org/protobuf/types/known/wrapperspb"
 )
 
 type warehousegrpc struct {
