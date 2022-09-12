@@ -19,8 +19,8 @@ type ConstraintsI interface {
 }
 
 type ConstraintsViolationT struct {
-	isViolated         bool
-	violatedIdentifier string
+	IsViolated         bool
+	ViolatedIdentifier string
 }
 
 type IndexConstraintT struct {
@@ -75,7 +75,7 @@ func ViolatedConstraints(destinationType string, brEvent *BatchRouterEventT, col
 	}
 	for _, constraint := range constraints {
 		cv = constraint.violates(brEvent, columnName)
-		if cv.isViolated {
+		if cv.IsViolated {
 			return
 		}
 	}
@@ -101,7 +101,7 @@ func (ic *IndexConstraintT) violates(brEvent *BatchRouterEventT, columnName stri
 		}
 	}
 	return &ConstraintsViolationT{
-		isViolated:         concatenatedLength > ic.Limit,
-		violatedIdentifier: fmt.Sprintf(`%s-%s`, strcase.ToKebab(warehouseutils.DiscardsTable), uuid.Must(uuid.NewV4()).String()),
+		IsViolated:         concatenatedLength > ic.Limit,
+		ViolatedIdentifier: fmt.Sprintf(`%s-%s`, strcase.ToKebab(warehouseutils.DiscardsTable), uuid.Must(uuid.NewV4()).String()),
 	}
 }
