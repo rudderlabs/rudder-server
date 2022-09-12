@@ -611,7 +611,7 @@ func sendMessage(ctx context.Context, jsonData json.RawMessage, p producer, topi
 	}
 	message := prepareMessage(topic, userID, value, timestamp)
 	if err = publish(ctx, p, message); err != nil {
-		return makeErrorResponse(err)
+		return makeErrorResponse(fmt.Errorf("could not publish to %q: %w", topic, err))
 	}
 
 	returnMessage := fmt.Sprintf("Message delivered to topic: %s", topic)

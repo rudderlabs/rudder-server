@@ -485,8 +485,8 @@ func TestProduce(t *testing.T) {
 		destConfig := map[string]interface{}{"topic": "foo-bar"}
 		sc, res, err := kp.Produce(json.RawMessage(`{"message":"ciao"}`), destConfig)
 		require.Equal(t, 400, sc)
-		require.Equal(t, "super bad error occurred.", res)
-		require.Equal(t, "super bad", err)
+		require.Contains(t, res, "super bad error occurred.")
+		require.Contains(t, err, "super bad")
 	})
 
 	t.Run("producer retryable error", func(t *testing.T) {
@@ -498,8 +498,8 @@ func TestProduce(t *testing.T) {
 		destConfig := map[string]interface{}{"topic": "foo-bar"}
 		sc, res, err := kp.Produce(json.RawMessage(`{"message":"ciao"}`), destConfig)
 		require.Equal(t, 500, sc)
-		require.Equal(t, kafka.LeaderNotAvailable.Error()+" error occurred.", res)
-		require.Equal(t, kafka.LeaderNotAvailable.Error(), err)
+		require.Contains(t, res, kafka.LeaderNotAvailable.Error()+" error occurred.")
+		require.Contains(t, err, kafka.LeaderNotAvailable.Error())
 	})
 
 	t.Run("ok", func(t *testing.T) {
@@ -579,8 +579,8 @@ func TestSendBatchedMessage(t *testing.T) {
 			"some-topic",
 		)
 		require.Equal(t, 500, sc)
-		require.Equal(t, kafka.LeaderNotAvailable.Error()+" error occurred.", res)
-		require.Equal(t, kafka.LeaderNotAvailable.Error(), err)
+		require.Contains(t, res, kafka.LeaderNotAvailable.Error()+" error occurred.")
+		require.Equal(t, err, kafka.LeaderNotAvailable.Error())
 		require.Len(t, p.calls, 1)
 		require.Len(t, p.calls[0], 1)
 		require.Equal(t, []byte("123"), p.calls[0][0].Key)
@@ -742,8 +742,8 @@ func TestSendMessage(t *testing.T) {
 			"some-topic",
 		)
 		require.Equal(t, 400, sc)
-		require.Equal(t, "something bad error occurred.", res)
-		require.Equal(t, "something bad", err)
+		require.Contains(t, res, "something bad error occurred.")
+		require.Contains(t, err, "something bad")
 		require.Len(t, p.calls, 1)
 		require.Len(t, p.calls[0], 1)
 		require.Equal(t, []byte("123"), p.calls[0][0].Key)
