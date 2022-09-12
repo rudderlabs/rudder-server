@@ -2,9 +2,12 @@ package warehouse
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 
 	proto "github.com/rudderlabs/rudder-server/proto/warehouse"
 	"github.com/rudderlabs/rudder-server/warehouse/configuration_testing"
+	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/types/known/emptypb"
 	"google.golang.org/protobuf/types/known/wrapperspb"
 )
@@ -86,16 +89,40 @@ func (w *warehousegrpc) RetryWHUploads(ctx context.Context, req *proto.RetryWHUp
 	}
 	return
 }
+
+type ObjectStorageValidationRequest struct {
+	Type   string                 `json:"type"`
+	Config map[string]interface{} `json:"config"`
+}
+
 func (w *warehousegrpc) ValidateObjectStorageDestination(context context.Context, request *proto.ValidateObjectStorageRequest) (response *proto.ValidateObjectStorageResponse, err error) {
-	validateObjectReq := &ValidateObjectRequestT{
-		body: request.Body,
-	}
-	r, err := validateObjectReq.validateObjectStorage()
-	response = &proto.ValidateObjectStorageResponse{
-		Status:  r.Status,
-		IsValid: r.IsValid,
-		Error:   r.Error,
+
+	byt, err := protojson.Marshal(request)
+	if err != nil {
+		return nil, fmt.Errorf("Unable to marshal the request proto message")
 	}
 
-	return r, nil
+	r := ObjectStorageValidationRequest{}
+	if err := json.Unmarshal(byt, &r); err != nil {
+		return nil, fmt.Errorf("Unable to extract data into validation request")
+	}
+
+	valid, err := validateObjectStorage(&r)
+	if err != nil {
+		return nil, fmt.Errorf("Unable to finish request to validate storage: %s", err.Error())
+	}
+
+	if !valid {
+		return &proto.ValidateObjectStorageResponse{
+			IsValid: valid,
+			Status:  400,
+			Error:   "authentication with credentials provided failed",
+		}, nil
+	}
+
+	return &proto.ValidateObjectStorageResponse{
+		IsValid: true,
+		Status:  200,
+		Error:   "",
+	}, nil
 }

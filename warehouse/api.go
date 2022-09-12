@@ -3,7 +3,6 @@ package warehouse
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -622,83 +621,55 @@ func (uploadsReq *UploadsReqT) getWhUploads(selectFields string) (uploadsRes *pr
 	}
 	return
 }
-func (validateObjectStorageRequest *ValidateObjectRequestT) validateObjectStorage() (validateObjectStorageResp *proto.ValidateObjectStorageResponse, err error) {
-	var requestMap, configMap map[string]interface{}
+func validateObjectStorage(request *ObjectStorageValidationRequest) (bool, error) {
+	pkgLogger.Infof("Received call to validate object storage for type: %s\n", request.Type)
 
-	err = json.Unmarshal([]byte(validateObjectStorageRequest.body), &requestMap)
-	if err != nil {
-		validateObjectStorageResp = &proto.ValidateObjectStorageResponse{
-			Status:  400,
-			IsValid: false,
-			Error:   fmt.Sprintf("Invalid request body"),
-		}
-		return
-	}
-	objectStorageType := fmt.Sprint(requestMap["type"])
-
-	if cMap, ok := requestMap["config"].(map[string]interface{}); !ok {
-		validateObjectStorageResp = &proto.ValidateObjectStorageResponse{
-			Status:  400,
-			IsValid: false,
-			Error:   fmt.Sprintf("Invalid request body"),
-		}
-		pkgLogger.Errorf("Unable to convert  value for key:config in request body")
-		return
-
-	} else {
-		configMap = cMap
-		bucketName, ok := configMap["bucketName"]
-		if name, bucketNameCheck := bucketName.(string); !ok || !bucketNameCheck || len(name) == 0 {
-			validateObjectStorageResp = &proto.ValidateObjectStorageResponse{
-				Status:  400,
-				IsValid: false,
-				Error:   fmt.Sprintf("Invalid request body"),
-			}
-			pkgLogger.Errorf("Bucket name invalid or not present ")
-			return
-		}
-
-	}
-
-	settings := getFileManagerSettings(objectStorageType, configMap)
 	fileManagerFactory := filemanager.FileManagerFactoryT{}
-	fileManager, err := fileManagerFactory.New(settings)
+	fileManager, err := fileManagerFactory.New(
+		getFileManagerSettings(request.Type, request.Config),
+	)
 
 	if err != nil {
-		fmt.Println(err)
-		validateObjectStorageResp = &proto.ValidateObjectStorageResponse{
-			Status:  400,
-			IsValid: false,
-			Error:   fmt.Sprintf("Invalid request body"),
-		}
-		return
+		return false, fmt.Errorf("unable to create file manager: %s", err.Error())
 	}
 
 	req := configuration_testing.DestinationValidationRequest{
 		Destination: backendconfig.DestinationT{
-			DestinationDefinition: backendconfig.DestinationDefinitionT{Name: objectStorageType},
+			DestinationDefinition: backendconfig.DestinationDefinitionT{Name: request.Type},
 		},
 	}
+
 	filePath, err := configuration_testing.CreateTempLoadFile(&req)
+	if err != nil {
+		return false, fmt.Errorf("unable to create temp load file: %w", err)
+	}
 	defer misc.RemoveFilePaths(filePath)
 
-	filePtr, err := os.Open(filePath)
-	_, err = fileManager.Upload(context.TODO(), filePtr)
+	f, err := os.Open(filePath)
 	if err != nil {
-		fmt.Println(err)
-		validateObjectStorageResp = &proto.ValidateObjectStorageResponse{
-			Status:  200,
-			Error:   fmt.Sprintf("invalid creds"),
-			IsValid: false,
-		}
-		return
+		return false, fmt.Errorf("unable to open path to temporary file: %w", err)
 	}
-	validateObjectStorageResp = &proto.ValidateObjectStorageResponse{
-		Status:  200,
-		Error:   fmt.Sprintf(""),
-		IsValid: true,
+
+	_, err = fileManager.Upload(context.TODO(), f)
+	if err != nil {
+		pkgLogger.Errorf("error while uploading for object storage validation: %s", err.Error())
+		return false, nil
 	}
-	return
+
+	return true, nil
+}
+
+func isEmptyString(val interface{}) bool {
+
+	if val == nil {
+		return true
+	}
+
+	if name, ok := val.(string); ok {
+		return name == ""
+	}
+
+	return false
 }
 
 func getFileManagerSettings(provider string, inputConfig map[string]interface{}) *filemanager.SettingsT {
