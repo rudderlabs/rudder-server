@@ -69,7 +69,6 @@ var _ = Describe("Scheduling", func() {
 			sTime := GetPrevScheduledTime("180", "00:00", now)
 			Expect(sTime).To(Equal(time.Date(2020, 0o4, 27, 21, 0, 0, 0, time.UTC)))
 		})
-
 	})
 
 	Describe("CheckCurrentTimeExistsInExcludeWindow", func() {
@@ -111,7 +110,7 @@ var _ = Describe("Scheduling", func() {
 		})
 	})
 
-	DescribeTable("GetExcludeWindowStartEndTimes", func(excludeWindow map[string]interface{}, expectedStart string, expectedEnd string) {
+	DescribeTable("GetExcludeWindowStartEndTimes", func(excludeWindow map[string]interface{}, expectedStart, expectedEnd string) {
 		start, end := GetExcludeWindowStartEndTimes(excludeWindow)
 		Expect(start).To(Equal(expectedStart))
 		Expect(end).To(Equal(expectedEnd))
