@@ -790,8 +790,11 @@ func (bq *HandleT) TestConnection(warehouse warehouseutils.WarehouseT) (err erro
 
 func (bq *HandleT) LoadTable(tableName string) error {
 	var getLoadFileLocFromTableUploads bool
-	if misc.ContainsString([]string{warehouseutils.IdentityMappingsTable, warehouseutils.IdentityMergeRulesTable}, tableName) {
+	switch tableName {
+	case warehouseutils.IdentityMappingsTable, warehouseutils.IdentityMergeRulesTable:
 		getLoadFileLocFromTableUploads = true
+	default:
+		getLoadFileLocFromTableUploads = false
 	}
 	_, err := bq.loadTable(tableName, false, getLoadFileLocFromTableUploads, false)
 	return err
