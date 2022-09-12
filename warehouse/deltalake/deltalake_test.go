@@ -3,12 +3,12 @@
 package deltalake_test
 
 import (
-	"encoding/json"
 	"fmt"
-	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"log"
 	"os"
 	"testing"
+
+	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
 
@@ -34,35 +34,12 @@ type TestHandle struct {
 
 var handle *TestHandle
 
-const (
-	TestCredentialsKey = testhelper.DeltalakeIntegrationTestCredentials
-	TestSchemaKey      = testhelper.DeltalakeIntegrationTestSchema
-)
-
-// databricksCredentials extracting deltalake credentials
-func databricksCredentials() (databricksCredentials databricks.CredentialsT, err error) {
-	cred, exists := os.LookupEnv(TestCredentialsKey)
-	if !exists {
-		err = fmt.Errorf("following %s does not exists while running the Deltalake test", TestCredentialsKey)
-		return
-	}
-
-	err = json.Unmarshal([]byte(cred), &databricksCredentials)
-	if err != nil {
-		err = fmt.Errorf("error occurred while unmarshalling databricks test credentials with err: %s", err.Error())
-		return
-	}
-	return
-}
-
-// VerifyConnection test connection for deltalake
 func (*TestHandle) VerifyConnection() error {
-	credentials, err := databricksCredentials()
+	credentials, err := testhelper.DatabricksCredentials()
 	if err != nil {
 		return err
 	}
-
-	err = testhelper.WithConstantBackoff(func() (err error) {
+	return testhelper.WithConstantBackoff(func() (err error) {
 		handle.DB, err = deltalake.Connect(&credentials, 0)
 		if err != nil {
 			err = fmt.Errorf("could not connect to warehouse deltalake with error: %w", err)
@@ -70,14 +47,9 @@ func (*TestHandle) VerifyConnection() error {
 		}
 		return
 	})
-	if err != nil {
-		return fmt.Errorf("error while running test connection for deltalake with err: %s", err.Error())
-	}
-	return nil
 }
 
 func TestDeltalakeIntegration(t *testing.T) {
-	// Cleanup resources
 	t.Cleanup(func() {
 		require.NoError(t, testhelper.WithConstantBackoff(func() (err error) {
 			dropSchemaResponse, err := handle.DB.Client.Execute(handle.DB.Context, &proto.ExecuteRequest{
@@ -85,9 +57,11 @@ func TestDeltalakeIntegration(t *testing.T) {
 				Identifier:   handle.DB.CredIdentifier,
 				SqlStatement: fmt.Sprintf(`DROP SCHEMA %[1]s CASCADE;`, handle.Schema),
 			})
+
 			if err != nil {
 				return fmt.Errorf("failed dropping schema %s for Deltalake, error: %s", handle.Schema, err.Error())
 			}
+
 			if dropSchemaResponse.GetErrorCode() != "" {
 				return fmt.Errorf("failed dropping schema %s for Deltalake, errorCode: %s, errorMessage: %s", handle.Schema, dropSchemaResponse.GetErrorCode(), dropSchemaResponse.GetErrorMessage())
 			}
@@ -96,7 +70,6 @@ func TestDeltalakeIntegration(t *testing.T) {
 	})
 
 	t.Run("Merge Mode", func(t *testing.T) {
-		// Setting up the test configuration
 		require.NoError(t, testhelper.SetConfig([]warehouseutils.KeyValue{
 			{
 				Key:   "Warehouse.deltalake.loadTableStrategy",
@@ -122,49 +95,34 @@ func TestDeltalakeIntegration(t *testing.T) {
 		warehouseTest.TimestampBeforeSendingEvents = timeutil.Now()
 		warehouseTest.UserId = testhelper.GetUserId(warehouseutils.DELTALAKE)
 
-		warehouseTest.EventsCountMap = testhelper.SendEventsMap()
-		testhelper.SendEvents(t, warehouseTest)
-		testhelper.SendEvents(t, warehouseTest)
-		testhelper.SendEvents(t, warehouseTest)
-		testhelper.SendIntegratedEvents(t, warehouseTest)
+		sendEventsMap := testhelper.SendEventsMap()
+		testhelper.SendEvents(t, warehouseTest, sendEventsMap)
+		testhelper.SendEvents(t, warehouseTest, sendEventsMap)
+		testhelper.SendEvents(t, warehouseTest, sendEventsMap)
+		testhelper.SendIntegratedEvents(t, warehouseTest, sendEventsMap)
 
-		warehouseTest.EventsCountMap = testhelper.StagingFilesEventsMap()
-		testhelper.VerifyEventsInStagingFiles(t, warehouseTest)
-
-		warehouseTest.EventsCountMap = testhelper.LoadFilesEventsMap()
-		testhelper.VerifyEventsInLoadFiles(t, warehouseTest)
-
-		warehouseTest.EventsCountMap = testhelper.TableUploadsEventsMap()
-		testhelper.VerifyEventsInTableUploads(t, warehouseTest)
-
-		warehouseTest.EventsCountMap = mergeEventsMap()
-		testhelper.VerifyEventsInWareHouse(t, warehouseTest)
+		testhelper.VerifyEventsInStagingFiles(t, warehouseTest, testhelper.StagingFilesEventsMap())
+		testhelper.VerifyEventsInLoadFiles(t, warehouseTest, testhelper.LoadFilesEventsMap())
+		testhelper.VerifyEventsInTableUploads(t, warehouseTest, testhelper.TableUploadsEventsMap())
+		testhelper.VerifyEventsInWareHouse(t, warehouseTest, mergeEventsMap())
 
 		// Scenario 2
 		warehouseTest.TimestampBeforeSendingEvents = timeutil.Now()
 		warehouseTest.UserId = testhelper.GetUserId(warehouseutils.DELTALAKE)
 
-		warehouseTest.EventsCountMap = testhelper.SendEventsMap()
-		testhelper.SendModifiedEvents(t, warehouseTest)
-		testhelper.SendModifiedEvents(t, warehouseTest)
-		testhelper.SendModifiedEvents(t, warehouseTest)
-		testhelper.SendIntegratedEvents(t, warehouseTest)
+		sendEventsMap = testhelper.SendEventsMap()
+		testhelper.SendModifiedEvents(t, warehouseTest, sendEventsMap)
+		testhelper.SendModifiedEvents(t, warehouseTest, sendEventsMap)
+		testhelper.SendModifiedEvents(t, warehouseTest, sendEventsMap)
+		testhelper.SendIntegratedEvents(t, warehouseTest, sendEventsMap)
 
-		warehouseTest.EventsCountMap = testhelper.StagingFilesEventsMap()
-		testhelper.VerifyEventsInStagingFiles(t, warehouseTest)
-
-		warehouseTest.EventsCountMap = testhelper.LoadFilesEventsMap()
-		testhelper.VerifyEventsInLoadFiles(t, warehouseTest)
-
-		warehouseTest.EventsCountMap = testhelper.TableUploadsEventsMap()
-		testhelper.VerifyEventsInTableUploads(t, warehouseTest)
-
-		warehouseTest.EventsCountMap = mergeEventsMap()
-		testhelper.VerifyEventsInWareHouse(t, warehouseTest)
+		testhelper.VerifyEventsInStagingFiles(t, warehouseTest, testhelper.StagingFilesEventsMap())
+		testhelper.VerifyEventsInLoadFiles(t, warehouseTest, testhelper.LoadFilesEventsMap())
+		testhelper.VerifyEventsInTableUploads(t, warehouseTest, testhelper.TableUploadsEventsMap())
+		testhelper.VerifyEventsInWareHouse(t, warehouseTest, mergeEventsMap())
 	})
 
 	t.Run("Append Mode", func(t *testing.T) {
-		// Setting up the test configuration
 		require.NoError(t, testhelper.SetConfig([]warehouseutils.KeyValue{
 			{
 				Key:   "Warehouse.deltalake.loadTableStrategy",
@@ -190,50 +148,35 @@ func TestDeltalakeIntegration(t *testing.T) {
 		warehouseTest.TimestampBeforeSendingEvents = timeutil.Now()
 		warehouseTest.UserId = testhelper.GetUserId(warehouseutils.DELTALAKE)
 
-		warehouseTest.EventsCountMap = testhelper.SendEventsMap()
-		testhelper.SendEvents(t, warehouseTest)
-		testhelper.SendEvents(t, warehouseTest)
-		testhelper.SendEvents(t, warehouseTest)
-		testhelper.SendIntegratedEvents(t, warehouseTest)
+		sendEventsMap := testhelper.SendEventsMap()
+		testhelper.SendEvents(t, warehouseTest, sendEventsMap)
+		testhelper.SendEvents(t, warehouseTest, sendEventsMap)
+		testhelper.SendEvents(t, warehouseTest, sendEventsMap)
+		testhelper.SendIntegratedEvents(t, warehouseTest, sendEventsMap)
 
-		warehouseTest.EventsCountMap = testhelper.StagingFilesEventsMap()
-		testhelper.VerifyEventsInStagingFiles(t, warehouseTest)
-
-		warehouseTest.EventsCountMap = testhelper.LoadFilesEventsMap()
-		testhelper.VerifyEventsInLoadFiles(t, warehouseTest)
-
-		warehouseTest.EventsCountMap = testhelper.TableUploadsEventsMap()
-		testhelper.VerifyEventsInTableUploads(t, warehouseTest)
-
-		warehouseTest.EventsCountMap = mergeEventsMap()
-		testhelper.VerifyEventsInWareHouse(t, warehouseTest)
+		testhelper.VerifyEventsInStagingFiles(t, warehouseTest, testhelper.StagingFilesEventsMap())
+		testhelper.VerifyEventsInLoadFiles(t, warehouseTest, testhelper.LoadFilesEventsMap())
+		testhelper.VerifyEventsInTableUploads(t, warehouseTest, testhelper.TableUploadsEventsMap())
+		testhelper.VerifyEventsInWareHouse(t, warehouseTest, mergeEventsMap())
 
 		// Scenario 2
 		warehouseTest.TimestampBeforeSendingEvents = timeutil.Now()
 
-		warehouseTest.EventsCountMap = testhelper.SendEventsMap()
-		testhelper.SendModifiedEvents(t, warehouseTest)
-		testhelper.SendModifiedEvents(t, warehouseTest)
-		testhelper.SendModifiedEvents(t, warehouseTest)
-		testhelper.SendIntegratedEvents(t, warehouseTest)
+		sendEventsMap = testhelper.SendEventsMap()
+		testhelper.SendModifiedEvents(t, warehouseTest, sendEventsMap)
+		testhelper.SendModifiedEvents(t, warehouseTest, sendEventsMap)
+		testhelper.SendModifiedEvents(t, warehouseTest, sendEventsMap)
+		testhelper.SendIntegratedEvents(t, warehouseTest, sendEventsMap)
 
-		warehouseTest.EventsCountMap = testhelper.StagingFilesEventsMap()
-		testhelper.VerifyEventsInStagingFiles(t, warehouseTest)
-
-		warehouseTest.EventsCountMap = testhelper.LoadFilesEventsMap()
-		testhelper.VerifyEventsInLoadFiles(t, warehouseTest)
-
-		warehouseTest.EventsCountMap = testhelper.TableUploadsEventsMap()
-		testhelper.VerifyEventsInTableUploads(t, warehouseTest)
-
-		warehouseTest.EventsCountMap = appendEventsMap()
-		testhelper.VerifyEventsInWareHouse(t, warehouseTest)
+		testhelper.VerifyEventsInStagingFiles(t, warehouseTest, testhelper.StagingFilesEventsMap())
+		testhelper.VerifyEventsInLoadFiles(t, warehouseTest, testhelper.LoadFilesEventsMap())
+		testhelper.VerifyEventsInTableUploads(t, warehouseTest, testhelper.TableUploadsEventsMap())
+		testhelper.VerifyEventsInWareHouse(t, warehouseTest, appendEventsMap())
 	})
 }
 
 func TestDeltalakeConfigurationValidation(t *testing.T) {
 	configurations := testhelper.PopulateTemplateConfigurations()
-
 	destination := backendconfig.DestinationT{
 		ID: "25IDjdnoEus6DDNrth3SWO1FOpu",
 		Config: map[string]interface{}{
@@ -292,7 +235,7 @@ func appendEventsMap() testhelper.EventsCountMap {
 }
 
 func TestMain(m *testing.M) {
-	_, exists := os.LookupEnv(TestCredentialsKey)
+	_, exists := os.LookupEnv(testhelper.DeltalakeIntegrationTestCredentials)
 	if !exists {
 		log.Println("Skipping Deltalake Test as the Test credentials does not exists.")
 		return
@@ -300,7 +243,7 @@ func TestMain(m *testing.M) {
 
 	handle = &TestHandle{
 		WriteKey: "sToFgoilA0U1WxNeW1gdgUVDsEW",
-		Schema:   testhelper.GetSchema(warehouseutils.DELTALAKE, TestSchemaKey),
+		Schema:   testhelper.Schema(warehouseutils.DELTALAKE, testhelper.DeltalakeIntegrationTestSchema),
 		Tables:   []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"},
 	}
 	os.Exit(testhelper.Run(m, handle))

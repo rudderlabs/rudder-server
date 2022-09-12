@@ -3,14 +3,10 @@
 package datalake_test
 
 import (
-	"encoding/json"
-	"fmt"
-	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
-	bigquery2 "github.com/rudderlabs/rudder-server/warehouse/bigquery"
 	"os"
 	"testing"
 
-	"github.com/minio/minio-go/v6"
+	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
 	"github.com/stretchr/testify/require"
 
@@ -26,43 +22,13 @@ type TestHandle struct {
 
 var handle *TestHandle
 
-const (
-	TestCredentialsKey = testhelper.BigqueryIntegrationTestCredentials
-)
-
 func (*TestHandle) VerifyConnection() error {
 	return nil
-}
-
-// bigqueryCredentials extracting big query credentials
-func bigqueryCredentials() (bqCredentials bigquery2.BQCredentialsT, err error) {
-	cred, exists := os.LookupEnv(TestCredentialsKey)
-	if !exists {
-		err = fmt.Errorf("following %s does not exists while running the Bigquery test", TestCredentialsKey)
-		return
-	}
-
-	err = json.Unmarshal([]byte(cred), &bqCredentials)
-	if err != nil {
-		err = fmt.Errorf("error occurred while unmarshalling bigquery test credentials with err: %s", err.Error())
-		return
-	}
-	return
 }
 
 func TestDatalakeIntegration(t *testing.T) {
 	t.Run("S3Datalake", func(t *testing.T) {
 		t.Parallel()
-
-		minioClient, err := minio.New("wh-minio:9000", "MYACCESSKEY", "MYSECRETKEY", false)
-		require.NoError(t, err)
-
-		if err = minioClient.MakeBucket("s3-datalake-test", "us-east-1"); err != nil {
-			exists, errBucketExists := minioClient.BucketExists("devintegrationtest")
-			if !(errBucketExists == nil && exists) {
-				t.Errorf("Failed to create bucket for s3-datalake integration test: %v", err)
-			}
-		}
 
 		warehouseTest := &testhelper.WareHouseTest{
 			WriteKey:      handle.S3DatalakeWriteKey,
@@ -71,43 +37,35 @@ func TestDatalakeIntegration(t *testing.T) {
 			DestinationID: "27SthahyhhqEZ7H4T4NTtNPl06V",
 		}
 
+		testhelper.CreateBucketForMinio(t, "s3-datalake-test")
+
 		// Scenario 1
 		warehouseTest.TimestampBeforeSendingEvents = timeutil.Now()
 		warehouseTest.UserId = testhelper.GetUserId(warehouseutils.S3_DATALAKE)
 
-		warehouseTest.EventsCountMap = testhelper.SendEventsMap()
-		testhelper.SendEvents(t, warehouseTest)
-		testhelper.SendEvents(t, warehouseTest)
-		testhelper.SendEvents(t, warehouseTest)
-		testhelper.SendIntegratedEvents(t, warehouseTest)
+		sendEventsMap := testhelper.SendEventsMap()
+		testhelper.SendEvents(t, warehouseTest, sendEventsMap)
+		testhelper.SendEvents(t, warehouseTest, sendEventsMap)
+		testhelper.SendEvents(t, warehouseTest, sendEventsMap)
+		testhelper.SendIntegratedEvents(t, warehouseTest, sendEventsMap)
 
-		warehouseTest.EventsCountMap = testhelper.StagingFilesEventsMap()
-		testhelper.VerifyEventsInStagingFiles(t, warehouseTest)
-
-		warehouseTest.EventsCountMap = testhelper.LoadFilesEventsMap()
-		testhelper.VerifyEventsInLoadFiles(t, warehouseTest)
-
-		warehouseTest.EventsCountMap = testhelper.TableUploadsEventsMap()
-		testhelper.VerifyEventsInTableUploads(t, warehouseTest)
+		testhelper.VerifyEventsInStagingFiles(t, warehouseTest, testhelper.StagingFilesEventsMap())
+		testhelper.VerifyEventsInLoadFiles(t, warehouseTest, testhelper.LoadFilesEventsMap())
+		testhelper.VerifyEventsInTableUploads(t, warehouseTest, testhelper.TableUploadsEventsMap())
 
 		// Scenario 2
 		warehouseTest.TimestampBeforeSendingEvents = timeutil.Now()
 		warehouseTest.UserId = testhelper.GetUserId(warehouseutils.S3_DATALAKE)
 
-		warehouseTest.EventsCountMap = testhelper.SendEventsMap()
-		testhelper.SendModifiedEvents(t, warehouseTest)
-		testhelper.SendModifiedEvents(t, warehouseTest)
-		testhelper.SendModifiedEvents(t, warehouseTest)
-		testhelper.SendIntegratedEvents(t, warehouseTest)
+		sendEventsMap = testhelper.SendEventsMap()
+		testhelper.SendModifiedEvents(t, warehouseTest, sendEventsMap)
+		testhelper.SendModifiedEvents(t, warehouseTest, sendEventsMap)
+		testhelper.SendModifiedEvents(t, warehouseTest, sendEventsMap)
+		testhelper.SendIntegratedEvents(t, warehouseTest, sendEventsMap)
 
-		warehouseTest.EventsCountMap = testhelper.StagingFilesEventsMap()
-		testhelper.VerifyEventsInStagingFiles(t, warehouseTest)
-
-		warehouseTest.EventsCountMap = testhelper.LoadFilesEventsMap()
-		testhelper.VerifyEventsInLoadFiles(t, warehouseTest)
-
-		warehouseTest.EventsCountMap = testhelper.TableUploadsEventsMap()
-		testhelper.VerifyEventsInTableUploads(t, warehouseTest)
+		testhelper.VerifyEventsInStagingFiles(t, warehouseTest, testhelper.StagingFilesEventsMap())
+		testhelper.VerifyEventsInLoadFiles(t, warehouseTest, testhelper.LoadFilesEventsMap())
+		testhelper.VerifyEventsInTableUploads(t, warehouseTest, testhelper.TableUploadsEventsMap())
 	})
 	t.Run("AzureDatalake", func(t *testing.T) {
 		t.Parallel()
@@ -123,39 +81,29 @@ func TestDatalakeIntegration(t *testing.T) {
 		warehouseTest.TimestampBeforeSendingEvents = timeutil.Now()
 		warehouseTest.UserId = testhelper.GetUserId(warehouseutils.AZURE_DATALAKE)
 
-		warehouseTest.EventsCountMap = testhelper.SendEventsMap()
-		testhelper.SendEvents(t, warehouseTest)
-		testhelper.SendEvents(t, warehouseTest)
-		testhelper.SendEvents(t, warehouseTest)
-		testhelper.SendIntegratedEvents(t, warehouseTest)
+		sendEventsMap := testhelper.SendEventsMap()
+		testhelper.SendEvents(t, warehouseTest, sendEventsMap)
+		testhelper.SendEvents(t, warehouseTest, sendEventsMap)
+		testhelper.SendEvents(t, warehouseTest, sendEventsMap)
+		testhelper.SendIntegratedEvents(t, warehouseTest, sendEventsMap)
 
-		warehouseTest.EventsCountMap = testhelper.StagingFilesEventsMap()
-		testhelper.VerifyEventsInStagingFiles(t, warehouseTest)
-
-		warehouseTest.EventsCountMap = testhelper.LoadFilesEventsMap()
-		testhelper.VerifyEventsInLoadFiles(t, warehouseTest)
-
-		warehouseTest.EventsCountMap = testhelper.TableUploadsEventsMap()
-		testhelper.VerifyEventsInTableUploads(t, warehouseTest)
+		testhelper.VerifyEventsInStagingFiles(t, warehouseTest, testhelper.StagingFilesEventsMap())
+		testhelper.VerifyEventsInLoadFiles(t, warehouseTest, testhelper.LoadFilesEventsMap())
+		testhelper.VerifyEventsInTableUploads(t, warehouseTest, testhelper.TableUploadsEventsMap())
 
 		// Scenario 2
 		warehouseTest.TimestampBeforeSendingEvents = timeutil.Now()
 		warehouseTest.UserId = testhelper.GetUserId(warehouseutils.AZURE_DATALAKE)
 
-		warehouseTest.EventsCountMap = testhelper.SendEventsMap()
-		testhelper.SendModifiedEvents(t, warehouseTest)
-		testhelper.SendModifiedEvents(t, warehouseTest)
-		testhelper.SendModifiedEvents(t, warehouseTest)
-		testhelper.SendIntegratedEvents(t, warehouseTest)
+		sendEventsMap = testhelper.SendEventsMap()
+		testhelper.SendModifiedEvents(t, warehouseTest, sendEventsMap)
+		testhelper.SendModifiedEvents(t, warehouseTest, sendEventsMap)
+		testhelper.SendModifiedEvents(t, warehouseTest, sendEventsMap)
+		testhelper.SendIntegratedEvents(t, warehouseTest, sendEventsMap)
 
-		warehouseTest.EventsCountMap = testhelper.StagingFilesEventsMap()
-		testhelper.VerifyEventsInStagingFiles(t, warehouseTest)
-
-		warehouseTest.EventsCountMap = testhelper.LoadFilesEventsMap()
-		testhelper.VerifyEventsInLoadFiles(t, warehouseTest)
-
-		warehouseTest.EventsCountMap = testhelper.TableUploadsEventsMap()
-		testhelper.VerifyEventsInTableUploads(t, warehouseTest)
+		testhelper.VerifyEventsInStagingFiles(t, warehouseTest, testhelper.StagingFilesEventsMap())
+		testhelper.VerifyEventsInLoadFiles(t, warehouseTest, testhelper.LoadFilesEventsMap())
+		testhelper.VerifyEventsInTableUploads(t, warehouseTest, testhelper.TableUploadsEventsMap())
 	})
 	t.Run("GCSDatalake", func(t *testing.T) {
 		t.Parallel()
@@ -175,57 +123,39 @@ func TestDatalakeIntegration(t *testing.T) {
 		warehouseTest.TimestampBeforeSendingEvents = timeutil.Now()
 		warehouseTest.UserId = testhelper.GetUserId(warehouseutils.GCS_DATALAKE)
 
-		warehouseTest.EventsCountMap = testhelper.SendEventsMap()
-		testhelper.SendEvents(t, warehouseTest)
-		testhelper.SendEvents(t, warehouseTest)
-		testhelper.SendEvents(t, warehouseTest)
-		testhelper.SendIntegratedEvents(t, warehouseTest)
+		sendEventsMap := testhelper.SendEventsMap()
+		testhelper.SendEvents(t, warehouseTest, sendEventsMap)
+		testhelper.SendEvents(t, warehouseTest, sendEventsMap)
+		testhelper.SendEvents(t, warehouseTest, sendEventsMap)
+		testhelper.SendIntegratedEvents(t, warehouseTest, sendEventsMap)
 
-		warehouseTest.EventsCountMap = testhelper.StagingFilesEventsMap()
-		testhelper.VerifyEventsInStagingFiles(t, warehouseTest)
-
-		warehouseTest.EventsCountMap = testhelper.LoadFilesEventsMap()
-		testhelper.VerifyEventsInLoadFiles(t, warehouseTest)
-
-		warehouseTest.EventsCountMap = testhelper.TableUploadsEventsMap()
-		testhelper.VerifyEventsInTableUploads(t, warehouseTest)
+		testhelper.VerifyEventsInStagingFiles(t, warehouseTest, testhelper.StagingFilesEventsMap())
+		testhelper.VerifyEventsInLoadFiles(t, warehouseTest, testhelper.LoadFilesEventsMap())
+		testhelper.VerifyEventsInTableUploads(t, warehouseTest, testhelper.TableUploadsEventsMap())
 
 		// Scenario 2
 		warehouseTest.TimestampBeforeSendingEvents = timeutil.Now()
 		warehouseTest.UserId = testhelper.GetUserId(warehouseutils.GCS_DATALAKE)
 
-		warehouseTest.EventsCountMap = testhelper.SendEventsMap()
-		testhelper.SendModifiedEvents(t, warehouseTest)
-		testhelper.SendModifiedEvents(t, warehouseTest)
-		testhelper.SendModifiedEvents(t, warehouseTest)
-		testhelper.SendIntegratedEvents(t, warehouseTest)
+		sendEventsMap = testhelper.SendEventsMap()
+		testhelper.SendModifiedEvents(t, warehouseTest, sendEventsMap)
+		testhelper.SendModifiedEvents(t, warehouseTest, sendEventsMap)
+		testhelper.SendModifiedEvents(t, warehouseTest, sendEventsMap)
+		testhelper.SendIntegratedEvents(t, warehouseTest, sendEventsMap)
 
-		warehouseTest.EventsCountMap = testhelper.StagingFilesEventsMap()
-		testhelper.VerifyEventsInStagingFiles(t, warehouseTest)
-
-		warehouseTest.EventsCountMap = testhelper.LoadFilesEventsMap()
-		testhelper.VerifyEventsInLoadFiles(t, warehouseTest)
-
-		warehouseTest.EventsCountMap = testhelper.TableUploadsEventsMap()
-		testhelper.VerifyEventsInTableUploads(t, warehouseTest)
+		testhelper.VerifyEventsInStagingFiles(t, warehouseTest, testhelper.StagingFilesEventsMap())
+		testhelper.VerifyEventsInLoadFiles(t, warehouseTest, testhelper.LoadFilesEventsMap())
+		testhelper.VerifyEventsInTableUploads(t, warehouseTest, testhelper.TableUploadsEventsMap())
 	})
 }
 
 func TestDatalakeConfigurationValidation(t *testing.T) {
+	configurations := testhelper.PopulateTemplateConfigurations()
+
 	t.Run("S3Datalake", func(t *testing.T) {
 		t.Parallel()
 
-		minioClient, err := minio.New("wh-minio:9000", "MYACCESSKEY", "MYSECRETKEY", false)
-		require.NoError(t, err)
-
-		if err = minioClient.MakeBucket("s3-datalake-test", "us-east-1"); err != nil {
-			exists, errBucketExists := minioClient.BucketExists("devintegrationtest")
-			if !(errBucketExists == nil && exists) {
-				t.Logf("Failed to create bucket for s3-datalake integration test: %v", err)
-			}
-		}
-
-		configurations := testhelper.PopulateTemplateConfigurations()
+		testhelper.CreateBucketForMinio(t, "s3-datalake-test")
 
 		destination := backendconfig.DestinationT{
 			ID: "27SthahyhhqEZ7H4T4NTtNPl06V",
@@ -255,8 +185,11 @@ func TestDatalakeConfigurationValidation(t *testing.T) {
 	t.Run("GCSDatalake", func(t *testing.T) {
 		t.Parallel()
 
-		configurations := testhelper.PopulateTemplateConfigurations()
-		bqCredentials, err := bigqueryCredentials()
+		if _, exists := os.LookupEnv(testhelper.BigqueryIntegrationTestCredentials); !exists {
+			t.Skip("Skipping GCS Datalake Test as the Test credentials does not exists.")
+		}
+
+		bqCredentials, err := testhelper.BigqueryCredentials()
 		require.NoError(t, err)
 
 		destination := backendconfig.DestinationT{
@@ -280,8 +213,6 @@ func TestDatalakeConfigurationValidation(t *testing.T) {
 	})
 	t.Run("AzureDatalake", func(t *testing.T) {
 		t.Parallel()
-
-		configurations := testhelper.PopulateTemplateConfigurations()
 
 		destination := backendconfig.DestinationT{
 			ID: "27SthahyhhqZE7H4T4NTtNPl06V",

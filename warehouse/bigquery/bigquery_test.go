@@ -4,12 +4,12 @@ package bigquery_test
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
-	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"log"
 	"os"
 	"testing"
+
+	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
 
@@ -34,35 +34,12 @@ type TestHandle struct {
 
 var handle *TestHandle
 
-const (
-	TestCredentialsKey = testhelper.BigqueryIntegrationTestCredentials
-	TestSchemaKey      = testhelper.BigqueryIntegrationTestSchema
-)
-
-// bigqueryCredentials extracting big query credentials
-func bigqueryCredentials() (bqCredentials bigquery2.BQCredentialsT, err error) {
-	cred, exists := os.LookupEnv(TestCredentialsKey)
-	if !exists {
-		err = fmt.Errorf("following %s does not exists while running the Bigquery test", TestCredentialsKey)
-		return
-	}
-
-	err = json.Unmarshal([]byte(cred), &bqCredentials)
-	if err != nil {
-		err = fmt.Errorf("error occurred while unmarshalling bigquery test credentials with err: %s", err.Error())
-		return
-	}
-	return
-}
-
-// VerifyConnection test connection for big query
 func (*TestHandle) VerifyConnection() error {
-	credentials, err := bigqueryCredentials()
+	credentials, err := testhelper.BigqueryCredentials()
 	if err != nil {
 		return err
 	}
-
-	err = testhelper.WithConstantBackoff(func() (err error) {
+	return testhelper.WithConstantBackoff(func() (err error) {
 		handle.DB, err = bigquery2.Connect(context.TODO(), &credentials)
 		if err != nil {
 			err = fmt.Errorf("could not connect to warehouse bigquery with error: %s", err.Error())
@@ -70,14 +47,9 @@ func (*TestHandle) VerifyConnection() error {
 		}
 		return
 	})
-	if err != nil {
-		return fmt.Errorf("error while running test connection for bigquery with err: %s", err.Error())
-	}
-	return nil
 }
 
 func TestBigQueryIntegration(t *testing.T) {
-	// Cleanup resources
 	t.Cleanup(func() {
 		require.NoError(t, testhelper.WithConstantBackoff(func() (err error) {
 			return handle.DB.Dataset(handle.Schema).DeleteWithContents(context.TODO())
@@ -85,7 +57,6 @@ func TestBigQueryIntegration(t *testing.T) {
 	})
 
 	t.Run("Merge Mode", func(t *testing.T) {
-		// Setting up the test configuration
 		require.NoError(t, testhelper.SetConfig([]warehouseutils.KeyValue{
 			{
 				Key:   "Warehouse.bigquery.isDedupEnabled",
@@ -111,49 +82,34 @@ func TestBigQueryIntegration(t *testing.T) {
 		warehouseTest.TimestampBeforeSendingEvents = timeutil.Now()
 		warehouseTest.UserId = testhelper.GetUserId(warehouseutils.BQ)
 
-		warehouseTest.EventsCountMap = testhelper.SendEventsMap()
-		testhelper.SendEvents(t, warehouseTest)
-		testhelper.SendEvents(t, warehouseTest)
-		testhelper.SendEvents(t, warehouseTest)
-		testhelper.SendIntegratedEvents(t, warehouseTest)
+		sendEventsMap := testhelper.SendEventsMap()
+		testhelper.SendEvents(t, warehouseTest, sendEventsMap)
+		testhelper.SendEvents(t, warehouseTest, sendEventsMap)
+		testhelper.SendEvents(t, warehouseTest, sendEventsMap)
+		testhelper.SendIntegratedEvents(t, warehouseTest, sendEventsMap)
 
-		warehouseTest.EventsCountMap = testhelper.StagingFilesEventsMap()
-		testhelper.VerifyEventsInStagingFiles(t, warehouseTest)
-
-		warehouseTest.EventsCountMap = loadFilesEventsMap()
-		testhelper.VerifyEventsInLoadFiles(t, warehouseTest)
-
-		warehouseTest.EventsCountMap = tableUploadsEventsMap()
-		testhelper.VerifyEventsInTableUploads(t, warehouseTest)
-
-		warehouseTest.EventsCountMap = mergeEventsMap()
-		testhelper.VerifyEventsInWareHouse(t, warehouseTest)
+		testhelper.VerifyEventsInStagingFiles(t, warehouseTest, testhelper.StagingFilesEventsMap())
+		testhelper.VerifyEventsInLoadFiles(t, warehouseTest, loadFilesEventsMap())
+		testhelper.VerifyEventsInTableUploads(t, warehouseTest, tableUploadsEventsMap())
+		testhelper.VerifyEventsInWareHouse(t, warehouseTest, mergeEventsMap())
 
 		// Scenario 2
 		warehouseTest.TimestampBeforeSendingEvents = timeutil.Now()
 		warehouseTest.UserId = testhelper.GetUserId(warehouseutils.BQ)
 
-		warehouseTest.EventsCountMap = testhelper.SendEventsMap()
-		testhelper.SendModifiedEvents(t, warehouseTest)
-		testhelper.SendModifiedEvents(t, warehouseTest)
-		testhelper.SendModifiedEvents(t, warehouseTest)
-		testhelper.SendIntegratedEvents(t, warehouseTest)
+		sendEventsMap = testhelper.SendEventsMap()
+		testhelper.SendModifiedEvents(t, warehouseTest, sendEventsMap)
+		testhelper.SendModifiedEvents(t, warehouseTest, sendEventsMap)
+		testhelper.SendModifiedEvents(t, warehouseTest, sendEventsMap)
+		testhelper.SendIntegratedEvents(t, warehouseTest, sendEventsMap)
 
-		warehouseTest.EventsCountMap = testhelper.StagingFilesEventsMap()
-		testhelper.VerifyEventsInStagingFiles(t, warehouseTest)
-
-		warehouseTest.EventsCountMap = loadFilesEventsMap()
-		testhelper.VerifyEventsInLoadFiles(t, warehouseTest)
-
-		warehouseTest.EventsCountMap = tableUploadsEventsMap()
-		testhelper.VerifyEventsInTableUploads(t, warehouseTest)
-
-		warehouseTest.EventsCountMap = mergeEventsMap()
-		testhelper.VerifyEventsInWareHouse(t, warehouseTest)
+		testhelper.VerifyEventsInStagingFiles(t, warehouseTest, testhelper.StagingFilesEventsMap())
+		testhelper.VerifyEventsInLoadFiles(t, warehouseTest, loadFilesEventsMap())
+		testhelper.VerifyEventsInTableUploads(t, warehouseTest, tableUploadsEventsMap())
+		testhelper.VerifyEventsInWareHouse(t, warehouseTest, mergeEventsMap())
 	})
 
 	t.Run("Append Mode", func(t *testing.T) {
-		// Setting up the test configuration
 		require.NoError(t, testhelper.SetConfig([]warehouseutils.KeyValue{
 			{
 				Key:   "Warehouse.bigquery.isDedupEnabled",
@@ -161,7 +117,6 @@ func TestBigQueryIntegration(t *testing.T) {
 			},
 		}))
 
-		// Setting up the warehouseTest
 		warehouseTest := &testhelper.WareHouseTest{
 			Client: &client.Client{
 				BQ:   handle.DB,
@@ -180,29 +135,22 @@ func TestBigQueryIntegration(t *testing.T) {
 		warehouseTest.TimestampBeforeSendingEvents = timeutil.Now()
 		warehouseTest.UserId = testhelper.GetUserId(warehouseutils.BQ)
 
-		warehouseTest.EventsCountMap = testhelper.SendEventsMap()
-		testhelper.SendEvents(t, warehouseTest)
-		testhelper.SendIntegratedEvents(t, warehouseTest)
-		testhelper.SendModifiedEvents(t, warehouseTest)
-		testhelper.SendModifiedEvents(t, warehouseTest)
+		sendEventsMap := testhelper.SendEventsMap()
+		testhelper.SendEvents(t, warehouseTest, sendEventsMap)
+		testhelper.SendIntegratedEvents(t, warehouseTest, sendEventsMap)
+		testhelper.SendModifiedEvents(t, warehouseTest, sendEventsMap)
+		testhelper.SendModifiedEvents(t, warehouseTest, sendEventsMap)
 
-		warehouseTest.EventsCountMap = testhelper.StagingFilesEventsMap()
-		testhelper.VerifyEventsInStagingFiles(t, warehouseTest)
-
-		warehouseTest.EventsCountMap = loadFilesEventsMap()
-		testhelper.VerifyEventsInLoadFiles(t, warehouseTest)
-
-		warehouseTest.EventsCountMap = tableUploadsEventsMap()
-		testhelper.VerifyEventsInTableUploads(t, warehouseTest)
-
-		warehouseTest.EventsCountMap = appendEventsMap()
-		testhelper.VerifyEventsInWareHouse(t, warehouseTest)
+		testhelper.VerifyEventsInStagingFiles(t, warehouseTest, testhelper.StagingFilesEventsMap())
+		testhelper.VerifyEventsInLoadFiles(t, warehouseTest, loadFilesEventsMap())
+		testhelper.VerifyEventsInTableUploads(t, warehouseTest, tableUploadsEventsMap())
+		testhelper.VerifyEventsInWareHouse(t, warehouseTest, appendEventsMap())
 	})
 }
 
 func TestBigQueryConfigurationValidation(t *testing.T) {
 	configurations := testhelper.PopulateTemplateConfigurations()
-	bqCredentials, err := bigqueryCredentials()
+	bqCredentials, err := testhelper.BigqueryCredentials()
 	require.NoError(t, err)
 
 	destination := backendconfig.DestinationT{
@@ -275,7 +223,7 @@ func TestUnsupportedCredentials(t *testing.T) {
 }
 
 func TestMain(m *testing.M) {
-	_, exists := os.LookupEnv(TestCredentialsKey)
+	_, exists := os.LookupEnv(testhelper.BigqueryIntegrationTestCredentials)
 	if !exists {
 		log.Println("Skipping Bigquery Test as the Test credentials does not exists.")
 		return
@@ -283,7 +231,7 @@ func TestMain(m *testing.M) {
 
 	handle = &TestHandle{
 		WriteKey: "J77aX7tLFJ84qYU6UrN8ctecwZt",
-		Schema:   testhelper.GetSchema(warehouseutils.BQ, TestSchemaKey),
+		Schema:   testhelper.Schema(warehouseutils.BQ, testhelper.BigqueryIntegrationTestSchema),
 		Tables:   []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "_groups", "groups"},
 	}
 	os.Exit(testhelper.Run(m, handle))

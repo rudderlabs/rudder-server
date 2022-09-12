@@ -12,7 +12,7 @@ import (
 func main() {
 	log.Println("Started populating workspace config")
 
-	t, err := template.ParseFiles("warehouse/testdata/workspaceConfig/template.json")
+	t, err := template.ParseFiles(testhelper.WorkspaceTemplatePath)
 	if err != nil {
 		log.Panicf("Error occurred while parsing files for template path with error: %s", err.Error())
 	}

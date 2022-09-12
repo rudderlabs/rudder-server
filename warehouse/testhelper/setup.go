@@ -5,17 +5,20 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
-	"github.com/rudderlabs/rudder-server/admin"
-	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
-	"github.com/rudderlabs/rudder-server/services/pgnotifier"
-	"github.com/rudderlabs/rudder-server/warehouse"
-	"github.com/rudderlabs/rudder-server/warehouse/configuration_testing"
+	"github.com/minio/minio-go/v6"
 	"log"
 	"os"
 	"strconv"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/rudderlabs/rudder-server/admin"
+	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
+	"github.com/rudderlabs/rudder-server/services/pgnotifier"
+	"github.com/rudderlabs/rudder-server/warehouse"
+	"github.com/rudderlabs/rudder-server/warehouse/configuration_testing"
+	"github.com/rudderlabs/rudder-server/warehouse/deltalake/databricks"
 
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
@@ -56,7 +59,6 @@ type WareHouseTest struct {
 	WriteKey                     string
 	Schema                       string
 	TablesQueryFrequency         time.Duration
-	EventsCountMap               EventsCountMap
 	UserId                       string
 	SourceID                     string
 	DestinationID                string
@@ -81,37 +83,32 @@ const (
 	BackoffRetryMax = 5
 )
 
-var jobsDB *JobsDBResource
-
 const (
 	SnowflakeIntegrationTestCredentials = "SNOWFLAKE_INTEGRATION_TEST_CREDENTIALS"
 	RedshiftIntegrationTestCredentials  = "REDSHIFT_INTEGRATION_TEST_CREDENTIALS"
 	DeltalakeIntegrationTestCredentials = "DATABRICKS_INTEGRATION_TEST_CREDENTIALS"
 	BigqueryIntegrationTestCredentials  = "BIGQUERY_INTEGRATION_TEST_CREDENTIALS"
-	SnowflakeIntegrationTestSchema      = "SNOWFLAKE_INTEGRATION_TEST_SCHEMA"
-	RedshiftIntegrationTestSchema       = "REDSHIFT_INTEGRATION_TEST_SCHEMA"
-	DeltalakeIntegrationTestSchema      = "DATABRICKS_INTEGRATION_TEST_SCHEMA"
-	BigqueryIntegrationTestSchema       = "BIGQUERY_INTEGRATION_TEST_SCHEMA"
-	WorkspaceConfigPath                 = "/etc/rudderstack/workspaceConfig.json"
 )
 
-func (w *WareHouseTest) MsgId() string {
-	if w.MessageId == "" {
-		return uuid.Must(uuid.NewV4()).String()
-	}
-	return w.MessageId
-}
+const (
+	SnowflakeIntegrationTestSchema = "SNOWFLAKE_INTEGRATION_TEST_SCHEMA"
+	RedshiftIntegrationTestSchema  = "REDSHIFT_INTEGRATION_TEST_SCHEMA"
+	DeltalakeIntegrationTestSchema = "DATABRICKS_INTEGRATION_TEST_SCHEMA"
+	BigqueryIntegrationTestSchema  = "BIGQUERY_INTEGRATION_TEST_SCHEMA"
+)
 
-func (w *WareHouseTest) SetUserId(destType string) {
-	w.UserId = fmt.Sprintf("userId_%s_%s", strings.ToLower(destType), strings.ReplaceAll(uuid.Must(uuid.NewV4()).String(), "-", ""))
-}
+const (
+	WorkspaceConfigPath   = "/etc/rudderstack/workspaceConfig.json"
+	WorkspaceTemplatePath = "warehouse/testdata/workspaceConfig/template.json"
+)
+
+var jobsDB *JobsDBResource
 
 func Run(m *testing.M, setup WarehouseTestSetup) int {
+	loadEnv()
 	initialize()
 	initJobsDB()
-	if err := setup.VerifyConnection(); err != nil {
-		log.Fatalf("Could not complete test connection with err: %s", err.Error())
-	}
+	initConnection(setup)
 	return m.Run()
 }
 
@@ -122,8 +119,6 @@ func loadEnv() {
 }
 
 func initialize() {
-	loadEnv()
-
 	config.Load()
 	admin.Init()
 	logger.Init()
@@ -159,7 +154,7 @@ func initJobsDB() {
 	jobsDB = setUpJobsDB()
 }
 
-func setUpJobsDB() (jobsDB *JobsDBResource) {
+func setUpJobsDB() *JobsDBResource {
 	pgCredentials := &postgres.CredentialsT{
 		DBName:   "jobsdb",
 		Password: "password",
@@ -168,7 +163,7 @@ func setUpJobsDB() (jobsDB *JobsDBResource) {
 		SSLMode:  "disable",
 		Port:     "5432",
 	}
-	jobsDB = &JobsDBResource{}
+	jobsDB := &JobsDBResource{}
 	jobsDB.Credentials = pgCredentials
 
 	var err error
@@ -178,30 +173,35 @@ func setUpJobsDB() (jobsDB *JobsDBResource) {
 	if err = jobsDB.DB.Ping(); err != nil {
 		log.Fatalf("could not connect to jobsDb while pinging with error: %s", err.Error())
 	}
-	return
+	return jobsDB
 }
 
-func VerifyEventsInStagingFiles(t testing.TB, wareHouseTest *WareHouseTest) {
+func initConnection(setup WarehouseTestSetup) {
+	if err := setup.VerifyConnection(); err != nil {
+		log.Fatalf("Could not complete test connection with err: %s", err.Error())
+	}
+}
+
+func VerifyEventsInStagingFiles(t testing.TB, wareHouseTest *WareHouseTest, eventsMap EventsCountMap) {
 	t.Helper()
 	t.Logf("Started verifying events in staging files")
 
 	var (
-		count             sql.NullInt64
+		tableName         = "wh_staging_files"
 		stagingFileEvents int
 		sqlStatement      string
 		operation         func() bool
+		count             sql.NullInt64
 		err               error
-		tableName         = "wh_staging_files"
 	)
 
 	require.NotEmpty(t, wareHouseTest.SourceID)
 	require.NotEmpty(t, wareHouseTest.DestinationID)
-	require.NotEmpty(t, wareHouseTest.EventsCountMap)
-	require.NotEmpty(t, wareHouseTest.EventsCountMap[tableName])
-
+	require.NotEmpty(t, eventsMap)
+	require.NotEmpty(t, eventsMap[tableName])
 	require.NotNil(t, jobsDB.DB)
 
-	stagingFileEvents = wareHouseTest.EventsCountMap[tableName]
+	stagingFileEvents = eventsMap[tableName]
 
 	sqlStatement = `
 		SELECT
@@ -234,28 +234,27 @@ func VerifyEventsInStagingFiles(t testing.TB, wareHouseTest *WareHouseTest) {
 	t.Logf("Completed verifying events in staging files")
 }
 
-func VerifyEventsInLoadFiles(t testing.TB, wareHouseTest *WareHouseTest) {
+func VerifyEventsInLoadFiles(t testing.TB, wareHouseTest *WareHouseTest, eventsMap EventsCountMap) {
 	t.Helper()
 	t.Logf("Started verifying events in load file")
 
 	var (
-		count          sql.NullInt64
 		loadFileEvents int
 		sqlStatement   string
 		operation      func() bool
+		count          sql.NullInt64
 		err            error
 	)
 
 	require.NotEmpty(t, wareHouseTest.SourceID)
 	require.NotEmpty(t, wareHouseTest.DestinationID)
-	require.NotEmpty(t, wareHouseTest.EventsCountMap)
-
+	require.NotEmpty(t, eventsMap)
 	require.NotNil(t, jobsDB.DB)
 
 	for _, table := range wareHouseTest.Tables {
-		require.NotEmpty(t, wareHouseTest.EventsCountMap[table])
+		require.NotEmpty(t, eventsMap[table])
 
-		loadFileEvents = wareHouseTest.EventsCountMap[table]
+		loadFileEvents = eventsMap[table]
 
 		sqlStatement = `
 			SELECT
@@ -292,28 +291,27 @@ func VerifyEventsInLoadFiles(t testing.TB, wareHouseTest *WareHouseTest) {
 	t.Logf("Completed verifying events in load files")
 }
 
-func VerifyEventsInTableUploads(t testing.TB, wareHouseTest *WareHouseTest) {
+func VerifyEventsInTableUploads(t testing.TB, wareHouseTest *WareHouseTest, eventsMap EventsCountMap) {
 	t.Helper()
 	t.Logf("Started verifying events in table uploads")
 
 	var (
-		count             sql.NullInt64
 		tableUploadEvents int
 		sqlStatement      string
 		operation         func() bool
+		count             sql.NullInt64
 		err               error
 	)
 
 	require.NotEmpty(t, wareHouseTest.SourceID)
 	require.NotEmpty(t, wareHouseTest.DestinationID)
-	require.NotEmpty(t, wareHouseTest.EventsCountMap)
-
+	require.NotEmpty(t, eventsMap)
 	require.NotNil(t, jobsDB.DB)
 
 	for _, table := range wareHouseTest.Tables {
-		require.NotEmpty(t, wareHouseTest.EventsCountMap[table])
+		require.NotEmpty(t, eventsMap[table])
 
-		tableUploadEvents = wareHouseTest.EventsCountMap[table]
+		tableUploadEvents = eventsMap[table]
 
 		sqlStatement = `
 			SELECT
@@ -354,13 +352,12 @@ func VerifyEventsInTableUploads(t testing.TB, wareHouseTest *WareHouseTest) {
 	t.Logf("Completed verifying events in table uploads")
 }
 
-func VerifyEventsInWareHouse(t testing.TB, wareHouseTest *WareHouseTest) {
+func VerifyEventsInWareHouse(t testing.TB, wareHouseTest *WareHouseTest, eventsMap EventsCountMap) {
 	t.Helper()
 	t.Logf("Started verifying events in warehouse")
 
 	require.NotEmpty(t, wareHouseTest.Schema)
 	require.NotEmpty(t, wareHouseTest.UserId)
-
 	require.NotNil(t, wareHouseTest.Client)
 
 	primaryKey := func(tableName string) string {
@@ -376,9 +373,9 @@ func VerifyEventsInWareHouse(t testing.TB, wareHouseTest *WareHouseTest) {
 	)
 
 	for _, table := range wareHouseTest.Tables {
-		require.Contains(t, wareHouseTest.EventsCountMap, table)
+		require.Contains(t, eventsMap, table)
 
-		tableCount := wareHouseTest.EventsCountMap[table]
+		tableCount := eventsMap[table]
 
 		sqlStatement := fmt.Sprintf(`
 			select
@@ -509,6 +506,23 @@ func GetUserId(userType string) string {
 	return fmt.Sprintf("userId_%s_%s", strings.ToLower(userType), strings.ReplaceAll(uuid.Must(uuid.NewV4()).String(), "-", ""))
 }
 
+func CreateBucketForMinio(t testing.TB, bucketName string) {
+	t.Helper()
+	t.Logf("Creating bucket for minio: %s", bucketName)
+
+	const (
+		endPoint    = "wh-minio:9000"
+		accessKeyID = "MYACCESSKEY"
+		accessKey   = "MYSECRETKEY"
+		secure      = false
+	)
+	minioClient, err := minio.New(endPoint, accessKeyID, accessKey, secure)
+	require.NoError(t, err)
+
+	_ = minioClient.MakeBucket(bucketName, "us-east-1")
+}
+
+// TODO: Make it retryable
 func SetConfig(kvs []warehouseutils.KeyValue) error {
 	payload, err := json.Marshal(&kvs)
 	if err != nil {
@@ -523,18 +537,8 @@ func SetConfig(kvs []warehouseutils.KeyValue) error {
 	return nil
 }
 
-func GetSchema(provider, schemaKey string) string {
-	return warehouseutils.ToProviderCase(
-		provider,
-		warehouseutils.ToSafeNamespace(
-			provider,
-			config.GetRequiredEnv(schemaKey),
-		),
-	)
-}
-
 func PopulateTemplateConfigurations() map[string]string {
-	values := map[string]string{
+	configurations := map[string]string{
 		"workspaceId": "BpLnfgDsc2WD8F2qNfHK5a84jjJ",
 
 		"postgresWriteKey": "kwzDkh9h2fhfUVuS9jZ8uVbhV3v",
@@ -590,27 +594,20 @@ func PopulateTemplateConfigurations() map[string]string {
 	}
 
 	for k, v := range credentialsFromKey(SnowflakeIntegrationTestCredentials) {
-		values[fmt.Sprintf("snowflake%s", k)] = v
+		configurations[fmt.Sprintf("snowflake%s", k)] = v
 	}
 	for k, v := range credentialsFromKey(RedshiftIntegrationTestCredentials) {
-		values[fmt.Sprintf("redshift%s", k)] = v
+		configurations[fmt.Sprintf("redshift%s", k)] = v
 	}
 	for k, v := range credentialsFromKey(DeltalakeIntegrationTestCredentials) {
-		values[fmt.Sprintf("deltalake%s", k)] = v
+		configurations[fmt.Sprintf("deltalake%s", k)] = v
 	}
 	for k, v := range credentialsFromKey(BigqueryIntegrationTestCredentials) {
-		values[fmt.Sprintf("bigquery%s", k)] = v
+		configurations[fmt.Sprintf("bigquery%s", k)] = v
 	}
-	enhanceBQCredentials(values)
-	enhanceNamespace(values)
-	return values
-}
-
-func enhanceNamespace(values map[string]string) {
-	values["snowflakeNamespace"] = GetSchema(warehouseutils.SNOWFLAKE, SnowflakeIntegrationTestSchema)
-	values["redshiftNamespace"] = GetSchema(warehouseutils.RS, RedshiftIntegrationTestSchema)
-	values["bigqueryNamespace"] = GetSchema(warehouseutils.BQ, BigqueryIntegrationTestSchema)
-	values["deltalakeNamespace"] = GetSchema(warehouseutils.DELTALAKE, DeltalakeIntegrationTestSchema)
+	enhanceBQCredentials(configurations)
+	enhanceNamespace(configurations)
+	return configurations
 }
 
 func enhanceBQCredentials(values map[string]string) {
@@ -622,6 +619,23 @@ func enhanceBQCredentials(values map[string]string) {
 		}
 		values[key] = strings.Trim(string(escapedCredentials), `"`)
 	}
+}
+
+func enhanceNamespace(values map[string]string) {
+	values["snowflakeNamespace"] = Schema(warehouseutils.SNOWFLAKE, SnowflakeIntegrationTestSchema)
+	values["redshiftNamespace"] = Schema(warehouseutils.RS, RedshiftIntegrationTestSchema)
+	values["bigqueryNamespace"] = Schema(warehouseutils.BQ, BigqueryIntegrationTestSchema)
+	values["deltalakeNamespace"] = Schema(warehouseutils.DELTALAKE, DeltalakeIntegrationTestSchema)
+}
+
+func Schema(provider, schemaKey string) string {
+	return warehouseutils.ToProviderCase(
+		provider,
+		warehouseutils.ToSafeNamespace(
+			provider,
+			config.GetRequiredEnv(schemaKey),
+		),
+	)
 }
 
 func credentialsFromKey(key string) (credentials map[string]string) {
@@ -637,4 +651,70 @@ func credentialsFromKey(key string) (credentials map[string]string) {
 		return
 	}
 	return
+}
+
+func SnowflakeCredentials() (credentials snowflake.SnowflakeCredentialsT, err error) {
+	cred, exists := os.LookupEnv(SnowflakeIntegrationTestCredentials)
+	if !exists {
+		err = fmt.Errorf("following %s does not exists while running the Snowflake test", SnowflakeIntegrationTestCredentials)
+		return
+	}
+
+	err = json.Unmarshal([]byte(cred), &credentials)
+	if err != nil {
+		err = fmt.Errorf("error occurred while unmarshalling snowflake test credentials with err: %s", err.Error())
+		return
+	}
+	return
+}
+
+func RedshiftCredentials() (credentials redshift.RedshiftCredentialsT, err error) {
+	cred, exists := os.LookupEnv(RedshiftIntegrationTestCredentials)
+	if !exists {
+		err = fmt.Errorf("following %s does not exists while running the Redshift test", RedshiftIntegrationTestCredentials)
+		return
+	}
+
+	err = json.Unmarshal([]byte(cred), &credentials)
+	if err != nil {
+		err = fmt.Errorf("error occurred while unmarshalling redshift test credentials with err: %s", err.Error())
+	}
+	return
+}
+
+func BigqueryCredentials() (credentials bigquery.BQCredentialsT, err error) {
+	cred, exists := os.LookupEnv(BigqueryIntegrationTestCredentials)
+	if !exists {
+		err = fmt.Errorf("following %s does not exists while running the Bigquery test", BigqueryIntegrationTestCredentials)
+		return
+	}
+
+	err = json.Unmarshal([]byte(cred), &credentials)
+	if err != nil {
+		err = fmt.Errorf("error occurred while unmarshalling bigquery test credentials with err: %s", err.Error())
+		return
+	}
+	return
+}
+
+func DatabricksCredentials() (credentials databricks.CredentialsT, err error) {
+	cred, exists := os.LookupEnv(DeltalakeIntegrationTestCredentials)
+	if !exists {
+		err = fmt.Errorf("following %s does not exists while running the Deltalake test", DeltalakeIntegrationTestCredentials)
+		return
+	}
+
+	err = json.Unmarshal([]byte(cred), &credentials)
+	if err != nil {
+		err = fmt.Errorf("error occurred while unmarshalling databricks test credentials with err: %s", err.Error())
+		return
+	}
+	return
+}
+
+func (w *WareHouseTest) MsgId() string {
+	if w.MessageId == "" {
+		return uuid.Must(uuid.NewV4()).String()
+	}
+	return w.MessageId
 }

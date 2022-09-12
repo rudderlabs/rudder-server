@@ -5,9 +5,10 @@ package mssql_test
 import (
 	"database/sql"
 	"fmt"
-	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"os"
 	"testing"
+
+	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
 
@@ -26,9 +27,8 @@ type TestHandle struct {
 
 var handle *TestHandle
 
-// VerifyConnection test connection for mssql
 func (*TestHandle) VerifyConnection() error {
-	err := testhelper.WithConstantBackoff(func() (err error) {
+	return testhelper.WithConstantBackoff(func() (err error) {
 		credentials := mssql.CredentialsT{
 			DBName:   "master",
 			Password: "reallyStrongPwd123",
@@ -47,20 +47,14 @@ func (*TestHandle) VerifyConnection() error {
 		}
 		return
 	})
-	if err != nil {
-		return fmt.Errorf("error while running test connection for mssql with err: %s", err.Error())
-	}
-	return nil
 }
 
 func TestMSSQLIntegration(t *testing.T) {
-	// Setting up the warehouseTest
 	warehouseTest := &testhelper.WareHouseTest{
 		Client: &client.Client{
 			SQL:  handle.DB,
 			Type: client.SQLClient,
 		},
-
 		WriteKey:      handle.WriteKey,
 		Schema:        handle.Schema,
 		Tables:        handle.Tables,
@@ -73,45 +67,31 @@ func TestMSSQLIntegration(t *testing.T) {
 	warehouseTest.TimestampBeforeSendingEvents = timeutil.Now()
 	warehouseTest.UserId = testhelper.GetUserId(warehouseutils.MSSQL)
 
-	warehouseTest.EventsCountMap = testhelper.SendEventsMap()
-	testhelper.SendEvents(t, warehouseTest)
-	testhelper.SendEvents(t, warehouseTest)
-	testhelper.SendEvents(t, warehouseTest)
-	testhelper.SendIntegratedEvents(t, warehouseTest)
+	sendEventsMap := testhelper.SendEventsMap()
+	testhelper.SendEvents(t, warehouseTest, sendEventsMap)
+	testhelper.SendEvents(t, warehouseTest, sendEventsMap)
+	testhelper.SendEvents(t, warehouseTest, sendEventsMap)
+	testhelper.SendIntegratedEvents(t, warehouseTest, sendEventsMap)
 
-	warehouseTest.EventsCountMap = testhelper.StagingFilesEventsMap()
-	testhelper.VerifyEventsInStagingFiles(t, warehouseTest)
-
-	warehouseTest.EventsCountMap = testhelper.LoadFilesEventsMap()
-	testhelper.VerifyEventsInLoadFiles(t, warehouseTest)
-
-	warehouseTest.EventsCountMap = testhelper.TableUploadsEventsMap()
-	testhelper.VerifyEventsInTableUploads(t, warehouseTest)
-
-	warehouseTest.EventsCountMap = testhelper.WarehouseEventsMap()
-	testhelper.VerifyEventsInWareHouse(t, warehouseTest)
+	testhelper.VerifyEventsInStagingFiles(t, warehouseTest, testhelper.StagingFilesEventsMap())
+	testhelper.VerifyEventsInLoadFiles(t, warehouseTest, testhelper.LoadFilesEventsMap())
+	testhelper.VerifyEventsInTableUploads(t, warehouseTest, testhelper.TableUploadsEventsMap())
+	testhelper.VerifyEventsInWareHouse(t, warehouseTest, testhelper.WarehouseEventsMap())
 
 	// Scenario 2
 	warehouseTest.TimestampBeforeSendingEvents = timeutil.Now()
 	warehouseTest.UserId = testhelper.GetUserId(warehouseutils.MSSQL)
 
-	warehouseTest.EventsCountMap = testhelper.SendEventsMap()
-	testhelper.SendModifiedEvents(t, warehouseTest)
-	testhelper.SendModifiedEvents(t, warehouseTest)
-	testhelper.SendModifiedEvents(t, warehouseTest)
-	testhelper.SendIntegratedEvents(t, warehouseTest)
+	sendEventsMap = testhelper.SendEventsMap()
+	testhelper.SendModifiedEvents(t, warehouseTest, sendEventsMap)
+	testhelper.SendModifiedEvents(t, warehouseTest, sendEventsMap)
+	testhelper.SendModifiedEvents(t, warehouseTest, sendEventsMap)
+	testhelper.SendIntegratedEvents(t, warehouseTest, sendEventsMap)
 
-	warehouseTest.EventsCountMap = testhelper.StagingFilesEventsMap()
-	testhelper.VerifyEventsInStagingFiles(t, warehouseTest)
-
-	warehouseTest.EventsCountMap = testhelper.LoadFilesEventsMap()
-	testhelper.VerifyEventsInLoadFiles(t, warehouseTest)
-
-	warehouseTest.EventsCountMap = testhelper.TableUploadsEventsMap()
-	testhelper.VerifyEventsInTableUploads(t, warehouseTest)
-
-	warehouseTest.EventsCountMap = testhelper.WarehouseEventsMap()
-	testhelper.VerifyEventsInWareHouse(t, warehouseTest)
+	testhelper.VerifyEventsInStagingFiles(t, warehouseTest, testhelper.StagingFilesEventsMap())
+	testhelper.VerifyEventsInLoadFiles(t, warehouseTest, testhelper.LoadFilesEventsMap())
+	testhelper.VerifyEventsInTableUploads(t, warehouseTest, testhelper.TableUploadsEventsMap())
+	testhelper.VerifyEventsInWareHouse(t, warehouseTest, testhelper.WarehouseEventsMap())
 }
 
 func TestMSSQLConfigurationValidation(t *testing.T) {
