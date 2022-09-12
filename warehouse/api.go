@@ -163,11 +163,11 @@ func (uploadsReq *UploadsReqT) GetWhUploads() (uploadsRes *proto.WHUploadsRespon
 	}
 
 	if UploadAPI.isMultiWorkspace {
-		uploadsRes, err = uploadsReq.getWhUploadsForHosted(authorizedSourceIDs, `id, source_id, destination_id, destination_type, namespace, status, error, first_event_at, last_event_at, last_exec_at, updated_at, timings, metadata->>'nextRetryTime', metadata->>'archivedStagingAndLoadFiles'`)
+		uploadsRes, err = uploadsReq.warehouseUploadsForHosted(authorizedSourceIDs, `id, source_id, destination_id, destination_type, namespace, status, error, first_event_at, last_event_at, last_exec_at, updated_at, timings, metadata->>'nextRetryTime', metadata->>'archivedStagingAndLoadFiles'`)
 		return
 	}
 
-	uploadsRes, err = uploadsReq.getWhUploads(`id, source_id, destination_id, destination_type, namespace, status, error, first_event_at, last_event_at, last_exec_at, updated_at, timings, metadata->>'nextRetryTime', metadata->>'archivedStagingAndLoadFiles'`)
+	uploadsRes, err = uploadsReq.warehouseUploads(`id, source_id, destination_id, destination_type, namespace, status, error, first_event_at, last_event_at, last_exec_at, updated_at, timings, metadata->>'nextRetryTime', metadata->>'archivedStagingAndLoadFiles'`)
 	return
 }
 
@@ -514,7 +514,7 @@ func (uploadsReq *UploadsReqT) getTotalUploadCount(whereClause string) (int32, e
 }
 
 // for hosted workspaces - we get the uploads and the total upload count using the same query
-func (uploadsReq *UploadsReqT) getWhUploadsForHosted(authorizedSourceIDs []string, selectFields string) (uploadsRes *proto.WHUploadsResponse, err error) {
+func (uploadsReq *UploadsReqT) warehouseUploadsForHosted(authorizedSourceIDs []string, selectFields string) (uploadsRes *proto.WHUploadsResponse, err error) {
 	var uploads []*proto.WHUploadResponse
 	var totalUploadCount int32
 
@@ -560,7 +560,7 @@ func (uploadsReq *UploadsReqT) getWhUploadsForHosted(authorizedSourceIDs []strin
 }
 
 // for non hosted workspaces - we get the uploads and the total upload count using separate queries
-func (uploadsReq *UploadsReqT) getWhUploads(selectFields string) (uploadsRes *proto.WHUploadsResponse, err error) {
+func (uploadsReq *UploadsReqT) warehouseUploads(selectFields string) (uploadsRes *proto.WHUploadsResponse, err error) {
 	var uploads []*proto.WHUploadResponse
 	var totalUploadCount int32
 
