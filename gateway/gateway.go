@@ -1368,7 +1368,7 @@ func newSubRouter(ctx context.Context, r *mux.Router, contentType response.Conte
 			middleware.SetJsonContentType(),
 		)
 		return mux, nil
-	case response.ContentTypeHTML:
+	case response.ContentTypePlain:
 		mux.Use(
 			middleware.SetPlainContentType(),
 		)
@@ -1393,7 +1393,7 @@ func (gateway *HandleT) StartWebHandler(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	plainMux, err := newSubRouter(ctx, srvMux, response.ContentTypeText)
+	plainMux, err := newSubRouter(ctx, srvMux, response.ContentTypePlain)
 	if err != nil {
 		return err
 	}

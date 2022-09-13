@@ -8,9 +8,8 @@ import (
 type ContentType string
 
 const (
-	ContentTypeJSON ContentType = "application/json"
-	ContentTypeHTML ContentType = "text/html"
-	ContentTypeText ContentType = "text/plain"
+	ContentTypeJSON  ContentType = "application/json"
+	ContentTypePlain ContentType = "text/plain"
 
 	// Ok - ok
 	Ok = "OK"
