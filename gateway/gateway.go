@@ -1356,23 +1356,23 @@ func reflectOrigin(_ string) bool {
 }
 
 func newSubRouter(ctx context.Context, r *mux.Router, contentType response.ContentType) (*mux.Router, error) {
+	mux := r.NewRoute().Subrouter()
+	mux.Use(
+		middleware.StatMiddleware(ctx),
+		middleware.LimitConcurrentRequests(maxConcurrentRequests),
+	)
+
 	switch contentType {
 	case response.ContentTypeJSON:
-		jsonMux := r.NewRoute().Subrouter()
-		jsonMux.Use(
-			middleware.StatMiddleware(ctx),
-			middleware.LimitConcurrentRequests(maxConcurrentRequests),
+		mux.Use(
 			middleware.SetJsonContentType(),
 		)
-		return jsonMux, nil
+		return mux, nil
 	case response.ContentTypeHTML:
-		plainMux := r.NewRoute().Subrouter()
-		plainMux.Use(
-			middleware.StatMiddleware(ctx),
-			middleware.LimitConcurrentRequests(maxConcurrentRequests),
+		mux.Use(
 			middleware.SetPlainContentType(),
 		)
-		return plainMux, nil
+		return mux, nil
 	default:
 		return nil, fmt.Errorf("invalid content type: %s", contentType)
 	}
