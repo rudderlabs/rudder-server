@@ -7,7 +7,14 @@ import (
 	"time"
 )
 
+type Notify func(attempt int)
+
 func RetryWith(parentContext context.Context, timeout time.Duration, maxAttempts int, f func(ctx context.Context) error) error {
+	return RetryWithNotify(parentContext, timeout, maxAttempts, f, nil)
+}
+
+// RetryWithNotify retries a function f with a timeout and a maximum number of attempts & calls notify on each failure.
+func RetryWithNotify(parentContext context.Context, timeout time.Duration, maxAttempts int, f func(ctx context.Context) error, notify Notify) error {
 	if parentContext.Err() != nil {
 		return parentContext.Err()
 	}
@@ -28,11 +35,19 @@ func RetryWith(parentContext context.Context, timeout time.Duration, maxAttempts
 			return err
 		}
 		attempt++
+
+		if notify != nil {
+			notify(attempt)
+		}
 	}
 	return err
 }
 
 func QueryWithRetries(parentContext context.Context, timeout time.Duration, maxAttempts int, f func(ctx context.Context) (interface{}, error)) (interface{}, error) {
+	return QueryWithRetriesAndNotify(parentContext, timeout, maxAttempts, f, nil)
+}
+
+func QueryWithRetriesAndNotify(parentContext context.Context, timeout time.Duration, maxAttempts int, f func(ctx context.Context) (interface{}, error), notify Notify) (interface{}, error) {
 	if parentContext.Err() != nil {
 		return nil, parentContext.Err()
 	}
@@ -45,6 +60,7 @@ func QueryWithRetries(parentContext context.Context, timeout time.Duration, maxA
 	for attempt <= maxAttempts {
 		ctx, cancel := context.WithTimeout(parentContext, timeout)
 		defer cancel()
+
 		res, err = f(ctx)
 		if err == nil {
 			return res, nil
@@ -54,6 +70,10 @@ func QueryWithRetries(parentContext context.Context, timeout time.Duration, maxA
 			return res, err
 		}
 		attempt++
+
+		if notify != nil {
+			notify(attempt)
+		}
 	}
 	return res, err
 }

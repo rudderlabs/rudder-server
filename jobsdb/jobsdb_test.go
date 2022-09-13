@@ -625,7 +625,7 @@ func TestJobsDBTimeout(t *testing.T) {
 		expectedRetries := 2
 		var errorsCount int
 
-		jobs, err := QueryJobsResultWithRetries(context.Background(), 10*time.Millisecond, expectedRetries, func(ctx context.Context) (JobsResult, error) {
+		jobs, err := QueryJobsResultWithRetriesAndNotify(context.Background(), 10*time.Millisecond, expectedRetries, func(ctx context.Context) (JobsResult, error) {
 			jobs, err := jobDB.GetUnprocessed(ctx, GetQueryParamsT{
 				CustomValFilters: []string{customVal},
 				JobsLimit:        1,
@@ -635,7 +635,7 @@ func TestJobsDBTimeout(t *testing.T) {
 				errorsCount++
 			}
 			return jobs, err
-		})
+		}, nil)
 		require.True(t, len(jobs.Jobs) == 0, "Error in getting unprocessed jobs")
 		require.Error(t, err)
 		require.True(t, errors.Is(ctx.Err(), context.DeadlineExceeded))

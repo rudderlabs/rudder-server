@@ -4706,30 +4706,30 @@ func sanitizeJson(input json.RawMessage) json.RawMessage {
 	return v
 }
 
-func QueryJobsWithRetries(parentContext context.Context, timeout time.Duration, maxAttempts int, f func(ctx context.Context) ([]*JobT, error)) ([]*JobT, error) {
-	res, err := misc.QueryWithRetries(parentContext, timeout, maxAttempts, func(ctx context.Context) (interface{}, error) {
+func QueryJobsWithRetriesAndNotify(parentContext context.Context, timeout time.Duration, maxAttempts int, f func(ctx context.Context) ([]*JobT, error), notify misc.Notify) ([]*JobT, error) {
+	res, err := misc.QueryWithRetriesAndNotify(parentContext, timeout, maxAttempts, func(ctx context.Context) (interface{}, error) {
 		return f(ctx)
-	})
+	}, notify)
 	if err != nil {
 		return nil, err
 	}
 	return res.([]*JobT), err
 }
 
-func QueryJobsResultWithRetries(parentContext context.Context, timeout time.Duration, maxAttempts int, f func(ctx context.Context) (JobsResult, error)) (JobsResult, error) {
-	res, err := misc.QueryWithRetries(parentContext, timeout, maxAttempts, func(ctx context.Context) (interface{}, error) {
+func QueryJobsResultWithRetriesAndNotify(parentContext context.Context, timeout time.Duration, maxAttempts int, f func(ctx context.Context) (JobsResult, error), notify misc.Notify) (JobsResult, error) {
+	res, err := misc.QueryWithRetriesAndNotify(parentContext, timeout, maxAttempts, func(ctx context.Context) (interface{}, error) {
 		return f(ctx)
-	})
+	}, notify)
 	if err != nil {
 		return JobsResult{}, err
 	}
 	return res.(JobsResult), err
 }
 
-func QueryWorkspacePileupWithRetries(parentContext context.Context, timeout time.Duration, maxAttempts int, f func(ctx context.Context) (map[string]map[string]int, error)) (map[string]map[string]int, error) {
-	res, err := misc.QueryWithRetries(parentContext, timeout, maxAttempts, func(ctx context.Context) (interface{}, error) {
+func QueryWorkspacePileupWithRetriesAndNotify(parentContext context.Context, timeout time.Duration, maxAttempts int, f func(ctx context.Context) (map[string]map[string]int, error), notify misc.Notify) (map[string]map[string]int, error) {
+	res, err := misc.QueryWithRetriesAndNotify(parentContext, timeout, maxAttempts, func(ctx context.Context) (interface{}, error) {
 		return f(ctx)
-	})
+	}, notify)
 	if err != nil {
 		return nil, err
 	}
