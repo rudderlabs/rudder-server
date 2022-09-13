@@ -176,7 +176,7 @@ func (rs *HandleT) AddColumn(name, columnName, columnType string) (err error) {
 }
 
 //Need to create a structure with delete parameters instead of simply adding a long list of params
-func (rs *HandleT) DeleteBy(tableNames []string, jobRunID string, sourceID string, taskRunID string) (err error) {
+func (rs *HandleT) DeleteBy(tableNames []string, params warehouseutils.DeleteByParams) (err error) {
 	pkgLogger.Infof("RS: Cleaning up the followng tables in redshift for RS:%s : %v", tableNames)
 	for _, tb := range tableNames {
 		if tb == "rudder_discards" {
@@ -196,9 +196,9 @@ func (rs *HandleT) DeleteBy(tableNames []string, jobRunID string, sourceID strin
 		pkgLogger.Infof("RS: Deleting rows in table in redshift for RS:%s : %v", rs.Warehouse.Destination.ID, sqlStatement)
 		// Uncomment below 4 lines when we are ready to launch async job on redshift warehouse
 		// _, err = rs.Db.Exec(sqlStatement,
-		// 	jobRunID,
-		// 	taskRunID,
-		// 	sourceID)
+		// 	params.JobRunId,
+		// 	params.TaskRunId,
+		// 	params.SourceId)
 		if err != nil {
 			pkgLogger.Errorf("Error in executing the query %s", err.Error)
 			return err

@@ -223,7 +223,7 @@ func (sf *HandleT) authString() string {
 }
 
 //Need to create a structure with delete parameters instead of simply adding a long list of params
-func (sf *HandleT) DeleteBy(tableNames []string, jobRunID string, sourceID string, taskRunID string) (err error) {
+func (sf *HandleT) DeleteBy(tableNames []string, params warehouseutils.DeleteByParams) (err error) {
 	pkgLogger.Infof("SF: Cleaning up the followng tables in snowflake for SF:%s : %v", tableNames)
 	for _, tb := range tableNames {
 		if tb == "rudder_discards" {
@@ -243,9 +243,9 @@ func (sf *HandleT) DeleteBy(tableNames []string, jobRunID string, sourceID strin
 		pkgLogger.Infof("SF: Deleting rows in table in snowflake for SF:%s : %v", sf.Warehouse.Destination.ID, sqlStatement)
 		// Uncomment below 4 lines when we are ready to launch async job on snowflake warehouse
 		// _, err = sf.Db.Exec(sqlStatement,
-		// 	jobRunID,
-		// 	taskRunID,
-		// 	sourceID)
+		// 	params.JobRunId,
+		// 	params.TaskRunId,
+		// 	params.SourceId)
 		if err != nil {
 			pkgLogger.Errorf("Error %s", err)
 			return err

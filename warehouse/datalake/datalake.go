@@ -69,7 +69,7 @@ func (wh *HandleT) LoadTable(tableName string) error {
 }
 
 //Need to create a structure with delete parameters instead of simply adding a long list of params
-func (wh *HandleT) DeleteBy(tableNames []string, jobRunID string, sourceID string, taskRunID string) (err error) {
+func (wh *HandleT) DeleteBy(tableNames []string, params warehouseutils.DeleteByParams) (err error) {
 	return fmt.Errorf(warehouseutils.NotImplementedErrorCode)
 }
 

@@ -235,7 +235,7 @@ func (ms *HandleT) DownloadLoadFiles(tableName string) ([]string, error) {
 	return fileNames, nil
 }
 
-func (ms *HandleT) DeleteBy(tableNames []string, jobRunID string, sourceID string, taskRunID string) (err error) {
+func (ms *HandleT) DeleteBy(tableNames []string, params warehouseutils.DeleteByParams) (err error) {
 	pkgLogger.Infof("PG: Cleaning up the followng tables in mysql for MS:%s : %v", tableNames)
 	for _, tb := range tableNames {
 		if tb == "rudder_discards" {
@@ -255,13 +255,13 @@ func (ms *HandleT) DeleteBy(tableNames []string, jobRunID string, sourceID strin
 		pkgLogger.Infof("MYSQL: Deleting rows in table in mysql for MS:%s : %v", ms.Warehouse.Destination.ID, sqlStatement)
 		// Uncomment below 4 lines when we are ready to launch async job on MsSQL warehouse
 		// _, err = ms.Db.Exec(sqlStatement,
-		// 	jobRunID,
-		// 	taskRunID,
-		// 	sourceID)
-		if err != nil {
-			pkgLogger.Errorf("Error %s", err)
-			return err
-		}
+		// 	params.JobRunId,
+		// 	params.TaskRunId,
+		// 	params.SourceId)
+		// if err != nil {
+		// 	pkgLogger.Errorf("Error %s", err)
+		// 	return err
+		// }
 	}
 	return nil
 }

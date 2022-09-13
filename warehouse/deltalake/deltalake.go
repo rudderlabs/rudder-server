@@ -266,7 +266,7 @@ func Connect(cred *databricks.CredentialsT, connectTimeout time.Duration) (dbHan
 }
 
 //Need to create a structure with delete parameters instead of simply adding a long list of params
-func (dl *HandleT) DeleteBy(tableNames []string, jobRunID string, startTime string, taskRunID string) error {
+func (dl *HandleT) DeleteBy(tableNames []string, params warehouseutils.DeleteByParams) error {
 	return fmt.Errorf(warehouseutils.NotImplementedErrorCode)
 }
 

@@ -189,6 +189,13 @@ type WarehouseT struct {
 	Identifier  string
 }
 
+type DeleteByParams struct {
+	SourceId  string
+	JobRunId  string
+	TaskRunId string
+	StartTime string
+}
+
 func (w *WarehouseT) GetBoolDestinationConfig(key string) bool {
 	destConfig := w.Destination.Config
 	if destConfig[key] != nil {

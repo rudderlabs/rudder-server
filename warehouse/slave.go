@@ -615,7 +615,7 @@ func runAsyncJob(asyncjob jobs.AsyncJobPayloadT, workerIndex int) (AsyncJobRunRe
 	switch asyncjob.AsyncJobType {
 	case "deletebyjobrunid":
 		pkgLogger.Info("[WH-Jobs]: Running DeleteByJobRunID on slave worker")
-		err = whManager.DeleteBy(tableNames, asyncjob.JobRunID, asyncjob.SourceID, asyncjob.TaskRunID)
+		err = whManager.DeleteBy(tableNames, asyncjob.JobRunID, asyncjob.SourceID, asyncjob.TaskRunID, asyncjob.StartTime)
 	}
 	if err == nil {
 		success = true

@@ -612,7 +612,7 @@ func (as *HandleT) loadUserTables() (errorMap map[string]error) {
 }
 
 //Need to create a structure with delete parameters instead of simply adding a long list of params
-func (as *HandleT) DeleteBy(tableNames []string, jobRunID string, sourceID string, taskRunID string) (err error) {
+func (as *HandleT) DeleteBy(tableNames []string, params warehouseutils.DeleteByParams) (err error) {
 	pkgLogger.Infof("AS: Cleaning up the followng tables in postgres for PG:%s : %v", tableNames)
 	for _, tb := range tableNames {
 		if tb == "rudder_discards" {
@@ -623,17 +623,17 @@ func (as *HandleT) DeleteBy(tableNames []string, jobRunID string, sourceID strin
 			as.Namespace,
 			tb,
 			"context_sources_job_run_id",
-			jobRunID,
+			params.JobRunId,
 			"context_sources_task_run_id",
-			taskRunID,
+			params.TaskRunId,
 			"context_source_id",
-			sourceID,
+			params.SourceId,
 		)
 		pkgLogger.Infof("AS: Deleting rows in table in azure synapse for AS:%s : %v", as.Warehouse.Destination.ID, sqlStatement)
-		_, err = as.Db.Exec(sqlStatement)
-		if err != nil {
-			return err
-		}
+		// _, err = as.Db.Exec(sqlStatement)
+		// if err != nil {
+		// 	return err
+		// }
 
 	}
 	return nil

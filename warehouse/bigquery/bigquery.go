@@ -252,7 +252,7 @@ func (bq *HandleT) dropStagingTable(stagingTableName string) {
 }
 
 //Need to create a structure with delete parameters instead of simply adding a long list of params
-func (bq *HandleT) DeleteBy(tableNames []string, jobRunID string, sourceID string, taskRunID string) error {
+func (bq *HandleT) DeleteBy(tableNames []string, params warehouseutils.DeleteByParams) error {
 	pkgLogger.Infof("BQ: Cleaning up the followng tables in bigquery for BQ:%s : %v", tableNames)
 	for _, tb := range tableNames {
 		if tb == "rudder_discards" {
@@ -272,9 +272,9 @@ func (bq *HandleT) DeleteBy(tableNames []string, jobRunID string, sourceID strin
 		pkgLogger.Infof("PG: Deleting rows in table in bigquery for BQ:%s : %v", bq.Warehouse.Destination.ID, sqlStatement)
 		query := bq.Db.Query(sqlStatement)
 		query.Parameters = []bigquery.QueryParameter{
-			{Name: "jobrunid", Value: jobRunID},
-			{Name: "taskrunid", Value: taskRunID},
-			{Name: "sourceid", Value: sourceID},
+			{Name: "jobrunid", Value: params.JobRunId},
+			{Name: "taskrunid", Value: params.TaskRunId},
+			{Name: "sourceid", Value: params.SourceId},
 		}
 		// job, err := query.Run(bq.BQContext)
 		// if err != nil {

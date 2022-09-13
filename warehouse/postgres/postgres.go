@@ -424,7 +424,7 @@ func (pg *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 }
 
 //Need to create a structure with delete parameters instead of simply adding a long list of params
-func (pq *HandleT) DeleteBy(tableNames []string, jobRunID string, sourceID string, taskRunID string) (err error) {
+func (pq *HandleT) DeleteBy(tableNames []string, params warehouseutils.DeleteByParams) (err error) {
 	pkgLogger.Infof("PG: Cleaning up the followng tables in postgres for PG:%s : %v", tableNames)
 	for _, tb := range tableNames {
 		if tb == "rudder_discards" {
@@ -443,9 +443,9 @@ func (pq *HandleT) DeleteBy(tableNames []string, jobRunID string, sourceID strin
 		pkgLogger.Infof("PG: Deleting rows in table in postgres for PG:%s : %v", pq.Warehouse.Destination.ID, sqlStatement)
 		// Uncomment below 4 lines when we are ready to launch async job on postgres warehouse
 		// _, err = pq.Db.Exec(sqlStatement,
-		// 	jobRunID,
-		// 	taskRunID,
-		// 	sourceID)
+		// 	params.JobRunId,
+		// 	params.TaskRunId,
+		// 	params.SourceId	)
 		if err != nil {
 			pkgLogger.Errorf("Error %s", err)
 			return err
