@@ -250,17 +250,18 @@ var _ = Describe("Gateway", func() {
 	})
 
 	Context("Initialization", func() {
-		gateway := &HandleT{}
-
 		It("should wait for backend config", func() {
+			gateway := &HandleT{}
 			err := gateway.Setup(c.mockApp, c.mockBackendConfig, c.mockJobsDB, nil, c.mockVersionHandler, rsources.NewNoOpService())
+			Expect(err).To(BeNil())
+			err = gateway.Shutdown()
 			Expect(err).To(BeNil())
 		})
 	})
 
 	Context("Valid requests", func() {
 		var (
-			gateway           = &HandleT{}
+			gateway           *HandleT
 			gatewayBatchCalls = 1
 		)
 
@@ -272,7 +273,13 @@ var _ = Describe("Gateway", func() {
 		}
 
 		BeforeEach(func() {
+			gateway = &HandleT{}
 			err := gateway.Setup(c.mockApp, c.mockBackendConfig, c.mockJobsDB, nil, c.mockVersionHandler, rsources.NewNoOpService())
+			Expect(err).To(BeNil())
+		})
+
+		AfterEach(func() {
+			err := gateway.Shutdown()
 			Expect(err).To(BeNil())
 		})
 
@@ -326,53 +333,56 @@ var _ = Describe("Gateway", func() {
 		}
 
 		// common tests for all web handlers
-		assertSingleMessageHandler := func(handlerType string, handler http.HandlerFunc) {
-			It("should accept valid requests on a single endpoint (except batch), and store to jobsdb", func() {
-				validBody := createValidBody("custom-property", "custom-value")
+		It("should accept valid requests on a single endpoint (except batch), and store to jobsdb", func() {
+			for handlerType, handler := range allHandlers(gateway) {
+				if !(handlerType == "batch" || handlerType == "import") {
 
-				c.mockJobsDB.EXPECT().WithStoreSafeTx(gomock.Any()).Times(1).Do(func(f func(tx jobsdb.StoreSafeTx) error) {
-					_ = f(jobsdb.EmptyStoreSafeTx())
-				}).Return(nil)
-				c.mockJobsDB.
-					EXPECT().StoreWithRetryEachInTx(gomock.Any(), gomock.Any(), gomock.Any()).
-					DoAndReturn(func(ctx context.Context, tx jobsdb.StoreSafeTx, jobs []*jobsdb.JobT) (map[uuid.UUID]string, error) {
-						for _, job := range jobs {
-							// each call should be included in a separate batch, with a separate batch_id
-							expectedBatchID := nextBatchID()
-							assertJobMetadata(job, 1, expectedBatchID)
+					validBody := createValidBody("custom-property", "custom-value")
 
-							responseData := []byte(job.EventPayload)
-							payload := gjson.GetBytes(responseData, "batch.0")
+					c.mockJobsDB.EXPECT().WithStoreSafeTx(gomock.Any()).Times(1).Do(func(f func(tx jobsdb.StoreSafeTx) error) {
+						_ = f(jobsdb.EmptyStoreSafeTx())
+					}).Return(nil)
+					c.mockJobsDB.
+						EXPECT().StoreWithRetryEachInTx(gomock.Any(), gomock.Any(), gomock.Any()).
+						DoAndReturn(func(ctx context.Context, tx jobsdb.StoreSafeTx, jobs []*jobsdb.JobT) (map[uuid.UUID]string, error) {
+							for _, job := range jobs {
+								// each call should be included in a separate batch, with a separate batch_id
+								expectedBatchID := nextBatchID()
+								assertJobMetadata(job, 1, expectedBatchID)
 
-							assertJobBatchItem(payload)
+								responseData := []byte(job.EventPayload)
+								payload := gjson.GetBytes(responseData, "batch.0")
 
-							messageType := payload.Get("type")
-							Expect(messageType.String()).To(Equal(handlerType))
-							Expect(stripJobPayload(payload)).To(MatchJSON(validBody))
-						}
-						c.asyncHelper.ExpectAndNotifyCallbackWithName("jobsdb_store")()
+								assertJobBatchItem(payload)
 
-						return jobsToEmptyErrors(ctx, tx, jobs)
-					}).
-					Times(1)
+								messageType := payload.Get("type")
+								Expect(messageType.String()).To(Equal(handlerType))
+								Expect(stripJobPayload(payload)).To(MatchJSON(validBody))
+							}
+							c.asyncHelper.ExpectAndNotifyCallbackWithName("jobsdb_store")()
 
-				expectHandlerResponse(handler, authorizedRequest(WriteKeyEnabled, bytes.NewBuffer(validBody)), 200, "OK")
-			})
-		}
+							return jobsToEmptyErrors(ctx, tx, jobs)
+						}).
+						Times(1)
 
-		for handlerType, handler := range allHandlers(gateway) {
-			if !(handlerType == "batch" || handlerType == "import") {
-				assertSingleMessageHandler(handlerType, handler)
+					expectHandlerResponse(handler, authorizedRequest(WriteKeyEnabled, bytes.NewBuffer(validBody)), 200, "OK")
+				}
 			}
-		}
+		})
 	})
 
 	Context("Rate limits", func() {
-		gateway := &HandleT{}
+		var gateway *HandleT
 
 		BeforeEach(func() {
+			gateway = &HandleT{}
 			SetEnableRateLimit(true)
 			err := gateway.Setup(c.mockApp, c.mockBackendConfig, c.mockJobsDB, c.mockRateLimiter, c.mockVersionHandler, rsources.NewNoOpService())
+			Expect(err).To(BeNil())
+		})
+
+		AfterEach(func() {
+			err := gateway.Shutdown()
 			Expect(err).To(BeNil())
 		})
 
@@ -413,10 +423,16 @@ var _ = Describe("Gateway", func() {
 	})
 
 	Context("Invalid requests", func() {
-		gateway := &HandleT{}
+		var gateway *HandleT
 
 		BeforeEach(func() {
+			gateway = &HandleT{}
 			err := gateway.Setup(c.mockApp, c.mockBackendConfig, c.mockJobsDB, nil, c.mockVersionHandler, rsources.NewNoOpService())
+			Expect(err).To(BeNil())
+		})
+
+		AfterEach(func() {
+			err := gateway.Shutdown()
 			Expect(err).To(BeNil())
 		})
 
@@ -428,16 +444,20 @@ var _ = Describe("Gateway", func() {
 		}
 
 		// common tests for all web handlers
-		assertHandler := func(handlerType string, handler http.HandlerFunc) {
-			It("should reject requests without Authorization header", func() {
+		It("should reject requests without Authorization header", func() {
+			for _, handler := range allHandlers(gateway) {
 				expectHandlerResponse(handler, unauthorizedRequest(nil), 401, response.NoWriteKeyInBasicAuth+"\n")
-			})
+			}
+		})
 
-			It("should reject requests without username in Authorization header", func() {
+		It("should reject requests without username in Authorization header", func() {
+			for _, handler := range allHandlers(gateway) {
 				expectHandlerResponse(handler, authorizedRequest(WriteKeyEmpty, nil), 401, response.NoWriteKeyInBasicAuth+"\n")
-			})
+			}
+		})
 
-			It("should reject requests without valid rudder event in request body", func() {
+		It("should reject requests without valid rudder event in request body", func() {
+			for handlerType, handler := range allHandlers(gateway) {
 				notRudderEvent := `[{"data": "valid-json","foo":"bar"}]`
 				if handlerType == "batch" || handlerType == "import" {
 					notRudderEvent = `{"batch": [[{"data": "valid-json","foo":"bar"}]]}`
@@ -445,26 +465,34 @@ var _ = Describe("Gateway", func() {
 				setAllowReqsWithoutUserIDAndAnonymousID(true)
 				expectHandlerResponse(handler, authorizedRequest(WriteKeyEnabled, bytes.NewBufferString(notRudderEvent)), 400, response.NotRudderEvent+"\n")
 				setAllowReqsWithoutUserIDAndAnonymousID(false)
-			})
+			}
+		})
 
-			It("should reject requests with both userId and anonymousId not present", func() {
+		It("should reject requests with both userId and anonymousId not present", func() {
+			for handlerType, handler := range allHandlers(gateway) {
 				validBody := `{"data": "valid-json"}`
 				if handlerType == "batch" || handlerType == "import" {
 					validBody = `{"batch": [{"data": "valid-json"}]}`
 				}
 				expectHandlerResponse(handler, authorizedRequest(WriteKeyEnabled, bytes.NewBufferString(validBody)), 400, response.NonIdentifiableRequest+"\n")
-			})
+			}
+		})
 
-			It("should reject requests without request body", func() {
+		It("should reject requests without request body", func() {
+			for _, handler := range allHandlers(gateway) {
 				expectHandlerResponse(handler, authorizedRequest(WriteKeyInvalid, nil), 400, response.RequestBodyNil+"\n")
-			})
+			}
+		})
 
-			It("should reject requests without valid json in request body", func() {
+		It("should reject requests without valid json in request body", func() {
+			for _, handler := range allHandlers(gateway) {
 				invalidBody := "not-a-valid-json"
 				expectHandlerResponse(handler, authorizedRequest(WriteKeyInvalid, bytes.NewBufferString(invalidBody)), 400, response.InvalidJSON+"\n")
-			})
+			}
+		})
 
-			It("should reject requests with request bodies larger than configured limit", func() {
+		It("should reject requests with request bodies larger than configured limit", func() {
+			for handlerType, handler := range allHandlers(gateway) {
 				data := make([]byte, gateway.MaxReqSize())
 				for i := range data {
 					data[i] = 'a'
@@ -479,61 +507,59 @@ var _ = Describe("Gateway", func() {
 				if handlerType != "audiencelist" {
 					expectHandlerResponse(handler, authorizedRequest(WriteKeyEnabled, bytes.NewBufferString(body)), 413, response.RequestBodyTooLarge+"\n")
 				}
-			})
+			}
+		})
 
-			It("should reject requests with invalid write keys", func() {
+		It("should reject requests with invalid write keys", func() {
+			for handlerType, handler := range allHandlers(gateway) {
 				validBody := `{"data":"valid-json"}`
 				if handlerType == "batch" || handlerType == "import" {
 					validBody = `{"batch":[{"data":"valid-json"}]}`
 				}
 				expectHandlerResponse(handler, authorizedRequest(WriteKeyInvalid, bytes.NewBufferString(validBody)), 401, response.InvalidWriteKey+"\n")
-			})
+			}
+		})
 
-			It("should reject requests with disabled write keys (source)", func() {
+		It("should reject requests with disabled write keys (source)", func() {
+			for handlerType, handler := range allHandlers(gateway) {
 				validBody := `{"data":"valid-json"}`
 				if handlerType == "batch" || handlerType == "import" {
 					validBody = `{"batch":[{"data":"valid-json"}]}`
 				}
 				expectHandlerResponse(handler, authorizedRequest(WriteKeyDisabled, bytes.NewBufferString(validBody)), 404, response.SourceDisabled+"\n")
-			})
-		}
+			}
+		})
 
-		for handlerType, handler := range allHandlers(gateway) {
-			Context(handlerType, func() {
-				assertHandler(handlerType, handler)
-			})
-		}
-
-		assertHandler = func(_ string, handler http.HandlerFunc) {
-			It("should reject requests with 500 if jobsdb store returns an error", func() {
-				validBody := createJSONBody("custom-property", "custom-value")
-
-				c.mockJobsDB.EXPECT().WithStoreSafeTx(gomock.Any()).Times(1).Do(func(f func(tx jobsdb.StoreSafeTx) error) {
-					_ = f(jobsdb.EmptyStoreSafeTx())
-				}).Return(nil)
-				c.mockJobsDB.
-					EXPECT().StoreWithRetryEachInTx(gomock.Any(), gomock.Any(), gomock.Any()).
-					DoAndReturn(jobsToJobsdbErrors).
-					Times(1)
-
-				expectHandlerResponse(handler, authorizedRequest(WriteKeyEnabled, bytes.NewBuffer(validBody)), 500, "tx error"+"\n")
-			})
-		}
-
-		for handlerType, handler := range allHandlers(gateway) {
-			Context(handlerType, func() {
+		It("should reject requests with 500 if jobsdb store returns an error", func() {
+			for handlerType, handler := range allHandlers(gateway) {
 				if handlerType != "import" {
-					assertHandler(handlerType, handler)
+					validBody := createJSONBody("custom-property", "custom-value")
+
+					c.mockJobsDB.EXPECT().WithStoreSafeTx(gomock.Any()).Times(1).Do(func(f func(tx jobsdb.StoreSafeTx) error) {
+						_ = f(jobsdb.EmptyStoreSafeTx())
+					}).Return(nil)
+					c.mockJobsDB.
+						EXPECT().StoreWithRetryEachInTx(gomock.Any(), gomock.Any(), gomock.Any()).
+						DoAndReturn(jobsToJobsdbErrors).
+						Times(1)
+
+					expectHandlerResponse(handler, authorizedRequest(WriteKeyEnabled, bytes.NewBuffer(validBody)), 500, "tx error"+"\n")
 				}
-			})
-		}
+			}
+		})
 	})
 
 	Context("Robots", func() {
-		gateway := &HandleT{}
+		var gateway *HandleT
 
 		BeforeEach(func() {
+			gateway = &HandleT{}
 			err := gateway.Setup(c.mockApp, c.mockBackendConfig, c.mockJobsDB, nil, c.mockVersionHandler, rsources.NewNoOpService())
+			Expect(err).To(BeNil())
+		})
+
+		AfterEach(func() {
+			err := gateway.Shutdown()
 			Expect(err).To(BeNil())
 		})
 

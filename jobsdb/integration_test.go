@@ -567,6 +567,12 @@ func TestJobsDB(t *testing.T) {
 		require.NoError(t, err)
 		defer jobDB.TearDown()
 
+		getDSList := func() []dataSetT {
+			jobDB.dsListLock.RLock()
+			defer jobDB.dsListLock.RUnlock()
+			return jobDB.getDSList()
+		}
+
 		jobs := genJobs(defaultWorkspaceID, customVal, 20, 1)
 		require.NoError(t, jobDB.Store(context.Background(), jobs))
 		trigger()
@@ -579,7 +585,7 @@ func TestJobsDB(t *testing.T) {
 		jobs = genJobs(defaultWorkspaceID, customVal, 11, 1)
 		require.NoError(t, jobDB.Store(context.Background(), jobs))
 		trigger()
-		dsList := jobDB.getDSList()
+		dsList := getDSList()
 		require.Lenf(t, dsList, 5, "dsList length is not 5, got %+v", dsList)
 		require.Equal(t, prefix+"_jobs_1", dsList[0].JobTable)
 		require.Equal(t, prefix+"_jobs_2", dsList[1].JobTable)
@@ -611,7 +617,8 @@ func TestJobsDB(t *testing.T) {
 		}
 
 		trigger() // jobs_1 will be migrated to jobs_1_1 due to the completed threshold (15/20 > 0.7)
-		dsList = jobDB.getDSList()
+
+		dsList = getDSList()
 		require.Lenf(t, dsList, 5, "dsList length is not 5, got %+v", dsList)
 		require.Equal(t, prefix+"_jobs_1_1", dsList[0].JobTable)
 		require.Equal(t, prefix+"_jobs_2", dsList[1].JobTable)
@@ -620,7 +627,7 @@ func TestJobsDB(t *testing.T) {
 		require.Equal(t, prefix+"_jobs_5", dsList[4].JobTable)
 
 		trigger() // jobs_1_1 will remain as is even though it is now a small table (5 < 10*0.6)
-		dsList = jobDB.getDSList()
+		dsList = getDSList()
 		require.Lenf(t, dsList, 5, "dsList length is not 5, got %+v", dsList)
 		require.Equal(t, prefix+"_jobs_1_1", dsList[0].JobTable)
 		require.Equal(t, prefix+"_jobs_2", dsList[1].JobTable)
@@ -651,7 +658,7 @@ func TestJobsDB(t *testing.T) {
 		}
 
 		trigger() // both jobs_1_1 and jobs_2 would be migrated to jobs_2_1
-		dsList = jobDB.getDSList()
+		dsList = getDSList()
 		require.Lenf(t, dsList, 4, "dsList length is not 4, got %+v", dsList)
 		require.Equal(t, prefix+"_jobs_2_1", dsList[0].JobTable)
 		require.Equal(t, prefix+"_jobs_3", dsList[1].JobTable)
