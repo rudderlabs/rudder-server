@@ -683,7 +683,7 @@ func (validateObjectStorageRequest *ValidateObjectRequestT) validateObjectStorag
 	defer misc.RemoveFilePaths(filePath)
 
 	filePtr, err := os.Open(filePath)
-	_, err = fileManager.Upload(context.TODO(), filePtr)
+	uploadOutput, err := fileManager.Upload(context.TODO(), filePtr)
 	if err != nil {
 		fmt.Println(err)
 		validateObjectStorageResp = &proto.ValidateObjectStorageResponse{
@@ -693,6 +693,34 @@ func (validateObjectStorageRequest *ValidateObjectRequestT) validateObjectStorag
 		}
 		return
 	}
+	key := fileManager.GetDownloadKeyFromFileLocation(uploadOutput.Location)
+
+	downloadFileName := "tmpFileObjectStorageValidation"
+
+	filePtr, err = os.OpenFile(downloadFileName, os.O_CREATE|os.O_RDWR|os.O_TRUNC, 0o644)
+	if err != nil {
+		pkgLogger.Errorf("error while Creating file to download data: ", err)
+		validateObjectStorageResp = &proto.ValidateObjectStorageResponse{
+			Status:  500,
+			Error:   fmt.Sprintf(" Unable to validate"),
+			IsValid: false,
+		}
+		return
+	}
+
+	defer os.Remove(downloadFileName)
+
+	err = fileManager.Download(context.TODO(), filePtr, key)
+	if err != nil {
+		pkgLogger.Errorf("error while downloading object for object storage validation: %s", err.Error())
+		validateObjectStorageResp = &proto.ValidateObjectStorageResponse{
+			Status:  200,
+			Error:   fmt.Sprintf("invalid creds"),
+			IsValid: false,
+		}
+		return
+	}
+
 	validateObjectStorageResp = &proto.ValidateObjectStorageResponse{
 		Status:  200,
 		Error:   fmt.Sprintf(""),

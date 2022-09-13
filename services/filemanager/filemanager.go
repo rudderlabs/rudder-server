@@ -87,8 +87,8 @@ func (factory *FileManagerFactoryT) New(settings *SettingsT) (FileManager, error
 	return nil, fmt.Errorf("%w: %s", rterror.InvalidServiceProvider, settings.Provider)
 }
 
-func GetProviderConfigFromEnv(ctx context.Context, provider string) (providerConfig map[string]interface{}) {
-
+func GetProviderConfigFromEnv(ctx context.Context, provider string) map[string]interface{} {
+	providerConfig := make(map[string]interface{})
 	switch provider {
 
 	case "S3":
@@ -134,7 +134,7 @@ func GetProviderConfigFromEnv(ctx context.Context, provider string) (providerCon
 		providerConfig["accessKey"] = config.GetEnv("DO_SPACES_SECRET_ACCESS_KEY", "")
 	}
 
-	return
+	return providerConfig
 }
 
 // GetProviderConfigForBackupsFromEnv returns the provider config
