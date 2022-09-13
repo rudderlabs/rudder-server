@@ -265,7 +265,7 @@ func GetAzureBlogStorageConfig(config map[string]interface{}) *AzureBlobStorageC
 	if config["sasToken"] != nil {
 		tmp, ok := config["sasToken"].(string)
 		if ok {
-			sasToken = tmp
+			sasToken = strings.TrimPrefix(tmp, "?")
 		}
 	}
 	if config["accountKey"] != nil {
