@@ -136,10 +136,7 @@ var defaultTransformerFeatures = `{
 	}
   }`
 
-var (
-	mainLoopTimeout          = 200 * time.Millisecond
-	featuresRetryMaxAttempts = 10
-)
+var featuresRetryMaxAttempts = 10
 
 type DestStatT struct {
 	numEvents              stats.RudderStats
@@ -440,11 +437,7 @@ func (proc *HandleT) Start(ctx context.Context) error {
 
 	g.Go(misc.WithBugsnag(func() error {
 		proc.backendConfig.WaitForConfig(ctx)
-		if enablePipelining {
-			proc.mainPipeline(ctx)
-		} else {
-			proc.mainLoop(ctx)
-		}
+		proc.mainPipeline(ctx)
 		return nil
 	}))
 
@@ -464,7 +457,6 @@ func (proc *HandleT) Shutdown() {
 }
 
 var (
-	enablePipelining          bool
 	pipelineBufferedItems     int
 	subJobSize                int
 	readLoopSleep             time.Duration
@@ -495,7 +487,6 @@ var (
 )
 
 func loadConfig() {
-	config.RegisterBoolConfigVariable(true, &enablePipelining, false, "Processor.enablePipelining")
 	config.RegisterIntConfigVariable(0, &pipelineBufferedItems, false, 1, "Processor.pipelineBufferedItems")
 	config.RegisterIntConfigVariable(2000, &subJobSize, false, 1, "Processor.subJobSize")
 	config.RegisterDurationConfigVariable(5000, &maxLoopSleep, true, time.Millisecond, []string{"Processor.maxLoopSleep", "Processor.maxLoopSleepInMS"}...)
@@ -2306,52 +2297,6 @@ func (proc *HandleT) handlePendingGatewayJobs() bool {
 	proc.stats.statLoopTime.Since(s)
 
 	return true
-}
-
-// mainLoop: legacy way of handling jobs
-func (proc *HandleT) mainLoop(ctx context.Context) {
-	// waiting for reporting client setup
-	if proc.reporting != nil && proc.reportingEnabled {
-		proc.reporting.WaitForSetup(ctx, types.CORE_REPORTING_CLIENT)
-	}
-
-	proc.logger.Info("Processor loop started")
-	var currLoopSleep time.Duration
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-time.After(mainLoopTimeout):
-			if isUnLocked {
-				found := proc.handlePendingGatewayJobs()
-				if found {
-					currLoopSleep = 0
-				} else {
-					currLoopSleep = 2*currLoopSleep + loopSleep
-					if currLoopSleep > maxLoopSleep {
-						currLoopSleep = maxLoopSleep
-					}
-					if sleepTrueOnDone(ctx, currLoopSleep) {
-						return
-					}
-				}
-				if sleepTrueOnDone(ctx, fixedLoopSleep) { // adding sleep here to reduce cpu load on postgres when we have less rps
-					return
-				}
-			} else if sleepTrueOnDone(ctx, fixedLoopSleep) {
-				return
-			}
-		}
-	}
-}
-
-func sleepTrueOnDone(ctx context.Context, duration time.Duration) bool {
-	select {
-	case <-ctx.Done():
-		return true
-	case <-time.After(duration):
-		return false
-	}
 }
 
 // `jobSplitter` func Splits the read Jobs into sub-batches after reading from DB to process.

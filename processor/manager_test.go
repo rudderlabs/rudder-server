@@ -166,7 +166,6 @@ func TestProcessorManager(t *testing.T) {
 	mockRsourcesService := rsources.NewMockJobService(mockCtrl)
 
 	SetFeaturesRetryAttempts(0)
-	enablePipelining = false
 	RegisterTestingT(t)
 
 	migrationMode := ""

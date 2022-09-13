@@ -135,10 +135,6 @@ func setDisableDedupFeature(b bool) bool {
 	return prev
 }
 
-func setMainLoopTimeout(timeout time.Duration) {
-	mainLoopTimeout = timeout
-}
-
 // This configuration is assumed by all processor tests and, is returned on Subscribe of mocked backend config
 var sampleBackendConfig = backendconfig.ConfigT{
 	Sources: []backendconfig.SourceT{
@@ -1208,31 +1204,6 @@ var _ = Describe("Processor", func() {
 			}
 
 			processorSetupAndAssertJobHandling(processor, c)
-		})
-	})
-
-	Context("MainLoop Tests", func() {
-		clearDB := false
-		It("Should not handle jobs when transformer features are not set", func() {
-			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
-			mockTransformer.EXPECT().Setup().Times(1)
-
-			processor := &HandleT{
-				transformer: mockTransformer,
-			}
-
-			// crash recover returns empty list
-			c.mockGatewayJobsDB.EXPECT().DeleteExecuting().Times(1)
-			SetFeaturesRetryAttempts(0)
-			processor.Setup(c.mockBackendConfig, c.mockGatewayJobsDB, c.mockRouterJobsDB, c.mockBatchRouterJobsDB, c.mockProcErrorsDB, &clearDB, nil, c.MockMultitenantHandle, transientsource.NewEmptyService(), c.MockRsourcesService)
-
-			setMainLoopTimeout(1 * time.Second)
-
-			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-			defer cancel()
-
-			go processor.mainLoop(ctx)
-			Eventually(func() bool { return isUnLocked }, 30*time.Second, 10*time.Millisecond).Should(BeFalse())
 		})
 	})
 
