@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+
+	"github.com/rudderlabs/rudder-server/utils/logger"
 )
 
 //go:generate mockgen -source=rsources.go -destination=mock_rsources.go -package=rsources github.com/rudderlabs/rudder-server/services/rsources JobService
@@ -110,6 +112,7 @@ type JobServiceConfig struct {
 	SharedConn                  string
 	SubscriptionTargetConn      string
 	SkipFailedRecordsCollection bool
+	Log                         logger.Logger
 }
 
 // JobService manages information about jobs created by rudder-sources
@@ -130,9 +133,19 @@ type JobService interface {
 
 	// CleanupLoop starts the cleanup loop in the background which will stop upon context termination or in case of an error
 	CleanupLoop(ctx context.Context) error
+
+	// Monitor monitors the logical replication slot and lag when a shared database is configured
+	Monitor(ctx context.Context, lagGauge, replicationSlotGauge Gauger)
+}
+
+type Gauger interface {
+	Gauge(interface{})
 }
 
 func NewJobService(config JobServiceConfig) (JobService, error) {
+	if config.Log == nil {
+		config.Log = logger.NewLogger().Child("rsources")
+	}
 	var (
 		localDB, sharedDB *sql.DB
 		err               error
@@ -152,6 +165,7 @@ func NewJobService(config JobServiceConfig) (JobService, error) {
 		sharedDB.SetMaxOpenConns(config.MaxPoolSize)
 	}
 	handler := &sourcesHandler{
+		log:      config.Log,
 		config:   config,
 		localDB:  localDB,
 		sharedDB: sharedDB,
@@ -189,3 +203,5 @@ func (*noopService) CleanupLoop(ctx context.Context) error {
 	<-ctx.Done()
 	return nil
 }
+
+func (*noopService) Monitor(_ context.Context, _, _ Gauger) {}
