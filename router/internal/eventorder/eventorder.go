@@ -74,7 +74,7 @@ func (b *Barrier) Enter(userID string, jobID int64) (accepted bool, previousFail
 	if barrier.failedJobID != nil {
 		failedJob := *barrier.failedJobID
 		if failedJob > jobID {
-			panic(fmt.Errorf("barrier enter %+v: userID %q previousFailedJob:%d > jobID:%d", b.metadata, userID, failedJob, jobID))
+			panic(fmt.Errorf("detected illegal job sequence during barrier enter %+v: userID %q, previousFailedJob:%d > jobID:%d", b.metadata, userID, failedJob, jobID))
 		}
 		return jobID == failedJob, &failedJob
 	}
@@ -109,7 +109,7 @@ func (b *Barrier) Wait(userID string, jobID int64) (wait bool, previousFailedJob
 	if barrier.failedJobID != nil {
 		failedJob := *barrier.failedJobID
 		if failedJob > jobID {
-			panic(fmt.Errorf("barrier wait %+v: userID %q previousFailedJob:%d > jobID:%d", b.metadata, userID, failedJob, jobID))
+			panic(fmt.Errorf("detected illegal job sequence during barrier wait %+v: userID %q, previousFailedJob:%d > jobID:%d", b.metadata, userID, failedJob, jobID))
 		}
 		return jobID > failedJob, &failedJob // wait if this is not the failed job
 	}
@@ -230,8 +230,10 @@ func (c *jobFailedCommand) execute(b *Barrier) {
 	defer barrier.mu.Unlock()
 
 	// it is unfortunately possible within a single batch for events to be processed out-of-order
-	if barrier.failedJobID == nil || c.jobID < *barrier.failedJobID {
+	if barrier.failedJobID == nil {
 		barrier.failedJobID = &c.jobID
+	} else if *barrier.failedJobID > c.jobID {
+		panic(fmt.Errorf("detected illegal job sequence during barrier job failed %+v: userID %q, previousFailedJob:%d > jobID:%d", b.metadata, c.userID, *barrier.failedJobID, c.jobID))
 	}
 	// reset concurrency limiter
 	barrier.concurrencyLimiter = nil
