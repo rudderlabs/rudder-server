@@ -202,6 +202,20 @@ func (gateway *HandleT) updateSourceStats(sourceStats map[string]int, bucket str
 	}
 }
 
+func (gateway *HandleT) updateFailedSourceStats(sourceStats map[string]int, bucket string, sourceTagMap map[string]string) {
+	for sourceTag, count := range sourceStats {
+		tags := map[string]string{
+			"source":      sourceTag,
+			"writeKey":    sourceTagMap[sourceTag],
+			"reqType":     sourceTagMap["reqType"],
+			"workspaceId": sourceTagMap["workspaceId"],
+			"reason":      sourceTagMap["reason"],
+		}
+		sourceStatsD := gateway.stats.NewTaggedStat(bucket, stats.CountType, tags)
+		sourceStatsD.Count(count)
+	}
+}
+
 // Part of the gateway module Setup call.
 //
 //	Initiates `maxUserWebRequestWorkerProcess` number of `webRequestWorkers` that listen on their `webRequestQ` for new WebRequests.
@@ -458,6 +472,7 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 			if !gjson.ValidBytes(body) {
 				req.done <- response.GetStatus(response.InvalidJSON)
 				preDbStoreCount++
+				sourceTagMap["reason"] = "invalidJSON"
 				misc.IncrementMapByKey(sourceFailStats, sourceTag, 1)
 				continue
 			}
@@ -467,6 +482,7 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 			if req.reqType != "batch" {
 				body, err = sjson.SetBytes(body, "type", req.reqType)
 				if err != nil {
+					sourceTagMap["reason"] = "notRudderEvent"
 					req.done <- response.GetStatus(response.NotRudderEvent)
 					preDbStoreCount++
 					misc.IncrementMapByKey(sourceFailStats, sourceTag, 1)
@@ -474,6 +490,7 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 				}
 				body, err = sjson.SetRawBytes(BatchEvent, "batch.0", body)
 				if err != nil {
+					sourceTagMap["reason"] = "notRudderEvent"
 					req.done <- response.GetStatus(response.NotRudderEvent)
 					preDbStoreCount++
 					misc.IncrementMapByKey(sourceFailStats, sourceTag, 1)
@@ -488,6 +505,7 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 			sourceID := gateway.getSourceIDForWriteKey(writeKey)
 
 			if !gateway.isValidWriteKey(writeKey) {
+				sourceTagMap["reason"] = "invalidWriteKey"
 				req.done <- response.GetStatus(response.InvalidWriteKey)
 				preDbStoreCount++
 				misc.IncrementMapByKey(sourceFailStats, sourceTag, 1)
@@ -496,6 +514,7 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 			}
 
 			if !gateway.isWriteKeyEnabled(writeKey) {
+				sourceTagMap["reason"] = "sourceDisabled"
 				req.done <- response.GetStatus(response.SourceDisabled)
 				preDbStoreCount++
 				misc.IncrementMapByKey(sourceFailStats, sourceTag, 1)
@@ -563,6 +582,7 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 			})
 
 			if len(body) > maxReqSize && !containsAudienceList {
+				sourceTagMap["reason"] = "requestBodyTooLarge"
 				req.done <- response.GetStatus(response.RequestBodyTooLarge)
 				preDbStoreCount++
 				misc.IncrementMapByKey(sourceFailStats, sourceTag, 1)
@@ -573,6 +593,7 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 			body, _ = sjson.SetBytes(body, "batch", out)
 
 			if notIdentifiable {
+				sourceTagMap["reason"] = "nonIdentifiableRequest"
 				req.done <- response.GetStatus(response.NonIdentifiableRequest)
 				preDbStoreCount++
 				misc.IncrementMapByKey(sourceFailStats, "notIdentifiable", 1)
@@ -580,6 +601,7 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 			}
 
 			if nonRudderEvent {
+				sourceTagMap["reason"] = "notRudderEvent"
 				req.done <- response.GetStatus(response.NotRudderEvent)
 				preDbStoreCount++
 				misc.IncrementMapByKey(sourceFailStats, sourceTag, 1)
@@ -667,14 +689,14 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 		// update stats request wise
 		gateway.updateSourceStats(sourceStats, "gateway.write_key_requests", sourceTagMap)
 		gateway.updateSourceStats(sourceSuccessStats, "gateway.write_key_successful_requests", sourceTagMap)
-		gateway.updateSourceStats(sourceFailStats, "gateway.write_key_failed_requests", sourceTagMap)
+		gateway.updateFailedSourceStats(sourceFailStats, "gateway.write_key_failed_requests", sourceTagMap)
 		if enableRateLimit {
 			gateway.updateSourceStats(workspaceDropRequestStats, "gateway.work_space_dropped_requests", sourceTagMap)
 		}
 		// update stats event wise
 		gateway.updateSourceStats(sourceEventStats, "gateway.write_key_events", sourceTagMap)
 		gateway.updateSourceStats(sourceSuccessEventStats, "gateway.write_key_successful_events", sourceTagMap)
-		gateway.updateSourceStats(sourceFailEventStats, "gateway.write_key_failed_events", sourceTagMap)
+		gateway.updateFailedSourceStats(sourceFailEventStats, "gateway.write_key_failed_events", sourceTagMap)
 	}
 }
 
@@ -1079,7 +1101,7 @@ func (gateway *HandleT) getPayloadAndWriteKey(_ http.ResponseWriter, r *http.Req
 	if !ok || writeKey == "" {
 		err = errors.New(response.NoWriteKeyInBasicAuth)
 		misc.IncrementMapByKey(sourceFailStats, "noWriteKey", 1)
-		gateway.updateSourceStats(sourceFailStats, "gateway.write_key_failed_requests", map[string]string{"noWriteKey": "noWriteKey", "reqType": reqType})
+		gateway.updateFailedSourceStats(sourceFailStats, "gateway.write_key_failed_requests", map[string]string{"noWriteKey": "noWriteKey", "reqType": reqType, "reason": "noWriteKeyInBasicAuth"})
 		gateway.updateSourceStats(sourceFailStats, "gateway.write_key_requests", map[string]string{"noWriteKey": "noWriteKey", "reqType": reqType})
 
 		return []byte{}, "", err
@@ -1088,7 +1110,7 @@ func (gateway *HandleT) getPayloadAndWriteKey(_ http.ResponseWriter, r *http.Req
 	if err != nil {
 		sourceTag := gateway.getSourceTagFromWriteKey(writeKey)
 		misc.IncrementMapByKey(sourceFailStats, sourceTag, 1)
-		gateway.updateSourceStats(sourceFailStats, "gateway.write_key_failed_requests", map[string]string{sourceTag: writeKey, "reqType": reqType})
+		gateway.updateSourceStats(sourceFailStats, "gateway.write_key_failed_requests", map[string]string{sourceTag: writeKey, "reqType": reqType, "reason": "requestBodyReadFailed"})
 		gateway.updateSourceStats(sourceFailStats, "gateway.write_key_requests", map[string]string{sourceTag: writeKey, "reqType": reqType})
 		return []byte{}, writeKey, err
 	}
