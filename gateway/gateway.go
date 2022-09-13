@@ -1355,6 +1355,29 @@ func reflectOrigin(_ string) bool {
 	return true
 }
 
+func newSubRouter(ctx context.Context, r *mux.Router, contentType response.ContentType) (*mux.Router, error) {
+	switch contentType {
+	case response.ContentTypeJSON:
+		jsonMux := r.NewRoute().Subrouter()
+		jsonMux.Use(
+			middleware.StatMiddleware(ctx),
+			middleware.LimitConcurrentRequests(maxConcurrentRequests),
+			middleware.SetJsonContentType(),
+		)
+		return jsonMux, nil
+	case response.ContentTypeHTML:
+		plainMux := r.NewRoute().Subrouter()
+		plainMux.Use(
+			middleware.StatMiddleware(ctx),
+			middleware.LimitConcurrentRequests(maxConcurrentRequests),
+			middleware.SetPlainContentType(),
+		)
+		return plainMux, nil
+	default:
+		return nil, fmt.Errorf("invalid content type: %s", contentType)
+	}
+}
+
 /*
 StartWebHandler starts all gateway web handlers, listening on gateway port.
 Supports CORS from all origins.
@@ -1366,51 +1389,56 @@ func (gateway *HandleT) StartWebHandler(ctx context.Context) error {
 	gateway.logger.Infof("WebHandler Starting on %d", webPort)
 
 	srvMux := mux.NewRouter()
-	srvMux.Use(
-		middleware.StatMiddleware(ctx),
-		middleware.LimitConcurrentRequests(maxConcurrentRequests),
-		middleware.ContentType(),
-	)
-	srvMux.HandleFunc("/v1/batch", gateway.webBatchHandler).Methods("POST")
-	srvMux.HandleFunc("/v1/identify", gateway.webIdentifyHandler).Methods("POST")
-	srvMux.HandleFunc("/v1/track", gateway.webTrackHandler).Methods("POST")
-	srvMux.HandleFunc("/v1/page", gateway.webPageHandler).Methods("POST")
-	srvMux.HandleFunc("/v1/screen", gateway.webScreenHandler).Methods("POST")
-	srvMux.HandleFunc("/v1/alias", gateway.webAliasHandler).Methods("POST")
-	srvMux.HandleFunc("/v1/merge", gateway.webMergeHandler).Methods("POST")
-	srvMux.HandleFunc("/v1/group", gateway.webGroupHandler).Methods("POST")
-	srvMux.HandleFunc("/health", app.LivenessHandler(gateway.jobsDB)).Methods("GET")
-	srvMux.HandleFunc("/", app.LivenessHandler(gateway.jobsDB)).Methods("GET")
-	srvMux.HandleFunc("/v1/import", gateway.webImportHandler).Methods("POST")
-	srvMux.HandleFunc("/v1/audiencelist", gateway.webAudienceListHandler).Methods("POST")
-	srvMux.HandleFunc("/pixel/v1/track", gateway.pixelTrackHandler).Methods("GET")
-	srvMux.HandleFunc("/pixel/v1/page", gateway.pixelPageHandler).Methods("GET")
-	srvMux.HandleFunc("/v1/webhook", gateway.webhookHandler.RequestHandler).Methods("POST", "GET")
-	srvMux.HandleFunc("/beacon/v1/batch", gateway.beaconBatchHandler).Methods("POST")
+	jsonMux, err := newSubRouter(ctx, srvMux, response.ContentTypeJSON)
+	if err != nil {
+		return err
+	}
+	plainMux, err := newSubRouter(ctx, srvMux, response.ContentTypeText)
+	if err != nil {
+		return err
+	}
 
-	srvMux.HandleFunc("/version", gateway.versionHandler).Methods("GET")
-	srvMux.HandleFunc("/robots.txt", gateway.robots).Methods("GET")
+	plainMux.HandleFunc("/v1/batch", gateway.webBatchHandler).Methods("POST")
+	plainMux.HandleFunc("/v1/identify", gateway.webIdentifyHandler).Methods("POST")
+	plainMux.HandleFunc("/v1/track", gateway.webTrackHandler).Methods("POST")
+	plainMux.HandleFunc("/v1/page", gateway.webPageHandler).Methods("POST")
+	plainMux.HandleFunc("/v1/screen", gateway.webScreenHandler).Methods("POST")
+	plainMux.HandleFunc("/v1/alias", gateway.webAliasHandler).Methods("POST")
+	plainMux.HandleFunc("/v1/merge", gateway.webMergeHandler).Methods("POST")
+	plainMux.HandleFunc("/v1/group", gateway.webGroupHandler).Methods("POST")
+	plainMux.HandleFunc("/v1/import", gateway.webImportHandler).Methods("POST")
+	plainMux.HandleFunc("/v1/audiencelist", gateway.webAudienceListHandler).Methods("POST")
+	plainMux.HandleFunc("/v1/webhook", gateway.webhookHandler.RequestHandler).Methods("POST", "GET")
+	plainMux.HandleFunc("/beacon/v1/batch", gateway.beaconBatchHandler).Methods("POST")
+	plainMux.HandleFunc("/pixel/v1/track", gateway.pixelTrackHandler).Methods("GET")
+	plainMux.HandleFunc("/pixel/v1/page", gateway.pixelPageHandler).Methods("GET")
+	jsonMux.HandleFunc("/health", app.LivenessHandler(gateway.jobsDB)).Methods("GET")
+	jsonMux.HandleFunc("/", app.LivenessHandler(gateway.jobsDB)).Methods("GET")
+
+	plainMux.HandleFunc("/version", gateway.versionHandler).Methods("GET")
+	plainMux.HandleFunc("/robots.txt", gateway.robots).Methods("GET")
 
 	if enableEventSchemasFeature {
-		srvMux.HandleFunc("/schemas/event-models", gateway.eventSchemaWebHandler(gateway.eventSchemaHandler.GetEventModels)).Methods("GET")
-		srvMux.HandleFunc("/schemas/event-versions", gateway.eventSchemaWebHandler(gateway.eventSchemaHandler.GetEventVersions)).Methods("GET")
-		srvMux.HandleFunc("/schemas/event-model/{EventID}/key-counts", gateway.eventSchemaWebHandler(gateway.eventSchemaHandler.GetKeyCounts)).Methods("GET")
-		srvMux.HandleFunc("/schemas/event-model/{EventID}/metadata", gateway.eventSchemaWebHandler(gateway.eventSchemaHandler.GetEventModelMetadata)).Methods("GET")
-		srvMux.HandleFunc("/schemas/event-version/{VersionID}/metadata", gateway.eventSchemaWebHandler(gateway.eventSchemaHandler.GetSchemaVersionMetadata)).Methods("GET")
-		srvMux.HandleFunc("/schemas/event-version/{VersionID}/missing-keys", gateway.eventSchemaWebHandler(gateway.eventSchemaHandler.GetSchemaVersionMissingKeys)).Methods("GET")
-		srvMux.HandleFunc("/schemas/event-models/json-schemas", gateway.eventSchemaWebHandler(gateway.eventSchemaHandler.GetJsonSchemas)).Methods("GET")
+		jsonMux.HandleFunc("/schemas/event-models", gateway.eventSchemaWebHandler(gateway.eventSchemaHandler.GetEventModels)).Methods("GET")
+		jsonMux.HandleFunc("/schemas/event-versions", gateway.eventSchemaWebHandler(gateway.eventSchemaHandler.GetEventVersions)).Methods("GET")
+		jsonMux.HandleFunc("/schemas/event-model/{EventID}/key-counts", gateway.eventSchemaWebHandler(gateway.eventSchemaHandler.GetKeyCounts)).Methods("GET")
+		jsonMux.HandleFunc("/schemas/event-model/{EventID}/metadata", gateway.eventSchemaWebHandler(gateway.eventSchemaHandler.GetEventModelMetadata)).Methods("GET")
+		jsonMux.HandleFunc("/schemas/event-version/{VersionID}/metadata", gateway.eventSchemaWebHandler(gateway.eventSchemaHandler.GetSchemaVersionMetadata)).Methods("GET")
+		jsonMux.HandleFunc("/schemas/event-version/{VersionID}/missing-keys", gateway.eventSchemaWebHandler(gateway.eventSchemaHandler.GetSchemaVersionMissingKeys)).Methods("GET")
+		jsonMux.HandleFunc("/schemas/event-models/json-schemas", gateway.eventSchemaWebHandler(gateway.eventSchemaHandler.GetJsonSchemas)).Methods("GET")
 	}
 
 	// todo: remove in next release
-	srvMux.HandleFunc("/v1/pending-events", gateway.pendingEventsHandler).Methods("POST")
-	srvMux.HandleFunc("/v1/failed-events", gateway.fetchFailedEventsHandler).Methods("POST")
-	srvMux.HandleFunc("/v1/clear-failed-events", gateway.clearFailedEventsHandler).Methods("POST")
+	plainMux.HandleFunc("/v1/pending-events", gateway.pendingEventsHandler).Methods("POST")
+	plainMux.HandleFunc("/v1/failed-events", gateway.fetchFailedEventsHandler).Methods("POST")
+	plainMux.HandleFunc("/v1/clear-failed-events", gateway.clearFailedEventsHandler).Methods("POST")
 
 	// rudder-sources new APIs
 	rsourcesHandler := rsources_http.NewHandler(
 		gateway.rsourcesService,
 		gateway.logger.Child("rsources"))
-	srvMux.PathPrefix("/v1/job-status").Handler(rsourcesHandler)
+
+	plainMux.PathPrefix("/v1/job-status").Handler(rsourcesHandler)
 
 	c := cors.New(cors.Options{
 		AllowOriginFunc:  reflectOrigin,
@@ -1446,7 +1474,6 @@ func (gateway *HandleT) StartAdminHandler(ctx context.Context) error {
 	srvMux.Use(
 		middleware.StatMiddleware(ctx),
 		middleware.LimitConcurrentRequests(maxConcurrentRequests),
-		middleware.ContentType(),
 	)
 	srvMux.HandleFunc("/v1/pending-events", gateway.pendingEventsHandler).Methods("POST")
 
