@@ -51,8 +51,8 @@ type FileManager interface {
 
 // SettingsT sets configuration for FileManager
 type SettingsT struct {
-	Provider    string
-	Config      map[string]interface{}
+	Provider string
+	Config   map[string]interface{}
 }
 
 func init() {
@@ -65,7 +65,7 @@ func (factory *FileManagerFactoryT) New(settings *SettingsT) (FileManager, error
 	switch settings.Provider {
 	case "S3":
 		return &S3Manager{
-			Config:      GetS3Config(settings.Config),
+			Config: GetS3Config(settings.Config),
 		}, nil
 	case "GCS":
 		return &GCSManager{
