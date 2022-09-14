@@ -1409,7 +1409,7 @@ func pendingEventsHandler(w http.ResponseWriter, r *http.Request) {
 
 	filterBy := []warehouseutils.FilterBy{{Key: "source_id", Value: sourceID}}
 	if pendingEventsReq.TaskRunID != "" {
-		filterBy = append(filterBy, warehouseutils.FilterBy{Key: "metadata->'source_task_run_id'", Value: pendingEventsReq.TaskRunID})
+		filterBy = append(filterBy, warehouseutils.FilterBy{Key: "metadata->>'source_task_run_id'", Value: pendingEventsReq.TaskRunID})
 	}
 
 	pendingUploadCount, err = getPendingUploadCount(filterBy...)
@@ -1519,7 +1519,7 @@ func getPendingUploadCount(filters ...warehouseutils.FilterBy) (uploadCount int6
 	query := fmt.Sprintf(`
 		SELECT COUNT(*)
 		FROM %[1]s
-		WHERE %[1]s.status NOT IN ('%[2]s', '%[3]s')'
+		WHERE %[1]s.status NOT IN ('%[2]s', '%[3]s')
 	`, warehouseutils.WarehouseUploadsTable, ExportedData, Aborted)
 
 	args := make([]interface{}, 0)
