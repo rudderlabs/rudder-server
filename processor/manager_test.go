@@ -179,19 +179,18 @@ func TestProcessorManager(t *testing.T) {
 			return triggerAddNewDS
 		},
 	}
-	queryFilters := jobsdb.QueryFiltersT{
-		CustomVal: true,
-	}
-	err := tempDB.Setup(jobsdb.Write, true, "gw", migrationMode, true, queryFilters, []prebackup.Handler{})
+
+	err := tempDB.Setup(jobsdb.Write, true, "gw", migrationMode, true, []prebackup.Handler{})
 	require.NoError(t, err)
 	defer tempDB.TearDown()
 
 	customVal := "GW"
-	unprocessedListEmpty := tempDB.GetUnprocessed(jobsdb.GetQueryParamsT{
+	unprocessedListEmpty, err := tempDB.GetUnprocessed(context.Background(), jobsdb.GetQueryParamsT{
 		CustomValFilters: []string{customVal},
 		JobsLimit:        1,
 		ParameterFilters: []jobsdb.ParameterFilterT{},
 	})
+	require.NoError(t, err, "GetUnprocessed failed")
 	require.Equal(t, 0, len(unprocessedListEmpty.Jobs))
 
 	jobCountPerDS := 10
@@ -238,11 +237,13 @@ func TestProcessorManager(t *testing.T) {
 		require.NoError(t, processor.Start())
 		defer processor.Stop()
 		Eventually(func() int {
-			return len(tempDB.GetUnprocessed(jobsdb.GetQueryParamsT{
+			res, err := tempDB.GetUnprocessed(context.Background(), jobsdb.GetQueryParamsT{
 				CustomValFilters: []string{customVal},
 				JobsLimit:        20,
 				ParameterFilters: []jobsdb.ParameterFilterT{},
-			}).Jobs)
+			})
+			require.NoError(t, err)
+			return len(res.Jobs)
 		}, 10*time.Minute, 100*time.Millisecond).Should(Equal(0))
 	})
 
@@ -265,18 +266,20 @@ func TestProcessorManager(t *testing.T) {
 		require.NoError(t, processor.Start())
 		err = tempDB.Store(context.Background(), genJobs(customVal, jobCountPerDS, eventsPerJob))
 		require.NoError(t, err)
-		unprocessedListEmpty = tempDB.GetUnprocessed(jobsdb.GetQueryParamsT{
+		unprocessedListEmpty, err = tempDB.GetUnprocessed(context.Background(), jobsdb.GetQueryParamsT{
 			CustomValFilters: []string{customVal},
 			JobsLimit:        20,
 			ParameterFilters: []jobsdb.ParameterFilterT{},
 		})
-
+		require.NoError(t, err, "failed to get unprocessed jobs")
 		Eventually(func() int {
-			return len(tempDB.GetUnprocessed(jobsdb.GetQueryParamsT{
+			res, err := tempDB.GetUnprocessed(context.Background(), jobsdb.GetQueryParamsT{
 				CustomValFilters: []string{customVal},
 				JobsLimit:        20,
 				ParameterFilters: []jobsdb.ParameterFilterT{},
-			}).Jobs)
+			})
+			require.NoError(t, err)
+			return len(res.Jobs)
 		}, time.Minute, 100*time.Millisecond).Should(Equal(0))
 		processor.Stop()
 	})

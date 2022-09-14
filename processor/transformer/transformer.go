@@ -270,7 +270,7 @@ func (trans *HandleT) Validate(clientEvents []TransformerEventT,
 	return trans.Transform(context.TODO(), clientEvents, url, batchSize)
 }
 
-func (_ *HandleT) requestTime(s stats.Tags, d time.Duration) {
+func (*HandleT) requestTime(s stats.Tags, d time.Duration) {
 	stats.NewTaggedStat("processor.transformer_request_time", stats.TimerType, s).SendTiming(d)
 }
 

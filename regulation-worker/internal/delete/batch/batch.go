@@ -63,7 +63,7 @@ func getDeleteManager(destName string) (*S3DeleteManager, error) {
 // NOTE: assuming that all of batch destination have same file system as S3, i.e. flat.
 func (b *Batch) listFiles(ctx context.Context) ([]*filemanager.FileObject, error) {
 	pkgLogger.Debugf("getting a list of files from destination")
-	fileObjects, err := b.FM.ListFilesWithPrefix(context.TODO(), "", "", listMaxItem)
+	fileObjects, err := b.FM.ListFilesWithPrefix(ctx, "", "", listMaxItem)
 	if err != nil {
 		pkgLogger.Errorf("error while getting list of files: %v", err)
 		return []*filemanager.FileObject{}, fmt.Errorf("failed to fetch object list from S3: %v", err)
@@ -75,7 +75,7 @@ func (b *Batch) listFiles(ctx context.Context) ([]*filemanager.FileObject, error
 	// since everything is stored as a file in S3, above fileObjects list also has directory & not just *.json.gz files. So, need to remove those.
 	count := 0
 	for i := 0; i < len(fileObjects); i++ {
-		if regexRequiredSuffix.Match([]byte(fileObjects[i].Key)) {
+		if regexRequiredSuffix.MatchString(fileObjects[i].Key) {
 			count++
 		}
 	}
@@ -83,7 +83,7 @@ func (b *Batch) listFiles(ctx context.Context) ([]*filemanager.FileObject, error
 	gzFileObjects := make([]*filemanager.FileObject, count)
 	index := 0
 	for i := 0; i < len(fileObjects); i++ {
-		if regexRequiredSuffix.Match([]byte(fileObjects[i].Key)) {
+		if regexRequiredSuffix.MatchString(fileObjects[i].Key) {
 			gzFileObjects[index] = fileObjects[i]
 			index++
 		}

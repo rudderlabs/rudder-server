@@ -8,8 +8,10 @@ import (
 	pprof "net/http/pprof"
 	"strconv"
 	"sync"
+	"time"
 
 	"github.com/rudderlabs/rudder-server/config"
+	"github.com/rudderlabs/rudder-server/utils/httputil"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 )
 
@@ -76,15 +78,11 @@ func (p *Profiler) StartServer(ctx context.Context) error {
 		Handler: mux,
 		Addr:    ":" + strconv.Itoa(p.port),
 	}
-	go func() {
-		<-ctx.Done()
-		_ = srv.Shutdown(context.Background())
-	}()
 
 	pkgLogger.Infof("Starting server on port %d", p.port)
-
-	if err := srv.ListenAndServe(); err != nil {
+	if err := httputil.ListenAndServe(ctx, srv, 3*time.Second); err != nil {
 		return fmt.Errorf("debug server: %w", err)
 	}
+
 	return nil
 }

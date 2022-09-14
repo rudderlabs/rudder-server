@@ -57,7 +57,7 @@ func (manager *AzureBlobStorageManager) getContainerURL() (azblob.ContainerURL, 
 	}
 
 	accountName, accountKey := manager.Config.AccountName, manager.Config.AccountKey
-	if len(accountName) == 0 || len(accountKey) == 0 {
+	if accountName == "" || accountKey == "" {
 		return azblob.ContainerURL{}, errors.New("either the AccountName or AccountKey is not correct")
 	}
 
@@ -200,7 +200,7 @@ func (manager *AzureBlobStorageManager) getTimeout() time.Duration {
 		return manager.timeout
 	}
 
-	return getBatchRouterDurationConfig("timeout", "AZURE_BLOB", 120, time.Second)
+	return getBatchRouterTimeoutConfig("AZURE_BLOB")
 }
 
 func GetAzureBlogStorageConfig(config map[string]interface{}) *AzureBlobStorageConfig {

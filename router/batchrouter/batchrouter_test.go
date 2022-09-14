@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	uuid "github.com/gofrs/uuid"
+	"github.com/gofrs/uuid"
 	"github.com/golang/mock/gomock"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -125,7 +125,7 @@ func (c *testContext) Finish() {
 }
 
 var (
-	CustomVal           map[string]string = map[string]string{"S3": "S3"}
+	CustomVal           = map[string]string{"S3": "S3"}
 	emptyJournalEntries []jobsdb.JournalEntryT
 )
 
@@ -177,7 +177,6 @@ var _ = Describe("BatchRouter", func() {
 
 			batchrouter.Setup(c.mockBackendConfig, c.mockBatchRouterJobsDB, c.mockProcErrorsDB, s3DestinationDefinition.Name, nil, c.mockMultitenantI, transientsource.NewEmptyService(), rsources.NewNoOpService())
 			readPerDestination = false
-			setQueryFilters()
 			batchrouter.fileManagerFactory = c.mockFileManagerFactory
 
 			c.mockFileManagerFactory.EXPECT().New(gomock.Any()).Times(1).Return(c.mockFileManager, nil)
@@ -201,7 +200,7 @@ var _ = Describe("BatchRouter", func() {
 			  }`
 			parameters := fmt.Sprintf(`{"source_id": "%s", "destination_id": "%s", "message_id": "2f548e6d-60f6-44af-a1f4-62b3272445c3", "received_at": "2021-06-28T10:04:48.527+05:30", "transform_at": "none"}`, SourceIDEnabled, S3DestinationID)
 
-			var toRetryJobsList []*jobsdb.JobT = []*jobsdb.JobT{
+			toRetryJobsList := []*jobsdb.JobT{
 				{
 					UUID:         uuid.Must(uuid.NewV4()),
 					UserID:       "u1",
@@ -218,7 +217,7 @@ var _ = Describe("BatchRouter", func() {
 				},
 			}
 
-			var unprocessedJobsList []*jobsdb.JobT = []*jobsdb.JobT{
+			unprocessedJobsList := []*jobsdb.JobT{
 				{
 					UUID:         uuid.Must(uuid.NewV4()),
 					UserID:       "u1",
@@ -235,13 +234,13 @@ var _ = Describe("BatchRouter", func() {
 			}
 
 			payloadLimit := batchrouter.payloadLimit
-			callRetry := c.mockBatchRouterJobsDB.EXPECT().GetToRetry(jobsdb.GetQueryParamsT{CustomValFilters: []string{CustomVal["S3"]}, JobsLimit: c.jobQueryBatchSize, PayloadSizeLimit: payloadLimit}).Return(jobsdb.JobsResult{Jobs: toRetryJobsList}).Times(1)
-			c.mockBatchRouterJobsDB.EXPECT().GetUnprocessed(jobsdb.GetQueryParamsT{CustomValFilters: []string{CustomVal["S3"]}, JobsLimit: c.jobQueryBatchSize - len(toRetryJobsList), PayloadSizeLimit: payloadLimit}).Return(jobsdb.JobsResult{Jobs: unprocessedJobsList}).Times(1).After(callRetry)
+			callRetry := c.mockBatchRouterJobsDB.EXPECT().GetToRetry(gomock.Any(), jobsdb.GetQueryParamsT{CustomValFilters: []string{CustomVal["S3"]}, JobsLimit: c.jobQueryBatchSize, PayloadSizeLimit: payloadLimit}).Return(jobsdb.JobsResult{Jobs: toRetryJobsList}, nil).Times(1)
+			c.mockBatchRouterJobsDB.EXPECT().GetUnprocessed(gomock.Any(), jobsdb.GetQueryParamsT{CustomValFilters: []string{CustomVal["S3"]}, JobsLimit: c.jobQueryBatchSize - len(toRetryJobsList), PayloadSizeLimit: payloadLimit}).Return(jobsdb.JobsResult{Jobs: unprocessedJobsList}, nil).Times(1).After(callRetry)
 
 			c.mockBatchRouterJobsDB.EXPECT().UpdateJobStatus(gomock.Any(), gomock.Any(), []string{CustomVal["S3"]}, gomock.Any()).Times(1).
 				Do(func(ctx context.Context, statuses []*jobsdb.JobStatusT, _, _ interface{}) {
-					assertJobStatus(toRetryJobsList[0], statuses[0], jobsdb.Executing.State, "", `{}`, 2)
-					assertJobStatus(unprocessedJobsList[0], statuses[1], jobsdb.Executing.State, "", `{}`, 1)
+					assertJobStatus(toRetryJobsList[0], statuses[0], jobsdb.Executing.State, `{}`, 2)
+					assertJobStatus(unprocessedJobsList[0], statuses[1], jobsdb.Executing.State, `{}`, 1)
 				}).Return(nil)
 
 			c.mockBatchRouterJobsDB.EXPECT().JournalMarkStart(gomock.Any(), gomock.Any()).Times(1).Return(int64(1))
@@ -251,8 +250,8 @@ var _ = Describe("BatchRouter", func() {
 			}).Return(nil)
 			c.mockBatchRouterJobsDB.EXPECT().UpdateJobStatusInTx(gomock.Any(), gomock.Any(), gomock.Any(), []string{CustomVal["S3"]}, nil).Times(1).
 				Do(func(ctx context.Context, _ interface{}, statuses []*jobsdb.JobStatusT, _, _ interface{}) {
-					assertJobStatus(toRetryJobsList[0], statuses[0], jobsdb.Succeeded.State, "", `{"firstAttemptedAt": "2021-06-28T15:57:30.742+05:30", "success": "OK"}`, 2)
-					assertJobStatus(unprocessedJobsList[0], statuses[1], jobsdb.Succeeded.State, "", `{"firstAttemptedAt": "2021-06-28T15:57:30.742+05:30, "success": "OK""}`, 1)
+					assertJobStatus(toRetryJobsList[0], statuses[0], jobsdb.Succeeded.State, `{"firstAttemptedAt": "2021-06-28T15:57:30.742+05:30", "success": "OK"}`, 2)
+					assertJobStatus(unprocessedJobsList[0], statuses[1], jobsdb.Succeeded.State, `{"firstAttemptedAt": "2021-06-28T15:57:30.742+05:30, "success": "OK""}`, 1)
 				}).Return(nil)
 
 			c.mockBatchRouterJobsDB.EXPECT().JournalDeleteEntry(gomock.Any()).Times(1)
@@ -292,10 +291,9 @@ var _ = Describe("BatchRouter", func() {
 	})
 })
 
-func assertJobStatus(job *jobsdb.JobT, status *jobsdb.JobStatusT, expectedState, errorCode, errorResponse string, attemptNum int) {
+func assertJobStatus(job *jobsdb.JobT, status *jobsdb.JobStatusT, expectedState, errorResponse string, attemptNum int) {
 	Expect(status.JobID).To(Equal(job.JobID))
 	Expect(status.JobState).To(Equal(expectedState))
-	Expect(status.ErrorCode).To(Equal(errorCode))
 	if attemptNum > 1 {
 		Expect(status.ErrorResponse).To(MatchJSON(errorResponse))
 	}

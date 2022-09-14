@@ -502,6 +502,28 @@ var _ = Describe("Misc", func() {
 	)
 })
 
+func TestContains(t *testing.T) {
+	t.Run("strings", func(t *testing.T) {
+		list := []string{"a", "b", "c"}
+
+		for _, item := range list {
+			require.True(t, Contains(list, item))
+		}
+
+		require.False(t, Contains(list, "0"))
+	})
+
+	t.Run("int", func(t *testing.T) {
+		list := []int{1, 2, 3}
+
+		for _, item := range list {
+			require.True(t, Contains(list, item))
+		}
+
+		require.False(t, Contains(list, -1))
+	})
+}
+
 func TestReplaceMultiRegex(t *testing.T) {
 	inputs := []struct {
 		expression string
@@ -551,31 +573,27 @@ func TestReplaceMultiRegex(t *testing.T) {
 }
 
 // FolderExists Check if folder exists at particular path
-func FolderExists(path string) (exists bool, err error) {
+func FolderExists(path string) (bool, error) {
 	fileInfo, err := os.Stat(path)
-	if err == nil {
-		exists = fileInfo.IsDir()
-		return
-	}
 	if errors.Is(err, os.ErrNotExist) {
-		exists = false
-		err = nil
-		return
+		return false, nil
 	}
-	return
+	if err != nil {
+		return false, err
+	}
+
+	return fileInfo.IsDir(), nil
 }
 
 // FileExists Check if file exists at particular path
-func FileExists(path string) (exists bool, err error) {
+func FileExists(path string) (bool, error) {
 	fileInfo, err := os.Stat(path)
-	if err == nil {
-		exists = !fileInfo.IsDir()
-		return
-	}
 	if errors.Is(err, os.ErrNotExist) {
-		exists = false
-		err = nil
-		return
+		return false, nil
 	}
-	return
+	if err != nil {
+		return false, err
+	}
+
+	return !fileInfo.IsDir(), nil
 }

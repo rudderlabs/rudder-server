@@ -384,7 +384,7 @@ var _ = Describe("Processor", func() {
 			processor.Setup(c.mockBackendConfig, c.mockGatewayJobsDB, c.mockRouterJobsDB, c.mockBatchRouterJobsDB, c.mockProcErrorsDB, &clearDB, c.MockReportingI, c.MockMultitenantHandle, transientsource.NewEmptyService(), c.MockRsourcesService)
 
 			payloadLimit := processor.payloadLimit
-			c.mockGatewayJobsDB.EXPECT().GetUnprocessed(jobsdb.GetQueryParamsT{CustomValFilters: gatewayCustomVal, JobsLimit: c.dbReadBatchSize, EventsLimit: c.processEventSize, PayloadSizeLimit: payloadLimit}).Return(jobsdb.JobsResult{Jobs: emptyJobsList}).Times(1)
+			c.mockGatewayJobsDB.EXPECT().GetUnprocessed(gomock.Any(), jobsdb.GetQueryParamsT{CustomValFilters: gatewayCustomVal, JobsLimit: c.dbReadBatchSize, EventsLimit: c.processEventSize, PayloadSizeLimit: payloadLimit}).Return(jobsdb.JobsResult{Jobs: emptyJobsList}, nil).Times(1)
 
 			didWork := processor.handlePendingGatewayJobs()
 			Expect(didWork).To(Equal(false))
@@ -507,12 +507,12 @@ var _ = Describe("Processor", func() {
 			mockTransformer.EXPECT().Setup().Times(1)
 
 			payloadLimit := 100 * bytesize.MB
-			callUnprocessed := c.mockGatewayJobsDB.EXPECT().GetUnprocessed(jobsdb.GetQueryParamsT{
+			callUnprocessed := c.mockGatewayJobsDB.EXPECT().GetUnprocessed(gomock.Any(), jobsdb.GetQueryParamsT{
 				CustomValFilters: gatewayCustomVal,
 				JobsLimit:        c.dbReadBatchSize,
 				EventsLimit:      c.processEventSize,
 				PayloadSizeLimit: payloadLimit,
-			}).Return(jobsdb.JobsResult{Jobs: unprocessedJobsList}).Times(1)
+			}).Return(jobsdb.JobsResult{Jobs: unprocessedJobsList}, nil).Times(1)
 
 			transformExpectations := map[string]transformExpectation{
 				DestinationIDEnabledA: {
@@ -558,7 +558,7 @@ var _ = Describe("Processor", func() {
 				Do(func(ctx context.Context, txn jobsdb.UpdateSafeTx, statuses []*jobsdb.JobStatusT, _, _ interface{}) {
 					// jobs should be sorted by jobid, so order of statuses is different than order of jobs
 					for i := range unprocessedJobsList {
-						assertJobStatus(unprocessedJobsList[i], statuses[i], jobsdb.Succeeded.State, "200", `{"success":"OK"}`, 1)
+						assertJobStatus(unprocessedJobsList[i], statuses[i], jobsdb.Succeeded.State)
 					}
 				})
 			processor := &HandleT{
@@ -567,7 +567,7 @@ var _ = Describe("Processor", func() {
 			c.mockBackendConfig.EXPECT().GetWorkspaceIDForWriteKey(WriteKeyEnabledNoUT).Return(WorkspaceID).AnyTimes()
 			c.mockBackendConfig.EXPECT().GetWorkspaceLibrariesForWorkspaceID(WorkspaceID).Return(backendconfig.LibrariesT{}).AnyTimes()
 
-			processorSetupAndAssertJobHandling(processor, c, false, false)
+			processorSetupAndAssertJobHandling(processor, c)
 		})
 
 		It("should process unprocessed jobs to destination with only user transformation", func() {
@@ -686,12 +686,12 @@ var _ = Describe("Processor", func() {
 			mockTransformer.EXPECT().Setup().Times(1)
 
 			payloadLimit := 100 * bytesize.MB
-			callUnprocessed := c.mockGatewayJobsDB.EXPECT().GetUnprocessed(jobsdb.GetQueryParamsT{
+			callUnprocessed := c.mockGatewayJobsDB.EXPECT().GetUnprocessed(gomock.Any(), jobsdb.GetQueryParamsT{
 				CustomValFilters: gatewayCustomVal,
 				JobsLimit:        c.dbReadBatchSize,
 				EventsLimit:      c.processEventSize,
 				PayloadSizeLimit: payloadLimit,
-			}).Return(jobsdb.JobsResult{Jobs: unprocessedJobsList}).Times(1)
+			}).Return(jobsdb.JobsResult{Jobs: unprocessedJobsList}, nil).Times(1)
 
 			transformExpectations := map[string]transformExpectation{
 				DestinationIDEnabledB: {
@@ -756,7 +756,7 @@ var _ = Describe("Processor", func() {
 			c.mockGatewayJobsDB.EXPECT().UpdateJobStatusInTx(gomock.Any(), gomock.Any(), gomock.Len(len(unprocessedJobsList)), gatewayCustomVal, nil).Times(1).After(callStoreBatchRouter).
 				Do(func(ctx context.Context, txn jobsdb.UpdateSafeTx, statuses []*jobsdb.JobStatusT, _, _ interface{}) {
 					for i := range unprocessedJobsList {
-						assertJobStatus(unprocessedJobsList[i], statuses[i], jobsdb.Succeeded.State, "200", `{"success":"OK"}`, 1)
+						assertJobStatus(unprocessedJobsList[i], statuses[i], jobsdb.Succeeded.State)
 					}
 				})
 			c.mockBackendConfig.EXPECT().GetWorkspaceIDForWriteKey(WriteKeyEnabledOnlyUT).Return(WorkspaceID).AnyTimes()
@@ -766,7 +766,7 @@ var _ = Describe("Processor", func() {
 				transformer: mockTransformer,
 			}
 
-			processorSetupAndAssertJobHandling(processor, c, false, false)
+			processorSetupAndAssertJobHandling(processor, c)
 		})
 
 		It("should process unprocessed jobs to destination without user transformation with enabled Dedup", func() {
@@ -835,7 +835,7 @@ var _ = Describe("Processor", func() {
 			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
 			mockTransformer.EXPECT().Setup().Times(1)
 
-			callUnprocessed := c.mockGatewayJobsDB.EXPECT().GetUnprocessed(gomock.Any()).Return(jobsdb.JobsResult{Jobs: unprocessedJobsList}).Times(1)
+			callUnprocessed := c.mockGatewayJobsDB.EXPECT().GetUnprocessed(gomock.Any(), gomock.Any()).Return(jobsdb.JobsResult{Jobs: unprocessedJobsList}, nil).Times(1)
 			c.MockDedup.EXPECT().FindDuplicates(gomock.Any(), gomock.Any()).Return([]int{1}).After(callUnprocessed).Times(2)
 			c.MockDedup.EXPECT().MarkProcessed(gomock.Any()).Times(1)
 
@@ -920,7 +920,7 @@ var _ = Describe("Processor", func() {
 				},
 			}
 
-			assertErrStoreJob := func(job *jobsdb.JobT, i int, destination string) {
+			assertErrStoreJob := func(job *jobsdb.JobT, i int) {
 				Expect(job.UUID.String()).To(testutils.BeValidUUID())
 				Expect(job.JobID).To(Equal(int64(0)))
 				Expect(job.CreatedAt).To(BeTemporally("~", time.Now(), 200*time.Millisecond))
@@ -954,12 +954,12 @@ var _ = Describe("Processor", func() {
 			mockTransformer.EXPECT().Setup().Times(1)
 
 			payloadLimit := 100 * bytesize.MB
-			c.mockGatewayJobsDB.EXPECT().GetUnprocessed(jobsdb.GetQueryParamsT{
+			c.mockGatewayJobsDB.EXPECT().GetUnprocessed(gomock.Any(), jobsdb.GetQueryParamsT{
 				CustomValFilters: gatewayCustomVal,
 				JobsLimit:        c.dbReadBatchSize,
 				EventsLimit:      c.processEventSize,
 				PayloadSizeLimit: payloadLimit,
-			}).Return(jobsdb.JobsResult{Jobs: unprocessedJobsList}).Times(1)
+			}).Return(jobsdb.JobsResult{Jobs: unprocessedJobsList}, nil).Times(1)
 			// Test transformer failure
 			mockTransformer.EXPECT().Transform(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Times(1).
 				Return(transformer.ResponseT{
@@ -975,7 +975,7 @@ var _ = Describe("Processor", func() {
 			c.mockGatewayJobsDB.EXPECT().UpdateJobStatusInTx(gomock.Any(), gomock.Any(), gomock.Len(len(unprocessedJobsList)), gatewayCustomVal, nil).Times(1).
 				Do(func(ctx context.Context, txn jobsdb.UpdateSafeTx, statuses []*jobsdb.JobStatusT, _, _ interface{}) {
 					// job should be marked as successful regardless of transformer response
-					assertJobStatus(unprocessedJobsList[0], statuses[0], jobsdb.Succeeded.State, "200", `{"success":"OK"}`, 1)
+					assertJobStatus(unprocessedJobsList[0], statuses[0], jobsdb.Succeeded.State)
 				})
 
 			// will be used to save failed events to failed keys table
@@ -988,7 +988,7 @@ var _ = Describe("Processor", func() {
 				Do(func(ctx context.Context, jobs []*jobsdb.JobT) {
 					Expect(jobs).To(HaveLen(2))
 					for i, job := range jobs {
-						assertErrStoreJob(job, i, "value-enabled-destination-a")
+						assertErrStoreJob(job, i)
 					}
 				})
 			c.mockBackendConfig.EXPECT().GetWorkspaceIDForWriteKey(WriteKeyEnabled).Return(WorkspaceID).AnyTimes()
@@ -998,7 +998,7 @@ var _ = Describe("Processor", func() {
 				transformer: mockTransformer,
 			}
 
-			processorSetupAndAssertJobHandling(processor, c, false, false)
+			processorSetupAndAssertJobHandling(processor, c)
 		})
 
 		It("messages should be skipped on user transform failures, without failing the job", func() {
@@ -1088,12 +1088,12 @@ var _ = Describe("Processor", func() {
 			mockTransformer.EXPECT().Setup().Times(1)
 
 			payloadLimit := 100 * bytesize.MB
-			c.mockGatewayJobsDB.EXPECT().GetUnprocessed(jobsdb.GetQueryParamsT{
+			c.mockGatewayJobsDB.EXPECT().GetUnprocessed(gomock.Any(), jobsdb.GetQueryParamsT{
 				CustomValFilters: gatewayCustomVal,
 				JobsLimit:        c.dbReadBatchSize,
 				EventsLimit:      c.processEventSize,
 				PayloadSizeLimit: payloadLimit,
-			}).Return(jobsdb.JobsResult{Jobs: unprocessedJobsList}).Times(1)
+			}).Return(jobsdb.JobsResult{Jobs: unprocessedJobsList}, nil).Times(1)
 
 			// Test transformer failure
 			mockTransformer.EXPECT().Transform(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Times(1).
@@ -1110,7 +1110,7 @@ var _ = Describe("Processor", func() {
 			c.mockGatewayJobsDB.EXPECT().UpdateJobStatusInTx(gomock.Any(), gomock.Any(), gomock.Len(len(toRetryJobsList)+len(unprocessedJobsList)), gatewayCustomVal, nil).Times(1).
 				Do(func(ctx context.Context, txn jobsdb.UpdateSafeTx, statuses []*jobsdb.JobStatusT, _, _ interface{}) {
 					// job should be marked as successful regardless of transformer response
-					assertJobStatus(unprocessedJobsList[0], statuses[0], jobsdb.Succeeded.State, "200", `{"success":"OK"}`, 1)
+					assertJobStatus(unprocessedJobsList[0], statuses[0], jobsdb.Succeeded.State)
 				})
 
 			c.mockProcErrorsDB.EXPECT().WithTx(gomock.Any()).Do(func(f func(tx *sql.Tx) error) {
@@ -1132,7 +1132,7 @@ var _ = Describe("Processor", func() {
 				transformer: mockTransformer,
 			}
 
-			processorSetupAndAssertJobHandling(processor, c, false, false)
+			processorSetupAndAssertJobHandling(processor, c)
 		})
 
 		It("should drop messages that the destination doesn't support", func() {
@@ -1172,12 +1172,12 @@ var _ = Describe("Processor", func() {
 			mockTransformer.EXPECT().Setup().Times(1)
 
 			payloadLimit := 100 * bytesize.MB
-			c.mockGatewayJobsDB.EXPECT().GetUnprocessed(jobsdb.GetQueryParamsT{
+			c.mockGatewayJobsDB.EXPECT().GetUnprocessed(gomock.Any(), jobsdb.GetQueryParamsT{
 				CustomValFilters: gatewayCustomVal,
 				JobsLimit:        c.dbReadBatchSize,
 				EventsLimit:      c.processEventSize,
 				PayloadSizeLimit: payloadLimit,
-			}).Return(jobsdb.JobsResult{Jobs: unprocessedJobsList}).Times(1)
+			}).Return(jobsdb.JobsResult{Jobs: unprocessedJobsList}, nil).Times(1)
 
 			// Test transformer failure
 			mockTransformer.EXPECT().Transform(gomock.Any(), gomock.Len(0), gomock.Any(), gomock.Any()).Times(0)
@@ -1190,7 +1190,7 @@ var _ = Describe("Processor", func() {
 			c.mockGatewayJobsDB.EXPECT().UpdateJobStatusInTx(gomock.Any(), gomock.Any(), gomock.Len(len(toRetryJobsList)+len(unprocessedJobsList)), gatewayCustomVal, nil).Times(1).
 				Do(func(ctx context.Context, txn jobsdb.UpdateSafeTx, statuses []*jobsdb.JobStatusT, _, _ interface{}) {
 					// job should be marked as successful regardless of transformer response
-					assertJobStatus(unprocessedJobsList[0], statuses[0], jobsdb.Succeeded.State, "200", `{"success":"OK"}`, 1)
+					assertJobStatus(unprocessedJobsList[0], statuses[0], jobsdb.Succeeded.State)
 				})
 
 			c.mockProcErrorsDB.EXPECT().WithTx(gomock.Any()).Do(func(f func(tx *sql.Tx) error) {
@@ -1207,7 +1207,7 @@ var _ = Describe("Processor", func() {
 				transformer: mockTransformer,
 			}
 
-			processorSetupAndAssertJobHandling(processor, c, false, false)
+			processorSetupAndAssertJobHandling(processor, c)
 		})
 	})
 
@@ -1256,11 +1256,11 @@ var _ = Describe("Processor", func() {
 			processor.readLoopSleep = time.Millisecond
 
 			c.mockProcErrorsDB.EXPECT().DeleteExecuting()
-			c.mockProcErrorsDB.EXPECT().GetToRetry(gomock.Any()).Return(jobsdb.JobsResult{}).AnyTimes()
-			c.mockProcErrorsDB.EXPECT().GetUnprocessed(gomock.Any()).Return(jobsdb.JobsResult{}).AnyTimes()
+			c.mockProcErrorsDB.EXPECT().GetToRetry(gomock.Any(), gomock.Any()).Return(jobsdb.JobsResult{}, nil).AnyTimes()
+			c.mockProcErrorsDB.EXPECT().GetUnprocessed(gomock.Any(), gomock.Any()).Return(jobsdb.JobsResult{}, nil).AnyTimes()
 			c.mockBackendConfig.EXPECT().WaitForConfig(gomock.Any()).Times(1)
 
-			c.mockGatewayJobsDB.EXPECT().GetUnprocessed(gomock.Any()).Times(0)
+			c.mockGatewayJobsDB.EXPECT().GetUnprocessed(gomock.Any(), gomock.Any()).Times(0)
 			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
 			defer cancel()
 
@@ -1877,14 +1877,11 @@ func createBatchParameters(sourceId string) []byte {
 	return []byte(fmt.Sprintf(`{"source_id":%q}`, sourceId))
 }
 
-func assertJobStatus(job *jobsdb.JobT, status *jobsdb.JobStatusT, expectedState, errorCode, errorResponse string, attemptNum int) {
+func assertJobStatus(job *jobsdb.JobT, status *jobsdb.JobStatusT, expectedState string) {
 	Expect(status.JobID).To(Equal(job.JobID))
 	Expect(status.JobState).To(Equal(expectedState))
-	Expect(status.ErrorCode).To(Equal(errorCode))
-	Expect(status.ErrorResponse).To(MatchJSON(errorResponse))
 	Expect(status.RetryTime).To(BeTemporally("~", time.Now(), 200*time.Millisecond))
 	Expect(status.ExecTime).To(BeTemporally("~", time.Now(), 200*time.Millisecond))
-	Expect(status.AttemptNum).To(Equal(attemptNum))
 }
 
 func assertReportMetric(expectedMetric, actualMetric []*types.PUReportedMetric) {
@@ -2031,8 +2028,8 @@ func assertDestinationTransform(messages map[string]mockEventData, sourceId, des
 	}
 }
 
-func processorSetupAndAssertJobHandling(processor *HandleT, c *testContext, enableDedup, enableReporting bool) {
-	Setup(processor, c, enableDedup, enableReporting)
+func processorSetupAndAssertJobHandling(processor *HandleT, c *testContext) {
+	Setup(processor, c, false, false)
 	processor.multitenantI = c.MockMultitenantHandle
 	handlePendingGatewayJobs(processor)
 }

@@ -96,7 +96,7 @@ func RecordEvent(writeKey, eventBatch string) bool {
 	// Check if writeKey part of enabled sources
 	configSubscriberLock.RLock()
 	defer configSubscriberLock.RUnlock()
-	if !misc.ContainsString(uploadEnabledWriteKeys, writeKey) {
+	if !misc.Contains(uploadEnabledWriteKeys, writeKey) {
 		eventBatchData, _ := json.Marshal(eventBatch)
 		eventsCacheMap.Update(writeKey, eventBatchData)
 		return false
