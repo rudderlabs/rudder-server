@@ -604,7 +604,7 @@ func runAsyncJob(asyncjob jobs.AsyncJobPayloadT, workerIndex int) (AsyncJobRunRe
 	warehouse := connectionsMap[asyncjob.DestinationID][asyncjob.SourceID]
 	whManager, err := manager.NewWarehouseOperations(asyncjob.DestType)
 	if err != nil {
-		return AsyncJobRunResult{JobRunID: "", TableName: "", Result: false}, err
+		return AsyncJobRunResult{Result: false}, err
 	}
 	whasyncjob := new(jobs.WhAsyncJob)
 

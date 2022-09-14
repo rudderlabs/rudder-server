@@ -555,11 +555,6 @@ func blockByPendingEvents(t testing.TB, payload *strings.Reader, writeKey string
 			[]byte(fmt.Sprintf("%s:", writeKey)),
 		)),
 	)
-	// requestDump, err := httputil.DumpRequest(req, true)
-	// if err != nil {
-	// 	fmt.Println(err)
-	// }
-	// fmt.Println(string(requestDump))
 
 	res, err := httpClient.Do(req)
 	if err != nil {

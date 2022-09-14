@@ -48,6 +48,11 @@ const (
 	AbortedState   = "aborted"
 )
 
+const (
+	AsyncJobType  = "async_job"
+	UploadJobType = "upload"
+)
+
 func Init() {
 	loadPGNotifierConfig()
 	queueName = "pg_notifier_queue"
@@ -242,17 +247,17 @@ func (notifier *PgNotifierT) trackAsyncBatch(batchID string, ch *chan []Response
 			// keep polling db for batch status
 			// or subscribe to triggers
 			pkgLogger.Info("Tracking the async batch that's uploaded")
-			stmt := fmt.Sprintf(`SELECT count(*) FROM %s WHERE batch_id='%s' AND status!='%s' AND status!='%s'`, queueName, batchID, SucceededState, AbortedState)
+			stmt := fmt.Sprintf(`SELECT count(*) FROM %s WHERE batch_id=$1 AND status!=$2 AND status!=$3`, queueName)
 			var count int
-			err := notifier.dbHandle.QueryRow(stmt).Scan(&count)
+			err := notifier.dbHandle.QueryRow(stmt, batchID, SucceededState, AbortedState).Scan(&count)
 			if err != nil {
 				pkgLogger.Errorf("PgNotifier: Failed to query for tracking jobs by batch_id: %s, connInfo: %s, error : %s", stmt, notifier.URI, err.Error())
 				continue
 			}
 
 			if count == 0 {
-				stmt = fmt.Sprintf(`SELECT payload, status, error FROM %s WHERE batch_id = '%s'`, queueName, batchID)
-				rows, err := notifier.dbHandle.Query(stmt)
+				stmt = fmt.Sprintf(`SELECT payload, status, error FROM %s WHERE batch_id = $1`, queueName)
+				rows, err := notifier.dbHandle.Query(stmt, batchID)
 				if err != nil {
 					panic(err)
 				}
@@ -476,7 +481,7 @@ func (notifier *PgNotifierT) Publish(payload MessagePayload, schema *whUtils.Sch
 		"queueName": queueName,
 		"module":    "pg_notifier",
 	}).Count(len(jobs))
-	if payload.JobType == "async_job" {
+	if payload.JobType == AsyncJobType {
 		notifier.trackAsyncBatch(batchID, &ch)
 		return
 	}

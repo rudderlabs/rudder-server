@@ -440,7 +440,8 @@ func (pq *HandleT) DeleteBy(tableNames []string, params warehouseutils.DeleteByP
 			"context_sources_task_run_id",
 			"context_source_id",
 		)
-		pkgLogger.Infof("PG: Deleting rows in table in postgres for PG:%s : %v", pq.Warehouse.Destination.ID, sqlStatement)
+		pkgLogger.Infof("PG: Deleting rows in table in postgres for PG:%s", pq.Warehouse.Destination.ID)
+		pkgLogger.Debugf("PG: Executing the sqlstatement  %v", sqlStatement)
 		// Uncomment below 4 lines when we are ready to launch async job on postgres warehouse
 		// _, err = pq.Db.Exec(sqlStatement,
 		// 	params.JobRunId,

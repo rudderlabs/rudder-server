@@ -931,7 +931,10 @@ func (gateway *HandleT) pendingEventsHandler(w http.ResponseWriter, r *http.Requ
 }
 
 func warehouseHandler(w http.ResponseWriter, r *http.Request) {
-	origin, _ := url.Parse(misc.GetWarehouseURL())
+	origin, err := url.Parse(misc.GetWarehouseURL())
+	if err != nil {
+		http.Error(w, err.Error(), 404)
+	}
 	// gateway.logger.LogRequest(r)
 	director := func(req *http.Request) {
 		req.URL.Scheme = "http"

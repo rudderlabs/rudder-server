@@ -112,7 +112,6 @@ func Run(m *testing.M, setup WarehouseTestSetup) int {
 }
 
 func loadEnv() {
-	fmt.Println("Hey I am LoadEnv")
 	if err := godotenv.Load("../testhelper/.env"); err != nil {
 		fmt.Printf("Error occurred while loading env for warehouse integration test with error: %s", err.Error())
 	}
@@ -195,7 +194,6 @@ func VerifyingGatewayEvents(t testing.TB, wareHouseTest *WareHouseTest) {
 
 	require.Contains(t, wareHouseTest.EventsCountMap, "gateway")
 	gwEvents := wareHouseTest.EventsCountMap["gateway"]
-	// gsEvents := wareHouseTest.EventsCountMap["google_sheet"]
 
 	var (
 		count        int64

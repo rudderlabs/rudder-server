@@ -179,9 +179,6 @@ func (rs *HandleT) AddColumn(name, columnName, columnType string) (err error) {
 func (rs *HandleT) DeleteBy(tableNames []string, params warehouseutils.DeleteByParams) (err error) {
 	pkgLogger.Infof("RS: Cleaning up the followng tables in redshift for RS:%s : %v", tableNames)
 	for _, tb := range tableNames {
-		if tb == "rudder_discards" {
-			continue
-		}
 		sqlStatement := fmt.Sprintf(`DELETE FROM "%[1]s"."%[2]s" WHERE 
 		%[3]s <> $1 AND
 		%[4]s <> $2 AND
@@ -193,7 +190,8 @@ func (rs *HandleT) DeleteBy(tableNames []string, params warehouseutils.DeleteByP
 			"context_source_id",
 		)
 
-		pkgLogger.Infof("RS: Deleting rows in table in redshift for RS:%s : %v", rs.Warehouse.Destination.ID, sqlStatement)
+		pkgLogger.Infof("RS: Deleting rows in table in redshift for RS:%s", rs.Warehouse.Destination.ID)
+		pkgLogger.Debugf("RS: Executing the query %v", sqlStatement)
 		// Uncomment below 4 lines when we are ready to launch async job on redshift warehouse
 		// _, err = rs.Db.Exec(sqlStatement,
 		// 	params.JobRunId,

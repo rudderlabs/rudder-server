@@ -198,7 +198,7 @@ func (asyncWhJob *AsyncJobWhT) startAsyncJobRunner(ctx context.Context) {
 						// We need to program retry strategy, timeout strategy for each row in the asyncJobtable
 						continue
 					}
-					ind := getSinglePayloadFromBatchPayloadByTableName(&asyncjobpayloads, jobID.TableName)
+					ind := getSinglePayloadFromBatchPayloadByTableName(asyncjobpayloads, jobID.TableName)
 					if ind == -1 {
 						//Continues with the next payload leaving this row in the executing stage
 						asyncWhJob.log.Errorf("tableName is not found while updating the response after completing the trackasyncJob %s", jobID.TableName)
@@ -363,8 +363,8 @@ func getMessagePayloadsFromAsyncJobPayloads(asyncjobs []AsyncJobPayloadT) ([]pgn
 	return messages, nil
 }
 
-func getSinglePayloadFromBatchPayloadByTableName(asyncJobs *[]AsyncJobPayloadT, tableName string) int {
-	for ind, asyncjob := range *asyncJobs {
+func getSinglePayloadFromBatchPayloadByTableName(asyncJobs []AsyncJobPayloadT, tableName string) int {
+	for ind, asyncjob := range asyncJobs {
 		if asyncjob.TableName == tableName {
 			return ind
 		}

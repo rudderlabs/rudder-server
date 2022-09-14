@@ -615,9 +615,6 @@ func (as *HandleT) loadUserTables() (errorMap map[string]error) {
 func (as *HandleT) DeleteBy(tableNames []string, params warehouseutils.DeleteByParams) (err error) {
 	pkgLogger.Infof("AS: Cleaning up the followng tables in azure synapse for AS:%s : %v", tableNames)
 	for _, tb := range tableNames {
-		if tb == "rudder_discards" {
-			continue
-		}
 
 		sqlStatement := fmt.Sprintf(`DELETE FROM "%[1]s"."%[2]s" WHERE %[3]s <> '%[4]s' AND %[5]s <> '%[6]s' AND %[7]s='%[8]s'`,
 			as.Namespace,
@@ -629,7 +626,8 @@ func (as *HandleT) DeleteBy(tableNames []string, params warehouseutils.DeleteByP
 			"context_source_id",
 			params.SourceId,
 		)
-		pkgLogger.Infof("AS: Deleting rows in table in azure synapse for AS:%s : %v", as.Warehouse.Destination.ID, sqlStatement)
+		pkgLogger.Infof("AS: Deleting rows in table in azure synapse for AS:%s", as.Warehouse.Destination.ID)
+		pkgLogger.Debugf("AS: Executing the query in the deleteby %v", sqlStatement)
 		// _, err = as.Db.Exec(sqlStatement)
 		// if err != nil {
 		// 	return err

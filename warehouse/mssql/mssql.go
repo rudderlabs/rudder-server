@@ -238,9 +238,6 @@ func (ms *HandleT) DownloadLoadFiles(tableName string) ([]string, error) {
 func (ms *HandleT) DeleteBy(tableNames []string, params warehouseutils.DeleteByParams) (err error) {
 	pkgLogger.Infof("PG: Cleaning up the followng tables in mysql for MS:%s : %v", tableNames)
 	for _, tb := range tableNames {
-		if tb == "rudder_discards" {
-			continue
-		}
 		sqlStatement := fmt.Sprintf(`DELETE FROM "%[1]s"."%[2]s" WHERE 
 		%[3]s <> ? AND
 		%[4]s <> ? AND
@@ -252,7 +249,8 @@ func (ms *HandleT) DeleteBy(tableNames []string, params warehouseutils.DeleteByP
 			"context_source_id",
 		)
 
-		pkgLogger.Infof("MYSQL: Deleting rows in table in mysql for MS:%s : %v", ms.Warehouse.Destination.ID, sqlStatement)
+		pkgLogger.Infof("MYSQL: Deleting rows in table in mysql for MS:%s ", ms.Warehouse.Destination.ID)
+		pkgLogger.Debugf("MYSQL: Executing the statement %v", sqlStatement)
 		// Uncomment below 4 lines when we are ready to launch async job on MsSQL warehouse
 		// _, err = ms.Db.Exec(sqlStatement,
 		// 	params.JobRunId,

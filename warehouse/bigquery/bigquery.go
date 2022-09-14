@@ -255,9 +255,6 @@ func (bq *HandleT) dropStagingTable(stagingTableName string) {
 func (bq *HandleT) DeleteBy(tableNames []string, params warehouseutils.DeleteByParams) error {
 	pkgLogger.Infof("BQ: Cleaning up the followng tables in bigquery for BQ:%s : %v", tableNames)
 	for _, tb := range tableNames {
-		if tb == "rudder_discards" {
-			continue
-		}
 		sqlStatement := fmt.Sprintf(`DELETE FROM "%[1]s"."%[2]s" WHERE 
 		%[3]s <> @jobrunid AND
 		%[4]s <> @taskrunid AND
@@ -269,7 +266,8 @@ func (bq *HandleT) DeleteBy(tableNames []string, params warehouseutils.DeleteByP
 			"context_source_id",
 		)
 
-		pkgLogger.Infof("PG: Deleting rows in table in bigquery for BQ:%s : %v", bq.Warehouse.Destination.ID, sqlStatement)
+		pkgLogger.Infof("PG: Deleting rows in table in bigquery for BQ:%s", bq.Warehouse.Destination.ID)
+		pkgLogger.Debugf("PG: Executing the sql statement %v", sqlStatement)
 		query := bq.Db.Query(sqlStatement)
 		query.Parameters = []bigquery.QueryParameter{
 			{Name: "jobrunid", Value: params.JobRunId},
