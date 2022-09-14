@@ -420,7 +420,18 @@ func (tableUploadReq TableUploadReqT) GetWhTableUploads() ([]*proto.WHTable, err
 }
 
 func (tableUploadReq TableUploadReqT) generateQuery(selectFields string) string {
-	query := fmt.Sprintf(`select %s from %s where wh_upload_id = %d`, selectFields, warehouseutils.WarehouseTableUploadsTable, tableUploadReq.UploadID)
+	query := fmt.Sprintf(`
+		select
+		  %s
+		from
+		  %s
+		where
+		  wh_upload_id = %d
+	`,
+		selectFields,
+		warehouseutils.WarehouseTableUploadsTable,
+		tableUploadReq.UploadID,
+	)
 	if len(strings.TrimSpace(tableUploadReq.Name)) > 0 {
 		query = fmt.Sprintf(`%s and table_name = %s`, query, tableUploadReq.Name)
 	}
@@ -438,7 +449,18 @@ func (tableUploadReq TableUploadReqT) validateReq() error {
 }
 
 func (uploadReq UploadReqT) generateQuery(selectedFields string) string {
-	return fmt.Sprintf(`select %s from %s  where id = %d`, selectedFields, warehouseutils.WarehouseUploadsTable, uploadReq.UploadId)
+	return fmt.Sprintf(`
+		select
+		  %s
+		from
+		  %s
+		where
+		  id = %d
+	`,
+		selectedFields,
+		warehouseutils.WarehouseUploadsTable,
+		uploadReq.UploadId,
+	)
 }
 
 func (uploadReq UploadReqT) validateReq() error {
@@ -585,7 +607,20 @@ func (uploadsReq *UploadsReqT) getWhUploadsForHosted(authorizedSourceIDs []strin
 	}
 
 	subQuery = subQuery + strings.Join(whereClauses, " AND ")
-	query = fmt.Sprintf(`select * from (%s)p order by id desc limit %d offset %d`, subQuery, uploadsReq.Limit, uploadsReq.Offset)
+	query = fmt.Sprintf(`
+		select
+		  *
+		from
+		  (%s) p
+		order by
+		  id desc
+		limit
+		  %d offset %d
+	`,
+		subQuery,
+		uploadsReq.Limit,
+		uploadsReq.Offset,
+	)
 	uploadsReq.API.log.Info(query)
 
 	// get uploads from db
