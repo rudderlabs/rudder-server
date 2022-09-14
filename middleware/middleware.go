@@ -59,7 +59,7 @@ func StatMiddleware(ctx context.Context) func(http.Handler) http.Handler {
 	}
 }
 
-// SetJsonContentType currently sets the content-type only for eventSchemas, health responses.
+// SetJsonContentType sets the content-type to application/json.
 func SetJsonContentType() func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -69,6 +69,7 @@ func SetJsonContentType() func(http.Handler) http.Handler {
 	}
 }
 
+// SetPlainContentType sets content type to plain text.
 func SetPlainContentType() func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

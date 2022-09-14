@@ -73,3 +73,32 @@ func TestMaxConcurrentRequestsMiddleware(t *testing.T) {
 		})
 	}
 }
+
+func TestContentTypeMiddleware(t *testing.T) {
+	nextHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+	t.Run("test SetJsonContentType middleware", func(t *testing.T) {
+		expectedContentType := "application/json; charset=utf-8"
+		contentTypeMiddleware := middleware.SetJsonContentType()
+		handlerToTest := contentTypeMiddleware(nextHandler)
+		respRecorder := httptest.NewRecorder()
+		req := httptest.NewRequest("GET", "http://testing", nil)
+
+		handlerToTest.ServeHTTP(respRecorder, req)
+		receivedContentType := respRecorder.Header()["Content-Type"][0]
+		require.Equal(t, expectedContentType, receivedContentType, "actual content type different than expected.")
+	})
+
+	t.Run("test SetPlainContentType middleware", func(t *testing.T) {
+		expectedContentType := "text/plain; charset=utf-8"
+		contentTypeMiddleware := middleware.SetPlainContentType()
+		handlerToTest := contentTypeMiddleware(nextHandler)
+		respRecorder := httptest.NewRecorder()
+		req := httptest.NewRequest("GET", "http://testing", nil)
+
+		handlerToTest.ServeHTTP(respRecorder, req)
+		receivedContentType := respRecorder.Header()["Content-Type"][0]
+		require.Equal(t, expectedContentType, receivedContentType, "actual content type different than expected.")
+	})
+}
