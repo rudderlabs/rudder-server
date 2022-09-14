@@ -64,7 +64,7 @@ func (t *Stats) Start() error {
 
 	for dbPrefix := range t.RouterDBs {
 		t.routerInputRates[dbPrefix] = make(map[string]map[string]metric.MovingAverage)
-		pileUpStatMap, err := jobsdb.QueryWorkspacePileupWithRetriesAndNotify(context.Background(),
+		pileUpStatMap, err := misc.QueryWithRetriesAndNotify(context.Background(),
 			t.jobdDBQueryRequestTimeout,
 			t.jobdDBMaxRetries,
 			func(ctx context.Context) (map[string]map[string]int, error) {
@@ -97,8 +97,8 @@ func Init() {
 }
 
 func sendQueryRetryStats(attempt int) {
-	pkgLogger.Errorf("Multitenant: Retrying GET jobs: attempt: %d", attempt)
-	stats.NewTaggedStat("multitenant_query_retry_count", stats.CountType, stats.Tags{"attempt": fmt.Sprint(attempt)}).Count(1)
+	pkgLogger.Warnf("Timeout during query jobs in multitenant module, attempt %d", attempt)
+	stats.NewTaggedStat("jobsdb_query_timeout", stats.CountType, stats.Tags{"attempt": fmt.Sprint(attempt), "module": "multitenant"}).Count(1)
 }
 
 func NewStats(routerDBs map[string]jobsdb.MultiTenantJobsDB) *Stats {
@@ -114,7 +114,7 @@ func NewStats(routerDBs map[string]jobsdb.MultiTenantJobsDB) *Stats {
 	for dbPrefix := range routerDBs {
 		t.routerInputRates[dbPrefix] = make(map[string]map[string]metric.MovingAverage)
 
-		pileUpStatMap, err := jobsdb.QueryWorkspacePileupWithRetriesAndNotify(context.Background(),
+		pileUpStatMap, err := misc.QueryWithRetriesAndNotify(context.Background(),
 			t.jobdDBQueryRequestTimeout,
 			t.jobdDBMaxRetries,
 			func(ctx context.Context) (map[string]map[string]int, error) {

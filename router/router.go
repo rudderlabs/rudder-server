@@ -256,18 +256,18 @@ func loadConfig() {
 }
 
 func sendRetryStoreStats(attempt int) {
-	pkgLogger.Errorf("Router: Retrying store: attempt: %d", attempt)
-	stats.NewTaggedStat("rt_store_retry_count", stats.CountType, stats.Tags{"attempt": fmt.Sprint(attempt)}).Count(1)
+	pkgLogger.Warnf("Timeout during store jobs in router module, attempt %d", attempt)
+	stats.NewTaggedStat("jobsdb_store_timeout", stats.CountType, stats.Tags{"attempt": fmt.Sprint(attempt), "module": "router"}).Count(1)
 }
 
 func sendRetryUpdateStats(attempt int) {
-	pkgLogger.Errorf("Router: Retrying store: attempt: %d", attempt)
-	stats.NewTaggedStat("rt_update_retry_count", stats.CountType, stats.Tags{"attempt": fmt.Sprint(attempt)}).Count(1)
+	pkgLogger.Warnf("Timeout during update job status in router module, attempt %d", attempt)
+	stats.NewTaggedStat("jobsdb_update_timeout", stats.CountType, stats.Tags{"attempt": fmt.Sprint(attempt), "module": "router"}).Count(1)
 }
 
 func sendQueryRetryStats(attempt int) {
-	pkgLogger.Errorf("Router: Retrying GET jobs: attempt: %d", attempt)
-	stats.NewTaggedStat("rt_query_retry_count", stats.CountType, stats.Tags{"attempt": fmt.Sprint(attempt)}).Count(1)
+	pkgLogger.Warnf("Timeout during query jobs in router module, attempt %d", attempt)
+	stats.NewTaggedStat("jobsdb_query_timeout", stats.CountType, stats.Tags{"attempt": fmt.Sprint(attempt), "module": "router"}).Count(1)
 }
 
 func (worker *workerT) trackStuckDelivery() chan struct{} {
@@ -1718,7 +1718,7 @@ func (rt *HandleT) readAndProcess() int {
 	}
 	rt.timeGained = 0
 	rt.logger.Debugf("[%v Router] :: pickupMap: %+v", rt.destName, pickupMap)
-	combinedList, err := jobsdb.QueryJobsWithRetriesAndNotify(context.Background(), rt.jobdDBQueryRequestTimeout, rt.jobdDBMaxRetries, func(ctx context.Context) ([]*jobsdb.JobT, error) {
+	combinedList, err := misc.QueryWithRetriesAndNotify(context.Background(), rt.jobdDBQueryRequestTimeout, rt.jobdDBMaxRetries, func(ctx context.Context) ([]*jobsdb.JobT, error) {
 		return rt.jobsDB.GetAllJobs(
 			ctx,
 			pickupMap,

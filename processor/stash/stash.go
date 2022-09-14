@@ -101,13 +101,13 @@ func (st *HandleT) Start(ctx context.Context) {
 }
 
 func sendRetryUpdateStats(attempt int) {
-	pkgLogger.Errorf("Stash: Retrying store: attempt: %d", attempt)
-	stats.NewTaggedStat("stash_update_retry_count", stats.CountType, stats.Tags{"attempt": fmt.Sprint(attempt)}).Count(1)
+	pkgLogger.Warnf("Timeout during update job status in stash module, attempt %d", attempt)
+	stats.NewTaggedStat("jobsdb_update_timeout", stats.CountType, stats.Tags{"attempt": fmt.Sprint(attempt), "module": "stash"}).Count(1)
 }
 
 func sendQueryRetryStats(attempt int) {
-	pkgLogger.Errorf("Stash: Retrying GET jobs: attempt: %d", attempt)
-	stats.NewTaggedStat("stash_query_retry_count", stats.CountType, stats.Tags{"attempt": fmt.Sprint(attempt)}).Count(1)
+	pkgLogger.Warnf("Timeout during query jobs in stash module, attempt %d", attempt)
+	stats.NewTaggedStat("jobsdb_query_timeout", stats.CountType, stats.Tags{"attempt": fmt.Sprint(attempt), "module": "stash"}).Count(1)
 }
 
 func (st *HandleT) getFileUploader(ctx context.Context) filemanager.FileManager {
@@ -267,7 +267,7 @@ func (st *HandleT) readErrJobsLoop(ctx context.Context) {
 				JobsLimit:                     errDBReadBatchSize,
 				PayloadSizeLimit:              payloadLimit,
 			}
-			toRetry, err := jobsdb.QueryJobsResultWithRetriesAndNotify(ctx, st.jobdDBQueryRequestTimeout, st.jobdDBMaxRetries, func(ctx context.Context) (jobsdb.JobsResult, error) {
+			toRetry, err := misc.QueryWithRetriesAndNotify(ctx, st.jobdDBQueryRequestTimeout, st.jobdDBMaxRetries, func(ctx context.Context) (jobsdb.JobsResult, error) {
 				return st.errorDB.GetToRetry(ctx, queryParams)
 			}, sendQueryRetryStats)
 			if err != nil {
@@ -281,7 +281,7 @@ func (st *HandleT) readErrJobsLoop(ctx context.Context) {
 				if queryParams.PayloadSizeLimit > 0 {
 					queryParams.PayloadSizeLimit -= toRetry.PayloadSize
 				}
-				unprocessed, err := jobsdb.QueryJobsResultWithRetriesAndNotify(ctx, st.jobdDBQueryRequestTimeout, st.jobdDBMaxRetries, func(ctx context.Context) (jobsdb.JobsResult, error) {
+				unprocessed, err := misc.QueryWithRetriesAndNotify(ctx, st.jobdDBQueryRequestTimeout, st.jobdDBMaxRetries, func(ctx context.Context) (jobsdb.JobsResult, error) {
 					return st.errorDB.GetUnprocessed(ctx, queryParams)
 				}, sendQueryRetryStats)
 				if err != nil {

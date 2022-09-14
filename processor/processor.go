@@ -1553,18 +1553,18 @@ type storeMessage struct {
 }
 
 func sendRetryStoreStats(attempt int) {
-	pkgLogger.Errorf("Processor: Retrying store: attempt: %d", attempt)
-	stats.NewTaggedStat("proc_store_retry_count", stats.CountType, stats.Tags{"attempt": fmt.Sprint(attempt)}).Count(1)
+	pkgLogger.Warnf("Timeout during store jobs in processor module, attempt %d", attempt)
+	stats.NewTaggedStat("jobsdb_store_timeout", stats.CountType, stats.Tags{"attempt": fmt.Sprint(attempt), "module": "processor"}).Count(1)
 }
 
 func sendRetryUpdateStats(attempt int) {
-	pkgLogger.Errorf("Processor: Retrying store: attempt: %d", attempt)
-	stats.NewTaggedStat("proc_update_retry_count", stats.CountType, stats.Tags{"attempt": fmt.Sprint(attempt)}).Count(1)
+	pkgLogger.Warnf("Timeout during update job status in processor module, attempt %d", attempt)
+	stats.NewTaggedStat("jobsdb_update_timeout", stats.CountType, stats.Tags{"attempt": fmt.Sprint(attempt), "module": "processor"}).Count(1)
 }
 
 func sendQueryRetryStats(attempt int) {
-	pkgLogger.Errorf("Processor: Retrying GET jobs: attempt: %d", attempt)
-	stats.NewTaggedStat("proc_query_retry_count", stats.CountType, stats.Tags{"attempt": fmt.Sprint(attempt)}).Count(1)
+	pkgLogger.Warnf("Timeout during query jobs in processor module, attempt %d", attempt)
+	stats.NewTaggedStat("jobsdb_query_timeout", stats.CountType, stats.Tags{"attempt": fmt.Sprint(attempt), "module": "processor"}).Count(1)
 }
 
 func (proc *HandleT) Store(in *storeMessage) {
@@ -2209,7 +2209,7 @@ func (proc *HandleT) getJobs() jobsdb.JobsResult {
 	if !enableEventCount {
 		eventCount = 0
 	}
-	unprocessedList, err := jobsdb.QueryJobsResultWithRetriesAndNotify(context.Background(), proc.jobdDBQueryRequestTimeout, proc.jobdDBMaxRetries, func(ctx context.Context) (jobsdb.JobsResult, error) {
+	unprocessedList, err := misc.QueryWithRetriesAndNotify(context.Background(), proc.jobdDBQueryRequestTimeout, proc.jobdDBMaxRetries, func(ctx context.Context) (jobsdb.JobsResult, error) {
 		return proc.gatewayDB.GetUnprocessed(ctx, jobsdb.GetQueryParamsT{
 			CustomValFilters: []string{GWCustomVal},
 			JobsLimit:        maxEventsToProcess,

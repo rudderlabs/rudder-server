@@ -4706,36 +4706,6 @@ func sanitizeJson(input json.RawMessage) json.RawMessage {
 	return v
 }
 
-func QueryJobsWithRetriesAndNotify(parentContext context.Context, timeout time.Duration, maxAttempts int, f func(ctx context.Context) ([]*JobT, error), notify misc.Notify) ([]*JobT, error) {
-	res, err := misc.QueryWithRetriesAndNotify(parentContext, timeout, maxAttempts, func(ctx context.Context) (interface{}, error) {
-		return f(ctx)
-	}, notify)
-	if err != nil {
-		return nil, err
-	}
-	return res.([]*JobT), err
-}
-
-func QueryJobsResultWithRetriesAndNotify(parentContext context.Context, timeout time.Duration, maxAttempts int, f func(ctx context.Context) (JobsResult, error), notify misc.Notify) (JobsResult, error) {
-	res, err := misc.QueryWithRetriesAndNotify(parentContext, timeout, maxAttempts, func(ctx context.Context) (interface{}, error) {
-		return f(ctx)
-	}, notify)
-	if err != nil {
-		return JobsResult{}, err
-	}
-	return res.(JobsResult), err
-}
-
-func QueryWorkspacePileupWithRetriesAndNotify(parentContext context.Context, timeout time.Duration, maxAttempts int, f func(ctx context.Context) (map[string]map[string]int, error), notify misc.Notify) (map[string]map[string]int, error) {
-	res, err := misc.QueryWithRetriesAndNotify(parentContext, timeout, maxAttempts, func(ctx context.Context) (interface{}, error) {
-		return f(ctx)
-	}, notify)
-	if err != nil {
-		return nil, err
-	}
-	return res.(map[string]map[string]int), err
-}
-
 type smallDS struct {
 	ds          dataSetT
 	recordsLeft int

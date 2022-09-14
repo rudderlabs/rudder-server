@@ -34,29 +34,28 @@ func RetryWithNotify(parentContext context.Context, timeout time.Duration, maxAt
 		if !errors.Is(ctx.Err(), context.DeadlineExceeded) || parentContext.Err() != nil {
 			return err
 		}
-		attempt++
-
 		if notify != nil {
 			notify(attempt)
 		}
+		attempt++
 	}
 	return err
 }
 
-func QueryWithRetries(parentContext context.Context, timeout time.Duration, maxAttempts int, f func(ctx context.Context) (interface{}, error)) (interface{}, error) {
+func QueryWithRetries[T any](parentContext context.Context, timeout time.Duration, maxAttempts int, f func(ctx context.Context) (T, error)) (T, error) {
 	return QueryWithRetriesAndNotify(parentContext, timeout, maxAttempts, f, nil)
 }
 
-func QueryWithRetriesAndNotify(parentContext context.Context, timeout time.Duration, maxAttempts int, f func(ctx context.Context) (interface{}, error), notify Notify) (interface{}, error) {
+func QueryWithRetriesAndNotify[T any](parentContext context.Context, timeout time.Duration, maxAttempts int, f func(ctx context.Context) (T, error), notify Notify) (T, error) {
+	var res T
 	if parentContext.Err() != nil {
-		return nil, parentContext.Err()
+		return res, parentContext.Err()
 	}
 	attempt := 1
 	if maxAttempts < 1 {
-		return nil, fmt.Errorf("invalid parameter maxAttempts: %d", maxAttempts)
+		return res, fmt.Errorf("invalid parameter maxAttempts: %d", maxAttempts)
 	}
 	var err error
-	var res interface{}
 	for attempt <= maxAttempts {
 		ctx, cancel := context.WithTimeout(parentContext, timeout)
 		defer cancel()
@@ -69,11 +68,10 @@ func QueryWithRetriesAndNotify(parentContext context.Context, timeout time.Durat
 		if !errors.Is(ctx.Err(), context.DeadlineExceeded) || parentContext.Err() != nil {
 			return res, err
 		}
-		attempt++
-
 		if notify != nil {
 			notify(attempt)
 		}
+		attempt++
 	}
 	return res, err
 }
