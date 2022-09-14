@@ -4,10 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-
 	proto "github.com/rudderlabs/rudder-server/proto/warehouse"
 	"github.com/rudderlabs/rudder-server/warehouse/configuration_testing"
-	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/types/known/emptypb"
 	"google.golang.org/protobuf/types/known/wrapperspb"
 )
@@ -97,19 +95,22 @@ type ObjectStorageValidationRequest struct {
 
 func (w *warehousegrpc) ValidateObjectStorageDestination(context context.Context, request *proto.ValidateObjectStorageRequest) (response *proto.ValidateObjectStorageResponse, err error) {
 
-	byt, err := protojson.Marshal(request)
+	byt, err := json.Marshal(request)
 	if err != nil {
-		return nil, fmt.Errorf("Unable to marshal the request proto message")
+		return nil, fmt.Errorf("unable to marshal the request proto message")
 	}
 
 	r := ObjectStorageValidationRequest{}
+
 	if err := json.Unmarshal(byt, &r); err != nil {
-		return nil, fmt.Errorf("Unable to extract data into validation request")
+		return nil, fmt.Errorf("unable to extract data into validation request")
 	}
 
 	valid, err := validateObjectStorage(&r)
 	if err != nil {
-		return nil, fmt.Errorf("Unable to finish request to validate storage: %s", err.Error())
+		errMessage := fmt.Errorf("unable to finish request to validate storage: %w", err)
+		pkgLogger.Errorf(errMessage.Error())
+		return nil, errMessage
 	}
 
 	if !valid {
