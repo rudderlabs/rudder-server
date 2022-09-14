@@ -389,16 +389,16 @@ func (trans *handle) doProxyRequest(ctx context.Context, proxyReqParams *ProxyRe
 }
 
 func getBatchURL() string {
-	return strings.TrimSuffix(config.GetEnv("DEST_TRANSFORM_URL", "http://localhost:9090"), "/") + "/batch"
+	return strings.TrimSuffix(config.GetString("DEST_TRANSFORM_URL", "http://localhost:9090"), "/") + "/batch"
 }
 
 func getRouterTransformURL() string {
-	return strings.TrimSuffix(config.GetEnv("DEST_TRANSFORM_URL", "http://localhost:9090"), "/") + "/routerTransform"
+	return strings.TrimSuffix(config.GetString("DEST_TRANSFORM_URL", "http://localhost:9090"), "/") + "/routerTransform"
 }
 
 func getProxyURL(destName, baseUrl string) string {
 	if !router_utils.IsNotEmptyString(baseUrl) { // empty string check
-		baseUrl = strings.TrimSuffix(config.GetEnv("DEST_TRANSFORM_URL", "http://localhost:9090"), "/")
+		baseUrl = strings.TrimSuffix(config.GetString("DEST_TRANSFORM_URL", "http://localhost:9090"), "/")
 	}
 	return baseUrl + "/v0/destinations/" + strings.ToLower(destName) + "/proxy"
 }

@@ -160,7 +160,7 @@ func getHealthVal(jobsDB jobsdb.JobsDB) string {
 		backendConfigMode = "JSON"
 	}
 
-	appTypeStr := strings.ToUpper(config.GetEnv("APP_TYPE", EMBEDDED))
+	appTypeStr := strings.ToUpper(config.GetString("APP_TYPE", EMBEDDED))
 	return fmt.Sprintf(
 		`{"appType":"%s","server":"UP","db":"%s","acceptingEvents":"TRUE","routingEvents":"%s","mode":"%s",`+
 			`"backendConfigMode":"%s","lastSync":"%s","lastRegulationSync":"%s"}`,

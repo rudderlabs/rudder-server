@@ -86,10 +86,10 @@ func (migrator *MigratorT) getURI(uri string) string {
 
 func (migrator *MigratorT) setupFileManager() filemanager.FileManager {
 	versionPrefix := fmt.Sprintf("%d-%d", migrator.fromClusterVersion, migrator.toClusterVersion)
-	provider := config.GetEnv("MIGRATOR_STORAGE_PROVIDER", "S3")
+	provider := config.GetString("MIGRATOR_STORAGE_PROVIDER", "S3")
 	conf := map[string]interface{}{}
-	conf["bucketName"] = config.GetRequiredEnv("MIGRATOR_BUCKET")
-	bucketPrefix := config.GetEnv("MIGRATOR_BUCKET_PREFIX", "")
+	conf["bucketName"] = config.MustGetString("MIGRATOR_BUCKET")
+	bucketPrefix := config.GetString("MIGRATOR_BUCKET_PREFIX", "")
 
 	if bucketPrefix != "" {
 		bucketPrefix = fmt.Sprintf("%s/%s", bucketPrefix, versionPrefix)
@@ -99,10 +99,10 @@ func (migrator *MigratorT) setupFileManager() filemanager.FileManager {
 	conf["prefix"] = bucketPrefix
 	switch provider {
 	case "S3":
-		conf["accessKeyID"] = config.GetEnv("MIGRATOR_ACCESS_KEY_ID", "")
-		conf["accessKey"] = config.GetEnv("MIGRATOR_SECRET_ACCESS_KEY", "")
+		conf["accessKeyID"] = config.GetString("MIGRATOR_ACCESS_KEY_ID", "")
+		conf["accessKey"] = config.GetString("MIGRATOR_SECRET_ACCESS_KEY", "")
 	case "GCS":
-		credentialsFilePath := config.GetRequiredEnv("GOOGLE_APPLICATION_CREDENTIALS")
+		credentialsFilePath := config.MustGetString("GOOGLE_APPLICATION_CREDENTIALS")
 		credentials, err := os.ReadFile(credentialsFilePath)
 		if err != nil {
 			panic(fmt.Sprintf("Error when reading GCS credentials file: %s", credentialsFilePath))
@@ -123,10 +123,10 @@ func (migrator *MigratorT) setupFileManager() filemanager.FileManager {
 
 // GetMigratingFromVersion gives the from version during migration
 func GetMigratingFromVersion() int {
-	return config.GetRequiredEnvAsInt("MIGRATING_FROM_CLUSTER_VERSION")
+	return config.MustGetInt("MIGRATING_FROM_CLUSTER_VERSION")
 }
 
 // GetMigratingToVersion gives the from version during migration
 func GetMigratingToVersion() int {
-	return config.GetRequiredEnvAsInt("MIGRATING_TO_CLUSTER_VERSION")
+	return config.MustGetInt("MIGRATING_TO_CLUSTER_VERSION")
 }

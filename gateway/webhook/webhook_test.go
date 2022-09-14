@@ -39,7 +39,7 @@ var (
 
 func initWebhook() {
 	once.Do(func() {
-		config.Load()
+		config.Reset()
 		logger.Init()
 		misc.Init()
 		Init()

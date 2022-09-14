@@ -50,5 +50,5 @@ func LoadOptions() *Options {
 }
 
 func getMigrationMode() string {
-	return config.GetEnv("MIGRATION_MODE", "")
+	return config.GetString("MIGRATION_MODE", "")
 }

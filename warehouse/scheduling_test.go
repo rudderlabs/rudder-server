@@ -13,7 +13,7 @@ import (
 )
 
 func initWarehouse() {
-	config.Load()
+	config.Reset()
 	admin.Init()
 	logger.Init()
 	Init()

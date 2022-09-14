@@ -80,11 +80,11 @@ func backupRecords(args backupRecordsArgs) (backupLocation string, err error) {
 	defer misc.RemoveFilePaths(path)
 
 	fManager, err := filemanager.DefaultFileManagerFactory.New(&filemanager.SettingsT{
-		Provider: config.GetEnv("JOBS_BACKUP_STORAGE_PROVIDER", "S3"),
+		Provider: config.GetString("JOBS_BACKUP_STORAGE_PROVIDER", "S3"),
 		Config:   filemanager.GetProviderConfigForBackupsFromEnv(context.TODO()),
 	})
 	if err != nil {
-		err = fmt.Errorf("Error in creating a file manager for:%s. Error: %w", config.GetEnv("JOBS_BACKUP_STORAGE_PROVIDER", "S3"), err)
+		err = fmt.Errorf("Error in creating a file manager for:%s. Error: %w", config.GetString("JOBS_BACKUP_STORAGE_PROVIDER", "S3"), err)
 		return
 	}
 

@@ -24,7 +24,7 @@ var once sync.Once
 
 func initCustomerManager() {
 	once.Do(func() {
-		config.Load()
+		config.Reset()
 		Init()
 		logger.Init()
 		stats.Setup()

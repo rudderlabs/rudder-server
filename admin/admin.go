@@ -235,9 +235,8 @@ func (a *Admin) GetLoggingConfig(_ struct{}, reply *string) (err error) {
 	return err
 }
 
-// GetFormattedEnv return the formatted env
 func (a *Admin) GetFormattedEnv(env string, reply *string) (err error) {
-	*reply = config.TransformKey(env)
+	*reply = config.ConfigKeyToEnvRudder(env)
 	return nil
 }
 
