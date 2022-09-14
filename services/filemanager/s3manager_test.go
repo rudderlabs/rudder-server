@@ -31,7 +31,6 @@ func TestGetSessionWithIAMRole(t *testing.T) {
 			ExternalID: "someExternalID",
 			Region:     aws.String("someRegion"),
 		},
-		WorkspaceID: "someWorkspaceID",
 	}
 	awsSession, err := s3Manager.getSession(context.TODO())
 	assert.Nil(t, err)
@@ -54,7 +53,7 @@ func TestGetSessionConfigWithAccessKeys(t *testing.T) {
 	assert.Equal(t, s3Manager.Config.AccessKeyID, awsSessionConfig.AccessKeyID)
 }
 
-func TestGetSessionConfigWithIAMRoleAndWorkspaceID(t *testing.T) {
+func TestGetSessionConfigWithIAMRole(t *testing.T) {
 	s3Manager := S3Manager{
 		Config: &S3Config{
 			Bucket:     "someBucket",
@@ -62,23 +61,6 @@ func TestGetSessionConfigWithIAMRoleAndWorkspaceID(t *testing.T) {
 			ExternalID: "someExternalID",
 			Region:     aws.String("someRegion"),
 		},
-		WorkspaceID: "someWorkspaceID",
-	}
-	awsSessionConfig := s3Manager.getSessionConfig()
-	assert.NotNil(t, awsSessionConfig)
-	assert.Equal(t, s3Manager.Config.IAMRoleARN, awsSessionConfig.IAMRoleARN)
-	assert.Equal(t, s3Manager.WorkspaceID, awsSessionConfig.ExternalID)
-}
-
-func TestGetSessionConfigWithIAMRoleAndEmptyWorkspaceID(t *testing.T) {
-	s3Manager := S3Manager{
-		Config: &S3Config{
-			Bucket:     "someBucket",
-			IAMRoleARN: "someIAMRole",
-			ExternalID: "someExternalID",
-			Region:     aws.String("someRegion"),
-		},
-		WorkspaceID: "",
 	}
 	awsSessionConfig := s3Manager.getSessionConfig()
 	assert.NotNil(t, awsSessionConfig)

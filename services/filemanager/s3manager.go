@@ -165,10 +165,9 @@ func (manager *S3Manager) getSessionConfig() *awsutils.SessionConfig {
 		AccessKey:        manager.Config.AccessKey,
 		IAMRoleARN:       manager.Config.IAMRoleARN,
 		ExternalID:       manager.Config.ExternalID,
+		Service:          s3.ServiceName,
 	}
-	if manager.WorkspaceID != "" {
-		sessionConfig.ExternalID = manager.WorkspaceID
-	}
+
 	return sessionConfig
 }
 
@@ -261,10 +260,9 @@ func (manager *S3Manager) GetConfiguredPrefix() string {
 }
 
 type S3Manager struct {
-	Config      *S3Config
-	WorkspaceID string
-	session     *session.Session
-	timeout     time.Duration
+	Config  *S3Config
+	session *session.Session
+	timeout time.Duration
 }
 
 func (manager *S3Manager) SetTimeout(timeout time.Duration) {

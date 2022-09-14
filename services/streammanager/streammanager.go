@@ -74,7 +74,7 @@ func Produce(jsonData json.RawMessage, destType string, producer common.StreamPr
 	case "KINESIS", "KAFKA", "AZURE_EVENT_HUB", "CONFLUENT_CLOUD", "PERSONALIZE",
 		"FIREHOSE", "EVENTBRIDGE", "GOOGLEPUBSUB", "GOOGLESHEETS", "BQSTREAM", "LAMBDA":
 		if producer == nil {
-			return 500, "producer is nil", "producer is nil"
+			panic(fmt.Sprintf("[streammanager %s]:producer is nil", destType))
 		}
 		return producer.Produce(jsonData, config)
 	default:

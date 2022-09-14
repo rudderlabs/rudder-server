@@ -279,10 +279,9 @@ func TestProduceWithInvalidDestinationType(t *testing.T) {
 func TestProduceWithNilProducer(t *testing.T) {
 	initStreamManager()
 	for _, streamProducer := range streamProducers {
-		statusCode, statusMsg, respMsg := streammanager.Produce(json.RawMessage{}, streamProducer, nil, nil)
-		assert.Equal(t, 500, statusCode)
-		assert.Equal(t, "producer is nil", statusMsg)
-		assert.Equal(t, "producer is nil", respMsg)
+		assert.Panics(t, func() {
+			streammanager.Produce(json.RawMessage{}, streamProducer, nil, nil)
+		})
 	}
 }
 

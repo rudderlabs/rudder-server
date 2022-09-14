@@ -53,7 +53,6 @@ type FileManager interface {
 type SettingsT struct {
 	Provider    string
 	Config      map[string]interface{}
-	WorkspaceID string
 }
 
 func init() {
@@ -67,7 +66,6 @@ func (factory *FileManagerFactoryT) New(settings *SettingsT) (FileManager, error
 	case "S3":
 		return &S3Manager{
 			Config:      GetS3Config(settings.Config),
-			WorkspaceID: settings.WorkspaceID,
 		}, nil
 	case "GCS":
 		return &GCSManager{

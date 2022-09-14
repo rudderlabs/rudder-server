@@ -127,11 +127,11 @@ func (customManager *CustomManagerT) send(jsonData json.RawMessage, destType str
 	var respBody string
 	switch customManager.managerType {
 	case STREAM:
+		// If client is not properly initialized then it won't reach here
 		streamProducer, _ := client.(common.StreamProducer)
 		statusCode, _, respBody = streammanager.Produce(jsonData, destType, streamProducer, config)
 	case KV:
 		kvManager, _ := client.(kvstoremanager.KVStoreManager)
-
 		key, fields := kvstoremanager.EventToKeyValue(jsonData)
 		err := kvManager.HMSet(key, fields)
 		statusCode = kvManager.StatusCode(err)
