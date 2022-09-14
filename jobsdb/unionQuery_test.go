@@ -5,26 +5,21 @@ import (
 	"testing"
 	"time"
 
-	uuid "github.com/gofrs/uuid"
+	"github.com/gofrs/uuid"
 	"github.com/rudderlabs/rudder-server/jobsdb/prebackup"
-	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/bytesize"
 	"github.com/stretchr/testify/require"
 )
 
 func TestMultiTenantHandleT_GetAllJobs(t *testing.T) {
-	initJobsDB()
-	stats.Setup()
+	_ = startPostgres(t)
 
 	migrationMode := ""
 
 	maxDSSize := 2
 	jobDB := MultiTenantHandleT{HandleT: &HandleT{MaxDSSize: &maxDSSize}}
-	queryFilters := QueryFiltersT{
-		CustomVal: true,
-	}
 
-	err := jobDB.Setup(ReadWrite, false, "rt", migrationMode, true, queryFilters, []prebackup.Handler{})
+	err := jobDB.Setup(ReadWrite, false, "rt", migrationMode, true, []prebackup.Handler{})
 	require.NoError(t, err, "expected no error while jobsDB setup")
 	defer jobDB.TearDown()
 

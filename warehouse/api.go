@@ -95,7 +95,7 @@ type UploadAPIT struct {
 var UploadAPI UploadAPIT
 
 func InitWarehouseAPI(dbHandle *sql.DB, log logger.LoggerI) error {
-	connectionToken, isMultiWorkspace, err := deployment.GetConnectionToken()
+	connectionToken, tokenType, isMultiWorkspace, err := deployment.GetConnectionToken()
 	if err != nil {
 		return err
 	}
@@ -109,6 +109,7 @@ func InitWarehouseAPI(dbHandle *sql.DB, log logger.LoggerI) error {
 				Service:         "warehouse",
 				ConnectionToken: connectionToken,
 				InstanceID:      config.GetEnv("instance_id", "1"),
+				TokenType:       tokenType,
 			},
 			RetryInterval: 0,
 			UseTLS:        config.GetEnvAsBool("CP_ROUTER_USE_TLS", true),
@@ -460,7 +461,7 @@ func (uploadReq UploadReqT) authorizeSource(sourceID string) bool {
 		return false
 	}
 	pkgLogger.Debugf(`Authorized sourceId's for workspace:%s - %v`, uploadReq.WorkspaceID, authorizedSourceIDs)
-	return misc.ContainsString(authorizedSourceIDs, sourceID)
+	return misc.Contains(authorizedSourceIDs, sourceID)
 }
 
 func (uploadsReq UploadsReqT) authorizedSources() (sourceIDs []string) {
@@ -570,7 +571,7 @@ func (uploadsReq *UploadsReqT) getWhUploadsForHosted(authorizedSourceIDs []strin
 	subQuery = fmt.Sprintf(`select %s, count(*) OVER() AS total_uploads from %s WHERE `, selectFields, warehouseutils.WarehouseUploadsTable)
 	if uploadsReq.SourceID == "" {
 		whereClauses = append(whereClauses, fmt.Sprintf(`source_id IN (%v)`, misc.SingleQuoteLiteralJoin(authorizedSourceIDs)))
-	} else if misc.ContainsString(authorizedSourceIDs, uploadsReq.SourceID) {
+	} else if misc.Contains(authorizedSourceIDs, uploadsReq.SourceID) {
 		whereClauses = append(whereClauses, fmt.Sprintf(`source_id = '%s'`, uploadsReq.SourceID))
 	}
 	if uploadsReq.DestinationID != "" {

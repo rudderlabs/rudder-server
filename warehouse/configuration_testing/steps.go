@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 
 	"github.com/rudderlabs/rudder-server/utils/misc"
-	"github.com/rudderlabs/rudder-server/warehouse/utils"
+	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
 func (ct *CTHandleT) validationStepsFunc(req json.RawMessage, _ string) (json.RawMessage, error) {
@@ -28,7 +28,7 @@ func (ct *CTHandleT) validationSteps() []*validationStep {
 	}}
 
 	// Time window destination contains only object storage verification
-	if misc.ContainsString(warehouseutils.TimeWindowDestinations, ct.infoRequest.Destination.DestinationDefinition.Name) {
+	if misc.Contains(warehouseutils.TimeWindowDestinations, ct.infoRequest.Destination.DestinationDefinition.Name) {
 		return steps
 	}
 

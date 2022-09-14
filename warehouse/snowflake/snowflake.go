@@ -380,6 +380,7 @@ func (sf *HandleT) LoadIdentityMergeRulesTable() (err error) {
 	sanitisedSQLStmt, regexErr := misc.ReplaceMultiRegex(sqlStatement, map[string]string{
 		"AWS_KEY_ID='[^']*'":     "AWS_KEY_ID='***'",
 		"AWS_SECRET_KEY='[^']*'": "AWS_SECRET_KEY='***'",
+		"AWS_TOKEN='[^']*'":      "AWS_TOKEN='***'",
 	})
 	if regexErr == nil {
 		pkgLogger.Infof("SF: Dedup records for table:%s using staging table: %s\n", identityMergeRulesTable, sanitisedSQLStmt)
@@ -844,11 +845,18 @@ func (sf *HandleT) FetchSchema(warehouse warehouseutils.WarehouseT) (schema ware
 	defer dbHandle.Close()
 
 	schema = make(warehouseutils.SchemaT)
-	sqlStatement := fmt.Sprintf(`SELECT t.table_name, c.column_name, c.data_type
-									FROM INFORMATION_SCHEMA.TABLES as t
-									JOIN INFORMATION_SCHEMA.COLUMNS as c
-									ON t.table_schema = c.table_schema and t.table_name = c.table_name
-									WHERE t.table_schema = '%s'`, sf.Namespace)
+	sqlStatement := fmt.Sprintf(`
+		SELECT
+		  table_name,
+		  column_name,
+		  data_type
+		FROM
+		  INFORMATION_SCHEMA.COLUMNS
+		WHERE
+		  table_schema = '%s'
+	`,
+		sf.Namespace,
+	)
 
 	rows, err := dbHandle.Query(sqlStatement)
 	if err != nil && err != sql.ErrNoRows {

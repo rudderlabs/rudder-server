@@ -155,7 +155,7 @@ func (job *UploadJobT) generateUploadAbortedMetrics() {
 
 func (job *UploadJobT) recordTableLoad(tableName string, numEvents int64) {
 	rudderAPISupportedEventTypes := []string{"tracks", "identifies", "pages", "screens", "aliases", "groups"}
-	if misc.ContainsString(rudderAPISupportedEventTypes, strings.ToLower(tableName)) {
+	if misc.Contains(rudderAPISupportedEventTypes, strings.ToLower(tableName)) {
 		// record total events synced (ignoring additional row synced to event table for eg.track call)
 		job.counterStat(`event_delivery`, tag{name: "tableName", value: strings.ToLower(tableName)}).Count(int(numEvents))
 	}
@@ -163,7 +163,7 @@ func (job *UploadJobT) recordTableLoad(tableName string, numEvents int64) {
 	skipMetricTagForEachEventTable := config.GetBool("Warehouse.skipMetricTagForEachEventTable", false)
 	if skipMetricTagForEachEventTable {
 		standardTablesToRecordEventsMetric := []string{"tracks", "users", "identifies", "pages", "screens", "aliases", "groups", "rudder_discards"}
-		if !misc.ContainsString(standardTablesToRecordEventsMetric, strings.ToLower(tableName)) {
+		if !misc.Contains(standardTablesToRecordEventsMetric, strings.ToLower(tableName)) {
 			// club all event table metric tags under one tag to avoid too many tags
 			tableName = "others"
 		}
