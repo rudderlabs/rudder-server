@@ -1517,9 +1517,12 @@ func getPendingUploadCount(filters ...warehouseutils.FilterBy) (uploadCount int6
 	pkgLogger.Debugf("Fetching pending upload count with filters: %v", filters)
 
 	query := fmt.Sprintf(`
-		SELECT COUNT(*)
-		FROM %[1]s
-		WHERE %[1]s.status NOT IN ('%[2]s', '%[3]s')
+	SELECT 
+		COUNT(*) 
+	FROM 
+		%[1]s 
+	WHERE 
+		%[1]s.status NOT IN ('%[2]s', '%[3]s')
 	`, warehouseutils.WarehouseUploadsTable, ExportedData, Aborted)
 
 	args := make([]interface{}, 0)
