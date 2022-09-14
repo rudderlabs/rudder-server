@@ -650,10 +650,27 @@ func validateObjectStorage(request *ObjectStorageValidationRequest) (bool, error
 		return false, fmt.Errorf("unable to open path to temporary file: %w", err)
 	}
 
-	_, err = fileManager.Upload(context.TODO(), f)
+	uploadOutput, err := fileManager.Upload(context.TODO(), f)
 	if err != nil {
-		pkgLogger.Errorf("error while uploading for object storage validation: %s", err.Error())
+		pkgLogger.Errorf("error while uploading file  for object storage validation with err: %w", err)
 		return false, nil
+	}
+
+	key := fileManager.GetDownloadKeyFromFileLocation(uploadOutput.Location)
+
+	downloadFileName := "tmpFileObjectStorageValidation"
+
+	filePtr, err := os.OpenFile(downloadFileName, os.O_CREATE|os.O_RDWR|os.O_TRUNC, 0o644)
+	if err != nil {
+		return false, fmt.Errorf("error while Creating file to download data")
+	}
+
+	defer os.Remove(downloadFileName)
+
+	err = fileManager.Download(context.TODO(), filePtr, key)
+	if err != nil {
+		pkgLogger.Errorf("error while downloading object for object storage validation: %s", err.Error())
+		return false, fmt.Errorf("error while downloading object for object storage validation")
 	}
 
 	return true, nil
