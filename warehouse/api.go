@@ -648,6 +648,10 @@ func (validateObjectStorageRequest *ValidateObjectRequestT) validateObjectStorag
 	} else {
 		configMap = cMap
 		bucketName, ok := configMap["bucketName"]
+		if !ok {
+			//Checking for azure blob
+			bucketName, ok = configMap["containerName"]
+		}
 		if name, bucketNameCheck := bucketName.(string); !ok || !bucketNameCheck || len(name) == 0 {
 			validateObjectStorageResp = &proto.ValidateObjectStorageResponse{
 				Status:  400,
@@ -665,7 +669,6 @@ func (validateObjectStorageRequest *ValidateObjectRequestT) validateObjectStorag
 	fileManager, err := fileManagerFactory.New(settings)
 
 	if err != nil {
-		fmt.Println(err)
 		validateObjectStorageResp = &proto.ValidateObjectStorageResponse{
 			Status:  400,
 			IsValid: false,
@@ -685,7 +688,6 @@ func (validateObjectStorageRequest *ValidateObjectRequestT) validateObjectStorag
 	filePtr, err := os.Open(filePath)
 	uploadOutput, err := fileManager.Upload(context.TODO(), filePtr)
 	if err != nil {
-		fmt.Println(err)
 		validateObjectStorageResp = &proto.ValidateObjectStorageResponse{
 			Status:  200,
 			Error:   fmt.Sprintf("invalid creds"),
