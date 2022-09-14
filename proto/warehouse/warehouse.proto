@@ -3,7 +3,7 @@ package proto;
 import "google/protobuf/timestamp.proto";
 import "google/protobuf/empty.proto";
 import "google/protobuf/wrappers.proto";
-import "google/protobuf/any.proto";
+import "google/protobuf/struct.proto";
 
 option go_package = ".;proto";
 
@@ -109,7 +109,7 @@ message RetryWHUploadsResponse {
 
 message ValidateObjectStorageRequest {
   string type=1;
-  map<string, google.protobuf.Any> config=2;
+  google.protobuf.Struct config=2;
 }
 
 message ValidateObjectStorageResponse{
