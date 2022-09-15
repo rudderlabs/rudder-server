@@ -107,7 +107,7 @@ func (producer *PersonalizeProducer) Produce(jsonData json.RawMessage, _ interfa
 	return 200, "Success", fmt.Sprintf("Message delivered with Record information %v", response)
 }
 
-func (producer *PersonalizeProducer) Close() error {
+func (*PersonalizeProducer) Close() error {
 	// no-op
 	return nil
 }

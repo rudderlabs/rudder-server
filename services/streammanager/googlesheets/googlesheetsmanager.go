@@ -351,7 +351,7 @@ func testClientOptions(config *Config) []option.ClientOption {
 	return []option.ClientOption{option.WithEndpoint(config.TestConfig.Endpoint), option.WithHTTPClient(client)}
 }
 
-func (producer *GoogleSheetsProducer) Close() error {
+func (*GoogleSheetsProducer) Close() error {
 	// no-op
 	return nil
 }

@@ -95,7 +95,7 @@ func (producer *EventBridgeProducer) Produce(jsonData json.RawMessage, _ interfa
 	return 200, "Success", message
 }
 
-func (producer *EventBridgeProducer) Close() error {
+func (*EventBridgeProducer) Close() error {
 	// no-op
 	return nil
 }

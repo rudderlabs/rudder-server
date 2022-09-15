@@ -98,7 +98,7 @@ func (producer *LambdaProducer) Produce(jsonData json.RawMessage, _ interface{})
 	return 200, "Success", "Event delivered to Lambda :: " + config.Lambda
 }
 
-func (producer *LambdaProducer) Close() error {
+func (*LambdaProducer) Close() error {
 	// no-op
 	return nil
 }

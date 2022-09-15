@@ -107,7 +107,7 @@ func (producer *KinesisProducer) Produce(jsonData json.RawMessage, destConfig in
 	return 200, "Success", message
 }
 
-func (producer *KinesisProducer) Close() error {
+func (*KinesisProducer) Close() error {
 	// no-op
 	return nil
 }
