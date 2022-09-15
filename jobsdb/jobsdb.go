@@ -178,6 +178,8 @@ type HandleInspector struct {
 
 // DSListSize returns the current size of the handle's dsList
 func (h *HandleInspector) DSListSize() int {
+	h.HandleT.dsListLock.RLock()
+	defer h.HandleT.dsListLock.RUnlock()
 	return len(h.HandleT.getDSList())
 }
 
@@ -1055,7 +1057,6 @@ func (jd *HandleT) getDSList() []dataSetT {
 func (jd *HandleT) refreshDSList(l lock.DSListLockToken) []dataSetT {
 	jd.assert(l != nil, "cannot refresh DS list without a valid lock token")
 	// Reset the global list
-	jd.datasetList = nil
 	jd.datasetList = getDSList(jd, jd.dbHandle, jd.tablePrefix)
 
 	// report table count metrics before shrinking the datasetList

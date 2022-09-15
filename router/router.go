@@ -1162,8 +1162,14 @@ func (rt *HandleT) initWorkers() {
 	g, _ := errgroup.WithContext(context.Background())
 	for i := 0; i < rt.noOfWorkers; i++ {
 		worker := &workerT{
-			channel:                   make(chan workerMessageT, noOfJobsPerChannel),
-			barrier:                   eventorder.NewBarrier(rt.allowAbortedUserJobsCountForProcessing),
+			channel: make(chan workerMessageT, noOfJobsPerChannel),
+			barrier: eventorder.NewBarrier(
+				eventorder.WithConcurrencyLimit(rt.allowAbortedUserJobsCountForProcessing),
+				eventorder.WithMetadata(map[string]string{
+					"destType":         rt.destName,
+					"batching":         strconv.FormatBool(rt.enableBatching),
+					"transformerProxy": strconv.FormatBool(rt.transformerProxy),
+				})),
 			retryForJobMap:            make(map[int64]time.Time),
 			workerID:                  i,
 			failedJobs:                0,
