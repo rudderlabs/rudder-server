@@ -76,7 +76,8 @@ func TestMaxConcurrentRequestsMiddleware(t *testing.T) {
 
 func TestContentTypeMiddleware(t *testing.T) {
 	nextHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
+		// setting it custom to verify that next handler is called
+		w.WriteHeader(123)
 	})
 	t.Run("test SetJsonContentType middleware", func(t *testing.T) {
 		expectedContentType := "application/json; charset=utf-8"
@@ -88,6 +89,7 @@ func TestContentTypeMiddleware(t *testing.T) {
 		handlerToTest.ServeHTTP(respRecorder, req)
 		receivedContentType := respRecorder.Header()["Content-Type"][0]
 		require.Equal(t, expectedContentType, receivedContentType, "actual content type different than expected.")
+		require.Equal(t, 123, respRecorder.Code, "actual response code different than expected.")
 	})
 
 	t.Run("test SetPlainContentType middleware", func(t *testing.T) {
@@ -100,5 +102,6 @@ func TestContentTypeMiddleware(t *testing.T) {
 		handlerToTest.ServeHTTP(respRecorder, req)
 		receivedContentType := respRecorder.Header()["Content-Type"][0]
 		require.Equal(t, expectedContentType, receivedContentType, "actual content type different than expected.")
+		require.Equal(t, 123, respRecorder.Code, "actual response code different than expected.")
 	})
 }
