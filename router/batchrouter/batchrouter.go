@@ -111,6 +111,7 @@ type HandleT struct {
 	backendConfigInitialized    chan bool
 	asyncDestinationStruct      map[string]*asyncdestinationmanager.AsyncDestinationStruct
 	jobQueryBatchSize           int
+	dsQueryLimit                int
 	pollStatusLoopSleep         time.Duration
 	pollTimeStat                stats.RudderStats
 	failedJobsTimeStat          stats.RudderStats
@@ -306,6 +307,7 @@ func (brt *HandleT) pollAsyncStatus(ctx context.Context) {
 							jobsdb.GetQueryParamsT{
 								CustomValFilters: []string{brt.destType},
 								JobsLimit:        1,
+								DSLimit:          brt.dsQueryLimit,
 								ParameterFilters: parameterFilters,
 								PayloadSizeLimit: brt.payloadLimit,
 							},
@@ -360,6 +362,7 @@ func (brt *HandleT) pollAsyncStatus(ctx context.Context) {
 										jobsdb.GetQueryParamsT{
 											CustomValFilters: []string{brt.destType},
 											JobsLimit:        brt.maxEventsInABatch,
+											DSLimit:          brt.dsQueryLimit,
 											ParameterFilters: parameterFilters,
 											PayloadSizeLimit: brt.payloadLimit,
 										},
@@ -512,6 +515,7 @@ func (brt *HandleT) pollAsyncStatus(ctx context.Context) {
 										jobsdb.GetQueryParamsT{
 											CustomValFilters: []string{brt.destType},
 											JobsLimit:        brt.maxEventsInABatch,
+											DSLimit:          brt.dsQueryLimit,
 											ParameterFilters: parameterFilters,
 											PayloadSizeLimit: brt.payloadLimit,
 										},
@@ -1613,6 +1617,7 @@ func (worker *workerT) workerProcess() {
 				queryParams := jobsdb.GetQueryParamsT{
 					CustomValFilters:              []string{brt.destType},
 					JobsLimit:                     toQuery,
+					DSLimit:                       brt.dsQueryLimit,
 					ParameterFilters:              parameterFilters,
 					IgnoreCustomValFiltersInQuery: true,
 					PayloadSizeLimit:              brt.payloadLimit,
@@ -1976,6 +1981,7 @@ func (brt *HandleT) readAndProcess() {
 			queryParams := jobsdb.GetQueryParamsT{
 				CustomValFilters: []string{brt.destType},
 				JobsLimit:        brt.jobQueryBatchSize,
+				DSLimit:          brt.dsQueryLimit,
 				PayloadSizeLimit: brt.payloadLimit,
 			}
 			toRetry, err := jobsdb.QueryJobsResultWithRetries(context.Background(), brt.jobdDBQueryRequestTimeout, brt.jobdDBMaxRetries, func(ctx context.Context) (jobsdb.JobsResult, error) {
@@ -2135,6 +2141,7 @@ func (brt *HandleT) holdFetchingJobs(parameterFilters []jobsdb.ParameterFilterT)
 				jobsdb.GetQueryParamsT{
 					CustomValFilters: []string{brt.destType},
 					JobsLimit:        1,
+					DSLimit:          brt.dsQueryLimit,
 					ParameterFilters: parameterFilters,
 					PayloadSizeLimit: brt.payloadLimit,
 				},
@@ -2298,6 +2305,7 @@ func (brt *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB, err
 	brt.noOfWorkers = getBatchRouterConfigInt("noOfWorkers", destType, 8)
 	config.RegisterDurationConfigVariable(10, &brt.pollStatusLoopSleep, true, time.Second, []string{"BatchRouter." + brt.destType + "." + "pollStatusLoopSleep", "BatchRouter.pollStatusLoopSleep"}...)
 	config.RegisterIntConfigVariable(100000, &brt.jobQueryBatchSize, true, 1, []string{"BatchRouter." + brt.destType + "." + "jobQueryBatchSize", "BatchRouter.jobQueryBatchSize"}...)
+	config.RegisterIntConfigVariable(0, &brt.dsQueryLimit, true, 1, []string{"BatchRouter." + brt.destType + "." + "dsQueryLimit", "BatchRouter.dsQueryLimit"}...)
 	config.RegisterIntConfigVariable(10000, &brt.maxEventsInABatch, false, 1, []string{"BatchRouter." + brt.destType + "." + "maxEventsInABatch", "BatchRouter.maxEventsInABatch"}...)
 	config.RegisterIntConfigVariable(128, &brt.maxFailedCountForJob, true, 1, []string{"BatchRouter." + brt.destType + "." + "maxFailedCountForJob", "BatchRouter." + "maxFailedCountForJob"}...)
 	config.RegisterDurationConfigVariable(180, &brt.retryTimeWindow, true, time.Minute, []string{"BatchRouter." + brt.destType + "." + "retryTimeWindow", "BatchRouter." + brt.destType + "." + "retryTimeWindowInMins", "BatchRouter." + "retryTimeWindow", "BatchRouter." + "retryTimeWindowInMins"}...)

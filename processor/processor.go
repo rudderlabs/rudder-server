@@ -473,6 +473,7 @@ var (
 	loopSleep                 time.Duration // DEPRECATED: used only on the old mainLoop
 	fixedLoopSleep            time.Duration // DEPRECATED: used only on the old mainLoop
 	maxEventsToProcess        int
+	dsQueryLimit              int
 	transformBatchSize        int
 	userTransformBatchSize    int
 	writeKeyDestinationMap    map[string][]backendconfig.DestinationT
@@ -515,6 +516,7 @@ func loadConfig() {
 	config.RegisterBoolConfigVariable(false, &enableEventSchemasFeature, false, "EventSchemas.enableEventSchemasFeature")
 	config.RegisterBoolConfigVariable(false, &enableEventSchemasAPIOnly, true, "EventSchemas.enableEventSchemasAPIOnly")
 	config.RegisterIntConfigVariable(10000, &maxEventsToProcess, true, 1, "Processor.maxLoopProcessEvents")
+	config.RegisterIntConfigVariable(0, &dsQueryLimit, true, 1, "Processor.dsQueryLimit")
 
 	batchDestinations, customDestinations = misc.LoadDestinations()
 	config.RegisterIntConfigVariable(5, &transformTimesPQLength, false, 1, "Processor.transformTimesPQLength")
@@ -2198,6 +2200,7 @@ func (proc *HandleT) getJobs() jobsdb.JobsResult {
 		return proc.gatewayDB.GetUnprocessed(ctx, jobsdb.GetQueryParamsT{
 			CustomValFilters: []string{GWCustomVal},
 			JobsLimit:        maxEventsToProcess,
+			DSLimit:          dsQueryLimit,
 			EventsLimit:      eventCount,
 			PayloadSizeLimit: proc.payloadLimit,
 		})

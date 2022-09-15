@@ -136,6 +136,7 @@ type HandleT struct {
 	timeGained       float64
 
 	payloadLimit     int64
+	dsQueryLimit     int
 	transientSources transientsource.Service
 	rsourcesService  rsources.JobService
 }
@@ -1661,12 +1662,14 @@ func (rt *HandleT) getQueryParams(pickUpCount int) jobsdb.GetQueryParamsT {
 			IgnoreCustomValFiltersInQuery: true,
 			PayloadSizeLimit:              rt.payloadLimit,
 			JobsLimit:                     pickUpCount,
+			DSLimit:                       rt.dsQueryLimit,
 		}
 	}
 	return jobsdb.GetQueryParamsT{
 		CustomValFilters: []string{rt.destName},
 		PayloadSizeLimit: rt.payloadLimit,
 		JobsLimit:        pickUpCount,
+		DSLimit:          rt.dsQueryLimit,
 	}
 }
 
@@ -2010,6 +2013,8 @@ func (rt *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB jobsd
 	config.RegisterIntConfigVariable(3, &rt.maxFailedCountForJob, true, 1, maxFailedCountKeys...)
 	routerPayloadLimitKeys := []string{"Router." + rt.destName + "." + "PayloadLimit", "Router." + "PayloadLimit"}
 	config.RegisterInt64ConfigVariable(100*bytesize.MB, &rt.payloadLimit, true, 1, routerPayloadLimitKeys...)
+	routerDSLimitKeys := []string{"Router." + rt.destName + "." + "DSLimit", "Router." + "DSLimit"}
+	config.RegisterIntConfigVariable(0, &rt.dsQueryLimit, true, 1, routerDSLimitKeys...)
 	routerTimeoutKeys := []string{"Router." + rt.destName + "." + "routerTimeout", "Router." + "routerTimeout"}
 	config.RegisterDurationConfigVariable(3600, &rt.routerTimeout, true, time.Second, routerTimeoutKeys...)
 	config.RegisterDurationConfigVariable(180, &rt.retryTimeWindow, true, time.Minute, retryTimeWindowKeys...)

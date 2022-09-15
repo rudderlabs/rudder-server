@@ -80,7 +80,6 @@ func (mj *MultiTenantHandleT) GetAllJobs(ctx context.Context, workspaceCount map
 		workspacePayloadLimitMap[workspace] = int64(payloadLimit)
 	}
 
-	var tablesQueried int
 	params.StateFilters = []string{NotProcessed.State, Waiting.State, Failed.State}
 	conditions := QueryConditions{
 		IgnoreCustomValFiltersInQuery: params.IgnoreCustomValFiltersInQuery,
@@ -89,37 +88,35 @@ func (mj *MultiTenantHandleT) GetAllJobs(ctx context.Context, workspaceCount map
 		StateFilters:                  params.StateFilters,
 	}
 	start := time.Now()
+	dsQueryCount := 0
+	dsQueryLimit := params.DSLimit
 	for _, ds := range dsList {
-		jobs, err := mj.getUnionDS(ctx, ds, workspaceCount, workspacePayloadLimitMap, conditions)
+		if (dsQueryLimit > 0 && dsQueryCount >= dsQueryLimit) || len(workspaceCount) == 0 {
+			break
+		}
+		jobs, dsHit, err := mj.getUnionDS(ctx, ds, workspaceCount, workspacePayloadLimitMap, conditions)
 		if err != nil {
 			return nil, err
 		}
 		outJobs = append(outJobs, jobs...)
-		if len(jobs) > 0 {
-			tablesQueried++
-		}
-
-		if len(workspaceCount) == 0 {
-			break
-		}
-		if tablesQueried >= maxDSQuerySize {
-			break
+		if dsHit {
+			dsQueryCount++
 		}
 	}
 
 	mj.unionQueryTime.SendTiming(time.Since(start))
 
-	mj.tablesQueriedStat.Gauge(tablesQueried)
+	mj.tablesQueriedStat.Gauge(dsQueryCount)
 
 	return outJobs, nil
 }
 
-func (mj *MultiTenantHandleT) getUnionDS(ctx context.Context, ds dataSetT, workspaceCount map[string]int, workspacePayloadLimitMap map[string]int64, conditions QueryConditions) ([]*JobT, error) { // skipcq: CRT-P0003
+func (mj *MultiTenantHandleT) getUnionDS(ctx context.Context, ds dataSetT, workspaceCount map[string]int, workspacePayloadLimitMap map[string]int64, conditions QueryConditions) ([]*JobT, bool, error) { // skipcq: CRT-P0003
 	var jobList []*JobT
 	queryString, workspacesToQuery := mj.getUnionQuerystring(workspaceCount, workspacePayloadLimitMap, ds, conditions)
 
 	if len(workspacesToQuery) == 0 {
-		return jobList, nil
+		return jobList, false, nil
 	}
 	for _, workspace := range workspacesToQuery {
 		mj.markClearEmptyResult(ds, workspace, conditions.StateFilters, conditions.CustomValFilters, conditions.ParameterFilters,
@@ -137,7 +134,7 @@ func (mj *MultiTenantHandleT) getUnionDS(ctx context.Context, ds dataSetT, works
 	stmt, err := mj.dbHandle.PrepareContext(ctx, queryString)
 	mj.logger.Debug(queryString)
 	if err != nil {
-		return jobList, err
+		return jobList, false, err
 	}
 	defer func(stmt *sql.Stmt) {
 		err := stmt.Close()
@@ -148,7 +145,7 @@ func (mj *MultiTenantHandleT) getUnionDS(ctx context.Context, ds dataSetT, works
 
 	rows, err = stmt.QueryContext(ctx, getTimeNowFunc())
 	if err != nil {
-		return jobList, err
+		return jobList, false, err
 	}
 	defer func(rows *sql.Rows) {
 		err := rows.Close()
@@ -175,7 +172,7 @@ func (mj *MultiTenantHandleT) getUnionDS(ctx context.Context, ds dataSetT, works
 			&job.EventPayload, &job.EventCount, &job.CreatedAt, &job.ExpireAt, &job.WorkspaceId, &job.PayloadSize, &_null,
 			&_nullJS, &_nullA, &_nullET, &_nullRT, &_nullEC, &_nullER, &_nullSP)
 		if err != nil {
-			return jobList, err
+			return jobList, false, err
 		}
 
 		job.LastJobStatus = JobStatusT{}
@@ -221,7 +218,7 @@ func (mj *MultiTenantHandleT) getUnionDS(ctx context.Context, ds dataSetT, works
 		cacheUpdateByWorkspace[job.WorkspaceId] = string(hasJobs)
 	}
 	if err = rows.Err(); err != nil {
-		return jobList, err
+		return jobList, false, err
 	}
 
 	// do cache stuff here
@@ -231,7 +228,7 @@ func (mj *MultiTenantHandleT) getUnionDS(ctx context.Context, ds dataSetT, works
 			cacheValue(cacheUpdate), &_willTryToSet)
 	}
 
-	return jobList, err
+	return jobList, true, nil
 }
 
 func (mj *MultiTenantHandleT) getUnionQuerystring(workspaceCount map[string]int, workspacePayloadLimitMap map[string]int64, ds dataSetT, conditions QueryConditions) (string, []string) {
