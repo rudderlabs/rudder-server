@@ -1,15 +1,12 @@
 package streammanager_test
 
 import (
-	"encoding/json"
 	"sync"
 	"testing"
 
-	"github.com/golang/mock/gomock"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/rudderlabs/rudder-server/config"
-	mock_streammanager "github.com/rudderlabs/rudder-server/mocks/services/streammanager/common"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
@@ -27,20 +24,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-var (
-	once            sync.Once
-	streamProducers []string = []string{
-		"KINESIS", "KAFKA", "AZURE_EVENT_HUB", "CONFLUENT_CLOUD",
-		"PERSONALIZE", "FIREHOSE", "EVENTBRIDGE", "GOOGLEPUBSUB",
-		"GOOGLESHEETS", "BQSTREAM", "LAMBDA",
-	}
-	nonCloseableStreamProducers []string = []string{
-		"PERSONALIZE", "FIREHOSE", "EVENTBRIDGE", "KINESIS", "LAMBDA",
-	}
-	closableStreamProducers []string = []string{
-		"BQSTREAM", "KAFKA", "AZURE_EVENT_HUB", "CONFLUENT_CLOUD", "GOOGLEPUBSUB",
-	}
-)
+var once sync.Once
 
 func initStreamManager() {
 	once.Do(func() {
@@ -266,63 +250,4 @@ func TestNewProducerWithGoogleSheetsDestination(t *testing.T) {
 	assert.Error(t, err)
 	// error contains "Kafka" means we called right producer
 	assert.ErrorContains(t, err, "GoogleSheets")
-}
-
-func TestProduceWithInvalidDestinationType(t *testing.T) {
-	initStreamManager()
-	statusCode, statusMsg, respMsg := streammanager.Produce(json.RawMessage{}, "notAStreamingDestination", nil, nil)
-	assert.Equal(t, 404, statusCode)
-	assert.Equal(t, "No provider configured for StreamManager", statusMsg)
-	assert.Equal(t, "No provider configured for StreamManager", respMsg)
-}
-
-func TestProduceWithNilProducer(t *testing.T) {
-	initStreamManager()
-	for _, streamProducer := range streamProducers {
-		assert.Panics(t, func() {
-			streammanager.Produce(json.RawMessage{}, streamProducer, nil, nil)
-		})
-	}
-}
-
-func TestProduceWithValidProducer(t *testing.T) {
-	initStreamManager()
-	ctrl := gomock.NewController(t)
-	mockProducer := mock_streammanager.NewMockStreamProducer(ctrl)
-	message := json.RawMessage{}
-	config := map[string]interface{}{}
-	for _, streamProducer := range streamProducers {
-		mockProducer.EXPECT().Produce(message, config).Times(1)
-		streammanager.Produce(message, streamProducer, mockProducer, config)
-	}
-}
-
-func TestCloseWithInvalidDestinationType(t *testing.T) {
-	initStreamManager()
-	err := streammanager.Close(nil, "notAStreamingDestination")
-	assert.EqualError(t, err, "no provider configured for StreamManager")
-}
-
-func TestCloseWithNilProducer(t *testing.T) {
-	initStreamManager()
-	for _, streamProducer := range closableStreamProducers {
-		err := streammanager.Close(nil, streamProducer)
-		assert.EqualError(t, err, "producer is not closable")
-	}
-	for _, streamProducer := range nonCloseableStreamProducers {
-		assert.Nil(t, streammanager.Close(nil, streamProducer))
-	}
-}
-
-func TestCloseWithValidProducer(t *testing.T) {
-	initStreamManager()
-	ctrl := gomock.NewController(t)
-	mockProducer := mock_streammanager.NewMockClosableStreamProducer(ctrl)
-	for _, streamProducer := range closableStreamProducers {
-		mockProducer.EXPECT().Close().Times(1)
-		streammanager.Close(mockProducer, streamProducer)
-	}
-	for _, streamProducer := range nonCloseableStreamProducers {
-		streammanager.Close(mockProducer, streamProducer)
-	}
 }

@@ -106,3 +106,8 @@ func (producer *KinesisProducer) Produce(jsonData json.RawMessage, destConfig in
 	message := fmt.Sprintf("Message delivered at SequenceNumber: %v , shard Id: %v", putOutput.SequenceNumber, putOutput.ShardId)
 	return 200, "Success", message
 }
+
+func (producer *KinesisProducer) Close() error {
+	// no-op
+	return nil
+}

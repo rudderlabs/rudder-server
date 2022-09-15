@@ -89,3 +89,8 @@ func (producer *FireHoseProducer) Produce(jsonData json.RawMessage, _ interface{
 
 	return 200, "Success", fmt.Sprintf("Message delivered with Record information %v", putOutput)
 }
+
+func (producer *FireHoseProducer) Close() error {
+	// no-op
+	return nil
+}

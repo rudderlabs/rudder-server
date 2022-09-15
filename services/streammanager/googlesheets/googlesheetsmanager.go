@@ -350,3 +350,8 @@ func testClientOptions(config *Config) []option.ClientOption {
 	trans.Base = &http.Transport{TLSClientConfig: tlsConfig}
 	return []option.ClientOption{option.WithEndpoint(config.TestConfig.Endpoint), option.WithHTTPClient(client)}
 }
+
+func (producer *GoogleSheetsProducer) Close() error {
+	// no-op
+	return nil
+}
