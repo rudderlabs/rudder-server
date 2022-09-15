@@ -97,26 +97,38 @@ func (w *warehousegrpc) ValidateObjectStorageDestination(context context.Context
 
 	byt, err := json.Marshal(request)
 	if err != nil {
-		return nil, fmt.Errorf("unable to marshal the request proto message")
+		return &proto.ValidateObjectStorageResponse{
+			IsValid: false,
+			Status:  500,
+			Error:   fmt.Errorf("unable to validate the request. unable to marshal the request proto message with error: %w", err).Error(),
+		}, nil
 	}
 
 	r := ObjectStorageValidationRequest{}
 
 	if err := json.Unmarshal(byt, &r); err != nil {
-		return nil, fmt.Errorf("unable to extract data into validation request")
+		return &proto.ValidateObjectStorageResponse{
+			IsValid: false,
+			Status:  500,
+			Error:   fmt.Errorf("unable to validate the request. unable to extract data into validation request with error: %w", err).Error(),
+		}, nil
 	}
 
-	valid, err := validateObjectStorage(&r)
+	valid, statusCode, err := validateObjectStorage(&r)
 	if err != nil {
 		errMessage := fmt.Errorf("unable to finish request to validate storage: %w", err)
 		pkgLogger.Errorf(errMessage.Error())
-		return nil, errMessage
+		return &proto.ValidateObjectStorageResponse{
+			IsValid: false,
+			Status:  statusCode,
+			Error:   errMessage.Error(),
+		}, nil
 	}
 
 	if !valid {
 		return &proto.ValidateObjectStorageResponse{
 			IsValid: valid,
-			Status:  400,
+			Status:  200,
 			Error:   "authentication with credentials provided failed",
 		}, nil
 	}

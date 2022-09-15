@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"net/http"
 	"os"
 	"strings"
 	"time"
@@ -621,16 +622,40 @@ func (uploadsReq *UploadsReqT) getWhUploads(selectFields string) (uploadsRes *pr
 	}
 	return
 }
-func validateObjectStorage(request *ObjectStorageValidationRequest) (bool, error) {
+
+func checkMapForKey(configMap map[string]interface{}, key string) bool {
+	value, ok := configMap[key]
+	if name, bucketNameCheck := value.(string); !ok || !bucketNameCheck || len(name) == 0 {
+		return false
+	}
+	return true
+
+}
+func validateObjectStorage(request *ObjectStorageValidationRequest) (bool, int32, error) {
+
 	pkgLogger.Infof("Received call to validate object storage for type: %s\n", request.Type)
 
 	fileManagerFactory := filemanager.FileManagerFactoryT{}
 	fileManager, err := fileManagerFactory.New(
-		getFileManagerSettings(request.Type, request.Config),
+		getFileManagerSettings(request.Type, request.Config, true),
 	)
 
+	switch request.Type {
+	case "AZURE_BLOB":
+		if !checkMapForKey(request.Config, "containerName") {
+			return false, http.StatusBadRequest, fmt.Errorf("containerName invalid or not present")
+		}
+	case "GCS", "MINIO", "S3", "DIGITAL_OCEAN_SPACES":
+		if !checkMapForKey(request.Config, "bucketName") {
+			return false, http.StatusBadRequest, fmt.Errorf("bucketName invalid or not present")
+		}
+	default:
+		return false, http.StatusBadRequest, fmt.Errorf("%v is not supported", request.Type)
+
+	}
+
 	if err != nil {
-		return false, fmt.Errorf("unable to create file manager: %s", err.Error())
+		return false, http.StatusInternalServerError, fmt.Errorf("unable to create file manager: %s", err.Error())
 	}
 
 	req := configuration_testing.DestinationValidationRequest{
@@ -641,19 +666,18 @@ func validateObjectStorage(request *ObjectStorageValidationRequest) (bool, error
 
 	filePath, err := configuration_testing.CreateTempLoadFile(&req)
 	if err != nil {
-		return false, fmt.Errorf("unable to create temp load file: %w", err)
+		return false, http.StatusInternalServerError, fmt.Errorf("unable to create temp load file: %w", err)
 	}
 	defer misc.RemoveFilePaths(filePath)
 
 	f, err := os.Open(filePath)
 	if err != nil {
-		return false, fmt.Errorf("unable to open path to temporary file: %w", err)
+		return false, http.StatusInternalServerError, fmt.Errorf("unable to open path to temporary file: %w", err)
 	}
 
 	uploadOutput, err := fileManager.Upload(context.TODO(), f)
 	if err != nil {
-		pkgLogger.Errorf("error while uploading file  for object storage validation with err: %w", err)
-		return false, nil
+		return false, http.StatusOK, fmt.Errorf("error while uploading file  for object storage validation with err: %w", err)
 	}
 
 	key := fileManager.GetDownloadKeyFromFileLocation(uploadOutput.Location)
@@ -662,38 +686,25 @@ func validateObjectStorage(request *ObjectStorageValidationRequest) (bool, error
 
 	filePtr, err := os.OpenFile(downloadFileName, os.O_CREATE|os.O_RDWR|os.O_TRUNC, 0o644)
 	if err != nil {
-		return false, fmt.Errorf("error while Creating file to download data")
+		return false, http.StatusInternalServerError, fmt.Errorf("error while Creating file to download data")
 	}
 
 	defer os.Remove(downloadFileName)
 
 	err = fileManager.Download(context.TODO(), filePtr, key)
 	if err != nil {
-		pkgLogger.Errorf("error while downloading object for object storage validation: %s", err.Error())
-		return false, fmt.Errorf("error while downloading object for object storage validation")
+		return false, http.StatusOK, fmt.Errorf("error while downloading object for object storage validation: %w", err.Error())
 	}
 
-	return true, nil
+	return true, http.StatusOK, nil
 }
 
-func isEmptyString(val interface{}) bool {
-
-	if val == nil {
-		return true
-	}
-
-	if name, ok := val.(string); ok {
-		return name == ""
-	}
-
-	return false
-}
-
-func getFileManagerSettings(provider string, inputConfig map[string]interface{}) *filemanager.SettingsT {
+func getFileManagerSettings(provider string, inputConfig map[string]interface{}, checkBucketOrContainerField bool) *filemanager.SettingsT {
 	settings := &filemanager.SettingsT{
 		Provider: provider,
 		Config:   inputConfig,
 	}
+
 	overrideWithEnv(settings)
 	return settings
 }
