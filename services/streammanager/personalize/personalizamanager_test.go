@@ -11,6 +11,7 @@ import (
 	"github.com/aws/aws-sdk-go/aws/awserr"
 	"github.com/aws/aws-sdk-go/service/personalizeevents"
 	"github.com/golang/mock/gomock"
+	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	mock_personalize "github.com/rudderlabs/rudder-server/mocks/services/streammanager/personalize"
 	mock_logger "github.com/rudderlabs/rudder-server/mocks/utils/logger"
 	"github.com/tidwall/gjson"
@@ -26,8 +27,12 @@ func TestNewProducer(t *testing.T) {
 		"IAMRoleARN": "sampleRoleArn",
 		"ExternalID": "sampleExternalID",
 	}
+	destination := backendconfig.DestinationT{
+		Config:      destinationConfig,
+		WorkspaceID: "sampleWorkspaceID",
+	}
 	timeOut := 10 * time.Second
-	producer, err := NewProducer(destinationConfig, common.Opts{Timeout: timeOut})
+	producer, err := NewProducer(&destination, common.Opts{Timeout: timeOut})
 	assert.Nil(t, err)
 	assert.NotNil(t, producer)
 	assert.NotNil(t, producer.client)

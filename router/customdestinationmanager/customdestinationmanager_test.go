@@ -1,19 +1,37 @@
 package customdestinationmanager
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
+	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/assert"
 
 	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
+	mock_streammanager "github.com/rudderlabs/rudder-server/mocks/services/streammanager/common"
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/services/streammanager/kafka"
+	"github.com/rudderlabs/rudder-server/services/streammanager/lambda"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 )
+
+var once sync.Once
+
+func initCustomerManager() {
+	once.Do(func() {
+		config.Load()
+		Init()
+		logger.Init()
+		stats.Setup()
+		kafka.Init()
+		skipBackendConfigSubscriber = true
+	})
+}
 
 func TestCircuitBreaker(t *testing.T) {
 	const (
@@ -22,12 +40,7 @@ func TestCircuitBreaker(t *testing.T) {
 	)
 
 	// init various packages
-	config.Load()
-	Init()
-	logger.Init()
-	stats.Setup()
-	kafka.Init()
-
+	initCustomerManager()
 	// don't let manager subscribe to backend-config
 	skipBackendConfigSubscriber = true
 
@@ -90,6 +103,9 @@ func getDestConfig() backendconfig.DestinationT {
 	return backendconfig.DestinationT{
 		ID:   "test",
 		Name: "test",
+		DestinationDefinition: backendconfig.DestinationDefinitionT{
+			Name: "KAFKA",
+		},
 		Config: map[string]interface{}{
 			"hostName":      "unknown.example.com",
 			"port":          "9999",
@@ -103,4 +119,30 @@ func getDestConfig() backendconfig.DestinationT {
 		},
 		Enabled: true,
 	}
+}
+
+func TestSendDataWithStreamDestination(t *testing.T) {
+	initCustomerManager()
+
+	customManager := New("LAMBDA", Opts{}).(*CustomManagerT)
+	someDestination := backendconfig.DestinationT{
+		ID: "someDestinationID1",
+		DestinationDefinition: backendconfig.DestinationDefinitionT{
+			Name: "LAMBDA",
+		},
+		Config: map[string]interface{}{
+			"region": "someRegion",
+		},
+	}
+	err := customManager.onNewDestination(someDestination)
+	assert.Nil(t, err)
+	assert.NotNil(t, customManager.client[someDestination.ID])
+	assert.IsType(t, &lambda.LambdaProducer{}, customManager.client[someDestination.ID].client)
+
+	ctrl := gomock.NewController(t)
+	mockProducer := mock_streammanager.NewMockStreamProducer(ctrl)
+	customManager.client[someDestination.ID].client = mockProducer
+	event := json.RawMessage{}
+	mockProducer.EXPECT().Produce(event, someDestination.Config).Times(1)
+	customManager.SendData(event, someDestination.ID)
 }
