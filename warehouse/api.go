@@ -693,7 +693,7 @@ func validateObjectStorage(request *ObjectStorageValidationRequest) (bool, int32
 
 	err = fileManager.Download(context.TODO(), filePtr, key)
 	if err != nil {
-		return false, http.StatusOK, fmt.Errorf("error while downloading object for object storage validation: %w", err.Error())
+		return false, http.StatusOK, fmt.Errorf("error while downloading object for object storage validation: %w", err)
 	}
 
 	return true, http.StatusOK, nil
