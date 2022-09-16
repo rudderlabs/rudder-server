@@ -62,7 +62,6 @@ func init() {
 
 // New returns FileManager backed by configured provider
 func (factory *FileManagerFactoryT) New(settings *SettingsT) (FileManager, error) {
-
 	switch settings.Provider {
 	case "S3":
 		return &S3Manager{
@@ -89,7 +88,6 @@ func (factory *FileManagerFactoryT) New(settings *SettingsT) (FileManager, error
 }
 
 func GetProviderConfigFromEnv(ctx context.Context, provider string) map[string]interface{} {
-
 	providerConfig := make(map[string]interface{})
 	switch provider {
 

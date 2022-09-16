@@ -629,10 +629,9 @@ func checkMapForKey(configMap map[string]interface{}, key string) bool {
 		return false
 	}
 	return true
-
 }
-func validateObjectStorage(request *ObjectStorageValidationRequest) (bool, int32, error) {
 
+func validateObjectStorage(request *ObjectStorageValidationRequest) (bool, int32, error) {
 	pkgLogger.Infof("Received call to validate object storage for type: %s\n", request.Type)
 
 	fileManagerFactory := filemanager.FileManagerFactoryT{}
@@ -728,7 +727,6 @@ func overrideWithEnv(settings *filemanager.SettingsT) {
 
 //
 func ifNotExistThenSet(keyToReplace string, replaceWith interface{}, configMap map[string]interface{}) {
-
 	if _, ok := configMap[keyToReplace]; !ok {
 		// In case we don't have the key, simply replace it with replaceWith
 		configMap[keyToReplace] = replaceWith

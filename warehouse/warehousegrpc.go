@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+
 	proto "github.com/rudderlabs/rudder-server/proto/warehouse"
 	"github.com/rudderlabs/rudder-server/warehouse/configuration_testing"
 	"google.golang.org/protobuf/types/known/emptypb"
@@ -94,7 +95,6 @@ type ObjectStorageValidationRequest struct {
 }
 
 func (w *warehousegrpc) ValidateObjectStorageDestination(context context.Context, request *proto.ValidateObjectStorageRequest) (response *proto.ValidateObjectStorageResponse, err error) {
-
 	byt, err := json.Marshal(request)
 	if err != nil {
 		return &proto.ValidateObjectStorageResponse{
