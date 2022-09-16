@@ -82,7 +82,7 @@ func (manager *AzureBlobStorageManager) getCredentials() (azblob.Credential, err
 
 	accountName, accountKey := manager.Config.AccountName, manager.Config.AccountKey
 	if accountName == "" || accountKey == "" {
-		return nil, errors.New("either the AccountName or AccountKey is not correct")
+		return nil, errors.New("either accountName or accountKey is empty")
 	}
 
 	// Create a default request pipeline using your storage account name and account key.
