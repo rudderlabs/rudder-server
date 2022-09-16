@@ -1378,8 +1378,8 @@ func (gateway *HandleT) StartWebHandler(ctx context.Context) error {
 	srvMux.HandleFunc("/v1/alias", gateway.webAliasHandler).Methods("POST")
 	srvMux.HandleFunc("/v1/merge", gateway.webMergeHandler).Methods("POST")
 	srvMux.HandleFunc("/v1/group", gateway.webGroupHandler).Methods("POST")
-	srvMux.HandleFunc("/health", WithContentType("application/json", app.LivenessHandler(gateway.jobsDB))).Methods("GET")
-	srvMux.HandleFunc("/", WithContentType("application/json", app.LivenessHandler(gateway.jobsDB))).Methods("GET")
+	srvMux.HandleFunc("/health", WithContentType("application/json; charset=utf-8", app.LivenessHandler(gateway.jobsDB))).Methods("GET")
+	srvMux.HandleFunc("/", WithContentType("application/json; charset=utf-8", app.LivenessHandler(gateway.jobsDB))).Methods("GET")
 	srvMux.HandleFunc("/v1/import", gateway.webImportHandler).Methods("POST")
 	srvMux.HandleFunc("/v1/audiencelist", gateway.webAudienceListHandler).Methods("POST")
 	srvMux.HandleFunc("/pixel/v1/track", gateway.pixelTrackHandler).Methods("GET")
@@ -1387,28 +1387,28 @@ func (gateway *HandleT) StartWebHandler(ctx context.Context) error {
 	srvMux.HandleFunc("/v1/webhook", gateway.webhookHandler.RequestHandler).Methods("POST", "GET")
 	srvMux.HandleFunc("/beacon/v1/batch", gateway.beaconBatchHandler).Methods("POST")
 
-	srvMux.HandleFunc("/version", WithContentType("application/json", gateway.versionHandler)).Methods("GET")
+	srvMux.HandleFunc("/version", WithContentType("application/json; charset=utf-8", gateway.versionHandler)).Methods("GET")
 	srvMux.HandleFunc("/robots.txt", gateway.robots).Methods("GET")
 
 	if enableEventSchemasFeature {
-		srvMux.HandleFunc("/schemas/event-models", WithContentType("application/json", gateway.eventSchemaWebHandler(gateway.eventSchemaHandler.GetEventModels))).Methods("GET")
-		srvMux.HandleFunc("/schemas/event-versions", WithContentType("application/json", gateway.eventSchemaWebHandler(gateway.eventSchemaHandler.GetEventVersions))).Methods("GET")
-		srvMux.HandleFunc("/schemas/event-model/{EventID}/key-counts", WithContentType("application/json", gateway.eventSchemaWebHandler(gateway.eventSchemaHandler.GetKeyCounts))).Methods("GET")
-		srvMux.HandleFunc("/schemas/event-model/{EventID}/metadata", WithContentType("application/json", gateway.eventSchemaWebHandler(gateway.eventSchemaHandler.GetEventModelMetadata))).Methods("GET")
-		srvMux.HandleFunc("/schemas/event-version/{VersionID}/metadata", WithContentType("application/json", gateway.eventSchemaWebHandler(gateway.eventSchemaHandler.GetSchemaVersionMetadata))).Methods("GET")
-		srvMux.HandleFunc("/schemas/event-version/{VersionID}/missing-keys", WithContentType("application/json", gateway.eventSchemaWebHandler(gateway.eventSchemaHandler.GetSchemaVersionMissingKeys))).Methods("GET")
-		srvMux.HandleFunc("/schemas/event-models/json-schemas", WithContentType("application/json", gateway.eventSchemaWebHandler(gateway.eventSchemaHandler.GetJsonSchemas))).Methods("GET")
+		srvMux.HandleFunc("/schemas/event-models", WithContentType("application/json; charset=utf-8", gateway.eventSchemaWebHandler(gateway.eventSchemaHandler.GetEventModels))).Methods("GET")
+		srvMux.HandleFunc("/schemas/event-versions", WithContentType("application/json; charset=utf-8", gateway.eventSchemaWebHandler(gateway.eventSchemaHandler.GetEventVersions))).Methods("GET")
+		srvMux.HandleFunc("/schemas/event-model/{EventID}/key-counts", WithContentType("application/json; charset=utf-8", gateway.eventSchemaWebHandler(gateway.eventSchemaHandler.GetKeyCounts))).Methods("GET")
+		srvMux.HandleFunc("/schemas/event-model/{EventID}/metadata", WithContentType("application/json; charset=utf-8", gateway.eventSchemaWebHandler(gateway.eventSchemaHandler.GetEventModelMetadata))).Methods("GET")
+		srvMux.HandleFunc("/schemas/event-version/{VersionID}/metadata", WithContentType("application/json; charset=utf-8", gateway.eventSchemaWebHandler(gateway.eventSchemaHandler.GetSchemaVersionMetadata))).Methods("GET")
+		srvMux.HandleFunc("/schemas/event-version/{VersionID}/missing-keys", WithContentType("application/json; charset=utf-8", gateway.eventSchemaWebHandler(gateway.eventSchemaHandler.GetSchemaVersionMissingKeys))).Methods("GET")
+		srvMux.HandleFunc("/schemas/event-models/json-schemas", WithContentType("application/json; charset=utf-8", gateway.eventSchemaWebHandler(gateway.eventSchemaHandler.GetJsonSchemas))).Methods("GET")
 	}
 
-	srvMux.HandleFunc("/v1/pending-events", WithContentType("application/json", gateway.pendingEventsHandler)).Methods("POST")
-	srvMux.HandleFunc("/v1/failed-events", WithContentType("application/json", gateway.fetchFailedEventsHandler)).Methods("POST")
+	srvMux.HandleFunc("/v1/pending-events", WithContentType("application/json; charset=utf-8", gateway.pendingEventsHandler)).Methods("POST")
+	srvMux.HandleFunc("/v1/failed-events", WithContentType("application/json; charset=utf-8", gateway.fetchFailedEventsHandler)).Methods("POST")
 	srvMux.HandleFunc("/v1/clear-failed-events", gateway.clearFailedEventsHandler).Methods("POST")
 
 	// rudder-sources new APIs
 	rsourcesHandler := rsources_http.NewHandler(
 		gateway.rsourcesService,
 		gateway.logger.Child("rsources"))
-	srvMux.PathPrefix("/v1/job-status").Handler(WithContentType("application/json", rsourcesHandler.ServeHTTP))
+	srvMux.PathPrefix("/v1/job-status").Handler(WithContentType("application/json; charset=utf-8", rsourcesHandler.ServeHTTP))
 
 	c := cors.New(cors.Options{
 		AllowOriginFunc:  reflectOrigin,
