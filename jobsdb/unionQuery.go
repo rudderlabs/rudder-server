@@ -17,7 +17,7 @@ type MultiTenantHandleT struct {
 }
 
 type MultiTenantJobsDB interface {
-	GetAllJobs(context.Context, map[string]int, GetQueryParamsT, int) ([]*JobT, error)
+	GetAllJobs(context.Context, map[string]int, GetQueryParamsT) ([]*JobT, error)
 
 	WithUpdateSafeTx(func(tx UpdateSafeTx) error) error
 	UpdateJobStatusInTx(ctx context.Context, tx UpdateSafeTx, statusList []*JobStatusT, customValFilters []string, parameterFilters []ParameterFilterT) error
@@ -61,7 +61,7 @@ func (*MultiTenantHandleT) getSingleWorkspaceQueryString(workspace string, jobsL
 
 // All Jobs
 
-func (mj *MultiTenantHandleT) GetAllJobs(ctx context.Context, workspaceCount map[string]int, params GetQueryParamsT, maxDSQuerySize int) ([]*JobT, error) { // skipcq: CRT-P0003
+func (mj *MultiTenantHandleT) GetAllJobs(ctx context.Context, workspaceCount map[string]int, params GetQueryParamsT) ([]*JobT, error) { // skipcq: CRT-P0003
 	// The order of lock is very important. The migrateDSLoop
 	// takes lock in this order so reversing this will cause
 	// deadlocks
