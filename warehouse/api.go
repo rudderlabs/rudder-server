@@ -5,23 +5,20 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"net/http"
 	"os"
 	"strings"
 	"time"
 
-	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
-	"github.com/rudderlabs/rudder-server/services/filemanager"
-	"github.com/rudderlabs/rudder-server/warehouse/configuration_testing"
-
-	"github.com/rudderlabs/rudder-server/utils/types/deployment"
-
 	"github.com/rudderlabs/rudder-server/config"
+	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/controlplane"
 	proto "github.com/rudderlabs/rudder-server/proto/warehouse"
+	"github.com/rudderlabs/rudder-server/services/filemanager"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
+	"github.com/rudderlabs/rudder-server/utils/types/deployment"
+	"github.com/rudderlabs/rudder-server/warehouse/configuration_testing"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 	"github.com/tidwall/gjson"
 	"google.golang.org/grpc"
@@ -104,6 +101,8 @@ type ValidateObjectRequestT struct {
 }
 
 var UploadAPI UploadAPIT
+
+var DOWNLOAD_FILE_NAME = "downloadfile.tmp"
 
 func InitWarehouseAPI(dbHandle *sql.DB, log logger.LoggerI) error {
 	connectionToken, isMultiWorkspace, err := deployment.GetConnectionToken()
@@ -623,38 +622,29 @@ func (uploadsReq *UploadsReqT) getWhUploads(selectFields string) (uploadsRes *pr
 	return
 }
 
-func checkMapForKey(configMap map[string]interface{}, key string) bool {
+// checkMapForValidKey checks the presence of key in map
+// and if yes verifies that the key is string and non-empty.
+func checkMapForValidKey(configMap map[string]interface{}, key string) bool {
+
 	value, ok := configMap[key]
-	if name, bucketNameCheck := value.(string); !ok || !bucketNameCheck || len(name) == 0 {
+	if !ok {
 		return false
 	}
-	return true
-}
 
-func validateObjectStorage(request *ObjectStorageValidationRequest) (bool, int32, error) {
-	pkgLogger.Infof("Received call to validate object storage for type: %s\n", request.Type)
-
-	fileManagerFactory := filemanager.FileManagerFactoryT{}
-	fileManager, err := fileManagerFactory.New(
-		getFileManagerSettings(request.Type, request.Config, true),
-	)
-
-	switch request.Type {
-	case "AZURE_BLOB":
-		if !checkMapForKey(request.Config, "containerName") {
-			return false, http.StatusBadRequest, fmt.Errorf("containerName invalid or not present")
-		}
-	case "GCS", "MINIO", "S3", "DIGITAL_OCEAN_SPACES":
-		if !checkMapForKey(request.Config, "bucketName") {
-			return false, http.StatusBadRequest, fmt.Errorf("bucketName invalid or not present")
-		}
-	default:
-		return false, http.StatusBadRequest, fmt.Errorf("%v is not supported", request.Type)
-
+	if _, ok := value.(string); !ok {
+		return false
 	}
 
+	return value.(string) != ""
+}
+
+func validateObjectStorage(ctx context.Context, request *ObjectStorageValidationRequest) error {
+	pkgLogger.Infof("Received call to validate object storage for type: %s\n", request.Type)
+
+	factory := &filemanager.FileManagerFactoryT{}
+	fileManager, err := factory.New(getFileManagerSettings(request.Type, request.Config, true))
 	if err != nil {
-		return false, http.StatusInternalServerError, fmt.Errorf("unable to create file manager: %s", err.Error())
+		return fmt.Errorf("unable to create file manager: %s", err.Error())
 	}
 
 	req := configuration_testing.DestinationValidationRequest{
@@ -665,37 +655,37 @@ func validateObjectStorage(request *ObjectStorageValidationRequest) (bool, int32
 
 	filePath, err := configuration_testing.CreateTempLoadFile(&req)
 	if err != nil {
-		return false, http.StatusInternalServerError, fmt.Errorf("unable to create temp load file: %w", err)
+		return fmt.Errorf("unable to create temp load file: %w", err)
 	}
 	defer misc.RemoveFilePaths(filePath)
 
 	f, err := os.Open(filePath)
 	if err != nil {
-		return false, http.StatusInternalServerError, fmt.Errorf("unable to open path to temporary file: %w", err)
+		return fmt.Errorf("unable to open path to temporary file: %w", err)
 	}
 
-	uploadOutput, err := fileManager.Upload(context.TODO(), f)
+	uploadOutput, err := fileManager.Upload(ctx, f)
 	if err != nil {
-		return false, http.StatusOK, fmt.Errorf("error while uploading file  for object storage validation with err: %w", err)
+		return InvalidDestinationCredErr{Base: err, Operation: "upload"}
 	}
 
 	key := fileManager.GetDownloadKeyFromFileLocation(uploadOutput.Location)
 
-	downloadFileName := "tmpFileObjectStorageValidation"
-
-	filePtr, err := os.OpenFile(downloadFileName, os.O_CREATE|os.O_RDWR|os.O_TRUNC, 0o644)
+	filePtr, err := os.OpenFile(DOWNLOAD_FILE_NAME, os.O_CREATE|os.O_RDWR|os.O_TRUNC, 0o644)
 	if err != nil {
-		return false, http.StatusInternalServerError, fmt.Errorf("error while Creating file to download data")
+		return fmt.Errorf("error while Creating file to download data")
 	}
 
-	defer os.Remove(downloadFileName)
+	// TODO: create a temp file here ?
+	// Tempfile automatically removes itself as it looses scope.
+	defer os.Remove(DOWNLOAD_FILE_NAME)
 
-	err = fileManager.Download(context.TODO(), filePtr, key)
+	err = fileManager.Download(ctx, filePtr, key)
 	if err != nil {
-		return false, http.StatusOK, fmt.Errorf("error while downloading object for object storage validation: %w", err)
+		return InvalidDestinationCredErr{Base: err, Operation: "download"}
 	}
 
-	return true, http.StatusOK, nil
+	return nil
 }
 
 func getFileManagerSettings(provider string, inputConfig map[string]interface{}, checkBucketOrContainerField bool) *filemanager.SettingsT {

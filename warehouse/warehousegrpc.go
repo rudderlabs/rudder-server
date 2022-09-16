@@ -3,10 +3,14 @@ package warehouse
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 
 	proto "github.com/rudderlabs/rudder-server/proto/warehouse"
 	"github.com/rudderlabs/rudder-server/warehouse/configuration_testing"
+	"google.golang.org/genproto/googleapis/rpc/code"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/emptypb"
 	"google.golang.org/protobuf/types/known/wrapperspb"
 )
@@ -94,48 +98,58 @@ type ObjectStorageValidationRequest struct {
 	Config map[string]interface{} `json:"config"`
 }
 
-func (w *warehousegrpc) ValidateObjectStorageDestination(context context.Context, request *proto.ValidateObjectStorageRequest) (response *proto.ValidateObjectStorageResponse, err error) {
+// TODO: Can we simplify this function a bit ?
+func (w *warehousegrpc) ValidateObjectStorageDestination(ctx context.Context, request *proto.ValidateObjectStorageRequest) (response *proto.ValidateObjectStorageResponse, err error) {
+
 	byt, err := json.Marshal(request)
 	if err != nil {
-		return &proto.ValidateObjectStorageResponse{
-			IsValid: false,
-			Status:  500,
-			Error:   fmt.Errorf("unable to validate the request. unable to marshal the request proto message with error: %w", err).Error(),
-		}, nil
+		return nil, status.Errorf(
+			codes.Code(code.Code_INTERNAL),
+			"unable to marshal the request proto message with error: %s", err.Error())
 	}
 
 	r := ObjectStorageValidationRequest{}
-
 	if err := json.Unmarshal(byt, &r); err != nil {
-		return &proto.ValidateObjectStorageResponse{
-			IsValid: false,
-			Status:  500,
-			Error:   fmt.Errorf("unable to validate the request. unable to extract data into validation request with error: %w", err).Error(),
-		}, nil
+		return nil, status.Errorf(
+			codes.Code(code.Code_INTERNAL),
+			"unable to extract data into validation request with error: %s", err)
 	}
 
-	valid, statusCode, err := validateObjectStorage(&r)
+	switch r.Type {
+	case "AZURE_BLOB":
+		if !checkMapForValidKey(r.Config, "containerName") {
+			err = fmt.Errorf("containerName invalid or not present")
+		}
+	case "GCS", "MINIO", "S3", "DIGITAL_OCEAN_SPACES":
+		if !checkMapForValidKey(r.Config, "bucketName") {
+			err = fmt.Errorf("bucketName invalid or not present")
+		}
+	default:
+		err = fmt.Errorf("type: %v not supported", request.Type)
+	}
+
 	if err != nil {
-		errMessage := fmt.Errorf("unable to finish request to validate storage: %w", err)
-		pkgLogger.Errorf(errMessage.Error())
-		return &proto.ValidateObjectStorageResponse{
-			IsValid: false,
-			Status:  statusCode,
-			Error:   errMessage.Error(),
-		}, nil
+		return nil, status.Errorf(
+			codes.Code(code.Code_INVALID_ARGUMENT),
+			"invalid argument err: %s", err.Error())
 	}
 
-	if !valid {
-		return &proto.ValidateObjectStorageResponse{
-			IsValid: valid,
-			Status:  200,
-			Error:   "authentication with credentials provided failed",
-		}, nil
+	err = validateObjectStorage(ctx, &r)
+	if err != nil {
+
+		if errors.As(err, &InvalidDestinationCredErr{}) {
+			return &proto.ValidateObjectStorageResponse{
+				IsValid: false,
+				Error:   err.Error(),
+			}, nil
+		}
+
+		return &proto.ValidateObjectStorageResponse{},
+			status.Errorf(codes.Code(code.Code_INTERNAL), "unable to handle validate storage request call: %s", err)
 	}
 
 	return &proto.ValidateObjectStorageResponse{
 		IsValid: true,
-		Status:  200,
 		Error:   "",
 	}, nil
 }
