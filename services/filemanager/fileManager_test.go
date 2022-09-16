@@ -26,21 +26,22 @@ import (
 	"github.com/stretchr/testify/require"
 	"google.golang.org/api/option"
 
+	"github.com/Azure/azure-storage-blob-go/azblob"
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/services/filemanager"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 )
 
 var (
-	AzuriteEndpoint, gcsURL, minioEndpoint string
-	base64Secret                           = base64.StdEncoding.EncodeToString([]byte(secretAccessKey))
-	bucket                                 = "filemanager-test-1"
-	region                                 = "us-east-1"
-	accessKeyId                            = "MYACCESSKEY"
-	secretAccessKey                        = "MYSECRETKEY"
-	hold                                   bool
-	regexRequiredSuffix                    = regexp.MustCompile(".json.gz$")
-	fileList                               []string
+	AzuriteEndpoint, gcsURL, minioEndpoint, azureSASTokens string
+	base64Secret                                           = base64.StdEncoding.EncodeToString([]byte(secretAccessKey))
+	bucket                                                 = "filemanager-test-1"
+	region                                                 = "us-east-1"
+	accessKeyId                                            = "MYACCESSKEY"
+	secretAccessKey                                        = "MYSECRETKEY"
+	hold                                                   bool
+	regexRequiredSuffix                                    = regexp.MustCompile(".json.gz$")
+	fileList                                               []string
 )
 
 func TestMain(m *testing.M) {
@@ -136,6 +137,11 @@ func run(m *testing.M) int {
 	fmt.Println("Azurite endpoint", AzuriteEndpoint)
 	fmt.Println("azurite resource successfully created")
 
+	azureSASTokens, err = createAzureSASTokens()
+	if err != nil {
+		log.Fatalf("Could not create azure sas tokens: %s", err)
+	}
+
 	// Running GCS emulator
 	GCSResource, err := pool.RunWithOptions(&dockertest.RunOptions{
 		Repository: "fsouza/fake-gcs-server",
@@ -185,6 +191,26 @@ func run(m *testing.M) int {
 	code := m.Run()
 	blockOnHold()
 	return code
+}
+
+func createAzureSASTokens() (string, error) {
+	credential, err := azblob.NewSharedKeyCredential(accessKeyId, base64Secret)
+	if err != nil {
+		return "", err
+	}
+
+	sasQueryParams, err := azblob.AccountSASSignatureValues{
+		Protocol:      azblob.SASProtocolHTTPSandHTTP,
+		ExpiryTime:    time.Now().UTC().Add(1 * time.Hour),
+		Permissions:   azblob.AccountSASPermissions{Read: true, List: true, Write: true, Delete: true}.String(),
+		Services:      azblob.AccountSASServices{Blob: true}.String(),
+		ResourceTypes: azblob.AccountSASResourceTypes{Container: true, Object: true}.String(),
+	}.NewSASQueryParameters(credential)
+	if err != nil {
+		return "", err
+	}
+
+	return sasQueryParams.Encode(), nil
 }
 
 func TestFileManager(t *testing.T) {
@@ -240,7 +266,7 @@ func TestFileManager(t *testing.T) {
 			},
 		},
 		{
-			name:     "testing Azure blob storage filemanager functionality",
+			name:     "testing Azure blob storage filemanager functionality with account keys configured",
 			destName: "AZURE_BLOB",
 			config: map[string]interface{}{
 				"containerName":  bucket,
@@ -262,6 +288,20 @@ func TestFileManager(t *testing.T) {
 				"endPoint":         gcsURL,
 				"s3ForcePathStyle": true,
 				"disableSSL":       true,
+			},
+		},
+		{
+			name:     "testing Azure blob storage filemanager functionality with sas tokens configured",
+			destName: "AZURE_BLOB",
+			config: map[string]interface{}{
+				"containerName":  bucket,
+				"prefix":         "some-prefix",
+				"accountName":    accessKeyId,
+				"useSASTokens":   true,
+				"sasToken":       azureSASTokens,
+				"endPoint":       AzuriteEndpoint,
+				"forcePathStyle": true,
+				"disableSSL":     true,
 			},
 		},
 	}

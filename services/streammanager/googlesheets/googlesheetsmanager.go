@@ -19,6 +19,7 @@ import (
 	"google.golang.org/api/option"
 	"google.golang.org/api/sheets/v4"
 
+	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/services/streammanager/common"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 )
@@ -60,10 +61,10 @@ type GoogleSheetsProducer struct {
 }
 
 // NewProducer creates a producer based on destination config
-func NewProducer(destinationConfig interface{}, o common.Opts) (*GoogleSheetsProducer, error) {
+func NewProducer(destination *backendconfig.DestinationT, o common.Opts) (*GoogleSheetsProducer, error) {
 	var config Config
 	var headerRowStr []string
-	jsonConfig, err := json.Marshal(destinationConfig)
+	jsonConfig, err := json.Marshal(destination.Config)
 	if err != nil {
 		return nil, fmt.Errorf("[GoogleSheets] Error while marshalling destination config :: %w", err)
 	}
@@ -77,14 +78,14 @@ func NewProducer(destinationConfig interface{}, o common.Opts) (*GoogleSheetsPro
 		opts = testClientOptions(&config)
 	} else { // normal configuration
 		if opts, err = clientOptions(&config); err != nil {
-			return nil, err
+			return nil, fmt.Errorf("[GoogleSheets] error :: %w", err)
 		}
 	}
 
 	service, err := generateService(opts...)
 	// If err is not nil then retrun
 	if err != nil {
-		pkgLogger.Errorf("[Googlesheets] error  :: %v", err)
+		pkgLogger.Errorf("[Googlesheets] error  :: %w", err)
 		return nil, err
 	}
 
@@ -348,4 +349,9 @@ func testClientOptions(config *Config) []option.ClientOption {
 	trans := client.Transport.(*oauth2.Transport)
 	trans.Base = &http.Transport{TLSClientConfig: tlsConfig}
 	return []option.ClientOption{option.WithEndpoint(config.TestConfig.Endpoint), option.WithHTTPClient(client)}
+}
+
+func (*GoogleSheetsProducer) Close() error {
+	// no-op
+	return nil
 }

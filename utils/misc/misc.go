@@ -1014,6 +1014,7 @@ type ObjectStorageOptsT struct {
 	Config                      interface{}
 	UseRudderStorage            bool
 	RudderStoragePrefixOverride string
+	WorkspaceID                 string
 }
 
 func GetObjectStorageConfig(opts ObjectStorageOptsT) map[string]interface{} {
@@ -1021,14 +1022,17 @@ func GetObjectStorageConfig(opts ObjectStorageOptsT) map[string]interface{} {
 	if opts.UseRudderStorage {
 		return GetRudderObjectStorageConfig(opts.RudderStoragePrefixOverride)
 	}
-	if opts.Provider == "S3" && !HasAWSKeysInConfig(opts.Config) {
+	if opts.Provider == "S3" {
 		clonedObjectStorageConfig := make(map[string]interface{})
 		for k, v := range objectStorageConfigMap {
 			clonedObjectStorageConfig[k] = v
 		}
-		clonedObjectStorageConfig["accessKeyID"] = config.GetEnv("RUDDER_AWS_S3_COPY_USER_ACCESS_KEY_ID", "")
-		clonedObjectStorageConfig["accessKey"] = config.GetEnv("RUDDER_AWS_S3_COPY_USER_ACCESS_KEY", "")
-		return clonedObjectStorageConfig
+		clonedObjectStorageConfig["externalID"] = opts.WorkspaceID
+		if !HasAWSKeysInConfig(objectStorageConfigMap) {
+			clonedObjectStorageConfig["accessKeyID"] = config.GetEnv("RUDDER_AWS_S3_COPY_USER_ACCESS_KEY_ID", "")
+			clonedObjectStorageConfig["accessKey"] = config.GetEnv("RUDDER_AWS_S3_COPY_USER_ACCESS_KEY", "")
+		}
+		objectStorageConfigMap = clonedObjectStorageConfig
 	}
 	return objectStorageConfigMap
 }

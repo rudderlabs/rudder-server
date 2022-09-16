@@ -100,6 +100,16 @@ func (st *HandleT) Start(ctx context.Context) {
 	_ = g.Wait()
 }
 
+func sendRetryUpdateStats(attempt int) {
+	pkgLogger.Warnf("Timeout during update job status in stash module, attempt %d", attempt)
+	stats.NewTaggedStat("jobsdb_update_timeout", stats.CountType, stats.Tags{"attempt": fmt.Sprint(attempt), "module": "stash"}).Count(1)
+}
+
+func sendQueryRetryStats(attempt int) {
+	pkgLogger.Warnf("Timeout during query jobs in stash module, attempt %d", attempt)
+	stats.NewTaggedStat("jobsdb_query_timeout", stats.CountType, stats.Tags{"attempt": fmt.Sprint(attempt), "module": "stash"}).Count(1)
+}
+
 func (st *HandleT) getFileUploader(ctx context.Context) filemanager.FileManager {
 	if st.errFileUploader == nil && backupEnabled() {
 		st.setupFileUploader(ctx)
@@ -230,9 +240,9 @@ func (st *HandleT) setErrJobStatus(jobs []*jobsdb.JobT, output StoreErrorOutputT
 		}
 		statusList = append(statusList, &status)
 	}
-	err := misc.RetryWith(context.Background(), st.jobsDBCommandTimeout, st.jobdDBMaxRetries, func(ctx context.Context) error {
+	err := misc.RetryWithNotify(context.Background(), st.jobsDBCommandTimeout, st.jobdDBMaxRetries, func(ctx context.Context) error {
 		return st.errorDB.UpdateJobStatus(ctx, statusList, nil, nil)
-	})
+	}, sendRetryUpdateStats)
 	if err != nil {
 		pkgLogger.Errorf("Error occurred while updating proc error jobs statuses. Panicking. Err: %v", err)
 		panic(err)
@@ -257,9 +267,9 @@ func (st *HandleT) readErrJobsLoop(ctx context.Context) {
 				JobsLimit:                     errDBReadBatchSize,
 				PayloadSizeLimit:              payloadLimit,
 			}
-			toRetry, err := jobsdb.QueryJobsResultWithRetries(ctx, st.jobdDBQueryRequestTimeout, st.jobdDBMaxRetries, func(ctx context.Context) (jobsdb.JobsResult, error) {
+			toRetry, err := misc.QueryWithRetriesAndNotify(ctx, st.jobdDBQueryRequestTimeout, st.jobdDBMaxRetries, func(ctx context.Context) (jobsdb.JobsResult, error) {
 				return st.errorDB.GetToRetry(ctx, queryParams)
-			})
+			}, sendQueryRetryStats)
 			if err != nil {
 				st.logger.Errorf("Error occurred while reading proc error jobs. Err: %v", err)
 				panic(err)
@@ -271,9 +281,9 @@ func (st *HandleT) readErrJobsLoop(ctx context.Context) {
 				if queryParams.PayloadSizeLimit > 0 {
 					queryParams.PayloadSizeLimit -= toRetry.PayloadSize
 				}
-				unprocessed, err := jobsdb.QueryJobsResultWithRetries(ctx, st.jobdDBQueryRequestTimeout, st.jobdDBMaxRetries, func(ctx context.Context) (jobsdb.JobsResult, error) {
+				unprocessed, err := misc.QueryWithRetriesAndNotify(ctx, st.jobdDBQueryRequestTimeout, st.jobdDBMaxRetries, func(ctx context.Context) (jobsdb.JobsResult, error) {
 					return st.errorDB.GetUnprocessed(ctx, queryParams)
-				})
+				}, sendQueryRetryStats)
 				if err != nil {
 					st.logger.Errorf("Error occurred while reading proc error jobs. Err: %v", err)
 					panic(err)
@@ -326,9 +336,9 @@ func (st *HandleT) readErrJobsLoop(ctx context.Context) {
 				}
 				statusList = append(statusList, &status)
 			}
-			err = misc.RetryWith(context.Background(), st.jobsDBCommandTimeout, st.jobdDBMaxRetries, func(ctx context.Context) error {
+			err = misc.RetryWithNotify(context.Background(), st.jobsDBCommandTimeout, st.jobdDBMaxRetries, func(ctx context.Context) error {
 				return st.errorDB.UpdateJobStatus(ctx, statusList, nil, nil)
-			})
+			}, sendRetryUpdateStats)
 			if err != nil {
 				pkgLogger.Errorf("Error occurred while marking proc error jobs statuses as %v. Panicking. Err: %v", jobState, err)
 				panic(err)

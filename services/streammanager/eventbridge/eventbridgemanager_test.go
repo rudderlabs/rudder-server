@@ -6,7 +6,8 @@ import (
 	"testing"
 	"time"
 
-	mock_eventbride "github.com/rudderlabs/rudder-server/mocks/services/streammanager/eventbridge"
+	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
+	mock_eventbridge "github.com/rudderlabs/rudder-server/mocks/services/streammanager/eventbridge"
 	mock_logger "github.com/rudderlabs/rudder-server/mocks/utils/logger"
 
 	"github.com/aws/aws-sdk-go/aws"
@@ -23,8 +24,12 @@ func TestNewProducer(t *testing.T) {
 		"IAMRoleARN": "sampleRoleArn",
 		"ExternalID": "sampleExternalID",
 	}
+	destination := backendconfig.DestinationT{
+		Config:      destinationConfig,
+		WorkspaceID: "sampleWorkspaceID",
+	}
 	timeOut := 10 * time.Second
-	producer, err := NewProducer(destinationConfig, common.Opts{Timeout: timeOut})
+	producer, err := NewProducer(&destination, common.Opts{Timeout: timeOut})
 	assert.Nil(t, err)
 	assert.NotNil(t, producer)
 	assert.NotNil(t, producer.client)
@@ -40,7 +45,7 @@ var sampleEvent = eventbridge.PutEventsRequestEntry{
 
 func TestProduceHappyCase(t *testing.T) {
 	ctrl := gomock.NewController(t)
-	mockClient := mock_eventbride.NewMockEventBridgeClient(ctrl)
+	mockClient := mock_eventbridge.NewMockEventBridgeClient(ctrl)
 	producer := &EventBridgeProducer{client: mockClient}
 	mockClient.
 		EXPECT().
@@ -66,7 +71,7 @@ func TestProduceWithInvalidClient(t *testing.T) {
 
 func TestProduceWithInvalidJson(t *testing.T) {
 	ctrl := gomock.NewController(t)
-	mockClient := mock_eventbride.NewMockEventBridgeClient(ctrl)
+	mockClient := mock_eventbridge.NewMockEventBridgeClient(ctrl)
 	producer := &EventBridgeProducer{client: mockClient}
 	sampleEventJson := []byte("Invalid json")
 	statusCode, statusMsg, respMsg := producer.Produce(sampleEventJson, map[string]string{})
@@ -79,7 +84,7 @@ func TestProduceWithBadResponse(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mockLogger := mock_logger.NewMockLoggerI(ctrl)
 	pkgLogger = mockLogger
-	mockClient := mock_eventbride.NewMockEventBridgeClient(ctrl)
+	mockClient := mock_eventbridge.NewMockEventBridgeClient(ctrl)
 	producer := &EventBridgeProducer{client: mockClient}
 	errorCode := "SomeError"
 	// Failed response
