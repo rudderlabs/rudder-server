@@ -74,7 +74,7 @@ type backupSettings struct {
 }
 
 func (b *backupSettings) isBackupEnabled() bool {
-	return masterBackupEnabled && b.instanceBackupEnabled
+	return masterBackupEnabled && b.instanceBackupEnabled && isBackupConfigured()
 }
 
 func IsMasterBackupEnabled() bool {
@@ -3364,23 +3364,22 @@ func (jd *HandleT) backupDSLoop(ctx context.Context) {
 		opPayload, err := json.Marshal(&backupDS)
 		jd.assertError(err)
 
-		var opID int64
-		if isBackupConfigured() {
-			opID = jd.JournalMarkStart(backupDSOperation, opPayload)
-			err := jd.backupDS(ctx, backupDSRange)
-			if err != nil {
-				stats.NewTaggedStat("backup_ds_failed", stats.CountType, stats.Tags{"customVal": jd.tablePrefix, "provider": config.GetEnv("JOBS_BACKUP_STORAGE_PROVIDER", "S3")}).Increment()
-				jd.logger.Errorf("[JobsDB] :: Failed to backup jobs table %v. Err: %v", backupDSRange.ds.JobStatusTable, err)
-			}
-			jd.JournalMarkDone(opID)
+		opID := jd.JournalMarkStart(backupDSOperation, opPayload)
+		err = jd.backupDS(ctx, backupDSRange)
+		if err != nil {
+			stats.NewTaggedStat("backup_ds_failed", stats.CountType, stats.Tags{"customVal": jd.tablePrefix, "provider": config.GetEnv("JOBS_BACKUP_STORAGE_PROVIDER", "S3")}).Increment()
+			jd.logger.Errorf("[JobsDB] :: Failed to backup jobs table %v. Err: %v", backupDSRange.ds.JobStatusTable, err)
 		}
+		jd.JournalMarkDone(opID)
 
+		/*
+			NOTE: Currently, we retry uploading a table for some time & if it fails, we drop that table only & not all `pre_drop` tables.
+			 So, in situation where new table creation rate is more than drop. We will still have pipe up issue.
+			 An easy way to fix this is, if at any point of time exponential retry fails then instead of just dropping that particular
+			 table drop all subsequent `pre_drop` table. As, most likely the upload of rest of the table will also fail with the same error.
+		*/
 		// drop dataset after successfully uploading both jobs and jobs_status to s3
 		opID = jd.JournalMarkStart(backupDropDSOperation, opPayload)
-		// Currently, we retry uploading a table for some time & if it fails. We only drop that table & not all `pre_drop` tables.
-		// So, in situation when new table creation rate is more than drop. We will still have pipe up issue.
-		// An easy way to fix this is, if at any point of time exponential retry fails then instead of just dropping that particular
-		// table drop all subsequent `pre_drop` table. As, most likely the upload of rest of the table will also fail with the same error.
 		jd.mustDropDS(backupDS)
 		jd.JournalMarkDone(opID)
 	}
