@@ -5,12 +5,7 @@ import (
 	"net/http"
 )
 
-type ContentType string
-
 const (
-	ContentTypeJSON  ContentType = "application/json"
-	ContentTypePlain ContentType = "text/plain"
-
 	// Ok - ok
 	Ok = "OK"
 	// RequestBodyNil - Request body is nil

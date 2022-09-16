@@ -58,23 +58,3 @@ func StatMiddleware(ctx context.Context) func(http.Handler) http.Handler {
 		})
 	}
 }
-
-// SetJsonContentType sets the content-type to application/json.
-func SetJsonContentType() func(http.Handler) http.Handler {
-	return func(next http.Handler) http.Handler {
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			w.Header().Add("Content-Type", "application/json; charset=utf-8")
-			next.ServeHTTP(w, r)
-		})
-	}
-}
-
-// SetPlainContentType sets content type to plain text.
-func SetPlainContentType() func(http.Handler) http.Handler {
-	return func(next http.Handler) http.Handler {
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			w.Header().Add("Content-Type", "text/plain; charset=utf-8")
-			next.ServeHTTP(w, r)
-		})
-	}
-}
