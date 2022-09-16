@@ -10,6 +10,7 @@ import (
 	"github.com/aws/aws-sdk-go/service/kinesis"
 	"github.com/tidwall/gjson"
 
+	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/services/streammanager/common"
 	"github.com/rudderlabs/rudder-server/utils/awsutils"
 	"github.com/rudderlabs/rudder-server/utils/logger"
@@ -36,8 +37,8 @@ type KinesisClient interface {
 }
 
 // NewProducer creates a producer based on destination config
-func NewProducer(destinationConfig map[string]interface{}, o common.Opts) (*KinesisProducer, error) {
-	sessionConfig, err := awsutils.NewSessionConfig(destinationConfig, o.Timeout, kinesis.ServiceName)
+func NewProducer(destination *backendconfig.DestinationT, o common.Opts) (*KinesisProducer, error) {
+	sessionConfig, err := awsutils.NewSessionConfigForDestination(destination, o.Timeout, kinesis.ServiceName)
 	if err != nil {
 		return nil, err
 	}
@@ -104,4 +105,9 @@ func (producer *KinesisProducer) Produce(jsonData json.RawMessage, destConfig in
 	}
 	message := fmt.Sprintf("Message delivered at SequenceNumber: %v , shard Id: %v", putOutput.SequenceNumber, putOutput.ShardId)
 	return 200, "Success", message
+}
+
+func (*KinesisProducer) Close() error {
+	// no-op
+	return nil
 }

@@ -1,7 +1,10 @@
+//go:generate mockgen --build_flags=--mod=mod -destination=../../../mocks/services/streammanager/common/mock_streammanager.go -package mock_streammanager github.com/rudderlabs/rudder-server/services/streammanager/common StreamProducer
+
 package common
 
 import (
 	"encoding/json"
+	"io"
 	"strings"
 	"time"
 
@@ -9,11 +12,8 @@ import (
 )
 
 type StreamProducer interface {
+	io.Closer
 	Produce(jsonData json.RawMessage, destConfig interface{}) (int, string, string)
-}
-
-type ClosableStreamProducer interface {
-	Close() error
 }
 
 type Opts struct {
