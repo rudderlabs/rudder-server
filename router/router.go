@@ -255,6 +255,21 @@ func loadConfig() {
 	failedKeysEnabled = config.GetBool("Router.failedKeysEnabled", false)
 }
 
+func sendRetryStoreStats(attempt int) {
+	pkgLogger.Warnf("Timeout during store jobs in router module, attempt %d", attempt)
+	stats.NewTaggedStat("jobsdb_store_timeout", stats.CountType, stats.Tags{"attempt": fmt.Sprint(attempt), "module": "router"}).Count(1)
+}
+
+func sendRetryUpdateStats(attempt int) {
+	pkgLogger.Warnf("Timeout during update job status in router module, attempt %d", attempt)
+	stats.NewTaggedStat("jobsdb_update_timeout", stats.CountType, stats.Tags{"attempt": fmt.Sprint(attempt), "module": "router"}).Count(1)
+}
+
+func sendQueryRetryStats(attempt int) {
+	pkgLogger.Warnf("Timeout during query jobs in router module, attempt %d", attempt)
+	stats.NewTaggedStat("jobsdb_query_timeout", stats.CountType, stats.Tags{"attempt": fmt.Sprint(attempt), "module": "router"}).Count(1)
+}
+
 func (worker *workerT) trackStuckDelivery() chan struct{} {
 	var d time.Duration
 	if worker.rt.transformerProxy {
@@ -1420,15 +1435,15 @@ func (rt *HandleT) commitStatusList(responseList *[]jobResponseT) {
 		})
 		// Store the aborted jobs to errorDB
 		if routerAbortedJobs != nil {
-			err := misc.RetryWith(context.Background(), rt.jobsDBCommandTimeout, rt.jobdDBMaxRetries, func(ctx context.Context) error {
+			err := misc.RetryWithNotify(context.Background(), rt.jobsDBCommandTimeout, rt.jobdDBMaxRetries, func(ctx context.Context) error {
 				return rt.errorDB.Store(ctx, routerAbortedJobs)
-			})
+			}, sendRetryStoreStats)
 			if err != nil {
 				panic(fmt.Errorf("storing jobs into ErrorDB: %w", err))
 			}
 		}
 		// Update the status
-		err := misc.RetryWith(context.Background(), rt.jobsDBCommandTimeout, rt.jobdDBMaxRetries, func(ctx context.Context) error {
+		err := misc.RetryWithNotify(context.Background(), rt.jobsDBCommandTimeout, rt.jobdDBMaxRetries, func(ctx context.Context) error {
 			return rt.jobsDB.WithUpdateSafeTx(func(tx jobsdb.UpdateSafeTx) error {
 				err := rt.jobsDB.UpdateJobStatusInTx(ctx, tx, statusList, []string{rt.destName}, nil)
 				if err != nil {
@@ -1448,7 +1463,7 @@ func (rt *HandleT) commitStatusList(responseList *[]jobResponseT) {
 				rt.Reporting.Report(reportMetrics, tx.Tx())
 				return nil
 			})
-		})
+		}, sendRetryStoreStats)
 		if err != nil {
 			panic(err)
 		}
@@ -1703,14 +1718,14 @@ func (rt *HandleT) readAndProcess() int {
 	}
 	rt.timeGained = 0
 	rt.logger.Debugf("[%v Router] :: pickupMap: %+v", rt.destName, pickupMap)
-	combinedList, err := jobsdb.QueryJobsWithRetries(context.Background(), rt.jobdDBQueryRequestTimeout, rt.jobdDBMaxRetries, func(ctx context.Context) ([]*jobsdb.JobT, error) {
+	combinedList, err := misc.QueryWithRetriesAndNotify(context.Background(), rt.jobdDBQueryRequestTimeout, rt.jobdDBMaxRetries, func(ctx context.Context) ([]*jobsdb.JobT, error) {
 		return rt.jobsDB.GetAllJobs(
 			ctx,
 			pickupMap,
 			rt.getQueryParams(totalPickupCount),
 			rt.maxDSQuerySize,
 		)
-	})
+	}, sendQueryRetryStats)
 	if err != nil {
 		rt.logger.Errorf("[%v Router] :: Error getting jobs from DB: %v", rt.destName, err)
 		panic(err)
@@ -1840,9 +1855,9 @@ func (rt *HandleT) readAndProcess() int {
 	rt.throttledUserMap = nil
 
 	// Mark the jobs as executing
-	err = misc.RetryWith(context.Background(), rt.jobsDBCommandTimeout, rt.jobdDBMaxRetries, func(ctx context.Context) error {
+	err = misc.RetryWithNotify(context.Background(), rt.jobsDBCommandTimeout, rt.jobdDBMaxRetries, func(ctx context.Context) error {
 		return rt.jobsDB.UpdateJobStatus(ctx, statusList, []string{rt.destName}, nil)
-	})
+	}, sendRetryUpdateStats)
 	if err != nil {
 		pkgLogger.Errorf("Error occurred while marking %s jobs statuses as executing. Panicking. Err: %v", rt.destName, err)
 		panic(err)
@@ -1850,9 +1865,9 @@ func (rt *HandleT) readAndProcess() int {
 
 	// Mark the jobs as aborted
 	if len(drainList) > 0 {
-		err := misc.RetryWith(context.Background(), rt.jobsDBCommandTimeout, rt.jobdDBMaxRetries, func(ctx context.Context) error {
+		err := misc.RetryWithNotify(context.Background(), rt.jobsDBCommandTimeout, rt.jobdDBMaxRetries, func(ctx context.Context) error {
 			return rt.errorDB.Store(ctx, drainJobList)
-		})
+		}, sendRetryStoreStats)
 		if err != nil {
 			pkgLogger.Errorf("Error occurred while storing %s jobs into ErrorDB. Panicking. Err: %v", rt.destName, err)
 			panic(err)
@@ -1878,7 +1893,7 @@ func (rt *HandleT) readAndProcess() int {
 		}
 		// REPORTING - ROUTER - END
 
-		err = misc.RetryWith(context.Background(), rt.jobsDBCommandTimeout, rt.jobdDBMaxRetries, func(ctx context.Context) error {
+		err = misc.RetryWithNotify(context.Background(), rt.jobsDBCommandTimeout, rt.jobdDBMaxRetries, func(ctx context.Context) error {
 			return rt.jobsDB.WithUpdateSafeTx(func(tx jobsdb.UpdateSafeTx) error {
 				err := rt.jobsDB.UpdateJobStatusInTx(ctx, tx, drainList, []string{rt.destName}, nil)
 				if err != nil {
@@ -1893,7 +1908,7 @@ func (rt *HandleT) readAndProcess() int {
 				rt.Reporting.Report(reportMetrics, tx.Tx())
 				return nil
 			})
-		})
+		}, sendRetryUpdateStats)
 		if err != nil {
 			panic(err)
 		}
