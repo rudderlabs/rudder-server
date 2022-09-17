@@ -107,7 +107,7 @@ func TestSourceRedshiftIntegration(t *testing.T) {
 	testhelper.SendEvents(t, warehouseTest)
 	testhelper.SendEvents(t, warehouseTest)
 	testhelper.SendEvents(t, warehouseTest)
-	testhelper.SendIntegratedEvents(t, warehouseTest)
+	testhelper.SendAsyncRequest(t, warehouseTest)
 
 	// Setting up the events map
 	// Checking for Gateway and Batch router events
