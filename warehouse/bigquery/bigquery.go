@@ -255,14 +255,11 @@ func (bq *HandleT) DeleteBy(tableNames []string, params warehouseutils.DeleteByP
 	pkgLogger.Infof("BQ: Cleaning up the followng tables in bigquery for BQ:%s : %v", tableNames)
 	for _, tb := range tableNames {
 		sqlStatement := fmt.Sprintf(`DELETE FROM "%[1]s"."%[2]s" WHERE 
-		%[3]s <> @jobrunid AND
-		%[4]s <> @taskrunid AND
-		%[5]s = @sourceid`,
+		@jobrundidcolname <> @jobrunid AND
+		@taskrunidcolname <> @taskrunid AND
+		@sourceidcolname = @sourceid`,
 			bq.Namespace,
 			tb,
-			"context_sources_job_run_id",
-			"context_sources_task_run_id",
-			"context_source_id",
 		)
 
 		pkgLogger.Infof("PG: Deleting rows in table in bigquery for BQ:%s", bq.Warehouse.Destination.ID)
@@ -272,6 +269,9 @@ func (bq *HandleT) DeleteBy(tableNames []string, params warehouseutils.DeleteByP
 			{Name: "jobrunid", Value: params.JobRunId},
 			{Name: "taskrunid", Value: params.TaskRunId},
 			{Name: "sourceid", Value: params.SourceId},
+			{Name: "jobrundidcolname,", Value: "context_sources_job_run_id"},
+			{Name: "taskrundidcolname,", Value: "context_sources_task_run_id"},
+			{Name: "sourceidcolname,", Value: "context_source_id"},
 		}
 		// job, err := query.Run(bq.BQContext)
 		// if err != nil {

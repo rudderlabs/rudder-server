@@ -427,25 +427,26 @@ func (pq *HandleT) DeleteBy(tableNames []string, params warehouseutils.DeleteByP
 	pkgLogger.Infof("PG: Cleaning up the followng tables in postgres for PG:%s : %v", tableNames)
 	for _, tb := range tableNames {
 		sqlStatement := fmt.Sprintf(`DELETE FROM "%[1]s"."%[2]s" WHERE 
-		%[3]s <> $1 AND
-		%[4]s <> $2 AND
-		%[5]s = $3 AND
-		%[6]s < $4`,
+		$1 <> $2 AND
+		$3 <> $4 AND
+		$5 = $6 AND
+		$7 < $8`,
 			pq.Namespace,
 			tb,
-			"context_sources_job_run_id",
-			"context_sources_task_run_id",
-			"context_source_id",
-			"received_at",
 		)
 		pkgLogger.Infof("PG: Deleting rows in table in postgres for PG:%s", pq.Warehouse.Destination.ID)
 		pkgLogger.Debugf("PG: Executing the sqlstatement  %v", sqlStatement)
 		// Uncomment below 4 lines when we are ready to launch async job on postgres warehouse
 		_, err = pq.Db.Exec(sqlStatement,
+			"context_sources_job_run_id",
 			params.JobRunId,
+			"context_sources_task_run_id",
 			params.TaskRunId,
+			"context_source_id",
 			params.SourceId,
-			params.StartTime)
+			"received_at",
+			params.StartTime,
+		)
 		if err != nil {
 			pkgLogger.Errorf("Error %s", err)
 			return err

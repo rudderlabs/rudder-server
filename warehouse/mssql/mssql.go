@@ -239,16 +239,12 @@ func (ms *HandleT) DeleteBy(tableNames []string, params warehouseutils.DeleteByP
 	pkgLogger.Infof("MS: Cleaning up the followng tables in mysql for MS:%s : %v", tableNames)
 	for _, tb := range tableNames {
 		sqlStatement := fmt.Sprintf(`DELETE FROM "%[1]s"."%[2]s" WHERE 
-		%[3]s <> @jobrunid AND
-		%[4]s <> @taskrunid AND
-		%[5]s = @sourceid AND
-		%[6]s < @starttime`,
+		@jobRunIdColName <> @jobrunid AND
+		@taskRunIdColName <> @taskrunid AND
+		@sourceIdColName = @sourceid AND
+		@startTimeColName < @starttime`,
 			ms.Namespace,
 			tb,
-			"context_sources_job_run_id",
-			"context_sources_task_run_id",
-			"context_source_id",
-			"received_at",
 		)
 
 		pkgLogger.Infof("MSSQL: Deleting rows in table in mysql for MS:%s ", ms.Warehouse.Destination.ID)
@@ -259,6 +255,10 @@ func (ms *HandleT) DeleteBy(tableNames []string, params warehouseutils.DeleteByP
 			sql.Named("taskrunid", params.TaskRunId),
 			sql.Named("sourceid", params.SourceId),
 			sql.Named("starttime", params.StartTime),
+			sql.Named("jobRunIdColName", "context_sources_job_run_id"),
+			sql.Named("taskRunIdColName", "context_sources_task_run_id"),
+			sql.Named("sourceIdColName", "context_source_id"),
+			sql.Named("startTimeColName", "received_at"),
 		)
 		if err != nil {
 			pkgLogger.Errorf("Error %s", err)
