@@ -378,7 +378,6 @@ func (ch *HandleT) DownloadLoadFiles(tableName string) ([]string, error) {
 	return fileNames, dErr
 }
 
-//Need to create a structure with delete parameters instead of simply adding a long list of params
 func (ch *HandleT) DeleteBy(tableNames []string, params warehouseutils.DeleteByParams) error {
 	return fmt.Errorf(warehouseutils.NotImplementedErrorCode)
 }
