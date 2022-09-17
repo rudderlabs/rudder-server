@@ -186,8 +186,7 @@ func GetPGNotifierConnectionString() string {
 		pgNotifierDBpassword, pgNotifierDBname, pgNotifierDBsslmode)
 }
 
-//trackBatch tracks the batches until they are complete and triggers output through channel of type ResponseT
-// The channel gets listened to by the agents that publish the messages
+//trackUploadBatch tracks the upload batches until they are complete and triggers output through channel of type ResponseT
 func (notifier *PgNotifierT) trackUploadBatch(batchID string, ch *chan []ResponseT) {
 	rruntime.GoForWarehouse(func() {
 		for {
@@ -239,6 +238,7 @@ func (notifier *PgNotifierT) trackUploadBatch(batchID string, ch *chan []Respons
 	})
 }
 
+//trackAsyncBatch tracks the upload batches until they are complete and triggers output through channel of type ResponseT
 func (notifier *PgNotifierT) trackAsyncBatch(batchID string, ch *chan []ResponseT) {
 	rruntime.GoForWarehouse(func() {
 		for {
