@@ -159,7 +159,7 @@ func TestBigQueryIntegration(t *testing.T) {
 		warehouseTest.EventsCountMap = testhelper.EventsCountMap{
 			"identifies":    1,
 			"users":         1,
-			"tracks":        2,
+			"tracks":        1,
 			"product_track": 1,
 			"pages":         1,
 			"screens":       1,
@@ -210,7 +210,6 @@ func TestBigQueryIntegration(t *testing.T) {
 		testhelper.SendIntegratedEvents(t, warehouseTest)
 		testhelper.SendModifiedEvents(t, warehouseTest)
 		testhelper.SendModifiedEvents(t, warehouseTest)
-		// testhelper.SendAsyncRequest(t, warehouseTest)
 		// Setting up the events map
 		// Checking for Gateway and Batch router events
 		// Checking for the events count for each table
@@ -218,7 +217,7 @@ func TestBigQueryIntegration(t *testing.T) {
 		warehouseTest.EventsCountMap = testhelper.EventsCountMap{
 			"identifies":    4,
 			"users":         1,
-			"tracks":        5,
+			"tracks":        4,
 			"product_track": 4,
 			"pages":         4,
 			"screens":       4,
