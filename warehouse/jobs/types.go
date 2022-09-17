@@ -51,7 +51,6 @@ const (
 	WhJobSucceeded string = "succeeded"
 	WhJobAborted   string = "aborted"
 	WhJobFailed    string = "failed"
-	WhJobError     string = "error"
 	AsyncJobType   string = "async_job"
 )
 

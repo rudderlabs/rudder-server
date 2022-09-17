@@ -130,7 +130,7 @@ func TestRedshiftIntegration(t *testing.T) {
 	// Re-Setting up the events map
 	// Sending the second set of events.
 	// This time we will not be resetting the MessageID. We will be using the same one to check for the dedupe.
-	warehouseTest.EventsCountMap = testhelper.DefaultEventMap(true)
+	warehouseTest.EventsCountMap = testhelper.DefaultEventMap()
 	testhelper.SendModifiedEvents(t, warehouseTest)
 	testhelper.SendModifiedEvents(t, warehouseTest)
 	testhelper.SendModifiedEvents(t, warehouseTest)

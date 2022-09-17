@@ -341,9 +341,9 @@ func (asyncWhJob *AsyncJobWhT) updateAsyncJob(ctx context.Context, Id string, st
 func (asyncWhJob *AsyncJobWhT) getStatusAsyncJob(ctx context.Context, payload *StartJobReqPayload) (statusResponse WhStatusResponse) {
 	pkgLogger.Info("WH-Jobs: Getting status for wh async jobs %v", payload)
 	//Need to check for count first and see if there are any rows matching the jobrunid and taskrunid. If none, then raise an error instead of showing complete
-	sqlStatement := fmt.Sprintf(`SELECT status,error FROM %s WHERE jobrunid='%s' AND taskrunid='%s'`, warehouseutils.WarehouseAsyncJobTable, payload.JobRunID, payload.TaskRunID)
-	pkgLogger.Infof("Query is %s", sqlStatement)
-	rows, err := asyncWhJob.dbHandle.Query(sqlStatement)
+	sqlStatement := fmt.Sprintf(`SELECT status,error FROM %s WHERE jobrunid=$1 AND taskrunid=$2`, warehouseutils.WarehouseAsyncJobTable)
+	pkgLogger.Debugf("Query inside getStatusAsync function is %s", sqlStatement)
+	rows, err := asyncWhJob.dbHandle.Query(sqlStatement, payload.JobRunID, payload.TaskRunID)
 	if err != nil {
 		pkgLogger.Errorf("WH-Jobs: Error executing the query %s", err.Error())
 		statusResponse.Status = WhJobFailed
