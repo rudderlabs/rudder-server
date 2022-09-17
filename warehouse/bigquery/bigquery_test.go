@@ -42,7 +42,6 @@ const (
 // bigqueryCredentials extracting big query credentials
 func bigqueryCredentials() (bqCredentials bigquery2.BQCredentialsT, err error) {
 	cred, exists := os.LookupEnv(TestCredentialsKey)
-
 	if !exists {
 		err = fmt.Errorf("following %s does not exists while running the Bigquery test", TestCredentialsKey)
 		return
@@ -117,7 +116,6 @@ func TestBigQueryIntegration(t *testing.T) {
 		testhelper.SendEvents(t, warehouseTest)
 		testhelper.SendEvents(t, warehouseTest)
 		testhelper.SendEvents(t, warehouseTest)
-		// testhelper.SendAsyncRequest(t, warehouseTest)
 		// Integrated events has events set to skipReservedKeywordsEscaping to True
 		// Eg: Since groups is reserved keyword in BQ, table populated will be groups if true else _groups
 		testhelper.SendIntegratedEvents(t, warehouseTest)
@@ -146,7 +144,7 @@ func TestBigQueryIntegration(t *testing.T) {
 		// Re-Setting up the events map
 		// Sending the second set of events.
 		// This time we will not be resetting the MessageID. We will be using the same one to check for the dedupe.
-		warehouseTest.EventsCountMap = testhelper.DefaultEventMap(true)
+		warehouseTest.EventsCountMap = testhelper.DefaultEventMap()
 		testhelper.SendModifiedEvents(t, warehouseTest)
 		testhelper.SendModifiedEvents(t, warehouseTest)
 		testhelper.SendModifiedEvents(t, warehouseTest)
@@ -207,6 +205,7 @@ func TestBigQueryIntegration(t *testing.T) {
 		testhelper.SendEvents(t, warehouseTest)
 		// Integrated events has events set to skipReservedKeywordsEscaping to True
 		// Eg: Since groups is reserved keyword in BQ, table populated will be groups if true else _groups
+
 		testhelper.SendIntegratedEvents(t, warehouseTest)
 		testhelper.SendModifiedEvents(t, warehouseTest)
 		testhelper.SendModifiedEvents(t, warehouseTest)
