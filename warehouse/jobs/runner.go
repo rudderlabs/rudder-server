@@ -214,8 +214,8 @@ func (asyncWhJob *AsyncJobWhT) startAsyncJobRunner(ctx context.Context) error {
 						// Todo: Need to program retry strategy, timeout strategy for each row in the asyncJobtable
 						continue
 					}
-					ind := getSinglePayloadFromBatchPayloadByTableName(asyncjobpayloads, jobID.TableName)
-					if ind == -1 {
+					tableNameIndex := getSinglePayloadFromBatchPayloadByTableName(asyncjobpayloads, jobID.TableName)
+					if tableNameIndex == -1 {
 						pkgLogger.Errorf("tableName is not found while updating the response after completing the trackasyncJob %s", jobID.TableName)
 						continue
 					}
@@ -223,7 +223,7 @@ func (asyncWhJob *AsyncJobWhT) startAsyncJobRunner(ctx context.Context) error {
 						pkgLogger.Errorf("[WH]: Error in running async task %v", resp.Error)
 						jobError := fmt.Errorf(resp.Error)
 						jobstatusmap = AsyncJobsStatusMap{
-							Id:     asyncjobpayloads[ind].Id,
+							Id:     asyncjobpayloads[tableNameIndex].Id,
 							Status: WhJobAborted,
 							Error:  jobError,
 						}
@@ -234,7 +234,7 @@ func (asyncWhJob *AsyncJobWhT) startAsyncJobRunner(ctx context.Context) error {
 						pkgLogger.Errorf("[WH]: Error in running async task %v", resp.Error)
 						jobError := fmt.Errorf(resp.Error)
 						jobstatusmap = AsyncJobsStatusMap{
-							Id:     asyncjobpayloads[ind].Id,
+							Id:     asyncjobpayloads[tableNameIndex].Id,
 							Status: WhJobFailed,
 							Error:  jobError,
 						}
@@ -243,7 +243,7 @@ func (asyncWhJob *AsyncJobWhT) startAsyncJobRunner(ctx context.Context) error {
 					}
 					if resp.Status == pgnotifier.SucceededState {
 						jobstatusmap = AsyncJobsStatusMap{
-							Id:     asyncjobpayloads[ind].Id,
+							Id:     asyncjobpayloads[tableNameIndex].Id,
 							Status: WhJobSucceeded,
 							Error:  nil,
 						}
