@@ -1146,7 +1146,6 @@ func (wh *HandleT) Setup(whType string) {
 func (wh *HandleT) Shutdown() {
 	wh.backgroundCancel()
 	wh.backgroundWait()
-	// jobs.AsyncJobWH.Cancel()
 }
 
 func (wh *HandleT) resetInProgressJobs() {
