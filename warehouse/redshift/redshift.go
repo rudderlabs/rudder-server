@@ -175,7 +175,6 @@ func (rs *HandleT) AddColumn(name, columnName, columnType string) (err error) {
 	return
 }
 
-//Need to create a structure with delete parameters instead of simply adding a long list of params
 func (rs *HandleT) DeleteBy(tableNames []string, params warehouseutils.DeleteByParams) (err error) {
 	pkgLogger.Infof("RS: Cleaning up the followng tables in redshift for RS:%s : %v", tableNames)
 	for _, tb := range tableNames {

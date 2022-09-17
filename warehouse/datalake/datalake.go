@@ -68,7 +68,6 @@ func (wh *HandleT) LoadTable(tableName string) error {
 	return nil
 }
 
-//Need to create a structure with delete parameters instead of simply adding a long list of params
 func (wh *HandleT) DeleteBy(tableNames []string, params warehouseutils.DeleteByParams) (err error) {
 	return fmt.Errorf(warehouseutils.NotImplementedErrorCode)
 }

@@ -611,7 +611,6 @@ func (as *HandleT) loadUserTables() (errorMap map[string]error) {
 	return
 }
 
-//Need to create a structure with delete parameters instead of simply adding a long list of params
 func (as *HandleT) DeleteBy(tableNames []string, params warehouseutils.DeleteByParams) (err error) {
 	pkgLogger.Infof("AS: Cleaning up the followng tables in azure synapse for AS:%s : %v", tableNames)
 	for _, tb := range tableNames {

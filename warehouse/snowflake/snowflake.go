@@ -222,7 +222,6 @@ func (sf *HandleT) authString() string {
 	return auth
 }
 
-//Need to create a structure with delete parameters instead of simply adding a long list of params
 func (sf *HandleT) DeleteBy(tableNames []string, params warehouseutils.DeleteByParams) (err error) {
 	pkgLogger.Infof("SF: Cleaning up the followng tables in snowflake for SF:%s : %v", tableNames)
 	for _, tb := range tableNames {

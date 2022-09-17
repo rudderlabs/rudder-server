@@ -251,7 +251,6 @@ func (bq *HandleT) dropStagingTable(stagingTableName string) {
 	}
 }
 
-//Need to create a structure with delete parameters instead of simply adding a long list of params
 func (bq *HandleT) DeleteBy(tableNames []string, params warehouseutils.DeleteByParams) error {
 	pkgLogger.Infof("BQ: Cleaning up the followng tables in bigquery for BQ:%s : %v", tableNames)
 	for _, tb := range tableNames {
