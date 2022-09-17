@@ -133,7 +133,8 @@ func (asyncWhJob *AsyncJobWhT) StatusWarehouseJobHandler(w http.ResponseWriter, 
 		writeResponse, err := json.Marshal(response)
 
 		if err != nil {
-			w.Write(writeResponse)
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
 		}
 		w.Write(writeResponse)
 	} else {
