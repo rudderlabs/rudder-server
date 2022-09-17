@@ -329,7 +329,8 @@ func (asyncWhJob *AsyncJobWhT) updateAsyncJob(ctx context.Context, Id string, st
 		pkgLogger.Infof("WH-Jobs: updating async jobs table query %s, retry no : %d", sqlStatement, queryretry)
 		_, err = asyncWhJob.dbHandle.Query(sqlStatement, status, errMessage, Id, WhJobAborted)
 		if err == nil {
-			pkgLogger.Errorf("query: %s successfully executed", sqlStatement)
+			pkgLogger.Info("Updation successful")
+			pkgLogger.Debugf("query: %s successfully executed", sqlStatement)
 			return err
 		}
 	}

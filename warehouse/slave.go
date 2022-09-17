@@ -610,7 +610,7 @@ func runAsyncJob(asyncjob jobs.AsyncJobPayloadT, workerIndex int) (AsyncJobRunRe
 	if err != nil {
 		return AsyncJobRunResult{Result: false}, err
 	}
-	whasyncjob := new(jobs.WhAsyncJob)
+	whasyncjob := &jobs.WhAsyncJob{}
 
 	whManager.Setup(warehouse, whasyncjob)
 	defer whManager.Cleanup()
