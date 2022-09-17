@@ -226,14 +226,12 @@ func (sf *HandleT) DeleteBy(tableNames []string, params warehouseutils.DeleteByP
 	pkgLogger.Infof("SF: Cleaning up the followng tables in snowflake for SF:%s : %v", tableNames)
 	for _, tb := range tableNames {
 		sqlStatement := fmt.Sprintf(`DELETE FROM "%[1]s"."%[2]s" WHERE 
-		%[3]s <> ? AND
-		%[4]s <> ? AND
-		%[5]s = ?`,
+		context_sources_job_run_id <> ? AND
+		context_sources_task_run_id <> ? AND
+		context_source_id = ? AND
+		received_at < ?`,
 			sf.Namespace,
 			tb,
-			"context_sources_job_run_id",
-			"context_sources_task_run_id",
-			"context_source_id",
 		)
 
 		pkgLogger.Infof("SF: Deleting rows in table in snowflake for SF:%s", sf.Warehouse.Destination.ID)
@@ -242,7 +240,9 @@ func (sf *HandleT) DeleteBy(tableNames []string, params warehouseutils.DeleteByP
 		// _, err = sf.Db.Exec(sqlStatement,
 		// 	params.JobRunId,
 		// 	params.TaskRunId,
-		// 	params.SourceId)
+		// 	params.SourceId,
+		// 	params.StartTime,
+		// )
 		if err != nil {
 			pkgLogger.Errorf("Error %s", err)
 			return err

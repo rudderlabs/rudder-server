@@ -15,12 +15,6 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
-
-	"github.com/rudderlabs/rudder-server/utils/logger"
-)
-
-var (
-	pkgLogger = logger.NewLogger().Child("warehouse-asyncjob")
 )
 
 //The following handler gets called for adding async

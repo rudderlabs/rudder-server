@@ -6,11 +6,10 @@ import (
 	"time"
 
 	"github.com/rudderlabs/rudder-server/services/pgnotifier"
+	"github.com/rudderlabs/rudder-server/utils/logger"
 )
 
-var (
-	JOB_TYPES = []string{"DELETE_BY_JOB_RUN_ID_TASK_RUN_ID"}
-)
+var pkgLogger logger.LoggerI
 
 //For processing requests payload in handlers.go
 type StartJobReqPayload struct {

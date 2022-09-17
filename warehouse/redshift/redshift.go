@@ -179,10 +179,10 @@ func (rs *HandleT) DeleteBy(tableNames []string, params warehouseutils.DeleteByP
 	pkgLogger.Infof("RS: Cleaning up the followng tables in redshift for RS:%s : %v", tableNames)
 	for _, tb := range tableNames {
 		sqlStatement := fmt.Sprintf(`DELETE FROM "%[1]s"."%[2]s" WHERE 
-		$1 <> $2 AND
-		$3 <> $4 AND
-		$5 = $6 AND
-		$7 < $8`,
+		context_sources_job_run_id <> $1 AND
+		context_sources_task_run_id <> $2 AND
+		context_source_id = $3 AND
+		received_at < $4`,
 			rs.Namespace,
 			tb,
 		)
@@ -190,16 +190,12 @@ func (rs *HandleT) DeleteBy(tableNames []string, params warehouseutils.DeleteByP
 		pkgLogger.Infof("RS: Deleting rows in table in redshift for RS:%s", rs.Warehouse.Destination.ID)
 		pkgLogger.Debugf("RS: Executing the query %v", sqlStatement)
 		// Uncomment below 4 lines when we are ready to launch async job on redshift warehouse
-		// _, err = rs.Db.Exec(sqlStatement,
-		// 	"context_sources_job_run_id",
-		// 	params.JobRunId,
-		// 	"context_sources_task_run_id",
-		// 	params.TaskRunId,
-		// 	"context_source_id",
-		// 	params.SourceId,
-		// 	"received_at",
-		// 	params.StartTime,
-		// )
+		_, err = rs.Db.Exec(sqlStatement,
+			params.JobRunId,
+			params.TaskRunId,
+			params.SourceId,
+			params.StartTime,
+		)
 		if err != nil {
 			pkgLogger.Errorf("Error in executing the query %s", err.Error)
 			return err

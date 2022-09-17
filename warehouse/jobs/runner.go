@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/rudderlabs/rudder-server/services/pgnotifier"
+	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 	"golang.org/x/sync/errgroup"
@@ -25,6 +26,7 @@ func InitWarehouseJobsAPI(dbHandle *sql.DB, notifier *pgnotifier.PgNotifierT, ct
 		pgnotifier: notifier,
 		context:    ctx,
 	}
+	pkgLogger = logger.NewLogger().Child("warehouse-asyncjob")
 	return &AsyncJobWh
 }
 

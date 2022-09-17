@@ -615,14 +615,15 @@ func (as *HandleT) DeleteBy(tableNames []string, params warehouseutils.DeleteByP
 	pkgLogger.Infof("AS: Cleaning up the followng tables in azure synapse for AS:%s : %v", tableNames)
 	for _, tb := range tableNames {
 
-		sqlStatement := fmt.Sprintf(`DELETE FROM "%[1]s"."%[2]s" WHERE %[3]s <> '%[4]s' AND %[5]s <> '%[6]s' AND %[7]s='%[8]s'`,
+		sqlStatement := fmt.Sprintf(`DELETE FROM "%[1]s"."%[2]s" WHERE 
+		context_sources_job_run_id <> '%[3]s' AND 
+		context_sources_task_run_id <> '%[4]s' AND
+		context_source_id='%[5]s AND
+		 '`,
 			as.Namespace,
 			tb,
-			"context_sources_job_run_id",
 			params.JobRunId,
-			"context_sources_task_run_id",
 			params.TaskRunId,
-			"context_source_id",
 			params.SourceId,
 		)
 		pkgLogger.Infof("AS: Deleting rows in table in azure synapse for AS:%s", as.Warehouse.Destination.ID)
