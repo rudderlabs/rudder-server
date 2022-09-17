@@ -472,39 +472,28 @@ func BRTJobsForUserId() string {
 `
 }
 
-func DefaultEventMap(withSources bool) EventsCountMap {
-	if withSources {
-		return EventsCountMap{
-			"identifies":      1,
-			"users":           1,
-			"tracks":          1,
-			"pages":           1,
-			"product_track":   1,
-			"screens":         1,
-			"aliases":         1,
-			"groups":          1,
-			"google_sheet":    1,
-			"wh_google_sheet": 1,
-			"_groups":         1,
-			"gateway":         6,
-			"batchRT":         8,
-		}
-	} else {
-		return EventsCountMap{
-			"identifies":      1,
-			"users":           1,
-			"tracks":          1,
-			"pages":           1,
-			"product_track":   1,
-			"screens":         1,
-			"aliases":         1,
-			"groups":          1,
-			"google_sheet":    0,
-			"wh_google_sheet": 0,
-			"_groups":         1,
-			"gateway":         6,
-			"batchRT":         8,
-		}
+func DefaultSourceEventMap() EventsCountMap {
+	return EventsCountMap{
+		"google_sheet":    1,
+		"wh_google_sheet": 1,
+		"gateway":         1,
+		"batchRT":         2,
+	}
+}
+
+func DefaultEventMap() EventsCountMap {
+	return EventsCountMap{
+		"identifies":    1,
+		"users":         1,
+		"tracks":        1,
+		"pages":         1,
+		"product_track": 1,
+		"screens":       1,
+		"aliases":       1,
+		"groups":        1,
+		"_groups":       1,
+		"gateway":       6,
+		"batchRT":       8,
 	}
 
 }

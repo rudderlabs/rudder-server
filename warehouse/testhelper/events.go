@@ -48,7 +48,7 @@ const (
 		"channel":"sources",
 		"async_job_type":"deletebyjobrunid",
 		"destinationid":"%s",
-		"starttime":"2022-08-31 02:54:38.842+00"
+		"starttime":"%s"
 	}`
 	PendingEventsPayload = `{
 		"source_id": "%s",
@@ -531,8 +531,8 @@ func send(t testing.TB, payload *strings.Reader, eventType, writeKey string) {
 }
 
 func SendAsyncRequest(t testing.TB, wareHouseTest *WareHouseTest) {
-	asyncwhpayload := strings.NewReader(fmt.Sprintf(AsyncWhPayload, wareHouseTest.SourceId, wareHouseTest.LatestSourceRunConfig["jobrunid"], wareHouseTest.LatestSourceRunConfig["taskrunid"], wareHouseTest.DestinationId))
-	send(t, asyncwhpayload, "wh-jobs/add", wareHouseTest.SourceWriteKey)
+	asyncwhpayload := strings.NewReader(fmt.Sprintf(AsyncWhPayload, wareHouseTest.SourceId, wareHouseTest.LatestSourceRunConfig["jobrunid"], wareHouseTest.LatestSourceRunConfig["taskrunid"], wareHouseTest.DestinationId, time.Now().UTC().Format("01-02-2006 15:04:05")))
+	send(t, asyncwhpayload, "warehouse/jobs", wareHouseTest.SourceWriteKey)
 }
 
 func blockByPendingEvents(t testing.TB, payload *strings.Reader, writeKey string) uint {

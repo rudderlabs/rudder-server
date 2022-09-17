@@ -236,30 +236,34 @@ func (ms *HandleT) DownloadLoadFiles(tableName string) ([]string, error) {
 }
 
 func (ms *HandleT) DeleteBy(tableNames []string, params warehouseutils.DeleteByParams) (err error) {
-	pkgLogger.Infof("PG: Cleaning up the followng tables in mysql for MS:%s : %v", tableNames)
+	pkgLogger.Infof("MS: Cleaning up the followng tables in mysql for MS:%s : %v", tableNames)
 	for _, tb := range tableNames {
 		sqlStatement := fmt.Sprintf(`DELETE FROM "%[1]s"."%[2]s" WHERE 
-		%[3]s <> ? AND
-		%[4]s <> ? AND
-		%[5]s = ?`,
+		%[3]s <> @jobrunid AND
+		%[4]s <> @taskrunid AND
+		%[5]s = @sourceid AND
+		%[6]s < @starttime`,
 			ms.Namespace,
 			tb,
 			"context_sources_job_run_id",
 			"context_sources_task_run_id",
 			"context_source_id",
+			"received_at",
 		)
 
-		pkgLogger.Infof("MYSQL: Deleting rows in table in mysql for MS:%s ", ms.Warehouse.Destination.ID)
-		pkgLogger.Debugf("MYSQL: Executing the statement %v", sqlStatement)
+		pkgLogger.Infof("MSSQL: Deleting rows in table in mysql for MS:%s ", ms.Warehouse.Destination.ID)
+		pkgLogger.Debugf("MSSQL: Executing the statement %v", sqlStatement)
 		// Uncomment below 4 lines when we are ready to launch async job on MsSQL warehouse
-		// _, err = ms.Db.Exec(sqlStatement,
-		// 	params.JobRunId,
-		// 	params.TaskRunId,
-		// 	params.SourceId)
-		// if err != nil {
-		// 	pkgLogger.Errorf("Error %s", err)
-		// 	return err
-		// }
+		_, err = ms.Db.Exec(sqlStatement,
+			sql.Named("jobrunid", params.JobRunId),
+			sql.Named("taskrunid", params.TaskRunId),
+			sql.Named("sourceid", params.SourceId),
+			sql.Named("starttime", params.StartTime),
+		)
+		if err != nil {
+			pkgLogger.Errorf("Error %s", err)
+			return err
+		}
 	}
 	return nil
 }

@@ -24,7 +24,7 @@ var (
 )
 
 //The following handler gets called for adding async
-func AddWarehouseJobHandler(w http.ResponseWriter, r *http.Request) {
+func (asyncWhJob *AsyncJobWhT) AddWarehouseJobHandler(w http.ResponseWriter, r *http.Request) {
 	pkgLogger.Info("[WH-Jobs] Got Async Job Add Request")
 	pkgLogger.LogRequest(r)
 	body, err := io.ReadAll(r.Body)
@@ -41,17 +41,17 @@ func AddWarehouseJobHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "can't unmarshall body", http.StatusBadRequest)
 		return
 	}
-	if startJobPayload.SourceID == "" || startJobPayload.JobRunID == "" || startJobPayload.TaskRunID == "" || startJobPayload.DestinationID == "" {
+	if !validatePayload(startJobPayload) {
 		pkgLogger.Errorf("[WH-Jobs]: Invalid Payload %v", err)
 		http.Error(w, "invalid Payload", http.StatusBadRequest)
 		return
 	}
-	if !AsyncJobWH.enabled {
+	if !asyncWhJob.enabled {
 		pkgLogger.Errorf("[WH-Jobs]: Error Warehouse Jobs API not initialized %v", err)
 		http.Error(w, "warehouse jobs api not initialized", http.StatusBadRequest)
 		return
 	}
-	tableNames, err := AsyncJobWH.getTableNamesBy(startJobPayload.SourceID, startJobPayload.DestinationID, startJobPayload.JobRunID, startJobPayload.TaskRunID)
+	tableNames, err := asyncWhJob.getTableNamesBy(startJobPayload.SourceID, startJobPayload.DestinationID, startJobPayload.JobRunID, startJobPayload.TaskRunID)
 
 	if err != nil {
 		pkgLogger.Errorf("[WH-Jobs]: Error extracting tableNames for the job run id: %v", err)
@@ -61,20 +61,18 @@ func AddWarehouseJobHandler(w http.ResponseWriter, r *http.Request) {
 	var jobIds []int64
 	//Add to wh_async_job queue each of the tables
 	for _, th := range tableNames {
-		if th != "RUDDER_DISCARDS" && th != "rudder_discards" {
-			destType := (*AsyncJobWH.connectionsMap)[startJobPayload.DestinationID][startJobPayload.SourceID].Destination.DestinationDefinition.Name
+		if !skipTable(th) {
 			payload := AsyncJobPayloadT{
 				SourceID:      startJobPayload.SourceID,
 				DestinationID: startJobPayload.DestinationID,
 				TableName:     th,
-				DestType:      destType,
-				JobType:       "async_job",
+				JobType:       AsyncJobType,
 				JobRunID:      startJobPayload.JobRunID,
 				TaskRunID:     startJobPayload.TaskRunID,
 				StartTime:     startJobPayload.StartTime,
 				AsyncJobType:  startJobPayload.AsyncJobType,
 			}
-			id, err := AsyncJobWH.addJobstoDB(&payload)
+			id, err := asyncWhJob.addJobstoDB(asyncWhJob.context, &payload)
 			if err != nil {
 				http.Error(w, err.Error(), http.StatusInternalServerError)
 				return
@@ -95,7 +93,7 @@ func AddWarehouseJobHandler(w http.ResponseWriter, r *http.Request) {
 
 }
 
-func StatusWarehouseJobHandler(w http.ResponseWriter, r *http.Request) {
+func (asyncWhJob *AsyncJobWhT) StatusWarehouseJobHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodGet {
 		pkgLogger.Info("Got Async Job Status Request")
 		pkgLogger.LogRequest(r)
@@ -104,7 +102,13 @@ func StatusWarehouseJobHandler(w http.ResponseWriter, r *http.Request) {
 
 		sourceId := r.URL.Query().Get("source_id")
 		destinationId := r.URL.Query().Get("destination_id")
-		if taskRunId == "" || jobRunId == "" || sourceId == "" || destinationId == "" {
+		var payload = StartJobReqPayload{
+			TaskRunID:     taskRunId,
+			JobRunID:      jobRunId,
+			SourceID:      sourceId,
+			DestinationID: destinationId,
+		}
+		if !validatePayload(payload) {
 
 			pkgLogger.Errorf("[WH]: Error Invalid Status Parameters")
 			http.Error(w, "invalid request", http.StatusBadRequest)
@@ -118,45 +122,24 @@ func StatusWarehouseJobHandler(w http.ResponseWriter, r *http.Request) {
 		}
 		pkgLogger.Infof("Got Payload jobrunid %s, taskrunid %s \n", startJobPayload.JobRunID, startJobPayload.TaskRunID)
 
-		if !AsyncJobWH.enabled {
+		if !asyncWhJob.enabled {
 			pkgLogger.Errorf("[WH]: Error Warehouse Jobs API not initialized")
 			http.Error(w, "warehouse jobs api not initialized", http.StatusBadRequest)
 			return
 		}
 
-		status, err := AsyncJobWH.getStatusAsyncJob(&startJobPayload)
+		response := asyncWhJob.getStatusAsyncJob(asyncWhJob.context, &startJobPayload)
 
-		var statusresponse WhStatusResponse
-		if err != nil {
-			statusresponse = WhStatusResponse{
-				Status: status,
-				Err:    err.Error(),
-			}
-		} else {
-			statusresponse = WhStatusResponse{
-				Status: status,
-				Err:    "",
-			}
-		}
-
-		writeResponse, err := json.Marshal(statusresponse)
+		writeResponse, err := json.Marshal(response)
 
 		if err != nil {
 			w.Write(writeResponse)
 		}
 		w.Write(writeResponse)
 	} else {
-		pkgLogger.Errorf("[WH]: Error Invalid Status Parameters")
+		pkgLogger.Errorf("[WH]: Error Invalid Method")
 		http.Error(w, "invalid request", http.StatusBadRequest)
 		return
 	}
-
-}
-
-func StopWarehouseJobHandler(w http.ResponseWriter, r *http.Request) {
-
-}
-
-func GetWarehouseJobHandler(w http.ResponseWriter, r *http.Request) {
 
 }

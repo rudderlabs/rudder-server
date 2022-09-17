@@ -601,8 +601,12 @@ type AsyncJobRunResult struct {
 }
 
 func runAsyncJob(asyncjob jobs.AsyncJobPayloadT, workerIndex int) (AsyncJobRunResult, error) {
-	warehouse := connectionsMap[asyncjob.DestinationID][asyncjob.SourceID]
-	whManager, err := manager.NewWarehouseOperations(asyncjob.DestType)
+	warehouse, err := getDestinationFromConnectionMap(asyncjob.DestinationID, asyncjob.SourceID)
+	if err != nil {
+		return AsyncJobRunResult{Result: false}, err
+	}
+	destType := warehouse.Destination.DestinationDefinition.Name
+	whManager, err := manager.NewWarehouseOperations(destType)
 	if err != nil {
 		return AsyncJobRunResult{Result: false}, err
 	}
@@ -681,8 +685,7 @@ func setupSlave(ctx context.Context) error {
 				workerIdleTimer.Since(workerIdleTimeStart)
 				pkgLogger.Infof("[WH]: Successfully claimed job:%v by slave worker-%v-%v & job type %s", claimedJob.ID, idx, slaveID, claimedJob.JobType)
 
-				//Thread goes to process async wh jobs or else it goes to the upload job
-				if claimedJob.JobType == "async_job" {
+				if claimedJob.JobType == jobs.AsyncJobType {
 					processClaimedAsyncJob(claimedJob, idx)
 				} else {
 					processClaimedUploadJob(claimedJob, idx)

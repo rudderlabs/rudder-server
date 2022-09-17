@@ -10,28 +10,23 @@ import (
 	"time"
 
 	"github.com/rudderlabs/rudder-server/services/pgnotifier"
-	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 	"golang.org/x/sync/errgroup"
 )
 
 //Global variable that initializes the AsyncJobWhT with necessary values
-var AsyncJobWH AsyncJobWhT
 
-func InitWarehouseJobsAPI(dbHandle *sql.DB, notifier *pgnotifier.PgNotifierT, log logger.LoggerI, connectionsMap *map[string]map[string]warehouseutils.WarehouseT) {
+func InitWarehouseJobsAPI(dbHandle *sql.DB, notifier *pgnotifier.PgNotifierT, ctx context.Context) *AsyncJobWhT {
 
-	AsyncJobWH = AsyncJobWhT{
-		dbHandle:       dbHandle,
-		log:            log,
-		enabled:        false,
-		pgnotifier:     notifier,
-		connectionsMap: connectionsMap,
+	AsyncJobWh := AsyncJobWhT{
+		dbHandle:   dbHandle,
+		enabled:    false,
+		pgnotifier: notifier,
+		context:    ctx,
 	}
-
+	return &AsyncJobWh
 }
-
-const AsyncTableName string = "wh_async_jobs"
 
 /*
 Gets Table names from the jobrunid.
@@ -39,32 +34,40 @@ Should not belong here but need to create separate package for deletebyjobs or
 refactor to a more generic getTableName with jobrundid and taskrunid as params
 */
 func (asyncWhJob *AsyncJobWhT) getTableNamesBy(sourceid string, destinationid string, jobrunid string, taskrunid string) ([]string, error) {
-	asyncWhJob.log.Infof("Extracting tablenames for the job run id %s", jobrunid)
+	pkgLogger.Infof("Extracting tablenames for the job run id %s", jobrunid)
 	var tableNames []string
-	query := fmt.Sprintf(`SELECT id from %s where metadata->>'%s'='%s' and metadata->>'%s'='%s' and metadata in (SELECT metadata FROM wh_uploads where source_id='%s' and destination_id='%s')`, warehouseutils.WarehouseUploadsTable, "source_job_run_id", jobrunid, "source_task_run_id", taskrunid, sourceid, destinationid)
-	// query := fmt.Sprintf(`select id from %s where metadata->>'%s'='%s' and metadata->>'%s'='%s'`, warehouseutils.WarehouseUploadsTable, "source_job_run_id", jobrunid, "source_task_run_id", taskrunid)
-	asyncWhJob.log.Infof("Query is %s\n", query)
-	rows, err := asyncWhJob.dbHandle.Query(query)
+	var err error
+	query := fmt.Sprintf(`SELECT id from %s where metadata->>'%s'=$1 and metadata->>'%s'=$2 and metadata in (SELECT metadata FROM wh_uploads where source_id=$3 and destination_id=$4)`, warehouseutils.WarehouseUploadsTable, "source_job_run_id", "source_task_run_id")
+	pkgLogger.Debugf("Query is %s\n", query)
+	rows, err := asyncWhJob.dbHandle.Query(query, jobrunid, taskrunid, sourceid, destinationid)
 	if err != nil {
-		asyncWhJob.log.Errorf("Error carrying out the query %s ", query)
+		pkgLogger.Errorf("Error carrying out the query %s ", query)
 		return nil, err
 	}
 	for rows.Next() {
-		var upload_id string
-		rows.Scan(&upload_id)
-		query = fmt.Sprintf(`select table_name from %s where wh_upload_id=%s`, warehouseutils.WarehouseTableUploadsTable, upload_id)
-		tables, err := asyncWhJob.dbHandle.Query(query)
+		var uploadId string
+		err := rows.Scan(&uploadId)
 		if err != nil {
-			asyncWhJob.log.Errorf("Error carrying out the query %s ", query)
+			pkgLogger.Errorf("Error carrying the scan operation to uploadId\n")
+			return nil, err
+		}
+		query = fmt.Sprintf(`select table_name from %s where wh_upload_id=$1`, warehouseutils.WarehouseTableUploadsTable)
+		tables, err := asyncWhJob.dbHandle.Query(query, uploadId)
+		if err != nil {
+			pkgLogger.Errorf("Error carrying out the query %s ", query)
 			return nil, err
 		}
 		for tables.Next() {
-			var tablename string
-			tables.Scan(&tablename)
-			tableNames = append(tableNames, tablename)
+			var tableName string
+			err = tables.Scan(&tableName)
+			if err != nil {
+				pkgLogger.Errorf("Error carrying the scan operation to tablename\n")
+				return nil, err
+			}
+			tableNames = append(tableNames, tableName)
 		}
 	}
-	asyncWhJob.log.Infof("%s\n", tableNames)
+	pkgLogger.Infof("Got the TableNames as %s\n", tableNames)
 	return tableNames, nil
 }
 
@@ -72,24 +75,29 @@ func (asyncWhJob *AsyncJobWhT) getTableNamesBy(sourceid string, destinationid st
 Takes AsyncJobPayloadT and adds rows to table wh_async_jobs
 Should id be int64 or uuid?
 */
-func (asyncWhJob *AsyncJobWhT) addJobstoDB(payload *AsyncJobPayloadT) (jobId int64, err error) {
-	asyncWhJob.log.Infof("Adding job to the wh_asnc_jobs jobrunid:%s, taskrunid: %s and tablename: %s", payload.JobRunID, payload.TaskRunID, payload.TableName)
-	sqlStatement := fmt.Sprintf(`INSERT INTO %s (sourceid, namespace, destinationid, destination_type, jobrunid, taskrunid, tablename,  status, created_at, updated_at,jobtype,async_job_type)
+func (asyncWhJob *AsyncJobWhT) addJobstoDB(ctx context.Context, payload *AsyncJobPayloadT) (jobId int64, err error) {
+	pkgLogger.Infof("Adding job to the wh_asnc_jobs jobrunid:%s, taskrunid: %s and tablename: %s", payload.JobRunID, payload.TaskRunID, payload.TableName)
+	sqlStatement := fmt.Sprintf(`INSERT INTO %s (sourceid, namespace, destinationid, jobrunid, taskrunid, tablename,  status, created_at, updated_at,jobtype,async_job_type,starttime)
 	VALUES ($1, $2, $3, $4, $5, $6 ,$7, $8, $9, $10,$11,$12) RETURNING id`, warehouseutils.WarehouseAsyncJobTable)
 
 	stmt, err := asyncWhJob.dbHandle.Prepare(sqlStatement)
 	if err != nil {
-		asyncWhJob.log.Errorf("Error preparing out the query %s ", sqlStatement)
+		pkgLogger.Errorf("Error preparing out the query %s ", sqlStatement)
 		err = errors.New("error preparing out the query, while addJobstoDb")
+		return
+	}
+	startTime, err := time.Parse("01-02-2006 15:04:05", payload.StartTime)
+	if err != nil {
+		err = errors.New("error parsing time, while addJobstoDb")
 		return
 	}
 
 	defer stmt.Close()
 	now := timeutil.Now()
-	row := stmt.QueryRow(payload.SourceID, payload.Namespace, payload.DestinationID, payload.DestType, payload.JobRunID, payload.TaskRunID, payload.TableName, WhJobWaiting, now, now, payload.JobType, payload.AsyncJobType)
+	row := stmt.QueryRow(payload.SourceID, payload.Namespace, payload.DestinationID, payload.JobRunID, payload.TaskRunID, payload.TableName, WhJobWaiting, now, now, payload.JobType, payload.AsyncJobType, startTime)
 	err = row.Scan(&jobId)
 	if err != nil {
-		asyncWhJob.log.Errorf("Error processing the %s ", sqlStatement)
+		pkgLogger.Errorf("Error processing the %s, %s ", sqlStatement, err.Error())
 		err = errors.New("error processing the query, while addJobstoDb")
 		return
 	}
@@ -102,38 +110,42 @@ Async Job runner's main job is to
 2) Publish data to pg_notifier queue
 3) Move any executing jobs to waiting
 */
-func (asyncWhJob *AsyncJobWhT) InitAsyncJobRunner() {
+func (asyncWhJob *AsyncJobWhT) InitAsyncJobRunner() error {
 	//Start the asyncJobRunner
-	asyncWhJob.log.Info("WH-Jobs: Initializing async job runner")
-
+	pkgLogger.Info("WH-Jobs: Initializing async job runner")
+	ctx, cancel := context.WithCancel(asyncWhJob.context)
+	defer cancel()
+	g, ctx := errgroup.WithContext(ctx)
+	asyncWhJob.context = ctx
+	var err error
 	for retry := 0; retry < MaxCleanUpRetries; retry++ {
-		err := AsyncJobWH.cleanUpAsyncTable()
+		err = asyncWhJob.cleanUpAsyncTable(ctx)
 		if err == nil {
-			AsyncJobWH.enabled = true
+			asyncWhJob.enabled = true
 			break
 		}
-		asyncWhJob.log.Infof("WH-Jobs: Cleanup asynctable failed with error %s", err.Error())
+		pkgLogger.Infof("WH-Jobs: Cleanup asynctable failed with error %s", err.Error())
 	}
 
+	if err != nil {
+		return err
+	}
 	if asyncWhJob.enabled {
-		ctx, cancel := context.WithCancel(context.Background())
-		asyncWhJob.Cancel = cancel
-		g, ctx := errgroup.WithContext(ctx)
 		//How does threading policy work here? Should we have one thread per customer/namespace?
 		g.Go(func() error {
-			asyncWhJob.startAsyncJobRunner(ctx)
-			return nil
+			return asyncWhJob.startAsyncJobRunner(ctx)
 		})
 		g.Wait()
 	}
+	return errors.New("unable to enable warehouse Async Job")
 
 }
 
-func (asyncWhJob *AsyncJobWhT) cleanUpAsyncTable() error {
-	asyncWhJob.log.Info("WH-Jobs: Cleaning up the zombie asyncjobs")
-	sqlStatement := fmt.Sprintf(`UPDATE %s SET status='%s' WHERE status='%s'`, warehouseutils.WarehouseAsyncJobTable, WhJobWaiting, WhJobExecuting)
-	asyncWhJob.log.Infof("WH-Jobs: resetting up async jobs table query %s", sqlStatement)
-	_, err := asyncWhJob.dbHandle.Query(sqlStatement)
+func (asyncWhJob *AsyncJobWhT) cleanUpAsyncTable(ctx context.Context) error {
+	pkgLogger.Info("WH-Jobs: Cleaning up the zombie asyncjobs")
+	sqlStatement := fmt.Sprintf(`UPDATE %s SET status=$1 WHERE status=$2`, warehouseutils.WarehouseAsyncJobTable)
+	pkgLogger.Infof("WH-Jobs: resetting up async jobs table query %s", sqlStatement)
+	_, err := asyncWhJob.dbHandle.Query(sqlStatement, WhJobWaiting, WhJobExecuting)
 	return err
 }
 
@@ -144,32 +156,33 @@ startAsyncJobRunner is the main runner that
 3) Publishes them to the pgnotifier
 4) Spawns a subroutine that periodically checks for responses from pgNotifier/slave worker post trackBatch
 */
-func (asyncWhJob *AsyncJobWhT) startAsyncJobRunner(ctx context.Context) {
-	asyncWhJob.log.Info("WH-Jobs: Starting async job runner")
+func (asyncWhJob *AsyncJobWhT) startAsyncJobRunner(ctx context.Context) error {
+	pkgLogger.Info("WH-Jobs: Starting async job runner")
 	for {
-		asyncWhJob.log.Info("WH-Jobs: Scanning for waiting async job")
+		pkgLogger.Info("WH-Jobs: Scanning for waiting async job")
 		select {
 		case <-ctx.Done():
-			asyncWhJob.log.Info("WH-Jobs: Stopping AsyncJobRunner")
-			return
-		case <-time.After(10 * time.Second):
+			pkgLogger.Info("WH-Jobs: Stopping AsyncJobRunner")
+			return nil
+		case <-time.After(RetryTimeInterval):
 
 		}
 
 		asyncjobpayloads, err := asyncWhJob.getPendingAsyncJobs(ctx)
 		if err != nil {
-			return
+			return err
 		}
 
 		if len(asyncjobpayloads) > 0 {
-			asyncWhJob.log.Info("WH-Jobs: Got pending wh async jobs")
-			asyncWhJob.log.Infof("WH-Jobs: Number of async wh jobs left = %d\n", len(asyncjobpayloads))
+			pkgLogger.Info("WH-Jobs: Got pending wh async jobs")
+			pkgLogger.Infof("WH-Jobs: Number of async wh jobs left = %d\n", len(asyncjobpayloads))
 			notifierClaims, err := getMessagePayloadsFromAsyncJobPayloads(asyncjobpayloads)
 
 			if err != nil {
-				asyncWhJob.log.Errorf("Error converting the asyncJobType to notifier payload %s ", err)
-				asyncWhJob.updateMultipleAsyncJobs(&asyncjobpayloads, WhJobFailed, err.Error())
-				return
+				pkgLogger.Errorf("Error converting the asyncJobType to notifier payload %s ", err)
+				asyncJobStatusMap := convertToPayloadStatusStructWithSingleStatus(asyncjobpayloads, WhJobFailed, err)
+				asyncWhJob.updateAsyncJobs(ctx, asyncJobStatusMap)
+				return err
 			}
 			messagePayload := pgnotifier.MessagePayload{
 				Jobs:    notifierClaims,
@@ -178,48 +191,65 @@ func (asyncWhJob *AsyncJobWhT) startAsyncJobRunner(ctx context.Context) {
 			schema := warehouseutils.SchemaT{}
 			ch, err := asyncWhJob.pgnotifier.Publish(messagePayload, &schema, 100)
 			if err != nil {
-				asyncWhJob.updateMultipleAsyncJobs(&asyncjobpayloads, WhJobFailed, err.Error())
-				return
+				asyncJobStatusMap := convertToPayloadStatusStructWithSingleStatus(asyncjobpayloads, WhJobFailed, err)
+				asyncWhJob.updateAsyncJobs(ctx, asyncJobStatusMap)
+				return err
 			}
-			asyncWhJob.updateMultipleAsyncJobs(&asyncjobpayloads, WhJobExecuting, "")
+			asyncJobStatusMap := convertToPayloadStatusStructWithSingleStatus(asyncjobpayloads, WhJobExecuting, err)
+			asyncWhJob.updateAsyncJobs(ctx, asyncJobStatusMap)
 			var wg sync.WaitGroup
 			wg.Add(1)
 			go func() {
-				//Is this correct or should I be passing ch as a variable to the anonymous go routine instead?
 				responses := <-ch
-				asyncWhJob.log.Info("Response recieved from the pgnotifier track batch")
-				var successfulAsyncJobs []AsyncJobPayloadT
+				pkgLogger.Info("Response received from the pgnotifier track batch")
+				var asyncJobsStatusMap []AsyncJobsStatusMap
 				for _, resp := range responses {
 					var jobID pgnotifier.AsyncOutput
+					var jobstatusmap AsyncJobsStatusMap
 					err = json.Unmarshal(resp.Output, &jobID)
 					if err != nil {
-						asyncWhJob.log.Errorf("Unable unmarshal output %s", err)
-						//Will skip to next response, leaving the table row in executing stage.
-						// We need to program retry strategy, timeout strategy for each row in the asyncJobtable
+						pkgLogger.Errorf("Unable unmarshal output %s", err)
+						// Todo: Need to program retry strategy, timeout strategy for each row in the asyncJobtable
 						continue
 					}
 					ind := getSinglePayloadFromBatchPayloadByTableName(asyncjobpayloads, jobID.TableName)
 					if ind == -1 {
-						//Continues with the next payload leaving this row in the executing stage
-						asyncWhJob.log.Errorf("tableName is not found while updating the response after completing the trackasyncJob %s", jobID.TableName)
+						pkgLogger.Errorf("tableName is not found while updating the response after completing the trackasyncJob %s", jobID.TableName)
 						continue
 					}
 					if resp.Status == pgnotifier.AbortedState {
 						pkgLogger.Errorf("[WH]: Error in running async task %v", resp.Error)
-						sampleError := fmt.Errorf(resp.Error)
-						asyncWhJob.updateSingleAsyncJob(&asyncjobpayloads[ind], WhJobAborted, sampleError.Error())
+						jobError := fmt.Errorf(resp.Error)
+						jobstatusmap = AsyncJobsStatusMap{
+							Id:     asyncjobpayloads[ind].Id,
+							Status: WhJobAborted,
+							Error:  jobError,
+						}
+						asyncJobsStatusMap = append(asyncJobsStatusMap, jobstatusmap)
 						continue
 					}
 					if resp.Status == pgnotifier.FailedState {
 						pkgLogger.Errorf("[WH]: Error in running async task %v", resp.Error)
-						sampleError := fmt.Errorf(resp.Error)
-						asyncWhJob.updateSingleAsyncJob(&asyncjobpayloads[ind], WhJobFailed, sampleError.Error())
+						jobError := fmt.Errorf(resp.Error)
+						jobstatusmap = AsyncJobsStatusMap{
+							Id:     asyncjobpayloads[ind].Id,
+							Status: WhJobFailed,
+							Error:  jobError,
+						}
+						asyncJobsStatusMap = append(asyncJobsStatusMap, jobstatusmap)
 						continue
 					}
-					successfulAsyncJobs = append(successfulAsyncJobs, asyncjobpayloads[ind])
-
+					if resp.Status == pgnotifier.SucceededState {
+						jobstatusmap = AsyncJobsStatusMap{
+							Id:     asyncjobpayloads[ind].Id,
+							Status: WhJobSucceeded,
+							Error:  nil,
+						}
+						asyncJobsStatusMap = append(asyncJobsStatusMap, jobstatusmap)
+						continue
+					}
 				}
-				asyncWhJob.updateMultipleAsyncJobs(&successfulAsyncJobs, WhJobSucceeded, "")
+				asyncWhJob.updateAsyncJobs(ctx, asyncJobsStatusMap)
 				wg.Done()
 			}()
 			wg.Wait()
@@ -230,42 +260,34 @@ func (asyncWhJob *AsyncJobWhT) startAsyncJobRunner(ctx context.Context) {
 //Queries the jobsDB and gets active async job and returns it in a
 func (asyncWhJob *AsyncJobWhT) getPendingAsyncJobs(ctx context.Context) ([]AsyncJobPayloadT, error) {
 	var asyncjobpayloads = make([]AsyncJobPayloadT, 0)
+	pkgLogger.Info("WH-Jobs: Get pending wh async jobs")
 	//Filter to get most recent row for the sourceId/destinationID combo and remaining ones should relegated to aborted.
 	query := fmt.Sprintf(
 		`select 
 	id,
 	sourceid,
 	destinationid,
-	status,
 	jobrunid,
-	COALESCE(starttime, ''),
-	created_at,
-	updated_at,
-	destination_type,
+	starttime,
 	taskrunid,
 	tablename,
 	jobtype,
 	async_job_type,
-	namespace from %s where status='%s' LIMIT %d`, warehouseutils.WarehouseAsyncJobTable, WhJobWaiting, MaxBatchSizeToProcess)
-	rows, err := asyncWhJob.dbHandle.Query(query)
+	namespace from %s where status=$1 LIMIT $2`, warehouseutils.WarehouseAsyncJobTable)
+	rows, err := asyncWhJob.dbHandle.Query(query, WhJobWaiting, MaxBatchSizeToProcess)
 	if err != nil {
+		pkgLogger.Errorf("WH-Jobs: Error in getting pending wh async jobs with error %s", err.Error())
 		return asyncjobpayloads, err
 	}
 	defer rows.Close()
 	for rows.Next() {
 		var asyncjobpayload AsyncJobPayloadT
-		var status string
-		var updated_at, created_at string
 		err = rows.Scan(
 			&asyncjobpayload.Id,
 			&asyncjobpayload.SourceID,
 			&asyncjobpayload.DestinationID,
-			&status,
 			&asyncjobpayload.JobRunID,
 			&asyncjobpayload.StartTime,
-			&created_at,
-			&updated_at,
-			&asyncjobpayload.DestType,
 			&asyncjobpayload.TaskRunID,
 			&asyncjobpayload.TableName,
 			&asyncjobpayload.JobType,
@@ -273,7 +295,7 @@ func (asyncWhJob *AsyncJobWhT) getPendingAsyncJobs(ctx context.Context) ([]Async
 			&asyncjobpayload.Namespace,
 		)
 		if err != nil {
-			asyncWhJob.log.Errorf("WH-Jobs: Error scanning rows %s\n", err)
+			pkgLogger.Errorf("WH-Jobs: Error scanning rows %s\n", err)
 			return asyncjobpayloads, err
 		}
 		asyncjobpayloads = append(asyncjobpayloads, asyncjobpayload)
@@ -282,40 +304,51 @@ func (asyncWhJob *AsyncJobWhT) getPendingAsyncJobs(ctx context.Context) ([]Async
 }
 
 //Updates the warehouse async jobs with the status sent as a parameter
-func (asyncWhJob *AsyncJobWhT) updateMultipleAsyncJobs(payloads *[]AsyncJobPayloadT, status string, errMessage string) {
-	asyncWhJob.log.Info("WH-Jobs: Updating pending wh async jobs to Executing")
-	for _, payload := range *payloads {
-		asyncWhJob.updateSingleAsyncJob(&payload, status, errMessage)
+func (asyncWhJob *AsyncJobWhT) updateAsyncJobs(ctx context.Context, payloads []AsyncJobsStatusMap) error {
+	pkgLogger.Info("WH-Jobs: Updating pending wh async jobs to Executing")
+	var err error
+	for _, payload := range payloads {
+		if payload.Error != nil {
+			err = asyncWhJob.updateAsyncJob(ctx, payload.Id, payload.Status, payload.Error.Error())
+			continue
+		}
+		err = asyncWhJob.updateAsyncJob(ctx, payload.Id, payload.Status, "")
+
 	}
+	return err
 }
 
 //The above function and the following function can be merged into one. This can be part of future work
-func (asyncWhJob *AsyncJobWhT) updateSingleAsyncJob(payload *AsyncJobPayloadT, status string, errMessage string) {
-	asyncWhJob.log.Infof("WH-Jobs: Updating pending wh async jobs to %s", status)
-	sqlStatement := fmt.Sprintf(`UPDATE %s SET status='%s' , error='%s' WHERE id=%s`, warehouseutils.WarehouseAsyncJobTable, status, errMessage, payload.Id)
+func (asyncWhJob *AsyncJobWhT) updateAsyncJob(ctx context.Context, Id string, status string, errMessage string) error {
+	pkgLogger.Infof("WH-Jobs: Updating pending wh async jobs to %s", status)
+	sqlStatement := fmt.Sprintf(`UPDATE %s SET status=$1 , error=$2 WHERE id=$3 AND status!=$4 `, warehouseutils.WarehouseAsyncJobTable)
 	var err error
 	for queryretry := 0; queryretry < MaxQueryRetries; queryretry++ {
-		asyncWhJob.log.Infof("WH-Jobs: updating async jobs table query %s, retry no : %d", sqlStatement, queryretry)
-		_, err := asyncWhJob.dbHandle.Query(sqlStatement)
+		pkgLogger.Infof("WH-Jobs: updating async jobs table query %s, retry no : %d", sqlStatement, queryretry)
+		_, err = asyncWhJob.dbHandle.Query(sqlStatement, status, errMessage, Id, WhJobAborted)
 		if err == nil {
 			pkgLogger.Errorf("query: %s successfully executed", sqlStatement)
-			return
+			return err
 		}
 	}
 	pkgLogger.Errorf("query: %s failed with Error : %s", sqlStatement, err.Error())
+	return err
 }
 
 //returns status and errMessage
 //Only succeeded, executing & waiting states should have empty errMessage
 //Rest of the states failed, aborted should send an error message conveying a message
-func (asyncWhJob *AsyncJobWhT) getStatusAsyncJob(payload *StartJobReqPayload) (status string, errMessage error) {
-	asyncWhJob.log.Info("WH-Jobs: Getting status for wh async jobs %v", payload)
+func (asyncWhJob *AsyncJobWhT) getStatusAsyncJob(ctx context.Context, payload *StartJobReqPayload) (statusResponse WhStatusResponse) {
+	pkgLogger.Info("WH-Jobs: Getting status for wh async jobs %v", payload)
 	//Need to check for count first and see if there are any rows matching the jobrunid and taskrunid. If none, then raise an error instead of showing complete
 	sqlStatement := fmt.Sprintf(`SELECT status,error FROM %s WHERE jobrunid='%s' AND taskrunid='%s'`, warehouseutils.WarehouseAsyncJobTable, payload.JobRunID, payload.TaskRunID)
-	asyncWhJob.log.Infof("Query is %s", sqlStatement)
+	pkgLogger.Infof("Query is %s", sqlStatement)
 	rows, err := asyncWhJob.dbHandle.Query(sqlStatement)
 	if err != nil {
-		return WhJobFailed, err
+		pkgLogger.Errorf("WH-Jobs: Error executing the query %s", err.Error())
+		statusResponse.Status = WhJobFailed
+		statusResponse.Err = err.Error()
+		return
 	}
 
 	for rows.Next() {
@@ -323,51 +356,42 @@ func (asyncWhJob *AsyncJobWhT) getStatusAsyncJob(payload *StartJobReqPayload) (s
 		var errMessage sql.NullString
 		err = rows.Scan(&status, &errMessage)
 		if err != nil {
-			asyncWhJob.log.Errorf("WH-Jobs: Error scanning rows %s\n", err)
-			return WhJobError, err
+			pkgLogger.Errorf("WH-Jobs: Error scanning rows %s\n", err)
+			statusResponse = WhStatusResponse{
+				Status: WhJobFailed,
+				Err:    err.Error(),
+			}
+			return
 		}
 		if status == WhJobFailed {
-			asyncWhJob.log.Infof("[WH-Jobs] Async Job with jobrunid: %s, taskrunid: %s is failed", payload.JobRunID, payload.TaskRunID)
+			pkgLogger.Infof("[WH-Jobs] Async Job with jobrunid: %s, taskrunid: %s is failed", payload.JobRunID, payload.TaskRunID)
+			statusResponse.Status = WhJobFailed
 			if !errMessage.Valid {
-				return WhJobAborted, errors.New("failed for unknown reasons")
+				statusResponse.Err = "Failed while scanning"
+				return
 			}
-			return WhJobFailed, errors.New(errMessage.String)
+			statusResponse.Err = errMessage.String
+			return
 		}
 		if status == WhJobAborted {
-			asyncWhJob.log.Infof("[WH-Jobs] Async Job with jobrunid: %s, taskrunid: %s is aborted", payload.JobRunID, payload.TaskRunID)
+			pkgLogger.Infof("[WH-Jobs] Async Job with jobrunid: %s, taskrunid: %s is aborted", payload.JobRunID, payload.TaskRunID)
+			statusResponse.Status = WhJobAborted
 			if !errMessage.Valid {
-				return WhJobAborted, errors.New("aborted for unknown reasons")
+				statusResponse.Err = "Failed while scanning"
+				return
+
 			}
-			return WhJobAborted, errors.New(errMessage.String)
+			statusResponse.Err = errMessage.String
+			return
 		}
 		if status != WhJobSucceeded {
-			asyncWhJob.log.Infof("[WH-Jobs] Async Job with jobrunid: %s, taskrunid: %s is under processing", payload.JobRunID, payload.TaskRunID)
-			return WhJobExecuting, err
+			pkgLogger.Infof("[WH-Jobs] Async Job with jobrunid: %s, taskrunid: %s is under processing", payload.JobRunID, payload.TaskRunID)
+			statusResponse.Status = WhJobExecuting
+			return
 		}
 
 	}
-	asyncWhJob.log.Infof("[WH-Jobs] Async Job with jobrunid: %s, taskrunid: %s is complete", payload.JobRunID, payload.TaskRunID)
-	return WhJobSucceeded, err
-}
-
-//convert to pgNotifier Payload and return the array of payloads
-func getMessagePayloadsFromAsyncJobPayloads(asyncjobs []AsyncJobPayloadT) ([]pgnotifier.JobPayload, error) {
-	var messages []pgnotifier.JobPayload
-	for _, job := range asyncjobs {
-		message, err := json.Marshal(job)
-		if err != nil {
-			return messages, err
-		}
-		messages = append(messages, message)
-	}
-	return messages, nil
-}
-
-func getSinglePayloadFromBatchPayloadByTableName(asyncJobs []AsyncJobPayloadT, tableName string) int {
-	for ind, asyncjob := range asyncJobs {
-		if asyncjob.TableName == tableName {
-			return ind
-		}
-	}
-	return -1
+	pkgLogger.Infof("[WH-Jobs] Async Job with jobrunid: %s, taskrunid: %s is complete", payload.JobRunID, payload.TaskRunID)
+	statusResponse.Status = WhJobSucceeded
+	return
 }

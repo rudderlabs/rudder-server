@@ -3,10 +3,9 @@ package jobs
 import (
 	"context"
 	"database/sql"
+	"time"
 
 	"github.com/rudderlabs/rudder-server/services/pgnotifier"
-	"github.com/rudderlabs/rudder-server/utils/logger"
-	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
 var (
@@ -26,12 +25,10 @@ type StartJobReqPayload struct {
 }
 
 type AsyncJobWhT struct {
-	dbHandle       *sql.DB
-	log            logger.LoggerI
-	enabled        bool
-	Cancel         context.CancelFunc
-	pgnotifier     *pgnotifier.PgNotifierT
-	connectionsMap *map[string]map[string]warehouseutils.WarehouseT
+	dbHandle   *sql.DB
+	enabled    bool
+	pgnotifier *pgnotifier.PgNotifierT
+	context    context.Context
 }
 
 //For creating job payload to wh_async_jobs table
@@ -43,7 +40,6 @@ type AsyncJobPayloadT struct {
 	StartTime     string `json:"starttime"`
 	JobRunID      string `json:"jobrunid"`
 	TaskRunID     string `json:"taskrunid"`
-	DestType      string `json:"destination_type"`
 	Namespace     string `json:"namespace"`
 	TableName     string `json:"tablename"`
 	AsyncJobType  string `json:"async_job_type"`
@@ -56,6 +52,7 @@ const (
 	WhJobAborted   string = "aborted"
 	WhJobFailed    string = "failed"
 	WhJobError     string = "error"
+	AsyncJobType   string = "async_job"
 )
 
 type WhAddJobResponse struct {
@@ -68,16 +65,23 @@ type WhStatusResponse struct {
 	Err    string
 }
 
-type WhAsyncJobRunnerI interface {
+type WhAsyncJobRunner interface {
 	startAsyncJobRunner(context.Context)
-	getTableNamesBy(jobrunid string, taskrunid string)
+	getTableNamesBy(context.Context, string, string)
 	getPendingAsyncJobs(context.Context) ([]AsyncJobPayloadT, error)
 	getStatusAsyncJob(*StartJobReqPayload) (string, error)
 	updateMultipleAsyncJobs(*[]AsyncJobPayloadT, string, string)
 }
 
+type AsyncJobsStatusMap struct {
+	Id     string
+	Status string
+	Error  error
+}
+
 const (
-	MaxBatchSizeToProcess int = 10
-	MaxCleanUpRetries     int = 5
-	MaxQueryRetries       int = 3
+	MaxBatchSizeToProcess int           = 10
+	MaxCleanUpRetries     int           = 5
+	MaxQueryRetries       int           = 3
+	RetryTimeInterval     time.Duration = 10 * time.Second
 )

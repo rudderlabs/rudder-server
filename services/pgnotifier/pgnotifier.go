@@ -194,7 +194,6 @@ func (notifier *PgNotifierT) trackUploadBatch(batchID string, ch *chan []Respons
 			time.Sleep(trackBatchInterval)
 			// keep polling db for batch status
 			// or subscribe to triggers
-			pkgLogger.Info("Tracking the batch that's uploaded")
 			stmt := fmt.Sprintf(`SELECT count(*) FROM %s WHERE batch_id='%s' AND status!='%s' AND status!='%s'`, queueName, batchID, SucceededState, AbortedState)
 			var count int
 			err := notifier.dbHandle.QueryRow(stmt).Scan(&count)
@@ -246,7 +245,6 @@ func (notifier *PgNotifierT) trackAsyncBatch(batchID string, ch *chan []Response
 			time.Sleep(trackBatchInterval)
 			// keep polling db for batch status
 			// or subscribe to triggers
-			pkgLogger.Info("Tracking the async batch that's uploaded")
 			stmt := fmt.Sprintf(`SELECT count(*) FROM %s WHERE batch_id=$1 AND status!=$2 AND status!=$3`, queueName)
 			var count int
 			err := notifier.dbHandle.QueryRow(stmt, batchID, SucceededState, AbortedState).Scan(&count)
@@ -284,8 +282,8 @@ func (notifier *PgNotifierT) trackAsyncBatch(batchID string, ch *chan []Response
 				_ = rows.Close()
 				*ch <- responses
 				pkgLogger.Infof("PgNotifier: Completed processing all files  in batch: %s", batchID)
-				stmt = fmt.Sprintf(`DELETE FROM %s WHERE batch_id = '%s'`, queueName, batchID)
-				_, err = notifier.dbHandle.Exec(stmt)
+				stmt = fmt.Sprintf(`DELETE FROM %s WHERE batch_id = $1`, queueName)
+				_, err = notifier.dbHandle.Exec(stmt, batchID)
 				if err != nil {
 					pkgLogger.Errorf("PgNotifier: Error deleting from %s for batch_id:%s : %v", queueName, batchID, err)
 				}

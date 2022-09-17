@@ -88,6 +88,7 @@ var (
 	maxParallelJobCreation              int
 	enableJitterForSyncs                bool
 	configBackendURL                    string
+	asyncWh                             *jobs.AsyncJobWhT
 )
 
 var (
@@ -200,6 +201,23 @@ func (wh *HandleT) workerIdentifier(warehouse warehouseutils.WarehouseT) (identi
 	}
 	return
 }
+func getDestinationFromConnectionMap(DestinationId string, SourceId string) (warehouseutils.WarehouseT, error) {
+	if DestinationId == "" || SourceId == "" {
+		return warehouseutils.WarehouseT{}, errors.New("Invalid Parameters")
+	}
+	srcmap, ok := connectionsMap[DestinationId]
+	if !ok {
+		return warehouseutils.WarehouseT{}, errors.New("Invalid Destination Id")
+	}
+
+	conn, ok := srcmap[SourceId]
+	if !ok {
+		return warehouseutils.WarehouseT{}, errors.New("Invalid Source Id")
+	}
+
+	return conn, nil
+
+}
 
 func (wh *HandleT) getActiveWorkerCount() int {
 	wh.activeWorkerCountLock.Lock()
@@ -282,7 +300,6 @@ func (wh *HandleT) backendConfigSubscriber() {
 				workerName := wh.workerIdentifier(warehouse)
 				wh.workerChannelMapLock.Lock()
 
-				// Whats a worker?
 				// spawn one worker for each unique destID_namespace
 				// check this commit to https://github.com/rudderlabs/rudder-server/pull/476/commits/fbfddf167aa9fc63485fe006d34e6881f5019667
 				// to avoid creating goroutine for disabled sources/destiantions
@@ -1129,7 +1146,7 @@ func (wh *HandleT) Setup(whType string) {
 func (wh *HandleT) Shutdown() {
 	wh.backgroundCancel()
 	wh.backgroundWait()
-	jobs.AsyncJobWH.Cancel()
+	// jobs.AsyncJobWH.Cancel()
 }
 
 func (wh *HandleT) resetInProgressJobs() {
@@ -1690,8 +1707,8 @@ func startWebHandler(ctx context.Context) error {
 			mux.HandleFunc("/v1/setConfig", setConfigHandler)
 
 			//Warehouse Async Job end-points
-			mux.HandleFunc("/v1/warehouse/jobs", jobs.AddWarehouseJobHandler)
-			mux.HandleFunc("/v1/warehouse/jobs/status", jobs.StatusWarehouseJobHandler)
+			mux.HandleFunc("/v1/warehouse/jobs", asyncWh.AddWarehouseJobHandler)
+			mux.HandleFunc("/v1/warehouse/jobs/status", asyncWh.StatusWarehouseJobHandler)
 
 			pkgLogger.Infof("WH: Starting warehouse master service in %d", webPort)
 		} else {
@@ -1853,11 +1870,10 @@ func Start(ctx context.Context, app app.Interface) error {
 		}))
 
 		InitWarehouseAPI(dbHandle, pkgLogger.Child("upload_api"))
-		jobs.InitWarehouseJobsAPI(dbHandle, &notifier, pkgLogger.Child("jobs"), &connectionsMap)
+		asyncWh = jobs.InitWarehouseJobsAPI(dbHandle, &notifier, ctx)
 
 		g.Go(misc.WithBugsnagForWarehouse(func() error {
-			jobs.AsyncJobWH.InitAsyncJobRunner()
-			return nil
+			return asyncWh.InitAsyncJobRunner()
 		}))
 	}
 

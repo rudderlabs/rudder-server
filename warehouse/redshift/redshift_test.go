@@ -1,4 +1,4 @@
-//go:build warehouse_integration
+//go:build warehouse_integration && !sources_integration
 
 package redshift_test
 
@@ -89,18 +89,14 @@ func TestRedshiftIntegration(t *testing.T) {
 			SQL:  handle.DB,
 			Type: client.SQLClient,
 		},
-		WriteKey:              handle.WriteKey,
-		Schema:                handle.Schema,
-		Tables:                handle.Tables,
-		SourceWriteKey:        handle.SourceWriteKey,
-		SourceId:              handle.SourceId,
-		DestinationId:         handle.DestinationId,
-		LatestSourceRunConfig: testhelper.DefaultSourceRunConfig(),
-		TablesQueryFrequency:  testhelper.LongRunningQueryFrequency,
-		EventsCountMap:        testhelper.DefaultEventMap(true),
-		MessageId:             uuid.Must(uuid.NewV4()).String(),
-		UserId:                testhelper.GetUserId(warehouseutils.RS),
-		Provider:              warehouseutils.RS,
+		WriteKey:             handle.WriteKey,
+		Schema:               handle.Schema,
+		Tables:               handle.Tables,
+		TablesQueryFrequency: testhelper.LongRunningQueryFrequency,
+		EventsCountMap:       testhelper.DefaultEventMap(),
+		MessageId:            uuid.Must(uuid.NewV4()).String(),
+		UserId:               testhelper.GetUserId(warehouseutils.RS),
+		Provider:             warehouseutils.RS,
 	}
 
 	// Scenario 1
@@ -115,18 +111,16 @@ func TestRedshiftIntegration(t *testing.T) {
 	// Checking for Gateway and Batch router events
 	// Checking for the events count for each table
 	warehouseTest.EventsCountMap = testhelper.EventsCountMap{
-		"google_sheet":    3,
-		"wh_google_sheet": 1,
-		"identifies":      1,
-		"users":           1,
-		"tracks":          2,
-		"product_track":   1,
-		"pages":           1,
-		"screens":         1,
-		"aliases":         1,
-		"groups":          1,
-		"gateway":         27,
-		"batchRT":         38,
+		"identifies":    1,
+		"users":         1,
+		"tracks":        1,
+		"product_track": 1,
+		"pages":         1,
+		"screens":       1,
+		"aliases":       1,
+		"groups":        1,
+		"gateway":       24,
+		"batchRT":       32,
 	}
 	testhelper.VerifyingGatewayEvents(t, warehouseTest)
 	testhelper.VerifyingBatchRouterEvents(t, warehouseTest)
@@ -147,18 +141,16 @@ func TestRedshiftIntegration(t *testing.T) {
 	// Checking for the events count for each table
 	// Since because of merge everything comes down to a single event in warehouse
 	warehouseTest.EventsCountMap = testhelper.EventsCountMap{
-		"google_sheet":    3,
-		"wh_google_sheet": 1,
-		"identifies":      1,
-		"users":           1,
-		"tracks":          2,
-		"product_track":   1,
-		"pages":           1,
-		"screens":         1,
-		"aliases":         1,
-		"groups":          1,
-		"gateway":         51,
-		"batchRT":         70,
+		"identifies":    1,
+		"users":         1,
+		"tracks":        1,
+		"product_track": 1,
+		"pages":         1,
+		"screens":       1,
+		"aliases":       1,
+		"groups":        1,
+		"gateway":       48,
+		"batchRT":       64,
 	}
 	testhelper.VerifyingGatewayEvents(t, warehouseTest)
 	testhelper.VerifyingBatchRouterEvents(t, warehouseTest)
@@ -173,12 +165,9 @@ func TestMain(m *testing.M) {
 	}
 
 	handle = &TestHandle{
-		WriteKey:       "JAAwdCxmM8BIabKERsUhPNmMmdf",
-		SourceWriteKey: "2DkCpJkiuyil2fcpUD3LmjPI7J6",
-		SourceId:       "2DkCpXZcFJhrj2fcpUD3LmjPI7J6",
-		DestinationId:  "27SthahyhhqZE74HT4NTtNPl06V",
-		Schema:         testhelper.GetSchema(warehouseutils.RS, TestSchemaKey),
-		Tables:         []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups", "google_sheet"},
+		WriteKey: "JAAwdCxmM8BIabKERsUhPNmMmdf",
+		Schema:   testhelper.GetSchema(warehouseutils.RS, TestSchemaKey),
+		Tables:   []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"},
 	}
 	os.Exit(testhelper.Run(m, handle))
 }

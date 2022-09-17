@@ -1,4 +1,4 @@
-//go:build warehouse_integration
+//go:build warehouse_integration && !sources_integration
 
 package bigquery_test
 
@@ -101,18 +101,14 @@ func TestBigQueryIntegration(t *testing.T) {
 				BQ:   handle.DB,
 				Type: client.BQClient,
 			},
-			WriteKey:              handle.WriteKey,
-			SourceWriteKey:        handle.SourceWriteKey,
-			SourceId:              handle.SourceId,
-			DestinationId:         handle.DestinationId,
-			Schema:                handle.Schema,
-			Tables:                handle.Tables,
-			TablesQueryFrequency:  testhelper.LongRunningQueryFrequency,
-			EventsCountMap:        testhelper.DefaultEventMap(true),
-			MessageId:             uuid.Must(uuid.NewV4()).String(),
-			UserId:                testhelper.GetUserId(warehouseutils.BQ),
-			Provider:              warehouseutils.BQ,
-			LatestSourceRunConfig: testhelper.DefaultSourceRunConfig(),
+			WriteKey:             handle.WriteKey,
+			Schema:               handle.Schema,
+			Tables:               handle.Tables,
+			TablesQueryFrequency: testhelper.LongRunningQueryFrequency,
+			EventsCountMap:       testhelper.DefaultEventMap(),
+			MessageId:            uuid.Must(uuid.NewV4()).String(),
+			UserId:               testhelper.GetUserId(warehouseutils.BQ),
+			Provider:             warehouseutils.BQ,
 		}
 
 		// Scenario 1
@@ -130,19 +126,17 @@ func TestBigQueryIntegration(t *testing.T) {
 		// Checking for Gateway and Batch router events
 		// Checking for the events count for each table
 		warehouseTest.EventsCountMap = testhelper.EventsCountMap{
-			"google_sheet":    3,
-			"wh_google_sheet": 1,
-			"identifies":      1,
-			"users":           1,
-			"tracks":          2,
-			"product_track":   1,
-			"pages":           1,
-			"screens":         1,
-			"aliases":         1,
-			"groups":          1,
-			"_groups":         1,
-			"gateway":         27,
-			"batchRT":         38,
+			"identifies":    1,
+			"users":         1,
+			"tracks":        1,
+			"product_track": 1,
+			"pages":         1,
+			"screens":       1,
+			"aliases":       1,
+			"groups":        1,
+			"_groups":       1,
+			"gateway":       24,
+			"batchRT":       32,
 		}
 		testhelper.VerifyingGatewayEvents(t, warehouseTest)
 		testhelper.VerifyingBatchRouterEvents(t, warehouseTest)
@@ -163,19 +157,17 @@ func TestBigQueryIntegration(t *testing.T) {
 		// Checking for the events count for each table
 		// Since because of merge everything comes down to a single event in warehouse
 		warehouseTest.EventsCountMap = testhelper.EventsCountMap{
-			"google_sheet":    3,
-			"wh_google_sheet": 1,
-			"identifies":      1,
-			"users":           1,
-			"tracks":          2,
-			"product_track":   1,
-			"pages":           1,
-			"screens":         1,
-			"aliases":         1,
-			"groups":          1,
-			"_groups":         1,
-			"gateway":         51,
-			"batchRT":         70,
+			"identifies":    1,
+			"users":         1,
+			"tracks":        2,
+			"product_track": 1,
+			"pages":         1,
+			"screens":       1,
+			"aliases":       1,
+			"groups":        1,
+			"_groups":       1,
+			"gateway":       48,
+			"batchRT":       64,
 		}
 		testhelper.VerifyingGatewayEvents(t, warehouseTest)
 		testhelper.VerifyingBatchRouterEvents(t, warehouseTest)
@@ -197,18 +189,14 @@ func TestBigQueryIntegration(t *testing.T) {
 				BQ:   handle.DB,
 				Type: client.BQClient,
 			},
-			WriteKey:              handle.WriteKey,
-			SourceWriteKey:        handle.SourceWriteKey,
-			SourceId:              handle.SourceId,
-			DestinationId:         handle.DestinationId,
-			Schema:                handle.Schema,
-			Tables:                handle.Tables,
-			TablesQueryFrequency:  testhelper.LongRunningQueryFrequency,
-			EventsCountMap:        testhelper.DefaultEventMap(true),
-			MessageId:             uuid.Must(uuid.NewV4()).String(),
-			UserId:                testhelper.GetUserId(warehouseutils.BQ),
-			Provider:              warehouseutils.BQ,
-			LatestSourceRunConfig: testhelper.DefaultSourceRunConfig(),
+			WriteKey:             handle.WriteKey,
+			Schema:               handle.Schema,
+			Tables:               handle.Tables,
+			TablesQueryFrequency: testhelper.LongRunningQueryFrequency,
+			EventsCountMap:       testhelper.DefaultEventMap(),
+			MessageId:            uuid.Must(uuid.NewV4()).String(),
+			UserId:               testhelper.GetUserId(warehouseutils.BQ),
+			Provider:             warehouseutils.BQ,
 		}
 
 		// Scenario 1
@@ -228,19 +216,17 @@ func TestBigQueryIntegration(t *testing.T) {
 		// Checking for the events count for each table
 		// Since because of append events count will be equal to the number of events being sent
 		warehouseTest.EventsCountMap = testhelper.EventsCountMap{
-			"google_sheet":    1,
-			"wh_google_sheet": 1,
-			"identifies":      4,
-			"users":           1,
-			"tracks":          6,
-			"product_track":   4,
-			"pages":           4,
-			"screens":         4,
-			"aliases":         4,
-			"groups":          1,
-			"_groups":         3,
-			"gateway":         25,
-			"batchRT":         34,
+			"identifies":    4,
+			"users":         1,
+			"tracks":        5,
+			"product_track": 4,
+			"pages":         4,
+			"screens":       4,
+			"aliases":       4,
+			"groups":        1,
+			"_groups":       3,
+			"gateway":       24,
+			"batchRT":       32,
 		}
 		testhelper.VerifyingGatewayEvents(t, warehouseTest)
 		testhelper.VerifyingBatchRouterEvents(t, warehouseTest)
@@ -267,12 +253,9 @@ func TestMain(m *testing.M) {
 	}
 
 	handle = &TestHandle{
-		WriteKey:       "J77aX7tLFJ84qYU6UrN8ctecwZt",
-		SourceWriteKey: "2DkCpXZcExKM2fcpUD3LmjPI7J6",
-		SourceId:       "2DkCpXZcEvLN2fcpUD3LmjPI7J6",
-		DestinationId:  "26Bgm9FrQDZjvadSwAlpd35atwn",
-		Schema:         testhelper.GetSchema(warehouseutils.BQ, TestSchemaKey),
-		Tables:         []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "_groups", "groups", "google_sheet"},
+		WriteKey: "J77aX7tLFJ84qYU6UrN8ctecwZt",
+		Schema:   testhelper.GetSchema(warehouseutils.BQ, TestSchemaKey),
+		Tables:   []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "_groups", "groups"},
 	}
 	os.Exit(testhelper.Run(m, handle))
 }
