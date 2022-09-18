@@ -54,6 +54,7 @@ type HandleT struct {
 	whActionsOnly                 bool
 	sleepInterval                 time.Duration
 	mainLoopSleepInterval         time.Duration
+	enableReportingPii            bool
 
 	getMinReportedAtQueryTime stats.RudderStats
 	getReportsQueryTime       stats.RudderStats
@@ -105,6 +106,7 @@ func (handle *HandleT) setup(beConfigHandle backendconfig.BackendConfig) {
 		} else {
 			handle.workspaceID = sources.WorkspaceID
 		}
+		handle.enableReportingPii = sources.Settings.DataRetention.EnableReportingPii
 		handle.workspaceIDForSourceIDMapLock.Unlock()
 	}
 }
@@ -432,7 +434,7 @@ func isMetricPosted(status int) bool {
 }
 
 func getPIIColumnsToExclude() []string {
-	piiColumnsToExclude := strings.Split(config.GetString("REPORTING_PII_COLUMNS_TO_EXCLUDE", ""), ",")
+	piiColumnsToExclude := strings.Split(config.GetString("Reporting.piiColumnstoExclude", "sample_event,sample_response"), ",")
 	for i := range piiColumnsToExclude {
 		piiColumnsToExclude[i] = strings.Trim(piiColumnsToExclude[i], " ")
 	}
@@ -445,6 +447,10 @@ func transformMetricForPII(metric types.PUReportedMetric, piiColumns []string) t
 			metric.StatusDetail.SampleEvent = []byte(`{}`)
 		} else if col == "sample_response" {
 			metric.StatusDetail.SampleResponse = ""
+		} else if col == "event_name" {
+			metric.StatusDetail.EventName = ""
+		} else if col == "event_type" {
+			metric.StatusDetail.EventType = ""
 		}
 	}
 
@@ -466,7 +472,10 @@ func (handle *HandleT) Report(metrics []*types.PUReportedMetric, txn *sql.Tx) {
 	reportedAt := time.Now().UTC().Unix() / 60
 	for _, metric := range metrics {
 		workspaceID := handle.getWorkspaceID(metric.ConnectionDetails.SourceID)
-		metric := transformMetricForPII(*metric, getPIIColumnsToExclude())
+		metric := *metric
+		if !handle.enableReportingPii {
+			metric = transformMetricForPII(metric, getPIIColumnsToExclude())
+		}
 
 		_, err = stmt.Exec(workspaceID, handle.namespace, handle.instanceID, metric.ConnectionDetails.SourceDefinitionId, metric.ConnectionDetails.SourceCategory, metric.ConnectionDetails.SourceID, metric.ConnectionDetails.DestinationDefinitionId, metric.ConnectionDetails.DestinationID, metric.ConnectionDetails.SourceBatchID, metric.ConnectionDetails.SourceTaskID, metric.ConnectionDetails.SourceTaskRunID, metric.ConnectionDetails.SourceJobID, metric.ConnectionDetails.SourceJobRunID, metric.PUDetails.InPU, metric.PUDetails.PU, reportedAt, metric.StatusDetail.Status, metric.StatusDetail.Count, metric.PUDetails.TerminalPU, metric.PUDetails.InitialPU, metric.StatusDetail.StatusCode, metric.StatusDetail.SampleResponse, string(metric.StatusDetail.SampleEvent), metric.StatusDetail.EventName, metric.StatusDetail.EventType)
 		if err != nil {

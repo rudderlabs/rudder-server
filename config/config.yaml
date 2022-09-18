@@ -250,3 +250,5 @@ PgNotifier:
   retriggerCount: 500
   trackBatchInterval: 2s
   maxAttempt: 3
+Reporting:
+  piiColumnstoExclude: sample_event,sample_response

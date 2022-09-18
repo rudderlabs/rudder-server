@@ -87,11 +87,21 @@ type ConfigT struct {
 	Sources         []SourceT       `json:"sources"`
 	Libraries       LibrariesT      `json:"libraries"`
 	ConnectionFlags ConnectionFlags `json:"flags"`
+	Settings        Settings        `json:"settings"`
 }
 
 type ConnectionFlags struct {
 	URL      string          `json:"url"`
 	Services map[string]bool `json:"services"`
+}
+
+type Settings struct {
+	DataRetention DataRetention `json:"dataRetention"`
+}
+
+type DataRetention struct {
+	EnableReportingPii     bool `json:"enableReportingPii"`
+	UseRudderServerStorage bool `json:"useRudderServerStorage"`
 }
 
 type WRegulationsT struct {
