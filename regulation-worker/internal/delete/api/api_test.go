@@ -47,8 +47,9 @@ func TestDelete(t *testing.T) {
 					{
 						UserID: "Jermaine1473336609491897794707338",
 						Opts: map[string]string{
-							"phone": "6463633841",
-							"email": "dorowane8n285680461479465450293436@gmail.com",
+							"phone":     "6463633841",
+							"email":     "dorowane8n285680461479465450293436@gmail.com",
+							"randomKey": "randomValue",
 						},
 					},
 					{
@@ -76,7 +77,7 @@ func TestDelete(t *testing.T) {
 			respCode:             200,
 			respBodyStatus:       "complete",
 			expectedDeleteStatus: model.JobStatusComplete,
-			expectedPayload:      `[{"jobId":"1","destType":"amplitude","config":{"accessKey":"xyz","accessKeyID":"abc","bucketName":"regulation-test-data","enableSSE":false,"prefix":"reg-original"},"userAttributes":[{"email":"dorowane8n285680461479465450293436@gmail.com","phone":"6463633841","userId":"Jermaine1473336609491897794707338"},{"email":"dshirilad8536019424659691213279980@gmail.com","userId":"Mercie8221821544021583104106123"},{"phone":"8782905113","userId":"Claiborn443446989226249191822329"}]}]`,
+			expectedPayload:      `[{"jobId":"1","destType":"amplitude","config":{"accessKey":"xyz","accessKeyID":"abc","bucketName":"regulation-test-data","enableSSE":false,"prefix":"reg-original"},"userAttributes":[{"email":"dorowane8n285680461479465450293436@gmail.com","phone":"6463633841","randomKey":"randomValue","userId":"Jermaine1473336609491897794707338"},{"email":"dshirilad8536019424659691213279980@gmail.com","userId":"Mercie8221821544021583104106123"},{"phone":"8782905113","userId":"Claiborn443446989226249191822329"}]}]`,
 		},
 		{
 			name:                 "test deleter API client with expected status failed: error returned 429",

@@ -28,9 +28,9 @@ func TestGet(t *testing.T) {
 		{
 			name:                      "Get request to get job: successful",
 			workspaceID:               "1001",
-			respBody:                  `{"jobId":"1","destinationId":"23","userAttributes":[{"userId":"1","phone":"555-555-5555"},{"userId":"2","email":"john@example.com"}]}`,
+			respBody:                  `{"jobId":"1","destinationId":"23","userAttributes":[{"userId":"1","phone":"555-555-5555"},{"userId":"2","email":"john@example.com"},{"userId":"3","randomKey":"randomValue"}]}`,
 			respCode:                  200,
-			expectedUsrAttributeCount: 2,
+			expectedUsrAttributeCount: 3,
 		},
 		{
 			name:        "Get request to get job: NoRunnableJob found",
