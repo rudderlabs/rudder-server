@@ -24,7 +24,7 @@ func (c *Config) RegisterIntConfigVariable(defaultValue int, ptr *int, isHotRelo
 	c.appendVarToConfigMaps(isHotReloadable, keys[0], &configVar)
 
 	for _, key := range keys {
-		if c.isSet(key) {
+		if c.viperIsSet(key) {
 			*ptr = c.GetInt(key, defaultValue) * valueScale
 			return
 		}
@@ -54,7 +54,7 @@ func (c *Config) RegisterBoolConfigVariable(defaultValue bool, ptr *bool, isHotR
 
 	for _, key := range keys {
 		c.bindEnv(key)
-		if c.isSet(key) {
+		if c.viperIsSet(key) {
 			*ptr = c.GetBool(key, defaultValue)
 			return
 		}
@@ -85,7 +85,7 @@ func (c *Config) RegisterFloat64ConfigVariable(defaultValue float64, ptr *float6
 
 	for _, key := range keys {
 		c.bindEnv(key)
-		if c.isSet(key) {
+		if c.viperIsSet(key) {
 			*ptr = c.GetFloat64(key, defaultValue)
 			return
 		}
@@ -116,7 +116,7 @@ func (c *Config) RegisterInt64ConfigVariable(defaultValue int64, ptr *int64, isH
 
 	for _, key := range keys {
 		c.bindEnv(key)
-		if c.isSet(key) {
+		if c.viperIsSet(key) {
 			*ptr = c.GetInt64(key, defaultValue) * valueScale
 			return
 		}
@@ -146,7 +146,7 @@ func (c *Config) RegisterDurationConfigVariable(defaultValueInTimescaleUnits int
 	c.appendVarToConfigMaps(isHotReloadable, keys[0], &configVar)
 
 	for _, key := range keys {
-		if c.isSet(key) {
+		if c.viperIsSet(key) {
 			*ptr = c.GetDuration(key, defaultValueInTimescaleUnits, timeScale)
 			return
 		}
@@ -175,7 +175,7 @@ func (c *Config) RegisterStringConfigVariable(defaultValue string, ptr *string, 
 	c.appendVarToConfigMaps(isHotReloadable, keys[0], &configVar)
 
 	for _, key := range keys {
-		if c.isSet(key) {
+		if c.viperIsSet(key) {
 			*ptr = c.GetString(key, defaultValue)
 			return
 		}
@@ -204,7 +204,7 @@ func (c *Config) RegisterStringSliceConfigVariable(defaultValue []string, ptr *[
 	c.appendVarToConfigMaps(isHotReloadable, keys[0], &configVar)
 
 	for _, key := range keys {
-		if c.isSet(key) {
+		if c.viperIsSet(key) {
 			*ptr = c.GetStringSlice(key, defaultValue)
 			return
 		}
