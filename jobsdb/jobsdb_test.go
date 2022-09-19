@@ -625,7 +625,7 @@ func TestJobsDBTimeout(t *testing.T) {
 		expectedRetries := 2
 		var errorsCount int
 
-		jobs, err := QueryJobsResultWithRetries(context.Background(), 10*time.Millisecond, expectedRetries, func(ctx context.Context) (JobsResult, error) {
+		jobs, err := misc.QueryWithRetries(context.Background(), 10*time.Millisecond, expectedRetries, func(ctx context.Context) (JobsResult, error) {
 			jobs, err := jobDB.GetUnprocessed(ctx, GetQueryParamsT{
 				CustomValFilters: []string{customVal},
 				JobsLimit:        1,

@@ -87,9 +87,9 @@ func makePostRequest(url string, payload interface{}) error {
 
 		resp, err = client.Do(req)
 		if err == nil {
+			resp.Body.Close()
 			break
 		}
-		defer resp.Body.Close()
 
 		pkgLogger.Errorf("DCT: Config Backend connection error", err)
 		if retryCount > maxRetry {

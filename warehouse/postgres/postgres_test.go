@@ -8,6 +8,9 @@ import (
 	"os"
 	"testing"
 
+	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
+	"github.com/rudderlabs/rudder-server/utils/timeutil"
+
 	"github.com/rudderlabs/rudder-server/warehouse/client"
 	"github.com/rudderlabs/rudder-server/warehouse/postgres"
 	"github.com/rudderlabs/rudder-server/warehouse/testhelper"
@@ -23,9 +26,8 @@ type TestHandle struct {
 
 var handle *TestHandle
 
-// VerifyConnection test connection for postgres
 func (*TestHandle) VerifyConnection() error {
-	err := testhelper.WithConstantBackoff(func() (err error) {
+	return testhelper.WithConstantBackoff(func() (err error) {
 		credentials := postgres.CredentialsT{
 			DBName:   "rudderdb",
 			Password: "rudder-password",
@@ -44,87 +46,84 @@ func (*TestHandle) VerifyConnection() error {
 		}
 		return
 	})
-	if err != nil {
-		return fmt.Errorf("error while running test connection for postgres with err: %s", err.Error())
-	}
-	return nil
 }
 
 func TestPostgresIntegration(t *testing.T) {
-	// Setting up the warehouseTest
 	warehouseTest := &testhelper.WareHouseTest{
 		Client: &client.Client{
 			SQL:  handle.DB,
 			Type: client.SQLClient,
 		},
-		WriteKey:             handle.WriteKey,
-		Schema:               handle.Schema,
-		Tables:               handle.Tables,
-		EventsCountMap:       testhelper.DefaultEventMap(),
-		TablesQueryFrequency: testhelper.DefaultQueryFrequency,
-		UserId:               testhelper.GetUserId(warehouseutils.POSTGRES),
-		Provider:             warehouseutils.POSTGRES,
+		WriteKey:      handle.WriteKey,
+		Schema:        handle.Schema,
+		Tables:        handle.Tables,
+		Provider:      warehouseutils.POSTGRES,
+		SourceID:      "1wRvLmEnMOOxSQD9pwaZhyCqXRE",
+		DestinationID: "216ZvbavR21Um6eGKQCagZHqLGZ",
 	}
 
 	// Scenario 1
-	// Sending the first set of events.
-	// Since we are sending unique message Ids.
-	// These should result in events count will be equal to the number of events being sent
-	testhelper.SendEvents(t, warehouseTest)
-	testhelper.SendEvents(t, warehouseTest)
-	testhelper.SendEvents(t, warehouseTest)
-	testhelper.SendIntegratedEvents(t, warehouseTest)
+	warehouseTest.TimestampBeforeSendingEvents = timeutil.Now()
+	warehouseTest.UserId = testhelper.GetUserId(warehouseutils.POSTGRES)
 
-	// Setting up the events map
-	// Checking for Gateway and Batch router events
-	// Checking for the events count for each table
-	warehouseTest.EventsCountMap = testhelper.EventsCountMap{
-		"identifies":    4,
-		"users":         1,
-		"tracks":        4,
-		"product_track": 4,
-		"pages":         4,
-		"screens":       4,
-		"aliases":       4,
-		"groups":        4,
-		"gateway":       24,
-		"batchRT":       32,
-	}
-	testhelper.VerifyingGatewayEvents(t, warehouseTest)
-	testhelper.VerifyingBatchRouterEvents(t, warehouseTest)
-	testhelper.VerifyingTablesEventCount(t, warehouseTest)
+	sendEventsMap := testhelper.SendEventsMap()
+	testhelper.SendEvents(t, warehouseTest, sendEventsMap)
+	testhelper.SendEvents(t, warehouseTest, sendEventsMap)
+	testhelper.SendEvents(t, warehouseTest, sendEventsMap)
+	testhelper.SendIntegratedEvents(t, warehouseTest, sendEventsMap)
+
+	testhelper.VerifyEventsInStagingFiles(t, warehouseTest, testhelper.StagingFilesEventsMap())
+	testhelper.VerifyEventsInLoadFiles(t, warehouseTest, testhelper.LoadFilesEventsMap())
+	testhelper.VerifyEventsInTableUploads(t, warehouseTest, testhelper.TableUploadsEventsMap())
+	testhelper.VerifyEventsInWareHouse(t, warehouseTest, testhelper.WarehouseEventsMap())
 
 	// Scenario 2
-	// Setting up events count map
-	// Setting up the UserID
-	// Sending the second set of modified events
-	// Since we are sending unique message Ids
-	// These should result in events count will be equal to the number of events being sent
-	warehouseTest.EventsCountMap = testhelper.DefaultEventMap()
+	warehouseTest.TimestampBeforeSendingEvents = timeutil.Now()
 	warehouseTest.UserId = testhelper.GetUserId(warehouseutils.POSTGRES)
-	testhelper.SendModifiedEvents(t, warehouseTest)
-	testhelper.SendModifiedEvents(t, warehouseTest)
-	testhelper.SendModifiedEvents(t, warehouseTest)
-	testhelper.SendIntegratedEvents(t, warehouseTest)
 
-	// Setting up the events map
-	// Checking for Gateway and Batch router events
-	// Checking for the events count for each table
-	warehouseTest.EventsCountMap = testhelper.EventsCountMap{
-		"identifies":    4,
-		"users":         1,
-		"tracks":        4,
-		"product_track": 4,
-		"pages":         4,
-		"screens":       4,
-		"aliases":       4,
-		"groups":        4,
-		"gateway":       24,
-		"batchRT":       32,
+	sendEventsMap = testhelper.SendEventsMap()
+	testhelper.SendModifiedEvents(t, warehouseTest, sendEventsMap)
+	testhelper.SendModifiedEvents(t, warehouseTest, sendEventsMap)
+	testhelper.SendModifiedEvents(t, warehouseTest, sendEventsMap)
+	testhelper.SendIntegratedEvents(t, warehouseTest, sendEventsMap)
+
+	testhelper.VerifyEventsInStagingFiles(t, warehouseTest, testhelper.StagingFilesEventsMap())
+	testhelper.VerifyEventsInLoadFiles(t, warehouseTest, testhelper.LoadFilesEventsMap())
+	testhelper.VerifyEventsInTableUploads(t, warehouseTest, testhelper.TableUploadsEventsMap())
+	testhelper.VerifyEventsInWareHouse(t, warehouseTest, testhelper.WarehouseEventsMap())
+}
+
+func TestPostgresConfigurationValidation(t *testing.T) {
+	configurations := testhelper.PopulateTemplateConfigurations()
+	destination := backendconfig.DestinationT{
+		ID: "216ZvbavR21Um6eGKQCagZHqLGZ",
+		Config: map[string]interface{}{
+			"host":             configurations["postgresHost"],
+			"database":         configurations["postgresDatabase"],
+			"user":             configurations["postgresUser"],
+			"password":         configurations["postgresPassword"],
+			"port":             configurations["postgresPort"],
+			"sslMode":          "disable",
+			"namespace":        "",
+			"bucketProvider":   "MINIO",
+			"bucketName":       configurations["minioBucketName"],
+			"accessKeyID":      configurations["minioAccesskeyID"],
+			"secretAccessKey":  configurations["minioSecretAccessKey"],
+			"useSSL":           false,
+			"endPoint":         configurations["minioEndpoint"],
+			"syncFrequency":    "30",
+			"useRudderStorage": false,
+		},
+		DestinationDefinition: backendconfig.DestinationDefinitionT{
+			ID:          "1bJ4YC7INdkvBTzotNh0zta5jDm",
+			Name:        "POSTGRES",
+			DisplayName: "Postgres",
+		},
+		Name:       "postgres-demo",
+		Enabled:    true,
+		RevisionID: "29eeuu9kywWsRAybaXcxcnTVEl8",
 	}
-	testhelper.VerifyingGatewayEvents(t, warehouseTest)
-	testhelper.VerifyingBatchRouterEvents(t, warehouseTest)
-	testhelper.VerifyingTablesEventCount(t, warehouseTest)
+	testhelper.VerifyingConfigurationTest(t, destination)
 }
 
 func TestMain(m *testing.M) {

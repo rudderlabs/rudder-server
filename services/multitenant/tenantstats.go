@@ -4,6 +4,7 @@ package multitenant
 
 import (
 	"context"
+	"fmt"
 	"math"
 	"sort"
 	"sync"
@@ -12,6 +13,7 @@ import (
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/services/metric"
+	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
@@ -62,12 +64,12 @@ func (t *Stats) Start() error {
 
 	for dbPrefix := range t.RouterDBs {
 		t.routerInputRates[dbPrefix] = make(map[string]map[string]metric.MovingAverage)
-		pileUpStatMap, err := jobsdb.QueryWorkspacePileupWithRetries(context.Background(),
+		pileUpStatMap, err := misc.QueryWithRetriesAndNotify(context.Background(),
 			t.jobdDBQueryRequestTimeout,
 			t.jobdDBMaxRetries,
 			func(ctx context.Context) (map[string]map[string]int, error) {
 				return t.RouterDBs[dbPrefix].GetPileUpCounts(ctx)
-			})
+			}, sendQueryRetryStats)
 		if err != nil {
 			return err
 		}
@@ -94,6 +96,11 @@ func Init() {
 	pkgLogger = logger.NewLogger().Child("services").Child("multiTenant")
 }
 
+func sendQueryRetryStats(attempt int) {
+	pkgLogger.Warnf("Timeout during query jobs in multitenant module, attempt %d", attempt)
+	stats.NewTaggedStat("jobsdb_query_timeout", stats.CountType, stats.Tags{"attempt": fmt.Sprint(attempt), "module": "multitenant"}).Count(1)
+}
+
 func NewStats(routerDBs map[string]jobsdb.MultiTenantJobsDB) *Stats {
 	t := Stats{}
 	config.RegisterDurationConfigVariable(60, &t.jobdDBQueryRequestTimeout, true, time.Second, []string{"JobsDB.Multitenant.QueryRequestTimeout", "JobsDB.QueryRequestTimeout"}...)
@@ -107,12 +114,12 @@ func NewStats(routerDBs map[string]jobsdb.MultiTenantJobsDB) *Stats {
 	for dbPrefix := range routerDBs {
 		t.routerInputRates[dbPrefix] = make(map[string]map[string]metric.MovingAverage)
 
-		pileUpStatMap, err := jobsdb.QueryWorkspacePileupWithRetries(context.Background(),
+		pileUpStatMap, err := misc.QueryWithRetriesAndNotify(context.Background(),
 			t.jobdDBQueryRequestTimeout,
 			t.jobdDBMaxRetries,
 			func(ctx context.Context) (map[string]map[string]int, error) {
 				return routerDBs[dbPrefix].GetPileUpCounts(ctx)
-			})
+			}, sendQueryRetryStats)
 		if err != nil {
 			pkgLogger.Error("Error while getting pile up counts", "error", err)
 			panic(err)
