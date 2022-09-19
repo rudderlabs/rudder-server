@@ -1668,7 +1668,7 @@ func (proc *HandleT) Store(in *storeMessage) {
 			}
 
 			if proc.isReportingEnabled() {
-				proc.reporting.Report(in.reportMetrics, tx.Tx())
+				proc.reporting.Report(ctx, in.reportMetrics, tx.Tx())
 			}
 
 			if enableDedup {

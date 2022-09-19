@@ -132,8 +132,8 @@ var (
 
 type reportingNOOP struct{}
 
-func (*reportingNOOP) WaitForSetup(_ context.Context, _ string)          {}
-func (*reportingNOOP) Report(_ []*utilTypes.PUReportedMetric, _ *sql.Tx) {}
+func (*reportingNOOP) WaitForSetup(_ context.Context, _ string)                             {}
+func (*reportingNOOP) Report(_ context.Context, _ []*utilTypes.PUReportedMetric, _ *sql.Tx) {}
 
 type testContext struct {
 	asyncHelper     testutils.AsyncTestHelper

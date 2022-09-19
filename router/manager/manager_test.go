@@ -121,7 +121,7 @@ type reportingNOOP struct{}
 func (*reportingNOOP) WaitForSetup(ctx context.Context, clientName string) {
 }
 
-func (*reportingNOOP) Report(metrics []*utilTypes.PUReportedMetric, txn *sql.Tx) {
+func (*reportingNOOP) Report(ctx context.Context, metrics []*utilTypes.PUReportedMetric, txn *sql.Tx) {
 }
 
 func (*reportingNOOP) AddClient(ctx context.Context, c utilTypes.Config) {

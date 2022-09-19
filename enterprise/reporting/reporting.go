@@ -54,7 +54,6 @@ type HandleT struct {
 	whActionsOnly                 bool
 	sleepInterval                 time.Duration
 	mainLoopSleepInterval         time.Duration
-	enableReportingPii            bool
 
 	getMinReportedAtQueryTime stats.RudderStats
 	getReportsQueryTime       stats.RudderStats
@@ -106,7 +105,6 @@ func (handle *HandleT) setup(beConfigHandle backendconfig.BackendConfig) {
 		} else {
 			handle.workspaceID = sources.WorkspaceID
 		}
-		handle.enableReportingPii = sources.Settings.DataRetention.EnableReportingPii
 		handle.workspaceIDForSourceIDMapLock.Unlock()
 	}
 }
@@ -457,7 +455,7 @@ func transformMetricForPII(metric types.PUReportedMetric, piiColumns []string) t
 	return metric
 }
 
-func (handle *HandleT) Report(metrics []*types.PUReportedMetric, txn *sql.Tx) {
+func (handle *HandleT) Report(ctx context.Context, metrics []*types.PUReportedMetric, txn *sql.Tx) {
 	if len(metrics) == 0 {
 		return
 	}
@@ -469,11 +467,14 @@ func (handle *HandleT) Report(metrics []*types.PUReportedMetric, txn *sql.Tx) {
 	}
 	defer stmt.Close()
 
+	backendconfig.DefaultBackendConfig.WaitForConfig(ctx)
+	piiReportingEnabled := backendconfig.DefaultBackendConfig.GetDataRetentionSettingsForWorkspaceID(handle.workspaceID).EnableReportingPii
+
 	reportedAt := time.Now().UTC().Unix() / 60
 	for _, metric := range metrics {
 		workspaceID := handle.getWorkspaceID(metric.ConnectionDetails.SourceID)
 		metric := *metric
-		if !handle.enableReportingPii {
+		if !piiReportingEnabled {
 			metric = transformMetricForPII(metric, getPIIColumnsToExclude())
 		}
 

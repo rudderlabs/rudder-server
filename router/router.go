@@ -46,7 +46,7 @@ import (
 
 type reporter interface {
 	WaitForSetup(ctx context.Context, clientName string)
-	Report(metrics []*utilTypes.PUReportedMetric, txn *sql.Tx)
+	Report(ctx context.Context, metrics []*utilTypes.PUReportedMetric, txn *sql.Tx)
 }
 
 type tenantStats interface {
@@ -1445,7 +1445,7 @@ func (rt *HandleT) commitStatusList(responseList *[]jobResponseT) {
 				if len(jobRunIDAbortedEventsMap) > 0 {
 					GetFailedEventsManager().SaveFailedRecordIDs(jobRunIDAbortedEventsMap, tx.Tx())
 				}
-				rt.Reporting.Report(reportMetrics, tx.Tx())
+				rt.Reporting.Report(ctx, reportMetrics, tx.Tx())
 				return nil
 			})
 		})
@@ -1890,7 +1890,7 @@ func (rt *HandleT) readAndProcess() int {
 					return err
 				}
 
-				rt.Reporting.Report(reportMetrics, tx.Tx())
+				rt.Reporting.Report(ctx, reportMetrics, tx.Tx())
 				return nil
 			})
 		})

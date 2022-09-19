@@ -35,6 +35,10 @@ func (*NOOPConfig) GetWorkspaceLibrariesForWorkspaceID(string) backendconfig.Lib
 	return backendconfig.LibrariesT{}
 }
 
+func (*NOOPConfig) GetDataRetentionSettingsForWorkspaceID(string) backendconfig.DataRetention {
+	return backendconfig.DataRetention{}
+}
+
 func (*NOOPConfig) WaitForConfig(_ context.Context) {}
 
 func (*NOOPConfig) Subscribe(ctx context.Context, _ backendconfig.Topic) pubsub.DataChannel {

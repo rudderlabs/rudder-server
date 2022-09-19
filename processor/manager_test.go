@@ -47,7 +47,7 @@ type reportingNOOP struct{}
 func (*reportingNOOP) WaitForSetup(_ context.Context, _ string) {
 }
 
-func (*reportingNOOP) Report(_ []*utilTypes.PUReportedMetric, _ *sql.Tx) {
+func (*reportingNOOP) Report(_ context.Context, _ []*utilTypes.PUReportedMetric, _ *sql.Tx) {
 }
 
 func (*reportingNOOP) AddClient(_ context.Context, _ utilTypes.Config) {

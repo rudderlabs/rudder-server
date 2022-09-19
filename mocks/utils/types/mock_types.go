@@ -86,15 +86,15 @@ func (mr *MockReportingIMockRecorder) AddClient(arg0, arg1 interface{}) *gomock.
 }
 
 // Report mocks base method.
-func (m *MockReportingI) Report(arg0 []*types.PUReportedMetric, arg1 *sql.Tx) {
+func (m *MockReportingI) Report(arg0 context.Context, arg1 []*types.PUReportedMetric, arg2 *sql.Tx) {
 	m.ctrl.T.Helper()
-	m.ctrl.Call(m, "Report", arg0, arg1)
+	m.ctrl.Call(m, "Report", arg0, arg1, arg2)
 }
 
 // Report indicates an expected call of Report.
-func (mr *MockReportingIMockRecorder) Report(arg0, arg1 interface{}) *gomock.Call {
+func (mr *MockReportingIMockRecorder) Report(arg0, arg1, arg2 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Report", reflect.TypeOf((*MockReportingI)(nil).Report), arg0, arg1)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Report", reflect.TypeOf((*MockReportingI)(nil).Report), arg0, arg1, arg2)
 }
 
 // WaitForSetup mocks base method.

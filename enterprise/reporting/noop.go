@@ -10,7 +10,7 @@ import (
 // NOOP reporting implementation that does nothing
 type NOOP struct{}
 
-func (n *NOOP) Report(metrics []*types.PUReportedMetric, txn *sql.Tx) {
+func (n *NOOP) Report(ctx context.Context, metrics []*types.PUReportedMetric, txn *sql.Tx) {
 }
 
 func (n *NOOP) WaitForSetup(ctx context.Context, clientName string) {

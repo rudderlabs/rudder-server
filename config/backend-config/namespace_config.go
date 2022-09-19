@@ -17,12 +17,13 @@ import (
 )
 
 type namespaceConfig struct {
-	configEnvHandler          types.ConfigEnvI
-	mapsMutex                 sync.RWMutex
-	writeKeyToWorkspaceIDMap  map[string]string
-	workspaceIDToLibrariesMap map[string]LibrariesT
-	sourceToWorkspaceIDMap    map[string]string
-	cpRouterURL               string
+	configEnvHandler              types.ConfigEnvI
+	mapsMutex                     sync.RWMutex
+	writeKeyToWorkspaceIDMap      map[string]string
+	workspaceIDToLibrariesMap     map[string]LibrariesT
+	workspaceIDToDataRetentionMap map[string]DataRetention
+	sourceToWorkspaceIDMap        map[string]string
+	cpRouterURL                   string
 
 	Logger logger.LoggerI
 	Client *http.Client
@@ -102,6 +103,17 @@ func (nc *namespaceConfig) GetWorkspaceLibrariesForWorkspaceID(workspaceID strin
 	return LibrariesT{}
 }
 
+// GetDataRetentionSettingsForWorkspaceID returns dataRetention settings for workspaceID
+func (nc *namespaceConfig) GetDataRetentionSettingsForWorkspaceID(workspaceID string) DataRetention {
+	nc.mapsMutex.RLock()
+	defer nc.mapsMutex.RUnlock()
+
+	if workspaceDataRetentionSettings, ok := nc.workspaceIDToDataRetentionMap[workspaceID]; ok {
+		return workspaceDataRetentionSettings
+	}
+	return DataRetention{}
+}
+
 // Get returns sources from the workspace
 func (nc *namespaceConfig) Get(ctx context.Context, workspaces string) (ConfigT, error) {
 	return nc.getFromAPI(ctx, workspaces)
@@ -147,6 +159,7 @@ func (nc *namespaceConfig) getFromAPI(ctx context.Context, _ string) (ConfigT, e
 	writeKeyToWorkspaceIDMap := make(map[string]string)
 	sourceToWorkspaceIDMap := make(map[string]string)
 	workspaceIDToLibrariesMap := make(map[string]LibrariesT)
+	workspaceIDToDataRetentionMap := make(map[string]DataRetention)
 	sourcesJSON := ConfigT{}
 	sourcesJSON.Sources = make([]SourceT, 0)
 	for workspaceID, nc := range workspaces.WorkspaceSourcesMap {
@@ -155,6 +168,7 @@ func (nc *namespaceConfig) getFromAPI(ctx context.Context, _ string) (ConfigT, e
 			writeKeyToWorkspaceIDMap[source.WriteKey] = workspaceID
 			sourceToWorkspaceIDMap[source.ID] = workspaceID
 			workspaceIDToLibrariesMap[workspaceID] = nc.Libraries
+			workspaceIDToDataRetentionMap[workspaceID] = nc.Settings.DataRetention
 		}
 		sourcesJSON.Sources = append(sourcesJSON.Sources, nc.Sources...)
 	}
@@ -165,6 +179,7 @@ func (nc *namespaceConfig) getFromAPI(ctx context.Context, _ string) (ConfigT, e
 	nc.writeKeyToWorkspaceIDMap = writeKeyToWorkspaceIDMap
 	nc.sourceToWorkspaceIDMap = sourceToWorkspaceIDMap
 	nc.workspaceIDToLibrariesMap = workspaceIDToLibrariesMap
+	nc.workspaceIDToDataRetentionMap = workspaceIDToDataRetentionMap
 	nc.mapsMutex.Unlock()
 
 	return sourcesJSON, nil

@@ -25,14 +25,15 @@ type WorkspacesT struct {
 }
 
 type multiTenantWorkspacesConfig struct {
-	Token                     string
-	configBackendURL          *url.URL
-	configEnvHandler          types.ConfigEnvI
-	cpRouterURL               string
-	writeKeyToWorkspaceIDMap  map[string]string
-	sourceToWorkspaceIDMap    map[string]string
-	workspaceIDToLibrariesMap map[string]LibrariesT
-	workspaceWriteKeysMapLock sync.RWMutex
+	Token                         string
+	configBackendURL              *url.URL
+	configEnvHandler              types.ConfigEnvI
+	cpRouterURL                   string
+	writeKeyToWorkspaceIDMap      map[string]string
+	sourceToWorkspaceIDMap        map[string]string
+	workspaceIDToLibrariesMap     map[string]LibrariesT
+	workspaceIDToDataRetentionMap map[string]DataRetention
+	workspaceWriteKeysMapLock     sync.RWMutex
 }
 
 func (wc *multiTenantWorkspacesConfig) SetUp() error {
@@ -82,6 +83,16 @@ func (wc *multiTenantWorkspacesConfig) GetWorkspaceLibrariesForWorkspaceID(works
 		return workspaceLibraries
 	}
 	return LibrariesT{}
+}
+
+func (wc *multiTenantWorkspacesConfig) GetDataRetentionSettingsForWorkspaceID(workspaceID string) DataRetention {
+	wc.workspaceWriteKeysMapLock.RLock()
+	defer wc.workspaceWriteKeysMapLock.RUnlock()
+
+	if workspaceDataRetentionSettings, ok := wc.workspaceIDToDataRetentionMap[workspaceID]; ok {
+		return workspaceDataRetentionSettings
+	}
+	return DataRetention{}
 }
 
 // Get returns sources from the workspace
@@ -134,6 +145,7 @@ func (wc *multiTenantWorkspacesConfig) getFromAPI(ctx context.Context, _ string)
 	writeKeyToWorkspaceIDMap := make(map[string]string)
 	sourceToWorkspaceIDMap := make(map[string]string)
 	workspaceIDToLibrariesMap := make(map[string]LibrariesT)
+	workspaceIDToDataRetentionMap := make(map[string]DataRetention)
 	sourcesJSON := ConfigT{}
 	sourcesJSON.Sources = make([]SourceT, 0)
 	for workspaceID, workspaceConfig := range workspaces.WorkspaceSourcesMap {
@@ -141,6 +153,7 @@ func (wc *multiTenantWorkspacesConfig) getFromAPI(ctx context.Context, _ string)
 			writeKeyToWorkspaceIDMap[source.WriteKey] = workspaceID
 			sourceToWorkspaceIDMap[source.ID] = workspaceID
 			workspaceIDToLibrariesMap[workspaceID] = workspaceConfig.Libraries
+			workspaceIDToDataRetentionMap[workspaceID] = workspaceConfig.Settings.DataRetention
 		}
 		sourcesJSON.Sources = append(sourcesJSON.Sources, workspaceConfig.Sources...)
 	}
@@ -151,6 +164,7 @@ func (wc *multiTenantWorkspacesConfig) getFromAPI(ctx context.Context, _ string)
 	wc.writeKeyToWorkspaceIDMap = writeKeyToWorkspaceIDMap
 	wc.sourceToWorkspaceIDMap = sourceToWorkspaceIDMap
 	wc.workspaceIDToLibrariesMap = workspaceIDToLibrariesMap
+	wc.workspaceIDToDataRetentionMap = workspaceIDToDataRetentionMap
 	wc.workspaceWriteKeysMapLock.Unlock()
 
 	return sourcesJSON, nil

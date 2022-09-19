@@ -48,7 +48,7 @@ type ConfigEnvI interface {
 type ReportingI interface {
 	WaitForSetup(ctx context.Context, clientName string)
 	AddClient(ctx context.Context, c Config)
-	Report(metrics []*PUReportedMetric, txn *sql.Tx)
+	Report(ctx context.Context, metrics []*PUReportedMetric, txn *sql.Tx)
 }
 
 // ConfigT simple map config structure

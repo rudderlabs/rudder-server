@@ -24,8 +24,9 @@ type singleWorkspaceConfig struct {
 	configJSONPath   string
 	configEnvHandler types.ConfigEnvI
 
-	workspaceIDToLibrariesMap map[string]LibrariesT
-	workspaceIDLock           sync.RWMutex
+	workspaceIDToLibrariesMap     map[string]LibrariesT
+	workspaceIDToDataRetentionMap map[string]DataRetention
+	workspaceIDLock               sync.RWMutex
 }
 
 func (wc *singleWorkspaceConfig) SetUp() error {
@@ -70,6 +71,17 @@ func (wc *singleWorkspaceConfig) GetWorkspaceLibrariesForWorkspaceID(workspaceID
 		return LibrariesT{}
 	}
 	return wc.workspaceIDToLibrariesMap[workspaceID]
+}
+
+// GetDataRetentionSettingsForWorkspaceID returns dataRetention settings for workspaceID
+func (wc *singleWorkspaceConfig) GetDataRetentionSettingsForWorkspaceID(workspaceID string) DataRetention {
+	wc.workspaceIDLock.RLock()
+	defer wc.workspaceIDLock.RUnlock()
+
+	if workspaceDataRetentionSettings, ok := wc.workspaceIDToDataRetentionMap[workspaceID]; ok {
+		return workspaceDataRetentionSettings
+	}
+	return DataRetention{}
 }
 
 // Get returns sources from the workspace
@@ -125,6 +137,9 @@ func (wc *singleWorkspaceConfig) getFromAPI(ctx context.Context, _ string) (Conf
 	wc.workspaceID = sourcesJSON.WorkspaceID
 	wc.workspaceIDToLibrariesMap = make(map[string]LibrariesT)
 	wc.workspaceIDToLibrariesMap[sourcesJSON.WorkspaceID] = sourcesJSON.Libraries
+
+	wc.workspaceIDToDataRetentionMap = make(map[string]DataRetention)
+	wc.workspaceIDToDataRetentionMap[sourcesJSON.WorkspaceID] = sourcesJSON.Settings.DataRetention
 	wc.workspaceIDLock.Unlock()
 
 	return sourcesJSON, nil
