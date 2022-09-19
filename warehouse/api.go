@@ -644,7 +644,7 @@ func validateObjectStorage(ctx context.Context, request *ObjectStorageValidation
 	pkgLogger.Infof("Received call to validate object storage for type: %s\n", request.Type)
 
 	factory := &filemanager.FileManagerFactoryT{}
-	fileManager, err := factory.New(getFileManagerSettings(request.Type, request.Config, true))
+	fileManager, err := factory.New(getFileManagerSettings(request.Type, request.Config))
 	if err != nil {
 		return fmt.Errorf("unable to create file manager: %s", err.Error())
 	}
@@ -695,7 +695,7 @@ func validateObjectStorage(ctx context.Context, request *ObjectStorageValidation
 	return nil
 }
 
-func getFileManagerSettings(provider string, inputConfig map[string]interface{}, checkBucketOrContainerField bool) *filemanager.SettingsT {
+func getFileManagerSettings(provider string, inputConfig map[string]interface{}) *filemanager.SettingsT {
 	settings := &filemanager.SettingsT{
 		Provider: provider,
 		Config:   inputConfig,

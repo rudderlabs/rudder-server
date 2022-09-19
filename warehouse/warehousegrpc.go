@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-
 	proto "github.com/rudderlabs/rudder-server/proto/warehouse"
 	"github.com/rudderlabs/rudder-server/warehouse/configuration_testing"
 	"google.golang.org/genproto/googleapis/rpc/code"
@@ -98,7 +97,7 @@ type ObjectStorageValidationRequest struct {
 	Config map[string]interface{} `json:"config"`
 }
 
-func (w *warehousegrpc) ValidateObjectStorageDestination(ctx context.Context, request *proto.ValidateObjectStorageRequest) (response *proto.ValidateObjectStorageResponse, err error) {
+func validateObjectStorageRequest(request *proto.ValidateObjectStorageRequest) (*ObjectStorageValidationRequest, error) {
 
 	byt, err := json.Marshal(request)
 	if err != nil {
@@ -107,13 +106,12 @@ func (w *warehousegrpc) ValidateObjectStorageDestination(ctx context.Context, re
 			"unable to marshal the request proto message with error: %s", err.Error())
 	}
 
-	r := ObjectStorageValidationRequest{}
+	r := &ObjectStorageValidationRequest{}
 	if err := json.Unmarshal(byt, &r); err != nil {
 		return nil, status.Errorf(
 			codes.Code(code.Code_INTERNAL),
 			"unable to extract data into validation request with error: %s", err)
 	}
-
 	switch r.Type {
 	case "AZURE_BLOB":
 		if !checkMapForValidKey(r.Config, "containerName") {
@@ -124,16 +122,24 @@ func (w *warehousegrpc) ValidateObjectStorageDestination(ctx context.Context, re
 			err = fmt.Errorf("bucketName invalid or not present")
 		}
 	default:
-		err = fmt.Errorf("type: %v not supported", request.Type)
+		err = fmt.Errorf("type: %v not supported", r.Type)
 	}
-
 	if err != nil {
 		return nil, status.Errorf(
 			codes.Code(code.Code_INVALID_ARGUMENT),
 			"invalid argument err: %s", err.Error())
 	}
+	return r, nil
 
-	err = validateObjectStorage(ctx, &r)
+}
+func (w *warehousegrpc) ValidateObjectStorageDestination(ctx context.Context, request *proto.ValidateObjectStorageRequest) (response *proto.ValidateObjectStorageResponse, err error) {
+
+	r, err := validateObjectStorageRequest(request)
+	if err != nil {
+		return nil, err
+	}
+
+	err = validateObjectStorage(ctx, r)
 	if err != nil {
 
 		if errors.As(err, &InvalidDestinationCredErr{}) {
