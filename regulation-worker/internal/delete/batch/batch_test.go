@@ -48,16 +48,22 @@ func TestBatchDelete(t *testing.T) {
 				UserAttributes: []model.UserAttribute{
 					{
 						UserID: "Jermaine1473336609491897794707338",
-						Phone:  strPtr("6463633841"),
-						Email:  strPtr("dorowane8n285680461479465450293436@gmail.com"),
+						Opts: map[string]string{
+							"phone": "6463633841",
+							"email": "dorowane8n285680461479465450293436@gmail.com",
+						},
 					},
 					{
 						UserID: "Mercie8221821544021583104106123",
-						Email:  strPtr("dshirilad8536019424659691213279980@gmail.com"),
+						Opts: map[string]string{
+							"email": "dshirilad8536019424659691213279980@gmail.com",
+						},
 					},
 					{
 						UserID: "Claiborn443446989226249191822329",
-						Phone:  strPtr("8782905113"),
+						Opts: map[string]string{
+							"phone": "8782905113",
+						},
 					},
 				},
 			},
@@ -136,10 +142,6 @@ func TestBatchDelete(t *testing.T) {
 			}
 		})
 	}
-}
-
-func strPtr(str string) *string {
-	return &(str)
 }
 
 type mockFileManagerFactory struct{}

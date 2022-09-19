@@ -165,11 +165,14 @@ func prepURL(url string, params ...string) string {
 
 func mapPayloadToJob(wjs jobSchema, workspaceID string) (model.Job, error) {
 	usrAttribute := make([]model.UserAttribute, len(wjs.UserAttributes))
-	for i := 0; i < len(wjs.UserAttributes); i++ {
-		usrAttribute[i] = model.UserAttribute{
-			UserID: wjs.UserAttributes[i].UserID,
-			Phone:  wjs.UserAttributes[i].Phone,
-			Email:  wjs.UserAttributes[i].Email,
+	for i, usrAttr := range wjs.UserAttributes {
+		usrAttribute[i].Opts = make(map[string]string)
+		for key, value := range usrAttr {
+			if key == "userId" {
+				usrAttribute[i].UserID = value.(string)
+			} else {
+				usrAttribute[i].Opts[key] = value.(string)
+			}
 		}
 	}
 	jobID, err := strconv.Atoi(wjs.JobID)

@@ -349,17 +349,17 @@ func (b *Batch) createPatternFile(userAttributes []model.UserAttribute) (string,
 		searchObject = append(searchObject, users.UserID...)
 		searchObject = append(searchObject, "\"/d;"...)
 
-		if users.Email != nil {
+		if users.Opts["email"] != "" {
 			searchObject = append(searchObject, "/"...)
 			searchObject = append(searchObject, "\"email\": *\""...)
-			searchObject = append(searchObject, []byte(*users.Email)...)
+			searchObject = append(searchObject, []byte(users.Opts["email"])...)
 			searchObject = append(searchObject, "\"/d;"...)
 		}
 
-		if users.Phone != nil {
+		if users.Opts["phone"] != "" {
 			searchObject = append(searchObject, "/"...)
 			searchObject = append(searchObject, "\"phone\": *\""...)
-			searchObject = append(searchObject, []byte(*users.Phone)...)
+			searchObject = append(searchObject, []byte(users.Opts["phone"])...)
 			searchObject = append(searchObject, "\"/d;"...)
 		}
 	}

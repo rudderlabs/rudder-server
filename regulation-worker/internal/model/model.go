@@ -36,8 +36,7 @@ type Job struct {
 
 type UserAttribute struct {
 	UserID string
-	Phone  *string
-	Email  *string
+	Opts   map[string]string
 }
 
 type Destination struct {

@@ -116,11 +116,10 @@ func (bm *APIManager) GetSupportedDestinations() []string {
 func mapJobToPayload(job model.Job, destName string, destConfig map[string]interface{}) []apiDeletionPayloadSchema {
 	uas := make([]userAttributesSchema, len(job.UserAttributes))
 	for i, ua := range job.UserAttributes {
-		uas[i] = userAttributesSchema{
-			UserID: ua.UserID,
-
-			Phone: ua.Phone,
-			Email: ua.Email,
+		uas[i] = make(map[string]string)
+		uas[i]["userId"] = ua.UserID
+		for k, v := range ua.Opts {
+			uas[i][k] = v
 		}
 	}
 
