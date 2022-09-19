@@ -273,8 +273,9 @@ func (gateway *HandleT) userWorkerRequestBatcher() {
 		select {
 		case userWorkerBatchRequest, hasMore := <-gateway.userWorkerBatchRequestQ:
 			if !hasMore {
-				breq := batchUserWorkerBatchRequestT{batchUserWorkerBatchRequest: userWorkerBatchRequestBuffer}
-				gateway.batchUserWorkerBatchRequestQ <- &breq
+				if len(userWorkerBatchRequestBuffer) > 0 {
+					gateway.batchUserWorkerBatchRequestQ <- &batchUserWorkerBatchRequestT{batchUserWorkerBatchRequest: userWorkerBatchRequestBuffer}
+				}
 				close(gateway.batchUserWorkerBatchRequestQ)
 				return
 			}
@@ -418,12 +419,6 @@ func (gateway *HandleT) getSourceTagFromWriteKey(writeKey string) string {
 //
 // Finally sends responses(error) if any back to the webRequests over their `done` channels
 func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWebRequestWorkerT) {
-	if userWebRequestWorker == nil {
-		panic("worker is nil")
-	}
-	if userWebRequestWorker.batchRequestQ == nil {
-		panic("batchRequestQ is nil")
-	}
 	for breq := range userWebRequestWorker.batchRequestQ {
 		counter := atomic.AddUint64(&gateway.webRequestBatchCount, 1)
 		var jobList []*jobsdb.JobT

@@ -7,6 +7,7 @@ import (
 	"fmt"
 
 	"cloud.google.com/go/pubsub"
+	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/services/streammanager/common"
 	"github.com/rudderlabs/rudder-server/utils/googleutils"
 	"github.com/rudderlabs/rudder-server/utils/logger"
@@ -45,10 +46,10 @@ type GooglePubSubProducer struct {
 }
 
 // NewProducer creates a producer based on destination config
-func NewProducer(destinationConfig interface{}, o common.Opts) (*GooglePubSubProducer, error) {
+func NewProducer(destination *backendconfig.DestinationT, o common.Opts) (*GooglePubSubProducer, error) {
 	var config Config
 	ctx := context.Background()
-	jsonConfig, err := json.Marshal(destinationConfig)
+	jsonConfig, err := json.Marshal(destination.Config)
 	if err != nil {
 		return nil, fmt.Errorf("[GooglePubSub] Error while marshalling destination config :: %w", err)
 	}

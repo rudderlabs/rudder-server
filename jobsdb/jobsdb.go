@@ -178,6 +178,8 @@ type HandleInspector struct {
 
 // DSListSize returns the current size of the handle's dsList
 func (h *HandleInspector) DSListSize() int {
+	h.HandleT.dsListLock.RLock()
+	defer h.HandleT.dsListLock.RUnlock()
 	return len(h.HandleT.getDSList())
 }
 
@@ -1055,7 +1057,6 @@ func (jd *HandleT) getDSList() []dataSetT {
 func (jd *HandleT) refreshDSList(l lock.DSListLockToken) []dataSetT {
 	jd.assert(l != nil, "cannot refresh DS list without a valid lock token")
 	// Reset the global list
-	jd.datasetList = nil
 	jd.datasetList = getDSList(jd, jd.dbHandle, jd.tablePrefix)
 
 	// report table count metrics before shrinking the datasetList
@@ -1101,8 +1102,6 @@ func (jd *HandleT) refreshDSRangeList(l lock.DSListLockToken) {
 		}
 		_ = rows.Close()
 		jd.logger.Debug(sqlStatement, minID, maxID)
-
-		_ = rows.Close()
 		// We store ranges EXCEPT for
 		// 1. the last element (which is being actively written to)
 		// 2. Migration target ds
@@ -2462,7 +2461,7 @@ func (jd *HandleT) markClearEmptyResult(ds dataSetT, workspace string, stateFilt
 	}
 
 	// Safe Check , All parameter filters must be provided explicitly
-	if len(parameterFilters) != len(CacheKeyParameterFilters) {
+	if len(parameterFilters) != len(CacheKeyParameterFilters) && len(parameterFilters) != 0 {
 		return
 	}
 
@@ -2507,6 +2506,7 @@ func (jd *HandleT) markClearEmptyResult(ds dataSetT, workspace string, stateFilt
 		}
 		sort.Strings(pVals)
 		pVal := strings.Join(pVals, "_")
+		pvalArr := []string{pVal, cValDefaultFilter}
 
 		_, ok = jd.dsEmptyResultCache[ds][workspace][cVal][pVal]
 		if !ok {
@@ -2519,15 +2519,16 @@ func (jd *HandleT) markClearEmptyResult(ds dataSetT, workspace string, stateFilt
 			jd.dsEmptyResultCache[ds][workspace][cVal][cValDefaultFilter] = map[string]cacheEntry{}
 		}
 
-		for _, st := range stateFilters {
-			previous := jd.dsEmptyResultCache[ds][workspace][cVal][pVal][st]
-			if checkAndSet == nil || *checkAndSet == previous.Value {
-				cache := cacheEntry{
-					Value: value,
-					T:     time.Now(),
+		for _, pf := range pvalArr {
+			for _, st := range stateFilters {
+				previous := jd.dsEmptyResultCache[ds][workspace][cVal][pf][st]
+				if checkAndSet == nil || *checkAndSet == previous.Value {
+					cache := cacheEntry{
+						Value: value,
+						T:     time.Now(),
+					}
+					jd.dsEmptyResultCache[ds][workspace][cVal][pf][st] = cache
 				}
-				jd.dsEmptyResultCache[ds][workspace][cVal][pVal][st] = cache
-				jd.dsEmptyResultCache[ds][workspace][cVal][cValDefaultFilter][st] = cache
 			}
 		}
 	}
@@ -2573,7 +2574,7 @@ func (jd *HandleT) isEmptyResult(ds dataSetT, workspace string, stateFilters, cu
 		if len(parameterFilters) > 0 {
 			var pVals []string
 
-			if len(parameterFilters) != len(CacheKeyParameterFilters) {
+			if len(parameterFilters) != len(CacheKeyParameterFilters) && len(parameterFilters) != 0 {
 				return false
 			}
 
@@ -4703,36 +4704,6 @@ func sanitizeJson(input json.RawMessage) json.RawMessage {
 		v = []byte(`{}`)
 	}
 	return v
-}
-
-func QueryJobsWithRetries(parentContext context.Context, timeout time.Duration, maxAttempts int, f func(ctx context.Context) ([]*JobT, error)) ([]*JobT, error) {
-	res, err := misc.QueryWithRetries(parentContext, timeout, maxAttempts, func(ctx context.Context) (interface{}, error) {
-		return f(ctx)
-	})
-	if err != nil {
-		return nil, err
-	}
-	return res.([]*JobT), err
-}
-
-func QueryJobsResultWithRetries(parentContext context.Context, timeout time.Duration, maxAttempts int, f func(ctx context.Context) (JobsResult, error)) (JobsResult, error) {
-	res, err := misc.QueryWithRetries(parentContext, timeout, maxAttempts, func(ctx context.Context) (interface{}, error) {
-		return f(ctx)
-	})
-	if err != nil {
-		return JobsResult{}, err
-	}
-	return res.(JobsResult), err
-}
-
-func QueryWorkspacePileupWithRetries(parentContext context.Context, timeout time.Duration, maxAttempts int, f func(ctx context.Context) (map[string]map[string]int, error)) (map[string]map[string]int, error) {
-	res, err := misc.QueryWithRetries(parentContext, timeout, maxAttempts, func(ctx context.Context) (interface{}, error) {
-		return f(ctx)
-	})
-	if err != nil {
-		return nil, err
-	}
-	return res.(map[string]map[string]int), err
 }
 
 type smallDS struct {

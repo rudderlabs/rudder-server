@@ -13,6 +13,7 @@ import (
 	"github.com/tidwall/gjson"
 
 	"github.com/rudderlabs/rudder-server/config"
+	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/services/streammanager/common"
 	"github.com/rudderlabs/rudder-server/services/streammanager/kafka/client"
@@ -230,27 +231,27 @@ type KafkaProducer struct {
 }
 
 // NewProducer creates a producer based on destination config
-func NewProducer(destConfigJSON interface{}, o common.Opts) (*KafkaProducer, error) { // skipcq: RVV-B0011
+func NewProducer(destination *backendconfig.DestinationT, o common.Opts) (*KafkaProducer, error) { // skipcq: RVV-B0011
 	start := now()
 	defer func() { kafkaStats.creationTime.SendTiming(since(start)) }()
 
 	destConfig := configuration{}
-	jsonConfig, err := json.Marshal(destConfigJSON)
+	jsonConfig, err := json.Marshal(destination.Config)
 	if err != nil {
 		return nil, fmt.Errorf(
 			"[Kafka] Error while marshaling destination configuration %+v, got error: %w",
-			destConfigJSON, err,
+			destination.Config, err,
 		)
 	}
 	err = json.Unmarshal(jsonConfig, &destConfig)
 	if err != nil {
 		return nil, fmt.Errorf("[Kafka] Error while unmarshalling destination configuration %+v, got error: %w",
-			destConfigJSON, err,
+			destination.Config, err,
 		)
 	}
 
 	if err = destConfig.validate(); err != nil {
-		return nil, fmt.Errorf("invalid configuration: %w", err)
+		return nil, fmt.Errorf("[Kafka] invalid configuration: %w", err)
 	}
 
 	convertToAvro := destConfig.ConvertToAvro
@@ -324,28 +325,28 @@ func NewProducer(destConfigJSON interface{}, o common.Opts) (*KafkaProducer, err
 }
 
 // NewProducerForAzureEventHubs creates a producer for Azure event hub based on destination config
-func NewProducerForAzureEventHubs(destinationConfig interface{}, o common.Opts) (*KafkaProducer, error) { // skipcq: RVV-B0011
+func NewProducerForAzureEventHubs(destination *backendconfig.DestinationT, o common.Opts) (*KafkaProducer, error) { // skipcq: RVV-B0011
 	start := now()
 	defer func() { kafkaStats.creationTimeAzureEventHubs.SendTiming(since(start)) }()
 
 	destConfig := azureEventHubConfig{}
-	jsonConfig, err := json.Marshal(destinationConfig)
+	jsonConfig, err := json.Marshal(destination.Config)
 	if err != nil {
 		return nil, fmt.Errorf(
 			"[Azure Event Hubs] Error while marshaling destination configuration %+v, got error: %w",
-			destinationConfig, err,
+			destination.Config, err,
 		)
 	}
 	err = json.Unmarshal(jsonConfig, &destConfig)
 	if err != nil {
 		return nil, fmt.Errorf(
 			"[Azure Event Hubs] Error while unmarshaling destination configuration %+v, got error: %w",
-			destinationConfig, err,
+			destination.Config, err,
 		)
 	}
 
 	if err = destConfig.validate(); err != nil {
-		return nil, fmt.Errorf("invalid configuration: %w", err)
+		return nil, fmt.Errorf("[Azure Event Hubs] invalid configuration: %w", err)
 	}
 
 	addresses := strings.Split(destConfig.BootstrapServer, ",")
@@ -375,16 +376,16 @@ func NewProducerForAzureEventHubs(destinationConfig interface{}, o common.Opts) 
 }
 
 // NewProducerForConfluentCloud creates a producer for Confluent cloud based on destination config
-func NewProducerForConfluentCloud(destinationConfig interface{}, o common.Opts) (*KafkaProducer, error) { // skipcq: RVV-B0011
+func NewProducerForConfluentCloud(destination *backendconfig.DestinationT, o common.Opts) (*KafkaProducer, error) { // skipcq: RVV-B0011
 	start := now()
 	defer func() { kafkaStats.creationTimeConfluentCloud.SendTiming(since(start)) }()
 
 	destConfig := confluentCloudConfig{}
-	jsonConfig, err := json.Marshal(destinationConfig)
+	jsonConfig, err := json.Marshal(destination.Config)
 	if err != nil {
 		return nil, fmt.Errorf(
 			"[Confluent Cloud] Error while marshaling destination configuration %+v, got error: %w",
-			destinationConfig, err,
+			destination.Config, err,
 		)
 	}
 
@@ -392,12 +393,12 @@ func NewProducerForConfluentCloud(destinationConfig interface{}, o common.Opts) 
 	if err != nil {
 		return nil, fmt.Errorf(
 			"[Confluent Cloud] Error while unmarshaling destination configuration %+v, got error: %w",
-			destinationConfig, err,
+			destination.Config, err,
 		)
 	}
 
 	if err = destConfig.validate(); err != nil {
-		return nil, fmt.Errorf("invalid configuration: %w", err)
+		return nil, fmt.Errorf("[Confluent Cloud] invalid configuration: %w", err)
 	}
 
 	addresses := strings.Split(destConfig.BootstrapServer, ",")

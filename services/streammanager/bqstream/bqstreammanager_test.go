@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/golang/mock/gomock"
+	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	mock_logger "github.com/rudderlabs/rudder-server/mocks/utils/logger"
 	"github.com/rudderlabs/rudder-server/services/streammanager/common"
 	"github.com/stretchr/testify/assert"
@@ -34,11 +35,12 @@ func TestTimeout(t *testing.T) {
 		t.Fatalf("could not unmarshal BIGQUERY_INTEGRATION_TEST_USER_CRED: %s", err)
 	}
 	credentials, _ := json.Marshal(bqCredentials.Credentials)
-	config := Config{
-		Credentials: string(credentials),
-		ProjectId:   bqCredentials.ProjectID,
+	config := map[string]interface{}{
+		"Credentials": string(credentials),
+		"ProjectId":   bqCredentials.ProjectID,
 	}
-	producer, err := NewProducer(config, common.Opts{Timeout: 1 * time.Microsecond})
+	destination := backendconfig.DestinationT{Config: config}
+	producer, err := NewProducer(&destination, common.Opts{Timeout: 1 * time.Microsecond})
 	if err != nil {
 		t.Errorf(" %+v", err)
 		return
@@ -98,11 +100,12 @@ func TestUnsupportedCredentials(t *testing.T) {
 		}`), &bqCredentials)
 	assert.NoError(t, err)
 	credentials, _ := json.Marshal(bqCredentials.Credentials)
-	config := Config{
-		Credentials: string(credentials),
-		ProjectId:   bqCredentials.ProjectID,
+	config := map[string]interface{}{
+		"Credentials": string(credentials),
+		"ProjectId":   bqCredentials.ProjectID,
 	}
-	_, err = NewProducer(config, common.Opts{Timeout: 1 * time.Microsecond})
+	destination := backendconfig.DestinationT{Config: config}
+	_, err = NewProducer(&destination, common.Opts{Timeout: 1 * time.Microsecond})
 
 	assert.NotNil(t, err)
 	assert.Contains(t, err.Error(), "incompatible credentials")
@@ -126,11 +129,12 @@ func TestInvalidCredentials(t *testing.T) {
 		}`), &bqCredentials)
 	assert.NoError(t, err)
 	credentials, _ := json.Marshal(bqCredentials.Credentials)
-	config := Config{
-		Credentials: string(credentials),
-		ProjectId:   bqCredentials.ProjectID,
+	config := map[string]interface{}{
+		"Credentials": string(credentials),
+		"ProjectId":   bqCredentials.ProjectID,
 	}
-	_, err = NewProducer(config, common.Opts{Timeout: 1 * time.Microsecond})
+	destination := backendconfig.DestinationT{Config: config}
+	_, err = NewProducer(&destination, common.Opts{Timeout: 1 * time.Microsecond})
 
 	assert.NotNil(t, err)
 	assert.EqualError(t, err, "bigquery: constructing client: missing 'type' field in credentials")

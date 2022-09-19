@@ -572,6 +572,40 @@ func TestReplaceMultiRegex(t *testing.T) {
 	}
 }
 
+func TestGetObjectStorageConfig(t *testing.T) {
+	sampleWorkspaceID := "someWorkspaceID"
+	sampleAccessKeyID := "someAccessKeyID"
+	sampleAccessKey := "someAccessKey"
+	t.Setenv("RUDDER_AWS_S3_COPY_USER_ACCESS_KEY_ID", sampleAccessKeyID)
+	t.Setenv("RUDDER_AWS_S3_COPY_USER_ACCESS_KEY", sampleAccessKey)
+	t.Run("S3 without AccessKeys", func(t *testing.T) {
+		config := GetObjectStorageConfig(ObjectStorageOptsT{
+			Provider:    "S3",
+			Config:      map[string]interface{}{},
+			WorkspaceID: sampleWorkspaceID,
+		})
+		require.NotNil(t, config)
+		require.Equal(t, sampleWorkspaceID, config["externalID"])
+		require.Equal(t, sampleAccessKeyID, config["accessKeyID"])
+		require.Equal(t, sampleAccessKey, config["accessKey"])
+	})
+
+	t.Run("S3 with AccessKeys", func(t *testing.T) {
+		config := GetObjectStorageConfig(ObjectStorageOptsT{
+			Provider: "S3",
+			Config: map[string]interface{}{
+				"accessKeyID": "someOtherAccessKeyID",
+				"accessKey":   "someOtherAccessKey",
+			},
+			WorkspaceID: sampleWorkspaceID,
+		})
+		require.NotNil(t, config)
+		require.Equal(t, sampleWorkspaceID, config["externalID"])
+		require.Equal(t, "someOtherAccessKeyID", config["accessKeyID"])
+		require.Equal(t, "someOtherAccessKey", config["accessKey"])
+	})
+}
+
 // FolderExists Check if folder exists at particular path
 func FolderExists(path string) (bool, error) {
 	fileInfo, err := os.Stat(path)
