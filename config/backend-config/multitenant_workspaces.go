@@ -85,7 +85,7 @@ func (wc *multiTenantWorkspacesConfig) GetWorkspaceLibrariesForWorkspaceID(works
 	return LibrariesT{}
 }
 
-func (wc *multiTenantWorkspacesConfig) GetDataRetentionSettingsForWorkspaceID(workspaceID string) DataRetention {
+func (wc *multiTenantWorkspacesConfig) DataRetentionSettings(workspaceID string) DataRetention {
 	wc.workspaceWriteKeysMapLock.RLock()
 	defer wc.workspaceWriteKeysMapLock.RUnlock()
 

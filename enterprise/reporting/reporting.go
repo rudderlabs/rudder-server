@@ -468,7 +468,7 @@ func (handle *HandleT) Report(ctx context.Context, metrics []*types.PUReportedMe
 	defer stmt.Close()
 
 	backendconfig.DefaultBackendConfig.WaitForConfig(ctx)
-	piiReportingEnabled := backendconfig.DefaultBackendConfig.GetDataRetentionSettingsForWorkspaceID(handle.workspaceID).EnableReportingPii
+	piiReportingEnabled := backendconfig.DefaultBackendConfig.DataRetentionSettings(handle.workspaceID).EnableReportingPII
 
 	reportedAt := time.Now().UTC().Unix() / 60
 	for _, metric := range metrics {

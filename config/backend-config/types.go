@@ -100,7 +100,7 @@ type Settings struct {
 }
 
 type DataRetention struct {
-	EnableReportingPii     bool          `json:"enableReportingPii"`
+	EnableReportingPII     bool          `json:"enableReportingPii"`
 	UseRudderServerStorage bool          `json:"useRudderServerStorage"`
 	StorageBucket          StorageBucket `json:"storageBucket"`
 }

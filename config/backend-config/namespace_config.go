@@ -103,8 +103,8 @@ func (nc *namespaceConfig) GetWorkspaceLibrariesForWorkspaceID(workspaceID strin
 	return LibrariesT{}
 }
 
-// GetDataRetentionSettingsForWorkspaceID returns dataRetention settings for workspaceID
-func (nc *namespaceConfig) GetDataRetentionSettingsForWorkspaceID(workspaceID string) DataRetention {
+// DataRetentionSettings returns dataRetention settings for workspaceID
+func (nc *namespaceConfig) DataRetentionSettings(workspaceID string) DataRetention {
 	nc.mapsMutex.RLock()
 	defer nc.mapsMutex.RUnlock()
 

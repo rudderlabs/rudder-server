@@ -1366,7 +1366,7 @@ func (brt *HandleT) setJobStatus(batchJobs *BatchJobsT, isWarehouse bool, errOcc
 				router.GetFailedEventsManager().SaveFailedRecordIDs(jobRunIDAbortedEventsMap, tx.Tx())
 			}
 			if brt.reporting != nil && brt.reportingEnabled {
-				brt.reporting.Report(context.TODO(), reportMetrics, tx.Tx())
+				brt.reporting.Report(ctx, reportMetrics, tx.Tx())
 			}
 			return nil
 		})

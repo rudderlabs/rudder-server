@@ -92,18 +92,14 @@ func GetBackupStorageConfig(ctx context.Context) (string, map[string]interface{}
 	backendconfig.DefaultBackendConfig.WaitForConfig(ctx)
 	// TODO: Adapt for multi-tenancy
 	workspaceID := backendconfig.DefaultBackendConfig.GetWorkspaceIDForWriteKey("")
-	useRudderStorage := backendconfig.DefaultBackendConfig.GetDataRetentionSettingsForWorkspaceID(workspaceID).UseRudderServerStorage
 
+	retentionSettings := backendconfig.DefaultBackendConfig.DataRetentionSettings(workspaceID)
+	useRudderStorage := retentionSettings.UseRudderServerStorage
 	if useRudderStorage {
 		return getProviderAndConfigForBackupsFromEnv()
-	} else {
-		return getProviderAndConfigForBackupsFromWorkspaceSettings(backendconfig.DefaultBackendConfig.GetDataRetentionSettingsForWorkspaceID(workspaceID).StorageBucket)
 	}
-}
 
-// getProviderAndConfigForBackupsFromWorkspaceSettings returns the provider config from the workspace settings
-func getProviderAndConfigForBackupsFromWorkspaceSettings(bucket backendconfig.StorageBucket) (string, map[string]interface{}) {
-	return bucket.Provider, bucket.Config
+	return retentionSettings.StorageBucket.Provider, retentionSettings.StorageBucket.Config
 }
 
 // getProviderAndConfigForBackupsFromEnv returns the provider config from env

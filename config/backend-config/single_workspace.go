@@ -73,8 +73,8 @@ func (wc *singleWorkspaceConfig) GetWorkspaceLibrariesForWorkspaceID(workspaceID
 	return wc.workspaceIDToLibrariesMap[workspaceID]
 }
 
-// GetDataRetentionSettingsForWorkspaceID returns dataRetention settings for workspaceID
-func (wc *singleWorkspaceConfig) GetDataRetentionSettingsForWorkspaceID(workspaceID string) DataRetention {
+// DataRetentionSettings returns dataRetention settings for workspaceID
+func (wc *singleWorkspaceConfig) DataRetentionSettings(workspaceID string) DataRetention {
 	wc.workspaceIDLock.RLock()
 	defer wc.workspaceIDLock.RUnlock()
 

@@ -49,6 +49,20 @@ func (mr *MockworkspaceConfigMockRecorder) AccessToken() *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AccessToken", reflect.TypeOf((*MockworkspaceConfig)(nil).AccessToken))
 }
 
+// DataRetentionSettings mocks base method.
+func (m *MockworkspaceConfig) DataRetentionSettings(workspaceID string) DataRetention {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "DataRetentionSettings", workspaceID)
+	ret0, _ := ret[0].(DataRetention)
+	return ret0
+}
+
+// DataRetentionSettings indicates an expected call of DataRetentionSettings.
+func (mr *MockworkspaceConfigMockRecorder) DataRetentionSettings(workspaceID interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DataRetentionSettings", reflect.TypeOf((*MockworkspaceConfig)(nil).DataRetentionSettings), workspaceID)
+}
+
 // Get mocks base method.
 func (m *MockworkspaceConfig) Get(arg0 context.Context, arg1 string) (ConfigT, error) {
 	m.ctrl.T.Helper()
@@ -62,20 +76,6 @@ func (m *MockworkspaceConfig) Get(arg0 context.Context, arg1 string) (ConfigT, e
 func (mr *MockworkspaceConfigMockRecorder) Get(arg0, arg1 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Get", reflect.TypeOf((*MockworkspaceConfig)(nil).Get), arg0, arg1)
-}
-
-// GetDataRetentionSettingsForWorkspaceID mocks base method.
-func (m *MockworkspaceConfig) GetDataRetentionSettingsForWorkspaceID(arg0 string) DataRetention {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "GetDataRetentionSettingsForWorkspaceID", arg0)
-	ret0, _ := ret[0].(DataRetention)
-	return ret0
-}
-
-// GetDataRetentionSettingsForWorkspaceID indicates an expected call of GetDataRetentionSettingsForWorkspaceID.
-func (mr *MockworkspaceConfigMockRecorder) GetDataRetentionSettingsForWorkspaceID(arg0 interface{}) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetDataRetentionSettingsForWorkspaceID", reflect.TypeOf((*MockworkspaceConfig)(nil).GetDataRetentionSettingsForWorkspaceID), arg0)
 }
 
 // GetWorkspaceIDForSourceID mocks base method.
@@ -171,6 +171,20 @@ func (mr *MockBackendConfigMockRecorder) AccessToken() *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AccessToken", reflect.TypeOf((*MockBackendConfig)(nil).AccessToken))
 }
 
+// DataRetentionSettings mocks base method.
+func (m *MockBackendConfig) DataRetentionSettings(workspaceID string) DataRetention {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "DataRetentionSettings", workspaceID)
+	ret0, _ := ret[0].(DataRetention)
+	return ret0
+}
+
+// DataRetentionSettings indicates an expected call of DataRetentionSettings.
+func (mr *MockBackendConfigMockRecorder) DataRetentionSettings(workspaceID interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DataRetentionSettings", reflect.TypeOf((*MockBackendConfig)(nil).DataRetentionSettings), workspaceID)
+}
+
 // Get mocks base method.
 func (m *MockBackendConfig) Get(arg0 context.Context, arg1 string) (ConfigT, error) {
 	m.ctrl.T.Helper()
@@ -184,20 +198,6 @@ func (m *MockBackendConfig) Get(arg0 context.Context, arg1 string) (ConfigT, err
 func (mr *MockBackendConfigMockRecorder) Get(arg0, arg1 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Get", reflect.TypeOf((*MockBackendConfig)(nil).Get), arg0, arg1)
-}
-
-// GetDataRetentionSettingsForWorkspaceID mocks base method.
-func (m *MockBackendConfig) GetDataRetentionSettingsForWorkspaceID(arg0 string) DataRetention {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "GetDataRetentionSettingsForWorkspaceID", arg0)
-	ret0, _ := ret[0].(DataRetention)
-	return ret0
-}
-
-// GetDataRetentionSettingsForWorkspaceID indicates an expected call of GetDataRetentionSettingsForWorkspaceID.
-func (mr *MockBackendConfigMockRecorder) GetDataRetentionSettingsForWorkspaceID(arg0 interface{}) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetDataRetentionSettingsForWorkspaceID", reflect.TypeOf((*MockBackendConfig)(nil).GetDataRetentionSettingsForWorkspaceID), arg0)
 }
 
 // GetWorkspaceIDForSourceID mocks base method.

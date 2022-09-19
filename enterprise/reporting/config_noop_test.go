@@ -35,7 +35,7 @@ func (*NOOPConfig) GetWorkspaceLibrariesForWorkspaceID(string) backendconfig.Lib
 	return backendconfig.LibrariesT{}
 }
 
-func (*NOOPConfig) GetDataRetentionSettingsForWorkspaceID(string) backendconfig.DataRetention {
+func (*NOOPConfig) DataRetentionSettings(string) backendconfig.DataRetention {
 	return backendconfig.DataRetention{}
 }
 

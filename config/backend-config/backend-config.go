@@ -51,7 +51,7 @@ type workspaceConfig interface {
 	GetWorkspaceIDForWriteKey(string) string
 	GetWorkspaceIDForSourceID(string) string
 	GetWorkspaceLibrariesForWorkspaceID(string) LibrariesT
-	GetDataRetentionSettingsForWorkspaceID(string) DataRetention
+	DataRetentionSettings(workspaceID string) DataRetention
 }
 
 type BackendConfig interface {
