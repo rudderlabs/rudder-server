@@ -97,7 +97,7 @@ type ObjectStorageValidationRequest struct {
 	Config map[string]interface{} `json:"config"`
 }
 
-func validateObjectStorageRequest(request *proto.ValidateObjectStorageRequest) (*ObjectStorageValidationRequest, error) {
+func validateObjectStorageRequestBody(request *proto.ValidateObjectStorageRequest) (*ObjectStorageValidationRequest, error) {
 
 	byt, err := json.Marshal(request)
 	if err != nil {
@@ -134,7 +134,7 @@ func validateObjectStorageRequest(request *proto.ValidateObjectStorageRequest) (
 }
 func (w *warehousegrpc) ValidateObjectStorageDestination(ctx context.Context, request *proto.ValidateObjectStorageRequest) (response *proto.ValidateObjectStorageResponse, err error) {
 
-	r, err := validateObjectStorageRequest(request)
+	r, err := validateObjectStorageRequestBody(request)
 	if err != nil {
 		return nil, err
 	}
