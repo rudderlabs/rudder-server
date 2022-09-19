@@ -66,7 +66,7 @@ func (c *Config) checkAndHotReloadConfig(configMap map[string][]*configValue) (h
 				var _value int
 				var isSet bool
 				for _, key := range configVal.keys {
-					if c.viperIsSet(key) {
+					if c.IsSet(key) {
 						isSet = true
 						_value = c.GetInt(key, configVal.defaultValue.(int))
 						break
@@ -87,7 +87,7 @@ func (c *Config) checkAndHotReloadConfig(configMap map[string][]*configValue) (h
 				var _value int64
 				var isSet bool
 				for _, key := range configVal.keys {
-					if c.viperIsSet(key) {
+					if c.IsSet(key) {
 						isSet = true
 						_value = c.GetInt64(key, configVal.defaultValue.(int64))
 						break
@@ -108,7 +108,7 @@ func (c *Config) checkAndHotReloadConfig(configMap map[string][]*configValue) (h
 				var _value string
 				var isSet bool
 				for _, key := range configVal.keys {
-					if c.viperIsSet(key) {
+					if c.IsSet(key) {
 						isSet = true
 						_value = c.GetString(key, configVal.defaultValue.(string))
 						break
@@ -128,7 +128,7 @@ func (c *Config) checkAndHotReloadConfig(configMap map[string][]*configValue) (h
 				var _value time.Duration
 				var isSet bool
 				for _, key := range configVal.keys {
-					if c.viperIsSet(key) {
+					if c.IsSet(key) {
 						isSet = true
 						_value = c.GetDuration(key, configVal.defaultValue.(int64), configVal.multiplier.(time.Duration))
 						break
@@ -148,7 +148,7 @@ func (c *Config) checkAndHotReloadConfig(configMap map[string][]*configValue) (h
 				var _value bool
 				var isSet bool
 				for _, key := range configVal.keys {
-					if c.viperIsSet(key) {
+					if c.IsSet(key) {
 						isSet = true
 						_value = c.GetBool(key, configVal.defaultValue.(bool))
 						break
@@ -168,7 +168,7 @@ func (c *Config) checkAndHotReloadConfig(configMap map[string][]*configValue) (h
 				var _value float64
 				var isSet bool
 				for _, key := range configVal.keys {
-					if c.viperIsSet(key) {
+					if c.IsSet(key) {
 						isSet = true
 						_value = c.GetFloat64(key, configVal.defaultValue.(float64))
 						break
