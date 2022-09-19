@@ -89,7 +89,7 @@ func (mj *MultiTenantHandleT) GetAllJobs(ctx context.Context, workspaceCount map
 	}
 	start := time.Now()
 	dsQueryCount := 0
-	dsQueryLimit := params.DSLimit
+	dsQueryLimit := mj.dsLimit
 	for _, ds := range dsList {
 		if (dsQueryLimit > 0 && dsQueryCount >= dsQueryLimit) || len(workspaceCount) == 0 {
 			break

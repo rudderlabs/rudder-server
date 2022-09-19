@@ -20,7 +20,6 @@ type Handler struct {
 	workers                  []*SourceWorkerT
 	dumpsLoader              *dumpsLoaderHandleT
 	dbReadSize               int
-	dsQueryLimit             int
 	tablePrefix              string
 	uploader                 filemanager.FileManager
 	initSourceWorkersChannel chan bool
@@ -39,7 +38,6 @@ func (handle *Handler) generatorLoop(ctx context.Context) {
 		queryParams := jobsdb.GetQueryParamsT{
 			CustomValFilters: []string{"replay"},
 			JobsLimit:        handle.dbReadSize,
-			DSLimit:          handle.dsQueryLimit,
 		}
 		toRetry, err := handle.db.GetToRetry(context.TODO(), queryParams)
 		if err != nil {
@@ -61,7 +59,7 @@ func (handle *Handler) generatorLoop(ctx context.Context) {
 
 		if len(combinedList) == 0 {
 			if breakLoop {
-				executingList, err := handle.db.GetExecuting(context.TODO(), jobsdb.GetQueryParamsT{CustomValFilters: []string{"replay"}, JobsLimit: handle.dbReadSize, DSLimit: handle.dsQueryLimit})
+				executingList, err := handle.db.GetExecuting(context.TODO(), jobsdb.GetQueryParamsT{CustomValFilters: []string{"replay"}, JobsLimit: handle.dbReadSize})
 				if err != nil {
 					pkgLogger.Errorf("Error getting executing jobs: %v", err)
 					panic(err)
@@ -154,7 +152,6 @@ func (handle *Handler) Setup(ctx context.Context, dumpsLoader *dumpsLoaderHandle
 	handle.noOfWorkers = config.GetEnvAsInt("WORKERS_PER_SOURCE", 4)
 	handle.dumpsLoader = dumpsLoader
 	handle.dbReadSize = config.GetEnvAsInt("DB_READ_SIZE", 10)
-	handle.dsQueryLimit = config.GetEnvAsInt("DS_QUERY_LIMIT", 0)
 	handle.tablePrefix = tablePrefix
 	handle.initSourceWorkersChannel = make(chan bool)
 

@@ -105,10 +105,6 @@ type GetQueryParamsT struct {
 	// Limit the total number of jobs.
 	// A value less than or equal to zero will return no results
 	JobsLimit int
-	// Limit the number of Datasets to query.
-	// A value less than or equal to zero will disable this limit (no limit),
-	// only values greater than zero are considered as valid limits.
-	DSLimit int
 	// Limit the total number of events, 1 job contains 1+ event(s).
 	// A value less than or equal to zero will disable this limit (no limit),
 	// only values greater than zero are considered as valid limits.
@@ -438,6 +434,7 @@ type HandleT struct {
 	enableWriterQueue             bool
 	enableReaderQueue             bool
 	clearAll                      bool
+	dsLimit                       int
 	maxReaders                    int
 	maxWriters                    int
 	maxOpenConnections            int
@@ -736,6 +733,12 @@ func WithStatusHandler() OptsFunc {
 func WithPreBackupHandlers(preBackupHandlers []prebackup.Handler) OptsFunc {
 	return func(jd *HandleT) {
 		jd.preBackupHandlers = preBackupHandlers
+	}
+}
+
+func WithDSLimit(limit int) OptsFunc {
+	return func(jd *HandleT) {
+		jd.dsLimit = limit
 	}
 }
 
@@ -4341,7 +4344,7 @@ func (jd *HandleT) getUnprocessed(ctx context.Context, params GetQueryParamsT) (
 
 	var completeUnprocessedJobs JobsResult
 	dsQueryCount := 0
-	dsLimit := params.DSLimit
+	dsLimit := jd.dsLimit
 	for _, ds := range dsList {
 		if dsLimit > 0 && dsQueryCount >= dsLimit {
 			break
@@ -4558,7 +4561,7 @@ func (jd *HandleT) GetProcessed(ctx context.Context, params GetQueryParamsT) (Jo
 
 	var completeProcessedJobs JobsResult
 	dsQueryCount := 0
-	dsLimit := params.DSLimit
+	dsLimit := jd.dsLimit
 	for _, ds := range dsList {
 		if dsLimit > 0 && dsQueryCount >= dsLimit {
 			break
