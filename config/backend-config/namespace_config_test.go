@@ -99,6 +99,12 @@ func Test_Namespace_Get(t *testing.T) {
 		)
 	}
 
+	t.Log("correct workspaceID to dataRetention settings mapping")
+	w1DataRetention := DataRetention{EnableReportingPii: true}
+	w2DataRetention := DataRetention{EnableReportingPii: false}
+	require.Equal(t, w1DataRetention, client.GetDataRetentionSettingsForWorkspaceID(workspaceID1))
+	require.Equal(t, w2DataRetention, client.GetDataRetentionSettingsForWorkspaceID(workspaceID2))
+
 	t.Run("Invalid credentials", func(t *testing.T) {
 		client := &namespaceConfig{
 			Client:           ts.Client(),

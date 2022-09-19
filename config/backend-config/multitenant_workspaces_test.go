@@ -91,6 +91,23 @@ func TestMultiTenantWorkspacesConfig_GetWorkspaceLibrariesForWorkspaceID(t *test
 	})
 }
 
+func TestMultiTenantWorkspacesConfig_GetDataRetentionSettingsForWorkspaceID(t *testing.T) {
+	t.Run("found", func(t *testing.T) {
+		workspaceID1 := "some-workspace-id1"
+		workspaceID2 := "some-workspace-id2"
+		dataRetentionW1 := DataRetention{EnableReportingPii: true}
+		dataRetentionW2 := DataRetention{EnableReportingPii: false}
+		wc := &multiTenantWorkspacesConfig{
+			workspaceIDToDataRetentionMap: map[string]DataRetention{
+				workspaceID1: dataRetentionW1,
+				workspaceID2: dataRetentionW2,
+			},
+		}
+		require.Equal(t, dataRetentionW1, wc.GetDataRetentionSettingsForWorkspaceID(workspaceID1))
+		require.Equal(t, dataRetentionW2, wc.GetDataRetentionSettingsForWorkspaceID(workspaceID2))
+	})
+}
+
 func TestMultiTenantWorkspacesConfig_Get(t *testing.T) {
 	initBackendConfig()
 

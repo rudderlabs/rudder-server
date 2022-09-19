@@ -851,7 +851,12 @@
             {
                 "versionId": "2AWIMafC3YPKHXazWWvVn5hSGnR"
             }
-        ]
+        ],
+        "settings": {
+            "dataRetention": {
+                "enableReportingPii": true
+            }
+        }
     },
     "2CChLejq5aIWi3qsKVm1PjHkyTj": {
         "sources": [
@@ -989,6 +994,11 @@
             {
                 "versionId": "2AWIMafC3YPKHXazWWvVn5hSGnR"
             }
-        ]
+        ],
+        "settings": {
+            "dataRetention": {
+                "enableReportingPii": false
+            }
+        }
     }
 }
