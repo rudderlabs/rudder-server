@@ -113,7 +113,6 @@ message ValidateObjectStorageRequest {
 }
 
 message ValidateObjectStorageResponse{
-  int32 status=1;
   bool isValid=2;
   string error=3;
 }
