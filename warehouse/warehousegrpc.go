@@ -98,7 +98,6 @@ type ObjectStorageValidationRequest struct {
 	Config map[string]interface{} `json:"config"`
 }
 
-// TODO: Can we simplify this function a bit ?
 func (w *warehousegrpc) ValidateObjectStorageDestination(ctx context.Context, request *proto.ValidateObjectStorageRequest) (response *proto.ValidateObjectStorageResponse, err error) {
 
 	byt, err := json.Marshal(request)

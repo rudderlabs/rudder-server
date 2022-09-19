@@ -102,7 +102,7 @@ type ValidateObjectRequestT struct {
 
 var UploadAPI UploadAPIT
 
-var DOWNLOAD_FILE_NAME = "downloadfile.tmp"
+var DownloadFileNamePattern = "downloadfile.*.tmp"
 
 func InitWarehouseAPI(dbHandle *sql.DB, log logger.LoggerI) error {
 	connectionToken, isMultiWorkspace, err := deployment.GetConnectionToken()
@@ -631,11 +631,13 @@ func checkMapForValidKey(configMap map[string]interface{}, key string) bool {
 		return false
 	}
 
-	if _, ok := value.(string); !ok {
+	if valStr, ok := value.(string); !ok {
 		return false
+	} else {
+		return len(valStr) != 0
 	}
 
-	return value.(string) != ""
+	return false
 }
 
 func validateObjectStorage(ctx context.Context, request *ObjectStorageValidationRequest) error {
@@ -657,7 +659,7 @@ func validateObjectStorage(ctx context.Context, request *ObjectStorageValidation
 	if err != nil {
 		return fmt.Errorf("unable to create temp load file: %w", err)
 	}
-	defer misc.RemoveFilePaths(filePath)
+	defer os.Remove(filePath)
 
 	f, err := os.Open(filePath)
 	if err != nil {
@@ -668,22 +670,27 @@ func validateObjectStorage(ctx context.Context, request *ObjectStorageValidation
 	if err != nil {
 		return InvalidDestinationCredErr{Base: err, Operation: "upload"}
 	}
+	f.Close()
 
 	key := fileManager.GetDownloadKeyFromFileLocation(uploadOutput.Location)
 
-	filePtr, err := os.OpenFile(DOWNLOAD_FILE_NAME, os.O_CREATE|os.O_RDWR|os.O_TRUNC, 0o644)
+	tmpDirectory, err := misc.CreateTMPDIR()
+	if err != nil {
+		return fmt.Errorf("error while Creating file to download data")
+
+	}
+	f, err = os.CreateTemp(tmpDirectory, DownloadFileNamePattern)
 	if err != nil {
 		return fmt.Errorf("error while Creating file to download data")
 	}
 
-	// TODO: create a temp file here ?
-	// Tempfile automatically removes itself as it looses scope.
-	defer os.Remove(DOWNLOAD_FILE_NAME)
+	defer os.Remove(f.Name())
 
-	err = fileManager.Download(ctx, filePtr, key)
+	err = fileManager.Download(ctx, f, key)
 	if err != nil {
 		return InvalidDestinationCredErr{Base: err, Operation: "download"}
 	}
+	f.Close()
 
 	return nil
 }
