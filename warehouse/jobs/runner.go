@@ -16,8 +16,7 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
-//Global variable that initializes the AsyncJobWhT with necessary values
-
+//Initializes AsyncJobWh structure with appropriate
 func InitWarehouseJobsAPI(dbHandle *sql.DB, notifier *pgnotifier.PgNotifierT, ctx context.Context) *AsyncJobWhT {
 
 	AsyncJobWh := AsyncJobWhT{
@@ -73,10 +72,7 @@ func (asyncWhJob *AsyncJobWhT) getTableNamesBy(sourceid string, destinationid st
 	return tableNames, nil
 }
 
-/*
-Takes AsyncJobPayloadT and adds rows to table wh_async_jobs
-Should id be int64 or uuid?
-*/
+//Takes AsyncJobPayloadT and adds rows to table wh_async_jobs
 func (asyncWhJob *AsyncJobWhT) addJobstoDB(ctx context.Context, payload *AsyncJobPayloadT) (jobId int64, err error) {
 	pkgLogger.Infof("Adding job to the wh_asnc_jobs jobrunid:%s, taskrunid: %s and tablename: %s", payload.JobRunID, payload.TaskRunID, payload.TableName)
 	sqlStatement := fmt.Sprintf(`INSERT INTO %s (sourceid, namespace, destinationid, jobrunid, taskrunid, tablename,  status, created_at, updated_at,jobtype,async_job_type,starttime)
