@@ -454,13 +454,12 @@ func (job *UploadJobT) run() (err error) {
 
 		case ExportedData:
 			newStatus = nextUploadState.failed
-			_, currentJobSucceededTables := job.getTablesToSkip()
+			_, currentJobSucceededTables := job.getTablesToSkip(false)
 
 			var loadErrors []error
 			var loadErrorLock sync.Mutex
-			var loadFilesTableMap map[tableNameT]bool
 
-			loadFilesTableMap, loadFilesTableEventCountMap, err = job.getLoadFilesTablePresenceAndEventCountMaps()
+			loadFilesTableEventCountMap, err = job.getLoadFilesTableEventCountMap()
 			if err != nil {
 				err = fmt.Errorf("unable to get load files table map: %w", err)
 				break
@@ -480,7 +479,7 @@ func (job *UploadJobT) run() (err error) {
 					wg.Done()
 					return
 				}
-				err = job.exportUserTables(loadFilesTableMap)
+				err = job.exportUserTables(loadFilesTableEventCountMap)
 				if err != nil {
 					loadErrorLock.Lock()
 					loadErrors = append(loadErrors, err)
@@ -511,7 +510,7 @@ func (job *UploadJobT) run() (err error) {
 
 			rruntime.GoForWarehouse(func() {
 				specialTables := append(userTables, identityTables...)
-				err = job.exportRegularTables(specialTables, loadFilesTableMap)
+				err = job.exportRegularTables(specialTables, loadFilesTableEventCountMap)
 				if err != nil {
 					loadErrorLock.Lock()
 					loadErrors = append(loadErrors, err)
@@ -567,9 +566,8 @@ func (job *UploadJobT) run() (err error) {
 						TerminalPU: true,
 					},
 					StatusDetail: &types.StatusDetail{
-						Status:     jobsdb.Succeeded.State,
-						StatusCode: 200,
-						// Count:       job.getTotalRowsInStagingFiles(),
+						Status:      jobsdb.Succeeded.State,
+						StatusCode:  200,
 						Count:       int64(eventCount),
 						EventName:   string(table),
 						SampleEvent: []byte("{}"),
@@ -600,7 +598,7 @@ func (job *UploadJobT) run() (err error) {
 	return nil
 }
 
-func (job *UploadJobT) exportUserTables(loadFilesTableMap map[tableNameT]bool) (err error) {
+func (job *UploadJobT) exportUserTables(loadFilesTableEventCountMap map[tableNameT]int) (err error) {
 	uploadSchema := job.upload.UploadSchema
 	if _, ok := uploadSchema[job.identifiesTableName()]; ok {
 
@@ -608,7 +606,7 @@ func (job *UploadJobT) exportUserTables(loadFilesTableMap map[tableNameT]bool) (
 		loadTimeStat.Start()
 		defer loadTimeStat.End()
 		var loadErrors []error
-		loadErrors, err = job.loadUserTables(loadFilesTableMap)
+		loadErrors, err = job.loadUserTables(loadFilesTableEventCountMap)
 		if err != nil {
 			return
 		}
@@ -647,14 +645,14 @@ func (job *UploadJobT) exportIdentities() (err error) {
 	return
 }
 
-func (job *UploadJobT) exportRegularTables(specialTables []string, loadFilesTableMap map[tableNameT]bool) (err error) {
+func (job *UploadJobT) exportRegularTables(specialTables []string, loadFilesTableEventCountMap map[tableNameT]int) (err error) {
 	//[]string{job.identifiesTableName(), job.usersTableName(), job.identityMergeRulesTableName(), job.identityMappingsTableName()}
 	// Export all other tables
 	loadTimeStat := job.timerStat("other_tables_load_time")
 	loadTimeStat.Start()
 	defer loadTimeStat.End()
 
-	loadErrors := job.loadAllTablesExcept(specialTables, loadFilesTableMap)
+	loadErrors := job.loadAllTablesExcept(specialTables, loadFilesTableEventCountMap)
 	job.hasAllTablesSkipped = areAllTableSkipErrors(loadErrors)
 
 	if len(loadErrors) > 0 {
@@ -698,8 +696,8 @@ type TableUploadIDInfoT struct {
 	error    string
 }
 
-func (job *UploadJobT) fetchPendingUploadTableStatus() []*TableUploadStatusT {
-	if job.tableUploadStatuses != nil {
+func (job *UploadJobT) fetchPendingUploadTableStatus(forceQueryExecution bool) []*TableUploadStatusT {
+	if job.tableUploadStatuses != nil && !forceQueryExecution {
 		return job.tableUploadStatuses
 	}
 	sqlStatement := fmt.Sprintf(`
@@ -757,10 +755,6 @@ func (job *UploadJobT) fetchPendingUploadTableStatus() []*TableUploadStatusT {
 	return tableUploadStatuses
 }
 
-func (job *UploadJobT) resetTableUploadStatuses() {
-	job.tableUploadStatuses = nil
-}
-
 func getTableUploadStatusMap(tableUploadStatuses []*TableUploadStatusT) map[int64]map[string]*TableUploadStatusInfoT {
 	tableUploadStatus := make(map[int64]map[string]*TableUploadStatusInfoT)
 	for _, tUploadStatus := range tableUploadStatuses {
@@ -775,8 +769,8 @@ func getTableUploadStatusMap(tableUploadStatuses []*TableUploadStatusT) map[int6
 	return tableUploadStatus
 }
 
-func (job *UploadJobT) getTablesToSkip() (map[string]*TableUploadIDInfoT, map[string]bool) {
-	tableUploadStatuses := job.fetchPendingUploadTableStatus()
+func (job *UploadJobT) getTablesToSkip(forcePendingUploadTableStatusQueryExecution bool) (map[string]*TableUploadIDInfoT, map[string]bool) {
+	tableUploadStatuses := job.fetchPendingUploadTableStatus(forcePendingUploadTableStatusQueryExecution)
 	tableUploadStatus := getTableUploadStatusMap(tableUploadStatuses)
 	previouslyFailedTableMap := make(map[string]*TableUploadIDInfoT)
 	currentlySucceededTableMap := make(map[string]bool)
@@ -861,7 +855,7 @@ func (tse *TableSkipError) Error() string {
 	return fmt.Sprintf("Skipping %s table because it previously failed to load in an earlier job: %d with error: %s", tse.tableName, tse.previousJobID, tse.previousJobError)
 }
 
-func (job *UploadJobT) loadAllTablesExcept(skipLoadForTables []string, loadFilesTableMap map[tableNameT]bool) []error {
+func (job *UploadJobT) loadAllTablesExcept(skipLoadForTables []string, loadFilesTableEventCountMap map[tableNameT]int) []error {
 	uploadSchema := job.upload.UploadSchema
 	var parallelLoads int
 	var ok bool
@@ -878,7 +872,7 @@ func (job *UploadJobT) loadAllTablesExcept(skipLoadForTables []string, loadFiles
 
 	var alteredSchemaInAtleastOneTable bool
 	loadChan := make(chan struct{}, parallelLoads)
-	previouslyFailedTables, currentJobSucceededTables := job.getTablesToSkip()
+	previouslyFailedTables, currentJobSucceededTables := job.getTablesToSkip(false)
 	for tableName := range uploadSchema {
 		if misc.Contains(skipLoadForTables, tableName) {
 			wg.Done()
@@ -893,7 +887,7 @@ func (job *UploadJobT) loadAllTablesExcept(skipLoadForTables []string, loadFiles
 			wg.Done()
 			continue
 		}
-		hasLoadFiles := loadFilesTableMap[tableNameT(tableName)]
+		_, hasLoadFiles := loadFilesTableEventCountMap[tableNameT(tableName)]
 		if !hasLoadFiles {
 			wg.Done()
 			if misc.Contains(alwaysMarkExported, strings.ToLower(tableName)) {
@@ -1024,12 +1018,12 @@ func (job *UploadJobT) loadTable(tName string) (alteredSchema bool, err error) {
 	return
 }
 
-func (job *UploadJobT) loadUserTables(loadFilesTableMap map[tableNameT]bool) ([]error, error) {
+func (job *UploadJobT) loadUserTables(loadFilesTableEventCountMap map[tableNameT]int) ([]error, error) {
 	var hasLoadFiles bool
 	userTables := []string{job.identifiesTableName(), job.usersTableName()}
 
 	var err error
-	previouslyFailedTables, currentJobSucceededTables := job.getTablesToSkip()
+	previouslyFailedTables, currentJobSucceededTables := job.getTablesToSkip(false)
 	for _, tName := range userTables {
 		if prevJobStatus, ok := previouslyFailedTables[tName]; ok {
 			err = &TableSkipError{tableName: tName, previousJobID: prevJobStatus.uploadID, previousJobError: prevJobStatus.error}
@@ -1040,7 +1034,7 @@ func (job *UploadJobT) loadUserTables(loadFilesTableMap map[tableNameT]bool) ([]
 		if _, ok := currentJobSucceededTables[tName]; ok {
 			continue
 		}
-		hasLoadFiles = loadFilesTableMap[tableNameT(tName)]
+		_, hasLoadFiles = loadFilesTableEventCountMap[tableNameT(tName)]
 		if hasLoadFiles {
 			// There is at least one table to load
 			break
@@ -1087,7 +1081,7 @@ func (job *UploadJobT) loadUserTables(loadFilesTableMap map[tableNameT]bool) ([]
 func (job *UploadJobT) loadIdentityTables(populateHistoricIdentities bool) (loadErrors []error, tableUploadErr error) {
 	pkgLogger.Infof(`[WH]: Starting load for identity tables in namespace %s of destination %s:%s`, job.warehouse.Namespace, job.warehouse.Type, job.warehouse.Destination.ID)
 	identityTables := []string{job.identityMergeRulesTableName(), job.identityMappingsTableName()}
-	previouslyFailedTables, currentJobSucceededTables := job.getTablesToSkip()
+	previouslyFailedTables, currentJobSucceededTables := job.getTablesToSkip(false)
 	for _, tableName := range identityTables {
 		if prevJobStatus, ok := previouslyFailedTables[tableName]; ok {
 			return []error{&TableSkipError{tableName: tableName, previousJobID: prevJobStatus.uploadID, previousJobError: prevJobStatus.error}}, nil
@@ -1243,7 +1237,7 @@ func (job *UploadJobT) setUploadStatus(statusOpts UploadStatusOpts) (err error) 
 
 	uploadColumnOpts := UploadColumnsOpts{Fields: additionalFields}
 
-	if statusOpts.ReportingMetrics != nil && len(statusOpts.ReportingMetrics) > 0 {
+	if len(statusOpts.ReportingMetrics) > 0 {
 		txn, err := dbHandle.Begin()
 		if err != nil {
 			return err
@@ -1481,15 +1475,14 @@ func (job *UploadJobT) setUploadError(statusError error, state string) (string, 
 		return "", fmt.Errorf("unable to change upload columns: %w", err)
 	}
 
-	job.resetTableUploadStatuses()
-	_, currentJobSucceededTables := job.getTablesToSkip()
-	_, loadFilesTableEventCountMap, err := job.getLoadFilesTablePresenceAndEventCountMaps()
+	_, currentJobSucceededTables := job.getTablesToSkip(true)
+	loadFilesTableEventCountMap, err := job.getLoadFilesTableEventCountMap()
 	if err != nil {
 		loadFilesTableEventCountMap = make(map[tableNameT]int)
 	}
 
 	for tableName := range job.upload.UploadSchema {
-		_, ok := currentJobSucceededTables[string(tableName)]
+		_, ok := currentJobSucceededTables[tableName]
 
 		if ok {
 			continue
@@ -1604,14 +1597,13 @@ func (job *UploadJobT) setStagingFilesStatus(stagingFiles []*StagingFileT, statu
 	return
 }
 
-func (job *UploadJobT) getLoadFilesTablePresenceAndEventCountMaps() (loadFilesMap map[tableNameT]bool, loadFilesEventCountMaps map[tableNameT]int, err error) {
-	loadFilesMap = make(map[tableNameT]bool)
+func (job *UploadJobT) getLoadFilesTableEventCountMap() (loadFilesEventCountMaps map[tableNameT]int, err error) {
 	loadFilesEventCountMaps = make(map[tableNameT]int)
 
 	sourceID := job.warehouse.Source.ID
 	destID := job.warehouse.Destination.ID
 
-	sqlStatement := fmt.Sprintf(`SELECT table_name, sum(total_events) FROM %s WHERE ( source_id = $1 AND destination_id = $2 AND id >= $3 AND id <= $4 ) group by table_name;`,
+	sqlStatement := fmt.Sprintf(`SELECT table_name, SUM(total_events) FROM %s WHERE ( source_id = $1 AND destination_id = $2 AND id >= $3 AND id <= $4 ) GROUP BY table_name;`,
 		warehouseutils.WarehouseLoadFilesTable,
 	)
 	sqlStatementArgs := []interface{}{
@@ -1639,7 +1631,6 @@ func (job *UploadJobT) getLoadFilesTablePresenceAndEventCountMaps() (loadFilesMa
 			err = fmt.Errorf("error occurred while processing distinct table name query for jobId: %d, sourceId: %s, destinationId: %s, err: %w", job.upload.ID, job.warehouse.Source.ID, job.warehouse.Destination.ID, err)
 			return
 		}
-		loadFilesMap[tableNameT(tableName)] = true
 		loadFilesEventCountMaps[tableNameT(tableName)] = eventCount
 	}
 	return
