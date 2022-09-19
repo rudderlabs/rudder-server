@@ -169,9 +169,9 @@ func mapPayloadToJob(wjs jobSchema, workspaceID string) (model.Job, error) {
 		usrAttribute[i].Opts = make(map[string]string)
 		for key, value := range usrAttr {
 			if key == "userId" {
-				usrAttribute[i].UserID = value.(string)
+				usrAttribute[i].UserID = value
 			} else {
-				usrAttribute[i].Opts[key] = value.(string)
+				usrAttribute[i].Opts[key] = value
 			}
 		}
 	}

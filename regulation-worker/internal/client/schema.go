@@ -10,4 +10,4 @@ type statusJobSchema struct {
 	Status string `json:"status"`
 }
 
-type userAttributesSchema map[string]interface{}
+type userAttributesSchema map[string]string
