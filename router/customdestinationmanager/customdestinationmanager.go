@@ -60,7 +60,7 @@ type CustomManagerT struct {
 
 // clientHolder keeps the config of a destination and corresponding producer for a stream destination
 type clientHolder struct {
-	config interface{}
+	config map[string]interface{}
 	client interface{}
 }
 
@@ -84,7 +84,8 @@ func loadConfig() {
 
 // newClient delegates the call to the appropriate manager
 func (customManager *CustomManagerT) newClient(destID string) error {
-	destConfig := customManager.config[destID].Config
+	destination := customManager.config[destID]
+	destConfig := destination.Config
 	_, err := customManager.breaker[destID].breaker.Execute(func() (interface{}, error) {
 		var customDestination *clientHolder
 		var err error
@@ -92,7 +93,7 @@ func (customManager *CustomManagerT) newClient(destID string) error {
 		switch customManager.managerType {
 		case STREAM:
 			var producer interface{}
-			producer, err = streammanager.NewProducer(destConfig, customManager.destType, common.Opts{
+			producer, err = streammanager.NewProducer(&destination, common.Opts{
 				Timeout: customManager.timeout,
 			})
 			if err == nil {
@@ -121,15 +122,16 @@ func (customManager *CustomManagerT) newClient(destID string) error {
 	return err
 }
 
-func (customManager *CustomManagerT) send(jsonData json.RawMessage, destType string, client, config interface{}) (int, string) {
+func (customManager *CustomManagerT) send(jsonData json.RawMessage, client interface{}, config map[string]interface{}) (int, string) {
 	var statusCode int
 	var respBody string
 	switch customManager.managerType {
 	case STREAM:
-		statusCode, _, respBody = streammanager.Produce(jsonData, destType, client, config)
+		// If client is not properly initialized then it won't reach here
+		streamProducer, _ := client.(common.StreamProducer)
+		statusCode, _, respBody = streamProducer.Produce(jsonData, config)
 	case KV:
 		kvManager, _ := client.(kvstoremanager.KVStoreManager)
-
 		key, fields := kvstoremanager.EventToKeyValue(jsonData)
 		err := kvManager.HMSet(key, fields)
 		statusCode = kvManager.StatusCode(err)
@@ -175,7 +177,7 @@ func (customManager *CustomManagerT) SendData(jsonData json.RawMessage, destID s
 	}
 	clientLock.RUnlock()
 
-	respStatusCode, respBody := customManager.send(jsonData, customManager.destType, customDestination.client, customDestination.config)
+	respStatusCode, respBody := customManager.send(jsonData, customDestination.client, customDestination.config)
 
 	if respStatusCode == CLIENT_EXPIRED_CODE {
 		clientLock.Lock()
@@ -187,7 +189,7 @@ func (customManager *CustomManagerT) SendData(jsonData json.RawMessage, destID s
 		clientLock.RLock()
 		customDestination = customManager.client[destID]
 		clientLock.RUnlock()
-		respStatusCode, respBody = customManager.send(jsonData, customManager.destType, customDestination.client, customDestination.config)
+		respStatusCode, respBody = customManager.send(jsonData, customDestination.client, customDestination.config)
 	}
 
 	return respStatusCode, respBody
@@ -197,7 +199,8 @@ func (customManager *CustomManagerT) close(destID string) {
 	customDestination := customManager.client[destID]
 	switch customManager.managerType {
 	case STREAM:
-		_ = streammanager.Close(customDestination.client, customManager.destType)
+		streamProducer, _ := customDestination.client.(common.StreamProducer)
+		_ = streamProducer.Close()
 	case KV:
 		kvManager, _ := customDestination.client.(kvstoremanager.KVStoreManager)
 		_ = kvManager.Close()
@@ -212,7 +215,8 @@ func (customManager *CustomManagerT) refreshClient(destID string) error {
 		pkgLogger.Infof("[CDM %s] [Token Expired] Closing Existing client for destination id: %s", customManager.destType, destID)
 		switch customManager.managerType {
 		case STREAM:
-			_ = streammanager.Close(customDestination.client, customManager.destType)
+			streamProducer, _ := customDestination.client.(common.StreamProducer)
+			streamProducer.Close()
 		case KV:
 			kvManager, _ := customDestination.client.(kvstoremanager.KVStoreManager)
 			_ = kvManager.Close()

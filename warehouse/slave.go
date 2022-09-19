@@ -483,11 +483,11 @@ func processStagingFile(job PayloadT, workerIndex int) (loadFileUploadOutputs []
 
 			dataTypeInSchema, ok := job.UploadSchema[tableName][columnName]
 			violatedConstraints := ViolatedConstraints(job.DestinationType, &batchRouterEvent, columnName)
-			if ok && ((columnType != dataTypeInSchema) || (violatedConstraints.isViolated)) {
+			if ok && ((columnType != dataTypeInSchema) || (violatedConstraints.IsViolated)) {
 				newColumnVal, ok := HandleSchemaChange(dataTypeInSchema, columnType, columnVal)
-				if !ok || violatedConstraints.isViolated {
-					if violatedConstraints.isViolated {
-						eventLoader.AddColumn(columnName, job.UploadSchema[tableName][columnName], violatedConstraints.violatedIdentifier)
+				if !ok || violatedConstraints.IsViolated {
+					if violatedConstraints.IsViolated {
+						eventLoader.AddColumn(columnName, job.UploadSchema[tableName][columnName], violatedConstraints.ViolatedIdentifier)
 					} else {
 						eventLoader.AddEmptyColumn(columnName)
 					}
@@ -625,9 +625,9 @@ func (jobRun *JobRunT) handleDiscardTypes(tableName, columnName string, columnVa
 	job := jobRun.job
 	rowID, hasID := columnData[job.getColumnName("id")]
 	receivedAt, hasReceivedAt := columnData[job.getColumnName("received_at")]
-	if violatedConstraints.isViolated {
+	if violatedConstraints.IsViolated {
 		if !hasID {
-			rowID = violatedConstraints.violatedIdentifier
+			rowID = violatedConstraints.ViolatedIdentifier
 			hasID = true
 		}
 		if !hasReceivedAt {

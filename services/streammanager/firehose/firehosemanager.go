@@ -8,6 +8,7 @@ import (
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/firehose"
+	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/services/streammanager/common"
 	"github.com/rudderlabs/rudder-server/utils/awsutils"
 	"github.com/rudderlabs/rudder-server/utils/logger"
@@ -29,8 +30,8 @@ type FireHoseClient interface {
 }
 
 // NewProducer creates a producer based on destination config
-func NewProducer(destinationConfig map[string]interface{}, o common.Opts) (*FireHoseProducer, error) {
-	sessionConfig, err := awsutils.NewSessionConfig(destinationConfig, o.Timeout, firehose.ServiceName)
+func NewProducer(destination *backendconfig.DestinationT, o common.Opts) (*FireHoseProducer, error) {
+	sessionConfig, err := awsutils.NewSessionConfigForDestination(destination, o.Timeout, firehose.ServiceName)
 	if err != nil {
 		return nil, err
 	}
@@ -87,4 +88,9 @@ func (producer *FireHoseProducer) Produce(jsonData json.RawMessage, _ interface{
 	}
 
 	return 200, "Success", fmt.Sprintf("Message delivered with Record information %v", putOutput)
+}
+
+func (*FireHoseProducer) Close() error {
+	// no-op
+	return nil
 }
