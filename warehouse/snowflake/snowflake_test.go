@@ -4,19 +4,18 @@ package snowflake_test
 
 import (
 	"database/sql"
-	"encoding/json"
 	"fmt"
-	"os"
 	"testing"
 
-	"github.com/stretchr/testify/require"
+	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 
-	"github.com/gofrs/uuid"
+	"github.com/rudderlabs/rudder-server/utils/timeutil"
 
 	"github.com/rudderlabs/rudder-server/warehouse/client"
 	"github.com/rudderlabs/rudder-server/warehouse/snowflake"
 	"github.com/rudderlabs/rudder-server/warehouse/testhelper"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
+	"github.com/stretchr/testify/require"
 )
 
 type TestHandle struct {
@@ -28,35 +27,12 @@ type TestHandle struct {
 
 var handle *TestHandle
 
-const (
-	TestCredentialsKey = testhelper.SnowflakeIntegrationTestCredentials
-	TestSchemaKey      = testhelper.SnowflakeIntegrationTestSchema
-)
-
-// snowflakeCredentials extracting snowflake credentials
-func snowflakeCredentials() (snowflakeCredentials snowflake.SnowflakeCredentialsT, err error) {
-	cred, exists := os.LookupEnv(TestCredentialsKey)
-	if !exists {
-		err = fmt.Errorf("following %s does not exists while running the Snowflake test", TestCredentialsKey)
-		return
-	}
-
-	err = json.Unmarshal([]byte(cred), &snowflakeCredentials)
-	if err != nil {
-		err = fmt.Errorf("error occurred while unmarshalling snowflake test credentials with err: %s", err.Error())
-		return
-	}
-	return
-}
-
-// VerifyConnection test connection for snowflake
-func (t *TestHandle) VerifyConnection() (err error) {
-	credentials, err := snowflakeCredentials()
+func (t *TestHandle) VerifyConnection() error {
+	credentials, err := testhelper.SnowflakeCredentials()
 	if err != nil {
 		return err
 	}
-
-	err = testhelper.WithConstantBackoff(func() (err error) {
+	return testhelper.WithConstantBackoff(func() (err error) {
 		handle.DB, err = snowflake.Connect(credentials)
 		if err != nil {
 			err = fmt.Errorf("could not connect to warehouse snowflake with error: %w", err)
@@ -64,17 +40,11 @@ func (t *TestHandle) VerifyConnection() (err error) {
 		}
 		return
 	})
-	if err != nil {
-		return fmt.Errorf("error while running test connection for snowflake with err: %s", err.Error())
-	}
-	return nil
 }
 
 func TestSnowflakeIntegration(t *testing.T) {
-	t.Skip()
+	t.SkipNow()
 
-	// Cleanup resources
-	// Dropping temporary schema
 	t.Cleanup(func() {
 		require.NoError(t, testhelper.WithConstantBackoff(func() (err error) {
 			_, err = handle.DB.Exec(fmt.Sprintf(`DROP SCHEMA "%s" CASCADE;`, handle.Schema))
@@ -82,90 +52,95 @@ func TestSnowflakeIntegration(t *testing.T) {
 		}), fmt.Sprintf("Failed dropping schema %s for Snowflake", handle.Schema))
 	})
 
-	// Setting up the test configuration
 	warehouseTest := &testhelper.WareHouseTest{
 		Client: &client.Client{
 			SQL:  handle.DB,
 			Type: client.SQLClient,
 		},
-		WriteKey:             handle.WriteKey,
-		Schema:               handle.Schema,
-		Tables:               handle.Tables,
-		TablesQueryFrequency: testhelper.LongRunningQueryFrequency,
-		EventsCountMap:       testhelper.DefaultEventMap(),
-		MessageId:            uuid.Must(uuid.NewV4()).String(),
-		UserId:               testhelper.GetUserId(warehouseutils.SNOWFLAKE),
-		Provider:             warehouseutils.SNOWFLAKE,
+		WriteKey:      handle.WriteKey,
+		Schema:        handle.Schema,
+		Tables:        handle.Tables,
+		Provider:      warehouseutils.SNOWFLAKE,
+		SourceID:      "24p1HhPk09FW25Kuzvx7GshCLKR",
+		DestinationID: "24qeADObp6eIhjjDnEppO6P1SNc",
 	}
 
 	// Scenario 1
-	// Sending the first set of events.
-	// Since we handle dedupe on the staging table, we need to check if the first set of events reached the destination.
-	testhelper.SendEvents(t, warehouseTest)
-	testhelper.SendEvents(t, warehouseTest)
-	testhelper.SendEvents(t, warehouseTest)
-	testhelper.SendIntegratedEvents(t, warehouseTest)
+	warehouseTest.TimestampBeforeSendingEvents = timeutil.Now()
+	warehouseTest.UserId = testhelper.GetUserId(warehouseutils.SNOWFLAKE)
 
-	// Setting up the events map
-	// Checking for Gateway and Batch router events
-	// Checking for the events count for each table
-	warehouseTest.EventsCountMap = testhelper.EventsCountMap{
-		"identifies":    1,
-		"users":         1,
-		"tracks":        1,
-		"product_track": 1,
-		"pages":         1,
-		"screens":       1,
-		"aliases":       1,
-		"groups":        1,
-		"gateway":       24,
-		"batchRT":       32,
-	}
-	testhelper.VerifyingGatewayEvents(t, warehouseTest)
-	testhelper.VerifyingBatchRouterEvents(t, warehouseTest)
-	testhelper.VerifyingTablesEventCount(t, warehouseTest)
+	sendEventsMap := testhelper.SendEventsMap()
+	testhelper.SendEvents(t, warehouseTest, sendEventsMap)
+	testhelper.SendEvents(t, warehouseTest, sendEventsMap)
+	testhelper.SendEvents(t, warehouseTest, sendEventsMap)
+	testhelper.SendIntegratedEvents(t, warehouseTest, sendEventsMap)
+
+	testhelper.VerifyEventsInStagingFiles(t, warehouseTest, testhelper.StagingFilesEventsMap())
+	testhelper.VerifyEventsInLoadFiles(t, warehouseTest, testhelper.LoadFilesEventsMap())
+	testhelper.VerifyEventsInTableUploads(t, warehouseTest, testhelper.TableUploadsEventsMap())
+	testhelper.VerifyEventsInWareHouse(t, warehouseTest, testhelper.WarehouseEventsMap())
 
 	// Scenario 2
-	// Re-Setting up the events map
-	// Sending the second set of events.
-	// This time we will not be resetting the MessageID. We will be using the same one to check for the dedupe.
-	warehouseTest.EventsCountMap = testhelper.DefaultEventMap()
-	testhelper.SendModifiedEvents(t, warehouseTest)
-	testhelper.SendModifiedEvents(t, warehouseTest)
-	testhelper.SendModifiedEvents(t, warehouseTest)
-	testhelper.SendIntegratedEvents(t, warehouseTest)
+	warehouseTest.TimestampBeforeSendingEvents = timeutil.Now()
+	warehouseTest.UserId = testhelper.GetUserId(warehouseutils.SNOWFLAKE)
 
-	// Setting up the events map
-	// Checking for Gateway and Batch router events
-	// Checking for the events count for each table
-	// Since because of merge everything comes down to a single event in warehouse
-	warehouseTest.EventsCountMap = testhelper.EventsCountMap{
-		"identifies":    1,
-		"users":         1,
-		"tracks":        1,
-		"product_track": 1,
-		"pages":         1,
-		"screens":       1,
-		"aliases":       1,
-		"groups":        1,
-		"gateway":       48,
-		"batchRT":       64,
+	sendEventsMap = testhelper.SendEventsMap()
+	testhelper.SendModifiedEvents(t, warehouseTest, sendEventsMap)
+	testhelper.SendModifiedEvents(t, warehouseTest, sendEventsMap)
+	testhelper.SendModifiedEvents(t, warehouseTest, sendEventsMap)
+	testhelper.SendIntegratedEvents(t, warehouseTest, sendEventsMap)
+
+	testhelper.VerifyEventsInStagingFiles(t, warehouseTest, testhelper.StagingFilesEventsMap())
+	testhelper.VerifyEventsInLoadFiles(t, warehouseTest, testhelper.LoadFilesEventsMap())
+	testhelper.VerifyEventsInTableUploads(t, warehouseTest, testhelper.TableUploadsEventsMap())
+	testhelper.VerifyEventsInWareHouse(t, warehouseTest, testhelper.WarehouseEventsMap())
+}
+
+func TestSnowflakeConfigurationValidation(t *testing.T) {
+	t.SkipNow()
+
+	configurations := testhelper.PopulateTemplateConfigurations()
+	destination := backendconfig.DestinationT{
+		ID: "24qeADObp6eIhjjDnEppO6P1SNc",
+		Config: map[string]interface{}{
+			"account":            configurations["snowflakeAccount"],
+			"database":           configurations["snowflakeDBName"],
+			"warehouse":          configurations["snowflakeWHName"],
+			"user":               configurations["snowflakeUsername"],
+			"password":           configurations["snowflakePassword"],
+			"cloudProvider":      "AWS",
+			"bucketName":         configurations["snowflakeBucketName"],
+			"storageIntegration": "",
+			"accessKeyID":        configurations["snowflakeAccessKeyID"],
+			"accessKey":          configurations["snowflakeAccessKey"],
+			"namespace":          configurations["snowflakeNamespace"],
+			"prefix":             "snowflake-prefix",
+			"syncFrequency":      "30",
+			"enableSSE":          false,
+			"useRudderStorage":   false,
+		},
+		DestinationDefinition: backendconfig.DestinationDefinitionT{
+			ID:          "1XjvXnzw34UMAz1YOuKqL1kwzh6",
+			Name:        "SNOWFLAKE",
+			DisplayName: "Snowflake",
+		},
+		Name:       "snowflake-demo",
+		Enabled:    true,
+		RevisionID: "29HgdgvNPwqFDMONSgmIZ3YSehV",
 	}
-	testhelper.VerifyingGatewayEvents(t, warehouseTest)
-	testhelper.VerifyingBatchRouterEvents(t, warehouseTest)
-	testhelper.VerifyingTablesEventCount(t, warehouseTest)
+	testhelper.VerifyingConfigurationTest(t, destination)
 }
 
 func TestMain(m *testing.M) {
-	//_, exists := os.LookupEnv(TestCredentialsKey)
+	//_, exists := os.LookupEnv(testhelper.SnowflakeIntegrationTestCredentials)
 	//if !exists {
-	//	log.Println("Skipping Snowflake Test as the Test credentials does not exits.")
+	//	log.Println("Skipping Snowflake Test as the Test credentials does not exists.")
 	//	return
 	//}
 	//
 	//handle = &TestHandle{
 	//	WriteKey: "2eSJyYtqwcFiUILzXv2fcNIrWO7",
-	//	Schema:   testhelper.GetSchema(warehouseutils.SNOWFLAKE, TestSchemaKey),
+	//	Schema:   testhelper.Schema(warehouseutils.SNOWFLAKE, testhelper.SnowflakeIntegrationTestSchema),
 	//	Tables:   []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"},
 	//}
 	//os.Exit(testhelper.Run(m, handle))

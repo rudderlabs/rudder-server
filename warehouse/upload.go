@@ -1433,7 +1433,7 @@ func (job *UploadJobT) setUploadError(statusError error, state string) (string, 
 	if unmarshallErr != nil {
 		metadata = make(map[string]interface{})
 	}
-	metadata["nextRetryTime"] = timeutil.Now().Add(durationBeforeNextAttempt(upload.Attempts + 1)).Format(time.RFC3339)
+	metadata["nextRetryTime"] = timeutil.Now().Add(DurationBeforeNextAttempt(upload.Attempts + 1)).Format(time.RFC3339)
 	metadataJSON, err := json.Marshal(metadata)
 	if err != nil {
 		metadataJSON = []byte("{}")
