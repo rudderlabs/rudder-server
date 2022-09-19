@@ -87,8 +87,27 @@ func (factory *FileManagerFactoryT) New(settings *SettingsT) (FileManager, error
 	return nil, fmt.Errorf("%w: %s", rterror.InvalidServiceProvider, settings.Provider)
 }
 
-// GetProviderConfigForBackupsFromEnv returns the provider config
-func GetProviderConfigForBackupsFromEnv(ctx context.Context) map[string]interface{} {
+// GetBackupStorageConfig returns the backup storage config based on the user settings
+func GetBackupStorageConfig(ctx context.Context) (string, map[string]interface{}) {
+	backendconfig.DefaultBackendConfig.WaitForConfig(ctx)
+	// TODO: Adapt for multi-tenancy
+	workspaceID := backendconfig.DefaultBackendConfig.GetWorkspaceIDForWriteKey("")
+	useRudderStorage := backendconfig.DefaultBackendConfig.GetDataRetentionSettingsForWorkspaceID(workspaceID).UseRudderServerStorage
+
+	if useRudderStorage {
+		return getProviderAndConfigForBackupsFromEnv()
+	} else {
+		return getProviderAndConfigForBackupsFromWorkspaceSettings(backendconfig.DefaultBackendConfig.GetDataRetentionSettingsForWorkspaceID(workspaceID).StorageBucket)
+	}
+}
+
+// getProviderAndConfigForBackupsFromWorkspaceSettings returns the provider config from the workspace settings
+func getProviderAndConfigForBackupsFromWorkspaceSettings(bucket backendconfig.StorageBucket) (string, map[string]interface{}) {
+	return bucket.Provider, bucket.Config
+}
+
+// getProviderAndConfigForBackupsFromEnv returns the provider config from env
+func getProviderAndConfigForBackupsFromEnv() (string, map[string]interface{}) {
 	providerConfig := make(map[string]interface{})
 	provider := config.GetEnv("JOBS_BACKUP_STORAGE_PROVIDER", "S3")
 	switch provider {
@@ -101,7 +120,6 @@ func GetProviderConfigForBackupsFromEnv(ctx context.Context) map[string]interfac
 		providerConfig["regionHint"] = config.GetEnv("AWS_S3_REGION_HINT", "us-east-1")
 		providerConfig["iamRoleArn"] = config.GetEnv("BACKUP_IAM_ROLE_ARN", "")
 		if providerConfig["iamRoleArn"] != "" {
-			backendconfig.DefaultBackendConfig.WaitForConfig(ctx)
 			providerConfig["externalId"] = backendconfig.DefaultBackendConfig.GetWorkspaceIDForWriteKey("")
 		}
 	case "GCS":
@@ -130,7 +148,7 @@ func GetProviderConfigForBackupsFromEnv(ctx context.Context) map[string]interfac
 		providerConfig["accessKeyID"] = config.GetEnv("DO_SPACES_ACCESS_KEY_ID", "")
 		providerConfig["accessKey"] = config.GetEnv("DO_SPACES_SECRET_ACCESS_KEY", "")
 	}
-	return providerConfig
+	return provider, providerConfig
 }
 
 func getBatchRouterTimeoutConfig(destType string) time.Duration {

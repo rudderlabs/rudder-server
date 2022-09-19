@@ -3609,9 +3609,10 @@ func (jd *HandleT) getBackUpQuery(backupDSRange *dataSetRangeT, isJobStatusTable
 func (jd *HandleT) getFileUploader(ctx context.Context) (filemanager.FileManager, error) {
 	var err error
 	if jd.jobsFileUploader == nil {
+		provider, config := filemanager.GetBackupStorageConfig(ctx)
 		jd.jobsFileUploader, err = filemanager.DefaultFileManagerFactory.New(&filemanager.SettingsT{
-			Provider: config.GetEnv("JOBS_BACKUP_STORAGE_PROVIDER", "S3"),
-			Config:   filemanager.GetProviderConfigForBackupsFromEnv(ctx),
+			Provider: provider,
+			Config:   config,
 		})
 	}
 	return jd.jobsFileUploader, err

@@ -29,10 +29,9 @@ func initFileManager() (filemanager.FileManager, string, error) {
 		panic("Bucket is not configured.")
 	}
 
-	provider := config.GetEnv("JOBS_BACKUP_STORAGE_PROVIDER", "S3")
 	fileManagerFactory := filemanager.DefaultFileManagerFactory
 
-	configFromEnv := filemanager.GetProviderConfigForBackupsFromEnv(context.TODO())
+	provider, configFromEnv := filemanager.GetBackupStorageConfig(context.TODO())
 	uploader, err := fileManagerFactory.New(&filemanager.SettingsT{
 		Provider: provider,
 		Config: misc.GetObjectStorageConfig(misc.ObjectStorageOptsT{

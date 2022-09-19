@@ -113,16 +113,15 @@ func backupEnabled() bool {
 
 func (st *HandleT) setupFileUploader(ctx context.Context) {
 	if backupEnabled() {
-		provider := config.GetEnv("JOBS_BACKUP_STORAGE_PROVIDER", "")
-		bucket := config.GetEnv("JOBS_BACKUP_BUCKET", "")
-		if provider != "" && bucket != "" {
+		provider, config := filemanager.GetBackupStorageConfig(ctx)
+		if provider != "" {
 			var err error
 			st.errFileUploader, err = filemanager.DefaultFileManagerFactory.New(&filemanager.SettingsT{
 				Provider: provider,
-				Config:   filemanager.GetProviderConfigForBackupsFromEnv(ctx),
+				Config:   config,
 			})
 			if err != nil {
-				panic(err)
+				pkgLogger.Errorf("[[ Stash ]] Error creating file manager: %s", err.Error())
 			}
 		}
 	}

@@ -80,12 +80,14 @@ func ArchiveOldRecords(tableName, tsColumn string, archivalTimeInDays int, dbHan
 	)
 	defer os.Remove(path)
 
+	provider, providerConfig := filemanager.GetBackupStorageConfig(context.TODO())
 	fManager, err := filemanager.DefaultFileManagerFactory.New(&filemanager.SettingsT{
-		Provider: config.GetEnv("JOBS_BACKUP_STORAGE_PROVIDER", "S3"),
-		Config:   filemanager.GetProviderConfigForBackupsFromEnv(context.TODO()),
+		Provider: provider,
+		Config:   providerConfig,
 	})
 	if err != nil {
 		pkgLogger.Errorf("[Archiver]: Error in creating a file manager for :%s: , %v", config.GetEnv("JOBS_BACKUP_STORAGE_PROVIDER", "S3"), err)
+		return
 	}
 
 	tableJSONArchiver := tablearchiver.TableJSONArchiver{

@@ -100,8 +100,14 @@ type Settings struct {
 }
 
 type DataRetention struct {
-	EnableReportingPii     bool `json:"enableReportingPii"`
-	UseRudderServerStorage bool `json:"useRudderServerStorage"`
+	EnableReportingPii     bool          `json:"enableReportingPii"`
+	UseRudderServerStorage bool          `json:"useRudderServerStorage"`
+	StorageBucket          StorageBucket `json:"storageBucket"`
+}
+
+type StorageBucket struct {
+	Provider string                 `json:"type"`
+	Config   map[string]interface{} `json:"config"`
 }
 
 type WRegulationsT struct {
