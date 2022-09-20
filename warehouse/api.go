@@ -672,6 +672,7 @@ func validateObjectStorage(ctx context.Context, request *ObjectStorageValidation
 	uploadOutput, err := fileManager.Upload(ctx, f)
 	if err != nil {
 		return InvalidDestinationCredErr{Base: err, Operation: "upload"}
+
 	}
 	f.Close()
 
