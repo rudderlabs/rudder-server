@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+
 	proto "github.com/rudderlabs/rudder-server/proto/warehouse"
 	"github.com/rudderlabs/rudder-server/warehouse/configuration_testing"
 	"google.golang.org/genproto/googleapis/rpc/code"
@@ -98,7 +99,6 @@ type ObjectStorageValidationRequest struct {
 }
 
 func validateObjectStorageRequestBody(request *proto.ValidateObjectStorageRequest) (*ObjectStorageValidationRequest, error) {
-
 	byt, err := json.Marshal(request)
 	if err != nil {
 		return nil, status.Errorf(
@@ -130,10 +130,9 @@ func validateObjectStorageRequestBody(request *proto.ValidateObjectStorageReques
 			"invalid argument err: %s", err.Error())
 	}
 	return r, nil
-
 }
-func (*warehousegrpc) ValidateObjectStorageDestination(ctx context.Context, request *proto.ValidateObjectStorageRequest) (response *proto.ValidateObjectStorageResponse, err error) {
 
+func (*warehousegrpc) ValidateObjectStorageDestination(ctx context.Context, request *proto.ValidateObjectStorageRequest) (response *proto.ValidateObjectStorageResponse, err error) {
 	r, err := validateObjectStorageRequestBody(request)
 	if err != nil {
 		return nil, err
