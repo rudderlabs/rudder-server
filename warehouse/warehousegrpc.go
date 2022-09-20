@@ -158,6 +158,7 @@ func (w *warehousegrpc) ValidateObjectStorageDestination(ctx context.Context, re
 		Error:   "",
 	}, nil
 }
+
 func (*warehousegrpc) CountWHUploadsToRetry(ctx context.Context, req *proto.RetryWHUploadsRequest) (response *proto.RetryWHUploadsResponse, err error) {
 	retryReq := &RetryRequest{
 		WorkspaceID:     req.WorkspaceId,
