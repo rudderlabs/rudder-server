@@ -624,7 +624,6 @@ func (uploadsReq *UploadsReqT) warehouseUploads(selectFields string) (uploadsRes
 // checkMapForValidKey checks the presence of key in map
 // and if yes verifies that the key is string and non-empty.
 func checkMapForValidKey(configMap map[string]interface{}, key string) bool {
-
 	value, ok := configMap[key]
 	if !ok {
 		return false
@@ -634,7 +633,6 @@ func checkMapForValidKey(configMap map[string]interface{}, key string) bool {
 		return len(valStr) != 0
 	}
 	return false
-
 }
 
 func validateObjectStorage(ctx context.Context, request *ObjectStorageValidationRequest) error {
@@ -666,7 +664,6 @@ func validateObjectStorage(ctx context.Context, request *ObjectStorageValidation
 	uploadOutput, err := fileManager.Upload(ctx, f)
 	if err != nil {
 		return InvalidDestinationCredErr{Base: err, Operation: "upload"}
-
 	}
 	f.Close()
 
@@ -675,7 +672,6 @@ func validateObjectStorage(ctx context.Context, request *ObjectStorageValidation
 	tmpDirectory, err := misc.CreateTMPDIR()
 	if err != nil {
 		return fmt.Errorf("error while Creating file to download data")
-
 	}
 	f, err = os.CreateTemp(tmpDirectory, DownloadFileNamePattern)
 	if err != nil {
