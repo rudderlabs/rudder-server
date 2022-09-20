@@ -1603,7 +1603,19 @@ func (job *UploadJobT) getLoadFilesTableEventCountMap() (loadFilesEventCountMaps
 	sourceID := job.warehouse.Source.ID
 	destID := job.warehouse.Destination.ID
 
-	sqlStatement := fmt.Sprintf(`SELECT table_name, SUM(total_events) FROM %s WHERE ( source_id = $1 AND destination_id = $2 AND id >= $3 AND id <= $4 ) GROUP BY table_name;`,
+	sqlStatement := fmt.Sprintf(`
+	SELECT
+		table_name,
+		SUM(total_events)
+	FROM %s
+	WHERE
+		(
+			source_id = $1
+			AND destination_id = $2
+			AND id >= $3
+			AND id <= $4
+		)
+	GROUP BY table_name;`,
 		warehouseutils.WarehouseLoadFilesTable,
 	)
 	sqlStatementArgs := []interface{}{
