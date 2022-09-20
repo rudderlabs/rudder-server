@@ -110,14 +110,14 @@ func (c *Client) Send(ctx context.Context, component string, features []string) 
 
 	body, err := json.Marshal(payload)
 	if err != nil {
-		return err
+		return fmt.Errorf("could not marshal payload: %w", err)
 	}
 
 	backoffWithMaxRetry := backoff.WithContext(backoff.WithMaxRetries(backoff.NewExponentialBackOff(), uint64(c.retries)), ctx)
 	return backoff.Retry(func() error {
 		req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
 		if err != nil {
-			return err
+			return fmt.Errorf("new request: %w", err)
 		}
 
 		req.Header.Set("Content-Type", "application/json")
@@ -127,17 +127,18 @@ func (c *Client) Send(ctx context.Context, component string, features []string) 
 
 		resp, err := c.client.Do(req)
 		if err != nil {
-			return err
+			return fmt.Errorf("doing http request: %w", err)
 		}
 		defer resp.Body.Close()
 
-		b, err := io.ReadAll(resp.Body)
-		if err != nil {
-			return err
-		}
-
 		if resp.StatusCode != http.StatusNoContent {
-			err := fmt.Errorf("unexpected status code %d: %s", resp.StatusCode, string(b))
+			// we don't expect a body, unless there is an error
+			b, err := io.ReadAll(resp.Body)
+			if err != nil {
+				return fmt.Errorf("read response body: %w", err)
+			}
+
+			err = fmt.Errorf("unexpected status code %d: %s", resp.StatusCode, string(b))
 			if !httputil.RetriableStatus(resp.StatusCode) {
 				return backoff.Permanent(fmt.Errorf("non retriable: %w", err))
 			}

@@ -49,7 +49,6 @@ func TestRetriableStatus(t *testing.T) {
 		http.StatusMethodNotAllowed,
 		http.StatusNotAcceptable,
 		http.StatusProxyAuthRequired,
-		http.StatusRequestTimeout,
 		http.StatusConflict,
 		http.StatusGone,
 		http.StatusLengthRequired,
