@@ -2,10 +2,11 @@ package warehouse
 
 import (
 	"context"
+	"net/http"
+
 	"github.com/rudderlabs/rudder-server/admin"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 	"google.golang.org/protobuf/types/known/emptypb"
-	"net/http"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -131,222 +132,335 @@ var _ = Describe("Warehouse", Ordered, func() {
 	)
 
 	Describe("Warehouse GRPC round trip", Ordered, func() {
-		var (
-			pgResource *destination.PostgresResource
-			err        error
-			cleanup    = &testhelper.Cleanup{}
-			w          *warehouseGrpc
-			c          context.Context
-			limit      = int32(2)
-			uploadID   = int64(1)
-		)
+		Describe("Dedicated workspace", Ordered, func() {
+			var (
+				pgResource *destination.PostgresResource
+				err        error
+				cleanup    = &testhelper.Cleanup{}
+				w          *warehouseGrpc
+				c          context.Context
+				limit      = int32(2)
+				uploadID   = int64(1)
+			)
 
-		BeforeAll(func() {
-			pgResource = setupWarehouse(GinkgoT(), cleanup)
+			BeforeAll(func() {
+				pgResource = setupWarehouse(GinkgoT(), cleanup)
 
-			pkgLogger = &logger.NOP{}
-			sourceIDsByWorkspace = map[string][]string{
-				workspaceID: {sourceID},
-			}
-			connectionsMap = map[string]map[string]warehouseutils.WarehouseT{
-				destinationID: {
-					sourceID: warehouseutils.WarehouseT{
-						Identifier: warehouseutils.GetWarehouseIdentifier(destinationType, sourceID, destinationID),
+				pkgLogger = &logger.NOP{}
+				sourceIDsByWorkspace = map[string][]string{
+					workspaceID: {sourceID},
+				}
+				connectionsMap = map[string]map[string]warehouseutils.WarehouseT{
+					destinationID: {
+						sourceID: warehouseutils.WarehouseT{
+							Identifier: warehouseutils.GetWarehouseIdentifier(destinationType, sourceID, destinationID),
+						},
 					},
-				},
-			}
+				}
 
-			w = &warehouseGrpc{}
-			c = context.TODO()
-		})
-
-		AfterAll(func() {
-			cleanup.Run()
-		})
-
-		It("Init warehouse api", func() {
-			err = InitWarehouseAPI(pgResource.DB, &logger.NOP{})
-			Expect(err).To(BeNil())
-
-			_, err = pgResource.DB.Exec(syncsSQLStatement())
-			Expect(err).To(BeNil())
-		})
-
-		It("Getting health", func() {
-			res, err := w.GetHealth(c, &emptypb.Empty{})
-			Expect(err).To(BeNil())
-			Expect(res.Value).To(BeTrue())
-		})
-
-		It("Getting warehouse upload", func() {
-			res, err := w.GetWHUpload(c, &proto.WHUploadRequest{
-				UploadId:    uploadID,
-				WorkspaceId: workspaceID,
+				w = &warehouseGrpc{}
+				c = context.TODO()
 			})
-			Expect(err).To(BeNil())
-			Expect(res).NotTo(BeNil())
-			Expect(res.Id).To(Equal(uploadID))
-			Expect(res.Tables).Should(HaveLen(1))
-			Expect(res.Tables[0].UploadId).To(Equal(uploadID))
+
+			AfterAll(func() {
+				cleanup.Run()
+			})
+
+			It("Init warehouse api", func() {
+				err = InitWarehouseAPI(pgResource.DB, &logger.NOP{})
+				Expect(err).To(BeNil())
+
+				_, err = pgResource.DB.Exec(syncsSQLStatement())
+				Expect(err).To(BeNil())
+			})
+
+			It("Getting health", func() {
+				res, err := w.GetHealth(c, &emptypb.Empty{})
+				Expect(err).To(BeNil())
+				Expect(res.Value).To(BeTrue())
+			})
+
+			It("Getting warehouse upload", func() {
+				res, err := w.GetWHUpload(c, &proto.WHUploadRequest{
+					UploadId:    uploadID,
+					WorkspaceId: workspaceID,
+				})
+				Expect(err).To(BeNil())
+				Expect(res).NotTo(BeNil())
+				Expect(res.Id).To(Equal(uploadID))
+				Expect(res.Tables).Should(HaveLen(1))
+				Expect(res.Tables[0].UploadId).To(Equal(uploadID))
+			})
+
+			Describe("Getting warehouse uploads", func() {
+				var req *proto.WHUploadsRequest
+
+				BeforeEach(func() {
+					req = &proto.WHUploadsRequest{
+						WorkspaceId:     workspaceID,
+						SourceId:        sourceID,
+						DestinationId:   destinationID,
+						DestinationType: destinationType,
+						Limit:           limit,
+					}
+				})
+
+				It("Waiting syncs", func() {
+					req.Status = "waiting"
+
+					res, err := w.GetWHUploads(c, req)
+					Expect(err).To(BeNil())
+					Expect(res).NotTo(BeNil())
+					Expect(res.Uploads).Should(HaveLen(1))
+					Expect(res.Uploads[0].Id).To(BeEquivalentTo(1))
+				})
+				It("Succeeded syncs", func() {
+					req.Status = "success"
+
+					res, err := w.GetWHUploads(c, req)
+					Expect(err).To(BeNil())
+					Expect(res).NotTo(BeNil())
+					Expect(res.Uploads).Should(HaveLen(1))
+					Expect(res.Uploads[0].Id).To(BeEquivalentTo(4))
+				})
+				It("Failed syncs", func() {
+					req.Status = "failed"
+
+					res, err := w.GetWHUploads(c, req)
+					Expect(err).To(BeNil())
+					Expect(res).NotTo(BeNil())
+					Expect(res.Uploads).Should(HaveLen(1))
+					Expect(res.Uploads[0].Id).To(BeEquivalentTo(2))
+				})
+				It("Aborted syncs", func() {
+					req.Status = "aborted"
+
+					res, err := w.GetWHUploads(c, req)
+					Expect(err).To(BeNil())
+					Expect(res).NotTo(BeNil())
+					Expect(res.Uploads).Should(HaveLen(1))
+					Expect(res.Uploads[0].Id).To(BeEquivalentTo(3))
+				})
+				It("No status", func() {
+					res, err := w.GetWHUploads(c, req)
+					Expect(err).To(BeNil())
+					Expect(res).NotTo(BeNil())
+					Expect(res.Uploads).Should(HaveLen(2))
+					Expect(res.Uploads[0].Id).To(BeEquivalentTo(4))
+					Expect(res.Uploads[1].Id).To(BeEquivalentTo(3))
+				})
+				It("With offset", func() {
+					req.Offset = 3
+
+					res, err := w.GetWHUploads(c, req)
+					Expect(err).To(BeNil())
+					Expect(res).NotTo(BeNil())
+					Expect(res.Uploads).Should(HaveLen(1))
+					Expect(res.Uploads[0].Id).To(BeEquivalentTo(1))
+				})
+			})
+
+			Describe("Count warehouse uploads to retry", func() {
+				var req *proto.RetryWHUploadsRequest
+
+				BeforeEach(func() {
+					req = &proto.RetryWHUploadsRequest{
+						WorkspaceId:     workspaceID,
+						SourceId:        sourceID,
+						DestinationId:   destinationID,
+						DestinationType: destinationType,
+					}
+				})
+
+				It("Interval in hours", func() {
+					req.IntervalInHours = 24
+
+					res, err := w.CountWHUploadsToRetry(c, req)
+					Expect(err).To(BeNil())
+					Expect(res).NotTo(BeNil())
+					Expect(res.StatusCode).To(BeEquivalentTo(http.StatusOK))
+					Expect(res.Count).To(BeEquivalentTo(1))
+				})
+				It("Interval in hours", func() {
+					req.UploadIds = []int64{3}
+
+					res, err := w.CountWHUploadsToRetry(c, req)
+					Expect(err).To(BeNil())
+					Expect(res).NotTo(BeNil())
+					Expect(res.StatusCode).To(BeEquivalentTo(http.StatusOK))
+					Expect(res.Count).To(BeEquivalentTo(1))
+				})
+			})
+
+			Describe("Retry warehouse uploads", func() {
+				var req *proto.RetryWHUploadsRequest
+
+				BeforeEach(func() {
+					req = &proto.RetryWHUploadsRequest{
+						WorkspaceId:     workspaceID,
+						SourceId:        sourceID,
+						DestinationId:   destinationID,
+						DestinationType: destinationType,
+					}
+				})
+
+				It("Interval in hours", func() {
+					req.IntervalInHours = 24
+
+					res, err := w.RetryWHUploads(c, req)
+					Expect(err).To(BeNil())
+					Expect(res).NotTo(BeNil())
+					Expect(res.StatusCode).To(BeEquivalentTo(http.StatusOK))
+				})
+				It("Interval in hours", func() {
+					req.UploadIds = []int64{3}
+
+					res, err := w.RetryWHUploads(c, req)
+					Expect(err).To(BeNil())
+					Expect(res).NotTo(BeNil())
+					Expect(res.StatusCode).To(BeEquivalentTo(http.StatusOK))
+				})
+			})
+
+			It("Triggering warehouse upload", func() {
+				res, err := w.TriggerWHUpload(c, &proto.WHUploadRequest{
+					UploadId:    3,
+					WorkspaceId: workspaceID,
+				})
+				Expect(err).To(BeNil())
+				Expect(res).NotTo(BeNil())
+				Expect(res.Message).To(Equal(TriggeredSuccessfully))
+				Expect(res.StatusCode).To(BeEquivalentTo(http.StatusOK))
+			})
+
+			It("Triggering warehouse uploads", func() {
+				res, err := w.TriggerWHUploads(c, &proto.WHUploadsRequest{
+					WorkspaceId:   workspaceID,
+					SourceId:      sourceID,
+					DestinationId: destinationID,
+				})
+				Expect(err).To(BeNil())
+				Expect(res).NotTo(BeNil())
+				Expect(res.Message).To(Equal(TriggeredSuccessfully))
+				Expect(res.StatusCode).To(BeEquivalentTo(http.StatusOK))
+			})
 		})
 
-		Describe("Getting warehouse uploads", func() {
+		Describe("Multi-tenant workspace", Ordered, func() {
 			var (
-				req *proto.WHUploadsRequest
+				pgResource *destination.PostgresResource
+				err        error
+				cleanup    = &testhelper.Cleanup{}
+				w          *warehouseGrpc
+				c          context.Context
+				limit      = int32(2)
+				es         = GinkgoT()
 			)
 
-			BeforeEach(func() {
-				req = &proto.WHUploadsRequest{
-					WorkspaceId:     workspaceID,
-					SourceId:        sourceID,
-					DestinationId:   destinationID,
-					DestinationType: destinationType,
-					Limit:           limit,
+			BeforeAll(func() {
+				pgResource = setupWarehouse(es, cleanup)
+
+				es.Setenv("DEPLOYMENT_TYPE", "MULTITENANT")
+				es.Setenv("HOSTED_SERVICE_SECRET", "test-secret")
+
+				pkgLogger = &logger.NOP{}
+				sourceIDsByWorkspace = map[string][]string{
+					workspaceID: {sourceID},
 				}
-			})
-
-			It("Waiting syncs", func() {
-				req.Status = "waiting"
-
-				res, err := w.GetWHUploads(c, req)
-				Expect(err).To(BeNil())
-				Expect(res).NotTo(BeNil())
-				Expect(res.Uploads).Should(HaveLen(1))
-				Expect(res.Uploads[0].Id).To(BeEquivalentTo(1))
-			})
-			It("Succeeded syncs", func() {
-				req.Status = "success"
-
-				res, err := w.GetWHUploads(c, req)
-				Expect(err).To(BeNil())
-				Expect(res).NotTo(BeNil())
-				Expect(res.Uploads).Should(HaveLen(1))
-				Expect(res.Uploads[0].Id).To(BeEquivalentTo(4))
-			})
-			It("Failed syncs", func() {
-				req.Status = "failed"
-
-				res, err := w.GetWHUploads(c, req)
-				Expect(err).To(BeNil())
-				Expect(res).NotTo(BeNil())
-				Expect(res.Uploads).Should(HaveLen(1))
-				Expect(res.Uploads[0].Id).To(BeEquivalentTo(2))
-			})
-			It("Aborted syncs", func() {
-				req.Status = "aborted"
-
-				res, err := w.GetWHUploads(c, req)
-				Expect(err).To(BeNil())
-				Expect(res).NotTo(BeNil())
-				Expect(res.Uploads).Should(HaveLen(1))
-				Expect(res.Uploads[0].Id).To(BeEquivalentTo(3))
-			})
-			It("No status", func() {
-				res, err := w.GetWHUploads(c, req)
-				Expect(err).To(BeNil())
-				Expect(res).NotTo(BeNil())
-				Expect(res.Uploads).Should(HaveLen(2))
-				Expect(res.Uploads[0].Id).To(BeEquivalentTo(4))
-				Expect(res.Uploads[1].Id).To(BeEquivalentTo(3))
-			})
-			It("With offset", func() {
-				req.Offset = 3
-
-				res, err := w.GetWHUploads(c, req)
-				Expect(err).To(BeNil())
-				Expect(res).NotTo(BeNil())
-				Expect(res.Uploads).Should(HaveLen(1))
-				Expect(res.Uploads[0].Id).To(BeEquivalentTo(1))
-			})
-		})
-
-		Describe("Count warehouse uploads to retry", func() {
-			var (
-				req *proto.RetryWHUploadsRequest
-			)
-
-			BeforeEach(func() {
-				req = &proto.RetryWHUploadsRequest{
-					WorkspaceId:     workspaceID,
-					SourceId:        sourceID,
-					DestinationId:   destinationID,
-					DestinationType: destinationType,
+				connectionsMap = map[string]map[string]warehouseutils.WarehouseT{
+					destinationID: {
+						sourceID: warehouseutils.WarehouseT{
+							Identifier: warehouseutils.GetWarehouseIdentifier(destinationType, sourceID, destinationID),
+						},
+					},
 				}
+
+				w = &warehouseGrpc{}
+				c = context.TODO()
 			})
 
-			It("Interval in hours", func() {
-				req.IntervalInHours = 24
+			AfterAll(func() {
+				es.Setenv("DEPLOYMENT_TYPE", "")
+				es.Setenv("HOSTED_SERVICE_SECRET", "")
 
-				res, err := w.CountWHUploadsToRetry(c, req)
+				cleanup.Run()
+			})
+
+			It("Init warehouse api", func() {
+				err = InitWarehouseAPI(pgResource.DB, &logger.NOP{})
 				Expect(err).To(BeNil())
-				Expect(res).NotTo(BeNil())
-				Expect(res.StatusCode).To(BeEquivalentTo(http.StatusOK))
-				Expect(res.Count).To(BeEquivalentTo(1))
-			})
-			It("Interval in hours", func() {
-				req.UploadIds = []int64{3}
 
-				res, err := w.CountWHUploadsToRetry(c, req)
+				_, err = pgResource.DB.Exec(syncsSQLStatement())
 				Expect(err).To(BeNil())
-				Expect(res).NotTo(BeNil())
-				Expect(res.StatusCode).To(BeEquivalentTo(http.StatusOK))
-				Expect(res.Count).To(BeEquivalentTo(1))
-			})
-		})
-
-		Describe("Retry warehouse uploads", func() {
-			var (
-				req *proto.RetryWHUploadsRequest
-			)
-
-			BeforeEach(func() {
-				req = &proto.RetryWHUploadsRequest{
-					WorkspaceId:     workspaceID,
-					SourceId:        sourceID,
-					DestinationId:   destinationID,
-					DestinationType: destinationType,
-				}
 			})
 
-			It("Interval in hours", func() {
-				req.IntervalInHours = 24
+			Describe("Getting warehouse uploads", func() {
+				var req *proto.WHUploadsRequest
 
-				res, err := w.RetryWHUploads(c, req)
-				Expect(err).To(BeNil())
-				Expect(res).NotTo(BeNil())
-				Expect(res.StatusCode).To(BeEquivalentTo(http.StatusOK))
-			})
-			It("Interval in hours", func() {
-				req.UploadIds = []int64{3}
+				BeforeEach(func() {
+					req = &proto.WHUploadsRequest{
+						WorkspaceId:     workspaceID,
+						SourceId:        sourceID,
+						DestinationId:   destinationID,
+						DestinationType: destinationType,
+						Limit:           limit,
+					}
+				})
 
-				res, err := w.RetryWHUploads(c, req)
-				Expect(err).To(BeNil())
-				Expect(res).NotTo(BeNil())
-				Expect(res.StatusCode).To(BeEquivalentTo(http.StatusOK))
-			})
-		})
+				It("Waiting syncs", func() {
+					req.Status = "waiting"
 
-		It("Triggering warehouse upload", func() {
-			res, err := w.TriggerWHUpload(c, &proto.WHUploadRequest{
-				UploadId:    3,
-				WorkspaceId: workspaceID,
-			})
-			Expect(err).To(BeNil())
-			Expect(res).NotTo(BeNil())
-			Expect(res.Message).To(Equal(TriggeredSuccessfully))
-			Expect(res.StatusCode).To(BeEquivalentTo(http.StatusOK))
-		})
+					res, err := w.GetWHUploads(c, req)
+					Expect(err).To(BeNil())
+					Expect(res).NotTo(BeNil())
+					Expect(res.Uploads).Should(HaveLen(1))
+					Expect(res.Uploads[0].Id).To(BeEquivalentTo(1))
+				})
+				It("Succeeded syncs", func() {
+					req.Status = "success"
 
-		It("Triggering warehouse uploads", func() {
-			res, err := w.TriggerWHUploads(c, &proto.WHUploadsRequest{
-				WorkspaceId:   workspaceID,
-				SourceId:      sourceID,
-				DestinationId: destinationID,
+					res, err := w.GetWHUploads(c, req)
+					Expect(err).To(BeNil())
+					Expect(res).NotTo(BeNil())
+					Expect(res.Uploads).Should(HaveLen(1))
+					Expect(res.Uploads[0].Id).To(BeEquivalentTo(4))
+				})
+				It("Failed syncs", func() {
+					req.Status = "failed"
+
+					res, err := w.GetWHUploads(c, req)
+					Expect(err).To(BeNil())
+					Expect(res).NotTo(BeNil())
+					Expect(res.Uploads).Should(HaveLen(1))
+					Expect(res.Uploads[0].Id).To(BeEquivalentTo(2))
+				})
+				It("Aborted syncs", func() {
+					req.Status = "aborted"
+
+					res, err := w.GetWHUploads(c, req)
+					Expect(err).To(BeNil())
+					Expect(res).NotTo(BeNil())
+					Expect(res.Uploads).Should(HaveLen(1))
+					Expect(res.Uploads[0].Id).To(BeEquivalentTo(3))
+				})
+				It("No status", func() {
+					res, err := w.GetWHUploads(c, req)
+					Expect(err).To(BeNil())
+					Expect(res).NotTo(BeNil())
+					Expect(res.Uploads).Should(HaveLen(2))
+					Expect(res.Uploads[0].Id).To(BeEquivalentTo(4))
+					Expect(res.Uploads[1].Id).To(BeEquivalentTo(3))
+				})
+				It("With offset", func() {
+					req.Offset = 3
+
+					res, err := w.GetWHUploads(c, req)
+					Expect(err).To(BeNil())
+					Expect(res).NotTo(BeNil())
+					Expect(res.Uploads).Should(HaveLen(1))
+					Expect(res.Uploads[0].Id).To(BeEquivalentTo(1))
+				})
 			})
-			Expect(err).To(BeNil())
-			Expect(res).NotTo(BeNil())
-			Expect(res.Message).To(Equal(TriggeredSuccessfully))
-			Expect(res.StatusCode).To(BeEquivalentTo(http.StatusOK))
 		})
 	})
 })
