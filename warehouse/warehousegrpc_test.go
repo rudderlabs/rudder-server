@@ -2,6 +2,8 @@ package warehouse
 
 import (
 	"context"
+	"net/http"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/ory/dockertest/v3"
@@ -12,7 +14,6 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 	"google.golang.org/protobuf/types/known/emptypb"
-	"net/http"
 )
 
 func syncsSQLStatement() string {
@@ -104,6 +105,11 @@ var _ = Describe("WarehouseGrpc", func() {
 				Expect(err).To(BeNil())
 
 				pgResource = setupWarehouseJobs(pool, GinkgoT(), cleanup)
+
+				initWarehouse()
+
+				err = setupDB(context.TODO(), getConnectionString())
+				Expect(err).To(BeNil())
 
 				pkgLogger = &logger.NOP{}
 				sourceIDsByWorkspace = map[string][]string{
@@ -320,10 +326,15 @@ var _ = Describe("WarehouseGrpc", func() {
 				pool, err := dockertest.NewPool("")
 				Expect(err).To(BeNil())
 
-				pgResource = setupWarehouseJobs(pool, es, cleanup)
-
 				es.Setenv("DEPLOYMENT_TYPE", "MULTITENANT")
 				es.Setenv("HOSTED_SERVICE_SECRET", "test-secret")
+
+				pgResource = setupWarehouseJobs(pool, es, cleanup)
+
+				initWarehouse()
+
+				err = setupDB(context.TODO(), getConnectionString())
+				Expect(err).To(BeNil())
 
 				pkgLogger = &logger.NOP{}
 				sourceIDsByWorkspace = map[string][]string{

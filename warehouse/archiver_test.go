@@ -1,6 +1,8 @@
 package warehouse
 
 import (
+	"context"
+
 	"github.com/ory/dockertest/v3"
 	mock_logger "github.com/rudderlabs/rudder-server/mocks/utils/logger"
 
@@ -130,21 +132,10 @@ var _ = Describe("Archiver", Ordered, func() {
 		pool, err := dockertest.NewPool("")
 		Expect(err).To(BeNil())
 
-		es.Setenv("RSERVER_WAREHOUSE_UPLOADS_ARCHIVAL_TIME_IN_DAYS", "0")
-
 		pgResource = setupWarehouseJobs(pool, GinkgoT(), cleanup)
 
 		minioResource, err = destination.SetupMINIO(pool, cleanup)
 		Expect(err).To(BeNil())
-
-		mockCtrl = gomock.NewController(es)
-		mockLogger = mock_logger.NewMockLoggerI(mockCtrl)
-		mockLogger.EXPECT().Errorf(gomock.Any(), gomock.Any()).MaxTimes(0)
-		mockLogger.EXPECT().Errorf(gomock.Any(), gomock.Any()).MinTimes(0)
-		mockLogger.EXPECT().Infof(gomock.Any(), gomock.Any()).AnyTimes()
-		mockLogger.EXPECT().Debugf(gomock.Any(), gomock.Any()).AnyTimes()
-
-		pkgLogger = mockLogger
 
 		es.Setenv("JOBS_BACKUP_STORAGE_PROVIDER", "MINIO")
 		es.Setenv("JOBS_BACKUP_STORAGE_PROVIDER", "MINIO")
@@ -155,6 +146,21 @@ var _ = Describe("Archiver", Ordered, func() {
 		es.Setenv("MINIO_SECRET_ACCESS_KEY", minioResource.SecretKey)
 		es.Setenv("MINIO_SSL", "false")
 		es.Setenv("RUDDER_TMPDIR", es.TempDir())
+		es.Setenv("RSERVER_WAREHOUSE_UPLOADS_ARCHIVAL_TIME_IN_DAYS", "0")
+
+		initWarehouse()
+
+		err = setupDB(context.TODO(), getConnectionString())
+		Expect(err).To(BeNil())
+
+		mockCtrl = gomock.NewController(es)
+		mockLogger = mock_logger.NewMockLoggerI(mockCtrl)
+		mockLogger.EXPECT().Errorf(gomock.Any(), gomock.Any()).MaxTimes(0)
+		mockLogger.EXPECT().Errorf(gomock.Any(), gomock.Any()).MinTimes(0)
+		mockLogger.EXPECT().Infof(gomock.Any(), gomock.Any()).AnyTimes()
+		mockLogger.EXPECT().Debugf(gomock.Any(), gomock.Any()).AnyTimes()
+
+		pkgLogger = mockLogger
 	})
 
 	AfterAll(func() {
