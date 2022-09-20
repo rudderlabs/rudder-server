@@ -132,7 +132,7 @@ func validateObjectStorageRequestBody(request *proto.ValidateObjectStorageReques
 	return r, nil
 
 }
-func (w *warehousegrpc) ValidateObjectStorageDestination(ctx context.Context, request *proto.ValidateObjectStorageRequest) (response *proto.ValidateObjectStorageResponse, err error) {
+func (*warehousegrpc) ValidateObjectStorageDestination(ctx context.Context, request *proto.ValidateObjectStorageRequest) (response *proto.ValidateObjectStorageResponse, err error) {
 
 	r, err := validateObjectStorageRequestBody(request)
 	if err != nil {

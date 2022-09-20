@@ -97,10 +97,6 @@ type UploadAPIT struct {
 	isMultiWorkspace  bool
 }
 
-type ValidateObjectRequestT struct {
-	body string
-}
-
 var UploadAPI UploadAPIT
 
 var DownloadFileNamePattern = "downloadfile.*.tmp"
@@ -712,8 +708,7 @@ func getFileManagerSettings(provider string, inputConfig map[string]interface{})
 func overrideWithEnv(settings *filemanager.SettingsT) {
 	envConfig := filemanager.GetProviderConfigFromEnv(context.TODO(), settings.Provider)
 
-	switch settings.Provider {
-	case "S3":
+	if settings.Provider == "S3" {
 		ifNotExistThenSet("prefix", envConfig["prefix"], settings.Config)
 		ifNotExistThenSet("accessKeyID", envConfig["accessKeyID"], settings.Config)
 		ifNotExistThenSet("accessKey", envConfig["accessKey"], settings.Config)
