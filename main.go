@@ -277,13 +277,22 @@ func Run(ctx context.Context) int {
 			}
 			return nil
 		}))
-		go func() {
-			backendconfig.DefaultBackendConfig.WaitForConfig(context.Background())
-			err := features.New(backendconfig.DefaultBackendConfig.Identity()).Send(context.Background(), info.ServerFeatures)
+		g.Go(misc.WithBugsnag(func() error {
+			backendconfig.DefaultBackendConfig.WaitForConfig(ctx)
+
+			c := features.New(
+				config.GetEnv("CONFIG_BACKEND_URL", "https://api.rudderlabs.com"),
+				backendconfig.DefaultBackendConfig.Identity(),
+			)
+
+			err := c.Send(ctx, info.ServerComponent.Name, info.ServerComponent.Features)
 			if err != nil {
 				pkgLogger.Errorf("error sending server features: %v", err)
 			}
-		}()
+
+			// we don't want to exit if we can't send server features
+			return nil
+		}))
 	}
 
 	// initialize warehouse service after core to handle non-normal recovery modes

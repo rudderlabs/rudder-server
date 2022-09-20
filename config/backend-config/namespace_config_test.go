@@ -58,7 +58,7 @@ func Test_Namespace_Get(t *testing.T) {
 	require.NoError(t, err)
 
 	client := &namespaceConfig{
-		Logger: logger.NewLogger(),
+		Logger: &logger.NOP{},
 
 		Client:           ts.Client(),
 		ConfigBackendURL: httpSrvURL,
@@ -152,7 +152,7 @@ func Test_Namespace_Identity(t *testing.T) {
 	require.NoError(t, err)
 
 	client := &namespaceConfig{
-		Logger: logger.NewLogger(),
+		Logger: &logger.NOP{},
 
 		Client:           ts.Client(),
 		ConfigBackendURL: httpSrvURL,

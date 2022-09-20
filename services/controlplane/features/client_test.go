@@ -66,53 +66,52 @@ func Test_Client_Send(t *testing.T) {
 			}))
 			defer s.Close()
 
-			c := features.New(tc.identity, features.WithHTTPClient(s.Client()), features.WithURL(s.URL))
+			c := features.New(s.URL, tc.identity, features.WithHTTPClient(s.Client()))
 
-			err := c.Send(context.Background(), features.PerComponent{
-				"test": {"feature1", "feature2"},
-			})
+			err := c.Send(context.Background(), "test", []string{"feature1", "feature2"})
 			require.NoError(t, err)
 		})
 	}
 
 	t.Run("unexpected status", func(t *testing.T) {
-		count := int64(0)
+		const maxRetries = 2
+		var count int64
+
 		s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			atomic.AddInt64(&count, 1)
 			w.WriteHeader(http.StatusBadRequest)
 		}))
 		defer s.Close()
 
-		c := features.New(&identity.Namespace{}, features.WithHTTPClient(s.Client()), features.WithURL(s.URL))
+		c := features.New(s.URL, &identity.Namespace{},
+			features.WithHTTPClient(s.Client()),
+			features.WithMaxRetries(maxRetries),
+		)
 
-		err := c.Send(context.Background(), features.PerComponent{
-			"test": {"feature1", "feature2"},
-		})
-		require.Error(t, err)
+		err := c.Send(context.Background(), "test", []string{"feature1", "feature2"})
+		require.ErrorContains(t, err, "")
 
-		require.Equalf(t, int64(4), atomic.LoadInt64(&count), "retry %d times", features.MaxRetries)
+		require.Equalf(t, int64(maxRetries+1), atomic.LoadInt64(&count), "retry %d times", maxRetries)
 	})
 
 	t.Run("timeout", func(t *testing.T) {
-		t.Skip("test is too slow")
-		count := int64(0)
+		const maxRetries = 1
 
 		blocker := make(chan struct{})
 		s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			atomic.AddInt64(&count, 1)
 
 			<-blocker
 		}))
 		defer s.Close()
 		defer close(blocker)
 
-		c := features.New(&identity.Namespace{}, features.WithHTTPClient(s.Client()), features.WithURL(s.URL), features.WithTimeout(time.Millisecond))
+		c := features.New(s.URL, &identity.Namespace{},
+			features.WithHTTPClient(s.Client()),
+			features.WithMaxRetries(maxRetries),
+			features.WithTimeout(time.Millisecond),
+		)
 
-		err := c.Send(context.Background(), features.PerComponent{
-			"test": {"feature1", "feature2"},
-		})
-		require.Error(t, err)
-
-		require.Equalf(t, int64(4), atomic.LoadInt64(&count), "retry %d times", features.MaxRetries)
+		err := c.Send(context.Background(), "test", []string{"feature1", "feature2"})
+		require.ErrorContains(t, err, "deadline exceeded")
 	})
 }

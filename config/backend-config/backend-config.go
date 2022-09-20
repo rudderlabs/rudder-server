@@ -47,7 +47,7 @@ var (
 
 type workspaceConfig interface {
 	SetUp() error
-	// AccessToken: DEPRECATED
+	// Deprecated: use Identity() instead.
 	AccessToken() string
 	Get(context.Context, string) (ConfigT, error)
 	GetWorkspaceIDForWriteKey(string) string

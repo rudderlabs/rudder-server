@@ -20,11 +20,6 @@ import (
 
 var jsonfast = jsoniter.ConfigCompatibleWithStandardLibrary
 
-// WorkspacesT holds sources of workspaces
-type WorkspacesT struct {
-	WorkspaceSourcesMap map[string]ConfigT `json:"-"`
-}
-
 type namespaceConfig struct {
 	configEnvHandler          types.ConfigEnvI
 	mapsMutex                 sync.RWMutex
@@ -146,8 +141,8 @@ func (nc *namespaceConfig) getFromAPI(ctx context.Context, _ string) (ConfigT, e
 		respBody = configEnvHandler.ReplaceConfigWithEnvVariables(respBody)
 	}
 
-	var workspaces WorkspacesT
-	err = jsonfast.Unmarshal(respBody, &workspaces.WorkspaceSourcesMap)
+	var workspacesConfig map[string]ConfigT
+	err = jsonfast.Unmarshal(respBody, &workspacesConfig)
 	if err != nil {
 		nc.Logger.Errorf("Error while parsing request: %v", err)
 		return ConfigT{}, err
@@ -158,7 +153,7 @@ func (nc *namespaceConfig) getFromAPI(ctx context.Context, _ string) (ConfigT, e
 	workspaceIDToLibrariesMap := make(map[string]LibrariesT)
 	sourcesJSON := ConfigT{}
 	sourcesJSON.Sources = make([]SourceT, 0)
-	for workspaceID, nc := range workspaces.WorkspaceSourcesMap {
+	for workspaceID, nc := range workspacesConfig {
 		for i := range nc.Sources {
 			source := &nc.Sources[i]
 			writeKeyToWorkspaceIDMap[source.WriteKey] = workspaceID

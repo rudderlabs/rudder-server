@@ -41,7 +41,7 @@ func TestMultiTenant(t *testing.T) {
 	}
 }
 
-func requireAuth(t *testing.T, secret string, hander http.HandlerFunc) http.HandlerFunc {
+func requireAuth(t *testing.T, secret string, handler http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		u, _, ok := r.BasicAuth()
 		require.True(t, ok, "Auth should be present")
@@ -49,7 +49,7 @@ func requireAuth(t *testing.T, secret string, hander http.HandlerFunc) http.Hand
 			"Expected HTTP basic authentication to be %q, got %q instead",
 			secret, u)
 
-		hander(w, r)
+		handler(w, r)
 	}
 }
 

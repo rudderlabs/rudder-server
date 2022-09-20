@@ -9,26 +9,18 @@ import (
 	"net/http"
 	"os"
 	"runtime"
-	"sort"
 	"time"
 
 	"github.com/cenkalti/backoff"
-	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/services/controlplane/identity"
 )
 
 var (
-	DefaultTimeout = 30 * time.Second
-	MaxRetries     = uint64(3)
+	defaultTimeout    = 30 * time.Second
+	defaultMaxRetries = 3
 )
 
 type OptFn func(c *Client)
-
-func WithURL(url string) OptFn {
-	return func(c *Client) {
-		c.url = url
-	}
-}
 
 func WithHTTPClient(httpClient *http.Client) OptFn {
 	return func(c *Client) {
@@ -42,18 +34,25 @@ func WithTimeout(timeout time.Duration) OptFn {
 	}
 }
 
+func WithMaxRetries(retries int) OptFn {
+	return func(c *Client) {
+		c.retries = retries
+	}
+}
+
 type Client struct {
 	client   *http.Client
+	retries  int
 	ua       string
 	url      string
 	identity identity.Identifier
 }
 
-type payload struct {
-	Components []component `json:"components"`
+type payloadSchema struct {
+	Components []componentSchema `json:"components"`
 }
 
-type component struct {
+type componentSchema struct {
 	Name     string   `json:"name"`
 	Features []string `json:"features"`
 }
@@ -66,14 +65,16 @@ func hostname() string {
 	return hostname
 }
 
-func New(identity identity.Identifier, fns ...OptFn) *Client {
+func New(baseURL string, identity identity.Identifier, fns ...OptFn) *Client {
 	c := &Client{
-		client: &http.Client{
-			Timeout: DefaultTimeout,
-		},
-		url:      config.GetEnv("CONFIG_BACKEND_URL", "https://api.rudderlabs.com"),
+		url:      baseURL,
 		identity: identity,
-		ua:       fmt.Sprintf("Go-http-client/1.1; %s; control-plane/features; %s", runtime.Version(), hostname()),
+
+		client: &http.Client{
+			Timeout: defaultTimeout,
+		},
+		retries: defaultMaxRetries,
+		ua:      fmt.Sprintf("Go-http-client/1.1; %s; control-plane/features; %s", runtime.Version(), hostname()),
 	}
 
 	for _, fn := range fns {
@@ -83,9 +84,9 @@ func New(identity identity.Identifier, fns ...OptFn) *Client {
 	return c
 }
 
-type PerComponent map[string][]string
+type PerComponent = map[string][]string
 
-func (c *Client) Send(ctx context.Context, components PerComponent) error {
+func (c *Client) Send(ctx context.Context, component string, features []string) error {
 	var url string
 
 	switch t := c.identity.(type) {
@@ -97,26 +98,21 @@ func (c *Client) Send(ctx context.Context, components PerComponent) error {
 		return fmt.Errorf("identity not supported %T", t)
 	}
 
-	payload := payload{
-		Components: []component{},
+	payload := payloadSchema{
+		Components: []componentSchema{
+			{
+				Name:     component,
+				Features: features,
+			},
+		},
 	}
-
-	for name, features := range components {
-		payload.Components = append(payload.Components, component{
-			Name:     name,
-			Features: features,
-		})
-	}
-
-	// sort by name, so that the order of components is always the same in every call
-	sort.Slice(payload.Components, func(i, j int) bool { return payload.Components[i].Name < payload.Components[j].Name })
 
 	body, err := json.Marshal(payload)
 	if err != nil {
 		return err
 	}
 
-	backoffWithMaxRetry := backoff.WithContext(backoff.WithMaxRetries(backoff.NewExponentialBackOff(), MaxRetries), ctx)
+	backoffWithMaxRetry := backoff.WithContext(backoff.WithMaxRetries(backoff.NewExponentialBackOff(), uint64(c.retries)), ctx)
 	return backoff.Retry(func() error {
 		req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
 		if err != nil {
