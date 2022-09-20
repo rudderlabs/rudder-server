@@ -99,7 +99,7 @@ type UploadAPIT struct {
 
 var UploadAPI UploadAPIT
 
-var DownloadFileNamePattern = "downloadfile.*.tmp"
+const DownloadFileNamePattern = "downloadfile.*.tmp"
 
 func InitWarehouseAPI(dbHandle *sql.DB, log logger.LoggerI) error {
 	connectionToken, tokenType, isMultiWorkspace, err := deployment.GetConnectionToken()
@@ -665,7 +665,7 @@ func validateObjectStorage(ctx context.Context, request *ObjectStorageValidation
 	if err != nil {
 		return InvalidDestinationCredErr{Base: err, Operation: "upload"}
 	}
-	f.Close()
+	_ = f.Close()
 
 	key := fileManager.GetDownloadKeyFromFileLocation(uploadOutput.Location)
 
@@ -684,7 +684,7 @@ func validateObjectStorage(ctx context.Context, request *ObjectStorageValidation
 	if err != nil {
 		return InvalidDestinationCredErr{Base: err, Operation: "download"}
 	}
-	f.Close()
+	_ = f.Close()
 
 	return nil
 }
