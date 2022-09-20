@@ -1723,6 +1723,7 @@ func (rt *HandleT) readAndProcess() int {
 			ctx,
 			pickupMap,
 			rt.getQueryParams(totalPickupCount),
+			rt.maxDSQuerySize,
 		)
 	}, sendQueryRetryStats)
 	if err != nil {

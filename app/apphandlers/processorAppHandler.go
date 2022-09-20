@@ -50,10 +50,10 @@ var (
 	IdleTimeout        time.Duration
 	webPort            int
 	MaxHeaderBytes     int
-	ProcessorDSLimit   int
-	RouterDSLimit      int
-	BatchRouterDSLimit int
-	GatewayDSLimit     int
+	processorDSLimit   int
+	routerDSLimit      int
+	batchRouterDSLimit int
+	gatewayDSLimit     int
 )
 
 func (*ProcessorApp) GetAppType() string {
@@ -71,10 +71,10 @@ func loadConfigHandler() {
 	config.RegisterDurationConfigVariable(720, &IdleTimeout, false, time.Second, []string{"IdleTimeout", "IdleTimeoutInSec"}...)
 	config.RegisterIntConfigVariable(8086, &webPort, false, 1, "Processor.webPort")
 	config.RegisterIntConfigVariable(524288, &MaxHeaderBytes, false, 1, "MaxHeaderBytes")
-	config.RegisterIntConfigVariable(0, &ProcessorDSLimit, true, 1, "Processor.dsLimit")
-	config.RegisterIntConfigVariable(0, &GatewayDSLimit, true, 1, "Gateway.dsLimit")
-	config.RegisterIntConfigVariable(0, &RouterDSLimit, true, 1, "Router.dsLimit")
-	config.RegisterIntConfigVariable(0, &BatchRouterDSLimit, true, 1, "BatchRouter.dsLimit")
+	config.RegisterIntConfigVariable(0, &processorDSLimit, true, 1, "Processor.jobsDB.dsLimit", "JobsDB.dsLimit")
+	config.RegisterIntConfigVariable(0, &gatewayDSLimit, true, 1, "Gateway.jobsDB.dsLimit", "JobsDB.dsLimit")
+	config.RegisterIntConfigVariable(0, &routerDSLimit, true, 1, "Router.jobsDB.dsLimit", "JobsDB.dsLimit")
+	config.RegisterIntConfigVariable(0, &batchRouterDSLimit, true, 1, "BatchRouter.jobsDB.dsLimit", "JobsDB.dsLimit")
 }
 
 func (processor *ProcessorApp) StartRudderCore(ctx context.Context, options *app.Options) error {
@@ -122,7 +122,7 @@ func (processor *ProcessorApp) StartRudderCore(ctx context.Context, options *app
 		jobsdb.WithMigrationMode(migrationMode),
 		jobsdb.WithStatusHandler(),
 		jobsdb.WithPreBackupHandlers(prebackupHandlers),
-		jobsdb.WithDSLimit(GatewayDSLimit),
+		jobsdb.WithDSLimit(&gatewayDSLimit),
 	)
 	defer gwDBForProcessor.Close()
 	gatewayDB = gwDBForProcessor
@@ -132,7 +132,7 @@ func (processor *ProcessorApp) StartRudderCore(ctx context.Context, options *app
 		jobsdb.WithMigrationMode(migrationMode),
 		jobsdb.WithStatusHandler(),
 		jobsdb.WithPreBackupHandlers(prebackupHandlers),
-		jobsdb.WithDSLimit(RouterDSLimit),
+		jobsdb.WithDSLimit(&routerDSLimit),
 	)
 	defer routerDB.Close()
 	batchRouterDB := jobsdb.NewForReadWrite(
@@ -141,7 +141,7 @@ func (processor *ProcessorApp) StartRudderCore(ctx context.Context, options *app
 		jobsdb.WithMigrationMode(migrationMode),
 		jobsdb.WithStatusHandler(),
 		jobsdb.WithPreBackupHandlers(prebackupHandlers),
-		jobsdb.WithDSLimit(BatchRouterDSLimit),
+		jobsdb.WithDSLimit(&batchRouterDSLimit),
 	)
 	defer batchRouterDB.Close()
 	errDB := jobsdb.NewForReadWrite(
@@ -150,7 +150,7 @@ func (processor *ProcessorApp) StartRudderCore(ctx context.Context, options *app
 		jobsdb.WithMigrationMode(migrationMode),
 		jobsdb.WithStatusHandler(),
 		jobsdb.WithPreBackupHandlers(prebackupHandlers),
-		jobsdb.WithDSLimit(ProcessorDSLimit),
+		jobsdb.WithDSLimit(&processorDSLimit),
 	)
 	var tenantRouterDB jobsdb.MultiTenantJobsDB
 	var multitenantStats multitenant.MultiTenantI

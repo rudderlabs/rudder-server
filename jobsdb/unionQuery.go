@@ -10,6 +10,8 @@ import (
 	"math"
 	"strings"
 	"time"
+
+	"github.com/rudderlabs/rudder-server/services/stats"
 )
 
 type MultiTenantHandleT struct {
@@ -17,7 +19,7 @@ type MultiTenantHandleT struct {
 }
 
 type MultiTenantJobsDB interface {
-	GetAllJobs(context.Context, map[string]int, GetQueryParamsT) ([]*JobT, error)
+	GetAllJobs(context.Context, map[string]int, GetQueryParamsT, int) ([]*JobT, error)
 
 	WithUpdateSafeTx(func(tx UpdateSafeTx) error) error
 	UpdateJobStatusInTx(ctx context.Context, tx UpdateSafeTx, statusList []*JobStatusT, customValFilters []string, parameterFilters []ParameterFilterT) error
@@ -61,7 +63,7 @@ func (*MultiTenantHandleT) getSingleWorkspaceQueryString(workspace string, jobsL
 
 // All Jobs
 
-func (mj *MultiTenantHandleT) GetAllJobs(ctx context.Context, workspaceCount map[string]int, params GetQueryParamsT) ([]*JobT, error) { // skipcq: CRT-P0003
+func (mj *MultiTenantHandleT) GetAllJobs(ctx context.Context, workspaceCount map[string]int, params GetQueryParamsT, maxDSQuerySize int) ([]*JobT, error) { // skipcq: CRT-P0003
 	// The order of lock is very important. The migrateDSLoop
 	// takes lock in this order so reversing this will cause
 	// deadlocks
@@ -80,6 +82,7 @@ func (mj *MultiTenantHandleT) GetAllJobs(ctx context.Context, workspaceCount map
 		workspacePayloadLimitMap[workspace] = int64(payloadLimit)
 	}
 
+	var tablesQueried int
 	params.StateFilters = []string{NotProcessed.State, Waiting.State, Failed.State}
 	conditions := QueryConditions{
 		IgnoreCustomValFiltersInQuery: params.IgnoreCustomValFiltersInQuery,
@@ -89,9 +92,12 @@ func (mj *MultiTenantHandleT) GetAllJobs(ctx context.Context, workspaceCount map
 	}
 	start := time.Now()
 	dsQueryCount := 0
-	dsQueryLimit := mj.dsLimit
+	var dsQueryLimit int
+	if mj.dsLimit != nil {
+		dsQueryLimit = *mj.dsLimit
+	}
 	for _, ds := range dsList {
-		if (dsQueryLimit > 0 && dsQueryCount >= dsQueryLimit) || len(workspaceCount) == 0 {
+		if dsQueryLimit > 0 && dsQueryCount >= dsQueryLimit {
 			break
 		}
 		jobs, dsHit, err := mj.getUnionDS(ctx, ds, workspaceCount, workspacePayloadLimitMap, conditions)
@@ -102,11 +108,27 @@ func (mj *MultiTenantHandleT) GetAllJobs(ctx context.Context, workspaceCount map
 		if dsHit {
 			dsQueryCount++
 		}
+
+		if len(jobs) > 0 {
+			tablesQueried++
+		}
+
+		if len(workspaceCount) == 0 {
+			break
+		}
+		if tablesQueried >= maxDSQuerySize {
+			break
+		}
 	}
 
 	mj.unionQueryTime.SendTiming(time.Since(start))
 
-	mj.tablesQueriedStat.Gauge(dsQueryCount)
+	unionQueryTablesQueriedStat := stats.NewTaggedStat("tables_queried_gauge", stats.GaugeType, stats.Tags{
+		"state":     "nonterminal",
+		"query":     "union",
+		"customVal": mj.tablePrefix,
+	})
+	unionQueryTablesQueriedStat.Gauge(dsQueryCount)
 
 	return outJobs, nil
 }

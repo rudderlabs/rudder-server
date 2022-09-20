@@ -423,7 +423,6 @@ type HandleT struct {
 	isStatNewDSPeriodInitialized  bool
 	statDropDSPeriod              stats.RudderStats
 	unionQueryTime                stats.RudderStats
-	tablesQueriedStat             stats.RudderStats
 	isStatDropDSPeriodInitialized bool
 	migrationState                migrationState
 	inProgressMigrationTargetDS   *dataSetT
@@ -434,7 +433,7 @@ type HandleT struct {
 	enableWriterQueue             bool
 	enableReaderQueue             bool
 	clearAll                      bool
-	dsLimit                       int
+	dsLimit                       *int
 	maxReaders                    int
 	maxWriters                    int
 	maxOpenConnections            int
@@ -736,7 +735,7 @@ func WithPreBackupHandlers(preBackupHandlers []prebackup.Handler) OptsFunc {
 	}
 }
 
-func WithDSLimit(limit int) OptsFunc {
+func WithDSLimit(limit *int) OptsFunc {
 	return func(jd *HandleT) {
 		jd.dsLimit = limit
 	}
@@ -872,10 +871,6 @@ func (jd *HandleT) workersAndAuxSetup() {
 
 	jd.statTableCount = stats.DefaultStats.NewStat(fmt.Sprintf("jobsdb.%s_tables_count", jd.tablePrefix), stats.GaugeType)
 	jd.statDSCount = stats.NewTaggedStat("jobsdb.tables_count", stats.GaugeType, stats.Tags{"customVal": jd.tablePrefix})
-	jd.tablesQueriedStat = stats.NewTaggedStat("tables_queried_gauge", stats.GaugeType, stats.Tags{
-		"state":     "nonterminal",
-		"customVal": jd.tablePrefix,
-	})
 	jd.unionQueryTime = stats.NewTaggedStat("union_query_time", stats.TimerType, stats.Tags{
 		"state":     "nonterminal",
 		"customVal": jd.tablePrefix,
@@ -1951,22 +1946,15 @@ func (jd *HandleT) migrateJobs(ctx context.Context, srcDS, destDS dataSetT) (noJ
 	defer jd.dsListLock.RUnlock()
 
 	// Unprocessed jobs
-	dsHitCount := 0
-	unprocessedList, dsHit, err := jd.getUnprocessedJobsDS(ctx, srcDS, false, GetQueryParamsT{})
+	unprocessedList, _, err := jd.getUnprocessedJobsDS(ctx, srcDS, false, GetQueryParamsT{})
 	if err != nil {
 		return 0, err
 	}
-	if dsHit {
-		dsHitCount++
-	}
 	// Jobs which haven't finished processing
-	retryList, dsHit, err := jd.getProcessedJobsDS(ctx, srcDS, true,
+	retryList, _, err := jd.getProcessedJobsDS(ctx, srcDS, true,
 		GetQueryParamsT{StateFilters: validNonTerminalStates})
 	if err != nil {
 		return 0, err
-	}
-	if dsHit {
-		dsHitCount++
 	}
 	jobsToMigrate := append(unprocessedList.Jobs, retryList.Jobs...)
 	noJobsMigrated = len(jobsToMigrate)
@@ -1996,7 +1984,6 @@ func (jd *HandleT) migrateJobs(ctx context.Context, srcDS, destDS dataSetT) (noJ
 	if err != nil {
 		return 0, err
 	}
-	jd.tablesQueriedStat.Gauge(dsHitCount)
 	return noJobsMigrated, nil
 }
 
@@ -4344,7 +4331,10 @@ func (jd *HandleT) getUnprocessed(ctx context.Context, params GetQueryParamsT) (
 
 	var completeUnprocessedJobs JobsResult
 	dsQueryCount := 0
-	dsLimit := jd.dsLimit
+	var dsLimit int
+	if jd.dsLimit != nil {
+		dsLimit = *jd.dsLimit
+	}
 	for _, ds := range dsList {
 		if dsLimit > 0 && dsQueryCount >= dsLimit {
 			break
@@ -4375,7 +4365,12 @@ func (jd *HandleT) getUnprocessed(ctx context.Context, params GetQueryParamsT) (
 			params.PayloadSizeLimit -= unprocessedJobs.PayloadSize
 		}
 	}
-	jd.tablesQueriedStat.Gauge(dsQueryCount)
+	unprocessedQueryTablesQueriedStat := stats.NewTaggedStat("tables_queried_gauge", stats.GaugeType, stats.Tags{
+		"state":     "nonterminal",
+		"query":     "unprocessed",
+		"customVal": jd.tablePrefix,
+	})
+	unprocessedQueryTablesQueriedStat.Gauge(dsQueryCount)
 	// Release lock
 	return completeUnprocessedJobs, nil
 }
@@ -4561,7 +4556,10 @@ func (jd *HandleT) GetProcessed(ctx context.Context, params GetQueryParamsT) (Jo
 
 	var completeProcessedJobs JobsResult
 	dsQueryCount := 0
-	dsLimit := jd.dsLimit
+	var dsLimit int
+	if jd.dsLimit != nil {
+		dsLimit = *jd.dsLimit
+	}
 	for _, ds := range dsList {
 		if dsLimit > 0 && dsQueryCount >= dsLimit {
 			break
@@ -4592,7 +4590,12 @@ func (jd *HandleT) GetProcessed(ctx context.Context, params GetQueryParamsT) (Jo
 			params.PayloadSizeLimit -= processedJobs.PayloadSize
 		}
 	}
-	jd.tablesQueriedStat.Gauge(dsQueryCount)
+	processedQueryTablesQueriedStat := stats.NewTaggedStat("tables_queried_gauge", stats.GaugeType, stats.Tags{
+		"state":     "nonterminal",
+		"query":     "processed",
+		"customVal": jd.tablePrefix,
+	})
+	processedQueryTablesQueriedStat.Gauge(dsQueryCount)
 	return completeProcessedJobs, nil
 }
 
