@@ -634,13 +634,11 @@ func checkMapForValidKey(configMap map[string]interface{}, key string) bool {
 		return false
 	}
 
-	if valStr, ok := value.(string); !ok {
-		return false
-	} else {
+	if valStr, ok := value.(string); ok {
 		return len(valStr) != 0
 	}
-
 	return false
+
 }
 
 func validateObjectStorage(ctx context.Context, request *ObjectStorageValidationRequest) error {
