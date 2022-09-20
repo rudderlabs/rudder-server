@@ -124,47 +124,44 @@ func syncsSQLStatement() string {
 
 var _ = Describe("Warehouse", Ordered, func() {
 	var (
-		pgResource      *destination.PostgresResource
-		err             error
-		cleanup         = &testhelper.Cleanup{}
 		sourceID        = "test-sourceID"
 		destinationID   = "test-destinationID"
 		workspaceID     = "test-workspaceID"
 		destinationType = "POSTGRES"
 	)
 
-	BeforeAll(func() {
-		pgResource = setupWarehouse(GinkgoT(), cleanup)
-
-		pkgLogger = &logger.NOP{}
-		sourceIDsByWorkspace = map[string][]string{
-			workspaceID: {sourceID},
-		}
-		connectionsMap = map[string]map[string]warehouseutils.WarehouseT{
-			destinationID: {
-				sourceID: warehouseutils.WarehouseT{
-					Identifier: warehouseutils.GetWarehouseIdentifier(destinationType, sourceID, destinationID),
-				},
-			},
-		}
-	})
-
-	AfterAll(func() {
-		cleanup.Run()
-	})
-
 	Describe("Warehouse GRPC round trip", Ordered, func() {
 		var (
-			w *warehouseGrpc
-			c context.Context
-
-			limit    = int32(2)
-			uploadID = int64(1)
+			pgResource *destination.PostgresResource
+			err        error
+			cleanup    = &testhelper.Cleanup{}
+			w          *warehouseGrpc
+			c          context.Context
+			limit      = int32(2)
+			uploadID   = int64(1)
 		)
 
 		BeforeAll(func() {
+			pgResource = setupWarehouse(GinkgoT(), cleanup)
+
+			pkgLogger = &logger.NOP{}
+			sourceIDsByWorkspace = map[string][]string{
+				workspaceID: {sourceID},
+			}
+			connectionsMap = map[string]map[string]warehouseutils.WarehouseT{
+				destinationID: {
+					sourceID: warehouseutils.WarehouseT{
+						Identifier: warehouseutils.GetWarehouseIdentifier(destinationType, sourceID, destinationID),
+					},
+				},
+			}
+
 			w = &warehouseGrpc{}
 			c = context.TODO()
+		})
+
+		AfterAll(func() {
+			cleanup.Run()
 		})
 
 		It("Init warehouse api", func() {
