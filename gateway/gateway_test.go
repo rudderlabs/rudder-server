@@ -10,12 +10,14 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"reflect"
+	"testing"
 	"time"
 
 	"github.com/gofrs/uuid"
 	"github.com/golang/mock/gomock"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
 
@@ -630,4 +632,21 @@ func jobsToJobsdbErrors(_ context.Context, _ jobsdb.StoreSafeTx, jobs []*jobsdb.
 	}
 
 	return errorsMap, nil
+}
+
+func TestContentTypeFunction(t *testing.T) {
+	expectedContentType := "application/json; charset=utf-8"
+	expectedStatus := http.StatusOK
+	nextHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// setting it custom to verify that next handler is called
+		w.WriteHeader(expectedStatus)
+	})
+	handlerToTest := WithContentType(expectedContentType, nextHandler)
+	respRecorder := httptest.NewRecorder()
+	req := httptest.NewRequest("GET", "http://testing", nil)
+
+	handlerToTest.ServeHTTP(respRecorder, req)
+	receivedContentType := respRecorder.Header()["Content-Type"][0]
+	require.Equal(t, expectedContentType, receivedContentType, "actual content type different than expected.")
+	require.Equal(t, expectedStatus, respRecorder.Code, "actual response code different than expected.")
 }
