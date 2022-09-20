@@ -423,7 +423,7 @@ func (bm *BatchManager) Delete(ctx context.Context, job model.Job, destConfig ma
 	defer batch.cleanup(destConfig["prefix"].(string))
 
 	// file with pattern to be searched & deleted from all downloaded files.
-	absPatternFile, err := batch.createPatternFile(job.UserAttributes)
+	absPatternFile, err := batch.createPatternFile(job.Users)
 	if err != nil {
 		pkgLogger.Errorf("error while creating pattern file: %v", err)
 		return model.JobStatusFailed

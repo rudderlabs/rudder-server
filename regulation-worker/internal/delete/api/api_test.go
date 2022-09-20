@@ -43,7 +43,7 @@ func TestDelete(t *testing.T) {
 				WorkspaceID:   "1001",
 				DestinationID: "1234",
 				Status:        model.JobStatusPending,
-				UserAttributes: []model.User{
+				Users: []model.User{
 					{
 						ID: "Jermaine1473336609491897794707338",
 						Attributes: map[string]string{

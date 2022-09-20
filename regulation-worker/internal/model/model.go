@@ -26,12 +26,12 @@ const (
 )
 
 type Job struct {
-	ID             int
-	WorkspaceID    string
-	DestinationID  string
-	Status         JobStatus
-	UserAttributes []User
-	UpdatedAt      time.Time
+	ID            int
+	WorkspaceID   string
+	DestinationID string
+	Status        JobStatus
+	Users         []User
+	UpdatedAt     time.Time
 }
 
 type User struct {

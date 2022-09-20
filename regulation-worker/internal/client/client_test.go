@@ -60,7 +60,7 @@ func TestGet(t *testing.T) {
 			}
 			job, err := c.Get(context.Background())
 			require.Equal(t, tt.expectedErr, err)
-			require.Equal(t, tt.expectedUsrAttributeCount, len(job.UserAttributes), "no of users different than expected")
+			require.Equal(t, tt.expectedUsrAttributeCount, len(job.Users), "no of users different than expected")
 			t.Log("actual job:", job)
 		})
 	}

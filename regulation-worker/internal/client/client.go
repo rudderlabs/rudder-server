@@ -182,10 +182,10 @@ func mapPayloadToJob(wjs jobSchema, workspaceID string) (model.Job, error) {
 	}
 
 	return model.Job{
-		ID:             jobID,
-		WorkspaceID:    workspaceID,
-		DestinationID:  wjs.DestinationID,
-		Status:         model.JobStatusRunning,
-		UserAttributes: usrAttribute,
+		ID:            jobID,
+		WorkspaceID:   workspaceID,
+		DestinationID: wjs.DestinationID,
+		Status:        model.JobStatusRunning,
+		Users:         usrAttribute,
 	}, nil
 }
