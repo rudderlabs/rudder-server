@@ -73,7 +73,28 @@ func Test_Client_Send(t *testing.T) {
 		})
 	}
 
-	t.Run("unexpected status", func(t *testing.T) {
+	t.Run("unexpected retriable status", func(t *testing.T) {
+		const maxRetries = 2
+		var count int64
+
+		s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			atomic.AddInt64(&count, 1)
+			w.WriteHeader(http.StatusInternalServerError)
+		}))
+		defer s.Close()
+
+		c := features.New(s.URL, &identity.Namespace{},
+			features.WithHTTPClient(s.Client()),
+			features.WithMaxRetries(maxRetries),
+		)
+
+		err := c.Send(context.Background(), "test", []string{"feature1", "feature2"})
+		require.ErrorContains(t, err, "")
+
+		require.Equalf(t, int64(maxRetries+1), atomic.LoadInt64(&count), "retry %d times", maxRetries)
+	})
+
+	t.Run("unexpected non-retriable status", func(t *testing.T) {
 		const maxRetries = 2
 		var count int64
 
@@ -91,7 +112,7 @@ func Test_Client_Send(t *testing.T) {
 		err := c.Send(context.Background(), "test", []string{"feature1", "feature2"})
 		require.ErrorContains(t, err, "")
 
-		require.Equalf(t, int64(maxRetries+1), atomic.LoadInt64(&count), "retry %d times", maxRetries)
+		require.Equalf(t, int64(1), atomic.LoadInt64(&count), "retry %d times", maxRetries)
 	})
 
 	t.Run("timeout", func(t *testing.T) {
@@ -99,7 +120,6 @@ func Test_Client_Send(t *testing.T) {
 
 		blocker := make(chan struct{})
 		s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-
 			<-blocker
 		}))
 		defer s.Close()

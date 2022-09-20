@@ -13,6 +13,7 @@ import (
 
 	"github.com/cenkalti/backoff"
 	"github.com/rudderlabs/rudder-server/services/controlplane/identity"
+	"github.com/rudderlabs/rudder-server/utils/httputil"
 )
 
 var (
@@ -136,7 +137,11 @@ func (c *Client) Send(ctx context.Context, component string, features []string) 
 		}
 
 		if resp.StatusCode != http.StatusNoContent {
-			return fmt.Errorf("unexpected status code %d: %s", resp.StatusCode, string(b))
+			err := fmt.Errorf("unexpected status code %d: %s", resp.StatusCode, string(b))
+			if !httputil.RetriableStatus(resp.StatusCode) {
+				return backoff.Permanent(fmt.Errorf("non retriable: %w", err))
+			}
+			return err
 		}
 		return err
 	}, backoffWithMaxRetry)
