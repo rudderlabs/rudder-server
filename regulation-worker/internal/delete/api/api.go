@@ -117,8 +117,8 @@ func mapJobToPayload(job model.Job, destName string, destConfig map[string]inter
 	uas := make([]userAttributesSchema, len(job.UserAttributes))
 	for i, ua := range job.UserAttributes {
 		uas[i] = make(map[string]string)
-		uas[i]["userId"] = ua.UserID
-		for k, v := range ua.Opts {
+		uas[i]["userId"] = ua.ID
+		for k, v := range ua.Attributes {
 			uas[i][k] = v
 		}
 	}

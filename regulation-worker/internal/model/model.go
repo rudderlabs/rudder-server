@@ -30,13 +30,13 @@ type Job struct {
 	WorkspaceID    string
 	DestinationID  string
 	Status         JobStatus
-	UserAttributes []UserAttribute
+	UserAttributes []User
 	UpdatedAt      time.Time
 }
 
-type UserAttribute struct {
-	UserID string
-	Opts   map[string]string
+type User struct {
+	ID         string
+	Attributes map[string]string
 }
 
 type Destination struct {

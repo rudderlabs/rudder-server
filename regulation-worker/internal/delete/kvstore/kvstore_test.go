@@ -143,10 +143,10 @@ func TestRedisDeletion(t *testing.T) {
 
 	deleteJob := model.Job{
 		ID: 1,
-		UserAttributes: []model.UserAttribute{
+		UserAttributes: []model.User{
 			{
-				UserID: "Jermaine1473336609491897794707338",
-				Opts: map[string]string{
+				ID: "Jermaine1473336609491897794707338",
+				Attributes: map[string]string{
 					"phone": "6463633841",
 					"email": "dorowane8n285680461479465450293436@gmail.com",
 				},
