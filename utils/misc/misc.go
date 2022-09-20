@@ -514,27 +514,9 @@ func GetIPFromReq(req *http.Request) string {
 	return strings.ReplaceAll(addresses[0], " ", "")
 }
 
-func ContainsString(slice []string, str string) bool {
+func Contains[K comparable](slice []K, item K) bool {
 	for _, s := range slice {
-		if s == str {
-			return true
-		}
-	}
-	return false
-}
-
-func ContainsInt64(slice []int64, val int64) bool {
-	for _, s := range slice {
-		if s == val {
-			return true
-		}
-	}
-	return false
-}
-
-func ContainsInt(slice []int, val int) bool {
-	for _, s := range slice {
-		if s == val {
+		if s == item {
 			return true
 		}
 	}
@@ -1032,6 +1014,7 @@ type ObjectStorageOptsT struct {
 	Config                      interface{}
 	UseRudderStorage            bool
 	RudderStoragePrefixOverride string
+	WorkspaceID                 string
 }
 
 func GetObjectStorageConfig(opts ObjectStorageOptsT) map[string]interface{} {
@@ -1039,14 +1022,17 @@ func GetObjectStorageConfig(opts ObjectStorageOptsT) map[string]interface{} {
 	if opts.UseRudderStorage {
 		return GetRudderObjectStorageConfig(opts.RudderStoragePrefixOverride)
 	}
-	if opts.Provider == "S3" && !HasAWSKeysInConfig(opts.Config) {
+	if opts.Provider == "S3" {
 		clonedObjectStorageConfig := make(map[string]interface{})
 		for k, v := range objectStorageConfigMap {
 			clonedObjectStorageConfig[k] = v
 		}
-		clonedObjectStorageConfig["accessKeyID"] = config.GetEnv("RUDDER_AWS_S3_COPY_USER_ACCESS_KEY_ID", "")
-		clonedObjectStorageConfig["accessKey"] = config.GetEnv("RUDDER_AWS_S3_COPY_USER_ACCESS_KEY", "")
-		return clonedObjectStorageConfig
+		clonedObjectStorageConfig["externalID"] = opts.WorkspaceID
+		if !HasAWSKeysInConfig(objectStorageConfigMap) {
+			clonedObjectStorageConfig["accessKeyID"] = config.GetEnv("RUDDER_AWS_S3_COPY_USER_ACCESS_KEY_ID", "")
+			clonedObjectStorageConfig["accessKey"] = config.GetEnv("RUDDER_AWS_S3_COPY_USER_ACCESS_KEY", "")
+		}
+		objectStorageConfigMap = clonedObjectStorageConfig
 	}
 	return objectStorageConfigMap
 }

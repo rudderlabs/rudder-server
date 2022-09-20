@@ -11,12 +11,32 @@ import (
 
 var ErrUnsupportedState = errors.New("unsupported state")
 
-// NewBarrier creates a new properly initialized Barrier
-func NewBarrier(abortConcurrencyLimit int) *Barrier {
-	return &Barrier{
-		concurrencyLimit: abortConcurrencyLimit,
-		barriers:         make(map[string]*barrierInfo),
+type OptFn func(b *Barrier)
+
+// WithMetadata includes the provided metadata in the error messages
+func WithMetadata(metadata map[string]string) OptFn {
+	return func(b *Barrier) {
+		b.metadata = metadata
 	}
+}
+
+// WithConcurrencyLimit sets the maximum number of concurrent jobs for
+// a given user when the limiter is enabled
+func WithConcurrencyLimit(abortConcurrencyLimit int) OptFn {
+	return func(b *Barrier) {
+		b.concurrencyLimit = abortConcurrencyLimit
+	}
+}
+
+// NewBarrier creates a new properly initialized Barrier
+func NewBarrier(fns ...OptFn) *Barrier {
+	b := &Barrier{
+		barriers: make(map[string]*barrierInfo),
+	}
+	for _, fn := range fns {
+		fn(b)
+	}
+	return b
 }
 
 // Barrier is an abstraction for applying event ordering guarantees in the router.
@@ -36,6 +56,7 @@ type Barrier struct {
 	mu               sync.RWMutex // mutex to synchronize concurrent access to the barrier's methods
 	queue            []command
 	barriers         map[string]*barrierInfo
+	metadata         map[string]string
 }
 
 // Enter the barrier for this userID and jobID. If there is not already a barrier for this userID
@@ -52,6 +73,9 @@ func (b *Barrier) Enter(userID string, jobID int64) (accepted bool, previousFail
 	// if there is a failed job in the barrier, only this job can enter the barrier
 	if barrier.failedJobID != nil {
 		failedJob := *barrier.failedJobID
+		if failedJob > jobID {
+			panic(fmt.Errorf("detected illegal job sequence during barrier enter %+v: userID %q, previousFailedJob:%d > jobID:%d", b.metadata, userID, failedJob, jobID))
+		}
 		return jobID == failedJob, &failedJob
 	}
 
@@ -85,7 +109,7 @@ func (b *Barrier) Wait(userID string, jobID int64) (wait bool, previousFailedJob
 	if barrier.failedJobID != nil {
 		failedJob := *barrier.failedJobID
 		if failedJob > jobID {
-			panic(fmt.Errorf("previousFailedJob:%d > jobID:%d", failedJob, jobID))
+			panic(fmt.Errorf("detected illegal job sequence during barrier wait %+v: userID %q, previousFailedJob:%d > jobID:%d", b.metadata, userID, failedJob, jobID))
 		}
 		return jobID > failedJob, &failedJob // wait if this is not the failed job
 	}
@@ -115,10 +139,10 @@ func (b *Barrier) StateChanged(userID string, jobID int64, state string) error {
 		return ErrUnsupportedState
 	}
 
-	if command.enqueue(b.barriers) {
+	if command.enqueue(b) {
 		b.queue = append(b.queue, command)
 	} else {
-		command.execute(b.barriers)
+		command.execute(b)
 	}
 	return nil
 }
@@ -128,7 +152,7 @@ func (b *Barrier) Sync() int {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	for _, c := range b.queue {
-		c.execute(b.barriers)
+		c.execute(b)
 	}
 	flushed := len(b.queue)
 	b.queue = nil
@@ -147,7 +171,7 @@ func (b *Barrier) String() string {
 	var sb strings.Builder
 	b.mu.RLock()
 	defer b.mu.RUnlock()
-	sb.WriteString("Barrier{[")
+	sb.WriteString(fmt.Sprintf("Barrier{%+v[", b.metadata))
 	for userID, barrier := range b.barriers {
 		failedJobID := "<nil>"
 		if barrier.failedJobID != nil {
@@ -166,8 +190,8 @@ type barrierInfo struct {
 }
 
 type command interface {
-	enqueue(barriers map[string]*barrierInfo) bool
-	execute(barriers map[string]*barrierInfo)
+	enqueue(b *Barrier) bool
+	execute(b *Barrier)
 }
 
 type cmd struct {
@@ -176,8 +200,8 @@ type cmd struct {
 }
 
 // default behaviour is to try and remove the jobID from the concurrent jobs map
-func (c *cmd) execute(barriers map[string]*barrierInfo) {
-	if barrier, ok := barriers[c.userID]; ok {
+func (c *cmd) execute(b *Barrier) {
+	if barrier, ok := b.barriers[c.userID]; ok {
 		barrier.mu.Lock()
 		defer barrier.mu.Unlock()
 		delete(barrier.concurrencyLimiter, c.jobID)
@@ -185,8 +209,8 @@ func (c *cmd) execute(barriers map[string]*barrierInfo) {
 }
 
 // default behaviour is to enqueue the command if a barrier for this userID already exists
-func (c *cmd) enqueue(barriers map[string]*barrierInfo) bool {
-	_, ok := barriers[c.userID]
+func (c *cmd) enqueue(b *Barrier) bool {
+	_, ok := b.barriers[c.userID]
 	return ok
 }
 
@@ -196,26 +220,27 @@ type jobFailedCommand struct {
 }
 
 // If no failed jobID is in the barrier make this jobID the failed job for this userID. Removes the job from the concurrent jobs map if it exists there
-func (c *jobFailedCommand) execute(barriers map[string]*barrierInfo) {
-	barrier, ok := barriers[c.userID]
+func (c *jobFailedCommand) execute(b *Barrier) {
+	barrier, ok := b.barriers[c.userID]
 	if !ok {
 		barrier = &barrierInfo{}
-		barriers[c.userID] = barrier
+		b.barriers[c.userID] = barrier
 	}
 	barrier.mu.Lock()
 	defer barrier.mu.Unlock()
 
+	// it is unfortunately possible within a single batch for events to be processed out-of-order
 	if barrier.failedJobID == nil {
 		barrier.failedJobID = &c.jobID
 	} else if *barrier.failedJobID > c.jobID {
-		panic(fmt.Errorf("previousFailedJob:%d > jobID:%d", *barrier.failedJobID, c.jobID))
+		panic(fmt.Errorf("detected illegal job sequence during barrier job failed %+v: userID %q, previousFailedJob:%d > jobID:%d", b.metadata, c.userID, *barrier.failedJobID, c.jobID))
 	}
 	// reset concurrency limiter
 	barrier.concurrencyLimiter = nil
 }
 
 // a failed command never gets enqueued
-func (*jobFailedCommand) enqueue(_ map[string]*barrierInfo) bool {
+func (*jobFailedCommand) enqueue(_ *Barrier) bool {
 	return false
 }
 
@@ -225,13 +250,13 @@ type jobSucceededCmd struct {
 }
 
 // removes the barrier for this userID, if it exists
-func (c *jobSucceededCmd) execute(barriers map[string]*barrierInfo) {
-	if barrier, ok := barriers[c.userID]; ok {
+func (c *jobSucceededCmd) execute(b *Barrier) {
+	if barrier, ok := b.barriers[c.userID]; ok {
 		if barrier.failedJobID != nil && *barrier.failedJobID != c.jobID { // out-of-sync command (failed commands get executed immediately)
 			return
 		}
 	}
-	delete(barriers, c.userID)
+	delete(b.barriers, c.userID)
 }
 
 // jobAbortedCommand is a command that is executed when a job has aborted.
@@ -240,11 +265,11 @@ type jobAbortedCommand struct {
 }
 
 // Creates a concurrent jobs map if none exists. Also removes the jobID from the concurrent jobs map if it exists there
-func (c *jobAbortedCommand) execute(barriers map[string]*barrierInfo) {
-	if barrier, ok := barriers[c.userID]; ok {
+func (c *jobAbortedCommand) execute(b *Barrier) {
+	if barrier, ok := b.barriers[c.userID]; ok {
 		if barrier.failedJobID == nil {
 			// no previously failed job, simply remove the barrier
-			delete(barriers, c.userID)
+			delete(b.barriers, c.userID)
 			return
 		}
 		if *barrier.failedJobID != c.jobID {

@@ -16,7 +16,7 @@ service Warehouse {
   rpc Validate (WHValidationRequest) returns (WHValidationResponse);
   rpc RetryWHUploads (RetryWHUploadsRequest) returns (RetryWHUploadsResponse);
   rpc ValidateObjectStorageDestination (ValidateObjectStorageRequest) returns (ValidateObjectStorageResponse);
-
+  rpc CountWHUploadsToRetry (RetryWHUploadsRequest) returns (RetryWHUploadsResponse);
 }
 
 message Pagination {
@@ -104,7 +104,8 @@ message RetryWHUploadsRequest{
 
 message RetryWHUploadsResponse {
   string message = 1;
-  int32 status_code = 2;
+  int64 count = 2;
+  int32 status_code = 3;
 }
 
 message ValidateObjectStorageRequest {

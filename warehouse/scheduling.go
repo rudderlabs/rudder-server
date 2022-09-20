@@ -54,7 +54,7 @@ func ScheduledTimes(syncFrequency, syncStartAt string) []int {
 		counter++
 	}
 
-	prependTimes := []int{}
+	var prependTimes []int
 	counter = 1
 	for {
 		mins := syncStartAtInMin - counter*syncFrequencyInMin
@@ -118,7 +118,7 @@ func (wh *HandleT) getLastUploadCreatedAt(warehouse warehouseutils.WarehouseT) t
 	return t.Time
 }
 
-func GetExludeWindowStartEndTimes(excludeWindow map[string]interface{}) (string, string) {
+func GetExcludeWindowStartEndTimes(excludeWindow map[string]interface{}) (string, string) {
 	var startTime, endTime string
 	if time, ok := excludeWindow[warehouseutils.ExcludeWindowStartTime].(string); ok {
 		startTime = time
@@ -166,7 +166,7 @@ func (wh *HandleT) canCreateUpload(warehouse warehouseutils.WarehouseT) bool {
 	}
 	// gets exclude window start time and end time
 	excludeWindow := warehouseutils.GetConfigValueAsMap(warehouseutils.ExcludeWindow, warehouse.Destination.Config)
-	excludeWindowStartTime, excludeWindowEndTime := GetExludeWindowStartEndTimes(excludeWindow)
+	excludeWindowStartTime, excludeWindowEndTime := GetExcludeWindowStartEndTimes(excludeWindow)
 	if CheckCurrentTimeExistsInExcludeWindow(timeutil.Now(), excludeWindowStartTime, excludeWindowEndTime) {
 		return false
 	}
@@ -182,7 +182,7 @@ func (wh *HandleT) canCreateUpload(warehouse warehouseutils.WarehouseT) bool {
 	return lastUploadCreatedAt.Before(prevScheduledTime)
 }
 
-func durationBeforeNextAttempt(attempt int64) time.Duration { // Add state(retryable/non-retryable) as an argument to decide backoff etc)
+func DurationBeforeNextAttempt(attempt int64) time.Duration { // Add state(retryable/non-retryable) as an argument to decide backoff etc)
 	var d time.Duration
 	b := backoff.NewExponentialBackOff()
 	b.InitialInterval = minUploadBackoff

@@ -141,6 +141,7 @@ func TestBadResponse(t *testing.T) {
 }
 
 func TestNewForDeployment(t *testing.T) {
+	initBackendConfig()
 	t.Run("dedicated", func(t *testing.T) {
 		t.Setenv("WORKSPACE_TOKEN", "foobar")
 		conf, err := newForDeployment(deployment.DedicatedType, nil)

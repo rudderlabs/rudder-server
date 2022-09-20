@@ -1,4 +1,8 @@
 <p align="center">
+  🔥 <b>New: Just launched <a href="https://github.com/rudderlabs/rudder-server/discussions/2401">RudderStack v1.0</a><br/>
+ </p>
+ 
+<p align="center">
   <a href="https://www.rudderstack.com/">
     <img src="resources/logo.png">
   </a>

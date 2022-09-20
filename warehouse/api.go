@@ -91,6 +91,7 @@ type TableUploadResT struct {
 type UploadAPIT struct {
 	enabled           bool
 	dbHandle          *sql.DB
+	warehouseDBHandle *DB
 	log               logger.LoggerI
 	connectionManager *controlplane.ConnectionManager
 	isMultiWorkspace  bool
@@ -105,20 +106,22 @@ var UploadAPI UploadAPIT
 var DownloadFileNamePattern = "downloadfile.*.tmp"
 
 func InitWarehouseAPI(dbHandle *sql.DB, log logger.LoggerI) error {
-	connectionToken, isMultiWorkspace, err := deployment.GetConnectionToken()
+	connectionToken, tokenType, isMultiWorkspace, err := deployment.GetConnectionToken()
 	if err != nil {
 		return err
 	}
 	UploadAPI = UploadAPIT{
-		enabled:          true,
-		dbHandle:         dbHandle,
-		log:              log,
-		isMultiWorkspace: isMultiWorkspace,
+		enabled:           true,
+		dbHandle:          dbHandle,
+		warehouseDBHandle: NewWarehouseDB(dbHandle),
+		log:               log,
+		isMultiWorkspace:  isMultiWorkspace,
 		connectionManager: &controlplane.ConnectionManager{
 			AuthInfo: controlplane.AuthInfo{
 				Service:         "warehouse",
 				ConnectionToken: connectionToken,
 				InstanceID:      config.GetEnv("instance_id", "1"),
+				TokenType:       tokenType,
 			},
 			RetryInterval: 0,
 			UseTLS:        config.GetEnvAsBool("CP_ROUTER_USE_TLS", true),
@@ -171,11 +174,11 @@ func (uploadsReq *UploadsReqT) GetWhUploads() (uploadsRes *proto.WHUploadsRespon
 	}
 
 	if UploadAPI.isMultiWorkspace {
-		uploadsRes, err = uploadsReq.getWhUploadsForHosted(authorizedSourceIDs, `id, source_id, destination_id, destination_type, namespace, status, error, first_event_at, last_event_at, last_exec_at, updated_at, timings, metadata->>'nextRetryTime', metadata->>'archivedStagingAndLoadFiles'`)
+		uploadsRes, err = uploadsReq.warehouseUploadsForHosted(authorizedSourceIDs, `id, source_id, destination_id, destination_type, namespace, status, error, first_event_at, last_event_at, last_exec_at, updated_at, timings, metadata->>'nextRetryTime', metadata->>'archivedStagingAndLoadFiles'`)
 		return
 	}
 
-	uploadsRes, err = uploadsReq.getWhUploads(`id, source_id, destination_id, destination_type, namespace, status, error, first_event_at, last_event_at, last_exec_at, updated_at, timings, metadata->>'nextRetryTime', metadata->>'archivedStagingAndLoadFiles'`)
+	uploadsRes, err = uploadsReq.warehouseUploads(`id, source_id, destination_id, destination_type, namespace, status, error, first_event_at, last_event_at, last_exec_at, updated_at, timings, metadata->>'nextRetryTime', metadata->>'archivedStagingAndLoadFiles'`)
 	return
 }
 
@@ -425,7 +428,7 @@ func (uploadReq UploadReqT) authorizeSource(sourceID string) bool {
 		return false
 	}
 	pkgLogger.Debugf(`Authorized sourceId's for workspace:%s - %v`, uploadReq.WorkspaceID, authorizedSourceIDs)
-	return misc.ContainsString(authorizedSourceIDs, sourceID)
+	return misc.Contains(authorizedSourceIDs, sourceID)
 }
 
 func (uploadsReq UploadsReqT) authorizedSources() (sourceIDs []string) {
@@ -522,7 +525,7 @@ func (uploadsReq *UploadsReqT) getTotalUploadCount(whereClause string) (int32, e
 }
 
 // for hosted workspaces - we get the uploads and the total upload count using the same query
-func (uploadsReq *UploadsReqT) getWhUploadsForHosted(authorizedSourceIDs []string, selectFields string) (uploadsRes *proto.WHUploadsResponse, err error) {
+func (uploadsReq *UploadsReqT) warehouseUploadsForHosted(authorizedSourceIDs []string, selectFields string) (uploadsRes *proto.WHUploadsResponse, err error) {
 	var uploads []*proto.WHUploadResponse
 	var totalUploadCount int32
 
@@ -531,7 +534,7 @@ func (uploadsReq *UploadsReqT) getWhUploadsForHosted(authorizedSourceIDs []strin
 	var whereClauses []string
 	if uploadsReq.SourceID == "" {
 		whereClauses = append(whereClauses, fmt.Sprintf(`source_id IN (%v)`, misc.SingleQuoteLiteralJoin(authorizedSourceIDs)))
-	} else if misc.ContainsString(authorizedSourceIDs, uploadsReq.SourceID) {
+	} else if misc.Contains(authorizedSourceIDs, uploadsReq.SourceID) {
 		whereClauses = append(whereClauses, fmt.Sprintf(`source_id = '%s'`, uploadsReq.SourceID))
 	}
 	if uploadsReq.DestinationID != "" {
@@ -568,7 +571,7 @@ func (uploadsReq *UploadsReqT) getWhUploadsForHosted(authorizedSourceIDs []strin
 }
 
 // for non hosted workspaces - we get the uploads and the total upload count using separate queries
-func (uploadsReq *UploadsReqT) getWhUploads(selectFields string) (uploadsRes *proto.WHUploadsResponse, err error) {
+func (uploadsReq *UploadsReqT) warehouseUploads(selectFields string) (uploadsRes *proto.WHUploadsResponse, err error) {
 	var uploads []*proto.WHUploadResponse
 	var totalUploadCount int32
 

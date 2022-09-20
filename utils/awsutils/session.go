@@ -14,6 +14,7 @@ import (
 	"github.com/aws/aws-sdk-go/aws/ec2metadata"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/mitchellh/mapstructure"
+	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 )
 
 // Some AWS destinations are using SecretAccessKey instead of accessKey
@@ -96,13 +97,16 @@ func CreateSession(config *SessionConfig) (*session.Session, error) {
 	})
 }
 
-func NewSessionConfig(destinationConfig map[string]interface{}, timeout time.Duration, serviceName string) (*SessionConfig, error) {
-	if destinationConfig == nil {
-		return nil, errors.New("destinationConfig should not be nil")
+func NewSessionConfigForDestination(destination *backendconfig.DestinationT, timeout time.Duration, serviceName string) (*SessionConfig, error) {
+	if destination == nil {
+		return nil, errors.New("destination should not be nil")
 	}
 	sessionConfig := SessionConfig{}
-	if err := mapstructure.Decode(destinationConfig, &sessionConfig); err != nil {
+	if err := mapstructure.Decode(destination.Config, &sessionConfig); err != nil {
 		return nil, fmt.Errorf("unable to populate session config using destinationConfig: %w", err)
+	}
+	if sessionConfig.Region == "" {
+		return nil, errors.New("could not find region configuration")
 	}
 	// Some AWS destinations are using SecretAccessKey instead of accessKey
 	if sessionConfig.SecretAccessKey != "" {
@@ -110,5 +114,13 @@ func NewSessionConfig(destinationConfig map[string]interface{}, timeout time.Dur
 	}
 	sessionConfig.Timeout = timeout
 	sessionConfig.Service = serviceName
+	if sessionConfig.IAMRoleARN != "" {
+		/**
+		In order prevent confused deputy problem, we are using
+		workspace token as external ID.
+		Ref: https://docs.aws.amazon.com/IAM/latest/UserGuide/confused-deputy.html
+		*/
+		sessionConfig.ExternalID = destination.WorkspaceID
+	}
 	return &sessionConfig, nil
 }

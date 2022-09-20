@@ -7,6 +7,7 @@
 package proto
 
 import (
+	proto "github.com/golang/protobuf/proto"
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
 	emptypb "google.golang.org/protobuf/types/known/emptypb"
@@ -23,6 +24,10 @@ const (
 	// Verify that runtime/protoimpl is sufficiently up-to-date.
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
+
+// This is a compile-time assertion that a sufficiently up-to-date version
+// of the legacy proto package is being used.
+const _ = proto.ProtoPackageIsVersion4
 
 type Pagination struct {
 	state         protoimpl.MessageState
@@ -844,7 +849,8 @@ type RetryWHUploadsResponse struct {
 	unknownFields protoimpl.UnknownFields
 
 	Message    string `protobuf:"bytes,1,opt,name=message,proto3" json:"message,omitempty"`
-	StatusCode int32  `protobuf:"varint,2,opt,name=status_code,json=statusCode,proto3" json:"status_code,omitempty"`
+	Count      int64  `protobuf:"varint,2,opt,name=count,proto3" json:"count,omitempty"`
+	StatusCode int32  `protobuf:"varint,3,opt,name=status_code,json=statusCode,proto3" json:"status_code,omitempty"`
 }
 
 func (x *RetryWHUploadsResponse) Reset() {
@@ -884,6 +890,13 @@ func (x *RetryWHUploadsResponse) GetMessage() string {
 		return x.Message
 	}
 	return ""
+}
+
+func (x *RetryWHUploadsResponse) GetCount() int64 {
+	if x != nil {
+		return x.Count
+	}
+	return 0
 }
 
 func (x *RetryWHUploadsResponse) GetStatusCode() int32 {
@@ -1197,6 +1210,7 @@ var file_proto_warehouse_warehouse_proto_rawDesc = []byte{
 	0x53, 0x74, 0x6f, 0x72, 0x61, 0x67, 0x65, 0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x42,
 	0x09, 0x5a, 0x07, 0x2e, 0x3b, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x62, 0x06, 0x70, 0x72, 0x6f, 0x74,
 	0x6f, 0x33,
+
 }
 
 var (

@@ -1215,7 +1215,7 @@ func (proc *HandleT) processJobsForDest(subJobs subJob, parsedEventList [][]type
 			// Iterate through all the events in the batch
 			for eventIndex, singularEvent := range singularEvents {
 				messageId := misc.GetStringifiedData(singularEvent["messageId"])
-				if enableDedup && misc.ContainsInt(duplicateIndexes, eventIndex) {
+				if enableDedup && misc.Contains(duplicateIndexes, eventIndex) {
 					proc.logger.Debugf("Dropping event with duplicate messageId: %s", messageId)
 					misc.IncrementMapByKey(sourceDupStats, writeKey, 1)
 					continue
@@ -1394,7 +1394,7 @@ func (proc *HandleT) processJobsForDest(subJobs subJob, parsedEventList [][]type
 					certificate chain. So, that will make the payload huge while sending a batch of events to transformer,
 					it may result into payload larger than accepted by transformer. So, discarding destination config from being
 					sent to transformer for such destination. */
-					if misc.ContainsString(customDestinations, *destType) {
+					if misc.Contains(customDestinations, *destType) {
 						shallowEventCopy.Destination.Config = nil
 					}
 
@@ -1552,6 +1552,21 @@ type storeMessage struct {
 	rsourcesStats rsources.StatsCollector
 }
 
+func sendRetryStoreStats(attempt int) {
+	pkgLogger.Warnf("Timeout during store jobs in processor module, attempt %d", attempt)
+	stats.NewTaggedStat("jobsdb_store_timeout", stats.CountType, stats.Tags{"attempt": fmt.Sprint(attempt), "module": "processor"}).Count(1)
+}
+
+func sendRetryUpdateStats(attempt int) {
+	pkgLogger.Warnf("Timeout during update job status in processor module, attempt %d", attempt)
+	stats.NewTaggedStat("jobsdb_update_timeout", stats.CountType, stats.Tags{"attempt": fmt.Sprint(attempt), "module": "processor"}).Count(1)
+}
+
+func sendQueryRetryStats(attempt int) {
+	pkgLogger.Warnf("Timeout during query jobs in processor module, attempt %d", attempt)
+	stats.NewTaggedStat("jobsdb_query_timeout", stats.CountType, stats.Tags{"attempt": fmt.Sprint(attempt), "module": "processor"}).Count(1)
+}
+
 func (proc *HandleT) Store(in *storeMessage) {
 	statusList, destJobs, batchDestJobs := in.statusList, in.destJobs, in.batchDestJobs
 	processorLoopStats := make(map[string]map[string]map[string]int)
@@ -1560,7 +1575,7 @@ func (proc *HandleT) Store(in *storeMessage) {
 	if len(batchDestJobs) > 0 {
 		proc.logger.Debug("[Processor] Total jobs written to batch router : ", len(batchDestJobs))
 
-		err := misc.RetryWith(context.Background(), proc.jobsDBCommandTimeout, proc.jobdDBMaxRetries, func(ctx context.Context) error {
+		err := misc.RetryWithNotify(context.Background(), proc.jobsDBCommandTimeout, proc.jobdDBMaxRetries, func(ctx context.Context) error {
 			return proc.batchRouterDB.WithStoreSafeTx(func(tx jobsdb.StoreSafeTx) error {
 				err := proc.batchRouterDB.StoreInTx(ctx, tx, batchDestJobs)
 				if err != nil {
@@ -1574,7 +1589,7 @@ func (proc *HandleT) Store(in *storeMessage) {
 				}
 				return nil
 			})
-		})
+		}, sendRetryStoreStats)
 		if err != nil {
 			panic(err)
 		}
@@ -1599,7 +1614,7 @@ func (proc *HandleT) Store(in *storeMessage) {
 	if len(destJobs) > 0 {
 		proc.logger.Debug("[Processor] Total jobs written to router : ", len(destJobs))
 
-		err := misc.RetryWith(context.Background(), proc.jobsDBCommandTimeout, proc.jobdDBMaxRetries, func(ctx context.Context) error {
+		err := misc.RetryWithNotify(context.Background(), proc.jobsDBCommandTimeout, proc.jobdDBMaxRetries, func(ctx context.Context) error {
 			return proc.routerDB.WithStoreSafeTx(func(tx jobsdb.StoreSafeTx) error {
 				err := proc.routerDB.StoreInTx(ctx, tx, destJobs)
 				if err != nil {
@@ -1613,7 +1628,7 @@ func (proc *HandleT) Store(in *storeMessage) {
 				}
 				return nil
 			})
-		})
+		}, sendRetryStoreStats)
 		if err != nil {
 			panic(err)
 		}
@@ -1640,9 +1655,9 @@ func (proc *HandleT) Store(in *storeMessage) {
 	}
 	if len(in.procErrorJobs) > 0 {
 		proc.logger.Debug("[Processor] Total jobs written to proc_error: ", len(in.procErrorJobs))
-		err := misc.RetryWith(context.Background(), proc.jobsDBCommandTimeout, proc.jobdDBMaxRetries, func(ctx context.Context) error {
+		err := misc.RetryWithNotify(context.Background(), proc.jobsDBCommandTimeout, proc.jobdDBMaxRetries, func(ctx context.Context) error {
 			return proc.errorDB.Store(ctx, in.procErrorJobs)
-		})
+		}, sendRetryStoreStats)
 		if err != nil {
 			proc.logger.Errorf("Store into proc error table failed with error: %v", err)
 			proc.logger.Errorf("procErrorJobs: %v", in.procErrorJobs)
@@ -1653,7 +1668,7 @@ func (proc *HandleT) Store(in *storeMessage) {
 	writeJobsTime := time.Since(beforeStoreStatus)
 
 	txnStart := time.Now()
-	err := misc.RetryWith(context.Background(), proc.jobsDBCommandTimeout, proc.jobdDBMaxRetries, func(ctx context.Context) error {
+	err := misc.RetryWithNotify(context.Background(), proc.jobsDBCommandTimeout, proc.jobdDBMaxRetries, func(ctx context.Context) error {
 		return proc.gatewayDB.WithUpdateSafeTx(func(tx jobsdb.UpdateSafeTx) error {
 			err := proc.gatewayDB.UpdateJobStatusInTx(ctx, tx, statusList, []string{GWCustomVal}, nil)
 			if err != nil {
@@ -1686,7 +1701,7 @@ func (proc *HandleT) Store(in *storeMessage) {
 			}
 			return nil
 		})
-	})
+	}, sendRetryUpdateStats)
 	if err != nil {
 		panic(err)
 	}
@@ -2068,7 +2083,7 @@ func (proc *HandleT) transformSrcDest(
 				EventPayload: destEventJSON,
 				WorkspaceId:  workspaceId,
 			}
-			if misc.ContainsString(batchDestinations, newJob.CustomVal) {
+			if misc.Contains(batchDestinations, newJob.CustomVal) {
 				batchDestJobs = append(batchDestJobs, &newJob)
 			} else {
 				destJobs = append(destJobs, &newJob)
@@ -2136,7 +2151,7 @@ func ConvertToFilteredTransformerResponse(events []transformer.TransformerEventT
 					continue
 				}
 				messageType = strings.TrimSpace(strings.ToLower(messageType))
-				if !misc.ContainsString(supportedTypes.values, messageType) {
+				if !misc.Contains(supportedTypes.values, messageType) {
 					continue
 				}
 			}
@@ -2157,7 +2172,7 @@ func ConvertToFilteredTransformerResponse(events []transformer.TransformerEventT
 					failedEvents = append(failedEvents, resp)
 					continue
 				}
-				if !misc.ContainsString(supportedEvents.values, messageEvent) {
+				if !misc.Contains(supportedEvents.values, messageEvent) {
 					continue
 				}
 			}
@@ -2194,14 +2209,14 @@ func (proc *HandleT) getJobs() jobsdb.JobsResult {
 	if !enableEventCount {
 		eventCount = 0
 	}
-	unprocessedList, err := jobsdb.QueryJobsResultWithRetries(context.Background(), proc.jobdDBQueryRequestTimeout, proc.jobdDBMaxRetries, func(ctx context.Context) (jobsdb.JobsResult, error) {
+	unprocessedList, err := misc.QueryWithRetriesAndNotify(context.Background(), proc.jobdDBQueryRequestTimeout, proc.jobdDBMaxRetries, func(ctx context.Context) (jobsdb.JobsResult, error) {
 		return proc.gatewayDB.GetUnprocessed(ctx, jobsdb.GetQueryParamsT{
 			CustomValFilters: []string{GWCustomVal},
 			JobsLimit:        maxEventsToProcess,
 			EventsLimit:      eventCount,
 			PayloadSizeLimit: proc.payloadLimit,
 		})
-	})
+	}, sendQueryRetryStats)
 	if err != nil {
 		proc.logger.Errorf("Failed to get unprocessed jobs from DB. Error: %v", err)
 		panic(err)
@@ -2270,9 +2285,9 @@ func (proc *HandleT) markExecuting(jobs []*jobsdb.JobT) error {
 		}
 	}
 	// Mark the jobs as executing
-	err := misc.RetryWith(context.Background(), proc.jobsDBCommandTimeout, proc.jobdDBMaxRetries, func(ctx context.Context) error {
+	err := misc.RetryWithNotify(context.Background(), proc.jobsDBCommandTimeout, proc.jobdDBMaxRetries, func(ctx context.Context) error {
 		return proc.gatewayDB.UpdateJobStatus(ctx, statusList, []string{GWCustomVal}, nil)
-	})
+	}, sendRetryUpdateStats)
 	if err != nil {
 		return fmt.Errorf("marking jobs as executing: %w", err)
 	}

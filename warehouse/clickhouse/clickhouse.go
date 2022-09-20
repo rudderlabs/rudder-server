@@ -289,7 +289,7 @@ func ColumnsWithDataTypes(tableName string, columns map[string]string, notNullab
 	var arr []string
 	for columnName, dataType := range columns {
 		codec := getClickHouseCodecForColumnType(dataType, tableName)
-		columnType := getClickHouseColumnTypeForSpecificTable(tableName, columnName, rudderDataTypesMapToClickHouse[dataType], misc.ContainsString(notNullableColumns, columnName))
+		columnType := getClickHouseColumnTypeForSpecificTable(tableName, columnName, rudderDataTypesMapToClickHouse[dataType], misc.Contains(notNullableColumns, columnName))
 		arr = append(arr, fmt.Sprintf(`%q %s %s`, columnName, columnType, codec))
 	}
 	return strings.Join(arr, ",")

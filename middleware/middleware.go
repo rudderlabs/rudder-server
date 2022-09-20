@@ -3,7 +3,6 @@ package middleware
 import (
 	"context"
 	"net/http"
-	"strings"
 	"sync/atomic"
 	"time"
 
@@ -55,19 +54,6 @@ func StatMiddleware(ctx context.Context) func(http.Handler) http.Handler {
 			atomic.AddInt32(&concurrentRequests, 1)
 			defer atomic.AddInt32(&concurrentRequests, -1)
 
-			next.ServeHTTP(w, r)
-		})
-	}
-}
-
-// ContentType currently sets the content-type only for eventSchemas, health responses.
-// Note : responses via http.Error aren't affected. They default to text/plain
-func ContentType() func(http.Handler) http.Handler {
-	return func(next http.Handler) http.Handler {
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if strings.HasPrefix(r.URL.Path, "/schemas") || strings.HasPrefix(r.URL.Path, "/health") {
-				w.Header().Add("Content-Type", "application/json; charset=utf-8")
-			}
 			next.ServeHTTP(w, r)
 		})
 	}

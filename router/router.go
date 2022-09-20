@@ -73,6 +73,7 @@ type HandleT struct {
 	netHandle             NetHandleI
 	MultitenantI          tenantStats
 	destName              string
+	destinationId         string
 	workers               []*workerT
 	perfStats             *misc.PerfStats
 	successCount          uint64
@@ -209,7 +210,6 @@ var (
 	Diagnostics                                                   diagnostics.DiagnosticsI
 	fixedLoopSleep                                                time.Duration
 	toAbortDestinationIDs                                         string
-	QueryFilters                                                  jobsdb.QueryFiltersT
 	disableEgress                                                 bool
 )
 
@@ -253,6 +253,21 @@ func loadConfig() {
 	config.RegisterDurationConfigVariable(48, &failedKeysExpire, true, time.Hour, "Router.failedKeysExpire")
 	config.RegisterDurationConfigVariable(24, &failedKeysCleanUpSleep, true, time.Hour, "Router.failedKeysCleanUpSleep")
 	failedKeysEnabled = config.GetBool("Router.failedKeysEnabled", false)
+}
+
+func sendRetryStoreStats(attempt int) {
+	pkgLogger.Warnf("Timeout during store jobs in router module, attempt %d", attempt)
+	stats.NewTaggedStat("jobsdb_store_timeout", stats.CountType, stats.Tags{"attempt": fmt.Sprint(attempt), "module": "router"}).Count(1)
+}
+
+func sendRetryUpdateStats(attempt int) {
+	pkgLogger.Warnf("Timeout during update job status in router module, attempt %d", attempt)
+	stats.NewTaggedStat("jobsdb_update_timeout", stats.CountType, stats.Tags{"attempt": fmt.Sprint(attempt), "module": "router"}).Count(1)
+}
+
+func sendQueryRetryStats(attempt int) {
+	pkgLogger.Warnf("Timeout during query jobs in router module, attempt %d", attempt)
+	stats.NewTaggedStat("jobsdb_query_timeout", stats.CountType, stats.Tags{"attempt": fmt.Sprint(attempt), "module": "router"}).Count(1)
 }
 
 func (worker *workerT) trackStuckDelivery() chan struct{} {
@@ -803,7 +818,7 @@ func (worker *workerT) processDestinationJobs() {
 			}
 			sourcesIDs := make([]string, 0)
 			for _, metadata := range routerJobResponse.destinationJob.JobMetadataArray {
-				if !misc.ContainsString(sourcesIDs, metadata.SourceID) {
+				if !misc.Contains(sourcesIDs, metadata.SourceID) {
 					sourcesIDs = append(sourcesIDs, metadata.SourceID)
 				}
 			}
@@ -1162,8 +1177,14 @@ func (rt *HandleT) initWorkers() {
 	g, _ := errgroup.WithContext(context.Background())
 	for i := 0; i < rt.noOfWorkers; i++ {
 		worker := &workerT{
-			channel:                   make(chan workerMessageT, noOfJobsPerChannel),
-			barrier:                   eventorder.NewBarrier(rt.allowAbortedUserJobsCountForProcessing),
+			channel: make(chan workerMessageT, noOfJobsPerChannel),
+			barrier: eventorder.NewBarrier(
+				eventorder.WithConcurrencyLimit(rt.allowAbortedUserJobsCountForProcessing),
+				eventorder.WithMetadata(map[string]string{
+					"destType":         rt.destName,
+					"batching":         strconv.FormatBool(rt.enableBatching),
+					"transformerProxy": strconv.FormatBool(rt.transformerProxy),
+				})),
 			retryForJobMap:            make(map[int64]time.Time),
 			workerID:                  i,
 			failedJobs:                0,
@@ -1212,7 +1233,6 @@ func (rt *HandleT) findWorker(job *jobsdb.JobT, throttledAtTime time.Time) (toSe
 	// checking if this job can be throttled
 	var parameters JobParametersT
 	userID := job.UserID
-
 	// checking if the user is in throttledMap. If yes, returning nil.
 	// this check is done to maintain order.
 	if _, ok := rt.throttledUserMap[userID]; ok {
@@ -1415,15 +1435,15 @@ func (rt *HandleT) commitStatusList(responseList *[]jobResponseT) {
 		})
 		// Store the aborted jobs to errorDB
 		if routerAbortedJobs != nil {
-			err := misc.RetryWith(context.Background(), rt.jobsDBCommandTimeout, rt.jobdDBMaxRetries, func(ctx context.Context) error {
+			err := misc.RetryWithNotify(context.Background(), rt.jobsDBCommandTimeout, rt.jobdDBMaxRetries, func(ctx context.Context) error {
 				return rt.errorDB.Store(ctx, routerAbortedJobs)
-			})
+			}, sendRetryStoreStats)
 			if err != nil {
 				panic(fmt.Errorf("storing jobs into ErrorDB: %w", err))
 			}
 		}
 		// Update the status
-		err := misc.RetryWith(context.Background(), rt.jobsDBCommandTimeout, rt.jobdDBMaxRetries, func(ctx context.Context) error {
+		err := misc.RetryWithNotify(context.Background(), rt.jobsDBCommandTimeout, rt.jobdDBMaxRetries, func(ctx context.Context) error {
 			return rt.jobsDB.WithUpdateSafeTx(func(tx jobsdb.UpdateSafeTx) error {
 				err := rt.jobsDB.UpdateJobStatusInTx(ctx, tx, statusList, []string{rt.destName}, nil)
 				if err != nil {
@@ -1443,7 +1463,7 @@ func (rt *HandleT) commitStatusList(responseList *[]jobResponseT) {
 				rt.Reporting.Report(reportMetrics, tx.Tx())
 				return nil
 			})
-		})
+		}, sendRetryStoreStats)
 		if err != nil {
 			panic(err)
 		}
@@ -1616,7 +1636,7 @@ func (rt *HandleT) collectMetrics(ctx context.Context) {
 // C. Finally, we want for generatorLoop buffer to be fully processed.
 
 func (rt *HandleT) generatorLoop(ctx context.Context) {
-	rt.logger.Info("Generator started")
+	rt.logger.Infof("Generator started for %s and destinationID %s", rt.destName, rt.destinationId)
 
 	generatorStat := stats.NewTaggedStat("router_generator_loop", stats.TimerType, stats.Tags{"destType": rt.destName})
 	countStat := stats.NewTaggedStat("router_generator_events", stats.CountType, stats.Tags{"destType": rt.destName})
@@ -1650,6 +1670,27 @@ func (rt *HandleT) generatorLoop(ctx context.Context) {
 	}
 }
 
+func (rt *HandleT) getQueryParams(pickUpCount int) jobsdb.GetQueryParamsT {
+	if rt.destinationId != rt.destName {
+		return jobsdb.GetQueryParamsT{
+			CustomValFilters: []string{rt.destName},
+			ParameterFilters: []jobsdb.ParameterFilterT{{
+				Name:     "destination_id",
+				Value:    rt.destinationId,
+				Optional: false,
+			}},
+			IgnoreCustomValFiltersInQuery: true,
+			PayloadSizeLimit:              rt.payloadLimit,
+			JobsLimit:                     pickUpCount,
+		}
+	}
+	return jobsdb.GetQueryParamsT{
+		CustomValFilters: []string{rt.destName},
+		PayloadSizeLimit: rt.payloadLimit,
+		JobsLimit:        pickUpCount,
+	}
+}
+
 func (rt *HandleT) readAndProcess() int {
 	//#JobOrder (See comment marked #JobOrder
 	if rt.guaranteeUserEventOrder {
@@ -1677,18 +1718,14 @@ func (rt *HandleT) readAndProcess() int {
 	}
 	rt.timeGained = 0
 	rt.logger.Debugf("[%v Router] :: pickupMap: %+v", rt.destName, pickupMap)
-	combinedList, err := jobsdb.QueryJobsWithRetries(context.Background(), rt.jobdDBQueryRequestTimeout, rt.jobdDBMaxRetries, func(ctx context.Context) ([]*jobsdb.JobT, error) {
+	combinedList, err := misc.QueryWithRetriesAndNotify(context.Background(), rt.jobdDBQueryRequestTimeout, rt.jobdDBMaxRetries, func(ctx context.Context) ([]*jobsdb.JobT, error) {
 		return rt.jobsDB.GetAllJobs(
 			ctx,
 			pickupMap,
-			jobsdb.GetQueryParamsT{
-				CustomValFilters: []string{rt.destName},
-				PayloadSizeLimit: rt.payloadLimit,
-				JobsLimit:        totalPickupCount,
-			},
+			rt.getQueryParams(totalPickupCount),
 			rt.maxDSQuerySize,
 		)
-	})
+	}, sendQueryRetryStats)
 	if err != nil {
 		rt.logger.Errorf("[%v Router] :: Error getting jobs from DB: %v", rt.destName, err)
 		panic(err)
@@ -1706,7 +1743,7 @@ func (rt *HandleT) readAndProcess() int {
 
 	if len(combinedList) > 0 {
 		rt.logger.Debugf("[%v Router] :: router is enabled", rt.destName)
-		rt.logger.Debugf("[%v Router] ===== len to be processed==== : %v", rt.destName, len(combinedList))
+		rt.logger.Debugf("[%v Router] ===== len to be processed==== %v: %v", rt.destName, rt.destinationId, len(combinedList))
 	}
 
 	// List of jobs which can be processed mapped per channel
@@ -1758,7 +1795,7 @@ func (rt *HandleT) readAndProcess() int {
 				}
 			}
 			drainStatsbyDest[destID].Count = drainStatsbyDest[destID].Count + 1
-			if !misc.ContainsString(drainStatsbyDest[destID].Reasons, reason) {
+			if !misc.Contains(drainStatsbyDest[destID].Reasons, reason) {
 				drainStatsbyDest[destID].Reasons = append(drainStatsbyDest[destID].Reasons, reason)
 			}
 
@@ -1818,9 +1855,9 @@ func (rt *HandleT) readAndProcess() int {
 	rt.throttledUserMap = nil
 
 	// Mark the jobs as executing
-	err = misc.RetryWith(context.Background(), rt.jobsDBCommandTimeout, rt.jobdDBMaxRetries, func(ctx context.Context) error {
+	err = misc.RetryWithNotify(context.Background(), rt.jobsDBCommandTimeout, rt.jobdDBMaxRetries, func(ctx context.Context) error {
 		return rt.jobsDB.UpdateJobStatus(ctx, statusList, []string{rt.destName}, nil)
-	})
+	}, sendRetryUpdateStats)
 	if err != nil {
 		pkgLogger.Errorf("Error occurred while marking %s jobs statuses as executing. Panicking. Err: %v", rt.destName, err)
 		panic(err)
@@ -1828,9 +1865,9 @@ func (rt *HandleT) readAndProcess() int {
 
 	// Mark the jobs as aborted
 	if len(drainList) > 0 {
-		err := misc.RetryWith(context.Background(), rt.jobsDBCommandTimeout, rt.jobdDBMaxRetries, func(ctx context.Context) error {
+		err := misc.RetryWithNotify(context.Background(), rt.jobsDBCommandTimeout, rt.jobdDBMaxRetries, func(ctx context.Context) error {
 			return rt.errorDB.Store(ctx, drainJobList)
-		})
+		}, sendRetryStoreStats)
 		if err != nil {
 			pkgLogger.Errorf("Error occurred while storing %s jobs into ErrorDB. Panicking. Err: %v", rt.destName, err)
 			panic(err)
@@ -1856,7 +1893,7 @@ func (rt *HandleT) readAndProcess() int {
 		}
 		// REPORTING - ROUTER - END
 
-		err = misc.RetryWith(context.Background(), rt.jobsDBCommandTimeout, rt.jobdDBMaxRetries, func(ctx context.Context) error {
+		err = misc.RetryWithNotify(context.Background(), rt.jobsDBCommandTimeout, rt.jobdDBMaxRetries, func(ctx context.Context) error {
 			return rt.jobsDB.WithUpdateSafeTx(func(tx jobsdb.UpdateSafeTx) error {
 				err := rt.jobsDB.UpdateJobStatusInTx(ctx, tx, drainList, []string{rt.destName}, nil)
 				if err != nil {
@@ -1871,7 +1908,7 @@ func (rt *HandleT) readAndProcess() int {
 				rt.Reporting.Report(reportMetrics, tx.Tx())
 				return nil
 			})
-		})
+		}, sendRetryUpdateStats)
 		if err != nil {
 			panic(err)
 		}
@@ -1929,18 +1966,17 @@ func (*HandleT) crashRecover() {
 func Init() {
 	loadConfig()
 	pkgLogger = logger.NewLogger().Child("router")
-	QueryFilters = jobsdb.QueryFiltersT{CustomVal: true}
 	Diagnostics = diagnostics.Diagnostics
 }
 
 // Setup initializes this module
-func (rt *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB jobsdb.MultiTenantJobsDB, errorDB jobsdb.JobsDB, destinationDefinition backendconfig.DestinationDefinitionT, transientSources transientsource.Service, rsourcesService rsources.JobService) {
+func (rt *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB jobsdb.MultiTenantJobsDB, errorDB jobsdb.JobsDB, destinationConfig destinationConfig, transientSources transientsource.Service, rsourcesService rsources.JobService) {
 	rt.backendConfig = backendConfig
 	rt.workspaceSet = make(map[string]struct{})
 
-	destName := destinationDefinition.Name
+	destName := destinationConfig.name
 	rt.logger = pkgLogger.Child(destName)
-	rt.logger.Info("Router started: ", destName)
+	rt.logger.Info("Router started: ", destinationConfig.destinationID)
 
 	rt.transientSources = transientSources
 	rt.rsourcesService = rsourcesService
@@ -1952,6 +1988,7 @@ func (rt *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB jobsd
 	rt.jobsDB = jobsDB
 	rt.errorDB = errorDB
 	rt.destName = destName
+	rt.destinationId = destinationConfig.destinationID
 	netClientTimeoutKeys := []string{"Router." + rt.destName + "." + "httpTimeout", "Router." + rt.destName + "." + "httpTimeoutInS", "Router." + "httpTimeout", "Router." + "httpTimeoutInS"}
 	config.RegisterDurationConfigVariable(10, &rt.netClientTimeout, false, time.Second, netClientTimeoutKeys...)
 	config.RegisterDurationConfigVariable(30, &rt.backendProxyTimeout, false, time.Second, "HttpClient.backendProxy.timeout")
@@ -1978,8 +2015,8 @@ func (rt *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB jobsd
 	})
 	rt.failuresMetric = make(map[string]map[string]int)
 
-	rt.destinationResponseHandler = New(destinationDefinition.ResponseRules)
-	if value, ok := destinationDefinition.Config["saveDestinationResponse"].(bool); ok {
+	rt.destinationResponseHandler = New(destinationConfig.responseRules)
+	if value, ok := destinationConfig.config["saveDestinationResponse"].(bool); ok {
 		rt.saveDestinationResponse = value
 	}
 	rt.guaranteeUserEventOrder = getRouterConfigBool("guaranteeUserEventOrder", rt.destName, true)
@@ -2098,7 +2135,7 @@ func (rt *HandleT) Shutdown() {
 		// router is not started
 		return
 	}
-	rt.logger.Infof("Shutting down router: %s", rt.destName)
+	rt.logger.Infof("Shutting down router: %s destinationId: %s", rt.destName, rt.destinationId)
 	rt.backgroundCancel()
 
 	<-rt.startEnded

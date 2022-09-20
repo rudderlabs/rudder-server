@@ -32,7 +32,6 @@ type WarehouseClient interface {
 	Validate(ctx context.Context, in *WHValidationRequest, opts ...grpc.CallOption) (*WHValidationResponse, error)
 	RetryWHUploads(ctx context.Context, in *RetryWHUploadsRequest, opts ...grpc.CallOption) (*RetryWHUploadsResponse, error)
 	ValidateObjectStorageDestination(ctx context.Context, in *ValidateObjectStorageRequest, opts ...grpc.CallOption) (*ValidateObjectStorageResponse, error)
-}
 
 type warehouseClient struct {
 	cc grpc.ClientConnInterface
@@ -108,6 +107,15 @@ func (c *warehouseClient) RetryWHUploads(ctx context.Context, in *RetryWHUploads
 func (c *warehouseClient) ValidateObjectStorageDestination(ctx context.Context, in *ValidateObjectStorageRequest, opts ...grpc.CallOption) (*ValidateObjectStorageResponse, error) {
 	out := new(ValidateObjectStorageResponse)
 	err := c.cc.Invoke(ctx, "/proto.Warehouse/ValidateObjectStorageDestination", in, out, opts...)
+  	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *warehouseClient) CountWHUploadsToRetry(ctx context.Context, in *RetryWHUploadsRequest, opts ...grpc.CallOption) (*RetryWHUploadsResponse, error) {
+	out := new(RetryWHUploadsResponse)
+	err := c.cc.Invoke(ctx, "/proto.Warehouse/CountWHUploadsToRetry", in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -126,8 +134,7 @@ type WarehouseServer interface {
 	Validate(context.Context, *WHValidationRequest) (*WHValidationResponse, error)
 	RetryWHUploads(context.Context, *RetryWHUploadsRequest) (*RetryWHUploadsResponse, error)
 	ValidateObjectStorageDestination(context.Context, *ValidateObjectStorageRequest) (*ValidateObjectStorageResponse, error)
-	mustEmbedUnimplementedWarehouseServer()
-}
+	CountWHUploadsToRetry(context.Context, *RetryWHUploadsRequest) (*RetryWHUploadsResponse, error)
 
 // UnimplementedWarehouseServer must be embedded to have forward compatible implementations.
 type UnimplementedWarehouseServer struct {
@@ -156,6 +163,9 @@ func (UnimplementedWarehouseServer) RetryWHUploads(context.Context, *RetryWHUplo
 }
 func (UnimplementedWarehouseServer) ValidateObjectStorageDestination(context.Context, *ValidateObjectStorageRequest) (*ValidateObjectStorageResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ValidateObjectStorageDestination not implemented")
+}
+func (UnimplementedWarehouseServer) CountWHUploadsToRetry(context.Context, *RetryWHUploadsRequest) (*RetryWHUploadsResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method CountWHUploadsToRetry not implemented")
 }
 func (UnimplementedWarehouseServer) mustEmbedUnimplementedWarehouseServer() {}
 
@@ -296,8 +306,10 @@ func _Warehouse_RetryWHUploads_Handler(srv interface{}, ctx context.Context, dec
 	return interceptor(ctx, in, info, handler)
 }
 
-func _Warehouse_ValidateObjectStorageDestination_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(ValidateObjectStorageRequest)
+
+func _Warehouse_CountWHUploadsToRetry_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RetryWHUploadsRequest)
+
 	if err := dec(in); err != nil {
 		return nil, err
 	}
@@ -310,6 +322,7 @@ func _Warehouse_ValidateObjectStorageDestination_Handler(srv interface{}, ctx co
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(WarehouseServer).ValidateObjectStorageDestination(ctx, req.(*ValidateObjectStorageRequest))
+
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -352,6 +365,9 @@ var Warehouse_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ValidateObjectStorageDestination",
 			Handler:    _Warehouse_ValidateObjectStorageDestination_Handler,
+			MethodName: "CountWHUploadsToRetry",
+			Handler:    _Warehouse_CountWHUploadsToRetry_Handler,
+
 		},
 	},
 	Streams:  []grpc.StreamDesc{},
