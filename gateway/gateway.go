@@ -9,6 +9,7 @@ import (
 	"io"
 	"math"
 	"net/http"
+	"net/http/httputil"
 	"net/url"
 	"regexp"
 	"strconv"
@@ -43,7 +44,7 @@ import (
 	"github.com/rudderlabs/rudder-server/services/rsources"
 	rsources_http "github.com/rudderlabs/rudder-server/services/rsources/http"
 	"github.com/rudderlabs/rudder-server/services/stats"
-	"github.com/rudderlabs/rudder-server/utils/httputil"
+	rs_httputil "github.com/rudderlabs/rudder-server/utils/httputil"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/types"
@@ -187,6 +188,7 @@ type HandleT struct {
 	backgroundCancel                                           context.CancelFunc
 	backgroundWait                                             func() error
 	rsourcesService                                            rsources.JobService
+	whProxy                                                    http.Handler
 }
 
 func (gateway *HandleT) updateSourceStats(sourceStats map[string]int, bucket string, sourceTagMap map[string]string) {
@@ -1402,6 +1404,7 @@ func (gateway *HandleT) StartWebHandler(ctx context.Context) error {
 
 	srvMux.HandleFunc("/v1/pending-events", WithContentType("application/json; charset=utf-8", gateway.pendingEventsHandler)).Methods("POST")
 	srvMux.HandleFunc("/v1/failed-events", WithContentType("application/json; charset=utf-8", gateway.fetchFailedEventsHandler)).Methods("POST")
+	srvMux.HandleFunc("/v1/warehouse/pending-events", gateway.whProxy.ServeHTTP).Methods("POST")
 	srvMux.HandleFunc("/v1/clear-failed-events", gateway.clearFailedEventsHandler).Methods("POST")
 
 	// rudder-sources new APIs
@@ -1431,7 +1434,7 @@ func (gateway *HandleT) StartWebHandler(ctx context.Context) error {
 		MaxHeaderBytes:    maxHeaderBytes,
 	}
 
-	return httputil.ListenAndServe(ctx, gateway.httpWebServer)
+	return rs_httputil.ListenAndServe(ctx, gateway.httpWebServer)
 }
 
 // StartAdminHandler for Admin Operations
@@ -1452,7 +1455,7 @@ func (gateway *HandleT) StartAdminHandler(ctx context.Context) error {
 		Handler: bugsnag.Handler(srvMux),
 	}
 
-	return httputil.ListenAndServe(ctx, srv)
+	return rs_httputil.ListenAndServe(ctx, srv)
 }
 
 // Gets the config from config backend and extracts enabled writekeys
@@ -1587,6 +1590,14 @@ func (gateway *HandleT) Setup(
 	gateway.rrh = &RegularRequestHandler{}
 
 	gateway.webhookHandler = webhook.Setup(gateway)
+
+	whURL, err := url.ParseRequestURI(misc.GetWarehouseURL())
+	if err != nil {
+		return fmt.Errorf("Invalid warehouse URL %s: %w", whURL, err)
+	}
+	whProxy := httputil.NewSingleHostReverseProxy(whURL)
+	gateway.whProxy = whProxy
+
 	gatewayAdmin := GatewayAdmin{handle: gateway}
 	gatewayRPCHandler := GatewayRPCHandler{jobsDB: gateway.jobsDB, readOnlyJobsDB: gateway.readonlyGatewayDB}
 
