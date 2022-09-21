@@ -196,6 +196,7 @@ func (gateway *HandleT) updateSourceStats(sourceStats map[string]int, bucket str
 			"writeKey":    sourceTagMap[sourceTag],
 			"reqType":     sourceTagMap["reqType"],
 			"workspaceId": sourceTagMap["workspaceId"],
+			"sourceID":    sourceTagMap["sourceID"],
 		}
 		sourceStatsD := gateway.stats.NewTaggedStat(bucket, stats.CountType, tags)
 		sourceStatsD.Count(count)
@@ -210,6 +211,7 @@ func (gateway *HandleT) updateFailedSourceStats(sourceStats map[string]int, buck
 			"reqType":     sourceTagMap["reqType"],
 			"workspaceId": sourceTagMap["workspaceId"],
 			"reason":      sourceTagMap["reason"],
+			"sourceID":    sourceTagMap["sourceID"],
 		}
 		sourceStatsD := gateway.stats.NewTaggedStat(bucket, stats.CountType, tags)
 		sourceStatsD.Count(count)
