@@ -8,6 +8,10 @@ import (
 	"os"
 	"testing"
 
+	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
+
+	"github.com/rudderlabs/rudder-server/utils/timeutil"
+
 	"github.com/rudderlabs/rudder-server/warehouse/client"
 	"github.com/rudderlabs/rudder-server/warehouse/mssql"
 	"github.com/rudderlabs/rudder-server/warehouse/testhelper"
@@ -23,9 +27,8 @@ type TestHandle struct {
 
 var handle *TestHandle
 
-// VerifyConnection test connection for mssql
 func (*TestHandle) VerifyConnection() error {
-	err := testhelper.WithConstantBackoff(func() (err error) {
+	return testhelper.WithConstantBackoff(func() (err error) {
 		credentials := mssql.CredentialsT{
 			DBName:   "master",
 			Password: "reallyStrongPwd123",
@@ -44,88 +47,84 @@ func (*TestHandle) VerifyConnection() error {
 		}
 		return
 	})
-	if err != nil {
-		return fmt.Errorf("error while running test connection for mssql with err: %s", err.Error())
-	}
-	return nil
 }
 
 func TestMSSQLIntegration(t *testing.T) {
-	// Setting up the warehouseTest
 	warehouseTest := &testhelper.WareHouseTest{
 		Client: &client.Client{
 			SQL:  handle.DB,
 			Type: client.SQLClient,
 		},
-
-		WriteKey:             handle.WriteKey,
-		Schema:               handle.Schema,
-		Tables:               handle.Tables,
-		EventsCountMap:       testhelper.DefaultEventMap(),
-		TablesQueryFrequency: testhelper.DefaultQueryFrequency,
-		UserId:               testhelper.GetUserId(warehouseutils.MSSQL),
-		Provider:             warehouseutils.MSSQL,
+		WriteKey:      handle.WriteKey,
+		Schema:        handle.Schema,
+		Tables:        handle.Tables,
+		Provider:      warehouseutils.MSSQL,
+		SourceID:      "1wRvLmEnMOONMbdspwaZhyCqXRE",
+		DestinationID: "21Ezdq58khNMj07VJB0VJmxLvgu",
 	}
 
 	// Scenario 1
-	// Sending the first set of events.
-	// Since we are sending unique message Ids. These should result in
-	// These should result in events count will be equal to the number of events being sent
-	testhelper.SendEvents(t, warehouseTest)
-	testhelper.SendEvents(t, warehouseTest)
-	testhelper.SendEvents(t, warehouseTest)
-	testhelper.SendIntegratedEvents(t, warehouseTest)
+	warehouseTest.TimestampBeforeSendingEvents = timeutil.Now()
+	warehouseTest.UserId = testhelper.GetUserId(warehouseutils.MSSQL)
 
-	// Setting up the events map
-	// Checking for Gateway and Batch router events
-	// Checking for the events count for each table
-	warehouseTest.EventsCountMap = testhelper.EventsCountMap{
-		"identifies":    4,
-		"users":         1,
-		"tracks":        4,
-		"product_track": 4,
-		"pages":         4,
-		"screens":       4,
-		"aliases":       4,
-		"groups":        4,
-		"gateway":       24,
-		"batchRT":       32,
-	}
-	testhelper.VerifyingGatewayEvents(t, warehouseTest)
-	testhelper.VerifyingBatchRouterEvents(t, warehouseTest)
-	testhelper.VerifyingTablesEventCount(t, warehouseTest)
+	sendEventsMap := testhelper.SendEventsMap()
+	testhelper.SendEvents(t, warehouseTest, sendEventsMap)
+	testhelper.SendEvents(t, warehouseTest, sendEventsMap)
+	testhelper.SendEvents(t, warehouseTest, sendEventsMap)
+	testhelper.SendIntegratedEvents(t, warehouseTest, sendEventsMap)
+
+	testhelper.VerifyEventsInStagingFiles(t, warehouseTest, testhelper.StagingFilesEventsMap())
+	testhelper.VerifyEventsInLoadFiles(t, warehouseTest, testhelper.LoadFilesEventsMap())
+	testhelper.VerifyEventsInTableUploads(t, warehouseTest, testhelper.TableUploadsEventsMap())
+	testhelper.VerifyEventsInWareHouse(t, warehouseTest, testhelper.WarehouseEventsMap())
 
 	// Scenario 2
-	// Setting up events count map
-	// Setting up the UserID
-	// Sending the second set of modified events.
-	// Since we are sending unique message Ids.
-	// These should result in events count will be equal to the number of events being sent
-	warehouseTest.EventsCountMap = testhelper.DefaultEventMap()
+	warehouseTest.TimestampBeforeSendingEvents = timeutil.Now()
 	warehouseTest.UserId = testhelper.GetUserId(warehouseutils.MSSQL)
-	testhelper.SendModifiedEvents(t, warehouseTest)
-	testhelper.SendModifiedEvents(t, warehouseTest)
-	testhelper.SendModifiedEvents(t, warehouseTest)
-	testhelper.SendIntegratedEvents(t, warehouseTest)
 
-	// Setting up the events map
-	// Checking for Gateway and Batch router events
-	// Checking for the events count for each table
-	warehouseTest.EventsCountMap = testhelper.EventsCountMap{
-		"identifies":    4,
-		"users":         1,
-		"tracks":        4,
-		"product_track": 4,
-		"pages":         4,
-		"screens":       4,
-		"aliases":       4,
-		"groups":        4,
-		"gateway":       24,
-		"batchRT":       32,
+	sendEventsMap = testhelper.SendEventsMap()
+	testhelper.SendModifiedEvents(t, warehouseTest, sendEventsMap)
+	testhelper.SendModifiedEvents(t, warehouseTest, sendEventsMap)
+	testhelper.SendModifiedEvents(t, warehouseTest, sendEventsMap)
+	testhelper.SendIntegratedEvents(t, warehouseTest, sendEventsMap)
+
+	testhelper.VerifyEventsInStagingFiles(t, warehouseTest, testhelper.StagingFilesEventsMap())
+	testhelper.VerifyEventsInLoadFiles(t, warehouseTest, testhelper.LoadFilesEventsMap())
+	testhelper.VerifyEventsInTableUploads(t, warehouseTest, testhelper.TableUploadsEventsMap())
+	testhelper.VerifyEventsInWareHouse(t, warehouseTest, testhelper.WarehouseEventsMap())
+}
+
+func TestMSSQLConfigurationValidation(t *testing.T) {
+	configurations := testhelper.PopulateTemplateConfigurations()
+	destination := backendconfig.DestinationT{
+		ID: "21Ezdq58khNMj07VJB0VJmxLvgu",
+		Config: map[string]interface{}{
+			"host":             configurations["mssqlHost"],
+			"database":         configurations["mssqlDatabase"],
+			"user":             configurations["mssqlUser"],
+			"password":         configurations["mssqlPassword"],
+			"port":             configurations["mssqlPort"],
+			"sslMode":          "disable",
+			"namespace":        "",
+			"bucketProvider":   "MINIO",
+			"bucketName":       configurations["minioBucketName"],
+			"accessKeyID":      configurations["minioAccesskeyID"],
+			"secretAccessKey":  configurations["minioSecretAccessKey"],
+			"useSSL":           false,
+			"endPoint":         configurations["minioEndpoint"],
+			"syncFrequency":    "30",
+			"useRudderStorage": false,
+		},
+		DestinationDefinition: backendconfig.DestinationDefinitionT{
+			ID:          "1qvbUYC2xVQ7lvI9UUYkkM4IBt9",
+			Name:        "MSSQL",
+			DisplayName: "Microsoft SQL Server",
+		},
+		Name:       "mssql-demo",
+		Enabled:    true,
+		RevisionID: "29eeuUb21cuDBeFKPTUA9GaQ9Aq",
 	}
-	testhelper.VerifyingGatewayEvents(t, warehouseTest)
-	testhelper.VerifyingBatchRouterEvents(t, warehouseTest)
-	testhelper.VerifyingTablesEventCount(t, warehouseTest)
+	testhelper.VerifyingConfigurationTest(t, destination)
 }
 
 func TestMain(m *testing.M) {

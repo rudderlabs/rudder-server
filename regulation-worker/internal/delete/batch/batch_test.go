@@ -84,7 +84,7 @@ func TestBatchDelete(t *testing.T) {
 			searchDir := mockBucketLocation
 			var cleanedFilesList []string
 			err := filepath.Walk(searchDir, func(path string, f os.FileInfo, err error) error {
-				if regexRequiredSuffix.Match([]byte(path)) {
+				if regexRequiredSuffix.MatchString(path) {
 					cleanedFilesList = append(cleanedFilesList, path)
 				}
 				return nil
@@ -97,7 +97,7 @@ func TestBatchDelete(t *testing.T) {
 			searchDir = "./goldenFile"
 			var goldenFilesList []string
 			err = filepath.Walk(searchDir, func(path string, f os.FileInfo, err error) error {
-				if regexRequiredSuffix.Match([]byte(path)) {
+				if regexRequiredSuffix.MatchString(path) {
 					goldenFilesList = append(goldenFilesList, path)
 				}
 				return nil
@@ -177,7 +177,7 @@ func (fm *mockFileManager) Upload(ctx context.Context, file *os.File, prefixes .
 	splitFileName := strings.Split(file.Name(), "/")
 	fileName := ""
 	if len(prefixes) > 0 {
-		fileName = strings.Join(prefixes[:], "/") + "/"
+		fileName = strings.Join(prefixes, "/") + "/"
 	}
 	fileName += splitFileName[len(splitFileName)-1]
 	// copy the content of file to mockBucektLocation+fileName

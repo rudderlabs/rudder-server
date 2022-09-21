@@ -90,7 +90,6 @@ func (embedded *EmbeddedApp) StartRudderCore(ctx context.Context, options *app.O
 		jobsdb.WithClearDB(options.ClearDB),
 		jobsdb.WithMigrationMode(migrationMode),
 		jobsdb.WithStatusHandler(),
-		jobsdb.WithQueryFilterKeys(jobsdb.QueryFiltersT{}),
 		jobsdb.WithPreBackupHandlers(prebackupHandlers),
 	)
 	defer gwDBForProcessor.Close()
@@ -99,7 +98,6 @@ func (embedded *EmbeddedApp) StartRudderCore(ctx context.Context, options *app.O
 		jobsdb.WithClearDB(options.ClearDB),
 		jobsdb.WithMigrationMode(migrationMode),
 		jobsdb.WithStatusHandler(),
-		jobsdb.WithQueryFilterKeys(router.QueryFilters),
 		jobsdb.WithPreBackupHandlers(prebackupHandlers),
 	)
 	defer routerDB.Close()
@@ -108,7 +106,6 @@ func (embedded *EmbeddedApp) StartRudderCore(ctx context.Context, options *app.O
 		jobsdb.WithClearDB(options.ClearDB),
 		jobsdb.WithMigrationMode(migrationMode),
 		jobsdb.WithStatusHandler(),
-		jobsdb.WithQueryFilterKeys(batchrouter.QueryFilters),
 		jobsdb.WithPreBackupHandlers(prebackupHandlers),
 	)
 	defer batchRouterDB.Close()
@@ -117,7 +114,6 @@ func (embedded *EmbeddedApp) StartRudderCore(ctx context.Context, options *app.O
 		jobsdb.WithClearDB(options.ClearDB),
 		jobsdb.WithMigrationMode(migrationMode),
 		jobsdb.WithStatusHandler(),
-		jobsdb.WithQueryFilterKeys(jobsdb.QueryFiltersT{}),
 		jobsdb.WithPreBackupHandlers(prebackupHandlers),
 	)
 
@@ -235,7 +231,6 @@ func (embedded *EmbeddedApp) StartRudderCore(ctx context.Context, options *app.O
 			jobsdb.WithClearDB(options.ClearDB),
 			jobsdb.WithMigrationMode(migrationMode),
 			jobsdb.WithStatusHandler(),
-			jobsdb.WithQueryFilterKeys(jobsdb.QueryFiltersT{}),
 		)
 		defer gwDBForProcessor.Close()
 		if err = gatewayDB.Start(); err != nil {
@@ -268,7 +263,7 @@ func (embedded *EmbeddedApp) StartRudderCore(ctx context.Context, options *app.O
 		var replayDB jobsdb.HandleT
 		err := replayDB.Setup(
 			jobsdb.ReadWrite, options.ClearDB, "replay",
-			migrationMode, true, jobsdb.QueryFiltersT{}, prebackupHandlers,
+			migrationMode, true, prebackupHandlers,
 		)
 		if err != nil {
 			return fmt.Errorf("could not setup replayDB: %w", err)

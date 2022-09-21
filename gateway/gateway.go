@@ -43,6 +43,7 @@ import (
 	"github.com/rudderlabs/rudder-server/services/rsources"
 	rsources_http "github.com/rudderlabs/rudder-server/services/rsources/http"
 	"github.com/rudderlabs/rudder-server/services/stats"
+	"github.com/rudderlabs/rudder-server/utils/httputil"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/types"
@@ -69,6 +70,7 @@ type webRequestT struct {
 	requestPayload []byte
 	writeKey       string
 	ipAddr         string
+	userIDHeader   string
 }
 
 type batchWebRequestT struct {
@@ -160,7 +162,8 @@ type HandleT struct {
 	dbWorkersBufferFullStat, dbWorkersTimeOutStat stats.RudderStats
 	bodyReadTimeStat                              stats.RudderStats
 	addToWebRequestQWaitTime                      stats.RudderStats
-	ProcessRequestTime                            stats.RudderStats
+	processRequestTime                            stats.RudderStats
+	emptyAnonIdHeaderStat                         stats.RudderStats
 	addToBatchRequestQWaitTime                    stats.RudderStats
 
 	diagnosisTicker   *time.Ticker
@@ -270,8 +273,9 @@ func (gateway *HandleT) userWorkerRequestBatcher() {
 		select {
 		case userWorkerBatchRequest, hasMore := <-gateway.userWorkerBatchRequestQ:
 			if !hasMore {
-				breq := batchUserWorkerBatchRequestT{batchUserWorkerBatchRequest: userWorkerBatchRequestBuffer}
-				gateway.batchUserWorkerBatchRequestQ <- &breq
+				if len(userWorkerBatchRequestBuffer) > 0 {
+					gateway.batchUserWorkerBatchRequestQ <- &batchUserWorkerBatchRequestT{batchUserWorkerBatchRequest: userWorkerBatchRequestBuffer}
+				}
 				close(gateway.batchUserWorkerBatchRequestQ)
 				return
 			}
@@ -295,10 +299,10 @@ func (gateway *HandleT) userWorkerRequestBatcher() {
 	}
 }
 
-// goes over the batches of jobslist, and stores each job in every jobList into gw_db
+// goes over the batches of jobs-list, and stores each job in every jobList into gw_db
 // sends a map of errors if any(errors mapped to the job.uuid) over the responseQ channel of the webRequestWorker.
 // userWebRequestWorkerProcess method of the webRequestWorker is waiting for this errorMessageMap.
-// This in turn sends the error over the done channel of each respcetive webRequest.
+// This in turn sends the error over the done channel of each respective webRequest.
 func (gateway *HandleT) dbWriterWorkerProcess() {
 	for breq := range gateway.batchUserWorkerBatchRequestQ {
 		jobList := make([]*jobsdb.JobT, 0)
@@ -311,7 +315,11 @@ func (gateway *HandleT) dbWriterWorkerProcess() {
 		ctx, cancel := context.WithTimeout(context.Background(), WriteTimeout)
 		err := gateway.jobsDB.WithStoreSafeTx(func(tx jobsdb.StoreSafeTx) error {
 			if gwAllowPartialWriteWithErrors {
-				errorMessagesMap = gateway.jobsDB.StoreWithRetryEachInTx(ctx, tx, jobList)
+				var err error
+				errorMessagesMap, err = gateway.jobsDB.StoreWithRetryEachInTx(ctx, tx, jobList)
+				if err != nil {
+					return err
+				}
 			} else {
 				err := gateway.jobsDB.StoreInTx(ctx, tx, jobList)
 				if err != nil {
@@ -435,6 +443,7 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 			sourceTag := gateway.getSourceTagFromWriteKey(writeKey)
 			sourceTagMap[sourceTag] = writeKey
 			sourceTagMap["reqType"] = req.reqType
+			userIDHeader := req.userIDHeader
 			misc.IncrementMapByKey(sourceStats, sourceTag, 1)
 			// Should be function of body
 			configSubscriberLock.RLock()
@@ -495,7 +504,7 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 			}
 
 			if enableRateLimit {
-				// In case of "batch" requests, if ratelimiter returns true for LimitReached, just drop the event batch and continue.
+				// In case of "batch" requests, if rate-limiter returns true for LimitReached, just drop the event batch and continue.
 				restrictorKey := gateway.backendConfig.GetWorkspaceIDForWriteKey(writeKey)
 				if gateway.rateLimiter.LimitReached(restrictorKey) {
 					req.done <- response.GetStatus(response.TooManyRequests)
@@ -515,10 +524,10 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 				userIDFromReq := strings.TrimSpace(vjson.Get("userId").String())
 				if builtUserID == "" {
 					if anonIDFromReq != "" {
-						builtUserID = anonIDFromReq + DELIMITER + userIDFromReq
+						builtUserID = userIDHeader + DELIMITER + anonIDFromReq + DELIMITER + userIDFromReq
 					} else {
 						// Proxy gets the userID from body if there is no anonymousId in body/header
-						builtUserID = userIDFromReq + DELIMITER + userIDFromReq
+						builtUserID = userIDHeader + DELIMITER + userIDFromReq + DELIMITER + userIDFromReq
 					}
 				}
 
@@ -1042,7 +1051,7 @@ func (rrh *RegularRequestHandler) ProcessRequest(gateway *HandleT, w *http.Respo
 	start := time.Now()
 	gateway.addToWebRequestQ(w, r, done, reqType, payload, writeKey)
 	gateway.addToWebRequestQWaitTime.SendTiming(time.Since(start))
-	defer gateway.ProcessRequestTime.Since(start)
+	defer gateway.processRequestTime.Since(start)
 	errorMessage := <-done
 	return errorMessage
 }
@@ -1360,7 +1369,6 @@ func (gateway *HandleT) StartWebHandler(ctx context.Context) error {
 	srvMux.Use(
 		middleware.StatMiddleware(ctx),
 		middleware.LimitConcurrentRequests(maxConcurrentRequests),
-		middleware.ContentType(),
 	)
 	srvMux.HandleFunc("/v1/batch", gateway.webBatchHandler).Methods("POST")
 	srvMux.HandleFunc("/v1/identify", gateway.webIdentifyHandler).Methods("POST")
@@ -1370,8 +1378,8 @@ func (gateway *HandleT) StartWebHandler(ctx context.Context) error {
 	srvMux.HandleFunc("/v1/alias", gateway.webAliasHandler).Methods("POST")
 	srvMux.HandleFunc("/v1/merge", gateway.webMergeHandler).Methods("POST")
 	srvMux.HandleFunc("/v1/group", gateway.webGroupHandler).Methods("POST")
-	srvMux.HandleFunc("/health", app.LivenessHandler(gateway.jobsDB)).Methods("GET")
-	srvMux.HandleFunc("/", app.LivenessHandler(gateway.jobsDB)).Methods("GET")
+	srvMux.HandleFunc("/health", WithContentType("application/json; charset=utf-8", app.LivenessHandler(gateway.jobsDB))).Methods("GET")
+	srvMux.HandleFunc("/", WithContentType("application/json; charset=utf-8", app.LivenessHandler(gateway.jobsDB))).Methods("GET")
 	srvMux.HandleFunc("/v1/import", gateway.webImportHandler).Methods("POST")
 	srvMux.HandleFunc("/v1/audiencelist", gateway.webAudienceListHandler).Methods("POST")
 	srvMux.HandleFunc("/pixel/v1/track", gateway.pixelTrackHandler).Methods("GET")
@@ -1379,29 +1387,28 @@ func (gateway *HandleT) StartWebHandler(ctx context.Context) error {
 	srvMux.HandleFunc("/v1/webhook", gateway.webhookHandler.RequestHandler).Methods("POST", "GET")
 	srvMux.HandleFunc("/beacon/v1/batch", gateway.beaconBatchHandler).Methods("POST")
 
-	srvMux.HandleFunc("/version", gateway.versionHandler).Methods("GET")
+	srvMux.HandleFunc("/version", WithContentType("application/json; charset=utf-8", gateway.versionHandler)).Methods("GET")
 	srvMux.HandleFunc("/robots.txt", gateway.robots).Methods("GET")
 
 	if enableEventSchemasFeature {
-		srvMux.HandleFunc("/schemas/event-models", gateway.eventSchemaWebHandler(gateway.eventSchemaHandler.GetEventModels)).Methods("GET")
-		srvMux.HandleFunc("/schemas/event-versions", gateway.eventSchemaWebHandler(gateway.eventSchemaHandler.GetEventVersions)).Methods("GET")
-		srvMux.HandleFunc("/schemas/event-model/{EventID}/key-counts", gateway.eventSchemaWebHandler(gateway.eventSchemaHandler.GetKeyCounts)).Methods("GET")
-		srvMux.HandleFunc("/schemas/event-model/{EventID}/metadata", gateway.eventSchemaWebHandler(gateway.eventSchemaHandler.GetEventModelMetadata)).Methods("GET")
-		srvMux.HandleFunc("/schemas/event-version/{VersionID}/metadata", gateway.eventSchemaWebHandler(gateway.eventSchemaHandler.GetSchemaVersionMetadata)).Methods("GET")
-		srvMux.HandleFunc("/schemas/event-version/{VersionID}/missing-keys", gateway.eventSchemaWebHandler(gateway.eventSchemaHandler.GetSchemaVersionMissingKeys)).Methods("GET")
-		srvMux.HandleFunc("/schemas/event-models/json-schemas", gateway.eventSchemaWebHandler(gateway.eventSchemaHandler.GetJsonSchemas)).Methods("GET")
+		srvMux.HandleFunc("/schemas/event-models", WithContentType("application/json; charset=utf-8", gateway.eventSchemaWebHandler(gateway.eventSchemaHandler.GetEventModels))).Methods("GET")
+		srvMux.HandleFunc("/schemas/event-versions", WithContentType("application/json; charset=utf-8", gateway.eventSchemaWebHandler(gateway.eventSchemaHandler.GetEventVersions))).Methods("GET")
+		srvMux.HandleFunc("/schemas/event-model/{EventID}/key-counts", WithContentType("application/json; charset=utf-8", gateway.eventSchemaWebHandler(gateway.eventSchemaHandler.GetKeyCounts))).Methods("GET")
+		srvMux.HandleFunc("/schemas/event-model/{EventID}/metadata", WithContentType("application/json; charset=utf-8", gateway.eventSchemaWebHandler(gateway.eventSchemaHandler.GetEventModelMetadata))).Methods("GET")
+		srvMux.HandleFunc("/schemas/event-version/{VersionID}/metadata", WithContentType("application/json; charset=utf-8", gateway.eventSchemaWebHandler(gateway.eventSchemaHandler.GetSchemaVersionMetadata))).Methods("GET")
+		srvMux.HandleFunc("/schemas/event-version/{VersionID}/missing-keys", WithContentType("application/json; charset=utf-8", gateway.eventSchemaWebHandler(gateway.eventSchemaHandler.GetSchemaVersionMissingKeys))).Methods("GET")
+		srvMux.HandleFunc("/schemas/event-models/json-schemas", WithContentType("application/json; charset=utf-8", gateway.eventSchemaWebHandler(gateway.eventSchemaHandler.GetJsonSchemas))).Methods("GET")
 	}
 
-	// todo: remove in next release
-	srvMux.HandleFunc("/v1/pending-events", gateway.pendingEventsHandler).Methods("POST")
-	srvMux.HandleFunc("/v1/failed-events", gateway.fetchFailedEventsHandler).Methods("POST")
+	srvMux.HandleFunc("/v1/pending-events", WithContentType("application/json; charset=utf-8", gateway.pendingEventsHandler)).Methods("POST")
+	srvMux.HandleFunc("/v1/failed-events", WithContentType("application/json; charset=utf-8", gateway.fetchFailedEventsHandler)).Methods("POST")
 	srvMux.HandleFunc("/v1/clear-failed-events", gateway.clearFailedEventsHandler).Methods("POST")
 
 	// rudder-sources new APIs
 	rsourcesHandler := rsources_http.NewHandler(
 		gateway.rsourcesService,
 		gateway.logger.Child("rsources"))
-	srvMux.PathPrefix("/v1/job-status").Handler(rsourcesHandler)
+	srvMux.PathPrefix("/v1/job-status").Handler(WithContentType("application/json; charset=utf-8", rsourcesHandler.ServeHTTP))
 
 	c := cors.New(cors.Options{
 		AllowOriginFunc:  reflectOrigin,
@@ -1424,16 +1431,7 @@ func (gateway *HandleT) StartWebHandler(ctx context.Context) error {
 		MaxHeaderBytes:    maxHeaderBytes,
 	}
 
-	g, ctx := errgroup.WithContext(ctx)
-	g.Go(func() error {
-		<-ctx.Done()
-		return gateway.httpWebServer.Shutdown(context.Background())
-	})
-	g.Go(func() error {
-		return gateway.httpWebServer.ListenAndServe()
-	})
-
-	return g.Wait()
+	return httputil.ListenAndServe(ctx, gateway.httpWebServer)
 }
 
 // StartAdminHandler for Admin Operations
@@ -1446,7 +1444,6 @@ func (gateway *HandleT) StartAdminHandler(ctx context.Context) error {
 	srvMux.Use(
 		middleware.StatMiddleware(ctx),
 		middleware.LimitConcurrentRequests(maxConcurrentRequests),
-		middleware.ContentType(),
 	)
 	srvMux.HandleFunc("/v1/pending-events", gateway.pendingEventsHandler).Methods("POST")
 
@@ -1455,16 +1452,7 @@ func (gateway *HandleT) StartAdminHandler(ctx context.Context) error {
 		Handler: bugsnag.Handler(srvMux),
 	}
 
-	g, ctx := errgroup.WithContext(ctx)
-	g.Go(func() error {
-		<-ctx.Done()
-		return srv.Shutdown(context.Background())
-	})
-	g.Go(func() error {
-		return srv.ListenAndServe()
-	})
-
-	return g.Wait()
+	return httputil.ListenAndServe(ctx, srv)
 }
 
 // Gets the config from config backend and extracts enabled writekeys
@@ -1504,14 +1492,15 @@ They are further batched together in userWebRequestBatcher
 */
 func (gateway *HandleT) addToWebRequestQ(_ *http.ResponseWriter, req *http.Request, done chan string, reqType string, requestPayload []byte, writeKey string) {
 	userIDHeader := req.Header.Get("AnonymousId")
-	// If necessary fetch userID from request body.
+	workerKey := userIDHeader
 	if userIDHeader == "" {
 		// If the request comes through proxy, proxy would already send this. So this shouldn't be happening in that case
-		userIDHeader = uuid.Must(uuid.NewV4()).String()
+		workerKey = uuid.Must(uuid.NewV4()).String()
+		gateway.emptyAnonIdHeaderStat.Increment()
 	}
-	userWebRequestWorker := gateway.findUserWebRequestWorker(userIDHeader)
+	userWebRequestWorker := gateway.findUserWebRequestWorker(workerKey)
 	ipAddr := misc.GetIPFromReq(req)
-	webReq := webRequestT{done: done, reqType: reqType, requestPayload: requestPayload, writeKey: writeKey, ipAddr: ipAddr}
+	webReq := webRequestT{done: done, reqType: reqType, requestPayload: requestPayload, writeKey: writeKey, ipAddr: ipAddr, userIDHeader: userIDHeader}
 	userWebRequestWorker.webRequestQ <- &webReq
 }
 
@@ -1584,11 +1573,12 @@ func (gateway *HandleT) Setup(
 	gateway.bodyReadTimeStat = gateway.stats.NewStat("gateway.http_body_read_time", stats.TimerType)
 	gateway.addToWebRequestQWaitTime = gateway.stats.NewStat("gateway.web_request_queue_wait_time", stats.TimerType)
 	gateway.addToBatchRequestQWaitTime = gateway.stats.NewStat("gateway.batch_request_queue_wait_time", stats.TimerType)
-	gateway.ProcessRequestTime = gateway.stats.NewStat("gateway.process_request_time", stats.TimerType)
+	gateway.processRequestTime = gateway.stats.NewStat("gateway.process_request_time", stats.TimerType)
 	gateway.backendConfig = backendConfig
 	gateway.rateLimiter = rateLimiter
 	gateway.userWorkerBatchRequestQ = make(chan *userWorkerBatchRequestT, maxDBBatchSize)
 	gateway.batchUserWorkerBatchRequestQ = make(chan *batchUserWorkerBatchRequestT, maxDBWriterProcess)
+	gateway.emptyAnonIdHeaderStat = gateway.stats.NewStat("gateway.empty_anonymous_id_header", stats.CountType)
 	gateway.jobsDB = jobsDB
 
 	gateway.versionHandler = versionHandler
@@ -1661,4 +1651,11 @@ func (gateway *HandleT) Shutdown() error {
 	}
 
 	return gateway.backgroundWait()
+}
+
+func WithContentType(contentType string, delegate http.HandlerFunc) http.HandlerFunc {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Add("Content-Type", contentType)
+		delegate(w, r)
+	})
 }

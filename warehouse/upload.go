@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -238,7 +239,7 @@ func (job *UploadJobT) initTableUploads() error {
 	for t := range schemaForUpload {
 		tables = append(tables, t)
 		// also track upload to rudder_identity_mappings if the upload has records for rudder_identity_merge_rules
-		if misc.ContainsString(warehouseutils.IdentityEnabledWarehouses, destType) && t == warehouseutils.ToProviderCase(destType, warehouseutils.IdentityMergeRulesTable) {
+		if misc.Contains(warehouseutils.IdentityEnabledWarehouses, destType) && t == warehouseutils.ToProviderCase(destType, warehouseutils.IdentityMergeRulesTable) {
 			if _, ok := schemaForUpload[warehouseutils.ToProviderCase(destType, warehouseutils.IdentityMappingsTable)]; !ok {
 				tables = append(tables, warehouseutils.ToProviderCase(destType, warehouseutils.IdentityMappingsTable))
 			}
@@ -407,7 +408,7 @@ func (job *UploadJobT) run() (err error) {
 		case GeneratedLoadFiles:
 			newStatus = nextUploadState.failed
 			// generate load files for all staging files(including succeeded) if hasSchemaChanged or if its snowflake(to have all load files in same folder in bucket) or set via toml/env
-			generateAll := hasSchemaChanged || misc.ContainsString(warehousesToAlwaysRegenerateAllLoadFilesOnResume, job.warehouse.Type) || config.GetBool("Warehouse.alwaysRegenerateAllLoadFiles", true)
+			generateAll := hasSchemaChanged || misc.Contains(warehousesToAlwaysRegenerateAllLoadFilesOnResume, job.warehouse.Type) || config.GetBool("Warehouse.alwaysRegenerateAllLoadFiles", true)
 			var startLoadFileID, endLoadFileID int64
 			startLoadFileID, endLoadFileID, err = job.createLoadFiles(generateAll)
 			if err != nil {
@@ -612,7 +613,7 @@ func (job *UploadJobT) exportUserTables(loadFilesTableMap map[tableNameT]bool) (
 func (job *UploadJobT) exportIdentities() (err error) {
 	// Load Identities if enabled
 	uploadSchema := job.upload.UploadSchema
-	if warehouseutils.IDResolutionEnabled() && misc.ContainsString(warehouseutils.IdentityEnabledWarehouses, job.warehouse.Type) {
+	if warehouseutils.IDResolutionEnabled() && misc.Contains(warehouseutils.IdentityEnabledWarehouses, job.warehouse.Type) {
 		if _, ok := uploadSchema[job.identityMergeRulesTableName()]; ok {
 			loadTimeStat := job.timerStat("identity_tables_load_time")
 			loadTimeStat.Start()
@@ -863,7 +864,7 @@ func (job *UploadJobT) loadAllTablesExcept(skipLoadForTables []string, loadFiles
 	loadChan := make(chan struct{}, parallelLoads)
 	previouslyFailedTables, currentJobSucceededTables := job.getTablesToSkip()
 	for tableName := range uploadSchema {
-		if misc.ContainsString(skipLoadForTables, tableName) {
+		if misc.Contains(skipLoadForTables, tableName) {
 			wg.Done()
 			continue
 		}
@@ -879,7 +880,7 @@ func (job *UploadJobT) loadAllTablesExcept(skipLoadForTables []string, loadFiles
 		hasLoadFiles := loadFilesTableMap[tableNameT(tableName)]
 		if !hasLoadFiles {
 			wg.Done()
-			if misc.ContainsString(alwaysMarkExported, strings.ToLower(tableName)) {
+			if misc.Contains(alwaysMarkExported, strings.ToLower(tableName)) {
 				tableUpload := NewTableUpload(job.upload.ID, tableName)
 				tableUpload.setStatus(TableUploadExported)
 			}
@@ -1432,7 +1433,7 @@ func (job *UploadJobT) setUploadError(statusError error, state string) (string, 
 	if unmarshallErr != nil {
 		metadata = make(map[string]interface{})
 	}
-	metadata["nextRetryTime"] = timeutil.Now().Add(durationBeforeNextAttempt(upload.Attempts + 1)).Format(time.RFC3339)
+	metadata["nextRetryTime"] = timeutil.Now().Add(DurationBeforeNextAttempt(upload.Attempts + 1)).Format(time.RFC3339)
 	metadataJSON, err := json.Marshal(metadata)
 	if err != nil {
 		metadataJSON = []byte("{}")
@@ -1549,6 +1550,9 @@ func (job *UploadJobT) setUploadError(statusError error, state string) (string, 
 }
 
 func (job *UploadJobT) validateDestinationCredentials() (bool, error) {
+	if job.destinationValidator == nil {
+		return false, errors.New("failed to validate as destinationValidator is not set")
+	}
 	validationResult, err := job.destinationValidator.ValidateCredentials(&configuration_testing.DestinationValidationRequest{Destination: job.warehouse.Destination})
 	if err != nil {
 		pkgLogger.Errorf("Unable to successfully validate destination: %s credentials, err: %v", job.warehouse.Destination.ID, err)
@@ -1777,7 +1781,7 @@ func (job *UploadJobT) createLoadFiles(generateAll bool) (startLoadFileID, endLo
 			if revisionConfig, ok := destinationRevisionIDMap[stagingFile.DestinationRevisionID]; ok {
 				payload.StagingDestinationConfig = revisionConfig.Config
 			}
-			if misc.ContainsString(warehouseutils.TimeWindowDestinations, job.warehouse.Type) {
+			if misc.Contains(warehouseutils.TimeWindowDestinations, job.warehouse.Type) {
 				payload.LoadFilePrefix = warehouseutils.GetLoadFilePrefix(stagingFile.TimeWindow, job.warehouse)
 			}
 
@@ -1859,7 +1863,7 @@ func (job *UploadJobT) createLoadFiles(generateAll bool) (startLoadFileID, endLo
 	}
 
 	// verify if all load files are in same folder in object storage
-	if misc.ContainsString(warehousesToVerifyLoadFilesFolder, job.warehouse.Type) {
+	if misc.Contains(warehousesToVerifyLoadFilesFolder, job.warehouse.Type) {
 		locations := job.GetLoadFilesMetadata(warehouseutils.GetLoadFilesOptionsT{
 			StartID: startLoadFileID,
 			EndID:   endLoadFileID,
@@ -2044,10 +2048,7 @@ func (job *UploadJobT) GetSingleLoadFile(tableName string) (warehouseutils.LoadF
 }
 
 func (job *UploadJobT) ShouldOnDedupUseNewRecord() bool {
-	if job.upload.SourceCategory == CloudSourceCateogry {
-		return true
-	}
-	return false
+	return job.upload.SourceCategory == CloudSourceCateogry
 }
 
 func (job *UploadJobT) UseRudderStorage() bool {

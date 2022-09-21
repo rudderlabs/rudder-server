@@ -26,7 +26,7 @@ services:
       - JOBS_DB_PASSWORD=password
       - DEST_TRANSFORM_URL=http://d-transformer:9090
       - CONFIG_BACKEND_URL=https://api.rudderlabs.com
-      - WORKSPACE_TOKEN=<your_workspace_token>
+      - WORKSPACE_TOKEN=<your_workspace_token> # Must be written without quotes e.g. WORKSPACE_TOKEN=20TokEO34NWitou2t3quO8teS7
       - STATSD_SERVER_URL=metrics-exporter:9125
       # - RSERVER_BACKEND_CONFIG_CONFIG_FROM_FILE=true
       # - RSERVER_BACKEND_CONFIG_CONFIG_JSONPATH=<workspace_config_filepath_in_container> # For ex., /etc/rudderstack/workspaceConfig.json

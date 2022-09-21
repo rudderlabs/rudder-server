@@ -9,6 +9,7 @@ import (
 
 	"cloud.google.com/go/bigquery"
 
+	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/services/streammanager/common"
 	"github.com/rudderlabs/rudder-server/utils/googleutils"
 	"github.com/rudderlabs/rudder-server/utils/logger"
@@ -51,9 +52,9 @@ type BQStreamProducer struct {
 	client *Client
 }
 
-func NewProducer(destinationConfig interface{}, o common.Opts) (*BQStreamProducer, error) {
+func NewProducer(destination *backendconfig.DestinationT, o common.Opts) (*BQStreamProducer, error) {
 	var config Config
-	jsonConfig, err := json.Marshal(destinationConfig)
+	jsonConfig, err := json.Marshal(destination.Config)
 	if err != nil {
 		return nil, fmt.Errorf("[BQStream] Error while marshalling destination config :: %w", err)
 	}

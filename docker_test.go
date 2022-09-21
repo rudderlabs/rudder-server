@@ -3,8 +3,6 @@
 // It then runs the service ensuring it is configured to use the dependencies.
 // Finally, it sends events and observe the destinations expecting to get the events back.
 
-//go:build integration
-
 package main_test
 
 import (
@@ -14,7 +12,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"net/http"
 	"os"
 	"os/signal"
@@ -25,13 +22,13 @@ import (
 	"testing"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/testhelper"
 	"github.com/rudderlabs/rudder-server/testhelper/workspaceConfig"
 
 	redigo "github.com/gomodule/redigo/redis"
 	"github.com/joho/godotenv"
 	_ "github.com/lib/pq"
 	"github.com/ory/dockertest/v3"
-	"github.com/phayes/freeport"
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
 	"golang.org/x/sync/errgroup"
@@ -237,7 +234,7 @@ func TestMainFlow(t *testing.T) {
 		messages, errors := consume(t, c, topics)
 
 		signals := make(chan os.Signal, 1)
-		signal.Notify(signals, os.Interrupt, os.Kill) // Get signal for finish
+		signal.Notify(signals, os.Interrupt, syscall.SIGTERM) // Get signal for finish
 
 		var (
 			msgCount      = 0 // Count how many message processed
@@ -436,12 +433,12 @@ func setupMainFlow(svcCtx context.Context, t *testing.T) <-chan struct{} {
 	t.Setenv("DEST_TRANSFORM_URL", transformerContainer.TransformURL)
 	t.Setenv("DEPLOYMENT_TYPE", string(deployment.DedicatedType))
 
-	httpPortInt, err := freeport.GetFreePort()
+	httpPortInt, err := testhelper.GetFreePort()
 	require.NoError(t, err)
 
 	httpPort = strconv.Itoa(httpPortInt)
 	t.Setenv("RSERVER_GATEWAY_WEB_PORT", httpPort)
-	httpAdminPort, err := freeport.GetFreePort()
+	httpAdminPort, err := testhelper.GetFreePort()
 	require.NoError(t, err)
 
 	t.Setenv("RSERVER_GATEWAY_ADMIN_WEB_PORT", strconv.Itoa(httpAdminPort))
@@ -475,7 +472,7 @@ func setupMainFlow(svcCtx context.Context, t *testing.T) <-chan struct{} {
 		mapWorkspaceConfig,
 	)
 	if testing.Verbose() {
-		data, err := ioutil.ReadFile(workspaceConfigPath)
+		data, err := os.ReadFile(workspaceConfigPath)
 		require.NoError(t, err)
 		t.Logf("Workspace config: %s", string(data))
 	}
@@ -758,7 +755,7 @@ func consume(t *testing.T, client *kafkaClient.Client, topics []testutil.TopicPa
 		})
 
 		t.Logf("Start consuming topic %s:%d", topic.Topic, topic.Partition)
-		go func(topic testutil.TopicPartition, consumer *kafkaClient.Consumer) {
+		go func(consumer *kafkaClient.Consumer) {
 			for {
 				msg, err := consumer.Receive(context.TODO())
 				if err != nil {
@@ -767,7 +764,7 @@ func consume(t *testing.T, client *kafkaClient.Client, topics []testutil.TopicPa
 					messages <- msg
 				}
 			}
-		}(topic, consumer)
+		}(consumer)
 	}
 
 	return messages, errors
