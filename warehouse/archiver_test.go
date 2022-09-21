@@ -4,7 +4,7 @@ import (
 	"context"
 
 	"github.com/ory/dockertest/v3"
-	mock_logger "github.com/rudderlabs/rudder-server/mocks/utils/logger"
+	mocklogger "github.com/rudderlabs/rudder-server/mocks/utils/logger"
 
 	"github.com/golang/mock/gomock"
 	. "github.com/onsi/ginkgo/v2"
@@ -123,7 +123,7 @@ var _ = Describe("Archiver", Ordered, func() {
 		err           error
 		cleanup       = &testhelper.Cleanup{}
 		es            = GinkgoT()
-		mockLogger    *mock_logger.MockLoggerI
+		mockLogger    *mocklogger.MockLoggerI
 		mockCtrl      *gomock.Controller
 		prefix        = "test-prefix"
 	)
@@ -154,7 +154,7 @@ var _ = Describe("Archiver", Ordered, func() {
 		Expect(err).To(BeNil())
 
 		mockCtrl = gomock.NewController(es)
-		mockLogger = mock_logger.NewMockLoggerI(mockCtrl)
+		mockLogger = mocklogger.NewMockLoggerI(mockCtrl)
 		mockLogger.EXPECT().Errorf(gomock.Any(), gomock.Any()).MaxTimes(0)
 		mockLogger.EXPECT().Errorf(gomock.Any(), gomock.Any()).MinTimes(0)
 		mockLogger.EXPECT().Infof(gomock.Any(), gomock.Any()).AnyTimes()
