@@ -109,7 +109,7 @@ func archiveSQLStatement() string {
 				'{}'
 			  ),
 			  (
-				4, 3, 'rudder/rudder-warehouse-staging-logs/2EUralUySYUs7hgsdU1lFXRSm/2022-09-20/1663650685.2EUralsdsDyZjOKU1lFXRSm.eeadsb4-a066-42f4-a90b-460161378e1b.json.gz',
+				4, 4, 'rudder/rudder-warehouse-staging-logs/2EUralUySYUs7hgsdU1lFXRSm/2022-09-20/1663650685.2EUralsdsDyZjOKU1lFXRSm.eeadsb4-a066-42f4-a90b-460161378e1b.json.gz',
 				'test-sourceID', 'test-destinationID',
 				'POSTGRES', 'test-table', 1, NOW(),
 				'{}'
