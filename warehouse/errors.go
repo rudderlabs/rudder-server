@@ -32,10 +32,11 @@ func (err *SyncsErr) Error() string {
 }
 
 func (err *SyncsErr) canSkipError() bool {
-	if err.DestinationType == "" {
+	skipErrorCodes, ok := skipErrorCodesMap[DestinationType(err.DestinationType)]
+	if !ok {
 		return false
 	}
-	for _, errorCode := range skipErrorCodesMap[DestinationType(err.DestinationType)] {
+	for _, errorCode := range skipErrorCodes {
 		if ErrorCode(err.Code) == errorCode {
 			return true
 		}
