@@ -9,17 +9,6 @@ import (
 
 func TestRetriableStatus(t *testing.T) {
 	retribaleCodes := []int{
-		// 2xx
-		http.StatusOK,
-		http.StatusCreated,
-		http.StatusAccepted,
-		http.StatusNonAuthoritativeInfo,
-		http.StatusNoContent,
-		http.StatusResetContent,
-		http.StatusPartialContent,
-		http.StatusMultiStatus,
-		http.StatusAlreadyReported,
-		http.StatusIMUsed,
 
 		// 4xx
 		http.StatusRequestTimeout,
@@ -40,6 +29,18 @@ func TestRetriableStatus(t *testing.T) {
 	}
 
 	nonRetriableCodes := []int{
+		// 2xx
+		http.StatusOK,
+		http.StatusCreated,
+		http.StatusAccepted,
+		http.StatusNonAuthoritativeInfo,
+		http.StatusNoContent,
+		http.StatusResetContent,
+		http.StatusPartialContent,
+		http.StatusMultiStatus,
+		http.StatusAlreadyReported,
+		http.StatusIMUsed,
+
 		// 4xx
 		http.StatusBadRequest,
 		http.StatusUnauthorized,

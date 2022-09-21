@@ -963,3 +963,8 @@ func GetDateRangeList(start, end time.Time, dateFormat string) (dateRange []stri
 	}
 	return
 }
+
+type FilterBy struct {
+	Key   string
+	Value interface{}
+}
