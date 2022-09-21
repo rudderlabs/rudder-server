@@ -185,6 +185,12 @@ type WarehouseT struct {
 	Identifier  string
 }
 
+type DeleteByMetaData struct {
+	JobRunId  string
+	TaskRunId string
+	StartTime string
+}
+
 type DeleteByParams struct {
 	SourceId  string
 	JobRunId  string

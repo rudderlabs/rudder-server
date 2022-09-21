@@ -3,6 +3,7 @@ package jobs
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"time"
 
 	"github.com/rudderlabs/rudder-server/services/pgnotifier"
@@ -30,18 +31,21 @@ type AsyncJobWhT struct {
 	context    context.Context
 }
 
+type WhJobsMetaData struct {
+	JobRunID  string `json:"jobrunid"`
+	TaskRunID string `json:"taskrunid"`
+	JobType   string `json:"jobtype"`
+	StartTime string `json:"starttime"`
+}
+
 //For creating job payload to wh_async_jobs table
 type AsyncJobPayloadT struct {
-	Id            string `json:"id"`
-	SourceID      string `json:"sourceid"`
-	JobType       string `json:"jobtype"`
-	DestinationID string `json:"destinationid"`
-	StartTime     string `json:"starttime"`
-	JobRunID      string `json:"jobrunid"`
-	TaskRunID     string `json:"taskrunid"`
-	Namespace     string `json:"namespace"`
-	TableName     string `json:"tablename"`
-	AsyncJobType  string `json:"async_job_type"`
+	Id            string          `json:"id"`
+	SourceID      string          `json:"sourceid"`
+	DestinationID string          `json:"destinationid"`
+	TableName     string          `json:"tablename"`
+	AsyncJobType  string          `json:"async_job_type"`
+	MetaData      json.RawMessage `json:"metadata"`
 }
 
 const (
@@ -52,6 +56,11 @@ const (
 	WhJobFailed    string = "failed"
 	AsyncJobType   string = "async_job"
 )
+
+type PGNotifierOutput struct {
+	Id        string
+	TableName string
+}
 
 type WhAddJobResponse struct {
 	JobIds []int64 `json:"jobids"`
@@ -72,9 +81,10 @@ type WhAsyncJobRunner interface {
 }
 
 type AsyncJobsStatusMap struct {
-	Id     string
-	Status string
-	Error  error
+	Id             string
+	Status         string
+	Error          error
+	CountIncrement int
 }
 
 const (
@@ -82,4 +92,6 @@ const (
 	MaxCleanUpRetries     int           = 5
 	MaxQueryRetries       int           = 3
 	RetryTimeInterval     time.Duration = 10 * time.Second
+	MaxAttemptsPerJob     int           = 3
+	WhAsyncJobTimeOut     time.Duration = 10 * time.Second
 )

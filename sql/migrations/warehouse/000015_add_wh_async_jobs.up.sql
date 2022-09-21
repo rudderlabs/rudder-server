@@ -3,20 +3,17 @@
 --
 
 CREATE TABLE wh_async_jobs (
-    id SERIAL PRIMARY KEY,
-    sourceid VARCHAR(64) NOT NULL,
-    destinationid VARCHAR(64) NOT NULL,
-    status VARCHAR(64) NOT NULL,
-    jobrunid VARCHAR(64) NOT NULL,
-    starttime timestamp without time zone,
+    id integer DEFAULT nextval('wh_async_jobs_id_seq1'::regclass) PRIMARY KEY,
+    sourceid character varying(64) NOT NULL,
+    destinationid character varying(64) NOT NULL,
+    status character varying(64) NOT NULL,
     created_at timestamp without time zone,
     updated_at timestamp without time zone,
-    destination_type VARCHAR(64) NOT NULL,
-    taskrunid VARCHAR(64) NOT NULL,
     tablename text NOT NULL,
-    jobtype VARCHAR(64) NOT NULL,
-    namespace VARCHAR(64) NOT NULL,
     error text,
-    async_job_type VARCHAR(64) NOT NULL,
-    UNIQUE(sourceid,destinationid,jobrunid,taskrunid,tablename)
+    async_job_type character varying(64) NOT NULL,
+    metadata jsonb,
+    attempt integer DEFAULT 0
 );
+
+CREATE UNIQUE INDEX asyncjobindex ON wh_async_jobs (sourceid,destinationid, (metadata->>'jobrunid'),(metadata->>'taskrunid'),tablename) WHERE metadata->>'jobrunid'!='' AND metadata->>'taskrunid'!='' ;

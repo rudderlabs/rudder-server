@@ -612,27 +612,32 @@ func runAsyncJob(asyncjob jobs.AsyncJobPayloadT, workerIndex int) (AsyncJobRunRe
 	}
 	whasyncjob := &jobs.WhAsyncJob{}
 
+	var metadata warehouseutils.DeleteByMetaData
+	err = json.Unmarshal(asyncjob.MetaData, &metadata)
+	if err != nil {
+		return AsyncJobRunResult{Result: false}, err
+	}
 	whManager.Setup(warehouse, whasyncjob)
 	defer whManager.Cleanup()
 	tableNames := []string{asyncjob.TableName}
 	switch asyncjob.AsyncJobType {
 	case "deletebyjobrunid":
 		pkgLogger.Info("[WH-Jobs]: Running DeleteByJobRunID on slave worker")
+
 		params := warehouseutils.DeleteByParams{
 			SourceId:  asyncjob.SourceID,
-			TaskRunId: asyncjob.TaskRunID,
-			JobRunId:  asyncjob.JobRunID,
-			StartTime: asyncjob.StartTime,
+			TaskRunId: metadata.TaskRunId,
+			JobRunId:  metadata.JobRunId,
+			StartTime: metadata.StartTime,
 		}
 		err = whManager.DeleteBy(tableNames, params)
 	}
 	var asyncJobRunResult = AsyncJobRunResult{
-		JobRunID:  asyncjob.JobRunID,
+		JobRunID:  metadata.JobRunId,
 		TableName: asyncjob.TableName,
 		Result:    err == nil,
 	}
 	return asyncJobRunResult, err
-
 }
 
 func processClaimedAsyncJob(claimedJob pgnotifier.ClaimT, workerIndex int) {

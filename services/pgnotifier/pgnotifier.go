@@ -67,6 +67,8 @@ type PgNotifierT struct {
 
 type JobPayload json.RawMessage
 
+const MaxTrackAsyncBatchRetries = 5
+
 type ResponseT struct {
 	JobID   int64
 	Status  string
@@ -75,6 +77,14 @@ type ResponseT struct {
 	JobType string
 }
 
+type JobsResponse struct {
+	Status    string
+	Output    json.RawMessage
+	Error     string
+	JobType   string
+	JobRunID  string
+	TaskRunID string
+}
 type ClaimT struct {
 	ID        int64
 	BatchID   string
@@ -93,12 +103,6 @@ type ClaimResponseT struct {
 type MessagePayload struct {
 	Jobs    []JobPayload
 	JobType string
-}
-
-type AsyncOutput struct {
-	JobID     string
-	TableName string
-	Output    string
 }
 
 func loadPGNotifierConfig() {
@@ -241,6 +245,8 @@ func (notifier *PgNotifierT) trackUploadBatch(batchID string, ch *chan []Respons
 //trackAsyncBatch tracks the upload batches until they are complete and triggers output through channel of type ResponseT
 func (notifier *PgNotifierT) trackAsyncBatch(batchID string, ch *chan []ResponseT) {
 	rruntime.GoForWarehouse(func() {
+		// retry := 0
+		var responses []ResponseT
 		for {
 			time.Sleep(trackBatchInterval)
 			// keep polling db for batch status
@@ -249,29 +255,27 @@ func (notifier *PgNotifierT) trackAsyncBatch(batchID string, ch *chan []Response
 			var count int
 			err := notifier.dbHandle.QueryRow(stmt, batchID, SucceededState, AbortedState).Scan(&count)
 			if err != nil {
+				*ch <- responses
 				pkgLogger.Errorf("PgNotifier: Failed to query for tracking jobs by batch_id: %s, connInfo: %s, error : %s", stmt, notifier.URI, err.Error())
-				continue
+				break
 			}
 
 			if count == 0 {
 				stmt = fmt.Sprintf(`SELECT payload, status, error FROM %s WHERE batch_id = $1`, queueName)
 				rows, err := notifier.dbHandle.Query(stmt, batchID)
 				if err != nil {
-					panic(err)
+					*ch <- responses
+					pkgLogger.Errorf("PgNotifier: Failed to query for getting jobs for payload, status & error: %s, connInfo: %s, error : %s", stmt, notifier.URI, err.Error())
+					break
 				}
-				var responses []ResponseT
 				for rows.Next() {
 					var status, jobError sql.NullString
 					var payload json.RawMessage
-
 					err = rows.Scan(&payload, &status, &jobError)
 					if err != nil {
-						panic(fmt.Errorf("failed to scan result from query: %s\nwith Error : %w", stmt, err))
+						continue
 					}
 
-					if err != nil {
-						panic(fmt.Errorf("failed to marshal async Output with Error : %w", err))
-					}
 					responses = append(responses, ResponseT{
 						JobID:  0, //Not required for this as there is no concept of BatchFileId
 						Output: payload,
