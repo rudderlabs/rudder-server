@@ -13,6 +13,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/info"
 	"github.com/rudderlabs/rudder-server/warehouse/datalake"
 
 	"github.com/bugsnag/bugsnag-go/v2"
@@ -43,6 +44,7 @@ import (
 	batchrouterutils "github.com/rudderlabs/rudder-server/router/utils"
 	"github.com/rudderlabs/rudder-server/services/alert"
 	"github.com/rudderlabs/rudder-server/services/archiver"
+	"github.com/rudderlabs/rudder-server/services/controlplane/features"
 	"github.com/rudderlabs/rudder-server/services/db"
 	destinationdebugger "github.com/rudderlabs/rudder-server/services/debugger/destination"
 	sourcedebugger "github.com/rudderlabs/rudder-server/services/debugger/source"
@@ -273,6 +275,22 @@ func Run(ctx context.Context) int {
 			if err := appHandler.StartRudderCore(ctx, options); err != nil {
 				return fmt.Errorf("rudder core: %w", err)
 			}
+			return nil
+		}))
+		g.Go(misc.WithBugsnag(func() error {
+			backendconfig.DefaultBackendConfig.WaitForConfig(ctx)
+
+			c := features.NewClient(
+				config.GetEnv("CONFIG_BACKEND_URL", "https://api.rudderlabs.com"),
+				backendconfig.DefaultBackendConfig.Identity(),
+			)
+
+			err := c.Send(ctx, info.ServerComponent.Name, info.ServerComponent.Features)
+			if err != nil {
+				pkgLogger.Errorf("error sending server features: %v", err)
+			}
+
+			// we don't want to exit if we can't send server features
 			return nil
 		}))
 	}

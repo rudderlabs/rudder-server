@@ -23,6 +23,7 @@ import (
 )
 
 var sampleBackendConfig = ConfigT{
+	WorkspaceID: "sampleWorkspaceID",
 	Sources: []SourceT{
 		{
 			ID:       "1",
@@ -105,9 +106,6 @@ func TestBadResponse(t *testing.T) {
 			Client:           http.DefaultClient,
 			Logger:           &logger.NOP{},
 		},
-		"multi-tenant": &multiTenantWorkspacesConfig{
-			configBackendURL: parsedURL,
-		},
 		"single-workspace": &singleWorkspaceConfig{
 			configBackendURL: parsedURL,
 		},
@@ -153,17 +151,6 @@ func TestNewForDeployment(t *testing.T) {
 	})
 
 	t.Run("multi-tenant", func(t *testing.T) {
-		t.Setenv("HOSTED_SERVICE_SECRET", "foobar")
-		conf, err := newForDeployment(deployment.MultiTenantType, nil)
-		require.NoError(t, err)
-
-		cb, ok := conf.(*backendConfigImpl)
-		require.True(t, ok)
-		_, ok = cb.workspaceConfig.(*multiTenantWorkspacesConfig)
-		require.True(t, ok)
-	})
-
-	t.Run("multi-tenant-with-namespace", func(t *testing.T) {
 		t.Setenv("WORKSPACE_NAMESPACE", "spaghetti")
 		t.Setenv("HOSTED_SERVICE_SECRET", "foobar")
 		conf, err := newForDeployment(deployment.MultiTenantType, nil)

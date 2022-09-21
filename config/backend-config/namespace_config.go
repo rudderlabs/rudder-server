@@ -10,11 +10,15 @@ import (
 	"time"
 
 	"github.com/cenkalti/backoff"
+	jsoniter "github.com/json-iterator/go"
 
 	"github.com/rudderlabs/rudder-server/config"
+	"github.com/rudderlabs/rudder-server/services/controlplane/identity"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/types"
 )
+
+var jsonfast = jsoniter.ConfigCompatibleWithStandardLibrary
 
 type namespaceConfig struct {
 	configEnvHandler          types.ConfigEnvI
@@ -137,8 +141,8 @@ func (nc *namespaceConfig) getFromAPI(ctx context.Context, _ string) (ConfigT, e
 		respBody = configEnvHandler.ReplaceConfigWithEnvVariables(respBody)
 	}
 
-	var workspaces WorkspacesT
-	err = jsonfast.Unmarshal(respBody, &workspaces.WorkspaceSourcesMap)
+	var workspacesConfig map[string]ConfigT
+	err = jsonfast.Unmarshal(respBody, &workspacesConfig)
 	if err != nil {
 		nc.Logger.Errorf("Error while parsing request: %v", err)
 		return ConfigT{}, err
@@ -149,7 +153,7 @@ func (nc *namespaceConfig) getFromAPI(ctx context.Context, _ string) (ConfigT, e
 	workspaceIDToLibrariesMap := make(map[string]LibrariesT)
 	sourcesJSON := ConfigT{}
 	sourcesJSON.Sources = make([]SourceT, 0)
-	for workspaceID, nc := range workspaces.WorkspaceSourcesMap {
+	for workspaceID, nc := range workspacesConfig {
 		for i := range nc.Sources {
 			source := &nc.Sources[i]
 			writeKeyToWorkspaceIDMap[source.WriteKey] = workspaceID
@@ -176,7 +180,8 @@ func (nc *namespaceConfig) makeHTTPRequest(ctx context.Context, url string) ([]b
 		return nil, err
 	}
 
-	req.SetBasicAuth(nc.HostedServiceSecret, "")
+	req.SetBasicAuth(nc.Identity().BasicAuth())
+
 	resp, err := nc.Client.Do(req)
 	if err != nil {
 		return nil, err
@@ -198,4 +203,11 @@ func (nc *namespaceConfig) makeHTTPRequest(ctx context.Context, url string) ([]b
 
 func (nc *namespaceConfig) AccessToken() string {
 	return nc.HostedServiceSecret
+}
+
+func (nc *namespaceConfig) Identity() identity.Identifier {
+	return &identity.Namespace{
+		Namespace:    nc.Namespace,
+		HostedSecret: nc.HostedServiceSecret,
+	}
 }
