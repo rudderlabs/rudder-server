@@ -195,7 +195,7 @@ var _ = Describe("Stats", Ordered, func() {
 							Name: destinationName,
 						},
 						Source: backendconfig.SourceT{
-							ID:   destinationID,
+							ID:   sourceID,
 							Name: destinationName,
 						},
 					},
