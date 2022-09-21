@@ -5,9 +5,8 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
-	"errors"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"net/http"
 	"strconv"
 	"strings"
@@ -402,14 +401,14 @@ func (handle *HandleT) sendMetric(ctx context.Context, netClient *http.Client, c
 		stats.NewTaggedStat(STAT_REPORTING_HTTP_REQ, stats.CountType, httpStatTags).Count(1)
 
 		defer resp.Body.Close()
-		respBody, err := ioutil.ReadAll(resp.Body)
+		respBody, err := io.ReadAll(resp.Body)
 		if err != nil {
 			handle.logger.Error(err.Error())
 			return err
 		}
 
 		if !isMetricPosted(resp.StatusCode) {
-			err = errors.New(fmt.Sprintf(`Received reponse: statusCode:%d error:%v`, resp.StatusCode, string(respBody)))
+			err = fmt.Errorf(`Received response: statusCode:%d error:%v`, resp.StatusCode, string(respBody))
 		}
 		return err
 	}

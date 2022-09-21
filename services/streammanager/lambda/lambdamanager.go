@@ -4,10 +4,10 @@ package lambda
 
 import (
 	"encoding/json"
-	"errors"
 
 	"github.com/aws/aws-sdk-go/service/lambda"
 	jsoniter "github.com/json-iterator/go"
+	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/services/streammanager/common"
 	"github.com/rudderlabs/rudder-server/utils/awsutils"
 	"github.com/rudderlabs/rudder-server/utils/logger"
@@ -43,13 +43,10 @@ func init() {
 }
 
 // NewProducer creates a producer based on destination config
-func NewProducer(destinationConfig map[string]interface{}, o common.Opts) (*LambdaProducer, error) {
-	sessionConfig, err := awsutils.NewSessionConfig(destinationConfig, o.Timeout, lambda.ServiceName)
+func NewProducer(destination *backendconfig.DestinationT, o common.Opts) (*LambdaProducer, error) {
+	sessionConfig, err := awsutils.NewSessionConfigForDestination(destination, o.Timeout, lambda.ServiceName)
 	if err != nil {
 		return nil, err
-	}
-	if sessionConfig.Region == "" {
-		return nil, errors.New("could not find region configuration")
 	}
 	awsSession, err := awsutils.CreateSession(sessionConfig)
 	if err != nil {
@@ -99,4 +96,9 @@ func (producer *LambdaProducer) Produce(jsonData json.RawMessage, _ interface{})
 	}
 
 	return 200, "Success", "Event delivered to Lambda :: " + config.Lambda
+}
+
+func (*LambdaProducer) Close() error {
+	// no-op
+	return nil
 }

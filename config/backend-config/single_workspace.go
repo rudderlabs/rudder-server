@@ -17,6 +17,7 @@ import (
 )
 
 type singleWorkspaceConfig struct {
+	logOnce          sync.Once
 	Token            string
 	workspaceID      string
 	configBackendURL *url.URL
@@ -97,12 +98,14 @@ func (wc *singleWorkspaceConfig) getFromAPI(ctx context.Context, _ string) (Conf
 		return fetchError
 	}
 
-	backoffWithMaxRetry := backoff.WithMaxRetries(backoff.NewExponentialBackOff(), 3)
+	backoffWithMaxRetry := backoff.WithContext(backoff.WithMaxRetries(backoff.NewExponentialBackOff(), 3), ctx)
 	err := backoff.RetryNotify(operation, backoffWithMaxRetry, func(err error, t time.Duration) {
 		pkgLogger.Warnf("Failed to fetch config from API with error: %v, retrying after %v", err, t)
 	})
 	if err != nil {
-		pkgLogger.Errorf("Error sending request to the server: %v", err)
+		if ctx.Err() == nil {
+			pkgLogger.Errorf("Error sending request to the server: %v", err)
+		}
 		return ConfigT{}, err
 	}
 
@@ -129,7 +132,9 @@ func (wc *singleWorkspaceConfig) getFromAPI(ctx context.Context, _ string) (Conf
 
 // getFromFile reads the workspace config from JSON file
 func (wc *singleWorkspaceConfig) getFromFile() (ConfigT, error) {
-	pkgLogger.Info("Reading workspace config from JSON file")
+	wc.logOnce.Do(func() {
+		pkgLogger.Info("Reading workspace config from JSON file")
+	})
 	data, err := IoUtil.ReadFile(wc.configJSONPath)
 	if err != nil {
 		pkgLogger.Errorf("Unable to read backend config from file: %s with error : %s", wc.configJSONPath, err.Error())

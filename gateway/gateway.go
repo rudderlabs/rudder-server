@@ -9,6 +9,7 @@ import (
 	"io"
 	"math"
 	"net/http"
+	stdhttputil "net/http/httputil"
 	"net/url"
 	"regexp"
 	"strconv"
@@ -938,28 +939,18 @@ func (gateway *HandleT) pendingEventsHandler(w http.ResponseWriter, r *http.Requ
 	_, _ = w.Write([]byte(fmt.Sprintf("{ \"pending_events\": %d }", getIntResponseFromBool(gateway.getWarehousePending(payload)))))
 }
 
-//Warehouse Async Job Handlers
-func (gateway *HandleT) warehouseJobStartHandler(w http.ResponseWriter, r *http.Request) {
-	gateway.logger.LogRequest(r)
-	gateway.logger.Info("Warehouse Job Start Handler")
-	payload, err := io.ReadAll(r.Body)
+func warehouseHandler(w http.ResponseWriter, r *http.Request) {
+	origin, err := url.Parse(misc.GetWarehouseURL())
 	if err != nil {
-		gateway.logger.Error("Error in reading payload in warehouseJobStartHandler")
-		return
+		http.Error(w, err.Error(), 404)
 	}
-	gateway.startWarehouseAsyncJob(payload)
-}
-
-func (gateway *HandleT) startWarehouseAsyncJob(payload []byte) bool {
-	uri := fmt.Sprintf(`%s/v1/warehouse/wh-jobs/start`, misc.GetWarehouseURL())
-	resp, err := gateway.netHandle.Post(uri, "application/json; charset=utf-8",
-		bytes.NewBuffer(payload))
-	if err != nil {
-		return false
+	// gateway.logger.LogRequest(r)
+	director := func(req *http.Request) {
+		req.URL.Scheme = "http"
+		req.URL.Host = origin.Host
 	}
-
-	defer resp.Body.Close()
-	return true
+	proxy := &stdhttputil.ReverseProxy{Director: director}
+	proxy.ServeHTTP(w, r)
 }
 
 func getIntResponseFromBool(resp bool) int {
@@ -1410,11 +1401,8 @@ func (gateway *HandleT) StartWebHandler(ctx context.Context) error {
 	srvMux.HandleFunc("/pixel/v1/page", gateway.pixelPageHandler).Methods("GET")
 	srvMux.HandleFunc("/v1/webhook", gateway.webhookHandler.RequestHandler).Methods("POST", "GET")
 	srvMux.HandleFunc("/beacon/v1/batch", gateway.beaconBatchHandler).Methods("POST")
-
+	srvMux.PathPrefix("/v1/warehouse").Handler(http.HandlerFunc(warehouseHandler)).Methods("GET", "POST")
 	srvMux.HandleFunc("/version", WithContentType("application/json; charset=utf-8", gateway.versionHandler)).Methods("GET")
-	//Warehouse Async Jobs API
-	srvMux.HandleFunc("/v1/wh-jobs/start", gateway.warehouseJobStartHandler).Methods("POST")
-
 	srvMux.HandleFunc("/robots.txt", gateway.robots).Methods("GET")
 
 	if enableEventSchemasFeature {

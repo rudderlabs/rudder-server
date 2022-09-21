@@ -1,32 +1,46 @@
 package customdestinationmanager
 
 import (
+	"encoding/json"
 	"fmt"
+	"strings"
+	"sync"
 	"testing"
 	"time"
 
+	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/assert"
 
 	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
+	mock_streammanager "github.com/rudderlabs/rudder-server/mocks/services/streammanager/common"
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/services/streammanager/kafka"
+	"github.com/rudderlabs/rudder-server/services/streammanager/lambda"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 )
+
+var once sync.Once
+
+func initCustomerManager() {
+	once.Do(func() {
+		config.Load()
+		Init()
+		logger.Init()
+		stats.Setup()
+		kafka.Init()
+		skipBackendConfigSubscriber = true
+	})
+}
 
 func TestCircuitBreaker(t *testing.T) {
 	const (
 		normalError  = "could not ping: could not dial any of the addresses"
-		breakerError = "circuit breaker is open"
+		breakerError = "circuit breaker is open, last error: could not ping: could not dial any of the addresses"
 	)
 
 	// init various packages
-	config.Load()
-	Init()
-	logger.Init()
-	stats.Setup()
-	kafka.Init()
-
+	initCustomerManager()
 	// don't let manager subscribe to backend-config
 	skipBackendConfigSubscriber = true
 
@@ -75,18 +89,23 @@ func TestCircuitBreaker(t *testing.T) {
 
 func newDestination(t *testing.T, manager *CustomManagerT, dest backendconfig.DestinationT, attempt int, errorString string) { // skipcq: CRT-P0003
 	err := manager.onNewDestination(dest)
-	assert.ErrorContains(t, err, errorString, fmt.Sprintf("wrong error for attempt no %d", attempt))
+	assert.NotNil(t, err, "it should return an error for attempt no %d", attempt)
+	assert.True(t, strings.HasPrefix(err.Error(), errorString), fmt.Sprintf("error %s should start with %s for attempt no %d", err.Error(), errorString, attempt))
 }
 
 func newClientAttempt(t *testing.T, manager *CustomManagerT, destId string, attempt int, errorString string) {
 	err := manager.newClient(destId)
-	assert.ErrorContains(t, err, errorString, fmt.Sprintf("wrong error for attempt no %d", attempt))
+	assert.NotNil(t, err, "it should return an error for attempt no %d", attempt)
+	assert.True(t, strings.HasPrefix(err.Error(), errorString), fmt.Sprintf("error %s should start with %s for attempt no %d", err.Error(), errorString, attempt))
 }
 
 func getDestConfig() backendconfig.DestinationT {
 	return backendconfig.DestinationT{
 		ID:   "test",
 		Name: "test",
+		DestinationDefinition: backendconfig.DestinationDefinitionT{
+			Name: "KAFKA",
+		},
 		Config: map[string]interface{}{
 			"hostName":      "unknown.example.com",
 			"port":          "9999",
@@ -100,4 +119,30 @@ func getDestConfig() backendconfig.DestinationT {
 		},
 		Enabled: true,
 	}
+}
+
+func TestSendDataWithStreamDestination(t *testing.T) {
+	initCustomerManager()
+
+	customManager := New("LAMBDA", Opts{}).(*CustomManagerT)
+	someDestination := backendconfig.DestinationT{
+		ID: "someDestinationID1",
+		DestinationDefinition: backendconfig.DestinationDefinitionT{
+			Name: "LAMBDA",
+		},
+		Config: map[string]interface{}{
+			"region": "someRegion",
+		},
+	}
+	err := customManager.onNewDestination(someDestination)
+	assert.Nil(t, err)
+	assert.NotNil(t, customManager.client[someDestination.ID])
+	assert.IsType(t, &lambda.LambdaProducer{}, customManager.client[someDestination.ID].client)
+
+	ctrl := gomock.NewController(t)
+	mockProducer := mock_streammanager.NewMockStreamProducer(ctrl)
+	customManager.client[someDestination.ID].client = mockProducer
+	event := json.RawMessage{}
+	mockProducer.EXPECT().Produce(event, someDestination.Config).Times(1)
+	customManager.SendData(event, someDestination.ID)
 }

@@ -77,21 +77,18 @@ var _ = Describe("Using sources handler", Ordered, func() {
 
 			failedRecords, err := sh.GetFailedRecords(context.Background(), jobRunId, jobFilters)
 			Expect(err).NotTo(HaveOccurred(), "it should be able to get failed records")
-			expcetedRecords := FailedRecords{
-				{
-					JobRunID:      jobRunId,
-					TaskRunID:     "task_run_id",
-					SourceID:      "source_id",
-					DestinationID: "destination_id",
-					RecordID:      json.RawMessage(`{"record-1": "id-1"}`),
-				},
-				{
-					JobRunID:      jobRunId,
-					TaskRunID:     "task_run_id",
-					SourceID:      "source_id",
-					DestinationID: "destination_id",
-					RecordID:      json.RawMessage(`{"record-2": "id-2"}`),
-				},
+			expcetedRecords := JobFailedRecords{
+				ID: jobRunId,
+				Tasks: []TaskFailedRecords{{
+					ID: "task_run_id",
+					Sources: []SourceFailedRecords{{
+						ID: "source_id",
+						Destinations: []DestinationFailedRecords{{
+							ID:      "destination_id",
+							Records: []json.RawMessage{[]byte(`{"record-1": "id-1"}`), []byte(`{"record-2": "id-2"}`)},
+						}},
+					}},
+				}},
 			}
 			Expect(failedRecords).To(Equal(expcetedRecords), "it should be able to get failed records")
 		})
@@ -110,7 +107,7 @@ var _ = Describe("Using sources handler", Ordered, func() {
 
 			failedRecords, err := sh.GetFailedRecords(context.Background(), jobRunId, JobFilter{})
 			Expect(err).To(HaveOccurred(), "it shouldn't be able to get failed records")
-			Expect(failedRecords).To(BeNil(), "it should return nil failed records")
+			Expect(failedRecords).To(Equal(JobFailedRecords{ID: jobRunId}), "it should return an empty failed records")
 			Expect(err).To(Equal(ErrOperationNotSupported), "it should return an ErrOperationNotSupported error")
 		})
 		It("should be able to get the status", func() {
@@ -156,7 +153,7 @@ var _ = Describe("Using sources handler", Ordered, func() {
 			})
 			tx, err := resource.db.Begin()
 			Expect(err).NotTo(HaveOccurred(), "it should be able to begin the transaction")
-			err = sh.Delete(context.Background(), jobRunId)
+			err = sh.Delete(context.Background(), jobRunId, JobFilter{})
 			Expect(err).NotTo(HaveOccurred(), "it should be able to delete stats, failed keys for the jobrunid")
 			err = tx.Commit()
 			Expect(err).NotTo(HaveOccurred(), "it should be able to commit the transaction")
@@ -170,7 +167,49 @@ var _ = Describe("Using sources handler", Ordered, func() {
 			Expect(errors.Is(err, StatusNotFoundError)).To(BeTrue(), "it should return a StatusNotFoundError")
 			failedRecords, err := sh.GetFailedRecords(context.Background(), jobRunId, jobFilters)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(failedRecords).To(Equal(FailedRecords{}))
+			Expect(failedRecords).To(Equal(JobFailedRecords{ID: jobRunId}))
+		})
+
+		It("should be able to delete stats and failed keys partially", func() {
+			otherJobTargetKey := defaultJobTargetKey
+			otherJobTargetKey.SourceID = "other_source_id"
+			jobRunId := newJobRunId()
+			increment(resource.db, jobRunId, defaultJobTargetKey, stats, sh, nil)
+			increment(resource.db, jobRunId, otherJobTargetKey, stats, sh, nil)
+
+			addFailedRecords(resource.db, jobRunId, defaultJobTargetKey, sh, []json.RawMessage{
+				[]byte(`{"record-1": "id-1"}`),
+				[]byte(`{"record-2": "id-2"}`),
+			})
+			addFailedRecords(resource.db, jobRunId, otherJobTargetKey, sh, []json.RawMessage{
+				[]byte(`{"record-1": "id-1"}`),
+				[]byte(`{"record-2": "id-2"}`),
+			})
+			tx, err := resource.db.Begin()
+			Expect(err).NotTo(HaveOccurred(), "it should be able to begin the transaction")
+			err = sh.Delete(context.Background(), jobRunId, JobFilter{SourceID: []string{"other_source_id"}})
+			Expect(err).NotTo(HaveOccurred(), "it should be able to delete stats, failed keys for the jobrunid")
+			err = tx.Commit()
+			Expect(err).NotTo(HaveOccurred(), "it should be able to commit the transaction")
+
+			jobFilters := JobFilter{
+				SourceID:  []string{"other_source_id"},
+				TaskRunID: []string{"task_run_id"},
+			}
+			status, err := sh.GetStatus(context.Background(), jobRunId, jobFilters)
+			Expect(err).To(HaveOccurred())
+			Expect(status).To(Equal(JobStatus{}))
+			Expect(errors.Is(err, StatusNotFoundError)).To(BeTrue(), "it should return a StatusNotFoundError")
+			failedRecords, err := sh.GetFailedRecords(context.Background(), jobRunId, jobFilters)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(failedRecords).To(Equal(JobFailedRecords{ID: jobRunId}))
+
+			jobFilters.SourceID = []string{defaultJobTargetKey.SourceID}
+			_, err = sh.GetStatus(context.Background(), jobRunId, jobFilters)
+			Expect(err).ToNot(HaveOccurred())
+			failedRecords, err = sh.GetFailedRecords(context.Background(), jobRunId, jobFilters)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(failedRecords).ToNot(Equal(JobFailedRecords{ID: jobRunId}))
 		})
 
 		It("should be able to get failed records by filtering", func() {
@@ -216,62 +255,49 @@ var _ = Describe("Using sources handler", Ordered, func() {
 				[]byte(`{"record-13": "id-13"}`),
 				[]byte(`{"record-23": "id-23"}`),
 			})
-			expected := FailedRecords{
-				{
-					JobRunID:      jobRunId,
-					TaskRunID:     "task_run_id1",
-					SourceID:      "source_id1",
-					DestinationID: "destination_id",
-					RecordID:      json.RawMessage(`{"record-1": "id-1"}`),
-				},
-				{
-					JobRunID:      jobRunId,
-					TaskRunID:     "task_run_id1",
-					SourceID:      "source_id1",
-					DestinationID: "destination_id",
-					RecordID:      json.RawMessage("{\"record-2\": \"id-2\"}"),
-				},
-				{
-					JobRunID:      jobRunId,
-					TaskRunID:     "task_run_id1",
-					SourceID:      "source_id1",
-					DestinationID: "destination_id",
-					RecordID:      json.RawMessage("{\"record-11\": \"id-112\"}"),
-				},
-				{
-					JobRunID:      jobRunId,
-					TaskRunID:     "task_run_id1",
-					SourceID:      "source_id1",
-					DestinationID: "destination_id",
-					RecordID:      json.RawMessage("{\"record-22\": \"id-222\"}"),
-				},
-				{
-					JobRunID:      jobRunId,
-					TaskRunID:     "task_run_id1",
-					SourceID:      "source_id2",
-					DestinationID: "destination_id",
-					RecordID:      json.RawMessage("{\"record-12\": \"id-12\"}"),
-				},
-				{
-					JobRunID:      jobRunId,
-					TaskRunID:     "task_run_id1",
-					SourceID:      "source_id2",
-					DestinationID: "destination_id",
-					RecordID:      json.RawMessage("{\"record-21\": \"id-21\"}"),
-				},
-				{
-					JobRunID:      jobRunId,
-					TaskRunID:     "task_run_id2",
-					SourceID:      "source_id2",
-					DestinationID: "destination_id",
-					RecordID:      json.RawMessage("{\"record-11\": \"id-11\"}"),
-				},
-				{
-					JobRunID:      jobRunId,
-					TaskRunID:     "task_run_id2",
-					SourceID:      "source_id2",
-					DestinationID: "destination_id",
-					RecordID:      json.RawMessage("{\"record-32\": \"id-32\"}"),
+			expected := JobFailedRecords{
+				ID: jobRunId,
+				Tasks: []TaskFailedRecords{
+					{
+						ID: "task_run_id1",
+						Sources: []SourceFailedRecords{
+							{
+								ID: "source_id1",
+								Destinations: []DestinationFailedRecords{{
+									ID: "destination_id",
+									Records: []json.RawMessage{
+										[]byte(`{"record-1": "id-1"}`),
+										[]byte(`{"record-2": "id-2"}`),
+										[]byte(`{"record-11": "id-112"}`),
+										[]byte(`{"record-22": "id-222"}`),
+									},
+								}},
+							},
+							{
+								ID: "source_id2",
+								Destinations: []DestinationFailedRecords{{
+									ID: "destination_id",
+									Records: []json.RawMessage{
+										[]byte(`{"record-12": "id-12"}`),
+										[]byte(`{"record-21": "id-21"}`),
+									},
+								}},
+							},
+						},
+					},
+					{
+						ID: "task_run_id2",
+						Sources: []SourceFailedRecords{{
+							ID: "source_id2",
+							Destinations: []DestinationFailedRecords{{
+								ID: "destination_id",
+								Records: []json.RawMessage{
+									[]byte(`{"record-11": "id-11"}`),
+									[]byte(`{"record-32": "id-32"}`),
+								},
+							}},
+						}},
+					},
 				},
 			}
 			failedRecords, err := sh.GetFailedRecords(context.Background(), jobRunId, JobFilter{
@@ -428,11 +454,11 @@ var _ = Describe("Using sources handler", Ordered, func() {
 			Expect(err).NotTo(HaveOccurred())
 			_, err = stmt.Exec(ts)
 			Expect(err).NotTo(HaveOccurred())
-			defer stmt.Close()
+			defer func() { _ = stmt.Close() }()
 			stmt2, err := resource.db.Prepare(`update "rsources_failed_keys" set ts = $1`)
 			Expect(err).NotTo(HaveOccurred())
 			_, err = stmt2.Exec(ts)
-			defer stmt2.Close()
+			defer func() { _ = stmt2.Close() }()
 			Expect(err).NotTo(HaveOccurred())
 
 			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Minute)
@@ -597,34 +623,26 @@ var _ = Describe("Using sources handler", Ordered, func() {
 				json.RawMessage(`{"id": "2"}`),
 				json.RawMessage(`{"id": "3"}`),
 			})
-			expected := FailedRecords{
-				{
-					JobRunID:      jobRunId,
-					TaskRunID:     defaultJobTargetKey.TaskRunID,
-					SourceID:      defaultJobTargetKey.SourceID,
-					DestinationID: defaultJobTargetKey.DestinationID,
-					RecordID:      json.RawMessage(`{"id": "1"}`),
-				},
-				{
-					JobRunID:      jobRunId,
-					TaskRunID:     defaultJobTargetKey.TaskRunID,
-					SourceID:      defaultJobTargetKey.SourceID,
-					DestinationID: defaultJobTargetKey.DestinationID,
-					RecordID:      json.RawMessage(`{"id": "2"}`),
-				},
-				{
-					JobRunID:      jobRunId,
-					TaskRunID:     defaultJobTargetKey.TaskRunID,
-					SourceID:      defaultJobTargetKey.SourceID,
-					DestinationID: defaultJobTargetKey.DestinationID,
-					RecordID:      json.RawMessage(`{"id": "2"}`),
-				},
-				{
-					JobRunID:      jobRunId,
-					TaskRunID:     defaultJobTargetKey.TaskRunID,
-					SourceID:      defaultJobTargetKey.SourceID,
-					DestinationID: defaultJobTargetKey.DestinationID,
-					RecordID:      json.RawMessage(`{"id": "3"}`),
+			expected := JobFailedRecords{
+				ID: jobRunId,
+				Tasks: []TaskFailedRecords{
+					{
+						ID: defaultJobTargetKey.TaskRunID,
+						Sources: []SourceFailedRecords{
+							{
+								ID: defaultJobTargetKey.SourceID,
+								Destinations: []DestinationFailedRecords{{
+									ID: defaultJobTargetKey.DestinationID,
+									Records: []json.RawMessage{
+										[]byte(`{"id": "1"}`),
+										[]byte(`{"id": "2"}`),
+										[]byte(`{"id": "2"}`),
+										[]byte(`{"id": "3"}`),
+									},
+								}},
+							},
+						},
+					},
 				},
 			}
 			Eventually(func() bool {
@@ -726,11 +744,11 @@ var _ = Describe("Using sources handler", Ordered, func() {
 			// Setting up previous environment before adding failedkeys table to the publication
 			// setup databases
 			databaseA := getDB(configA.LocalConn, configA.MaxPoolSize)
-			defer databaseA.Close()
+			defer func() { _ = databaseA.Close() }()
 			databaseB := getDB(configB.LocalConn, configB.MaxPoolSize)
-			defer databaseB.Close()
+			defer func() { _ = databaseB.Close() }()
 			databaseC := getDB(configB.SharedConn, configB.MaxPoolSize) // shared
-			defer databaseC.Close()
+			defer func() { _ = databaseC.Close() }()
 
 			// create tables
 			err = setupStatsTable(context.Background(), databaseA, configA.LocalHostname)
@@ -770,34 +788,26 @@ var _ = Describe("Using sources handler", Ordered, func() {
 				json.RawMessage(`{"id": "2"}`),
 				json.RawMessage(`{"id": "3"}`),
 			})
-			expected := FailedRecords{
-				{
-					JobRunID:      jobRunId,
-					TaskRunID:     defaultJobTargetKey.TaskRunID,
-					SourceID:      defaultJobTargetKey.SourceID,
-					DestinationID: defaultJobTargetKey.DestinationID,
-					RecordID:      json.RawMessage(`{"id": "1"}`),
-				},
-				{
-					JobRunID:      jobRunId,
-					TaskRunID:     defaultJobTargetKey.TaskRunID,
-					SourceID:      defaultJobTargetKey.SourceID,
-					DestinationID: defaultJobTargetKey.DestinationID,
-					RecordID:      json.RawMessage(`{"id": "2"}`),
-				},
-				{
-					JobRunID:      jobRunId,
-					TaskRunID:     defaultJobTargetKey.TaskRunID,
-					SourceID:      defaultJobTargetKey.SourceID,
-					DestinationID: defaultJobTargetKey.DestinationID,
-					RecordID:      json.RawMessage(`{"id": "2"}`),
-				},
-				{
-					JobRunID:      jobRunId,
-					TaskRunID:     defaultJobTargetKey.TaskRunID,
-					SourceID:      defaultJobTargetKey.SourceID,
-					DestinationID: defaultJobTargetKey.DestinationID,
-					RecordID:      json.RawMessage(`{"id": "3"}`),
+			expected := JobFailedRecords{
+				ID: jobRunId,
+				Tasks: []TaskFailedRecords{
+					{
+						ID: defaultJobTargetKey.TaskRunID,
+						Sources: []SourceFailedRecords{
+							{
+								ID: defaultJobTargetKey.SourceID,
+								Destinations: []DestinationFailedRecords{{
+									ID: defaultJobTargetKey.DestinationID,
+									Records: []json.RawMessage{
+										[]byte(`{"id": "1"}`),
+										[]byte(`{"id": "2"}`),
+										[]byte(`{"id": "2"}`),
+										[]byte(`{"id": "3"}`),
+									},
+								}},
+							},
+						},
+					},
 				},
 			}
 			Eventually(func() bool {
@@ -879,19 +889,19 @@ func newDBResource(pool *dockertest.Pool, networkId, hostname string, params ...
 	port := resource.GetPort("5432/tcp")
 	externalDSN := fmt.Sprintf("postgres://rudder:password@localhost:%s/%s?sslmode=disable", port, database)
 	internalDSN := fmt.Sprintf("postgres://rudder:password@%s:5432/%s?sslmode=disable", hostname, database)
-	var db *sql.DB
+	var (
+		db  *sql.DB
+		dsn = fmt.Sprintf("host=localhost port=%s user=rudder password=password dbname=jobsdb sslmode=disable", port)
+	)
 	// exponential backoff-retry, because the application in the container might not be ready to accept connections yet
-	if err := pool.Retry(func() error {
-		var err error
-		db, err = sql.Open("postgres", fmt.Sprintf(
-			"host=localhost port=%s user=rudder password=password dbname=jobsdb sslmode=disable",
-			port))
+	if err := pool.Retry(func() (err error) {
+		db, err = sql.Open("postgres", dsn)
 		if err != nil {
 			return err
 		}
 		return db.Ping()
 	}); err != nil {
-		Expect(err).NotTo(HaveOccurred())
+		Expect(err).NotTo(HaveOccurred(), dsn)
 	}
 	return postgresResource{
 		db:          db,

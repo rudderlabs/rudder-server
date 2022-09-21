@@ -122,12 +122,14 @@ func (nc *namespaceConfig) getFromAPI(ctx context.Context, _ string) (ConfigT, e
 		return fetchError
 	}
 
-	backoffWithMaxRetry := backoff.WithMaxRetries(backoff.NewExponentialBackOff(), 3)
+	backoffWithMaxRetry := backoff.WithContext(backoff.WithMaxRetries(backoff.NewExponentialBackOff(), 3), ctx)
 	err := backoff.RetryNotify(operation, backoffWithMaxRetry, func(err error, t time.Duration) {
 		nc.Logger.Warnf("Failed to fetch config from API with error: %v, retrying after %v", err, t)
 	})
 	if err != nil {
-		nc.Logger.Errorf("Error sending request to the server: %v", err)
+		if ctx.Err() == nil {
+			nc.Logger.Errorf("Error sending request to the server: %v", err)
+		}
 		return ConfigT{}, err
 	}
 	configEnvHandler := nc.configEnvHandler

@@ -97,15 +97,15 @@ func (manager *S3Manager) GetObjectNameFromLocation(location string) (string, er
 }
 
 func (manager *S3Manager) GetDownloadKeyFromFileLocation(location string) string {
-	parsedUrl, err := url.Parse(location)
+	parsedURL, err := url.Parse(location)
 	if err != nil {
 		fmt.Println("error while parsing location url: ", err)
 	}
-	trimedUrl := strings.TrimLeft(parsedUrl.Path, "/")
-	if (manager.Config.S3ForcePathStyle != nil && *manager.Config.S3ForcePathStyle) || (!strings.Contains(parsedUrl.Host, manager.Config.Bucket)) {
-		return strings.TrimPrefix(trimedUrl, fmt.Sprintf(`%s/`, manager.Config.Bucket))
+	trimmedURL := strings.TrimLeft(parsedURL.Path, "/")
+	if (manager.Config.S3ForcePathStyle != nil && *manager.Config.S3ForcePathStyle) || (!strings.Contains(parsedURL.Host, manager.Config.Bucket)) {
+		return strings.TrimPrefix(trimmedURL, fmt.Sprintf(`%s/`, manager.Config.Bucket))
 	}
-	return trimedUrl
+	return trimmedURL
 }
 
 func (manager *S3Manager) DeleteObjects(ctx context.Context, keys []string) (err error) {
@@ -156,7 +156,7 @@ func (manager *S3Manager) DeleteObjects(ctx context.Context, keys []string) (err
 }
 
 func (manager *S3Manager) getSessionConfig() *awsutils.SessionConfig {
-	return &awsutils.SessionConfig{
+	sessionConfig := &awsutils.SessionConfig{
 		Region:           *manager.Config.Region,
 		Endpoint:         manager.Config.Endpoint,
 		S3ForcePathStyle: manager.Config.S3ForcePathStyle,
@@ -165,7 +165,10 @@ func (manager *S3Manager) getSessionConfig() *awsutils.SessionConfig {
 		AccessKey:        manager.Config.AccessKey,
 		IAMRoleARN:       manager.Config.IAMRoleARN,
 		ExternalID:       manager.Config.ExternalID,
+		Service:          s3.ServiceName,
 	}
+
+	return sessionConfig
 }
 
 func (manager *S3Manager) getSession(ctx context.Context) (*session.Session, error) {
@@ -193,7 +196,12 @@ func (manager *S3Manager) getSession(ctx context.Context) (*session.Session, err
 		manager.Config.Region = aws.String(region)
 	}
 
-	return awsutils.CreateSession(manager.getSessionConfig())
+	var err error
+	manager.session, err = awsutils.CreateSession(manager.getSessionConfig())
+	if err != nil {
+		return nil, err
+	}
+	return manager.session, err
 }
 
 // IMPT NOTE: `ListFilesWithPrefix` support Continuation Token. So, if you want same set of files (says 1st 1000 again)
@@ -266,7 +274,7 @@ func (manager *S3Manager) getTimeout() time.Duration {
 		return manager.timeout
 	}
 
-	return getBatchRouterDurationConfig("timeout", "S3", 120, time.Second)
+	return getBatchRouterTimeoutConfig("S3")
 }
 
 func GetS3Config(config map[string]interface{}) *S3Config {

@@ -1,0 +1,7 @@
+CREATE OR REPLACE FUNCTION readonly_table_exception()
+RETURNS trigger AS 
+$$
+BEGIN RAISE EXCEPTION 'table is readonly' USING ERRCODE = 'RS001';
+END;
+$$
+LANGUAGE plpgsql;

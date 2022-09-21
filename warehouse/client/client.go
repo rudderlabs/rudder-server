@@ -78,7 +78,7 @@ func (cl *Client) bqQuery(statement string) (result warehouseutils.QueryResult, 
 	}
 
 	for index := 0; index < len(it.Schema); index++ {
-		result.Columns = append(result.Columns, (*it.Schema[index]).Name)
+		result.Columns = append(result.Columns, (it.Schema[index]).Name)
 	}
 
 	for {

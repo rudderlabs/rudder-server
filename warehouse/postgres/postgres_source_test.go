@@ -65,32 +65,22 @@ func TestSourcesPostgresIntegration(t *testing.T) {
 		DestinationId:         handle.DestinationId,
 		Schema:                handle.Schema,
 		Tables:                handle.Tables,
-		EventsCountMap:        testhelper.DefaultSourceEventMap(),
-		TablesQueryFrequency:  testhelper.DefaultQueryFrequency,
-		UserId:                testhelper.GetUserId(warehouseutils.POSTGRES),
 		Provider:              warehouseutils.POSTGRES,
 		LatestSourceRunConfig: testhelper.DefaultSourceRunConfig(),
 	}
 
+	warehouseTest.UserId = testhelper.GetUserId(warehouseutils.POSTGRES)
+	sendEventsMap := testhelper.DefaultSourceEventMap()
 	// Sending the sheet events.
-	testhelper.SendEvents(t, warehouseTest)
-	testhelper.SendEvents(t, warehouseTest)
-	testhelper.SendEvents(t, warehouseTest)
+	testhelper.SendEvents(t, warehouseTest, sendEventsMap)
+	testhelper.SendEvents(t, warehouseTest, sendEventsMap)
+	testhelper.SendEvents(t, warehouseTest, sendEventsMap)
 	testhelper.SendAsyncRequest(t, warehouseTest)
 
 	// Setting up the events map
 	// Checking for Gateway and Batch router events
 	// Checking for the events count for each table
-	warehouseTest.EventsCountMap = testhelper.EventsCountMap{
-		"google_sheet":    3,
-		"wh_google_sheet": 1,
-		"tracks":          1,
-		"gateway":         3,
-		"batchRT":         6,
-	}
-	testhelper.VerifyingGatewayEvents(t, warehouseTest)
-	testhelper.VerifyingBatchRouterEvents(t, warehouseTest)
-	testhelper.VerifyingTablesEventCount(t, warehouseTest)
+	testhelper.VerifyEventsInWareHouse(t, warehouseTest, testhelper.WarehouseSourceEventsMap())
 
 }
 

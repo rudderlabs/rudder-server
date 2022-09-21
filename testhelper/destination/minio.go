@@ -11,7 +11,7 @@ import (
 	"github.com/minio/minio-go"
 	"github.com/ory/dockertest/v3"
 	dc "github.com/ory/dockertest/v3/docker"
-	"github.com/phayes/freeport"
+	"github.com/rudderlabs/rudder-server/testhelper"
 )
 
 type MINIOResource struct {
@@ -25,7 +25,7 @@ type MINIOResource struct {
 }
 
 func SetupMINIO(pool *dockertest.Pool, d cleaner) (*MINIOResource, error) {
-	minioPortInt, err := freeport.GetFreePort()
+	minioPortInt, err := testhelper.GetFreePort()
 	if err != nil {
 		fmt.Println(err)
 	}
@@ -68,6 +68,7 @@ func SetupMINIO(pool *dockertest.Pool, d cleaner) (*MINIOResource, error) {
 		if err != nil {
 			return err
 		}
+		defer resp.Body.Close()
 		if resp.StatusCode != http.StatusOK {
 			return fmt.Errorf("status code not OK")
 		}

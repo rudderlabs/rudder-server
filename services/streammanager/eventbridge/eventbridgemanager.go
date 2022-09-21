@@ -1,4 +1,4 @@
-//go:generate mockgen -destination=../../../mocks/services/streammanager/eventbridge/mock_eventbride.go -package mock_eventbride github.com/rudderlabs/rudder-server/services/streammanager/eventbridge EventBridgeClient
+//go:generate mockgen -destination=../../../mocks/services/streammanager/eventbridge/mock_eventbridge.go -package mock_eventbridge github.com/rudderlabs/rudder-server/services/streammanager/eventbridge EventBridgeClient
 
 package eventbridge
 
@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/aws/aws-sdk-go/service/eventbridge"
+	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/services/streammanager/common"
 	"github.com/rudderlabs/rudder-server/utils/awsutils"
 	"github.com/rudderlabs/rudder-server/utils/logger"
@@ -28,8 +29,8 @@ type EventBridgeClient interface {
 }
 
 // NewProducer creates a producer based on destination config
-func NewProducer(destinationConfig map[string]interface{}, o common.Opts) (*EventBridgeProducer, error) {
-	sessionConfig, err := awsutils.NewSessionConfig(destinationConfig, o.Timeout, eventbridge.ServiceName)
+func NewProducer(destination *backendconfig.DestinationT, o common.Opts) (*EventBridgeProducer, error) {
+	sessionConfig, err := awsutils.NewSessionConfigForDestination(destination, o.Timeout, eventbridge.ServiceName)
 	if err != nil {
 		return nil, err
 	}
@@ -92,4 +93,9 @@ func (producer *EventBridgeProducer) Produce(jsonData json.RawMessage, _ interfa
 		message += fmt.Sprintf(",with eventID: %v", *eventID)
 	}
 	return 200, "Success", message
+}
+
+func (*EventBridgeProducer) Close() error {
+	// no-op
+	return nil
 }

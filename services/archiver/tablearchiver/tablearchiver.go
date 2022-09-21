@@ -91,9 +91,9 @@ func (jsonArchiver *TableJSONArchiver) Do() (location string, err error) {
 
 		jsonBytes := []byte(rawJSONRows.String)
 
-		jsonBytes = bytes.Replace(jsonBytes, []byte("}, \n {"), []byte("}\n{"), -1) // replacing ", \n " with "\n"
-		jsonBytes = jsonBytes[1 : len(jsonBytes)-1]                                 // stripping starting '[' and ending ']'
-		jsonBytes = append(jsonBytes, '\n')                                         // appending '\n'
+		jsonBytes = bytes.ReplaceAll(jsonBytes, []byte("}, \n {"), []byte("}\n{")) // replacing ", \n " with "\n"
+		jsonBytes = jsonBytes[1 : len(jsonBytes)-1]                                // stripping starting '[' and ending ']'
+		jsonBytes = append(jsonBytes, '\n')                                        // appending '\n'
 
 		if _, err = gzWriter.Write(jsonBytes); err != nil {
 			return location, err

@@ -5,7 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"net/http"
 	"regexp"
 	"strconv"
@@ -64,6 +64,11 @@ func (j *JobAPI) Get(ctx context.Context) (model.Job, error) {
 	// if successful
 
 	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+		if resp.StatusCode == http.StatusNoContent {
+			pkgLogger.Debugf("no runnable job found")
+			return model.Job{}, model.ErrNoRunnableJob
+		}
+
 		var jobSchema jobSchema
 		if err := json.NewDecoder(resp.Body).Decode(&jobSchema); err != nil {
 			pkgLogger.Errorf("error while decoding response body: %v", err)
@@ -83,11 +88,13 @@ func (j *JobAPI) Get(ctx context.Context) (model.Job, error) {
 		return job, nil
 
 	} else if resp.StatusCode == http.StatusNotFound {
+		// NOTE: `http.StatusNotFound` has to be deprecated once,
+		// regulation manager is updated with the latest changes to respond with `http.StatusNoContent`204`
+		// when no job is found.
 		pkgLogger.Debugf("no runnable job found")
 		return model.Job{}, model.ErrNoRunnableJob
 	} else {
-
-		body, err := ioutil.ReadAll(resp.Body)
+		body, err := io.ReadAll(resp.Body)
 		if err != nil {
 			pkgLogger.Errorf("error while reading response body: %v", err)
 			return model.Job{}, fmt.Errorf("error while reading response body: %w", err)
