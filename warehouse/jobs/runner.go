@@ -88,11 +88,6 @@ func (asyncWhJob *AsyncJobWhT) addJobstoDB(ctx context.Context, payload *AsyncJo
 		return
 	}
 
-	if err != nil {
-		err = errors.New("error parsing time, while addJobstoDb")
-		return
-	}
-
 	defer stmt.Close()
 	now := timeutil.Now()
 	row := stmt.QueryRow(payload.SourceID, payload.DestinationID, payload.TableName, WhJobWaiting, now, now, payload.AsyncJobType, payload.MetaData)
@@ -172,7 +167,7 @@ func (asyncWhJob *AsyncJobWhT) startAsyncJobRunner(ctx context.Context) error {
 
 		asyncjobpayloads, err := asyncWhJob.getPendingAsyncJobs(ctx)
 		if err != nil {
-			return err
+			continue
 		}
 
 		if len(asyncjobpayloads) > 0 {
@@ -184,7 +179,7 @@ func (asyncWhJob *AsyncJobWhT) startAsyncJobRunner(ctx context.Context) error {
 				pkgLogger.Errorf("Error converting the asyncJobType to notifier payload %s ", err)
 				asyncJobStatusMap := convertToPayloadStatusStructWithSingleStatus(asyncjobpayloads, WhJobFailed, err, 0)
 				asyncWhJob.updateAsyncJobs(ctx, asyncJobStatusMap)
-				return err
+				continue
 			}
 			messagePayload := pgnotifier.MessagePayload{
 				Jobs:    notifierClaims,
@@ -195,7 +190,7 @@ func (asyncWhJob *AsyncJobWhT) startAsyncJobRunner(ctx context.Context) error {
 			if err != nil {
 				asyncJobStatusMap := convertToPayloadStatusStructWithSingleStatus(asyncjobpayloads, WhJobFailed, err, 1)
 				asyncWhJob.updateAsyncJobs(ctx, asyncJobStatusMap)
-				return err
+				continue
 			}
 			asyncJobStatusMap := convertToPayloadStatusStructWithSingleStatus(asyncjobpayloads, WhJobExecuting, err, 1)
 			asyncWhJob.updateAsyncJobs(ctx, asyncJobStatusMap)
@@ -280,11 +275,16 @@ func (asyncWhJob *AsyncJobWhT) updateAsyncJobs(ctx context.Context, payloads map
 
 func (asyncWhJob *AsyncJobWhT) updateAsyncJob(ctx context.Context, Id string, status string, countIncrement int, errMessage string) error {
 	pkgLogger.Infof("WH-Jobs: Updating pending wh async jobs to %s", status)
-	sqlStatement := fmt.Sprintf(`UPDATE %s SET status=$1 , error=$2, attempt=attempt+$3 WHERE id=$4 AND status!=$5 AND status!=$6 `, warehouseutils.WarehouseAsyncJobTable)
+	sqlStatement := fmt.Sprintf(`UPDATE %s SET status=(CASE
+															WHEN attempt > $1
+															THEN $2
+															ELSE  $3
+															END) , 
+															error=$4, attempt=attempt+$5 WHERE id=$6 AND status!=$7 AND status!=$8 `, warehouseutils.WarehouseAsyncJobTable)
 	var err error
 	for queryretry := 0; queryretry < MaxQueryRetries; queryretry++ {
-		pkgLogger.Infof("WH-Jobs: updating async jobs table query %s, retry no : %d", sqlStatement, queryretry)
-		_, err = asyncWhJob.dbHandle.Query(sqlStatement, status, errMessage, countIncrement, Id, WhJobAborted, WhJobSucceeded)
+		pkgLogger.Debugf("WH-Jobs: updating async jobs table query %s, retry no : %d", sqlStatement, queryretry)
+		_, err = asyncWhJob.dbHandle.Query(sqlStatement, MaxAttemptsPerJob, WhJobFailed, status, errMessage, countIncrement, Id, WhJobAborted, WhJobSucceeded)
 		if err == nil {
 			pkgLogger.Info("Updation successful")
 			pkgLogger.Debugf("query: %s successfully executed", sqlStatement)

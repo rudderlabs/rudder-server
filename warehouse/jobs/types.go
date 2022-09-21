@@ -58,8 +58,7 @@ const (
 )
 
 type PGNotifierOutput struct {
-	Id        string
-	TableName string
+	Id string `json:"id"`
 }
 
 type WhAddJobResponse struct {

@@ -76,7 +76,6 @@ func (asyncWhJob *AsyncJobWhT) AddWarehouseJobHandler(w http.ResponseWriter, r *
 				MetaData:      metadata,
 			}
 			id, err := asyncWhJob.addJobstoDB(asyncWhJob.context, &payload)
-			pkgLogger.Errorf("Error adding jobs to the table %s", err.Error())
 			if err != nil {
 				http.Error(w, err.Error(), http.StatusBadRequest)
 				return

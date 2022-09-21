@@ -8,12 +8,9 @@ import (
 	"net/http"
 	"strings"
 	"testing"
-<<<<<<< HEAD
 	"time"
-=======
 
 	"github.com/stretchr/testify/require"
->>>>>>> 45936bb72ce31b7ea749e2500341c024e78a5387
 )
 
 const (

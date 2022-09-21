@@ -595,27 +595,26 @@ func processClaimedUploadJob(claimedJob pgnotifier.ClaimT, workerIndex int) {
 }
 
 type AsyncJobRunResult struct {
-	JobRunID  string
-	TableName string
-	Result    bool
+	Result bool
+	Id     string
 }
 
 func runAsyncJob(asyncjob jobs.AsyncJobPayloadT, workerIndex int) (AsyncJobRunResult, error) {
 	warehouse, err := getDestinationFromConnectionMap(asyncjob.DestinationID, asyncjob.SourceID)
 	if err != nil {
-		return AsyncJobRunResult{Result: false}, err
+		return AsyncJobRunResult{Id: asyncjob.Id, Result: false}, err
 	}
 	destType := warehouse.Destination.DestinationDefinition.Name
 	whManager, err := manager.NewWarehouseOperations(destType)
 	if err != nil {
-		return AsyncJobRunResult{Result: false}, err
+		return AsyncJobRunResult{Id: asyncjob.Id, Result: false}, err
 	}
 	whasyncjob := &jobs.WhAsyncJob{}
 
 	var metadata warehouseutils.DeleteByMetaData
 	err = json.Unmarshal(asyncjob.MetaData, &metadata)
 	if err != nil {
-		return AsyncJobRunResult{Result: false}, err
+		return AsyncJobRunResult{Id: asyncjob.Id, Result: false}, err
 	}
 	whManager.Setup(warehouse, whasyncjob)
 	defer whManager.Cleanup()
@@ -633,9 +632,8 @@ func runAsyncJob(asyncjob jobs.AsyncJobPayloadT, workerIndex int) (AsyncJobRunRe
 		err = whManager.DeleteBy(tableNames, params)
 	}
 	var asyncJobRunResult = AsyncJobRunResult{
-		JobRunID:  metadata.JobRunId,
-		TableName: asyncjob.TableName,
-		Result:    err == nil,
+		Result: err == nil,
+		Id:     asyncjob.Id,
 	}
 	return asyncJobRunResult, err
 }

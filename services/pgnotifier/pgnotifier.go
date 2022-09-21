@@ -274,7 +274,6 @@ func (notifier *PgNotifierT) trackAsyncBatch(batchID string, ch *chan []Response
 					if err != nil {
 						continue
 					}
-
 					responses = append(responses, ResponseT{
 						JobID:  0, //Not required for this as there is no concept of BatchFileId
 						Output: payload,

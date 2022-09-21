@@ -82,10 +82,12 @@ func updateStatusJobPayloadsFromPgnotifierResponse(r []pgnotifier.ResponseT, m m
 	var err error
 	for _, resp := range r {
 		var pgoutput PGNotifierOutput
-		err = json.Unmarshal(resp.Output, pgoutput)
+		err = json.Unmarshal(resp.Output, &pgoutput)
 		if err != nil {
+			pkgLogger.Errorf("error unmarshaling pgnotifier payload to AsyncJobStatusMa for Id: %s", pgoutput.Id)
 			continue
 		}
+		pkgLogger.Errorf("Successfully unmarshaled pgnotifier payload to AsyncJobStatusMa for Id: %s", pgoutput.Id)
 		if output, ok := m[pgoutput.Id]; ok {
 			output.Status = resp.Status
 			if resp.Error != "" {
