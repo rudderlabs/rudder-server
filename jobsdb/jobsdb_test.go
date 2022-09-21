@@ -957,6 +957,68 @@ func TestCacheScenarios(t *testing.T) {
 		return js
 	}
 
+	checkDSLimitJobs := func(t *testing.T, limit int) []*JobT {
+		maxDSSize := 1
+		var dbWithOneLimit *HandleT
+		triggerAddNewDS := make(chan time.Time)
+		if limit > 0 {
+			dbWithOneLimit = NewForReadWrite(
+				"cache",
+				WithDSLimit(&limit),
+			)
+		} else {
+			dbWithOneLimit = NewForReadWrite(
+				"cache",
+			)
+		}
+		dbWithOneLimit.MaxDSSize = &maxDSSize
+		dbWithOneLimit.TriggerAddNewDS = func() <-chan time.Time {
+			return triggerAddNewDS
+		}
+
+		prefix := strings.ToLower(rsRand.String(5))
+		err := dbWithOneLimit.Setup(ReadWrite, false, prefix, "", true, []prebackup.Handler{})
+		require.NoError(t, err)
+		require.Equal(t, 1, len(dbWithOneLimit.getDSList()), "expected cache to be auto-updated with DS list length 1")
+		defer dbWithOneLimit.TearDown()
+
+		err = dbWithOneLimit.Store(context.Background(), generateJobs(2, ""))
+		require.NoError(t, err)
+
+		res, err := dbWithOneLimit.getUnprocessed(context.Background(), GetQueryParamsT{CustomValFilters: []string{customVal}, JobsLimit: 100})
+		require.NoError(t, err)
+		require.Equal(t, 2, len(res.Jobs))
+
+		triggerAddNewDS <- time.Now()
+		require.Eventually(
+			t,
+			func() bool {
+				return len(dbWithOneLimit.getDSList()) == 2
+			},
+			time.Second, time.Millisecond,
+			"expected cache to be auto-updated with DS list length 2")
+
+		require.NoError(t, dbWithOneLimit.Store(context.Background(), generateJobs(3, "")))
+
+		res, err = dbWithOneLimit.getUnprocessed(context.Background(), GetQueryParamsT{CustomValFilters: []string{customVal}, JobsLimit: 100})
+		require.NoError(t, err)
+		fmt.Println("res jobs:", len(res.Jobs))
+		return res.Jobs
+	}
+
+	t.Run("Test cache with ds limit as one", func(t *testing.T) {
+		limit := 1
+		jobs := checkDSLimitJobs(t, limit)
+		fmt.Println("jobs:", jobs)
+		require.Equal(t, 2, len(jobs)) // Should return only 2 jobs since ds limit is 1
+	})
+
+	t.Run("Test cache with no ds limit i.e. using default limit", func(t *testing.T) {
+		limit := -1
+		jobs := checkDSLimitJobs(t, limit)
+		require.Equal(t, 5, len(jobs)) // Should return all jobs since there is no ds limit
+	})
+
 	t.Run("Test cache with 1 writer and 1 reader jobsdb (gateway, processor scenario)", func(t *testing.T) {
 		gwDB := NewForWrite("gw_cache")
 		require.NoError(t, gwDB.Start())

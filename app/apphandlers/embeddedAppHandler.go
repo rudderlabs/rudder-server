@@ -91,6 +91,7 @@ func (embedded *EmbeddedApp) StartRudderCore(ctx context.Context, options *app.O
 		jobsdb.WithMigrationMode(migrationMode),
 		jobsdb.WithStatusHandler(),
 		jobsdb.WithPreBackupHandlers(prebackupHandlers),
+		jobsdb.WithDSLimit(&gatewayDSLimit),
 	)
 	defer gwDBForProcessor.Close()
 	routerDB := jobsdb.NewForReadWrite(
@@ -99,6 +100,7 @@ func (embedded *EmbeddedApp) StartRudderCore(ctx context.Context, options *app.O
 		jobsdb.WithMigrationMode(migrationMode),
 		jobsdb.WithStatusHandler(),
 		jobsdb.WithPreBackupHandlers(prebackupHandlers),
+		jobsdb.WithDSLimit(&routerDSLimit),
 	)
 	defer routerDB.Close()
 	batchRouterDB := jobsdb.NewForReadWrite(
@@ -107,6 +109,7 @@ func (embedded *EmbeddedApp) StartRudderCore(ctx context.Context, options *app.O
 		jobsdb.WithMigrationMode(migrationMode),
 		jobsdb.WithStatusHandler(),
 		jobsdb.WithPreBackupHandlers(prebackupHandlers),
+		jobsdb.WithDSLimit(&batchRouterDSLimit),
 	)
 	defer batchRouterDB.Close()
 	errDB := jobsdb.NewForReadWrite(
@@ -115,6 +118,7 @@ func (embedded *EmbeddedApp) StartRudderCore(ctx context.Context, options *app.O
 		jobsdb.WithMigrationMode(migrationMode),
 		jobsdb.WithStatusHandler(),
 		jobsdb.WithPreBackupHandlers(prebackupHandlers),
+		jobsdb.WithDSLimit(&processorDSLimit),
 	)
 
 	var tenantRouterDB jobsdb.MultiTenantJobsDB

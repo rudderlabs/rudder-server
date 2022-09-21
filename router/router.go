@@ -2291,16 +2291,23 @@ func (rt *HandleT) updateRudderSourcesStats(ctx context.Context, tx jobsdb.Updat
 }
 
 func (rt *HandleT) updateProcessedEventsMetrics(statusList []*jobsdb.JobStatusT) {
-	eventsPerState := map[string]int{}
+	eventsPerStateAndCode := map[string]map[string]int{}
 	for i := range statusList {
 		state := statusList[i].JobState
-		eventsPerState[state]++
+		code := statusList[i].ErrorCode
+		if _, ok := eventsPerStateAndCode[state]; !ok {
+			eventsPerStateAndCode[state] = map[string]int{}
+		}
+		eventsPerStateAndCode[state][code]++
 	}
-	for state, count := range eventsPerState {
-		stats.NewTaggedStat(`pipeline_processed_events`, stats.CountType, stats.Tags{
-			"module":   "router",
-			"destType": rt.destName,
-			"state":    state,
-		}).Count(count)
+	for state, codes := range eventsPerStateAndCode {
+		for code, count := range codes {
+			stats.NewTaggedStat(`pipeline_processed_events`, stats.CountType, stats.Tags{
+				"module":   "router",
+				"destType": rt.destName,
+				"state":    state,
+				"code":     code,
+			}).Count(count)
+		}
 	}
 }
