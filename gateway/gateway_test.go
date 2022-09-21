@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"reflect"
 	"testing"
 	"time"
@@ -568,6 +569,45 @@ var _ = Describe("Gateway", func() {
 		It("should return a robots.txt", func() {
 			expectHandlerResponse(gateway.robots, nil, 200, "User-agent: * \nDisallow: / \n")
 		})
+	})
+
+	Context("Warehouse proxy", func() {
+		DescribeTable("forwarding requests to warehouse with different response codes",
+			func(url string, code int, payload string) {
+				gateway := &HandleT{}
+				whMock := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					Expect(r.URL.String()).To(Equal(url))
+					Expect(r.Body)
+					Expect(r.Body).To(Not(BeNil()))
+					defer r.Body.Close()
+					reqBody, err := io.ReadAll(r.Body)
+					Expect(err).To(BeNil())
+					Expect(string(reqBody)).To(Equal(payload))
+					w.WriteHeader(code)
+				}))
+				err := os.Setenv("WAREHOUSE_URL", whMock.URL)
+				Expect(err).To(BeNil())
+				err = os.Setenv("RSERVER_WAREHOUSE_MODE", config.OffMode)
+				Expect(err).To(BeNil())
+				err = gateway.Setup(c.mockApp, c.mockBackendConfig, c.mockJobsDB, nil, c.mockVersionHandler, rsources.NewNoOpService())
+				Expect(err).To(BeNil())
+
+				defer func() {
+					err := gateway.Shutdown()
+					Expect(err).To(BeNil())
+					whMock.Close()
+				}()
+
+				req := httptest.NewRequest("POST", "http://rudder-server"+url, bytes.NewBufferString(payload))
+				w := httptest.NewRecorder()
+				gateway.whProxy.ServeHTTP(w, req)
+				resp := w.Result()
+				Expect(resp.StatusCode).To(Equal(code))
+			},
+			Entry("successful request", "/v1/warehouse/pending-events", http.StatusOK, `{"source_id": "1", "task_run_id":"2"}`),
+			Entry("failed request", "/v1/warehouse/pending-events", http.StatusBadRequest, `{"source_id": "3", "task_run_id":"4"}`),
+			Entry("request with query parameters", "/v1/warehouse/pending-events?triggerUpload=true", http.StatusOK, `{"source_id": "5", "task_run_id":"6"}`),
+		)
 	})
 })
 
