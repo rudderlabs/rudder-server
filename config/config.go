@@ -27,7 +27,7 @@ import (
 	"github.com/spf13/viper"
 )
 
-// regular expression matching lowecase letter followed by an uppercase letter
+// regular expression matching lowercase letter followed by an uppercase letter
 var camelCaseMatch = regexp.MustCompile("([a-z0-9])([A-Z])")
 
 // regular expression matching uppercase letters contained in environment variable names
@@ -56,10 +56,10 @@ func New() *Config {
 type Config struct {
 	vLock                  sync.RWMutex // protects reading and writing to the config (viper is not thread-safe)
 	v                      *viper.Viper
-	mapLock                sync.RWMutex // protects maps holding registered condig keys
+	mapLock                sync.RWMutex // protects maps holding registered config keys
 	hotReloadableConfig    map[string][]*configValue
 	nonHotReloadableConfig map[string][]*configValue
-	envLock                sync.RWMutex // protects the envs map below
+	envsLock               sync.RWMutex // protects the envs map below
 	envs                   map[string]string
 }
 
@@ -98,7 +98,7 @@ func MustGetInt(key string) (value int) {
 	return c.MustGetInt(key)
 }
 
-// MustGetString gets int value from config or panics if the config doesn't exist
+// MustGetInt gets int value from config or panics if the config doesn't exist
 func (c *Config) MustGetInt(key string) (value int) {
 	c.vLock.RLock()
 	defer c.vLock.RUnlock()
@@ -166,11 +166,6 @@ func (c *Config) MustGetString(key string) (value string) {
 		panic(fmt.Errorf("config key %s not found", key))
 	}
 	return c.v.GetString(key)
-}
-
-// GetStringSlice gets string slice value from config
-func GetStringSlice(key string, defaultValue []string) (value []string) {
-	return c.GetStringSlice(key, defaultValue)
 }
 
 // GetStringSlice gets string slice value from config
@@ -245,17 +240,17 @@ func (c *Config) Set(key string, value interface{}) {
 func (c *Config) bindEnv(key string) {
 	envVar := key
 	if !upperCaseMatch.MatchString(key) {
-		envVar = ConfigKeyToEnvRudder(key)
+		envVar = ConfigKeyToEnv(key)
 	}
 	// bind once
-	c.envLock.RLock()
+	c.envsLock.RLock()
 	if _, ok := c.envs[key]; !ok {
-		c.envLock.RUnlock()
-		c.envLock.Lock() // don't really care about race here, setting the same value
+		c.envsLock.RUnlock()
+		c.envsLock.Lock() // don't really care about race here, setting the same value
 		c.envs[strings.ToUpper(key)] = envVar
-		c.envLock.Unlock()
+		c.envsLock.Unlock()
 	} else {
-		c.envLock.RUnlock()
+		c.envsLock.RUnlock()
 	}
 }
 
@@ -264,8 +259,8 @@ type envReplacer struct {
 }
 
 func (r *envReplacer) Replace(s string) string {
-	r.c.envLock.RLock()
-	defer r.c.envLock.RUnlock()
+	r.c.envsLock.RLock()
+	defer r.c.envsLock.RUnlock()
 	if v, ok := r.c.envs[s]; ok {
 		return v
 	}

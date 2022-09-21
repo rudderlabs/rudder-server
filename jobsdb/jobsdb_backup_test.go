@@ -57,8 +57,8 @@ func TestBackupTable(t *testing.T) {
 		t.Setenv("RSERVER_JOBS_DB_BACKUP_RT_ENABLED", "true")
 		t.Setenv("JOBS_BACKUP_BUCKET", "backup-test")
 		t.Setenv("RUDDER_TMPDIR", tmpDir)
-		t.Setenv(config.ConfigKeyToEnvRudder("JobsDB.maxDSSize"), "10")
-		t.Setenv(config.ConfigKeyToEnvRudder("JobsDB.migrateDSLoopSleepDuration"), "3")
+		t.Setenv(config.ConfigKeyToEnv("JobsDB.maxDSSize"), "10")
+		t.Setenv(config.ConfigKeyToEnv("JobsDB.migrateDSLoopSleepDuration"), "3")
 		t.Setenv("JOBS_BACKUP_BUCKET", minioResource.BucketName)
 		t.Setenv("JOBS_BACKUP_PREFIX", prefix)
 

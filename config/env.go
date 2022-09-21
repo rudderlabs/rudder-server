@@ -7,8 +7,8 @@ import (
 	"strings"
 )
 
-// ConfigKeyToEnvRudder as package method to get the formatted env from a given string
-func ConfigKeyToEnvRudder(s string) string {
+// ConfigKeyToEnv gets the env variable name from a given config key
+func ConfigKeyToEnv(s string) string {
 	if upperCaseMatch.MatchString(s) {
 		return s
 	}

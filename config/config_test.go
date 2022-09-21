@@ -44,14 +44,7 @@ func Test_MustGet(t *testing.T) {
 	tc := New()
 	tc.Set("string", "string")
 	require.Equal(t, "string", tc.MustGetString("string"), "it should return the key value")
-	func() {
-		defer func() {
-			if r := recover(); r == nil {
-				t.Errorf("The code did not panic")
-			}
-		}()
-		tc.MustGetString("other")
-	}()
+	require.Panics(t, func() { tc.MustGetString("other") })
 
 	tc.Set("int", 0)
 	require.Equal(t, 0, tc.MustGetInt("int"), "it should return the key value")
@@ -222,9 +215,9 @@ func Test_Set_CaseInsensitive(t *testing.T) {
 }
 
 func Test_ConfigKeyToEnvRudder(t *testing.T) {
-	require.Equal(t, "RSERVER_KEYVAL", ConfigKeyToEnvRudder("keyval"))
-	require.Equal(t, "RSERVER_KEY_VAL", ConfigKeyToEnvRudder("keyVal"))
-	require.Equal(t, "RSERVER_KEY_VAL", ConfigKeyToEnvRudder("Key.val"))
+	require.Equal(t, "RSERVER_KEYVAL", ConfigKeyToEnv("keyval"))
+	require.Equal(t, "RSERVER_KEY_VAL", ConfigKeyToEnv("keyVal"))
+	require.Equal(t, "RSERVER_KEY_VAL", ConfigKeyToEnv("Key.val"))
 }
 
 func Test_Misc(t *testing.T) {
