@@ -1091,7 +1091,7 @@ func (worker *workerT) sendEventDeliveryStat(destinationJobMetadata *types.JobMe
 		eventsDeliveredStat := stats.NewTaggedStat("event_delivery", stats.CountType, stats.Tags{
 			"module":         "router",
 			"destType":       worker.rt.destName,
-			"destID":         worker.rt.destinationId,
+			"destID":         destination.ID,
 			"destination":    destinationTag,
 			"attempt_number": strconv.Itoa(status.AttemptNum),
 			"workspaceId":    status.WorkspaceId,
@@ -1104,7 +1104,7 @@ func (worker *workerT) sendEventDeliveryStat(destinationJobMetadata *types.JobMe
 					"event_delivery_time", stats.TimerType, map[string]string{
 						"module":         "router",
 						"destType":       worker.rt.destName,
-						"destID":         worker.rt.destinationId,
+						"destID":         destination.ID,
 						"destination":    destinationTag,
 						"attempt_number": strconv.Itoa(status.AttemptNum),
 						"workspaceId":    status.WorkspaceId,
