@@ -348,20 +348,6 @@ func (b *Batch) createPatternFile(userAttributes []model.User) (string, error) {
 		searchObject = append(searchObject, "\"userId\": *\""...)
 		searchObject = append(searchObject, users.ID...)
 		searchObject = append(searchObject, "\"/d;"...)
-
-		if users.Attributes["email"] != "" {
-			searchObject = append(searchObject, "/"...)
-			searchObject = append(searchObject, "\"email\": *\""...)
-			searchObject = append(searchObject, []byte(users.Attributes["email"])...)
-			searchObject = append(searchObject, "\"/d;"...)
-		}
-
-		if users.Attributes["phone"] != "" {
-			searchObject = append(searchObject, "/"...)
-			searchObject = append(searchObject, "\"phone\": *\""...)
-			searchObject = append(searchObject, []byte(users.Attributes["phone"])...)
-			searchObject = append(searchObject, "\"/d;"...)
-		}
 	}
 
 	PatternFilePtr, err := os.CreateTemp(b.TmpDirPath, "")
