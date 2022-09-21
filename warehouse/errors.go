@@ -3,6 +3,7 @@ package warehouse
 import (
 	"errors"
 	"fmt"
+
 	"github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
