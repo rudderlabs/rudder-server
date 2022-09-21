@@ -1361,6 +1361,11 @@ func pendingEventsHandler(w http.ResponseWriter, r *http.Request) {
 	// TODO : respond with errors in a common way
 	pkgLogger.LogRequest(r)
 
+	if r.Method != "POST" {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+
 	// read body
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
@@ -1398,19 +1403,21 @@ func pendingEventsHandler(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		err := fmt.Errorf("Error getting pending staging file count : %v", err)
 		pkgLogger.Errorf("[WH]: %v", err)
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
-	// get pending uploads only if there are no pending staging files
-	if pendingStagingFileCount == 0 {
-		pendingUploadCount, err = getPendingUploadCount(sourceID, true)
-		if err != nil {
-			err := fmt.Errorf("Error getting pending uploads : %v", err)
-			pkgLogger.Errorf("[WH]: %v", err)
-			http.Error(w, err.Error(), http.StatusBadRequest)
-			return
-		}
+	filterBy := []warehouseutils.FilterBy{{Key: "source_id", Value: sourceID}}
+	if pendingEventsReq.TaskRunID != "" {
+		filterBy = append(filterBy, warehouseutils.FilterBy{Key: "metadata->>'source_task_run_id'", Value: pendingEventsReq.TaskRunID})
+	}
+
+	pendingUploadCount, err = getPendingUploadCount(filterBy...)
+	if err != nil {
+		err := fmt.Errorf("Error getting pending uploads : %v", err)
+		pkgLogger.Errorf("[WH]: %v", err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
 	}
 
 	// if there are any pending staging files or uploads, set pending events as true
@@ -1465,7 +1472,7 @@ func pendingEventsHandler(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		err := fmt.Errorf("Failed to marshall pending events response : %v", err)
 		pkgLogger.Errorf("[WH]: %v", err)
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
@@ -1506,21 +1513,27 @@ func getPendingStagingFileCount(sourceOrDestId string, isSourceId bool) (fileCou
 	return fileCount, nil
 }
 
-func getPendingUploadCount(sourceOrDestId string, isSourceId bool) (uploadCount int64, err error) {
-	sourceOrDestColumn := ""
-	if isSourceId {
-		sourceOrDestColumn = "source_id"
-	} else {
-		sourceOrDestColumn = "destination_id"
-	}
-	sqlStatement := fmt.Sprintf(`SELECT COUNT(*)
-								FROM %[1]s
-								WHERE %[1]s.status NOT IN ('%[2]s', '%[3]s') AND %[1]s.%[5]s='%[4]s'
-	`, warehouseutils.WarehouseUploadsTable, ExportedData, Aborted, sourceOrDestId, sourceOrDestColumn)
+func getPendingUploadCount(filters ...warehouseutils.FilterBy) (uploadCount int64, err error) {
+	pkgLogger.Debugf("Fetching pending upload count with filters: %v", filters)
 
-	err = dbHandle.QueryRow(sqlStatement).Scan(&uploadCount)
+	query := fmt.Sprintf(`
+	SELECT 
+		COUNT(*) 
+	FROM 
+		%[1]s 
+	WHERE 
+		%[1]s.status NOT IN ('%[2]s', '%[3]s')
+	`, warehouseutils.WarehouseUploadsTable, ExportedData, Aborted)
+
+	args := make([]interface{}, 0)
+	for i, filter := range filters {
+		query += fmt.Sprintf(" AND %s=$%d", filter.Key, i+1)
+		args = append(args, filter.Value)
+	}
+
+	err = dbHandle.QueryRow(query, args...).Scan(&uploadCount)
 	if err != nil && err != sql.ErrNoRows {
-		err = fmt.Errorf("Query: %s failed with Error : %w", sqlStatement, err)
+		err = fmt.Errorf("Query: %s failed with Error : %w", query, err)
 		return
 	}
 
