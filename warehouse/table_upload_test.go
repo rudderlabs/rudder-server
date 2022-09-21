@@ -87,7 +87,7 @@ var _ = Describe("TableUpload", func() {
 			cleanup.Run()
 		})
 
-		It("Setup load files", func() {
+		It("Setup table uploads", func() {
 			_, err = pgResource.DB.Exec(tableUploadsSQLStatement())
 			Expect(err).To(BeNil())
 		})
