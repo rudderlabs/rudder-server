@@ -1079,6 +1079,7 @@ func (worker *workerT) sendRouterResponseCountStat(status *jobsdb.JobStatusT, de
 		"destType":       worker.rt.destName,
 		"respStatusCode": status.ErrorCode,
 		"destination":    destinationTag,
+		"destId":         destination.ID,
 		"attempt_number": strconv.Itoa(status.AttemptNum),
 		"workspaceId":    status.WorkspaceId,
 	})
