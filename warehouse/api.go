@@ -202,7 +202,9 @@ func (uploadsReq *UploadsReqT) TriggerWhUploads() (response *proto.TriggerWhUplo
 		return
 	}
 	var pendingStagingFileCount int64
-	pendingUploadCount, err := getPendingUploadCount(uploadsReq.DestinationID, false)
+
+	filterBy := []warehouseutils.FilterBy{{Key: "destination_id", Value: uploadsReq.DestinationID}}
+	pendingUploadCount, err := getPendingUploadCount(filterBy...)
 	if err != nil {
 		return
 	}
