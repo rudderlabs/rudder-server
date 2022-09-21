@@ -143,11 +143,13 @@ func TestRedisDeletion(t *testing.T) {
 
 	deleteJob := model.Job{
 		ID: 1,
-		UserAttributes: []model.UserAttribute{
+		Users: []model.User{
 			{
-				UserID: "Jermaine1473336609491897794707338",
-				Phone:  strPtr("6463633841"),
-				Email:  strPtr("dorowane8n285680461479465450293436@gmail.com"),
+				ID: "Jermaine1473336609491897794707338",
+				Attributes: map[string]string{
+					"phone": "6463633841",
+					"email": "dorowane8n285680461479465450293436@gmail.com",
+				},
 			},
 		},
 	}
@@ -177,8 +179,4 @@ func TestGetSupportedDestination(t *testing.T) {
 	kvm := kvstore.KVDeleteManager{}
 	actualSupportedDest := kvm.GetSupportedDestinations()
 	require.Equal(t, expectedDestinations, actualSupportedDest, "actual supported destinatins different than expected")
-}
-
-func strPtr(str string) *string {
-	return &str
 }
