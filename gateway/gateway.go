@@ -457,7 +457,9 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 		for _, req := range breq.batchRequest {
 			writeKey := req.writeKey
 			sourceTag := gateway.getSourceTagFromWriteKey(writeKey)
+			sourceID := gateway.getSourceIDForWriteKey(writeKey)
 			sourceTagMap[sourceTag] = writeKey
+			sourceTagMap["sourceID"] = sourceID
 			sourceTagMap["reqType"] = req.reqType
 			userIDHeader := req.userIDHeader
 			misc.IncrementMapByKey(sourceStats, sourceTag, 1)
@@ -504,7 +506,6 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 
 			// store sourceID before call made to check if source is enabled
 			// this prevents not setting sourceID in gw job if disabled before setting it
-			sourceID := gateway.getSourceIDForWriteKey(writeKey)
 
 			if !gateway.isValidWriteKey(writeKey) {
 				sourceTagMap["reason"] = "invalidWriteKey"
@@ -1100,11 +1101,12 @@ func (gateway *HandleT) getPayloadAndWriteKey(_ http.ResponseWriter, r *http.Req
 	sourceFailStats := make(map[string]int)
 	var err error
 	writeKey, _, ok := r.BasicAuth()
+	sourceID := gateway.getSourceIDForWriteKey(writeKey)
 	if !ok || writeKey == "" {
 		err = errors.New(response.NoWriteKeyInBasicAuth)
 		misc.IncrementMapByKey(sourceFailStats, "noWriteKey", 1)
-		gateway.updateFailedSourceStats(sourceFailStats, "gateway.write_key_failed_requests", map[string]string{"noWriteKey": "noWriteKey", "reqType": reqType, "reason": "noWriteKeyInBasicAuth"})
-		gateway.updateSourceStats(sourceFailStats, "gateway.write_key_requests", map[string]string{"noWriteKey": "noWriteKey", "reqType": reqType})
+		gateway.updateFailedSourceStats(sourceFailStats, "gateway.write_key_failed_requests", map[string]string{"noWriteKey": "noWriteKey", "reqType": reqType, "reason": "noWriteKeyInBasicAuth", "sourceID": sourceID})
+		gateway.updateSourceStats(sourceFailStats, "gateway.write_key_requests", map[string]string{"noWriteKey": "noWriteKey", "reqType": reqType, "sourceID": sourceID})
 
 		return []byte{}, "", err
 	}
@@ -1112,8 +1114,8 @@ func (gateway *HandleT) getPayloadAndWriteKey(_ http.ResponseWriter, r *http.Req
 	if err != nil {
 		sourceTag := gateway.getSourceTagFromWriteKey(writeKey)
 		misc.IncrementMapByKey(sourceFailStats, sourceTag, 1)
-		gateway.updateSourceStats(sourceFailStats, "gateway.write_key_failed_requests", map[string]string{sourceTag: writeKey, "reqType": reqType, "reason": "requestBodyReadFailed"})
-		gateway.updateSourceStats(sourceFailStats, "gateway.write_key_requests", map[string]string{sourceTag: writeKey, "reqType": reqType})
+		gateway.updateSourceStats(sourceFailStats, "gateway.write_key_failed_requests", map[string]string{sourceTag: writeKey, "reqType": reqType, "reason": "requestBodyReadFailed", "sourceID": sourceID})
+		gateway.updateSourceStats(sourceFailStats, "gateway.write_key_requests", map[string]string{sourceTag: writeKey, "reqType": reqType, "sourceID": sourceID})
 		return []byte{}, writeKey, err
 	}
 	return payload, writeKey, err
