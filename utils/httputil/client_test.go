@@ -9,7 +9,6 @@ import (
 
 func TestRetriableStatus(t *testing.T) {
 	retribaleCodes := []int{
-
 		// 4xx
 		http.StatusRequestTimeout,
 		http.StatusTooManyRequests,
