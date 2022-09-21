@@ -280,7 +280,7 @@ func Run(ctx context.Context) int {
 		g.Go(misc.WithBugsnag(func() error {
 			backendconfig.DefaultBackendConfig.WaitForConfig(ctx)
 
-			c := features.New(
+			c := features.NewClient(
 				config.GetEnv("CONFIG_BACKEND_URL", "https://api.rudderlabs.com"),
 				backendconfig.DefaultBackendConfig.Identity(),
 			)

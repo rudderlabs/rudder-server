@@ -66,7 +66,7 @@ func Test_Client_Send(t *testing.T) {
 			}))
 			defer s.Close()
 
-			c := features.New(s.URL, tc.identity, features.WithHTTPClient(s.Client()))
+			c := features.NewClient(s.URL, tc.identity, features.WithHTTPClient(s.Client()))
 
 			err := c.Send(context.Background(), "test", []string{"feature1", "feature2"})
 			require.NoError(t, err)
@@ -83,7 +83,7 @@ func Test_Client_Send(t *testing.T) {
 		}))
 		defer s.Close()
 
-		c := features.New(s.URL, &identity.Namespace{},
+		c := features.NewClient(s.URL, &identity.Namespace{},
 			features.WithHTTPClient(s.Client()),
 			features.WithMaxRetries(maxRetries),
 		)
@@ -104,7 +104,7 @@ func Test_Client_Send(t *testing.T) {
 		}))
 		defer s.Close()
 
-		c := features.New(s.URL, &identity.Namespace{},
+		c := features.NewClient(s.URL, &identity.Namespace{},
 			features.WithHTTPClient(s.Client()),
 			features.WithMaxRetries(maxRetries),
 		)
@@ -125,7 +125,7 @@ func Test_Client_Send(t *testing.T) {
 		defer s.Close()
 		defer close(blocker)
 
-		c := features.New(s.URL, &identity.Namespace{},
+		c := features.NewClient(s.URL, &identity.Namespace{},
 			features.WithHTTPClient(s.Client()),
 			features.WithMaxRetries(maxRetries),
 			features.WithTimeout(time.Millisecond),

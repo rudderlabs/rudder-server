@@ -59,7 +59,6 @@ type workspaceConfig interface {
 type BackendConfig interface {
 	workspaceConfig
 	WaitForConfig(ctx context.Context)
-	Identity() identity.Identifier
 	Subscribe(ctx context.Context, topic Topic) pubsub.DataChannel
 	Stop()
 	StartWithIDs(ctx context.Context, workspaces string)

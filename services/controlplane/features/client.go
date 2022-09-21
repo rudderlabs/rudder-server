@@ -66,7 +66,7 @@ func hostname() string {
 	return hostname
 }
 
-func New(baseURL string, identity identity.Identifier, fns ...OptFn) *Client {
+func NewClient(baseURL string, identity identity.Identifier, fns ...OptFn) *Client {
 	c := &Client{
 		url:      baseURL,
 		identity: identity,
