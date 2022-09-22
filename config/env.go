@@ -3,7 +3,6 @@ package config
 // TODO: everything in this file should be either removed or unexported
 import (
 	"os"
-	"strconv"
 	"strings"
 )
 
@@ -21,15 +20,5 @@ func getEnv(key, defaultVal string) string {
 	if value, exists := os.LookupEnv(key); exists {
 		return value
 	}
-	return defaultVal
-}
-
-// getEnvAsBool returns the boolean environment value stored in key variable
-func getEnvAsBool(name string, defaultVal bool) bool {
-	valueStr := getEnv(name, "")
-	if value, err := strconv.ParseBool(valueStr); err == nil {
-		return value
-	}
-
 	return defaultVal
 }

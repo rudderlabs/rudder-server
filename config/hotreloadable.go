@@ -11,17 +11,18 @@ func RegisterIntConfigVariable(defaultValue int, ptr *int, isHotReloadable bool,
 func (c *Config) RegisterIntConfigVariable(defaultValue int, ptr *int, isHotReloadable bool, valueScale int, keys ...string) {
 	c.vLock.RLock()
 	defer c.vLock.RUnlock()
-	c.mapLock.Lock()
-	defer c.mapLock.Unlock()
+	c.hotReloadableConfigLock.Lock()
+	defer c.hotReloadableConfigLock.Unlock()
 	configVar := configValue{
-		value:           ptr,
-		multiplier:      valueScale,
-		isHotReloadable: isHotReloadable,
-		defaultValue:    defaultValue,
-		keys:            keys,
+		value:        ptr,
+		multiplier:   valueScale,
+		defaultValue: defaultValue,
+		keys:         keys,
 	}
 
-	c.appendVarToConfigMaps(isHotReloadable, keys[0], &configVar)
+	if isHotReloadable {
+		c.appendVarToConfigMaps(keys[0], &configVar)
+	}
 
 	for _, key := range keys {
 		if c.IsSet(key) {
@@ -41,16 +42,17 @@ func RegisterBoolConfigVariable(defaultValue bool, ptr *bool, isHotReloadable bo
 func (c *Config) RegisterBoolConfigVariable(defaultValue bool, ptr *bool, isHotReloadable bool, keys ...string) {
 	c.vLock.RLock()
 	defer c.vLock.RUnlock()
-	c.mapLock.Lock()
-	defer c.mapLock.Unlock()
+	c.hotReloadableConfigLock.Lock()
+	defer c.hotReloadableConfigLock.Unlock()
 	configVar := configValue{
-		value:           ptr,
-		isHotReloadable: isHotReloadable,
-		defaultValue:    defaultValue,
-		keys:            keys,
+		value:        ptr,
+		defaultValue: defaultValue,
+		keys:         keys,
 	}
 
-	c.appendVarToConfigMaps(isHotReloadable, keys[0], &configVar)
+	if isHotReloadable {
+		c.appendVarToConfigMaps(keys[0], &configVar)
+	}
 
 	for _, key := range keys {
 		c.bindEnv(key)
@@ -71,17 +73,18 @@ func RegisterFloat64ConfigVariable(defaultValue float64, ptr *float64, isHotRelo
 func (c *Config) RegisterFloat64ConfigVariable(defaultValue float64, ptr *float64, isHotReloadable bool, keys ...string) {
 	c.vLock.RLock()
 	defer c.vLock.RUnlock()
-	c.mapLock.Lock()
-	defer c.mapLock.Unlock()
+	c.hotReloadableConfigLock.Lock()
+	defer c.hotReloadableConfigLock.Unlock()
 	configVar := configValue{
-		value:           ptr,
-		multiplier:      1.0,
-		isHotReloadable: isHotReloadable,
-		defaultValue:    defaultValue,
-		keys:            keys,
+		value:        ptr,
+		multiplier:   1.0,
+		defaultValue: defaultValue,
+		keys:         keys,
 	}
 
-	c.appendVarToConfigMaps(isHotReloadable, keys[0], &configVar)
+	if isHotReloadable {
+		c.appendVarToConfigMaps(keys[0], &configVar)
+	}
 
 	for _, key := range keys {
 		c.bindEnv(key)
@@ -102,17 +105,18 @@ func RegisterInt64ConfigVariable(defaultValue int64, ptr *int64, isHotReloadable
 func (c *Config) RegisterInt64ConfigVariable(defaultValue int64, ptr *int64, isHotReloadable bool, valueScale int64, keys ...string) {
 	c.vLock.RLock()
 	defer c.vLock.RUnlock()
-	c.mapLock.Lock()
-	defer c.mapLock.Unlock()
+	c.hotReloadableConfigLock.Lock()
+	defer c.hotReloadableConfigLock.Unlock()
 	configVar := configValue{
-		value:           ptr,
-		multiplier:      valueScale,
-		isHotReloadable: isHotReloadable,
-		defaultValue:    defaultValue,
-		keys:            keys,
+		value:        ptr,
+		multiplier:   valueScale,
+		defaultValue: defaultValue,
+		keys:         keys,
 	}
 
-	c.appendVarToConfigMaps(isHotReloadable, keys[0], &configVar)
+	if isHotReloadable {
+		c.appendVarToConfigMaps(keys[0], &configVar)
+	}
 
 	for _, key := range keys {
 		c.bindEnv(key)
@@ -133,17 +137,18 @@ func RegisterDurationConfigVariable(defaultValueInTimescaleUnits int64, ptr *tim
 func (c *Config) RegisterDurationConfigVariable(defaultValueInTimescaleUnits int64, ptr *time.Duration, isHotReloadable bool, timeScale time.Duration, keys ...string) {
 	c.vLock.RLock()
 	defer c.vLock.RUnlock()
-	c.mapLock.Lock()
-	defer c.mapLock.Unlock()
+	c.hotReloadableConfigLock.Lock()
+	defer c.hotReloadableConfigLock.Unlock()
 	configVar := configValue{
-		value:           ptr,
-		multiplier:      timeScale,
-		isHotReloadable: isHotReloadable,
-		defaultValue:    defaultValueInTimescaleUnits,
-		keys:            keys,
+		value:        ptr,
+		multiplier:   timeScale,
+		defaultValue: defaultValueInTimescaleUnits,
+		keys:         keys,
 	}
 
-	c.appendVarToConfigMaps(isHotReloadable, keys[0], &configVar)
+	if isHotReloadable {
+		c.appendVarToConfigMaps(keys[0], &configVar)
+	}
 
 	for _, key := range keys {
 		if c.IsSet(key) {
@@ -163,16 +168,17 @@ func RegisterStringConfigVariable(defaultValue string, ptr *string, isHotReloada
 func (c *Config) RegisterStringConfigVariable(defaultValue string, ptr *string, isHotReloadable bool, keys ...string) {
 	c.vLock.RLock()
 	defer c.vLock.RUnlock()
-	c.mapLock.Lock()
-	defer c.mapLock.Unlock()
+	c.hotReloadableConfigLock.Lock()
+	defer c.hotReloadableConfigLock.Unlock()
 	configVar := configValue{
-		value:           ptr,
-		isHotReloadable: isHotReloadable,
-		defaultValue:    defaultValue,
-		keys:            keys,
+		value:        ptr,
+		defaultValue: defaultValue,
+		keys:         keys,
 	}
 
-	c.appendVarToConfigMaps(isHotReloadable, keys[0], &configVar)
+	if isHotReloadable {
+		c.appendVarToConfigMaps(keys[0], &configVar)
+	}
 
 	for _, key := range keys {
 		if c.IsSet(key) {
@@ -192,16 +198,17 @@ func RegisterStringSliceConfigVariable(defaultValue []string, ptr *[]string, isH
 func (c *Config) RegisterStringSliceConfigVariable(defaultValue []string, ptr *[]string, isHotReloadable bool, keys ...string) {
 	c.vLock.RLock()
 	defer c.vLock.RUnlock()
-	c.mapLock.Lock()
-	defer c.mapLock.Unlock()
+	c.hotReloadableConfigLock.Lock()
+	defer c.hotReloadableConfigLock.Unlock()
 	configVar := configValue{
-		value:           ptr,
-		isHotReloadable: isHotReloadable,
-		defaultValue:    defaultValue,
-		keys:            keys,
+		value:        ptr,
+		defaultValue: defaultValue,
+		keys:         keys,
 	}
 
-	c.appendVarToConfigMaps(isHotReloadable, keys[0], &configVar)
+	if isHotReloadable {
+		c.appendVarToConfigMaps(keys[0], &configVar)
+	}
 
 	for _, key := range keys {
 		if c.IsSet(key) {
@@ -212,16 +219,9 @@ func (c *Config) RegisterStringSliceConfigVariable(defaultValue []string, ptr *[
 	*ptr = defaultValue
 }
 
-func (c *Config) appendVarToConfigMaps(isHotReloadable bool, key string, configVar *configValue) {
-	if isHotReloadable {
-		if _, ok := c.hotReloadableConfig[key]; !ok {
-			c.hotReloadableConfig[key] = make([]*configValue, 0)
-		}
-		c.hotReloadableConfig[key] = append(c.hotReloadableConfig[key], configVar)
-	} else {
-		if _, ok := c.nonHotReloadableConfig[key]; !ok {
-			c.nonHotReloadableConfig[key] = make([]*configValue, 0)
-		}
-		c.nonHotReloadableConfig[key] = append(c.nonHotReloadableConfig[key], configVar)
+func (c *Config) appendVarToConfigMaps(key string, configVar *configValue) {
+	if _, ok := c.hotReloadableConfig[key]; !ok {
+		c.hotReloadableConfig[key] = make([]*configValue, 0)
 	}
+	c.hotReloadableConfig[key] = append(c.hotReloadableConfig[key], configVar)
 }

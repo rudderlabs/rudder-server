@@ -54,13 +54,12 @@ func New() *Config {
 
 // Config is the entry point for accessing configuration
 type Config struct {
-	vLock                  sync.RWMutex // protects reading and writing to the config (viper is not thread-safe)
-	v                      *viper.Viper
-	mapLock                sync.RWMutex // protects maps holding registered config keys
-	hotReloadableConfig    map[string][]*configValue
-	nonHotReloadableConfig map[string][]*configValue
-	envsLock               sync.RWMutex // protects the envs map below
-	envs                   map[string]string
+	vLock                   sync.RWMutex // protects reading and writing to the config (viper is not thread-safe)
+	v                       *viper.Viper
+	hotReloadableConfigLock sync.RWMutex // protects map holding hot reloadable config keys
+	hotReloadableConfig     map[string][]*configValue
+	envsLock                sync.RWMutex // protects the envs map below
+	envs                    map[string]string
 }
 
 // GetBool gets bool value from config

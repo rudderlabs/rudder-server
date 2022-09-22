@@ -2,7 +2,6 @@ package config
 
 import (
 	"fmt"
-	"os"
 	"time"
 
 	"github.com/fsnotify/fsnotify"
@@ -12,7 +11,6 @@ import (
 
 func (c *Config) load() {
 	c.hotReloadableConfig = make(map[string][]*configValue)
-	c.nonHotReloadableConfig = make(map[string][]*configValue)
 	c.envs = make(map[string]string)
 
 	if err := godotenv.Load(); err != nil {
@@ -48,16 +46,12 @@ func (c *Config) onConfigChange() {
 	}()
 	c.vLock.RLock()
 	defer c.vLock.RUnlock()
-	c.mapLock.RLock()
-	defer c.mapLock.RUnlock()
-	_ = c.checkAndHotReloadConfig(c.hotReloadableConfig)
-	isChanged := c.checkAndHotReloadConfig(c.nonHotReloadableConfig)
-	if isChanged && getEnvAsBool("RESTART_ON_CONFIG_CHANGE", false) {
-		os.Exit(1)
-	}
+	c.hotReloadableConfigLock.RLock()
+	defer c.hotReloadableConfigLock.RUnlock()
+	c.checkAndHotReloadConfig(c.hotReloadableConfig)
 }
 
-func (c *Config) checkAndHotReloadConfig(configMap map[string][]*configValue) (hasConfigChanged bool) {
+func (c *Config) checkAndHotReloadConfig(configMap map[string][]*configValue) {
 	for key, configValArr := range configMap {
 		for _, configVal := range configValArr {
 			value := configVal.value
@@ -77,11 +71,8 @@ func (c *Config) checkAndHotReloadConfig(configMap map[string][]*configValue) (h
 				}
 				_value = _value * configVal.multiplier.(int)
 				if _value != *value {
-					hasConfigChanged = true
-					if configVal.isHotReloadable {
-						fmt.Printf("The value of key:%s & variable:%p changed from %d to %d\n", key, configVal, *value, _value)
-						*value = _value
-					}
+					fmt.Printf("The value of key:%s & variable:%p changed from %d to %d\n", key, configVal, *value, _value)
+					*value = _value
 				}
 			case *int64:
 				var _value int64
@@ -98,11 +89,8 @@ func (c *Config) checkAndHotReloadConfig(configMap map[string][]*configValue) (h
 				}
 				_value = _value * configVal.multiplier.(int64)
 				if _value != *value {
-					hasConfigChanged = true
-					if configVal.isHotReloadable {
-						fmt.Printf("The value of key:%s & variable:%p changed from %d to %d\n", key, configVal, *value, _value)
-						*value = _value
-					}
+					fmt.Printf("The value of key:%s & variable:%p changed from %d to %d\n", key, configVal, *value, _value)
+					*value = _value
 				}
 			case *string:
 				var _value string
@@ -118,11 +106,8 @@ func (c *Config) checkAndHotReloadConfig(configMap map[string][]*configValue) (h
 					_value = configVal.defaultValue.(string)
 				}
 				if _value != *value {
-					hasConfigChanged = true
-					if configVal.isHotReloadable {
-						fmt.Printf("The value of key:%s & variable:%p changed from %v to %v\n", key, configVal, *value, _value)
-						*value = _value
-					}
+					fmt.Printf("The value of key:%s & variable:%p changed from %v to %v\n", key, configVal, *value, _value)
+					*value = _value
 				}
 			case *time.Duration:
 				var _value time.Duration
@@ -138,11 +123,8 @@ func (c *Config) checkAndHotReloadConfig(configMap map[string][]*configValue) (h
 					_value = time.Duration(configVal.defaultValue.(int64)) * configVal.multiplier.(time.Duration)
 				}
 				if _value != *value {
-					hasConfigChanged = true
-					if configVal.isHotReloadable {
-						fmt.Printf("The value of key:%s & variable:%p changed from %v to %v\n", key, configVal, *value, _value)
-						*value = _value
-					}
+					fmt.Printf("The value of key:%s & variable:%p changed from %v to %v\n", key, configVal, *value, _value)
+					*value = _value
 				}
 			case *bool:
 				var _value bool
@@ -158,11 +140,8 @@ func (c *Config) checkAndHotReloadConfig(configMap map[string][]*configValue) (h
 					_value = configVal.defaultValue.(bool)
 				}
 				if _value != *value {
-					hasConfigChanged = true
-					if configVal.isHotReloadable {
-						fmt.Printf("The value of key:%s & variable:%p changed from %v to %v\n", key, configVal, *value, _value)
-						*value = _value
-					}
+					fmt.Printf("The value of key:%s & variable:%p changed from %v to %v\n", key, configVal, *value, _value)
+					*value = _value
 				}
 			case *float64:
 				var _value float64
@@ -179,32 +158,26 @@ func (c *Config) checkAndHotReloadConfig(configMap map[string][]*configValue) (h
 				}
 				_value = _value * configVal.multiplier.(float64)
 				if _value != *value {
-					hasConfigChanged = true
-					if configVal.isHotReloadable {
-						fmt.Printf("The value of key:%s & variable:%p changed from %v to %v\n", key, configVal, *value, _value)
-						*value = _value
-					}
+					fmt.Printf("The value of key:%s & variable:%p changed from %v to %v\n", key, configVal, *value, _value)
+					*value = _value
 				}
 			}
 		}
 	}
-	return hasConfigChanged
 }
 
 type configValue struct {
-	value           interface{}
-	multiplier      interface{}
-	isHotReloadable bool
-	defaultValue    interface{}
-	keys            []string
+	value        interface{}
+	multiplier   interface{}
+	defaultValue interface{}
+	keys         []string
 }
 
-func newConfigValue(value, multiplier, defaultValue interface{}, isHotReloadable bool, keys []string) *configValue {
+func newConfigValue(value, multiplier, defaultValue interface{}, keys []string) *configValue {
 	return &configValue{
-		value:           value,
-		multiplier:      multiplier,
-		isHotReloadable: isHotReloadable,
-		defaultValue:    defaultValue,
-		keys:            keys,
+		value:        value,
+		multiplier:   multiplier,
+		defaultValue: defaultValue,
+		keys:         keys,
 	}
 }
