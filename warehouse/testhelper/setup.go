@@ -508,7 +508,6 @@ func WarehouseEventsMap() EventsCountMap {
 		"aliases":       4,
 		"groups":        4,
 	}
-
 }
 
 func WarehouseSourceEventsMap() EventsCountMap {
@@ -516,7 +515,6 @@ func WarehouseSourceEventsMap() EventsCountMap {
 		"google_sheet": 1,
 		"tracks":       1,
 	}
-
 }
 
 func DefaultSourceRunConfig() map[string]string {

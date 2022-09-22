@@ -630,7 +630,7 @@ func runAsyncJob(asyncjob jobs.AsyncJobPayloadT, _ int) (AsyncJobRunResult, erro
 		}
 		err = whManager.DeleteBy(tableNames, params)
 	}
-	var asyncJobRunResult = AsyncJobRunResult{
+	asyncJobRunResult := AsyncJobRunResult{
 		Result: err == nil,
 		Id:     asyncjob.Id,
 	}

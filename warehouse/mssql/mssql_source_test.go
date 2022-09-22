@@ -5,13 +5,14 @@ package mssql_test
 import (
 	"database/sql"
 	"fmt"
+	"os"
+	"testing"
+
 	"github.com/rudderlabs/rudder-server/warehouse/client"
 	"github.com/rudderlabs/rudder-server/warehouse/mssql"
 	"github.com/rudderlabs/rudder-server/warehouse/testhelper"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 	"github.com/stretchr/testify/require"
-	"os"
-	"testing"
 )
 
 type TestHandle struct {
@@ -51,7 +52,6 @@ func (t *TestHandle) VerifyConnection() error {
 		return fmt.Errorf("error while running test connection for mssql with err: %s", err.Error())
 	}
 	return nil
-
 }
 
 func TestSourcesMSSQLIntegration(t *testing.T) {

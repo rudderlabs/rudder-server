@@ -519,7 +519,7 @@ func SendIntegratedEvents(t testing.TB, wareHouseTest *WareHouseTest, eventsMap 
 	}
 }
 
-func send(t testing.TB, payload *strings.Reader, eventType, writeKey string, method string) {
+func send(t testing.TB, payload *strings.Reader, eventType, writeKey, method string) {
 	t.Helper()
 
 	t.Logf("Sending event: %s for writeKey: %s", eventType, writeKey)
@@ -577,11 +577,9 @@ func SendAsyncStatusRequest(t testing.TB, wareHouseTest *WareHouseTest) {
 			break
 		}
 	}
-
 }
 
-func blockByWhJobStatus(t testing.TB, path string, writeKey string) (string, error) {
-
+func blockByWhJobStatus(t testing.TB, path, writeKey string) (string, error) {
 	t.Helper()
 	t.Logf("Sending event: %s for writeKey: %s", "pending-events", writeKey)
 	url := fmt.Sprintf("http://localhost:%s/v1/%s", "8080", path)
@@ -633,7 +631,6 @@ func blockByWhJobStatus(t testing.TB, path string, writeKey string) (string, err
 }
 
 func blockByPendingEvents(t testing.TB, payload *strings.Reader, writeKey string) uint {
-
 	t.Helper()
 	t.Logf("Sending event: %s for writeKey: %s", "pending-events", writeKey)
 	url := fmt.Sprintf("http://localhost:%s/v1/%s", "8080", "pending-events")

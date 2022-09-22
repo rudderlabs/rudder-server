@@ -204,7 +204,8 @@ func (wh *HandleT) workerIdentifier(warehouse warehouseutils.WarehouseT) (identi
 	}
 	return
 }
-func getDestinationFromConnectionMap(DestinationId string, SourceId string) (warehouseutils.WarehouseT, error) {
+
+func getDestinationFromConnectionMap(DestinationId, SourceId string) (warehouseutils.WarehouseT, error) {
 	if DestinationId == "" || SourceId == "" {
 		return warehouseutils.WarehouseT{}, errors.New("Invalid Parameters")
 	}
@@ -219,7 +220,6 @@ func getDestinationFromConnectionMap(DestinationId string, SourceId string) (war
 	}
 
 	return conn, nil
-
 }
 
 func (wh *HandleT) getActiveWorkerCount() int {
@@ -267,7 +267,7 @@ func (wh *HandleT) handleUploadJob(uploadJob *UploadJobT) (err error) {
 	return
 }
 
-//Backend Config subscriber subscribes to backend-config and gets all the configurations that includes all sources, destinations and their latest values.
+// Backend Config subscriber subscribes to backend-config and gets all the configurations that includes all sources, destinations and their latest values.
 func (wh *HandleT) backendConfigSubscriber() {
 	ch := backendconfig.DefaultBackendConfig.Subscribe(context.TODO(), backendconfig.TopicBackendConfig)
 	for config := range ch {
@@ -1720,7 +1720,7 @@ func startWebHandler(ctx context.Context) error {
 			mux.HandleFunc("/databricksVersion", databricksVersionHandler)
 			mux.HandleFunc("/v1/setConfig", setConfigHandler)
 
-			//Warehouse Async Job end-points
+			// Warehouse Async Job end-points
 			mux.HandleFunc("/v1/warehouse/jobs", asyncWh.AddWarehouseJobHandler)
 			mux.HandleFunc("/v1/warehouse/jobs/status", asyncWh.StatusWarehouseJobHandler)
 

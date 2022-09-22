@@ -424,7 +424,7 @@ func (pg *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 	return
 }
 
-//Need to create a structure with delete parameters instead of simply adding a long list of params
+// Need to create a structure with delete parameters instead of simply adding a long list of params
 func (pq *HandleT) DeleteBy(tableNames []string, params warehouseutils.DeleteByParams) (err error) {
 	pkgLogger.Infof("PG: Cleaning up the followng tables in postgres for PG:%s : %v", tableNames)
 	for _, tb := range tableNames {

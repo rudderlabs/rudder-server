@@ -12,7 +12,7 @@ import (
 
 var pkgLogger logger.LoggerI
 
-//For processing requests payload in handlers.go
+// For processing requests payload in handlers.go
 type StartJobReqPayload struct {
 	SourceID      string `json:"sourceid"`
 	Type          string `json:"type"`
@@ -38,7 +38,7 @@ type WhJobsMetaData struct {
 	StartTime string `json:"starttime"`
 }
 
-//For creating job payload to wh_async_jobs table
+// For creating job payload to wh_async_jobs table
 type AsyncJobPayloadT struct {
 	Id            string          `json:"id"`
 	SourceID      string          `json:"sourceid"`

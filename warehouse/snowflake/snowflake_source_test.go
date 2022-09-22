@@ -115,7 +115,7 @@ func TestSnowflakeIntegration(t *testing.T) {
 	}
 	testhelper.VerifyEventsInWareHouse(t, warehouseTest, warehouseEventsWithoutDeDup)
 
-	//Sending deduped events
+	// Sending deduped events
 	testhelper.SendEvents(t, warehouseTest, sendEventsMap)
 	testhelper.SendEvents(t, warehouseTest, sendEventsMap)
 	testhelper.SendEvents(t, warehouseTest, sendEventsMap)

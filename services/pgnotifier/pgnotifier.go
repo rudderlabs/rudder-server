@@ -190,7 +190,7 @@ func GetPGNotifierConnectionString() string {
 		pgNotifierDBpassword, pgNotifierDBname, pgNotifierDBsslmode)
 }
 
-//trackUploadBatch tracks the upload batches until they are complete and triggers output through channel of type ResponseT
+// trackUploadBatch tracks the upload batches until they are complete and triggers output through channel of type ResponseT
 func (notifier *PgNotifierT) trackUploadBatch(batchID string, ch *chan []ResponseT) {
 	rruntime.GoForWarehouse(func() {
 		for {
@@ -241,7 +241,7 @@ func (notifier *PgNotifierT) trackUploadBatch(batchID string, ch *chan []Respons
 	})
 }
 
-//trackAsyncBatch tracks the upload batches until they are complete and triggers output through channel of type ResponseT
+// trackAsyncBatch tracks the upload batches until they are complete and triggers output through channel of type ResponseT
 func (notifier *PgNotifierT) trackAsyncBatch(batchID string, ch *chan []ResponseT) {
 	rruntime.GoForWarehouse(func() {
 		// retry := 0
@@ -275,7 +275,7 @@ func (notifier *PgNotifierT) trackAsyncBatch(batchID string, ch *chan []Response
 						continue
 					}
 					responses = append(responses, ResponseT{
-						JobID:  0, //Not required for this as there is no concept of BatchFileId
+						JobID:  0, // Not required for this as there is no concept of BatchFileId
 						Output: payload,
 						Status: status.String,
 						Error:  jobError.String,

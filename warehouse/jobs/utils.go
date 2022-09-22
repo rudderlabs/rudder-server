@@ -8,7 +8,7 @@ import (
 )
 
 func convertToPayloadStatusStructWithSingleStatus(payloads []AsyncJobPayloadT, status string, err error) map[string]AsyncJobsStatusMap {
-	var asyncJobsStatusMap = make(map[string]AsyncJobsStatusMap)
+	asyncJobsStatusMap := make(map[string]AsyncJobsStatusMap)
 	for _, payload := range payloads {
 		asyncjobmap := AsyncJobsStatusMap{
 			Id:     payload.Id,
@@ -20,7 +20,7 @@ func convertToPayloadStatusStructWithSingleStatus(payloads []AsyncJobPayloadT, s
 	return asyncJobsStatusMap
 }
 
-//convert to pgNotifier Payload and return the array of payloads
+// convert to pgNotifier Payload and return the array of payloads
 func getMessagePayloadsFromAsyncJobPayloads(asyncjobs []AsyncJobPayloadT) ([]pgnotifier.JobPayload, error) {
 	var messages []pgnotifier.JobPayload
 	for _, job := range asyncjobs {
@@ -57,7 +57,7 @@ func contains(sArray []string, s string) bool {
 }
 
 func getAsyncStatusMapFromAsyncPayloads(payloads []AsyncJobPayloadT) map[string]AsyncJobsStatusMap {
-	var asyncjobsstatusmap = make(map[string]AsyncJobsStatusMap)
+	asyncjobsstatusmap := make(map[string]AsyncJobsStatusMap)
 	for _, payload := range payloads {
 		asyncstatus := AsyncJobsStatusMap{
 			Id:     payload.Id,

@@ -17,7 +17,7 @@ import (
 	"net/http"
 )
 
-//The following handler gets called for adding async
+// The following handler gets called for adding async
 func (asyncWhJob *AsyncJobWhT) AddWarehouseJobHandler(w http.ResponseWriter, r *http.Request) {
 	pkgLogger.Info("[WH-Jobs] Got Async Job Add Request")
 	pkgLogger.LogRequest(r)
@@ -46,14 +46,13 @@ func (asyncWhJob *AsyncJobWhT) AddWarehouseJobHandler(w http.ResponseWriter, r *
 		return
 	}
 	tableNames, err := asyncWhJob.getTableNamesBy(startJobPayload.SourceID, startJobPayload.DestinationID, startJobPayload.JobRunID, startJobPayload.TaskRunID)
-
 	if err != nil {
 		pkgLogger.Errorf("[WH-Jobs]: Error extracting tableNames for the job run id: %v", err)
 		http.Error(w, "Error extracting tableNames", http.StatusBadRequest)
 		return
 	}
 	var jobIds []int64
-	//Add to wh_async_job queue each of the tables
+	// Add to wh_async_job queue each of the tables
 	for _, th := range tableNames {
 		if !skipTable(th) {
 			whmetadata := WhJobsMetaData{
@@ -92,7 +91,6 @@ func (asyncWhJob *AsyncJobWhT) AddWarehouseJobHandler(w http.ResponseWriter, r *
 		return
 	}
 	_, _ = w.Write(response)
-
 }
 
 func (asyncWhJob *AsyncJobWhT) StatusWarehouseJobHandler(w http.ResponseWriter, r *http.Request) {
@@ -104,7 +102,7 @@ func (asyncWhJob *AsyncJobWhT) StatusWarehouseJobHandler(w http.ResponseWriter, 
 
 		sourceId := r.URL.Query().Get("source_id")
 		destinationId := r.URL.Query().Get("destination_id")
-		var payload = StartJobReqPayload{
+		payload := StartJobReqPayload{
 			TaskRunID:     taskRunId,
 			JobRunID:      jobRunId,
 			SourceID:      sourceId,
@@ -116,7 +114,7 @@ func (asyncWhJob *AsyncJobWhT) StatusWarehouseJobHandler(w http.ResponseWriter, 
 			http.Error(w, "invalid request", http.StatusBadRequest)
 			return
 		}
-		var startJobPayload = StartJobReqPayload{
+		startJobPayload := StartJobReqPayload{
 			JobRunID:      jobRunId,
 			TaskRunID:     taskRunId,
 			SourceID:      sourceId,
@@ -133,7 +131,6 @@ func (asyncWhJob *AsyncJobWhT) StatusWarehouseJobHandler(w http.ResponseWriter, 
 		response := asyncWhJob.getStatusAsyncJob(asyncWhJob.context, &startJobPayload)
 
 		writeResponse, err := json.Marshal(response)
-
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
@@ -144,5 +141,4 @@ func (asyncWhJob *AsyncJobWhT) StatusWarehouseJobHandler(w http.ResponseWriter, 
 		http.Error(w, "invalid request", http.StatusBadRequest)
 		return
 	}
-
 }

@@ -6,8 +6,7 @@ import (
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
-type WhAsyncJob struct {
-}
+type WhAsyncJob struct{}
 
 func (*WhAsyncJob) GetSchemaInWarehouse() warehouseutils.SchemaT {
 	return warehouseutils.SchemaT{}

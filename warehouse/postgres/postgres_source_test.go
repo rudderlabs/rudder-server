@@ -5,13 +5,14 @@ package postgres_test
 import (
 	"database/sql"
 	"fmt"
+	"os"
+	"testing"
+
 	"github.com/rudderlabs/rudder-server/warehouse/client"
 	"github.com/rudderlabs/rudder-server/warehouse/postgres"
 	"github.com/rudderlabs/rudder-server/warehouse/testhelper"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 	"github.com/stretchr/testify/require"
-	"os"
-	"testing"
 )
 
 type TestHandle struct {
@@ -97,11 +98,9 @@ func TestSourcesPostgresIntegration(t *testing.T) {
 	testhelper.SendAsyncRequest(t, warehouseTest)
 	testhelper.SendAsyncStatusRequest(t, warehouseTest)
 	testhelper.VerifyEventsInWareHouse(t, warehouseTest, testhelper.WarehouseSourceEventsMap())
-
 }
 
 func TestMain(m *testing.M) {
-
 	handle = &TestHandle{
 		Type:           "POSTGRES",
 		SourceWriteKey: "2DkCpXZcEvJK2fcpUD3LmjPI7J6",
