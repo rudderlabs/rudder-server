@@ -79,15 +79,15 @@ func TestSourcesMSSQLIntegration(t *testing.T) {
 
 	warehouseTest.UserId = testhelper.GetUserId(warehouseutils.MSSQL)
 	sendEventsMap := testhelper.DefaultSourceEventMap()
-	// testhelper.SendEvents(t, warehouseTest, sendEventsMap)
-	// testhelper.SendEvents(t, warehouseTest, sendEventsMap)
-	// testhelper.SendEvents(t, warehouseTest, sendEventsMap)
+	testhelper.SendEvents(t, warehouseTest, sendEventsMap)
+	testhelper.SendEvents(t, warehouseTest, sendEventsMap)
+	testhelper.SendEvents(t, warehouseTest, sendEventsMap)
 
-	// warehouseEventsWithoutDeDup := testhelper.EventsCountMap{
-	// 	"google_sheet": 3,
-	// 	"tracks":       1,
-	// }
-	// testhelper.VerifyEventsInWareHouse(t, warehouseTest, warehouseEventsWithoutDeDup)
+	warehouseEventsWithoutDeDup := testhelper.EventsCountMap{
+		"google_sheet": 3,
+		"tracks":       1,
+	}
+	testhelper.VerifyEventsInWareHouse(t, warehouseTest, warehouseEventsWithoutDeDup)
 
 	testhelper.SendEvents(t, warehouseTest, sendEventsMap)
 	testhelper.SendEvents(t, warehouseTest, sendEventsMap)
