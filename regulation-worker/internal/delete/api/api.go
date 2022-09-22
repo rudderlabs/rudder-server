@@ -20,7 +20,7 @@ import (
 
 var (
 	pkgLogger             = logger.NewLogger().Child("api")
-	supportedDestinations = []string{"BRAZE", "AM", "INTERCOM"}
+	supportedDestinations = []string{"BRAZE", "AM", "INTERCOM", "CLEVERTAP", "AF", "MP"}
 )
 
 type APIManager struct {
