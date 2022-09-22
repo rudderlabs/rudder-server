@@ -48,12 +48,9 @@ func (gatewayApp *GatewayApp) StartRudderCore(ctx context.Context, options *app.
 
 	sourcedebugger.Setup(backendconfig.DefaultBackendConfig)
 
-	migrationMode := gatewayApp.App.Options().MigrationMode
-
 	gatewayDB := jobsdb.NewForWrite(
 		"gw",
 		jobsdb.WithClearDB(options.ClearDB),
-		jobsdb.WithMigrationMode(migrationMode),
 		jobsdb.WithStatusHandler(),
 		jobsdb.WithDSLimit(&gatewayDSLimit),
 	)
@@ -64,14 +61,6 @@ func (gatewayApp *GatewayApp) StartRudderCore(ctx context.Context, options *app.
 	defer gatewayDB.Stop()
 
 	enableGateway := true
-	if gatewayApp.App.Features().Migrator != nil {
-		if migrationMode == db.IMPORT || migrationMode == db.EXPORT || migrationMode == db.IMPORT_EXPORT {
-			enableGateway = migrationMode != db.EXPORT
-
-			gatewayApp.App.Features().Migrator.PrepareJobsdbsForImport(gatewayDB, nil, nil)
-		}
-	}
-
 	g, ctx := errgroup.WithContext(ctx)
 
 	var modeProvider cluster.ChangeEventProvider
@@ -134,5 +123,5 @@ func (gatewayApp *GatewayApp) StartRudderCore(ctx context.Context, options *app.
 }
 
 func (*GatewayApp) HandleRecovery(options *app.Options) {
-	db.HandleNullRecovery(options.NormalMode, options.DegradedMode, options.MigrationMode, misc.AppStartTime, app.GATEWAY)
+	db.HandleNullRecovery(options.NormalMode, options.DegradedMode, misc.AppStartTime, app.GATEWAY)
 }
