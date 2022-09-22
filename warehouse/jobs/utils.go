@@ -7,14 +7,13 @@ import (
 	"github.com/rudderlabs/rudder-server/services/pgnotifier"
 )
 
-func convertToPayloadStatusStructWithSingleStatus(payloads []AsyncJobPayloadT, status string, err error, increment int) map[string]AsyncJobsStatusMap {
+func convertToPayloadStatusStructWithSingleStatus(payloads []AsyncJobPayloadT, status string, err error) map[string]AsyncJobsStatusMap {
 	var asyncJobsStatusMap = make(map[string]AsyncJobsStatusMap)
 	for _, payload := range payloads {
 		asyncjobmap := AsyncJobsStatusMap{
-			Id:             payload.Id,
-			Status:         status,
-			Error:          err,
-			CountIncrement: increment,
+			Id:     payload.Id,
+			Status: status,
+			Error:  err,
 		}
 		asyncJobsStatusMap[payload.Id] = asyncjobmap
 	}

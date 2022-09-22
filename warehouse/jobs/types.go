@@ -80,10 +80,9 @@ type WhAsyncJobRunner interface {
 }
 
 type AsyncJobsStatusMap struct {
-	Id             string
-	Status         string
-	Error          error
-	CountIncrement int
+	Id     string
+	Status string
+	Error  error
 }
 
 const (
