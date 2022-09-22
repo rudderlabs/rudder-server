@@ -77,7 +77,7 @@ func updateStatusJobPayloadsFromPgnotifierResponse(r []pgnotifier.ResponseT, m m
 			pkgLogger.Errorf("error unmarshaling pgnotifier payload to AsyncJobStatusMa for Id: %s", pgoutput.Id)
 			continue
 		}
-		pkgLogger.Errorf("Successfully unmarshaled pgnotifier payload to AsyncJobStatusMa for Id: %s", pgoutput.Id)
+		pkgLogger.Infof("Successfully unmarshaled pgnotifier payload to AsyncJobStatusMa for Id: %s", pgoutput.Id)
 		if output, ok := m[pgoutput.Id]; ok {
 			output.Status = resp.Status
 			if resp.Error != "" {
