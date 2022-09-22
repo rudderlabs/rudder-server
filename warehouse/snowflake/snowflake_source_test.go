@@ -95,8 +95,8 @@ func TestSnowflakeIntegration(t *testing.T) {
 		Tables:                handle.Tables,
 		MessageId:             uuid.Must(uuid.NewV4()).String(),
 		Provider:              warehouseutils.SNOWFLAKE,
-		SourceId:              handle.SourceId,
-		DestinationId:         handle.DestinationId,
+		SourceID:              handle.SourceId,
+		DestinationID:         handle.DestinationId,
 		SourceWriteKey:        handle.SourceWriteKey,
 		LatestSourceRunConfig: testhelper.DefaultSourceRunConfig(),
 	}

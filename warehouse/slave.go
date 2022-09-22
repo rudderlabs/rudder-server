@@ -619,8 +619,7 @@ func runAsyncJob(asyncjob jobs.AsyncJobPayloadT, workerIndex int) (AsyncJobRunRe
 	whManager.Setup(warehouse, whasyncjob)
 	defer whManager.Cleanup()
 	tableNames := []string{asyncjob.TableName}
-	switch asyncjob.AsyncJobType {
-	case "deletebyjobrunid":
+	if asyncjob.AsyncJobType == "deletebyjobrunid" {
 		pkgLogger.Info("[WH-Jobs]: Running DeleteByJobRunID on slave worker")
 
 		params := warehouseutils.DeleteByParams{

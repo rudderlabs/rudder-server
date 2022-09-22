@@ -59,8 +59,6 @@ type WareHouseTest struct {
 	Client                       *client.Client
 	WriteKey                     string
 	SourceWriteKey               string
-	SourceId                     string
-	DestinationId                string
 	Schema                       string
 	TablesQueryFrequency         time.Duration
 	EventsCountMap               EventsCountMap

@@ -386,7 +386,7 @@ func SendEvents(t testing.TB, wareHouseTest *WareHouseTest, eventsMap EventsCoun
 			wareHouseTest.LatestSourceRunConfig["jobrunid"] = job_run_id
 			wareHouseTest.LatestSourceRunConfig["taskrunid"] = task_run_id
 			for {
-				pendingEventsPayload := strings.NewReader(fmt.Sprintf(PendingEventsPayload, wareHouseTest.SourceId, job_run_id))
+				pendingEventsPayload := strings.NewReader(fmt.Sprintf(PendingEventsPayload, wareHouseTest.SourceID, job_run_id))
 				count := blockByPendingEvents(t, pendingEventsPayload, wareHouseTest.SourceWriteKey)
 				if count == 0 {
 					break
@@ -560,16 +560,16 @@ func send(t testing.TB, payload *strings.Reader, eventType, writeKey string, met
 }
 
 func SendAsyncRequest(t testing.TB, wareHouseTest *WareHouseTest) {
-	asyncwhpayload := strings.NewReader(fmt.Sprintf(AsyncWhPayload, wareHouseTest.SourceId, wareHouseTest.LatestSourceRunConfig["jobrunid"], wareHouseTest.LatestSourceRunConfig["taskrunid"], wareHouseTest.DestinationId, time.Now().UTC().Format("01-02-2006 15:04:05")))
+	asyncwhpayload := strings.NewReader(fmt.Sprintf(AsyncWhPayload, wareHouseTest.SourceID, wareHouseTest.LatestSourceRunConfig["jobrunid"], wareHouseTest.LatestSourceRunConfig["taskrunid"], wareHouseTest.DestinationID, time.Now().UTC().Format("01-02-2006 15:04:05")))
 	send(t, asyncwhpayload, "warehouse/jobs", wareHouseTest.SourceWriteKey, "POST")
 }
 
 func SendAsyncStatusRequest(t testing.TB, wareHouseTest *WareHouseTest) {
-	url := "warehouse/jobs/status?job_run_id=" + wareHouseTest.LatestSourceRunConfig["jobrunid"] + "&task_run_id=" + wareHouseTest.LatestSourceRunConfig["taskrunid"] + "&source_id=" + wareHouseTest.SourceId + "&destination_id=" + wareHouseTest.DestinationId
+	url := "warehouse/jobs/status?job_run_id=" + wareHouseTest.LatestSourceRunConfig["jobrunid"] + "&task_run_id=" + wareHouseTest.LatestSourceRunConfig["taskrunid"] + "&source_id=" + wareHouseTest.SourceID + "&destination_id=" + wareHouseTest.DestinationID
 
 	for {
-		status, error := blockByWhJobStatus(t, url, wareHouseTest.SourceWriteKey)
-		if error != nil {
+		status, err := blockByWhJobStatus(t, url, wareHouseTest.SourceWriteKey)
+		if err != nil {
 			break
 		}
 

@@ -290,9 +290,8 @@ func (notifier *PgNotifierT) trackAsyncBatch(batchID string, ch *chan []Response
 					pkgLogger.Errorf("PgNotifier: Error deleting from %s for batch_id:%s : %v", queueName, batchID, err)
 				}
 				break
-			} else {
-				pkgLogger.Debugf("PgNotifier: Pending %d files to process in batch: %s", count, batchID)
 			}
+			pkgLogger.Debugf("PgNotifier: Pending %d files to process in batch: %s", count, batchID)
 		}
 	})
 }

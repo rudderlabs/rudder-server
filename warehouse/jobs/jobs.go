@@ -9,54 +9,54 @@ import (
 type WhAsyncJob struct {
 }
 
-func (job *WhAsyncJob) GetSchemaInWarehouse() warehouseutils.SchemaT {
+func (*WhAsyncJob) GetSchemaInWarehouse() warehouseutils.SchemaT {
 	return warehouseutils.SchemaT{}
 }
 
-func (job *WhAsyncJob) GetLocalSchema() warehouseutils.SchemaT {
+func (*WhAsyncJob) GetLocalSchema() warehouseutils.SchemaT {
 	return warehouseutils.SchemaT{}
 }
 
-func (job *WhAsyncJob) UpdateLocalSchema(schema warehouseutils.SchemaT) error {
+func (*WhAsyncJob) UpdateLocalSchema(warehouseutils.SchemaT) error {
 	return nil
 }
 
-func (job *WhAsyncJob) GetTableSchemaInWarehouse(tableName string) warehouseutils.TableSchemaT {
+func (*WhAsyncJob) GetTableSchemaInWarehouse(string) warehouseutils.TableSchemaT {
 	return warehouseutils.TableSchemaT{}
 }
 
-func (job *WhAsyncJob) GetTableSchemaInUpload(tableName string) warehouseutils.TableSchemaT {
+func (*WhAsyncJob) GetTableSchemaInUpload(string) warehouseutils.TableSchemaT {
 	return warehouseutils.TableSchemaT{}
 }
 
-func (job *WhAsyncJob) GetLoadFilesMetadata(options warehouseutils.GetLoadFilesOptionsT) []warehouseutils.LoadFileT {
+func (*WhAsyncJob) GetLoadFilesMetadata(warehouseutils.GetLoadFilesOptionsT) []warehouseutils.LoadFileT {
 	return []warehouseutils.LoadFileT{}
 }
 
-func (job *WhAsyncJob) GetSampleLoadFileLocation(tableName string) (string, error) {
+func (*WhAsyncJob) GetSampleLoadFileLocation(string) (string, error) {
 	return "", nil
 }
 
-func (job *WhAsyncJob) GetSingleLoadFile(tableName string) (warehouseutils.LoadFileT, error) {
+func (*WhAsyncJob) GetSingleLoadFile(string) (warehouseutils.LoadFileT, error) {
 	return warehouseutils.LoadFileT{}, nil
 }
 
-func (job *WhAsyncJob) ShouldOnDedupUseNewRecord() bool {
+func (*WhAsyncJob) ShouldOnDedupUseNewRecord() bool {
 	return false
 }
 
-func (job *WhAsyncJob) UseRudderStorage() bool {
+func (*WhAsyncJob) UseRudderStorage() bool {
 	return false
 }
 
-func (job *WhAsyncJob) GetLoadFileGenStartTIme() time.Time {
+func (*WhAsyncJob) GetLoadFileGenStartTIme() time.Time {
 	return time.Time{}
 }
 
-func (job *WhAsyncJob) GetLoadFileType() string {
+func (*WhAsyncJob) GetLoadFileType() string {
 	return ""
 }
 
-func (job *WhAsyncJob) GetFirstLastEvent() (time.Time, time.Time) {
+func (*WhAsyncJob) GetFirstLastEvent() (time.Time, time.Time) {
 	return time.Now(), time.Now()
 }

@@ -1901,7 +1901,7 @@ func Start(ctx context.Context, app app.Interface) error {
 			pkgLogger.Errorf("WH: Failed to start warehouse api: %v", err)
 			return err
 		}
-		asyncWh = jobs.InitWarehouseJobsAPI(dbHandle, &notifier, ctx)
+		asyncWh = jobs.InitWarehouseJobsAPI(ctx, dbHandle, &notifier)
 
 		g.Go(misc.WithBugsnagForWarehouse(func() error {
 			return asyncWh.InitAsyncJobRunner()

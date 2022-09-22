@@ -16,7 +16,7 @@ import (
 )
 
 //Initializes AsyncJobWh structure with appropriate variabless
-func InitWarehouseJobsAPI(dbHandle *sql.DB, notifier *pgnotifier.PgNotifierT, ctx context.Context) *AsyncJobWhT {
+func InitWarehouseJobsAPI(ctx context.Context, dbHandle *sql.DB, notifier *pgnotifier.PgNotifierT) *AsyncJobWhT {
 
 	AsyncJobWh := AsyncJobWhT{
 		dbHandle:   dbHandle,
@@ -40,7 +40,7 @@ func (asyncWhJob *AsyncJobWhT) getTableNamesBy(sourceid string, destinationid st
 	query := fmt.Sprintf(`SELECT id from %s where metadata->>'%s'=$1 and metadata->>'%s'=$2 and metadata in (SELECT metadata FROM wh_uploads where source_id=$3 and destination_id=$4)`, warehouseutils.WarehouseUploadsTable, "source_job_run_id", "source_task_run_id")
 	pkgLogger.Debugf("Query is %s\n", query)
 	rows, err := asyncWhJob.dbHandle.Query(query, jobrunid, taskrunid, sourceid, destinationid)
-	defer rows.Close()
+
 	if err != nil {
 		pkgLogger.Errorf("Error carrying out the query %s ", query)
 		return nil, err
@@ -71,6 +71,7 @@ func (asyncWhJob *AsyncJobWhT) getTableNamesBy(sourceid string, destinationid st
 
 		}
 	}
+	rows.Close()
 	pkgLogger.Infof("Got the TableNames as %s\n", tableNames)
 	return tableNames, nil
 }
@@ -143,7 +144,7 @@ func (asyncWhJob *AsyncJobWhT) cleanUpAsyncTable(ctx context.Context) error {
 	sqlStatement := fmt.Sprintf(`UPDATE %s SET status=$1 WHERE status=$2 or status=$3`, warehouseutils.WarehouseAsyncJobTable)
 	pkgLogger.Debugf("WH-Jobs: resetting up async jobs table query %s", sqlStatement)
 	row, err := asyncWhJob.dbHandle.Query(sqlStatement, WhJobWaiting, WhJobExecuting, WhJobFailed)
-	defer row.Close()
+	row.Close()
 	return err
 }
 
@@ -236,7 +237,6 @@ func (asyncWhJob *AsyncJobWhT) getPendingAsyncJobs(ctx context.Context) ([]Async
 	metadata,
 	attempt from %s where (status=$1 OR status=$2) LIMIT $3`, warehouseutils.WarehouseAsyncJobTable)
 	rows, err := asyncWhJob.dbHandle.Query(query, WhJobWaiting, WhJobFailed, MaxBatchSizeToProcess)
-	defer rows.Close()
 	if err != nil {
 		pkgLogger.Errorf("WH-Jobs: Error in getting pending wh async jobs with error %s", err.Error())
 		return asyncjobpayloads, err
@@ -259,6 +259,7 @@ func (asyncWhJob *AsyncJobWhT) getPendingAsyncJobs(ctx context.Context) ([]Async
 		asyncjobpayloads = append(asyncjobpayloads, asyncjobpayload)
 		pkgLogger.Infof("Adding row with Id = %s & attempt no %d", asyncjobpayload.Id, attempt)
 	}
+	rows.Close()
 	return asyncjobpayloads, nil
 }
 
@@ -342,11 +343,11 @@ func (asyncWhJob *AsyncJobWhT) getStatusAsyncJob(ctx context.Context, payload *S
 	sqlStatement := fmt.Sprintf(`SELECT status,error FROM %s WHERE metadata->>'jobrunid'=$1 AND metadata->>'taskrunid'=$2`, warehouseutils.WarehouseAsyncJobTable)
 	pkgLogger.Debugf("Query inside getStatusAsync function is %s", sqlStatement)
 	rows, err := asyncWhJob.dbHandle.Query(sqlStatement, payload.JobRunID, payload.TaskRunID)
-	defer rows.Close()
 	if err != nil {
 		pkgLogger.Errorf("WH-Jobs: Error executing the query %s", err.Error())
 		statusResponse.Status = WhJobFailed
 		statusResponse.Err = err.Error()
+		rows.Close()
 		return
 	}
 
@@ -390,7 +391,7 @@ func (asyncWhJob *AsyncJobWhT) getStatusAsyncJob(ctx context.Context, payload *S
 		}
 
 	}
-
+	rows.Close()
 	pkgLogger.Infof("[WH-Jobs] Async Job with jobrunid: %s, taskrunid: %s is complete", payload.JobRunID, payload.TaskRunID)
 	statusResponse.Status = WhJobSucceeded
 	return

@@ -69,8 +69,8 @@ func TestSourcesMSSQLIntegration(t *testing.T) {
 		},
 
 		SourceWriteKey:        handle.SourceWriteKey,
-		SourceId:              handle.SourceId,
-		DestinationId:         handle.DestinationId,
+		SourceID:              handle.SourceId,
+		DestinationID:         handle.DestinationId,
 		Schema:                handle.Schema,
 		Tables:                handle.Tables,
 		Provider:              warehouseutils.MSSQL,
