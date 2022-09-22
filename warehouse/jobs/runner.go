@@ -232,7 +232,7 @@ func (asyncWhJob *AsyncJobWhT) getPendingAsyncJobs(ctx context.Context) ([]Async
 	tablename,
 	async_job_type,
 	metadata,
-	attempt from %s where (status=$1 OR status=$2) AND attempt<$3 LIMIT $4`, warehouseutils.WarehouseAsyncJobTable)
+	attempt from %s where (status=$1 OR status=$2) LIMIT $4`, warehouseutils.WarehouseAsyncJobTable)
 	rows, err := asyncWhJob.dbHandle.Query(query, WhJobWaiting, WhJobFailed, MaxAttemptsPerJob, MaxBatchSizeToProcess)
 	if err != nil {
 		pkgLogger.Errorf("WH-Jobs: Error in getting pending wh async jobs with error %s", err.Error())
@@ -278,7 +278,7 @@ func (asyncWhJob *AsyncJobWhT) updateAsyncJobs(ctx context.Context, payloads map
 func (asyncWhJob *AsyncJobWhT) updateAsyncJob(ctx context.Context, Id string, status string, countIncrement int, errMessage string) error {
 	pkgLogger.Infof("WH-Jobs: Updating pending wh async jobs to %s", status)
 	sqlStatement := fmt.Sprintf(`UPDATE %s SET status=(CASE
-															WHEN attempt > $1
+															WHEN attempt >= $1
 															THEN $2
 															ELSE  $3
 															END) , 
@@ -286,7 +286,7 @@ func (asyncWhJob *AsyncJobWhT) updateAsyncJob(ctx context.Context, Id string, st
 	var err error
 	for queryretry := 0; queryretry < MaxQueryRetries; queryretry++ {
 		pkgLogger.Debugf("WH-Jobs: updating async jobs table query %s, retry no : %d", sqlStatement, queryretry)
-		rows, err := asyncWhJob.dbHandle.Query(sqlStatement, MaxAttemptsPerJob, WhJobFailed, status, errMessage, countIncrement, Id, WhJobAborted, WhJobSucceeded)
+		rows, err := asyncWhJob.dbHandle.Query(sqlStatement, MaxAttemptsPerJob, WhJobAborted, status, errMessage, countIncrement, Id, WhJobAborted, WhJobSucceeded)
 		defer rows.Close()
 		if err == nil {
 			pkgLogger.Info("Updation successful")
