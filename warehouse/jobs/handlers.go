@@ -56,7 +56,6 @@ func (asyncWhJob *AsyncJobWhT) AddWarehouseJobHandler(w http.ResponseWriter, r *
 	//Add to wh_async_job queue each of the tables
 	for _, th := range tableNames {
 		if !skipTable(th) {
-			// startTime, err := time.Parse("01-02-2006 15:04:05", startJobPayload.StartTime)
 			whmetadata := WhJobsMetaData{
 				JobRunID:  startJobPayload.JobRunID,
 				TaskRunID: startJobPayload.TaskRunID,
