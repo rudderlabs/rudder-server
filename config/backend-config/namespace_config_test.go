@@ -134,7 +134,7 @@ func Test_Namespace_Get(t *testing.T) {
 }
 
 func Test_Namespace_Identity(t *testing.T) {
-	config.Load()
+	config.Reset()
 	logger.Init()
 
 	var (
