@@ -315,7 +315,7 @@ func (gateway *HandleT) dbWriterWorkerProcess() {
 		}
 
 		ctx, cancel := context.WithTimeout(context.Background(), WriteTimeout)
-		err := gateway.jobsDB.WithStoreSafeTx(func(tx jobsdb.StoreSafeTx) error {
+		err := gateway.jobsDB.WithStoreSafeTx(ctx, func(tx jobsdb.StoreSafeTx) error {
 			if gwAllowPartialWriteWithErrors {
 				var err error
 				errorMessagesMap, err = gateway.jobsDB.StoreWithRetryEachInTx(ctx, tx, jobList)

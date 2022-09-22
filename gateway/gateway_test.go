@@ -217,7 +217,7 @@ var _ = Describe("Gateway Enterprise", func() {
 		It("should accept events from normal users", func() {
 			allowedUserEventData := fmt.Sprintf(`{"batch":[{"userId":%q}]}`, NormalUserID)
 
-			c.mockJobsDB.EXPECT().WithStoreSafeTx(gomock.Any()).Times(1).Do(func(f func(tx jobsdb.StoreSafeTx) error) {
+			c.mockJobsDB.EXPECT().WithStoreSafeTx(context.Background(), gomock.Any()).Times(1).Do(func(f func(tx jobsdb.StoreSafeTx) error) {
 				_ = f(jobsdb.EmptyStoreSafeTx())
 			}).Return(nil)
 			mockCall := c.mockJobsDB.EXPECT().StoreWithRetryEachInTx(gomock.Any(), gomock.Any(), gomock.Any()).DoAndReturn(jobsToEmptyErrors).Times(1)
@@ -342,7 +342,7 @@ var _ = Describe("Gateway", func() {
 
 					validBody := createValidBody("custom-property", "custom-value")
 
-					c.mockJobsDB.EXPECT().WithStoreSafeTx(gomock.Any()).Times(1).Do(func(f func(tx jobsdb.StoreSafeTx) error) {
+					c.mockJobsDB.EXPECT().WithStoreSafeTx(context.Background(), gomock.Any()).Times(1).Do(func(f func(tx jobsdb.StoreSafeTx) error) {
 						_ = f(jobsdb.EmptyStoreSafeTx())
 					}).Return(nil)
 					c.mockJobsDB.
@@ -400,7 +400,7 @@ var _ = Describe("Gateway", func() {
 			tFunc = c.asyncHelper.ExpectAndNotifyCallbackWithName("")
 			mockCall.Do(func(interface{}) { tFunc() })
 
-			c.mockJobsDB.EXPECT().WithStoreSafeTx(gomock.Any()).Times(1).Do(func(f func(tx jobsdb.StoreSafeTx) error) {
+			c.mockJobsDB.EXPECT().WithStoreSafeTx(context.Background(), gomock.Any()).Times(1).Do(func(f func(tx jobsdb.StoreSafeTx) error) {
 				_ = f(jobsdb.EmptyStoreSafeTx())
 			}).Return(nil)
 			mockCall = c.mockJobsDB.EXPECT().StoreWithRetryEachInTx(gomock.Any(), gomock.Any(), gomock.Any()).DoAndReturn(jobsToEmptyErrors).Times(1)
@@ -538,7 +538,7 @@ var _ = Describe("Gateway", func() {
 				if handlerType != "import" {
 					validBody := createJSONBody("custom-property", "custom-value")
 
-					c.mockJobsDB.EXPECT().WithStoreSafeTx(gomock.Any()).Times(1).Do(func(f func(tx jobsdb.StoreSafeTx) error) {
+					c.mockJobsDB.EXPECT().WithStoreSafeTx(context.Background(), gomock.Any()).Times(1).Do(func(f func(tx jobsdb.StoreSafeTx) error) {
 						_ = f(jobsdb.EmptyStoreSafeTx())
 					}).Return(nil)
 					c.mockJobsDB.

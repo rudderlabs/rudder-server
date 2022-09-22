@@ -1576,7 +1576,7 @@ func (proc *HandleT) Store(in *storeMessage) {
 		proc.logger.Debug("[Processor] Total jobs written to batch router : ", len(batchDestJobs))
 
 		err := misc.RetryWithNotify(context.Background(), proc.jobsDBCommandTimeout, proc.jobdDBMaxRetries, func(ctx context.Context) error {
-			return proc.batchRouterDB.WithStoreSafeTx(func(tx jobsdb.StoreSafeTx) error {
+			return proc.batchRouterDB.WithStoreSafeTx(ctx, func(tx jobsdb.StoreSafeTx) error {
 				err := proc.batchRouterDB.StoreInTx(ctx, tx, batchDestJobs)
 				if err != nil {
 					return fmt.Errorf("storing batch router jobs: %w", err)
@@ -1615,7 +1615,7 @@ func (proc *HandleT) Store(in *storeMessage) {
 		proc.logger.Debug("[Processor] Total jobs written to router : ", len(destJobs))
 
 		err := misc.RetryWithNotify(context.Background(), proc.jobsDBCommandTimeout, proc.jobdDBMaxRetries, func(ctx context.Context) error {
-			return proc.routerDB.WithStoreSafeTx(func(tx jobsdb.StoreSafeTx) error {
+			return proc.routerDB.WithStoreSafeTx(ctx, func(tx jobsdb.StoreSafeTx) error {
 				err := proc.routerDB.StoreInTx(ctx, tx, destJobs)
 				if err != nil {
 					return fmt.Errorf("storing router jobs: %w", err)

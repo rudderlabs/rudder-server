@@ -27,7 +27,7 @@ func (jd *HandleT) getDsForImport(l lock.DSListLockToken) dataSetT {
 func (jd *HandleT) GetLastJobIDBeforeImport() int64 {
 	jd.assert(jd.migrationState.dsForNewEvents.Index != "", "dsForNewEvents must be setup before calling this")
 	var lastJobIDBeforeNewImports int64
-	jd.dsListLock.WithLock(func(l lock.DSListLockToken) {
+	jd.dsListLock.WithCtxAwareLock(context.Background(), func(l lock.DSListLockToken) {
 		dsList := jd.refreshDSList(l)
 		for idx, dataSet := range dsList {
 			if dataSet.Index == jd.migrationState.dsForNewEvents.Index {
@@ -70,7 +70,7 @@ func (jd *HandleT) StoreJobsAndCheckpoint(jobList []*JobT, migrationCheckpoint M
 		jd.assertError(err)
 		opID = jd.JournalMarkStart(migrateImportOperation, opPayload)
 	} else if jd.checkIfFullDS(jd.migrationState.dsForImport) {
-		jd.dsListLock.WithLock(func(l lock.DSListLockToken) {
+		jd.dsListLock.WithCtxAwareLock(context.Background(), func(l lock.DSListLockToken) {
 			jd.migrationState.dsForImport = newDataSet(jd.tablePrefix, jd.computeNewIdxForInterNodeMigration(l, jd.migrationState.dsForNewEvents))
 			jd.addDS(jd.migrationState.dsForImport)
 			setupCheckpoint, found := jd.GetSetupCheckpoint(ImportOp)
@@ -148,7 +148,7 @@ func (jd *HandleT) GetMaxIDForDs(ds dataSetT) int64 {
 }
 
 func (jd *HandleT) UpdateSequenceNumberOfLatestDS(seqNoForNewDS int64) {
-	jd.dsListLock.WithLock(func(l lock.DSListLockToken) {
+	jd.dsListLock.WithCtxAwareLock(context.Background(), func(l lock.DSListLockToken) {
 		jd.updateSequenceNumberOfLatestDSWithLock(l, seqNoForNewDS)
 	})
 }

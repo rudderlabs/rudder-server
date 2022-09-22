@@ -537,7 +537,7 @@ var _ = Describe("Processor", func() {
 				Expect(string(job.Parameters)).To(Equal(`{"source_id":"source-from-transformer","destination_id":"destination-from-transformer","received_at":"","transform_at":"processor","message_id":"","gateway_job_id":0,"source_batch_id":"","source_task_id":"","source_task_run_id":"","source_job_id":"","source_job_run_id":"","event_name":"","event_type":"","source_definition_id":"","destination_definition_id":"","source_category":"","record_id":null,"workspaceId":""}`))
 			}
 			// One Store call is expected for all events
-			c.mockRouterJobsDB.EXPECT().WithStoreSafeTx(gomock.Any()).Times(1).Do(func(f func(tx jobsdb.StoreSafeTx) error) {
+			c.mockRouterJobsDB.EXPECT().WithStoreSafeTx(context.Background(), gomock.Any()).Times(1).Do(func(f func(tx jobsdb.StoreSafeTx) error) {
 				_ = f(jobsdb.EmptyStoreSafeTx())
 			}).Return(nil)
 
@@ -737,7 +737,7 @@ var _ = Describe("Processor", func() {
 				Expect(string(job.Parameters)).To(Equal(`{"source_id":"source-from-transformer","destination_id":"destination-from-transformer","received_at":"","transform_at":"processor","message_id":"","gateway_job_id":0,"source_batch_id":"","source_task_id":"","source_task_run_id":"","source_job_id":"","source_job_run_id":"","event_name":"","event_type":"","source_definition_id":"","destination_definition_id":"","source_category":"","record_id":null,"workspaceId":""}`))
 			}
 
-			c.mockBatchRouterJobsDB.EXPECT().WithStoreSafeTx(gomock.Any()).Times(1).Do(func(f func(tx jobsdb.StoreSafeTx) error) {
+			c.mockBatchRouterJobsDB.EXPECT().WithStoreSafeTx(context.Background(), gomock.Any()).Times(1).Do(func(f func(tx jobsdb.StoreSafeTx) error) {
 				_ = f(jobsdb.EmptyStoreSafeTx())
 			}).Return(nil)
 			callStoreBatchRouter := c.mockBatchRouterJobsDB.EXPECT().StoreInTx(gomock.Any(), gomock.Any(), gomock.Any()).Times(1).
@@ -842,7 +842,7 @@ var _ = Describe("Processor", func() {
 			// We expect one transform call to destination A, after callUnprocessed.
 			mockTransformer.EXPECT().Transform(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Times(0).After(callUnprocessed)
 			// One Store call is expected for all events
-			c.mockRouterJobsDB.EXPECT().WithStoreSafeTx(gomock.Any()).Do(func(f func(tx jobsdb.StoreSafeTx) error) {
+			c.mockRouterJobsDB.EXPECT().WithStoreSafeTx(context.Background(), gomock.Any()).Do(func(f func(tx jobsdb.StoreSafeTx) error) {
 				_ = f(jobsdb.EmptyStoreSafeTx())
 			}).Return(nil).Times(1)
 			callStoreRouter := c.mockRouterJobsDB.EXPECT().StoreInTx(gomock.Any(), gomock.Any(), gomock.Len(2)).Times(1)

@@ -1,6 +1,7 @@
 package jobsdb
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"fmt"
@@ -208,7 +209,7 @@ func (jd *HandleT) findDsFromSetupCheckpoint(migrationType MigrationOp) (dataSet
 
 func (jd *HandleT) createSetupCheckpointAndGetDs(migrationType MigrationOp) dataSetT {
 	var ds dataSetT
-	jd.dsListLock.WithLock(func(l lock.DSListLockToken) {
+	jd.dsListLock.WithCtxAwareLock(context.Background(), func(l lock.DSListLockToken) {
 		dsList := jd.refreshDSList(l)
 		checkpoint := NewSetupCheckpointEvent(migrationType, misc.GetNodeID())
 

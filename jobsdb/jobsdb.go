@@ -199,7 +199,7 @@ type JobsDB interface {
 
 	// WithStoreSafeTx prepares a store-safe environment and then starts a transaction
 	// that can be used by the provided function.
-	WithStoreSafeTx(func(tx StoreSafeTx) error) error
+	WithStoreSafeTx(context.Context, func(tx StoreSafeTx) error) error
 
 	// Store stores the provided jobs to the database
 	Store(ctx context.Context, jobList []*JobT) error
@@ -927,7 +927,7 @@ func (jd *HandleT) Start() error {
 }
 
 func (jd *HandleT) setUpForOwnerType(ctx context.Context, ownerType OwnerType, clearAll bool) {
-	jd.dsListLock.WithLock(func(l lock.DSListLockToken) {
+	jd.dsListLock.WithCtxAwareLock(ctx, func(l lock.DSListLockToken) {
 		switch ownerType {
 		case Read:
 			jd.readerSetup(ctx, l)
@@ -2036,13 +2036,13 @@ func (jd *HandleT) copyJobsDS(tx *sql.Tx, ds dataSetT, jobList []*JobT) error { 
 	return jd.copyJobsDSInTx(tx, ds, jobList)
 }
 
-func (jd *HandleT) WithStoreSafeTx(f func(tx StoreSafeTx) error) error {
-	return jd.inStoreSafeCtx(func() error {
+func (jd *HandleT) WithStoreSafeTx(ctx context.Context, f func(tx StoreSafeTx) error) error {
+	return jd.inStoreSafeCtx(ctx, func() error {
 		return jd.WithTx(func(tx *sql.Tx) error { return f(&storeSafeTx{tx: tx, identity: jd.tablePrefix}) })
 	})
 }
 
-func (jd *HandleT) inStoreSafeCtx(f func() error) error {
+func (jd *HandleT) inStoreSafeCtx(ctx context.Context, f func() error) error {
 	// Only locks the list
 	op := func() error {
 		jd.dsListLock.RLock()
@@ -2053,7 +2053,7 @@ func (jd *HandleT) inStoreSafeCtx(f func() error) error {
 		err := op()
 		if err != nil && errors.Is(err, errStaleDsList) {
 			jd.logger.Errorf("[JobsDB] :: Store failed: %v. Retrying after refreshing DS cache", errStaleDsList)
-			jd.dsListLock.WithLock(func(l lock.DSListLockToken) {
+			jd.dsListLock.WithCtxAwareLock(ctx, func(l lock.DSListLockToken) {
 				_ = jd.refreshDSList(l)
 			})
 		} else {
@@ -3119,41 +3119,48 @@ func (jd *HandleT) addNewDSLoop(ctx context.Context) {
 
 			// We acquire the list lock only after we have acquired the advisory lock.
 			// We will release the list lock after the transaction ends, that's why we need to use an async lock
-			dsListLock, releaseDsListLock = jd.dsListLock.AsyncLock()
-			// refresh ds list
-			var dsList []dataSetT
-			var nextDSIdx string
-			// make sure we are operating on the latest version of the list
-			dsList = getDSList(jd, tx, jd.tablePrefix)
-			latestDS := dsList[len(dsList)-1]
-			full, err := jd.checkIfFullDSInTx(tx, latestDS)
-			if err != nil {
-				return fmt.Errorf("error while checking if DS is full: %w", err)
-			}
-			// checkIfFullDS is true for last DS in the list
-			if full {
-				if _, err = tx.Exec(fmt.Sprintf(`LOCK TABLE %q IN EXCLUSIVE MODE;`, latestDS.JobTable)); err != nil {
-					return fmt.Errorf("error locking table %s: %w", latestDS.JobTable, err)
+			childCtx, cancel := context.WithTimeout(ctx, time.Minute)
+			defer cancel()
+			dsListLock, releaseDsListLock = jd.dsListLock.AsyncLockWithCtx(childCtx)
+			if dsListLock != nil {
+				// refresh ds list
+				var dsList []dataSetT
+				var nextDSIdx string
+				// make sure we are operating on the latest version of the list
+				dsList = getDSList(jd, tx, jd.tablePrefix)
+				latestDS := dsList[len(dsList)-1]
+				full, err := jd.checkIfFullDSInTx(tx, latestDS)
+				if err != nil {
+					return fmt.Errorf("error while checking if DS is full: %w", err)
 				}
+				// checkIfFullDS is true for last DS in the list
+				if full {
+					if _, err = tx.Exec(fmt.Sprintf(`LOCK TABLE %q IN EXCLUSIVE MODE;`, latestDS.JobTable)); err != nil {
+						return fmt.Errorf("error locking table %s: %w", latestDS.JobTable, err)
+					}
 
-				nextDSIdx = jd.doComputeNewIdxForAppend(dsList)
-				jd.logger.Infof("[[ %s : addNewDSLoop ]]: NewDS", jd.tablePrefix)
-				if err = jd.addNewDSInTx(tx, dsListLock, dsList, newDataSet(jd.tablePrefix, nextDSIdx)); err != nil {
-					return fmt.Errorf("error adding new DS: %w", err)
-				}
+					nextDSIdx = jd.doComputeNewIdxForAppend(dsList)
+					jd.logger.Infof("[[ %s : addNewDSLoop ]]: NewDS", jd.tablePrefix)
+					if err = jd.addNewDSInTx(tx, dsListLock, dsList, newDataSet(jd.tablePrefix, nextDSIdx)); err != nil {
+						return fmt.Errorf("error adding new DS: %w", err)
+					}
 
-				// previous DS should become read only
-				if err = setReadonlyDsInTx(tx, latestDS); err != nil {
-					return fmt.Errorf("error making dataset read only: %w", err)
+					// previous DS should become read only
+					if err = setReadonlyDsInTx(tx, latestDS); err != nil {
+						return fmt.Errorf("error making dataset read only: %w", err)
+					}
 				}
 			}
+
 			return nil
 		})
 		jd.assertError(err)
 
 		// to get the updated DS list in the cache after createDS transaction has been committed.
-		jd.refreshDSRangeList(dsListLock)
-		releaseDsListLock <- dsListLock
+		if dsListLock != nil {
+			jd.refreshDSRangeList(dsListLock)
+			releaseDsListLock <- dsListLock
+		}
 	}
 }
 
@@ -3177,7 +3184,7 @@ func (jd *HandleT) refreshDSListLoop(ctx context.Context) {
 		}
 
 		jd.logger.Debugf("[[ %s : refreshDSListLoop ]]: Start", jd.tablePrefix)
-		jd.dsListLock.WithLock(func(l lock.DSListLockToken) {
+		jd.dsListLock.WithCtxAwareLock(ctx, func(l lock.DSListLockToken) {
 			jd.refreshDSRangeList(l)
 		})
 	}
@@ -3268,7 +3275,9 @@ func (jd *HandleT) migrateDSLoop(ctx context.Context) {
 		if len(migrateFrom) > 0 {
 			if liveJobCount > 0 {
 				var migrateTo dataSetT
-				jd.dsListLock.WithLock(func(l lock.DSListLockToken) {
+				childCtx, cancel := context.WithTimeout(ctx, time.Minute*5)
+				defer cancel()
+				if ok := jd.dsListLock.WithCtxAwareLock(childCtx, func(l lock.DSListLockToken) {
 					migrateTo = newDataSet(jd.tablePrefix, jd.computeNewIdxForIntraNodeMigration(l, insertBeforeDS))
 
 					jd.logger.Infof("[[ %s : migrateDSLoop ]]: Migrate from: %v", jd.tablePrefix, migrateFrom)
@@ -3283,7 +3292,10 @@ func (jd *HandleT) migrateDSLoop(ctx context.Context) {
 
 					jd.addDS(migrateTo)
 					jd.inProgressMigrationTargetDS = &migrateTo
-				})
+				}); !ok {
+					jd.logger.Errorf("[[ %s : migrateDSLoop ]]: Timeout while acquiring lock to add new DS", jd.tablePrefix)
+					continue
+				}
 
 				totalJobsMigrated := 0
 				for _, ds := range migrateFrom {
@@ -3323,7 +3335,6 @@ func (jd *HandleT) migrateDSLoop(ctx context.Context) {
 				return err
 			})
 			jd.assertError(err)
-
 			jd.dsListLock.WithLock(func(l lock.DSListLockToken) {
 				jd.assertError(jd.postMigrateHandleDS(l, migrateFrom))
 			})
@@ -3345,6 +3356,10 @@ func (jd *HandleT) backupDSLoop(ctx context.Context) {
 		case <-time.After(sleepMultiplier * backupCheckSleepDuration):
 			if !jd.BackupSettings.isBackupEnabled() {
 				jd.logger.Debugf("backupDSLoop backup disabled %s", jd.tablePrefix)
+				continue
+			}
+			if !isBackupConfigured() {
+				jd.logger.Errorf("backupDSLoop backup not configured %s", jd.tablePrefix)
 				continue
 			}
 		case <-ctx.Done():
@@ -4208,7 +4223,7 @@ func (jd *HandleT) doUpdateJobStatusInTx(ctx context.Context, tx *sql.Tx, status
 // Store stores new jobs to the jobsdb.
 // If enableWriterQueue is true, this goes through writer worker pool.
 func (jd *HandleT) Store(ctx context.Context, jobList []*JobT) error {
-	return jd.WithStoreSafeTx(func(tx StoreSafeTx) error {
+	return jd.WithStoreSafeTx(ctx, func(tx StoreSafeTx) error {
 		return jd.StoreInTx(ctx, tx, jobList)
 	})
 }
@@ -4227,14 +4242,14 @@ func (jd *HandleT) StoreInTx(ctx context.Context, tx StoreSafeTx, jobList []*Job
 	}
 
 	if tx.storeSafeTxIdentifier() != jd.Identifier() {
-		return jd.inStoreSafeCtx(storeCmd)
+		return jd.inStoreSafeCtx(ctx, storeCmd)
 	}
 	return storeCmd()
 }
 
 func (jd *HandleT) StoreWithRetryEach(ctx context.Context, jobList []*JobT) map[uuid.UUID]string {
 	var res map[uuid.UUID]string
-	_ = jd.WithStoreSafeTx(func(tx StoreSafeTx) error {
+	_ = jd.WithStoreSafeTx(ctx, func(tx StoreSafeTx) error {
 		var err error
 		res, err = jd.StoreWithRetryEachInTx(ctx, tx, jobList)
 		return err
@@ -4256,7 +4271,7 @@ func (jd *HandleT) StoreWithRetryEachInTx(ctx context.Context, tx StoreSafeTx, j
 	}
 
 	if tx.storeSafeTxIdentifier() != jd.Identifier() {
-		_ = jd.inStoreSafeCtx(storeCmd)
+		_ = jd.inStoreSafeCtx(ctx, storeCmd)
 		return res, err
 	}
 	_ = storeCmd()
