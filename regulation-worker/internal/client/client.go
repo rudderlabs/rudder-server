@@ -164,12 +164,15 @@ func prepURL(url string, params ...string) string {
 }
 
 func mapPayloadToJob(wjs jobSchema, workspaceID string) (model.Job, error) {
-	usrAttribute := make([]model.UserAttribute, len(wjs.UserAttributes))
-	for i := 0; i < len(wjs.UserAttributes); i++ {
-		usrAttribute[i] = model.UserAttribute{
-			UserID: wjs.UserAttributes[i].UserID,
-			Phone:  wjs.UserAttributes[i].Phone,
-			Email:  wjs.UserAttributes[i].Email,
+	usrAttribute := make([]model.User, len(wjs.UserAttributes))
+	for i, usrAttr := range wjs.UserAttributes {
+		usrAttribute[i].Attributes = make(map[string]string)
+		for key, value := range usrAttr {
+			if key == "userId" {
+				usrAttribute[i].ID = value
+			} else {
+				usrAttribute[i].Attributes[key] = value
+			}
 		}
 	}
 	jobID, err := strconv.Atoi(wjs.JobID)
@@ -179,10 +182,10 @@ func mapPayloadToJob(wjs jobSchema, workspaceID string) (model.Job, error) {
 	}
 
 	return model.Job{
-		ID:             jobID,
-		WorkspaceID:    workspaceID,
-		DestinationID:  wjs.DestinationID,
-		Status:         model.JobStatusRunning,
-		UserAttributes: usrAttribute,
+		ID:            jobID,
+		WorkspaceID:   workspaceID,
+		DestinationID: wjs.DestinationID,
+		Status:        model.JobStatusRunning,
+		Users:         usrAttribute,
 	}, nil
 }
