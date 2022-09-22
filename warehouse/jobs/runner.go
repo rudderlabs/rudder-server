@@ -45,6 +45,7 @@ func (asyncWhJob *AsyncJobWhT) getTableNamesBy(sourceid string, destinationid st
 		pkgLogger.Errorf("Error carrying out the query %s ", query)
 		return nil, err
 	}
+	defer rows.Close()
 	for rows.Next() {
 		var uploadId string
 		err := rows.Scan(&uploadId)
@@ -71,7 +72,6 @@ func (asyncWhJob *AsyncJobWhT) getTableNamesBy(sourceid string, destinationid st
 
 		}
 	}
-	rows.Close()
 	pkgLogger.Infof("Got the TableNames as %s\n", tableNames)
 	return tableNames, nil
 }
@@ -153,7 +153,7 @@ func (asyncWhJob *AsyncJobWhT) cleanUpAsyncTable(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	row.Close()
+	defer row.Close()
 	return nil
 }
 
@@ -254,6 +254,7 @@ func (asyncWhJob *AsyncJobWhT) getPendingAsyncJobs(ctx context.Context) ([]Async
 		pkgLogger.Errorf("WH-Jobs: Error in getting pending wh async jobs with error %s", err.Error())
 		return asyncjobpayloads, err
 	}
+	defer rows.Close()
 	for rows.Next() {
 		var asyncjobpayload AsyncJobPayloadT
 		err = rows.Scan(
@@ -272,7 +273,6 @@ func (asyncWhJob *AsyncJobWhT) getPendingAsyncJobs(ctx context.Context) ([]Async
 		asyncjobpayloads = append(asyncjobpayloads, asyncjobpayload)
 		pkgLogger.Infof("Adding row with Id = %s & attempt no %d", asyncjobpayload.Id, attempt)
 	}
-	rows.Close()
 	return asyncjobpayloads, nil
 }
 
@@ -310,11 +310,8 @@ func (asyncWhJob *AsyncJobWhT) updateAsyncJobStatus(ctx context.Context, Id stri
 	for queryretry := 0; queryretry < MaxQueryRetries; queryretry++ {
 		pkgLogger.Debugf("WH-Jobs: updating async jobs table query %s, retry no : %d", sqlStatement, queryretry)
 		rows, err = asyncWhJob.dbHandle.Query(sqlStatement, MaxAttemptsPerJob, WhJobAborted, status, errMessage, Id, WhJobAborted, WhJobSucceeded)
-		rowCloseErr := rows.Close()
-		if rowCloseErr != nil {
-			pkgLogger.Errorf("Wh-jobs: error close the rows connection")
-		}
 		if err == nil {
+			defer rows.Close()
 			pkgLogger.Info("Updation successful")
 			pkgLogger.Debugf("query: %s successfully executed", sqlStatement)
 			if status == WhJobFailed {
@@ -341,11 +338,8 @@ func (asyncWhJob *AsyncJobWhT) updateAsyncJobAttempt(ctx context.Context, Id str
 	for queryretry := 0; queryretry < MaxQueryRetries; queryretry++ {
 		pkgLogger.Debugf("WH-Jobs: updating async jobs table query %s, retry no : %d", sqlStatement, queryretry)
 		rows, err = asyncWhJob.dbHandle.Query(sqlStatement, Id, WhJobAborted, WhJobSucceeded)
-		rowCloseErr := rows.Close()
-		if rowCloseErr != nil {
-			pkgLogger.Errorf("Wh-jobs: error close the rows connection")
-		}
 		if err == nil {
+			defer rows.Close()
 			pkgLogger.Info("Updation successful")
 			pkgLogger.Debugf("query: %s successfully executed", sqlStatement)
 			return err
@@ -368,14 +362,14 @@ func (asyncWhJob *AsyncJobWhT) getStatusAsyncJob(ctx context.Context, payload *S
 	sqlStatement := fmt.Sprintf(`SELECT status,error FROM %s WHERE metadata->>'jobrunid'=$1 AND metadata->>'taskrunid'=$2`, warehouseutils.WarehouseAsyncJobTable)
 	pkgLogger.Debugf("Query inside getStatusAsync function is %s", sqlStatement)
 	rows, err := asyncWhJob.dbHandle.Query(sqlStatement, payload.JobRunID, payload.TaskRunID)
-	defer rows.Close()
+
 	if err != nil {
 		pkgLogger.Errorf("WH-Jobs: Error executing the query %s", err.Error())
 		statusResponse.Status = WhJobFailed
 		statusResponse.Err = err.Error()
 		return
 	}
-
+	defer rows.Close()
 	for rows.Next() {
 		var status string
 		var errMessage sql.NullString
