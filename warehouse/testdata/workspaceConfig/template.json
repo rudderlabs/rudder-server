@@ -1423,10 +1423,7 @@
           "isProcessorEnabled": true
         }
       ],
-      "dgSourceTrackingPlanConfig": null,
-      "permissions": {
-        "isLocked": false
-      }
+      "dgSourceTrackingPlanConfig": null
     },
     {
       "config": {
@@ -1569,10 +1566,7 @@
           "isProcessorEnabled": true
         }
       ],
-      "dgSourceTrackingPlanConfig": null,
-      "permissions": {
-        "isLocked": false
-      }
+      "dgSourceTrackingPlanConfig": null
     }
 
   ],
