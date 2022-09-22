@@ -116,17 +116,17 @@ func (asyncWhJob *AsyncJobWhT) InitAsyncJobRunner() error {
 	for retry := 0; retry < MaxCleanUpRetries; retry++ {
 		err = asyncWhJob.cleanUpAsyncTable(ctx)
 		if err == nil {
+			pkgLogger.Info("WH-Jobs: successfully cleanedup asynctable with error")
 			asyncWhJob.enabled = true
 			break
 		}
-		pkgLogger.Infof("WH-Jobs: Cleanup asynctable failed with error %s", err.Error())
 	}
 
 	if err != nil {
+		pkgLogger.Errorf("WH-Jobs: unable to cleanup asynctable with error %s", err.Error())
 		return err
 	}
 	if asyncWhJob.enabled {
-		//How does threading policy work here? Should we have one thread per customer/namespace?
 		g.Go(func() error {
 			return asyncWhJob.startAsyncJobRunner(ctx)
 		})
@@ -140,7 +140,7 @@ func (asyncWhJob *AsyncJobWhT) InitAsyncJobRunner() error {
 func (asyncWhJob *AsyncJobWhT) cleanUpAsyncTable(ctx context.Context) error {
 	pkgLogger.Info("WH-Jobs: Cleaning up the zombie asyncjobs")
 	sqlStatement := fmt.Sprintf(`UPDATE %s SET status=$1 WHERE status=$2`, warehouseutils.WarehouseAsyncJobTable)
-	pkgLogger.Infof("WH-Jobs: resetting up async jobs table query %s", sqlStatement)
+	pkgLogger.Debugf("WH-Jobs: resetting up async jobs table query %s", sqlStatement)
 	_, err := asyncWhJob.dbHandle.Query(sqlStatement, WhJobWaiting, WhJobExecuting)
 	return err
 }
@@ -167,6 +167,7 @@ func (asyncWhJob *AsyncJobWhT) startAsyncJobRunner(ctx context.Context) error {
 
 		asyncjobpayloads, err := asyncWhJob.getPendingAsyncJobs(ctx)
 		if err != nil {
+			pkgLogger.Errorf("WH-Jobs: unable to get pending async jobs with error %s", err.Error())
 			continue
 		}
 
@@ -188,6 +189,7 @@ func (asyncWhJob *AsyncJobWhT) startAsyncJobRunner(ctx context.Context) error {
 			schema := warehouseutils.SchemaT{}
 			ch, err := asyncWhJob.pgnotifier.Publish(messagePayload, &schema, 100)
 			if err != nil {
+				pkgLogger.Errorf("WH-Jobs: unable to get publish async jobs to pgnotifier. Task failed with error %s", err.Error())
 				asyncJobStatusMap := convertToPayloadStatusStructWithSingleStatus(asyncjobpayloads, WhJobFailed, err, 1)
 				asyncWhJob.updateAsyncJobs(ctx, asyncJobStatusMap)
 				continue

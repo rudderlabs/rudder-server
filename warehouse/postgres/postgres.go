@@ -149,7 +149,6 @@ func loadConfig() {
 	config.RegisterDurationConfigVariable(30, &txnRollbackTimeout, true, time.Second, "Warehouse.postgres.txnRollbackTimeout")
 	config.RegisterBoolConfigVariable(false, &enableSQLStatementExecutionPlan, true, "Warehouse.postgres.enableSQLStatementExecutionPlan")
 	enableDeleteByJobs = config.GetBool("Warehouse.postgres.enableDeleteByJobs", false)
-	fmt.Printf("Key for enabledDeleteByJObs is %t\n", enableDeleteByJobs)
 }
 
 func (pg *HandleT) getConnectionCredentials() CredentialsT {

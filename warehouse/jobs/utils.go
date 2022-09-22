@@ -34,15 +34,6 @@ func getMessagePayloadsFromAsyncJobPayloads(asyncjobs []AsyncJobPayloadT) ([]pgn
 	return messages, nil
 }
 
-func getSinglePayloadFromBatchPayloadByTableName(asyncJobs []AsyncJobPayloadT, tableName string) int {
-	for ind, asyncjob := range asyncJobs {
-		if asyncjob.TableName == tableName {
-			return ind
-		}
-	}
-	return -1
-}
-
 func validatePayload(payload StartJobReqPayload) bool {
 	if payload.SourceID == "" || payload.JobRunID == "" || payload.TaskRunID == "" || payload.DestinationID == "" {
 		return false
