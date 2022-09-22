@@ -599,7 +599,7 @@ type AsyncJobRunResult struct {
 	Id     string
 }
 
-func runAsyncJob(asyncjob jobs.AsyncJobPayloadT, workerIndex int) (AsyncJobRunResult, error) {
+func runAsyncJob(asyncjob jobs.AsyncJobPayloadT, _ int) (AsyncJobRunResult, error) {
 	warehouse, err := getDestinationFromConnectionMap(asyncjob.DestinationID, asyncjob.SourceID)
 	if err != nil {
 		return AsyncJobRunResult{Id: asyncjob.Id, Result: false}, err

@@ -239,7 +239,7 @@ func (ms *HandleT) DownloadLoadFiles(tableName string) ([]string, error) {
 }
 
 func (ms *HandleT) DeleteBy(tableNames []string, params warehouseutils.DeleteByParams) (err error) {
-	pkgLogger.Infof("MS: Cleaning up the followng tables in mysql for MS:%s : %v", tableNames)
+	pkgLogger.Infof("MS: Cleaning up the followng tables in mysql for MS: %v", tableNames)
 	for _, tb := range tableNames {
 		sqlStatement := fmt.Sprintf(`DELETE FROM "%[1]s"."%[2]s" WHERE 
 		context_sources_job_run_id <> @jobrunid AND
