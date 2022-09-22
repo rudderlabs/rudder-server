@@ -48,14 +48,7 @@ func Test_MustGet(t *testing.T) {
 
 	tc.Set("int", 0)
 	require.Equal(t, 0, tc.MustGetInt("int"), "it should return the key value")
-	func() {
-		defer func() {
-			if r := recover(); r == nil {
-				t.Errorf("The code did not panic")
-			}
-		}()
-		tc.MustGetInt("other")
-	}()
+	require.Panics(t, func() { tc.MustGetInt("other") })
 }
 
 func Test_Register_Existing_and_Default(t *testing.T) {
@@ -132,6 +125,15 @@ func TestStatic_checkAndHotReloadConfig(t *testing.T) {
 	varptr2 := configVar2.value.(*string)
 	require.Equal(t, *varptr1, "value_changed")
 	require.Equal(t, *varptr2, "value_changed")
+}
+
+func TestConfigKeyToEnv(t *testing.T) {
+	expected := "RSERVER_KEY_VAR1_VAR2"
+	require.Equal(t, expected, ConfigKeyToEnv("Key.Var1.Var2"))
+	require.Equal(t, expected, ConfigKeyToEnv("key.var1.var2"))
+	require.Equal(t, expected, ConfigKeyToEnv("KeyVar1Var2"))
+	require.Equal(t, expected, ConfigKeyToEnv("RSERVER_KEY_VAR1_VAR2"))
+	require.Equal(t, "KEY_VAR1_VAR2", ConfigKeyToEnv("KEY_VAR1_VAR2"))
 }
 
 func TestGetEnvThroughViper(t *testing.T) {
@@ -212,12 +214,6 @@ func Test_Set_CaseInsensitive(t *testing.T) {
 	tc := New()
 	tc.Set("sTrIng.One", "string")
 	require.Equal(t, "string", tc.GetString("String.one", "default"), "it should return the key value")
-}
-
-func Test_ConfigKeyToEnvRudder(t *testing.T) {
-	require.Equal(t, "RSERVER_KEYVAL", ConfigKeyToEnv("keyval"))
-	require.Equal(t, "RSERVER_KEY_VAL", ConfigKeyToEnv("keyVal"))
-	require.Equal(t, "RSERVER_KEY_VAL", ConfigKeyToEnv("Key.val"))
 }
 
 func Test_Misc(t *testing.T) {
