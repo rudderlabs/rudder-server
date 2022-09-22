@@ -13,6 +13,7 @@ import (
 	"github.com/cenkalti/backoff"
 
 	"github.com/rudderlabs/rudder-server/config"
+	"github.com/rudderlabs/rudder-server/services/controlplane/identity"
 	"github.com/rudderlabs/rudder-server/utils/types"
 )
 
@@ -175,4 +176,11 @@ func (wc *singleWorkspaceConfig) makeHTTPRequest(ctx context.Context, url string
 	}
 
 	return respBody, nil
+}
+
+func (wc *singleWorkspaceConfig) Identity() identity.Identifier {
+	return &identity.Workspace{
+		WorkspaceID:    wc.workspaceID,
+		WorkspaceToken: wc.Token,
+	}
 }

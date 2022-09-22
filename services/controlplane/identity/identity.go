@@ -1,0 +1,59 @@
+package identity
+
+// Identifier abstracts how data-plane can be identified to the control-plane.
+//
+//	Including both a unique identifier and the authentication method.
+type Identifier interface {
+	ID() string
+	BasicAuth() (string, string)
+}
+
+var (
+	_ Identifier = (*Namespace)(nil)
+	_ Identifier = (*Workspace)(nil)
+	_ Identifier = (*NOOP)(nil)
+)
+
+// Workspace identifier represents a single customer's workspace.
+// Less flexible than a namespace, it does not allow for multitenant.
+type Workspace struct {
+	WorkspaceID    string
+	WorkspaceToken string
+}
+
+func (w *Workspace) ID() string {
+	return w.WorkspaceID
+}
+
+func (w *Workspace) BasicAuth() (string, string) {
+	return w.WorkspaceToken, ""
+}
+
+// Namespace identifier represents a group of workspaces that share a common resource.
+//
+//	Namespace is used but is not limited to implemented multi-tenancy.
+//	It also allows for more complex entity relations.
+type Namespace struct {
+	Namespace    string
+	HostedSecret string
+}
+
+func (n *Namespace) ID() string {
+	return n.Namespace
+}
+
+func (n *Namespace) BasicAuth() (string, string) {
+	return n.HostedSecret, ""
+}
+
+// NOOP is a no-op implementation of the Identifier interface.
+// Used only for testing purposes.
+type NOOP struct{}
+
+func (*NOOP) ID() string {
+	return ""
+}
+
+func (*NOOP) BasicAuth() (string, string) {
+	return "", ""
+}

@@ -10,6 +10,8 @@ import (
 	"math"
 	"strings"
 	"time"
+
+	"github.com/rudderlabs/rudder-server/services/stats"
 )
 
 type MultiTenantHandleT struct {
@@ -109,7 +111,12 @@ func (mj *MultiTenantHandleT) GetAllJobs(ctx context.Context, workspaceCount map
 
 	mj.unionQueryTime.SendTiming(time.Since(start))
 
-	mj.tablesQueriedStat.Gauge(tablesQueried)
+	unionQueryTablesQueriedStat := stats.NewTaggedStat("tables_queried_gauge", stats.GaugeType, stats.Tags{
+		"state":     "nonterminal",
+		"query":     "union",
+		"customVal": mj.tablePrefix,
+	})
+	unionQueryTablesQueriedStat.Gauge(tablesQueried)
 
 	return outJobs, nil
 }

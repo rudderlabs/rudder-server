@@ -10,6 +10,7 @@ import (
 
 	gomock "github.com/golang/mock/gomock"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
+	identity "github.com/rudderlabs/rudder-server/services/controlplane/identity"
 	pubsub "github.com/rudderlabs/rudder-server/utils/pubsub"
 )
 
@@ -105,6 +106,20 @@ func (m *MockBackendConfig) GetWorkspaceLibrariesForWorkspaceID(arg0 string) bac
 func (mr *MockBackendConfigMockRecorder) GetWorkspaceLibrariesForWorkspaceID(arg0 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetWorkspaceLibrariesForWorkspaceID", reflect.TypeOf((*MockBackendConfig)(nil).GetWorkspaceLibrariesForWorkspaceID), arg0)
+}
+
+// Identity mocks base method.
+func (m *MockBackendConfig) Identity() identity.Identifier {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "Identity")
+	ret0, _ := ret[0].(identity.Identifier)
+	return ret0
+}
+
+// Identity indicates an expected call of Identity.
+func (mr *MockBackendConfigMockRecorder) Identity() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Identity", reflect.TypeOf((*MockBackendConfig)(nil).Identity))
 }
 
 // SetUp mocks base method.
