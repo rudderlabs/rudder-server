@@ -378,7 +378,7 @@ func (ch *HandleT) DownloadLoadFiles(tableName string) ([]string, error) {
 	return fileNames, dErr
 }
 
-func (*HandleT) DeleteBy(tableNames []string, params warehouseutils.DeleteByParams) error {
+func (*HandleT) DeleteBy([]string, warehouseutils.DeleteByParams) error {
 	return fmt.Errorf(warehouseutils.NotImplementedErrorCode)
 }
 

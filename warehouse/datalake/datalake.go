@@ -68,7 +68,7 @@ func (wh *HandleT) LoadTable(tableName string) error {
 	return nil
 }
 
-func (*HandleT) DeleteBy(tableNames []string, params warehouseutils.DeleteByParams) (err error) {
+func (*HandleT) DeleteBy([]string, warehouseutils.DeleteByParams) (err error) {
 	return fmt.Errorf(warehouseutils.NotImplementedErrorCode)
 }
 

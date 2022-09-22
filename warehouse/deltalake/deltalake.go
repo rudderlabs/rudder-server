@@ -265,7 +265,7 @@ func Connect(cred *databricks.CredentialsT, connectTimeout time.Duration) (dbHan
 	return
 }
 
-func (*HandleT) DeleteBy(tableNames []string, params warehouseutils.DeleteByParams) error {
+func (*HandleT) DeleteBy([]string, warehouseutils.DeleteByParams) error {
 	return fmt.Errorf(warehouseutils.NotImplementedErrorCode)
 }
 
