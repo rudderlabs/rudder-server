@@ -19,13 +19,10 @@ import (
 )
 
 type TestHandle struct {
-	DB             *sql.DB
-	WriteKey       string
-	SourceWriteKey string
-	SourceId       string
-	DestinationId  string
-	Schema         string
-	Tables         []string
+	DB       *sql.DB
+	WriteKey string
+	Schema   string
+	Tables   []string
 }
 
 var handle *TestHandle
@@ -58,10 +55,12 @@ func TestMSSQLIntegration(t *testing.T) {
 			SQL:  handle.DB,
 			Type: client.SQLClient,
 		},
-		WriteKey: handle.WriteKey,
-		Schema:   handle.Schema,
-		Tables:   handle.Tables,
-		Provider: warehouseutils.MSSQL,
+		WriteKey:      handle.WriteKey,
+		Schema:        handle.Schema,
+		Tables:        handle.Tables,
+		Provider:      warehouseutils.MSSQL,
+		SourceID:      "1wRvLmEnMOONMbdspwaZhyCqXRE",
+		DestinationID: "21Ezdq58khNMj07VJB0VJmxLvgu",
 	}
 
 	// Scenario 1

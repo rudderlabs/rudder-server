@@ -22,13 +22,10 @@ import (
 )
 
 type TestHandle struct {
-	DB             *sql.DB
-	WriteKey       string
-	Schema         string
-	Tables         []string
-	SourceId       string
-	DestinationId  string
-	SourceWriteKey string
+	DB       *sql.DB
+	WriteKey string
+	Schema   string
+	Tables   []string
 }
 
 var handle *TestHandle

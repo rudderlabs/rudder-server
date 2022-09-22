@@ -54,10 +54,12 @@ func TestPostgresIntegration(t *testing.T) {
 			SQL:  handle.DB,
 			Type: client.SQLClient,
 		},
-		WriteKey: handle.WriteKey,
-		Schema:   handle.Schema,
-		Tables:   handle.Tables,
-		Provider: warehouseutils.POSTGRES,
+		WriteKey:      handle.WriteKey,
+		Schema:        handle.Schema,
+		Tables:        handle.Tables,
+		Provider:      warehouseutils.POSTGRES,
+		SourceID:      "1wRvLmEnMOOxSQD9pwaZhyCqXRE",
+		DestinationID: "216ZvbavR21Um6eGKQCagZHqLGZ",
 	}
 
 	// Scenario 1
