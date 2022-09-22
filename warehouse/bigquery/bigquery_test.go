@@ -26,13 +26,10 @@ import (
 )
 
 type TestHandle struct {
-	DB             *bigquery.Client
-	WriteKey       string
-	Schema         string
-	Tables         []string
-	SourceId       string
-	DestinationId  string
-	SourceWriteKey string
+	DB       *bigquery.Client
+	WriteKey string
+	Schema   string
+	Tables   []string
 }
 
 var handle *TestHandle
