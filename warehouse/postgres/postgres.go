@@ -439,7 +439,6 @@ func (pq *HandleT) DeleteBy(tableNames []string, params warehouseutils.DeleteByP
 		pkgLogger.Infof("PG: Deleting rows in table in postgres for PG:%s", pq.Warehouse.Destination.ID)
 		pkgLogger.Debugf("PG: Executing the sqlstatement  %v", sqlStatement)
 		if enableDeleteByJobs {
-			pkgLogger.Infof("Hey ITS ENABLED")
 			_, err = pq.Db.Exec(sqlStatement,
 				params.JobRunId,
 				params.TaskRunId,
