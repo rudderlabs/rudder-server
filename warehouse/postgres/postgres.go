@@ -29,6 +29,7 @@ var (
 	skipComputingUserLatestTraits   bool
 	enableSQLStatementExecutionPlan bool
 	txnRollbackTimeout              time.Duration
+	enableDeleteByJobs              bool
 )
 
 const (
@@ -147,6 +148,8 @@ func loadConfig() {
 	config.RegisterBoolConfigVariable(false, &skipComputingUserLatestTraits, true, "Warehouse.postgres.skipComputingUserLatestTraits")
 	config.RegisterDurationConfigVariable(30, &txnRollbackTimeout, true, time.Second, "Warehouse.postgres.txnRollbackTimeout")
 	config.RegisterBoolConfigVariable(false, &enableSQLStatementExecutionPlan, true, "Warehouse.postgres.enableSQLStatementExecutionPlan")
+	enableDeleteByJobs = config.GetBool("Warehouse.postgres.enableDeleteByJobs", false)
+	fmt.Printf("Key for enabledDeleteByJObs is %t\n", enableDeleteByJobs)
 }
 
 func (pg *HandleT) getConnectionCredentials() CredentialsT {
@@ -436,16 +439,19 @@ func (pq *HandleT) DeleteBy(tableNames []string, params warehouseutils.DeleteByP
 		)
 		pkgLogger.Infof("PG: Deleting rows in table in postgres for PG:%s", pq.Warehouse.Destination.ID)
 		pkgLogger.Debugf("PG: Executing the sqlstatement  %v", sqlStatement)
-		// Uncomment below 4 lines when we are ready to launch async job on postgres warehouse
-		_, err = pq.Db.Exec(sqlStatement,
-			params.JobRunId,
-			params.TaskRunId,
-			params.SourceId,
-			params.StartTime)
-		if err != nil {
-			pkgLogger.Errorf("Error %s", err)
-			return err
+		if enableDeleteByJobs {
+			pkgLogger.Infof("Hey ITS ENABLED")
+			_, err = pq.Db.Exec(sqlStatement,
+				params.JobRunId,
+				params.TaskRunId,
+				params.SourceId,
+				params.StartTime)
+			if err != nil {
+				pkgLogger.Errorf("Error %s", err)
+				return err
+			}
 		}
+
 	}
 	return nil
 }

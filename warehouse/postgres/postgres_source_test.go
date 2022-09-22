@@ -9,6 +9,7 @@ import (
 	"github.com/rudderlabs/rudder-server/warehouse/postgres"
 	"github.com/rudderlabs/rudder-server/warehouse/testhelper"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
+	"github.com/stretchr/testify/require"
 	"os"
 	"testing"
 )
@@ -55,6 +56,12 @@ func (t *TestHandle) VerifyConnection() error {
 
 func TestSourcesPostgresIntegration(t *testing.T) {
 	// Setting up the warehouseTest
+	require.NoError(t, testhelper.SetConfig([]warehouseutils.KeyValue{
+		{
+			Key:   "Warehouse.postgres.enableDeleteByJobs",
+			Value: true,
+		},
+	}))
 	warehouseTest := &testhelper.WareHouseTest{
 		Client: &client.Client{
 			SQL:  handle.DB,
@@ -75,11 +82,20 @@ func TestSourcesPostgresIntegration(t *testing.T) {
 	testhelper.SendEvents(t, warehouseTest, sendEventsMap)
 	testhelper.SendEvents(t, warehouseTest, sendEventsMap)
 	testhelper.SendEvents(t, warehouseTest, sendEventsMap)
-	testhelper.SendAsyncRequest(t, warehouseTest)
-
+	warehouseEventsWithoutDeDup := testhelper.EventsCountMap{
+		"google_sheet": 3,
+		"tracks":       1,
+	}
+	testhelper.VerifyEventsInWareHouse(t, warehouseTest, warehouseEventsWithoutDeDup)
 	// Setting up the events map
 	// Checking for Gateway and Batch router events
 	// Checking for the events count for each table
+
+	testhelper.SendEvents(t, warehouseTest, sendEventsMap)
+	testhelper.SendEvents(t, warehouseTest, sendEventsMap)
+	testhelper.SendEvents(t, warehouseTest, sendEventsMap)
+	testhelper.SendAsyncRequest(t, warehouseTest)
+	testhelper.SendAsyncStatusRequest(t, warehouseTest)
 	testhelper.VerifyEventsInWareHouse(t, warehouseTest, testhelper.WarehouseSourceEventsMap())
 
 }

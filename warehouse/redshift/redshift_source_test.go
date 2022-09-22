@@ -95,33 +95,31 @@ func TestSourceRedshiftIntegration(t *testing.T) {
 		SourceId:              handle.SourceId,
 		DestinationId:         handle.DestinationId,
 		LatestSourceRunConfig: testhelper.DefaultSourceRunConfig(),
-		TablesQueryFrequency:  testhelper.LongRunningQueryFrequency,
 		MessageId:             uuid.Must(uuid.NewV4()).String(),
-		UserId:                testhelper.GetUserId(warehouseutils.RS),
 		Provider:              warehouseutils.RS,
 	}
 
+	warehouseTest.UserId = testhelper.GetUserId(warehouseutils.RS)
+	sendEventsMap := testhelper.DefaultSourceEventMap()
 	// Scenario 1
 	// Sending the first set of events.
 	// Since we handle dedupe on the staging table, we need to check if the first set of events reached the destination.
-	testhelper.SendEvents(t, warehouseTest)
-	testhelper.SendEvents(t, warehouseTest)
-	testhelper.SendEvents(t, warehouseTest)
-	testhelper.SendAsyncRequest(t, warehouseTest)
-
-	// Setting up the events map
-	// Checking for Gateway and Batch router events
-	// Checking for the events count for each table
-	warehouseTest.EventsCountMap = testhelper.EventsCountMap{
-		"google_sheet":    3,
-		"wh_google_sheet": 1,
-		"tracks":          1,
-		"gateway":         3,
-		"batchRT":         6,
+	testhelper.SendEvents(t, warehouseTest, sendEventsMap)
+	testhelper.SendEvents(t, warehouseTest, sendEventsMap)
+	testhelper.SendEvents(t, warehouseTest, sendEventsMap)
+	warehouseEventsWithoutDeDup := testhelper.EventsCountMap{
+		"google_sheet": 3,
+		"tracks":       1,
 	}
-	testhelper.VerifyingGatewayEvents(t, warehouseTest)
-	testhelper.VerifyingBatchRouterEvents(t, warehouseTest)
-	testhelper.VerifyingTablesEventCount(t, warehouseTest)
+	testhelper.VerifyEventsInWareHouse(t, warehouseTest, warehouseEventsWithoutDeDup)
+
+	//Sending deduped events
+	testhelper.SendEvents(t, warehouseTest, sendEventsMap)
+	testhelper.SendEvents(t, warehouseTest, sendEventsMap)
+	testhelper.SendEvents(t, warehouseTest, sendEventsMap)
+	testhelper.SendAsyncRequest(t, warehouseTest)
+	testhelper.SendAsyncStatusRequest(t, warehouseTest)
+	testhelper.VerifyEventsInWareHouse(t, warehouseTest, testhelper.WarehouseSourceEventsMap())
 }
 
 func TestMain(m *testing.M) {
@@ -132,10 +130,10 @@ func TestMain(m *testing.M) {
 	}
 
 	handle = &TestHandle{
-		SourceWriteKey: "2DkCpJkiuyil2fcpUD3LmjPI7J6",
-		SourceId:       "2DkCpXZcFJhrj2fcpUD3LmjPI7J6",
+		SourceWriteKey: "2DkCpXZcEvJK2fcpUD3LmjPI7J6",
+		SourceId:       "2DkCpUr0xfiGBPJxIwqyqfyHdq4",
 		DestinationId:  "27SthahyhhqZE74HT4NTtNPl06V",
-		Schema:         testhelper.GetSchema(warehouseutils.RS, TestSchemaKey),
+		Schema:         testhelper.Schema(warehouseutils.RS, testhelper.RedshiftIntegrationTestSchema),
 		Tables:         []string{"tracks", "google_sheet"},
 	}
 	os.Exit(testhelper.Run(m, handle))

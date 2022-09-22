@@ -3,7 +3,7 @@
 --
 
 CREATE TABLE wh_async_jobs (
-    id integer DEFAULT nextval('wh_async_jobs_id_seq1'::regclass) PRIMARY KEY,
+    id BIGSERIAL PRIMARY KEY,
     sourceid character varying(64) NOT NULL,
     destinationid character varying(64) NOT NULL,
     status character varying(64) NOT NULL,

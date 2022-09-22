@@ -93,9 +93,7 @@ func TestSnowflakeIntegration(t *testing.T) {
 		},
 		Schema:                handle.Schema,
 		Tables:                handle.Tables,
-		TablesQueryFrequency:  testhelper.LongRunningQueryFrequency,
 		MessageId:             uuid.Must(uuid.NewV4()).String(),
-		UserId:                testhelper.GetUserId(warehouseutils.SNOWFLAKE),
 		Provider:              warehouseutils.SNOWFLAKE,
 		SourceId:              handle.SourceId,
 		DestinationId:         handle.DestinationId,
@@ -103,27 +101,27 @@ func TestSnowflakeIntegration(t *testing.T) {
 		LatestSourceRunConfig: testhelper.DefaultSourceRunConfig(),
 	}
 
+	warehouseTest.UserId = testhelper.GetUserId(warehouseutils.SNOWFLAKE)
+	sendEventsMap := testhelper.DefaultSourceEventMap()
 	// Scenario 1
 	// Sending the first set of events.
 	// Since we handle dedupe on the staging table, we need to check if the first set of events reached the destination.
-	testhelper.SendEvents(t, warehouseTest)
-	testhelper.SendEvents(t, warehouseTest)
-	testhelper.SendEvents(t, warehouseTest)
-	testhelper.SendAsyncRequest(t, warehouseTest)
-
-	// Setting up the events map
-	// Checking for Gateway and Batch router events
-	// Checking for the events count for each table
-	warehouseTest.EventsCountMap = testhelper.EventsCountMap{
-		"google_sheet":    3,
-		"wh_google_sheet": 1,
-		"tracks":          1,
-		"gateway":         3,
-		"batchRT":         6,
+	testhelper.SendEvents(t, warehouseTest, sendEventsMap)
+	testhelper.SendEvents(t, warehouseTest, sendEventsMap)
+	testhelper.SendEvents(t, warehouseTest, sendEventsMap)
+	warehouseEventsWithoutDeDup := testhelper.EventsCountMap{
+		"google_sheet": 3,
+		"tracks":       1,
 	}
-	testhelper.VerifyingGatewayEvents(t, warehouseTest)
-	testhelper.VerifyingBatchRouterEvents(t, warehouseTest)
-	testhelper.VerifyingTablesEventCount(t, warehouseTest)
+	testhelper.VerifyEventsInWareHouse(t, warehouseTest, warehouseEventsWithoutDeDup)
+
+	//Sending deduped events
+	testhelper.SendEvents(t, warehouseTest, sendEventsMap)
+	testhelper.SendEvents(t, warehouseTest, sendEventsMap)
+	testhelper.SendEvents(t, warehouseTest, sendEventsMap)
+	testhelper.SendAsyncRequest(t, warehouseTest)
+	testhelper.SendAsyncStatusRequest(t, warehouseTest)
+	testhelper.VerifyEventsInWareHouse(t, warehouseTest, testhelper.WarehouseSourceEventsMap())
 }
 
 func TestMain(m *testing.M) {
@@ -134,10 +132,10 @@ func TestMain(m *testing.M) {
 	}
 
 	handle = &TestHandle{
-		Schema:         testhelper.GetSchema(warehouseutils.SNOWFLAKE, TestSchemaKey),
-		SourceId:       "2DkCpXZcFJkiu2fcpUD3LmjPI7J6",
+		Schema:         testhelper.Schema(warehouseutils.SNOWFLAKE, testhelper.SnowflakeIntegrationTestSchema),
+		SourceWriteKey: "2DkCpXZcEvJK2fcpUD3LmjPI7J6",
+		SourceId:       "2DkCpUr0xfiGBPJxIwqyqfyHdq4",
 		DestinationId:  "24qeADObp6eIhjjDnEppO6P1SNc",
-		SourceWriteKey: "2DkCpJkiuxKM2fcpUD3LmjPI7J6",
 		Tables:         []string{"tracks", "google_sheet"},
 	}
 	os.Exit(testhelper.Run(m, handle))

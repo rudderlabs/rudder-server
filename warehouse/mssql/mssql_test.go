@@ -58,12 +58,10 @@ func TestMSSQLIntegration(t *testing.T) {
 			SQL:  handle.DB,
 			Type: client.SQLClient,
 		},
-		WriteKey:      handle.WriteKey,
-		Schema:        handle.Schema,
-		Tables:        handle.Tables,
-		Provider:      warehouseutils.MSSQL,
-		SourceID:      "1wRvLmEnMOONMbdspwaZhyCqXRE",
-		DestinationID: "21Ezdq58khNMj07VJB0VJmxLvgu",
+		WriteKey: handle.WriteKey,
+		Schema:   handle.Schema,
+		Tables:   handle.Tables,
+		Provider: warehouseutils.MSSQL,
 	}
 
 	// Scenario 1

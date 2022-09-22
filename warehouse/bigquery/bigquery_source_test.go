@@ -106,34 +106,32 @@ func TestBigQueryIntegration(t *testing.T) {
 			DestinationId:         handle.DestinationId,
 			Schema:                handle.Schema,
 			Tables:                handle.Tables,
-			TablesQueryFrequency:  testhelper.LongRunningQueryFrequency,
 			MessageId:             uuid.Must(uuid.NewV4()).String(),
-			UserId:                testhelper.GetUserId(warehouseutils.BQ),
 			Provider:              warehouseutils.BQ,
 			LatestSourceRunConfig: testhelper.DefaultSourceRunConfig(),
 		}
 
+		warehouseTest.UserId = testhelper.GetUserId(warehouseutils.BQ)
+		sendEventsMap := testhelper.DefaultSourceEventMap()
 		// Scenario 1
 		// Sending the first set of events.
 		// Since we handle dedupe on the staging table, we need to check if the first set of events reached the destination.
-		testhelper.SendEvents(t, warehouseTest)
-		testhelper.SendEvents(t, warehouseTest)
-		testhelper.SendEvents(t, warehouseTest)
-		testhelper.SendAsyncRequest(t, warehouseTest)
-
-		// Setting up the events map
-		// Checking for Gateway and Batch router events
-		// Checking for the events count for each table
-		warehouseTest.EventsCountMap = testhelper.EventsCountMap{
-			"google_sheet":    3,
-			"wh_google_sheet": 1,
-			"tracks":          1,
-			"gateway":         3,
-			"batchRT":         6,
+		testhelper.SendEvents(t, warehouseTest, sendEventsMap)
+		testhelper.SendEvents(t, warehouseTest, sendEventsMap)
+		testhelper.SendEvents(t, warehouseTest, sendEventsMap)
+		warehouseEventsWithoutDeDup := testhelper.EventsCountMap{
+			"google_sheet": 3,
+			"tracks":       1,
 		}
-		testhelper.VerifyingGatewayEvents(t, warehouseTest)
-		testhelper.VerifyingBatchRouterEvents(t, warehouseTest)
-		testhelper.VerifyingTablesEventCount(t, warehouseTest)
+		testhelper.VerifyEventsInWareHouse(t, warehouseTest, warehouseEventsWithoutDeDup)
+
+		//Sending deduped events
+		testhelper.SendEvents(t, warehouseTest, sendEventsMap)
+		testhelper.SendEvents(t, warehouseTest, sendEventsMap)
+		testhelper.SendEvents(t, warehouseTest, sendEventsMap)
+		testhelper.SendAsyncRequest(t, warehouseTest)
+		testhelper.SendAsyncStatusRequest(t, warehouseTest)
+		testhelper.VerifyEventsInWareHouse(t, warehouseTest, testhelper.WarehouseSourceEventsMap())
 	})
 }
 
@@ -156,10 +154,10 @@ func TestMain(m *testing.M) {
 	}
 
 	handle = &TestHandle{
-		SourceWriteKey: "2DkCpXZcExKM2fcpUD3LmjPI7J6",
-		SourceId:       "2DkCpXZcEvLN2fcpUD3LmjPI7J6",
+		SourceWriteKey: "2DkCpXZcUjnK2fcpUD3LmjPI7J6",
+		SourceId:       "2DkCpUr0xfiPLKJxIwqyqfyHdq4",
 		DestinationId:  "26Bgm9FrQDZjvadSwAlpd35atwn",
-		Schema:         testhelper.GetSchema(warehouseutils.BQ, TestSchemaKey),
+		Schema:         testhelper.Schema(warehouseutils.BQ, testhelper.BigqueryIntegrationTestSchema),
 		Tables:         []string{"tracks", "google_sheet"},
 	}
 	os.Exit(testhelper.Run(m, handle))

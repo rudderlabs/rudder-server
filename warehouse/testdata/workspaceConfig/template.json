@@ -1301,7 +1301,7 @@
       },
       "liveEventsConfig": {},
       "id": "2DkCpUr0xfiGBPJxIwqyqfyHdq4",
-      "name": "postgres-wh-integration",
+      "name": "postgres_wh_integration",
       "writeKey": "2DkCpXZcEvJK2fcpUD3LmjPI7J6",
       "enabled": true,
       "sourceDefinitionId": "29seNpaVfhMp7YVpiBUszPOvmO1",
@@ -1421,7 +1421,60 @@
           },
           "isConnectionEnabled": true,
           "isProcessorEnabled": true
+        }
+      ],
+      "dgSourceTrackingPlanConfig": null,
+      "permissions": {
+        "isLocked": false
+      }
+    },
+    {
+      "config": {
+        "config": {
+          "row_batch_size": 200,
+          "credentials": {
+            "auth_type": "Client",
+            "accountId": "29hOyXzmdF9rz7yR2FTq4pohyXL"
+          },
+          "spreadsheet_id": "1bKQpN-KkhYZd4eqUUoq3Tec6HrJzgqSc8jwVvajnpk8"
         },
+        "schedule": {
+          "type": "manual",
+          "every": 0,
+          "unit": "minutes"
+        },
+        "prefix": "SGS5"
+      },
+      "liveEventsConfig": {},
+      "id": "2DkCpUr0xfiINRJxIwqyqfyHdq4",
+      "name": "mssql_wh_integration",
+      "writeKey": "2DkCpXZcEvPG2fcpUD3LmjPI7J6",
+      "enabled": true,
+      "sourceDefinitionId": "29seNpaVfhMp7YVpiBUszPOvmO1",
+      "createdBy": "279BPpjT6BGqKKhT5qAZuUVZa1h",
+      "workspaceId": "{{.workspaceId}}",
+      "deleted": false,
+      "transient": false,
+      "secretVersion": null,
+      "createdAt": "2022-08-23T00:21:18.366Z",
+      "updatedAt": "2022-08-23T00:21:18.366Z",
+      "sourceDefinition": {
+        "options": {
+          "auth": {
+            "provider": "Google",
+            "oauthRole": "google_sheets"
+          },
+          "image": "source-google-sheets:v2",
+          "isBeta": true
+        },
+        "id": "29seNpaVfhMp7YVpiBUszPOvmO1",
+        "name": "singer-google-sheets",
+        "displayName": "Singer Google Sheets",
+        "category": "singer-protocol",
+        "createdAt": "2022-05-30T04:53:02.188Z",
+        "updatedAt": "2022-05-30T04:53:02.188Z"
+      },
+      "destinations": [
         {
           "config": {
             "host": "{{.mssqlHost}}",
@@ -1521,6 +1574,7 @@
         "isLocked": false
       }
     }
+
   ],
   "libraries": [
     {

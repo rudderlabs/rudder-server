@@ -382,12 +382,6 @@ func VerifyEventsInWareHouse(t testing.TB, wareHouseTest *WareHouseTest, eventsM
 		require.Contains(t, eventsMap, table)
 
 		tableCount := eventsMap[table]
-		if table == "google_sheet" {
-			require.Contains(t, wareHouseTest.EventsCountMap, "wh_google_sheet")
-			tableCount = wareHouseTest.EventsCountMap["wh_google_sheet"]
-		} else {
-			tableCount = wareHouseTest.EventsCountMap[table]
-		}
 		sqlStatement := fmt.Sprintf(`
 			select
 			  count(*)

@@ -9,6 +9,7 @@ import (
 	"github.com/rudderlabs/rudder-server/warehouse/mssql"
 	"github.com/rudderlabs/rudder-server/warehouse/testhelper"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
+	"github.com/stretchr/testify/require"
 	"os"
 	"testing"
 )
@@ -55,6 +56,12 @@ func (t *TestHandle) VerifyConnection() error {
 
 func TestSourcesMSSQLIntegration(t *testing.T) {
 	// Setting up the warehouseTest
+	require.NoError(t, testhelper.SetConfig([]warehouseutils.KeyValue{
+		{
+			Key:   "Warehouse.mssql.enableDeleteByJobs",
+			Value: true,
+		},
+	}))
 	warehouseTest := &testhelper.WareHouseTest{
 		Client: &client.Client{
 			SQL:  handle.DB,
@@ -66,36 +73,36 @@ func TestSourcesMSSQLIntegration(t *testing.T) {
 		DestinationId:         handle.DestinationId,
 		Schema:                handle.Schema,
 		Tables:                handle.Tables,
-		EventsCountMap:        testhelper.DefaultSourceEventMap(),
-		TablesQueryFrequency:  testhelper.DefaultQueryFrequency,
-		UserId:                testhelper.GetUserId(warehouseutils.MSSQL),
 		Provider:              warehouseutils.MSSQL,
 		LatestSourceRunConfig: testhelper.DefaultSourceRunConfig(),
 	}
 
-	testhelper.SendEvents(t, warehouseTest)
-	testhelper.SendEvents(t, warehouseTest)
-	testhelper.SendEvents(t, warehouseTest)
-	testhelper.SendAsyncRequest(t, warehouseTest)
+	warehouseTest.UserId = testhelper.GetUserId(warehouseutils.MSSQL)
+	sendEventsMap := testhelper.DefaultSourceEventMap()
+	testhelper.SendEvents(t, warehouseTest, sendEventsMap)
+	testhelper.SendEvents(t, warehouseTest, sendEventsMap)
+	testhelper.SendEvents(t, warehouseTest, sendEventsMap)
 
-	warehouseTest.EventsCountMap = testhelper.EventsCountMap{
-		"google_sheet":    3,
-		"wh_google_sheet": 1,
-		"tracks":          1,
-		"gateway":         3,
-		"batchRT":         6,
+	warehouseEventsWithoutDeDup := testhelper.EventsCountMap{
+		"google_sheet": 3,
+		"tracks":       1,
 	}
-	testhelper.VerifyingGatewayEvents(t, warehouseTest)
-	testhelper.VerifyingBatchRouterEvents(t, warehouseTest)
-	testhelper.VerifyingTablesEventCount(t, warehouseTest)
+	testhelper.VerifyEventsInWareHouse(t, warehouseTest, warehouseEventsWithoutDeDup)
+
+	testhelper.SendEvents(t, warehouseTest, sendEventsMap)
+	testhelper.SendEvents(t, warehouseTest, sendEventsMap)
+	testhelper.SendEvents(t, warehouseTest, sendEventsMap)
+	testhelper.SendAsyncRequest(t, warehouseTest)
+	testhelper.SendAsyncStatusRequest(t, warehouseTest)
+	testhelper.VerifyEventsInWareHouse(t, warehouseTest, testhelper.WarehouseSourceEventsMap())
 }
 
 func TestMain(m *testing.M) {
 	handle = &TestHandle{
-		SourceWriteKey: "2DkCpXZcEvKM2fcpUD3LmjPI7J6",
-		SourceId:       "2DkCpXZcEvLM2fcpUD3LmjPI7J6",
-		DestinationId:  "21Ezdq58khNMj07VJB0VJmxLvgu",
+		SourceWriteKey: "2DkCpXZcEvPG2fcpUD3LmjPI7J6",
 		Schema:         "mssql_wh_integration",
+		SourceId:       "2DkCpUr0xfiINRJxIwqyqfyHdq4",
+		DestinationId:  "21Ezdq58khNMj07VJB0VJmxLvgu",
 		Tables:         []string{"tracks", "google_sheet"},
 	}
 	os.Exit(testhelper.Run(m, handle))

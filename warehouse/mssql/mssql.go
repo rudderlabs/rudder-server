@@ -18,6 +18,7 @@ import (
 
 	mssql "github.com/denisenkom/go-mssqldb"
 	uuid "github.com/gofrs/uuid"
+	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/services/filemanager"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
@@ -29,6 +30,7 @@ var (
 	stagingTablePrefix   string
 	pkgLogger            logger.LoggerI
 	diacriticLengthLimit = diacriticLimit()
+	enableDeleteByJobs   bool
 )
 
 const (
@@ -155,6 +157,7 @@ func Init() {
 
 func loadConfig() {
 	stagingTablePrefix = "rudder_staging_"
+	enableDeleteByJobs = config.GetBool("Warehouse.mssql.enableDeleteByJobs", false)
 }
 
 func (ms *HandleT) getConnectionCredentials() CredentialsT {
@@ -249,17 +252,20 @@ func (ms *HandleT) DeleteBy(tableNames []string, params warehouseutils.DeleteByP
 
 		pkgLogger.Infof("MSSQL: Deleting rows in table in mysql for MS:%s ", ms.Warehouse.Destination.ID)
 		pkgLogger.Debugf("MSSQL: Executing the statement %v", sqlStatement)
-		// Uncomment below 4 lines when we are ready to launch async job on MsSQL warehouse
-		_, err = ms.Db.Exec(sqlStatement,
-			sql.Named("jobrunid", params.JobRunId),
-			sql.Named("taskrunid", params.TaskRunId),
-			sql.Named("sourceid", params.SourceId),
-			sql.Named("starttime", params.StartTime),
-		)
-		if err != nil {
-			pkgLogger.Errorf("Error %s", err)
-			return err
+
+		if enableDeleteByJobs {
+			_, err = ms.Db.Exec(sqlStatement,
+				sql.Named("jobrunid", params.JobRunId),
+				sql.Named("taskrunid", params.TaskRunId),
+				sql.Named("sourceid", params.SourceId),
+				sql.Named("starttime", params.StartTime),
+			)
+			if err != nil {
+				pkgLogger.Errorf("Error %s", err)
+				return err
+			}
 		}
+
 	}
 	return nil
 }
