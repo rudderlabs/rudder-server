@@ -118,7 +118,7 @@ var _ = Describe("Stats", Ordered, func() {
 		destinationName = "test-destinationName"
 		sourceName      = "test-sourceName"
 		statName        = "test-statName"
-		es              = GinkgoT()
+		g               = GinkgoT()
 		pgResource      *destination.PostgresResource
 		err             error
 		uploadID        = int64(1)
@@ -129,7 +129,7 @@ var _ = Describe("Stats", Ordered, func() {
 		pool, err := dockertest.NewPool("")
 		Expect(err).To(BeNil())
 
-		pgResource = setupWarehouseJobs(pool, GinkgoT(), cleanup)
+		pgResource = setupWarehouseJobs(pool, g, cleanup)
 
 		initWarehouse()
 
@@ -150,7 +150,7 @@ var _ = Describe("Stats", Ordered, func() {
 
 	Describe("Jobs stats", func() {
 		BeforeEach(func() {
-			ctrl := gomock.NewController(es)
+			ctrl := gomock.NewController(g)
 			mockStats := mock_stats.NewMockStats(ctrl)
 			mockRudderStats := mock_stats.NewMockRudderStats(ctrl)
 
@@ -236,7 +236,7 @@ var _ = Describe("Stats", Ordered, func() {
 		var job *UploadJobT
 
 		BeforeEach(func() {
-			ctrl := gomock.NewController(es)
+			ctrl := gomock.NewController(g)
 			mockStats := mock_stats.NewMockStats(ctrl)
 			mockRudderStats := mock_stats.NewMockRudderStats(ctrl)
 
@@ -268,7 +268,7 @@ var _ = Describe("Stats", Ordered, func() {
 	})
 
 	It("Record table load", func() {
-		ctrl := gomock.NewController(es)
+		ctrl := gomock.NewController(g)
 		mockStats := mock_stats.NewMockStats(ctrl)
 		mockRudderStats := mock_stats.NewMockRudderStats(ctrl)
 
@@ -292,7 +292,7 @@ var _ = Describe("Stats", Ordered, func() {
 	})
 
 	It("Record load files generation time", func() {
-		ctrl := gomock.NewController(es)
+		ctrl := gomock.NewController(g)
 		mockStats := mock_stats.NewMockStats(ctrl)
 		mockRudderStats := mock_stats.NewMockRudderStats(ctrl)
 

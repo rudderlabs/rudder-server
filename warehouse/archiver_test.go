@@ -124,9 +124,9 @@ var _ = Describe("Archiver", Ordered, func() {
 		minioResource *destination.MINIOResource
 		err           error
 		cleanup       = &testhelper.Cleanup{}
-		es            = GinkgoT()
+		g             = GinkgoT()
 		mockLogger    *mocklogger.MockLoggerI
-		mockCtrl      *gomock.Controller
+		ctrl          *gomock.Controller
 		prefix        = "test-prefix"
 	)
 
@@ -139,26 +139,25 @@ var _ = Describe("Archiver", Ordered, func() {
 		minioResource, err = destination.SetupMINIO(pool, cleanup)
 		Expect(err).To(BeNil())
 
-		es.Setenv("JOBS_BACKUP_STORAGE_PROVIDER", "MINIO")
-		es.Setenv("JOBS_BACKUP_STORAGE_PROVIDER", "MINIO")
-		es.Setenv("JOBS_BACKUP_BUCKET", minioResource.BucketName)
-		es.Setenv("JOBS_BACKUP_PREFIX", prefix)
-		es.Setenv("MINIO_ENDPOINT", minioResource.Endpoint)
-		es.Setenv("MINIO_ACCESS_KEY_ID", minioResource.AccessKey)
-		es.Setenv("MINIO_SECRET_ACCESS_KEY", minioResource.SecretKey)
-		es.Setenv("MINIO_SSL", "false")
-		es.Setenv("RUDDER_TMPDIR", es.TempDir())
-		es.Setenv("RSERVER_WAREHOUSE_UPLOADS_ARCHIVAL_TIME_IN_DAYS", "0")
+		g.Setenv("JOBS_BACKUP_STORAGE_PROVIDER", "MINIO")
+		g.Setenv("JOBS_BACKUP_STORAGE_PROVIDER", "MINIO")
+		g.Setenv("JOBS_BACKUP_BUCKET", minioResource.BucketName)
+		g.Setenv("JOBS_BACKUP_PREFIX", prefix)
+		g.Setenv("MINIO_ENDPOINT", minioResource.Endpoint)
+		g.Setenv("MINIO_ACCESS_KEY_ID", minioResource.AccessKey)
+		g.Setenv("MINIO_SECRET_ACCESS_KEY", minioResource.SecretKey)
+		g.Setenv("MINIO_SSL", "false")
+		g.Setenv("RUDDER_TMPDIR", g.TempDir())
+		g.Setenv("RSERVER_WAREHOUSE_UPLOADS_ARCHIVAL_TIME_IN_DAYS", "0")
 
 		initWarehouse()
 
 		err = setupDB(context.TODO(), getConnectionString())
 		Expect(err).To(BeNil())
 
-		mockCtrl = gomock.NewController(es)
-		mockLogger = mocklogger.NewMockLoggerI(mockCtrl)
-		mockLogger.EXPECT().Errorf(gomock.Any(), gomock.Any()).MaxTimes(0)
-		mockLogger.EXPECT().Errorf(gomock.Any(), gomock.Any()).MinTimes(0)
+		ctrl = gomock.NewController(g)
+		mockLogger = mocklogger.NewMockLoggerI(ctrl)
+		mockLogger.EXPECT().Errorf(gomock.Any(), gomock.Any()).Times(0)
 		mockLogger.EXPECT().Infof(gomock.Any(), gomock.Any()).AnyTimes()
 		mockLogger.EXPECT().Debugf(gomock.Any(), gomock.Any()).AnyTimes()
 

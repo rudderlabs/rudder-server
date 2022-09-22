@@ -366,10 +366,11 @@ var _ = Describe("Schema", func() {
 	)
 
 	Describe("Has schema changed", func() {
+		g := GinkgoT()
+
 		Context("when skipping deep equals", func() {
 			BeforeEach(func() {
-				es := GinkgoT()
-				es.Setenv("RSERVER_WAREHOUSE_SKIP_DEEP_EQUAL_SCHEMAS", "true")
+				g.Setenv("RSERVER_WAREHOUSE_SKIP_DEEP_EQUAL_SCHEMAS", "true")
 				Init4()
 			})
 
@@ -420,8 +421,7 @@ var _ = Describe("Schema", func() {
 
 		Context("when not skipping deep equals", func() {
 			BeforeEach(func() {
-				es := GinkgoT()
-				es.Setenv("RSERVER_WAREHOUSE_SKIP_DEEP_EQUAL_SCHEMAS", "false")
+				g.Setenv("RSERVER_WAREHOUSE_SKIP_DEEP_EQUAL_SCHEMAS", "false")
 				Init4()
 			})
 

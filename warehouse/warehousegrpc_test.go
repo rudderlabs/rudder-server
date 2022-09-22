@@ -321,17 +321,17 @@ var _ = Describe("WarehouseGrpc", func() {
 				w          *warehouseGrpc
 				c          context.Context
 				limit      = int32(2)
-				es         = GinkgoT()
+				g          = GinkgoT()
 			)
 
 			BeforeAll(func() {
 				pool, err := dockertest.NewPool("")
 				Expect(err).To(BeNil())
 
-				es.Setenv("DEPLOYMENT_TYPE", "MULTITENANT")
-				es.Setenv("HOSTED_SERVICE_SECRET", "test-secret")
+				g.Setenv("DEPLOYMENT_TYPE", "MULTITENANT")
+				g.Setenv("HOSTED_SERVICE_SECRET", "test-secret")
 
-				pgResource = setupWarehouseJobs(pool, es, cleanup)
+				pgResource = setupWarehouseJobs(pool, g, cleanup)
 
 				initWarehouse()
 
@@ -355,8 +355,8 @@ var _ = Describe("WarehouseGrpc", func() {
 			})
 
 			AfterAll(func() {
-				es.Setenv("DEPLOYMENT_TYPE", "")
-				es.Setenv("HOSTED_SERVICE_SECRET", "")
+				g.Setenv("DEPLOYMENT_TYPE", "")
+				g.Setenv("HOSTED_SERVICE_SECRET", "")
 
 				cleanup.Run()
 			})

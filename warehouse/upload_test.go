@@ -234,7 +234,7 @@ var _ = Describe("Upload", Ordered, func() {
 		destinationName = "test-destinationName"
 		namespace       = "test-namespace"
 		destinationType = "POSTGRES"
-		es              = GinkgoT()
+		g               = GinkgoT()
 	)
 
 	var (
@@ -366,7 +366,7 @@ var _ = Describe("Upload", Ordered, func() {
 	Describe("Staging files and load files events match", func() {
 		When("Matched", func() {
 			It("Should not send stats", func() {
-				ctrl := gomock.NewController(es)
+				ctrl := gomock.NewController(g)
 				mockStats := mock_stats.NewMockStats(ctrl)
 				mockRudderStats := mock_stats.NewMockRudderStats(ctrl)
 
@@ -380,7 +380,7 @@ var _ = Describe("Upload", Ordered, func() {
 
 		When("Not matched", func() {
 			It("Should send stats", func() {
-				ctrl := gomock.NewController(es)
+				ctrl := gomock.NewController(g)
 				mockStats := mock_stats.NewMockStats(ctrl)
 				mockRudderStats := mock_stats.NewMockRudderStats(ctrl)
 

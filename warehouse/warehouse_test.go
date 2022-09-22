@@ -18,15 +18,15 @@ type testingT interface {
 	Setenv(key, value string)
 }
 
-func setupWarehouseJobs(pool *dockertest.Pool, es testingT, cleanup *testhelper.Cleanup) *destination.PostgresResource {
+func setupWarehouseJobs(pool *dockertest.Pool, t testingT, cleanup *testhelper.Cleanup) *destination.PostgresResource {
 	pgResource, err := destination.SetupPostgres(pool, cleanup)
 	Expect(err).To(BeNil())
 
-	es.Setenv("WAREHOUSE_JOBS_DB_HOST", pgResource.Host)
-	es.Setenv("WAREHOUSE_JOBS_DB_USER", pgResource.User)
-	es.Setenv("WAREHOUSE_JOBS_DB_PASSWORD", pgResource.Password)
-	es.Setenv("WAREHOUSE_JOBS_DB_DB_NAME", pgResource.Database)
-	es.Setenv("WAREHOUSE_JOBS_DB_PORT", pgResource.Port)
+	t.Setenv("WAREHOUSE_JOBS_DB_HOST", pgResource.Host)
+	t.Setenv("WAREHOUSE_JOBS_DB_USER", pgResource.User)
+	t.Setenv("WAREHOUSE_JOBS_DB_PASSWORD", pgResource.Password)
+	t.Setenv("WAREHOUSE_JOBS_DB_DB_NAME", pgResource.Database)
+	t.Setenv("WAREHOUSE_JOBS_DB_PORT", pgResource.Port)
 
 	return pgResource
 }
