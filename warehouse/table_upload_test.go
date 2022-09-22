@@ -15,7 +15,7 @@ import (
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
-func tableUploadsSQLStatement() string {
+func tableUploadsTestSQLStatement() string {
 	return `
 			BEGIN;
 			INSERT INTO wh_load_files (
@@ -89,7 +89,7 @@ var _ = Describe("TableUpload", func() {
 		})
 
 		It("Setup table uploads", func() {
-			_, err = pgResource.DB.Exec(tableUploadsSQLStatement())
+			_, err = pgResource.DB.Exec(tableUploadsTestSQLStatement())
 			Expect(err).To(BeNil())
 		})
 
@@ -126,7 +126,7 @@ var _ = Describe("TableUpload", func() {
 				Expect(err).To(BeNil())
 			})
 
-			It("Check table upload count", func() {
+			It("Getting total number of events", func() {
 				count, err := tu.getTotalEvents()
 				Expect(err).To(BeNil())
 				Expect(count).To(BeEquivalentTo(4))
@@ -138,7 +138,7 @@ var _ = Describe("TableUpload", func() {
 				Expect(count).To(BeEquivalentTo(4))
 			})
 
-			It("Getting number of events", func() {
+			It("Setting error", func() {
 				err := tu.setError("exporting_data_failed", errors.New("test error"))
 				Expect(err).To(BeNil())
 			})

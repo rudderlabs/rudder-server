@@ -77,7 +77,7 @@ func TestExtractUploadErrorsByState(t *testing.T) {
 	}
 }
 
-func uploadsSQLStatement() string {
+func uploadsTestSQLStatement() string {
 	return `
 			BEGIN;
 			INSERT INTO wh_uploads (
@@ -288,17 +288,17 @@ var _ = Describe("Upload", Ordered, func() {
 		}
 	})
 
-	It("Init warehouse", func() {
-		_, err = pgResource.DB.Exec(uploadsSQLStatement())
+	It("Setup uploads", func() {
+		_, err = pgResource.DB.Exec(uploadsTestSQLStatement())
 		Expect(err).To(BeNil())
 	})
 
-	It("total rows in load files", func() {
+	It("Total rows in load files", func() {
 		count := job.getTotalRowsInLoadFiles()
 		Expect(count).To(BeEquivalentTo(5))
 	})
 
-	It("total rows in staging files", func() {
+	It("Total rows in staging files", func() {
 		count := job.getTotalRowsInStagingFiles()
 		Expect(count).To(BeEquivalentTo(5))
 	})
@@ -346,7 +346,7 @@ var _ = Describe("Upload", Ordered, func() {
 		),
 	)
 
-	It("getting tables to skip", func() {
+	It("Getting tables to skip", func() {
 		job.upload.ID = 5
 
 		previousFailedMap, currentSuceededMap := job.getTablesToSkip()
@@ -354,7 +354,7 @@ var _ = Describe("Upload", Ordered, func() {
 		Expect(currentSuceededMap).Should(HaveLen(0))
 	})
 
-	It("get uploads timings", func() {
+	It("Get uploads timings", func() {
 		Expect(job.getUploadTimings()).To(BeEquivalentTo([]map[string]string{
 			{
 				"exported_data":  "2020-04-21 15:26:34.344356",
@@ -364,8 +364,8 @@ var _ = Describe("Upload", Ordered, func() {
 	})
 
 	Describe("Staging files and load files events match", func() {
-		When("matched", func() {
-			It("should not send stats", func() {
+		When("Matched", func() {
+			It("Should not send stats", func() {
 				ctrl := gomock.NewController(es)
 				mockStats := mock_stats.NewMockStats(ctrl)
 				mockRudderStats := mock_stats.NewMockRudderStats(ctrl)
@@ -378,8 +378,8 @@ var _ = Describe("Upload", Ordered, func() {
 			})
 		})
 
-		When("not matched", func() {
-			It("should send stats", func() {
+		When("Not matched", func() {
+			It("Should send stats", func() {
 				ctrl := gomock.NewController(es)
 				mockStats := mock_stats.NewMockStats(ctrl)
 				mockRudderStats := mock_stats.NewMockRudderStats(ctrl)

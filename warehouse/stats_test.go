@@ -20,7 +20,7 @@ import (
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
-func statsSQLStatement() string {
+func statsTestSQLStatement() string {
 	return `
 			BEGIN;
 			INSERT INTO wh_staging_files (
@@ -143,8 +143,8 @@ var _ = Describe("Stats", Ordered, func() {
 		cleanup.Run()
 	})
 
-	It("Setup table uploads", func() {
-		_, err = pgResource.DB.Exec(statsSQLStatement())
+	It("Setup stats", func() {
+		_, err = pgResource.DB.Exec(statsTestSQLStatement())
 		Expect(err).To(BeNil())
 	})
 
@@ -174,11 +174,11 @@ var _ = Describe("Stats", Ordered, func() {
 				}
 			})
 
-			It("timer stat", func() {
+			It("Timer stat", func() {
 				jr.timerStat(statName)
 			})
 
-			It("counter stat", func() {
+			It("Counter stat", func() {
 				jr.counterStat(statName)
 			})
 		})
@@ -206,28 +206,28 @@ var _ = Describe("Stats", Ordered, func() {
 				}
 			})
 
-			It("timer stat", func() {
+			It("Timer stat", func() {
 				u.timerStat(statName)
 			})
 
-			It("counter stat", func() {
+			It("Counter stat", func() {
 				u.counterStat(statName)
 			})
 
-			It("gauge stat", func() {
+			It("Gauge stat", func() {
 				u.guageStat(statName)
 			})
 		})
 
-		It("record staged rows stat", func() {
+		It("Record staged rows stat", func() {
 			recordStagedRowsStat(100, destinationType, destinationID, sourceName, destinationName, sourceID)
 		})
 
-		It("upload status stat", func() {
+		It("Upload status stat", func() {
 			getUploadStatusStat(statName, destinationType, destinationID, sourceName, destinationName, sourceID)
 		})
 
-		It("persis ssl file error stat", func() {
+		It("Persist ssl file error stat", func() {
 			persistSSLFileErrorStat(destinationType, destinationName, destinationID, sourceName, sourceID, "")
 		})
 	})

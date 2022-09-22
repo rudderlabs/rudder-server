@@ -15,7 +15,7 @@ import (
 	"github.com/rudderlabs/rudder-server/testhelper/destination"
 )
 
-func archiveSQLStatement() string {
+func archiveTestSQLStatement() string {
 	return `
 			BEGIN;
 			INSERT INTO wh_uploads (
@@ -169,10 +169,12 @@ var _ = Describe("Archiver", Ordered, func() {
 		cleanup.Run()
 	})
 
-	It("Archive uploads", func() {
-		_, err = pgResource.DB.Exec(archiveSQLStatement())
+	It("Setup archiving", func() {
+		_, err = pgResource.DB.Exec(archiveTestSQLStatement())
 		Expect(err).To(BeNil())
+	})
 
+	It("Archive uploads", func() {
 		archiveUploads(dbHandle)
 	})
 })

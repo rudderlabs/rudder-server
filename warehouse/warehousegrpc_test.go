@@ -18,7 +18,7 @@ import (
 	"google.golang.org/protobuf/types/known/emptypb"
 )
 
-func syncsSQLStatement() string {
+func warehouseGRPCTestSQLStatement() string {
 	return `
 			BEGIN;
 
@@ -137,7 +137,7 @@ var _ = Describe("WarehouseGrpc", func() {
 				err = InitWarehouseAPI(pgResource.DB, &logger.NOP{})
 				Expect(err).To(BeNil())
 
-				_, err = pgResource.DB.Exec(syncsSQLStatement())
+				_, err = pgResource.DB.Exec(warehouseGRPCTestSQLStatement())
 				Expect(err).To(BeNil())
 			})
 
@@ -365,7 +365,7 @@ var _ = Describe("WarehouseGrpc", func() {
 				err = InitWarehouseAPI(pgResource.DB, &logger.NOP{})
 				Expect(err).To(BeNil())
 
-				_, err = pgResource.DB.Exec(syncsSQLStatement())
+				_, err = pgResource.DB.Exec(warehouseGRPCTestSQLStatement())
 				Expect(err).To(BeNil())
 			})
 
