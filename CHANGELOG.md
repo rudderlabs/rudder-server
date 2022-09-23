@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.1.2](https://github.com/rudderlabs/rudder-server/compare/v1.1.1...v1.1.2) (2022-09-23)
+
+
+### Bug Fixes
+
+* snowflake identifier issue ([#2471](https://github.com/rudderlabs/rudder-server/issues/2471)) ([d4b2583](https://github.com/rudderlabs/rudder-server/commit/d4b2583a81104eb35b226b3606e178506897fab0))
+
 ## [1.1.1](https://github.com/rudderlabs/rudder-server/compare/v1.1.0...v1.1.1) (2022-09-15)
 
 
