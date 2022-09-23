@@ -21,8 +21,8 @@ import (
 
 	"github.com/rudderlabs/rudder-server/admin"
 	"github.com/rudderlabs/rudder-server/config"
-	backendConfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/enterprise/reporting"
+	backendConfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	mocksBackendConfig "github.com/rudderlabs/rudder-server/mocks/config/backend-config"
 	mock_tenantstats "github.com/rudderlabs/rudder-server/mocks/services/multitenant"
@@ -133,6 +133,7 @@ var (
 		DisplayName: "Google Analytics", Config: nil, ResponseRules: nil,
 	}
 	sampleBackendConfig = backendConfig.ConfigT{
+		WorkspaceID: workspaceID,
 		Sources: []backendConfig.SourceT{
 			{
 				WorkspaceID: workspaceID,
@@ -193,7 +194,7 @@ func TestRouterManager(t *testing.T) {
 		// on Subscribe, emulate a backend configuration event
 
 		ch := make(chan pubsub.DataEvent, 1)
-		ch <- pubsub.DataEvent{Data: sampleBackendConfig, Topic: string(topic)}
+		ch <- pubsub.DataEvent{Data: map[string]backendconfig.ConfigT{workspaceID: sampleBackendConfig}, Topic: string(topic)}
 		go func() {
 			<-ctx.Done()
 			close(ch)

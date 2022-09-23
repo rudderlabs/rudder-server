@@ -77,7 +77,7 @@ func (c *testContext) Setup() {
 		DoAndReturn(func(ctx context.Context, topic backendconfig.Topic) pubsub.DataChannel {
 			tFunc()
 			ch := make(chan pubsub.DataEvent, 1)
-			ch <- pubsub.DataEvent{Data: sampleBackendConfig, Topic: string(topic)}
+			ch <- pubsub.DataEvent{Data: map[string]backendconfig.ConfigT{sampleWorkspaceID: sampleBackendConfig}, Topic: string(topic)}
 			c.configInitialised = true
 
 			go func() {
@@ -138,8 +138,11 @@ func setMainLoopTimeout(timeout time.Duration) {
 	mainLoopTimeout = timeout
 }
 
+var sampleWorkspaceID = "some-workspace-id"
+
 // This configuration is assumed by all processor tests and, is returned on Subscribe of mocked backend config
 var sampleBackendConfig = backendconfig.ConfigT{
+	WorkspaceID: sampleWorkspaceID,
 	Sources: []backendconfig.SourceT{
 		{
 			ID:       SourceIDDisabled,

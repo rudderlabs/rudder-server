@@ -52,12 +52,14 @@ const (
 
 	SuppressedUserID = "suppressed-user-2"
 	NormalUserID     = "normal-user-1"
+	WorkspaceID      = "workspace"
 )
 
 var testTimeout = 15 * time.Second
 
 // This configuration is assumed by all gateway tests and, is returned on Subscribe of mocked backend config
 var sampleBackendConfig = backendconfig.ConfigT{
+	WorkspaceID: WorkspaceID,
 	Sources: []backendconfig.SourceT{
 		{
 			ID:       SourceIDDisabled,
@@ -119,7 +121,7 @@ func (c *testContext) Setup() {
 			tFunc()
 
 			ch := make(chan pubsub.DataEvent, 1)
-			ch <- pubsub.DataEvent{Data: sampleBackendConfig, Topic: string(topic)}
+			ch <- pubsub.DataEvent{Data: map[string]backendconfig.ConfigT{WorkspaceID: sampleBackendConfig}, Topic: string(topic)}
 			// on Subscribe, emulate a backend configuration event
 			go func() {
 				<-ctx.Done()

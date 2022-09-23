@@ -5,7 +5,6 @@ import (
 	"context"
 	"crypto/aes"
 	"crypto/cipher"
-	"crypto/md5"
 	"crypto/rand"
 	"database/sql"
 	"encoding/json"
@@ -26,7 +25,7 @@ type Cache interface {
 
 type cacheStore struct {
 	*sql.DB
-	secret string
+	secret [32]byte
 	key    string
 }
 
@@ -37,7 +36,7 @@ type cacheStore struct {
 // key is the key to use to store and fetch the config from the cache store
 //
 // ch is the channel to listen on for config updates and store them
-func Start(ctx context.Context, secret, key string, ch pubsub.DataChannel) Cache {
+func Start(ctx context.Context, secret [32]byte, key string, ch pubsub.DataChannel) Cache {
 	var (
 		err    error
 		dbConn *sql.DB
@@ -190,11 +189,10 @@ func (db *cacheStore) decryptAES(data []byte) ([]byte, error) {
 	return out, nil
 }
 
-func newGCM(secret string) (cipher.AEAD, error) {
+func newGCM(secret [32]byte) (cipher.AEAD, error) {
 	// We need a 32-bytes key for AES-256
 	// thus converting the secret to md5 (32-digit hexadecimal number)
-	key := []byte(fmt.Sprintf(`%x`, md5.Sum([]byte(secret)))) // skipcq: GSC-G401, GO-S1025
-	c, err := aes.NewCipher(key)
+	c, err := aes.NewCipher(secret[:])
 	if err != nil {
 		return nil, err
 	}

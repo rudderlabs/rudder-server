@@ -4,8 +4,7 @@ import (
 	"context"
 	"crypto/aes"
 	"crypto/cipher"
-	"crypto/md5"
-	"crypto/sha1"
+	"crypto/sha256"
 	"database/sql"
 	"encoding/json"
 	"errors"
@@ -13,7 +12,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
-	"reflect"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -31,8 +29,10 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/types/deployment"
 )
 
+var sampleWorkspaceID = "sampleWorkspaceID"
+
 var sampleBackendConfig = ConfigT{
-	WorkspaceID: "sampleWorkspaceID",
+	WorkspaceID: sampleWorkspaceID,
 	Sources: []SourceT{
 		{
 			ID:       "1",
@@ -61,10 +61,9 @@ var sampleBackendConfig = ConfigT{
 var sampleFilteredSources = ConfigT{
 	Sources: []SourceT{
 		{
-			ID:           "1",
-			WriteKey:     "d",
-			Enabled:      false,
-			Destinations: []DestinationT{},
+			ID:       "1",
+			WriteKey: "d",
+			Enabled:  false,
 		}, {
 			ID:       "2",
 			WriteKey: "d2",
@@ -81,6 +80,7 @@ var sampleFilteredSources = ConfigT{
 }
 
 var sampleBackendConfig2 = ConfigT{
+	WorkspaceID: sampleWorkspaceID,
 	Sources: []SourceT{
 		{
 			ID:       "3",
@@ -195,7 +195,7 @@ func TestConfigUpdate(t *testing.T) {
 		defer ctrl.Finish()
 
 		wc := NewMockworkspaceConfig(ctrl)
-		wc.EXPECT().Get(gomock.Eq(ctx), workspaces).Return(ConfigT{}, fakeError).Times(1)
+		wc.EXPECT().Get(gomock.Eq(ctx), workspaces).Return(map[string]ConfigT{}, fakeError).Times(1)
 
 		bc := &backendConfigImpl{
 			workspaceConfig: wc,
@@ -216,11 +216,11 @@ func TestConfigUpdate(t *testing.T) {
 		defer ctrl.Finish()
 
 		wc := NewMockworkspaceConfig(ctrl)
-		wc.EXPECT().Get(gomock.Eq(ctx), workspaces).Return(sampleBackendConfig, nil).Times(1)
+		wc.EXPECT().Get(gomock.Eq(ctx), workspaces).Return(map[string]ConfigT{workspaces: sampleBackendConfig}, nil).Times(1)
 
 		bc := &backendConfigImpl{
 			workspaceConfig: wc,
-			curSourceJSON:   sampleBackendConfig, // same as the one returned by the workspace config
+			curSourceJSON:   map[string]ConfigT{workspaces: sampleBackendConfig}, // same as the one returned by the workspace config
 			cache:           cacheStore,
 		}
 		bc.configUpdate(ctx, workspaces)
@@ -238,7 +238,7 @@ func TestConfigUpdate(t *testing.T) {
 		defer cancel()
 
 		wc := NewMockworkspaceConfig(ctrl)
-		wc.EXPECT().Get(gomock.Eq(ctx), workspaces).Return(sampleBackendConfig, nil).Times(1)
+		wc.EXPECT().Get(gomock.Eq(ctx), workspaces).Return(map[string]ConfigT{workspaces: sampleBackendConfig}, nil).Times(1)
 
 		pubSub := pubsub.PublishSubscriber{}
 		bc := &backendConfigImpl{
@@ -246,23 +246,26 @@ func TestConfigUpdate(t *testing.T) {
 			workspaceConfig: wc,
 			cache:           cacheStore,
 		}
-		bc.curSourceJSON = sampleBackendConfig2
+		bc.curSourceJSON = map[string]ConfigT{workspaces: sampleBackendConfig2}
 
 		chProcess := pubSub.Subscribe(ctx, string(TopicProcessConfig))
 		chBackend := pubSub.Subscribe(ctx, string(TopicBackendConfig))
 
 		bc.configUpdate(ctx, workspaces)
 		require.True(t, bc.initialized)
-		require.Equal(t, (<-chProcess).Data, sampleFilteredSources)
-		require.Equal(t, (<-chBackend).Data, sampleBackendConfig)
+		require.Equal(t, (<-chProcess).Data, map[string]ConfigT{workspaces: sampleFilteredSources})
+		require.Equal(t, (<-chBackend).Data, map[string]ConfigT{workspaces: sampleBackendConfig})
 	})
 }
 
 func TestFilterProcessorEnabledDestinations(t *testing.T) {
 	initBackendConfig()
 
-	result := filterProcessorEnabledDestinations(sampleBackendConfig)
-	require.Equal(t, result, sampleFilteredSources)
+	configToFilter := map[string]ConfigT{sampleWorkspaceID: sampleBackendConfig}
+	originalConfig := map[string]ConfigT{sampleWorkspaceID: sampleBackendConfig}
+	result := filterProcessorEnabledWorkspaceConfig(configToFilter)
+	require.Equal(t, originalConfig, configToFilter)
+	require.Equal(t, map[string]ConfigT{sampleWorkspaceID: sampleFilteredSources}, result)
 }
 
 func TestSubscribe(t *testing.T) {
@@ -274,10 +277,10 @@ func TestSubscribe(t *testing.T) {
 
 		bc := &backendConfigImpl{
 			eb:            &pubsub.PublishSubscriber{},
-			curSourceJSON: sampleBackendConfig,
+			curSourceJSON: map[string]ConfigT{sampleWorkspaceID: sampleBackendConfig},
 		}
 
-		filteredSourcesJSON := filterProcessorEnabledDestinations(bc.curSourceJSON)
+		filteredSourcesJSON := filterProcessorEnabledWorkspaceConfig(bc.curSourceJSON)
 		bc.eb.Publish(string(TopicProcessConfig), filteredSourcesJSON)
 
 		ch := bc.Subscribe(ctx, TopicProcessConfig)
@@ -291,7 +294,7 @@ func TestSubscribe(t *testing.T) {
 
 		bc := &backendConfigImpl{
 			eb:            &pubsub.PublishSubscriber{},
-			curSourceJSON: sampleBackendConfig,
+			curSourceJSON: map[string]ConfigT{sampleWorkspaceID: sampleBackendConfig},
 		}
 
 		ch := bc.Subscribe(ctx, TopicBackendConfig)
@@ -410,8 +413,11 @@ func TestCache(t *testing.T) {
 		defer cancel()
 
 		wc := NewMockworkspaceConfig(ctrl)
-		wc.EXPECT().Get(gomock.Eq(ctx), workspaces).Return(ConfigT{}, errors.New("control plane down")).Times(1)
-		sampleBackendConfigBytes, _ := json.Marshal(sampleBackendConfig)
+		wc.EXPECT().Get(gomock.Eq(ctx), workspaces).Return(map[string]ConfigT{}, errors.New("control plane down")).Times(1)
+		sampleBackendConfigBytes, _ := json.Marshal(map[string]ConfigT{sampleWorkspaceID: sampleBackendConfig})
+		unmarshalledConfig := make(map[string]ConfigT)
+		err = json.Unmarshal(sampleBackendConfigBytes, &unmarshalledConfig)
+		require.NoError(t, err)
 		cacheStore.EXPECT().Get(gomock.Eq(ctx)).Return(sampleBackendConfigBytes, nil).Times(1)
 		pubSub := pubsub.PublishSubscriber{}
 		bc := &backendConfigImpl{
@@ -419,15 +425,15 @@ func TestCache(t *testing.T) {
 			workspaceConfig: wc,
 			cache:           cacheStore,
 		}
-		bc.curSourceJSON = sampleBackendConfig2
+		bc.curSourceJSON = map[string]ConfigT{sampleWorkspaceID: sampleBackendConfig2}
 
 		chProcess := pubSub.Subscribe(ctx, string(TopicProcessConfig))
 		chBackend := pubSub.Subscribe(ctx, string(TopicBackendConfig))
 
 		bc.configUpdate(ctx, workspaces)
 		require.True(t, bc.initialized)
-		require.Equal(t, (<-chProcess).Data, sampleFilteredSources)
-		require.Equal(t, (<-chBackend).Data, sampleBackendConfig)
+		require.Equal(t, (<-chProcess).Data, map[string]ConfigT{sampleWorkspaceID: sampleFilteredSources})
+		require.Equal(t, (<-chBackend).Data, unmarshalledConfig)
 	})
 
 	t.Run("not initialized from cache when a call to control plane fails and nothing exists in cache", func(t *testing.T) {
@@ -441,7 +447,7 @@ func TestCache(t *testing.T) {
 		defer cancel()
 
 		wc := NewMockworkspaceConfig(ctrl)
-		wc.EXPECT().Get(gomock.Eq(ctx), workspaces).Return(ConfigT{}, errors.New("control plane down")).Times(1)
+		wc.EXPECT().Get(gomock.Eq(ctx), workspaces).Return(map[string]ConfigT{}, errors.New("control plane down")).Times(1)
 		cacheStore.EXPECT().Get(gomock.Eq(ctx)).Return([]byte{}, sql.ErrNoRows).Times(1)
 		pubSub := pubsub.PublishSubscriber{}
 		bc := &backendConfigImpl{
@@ -449,7 +455,7 @@ func TestCache(t *testing.T) {
 			workspaceConfig: wc,
 			cache:           cacheStore,
 		}
-		bc.curSourceJSON = sampleBackendConfig2
+		bc.curSourceJSON = map[string]ConfigT{sampleWorkspaceID: sampleBackendConfig2}
 
 		bc.configUpdate(ctx, workspaces)
 		require.False(t, bc.initialized)
@@ -461,26 +467,31 @@ func TestCache(t *testing.T) {
 			ctx        = context.Background()
 			workspaces = "foo"
 			// cacheStore  = NewMockCache(ctrl)
-			accessToken = `accessToken`
+			// accessToken    = `accessToken`
+			workspaceToken = `token`
 		)
 		defer ctrl.Finish()
 
+		mockID := &mockIdentifier{key: workspaces, token: workspaceToken}
+
 		wc := NewMockworkspaceConfig(ctrl)
-		wc.EXPECT().AccessToken().Return(accessToken).Times(1)
-		wc.EXPECT().Get(gomock.Any(), workspaces).Return(sampleBackendConfig, nil).AnyTimes()
+		wc.EXPECT().Identity().Return(mockID).Times(1)
+		wc.EXPECT().Get(gomock.Any(), workspaces).Return(map[string]ConfigT{sampleWorkspaceID: sampleBackendConfig}, nil).AnyTimes()
 		bc := &backendConfigImpl{
 			workspaceConfig: wc,
 			eb:              pubsub.New(),
+			curSourceJSON:   map[string]ConfigT{},
 		}
 		bc.StartWithIDs(ctx, workspaces)
 		bc.WaitForConfig(ctx)
 		var (
 			configBytes []byte
-			config      ConfigT
+			config      map[string]ConfigT
 			cipherBlock cipher.Block
 		)
-		key := []byte(fmt.Sprintf(`%x`, md5.Sum([]byte(accessToken)))) // skipcq: GSC-G401, GO-S1025
-		cipherBlock, err = aes.NewCipher(key)
+		secret := sha256.Sum256([]byte(workspaceToken))
+		key := workspaces
+		cipherBlock, err = aes.NewCipher(secret[:])
 		require.NoError(t, err)
 		gcm, err := cipher.NewGCM(cipherBlock)
 		require.NoError(t, err)
@@ -489,29 +500,23 @@ func TestCache(t *testing.T) {
 			err = db.QueryRowContext(
 				ctx,
 				`SELECT config FROM config_cache WHERE key = $1`,
-				fmt.Sprintf(`%x`, sha1.Sum([]byte(workspaces))),
+				key,
 			).Scan(&configBytes)
 			if err != nil {
 				t.Logf("error while fetching config from cache: %v", err)
 				return false
 			}
-			nonce, ciphertext := configBytes[:nonceSize], configBytes[nonceSize:]
-			out, err := gcm.Open(nil, nonce, ciphertext, nil)
-			if err != nil {
-				t.Logf("error while decrypting config: %v", err)
-				return false
-			}
-			require.NoError(t, err)
-			err = json.Unmarshal(out, &config)
-			if err != nil {
-				t.Logf("error while unmarshaling config: %v", err)
-				return false
-			}
-			return reflect.DeepEqual(config, sampleBackendConfig)
+			return true
 		},
 			10*time.Second,
 			100*time.Millisecond,
 		)
+		nonce, ciphertext := configBytes[:nonceSize], configBytes[nonceSize:]
+		out, err := gcm.Open(nil, nonce, ciphertext, nil)
+		require.NoError(t, err)
+		err = json.Unmarshal(out, &config)
+		require.NoError(t, err)
+		require.Equal(t, map[string]ConfigT{sampleWorkspaceID: sampleBackendConfig}, config)
 	})
 }
 
@@ -522,4 +527,17 @@ func initBackendConfig() {
 	diagnostics.Init()
 	logger.Reset()
 	Init()
+}
+
+type mockIdentifier struct {
+	key   string
+	token string
+}
+
+func (m *mockIdentifier) ID() string {
+	return m.key
+}
+
+func (m *mockIdentifier) BasicAuth() (string, string) {
+	return m.token, ""
 }

@@ -72,8 +72,9 @@ func Test_Namespace_Get(t *testing.T) {
 
 	c, err := client.Get(context.Background(), workspaceID1)
 	require.NoError(t, err)
-	require.Equal(t, "", c.WorkspaceID)
-	require.Len(t, c.Sources, 3)
+	require.Len(t, c, 2)
+	// require.Equal(t, "", c.WorkspaceID)
+	// require.Len(t, c.Sources, 3)
 
 	t.Log("correct writeKey to workspaceID mapping")
 	require.Equal(t, workspaceID1, client.GetWorkspaceIDForWriteKey("2CCggSFf....jBLNxmXtSlvZ"))
@@ -85,8 +86,10 @@ func Test_Namespace_Get(t *testing.T) {
 	require.Equal(t, workspaceID1, client.GetWorkspaceIDForSourceID("2CCgpZlqlXRDRz8rChhQKtuwqKA"))
 	require.Equal(t, workspaceID2, client.GetWorkspaceIDForSourceID("2CChOtDTWeXIQiRmHMU56C3htPf"))
 
-	require.Equal(t, c.ConnectionFlags.URL, cpRouterURL)
-	require.True(t, c.ConnectionFlags.Services["warehouse"])
+	for workspace := range c {
+		require.Equal(t, cpRouterURL, c[workspace].ConnectionFlags.URL)
+		require.True(t, c[workspace].ConnectionFlags.Services["warehouse"])
+	}
 
 	for _, workspaceID := range []string{workspaceID1, workspaceID2} {
 		require.Equal(t,

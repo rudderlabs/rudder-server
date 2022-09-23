@@ -51,10 +51,10 @@ func (mr *MockworkspaceConfigMockRecorder) AccessToken() *gomock.Call {
 }
 
 // Get mocks base method.
-func (m *MockworkspaceConfig) Get(arg0 context.Context, arg1 string) (ConfigT, error) {
+func (m *MockworkspaceConfig) Get(arg0 context.Context, arg1 string) (map[string]ConfigT, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "Get", arg0, arg1)
-	ret0, _ := ret[0].(ConfigT)
+	ret0, _ := ret[0].(map[string]ConfigT)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
@@ -173,10 +173,10 @@ func (mr *MockBackendConfigMockRecorder) AccessToken() *gomock.Call {
 }
 
 // Get mocks base method.
-func (m *MockBackendConfig) Get(arg0 context.Context, arg1 string) (ConfigT, error) {
+func (m *MockBackendConfig) Get(arg0 context.Context, arg1 string) (map[string]ConfigT, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "Get", arg0, arg1)
-	ret0, _ := ret[0].(ConfigT)
+	ret0, _ := ret[0].(map[string]ConfigT)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }

@@ -1461,22 +1461,24 @@ func (gateway *HandleT) StartAdminHandler(ctx context.Context) error {
 // Gets the config from config backend and extracts enabled writekeys
 func (gateway *HandleT) backendConfigSubscriber() {
 	ch := gateway.backendConfig.Subscribe(context.TODO(), backendconfig.TopicProcessConfig)
-	for config := range ch {
+	for data := range ch {
 		configSubscriberLock.Lock()
 		writeKeysSourceMap = map[string]backendconfig.SourceT{}
 		enabledWriteKeyWebhookMap = map[string]string{}
 		enabledWriteKeyWorkspaceMap = map[string]string{}
-		sources := config.Data.(backendconfig.ConfigT)
+		config := data.Data.(map[string]backendconfig.ConfigT)
 		sourceIDToNameMap = map[string]string{}
-		for _, source := range sources.Sources {
-			sourceIDToNameMap[source.ID] = source.Name
-			writeKeysSourceMap[source.WriteKey] = source
+		for workspaceID, wsConfig := range config {
+			for _, source := range wsConfig.Sources {
+				sourceIDToNameMap[source.ID] = source.Name
+				writeKeysSourceMap[source.WriteKey] = source
 
-			if source.Enabled {
-				enabledWriteKeyWorkspaceMap[source.WriteKey] = source.WorkspaceID
-				if source.SourceDefinition.Category == "webhook" {
-					enabledWriteKeyWebhookMap[source.WriteKey] = source.SourceDefinition.Name
-					gateway.webhookHandler.Register(source.SourceDefinition.Name)
+				if source.Enabled {
+					enabledWriteKeyWorkspaceMap[source.WriteKey] = workspaceID
+					if source.SourceDefinition.Category == "webhook" {
+						enabledWriteKeyWebhookMap[source.WriteKey] = source.SourceDefinition.Name
+						gateway.webhookHandler.Register(source.SourceDefinition.Name)
+					}
 				}
 			}
 		}

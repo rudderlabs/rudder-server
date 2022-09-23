@@ -17,7 +17,7 @@ var pkgLogger = logger.NewLogger().Child("client")
 
 //go:generate mockgen -source=destination.go -destination=mock_destination_test.go -package=destination github.com/rudderlabs/rudder-server/regulation-worker/internal/Destination/destination
 type destinationMiddleware interface {
-	Get(ctx context.Context, workspace string) (backendconfig.ConfigT, error)
+	Get(ctx context.Context, workspace string) (map[string]backendconfig.ConfigT, error)
 }
 
 type DestMiddleware struct {
@@ -31,9 +31,11 @@ func (d *DestMiddleware) GetWorkspaceId(ctx context.Context) (string, error) {
 		pkgLogger.Errorf("error while getting destination details from backend config: %v", err)
 		return "", err
 	}
-	if destConfig.WorkspaceID != "" {
-		pkgLogger.Debugf("workspaceId=", destConfig.WorkspaceID)
-		return destConfig.WorkspaceID, nil
+	if len(destConfig) == 1 { // only single workspace configs are supported by regulation worker
+		for workspaceID := range destConfig {
+			pkgLogger.Debugf("workspaceId=", workspaceID)
+			return workspaceID, nil
+		}
 	}
 
 	pkgLogger.Error("workspaceId not found in config")
@@ -50,25 +52,24 @@ func (d *DestMiddleware) GetDestDetails(ctx context.Context, destID string) (mod
 		return model.Destination{}, err
 	}
 
-	destDetail := model.Destination{}
-	for _, source := range destConf.Sources {
-		for _, dest := range source.Destinations {
-			if dest.ID == destID {
-				destDetail.Config = dest.Config
-				destDetail.DestinationID = dest.ID
-				destDetail.Name = dest.DestinationDefinition.Name
+	for _, wConf := range destConf {
+		for _, source := range wConf.Sources {
+			for _, dest := range source.Destinations {
+				if dest.ID == destID {
+					var destDetail model.Destination
+					destDetail.Config = dest.Config
+					destDetail.DestinationID = dest.ID
+					destDetail.Name = dest.DestinationDefinition.Name
+					pkgLogger.Debugf("obtained destination detail: %v", destDetail)
+					return destDetail, nil
+				}
 			}
 		}
 	}
-	if destDetail.Name == "" {
-		return model.Destination{}, model.ErrInvalidDestination
-	}
-
-	pkgLogger.Debugf("obtained destination detail: %v", destDetail)
-	return destDetail, nil
+	return model.Destination{}, model.ErrInvalidDestination
 }
 
-func (d *DestMiddleware) getDestDetails(ctx context.Context) (backendconfig.ConfigT, error) {
+func (d *DestMiddleware) getDestDetails(ctx context.Context) (map[string]backendconfig.ConfigT, error) {
 	pkgLogger.Debugf("getting destination details with exponential backoff")
 
 	maxWait := time.Minute * 10
@@ -77,7 +78,7 @@ func (d *DestMiddleware) getDestDetails(ctx context.Context) (backendconfig.Conf
 	boCtx := backoff.WithContext(bo, ctx)
 	bo.MaxInterval = time.Minute
 	bo.MaxElapsedTime = maxWait
-	var destConf backendconfig.ConfigT
+	var destConf map[string]backendconfig.ConfigT
 	if err = backoff.Retry(func() error {
 		pkgLogger.Debugf("Fetching backend-config...")
 		// TODO : Revisit the Implementation for Regulation Worker in case of MultiTenant Deployment
@@ -89,7 +90,7 @@ func (d *DestMiddleware) getDestDetails(ctx context.Context) (backendconfig.Conf
 	}, boCtx); err != nil {
 		if bo.NextBackOff() == backoff.Stop {
 			pkgLogger.Debugf("reached retry limit...")
-			return backendconfig.ConfigT{}, err
+			return map[string]backendconfig.ConfigT{}, err
 		}
 	}
 	return destConf, nil

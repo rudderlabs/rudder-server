@@ -324,17 +324,19 @@ func (customManager *CustomManagerT) BackendConfigInitialized() <-chan struct{} 
 func (customManager *CustomManagerT) backendConfigSubscriber() {
 	var once sync.Once
 	ch := backendconfig.DefaultBackendConfig.Subscribe(context.TODO(), "backendConfig")
-	for conf := range ch {
-		allSources := conf.Data.(backendconfig.ConfigT)
-		for _, source := range allSources.Sources {
-			for _, destination := range source.Destinations {
-				if destination.DestinationDefinition.Name == customManager.destType {
-					err := customManager.onNewDestination(destination)
-					if err != nil {
-						pkgLogger.Errorf(
-							"[CDM %s] Error while subscribing to BackendConfig for destination id: %s",
-							customManager.destType, destination.ID,
-						)
+	for data := range ch {
+		config := data.Data.(map[string]backendconfig.ConfigT)
+		for _, wConfig := range config {
+			for _, source := range wConfig.Sources {
+				for _, destination := range source.Destinations {
+					if destination.DestinationDefinition.Name == customManager.destType {
+						err := customManager.onNewDestination(destination)
+						if err != nil {
+							pkgLogger.Errorf(
+								"[CDM %s] Error while subscribing to BackendConfig for destination id: %s",
+								customManager.destType, destination.ID,
+							)
+						}
 					}
 				}
 			}

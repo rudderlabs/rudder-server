@@ -477,6 +477,7 @@ var (
 	userTransformBatchSize    int
 	writeKeyDestinationMap    map[string][]backendconfig.DestinationT
 	writeKeySourceMap         map[string]backendconfig.SourceT
+	workspaceLibrariesMap     map[string]backendconfig.LibrariesT
 	destinationIDtoTypeMap    map[string]string
 	batchDestinations         []string
 	configSubscriberLock      sync.RWMutex
@@ -597,25 +598,35 @@ func SetFeaturesRetryAttempts(overrideAttempts int) {
 
 func (proc *HandleT) backendConfigSubscriber() {
 	ch := proc.backendConfig.Subscribe(context.TODO(), backendconfig.TopicProcessConfig)
-	for config := range ch {
+	for data := range ch {
+		config := data.Data.(map[string]backendconfig.ConfigT)
 		configSubscriberLock.Lock()
+		workspaceLibrariesMap = make(map[string]backendconfig.LibrariesT, len(config))
 		writeKeyDestinationMap = make(map[string][]backendconfig.DestinationT)
 		writeKeySourceMap = map[string]backendconfig.SourceT{}
 		destinationIDtoTypeMap = make(map[string]string)
-		sources := config.Data.(backendconfig.ConfigT)
-		for i := range sources.Sources {
-			source := &sources.Sources[i]
-			writeKeySourceMap[source.WriteKey] = *source
-			if source.Enabled {
-				writeKeyDestinationMap[source.WriteKey] = source.Destinations
-				for j := range source.Destinations {
-					destination := &source.Destinations[j]
-					destinationIDtoTypeMap[destination.ID] = destination.DestinationDefinition.Name
+		for workspaceID, wConfig := range config {
+			for i := range wConfig.Sources {
+				source := &wConfig.Sources[i]
+				writeKeySourceMap[source.WriteKey] = *source
+				if source.Enabled {
+					writeKeyDestinationMap[source.WriteKey] = source.Destinations
+					for j := range source.Destinations {
+						destination := &source.Destinations[j]
+						destinationIDtoTypeMap[destination.ID] = destination.DestinationDefinition.Name
+					}
 				}
 			}
+			workspaceLibrariesMap[workspaceID] = wConfig.Libraries
 		}
 		configSubscriberLock.Unlock()
 	}
+}
+
+func getWorkspaceLibraries(workspaceID string) backendconfig.LibrariesT {
+	configSubscriberLock.RLock()
+	defer configSubscriberLock.RUnlock()
+	return workspaceLibrariesMap[workspaceID]
 }
 
 func getSourceByWriteKey(writeKey string) (*backendconfig.SourceT, error) {
@@ -1370,7 +1381,7 @@ func (proc *HandleT) processJobsForDest(subJobs subJob, parsedEventList [][]type
 			backendEnabledDestTypes := getBackendEnabledDestinationTypes(writeKey)
 			enabledDestTypes := integrations.FilterClientIntegrations(singularEvent, backendEnabledDestTypes)
 			workspaceID := proc.backendConfig.GetWorkspaceIDForWriteKey(writeKey)
-			workspaceLibraries := proc.backendConfig.GetWorkspaceLibrariesForWorkspaceID(workspaceID)
+			workspaceLibraries := getWorkspaceLibraries(workspaceID)
 
 			for i := range enabledDestTypes {
 				destType := &enabledDestTypes[i]

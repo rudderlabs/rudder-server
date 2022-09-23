@@ -5,7 +5,7 @@ package backendconfig
 
 import (
 	"context"
-	"crypto/sha1" // skipcq: GSC-G505
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"net/url"
@@ -63,7 +63,7 @@ type workspaceConfig interface {
 	SetUp() error
 	// Deprecated: use Identity() instead.
 	AccessToken() string
-	Get(context.Context, string) (ConfigT, error)
+	Get(context.Context, string) (map[string]ConfigT, error)
 	GetWorkspaceIDForWriteKey(string) string
 	GetWorkspaceIDForSourceID(string) string
 	GetWorkspaceLibrariesForWorkspaceID(string) LibrariesT
@@ -86,7 +86,7 @@ type backendConfigImpl struct {
 	blockChan         chan struct{}
 	initializedLock   sync.RWMutex
 	initialized       bool
-	curSourceJSON     ConfigT
+	curSourceJSON     map[string]ConfigT
 	curSourceJSONLock sync.RWMutex
 	usingCache        bool
 	cache             cache.Cache
@@ -130,12 +130,20 @@ func trackConfig(preConfig, curConfig ConfigT) {
 	}
 }
 
+func filterProcessorEnabledWorkspaceConfig(config map[string]ConfigT) map[string]ConfigT {
+	filterConfig := make(map[string]ConfigT, len(config))
+	for workspaceID, wConfig := range config {
+		filterConfig[workspaceID] = filterProcessorEnabledDestinations(wConfig)
+	}
+	return filterConfig
+}
+
 func filterProcessorEnabledDestinations(config ConfigT) ConfigT {
 	var modifiedConfig ConfigT
 	modifiedConfig.Libraries = config.Libraries
 	modifiedConfig.Sources = make([]SourceT, 0)
 	for _, source := range config.Sources {
-		destinations := make([]DestinationT, 0)
+		var destinations []DestinationT
 		for _, destination := range source.Destinations { // TODO skipcq: CRT-P0006
 			pkgLogger.Debug(destination.Name, " IsProcessorEnabled: ", destination.IsProcessorEnabled)
 			if destination.IsProcessorEnabled {
@@ -152,7 +160,7 @@ func (bc *backendConfigImpl) configUpdate(ctx context.Context, workspaces string
 	statConfigBackendError := stats.Default.NewStat("config_backend.errors", stats.CountType)
 
 	var (
-		sourceJSON ConfigT
+		sourceJSON map[string]ConfigT
 		err        error
 	)
 	defer func() {
@@ -194,9 +202,11 @@ func (bc *backendConfigImpl) configUpdate(ctx context.Context, workspaces string
 
 	// sorting the sourceJSON.
 	// json unmarshal does not guarantee order. For DeepEqual to work as expected, sorting is necessary
-	sort.Slice(sourceJSON.Sources, func(i, j int) bool {
-		return sourceJSON.Sources[i].ID < sourceJSON.Sources[j].ID
-	})
+	for workspace := range sourceJSON {
+		sort.Slice(sourceJSON[workspace].Sources, func(i, j int) bool {
+			return sourceJSON[workspace].Sources[i].ID < sourceJSON[workspace].Sources[j].ID
+		})
+	}
 
 	bc.curSourceJSONLock.Lock()
 	if !reflect.DeepEqual(bc.curSourceJSON, sourceJSON) {
@@ -206,8 +216,12 @@ func (bc *backendConfigImpl) configUpdate(ctx context.Context, workspaces string
 			pkgLogger.Infof("Workspace Config changed")
 		}
 
-		trackConfig(bc.curSourceJSON, sourceJSON)
-		filteredSourcesJSON := filterProcessorEnabledDestinations(sourceJSON)
+		if len(sourceJSON) == 1 { // only use diagnostics if there is one workspace
+			for _, wConfig := range sourceJSON {
+				trackConfig(bc.curSourceJSON[wConfig.WorkspaceID], wConfig)
+			}
+		}
+		filteredSourcesJSON := filterProcessorEnabledWorkspaceConfig(sourceJSON)
 		bc.curSourceJSON = sourceJSON
 		bc.curSourceJSONLock.Unlock()
 		LastSync = time.Now().Format(time.RFC3339) // TODO fix concurrent access
@@ -234,7 +248,7 @@ func (bc *backendConfigImpl) pollConfigUpdate(ctx context.Context, workspaces st
 	}
 }
 
-func getConfig() ConfigT {
+func getConfig() map[string]ConfigT {
 	bc, _ := DefaultBackendConfig.(*backendConfigImpl)
 	bc.curSourceJSONLock.RLock()
 	defer bc.curSourceJSONLock.RUnlock()
@@ -314,10 +328,13 @@ func (bc *backendConfigImpl) StartWithIDs(ctx context.Context, workspaces string
 	bc.blockChan = make(chan struct{})
 	bc.cache = cacheOverride
 	if bc.cache == nil {
-		cacheKey := fmt.Sprintf(`%x`, sha1.Sum([]byte(workspaces))) // using a fixed size key	// skipcq: GSC-G401, GO-S1025
+		identifier := bc.Identity()
+		u, _ := identifier.BasicAuth()
+		secret := sha256.Sum256([]byte(u))
+		cacheKey := identifier.ID()
 		bc.cache = cache.Start(
 			ctx,
-			bc.Identity().ID(),
+			secret,
 			cacheKey,
 			bc.Subscribe(ctx, TopicBackendConfig),
 		)
