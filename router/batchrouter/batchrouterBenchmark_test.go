@@ -12,6 +12,7 @@ import (
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	mocksFileManager "github.com/rudderlabs/rudder-server/mocks/services/filemanager"
+	"github.com/rudderlabs/rudder-server/utils/logger"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -46,6 +47,10 @@ func randomString() string {
 
 func Benchmark_JSONUmarshal(b *testing.B) {
 
+	config.Load()
+	logger.Init()
+	Init()
+
 	for i := 0; i < b.N; i++ {
 
 		jobs := []*jobsdb.JobT{}
@@ -53,7 +58,7 @@ func Benchmark_JSONUmarshal(b *testing.B) {
 			params := JobParametersT{
 				EventName: "test",
 				EventType: "track",
-				MessageID: string(uuid.Must(uuid.NewV4()).String()),
+				MessageID: uuid.Must(uuid.NewV4()).String(),
 
 				ReceivedAt: "2021-01-01T00:00:00Z",
 			}
@@ -69,7 +74,6 @@ func Benchmark_JSONUmarshal(b *testing.B) {
 
 		g := errgroup.Group{}
 		g.Go(func() error {
-
 			params := JobParametersT{
 				EventName: "test",
 				EventType: "track",
@@ -91,10 +95,9 @@ func Benchmark_JSONUmarshal(b *testing.B) {
 		})
 
 		g.Go(func() error {
-
-			for i, _ := range jobs {
+			for i := range jobs {
 				var params JobParametersT
-				json.Unmarshal(jobs[i].Parameters, &params)
+				_ = TryUnmarshalJSON(jobs[i].Parameters, &params)
 				// if err != nil {
 				// 	b.Fatal(err)
 				// }
@@ -104,8 +107,7 @@ func Benchmark_JSONUmarshal(b *testing.B) {
 			return nil
 		})
 
-		g.Wait()
-
+		_ = g.Wait()
 	}
 
 }

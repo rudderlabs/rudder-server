@@ -1207,7 +1207,7 @@ func (brt *HandleT) setJobStatus(batchJobs *BatchJobsT, isWarehouse bool, errOcc
 		}
 
 		var parameters JobParametersT
-		err = json.Unmarshal(job.Parameters, &parameters)
+		err = TryUnmarshalJSON(job.Parameters, &parameters)
 		if err != nil {
 			brt.logger.Error("Unmarshal of job parameters failed. ", string(job.Parameters))
 		}
@@ -2433,4 +2433,25 @@ func (brt *HandleT) updateProcessedEventsMetrics(statusList []*jobsdb.JobStatusT
 			}).Count(count)
 		}
 	}
+}
+
+func TryUnmarshalJSON(data []byte, v interface{}) (err error) {
+	c := cap(data)
+	l := len(data)
+
+	startingData := make([]byte, l)
+	copy(startingData, data)
+
+	defer func() {
+		if r := recover(); r != nil {
+			pkgLogger.Warnf("Panic while unmarshalling json: %v", r)
+			pkgLogger.Warnf("	starting slice: [%d:%d]: %q", l, c, string(startingData))
+			pkgLogger.Warnf("	leading slice:  [%d:%d]: %q", len(data), cap(data), string(data))
+
+			err = stdjson.Unmarshal(data, v)
+		}
+	}()
+
+	err = json.Unmarshal(data, v)
+	return
 }
