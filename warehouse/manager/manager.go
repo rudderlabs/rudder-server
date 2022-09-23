@@ -39,6 +39,7 @@ type ManagerI interface {
 	Connect(warehouse warehouseutils.WarehouseT) (client.Client, error)
 	LoadTestTable(location, stagingTableName string, payloadMap map[string]interface{}, loadFileFormat string) error
 	SetConnectionTimeout(timeout time.Duration)
+	RefreshPartitions(tableName string, loadFiles []warehouseutils.LoadFileT) error
 }
 
 type WarehouseDelete interface {

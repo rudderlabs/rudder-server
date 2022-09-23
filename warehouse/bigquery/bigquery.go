@@ -1100,3 +1100,7 @@ func (bq *HandleT) LoadTestTable(location, tableName string, payloadMap map[stri
 
 func (bq *HandleT) SetConnectionTimeout(timeout time.Duration) {
 }
+
+func (*HandleT) RefreshPartitions(_ string, _ []warehouseutils.LoadFileT) (err error) {
+	return nil
+}

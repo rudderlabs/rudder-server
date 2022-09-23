@@ -945,3 +945,7 @@ func (sf *HandleT) LoadTestTable(location, tableName string, _ map[string]interf
 func (sf *HandleT) SetConnectionTimeout(timeout time.Duration) {
 	sf.ConnectTimeout = timeout
 }
+
+func (*HandleT) RefreshPartitions(_ string, _ []warehouseutils.LoadFileT) (err error) {
+	return nil
+}

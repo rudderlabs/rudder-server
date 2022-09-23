@@ -423,7 +423,25 @@ func (job *UploadJobT) run() (err error) {
 
 			job.matchRowsInStagingAndLoadFiles()
 			job.recordLoadFileGenerationTimeStat(startLoadFileID, endLoadFileID)
-
+			// Refresh partitions if exists
+			if job.warehouse.Type == "S3_DATALAKE" && warehouseutils.GetConfigValueBoolString("useGlue", job.warehouse) == "true" {
+				for tableName := range job.upload.UploadSchema {
+					loadFiles := job.GetLoadFilesMetadata(warehouseutils.GetLoadFilesOptionsT{
+						Table:   tableName,
+						StartID: startLoadFileID,
+						EndID:   endLoadFileID,
+					})
+					// This is best done every 100 files, since it's a batch request for updates in Glue
+					partitionBatchSize := 99
+					for i := 0; i < len(loadFiles); i += partitionBatchSize {
+						end := i + partitionBatchSize
+						if end > len(loadFiles) {
+							end = len(loadFiles)
+						}
+						whManager.RefreshPartitions(tableName, loadFiles[i:end])
+					}
+				}
+			}
 			newStatus = nextUploadState.completed
 
 		case UpdatedTableUploadsCounts:
@@ -1782,7 +1800,11 @@ func (job *UploadJobT) createLoadFiles(generateAll bool) (startLoadFileID, endLo
 				payload.StagingDestinationConfig = revisionConfig.Config
 			}
 			if misc.Contains(warehouseutils.TimeWindowDestinations, job.warehouse.Type) {
-				payload.LoadFilePrefix = warehouseutils.GetLoadFilePrefix(stagingFile.TimeWindow, job.warehouse)
+				if job.warehouse.Type == "S3_DATALAKE" && warehouseutils.GetConfigValueBoolString("useGlue", job.warehouse) == "true" {
+					payload.LoadFilePrefix = stagingFile.TimeWindow.Format(warehouseutils.GlueTimeWindowFormat)
+				} else {
+					payload.LoadFilePrefix = warehouseutils.GetLoadFilePrefix(stagingFile.TimeWindow, job.warehouse)
+				}
 			}
 
 			payloadJSON, err := json.Marshal(payload)

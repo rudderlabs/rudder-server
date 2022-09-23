@@ -42,6 +42,7 @@ type SchemaRepository interface {
 	CreateTable(tableName string, columnMap map[string]string) (err error)
 	AddColumn(tableName, columnName, columnType string) (err error)
 	AlterColumn(tableName, columnName, columnType string) (err error)
+	RefreshPartitions(tableName string, loadFiles []warehouseutils.LoadFileT) error
 }
 
 func NewSchemaRepository(wh warehouseutils.WarehouseT, uploader warehouseutils.UploaderI) (SchemaRepository, error) {

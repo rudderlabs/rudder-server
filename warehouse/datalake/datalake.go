@@ -118,3 +118,7 @@ func (wh *HandleT) LoadTestTable(location, tableName string, payloadMap map[stri
 
 func (wh *HandleT) SetConnectionTimeout(timeout time.Duration) {
 }
+
+func (wh *HandleT) RefreshPartitions(tableName string, loadFiles []warehouseutils.LoadFileT) error {
+	return wh.SchemaRepository.RefreshPartitions(tableName, loadFiles)
+}
