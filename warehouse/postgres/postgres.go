@@ -148,7 +148,7 @@ func loadConfig() {
 	config.RegisterBoolConfigVariable(false, &skipComputingUserLatestTraits, true, "Warehouse.postgres.skipComputingUserLatestTraits")
 	config.RegisterDurationConfigVariable(30, &txnRollbackTimeout, true, time.Second, "Warehouse.postgres.txnRollbackTimeout")
 	config.RegisterBoolConfigVariable(false, &enableSQLStatementExecutionPlan, true, "Warehouse.postgres.enableSQLStatementExecutionPlan")
-	enableDeleteByJobs = config.GetBool("Warehouse.postgres.enableDeleteByJobs", false)
+	config.RegisterBoolConfigVariable(false, &enableDeleteByJobs, true, "Warehouse.postgres.enableDeleteByJobs")
 }
 
 func (pg *HandleT) getConnectionCredentials() CredentialsT {

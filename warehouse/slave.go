@@ -599,7 +599,7 @@ type AsyncJobRunResult struct {
 	Id     string
 }
 
-func runAsyncJob(asyncjob jobs.AsyncJobPayloadT, _ int) (AsyncJobRunResult, error) {
+func runAsyncJob(asyncjob jobs.AsyncJobPayloadT) (AsyncJobRunResult, error) {
 	warehouse, err := getDestinationFromConnectionMap(asyncjob.DestinationID, asyncjob.SourceID)
 	if err != nil {
 		return AsyncJobRunResult{Id: asyncjob.Id, Result: false}, err
@@ -637,7 +637,7 @@ func runAsyncJob(asyncjob jobs.AsyncJobPayloadT, _ int) (AsyncJobRunResult, erro
 	return asyncJobRunResult, err
 }
 
-func processClaimedAsyncJob(claimedJob pgnotifier.ClaimT, workerIndex int) {
+func processClaimedAsyncJob(claimedJob pgnotifier.ClaimT) {
 	pkgLogger.Infof("[WH-Jobs]: Got request for processing Async Job with Batch ID %s", claimedJob.BatchID)
 	handleErr := func(err error, claim pgnotifier.ClaimT) {
 		pkgLogger.Errorf("[WH]: Error processing claim: %v", err)
@@ -652,7 +652,7 @@ func processClaimedAsyncJob(claimedJob pgnotifier.ClaimT, workerIndex int) {
 	if err != nil {
 		handleErr(err, claimedJob)
 	}
-	result, err := runAsyncJob(job, workerIndex)
+	result, err := runAsyncJob(job)
 	if err != nil {
 		handleErr(err, claimedJob)
 	}
@@ -684,7 +684,7 @@ func setupSlave(ctx context.Context) error {
 				pkgLogger.Infof("[WH]: Successfully claimed job:%v by slave worker-%v-%v & job type %s", claimedJob.ID, idx, slaveID, claimedJob.JobType)
 
 				if claimedJob.JobType == jobs.AsyncJobType {
-					processClaimedAsyncJob(claimedJob, idx)
+					processClaimedAsyncJob(claimedJob)
 				} else {
 					processClaimedUploadJob(claimedJob, idx)
 				}
