@@ -45,13 +45,13 @@ const (
 
 	}`
 	AsyncWhPayload = `{
-		"sourceid":"%s",
-		"jobrunid":"%s",
-		"taskrunid":"%s",
+		"source_id":"%s",
+		"job_run_id":"%s",
+		"task_run_id":"%s",
 		"channel":"sources",
 		"async_job_type":"deletebyjobrunid",
-		"destinationid":"%s",
-		"starttime":"%s"
+		"destination_id":"%s",
+		"start_time":"%s"
 	}`
 	PendingEventsPayload = `{
 		"source_id": "%s",
@@ -383,8 +383,8 @@ func SendEvents(t testing.TB, wareHouseTest *WareHouseTest, eventsMap EventsCoun
 			task_run_id := wareHouseTest.MsgId()
 			payloadGroup := strings.NewReader(fmt.Sprintf(GoogleSheetsPayload, wareHouseTest.UserId, wareHouseTest.MsgId(), job_run_id, task_run_id))
 			send(t, payloadGroup, "import", wareHouseTest.SourceWriteKey, "POST")
-			wareHouseTest.LatestSourceRunConfig["jobrunid"] = job_run_id
-			wareHouseTest.LatestSourceRunConfig["taskrunid"] = task_run_id
+			wareHouseTest.LatestSourceRunConfig["job_run_id"] = job_run_id
+			wareHouseTest.LatestSourceRunConfig["task_run_id"] = task_run_id
 			for {
 				pendingEventsPayload := strings.NewReader(fmt.Sprintf(PendingEventsPayload, wareHouseTest.SourceID, job_run_id))
 				count := blockByPendingEvents(t, pendingEventsPayload, wareHouseTest.SourceWriteKey)
@@ -560,12 +560,12 @@ func send(t testing.TB, payload *strings.Reader, eventType, writeKey, method str
 }
 
 func SendAsyncRequest(t testing.TB, wareHouseTest *WareHouseTest) {
-	asyncwhpayload := strings.NewReader(fmt.Sprintf(AsyncWhPayload, wareHouseTest.SourceID, wareHouseTest.LatestSourceRunConfig["jobrunid"], wareHouseTest.LatestSourceRunConfig["taskrunid"], wareHouseTest.DestinationID, time.Now().UTC().Format("01-02-2006 15:04:05")))
+	asyncwhpayload := strings.NewReader(fmt.Sprintf(AsyncWhPayload, wareHouseTest.SourceID, wareHouseTest.LatestSourceRunConfig["job_run_id"], wareHouseTest.LatestSourceRunConfig["task_run_id"], wareHouseTest.DestinationID, time.Now().UTC().Format("01-02-2006 15:04:05")))
 	send(t, asyncwhpayload, "warehouse/jobs", wareHouseTest.SourceWriteKey, "POST")
 }
 
 func SendAsyncStatusRequest(t testing.TB, wareHouseTest *WareHouseTest) {
-	url := "warehouse/jobs/status?job_run_id=" + wareHouseTest.LatestSourceRunConfig["jobrunid"] + "&task_run_id=" + wareHouseTest.LatestSourceRunConfig["taskrunid"] + "&source_id=" + wareHouseTest.SourceID + "&destination_id=" + wareHouseTest.DestinationID
+	url := "warehouse/jobs/status?job_run_id=" + wareHouseTest.LatestSourceRunConfig["job_run_id"] + "&task_run_id=" + wareHouseTest.LatestSourceRunConfig["task_run_id"] + "&source_id=" + wareHouseTest.SourceID + "&destination_id=" + wareHouseTest.DestinationID
 
 	for {
 		status, err := blockByWhJobStatus(t, url, wareHouseTest.SourceWriteKey)

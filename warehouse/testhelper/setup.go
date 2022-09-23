@@ -519,8 +519,8 @@ func WarehouseSourceEventsMap() EventsCountMap {
 
 func DefaultSourceRunConfig() map[string]string {
 	srcrunconfig := make(map[string]string)
-	srcrunconfig["jobrunid"] = ""
-	srcrunconfig["taskrunid"] = ""
+	srcrunconfig["job_run_id"] = ""
+	srcrunconfig["task_run_id"] = ""
 
 	return srcrunconfig
 }

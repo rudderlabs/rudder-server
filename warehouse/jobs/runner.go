@@ -27,11 +27,6 @@ func InitWarehouseJobsAPI(ctx context.Context, dbHandle *sql.DB, notifier *pgnot
 	return &AsyncJobWh
 }
 
-/*
-Gets Table names from the jobrunid.
-Should not belong here but need to create separate package for deletebyjobs or
-refactor to a more generic getTableName with jobrundid and taskrunid as params
-*/
 func (asyncWhJob *AsyncJobWhT) getTableNamesBy(sourceid, destinationid, jobrunid, taskrunid string) ([]string, error) {
 	pkgLogger.Infof("Extracting tablenames for the job run id %s", jobrunid)
 	var tableNames []string
@@ -81,7 +76,7 @@ func (asyncWhJob *AsyncJobWhT) addJobstoDB(ctx context.Context, payload *AsyncJo
 	}
 	pkgLogger.Infof("Adding job to the wh_asnc_jobs %s for %tablename: %s", payload.MetaData, payload.TableName)
 
-	sqlStatement := fmt.Sprintf(`INSERT INTO %s (sourceid, destinationid, tablename, status, created_at, updated_at, async_job_type, metadata)
+	sqlStatement := fmt.Sprintf(`INSERT INTO %s (source_id, destination_id, tablename, status, created_at, updated_at, async_job_type, metadata)
 	VALUES ($1, $2, $3, $4, $5, $6 ,$7, $8 ) RETURNING id`, warehouseutils.WarehouseAsyncJobTable)
 
 	stmt, err := asyncWhJob.dbHandle.Prepare(sqlStatement)
@@ -237,8 +232,8 @@ func (asyncWhJob *AsyncJobWhT) getPendingAsyncJobs(ctx context.Context) ([]Async
 	query := fmt.Sprintf(
 		`select 
 	id,
-	sourceid,
-	destinationid,
+	source_id,
+	destination_id,
 	tablename,
 	async_job_type,
 	metadata,
@@ -352,8 +347,8 @@ func (asyncWhJob *AsyncJobWhT) getStatusAsyncJob(ctx context.Context, payload *S
 		return
 	}
 	pkgLogger.Info("WH-Jobs: Getting status for wh async jobs %v", payload)
-	// Need to check for count first and see if there are any rows matching the jobrunid and taskrunid. If none, then raise an error instead of showing complete
-	sqlStatement := fmt.Sprintf(`SELECT status,error FROM %s WHERE metadata->>'jobrunid'=$1 AND metadata->>'taskrunid'=$2`, warehouseutils.WarehouseAsyncJobTable)
+	// Need to check for count first and see if there are any rows matching the job_run_id and task_run_id. If none, then raise an error instead of showing complete
+	sqlStatement := fmt.Sprintf(`SELECT status,error FROM %s WHERE metadata->>'job_run_id'=$1 AND metadata->>'task_run_id'=$2`, warehouseutils.WarehouseAsyncJobTable)
 	pkgLogger.Debugf("Query inside getStatusAsync function is %s", sqlStatement)
 	rows, err := asyncWhJob.dbHandle.Query(sqlStatement, payload.JobRunID, payload.TaskRunID)
 	if err != nil {
@@ -376,7 +371,7 @@ func (asyncWhJob *AsyncJobWhT) getStatusAsyncJob(ctx context.Context, payload *S
 			return
 		}
 		if status == WhJobFailed {
-			pkgLogger.Infof("[WH-Jobs] Async Job with jobrunid: %s, taskrunid: %s is failed", payload.JobRunID, payload.TaskRunID)
+			pkgLogger.Infof("[WH-Jobs] Async Job with job_run_id: %s, task_run_id: %s is failed", payload.JobRunID, payload.TaskRunID)
 			statusResponse.Status = WhJobFailed
 			if !errMessage.Valid {
 				statusResponse.Err = "Failed while scanning"
@@ -386,7 +381,7 @@ func (asyncWhJob *AsyncJobWhT) getStatusAsyncJob(ctx context.Context, payload *S
 			return
 		}
 		if status == WhJobAborted {
-			pkgLogger.Infof("[WH-Jobs] Async Job with jobrunid: %s, taskrunid: %s is aborted", payload.JobRunID, payload.TaskRunID)
+			pkgLogger.Infof("[WH-Jobs] Async Job with job_run_id: %s, task_run_id: %s is aborted", payload.JobRunID, payload.TaskRunID)
 			statusResponse.Status = WhJobAborted
 			if !errMessage.Valid {
 				statusResponse.Err = "Failed while scanning"
@@ -397,14 +392,14 @@ func (asyncWhJob *AsyncJobWhT) getStatusAsyncJob(ctx context.Context, payload *S
 			return
 		}
 		if status != WhJobSucceeded {
-			pkgLogger.Infof("[WH-Jobs] Async Job with jobrunid: %s, taskrunid: %s is under processing", payload.JobRunID, payload.TaskRunID)
+			pkgLogger.Infof("[WH-Jobs] Async Job with job_run_id: %s, task_run_id: %s is under processing", payload.JobRunID, payload.TaskRunID)
 			statusResponse.Status = WhJobExecuting
 			return
 		}
 
 	}
 
-	pkgLogger.Infof("[WH-Jobs] Async Job with jobrunid: %s, taskrunid: %s is complete", payload.JobRunID, payload.TaskRunID)
+	pkgLogger.Infof("[WH-Jobs] Async Job with job_run_id: %s, task_run_id: %s is complete", payload.JobRunID, payload.TaskRunID)
 	statusResponse.Status = WhJobSucceeded
 	return
 }

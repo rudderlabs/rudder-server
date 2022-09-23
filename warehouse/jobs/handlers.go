@@ -120,7 +120,7 @@ func (asyncWhJob *AsyncJobWhT) StatusWarehouseJobHandler(w http.ResponseWriter, 
 			SourceID:      sourceId,
 			DestinationID: destinationId,
 		}
-		pkgLogger.Infof("Got Payload jobrunid %s, taskrunid %s \n", startJobPayload.JobRunID, startJobPayload.TaskRunID)
+		pkgLogger.Infof("Got Payload job_run_id %s, task_run_id %s \n", startJobPayload.JobRunID, startJobPayload.TaskRunID)
 
 		if !asyncWhJob.enabled {
 			pkgLogger.Errorf("[WH]: Error Warehouse Jobs API not initialized")

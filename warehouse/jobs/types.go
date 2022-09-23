@@ -14,13 +14,13 @@ var pkgLogger logger.LoggerI
 
 // For processing requests payload in handlers.go
 type StartJobReqPayload struct {
-	SourceID      string `json:"sourceid"`
+	SourceID      string `json:"source_id"`
 	Type          string `json:"type"`
 	Channel       string `json:"channel"`
-	DestinationID string `json:"destinationid"`
-	StartTime     string `json:"starttime"`
-	JobRunID      string `json:"jobrunid"`
-	TaskRunID     string `json:"taskrunid"`
+	DestinationID string `json:"destination_id"`
+	StartTime     string `json:"start_time"`
+	JobRunID      string `json:"job_run_id"`
+	TaskRunID     string `json:"task_run_id"`
 	AsyncJobType  string `json:"async_job_type"`
 }
 
@@ -32,17 +32,17 @@ type AsyncJobWhT struct {
 }
 
 type WhJobsMetaData struct {
-	JobRunID  string `json:"jobrunid"`
-	TaskRunID string `json:"taskrunid"`
+	JobRunID  string `json:"job_run_id"`
+	TaskRunID string `json:"task_run_id"`
 	JobType   string `json:"jobtype"`
-	StartTime string `json:"starttime"`
+	StartTime string `json:"start_time"`
 }
 
 // For creating job payload to wh_async_jobs table
 type AsyncJobPayloadT struct {
 	Id            string          `json:"id"`
-	SourceID      string          `json:"sourceid"`
-	DestinationID string          `json:"destinationid"`
+	SourceID      string          `json:"source_id"`
+	DestinationID string          `json:"destination_id"`
 	TableName     string          `json:"tablename"`
 	AsyncJobType  string          `json:"async_job_type"`
 	MetaData      json.RawMessage `json:"metadata"`
