@@ -157,7 +157,7 @@ func Init() {
 
 func loadConfig() {
 	stagingTablePrefix = "rudder_staging_"
-	enableDeleteByJobs = config.GetBool("Warehouse.mssql.enableDeleteByJobs", false)
+	config.RegisterBoolConfigVariable(false, &enableDeleteByJobs, true, "Warehouse.mssql.enableDeleteByJobs")
 }
 
 func (ms *HandleT) getConnectionCredentials() CredentialsT {
