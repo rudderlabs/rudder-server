@@ -227,7 +227,8 @@ func Run(ctx context.Context) int {
 	appTypeStr := strings.ToUpper(config.GetEnv("APP_TYPE", app.EMBEDDED))
 	appHandler = apphandlers.GetAppHandler(application, appTypeStr, versionHandler)
 
-	version := versionInfo()
+	versionDetail := versionInfo()
+	stats.NewTaggedStat("rudder_server_config", stats.GaugeType, stats.Tags{"version": version, "major": major, "minor": minor, "patch": patch, "commit": commit, "buildDate": buildDate, "builtBy": builtBy, "gitUrl": gitURL, "TransformerVersion": transformer.GetVersion(), "DatabricksVersion": misc.GetDatabricksVersion()}).Gauge(1)
 	bugsnag.Configure(bugsnag.Configuration{
 		APIKey:       config.GetEnv("BUGSNAG_KEY", ""),
 		ReleaseStage: config.GetEnv("GO_ENV", "development"),
@@ -235,7 +236,7 @@ func Run(ctx context.Context) int {
 		ProjectPackages: []string{"main", "github.com/rudderlabs/rudder-server"},
 		// more configuration options
 		AppType:      appHandler.GetAppType(),
-		AppVersion:   version["Version"].(string),
+		AppVersion:   versionDetail["Version"].(string),
 		PanicHandler: func() {},
 	})
 	ctx = bugsnag.StartSession(ctx)
