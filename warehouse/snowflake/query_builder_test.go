@@ -26,8 +26,8 @@ var _ = Describe("Snowflake QueryBuilder", func() {
 		},
 			`
 		ALTER TABLE
-		testNamespace.testTableName
-		ADD testColumnName-1 varchar, testColumnName-2 number;`,
+		testNamespace."testTableName"
+		ADD COLUMN "testColumnName-1" varchar, "testColumnName-2" number;`,
 		),
 	)
 })
