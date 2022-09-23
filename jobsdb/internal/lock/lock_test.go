@@ -11,7 +11,7 @@ import (
 )
 
 func TestAsyncLock(t *testing.T) {
-	locker := &lock.DSListLocker{}
+	locker := &lock.Locker{}
 
 	l, c := locker.AsyncLock()
 	require.NotNil(t, l)
@@ -21,7 +21,7 @@ func TestAsyncLock(t *testing.T) {
 	wg.Add(1)
 	go func() {
 		wg.Done()
-		locker.WithLock(func(l lock.DSListLockToken) {
+		locker.WithLock(func(l lock.LockToken) {
 			secondLock <- struct{}{}
 		})
 	}()
@@ -42,7 +42,7 @@ func TestAsyncLock(t *testing.T) {
 }
 
 func TestWithCtxAwareLock(t *testing.T) {
-	locker := &lock.DSListLocker{}
+	locker := &lock.Locker{}
 	syncChan := make(chan struct{})
 
 	var wg sync.WaitGroup
@@ -51,7 +51,7 @@ func TestWithCtxAwareLock(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			wg.Done()
-			locker.WithLock(func(l lock.DSListLockToken) {
+			locker.WithLock(func(l lock.LockToken) {
 				<-syncChan
 			})
 		}()
@@ -60,7 +60,7 @@ func TestWithCtxAwareLock(t *testing.T) {
 		start := time.Now()
 		ctx, cancel := context.WithTimeout(context.Background(), timeout)
 		defer cancel()
-		lockAcquired := locker.WithCtxAwareLock(ctx, func(l lock.DSListLockToken) {
+		lockAcquired := locker.WithCtxAwareLock(ctx, func(l lock.LockToken) {
 			counter++
 			t.Fatal("lock should not have been acquired")
 		})
@@ -75,7 +75,7 @@ func TestWithCtxAwareLock(t *testing.T) {
 		var counter int
 		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 		defer cancel()
-		lockAcquired := locker.WithCtxAwareLock(ctx, func(l lock.DSListLockToken) {
+		lockAcquired := locker.WithCtxAwareLock(ctx, func(l lock.LockToken) {
 			counter++
 		})
 		require.Equal(t, 1, counter, "expected locker.WithTimeoutLock to acquire the lock & execute the function")
@@ -85,7 +85,7 @@ func TestWithCtxAwareLock(t *testing.T) {
 
 func TestAsyncLockWithCtx(t *testing.T) {
 	t.Run("context timeout should be triggered while acquiring lock.", func(t *testing.T) {
-		locker := &lock.DSListLocker{}
+		locker := &lock.Locker{}
 
 		l1, c1 := locker.AsyncLock()
 		require.NotNil(t, l1)
@@ -100,7 +100,7 @@ func TestAsyncLockWithCtx(t *testing.T) {
 		c1 <- l1
 	})
 	t.Run("context timeout shouldn't be triggered while acquiring lock.", func(t *testing.T) {
-		locker := &lock.DSListLocker{}
+		locker := &lock.Locker{}
 
 		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 		defer cancel()

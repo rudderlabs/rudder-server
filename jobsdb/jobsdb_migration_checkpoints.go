@@ -209,7 +209,7 @@ func (jd *HandleT) findDsFromSetupCheckpoint(migrationType MigrationOp) (dataSet
 
 func (jd *HandleT) createSetupCheckpointAndGetDs(migrationType MigrationOp) dataSetT {
 	var ds dataSetT
-	jd.dsListLock.WithCtxAwareLock(context.Background(), func(l lock.DSListLockToken) {
+	jd.dsListLock.WithCtxAwareLock(context.Background(), func(l lock.LockToken) {
 		dsList := jd.refreshDSList(l)
 		checkpoint := NewSetupCheckpointEvent(migrationType, misc.GetNodeID())
 

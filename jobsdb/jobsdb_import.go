@@ -16,7 +16,7 @@ func (jd *HandleT) SetupForImport() {
 	jd.logger.Infof("[[ %s-JobsDB Import ]] Ds for new events :%v", jd.GetTablePrefix(), jd.migrationState.dsForNewEvents)
 }
 
-func (jd *HandleT) getDsForImport(l lock.DSListLockToken) dataSetT {
+func (jd *HandleT) getDsForImport(l lock.LockToken) dataSetT {
 	ds := newDataSet(jd.tablePrefix, jd.computeNewIdxForInterNodeMigration(l, jd.migrationState.dsForNewEvents))
 	jd.addDS(ds)
 	jd.logger.Infof("[[ %s-JobsDB Import ]] Should Checkpoint Import Setup event for the new ds : %v", jd.GetTablePrefix(), ds)
@@ -27,7 +27,7 @@ func (jd *HandleT) getDsForImport(l lock.DSListLockToken) dataSetT {
 func (jd *HandleT) GetLastJobIDBeforeImport() int64 {
 	jd.assert(jd.migrationState.dsForNewEvents.Index != "", "dsForNewEvents must be setup before calling this")
 	var lastJobIDBeforeNewImports int64
-	jd.dsListLock.WithCtxAwareLock(context.Background(), func(l lock.DSListLockToken) {
+	jd.dsListLock.WithCtxAwareLock(context.Background(), func(l lock.LockToken) {
 		dsList := jd.refreshDSList(l)
 		for idx, dataSet := range dsList {
 			if dataSet.Index == jd.migrationState.dsForNewEvents.Index {
@@ -70,7 +70,7 @@ func (jd *HandleT) StoreJobsAndCheckpoint(jobList []*JobT, migrationCheckpoint M
 		jd.assertError(err)
 		opID = jd.JournalMarkStart(migrateImportOperation, opPayload)
 	} else if jd.checkIfFullDS(jd.migrationState.dsForImport) {
-		jd.dsListLock.WithCtxAwareLock(context.Background(), func(l lock.DSListLockToken) {
+		jd.dsListLock.WithCtxAwareLock(context.Background(), func(l lock.LockToken) {
 			jd.migrationState.dsForImport = newDataSet(jd.tablePrefix, jd.computeNewIdxForInterNodeMigration(l, jd.migrationState.dsForNewEvents))
 			jd.addDS(jd.migrationState.dsForImport)
 			setupCheckpoint, found := jd.GetSetupCheckpoint(ImportOp)
@@ -148,13 +148,13 @@ func (jd *HandleT) GetMaxIDForDs(ds dataSetT) int64 {
 }
 
 func (jd *HandleT) UpdateSequenceNumberOfLatestDS(seqNoForNewDS int64) {
-	jd.dsListLock.WithCtxAwareLock(context.Background(), func(l lock.DSListLockToken) {
+	jd.dsListLock.WithCtxAwareLock(context.Background(), func(l lock.LockToken) {
 		jd.updateSequenceNumberOfLatestDSWithLock(l, seqNoForNewDS)
 	})
 }
 
 // UpdateSequenceNumberOfLatestDS updates (if not already updated) the sequence number of the right most dataset to the seq no provided.
-func (jd *HandleT) updateSequenceNumberOfLatestDSWithLock(l lock.DSListLockToken, seqNoForNewDS int64) {
+func (jd *HandleT) updateSequenceNumberOfLatestDSWithLock(l lock.LockToken, seqNoForNewDS int64) {
 	dsList := jd.getDSList()
 	dsListLen := len(dsList)
 	var ds dataSetT

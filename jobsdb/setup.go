@@ -20,7 +20,7 @@ func (jd *HandleT) SchemaMigrationTable() string {
 // - Prefix: The table prefix used by this jobsdb instance.
 // - Datasets: Array of existing dataset indices.
 // If clearAll is set to true, all existing jobsdb tables will be removed first.
-func (jd *HandleT) setupDatabaseTables(l lock.DSListLockToken, clearAll bool) {
+func (jd *HandleT) setupDatabaseTables(l lock.LockToken, clearAll bool) {
 	if clearAll {
 		jd.dropDatabaseTables(l)
 	}
@@ -60,7 +60,7 @@ func (jd *HandleT) setupDatabaseTables(l lock.DSListLockToken, clearAll bool) {
 	}
 }
 
-func (jd *HandleT) dropDatabaseTables(l lock.DSListLockToken) {
+func (jd *HandleT) dropDatabaseTables(l lock.LockToken) {
 	jd.logger.Infof("[JobsDB:%v] Dropping all database tables", jd.tablePrefix)
 	jd.dropSchemaMigrationTables()
 	jd.assertError(jd.dropAllDS(l))

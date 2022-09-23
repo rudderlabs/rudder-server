@@ -6,43 +6,43 @@ import (
 	"time"
 )
 
-// DSListLockToken represents proof that a list lock has been acquired
-type DSListLockToken interface {
-	listLockToken()
+// LockToken represents proof that a list lock has been acquired
+type LockToken interface {
+	lockToken()
 }
 
-// DSListLocker
-type DSListLocker struct {
+// Locker
+type Locker struct {
 	m sync.RWMutex
 }
 
 // RLock acquires a read lock
-func (r *DSListLocker) RLock() {
+func (r *Locker) RLock() {
 	r.m.RLock()
 }
 
 // RLock releases a read lock
-func (r *DSListLocker) RUnlock() {
+func (r *Locker) RUnlock() {
 	r.m.RUnlock()
 }
 
 // WithLock acquires a lock for the duration that the provided function
 // is being executed. A token as proof of the lock is passed to the function.
-func (r *DSListLocker) WithLock(f func(l DSListLockToken)) {
+func (r *Locker) WithLock(f func(l LockToken)) {
 	r.m.Lock()
 	defer r.m.Unlock()
-	f(&listLockToken{})
+	f(&lockToken{})
 }
 
 // WithCtxAwareLock tries to acquires a lock until the context is cancelled or timed out.
 // It return 'false' if context is cancelled or timed out while acquiring lock.
-func (r *DSListLocker) WithCtxAwareLock(ctx context.Context, f func(l DSListLockToken)) (ok bool) {
+func (r *Locker) WithCtxAwareLock(ctx context.Context, f func(l LockToken)) (ok bool) {
 	for {
 		select {
 		case <-time.After(time.Millisecond):
 			if r.m.TryLock() {
 				defer r.m.Unlock()
-				f(&listLockToken{})
+				f(&lockToken{})
 				return true
 			}
 		case <-ctx.Done():
@@ -52,12 +52,12 @@ func (r *DSListLocker) WithCtxAwareLock(ctx context.Context, f func(l DSListLock
 }
 
 // AsyncLock acquires a lock until the token is returned to the receiving channel
-func (r *DSListLocker) AsyncLock() (DSListLockToken, chan<- DSListLockToken) {
-	acquireDsListLock := make(chan DSListLockToken)
-	releaseDsListLock := make(chan DSListLockToken)
+func (r *Locker) AsyncLock() (LockToken, chan<- LockToken) {
+	acquireDsListLock := make(chan LockToken)
+	releaseDsListLock := make(chan LockToken)
 
 	go func() {
-		r.WithLock(func(l DSListLockToken) {
+		r.WithLock(func(l LockToken) {
 			acquireDsListLock <- l
 			<-releaseDsListLock
 		})
@@ -68,11 +68,11 @@ func (r *DSListLocker) AsyncLock() (DSListLockToken, chan<- DSListLockToken) {
 
 // AsyncLockWithCtx tries to acquires a lock until context is canceled or timed out.
 // And if succeeds, lock is acquired until the token is returned to the receiving channel.
-func (r *DSListLocker) AsyncLockWithCtx(ctx context.Context) (DSListLockToken, chan<- DSListLockToken) {
-	acquireDsListLock := make(chan DSListLockToken)
-	releaseDsListLock := make(chan DSListLockToken)
+func (r *Locker) AsyncLockWithCtx(ctx context.Context) (LockToken, chan<- LockToken) {
+	acquireDsListLock := make(chan LockToken)
+	releaseDsListLock := make(chan LockToken)
 	go func() {
-		r.WithCtxAwareLock(ctx, func(l DSListLockToken) {
+		r.WithCtxAwareLock(ctx, func(l LockToken) {
 			acquireDsListLock <- l
 			<-releaseDsListLock
 		})
@@ -87,8 +87,8 @@ func (r *DSListLocker) AsyncLockWithCtx(ctx context.Context) (DSListLockToken, c
 	}
 }
 
-type listLockToken struct{}
+type lockToken struct{}
 
-func (*listLockToken) listLockToken() {
+func (*lockToken) lockToken() {
 	// no-op
 }
