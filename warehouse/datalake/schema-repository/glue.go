@@ -118,7 +118,7 @@ func (gl *GlueSchemaRepository) CreateSchema() (err error) {
 
 func (_ *GlueSchemaRepository) getPartitionKeys() []*glue.Column {
 	columnName := strings.Split(warehouseutils.GlueTimeWindowFormat, "=")[0]
-	return []*glue.Column{&glue.Column{Name: aws.String(columnName), Type: aws.String("date")}}
+	return []*glue.Column{{Name: aws.String(columnName), Type: aws.String("date")}}
 }
 
 func (gl *GlueSchemaRepository) CreateTable(tableName string, columnMap map[string]string) (err error) {
@@ -263,7 +263,8 @@ func (gl *GlueSchemaRepository) RefreshPartitions(tableName string, loadFiles []
 				SerializationLibrary: aws.String(glueSerdeSerializationLib),
 			},
 			InputFormat:  aws.String(glueParquetInputFormat),
-			OutputFormat: aws.String(glueParquetOutputFormat)}
+			OutputFormat: aws.String(glueParquetOutputFormat),
+		}
 		pathParts := strings.Split(locationFolder, "/")
 		partitioning := strings.Split(pathParts[len(pathParts)-1], "=")
 		if len(partitioning) < 2 {
