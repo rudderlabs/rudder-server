@@ -161,10 +161,10 @@ Warehouse:
   postgres:
     maxParallelLoads: 3
     enableSQLStatementExecutionPlan: false
-    enableDeleteByJobs: true
+    enableDeleteByJobs: false
   mssql:
     maxParallelLoads: 3
-    enableDeleteByJobs: true
+    enableDeleteByJobs: false
   azure_synapse:
     maxParallelLoads: 3
   clickhouse:
