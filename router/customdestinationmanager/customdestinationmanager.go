@@ -31,7 +31,7 @@ var (
 	ObjectStreamDestinations    []string
 	KVStoreDestinations         []string
 	Destinations                []string
-	pkgLogger                   logger.LoggerI
+	pkgLogger                   logger.Logger
 	disableEgress               bool
 	skipBackendConfigSubscriber bool
 )

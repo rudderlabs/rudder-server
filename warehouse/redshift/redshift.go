@@ -30,7 +30,7 @@ import (
 var (
 	setVarCharMax                 bool
 	stagingTablePrefix            string
-	pkgLogger                     logger.LoggerI
+	pkgLogger                     logger.Logger
 	skipComputingUserLatestTraits bool
 )
 

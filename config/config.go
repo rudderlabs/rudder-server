@@ -34,15 +34,16 @@ var camelCaseMatch = regexp.MustCompile("([a-z0-9])([A-Z])")
 var upperCaseMatch = regexp.MustCompile("^[A-Z0-9_]+$")
 
 // default, singleton config instance
-var defaultConfig *Config
+var Default *Config
 
 func init() {
-	defaultConfig = New()
+	Default = New()
 }
 
-// Reset resets configuration
+// Reset resets the default, singleton config instance.
+// Shall only be used by tests, until we move to a proper DI framework
 func Reset() {
-	defaultConfig = New()
+	Default = New()
 }
 
 // New creates a new config instance
@@ -64,7 +65,7 @@ type Config struct {
 
 // GetBool gets bool value from config
 func GetBool(key string, defaultValue bool) (value bool) {
-	return defaultConfig.GetBool(key, defaultValue)
+	return Default.GetBool(key, defaultValue)
 }
 
 // GetBool gets bool value from config
@@ -79,7 +80,7 @@ func (c *Config) GetBool(key string, defaultValue bool) (value bool) {
 
 // GetInt gets int value from config
 func GetInt(key string, defaultValue int) (value int) {
-	return defaultConfig.GetInt(key, defaultValue)
+	return Default.GetInt(key, defaultValue)
 }
 
 // GetInt gets int value from config
@@ -94,7 +95,7 @@ func (c *Config) GetInt(key string, defaultValue int) (value int) {
 
 // MustGetInt gets int value from config or panics if the config doesn't exist
 func MustGetInt(key string) (value int) {
-	return defaultConfig.MustGetInt(key)
+	return Default.MustGetInt(key)
 }
 
 // MustGetInt gets int value from config or panics if the config doesn't exist
@@ -109,7 +110,7 @@ func (c *Config) MustGetInt(key string) (value int) {
 
 // GetInt64 gets int64 value from config
 func GetInt64(key string, defaultValue int64) (value int64) {
-	return defaultConfig.GetInt64(key, defaultValue)
+	return Default.GetInt64(key, defaultValue)
 }
 
 // GetInt64 gets int64 value from config
@@ -124,7 +125,7 @@ func (c *Config) GetInt64(key string, defaultValue int64) (value int64) {
 
 // GetFloat64 gets float64 value from config
 func GetFloat64(key string, defaultValue float64) (value float64) {
-	return defaultConfig.GetFloat64(key, defaultValue)
+	return Default.GetFloat64(key, defaultValue)
 }
 
 // GetFloat64 gets float64 value from config
@@ -139,7 +140,7 @@ func (c *Config) GetFloat64(key string, defaultValue float64) (value float64) {
 
 // GetString gets string value from config
 func GetString(key, defaultValue string) (value string) {
-	return defaultConfig.GetString(key, defaultValue)
+	return Default.GetString(key, defaultValue)
 }
 
 // GetString gets string value from config
@@ -154,7 +155,7 @@ func (c *Config) GetString(key, defaultValue string) (value string) {
 
 // MustGetString gets string value from config or panics if the config doesn't exist
 func MustGetString(key string) (value string) {
-	return defaultConfig.MustGetString(key)
+	return Default.MustGetString(key)
 }
 
 // MustGetString gets string value from config or panics if the config doesn't exist
@@ -179,7 +180,7 @@ func (c *Config) GetStringSlice(key string, defaultValue []string) (value []stri
 
 // GetDuration gets duration value from config
 func GetDuration(key string, defaultValueInTimescaleUnits int64, timeScale time.Duration) (value time.Duration) {
-	return defaultConfig.GetDuration(key, defaultValueInTimescaleUnits, timeScale)
+	return Default.GetDuration(key, defaultValueInTimescaleUnits, timeScale)
 }
 
 // GetDuration gets duration value from config
@@ -206,7 +207,7 @@ func (c *Config) GetDuration(key string, defaultValueInTimescaleUnits int64, tim
 
 // IsSet checks if config is set for a key
 func IsSet(key string) bool {
-	return defaultConfig.IsSet(key)
+	return Default.IsSet(key)
 }
 
 // IsSet checks if config is set for a key
@@ -221,7 +222,7 @@ func (c *Config) IsSet(key string) bool {
 
 // Set override existing config
 func Set(key string, value interface{}) {
-	defaultConfig.Set(key, value)
+	Default.Set(key, value)
 }
 
 // Set override existing config

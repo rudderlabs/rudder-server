@@ -44,7 +44,7 @@ const (
 
 var (
 	stagingTablePrefix     string
-	pkgLogger              logger.LoggerI
+	pkgLogger              logger.Logger
 	schema                 string
 	sparkServerType        string
 	authMech               string

@@ -130,7 +130,7 @@ func blockOnHold() {
 
 func initJobsDB() {
 	config.Reset()
-	logger.Init()
+	logger.Reset()
 	stash.Init()
 	admin.Init()
 	jobsdb.Init()
