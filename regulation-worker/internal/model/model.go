@@ -26,18 +26,17 @@ const (
 )
 
 type Job struct {
-	ID             int
-	WorkspaceID    string
-	DestinationID  string
-	Status         JobStatus
-	UserAttributes []UserAttribute
-	UpdatedAt      time.Time
+	ID            int
+	WorkspaceID   string
+	DestinationID string
+	Status        JobStatus
+	Users         []User
+	UpdatedAt     time.Time
 }
 
-type UserAttribute struct {
-	UserID string
-	Phone  *string
-	Email  *string
+type User struct {
+	ID         string
+	Attributes map[string]string
 }
 
 type Destination struct {

@@ -338,7 +338,7 @@ func (b *Batch) upload(ctx context.Context, uploadFileAbsPath, actualFileName, a
 	return nil
 }
 
-func (b *Batch) createPatternFile(userAttributes []model.UserAttribute) (string, error) {
+func (b *Batch) createPatternFile(userAttributes []model.User) (string, error) {
 	pkgLogger.Debug("creating a file with pattern to be searched & deleted.")
 
 	searchObject := make([]byte, 0)
@@ -346,22 +346,8 @@ func (b *Batch) createPatternFile(userAttributes []model.UserAttribute) (string,
 	for _, users := range userAttributes {
 		searchObject = append(searchObject, "/"...)
 		searchObject = append(searchObject, "\"userId\": *\""...)
-		searchObject = append(searchObject, users.UserID...)
+		searchObject = append(searchObject, users.ID...)
 		searchObject = append(searchObject, "\"/d;"...)
-
-		if users.Email != nil {
-			searchObject = append(searchObject, "/"...)
-			searchObject = append(searchObject, "\"email\": *\""...)
-			searchObject = append(searchObject, []byte(*users.Email)...)
-			searchObject = append(searchObject, "\"/d;"...)
-		}
-
-		if users.Phone != nil {
-			searchObject = append(searchObject, "/"...)
-			searchObject = append(searchObject, "\"phone\": *\""...)
-			searchObject = append(searchObject, []byte(*users.Phone)...)
-			searchObject = append(searchObject, "\"/d;"...)
-		}
 	}
 
 	PatternFilePtr, err := os.CreateTemp(b.TmpDirPath, "")
@@ -423,7 +409,7 @@ func (bm *BatchManager) Delete(ctx context.Context, job model.Job, destConfig ma
 	defer batch.cleanup(destConfig["prefix"].(string))
 
 	// file with pattern to be searched & deleted from all downloaded files.
-	absPatternFile, err := batch.createPatternFile(job.UserAttributes)
+	absPatternFile, err := batch.createPatternFile(job.Users)
 	if err != nil {
 		pkgLogger.Errorf("error while creating pattern file: %v", err)
 		return model.JobStatusFailed
