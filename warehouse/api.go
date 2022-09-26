@@ -110,11 +110,11 @@ func InitWarehouseAPI(dbHandle *sql.DB, log logger.LoggerI) error {
 			AuthInfo: controlplane.AuthInfo{
 				Service:         "warehouse",
 				ConnectionToken: connectionToken,
-				InstanceID:      config.GetEnv("instance_id", "1"),
+				InstanceID:      config.GetString("INSTANCE_ID", "1"),
 				TokenType:       tokenType,
 			},
 			RetryInterval: 0,
-			UseTLS:        config.GetEnvAsBool("CP_ROUTER_USE_TLS", true),
+			UseTLS:        config.GetBool("CP_ROUTER_USE_TLS", true),
 			Logger:        log,
 			RegisterService: func(srv *grpc.Server) {
 				proto.RegisterWarehouseServer(srv, &warehousegrpc{})

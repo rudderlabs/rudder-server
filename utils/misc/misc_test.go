@@ -20,7 +20,7 @@ import (
 )
 
 func initMisc() {
-	config.Load()
+	config.Reset()
 	logger.Init()
 	Init()
 }

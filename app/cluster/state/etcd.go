@@ -68,7 +68,7 @@ type workspacesAckValue struct {
 }
 
 func EnvETCDConfig() *ETCDConfig {
-	endpoints := strings.Split(config.GetEnv("ETCD_HOSTS", "127.0.0.1:2379"), `,`)
+	endpoints := strings.Split(config.GetString("ETCD_HOSTS", "127.0.0.1:2379"), `,`)
 	releaseName := config.GetReleaseName()
 	serverIndex := config.GetInstanceID()
 	var ackTimeout time.Duration
@@ -284,7 +284,7 @@ func (manager *ETCDManager) WorkspaceIDs(ctx context.Context) <-chan workspace.C
 		return errChWorkspacesRequest(err)
 	}
 
-	appTypeStr := strings.ToUpper(config.GetEnv("APP_TYPE", app.PROCESSOR))
+	appTypeStr := strings.ToUpper(config.GetString("APP_TYPE", app.PROCESSOR))
 	modeRequestKey := fmt.Sprintf(workspacesRequestsKeyPattern, manager.Config.ReleaseName, manager.Config.ServerIndex, appTypeStr)
 	manager.logger.Infof("Workspace ID Lookup Key: %s", modeRequestKey)
 

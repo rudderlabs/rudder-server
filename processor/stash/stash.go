@@ -123,8 +123,8 @@ func backupEnabled() bool {
 
 func (st *HandleT) setupFileUploader(ctx context.Context) {
 	if backupEnabled() {
-		provider := config.GetEnv("JOBS_BACKUP_STORAGE_PROVIDER", "")
-		bucket := config.GetEnv("JOBS_BACKUP_BUCKET", "")
+		provider := config.GetString("JOBS_BACKUP_STORAGE_PROVIDER", "")
+		bucket := config.GetString("JOBS_BACKUP_BUCKET", "")
 		if provider != "" && bucket != "" {
 			var err error
 			st.errFileUploader, err = filemanager.DefaultFileManagerFactory.New(&filemanager.SettingsT{
@@ -168,7 +168,7 @@ func (st *HandleT) storeErrorsToObjectStorage(jobs []*jobsdb.JobT) StoreErrorOut
 	if err != nil {
 		panic(err)
 	}
-	path := fmt.Sprintf("%v%v.json", tmpDirPath+localTmpDirName, fmt.Sprintf("%v.%v.%v.%v", time.Now().Unix(), config.GetEnv("INSTANCE_ID", "1"), fmt.Sprintf("%v-%v", jobs[0].JobID, jobs[len(jobs)-1].JobID), uuid))
+	path := fmt.Sprintf("%v%v.json", tmpDirPath+localTmpDirName, fmt.Sprintf("%v.%v.%v.%v", time.Now().Unix(), config.GetString("INSTANCE_ID", "1"), fmt.Sprintf("%v-%v", jobs[0].JobID, jobs[len(jobs)-1].JobID), uuid))
 
 	gzipFilePath := fmt.Sprintf(`%v.gz`, path)
 	err = os.MkdirAll(filepath.Dir(gzipFilePath), os.ModePerm)

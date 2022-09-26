@@ -46,7 +46,6 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/logger"
 
 	"github.com/rudderlabs/rudder-server/config"
-	"github.com/rudderlabs/rudder-server/services/db"
 	"github.com/rudderlabs/rudder-server/services/filemanager"
 	"github.com/rudderlabs/rudder-server/services/metric"
 	"github.com/rudderlabs/rudder-server/services/stats"
@@ -385,19 +384,6 @@ type dataSetRangeT struct {
 	ds        dataSetT
 }
 
-// migrationState maintains the state required during the migration process
-type migrationState struct {
-	dsForNewEvents             dataSetT
-	dsForImport                dataSetT
-	lastDsForExport            dataSetT
-	importLock                 *sync.RWMutex
-	migrationMode              string
-	fromVersion                int
-	toVersion                  int
-	nonExportedJobsCountByDS   map[string]int64
-	doesDSHaveJobsToMigrateMap map[string]bool
-}
-
 /*
 HandleT is the main type implementing the database for implementing
 jobs. The caller must call the SetUp function on a HandleT object
@@ -425,7 +411,6 @@ type HandleT struct {
 	statDropDSPeriod              stats.RudderStats
 	unionQueryTime                stats.RudderStats
 	isStatDropDSPeriodInitialized bool
-	migrationState                migrationState
 	inProgressMigrationTargetDS   *dataSetT
 	logger                        logger.LoggerI
 	writeCapacity                 chan struct{}
@@ -534,9 +519,6 @@ func (jd *HandleT) Status() interface{} {
 	}
 	statusObj["empty-results-cache"] = emptyResults
 
-	if db.IsValidMigrationMode(jd.migrationState.migrationMode) {
-		statusObj["migration-state"] = jd.migrationState
-	}
 	pendingEventMetrics := metric.GetManager().
 		GetRegistry(metric.PUBLISHED_METRICS).
 		GetMetricsByName(fmt.Sprintf(metric.JOBSDB_PENDING_EVENTS_COUNT, jd.tablePrefix))
@@ -653,12 +635,12 @@ var (
 
 // Loads db config and migration related config from config file
 func loadConfig() {
-	host = config.GetEnv("JOBS_DB_HOST", "localhost")
-	user = config.GetEnv("JOBS_DB_USER", "ubuntu")
-	dbname = config.GetEnv("JOBS_DB_DB_NAME", "ubuntu")
-	port, _ = strconv.Atoi(config.GetEnv("JOBS_DB_PORT", "5432"))
-	password = config.GetEnv("JOBS_DB_PASSWORD", "ubuntu") // Reading secrets from
-	sslmode = config.GetEnv("JOBS_DB_SSL_MODE", "disable")
+	host = config.GetString("DB.host", "localhost")
+	user = config.GetString("DB.user", "ubuntu")
+	dbname = config.GetString("DB.name", "ubuntu")
+	port = config.GetInt("DB.port", 5432)
+	password = config.GetString("DB.password", "ubuntu") // Reading secrets from
+	sslmode = config.GetString("DB.sslMode", "disable")
 	// Application Name can be any string of less than NAMEDATALEN characters (64 characters in a standard PostgreSQL build).
 	// There is no need to truncate the string on our own though since PostgreSQL auto-truncates this identifier and issues a relevant notice if necessary.
 	appName = misc.DefaultString("rudder-server").OnError(os.Hostname())
@@ -717,12 +699,6 @@ func WithClearDB(clearDB bool) OptsFunc {
 	}
 }
 
-func WithMigrationMode(mode string) OptsFunc {
-	return func(jd *HandleT) {
-		jd.migrationState.migrationMode = mode
-	}
-}
-
 func WithStatusHandler() OptsFunc {
 	return func(jd *HandleT) {
 		jd.registerStatusHandler = true
@@ -758,11 +734,6 @@ func newOwnerType(ownerType OwnerType, tablePrefix string, opts ...OptsFunc) *Ha
 	j := &HandleT{
 		ownerType:   ownerType,
 		tablePrefix: tablePrefix,
-		// default values:
-		migrationState: migrationState{
-			migrationMode: "",
-			importLock:    &sync.RWMutex{},
-		},
 	}
 
 	for _, fn := range opts {
@@ -781,13 +752,12 @@ tablePrefix must be unique and is used to separate
 multiple users of JobsDB
 */
 func (jd *HandleT) Setup(
-	ownerType OwnerType, clearAll bool, tablePrefix, migrationMode string,
+	ownerType OwnerType, clearAll bool, tablePrefix string,
 	registerStatusHandler bool, preBackupHandlers []prebackup.Handler,
 ) error {
 	jd.ownerType = ownerType
 	jd.clearAll = clearAll
 	jd.tablePrefix = tablePrefix
-	jd.migrationState.migrationMode = migrationMode
 	jd.registerStatusHandler = registerStatusHandler
 	jd.preBackupHandlers = preBackupHandlers
 
@@ -1230,19 +1200,6 @@ func (jd *HandleT) getTableSize(jobTable string) int64 {
 	return tableSize
 }
 
-func (jd *HandleT) checkIfFullDS(ds dataSetT) bool {
-	var full bool
-	jd.assertError(jd.WithTx(func(tx *sql.Tx) error {
-		var err error
-		full, err = jd.checkIfFullDSInTx(tx, ds)
-		if err != nil {
-			return err
-		}
-		return nil
-	}))
-	return full
-}
-
 func (jd *HandleT) checkIfFullDSInTx(tx *sql.Tx, ds dataSetT) (bool, error) {
 	var minJobCreatedAt sql.NullTime
 	sqlStatement := fmt.Sprintf(`SELECT MIN(created_at) FROM %q`, ds.JobTable)
@@ -1391,76 +1348,6 @@ func (jd *HandleT) doComputeNewIdxForAppend(dList []dataSetT) string {
 		newDSIdx = fmt.Sprintf("%d", levelVals[0]+1)
 	}
 	return newDSIdx
-}
-
-func (jd *HandleT) computeNewIdxForInterNodeMigration(l lock.DSListLockToken, insertBeforeDS dataSetT) string { // ClusterMigration
-	jd.logger.Debugf("computeNewIdxForInterNodeMigration, insertBeforeDS : %v", insertBeforeDS)
-	dList := jd.refreshDSList(l)
-	newIdx, err := computeIdxForClusterMigration(jd.tablePrefix, dList, insertBeforeDS)
-	jd.assertError(err)
-	return newIdx
-}
-
-func computeIdxForClusterMigration(tablePrefix string, dList []dataSetT, insertBeforeDS dataSetT) (newDSIdx string, err error) {
-	pkgLogger.Debugf("dlist in which we are trying to find %v is %v", insertBeforeDS, dList)
-	if len(dList) <= 0 {
-		return "", fmt.Errorf("len(dList): %d <= 0", len(dList))
-	}
-	for idx, ds := range dList {
-		if ds.Index == insertBeforeDS.Index {
-			var levels int
-			var levelVals []int
-			levels, levelVals, err = mapDSToLevel(ds)
-			if err != nil {
-				return
-			}
-			if levels != 1 {
-				err = fmt.Errorf("insertBeforeDS called for ds : %s_%s. insertBeforeDS should always be called for dsForNewEvents and this should always be a Level0 dataset", tablePrefix, ds.Index)
-				return
-			}
-			var (
-				levelsPre    int
-				levelPreVals []int
-			)
-			if idx == 0 {
-				pkgLogger.Debugf("idx = 0 case with insertForImport and ds at idx 0 is %v", ds)
-				levelsPre = 1
-				levelPreVals = []int{levelVals[0] - 1}
-			} else {
-				pkgLogger.Debugf("ds to insert before found in dList is %v", ds)
-				levelsPre, levelPreVals, err = mapDSToLevel(dList[idx-1])
-				if err != nil {
-					return
-				}
-			}
-			if levelPreVals[0] >= levelVals[0] {
-				err = fmt.Errorf("first level val of previous ds should be less than the first(and only) levelVal of insertBeforeDS. Found %s_%d and %s_%s instead", tablePrefix, levelPreVals[0], tablePrefix, ds.Index)
-				return
-			}
-			switch levelsPre {
-			case 1:
-				/*
-					| prevDS    | insertBeforeDS | newDSIdx |
-					| --------- | -------------- | -------- |
-					| 0         | 1              | 0_1      |
-				*/
-				newDSIdx = fmt.Sprintf("%d_%d", levelPreVals[0], 1)
-			case 2:
-				/*
-					| prevDS    | insertBeforeDS | newDSIdx |
-					| --------- | -------------- | -------- |
-					| 0_1       | 1              | 0_2      |
-				*/
-
-				newDSIdx = fmt.Sprintf("%d_%d", levelPreVals[0], levelPreVals[1]+1)
-			default:
-				err = fmt.Errorf("The previous ds can only be a Level0 or Level1. Found %s_%s instead", tablePrefix, dList[idx-1].Index)
-				return
-
-			}
-		}
-	}
-	return
 }
 
 // Tries to give a slice between before and after by incrementing last value in before. If the order doesn't maintain, it adds a level and recurses.
@@ -1898,23 +1785,6 @@ func (jd *HandleT) dropAllBackupDS() error {
 		}
 	}
 	return nil
-}
-
-func (jd *HandleT) dropMigrationCheckpointTables() {
-	tableNames := mustGetAllTableNames(jd, jd.dbHandle)
-
-	var migrationCheckPointTables []string
-	for _, t := range tableNames {
-		if strings.HasPrefix(t, jd.tablePrefix) && strings.HasSuffix(t, MigrationCheckpointSuffix) {
-			migrationCheckPointTables = append(migrationCheckPointTables, t)
-		}
-	}
-
-	for _, tableName := range migrationCheckPointTables {
-		sqlStatement := fmt.Sprintf(`DROP TABLE %q`, tableName)
-		_, err := jd.dbHandle.Exec(sqlStatement)
-		jd.assertError(err)
-	}
 }
 
 func (jd *HandleT) dropAllDS(l lock.DSListLockToken) error {
@@ -3192,13 +3062,6 @@ func (jd *HandleT) migrateDSLoop(ctx context.Context) {
 			return
 		}
 		jd.logger.Debugf("[[ %s : migrateDSLoop ]]: Start", jd.tablePrefix)
-
-		// This block disables internal migration/consolidation while cluster-level migration is in progress
-		if db.IsValidMigrationMode(jd.migrationState.migrationMode) {
-			jd.logger.Debugf("[[ %s : migrateDSLoop ]]: migration mode = %s, so skipping internal migrations", jd.tablePrefix, jd.migrationState.migrationMode)
-			continue
-		}
-
 		jd.dsListLock.RLock()
 		dsList := jd.getDSList()
 		jd.dsListLock.RUnlock()
@@ -3372,7 +3235,7 @@ func (jd *HandleT) backupDSLoop(ctx context.Context) {
 			opID = jd.JournalMarkStart(backupDSOperation, opPayload)
 			err := jd.backupDS(ctx, backupDSRange)
 			if err != nil {
-				stats.NewTaggedStat("backup_ds_failed", stats.CountType, stats.Tags{"customVal": jd.tablePrefix, "provider": config.GetEnv("JOBS_BACKUP_STORAGE_PROVIDER", "S3")}).Increment()
+				stats.NewTaggedStat("backup_ds_failed", stats.CountType, stats.Tags{"customVal": jd.tablePrefix, "provider": config.GetString("JOBS_BACKUP_STORAGE_PROVIDER", "S3")}).Increment()
 				jd.logger.Errorf("[JobsDB] :: Failed to backup jobs table %v. Err: %v", backupDSRange.ds.JobStatusTable, err)
 			}
 			jd.JournalMarkDone(opID)
@@ -3613,7 +3476,7 @@ func (jd *HandleT) getFileUploader(ctx context.Context) (filemanager.FileManager
 	var err error
 	if jd.jobsFileUploader == nil {
 		jd.jobsFileUploader, err = filemanager.DefaultFileManagerFactory.New(&filemanager.SettingsT{
-			Provider: config.GetEnv("JOBS_BACKUP_STORAGE_PROVIDER", "S3"),
+			Provider: config.GetString("JOBS_BACKUP_STORAGE_PROVIDER", "S3"),
 			Config:   filemanager.GetProviderConfigForBackupsFromEnv(ctx),
 		})
 	}
@@ -3621,19 +3484,7 @@ func (jd *HandleT) getFileUploader(ctx context.Context) (filemanager.FileManager
 }
 
 func isBackupConfigured() bool {
-	return config.GetEnv("JOBS_BACKUP_BUCKET", "") != ""
-}
-
-func (jd *HandleT) isEmpty(ds dataSetT) bool {
-	var count sql.NullInt64
-	sqlStatement := fmt.Sprintf(`SELECT count(*) from %q`, ds.JobTable)
-	row := jd.dbHandle.QueryRow(sqlStatement)
-	err := row.Scan(&count)
-	jd.assertError(err)
-	if count.Valid {
-		return count.Int64 == 0
-	}
-	panic("Unable to get count on this dataset")
+	return config.GetString("JOBS_BACKUP_BUCKET", "") != ""
 }
 
 // Identifier returns the identifier of the jobsdb. Here it is tablePrefix.
@@ -3757,16 +3608,16 @@ func (jd *HandleT) backupTable(ctx context.Context, backupDSRange *dataSetRangeT
 	pathPrefixes := make([]string, 0)
 	// For empty path prefix, don't need to add anything to the array
 	if jd.BackupSettings.PathPrefix != "" {
-		pathPrefixes = append(pathPrefixes, jd.BackupSettings.PathPrefix, config.GetEnv("INSTANCE_ID", "1"))
+		pathPrefixes = append(pathPrefixes, jd.BackupSettings.PathPrefix, config.GetString("INSTANCE_ID", "1"))
 	} else {
-		pathPrefixes = append(pathPrefixes, config.GetEnv("INSTANCE_ID", "1"))
+		pathPrefixes = append(pathPrefixes, config.GetString("INSTANCE_ID", "1"))
 	}
 
 	jd.logger.Infof("[JobsDB] :: Uploading backup table to object storage: %v", tableName)
 	var output filemanager.UploadOutput
 	output, err = jd.backupUploadWithExponentialBackoff(ctx, file, pathPrefixes...)
 	if err != nil {
-		storageProvider := config.GetEnv("JOBS_BACKUP_STORAGE_PROVIDER", "S3")
+		storageProvider := config.GetString("JOBS_BACKUP_STORAGE_PROVIDER", "S3")
 		jd.logger.Errorf("[JobsDB] :: Failed to upload table %v dump to %s. Error: %s", tableName, storageProvider, err.Error())
 		return err
 	}
@@ -3855,7 +3706,6 @@ We keep a journal of all the operations. The journal helps
 const (
 	addDSOperation             = "ADD_DS"
 	migrateCopyOperation       = "MIGRATE_COPY"
-	migrateImportOperation     = "MIGRATE_IMPORT"
 	postMigrateDSOperation     = "POST_MIGRATE_DS_OP"
 	backupDSOperation          = "BACKUP_DS"
 	backupDropDSOperation      = "BACKUP_DROP_DS"
@@ -3891,7 +3741,6 @@ func (jd *HandleT) JournalMarkStartInTx(tx *sql.Tx, opType string, opPayload jso
 	var opID int64
 	jd.assert(opType == addDSOperation ||
 		opType == migrateCopyOperation ||
-		opType == migrateImportOperation ||
 		opType == postMigrateDSOperation ||
 		opType == backupDSOperation ||
 		opType == backupDropDSOperation ||
@@ -3962,8 +3811,6 @@ func (jd *HandleT) recoverFromCrash(owner OwnerType, goRoutineType string) {
 		opTypes = []string{migrateCopyOperation, postMigrateDSOperation, dropDSOperation}
 	case backupGoRoutine:
 		opTypes = []string{backupDSOperation, backupDropDSOperation}
-	case migratorRoutine:
-		opTypes = []string{migrateImportOperation}
 	}
 
 	sqlStatement := fmt.Sprintf(`SELECT id, operation, done, operation_payload
@@ -4025,13 +3872,6 @@ func (jd *HandleT) recoverFromCrash(owner OwnerType, goRoutineType string) {
 		jd.logger.Info("Recovering migrateCopy operation", migrateDest)
 		jd.dropDSForRecovery(migrateDest)
 		undoOp = true
-	case migrateImportOperation:
-		jd.assert(db.IsValidMigrationMode(jd.migrationState.migrationMode), "If migration mode is not valid, then this operation shouldn't have been unfinished. Go debug")
-		var importDest dataSetT
-		jd.assertError(json.Unmarshal(opPayload, &importDest))
-		jd.dropDSForRecovery(importDest)
-		jd.deleteSetupCheckpoint(ImportOp)
-		undoOp = true
 	case postMigrateDSOperation:
 		migrateSrc := opPayloadJSON.From
 		for _, ds := range migrateSrc {
@@ -4069,19 +3909,12 @@ const (
 	addDSGoRoutine  = "addDS"
 	mainGoRoutine   = "main"
 	backupGoRoutine = "backup"
-	migratorRoutine = "migrator"
 )
 
 func (jd *HandleT) recoverFromJournal(owner OwnerType) {
 	jd.recoverFromCrash(owner, addDSGoRoutine)
 	jd.recoverFromCrash(owner, mainGoRoutine)
 	jd.recoverFromCrash(owner, backupGoRoutine)
-}
-
-// RecoverFromMigrationJournal is an exposed function for migrator package to handle journal crashes during migration
-func (jd *HandleT) RecoverFromMigrationJournal() {
-	jd.recoverFromCrash(Write, migratorRoutine)
-	jd.recoverFromCrash(ReadWrite, migratorRoutine)
 }
 
 func (jd *HandleT) UpdateJobStatus(ctx context.Context, statusList []*JobStatusT, customValFilters []string, parameterFilters []ParameterFilterT) error {
@@ -4717,14 +4550,29 @@ func (jd *HandleT) GetLastJobID() int64 {
 	jd.dsListLock.RLock()
 	dsList := jd.getDSList()
 	jd.dsListLock.RUnlock()
-	return jd.GetMaxIDForDs(dsList[len(dsList)-1])
+	return jd.getMaxIDForDs(dsList[len(dsList)-1])
+}
+
+func (jd *HandleT) getMaxIDForDs(ds dataSetT) int64 {
+	var maxID sql.NullInt64
+	sqlStatement := fmt.Sprintf(`SELECT MAX(job_id) FROM %s`, ds.JobTable)
+	row := jd.dbHandle.QueryRow(sqlStatement)
+	err := row.Scan(&maxID)
+	if err != nil {
+		panic(fmt.Errorf("query for max job_id: %q", err))
+	}
+
+	if maxID.Valid {
+		return maxID.Int64
+	}
+	return 0
 }
 
 func (jd *HandleT) GetLastJob() *JobT {
 	jd.dsListLock.RLock()
 	defer jd.dsListLock.RUnlock()
 	dsList := jd.getDSList()
-	maxID := jd.GetMaxIDForDs(dsList[len(dsList)-1])
+	maxID := jd.getMaxIDForDs(dsList[len(dsList)-1])
 
 	var job JobT
 	sqlStatement := fmt.Sprintf(`SELECT %[1]s.job_id, %[1]s.uuid, %[1]s.user_id, %[1]s.parameters, %[1]s.custom_val, %[1]s.event_payload, %[1]s.created_at, %[1]s.expire_at FROM %[1]s WHERE %[1]s.job_id = %[2]d`, dsList[len(dsList)-1].JobTable, maxID)

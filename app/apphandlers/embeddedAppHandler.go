@@ -71,7 +71,6 @@ func (embedded *EmbeddedApp) StartRudderCore(ctx context.Context, options *app.O
 	destinationdebugger.Setup(backendconfig.DefaultBackendConfig)
 	sourcedebugger.Setup(backendconfig.DefaultBackendConfig)
 
-	migrationMode := embedded.App.Options().MigrationMode
 	reportingI := embedded.App.Features().Reporting.GetReportingInstance()
 	transientSources := transientsource.NewService(ctx, backendconfig.DefaultBackendConfig)
 	prebackupHandlers := []prebackup.Handler{
@@ -82,13 +81,11 @@ func (embedded *EmbeddedApp) StartRudderCore(ctx context.Context, options *app.O
 		return err
 	}
 
-	// IMP NOTE: All the jobsdb setups must happen before migrator setup.
 	// This gwDBForProcessor should only be used by processor as this is supposed to be stopped and started with the
 	// Processor.
 	gwDBForProcessor := jobsdb.NewForRead(
 		"gw",
 		jobsdb.WithClearDB(options.ClearDB),
-		jobsdb.WithMigrationMode(migrationMode),
 		jobsdb.WithStatusHandler(),
 		jobsdb.WithPreBackupHandlers(prebackupHandlers),
 		jobsdb.WithDSLimit(&gatewayDSLimit),
@@ -97,7 +94,6 @@ func (embedded *EmbeddedApp) StartRudderCore(ctx context.Context, options *app.O
 	routerDB := jobsdb.NewForReadWrite(
 		"rt",
 		jobsdb.WithClearDB(options.ClearDB),
-		jobsdb.WithMigrationMode(migrationMode),
 		jobsdb.WithStatusHandler(),
 		jobsdb.WithPreBackupHandlers(prebackupHandlers),
 		jobsdb.WithDSLimit(&routerDSLimit),
@@ -106,7 +102,6 @@ func (embedded *EmbeddedApp) StartRudderCore(ctx context.Context, options *app.O
 	batchRouterDB := jobsdb.NewForReadWrite(
 		"batch_rt",
 		jobsdb.WithClearDB(options.ClearDB),
-		jobsdb.WithMigrationMode(migrationMode),
 		jobsdb.WithStatusHandler(),
 		jobsdb.WithPreBackupHandlers(prebackupHandlers),
 		jobsdb.WithDSLimit(&batchRouterDSLimit),
@@ -115,7 +110,6 @@ func (embedded *EmbeddedApp) StartRudderCore(ctx context.Context, options *app.O
 	errDB := jobsdb.NewForReadWrite(
 		"proc_error",
 		jobsdb.WithClearDB(options.ClearDB),
-		jobsdb.WithMigrationMode(migrationMode),
 		jobsdb.WithStatusHandler(),
 		jobsdb.WithPreBackupHandlers(prebackupHandlers),
 		jobsdb.WithDSLimit(&processorDSLimit),
@@ -138,41 +132,6 @@ func (embedded *EmbeddedApp) StartRudderCore(ctx context.Context, options *app.O
 	}
 
 	enableGateway := true
-	if embedded.App.Features().Migrator != nil {
-		if migrationMode == db.IMPORT || migrationMode == db.EXPORT || migrationMode == db.IMPORT_EXPORT {
-			startProcessorFunc := func() {
-				clearDB := false
-				if enableProcessor {
-					g.Go(misc.WithBugsnag(func() error {
-						return StartProcessor(
-							ctx, &clearDB, gwDBForProcessor, routerDB, batchRouterDB, errDB,
-							reportingI, multitenant.NOOP, transientSources, rsourcesService,
-						)
-					}))
-				}
-			}
-			startRouterFunc := func() {
-				if enableRouter {
-					g.Go(misc.WithBugsnag(func() error {
-						StartRouter(ctx, tenantRouterDB, batchRouterDB, errDB, reportingI, multitenant.NOOP, transientSources, rsourcesService)
-						return nil
-					}))
-				}
-			}
-			enableRouter = false
-			enableProcessor = false
-			enableGateway = migrationMode != db.EXPORT
-
-			embedded.App.Features().Migrator.PrepareJobsdbsForImport(gwDBForProcessor, routerDB, batchRouterDB)
-
-			g.Go(func() error {
-				embedded.App.Features().Migrator.Run(ctx, gwDBForProcessor, routerDB, batchRouterDB, startProcessorFunc,
-					startRouterFunc) // TODO
-				return nil
-			})
-		}
-	}
-
 	var modeProvider cluster.ChangeEventProvider
 
 	switch deploymentType {
@@ -233,7 +192,6 @@ func (embedded *EmbeddedApp) StartRudderCore(ctx context.Context, options *app.O
 		gatewayDB = jobsdb.NewForWrite(
 			"gw",
 			jobsdb.WithClearDB(options.ClearDB),
-			jobsdb.WithMigrationMode(migrationMode),
 			jobsdb.WithStatusHandler(),
 		)
 		defer gwDBForProcessor.Close()
@@ -267,7 +225,7 @@ func (embedded *EmbeddedApp) StartRudderCore(ctx context.Context, options *app.O
 		var replayDB jobsdb.HandleT
 		err := replayDB.Setup(
 			jobsdb.ReadWrite, options.ClearDB, "replay",
-			migrationMode, true, prebackupHandlers,
+			true, prebackupHandlers,
 		)
 		if err != nil {
 			return fmt.Errorf("could not setup replayDB: %w", err)
@@ -291,5 +249,5 @@ func (embedded *EmbeddedApp) StartRudderCore(ctx context.Context, options *app.O
 }
 
 func (*EmbeddedApp) HandleRecovery(options *app.Options) {
-	db.HandleEmbeddedRecovery(options.NormalMode, options.DegradedMode, options.MigrationMode, misc.AppStartTime, app.EMBEDDED)
+	db.HandleEmbeddedRecovery(options.NormalMode, options.DegradedMode, misc.AppStartTime, app.EMBEDDED)
 }

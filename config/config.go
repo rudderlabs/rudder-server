@@ -1,675 +1,202 @@
+// Package config uses the exact same precedence order as Viper, where
+// each item takes precedence over the item below it:
+//
+//   - explicit call to Set (case insensitive)
+//   - flag (case insensitive)
+//   - env (case sensitive - see notes below)
+//   - config (case insensitive)
+//   - key/value store (case insensitive)
+//   - default (case insensitive)
+//
+// Environment variable resolution is performed based on the following rules:
+//   - If the key contains only uppercase characters, numbers and underscores, the environment variable is looked up in its entirety, e.g. SOME_VARIABLE -> SOME_VARIABLE
+//   - In all other cases, the environment variable is transformed before being looked up as following:
+//     1. camelCase is converted to snake_case, e.g. someVariable -> some_variable
+//     2. dots (.) are replaced with underscores (_), e.g. some.variable -> some_variable
+//     3. the resulting string is uppercased and prefixed with RSERVER_, e.g. some_variable -> RSERVER_SOME_VARIABLE
 package config
 
 import (
 	"fmt"
-	"os"
 	"regexp"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
 
-	"github.com/fsnotify/fsnotify"
-	"github.com/joho/godotenv"
-	"github.com/spf13/cast"
 	"github.com/spf13/viper"
 )
 
-var matchAllCap = regexp.MustCompile("([a-z0-9])([A-Z])")
+// regular expression matching lowercase letter followed by an uppercase letter
+var camelCaseMatch = regexp.MustCompile("([a-z0-9])([A-Z])")
 
-var (
-	whSchemaVersion        string
-	hotReloadableConfig    map[string][]*ConfigVar
-	nonHotReloadableConfig map[string][]*ConfigVar
-	configVarLock          sync.RWMutex
-)
+// regular expression matching uppercase letters contained in environment variable names
+var upperCaseMatch = regexp.MustCompile("^[A-Z0-9_]+$")
 
-type ConfigVar struct {
-	value           interface{}
-	multiplier      interface{}
-	isHotReloadable bool
-	defaultValue    interface{}
-	keys            []string
+// default, singleton config instance
+var defaultConfig *Config
+
+func init() {
+	defaultConfig = New()
 }
 
-func newConfigVar(value, multiplier, defaultValue interface{}, isHotReloadable bool, keys []string) *ConfigVar {
-	return &ConfigVar{
-		value:           value,
-		multiplier:      multiplier,
-		isHotReloadable: isHotReloadable,
-		defaultValue:    defaultValue,
-		keys:            keys,
-	}
+// Reset resets configuration
+func Reset() {
+	defaultConfig = New()
 }
 
-func getConfigValue(configVar *ConfigVar) interface{} {
-	return configVar.value
+// New creates a new config instance
+func New() *Config {
+	c := &Config{}
+	c.load()
+	return c
 }
 
-// Rudder server supported config constants
-const (
-	EmbeddedMode      = "embedded"
-	MasterMode        = "master"
-	MasterSlaveMode   = "master_and_slave"
-	SlaveMode         = "slave"
-	OffMode           = "off"
-	PooledWHSlaveMode = "embedded_master"
-)
-
-// TransformKey as package method to get the formatted env from a give string
-func TransformKey(s string) string {
-	snake := matchAllCap.ReplaceAllString(s, "${1}_${2}")
-	snake = strings.ReplaceAll(snake, ".", "_")
-	return "RSERVER_" + strings.ToUpper(snake)
+// Config is the entry point for accessing configuration
+type Config struct {
+	vLock                   sync.RWMutex // protects reading and writing to the config (viper is not thread-safe)
+	v                       *viper.Viper
+	hotReloadableConfigLock sync.RWMutex // protects map holding hot reloadable config keys
+	hotReloadableConfig     map[string][]*configValue
+	envsLock                sync.RWMutex // protects the envs map below
+	envs                    map[string]string
 }
 
-func Load() {
-	if err := godotenv.Load(); err != nil {
-		fmt.Println("INFO: No .env file found.")
-	}
-	hotReloadableConfig = make(map[string][]*ConfigVar)
-	nonHotReloadableConfig = make(map[string][]*ConfigVar)
-	configPath := GetEnv("CONFIG_PATH", "./config/config.yaml")
-	viper.SetConfigFile(configPath)
-	err := viper.ReadInConfig() // Find and read the config file
-	UpdateConfig()
-	// Don't panic if config.yaml is not found or error with parsing. Use the default config values instead
-	if err != nil {
-		fmt.Println("[Config] :: Failed to parse Config Yaml, using default values:", err)
-	}
-}
-
-func UpdateConfig() {
-	viper.WatchConfig()
-	viper.OnConfigChange(func(e fsnotify.Event) {
-		watchForConfigChange()
-	})
-}
-
-func watchForConfigChange() {
-	defer func() {
-		if r := recover(); r != nil {
-			err := fmt.Errorf("cannot update Config Variables: %v", r)
-			fmt.Println(err)
-		}
-	}()
-	configVarLock.RLock()
-	defer configVarLock.RUnlock()
-	_ = checkAndHotReloadConfig(hotReloadableConfig)
-	isChanged := checkAndHotReloadConfig(nonHotReloadableConfig)
-	if isChanged && GetEnvAsBool("RESTART_ON_CONFIG_CHANGE", false) {
-		os.Exit(1)
-	}
-}
-
-func checkAndHotReloadConfig(configMap map[string][]*ConfigVar) (hasConfigChanged bool) {
-	for key, configValArr := range configMap {
-		for _, configVal := range configValArr {
-			value := configVal.value
-			switch value := value.(type) {
-			case *int:
-				var _value int
-				var isSet bool
-				for _, key := range configVal.keys {
-					envVal := GetEnv(TransformKey(key), "")
-					if envVal != "" {
-						isSet = true
-						_value = cast.ToInt(envVal)
-						break
-					}
-				}
-
-				if !isSet {
-					for _, key := range configVal.keys {
-						if viper.IsSet(key) {
-							isSet = true
-							_value = GetInt(key, configVal.defaultValue.(int))
-							break
-						}
-					}
-				}
-				if !isSet {
-					_value = configVal.defaultValue.(int)
-				}
-				_value = _value * configVal.multiplier.(int)
-				if _value != *value {
-					hasConfigChanged = true
-					if configVal.isHotReloadable {
-						fmt.Printf("The value of key:%s & variable:%p changed from %d to %d\n", key, configVal, *value, _value)
-						*value = _value
-					}
-				}
-			case *int64:
-				var _value int64
-				var isSet bool
-				for _, key := range configVal.keys {
-					envVal := GetEnv(TransformKey(key), "")
-					if envVal != "" {
-						isSet = true
-						_value = cast.ToInt64(envVal)
-						break
-					}
-				}
-				if !isSet {
-					for _, key := range configVal.keys {
-						if viper.IsSet(key) {
-							isSet = true
-							_value = GetInt64(key, configVal.defaultValue.(int64))
-							break
-						}
-					}
-				}
-				if !isSet {
-					_value = configVal.defaultValue.(int64)
-				}
-				_value = _value * configVal.multiplier.(int64)
-				if _value != *value {
-					hasConfigChanged = true
-					if configVal.isHotReloadable {
-						fmt.Printf("The value of key:%s & variable:%p changed from %d to %d\n", key, configVal, *value, _value)
-						*value = _value
-					}
-				}
-			case *string:
-				var _value string
-				var isSet bool
-				for _, key := range configVal.keys {
-					envVal := GetEnv(TransformKey(key), "")
-					if envVal != "" {
-						isSet = true
-						_value = cast.ToString(envVal)
-						break
-					}
-				}
-				if !isSet {
-					for _, key := range configVal.keys {
-						if viper.IsSet(key) {
-							isSet = true
-							_value = GetString(key, configVal.defaultValue.(string))
-							break
-						}
-					}
-				}
-				if !isSet {
-					_value = configVal.defaultValue.(string)
-				}
-				if _value != *value {
-					hasConfigChanged = true
-					if configVal.isHotReloadable {
-						fmt.Printf("The value of key:%s & variable:%p changed from %v to %v\n", key, configVal, *value, _value)
-						*value = _value
-					}
-				}
-			case *time.Duration:
-				var _value time.Duration
-				var isSet bool
-				for _, key := range configVal.keys {
-					envVal := GetEnv(TransformKey(key), "")
-					if envVal != "" {
-						isSet = true
-						_value = GetDuration(key, configVal.defaultValue.(int64), configVal.multiplier.(time.Duration))
-						break
-					}
-				}
-				if !isSet {
-					for _, key := range configVal.keys {
-						if viper.IsSet(key) {
-							isSet = true
-							_value = GetDuration(key, configVal.defaultValue.(int64), configVal.multiplier.(time.Duration))
-							break
-						}
-					}
-				}
-				if !isSet {
-					_value = time.Duration(configVal.defaultValue.(int64)) * configVal.multiplier.(time.Duration)
-				}
-				if _value != *value {
-					hasConfigChanged = true
-					if configVal.isHotReloadable {
-						fmt.Printf("The value of key:%s & variable:%p changed from %v to %v\n", key, configVal, *value, _value)
-						*value = _value
-					}
-				}
-			case *bool:
-				var _value bool
-				var isSet bool
-				for _, key := range configVal.keys {
-					envVal := GetEnv(TransformKey(key), "")
-					if envVal != "" {
-						isSet = true
-						_value = cast.ToBool(envVal)
-						break
-					}
-				}
-				if !isSet {
-					for _, key := range configVal.keys {
-						if viper.IsSet(key) {
-							isSet = true
-							_value = GetBool(key, configVal.defaultValue.(bool))
-							break
-						}
-					}
-				}
-				if !isSet {
-					_value = configVal.defaultValue.(bool)
-				}
-				if _value != *value {
-					hasConfigChanged = true
-					if configVal.isHotReloadable {
-						fmt.Printf("The value of key:%s & variable:%p changed from %v to %v\n", key, configVal, *value, _value)
-						*value = _value
-					}
-				}
-			case *float64:
-				var _value float64
-				var isSet bool
-				for _, key := range configVal.keys {
-					envVal := GetEnv(TransformKey(key), "")
-					if envVal != "" {
-						isSet = true
-						_value = cast.ToFloat64(envVal)
-						break
-					}
-				}
-				if !isSet {
-					for _, key := range configVal.keys {
-						if viper.IsSet(key) {
-							isSet = true
-							_value = GetFloat64(key, configVal.defaultValue.(float64))
-							break
-						}
-					}
-				}
-				if !isSet {
-					_value = configVal.defaultValue.(float64)
-				}
-				_value = _value * configVal.multiplier.(float64)
-				if _value != *value {
-					hasConfigChanged = true
-					if configVal.isHotReloadable {
-						fmt.Printf("The value of key:%s & variable:%p changed from %v to %v\n", key, configVal, *value, _value)
-						*value = _value
-					}
-				}
-			}
-		}
-	}
-	return hasConfigChanged
-}
-
-// GetBool is a wrapper for viper's GetBool
+// GetBool gets bool value from config
 func GetBool(key string, defaultValue bool) (value bool) {
-	envVal := GetEnv(TransformKey(key), "")
-	if envVal != "" {
-		return cast.ToBool(envVal)
-	}
-
-	if !viper.IsSet(key) {
-		return defaultValue
-	}
-	return viper.GetBool(key)
+	return defaultConfig.GetBool(key, defaultValue)
 }
 
-// GetInt is wrapper for viper's GetInt
+// GetBool gets bool value from config
+func (c *Config) GetBool(key string, defaultValue bool) (value bool) {
+	c.vLock.RLock()
+	defer c.vLock.RUnlock()
+	if !c.IsSet(key) {
+		return defaultValue
+	}
+	return c.v.GetBool(key)
+}
+
+// GetInt gets int value from config
 func GetInt(key string, defaultValue int) (value int) {
-	envVal := GetEnv(TransformKey(key), "")
-	if envVal != "" {
-		return cast.ToInt(envVal)
-	}
+	return defaultConfig.GetInt(key, defaultValue)
+}
 
-	if !viper.IsSet(key) {
+// GetInt gets int value from config
+func (c *Config) GetInt(key string, defaultValue int) (value int) {
+	c.vLock.RLock()
+	defer c.vLock.RUnlock()
+	if !c.IsSet(key) {
 		return defaultValue
 	}
-	return viper.GetInt(key)
+	return c.v.GetInt(key)
 }
 
-func appendVarToConfigMaps(isHotReloadable bool, key string, configVar *ConfigVar) {
-	if isHotReloadable {
-		if _, ok := hotReloadableConfig[key]; !ok {
-			hotReloadableConfig[key] = make([]*ConfigVar, 0)
-		}
-		hotReloadableConfig[key] = append(hotReloadableConfig[key], configVar)
-	} else {
-		if _, ok := nonHotReloadableConfig[key]; !ok {
-			nonHotReloadableConfig[key] = make([]*ConfigVar, 0)
-		}
-		nonHotReloadableConfig[key] = append(nonHotReloadableConfig[key], configVar)
-	}
+// MustGetInt gets int value from config or panics if the config doesn't exist
+func MustGetInt(key string) (value int) {
+	return defaultConfig.MustGetInt(key)
 }
 
-func RegisterIntConfigVariable(defaultValue int, ptr *int, isHotReloadable bool, valueScale int, keys ...string) {
-	configVarLock.Lock()
-	defer configVarLock.Unlock()
-	var isSet bool
-	configVar := ConfigVar{
-		value:           ptr,
-		multiplier:      valueScale,
-		isHotReloadable: isHotReloadable,
-		defaultValue:    defaultValue,
-		keys:            keys,
+// MustGetInt gets int value from config or panics if the config doesn't exist
+func (c *Config) MustGetInt(key string) (value int) {
+	c.vLock.RLock()
+	defer c.vLock.RUnlock()
+	if !c.IsSet(key) {
+		panic(fmt.Errorf("config key %s not found", key))
 	}
-
-	appendVarToConfigMaps(isHotReloadable, keys[0], &configVar)
-
-	for _, key := range keys {
-		if IsTransformedEnvSet(key) {
-			isSet = true
-			*ptr = GetInt(key, defaultValue) * valueScale
-			break
-		}
-	}
-	if !isSet {
-		for _, key := range keys {
-			if viper.IsSet(key) {
-				isSet = true
-				*ptr = GetInt(key, defaultValue) * valueScale
-				break
-			}
-		}
-	}
-
-	if !isSet {
-		*ptr = defaultValue * valueScale
-	}
+	return c.v.GetInt(key)
 }
 
-func RegisterBoolConfigVariable(defaultValue bool, ptr *bool, isHotReloadable bool, keys ...string) {
-	configVarLock.Lock()
-	defer configVarLock.Unlock()
-	var isSet bool
-	configVar := ConfigVar{
-		value:           ptr,
-		isHotReloadable: isHotReloadable,
-		defaultValue:    defaultValue,
-		keys:            keys,
-	}
-
-	appendVarToConfigMaps(isHotReloadable, keys[0], &configVar)
-
-	for _, key := range keys {
-		if IsTransformedEnvSet(key) {
-			isSet = true
-			*ptr = GetBool(key, defaultValue)
-			break
-		}
-	}
-	if !isSet {
-		for _, key := range keys {
-			if viper.IsSet(key) {
-				isSet = true
-				*ptr = GetBool(key, defaultValue)
-				break
-			}
-		}
-	}
-
-	if !isSet {
-		*ptr = defaultValue
-	}
-}
-
-func RegisterFloat64ConfigVariable(defaultValue float64, ptr *float64, isHotReloadable bool, keys ...string) {
-	configVarLock.Lock()
-	defer configVarLock.Unlock()
-	var isSet bool
-	configVar := ConfigVar{
-		value:           ptr,
-		multiplier:      1.0,
-		isHotReloadable: isHotReloadable,
-		defaultValue:    defaultValue,
-		keys:            keys,
-	}
-
-	appendVarToConfigMaps(isHotReloadable, keys[0], &configVar)
-
-	for _, key := range keys {
-		if IsTransformedEnvSet(key) {
-			isSet = true
-			*ptr = GetFloat64(key, defaultValue)
-			break
-		}
-	}
-	if !isSet {
-		for _, key := range keys {
-			if viper.IsSet(key) {
-				isSet = true
-				*ptr = GetFloat64(key, defaultValue)
-				break
-			}
-		}
-	}
-
-	if !isSet {
-		*ptr = defaultValue
-	}
-}
-
-func RegisterInt64ConfigVariable(defaultValue int64, ptr *int64, isHotReloadable bool, valueScale int64, keys ...string) {
-	configVarLock.Lock()
-	defer configVarLock.Unlock()
-	var isSet bool
-	configVar := ConfigVar{
-		value:           ptr,
-		multiplier:      valueScale,
-		isHotReloadable: isHotReloadable,
-		defaultValue:    defaultValue,
-		keys:            keys,
-	}
-
-	appendVarToConfigMaps(isHotReloadable, keys[0], &configVar)
-
-	for _, key := range keys {
-		if IsTransformedEnvSet(key) {
-			isSet = true
-			*ptr = GetInt64(key, defaultValue) * valueScale
-			break
-		}
-	}
-	if !isSet {
-		for _, key := range keys {
-			if viper.IsSet(key) {
-				isSet = true
-				*ptr = GetInt64(key, defaultValue) * valueScale
-				break
-			}
-		}
-	}
-
-	if !isSet {
-		*ptr = defaultValue * valueScale
-	}
-}
-
-func RegisterDurationConfigVariable(defaultValueInTimescaleUnits int64, ptr *time.Duration, isHotReloadable bool, timeScale time.Duration, keys ...string) {
-	configVarLock.Lock()
-	defer configVarLock.Unlock()
-	var isSet bool
-	configVar := ConfigVar{
-		value:           ptr,
-		multiplier:      timeScale,
-		isHotReloadable: isHotReloadable,
-		defaultValue:    defaultValueInTimescaleUnits,
-		keys:            keys,
-	}
-
-	appendVarToConfigMaps(isHotReloadable, keys[0], &configVar)
-
-	for _, key := range keys {
-		if IsTransformedEnvSet(key) {
-			isSet = true
-			*ptr = GetDuration(key, defaultValueInTimescaleUnits, timeScale)
-			break
-		}
-	}
-
-	if !isSet {
-		for _, key := range keys {
-			if viper.IsSet(key) {
-				isSet = true
-				*ptr = GetDuration(key, defaultValueInTimescaleUnits, timeScale)
-				break
-			}
-		}
-	}
-
-	if !isSet {
-		*ptr = time.Duration(defaultValueInTimescaleUnits) * timeScale
-	}
-}
-
-func RegisterStringConfigVariable(defaultValue string, ptr *string, isHotReloadable bool, keys ...string) {
-	configVarLock.Lock()
-	defer configVarLock.Unlock()
-	var isSet bool
-	configVar := ConfigVar{
-		value:           ptr,
-		isHotReloadable: isHotReloadable,
-		defaultValue:    defaultValue,
-		keys:            keys,
-	}
-
-	appendVarToConfigMaps(isHotReloadable, keys[0], &configVar)
-
-	for _, key := range keys {
-		if IsTransformedEnvSet(key) {
-			isSet = true
-			*ptr = GetString(key, defaultValue)
-			break
-		}
-	}
-	if !isSet {
-		for _, key := range keys {
-			if viper.IsSet(key) {
-				isSet = true
-				*ptr = GetString(key, defaultValue)
-				break
-			}
-		}
-	}
-
-	if !isSet {
-		*ptr = defaultValue
-	}
-}
-
-func RegisterStringSliceConfigVariable(defaultValue []string, ptr *[]string, isHotReloadable bool, keys ...string) {
-	configVarLock.Lock()
-	defer configVarLock.Unlock()
-	var isSet bool
-	configVar := ConfigVar{
-		value:           ptr,
-		isHotReloadable: isHotReloadable,
-		defaultValue:    defaultValue,
-		keys:            keys,
-	}
-
-	appendVarToConfigMaps(isHotReloadable, keys[0], &configVar)
-
-	for _, key := range keys {
-		if IsTransformedEnvSet(key) {
-			isSet = true
-			*ptr = GetStringSlice(key, defaultValue)
-			break
-		}
-	}
-	if !isSet {
-		for _, key := range keys {
-			if viper.IsSet(key) {
-				isSet = true
-				*ptr = GetStringSlice(key, defaultValue)
-				break
-			}
-		}
-	}
-
-	if !isSet {
-		*ptr = defaultValue
-	}
-}
-
-// GetInt64 is wrapper for viper's GetInt
+// GetInt64 gets int64 value from config
 func GetInt64(key string, defaultValue int64) (value int64) {
-	envVal := GetEnv(TransformKey(key), "")
-	if envVal != "" {
-		return cast.ToInt64(envVal)
-	}
-
-	if !viper.IsSet(key) {
-		return defaultValue
-	}
-	return viper.GetInt64(key)
+	return defaultConfig.GetInt64(key, defaultValue)
 }
 
-// GetFloat64 is wrapper for viper's GetFloat64
+// GetInt64 gets int64 value from config
+func (c *Config) GetInt64(key string, defaultValue int64) (value int64) {
+	c.vLock.RLock()
+	defer c.vLock.RUnlock()
+	if !c.IsSet(key) {
+		return defaultValue
+	}
+	return c.v.GetInt64(key)
+}
+
+// GetFloat64 gets float64 value from config
 func GetFloat64(key string, defaultValue float64) (value float64) {
-	envVal := GetEnv(TransformKey(key), "")
-	if envVal != "" {
-		return cast.ToFloat64(envVal)
-	}
-
-	if !viper.IsSet(key) {
-		return defaultValue
-	}
-	return viper.GetFloat64(key)
+	return defaultConfig.GetFloat64(key, defaultValue)
 }
 
-// GetString is wrapper for viper's GetString
+// GetFloat64 gets float64 value from config
+func (c *Config) GetFloat64(key string, defaultValue float64) (value float64) {
+	c.vLock.RLock()
+	defer c.vLock.RUnlock()
+	if !c.IsSet(key) {
+		return defaultValue
+	}
+	return c.v.GetFloat64(key)
+}
+
+// GetString gets string value from config
 func GetString(key, defaultValue string) (value string) {
-	envVal := GetEnv(TransformKey(key), "")
-	if envVal != "" {
-		return envVal
-	}
-
-	if !viper.IsSet(key) {
-		return defaultValue
-	}
-	return viper.GetString(key)
+	return defaultConfig.GetString(key, defaultValue)
 }
 
-// GetStringSlice is wrapper for viper's GetStringSlice
-func GetStringSlice(key string, defaultValue []string) (value []string) {
-	envVal := GetEnv(TransformKey(key), "")
-
-	// parsing comma separated string from env and populating a slice
-	if envVal != "" {
-		envValList := strings.Split(envVal, ",")
-		for i, elem := range envValList {
-			envValList[i] = strings.ToLower(strings.Trim(elem, " "))
-		}
-		return envValList
-	}
-
-	if !viper.IsSet(key) {
+// GetString gets string value from config
+func (c *Config) GetString(key, defaultValue string) (value string) {
+	c.vLock.RLock()
+	defer c.vLock.RUnlock()
+	if !c.IsSet(key) {
 		return defaultValue
 	}
-	return viper.GetStringSlice(key)
+	return c.v.GetString(key)
 }
 
-// GetDuration is wrapper for viper's GetDuration
+// MustGetString gets string value from config or panics if the config doesn't exist
+func MustGetString(key string) (value string) {
+	return defaultConfig.MustGetString(key)
+}
+
+// MustGetString gets string value from config or panics if the config doesn't exist
+func (c *Config) MustGetString(key string) (value string) {
+	c.vLock.RLock()
+	defer c.vLock.RUnlock()
+	if !c.IsSet(key) {
+		panic(fmt.Errorf("config key %s not found", key))
+	}
+	return c.v.GetString(key)
+}
+
+// GetStringSlice gets string slice value from config
+func (c *Config) GetStringSlice(key string, defaultValue []string) (value []string) {
+	c.vLock.RLock()
+	defer c.vLock.RUnlock()
+	if !c.IsSet(key) {
+		return defaultValue
+	}
+	return c.v.GetStringSlice(key)
+}
+
+// GetDuration gets duration value from config
 func GetDuration(key string, defaultValueInTimescaleUnits int64, timeScale time.Duration) (value time.Duration) {
-	var envValue string
-	envVal := GetEnv(TransformKey(key), "")
-	if envVal != "" {
-		envValue = cast.ToString(envVal)
-		parseDuration, err := time.ParseDuration(envValue)
-		if err == nil {
-			return parseDuration
-		} else {
-			return cast.ToDuration(envVal) * timeScale
-		}
-	}
+	return defaultConfig.GetDuration(key, defaultValueInTimescaleUnits, timeScale)
+}
 
-	if !viper.IsSet(key) {
+// GetDuration gets duration value from config
+func (c *Config) GetDuration(key string, defaultValueInTimescaleUnits int64, timeScale time.Duration) (value time.Duration) {
+	c.vLock.RLock()
+	defer c.vLock.RUnlock()
+	if !c.IsSet(key) {
 		return time.Duration(defaultValueInTimescaleUnits) * timeScale
 	} else {
-		envValue = viper.GetString(key)
-		parseDuration, err := time.ParseDuration(envValue)
+		v := c.v.GetString(key)
+		parseDuration, err := time.ParseDuration(v)
 		if err == nil {
 			return parseDuration
 		} else {
-			_, err = strconv.ParseFloat(envValue, 64)
+			_, err = strconv.ParseFloat(v, 64)
 			if err == nil {
-				return viper.GetDuration(key) * timeScale
+				return c.v.GetDuration(key) * timeScale
 			} else {
 				return time.Duration(defaultValueInTimescaleUnits) * timeScale
 			}
@@ -679,159 +206,73 @@ func GetDuration(key string, defaultValueInTimescaleUnits int64, timeScale time.
 
 // IsSet checks if config is set for a key
 func IsSet(key string) bool {
-	if _, exists := os.LookupEnv(TransformKey(key)); exists {
-		return true
-	}
-
-	return viper.IsSet(key)
+	return defaultConfig.IsSet(key)
 }
 
-func IsTransformedEnvSet(key string) bool {
-	if _, exists := os.LookupEnv(TransformKey(key)); exists {
-		return true
-	}
-	return false
-}
-
-// IsEnvSet checks if an environment variable is set
-func IsEnvSet(key string) bool {
-	_, exists := os.LookupEnv(key)
-	return exists
-}
-
-// GetEnv returns the environment value stored in key variable
-func GetEnv(key, defaultVal string) string {
-	if value, exists := os.LookupEnv(key); exists {
-		return value
-	}
-	return defaultVal
-}
-
-func MustGetEnv(key string) string {
-	if value, exists := os.LookupEnv(key); exists {
-		return value
-	}
-	panic(fmt.Sprintf("environment variable not found: %q", key))
-}
-
-// GetEnvAsInt returns the int value of environment value stored in the key variable
-// If not set, default value will be return. If set but unparsable, returns 0
-func GetEnvAsInt(key string, defaultVal int) int {
-	stringValue, exists := os.LookupEnv(key)
-	if !exists {
-		return defaultVal
-	}
-	if value, err := strconv.Atoi(stringValue); err == nil {
-		return value
-	}
-	return 0
-}
-
-// GetRequiredEnvAsInt returns the environment value stored in key variable as int, no default
-func GetRequiredEnvAsInt(key string) int {
-	stringValue, exists := os.LookupEnv(key)
-	if !exists {
-		panic(fmt.Errorf("fatal error, no required environment variable: %s", key))
-	}
-	if value, err := strconv.Atoi(stringValue); err == nil {
-		return value
-	}
-	panic(fmt.Sprintf("Unable to parse the value of %s env variable. Value : %s", key, stringValue))
-}
-
-// GetEnvAsBool returns the boolean environment value stored in key variable
-func GetEnvAsBool(name string, defaultVal bool) bool {
-	valueStr := GetEnv(name, "")
-	if value, err := strconv.ParseBool(valueStr); err == nil {
-		return value
-	}
-
-	return defaultVal
-}
-
-// GetRequiredEnv returns the environment value stored in key variable, no default
-func GetRequiredEnv(key string) string {
-	if value, exists := os.LookupEnv(key); exists {
-		return value
-	}
-	panic(fmt.Errorf("fatal error, no required environment variable: %s", key))
-}
-
-// GetEnvErr returns the value of environment variable, error if not exists
-func GetEnvErr(key string) (string, error) {
-	if value, exists := os.LookupEnv(key); exists {
-		return value, nil
-	}
-	return "", fmt.Errorf("missing required environment variable: %s", key)
+// IsSet checks if config is set for a key
+func (c *Config) IsSet(key string) bool {
+	c.vLock.RLock()
+	defer c.vLock.RUnlock()
+	c.bindEnv(key)
+	return c.v.IsSet(key)
 }
 
 // Override Config by application or command line
 
-// SetBool override existing config
-func SetBool(key string, value bool) {
-	viper.Set(key, value)
+// Set override existing config
+func Set(key string, value interface{}) {
+	defaultConfig.Set(key, value)
 }
 
-func SetString(key, value string) {
-	viper.Set(key, value)
+// Set override existing config
+func (c *Config) Set(key string, value interface{}) {
+	c.vLock.Lock()
+	c.v.Set(key, value)
+	c.vLock.Unlock()
+	c.onConfigChange()
 }
 
-func SetHotReloadablesForcefully(key string, value interface{}) {
-	viper.Set(key, value)
-	configVarLock.RLock()
-	defer configVarLock.RUnlock()
-	_ = checkAndHotReloadConfig(hotReloadableConfig)
-}
-
-// GetWorkspaceToken returns the workspace token provided in the environment variables
-// Env variable CONFIG_BACKEND_TOKEN is deprecating soon
-// WORKSPACE_TOKEN is newly introduced. This will override CONFIG_BACKEND_TOKEN
-func GetWorkspaceToken() string {
-	token := GetEnv("WORKSPACE_TOKEN", "")
-	if token != "" && token != "<your_token_here>" {
-		return token
+// bindEnv handles rudder server's unique snake case replacement by registering
+// the environment variables to viper, that would otherwise be ignored.
+// Viper uppercases keys before sending them to its EnvKeyReplacer, thus
+// the replacer cannot detect camelCase keys.
+func (c *Config) bindEnv(key string) {
+	envVar := key
+	if !upperCaseMatch.MatchString(key) {
+		envVar = ConfigKeyToEnv(key)
 	}
-	return GetEnv("CONFIG_BACKEND_TOKEN", "")
-}
-
-func GetNamespaceIdentifier() string {
-	k8sNamespace := GetKubeNamespace()
-	if k8sNamespace != "" {
-		return k8sNamespace
+	// bind once
+	c.envsLock.RLock()
+	if _, ok := c.envs[key]; !ok {
+		c.envsLock.RUnlock()
+		c.envsLock.Lock() // don't really care about race here, setting the same value
+		c.envs[strings.ToUpper(key)] = envVar
+		c.envsLock.Unlock()
+	} else {
+		c.envsLock.RUnlock()
 	}
-	return "none"
 }
 
-// GetKubeNamespace returns value stored in KUBE_NAMESPACE env var
-func GetKubeNamespace() string {
-	return GetEnv("KUBE_NAMESPACE", "")
+type envReplacer struct {
+	c *Config
 }
 
-func GetReleaseName() string {
-	return GetEnv("RELEASE_NAME", "")
-}
-
-func GetInstanceID() string {
-	instance := GetEnv("INSTANCE_ID", "")
-	if instance == "" {
-		return ""
+func (r *envReplacer) Replace(s string) string {
+	r.c.envsLock.RLock()
+	defer r.c.envsLock.RUnlock()
+	if v, ok := r.c.envs[s]; ok {
+		return v
 	}
-	instanceArr := strings.Split(instance, "-")
-	return instanceArr[len(instanceArr)-1]
+	return s // bound environment variables
 }
 
-func SetWHSchemaVersion(version string) {
-	whSchemaVersion = version
-}
-
-func GetWHSchemaVersion() string {
-	return whSchemaVersion
-}
-
-func GetVarCharMaxForRS() bool {
-	return GetBool("Warehouse.redshift.setVarCharMax", false)
-}
-
-func GetArraySupportForCH() bool {
-	return GetBool("Warehouse.clickhouse.enableArraySupport", false)
+// Fallback environment variables supported (historically) by rudder-server
+func bindLegacyEnv(v *viper.Viper) {
+	_ = v.BindEnv("DB.host", "JOBS_DB_HOST")
+	_ = v.BindEnv("DB.user", "JOBS_DB_USER")
+	_ = v.BindEnv("DB.name", "JOBS_DB_DB_NAME")
+	_ = v.BindEnv("DB.port", "JOBS_DB_PORT")
+	_ = v.BindEnv("DB.password", "JOBS_DB_PASSWORD")
+	_ = v.BindEnv("DB.sslMode", "JOBS_DB_SSL_MODE")
+	_ = v.BindEnv("SharedDB.dsn", "SHARED_DB_DSN")
 }
