@@ -15,9 +15,8 @@ import (
 )
 
 const (
-	normalMode    = "normal"
-	degradedMode  = "degraded"
-	migrationMode = "migration"
+	normalMode   = "normal"
+	degradedMode = "degraded"
 )
 
 type RecoveryHandler interface {
@@ -116,19 +115,6 @@ func getForceRecoveryMode(forceNormal, forceDegraded bool) string {
 	return ""
 }
 
-func getNextMode(currentMode string) string {
-	switch currentMode {
-	case normalMode:
-		return degradedMode
-	case degradedMode:
-		return degradedMode
-	case migrationMode: // Staying in the migrationMode forever on repeated restarts.
-		return migrationMode
-	}
-
-	return degradedMode
-}
-
 func NewRecoveryHandler(recoveryData *RecoveryDataT) RecoveryHandler {
 	var recoveryHandler RecoveryHandler
 	switch recoveryData.Mode {
@@ -136,8 +122,6 @@ func NewRecoveryHandler(recoveryData *RecoveryDataT) RecoveryHandler {
 		recoveryHandler = &NormalModeHandler{recoveryData: recoveryData}
 	case degradedMode:
 		recoveryHandler = &DegradedModeHandler{recoveryData: recoveryData}
-	case migrationMode:
-		recoveryHandler = &MigrationModeHandler{recoveryData: recoveryData}
 	default:
 		// If the recovery mode is not one of the above modes, defaulting to degraded mode.
 		pkgLogger.Info("DB Recovery: Invalid recovery mode. Defaulting to degraded mode.")
@@ -148,7 +132,7 @@ func NewRecoveryHandler(recoveryData *RecoveryDataT) RecoveryHandler {
 }
 
 func alertOps(mode string) {
-	instanceName := config.GetEnv("INSTANCE_ID", "")
+	instanceName := config.GetString("INSTANCE_ID", "")
 
 	alertManager, err := alert.New()
 	if err != nil {
@@ -170,8 +154,6 @@ func sendRecoveryModeStat(appType string) {
 			recoveryModeStat.Gauge(1)
 		case degradedMode:
 			recoveryModeStat.Gauge(2)
-		case migrationMode:
-			recoveryModeStat.Gauge(4)
 		}
 	}
 }

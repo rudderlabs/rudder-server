@@ -57,8 +57,8 @@ func TestBackupTable(t *testing.T) {
 		t.Setenv("RSERVER_JOBS_DB_BACKUP_RT_ENABLED", "true")
 		t.Setenv("JOBS_BACKUP_BUCKET", "backup-test")
 		t.Setenv("RUDDER_TMPDIR", tmpDir)
-		t.Setenv(config.TransformKey("JobsDB.maxDSSize"), "10")
-		t.Setenv(config.TransformKey("JobsDB.migrateDSLoopSleepDuration"), "3")
+		t.Setenv(config.ConfigKeyToEnv("JobsDB.maxDSSize"), "10")
+		t.Setenv(config.ConfigKeyToEnv("JobsDB.migrateDSLoopSleepDuration"), "3")
 		t.Setenv("JOBS_BACKUP_BUCKET", minioResource.BucketName)
 		t.Setenv("JOBS_BACKUP_PREFIX", prefix)
 
@@ -157,7 +157,6 @@ func TestBackupTable(t *testing.T) {
 type backupTestCase struct{}
 
 func (*backupTestCase) insertRTData(t *testing.T, jobs []*JobT, statusList []*JobStatusT, cleanup *testhelper.Cleanup) {
-	migrationMode := ""
 	triggerAddNewDS := make(chan time.Time)
 
 	jobsDB := &HandleT{
@@ -165,7 +164,7 @@ func (*backupTestCase) insertRTData(t *testing.T, jobs []*JobT, statusList []*Jo
 			return triggerAddNewDS
 		},
 	}
-	err := jobsDB.Setup(ReadWrite, false, "rt", migrationMode, true, []prebackup.Handler{})
+	err := jobsDB.Setup(ReadWrite, false, "rt", true, []prebackup.Handler{})
 	require.NoError(t, err)
 
 	rtDS := newDataSet("rt", "1")
@@ -195,8 +194,6 @@ func (*backupTestCase) insertRTData(t *testing.T, jobs []*JobT, statusList []*Jo
 }
 
 func (*backupTestCase) insertBatchRTData(t *testing.T, jobs []*JobT, statusList []*JobStatusT, cleanup *testhelper.Cleanup) {
-	migrationMode := ""
-
 	triggerAddNewDS := make(chan time.Time)
 	jobsDB := &HandleT{
 		TriggerAddNewDS: func() <-chan time.Time {
@@ -204,7 +201,7 @@ func (*backupTestCase) insertBatchRTData(t *testing.T, jobs []*JobT, statusList 
 		},
 	}
 
-	err := jobsDB.Setup(ReadWrite, false, "batch_rt", migrationMode, true, []prebackup.Handler{})
+	err := jobsDB.Setup(ReadWrite, false, "batch_rt", true, []prebackup.Handler{})
 	require.NoError(t, err)
 
 	ds := newDataSet("batch_rt", "1")
@@ -325,7 +322,7 @@ func (*backupTestCase) readGzipJobFile(filename string) ([]*JobT, error) {
 	if err != nil {
 		return []*JobT{}, err
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 
 	gz, err := gzip.NewReader(file)
 	if err != nil {
@@ -367,7 +364,7 @@ func (*backupTestCase) readGzipStatusFile(fileName string) ([]*JobStatusT, error
 	if err != nil {
 		return []*JobStatusT{}, err
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 
 	gz, err := gzip.NewReader(file)
 	if err != nil {

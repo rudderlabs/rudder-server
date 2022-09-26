@@ -129,7 +129,7 @@ func blockOnHold() {
 }
 
 func initJobsDB() {
-	config.Load()
+	config.Reset()
 	logger.Init()
 	stash.Init()
 	admin.Init()
@@ -168,8 +168,6 @@ func TestProcessorManager(t *testing.T) {
 	SetFeaturesRetryAttempts(0)
 	enablePipelining = false
 	RegisterTestingT(t)
-
-	migrationMode := ""
 	triggerAddNewDS := make(chan time.Time)
 	maxDSSize := 10
 	// tempDB is created to observe/manage the GW DB from the outside without touching the actual GW DB.
@@ -180,7 +178,7 @@ func TestProcessorManager(t *testing.T) {
 		},
 	}
 
-	err := tempDB.Setup(jobsdb.Write, true, "gw", migrationMode, true, []prebackup.Handler{})
+	err := tempDB.Setup(jobsdb.Write, true, "gw", true, []prebackup.Handler{})
 	require.NoError(t, err)
 	defer tempDB.TearDown()
 

@@ -69,7 +69,7 @@ func NewFromEnvConfig() *HandleT {
 	config.RegisterIntConfigVariable(32, &maxConcurrentRequests, true, 1, "Reporting.maxConcurrentRequests")
 	reportingLogger := logger.NewLogger().Child("enterprise").Child("reporting")
 	// only send reports for wh actions sources if whActionsOnly is configured
-	whActionsOnly := config.GetEnvAsBool("REPORTING_WH_ACTIONS_ONLY", false)
+	whActionsOnly := config.GetBool("REPORTING_WH_ACTIONS_ONLY", false)
 	if whActionsOnly {
 		reportingLogger.Info("REPORTING_WH_ACTIONS_ONLY enabled.only sending reports relevant to wh actions.")
 	}
@@ -79,7 +79,7 @@ func NewFromEnvConfig() *HandleT {
 		clients:                   make(map[string]*types.Client),
 		reportingServiceURL:       reportingServiceURL,
 		namespace:                 config.GetKubeNamespace(),
-		instanceID:                config.GetEnv("INSTANCE_ID", "1"),
+		instanceID:                config.GetString("INSTANCE_ID", "1"),
 		workspaceIDForSourceIDMap: make(map[string]string),
 		whActionsOnly:             whActionsOnly,
 		sleepInterval:             sleepInterval,

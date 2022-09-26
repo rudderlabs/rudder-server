@@ -9,13 +9,16 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"reflect"
+	"testing"
 	"time"
 
 	"github.com/gofrs/uuid"
 	"github.com/golang/mock/gomock"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
 
@@ -158,7 +161,7 @@ var _ = Describe("Reconstructing JSON for ServerSide SDK", func() {
 })
 
 func initGW() {
-	config.Load()
+	config.Reset()
 	admin.Init()
 	logger.Init()
 	misc.Init()
@@ -567,6 +570,45 @@ var _ = Describe("Gateway", func() {
 			expectHandlerResponse(gateway.robots, nil, 200, "User-agent: * \nDisallow: / \n")
 		})
 	})
+
+	Context("Warehouse proxy", func() {
+		DescribeTable("forwarding requests to warehouse with different response codes",
+			func(url string, code int, payload string) {
+				gateway := &HandleT{}
+				whMock := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					Expect(r.URL.String()).To(Equal(url))
+					Expect(r.Body)
+					Expect(r.Body).To(Not(BeNil()))
+					defer r.Body.Close()
+					reqBody, err := io.ReadAll(r.Body)
+					Expect(err).To(BeNil())
+					Expect(string(reqBody)).To(Equal(payload))
+					w.WriteHeader(code)
+				}))
+				err := os.Setenv("WAREHOUSE_URL", whMock.URL)
+				Expect(err).To(BeNil())
+				err = os.Setenv("RSERVER_WAREHOUSE_MODE", config.OffMode)
+				Expect(err).To(BeNil())
+				err = gateway.Setup(c.mockApp, c.mockBackendConfig, c.mockJobsDB, nil, c.mockVersionHandler, rsources.NewNoOpService())
+				Expect(err).To(BeNil())
+
+				defer func() {
+					err := gateway.Shutdown()
+					Expect(err).To(BeNil())
+					whMock.Close()
+				}()
+
+				req := httptest.NewRequest("POST", "http://rudder-server"+url, bytes.NewBufferString(payload))
+				w := httptest.NewRecorder()
+				gateway.whProxy.ServeHTTP(w, req)
+				resp := w.Result()
+				Expect(resp.StatusCode).To(Equal(code))
+			},
+			Entry("successful request", "/v1/warehouse/pending-events", http.StatusOK, `{"source_id": "1", "task_run_id":"2"}`),
+			Entry("failed request", "/v1/warehouse/pending-events", http.StatusBadRequest, `{"source_id": "3", "task_run_id":"4"}`),
+			Entry("request with query parameters", "/v1/warehouse/pending-events?triggerUpload=true", http.StatusOK, `{"source_id": "5", "task_run_id":"6"}`),
+		)
+	})
 })
 
 func unauthorizedRequest(body io.Reader) *http.Request {
@@ -630,4 +672,21 @@ func jobsToJobsdbErrors(_ context.Context, _ jobsdb.StoreSafeTx, jobs []*jobsdb.
 	}
 
 	return errorsMap, nil
+}
+
+func TestContentTypeFunction(t *testing.T) {
+	expectedContentType := "application/json; charset=utf-8"
+	expectedStatus := http.StatusOK
+	nextHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// setting it custom to verify that next handler is called
+		w.WriteHeader(expectedStatus)
+	})
+	handlerToTest := WithContentType(expectedContentType, nextHandler)
+	respRecorder := httptest.NewRecorder()
+	req := httptest.NewRequest("GET", "http://testing", nil)
+
+	handlerToTest.ServeHTTP(respRecorder, req)
+	receivedContentType := respRecorder.Header()["Content-Type"][0]
+	require.Equal(t, expectedContentType, receivedContentType, "actual content type different than expected.")
+	require.Equal(t, expectedStatus, respRecorder.Code, "actual response code different than expected.")
 }

@@ -203,127 +203,6 @@ var _ = Describe("Calculate newDSIdx for internal migrations", Ordered, func() {
 	})
 })
 
-var _ = Describe("Calculate newDSIdx for cluster migrations", Ordered, func() {
-	BeforeAll(func() {
-		pkgLogger = &logger.NOP{}
-	})
-
-	DescribeTable("newDSIdx tests",
-		func(dList []dataSetT, after dataSetT, expected string) {
-			computedIdx, err := computeIdxForClusterMigration("table_prefix", dList, after)
-			Expect(computedIdx).To(Equal(expected))
-			Expect(err).To(BeNil())
-		},
-
-		Entry("ClusterMigration Case 1",
-			[]dataSetT{
-				{
-					JobTable:       "",
-					JobStatusTable: "",
-					Index:          "1",
-				},
-			},
-			dataSetT{
-				JobTable:       "",
-				JobStatusTable: "",
-				Index:          "1",
-			}, "0_1"),
-
-		Entry("ClusterMigration Case 2",
-			[]dataSetT{
-				{
-					JobTable:       "",
-					JobStatusTable: "",
-					Index:          "0_1",
-				},
-				{
-					JobTable:       "",
-					JobStatusTable: "",
-					Index:          "1",
-				},
-				{
-					JobTable:       "",
-					JobStatusTable: "",
-					Index:          "2",
-				},
-			},
-			dataSetT{
-				JobTable:       "",
-				JobStatusTable: "",
-				Index:          "1",
-			}, "0_2"),
-	)
-
-	DescribeTable("Error cases",
-		func(dList []dataSetT, after dataSetT) {
-			_, err := computeIdxForClusterMigration("table_prefix", dList, after)
-			Expect(err != nil).Should(BeTrue())
-		},
-
-		Entry("ClusterMigration Case 1",
-			[]dataSetT{
-				{
-					JobTable:       "",
-					JobStatusTable: "",
-					Index:          "1_1",
-				},
-			},
-			dataSetT{
-				JobTable:       "",
-				JobStatusTable: "",
-				Index:          "1_1",
-			},
-		),
-
-		Entry("ClusterMigration Case 2",
-			[]dataSetT{
-				{
-					JobTable:       "",
-					JobStatusTable: "",
-					Index:          "1",
-				},
-				{
-					JobTable:       "",
-					JobStatusTable: "",
-					Index:          "1_1",
-				},
-			},
-			dataSetT{
-				JobTable:       "",
-				JobStatusTable: "",
-				Index:          "1_1",
-			},
-		),
-
-		Entry("ClusterMigration Case 4",
-			[]dataSetT{},
-			dataSetT{
-				JobTable:       "",
-				JobStatusTable: "",
-				Index:          "1_1",
-			},
-		),
-
-		Entry("ClusterMigration Case 5",
-			[]dataSetT{},
-			dataSetT{
-				JobTable:       "",
-				JobStatusTable: "",
-				Index:          "1_1_1_1",
-			},
-		),
-
-		Entry("ClusterMigration Case 6",
-			[]dataSetT{},
-			dataSetT{
-				JobTable:       "",
-				JobStatusTable: "",
-				Index:          "1_1_!_1",
-			},
-		),
-	)
-})
-
 var _ = Describe("jobsdb", Ordered, func() {
 	BeforeAll(func() {
 		pkgLogger = &logger.NOP{}
@@ -341,7 +220,7 @@ var _ = Describe("jobsdb", Ordered, func() {
 			jd = &HandleT{}
 
 			jd.skipSetupDBSetup = true
-			err := jd.Setup(ReadWrite, false, prefix, "", false, []prebackup.Handler{})
+			err := jd.Setup(ReadWrite, false, prefix, false, []prebackup.Handler{})
 			Expect(err).To(BeNil())
 		})
 
@@ -369,7 +248,7 @@ var _ = Describe("jobsdb", Ordered, func() {
 			prefix = strings.ToLower(rsRand.String(5))
 			jd = &HandleT{}
 			jd.skipSetupDBSetup = true
-			err := jd.Setup(ReadWrite, false, prefix, "", false, []prebackup.Handler{})
+			err := jd.Setup(ReadWrite, false, prefix, false, []prebackup.Handler{})
 			Expect(err).To(BeNil())
 		})
 		AfterEach(func() {
@@ -561,9 +440,6 @@ func setSkipZeroAssertionForMultitenant(b bool) {
 
 func TestRefreshDSList(t *testing.T) {
 	_ = startPostgres(t)
-
-	migrationMode := ""
-
 	triggerAddNewDS := make(chan time.Time)
 	jobsDB := &HandleT{
 		TriggerAddNewDS: func() <-chan time.Time {
@@ -572,7 +448,7 @@ func TestRefreshDSList(t *testing.T) {
 	}
 
 	prefix := strings.ToLower(rsRand.String(5))
-	err := jobsDB.Setup(ReadWrite, false, prefix, migrationMode, true, []prebackup.Handler{})
+	err := jobsDB.Setup(ReadWrite, false, prefix, true, []prebackup.Handler{})
 	require.NoError(t, err)
 	defer jobsDB.TearDown()
 
@@ -595,7 +471,7 @@ func TestJobsDBTimeout(t *testing.T) {
 
 	customVal := "MOCKDS"
 	prefix := strings.ToLower(rsRand.String(5))
-	err := jobDB.Setup(ReadWrite, false, prefix, "", true, []prebackup.Handler{})
+	err := jobDB.Setup(ReadWrite, false, prefix, true, []prebackup.Handler{})
 	require.NoError(t, err)
 	defer jobDB.TearDown()
 
@@ -669,8 +545,6 @@ func TestJobsDBTimeout(t *testing.T) {
 
 func TestThreadSafeAddNewDSLoop(t *testing.T) {
 	_ = startPostgres(t)
-
-	migrationMode := ""
 	maxDSSize := 1
 	triggerAddNewDS1 := make(chan time.Time)
 	// jobsDB-1 setup
@@ -681,7 +555,7 @@ func TestThreadSafeAddNewDSLoop(t *testing.T) {
 		MaxDSSize: &maxDSSize,
 	}
 	prefix := strings.ToLower(rsRand.String(5))
-	err := jobsDB1.Setup(ReadWrite, false, prefix, migrationMode, true, []prebackup.Handler{})
+	err := jobsDB1.Setup(ReadWrite, false, prefix, true, []prebackup.Handler{})
 	require.NoError(t, err)
 	require.Equal(t, 1, len(jobsDB1.getDSList()), "expected cache to be auto-updated with DS list length 1")
 	defer jobsDB1.TearDown()
@@ -694,7 +568,7 @@ func TestThreadSafeAddNewDSLoop(t *testing.T) {
 		},
 		MaxDSSize: &maxDSSize,
 	}
-	err = jobsDB2.Setup(ReadWrite, false, prefix, migrationMode, true, []prebackup.Handler{})
+	err = jobsDB2.Setup(ReadWrite, false, prefix, true, []prebackup.Handler{})
 	require.NoError(t, err)
 	defer jobsDB2.TearDown()
 	require.Equal(t, 1, len(jobsDB2.getDSList()), "expected cache to be auto-updated with DS list length 1")
@@ -770,7 +644,6 @@ func TestThreadSafeJobStorage(t *testing.T) {
 	_ = startPostgres(t)
 
 	t.Run("verify that `pgErrorCodeTableReadonly` exception is triggered, if we try to insert in any DS other than latest.", func(t *testing.T) {
-		migrationMode := ""
 		maxDSSize := 1
 		triggerAddNewDS := make(chan time.Time)
 		jobsDB := &HandleT{
@@ -779,7 +652,7 @@ func TestThreadSafeJobStorage(t *testing.T) {
 			},
 			MaxDSSize: &maxDSSize,
 		}
-		err := jobsDB.Setup(ReadWrite, true, strings.ToLower(rsRand.String(5)), migrationMode, true, []prebackup.Handler{})
+		err := jobsDB.Setup(ReadWrite, true, strings.ToLower(rsRand.String(5)), true, []prebackup.Handler{})
 		require.NoError(t, err)
 		defer jobsDB.TearDown()
 		require.Equal(t, 1, len(jobsDB.getDSList()), "expected cache to be auto-updated with DS list length 1")
@@ -830,7 +703,6 @@ func TestThreadSafeJobStorage(t *testing.T) {
 
 	t.Run(`verify that even if jobsDB instance is unaware of new DS addition by other jobsDB instance.
 	 And, it tries to Store() in postgres, then the exception thrown is handled properly & DS cache is refreshed`, func(t *testing.T) {
-		migrationMode := ""
 		maxDSSize := 1
 
 		triggerRefreshDS := make(chan time.Time)
@@ -846,7 +718,7 @@ func TestThreadSafeJobStorage(t *testing.T) {
 		clearAllDS := true
 		prefix := strings.ToLower(rsRand.String(5))
 		// setting clearAllDS to true to clear all DS, since we are using the same postgres as previous test.
-		err := jobsDB1.Setup(ReadWrite, true, prefix, migrationMode, true, []prebackup.Handler{})
+		err := jobsDB1.Setup(ReadWrite, true, prefix, true, []prebackup.Handler{})
 		require.NoError(t, err)
 		defer jobsDB1.TearDown()
 		require.Equal(t, 1, len(jobsDB1.getDSList()), "expected cache to be auto-updated with DS list length 1")
@@ -862,7 +734,7 @@ func TestThreadSafeJobStorage(t *testing.T) {
 			},
 			MaxDSSize: &maxDSSize,
 		}
-		err = jobsDB2.Setup(ReadWrite, !clearAllDS, prefix, migrationMode, true, []prebackup.Handler{})
+		err = jobsDB2.Setup(ReadWrite, !clearAllDS, prefix, true, []prebackup.Handler{})
 		require.NoError(t, err)
 		defer jobsDB2.TearDown()
 		require.Equal(t, 1, len(jobsDB2.getDSList()), "expected cache to be auto-updated with DS list length 1")
@@ -878,7 +750,7 @@ func TestThreadSafeJobStorage(t *testing.T) {
 			},
 			MaxDSSize: &maxDSSize,
 		}
-		err = jobsDB3.Setup(ReadWrite, !clearAllDS, prefix, migrationMode, true, []prebackup.Handler{})
+		err = jobsDB3.Setup(ReadWrite, !clearAllDS, prefix, true, []prebackup.Handler{})
 		require.NoError(t, err)
 		defer jobsDB3.TearDown()
 		require.Equal(t, 1, len(jobsDB3.getDSList()), "expected cache to be auto-updated with DS list length 1")
@@ -956,6 +828,68 @@ func TestCacheScenarios(t *testing.T) {
 		}
 		return js
 	}
+
+	checkDSLimitJobs := func(t *testing.T, limit int) []*JobT {
+		maxDSSize := 1
+		var dbWithOneLimit *HandleT
+		triggerAddNewDS := make(chan time.Time)
+		if limit > 0 {
+			dbWithOneLimit = NewForReadWrite(
+				"cache",
+				WithDSLimit(&limit),
+			)
+		} else {
+			dbWithOneLimit = NewForReadWrite(
+				"cache",
+			)
+		}
+		dbWithOneLimit.MaxDSSize = &maxDSSize
+		dbWithOneLimit.TriggerAddNewDS = func() <-chan time.Time {
+			return triggerAddNewDS
+		}
+
+		prefix := strings.ToLower(rsRand.String(5))
+		err := dbWithOneLimit.Setup(ReadWrite, false, prefix, true, []prebackup.Handler{})
+		require.NoError(t, err)
+		require.Equal(t, 1, len(dbWithOneLimit.getDSList()), "expected cache to be auto-updated with DS list length 1")
+		defer dbWithOneLimit.TearDown()
+
+		err = dbWithOneLimit.Store(context.Background(), generateJobs(2, ""))
+		require.NoError(t, err)
+
+		res, err := dbWithOneLimit.getUnprocessed(context.Background(), GetQueryParamsT{CustomValFilters: []string{customVal}, JobsLimit: 100})
+		require.NoError(t, err)
+		require.Equal(t, 2, len(res.Jobs))
+
+		triggerAddNewDS <- time.Now()
+		require.Eventually(
+			t,
+			func() bool {
+				return len(dbWithOneLimit.getDSList()) == 2
+			},
+			time.Second, time.Millisecond,
+			"expected cache to be auto-updated with DS list length 2")
+
+		require.NoError(t, dbWithOneLimit.Store(context.Background(), generateJobs(3, "")))
+
+		res, err = dbWithOneLimit.getUnprocessed(context.Background(), GetQueryParamsT{CustomValFilters: []string{customVal}, JobsLimit: 100})
+		require.NoError(t, err)
+		fmt.Println("res jobs:", len(res.Jobs))
+		return res.Jobs
+	}
+
+	t.Run("Test cache with ds limit as one", func(t *testing.T) {
+		limit := 1
+		jobs := checkDSLimitJobs(t, limit)
+		fmt.Println("jobs:", jobs)
+		require.Equal(t, 2, len(jobs)) // Should return only 2 jobs since ds limit is 1
+	})
+
+	t.Run("Test cache with no ds limit i.e. using default limit", func(t *testing.T) {
+		limit := -1
+		jobs := checkDSLimitJobs(t, limit)
+		require.Equal(t, 5, len(jobs)) // Should return all jobs since there is no ds limit
+	})
 
 	t.Run("Test cache with 1 writer and 1 reader jobsdb (gateway, processor scenario)", func(t *testing.T) {
 		gwDB := NewForWrite("gw_cache")
@@ -1140,7 +1074,7 @@ func startPostgres(t testingT) *destination.PostgresResource {
 }
 
 func initJobsDB() {
-	config.Load()
+	config.Reset()
 	logger.Init()
 	admin.Init()
 	misc.Init()

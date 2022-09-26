@@ -55,8 +55,8 @@ var DefaultStats Stats
 func Init() {
 	config.RegisterBoolConfigVariable(true, &statsEnabled, false, "enableStats")
 	config.RegisterStringConfigVariable("influxdb", &statsTagsFormat, false, "statsTagsFormat")
-	statsdServerURL = config.GetEnv("STATSD_SERVER_URL", "localhost:8125")
-	instanceID = config.GetEnv("INSTANCE_ID", "")
+	statsdServerURL = config.GetString("STATSD_SERVER_URL", "localhost:8125")
+	instanceID = config.GetString("INSTANCE_ID", "")
 	config.RegisterBoolConfigVariable(true, &enabled, false, "RuntimeStats.enabled")
 	config.RegisterInt64ConfigVariable(10, &statsCollectionInterval, false, 1, "RuntimeStats.statsCollectionInterval")
 	config.RegisterBoolConfigVariable(true, &enableCPUStats, false, "RuntimeStats.enableCPUStats")
@@ -219,8 +219,8 @@ func CleanupTagsBasedOnDeploymentType(tags Tags, key string) Tags {
 	}
 
 	if deploymentType == deployment.MultiTenantType {
-		isNamespaced := config.IsEnvSet("WORKSPACE_NAMESPACE")
-		if !isNamespaced || (isNamespaced && strings.Contains(config.GetEnv("WORKSPACE_NAMESPACE", ""), "free")) {
+		isNamespaced := config.IsSet("WORKSPACE_NAMESPACE")
+		if !isNamespaced || (isNamespaced && strings.Contains(config.GetString("WORKSPACE_NAMESPACE", ""), "free")) {
 			delete(tags, key)
 		}
 	}

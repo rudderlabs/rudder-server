@@ -732,9 +732,9 @@ func (brt *HandleT) copyJobsToStorage(provider string, batchJobs *BatchJobsT, is
 	brt.logger.Debugf("BRT: Starting upload to %s", provider)
 	folderName := ""
 	if isWarehouse {
-		folderName = config.GetEnv("WAREHOUSE_STAGING_BUCKET_FOLDER_NAME", "rudder-warehouse-staging-logs")
+		folderName = config.GetString("WAREHOUSE_STAGING_BUCKET_FOLDER_NAME", "rudder-warehouse-staging-logs")
 	} else {
-		folderName = config.GetEnv("DESTINATION_BUCKET_FOLDER_NAME", "rudder-logs")
+		folderName = config.GetString("DESTINATION_BUCKET_FOLDER_NAME", "rudder-logs")
 	}
 
 	var datePrefixLayout string
@@ -2265,7 +2265,7 @@ func loadConfig() {
 	config.RegisterBoolConfigVariable(true, &readPerDestination, false, "BatchRouter.readPerDestination")
 	config.RegisterStringConfigVariable("", &toAbortDestinationIDs, true, "BatchRouter.toAbortDestinationIDs")
 	config.RegisterDurationConfigVariable(10, &netClientTimeout, false, time.Second, "BatchRouter.httpTimeout")
-	transformerURL = config.GetEnv("DEST_TRANSFORM_URL", "http://localhost:9090")
+	transformerURL = config.GetString("DEST_TRANSFORM_URL", "http://localhost:9090")
 	config.RegisterStringConfigVariable("", &datePrefixOverride, true, "BatchRouter.datePrefixOverride")
 	dateFormatLayouts = map[string]string{
 		"01-02-2006": "MM-DD-YYYY",
@@ -2413,16 +2413,23 @@ func (brt *HandleT) updateRudderSourcesStats(ctx context.Context, tx jobsdb.Upda
 }
 
 func (brt *HandleT) updateProcessedEventsMetrics(statusList []*jobsdb.JobStatusT) {
-	countPerState := map[string]int{}
+	eventsPerStateAndCode := map[string]map[string]int{}
 	for i := range statusList {
 		state := statusList[i].JobState
-		countPerState[state]++
+		code := statusList[i].ErrorCode
+		if _, ok := eventsPerStateAndCode[state]; !ok {
+			eventsPerStateAndCode[state] = map[string]int{}
+		}
+		eventsPerStateAndCode[state][code]++
 	}
-	for state, count := range countPerState {
-		stats.NewTaggedStat(`pipeline_processed_events`, stats.CountType, stats.Tags{
-			"module":   "batch_router",
-			"destType": brt.destType,
-			"state":    state,
-		}).Count(count)
+	for state, codes := range eventsPerStateAndCode {
+		for code, count := range codes {
+			stats.NewTaggedStat(`pipeline_processed_events`, stats.CountType, stats.Tags{
+				"module":   "batch_router",
+				"destType": brt.destType,
+				"state":    state,
+				"code":     code,
+			}).Count(count)
+		}
 	}
 }

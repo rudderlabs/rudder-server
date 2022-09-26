@@ -34,7 +34,7 @@ func (c *uploaderContext) Finish() {
 }
 
 func initUploader() {
-	config.Load()
+	config.Reset()
 	logger.Init()
 }
 
