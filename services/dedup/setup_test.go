@@ -11,7 +11,7 @@ import (
 )
 
 func Test_GetInstance(t *testing.T) {
-	config.Load()
+	config.Reset()
 	logger.Init()
 	misc.Init()
 	dedup.Init()

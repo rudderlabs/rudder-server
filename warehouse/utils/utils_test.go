@@ -30,7 +30,7 @@ func TestDestinationConfigKeys(t *testing.T) {
 
 			whName := WHDestNameMap[whType]
 			configKey := fmt.Sprintf("Warehouse.%s.feature", whName)
-			got := config.TransformKey(configKey)
+			got := config.ConfigKeyToEnv(configKey)
 			expected := fmt.Sprintf("RSERVER_WAREHOUSE_%s_FEATURE", strings.ToUpper(whName))
 			require.Equal(t, got, expected)
 		})
@@ -1205,7 +1205,7 @@ var _ = Describe("Utils", func() {
 })
 
 func TestMain(m *testing.M) {
-	config.Load()
+	config.Reset()
 	Init()
 	os.Exit(m.Run())
 }

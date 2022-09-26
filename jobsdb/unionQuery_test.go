@@ -13,13 +13,10 @@ import (
 
 func TestMultiTenantHandleT_GetAllJobs(t *testing.T) {
 	_ = startPostgres(t)
-
-	migrationMode := ""
-
 	maxDSSize := 2
 	jobDB := MultiTenantHandleT{HandleT: &HandleT{MaxDSSize: &maxDSSize}}
 
-	err := jobDB.Setup(ReadWrite, false, "rt", migrationMode, true, []prebackup.Handler{})
+	err := jobDB.Setup(ReadWrite, false, "rt", true, []prebackup.Handler{})
 	require.NoError(t, err, "expected no error while jobsDB setup")
 	defer jobDB.TearDown()
 

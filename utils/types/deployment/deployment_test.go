@@ -91,7 +91,7 @@ func Test_GetFromEnv(t *testing.T) {
 }
 
 func Test_GetConnectionToken(t *testing.T) {
-	config.Load()
+	config.Reset()
 	admin.Init()
 	logger.Init()
 	logger.Init()

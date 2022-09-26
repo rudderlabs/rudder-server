@@ -12,7 +12,7 @@ import (
 )
 
 var _ = Describe("Constraint", func() {
-	config.Load()
+	config.Reset()
 	logger.Init()
 	Init6()
 

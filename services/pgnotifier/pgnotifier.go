@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"math/rand"
-	"strconv"
 	"time"
 
 	"github.com/allisson/go-pglock/v2"
@@ -84,12 +83,12 @@ type ClaimResponseT struct {
 }
 
 func loadPGNotifierConfig() {
-	pgNotifierDBhost = config.GetEnv("PGNOTIFIER_DB_HOST", "localhost")
-	pgNotifierDBuser = config.GetEnv("PGNOTIFIER_DB_USER", "ubuntu")
-	pgNotifierDBname = config.GetEnv("PGNOTIFIER_DB_NAME", "ubuntu")
-	pgNotifierDBport, _ = strconv.Atoi(config.GetEnv("PGNOTIFIER_DB_PORT", "5432"))
-	pgNotifierDBpassword = config.GetEnv("PGNOTIFIER_DB_PASSWORD", "ubuntu") // Reading secrets from
-	pgNotifierDBsslmode = config.GetEnv("PGNOTIFIER_DB_SSL_MODE", "disable")
+	pgNotifierDBhost = config.GetString("PGNOTIFIER_DB_HOST", "localhost")
+	pgNotifierDBuser = config.GetString("PGNOTIFIER_DB_USER", "ubuntu")
+	pgNotifierDBname = config.GetString("PGNOTIFIER_DB_NAME", "ubuntu")
+	pgNotifierDBport = config.GetInt("PGNOTIFIER_DB_PORT", 5432)
+	pgNotifierDBpassword = config.GetString("PGNOTIFIER_DB_PASSWORD", "ubuntu") // Reading secrets from
+	pgNotifierDBsslmode = config.GetString("PGNOTIFIER_DB_SSL_MODE", "disable")
 	config.RegisterIntConfigVariable(3, &maxAttempt, false, 1, "PgNotifier.maxAttempt")
 	trackBatchInterval = time.Duration(config.GetInt("PgNotifier.trackBatchIntervalInS", 2)) * time.Second
 	config.RegisterDurationConfigVariable(5000, &maxPollSleep, true, time.Millisecond, "PgNotifier.maxPollSleep")
@@ -153,10 +152,10 @@ func (notifier PgNotifierT) ClearJobs(ctx context.Context) (err error) {
 
 // CheckForPGNotifierEnvVars Checks if all the required Env Variables for PG Notifier are present
 func CheckForPGNotifierEnvVars() bool {
-	return config.IsEnvSet("PGNOTIFIER_DB_HOST") &&
-		config.IsEnvSet("PGNOTIFIER_DB_USER") &&
-		config.IsEnvSet("PGNOTIFIER_DB_NAME") &&
-		config.IsEnvSet("PGNOTIFIER_DB_PASSWORD")
+	return config.IsSet("PGNOTIFIER_DB_HOST") &&
+		config.IsSet("PGNOTIFIER_DB_USER") &&
+		config.IsSet("PGNOTIFIER_DB_NAME") &&
+		config.IsSet("PGNOTIFIER_DB_PASSWORD")
 }
 
 // GetPGNotifierConnectionString Returns PG Notifier DB Connection Configuration

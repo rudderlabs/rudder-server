@@ -161,7 +161,7 @@ var _ = Describe("Reconstructing JSON for ServerSide SDK", func() {
 })
 
 func initGW() {
-	config.Load()
+	config.Reset()
 	admin.Init()
 	logger.Init()
 	misc.Init()
