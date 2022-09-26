@@ -43,13 +43,17 @@ type ProcessorApp struct {
 }
 
 var (
-	gatewayDB         *jobsdb.HandleT
-	ReadTimeout       time.Duration
-	ReadHeaderTimeout time.Duration
-	WriteTimeout      time.Duration
-	IdleTimeout       time.Duration
-	webPort           int
-	MaxHeaderBytes    int
+	gatewayDB          *jobsdb.HandleT
+	ReadTimeout        time.Duration
+	ReadHeaderTimeout  time.Duration
+	WriteTimeout       time.Duration
+	IdleTimeout        time.Duration
+	webPort            int
+	MaxHeaderBytes     int
+	processorDSLimit   int
+	routerDSLimit      int
+	batchRouterDSLimit int
+	gatewayDSLimit     int
 )
 
 func (*ProcessorApp) GetAppType() string {
@@ -67,6 +71,10 @@ func loadConfigHandler() {
 	config.RegisterDurationConfigVariable(720, &IdleTimeout, false, time.Second, []string{"IdleTimeout", "IdleTimeoutInSec"}...)
 	config.RegisterIntConfigVariable(8086, &webPort, false, 1, "Processor.webPort")
 	config.RegisterIntConfigVariable(524288, &MaxHeaderBytes, false, 1, "MaxHeaderBytes")
+	config.RegisterIntConfigVariable(0, &processorDSLimit, true, 1, "Processor.jobsDB.dsLimit", "JobsDB.dsLimit")
+	config.RegisterIntConfigVariable(0, &gatewayDSLimit, true, 1, "Gateway.jobsDB.dsLimit", "JobsDB.dsLimit")
+	config.RegisterIntConfigVariable(0, &routerDSLimit, true, 1, "Router.jobsDB.dsLimit", "JobsDB.dsLimit")
+	config.RegisterIntConfigVariable(0, &batchRouterDSLimit, true, 1, "BatchRouter.jobsDB.dsLimit", "JobsDB.dsLimit")
 }
 
 func (processor *ProcessorApp) StartRudderCore(ctx context.Context, options *app.Options) error {
@@ -96,7 +104,6 @@ func (processor *ProcessorApp) StartRudderCore(ctx context.Context, options *app
 	transformationdebugger.Setup()
 	destinationdebugger.Setup(backendconfig.DefaultBackendConfig)
 
-	migrationMode := processor.App.Options().MigrationMode
 	reportingI := processor.App.Features().Reporting.GetReportingInstance()
 	transientSources := transientsource.NewService(ctx, backendconfig.DefaultBackendConfig)
 	prebackupHandlers := []prebackup.Handler{
@@ -107,38 +114,37 @@ func (processor *ProcessorApp) StartRudderCore(ctx context.Context, options *app
 		return err
 	}
 
-	// IMP NOTE: All the jobsdb setups must happen before migrator setup.
 	gwDBForProcessor := jobsdb.NewForRead(
 		"gw",
 		jobsdb.WithClearDB(options.ClearDB),
-		jobsdb.WithMigrationMode(migrationMode),
 		jobsdb.WithStatusHandler(),
 		jobsdb.WithPreBackupHandlers(prebackupHandlers),
+		jobsdb.WithDSLimit(&gatewayDSLimit),
 	)
 	defer gwDBForProcessor.Close()
 	gatewayDB = gwDBForProcessor
 	routerDB := jobsdb.NewForReadWrite(
 		"rt",
 		jobsdb.WithClearDB(options.ClearDB),
-		jobsdb.WithMigrationMode(migrationMode),
 		jobsdb.WithStatusHandler(),
 		jobsdb.WithPreBackupHandlers(prebackupHandlers),
+		jobsdb.WithDSLimit(&routerDSLimit),
 	)
 	defer routerDB.Close()
 	batchRouterDB := jobsdb.NewForReadWrite(
 		"batch_rt",
 		jobsdb.WithClearDB(options.ClearDB),
-		jobsdb.WithMigrationMode(migrationMode),
 		jobsdb.WithStatusHandler(),
 		jobsdb.WithPreBackupHandlers(prebackupHandlers),
+		jobsdb.WithDSLimit(&batchRouterDSLimit),
 	)
 	defer batchRouterDB.Close()
 	errDB := jobsdb.NewForReadWrite(
 		"proc_error",
 		jobsdb.WithClearDB(options.ClearDB),
-		jobsdb.WithMigrationMode(migrationMode),
 		jobsdb.WithStatusHandler(),
 		jobsdb.WithPreBackupHandlers(prebackupHandlers),
+		jobsdb.WithDSLimit(&processorDSLimit),
 	)
 	var tenantRouterDB jobsdb.MultiTenantJobsDB
 	var multitenantStats multitenant.MultiTenantI
@@ -156,38 +162,6 @@ func (processor *ProcessorApp) StartRudderCore(ctx context.Context, options *app
 		}))
 	}
 
-	if processor.App.Features().Migrator != nil {
-		if migrationMode == db.IMPORT || migrationMode == db.EXPORT || migrationMode == db.IMPORT_EXPORT {
-			startProcessorFunc := func() {
-				g.Go(func() error {
-					clearDB := false
-					if enableProcessor {
-						return StartProcessor(
-							ctx, &clearDB, gwDBForProcessor, routerDB, batchRouterDB, errDB,
-							reportingI, multitenant.NOOP, transientSources, rsourcesService,
-						)
-					}
-					return nil
-				})
-			}
-			startRouterFunc := func() {
-				if enableRouter {
-					g.Go(func() error {
-						StartRouter(ctx, tenantRouterDB, batchRouterDB, errDB, reportingI, multitenant.NOOP, transientSources, rsourcesService)
-						return nil
-					})
-				}
-			}
-			enableRouter = false
-			enableProcessor = false
-
-			processor.App.Features().Migrator.PrepareJobsdbsForImport(nil, routerDB, batchRouterDB)
-			g.Go(func() error {
-				processor.App.Features().Migrator.Run(ctx, gwDBForProcessor, routerDB, batchRouterDB, startProcessorFunc, startRouterFunc) // TODO
-				return nil
-			})
-		}
-	}
 	var modeProvider cluster.ChangeEventProvider
 
 	switch deploymentType {
@@ -259,7 +233,7 @@ func (processor *ProcessorApp) StartRudderCore(ctx context.Context, options *app
 }
 
 func (*ProcessorApp) HandleRecovery(options *app.Options) {
-	db.HandleNullRecovery(options.NormalMode, options.DegradedMode, options.MigrationMode, misc.AppStartTime, app.PROCESSOR)
+	db.HandleNullRecovery(options.NormalMode, options.DegradedMode, misc.AppStartTime, app.PROCESSOR)
 }
 
 func startHealthWebHandler(ctx context.Context) error {

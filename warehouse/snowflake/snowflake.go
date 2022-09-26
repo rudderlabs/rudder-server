@@ -132,9 +132,7 @@ func ColumnsWithDataTypes(columns map[string]string, prefix string) string {
 
 // schemaIdentifier returns [DATABASE_NAME].[NAMESPACE] format to access the schema directly.
 func (sf *HandleT) schemaIdentifier() string {
-	DatabaseName := warehouseutils.GetConfigValue(SFDbName, sf.Warehouse)
-	return fmt.Sprintf(`"%s"."%s"`,
-		DatabaseName,
+	return fmt.Sprintf(`"%s"`,
 		sf.Namespace,
 	)
 }

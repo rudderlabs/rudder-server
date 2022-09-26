@@ -12,7 +12,7 @@ var once sync.Once
 
 func Init() {
 	once.Do(func() {
-		config.Load()
+		config.Reset()
 		logger.Init()
 		stats.Init()
 		stats.Setup()

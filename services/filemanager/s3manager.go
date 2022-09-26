@@ -283,7 +283,7 @@ func GetS3Config(config map[string]interface{}) *S3Config {
 		pkgLogger.Errorf("unable to code config into S3Config: %w", err)
 		s3Config = S3Config{}
 	}
-	regionHint := appConfig.GetEnv("AWS_S3_REGION_HINT", "us-east-1")
+	regionHint := appConfig.GetString("AWS_S3_REGION_HINT", "us-east-1")
 	s3Config.RegionHint = regionHint
 	s3Config.IsTruncated = true
 

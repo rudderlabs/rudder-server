@@ -149,9 +149,9 @@ func (handle *Handler) Setup(ctx context.Context, dumpsLoader *dumpsLoaderHandle
 	handle.toDB = toDB
 	handle.bucket = bucket
 	handle.uploader = uploader
-	handle.noOfWorkers = config.GetEnvAsInt("WORKERS_PER_SOURCE", 4)
+	handle.noOfWorkers = config.GetInt("WORKERS_PER_SOURCE", 4)
 	handle.dumpsLoader = dumpsLoader
-	handle.dbReadSize = config.GetEnvAsInt("DB_READ_SIZE", 10)
+	handle.dbReadSize = config.GetInt("DB_READ_SIZE", 10)
 	handle.tablePrefix = tablePrefix
 	handle.initSourceWorkersChannel = make(chan bool)
 

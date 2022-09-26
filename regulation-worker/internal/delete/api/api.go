@@ -20,7 +20,7 @@ import (
 
 var (
 	pkgLogger             = logger.NewLogger().Child("api")
-	supportedDestinations = []string{"BRAZE", "AM", "INTERCOM"}
+	supportedDestinations = []string{"BRAZE", "AM", "INTERCOM", "CLEVERTAP", "AF", "MP"}
 )
 
 type APIManager struct {
@@ -114,13 +114,12 @@ func (bm *APIManager) GetSupportedDestinations() []string {
 }
 
 func mapJobToPayload(job model.Job, destName string, destConfig map[string]interface{}) []apiDeletionPayloadSchema {
-	uas := make([]userAttributesSchema, len(job.UserAttributes))
-	for i, ua := range job.UserAttributes {
-		uas[i] = userAttributesSchema{
-			UserID: ua.UserID,
-
-			Phone: ua.Phone,
-			Email: ua.Email,
+	uas := make([]userAttributesSchema, len(job.Users))
+	for i, ua := range job.Users {
+		uas[i] = make(map[string]string)
+		uas[i]["userId"] = ua.ID
+		for k, v := range ua.Attributes {
+			uas[i][k] = v
 		}
 	}
 
