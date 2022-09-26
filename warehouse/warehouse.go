@@ -1826,26 +1826,26 @@ func Start(ctx context.Context, app app.Interface) error {
 		}))
 	}
 
-	// Report warehouse features
-	g.Go(func() error {
-		backendconfig.DefaultBackendConfig.WaitForConfig(ctx)
-
-		c := features.NewClient(
-			config.GetString("CONFIG_BACKEND_URL", "https://api.rudderlabs.com"),
-			backendconfig.DefaultBackendConfig.Identity(),
-		)
-
-		err := c.Send(ctx, info.WarehouseComponent.Name, info.WarehouseComponent.Features)
-		if err != nil {
-			pkgLogger.Errorf("error sending warehouse features: %v", err)
-		}
-
-		// We don't want to exit if we fail to send features
-		return nil
-	})
-
 	if isStandAlone() && isMaster() {
 		destinationdebugger.Setup(backendconfig.DefaultBackendConfig)
+
+		// Report warehouse features
+		g.Go(func() error {
+			backendconfig.DefaultBackendConfig.WaitForConfig(ctx)
+
+			c := features.NewClient(
+				config.GetString("CONFIG_BACKEND_URL", "https://api.rudderlabs.com"),
+				backendconfig.DefaultBackendConfig.Identity(),
+			)
+
+			err := c.Send(ctx, info.WarehouseComponent.Name, info.WarehouseComponent.Features)
+			if err != nil {
+				pkgLogger.Errorf("error sending warehouse features: %v", err)
+			}
+
+			// We don't want to exit if we fail to send features
+			return nil
+		})
 	}
 
 	if isSlave() {
