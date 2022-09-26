@@ -73,12 +73,12 @@ func getMinMaxCreatedAt(key string) (int64, int64, error) {
 	return minJobCreatedAt, maxJobCreatedAt, nil
 }
 
-type dbObjectT struct {
+type OrderedJobs struct {
 	SortIndex int
 	Job       *jobsdb.JobT
 }
 
-func storeJobs(ctx context.Context, objects []dbObjectT, dbHandle *jobsdb.HandleT) {
+func storeJobs(ctx context.Context, objects []OrderedJobs, dbHandle *jobsdb.HandleT) {
 	// sorting dumps list on index
 	sort.Slice(objects, func(i, j int) bool {
 		return objects[i].SortIndex < objects[j].SortIndex
@@ -103,9 +103,14 @@ func (gwHandle *GWReplayRequestHandler) fetchDumpsList(ctx context.Context) {
 	maxItems := config.GetInt64("MAX_ITEMS", 1000)
 
 	pkgLogger.Info("Fetching gw dump files list")
-	objects := make([]dbObjectT, 0)
+	objects := make([]OrderedJobs, 0)
 
-	iter := filemanager.IterateFilesWithPrefix(ctx, gwHandle.handle.prefix, gwHandle.handle.startAfterKey, maxItems, &gwHandle.handle.uploader)
+	iter := filemanager.IterateFilesWithPrefix(ctx,
+		gwHandle.handle.prefix,
+		gwHandle.handle.startAfterKey,
+		maxItems,
+		&gwHandle.handle.uploader,
+	)
 	for iter.Next() {
 		object := iter.Get()
 		if strings.Contains(object.Key, "gw_jobs_") {
@@ -138,7 +143,7 @@ func (gwHandle *GWReplayRequestHandler) fetchDumpsList(ctx context.Context) {
 					CustomVal:    "replay",
 					EventPayload: []byte(fmt.Sprintf(`{"location": %q}`, object.Key)),
 				}
-				objects = append(objects, dbObjectT{Job: &job, SortIndex: idx})
+				objects = append(objects, OrderedJobs{Job: &job, SortIndex: idx})
 			}
 		}
 		if len(objects) >= int(maxItems) {
@@ -159,12 +164,17 @@ func (gwHandle *GWReplayRequestHandler) fetchDumpsList(ctx context.Context) {
 }
 
 func (procHandle *ProcErrorRequestHandler) fetchDumpsList(ctx context.Context) {
-	objects := make([]dbObjectT, 0)
+	objects := make([]OrderedJobs, 0)
 	pkgLogger.Info("Fetching proc err files list")
 	var err error
 	maxItems := config.GetInt64("MAX_ITEMS", 1000)
 
-	iter := filemanager.IterateFilesWithPrefix(ctx, procHandle.handle.prefix, procHandle.handle.startAfterKey, maxItems, &procHandle.handle.uploader)
+	iter := filemanager.IterateFilesWithPrefix(ctx,
+		procHandle.handle.prefix,
+		procHandle.handle.startAfterKey,
+		maxItems,
+		&procHandle.handle.uploader,
+	)
 	for iter.Next() {
 		object := iter.Get()
 		if strings.Contains(object.Key, "rudder-proc-err-logs") {
@@ -189,7 +199,7 @@ func (procHandle *ProcErrorRequestHandler) fetchDumpsList(ctx context.Context) {
 				CustomVal:    "replay",
 				EventPayload: []byte(fmt.Sprintf(`{"location": %q}`, object.Key)),
 			}
-			objects = append(objects, dbObjectT{Job: &job, SortIndex: idx})
+			objects = append(objects, OrderedJobs{Job: &job, SortIndex: idx})
 		}
 		if len(objects) >= int(maxItems) {
 			storeJobs(ctx, objects, procHandle.handle.dbHandle)
