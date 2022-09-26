@@ -695,7 +695,7 @@ func GetTimeWindow(ts time.Time) time.Time {
 // GetTablePathInObjectStorage returns the path of the table relative to the object storage bucket
 // <$WAREHOUSE_DATALAKE_FOLDER_NAME>/<namespace>/tableName
 func GetTablePathInObjectStorage(namespace, tableName string) string {
-	return fmt.Sprintf("%s/%s/%s", config.GetEnv("WAREHOUSE_DATALAKE_FOLDER_NAME", "rudder-datalake"), namespace, tableName)
+	return fmt.Sprintf("%s/%s/%s", config.GetString("WAREHOUSE_DATALAKE_FOLDER_NAME", "rudder-datalake"), namespace, tableName)
 }
 
 // JoinWithFormatting returns joined string for keys with the provided formatting function.

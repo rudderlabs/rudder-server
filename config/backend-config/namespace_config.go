@@ -2,6 +2,7 @@ package backendconfig
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -41,19 +42,19 @@ func (nc *namespaceConfig) SetUp() (err error) {
 	nc.writeKeyToWorkspaceIDMap = make(map[string]string)
 
 	if nc.Namespace == "" {
-		nc.Namespace, err = config.GetEnvErr("WORKSPACE_NAMESPACE")
-		if err != nil {
-			return err
+		if !config.IsSet("WORKSPACE_NAMESPACE") {
+			return errors.New("workspaceNamespace is not configured")
 		}
+		nc.Namespace = config.GetString("WORKSPACE_NAMESPACE", "")
 	}
 	if nc.HostedServiceSecret == "" {
-		nc.HostedServiceSecret, err = config.GetEnvErr("HOSTED_SERVICE_SECRET")
-		if err != nil {
-			return err
+		if !config.IsSet("HOSTED_SERVICE_SECRET") {
+			return errors.New("hostedServiceSecret is not configured")
 		}
+		nc.HostedServiceSecret = config.GetString("HOSTED_SERVICE_SECRET", "")
 	}
 	if nc.ConfigBackendURL == nil {
-		configBackendURL := config.GetEnv("CONFIG_BACKEND_URL", "https://api.rudderlabs.com")
+		configBackendURL := config.GetString("CONFIG_BACKEND_URL", "https://api.rudderlabs.com")
 		nc.ConfigBackendURL, err = url.Parse(configBackendURL)
 		if err != nil {
 			return err

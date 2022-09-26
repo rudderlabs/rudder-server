@@ -89,7 +89,7 @@ func loadConfig() {
 
 // newDiagnostics return new instace of diagnostics
 func newDiagnostics() *diagnostics {
-	instanceId := config.GetEnv("INSTANCE_ID", "1")
+	instanceId := config.GetString("INSTANCE_ID", "1")
 
 	client := analytics.New(writekey, endpoint)
 	return &diagnostics{

@@ -329,7 +329,7 @@ func TestWaitForConfig(t *testing.T) {
 }
 
 func initBackendConfig() {
-	config.Load()
+	config.Reset()
 	adminpkg.Init()
 	diagnostics.Init()
 	logger.Init()

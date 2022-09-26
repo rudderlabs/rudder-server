@@ -66,7 +66,6 @@ func (jd *HandleT) dropDatabaseTables(l lock.DSListLockToken) {
 	jd.assertError(jd.dropAllDS(l))
 	jd.dropJournal()
 	jd.assertError(jd.dropAllBackupDS())
-	jd.dropMigrationCheckpointTables()
 }
 
 func (jd *HandleT) dropSchemaMigrationTables() {

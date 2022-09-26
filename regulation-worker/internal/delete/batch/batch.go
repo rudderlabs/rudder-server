@@ -500,7 +500,7 @@ func (bm *BatchManager) Delete(ctx context.Context, job model.Job, destConfig ma
 
 		g, gCtx := errgroup.WithContext(ctx)
 
-		procAllocated, err := strconv.Atoi(config.GetEnv("GOMAXPROCS", "32"))
+		procAllocated, err := strconv.Atoi(config.GetString("GOMAXPROCS", "32"))
 		if err != nil {
 			pkgLogger.Errorf("error while getting maximum number of go routines to be created: %v", err)
 			return model.JobStatusFailed

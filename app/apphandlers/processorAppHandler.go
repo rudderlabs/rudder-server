@@ -104,7 +104,6 @@ func (processor *ProcessorApp) StartRudderCore(ctx context.Context, options *app
 	transformationdebugger.Setup()
 	destinationdebugger.Setup(backendconfig.DefaultBackendConfig)
 
-	migrationMode := processor.App.Options().MigrationMode
 	reportingI := processor.App.Features().Reporting.GetReportingInstance()
 	transientSources := transientsource.NewService(ctx, backendconfig.DefaultBackendConfig)
 	prebackupHandlers := []prebackup.Handler{
@@ -115,11 +114,9 @@ func (processor *ProcessorApp) StartRudderCore(ctx context.Context, options *app
 		return err
 	}
 
-	// IMP NOTE: All the jobsdb setups must happen before migrator setup.
 	gwDBForProcessor := jobsdb.NewForRead(
 		"gw",
 		jobsdb.WithClearDB(options.ClearDB),
-		jobsdb.WithMigrationMode(migrationMode),
 		jobsdb.WithStatusHandler(),
 		jobsdb.WithPreBackupHandlers(prebackupHandlers),
 		jobsdb.WithDSLimit(&gatewayDSLimit),
@@ -129,7 +126,6 @@ func (processor *ProcessorApp) StartRudderCore(ctx context.Context, options *app
 	routerDB := jobsdb.NewForReadWrite(
 		"rt",
 		jobsdb.WithClearDB(options.ClearDB),
-		jobsdb.WithMigrationMode(migrationMode),
 		jobsdb.WithStatusHandler(),
 		jobsdb.WithPreBackupHandlers(prebackupHandlers),
 		jobsdb.WithDSLimit(&routerDSLimit),
@@ -138,7 +134,6 @@ func (processor *ProcessorApp) StartRudderCore(ctx context.Context, options *app
 	batchRouterDB := jobsdb.NewForReadWrite(
 		"batch_rt",
 		jobsdb.WithClearDB(options.ClearDB),
-		jobsdb.WithMigrationMode(migrationMode),
 		jobsdb.WithStatusHandler(),
 		jobsdb.WithPreBackupHandlers(prebackupHandlers),
 		jobsdb.WithDSLimit(&batchRouterDSLimit),
@@ -147,7 +142,6 @@ func (processor *ProcessorApp) StartRudderCore(ctx context.Context, options *app
 	errDB := jobsdb.NewForReadWrite(
 		"proc_error",
 		jobsdb.WithClearDB(options.ClearDB),
-		jobsdb.WithMigrationMode(migrationMode),
 		jobsdb.WithStatusHandler(),
 		jobsdb.WithPreBackupHandlers(prebackupHandlers),
 		jobsdb.WithDSLimit(&processorDSLimit),
@@ -168,38 +162,6 @@ func (processor *ProcessorApp) StartRudderCore(ctx context.Context, options *app
 		}))
 	}
 
-	if processor.App.Features().Migrator != nil {
-		if migrationMode == db.IMPORT || migrationMode == db.EXPORT || migrationMode == db.IMPORT_EXPORT {
-			startProcessorFunc := func() {
-				g.Go(func() error {
-					clearDB := false
-					if enableProcessor {
-						return StartProcessor(
-							ctx, &clearDB, gwDBForProcessor, routerDB, batchRouterDB, errDB,
-							reportingI, multitenant.NOOP, transientSources, rsourcesService,
-						)
-					}
-					return nil
-				})
-			}
-			startRouterFunc := func() {
-				if enableRouter {
-					g.Go(func() error {
-						StartRouter(ctx, tenantRouterDB, batchRouterDB, errDB, reportingI, multitenant.NOOP, transientSources, rsourcesService)
-						return nil
-					})
-				}
-			}
-			enableRouter = false
-			enableProcessor = false
-
-			processor.App.Features().Migrator.PrepareJobsdbsForImport(nil, routerDB, batchRouterDB)
-			g.Go(func() error {
-				processor.App.Features().Migrator.Run(ctx, gwDBForProcessor, routerDB, batchRouterDB, startProcessorFunc, startRouterFunc) // TODO
-				return nil
-			})
-		}
-	}
 	var modeProvider cluster.ChangeEventProvider
 
 	switch deploymentType {
@@ -271,7 +233,7 @@ func (processor *ProcessorApp) StartRudderCore(ctx context.Context, options *app
 }
 
 func (*ProcessorApp) HandleRecovery(options *app.Options) {
-	db.HandleNullRecovery(options.NormalMode, options.DegradedMode, options.MigrationMode, misc.AppStartTime, app.PROCESSOR)
+	db.HandleNullRecovery(options.NormalMode, options.DegradedMode, misc.AppStartTime, app.PROCESSOR)
 }
 
 func startHealthWebHandler(ctx context.Context) error {

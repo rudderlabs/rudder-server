@@ -11,7 +11,7 @@ import (
 )
 
 func TestFeatureSetup(t *testing.T) {
-	config.Load()
+	config.Reset()
 	logger.Init()
 
 	f := &Factory{

@@ -32,7 +32,7 @@ func Init() {
 }
 
 func loadConfig() {
-	destTransformURL = config.GetEnv("DEST_TRANSFORM_URL", "http://localhost:9090")
+	destTransformURL = config.GetString("DEST_TRANSFORM_URL", "http://localhost:9090")
 }
 
 const (
@@ -167,13 +167,13 @@ func GetTransformerURL() string {
 func GetDestinationURL(destType string) string {
 	destinationEndPoint := fmt.Sprintf("%s/v0/%s", destTransformURL, strings.ToLower(destType))
 	if misc.Contains(warehouseutils.WarehouseDestinations, destType) {
-		whSchemaVersionQueryParam := fmt.Sprintf("whSchemaVersion=%s&whIDResolve=%v", config.GetWHSchemaVersion(), warehouseutils.IDResolutionEnabled())
+		whSchemaVersionQueryParam := fmt.Sprintf("whSchemaVersion=%s&whIDResolve=%v", config.GetString("Warehouse.schemaVersion", "v1"), warehouseutils.IDResolutionEnabled())
 		if destType == "RS" {
-			rsAlterStringToTextQueryParam := fmt.Sprintf("rsAlterStringToText=%s", fmt.Sprintf("%v", config.GetVarCharMaxForRS()))
+			rsAlterStringToTextQueryParam := fmt.Sprintf("rsAlterStringToText=%s", fmt.Sprintf("%v", config.GetBool("Warehouse.redshift.setVarCharMax", false)))
 			return destinationEndPoint + "?" + whSchemaVersionQueryParam + "&" + rsAlterStringToTextQueryParam
 		}
 		if destType == "CLICKHOUSE" {
-			enableArraySupport := fmt.Sprintf("chEnableArraySupport=%s", fmt.Sprintf("%v", config.GetArraySupportForCH()))
+			enableArraySupport := fmt.Sprintf("chEnableArraySupport=%s", fmt.Sprintf("%v", config.GetBool("Warehouse.clickhouse.enableArraySupport", false)))
 			return destinationEndPoint + "?" + whSchemaVersionQueryParam + "&" + enableArraySupport
 		}
 		return destinationEndPoint + "?" + whSchemaVersionQueryParam
