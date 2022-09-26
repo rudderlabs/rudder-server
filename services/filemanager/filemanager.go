@@ -117,7 +117,7 @@ func GetProviderConfigFromEnv(ctx context.Context, provider string) map[string]i
 		providerConfig["prefix"] = config.GetString("JOBS_BACKUP_PREFIX", "")
 		providerConfig["accountName"] = config.GetString("AZURE_STORAGE_ACCOUNT", "")
 		providerConfig["accountKey"] = config.GetString("AZURE_STORAGE_ACCESS_KEY", "")
-    
+
 	case "MINIO":
 		providerConfig["bucketName"] = config.GetString("JOBS_BACKUP_BUCKET", "")
 		providerConfig["prefix"] = config.GetString("JOBS_BACKUP_PREFIX", "")
@@ -125,7 +125,7 @@ func GetProviderConfigFromEnv(ctx context.Context, provider string) map[string]i
 		providerConfig["accessKeyID"] = config.GetString("MINIO_ACCESS_KEY_ID", "minioadmin")
 		providerConfig["secretAccessKey"] = config.GetString("MINIO_SECRET_ACCESS_KEY", "minioadmin")
 		providerConfig["useSSL"] = config.GetBool("MINIO_SSL", false)
-    
+
 	case "DIGITAL_OCEAN_SPACES":
 		providerConfig["bucketName"] = config.GetString("JOBS_BACKUP_BUCKET", "")
 		providerConfig["prefix"] = config.GetString("JOBS_BACKUP_PREFIX", "")
@@ -141,7 +141,7 @@ func GetProviderConfigFromEnv(ctx context.Context, provider string) map[string]i
 func GetProviderConfigForBackupsFromEnv(ctx context.Context) map[string]interface{} {
 	return GetProviderConfigFromEnv(
 		ctx,
-		config.GetEnv("JOBS_BACKUP_STORAGE_PROVIDER", "S3"))
+		config.GetString("JOBS_BACKUP_STORAGE_PROVIDER", "S3"))
 }
 
 func getBatchRouterTimeoutConfig(destType string) time.Duration {
