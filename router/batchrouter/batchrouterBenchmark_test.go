@@ -97,7 +97,7 @@ func Benchmark_JSONUmarshal(b *testing.B) {
 		g.Go(func() error {
 			for i := range jobs {
 				var params JobParametersT
-				_ = TryUnmarshalJSON(jobs[i].Parameters, &params)
+				_ = tryUnmarshalJSON(jobs[i].Parameters, &params)
 			}
 
 			return nil

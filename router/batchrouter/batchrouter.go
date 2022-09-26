@@ -2445,8 +2445,8 @@ func tryUnmarshalJSON(data []byte, v interface{}) (err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			pkgLogger.Warnf("Panic while unmarshalling json: %v", r)
-			pkgLogger.Warnf("	starting slice: [%d:%d]: %q", l, c, string(startingData))
-			pkgLogger.Warnf("	leading slice:  [%d:%d]: %q", len(data), cap(data), string(data))
+			pkgLogger.Warnf("	starting slice: [%d:%d]: %s", l, c, string(startingData))
+			pkgLogger.Warnf("	leading slice:  [%d:%d]: %s", len(data), cap(data), string(data))
 
 			err = stdjson.Unmarshal(data, v)
 		}
