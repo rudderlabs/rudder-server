@@ -74,7 +74,6 @@ func insertTokenIfNotExists(dbHandle *sql.DB) {
 func setWHSchemaVersionIfNotExists(dbHandle *sql.DB) {
 	hashedToken := misc.GetMD5Hash(config.GetWorkspaceToken())
 	whSchemaVersion := config.GetString("Warehouse.schemaVersion", "v1")
-	config.SetWHSchemaVersion(whSchemaVersion)
 
 	var parameters sql.NullString
 	sqlStatement := fmt.Sprintf(`SELECT parameters FROM workspace WHERE token = '%s'`, hashedToken)
@@ -102,7 +101,7 @@ func setWHSchemaVersionIfNotExists(dbHandle *sql.DB) {
 		}
 		if version, ok := parametersMap["wh_schema_version"]; ok {
 			whSchemaVersion = version.(string)
-			config.SetWHSchemaVersion(whSchemaVersion)
+			config.Set("Warehouse.schemaVersion", whSchemaVersion)
 			return
 		}
 		parametersMap["wh_schema_version"] = whSchemaVersion
@@ -258,7 +257,7 @@ func CheckAndValidateWorkspaceToken() {
 
 	pkgLogger.Warn("Previous workspace token is not same as the current workspace token. Parking current jobsdb aside and creating a new one")
 
-	dbName := config.GetEnv("JOBS_DB_DB_NAME", "ubuntu")
+	dbName := config.GetString("DB.name", "ubuntu")
 	misc.ReplaceDB(dbName, dbName+"_"+strconv.FormatInt(time.Now().Unix(), 10)+"_"+workspaceTokenHashInDB)
 
 	dbHandle = createDBConnection()

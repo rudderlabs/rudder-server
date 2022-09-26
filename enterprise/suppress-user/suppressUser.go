@@ -152,7 +152,7 @@ func (suppressUser *SuppressRegulationHandler) regulationSyncLoop(ctx context.Co
 }
 
 func (suppressUser *SuppressRegulationHandler) getSourceRegulationsFromRegulationService() ([]sourceRegulation, error) {
-	if config.GetEnvAsBool("HOSTED_SERVICE", false) {
+	if config.GetBool("HOSTED_SERVICE", false) {
 		pkgLogger.Info("[Regulations] Regulations on free tier are not supported at the moment.")
 		return []sourceRegulation{}, nil
 	}

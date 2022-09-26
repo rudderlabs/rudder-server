@@ -49,7 +49,7 @@ func (t *fakeTransformer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 func Test_Transformer(t *testing.T) {
-	config.Load()
+	config.Reset()
 	logger.Init()
 	stats.Setup()
 	transformer.Init()

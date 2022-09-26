@@ -46,11 +46,11 @@ func Init() {
 }
 
 func loadConfig() {
-	configBackendURL = config.GetEnv("CONFIG_BACKEND_URL", "https://api.rudderstack.com")
+	configBackendURL = config.GetString("CONFIG_BACKEND_URL", "https://api.rudderstack.com")
 	maxRetry = config.GetInt("DestinationConnectionTester.maxRetry", 3)
 	config.RegisterDurationConfigVariable(100, &retrySleep, false, time.Millisecond, []string{"DestinationConnectionTester.retrySleep", "DestinationConnectionTester.retrySleepInMS"}...)
-	instanceID = config.GetEnv("INSTANCE_ID", "1")
-	rudderConnectionTestingFolder = config.GetEnv("RUDDER_CONNECTION_TESTING_BUCKET_FOLDER_NAME", misc.RudderTestPayload)
+	instanceID = config.GetString("INSTANCE_ID", "1")
+	rudderConnectionTestingFolder = config.GetString("RUDDER_CONNECTION_TESTING_BUCKET_FOLDER_NAME", misc.RudderTestPayload)
 }
 
 func UploadDestinationConnectionTesterResponse(testResponse, destinationId string) {
@@ -162,7 +162,7 @@ func uploadTestFileForBatchDestination(filename string, keyPrefixes []string, pr
 
 func TestBatchDestinationConnection(destination backendconfig.DestinationT) string {
 	testFileName := createTestFileForBatchDestination(destination.ID)
-	keyPrefixes := []string{config.GetEnv("RUDDER_CONNECTION_TESTING_BUCKET_FOLDER_NAME", misc.RudderTestPayload), destination.ID, time.Now().Format("01-02-2006")}
+	keyPrefixes := []string{config.GetString("RUDDER_CONNECTION_TESTING_BUCKET_FOLDER_NAME", misc.RudderTestPayload), destination.ID, time.Now().Format("01-02-2006")}
 	_, err := uploadTestFileForBatchDestination(testFileName, keyPrefixes, destination.DestinationDefinition.Name, destination)
 	if err != nil {
 		return err.Error()

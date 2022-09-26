@@ -653,12 +653,12 @@ var (
 
 // Loads db config and migration related config from config file
 func loadConfig() {
-	host = config.GetEnv("JOBS_DB_HOST", "localhost")
-	user = config.GetEnv("JOBS_DB_USER", "ubuntu")
-	dbname = config.GetEnv("JOBS_DB_DB_NAME", "ubuntu")
-	port, _ = strconv.Atoi(config.GetEnv("JOBS_DB_PORT", "5432"))
-	password = config.GetEnv("JOBS_DB_PASSWORD", "ubuntu") // Reading secrets from
-	sslmode = config.GetEnv("JOBS_DB_SSL_MODE", "disable")
+	host = config.GetString("DB.host", "localhost")
+	user = config.GetString("DB.user", "ubuntu")
+	dbname = config.GetString("DB.name", "ubuntu")
+	port = config.GetInt("DB.port", 5432)
+	password = config.GetString("DB.password", "ubuntu") // Reading secrets from
+	sslmode = config.GetString("DB.sslMode", "disable")
 	// Application Name can be any string of less than NAMEDATALEN characters (64 characters in a standard PostgreSQL build).
 	// There is no need to truncate the string on our own though since PostgreSQL auto-truncates this identifier and issues a relevant notice if necessary.
 	appName = misc.DefaultString("rudder-server").OnError(os.Hostname())
@@ -3372,7 +3372,7 @@ func (jd *HandleT) backupDSLoop(ctx context.Context) {
 			opID = jd.JournalMarkStart(backupDSOperation, opPayload)
 			err := jd.backupDS(ctx, backupDSRange)
 			if err != nil {
-				stats.NewTaggedStat("backup_ds_failed", stats.CountType, stats.Tags{"customVal": jd.tablePrefix, "provider": config.GetEnv("JOBS_BACKUP_STORAGE_PROVIDER", "S3")}).Increment()
+				stats.NewTaggedStat("backup_ds_failed", stats.CountType, stats.Tags{"customVal": jd.tablePrefix, "provider": config.GetString("JOBS_BACKUP_STORAGE_PROVIDER", "S3")}).Increment()
 				jd.logger.Errorf("[JobsDB] :: Failed to backup jobs table %v. Err: %v", backupDSRange.ds.JobStatusTable, err)
 			}
 			jd.JournalMarkDone(opID)
@@ -3613,7 +3613,7 @@ func (jd *HandleT) getFileUploader(ctx context.Context) (filemanager.FileManager
 	var err error
 	if jd.jobsFileUploader == nil {
 		jd.jobsFileUploader, err = filemanager.DefaultFileManagerFactory.New(&filemanager.SettingsT{
-			Provider: config.GetEnv("JOBS_BACKUP_STORAGE_PROVIDER", "S3"),
+			Provider: config.GetString("JOBS_BACKUP_STORAGE_PROVIDER", "S3"),
 			Config:   filemanager.GetProviderConfigForBackupsFromEnv(ctx),
 		})
 	}
@@ -3621,7 +3621,7 @@ func (jd *HandleT) getFileUploader(ctx context.Context) (filemanager.FileManager
 }
 
 func isBackupConfigured() bool {
-	return config.GetEnv("JOBS_BACKUP_BUCKET", "") != ""
+	return config.GetString("JOBS_BACKUP_BUCKET", "") != ""
 }
 
 func (jd *HandleT) isEmpty(ds dataSetT) bool {
@@ -3757,16 +3757,16 @@ func (jd *HandleT) backupTable(ctx context.Context, backupDSRange *dataSetRangeT
 	pathPrefixes := make([]string, 0)
 	// For empty path prefix, don't need to add anything to the array
 	if jd.BackupSettings.PathPrefix != "" {
-		pathPrefixes = append(pathPrefixes, jd.BackupSettings.PathPrefix, config.GetEnv("INSTANCE_ID", "1"))
+		pathPrefixes = append(pathPrefixes, jd.BackupSettings.PathPrefix, config.GetString("INSTANCE_ID", "1"))
 	} else {
-		pathPrefixes = append(pathPrefixes, config.GetEnv("INSTANCE_ID", "1"))
+		pathPrefixes = append(pathPrefixes, config.GetString("INSTANCE_ID", "1"))
 	}
 
 	jd.logger.Infof("[JobsDB] :: Uploading backup table to object storage: %v", tableName)
 	var output filemanager.UploadOutput
 	output, err = jd.backupUploadWithExponentialBackoff(ctx, file, pathPrefixes...)
 	if err != nil {
-		storageProvider := config.GetEnv("JOBS_BACKUP_STORAGE_PROVIDER", "S3")
+		storageProvider := config.GetString("JOBS_BACKUP_STORAGE_PROVIDER", "S3")
 		jd.logger.Errorf("[JobsDB] :: Failed to upload table %v dump to %s. Error: %s", tableName, storageProvider, err.Error())
 		return err
 	}

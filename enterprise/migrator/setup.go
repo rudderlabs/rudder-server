@@ -40,12 +40,12 @@ func (m *Migrator) Run(ctx context.Context, gatewayDB, routerDB, batchRouterDB *
 
 	var pf pathfinder.ClusterStateT
 
-	migratorPort = config.GetEnvAsInt("MIGRATOR_PORT", 8084)
+	migratorPort = config.GetInt("MIGRATOR_PORT", 8084)
 	if forExport {
-		nextClusterBackendCount := config.GetRequiredEnvAsInt("MIGRATING_TO_BACKEND_COUNT")
-		nextClusterVersion := config.GetRequiredEnvAsInt("MIGRATING_TO_CLUSTER_VERSION")
-		dnsPattern := config.GetEnv("URL_PATTERN", "http://backend-<CLUSTER_VERSION><NODENUM>")
-		instanceIDPattern := config.GetEnv("INSTANCE_ID_PATTERN", "hosted-v<CLUSTER_VERSION>-rudderstack-<NODENUM>")
+		nextClusterBackendCount := config.MustGetInt("MIGRATING_TO_BACKEND_COUNT")
+		nextClusterVersion := config.MustGetInt("MIGRATING_TO_CLUSTER_VERSION")
+		dnsPattern := config.GetString("URL_PATTERN", "http://backend-<CLUSTER_VERSION><NODENUM>")
+		instanceIDPattern := config.GetString("INSTANCE_ID_PATTERN", "hosted-v<CLUSTER_VERSION>-rudderstack-<NODENUM>")
 		pf = pathfinder.New(nextClusterBackendCount, nextClusterVersion, migratorPort, dnsPattern, instanceIDPattern)
 	}
 

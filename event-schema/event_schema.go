@@ -186,8 +186,8 @@ type EventPayloadT struct {
 }
 
 func loadConfig() {
-	adminUser = config.GetEnv("RUDDER_ADMIN_USER", "rudder")
-	adminPassword = config.GetEnv("RUDDER_ADMIN_PASSWORD", "rudderstack")
+	adminUser = config.GetString("RUDDER_ADMIN_USER", "rudder")
+	adminPassword = config.GetString("RUDDER_ADMIN_PASSWORD", "rudderstack")
 	noOfWorkers = config.GetInt("EventSchemas.noOfWorkers", 128)
 	config.RegisterDurationConfigVariable(240, &flushInterval, true, time.Second, []string{"EventSchemas.syncInterval", "EventSchemas.syncIntervalInS"}...)
 

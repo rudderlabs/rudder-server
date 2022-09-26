@@ -100,7 +100,7 @@ func loadConfig() {
 	config.RegisterDurationConfigVariable(15, &gracefulShutdownTimeout, false, time.Second, "GracefulShutdownTimeout")
 	config.RegisterIntConfigVariable(524288, &MaxHeaderBytes, false, 1, "MaxHeaderBytes")
 
-	enterpriseToken = config.GetEnv("ENTERPRISE_TOKEN", enterpriseToken)
+	enterpriseToken = config.GetString("ENTERPRISE_TOKEN", enterpriseToken)
 }
 
 func Init() {
@@ -138,7 +138,6 @@ func canStartWarehouse() bool {
 }
 
 func runAllInit() {
-	config.Load()
 	admin.Init()
 	app.Init()
 	logger.Init()
@@ -224,14 +223,14 @@ func Run(ctx context.Context) int {
 	// application & backend setup should be done before starting any new goroutines.
 	application.Setup()
 
-	appTypeStr := strings.ToUpper(config.GetEnv("APP_TYPE", app.EMBEDDED))
+	appTypeStr := strings.ToUpper(config.GetString("APP_TYPE", app.EMBEDDED))
 	appHandler = apphandlers.GetAppHandler(application, appTypeStr, versionHandler)
 
 	versionDetail := versionInfo()
 	stats.NewTaggedStat("rudder_server_config", stats.GaugeType, stats.Tags{"version": version, "major": major, "minor": minor, "patch": patch, "commit": commit, "buildDate": buildDate, "builtBy": builtBy, "gitUrl": gitURL, "TransformerVersion": transformer.GetVersion(), "DatabricksVersion": misc.GetDatabricksVersion()}).Gauge(1)
 	bugsnag.Configure(bugsnag.Configuration{
-		APIKey:       config.GetEnv("BUGSNAG_KEY", ""),
-		ReleaseStage: config.GetEnv("GO_ENV", "development"),
+		APIKey:       config.GetString("BUGSNAG_KEY", ""),
+		ReleaseStage: config.GetString("GO_ENV", "development"),
 		// The import paths for the Go packages containing your source files
 		ProjectPackages: []string{"main", "github.com/rudderlabs/rudder-server"},
 		// more configuration options
@@ -244,7 +243,7 @@ func Run(ctx context.Context) int {
 
 	configEnvHandler := application.Features().ConfigEnv.Setup()
 
-	if config.GetEnv("RSERVER_WAREHOUSE_MODE", "") != "slave" {
+	if config.GetString("Warehouse.mode", "") != "slave" {
 		if err := backendconfig.Setup(configEnvHandler); err != nil {
 			pkgLogger.Errorf("Unable to setup backend config: %s", err)
 			return 1
@@ -282,7 +281,7 @@ func Run(ctx context.Context) int {
 			backendconfig.DefaultBackendConfig.WaitForConfig(ctx)
 
 			c := features.NewClient(
-				config.GetEnv("CONFIG_BACKEND_URL", "https://api.rudderlabs.com"),
+				config.GetString("CONFIG_BACKEND_URL", "https://api.rudderlabs.com"),
 				backendconfig.DefaultBackendConfig.Identity(),
 			)
 
@@ -350,7 +349,7 @@ func Run(ctx context.Context) int {
 			_ = logger.Log.Sync()
 		}
 		stats.StopPeriodicStats()
-		if config.GetEnvAsBool("RUDDER_GRACEFUL_SHUTDOWN_TIMEOUT_EXIT", true) {
+		if config.GetBool("RUDDER_GRACEFUL_SHUTDOWN_TIMEOUT_EXIT", true) {
 			return 1
 		}
 	}

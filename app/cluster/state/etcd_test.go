@@ -81,7 +81,7 @@ func blockOnHold() {
 }
 
 func Init() {
-	config.Load()
+	config.Reset()
 	stats.Setup()
 	logger.Init()
 }
@@ -238,7 +238,7 @@ func Test_Workspaces(t *testing.T) {
 			},
 		}
 		defer provider.Close()
-		appType := strings.ToUpper(config.GetEnv("APP_TYPE", app.PROCESSOR))
+		appType := strings.ToUpper(config.GetString("APP_TYPE", app.PROCESSOR))
 		requestKey := fmt.Sprintf("/%s/SERVER/%s/%s/WORKSPACES", provider.Config.ReleaseName,
 			provider.Config.ServerIndex, appType)
 
@@ -263,7 +263,7 @@ func Test_Workspaces(t *testing.T) {
 	}
 	defer provider.Close()
 
-	appType := strings.ToUpper(config.GetEnv("APP_TYPE", app.PROCESSOR))
+	appType := strings.ToUpper(config.GetString("APP_TYPE", app.PROCESSOR))
 	requestKey := fmt.Sprintf("/%s/SERVER/%s/%s/WORKSPACES", provider.Config.ReleaseName, provider.Config.ServerIndex,
 		appType)
 

@@ -20,7 +20,7 @@ var (
 )
 
 func Init() {
-	connectionTestingFolder = config.GetEnv("RUDDER_CONNECTION_TESTING_BUCKET_FOLDER_NAME", misc.RudderTestPayload)
+	connectionTestingFolder = config.GetString("RUDDER_CONNECTION_TESTING_BUCKET_FOLDER_NAME", misc.RudderTestPayload)
 	pkgLogger = logger.NewLogger().Child("warehouse").Child("configuration_testing")
 	fileManagerFactory = filemanager.DefaultFileManagerFactory
 	fileManagerTimeout = 15 * time.Second

@@ -1202,7 +1202,7 @@ func startPostgres(t testingT) *destination.PostgresResource {
 }
 
 func initJobsDB() {
-	config.Load()
+	config.Reset()
 	logger.Init()
 	admin.Init()
 	misc.Init()

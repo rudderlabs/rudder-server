@@ -20,7 +20,7 @@ import (
 var _ = Describe("SuppressUser Test", func() {
 	testSuppressUser := new(SuppressRegulationHandler)
 	BeforeEach(func() {
-		config.Load()
+		config.Reset()
 		logger.Init()
 		backendconfig.Init()
 		pkgLogger = logger.NewLogger().Child("enterprise").Child("suppress-user")
@@ -264,7 +264,7 @@ func createSimpleTestServer(inp *serverInp) *httptest.Server {
 }
 
 func TestSuppressRegulationHandler_IsSuppressedUser(t *testing.T) {
-	config.Load()
+	config.Reset()
 	logger.Init()
 	pkgLogger = logger.NewLogger().Child("enterprise").Child("suppress-user")
 
