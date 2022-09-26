@@ -45,6 +45,7 @@ func randomString() string {
 	return strings.ReplaceAll(uuid.Must(uuid.NewV4()).String(), "-", "")
 }
 
+// Benchmark_JSONUmarshal tries to reproduce a panic encountered with jsoniter
 func Benchmark_JSONUmarshal(b *testing.B) {
 	config.Load()
 	logger.Init()
@@ -97,10 +98,6 @@ func Benchmark_JSONUmarshal(b *testing.B) {
 			for i := range jobs {
 				var params JobParametersT
 				_ = TryUnmarshalJSON(jobs[i].Parameters, &params)
-				// if err != nil {
-				// 	b.Fatal(err)
-				// }
-
 			}
 
 			return nil

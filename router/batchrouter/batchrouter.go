@@ -1207,7 +1207,7 @@ func (brt *HandleT) setJobStatus(batchJobs *BatchJobsT, isWarehouse bool, errOcc
 		}
 
 		var parameters JobParametersT
-		err = TryUnmarshalJSON(job.Parameters, &parameters)
+		err = tryUnmarshalJSON(job.Parameters, &parameters)
 		if err != nil {
 			brt.logger.Error("Unmarshal of job parameters failed. ", string(job.Parameters))
 		}
@@ -2435,7 +2435,7 @@ func (brt *HandleT) updateProcessedEventsMetrics(statusList []*jobsdb.JobStatusT
 	}
 }
 
-func TryUnmarshalJSON(data []byte, v interface{}) (err error) {
+func tryUnmarshalJSON(data []byte, v interface{}) (err error) {
 	c := cap(data)
 	l := len(data)
 
