@@ -13,7 +13,6 @@ import (
 	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	configenv "github.com/rudderlabs/rudder-server/enterprise/config-env"
-	"github.com/rudderlabs/rudder-server/enterprise/migrator"
 	"github.com/rudderlabs/rudder-server/enterprise/replay"
 	"github.com/rudderlabs/rudder-server/enterprise/reporting"
 	suppression "github.com/rudderlabs/rudder-server/enterprise/suppress-user"
@@ -93,10 +92,6 @@ func (a *App) initFeatures() {
 		ConfigEnv: &configenv.Factory{
 			EnterpriseToken: a.options.EnterpriseToken,
 		},
-	}
-
-	if a.options.EnterpriseToken != "" {
-		a.features.Migrator = &migrator.Migrator{}
 	}
 }
 
