@@ -46,7 +46,6 @@ func randomString() string {
 }
 
 func Benchmark_JSONUmarshal(b *testing.B) {
-
 	config.Load()
 	logger.Init()
 	Init()
@@ -109,5 +108,4 @@ func Benchmark_JSONUmarshal(b *testing.B) {
 
 		_ = g.Wait()
 	}
-
 }
