@@ -336,9 +336,43 @@ func TestFileManager(t *testing.T) {
 				filePtr.Close()
 			}
 			// list files using ListFilesWithPrefix
-			originalFileObject, err := fm.ListFilesWithPrefix(context.TODO(), "", "", 1000)
-			require.Equal(t, len(fileList), len(originalFileObject), "actual number of files different than expected")
-			require.NoError(t, err, "expected no error while listing files")
+			originalFileObject := make([]*filemanager.FileObject, 0)
+			originalFileNames := make(map[string]int)
+			fileListNames := make(map[string]int)
+			for i := 0; i < len(fileList); i++ {
+				files, err := fm.ListFilesWithPrefix(context.TODO(), "some-prefix/another-prefix1/another-prefix2/", "", 1)
+				require.NoError(t, err, "expected no error while listing files")
+				require.Equal(t, 1, len(files), "number of files should be 1")
+				originalFileObject = append(originalFileObject, files[0])
+				originalFileNames[files[0].Key]++
+				fileListNames[path.Join("some-prefix/another-prefix1/another-prefix2/", path.Base(fileList[i]))]++
+			}
+			require.Equal(t, len(originalFileObject), len(fileList), "actual number of files different than expected")
+			for fileListName, count := range fileListNames {
+				require.Equal(t, count, originalFileNames[fileListName], "files different than expected when listed")
+			}
+
+			tempFm, err := fmFactory.New(&filemanager.SettingsT{
+				Provider: tt.destName,
+				Config:   tt.config,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			iteratorMap := make(map[string]int)
+			iteratorCount := 0
+			iter := filemanager.IterateFilesWithPrefix(context.TODO(), "some-prefix/another-prefix1/another-prefix2/", "", int64(len(fileList)), &tempFm)
+			for iter.Next() {
+				iteratorFile := iter.Get().Key
+				iteratorMap[iteratorFile]++
+				iteratorCount++
+			}
+			require.NoError(t, iter.Err(), "no error expected while iterating files")
+			require.Equal(t, len(fileList), iteratorCount, "actual number of files different than expected")
+			for fileListName, count := range fileListNames {
+				require.Equal(t, count, iteratorMap[fileListName], "files different than expected when iterated")
+			}
 
 			// based on the obtained location, get object name by calling GetObjectNameFromLocation
 			objectName, err := fm.GetObjectNameFromLocation(uploadOutputs[0].Location)
@@ -458,6 +492,12 @@ func TestFileManager(t *testing.T) {
 				cancel()
 				_, err = fm.ListFilesWithPrefix(ctx1, "", "", 1000)
 				require.Error(t, err, "expected error while listing files")
+
+				iter := filemanager.IterateFilesWithPrefix(ctx1, "", "", 1000, &fm)
+				next := iter.Next()
+				require.Equal(t, false, next, "next should be false when context is cancelled")
+				err = iter.Err()
+				require.Error(t, err, "expected error while iterating files")
 			}
 		})
 

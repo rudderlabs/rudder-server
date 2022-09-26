@@ -10,7 +10,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/minio/minio-go/v6"
+	"github.com/minio/minio-go/v7"
+	"github.com/minio/minio-go/v7/pkg/credentials"
 )
 
 func (manager *MinioManager) ObjectUrl(objectName string) string {
@@ -34,8 +35,8 @@ func (manager *MinioManager) Upload(ctx context.Context, file *os.File, prefixes
 	ctx, cancel := context.WithTimeout(ctx, manager.getTimeout())
 	defer cancel()
 
-	if err = minioClient.MakeBucketWithContext(ctx, manager.Config.Bucket, "us-east-1"); err != nil {
-		exists, errBucketExists := minioClient.BucketExists(manager.Config.Bucket)
+	if err = minioClient.MakeBucket(ctx, manager.Config.Bucket, minio.MakeBucketOptions{Region: "us-east-1"}); err != nil {
+		exists, errBucketExists := minioClient.BucketExists(ctx, manager.Config.Bucket)
 		if !(errBucketExists == nil && exists) {
 			return UploadOutput{}, err
 		}
@@ -43,7 +44,7 @@ func (manager *MinioManager) Upload(ctx context.Context, file *os.File, prefixes
 
 	fileName := path.Join(manager.Config.Prefix, path.Join(prefixes...), path.Base(file.Name()))
 
-	_, err = minioClient.FPutObjectWithContext(ctx, manager.Config.Bucket, fileName, file.Name(), minio.PutObjectOptions{})
+	_, err = minioClient.FPutObject(ctx, manager.Config.Bucket, fileName, file.Name(), minio.PutObjectOptions{})
 	if err != nil {
 		return UploadOutput{}, err
 	}
@@ -60,7 +61,7 @@ func (manager *MinioManager) Download(ctx context.Context, file *os.File, key st
 	ctx, cancel := context.WithTimeout(ctx, manager.getTimeout())
 	defer cancel()
 
-	err = minioClient.FGetObjectWithContext(ctx, manager.Config.Bucket, key, file.Name(), minio.GetObjectOptions{})
+	err = minioClient.FGetObject(ctx, manager.Config.Bucket, key, file.Name(), minio.GetObjectOptions{})
 	return err
 }
 
@@ -92,9 +93,9 @@ func (manager *MinioManager) GetDownloadKeyFromFileLocation(location string) str
 }
 
 func (manager *MinioManager) DeleteObjects(ctx context.Context, keys []string) (err error) {
-	objectChannel := make(chan string, len(keys))
+	objectChannel := make(chan minio.ObjectInfo, len(keys))
 	for _, key := range keys {
-		objectChannel <- key
+		objectChannel <- minio.ObjectInfo{Key: key}
 	}
 	close(objectChannel)
 
@@ -106,35 +107,47 @@ func (manager *MinioManager) DeleteObjects(ctx context.Context, keys []string) (
 	ctx, cancel := context.WithTimeout(ctx, manager.getTimeout())
 	defer cancel()
 
-	tmp := <-minioClient.RemoveObjectsWithContext(ctx, manager.Config.Bucket, objectChannel)
+	tmp := <-minioClient.RemoveObjects(ctx, manager.Config.Bucket, objectChannel, minio.RemoveObjectsOptions{})
 	return tmp.Err
 }
 
 func (manager *MinioManager) ListFilesWithPrefix(ctx context.Context, startAfter, prefix string, maxItems int64) (fileObjects []*FileObject, err error) {
+	if !manager.Config.IsTruncated {
+		pkgLogger.Infof("Manager is truncated: %v so returning here", manager.Config.IsTruncated)
+		return
+	}
 	fileObjects = make([]*FileObject, 0)
 
 	// Created minio core
-	core, err := minio.NewCore(manager.Config.EndPoint, manager.Config.AccessKeyID, manager.Config.SecretAccessKey, manager.Config.UseSSL)
+	core, err := minio.NewCore(manager.Config.EndPoint, &minio.Options{
+		Creds:  credentials.NewStaticV4(manager.Config.AccessKeyID, manager.Config.SecretAccessKey, ""),
+		Secure: manager.Config.UseSSL,
+	})
 	if err != nil {
 		return
 	}
 
 	// List the Objects in the bucket
-	bucket, err := core.ListObjects(manager.Config.Bucket, prefix, prefix, "", int(maxItems))
+	result, err := core.ListObjectsV2(manager.Config.Bucket, prefix, startAfter, manager.Config.ContinuationToken, "", int(maxItems))
 	if err != nil {
 		return
 	}
 
-	for _, item := range bucket.Contents {
-		fileObjects = append(fileObjects, &FileObject{item.Key, item.LastModified})
+	for idx := range result.Contents {
+		fileObjects = append(fileObjects, &FileObject{result.Contents[idx].Key, result.Contents[idx].LastModified})
 	}
+	manager.Config.IsTruncated = result.IsTruncated
+	manager.Config.ContinuationToken = result.NextContinuationToken
 	return
 }
 
 func (manager *MinioManager) getClient() (*minio.Client, error) {
 	var err error
 	if manager.client == nil {
-		manager.client, err = minio.New(manager.Config.EndPoint, manager.Config.AccessKeyID, manager.Config.SecretAccessKey, manager.Config.UseSSL)
+		manager.client, err = minio.New(manager.Config.EndPoint, &minio.Options{
+			Creds:  credentials.NewStaticV4(manager.Config.AccessKeyID, manager.Config.SecretAccessKey, ""),
+			Secure: manager.Config.UseSSL,
+		})
 		if err != nil {
 			return &minio.Client{}, err
 		}
@@ -147,7 +160,7 @@ func (manager *MinioManager) GetConfiguredPrefix() string {
 }
 
 func GetMinioConfig(config map[string]interface{}) *MinioConfig {
-	var bucketName, prefix, endPoint, accessKeyID, secretAccessKey string
+	var bucketName, prefix, endPoint, accessKeyID, secretAccessKey, continuationToken string
 	var useSSL, ok bool
 	if config["bucketName"] != nil {
 		tmp, ok := config["bucketName"].(string)
@@ -186,12 +199,14 @@ func GetMinioConfig(config map[string]interface{}) *MinioConfig {
 	}
 
 	return &MinioConfig{
-		Bucket:          bucketName,
-		Prefix:          prefix,
-		EndPoint:        endPoint,
-		AccessKeyID:     accessKeyID,
-		SecretAccessKey: secretAccessKey,
-		UseSSL:          useSSL,
+		Bucket:            bucketName,
+		Prefix:            prefix,
+		EndPoint:          endPoint,
+		AccessKeyID:       accessKeyID,
+		SecretAccessKey:   secretAccessKey,
+		UseSSL:            useSSL,
+		ContinuationToken: continuationToken,
+		IsTruncated:       true,
 	}
 }
 
@@ -214,10 +229,12 @@ func (manager *MinioManager) getTimeout() time.Duration {
 }
 
 type MinioConfig struct {
-	Bucket          string
-	Prefix          string
-	EndPoint        string
-	AccessKeyID     string
-	SecretAccessKey string
-	UseSSL          bool
+	Bucket            string
+	Prefix            string
+	EndPoint          string
+	AccessKeyID       string
+	SecretAccessKey   string
+	UseSSL            bool
+	ContinuationToken string
+	IsTruncated       bool
 }

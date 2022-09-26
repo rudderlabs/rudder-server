@@ -138,7 +138,7 @@ func (manager *AzureBlobStorageManager) blobLocation(blobURL *azblob.BlockBlobUR
 	return newBlobURL.String()
 }
 
-func (manager *AzureBlobStorageManager) ListFilesWithPrefix(ctx context.Context, _, prefix string, maxItems int64) (fileObjects []*FileObject, err error) {
+func (manager *AzureBlobStorageManager) ListFilesWithPrefix(ctx context.Context, startAfter, prefix string, maxItems int64) (fileObjects []*FileObject, err error) {
 	containerURL, err := manager.getContainerURL()
 	if err != nil {
 		return []*FileObject{}, err
@@ -157,15 +157,23 @@ func (manager *AzureBlobStorageManager) ListFilesWithPrefix(ctx context.Context,
 	defer cancel()
 
 	// List the blobs in the container
-	var marker string
-	response, err := containerURL.ListBlobsFlatSegment(ctx, azblob.Marker{Val: &marker}, segmentOptions)
-	if err != nil {
-		return
-	}
+	var response *azblob.ListBlobsFlatSegmentResponse
 
-	fileObjects = make([]*FileObject, len(response.Segment.BlobItems))
-	for idx := range response.Segment.BlobItems {
-		fileObjects[idx] = &FileObject{response.Segment.BlobItems[idx].Name, response.Segment.BlobItems[idx].Properties.LastModified}
+	// Checking if maxItems > 0 to avoid function calls which expect only maxItems to be returned and not more in the code
+	for maxItems > 0 && manager.Config.Marker.NotDone() {
+		response, err = containerURL.ListBlobsFlatSegment(ctx, manager.Config.Marker, segmentOptions)
+		if err != nil {
+			return
+		}
+		manager.Config.Marker = response.NextMarker
+
+		fileObjects = make([]*FileObject, 0)
+		for idx := range response.Segment.BlobItems {
+			if strings.Compare(response.Segment.BlobItems[idx].Name, startAfter) > 0 {
+				fileObjects = append(fileObjects, &FileObject{response.Segment.BlobItems[idx].Name, response.Segment.BlobItems[idx].Properties.LastModified})
+				maxItems--
+			}
+		}
 	}
 	return
 }
@@ -236,6 +244,7 @@ func (manager *AzureBlobStorageManager) getTimeout() time.Duration {
 func GetAzureBlogStorageConfig(config map[string]interface{}) *AzureBlobStorageConfig {
 	var containerName, accountName, accountKey, sasToken, prefix string
 	var endPoint *string
+	var marker azblob.Marker
 	var forcePathStyle, disableSSL *bool
 	var useSASTokens bool
 	if config["containerName"] != nil {
@@ -302,6 +311,7 @@ func GetAzureBlogStorageConfig(config map[string]interface{}) *AzureBlobStorageC
 		EndPoint:       endPoint,
 		ForcePathStyle: forcePathStyle,
 		DisableSSL:     disableSSL,
+		Marker:         marker,
 	}
 }
 
@@ -314,6 +324,7 @@ type AzureBlobStorageConfig struct {
 	EndPoint       *string
 	ForcePathStyle *bool
 	DisableSSL     *bool
+	Marker         azblob.Marker
 	UseSASTokens   bool
 }
 
