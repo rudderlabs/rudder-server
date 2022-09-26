@@ -1190,7 +1190,7 @@ func isWarehouseMasterEnabled() bool {
 }
 
 func GetWarehouseURL() (url string) {
-	if isWarehouseMasterEnabled() {
+	if config.GetString("APP_TYPE", "EMBEDDED") != "GATEWAY" && isWarehouseMasterEnabled() {
 		url = fmt.Sprintf(`http://localhost:%d`, config.GetInt("Warehouse.webPort", 8082))
 	} else {
 		url = config.GetString("WAREHOUSE_URL", "http://localhost:8082")
