@@ -13,7 +13,7 @@ require (
 	github.com/Nvveen/Gotty v0.0.0-20120604004816-cd527374f1e5 // indirect
 	github.com/allisson/go-pglock/v2 v2.0.1
 	github.com/araddon/dateparse v0.0.0-20190622164848-0fb0a474d195
-	github.com/aws/aws-sdk-go v1.37.23
+	github.com/aws/aws-sdk-go v1.44.105
 	github.com/bugsnag/bugsnag-go/v2 v2.1.2
 	github.com/cenkalti/backoff v2.2.1+incompatible
 	github.com/cenkalti/backoff/v4 v4.1.3
@@ -48,7 +48,7 @@ require (
 	github.com/snowflakedb/gosnowflake v1.6.3
 	github.com/sony/gobreaker v0.5.0
 	github.com/spaolacci/murmur3 v1.1.0
-	github.com/spf13/cast v1.3.1
+	github.com/spf13/cast v1.3.1 // indirect
 	github.com/spf13/viper v1.8.0
 	github.com/stretchr/testify v1.7.1
 	github.com/thoas/go-funk v0.9.1
