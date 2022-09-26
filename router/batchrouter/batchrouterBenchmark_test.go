@@ -76,7 +76,7 @@ func Benchmark_JSONUmarshal(b *testing.B) {
 			params := JobParametersT{
 				EventName: "test",
 				EventType: "track",
-				MessageID: string(uuid.Must(uuid.NewV4()).String()),
+				MessageID: uuid.Must(uuid.NewV4()).String(),
 			}
 
 			p, _ := json.Marshal(params)
