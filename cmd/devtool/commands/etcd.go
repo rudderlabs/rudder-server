@@ -71,7 +71,7 @@ func Mode(c *cli.Context) error {
 		return fmt.Errorf("invalid mode: %s", mode)
 	}
 
-	endpoints := strings.Split(config.GetEnv("ETCD_HOSTS", "127.0.0.1:2379"), `,`)
+	endpoints := strings.Split(config.GetString("ETCD_HOSTS", "127.0.0.1:2379"), `,`)
 	etcdClient, err := etcd.New(etcd.Config{
 		Endpoints: endpoints,
 		DialOptions: []grpc.DialOption{
@@ -131,7 +131,7 @@ func Workspace(c *cli.Context) error {
 		workspaceIDs = strings.Split(workspaces, ",")
 	}
 
-	endpoints := strings.Split(config.GetEnv("ETCD_HOSTS", "127.0.0.1:2379"), `,`)
+	endpoints := strings.Split(config.GetString("ETCD_HOSTS", "127.0.0.1:2379"), `,`)
 	etcdClient, err := etcd.New(etcd.Config{
 		Endpoints: endpoints,
 		DialOptions: []grpc.DialOption{
@@ -144,7 +144,7 @@ func Workspace(c *cli.Context) error {
 
 	releaseName := config.GetReleaseName()
 	serverIndex := config.GetInstanceID()
-	appTypeStr := strings.ToUpper(config.GetEnv("APP_TYPE", app.PROCESSOR))
+	appTypeStr := strings.ToUpper(config.GetString("APP_TYPE", app.PROCESSOR))
 
 	ackKey := fmt.Sprintf("ack-devtool/%s", uuid.New().String())
 	ackCh := etcdClient.Watch(c.Context, ackKey)
@@ -176,7 +176,7 @@ func Workspace(c *cli.Context) error {
 }
 
 func List(c *cli.Context) error {
-	endpoints := strings.Split(config.GetEnv("ETCD_HOSTS", "127.0.0.1:2379"), `,`)
+	endpoints := strings.Split(config.GetString("ETCD_HOSTS", "127.0.0.1:2379"), `,`)
 	etcdClient, err := etcd.New(etcd.Config{
 		Endpoints: endpoints,
 		DialOptions: []grpc.DialOption{
