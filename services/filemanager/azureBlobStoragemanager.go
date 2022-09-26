@@ -138,7 +138,7 @@ func (manager *AzureBlobStorageManager) blobLocation(blobURL *azblob.BlockBlobUR
 	return newBlobURL.String()
 }
 
-func (manager *AzureBlobStorageManager) ListFilesWithPrefix(ctx context.Context, _, prefix string, maxItems int64) (fileObjects []*FileObject, err error) {
+func (manager *AzureBlobStorageManager) ListFilesWithPrefix(ctx context.Context, startAfter, prefix string, maxItems int64) (fileObjects []*FileObject, err error) {
 	containerURL, err := manager.getContainerURL()
 	if err != nil {
 		return []*FileObject{}, err

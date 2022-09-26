@@ -100,12 +100,12 @@ func (gwHandle *GWReplayRequestHandler) fetchDumpsList(ctx context.Context) {
 	startTimeMilli := gwHandle.handle.startTime.UnixNano() / int64(time.Millisecond)
 	endTimeMilli := gwHandle.handle.endTime.UnixNano() / int64(time.Millisecond)
 	var err error
-	maxItems := config.GetInt64("MAX_ITEMS", 1000)
+	maxItems := config.GetEnvAsInt("MAX_ITEMS", 1000)
 
 	pkgLogger.Info("Fetching gw dump files list")
 	objects := make([]dbObjectT, 0)
 
-	iter := filemanager.IterateFilesWithPrefix(ctx, gwHandle.handle.prefix, gwHandle.handle.startAfterKey, maxItems, &gwHandle.handle.uploader)
+	iter := filemanager.IterateFilesWithPrefix(ctx, gwHandle.handle.prefix, gwHandle.handle.startAfterKey, int64(maxItems), &gwHandle.handle.uploader)
 	for iter.Next() {
 		object := iter.Get()
 		if strings.Contains(object.Key, "gw_jobs_") {
@@ -143,6 +143,7 @@ func (gwHandle *GWReplayRequestHandler) fetchDumpsList(ctx context.Context) {
 		}
 		if len(objects) >= int(maxItems) {
 			storeJobs(ctx, objects, gwHandle.handle.dbHandle)
+			objects = nil
 		}
 	}
 	if iter.Err() != nil {
@@ -150,6 +151,7 @@ func (gwHandle *GWReplayRequestHandler) fetchDumpsList(ctx context.Context) {
 	}
 	if len(objects) != 0 {
 		storeJobs(ctx, objects, gwHandle.handle.dbHandle)
+		objects = nil
 	}
 
 	pkgLogger.Info("Dumps loader job is done")
@@ -160,9 +162,9 @@ func (procHandle *ProcErrorRequestHandler) fetchDumpsList(ctx context.Context) {
 	objects := make([]dbObjectT, 0)
 	pkgLogger.Info("Fetching proc err files list")
 	var err error
-	maxItems := config.GetInt64("MAX_ITEMS", 1000)
+	maxItems := config.GetEnvAsInt("MAX_ITEMS", 1000)
 
-	iter := filemanager.IterateFilesWithPrefix(ctx, procHandle.handle.prefix, procHandle.handle.startAfterKey, maxItems, &procHandle.handle.uploader)
+	iter := filemanager.IterateFilesWithPrefix(ctx, procHandle.handle.prefix, procHandle.handle.startAfterKey, int64(maxItems), &procHandle.handle.uploader)
 	for iter.Next() {
 		object := iter.Get()
 		if strings.Contains(object.Key, "rudder-proc-err-logs") {

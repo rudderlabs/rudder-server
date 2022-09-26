@@ -84,6 +84,9 @@ func (manager *GCSManager) ListFilesWithPrefix(ctx context.Context, startAfter, 
 		}
 		attrs, err = manager.Config.Iterator.Next()
 		if err == iterator.Done || err != nil {
+			if err == iterator.Done {
+				err = nil
+			}
 			break
 		}
 		fileObjects = append(fileObjects, &FileObject{attrs.Name, attrs.Updated})
