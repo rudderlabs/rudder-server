@@ -32,7 +32,7 @@ func setupWarehouseJobs(pool *dockertest.Pool, t testingT, cleanup *testhelper.C
 }
 
 func initWarehouse() {
-	config.Load()
+	config.Reset()
 	admin.Init()
 	logger.Init()
 	Init()
