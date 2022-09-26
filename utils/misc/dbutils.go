@@ -3,7 +3,6 @@ package misc
 import (
 	"database/sql"
 	"fmt"
-	"strconv"
 
 	"github.com/lib/pq"
 
@@ -22,11 +21,11 @@ var (
 )
 
 func loadConfig() {
-	host = config.GetEnv("JOBS_DB_HOST", "localhost")
-	user = config.GetEnv("JOBS_DB_USER", "ubuntu")
-	port, _ = strconv.Atoi(config.GetEnv("JOBS_DB_PORT", "5432"))
-	password = config.GetEnv("JOBS_DB_PASSWORD", "ubuntu") // Reading secrets from
-	sslmode = config.GetEnv("JOBS_DB_SSL_MODE", "disable")
+	host = config.GetString("DB.host", "localhost")
+	user = config.GetString("DB.user", "ubuntu")
+	port = config.GetInt("DB.port", 5432)
+	password = config.GetString("DB.password", "ubuntu") // Reading secrets from
+	sslmode = config.GetString("DB.sslMode", "disable")
 }
 
 /*

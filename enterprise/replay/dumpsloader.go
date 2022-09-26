@@ -234,17 +234,17 @@ func (handle *dumpsLoaderHandleT) Setup(ctx context.Context, db *jobsdb.HandleT,
 	handle.startAfterKey = gjson.GetBytes(lastJob.EventPayload, "location").String()
 	handle.bucket = bucket
 	handle.uploader = uploader
-	startTimeStr := strings.TrimSpace(config.GetEnv("START_TIME", "2000-10-02T15:04:05.000Z"))
+	startTimeStr := strings.TrimSpace(config.GetString("START_TIME", "2000-10-02T15:04:05.000Z"))
 	handle.startTime, err = time.Parse(misc.RFC3339Milli, startTimeStr)
 	if err != nil {
 		panic("invalid start time format provided")
 	}
-	handle.prefix = strings.TrimSpace(config.GetEnv("JOBS_BACKUP_PREFIX", ""))
+	handle.prefix = strings.TrimSpace(config.GetString("JOBS_BACKUP_PREFIX", ""))
 	handle.tablePrefix = tablePrefix
 	handle.procError = &ProcErrorRequestHandler{tablePrefix: tablePrefix, handle: handle}
 	handle.gwReplay = &GWReplayRequestHandler{tablePrefix: tablePrefix, handle: handle}
 
-	endTimeStr := strings.TrimSpace(config.GetEnv("END_TIME", ""))
+	endTimeStr := strings.TrimSpace(config.GetString("END_TIME", ""))
 	if endTimeStr == "" {
 		handle.endTime = time.Now()
 	} else {

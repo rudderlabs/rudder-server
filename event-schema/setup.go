@@ -20,7 +20,7 @@ func GetInstance() types.EventSchemasI {
 	eventSchemaManagerLock.Lock()
 	defer eventSchemaManagerLock.Unlock()
 	if eventSchemaManager == nil {
-		appTypeStr := strings.ToUpper(config.GetEnv("APP_TYPE", app.EMBEDDED))
+		appTypeStr := strings.ToUpper(config.GetString("APP_TYPE", app.EMBEDDED))
 		schemaManager := getEventSchemaManager(
 			createDBConnection(),
 			appTypeStr == app.GATEWAY)

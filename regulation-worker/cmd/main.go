@@ -61,8 +61,8 @@ func Run(ctx context.Context) {
 	svc := service.JobSvc{
 		API: &client.JobAPI{
 			Client:         &http.Client{Timeout: config.GetDuration("HttpClient.regulationWorker.timeout", 30, time.Second)},
-			URLPrefix:      config.MustGetEnv("CONFIG_BACKEND_URL"),
-			WorkspaceToken: config.MustGetEnv("CONFIG_BACKEND_TOKEN"),
+			URLPrefix:      config.MustGetString("CONFIG_BACKEND_URL"),
+			WorkspaceToken: config.MustGetString("CONFIG_BACKEND_TOKEN"),
 			WorkspaceID:    workspaceId,
 		},
 		DestDetail: dest,
@@ -73,7 +73,7 @@ func Run(ctx context.Context) {
 			},
 			&api.APIManager{
 				Client:           &http.Client{Timeout: config.GetDuration("HttpClient.regulationWorker.timeout", 30, time.Second)},
-				DestTransformURL: config.MustGetEnv("DEST_TRANSFORM_URL"),
+				DestTransformURL: config.MustGetString("DEST_TRANSFORM_URL"),
 			}),
 	}
 

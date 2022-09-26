@@ -17,7 +17,7 @@ import (
 )
 
 func Test_Dedup(t *testing.T) {
-	config.Load()
+	config.Reset()
 	logger.Init()
 
 	dbPath := os.TempDir() + "/dedup_test"
@@ -55,7 +55,7 @@ func Test_Dedup(t *testing.T) {
 }
 
 func Test_Dedup_Window(t *testing.T) {
-	config.Load()
+	config.Reset()
 	logger.Init()
 
 	dbPath := os.TempDir() + "/dedup_test"
@@ -80,7 +80,7 @@ func Test_Dedup_Window(t *testing.T) {
 }
 
 func Test_Dedup_ClearDB(t *testing.T) {
-	config.Load()
+	config.Reset()
 	logger.Init()
 
 	dbPath := os.TempDir() + "/dedup_test"
@@ -108,7 +108,7 @@ func Test_Dedup_ClearDB(t *testing.T) {
 }
 
 func Test_Dedup_ErrTxnTooBig(t *testing.T) {
-	config.Load()
+	config.Reset()
 	logger.Init()
 
 	dbPath := os.TempDir() + "/dedup_test_errtxntoobig"
@@ -129,7 +129,7 @@ func Test_Dedup_ErrTxnTooBig(t *testing.T) {
 var duplicateIndexes []int
 
 func Benchmark_Dedup(b *testing.B) {
-	config.Load()
+	config.Reset()
 	logger.Init()
 	dbPath := path.Join("./testdata", "tmp", rand.String(10), "/DB_Benchmark_Dedup")
 	b.Logf("using path %s, since tmpDir has issues in macOS\n", dbPath)

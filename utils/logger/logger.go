@@ -57,27 +57,9 @@ type LoggerI interface {
 	Child(s string) LoggerI
 }
 
-type LoggerT struct {
+type loggerT struct {
 	name   string
-	parent *LoggerT
-}
-
-const (
-	levelEvent = iota // Logs Event
-	levelDebug        // Most verbose logging level
-	levelInfo         // Logs about state of the application
-	levelWarn         // Logs about warnings
-	levelError        // Logs about errors which dont immediately halt the application
-	levelFatal        // Logs which crashes the application
-)
-
-var levelMap = map[string]int{
-	"EVENT": levelEvent,
-	"DEBUG": levelDebug,
-	"INFO":  levelInfo,
-	"WARN":  levelWarn,
-	"ERROR": levelError,
-	"FATAL": levelFatal,
+	parent *loggerT
 }
 
 var (
@@ -102,7 +84,7 @@ var (
 )
 
 func loadConfig() {
-	rootLevel = levelMap[config.GetEnv("LOG_LEVEL", "INFO")]
+	rootLevel = levelMap[config.GetString("LOG_LEVEL", "INFO")]
 	config.RegisterBoolConfigVariable(true, &enableConsole, true, "Logger.enableConsole")
 	config.RegisterBoolConfigVariable(false, &enableFile, true, "Logger.enableFile")
 	config.RegisterBoolConfigVariable(false, &consoleJsonFormat, true, "Logger.consoleJsonFormat")
@@ -142,8 +124,8 @@ func loadConfig() {
 
 var options []zap.Option
 
-func NewLogger() *LoggerT {
-	return &LoggerT{}
+func NewLogger() LoggerI {
+	return &loggerT{}
 }
 
 // Setup sets up the logger initially
@@ -153,7 +135,7 @@ func Init() {
 	loggerLevelsCache = make(map[string]int)
 }
 
-func (l *LoggerT) Child(s string) LoggerI {
+func (l *loggerT) Child(s string) LoggerI {
 	if s == "" {
 		return l
 	}
@@ -167,7 +149,7 @@ func (l *LoggerT) Child(s string) LoggerI {
 	return &cp
 }
 
-func (l *LoggerT) getLoggingLevel() int {
+func (l *loggerT) getLoggingLevel() int {
 	var found bool
 	var level int
 	levelConfigLock.RLock()
@@ -216,13 +198,13 @@ func SetModuleLevel(module, levelStr string) error {
 }
 
 // IsDebugLevel Returns true is debug lvl is enabled
-func (l *LoggerT) IsDebugLevel() bool {
+func (l *loggerT) IsDebugLevel() bool {
 	return levelDebug >= l.getLoggingLevel()
 }
 
 // Debug level logging.
 // Most verbose logging level.
-func (l *LoggerT) Debug(args ...interface{}) {
+func (l *loggerT) Debug(args ...interface{}) {
 	if levelDebug >= l.getLoggingLevel() {
 		Log.Debug(args...)
 	}
@@ -230,7 +212,7 @@ func (l *LoggerT) Debug(args ...interface{}) {
 
 // Info level logging.
 // Use this to log the state of the application. Dont use Logger.Info in the flow of individual events. Use Logger.Debug instead.
-func (l *LoggerT) Info(args ...interface{}) {
+func (l *loggerT) Info(args ...interface{}) {
 	if levelInfo >= l.getLoggingLevel() {
 		Log.Info(args...)
 	}
@@ -238,7 +220,7 @@ func (l *LoggerT) Info(args ...interface{}) {
 
 // Warn level logging.
 // Use this to log warnings
-func (l *LoggerT) Warn(args ...interface{}) {
+func (l *loggerT) Warn(args ...interface{}) {
 	if levelWarn >= l.getLoggingLevel() {
 		Log.Warn(args...)
 	}
@@ -246,7 +228,7 @@ func (l *LoggerT) Warn(args ...interface{}) {
 
 // Error level logging.
 // Use this to log errors which dont immediately halt the application.
-func (l *LoggerT) Error(args ...interface{}) {
+func (l *loggerT) Error(args ...interface{}) {
 	if levelError >= l.getLoggingLevel() {
 		Log.Error(args...)
 	}
@@ -254,7 +236,7 @@ func (l *LoggerT) Error(args ...interface{}) {
 
 // Fatal level logging.
 // Use this to log errors which crash the application.
-func (l *LoggerT) Fatal(args ...interface{}) {
+func (l *loggerT) Fatal(args ...interface{}) {
 	if levelFatal >= l.getLoggingLevel() {
 		Log.Error(args...)
 
@@ -272,7 +254,7 @@ func (l *LoggerT) Fatal(args ...interface{}) {
 
 // Debugf does debug level logging similar to fmt.Printf.
 // Most verbose logging level
-func (l *LoggerT) Debugf(format string, args ...interface{}) {
+func (l *loggerT) Debugf(format string, args ...interface{}) {
 	if levelDebug >= l.getLoggingLevel() {
 		Log.Debugf(format, args...)
 	}
@@ -280,7 +262,7 @@ func (l *LoggerT) Debugf(format string, args ...interface{}) {
 
 // Infof does info level logging similar to fmt.Printf.
 // Use this to log the state of the application. Dont use Logger.Info in the flow of individual events. Use Logger.Debug instead.
-func (l *LoggerT) Infof(format string, args ...interface{}) {
+func (l *loggerT) Infof(format string, args ...interface{}) {
 	if levelInfo >= l.getLoggingLevel() {
 		Log.Infof(format, args...)
 	}
@@ -288,7 +270,7 @@ func (l *LoggerT) Infof(format string, args ...interface{}) {
 
 // Warnf does warn level logging similar to fmt.Printf.
 // Use this to log warnings
-func (l *LoggerT) Warnf(format string, args ...interface{}) {
+func (l *loggerT) Warnf(format string, args ...interface{}) {
 	if levelWarn >= l.getLoggingLevel() {
 		Log.Warnf(format, args...)
 	}
@@ -296,7 +278,7 @@ func (l *LoggerT) Warnf(format string, args ...interface{}) {
 
 // Errorf does error level logging similar to fmt.Printf.
 // Use this to log errors which dont immediately halt the application.
-func (l *LoggerT) Errorf(format string, args ...interface{}) {
+func (l *loggerT) Errorf(format string, args ...interface{}) {
 	if levelError >= l.getLoggingLevel() {
 		Log.Errorf(format, args...)
 	}
@@ -304,7 +286,7 @@ func (l *LoggerT) Errorf(format string, args ...interface{}) {
 
 // Fatalf does fatal level logging similar to fmt.Printf.
 // Use this to log errors which crash the application.
-func (l *LoggerT) Fatalf(format string, args ...interface{}) {
+func (l *loggerT) Fatalf(format string, args ...interface{}) {
 	if levelFatal >= l.getLoggingLevel() {
 		Log.Errorf(format, args...)
 
@@ -321,7 +303,7 @@ func (l *LoggerT) Fatalf(format string, args ...interface{}) {
 }
 
 // LogRequest reads and logs the request body and resets the body to original state.
-func (l *LoggerT) LogRequest(req *http.Request) {
+func (l *loggerT) LogRequest(req *http.Request) {
 	if levelEvent >= l.getLoggingLevel() {
 		defer func() { _ = req.Body.Close() }()
 		bodyBytes, _ := io.ReadAll(req.Body)

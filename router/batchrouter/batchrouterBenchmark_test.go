@@ -12,7 +12,7 @@ import (
 )
 
 func Benchmark_GetStorageDateFormat(b *testing.B) {
-	config.Load()
+	config.Reset()
 	Init()
 
 	mockCtrl := gomock.NewController(b)

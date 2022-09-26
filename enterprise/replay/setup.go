@@ -23,13 +23,13 @@ func loadConfig() {
 }
 
 func initFileManager() (filemanager.FileManager, string, error) {
-	bucket := strings.TrimSpace(config.GetEnv("JOBS_BACKUP_BUCKET", ""))
+	bucket := strings.TrimSpace(config.GetString("JOBS_BACKUP_BUCKET", ""))
 	if bucket == "" {
 		pkgLogger.Error("[[ Replay ]] JOBS_BACKUP_BUCKET is not set")
 		panic("Bucket is not configured.")
 	}
 
-	provider := config.GetEnv("JOBS_BACKUP_STORAGE_PROVIDER", "S3")
+	provider := config.GetString("JOBS_BACKUP_STORAGE_PROVIDER", "S3")
 	fileManagerFactory := filemanager.DefaultFileManagerFactory
 
 	configFromEnv := filemanager.GetProviderConfigForBackupsFromEnv(context.TODO())
@@ -50,8 +50,8 @@ func initFileManager() (filemanager.FileManager, string, error) {
 }
 
 func setup(ctx context.Context, replayDB, gwDB, routerDB, batchRouterDB *jobsdb.HandleT) error {
-	tablePrefix := config.GetEnv("TO_REPLAY", "gw")
-	replayToDB := config.GetEnv("REPLAY_TO_DB", "gw")
+	tablePrefix := config.GetString("TO_REPLAY", "gw")
+	replayToDB := config.GetString("REPLAY_TO_DB", "gw")
 	pkgLogger.Infof("TO_REPLAY=%s and REPLAY_TO_DB=%s", tablePrefix, replayToDB)
 	var dumpsLoader dumpsLoaderHandleT
 	uploader, bucket, err := initFileManager()

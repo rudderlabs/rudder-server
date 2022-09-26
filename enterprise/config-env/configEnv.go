@@ -3,6 +3,7 @@ package configenv
 import (
 	"encoding/json"
 	"fmt"
+	"os"
 	"reflect"
 	"strings"
 
@@ -47,7 +48,7 @@ func (handle *HandleT) ReplaceConfigWithEnvVariables(workspaceConfig []byte) (up
 			shouldReplace := strings.HasPrefix(strings.TrimSpace(valString), configEnvReplacer)
 			if shouldReplace {
 				envVariable := valString[len(configEnvReplacer):]
-				envVarValue := config.GetEnv(envVariable, "")
+				envVarValue := os.Getenv(envVariable)
 				if envVarValue == "" {
 					errorMessage := fmt.Sprintf("[ConfigEnv] Missing envVariable: %s. Either set it as envVariable or remove %s from the destination config.", envVariable, configEnvReplacer)
 					pkgLogger.Errorf(errorMessage)
