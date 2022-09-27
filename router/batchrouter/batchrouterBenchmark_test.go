@@ -157,6 +157,7 @@ func BenchmarkReproduce(b *testing.B) {
 		}
 	}()
 
+	// FORCEFULLY REWRITE SOME RANDOM PARAMETERS
 	go func() {
 		max := len(jobs)
 		for {
