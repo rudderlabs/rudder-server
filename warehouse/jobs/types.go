@@ -7,10 +7,10 @@ import (
 	"time"
 
 	"github.com/rudderlabs/rudder-server/services/pgnotifier"
-	log "github.com/rudderlabs/rudder-server/utils/logger"
+	"github.com/rudderlabs/rudder-server/utils/logger"
 )
 
-var pkgLogger log.LoggerI
+var pkgLogger logger.Logger
 
 // For processing requests payload in handlers.go
 type StartJobReqPayload struct {
