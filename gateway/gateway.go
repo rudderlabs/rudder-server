@@ -1105,8 +1105,17 @@ func (gateway *HandleT) getPayloadAndWriteKey(_ http.ResponseWriter, r *http.Req
 	if !ok || writeKey == "" {
 		err = errors.New(response.NoWriteKeyInBasicAuth)
 		misc.IncrementMapByKey(sourceFailStats, "noWriteKey", 1)
-		gateway.updateFailedSourceStats(sourceFailStats, "gateway.write_key_failed_requests", map[string]string{"noWriteKey": "noWriteKey", "reqType": reqType, "reason": "noWriteKeyInBasicAuth", "sourceID": sourceID})
-		gateway.updateSourceStats(sourceFailStats, "gateway.write_key_requests", map[string]string{"noWriteKey": "noWriteKey", "reqType": reqType, "sourceID": sourceID})
+		gateway.updateFailedSourceStats(sourceFailStats, "gateway.write_key_failed_requests", map[string]string{
+			"noWriteKey": "noWriteKey",
+			"reqType":    reqType,
+			"reason":     "noWriteKeyInBasicAuth",
+			"sourceID":   sourceID,
+		})
+		gateway.updateSourceStats(sourceFailStats, "gateway.write_key_requests", map[string]string{
+			"noWriteKey": "noWriteKey",
+			"reqType":    reqType,
+			"sourceID":   sourceID,
+		})
 
 		return []byte{}, "", err
 	}
@@ -1114,8 +1123,17 @@ func (gateway *HandleT) getPayloadAndWriteKey(_ http.ResponseWriter, r *http.Req
 	if err != nil {
 		sourceTag := gateway.getSourceTagFromWriteKey(writeKey)
 		misc.IncrementMapByKey(sourceFailStats, sourceTag, 1)
-		gateway.updateSourceStats(sourceFailStats, "gateway.write_key_failed_requests", map[string]string{sourceTag: writeKey, "reqType": reqType, "reason": "requestBodyReadFailed", "sourceID": sourceID})
-		gateway.updateSourceStats(sourceFailStats, "gateway.write_key_requests", map[string]string{sourceTag: writeKey, "reqType": reqType, "sourceID": sourceID})
+		gateway.updateSourceStats(sourceFailStats, "gateway.write_key_failed_requests", map[string]string{
+			sourceTag:  writeKey,
+			"reqType":  reqType,
+			"reason":   "requestBodyReadFailed",
+			"sourceID": sourceID,
+		})
+		gateway.updateSourceStats(sourceFailStats, "gateway.write_key_requests", map[string]string{
+			sourceTag:  writeKey,
+			"reqType":  reqType,
+			"sourceID": sourceID,
+		})
 		return []byte{}, writeKey, err
 	}
 	return payload, writeKey, err
