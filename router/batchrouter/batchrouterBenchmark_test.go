@@ -2,6 +2,7 @@ package batchrouter
 
 import (
 	"context"
+	stdjson "encoding/json"
 	"fmt"
 	"math/rand"
 	"net"
@@ -71,26 +72,8 @@ func BenchmarkReproduce(b *testing.B) {
 	// CREATION OF JOBS
 	var jobs []*jobsdb.JobT
 	for i := 0; i < 1000; i++ {
-		params := JobParametersT{
-			SourceID:   "my-source-id",
-			EventName:  "test",
-			EventType:  "track",
-			MessageID:  uuid.Must(uuid.NewV4()).String(),
-			ReceivedAt: "2021-01-01T00:00:00Z",
-		}
-
-		p, _ := json.Marshal(params)
-		jobs = append(jobs, &jobsdb.JobT{
-			UUID:       uuid.Must(uuid.NewV4()),
-			JobID:      int64(i),
-			Parameters: p,
-			EventPayload: []byte(`{
-				"metadata":{
-					"table":"test",
-					"columns": {}
-				}
-			}`),
-		})
+		p := getJobParameters()
+		jobs = append(jobs, getJob(i, p))
 	}
 
 	// MOCKS CREATION
@@ -174,8 +157,41 @@ func BenchmarkReproduce(b *testing.B) {
 		}
 	}()
 
+	go func() {
+		max := len(jobs)
+		for {
+			idx := rand.Intn(max)
+			jobs[idx].Parameters = getJobParameters()
+		}
+	}()
+
 	// WAIT FOR ALL JOBS TO BE PROCESSED N TIMES - triggered by jobsDB.WithUpdateSafeTx()
 	wg.Wait()
+}
+
+func getJobParameters() stdjson.RawMessage {
+	p, _ := json.Marshal(JobParametersT{
+		SourceID:   "my-source-id",
+		EventName:  "test",
+		EventType:  "track",
+		MessageID:  uuid.Must(uuid.NewV4()).String(),
+		ReceivedAt: "2021-01-01T00:00:00Z",
+	})
+	return p
+}
+
+func getJob(i int, p stdjson.RawMessage) *jobsdb.JobT {
+	return &jobsdb.JobT{
+		UUID:       uuid.Must(uuid.NewV4()),
+		JobID:      int64(i),
+		Parameters: p,
+		EventPayload: []byte(`{
+			"metadata":{
+				"table":"test",
+				"columns": {}
+			}
+		}`),
+	}
 }
 
 func TestJsoniter(t *testing.T) {
