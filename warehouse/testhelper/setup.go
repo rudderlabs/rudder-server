@@ -121,8 +121,8 @@ func loadEnv() {
 
 func initialize() {
 	config.Reset()
+	logger.Reset()
 	admin.Init()
-	logger.Init()
 	misc.Init()
 	stats.Init()
 	stats.Setup()

@@ -23,7 +23,7 @@ import (
 
 // GatewayApp is the type for Gateway type implementation
 type GatewayApp struct {
-	App            app.Interface
+	App            app.App
 	VersionHandler func(w http.ResponseWriter, r *http.Request)
 }
 

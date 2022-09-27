@@ -17,7 +17,7 @@ import (
 
 var (
 	backupRowsBatchSize int
-	pkgLogger           logger.LoggerI
+	pkgLogger           logger.Logger
 )
 
 func Init() {

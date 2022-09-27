@@ -59,7 +59,7 @@ type RefreshTokenParams struct {
 type OAuthErrResHandler struct {
 	tr                   *http.Transport
 	client               *http.Client
-	logger               logger.LoggerI
+	logger               logger.Logger
 	destLockMap          map[string]*sync.RWMutex // This mutex map is used for disable destination locking
 	accountLockMap       map[string]*sync.RWMutex // This mutex map is used for refresh token locking
 	lockMapWMutex        *sync.RWMutex            // This mutex is used to prevent concurrent writes in lockMap(s) mentioned in the struct
@@ -92,7 +92,7 @@ func NewOAuthErrorHandler(provider tokenProvider) *OAuthErrResHandler {
 
 var (
 	configBEURL string
-	pkgLogger   logger.LoggerI
+	pkgLogger   logger.Logger
 	loggerNm    string
 )
 

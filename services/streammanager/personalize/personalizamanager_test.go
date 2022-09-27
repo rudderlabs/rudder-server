@@ -93,7 +93,7 @@ func TestProduceWithPutEventsWithServiceResponse(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mockClient := mock_personalize.NewMockPersonalizeClient(ctrl)
 	producer := &PersonalizeProducer{client: mockClient}
-	mockLogger := mock_logger.NewMockLoggerI(ctrl)
+	mockLogger := mock_logger.NewMockLogger(ctrl)
 	pkgLogger = mockLogger
 	sampleJsonPayload, _ := json.Marshal(map[string]interface{}{
 		"choice": "PutEvents",
@@ -147,7 +147,7 @@ func TestProduceWithPutUsersWithServiceResponse(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mockClient := mock_personalize.NewMockPersonalizeClient(ctrl)
 	producer := &PersonalizeProducer{client: mockClient}
-	mockLogger := mock_logger.NewMockLoggerI(ctrl)
+	mockLogger := mock_logger.NewMockLogger(ctrl)
 	pkgLogger = mockLogger
 	sampleJsonPayload, _ := json.Marshal(map[string]interface{}{
 		"choice": "PutUsers",
@@ -185,7 +185,7 @@ func TestProduceWithPutItemsWithServiceResponse(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mockClient := mock_personalize.NewMockPersonalizeClient(ctrl)
 	producer := &PersonalizeProducer{client: mockClient}
-	mockLogger := mock_logger.NewMockLoggerI(ctrl)
+	mockLogger := mock_logger.NewMockLogger(ctrl)
 	pkgLogger = mockLogger
 	sampleJsonPayload, _ := json.Marshal(map[string]interface{}{
 		"choice": "PutItems",

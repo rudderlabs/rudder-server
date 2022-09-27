@@ -61,7 +61,7 @@ type HandleT struct {
 	routerDB                  jobsdb.JobsDB
 	batchRouterDB             jobsdb.JobsDB
 	errorDB                   jobsdb.JobsDB
-	logger                    logger.LoggerI
+	logger                    logger.Logger
 	eventSchemaHandler        types.EventSchemasI
 	dedupHandler              dedup.DedupI
 	reporting                 types.ReportingI
@@ -481,7 +481,7 @@ var (
 	batchDestinations         []string
 	configSubscriberLock      sync.RWMutex
 	customDestinations        []string
-	pkgLogger                 logger.LoggerI
+	pkgLogger                 logger.Logger
 	enableEventSchemasFeature bool
 	enableEventSchemasAPIOnly bool
 	enableDedup               bool

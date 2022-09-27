@@ -40,7 +40,7 @@ var (
 	eventsDeliveryCache               debugger.Cache
 )
 
-var pkgLogger logger.LoggerI
+var pkgLogger logger.Logger
 
 func Init() {
 	loadConfig()

@@ -29,7 +29,7 @@ type namespaceConfig struct {
 	sourceToWorkspaceIDMap    map[string]string
 	cpRouterURL               string
 
-	Logger logger.LoggerI
+	Logger logger.Logger
 	Client *http.Client
 
 	HostedServiceSecret string

@@ -15,7 +15,7 @@ import (
 	"github.com/tidwall/gjson"
 )
 
-var pkgLogger logger.LoggerI
+var pkgLogger logger.Logger
 
 func init() {
 	pkgLogger = logger.NewLogger().Child("streammanager").Child(firehose.ServiceName)

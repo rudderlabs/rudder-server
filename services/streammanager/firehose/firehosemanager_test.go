@@ -103,7 +103,7 @@ func TestProduceWithServiceResponse(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mockClient := mock_firehose.NewMockFireHoseClient(ctrl)
 	producer := &FireHoseProducer{client: mockClient}
-	mockLogger := mock_logger.NewMockLoggerI(ctrl)
+	mockLogger := mock_logger.NewMockLogger(ctrl)
 	pkgLogger = mockLogger
 
 	sampleEventJson, _ := json.Marshal(map[string]string{

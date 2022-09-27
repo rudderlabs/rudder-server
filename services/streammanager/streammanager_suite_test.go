@@ -29,7 +29,7 @@ var once sync.Once
 func initStreamManager() {
 	once.Do(func() {
 		config.Reset()
-		logger.Init()
+		logger.Reset()
 		stats.Setup()
 		kafka.Init()
 	})

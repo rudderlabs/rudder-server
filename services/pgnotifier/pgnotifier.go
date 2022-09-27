@@ -28,7 +28,7 @@ var (
 	trackBatchInterval time.Duration
 	maxPollSleep       time.Duration
 	jobOrphanTimeout   time.Duration
-	pkgLogger          logger.LoggerI
+	pkgLogger          logger.Logger
 )
 
 var (
