@@ -45,7 +45,7 @@ func createDefaultSession(config *SessionConfig) (*session.Session, error) {
 
 func createCredentailsForRole(config *SessionConfig) (*credentials.Credentials, error) {
 	if config.ExternalID == "" {
-		return nil, errors.New("externalID is required fo IAM role")
+		return nil, errors.New("externalID is required for IAM role")
 	}
 	hostSession, err := createDefaultSession(config)
 	if err != nil {

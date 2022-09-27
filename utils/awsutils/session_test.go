@@ -117,7 +117,7 @@ func TestCreateSessionWithRoleButWithoutExternalID(t *testing.T) {
 	awsSession, err := CreateSession(&sessionConfig)
 	assert.NotNil(t, err)
 	assert.Nil(t, awsSession)
-	assert.EqualError(t, err, "externalID is required fo IAM role")
+	assert.EqualError(t, err, "externalID is required for IAM role")
 }
 
 func TestCreateSessionWithAccessKeys(t *testing.T) {
