@@ -639,13 +639,6 @@ func (as *HandleT) createTable(name string, columns map[string]string) (err erro
 	return
 }
 
-func (as *HandleT) addColumns(tableName string, columnsInfo warehouseutils.ColumnsInto) (err error) {
-	sqlStatement := addColumnsSQLStatement(as.Namespace, tableName, columnsInfo)
-	pkgLogger.Infof("AZ: Adding column in synapse for AZ:%s : %v", as.Warehouse.Destination.ID, sqlStatement)
-	_, err = as.Db.Exec(sqlStatement)
-	return
-}
-
 func (as *HandleT) CreateTable(tableName string, columnMap map[string]string) (err error) {
 	// Search paths doesnt exist unlike Postgres, default is dbo. Hence use namespace wherever possible
 	err = as.createTable(as.Namespace+"."+tableName, columnMap)

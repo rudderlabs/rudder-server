@@ -164,28 +164,6 @@ func (bq *HandleT) createTableView(tableName string, columnMap map[string]string
 	return
 }
 
-func (bq *HandleT) addColumns(tableName string, columnsInfo warehouseutils.ColumnsInto) (err error) {
-	pkgLogger.Infof("BQ: Adding columns in table %s in bigquery dataset: %s in project: %s", tableName, bq.Namespace, bq.ProjectID)
-	tableRef := bq.Db.Dataset(bq.Namespace).Table(tableName)
-	meta, err := tableRef.Metadata(bq.BQContext)
-	if err != nil {
-		return err
-	}
-
-	newSchema := meta.Schema
-	for _, columnInfo := range columnsInfo {
-		newSchema = append(newSchema,
-			&bigquery.FieldSchema{Name: columnInfo.Name, Type: dataTypesMap[columnInfo.Type]},
-		)
-	}
-
-	update := bigquery.TableMetadataToUpdate{
-		Schema: newSchema,
-	}
-	_, err = tableRef.Update(bq.BQContext, update, meta.ETag)
-	return
-}
-
 func (bq *HandleT) schemaExists(schemaname, location string) (exists bool, err error) {
 	ds := bq.Db.Dataset(bq.Namespace)
 	_, err = ds.Metadata(bq.BQContext)
