@@ -75,11 +75,12 @@ func CreateSession(config *SessionConfig) (*session.Session, error) {
 		HTTPClient: &http.Client{
 			Timeout: config.Timeout,
 		},
-		Region:           aws.String(config.Region),
-		Credentials:      awsCredentials,
-		Endpoint:         config.Endpoint,
-		S3ForcePathStyle: config.S3ForcePathStyle,
-		DisableSSL:       config.DisableSSL,
+		Region:                        aws.String(config.Region),
+		CredentialsChainVerboseErrors: aws.Bool(true),
+		Credentials:                   awsCredentials,
+		Endpoint:                      config.Endpoint,
+		S3ForcePathStyle:              config.S3ForcePathStyle,
+		DisableSSL:                    config.DisableSSL,
 	})
 }
 
