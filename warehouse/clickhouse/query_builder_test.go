@@ -1,10 +1,11 @@
 package clickhouse
 
 import (
+	"strings"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
-	"strings"
 )
 
 var _ = Describe("Clickhouse QueryBuilder", func() {
