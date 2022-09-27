@@ -7,7 +7,6 @@ import (
 	"io"
 	"net/http"
 	"net/url"
-	"sync"
 	"time"
 
 	"github.com/cenkalti/backoff"
@@ -22,12 +21,8 @@ import (
 var jsonfast = jsoniter.ConfigCompatibleWithStandardLibrary
 
 type namespaceConfig struct {
-	configEnvHandler          types.ConfigEnvI
-	mapsMutex                 sync.RWMutex
-	writeKeyToWorkspaceIDMap  map[string]string
-	workspaceIDToLibrariesMap map[string]LibrariesT
-	sourceToWorkspaceIDMap    map[string]string
-	cpRouterURL               string
+	configEnvHandler types.ConfigEnvI
+	cpRouterURL      string
 
 	Logger logger.Logger
 	Client *http.Client
@@ -39,8 +34,6 @@ type namespaceConfig struct {
 }
 
 func (nc *namespaceConfig) SetUp() (err error) {
-	nc.writeKeyToWorkspaceIDMap = make(map[string]string)
-
 	if nc.Namespace == "" {
 		if !config.IsSet("WORKSPACE_NAMESPACE") {
 			return errors.New("workspaceNamespace is not configured")
@@ -72,39 +65,6 @@ func (nc *namespaceConfig) SetUp() (err error) {
 	nc.Logger.Infof("Fetching config for namespace %s", nc.Namespace)
 
 	return nil
-}
-
-func (nc *namespaceConfig) GetWorkspaceIDForWriteKey(writeKey string) string {
-	nc.mapsMutex.RLock()
-	defer nc.mapsMutex.RUnlock()
-
-	if workspaceID, ok := nc.writeKeyToWorkspaceIDMap[writeKey]; ok {
-		return workspaceID
-	}
-
-	return ""
-}
-
-func (nc *namespaceConfig) GetWorkspaceIDForSourceID(source string) string {
-	nc.mapsMutex.RLock()
-	defer nc.mapsMutex.RUnlock()
-
-	if workspaceID, ok := nc.sourceToWorkspaceIDMap[source]; ok {
-		return workspaceID
-	}
-
-	return ""
-}
-
-// GetWorkspaceLibrariesForWorkspaceID returns workspaceLibraries for workspaceID
-func (nc *namespaceConfig) GetWorkspaceLibrariesForWorkspaceID(workspaceID string) LibrariesT {
-	nc.mapsMutex.RLock()
-	defer nc.mapsMutex.RUnlock()
-
-	if workspaceLibraries, ok := nc.workspaceIDToLibrariesMap[workspaceID]; ok {
-		return workspaceLibraries
-	}
-	return LibrariesT{}
 }
 
 // Get returns sources from the workspace
@@ -150,26 +110,12 @@ func (nc *namespaceConfig) getFromAPI(ctx context.Context, _ string) (map[string
 		return config, err
 	}
 
-	writeKeyToWorkspaceIDMap := make(map[string]string)
-	sourceToWorkspaceIDMap := make(map[string]string)
-	workspaceIDToLibrariesMap := make(map[string]LibrariesT)
 	for workspaceID, wc := range workspacesConfig {
-		for i := range wc.Sources {
-			source := &wc.Sources[i]
-			writeKeyToWorkspaceIDMap[source.WriteKey] = workspaceID
-			sourceToWorkspaceIDMap[source.ID] = workspaceID
-			workspaceIDToLibrariesMap[workspaceID] = wc.Libraries
-		}
 		// always set connection flags to true for hosted and multi-tenant warehouse service
 		wc.ConnectionFlags.URL = nc.cpRouterURL
 		wc.ConnectionFlags.Services = map[string]bool{"warehouse": true}
 		workspacesConfig[workspaceID] = wc
 	}
-	nc.mapsMutex.Lock()
-	nc.writeKeyToWorkspaceIDMap = writeKeyToWorkspaceIDMap
-	nc.sourceToWorkspaceIDMap = sourceToWorkspaceIDMap
-	nc.workspaceIDToLibrariesMap = workspaceIDToLibrariesMap
-	nc.mapsMutex.Unlock()
 
 	return workspacesConfig, nil
 }

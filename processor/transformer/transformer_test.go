@@ -129,8 +129,6 @@ func Test_Transformer(t *testing.T) {
 }
 
 func Test_EndlessLoopIf809(t *testing.T) {
-	logger.Init()
-	stats.Setup()
 	transformer.Init()
 
 	ft := &endlessLoopTransformer{

@@ -385,14 +385,8 @@ var _ = Describe("Gateway", func() {
 		})
 
 		It("should store messages successfully if rate limit is not reached for workspace", func() {
-			workspaceID := "some-workspace-id"
-
-			mockCall := c.mockBackendConfig.EXPECT().GetWorkspaceIDForWriteKey(WriteKeyEnabled).Return(workspaceID).AnyTimes()
+			mockCall := c.mockRateLimiter.EXPECT().LimitReached(WorkspaceID).Return(false).Times(1)
 			tFunc := c.asyncHelper.ExpectAndNotifyCallbackWithName("")
-			mockCall.Do(func(interface{}) { tFunc() })
-
-			mockCall = c.mockRateLimiter.EXPECT().LimitReached(workspaceID).Return(false).Times(1)
-			tFunc = c.asyncHelper.ExpectAndNotifyCallbackWithName("")
 			mockCall.Do(func(interface{}) { tFunc() })
 
 			c.mockJobsDB.EXPECT().WithStoreSafeTx(gomock.Any(), gomock.Any()).Times(1).Do(func(ctx context.Context, f func(tx jobsdb.StoreSafeTx) error) {
@@ -406,15 +400,7 @@ var _ = Describe("Gateway", func() {
 		})
 
 		It("should reject messages if rate limit is reached for workspace", func() {
-			workspaceID := "some-workspace-id"
-
-			mockCall := c.mockBackendConfig.EXPECT().GetWorkspaceIDForWriteKey(WriteKeyEnabled).Return(workspaceID).AnyTimes()
-			tFunc := c.asyncHelper.ExpectAndNotifyCallbackWithName("")
-			mockCall.Do(func(interface{}) { tFunc() })
-
-			c.mockRateLimiter.EXPECT().LimitReached(workspaceID).Return(true).Times(1)
-			tFunc = c.asyncHelper.ExpectAndNotifyCallbackWithName("")
-			mockCall.Do(func(interface{}) { tFunc() })
+			c.mockRateLimiter.EXPECT().LimitReached(WorkspaceID).Return(true).Times(1)
 
 			expectHandlerResponse(gateway.webAliasHandler, authorizedRequest(WriteKeyEnabled, bytes.NewBufferString("{}")), 429, response.TooManyRequests+"\n")
 		})

@@ -1380,7 +1380,7 @@ func (proc *HandleT) processJobsForDest(subJobs subJob, parsedEventList [][]type
 
 			backendEnabledDestTypes := getBackendEnabledDestinationTypes(writeKey)
 			enabledDestTypes := integrations.FilterClientIntegrations(singularEvent, backendEnabledDestTypes)
-			workspaceID := proc.backendConfig.GetWorkspaceIDForWriteKey(writeKey)
+			workspaceID := eventList[idx].Metadata.WorkspaceID
 			workspaceLibraries := getWorkspaceLibraries(workspaceID)
 
 			for i := range enabledDestTypes {

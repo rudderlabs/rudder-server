@@ -507,8 +507,7 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 
 			if enableRateLimit {
 				// In case of "batch" requests, if rate-limiter returns true for LimitReached, just drop the event batch and continue.
-				restrictorKey := gateway.backendConfig.GetWorkspaceIDForWriteKey(writeKey)
-				if gateway.rateLimiter.LimitReached(restrictorKey) {
+				if gateway.rateLimiter.LimitReached(workspaceId) {
 					req.done <- response.GetStatus(response.TooManyRequests)
 					preDbStoreCount++
 					misc.IncrementMapByKey(workspaceDropRequestStats, sourceTag, 1)
@@ -1462,26 +1461,32 @@ func (gateway *HandleT) StartAdminHandler(ctx context.Context) error {
 func (gateway *HandleT) backendConfigSubscriber() {
 	ch := gateway.backendConfig.Subscribe(context.TODO(), backendconfig.TopicProcessConfig)
 	for data := range ch {
-		configSubscriberLock.Lock()
-		writeKeysSourceMap = map[string]backendconfig.SourceT{}
-		enabledWriteKeyWebhookMap = map[string]string{}
-		enabledWriteKeyWorkspaceMap = map[string]string{}
+		var (
+			newWriteKeysSourceMap          = map[string]backendconfig.SourceT{}
+			newEnabledWriteKeyWebhookMap   = map[string]string{}
+			newEnabledWriteKeyWorkspaceMap = map[string]string{}
+			newSourceIDToNameMap           = map[string]string{}
+		)
 		config := data.Data.(map[string]backendconfig.ConfigT)
-		sourceIDToNameMap = map[string]string{}
 		for workspaceID, wsConfig := range config {
 			for _, source := range wsConfig.Sources {
-				sourceIDToNameMap[source.ID] = source.Name
-				writeKeysSourceMap[source.WriteKey] = source
+				newSourceIDToNameMap[source.ID] = source.Name
+				newWriteKeysSourceMap[source.WriteKey] = source
 
 				if source.Enabled {
-					enabledWriteKeyWorkspaceMap[source.WriteKey] = workspaceID
+					newEnabledWriteKeyWorkspaceMap[source.WriteKey] = workspaceID
 					if source.SourceDefinition.Category == "webhook" {
-						enabledWriteKeyWebhookMap[source.WriteKey] = source.SourceDefinition.Name
+						newEnabledWriteKeyWebhookMap[source.WriteKey] = source.SourceDefinition.Name
 						gateway.webhookHandler.Register(source.SourceDefinition.Name)
 					}
 				}
 			}
 		}
+		configSubscriberLock.Lock()
+		writeKeysSourceMap = newWriteKeysSourceMap
+		enabledWriteKeyWebhookMap = newEnabledWriteKeyWebhookMap
+		enabledWriteKeyWorkspaceMap = newEnabledWriteKeyWorkspaceMap
+		sourceIDToNameMap = newSourceIDToNameMap
 		configSubscriberLock.Unlock()
 	}
 }

@@ -27,18 +27,6 @@ func (*NOOP) Get(_ context.Context, _ string) (map[string]ConfigT, error) {
 	return map[string]ConfigT{}, nil
 }
 
-func (*NOOP) GetWorkspaceIDForWriteKey(string) string {
-	return ""
-}
-
-func (*NOOP) GetWorkspaceIDForSourceID(_ string) string {
-	return ""
-}
-
-func (*NOOP) GetWorkspaceLibrariesForWorkspaceID(string) LibrariesT {
-	return LibrariesT{}
-}
-
 func (*NOOP) WaitForConfig(_ context.Context) {}
 
 func (*NOOP) Subscribe(ctx context.Context, _ Topic) pubsub.DataChannel {

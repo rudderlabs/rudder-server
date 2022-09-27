@@ -55,7 +55,7 @@ func disableCache() {
 
 type noCache struct{}
 
-func (c *noCache) Get(context.Context) ([]byte, error) {
+func (*noCache) Get(context.Context) ([]byte, error) {
 	return nil, nil
 }
 
@@ -64,9 +64,6 @@ type workspaceConfig interface {
 	// Deprecated: use Identity() instead.
 	AccessToken() string
 	Get(context.Context, string) (map[string]ConfigT, error)
-	GetWorkspaceIDForWriteKey(string) string
-	GetWorkspaceIDForSourceID(string) string
-	GetWorkspaceLibrariesForWorkspaceID(string) LibrariesT
 	Identity() identity.Identifier
 }
 

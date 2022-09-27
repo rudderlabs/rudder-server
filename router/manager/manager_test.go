@@ -21,8 +21,8 @@ import (
 
 	"github.com/rudderlabs/rudder-server/admin"
 	"github.com/rudderlabs/rudder-server/config"
+	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/enterprise/reporting"
-	backendConfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	mocksBackendConfig "github.com/rudderlabs/rudder-server/mocks/config/backend-config"
 	mock_tenantstats "github.com/rudderlabs/rudder-server/mocks/services/multitenant"
@@ -124,23 +124,23 @@ const (
 
 var (
 	workspaceID             = uuid.Must(uuid.NewV4()).String()
-	gaDestinationDefinition = backendConfig.DestinationDefinitionT{
+	gaDestinationDefinition = backendconfig.DestinationDefinitionT{
 		ID: GADestinationDefinitionID, Name: "GA",
 		DisplayName: "Google Analytics", Config: nil, ResponseRules: nil,
 	}
-	gcsDestinationDefinition = backendConfig.DestinationDefinitionT{
+	gcsDestinationDefinition = backendconfig.DestinationDefinitionT{
 		ID: GADestinationDefinitionID, Name: "GCS",
 		DisplayName: "Google Analytics", Config: nil, ResponseRules: nil,
 	}
-	sampleBackendConfig = backendConfig.ConfigT{
+	sampleBackendConfig = backendconfig.ConfigT{
 		WorkspaceID: workspaceID,
-		Sources: []backendConfig.SourceT{
+		Sources: []backendconfig.SourceT{
 			{
 				WorkspaceID: workspaceID,
 				ID:          SourceIDEnabled,
 				WriteKey:    WriteKeyEnabled,
 				Enabled:     true,
-				Destinations: []backendConfig.DestinationT{{
+				Destinations: []backendconfig.DestinationT{{
 					ID:   GADestinationID,
 					Name: "GCS DEst", DestinationDefinition: gcsDestinationDefinition, Enabled: true, IsProcessorEnabled: true,
 				}},
@@ -150,7 +150,7 @@ var (
 				ID:          SourceIDEnabled,
 				WriteKey:    WriteKeyEnabled,
 				Enabled:     true,
-				Destinations: []backendConfig.DestinationT{{
+				Destinations: []backendconfig.DestinationT{{
 					ID: GADestinationID, Name: "ga dest",
 					DestinationDefinition: gaDestinationDefinition, Enabled: true, IsProcessorEnabled: true,
 				}},
@@ -188,8 +188,8 @@ func TestRouterManager(t *testing.T) {
 	mockRsourcesService := rsources.NewMockJobService(mockCtrl)
 	mockMTI := mock_tenantstats.NewMockMultiTenantI(mockCtrl)
 
-	mockBackendConfig.EXPECT().Subscribe(gomock.Any(), backendConfig.TopicBackendConfig).DoAndReturn(func(
-		ctx context.Context, topic backendConfig.Topic,
+	mockBackendConfig.EXPECT().Subscribe(gomock.Any(), backendconfig.TopicBackendConfig).DoAndReturn(func(
+		ctx context.Context, topic backendconfig.Topic,
 	) pubsub.DataChannel {
 		// on Subscribe, emulate a backend configuration event
 

@@ -18,15 +18,12 @@ import (
 )
 
 type singleWorkspaceConfig struct {
-	logOnce          sync.Once
+	doOnce           sync.Once
 	Token            string
 	workspaceID      string
 	configBackendURL *url.URL
 	configJSONPath   string
 	configEnvHandler types.ConfigEnvI
-
-	workspaceIDToLibrariesMap map[string]LibrariesT
-	workspaceIDLock           sync.RWMutex
 }
 
 func (wc *singleWorkspaceConfig) SetUp() error {
@@ -47,30 +44,6 @@ func (wc *singleWorkspaceConfig) SetUp() error {
 
 func (wc *singleWorkspaceConfig) AccessToken() string {
 	return wc.Token
-}
-
-func (wc *singleWorkspaceConfig) GetWorkspaceIDForWriteKey(_ string) string {
-	wc.workspaceIDLock.RLock()
-	defer wc.workspaceIDLock.RUnlock()
-
-	return wc.workspaceID
-}
-
-func (wc *singleWorkspaceConfig) GetWorkspaceIDForSourceID(_ string) string {
-	wc.workspaceIDLock.RLock()
-	defer wc.workspaceIDLock.RUnlock()
-
-	return wc.workspaceID
-}
-
-// GetWorkspaceLibrariesForWorkspaceID returns workspaceLibraries for workspaceID
-func (wc *singleWorkspaceConfig) GetWorkspaceLibrariesForWorkspaceID(workspaceID string) LibrariesT {
-	wc.workspaceIDLock.RLock()
-	defer wc.workspaceIDLock.RUnlock()
-	if wc.workspaceIDToLibrariesMap[workspaceID] == nil {
-		return LibrariesT{}
-	}
-	return wc.workspaceIDToLibrariesMap[workspaceID]
 }
 
 // Get returns sources from the workspace
@@ -124,11 +97,9 @@ func (wc *singleWorkspaceConfig) getFromAPI(ctx context.Context, _ string) (map[
 	}
 	workspaceID := sourcesJSON.WorkspaceID
 
-	wc.workspaceIDLock.Lock()
-	wc.workspaceID = workspaceID
-	wc.workspaceIDToLibrariesMap = make(map[string]LibrariesT)
-	wc.workspaceIDToLibrariesMap[workspaceID] = sourcesJSON.Libraries
-	wc.workspaceIDLock.Unlock()
+	wc.doOnce.Do(func() {
+		wc.workspaceID = workspaceID
+	})
 	config[workspaceID] = sourcesJSON
 
 	return config, nil
@@ -136,9 +107,7 @@ func (wc *singleWorkspaceConfig) getFromAPI(ctx context.Context, _ string) (map[
 
 // getFromFile reads the workspace config from JSON file
 func (wc *singleWorkspaceConfig) getFromFile() (map[string]ConfigT, error) {
-	wc.logOnce.Do(func() {
-		pkgLogger.Info("Reading workspace config from JSON file")
-	})
+	pkgLogger.Debug("Reading workspace config from JSON file")
 	config := make(map[string]ConfigT)
 	data, err := IoUtil.ReadFile(wc.configJSONPath)
 	if err != nil {
@@ -151,6 +120,10 @@ func (wc *singleWorkspaceConfig) getFromFile() (map[string]ConfigT, error) {
 		return config, err
 	}
 	workspaceID := configJSON.WorkspaceID
+	wc.doOnce.Do(func() {
+		pkgLogger.Info("Read workspace config from JSON file")
+		wc.workspaceID = workspaceID
+	})
 	config[workspaceID] = configJSON
 	return config, nil
 }
