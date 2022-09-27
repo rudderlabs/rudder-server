@@ -1,17 +1,17 @@
 package deltalake
 
 import (
-	"strings"
-
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
+	"regexp"
 )
 
 var _ = Describe("Deltalake QueryBuilder", func() {
 	DescribeTable("addColumnsSQLStatement", func(columnsInfo warehouseutils.ColumnsInto, expected string) {
 		got := addColumnsSQLStatement("testNamespace", "testTableName", columnsInfo)
-		Expect(strings.Trim(got, " ")).To(BeEquivalentTo(expected))
+		r := regexp.MustCompile(`\s+`)
+		Expect(r.ReplaceAllString(got, "")).To(BeEquivalentTo(r.ReplaceAllString(expected, "")))
 	},
 		Entry(nil, warehouseutils.ColumnsInto{
 			{

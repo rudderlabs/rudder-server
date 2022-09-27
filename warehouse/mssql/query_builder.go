@@ -7,19 +7,15 @@ import (
 )
 
 func addColumnsSQLStatement(namespace, tableName string, columnsInfo warehouseutils.ColumnsInto) string {
-	sqlStatement := fmt.Sprintf(`
+	format := func(_ int, columnInfo warehouseutils.ColumnInfoT) string {
+		return fmt.Sprintf(`%s %s`, columnInfo.Name, rudderDataTypesMapToMssql[columnInfo.Type])
+	}
+	return fmt.Sprintf(`
 		ALTER TABLE
-		%s.%s`,
+		%s.%s
+		ADD %s;`,
 		namespace,
 		tableName,
+		columnsInfo.JoinColumns(format, ","),
 	)
-	format := func(idx int, columnInfo warehouseutils.ColumnInfoT) string {
-		return fmt.Sprintf(`
-		ADD %s %s`,
-			columnInfo.Name,
-			rudderDataTypesMapToMssql[columnInfo.Type],
-		)
-	}
-	sqlStatement += columnsInfo.JoinColumns(format, ",")
-	return sqlStatement
 }

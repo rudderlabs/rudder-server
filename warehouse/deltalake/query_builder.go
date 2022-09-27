@@ -68,10 +68,10 @@ func appendableLTSQLStatement(namespace, tableName, stagingTableName string, col
 }
 
 func addColumnsSQLStatement(namespace, tableName string, columnsInfo warehouseutils.ColumnsInto) string {
-	format := func(idx int, columnInfo warehouseutils.ColumnInfoT) string {
+	format := func(_ int, columnInfo warehouseutils.ColumnInfoT) string {
 		return fmt.Sprintf(`%s %s`, columnInfo.Name, getDeltaLakeDataType(columnInfo.Type))
 	}
-	sqlStatement := fmt.Sprintf(`
+	return fmt.Sprintf(`
 		ALTER TABLE
 		%s.%s
 		ADD COLUMNS ( %s );`,
@@ -79,5 +79,4 @@ func addColumnsSQLStatement(namespace, tableName string, columnsInfo warehouseut
 		tableName,
 		columnsInfo.JoinColumns(format, ","),
 	)
-	return sqlStatement
 }
