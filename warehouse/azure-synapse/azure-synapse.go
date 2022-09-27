@@ -639,9 +639,8 @@ func (as *HandleT) createTable(name string, columns map[string]string) (err erro
 	return
 }
 
-func (as *HandleT) addColumn(tableName, columnName, columnType string) (err error) {
-	sqlStatement := fmt.Sprintf(`IF NOT EXISTS (SELECT 1  FROM SYS.COLUMNS WHERE OBJECT_ID = OBJECT_ID(N'%[1]s') AND name = '%[2]s')
-			ALTER TABLE %[1]s ADD %[2]s %[3]s`, tableName, columnName, rudderDataTypesMapToMssql[columnType])
+func (as *HandleT) addColumns(tableName string, columnsInfo warehouseutils.ColumnsInto) (err error) {
+	sqlStatement := addColumnsSQLStatement(as.Namespace, tableName, columnsInfo)
 	pkgLogger.Infof("AZ: Adding column in synapse for AZ:%s : %v", as.Warehouse.Destination.ID, sqlStatement)
 	_, err = as.Db.Exec(sqlStatement)
 	return
@@ -660,8 +659,8 @@ func (as *HandleT) DropTable(tableName string) (err error) {
 	return
 }
 
-func (as *HandleT) AddColumn(tableName, columnName, columnType string) (err error) {
-	err = as.addColumn(as.Namespace+"."+tableName, columnName, columnType)
+func (as *HandleT) AddColumns(tableName string, columnsInfo warehouseutils.ColumnsInto) (err error) {
+	err = as.addColumns(tableName, columnsInfo)
 	return err
 }
 

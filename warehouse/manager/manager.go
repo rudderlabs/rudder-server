@@ -25,7 +25,7 @@ type ManagerI interface {
 	FetchSchema(warehouse warehouseutils.WarehouseT) (warehouseutils.SchemaT, error)
 	CreateSchema() (err error)
 	CreateTable(tableName string, columnMap map[string]string) (err error)
-	AddColumn(tableName, columnName, columnType string) (err error)
+	AddColumns(tableName string, columnsInfo warehouseutils.ColumnsInto) (err error)
 	AlterColumn(tableName, columnName, columnType string) (err error)
 	LoadTable(tableName string) error
 	LoadUserTables() map[string]error

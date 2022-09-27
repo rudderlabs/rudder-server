@@ -4,6 +4,8 @@ import (
 	"database/sql"
 	"fmt"
 	"strings"
+
+	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
 type QueryParams struct {
@@ -24,7 +26,7 @@ func (q *QueryParams) validate() (err error) {
 // Print execution plan if enableWithQueryPlan is set to true else return result set.
 // Currently, these statements are supported by EXPLAIN
 // Any INSERT, UPDATE, DELETE whose execution plan you wish to see.
-func handleExec(e *QueryParams) (result sql.Result, err error) {
+func handleExec(e *QueryParams) (err error) {
 	sqlStatement := e.query
 
 	if err = e.validate(); err != nil {
@@ -45,7 +47,7 @@ func handleExec(e *QueryParams) (result sql.Result, err error) {
 			err = fmt.Errorf("[WH][POSTGRES] error occurred while handling transaction for query: %s with err: %w", sqlStatement, err)
 			return
 		}
-		defer rows.Close()
+		defer func() { _ = rows.Close() }()
 
 		var response []string
 		for rows.Next() {
@@ -60,9 +62,27 @@ func handleExec(e *QueryParams) (result sql.Result, err error) {
 `)))
 	}
 	if e.txn != nil {
-		result, err = e.txn.Exec(sqlStatement)
+		_, err = e.txn.Exec(sqlStatement)
 	} else if e.db != nil {
-		result, err = e.db.Exec(sqlStatement)
+		_, err = e.db.Exec(sqlStatement)
 	}
 	return
+}
+
+func addColumnsSQLStatement(namespace, tableName string, columnsInfo warehouseutils.ColumnsInto) string {
+	sqlStatement := fmt.Sprintf(`
+		ALTER TABLE
+		%s.%s`,
+		namespace,
+		tableName,
+	)
+	format := func(idx int, columnInfo warehouseutils.ColumnInfoT) string {
+		return fmt.Sprintf(`
+		ADD COLUMN IF NOT EXISTS %s %s`,
+			columnInfo.Name,
+			rudderDataTypesMapToPostgres[columnInfo.Type],
+		)
+	}
+	sqlStatement += columnsInfo.JoinColumns(format, ",")
+	return sqlStatement
 }

@@ -164,16 +164,21 @@ func (bq *HandleT) createTableView(tableName string, columnMap map[string]string
 	return
 }
 
-func (bq *HandleT) addColumn(tableName, columnName, columnType string) (err error) {
+func (bq *HandleT) addColumnS(tableName string, columnsInfo warehouseutils.ColumnsInto) (err error) {
 	pkgLogger.Infof("BQ: Adding columns in table %s in bigquery dataset: %s in project: %s", tableName, bq.Namespace, bq.ProjectID)
 	tableRef := bq.Db.Dataset(bq.Namespace).Table(tableName)
 	meta, err := tableRef.Metadata(bq.BQContext)
 	if err != nil {
 		return err
 	}
-	newSchema := append(meta.Schema,
-		&bigquery.FieldSchema{Name: columnName, Type: dataTypesMap[columnType]},
-	)
+
+	var newSchema bigquery.Schema
+	for _, columnInfo := range columnsInfo {
+		newSchema = append(meta.Schema,
+			&bigquery.FieldSchema{Name: columnInfo.Name, Type: dataTypesMap[columnInfo.Type]},
+		)
+	}
+
 	update := bigquery.TableMetadataToUpdate{
 		Schema: newSchema,
 	}
@@ -800,14 +805,8 @@ func (bq *HandleT) LoadTable(tableName string) error {
 	return err
 }
 
-func (bq *HandleT) AddColumn(tableName, columnName, columnType string) (err error) {
-	err = bq.addColumn(tableName, columnName, columnType)
-	if err != nil {
-		if checkAndIgnoreAlreadyExistError(err) {
-			pkgLogger.Infof("BQ: Column %s already exists on %s.%s \nResponse: %v", columnName, bq.Namespace, tableName, err)
-			err = nil
-		}
-	}
+func (bq *HandleT) AddColumns(tableName string, columnsInfo warehouseutils.ColumnsInto) (err error) {
+	err = bq.addColumnS(tableName, columnsInfo)
 	return err
 }
 

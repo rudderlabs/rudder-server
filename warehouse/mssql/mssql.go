@@ -445,9 +445,9 @@ func (ms *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 	}
 
 	quotedColumnNames := warehouseutils.DoubleQuoteAndJoinByComma(sortedColumnKeys)
-	sqlStatement = fmt.Sprintf(`INSERT INTO "%[1]s"."%[2]s" (%[3]s) 
-									SELECT %[3]s FROM ( 
-										SELECT *, row_number() OVER (PARTITION BY %[5]s ORDER BY received_at DESC) AS _rudder_staging_row_number FROM "%[1]s"."%[4]s" 
+	sqlStatement = fmt.Sprintf(`INSERT INTO "%[1]s"."%[2]s" (%[3]s)
+									SELECT %[3]s FROM (
+										SELECT *, row_number() OVER (PARTITION BY %[5]s ORDER BY received_at DESC) AS _rudder_staging_row_number FROM "%[1]s"."%[4]s"
 									) AS _ where _rudder_staging_row_number = 1
 									`, ms.Namespace, tableName, quotedColumnNames, stagingTableName, partitionKey)
 	pkgLogger.Infof("MS: Inserting records for table:%s using staging table: %s\n", tableName, sqlStatement)
@@ -637,9 +637,8 @@ func (ms *HandleT) createTable(name string, columns map[string]string) (err erro
 	return
 }
 
-func (ms *HandleT) addColumn(tableName, columnName, columnType string) (err error) {
-	sqlStatement := fmt.Sprintf(`IF NOT EXISTS (SELECT 1  FROM SYS.COLUMNS WHERE OBJECT_ID = OBJECT_ID(N'%[1]s') AND name = '%[2]s')
-			ALTER TABLE %[1]s ADD "%[2]s" %[3]s`, tableName, columnName, rudderDataTypesMapToMssql[columnType])
+func (ms *HandleT) addColumns(tableName string, columnsInfo warehouseutils.ColumnsInto) (err error) {
+	sqlStatement := addColumnsSQLStatement(ms.Namespace, tableName, columnsInfo)
 	pkgLogger.Infof("MS: Adding column in mssql for MS:%s : %v", ms.Warehouse.Destination.ID, sqlStatement)
 	_, err = ms.Db.Exec(sqlStatement)
 	return
@@ -658,8 +657,8 @@ func (ms *HandleT) DropTable(tableName string) (err error) {
 	return
 }
 
-func (ms *HandleT) AddColumn(tableName, columnName, columnType string) (err error) {
-	err = ms.addColumn(ms.Namespace+"."+tableName, columnName, columnType)
+func (ms *HandleT) AddColumns(tableName string, columnsInfo warehouseutils.ColumnsInto) (err error) {
+	err = ms.addColumns(tableName, columnsInfo)
 	return err
 }
 

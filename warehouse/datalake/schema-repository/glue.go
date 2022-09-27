@@ -136,7 +136,7 @@ func (gl *GlueSchemaRepository) CreateTable(tableName string, columnMap map[stri
 	return
 }
 
-func (gl *GlueSchemaRepository) AddColumn(tableName, columnName, columnType string) (err error) {
+func (gl *GlueSchemaRepository) AddColumns(tableName string, columnsInfo warehouseutils.ColumnsInto) (err error) {
 	updateTableInput := glue.UpdateTableInput{
 		DatabaseName: aws.String(gl.Namespace),
 		TableInput: &glue.TableInput{
@@ -156,8 +156,10 @@ func (gl *GlueSchemaRepository) AddColumn(tableName, columnName, columnType stri
 		return fmt.Errorf("table %s not found in schema", tableName)
 	}
 
-	// add new column to tableSchema
-	tableSchema[columnName] = columnType
+	// add new columns to table schema
+	for _, columnInfo := range columnsInfo {
+		tableSchema[columnInfo.Name] = columnInfo.Type
+	}
 
 	// add storage descriptor to update table request
 	updateTableInput.TableInput.StorageDescriptor = gl.getStorageDescriptor(tableName, tableSchema)
@@ -168,7 +170,7 @@ func (gl *GlueSchemaRepository) AddColumn(tableName, columnName, columnType stri
 }
 
 func (gl *GlueSchemaRepository) AlterColumn(tableName, columnName, columnType string) (err error) {
-	return gl.AddColumn(tableName, columnName, columnType)
+	return gl.AddColumns(tableName, warehouseutils.ColumnsInto{{Name: columnName, Type: columnType}})
 }
 
 func getGlueClient(wh warehouseutils.WarehouseT) (*glue.Glue, error) {

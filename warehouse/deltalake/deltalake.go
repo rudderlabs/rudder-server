@@ -868,11 +868,9 @@ func (dl *HandleT) DropTable(tableName string) (err error) {
 	return
 }
 
-// AddColumn adds column for column name and type
-func (dl *HandleT) AddColumn(name, columnName, columnType string) (err error) {
-	tableName := fmt.Sprintf(`%s.%s`, dl.Namespace, name)
-	sqlStatement := fmt.Sprintf(`ALTER TABLE %v ADD COLUMNS ( %s %s );`, tableName, columnName, getDeltaLakeDataType(columnType))
-	pkgLogger.Infof("%s Adding column in delta lake with SQL:%v", dl.GetLogIdentifier(tableName, columnName), sqlStatement)
+func (dl *HandleT) AddColumns(tableName string, columnsInfo warehouseutils.ColumnsInto) (err error) {
+	sqlStatement := addColumnsSQLStatement(dl.Namespace, tableName, columnsInfo)
+	pkgLogger.Infof("%s Adding column in delta lake with SQL:%v", dl.GetLogIdentifier(tableName), sqlStatement)
 	err = dl.ExecuteSQL(sqlStatement, "AddColumn")
 	return
 }

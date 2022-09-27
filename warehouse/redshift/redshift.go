@@ -167,12 +167,18 @@ func (rs *HandleT) schemaExists(schemaname string) (exists bool, err error) {
 	return
 }
 
-func (rs *HandleT) AddColumn(name, columnName, columnType string) (err error) {
+func (rs *HandleT) AddColumns(name string, columnsInfo warehouseutils.ColumnsInto) error {
 	tableName := fmt.Sprintf(`%q.%q`, rs.Namespace, name)
-	sqlStatement := fmt.Sprintf(`ALTER TABLE %v ADD COLUMN %q %s`, tableName, columnName, getRSDataType(columnType))
-	pkgLogger.Infof("Adding column in redshift for RS:%s : %v", rs.Warehouse.Destination.ID, sqlStatement)
-	_, err = rs.Db.Exec(sqlStatement)
-	return
+
+	for _, columnInfo := range columnsInfo {
+		sqlStatement := addColumnSQLStatement(tableName, columnInfo.Name, columnInfo.Type)
+		pkgLogger.Infof("Adding column in redshift for RS:%s : %v", rs.Warehouse.Destination.ID, sqlStatement)
+
+		if _, err := rs.Db.Exec(sqlStatement); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // alterStringToText alters column data type string(varchar(512)) to text which is varchar(max) in redshift

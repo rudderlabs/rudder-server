@@ -968,3 +968,19 @@ type FilterBy struct {
 	Key   string
 	Value interface{}
 }
+
+type ColumnInfoT struct {
+	Name  string
+	Value interface{}
+	Type  string
+}
+
+type ColumnsInto []ColumnInfoT
+
+func (c ColumnsInto) JoinColumns(format func(idx int, columnInfo ColumnInfoT) string, separator string) string {
+	output := make([]string, len(c))
+	for idx, columnInfo := range c {
+		output[idx] += format(idx, columnInfo)
+	}
+	return strings.Join(output, separator)
+}

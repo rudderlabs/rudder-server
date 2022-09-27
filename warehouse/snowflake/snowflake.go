@@ -177,9 +177,9 @@ func (sf *HandleT) schemaExists() (exists bool, err error) {
 	return
 }
 
-func (sf *HandleT) addColumn(tableName, columnName, columnType string) (err error) {
+func (sf *HandleT) addColumns(tableName string, columnsInfo warehouseutils.ColumnsInto) (err error) {
 	schemaIdentifier := sf.schemaIdentifier()
-	sqlStatement := fmt.Sprintf(`ALTER TABLE %s."%s" ADD COLUMN "%s" %s`, schemaIdentifier, tableName, columnName, dataTypesMap[columnType])
+	sqlStatement := addColumnsSQLStatement(schemaIdentifier, tableName, columnsInfo)
 	pkgLogger.Infof("SF: Adding column in snowflake for %s:%s : %v", sf.Warehouse.Namespace, sf.Warehouse.Destination.ID, sqlStatement)
 	_, err = sf.Db.Exec(sqlStatement)
 	return
@@ -632,15 +632,8 @@ func (sf *HandleT) DropTable(tableName string) (err error) {
 	return
 }
 
-func (sf *HandleT) AddColumn(tableName, columnName, columnType string) (err error) {
-	err = sf.addColumn(tableName, columnName, columnType)
-	schemaIdentifier := sf.schemaIdentifier()
-	if err != nil {
-		if checkAndIgnoreAlreadyExistError(err) {
-			pkgLogger.Infof("SF: Column %s already exists on %s.%s \nResponse: %v", columnName, schemaIdentifier, tableName, err)
-			err = nil
-		}
-	}
+func (sf *HandleT) AddColumns(tableName string, columnsInfo warehouseutils.ColumnsInto) (err error) {
+	err = sf.addColumns(tableName, columnsInfo)
 	return err
 }
 

@@ -171,7 +171,7 @@ func ColumnsWithDataTypes(columns map[string]string, prefix string) string {
 	return strings.Join(arr, ",")
 }
 
-func (bq *HandleT) IsEmpty(warehouse warehouseutils.WarehouseT) (empty bool, err error) {
+func (pg *HandleT) IsEmpty(warehouse warehouseutils.WarehouseT) (empty bool, err error) {
 	return
 }
 
@@ -387,7 +387,7 @@ func (pg *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 	}
 	sqlStatement = fmt.Sprintf(`DELETE FROM "%[1]s"."%[2]s" USING "%[1]s"."%[3]s" as  _source where (_source.%[4]s = "%[1]s"."%[2]s"."%[4]s" %[5]s)`, pg.Namespace, tableName, stagingTableName, primaryKey, additionalJoinClause)
 	pkgLogger.Infof("PG: Deduplicate records for table:%s using staging table: %s\n", tableName, sqlStatement)
-	_, err = handleExec(&QueryParams{txn: txn, query: sqlStatement, enableWithQueryPlan: enableSQLStatementExecutionPlan})
+	err = handleExec(&QueryParams{txn: txn, query: sqlStatement, enableWithQueryPlan: enableSQLStatementExecutionPlan})
 	if err != nil {
 		pkgLogger.Errorf("PG: Error deleting from original table for dedup: %v\n", err)
 		tags["stage"] = deleteDedup
@@ -402,7 +402,7 @@ func (pg *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 									) AS _ where _rudder_staging_row_number = 1
 									`, pg.Namespace, tableName, quotedColumnNames, stagingTableName, partitionKey)
 	pkgLogger.Infof("PG: Inserting records for table:%s using staging table: %s\n", tableName, sqlStatement)
-	_, err = handleExec(&QueryParams{txn: txn, query: sqlStatement, enableWithQueryPlan: enableSQLStatementExecutionPlan})
+	err = handleExec(&QueryParams{txn: txn, query: sqlStatement, enableWithQueryPlan: enableSQLStatementExecutionPlan})
 
 	if err != nil {
 		pkgLogger.Errorf("PG: Error inserting into original table: %v\n", err)
@@ -527,7 +527,7 @@ func (pg *HandleT) loadUserTables() (errorMap map[string]error) {
 		"destId":    pg.Warehouse.Destination.ID,
 		"tableName": warehouseutils.UsersTable,
 	}
-	_, err = handleExec(&QueryParams{txn: tx, query: sqlStatement, enableWithQueryPlan: enableSQLStatementExecutionPlan})
+	err = handleExec(&QueryParams{txn: tx, query: sqlStatement, enableWithQueryPlan: enableSQLStatementExecutionPlan})
 	if err != nil {
 		pkgLogger.Errorf("PG: Error deleting from original table for dedup: %v\n", err)
 		tags["stage"] = deleteDedup
@@ -538,7 +538,7 @@ func (pg *HandleT) loadUserTables() (errorMap map[string]error) {
 
 	sqlStatement = fmt.Sprintf(`INSERT INTO "%[1]s"."%[2]s" (%[4]s) SELECT %[4]s FROM  "%[1]s"."%[3]s"`, pg.Namespace, warehouseutils.UsersTable, stagingTableName, strings.Join(append([]string{"id"}, userColNames...), ","))
 	pkgLogger.Infof("PG: Inserting records for table:%s using staging table: %s\n", warehouseutils.UsersTable, sqlStatement)
-	_, err = handleExec(&QueryParams{txn: tx, query: sqlStatement, enableWithQueryPlan: enableSQLStatementExecutionPlan})
+	err = handleExec(&QueryParams{txn: tx, query: sqlStatement, enableWithQueryPlan: enableSQLStatementExecutionPlan})
 
 	if err != nil {
 		pkgLogger.Errorf("PG: Error inserting into users table from staging table: %v\n", err)
@@ -597,9 +597,9 @@ func (pg *HandleT) createTable(name string, columns map[string]string) (err erro
 	return
 }
 
-func (pg *HandleT) addColumn(tableName, columnName, columnType string) (err error) {
-	sqlStatement := fmt.Sprintf(`ALTER TABLE %s.%s ADD COLUMN IF NOT EXISTS %q %s`, pg.Namespace, tableName, columnName, rudderDataTypesMapToPostgres[columnType])
-	pkgLogger.Infof("PG: Adding column in postgres for PG:%s : %v", pg.Warehouse.Destination.ID, sqlStatement)
+func (pg *HandleT) addColumns(tableName string, columnsInfo warehouseutils.ColumnsInto) (err error) {
+	sqlStatement := addColumnsSQLStatement(pg.Namespace, tableName, columnsInfo)
+	pkgLogger.Infof("PG: Adding columns in postgres for PG:%s : %v", pg.Warehouse.Destination.ID, sqlStatement)
 	_, err = pg.Db.Exec(sqlStatement)
 	return
 }
@@ -616,14 +616,14 @@ func (pg *HandleT) CreateTable(tableName string, columnMap map[string]string) (e
 	return err
 }
 
-func (as *HandleT) DropTable(tableName string) (err error) {
+func (pg *HandleT) DropTable(tableName string) (err error) {
 	sqlStatement := `DROP TABLE "%[1]s"."%[2]s"`
-	pkgLogger.Infof("PG: Dropping table in postgres for PG:%s : %v", as.Warehouse.Destination.ID, sqlStatement)
-	_, err = as.Db.Exec(fmt.Sprintf(sqlStatement, as.Namespace, tableName))
+	pkgLogger.Infof("PG: Dropping table in postgres for PG:%s : %v", pg.Warehouse.Destination.ID, sqlStatement)
+	_, err = pg.Db.Exec(fmt.Sprintf(sqlStatement, pg.Namespace, tableName))
 	return
 }
 
-func (pg *HandleT) AddColumn(tableName, columnName, columnType string) (err error) {
+func (pg *HandleT) AddColumns(tableName string, columnsInfo warehouseutils.ColumnsInto) (err error) {
 	// set the schema in search path. so that we can query table with unqualified name which is just the table name rather than using schema.table in queries
 	sqlStatement := fmt.Sprintf(`SET search_path to %q`, pg.Namespace)
 	_, err = pg.Db.Exec(sqlStatement)
@@ -631,7 +631,7 @@ func (pg *HandleT) AddColumn(tableName, columnName, columnType string) (err erro
 		return err
 	}
 	pkgLogger.Infof("PG: Updated search_path to %s in postgres for PG:%s : %v", pg.Namespace, pg.Warehouse.Destination.ID, sqlStatement)
-	err = pg.addColumn(tableName, columnName, columnType)
+	err = pg.addColumns(tableName, columnsInfo)
 	return err
 }
 

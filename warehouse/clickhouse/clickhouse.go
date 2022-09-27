@@ -162,8 +162,8 @@ type clickHouseStatT struct {
 }
 
 // newClickHouseStat Creates a new clickHouseStatT instance
-func (proc *HandleT) newClickHouseStat(tableName string) *clickHouseStatT {
-	warehouse := proc.Warehouse
+func (ch *HandleT) newClickHouseStat(tableName string) *clickHouseStatT {
+	warehouse := ch.Warehouse
 
 	tags := map[string]string{
 		"destination": warehouse.Destination.ID,
@@ -174,13 +174,13 @@ func (proc *HandleT) newClickHouseStat(tableName string) *clickHouseStatT {
 		"tableName":   tableName,
 	}
 
-	numRowsLoadFile := proc.stats.NewTaggedStat("warehouse.clickhouse.numRowsLoadFile", stats.CountType, tags)
-	downloadLoadFilesTime := proc.stats.NewTaggedStat("warehouse.clickhouse.downloadLoadFilesTime", stats.TimerType, tags)
-	syncLoadFileTime := proc.stats.NewTaggedStat("warehouse.clickhouse.syncLoadFileTime", stats.TimerType, tags)
-	commitTime := proc.stats.NewTaggedStat("warehouse.clickhouse.commitTime", stats.TimerType, tags)
-	failRetries := proc.stats.NewTaggedStat("warehouse.clickhouse.failedRetries", stats.CountType, tags)
-	execTimeouts := proc.stats.NewTaggedStat("warehouse.clickhouse.execTimeouts", stats.CountType, tags)
-	commitTimeouts := proc.stats.NewTaggedStat("warehouse.clickhouse.commitTimeouts", stats.CountType, tags)
+	numRowsLoadFile := ch.stats.NewTaggedStat("warehouse.clickhouse.numRowsLoadFile", stats.CountType, tags)
+	downloadLoadFilesTime := ch.stats.NewTaggedStat("warehouse.clickhouse.downloadLoadFilesTime", stats.TimerType, tags)
+	syncLoadFileTime := ch.stats.NewTaggedStat("warehouse.clickhouse.syncLoadFileTime", stats.TimerType, tags)
+	commitTime := ch.stats.NewTaggedStat("warehouse.clickhouse.commitTime", stats.TimerType, tags)
+	failRetries := ch.stats.NewTaggedStat("warehouse.clickhouse.failedRetries", stats.CountType, tags)
+	execTimeouts := ch.stats.NewTaggedStat("warehouse.clickhouse.execTimeouts", stats.CountType, tags)
+	commitTimeouts := ch.stats.NewTaggedStat("warehouse.clickhouse.commitTimeouts", stats.CountType, tags)
 
 	return &clickHouseStatT{
 		numRowsLoadFile:       numRowsLoadFile,
@@ -841,14 +841,13 @@ func (ch *HandleT) DropTable(tableName string) (err error) {
 	return
 }
 
-// AddColumn adds column:columnName with dataType columnType to the tableName
-func (ch *HandleT) AddColumn(tableName, columnName, columnType string) (err error) {
+func (ch *HandleT) AddColumns(tableName string, columnsInfo warehouseutils.ColumnsInto) (err error) {
 	cluster := warehouseutils.GetConfigValue(Cluster, ch.Warehouse)
 	clusterClause := ""
 	if len(strings.TrimSpace(cluster)) > 0 {
 		clusterClause = fmt.Sprintf(`ON CLUSTER %q`, cluster)
 	}
-	sqlStatement := fmt.Sprintf(`ALTER TABLE %q.%q %s ADD COLUMN IF NOT EXISTS %q %s`, ch.Namespace, tableName, clusterClause, columnName, getClickHouseColumnTypeForSpecificTable(tableName, columnName, rudderDataTypesMapToClickHouse[columnType], false))
+	sqlStatement := addColumnsSQLStatement(ch.Namespace, tableName, clusterClause, columnsInfo)
 	pkgLogger.Infof("CH: Adding column in clickhouse for ch:%s : %v", ch.Warehouse.Destination.ID, sqlStatement)
 	_, err = ch.Db.Exec(sqlStatement)
 	return

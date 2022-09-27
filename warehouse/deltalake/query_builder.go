@@ -32,7 +32,6 @@ func stagingSqlStatement(namespace, tableName, stagingTableName string, columnKe
 	return
 }
 
-// mergeableLTSQLStatement merge load table sql statement
 func mergeableLTSQLStatement(namespace, tableName, stagingTableName string, columnKeys []string, partitionQuery string) (sqlStatement string) {
 	pk := primaryKey(tableName)
 	if partitionQuery != "" {
@@ -56,7 +55,6 @@ func mergeableLTSQLStatement(namespace, tableName, stagingTableName string, colu
 	return
 }
 
-// appendableLTSQLStatement append load table sql statement
 func appendableLTSQLStatement(namespace, tableName, stagingTableName string, columnKeys []string) (sqlStatement string) {
 	stagingTableSqlStatement := stagingSqlStatement(namespace, tableName, stagingTableName, columnKeys)
 	sqlStatement = fmt.Sprintf(`INSERT INTO %[1]s.%[2]s (%[4]s) SELECT %[4]s FROM ( %[5]s );`,
@@ -67,4 +65,19 @@ func appendableLTSQLStatement(namespace, tableName, stagingTableName string, col
 		stagingTableSqlStatement,
 	)
 	return
+}
+
+func addColumnsSQLStatement(namespace, tableName string, columnsInfo warehouseutils.ColumnsInto) string {
+	format := func(idx int, columnInfo warehouseutils.ColumnInfoT) string {
+		return fmt.Sprintf(`%s %s`, columnInfo.Name, getDeltaLakeDataType(columnInfo.Type))
+	}
+	sqlStatement := fmt.Sprintf(`
+		ALTER TABLE
+		%s.%s
+		ADD COLUMNS ( %s );`,
+		namespace,
+		tableName,
+		columnsInfo.JoinColumns(format, ","),
+	)
+	return sqlStatement
 }
