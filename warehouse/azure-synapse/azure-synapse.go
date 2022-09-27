@@ -660,8 +660,10 @@ func (as *HandleT) DropTable(tableName string) (err error) {
 }
 
 func (as *HandleT) AddColumns(tableName string, columnsInfo warehouseutils.ColumnsInto) (err error) {
-	err = as.addColumns(tableName, columnsInfo)
-	return err
+	sqlStatement := addColumnsSQLStatement(as.Namespace, tableName, columnsInfo)
+	pkgLogger.Infof("AZ: Adding column in synapse for AZ:%s : %v", as.Warehouse.Destination.ID, sqlStatement)
+	_, err = as.Db.Exec(sqlStatement)
+	return
 }
 
 func (as *HandleT) AlterColumn(tableName, columnName, columnType string) (err error) {

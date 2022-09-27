@@ -177,14 +177,6 @@ func (sf *HandleT) schemaExists() (exists bool, err error) {
 	return
 }
 
-func (sf *HandleT) addColumns(tableName string, columnsInfo warehouseutils.ColumnsInto) (err error) {
-	schemaIdentifier := sf.schemaIdentifier()
-	sqlStatement := addColumnsSQLStatement(schemaIdentifier, tableName, columnsInfo)
-	pkgLogger.Infof("SF: Adding column in snowflake for %s:%s : %v", sf.Warehouse.Namespace, sf.Warehouse.Destination.ID, sqlStatement)
-	_, err = sf.Db.Exec(sqlStatement)
-	return
-}
-
 func (sf *HandleT) createSchema() (err error) {
 	schemaIdentifier := sf.schemaIdentifier()
 	sqlStatement := fmt.Sprintf(`CREATE SCHEMA IF NOT EXISTS %s`, schemaIdentifier)
@@ -633,8 +625,11 @@ func (sf *HandleT) DropTable(tableName string) (err error) {
 }
 
 func (sf *HandleT) AddColumns(tableName string, columnsInfo warehouseutils.ColumnsInto) (err error) {
-	err = sf.addColumns(tableName, columnsInfo)
-	return err
+	schemaIdentifier := sf.schemaIdentifier()
+	sqlStatement := addColumnsSQLStatement(schemaIdentifier, tableName, columnsInfo)
+	pkgLogger.Infof("SF: Adding columns in snowflake for %s:%s : %v", sf.Warehouse.Namespace, sf.Warehouse.Destination.ID, sqlStatement)
+	_, err = sf.Db.Exec(sqlStatement)
+	return
 }
 
 func (sf *HandleT) AlterColumn(_, _, _ string) (err error) {

@@ -637,13 +637,6 @@ func (ms *HandleT) createTable(name string, columns map[string]string) (err erro
 	return
 }
 
-func (ms *HandleT) addColumns(tableName string, columnsInfo warehouseutils.ColumnsInto) (err error) {
-	sqlStatement := addColumnsSQLStatement(ms.Namespace, tableName, columnsInfo)
-	pkgLogger.Infof("MS: Adding column in mssql for MS:%s : %v", ms.Warehouse.Destination.ID, sqlStatement)
-	_, err = ms.Db.Exec(sqlStatement)
-	return
-}
-
 func (ms *HandleT) CreateTable(tableName string, columnMap map[string]string) (err error) {
 	// Search paths doesnt exist unlike Postgres, default is dbo. Hence use namespace wherever possible
 	err = ms.createTable(ms.Namespace+"."+tableName, columnMap)
@@ -658,8 +651,10 @@ func (ms *HandleT) DropTable(tableName string) (err error) {
 }
 
 func (ms *HandleT) AddColumns(tableName string, columnsInfo warehouseutils.ColumnsInto) (err error) {
-	err = ms.addColumns(tableName, columnsInfo)
-	return err
+	sqlStatement := addColumnsSQLStatement(ms.Namespace, tableName, columnsInfo)
+	pkgLogger.Infof("MS: Adding column in mssql for MS:%s : %v", ms.Warehouse.Destination.ID, sqlStatement)
+	_, err = ms.Db.Exec(sqlStatement)
+	return
 }
 
 func (ms *HandleT) AlterColumn(tableName, columnName, columnType string) (err error) {

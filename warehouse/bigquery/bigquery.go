@@ -172,7 +172,7 @@ func (bq *HandleT) addColumns(tableName string, columnsInfo warehouseutils.Colum
 		return err
 	}
 
-	newSchema := append(meta.Schema)
+	newSchema := meta.Schema
 	for _, columnInfo := range columnsInfo {
 		newSchema = append(newSchema,
 			&bigquery.FieldSchema{Name: columnInfo.Name, Type: dataTypesMap[columnInfo.Type]},
@@ -806,8 +806,25 @@ func (bq *HandleT) LoadTable(tableName string) error {
 }
 
 func (bq *HandleT) AddColumns(tableName string, columnsInfo warehouseutils.ColumnsInto) (err error) {
-	err = bq.addColumns(tableName, columnsInfo)
-	return err
+	pkgLogger.Infof("BQ: Adding columns in table %s in bigquery dataset: %s in project: %s", tableName, bq.Namespace, bq.ProjectID)
+	tableRef := bq.Db.Dataset(bq.Namespace).Table(tableName)
+	meta, err := tableRef.Metadata(bq.BQContext)
+	if err != nil {
+		return
+	}
+
+	newSchema := meta.Schema
+	for _, columnInfo := range columnsInfo {
+		newSchema = append(newSchema,
+			&bigquery.FieldSchema{Name: columnInfo.Name, Type: dataTypesMap[columnInfo.Type]},
+		)
+	}
+
+	update := bigquery.TableMetadataToUpdate{
+		Schema: newSchema,
+	}
+	_, err = tableRef.Update(bq.BQContext, update, meta.ETag)
+	return
 }
 
 func (bq *HandleT) AlterColumn(tableName, columnName, columnType string) (err error) {

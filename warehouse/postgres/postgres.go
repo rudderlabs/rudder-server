@@ -597,13 +597,6 @@ func (pg *HandleT) createTable(name string, columns map[string]string) (err erro
 	return
 }
 
-func (pg *HandleT) addColumns(tableName string, columnsInfo warehouseutils.ColumnsInto) (err error) {
-	sqlStatement := addColumnsSQLStatement(pg.Namespace, tableName, columnsInfo)
-	pkgLogger.Infof("PG: Adding columns in postgres for PG:%s : %v", pg.Warehouse.Destination.ID, sqlStatement)
-	_, err = pg.Db.Exec(sqlStatement)
-	return
-}
-
 func (pg *HandleT) CreateTable(tableName string, columnMap map[string]string) (err error) {
 	// set the schema in search path. so that we can query table with unqualified name which is just the table name rather than using schema.table in queries
 	sqlStatement := fmt.Sprintf(`SET search_path to %q`, pg.Namespace)
@@ -626,13 +619,15 @@ func (pg *HandleT) DropTable(tableName string) (err error) {
 func (pg *HandleT) AddColumns(tableName string, columnsInfo warehouseutils.ColumnsInto) (err error) {
 	// set the schema in search path. so that we can query table with unqualified name which is just the table name rather than using schema.table in queries
 	sqlStatement := fmt.Sprintf(`SET search_path to %q`, pg.Namespace)
-	_, err = pg.Db.Exec(sqlStatement)
-	if err != nil {
-		return err
+	if _, err = pg.Db.Exec(sqlStatement); err != nil {
+		return
 	}
 	pkgLogger.Infof("PG: Updated search_path to %s in postgres for PG:%s : %v", pg.Namespace, pg.Warehouse.Destination.ID, sqlStatement)
-	err = pg.addColumns(tableName, columnsInfo)
-	return err
+
+	sqlStatement = addColumnsSQLStatement(pg.Namespace, tableName, columnsInfo)
+	pkgLogger.Infof("PG: Adding columns in postgres for PG:%s : %v", pg.Warehouse.Destination.ID, sqlStatement)
+	_, err = pg.Db.Exec(sqlStatement)
+	return
 }
 
 func (*HandleT) AlterColumn(_, _, _ string) (err error) {
