@@ -73,15 +73,13 @@ func randomString() string {
 	return strings.ReplaceAll(uuid.Must(uuid.NewV4()).String(), "-", "")
 }
 
-func BenchmarkReproduce(b *testing.B) {
+func TestReproducePanic(t *testing.T) {
 	// SETUP
 	initBatchRouter()
 	stats.Setup()
 	whutils.WarehouseDestinations = []string{whutils.POSTGRES}
 	readPerDestination = false
 	warehouseServiceMaxRetryTime = 0
-	start := time.Now()
-	defer func() { b.Logf("Benchmark took %v", time.Since(start)) }()
 
 	// CREATION OF JOBS
 	var jobs []*jobsdb.JobT
@@ -96,7 +94,7 @@ func BenchmarkReproduce(b *testing.B) {
 		noOfWorkers    = 1000
 		noOfIterations = 100000
 		wg             sync.WaitGroup
-		ctrl           = gomock.NewController(b)
+		ctrl           = gomock.NewController(t)
 		processQ       = make(chan *BatchDestinationDataT, 100)
 	)
 
