@@ -568,37 +568,6 @@ func TailTruncateStr(str string, count int) string {
 	return str
 }
 
-func SortedMapKeys(input interface{}) []string {
-	inValue := reflect.ValueOf(input)
-	mapKeys := inValue.MapKeys()
-	keys := make([]string, 0, len(mapKeys))
-	for _, key := range mapKeys {
-		keys = append(keys, key.String())
-	}
-	sort.Strings(keys)
-	return keys
-}
-
-func SortedStructSliceValues(input interface{}, _ string) []string {
-	items := reflect.ValueOf(input)
-	var keys []string
-	if items.Kind() == reflect.Slice {
-		for i := 0; i < items.Len(); i++ {
-			item := items.Index(i)
-			if item.Kind() == reflect.Struct {
-				v := reflect.Indirect(item)
-				for j := 0; j < v.NumField(); j++ {
-					if v.Type().Field(j).Name == "Name" {
-						keys = append(keys, v.Field(j).String())
-					}
-				}
-			}
-		}
-	}
-	sort.Strings(keys)
-	return keys
-}
-
 func ReplaceMultiRegex(str string, expList map[string]string) (string, error) {
 	replacedStr := str
 	for regex, substitute := range expList {
