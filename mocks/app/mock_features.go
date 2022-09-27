@@ -36,10 +36,10 @@ func (m *MockSuppressUserFeature) EXPECT() *MockSuppressUserFeatureMockRecorder 
 }
 
 // Setup mocks base method.
-func (m *MockSuppressUserFeature) Setup(arg0 backendconfig.BackendConfig) (types.SuppressUserI, error) {
+func (m *MockSuppressUserFeature) Setup(arg0 backendconfig.BackendConfig) (types.UserSuppression, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "Setup", arg0)
-	ret0, _ := ret[0].(types.SuppressUserI)
+	ret0, _ := ret[0].(types.UserSuppression)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }

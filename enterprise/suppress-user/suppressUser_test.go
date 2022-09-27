@@ -117,7 +117,7 @@ var _ = Describe("SuppressUser Test", func() {
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
 			testSuppressUser.setup(ctx)
-			Eventually(func() bool { return testSuppressUser.IsSuppressedUser("user-1", "src-1", "") }).Should(BeTrue())
+			Eventually(func() bool { return testSuppressUser.IsSuppressedUser("user-1", "src-1") }).Should(BeTrue())
 		})
 
 		It("user suppression cancelled after adding first", func() {
@@ -151,8 +151,8 @@ var _ = Describe("SuppressUser Test", func() {
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
 			testSuppressUser.setup(ctx)
-			Eventually(func() bool { return testSuppressUser.IsSuppressedUser("user-2", "src-1", "") }).Should(BeTrue())
-			Eventually(func() bool { return testSuppressUser.IsSuppressedUser("user-1", "src-1", "") }).Should(BeFalse())
+			Eventually(func() bool { return testSuppressUser.IsSuppressedUser("user-2", "src-1") }).Should(BeTrue())
+			Eventually(func() bool { return testSuppressUser.IsSuppressedUser("user-1", "src-1") }).Should(BeFalse())
 		})
 
 		It("user suppression rule added for all the sources", func() {
@@ -189,9 +189,9 @@ var _ = Describe("SuppressUser Test", func() {
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
 			testSuppressUser.setup(ctx)
-			Eventually(func() bool { return testSuppressUser.IsSuppressedUser("user-1", "src-1", "") }).Should(BeTrue())
-			Eventually(func() bool { return testSuppressUser.IsSuppressedUser("user-2", "src-2", "") }).Should(BeTrue())
-			Eventually(func() bool { return testSuppressUser.IsSuppressedUser("user-2", "src-1", "") }).Should(BeFalse())
+			Eventually(func() bool { return testSuppressUser.IsSuppressedUser("user-1", "src-1") }).Should(BeTrue())
+			Eventually(func() bool { return testSuppressUser.IsSuppressedUser("user-2", "src-2") }).Should(BeTrue())
+			Eventually(func() bool { return testSuppressUser.IsSuppressedUser("user-2", "src-1") }).Should(BeFalse())
 		})
 
 		It("user suppression rule added for all the sources and then cancelled", func() {
@@ -236,11 +236,11 @@ var _ = Describe("SuppressUser Test", func() {
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
 			testSuppressUser.setup(ctx)
-			Eventually(func() bool { return testSuppressUser.IsSuppressedUser("user-1", "src-1", "") }).Should(BeTrue())
-			Eventually(func() bool { return testSuppressUser.IsSuppressedUser("user-2", "src-2", "") }).Should(BeTrue())
-			Eventually(func() bool { return testSuppressUser.IsSuppressedUser("user-2", "src-1", "") }).Should(BeFalse())
+			Eventually(func() bool { return testSuppressUser.IsSuppressedUser("user-1", "src-1") }).Should(BeTrue())
+			Eventually(func() bool { return testSuppressUser.IsSuppressedUser("user-2", "src-2") }).Should(BeTrue())
+			Eventually(func() bool { return testSuppressUser.IsSuppressedUser("user-2", "src-1") }).Should(BeFalse())
 			close(firstCheck)
-			Eventually(func() bool { return testSuppressUser.IsSuppressedUser("user-1", "src-1", "") }).Should(BeFalse())
+			Eventually(func() bool { return testSuppressUser.IsSuppressedUser("user-1", "src-1") }).Should(BeFalse())
 		})
 	})
 })
@@ -285,10 +285,10 @@ func TestSuppressRegulationHandler_IsSuppressedUser(t *testing.T) {
 		userSpecificSuppressedSourceMap: suppressUserMap,
 	}
 
-	require.True(t, s.IsSuppressedUser("user1", "src1", ""))
-	require.True(t, s.IsSuppressedUser("user1", "randomNewSrc", ""))
-	require.True(t, s.IsSuppressedUser("user2", "src1", ""))
-	require.True(t, s.IsSuppressedUser("user2", "src2", ""))
-	require.False(t, s.IsSuppressedUser("user2", "src3", ""))
-	require.False(t, s.IsSuppressedUser("user2", "randomNewSrc", ""))
+	require.True(t, s.IsSuppressedUser("user1", "src1"))
+	require.True(t, s.IsSuppressedUser("user1", "randomNewSrc"))
+	require.True(t, s.IsSuppressedUser("user2", "src1"))
+	require.True(t, s.IsSuppressedUser("user2", "src2"))
+	require.False(t, s.IsSuppressedUser("user2", "src3"))
+	require.False(t, s.IsSuppressedUser("user2", "randomNewSrc"))
 }

@@ -1,4 +1,4 @@
-//go:generate mockgen -destination=../../mocks/utils/types/mock_types.go -package mock_types github.com/rudderlabs/rudder-server/utils/types SuppressUserI,ReportingI
+//go:generate mockgen -destination=../../mocks/utils/types/mock_types.go -package mock_types github.com/rudderlabs/rudder-server/utils/types UserSuppression,ReportingI
 
 package types
 
@@ -22,9 +22,9 @@ type GatewayBatchRequestT struct {
 	Batch []SingularEventT `json:"batch"`
 }
 
-// SuppressUserI is interface to access Suppress user feature
-type SuppressUserI interface {
-	IsSuppressedUser(userID, sourceID, writeKey string) bool
+// UserSuppression is interface to access Suppress user feature
+type UserSuppression interface {
+	IsSuppressedUser(userID, sourceID string) bool
 }
 
 // EventSchemasI is interface to access EventSchemas feature
