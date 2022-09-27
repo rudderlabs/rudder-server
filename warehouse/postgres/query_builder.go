@@ -72,7 +72,7 @@ func handleExec(e *QueryParams) (err error) {
 func addColumnsSQLStatement(namespace, tableName string, columnsInfo warehouseutils.ColumnsInto) string {
 	format := func(_ int, columnInfo warehouseutils.ColumnInfoT) string {
 		return fmt.Sprintf(`
-		ADD COLUMN IF NOT EXISTS %s %s`,
+		ADD COLUMN IF NOT EXISTS %q %s`,
 			columnInfo.Name,
 			rudderDataTypesMapToPostgres[columnInfo.Type],
 		)

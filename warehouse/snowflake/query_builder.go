@@ -9,14 +9,14 @@ import (
 func addColumnsSQLStatement(namespace, tableName string, columnsInfo warehouseutils.ColumnsInto) string {
 	format := func(_ int, columnInfo warehouseutils.ColumnInfoT) string {
 		return fmt.Sprintf(`
-		"%s" %s`,
+		%q %s`,
 			columnInfo.Name,
 			dataTypesMap[columnInfo.Type],
 		)
 	}
 	return fmt.Sprintf(`
 		ALTER TABLE
-		%s."%s"
+		%s.%q
 		ADD COLUMN %s;`,
 		namespace,
 		tableName,
