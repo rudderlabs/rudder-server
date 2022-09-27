@@ -1,3 +1,5 @@
+//go:build warehouse_integration
+
 package bigquery_test
 
 import (
@@ -48,7 +50,6 @@ func (*TestHandle) VerifyConnection() error {
 }
 
 func TestBigQueryIntegration(t *testing.T) {
-	t.SkipNow()
 	t.Cleanup(func() {
 		require.NoError(t, testhelper.WithConstantBackoff(func() (err error) {
 			return handle.DB.Dataset(handle.Schema).DeleteWithContents(context.TODO())
