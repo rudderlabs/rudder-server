@@ -5,10 +5,10 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/rudderlabs/rudder-server/config/backend-config"
+	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/warehouse/manager"
-	"github.com/rudderlabs/rudder-server/warehouse/utils"
+	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
 type validationFunc struct {
@@ -100,27 +100,27 @@ func (job *CTUploadJob) GetLocalSchema() warehouseutils.SchemaT {
 	return warehouseutils.SchemaT{}
 }
 
-func (job *CTUploadJob) UpdateLocalSchema(schema warehouseutils.SchemaT) error {
+func (job *CTUploadJob) UpdateLocalSchema(_ warehouseutils.SchemaT) error {
 	return nil
 }
 
-func (job *CTUploadJob) GetTableSchemaInWarehouse(tableName string) warehouseutils.TableSchemaT {
+func (job *CTUploadJob) GetTableSchemaInWarehouse(_ string) warehouseutils.TableSchemaT {
 	return warehouseutils.TableSchemaT{}
 }
 
-func (job *CTUploadJob) GetTableSchemaInUpload(tableName string) warehouseutils.TableSchemaT {
+func (job *CTUploadJob) GetTableSchemaInUpload(_ string) warehouseutils.TableSchemaT {
 	return warehouseutils.TableSchemaT{}
 }
 
-func (job *CTUploadJob) GetLoadFilesMetadata(options warehouseutils.GetLoadFilesOptionsT) []warehouseutils.LoadFileT {
+func (job *CTUploadJob) GetLoadFilesMetadata(_ warehouseutils.GetLoadFilesOptionsT) []warehouseutils.LoadFileT {
 	return []warehouseutils.LoadFileT{}
 }
 
-func (job *CTUploadJob) GetSampleLoadFileLocation(tableName string) (string, error) {
+func (job *CTUploadJob) GetSampleLoadFileLocation(_ string) (string, error) {
 	return "", nil
 }
 
-func (job *CTUploadJob) GetSingleLoadFile(tableName string) (warehouseutils.LoadFileT, error) {
+func (job *CTUploadJob) GetSingleLoadFile(_ string) (warehouseutils.LoadFileT, error) {
 	return warehouseutils.LoadFileT{}, nil
 }
 

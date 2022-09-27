@@ -153,7 +153,7 @@ func (handle *HandleT) AddClient(ctx context.Context, c types.Config) {
 	handle.mainLoop(ctx, c.ClientName)
 }
 
-func (handle *HandleT) WaitForSetup(ctx context.Context, clientName string) {
+func (handle *HandleT) WaitForSetup(_ context.Context, clientName string) {
 	for {
 		if handle.GetClient(clientName) == nil {
 			time.Sleep(time.Second)

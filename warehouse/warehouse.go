@@ -538,7 +538,7 @@ func setLastProcessedMarker(warehouse warehouseutils.WarehouseT, lastProcessedTi
 	lastProcessedMarkerMap[warehouse.Identifier] = lastProcessedTime.Unix()
 }
 
-func (wh *HandleT) createUploadJobsFromStagingFiles(warehouse warehouseutils.WarehouseT, whManager manager.ManagerI, stagingFilesList []*StagingFileT, priority int, uploadStartAfter time.Time) {
+func (wh *HandleT) createUploadJobsFromStagingFiles(warehouse warehouseutils.WarehouseT, _ manager.ManagerI, stagingFilesList []*StagingFileT, priority int, uploadStartAfter time.Time) {
 	// count := 0
 	// Process staging files in batches of stagingFilesBatchSize
 	// Eg. If there are 1000 pending staging files and stagingFilesBatchSize is 100,
@@ -1620,7 +1620,7 @@ func TriggerUploadHandler(sourceID, destID string) error {
 	return nil
 }
 
-func databricksVersionHandler(w http.ResponseWriter, r *http.Request) {
+func databricksVersionHandler(w http.ResponseWriter, _ *http.Request) {
 	w.WriteHeader(http.StatusOK)
 	w.Write([]byte(deltalake.GetDatabricksVersion()))
 }
@@ -1645,7 +1645,7 @@ func clearTriggeredUpload(wh warehouseutils.WarehouseT) {
 	triggerUploadsMapLock.Unlock()
 }
 
-func healthHandler(w http.ResponseWriter, r *http.Request) {
+func healthHandler(w http.ResponseWriter, _ *http.Request) {
 	dbService := ""
 	pgNotifierService := ""
 	if runningMode != DegradedMode {

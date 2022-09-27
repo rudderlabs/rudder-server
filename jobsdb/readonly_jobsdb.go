@@ -140,7 +140,7 @@ Count queries
 HavePendingJobs returns the true if there are pending events, else false. Pending events are
 those whose jobs don't have a state or whose jobs status is neither succeeded nor aborted
 */
-func (jd *ReadonlyHandleT) HavePendingJobs(ctx context.Context, customValFilters []string, count int, parameterFilters []ParameterFilterT) (bool, error) {
+func (jd *ReadonlyHandleT) HavePendingJobs(ctx context.Context, customValFilters []string, _ int, parameterFilters []ParameterFilterT) (bool, error) {
 	haveUnprocessed, err := jd.haveUnprocessedJobs(ctx, customValFilters, parameterFilters)
 	if haveUnprocessed || err != nil {
 		return true, err
@@ -596,7 +596,7 @@ func (jd *ReadonlyHandleT) GetLatestFailedJobs(arg, prefix string) (string, erro
 	return string(response), nil
 }
 
-func (jd *ReadonlyHandleT) GetJobByID(job_id, prefix string) (string, error) {
+func (jd *ReadonlyHandleT) GetJobByID(job_id, _ string) (string, error) {
 	dsListTotal := jd.getDSList()
 	var response []byte
 	for _, dsPair := range dsListTotal {

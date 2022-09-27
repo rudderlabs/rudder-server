@@ -579,7 +579,7 @@ func SortedMapKeys(input interface{}) []string {
 	return keys
 }
 
-func SortedStructSliceValues(input interface{}, filedName string) []string {
+func SortedStructSliceValues(input interface{}, _ string) []string {
 	items := reflect.ValueOf(input)
 	var keys []string
 	if items.Kind() == reflect.Slice {
@@ -791,7 +791,7 @@ func (w GZipWriter) Write(b []byte) (count int, err error) {
 	return
 }
 
-func (w GZipWriter) WriteRow(row []interface{}) error {
+func (w GZipWriter) WriteRow(_ []interface{}) error {
 	return errors.New("not implemented")
 }
 
