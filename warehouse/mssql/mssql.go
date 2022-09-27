@@ -482,7 +482,7 @@ func str2ucs2(s string) []byte {
 
 func hasDiacritics(str string) bool {
 	for _, x := range str {
-		if utf8.RuneLen(rune(x)) > 1 {
+		if utf8.RuneLen(x) > 1 {
 			return true
 		}
 	}
