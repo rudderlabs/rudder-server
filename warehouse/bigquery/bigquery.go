@@ -164,7 +164,7 @@ func (bq *HandleT) createTableView(tableName string, columnMap map[string]string
 	return
 }
 
-func (bq *HandleT) addColumnS(tableName string, columnsInfo warehouseutils.ColumnsInto) (err error) {
+func (bq *HandleT) addColumns(tableName string, columnsInfo warehouseutils.ColumnsInto) (err error) {
 	pkgLogger.Infof("BQ: Adding columns in table %s in bigquery dataset: %s in project: %s", tableName, bq.Namespace, bq.ProjectID)
 	tableRef := bq.Db.Dataset(bq.Namespace).Table(tableName)
 	meta, err := tableRef.Metadata(bq.BQContext)
@@ -806,7 +806,7 @@ func (bq *HandleT) LoadTable(tableName string) error {
 }
 
 func (bq *HandleT) AddColumns(tableName string, columnsInfo warehouseutils.ColumnsInto) (err error) {
-	err = bq.addColumnS(tableName, columnsInfo)
+	err = bq.addColumns(tableName, columnsInfo)
 	return err
 }
 
