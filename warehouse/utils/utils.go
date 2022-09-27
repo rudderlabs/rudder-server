@@ -186,9 +186,9 @@ type WarehouseT struct {
 }
 
 type DeleteByMetaData struct {
-	JobRunId  string
-	TaskRunId string
-	StartTime string
+	JobRunId  string `json:"job_run_id"`
+	TaskRunId string `json:"task_run_id"`
+	StartTime string `json:"start_time"`
 }
 
 type DeleteByParams struct {

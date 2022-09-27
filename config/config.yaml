@@ -154,6 +154,7 @@ Warehouse:
   redshift:
     maxParallelLoads: 3
     setVarCharMax: false
+    enableDeleteByJobs: true
   snowflake:
     maxParallelLoads: 3
   bigquery:
