@@ -32,7 +32,6 @@ import (
 	"github.com/rudderlabs/rudder-server/processor/stash"
 	"github.com/rudderlabs/rudder-server/services/archiver"
 	"github.com/rudderlabs/rudder-server/services/multitenant"
-	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 )
 
@@ -148,7 +147,6 @@ func TestProcessorManager(t *testing.T) {
 	temp := isUnLocked
 	defer func() { isUnLocked = temp }()
 	initJobsDB()
-	stats.Setup()
 	mockCtrl := gomock.NewController(t)
 	mockBackendConfig := mocksBackendConfig.NewMockBackendConfig(mockCtrl)
 	mockTransformer := mocksTransformer.NewMockTransformer(mockCtrl)
