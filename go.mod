@@ -60,10 +60,10 @@ require (
 	go.etcd.io/etcd/client/v3 v3.5.2
 	go.uber.org/automaxprocs v1.4.0
 	go.uber.org/zap v1.23.0
-	golang.org/x/net v0.0.0-20220809184613-07c6da5e1ced
-	golang.org/x/oauth2 v0.0.0-20220808172628-8227340efae7
+	golang.org/x/net v0.0.0-20220909164309-bea034e7d591
+	golang.org/x/oauth2 v0.0.0-20220822191816-0ebed06d0094
 	golang.org/x/sync v0.0.0-20220601150217-0de741cfad7f
-	google.golang.org/api v0.91.0
+	google.golang.org/api v0.97.0
 	google.golang.org/grpc v1.48.0
 	google.golang.org/protobuf v1.28.1
 	gopkg.in/alexcesaro/statsd.v2 v2.0.0
