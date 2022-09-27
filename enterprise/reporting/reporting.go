@@ -224,7 +224,7 @@ func (handle *HandleT) getReports(current_ms int64, clientName string) (reports 
 	return metricReports, queryMin.Int64
 }
 
-func (handle *HandleT) getAggregatedReports(reports []*types.ReportByStatus) []*types.Metric {
+func (*HandleT) getAggregatedReports(reports []*types.ReportByStatus) []*types.Metric {
 	metricsByGroup := map[string]*types.Metric{}
 
 	reportIdentifier := func(report *types.ReportByStatus) string {

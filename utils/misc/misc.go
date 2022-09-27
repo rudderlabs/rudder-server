@@ -791,7 +791,7 @@ func (w GZipWriter) Write(b []byte) (count int, err error) {
 	return
 }
 
-func (w GZipWriter) WriteRow(row []interface{}) error {
+func (GZipWriter) WriteRow(row []interface{}) error {
 	return errors.New("not implemented")
 }
 

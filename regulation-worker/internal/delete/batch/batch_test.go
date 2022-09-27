@@ -147,7 +147,7 @@ func TestBatchDelete(t *testing.T) {
 type mockFileManagerFactory struct{}
 
 // creates a tmp directory & copy all the content of testData in it, to use it as mockBucket & store it in mockFileManager struct.
-func (ff mockFileManagerFactory) New(settings *filemanager.SettingsT) (filemanager.FileManager, error) {
+func (mockFileManagerFactory) New(settings *filemanager.SettingsT) (filemanager.FileManager, error) {
 	// create tmp directory
 	// parent directory of all the temporary files created/downloaded in the process of deletion.
 	tmpDirPath, err := os.MkdirTemp("", "")
@@ -172,7 +172,7 @@ type mockFileManager struct {
 	listCalled         bool
 }
 
-func (fm *mockFileManager) SetTimeout(_ time.Duration) {}
+func (*mockFileManager) SetTimeout(_ time.Duration) {}
 
 // Given a file pointer with cleaned file content upload to the appropriate destination, with the same name as the original.
 func (fm *mockFileManager) Upload(ctx context.Context, file *os.File, prefixes ...string) (filemanager.UploadOutput, error) {
@@ -251,14 +251,14 @@ func (fm *mockFileManager) ListFilesWithPrefix(ctx context.Context, startAfter, 
 	return fileObjects, nil
 }
 
-func (fm *mockFileManager) GetObjectNameFromLocation(string) (string, error) {
+func (*mockFileManager) GetObjectNameFromLocation(string) (string, error) {
 	return "", nil
 }
 
-func (fm *mockFileManager) GetDownloadKeyFromFileLocation(location string) string {
+func (*mockFileManager) GetDownloadKeyFromFileLocation(location string) string {
 	return ""
 }
 
-func (fm *mockFileManager) GetConfiguredPrefix() string {
+func (*mockFileManager) GetConfiguredPrefix() string {
 	return ""
 }

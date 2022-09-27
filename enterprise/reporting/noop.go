@@ -10,15 +10,15 @@ import (
 // NOOP reporting implementation that does nothing
 type NOOP struct{}
 
-func (n *NOOP) Report(metrics []*types.PUReportedMetric, txn *sql.Tx) {
+func (*NOOP) Report(metrics []*types.PUReportedMetric, txn *sql.Tx) {
 }
 
-func (n *NOOP) WaitForSetup(ctx context.Context, clientName string) {
+func (*NOOP) WaitForSetup(ctx context.Context, clientName string) {
 }
 
-func (n *NOOP) AddClient(ctx context.Context, c types.Config) {
+func (*NOOP) AddClient(ctx context.Context, c types.Config) {
 }
 
-func (n *NOOP) GetClient(clientName string) *types.Client {
+func (*NOOP) GetClient(clientName string) *types.Client {
 	return nil
 }
