@@ -27,8 +27,8 @@ var _ = Describe("Postgres QueryBuilder", func() {
 			`
 		ALTER TABLE
 		testNamespace.testTableName
-		ADD COLUMN IF NOT EXISTS testColumnName-1 text,
-		ADD COLUMN IF NOT EXISTS testColumnName-2 bigint;`,
+		ADD COLUMN IF NOT EXISTS "testColumnName-1" text,
+		ADD COLUMN IF NOT EXISTS "testColumnName-2" bigint;`,
 		),
 	)
 })

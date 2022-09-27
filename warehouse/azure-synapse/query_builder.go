@@ -8,7 +8,7 @@ import (
 
 func addColumnsSQLStatement(namespace, tableName string, columnsInfo warehouseutils.ColumnsInto) string {
 	format := func(_ int, columnInfo warehouseutils.ColumnInfoT) string {
-		return fmt.Sprintf(`%q %s`, columnInfo.Name, rudderDataTypesMapToMssql[columnInfo.Type])
+		return fmt.Sprintf(`%s %s`, columnInfo.Name, rudderDataTypesMapToMssql[columnInfo.Type])
 	}
 	return fmt.Sprintf(`
 		ALTER TABLE
