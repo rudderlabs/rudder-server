@@ -203,7 +203,7 @@ func (asyncWhJob *AsyncJobWhT) startAsyncJobRunner(ctx context.Context) error {
 			go func() {
 				select {
 				case responses := <-ch:
-					pkgLogger.Info("Response received from the pgnotifier track batch")
+					pkgLogger.Info("[WH-Jobs]: Response received from the pgnotifier track batch")
 					asyncJobsStatusMap := getAsyncStatusMapFromAsyncPayloads(asyncjobpayloads)
 					err = updateStatusJobPayloadsFromPgnotifierResponse(responses, asyncJobsStatusMap)
 					_ = asyncWhJob.updateAsyncJobs(ctx, asyncJobsStatusMap)

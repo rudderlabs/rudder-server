@@ -651,15 +651,18 @@ func processClaimedAsyncJob(claimedJob pgnotifier.ClaimT) {
 	err := json.Unmarshal(claimedJob.Payload, &job)
 	if err != nil {
 		handleErr(err, claimedJob)
+		return
 	}
 	result, err := runAsyncJob(job)
 	if err != nil {
 		handleErr(err, claimedJob)
+		return
 	}
 
 	marshalled_result, err := json.Marshal(result)
 	if err != nil {
 		handleErr(err, claimedJob)
+		return
 	}
 	response := pgnotifier.ClaimResponseT{
 		Err:     err,

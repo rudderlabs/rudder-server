@@ -283,8 +283,9 @@ func (notifier *PgNotifierT) trackAsyncBatch(batchID string, ch *chan []Response
 				}
 				_ = rows.Close()
 				*ch <- responses
-				pkgLogger.Infof("PgNotifier: Completed processing all files  in batch: %s", batchID)
+				pkgLogger.Infof("PgNotifier: Completed processing asyncjobs in batch: %s", batchID)
 				stmt = fmt.Sprintf(`DELETE FROM %s WHERE batch_id = $1`, queueName)
+				pkgLogger.Infof("Query for deleting pgnotifier rows is %s for batchId : %s in queueName: %s", stmt, batchID, queueName)
 				_, err = notifier.dbHandle.Exec(stmt, batchID)
 				if err != nil {
 					pkgLogger.Errorf("PgNotifier: Error deleting from %s for batch_id:%s : %v", queueName, batchID, err)
