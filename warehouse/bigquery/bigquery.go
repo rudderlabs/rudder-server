@@ -172,7 +172,7 @@ func (bq *HandleT) addColumns(tableName string, columnsInfo warehouseutils.Colum
 		return err
 	}
 
-	var newSchema bigquery.Schema
+	newSchema := append(meta.Schema)
 	for _, columnInfo := range columnsInfo {
 		newSchema = append(newSchema,
 			&bigquery.FieldSchema{Name: columnInfo.Name, Type: dataTypesMap[columnInfo.Type]},
