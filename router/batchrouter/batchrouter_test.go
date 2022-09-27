@@ -130,9 +130,9 @@ var (
 )
 
 func initBatchRouter() {
-	config.Load()
+	config.Reset()
 	admin.Init()
-	logger.Init()
+	logger.Reset()
 	misc.Init()
 	Init()
 	Init2()

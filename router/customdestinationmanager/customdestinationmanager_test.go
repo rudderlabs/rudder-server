@@ -24,9 +24,9 @@ var once sync.Once
 
 func initCustomerManager() {
 	once.Do(func() {
-		config.Load()
+		config.Reset()
 		Init()
-		logger.Init()
+		logger.Reset()
 		stats.Setup()
 		kafka.Init()
 		skipBackendConfigSubscriber = true

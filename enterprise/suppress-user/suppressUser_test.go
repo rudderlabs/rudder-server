@@ -20,8 +20,8 @@ import (
 var _ = Describe("SuppressUser Test", func() {
 	testSuppressUser := new(SuppressRegulationHandler)
 	BeforeEach(func() {
-		config.Load()
-		logger.Init()
+		config.Reset()
+		logger.Reset()
 		backendconfig.Init()
 		pkgLogger = logger.NewLogger().Child("enterprise").Child("suppress-user")
 		testSuppressUser = &SuppressRegulationHandler{Client: new(http.Client), RegulationsPollInterval: time.Duration(100)}
@@ -264,8 +264,8 @@ func createSimpleTestServer(inp *serverInp) *httptest.Server {
 }
 
 func TestSuppressRegulationHandler_IsSuppressedUser(t *testing.T) {
-	config.Load()
-	logger.Init()
+	config.Reset()
+	logger.Reset()
 	pkgLogger = logger.NewLogger().Child("enterprise").Child("suppress-user")
 
 	suppressUserMap := make(map[string]sourceFilter)

@@ -14,7 +14,7 @@ var (
 	eventLimit            int
 	rateLimitWindowInMins time.Duration
 	noOfBucketsInWindow   int
-	pkgLogger             logger.LoggerI
+	pkgLogger             logger.Logger
 )
 
 // RateLimiter is an interface for rate limiting functions

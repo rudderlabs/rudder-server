@@ -20,8 +20,8 @@ import (
 )
 
 func initMisc() {
-	config.Load()
-	logger.Init()
+	config.Reset()
+	logger.Reset()
 	Init()
 }
 

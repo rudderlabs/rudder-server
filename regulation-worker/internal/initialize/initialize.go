@@ -12,8 +12,8 @@ var once sync.Once
 
 func Init() {
 	once.Do(func() {
-		config.Load()
-		logger.Init()
+		config.Reset()
+		logger.Reset()
 		stats.Init()
 		stats.Setup()
 	})

@@ -8,8 +8,8 @@ import (
 )
 
 func setupDegradedMode() {
-	config.SetBool("enableProcessor", false)
-	config.SetBool("enableRouter", false)
+	config.Set("enableProcessor", false)
+	config.Set("enableRouter", false)
 }
 
 func (handler *DegradedModeHandler) RecordAppStart(currTime int64) {

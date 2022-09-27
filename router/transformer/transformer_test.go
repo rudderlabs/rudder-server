@@ -337,8 +337,8 @@ func mockProxyHandler(timeout time.Duration, code int, response string) *mux.Rou
 
 func TestTransformNoValidationErrors(t *testing.T) {
 	initMocks(t)
-	config.Load()
-	pkgLogger = logger.NOP{}
+	config.Reset()
+	pkgLogger = logger.NOP
 	expectedTransformerResponse := []types.DestinationJobT{
 		{JobMetadataArray: []types.JobMetadataT{{JobID: 1}}, StatusCode: http.StatusOK},
 		{JobMetadataArray: []types.JobMetadataT{{JobID: 2}}, StatusCode: http.StatusOK},
@@ -369,8 +369,8 @@ func TestTransformNoValidationErrors(t *testing.T) {
 
 func TestTransformValidationUnmarshallingError(t *testing.T) {
 	initMocks(t)
-	config.Load()
-	pkgLogger = logger.NOP{}
+	config.Reset()
+	pkgLogger = logger.NOP
 	expectedErrorTxt := "Transformer returned invalid response: invalid json for input:"
 	expectedTransformerResponse := []types.DestinationJobT{
 		{JobMetadataArray: []types.JobMetadataT{{JobID: 1}}, StatusCode: http.StatusInternalServerError, Error: expectedErrorTxt},
@@ -401,8 +401,8 @@ func TestTransformValidationUnmarshallingError(t *testing.T) {
 
 func TestTransformValidationInOutMismatchError(t *testing.T) {
 	initMocks(t)
-	config.Load()
-	pkgLogger = logger.NOP{}
+	config.Reset()
+	pkgLogger = logger.NOP
 	expectedErrorTxt := "Transformer returned invalid output size: 4 for input size: 3"
 	expectedTransformerResponse := []types.DestinationJobT{
 		{JobMetadataArray: []types.JobMetadataT{{JobID: 1}}, StatusCode: http.StatusInternalServerError, Error: expectedErrorTxt},
@@ -441,8 +441,8 @@ func TestTransformValidationInOutMismatchError(t *testing.T) {
 
 func TestTransformValidationJobIDMismatchError(t *testing.T) {
 	initMocks(t)
-	config.Load()
-	pkgLogger = logger.NOP{}
+	config.Reset()
+	pkgLogger = logger.NOP
 	expectedErrorTxt := "Transformer returned invalid jobIDs: [4]"
 	expectedTransformerResponse := []types.DestinationJobT{
 		{JobMetadataArray: []types.JobMetadataT{{JobID: 1}}, StatusCode: http.StatusInternalServerError, Error: expectedErrorTxt},
@@ -491,7 +491,7 @@ func initMocks(t *testing.T) {
 
 	stats.DefaultStats = mockStats
 
-	pkgLogger = logger.NOP{}
+	pkgLogger = logger.NOP
 }
 
 func normalizeErrors(transformerResponse []types.DestinationJobT, prefix string) {

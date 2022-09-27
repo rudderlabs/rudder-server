@@ -51,7 +51,7 @@ import (
 )
 
 var (
-	application                         app.Interface
+	application                         app.App
 	webPort                             int
 	dbHandle                            *sql.DB
 	notifier                            pgnotifier.PgNotifierT
@@ -77,7 +77,7 @@ var (
 	sourceIDsByWorkspace                map[string][]string // workspaceID -> []sourceIDs
 	sourceIDsByWorkspaceLock            sync.RWMutex
 	longRunningUploadStatThresholdInMin time.Duration
-	pkgLogger                           logger.LoggerI
+	pkgLogger                           logger.Logger
 	numLoadFileUploadWorkers            int
 	slaveUploadTimeout                  time.Duration
 	runningMode                         string
@@ -163,12 +163,12 @@ func loadConfig() {
 	inRecoveryMap = map[string]bool{}
 	lastProcessedMarkerMap = map[string]int64{}
 	config.RegisterStringConfigVariable("embedded", &warehouseMode, false, "Warehouse.mode")
-	host = config.GetEnv("WAREHOUSE_JOBS_DB_HOST", "localhost")
-	user = config.GetEnv("WAREHOUSE_JOBS_DB_USER", "ubuntu")
-	dbname = config.GetEnv("WAREHOUSE_JOBS_DB_DB_NAME", "ubuntu")
-	port, _ = strconv.Atoi(config.GetEnv("WAREHOUSE_JOBS_DB_PORT", "5432"))
-	password = config.GetEnv("WAREHOUSE_JOBS_DB_PASSWORD", "ubuntu") // Reading secrets from
-	sslmode = config.GetEnv("WAREHOUSE_JOBS_DB_SSL_MODE", "disable")
+	host = config.GetString("WAREHOUSE_JOBS_DB_HOST", "localhost")
+	user = config.GetString("WAREHOUSE_JOBS_DB_USER", "ubuntu")
+	dbname = config.GetString("WAREHOUSE_JOBS_DB_DB_NAME", "ubuntu")
+	port = config.GetInt("WAREHOUSE_JOBS_DB_PORT", 5432)
+	password = config.GetString("WAREHOUSE_JOBS_DB_PASSWORD", "ubuntu") // Reading secrets from
+	sslmode = config.GetString("WAREHOUSE_JOBS_DB_SSL_MODE", "disable")
 	config.RegisterIntConfigVariable(10, &warehouseSyncPreFetchCount, true, 1, "Warehouse.warehouseSyncPreFetchCount")
 	config.RegisterIntConfigVariable(100, &stagingFilesSchemaPaginationSize, true, 1, "Warehouse.stagingFilesSchemaPaginationSize")
 	config.RegisterBoolConfigVariable(false, &warehouseSyncFreqIgnore, true, "Warehouse.warehouseSyncFreqIgnore")
@@ -181,7 +181,7 @@ func loadConfig() {
 	config.RegisterDurationConfigVariable(120, &longRunningUploadStatThresholdInMin, true, time.Minute, []string{"Warehouse.longRunningUploadStatThreshold", "Warehouse.longRunningUploadStatThresholdInMin"}...)
 	config.RegisterDurationConfigVariable(10, &slaveUploadTimeout, true, time.Minute, []string{"Warehouse.slaveUploadTimeout", "Warehouse.slaveUploadTimeoutInMin"}...)
 	config.RegisterIntConfigVariable(8, &numLoadFileUploadWorkers, true, 1, "Warehouse.numLoadFileUploadWorkers")
-	runningMode = config.GetEnv("RSERVER_WAREHOUSE_RUNNING_MODE", "")
+	runningMode = config.GetString("Warehouse.runningMode", "")
 	config.RegisterDurationConfigVariable(30, &uploadStatusTrackFrequency, false, time.Minute, []string{"Warehouse.uploadStatusTrackFrequency", "Warehouse.uploadStatusTrackFrequencyInMin"}...)
 	config.RegisterIntConfigVariable(180, &uploadBufferTimeInMin, false, 1, "Warehouse.uploadBufferTimeInMin")
 	config.RegisterDurationConfigVariable(5, &uploadAllocatorSleep, false, time.Second, []string{"Warehouse.uploadAllocatorSleep", "Warehouse.uploadAllocatorSleepInS"}...)
@@ -192,7 +192,7 @@ func loadConfig() {
 	config.RegisterIntConfigVariable(8, &maxParallelJobCreation, true, 1, "Warehouse.maxParallelJobCreation")
 	config.RegisterBoolConfigVariable(false, &enableJitterForSyncs, true, "Warehouse.enableJitterForSyncs")
 	appName = misc.DefaultString("rudder-server").OnError(os.Hostname())
-	configBackendURL = config.GetEnv("CONFIG_BACKEND_URL", "https://api.rudderlabs.com")
+	configBackendURL = config.GetString("CONFIG_BACKEND_URL", "https://api.rudderlabs.com")
 }
 
 // get name of the worker (`destID_namespace`) to be stored in map wh.workerChannelMap
@@ -1375,7 +1375,7 @@ func setConfigHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	for _, kv := range kvs {
-		config.SetHotReloadablesForcefully(kv.Key, kv.Value)
+		config.Set(kv.Key, kv.Value)
 	}
 	w.WriteHeader(http.StatusOK)
 }
@@ -1740,10 +1740,10 @@ func startWebHandler(ctx context.Context) error {
 
 // CheckForWarehouseEnvVars Checks if all the required Env Variables for Warehouse are present
 func CheckForWarehouseEnvVars() bool {
-	return config.IsEnvSet("WAREHOUSE_JOBS_DB_HOST") &&
-		config.IsEnvSet("WAREHOUSE_JOBS_DB_USER") &&
-		config.IsEnvSet("WAREHOUSE_JOBS_DB_DB_NAME") &&
-		config.IsEnvSet("WAREHOUSE_JOBS_DB_PASSWORD")
+	return config.IsSet("WAREHOUSE_JOBS_DB_HOST") &&
+		config.IsSet("WAREHOUSE_JOBS_DB_USER") &&
+		config.IsSet("WAREHOUSE_JOBS_DB_DB_NAME") &&
+		config.IsSet("WAREHOUSE_JOBS_DB_PASSWORD")
 }
 
 // This checks if gateway is running or not
@@ -1795,7 +1795,7 @@ func setupDB(ctx context.Context, connInfo string) error {
 	return setupTables(dbHandle)
 }
 
-func Start(ctx context.Context, app app.Interface) error {
+func Start(ctx context.Context, app app.App) error {
 	application = app
 
 	// do not start warehouse service if rudder core is not in normal mode and warehouse is running in same process as rudder core
@@ -1817,7 +1817,7 @@ func Start(ctx context.Context, app app.Interface) error {
 		}
 	}()
 
-	runningMode := config.GetEnv("RSERVER_WAREHOUSE_RUNNING_MODE", "")
+	runningMode := config.GetString("Warehouse.runningMode", "")
 	if runningMode == DegradedMode {
 		pkgLogger.Infof("WH: Running warehouse service in degraded mode...")
 		if isMaster() {
@@ -1852,26 +1852,26 @@ func Start(ctx context.Context, app app.Interface) error {
 		}))
 	}
 
-	// Report warehouse features
-	g.Go(func() error {
-		backendconfig.DefaultBackendConfig.WaitForConfig(ctx)
-
-		c := features.NewClient(
-			config.GetEnv("CONFIG_BACKEND_URL", "https://api.rudderlabs.com"),
-			backendconfig.DefaultBackendConfig.Identity(),
-		)
-
-		err := c.Send(ctx, info.WarehouseComponent.Name, info.WarehouseComponent.Features)
-		if err != nil {
-			pkgLogger.Errorf("error sending warehouse features: %v", err)
-		}
-
-		// We don't want to exit if we fail to send features
-		return nil
-	})
-
 	if isStandAlone() && isMaster() {
 		destinationdebugger.Setup(backendconfig.DefaultBackendConfig)
+
+		// Report warehouse features
+		g.Go(func() error {
+			backendconfig.DefaultBackendConfig.WaitForConfig(ctx)
+
+			c := features.NewClient(
+				config.GetString("CONFIG_BACKEND_URL", "https://api.rudderlabs.com"),
+				backendconfig.DefaultBackendConfig.Identity(),
+			)
+
+			err := c.Send(ctx, info.WarehouseComponent.Name, info.WarehouseComponent.Features)
+			if err != nil {
+				pkgLogger.Errorf("error sending warehouse features: %v", err)
+			}
+
+			// We don't want to exit if we fail to send features
+			return nil
+		})
 	}
 
 	if isSlave() {

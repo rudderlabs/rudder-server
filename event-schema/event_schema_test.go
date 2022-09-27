@@ -53,9 +53,9 @@ func setupDB(es envSetter, cleanup *testhelper.Cleanup) (*destination.PostgresRe
 	}
 
 	// Load self configuration.
-	config.Load()
+	config.Reset()
 
-	logger.Init() // Initialize the logger
+	logger.Reset() // Initialize the logger
 	Init2()
 	Init()
 

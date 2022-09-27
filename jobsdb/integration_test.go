@@ -59,8 +59,6 @@ func genJobStatuses(jobs []*JobT, state string) []*JobStatusT {
 func TestJobsDB(t *testing.T) {
 	_ = startPostgres(t)
 
-	migrationMode := ""
-
 	triggerAddNewDS := make(chan time.Time)
 	maxDSSize := 10
 	jobDB := HandleT{
@@ -69,7 +67,7 @@ func TestJobsDB(t *testing.T) {
 			return triggerAddNewDS
 		},
 	}
-	err := jobDB.Setup(ReadWrite, false, strings.ToLower(rand.String(5)), migrationMode, true, []prebackup.Handler{})
+	err := jobDB.Setup(ReadWrite, false, strings.ToLower(rand.String(5)), true, []prebackup.Handler{})
 	require.NoError(t, err)
 	defer jobDB.TearDown()
 
@@ -230,7 +228,7 @@ func TestJobsDB(t *testing.T) {
 			},
 		}
 
-		err := jobDB.Setup(ReadWrite, true, strings.ToLower(rand.String(5)), migrationMode, true, []prebackup.Handler{})
+		err := jobDB.Setup(ReadWrite, true, strings.ToLower(rand.String(5)), true, []prebackup.Handler{})
 		require.NoError(t, err)
 		defer jobDB.TearDown()
 
@@ -316,7 +314,7 @@ func TestJobsDB(t *testing.T) {
 			},
 		}
 
-		err := jobDB.Setup(ReadWrite, true, strings.ToLower(rand.String(5)), migrationMode, true, []prebackup.Handler{})
+		err := jobDB.Setup(ReadWrite, true, strings.ToLower(rand.String(5)), true, []prebackup.Handler{})
 		require.NoError(t, err)
 		defer jobDB.TearDown()
 
@@ -355,7 +353,7 @@ func TestJobsDB(t *testing.T) {
 				return triggerAddNewDS
 			},
 		}
-		err := jobDB.Setup(ReadWrite, false, strings.ToLower(rand.String(5)), migrationMode, true, []prebackup.Handler{})
+		err := jobDB.Setup(ReadWrite, false, strings.ToLower(rand.String(5)), true, []prebackup.Handler{})
 		require.NoError(t, err)
 		defer jobDB.TearDown()
 
@@ -388,7 +386,7 @@ func TestJobsDB(t *testing.T) {
 				return triggerAddNewDS
 			},
 		}
-		err := jobDB.Setup(ReadWrite, true, strings.ToLower(rand.String(5)), migrationMode, true, []prebackup.Handler{})
+		err := jobDB.Setup(ReadWrite, true, strings.ToLower(rand.String(5)), true, []prebackup.Handler{})
 		require.NoError(t, err)
 		defer jobDB.TearDown()
 
@@ -420,7 +418,7 @@ func TestJobsDB(t *testing.T) {
 			},
 		}
 
-		err := jobDB.Setup(ReadWrite, true, strings.ToLower(rand.String(5)), migrationMode, true, []prebackup.Handler{})
+		err := jobDB.Setup(ReadWrite, true, strings.ToLower(rand.String(5)), true, []prebackup.Handler{})
 		require.NoError(t, err)
 		defer jobDB.TearDown()
 
@@ -460,7 +458,7 @@ func TestJobsDB(t *testing.T) {
 			},
 		}
 
-		err := jobDB.Setup(ReadWrite, true, strings.ToLower(rand.String(5)), migrationMode, true, []prebackup.Handler{})
+		err := jobDB.Setup(ReadWrite, true, strings.ToLower(rand.String(5)), true, []prebackup.Handler{})
 		require.NoError(t, err)
 		defer jobDB.TearDown()
 
@@ -491,7 +489,7 @@ func TestJobsDB(t *testing.T) {
 			},
 		}
 
-		err := jobDB.Setup(ReadWrite, true, strings.ToLower(rand.String(5)), migrationMode, true, []prebackup.Handler{})
+		err := jobDB.Setup(ReadWrite, true, strings.ToLower(rand.String(5)), true, []prebackup.Handler{})
 		require.NoError(t, err)
 		defer jobDB.TearDown()
 
@@ -563,7 +561,7 @@ func TestJobsDB(t *testing.T) {
 			},
 		}
 		prefix := strings.ToLower(rand.String(5))
-		err := jobDB.Setup(ReadWrite, true, prefix, migrationMode, true, []prebackup.Handler{})
+		err := jobDB.Setup(ReadWrite, true, prefix, true, []prebackup.Handler{})
 		require.NoError(t, err)
 		defer jobDB.TearDown()
 
@@ -669,8 +667,6 @@ func TestJobsDB(t *testing.T) {
 
 func TestMultiTenantLegacyGetAllJobs(t *testing.T) {
 	_ = startPostgres(t)
-	migrationMode := ""
-
 	triggerAddNewDS := make(chan time.Time)
 	maxDSSize := 10
 	jobDB := HandleT{
@@ -681,7 +677,7 @@ func TestMultiTenantLegacyGetAllJobs(t *testing.T) {
 	}
 
 	customVal := "MTL"
-	err := jobDB.Setup(ReadWrite, false, strings.ToLower(rand.String(5)), migrationMode, true, []prebackup.Handler{})
+	err := jobDB.Setup(ReadWrite, false, strings.ToLower(rand.String(5)), true, []prebackup.Handler{})
 	require.NoError(t, err)
 	defer jobDB.TearDown()
 
@@ -754,8 +750,6 @@ func TestMultiTenantLegacyGetAllJobs(t *testing.T) {
 
 func TestMultiTenantGetAllJobs(t *testing.T) {
 	_ = startPostgres(t)
-	migrationMode := ""
-
 	triggerAddNewDS := make(chan time.Time)
 	maxDSSize := 10
 	jobDB := HandleT{
@@ -766,7 +760,7 @@ func TestMultiTenantGetAllJobs(t *testing.T) {
 	}
 
 	customVal := "MT"
-	err := jobDB.Setup(ReadWrite, false, strings.ToLower(rand.String(5)), migrationMode, true, []prebackup.Handler{})
+	err := jobDB.Setup(ReadWrite, false, strings.ToLower(rand.String(5)), true, []prebackup.Handler{})
 	require.NoError(t, err)
 	defer jobDB.TearDown()
 
@@ -866,7 +860,7 @@ func TestStoreAndUpdateStatusExceedingAnalyzeThreshold(t *testing.T) {
 		MaxDSSize: &maxDSSize,
 	}
 	customVal := "MOCKDS"
-	err := jobDB.Setup(ReadWrite, false, strings.ToLower(rand.String(5)), "", true, []prebackup.Handler{})
+	err := jobDB.Setup(ReadWrite, false, strings.ToLower(rand.String(5)), true, []prebackup.Handler{})
 	require.NoError(t, err)
 	defer jobDB.TearDown()
 	sampleTestJob := JobT{
@@ -943,8 +937,6 @@ func TestCreateDS(t *testing.T) {
 			_, err = postgresql.DB.Exec(fmt.Sprintf(`INSERT INTO "%[1]s_jobs_-2" (uuid, user_id, custom_val, parameters, event_payload) values ('c2d29867-3d0b-d497-9191-18a9d8ee7860', 'someuserid', 'GW', '{}', '{}');`, prefix))
 			require.NoError(t, err)
 
-			migrationMode := ""
-
 			triggerAddNewDS := make(chan time.Time)
 			maxDSSize := 1
 			jobDB := HandleT{
@@ -954,7 +946,7 @@ func TestCreateDS(t *testing.T) {
 					return triggerAddNewDS
 				},
 			}
-			err = jobDB.Setup(ReadWrite, false, prefix, migrationMode, true, []prebackup.Handler{})
+			err = jobDB.Setup(ReadWrite, false, prefix, true, []prebackup.Handler{})
 			require.NoError(t, err)
 			defer jobDB.TearDown()
 
@@ -1006,9 +998,6 @@ func requireSequential(t *testing.T, jobs []*JobT) {
 
 func TestJobsDB_IncompatiblePayload(t *testing.T) {
 	_ = startPostgres(t)
-
-	migrationMode := ""
-
 	triggerAddNewDS := make(chan time.Time)
 	maxDSSize := 10
 	jobDB := HandleT{
@@ -1017,7 +1006,7 @@ func TestJobsDB_IncompatiblePayload(t *testing.T) {
 			return triggerAddNewDS
 		},
 	}
-	err := jobDB.Setup(ReadWrite, false, strings.ToLower(rand.String(5)), migrationMode, true, []prebackup.Handler{})
+	err := jobDB.Setup(ReadWrite, false, strings.ToLower(rand.String(5)), true, []prebackup.Handler{})
 	require.NoError(t, err)
 	defer jobDB.TearDown()
 	customVal := "MOCKDS"
@@ -1065,12 +1054,11 @@ func BenchmarkJobsdb(b *testing.B) {
 	_ = startPostgres(b)
 	concurrencies := []int{16, 64, 256, 512}
 
-	migrationMode := ""
 	for _, concurrency := range concurrencies {
 		jobsDb1 := HandleT{}
 		b.Setenv("RSERVER_JOBS_DB_ENABLE_WRITER_QUEUE", "true")
 		b.Setenv("RSERVER_JOBS_DB_ENABLE_READER_QUEUE", "true")
-		err := jobsDb1.Setup(ReadWrite, true, "batch_rt", migrationMode, true, []prebackup.Handler{})
+		err := jobsDb1.Setup(ReadWrite, true, "batch_rt", true, []prebackup.Handler{})
 		require.NoError(b, err)
 
 		b.Run(fmt.Sprintf("store and consume %d jobs using %d stream(s) with reader writer queues", totalJobs, concurrency), func(b *testing.B) {
@@ -1082,7 +1070,7 @@ func BenchmarkJobsdb(b *testing.B) {
 		b.Setenv("RSERVER_JOBS_DB_ENABLE_WRITER_QUEUE", "false")
 		b.Setenv("RSERVER_JOBS_DB_ENABLE_READER_QUEUE", "false")
 		b.Setenv("RSERVER_JOBS_DB_GW_MAX_OPEN_CONNECTIONS", "64")
-		err = jobsDb2.Setup(ReadWrite, true, "batch_rt", migrationMode, true, []prebackup.Handler{})
+		err = jobsDb2.Setup(ReadWrite, true, "batch_rt", true, []prebackup.Handler{})
 		require.NoError(b, err)
 
 		b.Run(fmt.Sprintf("store and consume %d jobs using %d stream(s) without reader writer queues", totalJobs, concurrency), func(b *testing.B) {

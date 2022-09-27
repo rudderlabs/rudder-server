@@ -171,8 +171,8 @@ var (
 )
 
 func initRouter() {
-	config.Load()
-	logger.Init()
+	config.Reset()
+	logger.Reset()
 	stash.Init()
 	admin.Init()
 	jobsdb.Init()

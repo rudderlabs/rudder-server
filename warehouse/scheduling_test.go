@@ -13,9 +13,9 @@ import (
 )
 
 func initWarehouse() {
-	config.Load()
+	config.Reset()
 	admin.Init()
-	logger.Init()
+	logger.Reset()
 	Init()
 	Init2()
 	Init3()

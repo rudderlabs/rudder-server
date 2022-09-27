@@ -58,9 +58,9 @@ func (m *mockLifecycle) Stop() {
 }
 
 func Init() {
-	config.Load()
+	config.Reset()
 	stats.Setup()
-	logger.Init()
+	logger.Reset()
 }
 
 func TestDynamicCluster(t *testing.T) {

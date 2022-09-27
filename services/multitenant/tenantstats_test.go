@@ -40,8 +40,8 @@ var (
 var _ = Describe("tenantStats", func() {
 	BeforeEach(func() {
 		metric.GetManager().Reset()
-		config.Load()
-		logger.Init()
+		config.Reset()
+		logger.Reset()
 		Init()
 	})
 

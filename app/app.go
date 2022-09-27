@@ -1,6 +1,6 @@
 package app
 
-//go:generate mockgen -destination=../mocks/app/mock_app.go -package=mock_app github.com/rudderlabs/rudder-server/app Interface
+//go:generate mockgen -destination=../mocks/app/mock_app.go -package=mock_app github.com/rudderlabs/rudder-server/app App
 
 import (
 	"fmt"
@@ -13,7 +13,6 @@ import (
 	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	configenv "github.com/rudderlabs/rudder-server/enterprise/config-env"
-	"github.com/rudderlabs/rudder-server/enterprise/migrator"
 	"github.com/rudderlabs/rudder-server/enterprise/replay"
 	"github.com/rudderlabs/rudder-server/enterprise/reporting"
 	suppression "github.com/rudderlabs/rudder-server/enterprise/suppress-user"
@@ -28,45 +27,40 @@ const (
 	EMBEDDED  = "EMBEDDED"
 )
 
-// App holds the main application's configuration and state
-type App struct {
-	options  *Options
-	features *Features // Enterprise features, if available
-
-	cpuprofileOutput *os.File
-}
-
-// Interface of a rudder-server application
-type Interface interface {
+// App represents a rudder-server application
+type App interface {
 	Setup()              // Initializes application
 	Stop()               // Stop application
 	Options() *Options   // Get this application's options
 	Features() *Features // Get this application's enterprise features
 }
 
-var pkgLogger logger.LoggerI
+// app holds the main application's configuration and state
+type app struct {
+	log      logger.Logger
+	options  *Options
+	features *Features // Enterprise features, if available
 
-func Init() {
-	pkgLogger = logger.NewLogger().Child("app")
+	cpuprofileOutput *os.File
 }
 
 // Setup initializes application
-func (a *App) Setup() {
+func (a *app) Setup() {
 	// If cpuprofile flag is present, setup cpu profiling
 	if a.options.Cpuprofile != "" {
 		a.initCPUProfiling()
 	}
 
 	if a.options.EnterpriseToken == "" {
-		pkgLogger.Info("Open source version of rudder-server")
+		a.log.Info("Open source version of rudder-server")
 	} else {
-		pkgLogger.Info("Enterprise version of rudder-server")
+		a.log.Info("Enterprise version of rudder-server")
 	}
 
 	a.initFeatures()
 }
 
-func (a *App) initCPUProfiling() {
+func (a *app) initCPUProfiling() {
 	var err error
 	a.cpuprofileOutput, err = os.Create(a.options.Cpuprofile)
 	if err != nil {
@@ -79,7 +73,7 @@ func (a *App) initCPUProfiling() {
 	}
 }
 
-func (a *App) initFeatures() {
+func (a *app) initFeatures() {
 	a.features = &Features{
 		SuppressUser: &suppression.Factory{
 			EnterpriseToken: a.options.EnterpriseToken,
@@ -94,26 +88,22 @@ func (a *App) initFeatures() {
 			EnterpriseToken: a.options.EnterpriseToken,
 		},
 	}
-
-	if a.options.EnterpriseToken != "" {
-		a.features.Migrator = &migrator.Migrator{}
-	}
 }
 
 // Options returns this application's options
-func (a *App) Options() *Options {
+func (a *app) Options() *Options {
 	return a.options
 }
 
 // Features returns this application's enterprise features
-func (a *App) Features() *Features {
+func (a *app) Features() *Features {
 	return a.features
 }
 
 // Stop stops application
-func (a *App) Stop() {
+func (a *app) Stop() {
 	if a.options.Cpuprofile != "" {
-		pkgLogger.Info("Stopping CPU profile")
+		a.log.Info("Stopping CPU profile")
 		pprof.StopCPUProfile()
 		_ = a.cpuprofileOutput.Close()
 	}
@@ -133,8 +123,9 @@ func (a *App) Stop() {
 }
 
 // New creates a new application instance
-func New(options *Options) Interface {
-	return &App{
+func New(options *Options) App {
+	return &app{
+		log:     logger.NewLogger().Child("app"),
 		options: options,
 	}
 }
@@ -160,7 +151,7 @@ func getHealthVal(jobsDB jobsdb.JobsDB) string {
 		backendConfigMode = "JSON"
 	}
 
-	appTypeStr := strings.ToUpper(config.GetEnv("APP_TYPE", EMBEDDED))
+	appTypeStr := strings.ToUpper(config.GetString("APP_TYPE", EMBEDDED))
 	return fmt.Sprintf(
 		`{"appType":"%s","server":"UP","db":"%s","acceptingEvents":"TRUE","routingEvents":"%s","mode":"%s",`+
 			`"backendConfigMode":"%s","lastSync":"%s","lastRegulationSync":"%s"}`,

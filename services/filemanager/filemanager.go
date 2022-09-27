@@ -16,7 +16,7 @@ import (
 )
 
 var (
-	pkgLogger                 logger.LoggerI
+	pkgLogger                 logger.Logger
 	DefaultFileManagerFactory FileManagerFactory
 	ErrKeyNotFound            = errors.New("NoSuchKey")
 )
@@ -90,45 +90,45 @@ func (factory *FileManagerFactoryT) New(settings *SettingsT) (FileManager, error
 // GetProviderConfigForBackupsFromEnv returns the provider config
 func GetProviderConfigForBackupsFromEnv(ctx context.Context) map[string]interface{} {
 	providerConfig := make(map[string]interface{})
-	provider := config.GetEnv("JOBS_BACKUP_STORAGE_PROVIDER", "S3")
+	provider := config.GetString("JOBS_BACKUP_STORAGE_PROVIDER", "S3")
 	switch provider {
 	case "S3":
-		providerConfig["bucketName"] = config.GetEnv("JOBS_BACKUP_BUCKET", "")
-		providerConfig["prefix"] = config.GetEnv("JOBS_BACKUP_PREFIX", "")
-		providerConfig["accessKeyID"] = config.GetEnv("AWS_ACCESS_KEY_ID", "")
-		providerConfig["accessKey"] = config.GetEnv("AWS_SECRET_ACCESS_KEY", "")
-		providerConfig["enableSSE"] = config.GetEnvAsBool("AWS_ENABLE_SSE", false)
-		providerConfig["regionHint"] = config.GetEnv("AWS_S3_REGION_HINT", "us-east-1")
-		providerConfig["iamRoleArn"] = config.GetEnv("BACKUP_IAM_ROLE_ARN", "")
+		providerConfig["bucketName"] = config.GetString("JOBS_BACKUP_BUCKET", "")
+		providerConfig["prefix"] = config.GetString("JOBS_BACKUP_PREFIX", "")
+		providerConfig["accessKeyID"] = config.GetString("AWS_ACCESS_KEY_ID", "")
+		providerConfig["accessKey"] = config.GetString("AWS_SECRET_ACCESS_KEY", "")
+		providerConfig["enableSSE"] = config.GetBool("AWS_ENABLE_SSE", false)
+		providerConfig["regionHint"] = config.GetString("AWS_S3_REGION_HINT", "us-east-1")
+		providerConfig["iamRoleArn"] = config.GetString("BACKUP_IAM_ROLE_ARN", "")
 		if providerConfig["iamRoleArn"] != "" {
 			backendconfig.DefaultBackendConfig.WaitForConfig(ctx)
 			providerConfig["externalId"] = backendconfig.DefaultBackendConfig.GetWorkspaceIDForWriteKey("")
 		}
 	case "GCS":
-		providerConfig["bucketName"] = config.GetEnv("JOBS_BACKUP_BUCKET", "")
-		providerConfig["prefix"] = config.GetEnv("JOBS_BACKUP_PREFIX", "")
-		credentials, err := os.ReadFile(config.GetEnv("GOOGLE_APPLICATION_CREDENTIALS", ""))
+		providerConfig["bucketName"] = config.GetString("JOBS_BACKUP_BUCKET", "")
+		providerConfig["prefix"] = config.GetString("JOBS_BACKUP_PREFIX", "")
+		credentials, err := os.ReadFile(config.GetString("GOOGLE_APPLICATION_CREDENTIALS", ""))
 		if err == nil {
 			providerConfig["credentials"] = string(credentials)
 		}
 	case "AZURE_BLOB":
-		providerConfig["containerName"] = config.GetEnv("JOBS_BACKUP_BUCKET", "")
-		providerConfig["prefix"] = config.GetEnv("JOBS_BACKUP_PREFIX", "")
-		providerConfig["accountName"] = config.GetEnv("AZURE_STORAGE_ACCOUNT", "")
-		providerConfig["accountKey"] = config.GetEnv("AZURE_STORAGE_ACCESS_KEY", "")
+		providerConfig["containerName"] = config.GetString("JOBS_BACKUP_BUCKET", "")
+		providerConfig["prefix"] = config.GetString("JOBS_BACKUP_PREFIX", "")
+		providerConfig["accountName"] = config.GetString("AZURE_STORAGE_ACCOUNT", "")
+		providerConfig["accountKey"] = config.GetString("AZURE_STORAGE_ACCESS_KEY", "")
 	case "MINIO":
-		providerConfig["bucketName"] = config.GetEnv("JOBS_BACKUP_BUCKET", "")
-		providerConfig["prefix"] = config.GetEnv("JOBS_BACKUP_PREFIX", "")
-		providerConfig["endPoint"] = config.GetEnv("MINIO_ENDPOINT", "localhost:9000")
-		providerConfig["accessKeyID"] = config.GetEnv("MINIO_ACCESS_KEY_ID", "minioadmin")
-		providerConfig["secretAccessKey"] = config.GetEnv("MINIO_SECRET_ACCESS_KEY", "minioadmin")
-		providerConfig["useSSL"] = config.GetEnvAsBool("MINIO_SSL", false)
+		providerConfig["bucketName"] = config.GetString("JOBS_BACKUP_BUCKET", "")
+		providerConfig["prefix"] = config.GetString("JOBS_BACKUP_PREFIX", "")
+		providerConfig["endPoint"] = config.GetString("MINIO_ENDPOINT", "localhost:9000")
+		providerConfig["accessKeyID"] = config.GetString("MINIO_ACCESS_KEY_ID", "minioadmin")
+		providerConfig["secretAccessKey"] = config.GetString("MINIO_SECRET_ACCESS_KEY", "minioadmin")
+		providerConfig["useSSL"] = config.GetBool("MINIO_SSL", false)
 	case "DIGITAL_OCEAN_SPACES":
-		providerConfig["bucketName"] = config.GetEnv("JOBS_BACKUP_BUCKET", "")
-		providerConfig["prefix"] = config.GetEnv("JOBS_BACKUP_PREFIX", "")
-		providerConfig["endPoint"] = config.GetEnv("DO_SPACES_ENDPOINT", "")
-		providerConfig["accessKeyID"] = config.GetEnv("DO_SPACES_ACCESS_KEY_ID", "")
-		providerConfig["accessKey"] = config.GetEnv("DO_SPACES_SECRET_ACCESS_KEY", "")
+		providerConfig["bucketName"] = config.GetString("JOBS_BACKUP_BUCKET", "")
+		providerConfig["prefix"] = config.GetString("JOBS_BACKUP_PREFIX", "")
+		providerConfig["endPoint"] = config.GetString("DO_SPACES_ENDPOINT", "")
+		providerConfig["accessKeyID"] = config.GetString("DO_SPACES_ACCESS_KEY_ID", "")
+		providerConfig["accessKey"] = config.GetString("DO_SPACES_SECRET_ACCESS_KEY", "")
 	}
 	return providerConfig
 }
@@ -144,4 +144,56 @@ func getBatchRouterTimeoutConfig(destType string) time.Duration {
 	} else {
 		return config.GetDuration("BatchRouter."+key, defaultValueInTimescaleUnits, timeScale)
 	}
+}
+
+func IterateFilesWithPrefix(ctx context.Context, startAfter, prefix string, maxItems int64, manager *FileManager) *ObjectIterator {
+	it := &ObjectIterator{
+		ctx:        ctx,
+		startAfter: startAfter,
+		maxItems:   maxItems,
+		prefix:     prefix,
+		manager:    manager,
+	}
+	return it
+}
+
+type ObjectIterator struct {
+	ctx        context.Context
+	err        error
+	item       *FileObject
+	items      []*FileObject
+	manager    *FileManager
+	maxItems   int64
+	startAfter string
+	prefix     string
+}
+
+func (it *ObjectIterator) Next() bool {
+	var err error
+	if len(it.items) == 0 {
+		mn := *it.manager
+		it.items, err = mn.ListFilesWithPrefix(it.ctx, it.startAfter, it.prefix, it.maxItems)
+		if err != nil {
+			it.err = err
+			return false
+		}
+		if len(it.items) > 0 {
+			pkgLogger.Infof(`Fetched files list from %v (lastModifiedAt: %v) to %v (lastModifiedAt: %v)`, it.items[0].Key, it.items[0].LastModified, it.items[len(it.items)-1].Key, it.items[len(it.items)-1].LastModified)
+		}
+	}
+
+	if len(it.items) > 0 {
+		it.item = it.items[0]
+		it.items = it.items[1:]
+		return true
+	}
+	return false
+}
+
+func (it *ObjectIterator) Get() *FileObject {
+	return it.item
+}
+
+func (it *ObjectIterator) Err() error {
+	return it.err
 }

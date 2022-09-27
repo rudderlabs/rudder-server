@@ -39,7 +39,7 @@ type sourceFilter struct {
 	specific map[string]struct{}
 }
 
-var pkgLogger logger.LoggerI
+var pkgLogger logger.Logger
 
 type apiResponse struct {
 	SourceRegulations []sourceRegulation `json:"items"`
@@ -152,7 +152,7 @@ func (suppressUser *SuppressRegulationHandler) regulationSyncLoop(ctx context.Co
 }
 
 func (suppressUser *SuppressRegulationHandler) getSourceRegulationsFromRegulationService() ([]sourceRegulation, error) {
-	if config.GetEnvAsBool("HOSTED_SERVICE", false) {
+	if config.GetBool("HOSTED_SERVICE", false) {
 		pkgLogger.Info("[Regulations] Regulations on free tier are not supported at the moment.")
 		return []sourceRegulation{}, nil
 	}

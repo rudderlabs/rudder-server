@@ -123,9 +123,9 @@ func loadEnv() {
 }
 
 func initialize() {
-	config.Load()
+	config.Reset()
+	logger.Reset()
 	admin.Init()
-	logger.Init()
 	misc.Init()
 	stats.Init()
 	stats.Setup()
@@ -656,7 +656,7 @@ func Schema(provider, schemaKey string) string {
 		provider,
 		warehouseutils.ToSafeNamespace(
 			provider,
-			config.GetRequiredEnv(schemaKey),
+			config.MustGetString(schemaKey),
 		),
 	)
 }

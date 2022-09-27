@@ -41,7 +41,7 @@ var uploader debugger.UploaderI
 var (
 	configBackendURL    string
 	disableEventUploads bool
-	pkgLogger           logger.LoggerI
+	pkgLogger           logger.Logger
 	eventsCacheMap      debugger.Cache
 )
 
@@ -51,7 +51,7 @@ func Init() {
 }
 
 func loadConfig() {
-	configBackendURL = config.GetEnv("CONFIG_BACKEND_URL", "https://api.rudderlabs.com")
+	configBackendURL = config.GetString("CONFIG_BACKEND_URL", "https://api.rudderlabs.com")
 	config.RegisterBoolConfigVariable(false, &disableEventUploads, true, "SourceDebugger.disableEventUploads")
 }
 

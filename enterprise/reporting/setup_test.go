@@ -11,8 +11,8 @@ import (
 )
 
 func TestFeatureSetup(t *testing.T) {
-	config.Load()
-	logger.Init()
+	config.Reset()
+	logger.Reset()
 
 	f := &Factory{
 		EnterpriseToken: "dummy-token",

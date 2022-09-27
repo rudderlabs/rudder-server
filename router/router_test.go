@@ -177,9 +177,9 @@ func (c *testContext) Finish() {
 }
 
 func initRouter() {
-	config.Load()
+	config.Reset()
 	admin.Init()
-	logger.Init()
+	logger.Reset()
 	Init()
 	InitRouterAdmin()
 }

@@ -30,7 +30,7 @@ import (
 var (
 	setVarCharMax                 bool
 	stagingTablePrefix            string
-	pkgLogger                     logger.LoggerI
+	pkgLogger                     logger.Logger
 	skipComputingUserLatestTraits bool
 	enableDeleteByJobs            bool
 )
@@ -542,8 +542,8 @@ func (rs *HandleT) getTemporaryCredForCopy() (string, string, string, error) {
 		accessKey = warehouseutils.GetConfigValue(AWSAccessKey, rs.Warehouse)
 		accessKeyID = warehouseutils.GetConfigValue(AWSAccessKeyID, rs.Warehouse)
 	} else {
-		accessKeyID = config.GetEnv("RUDDER_AWS_S3_COPY_USER_ACCESS_KEY_ID", "")
-		accessKey = config.GetEnv("RUDDER_AWS_S3_COPY_USER_ACCESS_KEY", "")
+		accessKeyID = config.GetString("RUDDER_AWS_S3_COPY_USER_ACCESS_KEY_ID", "")
+		accessKey = config.GetString("RUDDER_AWS_S3_COPY_USER_ACCESS_KEY", "")
 	}
 	mySession := session.Must(session.NewSession())
 	// Create a STS client from just a session.

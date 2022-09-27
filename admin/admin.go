@@ -82,7 +82,7 @@ type Admin struct {
 
 var (
 	instance  *Admin
-	pkgLogger logger.LoggerI
+	pkgLogger logger.Logger
 )
 
 func Init() {
@@ -214,7 +214,7 @@ func (a *Admin) SetLogLevel(l LogLevel, reply *string) (err error) {
 			err = fmt.Errorf("internal Rudder server error: %v", r)
 		}
 	}()
-	err = logger.SetModuleLevel(l.Module, l.Level)
+	err = logger.SetLogLevel(l.Module, l.Level)
 	if err == nil {
 		*reply = fmt.Sprintf("Module %s log level set to %s", l.Module, l.Level)
 	}
@@ -237,7 +237,7 @@ func (a *Admin) GetLoggingConfig(_ struct{}, reply *string) (err error) {
 
 // GetFormattedEnv return the formatted env
 func (a *Admin) GetFormattedEnv(env string, reply *string) (err error) {
-	*reply = config.TransformKey(env)
+	*reply = config.ConfigKeyToEnv(env)
 	return nil
 }
 

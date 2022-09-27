@@ -25,7 +25,7 @@ import (
 
 var (
 	stagingTablePrefix              string
-	pkgLogger                       logger.LoggerI
+	pkgLogger                       logger.Logger
 	skipComputingUserLatestTraits   bool
 	enableSQLStatementExecutionPlan bool
 	txnRollbackTimeout              time.Duration

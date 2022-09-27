@@ -179,8 +179,8 @@ var (
 )
 
 func Init() {
-	clientCertFile := config.GetEnv("KAFKA_SSL_CERTIFICATE_FILE_PATH", "")
-	clientKeyFile := config.GetEnv("KAFKA_SSL_KEY_FILE_PATH", "")
+	clientCertFile := config.GetString("KAFKA_SSL_CERTIFICATE_FILE_PATH", "")
+	clientKeyFile := config.GetString("KAFKA_SSL_KEY_FILE_PATH", "")
 	if clientCertFile != "" && clientKeyFile != "" {
 		var err error
 		clientCert, err = os.ReadFile(clientCertFile)
