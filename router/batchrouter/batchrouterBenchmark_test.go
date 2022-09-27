@@ -61,7 +61,7 @@ func init() {
 
 var letterRunes = []rune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ")
 
-func randomStringLength(n int) string {
+func randomStringOfLength(n int) string {
 	b := make([]rune, n)
 	for i := range b {
 		b[i] = letterRunes[rand.Intn(len(letterRunes))]
@@ -103,8 +103,6 @@ func TestReproducePanic(t *testing.T) {
 	jobsDB.EXPECT().GetToRetry(gomock.Any(), gomock.Any()).Return(jobsdb.JobsResult{
 		Jobs:          jobs,
 		LimitsReached: false,
-		EventsCount:   len(jobs),
-		PayloadSize:   rand.Int63n(1000000),
 	}, nil).AnyTimes()
 	jobsDB.EXPECT().WithUpdateSafeTx(gomock.Any()).Do(func(_ func(_ jobsdb.UpdateSafeTx) error) {
 		wg.Done()
@@ -126,8 +124,7 @@ func TestReproducePanic(t *testing.T) {
 	fileManagerFactory.EXPECT().New(gomock.Any()).AnyTimes().Return(mockFileManager, nil)
 
 	dialFunc := func(_ context.Context, _, _ string) (net.Conn, error) {
-		length := rand.Intn(1000)
-		errorMessage := randomStringLength(length)
+		errorMessage := randomStringOfLength(rand.Intn(1000))
 		return nil, fmt.Errorf(errorMessage)
 	}
 	httpClient := &http.Client{
