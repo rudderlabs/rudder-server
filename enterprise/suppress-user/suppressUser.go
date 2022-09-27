@@ -39,7 +39,7 @@ type sourceFilter struct {
 	specific map[string]struct{}
 }
 
-var pkgLogger logger.LoggerI
+var pkgLogger logger.Logger
 
 type apiResponse struct {
 	SourceRegulations []sourceRegulation `json:"items"`

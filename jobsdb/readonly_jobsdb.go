@@ -36,7 +36,7 @@ type ReadonlyJobsDB interface {
 type ReadonlyHandleT struct {
 	DbHandle    *sql.DB
 	tablePrefix string
-	logger      logger.LoggerI
+	logger      logger.Logger
 }
 
 type DSPair struct {

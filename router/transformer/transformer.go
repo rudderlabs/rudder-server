@@ -45,7 +45,7 @@ type handle struct {
 	// http client timeout for server-transformer request
 	transformTimeout          time.Duration
 	transformRequestTimerStat stats.RudderStats
-	logger                    logger.LoggerI
+	logger                    logger.Logger
 }
 
 type ProxyRequestParams struct {
@@ -71,7 +71,7 @@ func NewTransformer(netClientTimeout, backendProxyTimeout time.Duration) Transfo
 var (
 	maxRetry   int
 	retrySleep time.Duration
-	pkgLogger  logger.LoggerI
+	pkgLogger  logger.Logger
 )
 
 func loadConfig() {

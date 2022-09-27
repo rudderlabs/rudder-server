@@ -38,7 +38,7 @@ import (
 
 // ProcessorApp is the type for Processor type implemention
 type ProcessorApp struct {
-	App            app.Interface
+	App            app.App
 	VersionHandler func(w http.ResponseWriter, r *http.Request)
 }
 

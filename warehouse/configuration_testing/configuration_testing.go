@@ -14,7 +14,7 @@ import (
 
 var (
 	connectionTestingFolder string
-	pkgLogger               logger.LoggerI
+	pkgLogger               logger.Logger
 	fileManagerFactory      filemanager.FileManagerFactory
 	fileManagerTimeout      time.Duration
 )
