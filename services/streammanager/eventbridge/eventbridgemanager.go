@@ -14,7 +14,7 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/logger"
 )
 
-var pkgLogger logger.LoggerI
+var pkgLogger logger.Logger
 
 func init() {
 	pkgLogger = logger.NewLogger().Child("streammanager").Child(strings.ToLower(eventbridge.ServiceName))

@@ -38,7 +38,7 @@ var (
 	readTimeout                 string
 	writeTimeout                string
 	compress                    bool
-	pkgLogger                   logger.LoggerI
+	pkgLogger                   logger.Logger
 	disableNullable             bool
 	execTimeOutInSeconds        time.Duration
 	commitTimeOutInSeconds      time.Duration

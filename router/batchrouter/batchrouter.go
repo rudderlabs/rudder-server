@@ -60,7 +60,7 @@ var (
 	warehouseServiceFailedTimeLock     sync.RWMutex
 	warehouseServiceMaxRetryTime       time.Duration
 	asyncDestinations                  []string
-	pkgLogger                          logger.LoggerI
+	pkgLogger                          logger.Logger
 	Diagnostics                        diagnostics.DiagnosticsI
 	readPerDestination                 bool
 	disableEgress                      bool
@@ -86,7 +86,7 @@ type HandleT struct {
 	multitenantI                multitenant.MultiTenantI
 	diagnosisTicker             *time.Ticker
 	batchRequestsMetric         []batchRequestMetric
-	logger                      logger.LoggerI
+	logger                      logger.Logger
 	noOfWorkers                 int
 	maxEventsInABatch           int
 	maxFailedCountForJob        int

@@ -88,14 +88,14 @@ type UploadAPIT struct {
 	enabled           bool
 	dbHandle          *sql.DB
 	warehouseDBHandle *DB
-	log               logger.LoggerI
+	log               logger.Logger
 	connectionManager *controlplane.ConnectionManager
 	isMultiWorkspace  bool
 }
 
 var UploadAPI UploadAPIT
 
-func InitWarehouseAPI(dbHandle *sql.DB, log logger.LoggerI) error {
+func InitWarehouseAPI(dbHandle *sql.DB, log logger.Logger) error {
 	connectionToken, tokenType, isMultiWorkspace, err := deployment.GetConnectionToken()
 	if err != nil {
 		return err

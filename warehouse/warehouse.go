@@ -50,7 +50,7 @@ import (
 )
 
 var (
-	application                         app.Interface
+	application                         app.App
 	webPort                             int
 	dbHandle                            *sql.DB
 	notifier                            pgnotifier.PgNotifierT
@@ -76,7 +76,7 @@ var (
 	sourceIDsByWorkspace                map[string][]string // workspaceID -> []sourceIDs
 	sourceIDsByWorkspaceLock            sync.RWMutex
 	longRunningUploadStatThresholdInMin time.Duration
-	pkgLogger                           logger.LoggerI
+	pkgLogger                           logger.Logger
 	numLoadFileUploadWorkers            int
 	slaveUploadTimeout                  time.Duration
 	runningMode                         string
@@ -1769,7 +1769,7 @@ func setupDB(ctx context.Context, connInfo string) error {
 	return setupTables(dbHandle)
 }
 
-func Start(ctx context.Context, app app.Interface) error {
+func Start(ctx context.Context, app app.App) error {
 	application = app
 
 	// do not start warehouse service if rudder core is not in normal mode and warehouse is running in same process as rudder core

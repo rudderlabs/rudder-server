@@ -119,7 +119,7 @@ func TestStatic_checkAndHotReloadConfig(t *testing.T) {
 	configMap["keyVar"] = []*configValue{configVar1, configVar2}
 	t.Setenv("RSERVER_KEY_VAR", "value_changed")
 
-	defaultConfig.checkAndHotReloadConfig(configMap)
+	Default.checkAndHotReloadConfig(configMap)
 
 	varptr1 := configVar1.value.(*string)
 	varptr2 := configVar2.value.(*string)

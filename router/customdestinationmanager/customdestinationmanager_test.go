@@ -26,7 +26,7 @@ func initCustomerManager() {
 	once.Do(func() {
 		config.Reset()
 		Init()
-		logger.Init()
+		logger.Reset()
 		stats.Setup()
 		kafka.Init()
 		skipBackendConfigSubscriber = true

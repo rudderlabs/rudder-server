@@ -18,7 +18,7 @@ import (
 
 func Test_Dedup(t *testing.T) {
 	config.Reset()
-	logger.Init()
+	logger.Reset()
 
 	dbPath := os.TempDir() + "/dedup_test"
 	defer func() { _ = os.RemoveAll(dbPath) }()
@@ -56,7 +56,7 @@ func Test_Dedup(t *testing.T) {
 
 func Test_Dedup_Window(t *testing.T) {
 	config.Reset()
-	logger.Init()
+	logger.Reset()
 
 	dbPath := os.TempDir() + "/dedup_test"
 	defer func() { _ = os.RemoveAll(dbPath) }()
@@ -81,7 +81,7 @@ func Test_Dedup_Window(t *testing.T) {
 
 func Test_Dedup_ClearDB(t *testing.T) {
 	config.Reset()
-	logger.Init()
+	logger.Reset()
 
 	dbPath := os.TempDir() + "/dedup_test"
 	defer func() { _ = os.RemoveAll(dbPath) }()
@@ -109,7 +109,7 @@ func Test_Dedup_ClearDB(t *testing.T) {
 
 func Test_Dedup_ErrTxnTooBig(t *testing.T) {
 	config.Reset()
-	logger.Init()
+	logger.Reset()
 
 	dbPath := os.TempDir() + "/dedup_test_errtxntoobig"
 	defer os.RemoveAll(dbPath)
@@ -130,7 +130,7 @@ var duplicateIndexes []int
 
 func Benchmark_Dedup(b *testing.B) {
 	config.Reset()
-	logger.Init()
+	logger.Reset()
 	dbPath := path.Join("./testdata", "tmp", rand.String(10), "/DB_Benchmark_Dedup")
 	b.Logf("using path %s, since tmpDir has issues in macOS\n", dbPath)
 	defer func() { _ = os.RemoveAll(dbPath) }()

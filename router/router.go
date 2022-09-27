@@ -99,7 +99,7 @@ type HandleT struct {
 	transformer                            transformer.Transformer
 	configSubscriberLock                   sync.RWMutex
 	destinationsMap                        map[string]*routerutils.BatchDestinationT // destinationID -> destination
-	logger                                 logger.LoggerI
+	logger                                 logger.Logger
 	batchInputCountStat                    stats.RudderStats
 	batchOutputCountStat                   stats.RudderStats
 	routerTransformInputCountStat          stats.RudderStats
@@ -206,7 +206,7 @@ var (
 	failedEventsCacheSize                                         int
 	readSleep, minSleep, maxStatusUpdateWait, diagnosisTickerTime time.Duration
 	minRetryBackoff, maxRetryBackoff, jobsBatchTimeout            time.Duration
-	pkgLogger                                                     logger.LoggerI
+	pkgLogger                                                     logger.Logger
 	Diagnostics                                                   diagnostics.DiagnosticsI
 	fixedLoopSleep                                                time.Duration
 	toAbortDestinationIDs                                         string
