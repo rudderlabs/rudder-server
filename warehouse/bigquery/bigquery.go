@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
-	"sync"
 	"time"
 
 	"cloud.google.com/go/bigquery"
@@ -624,7 +623,6 @@ func (bq *HandleT) connect(cred BQCredentialsT) (*bigquery.Client, error) {
 }
 
 func loadConfig() {
-	partitionExpiryUpdated = make(map[string]bool)
 	stagingTablePrefix = "RUDDER_STAGING_"
 	config.RegisterBoolConfigVariable(true, &setUsersLoadPartitionFirstEventFilter, true, "Warehouse.bigquery.setUsersLoadPartitionFirstEventFilter")
 	config.RegisterBoolConfigVariable(false, &customPartitionsEnabled, true, "Warehouse.bigquery.customPartitionsEnabled")
