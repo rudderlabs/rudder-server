@@ -3,32 +3,35 @@ Logger Interface Use instance of logger instead of exported functions
 
 usage example
 
-import (
-	"errors"
-	"github.com/rudderlabs/rudder-server/utils/logger"
-)
+   import (
+	   "errors"
+	   "github.com/rudderlabs/rudder-server/config"
+	   "github.com/rudderlabs/rudder-server/utils/logger"
+   )
 
-var	log logger.LoggerI  = &logger.LoggerT{}
-			or
-var	log logger.LoggerI = logger.NewLogger()
+   var c = config.New()
+   var loggerFactory = logger.NewFactory(c)
+   var log logger.Logger = loggerFactory.NewLogger()
+   ...
+   log.Error(...)
 
-...
+or if you want to use the default logger factory (not advised):
 
-log.Error(...)
+   var log logger.Logger = logger.NewLogger()
+   ...
+   log.Error(...)
+
 */
-//go:generate mockgen -destination=../../mocks/utils/logger/mock_logger.go -package mock_logger github.com/rudderlabs/rudder-server/utils/logger LoggerI
+//go:generate mockgen -destination=../../mocks/utils/logger/mock_logger.go -package mock_logger github.com/rudderlabs/rudder-server/utils/logger Logger
 package logger
 
 import (
 	"bytes"
-	"errors"
 	"io"
 	"net/http"
 	"runtime"
 	"strings"
-	"sync"
 
-	"github.com/rudderlabs/rudder-server/config"
 	"go.uber.org/zap"
 )
 
@@ -38,104 +41,75 @@ The idea is to have the option of running the application in different logging l
 how verbose we want the logging to be.
 For example, using Debug level of logging, logs everything and it might slow the application, so we run application
 in DEBUG level for local development or when we want to look through the entire flow of events in detail.
-We use 4 logging levels here Debug, Info, Error and Fatal.
+We use 4 logging levels here Debug, Info, Warn and Error.
 */
 
-type LoggerI interface {
+type Logger interface {
+	// IsDebugLevel Returns true is debug lvl is enabled
 	IsDebugLevel() bool
+
+	// Debug level logging. Most verbose logging level.
 	Debug(args ...interface{})
-	Info(args ...interface{})
-	Warn(args ...interface{})
-	Error(args ...interface{})
-	Fatal(args ...interface{})
+
+	// Debugf does debug level logging similar to fmt.Printf. Most verbose logging level
 	Debugf(format string, args ...interface{})
+
+	// Debugw does debug level structured logging. Most verbose logging level
+	Debugw(msg string, keysAndValues ...interface{})
+
+	// Info level logging. Use this to log the state of the application. Dont use Logger.Info in the flow of individual events. Use Logger.Debug instead.
+	Info(args ...interface{})
+
+	// Infof does info level logging similar to fmt.Printf. Use this to log the state of the application. Dont use Logger.Info in the flow of individual events. Use Logger.Debug instead.
 	Infof(format string, args ...interface{})
+
+	// Infof does info level structured logging. Use this to log the state of the application. Dont use Logger.Info in the flow of individual events. Use Logger.Debug instead.
+	Infow(msg string, keysAndValues ...interface{})
+
+	// Warn level logging. Use this to log warnings
+	Warn(args ...interface{})
+
+	// Warnf does warn level logging similar to fmt.Printf. Use this to log warnings
 	Warnf(format string, args ...interface{})
+
+	// Warnf does warn level structured logging. Use this to log warnings
+	Warnw(msg string, keysAndValues ...interface{})
+
+	// Error level logging. Use this to log errors which dont immediately halt the application.
+	Error(args ...interface{})
+
+	// Errorf does error level logging similar to fmt.Printf. Use this to log errors which dont immediately halt the application.
 	Errorf(format string, args ...interface{})
+
+	// Errorf does error level structured logging. Use this to log errors which dont immediately halt the application.
+	Errorw(msg string, keysAndValues ...interface{})
+
+	// Fatal level logging. Use this to log errors which crash the application.
+	Fatal(args ...interface{})
+
+	// Fatalf does fatal level logging similar to fmt.Printf. Use this to log errors which crash the application.
 	Fatalf(format string, args ...interface{})
+
+	// Fatalf does fatal level structured logging. Use this to log errors which crash the application.
+	Fatalw(format string, keysAndValues ...interface{})
+
 	LogRequest(req *http.Request)
-	Child(s string) LoggerI
+
+	// Child creates a child logger with the given name
+	Child(s string) Logger
+
+	// With adds the provided key value pairs to the logger context
+	With(args ...interface{}) Logger
 }
 
-type loggerT struct {
-	name   string
-	parent *loggerT
+type logger struct {
+	logConfig *factoryConfig
+	name      string
+	zap       *zap.SugaredLogger
+	parent    *logger
 }
 
-var (
-	enableConsole       bool
-	enableFile          bool
-	consoleJsonFormat   bool
-	fileJsonFormat      bool
-	rootLevel           int
-	enableTimestamp     bool
-	enableFileNameInLog bool
-	enableStackTrace    bool
-	logFileLocation     string
-	logFileSize         int
-)
-
-var (
-	Log               *zap.SugaredLogger
-	levelConfig       map[string]int
-	loggerLevelsCache map[string]int
-	levelConfigLock   sync.RWMutex
-	levelConfigStr    string
-)
-
-func loadConfig() {
-	rootLevel = levelMap[config.GetString("LOG_LEVEL", "INFO")]
-	config.RegisterBoolConfigVariable(true, &enableConsole, true, "Logger.enableConsole")
-	config.RegisterBoolConfigVariable(false, &enableFile, true, "Logger.enableFile")
-	config.RegisterBoolConfigVariable(false, &consoleJsonFormat, true, "Logger.consoleJsonFormat")
-	config.RegisterBoolConfigVariable(false, &fileJsonFormat, true, "Logger.fileJsonFormat")
-	config.RegisterStringConfigVariable("/tmp/rudder_log.log", &logFileLocation, true, "Logger.logFileLocation")
-	config.RegisterIntConfigVariable(100, &logFileSize, true, 1, "Logger.logFileSize")
-	config.RegisterBoolConfigVariable(true, &enableTimestamp, true, "Logger.enableTimestamp")
-	config.RegisterBoolConfigVariable(true, &enableFileNameInLog, true, "Logger.enableFileNameInLog")
-	config.RegisterBoolConfigVariable(false, &enableStackTrace, true, "Logger.enableStackTrace")
-
-	// colon separated key value pairs
-	// Example: "router.GA=DEBUG:warehouse.REDSHIFT=DEBUG"
-	config.RegisterStringConfigVariable("", &levelConfigStr, false, "Logger.moduleLevels")
-	levelConfig = make(map[string]int)
-	levelConfigStr = strings.TrimSpace(levelConfigStr)
-	if levelConfigStr != "" {
-		moduleLevelKVs := strings.Split(levelConfigStr, ":")
-		for _, moduleLevelKV := range moduleLevelKVs {
-			pair := strings.SplitN(moduleLevelKV, "=", 2)
-			if len(pair) < 2 {
-				continue
-			}
-			module := strings.TrimSpace(pair[0])
-			if module == "" {
-				continue
-			}
-
-			levelStr := strings.TrimSpace(pair[1])
-			level, ok := levelMap[levelStr]
-			if !ok {
-				continue
-			}
-			levelConfig[module] = level
-		}
-	}
-}
-
-var options []zap.Option
-
-func NewLogger() LoggerI {
-	return &loggerT{}
-}
-
-// Setup sets up the logger initially
-func Init() {
-	loadConfig()
-	Log = configureLogger()
-	loggerLevelsCache = make(map[string]int)
-}
-
-func (l *loggerT) Child(s string) LoggerI {
+func (l *logger) Child(s string) Logger {
 	if s == "" {
 		return l
 	}
@@ -146,174 +120,180 @@ func (l *loggerT) Child(s string) LoggerI {
 	} else {
 		cp.name = strings.Join([]string{l.name, s}, ".")
 	}
+	if l.logConfig.enableNameInLog {
+		cp.zap = l.zap.Named(s)
+	}
 	return &cp
 }
 
-func (l *loggerT) getLoggingLevel() int {
-	var found bool
-	var level int
-	levelConfigLock.RLock()
-	if l.name == "" {
-		level = rootLevel
-		found = true
-	}
-	if !found {
-		level, found = loggerLevelsCache[l.name]
-	}
-	if !found {
-		level, found = levelConfig[l.name]
-	}
-	levelConfigLock.RUnlock()
-	if found {
-		return level
-	}
-
-	level = l.parent.getLoggingLevel()
-
-	levelConfigLock.Lock()
-	loggerLevelsCache[l.name] = level
-	levelConfigLock.Unlock()
-
-	return level
+// With adds a variadic number of fields to the logging context. It accepts a mix of strongly-typed Field objects and loosely-typed key-value pairs. When processing pairs, the first element of the pair is used as the field key and the second as the field value.
+func (l *logger) With(args ...interface{}) Logger {
+	cp := *l
+	cp.zap = l.zap.With(args...)
+	return &cp
 }
 
-// SetModuleLevel sets log level for a module and it's children
-// Pass empty string for module parameter for resetting root logging level
-func SetModuleLevel(module, levelStr string) error {
-	level, ok := levelMap[levelStr]
-	if !ok {
-		return errors.New("invalid level value : " + levelStr)
-	}
-	levelConfigLock.Lock()
-	if module == "" {
-		rootLevel = level
-	} else {
-		levelConfig[module] = level
-		Log.Info(levelConfig)
-	}
-	loggerLevelsCache = make(map[string]int)
-	levelConfigLock.Unlock()
-
-	return nil
+func (l *logger) getLoggingLevel() int {
+	return l.logConfig.getOrSetLogLevel(l.name, l.parent.getLoggingLevel)
 }
 
 // IsDebugLevel Returns true is debug lvl is enabled
-func (l *loggerT) IsDebugLevel() bool {
+func (l *logger) IsDebugLevel() bool {
 	return levelDebug >= l.getLoggingLevel()
 }
 
 // Debug level logging.
 // Most verbose logging level.
-func (l *loggerT) Debug(args ...interface{}) {
+func (l *logger) Debug(args ...interface{}) {
 	if levelDebug >= l.getLoggingLevel() {
-		Log.Debug(args...)
+		l.zap.Debug(args...)
 	}
 }
 
 // Info level logging.
 // Use this to log the state of the application. Dont use Logger.Info in the flow of individual events. Use Logger.Debug instead.
-func (l *loggerT) Info(args ...interface{}) {
+func (l *logger) Info(args ...interface{}) {
 	if levelInfo >= l.getLoggingLevel() {
-		Log.Info(args...)
+		l.zap.Info(args...)
 	}
 }
 
 // Warn level logging.
 // Use this to log warnings
-func (l *loggerT) Warn(args ...interface{}) {
+func (l *logger) Warn(args ...interface{}) {
 	if levelWarn >= l.getLoggingLevel() {
-		Log.Warn(args...)
+		l.zap.Warn(args...)
 	}
 }
 
 // Error level logging.
 // Use this to log errors which dont immediately halt the application.
-func (l *loggerT) Error(args ...interface{}) {
+func (l *logger) Error(args ...interface{}) {
 	if levelError >= l.getLoggingLevel() {
-		Log.Error(args...)
+		l.zap.Error(args...)
 	}
 }
 
 // Fatal level logging.
 // Use this to log errors which crash the application.
-func (l *loggerT) Fatal(args ...interface{}) {
-	if levelFatal >= l.getLoggingLevel() {
-		Log.Error(args...)
+func (l *logger) Fatal(args ...interface{}) {
+	l.zap.Error(args...)
 
-		// If enableStackTrace is true, Zaplogger will take care of writing stacktrace to the file.
-		// Else, we are force writing the stacktrace to the file.
-		if !enableStackTrace {
-			byteArr := make([]byte, 2048)
-			n := runtime.Stack(byteArr, false)
-			stackTrace := string(byteArr[:n])
-			Log.Error(stackTrace)
-		}
-		_ = Log.Sync()
+	// If enableStackTrace is true, Zaplogger will take care of writing stacktrace to the file.
+	// Else, we are force writing the stacktrace to the file.
+	if !l.logConfig.enableStackTrace {
+		byteArr := make([]byte, 2048)
+		n := runtime.Stack(byteArr, false)
+		stackTrace := string(byteArr[:n])
+		l.zap.Error(stackTrace)
 	}
+	_ = l.zap.Sync()
 }
 
 // Debugf does debug level logging similar to fmt.Printf.
 // Most verbose logging level
-func (l *loggerT) Debugf(format string, args ...interface{}) {
+func (l *logger) Debugf(format string, args ...interface{}) {
 	if levelDebug >= l.getLoggingLevel() {
-		Log.Debugf(format, args...)
+		l.zap.Debugf(format, args...)
 	}
 }
 
 // Infof does info level logging similar to fmt.Printf.
 // Use this to log the state of the application. Dont use Logger.Info in the flow of individual events. Use Logger.Debug instead.
-func (l *loggerT) Infof(format string, args ...interface{}) {
+func (l *logger) Infof(format string, args ...interface{}) {
 	if levelInfo >= l.getLoggingLevel() {
-		Log.Infof(format, args...)
+		l.zap.Infof(format, args...)
 	}
 }
 
 // Warnf does warn level logging similar to fmt.Printf.
 // Use this to log warnings
-func (l *loggerT) Warnf(format string, args ...interface{}) {
+func (l *logger) Warnf(format string, args ...interface{}) {
 	if levelWarn >= l.getLoggingLevel() {
-		Log.Warnf(format, args...)
+		l.zap.Warnf(format, args...)
 	}
 }
 
 // Errorf does error level logging similar to fmt.Printf.
 // Use this to log errors which dont immediately halt the application.
-func (l *loggerT) Errorf(format string, args ...interface{}) {
+func (l *logger) Errorf(format string, args ...interface{}) {
 	if levelError >= l.getLoggingLevel() {
-		Log.Errorf(format, args...)
+		l.zap.Errorf(format, args...)
 	}
 }
 
 // Fatalf does fatal level logging similar to fmt.Printf.
 // Use this to log errors which crash the application.
-func (l *loggerT) Fatalf(format string, args ...interface{}) {
-	if levelFatal >= l.getLoggingLevel() {
-		Log.Errorf(format, args...)
+func (l *logger) Fatalf(format string, args ...interface{}) {
+	l.zap.Errorf(format, args...)
 
-		// If enableStackTrace is true, Zaplogger will take care of writing stacktrace to the file.
-		// Else, we are force writing the stacktrace to the file.
-		if !enableStackTrace {
-			byteArr := make([]byte, 2048)
-			n := runtime.Stack(byteArr, false)
-			stackTrace := string(byteArr[:n])
-			Log.Error(stackTrace)
-		}
-		_ = Log.Sync()
+	// If enableStackTrace is true, Zaplogger will take care of writing stacktrace to the file.
+	// Else, we are force writing the stacktrace to the file.
+	if !l.logConfig.enableStackTrace {
+		byteArr := make([]byte, 2048)
+		n := runtime.Stack(byteArr, false)
+		stackTrace := string(byteArr[:n])
+		l.zap.Error(stackTrace)
+	}
+	_ = l.zap.Sync()
+}
+
+// Debugw does debug level structured logging.
+// Most verbose logging level
+func (l *logger) Debugw(msg string, keysAndValues ...interface{}) {
+	if levelDebug >= l.getLoggingLevel() {
+		l.zap.Debugw(msg, keysAndValues...)
 	}
 }
 
+// Infof does info level structured logging.
+// Use this to log the state of the application. Dont use Logger.Info in the flow of individual events. Use Logger.Debug instead.
+func (l *logger) Infow(msg string, keysAndValues ...interface{}) {
+	if levelInfo >= l.getLoggingLevel() {
+		l.zap.Infow(msg, keysAndValues...)
+	}
+}
+
+// Warnf does warn level structured logging.
+// Use this to log warnings
+func (l *logger) Warnw(msg string, keysAndValues ...interface{}) {
+	if levelWarn >= l.getLoggingLevel() {
+		l.zap.Warnw(msg, keysAndValues...)
+	}
+}
+
+// Errorf does error level structured logging.
+// Use this to log errors which dont immediately halt the application.
+func (l *logger) Errorw(msg string, keysAndValues ...interface{}) {
+	if levelError >= l.getLoggingLevel() {
+		l.zap.Errorw(msg, keysAndValues...)
+	}
+}
+
+// Fatalf does fatal level structured logging.
+// Use this to log errors which crash the application.
+func (l *logger) Fatalw(msg string, keysAndValues ...interface{}) {
+	l.zap.Errorw(msg, keysAndValues...)
+
+	// If enableStackTrace is true, Zaplogger will take care of writing stacktrace to the file.
+	// Else, we are force writing the stacktrace to the file.
+	if !l.logConfig.enableStackTrace {
+		byteArr := make([]byte, 2048)
+		n := runtime.Stack(byteArr, false)
+		stackTrace := string(byteArr[:n])
+		l.zap.Error(stackTrace)
+	}
+	_ = l.zap.Sync()
+}
+
 // LogRequest reads and logs the request body and resets the body to original state.
-func (l *loggerT) LogRequest(req *http.Request) {
+func (l *logger) LogRequest(req *http.Request) {
 	if levelEvent >= l.getLoggingLevel() {
 		defer func() { _ = req.Body.Close() }()
 		bodyBytes, _ := io.ReadAll(req.Body)
 		bodyString := string(bodyBytes)
 		req.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
 		// print raw request body for debugging purposes
-		Log.Debug("Request Body: ", bodyString)
+		l.zap.Debug("Request Body: ", bodyString)
 	}
-}
-
-func GetLoggingConfig() map[string]int {
-	return loggerLevelsCache
 }

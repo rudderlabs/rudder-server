@@ -40,7 +40,7 @@ var (
 func initWebhook() {
 	once.Do(func() {
 		config.Reset()
-		logger.Init()
+		logger.Reset()
 		misc.Init()
 		Init()
 		maxTransformerProcess = 1

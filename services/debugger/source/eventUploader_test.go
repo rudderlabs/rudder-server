@@ -50,7 +50,7 @@ func (c *eventUploaderContext) Finish() {
 
 func initEventUploader() {
 	config.Reset()
-	logger.Init()
+	logger.Reset()
 	Init()
 }
 

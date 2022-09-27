@@ -148,7 +148,7 @@ const (
 )
 
 var (
-	pkgLogger              logger.LoggerI
+	pkgLogger              logger.Logger
 	useParquetLoadFilesRS  bool
 	TimeWindowDestinations []string
 	WarehouseDestinations  []string

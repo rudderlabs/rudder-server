@@ -21,7 +21,7 @@ import (
 
 func initMisc() {
 	config.Reset()
-	logger.Init()
+	logger.Reset()
 	Init()
 }
 

@@ -24,7 +24,7 @@ import (
 var (
 	partitionExpiryUpdated                map[string]bool
 	partitionExpiryUpdatedLock            sync.RWMutex
-	pkgLogger                             logger.LoggerI
+	pkgLogger                             logger.Logger
 	setUsersLoadPartitionFirstEventFilter bool
 	stagingTablePrefix                    string
 	customPartitionsEnabled               bool

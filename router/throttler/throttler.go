@@ -46,7 +46,7 @@ type HandleT struct {
 	userLimiter     *Limiter
 }
 
-var pkgLogger logger.LoggerI
+var pkgLogger logger.Logger
 
 func (throttler *HandleT) setLimits() {
 	destName := throttler.destinationName

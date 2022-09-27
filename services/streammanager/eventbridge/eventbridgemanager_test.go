@@ -82,7 +82,7 @@ func TestProduceWithInvalidJson(t *testing.T) {
 
 func TestProduceWithBadResponse(t *testing.T) {
 	ctrl := gomock.NewController(t)
-	mockLogger := mock_logger.NewMockLoggerI(ctrl)
+	mockLogger := mock_logger.NewMockLogger(ctrl)
 	pkgLogger = mockLogger
 	mockClient := mock_eventbridge.NewMockEventBridgeClient(ctrl)
 	producer := &EventBridgeProducer{client: mockClient}

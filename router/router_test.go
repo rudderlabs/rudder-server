@@ -179,7 +179,7 @@ func (c *testContext) Finish() {
 func initRouter() {
 	config.Reset()
 	admin.Init()
-	logger.Init()
+	logger.Reset()
 	Init()
 	InitRouterAdmin()
 }

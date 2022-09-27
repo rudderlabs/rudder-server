@@ -15,7 +15,7 @@ func init() {
 const MAX_CHARACTER_LIMIT = 65535
 
 var (
-	pkgLogger    logger.LoggerI
+	pkgLogger    logger.Logger
 	VARCHAR_TYPE = fmt.Sprintf("varchar(%d)", MAX_CHARACTER_LIMIT)
 	dataTypesMap = map[string]string{
 		"boolean":  "boolean",

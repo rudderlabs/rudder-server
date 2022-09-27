@@ -35,7 +35,7 @@ func (c *uploaderContext) Finish() {
 
 func initUploader() {
 	config.Reset()
-	logger.Init()
+	logger.Reset()
 }
 
 var _ = Describe("Uploader", func() {

@@ -98,7 +98,7 @@ var (
 	IdleTimeout                                                                       time.Duration
 	allowReqsWithoutUserIDAndAnonymousID                                              bool
 	gwAllowPartialWriteWithErrors                                                     bool
-	pkgLogger                                                                         logger.LoggerI
+	pkgLogger                                                                         logger.Logger
 	Diagnostics                                                                       diagnostics.DiagnosticsI
 )
 
@@ -147,7 +147,7 @@ type userWebRequestWorkerT struct {
 
 // HandleT is the struct returned by the Setup call
 type HandleT struct {
-	application                  app.Interface
+	application                  app.App
 	userWorkerBatchRequestQ      chan *userWorkerBatchRequestT
 	batchUserWorkerBatchRequestQ chan *batchUserWorkerBatchRequestT
 	jobsDB                       jobsdb.JobsDB
@@ -178,7 +178,7 @@ type HandleT struct {
 	suppressUserHandler                                        types.SuppressUserI
 	eventSchemaHandler                                         types.EventSchemasI
 	versionHandler                                             func(w http.ResponseWriter, r *http.Request)
-	logger                                                     logger.LoggerI
+	logger                                                     logger.Logger
 	rrh                                                        *RegularRequestHandler
 	irh                                                        *ImportRequestHandler
 	readonlyGatewayDB, readonlyRouterDB, readonlyBatchRouterDB jobsdb.ReadonlyJobsDB
@@ -1551,7 +1551,7 @@ Setup initializes this module:
 This function will block until backend config is initially received.
 */
 func (gateway *HandleT) Setup(
-	application app.Interface, backendConfig backendconfig.BackendConfig, jobsDB jobsdb.JobsDB,
+	application app.App, backendConfig backendconfig.BackendConfig, jobsDB jobsdb.JobsDB,
 	rateLimiter ratelimiter.RateLimiter, versionHandler func(w http.ResponseWriter, r *http.Request),
 	rsourcesService rsources.JobService,
 ) error {

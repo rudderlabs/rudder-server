@@ -41,7 +41,7 @@ var uploader debugger.UploaderI
 var (
 	configBackendURL    string
 	disableEventUploads bool
-	pkgLogger           logger.LoggerI
+	pkgLogger           logger.Logger
 	eventsCacheMap      debugger.Cache
 )
 

@@ -21,7 +21,7 @@ import (
 
 var (
 	stagingTablePrefix string
-	pkgLogger          logger.LoggerI
+	pkgLogger          logger.Logger
 )
 
 func Init() {
