@@ -93,11 +93,17 @@ func BenchmarkReproduce(b *testing.B) {
 		})
 	}
 
-	delta := 100000
-	var wg sync.WaitGroup
-	wg.Add(delta)
+	// MOCKS CREATION
+	// The objective here is to end up in setJobStatus() where we overwrite job.Parameters (see batchrouter.go:1214)
+	var (
+		noOfWorkers    = 10
+		noOfIterations = 100000
+		wg             sync.WaitGroup
+		ctrl           = gomock.NewController(b)
+		processQ       = make(chan *BatchDestinationDataT, 100)
+	)
 
-	ctrl := gomock.NewController(b)
+	wg.Add(noOfIterations)
 	jobsDB := mocksJobsDB.NewMockJobsDB(ctrl)
 	jobsDB.EXPECT().GetToRetry(gomock.Any(), gomock.Any()).Return(jobsdb.JobsResult{
 		Jobs:          jobs,
@@ -135,8 +141,7 @@ func BenchmarkReproduce(b *testing.B) {
 		},
 	}
 
-	noOfWorkers := 10
-	processQ := make(chan *BatchDestinationDataT, 100)
+	// SETTING UP BATCH ROUTER
 	br := &HandleT{
 		processQ:           processQ,
 		jobsDB:             jobsDB,
@@ -150,14 +155,16 @@ func BenchmarkReproduce(b *testing.B) {
 		netHandle:          httpClient,
 	}
 
+	// STARTING UP WORKERS
 	for i := 0; i < noOfWorkers; i++ {
 		worker := &workerT{workerID: i, brt: br}
 		br.workers[i] = worker
 		go worker.workerProcess()
 	}
 
+	// PUSH INTO THE PROCESS QUEUE
 	go func() {
-		for i := 0; i < delta; i++ {
+		for i := 0; i < noOfIterations; i++ {
 			processQ <- &BatchDestinationDataT{
 				batchDestination: utils.BatchDestinationT{
 					Sources: []backendconfig.SourceT{{ID: "my-source-id"}},
@@ -167,6 +174,7 @@ func BenchmarkReproduce(b *testing.B) {
 		}
 	}()
 
+	// WAIT FOR ALL JOBS TO BE PROCESSED N TIMES - triggered by jobsDB.WithUpdateSafeTx()
 	wg.Wait()
 }
 
