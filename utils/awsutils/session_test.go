@@ -108,6 +108,18 @@ func TestCreateSessionWithRole(t *testing.T) {
 	assert.Equal(t, sessionConfig.Timeout, awsSession.Config.HTTPClient.Timeout)
 }
 
+func TestCreateSessionWithRoleButWithoutExternalID(t *testing.T) {
+	sessionConfig := SessionConfig{
+		Region:     someRegion,
+		IAMRoleARN: someIAMRoleARN,
+		Timeout:    10 * time.Second,
+	}
+	awsSession, err := CreateSession(&sessionConfig)
+	assert.NotNil(t, err)
+	assert.Nil(t, awsSession)
+	assert.EqualError(t, err, "externalID is required for IAM role")
+}
+
 func TestCreateSessionWithAccessKeys(t *testing.T) {
 	sessionConfig := SessionConfig{
 		Region:      destinationWithAccessKey.Config["region"].(string),

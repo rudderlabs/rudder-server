@@ -9,9 +9,7 @@ import (
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/credentials"
-	"github.com/aws/aws-sdk-go/aws/credentials/ec2rolecreds"
 	"github.com/aws/aws-sdk-go/aws/credentials/stscreds"
-	"github.com/aws/aws-sdk-go/aws/ec2metadata"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/mitchellh/mapstructure"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
@@ -46,6 +44,9 @@ func createDefaultSession(config *SessionConfig) (*session.Session, error) {
 }
 
 func createCredentailsForRole(config *SessionConfig) (*credentials.Credentials, error) {
+	if config.ExternalID == "" {
+		return nil, errors.New("externalID is required for IAM role")
+	}
 	hostSession, err := createDefaultSession(config)
 	if err != nil {
 		return nil, err
@@ -57,31 +58,16 @@ func createCredentailsForRole(config *SessionConfig) (*credentials.Credentials, 
 		}), err
 }
 
-func getHostCredentials(config *SessionConfig) (*credentials.Credentials, error) {
-	hostSession, err := createDefaultSession(config)
-	if err != nil {
-		return nil, err
-	}
-	return credentials.NewChainCredentials(
-		[]credentials.Provider{
-			&credentials.EnvProvider{},
-			&ec2rolecreds.EC2RoleProvider{
-				Client: ec2metadata.New(hostSession),
-			},
-		}), nil
-}
-
-func createCredentails(config *SessionConfig) (*credentials.Credentials, error) {
-	if config.IAMRoleARN != "" {
-		return createCredentailsForRole(config)
-	} else if config.AccessKey != "" && config.AccessKeyID != "" {
-		return credentials.NewStaticCredentials(config.AccessKeyID, config.AccessKey, ""), nil
-	}
-	return getHostCredentials(config)
-}
-
 func CreateSession(config *SessionConfig) (*session.Session, error) {
-	awsCredentials, err := createCredentails(config)
+	var (
+		awsCredentials *credentials.Credentials
+		err            error
+	)
+	if config.IAMRoleARN != "" {
+		awsCredentials, err = createCredentailsForRole(config)
+	} else if config.AccessKey != "" && config.AccessKeyID != "" {
+		awsCredentials, err = credentials.NewStaticCredentials(config.AccessKeyID, config.AccessKey, ""), nil
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -89,11 +75,12 @@ func CreateSession(config *SessionConfig) (*session.Session, error) {
 		HTTPClient: &http.Client{
 			Timeout: config.Timeout,
 		},
-		Region:           aws.String(config.Region),
-		Credentials:      awsCredentials,
-		Endpoint:         config.Endpoint,
-		S3ForcePathStyle: config.S3ForcePathStyle,
-		DisableSSL:       config.DisableSSL,
+		Region:                        aws.String(config.Region),
+		CredentialsChainVerboseErrors: aws.Bool(true),
+		Credentials:                   awsCredentials,
+		Endpoint:                      config.Endpoint,
+		S3ForcePathStyle:              config.S3ForcePathStyle,
+		DisableSSL:                    config.DisableSSL,
 	})
 }
 
