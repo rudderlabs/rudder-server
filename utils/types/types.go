@@ -46,7 +46,7 @@ type ConfigEnvI interface {
 
 // ReportingI is interface to report metrics
 type ReportingI interface {
-	WaitForSetup(ctx context.Context, clientName string)
+	WaitForSetup(ctx context.Context, clientName string) error
 	AddClient(ctx context.Context, c Config)
 	Report(metrics []*PUReportedMetric, txn *sql.Tx)
 }

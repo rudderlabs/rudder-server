@@ -1323,12 +1323,15 @@ func SortMap(inputMap map[string]metric.MovingAverage) []string {
 	return sortedWorkspaceList
 }
 
-func SleepCtx(ctx context.Context, delay time.Duration) bool {
+// SleepCtx sleeps for the given duration or until the context is canceled.
+//
+//	the context error is returned if context is canceled.
+func SleepCtx(ctx context.Context, delay time.Duration) error {
 	select {
 	case <-ctx.Done():
-		return true
+		return ctx.Err()
 	case <-time.After(delay):
-		return false
+		return nil
 	}
 }
 

@@ -2417,7 +2417,9 @@ func (proc *HandleT) mainPipeline(ctx context.Context) {
 	proc.logger.Infof("Processor mainPipeline started, subJobSize=%d pipelineBufferedItems=%d", subJobSize, pipelineBufferedItems)
 
 	if proc.reporting != nil && proc.reportingEnabled {
-		proc.reporting.WaitForSetup(ctx, types.CORE_REPORTING_CLIENT)
+		if err := proc.reporting.WaitForSetup(ctx, types.CORE_REPORTING_CLIENT); err != nil {
+			return
+		}
 	}
 	wg := sync.WaitGroup{}
 	bufferSize := pipelineBufferedItems

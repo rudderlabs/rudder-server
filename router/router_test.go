@@ -132,7 +132,7 @@ var (
 
 type reportingNOOP struct{}
 
-func (*reportingNOOP) WaitForSetup(_ context.Context, _ string)          {}
+func (*reportingNOOP) WaitForSetup(_ context.Context, _ string) error    { return nil }
 func (*reportingNOOP) Report(_ []*utilTypes.PUReportedMetric, _ *sql.Tx) {}
 
 type testContext struct {
