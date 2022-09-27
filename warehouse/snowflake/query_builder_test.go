@@ -1,10 +1,11 @@
 package snowflake
 
 import (
+	"regexp"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
-	"regexp"
 )
 
 var _ = Describe("Snowflake QueryBuilder", func() {
@@ -26,8 +27,7 @@ var _ = Describe("Snowflake QueryBuilder", func() {
 			`
 		ALTER TABLE
 		testNamespace.testTableName
-		ADD testColumnName-1 text,
-		ADD testColumnName-2 bigint;`,
+		ADD testColumnName-1 varchar, testColumnName-2 number;`,
 		),
 	)
 })

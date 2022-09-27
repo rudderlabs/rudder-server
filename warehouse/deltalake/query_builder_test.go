@@ -1,10 +1,11 @@
 package deltalake
 
 import (
+	"regexp"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
-	"regexp"
 )
 
 var _ = Describe("Deltalake QueryBuilder", func() {
