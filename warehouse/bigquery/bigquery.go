@@ -637,7 +637,6 @@ func Init() {
 	pkgLogger = logger.NewLogger().Child("warehouse").Child("bigquery")
 }
 
-
 func dedupEnabled() bool {
 	return isDedupEnabled || isUsersTableDedupEnabled
 }

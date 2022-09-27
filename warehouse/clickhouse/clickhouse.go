@@ -476,11 +476,11 @@ func castStringToArray(data, dataType string) interface{} {
 			return dataBool
 		}
 		dataInt := make([]int32, len(dataBool))
-		for _, val := range dataBool {
+		for i, val := range dataBool {
 			if val {
-				dataInt = append(dataInt, 1)
+				dataInt[i] = 1
 			} else {
-				dataInt = append(dataInt, 0)
+				dataInt[i] = 0
 			}
 		}
 		return dataBool
