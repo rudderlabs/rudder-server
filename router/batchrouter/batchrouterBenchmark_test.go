@@ -55,6 +55,20 @@ func Benchmark_GetStorageDateFormat(b *testing.B) {
 	})
 }
 
+func init() {
+	rand.Seed(time.Now().UnixNano())
+}
+
+var letterRunes = []rune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ")
+
+func randomStringLength(n int) string {
+	b := make([]rune, n)
+	for i := range b {
+		b[i] = letterRunes[rand.Intn(len(letterRunes))]
+	}
+	return string(b)
+}
+
 func randomString() string {
 	return strings.ReplaceAll(uuid.Must(uuid.NewV4()).String(), "-", "")
 }
@@ -79,7 +93,7 @@ func BenchmarkReproduce(b *testing.B) {
 	// MOCKS CREATION
 	// The objective here is to end up in setJobStatus() where we overwrite job.Parameters (see batchrouter.go:1214)
 	var (
-		noOfWorkers    = 10
+		noOfWorkers    = 1000
 		noOfIterations = 100000
 		wg             sync.WaitGroup
 		ctrl           = gomock.NewController(b)
@@ -113,14 +127,15 @@ func BenchmarkReproduce(b *testing.B) {
 	fileManagerFactory := mocksFileManager.NewMockFileManagerFactory(ctrl)
 	fileManagerFactory.EXPECT().New(gomock.Any()).AnyTimes().Return(mockFileManager, nil)
 
+	dialFunc := func(_ context.Context, _, _ string) (net.Conn, error) {
+		length := rand.Intn(1000)
+		errorMessage := randomStringLength(length)
+		return nil, fmt.Errorf(errorMessage)
+	}
 	httpClient := &http.Client{
 		Transport: &http.Transport{
-			DialContext: func(_ context.Context, _, _ string) (net.Conn, error) {
-				return nil, fmt.Errorf("some error")
-			},
-			DialTLSContext: func(_ context.Context, _, _ string) (net.Conn, error) {
-				return nil, fmt.Errorf("some error")
-			},
+			DialContext:    dialFunc,
+			DialTLSContext: dialFunc,
 		},
 	}
 
@@ -154,15 +169,6 @@ func BenchmarkReproduce(b *testing.B) {
 				},
 				jobs: jobs,
 			}
-		}
-	}()
-
-	// FORCEFULLY REWRITE SOME RANDOM PARAMETERS
-	go func() {
-		max := len(jobs)
-		for {
-			idx := rand.Intn(max)
-			jobs[idx].Parameters = getJobParameters()
 		}
 	}()
 
