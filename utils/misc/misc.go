@@ -108,7 +108,7 @@ type RFP struct {
 	levelsToKeep int
 }
 
-var pkgLogger logger.LoggerI
+var pkgLogger logger.Logger
 
 func init() {
 	gluuid.EnableRandPool()

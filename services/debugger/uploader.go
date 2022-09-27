@@ -16,7 +16,7 @@ import (
 )
 
 var (
-	pkgLogger logger.LoggerI
+	pkgLogger logger.Logger
 	Http      sysUtils.HttpI = sysUtils.NewHttp()
 )
 

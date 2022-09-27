@@ -412,7 +412,7 @@ type HandleT struct {
 	unionQueryTime                stats.RudderStats
 	isStatDropDSPeriodInitialized bool
 	inProgressMigrationTargetDS   *dataSetT
-	logger                        logger.LoggerI
+	logger                        logger.Logger
 	writeCapacity                 chan struct{}
 	readCapacity                  chan struct{}
 	registerStatusHandler         bool
@@ -629,7 +629,7 @@ var (
 	useJoinForUnprocessed                        bool
 	backupRowsBatchSize                          int64
 	backupMaxTotalPayloadSize                    int64
-	pkgLogger                                    logger.LoggerI
+	pkgLogger                                    logger.Logger
 	skipZeroAssertionForMultitenant              bool
 )
 

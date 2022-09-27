@@ -83,7 +83,7 @@ func blockOnHold() {
 func Init() {
 	config.Reset()
 	stats.Setup()
-	logger.Init()
+	logger.Reset()
 }
 
 func Test_Ping(t *testing.T) {

@@ -29,7 +29,7 @@ type TableJSONArchiver struct {
 	FileManager   filemanager.FileManager
 }
 
-var pkgLogger logger.LoggerI
+var pkgLogger logger.Logger
 
 func init() {
 	pkgLogger = logger.NewLogger().Child("tablearchiver")

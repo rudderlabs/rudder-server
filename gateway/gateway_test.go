@@ -79,7 +79,7 @@ type testContext struct {
 	mockCtrl          *gomock.Controller
 	mockJobsDB        *mocksJobsDB.MockJobsDB
 	mockBackendConfig *mocksBackendConfig.MockBackendConfig
-	mockApp           *mocksApp.MockInterface
+	mockApp           *mocksApp.MockApp
 	mockRateLimiter   *mocksRateLimiter.MockRateLimiter
 
 	mockVersionHandler func(w http.ResponseWriter, r *http.Request)
@@ -110,7 +110,7 @@ func (c *testContext) Setup() {
 	c.mockCtrl = gomock.NewController(GinkgoT())
 	c.mockJobsDB = mocksJobsDB.NewMockJobsDB(c.mockCtrl)
 	c.mockBackendConfig = mocksBackendConfig.NewMockBackendConfig(c.mockCtrl)
-	c.mockApp = mocksApp.NewMockInterface(c.mockCtrl)
+	c.mockApp = mocksApp.NewMockApp(c.mockCtrl)
 	c.mockRateLimiter = mocksRateLimiter.NewMockRateLimiter(c.mockCtrl)
 
 	tFunc := c.asyncHelper.ExpectAndNotifyCallbackWithName("process_config")
@@ -163,7 +163,7 @@ var _ = Describe("Reconstructing JSON for ServerSide SDK", func() {
 func initGW() {
 	config.Reset()
 	admin.Init()
-	logger.Init()
+	logger.Reset()
 	misc.Init()
 	Init()
 }

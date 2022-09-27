@@ -46,7 +46,7 @@ var (
 
 func TestMain(m *testing.M) {
 	config.Reset()
-	logger.Init()
+	logger.Reset()
 
 	os.Exit(run(m))
 }

@@ -12,7 +12,7 @@ import (
 
 func TestFeatureSetup(t *testing.T) {
 	config.Reset()
-	logger.Init()
+	logger.Reset()
 
 	f := &Factory{
 		EnterpriseToken: "dummy-token",

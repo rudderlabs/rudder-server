@@ -44,7 +44,7 @@ const (
 type HandleT struct {
 	clients                       map[string]*types.Client
 	clientsMapLock                sync.RWMutex
-	logger                        logger.LoggerI
+	logger                        logger.Logger
 	reportingServiceURL           string
 	namespace                     string
 	workspaceID                   string

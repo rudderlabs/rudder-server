@@ -29,7 +29,7 @@ var (
 	webhookRetryMax            int
 	webhookRetryWaitMax        time.Duration
 	webhookRetryWaitMin        time.Duration
-	pkgLogger                  logger.LoggerI
+	pkgLogger                  logger.Logger
 	sourceListForParsingParams []string
 )
 

@@ -16,7 +16,7 @@ import (
 )
 
 var (
-	pkgLogger                 logger.LoggerI
+	pkgLogger                 logger.Logger
 	DefaultFileManagerFactory FileManagerFactory
 	ErrKeyNotFound            = errors.New("NoSuchKey")
 )

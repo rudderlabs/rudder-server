@@ -23,7 +23,7 @@ const (
 	minPostgresVersion = 100000
 )
 
-var pkgLogger logger.LoggerI
+var pkgLogger logger.Logger
 
 func init() {
 	pkgLogger = logger.NewLogger().Child("validators").Child("envValidator")

@@ -88,7 +88,7 @@ var json = jsoniter.ConfigCompatibleWithStandardLibrary
 
 var (
 	HTTPTimeout time.Duration
-	pkgLogger   logger.LoggerI
+	pkgLogger   logger.Logger
 )
 
 func loadConfig() {
