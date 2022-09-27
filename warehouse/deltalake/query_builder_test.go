@@ -7,7 +7,7 @@ import (
 	"strings"
 )
 
-var _ = Describe("Postgres QueryBuilder", func() {
+var _ = Describe("Deltalake QueryBuilder", func() {
 	DescribeTable("addColumnsSQLStatement", func(columnsInfo warehouseutils.ColumnsInto, expected string) {
 		got := addColumnsSQLStatement("testNamespace", "testTableName", columnsInfo)
 		Expect(strings.Trim(got, " ")).To(BeEquivalentTo(expected))
