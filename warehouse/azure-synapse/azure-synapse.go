@@ -177,7 +177,7 @@ func columnsWithDataTypes(columns map[string]string, prefix string) string {
 	return strings.Join(arr, ",")
 }
 
-func (as *HandleT) IsEmpty(warehouse warehouseutils.WarehouseT) (empty bool, err error) {
+func (*HandleT) IsEmpty(warehouse warehouseutils.WarehouseT) (empty bool, err error) {
 	return
 }
 
@@ -665,7 +665,7 @@ func (as *HandleT) AddColumn(tableName, columnName, columnType string) (err erro
 	return err
 }
 
-func (as *HandleT) AlterColumn(tableName, columnName, columnType string) (err error) {
+func (*HandleT) AlterColumn(tableName, columnName, columnType string) (err error) {
 	return
 }
 
@@ -806,15 +806,15 @@ func (as *HandleT) Cleanup() {
 	}
 }
 
-func (as *HandleT) LoadIdentityMergeRulesTable() (err error) {
+func (*HandleT) LoadIdentityMergeRulesTable() (err error) {
 	return
 }
 
-func (as *HandleT) LoadIdentityMappingsTable() (err error) {
+func (*HandleT) LoadIdentityMappingsTable() (err error) {
 	return
 }
 
-func (as *HandleT) DownloadIdentityRules(*misc.GZipWriter) (err error) {
+func (*HandleT) DownloadIdentityRules(*misc.GZipWriter) (err error) {
 	return
 }
 

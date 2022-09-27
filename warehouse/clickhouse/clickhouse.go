@@ -862,7 +862,7 @@ func (ch *HandleT) CreateSchema() (err error) {
 	return err
 }
 
-func (ch *HandleT) AlterColumn(tableName, columnName, columnType string) (err error) {
+func (*HandleT) AlterColumn(tableName, columnName, columnType string) (err error) {
 	return
 }
 
@@ -900,7 +900,7 @@ func (ch *HandleT) Setup(warehouse warehouseutils.WarehouseT, uploader warehouse
 	return err
 }
 
-func (ch *HandleT) CrashRecover(warehouse warehouseutils.WarehouseT) (err error) {
+func (*HandleT) CrashRecover(warehouse warehouseutils.WarehouseT) (err error) {
 	return
 }
 
@@ -983,19 +983,19 @@ func (ch *HandleT) Cleanup() {
 	}
 }
 
-func (ch *HandleT) LoadIdentityMergeRulesTable() (err error) {
+func (*HandleT) LoadIdentityMergeRulesTable() (err error) {
 	return
 }
 
-func (ch *HandleT) LoadIdentityMappingsTable() (err error) {
+func (*HandleT) LoadIdentityMappingsTable() (err error) {
 	return
 }
 
-func (ch *HandleT) DownloadIdentityRules(*misc.GZipWriter) (err error) {
+func (*HandleT) DownloadIdentityRules(*misc.GZipWriter) (err error) {
 	return
 }
 
-func (ch *HandleT) IsEmpty(warehouse warehouseutils.WarehouseT) (empty bool, err error) {
+func (*HandleT) IsEmpty(warehouse warehouseutils.WarehouseT) (empty bool, err error) {
 	return
 }
 

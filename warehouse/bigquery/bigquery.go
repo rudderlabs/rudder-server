@@ -811,7 +811,7 @@ func (bq *HandleT) AddColumn(tableName, columnName, columnType string) (err erro
 	return err
 }
 
-func (bq *HandleT) AlterColumn(tableName, columnName, columnType string) (err error) {
+func (*HandleT) AlterColumn(tableName, columnName, columnType string) (err error) {
 	return
 }
 
@@ -1098,5 +1098,5 @@ func (bq *HandleT) LoadTestTable(location, tableName string, payloadMap map[stri
 	return
 }
 
-func (bq *HandleT) SetConnectionTimeout(timeout time.Duration) {
+func (*HandleT) SetConnectionTimeout(timeout time.Duration) {
 }

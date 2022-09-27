@@ -28,7 +28,7 @@ func (ls *LocalSchemaRepository) FetchSchema(warehouse warehouseutils.WarehouseT
 	return schema, nil
 }
 
-func (ls *LocalSchemaRepository) CreateSchema() (err error) {
+func (*LocalSchemaRepository) CreateSchema() (err error) {
 	return nil
 }
 

@@ -242,7 +242,7 @@ func (wh *HandleT) initWorker() chan *UploadJobT {
 	return workerChan
 }
 
-func (wh *HandleT) handleUploadJob(uploadJob *UploadJobT) (err error) {
+func (*HandleT) handleUploadJob(uploadJob *UploadJobT) (err error) {
 	// Process the upload job
 	err = uploadJob.run()
 	return
