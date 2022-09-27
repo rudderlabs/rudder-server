@@ -22,8 +22,6 @@ import (
 )
 
 var (
-	partitionExpiryUpdated                map[string]bool
-	partitionExpiryUpdatedLock            sync.RWMutex
 	pkgLogger                             logger.Logger
 	setUsersLoadPartitionFirstEventFilter bool
 	stagingTablePrefix                    string
@@ -639,29 +637,6 @@ func Init() {
 	pkgLogger = logger.NewLogger().Child("warehouse").Child("bigquery")
 }
 
-func (bq *HandleT) removePartitionExpiry() (err error) {
-	partitionExpiryUpdatedLock.Lock()
-	defer partitionExpiryUpdatedLock.Unlock()
-	identifier := fmt.Sprintf(`%s::%s`, bq.Warehouse.Source.ID, bq.Warehouse.Destination.ID)
-	if _, ok := partitionExpiryUpdated[identifier]; ok {
-		return
-	}
-	for tName := range bq.Uploader.GetSchemaInWarehouse() {
-		var m *bigquery.TableMetadata
-		m, err = bq.Db.Dataset(bq.Namespace).Table(tName).Metadata(bq.BQContext)
-		if err != nil {
-			return
-		}
-		if m.TimePartitioning != nil && m.TimePartitioning.Expiration > 0 {
-			_, err = bq.Db.Dataset(bq.Namespace).Table(tName).Update(bq.BQContext, bigquery.TableMetadataToUpdate{TimePartitioning: &bigquery.TimePartitioning{Expiration: time.Duration(0)}}, "")
-			if err != nil {
-				return
-			}
-		}
-	}
-	partitionExpiryUpdated[identifier] = true
-	return
-}
 
 func dedupEnabled() bool {
 	return isDedupEnabled || isUsersTableDedupEnabled
