@@ -4165,7 +4165,7 @@ func (jd *HandleT) getUnprocessed(ctx context.Context, params GetQueryParamsT) (
 	}
 
 	var completeUnprocessedJobs JobsResult
-	dsQueryCount := 0
+	var dsQueryCount int
 	var dsLimit int
 	if jd.dsLimit != nil {
 		dsLimit = *jd.dsLimit

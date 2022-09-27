@@ -70,16 +70,23 @@ func (manager *GCSManager) ListFilesWithPrefix(ctx context.Context, startAfter, 
 	defer cancel()
 
 	// Create GCS Bucket handle
-	it := client.Bucket(manager.Config.Bucket).Objects(ctx, &storage.Query{
-		Prefix:    prefix,
-		Delimiter: "",
-	})
+	if manager.Config.Iterator == nil {
+		manager.Config.Iterator = client.Bucket(manager.Config.Bucket).Objects(ctx, &storage.Query{
+			Prefix:      prefix,
+			Delimiter:   "",
+			StartOffset: startAfter,
+		})
+	}
+	var attrs *storage.ObjectAttrs
 	for {
-		if maxItems == 0 {
+		if maxItems <= 0 {
 			break
 		}
-		attrs, err := it.Next()
+		attrs, err = manager.Config.Iterator.Next()
 		if err == iterator.Done || err != nil {
+			if err == iterator.Done {
+				err = nil
+			}
 			break
 		}
 		fileObjects = append(fileObjects, &FileObject{attrs.Name, attrs.Updated})
@@ -225,6 +232,7 @@ type GCSConfig struct {
 	EndPoint       *string
 	ForcePathStyle *bool
 	DisableSSL     *bool
+	Iterator       *storage.ObjectIterator
 }
 
 func (manager *GCSManager) DeleteObjects(ctx context.Context, locations []string) (err error) {
