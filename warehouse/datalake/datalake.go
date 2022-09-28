@@ -35,7 +35,7 @@ func (wh *HandleT) Setup(warehouse warehouseutils.WarehouseT, uploader warehouse
 	return err
 }
 
-func (wh *HandleT) CrashRecover(warehouse warehouseutils.WarehouseT) (err error) {
+func (*HandleT) CrashRecover(warehouse warehouseutils.WarehouseT) (err error) {
 	return nil
 }
 
@@ -51,7 +51,7 @@ func (wh *HandleT) CreateTable(tableName string, columnMap map[string]string) (e
 	return wh.SchemaRepository.CreateTable(tableName, columnMap)
 }
 
-func (wh *HandleT) DropTable(tableName string) (err error) {
+func (*HandleT) DropTable(tableName string) (err error) {
 	return fmt.Errorf("datalake err :not implemented")
 }
 
@@ -89,32 +89,32 @@ func (wh *HandleT) LoadIdentityMappingsTable() error {
 	return nil
 }
 
-func (wh *HandleT) Cleanup() {
+func (*HandleT) Cleanup() {
 }
 
-func (wh *HandleT) IsEmpty(warehouse warehouseutils.WarehouseT) (bool, error) {
+func (*HandleT) IsEmpty(warehouse warehouseutils.WarehouseT) (bool, error) {
 	return false, nil
 }
 
-func (wh *HandleT) TestConnection(warehouse warehouseutils.WarehouseT) error {
+func (*HandleT) TestConnection(warehouse warehouseutils.WarehouseT) error {
 	return fmt.Errorf("datalake err :not implemented")
 }
 
-func (wh *HandleT) DownloadIdentityRules(*misc.GZipWriter) error {
+func (*HandleT) DownloadIdentityRules(*misc.GZipWriter) error {
 	return fmt.Errorf("datalake err :not implemented")
 }
 
-func (wh *HandleT) GetTotalCountInTable(tableName string) (int64, error) {
+func (*HandleT) GetTotalCountInTable(tableName string) (int64, error) {
 	return 0, nil
 }
 
-func (wh *HandleT) Connect(warehouse warehouseutils.WarehouseT) (client.Client, error) {
+func (*HandleT) Connect(warehouse warehouseutils.WarehouseT) (client.Client, error) {
 	return client.Client{}, fmt.Errorf("datalake err :not implemented")
 }
 
-func (wh *HandleT) LoadTestTable(location, tableName string, payloadMap map[string]interface{}, format string) error {
+func (*HandleT) LoadTestTable(location, tableName string, payloadMap map[string]interface{}, format string) error {
 	return fmt.Errorf("datalake err :not implemented")
 }
 
-func (wh *HandleT) SetConnectionTimeout(timeout time.Duration) {
+func (*HandleT) SetConnectionTimeout(timeout time.Duration) {
 }

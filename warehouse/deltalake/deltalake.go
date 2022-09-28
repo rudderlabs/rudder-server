@@ -367,7 +367,7 @@ func (dl *HandleT) ExecuteSQL(sqlStatement, queryType string) (err error) {
 }
 
 // ExecuteSQLClient executes sql client using grpc Client
-func (dl *HandleT) ExecuteSQLClient(dbClient *databricks.DBHandleT, sqlStatement string) (err error) {
+func (*HandleT) ExecuteSQLClient(dbClient *databricks.DBHandleT, sqlStatement string) (err error) {
 	executeResponse, err := dbClient.Client.Execute(dbClient.Context, &proto.ExecuteRequest{
 		Config:       dbClient.CredConfig,
 		Identifier:   dbClient.CredIdentifier,
@@ -896,7 +896,7 @@ func (dl *HandleT) CreateSchema() (err error) {
 }
 
 // AlterColumn alter table with column name and type
-func (dl *HandleT) AlterColumn(_, _, _ string) (err error) {
+func (*HandleT) AlterColumn(_, _, _ string) (err error) {
 	return
 }
 
@@ -1014,7 +1014,7 @@ func (dl *HandleT) CrashRecover(warehouse warehouseutils.WarehouseT) (err error)
 }
 
 // IsEmpty checks if the warehouse is empty or not
-func (dl *HandleT) IsEmpty(warehouseutils.WarehouseT) (empty bool, err error) {
+func (*HandleT) IsEmpty(warehouseutils.WarehouseT) (empty bool, err error) {
 	return
 }
 
@@ -1030,17 +1030,17 @@ func (dl *HandleT) LoadTable(tableName string) error {
 }
 
 // LoadIdentityMergeRulesTable loads identifies merge rules tables
-func (dl *HandleT) LoadIdentityMergeRulesTable() (err error) {
+func (*HandleT) LoadIdentityMergeRulesTable() (err error) {
 	return
 }
 
 // LoadIdentityMappingsTable loads identifies mappings table
-func (dl *HandleT) LoadIdentityMappingsTable() (err error) {
+func (*HandleT) LoadIdentityMappingsTable() (err error) {
 	return
 }
 
 // DownloadIdentityRules download identity rules
-func (dl *HandleT) DownloadIdentityRules(*misc.GZipWriter) (err error) {
+func (*HandleT) DownloadIdentityRules(*misc.GZipWriter) (err error) {
 	return
 }
 
