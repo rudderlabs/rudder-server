@@ -35,7 +35,7 @@ var (
 	enableGCStats           bool
 	statsSamplingRate       float32
 
-	pkgLogger logger.LoggerI
+	pkgLogger logger.Logger
 
 	conn   statsd.Option
 	client *statsd.Client

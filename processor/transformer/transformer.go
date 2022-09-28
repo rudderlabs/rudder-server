@@ -79,7 +79,7 @@ type HandleT struct {
 	sentStat     stats.RudderStats
 	receivedStat stats.RudderStats
 
-	logger logger.LoggerI
+	logger logger.Logger
 
 	Client *http.Client
 
@@ -102,7 +102,7 @@ var (
 	maxConcurrency, maxHTTPConnections, maxHTTPIdleConnections, maxRetry int
 	retrySleep                                                           time.Duration
 	timeoutDuration                                                      time.Duration
-	pkgLogger                                                            logger.LoggerI
+	pkgLogger                                                            logger.Logger
 )
 
 func Init() {

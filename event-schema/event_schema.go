@@ -153,7 +153,7 @@ var (
 	archivedSchemaVersions          map[string]map[string]*OffloadedSchemaVersionT
 	toDeleteEventModelIDs           []string
 	toDeleteSchemaVersionIDs        []string
-	pkgLogger                       logger.LoggerI
+	pkgLogger                       logger.Logger
 	noOfWorkers                     int
 	shouldCaptureNilAsUnknowns      bool
 	eventModelLimit                 int
@@ -200,13 +200,13 @@ func loadConfig() {
 	config.RegisterDurationConfigVariable(1800, &offloadThreshold, true, time.Second, []string{"EventSchemas.offloadThreshold"}...)
 
 	if adminPassword == "rudderstack" {
-		fmt.Println("[EventSchemas] You are using default password. Please change it by setting env variable RUDDER_ADMIN_PASSWORD")
+		pkgLogger.Warn("[EventSchemas] You are using default password. Please change it by setting env variable RUDDER_ADMIN_PASSWORD")
 	}
 }
 
 func Init2() {
-	loadConfig()
 	pkgLogger = logger.NewLogger().Child("event-schema")
+	loadConfig()
 }
 
 // RecordEventSchema : Records event schema for every event in the batch

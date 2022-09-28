@@ -114,6 +114,17 @@ func TestBackupTable(t *testing.T) {
 
 		if len(file) != 3 {
 			t.Log("file list: ", file, " err: ", err)
+			fm, _ = fmFactory.New(&filemanager.SettingsT{
+				Provider: "MINIO",
+				Config: map[string]interface{}{
+					"bucketName":      minioResource.BucketName,
+					"prefix":          prefix,
+					"endPoint":        minioResource.Endpoint,
+					"accessKeyID":     minioResource.AccessKey,
+					"secretAccessKey": minioResource.SecretKey,
+					"useSSL":          false,
+				},
+			})
 			return false
 		}
 		return true

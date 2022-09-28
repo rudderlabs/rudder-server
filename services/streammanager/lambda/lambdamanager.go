@@ -34,7 +34,7 @@ type LambdaClient interface {
 }
 
 var (
-	pkgLogger logger.LoggerI
+	pkgLogger logger.Logger
 	jsonfast  = jsoniter.ConfigCompatibleWithStandardLibrary
 )
 

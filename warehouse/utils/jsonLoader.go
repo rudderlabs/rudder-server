@@ -34,7 +34,7 @@ func (loader *JsonLoader) GetLoadTimeFomat(columnName string) string {
 	return ""
 }
 
-func (loader *JsonLoader) AddColumn(columnName, columnType string, val interface{}) {
+func (loader *JsonLoader) AddColumn(columnName, _ string, val interface{}) {
 	providerColumnName := ToProviderCase(loader.destType, columnName)
 	loader.columnData[providerColumnName] = val
 }

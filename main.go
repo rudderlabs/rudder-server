@@ -72,10 +72,10 @@ import (
 )
 
 var (
-	application               app.Interface
+	application               app.App
 	warehouseMode             string
 	enableSuppressUserFeature bool
-	pkgLogger                 logger.LoggerI
+	pkgLogger                 logger.Logger
 	appHandler                apphandlers.AppHandler
 	ReadTimeout               time.Duration
 	ReadHeaderTimeout         time.Duration
@@ -124,7 +124,7 @@ func printVersion() {
 	fmt.Printf("Version Info %s\n", versionFormatted)
 }
 
-func startWarehouseService(ctx context.Context, application app.Interface) error {
+func startWarehouseService(ctx context.Context, application app.App) error {
 	return warehouse.Start(ctx, application)
 }
 
@@ -139,8 +139,6 @@ func canStartWarehouse() bool {
 
 func runAllInit() {
 	admin.Init()
-	app.Init()
-	logger.Init()
 	misc.Init()
 	stats.Init()
 	stats.Setup()
@@ -329,9 +327,7 @@ func Run(ctx context.Context) int {
 			runtime.NumGoroutine(),
 		)
 		// clearing zap Log buffer to std output
-		if logger.Log != nil {
-			_ = logger.Log.Sync()
-		}
+		logger.Sync()
 		stats.StopPeriodicStats()
 	case <-time.After(gracefulShutdownTimeout):
 		// Assume graceful shutdown failed, log remain goroutines and force kill
@@ -345,9 +341,7 @@ func Run(ctx context.Context) int {
 		fmt.Print("\n\n")
 
 		application.Stop()
-		if logger.Log != nil {
-			_ = logger.Log.Sync()
-		}
+		logger.Sync()
 		stats.StopPeriodicStats()
 		if config.GetBool("RUDDER_GRACEFUL_SHUTDOWN_TIMEOUT_EXIT", true) {
 			return 1

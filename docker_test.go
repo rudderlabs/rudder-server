@@ -382,7 +382,7 @@ func setupMainFlow(svcCtx context.Context, t *testing.T) <-chan struct{} {
 	}
 
 	config.Reset()
-	logger.Init()
+	logger.Reset()
 
 	// uses a sensible default on windows (tcp/http) and linux/osx (socket)
 	pool, err := dockertest.NewPool("")
@@ -803,6 +803,6 @@ func waitForKafka(ctx context.Context, t *testing.T, port string) error {
 	}
 }
 
-type testLogger struct{ logger.LoggerI }
+type testLogger struct{ logger.Logger }
 
 func (t *testLogger) Log(args ...interface{}) { t.Info(args...) }
