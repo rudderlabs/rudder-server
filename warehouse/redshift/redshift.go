@@ -161,7 +161,7 @@ func (rs *HandleT) DropTable(tableName string) (err error) {
 	return
 }
 
-func (rs *HandleT) schemaExists(schemaname string) (exists bool, err error) {
+func (rs *HandleT) schemaExists(_ string) (exists bool, err error) {
 	sqlStatement := fmt.Sprintf(`SELECT EXISTS (SELECT 1 FROM pg_catalog.pg_namespace WHERE nspname = '%s');`, rs.Namespace)
 	err = rs.Db.QueryRow(sqlStatement).Scan(&exists)
 	return
@@ -204,7 +204,7 @@ type S3ManifestT struct {
 	Entries []S3ManifestEntryT `json:"entries"`
 }
 
-func (rs *HandleT) generateManifest(tableName string, columnMap map[string]string) (string, error) {
+func (rs *HandleT) generateManifest(tableName string, _ map[string]string) (string, error) {
 	loadFiles := rs.Uploader.GetLoadFilesMetadata(warehouseutils.GetLoadFilesOptionsT{Table: tableName})
 	loadFiles = warehouseutils.GetS3Locations(loadFiles)
 	var manifest S3ManifestT
@@ -724,7 +724,7 @@ func (rs *HandleT) CrashRecover(warehouse warehouseutils.WarehouseT) (err error)
 	return
 }
 
-func (*HandleT) IsEmpty(warehouse warehouseutils.WarehouseT) (empty bool, err error) {
+func (*HandleT) IsEmpty(_ warehouseutils.WarehouseT) (empty bool, err error) {
 	return
 }
 
@@ -769,7 +769,7 @@ func (rs *HandleT) Connect(warehouse warehouseutils.WarehouseT) (client.Client, 
 	return client.Client{Type: client.SQLClient, SQL: dbHandle}, err
 }
 
-func (rs *HandleT) LoadTestTable(location, tableName string, payloadMap map[string]interface{}, format string) (err error) {
+func (rs *HandleT) LoadTestTable(location, tableName string, _ map[string]interface{}, format string) (err error) {
 	tempAccessKeyId, tempSecretAccessKey, token, err := rs.getTemporaryCredForCopy()
 	if err != nil {
 		pkgLogger.Errorf("RS: Failed to create temp credentials before copying, while create load for table %v, err%v", tableName, err)

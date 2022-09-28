@@ -85,7 +85,7 @@ type testContext struct {
 	mockVersionHandler func(w http.ResponseWriter, r *http.Request)
 
 	// Enterprise mocks
-	mockSuppressUser        *mocksTypes.MockSuppressUserI
+	mockSuppressUser        *mocksTypes.MockUserSuppression
 	mockSuppressUserFeature *mocksApp.MockSuppressUserFeature
 }
 
@@ -177,13 +177,13 @@ var _ = Describe("Gateway Enterprise", func() {
 		c = &testContext{}
 		c.Setup()
 
-		c.mockSuppressUser = mocksTypes.NewMockSuppressUserI(c.mockCtrl)
+		c.mockSuppressUser = mocksTypes.NewMockUserSuppression(c.mockCtrl)
 		c.mockSuppressUserFeature = mocksApp.NewMockSuppressUserFeature(c.mockCtrl)
 		c.initializeEnterpriseAppFeatures()
 
 		c.mockSuppressUserFeature.EXPECT().Setup(gomock.Any()).AnyTimes().Return(c.mockSuppressUser, nil)
-		c.mockSuppressUser.EXPECT().IsSuppressedUser(NormalUserID, SourceIDEnabled, WriteKeyEnabled).Return(false).AnyTimes()
-		c.mockSuppressUser.EXPECT().IsSuppressedUser(SuppressedUserID, SourceIDEnabled, WriteKeyEnabled).Return(true).AnyTimes()
+		c.mockSuppressUser.EXPECT().IsSuppressedUser(NormalUserID, SourceIDEnabled).Return(false).AnyTimes()
+		c.mockSuppressUser.EXPECT().IsSuppressedUser(SuppressedUserID, SourceIDEnabled).Return(true).AnyTimes()
 
 		// setup static requirements of dependencies
 		stats.Setup()

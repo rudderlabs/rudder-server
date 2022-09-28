@@ -30,16 +30,16 @@ func (loader *CsvLoader) IsLoadTimeColumn(columnName string) bool {
 	return columnName == ToProviderCase(loader.destType, UUID_TS_COLUMN)
 }
 
-func (*CsvLoader) GetLoadTimeFomat(columnName string) string {
+func (*CsvLoader) GetLoadTimeFomat(_ string) string {
 	return misc.RFC3339Milli
 }
 
-func (loader *CsvLoader) AddColumn(columnName, columnType string, val interface{}) {
+func (loader *CsvLoader) AddColumn(_, _ string, val interface{}) {
 	valString := fmt.Sprintf("%v", val)
 	loader.csvRow = append(loader.csvRow, valString)
 }
 
-func (loader *CsvLoader) AddRow(columnNames, row []string) {
+func (loader *CsvLoader) AddRow(_, row []string) {
 	loader.csvRow = append(loader.csvRow, row...)
 }
 

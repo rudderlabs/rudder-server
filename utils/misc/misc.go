@@ -568,37 +568,6 @@ func TailTruncateStr(str string, count int) string {
 	return str
 }
 
-func SortedMapKeys(input interface{}) []string {
-	inValue := reflect.ValueOf(input)
-	mapKeys := inValue.MapKeys()
-	keys := make([]string, 0, len(mapKeys))
-	for _, key := range mapKeys {
-		keys = append(keys, key.String())
-	}
-	sort.Strings(keys)
-	return keys
-}
-
-func SortedStructSliceValues(input interface{}, filedName string) []string {
-	items := reflect.ValueOf(input)
-	var keys []string
-	if items.Kind() == reflect.Slice {
-		for i := 0; i < items.Len(); i++ {
-			item := items.Index(i)
-			if item.Kind() == reflect.Struct {
-				v := reflect.Indirect(item)
-				for j := 0; j < v.NumField(); j++ {
-					if v.Type().Field(j).Name == "Name" {
-						keys = append(keys, v.Field(j).String())
-					}
-				}
-			}
-		}
-	}
-	sort.Strings(keys)
-	return keys
-}
-
 func ReplaceMultiRegex(str string, expList map[string]string) (string, error) {
 	replacedStr := str
 	for regex, substitute := range expList {
@@ -791,7 +760,7 @@ func (w GZipWriter) Write(b []byte) (count int, err error) {
 	return
 }
 
-func (w GZipWriter) WriteRow(row []interface{}) error {
+func (w GZipWriter) WriteRow(_ []interface{}) error {
 	return errors.New("not implemented")
 }
 
@@ -1354,12 +1323,15 @@ func SortMap(inputMap map[string]metric.MovingAverage) []string {
 	return sortedWorkspaceList
 }
 
-func SleepCtx(ctx context.Context, delay time.Duration) bool {
+// SleepCtx sleeps for the given duration or until the context is canceled.
+//
+//	the context error is returned if context is canceled.
+func SleepCtx(ctx context.Context, delay time.Duration) error {
 	select {
 	case <-ctx.Done():
-		return true
+		return ctx.Err()
 	case <-time.After(delay):
-		return false
+		return nil
 	}
 }
 

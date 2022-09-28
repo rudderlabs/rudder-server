@@ -22,6 +22,7 @@ import (
 	"github.com/rudderlabs/rudder-server/admin"
 	"github.com/rudderlabs/rudder-server/config"
 	backendConfig "github.com/rudderlabs/rudder-server/config/backend-config"
+	"github.com/rudderlabs/rudder-server/enterprise/reporting"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	mocksBackendConfig "github.com/rudderlabs/rudder-server/mocks/config/backend-config"
 	mock_tenantstats "github.com/rudderlabs/rudder-server/mocks/services/multitenant"
@@ -35,7 +36,6 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/pubsub"
 	testutils "github.com/rudderlabs/rudder-server/utils/tests"
-	utilTypes "github.com/rudderlabs/rudder-server/utils/types"
 )
 
 var (
@@ -114,17 +114,6 @@ func blockOnHold() {
 	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
 
 	<-c
-}
-
-type reportingNOOP struct{}
-
-func (*reportingNOOP) WaitForSetup(ctx context.Context, clientName string) {
-}
-
-func (*reportingNOOP) Report(metrics []*utilTypes.PUReportedMetric, txn *sql.Tx) {
-}
-
-func (*reportingNOOP) AddClient(ctx context.Context, c utilTypes.Config) {
 }
 
 const (
@@ -231,7 +220,7 @@ func TestRouterManager(t *testing.T) {
 	defer errDB.Close()
 	tDb := &jobsdb.MultiTenantHandleT{HandleT: rtDB}
 	rtFactory := &router.Factory{
-		Reporting:        &reportingNOOP{},
+		Reporting:        &reporting.NOOP{},
 		Multitenant:      mockMTI,
 		BackendConfig:    mockBackendConfig,
 		RouterDB:         tDb,
@@ -240,7 +229,7 @@ func TestRouterManager(t *testing.T) {
 		RsourcesService:  mockRsourcesService,
 	}
 	brtFactory := &batchrouter.Factory{
-		Reporting:        &reportingNOOP{},
+		Reporting:        &reporting.NOOP{},
 		Multitenant:      mockMTI,
 		BackendConfig:    mockBackendConfig,
 		RouterDB:         brtDB,

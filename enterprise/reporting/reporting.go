@@ -20,6 +20,7 @@ import (
 	migrator "github.com/rudderlabs/rudder-server/services/sql-migrator"
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/logger"
+	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/types"
 	"github.com/thoas/go-funk"
 	"golang.org/x/sync/errgroup"
@@ -153,14 +154,17 @@ func (handle *HandleT) AddClient(ctx context.Context, c types.Config) {
 	handle.mainLoop(ctx, c.ClientName)
 }
 
-func (handle *HandleT) WaitForSetup(ctx context.Context, clientName string) {
+func (handle *HandleT) WaitForSetup(ctx context.Context, clientName string) error {
 	for {
-		if handle.GetClient(clientName) == nil {
-			time.Sleep(time.Second)
-			continue
+		if handle.GetClient(clientName) != nil {
+			break
 		}
-		break
+		if err := misc.SleepCtx(ctx, time.Second); err != nil {
+			return fmt.Errorf("wait for setup: %w", ctx.Err())
+		}
 	}
+
+	return nil
 }
 
 func (handle *HandleT) GetClient(clientName string) *types.Client {

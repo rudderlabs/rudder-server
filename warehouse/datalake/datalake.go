@@ -35,7 +35,7 @@ func (wh *HandleT) Setup(warehouse warehouseutils.WarehouseT, uploader warehouse
 	return err
 }
 
-func (*HandleT) CrashRecover(warehouse warehouseutils.WarehouseT) (err error) {
+func (*HandleT) CrashRecover(_ warehouseutils.WarehouseT) (err error) {
 	return nil
 }
 
@@ -51,7 +51,7 @@ func (wh *HandleT) CreateTable(tableName string, columnMap map[string]string) (e
 	return wh.SchemaRepository.CreateTable(tableName, columnMap)
 }
 
-func (*HandleT) DropTable(tableName string) (err error) {
+func (*HandleT) DropTable(_ string) (err error) {
 	return fmt.Errorf("datalake err :not implemented")
 }
 
@@ -92,11 +92,11 @@ func (wh *HandleT) LoadIdentityMappingsTable() error {
 func (*HandleT) Cleanup() {
 }
 
-func (*HandleT) IsEmpty(warehouse warehouseutils.WarehouseT) (bool, error) {
+func (*HandleT) IsEmpty(_ warehouseutils.WarehouseT) (bool, error) {
 	return false, nil
 }
 
-func (*HandleT) TestConnection(warehouse warehouseutils.WarehouseT) error {
+func (*HandleT) TestConnection(_ warehouseutils.WarehouseT) error {
 	return fmt.Errorf("datalake err :not implemented")
 }
 
@@ -104,17 +104,17 @@ func (*HandleT) DownloadIdentityRules(*misc.GZipWriter) error {
 	return fmt.Errorf("datalake err :not implemented")
 }
 
-func (*HandleT) GetTotalCountInTable(tableName string) (int64, error) {
+func (*HandleT) GetTotalCountInTable(_ string) (int64, error) {
 	return 0, nil
 }
 
-func (*HandleT) Connect(warehouse warehouseutils.WarehouseT) (client.Client, error) {
+func (*HandleT) Connect(_ warehouseutils.WarehouseT) (client.Client, error) {
 	return client.Client{}, fmt.Errorf("datalake err :not implemented")
 }
 
-func (*HandleT) LoadTestTable(location, tableName string, payloadMap map[string]interface{}, format string) error {
+func (*HandleT) LoadTestTable(_, _ string, _ map[string]interface{}, _ string) error {
 	return fmt.Errorf("datalake err :not implemented")
 }
 
-func (*HandleT) SetConnectionTimeout(timeout time.Duration) {
+func (*HandleT) SetConnectionTimeout(_ time.Duration) {
 }

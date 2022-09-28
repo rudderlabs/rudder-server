@@ -45,7 +45,7 @@ import (
 )
 
 type reporter interface {
-	WaitForSetup(ctx context.Context, clientName string)
+	WaitForSetup(ctx context.Context, clientName string) error
 	Report(metrics []*utilTypes.PUReportedMetric, txn *sql.Tx)
 }
 
@@ -1982,7 +1982,10 @@ func (rt *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB jobsd
 	rt.rsourcesService = rsourcesService
 
 	// waiting for reporting client setup
-	rt.Reporting.WaitForSetup(context.TODO(), utilTypes.CORE_REPORTING_CLIENT)
+	err := rt.Reporting.WaitForSetup(context.TODO(), utilTypes.CORE_REPORTING_CLIENT)
+	if err != nil {
+		return
+	}
 
 	rt.diagnosisTicker = time.NewTicker(diagnosisTickerTime)
 	rt.jobsDB = jobsDB
