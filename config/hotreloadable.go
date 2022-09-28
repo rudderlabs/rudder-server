@@ -4,7 +4,7 @@ import "time"
 
 // RegisterIntConfigVariable registers int config variable
 func RegisterIntConfigVariable(defaultValue int, ptr *int, isHotReloadable bool, valueScale int, keys ...string) {
-	defaultConfig.RegisterIntConfigVariable(defaultValue, ptr, isHotReloadable, valueScale, keys...)
+	Default.RegisterIntConfigVariable(defaultValue, ptr, isHotReloadable, valueScale, keys...)
 }
 
 // RegisterIntConfigVariable registers int config variable
@@ -35,7 +35,7 @@ func (c *Config) RegisterIntConfigVariable(defaultValue int, ptr *int, isHotRelo
 
 // RegisterBoolConfigVariable registers bool config variable
 func RegisterBoolConfigVariable(defaultValue bool, ptr *bool, isHotReloadable bool, keys ...string) {
-	defaultConfig.RegisterBoolConfigVariable(defaultValue, ptr, isHotReloadable, keys...)
+	Default.RegisterBoolConfigVariable(defaultValue, ptr, isHotReloadable, keys...)
 }
 
 // RegisterBoolConfigVariable registers bool config variable
@@ -66,7 +66,7 @@ func (c *Config) RegisterBoolConfigVariable(defaultValue bool, ptr *bool, isHotR
 
 // RegisterFloat64ConfigVariable registers float64 config variable
 func RegisterFloat64ConfigVariable(defaultValue float64, ptr *float64, isHotReloadable bool, keys ...string) {
-	defaultConfig.RegisterFloat64ConfigVariable(defaultValue, ptr, isHotReloadable, keys...)
+	Default.RegisterFloat64ConfigVariable(defaultValue, ptr, isHotReloadable, keys...)
 }
 
 // RegisterFloat64ConfigVariable registers float64 config variable
@@ -98,7 +98,7 @@ func (c *Config) RegisterFloat64ConfigVariable(defaultValue float64, ptr *float6
 
 // RegisterInt64ConfigVariable registers int64 config variable
 func RegisterInt64ConfigVariable(defaultValue int64, ptr *int64, isHotReloadable bool, valueScale int64, keys ...string) {
-	defaultConfig.RegisterInt64ConfigVariable(defaultValue, ptr, isHotReloadable, valueScale, keys...)
+	Default.RegisterInt64ConfigVariable(defaultValue, ptr, isHotReloadable, valueScale, keys...)
 }
 
 // RegisterInt64ConfigVariable registers int64 config variable
@@ -130,7 +130,7 @@ func (c *Config) RegisterInt64ConfigVariable(defaultValue int64, ptr *int64, isH
 
 // RegisterDurationConfigVariable registers duration config variable
 func RegisterDurationConfigVariable(defaultValueInTimescaleUnits int64, ptr *time.Duration, isHotReloadable bool, timeScale time.Duration, keys ...string) {
-	defaultConfig.RegisterDurationConfigVariable(defaultValueInTimescaleUnits, ptr, isHotReloadable, timeScale, keys...)
+	Default.RegisterDurationConfigVariable(defaultValueInTimescaleUnits, ptr, isHotReloadable, timeScale, keys...)
 }
 
 // RegisterDurationConfigVariable registers duration config variable
@@ -161,7 +161,7 @@ func (c *Config) RegisterDurationConfigVariable(defaultValueInTimescaleUnits int
 
 // RegisterStringConfigVariable registers string config variable
 func RegisterStringConfigVariable(defaultValue string, ptr *string, isHotReloadable bool, keys ...string) {
-	defaultConfig.RegisterStringConfigVariable(defaultValue, ptr, isHotReloadable, keys...)
+	Default.RegisterStringConfigVariable(defaultValue, ptr, isHotReloadable, keys...)
 }
 
 // RegisterStringConfigVariable registers string config variable
@@ -191,7 +191,7 @@ func (c *Config) RegisterStringConfigVariable(defaultValue string, ptr *string, 
 
 // RegisterStringSliceConfigVariable registers string slice config variable
 func RegisterStringSliceConfigVariable(defaultValue []string, ptr *[]string, isHotReloadable bool, keys ...string) {
-	defaultConfig.RegisterStringSliceConfigVariable(defaultValue, ptr, isHotReloadable, keys...)
+	Default.RegisterStringSliceConfigVariable(defaultValue, ptr, isHotReloadable, keys...)
 }
 
 // RegisterStringSliceConfigVariable registers string slice config variable

@@ -19,7 +19,7 @@ const (
 	defaultProfilePort = 7777
 )
 
-var pkgLogger logger.LoggerI
+var pkgLogger logger.Logger
 
 func init() {
 	pkgLogger = logger.NewLogger().Child("admin")
@@ -27,7 +27,7 @@ func init() {
 
 type Profiler struct {
 	once      sync.Once
-	pkgLogger logger.LoggerI
+	pkgLogger logger.Logger
 	port      int
 	enabled   bool
 }

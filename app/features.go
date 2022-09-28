@@ -44,7 +44,7 @@ type ReplayFeature interface {
 }
 
 // ReplayFeatureSetup is a function that initializes a Replay feature
-type ReplayFeatureSetup func(Interface) ReplayFeature
+type ReplayFeatureSetup func(App) ReplayFeature
 
 // Features contains optional implementations of Enterprise only features.
 type Features struct {

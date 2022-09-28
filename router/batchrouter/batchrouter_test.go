@@ -132,7 +132,7 @@ var (
 func initBatchRouter() {
 	config.Reset()
 	admin.Init()
-	logger.Init()
+	logger.Reset()
 	misc.Init()
 	Init()
 	Init2()

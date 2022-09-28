@@ -69,7 +69,7 @@ var (
 	configBackendURL             string
 	disableTransformationUploads bool
 	uploader                     debugger.UploaderI
-	pkgLogger                    logger.LoggerI
+	pkgLogger                    logger.Logger
 	transformationCacheMap       debugger.Cache
 )
 

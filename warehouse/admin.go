@@ -34,7 +34,7 @@ func Init5() {
 }
 
 // TriggerUpload sets uploads to start without delay
-func (wh *WarehouseAdmin) TriggerUpload(off bool, reply *string) error {
+func (*WarehouseAdmin) TriggerUpload(off bool, reply *string) error {
 	startUploadAlways = !off
 	if off {
 		*reply = "Turned off explicit warehouse upload triggers.\nWarehouse uploads will continue to be done as per schedule in control plane."
@@ -45,7 +45,7 @@ func (wh *WarehouseAdmin) TriggerUpload(off bool, reply *string) error {
 }
 
 // Query the underlying warehouse
-func (wh *WarehouseAdmin) Query(s QueryInput, reply *warehouseutils.QueryResult) error {
+func (*WarehouseAdmin) Query(s QueryInput, reply *warehouseutils.QueryResult) error {
 	if strings.TrimSpace(s.DestID) == "" {
 		return errors.New("Please specify the destination ID to query the warehouse")
 	}
@@ -87,7 +87,7 @@ func (wh *WarehouseAdmin) Query(s QueryInput, reply *warehouseutils.QueryResult)
 }
 
 // ConfigurationTest test the underlying warehouse destination
-func (wh *WarehouseAdmin) ConfigurationTest(s ConfigurationTestInput, reply *ConfigurationTestOutput) error {
+func (*WarehouseAdmin) ConfigurationTest(s ConfigurationTestInput, reply *ConfigurationTestOutput) error {
 	if strings.TrimSpace(s.DestID) == "" {
 		return errors.New("please specify the destination ID to query the warehouse")
 	}

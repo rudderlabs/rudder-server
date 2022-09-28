@@ -63,7 +63,7 @@ func TestProduceWithInvalidData(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mockClient := mock_lambda.NewMockLambdaClient(ctrl)
 	producer := &LambdaProducer{client: mockClient}
-	mockLogger := mock_logger.NewMockLoggerI(ctrl)
+	mockLogger := mock_logger.NewMockLogger(ctrl)
 	pkgLogger = mockLogger
 
 	// Invalid input
@@ -107,7 +107,7 @@ func TestProduceWithServiceResponse(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mockClient := mock_lambda.NewMockLambdaClient(ctrl)
 	producer := &LambdaProducer{client: mockClient}
-	mockLogger := mock_logger.NewMockLoggerI(ctrl)
+	mockLogger := mock_logger.NewMockLogger(ctrl)
 	pkgLogger = mockLogger
 
 	sampleDestConfig := map[string]interface{}{

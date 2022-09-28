@@ -96,7 +96,7 @@ type ETCDManager struct {
 	Client     *clientv3.Client
 	once       sync.Once
 	initErr    error
-	logger     logger.LoggerI
+	logger     logger.Logger
 	ackTimeout time.Duration
 }
 

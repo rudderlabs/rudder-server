@@ -28,7 +28,7 @@ var (
 	errDBReadBatchSize      int
 	noOfErrStashWorkers     int
 	maxFailedCountForErrJob int
-	pkgLogger               logger.LoggerI
+	pkgLogger               logger.Logger
 	payloadLimit            int64
 )
 
@@ -56,7 +56,7 @@ type HandleT struct {
 	errProcessQ               chan []*jobsdb.JobT
 	errFileUploader           filemanager.FileManager
 	statErrDBR                stats.RudderStats
-	logger                    logger.LoggerI
+	logger                    logger.Logger
 	transientSource           transientsource.Service
 	jobsDBCommandTimeout      time.Duration
 	jobdDBQueryRequestTimeout time.Duration
