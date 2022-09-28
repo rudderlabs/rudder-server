@@ -175,7 +175,7 @@ type HandleT struct {
 	webRequestBatchCount                                       uint64
 	userWebRequestWorkers                                      []*userWebRequestWorkerT
 	webhookHandler                                             *webhook.HandleT
-	suppressUserHandler                                        types.SuppressUserI
+	suppressUserHandler                                        types.UserSuppression
 	eventSchemaHandler                                         types.EventSchemasI
 	versionHandler                                             func(w http.ResponseWriter, r *http.Request)
 	logger                                                     logger.Logger
@@ -590,7 +590,7 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 
 			if enableSuppressUserFeature && gateway.suppressUserHandler != nil {
 				userID := gjson.GetBytes(body, "batch.0.userId").String()
-				if gateway.suppressUserHandler.IsSuppressedUser(userID, gateway.getSourceIDForWriteKey(writeKey), writeKey) {
+				if gateway.suppressUserHandler.IsSuppressedUser(userID, gateway.getSourceIDForWriteKey(writeKey)) {
 					req.done <- ""
 					preDbStoreCount++
 					continue

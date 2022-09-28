@@ -100,27 +100,27 @@ func (*CTUploadJob) GetLocalSchema() warehouseutils.SchemaT {
 	return warehouseutils.SchemaT{}
 }
 
-func (*CTUploadJob) UpdateLocalSchema(schema warehouseutils.SchemaT) error {
+func (*CTUploadJob) UpdateLocalSchema(_ warehouseutils.SchemaT) error {
 	return nil
 }
 
-func (*CTUploadJob) GetTableSchemaInWarehouse(tableName string) warehouseutils.TableSchemaT {
+func (*CTUploadJob) GetTableSchemaInWarehouse(_ string) warehouseutils.TableSchemaT {
 	return warehouseutils.TableSchemaT{}
 }
 
-func (*CTUploadJob) GetTableSchemaInUpload(tableName string) warehouseutils.TableSchemaT {
+func (*CTUploadJob) GetTableSchemaInUpload(_ string) warehouseutils.TableSchemaT {
 	return warehouseutils.TableSchemaT{}
 }
 
-func (*CTUploadJob) GetLoadFilesMetadata(options warehouseutils.GetLoadFilesOptionsT) []warehouseutils.LoadFileT {
+func (*CTUploadJob) GetLoadFilesMetadata(_ warehouseutils.GetLoadFilesOptionsT) []warehouseutils.LoadFileT {
 	return []warehouseutils.LoadFileT{}
 }
 
-func (*CTUploadJob) GetSampleLoadFileLocation(tableName string) (string, error) {
+func (*CTUploadJob) GetSampleLoadFileLocation(_ string) (string, error) {
 	return "", nil
 }
 
-func (*CTUploadJob) GetSingleLoadFile(tableName string) (warehouseutils.LoadFileT, error) {
+func (*CTUploadJob) GetSingleLoadFile(_ string) (warehouseutils.LoadFileT, error) {
 	return warehouseutils.LoadFileT{}, nil
 }
 

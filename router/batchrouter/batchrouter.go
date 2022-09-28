@@ -2297,7 +2297,8 @@ func (brt *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB, err
 	brt.rsourcesService = rsourcesService
 	// waiting for reporting client setup
 	if brt.reporting != nil && brt.reportingEnabled {
-		brt.reporting.WaitForSetup(context.TODO(), types.CORE_REPORTING_CLIENT)
+		// error is ignored as context.TODO() is passed, err is not expected.
+		_ = brt.reporting.WaitForSetup(context.TODO(), types.CORE_REPORTING_CLIENT)
 	}
 
 	brt.inProgressMap = map[string]bool{}
