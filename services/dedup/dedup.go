@@ -27,7 +27,7 @@ type DedupI interface {
 var (
 	dedupWindow  time.Duration
 	memOptimized bool
-	pkgLogger    logger.LoggerI
+	pkgLogger    logger.Logger
 )
 
 func Init() {
@@ -42,7 +42,7 @@ func loadConfig() {
 }
 
 type loggerForBadger struct {
-	logger.LoggerI
+	logger.Logger
 }
 
 func (l loggerForBadger) Warningf(fmt string, args ...interface{}) {

@@ -13,7 +13,7 @@ import (
 )
 
 var (
-	pkgLogger     logger.LoggerI
+	pkgLogger     logger.Logger
 	replayEnabled bool
 )
 

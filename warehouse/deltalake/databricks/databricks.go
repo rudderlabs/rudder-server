@@ -3,13 +3,13 @@ package databricks
 import (
 	"context"
 
-	"github.com/rudderlabs/rudder-server/proto/databricks"
+	proto "github.com/rudderlabs/rudder-server/proto/databricks"
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"google.golang.org/grpc"
 )
 
-var pkgLogger logger.LoggerI
+var pkgLogger logger.Logger
 
 type CredentialsT struct {
 	Host            string

@@ -101,7 +101,7 @@ func TestProduceWithServiceResponse(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mockClient := mock_kinesis.NewMockKinesisClient(ctrl)
 	producer := &KinesisProducer{client: mockClient}
-	mockLogger := mock_logger.NewMockLoggerI(ctrl)
+	mockLogger := mock_logger.NewMockLogger(ctrl)
 	pkgLogger = mockLogger
 
 	sampleData := "some data"
