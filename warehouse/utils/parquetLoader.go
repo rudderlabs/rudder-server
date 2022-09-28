@@ -28,7 +28,7 @@ func (loader *ParquetLoader) IsLoadTimeColumn(columnName string) bool {
 	return columnName == ToProviderCase(loader.destType, UUID_TS_COLUMN)
 }
 
-func (*ParquetLoader) GetLoadTimeFomat(columnName string) string {
+func (*ParquetLoader) GetLoadTimeFomat(_ string) string {
 	return time.RFC3339
 }
 
@@ -46,7 +46,7 @@ func (loader *ParquetLoader) AddColumn(columnName, colType string, val interface
 	loader.Values = append(loader.Values, val)
 }
 
-func (*ParquetLoader) AddRow(columnNames, row []string) {
+func (*ParquetLoader) AddRow(_, _ []string) {
 	// TODO : implement
 }
 

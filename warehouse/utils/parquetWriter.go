@@ -93,11 +93,11 @@ func (p *ParquetWriter) Close() error {
 	return p.fileWriter.Close()
 }
 
-func (*ParquetWriter) WriteGZ(s string) error {
+func (*ParquetWriter) WriteGZ(_ string) error {
 	return errors.New("not implemented")
 }
 
-func (*ParquetWriter) Write(b []byte) (int, error) {
+func (*ParquetWriter) Write(_ []byte) (int, error) {
 	return 0, errors.New("not implemented")
 }
 
