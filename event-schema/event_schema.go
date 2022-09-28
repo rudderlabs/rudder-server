@@ -210,7 +210,7 @@ func Init2() {
 }
 
 // RecordEventSchema : Records event schema for every event in the batch
-func (manager *EventSchemaManagerT) RecordEventSchema(writeKey, eventBatch string) bool {
+func (*EventSchemaManagerT) RecordEventSchema(writeKey, eventBatch string) bool {
 	select {
 	case eventSchemaChannel <- &GatewayEventBatchT{writeKey, eventBatch}:
 	default:
@@ -586,7 +586,7 @@ func (em *EventModelT) mergeSchema(sv *SchemaVersionT) {
 }
 
 // NewSchemaVersion should be used when a schemaVersion is not found in its cache and requires, a schemaVersionID for the newSchema and the eventModelID to which it belongs along with schema and schemaHash
-func (manager *EventSchemaManagerT) NewSchemaVersion(versionID string, schema map[string]string, schemaHash, eventModelID string) *SchemaVersionT {
+func (*EventSchemaManagerT) NewSchemaVersion(versionID string, schema map[string]string, schemaHash, eventModelID string) *SchemaVersionT {
 	schemaJSON, err := json.Marshal(schema)
 	assertError(err)
 

@@ -195,7 +195,7 @@ func Setup() {
 }
 
 // NewStat creates a new RudderStats with provided Name and Type
-func (s *HandleT) NewStat(Name, StatType string) (rStats RudderStats) {
+func (*HandleT) NewStat(Name, StatType string) (rStats RudderStats) {
 	return &RudderStatsT{
 		Name:     Name,
 		StatType: StatType,
@@ -203,11 +203,11 @@ func (s *HandleT) NewStat(Name, StatType string) (rStats RudderStats) {
 	}
 }
 
-func (s *HandleT) NewTaggedStat(Name, StatType string, tags Tags) (rStats RudderStats) {
+func (*HandleT) NewTaggedStat(Name, StatType string, tags Tags) (rStats RudderStats) {
 	return newTaggedStat(Name, StatType, tags, 1)
 }
 
-func (s *HandleT) NewSampledTaggedStat(Name, StatType string, tags Tags) (rStats RudderStats) {
+func (*HandleT) NewSampledTaggedStat(Name, StatType string, tags Tags) (rStats RudderStats) {
 	return newTaggedStat(Name, StatType, tags, statsSamplingRate)
 }
 

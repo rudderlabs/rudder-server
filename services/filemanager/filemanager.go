@@ -61,7 +61,7 @@ func init() {
 }
 
 // New returns FileManager backed by configured provider
-func (factory *FileManagerFactoryT) New(settings *SettingsT) (FileManager, error) {
+func (*FileManagerFactoryT) New(settings *SettingsT) (FileManager, error) {
 	switch settings.Provider {
 	case "S3":
 		return &S3Manager{

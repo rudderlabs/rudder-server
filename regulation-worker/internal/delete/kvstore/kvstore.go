@@ -17,11 +17,11 @@ var (
 
 type KVDeleteManager struct{}
 
-func (kv *KVDeleteManager) GetSupportedDestinations() []string {
+func (*KVDeleteManager) GetSupportedDestinations() []string {
 	return supportedDestinations
 }
 
-func (kv *KVDeleteManager) Delete(_ context.Context, job model.Job, destConfig map[string]interface{}, destName string) model.JobStatus {
+func (*KVDeleteManager) Delete(_ context.Context, job model.Job, destConfig map[string]interface{}, destName string) model.JobStatus {
 	pkgLogger.Debugf("deleting job: %v", job, " from kvstore")
 	kvm := kvstoremanager.New(destName, destConfig)
 	var err error

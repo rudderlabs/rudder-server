@@ -113,7 +113,7 @@ func (jd *ReadonlyHandleT) TearDown() {
 }
 
 // Some helper functions
-func (jd *ReadonlyHandleT) assertError(err error) {
+func (*ReadonlyHandleT) assertError(err error) {
 	if err != nil {
 		panic(err)
 	}
@@ -176,7 +176,7 @@ func (jd *ReadonlyHandleT) haveUnprocessedJobs(ctx context.Context, customValFil
 	return totalCount > 0, nil // If totalCount is 0, then there are no unprocessed events
 }
 
-func (jd *ReadonlyHandleT) prepareAndExecStmtInTxn(txn *sql.Tx, sqlStatement string) error {
+func (*ReadonlyHandleT) prepareAndExecStmtInTxn(txn *sql.Tx, sqlStatement string) error {
 	stmt, err := txn.Prepare(sqlStatement)
 	if err != nil {
 		return err
