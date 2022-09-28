@@ -3,6 +3,7 @@ package stats_test
 import (
 	"testing"
 
+	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/types/deployment"
 	"github.com/stretchr/testify/require"
@@ -40,59 +41,76 @@ func TestTags(t *testing.T) {
 }
 
 func TestCleanupTagsBasedOnDeploymentType(t *testing.T) {
-	t.Run("dedicated deployment type, dont remove workspaceId tag", func(t *testing.T) {
-		t.Setenv("DEPLOYMENT_TYPE", string(deployment.DedicatedType))
-		tags := stats.Tags{
-			"b":           "value1",
-			"workspaceId": "value2",
-		}
-		expectedTags := stats.Tags{
-			"b":           "value1",
-			"workspaceId": "value2",
-		}
-		cleanedTags := stats.CleanupTagsBasedOnDeploymentType(tags, "workspaceId")
-		require.Equal(t, expectedTags, cleanedTags)
-	})
+	testCases := []struct {
+		name           string
+		deploymentType deployment.Type
+		namespace      string
+		shouldFilter   bool
+	}{
+		{
+			name:         "dedicated deployment type",
+			shouldFilter: false,
 
-	t.Run("multitenant deployment type & not namespaced, remove workspaceId tag", func(t *testing.T) {
-		t.Setenv("DEPLOYMENT_TYPE", string(deployment.MultiTenantType))
-		tags := stats.Tags{
-			"b":           "value1",
-			"workspaceId": "value2",
-		}
-		expectedTags := stats.Tags{
-			"b": "value1",
-		}
-		cleanedTags := stats.CleanupTagsBasedOnDeploymentType(tags, "workspaceId")
-		require.Equal(t, expectedTags, cleanedTags)
-	})
+			deploymentType: deployment.DedicatedType,
+		},
+		{
+			name:         "multitenant deployment type & not namespaced",
+			shouldFilter: false,
 
-	t.Run("multitenant deployment type & pro namespaced, dont remove workspaceId tag", func(t *testing.T) {
-		t.Setenv("DEPLOYMENT_TYPE", string(deployment.MultiTenantType))
-		t.Setenv("WORKSPACE_NAMESPACE", "pro")
-		tags := stats.Tags{
-			"b":           "value1",
-			"workspaceId": "value2",
-		}
-		expectedTags := stats.Tags{
-			"b":           "value1",
-			"workspaceId": "value2",
-		}
-		cleanedTags := stats.CleanupTagsBasedOnDeploymentType(tags, "workspaceId")
-		require.Equal(t, expectedTags, cleanedTags)
-	})
+			deploymentType: deployment.MultiTenantType,
+		},
+		{
+			name:         "multitenant deployment type & pro namespaced",
+			shouldFilter: false,
 
-	t.Run("multitenant deployment type & free-tier-us namespaced, remove workspaceId tag", func(t *testing.T) {
-		t.Setenv("DEPLOYMENT_TYPE", string(deployment.MultiTenantType))
-		t.Setenv("WORKSPACE_NAMESPACE", "free-tier-us")
-		tags := stats.Tags{
-			"b":           "value1",
-			"workspaceId": "value2",
-		}
-		expectedTags := stats.Tags{
-			"b": "value1",
-		}
-		cleanedTags := stats.CleanupTagsBasedOnDeploymentType(tags, "workspaceId")
-		require.Equal(t, expectedTags, cleanedTags)
-	})
+			deploymentType: deployment.MultiTenantType,
+			namespace:      "pro",
+		},
+		{
+			name:         "multitenant deployment type & free namespaced",
+			shouldFilter: true,
+
+			deploymentType: deployment.MultiTenantType,
+			namespace:      "free",
+		},
+	}
+
+	filterKeys := []string{"workspaceId", "sourceID", "destID", "missing"}
+
+	withoutFilter := stats.Tags{
+		"b":           "value1",
+		"workspaceId": "value2",
+		"sourceID":    "value3",
+		"destID":      "value4",
+	}
+
+	withFilter := stats.Tags{
+		"b": "value1",
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			tags := stats.Tags{
+				"b":           "value1",
+				"workspaceId": "value2",
+				"sourceID":    "value3",
+				"destID":      "value4",
+			}
+
+			t.Log(tc.namespace)
+			config.Default.Set("DEPLOYMENT_TYPE", tc.deploymentType)
+			if tc.namespace != "" {
+				config.Default.Set("WORKSPACE_NAMESPACE", tc.namespace)
+			}
+
+			cleanedTags := stats.CleanupTagsBasedOnDeploymentType(tags, filterKeys...)
+
+			if tc.shouldFilter {
+				require.Equal(t, withFilter, cleanedTags)
+			} else {
+				require.Equal(t, withoutFilter, cleanedTags)
+			}
+		})
+	}
+
 }

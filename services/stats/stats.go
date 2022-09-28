@@ -211,7 +211,7 @@ func (s *HandleT) NewSampledTaggedStat(Name, StatType string, tags Tags) (rStats
 	return newTaggedStat(Name, StatType, tags, statsSamplingRate)
 }
 
-func CleanupTagsBasedOnDeploymentType(tags Tags, key string) Tags {
+func CleanupTagsBasedOnDeploymentType(tags Tags, keys ...string) Tags {
 	deploymentType, err := deployment.GetFromEnv()
 	if err != nil {
 		pkgLogger.Errorf("error while getting deployment type: %w", err)
@@ -221,7 +221,9 @@ func CleanupTagsBasedOnDeploymentType(tags Tags, key string) Tags {
 	if deploymentType == deployment.MultiTenantType {
 		isNamespaced := config.IsSet("WORKSPACE_NAMESPACE")
 		if !isNamespaced || (isNamespaced && strings.Contains(config.GetString("WORKSPACE_NAMESPACE", ""), "free")) {
-			delete(tags, key)
+			for _, key := range keys {
+				delete(tags, key)
+			}
 		}
 	}
 
