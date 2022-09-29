@@ -173,9 +173,7 @@ func (s *statsdStats) getNewStatsdClientWithExpoBackoff(ctx context.Context, opt
 
 func (s *statsdStats) collectPeriodicStats() {
 	gaugeFunc := func(key string, val uint64) {
-		if s.state.client.ready() {
-			s.state.client.statsd.Gauge("runtime_"+key, val)
-		}
+		s.state.client.statsd.Gauge("runtime_"+key, val)
 	}
 	s.state.rc = newRuntimeStatsCollector(gaugeFunc)
 	s.state.rc.PauseDur = time.Duration(s.conf.periodic.statsCollectionInterval) * time.Second
