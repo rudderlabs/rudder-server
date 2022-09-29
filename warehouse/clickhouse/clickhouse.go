@@ -475,14 +475,6 @@ func castStringToArray(data, dataType string) interface{} {
 			pkgLogger.Error("Error while unmarshalling data into array of bool: %s", err.Error())
 			return dataBool
 		}
-		dataInt := make([]int32, len(dataBool))
-		for i, val := range dataBool {
-			if val {
-				dataInt[i] = 1
-			} else {
-				dataInt[i] = 0
-			}
-		}
 		return dataBool
 	}
 	return data
