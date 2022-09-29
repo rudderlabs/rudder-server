@@ -3,7 +3,7 @@ package warehouseutils
 import (
 	"bytes"
 	"context"
-	"crypto/sha1"
+	"crypto/sha512"
 	"database/sql"
 	"encoding/json"
 	"errors"
@@ -810,7 +810,7 @@ func WriteSSLKeys(destination backendconfig.DestinationT) WriteSSLKeyError {
 		return WriteSSLKeyError{fmt.Sprintf("Error creating SSL root directory for destination %s %v", destination.ID, err), "dest_ssl_create_err"}
 	}
 	combinedString := fmt.Sprintf("%s%s%s", clientKey, clientCert, serverCert)
-	h := sha1.New()
+	h := sha512.New()
 	h.Write([]byte(combinedString))
 	sslHash := fmt.Sprintf("%x", h.Sum(nil))
 	clientCertPemFile := fmt.Sprintf("%s/client-cert.pem", sslDirPath)
