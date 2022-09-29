@@ -184,6 +184,7 @@ func (pg *HandleT) DownloadLoadFiles(tableName string) ([]string, error) {
 			Provider:         storageProvider,
 			Config:           pg.Warehouse.Destination.Config,
 			UseRudderStorage: pg.Uploader.UseRudderStorage(),
+			WorkspaceID:      pg.Warehouse.Destination.WorkspaceID,
 		}),
 	})
 	if err != nil {

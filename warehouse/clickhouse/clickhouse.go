@@ -344,6 +344,7 @@ func (ch *HandleT) DownloadLoadFiles(tableName string) ([]string, error) {
 			Provider:         storageProvider,
 			Config:           ch.Warehouse.Destination.Config,
 			UseRudderStorage: ch.Uploader.UseRudderStorage(),
+			WorkspaceID:      ch.Warehouse.Destination.WorkspaceID,
 		}),
 	})
 	if err != nil {

@@ -241,6 +241,7 @@ func (rs *HandleT) generateManifest(tableName string, _ map[string]string) (stri
 			Provider:         "S3",
 			Config:           rs.Warehouse.Destination.Config,
 			UseRudderStorage: rs.Uploader.UseRudderStorage(),
+			WorkspaceID:      rs.Warehouse.Destination.WorkspaceID,
 		}),
 	})
 	if err != nil {
