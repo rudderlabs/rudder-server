@@ -629,7 +629,7 @@ func TestConfluentAzureCloud(t *testing.T) {
 		t.Skip("Skipping because credentials or host are not provided")
 	}
 
-	c, err := NewConfluentCloud([]string{kafkaHost}, confluentCloudKey, confluentCloudSecret, Config{
+	c, err := NewConfluentCloud([]string{"bad-host", kafkaHost}, confluentCloudKey, confluentCloudSecret, Config{
 		ClientID:    "some-client",
 		DialTimeout: 45 * time.Second,
 	})
