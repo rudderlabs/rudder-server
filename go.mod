@@ -45,7 +45,7 @@ require (
 	github.com/rudderlabs/analytics-go v3.3.1+incompatible
 	github.com/segmentio/kafka-go v0.4.35
 	github.com/shurcooL/vfsgen v0.0.0-20200824052919-0d455de96546
-	github.com/snowflakedb/gosnowflake v1.6.3
+	github.com/snowflakedb/gosnowflake v1.6.13
 	github.com/sony/gobreaker v0.5.0
 	github.com/spaolacci/murmur3 v1.1.0
 	github.com/spf13/cast v1.3.1 // indirect
@@ -79,16 +79,16 @@ require (
 	github.com/Azure/azure-pipeline-go v0.2.3 // indirect
 	github.com/Azure/go-ansiterm v0.0.0-20210617225240-d185dfc1b5a1 // indirect
 	github.com/EagleChen/mapmutex v0.0.0-20180418073615-e1a5ae258d8d // indirect
-	github.com/apache/arrow/go/arrow v0.0.0-20211013220434-5962184e7a30 // indirect
+	github.com/apache/arrow/go/arrow v0.0.0-20211112161151-bc219186db40 // indirect
 	github.com/apache/thrift v0.13.1-0.20201008052519-daf620915714 // indirect
-	github.com/aws/aws-sdk-go-v2 v1.9.2 // indirect
-	github.com/aws/aws-sdk-go-v2/credentials v1.4.3 // indirect
-	github.com/aws/aws-sdk-go-v2/feature/s3/manager v1.5.4 // indirect
-	github.com/aws/aws-sdk-go-v2/service/internal/accept-encoding v1.3.0 // indirect
-	github.com/aws/aws-sdk-go-v2/service/internal/presigned-url v1.3.2 // indirect
-	github.com/aws/aws-sdk-go-v2/service/internal/s3shared v1.7.2 // indirect
-	github.com/aws/aws-sdk-go-v2/service/s3 v1.16.1 // indirect
-	github.com/aws/smithy-go v1.8.0 // indirect
+	github.com/aws/aws-sdk-go-v2 v1.11.0 // indirect
+	github.com/aws/aws-sdk-go-v2/credentials v1.6.1 // indirect
+	github.com/aws/aws-sdk-go-v2/feature/s3/manager v1.7.1 // indirect
+	github.com/aws/aws-sdk-go-v2/service/internal/accept-encoding v1.5.0 // indirect
+	github.com/aws/aws-sdk-go-v2/service/internal/presigned-url v1.5.0 // indirect
+	github.com/aws/aws-sdk-go-v2/service/internal/s3shared v1.9.0 // indirect
+	github.com/aws/aws-sdk-go-v2/service/s3 v1.19.0 // indirect
+	github.com/aws/smithy-go v1.9.0 // indirect
 	github.com/bugsnag/panicwrap v1.3.4 // indirect
 	github.com/cespare/xxhash v1.1.0 // indirect
 	github.com/cloudflare/golz4 v0.0.0-20150217214814-ef862a3cdc58 // indirect
@@ -179,6 +179,9 @@ require (
 require github.com/minio/minio-go/v7 v7.0.34
 
 require (
+	github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream v1.0.0 // indirect
+	github.com/aws/aws-sdk-go-v2/internal/configsources v1.1.0 // indirect
+	github.com/aws/aws-sdk-go-v2/internal/endpoints/v2 v2.0.0 // indirect
 	github.com/googleapis/enterprise-certificate-proxy v0.1.0 // indirect
 	github.com/klauspost/cpuid/v2 v2.1.0 // indirect
 	github.com/rs/xid v1.4.0 // indirect
