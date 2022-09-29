@@ -146,7 +146,7 @@ func (handler *JSONResponseHandler) IsSuccessStatus(respCode int, respBody strin
 // TXTResponseHandler -- start
 
 // IsSuccessStatus - returns the status code based on the response code and body
-func (handler *TXTResponseHandler) IsSuccessStatus(respCode int, _ string) (returnCode int) {
+func (*TXTResponseHandler) IsSuccessStatus(respCode int, _ string) (returnCode int) {
 	returnCode = respCode
 	return
 }

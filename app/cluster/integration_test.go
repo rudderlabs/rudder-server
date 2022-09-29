@@ -36,7 +36,6 @@ import (
 	routermanager "github.com/rudderlabs/rudder-server/router/manager"
 	"github.com/rudderlabs/rudder-server/services/archiver"
 	"github.com/rudderlabs/rudder-server/services/multitenant"
-	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/pubsub"
 	"github.com/rudderlabs/rudder-server/utils/types/servermode"
@@ -162,7 +161,6 @@ func initJobsDB() {
 	jobsdb.Init2()
 	jobsdb.Init3()
 	archiver.Init()
-	stats.Setup()
 	router.Init()
 	router.InitRouterAdmin()
 	batchrouter.Init()

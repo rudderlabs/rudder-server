@@ -42,14 +42,14 @@ func NewOs() OsI {
 
 // IsNotExist returns a boolean indicating whether the error is known to report that a file or directory does not exist.
 // It is satisfied by ErrNotExist as well as some syscall errors.
-func (o *Os) IsNotExist(err error) bool {
+func (*Os) IsNotExist(err error) bool {
 	return os.IsNotExist(err)
 }
 
 // Getenv retrieves the value of the environment variable named by the key.
 // It returns the value, which will be empty if the variable is not present.
 // To distinguish between an empty value and an unset value, use LookupEnv.
-func (o *Os) Getenv(key string) string {
+func (*Os) Getenv(key string) string {
 	return os.Getenv(key)
 }
 
@@ -58,7 +58,7 @@ func (o *Os) Getenv(key string) string {
 // On Unix, including macOS, it returns the $HOME environment variable.
 // On Windows, it returns %USERPROFILE%.
 // On Plan 9, it returns the $home environment variable.
-func (o *Os) UserHomeDir() (string, error) {
+func (*Os) UserHomeDir() (string, error) {
 	return os.UserHomeDir()
 }
 
@@ -67,7 +67,7 @@ func (o *Os) UserHomeDir() (string, error) {
 // (before umask). If successful, methods on the returned File can
 // be used for I/O; the associated file descriptor has mode O_RDWR.
 // If there is an error, it will be of type *PathError.
-func (o *Os) Create(name string) (*os.File, error) {
+func (*Os) Create(name string) (*os.File, error) {
 	return os.Create(name)
 }
 
@@ -75,7 +75,7 @@ func (o *Os) Create(name string) (*os.File, error) {
 // the returned file can be used for reading; the associated file
 // descriptor has mode O_RDONLY.
 // If there is an error, it will be of type *PathError.
-func (o *Os) Open(name string) (*os.File, error) {
+func (*Os) Open(name string) (*os.File, error) {
 	return os.Open(name)
 }
 
@@ -86,7 +86,7 @@ func (o *Os) Open(name string) (*os.File, error) {
 // directories that MkdirAll creates.
 // If path is already a directory, MkdirAll does nothing
 // and returns nil.
-func (o *Os) MkdirAll(path string, perm os.FileMode) error {
+func (*Os) MkdirAll(path string, perm os.FileMode) error {
 	return os.MkdirAll(path, perm)
 }
 
@@ -96,19 +96,19 @@ func (o *Os) MkdirAll(path string, perm os.FileMode) error {
 // is passed, it is created with mode perm (before umask). If successful,
 // methods on the returned File can be used for I/O.
 // If there is an error, it will be of type *PathError.
-func (o *Os) OpenFile(name string, flag int, perm os.FileMode) (*os.File, error) {
+func (*Os) OpenFile(name string, flag int, perm os.FileMode) (*os.File, error) {
 	return os.OpenFile(name, flag, perm)
 }
 
 // Stat returns a FileInfo describing the named file.
 // If there is an error, it will be of type *PathError.
-func (o *Os) Stat(name string) (os.FileInfo, error) {
+func (*Os) Stat(name string) (os.FileInfo, error) {
 	return os.Stat(name)
 }
 
 // Remove removes the named file or (empty) directory.
 // If there is an error, it will be of type *PathError.
-func (o *Os) Remove(name string) error {
+func (*Os) Remove(name string) error {
 	return os.Remove(name)
 }
 
@@ -117,6 +117,6 @@ func (o *Os) Remove(name string) error {
 // value (which may be empty) is returned and the boolean is true.
 // Otherwise the returned value will be empty and the boolean will
 // be false.
-func (o *Os) LookupEnv(key string) (string, bool) {
+func (*Os) LookupEnv(key string) (string, bool) {
 	return os.LookupEnv(key)
 }

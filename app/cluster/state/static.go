@@ -38,7 +38,7 @@ func (s *StaticProvider) ServerMode(ctx context.Context) <-chan servermode.Chang
 
 // WorkspaceIDs returns an empty channel, since we don't expect workspaceIDs updates with static provider
 // TODO: This method should return proper workspaceIDs for backend config, even with static provide.
-func (s *StaticProvider) WorkspaceIDs(ctx context.Context) <-chan workspace.ChangeEvent {
+func (*StaticProvider) WorkspaceIDs(ctx context.Context) <-chan workspace.ChangeEvent {
 	ch := make(chan workspace.ChangeEvent)
 
 	go func() {

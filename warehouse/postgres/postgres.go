@@ -230,7 +230,7 @@ func (pg *HandleT) DownloadLoadFiles(tableName string) ([]string, error) {
 }
 
 func handleRollbackTimeout(tags map[string]string) {
-	stats.NewTaggedStat("pg_rollback_timeout", stats.CountType, tags).Count(1)
+	stats.Default.NewTaggedStat("pg_rollback_timeout", stats.CountType, tags).Count(1)
 }
 
 func runRollbackWithTimeout(f func() error, onTimeout func(map[string]string), d time.Duration, tags map[string]string) {
