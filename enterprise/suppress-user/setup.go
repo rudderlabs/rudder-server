@@ -28,7 +28,7 @@ func loadConfig() {
 }
 
 // Setup initializes Suppress User feature
-func (m *Factory) Setup(backendConfig backendconfig.BackendConfig) (types.SuppressUserI, error) {
+func (m *Factory) Setup(backendConfig backendconfig.BackendConfig) (types.UserSuppression, error) {
 	pkgLogger = logger.NewLogger().Child("enterprise").Child("suppress-user")
 
 	if m.EnterpriseToken == "" {

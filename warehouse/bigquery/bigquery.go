@@ -164,7 +164,7 @@ func (bq *HandleT) createTableView(tableName string, columnMap map[string]string
 	return
 }
 
-func (bq *HandleT) schemaExists(schemaname, location string) (exists bool, err error) {
+func (bq *HandleT) schemaExists(_, _ string) (exists bool, err error) {
 	ds := bq.Db.Dataset(bq.Namespace)
 	_, err = ds.Metadata(bq.BQContext)
 	if err != nil {
@@ -237,7 +237,7 @@ func partitionedTable(tableName, partitionDate string) string {
 	return fmt.Sprintf(`%s$%v`, tableName, strings.ReplaceAll(partitionDate, "-", ""))
 }
 
-func (bq *HandleT) loadTable(tableName string, forceLoad, getLoadFileLocFromTableUploads, skipTempTableDelete bool) (stagingLoadTable StagingLoadTableT, err error) {
+func (bq *HandleT) loadTable(tableName string, _, getLoadFileLocFromTableUploads, skipTempTableDelete bool) (stagingLoadTable StagingLoadTableT, err error) {
 	pkgLogger.Infof("BQ: Starting load for table:%s\n", tableName)
 	var loadFiles []warehouseutils.LoadFileT
 	if getLoadFileLocFromTableUploads {
@@ -805,7 +805,7 @@ func (bq *HandleT) AddColumns(tableName string, columnsInfo warehouseutils.Colum
 	return
 }
 
-func (bq *HandleT) AlterColumn(tableName, columnName, columnType string) (err error) {
+func (*HandleT) AlterColumn(_, _, _ string) (err error) {
 	return
 }
 
@@ -1066,7 +1066,7 @@ func (bq *HandleT) Connect(warehouse warehouseutils.WarehouseT) (client.Client, 
 	return client.Client{Type: client.BQClient, BQ: dbClient}, err
 }
 
-func (bq *HandleT) LoadTestTable(location, tableName string, payloadMap map[string]interface{}, format string) (err error) {
+func (bq *HandleT) LoadTestTable(location, tableName string, _ map[string]interface{}, _ string) (err error) {
 	gcsLocations := warehouseutils.GetGCSLocation(location, warehouseutils.GCSLocationOptionsT{})
 	gcsRef := bigquery.NewGCSReference([]string{gcsLocations}...)
 	gcsRef.SourceFormat = bigquery.JSON
@@ -1092,5 +1092,5 @@ func (bq *HandleT) LoadTestTable(location, tableName string, payloadMap map[stri
 	return
 }
 
-func (bq *HandleT) SetConnectionTimeout(timeout time.Duration) {
+func (*HandleT) SetConnectionTimeout(_ time.Duration) {
 }

@@ -559,7 +559,7 @@ func (pg *HandleT) loadUserTables() (errorMap map[string]error) {
 	return
 }
 
-func (pg *HandleT) schemaExists(schemaname string) (exists bool, err error) {
+func (pg *HandleT) schemaExists(_ string) (exists bool, err error) {
 	sqlStatement := fmt.Sprintf(`SELECT EXISTS (SELECT 1 FROM pg_catalog.pg_namespace WHERE nspname = '%s');`, pg.Namespace)
 	err = pg.Db.QueryRow(sqlStatement).Scan(&exists)
 	return
@@ -834,7 +834,7 @@ func (pg *HandleT) Connect(warehouse warehouseutils.WarehouseT) (client.Client, 
 	return client.Client{Type: client.SQLClient, SQL: dbHandle}, err
 }
 
-func (pg *HandleT) LoadTestTable(location, tableName string, payloadMap map[string]interface{}, format string) (err error) {
+func (pg *HandleT) LoadTestTable(_, tableName string, payloadMap map[string]interface{}, _ string) (err error) {
 	sqlStatement := fmt.Sprintf(`INSERT INTO %q.%q (%v) VALUES (%s)`,
 		pg.Namespace,
 		tableName,

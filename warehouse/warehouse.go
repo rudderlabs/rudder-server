@@ -242,7 +242,7 @@ func (wh *HandleT) initWorker() chan *UploadJobT {
 	return workerChan
 }
 
-func (wh *HandleT) handleUploadJob(uploadJob *UploadJobT) (err error) {
+func (*HandleT) handleUploadJob(uploadJob *UploadJobT) (err error) {
 	// Process the upload job
 	err = uploadJob.run()
 	return
@@ -538,7 +538,7 @@ func setLastProcessedMarker(warehouse warehouseutils.WarehouseT, lastProcessedTi
 	lastProcessedMarkerMap[warehouse.Identifier] = lastProcessedTime.Unix()
 }
 
-func (wh *HandleT) createUploadJobsFromStagingFiles(warehouse warehouseutils.WarehouseT, whManager manager.ManagerI, stagingFilesList []*StagingFileT, priority int, uploadStartAfter time.Time) {
+func (wh *HandleT) createUploadJobsFromStagingFiles(warehouse warehouseutils.WarehouseT, _ manager.ManagerI, stagingFilesList []*StagingFileT, priority int, uploadStartAfter time.Time) {
 	// count := 0
 	// Process staging files in batches of stagingFilesBatchSize
 	// Eg. If there are 1000 pending staging files and stagingFilesBatchSize is 100,
@@ -1620,7 +1620,7 @@ func TriggerUploadHandler(sourceID, destID string) error {
 	return nil
 }
 
-func databricksVersionHandler(w http.ResponseWriter, r *http.Request) {
+func databricksVersionHandler(w http.ResponseWriter, _ *http.Request) {
 	w.WriteHeader(http.StatusOK)
 	w.Write([]byte(deltalake.GetDatabricksVersion()))
 }
@@ -1645,7 +1645,7 @@ func clearTriggeredUpload(wh warehouseutils.WarehouseT) {
 	triggerUploadsMapLock.Unlock()
 }
 
-func healthHandler(w http.ResponseWriter, r *http.Request) {
+func healthHandler(w http.ResponseWriter, _ *http.Request) {
 	dbService := ""
 	pgNotifierService := ""
 	if runningMode != DegradedMode {
@@ -1826,26 +1826,26 @@ func Start(ctx context.Context, app app.App) error {
 		}))
 	}
 
-	// Report warehouse features
-	g.Go(func() error {
-		backendconfig.DefaultBackendConfig.WaitForConfig(ctx)
-
-		c := features.NewClient(
-			config.GetString("CONFIG_BACKEND_URL", "https://api.rudderlabs.com"),
-			backendconfig.DefaultBackendConfig.Identity(),
-		)
-
-		err := c.Send(ctx, info.WarehouseComponent.Name, info.WarehouseComponent.Features)
-		if err != nil {
-			pkgLogger.Errorf("error sending warehouse features: %v", err)
-		}
-
-		// We don't want to exit if we fail to send features
-		return nil
-	})
-
 	if isStandAlone() && isMaster() {
 		destinationdebugger.Setup(backendconfig.DefaultBackendConfig)
+
+		// Report warehouse features
+		g.Go(func() error {
+			backendconfig.DefaultBackendConfig.WaitForConfig(ctx)
+
+			c := features.NewClient(
+				config.GetString("CONFIG_BACKEND_URL", "https://api.rudderlabs.com"),
+				backendconfig.DefaultBackendConfig.Identity(),
+			)
+
+			err := c.Send(ctx, info.WarehouseComponent.Name, info.WarehouseComponent.Features)
+			if err != nil {
+				pkgLogger.Errorf("error sending warehouse features: %v", err)
+			}
+
+			// We don't want to exit if we fail to send features
+			return nil
+		})
 	}
 
 	if isSlave() {

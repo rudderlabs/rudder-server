@@ -421,7 +421,7 @@ func (ch *HandleT) downloadLoadFile(object *warehouseutils.LoadFileT, tableName 
 	return fileName, err
 }
 
-func generateArgumentString(arg string, length int) string {
+func generateArgumentString(_ string, length int) string {
 	var args []string
 	for i := 0; i < length; i++ {
 		args = append(args, "?")
@@ -861,7 +861,7 @@ func (ch *HandleT) CreateSchema() (err error) {
 	return err
 }
 
-func (ch *HandleT) AlterColumn(tableName, columnName, columnType string) (err error) {
+func (*HandleT) AlterColumn(_, _, _ string) (err error) {
 	return
 }
 
@@ -899,7 +899,7 @@ func (ch *HandleT) Setup(warehouse warehouseutils.WarehouseT, uploader warehouse
 	return err
 }
 
-func (ch *HandleT) CrashRecover(warehouse warehouseutils.WarehouseT) (err error) {
+func (*HandleT) CrashRecover(_ warehouseutils.WarehouseT) (err error) {
 	return
 }
 
@@ -982,19 +982,19 @@ func (ch *HandleT) Cleanup() {
 	}
 }
 
-func (ch *HandleT) LoadIdentityMergeRulesTable() (err error) {
+func (*HandleT) LoadIdentityMergeRulesTable() (err error) {
 	return
 }
 
-func (ch *HandleT) LoadIdentityMappingsTable() (err error) {
+func (*HandleT) LoadIdentityMappingsTable() (err error) {
 	return
 }
 
-func (ch *HandleT) DownloadIdentityRules(*misc.GZipWriter) (err error) {
+func (*HandleT) DownloadIdentityRules(*misc.GZipWriter) (err error) {
 	return
 }
 
-func (ch *HandleT) IsEmpty(warehouse warehouseutils.WarehouseT) (empty bool, err error) {
+func (*HandleT) IsEmpty(_ warehouseutils.WarehouseT) (empty bool, err error) {
 	return
 }
 
@@ -1030,7 +1030,7 @@ func (ch *HandleT) GetLogIdentifier(args ...string) string {
 	return fmt.Sprintf("[%s][%s][%s][%s][%s]", ch.Warehouse.Type, ch.Warehouse.Source.ID, ch.Warehouse.Destination.ID, ch.Warehouse.Namespace, strings.Join(args, "]["))
 }
 
-func (ch *HandleT) LoadTestTable(location, tableName string, payloadMap map[string]interface{}, format string) (err error) {
+func (ch *HandleT) LoadTestTable(_, tableName string, payloadMap map[string]interface{}, _ string) (err error) {
 	var columns []string
 	var recordInterface []interface{}
 

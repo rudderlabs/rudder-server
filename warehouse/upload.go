@@ -1595,7 +1595,7 @@ func (job *UploadJobT) getAttemptNumber() int {
 	return int(attempts)
 }
 
-func (job *UploadJobT) setStagingFilesStatus(stagingFiles []*StagingFileT, status string) (err error) {
+func (*UploadJobT) setStagingFilesStatus(stagingFiles []*StagingFileT, status string) (err error) {
 	var ids []int64
 	for _, stagingFile := range stagingFiles {
 		ids = append(ids, stagingFile.ID)
@@ -1898,7 +1898,7 @@ func (job *UploadJobT) createLoadFiles(generateAll bool) (startLoadFileID, endLo
 	return startLoadFileID, endLoadFileID, nil
 }
 
-func (job *UploadJobT) setStagingFileSuccess(stagingFileIDs []int64) {
+func (*UploadJobT) setStagingFileSuccess(stagingFileIDs []int64) {
 	// using ANY instead of IN as WHERE clause filtering on primary key index uses index scan in both cases
 	// use IN for cases where filtering on composite indexes
 	sqlStatement := fmt.Sprintf(`UPDATE %s SET status=$1, updated_at=$2 WHERE id=ANY($3)`, warehouseutils.WarehouseStagingFilesTable)
@@ -1908,7 +1908,7 @@ func (job *UploadJobT) setStagingFileSuccess(stagingFileIDs []int64) {
 	}
 }
 
-func (job *UploadJobT) setStagingFileErr(stagingFileID int64, statusErr error) {
+func (*UploadJobT) setStagingFileErr(stagingFileID int64, statusErr error) {
 	sqlStatement := fmt.Sprintf(`UPDATE %s SET status=$1, error=$2, updated_at=$3 WHERE id=$4`, warehouseutils.WarehouseStagingFilesTable)
 	_, err := dbHandle.Exec(sqlStatement, warehouseutils.StagingFileFailedState, misc.QuoteLiteral(statusErr.Error()), timeutil.Now(), stagingFileID)
 	if err != nil {

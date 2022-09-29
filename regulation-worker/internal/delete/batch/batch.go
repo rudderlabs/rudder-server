@@ -146,7 +146,7 @@ func (b *Batch) updateStatusTrackerFile(absStatusTrackerFileName, fileName strin
 
 // downloads `fileName` locally. And returns empty file, if file not found.
 // Note: download happens concurrently in 5 go routine by default.
-func (b *Batch) download(ctx context.Context, completeFileName string) (string, error) {
+func (b *Batch) download(_ context.Context, completeFileName string) (string, error) {
 	pkgLogger.Debugf("downloading file: %v", completeFileName)
 
 	tmpFilePathPrefix, err := os.MkdirTemp(b.TmpDirPath, "")
@@ -303,7 +303,7 @@ func uploadWithExpBackoff(ctx context.Context, fu func(ctx context.Context, uplo
 
 // replace old json.gz & statusTrackerFile with the new during upload.
 // Note: upload happens concurrently in 5 go routine by default
-func (b *Batch) upload(ctx context.Context, uploadFileAbsPath, actualFileName, absStatusTrackerFileName string) error {
+func (b *Batch) upload(_ context.Context, uploadFileAbsPath, actualFileName, absStatusTrackerFileName string) error {
 	pkgLogger.Debugf("uploading file")
 	fileNamePrefixes := strings.Split(actualFileName, "/")
 
