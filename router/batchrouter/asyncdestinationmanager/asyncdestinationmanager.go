@@ -84,7 +84,12 @@ type Parameters struct {
 	MetaData MetaDataT `json:"metadata"`
 }
 
-var json = jsoniter.ConfigCompatibleWithStandardLibrary
+var json = jsoniter.Config{
+	EscapeHTML:             true,
+	SortMapKeys:            true,
+	ValidateJsonRawMessage: true,
+	UseNumber:              true,
+}.Froze()
 
 var (
 	HTTPTimeout time.Duration

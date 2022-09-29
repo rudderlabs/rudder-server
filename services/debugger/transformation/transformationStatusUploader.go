@@ -64,7 +64,12 @@ type UploadT struct {
 }
 
 var (
-	jsonfast = jsoniter.ConfigCompatibleWithStandardLibrary
+	jsonfast = jsoniter.Config{
+		EscapeHTML:             true,
+		SortMapKeys:            true,
+		ValidateJsonRawMessage: true,
+		UseNumber:              true,
+	}.Froze()
 
 	configBackendURL             string
 	disableTransformationUploads bool

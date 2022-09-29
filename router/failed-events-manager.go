@@ -3,7 +3,7 @@ package router
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
+	jsonstd "encoding/json"
 	"fmt"
 	"time"
 
@@ -13,8 +13,8 @@ import (
 var failedEventsManager FailedEventsManagerI
 
 type FailedEventRowT struct {
-	DestinationID string          `json:"destination_id"`
-	RecordID      json.RawMessage `json:"record_id"`
+	DestinationID string             `json:"destination_id"`
+	RecordID      jsonstd.RawMessage `json:"record_id"`
 }
 
 var (

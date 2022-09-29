@@ -3,7 +3,6 @@ package gateway
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -21,6 +20,7 @@ import (
 	"github.com/bugsnag/bugsnag-go/v2"
 	"github.com/gofrs/uuid"
 	"github.com/gorilla/mux"
+	jsoniter "github.com/json-iterator/go"
 	"github.com/rs/cors"
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
@@ -50,6 +50,13 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/types"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
+
+var json = jsoniter.Config{
+	EscapeHTML:             true,
+	SortMapKeys:            true,
+	ValidateJsonRawMessage: true,
+	UseNumber:              true,
+}.Froze()
 
 /*
  * The gateway module handles incoming requests from client devices.
@@ -517,52 +524,9 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 			}
 
 			// set anonymousId if not set in payload
-			result := gjson.GetBytes(body, "batch")
-			var out []map[string]interface{}
-			var builtUserID string
 			var notIdentifiable, nonRudderEvent, containsAudienceList bool
-			result.ForEach(func(_, vjson gjson.Result) bool {
-				anonIDFromReq := strings.TrimSpace(vjson.Get("anonymousId").String())
-				userIDFromReq := strings.TrimSpace(vjson.Get("userId").String())
-				if builtUserID == "" {
-					if anonIDFromReq != "" {
-						builtUserID = userIDHeader + DELIMITER + anonIDFromReq + DELIMITER + userIDFromReq
-					} else {
-						// Proxy gets the userID from body if there is no anonymousId in body/header
-						builtUserID = userIDHeader + DELIMITER + userIDFromReq + DELIMITER + userIDFromReq
-					}
-				}
-
-				eventTypeFromReq := strings.TrimSpace(vjson.Get("type").String())
-
-				if anonIDFromReq == "" {
-					if userIDFromReq == "" && !allowReqsWithoutUserIDAndAnonymousID {
-						notIdentifiable = true
-						return false
-					}
-				}
-				if eventTypeFromReq == "audiencelist" {
-					containsAudienceList = true
-				}
-				// hashing combination of userIDFromReq + anonIDFromReq, using colon as a delimiter
-				rudderId, err := misc.GetMD5UUID(userIDFromReq + ":" + anonIDFromReq)
-				if err != nil {
-					notIdentifiable = true
-					return false
-				}
-
-				toSet, ok := vjson.Value().(map[string]interface{})
-				if !ok {
-					nonRudderEvent = true
-					return false
-				}
-				toSet["rudderId"] = rudderId
-				if messageId := strings.TrimSpace(vjson.Get("messageId").String()); messageId == "" {
-					toSet["messageId"] = uuid.Must(uuid.NewV4()).String()
-				}
-				out = append(out, toSet)
-				return true // keep iterating
-			})
+			var builtUserID string
+			body, notIdentifiable, nonRudderEvent, containsAudienceList, builtUserID = injectIdentifiersV2(userIDHeader, body)
 
 			if len(body) > maxReqSize && !containsAudienceList {
 				req.done <- response.GetStatus(response.RequestBodyTooLarge)
@@ -571,8 +535,6 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 				misc.IncrementMapByKey(sourceFailEventStats, sourceTag, totalEventsInReq)
 				continue
 			}
-
-			body, _ = sjson.SetBytes(body, "batch", out)
 
 			if notIdentifiable {
 				req.done <- response.GetStatus(response.NonIdentifiableRequest)
@@ -1669,4 +1631,113 @@ func WithContentType(contentType string, delegate http.HandlerFunc) http.Handler
 		w.Header().Add("Content-Type", contentType)
 		delegate(w, r)
 	})
+}
+
+func injectIdentifiers(userIDHeader string, body []byte) (res []byte, notIdentifiable, nonRudderEvent, containsAudienceList bool, builtUserID string) {
+	// set anonymousId if not set in payload
+	result := gjson.GetBytes(body, "batch")
+	var out []map[string]interface{}
+	result.ForEach(func(_, vjson gjson.Result) bool {
+		anonIDFromReq := strings.TrimSpace(vjson.Get("anonymousId").String())
+		userIDFromReq := strings.TrimSpace(vjson.Get("userId").String())
+		if builtUserID == "" {
+			if anonIDFromReq != "" {
+				builtUserID = userIDHeader + DELIMITER + anonIDFromReq + DELIMITER + userIDFromReq
+			} else {
+				// Proxy gets the userID from body if there is no anonymousId in body/header
+				builtUserID = userIDHeader + DELIMITER + userIDFromReq + DELIMITER + userIDFromReq
+			}
+		}
+
+		eventTypeFromReq := strings.TrimSpace(vjson.Get("type").String())
+
+		if anonIDFromReq == "" {
+			if userIDFromReq == "" && !allowReqsWithoutUserIDAndAnonymousID {
+				notIdentifiable = true
+				return false
+			}
+		}
+		if eventTypeFromReq == "audiencelist" {
+			containsAudienceList = true
+		}
+		// hashing combination of userIDFromReq + anonIDFromReq, using colon as a delimiter
+		rudderId, err := misc.GetMD5UUID(userIDFromReq + ":" + anonIDFromReq)
+		if err != nil {
+			notIdentifiable = true
+			return false
+		}
+
+		toSet, ok := vjson.Value().(map[string]interface{})
+		if !ok {
+			nonRudderEvent = true
+			return false
+		}
+		toSet["rudderId"] = rudderId
+		if messageId := strings.TrimSpace(vjson.Get("messageId").String()); messageId == "" {
+			toSet["messageId"] = uuid.Must(uuid.NewV4()).String()
+		}
+		out = append(out, toSet)
+		return true // keep iterating
+	})
+
+	res, _ = sjson.SetBytes(body, "batch", out)
+	return
+}
+
+func injectIdentifiersV2(userIDHeader string, body []byte) (res []byte, notIdentifiable, nonRudderEvent, containsAudienceList bool, builtUserID string) {
+	type batchMessage struct {
+		Batch []map[string]interface{} `json:"batch"`
+	}
+	var result batchMessage
+	err := json.Unmarshal(body, &result)
+	if err != nil {
+		nonRudderEvent = true
+		return
+	}
+
+	toString := func(v interface{}) string {
+		var res string
+		if v != nil {
+			res = v.(string)
+		}
+		return res
+	}
+
+	for _, event := range result.Batch {
+
+		anonIDFromReq := toString(event["anonymousId"])
+		userIDFromReq := toString(event["userId"])
+		if builtUserID == "" {
+			if anonIDFromReq != "" {
+				builtUserID = userIDHeader + DELIMITER + anonIDFromReq + DELIMITER + userIDFromReq
+			} else {
+				// Proxy gets the userID from body if there is no anonymousId in body/header
+				builtUserID = userIDHeader + DELIMITER + userIDFromReq + DELIMITER + userIDFromReq
+			}
+		}
+
+		eventTypeFromReq := toString(event["type"])
+
+		if anonIDFromReq == "" {
+			if userIDFromReq == "" && !allowReqsWithoutUserIDAndAnonymousID {
+				notIdentifiable = true
+				return
+			}
+		}
+		if eventTypeFromReq == "audiencelist" {
+			containsAudienceList = true
+		}
+		// hashing combination of userIDFromReq + anonIDFromReq, using colon as a delimiter
+		rudderId, err := misc.GetMD5UUID(userIDFromReq + ":" + anonIDFromReq)
+		if err != nil {
+			notIdentifiable = true
+			return
+		}
+		event["rudderId"] = rudderId
+		if messageId := strings.TrimSpace(toString(event["messageId"])); messageId == "" {
+			event["messageId"] = uuid.Must(uuid.NewV4()).String()
+		}
+	}
+	res, _ = json.Marshal(result)
+	return
 }

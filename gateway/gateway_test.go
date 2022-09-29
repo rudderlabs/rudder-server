@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/base64"
-	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -304,7 +303,7 @@ var _ = Describe("Gateway", func() {
 			requestIP := gjson.GetBytes(responseData, "requestIP")
 			batch := gjson.GetBytes(responseData, "batch")
 
-			Expect(time.Parse(misc.RFC3339Milli, receivedAt.String())).To(BeTemporally("~", time.Now(), 100*time.Millisecond))
+			Expect(time.Parse(misc.RFC3339Milli, receivedAt.String())).To(BeTemporally("~", time.Now(), 1*time.Second))
 			Expect(writeKey.String()).To(Equal(WriteKeyEnabled))
 			Expect(requestIP.String()).To(Equal(TestRemoteAddress))
 			Expect(batch.Array()).To(HaveLen(batchLength))
@@ -689,4 +688,28 @@ func TestContentTypeFunction(t *testing.T) {
 	receivedContentType := respRecorder.Header()["Content-Type"][0]
 	require.Equal(t, expectedContentType, receivedContentType, "actual content type different than expected.")
 	require.Equal(t, expectedStatus, respRecorder.Code, "actual response code different than expected.")
+}
+
+func BenchmarkInjectIdentifiersV1(b *testing.B) {
+	b.StopTimer()
+	body, err := os.ReadFile("testdata/batch.json")
+	if err != nil {
+		b.FailNow()
+	}
+	b.StartTimer()
+	for i := 0; i < b.N; i++ {
+		_, _, _, _, _ = injectIdentifiers("userID", body)
+	}
+}
+
+func BenchmarkInjectIdentifiersV2(b *testing.B) {
+	b.StopTimer()
+	body, err := os.ReadFile("testdata/batch.json")
+	if err != nil {
+		b.FailNow()
+	}
+	b.StartTimer()
+	for i := 0; i < b.N; i++ {
+		_, _, _, _, _ = injectIdentifiersV2("userID", body)
+	}
 }

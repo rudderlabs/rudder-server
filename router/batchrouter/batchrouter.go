@@ -49,7 +49,12 @@ import (
 	"github.com/tidwall/sjson"
 )
 
-var json = jsoniter.ConfigCompatibleWithStandardLibrary
+var json = jsoniter.Config{
+	EscapeHTML:             true,
+	SortMapKeys:            true,
+	ValidateJsonRawMessage: true,
+	UseNumber:              true,
+}.Froze()
 
 var (
 	mainLoopSleep, diagnosisTickerTime time.Duration

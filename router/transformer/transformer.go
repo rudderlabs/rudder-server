@@ -25,7 +25,12 @@ import (
 	"github.com/tidwall/gjson"
 )
 
-var jsonfast = jsoniter.ConfigCompatibleWithStandardLibrary
+var jsonfast = jsoniter.Config{
+	EscapeHTML:             true,
+	SortMapKeys:            true,
+	ValidateJsonRawMessage: true,
+	UseNumber:              true,
+}.Froze()
 
 const (
 	BATCH            = "BATCH"

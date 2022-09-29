@@ -19,7 +19,12 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/types"
 )
 
-var jsonfast = jsoniter.ConfigCompatibleWithStandardLibrary
+var jsonfast = jsoniter.Config{
+	EscapeHTML:             true,
+	SortMapKeys:            true,
+	ValidateJsonRawMessage: true,
+	UseNumber:              true,
+}.Froze()
 
 type namespaceConfig struct {
 	configEnvHandler          types.ConfigEnvI

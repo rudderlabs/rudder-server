@@ -1,0 +1,1039 @@
+{
+    "batch": [
+        {
+            "type": "track",
+            "event": "Push___Received",
+            "sentAt": "2022-09-28T14:36:10.600Z",
+            "userId": "userId",
+            "channel": "server",
+            "context": {
+                "ip": "10.10.10.10",
+                "os": {
+                    "name": "Android",
+                    "version": "12"
+                },
+                "app": {
+                    "name": "LATOKEN",
+                    "build": "111300",
+                    "version": "1.113.00",
+                    "namespace": "com.latoken.wallet"
+                },
+                "device": {
+                    "id": "deviceID",
+                    "name": "2023",
+                    "type": "android",
+                    "model": "V2022",
+                    "manufacturer": "vivo",
+                    "advertisingId": "advertisingID",
+                    "adTrackingEnabled": true
+                },
+                "locale": "en-US",
+                "screen": {
+                    "width": 1080,
+                    "height": 2280,
+                    "density": 2.75
+                },
+                "traits": {
+                    "OS": "Android",
+                    "pro": 0,
+                    "Lang": "en",
+                    "Tier": 2,
+                    "store": "google_play",
+                    "GSF_ID": "gsfid",
+                    "userId": "userId",
+                    "App_ver": "1.113.00",
+                    "fee_level": 1,
+                    "30d_volume": "0",
+                    "LATOKEN_ID": "latoken-id",
+                    "Night_mode": "system",
+                    "anonymousId": "cab6a551-fc31-4741-bdda-4d60295d640c",
+                    "push_permission": 0,
+                    "LATOKEN_ID_History": "latoken-id"
+                },
+                "library": {
+                    "name": "analytics-android",
+                    "version": "4.10.4"
+                },
+                "network": {
+                    "wifi": false,
+                    "carrier": "Robi",
+                    "cellular": true,
+                    "bluetooth": false
+                },
+                "timezone": "Asia/Dhaka",
+                "userAgent": "Dalvik/2.1.0 (Linux; U; Android 12; V2022 Build/SP1A.210812.003)"
+            },
+            "version": 2,
+            "writeKey": "writekey",
+            "projectId": "projectID",
+            "timestamp": "2022-09-28T14:34:54.006Z",
+            "properties": {
+                "Logon": 1,
+                "topic": "36e9383b-2915-4fd3-8b51-180803c3d76f/0c3a106d-bde3-4c13-a26e-3fd2394529e5",
+                "UserID": "latoken-id",
+                "LATOKEN_ID": "latoken-id",
+                "terminal_id": null,
+                "notification": "price_alert",
+                "push_permission": 1,
+                "application_opened_time": "2022-09-28T20:34:54.664+06:00"
+            },
+            "receivedAt": "2022-09-28T14:36:09.942Z",
+            "anonymousId": "cab6a551-fc31-4741-bdda-4d60295d640c",
+            "integrations": {
+                "Firebase": false,
+                "AppsFlyer": false,
+                "Indicative": false
+            },
+            "originalTimestamp": "2022-09-28T14:34:54.664Z"
+        },
+        {
+            "type": "track",
+            "event": "Push___Received",
+            "sentAt": "2022-09-28T14:36:10.600Z",
+            "userId": "userId",
+            "channel": "server",
+            "context": {
+                "ip": "10.10.10.10",
+                "os": {
+                    "name": "Android",
+                    "version": "12"
+                },
+                "app": {
+                    "name": "LATOKEN",
+                    "build": "111300",
+                    "version": "1.113.00",
+                    "namespace": "com.latoken.wallet"
+                },
+                "device": {
+                    "id": "deviceID",
+                    "name": "2023",
+                    "type": "android",
+                    "model": "V2022",
+                    "manufacturer": "vivo",
+                    "advertisingId": "advertisingID",
+                    "adTrackingEnabled": true
+                },
+                "locale": "en-US",
+                "screen": {
+                    "width": 1080,
+                    "height": 2280,
+                    "density": 2.75
+                },
+                "traits": {
+                    "OS": "Android",
+                    "pro": 0,
+                    "Lang": "en",
+                    "Tier": 2,
+                    "store": "google_play",
+                    "GSF_ID": "gsfid",
+                    "userId": "userId",
+                    "App_ver": "1.113.00",
+                    "fee_level": 1,
+                    "30d_volume": "0",
+                    "LATOKEN_ID": "latoken-id",
+                    "Night_mode": "system",
+                    "anonymousId": "cab6a551-fc31-4741-bdda-4d60295d640c",
+                    "push_permission": 0,
+                    "LATOKEN_ID_History": "latoken-id"
+                },
+                "library": {
+                    "name": "analytics-android",
+                    "version": "4.10.4"
+                },
+                "network": {
+                    "wifi": false,
+                    "carrier": "Robi",
+                    "cellular": true,
+                    "bluetooth": false
+                },
+                "timezone": "Asia/Dhaka",
+                "userAgent": "Dalvik/2.1.0 (Linux; U; Android 12; V2022 Build/SP1A.210812.003)"
+            },
+            "version": 2,
+            "writeKey": "writekey",
+            "projectId": "projectID",
+            "timestamp": "2022-09-28T14:34:54.006Z",
+            "properties": {
+                "Logon": 1,
+                "topic": "36e9383b-2915-4fd3-8b51-180803c3d76f/0c3a106d-bde3-4c13-a26e-3fd2394529e5",
+                "UserID": "latoken-id",
+                "LATOKEN_ID": "latoken-id",
+                "terminal_id": null,
+                "notification": "price_alert",
+                "push_permission": 1,
+                "application_opened_time": "2022-09-28T20:34:54.664+06:00"
+            },
+            "receivedAt": "2022-09-28T14:36:09.942Z",
+            "anonymousId": "cab6a551-fc31-4741-bdda-4d60295d640c",
+            "integrations": {
+                "Firebase": false,
+                "AppsFlyer": false,
+                "Indicative": false
+            },
+            "originalTimestamp": "2022-09-28T14:34:54.664Z"
+        },
+        {
+            "type": "track",
+            "event": "Push___Received",
+            "sentAt": "2022-09-28T14:36:10.600Z",
+            "userId": "userId",
+            "channel": "server",
+            "context": {
+                "ip": "10.10.10.10",
+                "os": {
+                    "name": "Android",
+                    "version": "12"
+                },
+                "app": {
+                    "name": "LATOKEN",
+                    "build": "111300",
+                    "version": "1.113.00",
+                    "namespace": "com.latoken.wallet"
+                },
+                "device": {
+                    "id": "deviceID",
+                    "name": "2023",
+                    "type": "android",
+                    "model": "V2022",
+                    "manufacturer": "vivo",
+                    "advertisingId": "advertisingID",
+                    "adTrackingEnabled": true
+                },
+                "locale": "en-US",
+                "screen": {
+                    "width": 1080,
+                    "height": 2280,
+                    "density": 2.75
+                },
+                "traits": {
+                    "OS": "Android",
+                    "pro": 0,
+                    "Lang": "en",
+                    "Tier": 2,
+                    "store": "google_play",
+                    "GSF_ID": "gsfid",
+                    "userId": "userId",
+                    "App_ver": "1.113.00",
+                    "fee_level": 1,
+                    "30d_volume": "0",
+                    "LATOKEN_ID": "latoken-id",
+                    "Night_mode": "system",
+                    "anonymousId": "cab6a551-fc31-4741-bdda-4d60295d640c",
+                    "push_permission": 0,
+                    "LATOKEN_ID_History": "latoken-id"
+                },
+                "library": {
+                    "name": "analytics-android",
+                    "version": "4.10.4"
+                },
+                "network": {
+                    "wifi": false,
+                    "carrier": "Robi",
+                    "cellular": true,
+                    "bluetooth": false
+                },
+                "timezone": "Asia/Dhaka",
+                "userAgent": "Dalvik/2.1.0 (Linux; U; Android 12; V2022 Build/SP1A.210812.003)"
+            },
+            "version": 2,
+            "writeKey": "writekey",
+            "projectId": "projectID",
+            "timestamp": "2022-09-28T14:34:54.006Z",
+            "properties": {
+                "Logon": 1,
+                "topic": "36e9383b-2915-4fd3-8b51-180803c3d76f/0c3a106d-bde3-4c13-a26e-3fd2394529e5",
+                "UserID": "latoken-id",
+                "LATOKEN_ID": "latoken-id",
+                "terminal_id": null,
+                "notification": "price_alert",
+                "push_permission": 1,
+                "application_opened_time": "2022-09-28T20:34:54.664+06:00"
+            },
+            "receivedAt": "2022-09-28T14:36:09.942Z",
+            "anonymousId": "cab6a551-fc31-4741-bdda-4d60295d640c",
+            "integrations": {
+                "Firebase": false,
+                "AppsFlyer": false,
+                "Indicative": false
+            },
+            "originalTimestamp": "2022-09-28T14:34:54.664Z"
+        },
+        {
+            "type": "track",
+            "event": "Push___Received",
+            "sentAt": "2022-09-28T14:36:10.600Z",
+            "userId": "userId",
+            "channel": "server",
+            "context": {
+                "ip": "10.10.10.10",
+                "os": {
+                    "name": "Android",
+                    "version": "12"
+                },
+                "app": {
+                    "name": "LATOKEN",
+                    "build": "111300",
+                    "version": "1.113.00",
+                    "namespace": "com.latoken.wallet"
+                },
+                "device": {
+                    "id": "deviceID",
+                    "name": "2023",
+                    "type": "android",
+                    "model": "V2022",
+                    "manufacturer": "vivo",
+                    "advertisingId": "advertisingID",
+                    "adTrackingEnabled": true
+                },
+                "locale": "en-US",
+                "screen": {
+                    "width": 1080,
+                    "height": 2280,
+                    "density": 2.75
+                },
+                "traits": {
+                    "OS": "Android",
+                    "pro": 0,
+                    "Lang": "en",
+                    "Tier": 2,
+                    "store": "google_play",
+                    "GSF_ID": "gsfid",
+                    "userId": "userId",
+                    "App_ver": "1.113.00",
+                    "fee_level": 1,
+                    "30d_volume": "0",
+                    "LATOKEN_ID": "latoken-id",
+                    "Night_mode": "system",
+                    "anonymousId": "cab6a551-fc31-4741-bdda-4d60295d640c",
+                    "push_permission": 0,
+                    "LATOKEN_ID_History": "latoken-id"
+                },
+                "library": {
+                    "name": "analytics-android",
+                    "version": "4.10.4"
+                },
+                "network": {
+                    "wifi": false,
+                    "carrier": "Robi",
+                    "cellular": true,
+                    "bluetooth": false
+                },
+                "timezone": "Asia/Dhaka",
+                "userAgent": "Dalvik/2.1.0 (Linux; U; Android 12; V2022 Build/SP1A.210812.003)"
+            },
+            "version": 2,
+            "writeKey": "writekey",
+            "projectId": "projectID",
+            "timestamp": "2022-09-28T14:34:54.006Z",
+            "properties": {
+                "Logon": 1,
+                "topic": "36e9383b-2915-4fd3-8b51-180803c3d76f/0c3a106d-bde3-4c13-a26e-3fd2394529e5",
+                "UserID": "latoken-id",
+                "LATOKEN_ID": "latoken-id",
+                "terminal_id": null,
+                "notification": "price_alert",
+                "push_permission": 1,
+                "application_opened_time": "2022-09-28T20:34:54.664+06:00"
+            },
+            "receivedAt": "2022-09-28T14:36:09.942Z",
+            "anonymousId": "cab6a551-fc31-4741-bdda-4d60295d640c",
+            "integrations": {
+                "Firebase": false,
+                "AppsFlyer": false,
+                "Indicative": false
+            },
+            "originalTimestamp": "2022-09-28T14:34:54.664Z"
+        },
+        {
+            "type": "track",
+            "event": "Push___Received",
+            "sentAt": "2022-09-28T14:36:10.600Z",
+            "userId": "userId",
+            "channel": "server",
+            "context": {
+                "ip": "10.10.10.10",
+                "os": {
+                    "name": "Android",
+                    "version": "12"
+                },
+                "app": {
+                    "name": "LATOKEN",
+                    "build": "111300",
+                    "version": "1.113.00",
+                    "namespace": "com.latoken.wallet"
+                },
+                "device": {
+                    "id": "deviceID",
+                    "name": "2023",
+                    "type": "android",
+                    "model": "V2022",
+                    "manufacturer": "vivo",
+                    "advertisingId": "advertisingID",
+                    "adTrackingEnabled": true
+                },
+                "locale": "en-US",
+                "screen": {
+                    "width": 1080,
+                    "height": 2280,
+                    "density": 2.75
+                },
+                "traits": {
+                    "OS": "Android",
+                    "pro": 0,
+                    "Lang": "en",
+                    "Tier": 2,
+                    "store": "google_play",
+                    "GSF_ID": "gsfid",
+                    "userId": "userId",
+                    "App_ver": "1.113.00",
+                    "fee_level": 1,
+                    "30d_volume": "0",
+                    "LATOKEN_ID": "latoken-id",
+                    "Night_mode": "system",
+                    "anonymousId": "cab6a551-fc31-4741-bdda-4d60295d640c",
+                    "push_permission": 0,
+                    "LATOKEN_ID_History": "latoken-id"
+                },
+                "library": {
+                    "name": "analytics-android",
+                    "version": "4.10.4"
+                },
+                "network": {
+                    "wifi": false,
+                    "carrier": "Robi",
+                    "cellular": true,
+                    "bluetooth": false
+                },
+                "timezone": "Asia/Dhaka",
+                "userAgent": "Dalvik/2.1.0 (Linux; U; Android 12; V2022 Build/SP1A.210812.003)"
+            },
+            "version": 2,
+            "writeKey": "writekey",
+            "projectId": "projectID",
+            "timestamp": "2022-09-28T14:34:54.006Z",
+            "properties": {
+                "Logon": 1,
+                "topic": "36e9383b-2915-4fd3-8b51-180803c3d76f/0c3a106d-bde3-4c13-a26e-3fd2394529e5",
+                "UserID": "latoken-id",
+                "LATOKEN_ID": "latoken-id",
+                "terminal_id": null,
+                "notification": "price_alert",
+                "push_permission": 1,
+                "application_opened_time": "2022-09-28T20:34:54.664+06:00"
+            },
+            "receivedAt": "2022-09-28T14:36:09.942Z",
+            "anonymousId": "cab6a551-fc31-4741-bdda-4d60295d640c",
+            "integrations": {
+                "Firebase": false,
+                "AppsFlyer": false,
+                "Indicative": false
+            },
+            "originalTimestamp": "2022-09-28T14:34:54.664Z"
+        },
+        {
+            "type": "track",
+            "event": "Push___Received",
+            "sentAt": "2022-09-28T14:36:10.600Z",
+            "userId": "userId",
+            "channel": "server",
+            "context": {
+                "ip": "10.10.10.10",
+                "os": {
+                    "name": "Android",
+                    "version": "12"
+                },
+                "app": {
+                    "name": "LATOKEN",
+                    "build": "111300",
+                    "version": "1.113.00",
+                    "namespace": "com.latoken.wallet"
+                },
+                "device": {
+                    "id": "deviceID",
+                    "name": "2023",
+                    "type": "android",
+                    "model": "V2022",
+                    "manufacturer": "vivo",
+                    "advertisingId": "advertisingID",
+                    "adTrackingEnabled": true
+                },
+                "locale": "en-US",
+                "screen": {
+                    "width": 1080,
+                    "height": 2280,
+                    "density": 2.75
+                },
+                "traits": {
+                    "OS": "Android",
+                    "pro": 0,
+                    "Lang": "en",
+                    "Tier": 2,
+                    "store": "google_play",
+                    "GSF_ID": "gsfid",
+                    "userId": "userId",
+                    "App_ver": "1.113.00",
+                    "fee_level": 1,
+                    "30d_volume": "0",
+                    "LATOKEN_ID": "latoken-id",
+                    "Night_mode": "system",
+                    "anonymousId": "cab6a551-fc31-4741-bdda-4d60295d640c",
+                    "push_permission": 0,
+                    "LATOKEN_ID_History": "latoken-id"
+                },
+                "library": {
+                    "name": "analytics-android",
+                    "version": "4.10.4"
+                },
+                "network": {
+                    "wifi": false,
+                    "carrier": "Robi",
+                    "cellular": true,
+                    "bluetooth": false
+                },
+                "timezone": "Asia/Dhaka",
+                "userAgent": "Dalvik/2.1.0 (Linux; U; Android 12; V2022 Build/SP1A.210812.003)"
+            },
+            "version": 2,
+            "writeKey": "writekey",
+            "projectId": "projectID",
+            "timestamp": "2022-09-28T14:34:54.006Z",
+            "properties": {
+                "Logon": 1,
+                "topic": "36e9383b-2915-4fd3-8b51-180803c3d76f/0c3a106d-bde3-4c13-a26e-3fd2394529e5",
+                "UserID": "latoken-id",
+                "LATOKEN_ID": "latoken-id",
+                "terminal_id": null,
+                "notification": "price_alert",
+                "push_permission": 1,
+                "application_opened_time": "2022-09-28T20:34:54.664+06:00"
+            },
+            "receivedAt": "2022-09-28T14:36:09.942Z",
+            "anonymousId": "cab6a551-fc31-4741-bdda-4d60295d640c",
+            "integrations": {
+                "Firebase": false,
+                "AppsFlyer": false,
+                "Indicative": false
+            },
+            "originalTimestamp": "2022-09-28T14:34:54.664Z"
+        },
+        {
+            "type": "track",
+            "event": "Push___Received",
+            "sentAt": "2022-09-28T14:36:10.600Z",
+            "userId": "userId",
+            "channel": "server",
+            "context": {
+                "ip": "10.10.10.10",
+                "os": {
+                    "name": "Android",
+                    "version": "12"
+                },
+                "app": {
+                    "name": "LATOKEN",
+                    "build": "111300",
+                    "version": "1.113.00",
+                    "namespace": "com.latoken.wallet"
+                },
+                "device": {
+                    "id": "deviceID",
+                    "name": "2023",
+                    "type": "android",
+                    "model": "V2022",
+                    "manufacturer": "vivo",
+                    "advertisingId": "advertisingID",
+                    "adTrackingEnabled": true
+                },
+                "locale": "en-US",
+                "screen": {
+                    "width": 1080,
+                    "height": 2280,
+                    "density": 2.75
+                },
+                "traits": {
+                    "OS": "Android",
+                    "pro": 0,
+                    "Lang": "en",
+                    "Tier": 2,
+                    "store": "google_play",
+                    "GSF_ID": "gsfid",
+                    "userId": "userId",
+                    "App_ver": "1.113.00",
+                    "fee_level": 1,
+                    "30d_volume": "0",
+                    "LATOKEN_ID": "latoken-id",
+                    "Night_mode": "system",
+                    "anonymousId": "cab6a551-fc31-4741-bdda-4d60295d640c",
+                    "push_permission": 0,
+                    "LATOKEN_ID_History": "latoken-id"
+                },
+                "library": {
+                    "name": "analytics-android",
+                    "version": "4.10.4"
+                },
+                "network": {
+                    "wifi": false,
+                    "carrier": "Robi",
+                    "cellular": true,
+                    "bluetooth": false
+                },
+                "timezone": "Asia/Dhaka",
+                "userAgent": "Dalvik/2.1.0 (Linux; U; Android 12; V2022 Build/SP1A.210812.003)"
+            },
+            "version": 2,
+            "writeKey": "writekey",
+            "projectId": "projectID",
+            "timestamp": "2022-09-28T14:34:54.006Z",
+            "properties": {
+                "Logon": 1,
+                "topic": "36e9383b-2915-4fd3-8b51-180803c3d76f/0c3a106d-bde3-4c13-a26e-3fd2394529e5",
+                "UserID": "latoken-id",
+                "LATOKEN_ID": "latoken-id",
+                "terminal_id": null,
+                "notification": "price_alert",
+                "push_permission": 1,
+                "application_opened_time": "2022-09-28T20:34:54.664+06:00"
+            },
+            "receivedAt": "2022-09-28T14:36:09.942Z",
+            "anonymousId": "cab6a551-fc31-4741-bdda-4d60295d640c",
+            "integrations": {
+                "Firebase": false,
+                "AppsFlyer": false,
+                "Indicative": false
+            },
+            "originalTimestamp": "2022-09-28T14:34:54.664Z"
+        },
+        {
+            "type": "track",
+            "event": "Push___Received",
+            "sentAt": "2022-09-28T14:36:10.600Z",
+            "userId": "userId",
+            "channel": "server",
+            "context": {
+                "ip": "10.10.10.10",
+                "os": {
+                    "name": "Android",
+                    "version": "12"
+                },
+                "app": {
+                    "name": "LATOKEN",
+                    "build": "111300",
+                    "version": "1.113.00",
+                    "namespace": "com.latoken.wallet"
+                },
+                "device": {
+                    "id": "deviceID",
+                    "name": "2023",
+                    "type": "android",
+                    "model": "V2022",
+                    "manufacturer": "vivo",
+                    "advertisingId": "advertisingID",
+                    "adTrackingEnabled": true
+                },
+                "locale": "en-US",
+                "screen": {
+                    "width": 1080,
+                    "height": 2280,
+                    "density": 2.75
+                },
+                "traits": {
+                    "OS": "Android",
+                    "pro": 0,
+                    "Lang": "en",
+                    "Tier": 2,
+                    "store": "google_play",
+                    "GSF_ID": "gsfid",
+                    "userId": "userId",
+                    "App_ver": "1.113.00",
+                    "fee_level": 1,
+                    "30d_volume": "0",
+                    "LATOKEN_ID": "latoken-id",
+                    "Night_mode": "system",
+                    "anonymousId": "cab6a551-fc31-4741-bdda-4d60295d640c",
+                    "push_permission": 0,
+                    "LATOKEN_ID_History": "latoken-id"
+                },
+                "library": {
+                    "name": "analytics-android",
+                    "version": "4.10.4"
+                },
+                "network": {
+                    "wifi": false,
+                    "carrier": "Robi",
+                    "cellular": true,
+                    "bluetooth": false
+                },
+                "timezone": "Asia/Dhaka",
+                "userAgent": "Dalvik/2.1.0 (Linux; U; Android 12; V2022 Build/SP1A.210812.003)"
+            },
+            "version": 2,
+            "writeKey": "writekey",
+            "projectId": "projectID",
+            "timestamp": "2022-09-28T14:34:54.006Z",
+            "properties": {
+                "Logon": 1,
+                "topic": "36e9383b-2915-4fd3-8b51-180803c3d76f/0c3a106d-bde3-4c13-a26e-3fd2394529e5",
+                "UserID": "latoken-id",
+                "LATOKEN_ID": "latoken-id",
+                "terminal_id": null,
+                "notification": "price_alert",
+                "push_permission": 1,
+                "application_opened_time": "2022-09-28T20:34:54.664+06:00"
+            },
+            "receivedAt": "2022-09-28T14:36:09.942Z",
+            "anonymousId": "cab6a551-fc31-4741-bdda-4d60295d640c",
+            "integrations": {
+                "Firebase": false,
+                "AppsFlyer": false,
+                "Indicative": false
+            },
+            "originalTimestamp": "2022-09-28T14:34:54.664Z"
+        },
+        {
+            "type": "track",
+            "event": "Push___Received",
+            "sentAt": "2022-09-28T14:36:10.600Z",
+            "userId": "userId",
+            "channel": "server",
+            "context": {
+                "ip": "10.10.10.10",
+                "os": {
+                    "name": "Android",
+                    "version": "12"
+                },
+                "app": {
+                    "name": "LATOKEN",
+                    "build": "111300",
+                    "version": "1.113.00",
+                    "namespace": "com.latoken.wallet"
+                },
+                "device": {
+                    "id": "deviceID",
+                    "name": "2023",
+                    "type": "android",
+                    "model": "V2022",
+                    "manufacturer": "vivo",
+                    "advertisingId": "advertisingID",
+                    "adTrackingEnabled": true
+                },
+                "locale": "en-US",
+                "screen": {
+                    "width": 1080,
+                    "height": 2280,
+                    "density": 2.75
+                },
+                "traits": {
+                    "OS": "Android",
+                    "pro": 0,
+                    "Lang": "en",
+                    "Tier": 2,
+                    "store": "google_play",
+                    "GSF_ID": "gsfid",
+                    "userId": "userId",
+                    "App_ver": "1.113.00",
+                    "fee_level": 1,
+                    "30d_volume": "0",
+                    "LATOKEN_ID": "latoken-id",
+                    "Night_mode": "system",
+                    "anonymousId": "cab6a551-fc31-4741-bdda-4d60295d640c",
+                    "push_permission": 0,
+                    "LATOKEN_ID_History": "latoken-id"
+                },
+                "library": {
+                    "name": "analytics-android",
+                    "version": "4.10.4"
+                },
+                "network": {
+                    "wifi": false,
+                    "carrier": "Robi",
+                    "cellular": true,
+                    "bluetooth": false
+                },
+                "timezone": "Asia/Dhaka",
+                "userAgent": "Dalvik/2.1.0 (Linux; U; Android 12; V2022 Build/SP1A.210812.003)"
+            },
+            "version": 2,
+            "writeKey": "writekey",
+            "projectId": "projectID",
+            "timestamp": "2022-09-28T14:34:54.006Z",
+            "properties": {
+                "Logon": 1,
+                "topic": "36e9383b-2915-4fd3-8b51-180803c3d76f/0c3a106d-bde3-4c13-a26e-3fd2394529e5",
+                "UserID": "latoken-id",
+                "LATOKEN_ID": "latoken-id",
+                "terminal_id": null,
+                "notification": "price_alert",
+                "push_permission": 1,
+                "application_opened_time": "2022-09-28T20:34:54.664+06:00"
+            },
+            "receivedAt": "2022-09-28T14:36:09.942Z",
+            "anonymousId": "cab6a551-fc31-4741-bdda-4d60295d640c",
+            "integrations": {
+                "Firebase": false,
+                "AppsFlyer": false,
+                "Indicative": false
+            },
+            "originalTimestamp": "2022-09-28T14:34:54.664Z"
+        },
+        {
+            "type": "track",
+            "event": "Push___Received",
+            "sentAt": "2022-09-28T14:36:10.600Z",
+            "userId": "userId",
+            "channel": "server",
+            "context": {
+                "ip": "10.10.10.10",
+                "os": {
+                    "name": "Android",
+                    "version": "12"
+                },
+                "app": {
+                    "name": "LATOKEN",
+                    "build": "111300",
+                    "version": "1.113.00",
+                    "namespace": "com.latoken.wallet"
+                },
+                "device": {
+                    "id": "deviceID",
+                    "name": "2023",
+                    "type": "android",
+                    "model": "V2022",
+                    "manufacturer": "vivo",
+                    "advertisingId": "advertisingID",
+                    "adTrackingEnabled": true
+                },
+                "locale": "en-US",
+                "screen": {
+                    "width": 1080,
+                    "height": 2280,
+                    "density": 2.75
+                },
+                "traits": {
+                    "OS": "Android",
+                    "pro": 0,
+                    "Lang": "en",
+                    "Tier": 2,
+                    "store": "google_play",
+                    "GSF_ID": "gsfid",
+                    "userId": "userId",
+                    "App_ver": "1.113.00",
+                    "fee_level": 1,
+                    "30d_volume": "0",
+                    "LATOKEN_ID": "latoken-id",
+                    "Night_mode": "system",
+                    "anonymousId": "cab6a551-fc31-4741-bdda-4d60295d640c",
+                    "push_permission": 0,
+                    "LATOKEN_ID_History": "latoken-id"
+                },
+                "library": {
+                    "name": "analytics-android",
+                    "version": "4.10.4"
+                },
+                "network": {
+                    "wifi": false,
+                    "carrier": "Robi",
+                    "cellular": true,
+                    "bluetooth": false
+                },
+                "timezone": "Asia/Dhaka",
+                "userAgent": "Dalvik/2.1.0 (Linux; U; Android 12; V2022 Build/SP1A.210812.003)"
+            },
+            "version": 2,
+            "writeKey": "writekey",
+            "projectId": "projectID",
+            "timestamp": "2022-09-28T14:34:54.006Z",
+            "properties": {
+                "Logon": 1,
+                "topic": "36e9383b-2915-4fd3-8b51-180803c3d76f/0c3a106d-bde3-4c13-a26e-3fd2394529e5",
+                "UserID": "latoken-id",
+                "LATOKEN_ID": "latoken-id",
+                "terminal_id": null,
+                "notification": "price_alert",
+                "push_permission": 1,
+                "application_opened_time": "2022-09-28T20:34:54.664+06:00"
+            },
+            "receivedAt": "2022-09-28T14:36:09.942Z",
+            "anonymousId": "cab6a551-fc31-4741-bdda-4d60295d640c",
+            "integrations": {
+                "Firebase": false,
+                "AppsFlyer": false,
+                "Indicative": false
+            },
+            "originalTimestamp": "2022-09-28T14:34:54.664Z"
+        },
+        {
+            "type": "track",
+            "event": "Push___Received",
+            "sentAt": "2022-09-28T14:36:10.600Z",
+            "userId": "userId",
+            "channel": "server",
+            "context": {
+                "ip": "10.10.10.10",
+                "os": {
+                    "name": "Android",
+                    "version": "12"
+                },
+                "app": {
+                    "name": "LATOKEN",
+                    "build": "111300",
+                    "version": "1.113.00",
+                    "namespace": "com.latoken.wallet"
+                },
+                "device": {
+                    "id": "deviceID",
+                    "name": "2023",
+                    "type": "android",
+                    "model": "V2022",
+                    "manufacturer": "vivo",
+                    "advertisingId": "advertisingID",
+                    "adTrackingEnabled": true
+                },
+                "locale": "en-US",
+                "screen": {
+                    "width": 1080,
+                    "height": 2280,
+                    "density": 2.75
+                },
+                "traits": {
+                    "OS": "Android",
+                    "pro": 0,
+                    "Lang": "en",
+                    "Tier": 2,
+                    "store": "google_play",
+                    "GSF_ID": "gsfid",
+                    "userId": "userId",
+                    "App_ver": "1.113.00",
+                    "fee_level": 1,
+                    "30d_volume": "0",
+                    "LATOKEN_ID": "latoken-id",
+                    "Night_mode": "system",
+                    "anonymousId": "cab6a551-fc31-4741-bdda-4d60295d640c",
+                    "push_permission": 0,
+                    "LATOKEN_ID_History": "latoken-id"
+                },
+                "library": {
+                    "name": "analytics-android",
+                    "version": "4.10.4"
+                },
+                "network": {
+                    "wifi": false,
+                    "carrier": "Robi",
+                    "cellular": true,
+                    "bluetooth": false
+                },
+                "timezone": "Asia/Dhaka",
+                "userAgent": "Dalvik/2.1.0 (Linux; U; Android 12; V2022 Build/SP1A.210812.003)"
+            },
+            "version": 2,
+            "writeKey": "writekey",
+            "projectId": "projectID",
+            "timestamp": "2022-09-28T14:34:54.006Z",
+            "properties": {
+                "Logon": 1,
+                "topic": "36e9383b-2915-4fd3-8b51-180803c3d76f/0c3a106d-bde3-4c13-a26e-3fd2394529e5",
+                "UserID": "latoken-id",
+                "LATOKEN_ID": "latoken-id",
+                "terminal_id": null,
+                "notification": "price_alert",
+                "push_permission": 1,
+                "application_opened_time": "2022-09-28T20:34:54.664+06:00"
+            },
+            "receivedAt": "2022-09-28T14:36:09.942Z",
+            "anonymousId": "cab6a551-fc31-4741-bdda-4d60295d640c",
+            "integrations": {
+                "Firebase": false,
+                "AppsFlyer": false,
+                "Indicative": false
+            },
+            "originalTimestamp": "2022-09-28T14:34:54.664Z"
+        },
+        {
+            "type": "track",
+            "event": "Push___Received",
+            "sentAt": "2022-09-28T14:36:10.600Z",
+            "userId": "userId",
+            "channel": "server",
+            "context": {
+                "ip": "10.10.10.10",
+                "os": {
+                    "name": "Android",
+                    "version": "12"
+                },
+                "app": {
+                    "name": "LATOKEN",
+                    "build": "111300",
+                    "version": "1.113.00",
+                    "namespace": "com.latoken.wallet"
+                },
+                "device": {
+                    "id": "deviceID",
+                    "name": "2023",
+                    "type": "android",
+                    "model": "V2022",
+                    "manufacturer": "vivo",
+                    "advertisingId": "advertisingID",
+                    "adTrackingEnabled": true
+                },
+                "locale": "en-US",
+                "screen": {
+                    "width": 1080,
+                    "height": 2280,
+                    "density": 2.75
+                },
+                "traits": {
+                    "OS": "Android",
+                    "pro": 0,
+                    "Lang": "en",
+                    "Tier": 2,
+                    "store": "google_play",
+                    "GSF_ID": "gsfid",
+                    "userId": "userId",
+                    "App_ver": "1.113.00",
+                    "fee_level": 1,
+                    "30d_volume": "0",
+                    "LATOKEN_ID": "latoken-id",
+                    "Night_mode": "system",
+                    "anonymousId": "cab6a551-fc31-4741-bdda-4d60295d640c",
+                    "push_permission": 0,
+                    "LATOKEN_ID_History": "latoken-id"
+                },
+                "library": {
+                    "name": "analytics-android",
+                    "version": "4.10.4"
+                },
+                "network": {
+                    "wifi": false,
+                    "carrier": "Robi",
+                    "cellular": true,
+                    "bluetooth": false
+                },
+                "timezone": "Asia/Dhaka",
+                "userAgent": "Dalvik/2.1.0 (Linux; U; Android 12; V2022 Build/SP1A.210812.003)"
+            },
+            "version": 2,
+            "writeKey": "writekey",
+            "projectId": "projectID",
+            "timestamp": "2022-09-28T14:34:54.006Z",
+            "properties": {
+                "Logon": 1,
+                "topic": "36e9383b-2915-4fd3-8b51-180803c3d76f/0c3a106d-bde3-4c13-a26e-3fd2394529e5",
+                "UserID": "latoken-id",
+                "LATOKEN_ID": "latoken-id",
+                "terminal_id": null,
+                "notification": "price_alert",
+                "push_permission": 1,
+                "application_opened_time": "2022-09-28T20:34:54.664+06:00"
+            },
+            "receivedAt": "2022-09-28T14:36:09.942Z",
+            "anonymousId": "cab6a551-fc31-4741-bdda-4d60295d640c",
+            "integrations": {
+                "Firebase": false,
+                "AppsFlyer": false,
+                "Indicative": false
+            },
+            "originalTimestamp": "2022-09-28T14:34:54.664Z"
+        }
+    ],
+    "writeKey": "1ymnIPJRl56RtH8V5Kn3ktNBwbi",
+    "requestIP": "18.237.27.242",
+    "receivedAt": "2022-09-28T14:36:11.003Z"
+}

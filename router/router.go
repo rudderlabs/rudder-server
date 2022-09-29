@@ -4,7 +4,7 @@ import (
 	"container/list"
 	"context"
 	"database/sql"
-	"encoding/json"
+	jsonstd "encoding/json"
 	"fmt"
 	"math/rand"
 	"net/http"
@@ -62,7 +62,7 @@ type HandleDestOAuthRespParamsT struct {
 	workerID       int
 	trRespStCd     int
 	trRespBody     string
-	secret         json.RawMessage
+	secret         jsonstd.RawMessage
 }
 
 // HandleT is the handle to this module.
@@ -213,7 +213,12 @@ var (
 	disableEgress                                                 bool
 )
 
-var jsonfast = jsoniter.ConfigCompatibleWithStandardLibrary
+var json = jsoniter.Config{
+	EscapeHTML:             true,
+	SortMapKeys:            true,
+	ValidateJsonRawMessage: true,
+	UseNumber:              true,
+}.Froze()
 
 type requestMetric struct {
 	RequestRetries       int
@@ -986,7 +991,7 @@ func (worker *workerT) updateAbortedMetrics(destinationID, statusCode string) {
 	eventsAbortedStat.Increment()
 }
 
-func (worker *workerT) postStatusOnResponseQ(respStatusCode int, respBody string, payload json.RawMessage,
+func (worker *workerT) postStatusOnResponseQ(respStatusCode int, respBody string, payload jsonstd.RawMessage,
 	respContentType string, destinationJobMetadata *types.JobMetadataT, status *jobsdb.JobStatusT,
 ) {
 	// Enhancing status.ErrorResponse with firstAttemptedAt
@@ -1114,7 +1119,7 @@ func (worker *workerT) sendEventDeliveryStat(destinationJobMetadata *types.JobMe
 	}
 }
 
-func (*workerT) sendDestinationResponseToConfigBackend(payload json.RawMessage, destinationJobMetadata *types.JobMetadataT, status *jobsdb.JobStatusT, sourceIDs []string) {
+func (*workerT) sendDestinationResponseToConfigBackend(payload jsonstd.RawMessage, destinationJobMetadata *types.JobMetadataT, status *jobsdb.JobStatusT, sourceIDs []string) {
 	// Sending destination response to config backend
 	if status.ErrorCode != fmt.Sprint(types.RouterUnMarshalErrorCode) && status.ErrorCode != fmt.Sprint(types.RouterTimedOutStatusCode) {
 		deliveryStatus := destinationdebugger.DeliveryStatusT{
@@ -1591,7 +1596,7 @@ func (rt *HandleT) collectMetrics(ctx context.Context) {
 		rt.failureMetricLock.Lock()
 		for key, value := range rt.failuresMetric {
 			var err error
-			stringValueBytes, err := jsonfast.Marshal(value)
+			stringValueBytes, err := json.Marshal(value)
 			if err != nil {
 				stringValueBytes = []byte{}
 			}
@@ -2269,10 +2274,10 @@ func (rt *HandleT) ExecDisableDestination(destination *backendconfig.Destination
 	return http.StatusBadRequest, destResBody
 }
 
-func PrepareJobRunIDAbortedEventsMap(parameters json.RawMessage, jobRunIDAbortedEventsMap map[string][]*FailedEventRowT) {
+func PrepareJobRunIDAbortedEventsMap(parameters jsonstd.RawMessage, jobRunIDAbortedEventsMap map[string][]*FailedEventRowT) {
 	taskRunID := gjson.GetBytes(parameters, "source_task_run_id").String()
 	destinationID := gjson.GetBytes(parameters, "destination_id").String()
-	recordID := json.RawMessage(gjson.GetBytes(parameters, "record_id").Raw)
+	recordID := jsonstd.RawMessage(gjson.GetBytes(parameters, "record_id").Raw)
 	if taskRunID == "" {
 		return
 	}

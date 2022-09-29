@@ -20,7 +20,12 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/types/workspace"
 )
 
-var json = jsoniter.ConfigCompatibleWithStandardLibrary
+var json = jsoniter.Config{
+	EscapeHTML:             true,
+	SortMapKeys:            true,
+	ValidateJsonRawMessage: true,
+	UseNumber:              true,
+}.Froze()
 
 var (
 	keepaliveTime    time.Duration

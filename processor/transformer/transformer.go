@@ -31,7 +31,12 @@ const (
 	TrackingPlanValidationStage = "trackingPlan_validation"
 )
 
-var jsonfast = jsoniter.ConfigCompatibleWithStandardLibrary
+var jsonfast = jsoniter.Config{
+	EscapeHTML:             true,
+	SortMapKeys:            true,
+	ValidateJsonRawMessage: true,
+	UseNumber:              true,
+}.Froze()
 
 type MetadataT struct {
 	SourceID            string                            `json:"sourceId"`

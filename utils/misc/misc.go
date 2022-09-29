@@ -53,8 +53,14 @@ var (
 	AppStartTime        int64
 	errorStorePath      string
 	reservedFolderPaths []*RFP
-	jsonfast            = jsoniter.ConfigCompatibleWithStandardLibrary
-	notifyOnce          sync.Once
+	jsonfast            = jsoniter.Config{
+		EscapeHTML:             true,
+		SortMapKeys:            true,
+		ValidateJsonRawMessage: true,
+		UseNumber:              true,
+	}.Froze()
+
+	notifyOnce sync.Once
 )
 
 const (

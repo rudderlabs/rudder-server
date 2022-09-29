@@ -2,7 +2,6 @@ package gateway
 
 import (
 	"database/sql"
-	"encoding/json"
 	"fmt"
 
 	"github.com/rudderlabs/rudder-server/jobsdb"

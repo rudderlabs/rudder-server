@@ -3,7 +3,6 @@ package gateway
 import (
 	"context"
 	b64 "encoding/base64"
-	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"

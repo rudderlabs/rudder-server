@@ -35,7 +35,12 @@ type LambdaClient interface {
 
 var (
 	pkgLogger logger.Logger
-	jsonfast  = jsoniter.ConfigCompatibleWithStandardLibrary
+	jsonfast  = jsoniter.Config{
+		EscapeHTML:             true,
+		SortMapKeys:            true,
+		ValidateJsonRawMessage: true,
+		UseNumber:              true,
+	}.Froze()
 )
 
 func init() {

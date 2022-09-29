@@ -3,7 +3,6 @@ package router
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
 	"math"
@@ -1361,7 +1360,12 @@ func Benchmark_JSON_MARSHAL(b *testing.B) {
 }
 
 func Benchmark_FASTJSON_MARSHAL(b *testing.B) {
-	jsonfast := jsoniter.ConfigCompatibleWithStandardLibrary
+	jsonfast := jsoniter.Config{
+		EscapeHTML:             true,
+		SortMapKeys:            true,
+		ValidateJsonRawMessage: true,
+		UseNumber:              true,
+	}.Froze()
 
 	for i := 0; i < b.N; i++ {
 		val, _ := jsonfast.Marshal(collectMetricsErrorMap)
