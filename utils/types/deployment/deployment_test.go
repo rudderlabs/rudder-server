@@ -92,9 +92,8 @@ func Test_GetFromEnv(t *testing.T) {
 
 func Test_GetConnectionToken(t *testing.T) {
 	config.Reset()
+	logger.Reset()
 	admin.Init()
-	logger.Init()
-	logger.Init()
 	testcases := []struct {
 		name               string
 		dType              string

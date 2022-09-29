@@ -45,7 +45,7 @@ import (
 )
 
 type reporter interface {
-	WaitForSetup(ctx context.Context, clientName string)
+	WaitForSetup(ctx context.Context, clientName string) error
 	Report(metrics []*utilTypes.PUReportedMetric, txn *sql.Tx)
 }
 
@@ -99,7 +99,7 @@ type HandleT struct {
 	transformer                            transformer.Transformer
 	configSubscriberLock                   sync.RWMutex
 	destinationsMap                        map[string]*routerutils.BatchDestinationT // destinationID -> destination
-	logger                                 logger.LoggerI
+	logger                                 logger.Logger
 	batchInputCountStat                    stats.RudderStats
 	batchOutputCountStat                   stats.RudderStats
 	routerTransformInputCountStat          stats.RudderStats
@@ -206,7 +206,7 @@ var (
 	failedEventsCacheSize                                         int
 	readSleep, minSleep, maxStatusUpdateWait, diagnosisTickerTime time.Duration
 	minRetryBackoff, maxRetryBackoff, jobsBatchTimeout            time.Duration
-	pkgLogger                                                     logger.LoggerI
+	pkgLogger                                                     logger.Logger
 	Diagnostics                                                   diagnostics.DiagnosticsI
 	fixedLoopSleep                                                time.Duration
 	toAbortDestinationIDs                                         string
@@ -1982,7 +1982,10 @@ func (rt *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB jobsd
 	rt.rsourcesService = rsourcesService
 
 	// waiting for reporting client setup
-	rt.Reporting.WaitForSetup(context.TODO(), utilTypes.CORE_REPORTING_CLIENT)
+	err := rt.Reporting.WaitForSetup(context.TODO(), utilTypes.CORE_REPORTING_CLIENT)
+	if err != nil {
+		return
+	}
 
 	rt.diagnosisTicker = time.NewTicker(diagnosisTickerTime)
 	rt.jobsDB = jobsDB

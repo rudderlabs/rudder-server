@@ -25,7 +25,7 @@ var (
 	retrySleep                    time.Duration
 	instanceID                    string
 	rudderConnectionTestingFolder string
-	pkgLogger                     logger.LoggerI
+	pkgLogger                     logger.Logger
 )
 
 const (

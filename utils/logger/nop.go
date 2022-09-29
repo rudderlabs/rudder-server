@@ -2,20 +2,26 @@ package logger
 
 import "net/http"
 
-var _ LoggerI = &NOP{}
+var NOP Logger = nop{}
 
-type NOP struct{}
+type nop struct{}
 
-func (NOP) Debug(_ ...interface{})            {}
-func (NOP) Info(_ ...interface{})             {}
-func (NOP) Warn(_ ...interface{})             {}
-func (NOP) Error(_ ...interface{})            {}
-func (NOP) Fatal(_ ...interface{})            {}
-func (NOP) Debugf(_ string, _ ...interface{}) {}
-func (NOP) Infof(_ string, _ ...interface{})  {}
-func (NOP) Warnf(_ string, _ ...interface{})  {}
-func (NOP) Errorf(_ string, _ ...interface{}) {}
-func (NOP) Fatalf(_ string, _ ...interface{}) {}
-func (NOP) LogRequest(_ *http.Request)        {}
-func (NOP) Child(_ string) LoggerI            { return &NOP{} }
-func (NOP) IsDebugLevel() bool                { return false }
+func (nop) Debug(_ ...interface{})            {}
+func (nop) Info(_ ...interface{})             {}
+func (nop) Warn(_ ...interface{})             {}
+func (nop) Error(_ ...interface{})            {}
+func (nop) Fatal(_ ...interface{})            {}
+func (nop) Debugf(_ string, _ ...interface{}) {}
+func (nop) Infof(_ string, _ ...interface{})  {}
+func (nop) Warnf(_ string, _ ...interface{})  {}
+func (nop) Errorf(_ string, _ ...interface{}) {}
+func (nop) Fatalf(_ string, _ ...interface{}) {}
+func (nop) Debugw(_ string, _ ...interface{}) {}
+func (nop) Infow(_ string, _ ...interface{})  {}
+func (nop) Warnw(_ string, _ ...interface{})  {}
+func (nop) Errorw(_ string, _ ...interface{}) {}
+func (nop) Fatalw(_ string, _ ...interface{}) {}
+func (nop) LogRequest(_ *http.Request)        {}
+func (nop) With(_ ...interface{}) Logger      { return NOP }
+func (nop) Child(_ string) Logger             { return NOP }
+func (nop) IsDebugLevel() bool                { return false }

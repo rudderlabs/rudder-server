@@ -31,7 +31,7 @@ func init() {
 // NetHandleT is the wrapper holding private variables
 type NetHandleT struct {
 	httpClient sysUtils.HTTPClientI
-	logger     logger.LoggerI
+	logger     logger.Logger
 }
 
 // Network interface

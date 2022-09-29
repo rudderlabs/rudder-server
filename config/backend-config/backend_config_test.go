@@ -104,7 +104,7 @@ func TestBadResponse(t *testing.T) {
 			ConfigBackendURL: parsedURL,
 			Namespace:        "some-namespace",
 			Client:           http.DefaultClient,
-			Logger:           &logger.NOP{},
+			Logger:           logger.NOP,
 		},
 		"single-workspace": &singleWorkspaceConfig{
 			configBackendURL: parsedURL,
@@ -114,7 +114,7 @@ func TestBadResponse(t *testing.T) {
 	for name, conf := range configs {
 		t.Run(name, func(t *testing.T) {
 			ctx := context.Background()
-			pkgLogger = &logger.NOP{}
+			pkgLogger = logger.NOP
 			atomic.StoreInt32(&calls, 0)
 
 			bc := &backendConfigImpl{
@@ -302,7 +302,7 @@ func TestWaitForConfig(t *testing.T) {
 		)
 		defer ctrl.Finish()
 
-		pkgLogger = &logger.NOP{}
+		pkgLogger = logger.NOP
 		pollInterval = time.Millisecond
 		bc := &backendConfigImpl{initialized: false}
 
@@ -332,7 +332,7 @@ func initBackendConfig() {
 	config.Reset()
 	adminpkg.Init()
 	diagnostics.Init()
-	logger.Init()
+	logger.Reset()
 	stats.Setup()
 	Init()
 }

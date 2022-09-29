@@ -34,7 +34,7 @@ var (
 	asyncDestinations                                          []string
 	routerLoaded                                               utilsync.First
 	processorLoaded                                            utilsync.First
-	pkgLogger                                                  logger.LoggerI
+	pkgLogger                                                  logger.Logger
 	Diagnostics                                                diagnostics.DiagnosticsI
 	readonlyGatewayDB, readonlyRouterDB, readonlyBatchRouterDB jobsdb.ReadonlyHandleT
 	readonlyProcErrorDB                                        jobsdb.ReadonlyHandleT
@@ -47,7 +47,7 @@ type AppHandler interface {
 	StartRudderCore(context.Context, *app.Options) error
 }
 
-func GetAppHandler(application app.Interface, appType string, versionHandler func(w http.ResponseWriter, r *http.Request)) AppHandler {
+func GetAppHandler(application app.App, appType string, versionHandler func(w http.ResponseWriter, r *http.Request)) AppHandler {
 	var handler AppHandler
 	switch appType {
 	case app.GATEWAY:

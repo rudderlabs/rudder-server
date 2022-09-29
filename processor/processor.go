@@ -61,7 +61,7 @@ type HandleT struct {
 	routerDB                  jobsdb.JobsDB
 	batchRouterDB             jobsdb.JobsDB
 	errorDB                   jobsdb.JobsDB
-	logger                    logger.LoggerI
+	logger                    logger.Logger
 	eventSchemaHandler        types.EventSchemasI
 	dedupHandler              dedup.DedupI
 	reporting                 types.ReportingI
@@ -481,7 +481,7 @@ var (
 	batchDestinations         []string
 	configSubscriberLock      sync.RWMutex
 	customDestinations        []string
-	pkgLogger                 logger.LoggerI
+	pkgLogger                 logger.Logger
 	enableEventSchemasFeature bool
 	enableEventSchemasAPIOnly bool
 	enableDedup               bool
@@ -2327,7 +2327,9 @@ func (proc *HandleT) handlePendingGatewayJobs() bool {
 func (proc *HandleT) mainLoop(ctx context.Context) {
 	// waiting for reporting client setup
 	if proc.reporting != nil && proc.reportingEnabled {
-		proc.reporting.WaitForSetup(ctx, types.CORE_REPORTING_CLIENT)
+		if err := proc.reporting.WaitForSetup(ctx, types.CORE_REPORTING_CLIENT); err != nil {
+			return
+		}
 	}
 
 	proc.logger.Info("Processor loop started")
@@ -2417,7 +2419,9 @@ func (proc *HandleT) mainPipeline(ctx context.Context) {
 	proc.logger.Infof("Processor mainPipeline started, subJobSize=%d pipelineBufferedItems=%d", subJobSize, pipelineBufferedItems)
 
 	if proc.reporting != nil && proc.reportingEnabled {
-		proc.reporting.WaitForSetup(ctx, types.CORE_REPORTING_CLIENT)
+		if err := proc.reporting.WaitForSetup(ctx, types.CORE_REPORTING_CLIENT); err != nil {
+			return
+		}
 	}
 	wg := sync.WaitGroup{}
 	bufferSize := pipelineBufferedItems
