@@ -17,7 +17,6 @@ import (
 	mock_stats "github.com/rudderlabs/rudder-server/mocks/services/stats"
 	"github.com/rudderlabs/rudder-server/processor/integrations"
 	"github.com/rudderlabs/rudder-server/router/types"
-	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	utilTypes "github.com/rudderlabs/rudder-server/utils/types"
 	"github.com/stretchr/testify/assert"
@@ -481,15 +480,10 @@ func TestTransformValidationJobIDMismatchError(t *testing.T) {
 func initMocks(t *testing.T) {
 	ctrl := gomock.NewController(t)
 
-	mockStats := mock_stats.NewMockStats(ctrl)
-	mockRudderStats := mock_stats.NewMockRudderStats(ctrl)
+	mockRudderStats := mock_stats.NewMockMeasurement(ctrl)
 
-	mockStats.EXPECT().NewTaggedStat(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes().Return(mockRudderStats)
-	mockStats.EXPECT().NewStat(gomock.Any(), gomock.Any()).AnyTimes().Return(mockRudderStats)
 	mockRudderStats.EXPECT().SendTiming(gomock.Any()).AnyTimes()
 	mockRudderStats.EXPECT().Increment().AnyTimes()
-
-	stats.DefaultStats = mockStats
 
 	pkgLogger = logger.NOP
 }

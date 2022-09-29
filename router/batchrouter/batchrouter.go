@@ -96,7 +96,7 @@ type HandleT struct {
 	reporting                   types.ReportingI
 	reportingEnabled            bool
 	workers                     []*workerT
-	drainedJobsStat             stats.RudderStats
+	drainedJobsStat             stats.Measurement
 	backendConfig               backendconfig.BackendConfig
 	fileManagerFactory          filemanager.FileManagerFactory
 	inProgressMap               map[string]bool
@@ -112,11 +112,11 @@ type HandleT struct {
 	asyncDestinationStruct      map[string]*asyncdestinationmanager.AsyncDestinationStruct
 	jobQueryBatchSize           int
 	pollStatusLoopSleep         time.Duration
-	pollTimeStat                stats.RudderStats
-	failedJobsTimeStat          stats.RudderStats
-	successfulJobCount          stats.RudderStats
-	failedJobCount              stats.RudderStats
-	abortedJobCount             stats.RudderStats
+	pollTimeStat                stats.Measurement
+	failedJobsTimeStat          stats.Measurement
+	successfulJobCount          stats.Measurement
+	failedJobCount              stats.Measurement
+	abortedJobCount             stats.Measurement
 
 	backgroundGroup  *errgroup.Group
 	backgroundCtx    context.Context
@@ -260,17 +260,17 @@ func isJobTerminated(status int) bool {
 
 func sendRetryStoreStats(attempt int) {
 	pkgLogger.Warnf("Timeout during store jobs in batch router module, attempt %d", attempt)
-	stats.NewTaggedStat("jobsdb_store_timeout", stats.CountType, stats.Tags{"attempt": fmt.Sprint(attempt), "module": "batch_router"}).Count(1)
+	stats.Default.NewTaggedStat("jobsdb_store_timeout", stats.CountType, stats.Tags{"attempt": fmt.Sprint(attempt), "module": "batch_router"}).Count(1)
 }
 
 func sendRetryUpdateStats(attempt int) {
 	pkgLogger.Warnf("Timeout during update job status in batch router module, attempt %d", attempt)
-	stats.NewTaggedStat("jobsdb_update_timeout", stats.CountType, stats.Tags{"attempt": fmt.Sprint(attempt), "module": "batch_router"}).Count(1)
+	stats.Default.NewTaggedStat("jobsdb_update_timeout", stats.CountType, stats.Tags{"attempt": fmt.Sprint(attempt), "module": "batch_router"}).Count(1)
 }
 
 func sendQueryRetryStats(attempt int) {
 	pkgLogger.Warnf("Timeout during query jobs in batch router module, attempt %d", attempt)
-	stats.NewTaggedStat("jobsdb_query_timeout", stats.CountType, stats.Tags{"attempt": fmt.Sprint(attempt), "module": "batch_router"}).Count(1)
+	stats.Default.NewTaggedStat("jobsdb_query_timeout", stats.CountType, stats.Tags{"attempt": fmt.Sprint(attempt), "module": "batch_router"}).Count(1)
 }
 
 func sendDestStatusStats(batchDestination *DestinationT, jobStateCounts map[string]map[string]int, destType string, isWarehouse bool) {
@@ -287,7 +287,7 @@ func sendDestStatusStats(batchDestination *DestinationT, jobStateCounts map[stri
 		for attempt, count := range countByAttemptMap {
 			tags["attempt_number"] = attempt
 			if count > 0 {
-				stats.NewTaggedStat("event_status", stats.CountType, tags).Count(count)
+				stats.Default.NewTaggedStat("event_status", stats.CountType, tags).Count(count)
 			}
 		}
 	}
@@ -773,7 +773,7 @@ func (brt *HandleT) copyJobsToStorage(provider string, batchJobs *BatchJobsT, is
 	startTime := time.Now()
 	uploadOutput, err := uploader.Upload(context.TODO(), outputFile, keyPrefixes...)
 	uploadSuccess := err == nil
-	brtUploadTimeStat := stats.NewTaggedStat("brt_upload_time", stats.TimerType, map[string]string{
+	brtUploadTimeStat := stats.Default.NewTaggedStat("brt_upload_time", stats.TimerType, map[string]string{
 		"success":     strconv.FormatBool(uploadSuccess),
 		"destType":    brt.destType,
 		"destination": batchJobs.BatchDestination.Destination.ID,
@@ -1571,7 +1571,7 @@ func (*HandleT) recordDeliveryStatus(batchDestination DestinationT, output Stora
 
 func (brt *HandleT) recordUploadStats(destination DestinationT, output StorageUploadOutput) {
 	destinationTag := misc.GetTagName(destination.Destination.ID, destination.Destination.Name)
-	eventDeliveryStat := stats.NewTaggedStat("event_delivery", stats.CountType, map[string]string{
+	eventDeliveryStat := stats.Default.NewTaggedStat("event_delivery", stats.CountType, map[string]string{
 		"module":      "batch_router",
 		"destType":    brt.destType,
 		"destination": destinationTag,
@@ -1581,7 +1581,7 @@ func (brt *HandleT) recordUploadStats(destination DestinationT, output StorageUp
 
 	receivedTime, err := time.Parse(misc.RFC3339Milli, output.FirstEventAt)
 	if err != nil {
-		eventDeliveryTimeStat := stats.NewTaggedStat("event_delivery_time", stats.TimerType, map[string]string{
+		eventDeliveryTimeStat := stats.Default.NewTaggedStat("event_delivery_time", stats.TimerType, map[string]string{
 			"module":      "batch_router",
 			"destType":    brt.destType,
 			"destination": destinationTag,
@@ -1623,7 +1623,7 @@ func (worker *workerT) workerProcess() {
 		if readPerDestination {
 			toQuery := worker.brt.jobQueryBatchSize
 			if !brt.holdFetchingJobs(parameterFilters) {
-				brtQueryStat := stats.NewTaggedStat("batch_router.jobsdb_query_time", stats.TimerType, stats.Tags{"function": "workerProcess", "destType": brt.destType})
+				brtQueryStat := stats.Default.NewTaggedStat("batch_router.jobsdb_query_time", stats.TimerType, stats.Tags{"function": "workerProcess", "destType": brt.destType})
 				brtQueryStat.Start()
 				brt.logger.Debugf("BRT: %s: DB about to read for parameter Filters: %v ", brt.destType, parameterFilters)
 				queryParams := jobsdb.GetQueryParamsT{
@@ -1768,7 +1768,7 @@ func (worker *workerT) workerProcess() {
 			}
 			brt.updateProcessedEventsMetrics(statusList)
 			for destID, destDrainStat := range drainStatsbyDest {
-				brt.drainedJobsStat = stats.NewTaggedStat("drained_events", stats.CountType, stats.Tags{
+				brt.drainedJobsStat = stats.Default.NewTaggedStat("drained_events", stats.CountType, stats.Tags{
 					"destType":    brt.destType,
 					"destId":      destID,
 					"module":      "batchrouter",
@@ -1812,7 +1812,7 @@ func (worker *workerT) workerProcess() {
 			rruntime.Go(func() {
 				switch {
 				case misc.Contains(objectStorageDestinations, brt.destType):
-					destUploadStat := stats.DefaultStats.NewStat(fmt.Sprintf(`batch_router.%s_dest_upload_time`, brt.destType), stats.TimerType)
+					destUploadStat := stats.Default.NewStat(fmt.Sprintf(`batch_router.%s_dest_upload_time`, brt.destType), stats.TimerType)
 					destUploadStat.Start()
 					output := brt.copyJobsToStorage(brt.destType, &batchJobs, false)
 					brt.recordDeliveryStatus(*batchJobs.BatchDestination, output, false)
@@ -1829,7 +1829,7 @@ func (worker *workerT) workerProcess() {
 				case misc.Contains(warehouseutils.WarehouseDestinations, brt.destType):
 					useRudderStorage := misc.IsConfiguredToUseRudderObjectStorage(batchJobs.BatchDestination.Destination.Config)
 					objectStorageType := warehouseutils.ObjectStorageType(brt.destType, batchJobs.BatchDestination.Destination.Config, useRudderStorage)
-					destUploadStat := stats.DefaultStats.NewStat(fmt.Sprintf(`batch_router.%s_%s_dest_upload_time`, brt.destType, objectStorageType), stats.TimerType)
+					destUploadStat := stats.Default.NewStat(fmt.Sprintf(`batch_router.%s_%s_dest_upload_time`, brt.destType, objectStorageType), stats.TimerType)
 					destUploadStat.Start()
 					splitBatchJobs := brt.splitBatchJobsOnTimeWindow(batchJobs)
 					for _, batchJob := range splitBatchJobs {
@@ -1849,7 +1849,7 @@ func (worker *workerT) workerProcess() {
 					}
 					destUploadStat.End()
 				case misc.Contains(asyncDestinations, brt.destType):
-					destUploadStat := stats.DefaultStats.NewStat(fmt.Sprintf(`batch_router.%s_dest_upload_time`, brt.destType), stats.TimerType)
+					destUploadStat := stats.Default.NewStat(fmt.Sprintf(`batch_router.%s_dest_upload_time`, brt.destType), stats.TimerType)
 					destUploadStat.Start()
 					brt.sendJobsToStorage(batchJobs)
 					destUploadStat.End()
@@ -1985,7 +1985,7 @@ func (brt *HandleT) readAndProcess() {
 		}
 
 		brt.logger.Debugf("BRT: %s: Reading in mainLoop", brt.destType)
-		brtQueryStat := stats.NewTaggedStat("batch_router.jobsdb_query_time", stats.TimerType, stats.Tags{"function": "mainLoop", "destType": brt.destType})
+		brtQueryStat := stats.Default.NewTaggedStat("batch_router.jobsdb_query_time", stats.TimerType, stats.Tags{"function": "mainLoop", "destType": brt.destType})
 		brtQueryStat.Start()
 
 		if !brt.holdFetchingJobs([]jobsdb.ParameterFilterT{}) {
@@ -2328,25 +2328,25 @@ func (brt *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB, err
 	tr := &http.Transport{}
 	client := &http.Client{Transport: tr, Timeout: netClientTimeout}
 	brt.netHandle = client
-	brt.pollTimeStat = stats.NewTaggedStat("async_poll_time", stats.TimerType, map[string]string{
+	brt.pollTimeStat = stats.Default.NewTaggedStat("async_poll_time", stats.TimerType, map[string]string{
 		"module":   "batch_router",
 		"destType": destType,
 	})
-	brt.failedJobsTimeStat = stats.NewTaggedStat("async_failed_job_poll_time", stats.TimerType, map[string]string{
+	brt.failedJobsTimeStat = stats.Default.NewTaggedStat("async_failed_job_poll_time", stats.TimerType, map[string]string{
 		"module":   "batch_router",
 		"destType": destType,
 	})
-	brt.successfulJobCount = stats.NewTaggedStat("async_successful_job_count", stats.CountType, map[string]string{
-		"module":   "batch_router",
-		"destType": destType,
-	})
-
-	brt.failedJobCount = stats.NewTaggedStat("async_failed_job_count", stats.CountType, map[string]string{
+	brt.successfulJobCount = stats.Default.NewTaggedStat("async_successful_job_count", stats.CountType, map[string]string{
 		"module":   "batch_router",
 		"destType": destType,
 	})
 
-	brt.abortedJobCount = stats.NewTaggedStat("async_aborted_job_count", stats.CountType, map[string]string{
+	brt.failedJobCount = stats.Default.NewTaggedStat("async_failed_job_count", stats.CountType, map[string]string{
+		"module":   "batch_router",
+		"destType": destType,
+	})
+
+	brt.abortedJobCount = stats.Default.NewTaggedStat("async_aborted_job_count", stats.CountType, map[string]string{
 		"module":   "batch_router",
 		"destType": destType,
 	})
@@ -2425,7 +2425,7 @@ func (brt *HandleT) updateProcessedEventsMetrics(statusList []*jobsdb.JobStatusT
 	}
 	for state, codes := range eventsPerStateAndCode {
 		for code, count := range codes {
-			stats.NewTaggedStat(`pipeline_processed_events`, stats.CountType, stats.Tags{
+			stats.Default.NewTaggedStat(`pipeline_processed_events`, stats.CountType, stats.Tags{
 				"module":   "batch_router",
 				"destType": brt.destType,
 				"state":    state,

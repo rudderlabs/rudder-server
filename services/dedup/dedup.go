@@ -93,7 +93,7 @@ func New(path string, fns ...OptFn) *DedupHandleT {
 	d := &DedupHandleT{
 		path:   path,
 		logger: loggerForBadger{logger.NewLogger().Child("dedup")},
-		stats:  stats.DefaultStats,
+		stats:  stats.Default,
 		gcDone: make(chan struct{}),
 		close:  make(chan struct{}),
 		window: &dedupWindow,

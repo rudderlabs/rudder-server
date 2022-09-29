@@ -25,7 +25,7 @@ func (*KVDeleteManager) Delete(_ context.Context, job model.Job, destConfig map[
 	pkgLogger.Debugf("deleting job: %v", job, " from kvstore")
 	kvm := kvstoremanager.New(destName, destConfig)
 	var err error
-	fileCleaningTime := stats.NewTaggedStat("file_cleaning_time", stats.TimerType, stats.Tags{"jobId": fmt.Sprintf("%d", job.ID), "workspaceId": job.WorkspaceID, "destType": "kvstore", "destName": destName})
+	fileCleaningTime := stats.Default.NewTaggedStat("file_cleaning_time", stats.TimerType, stats.Tags{"jobId": fmt.Sprintf("%d", job.ID), "workspaceId": job.WorkspaceID, "destType": "kvstore", "destName": destName})
 	fileCleaningTime.Start()
 	defer fileCleaningTime.End()
 	for _, user := range job.Users {

@@ -20,7 +20,6 @@ import (
 	"github.com/rudderlabs/rudder-server/jobsdb/internal/lock"
 	"github.com/rudderlabs/rudder-server/jobsdb/prebackup"
 	"github.com/rudderlabs/rudder-server/services/filemanager"
-	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/testhelper"
 	"github.com/rudderlabs/rudder-server/testhelper/destination"
 )
@@ -75,7 +74,6 @@ func TestBackupTable(t *testing.T) {
 		t.Setenv("JOBS_DB_PASSWORD", postgresResource.Password)
 
 		initJobsDB()
-		stats.Setup()
 	}
 
 	t.Log("reading jobs")

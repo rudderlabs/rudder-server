@@ -55,10 +55,10 @@ type Dynamic struct {
 	currentMode         servermode.Mode
 	currentWorkspaceIDs string
 
-	serverStartTimeStat  stats.RudderStats
-	serverStopTimeStat   stats.RudderStats
-	serverStartCountStat stats.RudderStats
-	serverStopCountStat  stats.RudderStats
+	serverStartTimeStat  stats.Measurement
+	serverStopTimeStat   stats.Measurement
+	serverStartCountStat stats.Measurement
+	serverStopCountStat  stats.Measurement
 	BackendConfig        configLifecycle
 
 	logger logger.Logger
@@ -73,10 +73,10 @@ func (d *Dynamic) init() {
 		"controlled_by":   controller,
 		"controller_type": controllerType,
 	}
-	d.serverStartTimeStat = stats.NewTaggedStat("cluster.server_start_time", stats.TimerType, tag)
-	d.serverStopTimeStat = stats.NewTaggedStat("cluster.server_stop_time", stats.TimerType, tag)
-	d.serverStartCountStat = stats.NewTaggedStat("cluster.server_start_count", stats.CountType, tag)
-	d.serverStopCountStat = stats.NewTaggedStat("cluster.server_stop_count", stats.CountType, tag)
+	d.serverStartTimeStat = stats.Default.NewTaggedStat("cluster.server_start_time", stats.TimerType, tag)
+	d.serverStopTimeStat = stats.Default.NewTaggedStat("cluster.server_stop_time", stats.TimerType, tag)
+	d.serverStartCountStat = stats.Default.NewTaggedStat("cluster.server_start_count", stats.CountType, tag)
+	d.serverStopCountStat = stats.Default.NewTaggedStat("cluster.server_stop_count", stats.CountType, tag)
 
 	if d.BackendConfig == nil {
 		d.BackendConfig = backendconfig.DefaultBackendConfig
