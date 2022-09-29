@@ -99,6 +99,7 @@ type UploadAPIT struct {
 
 var UploadAPI UploadAPIT
 
+const DownloadFileNamePattern = "downloadfile.*.tmp"
 
 func InitWarehouseAPI(dbHandle *sql.DB, log logger.Logger) error {
 	connectionToken, tokenType, isMultiWorkspace, err := deployment.GetConnectionToken()
