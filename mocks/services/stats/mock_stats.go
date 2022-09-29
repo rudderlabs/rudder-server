@@ -36,6 +36,48 @@ func (m *MockStats) EXPECT() *MockStatsMockRecorder {
 	return m.recorder
 }
 
+// DeprecatedSampledTaggedStat mocks base method.
+func (m *MockStats) DeprecatedSampledTaggedStat(arg0, arg1 string, arg2 stats.Tags) stats.Measurement {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "DeprecatedSampledTaggedStat", arg0, arg1, arg2)
+	ret0, _ := ret[0].(stats.Measurement)
+	return ret0
+}
+
+// DeprecatedSampledTaggedStat indicates an expected call of DeprecatedSampledTaggedStat.
+func (mr *MockStatsMockRecorder) DeprecatedSampledTaggedStat(arg0, arg1, arg2 interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeprecatedSampledTaggedStat", reflect.TypeOf((*MockStats)(nil).DeprecatedSampledTaggedStat), arg0, arg1, arg2)
+}
+
+// DeprecatedStat mocks base method.
+func (m *MockStats) DeprecatedStat(arg0, arg1 string) stats.Measurement {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "DeprecatedStat", arg0, arg1)
+	ret0, _ := ret[0].(stats.Measurement)
+	return ret0
+}
+
+// DeprecatedStat indicates an expected call of DeprecatedStat.
+func (mr *MockStatsMockRecorder) DeprecatedStat(arg0, arg1 interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeprecatedStat", reflect.TypeOf((*MockStats)(nil).DeprecatedStat), arg0, arg1)
+}
+
+// DeprecatedTaggedStat mocks base method.
+func (m *MockStats) DeprecatedTaggedStat(arg0, arg1 string, arg2 stats.Tags) stats.Measurement {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "DeprecatedTaggedStat", arg0, arg1, arg2)
+	ret0, _ := ret[0].(stats.Measurement)
+	return ret0
+}
+
+// DeprecatedTaggedStat indicates an expected call of DeprecatedTaggedStat.
+func (mr *MockStatsMockRecorder) DeprecatedTaggedStat(arg0, arg1, arg2 interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeprecatedTaggedStat", reflect.TypeOf((*MockStats)(nil).DeprecatedTaggedStat), arg0, arg1, arg2)
+}
+
 // NewSampledTaggedStat mocks base method.
 func (m *MockStats) NewSampledTaggedStat(arg0, arg1 string, arg2 stats.Tags) stats.Measurement {
 	m.ctrl.T.Helper()

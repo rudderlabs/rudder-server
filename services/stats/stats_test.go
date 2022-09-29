@@ -222,6 +222,34 @@ func Test_Measurement_Operations(t *testing.T) {
 			return false
 		}, 2*time.Second, time.Millisecond)
 	})
+
+	t.Run("deprecated tags", func(t *testing.T) {
+		t.Log("mark stats as deprecated")
+		s.NewStat("test-measure-key", stats.CountType).Increment()
+		require.Eventually(t, func() bool {
+			return lastReceived == "test-measure-key,instanceName=test,_deprecated=true:1|c"
+		}, 2*time.Second, time.Millisecond)
+
+		t.Log("mark tagged stats as deprecated")
+		s.DeprecatedTaggedStat("test-measure-key", stats.CountType, stats.Tags{"key": "value"}).Increment()
+		require.Eventually(t, func() bool {
+			return lastReceived == "test-measure-key,instanceName=test,_deprecated=true,key=value:1|c"
+		}, 2*time.Second, time.Millisecond)
+
+		t.Log("mark sampled tagged stats as deprecated")
+		counterSampled := s.DeprecatedSampledTaggedStat("test-measure-key", stats.CountType, stats.Tags{"key": "value"})
+		counterSampled.Increment()
+		require.Eventually(t, func() bool {
+			if lastReceived == "test-measure-key,instanceName=test,_deprecated=true,key=value:1|c|@0.5" {
+				return true
+			}
+			// playing with probabilities, we might or might not get the sample (0.5 -> 50% chance)
+			counterSampled.Increment()
+			return false
+
+		}, 2*time.Second, time.Millisecond)
+	})
+
 }
 
 func Test_Periodic_stats(t *testing.T) {
@@ -375,6 +403,21 @@ func Test_Tags_Type(t *testing.T) {
 		emptyTags := stats.Tags{}
 		require.Nil(t, emptyTags.Strings())
 		require.Equal(t, "", emptyTags.String())
+	})
+
+	t.Run("clone tags", func(t *testing.T) {
+		tags := stats.Tags{
+			"b": "value1",
+			"a": "value2",
+		}
+
+		cloneTags := tags.Clone()
+
+		require.Equal(t, tags, cloneTags)
+
+		cloneTags["a"] = "value3"
+
+		require.Equal(t, "value2", tags["a"])
 	})
 }
 

@@ -23,6 +23,8 @@ const (
 	TimerType     = "timer"
 	GaugeType     = "gauge"
 	HistogramType = "histogram"
+
+	deprecatedTag = "_deprecated"
 )
 
 func init() {
@@ -49,6 +51,15 @@ type Stats interface {
 
 	// Stops stops the service and collection of periodic stats.
 	Stop()
+
+	// DeprecatedStat indicates a measurement as deprecated
+	DeprecatedStat(name, statType string) (m Measurement)
+
+	// DeprecatedTaggedStat indicates a tagged measurement as deprecated with a sampling rate of 1.0
+	DeprecatedTaggedStat(name, statType string, tags Tags) Measurement
+
+	// DeprecatedSampledTaggedStat indicates a tagged measurement as deprecated with the configured sampling rate (statsSamplingRate)
+	DeprecatedSampledTaggedStat(name, statType string, tags Tags) Measurement
 }
 
 // Tags is a map of key value pairs
@@ -76,6 +87,14 @@ func (t Tags) Strings() []string {
 // String returns all key value pairs as a single string, separated by commas, sorted by increasing key order
 func (t Tags) String() string {
 	return strings.Join(t.Strings(), ",")
+}
+
+func (t Tags) Clone() Tags {
+	clone := make(Tags, len(t))
+	for k, v := range t {
+		clone[k] = v
+	}
+	return clone
 }
 
 // NewStats create a new Stats instance using the provided config, logger factory and metric manager as dependencies
@@ -217,12 +236,30 @@ func (s *statsdStats) NewStat(name, statType string) (m Measurement) {
 	return newStatsdMeasurement(s.conf, name, statType, s.state.client)
 }
 
-func (s *statsdStats) NewTaggedStat(Name, StatType string, tags Tags) (m Measurement) {
-	return s.internalNewTaggedStat(Name, StatType, tags, 1)
+func (s *statsdStats) DeprecatedStat(name, statType string) (m Measurement) {
+	return s.internalNewTaggedStat(name, statType, Tags{deprecatedTag: "true"}, 1)
 }
 
-func (s *statsdStats) NewSampledTaggedStat(Name, StatType string, tags Tags) (m Measurement) {
-	return s.internalNewTaggedStat(Name, StatType, tags, s.conf.samplingRate)
+func (s *statsdStats) NewTaggedStat(name, statType string, tags Tags) (m Measurement) {
+	return s.internalNewTaggedStat(name, statType, tags, 1)
+}
+
+func (s *statsdStats) DeprecatedTaggedStat(name, statType string, tags Tags) (m Measurement) {
+	tagsClone := tags.Clone()
+	tagsClone[deprecatedTag] = "true"
+
+	return s.internalNewTaggedStat(name, statType, tagsClone, 1)
+}
+
+func (s *statsdStats) NewSampledTaggedStat(name, statType string, tags Tags) (m Measurement) {
+	return s.internalNewTaggedStat(name, statType, tags, s.conf.samplingRate)
+}
+
+func (s *statsdStats) DeprecatedSampledTaggedStat(name, statType string, tags Tags) (m Measurement) {
+	tagsClone := tags.Clone()
+	tagsClone[deprecatedTag] = "true"
+
+	return s.internalNewTaggedStat(name, statType, tagsClone, s.conf.samplingRate)
 }
 
 func (s *statsdStats) internalNewTaggedStat(name, statType string, tags Tags, samplingRate float32) (m Measurement) {
