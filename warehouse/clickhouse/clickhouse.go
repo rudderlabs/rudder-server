@@ -296,8 +296,7 @@ func ColumnsWithDataTypes(tableName string, columns map[string]string, notNullab
 }
 
 func getClickHouseCodecForColumnType(columnType, tableName string) string {
-	switch columnType {
-	case "datetime":
+	if columnType == "datetime" {
 		if disableNullable && !(tableName == warehouseutils.IdentifiesTable || tableName == warehouseutils.UsersTable) {
 			return "Codec(DoubleDelta, LZ4)"
 		}
