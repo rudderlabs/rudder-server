@@ -7,16 +7,15 @@ const (
 	PUBLISHED_METRICS string = "published_metrics"
 )
 
-var instance Manager = &manager{
-	registries: map[string]Registry{
-		PUBLISHED_METRICS: NewRegistry(),
-	},
+func NewManager() Manager {
+	return &manager{
+		registries: map[string]Registry{
+			PUBLISHED_METRICS: NewRegistry(),
+		},
+	}
 }
 
-// GetManager gets the manager's singleton instance
-func GetManager() Manager {
-	return instance
-}
+var Instance Manager = NewManager()
 
 // Manager is the entry-point for retrieving metric registries
 type Manager interface {

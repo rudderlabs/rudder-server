@@ -14,7 +14,6 @@ import (
 	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	mock_streammanager "github.com/rudderlabs/rudder-server/mocks/services/streammanager/common"
-	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/services/streammanager/kafka"
 	"github.com/rudderlabs/rudder-server/services/streammanager/lambda"
 	"github.com/rudderlabs/rudder-server/utils/logger"
@@ -27,7 +26,6 @@ func initCustomerManager() {
 		config.Reset()
 		Init()
 		logger.Reset()
-		stats.Setup()
 		kafka.Init()
 		skipBackendConfigSubscriber = true
 	})

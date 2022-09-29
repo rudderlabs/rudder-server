@@ -144,17 +144,17 @@ type logger interface {
 }
 
 type managerStats struct {
-	creationTime               stats.RudderStats
-	creationTimeConfluentCloud stats.RudderStats
-	creationTimeAzureEventHubs stats.RudderStats
-	missingUserID              stats.RudderStats
-	missingMessage             stats.RudderStats
-	publishTime                stats.RudderStats
-	produceTime                stats.RudderStats
-	prepareBatchTime           stats.RudderStats
-	closeProducerTime          stats.RudderStats
-	jsonSerializationMsgErr    stats.RudderStats
-	avroSerializationErr       stats.RudderStats
+	creationTime               stats.Measurement
+	creationTimeConfluentCloud stats.Measurement
+	creationTimeAzureEventHubs stats.Measurement
+	missingUserID              stats.Measurement
+	missingMessage             stats.Measurement
+	publishTime                stats.Measurement
+	produceTime                stats.Measurement
+	prepareBatchTime           stats.Measurement
+	closeProducerTime          stats.Measurement
+	jsonSerializationMsgErr    stats.Measurement
+	avroSerializationErr       stats.Measurement
 }
 
 const (
@@ -212,17 +212,17 @@ func Init() {
 
 	pkgLogger = rslogger.NewLogger().Child("streammanager").Child("kafka")
 	kafkaStats = managerStats{
-		creationTime:               stats.DefaultStats.NewStat("router.kafka.creation_time", stats.TimerType),
-		creationTimeConfluentCloud: stats.DefaultStats.NewStat("router.kafka.creation_time_confluent_cloud", stats.TimerType),
-		creationTimeAzureEventHubs: stats.DefaultStats.NewStat("router.kafka.creation_time_azure_event_hubs", stats.TimerType),
-		missingUserID:              stats.DefaultStats.NewStat("router.kafka.missing_user_id", stats.CountType),
-		missingMessage:             stats.DefaultStats.NewStat("router.kafka.missing_message", stats.CountType),
-		publishTime:                stats.DefaultStats.NewStat("router.kafka.publish_time", stats.TimerType),
-		produceTime:                stats.DefaultStats.NewStat("router.kafka.produce_time", stats.TimerType),
-		prepareBatchTime:           stats.DefaultStats.NewStat("router.kafka.prepare_batch_time", stats.TimerType),
-		closeProducerTime:          stats.DefaultStats.NewStat("router.kafka.close_producer_time", stats.TimerType),
-		jsonSerializationMsgErr:    stats.DefaultStats.NewStat("router.kafka.json_serialization_msg_err", stats.CountType),
-		avroSerializationErr:       stats.DefaultStats.NewStat("router.kafka.avro_serialization_err", stats.CountType),
+		creationTime:               stats.Default.NewStat("router.kafka.creation_time", stats.TimerType),
+		creationTimeConfluentCloud: stats.Default.NewStat("router.kafka.creation_time_confluent_cloud", stats.TimerType),
+		creationTimeAzureEventHubs: stats.Default.NewStat("router.kafka.creation_time_azure_event_hubs", stats.TimerType),
+		missingUserID:              stats.Default.NewStat("router.kafka.missing_user_id", stats.CountType),
+		missingMessage:             stats.Default.NewStat("router.kafka.missing_message", stats.CountType),
+		publishTime:                stats.Default.NewStat("router.kafka.publish_time", stats.TimerType),
+		produceTime:                stats.Default.NewStat("router.kafka.produce_time", stats.TimerType),
+		prepareBatchTime:           stats.Default.NewStat("router.kafka.prepare_batch_time", stats.TimerType),
+		closeProducerTime:          stats.Default.NewStat("router.kafka.close_producer_time", stats.TimerType),
+		jsonSerializationMsgErr:    stats.Default.NewStat("router.kafka.json_serialization_msg_err", stats.CountType),
+		avroSerializationErr:       stats.Default.NewStat("router.kafka.avro_serialization_err", stats.CountType),
 	}
 }
 

@@ -10,7 +10,6 @@ import (
 
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/processor/transformer"
-	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/stretchr/testify/require"
 )
@@ -51,7 +50,6 @@ func (t *fakeTransformer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 func Test_Transformer(t *testing.T) {
 	config.Reset()
 	logger.Reset()
-	stats.Setup()
 	transformer.Init()
 
 	ft := &fakeTransformer{}

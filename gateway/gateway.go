@@ -141,8 +141,8 @@ type userWebRequestWorkerT struct {
 	batchRequestQ               chan *batchWebRequestT
 	reponseQ                    chan map[uuid.UUID]string
 	workerID                    int
-	batchTimeStat               stats.RudderStats
-	bufferFullStat, timeOutStat stats.RudderStats
+	batchTimeStat               stats.Measurement
+	bufferFullStat, timeOutStat stats.Measurement
 }
 
 // HandleT is the struct returned by the Setup call
@@ -157,15 +157,15 @@ type HandleT struct {
 	rateLimiter                  ratelimiter.RateLimiter
 
 	stats                                         stats.Stats
-	batchSizeStat                                 stats.RudderStats
-	requestSizeStat                               stats.RudderStats
-	dbWritesStat                                  stats.RudderStats
-	dbWorkersBufferFullStat, dbWorkersTimeOutStat stats.RudderStats
-	bodyReadTimeStat                              stats.RudderStats
-	addToWebRequestQWaitTime                      stats.RudderStats
-	processRequestTime                            stats.RudderStats
-	emptyAnonIdHeaderStat                         stats.RudderStats
-	addToBatchRequestQWaitTime                    stats.RudderStats
+	batchSizeStat                                 stats.Measurement
+	requestSizeStat                               stats.Measurement
+	dbWritesStat                                  stats.Measurement
+	dbWorkersBufferFullStat, dbWorkersTimeOutStat stats.Measurement
+	bodyReadTimeStat                              stats.Measurement
+	addToWebRequestQWaitTime                      stats.Measurement
+	processRequestTime                            stats.Measurement
+	emptyAnonIdHeaderStat                         stats.Measurement
+	addToBatchRequestQWaitTime                    stats.Measurement
 
 	diagnosisTicker   *time.Ticker
 	requestMetricLock sync.Mutex
@@ -1557,7 +1557,7 @@ func (gateway *HandleT) Setup(
 ) error {
 	gateway.logger = pkgLogger
 	gateway.application = application
-	gateway.stats = stats.DefaultStats
+	gateway.stats = stats.Default
 
 	gateway.rsourcesService = rsourcesService
 

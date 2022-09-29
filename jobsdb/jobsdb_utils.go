@@ -255,7 +255,7 @@ func (*JobsdbUtilsHandler) RunSQLQuery(argString string, reply *string) (err err
 	return err
 }
 
-func (jd *HandleT) getTimerStat(stat string, tags *statTags) stats.RudderStats {
+func (jd *HandleT) getTimerStat(stat string, tags *statTags) stats.Measurement {
 	timingTags := map[string]string{
 		"tablePrefix": jd.tablePrefix,
 	}
@@ -276,5 +276,5 @@ func (jd *HandleT) getTimerStat(stat string, tags *statTags) stats.RudderStats {
 		}
 	}
 
-	return stats.NewTaggedStat(stat, stats.TimerType, timingTags)
+	return stats.Default.NewTaggedStat(stat, stats.TimerType, timingTags)
 }

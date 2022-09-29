@@ -184,7 +184,11 @@ require (
 	github.com/aws/aws-sdk-go-v2/internal/endpoints/v2 v2.0.0 // indirect
 	github.com/googleapis/enterprise-certificate-proxy v0.1.0 // indirect
 	github.com/klauspost/cpuid/v2 v2.1.0 // indirect
+	github.com/miekg/dns v1.1.25 // indirect
 	github.com/rs/xid v1.4.0 // indirect
 )
 
-require github.com/zenizh/go-capturer v0.0.0-20211219060012-52ea6c8fed04
+require (
+	github.com/foxcpp/go-mockdns v1.0.0
+	github.com/zenizh/go-capturer v0.0.0-20211219060012-52ea6c8fed04
+)

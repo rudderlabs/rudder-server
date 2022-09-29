@@ -32,7 +32,6 @@ import (
 	"github.com/rudderlabs/rudder-server/processor/transformer"
 	"github.com/rudderlabs/rudder-server/services/dedup"
 	"github.com/rudderlabs/rudder-server/services/rsources"
-	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/services/transientsource"
 	"github.com/rudderlabs/rudder-server/utils/bytesize"
 	"github.com/rudderlabs/rudder-server/utils/logger"
@@ -325,9 +324,6 @@ var _ = Describe("Processor", func() {
 
 		c = &testContext{}
 		c.Setup()
-
-		// setup static requirements of dependencies
-		stats.Setup()
 
 		setEnableEventSchemasFeature(false)
 	})
