@@ -17,6 +17,7 @@ import (
 	"github.com/golang/mock/gomock"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
@@ -690,26 +691,57 @@ func TestContentTypeFunction(t *testing.T) {
 	require.Equal(t, expectedStatus, respRecorder.Code, "actual response code different than expected.")
 }
 
-func BenchmarkInjectIdentifiersV1(b *testing.B) {
+func BenchmarkInjectIdentifiers(b *testing.B) {
 	b.StopTimer()
 	body, err := os.ReadFile("testdata/batch.json")
 	if err != nil {
 		b.FailNow()
 	}
 	b.StartTimer()
-	for i := 0; i < b.N; i++ {
-		_, _, _, _, _ = injectIdentifiers("userID", body)
+
+	fncs := []struct {
+		name string
+		fnc  func(userIDHeader string, body []byte) (res []byte, notIdentifiable, nonRudderEvent, containsAudienceList bool, builtUserID string)
+	}{
+		{"v1", injectIdentifiers},
+		{"v2", injectIdentifiersV2},
+		{"v3", injectIdentifiersV3},
+		{
+			"v4", injectIdentifiersV4,
+		},
+	}
+
+	for _, fnc := range fncs {
+		b.Run(fnc.name, func(b *testing.B) {
+			for i := 0; i < b.N; i++ {
+				_, _, _, _, _ = fnc.fnc("userId", body)
+			}
+		})
 	}
 }
 
-func BenchmarkInjectIdentifiersV2(b *testing.B) {
-	b.StopTimer()
+func TestInjectIdentifiers(t *testing.T) {
 	body, err := os.ReadFile("testdata/batch.json")
 	if err != nil {
-		b.FailNow()
+		t.FailNow()
 	}
-	b.StartTimer()
-	for i := 0; i < b.N; i++ {
-		_, _, _, _, _ = injectIdentifiersV2("userID", body)
+
+	expectedResult, _, _, _, _ := injectIdentifiers("userId", body)
+
+	fncs := []struct {
+		name string
+		fnc  func(userIDHeader string, body []byte) (res []byte, notIdentifiable, nonRudderEvent, containsAudienceList bool, builtUserID string)
+	}{
+		// {"v2", injectIdentifiersV2},
+		// {"v3", injectIdentifiersV3},
+		{"v4", injectIdentifiersV4},
+	}
+
+	for _, fnc := range fncs {
+		t.Run(fnc.name, func(t *testing.T) {
+			result, _, _, _, _ := fnc.fnc("userId", body)
+			assert.JSONEq(t, string(expectedResult), string(result))
+			fmt.Println(string(result))
+		})
 	}
 }

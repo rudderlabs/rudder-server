@@ -1741,3 +1741,148 @@ func injectIdentifiersV2(userIDHeader string, body []byte) (res []byte, notIdent
 	res, _ = json.Marshal(result)
 	return
 }
+
+func injectIdentifiersV3(userIDHeader string, body []byte) (res []byte, notIdentifiable, nonRudderEvent, containsAudienceList bool, builtUserID string) {
+	// set anonymousId if not set in payload
+	result := gjson.GetBytes(body, "batch")
+	var out []map[string]interface{}
+	result.ForEach(func(_, vjson gjson.Result) bool {
+		var anonIDFromReq, userIDFromReq, eventTypeFromReq, messageID string
+
+		vjson.ForEach(func(key, vjson gjson.Result) bool {
+			switch key.String() {
+			case "anonymousId":
+				anonIDFromReq = strings.TrimSpace(vjson.String())
+			case "userId":
+				userIDFromReq = strings.TrimSpace(vjson.String())
+			case "type":
+				eventTypeFromReq = strings.TrimSpace(vjson.String())
+			case "messageId":
+				messageID = strings.TrimSpace(vjson.String())
+			}
+
+			return (anonIDFromReq == "" ||
+				userIDFromReq == "" ||
+				eventTypeFromReq == "" ||
+				messageID == "")
+		})
+
+		if builtUserID == "" {
+			if anonIDFromReq != "" {
+				builtUserID = userIDHeader + DELIMITER + anonIDFromReq + DELIMITER + userIDFromReq
+			} else {
+				// Proxy gets the userID from body if there is no anonymousId in body/header
+				builtUserID = userIDHeader + DELIMITER + userIDFromReq + DELIMITER + userIDFromReq
+			}
+		}
+
+		if anonIDFromReq == "" {
+			if userIDFromReq == "" && !allowReqsWithoutUserIDAndAnonymousID {
+				notIdentifiable = true
+				return false
+			}
+		}
+		if eventTypeFromReq == "audiencelist" {
+			containsAudienceList = true
+		}
+		// hashing combination of userIDFromReq + anonIDFromReq, using colon as a delimiter
+		rudderId, err := misc.GetMD5UUID(userIDFromReq + ":" + anonIDFromReq)
+		if err != nil {
+			notIdentifiable = true
+			return false
+		}
+
+		toSet, ok := vjson.Value().(map[string]interface{})
+		if !ok {
+			nonRudderEvent = true
+			return false
+		}
+		toSet["rudderId"] = rudderId
+		if messageID == "" {
+			toSet["messageId"] = uuid.Must(uuid.NewV4()).String()
+		}
+		out = append(out, toSet)
+		return true // keep iterating
+	})
+
+	res, _ = sjson.SetBytes(body, "batch", out)
+	return
+}
+
+func injectIdentifiersV4(userIDHeader string, body []byte) (res []byte, notIdentifiable, nonRudderEvent, containsAudienceList bool, builtUserID string) {
+	type batchMessage struct {
+		Batch []jsoniter.RawMessage `json:"batch"`
+	}
+	type eventMessage struct {
+		AnonymousId string
+		UserId      string
+		Type        string
+		MessageId   string
+	}
+
+	var result batchMessage
+	err := json.Unmarshal(body, &result)
+	if err != nil {
+		nonRudderEvent = true
+		return
+	}
+
+	output := bytes.Buffer{}
+	output.Write([]byte(`{ "batch": [`))
+
+	for i := range result.Batch {
+		var event eventMessage
+		err := json.Unmarshal(result.Batch[i], &event)
+		if err != nil {
+			nonRudderEvent = true
+			return
+		}
+
+		anonIDFromReq := event.AnonymousId
+		userIDFromReq := event.MessageId
+		if builtUserID == "" {
+			if anonIDFromReq != "" {
+				builtUserID = userIDHeader + DELIMITER + anonIDFromReq + DELIMITER + userIDFromReq
+			} else {
+				// Proxy gets the userID from body if there is no anonymousId in body/header
+				builtUserID = userIDHeader + DELIMITER + userIDFromReq + DELIMITER + userIDFromReq
+			}
+		}
+
+		eventTypeFromReq := event.Type
+
+		if anonIDFromReq == "" {
+			if userIDFromReq == "" && !allowReqsWithoutUserIDAndAnonymousID {
+				notIdentifiable = true
+				return
+			}
+		}
+		if eventTypeFromReq == "audiencelist" {
+			containsAudienceList = true
+		}
+		// hashing combination of userIDFromReq + anonIDFromReq, using colon as a delimiter
+		rudderId, err := misc.GetMD5UUID(userIDFromReq + ":" + anonIDFromReq)
+		if err != nil {
+			notIdentifiable = true
+			return
+		}
+
+		lastIndex := bytes.LastIndexByte(result.Batch[i], '}')
+		output.Write(result.Batch[i][:lastIndex])
+
+		fmt.Fprintf(&output, `,"rudderId":"%s"`, rudderId)
+		if messageId := strings.TrimSpace(event.MessageId); messageId == "" {
+			fmt.Fprintf(&output, `,"messageId":"%s"`, uuid.Must(uuid.NewV4()).String())
+		}
+
+		fmt.Fprintf(&output, `}`)
+		if i != len(result.Batch)-1 {
+			output.WriteByte(',')
+		}
+	}
+	output.WriteByte(']')
+	output.WriteByte('}')
+
+	res = output.Bytes()
+	return
+}
