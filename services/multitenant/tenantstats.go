@@ -18,7 +18,7 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
-var pkgLogger logger.LoggerI
+var pkgLogger logger.Logger
 
 type Stats struct {
 	routerJobCountMutex sync.RWMutex

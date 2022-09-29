@@ -42,7 +42,7 @@ func (rec genericRecord) Save() (map[string]bigquery.Value, string, error) {
 	return rec, insertID, nil
 }
 
-var pkgLogger logger.LoggerI
+var pkgLogger logger.Logger
 
 func init() {
 	pkgLogger = logger.NewLogger().Child("streammanager").Child("bqstream")

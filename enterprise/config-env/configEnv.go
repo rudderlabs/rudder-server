@@ -18,7 +18,7 @@ type HandleT struct{}
 
 var (
 	configEnvReplacer string
-	pkgLogger         logger.LoggerI
+	pkgLogger         logger.Logger
 )
 
 func loadConfig() {

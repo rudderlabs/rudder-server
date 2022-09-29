@@ -12,7 +12,7 @@ import (
 
 func Test_GetInstance(t *testing.T) {
 	config.Reset()
-	logger.Init()
+	logger.Reset()
 	misc.Init()
 	dedup.Init()
 

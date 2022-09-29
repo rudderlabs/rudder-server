@@ -32,7 +32,7 @@ type Migrator struct {
 	ShouldForceSetLowerVersion bool
 }
 
-var pkgLogger logger.LoggerI
+var pkgLogger logger.Logger
 
 func init() {
 	pkgLogger = logger.NewLogger().Child("sql-migrator").Child("migrator")

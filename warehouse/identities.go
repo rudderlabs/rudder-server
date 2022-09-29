@@ -244,7 +244,7 @@ func (wh *HandleT) initPrePopulateDestIdentitiesUpload(warehouse warehouseutils.
 	return upload
 }
 
-func (wh *HandleT) setFailedStat(warehouse warehouseutils.WarehouseT, err error) {
+func (*HandleT) setFailedStat(warehouse warehouseutils.WarehouseT, err error) {
 	if err != nil {
 		warehouseutils.DestStat(stats.CountType, "failed_uploads", warehouse.Identifier).Count(1)
 	}

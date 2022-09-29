@@ -20,7 +20,7 @@ type BigQueryCredentials struct {
 
 func TestTimeout(t *testing.T) {
 	mockCtrl := gomock.NewController(t)
-	mockLogger := mock_logger.NewMockLoggerI(mockCtrl)
+	mockLogger := mock_logger.NewMockLogger(mockCtrl)
 	mockLogger.EXPECT().Errorf(gomock.Any(), gomock.Any()).AnyTimes()
 	pkgLogger = mockLogger
 
@@ -74,7 +74,7 @@ func TestTimeout(t *testing.T) {
 
 func TestUnsupportedCredentials(t *testing.T) {
 	mockCtrl := gomock.NewController(t)
-	mockLogger := mock_logger.NewMockLoggerI(mockCtrl)
+	mockLogger := mock_logger.NewMockLogger(mockCtrl)
 	mockLogger.EXPECT().Errorf(gomock.Any(), gomock.Any()).AnyTimes()
 	pkgLogger = mockLogger
 
@@ -113,7 +113,7 @@ func TestUnsupportedCredentials(t *testing.T) {
 
 func TestInvalidCredentials(t *testing.T) {
 	mockCtrl := gomock.NewController(t)
-	mockLogger := mock_logger.NewMockLoggerI(mockCtrl)
+	mockLogger := mock_logger.NewMockLogger(mockCtrl)
 	mockLogger.EXPECT().Errorf(gomock.Any(), gomock.Any()).AnyTimes()
 	pkgLogger = mockLogger
 

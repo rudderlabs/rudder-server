@@ -39,7 +39,7 @@ type sourceFilter struct {
 	specific map[string]struct{}
 }
 
-var pkgLogger logger.LoggerI
+var pkgLogger logger.Logger
 
 type apiResponse struct {
 	SourceRegulations []sourceRegulation `json:"items"`
@@ -58,7 +58,7 @@ func (suppressUser *SuppressRegulationHandler) setup(ctx context.Context) {
 	})
 }
 
-func (suppressUser *SuppressRegulationHandler) IsSuppressedUser(userID, sourceID, writeKey string) bool {
+func (suppressUser *SuppressRegulationHandler) IsSuppressedUser(userID, sourceID string) bool {
 	suppressUser.init()
 	pkgLogger.Debugf("IsSuppressedUser called for %v, %v", sourceID, userID)
 	suppressUser.regulationsSubscriberLock.RLock()

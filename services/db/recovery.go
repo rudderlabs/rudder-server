@@ -41,7 +41,7 @@ type RecoveryDataT struct {
 	Mode                            string
 }
 
-var pkgLogger logger.LoggerI
+var pkgLogger logger.Logger
 
 func Init() {
 	config.RegisterStringConfigVariable("/tmp/recovery_data.json", &storagePath, false, "recovery.storagePath")

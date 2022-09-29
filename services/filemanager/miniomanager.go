@@ -111,7 +111,7 @@ func (manager *MinioManager) DeleteObjects(ctx context.Context, keys []string) (
 	return tmp.Err
 }
 
-func (manager *MinioManager) ListFilesWithPrefix(ctx context.Context, startAfter, prefix string, maxItems int64) (fileObjects []*FileObject, err error) {
+func (manager *MinioManager) ListFilesWithPrefix(_ context.Context, startAfter, prefix string, maxItems int64) (fileObjects []*FileObject, err error) {
 	if !manager.Config.IsTruncated {
 		pkgLogger.Infof("Manager is truncated: %v so returning here", manager.Config.IsTruncated)
 		return
