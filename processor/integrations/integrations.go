@@ -73,7 +73,7 @@ func CollectDestErrorStats(input []byte) {
 	err := jsonfast.Unmarshal(input, &integrationStat)
 	if err == nil {
 		if len(integrationStat.StatTags) > 0 {
-			stats.NewTaggedStat("integration.failure_detailed", stats.CountType, integrationStat.StatTags).Increment()
+			stats.Default.NewTaggedStat("integration.failure_detailed", stats.CountType, integrationStat.StatTags).Increment()
 		}
 	}
 }
@@ -84,7 +84,7 @@ func CollectIntgTransformErrorStats(input []byte) {
 	if err == nil {
 		for _, integrationStat := range integrationStats {
 			if len(integrationStat.StatTags) > 0 {
-				stats.NewTaggedStat("integration.failure_detailed", stats.CountType, integrationStat.StatTags).Increment()
+				stats.Default.NewTaggedStat("integration.failure_detailed", stats.CountType, integrationStat.StatTags).Increment()
 			}
 		}
 	}

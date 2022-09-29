@@ -116,7 +116,7 @@ func (d *diagnostics) Track(event string, properties map[string]interface{}) {
 	}
 }
 
-func (d *diagnostics) DisableMetrics(enableMetrics bool) {
+func (*diagnostics) DisableMetrics(enableMetrics bool) {
 	if !enableMetrics {
 		EnableServerStartedMetric = false
 		EnableConfigProcessedMetric = false

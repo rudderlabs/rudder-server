@@ -11,7 +11,7 @@ import (
 type admin struct{}
 
 // RoutingConfig reports current backend config and process config after masking secret fields
-func (bca *admin) RoutingConfig(filterProcessor bool, reply *string) (err error) { // skipcq: RVV-A0005
+func (*admin) RoutingConfig(filterProcessor bool, reply *string) (err error) { // skipcq: RVV-A0005
 	defer func() {
 		if r := recover(); r != nil {
 			pkgLogger.Error(r)

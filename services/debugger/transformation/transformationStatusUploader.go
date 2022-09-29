@@ -121,7 +121,7 @@ func RecordTransformationStatus(transformStatus *TransformStatusT) bool {
 	return true
 }
 
-func (transformationStatusUploader *TransformationStatusUploader) Transform(data interface{}) ([]byte, error) {
+func (*TransformationStatusUploader) Transform(data interface{}) ([]byte, error) {
 	eventBuffer := data.([]interface{})
 	uploadT := UploadT{Payload: eventBuffer}
 

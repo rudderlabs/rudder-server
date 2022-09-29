@@ -235,7 +235,7 @@ type GCSConfig struct {
 	Iterator       *storage.ObjectIterator
 }
 
-func (manager *GCSManager) DeleteObjects(_ context.Context, _ []string) (err error) {
+func (*GCSManager) DeleteObjects(_ context.Context, _ []string) (err error) {
 	return
 }
 

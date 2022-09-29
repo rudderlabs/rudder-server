@@ -67,16 +67,16 @@ type HandleT struct {
 
 type webhookSourceStatT struct {
 	id              string
-	numEvents       stats.RudderStats
-	numOutputEvents stats.RudderStats
-	sourceTransform stats.RudderStats
+	numEvents       stats.Measurement
+	numOutputEvents stats.Measurement
+	sourceTransform stats.Measurement
 }
 
 type webhookStatsT struct {
-	sentStat           stats.RudderStats
-	receivedStat       stats.RudderStats
-	failedStat         stats.RudderStats
-	transformTimerStat stats.RudderStats
+	sentStat           stats.Measurement
+	receivedStat       stats.Measurement
+	failedStat         stats.Measurement
+	transformTimerStat stats.Measurement
 	sourceStats        map[string]*webhookSourceStatT
 }
 
@@ -381,9 +381,9 @@ func newWebhookStat(sourceType string) *webhookSourceStatT {
 	tags := map[string]string{
 		"sourceType": sourceType,
 	}
-	numEvents := stats.NewTaggedStat("webhook_num_events", stats.CountType, tags)
-	numOutputEvents := stats.NewTaggedStat("webhook_num_output_events", stats.CountType, tags)
-	sourceTransform := stats.NewTaggedStat("webhook_dest_transform", stats.TimerType, tags)
+	numEvents := stats.Default.NewTaggedStat("webhook_num_events", stats.CountType, tags)
+	numOutputEvents := stats.Default.NewTaggedStat("webhook_num_output_events", stats.CountType, tags)
+	sourceTransform := stats.Default.NewTaggedStat("webhook_dest_transform", stats.TimerType, tags)
 	return &webhookSourceStatT{
 		id:              sourceType,
 		numEvents:       numEvents,

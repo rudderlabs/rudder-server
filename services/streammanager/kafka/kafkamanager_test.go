@@ -306,9 +306,9 @@ func TestProducerForConfluentCloud(t *testing.T) {
 
 func TestPrepareBatchOfMessages(t *testing.T) {
 	ctrl := gomock.NewController(t)
-	mockSkippedDueToUserID := mockStats.NewMockRudderStats(ctrl)
-	mockSkippedDueToMessage := mockStats.NewMockRudderStats(ctrl)
-	mockPrepareBatchTime := mockStats.NewMockRudderStats(ctrl)
+	mockSkippedDueToUserID := mockStats.NewMockMeasurement(ctrl)
+	mockSkippedDueToMessage := mockStats.NewMockMeasurement(ctrl)
+	mockPrepareBatchTime := mockStats.NewMockMeasurement(ctrl)
 	kafkaStats = managerStats{
 		missingUserID:    mockSkippedDueToUserID,
 		missingMessage:   mockSkippedDueToMessage,
@@ -800,16 +800,16 @@ func TestSendMessage(t *testing.T) {
 	})
 }
 
-func getMockedTimer(t *testing.T, ctrl *gomock.Controller) *mockStats.MockRudderStats {
+func getMockedTimer(t *testing.T, ctrl *gomock.Controller) *mockStats.MockMeasurement {
 	t.Helper()
-	mockedTimer := mockStats.NewMockRudderStats(ctrl)
+	mockedTimer := mockStats.NewMockMeasurement(ctrl)
 	mockedTimer.EXPECT().SendTiming(sinceDuration).Times(1)
 	return mockedTimer
 }
 
-func getMockedCounter(t *testing.T, ctrl *gomock.Controller) *mockStats.MockRudderStats {
+func getMockedCounter(t *testing.T, ctrl *gomock.Controller) *mockStats.MockMeasurement {
 	t.Helper()
-	mockedCounter := mockStats.NewMockRudderStats(ctrl)
+	mockedCounter := mockStats.NewMockMeasurement(ctrl)
 	mockedCounter.EXPECT().Increment().Times(1)
 	return mockedCounter
 }

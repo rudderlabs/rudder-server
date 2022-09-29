@@ -55,7 +55,7 @@ type HandleT struct {
 	errorDB                   jobsdb.JobsDB
 	errProcessQ               chan []*jobsdb.JobT
 	errFileUploader           filemanager.FileManager
-	statErrDBR                stats.RudderStats
+	statErrDBR                stats.Measurement
 	logger                    logger.Logger
 	transientSource           transientsource.Service
 	jobsDBCommandTimeout      time.Duration
@@ -70,7 +70,7 @@ func New() *HandleT {
 func (st *HandleT) Setup(errorDB jobsdb.JobsDB, transientSource transientsource.Service) {
 	st.logger = pkgLogger
 	st.errorDB = errorDB
-	st.statErrDBR = stats.DefaultStats.NewStat("processor.err_db_read_time", stats.TimerType)
+	st.statErrDBR = stats.Default.NewStat("processor.err_db_read_time", stats.TimerType)
 	st.transientSource = transientSource
 	config.RegisterIntConfigVariable(3, &st.jobdDBMaxRetries, true, 1, []string{"JobsDB.Processor.MaxRetries", "JobsDB.MaxRetries"}...)
 	config.RegisterDurationConfigVariable(60, &st.jobdDBQueryRequestTimeout, true, time.Second, []string{"JobsDB.Processor.QueryRequestTimeout", "JobsDB.QueryRequestTimeout"}...)
@@ -102,12 +102,12 @@ func (st *HandleT) Start(ctx context.Context) {
 
 func sendRetryUpdateStats(attempt int) {
 	pkgLogger.Warnf("Timeout during update job status in stash module, attempt %d", attempt)
-	stats.NewTaggedStat("jobsdb_update_timeout", stats.CountType, stats.Tags{"attempt": fmt.Sprint(attempt), "module": "stash"}).Count(1)
+	stats.Default.NewTaggedStat("jobsdb_update_timeout", stats.CountType, stats.Tags{"attempt": fmt.Sprint(attempt), "module": "stash"}).Count(1)
 }
 
 func sendQueryRetryStats(attempt int) {
 	pkgLogger.Warnf("Timeout during query jobs in stash module, attempt %d", attempt)
-	stats.NewTaggedStat("jobsdb_query_timeout", stats.CountType, stats.Tags{"attempt": fmt.Sprint(attempt), "module": "stash"}).Count(1)
+	stats.Default.NewTaggedStat("jobsdb_query_timeout", stats.CountType, stats.Tags{"attempt": fmt.Sprint(attempt), "module": "stash"}).Count(1)
 }
 
 func (st *HandleT) getFileUploader(ctx context.Context) filemanager.FileManager {
@@ -144,7 +144,7 @@ func (st *HandleT) runErrWorkers(ctx context.Context) {
 	for i := 0; i < noOfErrStashWorkers; i++ {
 		g.Go(misc.WithBugsnag(func() error {
 			for jobs := range st.errProcessQ {
-				uploadStat := stats.DefaultStats.NewStat("Processor.err_upload_time", stats.TimerType)
+				uploadStat := stats.Default.NewStat("Processor.err_upload_time", stats.TimerType)
 				uploadStat.Start()
 				output := st.storeErrorsToObjectStorage(jobs)
 				st.setErrJobStatus(jobs, output)
