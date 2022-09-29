@@ -284,7 +284,7 @@ func TestProducerForConfluentCloud(t *testing.T) {
 		kafkaStats.creationTimeConfluentCloud = getMockedTimer(t, gomock.NewController(t))
 
 		destConfig := map[string]interface{}{
-			"topic":           "TestConfluentAzureCloud",
+			"topic":           "TestProducerForConfluentCloud_OK",
 			"bootstrapServer": "bad-host," + kafkaHost + "," + kafkaHost,
 			"apiKey":          confluentCloudKey,
 			"apiSecret":       confluentCloudSecret,

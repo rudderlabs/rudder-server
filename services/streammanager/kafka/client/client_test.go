@@ -629,9 +629,7 @@ func TestConfluentAzureCloud(t *testing.T) {
 		t.Skip("Skipping because credentials or host are not provided")
 	}
 
-	t.Logf("REMOVE ME: host(%s) cloudkey(%s) cloudsecret(%s)", kafkaHost, confluentCloudKey, confluentCloudSecret)
-
-	c, err := NewConfluentCloud([]string{"bad-host", kafkaHost}, confluentCloudKey, confluentCloudSecret, Config{
+	c, err := NewConfluentCloud([]string{kafkaHost}, confluentCloudKey, confluentCloudSecret, Config{
 		ClientID:    "some-client",
 		DialTimeout: 45 * time.Second,
 	})
@@ -675,8 +673,6 @@ func TestAzureEventHubsCloud(t *testing.T) {
 	if kafkaHost == "" || azureEventHubName == "" || azureEventHubsConnString == "" {
 		t.Skip("Skipping because credentials or host are not provided")
 	}
-
-	t.Logf("REMOVE ME: host(%s) eventhub(%s) connstring(%s)", kafkaHost, azureEventHubName, azureEventHubsConnString)
 
 	c, err := NewAzureEventHubs([]string{kafkaHost}, azureEventHubsConnString, Config{
 		ClientID:    "some-client",
