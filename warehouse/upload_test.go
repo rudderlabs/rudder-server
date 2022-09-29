@@ -255,7 +255,7 @@ var _ = Describe("Upload", Ordered, func() {
 		err = setupDB(context.TODO(), getConnectionString())
 		Expect(err).To(BeNil())
 
-		pkgLogger = &logger.NOP{}
+		pkgLogger = logger.NOP
 	})
 
 	AfterAll(func() {

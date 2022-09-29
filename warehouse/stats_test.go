@@ -136,7 +136,7 @@ var _ = Describe("Stats", Ordered, func() {
 		err = setupDB(context.TODO(), getConnectionString())
 		Expect(err).To(BeNil())
 
-		pkgLogger = &logger.NOP{}
+		pkgLogger = logger.NOP
 	})
 
 	AfterAll(func() {

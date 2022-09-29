@@ -113,7 +113,7 @@ var _ = Describe("WarehouseGrpc", func() {
 				err = setupDB(context.TODO(), getConnectionString())
 				Expect(err).To(BeNil())
 
-				pkgLogger = &logger.NOP{}
+				pkgLogger = logger.NOP
 				sourceIDsByWorkspace = map[string][]string{
 					workspaceID: {sourceID},
 				}
@@ -134,7 +134,7 @@ var _ = Describe("WarehouseGrpc", func() {
 			})
 
 			It("Init warehouse api", func() {
-				err = InitWarehouseAPI(pgResource.DB, &logger.NOP{})
+				err = InitWarehouseAPI(pgResource.DB, logger.NOP)
 				Expect(err).To(BeNil())
 
 				_, err = pgResource.DB.Exec(warehouseGRPCTestSQLStatement())
@@ -338,7 +338,7 @@ var _ = Describe("WarehouseGrpc", func() {
 				err = setupDB(context.TODO(), getConnectionString())
 				Expect(err).To(BeNil())
 
-				pkgLogger = &logger.NOP{}
+				pkgLogger = logger.NOP
 				sourceIDsByWorkspace = map[string][]string{
 					workspaceID: {sourceID},
 				}
@@ -362,7 +362,7 @@ var _ = Describe("WarehouseGrpc", func() {
 			})
 
 			It("Init warehouse api", func() {
-				err = InitWarehouseAPI(pgResource.DB, &logger.NOP{})
+				err = InitWarehouseAPI(pgResource.DB, logger.NOP)
 				Expect(err).To(BeNil())
 
 				_, err = pgResource.DB.Exec(warehouseGRPCTestSQLStatement())
