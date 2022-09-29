@@ -109,7 +109,7 @@ func (api *APIManager) Delete(ctx context.Context, job model.Job, destConfig map
 	}
 }
 
-func (bm *APIManager) GetSupportedDestinations() []string {
+func (*APIManager) GetSupportedDestinations() []string {
 	return supportedDestinations
 }
 

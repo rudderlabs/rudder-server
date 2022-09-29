@@ -130,7 +130,7 @@ func removeCleanedFiles(files []*filemanager.FileObject, cleanedFiles []string) 
 }
 
 // append <fileName> to <statusTrackerFile> locally for which deletion has completed.
-func (b *Batch) updateStatusTrackerFile(absStatusTrackerFileName, fileName string) error {
+func (*Batch) updateStatusTrackerFile(absStatusTrackerFileName, fileName string) error {
 	statusTrackerPtr, err := os.OpenFile(absStatusTrackerFileName, os.O_WRONLY|os.O_APPEND, 0o644)
 	if err != nil {
 		return fmt.Errorf("error while opening file, %w", err)
@@ -211,7 +211,7 @@ func (b *Batch) decompress(compressedFileName string) (string, error) {
 }
 
 // compress & write `cleanedBytes` of type []byte to `fileName`
-func (b *Batch) compress(fileName string, cleanedBytes []byte) error {
+func (*Batch) compress(fileName string, cleanedBytes []byte) error {
 	// compressing
 	var buffer bytes.Buffer
 	w := gzip.NewWriter(&buffer)
@@ -371,7 +371,7 @@ type BatchManager struct {
 	FMFactory filemanager.FileManagerFactory
 }
 
-func (bm *BatchManager) GetSupportedDestinations() []string {
+func (*BatchManager) GetSupportedDestinations() []string {
 	return supportedDestinations
 }
 

@@ -93,7 +93,7 @@ func (m *redisManagerT) HMSet(key string, fields map[string]interface{}) (err er
 	return err
 }
 
-func (m *redisManagerT) StatusCode(err error) int {
+func (*redisManagerT) StatusCode(err error) int {
 	if err == nil {
 		return http.StatusOK
 	}
