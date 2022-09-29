@@ -833,7 +833,7 @@ func WriteSSLKeys(destination backendconfig.DestinationT) WriteSSLKeyError {
 	if err = os.WriteFile(serverCertPemFile, []byte(serverCert), 0o600); err != nil {
 		return WriteSSLKeyError{fmt.Sprintf("Error saving file %s error::%v", serverCertPemFile, err), "server_cert_create_err"}
 	}
-	if err = os.WriteFile(checkSumFile, []byte(sslHash), 0o700); err != nil {
+	if err = os.WriteFile(checkSumFile, []byte(sslHash), 0o600); err != nil {
 		return WriteSSLKeyError{fmt.Sprintf("Error saving file %s error::%v", checkSumFile, err), "ssl_hash_create_err"}
 	}
 	return WriteSSLKeyError{}
