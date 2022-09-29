@@ -428,7 +428,6 @@ func TestExcludedTags(t *testing.T) {
 
 	c := config.New()
 	c.Set("STATSD_SERVER_URL", server.addr)
-	c.Set("statsExcludedTags", []string{"workspaceId"})
 	c.Set("INSTANCE_ID", "test")
 	c.Set("RuntimeStats.enabled", false)
 
@@ -443,8 +442,8 @@ func TestExcludedTags(t *testing.T) {
 	s.Start(ctx)
 	defer s.Stop()
 
-	c.Set("statsExcludedTags", []string{"workspaceId"})
-	s.NewTaggedStat("test-workspaceId", stats.CountType, stats.Tags{"workspaceId": "value"}).Increment()
+	c.Set("statsExcludedTags", []string{"workspaceId", "sourceId"})
+	s.NewTaggedStat("test-workspaceId", stats.CountType, stats.Tags{"sourceId": "value1", "workspaceId": "value"}).Increment()
 	require.Eventually(t, func() bool {
 		fmt.Println(lastReceived)
 		return lastReceived == "test-workspaceId,instanceName=test:1|c"
