@@ -34,7 +34,7 @@ import (
 
 // EmbeddedApp is the type for embedded type implementation
 type EmbeddedApp struct {
-	App            app.Interface
+	App            app.App
 	VersionHandler func(w http.ResponseWriter, r *http.Request)
 }
 

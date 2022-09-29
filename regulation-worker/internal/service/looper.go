@@ -23,8 +23,8 @@ func (l *Looper) Loop(ctx context.Context) error {
 		err := l.Svc.JobSvc(ctx)
 		if err == model.ErrNoRunnableJob {
 			pkgLogger.Debugf("no runnable job found... sleeping")
-			if ctxCanceled := misc.SleepCtx(ctx, 10*time.Minute); ctxCanceled {
-				pkgLogger.Debugf("context cancelled... exiting infinite loop")
+			if err := misc.SleepCtx(ctx, 10*time.Minute); err != nil {
+				pkgLogger.Debugf("context cancelled... exiting infinite loop %v", err)
 				return nil
 			}
 		} else if err != nil {

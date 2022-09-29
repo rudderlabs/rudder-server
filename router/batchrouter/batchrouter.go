@@ -60,7 +60,7 @@ var (
 	warehouseServiceFailedTimeLock     sync.RWMutex
 	warehouseServiceMaxRetryTime       time.Duration
 	asyncDestinations                  []string
-	pkgLogger                          logger.LoggerI
+	pkgLogger                          logger.Logger
 	Diagnostics                        diagnostics.DiagnosticsI
 	readPerDestination                 bool
 	disableEgress                      bool
@@ -86,7 +86,7 @@ type HandleT struct {
 	multitenantI                multitenant.MultiTenantI
 	diagnosisTicker             *time.Ticker
 	batchRequestsMetric         []batchRequestMetric
-	logger                      logger.LoggerI
+	logger                      logger.Logger
 	noOfWorkers                 int
 	maxEventsInABatch           int
 	maxFailedCountForJob        int
@@ -2297,7 +2297,8 @@ func (brt *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB, err
 	brt.rsourcesService = rsourcesService
 	// waiting for reporting client setup
 	if brt.reporting != nil && brt.reportingEnabled {
-		brt.reporting.WaitForSetup(context.TODO(), types.CORE_REPORTING_CLIENT)
+		// error is ignored as context.TODO() is passed, err is not expected.
+		_ = brt.reporting.WaitForSetup(context.TODO(), types.CORE_REPORTING_CLIENT)
 	}
 
 	brt.inProgressMap = map[string]bool{}

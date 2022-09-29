@@ -61,7 +61,7 @@ type Dynamic struct {
 	serverStopCountStat  stats.RudderStats
 	BackendConfig        configLifecycle
 
-	logger logger.LoggerI
+	logger logger.Logger
 
 	once sync.Once
 }

@@ -16,7 +16,7 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/logger"
 )
 
-var pkgLogger logger.LoggerI
+var pkgLogger logger.Logger
 
 // Config is the config that is required to send data to Kinesis
 type Config struct {

@@ -18,7 +18,7 @@ import (
 func Test_Namespace_SetUp(t *testing.T) {
 	var (
 		client = &namespaceConfig{
-			Logger: &logger.NOP{},
+			Logger: logger.NOP,
 		}
 		configBackendURL = "https://api.test.rudderlabs.com"
 	)
@@ -38,7 +38,7 @@ func Test_Namespace_SetUp(t *testing.T) {
 
 func Test_Namespace_Get(t *testing.T) {
 	config.Reset()
-	logger.Init()
+	logger.Reset()
 
 	var (
 		namespace    = "free-us-1"
@@ -58,7 +58,7 @@ func Test_Namespace_Get(t *testing.T) {
 	require.NoError(t, err)
 
 	client := &namespaceConfig{
-		Logger: &logger.NOP{},
+		Logger: logger.NOP,
 
 		Client:           ts.Client(),
 		ConfigBackendURL: httpSrvURL,
@@ -135,7 +135,7 @@ func Test_Namespace_Get(t *testing.T) {
 
 func Test_Namespace_Identity(t *testing.T) {
 	config.Reset()
-	logger.Init()
+	logger.Reset()
 
 	var (
 		namespace = "free-us-1"
@@ -152,7 +152,7 @@ func Test_Namespace_Identity(t *testing.T) {
 	require.NoError(t, err)
 
 	client := &namespaceConfig{
-		Logger: &logger.NOP{},
+		Logger: logger.NOP,
 
 		Client:           ts.Client(),
 		ConfigBackendURL: httpSrvURL,

@@ -306,7 +306,7 @@ var sampleBackendConfig = backendconfig.ConfigT{
 
 func initProcessor() {
 	config.Reset()
-	logger.Init()
+	logger.Reset()
 	stash.Init()
 	admin.Init()
 	dedup.Init()
