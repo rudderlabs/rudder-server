@@ -20,7 +20,6 @@ import (
 	"github.com/rudderlabs/rudder-server/app"
 	"github.com/rudderlabs/rudder-server/app/cluster/state"
 	"github.com/rudderlabs/rudder-server/config"
-	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/testhelper"
 	thEtcd "github.com/rudderlabs/rudder-server/testhelper/etcd"
 	"github.com/rudderlabs/rudder-server/utils/logger"
@@ -82,7 +81,6 @@ func blockOnHold() {
 
 func Init() {
 	config.Reset()
-	stats.Setup()
 	logger.Reset()
 }
 

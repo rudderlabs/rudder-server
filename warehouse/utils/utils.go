@@ -514,8 +514,8 @@ func JSONSchemaToMap(rawMsg json.RawMessage) map[string]map[string]string {
 	return schema
 }
 
-func DestStat(statType, statName, id string) stats.RudderStats {
-	return stats.NewTaggedStat(fmt.Sprintf("warehouse.%s", statName), statType, stats.Tags{"destID": id})
+func DestStat(statType, statName, id string) stats.Measurement {
+	return stats.Default.NewTaggedStat(fmt.Sprintf("warehouse.%s", statName), statType, stats.Tags{"destID": id})
 }
 
 /*
@@ -751,27 +751,27 @@ type Tag struct {
 	Value string
 }
 
-func NewTimerStat(name string, extraTags ...Tag) stats.RudderStats {
+func NewTimerStat(name string, extraTags ...Tag) stats.Measurement {
 	tags := map[string]string{
 		"module": "warehouse",
 	}
 	for _, extraTag := range extraTags {
 		tags[extraTag.Name] = extraTag.Value
 	}
-	return stats.NewTaggedStat(name, stats.TimerType, tags)
+	return stats.Default.NewTaggedStat(name, stats.TimerType, tags)
 }
 
-func NewCounterStat(name string, extraTags ...Tag) stats.RudderStats {
+func NewCounterStat(name string, extraTags ...Tag) stats.Measurement {
 	tags := map[string]string{
 		"module": "warehouse",
 	}
 	for _, extraTag := range extraTags {
 		tags[extraTag.Name] = extraTag.Value
 	}
-	return stats.NewTaggedStat(name, stats.CountType, tags)
+	return stats.Default.NewTaggedStat(name, stats.CountType, tags)
 }
 
-func WHCounterStat(name string, warehouse *WarehouseT, extraTags ...Tag) stats.RudderStats {
+func WHCounterStat(name string, warehouse *WarehouseT, extraTags ...Tag) stats.Measurement {
 	tags := map[string]string{
 		"module":   WAREHOUSE,
 		"destType": warehouse.Type,
@@ -781,7 +781,7 @@ func WHCounterStat(name string, warehouse *WarehouseT, extraTags ...Tag) stats.R
 	for _, extraTag := range extraTags {
 		tags[extraTag.Name] = extraTag.Value
 	}
-	return stats.NewTaggedStat(name, stats.CountType, tags)
+	return stats.Default.NewTaggedStat(name, stats.CountType, tags)
 }
 
 func formatSSLFile(content string) (formattedContent string) {

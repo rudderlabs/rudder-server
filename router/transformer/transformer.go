@@ -44,7 +44,7 @@ type handle struct {
 	destinationTimeout time.Duration
 	// http client timeout for server-transformer request
 	transformTimeout          time.Duration
-	transformRequestTimerStat stats.RudderStats
+	transformRequestTimerStat stats.Measurement
 	logger                    logger.Logger
 }
 
@@ -198,7 +198,7 @@ func (trans *handle) Transform(transformType string, transformMessage *types.Tra
 		if invalidResponseReason != "" {
 
 			trans.logger.Error(invalidResponseError)
-			stats.DefaultStats.NewTaggedStat(`router.transformer.invalid.response`, stats.CountType, stats.Tags{
+			stats.Default.NewTaggedStat(`router.transformer.invalid.response`, stats.CountType, stats.Tags{
 				"destType": transformMessage.DestType,
 				"reason":   invalidResponseReason,
 			}).Increment()
@@ -229,15 +229,15 @@ func (trans *handle) Transform(transformType string, transformMessage *types.Tra
 }
 
 func (trans *handle) ProxyRequest(ctx context.Context, proxyReqParams *ProxyRequestParams) (int, string, string) {
-	stats.NewTaggedStat("transformer_proxy.delivery_request", stats.CountType, stats.Tags{"destType": proxyReqParams.DestName}).Increment()
+	stats.Default.NewTaggedStat("transformer_proxy.delivery_request", stats.CountType, stats.Tags{"destType": proxyReqParams.DestName}).Increment()
 	trans.logger.Debugf(`[TransformerProxy] (Dest-%[1]v) {Job - %[2]v} Proxy Request starts - %[1]v`, proxyReqParams.DestName, proxyReqParams.JobID)
 
 	rdlTime := time.Now()
 	httpPrxResp := trans.doProxyRequest(ctx, proxyReqParams)
 	respData, respCode, requestError := httpPrxResp.respData, httpPrxResp.statusCode, httpPrxResp.err
 	reqSuccessStr := strconv.FormatBool(requestError == nil)
-	stats.NewTaggedStat("transformer_proxy.request_latency", stats.TimerType, stats.Tags{"requestSuccess": reqSuccessStr, "destType": proxyReqParams.DestName}).SendTiming(time.Since(rdlTime))
-	stats.NewTaggedStat("transformer_proxy.request_result", stats.CountType, stats.Tags{"requestSuccess": reqSuccessStr, "destType": proxyReqParams.DestName}).Increment()
+	stats.Default.NewTaggedStat("transformer_proxy.request_latency", stats.TimerType, stats.Tags{"requestSuccess": reqSuccessStr, "destType": proxyReqParams.DestName}).SendTiming(time.Since(rdlTime))
+	stats.Default.NewTaggedStat("transformer_proxy.request_result", stats.CountType, stats.Tags{"requestSuccess": reqSuccessStr, "destType": proxyReqParams.DestName}).Increment()
 
 	if requestError != nil {
 		return respCode, requestError.Error(), "text/plain; charset=utf-8"
@@ -284,7 +284,7 @@ func (trans *handle) setup(destinationTimeout, transformTimeout time.Duration) {
 	trans.client = &http.Client{Transport: trans.tr, Timeout: trans.transformTimeout}
 	// This client is used for Transformer Proxy(delivered from transformer to destination)
 	trans.proxyClient = &http.Client{Transport: trans.tr, Timeout: trans.destinationTimeout + trans.transformTimeout}
-	trans.transformRequestTimerStat = stats.DefaultStats.NewStat("router.transformer_request_time", stats.TimerType)
+	trans.transformRequestTimerStat = stats.Default.NewStat("router.transformer_request_time", stats.TimerType)
 }
 
 type httpProxyResponse struct {
@@ -325,7 +325,7 @@ func (trans *handle) doProxyRequest(ctx context.Context, proxyReqParams *ProxyRe
 	reqRoundTripTime := time.Since(httpReqStTime)
 	// This stat will be useful in understanding the round trip time taken for the http req
 	// between server and transformer
-	stats.NewTaggedStat("transformer_proxy.req_round_trip_time", stats.TimerType, stats.Tags{
+	stats.Default.NewTaggedStat("transformer_proxy.req_round_trip_time", stats.TimerType, stats.Tags{
 		"destType": destName,
 	}).SendTiming(reqRoundTripTime)
 

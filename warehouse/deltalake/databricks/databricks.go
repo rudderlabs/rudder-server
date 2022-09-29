@@ -31,7 +31,7 @@ type DBHandleT struct {
 	Context        context.Context
 	Conn           *grpc.ClientConn
 	Client         proto.DatabricksClient
-	CloseStats     stats.RudderStats
+	CloseStats     stats.Measurement
 }
 
 func Init() {

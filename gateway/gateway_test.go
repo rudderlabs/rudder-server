@@ -34,7 +34,6 @@ import (
 	mocksRateLimiter "github.com/rudderlabs/rudder-server/mocks/rate-limiter"
 	mocksTypes "github.com/rudderlabs/rudder-server/mocks/utils/types"
 	"github.com/rudderlabs/rudder-server/services/rsources"
-	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/pubsub"
@@ -185,9 +184,6 @@ var _ = Describe("Gateway Enterprise", func() {
 		c.mockSuppressUser.EXPECT().IsSuppressedUser(NormalUserID, SourceIDEnabled).Return(false).AnyTimes()
 		c.mockSuppressUser.EXPECT().IsSuppressedUser(SuppressedUserID, SourceIDEnabled).Return(true).AnyTimes()
 
-		// setup static requirements of dependencies
-		stats.Setup()
-
 		// setup common environment, override in BeforeEach when required
 		SetEnableRateLimit(false)
 		SetEnableSuppressUserFeature(true)
@@ -239,9 +235,6 @@ var _ = Describe("Gateway", func() {
 		c = &testContext{}
 		c.Setup()
 		c.initializeAppFeatures()
-
-		// setup static requirements of dependencies
-		stats.Setup()
 
 		// setup common environment, override in BeforeEach when required
 		SetEnableRateLimit(false)

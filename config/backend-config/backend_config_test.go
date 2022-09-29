@@ -182,7 +182,7 @@ func TestConfigUpdate(t *testing.T) {
 
 		wc := NewMockworkspaceConfig(ctrl)
 		wc.EXPECT().Get(gomock.Eq(ctx), workspaces).Return(ConfigT{}, fakeError).Times(1)
-		statConfigBackendError := stats.DefaultStats.NewStat("config_backend.errors", stats.CountType)
+		statConfigBackendError := stats.Default.NewStat("config_backend.errors", stats.CountType)
 
 		bc := &backendConfigImpl{workspaceConfig: wc}
 		bc.configUpdate(ctx, statConfigBackendError, workspaces)
@@ -199,7 +199,7 @@ func TestConfigUpdate(t *testing.T) {
 
 		wc := NewMockworkspaceConfig(ctrl)
 		wc.EXPECT().Get(gomock.Eq(ctx), workspaces).Return(sampleBackendConfig, nil).Times(1)
-		statConfigBackendError := stats.DefaultStats.NewStat("config_backend.errors", stats.CountType)
+		statConfigBackendError := stats.Default.NewStat("config_backend.errors", stats.CountType)
 
 		bc := &backendConfigImpl{
 			workspaceConfig: wc,
@@ -220,7 +220,7 @@ func TestConfigUpdate(t *testing.T) {
 
 		wc := NewMockworkspaceConfig(ctrl)
 		wc.EXPECT().Get(gomock.Eq(ctx), workspaces).Return(sampleBackendConfig, nil).Times(1)
-		statConfigBackendError := stats.DefaultStats.NewStat("config_backend.errors", stats.CountType)
+		statConfigBackendError := stats.Default.NewStat("config_backend.errors", stats.CountType)
 
 		pubSub := pubsub.PublishSubscriber{}
 		bc := &backendConfigImpl{
@@ -333,6 +333,5 @@ func initBackendConfig() {
 	adminpkg.Init()
 	diagnostics.Init()
 	logger.Reset()
-	stats.Setup()
 	Init()
 }

@@ -33,7 +33,6 @@ import (
 	"github.com/rudderlabs/rudder-server/warehouse/datalake"
 
 	"github.com/rudderlabs/rudder-server/config"
-	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/warehouse/bigquery"
 	"github.com/rudderlabs/rudder-server/warehouse/clickhouse"
@@ -124,8 +123,6 @@ func initialize() {
 	logger.Reset()
 	admin.Init()
 	misc.Init()
-	stats.Init()
-	stats.Setup()
 
 	backendconfig.Init()
 	warehouseutils.Init()
