@@ -58,10 +58,14 @@ func (c *configuration) validate() error {
 	return nil
 }
 
-// azureEventHubConfig is the config that is required to send data to Azure Event Hub
+// azureEventHubConfig is the config that is required to send data to Azure Event Hub.
+// Make sure to select at least the Standard tier since the Basic tier does not support Kafka.
 type azureEventHubConfig struct {
-	Topic                     string
-	BootstrapServer           string
+	// Topic is the name of the Event Hub on Azure (not the Event Hubs Namespace)
+	Topic string
+	// BootstrapServer should be in the form of "host:port" (the port is usually 9093 on Azure Event Hubs)
+	BootstrapServer string
+	// EventHubsConnectionString starts with "Endpoint=sb://" and contains the SharedAccessKey
 	EventHubsConnectionString string
 }
 
