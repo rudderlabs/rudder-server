@@ -707,22 +707,15 @@ func JoinWithFormatting(keys []string, format func(idx int, str string) string, 
 }
 
 func CreateAWSSessionConfig(destination *backendconfig.DestinationT, serviceName string) (*awsutils.SessionConfig, error) {
-	var (
-		sessionConfig *awsutils.SessionConfig
-		err           error
-	)
-
-	if misc.IsConfiguredToUseRudderObjectStorage(destination.Config) {
-		accessKeyID, accessKey := misc.GetRudderObjectStorageAccessKeys()
-		sessionConfig = &awsutils.SessionConfig{
-			AccessKeyID: accessKeyID,
-			AccessKey:   accessKey,
-			Service:     serviceName,
-		}
-	} else {
-		sessionConfig, err = awsutils.NewSimpleSessionConfigForDestination(destination, serviceName)
+	if !misc.IsConfiguredToUseRudderObjectStorage(destination.Config) {
+		return awsutils.NewSimpleSessionConfigForDestination(destination, serviceName)
 	}
-	return sessionConfig, err
+	accessKeyID, accessKey := misc.GetRudderObjectStorageAccessKeys()
+	return &awsutils.SessionConfig{
+		AccessKeyID: accessKeyID,
+		AccessKey:   accessKey,
+		Service:     serviceName,
+	}, nil
 }
 
 func GetTemporaryS3Cred(destination *backendconfig.DestinationT) (string, string, string, error) {
