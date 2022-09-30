@@ -402,14 +402,14 @@ type HandleT struct {
 	dsCacheLock                   sync.Mutex
 	BackupSettings                *backupSettings
 	jobsFileUploader              filemanager.FileManager
-	statTableCount                stats.RudderStats
-	statPreDropTableCount         stats.RudderStats
-	statDSCount                   stats.RudderStats
-	statNewDSPeriod               stats.RudderStats
-	invalidCacheKeyStat           stats.RudderStats
+	statTableCount                stats.Measurement
+	statPreDropTableCount         stats.Measurement
+	statDSCount                   stats.Measurement
+	statNewDSPeriod               stats.Measurement
+	invalidCacheKeyStat           stats.Measurement
 	isStatNewDSPeriodInitialized  bool
-	statDropDSPeriod              stats.RudderStats
-	unionQueryTime                stats.RudderStats
+	statDropDSPeriod              stats.Measurement
+	unionQueryTime                stats.Measurement
 	isStatDropDSPeriodInitialized bool
 	inProgressMigrationTargetDS   *dataSetT
 	logger                        logger.Logger
@@ -519,7 +519,7 @@ func (jd *HandleT) Status() interface{} {
 	}
 	statusObj["empty-results-cache"] = emptyResults
 
-	pendingEventMetrics := metric.GetManager().
+	pendingEventMetrics := metric.Instance.
 		GetRegistry(metric.PUBLISHED_METRICS).
 		GetMetricsByName(fmt.Sprintf(metric.JOBSDB_PENDING_EVENTS_COUNT, jd.tablePrefix))
 
@@ -839,16 +839,16 @@ func (jd *HandleT) workersAndAuxSetup() {
 	jd.registerBackUpSettings()
 
 	jd.logger.Infof("Connected to %s DB", jd.tablePrefix)
-	jd.statPreDropTableCount = stats.DefaultStats.NewTaggedStat("jobsdb.pre_drop_tables_count", stats.GaugeType, stats.Tags{"customVal": jd.tablePrefix})
-	jd.statTableCount = stats.DefaultStats.NewStat(fmt.Sprintf("jobsdb.%s_tables_count", jd.tablePrefix), stats.GaugeType)
-	jd.statDSCount = stats.NewTaggedStat("jobsdb.tables_count", stats.GaugeType, stats.Tags{"customVal": jd.tablePrefix})
-	jd.unionQueryTime = stats.NewTaggedStat("union_query_time", stats.TimerType, stats.Tags{
+	jd.statPreDropTableCount = stats.Default.NewTaggedStat("jobsdb.pre_drop_tables_count", stats.GaugeType, stats.Tags{"customVal": jd.tablePrefix})
+	jd.statTableCount = stats.Default.NewStat(fmt.Sprintf("jobsdb.%s_tables_count", jd.tablePrefix), stats.GaugeType)
+	jd.statDSCount = stats.Default.NewTaggedStat("jobsdb.tables_count", stats.GaugeType, stats.Tags{"customVal": jd.tablePrefix})
+	jd.unionQueryTime = stats.Default.NewTaggedStat("union_query_time", stats.TimerType, stats.Tags{
 		"state":     "nonterminal",
 		"customVal": jd.tablePrefix,
 	})
-	jd.statNewDSPeriod = stats.NewTaggedStat("jobsdb.new_ds_period", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix})
-	jd.statDropDSPeriod = stats.NewTaggedStat("jobsdb.drop_ds_period", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix})
-	jd.invalidCacheKeyStat = stats.NewTaggedStat("jobsdb.invalid_cache_key", stats.CountType, stats.Tags{"customVal": jd.tablePrefix})
+	jd.statNewDSPeriod = stats.Default.NewTaggedStat("jobsdb.new_ds_period", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix})
+	jd.statDropDSPeriod = stats.Default.NewTaggedStat("jobsdb.drop_ds_period", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix})
+	jd.invalidCacheKeyStat = stats.Default.NewTaggedStat("jobsdb.invalid_cache_key", stats.CountType, stats.Tags{"customVal": jd.tablePrefix})
 
 	enableWriterQueueKeys := []string{"JobsDB." + jd.tablePrefix + "." + "enableWriterQueue", "JobsDB." + "enableWriterQueue"}
 	config.RegisterBoolConfigVariable(true, &jd.enableWriterQueue, true, enableWriterQueueKeys...)
@@ -1111,7 +1111,7 @@ Or when the job_status table gets too big because of lots of retries/failures
 func (jd *HandleT) checkIfMigrateDS(ds dataSetT) (
 	migrate, small bool, recordsLeft int,
 ) {
-	queryStat := stats.NewTaggedStat("migration_ds_check", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix})
+	queryStat := stats.Default.NewTaggedStat("migration_ds_check", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix})
 	queryStat.Start()
 	defer queryStat.End()
 
@@ -1294,7 +1294,7 @@ func (jd *HandleT) addNewDSInTx(tx *sql.Tx, l lock.DSListLockToken, dsList []dat
 		return errors.New("nil ds list lock token provided")
 	}
 	jd.logger.Infof("Creating new DS %+v", ds)
-	queryStat := stats.NewTaggedStat("add_new_ds", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix})
+	queryStat := stats.Default.NewTaggedStat("add_new_ds", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix})
 	queryStat.Start()
 	defer queryStat.End()
 	err := jd.createDSInTx(tx, ds)
@@ -1317,7 +1317,7 @@ func (jd *HandleT) addNewDSInTx(tx *sql.Tx, l lock.DSListLockToken, dsList []dat
 
 func (jd *HandleT) addDS(ds dataSetT) {
 	jd.logger.Infof("Creating DS %+v", ds)
-	queryStat := stats.NewTaggedStat("add_new_ds", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix})
+	queryStat := stats.Default.NewTaggedStat("add_new_ds", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix})
 	queryStat.Start()
 	defer queryStat.End()
 	jd.assertError(jd.WithTx(func(tx *sql.Tx) error {
@@ -1810,7 +1810,7 @@ over. Then the status (only the latest) is set for those jobs
 */
 
 func (jd *HandleT) migrateJobs(ctx context.Context, srcDS, destDS dataSetT) (noJobsMigrated int, err error) {
-	queryStat := stats.NewTaggedStat("migration_jobs", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix})
+	queryStat := stats.Default.NewTaggedStat("migration_jobs", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix})
 	queryStat.Start()
 	defer queryStat.End()
 	jd.dsListLock.RLock()
@@ -2415,7 +2415,7 @@ func (jd *HandleT) markClearEmptyResult(ds dataSetT, workspace string, stateFilt
 //	 * The entry is noJobs
 //	 * The entry is not expired (entry time + cache expiration > now)
 func (jd *HandleT) isEmptyResult(ds dataSetT, workspace string, stateFilters, customValFilters []string, parameterFilters []ParameterFilterT) bool {
-	queryStat := stats.NewTaggedStat("isEmptyCheck", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix})
+	queryStat := stats.Default.NewTaggedStat("isEmptyCheck", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix})
 	queryStat.Start()
 	defer queryStat.End()
 	jd.dsCacheLock.Lock()
@@ -3125,7 +3125,7 @@ func (jd *HandleT) migrateDSLoop(ctx context.Context) {
 		// Take the lock and run actual migration
 		jd.dsMigrationLock.Lock()
 
-		migrationLoopStat := stats.NewTaggedStat("migration_loop", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix})
+		migrationLoopStat := stats.Default.NewTaggedStat("migration_loop", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix})
 		migrationLoopStat.Start()
 		var opID int64
 		// Add a temp DS to append to
@@ -3235,7 +3235,7 @@ func (jd *HandleT) backupDSLoop(ctx context.Context) {
 			opID = jd.JournalMarkStart(backupDSOperation, opPayload)
 			err := jd.backupDS(ctx, backupDSRange)
 			if err != nil {
-				stats.NewTaggedStat("backup_ds_failed", stats.CountType, stats.Tags{"customVal": jd.tablePrefix, "provider": config.GetString("JOBS_BACKUP_STORAGE_PROVIDER", "S3")}).Increment()
+				stats.Default.NewTaggedStat("backup_ds_failed", stats.CountType, stats.Tags{"customVal": jd.tablePrefix, "provider": config.GetString("JOBS_BACKUP_STORAGE_PROVIDER", "S3")}).Increment()
 				jd.logger.Errorf("[JobsDB] :: Failed to backup jobs table %v. Err: %v", backupDSRange.ds.JobStatusTable, err)
 			}
 			jd.JournalMarkDone(opID)
@@ -3498,9 +3498,9 @@ func (jd *HandleT) GetTablePrefix() string {
 }
 
 func (jd *HandleT) backupTable(ctx context.Context, backupDSRange *dataSetRangeT, isJobStatusTable bool) error {
-	tableFileDumpTimeStat := stats.NewTaggedStat("table_FileDump_TimeStat", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix})
+	tableFileDumpTimeStat := stats.Default.NewTaggedStat("table_FileDump_TimeStat", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix})
 	tableFileDumpTimeStat.Start()
-	totalTableDumpTimeStat := stats.NewTaggedStat("total_TableDump_TimeStat", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix})
+	totalTableDumpTimeStat := stats.Default.NewTaggedStat("total_TableDump_TimeStat", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix})
 	totalTableDumpTimeStat.Start()
 	var tableName, path, pathPrefix, countStmt string
 	backupPathDirName := "/rudder-s3-dumps/"
@@ -3599,7 +3599,7 @@ func (jd *HandleT) backupTable(ctx context.Context, backupDSRange *dataSetRangeT
 	}
 	tableFileDumpTimeStat.End()
 
-	fileUploadTimeStat := stats.NewTaggedStat("fileUpload_TimeStat", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix})
+	fileUploadTimeStat := stats.Default.NewTaggedStat("fileUpload_TimeStat", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix})
 	fileUploadTimeStat.Start()
 	file, err := os.Open(path)
 	jd.assertError(err)
@@ -4200,7 +4200,7 @@ func (jd *HandleT) getUnprocessed(ctx context.Context, params GetQueryParamsT) (
 			params.PayloadSizeLimit -= unprocessedJobs.PayloadSize
 		}
 	}
-	unprocessedQueryTablesQueriedStat := stats.NewTaggedStat("tables_queried_gauge", stats.GaugeType, stats.Tags{
+	unprocessedQueryTablesQueriedStat := stats.Default.NewTaggedStat("tables_queried_gauge", stats.GaugeType, stats.Tags{
 		"state":     "nonterminal",
 		"query":     "unprocessed",
 		"customVal": jd.tablePrefix,
@@ -4425,7 +4425,7 @@ func (jd *HandleT) GetProcessed(ctx context.Context, params GetQueryParamsT) (Jo
 			params.PayloadSizeLimit -= processedJobs.PayloadSize
 		}
 	}
-	processedQueryTablesQueriedStat := stats.NewTaggedStat("tables_queried_gauge", stats.GaugeType, stats.Tags{
+	processedQueryTablesQueriedStat := stats.Default.NewTaggedStat("tables_queried_gauge", stats.GaugeType, stats.Tags{
 		"state":     "nonterminal",
 		"query":     "processed",
 		"customVal": jd.tablePrefix,

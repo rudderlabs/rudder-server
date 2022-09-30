@@ -150,12 +150,12 @@ func Upload(url, filePath string, config map[string]interface{}, destType string
 		panic("BRT: JSON Marshal Failed " + err.Error())
 	}
 
-	uploadTimeStat := stats.NewTaggedStat("async_upload_time", stats.TimerType, map[string]string{
+	uploadTimeStat := stats.Default.NewTaggedStat("async_upload_time", stats.TimerType, map[string]string{
 		"module":   "batch_router",
 		"destType": destType,
 	})
 
-	payloadSizeStat := stats.NewTaggedStat("payload_size", stats.TimerType, map[string]string{
+	payloadSizeStat := stats.Default.NewTaggedStat("payload_size", stats.TimerType, map[string]string{
 		"module":   "batch_router",
 		"destType": destType,
 	})
@@ -221,7 +221,7 @@ func Upload(url, filePath string, config map[string]interface{}, destType string
 		if err != nil {
 			panic("Incorrect Response from Transformer: " + err.Error())
 		}
-		eventsAbortedStat := stats.NewTaggedStat("events_delivery_aborted", stats.CountType, map[string]string{
+		eventsAbortedStat := stats.Default.NewTaggedStat("events_delivery_aborted", stats.CountType, map[string]string{
 			"module":   "batch_router",
 			"destType": destType,
 		})

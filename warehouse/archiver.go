@@ -131,7 +131,7 @@ func archiveUploads(dbHandle *sql.DB) {
 	defer func() {
 		if err != nil {
 			pkgLogger.Errorf(`Error occurred while archiving for warehouse uploads with error: %v`, err)
-			stats.NewTaggedStat("warehouse.archiver.archiveFailed", stats.CountType, stats.Tags{}).Count(1)
+			stats.Default.NewTaggedStat("warehouse.archiver.archiveFailed", stats.CountType, stats.Tags{}).Count(1)
 		}
 	}()
 	if err == sql.ErrNoRows {
@@ -297,7 +297,7 @@ func archiveUploads(dbHandle *sql.DB) {
 			pkgLogger.Debugf(`[Archiver]: Archived upload: %d related staging files at: %s`, u.uploadID, storedStagingFilesLocation)
 		}
 
-		stats.NewTaggedStat("warehouse.archiver.numArchivedUploads", stats.CountType, map[string]string{
+		stats.Default.NewTaggedStat("warehouse.archiver.numArchivedUploads", stats.CountType, map[string]string{
 			"destination": u.destID,
 			"source":      u.sourceID,
 		}).Count(1)

@@ -152,13 +152,13 @@ type CredentialsT struct {
 }
 
 type clickHouseStatT struct {
-	numRowsLoadFile       stats.RudderStats
-	downloadLoadFilesTime stats.RudderStats
-	syncLoadFileTime      stats.RudderStats
-	commitTime            stats.RudderStats
-	failRetries           stats.RudderStats
-	execTimeouts          stats.RudderStats
-	commitTimeouts        stats.RudderStats
+	numRowsLoadFile       stats.Measurement
+	downloadLoadFilesTime stats.Measurement
+	syncLoadFileTime      stats.Measurement
+	commitTime            stats.Measurement
+	failRetries           stats.Measurement
+	execTimeouts          stats.Measurement
+	commitTimeouts        stats.Measurement
 }
 
 // newClickHouseStat Creates a new clickHouseStatT instance
@@ -893,7 +893,7 @@ func (ch *HandleT) Setup(warehouse warehouseutils.WarehouseT, uploader warehouse
 	ch.Warehouse = warehouse
 	ch.Namespace = warehouse.Namespace
 	ch.Uploader = uploader
-	ch.stats = stats.DefaultStats
+	ch.stats = stats.Default
 	ch.ObjectStorage = warehouseutils.ObjectStorageType(warehouseutils.CLICKHOUSE, warehouse.Destination.Config, ch.Uploader.UseRudderStorage())
 
 	ch.Db, err = Connect(ch.getConnectionCredentials(), true)

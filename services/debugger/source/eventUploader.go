@@ -106,7 +106,7 @@ func RecordEvent(writeKey, eventBatch string) bool {
 	return true
 }
 
-func (eventUploader *EventUploader) Transform(data interface{}) ([]byte, error) {
+func (*EventUploader) Transform(data interface{}) ([]byte, error) {
 	eventBuffer := data.([]interface{})
 	res := make(map[string]interface{})
 	res["version"] = "v2"

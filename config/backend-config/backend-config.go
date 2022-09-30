@@ -132,7 +132,7 @@ func filterProcessorEnabledDestinations(config ConfigT) ConfigT {
 	return modifiedConfig
 }
 
-func (bc *backendConfigImpl) configUpdate(ctx context.Context, statConfigBackendError stats.RudderStats, workspaces string) {
+func (bc *backendConfigImpl) configUpdate(ctx context.Context, statConfigBackendError stats.Measurement, workspaces string) {
 	sourceJSON, err := bc.workspaceConfig.Get(ctx, workspaces)
 	if err != nil {
 		statConfigBackendError.Increment()
@@ -171,7 +171,7 @@ func (bc *backendConfigImpl) configUpdate(ctx context.Context, statConfigBackend
 }
 
 func (bc *backendConfigImpl) pollConfigUpdate(ctx context.Context, workspaces string) {
-	statConfigBackendError := stats.DefaultStats.NewStat("config_backend.errors", stats.CountType)
+	statConfigBackendError := stats.Default.NewStat("config_backend.errors", stats.CountType)
 	for {
 		bc.configUpdate(ctx, statConfigBackendError, workspaces)
 
