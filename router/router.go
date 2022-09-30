@@ -628,7 +628,6 @@ func (worker *workerT) processDestinationJobs() {
 								// stat start
 								pkgLogger.Debugf(`responseTransform status :%v, %s`, worker.rt.transformerProxy, worker.rt.destName)
 								// transformer proxy start
-								// Telling us that failure might've been there here
 								errorAt = ERROR_AT_DEL
 								if worker.rt.transformerProxy {
 									jobID := destinationJob.JobMetadataArray[0].JobID
@@ -2095,8 +2094,6 @@ func (rt *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB jobsd
 	config.RegisterBoolConfigVariable(false, &rt.enableBatching, false, "Router."+rt.destName+"."+"enableBatching")
 	config.RegisterBoolConfigVariable(false, &rt.savePayloadOnError, true, savePayloadOnErrorKeys...)
 	config.RegisterBoolConfigVariable(false, &rt.transformerProxy, true, transformerProxyKeys...)
-	// config.RegisterBoolConfigVariable(true, , true, rtAbortDeliveryKeys...)
-	// config.RegisterBoolConfigVariable(true, &rt.rtAbortTfAlert, true, rtAbortTransformationKeys...)
 	config.RegisterBoolConfigVariable(true, &rt.allowRtAbortAlertForDelv, true, rtAbortTransformationKeys...)
 	config.RegisterBoolConfigVariable(true, &rt.allowRtAbortForTf, true, rtAbortDeliveryKeys...)
 	config.RegisterBoolConfigVariable(false, &rt.saveDestinationResponseOverride, true, saveDestinationResponseOverrideKeys...)
