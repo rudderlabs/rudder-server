@@ -56,6 +56,15 @@ type tenantStats interface {
 	UpdateWorkspaceLatencyMap(destType, workspaceID string, val float64)
 }
 
+const (
+	// transformation(router or batch)
+	ERROR_AT_TF = "transformation"
+	// event delivery
+	ERROR_AT_DEL = "delivery"
+	// custom destination manager
+	ERROR_AT_CUST = "custom"
+)
+
 type HandleDestOAuthRespParamsT struct {
 	ctx            context.Context
 	destinationJob types.DestinationJobT
@@ -122,6 +131,8 @@ type HandleT struct {
 	savePayloadOnError                     bool
 	oauth                                  oauth.Authorizer
 	transformerProxy                       bool
+	allowRtAbortAlertForDelv               bool // represents if transformation(router or batch) should be alerted via router-aborted-count alert def
+	allowRtAbortForTf                      bool // represents if event delivery(via transformerProxy) should be alerted via router-aborted-count alert def
 	saveDestinationResponseOverride        bool
 	workspaceSet                           map[string]struct{}
 	sourceIDWorkspaceMap                   map[string]string
@@ -551,6 +562,7 @@ func (worker *workerT) processDestinationJobs() {
 
 	for _, destinationJob := range worker.destinationJobs {
 		var attemptedToSendTheJob bool
+		var errorAt string
 		respBodyArr := make([]string, 0)
 		if destinationJob.StatusCode == 200 || destinationJob.StatusCode == 0 {
 			if worker.canSendJobToDestination(prevRespStatusCode, failedUserIDsMap, &destinationJob) {
@@ -599,20 +611,25 @@ func (worker *workerT) processDestinationJobs() {
 						}
 					}
 					respStatusCode, respBody = worker.rt.customDestinationManager.SendData(destinationJob.Message, destinationID)
+					errorAt = ERROR_AT_CUST
 				} else {
 					result, err := getIterableStruct(destinationJob.Message, transformAt)
 					if err != nil {
+						errorAt = ERROR_AT_TF
 						respStatusCode, respBody = types.RouterUnMarshalErrorCode, fmt.Errorf("transformer response unmarshal error: %w", err).Error()
 					} else {
 						for _, val := range result {
 							err := integrations.ValidatePostInfo(val)
 							if err != nil {
+								errorAt = ERROR_AT_TF
 								respStatusCode, respBodyTemp = http.StatusBadRequest, fmt.Sprintf(`400 GetPostInfoFailed with error: %s`, err.Error())
 								respBodyArr = append(respBodyArr, respBodyTemp)
 							} else {
 								// stat start
 								pkgLogger.Debugf(`responseTransform status :%v, %s`, worker.rt.transformerProxy, worker.rt.destName)
 								// transformer proxy start
+								// Telling us that failure might've been there here
+								errorAt = ERROR_AT_DEL
 								if worker.rt.transformerProxy {
 									jobID := destinationJob.JobMetadataArray[0].JobID
 									pkgLogger.Debugf(`[TransformerProxy] (Dest-%[1]v) {Job - %[2]v} Request started`, worker.rt.destName, jobID)
@@ -715,10 +732,12 @@ func (worker *workerT) processDestinationJobs() {
 				if !worker.rt.enableBatching {
 					respBody = "skipping sending to destination because previous job (of user) in batch is failed."
 				}
+				errorAt = ERROR_AT_TF
 			}
 		} else {
 			respStatusCode = destinationJob.StatusCode
 			respBody = destinationJob.Error
+			errorAt = ERROR_AT_TF
 		}
 
 		prevRespStatusCode = respStatusCode
@@ -745,6 +764,7 @@ func (worker *workerT) processDestinationJobs() {
 				respStatusCode:         respStatusCode,
 				respBody:               respBody,
 				attemptedToSendTheJob:  attemptedToSendTheJob,
+				errorAt:                errorAt,
 			})
 		}
 	}
@@ -798,7 +818,7 @@ func (worker *workerT) processDestinationJobs() {
 		status.ErrorResponse = routerutils.EmptyPayload
 		status.ErrorCode = strconv.Itoa(respStatusCode)
 
-		worker.postStatusOnResponseQ(respStatusCode, routerJobResponse.respBody, destinationJob.Message, respContentType, destinationJobMetadata, &status)
+		worker.postStatusOnResponseQ(respStatusCode, routerJobResponse.respBody, destinationJob.Message, respContentType, destinationJobMetadata, &status, routerJobResponse.errorAt)
 
 		worker.sendEventDeliveryStat(destinationJobMetadata, &status, &destinationJob.Destination)
 
@@ -889,6 +909,7 @@ type JobResponse struct {
 	destinationJobMetadata *types.JobMetadataT
 	respStatusCode         int
 	respBody               string
+	errorAt                string
 	attemptedToSendTheJob  bool
 	status                 *jobsdb.JobStatusT
 }
@@ -977,17 +998,27 @@ func (worker *workerT) updateReqMetrics(respStatusCode int, diagnosisStartTime *
 	worker.rt.trackRequestMetrics(reqMetric)
 }
 
-func (worker *workerT) updateAbortedMetrics(destinationID, statusCode string) {
+func (worker *workerT) updateAbortedMetrics(destinationID, statusCode, errorAt string) {
+	// when error occur during transformation(rt or batch)
+	// when proxy is not enabled or when rtAbortDeliveryAlert is true(default)
+	allowTf := errorAt == ERROR_AT_TF && worker.rt.allowRtAbortForTf
+	// (when error occur during delivery
+	// when proxy is not enabled or when rtAbortDeliveryAlert is true(default))
+	// or when destination is managed custom destination manager
+	allowDel := (errorAt == ERROR_AT_DEL && (!worker.rt.transformerProxy || worker.rt.allowRtAbortAlertForDelv)) || errorAt == ERROR_AT_CUST
 	eventsAbortedStat := stats.Default.NewTaggedStat(`router_aborted_events`, stats.CountType, stats.Tags{
 		"destType":       worker.rt.destName,
 		"respStatusCode": statusCode,
 		"destId":         destinationID,
+		"allowTf":        strconv.FormatBool(allowTf),
+		"allowDel":       strconv.FormatBool(allowDel),
 	})
 	eventsAbortedStat.Increment()
 }
 
 func (worker *workerT) postStatusOnResponseQ(respStatusCode int, respBody string, payload json.RawMessage,
 	respContentType string, destinationJobMetadata *types.JobMetadataT, status *jobsdb.JobStatusT,
+	errorAt string,
 ) {
 	// Enhancing status.ErrorResponse with firstAttemptedAt
 	firstAttemptedAtTime := time.Now()
@@ -1054,7 +1085,7 @@ func (worker *workerT) postStatusOnResponseQ(respStatusCode int, respBody string
 		}
 
 		if status.JobState == jobsdb.Aborted.State {
-			worker.updateAbortedMetrics(destinationJobMetadata.DestinationID, status.ErrorCode)
+			worker.updateAbortedMetrics(destinationJobMetadata.DestinationID, status.ErrorCode, errorAt)
 			destinationJobMetadata.JobT.Parameters = misc.UpdateJSONWithNewKeyVal(destinationJobMetadata.JobT.Parameters, "stage", "router")
 			destinationJobMetadata.JobT.Parameters = misc.UpdateJSONWithNewKeyVal(destinationJobMetadata.JobT.Parameters, "reason", status.ErrorResponse) // NOTE: Old key used was "error_response"
 		}
@@ -2028,6 +2059,12 @@ func (rt *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB jobsd
 	retryTimeWindowKeys := []string{"Router." + rt.destName + "." + "retryTimeWindow", "Router." + rt.destName + "." + "retryTimeWindowInMins", "Router." + "retryTimeWindow", "Router." + "retryTimeWindowInMins"}
 	savePayloadOnErrorKeys := []string{"Router." + rt.destName + "." + "savePayloadOnError", "Router." + "savePayloadOnError"}
 	transformerProxyKeys := []string{"Router." + rt.destName + "." + "transformerProxy", "Router." + "transformerProxy"}
+	// START: Alert configuration
+	// We want to use these configurations to control what alerts we show via router-abort-count alert definition
+	rtAbortTransformationKeys := []string{"Router." + rt.destName + "." + "rtAbortTfAlert", "Router." + "rtAbortTfAlert"}
+	rtAbortDeliveryKeys := []string{"Router." + rt.destName + "." + "rtAbortDeliveryAlert", "Router." + "rtAbortDeliveryAlert"}
+	// END: Alert configuration
+
 	saveDestinationResponseOverrideKeys := []string{"Router." + rt.destName + "." + "saveDestinationResponseOverride", "Router." + "saveDestinationResponseOverride"}
 	batchJobCountKeys := []string{"Router." + rt.destName + "." + "noOfJobsToBatchInAWorker", "Router." + "noOfJobsToBatchInAWorker"}
 	config.RegisterIntConfigVariable(20, &rt.noOfJobsToBatchInAWorker, true, 1, batchJobCountKeys...)
@@ -2042,6 +2079,10 @@ func (rt *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB jobsd
 	config.RegisterBoolConfigVariable(false, &rt.enableBatching, false, "Router."+rt.destName+"."+"enableBatching")
 	config.RegisterBoolConfigVariable(false, &rt.savePayloadOnError, true, savePayloadOnErrorKeys...)
 	config.RegisterBoolConfigVariable(false, &rt.transformerProxy, true, transformerProxyKeys...)
+	// config.RegisterBoolConfigVariable(true, , true, rtAbortDeliveryKeys...)
+	// config.RegisterBoolConfigVariable(true, &rt.rtAbortTfAlert, true, rtAbortTransformationKeys...)
+	config.RegisterBoolConfigVariable(true, &rt.allowRtAbortAlertForDelv, true, rtAbortTransformationKeys...)
+	config.RegisterBoolConfigVariable(true, &rt.allowRtAbortForTf, true, rtAbortDeliveryKeys...)
 	config.RegisterBoolConfigVariable(false, &rt.saveDestinationResponseOverride, true, saveDestinationResponseOverrideKeys...)
 	rt.allowAbortedUserJobsCountForProcessing = getRouterConfigInt("allowAbortedUserJobsCountForProcessing", destName, 1)
 
