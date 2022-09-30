@@ -73,42 +73,65 @@ func randomString() string {
 	return strings.ReplaceAll(uuid.Must(uuid.NewV4()).String(), "-", "")
 }
 
-func TestReproducePanic(t *testing.T) {
+func TestReproducePanic(t *testing.T) { // @TODO run with -race
 	// SETUP
 	initBatchRouter()
 	stats.Setup()
-	whutils.WarehouseDestinations = []string{whutils.POSTGRES}
+	start := time.Now()
+	uploadFreqInS = 0
 	readPerDestination = false
 	warehouseServiceMaxRetryTime = 0
+	destinationID := "24yIoSlZ08Qei9DfSwzSQnrZRTK"
+	whutils.WarehouseDestinations = []string{whutils.POSTGRES}
 
 	// CREATION OF JOBS
+	var (
+		noOfBatches  = 10000
+		jobsPerBatch = 1000
+		allBatches   = make(chan []*jobsdb.JobT, noOfBatches)
+	)
 	var jobs []*jobsdb.JobT
-	for i := 0; i < 1000; i++ {
-		p := getJobParameters()
+	for i := 0; i < jobsPerBatch; i++ {
+		p := getJobParameters(destinationID)
 		jobs = append(jobs, getJob(i, p))
 	}
+	for i := 0; i < noOfBatches; i++ {
+		allBatches <- jobs
+	}
+
+	t.Log("Jobs created in", time.Since(start))
 
 	// MOCKS CREATION
 	// The objective here is to end up in setJobStatus() where we overwrite job.Parameters (see batchrouter.go:1214)
 	var (
-		noOfWorkers    = 1000
-		noOfIterations = 100000
-		wg             sync.WaitGroup
-		ctrl           = gomock.NewController(t)
-		processQ       = make(chan *BatchDestinationDataT, 100)
+		noOfWorkers   = 1000
+		ctrl          = gomock.NewController(t)
+		processQ      = make(chan *BatchDestinationDataT, 100)
+		timerDuration = 3 * time.Second
+		timer         = time.NewTimer(timerDuration)
 	)
 
-	wg.Add(noOfIterations)
 	jobsDB := mocksJobsDB.NewMockJobsDB(ctrl)
-	jobsDB.EXPECT().GetToRetry(gomock.Any(), gomock.Any()).Return(jobsdb.JobsResult{
-		Jobs:          jobs,
-		LimitsReached: false,
-	}, nil).AnyTimes()
+	jobsDB.EXPECT().GetToRetry(gomock.Any(), gomock.Any()).DoAndReturn(
+		func(_ context.Context, _ jobsdb.GetQueryParamsT) (jobsdb.JobsResult, error) {
+			timer.Reset(timerDuration)
+			return jobsdb.JobsResult{
+				// Jobs:          <-allBatches,
+				Jobs:          jobs,
+				LimitsReached: true,
+			}, nil
+		},
+	).AnyTimes()
 	jobsDB.EXPECT().WithUpdateSafeTx(gomock.Any()).Do(func(_ func(_ jobsdb.UpdateSafeTx) error) {
-		wg.Done()
+		// do nothing for now
 	}).AnyTimes()
 	jobsDB.EXPECT().Store(gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
 	jobsDB.EXPECT().UpdateJobStatus(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
+	jobsDB.EXPECT().GetUnprocessed(gomock.Any(), gomock.Any()).DoAndReturn(
+		func(ctx context.Context, params jobsdb.GetQueryParamsT) (jobsdb.JobsResult, error) {
+			return jobsdb.JobsResult{}, nil
+		},
+	).AnyTimes()
 
 	mockFileManager := mocksFileManager.NewMockFileManager(ctrl)
 	mockFileManager.EXPECT().Upload(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Return(
@@ -146,38 +169,54 @@ func TestReproducePanic(t *testing.T) {
 		destType:           whutils.POSTGRES,
 		fileManagerFactory: fileManagerFactory,
 		netHandle:          httpClient,
+		lastExecMap:        make(map[string]int64, 0),
+		inProgressMap:      make(map[string]bool, 0),
+		destinationsMap: map[string]*utils.BatchDestinationT{
+			destinationID: {
+				Destination: backendconfig.DestinationT{
+					ID:      destinationID,
+					Enabled: true,
+				},
+				Sources: []backendconfig.SourceT{
+					{ID: "my-source-id", Enabled: true},
+				},
+			},
+		},
 	}
 
 	// STARTING UP WORKERS
+	t.Log("Starting workers after", time.Since(start))
 	for i := 0; i < noOfWorkers; i++ {
 		worker := &workerT{workerID: i, brt: br}
 		br.workers[i] = worker
 		go worker.workerProcess()
 	}
 
-	// PUSH INTO THE PROCESS QUEUE
-	go func() {
-		for i := 0; i < noOfIterations; i++ {
-			processQ <- &BatchDestinationDataT{
-				batchDestination: utils.BatchDestinationT{
-					Sources: []backendconfig.SourceT{{ID: "my-source-id"}},
-				},
-				jobs: jobs,
-			}
-		}
-	}()
+	// START!
+	var wg sync.WaitGroup
+	wg.Add(noOfBatches)
+	t.Log("Starting readAndProcess after", time.Since(start))
+	for i := 0; i < noOfBatches; i++ {
+		go func() {
+			defer wg.Done()
+			br.readAndProcess()
+		}()
+	}
 
 	// WAIT FOR ALL JOBS TO BE PROCESSED N TIMES - triggered by jobsDB.WithUpdateSafeTx()
+	t.Log("Waiting on timer after", time.Since(start))
+	<-timer.C
 	wg.Wait()
 }
 
-func getJobParameters() stdjson.RawMessage {
+func getJobParameters(destinationID string) stdjson.RawMessage {
 	p, _ := json.Marshal(JobParametersT{
-		SourceID:   "my-source-id",
-		EventName:  "test",
-		EventType:  "track",
-		MessageID:  uuid.Must(uuid.NewV4()).String(),
-		ReceivedAt: "2021-01-01T00:00:00Z",
+		DestinationID: destinationID,
+		SourceID:      "my-source-id",
+		EventName:     "test",
+		EventType:     "track",
+		MessageID:     uuid.Must(uuid.NewV4()).String(),
+		ReceivedAt:    "2021-01-01T00:00:00Z",
 	})
 	return p
 }
