@@ -12,10 +12,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/aws/credentials"
-	"github.com/aws/aws-sdk-go/aws/session"
-	"github.com/aws/aws-sdk-go/service/sts"
 	"github.com/tidwall/gjson"
 
 	uuid "github.com/gofrs/uuid"
@@ -245,6 +241,7 @@ func (rs *HandleT) generateManifest(tableName string, _ map[string]string) (stri
 			Provider:         "S3",
 			Config:           rs.Warehouse.Destination.Config,
 			UseRudderStorage: rs.Uploader.UseRudderStorage(),
+			WorkspaceID:      rs.Warehouse.Destination.WorkspaceID,
 		}),
 	})
 	if err != nil {
@@ -312,7 +309,7 @@ func (rs *HandleT) loadTable(tableName string, tableSchemaInUpload, tableSchemaA
 		return
 	}
 	// create session token and temporary credentials
-	tempAccessKeyId, tempSecretAccessKey, token, err := rs.getTemporaryCredForCopy()
+	tempAccessKeyId, tempSecretAccessKey, token, err := warehouseutils.GetTemporaryS3Cred(&rs.Warehouse.Destination)
 	if err != nil {
 		pkgLogger.Errorf("RS: Failed to create temp credentials before copying, while create load for table %v, err%v", tableName, err)
 		tx.Rollback()
@@ -499,27 +496,6 @@ func (rs *HandleT) loadUserTables() (errorMap map[string]error) {
 		return
 	}
 	return
-}
-
-func (rs *HandleT) getTemporaryCredForCopy() (string, string, string, error) {
-	var accessKey, accessKeyID string
-	if misc.HasAWSKeysInConfig(rs.Warehouse.Destination.Config) && !misc.IsConfiguredToUseRudderObjectStorage(rs.Warehouse.Destination.Config) {
-		accessKey = warehouseutils.GetConfigValue(AWSAccessKey, rs.Warehouse)
-		accessKeyID = warehouseutils.GetConfigValue(AWSAccessKeyID, rs.Warehouse)
-	} else {
-		accessKeyID = config.GetString("RUDDER_AWS_S3_COPY_USER_ACCESS_KEY_ID", "")
-		accessKey = config.GetString("RUDDER_AWS_S3_COPY_USER_ACCESS_KEY", "")
-	}
-	mySession := session.Must(session.NewSession())
-	// Create a STS client from just a session.
-	svc := sts.New(mySession, aws.NewConfig().WithCredentials(credentials.NewStaticCredentials(accessKeyID, accessKey, "")))
-
-	// sts.New(mySession, aws.NewConfig().WithRegion("us-west-2"))
-	SessionTokenOutput, err := svc.GetSessionToken(&sts.GetSessionTokenInput{DurationSeconds: &warehouseutils.AWSCredsExpiryInS})
-	if err != nil {
-		return "", "", "", err
-	}
-	return *SessionTokenOutput.Credentials.AccessKeyId, *SessionTokenOutput.Credentials.SecretAccessKey, *SessionTokenOutput.Credentials.SessionToken, err
 }
 
 // RedshiftCredentialsT ...
@@ -770,7 +746,7 @@ func (rs *HandleT) Connect(warehouse warehouseutils.WarehouseT) (client.Client, 
 }
 
 func (rs *HandleT) LoadTestTable(location, tableName string, _ map[string]interface{}, format string) (err error) {
-	tempAccessKeyId, tempSecretAccessKey, token, err := rs.getTemporaryCredForCopy()
+	tempAccessKeyId, tempSecretAccessKey, token, err := warehouseutils.GetTemporaryS3Cred(&rs.Warehouse.Destination)
 	if err != nil {
 		pkgLogger.Errorf("RS: Failed to create temp credentials before copying, while create load for table %v, err%v", tableName, err)
 		return
