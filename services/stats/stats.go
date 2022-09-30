@@ -247,7 +247,7 @@ func (s *statsdStats) internalNewTaggedStat(name, statType string, tags Tags, sa
 
 	if !found {
 		s.state.clientsLock.Lock()
-		if _, found = s.state.clients[taggedClientKey]; !found { // double check for race
+		if taggedClient, found = s.state.clients[taggedClientKey]; !found { // double check for race
 			tagVals := tags.Strings()
 			taggedClient = &statsdClient{samplingRate: samplingRate, tags: tagVals}
 			if s.state.connEstablished {
