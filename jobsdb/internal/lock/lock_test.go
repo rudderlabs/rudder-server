@@ -10,7 +10,7 @@ import (
 )
 
 func TestAsyncLock(t *testing.T) {
-	locker := &lock.DSListLocker{}
+	locker := lock.NewDSListLocker()
 
 	l, c := locker.AsyncLock()
 	require.NotNil(t, l)

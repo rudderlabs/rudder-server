@@ -278,7 +278,6 @@ func (eventOrderMethods) newWebhook(t *testing.T, spec *eventOrderSpec) *eventOr
 		require.True(t, testJobId.Exists(), "should have testJobId in the request", body)
 		require.Equal(t, gjson.Number, testJobId.Type, "testJobId should be a number", body)
 		jobID := int(gjson.GetBytes(body, "testJobId").Int())
-
 		userIdResult := gjson.GetBytes(body, "userId")
 		require.True(t, userIdResult.Exists(), "should have userId in the request", body)
 		require.Equal(t, gjson.String, userIdResult.Type, "userId should be a string", body)

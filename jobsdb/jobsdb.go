@@ -198,14 +198,14 @@ type JobsDB interface {
 
 	// WithStoreSafeTx prepares a store-safe environment and then starts a transaction
 	// that can be used by the provided function.
-	WithStoreSafeTx(func(tx StoreSafeTx) error) error
+	WithStoreSafeTx(context.Context, func(tx StoreSafeTx) error) error
 
 	// Store stores the provided jobs to the database
 	Store(ctx context.Context, jobList []*JobT) error
 
 	// StoreInTx stores the provided jobs to the database using an existing transaction.
 	// Please ensure that you are using an StoreSafeTx, e.g.
-	//    jobsdb.WithStoreSafeTx(func(tx StoreSafeTx) error {
+	//    jobsdb.WithStoreSafeTx(ctx, func(tx StoreSafeTx) error {
 	//	      jobsdb.StoreInTx(ctx, tx, jobList)
 	//    })
 	StoreInTx(ctx context.Context, tx StoreSafeTx, jobList []*JobT) error
@@ -223,14 +223,14 @@ type JobsDB interface {
 	// WithUpdateSafeTx prepares an update-safe environment and then starts a transaction
 	// that can be used by the provided function. An update-safe transaction shall be used if the provided function
 	// needs to call UpdateJobStatusInTx.
-	WithUpdateSafeTx(func(tx UpdateSafeTx) error) error
+	WithUpdateSafeTx(context.Context, func(tx UpdateSafeTx) error) error
 
 	// UpdateJobStatus updates the provided job statuses
 	UpdateJobStatus(ctx context.Context, statusList []*JobStatusT, customValFilters []string, parameterFilters []ParameterFilterT) error
 
 	// UpdateJobStatusInTx updates the provided job statuses in an existing transaction.
 	// Please ensure that you are using an UpdateSafeTx, e.g.
-	//    jobsdb.WithUpdateSafeTx(func(tx UpdateSafeTx) error {
+	//    jobsdb.WithUpdateSafeTx(ctx, func(tx UpdateSafeTx) error {
 	//	      jobsdb.UpdateJobStatusInTx(ctx, tx, statusList, customValFilters, parameterFilters)
 	//    })
 	UpdateJobStatusInTx(ctx context.Context, tx UpdateSafeTx, statusList []*JobStatusT, customValFilters []string, parameterFilters []ParameterFilterT) error
@@ -310,7 +310,7 @@ func (jd *HandleT) UpdateJobStatusInTx(ctx context.Context, tx UpdateSafeTx, sta
 	}
 
 	if tx.updateSafeTxSealIdentifier() != jd.Identifier() {
-		return jd.inUpdateSafeCtx(func() error {
+		return jd.inUpdateSafeCtx(ctx, func() error {
 			return updateCmd()
 		})
 	}
@@ -394,7 +394,7 @@ type HandleT struct {
 	tablePrefix                   string
 	datasetList                   []dataSetT
 	datasetRangeList              []dataSetRangeT
-	dsListLock                    lock.DSListLocker
+	dsListLock                    *lock.DSListLocker
 	dsMigrationLock               sync.RWMutex
 	MinDSRetentionPeriod          time.Duration
 	MaxDSRetentionPeriod          time.Duration
@@ -760,12 +760,12 @@ func (jd *HandleT) Setup(
 	jd.tablePrefix = tablePrefix
 	jd.registerStatusHandler = registerStatusHandler
 	jd.preBackupHandlers = preBackupHandlers
-
 	jd.init()
 	return jd.Start()
 }
 
 func (jd *HandleT) init() {
+	jd.dsListLock = lock.NewDSListLocker()
 	if jd.MaxDSSize == nil {
 		// passing `maxDSSize` by reference, so it can be hot reloaded
 		jd.MaxDSSize = &maxDSSize
@@ -823,7 +823,6 @@ func (jd *HandleT) init() {
 
 		jd.dbHandle = sqlDB
 	}
-
 	jd.workersAndAuxSetup()
 }
 
@@ -1907,18 +1906,20 @@ func (jd *HandleT) copyJobsDS(tx *sql.Tx, ds dataSetT, jobList []*JobT) error { 
 	return jd.copyJobsDSInTx(tx, ds, jobList)
 }
 
-func (jd *HandleT) WithStoreSafeTx(f func(tx StoreSafeTx) error) error {
-	return jd.inStoreSafeCtx(func() error {
+func (jd *HandleT) WithStoreSafeTx(ctx context.Context, f func(tx StoreSafeTx) error) error {
+	return jd.inStoreSafeCtx(ctx, func() error {
 		return jd.WithTx(func(tx *sql.Tx) error { return f(&storeSafeTx{tx: tx, identity: jd.tablePrefix}) })
 	})
 }
 
-func (jd *HandleT) inStoreSafeCtx(f func() error) error {
+func (jd *HandleT) inStoreSafeCtx(ctx context.Context, f func() error) error {
 	// Only locks the list
 	op := func() error {
-		jd.dsListLock.RLock()
-		defer jd.dsListLock.RUnlock()
-		return f()
+		if jd.dsListLock.TryRLockWithCtx(ctx) {
+			defer jd.dsListLock.RUnlock()
+			return f()
+		}
+		return fmt.Errorf("could not acquire dsList Rlock")
 	}
 	for {
 		err := op()
@@ -1933,21 +1934,24 @@ func (jd *HandleT) inStoreSafeCtx(f func() error) error {
 	}
 }
 
-func (jd *HandleT) WithUpdateSafeTx(f func(tx UpdateSafeTx) error) error {
-	return jd.inUpdateSafeCtx(func() error {
+func (jd *HandleT) WithUpdateSafeTx(ctx context.Context, f func(tx UpdateSafeTx) error) error {
+	return jd.inUpdateSafeCtx(ctx, func() error {
 		return jd.WithTx(func(tx *sql.Tx) error { return f(&updateSafeTx{tx: tx, identity: jd.tablePrefix}) })
 	})
 }
 
-func (jd *HandleT) inUpdateSafeCtx(f func() error) error {
+func (jd *HandleT) inUpdateSafeCtx(ctx context.Context, f func() error) error {
 	// The order of lock is very important. The migrateDSLoop
 	// takes lock in this order so reversing this will cause
 	// deadlocks
 	jd.dsMigrationLock.RLock()
-	jd.dsListLock.RLock()
 	defer jd.dsMigrationLock.RUnlock()
-	defer jd.dsListLock.RUnlock()
-	return f()
+
+	if jd.dsListLock.TryRLockWithCtx(ctx) {
+		defer jd.dsListLock.RUnlock()
+		return f()
+	}
+	return fmt.Errorf("could not acquire dsList Rlock")
 }
 
 func (jd *HandleT) WithTx(f func(tx *sql.Tx) error) error {
@@ -3918,7 +3922,7 @@ func (jd *HandleT) recoverFromJournal(owner OwnerType) {
 }
 
 func (jd *HandleT) UpdateJobStatus(ctx context.Context, statusList []*JobStatusT, customValFilters []string, parameterFilters []ParameterFilterT) error {
-	return jd.WithUpdateSafeTx(func(tx UpdateSafeTx) error {
+	return jd.WithUpdateSafeTx(ctx, func(tx UpdateSafeTx) error {
 		return jd.UpdateJobStatusInTx(ctx, tx, statusList, customValFilters, parameterFilters)
 	})
 }
@@ -4043,7 +4047,7 @@ func (jd *HandleT) doUpdateJobStatusInTx(ctx context.Context, tx *sql.Tx, status
 // Store stores new jobs to the jobsdb.
 // If enableWriterQueue is true, this goes through writer worker pool.
 func (jd *HandleT) Store(ctx context.Context, jobList []*JobT) error {
-	return jd.WithStoreSafeTx(func(tx StoreSafeTx) error {
+	return jd.WithStoreSafeTx(ctx, func(tx StoreSafeTx) error {
 		return jd.StoreInTx(ctx, tx, jobList)
 	})
 }
@@ -4062,14 +4066,14 @@ func (jd *HandleT) StoreInTx(ctx context.Context, tx StoreSafeTx, jobList []*Job
 	}
 
 	if tx.storeSafeTxIdentifier() != jd.Identifier() {
-		return jd.inStoreSafeCtx(storeCmd)
+		return jd.inStoreSafeCtx(ctx, storeCmd)
 	}
 	return storeCmd()
 }
 
 func (jd *HandleT) StoreWithRetryEach(ctx context.Context, jobList []*JobT) map[uuid.UUID]string {
 	var res map[uuid.UUID]string
-	_ = jd.WithStoreSafeTx(func(tx StoreSafeTx) error {
+	_ = jd.WithStoreSafeTx(ctx, func(tx StoreSafeTx) error {
 		var err error
 		res, err = jd.StoreWithRetryEachInTx(ctx, tx, jobList)
 		return err
@@ -4091,7 +4095,7 @@ func (jd *HandleT) StoreWithRetryEachInTx(ctx context.Context, tx StoreSafeTx, j
 	}
 
 	if tx.storeSafeTxIdentifier() != jd.Identifier() {
-		_ = jd.inStoreSafeCtx(storeCmd)
+		_ = jd.inStoreSafeCtx(ctx, storeCmd)
 		return res, err
 	}
 	_ = storeCmd()
