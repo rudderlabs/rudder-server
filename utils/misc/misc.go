@@ -927,7 +927,11 @@ func HasAWSRoleARNInConfig(configMap map[string]interface{}) bool {
 	if configMap["iamRoleARN"] == nil {
 		return false
 	}
-	if configMap["iamRoleARN"].(string) == "" {
+	iamRoleARN, ok := configMap["iamRoleARN"].(string)
+	if !ok {
+		return false
+	}
+	if iamRoleARN == "" {
 		return false
 	}
 	return true
