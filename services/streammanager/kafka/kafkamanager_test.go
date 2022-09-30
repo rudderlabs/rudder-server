@@ -394,7 +394,6 @@ func TestPrepareBatchOfMessages(t *testing.T) {
 
 func TestClose(t *testing.T) {
 	t.Run("nil", func(t *testing.T) {
-		kafkaStats.closeProducerTime = getMockedTimer(t, gomock.NewController(t))
 		pm := &ProducerManager{}
 		require.NoError(t, pm.Close())
 	})
@@ -418,13 +417,12 @@ func TestClose(t *testing.T) {
 		kafkaStats.closeProducerTime = getMockedTimer(t, gomock.NewController(t))
 
 		var pm producerManager = &ProducerManager{p: &pMockErr{error: fmt.Errorf("a bad error")}}
-		require.EqualError(t, pm.Close(), "a bad error")
+		require.EqualError(t, pm.Close(), "failed to close producer: a bad error")
 	})
 }
 
 func TestProduce(t *testing.T) {
 	t.Run("invalid producer", func(t *testing.T) {
-		kafkaStats.produceTime = getMockedTimer(t, gomock.NewController(t))
 		pm := ProducerManager{}
 		sc, res, err := pm.Produce(nil, nil)
 		require.Equal(t, 400, sc)
@@ -608,21 +606,21 @@ func TestSendBatchedMessage(t *testing.T) {
 		ctrl := gomock.NewController(t)
 		kafkaStats.prepareBatchTime = getMockedTimer(t, ctrl)
 		kafkaStats.avroSerializationErr = getMockedCounter(t, ctrl)
-		codec, _ := goavro.NewCodec(`{
+		codec, codecErr := goavro.NewCodec(`{
 			"namespace" : "kafkaAvroTest",
-			"name": "myrecord",
+			"name": "myRecord",
 			"type" :  "record",
 			"fields" : [
 			   {"name": "uid", "type": "int"},
-			   {"name": "somefield", "type": "string"}
+			   {"name": "someField", "type": "string"}
 			]
-		  }`)
-		p := &pMockErr{
+		}`)
+		require.NoError(t, codecErr)
+		pm := &pmMockErr{
 			codecs: map[string]*goavro.Codec{
 				"schemaId001": codec,
 			},
 		}
-		pm := &ProducerManager{p: p}
 		sc, res, err := sendBatchedMessage(
 			context.Background(),
 			json.RawMessage(`[{"message":{"messageId":"message001","data":"ciao"},"userId":"123"}]`),
@@ -638,21 +636,21 @@ func TestSendBatchedMessage(t *testing.T) {
 		ctrl := gomock.NewController(t)
 		kafkaStats.prepareBatchTime = getMockedTimer(t, ctrl)
 		kafkaStats.avroSerializationErr = getMockedCounter(t, ctrl)
-		codec, _ := goavro.NewCodec(`{
+		codec, codecErr := goavro.NewCodec(`{
 			"namespace" : "kafkaAvroTest",
-			"name": "myrecord",
+			"name": "myRecord",
 			"type" :  "record",
 			"fields" : [
 			   {"name": "uid", "type": "int"},
-			   {"name": "somefield", "type": "string"}
+			   {"name": "someField", "type": "string"}
 			]
-		  }`)
-		p := &pMockErr{
+		}`)
+		require.NoError(t, codecErr)
+		pm := &pmMockErr{
 			codecs: map[string]*goavro.Codec{
 				"schemaId001": codec,
 			},
 		}
-		pm := &ProducerManager{p: p}
 		sc, res, err := sendBatchedMessage(
 			context.Background(),
 			json.RawMessage(`[{"message":{"messageId":"message001","data":"ciao"},"userId":"123","schemaId":"schemaId001"}]`),
@@ -668,21 +666,21 @@ func TestSendBatchedMessage(t *testing.T) {
 		ctrl := gomock.NewController(t)
 		kafkaStats.prepareBatchTime = getMockedTimer(t, ctrl)
 		kafkaStats.avroSerializationErr = getMockedCounter(t, ctrl)
-		codec, _ := goavro.NewCodec(`{
+		codec, codecErr := goavro.NewCodec(`{
 			"namespace" : "kafkaAvroTest",
-			"name": "myrecord",
+			"name": "myRecord",
 			"type" :  "record",
 			"fields" : [
 			   {"name": "uid", "type": "int"},
-			   {"name": "somefield", "type": "string"}
+			   {"name": "someField", "type": "string"}
 			]
-		  }`)
-		p := &pMockErr{
+		}`)
+		require.NoError(t, codecErr)
+		pm := &pmMockErr{
 			codecs: map[string]*goavro.Codec{
 				"schemaId001": codec,
 			},
 		}
-		pm := &ProducerManager{p: p}
 		sc, res, err := sendBatchedMessage(
 			context.Background(),
 			json.RawMessage(`[{"message":{"messageId":"message001","data":"ciao"},"userId":"123","schemaId":"schemaId002"}]`),
@@ -759,12 +757,11 @@ func TestSendMessage(t *testing.T) {
 			   {"name": "somefield", "type": "string"}
 			]
 		  }`)
-		p := &pMockErr{
+		pm := &pmMockErr{
 			codecs: map[string]*goavro.Codec{
 				"schemaId001": codec,
 			},
 		}
-		pm := &ProducerManager{p: p}
 		sc, res, err := sendMessage(
 			context.Background(),
 			json.RawMessage(`{"message":{"messageId":"message001","data":"ciao"},"userId":"123"}`),
@@ -786,12 +783,11 @@ func TestSendMessage(t *testing.T) {
 			   {"name": "somefield", "type": "string"}
 			]
 		  }`)
-		p := &pMockErr{
+		pm := &pmMockErr{
 			codecs: map[string]*goavro.Codec{
 				"schemaId001": codec,
 			},
 		}
-		pm := &ProducerManager{p: p}
 		sc, res, err := sendMessage(
 			context.Background(),
 			json.RawMessage(`{"message":{"messageId":"message001","data":"ciao"},"userId":"123","schemaId":"schemaId001"}`),
@@ -819,10 +815,20 @@ func getMockedCounter(t *testing.T, ctrl *gomock.Controller) *mockStats.MockMeas
 }
 
 // Mocks
-type pMockErr struct {
-	error  error
-	calls  [][]client.Message
+type pmMockErr struct {
 	codecs map[string]*goavro.Codec
+}
+
+func (*pmMockErr) Close() error                                         { return nil }
+func (*pmMockErr) Publish(_ context.Context, _ ...client.Message) error { return nil }
+func (*pmMockErr) getTimeout() time.Duration                            { return 0 }
+func (pm *pmMockErr) getCodecs() map[string]*goavro.Codec {
+	return pm.codecs
+}
+
+type pMockErr struct {
+	error error
+	calls [][]client.Message
 }
 
 func (p *pMockErr) Close(_ context.Context) error { return p.error }
