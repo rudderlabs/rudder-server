@@ -823,7 +823,7 @@ func (worker *workerT) processDestinationJobs() {
 		worker.sendEventDeliveryStat(destinationJobMetadata, &status, &destinationJob.Destination)
 
 		if attemptedToSendTheJob {
-			worker.sendRouterResponseCountStat(&status, &destinationJob.Destination)
+			worker.sendRouterResponseCountStat(&status, &destinationJob.Destination, routerJobResponse.errorAt)
 		}
 	}
 
@@ -998,7 +998,12 @@ func (worker *workerT) updateReqMetrics(respStatusCode int, diagnosisStartTime *
 	worker.rt.trackRequestMetrics(reqMetric)
 }
 
-func (worker *workerT) updateAbortedMetrics(destinationID, statusCode, errorAt string) {
+type allowedRtTags struct {
+	allowTf  string
+	allowDel string
+}
+
+func (worker *workerT) getAllowedRtTags(errorAt string) allowedRtTags {
 	// when error occur during transformation(rt or batch)
 	// when proxy is not enabled or when rtAbortDeliveryAlert is true(default)
 	allowTf := errorAt == ERROR_AT_TF && worker.rt.allowRtAbortForTf
@@ -1006,12 +1011,20 @@ func (worker *workerT) updateAbortedMetrics(destinationID, statusCode, errorAt s
 	// when proxy is not enabled or when rtAbortDeliveryAlert is true(default))
 	// or when destination is managed custom destination manager
 	allowDel := (errorAt == ERROR_AT_DEL && (!worker.rt.transformerProxy || worker.rt.allowRtAbortAlertForDelv)) || errorAt == ERROR_AT_CUST
+	return allowedRtTags{
+		allowTf:  strconv.FormatBool(allowTf),
+		allowDel: strconv.FormatBool(allowDel),
+	}
+}
+
+func (worker *workerT) updateAbortedMetrics(destinationID, statusCode, errorAt string) {
+	allowedTags := worker.getAllowedRtTags(errorAt)
 	eventsAbortedStat := stats.Default.NewTaggedStat(`router_aborted_events`, stats.CountType, stats.Tags{
 		"destType":       worker.rt.destName,
 		"respStatusCode": statusCode,
 		"destId":         destinationID,
-		"allowTf":        strconv.FormatBool(allowTf),
-		"allowDel":       strconv.FormatBool(allowDel),
+		"allowTf":        allowedTags.allowTf,
+		"allowDel":       allowedTags.allowDel,
 	})
 	eventsAbortedStat.Increment()
 }
@@ -1104,14 +1117,17 @@ func (worker *workerT) postStatusOnResponseQ(respStatusCode int, respBody string
 	}
 }
 
-func (worker *workerT) sendRouterResponseCountStat(status *jobsdb.JobStatusT, destination *backendconfig.DestinationT) {
+func (worker *workerT) sendRouterResponseCountStat(status *jobsdb.JobStatusT, destination *backendconfig.DestinationT, errorAt string) {
 	destinationTag := misc.GetTagName(destination.ID, destination.Name)
+	allowedTags := worker.getAllowedRtTags(errorAt)
 	routerResponseStat := stats.Default.NewTaggedStat("router_response_counts", stats.CountType, stats.Tags{
 		"destType":       worker.rt.destName,
 		"respStatusCode": status.ErrorCode,
 		"destination":    destinationTag,
 		"attempt_number": strconv.Itoa(status.AttemptNum),
 		"workspaceId":    status.WorkspaceId,
+		"allowTf":        allowedTags.allowTf,
+		"allowDel":       allowedTags.allowDel,
 	})
 	routerResponseStat.Count(1)
 }
