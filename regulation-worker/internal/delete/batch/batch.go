@@ -5,14 +5,11 @@ package batch
 // called by delete/deleteSvc with (model.Job, model.Destination).
 // returns final status,error ({successful, failure}, err)
 import (
-	"bytes"
-	"compress/gzip"
 	"context"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
-	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -21,6 +18,7 @@ import (
 
 	"github.com/cenkalti/backoff"
 	"github.com/rudderlabs/rudder-server/config"
+	"github.com/rudderlabs/rudder-server/regulation-worker/internal/delete/batch/filehandler"
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/model"
 	"github.com/rudderlabs/rudder-server/services/filemanager"
 	"github.com/rudderlabs/rudder-server/services/stats"
@@ -31,64 +29,35 @@ import (
 
 var (
 	pkgLogger             = logger.NewLogger().Child("batch")
-	regexRequiredSuffix   = regexp.MustCompile(".json.gz$")
 	StatusTrackerFileName = "rudderDeleteTracker.txt"
-	supportedDestinations = []string{"S3"}
+	supportedDestinations = []string{"S3", "S3_DATALAKE"}
 )
 
 const listMaxItem int64 = 1000
 
-type deleteManager interface {
-	delete(ctx context.Context, patternFilePtr, targetFilePtr string) ([]byte, error)
+type PatternDeleter interface {
+	DeletePattern(ctx context.Context, pattern []string, source []byte) ([]byte, error)
 }
 
 type Batch struct {
 	mu         sync.Mutex
 	FM         filemanager.FileManager
-	DM         deleteManager
 	TmpDirPath string
-}
-
-// return appropriate deleteManger based on destination Name
-func getDeleteManager(destName string) (*S3DeleteManager, error) {
-	switch destName {
-	case "S3":
-		return &S3DeleteManager{}, nil
-	default:
-		return nil, model.ErrDestNotImplemented
-	}
 }
 
 // returns list of all .json.gz files.
 // NOTE: assuming that all of batch destination have same file system as S3, i.e. flat.
 func (b *Batch) listFiles(ctx context.Context) ([]*filemanager.FileObject, error) {
 	pkgLogger.Debugf("getting a list of files from destination")
+
+	// TODO: What happens if we have files greater than 1000 ?
 	fileObjects, err := b.FM.ListFilesWithPrefix(ctx, "", "", listMaxItem)
 	if err != nil {
 		pkgLogger.Errorf("error while getting list of files: %v", err)
 		return []*filemanager.FileObject{}, fmt.Errorf("failed to fetch object list from S3: %v", err)
 	}
-	if len(fileObjects) == 0 {
-		return nil, nil
-	}
 
-	// since everything is stored as a file in S3, above fileObjects list also has directory & not just *.json.gz files. So, need to remove those.
-	count := 0
-	for i := 0; i < len(fileObjects); i++ {
-		if regexRequiredSuffix.MatchString(fileObjects[i].Key) {
-			count++
-		}
-	}
-	// list of only .gz files
-	gzFileObjects := make([]*filemanager.FileObject, count)
-	index := 0
-	for i := 0; i < len(fileObjects); i++ {
-		if regexRequiredSuffix.MatchString(fileObjects[i].Key) {
-			gzFileObjects[index] = fileObjects[i]
-			index++
-		}
-	}
-	return gzFileObjects, nil
+	return fileObjects, nil
 }
 
 // two pointer algorithm implementation to remove all the files from which users are already deleted.
@@ -144,6 +113,74 @@ func (*Batch) updateStatusTrackerFile(absStatusTrackerFileName, fileName string)
 	return nil
 }
 
+func (b *Batch) getStatusTracker(ctx context.Context, prefix string) (string, io.ReadWriteCloser, error) {
+	pkgLogger.Debugf("fetching contents of status tracker file")
+
+	trackerFilePath, err := b.download(ctx, filepath.Join(prefix, StatusTrackerFileName))
+	if err != nil {
+		return "", nil, fmt.Errorf("error while downloading statusTrackerFile: %w", err)
+	}
+
+	f, err := os.OpenFile(trackerFilePath, os.O_RDWR, 0o644)
+	if err != nil {
+		return "", nil, fmt.Errorf("unable to open status tracker file")
+	}
+
+	return f.Name(), f, nil
+}
+
+func (b *Batch) cleanedFiles(_ context.Context, f io.ReadWriteCloser, job *model.Job) ([]string, error) {
+	pkgLogger.Debugf("fetching already cleaned files based on the status tracker file")
+
+	var response []string
+	defer f.Close()
+
+	byt, err := io.ReadAll(f)
+	if err != nil {
+		return nil, fmt.Errorf("unable to read contents of status tracker file, err: %w", err)
+	}
+	// if statusTracker.txt exists then read it & remove all those files name from above gzFilesObjects,
+	// since those files are already cleaned.
+
+	jobID := fmt.Sprintf("%d", job.ID)
+
+	if len(byt) == 0 {
+		// insert <jobID> in 1st line
+		if _, err := io.WriteString(f, jobID+"\n"); err != nil {
+			return nil, fmt.Errorf("error while writing to jobId to statusTrackerFile: %w", err)
+		}
+	} else {
+		lines := strings.Split(string(byt), "\n")
+		// check if our <jobID> matches with the one in file.
+		// if not, then truncate the file & write new current jobID.
+
+		// TODO: Why would this happen ? ( remanent of the past )
+		if lines[0] != jobID {
+			f.Close()
+
+			statusTrackerTmpDir, err := os.MkdirTemp(b.TmpDirPath, "")
+			if err != nil {
+				return nil, fmt.Errorf("error while creating temporary directory: %w", err)
+			}
+
+			f, err = os.OpenFile(filepath.Join(statusTrackerTmpDir, StatusTrackerFileName), os.O_CREATE|os.O_RDWR, 0o644)
+			if err != nil {
+				return nil, fmt.Errorf("error while opening file to create status tracker, %w", err)
+			}
+
+			if _, err := io.WriteString(f, jobID+"\n"); err != nil {
+				return nil, fmt.Errorf("error while writing to status tracker file:%s, err: %w", StatusTrackerFileName, err)
+			}
+
+		} else {
+			// if yes, then simply read it.
+			response = lines[1 : len(lines)-1]
+		}
+	}
+
+	return response, nil
+}
+
 // downloads `fileName` locally. And returns empty file, if file not found.
 // Note: download happens concurrently in 5 go routine by default.
 func (b *Batch) download(_ context.Context, completeFileName string) (string, error) {
@@ -151,108 +188,31 @@ func (b *Batch) download(_ context.Context, completeFileName string) (string, er
 
 	tmpFilePathPrefix, err := os.MkdirTemp(b.TmpDirPath, "")
 	if err != nil {
-		pkgLogger.Errorf("error while creating temporary directory: %v", err)
 		return "", fmt.Errorf("error while creating temporary directory: %w", err)
 	}
+
 	_, fileName := filepath.Split(completeFileName)
 	tmpFilePtr, err := os.OpenFile(filepath.Join(tmpFilePathPrefix, fileName), os.O_CREATE|os.O_RDWR, 0o644)
 	if err != nil {
-		pkgLogger.Errorf("error while opening file, %v", err)
 		return "", fmt.Errorf("error while opening file, %w", err)
 	}
 	defer tmpFilePtr.Close()
+
 	absPath, err := filepath.Abs(tmpFilePtr.Name())
 	if err != nil {
-		pkgLogger.Errorf("error while getting absolute path: %v", err)
 		return "", fmt.Errorf("error while getting absolute path: %w", err)
 	}
+
 	err = b.FM.Download(context.TODO(), tmpFilePtr, completeFileName)
 	if err != nil {
 		if err == filemanager.ErrKeyNotFound {
 			pkgLogger.Debugf("file not found")
 			return absPath, nil
 		}
-		pkgLogger.Errorf("error while downloading object using file manager: %v", err)
 		return "", fmt.Errorf("error while downloading object using file manager: %w", err)
 	}
+
 	return absPath, nil
-}
-
-// decompresses .json.gzip files to .json & remove corresponding .json.gzip file
-func (b *Batch) decompress(compressedFileName string) (string, error) {
-	compressedFilePtr, err := os.OpenFile(compressedFileName, os.O_RDWR, 0o644)
-	if err != nil {
-		return "", fmt.Errorf("error while opening compressed file, %w", err)
-	}
-	defer compressedFilePtr.Close()
-
-	gzipReader, err := gzip.NewReader(compressedFilePtr)
-	if err != nil {
-		return "", fmt.Errorf("error while reading compressed file: %w", err)
-	}
-
-	decompressedFilePtr, err := os.CreateTemp(b.TmpDirPath, "")
-	if err != nil {
-		return "", fmt.Errorf("error while creating temporary file for decompressed files during cleaning")
-	}
-	defer decompressedFilePtr.Close()
-
-	_, err = io.Copy(decompressedFilePtr, gzipReader)
-	if err != nil {
-		return "", fmt.Errorf("error while writing uncompressed file: %w", err)
-	}
-
-	decompressedFileName, err := filepath.Abs(decompressedFilePtr.Name())
-	if err != nil {
-		return "", err
-	}
-
-	return decompressedFileName, nil
-}
-
-// compress & write `cleanedBytes` of type []byte to `fileName`
-func (*Batch) compress(fileName string, cleanedBytes []byte) error {
-	// compressing
-	var buffer bytes.Buffer
-	w := gzip.NewWriter(&buffer)
-	_, err := w.Write(cleanedBytes)
-	if err != nil {
-		return fmt.Errorf("error while compressing file: %w", err)
-	}
-	w.Close() // must close this first to flush the bytes to the buffer.
-
-	cleanCompressedFilePtr, err := os.OpenFile(fileName, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o644)
-	if err != nil {
-		return fmt.Errorf("error while opening file, %w", err)
-	}
-	defer cleanCompressedFilePtr.Close()
-
-	_, err = cleanCompressedFilePtr.Write(buffer.Bytes())
-	if err != nil {
-		return fmt.Errorf("error while writing cleaned & compressed data:%w", err)
-	}
-
-	return nil
-}
-
-// delete users corresponding to `userAttributes` from `fileName` available locally
-func (b *Batch) delete(ctx context.Context, PatternFile, targetFile string) error {
-	decompressedFile, err := b.decompress(targetFile)
-	if err != nil {
-		return fmt.Errorf("error while decompressing file: %w", err)
-	}
-
-	out, err := b.DM.delete(ctx, PatternFile, decompressedFile)
-	if err != nil {
-		return fmt.Errorf("error while cleaning object, %w", err)
-	}
-
-	err = b.compress(targetFile, out)
-	if err != nil {
-		return fmt.Errorf("error while compressing file: %w", err)
-	}
-
-	return nil
 }
 
 func downloadWithExpBackoff(ctx context.Context, fu func(context.Context, string) (string, error), fileName string) (string, error) {
@@ -283,6 +243,7 @@ func downloadWithExpBackoff(ctx context.Context, fu func(context.Context, string
 
 func uploadWithExpBackoff(ctx context.Context, fu func(ctx context.Context, uploadFileAbsPath, actualFileName, absStatusTrackerFileName string) error, uploadFileAbsPath, actualFileName, absStatusTrackerFileName string) error {
 	pkgLogger.Debugf("uploading cleaned file with exponential backoff")
+
 	maxWait := time.Minute * 10
 	bo := backoff.NewExponentialBackOff()
 	boCtx := backoff.WithContext(bo, ctx)
@@ -338,35 +299,6 @@ func (b *Batch) upload(_ context.Context, uploadFileAbsPath, actualFileName, abs
 	return nil
 }
 
-func (b *Batch) createPatternFile(userAttributes []model.User) (string, error) {
-	pkgLogger.Debug("creating a file with pattern to be searched & deleted.")
-
-	searchObject := make([]byte, 0)
-
-	for _, users := range userAttributes {
-		searchObject = append(searchObject, "/"...)
-		searchObject = append(searchObject, "\"userId\": *\""...)
-		searchObject = append(searchObject, users.ID...)
-		searchObject = append(searchObject, "\"/d;"...)
-	}
-
-	PatternFilePtr, err := os.CreateTemp(b.TmpDirPath, "")
-	if err != nil {
-		pkgLogger.Errorf("error while creating pattern file: %v", err)
-		return "", fmt.Errorf("error while creating patternFile: %w", err)
-	}
-	defer PatternFilePtr.Close()
-
-	_, err = PatternFilePtr.Write(searchObject)
-	if err != nil {
-		pkgLogger.Errorf("error while writing pattern: %v", err)
-		return "", fmt.Errorf("error while writing pattern:%w", err)
-	}
-	absPatternFile, err := filepath.Abs(PatternFilePtr.Name())
-
-	return absPatternFile, err
-}
-
 type BatchManager struct {
 	FMFactory filemanager.FileManagerFactory
 }
@@ -375,22 +307,33 @@ func (*BatchManager) GetSupportedDestinations() []string {
 	return supportedDestinations
 }
 
+func getLocalFileHandlers(destType string) map[string]filehandler.LocalFileHandler {
+	var gzipHandler filehandler.LocalFileHandler
+
+	if destType == "S3" {
+		gzipHandler = filehandler.NewGZIPLocalFileHandler(filehandler.CamelCase)
+	}
+
+	// S3_DATALAKE is a warehouse destination, so in order
+	// to send events into a warehouse destination, we simply snake_cased
+	// so the gziphandler needs to be created with Snakecasing `user_id` in mind
+	if destType == "S3_DATALAKE" {
+		gzipHandler = filehandler.NewGZIPLocalFileHandler(filehandler.SnakeCase)
+	}
+
+	return map[string]filehandler.LocalFileHandler{
+		".json.gz": gzipHandler,
+		".parquet": filehandler.NewParquetLocalFileHandler(),
+	}
+}
+
 // Delete users corresponding to input userAttributes from a given batch destination
 func (bm *BatchManager) Delete(ctx context.Context, job model.Job, destConfig map[string]interface{}, destName string) model.JobStatus {
 	pkgLogger.Debugf("deleting job: %v", job, "from batch destination: %v", destName)
 
-	fm, err := bm.FMFactory.New(&filemanager.SettingsT{
-		Provider: destName,
-		Config:   destConfig,
-	})
+	fm, err := bm.FMFactory.New(&filemanager.SettingsT{Provider: destName, Config: destConfig})
 	if err != nil {
 		pkgLogger.Errorf("error while getting file manager: %v", err)
-		return model.JobStatusFailed
-	}
-
-	dm, err := getDeleteManager(destName)
-	if err != nil {
-		pkgLogger.Errorf("error while getting appropriate delete manager: %v", err)
 		return model.JobStatusFailed
 	}
 
@@ -403,17 +346,13 @@ func (bm *BatchManager) Delete(ctx context.Context, job model.Job, destConfig ma
 
 	batch := Batch{
 		FM:         fm,
-		DM:         dm,
 		TmpDirPath: tmpDirPath,
 	}
 	defer batch.cleanup(destConfig["prefix"].(string))
 
-	// file with pattern to be searched & deleted from all downloaded files.
-	absPatternFile, err := batch.createPatternFile(job.Users)
-	if err != nil {
-		pkgLogger.Errorf("error while creating pattern file: %v", err)
-		return model.JobStatusFailed
-	}
+	// fetch list of file handlers which we
+	// have present in our system, which would aid the system in filtering
+	filehandlers := getLocalFileHandlers(destName)
 
 	for {
 		files, err := batch.listFiles(ctx)
@@ -426,95 +365,46 @@ func (bm *BatchManager) Delete(ctx context.Context, job model.Job, destConfig ma
 			pkgLogger.Debug("no new files found")
 			break
 		}
-		// if statusTracker.txt exists then read it & remove all those files name from above gzFilesObjects,
-		// since those files are already cleaned.
-		var cleanedFiles []string
-		absStatusTrackerFileName, err := func() (string, error) {
-			absStatusTrackerFileName, err := batch.download(ctx, filepath.Join(destConfig["prefix"].(string), StatusTrackerFileName))
-			if err != nil {
-				pkgLogger.Errorf("error while downloading statusTrackerFile: %v", err)
-				return "", fmt.Errorf("error while downloading statusTrackerFile: %w", err)
-			}
 
-			statusTrackerFilePtr, err := os.OpenFile(absStatusTrackerFileName, os.O_RDWR, 0o644)
-			if err != nil {
-				pkgLogger.Errorf("error while opening file, %v", err)
-				return "", fmt.Errorf("error while opening file, %w", err)
-			}
-			defer statusTrackerFilePtr.Close()
+		fName, fPtr, err := batch.getStatusTracker(ctx, destConfig["prefix"].(string))
+		if err != nil {
+			return model.JobStatusFailed
+		}
 
-			data, err := io.ReadAll(statusTrackerFilePtr)
-			if err != nil {
-				pkgLogger.Errorf("error while reading statusTrackerFile: %v", err)
-				return "", fmt.Errorf("error while reading statusTrackerFile: %w", err)
-			}
-			// if statusTracker.txt exists then read it & remove all those files name from above gzFilesObjects,
-			// since those files are already cleaned.
+		defer fPtr.Close()
 
-			jobID := fmt.Sprintf("%d", job.ID)
-
-			if len(data) == 0 {
-				// insert <jobID> in 1st line
-				if _, err := io.WriteString(statusTrackerFilePtr, jobID+"\n"); err != nil {
-					pkgLogger.Errorf("error while writing jobId to statusTrackerFile: %v", err)
-					return "", fmt.Errorf("error while writing to jobId to statusTrackerFile: %w", err)
-				}
-			} else {
-				lines := strings.Split(string(data), "\n")
-				// check if our <jobID> matches with the one in file.
-				// if not, then truncate the file & write new current jobID.
-				if lines[0] != jobID {
-					_ = statusTrackerFilePtr.Close()
-					statusTrackerTmpDir, err := os.MkdirTemp(batch.TmpDirPath, "")
-					if err != nil {
-						pkgLogger.Errorf("error while creating temporary directory: %v", err)
-						return "", fmt.Errorf("error while creating temporary directory: %w", err)
-					}
-					statusTrackerFilePtr, err = os.OpenFile(filepath.Join(statusTrackerTmpDir, StatusTrackerFileName), os.O_CREATE|os.O_RDWR, 0o644)
-					if err != nil {
-						pkgLogger.Errorf("error while opening file, %v", err)
-						return "", fmt.Errorf("error while opening file, %w", err)
-					}
-
-					if _, err := io.WriteString(statusTrackerFilePtr, jobID+"\n"); err != nil {
-						pkgLogger.Errorf("error while writing to statusTrackerFile: %v", err)
-						err = fmt.Errorf("error while writing to statusTrackerFile: %w", err)
-						return "", err
-					}
-				} else {
-					// if yes, then simply read it.
-					cleanedFiles = lines[1 : len(lines)-1]
-				}
-			}
-			absPath, err := filepath.Abs(statusTrackerFilePtr.Name())
-
-			return absPath, err
-		}()
+		cleanedFiles, err := batch.cleanedFiles(ctx, fPtr, &job)
 		if err != nil {
 			pkgLogger.Errorf("error while getting status tracker file: %v", err)
 			return model.JobStatusFailed
 		}
+
 		if len(cleanedFiles) != 0 {
 			files = removeCleanedFiles(files, cleanedFiles)
 		}
 
 		g, gCtx := errgroup.WithContext(ctx)
 
-		procAllocated, err := strconv.Atoi(config.GetString("GOMAXPROCS", "32"))
+		count, err := maxRoutines()
 		if err != nil {
-			pkgLogger.Errorf("error while getting maximum number of go routines to be created: %v", err)
+			pkgLogger.Errorf("unable to get max go routines count: %w", err.Error())
 			return model.JobStatusFailed
 		}
-		maxGoRoutine := 8 * procAllocated
-		pkgLogger.Debugf("maximum number of go routines that can be created: %w", maxGoRoutine)
-		goRoutineCount := make(chan bool, maxGoRoutine)
+
+		goRoutineCount := make(chan bool, count)
 		defer close(goRoutineCount)
 
 		for i := 0; i < len(files); i++ {
+
 			_i := i
 			goRoutineCount <- true
 			g.Go(func() error {
-				// TODO: add file size stats
+				filehandler := getFileHandler(files[_i].Key, filehandlers)
+				if filehandler == nil {
+					pkgLogger.Warnf("unable to locate filehandler for file: %s ", files[_i].Key)
+					return nil
+				}
+
 				fileCleaningTime := stats.Default.NewTaggedStat("file_cleaning_time", stats.TimerType, stats.Tags{"jobId": fmt.Sprintf("%d", job.ID), "workspaceId": job.WorkspaceID, "destType": "batch", "destName": destName})
 				fileCleaningTime.Start()
 
@@ -523,25 +413,20 @@ func (bm *BatchManager) Delete(ctx context.Context, job model.Job, destConfig ma
 					<-goRoutineCount
 				}()
 
-				FileAbsPath, err := downloadWithExpBackoff(gCtx, batch.download, files[_i].Key)
+				absPath, err := downloadWithExpBackoff(gCtx, batch.download, files[_i].Key)
 				if err != nil {
-					pkgLogger.Errorf("error: %v, while downloading file: %v", err, files[_i].Key)
 					return fmt.Errorf("error: %w, while downloading file:%s", err, files[_i].Key)
 				}
 
-				fileSizeStats := stats.Default.NewTaggedStat("file_size_mb", stats.CountType, stats.Tags{"jobId": fmt.Sprintf("%d", job.ID)})
-				fileSizeStats.Count(getFileSize(FileAbsPath))
+				fileSizeStat := stats.Default.NewTaggedStat("file_size_mb", stats.CountType, stats.Tags{"jobId": fmt.Sprintf("%d", job.ID)})
+				fileSizeStat.Count(getFileSize(absPath))
 
-				getFileSize(FileAbsPath)
-				err = batch.delete(gCtx, absPatternFile, FileAbsPath)
-				if err != nil {
-					pkgLogger.Errorf("error: %v, while deleting file:%v", err, files[_i].Key)
-					return fmt.Errorf("error: %w, while deleting file:%s", err, files[_i].Key)
+				if err := handleIdentityRemoval(ctx, filehandler, job.Users, absPath, absPath); err != nil {
+					return fmt.Errorf("unable to handle identity removal for destination: %s, on file: %s, err: %w ", destName, files[_i].Key, err)
 				}
 
-				err = uploadWithExpBackoff(gCtx, batch.upload, FileAbsPath, files[_i].Key, absStatusTrackerFileName)
+				err = uploadWithExpBackoff(gCtx, batch.upload, absPath, files[_i].Key, fName)
 				if err != nil {
-					pkgLogger.Errorf("error: %v, while uploading cleaned file:%v", err, files[_i].Key)
 					return fmt.Errorf("error: %w, while uploading cleaned file:%s", err, files[_i].Key)
 				}
 
@@ -550,11 +435,61 @@ func (bm *BatchManager) Delete(ctx context.Context, job model.Job, destConfig ma
 		}
 		err = g.Wait()
 		if err != nil {
-			pkgLogger.Errorf("job failed with error: %v", err)
+			pkgLogger.Errorf("user identity deletion job failed with error: %v", err)
 			return model.JobStatusFailed
 		}
 	}
+
 	return model.JobStatusComplete
+}
+
+// getFileHandler extracts the filehandler based on the suffix of the file for which
+// we need to perform the identity removal.
+func getFileHandler(key string, handlers map[string]filehandler.LocalFileHandler) filehandler.LocalFileHandler {
+	// handlers map are over the file suffix like .json.gz, .parquet
+	// based on the file suffix, allow for the fetch of corresponding handler.
+	for k, v := range handlers {
+		if strings.HasSuffix(key, k) {
+			return v
+		}
+	}
+
+	return nil
+}
+
+// handleIdentityRemoval is a convenience wrapper over the filehandler
+// performing the operations over the file to remove the user identity.
+func handleIdentityRemoval(
+	ctx context.Context,
+	handler filehandler.LocalFileHandler,
+	attributes []model.User,
+	sourceFile, targetFile string,
+) error {
+	pkgLogger.Debugf("Handling identity removal for source: %s, destination: %s", sourceFile, targetFile)
+
+	if err := handler.Read(ctx, sourceFile); err != nil {
+		return fmt.Errorf("unable to parse contents of local file: %s, err: %w", sourceFile, err)
+	}
+
+	if err := handler.RemoveIdentity(ctx, attributes); err != nil {
+		return fmt.Errorf("unable to handle identity removal for attributes: %v, err: %w", nil, err)
+	}
+
+	if err := handler.Write(ctx, targetFile); err != nil {
+		return fmt.Errorf("unable to write to local file: %s, err: %w", targetFile, err)
+	}
+
+	return nil
+}
+
+func maxRoutines() (int, error) {
+	procAllocated, err := strconv.Atoi(config.GetString("GOMAXPROCS", "32"))
+	if err != nil {
+		return 0, fmt.Errorf("fetching maximum number of go routines: %w", err)
+	}
+
+	maxGoRoutine := 8 * procAllocated
+	return maxGoRoutine, nil
 }
 
 func getFileSize(fileAbsPath string) int {
@@ -567,10 +502,12 @@ func getFileSize(fileAbsPath string) int {
 
 func (b *Batch) cleanup(prefix string) {
 	pkgLogger.Debugf("removing all temporary files & directory locally & from destination.")
+
 	err := b.FM.DeleteObjects(context.TODO(), []string{filepath.Join(prefix, StatusTrackerFileName)})
 	if err != nil {
 		pkgLogger.Errorf("error while deleting delete status tracker file from destination: %v", err)
 	}
+
 	err = os.RemoveAll(b.TmpDirPath)
 	if err != nil {
 		pkgLogger.Errorf("error while deleting temporary directory locally: %v", err)

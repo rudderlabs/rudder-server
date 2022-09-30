@@ -33,12 +33,10 @@ func (j *JobAPI) Get(ctx context.Context) (model.Job, error) {
 	ctx, cancel := context.WithTimeout(ctx, time.Minute)
 	defer cancel()
 
-	method := "GET"
-	genEndPoint := "/dataplane/workspaces/{workspace_id}/regulations/workerJobs"
-	url := fmt.Sprint(j.URLPrefix, prepURL(genEndPoint, j.WorkspaceID))
+	url := fmt.Sprintf("%s/dataplane/workspaces/%s/regulations/workerJobs", j.URLPrefix, j.WorkspaceID)
 	pkgLogger.Debugf("making GET request to URL: %v", url)
 
-	req, err := http.NewRequestWithContext(ctx, method, url, nil)
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
 		pkgLogger.Errorf("error while create new http request: %v", err)
 		return model.Job{}, err

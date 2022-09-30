@@ -66,13 +66,13 @@ func (js *JobSvc) JobSvc(ctx context.Context) error {
 	}
 
 	status = js.Deleter.Delete(ctx, job, destDetail)
-
 	return js.updateStatus(ctx, status, job.ID)
 }
 
 func (js *JobSvc) updateStatus(ctx context.Context, status model.JobStatus, jobID int) error {
-	pkgLogger.Debugf("updating job status to: %v", status)
-	maxWait := time.Minute * 10
+	pkgLogger.Debugf("updating job: %d status to: %v", jobID, status)
+
+	maxWait := 10 * time.Minute
 	var err error
 	bo := backoff.NewExponentialBackOff()
 	boCtx := backoff.WithContext(bo, ctx)

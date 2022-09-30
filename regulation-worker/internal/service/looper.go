@@ -20,14 +20,20 @@ type Looper struct {
 func (l *Looper) Loop(ctx context.Context) error {
 	pkgLogger.Infof("running regulation worker in infinite loop")
 	for {
+
 		err := l.Svc.JobSvc(ctx)
+
 		if err == model.ErrNoRunnableJob {
 			pkgLogger.Debugf("no runnable job found... sleeping")
 			if err := misc.SleepCtx(ctx, 10*time.Minute); err != nil {
 				pkgLogger.Debugf("context cancelled... exiting infinite loop %v", err)
 				return nil
 			}
-		} else if err != nil {
+
+			continue
+		}
+
+		if err != nil {
 			return err
 		}
 	}
