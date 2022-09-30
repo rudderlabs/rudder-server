@@ -1183,15 +1183,17 @@ func (jd *HandleT) getTableSize(jobTable string) int64 {
 }
 
 func (jd *HandleT) checkIfFullDSInTx(tx *sql.Tx, ds dataSetT) (bool, error) {
-	var minJobCreatedAt sql.NullTime
-	sqlStatement := fmt.Sprintf(`SELECT MIN(created_at) FROM %q`, ds.JobTable)
-	row := tx.QueryRow(sqlStatement)
-	err := row.Scan(&minJobCreatedAt)
-	if err != nil && err != sql.ErrNoRows {
-		return false, err
-	}
-	if err == nil && minJobCreatedAt.Valid && time.Since(minJobCreatedAt.Time) > jd.MaxDSRetentionPeriod {
-		return true, nil
+	if jd.MaxDSRetentionPeriod > 0 {
+		var minJobCreatedAt sql.NullTime
+		sqlStatement := fmt.Sprintf(`SELECT MIN(created_at) FROM %q`, ds.JobTable)
+		row := tx.QueryRow(sqlStatement)
+		err := row.Scan(&minJobCreatedAt)
+		if err != nil && err != sql.ErrNoRows {
+			return false, err
+		}
+		if err == nil && minJobCreatedAt.Valid && time.Since(minJobCreatedAt.Time) > jd.MaxDSRetentionPeriod {
+			return true, nil
+		}
 	}
 
 	tableSize := jd.getTableSize(ds.JobTable)
