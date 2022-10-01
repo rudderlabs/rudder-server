@@ -190,6 +190,7 @@ func (as *HandleT) DownloadLoadFiles(tableName string) ([]string, error) {
 			Provider:         storageProvider,
 			Config:           as.Warehouse.Destination.Config,
 			UseRudderStorage: as.Uploader.UseRudderStorage(),
+			WorkspaceID:      as.Warehouse.Destination.WorkspaceID,
 		}),
 	})
 	if err != nil {

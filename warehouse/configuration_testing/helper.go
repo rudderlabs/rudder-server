@@ -57,6 +57,7 @@ func fileManager(req *DestinationValidationRequest) (fileManager filemanager.Fil
 			Provider:         provider,
 			Config:           destination.Config,
 			UseRudderStorage: misc.IsConfiguredToUseRudderObjectStorage(destination.Config),
+			WorkspaceID:      req.Destination.WorkspaceID,
 		}),
 	})
 	fileManager.SetTimeout(fileManagerTimeout)
