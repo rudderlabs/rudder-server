@@ -321,7 +321,9 @@ func Run(ctx context.Context) int {
 		}
 
 		pkgLogger.Info("Attempting to shutdown gracefully")
-		backendconfig.DefaultBackendConfig.Stop()
+		if backendconfig.DefaultBackendConfig != nil {
+			backendconfig.DefaultBackendConfig.Stop()
+		}
 		close(shutdownDone)
 	}()
 
