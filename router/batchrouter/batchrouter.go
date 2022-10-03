@@ -2450,8 +2450,9 @@ func tryUnmarshalJSON(jobID int64, data []byte, v interface{}) (err error) {
 				"Panic while unmarshalling json (%d): starting slice [%d:%d]: ending slice: [%d:%d]: %v",
 				jobID, l, c, len(data), cap(data), r,
 			)
-
-			err = stdjson.Unmarshal(data, v)
+			pkgLogger.Warnf("Starting data before unmarshalling json panic: %s", startingData)
+			pkgLogger.Warnf("Ending data after unmarshalling json panic: %s", data)
+			panic(r)
 		}
 	}()
 
