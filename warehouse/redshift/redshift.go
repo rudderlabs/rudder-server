@@ -24,10 +24,12 @@ import (
 )
 
 var (
-	setVarCharMax                 bool
-	stagingTablePrefix            string
-	pkgLogger                     logger.Logger
-	skipComputingUserLatestTraits bool
+	setVarCharMax                   bool
+	skipScanningEntireTableForDedup bool
+	scanningIntervalForDedupInDays  int
+	stagingTablePrefix              string
+	pkgLogger                       logger.Logger
+	skipComputingUserLatestTraits   bool
 )
 
 func Init() {
@@ -38,6 +40,9 @@ func Init() {
 func loadConfig() {
 	stagingTablePrefix = "rudder_staging_"
 	setVarCharMax = config.GetBool("Warehouse.redshift.setVarCharMax", false)
+
+	config.RegisterBoolConfigVariable(false, &skipScanningEntireTableForDedup, true, "Warehouse.redshift.skipScanningEntireTableForDedup")
+	config.RegisterIntConfigVariable(30, &scanningIntervalForDedupInDays, true, 1, "Warehouse.redshift.scanningIntervalForDedupInDays")
 	config.RegisterBoolConfigVariable(false, &skipComputingUserLatestTraits, true, "Warehouse.redshift.skipComputingUserLatestTraits")
 }
 
@@ -352,12 +357,19 @@ func (rs *HandleT) loadTable(tableName string, tableSchemaInUpload, tableSchemaA
 		partitionKey = column
 	}
 
+	var skipEntireTableClause string
+	if skipScanningEntireTableForDedup {
+		if _, ok := tableSchemaAfterUpload["received_at"]; ok {
+			skipEntireTableClause = fmt.Sprintf(`AND %[1]s.%[2]s.received_at > GETDATE() - INTERVAL '%d DAY'`, rs.Namespace, tableName, scanningIntervalForDedupInDays)
+		}
+	}
+
 	var additionalJoinClause string
 	if tableName == warehouseutils.DiscardsTable {
 		additionalJoinClause = fmt.Sprintf(`AND _source.%[3]s = %[1]s.%[2]s.%[3]s AND _source.%[4]s = %[1]s.%[2]s.%[4]s`, rs.Namespace, tableName, "table_name", "column_name")
 	}
 
-	sqlStatement = fmt.Sprintf(`DELETE FROM %[1]s."%[2]s" using %[1]s."%[3]s" _source where (_source.%[4]s = %[1]s.%[2]s.%[4]s %[5]s)`, rs.Namespace, tableName, stagingTableName, primaryKey, additionalJoinClause)
+	sqlStatement = fmt.Sprintf(`DELETE FROM %[1]s."%[2]s" using %[1]s."%[3]s" _source where (_source.%[4]s = %[1]s.%[2]s.%[4]s %[5]s %[6]s)`, rs.Namespace, tableName, stagingTableName, primaryKey, additionalJoinClause, skipEntireTableClause)
 	pkgLogger.Infof("RS: Dedup records for table:%s using staging table: %s\n", tableName, sqlStatement)
 	_, err = tx.Exec(sqlStatement)
 	if err != nil {
