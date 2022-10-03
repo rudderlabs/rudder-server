@@ -3188,6 +3188,7 @@ func (jd *HandleT) migrateDSLoop(ctx context.Context) {
 						jd.inProgressMigrationTargetDS = nil
 					})
 					if !success {
+						jd.JournalMarkDone(opID)
 						continue
 					}
 				}
