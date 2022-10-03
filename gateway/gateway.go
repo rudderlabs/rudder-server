@@ -141,8 +141,8 @@ type userWebRequestWorkerT struct {
 	batchRequestQ               chan *batchWebRequestT
 	reponseQ                    chan map[uuid.UUID]string
 	workerID                    int
-	batchTimeStat               stats.RudderStats
-	bufferFullStat, timeOutStat stats.RudderStats
+	batchTimeStat               stats.Measurement
+	bufferFullStat, timeOutStat stats.Measurement
 }
 
 // HandleT is the struct returned by the Setup call
@@ -157,15 +157,15 @@ type HandleT struct {
 	rateLimiter                  ratelimiter.RateLimiter
 
 	stats                                         stats.Stats
-	batchSizeStat                                 stats.RudderStats
-	requestSizeStat                               stats.RudderStats
-	dbWritesStat                                  stats.RudderStats
-	dbWorkersBufferFullStat, dbWorkersTimeOutStat stats.RudderStats
-	bodyReadTimeStat                              stats.RudderStats
-	addToWebRequestQWaitTime                      stats.RudderStats
-	processRequestTime                            stats.RudderStats
-	emptyAnonIdHeaderStat                         stats.RudderStats
-	addToBatchRequestQWaitTime                    stats.RudderStats
+	batchSizeStat                                 stats.Measurement
+	requestSizeStat                               stats.Measurement
+	dbWritesStat                                  stats.Measurement
+	dbWorkersBufferFullStat, dbWorkersTimeOutStat stats.Measurement
+	bodyReadTimeStat                              stats.Measurement
+	addToWebRequestQWaitTime                      stats.Measurement
+	processRequestTime                            stats.Measurement
+	emptyAnonIdHeaderStat                         stats.Measurement
+	addToBatchRequestQWaitTime                    stats.Measurement
 
 	diagnosisTicker   *time.Ticker
 	requestMetricLock sync.Mutex
@@ -680,7 +680,7 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 	}
 }
 
-func (gateway *HandleT) isValidWriteKey(writeKey string) bool {
+func (*HandleT) isValidWriteKey(writeKey string) bool {
 	configSubscriberLock.RLock()
 	defer configSubscriberLock.RUnlock()
 
@@ -688,14 +688,14 @@ func (gateway *HandleT) isValidWriteKey(writeKey string) bool {
 	return ok
 }
 
-func (gateway *HandleT) isWriteKeyEnabled(writeKey string) bool {
+func (*HandleT) isWriteKeyEnabled(writeKey string) bool {
 	configSubscriberLock.RLock()
 	defer configSubscriberLock.RUnlock()
 
 	return writeKeysSourceMap[writeKey].Enabled
 }
 
-func (gateway *HandleT) getSourceIDForWriteKey(writeKey string) string {
+func (*HandleT) getSourceIDForWriteKey(writeKey string) string {
 	configSubscriberLock.RLock()
 	defer configSubscriberLock.RUnlock()
 
@@ -706,7 +706,7 @@ func (gateway *HandleT) getSourceIDForWriteKey(writeKey string) string {
 	return ""
 }
 
-func (gateway *HandleT) getSourceNameForWriteKey(writeKey string) string {
+func (*HandleT) getSourceNameForWriteKey(writeKey string) string {
 	configSubscriberLock.RLock()
 	defer configSubscriberLock.RUnlock()
 
@@ -1048,7 +1048,7 @@ func (gateway *HandleT) failedEventsHandler(w http.ResponseWriter, r *http.Reque
 }
 
 // ProcessRequest throws a webRequest into the queue and waits for the response before returning
-func (rrh *RegularRequestHandler) ProcessRequest(gateway *HandleT, w *http.ResponseWriter, r *http.Request, reqType string, payload []byte, writeKey string) string {
+func (*RegularRequestHandler) ProcessRequest(gateway *HandleT, w *http.ResponseWriter, r *http.Request, reqType string, payload []byte, writeKey string) string {
 	done := make(chan string, 1)
 	start := time.Now()
 	gateway.addToWebRequestQ(w, r, done, reqType, payload, writeKey)
@@ -1160,7 +1160,7 @@ func (gateway *HandleT) pixelWebRequestHandler(rh RequestHandler, w http.Respons
 }
 
 // ProcessRequest on ImportRequestHandler splits payload by user and throws them into the webrequestQ and waits for all their responses before returning
-func (irh *ImportRequestHandler) ProcessRequest(gateway *HandleT, w *http.ResponseWriter, r *http.Request, _ string, payload []byte, writeKey string) string {
+func (*ImportRequestHandler) ProcessRequest(gateway *HandleT, w *http.ResponseWriter, r *http.Request, _ string, payload []byte, writeKey string) string {
 	usersPayload, payloadError := gateway.getUsersPayload(payload)
 	if payloadError != nil {
 		return payloadError.Error()
@@ -1180,7 +1180,7 @@ func (irh *ImportRequestHandler) ProcessRequest(gateway *HandleT, w *http.Respon
 }
 
 // for performance see: https://github.com/rudderlabs/rudder-server/pull/2040
-func (gateway *HandleT) getUsersPayload(requestPayload []byte) (map[string][]byte, error) {
+func (*HandleT) getUsersPayload(requestPayload []byte) (map[string][]byte, error) {
 	if !gjson.ValidBytes(requestPayload) {
 		return make(map[string][]byte), errors.New(response.InvalidJSON)
 	}
@@ -1253,7 +1253,7 @@ func (gateway *HandleT) collectMetrics(ctx context.Context) {
 	}
 }
 
-func (gateway *HandleT) setWebPayload(r *http.Request, qp url.Values, reqType string) error {
+func (*HandleT) setWebPayload(r *http.Request, qp url.Values, reqType string) error {
 	// add default fields to body
 	body := []byte(`{"channel": "web","integrations": {"All": true}}`)
 	currentTime := time.Now()
@@ -1349,7 +1349,7 @@ func (gateway *HandleT) beaconHandler(w http.ResponseWriter, r *http.Request, re
 }
 
 // Robots prevents robots from crawling the gateway endpoints
-func (gateway *HandleT) robots(w http.ResponseWriter, _ *http.Request) {
+func (*HandleT) robots(w http.ResponseWriter, _ *http.Request) {
 	_, _ = w.Write([]byte("User-agent: * \nDisallow: / \n"))
 }
 
@@ -1528,7 +1528,7 @@ func (gateway *HandleT) TrackRequestMetrics(errorMessage string) {
 }
 
 // GetWebhookSourceDefName returns the webhook source definition name by write key
-func (gateway *HandleT) GetWebhookSourceDefName(writeKey string) (name string, ok bool) {
+func (*HandleT) GetWebhookSourceDefName(writeKey string) (name string, ok bool) {
 	configSubscriberLock.RLock()
 	defer configSubscriberLock.RUnlock()
 	name, ok = enabledWriteKeyWebhookMap[writeKey]
@@ -1557,7 +1557,7 @@ func (gateway *HandleT) Setup(
 ) error {
 	gateway.logger = pkgLogger
 	gateway.application = application
-	gateway.stats = stats.DefaultStats
+	gateway.stats = stats.Default
 
 	gateway.rsourcesService = rsourcesService
 

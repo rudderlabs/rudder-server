@@ -31,7 +31,6 @@ import (
 	"github.com/rudderlabs/rudder-server/router/batchrouter"
 	"github.com/rudderlabs/rudder-server/services/archiver"
 	"github.com/rudderlabs/rudder-server/services/rsources"
-	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/services/transientsource"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/pubsub"
@@ -177,7 +176,6 @@ func initRouter() {
 func TestRouterManager(t *testing.T) {
 	RegisterTestingT(t)
 	initRouter()
-	stats.Setup()
 	pkgLogger = logger.NewLogger().Child("router")
 	c := make(chan bool)
 	once := sync.Once{}

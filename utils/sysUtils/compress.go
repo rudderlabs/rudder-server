@@ -42,7 +42,7 @@ func NewGZip() GZipI {
 //
 // Callers that wish to set the fields in Writer.Header must do so before
 // the first call to Write, Flush, or Close.
-func (gz *GZip) NewWriter(w io.Writer) *gzip.Writer {
+func (*GZip) NewWriter(w io.Writer) *gzip.Writer {
 	return gzip.NewWriter(w)
 }
 
@@ -53,6 +53,6 @@ func (gz *GZip) NewWriter(w io.Writer) *gzip.Writer {
 // It is the caller's responsibility to call Close on the Reader when done.
 //
 // The Reader.Header fields will be valid in the Reader returned.
-func (gz *GZip) NewReader(r io.Reader) (*gzip.Reader, error) {
+func (*GZip) NewReader(r io.Reader) (*gzip.Reader, error) {
 	return gzip.NewReader(r)
 }

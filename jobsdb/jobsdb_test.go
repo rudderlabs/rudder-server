@@ -28,7 +28,6 @@ import (
 	"github.com/rudderlabs/rudder-server/jobsdb/internal/lock"
 	"github.com/rudderlabs/rudder-server/jobsdb/prebackup"
 	"github.com/rudderlabs/rudder-server/services/archiver"
-	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/testhelper/destination"
 	rsRand "github.com/rudderlabs/rudder-server/testhelper/rand"
 	"github.com/rudderlabs/rudder-server/utils/logger"
@@ -1082,6 +1081,4 @@ func initJobsDB() {
 	Init2()
 	Init3()
 	archiver.Init()
-	stats.Init()
-	stats.Setup()
 }

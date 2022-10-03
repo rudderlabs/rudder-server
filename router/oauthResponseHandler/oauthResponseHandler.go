@@ -320,7 +320,7 @@ func getRefreshTokenErrResp(response string, accountSecret *AccountSecret) (mess
 }
 
 func (authStats *OAuthStats) SendTimerStats(startTime time.Time) {
-	stats.NewTaggedStat(authStats.statName, stats.TimerType, stats.Tags{
+	stats.Default.NewTaggedStat(authStats.statName, stats.TimerType, stats.Tags{
 		"id":              authStats.id,
 		"workspaceId":     authStats.workspaceId,
 		"rudderCategory":  authStats.rudderCategory,
@@ -332,7 +332,7 @@ func (authStats *OAuthStats) SendTimerStats(startTime time.Time) {
 
 // Send count type stats related to OAuth(Destination)
 func (refStats *OAuthStats) SendCountStat() {
-	stats.NewTaggedStat(refStats.statName, stats.CountType, stats.Tags{
+	stats.Default.NewTaggedStat(refStats.statName, stats.CountType, stats.Tags{
 		"id":              refStats.id,
 		"workspaceId":     refStats.workspaceId,
 		"rudderCategory":  refStats.rudderCategory,
@@ -478,7 +478,7 @@ func (authErrHandler *OAuthErrResHandler) cpApiCall(cpReq *ControlPlaneRequestT)
 
 	cpApiDoTimeStart := time.Now()
 	res, doErr := authErrHandler.client.Do(req)
-	stats.NewTaggedStat("cp_request_latency", stats.TimerType, stats.Tags{
+	stats.Default.NewTaggedStat("cp_request_latency", stats.TimerType, stats.Tags{
 		"url":         cpReq.Url,
 		"destination": cpReq.destName,
 		"requestType": cpReq.RequestType,

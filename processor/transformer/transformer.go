@@ -76,8 +76,8 @@ type TransformerEventT struct {
 // HandleT is the handle for this class
 type HandleT struct {
 	perfStats    *misc.PerfStats
-	sentStat     stats.RudderStats
-	receivedStat stats.RudderStats
+	sentStat     stats.Measurement
+	receivedStat stats.Measurement
 
 	logger logger.Logger
 
@@ -138,8 +138,8 @@ type ValidationErrorT struct {
 // Setup initializes this class
 func (trans *HandleT) Setup() {
 	trans.logger = pkgLogger
-	trans.sentStat = stats.DefaultStats.NewStat("processor.transformer_sent", stats.CountType)
-	trans.receivedStat = stats.DefaultStats.NewStat("processor.transformer_received", stats.CountType)
+	trans.sentStat = stats.Default.NewStat("processor.transformer_sent", stats.CountType)
+	trans.receivedStat = stats.Default.NewStat("processor.transformer_received", stats.CountType)
 
 	trans.guardConcurrency = make(chan struct{}, maxConcurrency)
 	trans.perfStats = &misc.PerfStats{}
@@ -207,7 +207,7 @@ func (trans *HandleT) Transform(ctx context.Context, clientEvents []TransformerE
 		batchCount += 1
 	}
 
-	stats.NewTaggedStat(
+	stats.Default.NewTaggedStat(
 		"processor.transformer_request_batch_count",
 		stats.HistogramType,
 		sTags,
@@ -271,7 +271,7 @@ func (trans *HandleT) Validate(clientEvents []TransformerEventT,
 }
 
 func (*HandleT) requestTime(s stats.Tags, d time.Duration) {
-	stats.NewTaggedStat("processor.transformer_request_time", stats.TimerType, s).SendTiming(d)
+	stats.Default.NewTaggedStat("processor.transformer_request_time", stats.TimerType, s).SendTiming(d)
 }
 
 func statsTags(event TransformerEventT) stats.Tags {

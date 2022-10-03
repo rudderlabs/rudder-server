@@ -39,6 +39,8 @@ func initFileManager() (filemanager.FileManager, string, error) {
 			Provider:         provider,
 			Config:           configFromEnv,
 			UseRudderStorage: false,
+			// TODO: need to figure out how to bring workspaceID here
+			// when we support IAM role here.
 		}),
 	})
 	if err != nil {

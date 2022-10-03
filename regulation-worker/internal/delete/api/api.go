@@ -53,7 +53,7 @@ func (api *APIManager) Delete(ctx context.Context, job model.Job, destConfig map
 	}
 	req.Header.Set("Content-Type", "application/json")
 
-	fileCleaningTime := stats.NewTaggedStat("file_cleaning_time", stats.TimerType, stats.Tags{
+	fileCleaningTime := stats.Default.NewTaggedStat("file_cleaning_time", stats.TimerType, stats.Tags{
 		"jobId":       fmt.Sprintf("%d", job.ID),
 		"workspaceId": job.WorkspaceID,
 		"destType":    "api",
@@ -109,7 +109,7 @@ func (api *APIManager) Delete(ctx context.Context, job model.Job, destConfig map
 	}
 }
 
-func (bm *APIManager) GetSupportedDestinations() []string {
+func (*APIManager) GetSupportedDestinations() []string {
 	return supportedDestinations
 }
 

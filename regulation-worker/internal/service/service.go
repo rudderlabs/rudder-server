@@ -44,7 +44,7 @@ func (js *JobSvc) JobSvc(ctx context.Context) error {
 		return err
 	}
 
-	totalJobTime := stats.NewTaggedStat("total_job_time", stats.TimerType, stats.Tags{"jobId": fmt.Sprintf("%d", job.ID), "workspaceId": job.WorkspaceID})
+	totalJobTime := stats.Default.NewTaggedStat("total_job_time", stats.TimerType, stats.Tags{"jobId": fmt.Sprintf("%d", job.ID), "workspaceId": job.WorkspaceID})
 	totalJobTime.Start()
 	defer totalJobTime.End()
 
