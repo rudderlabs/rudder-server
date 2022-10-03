@@ -67,62 +67,64 @@ func (mj *MultiTenantHandleT) GetAllJobs(ctx context.Context, workspaceCount map
 	// The order of lock is very important. The migrateDSLoop
 	// takes lock in this order so reversing this will cause
 	// deadlocks
-	mj.dsMigrationLock.RLock()
-	defer mj.dsMigrationLock.RUnlock()
+	if mj.dsMigrationLock.RTryLockWithCtx(ctx) {
+		defer mj.dsMigrationLock.RUnlock()
 
-	if mj.dsListLock.RTryLockWithCtx(ctx) {
-		defer mj.dsListLock.RUnlock()
+		if mj.dsListLock.RTryLockWithCtx(ctx) {
+			defer mj.dsListLock.RUnlock()
 
-		dsList := mj.getDSList()
-		outJobs := make([]*JobT, 0)
+			dsList := mj.getDSList()
+			outJobs := make([]*JobT, 0)
 
-		workspacePayloadLimitMap := make(map[string]int64)
-		for workspace, count := range workspaceCount {
-			percentage := math.Max(float64(count), 0) / float64(params.JobsLimit)
-			payloadLimit := percentage * float64(params.PayloadSizeLimit)
-			workspacePayloadLimitMap[workspace] = int64(payloadLimit)
+			workspacePayloadLimitMap := make(map[string]int64)
+			for workspace, count := range workspaceCount {
+				percentage := math.Max(float64(count), 0) / float64(params.JobsLimit)
+				payloadLimit := percentage * float64(params.PayloadSizeLimit)
+				workspacePayloadLimitMap[workspace] = int64(payloadLimit)
+			}
+
+			var tablesQueried int
+			params.StateFilters = []string{NotProcessed.State, Waiting.State, Failed.State}
+			conditions := QueryConditions{
+				IgnoreCustomValFiltersInQuery: params.IgnoreCustomValFiltersInQuery,
+				CustomValFilters:              params.CustomValFilters,
+				ParameterFilters:              params.ParameterFilters,
+				StateFilters:                  params.StateFilters,
+			}
+			start := time.Now()
+			for _, ds := range dsList {
+				jobs, err := mj.getUnionDS(ctx, ds, workspaceCount, workspacePayloadLimitMap, conditions)
+				if err != nil {
+					return nil, err
+				}
+				outJobs = append(outJobs, jobs...)
+				if len(jobs) > 0 {
+					tablesQueried++
+				}
+
+				if len(workspaceCount) == 0 {
+					break
+				}
+				if tablesQueried >= maxDSQuerySize {
+					break
+				}
+			}
+
+			mj.unionQueryTime.SendTiming(time.Since(start))
+
+			unionQueryTablesQueriedStat := stats.Default.NewTaggedStat("tables_queried_gauge", stats.GaugeType, stats.Tags{
+				"state":     "nonterminal",
+				"query":     "union",
+				"customVal": mj.tablePrefix,
+			})
+			unionQueryTablesQueriedStat.Gauge(tablesQueried)
+
+			return outJobs, nil
+
 		}
-
-		var tablesQueried int
-		params.StateFilters = []string{NotProcessed.State, Waiting.State, Failed.State}
-		conditions := QueryConditions{
-			IgnoreCustomValFiltersInQuery: params.IgnoreCustomValFiltersInQuery,
-			CustomValFilters:              params.CustomValFilters,
-			ParameterFilters:              params.ParameterFilters,
-			StateFilters:                  params.StateFilters,
-		}
-		start := time.Now()
-		for _, ds := range dsList {
-			jobs, err := mj.getUnionDS(ctx, ds, workspaceCount, workspacePayloadLimitMap, conditions)
-			if err != nil {
-				return nil, err
-			}
-			outJobs = append(outJobs, jobs...)
-			if len(jobs) > 0 {
-				tablesQueried++
-			}
-
-			if len(workspaceCount) == 0 {
-				break
-			}
-			if tablesQueried >= maxDSQuerySize {
-				break
-			}
-		}
-
-		mj.unionQueryTime.SendTiming(time.Since(start))
-
-		unionQueryTablesQueriedStat := stats.Default.NewTaggedStat("tables_queried_gauge", stats.GaugeType, stats.Tags{
-			"state":     "nonterminal",
-			"query":     "union",
-			"customVal": mj.tablePrefix,
-		})
-		unionQueryTablesQueriedStat.Gauge(tablesQueried)
-
-		return outJobs, nil
-
+		return nil, fmt.Errorf("could not acquire DS Rlock")
 	}
-	return nil, fmt.Errorf("could not acquire Rlock")
+	return nil, fmt.Errorf("could not acquire DS migration Rlock")
 }
 
 func (mj *MultiTenantHandleT) getUnionDS(ctx context.Context, ds dataSetT, workspaceCount map[string]int, workspacePayloadLimitMap map[string]int64, conditions QueryConditions) ([]*JobT, error) { // skipcq: CRT-P0003

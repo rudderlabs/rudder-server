@@ -6,73 +6,73 @@ import (
 	golock "github.com/viney-shih/go-lock"
 )
 
-// DSListLockToken represents proof that a list lock has been acquired
-type DSListLockToken interface {
+// LockToken represents proof that a list lock has been acquired
+type LockToken interface {
 	listLockToken()
 }
 
-// DSListLocker
-type DSListLocker struct {
+// Locker
+type Locker struct {
 	m *golock.CASMutex
 }
 
-func NewDSListLocker() *DSListLocker {
-	return &DSListLocker{
+func NewLocker() *Locker {
+	return &Locker{
 		m: golock.NewCASMutex(),
 	}
 }
 
 // RLock acquires a read lock
-func (r *DSListLocker) RLock() {
+func (r *Locker) RLock() {
 	r.m.RLock()
 }
 
 // RTryLockWithCtx tries to acquires a read lock with context and returns false if context times out, otherwise returns true.
-func (r *DSListLocker) RTryLockWithCtx(ctx context.Context) bool {
+func (r *Locker) RTryLockWithCtx(ctx context.Context) bool {
 	return r.m.RTryLockWithContext(ctx)
 }
 
 // RLock releases a read lock
-func (r *DSListLocker) RUnlock() {
+func (r *Locker) RUnlock() {
 	r.m.RUnlock()
 }
 
 // WithLock acquires a lock for the duration that the provided function
 // is being executed. A token as proof of the lock is passed to the function.
-func (r *DSListLocker) WithLock(f func(l DSListLockToken)) {
+func (r *Locker) WithLock(f func(l LockToken)) {
 	r.m.Lock()
 	defer r.m.Unlock()
-	f(&listLockToken{})
+	f(&lockToken{})
 }
 
 // TryWithCtxAwareLock tries to acquires a lock until it succeeds or context times out. If it fails, return value is false otherwise true. And, executes the function `f`, if lock is acquired.
 // A token as proof of the lock is passed to the function.
-func (r *DSListLocker) TryWithCtxAwareLock(ctx context.Context, f func(l DSListLockToken)) bool {
+func (r *Locker) TryWithCtxAwareLock(ctx context.Context, f func(l LockToken)) bool {
 	if r.m.TryLockWithContext(ctx) {
 		defer r.m.Unlock()
-		f(&listLockToken{})
+		f(&lockToken{})
 		return true
 	}
 	return false
 }
 
 // AsyncLock acquires a lock until the token is returned to the receiving channel
-func (r *DSListLocker) AsyncLock() (DSListLockToken, chan<- DSListLockToken) {
-	acquireDsListLock := make(chan DSListLockToken)
-	releaseDsListLock := make(chan DSListLockToken)
+func (r *Locker) AsyncLock() (LockToken, chan<- LockToken) {
+	acquireLock := make(chan LockToken)
+	releaseLock := make(chan LockToken)
 
 	go func() {
-		r.WithLock(func(l DSListLockToken) {
-			acquireDsListLock <- l
-			<-releaseDsListLock
+		r.WithLock(func(l LockToken) {
+			acquireLock <- l
+			<-releaseLock
 		})
 	}()
-	dsListLock := <-acquireDsListLock
-	return dsListLock, releaseDsListLock
+	dsListLock := <-acquireLock
+	return dsListLock, releaseLock
 }
 
-type listLockToken struct{}
+type lockToken struct{}
 
-func (*listLockToken) listLockToken() {
+func (*lockToken) listLockToken() {
 	// no-op
 }

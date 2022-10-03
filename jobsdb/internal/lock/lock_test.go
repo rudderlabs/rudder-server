@@ -10,7 +10,7 @@ import (
 )
 
 func TestAsyncLock(t *testing.T) {
-	locker := lock.NewDSListLocker()
+	locker := lock.NewLocker()
 
 	l, c := locker.AsyncLock()
 	require.NotNil(t, l)
@@ -20,7 +20,7 @@ func TestAsyncLock(t *testing.T) {
 	wg.Add(1)
 	go func() {
 		wg.Done()
-		locker.WithLock(func(l lock.DSListLockToken) {
+		locker.WithLock(func(l lock.LockToken) {
 			secondLock <- struct{}{}
 		})
 	}()
