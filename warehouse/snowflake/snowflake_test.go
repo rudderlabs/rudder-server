@@ -1,9 +1,6 @@
-//go:build warehouse_integration
-
 package snowflake_test
 
 import (
-	"database/sql"
 	"fmt"
 	"strings"
 	"testing"
@@ -19,153 +16,134 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-type TestHandle struct {
-	DB                   *sql.DB
-	CaseSensitiveDB      *sql.DB
-	WriteKey             string
-	CaseSensiiveWriteKey string
-	Schema               string
-	CaseSensitiveSchema  string
-	Tables               []string
-}
-
-var handle *TestHandle
+type TestHandle struct{}
 
 func (t *TestHandle) VerifyConnection() error {
 	credentials, err := testhelper.SnowflakeCredentials()
 	if err != nil {
 		return err
 	}
-	if err = testhelper.WithConstantBackoff(func() (err error) {
-		handle.DB, err = snowflake.Connect(credentials)
-		if err != nil {
-			err = fmt.Errorf("could not connect to warehouse snowflake with error: %w", err)
-			return
-		}
-		return
-	}); err != nil {
-		return err
-	}
-
 	return testhelper.WithConstantBackoff(func() (err error) {
-		caseSensitiveCredentials := credentials
-		caseSensitiveCredentials.DBName = strings.ToLower(credentials.DBName)
-		handle.CaseSensitiveDB, err = snowflake.Connect(caseSensitiveCredentials)
+		_, err = snowflake.Connect(credentials)
 		if err != nil {
 			err = fmt.Errorf("could not connect to warehouse snowflake with error: %w", err)
 			return
 		}
 		return
 	})
+}
+
+func TestMain(m *testing.M) {
+	//_, exists := os.LookupEnv(testhelper.SnowflakeIntegrationTestCredentials)
+	//if !exists {
+	//	log.Println("Skipping Snowflake Test as the Test credentials does not exists.")
+	//	return
+	//}
+	//
+	//os.Exit(testhelper.Run(m, &TestHandle{}))
 }
 
 func TestSnowflakeIntegration(t *testing.T) {
 	t.SkipNow()
+	t.Parallel()
 
-	t.Cleanup(func() {
-		require.NoError(t, testhelper.WithConstantBackoff(func() (err error) {
-			_, err = handle.DB.Exec(fmt.Sprintf(`DROP SCHEMA "%s" CASCADE;`, handle.Schema))
-			return
-		}), fmt.Sprintf("Failed dropping schema %s for Snowflake", handle.Schema))
-	})
+	credentials, err := testhelper.SnowflakeCredentials()
+	require.NoError(t, err)
 
-	t.Run("Normal Database", func(t *testing.T) {
-		t.Parallel()
+	testcase := []struct {
+		name          string
+		dbName        string
+		schema        string
+		writeKey      string
+		sourceID      string
+		destinationID string
+	}{
+		{
+			name:          "Normal Database",
+			dbName:        credentials.DBName,
+			schema:        testhelper.Schema(warehouseutils.SNOWFLAKE, testhelper.SnowflakeIntegrationTestSchema),
+			writeKey:      "2eSJyYtqwcFiUILzXv2fcNIrWO7",
+			sourceID:      "24p1HhPk09FW25Kuzvx7GshCLKR",
+			destinationID: "24qeADObp6eIhjjDnEppO6P1SNc",
+		},
+		{
+			name:          "Case Sensitive Database",
+			dbName:        strings.ToLower(credentials.DBName),
+			schema:        fmt.Sprintf("%s_%s", testhelper.Schema(warehouseutils.SNOWFLAKE, testhelper.SnowflakeIntegrationTestSchema), "CS"),
+			writeKey:      "2eSJyYtqwcFYUILzXv2fcNIrWO7",
+			sourceID:      "24p1HhPk09FBMKuzvx7GshCLKR",
+			destinationID: "24qeADObp6eJhijDnEppO6P1SNc",
+		},
+	}
 
-		warehouseTest := &testhelper.WareHouseTest{
-			Client: &client.Client{
-				SQL:  handle.DB,
-				Type: client.SQLClient,
-			},
-			WriteKey:      handle.WriteKey,
-			Schema:        handle.Schema,
-			Tables:        handle.Tables,
-			Provider:      warehouseutils.SNOWFLAKE,
-			SourceID:      "24p1HhPk09FW25Kuzvx7GshCLKR",
-			DestinationID: "24qeADObp6eIhjjDnEppO6P1SNc",
-		}
+	for _, tc := range testcase {
+		tc := tc
 
-		// Scenario 1
-		warehouseTest.TimestampBeforeSendingEvents = timeutil.Now()
-		warehouseTest.UserId = testhelper.GetUserId(warehouseutils.SNOWFLAKE)
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 
-		sendEventsMap := testhelper.SendEventsMap()
-		testhelper.SendEvents(t, warehouseTest, sendEventsMap)
-		testhelper.SendEvents(t, warehouseTest, sendEventsMap)
-		testhelper.SendEvents(t, warehouseTest, sendEventsMap)
-		testhelper.SendIntegratedEvents(t, warehouseTest, sendEventsMap)
+			credentialsCopy := credentials
+			credentialsCopy.DBName = tc.dbName
 
-		testhelper.VerifyEventsInStagingFiles(t, warehouseTest, testhelper.StagingFilesEventsMap())
-		testhelper.VerifyEventsInLoadFiles(t, warehouseTest, testhelper.LoadFilesEventsMap())
-		testhelper.VerifyEventsInTableUploads(t, warehouseTest, testhelper.TableUploadsEventsMap())
-		testhelper.VerifyEventsInWareHouse(t, warehouseTest, testhelper.WarehouseEventsMap())
+			db, err := snowflake.Connect(credentialsCopy)
+			require.NoError(t, err)
 
-		// Scenario 2
-		warehouseTest.TimestampBeforeSendingEvents = timeutil.Now()
-		warehouseTest.UserId = testhelper.GetUserId(warehouseutils.SNOWFLAKE)
+			t.Cleanup(func() {
+				require.NoError(t, testhelper.WithConstantBackoff(func() (err error) {
+					_, err = db.Exec(fmt.Sprintf(`DROP SCHEMA "%s" CASCADE;`, tc.schema))
+					return
+				}), fmt.Sprintf("Failed dropping schema %s for Snowflake", tc.schema))
+			})
 
-		sendEventsMap = testhelper.SendEventsMap()
-		testhelper.SendModifiedEvents(t, warehouseTest, sendEventsMap)
-		testhelper.SendModifiedEvents(t, warehouseTest, sendEventsMap)
-		testhelper.SendModifiedEvents(t, warehouseTest, sendEventsMap)
-		testhelper.SendIntegratedEvents(t, warehouseTest, sendEventsMap)
+			warehouseTest := &testhelper.WareHouseTest{
+				Client: &client.Client{
+					SQL:  db,
+					Type: client.SQLClient,
+				},
+				WriteKey:      tc.writeKey,
+				Schema:        tc.schema,
+				SourceID:      tc.sourceID,
+				DestinationID: tc.destinationID,
+				Tables:        []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"},
+				Provider:      warehouseutils.SNOWFLAKE,
+			}
 
-		testhelper.VerifyEventsInStagingFiles(t, warehouseTest, testhelper.StagingFilesEventsMap())
-		testhelper.VerifyEventsInLoadFiles(t, warehouseTest, testhelper.LoadFilesEventsMap())
-		testhelper.VerifyEventsInTableUploads(t, warehouseTest, testhelper.TableUploadsEventsMap())
-		testhelper.VerifyEventsInWareHouse(t, warehouseTest, testhelper.WarehouseEventsMap())
-	})
+			// Scenario 1
+			warehouseTest.TimestampBeforeSendingEvents = timeutil.Now()
+			warehouseTest.UserId = testhelper.GetUserId(warehouseutils.SNOWFLAKE)
 
-	t.Run("Case Sensitive Database", func(t *testing.T) {
-		t.Parallel()
+			sendEventsMap := testhelper.SendEventsMap()
+			testhelper.SendEvents(t, warehouseTest, sendEventsMap)
+			testhelper.SendEvents(t, warehouseTest, sendEventsMap)
+			testhelper.SendEvents(t, warehouseTest, sendEventsMap)
+			testhelper.SendIntegratedEvents(t, warehouseTest, sendEventsMap)
 
-		warehouseTest := &testhelper.WareHouseTest{
-			Client: &client.Client{
-				SQL:  handle.CaseSensitiveDB,
-				Type: client.SQLClient,
-			},
-			WriteKey:      handle.CaseSensiiveWriteKey,
-			Schema:        handle.CaseSensitiveSchema,
-			Tables:        handle.Tables,
-			Provider:      warehouseutils.SNOWFLAKE,
-			SourceID:      "24p1HhPk09FBMKuzvx7GshCLKR",
-			DestinationID: "24qeADObp6eJhijDnEppO6P1SNc",
-		}
+			testhelper.VerifyEventsInStagingFiles(t, warehouseTest, testhelper.StagingFilesEventsMap())
+			testhelper.VerifyEventsInLoadFiles(t, warehouseTest, testhelper.LoadFilesEventsMap())
+			testhelper.VerifyEventsInTableUploads(t, warehouseTest, testhelper.TableUploadsEventsMap())
+			testhelper.VerifyEventsInWareHouse(t, warehouseTest, testhelper.WarehouseEventsMap())
 
-		// Scenario 1
-		warehouseTest.TimestampBeforeSendingEvents = timeutil.Now()
-		warehouseTest.UserId = testhelper.GetUserId(warehouseutils.SNOWFLAKE)
+			// Scenario 2
+			warehouseTest.TimestampBeforeSendingEvents = timeutil.Now()
+			warehouseTest.UserId = testhelper.GetUserId(warehouseutils.SNOWFLAKE)
 
-		sendEventsMap := testhelper.SendEventsMap()
-		testhelper.SendEvents(t, warehouseTest, sendEventsMap)
-		testhelper.SendEvents(t, warehouseTest, sendEventsMap)
-		testhelper.SendEvents(t, warehouseTest, sendEventsMap)
-		testhelper.SendIntegratedEvents(t, warehouseTest, sendEventsMap)
+			sendEventsMap = testhelper.SendEventsMap()
+			testhelper.SendModifiedEvents(t, warehouseTest, sendEventsMap)
+			testhelper.SendModifiedEvents(t, warehouseTest, sendEventsMap)
+			testhelper.SendModifiedEvents(t, warehouseTest, sendEventsMap)
+			testhelper.SendIntegratedEvents(t, warehouseTest, sendEventsMap)
 
-		testhelper.VerifyEventsInStagingFiles(t, warehouseTest, testhelper.StagingFilesEventsMap())
-		testhelper.VerifyEventsInLoadFiles(t, warehouseTest, testhelper.LoadFilesEventsMap())
-		testhelper.VerifyEventsInTableUploads(t, warehouseTest, testhelper.TableUploadsEventsMap())
-		testhelper.VerifyEventsInWareHouse(t, warehouseTest, testhelper.WarehouseEventsMap())
-
-		// Scenario 2
-		warehouseTest.TimestampBeforeSendingEvents = timeutil.Now()
-		warehouseTest.UserId = testhelper.GetUserId(warehouseutils.SNOWFLAKE)
-
-		sendEventsMap = testhelper.SendEventsMap()
-		testhelper.SendModifiedEvents(t, warehouseTest, sendEventsMap)
-		testhelper.SendModifiedEvents(t, warehouseTest, sendEventsMap)
-		testhelper.SendModifiedEvents(t, warehouseTest, sendEventsMap)
-		testhelper.SendIntegratedEvents(t, warehouseTest, sendEventsMap)
-
-		testhelper.VerifyEventsInStagingFiles(t, warehouseTest, testhelper.StagingFilesEventsMap())
-		testhelper.VerifyEventsInLoadFiles(t, warehouseTest, testhelper.LoadFilesEventsMap())
-		testhelper.VerifyEventsInTableUploads(t, warehouseTest, testhelper.TableUploadsEventsMap())
-		testhelper.VerifyEventsInWareHouse(t, warehouseTest, testhelper.WarehouseEventsMap())
-	})
+			testhelper.VerifyEventsInStagingFiles(t, warehouseTest, testhelper.StagingFilesEventsMap())
+			testhelper.VerifyEventsInLoadFiles(t, warehouseTest, testhelper.LoadFilesEventsMap())
+			testhelper.VerifyEventsInTableUploads(t, warehouseTest, testhelper.TableUploadsEventsMap())
+			testhelper.VerifyEventsInWareHouse(t, warehouseTest, testhelper.WarehouseEventsMap())
+		})
+	}
 }
 
 func TestSnowflakeConfigurationValidation(t *testing.T) {
 	t.SkipNow()
+	t.Parallel()
 
 	configurations := testhelper.PopulateTemplateConfigurations()
 	destination := backendconfig.DestinationT{
@@ -197,21 +175,4 @@ func TestSnowflakeConfigurationValidation(t *testing.T) {
 		RevisionID: "29HgdgvNPwqFDMONSgmIZ3YSehV",
 	}
 	testhelper.VerifyingConfigurationTest(t, destination)
-}
-
-func TestMain(m *testing.M) {
-	//_, exists := os.LookupEnv(testhelper.SnowflakeIntegrationTestCredentials)
-	//if !exists {
-	//	log.Println("Skipping Snowflake Test as the Test credentials does not exists.")
-	//	return
-	//}
-	//
-	//handle = &TestHandle{
-	//	WriteKey:             "2eSJyYtqwcFiUILzXv2fcNIrWO7",
-	//	CaseSensiiveWriteKey: "2eSJyYtqwcFYUILzXv2fcNIrWO7",
-	//	Schema:               testhelper.Schema(warehouseutils.SNOWFLAKE, testhelper.SnowflakeIntegrationTestSchema),
-	//	CaseSensitiveSchema:  fmt.Sprintf("%s_%s", testhelper.Schema(warehouseutils.SNOWFLAKE, testhelper.SnowflakeIntegrationTestSchema), "cs"),
-	//	Tables:               []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"},
-	//}
-	//os.Exit(testhelper.Run(m, handle))
 }

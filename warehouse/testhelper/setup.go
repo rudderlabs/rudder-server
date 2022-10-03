@@ -59,7 +59,6 @@ type WareHouseTest struct {
 	Client                       *client.Client
 	WriteKey                     string
 	Schema                       string
-	TablesQueryFrequency         time.Duration
 	UserId                       string
 	SourceID                     string
 	DestinationID                string
@@ -595,24 +594,24 @@ func PopulateTemplateConfigurations() map[string]string {
 		"minioEndpoint":        "wh-minio:9000",
 	}
 
-	enhanceRedshiftCredentials(configurations)
-	enhanceSnowflakeCredentials(configurations)
-	enhanceDeltalakeCredentials(configurations)
-	enhanceBQCredentials(configurations)
+	enhanceWithRedshiftConfigurations(configurations)
+	enhanceWithSnowflakeConfigurations(configurations)
+	enhanceWithDeltalakeConfigurations(configurations)
+	enhanceWithBQConfigurations(configurations)
 	return configurations
 }
 
-func enhanceSnowflakeCredentials(values map[string]string) {
+func enhanceWithSnowflakeConfigurations(values map[string]string) {
 	for k, v := range credentialsFromKey(SnowflakeIntegrationTestCredentials) {
 		values[fmt.Sprintf("snowflake%s", k)] = v
 	}
 
 	values["snowflakeCaseSensitiveDBName"] = strings.ToLower(values["snowflakeDBName"])
 	values["snowflakeNamespace"] = Schema(warehouseutils.SNOWFLAKE, SnowflakeIntegrationTestSchema)
-	values["snowflakeCaseSensitiveNamespace"] = fmt.Sprintf("%s_%s", values["snowflakeNamespace"], "cs")
+	values["snowflakeCaseSensitiveNamespace"] = fmt.Sprintf("%s_%s", values["snowflakeNamespace"], "CS")
 }
 
-func enhanceRedshiftCredentials(values map[string]string) {
+func enhanceWithRedshiftConfigurations(values map[string]string) {
 	for k, v := range credentialsFromKey(RedshiftIntegrationTestCredentials) {
 		values[fmt.Sprintf("redshift%s", k)] = v
 	}
@@ -620,7 +619,7 @@ func enhanceRedshiftCredentials(values map[string]string) {
 	values["redshiftNamespace"] = Schema(warehouseutils.RS, RedshiftIntegrationTestSchema)
 }
 
-func enhanceDeltalakeCredentials(values map[string]string) {
+func enhanceWithDeltalakeConfigurations(values map[string]string) {
 	for k, v := range credentialsFromKey(DeltalakeIntegrationTestCredentials) {
 		values[fmt.Sprintf("deltalake%s", k)] = v
 	}
@@ -628,7 +627,7 @@ func enhanceDeltalakeCredentials(values map[string]string) {
 	values["deltalakeNamespace"] = Schema(warehouseutils.DELTALAKE, DeltalakeIntegrationTestSchema)
 }
 
-func enhanceBQCredentials(values map[string]string) {
+func enhanceWithBQConfigurations(values map[string]string) {
 	for k, v := range credentialsFromKey(BigqueryIntegrationTestCredentials) {
 		values[fmt.Sprintf("bigquery%s", k)] = v
 	}
