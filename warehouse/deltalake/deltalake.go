@@ -483,24 +483,21 @@ func (dl *HandleT) sortedColumnNames(tableSchemaInUpload warehouseutils.TableSch
 
 // credentialsStr return authentication for AWS STS and SSE-C encryption
 // STS authentication is only supported with S3A client.
-func (dl *HandleT) credentialsStr() (auth string, err error) {
+func (dl *HandleT) credentialsStr() (string, error) {
 	switch dl.ObjectStorage {
 	case "S3":
 		useSTSTokens := warehouseutils.GetConfigValueBoolString(AWSTokens, dl.Warehouse)
 		if useSTSTokens == "true" {
-			awsAccessKey := warehouseutils.GetConfigValue(AWSAccessKey, dl.Warehouse)
-			awsSecretKey := warehouseutils.GetConfigValue(AWSAccessSecret, dl.Warehouse)
-			if awsAccessKey != "" && awsSecretKey != "" {
-				var tempAccessKeyId, tempSecretAccessKey, token string
-				tempAccessKeyId, tempSecretAccessKey, token, err = warehouseutils.GetTemporaryS3Cred(awsSecretKey, awsAccessKey)
-				if err != nil {
-					return
-				}
-				auth = fmt.Sprintf(`CREDENTIALS ( 'awsKeyId' = '%s', 'awsSecretKey' = '%s', 'awsSessionToken' = '%s' )`, tempAccessKeyId, tempSecretAccessKey, token)
+			tempAccessKeyId, tempSecretAccessKey, token, err := warehouseutils.GetTemporaryS3Cred(&dl.Warehouse.Destination)
+			if err != nil {
+				return "", err
 			}
+			auth := fmt.Sprintf(`CREDENTIALS ( 'awsKeyId' = '%s', 'awsSecretKey' = '%s', 'awsSessionToken' = '%s' )`, tempAccessKeyId, tempSecretAccessKey, token)
+			return auth, nil
+
 		}
 	}
-	return
+	return "", nil
 }
 
 // getLoadFolder return the load folder where the load files are present
