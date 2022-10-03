@@ -13,7 +13,6 @@ import (
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	mocksFileManager "github.com/rudderlabs/rudder-server/mocks/services/filemanager"
-	"github.com/rudderlabs/rudder-server/utils/logger"
 )
 
 func Benchmark_GetStorageDateFormat(b *testing.B) {
@@ -47,8 +46,6 @@ func randomString() string {
 
 // Benchmark_JSONUnmarshal tries to reproduce a panic encountered with jsoniter
 func Benchmark_JSONUnmarshal(b *testing.B) {
-	config.Load()
-	logger.Init()
 	Init()
 
 	for i := 0; i < b.N; i++ {
