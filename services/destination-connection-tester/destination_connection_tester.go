@@ -140,6 +140,7 @@ func uploadTestFileForBatchDestination(filename string, keyPrefixes []string, pr
 			Provider:         provider,
 			Config:           destination.Config,
 			UseRudderStorage: misc.IsConfiguredToUseRudderObjectStorage(destination.Config),
+			WorkspaceID:      destination.WorkspaceID,
 		}),
 	})
 	if err != nil {

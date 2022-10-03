@@ -18,9 +18,7 @@ import (
 	"time"
 
 	"github.com/Azure/azure-storage-blob-go/azblob"
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/aws/credentials"
-	"github.com/aws/aws-sdk-go/aws/session"
+	"github.com/aws/aws-sdk-go/service/s3"
 	"github.com/aws/aws-sdk-go/service/sts"
 	"github.com/iancoleman/strcase"
 	"github.com/tidwall/gjson"
@@ -29,6 +27,7 @@ import (
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/services/filemanager"
 	"github.com/rudderlabs/rudder-server/services/stats"
+	"github.com/rudderlabs/rudder-server/utils/awsutils"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
@@ -707,14 +706,37 @@ func JoinWithFormatting(keys []string, format func(idx int, str string) string, 
 	return strings.Join(output, separator)
 }
 
-func GetTemporaryS3Cred(accessKeyID, accessKey string) (string, string, string, error) {
-	mySession := session.Must(session.NewSession())
-	svc := sts.New(mySession, aws.NewConfig().WithCredentials(credentials.NewStaticCredentials(accessKeyID, accessKey, "")))
-	SessionTokenOutput, err := svc.GetSessionToken(&sts.GetSessionTokenInput{DurationSeconds: &AWSCredsExpiryInS})
+func CreateAWSSessionConfig(destination *backendconfig.DestinationT, serviceName string) (*awsutils.SessionConfig, error) {
+	if !misc.IsConfiguredToUseRudderObjectStorage(destination.Config) {
+		return awsutils.NewSimpleSessionConfigForDestination(destination, serviceName)
+	}
+	accessKeyID, accessKey := misc.GetRudderObjectStorageAccessKeys()
+	return &awsutils.SessionConfig{
+		AccessKeyID: accessKeyID,
+		AccessKey:   accessKey,
+		Service:     serviceName,
+	}, nil
+}
+
+func GetTemporaryS3Cred(destination *backendconfig.DestinationT) (string, string, string, error) {
+	sessionConfig, err := CreateAWSSessionConfig(destination, s3.ServiceID)
 	if err != nil {
 		return "", "", "", err
 	}
-	return *SessionTokenOutput.Credentials.AccessKeyId, *SessionTokenOutput.Credentials.SecretAccessKey, *SessionTokenOutput.Credentials.SessionToken, err
+
+	awsSession, err := awsutils.CreateSession(sessionConfig)
+	if err != nil {
+		return "", "", "", err
+	}
+
+	// Create a STS client from just a session.
+	svc := sts.New(awsSession)
+
+	sessionTokenOutput, err := svc.GetSessionToken(&sts.GetSessionTokenInput{DurationSeconds: &AWSCredsExpiryInS})
+	if err != nil {
+		return "", "", "", err
+	}
+	return *sessionTokenOutput.Credentials.AccessKeyId, *sessionTokenOutput.Credentials.SecretAccessKey, *sessionTokenOutput.Credentials.SessionToken, err
 }
 
 type Tag struct {
