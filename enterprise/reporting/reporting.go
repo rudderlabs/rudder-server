@@ -56,9 +56,9 @@ type HandleT struct {
 	sleepInterval                 time.Duration
 	mainLoopSleepInterval         time.Duration
 
-	getMinReportedAtQueryTime stats.RudderStats
-	getReportsQueryTime       stats.RudderStats
-	requestLatency            stats.RudderStats
+	getMinReportedAtQueryTime stats.Measurement
+	getReportsQueryTime       stats.Measurement
+	requestLatency            stats.Measurement
 }
 
 func NewFromEnvConfig() *HandleT {
@@ -228,7 +228,7 @@ func (handle *HandleT) getReports(current_ms int64, clientName string) (reports 
 	return metricReports, queryMin.Int64
 }
 
-func (handle *HandleT) getAggregatedReports(reports []*types.ReportByStatus) []*types.Metric {
+func (*HandleT) getAggregatedReports(reports []*types.ReportByStatus) []*types.Metric {
 	metricsByGroup := map[string]*types.Metric{}
 
 	reportIdentifier := func(report *types.ReportByStatus) string {
@@ -300,15 +300,15 @@ func (handle *HandleT) mainLoop(ctx context.Context, clientName string) {
 	tr := &http.Transport{}
 	netClient := &http.Client{Transport: tr, Timeout: config.GetDuration("HttpClient.reporting.timeout", 60, time.Second)}
 	tags := handle.getTags(clientName)
-	mainLoopTimer := stats.NewTaggedStat(STAT_REPORTING_MAIN_LOOP_TIME, stats.TimerType, tags)
-	getReportsTimer := stats.NewTaggedStat(STAT_REPORTING_GET_REPORTS_TIME, stats.TimerType, tags)
-	getReportsCount := stats.NewTaggedStat(STAT_REPORTING_GET_REPORTS_COUNT, stats.HistogramType, tags)
-	getAggregatedReportsTimer := stats.NewTaggedStat(STAT_REPORTING_GET_AGGREGATED_REPORTS_TIME, stats.TimerType, tags)
-	getAggregatedReportsCount := stats.NewTaggedStat(STAT_REPORTING_GET_AGGREGATED_REPORTS_COUNT, stats.HistogramType, tags)
+	mainLoopTimer := stats.Default.NewTaggedStat(STAT_REPORTING_MAIN_LOOP_TIME, stats.TimerType, tags)
+	getReportsTimer := stats.Default.NewTaggedStat(STAT_REPORTING_GET_REPORTS_TIME, stats.TimerType, tags)
+	getReportsCount := stats.Default.NewTaggedStat(STAT_REPORTING_GET_REPORTS_COUNT, stats.HistogramType, tags)
+	getAggregatedReportsTimer := stats.Default.NewTaggedStat(STAT_REPORTING_GET_AGGREGATED_REPORTS_TIME, stats.TimerType, tags)
+	getAggregatedReportsCount := stats.Default.NewTaggedStat(STAT_REPORTING_GET_AGGREGATED_REPORTS_COUNT, stats.HistogramType, tags)
 
-	handle.getMinReportedAtQueryTime = stats.NewTaggedStat(STAT_REPORTING_GET_MIN_REPORTED_AT_QUERY_TIME, stats.TimerType, tags)
-	handle.getReportsQueryTime = stats.NewTaggedStat(STAT_REPORTING_GET_REPORTS_QUERY_TIME, stats.TimerType, tags)
-	handle.requestLatency = stats.NewTaggedStat(STAT_REPORTING_HTTP_REQ_LATENCY, stats.TimerType, tags)
+	handle.getMinReportedAtQueryTime = stats.Default.NewTaggedStat(STAT_REPORTING_GET_MIN_REPORTED_AT_QUERY_TIME, stats.TimerType, tags)
+	handle.getReportsQueryTime = stats.Default.NewTaggedStat(STAT_REPORTING_GET_REPORTS_QUERY_TIME, stats.TimerType, tags)
+	handle.requestLatency = stats.Default.NewTaggedStat(STAT_REPORTING_HTTP_REQ_LATENCY, stats.TimerType, tags)
 	for {
 		if ctx.Err() != nil {
 			handle.logger.Infof("stopping mainLoop for client %s : %s", clientName, ctx.Err())
@@ -402,7 +402,7 @@ func (handle *HandleT) sendMetric(ctx context.Context, netClient *http.Client, c
 		handle.requestLatency.Since(httpRequestStart)
 		httpStatTags := handle.getTags(clientName)
 		httpStatTags["status"] = strconv.Itoa(resp.StatusCode)
-		stats.NewTaggedStat(STAT_REPORTING_HTTP_REQ, stats.CountType, httpStatTags).Count(1)
+		stats.Default.NewTaggedStat(STAT_REPORTING_HTTP_REQ, stats.CountType, httpStatTags).Count(1)
 
 		defer resp.Body.Close()
 		respBody, err := io.ReadAll(resp.Body)

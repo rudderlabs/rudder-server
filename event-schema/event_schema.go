@@ -210,11 +210,11 @@ func Init2() {
 }
 
 // RecordEventSchema : Records event schema for every event in the batch
-func (manager *EventSchemaManagerT) RecordEventSchema(writeKey, eventBatch string) bool {
+func (*EventSchemaManagerT) RecordEventSchema(writeKey, eventBatch string) bool {
 	select {
 	case eventSchemaChannel <- &GatewayEventBatchT{writeKey, eventBatch}:
 	default:
-		stats.NewTaggedStat("dropped_events_count", stats.CountType, stats.Tags{"module": "event_schemas", "writeKey": writeKey}).Increment()
+		stats.Default.NewTaggedStat("dropped_events_count", stats.CountType, stats.Tags{"module": "event_schemas", "writeKey": writeKey}).Increment()
 	}
 	return true
 }
@@ -313,7 +313,7 @@ func (manager *EventSchemaManagerT) handleEvent(writeKey string, event EventT) {
 		return
 	}
 
-	processingTimer := stats.NewTaggedStat("archive_event_model", stats.TimerType, stats.Tags{"module": "event_schemas", "writeKey": writeKey, "eventIdentifier": eventIdentifier})
+	processingTimer := stats.Default.NewTaggedStat("archive_event_model", stats.TimerType, stats.Tags{"module": "event_schemas", "writeKey": writeKey, "eventIdentifier": eventIdentifier})
 	processingTimer.Start()
 	defer processingTimer.End()
 
@@ -344,7 +344,7 @@ func (manager *EventSchemaManagerT) handleEvent(writeKey string, event EventT) {
 				archivedEventModels[oldestModel.WriteKey] = make(map[string]*OffloadedModelT)
 			}
 			archivedEventModels[oldestModel.WriteKey][eventTypeIdentifier(oldestModel.EventType, oldestModel.EventIdentifier)] = &OffloadedModelT{UUID: oldestModel.UUID, LastSeen: oldestModel.LastSeen, WriteKey: oldestModel.WriteKey, EventType: oldestModel.EventType, EventIdentifier: oldestModel.EventIdentifier}
-			stats.NewTaggedStat("archive_event_model", stats.CountType, stats.Tags{"module": "event_schemas", "writeKey": oldestModel.WriteKey, "eventIdentifier": oldestModel.EventIdentifier}).Increment()
+			stats.Default.NewTaggedStat("archive_event_model", stats.CountType, stats.Tags{"module": "event_schemas", "writeKey": oldestModel.WriteKey, "eventIdentifier": oldestModel.EventIdentifier}).Increment()
 		}
 
 		// check in archived models
@@ -362,7 +362,7 @@ func (manager *EventSchemaManagerT) handleEvent(writeKey string, event EventT) {
 				pkgLogger.Errorf(`[EventSchemas] Failed to reload event +%v, writeKey: %s, eventType: %s, eventIdentifier: %s`, offloadedModel.UUID, writeKey, eventType, eventIdentifier)
 				return
 			}
-			stats.NewTaggedStat("reload_offloaded_event_model", stats.CountType, stats.Tags{"module": "event_schemas", "writeKey": eventModel.WriteKey, "eventIdentifier": eventModel.EventIdentifier}).Increment()
+			stats.Default.NewTaggedStat("reload_offloaded_event_model", stats.CountType, stats.Tags{"module": "event_schemas", "writeKey": eventModel.WriteKey, "eventIdentifier": eventModel.EventIdentifier}).Increment()
 		} else if wasArchived {
 			// If we saw event from an archived event model, reload the model into memory
 			// and archive the oldest model then. TODO: A test case for this ?
@@ -378,7 +378,7 @@ func (manager *EventSchemaManagerT) handleEvent(writeKey string, event EventT) {
 					pkgLogger.Errorf(`[EventSchemas] Failed to reload event +%v, writeKey: %s, eventType: %s, eventIdentifier: %s`, archivedModel.UUID, writeKey, eventType, eventIdentifier)
 					return
 				}
-				stats.NewTaggedStat("reload_archived_event_model", stats.CountType, stats.Tags{"module": "event_schemas", "writeKey": eventModel.WriteKey, "eventIdentifier": eventModel.EventIdentifier}).Increment()
+				stats.Default.NewTaggedStat("reload_archived_event_model", stats.CountType, stats.Tags{"module": "event_schemas", "writeKey": eventModel.WriteKey, "eventIdentifier": eventModel.EventIdentifier}).Increment()
 			}
 		} else {
 			eventModel = manager.createModel(writeKey, eventType, eventIdentifier, totalEventModels, archiveOldestLastSeenModel)
@@ -430,7 +430,7 @@ func (manager *EventSchemaManagerT) handleEvent(writeKey string, event EventT) {
 				archivedSchemaVersions[oldestVersion.EventModelID] = make(map[string]*OffloadedSchemaVersionT)
 			}
 			archivedSchemaVersions[oldestVersion.EventModelID][oldestVersion.SchemaHash] = &OffloadedSchemaVersionT{UUID: oldestVersion.UUID, LastSeen: oldestVersion.LastSeen, EventModelID: oldestVersion.EventModelID, SchemaHash: oldestVersion.SchemaHash}
-			stats.NewTaggedStat("archive_schema_version", stats.CountType, stats.Tags{"module": "event_schemas", "writeKey": eventModel.WriteKey, "eventIdentifier": eventModel.EventIdentifier}).Increment()
+			stats.Default.NewTaggedStat("archive_schema_version", stats.CountType, stats.Tags{"module": "event_schemas", "writeKey": eventModel.WriteKey, "eventIdentifier": eventModel.EventIdentifier}).Increment()
 		}
 
 		totalSchemaVersions := len(manager.schemaVersionMap[eventModel.UUID])
@@ -443,7 +443,7 @@ func (manager *EventSchemaManagerT) handleEvent(writeKey string, event EventT) {
 				pkgLogger.Errorf(`[EventSchemas] Failed to reload event +%v, writeKey: %s, eventType: %s, eventIdentifier: %s`, offloadedVersion.UUID, writeKey, eventType, eventIdentifier)
 				return
 			}
-			stats.NewTaggedStat("reload_offloaded_schema_version", stats.CountType, stats.Tags{"module": "event_schemas", "writeKey": eventModel.WriteKey, "eventIdentifier": eventModel.EventIdentifier}).Increment()
+			stats.Default.NewTaggedStat("reload_offloaded_schema_version", stats.CountType, stats.Tags{"module": "event_schemas", "writeKey": eventModel.WriteKey, "eventIdentifier": eventModel.EventIdentifier}).Increment()
 		} else if wasArchived {
 			if totalSchemaVersions >= schemaVersionPerEventModelLimit {
 				archiveOldestLastSeenVersion()
@@ -457,7 +457,7 @@ func (manager *EventSchemaManagerT) handleEvent(writeKey string, event EventT) {
 					pkgLogger.Errorf(`[EventSchemas] Failed to reload event +%v, writeKey: %s, eventType: %s, eventIdentifier: %s`, archivedVersion.UUID, writeKey, eventType, eventIdentifier)
 					return
 				}
-				stats.NewTaggedStat("reload_archived_schema_version", stats.CountType, stats.Tags{"module": "event_schemas", "writeKey": eventModel.WriteKey, "eventIdentifier": eventModel.EventIdentifier}).Increment()
+				stats.Default.NewTaggedStat("reload_archived_schema_version", stats.CountType, stats.Tags{"module": "event_schemas", "writeKey": eventModel.WriteKey, "eventIdentifier": eventModel.EventIdentifier}).Increment()
 			}
 		} else {
 			schemaVersion = manager.createSchema(schema, schemaHash, eventModel, totalSchemaVersions, archiveOldestLastSeenVersion)
@@ -487,7 +487,7 @@ func (manager *EventSchemaManagerT) createModel(writeKey, eventType, eventIdenti
 		archiveOldestLastSeenModel()
 	}
 	manager.updateEventModelCache(em, true)
-	stats.NewTaggedStat("record_new_event_model", stats.CountType, stats.Tags{
+	stats.Default.NewTaggedStat("record_new_event_model", stats.CountType, stats.Tags{
 		"module":          "event_schemas",
 		"writeKey":        em.WriteKey,
 		"eventIdentifier": em.EventIdentifier,
@@ -503,7 +503,7 @@ func (manager *EventSchemaManagerT) createSchema(schema map[string]string, schem
 	if totalSchemaVersions >= schemaVersionPerEventModelLimit {
 		archiveOldestLastSeenVersion()
 	}
-	stats.NewTaggedStat("record_new_schema_version", stats.CountType, stats.Tags{"module": "event_schemas", "writeKey": eventModel.WriteKey, "eventIdentifier": eventModel.EventIdentifier}).Increment()
+	stats.Default.NewTaggedStat("record_new_schema_version", stats.CountType, stats.Tags{"module": "event_schemas", "writeKey": eventModel.WriteKey, "eventIdentifier": eventModel.EventIdentifier}).Increment()
 	return schemaVersion
 }
 
@@ -586,7 +586,7 @@ func (em *EventModelT) mergeSchema(sv *SchemaVersionT) {
 }
 
 // NewSchemaVersion should be used when a schemaVersion is not found in its cache and requires, a schemaVersionID for the newSchema and the eventModelID to which it belongs along with schema and schemaHash
-func (manager *EventSchemaManagerT) NewSchemaVersion(versionID string, schema map[string]string, schemaHash, eventModelID string) *SchemaVersionT {
+func (*EventSchemaManagerT) NewSchemaVersion(versionID string, schema map[string]string, schemaHash, eventModelID string) *SchemaVersionT {
 	schemaJSON, err := json.Marshal(schema)
 	assertError(err)
 
@@ -766,7 +766,7 @@ func flushSchemaVersions(ctx context.Context, txn *sql.Tx, schemaVersionsInCache
 		return fmt.Errorf("unable to execute schema version statement, err: %w", err)
 	}
 
-	stats.NewTaggedStat(
+	stats.Default.NewTaggedStat(
 		"update_schema_version_count", stats.GaugeType, stats.Tags{"module": "event_schemas"},
 	).Gauge(len(versionIDs))
 	pkgLogger.Debugf("[EventSchemas][Flush] %d new schema versions", len(schemaVersionsInCache))
@@ -812,7 +812,7 @@ func flushEventModels(ctx context.Context, txn *sql.Tx, updatedEventModels map[s
 		return fmt.Errorf("unable to execute the statement")
 	}
 
-	stats.NewTaggedStat(
+	stats.Default.NewTaggedStat(
 		"update_event_model_count", stats.GaugeType, stats.Tags{"module": "event_schemas"},
 	).Gauge(len(eventModelIds))
 
@@ -844,7 +844,7 @@ func (manager *EventSchemaManagerT) offloadEventSchemas() {
 						}
 						manager.deleteFromEventModelCache(model)
 						offloadedEventModels[model.WriteKey][eventTypeIdentifier(model.EventType, model.EventIdentifier)] = &OffloadedModelT{UUID: model.UUID, LastSeen: model.LastSeen, WriteKey: model.WriteKey, EventType: model.EventType, EventIdentifier: model.EventIdentifier}
-						stats.NewTaggedStat("offload_event_model", stats.CountType, stats.Tags{"module": "event_schemas", "writeKey": model.WriteKey, "eventIdentifier": model.EventIdentifier}).Increment()
+						stats.Default.NewTaggedStat("offload_event_model", stats.CountType, stats.Tags{"module": "event_schemas", "writeKey": model.WriteKey, "eventIdentifier": model.EventIdentifier}).Increment()
 					}
 				}
 			}
@@ -857,7 +857,7 @@ func (manager *EventSchemaManagerT) offloadEventSchemas() {
 					}
 					manager.deleteFromSchemaVersionCache(&SchemaVersionT{EventModelID: version.EventModelID, SchemaHash: version.SchemaHash})
 					offloadedSchemaVersions[version.EventModelID][version.SchemaHash] = &OffloadedSchemaVersionT{UUID: version.UUID, LastSeen: version.LastSeen, EventModelID: version.EventModelID, SchemaHash: version.SchemaHash}
-					stats.NewTaggedStat("offload_schema_version", stats.CountType, stats.Tags{"module": "event_schemas"}).Increment()
+					stats.Default.NewTaggedStat("offload_schema_version", stats.CountType, stats.Tags{"module": "event_schemas"}).Increment()
 				}
 			}
 		}
@@ -1147,7 +1147,7 @@ func (manager *EventSchemaManagerT) Setup() {
 		rruntime.GoForWarehouse(func() {
 			defer setEventSchemasPopulated(true)
 
-			populateESTimer := stats.NewTaggedStat("populate_event_schemas", stats.TimerType, stats.Tags{"module": "event_schemas"})
+			populateESTimer := stats.Default.NewTaggedStat("populate_event_schemas", stats.TimerType, stats.Tags{"module": "event_schemas"})
 			populateESTimer.Start()
 			defer populateESTimer.End()
 

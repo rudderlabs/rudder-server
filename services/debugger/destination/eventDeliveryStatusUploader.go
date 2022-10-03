@@ -94,7 +94,7 @@ func Setup(backendConfig backendconfig.BackendConfig) {
 	})
 }
 
-func (eventDeliveryStatusUploader *EventDeliveryStatusUploader) Transform(data interface{}) ([]byte, error) {
+func (*EventDeliveryStatusUploader) Transform(data interface{}) ([]byte, error) {
 	deliveryStatusesBuffer := data.([]interface{})
 	res := make(map[string]interface{})
 	res["version"] = "v2"

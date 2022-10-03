@@ -34,9 +34,9 @@ var (
 var (
 	pgNotifierDBhost, pgNotifierDBuser, pgNotifierDBpassword, pgNotifierDBname, pgNotifierDBsslmode          string
 	pgNotifierDBport                                                                                         int
-	pgNotifierPublish, pgNotifierPublishTime                                                                 stats.RudderStats
-	pgNotifierClaimSucceeded, pgNotifierClaimSucceededTime, pgNotifierClaimFailed, pgNotifierClaimFailedTime stats.RudderStats
-	pgNotifierClaimUpdateFailed                                                                              stats.RudderStats
+	pgNotifierPublish, pgNotifierPublishTime                                                                 stats.Measurement
+	pgNotifierClaimSucceeded, pgNotifierClaimSucceededTime, pgNotifierClaimFailed, pgNotifierClaimFailedTime stats.Measurement
+	pgNotifierClaimUpdateFailed                                                                              stats.Measurement
 )
 
 const (
@@ -233,7 +233,7 @@ func (notifier *PgNotifierT) UpdateClaimedEvent(claim *ClaimT, response *ClaimRe
 
 		// Sending stats when we mark pg_notifier status as aborted.
 		if claim.Attempt > maxAttempt {
-			stats.NewTaggedStat("pg_notifier_aborted_records", stats.CountType, map[string]string{
+			stats.Default.NewTaggedStat("pg_notifier_aborted_records", stats.CountType, map[string]string{
 				"queueName": queueName,
 				"workspace": claim.Workspace,
 				"module":    "pg_notifier",
@@ -394,7 +394,7 @@ func (notifier *PgNotifierT) Publish(jobs []JobPayload, schema *whUtils.SchemaT,
 	}
 
 	pkgLogger.Infof("PgNotifier: Inserted %d records into %s as batch: %s", len(jobs), queueName, batchID)
-	stats.NewTaggedStat("pg_notifier_insert_records", stats.CountType, map[string]string{
+	stats.Default.NewTaggedStat("pg_notifier_insert_records", stats.CountType, map[string]string{
 		"queueName": queueName,
 		"module":    "pg_notifier",
 	}).Count(len(jobs))

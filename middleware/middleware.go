@@ -33,7 +33,7 @@ func LimitConcurrentRequests(maxRequests int) func(http.Handler) http.Handler {
 
 func StatMiddleware(ctx context.Context) func(http.Handler) http.Handler {
 	var concurrentRequests int32
-	activeClientCount := stats.DefaultStats.NewStat("gateway.concurrent_requests_count", stats.GaugeType)
+	activeClientCount := stats.Default.NewStat("gateway.concurrent_requests_count", stats.GaugeType)
 	go func() {
 		for {
 			select {
@@ -47,7 +47,7 @@ func StatMiddleware(ctx context.Context) func(http.Handler) http.Handler {
 
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			latencyStat := stats.DefaultStats.NewSampledTaggedStat("gateway.response_time", stats.TimerType, map[string]string{"reqType": r.URL.Path})
+			latencyStat := stats.Default.NewSampledTaggedStat("gateway.response_time", stats.TimerType, map[string]string{"reqType": r.URL.Path})
 			latencyStat.Start()
 			defer latencyStat.End()
 
