@@ -27,8 +27,8 @@ func (r *DSListLocker) RLock() {
 	r.m.RLock()
 }
 
-// TryRLockWithCtx tries to acquires a read lock with context and returns false if context times out, otherwise returns true.
-func (r *DSListLocker) TryRLockWithCtx(ctx context.Context) bool {
+// RTryLockWithCtx tries to acquires a read lock with context and returns false if context times out, otherwise returns true.
+func (r *DSListLocker) RTryLockWithCtx(ctx context.Context) bool {
 	return r.m.RTryLockWithContext(ctx)
 }
 

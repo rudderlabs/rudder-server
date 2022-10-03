@@ -176,8 +176,8 @@ type HandleInspector struct {
 }
 
 // DSListSize returns the current size of the handle's dsList
-func (h *HandleInspector) DSListSize() int {
-	h.HandleT.dsListLock.RLock()
+func (h *HandleInspector) DSListSize(ctx context.Context) int {
+	h.HandleT.dsListLock.RTryLockWithCtx(ctx)
 	defer h.HandleT.dsListLock.RUnlock()
 	return len(h.HandleT.getDSList())
 }
@@ -897,7 +897,7 @@ func (jd *HandleT) Start() error {
 }
 
 func (jd *HandleT) setUpForOwnerType(ctx context.Context, ownerType OwnerType, clearAll bool) {
-	jd.dsListLock.WithLock(func(l lock.DSListLockToken) {
+	_ = jd.dsListLock.TryWithCtxAwareLock(context.TODO(), func(l lock.DSListLockToken) {
 		switch ownerType {
 		case Read:
 			jd.readerSetup(ctx, l)
@@ -1557,8 +1557,8 @@ func (jd *HandleT) setSequenceNumberInTx(tx *sql.Tx, l lock.DSListLockToken, dsL
 }
 
 // GetMaxDSIndex returns max dataset index in the DB
-func (jd *HandleT) GetMaxDSIndex() (maxDSIndex int64) {
-	jd.dsListLock.RLock()
+func (jd *HandleT) GetMaxDSIndex(ctx context.Context) (maxDSIndex int64) {
+	jd.dsListLock.RTryLockWithCtx(ctx)
 	defer jd.dsListLock.RUnlock()
 
 	// dList is already sorted.
@@ -1809,52 +1809,54 @@ over. Then the status (only the latest) is set for those jobs
 */
 
 func (jd *HandleT) migrateJobs(ctx context.Context, srcDS, destDS dataSetT) (noJobsMigrated int, err error) {
-	queryStat := stats.Default.NewTaggedStat("migration_jobs", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix})
-	queryStat.Start()
-	defer queryStat.End()
-	jd.dsListLock.RLock()
-	defer jd.dsListLock.RUnlock()
+	if jd.dsListLock.RTryLockWithCtx(ctx) {
+		queryStat := stats.Default.NewTaggedStat("migration_jobs", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix})
+		queryStat.Start()
+		defer queryStat.End()
+		defer jd.dsListLock.RUnlock()
 
-	// Unprocessed jobs
-	unprocessedList, _, err := jd.getUnprocessedJobsDS(ctx, srcDS, false, GetQueryParamsT{})
-	if err != nil {
-		return 0, err
-	}
-	// Jobs which haven't finished processing
-	retryList, _, err := jd.getProcessedJobsDS(ctx, srcDS, true,
-		GetQueryParamsT{StateFilters: validNonTerminalStates})
-	if err != nil {
-		return 0, err
-	}
-	jobsToMigrate := append(unprocessedList.Jobs, retryList.Jobs...)
-	noJobsMigrated = len(jobsToMigrate)
-
-	err = jd.WithTx(func(tx *sql.Tx) error {
-		if err := jd.copyJobsDS(tx, destDS, jobsToMigrate); err != nil {
-			return err
+		// Unprocessed jobs
+		unprocessedList, _, err := jd.getUnprocessedJobsDS(ctx, srcDS, false, GetQueryParamsT{})
+		if err != nil {
+			return 0, err
 		}
-		// Now copy over the latest status of the unfinished jobs
-		var statusList []*JobStatusT
-		for _, job := range retryList.Jobs {
-			newStatus := JobStatusT{
-				JobID:         job.JobID,
-				JobState:      job.LastJobStatus.JobState,
-				AttemptNum:    job.LastJobStatus.AttemptNum,
-				ExecTime:      job.LastJobStatus.ExecTime,
-				RetryTime:     job.LastJobStatus.RetryTime,
-				ErrorCode:     job.LastJobStatus.ErrorCode,
-				ErrorResponse: job.LastJobStatus.ErrorResponse,
-				Parameters:    job.LastJobStatus.Parameters,
-				WorkspaceId:   job.WorkspaceId,
+		// Jobs which haven't finished processing
+		retryList, _, err := jd.getProcessedJobsDS(ctx, srcDS, true,
+			GetQueryParamsT{StateFilters: validNonTerminalStates})
+		if err != nil {
+			return 0, err
+		}
+		jobsToMigrate := append(unprocessedList.Jobs, retryList.Jobs...)
+		noJobsMigrated = len(jobsToMigrate)
+
+		err = jd.WithTx(func(tx *sql.Tx) error {
+			if err := jd.copyJobsDS(tx, destDS, jobsToMigrate); err != nil {
+				return err
 			}
-			statusList = append(statusList, &newStatus)
+			// Now copy over the latest status of the unfinished jobs
+			var statusList []*JobStatusT
+			for _, job := range retryList.Jobs {
+				newStatus := JobStatusT{
+					JobID:         job.JobID,
+					JobState:      job.LastJobStatus.JobState,
+					AttemptNum:    job.LastJobStatus.AttemptNum,
+					ExecTime:      job.LastJobStatus.ExecTime,
+					RetryTime:     job.LastJobStatus.RetryTime,
+					ErrorCode:     job.LastJobStatus.ErrorCode,
+					ErrorResponse: job.LastJobStatus.ErrorResponse,
+					Parameters:    job.LastJobStatus.Parameters,
+					WorkspaceId:   job.WorkspaceId,
+				}
+				statusList = append(statusList, &newStatus)
+			}
+			return jd.copyJobStatusDS(ctx, tx, destDS, statusList, []string{})
+		})
+		if err != nil {
+			return 0, err
 		}
-		return jd.copyJobStatusDS(ctx, tx, destDS, statusList, []string{})
-	})
-	if err != nil {
-		return 0, err
+		return noJobsMigrated, nil
 	}
-	return noJobsMigrated, nil
+	return 0, fmt.Errorf("could not acquire Rlock")
 }
 
 func (jd *HandleT) postMigrateHandleDS(l lock.DSListLockToken, migrateFrom []dataSetT) error {
@@ -1915,7 +1917,7 @@ func (jd *HandleT) WithStoreSafeTx(ctx context.Context, f func(tx StoreSafeTx) e
 func (jd *HandleT) inStoreSafeCtx(ctx context.Context, f func() error) error {
 	// Only locks the list
 	op := func() error {
-		if jd.dsListLock.TryRLockWithCtx(ctx) {
+		if jd.dsListLock.RTryLockWithCtx(ctx) {
 			defer jd.dsListLock.RUnlock()
 			return f()
 		}
@@ -1925,9 +1927,11 @@ func (jd *HandleT) inStoreSafeCtx(ctx context.Context, f func() error) error {
 		err := op()
 		if err != nil && errors.Is(err, errStaleDsList) {
 			jd.logger.Errorf("[JobsDB] :: Store failed: %v. Retrying after refreshing DS cache", errStaleDsList)
-			jd.dsListLock.WithLock(func(l lock.DSListLockToken) {
+			if !jd.dsListLock.TryWithCtxAwareLock(ctx, func(l lock.DSListLockToken) {
 				_ = jd.refreshDSList(l)
-			})
+			}) {
+				return fmt.Errorf("could not acquire dsList lock")
+			}
 		} else {
 			return err
 		}
@@ -1947,7 +1951,7 @@ func (jd *HandleT) inUpdateSafeCtx(ctx context.Context, f func() error) error {
 	jd.dsMigrationLock.RLock()
 	defer jd.dsMigrationLock.RUnlock()
 
-	if jd.dsListLock.TryRLockWithCtx(ctx) {
+	if jd.dsListLock.RTryLockWithCtx(ctx) {
 		defer jd.dsListLock.RUnlock()
 		return f()
 	}
@@ -2094,14 +2098,15 @@ func (jd *HandleT) doClearCache(ds dataSetT, CVPMap map[string]map[string]map[st
 
 func (jd *HandleT) GetPileUpCounts(ctx context.Context) (map[string]map[string]int, error) {
 	jd.dsMigrationLock.RLock()
-	jd.dsListLock.RLock()
 	defer jd.dsMigrationLock.RUnlock()
-	defer jd.dsListLock.RUnlock()
-	dsList := jd.getDSList()
-	statMap := make(map[string]map[string]int)
 
-	for _, ds := range dsList {
-		queryString := fmt.Sprintf(`with joined as (
+	if jd.dsListLock.RTryLockWithCtx(ctx) {
+		defer jd.dsListLock.RUnlock()
+		dsList := jd.getDSList()
+		statMap := make(map[string]map[string]int)
+
+		for _, ds := range dsList {
+			queryString := fmt.Sprintf(`with joined as (
 			select
 			  j.job_id as jobID,
 			  j.custom_val as customVal,
@@ -2142,29 +2147,31 @@ func (jd *HandleT) GetPileUpCounts(ctx context.Context) (map[string]map[string]i
 		  group by
 			customVal,
 			workspace;`, ds.JobTable, ds.JobStatusTable)
-		rows, err := jd.dbHandle.QueryContext(ctx, queryString)
-		if err != nil {
-			return nil, err
-		}
-
-		for rows.Next() {
-			var count sql.NullInt64
-			var customVal string
-			var workspace string
-			err := rows.Scan(&count, &customVal, &workspace)
+			rows, err := jd.dbHandle.QueryContext(ctx, queryString)
 			if err != nil {
+				return nil, err
+			}
+
+			for rows.Next() {
+				var count sql.NullInt64
+				var customVal string
+				var workspace string
+				err := rows.Scan(&count, &customVal, &workspace)
+				if err != nil {
+					return statMap, err
+				}
+				if _, ok := statMap[workspace]; !ok {
+					statMap[workspace] = make(map[string]int)
+				}
+				statMap[workspace][customVal] += int(count.Int64)
+			}
+			if err = rows.Err(); err != nil {
 				return statMap, err
 			}
-			if _, ok := statMap[workspace]; !ok {
-				statMap[workspace] = make(map[string]int)
-			}
-			statMap[workspace][customVal] += int(count.Int64)
 		}
-		if err = rows.Err(); err != nil {
-			return statMap, err
-		}
+		return statMap, nil
 	}
-	return statMap, nil
+	return nil, fmt.Errorf("could not acquire Rlock")
 }
 
 func (*HandleT) copyJobsDSInTx(txHandler transactionHandler, ds dataSetT, jobList []*JobT) error {
@@ -3052,9 +3059,13 @@ func (jd *HandleT) refreshDSListLoop(ctx context.Context) {
 		}
 
 		jd.logger.Debugf("[[ %s : refreshDSListLoop ]]: Start", jd.tablePrefix)
-		jd.dsListLock.WithLock(func(l lock.DSListLockToken) {
+
+		if !jd.dsListLock.TryWithCtxAwareLock(ctx, func(l lock.DSListLockToken) {
 			jd.refreshDSRangeList(l)
-		})
+		}) {
+			jd.logger.Debugf("[[ %s : refreshDSListLoop ]]: Failed to acquire lock", jd.tablePrefix)
+			jd.assertError(fmt.Errorf("failed to acquire lock"))
+		}
 	}
 }
 
@@ -3066,7 +3077,9 @@ func (jd *HandleT) migrateDSLoop(ctx context.Context) {
 			return
 		}
 		jd.logger.Debugf("[[ %s : migrateDSLoop ]]: Start", jd.tablePrefix)
-		jd.dsListLock.RLock()
+		if !jd.dsListLock.RTryLockWithCtx(ctx) {
+			continue
+		}
 		dsList := jd.getDSList()
 		jd.dsListLock.RUnlock()
 
@@ -3154,18 +3167,29 @@ func (jd *HandleT) migrateDSLoop(ctx context.Context) {
 				})
 
 				totalJobsMigrated := 0
+				var noJobsMigrated int
+				var err error
+				success := true
 				for _, ds := range migrateFrom {
 					jd.logger.Infof("[[ %s : migrateDSLoop ]]: Migrate: %v to: %v", jd.tablePrefix, ds, migrateTo)
-					noJobsMigrated, _ := jd.migrateJobs(ctx, ds, migrateTo)
+					noJobsMigrated, err = jd.migrateJobs(ctx, ds, migrateTo)
+					if err != nil {
+						jd.logger.Errorf("[[ %s : migrateDSLoop ]]: Error migrating jobs from %v to %v: %v", jd.tablePrefix, ds, migrateTo, err)
+						success = false
+						break
+					}
 					totalJobsMigrated += noJobsMigrated
 				}
 				jd.logger.Infof("[[ %s : migrateDSLoop ]]: Total migrated %d jobs", jd.tablePrefix, totalJobsMigrated)
 
-				if totalJobsMigrated <= 0 {
+				if totalJobsMigrated <= 0 || !success {
 					jd.dsListLock.WithLock(func(_ lock.DSListLockToken) {
 						jd.mustDropDS(migrateTo)
 						jd.inProgressMigrationTargetDS = nil
 					})
+					if !success {
+						continue
+					}
 				}
 				jd.logger.Infof("[[ %s : migrateDSLoop ]]: Migrate DONE", jd.tablePrefix)
 			}
@@ -4152,66 +4176,70 @@ func (jd *HandleT) getUnprocessed(ctx context.Context, params GetQueryParamsT) (
 	// takes lock in this order so reversing this will cause
 	// deadlocks
 	jd.dsMigrationLock.RLock()
-	jd.dsListLock.RLock()
 	defer jd.dsMigrationLock.RUnlock()
-	defer jd.dsListLock.RUnlock()
 
-	dsList := jd.getDSList()
+	if jd.dsListLock.RTryLockWithCtx(ctx) {
+		defer jd.dsListLock.RUnlock()
 
-	limitByEventCount := false
-	if params.EventsLimit > 0 {
-		limitByEventCount = true
+		dsList := jd.getDSList()
+
+		limitByEventCount := false
+		if params.EventsLimit > 0 {
+			limitByEventCount = true
+		}
+
+		limitByPayloadSize := false
+		if params.PayloadSizeLimit > 0 {
+			limitByPayloadSize = true
+		}
+
+		var completeUnprocessedJobs JobsResult
+		var dsQueryCount int
+		var dsLimit int
+		if jd.dsLimit != nil {
+			dsLimit = *jd.dsLimit
+		}
+		for _, ds := range dsList {
+			if dsLimit > 0 && dsQueryCount >= dsLimit {
+				break
+			}
+			unprocessedJobs, dsHit, err := jd.getUnprocessedJobsDS(ctx, ds, true, params)
+			if err != nil {
+				return JobsResult{}, err
+			}
+			if dsHit {
+				dsQueryCount++
+			}
+			completeUnprocessedJobs.Jobs = append(completeUnprocessedJobs.Jobs, unprocessedJobs.Jobs...)
+			completeUnprocessedJobs.EventsCount += unprocessedJobs.EventsCount
+			completeUnprocessedJobs.PayloadSize += unprocessedJobs.PayloadSize
+
+			if unprocessedJobs.LimitsReached {
+				completeUnprocessedJobs.LimitsReached = true
+				break
+			}
+			// decrement our limits for the next query
+			if params.JobsLimit > 0 {
+				params.JobsLimit -= len(unprocessedJobs.Jobs)
+			}
+			if limitByEventCount {
+				params.EventsLimit -= unprocessedJobs.EventsCount
+			}
+			if limitByPayloadSize {
+				params.PayloadSizeLimit -= unprocessedJobs.PayloadSize
+			}
+		}
+		unprocessedQueryTablesQueriedStat := stats.Default.NewTaggedStat("tables_queried_gauge", stats.GaugeType, stats.Tags{
+			"state":     "nonterminal",
+			"query":     "unprocessed",
+			"customVal": jd.tablePrefix,
+		})
+		unprocessedQueryTablesQueriedStat.Gauge(dsQueryCount)
+		// Release lock
+		return completeUnprocessedJobs, nil
+
 	}
-
-	limitByPayloadSize := false
-	if params.PayloadSizeLimit > 0 {
-		limitByPayloadSize = true
-	}
-
-	var completeUnprocessedJobs JobsResult
-	var dsQueryCount int
-	var dsLimit int
-	if jd.dsLimit != nil {
-		dsLimit = *jd.dsLimit
-	}
-	for _, ds := range dsList {
-		if dsLimit > 0 && dsQueryCount >= dsLimit {
-			break
-		}
-		unprocessedJobs, dsHit, err := jd.getUnprocessedJobsDS(ctx, ds, true, params)
-		if err != nil {
-			return JobsResult{}, err
-		}
-		if dsHit {
-			dsQueryCount++
-		}
-		completeUnprocessedJobs.Jobs = append(completeUnprocessedJobs.Jobs, unprocessedJobs.Jobs...)
-		completeUnprocessedJobs.EventsCount += unprocessedJobs.EventsCount
-		completeUnprocessedJobs.PayloadSize += unprocessedJobs.PayloadSize
-
-		if unprocessedJobs.LimitsReached {
-			completeUnprocessedJobs.LimitsReached = true
-			break
-		}
-		// decrement our limits for the next query
-		if params.JobsLimit > 0 {
-			params.JobsLimit -= len(unprocessedJobs.Jobs)
-		}
-		if limitByEventCount {
-			params.EventsLimit -= unprocessedJobs.EventsCount
-		}
-		if limitByPayloadSize {
-			params.PayloadSizeLimit -= unprocessedJobs.PayloadSize
-		}
-	}
-	unprocessedQueryTablesQueriedStat := stats.Default.NewTaggedStat("tables_queried_gauge", stats.GaugeType, stats.Tags{
-		"state":     "nonterminal",
-		"query":     "unprocessed",
-		"customVal": jd.tablePrefix,
-	})
-	unprocessedQueryTablesQueriedStat.Gauge(dsQueryCount)
-	// Release lock
-	return completeUnprocessedJobs, nil
+	return JobsResult{}, fmt.Errorf("could not acquire Rlock")
 }
 
 func (jd *HandleT) GetImporting(ctx context.Context, params GetQueryParamsT) (JobsResult, error) { // skipcq: CRT-P0003
@@ -4265,22 +4293,26 @@ func (jd *HandleT) deleteJobStatusInTx(txHandler transactionHandler, conditions 
 	// takes lock in this order so reversing this will cause
 	// deadlocks
 	jd.dsMigrationLock.RLock()
-	jd.dsListLock.RLock()
 	defer jd.dsMigrationLock.RUnlock()
-	defer jd.dsListLock.RUnlock()
 
-	dsList := jd.getDSList()
+	if jd.dsListLock.RTryLockWithCtx(context.TODO()) {
+		defer jd.dsListLock.RUnlock()
 
-	totalDeletedCount := 0
-	for _, ds := range dsList {
-		deletedCount, err := jd.deleteJobStatusDSInTx(txHandler, ds, conditions)
-		if err != nil {
-			return err
+		dsList := jd.getDSList()
+
+		totalDeletedCount := 0
+		for _, ds := range dsList {
+			deletedCount, err := jd.deleteJobStatusDSInTx(txHandler, ds, conditions)
+			if err != nil {
+				return err
+			}
+			totalDeletedCount += deletedCount
 		}
-		totalDeletedCount += deletedCount
-	}
 
-	return nil
+		return nil
+
+	}
+	return fmt.Errorf("could not acquire Rlock")
 }
 
 /*
@@ -4375,67 +4407,70 @@ func (jd *HandleT) GetProcessed(ctx context.Context, params GetQueryParamsT) (Jo
 	// takes lock in this order so reversing this will cause
 	// deadlocks
 	jd.dsMigrationLock.RLock()
-	jd.dsListLock.RLock()
 	defer jd.dsMigrationLock.RUnlock()
-	defer jd.dsListLock.RUnlock()
+	if jd.dsListLock.RTryLockWithCtx(ctx) {
+		defer jd.dsListLock.RUnlock()
 
-	dsList := jd.getDSList()
+		dsList := jd.getDSList()
 
-	limitByEventCount := false
-	if params.EventsLimit > 0 {
-		limitByEventCount = true
+		limitByEventCount := false
+		if params.EventsLimit > 0 {
+			limitByEventCount = true
+		}
+
+		limitByPayloadSize := false
+		if params.PayloadSizeLimit > 0 {
+			limitByPayloadSize = true
+		} else if params.PayloadSizeLimit < 0 {
+			return JobsResult{}, nil
+		}
+
+		var completeProcessedJobs JobsResult
+		dsQueryCount := 0
+		var dsLimit int
+		if jd.dsLimit != nil {
+			dsLimit = *jd.dsLimit
+		}
+		for _, ds := range dsList {
+			if dsLimit > 0 && dsQueryCount >= dsLimit {
+				break
+			}
+			processedJobs, dsHit, err := jd.getProcessedJobsDS(ctx, ds, false, params)
+			if err != nil {
+				return JobsResult{}, err
+			}
+			if dsHit {
+				dsQueryCount++
+			}
+			completeProcessedJobs.Jobs = append(completeProcessedJobs.Jobs, processedJobs.Jobs...)
+			completeProcessedJobs.EventsCount += processedJobs.EventsCount
+			completeProcessedJobs.PayloadSize += processedJobs.PayloadSize
+
+			if processedJobs.LimitsReached {
+				completeProcessedJobs.LimitsReached = true
+				break
+			}
+			// decrement our limits for the next query
+			if params.JobsLimit > 0 {
+				params.JobsLimit -= len(processedJobs.Jobs)
+			}
+			if limitByEventCount {
+				params.EventsLimit -= processedJobs.EventsCount
+			}
+			if limitByPayloadSize {
+				params.PayloadSizeLimit -= processedJobs.PayloadSize
+			}
+		}
+		processedQueryTablesQueriedStat := stats.Default.NewTaggedStat("tables_queried_gauge", stats.GaugeType, stats.Tags{
+			"state":     "nonterminal",
+			"query":     "processed",
+			"customVal": jd.tablePrefix,
+		})
+		processedQueryTablesQueriedStat.Gauge(dsQueryCount)
+		return completeProcessedJobs, nil
+
 	}
-
-	limitByPayloadSize := false
-	if params.PayloadSizeLimit > 0 {
-		limitByPayloadSize = true
-	} else if params.PayloadSizeLimit < 0 {
-		return JobsResult{}, nil
-	}
-
-	var completeProcessedJobs JobsResult
-	dsQueryCount := 0
-	var dsLimit int
-	if jd.dsLimit != nil {
-		dsLimit = *jd.dsLimit
-	}
-	for _, ds := range dsList {
-		if dsLimit > 0 && dsQueryCount >= dsLimit {
-			break
-		}
-		processedJobs, dsHit, err := jd.getProcessedJobsDS(ctx, ds, false, params)
-		if err != nil {
-			return JobsResult{}, err
-		}
-		if dsHit {
-			dsQueryCount++
-		}
-		completeProcessedJobs.Jobs = append(completeProcessedJobs.Jobs, processedJobs.Jobs...)
-		completeProcessedJobs.EventsCount += processedJobs.EventsCount
-		completeProcessedJobs.PayloadSize += processedJobs.PayloadSize
-
-		if processedJobs.LimitsReached {
-			completeProcessedJobs.LimitsReached = true
-			break
-		}
-		// decrement our limits for the next query
-		if params.JobsLimit > 0 {
-			params.JobsLimit -= len(processedJobs.Jobs)
-		}
-		if limitByEventCount {
-			params.EventsLimit -= processedJobs.EventsCount
-		}
-		if limitByPayloadSize {
-			params.PayloadSizeLimit -= processedJobs.PayloadSize
-		}
-	}
-	processedQueryTablesQueriedStat := stats.Default.NewTaggedStat("tables_queried_gauge", stats.GaugeType, stats.Tags{
-		"state":     "nonterminal",
-		"query":     "processed",
-		"customVal": jd.tablePrefix,
-	})
-	processedQueryTablesQueriedStat.Gauge(dsQueryCount)
-	return completeProcessedJobs, nil
+	return JobsResult{}, fmt.Errorf("could not acquire Rlock")
 }
 
 type queryResult struct {
@@ -4550,13 +4585,6 @@ func (jd *HandleT) Ping() error {
 	return nil
 }
 
-func (jd *HandleT) GetLastJobID() int64 {
-	jd.dsListLock.RLock()
-	dsList := jd.getDSList()
-	jd.dsListLock.RUnlock()
-	return jd.getMaxIDForDs(dsList[len(dsList)-1])
-}
-
 func (jd *HandleT) getMaxIDForDs(ds dataSetT) int64 {
 	var maxID sql.NullInt64
 	sqlStatement := fmt.Sprintf(`SELECT MAX(job_id) FROM %s`, ds.JobTable)
@@ -4573,18 +4601,20 @@ func (jd *HandleT) getMaxIDForDs(ds dataSetT) int64 {
 }
 
 func (jd *HandleT) GetLastJob() *JobT {
-	jd.dsListLock.RLock()
-	defer jd.dsListLock.RUnlock()
-	dsList := jd.getDSList()
-	maxID := jd.getMaxIDForDs(dsList[len(dsList)-1])
-
-	var job JobT
-	sqlStatement := fmt.Sprintf(`SELECT %[1]s.job_id, %[1]s.uuid, %[1]s.user_id, %[1]s.parameters, %[1]s.custom_val, %[1]s.event_payload, %[1]s.created_at, %[1]s.expire_at FROM %[1]s WHERE %[1]s.job_id = %[2]d`, dsList[len(dsList)-1].JobTable, maxID)
-	err := jd.dbHandle.QueryRow(sqlStatement).Scan(&job.JobID, &job.UUID, &job.UserID, &job.Parameters, &job.CustomVal, &job.EventPayload, &job.CreatedAt, &job.ExpireAt)
-	if err != nil && err != sql.ErrNoRows {
-		jd.assertError(err)
+	if jd.dsListLock.RTryLockWithCtx(context.TODO()) {
+		defer jd.dsListLock.RUnlock()
+		dsList := jd.getDSList()
+		maxID := jd.getMaxIDForDs(dsList[len(dsList)-1])
+		var job JobT
+		sqlStatement := fmt.Sprintf(`SELECT %[1]s.job_id, %[1]s.uuid, %[1]s.user_id, %[1]s.parameters, %[1]s.custom_val, %[1]s.event_payload, %[1]s.created_at, %[1]s.expire_at FROM %[1]s WHERE %[1]s.job_id = %[2]d`, dsList[len(dsList)-1].JobTable, maxID)
+		err := jd.dbHandle.QueryRow(sqlStatement).Scan(&job.JobID, &job.UUID, &job.UserID, &job.Parameters, &job.CustomVal, &job.EventPayload, &job.CreatedAt, &job.ExpireAt)
+		if err != nil && err != sql.ErrNoRows {
+			jd.assertError(err)
+		}
+		return &job
 	}
-	return &job
+	jd.assertError(errors.New("could not acquire lock"))
+	return nil
 }
 
 func sanitizeJson(input json.RawMessage) json.RawMessage {
