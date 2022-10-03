@@ -1,8 +1,9 @@
 package snowflake_test
 
 import (
-	"database/sql"
 	"fmt"
+	"log"
+	"os"
 	"strings"
 	"testing"
 
@@ -17,76 +18,69 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-type TestHandle struct {}
-
-var handle *TestHandle
+type TestHandle struct{}
 
 func (t *TestHandle) VerifyConnection() error {
 	credentials, err := testhelper.SnowflakeCredentials()
 	if err != nil {
 		return err
 	}
-	if err = testhelper.WithConstantBackoff(func() (err error) {
-		handle.DB, err = snowflake.Connect(credentials)
+	return testhelper.WithConstantBackoff(func() (err error) {
+		_, err = snowflake.Connect(credentials)
 		if err != nil {
 			err = fmt.Errorf("could not connect to warehouse snowflake with error: %w", err)
 			return
 		}
 		return
-	}); err != nil {
-		return err
-	}
-
+	})
 }
-
 
 func TestMain(m *testing.M) {
-	//_, exists := os.LookupEnv(testhelper.SnowflakeIntegrationTestCredentials)
-	//if !exists {
-	//	log.Println("Skipping Snowflake Test as the Test credentials does not exists.")
-	//	return
-	//}
-	//
-	//handle = &TestHandle{
-	//}
-	// 
-	//os.Exit(testhelper.Run(m, handle))
+	_, exists := os.LookupEnv(testhelper.SnowflakeIntegrationTestCredentials)
+	if !exists {
+		log.Println("Skipping Snowflake Test as the Test credentials does not exists.")
+		return
+	}
+
+	os.Exit(testhelper.Run(m, &TestHandle{}))
 }
 
-
 func TestSnowflakeIntegration(t *testing.T) {
-	t.SkipNow()
+	//t.SkipNow()
+	t.Parallel()
 
 	credentials, err := testhelper.SnowflakeCredentials()
-	if err != nil {
-		return err
-	}
-	
+	require.NoError(t, err)
+
 	testcase := []struct {
-		name string
-		dbName string
-		schema string
+		name          string
+		dbName        string
+		schema        string
+		writeKey      string
+		sourceID      string
+		destinationID string
 	}{
 		{
-			name: "Normal Database",
-			dbName: credentials.Name,
-			schema: testhelper.Schema(warehouseutils.SNOWFLAKE, testhelper.SnowflakeIntegrationTestSchema),
+			name:          "Normal Database",
+			dbName:        credentials.DBName,
+			schema:        testhelper.Schema(warehouseutils.SNOWFLAKE, testhelper.SnowflakeIntegrationTestSchema),
+			writeKey:      "2eSJyYtqwcFiUILzXv2fcNIrWO7",
+			sourceID:      "24p1HhPk09FW25Kuzvx7GshCLKR",
+			destinationID: "24qeADObp6eIhjjDnEppO6P1SNc",
 		},
 		{
-			name: "Case Sensitive Database",
-			dbName: strings.ToLower(credentials.Name),
-			schema: fmt.Sprintf("%s_%s", testhelper.Schema(warehouseutils.SNOWFLAKE, testhelper.SnowflakeIntegrationTestSchema), "cs"),
+			name:          "Case Sensitive Database",
+			dbName:        strings.ToLower(credentials.DBName),
+			schema:        fmt.Sprintf("%s_%s", testhelper.Schema(warehouseutils.SNOWFLAKE, testhelper.SnowflakeIntegrationTestSchema), "CS"),
+			writeKey:      "2eSJyYtqwcFYUILzXv2fcNIrWO7",
+			sourceID:      "24p1HhPk09FBMKuzvx7GshCLKR",
+			destinationID: "24qeADObp6eJhijDnEppO6P1SNc",
 		},
 	}
 
 	for _, tc := range testcase {
-		t.Cleanup(func() {
-			require.NoError(t, testhelper.WithConstantBackoff(func() (err error) {
-				_, err = handle.DB.Exec(fmt.Sprintf(`DROP SCHEMA "%s" CASCADE;`, tc.schema))
-				return
-			}), fmt.Sprintf("Failed dropping schema %s for Snowflake", tc.schema))
-		})
-	
+		tc := tc
+
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
@@ -95,19 +89,26 @@ func TestSnowflakeIntegration(t *testing.T) {
 
 			db, err := snowflake.Connect(credentialsCopy)
 			require.NoError(t, err)
-						
-			warehouseTest := testhelper.WareHouseTest{
+
+			t.Cleanup(func() {
+				require.NoError(t, testhelper.WithConstantBackoff(func() (err error) {
+					_, err = db.Exec(fmt.Sprintf(`DROP SCHEMA "%s" CASCADE;`, tc.schema))
+					return
+				}), fmt.Sprintf("Failed dropping schema %s for Snowflake", tc.schema))
+			})
+
+			warehouseTest := &testhelper.WareHouseTest{
 				Client: &client.Client{
 					SQL:  db,
 					Type: client.SQLClient,
 				},
-				WriteKey:      "24p1HhPk09FW25Kuzvx7GshCLKR",
+				WriteKey:      tc.writeKey,
 				Schema:        tc.schema,
-				Tables:         []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"},
+				SourceID:      tc.sourceID,
+				DestinationID: tc.destinationID,
+				Tables:        []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"},
 				Provider:      warehouseutils.SNOWFLAKE,
-				SourceID:      "24p1HhPk09FBMKuzvx7GshCLKR",
-				DestinationID: "24qeADObp6eJhijDnEppO6P1SNc",
-			},
+			}
 
 			// Scenario 1
 			warehouseTest.TimestampBeforeSendingEvents = timeutil.Now()
@@ -143,7 +144,8 @@ func TestSnowflakeIntegration(t *testing.T) {
 }
 
 func TestSnowflakeConfigurationValidation(t *testing.T) {
-	t.SkipNow()
+	//t.SkipNow()
+	t.Parallel()
 
 	configurations := testhelper.PopulateTemplateConfigurations()
 	destination := backendconfig.DestinationT{
@@ -176,4 +178,3 @@ func TestSnowflakeConfigurationValidation(t *testing.T) {
 	}
 	testhelper.VerifyingConfigurationTest(t, destination)
 }
-
