@@ -5,6 +5,7 @@ import (
 	"sync"
 	"time"
 
+	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
@@ -23,7 +24,7 @@ type PayloadT struct {
 	DestinationNamespace         string
 	DestinationRevisionID        string
 	StagingDestinationRevisionID string
-	DestinationConfig            interface{}
+	Destination                  backendconfig.DestinationT
 	StagingDestinationConfig     interface{}
 	UseRudderStorage             bool
 	StagingUseRudderStorage      bool
