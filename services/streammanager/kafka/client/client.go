@@ -86,6 +86,8 @@ func NewConfluentCloud(addresses []string, key, secret string, conf Config) (*Cl
 }
 
 // NewAzureEventHubs returns a Kafka client pre-configured to connect to Azure Event Hubs
+// addresses should be in the form of "host:port" where the port is usually 9093 on Azure Event Hubs
+// Also make sure to select at least the Standard tier since the Basic tier does not support Kafka
 func NewAzureEventHubs(addresses []string, connectionString string, conf Config) (*Client, error) {
 	conf.SASL = &SASL{
 		ScramHashGen: ScramPlainText,
