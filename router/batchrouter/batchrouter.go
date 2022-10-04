@@ -18,6 +18,9 @@ import (
 	"time"
 
 	jsoniter "github.com/json-iterator/go"
+	"github.com/thoas/go-funk"
+	"golang.org/x/sync/errgroup"
+
 	"github.com/rudderlabs/rudder-server/router"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager"
 	"github.com/rudderlabs/rudder-server/router/rterror"
@@ -27,10 +30,11 @@ import (
 	"github.com/rudderlabs/rudder-server/services/rsources"
 	"github.com/rudderlabs/rudder-server/services/transientsource"
 	"github.com/rudderlabs/rudder-server/warehouse"
-	"github.com/thoas/go-funk"
-	"golang.org/x/sync/errgroup"
 
 	"github.com/gofrs/uuid"
+	"github.com/tidwall/gjson"
+	"github.com/tidwall/sjson"
+
 	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
@@ -45,8 +49,6 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/types"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
-	"github.com/tidwall/gjson"
-	"github.com/tidwall/sjson"
 )
 
 var json = jsoniter.ConfigCompatibleWithStandardLibrary
@@ -1207,7 +1209,7 @@ func (brt *HandleT) setJobStatus(batchJobs *BatchJobsT, isWarehouse bool, errOcc
 		}
 
 		var parameters JobParametersT
-		err = json.Unmarshal(job.Parameters, &parameters)
+		err = tryUnmarshalJSON(job.JobID, job.Parameters, &parameters)
 		if err != nil {
 			brt.logger.Error("Unmarshal of job parameters failed. ", string(job.Parameters))
 		}
@@ -1662,7 +1664,7 @@ func (worker *workerT) workerProcess() {
 		} else {
 			for _, job := range batchDestData.jobs {
 				var parameters JobParametersT
-				err := json.Unmarshal(job.Parameters, &parameters)
+				err := tryUnmarshalJSON(job.JobID, job.Parameters, &parameters)
 				if err != nil {
 					worker.brt.logger.Error("BRT: %s: Unmarshal of job parameters failed. ", worker.brt.destType, string(job.Parameters))
 				}
@@ -2433,4 +2435,27 @@ func (brt *HandleT) updateProcessedEventsMetrics(statusList []*jobsdb.JobStatusT
 			}).Count(count)
 		}
 	}
+}
+
+func tryUnmarshalJSON(jobID int64, data []byte, v interface{}) (err error) {
+	c := cap(data)
+	l := len(data)
+
+	startingData := make([]byte, l)
+	copy(startingData, data)
+
+	defer func() {
+		if r := recover(); r != nil {
+			pkgLogger.Warnf(
+				"Panic while unmarshalling json (%d): starting slice [%d:%d]: ending slice: [%d:%d]: %v",
+				jobID, l, c, len(data), cap(data), r,
+			)
+			pkgLogger.Warnf("Starting data before unmarshalling json panic: %s", startingData)
+			pkgLogger.Warnf("Ending data after unmarshalling json panic: %s", data)
+			panic(r)
+		}
+	}()
+
+	err = json.Unmarshal(data, v)
+	return
 }
