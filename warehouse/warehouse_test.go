@@ -3,12 +3,14 @@
 package warehouse
 
 import (
+	"github.com/golang/mock/gomock"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/ory/dockertest/v3"
 	"github.com/rudderlabs/rudder-server/admin"
 	"github.com/rudderlabs/rudder-server/config"
-	"github.com/rudderlabs/rudder-server/services/stats"
+	mock_stats "github.com/rudderlabs/rudder-server/mocks/services/stats"
 	"github.com/rudderlabs/rudder-server/testhelper"
 	"github.com/rudderlabs/rudder-server/testhelper/destination"
 	"github.com/rudderlabs/rudder-server/utils/logger"
@@ -40,8 +42,13 @@ func initWarehouse() {
 	Init3()
 	Init4()
 	Init5()
-	stats.Setup()
 }
 
-var _ = Describe("Warehouse", func() {
-})
+func getMockStats(g GinkgoTInterface) (*mock_stats.MockStats, *mock_stats.MockMeasurement) {
+	ctrl := gomock.NewController(g)
+	mockStats := mock_stats.NewMockStats(ctrl)
+	mockMeasurement := mock_stats.NewMockMeasurement(ctrl)
+	return mockStats, mockMeasurement
+}
+
+var _ = Describe("Warehouse", func() {})

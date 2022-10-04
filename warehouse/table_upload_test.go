@@ -5,6 +5,7 @@ package warehouse
 import (
 	"context"
 	"errors"
+	"os"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -14,50 +15,6 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
-
-func tableUploadsTestSQLStatement() string {
-	return `
-			BEGIN;
-			INSERT INTO wh_load_files (
-			  id, staging_file_id, location, source_id,
-			  destination_id, destination_type,
-			  table_name, total_events, created_at,
-			  metadata
-			)
-			VALUES
-			  (
-				1, 1, 'rudder/rudder-warehouse-staging-logs/2EUralUySYUs7hgsdU1lFXRSm/2022-09-20/1663650685.2EUralsdsDyZjOKU1lFXRSm.eeadsb4-a066-42f4-a90b-460161378e1b.json.gz',
-				'test-sourceID', 'test-destinationID',
-				'POSTGRES', 'test-table', 1, NOW(),
-				'{}'
-			  ),
-			  (
-				2, 2, 'rudder/rudder-warehouse-staging-logs/2EUralUySYUs7hgsdU1lFXRSm/2022-09-20/1663650685.2EUralsdsDyZjOKU1lFXRSm.eeadsb4-a066-42f4-a90b-460161378e1b.json.gz',
-				'test-sourceID', 'test-destinationID',
-				'POSTGRES', 'test-table', 1, NOW(),
-				'{}'
-			  ),
-			  (
-				3, 3, 'rudder/rudder-warehouse-staging-logs/2EUralUySYUs7hgsdU1lFXRSm/2022-09-20/1663650685.2EUralsdsDyZjOKU1lFXRSm.eeadsb4-a066-42f4-a90b-460161378e1b.json.gz',
-				'test-sourceID', 'test-destinationID',
-				'POSTGRES', 'test-table', 1, NOW(),
-				'{}'
-			  ),
-			  (
-				4, 4, 'rudder/rudder-warehouse-staging-logs/2EUralUySYUs7hgsdU1lFXRSm/2022-09-20/1663650685.2EUralsdsDyZjOKU1lFXRSm.eeadsb4-a066-42f4-a90b-460161378e1b.json.gz',
-				'test-sourceID', 'test-destinationID',
-				'POSTGRES', 'test-table', 1, NOW(),
-				'{}'
-			  ),
-			  (
-				5, 1, 'rudder/rudder-warehouse-staging-logs/2EUralUySYUs7hgsdU1lFXRSm/2022-09-20/1663650685.2EUralsdsDyZjOKU1lFXRSm.eeadsb4-a066-42f4-a90b-460161378e1b.json.gz',
-				'test-sourceID', 'test-destinationID',
-				'POSTGRES', 'rudder-discards', 1, NOW(),
-				'{}'
-			  );
-			END;
-	`
-}
 
 var _ = Describe("TableUpload", func() {
 	Describe("Tale uploads round trip", Ordered, func() {
@@ -81,16 +38,17 @@ var _ = Describe("TableUpload", func() {
 			err = setupDB(context.TODO(), getConnectionString())
 			Expect(err).To(BeNil())
 
+			sqlStatement, err := os.ReadFile("testdata/sql/5.sql")
+			Expect(err).To(BeNil())
+
+			_, err = pgResource.DB.Exec(string(sqlStatement))
+			Expect(err).To(BeNil())
+
 			pkgLogger = logger.NOP
 		})
 
 		AfterAll(func() {
 			cleanup.Run()
-		})
-
-		It("Setup table uploads", func() {
-			_, err = pgResource.DB.Exec(tableUploadsTestSQLStatement())
-			Expect(err).To(BeNil())
 		})
 
 		It("Verify if no table uploads are created", func() {
