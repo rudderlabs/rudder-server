@@ -96,7 +96,7 @@ var _ = Describe("WarehouseGrpc", func() {
 				pgResource *destination.PostgresResource
 				err        error
 				cleanup    = &testhelper.Cleanup{}
-				w          *warehouseGrpc
+				w          *warehouseGRPC
 				c          context.Context
 				limit      = int32(2)
 				uploadID   = int64(1)
@@ -125,7 +125,7 @@ var _ = Describe("WarehouseGrpc", func() {
 					},
 				}
 
-				w = &warehouseGrpc{}
+				w = &warehouseGRPC{}
 				c = context.TODO()
 			})
 
@@ -318,7 +318,7 @@ var _ = Describe("WarehouseGrpc", func() {
 				pgResource *destination.PostgresResource
 				err        error
 				cleanup    = &testhelper.Cleanup{}
-				w          *warehouseGrpc
+				w          *warehouseGRPC
 				c          context.Context
 				limit      = int32(2)
 				g          = GinkgoT()
@@ -350,7 +350,7 @@ var _ = Describe("WarehouseGrpc", func() {
 					},
 				}
 
-				w = &warehouseGrpc{}
+				w = &warehouseGRPC{}
 				c = context.TODO()
 			})
 
