@@ -57,3 +57,12 @@ func (*NOOP) ID() string {
 func (*NOOP) BasicAuth() (string, string) {
 	return "", ""
 }
+
+type IdentifierDecorator struct {
+	Identifier
+	Id string
+}
+
+func (d *IdentifierDecorator) ID() string {
+	return d.Id
+}

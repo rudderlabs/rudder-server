@@ -384,16 +384,20 @@ func getNotOKError(respBody []byte, statusCode int) error {
 }
 
 func (bc *backendConfigImpl) Identity() identity.Identifier {
-	bc.curSourceJSONLock.RLock()
-	curConfig := bc.curSourceJSON
-	bc.curSourceJSONLock.RUnlock()
-	if bc.usingCache && len(curConfig) == 1 {
-		for workspaceID := range curConfig {
-			return &identity.Workspace{
-				WorkspaceID:    workspaceID,
-				WorkspaceToken: config.GetWorkspaceToken(),
+	result := bc.workspaceConfig.Identity()
+	if result.ID() == "" && bc.usingCache { // in case of a cached config the ID is not set when operating in single workspace mode
+		bc.curSourceJSONLock.RLock()
+		curConfig := bc.curSourceJSON
+		bc.curSourceJSONLock.RUnlock()
+		if len(curConfig) == 1 {
+			for workspaceID := range curConfig {
+				return &identity.IdentifierDecorator{
+					Identifier: result,
+					Id:         workspaceID,
+				}
 			}
 		}
+		return bc.workspaceConfig.Identity()
 	}
-	return bc.workspaceConfig.Identity()
+	return result
 }
