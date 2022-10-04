@@ -467,12 +467,12 @@ func TestJobsDB(t *testing.T) {
 		jobs := genJobs(defaultWorkspaceID, customVal, 1, 1)
 		require.NoError(t, jobDB.Store(context.Background(), jobs))
 
-		require.Equal(t, int64(1), jobDB.GetMaxDSIndex(context.Background()))
+		require.Equal(t, int64(1), jobDB.GetMaxDSIndex())
 		time.Sleep(time.Second * 2)   // wait for some time to pass
 		triggerAddNewDS <- time.Now() // trigger addNewDSLoop to run
 		triggerAddNewDS <- time.Now() // Second time, waits for the first loop to finish
 
-		require.Equal(t, int64(2), jobDB.GetMaxDSIndex(context.Background()))
+		require.Equal(t, int64(2), jobDB.GetMaxDSIndex())
 	})
 
 	t.Run("should migrate the datasets after maxDSRetentionPeriod (except the right most one)", func(t *testing.T) {
@@ -498,14 +498,14 @@ func TestJobsDB(t *testing.T) {
 		jobs := genJobs(defaultWorkspaceID, customVal, 1, 1)
 		require.NoError(t, jobDB.Store(context.Background(), jobs))
 
-		require.EqualValues(t, 1, jobDB.GetMaxDSIndex(context.Background()))
+		require.EqualValues(t, 1, jobDB.GetMaxDSIndex())
 		time.Sleep(time.Second * 2)   // wait for some time to pass
 		triggerAddNewDS <- time.Now() // trigger addNewDSLoop to run
 		triggerAddNewDS <- time.Now() // Second time, waits for the first loop to finish
 
 		jobDBInspector := HandleInspector{HandleT: &jobDB}
-		require.EqualValues(t, 2, jobDBInspector.DSListSize(context.Background()))
-		require.EqualValues(t, 2, jobDB.GetMaxDSIndex(context.Background()))
+		require.EqualValues(t, 2, jobDBInspector.DSListSize())
+		require.EqualValues(t, 2, jobDB.GetMaxDSIndex())
 
 		jobsResult, err := jobDB.GetUnprocessed(context.Background(), GetQueryParamsT{
 			CustomValFilters: []string{customVal},
@@ -533,8 +533,8 @@ func TestJobsDB(t *testing.T) {
 		triggerMigrateDS <- time.Now() // trigger migrateDSLoop to run
 		triggerMigrateDS <- time.Now() // Second time, waits for the first loop to finish
 
-		require.EqualValues(t, 1, jobDBInspector.DSListSize(context.Background()))
-		require.EqualValues(t, 2, jobDB.GetMaxDSIndex(context.Background()))
+		require.EqualValues(t, 1, jobDBInspector.DSListSize())
+		require.EqualValues(t, 2, jobDB.GetMaxDSIndex())
 	})
 
 	t.Run("should migrate small datasets that have been migrated at least once (except right most one)", func(t *testing.T) {
