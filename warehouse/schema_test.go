@@ -305,7 +305,7 @@ var _ = Describe("Schema", func() {
 		}),
 	)
 
-	DescribeTable("Get table schema diff", func(uploadSchema, schemaInWarehousePreUpload, expected warehouseutils.SchemaT) {
+	DescribeTable("Merge Upload and Local Schema", func(uploadSchema, schemaInWarehousePreUpload, expected warehouseutils.SchemaT) {
 		Expect(mergeUploadAndLocalSchemas(uploadSchema, schemaInWarehousePreUpload)).To(Equal(expected))
 	},
 
