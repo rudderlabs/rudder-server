@@ -71,11 +71,55 @@ func isDestHistoricIdentitiesPopulateInProgress(warehouse warehouseutils.Warehou
 	return false
 }
 
-func (wh *HandleT) getPendingPopulateIdentitiesLoad(warehouse warehouseutils.WarehouseT) (upload UploadT, found bool) {
-	sqlStatement := fmt.Sprintf(`SELECT id, status, schema, namespace, source_id, destination_id, destination_type, start_staging_file_id, end_staging_file_id, start_load_file_id, end_load_file_id, error FROM %[1]s WHERE (%[1]s.source_id='%[2]s' AND %[1]s.destination_id='%[3]s' AND %[1]s.destination_type='%[4]s' AND %[1]s.status != '%[5]s' AND %[1]s.status != '%[6]s') ORDER BY id asc`, warehouseutils.WarehouseUploadsTable, warehouse.Source.ID, warehouse.Destination.ID, wh.poulateHistoricIdentitiesDestType(), ExportedData, Aborted)
+func (wh *HandleT) getPendingPopulateIdentitiesLoad(warehouse warehouseutils.WarehouseT) (upload Upload, found bool) {
+	sqlStatement := fmt.Sprintf(`
+		SELECT 
+			id, 
+			status, 
+			schema, 
+			namespace, 
+			source_id, 
+			destination_id, 
+			destination_type, 
+			start_staging_file_id, 
+			end_staging_file_id, 
+			start_load_file_id, 
+			end_load_file_id, 
+			error 
+		FROM %[1]s UT
+		WHERE (
+			UT.source_id='%[2]s' AND 
+			UT.destination_id='%[3]s' AND 
+			UT.destination_type='%[4]s' AND 
+			UT.status != '%[5]s' AND 
+			UT.status != '%[6]s'
+		) 
+		ORDER BY id asc
+	`,
+		warehouseutils.WarehouseUploadsTable,
+		warehouse.Source.ID,
+		warehouse.Destination.ID,
+		wh.poulateHistoricIdentitiesDestType(),
+		ExportedData,
+		Aborted,
+	)
 
 	var schema json.RawMessage
-	err := wh.dbHandle.QueryRow(sqlStatement).Scan(&upload.ID, &upload.Status, &schema, &upload.Namespace, &upload.SourceID, &upload.DestinationID, &upload.DestinationType, &upload.StartStagingFileID, &upload.EndStagingFileID, &upload.StartLoadFileID, &upload.EndLoadFileID, &upload.Error)
+	err := wh.dbHandle.QueryRow(sqlStatement).Scan(
+		&upload.ID,
+		&upload.Status,
+		&schema,
+		&upload.Namespace,
+		&upload.WorkspaceID,
+		&upload.SourceID,
+		&upload.DestinationID,
+		&upload.DestinationType,
+		&upload.StartStagingFileID,
+		&upload.EndStagingFileID,
+		&upload.StartLoadFileID,
+		&upload.EndLoadFileID,
+		&upload.Error,
+	)
 	if err == sql.ErrNoRows {
 		return
 	}
@@ -84,6 +128,19 @@ func (wh *HandleT) getPendingPopulateIdentitiesLoad(warehouse warehouseutils.War
 	}
 	found = true
 	upload.UploadSchema = warehouseutils.JSONSchemaToMap(schema)
+
+	if upload.WorkspaceID == "" {
+		var ok bool
+		wh.sourceIDToWorkspaceIDLock.RLock()
+		upload.WorkspaceID, ok = wh.sourceIDToWorkspaceID[upload.SourceID]
+		wh.sourceIDToWorkspaceIDLock.Unlock()
+
+		if !ok {
+			pkgLogger.Warnf("Workspace not found for source id: %q", upload.SourceID)
+		}
+
+	}
+
 	return
 }
 
@@ -190,7 +247,7 @@ func (wh *HandleT) setupIdentityTables(warehouse warehouseutils.WarehouseT) {
 	}
 }
 
-func (wh *HandleT) initPrePopulateDestIdentitiesUpload(warehouse warehouseutils.WarehouseT) UploadT {
+func (wh *HandleT) initPrePopulateDestIdentitiesUpload(warehouse warehouseutils.WarehouseT) Upload {
 	schema := make(map[string]map[string]string)
 	// TODO: DRY this code
 	identityRules := map[string]string{
@@ -231,7 +288,7 @@ func (wh *HandleT) initPrePopulateDestIdentitiesUpload(warehouse warehouseutils.
 		panic(err)
 	}
 
-	upload := UploadT{
+	upload := Upload{
 		ID:              uploadID,
 		Namespace:       warehouse.Namespace,
 		SourceID:        warehouse.Source.ID,
@@ -266,7 +323,7 @@ func (wh *HandleT) populateHistoricIdentities(warehouse warehouseutils.Warehouse
 
 		// check for pending loads (populateHistoricIdentities)
 		var hasPendingLoad bool
-		var upload UploadT
+		var upload Upload
 		upload, hasPendingLoad = wh.getPendingPopulateIdentitiesLoad(warehouse)
 
 		if hasPendingLoad {

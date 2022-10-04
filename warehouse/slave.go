@@ -38,7 +38,7 @@ const (
 
 // JobRunT Temporary store for processing staging file to load file
 type JobRunT struct {
-	job                  PayloadT
+	job                  Payload
 	stagingFilePath      string
 	uuidTS               time.Time
 	outputFileWritersMap map[string]warehouseutils.LoadFileWriterI
@@ -379,7 +379,7 @@ func (event *BatchRouterEventT) GetColumnInfo(columnName string) (columnInfo Col
 // 5. Delete the staging and load files from tmp directory
 //
 
-func processStagingFile(job PayloadT, workerIndex int) (loadFileUploadOutputs []loadFileUploadOutputT, err error) {
+func processStagingFile(job Payload, workerIndex int) (loadFileUploadOutputs []loadFileUploadOutputT, err error) {
 	processStartTime := time.Now()
 	jobRun := JobRunT{
 		job:          job,
@@ -566,7 +566,7 @@ func processClaimedJob(claimedJob pgnotifier.ClaimT, workerIndex int) {
 		notifier.UpdateClaimedEvent(&claimedJob, &response)
 	}
 
-	var job PayloadT
+	var job Payload
 	err := json.Unmarshal(claimedJob.Payload, &job)
 	if err != nil {
 		handleErr(err, claimedJob)

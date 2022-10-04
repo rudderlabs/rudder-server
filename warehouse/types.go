@@ -10,12 +10,13 @@ import (
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
-type PayloadT struct {
+type Payload struct {
 	BatchID                      string
 	UploadID                     int64
 	StagingFileID                int64
 	StagingFileLocation          string
 	UploadSchema                 map[string]map[string]string
+	WorkspaceID                  string
 	SourceID                     string
 	SourceName                   string
 	DestinationID                string
@@ -36,13 +37,13 @@ type PayloadT struct {
 }
 
 type ProcessStagingFilesJobT struct {
-	Upload    UploadT
+	Upload    Upload
 	List      []*StagingFileT
 	Warehouse warehouseutils.WarehouseT
 }
 
 type LoadFileJobT struct {
-	Upload                     UploadT
+	Upload                     Upload
 	StagingFile                *StagingFileT
 	Schema                     map[string]map[string]string
 	Warehouse                  warehouseutils.WarehouseT

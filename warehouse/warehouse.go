@@ -136,6 +136,9 @@ type HandleT struct {
 	maxConcurrentUploadJobs           int
 	allowMultipleSourcesForJobsPickup bool
 
+	sourceIDToWorkspaceID     map[string]string
+	sourceIDToWorkspaceIDLock sync.RWMutex
+
 	backgroundCancel context.CancelFunc
 	backgroundGroup  errgroup.Group
 	backgroundWait   func() error
@@ -256,8 +259,14 @@ func (wh *HandleT) backendConfigSubscriber() {
 		allSources := config.Data.(backendconfig.ConfigT)
 		sourceIDsByWorkspaceLock.Lock()
 		sourceIDsByWorkspace = map[string][]string{}
+
+		wh.sourceIDToWorkspaceIDLock.Lock()
+		wh.sourceIDToWorkspaceID = map[string]string{}
+
 		pkgLogger.Infof(`Received updated workspace config`)
 		for _, source := range allSources.Sources {
+			wh.sourceIDToWorkspaceID[source.ID] = source.WorkspaceID
+
 			if _, ok := sourceIDsByWorkspace[source.WorkspaceID]; !ok {
 				sourceIDsByWorkspace[source.WorkspaceID] = []string{}
 			}
@@ -314,6 +323,7 @@ func (wh *HandleT) backendConfigSubscriber() {
 			}
 		}
 		pkgLogger.Infof("Releasing config subscriber lock: %s", wh.destType)
+		wh.sourceIDToWorkspaceIDLock.Unlock()
 		sourceIDsByWorkspaceLock.Unlock()
 		wh.configSubscriberLock.Unlock()
 		wh.initialConfigFetched = true
@@ -786,7 +796,27 @@ func (wh *HandleT) getUploadsToProcess(availableWorkers int, skipIdentifiers []s
 
 	sqlStatement := fmt.Sprintf(`
 			SELECT
-					id, status, schema, mergedSchema, namespace, source_id, destination_id, destination_type, start_staging_file_id, end_staging_file_id, start_load_file_id, end_load_file_id, error, metadata, timings->0 as firstTiming, timings->-1 as lastTiming, timings, COALESCE(metadata->>'priority', '100')::int, first_event_at, last_event_at
+					id, 
+					status, 
+					schema, 
+					mergedSchema, 
+					namespace,
+					workspace_id,
+					source_id,
+					destination_id,
+					destination_type,
+					start_staging_file_id,
+					end_staging_file_id,
+					start_load_file_id,
+					end_load_file_id,
+					error,
+					metadata,
+					timings->0 as firstTiming,
+					timings->-1 as lastTiming,
+					timings,
+					COALESCE(metadata->>'priority', '100')::int, 
+					first_event_at, 
+					last_event_at
 				FROM (
 					SELECT
 						ROW_NUMBER() OVER (PARTITION BY %s ORDER BY COALESCE(metadata->>'priority', '100')::int ASC, id ASC) AS row_number,
@@ -823,13 +853,35 @@ func (wh *HandleT) getUploadsToProcess(availableWorkers int, skipIdentifiers []s
 
 	var uploadJobs []*UploadJobT
 	for rows.Next() {
-		var upload UploadT
+		var upload Upload
 		var schema json.RawMessage
 		var mergedSchema json.RawMessage
 		var firstTiming sql.NullString
 		var lastTiming sql.NullString
 		var firstEventAt, lastEventAt sql.NullTime
-		err := rows.Scan(&upload.ID, &upload.Status, &schema, &mergedSchema, &upload.Namespace, &upload.SourceID, &upload.DestinationID, &upload.DestinationType, &upload.StartStagingFileID, &upload.EndStagingFileID, &upload.StartLoadFileID, &upload.EndLoadFileID, &upload.Error, &upload.Metadata, &firstTiming, &lastTiming, &upload.TimingsObj, &upload.Priority, &firstEventAt, &lastEventAt)
+		err := rows.Scan(
+			&upload.ID,
+			&upload.Status,
+			&schema,
+			&mergedSchema,
+			&upload.Namespace,
+			&upload.WorkspaceID,
+			&upload.SourceID,
+			&upload.DestinationID,
+			&upload.DestinationType,
+			&upload.StartStagingFileID,
+			&upload.EndStagingFileID,
+			&upload.StartLoadFileID,
+			&upload.EndLoadFileID,
+			&upload.Error,
+			&upload.Metadata,
+			&firstTiming,
+			&lastTiming,
+			&upload.TimingsObj,
+			&upload.Priority,
+			&firstEventAt,
+			&lastEventAt,
+		)
 		if err != nil {
 			panic(fmt.Errorf("Failed to scan result from query: %s\nwith Error : %w", sqlStatement, err))
 		}
@@ -837,6 +889,8 @@ func (wh *HandleT) getUploadsToProcess(availableWorkers int, skipIdentifiers []s
 		upload.LastEventAt = lastEventAt.Time
 		upload.UploadSchema = warehouseutils.JSONSchemaToMap(schema)
 		upload.MergedSchema = warehouseutils.JSONSchemaToMap(mergedSchema)
+
+		// TODO: replace gjson with jsoniter
 		// cloud sources info
 		upload.SourceBatchID = gjson.GetBytes(upload.Metadata, "source_batch_id").String()
 		upload.SourceTaskID = gjson.GetBytes(upload.Metadata, "source_task_id").String()
@@ -850,6 +904,17 @@ func (wh *HandleT) getUploadsToProcess(availableWorkers int, skipIdentifiers []s
 		var lastStatus string
 		lastStatus, upload.LastAttemptAt = warehouseutils.TimingFromJSONString(lastTiming)
 		upload.Attempts = gjson.Get(string(upload.Error), fmt.Sprintf(`%s.attempt`, lastStatus)).Int()
+
+		if upload.WorkspaceID == "" {
+			var ok bool
+			wh.sourceIDToWorkspaceIDLock.Lock()
+			upload.WorkspaceID, ok = wh.sourceIDToWorkspaceID[upload.SourceID]
+			wh.sourceIDToWorkspaceIDLock.Unlock()
+
+			if !ok {
+				pkgLogger.Warnf("could not find workspace id for source id: %s", upload.SourceID)
+			}
+		}
 
 		wh.configSubscriberLock.RLock()
 		warehouse, ok := funk.Find(wh.warehouses, func(w warehouseutils.WarehouseT) bool {

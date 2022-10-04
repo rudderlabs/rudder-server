@@ -80,9 +80,10 @@ type uploadStateT struct {
 	nextState  *uploadStateT
 }
 
-type UploadT struct {
+type Upload struct {
 	ID                   int64
 	Namespace            string
+	WorkspaceID          string
 	SourceID             string
 	SourceType           string
 	SourceCategory       string
@@ -119,7 +120,7 @@ type UploadT struct {
 type tableNameT string
 
 type UploadJobT struct {
-	upload               *UploadT
+	upload               *Upload
 	dbHandle             *sql.DB
 	warehouse            warehouseutils.WarehouseT
 	whManager            manager.ManagerI
@@ -1759,11 +1760,12 @@ func (job *UploadJobT) createLoadFiles(generateAll bool) (startLoadFileID, endLo
 		// td : add prefix to payload for s3 dest
 		var messages []pgnotifier.JobPayload
 		for _, stagingFile := range toProcessStagingFiles[i:j] {
-			payload := PayloadT{
+			payload := Payload{
 				UploadID:                     job.upload.ID,
 				StagingFileID:                stagingFile.ID,
 				StagingFileLocation:          stagingFile.Location,
 				LoadFileType:                 job.upload.LoadFileType,
+				WorkspaceID:                  job.upload.WorkspaceID,
 				SourceID:                     job.warehouse.Source.ID,
 				SourceName:                   job.warehouse.Source.Name,
 				DestinationID:                destID,

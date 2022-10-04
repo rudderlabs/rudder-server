@@ -310,7 +310,7 @@ func (uploadReq UploadReqT) TriggerWHUpload() (response *proto.TriggerWhUploadsR
 	query := uploadReq.generateQuery(`id, source_id, destination_id, metadata`)
 	uploadReq.API.log.Debug(query)
 	var uploadJobT UploadJobT
-	var upload UploadT
+	var upload Upload
 
 	row := uploadReq.API.dbHandle.QueryRow(query)
 	err = row.Scan(&upload.ID, &upload.SourceID, &upload.DestinationID, &upload.Metadata)
