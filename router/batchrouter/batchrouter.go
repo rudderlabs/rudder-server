@@ -855,7 +855,9 @@ func (brt *HandleT) sendJobsToStorage(batchJobs BatchJobsT) {
 	if err != nil {
 		panic(fmt.Errorf("BRT: %s: file open failed : %s", brt.destType, err.Error()))
 	}
-	defer file.Close()
+	defer func() {
+		_ = file.Close()
+	}()
 	var jobString string
 	writeAtBytes := brt.asyncDestinationStruct[destinationID].Size
 
@@ -1517,8 +1519,8 @@ func (brt *HandleT) trackRequestMetrics(batchReqDiagnostics batchRequestMetric) 
 	if diagnostics.EnableBatchRouterMetric {
 		brt.batchRequestsMetricLock.Lock()
 		if brt.batchRequestsMetric == nil {
-			var batchRequestsMetric []batchRequestMetric
-			brt.batchRequestsMetric = append(batchRequestsMetric, batchReqDiagnostics)
+			brt.batchRequestsMetric = []batchRequestMetric{}
+			brt.batchRequestsMetric = append(brt.batchRequestsMetric, batchReqDiagnostics)
 		} else {
 			brt.batchRequestsMetric = append(brt.batchRequestsMetric, batchReqDiagnostics)
 		}
