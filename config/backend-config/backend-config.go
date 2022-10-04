@@ -382,3 +382,18 @@ func getNotOKError(respBody []byte, statusCode int) error {
 	}
 	return fmt.Errorf("backend config request failed with %d%s", statusCode, errMsg)
 }
+
+func (bc *backendConfigImpl) Identity() identity.Identifier {
+	bc.curSourceJSONLock.RLock()
+	curConfig := bc.curSourceJSON
+	bc.curSourceJSONLock.RUnlock()
+	if bc.usingCache && len(curConfig) == 1 {
+		for workspaceID := range curConfig {
+			return &identity.Workspace{
+				WorkspaceID:    workspaceID,
+				WorkspaceToken: config.GetWorkspaceToken(),
+			}
+		}
+	}
+	return bc.workspaceConfig.Identity()
+}
