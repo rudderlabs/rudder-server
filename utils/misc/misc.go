@@ -760,7 +760,7 @@ func (w GZipWriter) Write(b []byte) (count int, err error) {
 	return
 }
 
-func (w GZipWriter) WriteRow(_ []interface{}) error {
+func (GZipWriter) WriteRow(_ []interface{}) error {
 	return errors.New("not implemented")
 }
 
@@ -923,6 +923,20 @@ func FastUUID() uuid.UUID {
 	return uuid.FromBytesOrNil(b)
 }
 
+func HasAWSRoleARNInConfig(configMap map[string]interface{}) bool {
+	if configMap["iamRoleARN"] == nil {
+		return false
+	}
+	iamRoleARN, ok := configMap["iamRoleARN"].(string)
+	if !ok {
+		return false
+	}
+	if iamRoleARN == "" {
+		return false
+	}
+	return true
+}
+
 func HasAWSKeysInConfig(config interface{}) bool {
 	configMap := config.(map[string]interface{})
 	if configMap["useSTSTokens"] == false {
@@ -997,7 +1011,8 @@ func GetObjectStorageConfig(opts ObjectStorageOptsT) map[string]interface{} {
 			clonedObjectStorageConfig[k] = v
 		}
 		clonedObjectStorageConfig["externalID"] = opts.WorkspaceID
-		if !HasAWSKeysInConfig(objectStorageConfigMap) {
+		if !HasAWSRoleARNInConfig(objectStorageConfigMap) &&
+			!HasAWSKeysInConfig(objectStorageConfigMap) {
 			clonedObjectStorageConfig["accessKeyID"] = config.GetString("RUDDER_AWS_S3_COPY_USER_ACCESS_KEY_ID", "")
 			clonedObjectStorageConfig["accessKey"] = config.GetString("RUDDER_AWS_S3_COPY_USER_ACCESS_KEY", "")
 		}

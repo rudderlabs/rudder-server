@@ -379,6 +379,7 @@ func (idr *HandleT) downloadLoadFiles(tableName string) ([]string, error) {
 				Provider:         storageProvider,
 				Config:           idr.Warehouse.Destination.Config,
 				UseRudderStorage: idr.Uploader.UseRudderStorage(),
+				WorkspaceID:      idr.Warehouse.Destination.WorkspaceID,
 			}),
 		})
 		if err != nil {

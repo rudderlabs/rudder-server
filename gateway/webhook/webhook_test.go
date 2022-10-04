@@ -14,7 +14,6 @@ import (
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/gateway/response"
 	mock_webhook "github.com/rudderlabs/rudder-server/mocks/gateway/webhook"
-	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/stretchr/testify/assert"
@@ -44,7 +43,6 @@ func initWebhook() {
 		misc.Init()
 		Init()
 		maxTransformerProcess = 1
-		stats.DefaultStats = &stats.HandleT{}
 		whStats = newWebhookStats()
 	})
 }

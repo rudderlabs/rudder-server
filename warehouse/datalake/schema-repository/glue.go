@@ -4,10 +4,8 @@ import (
 	"fmt"
 
 	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/aws/credentials"
-	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/glue"
-	"github.com/rudderlabs/rudder-server/utils/misc"
+	"github.com/rudderlabs/rudder-server/utils/awsutils"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
@@ -172,32 +170,15 @@ func (gl *GlueSchemaRepository) AlterColumn(tableName, columnName, columnType st
 }
 
 func getGlueClient(wh warehouseutils.WarehouseT) (*glue.Glue, error) {
-	var accessKey, accessKeyID string
-
-	// create session using default credentials - for vpc and open source deployments
-	sess, err := session.NewSession()
+	sessionConfig, err := awsutils.NewSimpleSessionConfigForDestination(&wh.Destination, glue.ServiceID)
 	if err != nil {
 		return nil, err
 	}
-
-	// create config for glue
-	config := aws.NewConfig()
-
-	// read credentials from config if they exist
-	if misc.HasAWSKeysInConfig(wh.Destination.Config) {
-		accessKey = warehouseutils.GetConfigValue(AWSAccessKey, wh)
-		accessKeyID = warehouseutils.GetConfigValue(AWSAccessKeyID, wh)
-		config = config.WithCredentials(credentials.NewStaticCredentials(accessKeyID, accessKey, ""))
+	awsSession, err := awsutils.CreateSession(sessionConfig)
+	if err != nil {
+		return nil, err
 	}
-
-	// read region from config
-	if misc.HasAWSRegionInConfig(wh.Destination.Config) {
-		region := warehouseutils.GetConfigValue(AWSRegion, wh)
-		config = config.WithRegion(region)
-	}
-
-	svc := glue.New(sess, config)
-	return svc, nil
+	return glue.New(awsSession), nil
 }
 
 func (gl *GlueSchemaRepository) getStorageDescriptor(tableName string, columnMap map[string]string) *glue.StorageDescriptor {

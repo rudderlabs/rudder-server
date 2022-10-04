@@ -111,7 +111,7 @@ func (mj *MultiTenantHandleT) GetAllJobs(ctx context.Context, workspaceCount map
 
 	mj.unionQueryTime.SendTiming(time.Since(start))
 
-	unionQueryTablesQueriedStat := stats.NewTaggedStat("tables_queried_gauge", stats.GaugeType, stats.Tags{
+	unionQueryTablesQueriedStat := stats.Default.NewTaggedStat("tables_queried_gauge", stats.GaugeType, stats.Tags{
 		"state":     "nonterminal",
 		"query":     "union",
 		"customVal": mj.tablePrefix,
