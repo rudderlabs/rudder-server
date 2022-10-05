@@ -1106,6 +1106,11 @@ func (gateway *HandleT) webHandler(w http.ResponseWriter, r *http.Request, reqTy
 }
 
 func (gateway *HandleT) webRequestHandler(rh RequestHandler, w http.ResponseWriter, r *http.Request, reqType string) {
+	_, _ = w.Write([]byte(response.GetStatus(response.Ok)))
+	if true {
+		return
+	}
+
 	webReqHandlerTime := gateway.stats.NewTaggedStat("gateway.web_req_handler_time", stats.TimerType, stats.Tags{"reqType": reqType})
 	webReqHandlerStartTime := time.Now()
 	defer webReqHandlerTime.Since(webReqHandlerStartTime)
