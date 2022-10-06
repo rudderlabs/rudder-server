@@ -122,7 +122,7 @@ type tableNameT string
 type UploadJobT struct {
 	upload               *Upload
 	dbHandle             *sql.DB
-	warehouse            warehouseutils.WarehouseT
+	warehouse            warehouseutils.Warehouse
 	whManager            manager.ManagerI
 	stagingFiles         []*StagingFileT
 	stagingFileIDs       []int64

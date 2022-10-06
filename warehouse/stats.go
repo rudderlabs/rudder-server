@@ -220,7 +220,7 @@ func (job *UploadJobT) recordLoadFileGenerationTimeStat(startID, endID int64) (e
 	return nil
 }
 
-func getUploadStatusStat(name string, warehouse warehouseutils.WarehouseT) stats.Measurement {
+func getUploadStatusStat(name string, warehouse warehouseutils.Warehouse) stats.Measurement {
 	tags := map[string]string{
 		"workspaceId": warehouse.WorkspaceID,
 		"module":      moduleName,

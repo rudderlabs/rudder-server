@@ -113,7 +113,7 @@ type HandleT struct {
 	dbHandleT      *databricks.DBHandleT
 	Namespace      string
 	ObjectStorage  string
-	Warehouse      warehouseutils.WarehouseT
+	Warehouse      warehouseutils.Warehouse
 	Uploader       warehouseutils.UploaderI
 	ConnectTimeout time.Duration
 }
@@ -904,7 +904,7 @@ func (*HandleT) AlterColumn(_, _, _ string) (err error) {
 }
 
 // FetchSchema queries delta lake and returns the schema associated with provided namespace
-func (dl *HandleT) FetchSchema(warehouse warehouseutils.WarehouseT) (schema warehouseutils.SchemaT, err error) {
+func (dl *HandleT) FetchSchema(warehouse warehouseutils.Warehouse) (schema warehouseutils.SchemaT, err error) {
 	dl.Warehouse = warehouse
 	dl.Namespace = warehouse.Namespace
 	dbHandle, err := dl.connectToWarehouse()
@@ -979,7 +979,7 @@ func (dl *HandleT) FetchSchema(warehouse warehouseutils.WarehouseT) (schema ware
 }
 
 // Setup populate the HandleT
-func (dl *HandleT) Setup(warehouse warehouseutils.WarehouseT, uploader warehouseutils.UploaderI) (err error) {
+func (dl *HandleT) Setup(warehouse warehouseutils.Warehouse, uploader warehouseutils.UploaderI) (err error) {
 	dl.Warehouse = warehouse
 	dl.Namespace = warehouse.Namespace
 	dl.Uploader = uploader
@@ -990,7 +990,7 @@ func (dl *HandleT) Setup(warehouse warehouseutils.WarehouseT, uploader warehouse
 }
 
 // TestConnection test the connection for the warehouse
-func (dl *HandleT) TestConnection(warehouse warehouseutils.WarehouseT) (err error) {
+func (dl *HandleT) TestConnection(warehouse warehouseutils.Warehouse) (err error) {
 	dl.Warehouse = warehouse
 	dl.dbHandleT, err = dl.connectToWarehouse()
 	return
@@ -1005,7 +1005,7 @@ func (dl *HandleT) Cleanup() {
 }
 
 // CrashRecover handle crash recover scenarios
-func (dl *HandleT) CrashRecover(warehouse warehouseutils.WarehouseT) (err error) {
+func (dl *HandleT) CrashRecover(warehouse warehouseutils.Warehouse) (err error) {
 	dl.Warehouse = warehouse
 	dl.Namespace = warehouse.Namespace
 	dl.dbHandleT, err = dl.connectToWarehouse()
@@ -1018,7 +1018,7 @@ func (dl *HandleT) CrashRecover(warehouse warehouseutils.WarehouseT) (err error)
 }
 
 // IsEmpty checks if the warehouse is empty or not
-func (*HandleT) IsEmpty(warehouseutils.WarehouseT) (empty bool, err error) {
+func (*HandleT) IsEmpty(warehouseutils.Warehouse) (empty bool, err error) {
 	return
 }
 
@@ -1081,7 +1081,7 @@ func (dl *HandleT) GetTotalCountInTable(tableName string) (total int64, err erro
 }
 
 // Connect returns Client
-func (dl *HandleT) Connect(warehouse warehouseutils.WarehouseT) (client.Client, error) {
+func (dl *HandleT) Connect(warehouse warehouseutils.Warehouse) (client.Client, error) {
 	dl.Warehouse = warehouse
 	dl.Namespace = warehouse.Namespace
 	dl.ObjectStorage = warehouseutils.ObjectStorageType(

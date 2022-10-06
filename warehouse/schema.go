@@ -15,7 +15,7 @@ import (
 type SchemaHandleT struct {
 	dbHandle          *sql.DB
 	stagingFiles      []*StagingFileT
-	warehouse         warehouseutils.WarehouseT
+	warehouse         warehouseutils.Warehouse
 	localSchema       warehouseutils.SchemaT
 	schemaInWarehouse warehouseutils.SchemaT
 	uploadSchema      warehouseutils.SchemaT

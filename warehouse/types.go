@@ -39,14 +39,14 @@ type Payload struct {
 type ProcessStagingFilesJobT struct {
 	Upload    Upload
 	List      []*StagingFileT
-	Warehouse warehouseutils.WarehouseT
+	Warehouse warehouseutils.Warehouse
 }
 
 type LoadFileJobT struct {
 	Upload                     Upload
 	StagingFile                *StagingFileT
 	Schema                     map[string]map[string]string
-	Warehouse                  warehouseutils.WarehouseT
+	Warehouse                  warehouseutils.Warehouse
 	Wg                         *misc.WaitGroup
 	LoadFileIDsChan            chan []int64
 	TableToBucketFolderMap     map[string]string

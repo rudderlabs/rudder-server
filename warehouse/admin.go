@@ -50,7 +50,7 @@ func (*WarehouseAdmin) Query(s QueryInput, reply *warehouseutils.QueryResult) er
 		return errors.New("Please specify the destination ID to query the warehouse")
 	}
 
-	var warehouse warehouseutils.WarehouseT
+	var warehouse warehouseutils.Warehouse
 	srcMap, ok := connectionsMap[s.DestID]
 	if !ok {
 		return errors.New("Please specify a valid and existing destination ID")
@@ -92,7 +92,7 @@ func (*WarehouseAdmin) ConfigurationTest(s ConfigurationTestInput, reply *Config
 		return errors.New("please specify the destination ID to query the warehouse")
 	}
 
-	var warehouse warehouseutils.WarehouseT
+	var warehouse warehouseutils.Warehouse
 	srcMap, ok := connectionsMap[s.DestID]
 	if !ok {
 		return fmt.Errorf("please specify a valid and existing destinationID: %s", s.DestID)
