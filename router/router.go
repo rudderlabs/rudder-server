@@ -131,8 +131,8 @@ type HandleT struct {
 	savePayloadOnError                     bool
 	oauth                                  oauth.Authorizer
 	transformerProxy                       bool
-	allowRtAbortAlertForDelv               bool // represents if transformation(router or batch) should be alerted via router-aborted-count alert def
-	allowRtAbortForTf                      bool // represents if event delivery(via transformerProxy) should be alerted via router-aborted-count alert def
+	skipRtAbortAlertForDelivery            bool // represents if transformation(router or batch) should be alerted via router-aborted-count alert def
+	skipRtAbortAlertForTransformation      bool // represents if event delivery(via transformerProxy) should be alerted via router-aborted-count alert def
 	saveDestinationResponseOverride        bool
 	workspaceSet                           map[string]struct{}
 	sourceIDWorkspaceMap                   map[string]string
@@ -998,21 +998,18 @@ func (worker *workerT) updateReqMetrics(respStatusCode int, diagnosisStartTime *
 }
 
 type allowedRtTags struct {
-	allowTf  string
-	allowDel string
+	alert string
 }
 
 func (worker *workerT) getAllowedRtTags(errorAt string) allowedRtTags {
 	// when error occur during transformation(rt or batch)
-	// when proxy is not enabled or when rtAbortDeliveryAlert is true(default)
-	allowTf := errorAt == ERROR_AT_TF && worker.rt.allowRtAbortForTf
-	// (when error occur during delivery
-	// when proxy is not enabled or when rtAbortDeliveryAlert is true(default))
+	// when proxy is not enabled or when skipRtAbortAlertForTransformation is false(default)
+	allowTf := errorAt == ERROR_AT_TF && !worker.rt.skipRtAbortAlertForTransformation
+	// (when error occur during delivery and (when proxy is not enabled or when skipRtAbortAlertForDelivery is false(default)))
 	// or when destination is managed custom destination manager
-	allowDel := (errorAt == ERROR_AT_DEL && (!worker.rt.transformerProxy || worker.rt.allowRtAbortAlertForDelv)) || errorAt == ERROR_AT_CUST
+	allowDel := (errorAt == ERROR_AT_DEL && (!worker.rt.transformerProxy || !worker.rt.skipRtAbortAlertForDelivery)) || errorAt == ERROR_AT_CUST
 	return allowedRtTags{
-		allowTf:  strconv.FormatBool(allowTf),
-		allowDel: strconv.FormatBool(allowDel),
+		alert: strconv.FormatBool(allowTf || allowDel),
 	}
 }
 
@@ -1022,8 +1019,10 @@ func (worker *workerT) updateAbortedMetrics(destinationID, statusCode, errorAt s
 		"destType":       worker.rt.destName,
 		"respStatusCode": statusCode,
 		"destId":         destinationID,
-		"allowTf":        allowedTags.allowTf,
-		"allowDel":       allowedTags.allowDel,
+		// To indicate if the failure should be alerted for router-aborted-count
+		"alert": allowedTags.alert,
+		// To specify at which point failure happened
+		"errorAt": errorAt,
 	})
 	eventsAbortedStat.Increment()
 }
@@ -1125,8 +1124,10 @@ func (worker *workerT) sendRouterResponseCountStat(status *jobsdb.JobStatusT, de
 		"destination":    destinationTag,
 		"attempt_number": strconv.Itoa(status.AttemptNum),
 		"workspaceId":    status.WorkspaceId,
-		"allowTf":        allowedTags.allowTf,
-		"allowDel":       allowedTags.allowDel,
+		// To indicate if the failure should be alerted for router-aborted-count
+		"alert": allowedTags.alert,
+		// To specify at which point failure happened
+		"errorAt": errorAt,
 	})
 	routerResponseStat.Count(1)
 }
@@ -2076,8 +2077,8 @@ func (rt *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB jobsd
 	transformerProxyKeys := []string{"Router." + rt.destName + "." + "transformerProxy", "Router." + "transformerProxy"}
 	// START: Alert configuration
 	// We want to use these configurations to control what alerts we show via router-abort-count alert definition
-	rtAbortTransformationKeys := []string{"Router." + rt.destName + "." + "rtAbortTfAlert", "Router." + "rtAbortTfAlert"}
-	rtAbortDeliveryKeys := []string{"Router." + rt.destName + "." + "rtAbortDeliveryAlert", "Router." + "rtAbortDeliveryAlert"}
+	rtAbortTransformationKeys := []string{"Router." + rt.destName + "." + "skipRtAbortAlertForTf", "Router." + "skipRtAbortAlertForTf"}
+	rtAbortDeliveryKeys := []string{"Router." + rt.destName + "." + "skipRtAbortAlertForDelivery", "Router." + "skipRtAbortAlertForDelivery"}
 	// END: Alert configuration
 
 	saveDestinationResponseOverrideKeys := []string{"Router." + rt.destName + "." + "saveDestinationResponseOverride", "Router." + "saveDestinationResponseOverride"}
@@ -2094,8 +2095,8 @@ func (rt *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB jobsd
 	config.RegisterBoolConfigVariable(false, &rt.enableBatching, false, "Router."+rt.destName+"."+"enableBatching")
 	config.RegisterBoolConfigVariable(false, &rt.savePayloadOnError, true, savePayloadOnErrorKeys...)
 	config.RegisterBoolConfigVariable(false, &rt.transformerProxy, true, transformerProxyKeys...)
-	config.RegisterBoolConfigVariable(true, &rt.allowRtAbortAlertForDelv, true, rtAbortTransformationKeys...)
-	config.RegisterBoolConfigVariable(true, &rt.allowRtAbortForTf, true, rtAbortDeliveryKeys...)
+	config.RegisterBoolConfigVariable(false, &rt.skipRtAbortAlertForDelivery, true, rtAbortTransformationKeys...)
+	config.RegisterBoolConfigVariable(false, &rt.skipRtAbortAlertForTransformation, true, rtAbortDeliveryKeys...)
 	config.RegisterBoolConfigVariable(false, &rt.saveDestinationResponseOverride, true, saveDestinationResponseOverrideKeys...)
 	rt.allowAbortedUserJobsCountForProcessing = getRouterConfigInt("allowAbortedUserJobsCountForProcessing", destName, 1)
 
