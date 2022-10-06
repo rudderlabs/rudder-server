@@ -1,4 +1,4 @@
-.PHONY: help default build run run-mt test test-run test-teardown mocks prepare-build
+.PHONY: help default build run run-mt test test-run test-teardown mocks
 
 GO=go
 GINKGO=ginkgo
@@ -38,13 +38,6 @@ coverage:
 
 test-with-coverage: test coverage
 
-build-sql-migrations: ./services/sql-migrator/migrations_vfsdata.go ## Prepare sql migrations embedded scripts
-
-prepare-build: build-sql-migrations
-
-./services/sql-migrator/migrations_vfsdata.go: $(shell find sql/migrations)
-	$(GO) run -tags=dev cmd/generate-migrations/generate-sql-migrations.go
-
 build: prepare-build ## Build rudder-server binary
 	$(eval BUILD_OPTIONS = )
 ifeq ($(RACE_ENABLED), TRUE)
@@ -72,13 +65,13 @@ install-tools:
 
 	go install mvdan.cc/gofumpt@latest
 
-.PHONY: lint
-lint: fmt
+.PHONY: lint 
+lint: fmt ## Run linters on all go files
 	docker run --rm -v $(shell pwd):/app:ro -w /app golangci/golangci-lint:v1.49.0 bash -e -c \
 		'golangci-lint run -v --timeout 5m'
 
-.PHONY: fmt
-fmt: install-tools
+.PHONY: fmt 
+fmt: install-tools ## Formats all go files
 	gofumpt -l -w -extra  .
 
 cleanup-warehouse-integration:
