@@ -3,7 +3,6 @@ package router
 import (
 	"bytes"
 	"context"
-	"database/sql"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -19,6 +18,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/enterprise/reporting"
 	"github.com/rudderlabs/rudder-server/testhelper/health"
 
 	trand "github.com/rudderlabs/rudder-server/testhelper/rand"
@@ -56,12 +56,10 @@ import (
 	"github.com/rudderlabs/rudder-server/router/types"
 	routerUtils "github.com/rudderlabs/rudder-server/router/utils"
 	"github.com/rudderlabs/rudder-server/services/rsources"
-	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/services/transientsource"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/pubsub"
 	testutils "github.com/rudderlabs/rudder-server/utils/tests"
-	utilTypes "github.com/rudderlabs/rudder-server/utils/types"
 )
 
 const (
@@ -130,11 +128,6 @@ var (
 	}
 )
 
-type reportingNOOP struct{}
-
-func (*reportingNOOP) WaitForSetup(_ context.Context, _ string)          {}
-func (*reportingNOOP) Report(_ []*utilTypes.PUReportedMetric, _ *sql.Tx) {}
-
 type testContext struct {
 	asyncHelper     testutils.AsyncTestHelper
 	dbReadBatchSize int
@@ -193,8 +186,6 @@ var _ = Describe("Router", func() {
 		routerUtils.JobRetention = time.Duration(175200) * time.Hour // 20 Years(20*365*24)
 		c = &testContext{}
 		c.Setup()
-		// setup static requirements of dependencies
-		stats.Setup()
 	})
 
 	AfterEach(func() {
@@ -205,7 +196,7 @@ var _ = Describe("Router", func() {
 		It("should initialize and recover after crash", func() {
 			mockMultitenantHandle := mocksMultitenant.NewMockMultiTenantI(c.mockCtrl)
 			router := &HandleT{
-				Reporting:    &reportingNOOP{},
+				Reporting:    &reporting.NOOP{},
 				MultitenantI: mockMultitenantHandle,
 			}
 			mockMultitenantHandle.EXPECT().UpdateWorkspaceLatencyMap(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
@@ -223,7 +214,7 @@ var _ = Describe("Router", func() {
 			mockMultitenantHandle := mocksMultitenant.NewMockMultiTenantI(c.mockCtrl)
 			mockNetHandle := mocksRouter.NewMockNetHandleI(c.mockCtrl)
 			router := &HandleT{
-				Reporting:    &reportingNOOP{},
+				Reporting:    &reporting.NOOP{},
 				MultitenantI: mockMultitenantHandle,
 				netHandle:    mockNetHandle,
 			}
@@ -313,7 +304,7 @@ var _ = Describe("Router", func() {
 			mockMultitenantHandle := mocksMultitenant.NewMockMultiTenantI(c.mockCtrl)
 
 			router := &HandleT{
-				Reporting:    &reportingNOOP{},
+				Reporting:    &reporting.NOOP{},
 				MultitenantI: mockMultitenantHandle,
 			}
 			mockMultitenantHandle.EXPECT().UpdateWorkspaceLatencyMap(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
@@ -399,7 +390,7 @@ var _ = Describe("Router", func() {
 			routerUtils.JobRetention = time.Duration(24) * time.Hour
 			mockMultitenantHandle := mocksMultitenant.NewMockMultiTenantI(c.mockCtrl)
 			router := &HandleT{
-				Reporting:    &reportingNOOP{},
+				Reporting:    &reporting.NOOP{},
 				MultitenantI: mockMultitenantHandle,
 			}
 			mockMultitenantHandle.EXPECT().UpdateWorkspaceLatencyMap(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
@@ -480,7 +471,7 @@ var _ = Describe("Router", func() {
 			mockNetHandle := mocksRouter.NewMockNetHandleI(c.mockCtrl)
 			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
 			router := &HandleT{
-				Reporting:    &reportingNOOP{},
+				Reporting:    &reporting.NOOP{},
 				MultitenantI: mockMultitenantHandle,
 				netHandle:    mockNetHandle,
 			}
@@ -612,7 +603,7 @@ var _ = Describe("Router", func() {
 			mockNetHandle := mocksRouter.NewMockNetHandleI(c.mockCtrl)
 			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
 			router := &HandleT{
-				Reporting:    &reportingNOOP{},
+				Reporting:    &reporting.NOOP{},
 				MultitenantI: mockMultitenantHandle,
 				netHandle:    mockNetHandle,
 			}
@@ -756,7 +747,7 @@ var _ = Describe("Router", func() {
 			mockNetHandle := mocksRouter.NewMockNetHandleI(c.mockCtrl)
 			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
 			router := &HandleT{
-				Reporting:    &reportingNOOP{},
+				Reporting:    &reporting.NOOP{},
 				MultitenantI: mockMultitenantHandle,
 				netHandle:    mockNetHandle,
 			}
@@ -928,7 +919,7 @@ var _ = Describe("Router", func() {
 			mockNetHandle := mocksRouter.NewMockNetHandleI(c.mockCtrl)
 			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
 			router := &HandleT{
-				Reporting:    &reportingNOOP{},
+				Reporting:    &reporting.NOOP{},
 				MultitenantI: mockMultitenantHandle,
 				netHandle:    mockNetHandle,
 			}
@@ -1143,7 +1134,7 @@ var _ = Describe("Router", func() {
 			mockMultitenantHandle := mocksMultitenant.NewMockMultiTenantI(c.mockCtrl)
 			mockNetHandle := mocksRouter.NewMockNetHandleI(c.mockCtrl)
 			router := &HandleT{
-				Reporting:    &reportingNOOP{},
+				Reporting:    &reporting.NOOP{},
 				MultitenantI: mockMultitenantHandle,
 				netHandle:    mockNetHandle,
 			}

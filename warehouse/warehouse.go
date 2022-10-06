@@ -11,7 +11,6 @@ import (
 	"net/http"
 	"os"
 	"runtime"
-	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -261,7 +260,7 @@ func (wh *HandleT) initWorker() chan *UploadJobT {
 	return workerChan
 }
 
-func (wh *HandleT) handleUploadJob(uploadJob *UploadJobT) (err error) {
+func (*HandleT) handleUploadJob(uploadJob *UploadJobT) (err error) {
 	// Process the upload job
 	err = uploadJob.run()
 	return
@@ -559,7 +558,7 @@ func setLastProcessedMarker(warehouse warehouseutils.WarehouseT, lastProcessedTi
 	lastProcessedMarkerMap[warehouse.Identifier] = lastProcessedTime.Unix()
 }
 
-func (wh *HandleT) createUploadJobsFromStagingFiles(warehouse warehouseutils.WarehouseT, whManager manager.ManagerI, stagingFilesList []*StagingFileT, priority int, uploadStartAfter time.Time) {
+func (wh *HandleT) createUploadJobsFromStagingFiles(warehouse warehouseutils.WarehouseT, _ manager.ManagerI, stagingFilesList []*StagingFileT, priority int, uploadStartAfter time.Time) {
 	// count := 0
 	// Process staging files in batches of stagingFilesBatchSize
 	// Eg. If there are 1000 pending staging files and stagingFilesBatchSize is 100,
@@ -656,7 +655,7 @@ func (wh *HandleT) createJobs(warehouse warehouseutils.WarehouseT) (err error) {
 
 	wh.areBeingEnqueuedLock.Unlock()
 
-	stagingFilesFetchStat := stats.DefaultStats.NewTaggedStat("wh_scheduler.pending_staging_files", stats.TimerType, stats.Tags{
+	stagingFilesFetchStat := stats.Default.NewTaggedStat("wh_scheduler.pending_staging_files", stats.TimerType, stats.Tags{
 		"destinationID": warehouse.Destination.ID,
 		"destType":      warehouse.Destination.DestinationDefinition.Name,
 	})
@@ -673,7 +672,7 @@ func (wh *HandleT) createJobs(warehouse warehouseutils.WarehouseT) (err error) {
 		return nil
 	}
 
-	uploadJobCreationStat := stats.DefaultStats.NewTaggedStat("wh_scheduler.create_upload_jobs", stats.TimerType, stats.Tags{
+	uploadJobCreationStat := stats.Default.NewTaggedStat("wh_scheduler.create_upload_jobs", stats.TimerType, stats.Tags{
 		"destinationID": warehouse.Destination.ID,
 		"destType":      warehouse.Destination.DestinationDefinition.Name,
 	})
@@ -686,60 +685,6 @@ func (wh *HandleT) createJobs(warehouse warehouseutils.WarehouseT) (err error) {
 	uploadJobCreationStat.End()
 
 	return nil
-}
-
-func (wh *HandleT) sortWarehousesByOldestUnSyncedEventAt() (err error) {
-	sqlStatement := fmt.Sprintf(`
-		SELECT
-			concat('%s', ':', source_id, ':', destination_id) as wh_identifier,
-			CASE
-				WHEN (status='exported_data' or status='aborted') THEN last_event_at
-				ELSE first_event_at
-				END AS oldest_unsynced_event
-		FROM (
-			SELECT
-				ROW_NUMBER() OVER (PARTITION BY source_id, destination_id ORDER BY id desc) AS row_number,
-				t.source_id, t.destination_id, t.last_event_at, t.first_event_at, t.status
-			FROM
-				wh_uploads t) grouped_uploads
-		WHERE
-			grouped_uploads.row_number = 1;`,
-		wh.destType)
-
-	rows, err := wh.dbHandle.Query(sqlStatement)
-	if err != nil && !errors.Is(err, sql.ErrNoRows) {
-		return err
-	}
-	defer rows.Close()
-
-	oldestEventAtMap := map[string]time.Time{}
-
-	for rows.Next() {
-		var whIdentifier string
-		var oldestUnSyncedEventAtNullTime sql.NullTime
-		err := rows.Scan(&whIdentifier, &oldestUnSyncedEventAtNullTime)
-		if err != nil {
-			return err
-		}
-		oldestUnSyncedEventAt := oldestUnSyncedEventAtNullTime.Time
-		if !oldestUnSyncedEventAtNullTime.Valid {
-			oldestUnSyncedEventAt = timeutil.Now()
-		}
-		oldestEventAtMap[whIdentifier] = oldestUnSyncedEventAt
-	}
-
-	sort.Slice(wh.warehouses, func(i, j int) bool {
-		var firstTime, secondTime time.Time
-		var ok bool
-		if firstTime, ok = oldestEventAtMap[warehouseutils.GetWarehouseIdentifier(wh.destType, wh.warehouses[i].Source.ID, wh.warehouses[i].Destination.ID)]; !ok {
-			firstTime = timeutil.Now()
-		}
-		if secondTime, ok = oldestEventAtMap[warehouseutils.GetWarehouseIdentifier(wh.destType, wh.warehouses[j].Source.ID, wh.warehouses[j].Destination.ID)]; !ok {
-			secondTime = timeutil.Now()
-		}
-		return firstTime.Before(secondTime)
-	})
-	return
 }
 
 func (wh *HandleT) mainLoop(ctx context.Context) {
@@ -758,7 +703,7 @@ func (wh *HandleT) mainLoop(ctx context.Context) {
 		wg := sync.WaitGroup{}
 		wg.Add(len(wh.warehouses))
 
-		whTotalSchedulingStats := stats.DefaultStats.NewStat("wh_scheduler.total_scheduling_time", stats.TimerType)
+		whTotalSchedulingStats := stats.Default.NewStat("wh_scheduler.total_scheduling_time", stats.TimerType)
 		whTotalSchedulingStats.Start()
 
 		for _, warehouse := range wh.warehouses {
@@ -781,7 +726,7 @@ func (wh *HandleT) mainLoop(ctx context.Context) {
 		wg.Wait()
 
 		whTotalSchedulingStats.End()
-		stats.DefaultStats.NewStat("wh_scheduler.warehouse_length", stats.CountType).Count(len(wh.warehouses)) // Correlation between number of warehouses and scheduling time.
+		stats.Default.NewStat("wh_scheduler.warehouse_length", stats.CountType).Count(len(wh.warehouses)) // Correlation between number of warehouses and scheduling time.
 		select {
 		case <-ctx.Done():
 			return
@@ -1641,7 +1586,7 @@ func TriggerUploadHandler(sourceID, destID string) error {
 	return nil
 }
 
-func databricksVersionHandler(w http.ResponseWriter, r *http.Request) {
+func databricksVersionHandler(w http.ResponseWriter, _ *http.Request) {
 	w.WriteHeader(http.StatusOK)
 	w.Write([]byte(deltalake.GetDatabricksVersion()))
 }
@@ -1666,7 +1611,7 @@ func clearTriggeredUpload(wh warehouseutils.WarehouseT) {
 	triggerUploadsMapLock.Unlock()
 }
 
-func healthHandler(w http.ResponseWriter, r *http.Request) {
+func healthHandler(w http.ResponseWriter, _ *http.Request) {
 	dbService := ""
 	pgNotifierService := ""
 	if runningMode != DegradedMode {

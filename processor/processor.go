@@ -89,44 +89,44 @@ type processorStats struct {
 	userTransformEventsByTimeTaken transformRequestPQ
 	pStatsJobs                     *misc.PerfStats
 	pStatsDBR                      *misc.PerfStats
-	statGatewayDBR                 stats.RudderStats
+	statGatewayDBR                 stats.Measurement
 	pStatsDBW                      *misc.PerfStats
-	statGatewayDBW                 stats.RudderStats
-	statRouterDBW                  stats.RudderStats
-	statBatchRouterDBW             stats.RudderStats
-	statProcErrDBW                 stats.RudderStats
-	statDBR                        stats.RudderStats
-	statDBW                        stats.RudderStats
-	statLoopTime                   stats.RudderStats
-	eventSchemasTime               stats.RudderStats
-	validateEventsTime             stats.RudderStats
-	processJobsTime                stats.RudderStats
-	statSessionTransform           stats.RudderStats
-	statUserTransform              stats.RudderStats
-	statDestTransform              stats.RudderStats
-	marshalSingularEvents          stats.RudderStats
-	destProcessing                 stats.RudderStats
-	pipeProcessing                 stats.RudderStats
-	statNumRequests                stats.RudderStats
-	statNumEvents                  stats.RudderStats
-	statDBReadRequests             stats.RudderStats
-	statDBReadEvents               stats.RudderStats
-	statDBReadPayloadBytes         stats.RudderStats
-	statDBReadOutOfOrder           stats.RudderStats
-	statDBReadOutOfSequence        stats.RudderStats
-	statMarkExecuting              stats.RudderStats
-	statDBWriteStatusTime          stats.RudderStats
-	statDBWriteJobsTime            stats.RudderStats
-	statDBWriteRouterPayloadBytes  stats.RudderStats
-	statDBWriteBatchPayloadBytes   stats.RudderStats
-	statDBWriteRouterEvents        stats.RudderStats
-	statDBWriteBatchEvents         stats.RudderStats
-	statDestNumOutputEvents        stats.RudderStats
-	statBatchDestNumOutputEvents   stats.RudderStats
-	DBReadThroughput               stats.RudderStats
-	processJobThroughput           stats.RudderStats
-	transformationsThroughput      stats.RudderStats
-	DBWriteThroughput              stats.RudderStats
+	statGatewayDBW                 stats.Measurement
+	statRouterDBW                  stats.Measurement
+	statBatchRouterDBW             stats.Measurement
+	statProcErrDBW                 stats.Measurement
+	statDBR                        stats.Measurement
+	statDBW                        stats.Measurement
+	statLoopTime                   stats.Measurement
+	eventSchemasTime               stats.Measurement
+	validateEventsTime             stats.Measurement
+	processJobsTime                stats.Measurement
+	statSessionTransform           stats.Measurement
+	statUserTransform              stats.Measurement
+	statDestTransform              stats.Measurement
+	marshalSingularEvents          stats.Measurement
+	destProcessing                 stats.Measurement
+	pipeProcessing                 stats.Measurement
+	statNumRequests                stats.Measurement
+	statNumEvents                  stats.Measurement
+	statDBReadRequests             stats.Measurement
+	statDBReadEvents               stats.Measurement
+	statDBReadPayloadBytes         stats.Measurement
+	statDBReadOutOfOrder           stats.Measurement
+	statDBReadOutOfSequence        stats.Measurement
+	statMarkExecuting              stats.Measurement
+	statDBWriteStatusTime          stats.Measurement
+	statDBWriteJobsTime            stats.Measurement
+	statDBWriteRouterPayloadBytes  stats.Measurement
+	statDBWriteBatchPayloadBytes   stats.Measurement
+	statDBWriteRouterEvents        stats.Measurement
+	statDBWriteBatchEvents         stats.Measurement
+	statDestNumOutputEvents        stats.Measurement
+	statBatchDestNumOutputEvents   stats.Measurement
+	DBReadThroughput               stats.Measurement
+	processJobThroughput           stats.Measurement
+	transformationsThroughput      stats.Measurement
+	DBWriteThroughput              stats.Measurement
 }
 
 var defaultTransformerFeatures = `{
@@ -142,10 +142,10 @@ var (
 )
 
 type DestStatT struct {
-	numEvents              stats.RudderStats
-	numOutputSuccessEvents stats.RudderStats
-	numOutputFailedEvents  stats.RudderStats
-	transformTime          stats.RudderStats
+	numEvents              stats.Measurement
+	numOutputSuccessEvents stats.Measurement
+	numOutputFailedEvents  stats.Measurement
+	transformTime          stats.Measurement
 }
 
 type ParametersT struct {
@@ -338,7 +338,7 @@ func (proc *HandleT) Setup(
 	proc.rsourcesService = rsourcesService
 
 	// Stats
-	proc.statsFactory = stats.DefaultStats
+	proc.statsFactory = stats.Default
 	proc.stats.pStatsJobs = &misc.PerfStats{}
 	proc.stats.pStatsDBR = &misc.PerfStats{}
 	proc.stats.pStatsDBW = &misc.PerfStats{}
@@ -1025,7 +1025,7 @@ func (proc *HandleT) getFailedEventJobs(response transformer.ResponseT, commonMe
 		}
 		failedEventsToStore = append(failedEventsToStore, &newFailedJob)
 
-		procErrorStat := stats.NewTaggedStat("proc_error_counts", stats.CountType, stats.Tags{
+		procErrorStat := stats.Default.NewTaggedStat("proc_error_counts", stats.CountType, stats.Tags{
 			"destName":   commonMetaData.DestinationType,
 			"statusCode": strconv.Itoa(failedEvent.StatusCode),
 			"stage":      stage,
@@ -1554,17 +1554,17 @@ type storeMessage struct {
 
 func sendRetryStoreStats(attempt int) {
 	pkgLogger.Warnf("Timeout during store jobs in processor module, attempt %d", attempt)
-	stats.NewTaggedStat("jobsdb_store_timeout", stats.CountType, stats.Tags{"attempt": fmt.Sprint(attempt), "module": "processor"}).Count(1)
+	stats.Default.NewTaggedStat("jobsdb_store_timeout", stats.CountType, stats.Tags{"attempt": fmt.Sprint(attempt), "module": "processor"}).Count(1)
 }
 
 func sendRetryUpdateStats(attempt int) {
 	pkgLogger.Warnf("Timeout during update job status in processor module, attempt %d", attempt)
-	stats.NewTaggedStat("jobsdb_update_timeout", stats.CountType, stats.Tags{"attempt": fmt.Sprint(attempt), "module": "processor"}).Count(1)
+	stats.Default.NewTaggedStat("jobsdb_update_timeout", stats.CountType, stats.Tags{"attempt": fmt.Sprint(attempt), "module": "processor"}).Count(1)
 }
 
 func sendQueryRetryStats(attempt int) {
 	pkgLogger.Warnf("Timeout during query jobs in processor module, attempt %d", attempt)
-	stats.NewTaggedStat("jobsdb_query_timeout", stats.CountType, stats.Tags{"attempt": fmt.Sprint(attempt), "module": "processor"}).Count(1)
+	stats.Default.NewTaggedStat("jobsdb_query_timeout", stats.CountType, stats.Tags{"attempt": fmt.Sprint(attempt), "module": "processor"}).Count(1)
 }
 
 func (proc *HandleT) Store(in *storeMessage) {
@@ -2327,7 +2327,9 @@ func (proc *HandleT) handlePendingGatewayJobs() bool {
 func (proc *HandleT) mainLoop(ctx context.Context) {
 	// waiting for reporting client setup
 	if proc.reporting != nil && proc.reportingEnabled {
-		proc.reporting.WaitForSetup(ctx, types.CORE_REPORTING_CLIENT)
+		if err := proc.reporting.WaitForSetup(ctx, types.CORE_REPORTING_CLIENT); err != nil {
+			return
+		}
 	}
 
 	proc.logger.Info("Processor loop started")
@@ -2417,7 +2419,9 @@ func (proc *HandleT) mainPipeline(ctx context.Context) {
 	proc.logger.Infof("Processor mainPipeline started, subJobSize=%d pipelineBufferedItems=%d", subJobSize, pipelineBufferedItems)
 
 	if proc.reporting != nil && proc.reportingEnabled {
-		proc.reporting.WaitForSetup(ctx, types.CORE_REPORTING_CLIENT)
+		if err := proc.reporting.WaitForSetup(ctx, types.CORE_REPORTING_CLIENT); err != nil {
+			return
+		}
 	}
 	wg := sync.WaitGroup{}
 	bufferSize := pipelineBufferedItems

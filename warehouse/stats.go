@@ -32,7 +32,7 @@ func (jobRun *JobRunT) warehouseID() string {
 	return getWarehouseTagName(jobRun.job.DestinationID, jobRun.job.SourceName, jobRun.job.DestinationName, jobRun.job.SourceID)
 }
 
-func (job *UploadJobT) timerStat(name string, extraTags ...tag) stats.RudderStats {
+func (job *UploadJobT) timerStat(name string, extraTags ...tag) stats.Measurement {
 	tags := map[string]string{
 		"module":      moduleName,
 		"destType":    job.warehouse.Type,
@@ -43,10 +43,10 @@ func (job *UploadJobT) timerStat(name string, extraTags ...tag) stats.RudderStat
 	for _, extraTag := range extraTags {
 		tags[extraTag.name] = extraTag.value
 	}
-	return stats.NewTaggedStat(name, stats.TimerType, tags)
+	return stats.Default.NewTaggedStat(name, stats.TimerType, tags)
 }
 
-func (job *UploadJobT) counterStat(name string, extraTags ...tag) stats.RudderStats {
+func (job *UploadJobT) counterStat(name string, extraTags ...tag) stats.Measurement {
 	tags := map[string]string{
 		"module":      moduleName,
 		"destType":    job.warehouse.Type,
@@ -57,10 +57,10 @@ func (job *UploadJobT) counterStat(name string, extraTags ...tag) stats.RudderSt
 	for _, extraTag := range extraTags {
 		tags[extraTag.name] = extraTag.value
 	}
-	return stats.NewTaggedStat(name, stats.CountType, tags)
+	return stats.Default.NewTaggedStat(name, stats.CountType, tags)
 }
 
-func (job *UploadJobT) guageStat(name string, extraTags ...tag) stats.RudderStats {
+func (job *UploadJobT) guageStat(name string, extraTags ...tag) stats.Measurement {
 	tags := map[string]string{
 		"module":         moduleName,
 		"destType":       job.warehouse.Type,
@@ -72,10 +72,10 @@ func (job *UploadJobT) guageStat(name string, extraTags ...tag) stats.RudderStat
 	for _, extraTag := range extraTags {
 		tags[extraTag.name] = extraTag.value
 	}
-	return stats.NewTaggedStat(name, stats.GaugeType, tags)
+	return stats.Default.NewTaggedStat(name, stats.GaugeType, tags)
 }
 
-func (jobRun *JobRunT) timerStat(name string, extraTags ...tag) stats.RudderStats {
+func (jobRun *JobRunT) timerStat(name string, extraTags ...tag) stats.Measurement {
 	tags := map[string]string{
 		"module":      moduleName,
 		"destType":    jobRun.job.DestinationType,
@@ -86,10 +86,10 @@ func (jobRun *JobRunT) timerStat(name string, extraTags ...tag) stats.RudderStat
 	for _, extraTag := range extraTags {
 		tags[extraTag.name] = extraTag.value
 	}
-	return stats.NewTaggedStat(name, stats.TimerType, tags)
+	return stats.Default.NewTaggedStat(name, stats.TimerType, tags)
 }
 
-func (jobRun *JobRunT) counterStat(name string, extraTags ...tag) stats.RudderStats {
+func (jobRun *JobRunT) counterStat(name string, extraTags ...tag) stats.Measurement {
 	tags := map[string]string{
 		"module":      moduleName,
 		"destType":    jobRun.job.DestinationType,
@@ -100,7 +100,7 @@ func (jobRun *JobRunT) counterStat(name string, extraTags ...tag) stats.RudderSt
 	for _, extraTag := range extraTags {
 		tags[extraTag.name] = extraTag.value
 	}
-	return stats.NewTaggedStat(name, stats.CountType, tags)
+	return stats.Default.NewTaggedStat(name, stats.CountType, tags)
 }
 
 func (job *UploadJobT) generateUploadSuccessMetrics() {
@@ -209,16 +209,16 @@ func recordStagedRowsStat(totalEvents int, destType, destID, sourceName, destNam
 		"destType":    destType,
 		"warehouseID": getWarehouseTagName(destID, sourceName, destName, sourceID),
 	}
-	stats.NewTaggedStat("rows_staged", stats.CountType, tags).Count(totalEvents)
+	stats.Default.NewTaggedStat("rows_staged", stats.CountType, tags).Count(totalEvents)
 }
 
-func getUploadStatusStat(name, destType, destID, sourceName, destName, sourceID string) stats.RudderStats {
+func getUploadStatusStat(name, destType, destID, sourceName, destName, sourceID string) stats.Measurement {
 	tags := map[string]string{
 		"module":      moduleName,
 		"destType":    destType,
 		"warehouseID": getWarehouseTagName(destID, sourceName, destName, sourceID),
 	}
-	return stats.NewTaggedStat(name, stats.CountType, tags)
+	return stats.Default.NewTaggedStat(name, stats.CountType, tags)
 }
 
 func persisteSSLFileErrorStat(destType, destName, destID, sourceName, sourceID, errTag string) {
@@ -229,5 +229,5 @@ func persisteSSLFileErrorStat(destType, destName, destID, sourceName, sourceID, 
 		"destinationID": destID,
 		"errTag":        errTag,
 	}
-	stats.NewTaggedStat("persist_ssl_file_failure", stats.CountType, tags).Count(1)
+	stats.Default.NewTaggedStat("persist_ssl_file_failure", stats.CountType, tags).Count(1)
 }

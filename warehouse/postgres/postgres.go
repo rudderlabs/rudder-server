@@ -173,7 +173,7 @@ func ColumnsWithDataTypes(columns map[string]string, prefix string) string {
 	return strings.Join(arr, ",")
 }
 
-func (bq *HandleT) IsEmpty(warehouse warehouseutils.WarehouseT) (empty bool, err error) {
+func (*HandleT) IsEmpty(_ warehouseutils.WarehouseT) (empty bool, err error) {
 	return
 }
 
@@ -186,6 +186,7 @@ func (pg *HandleT) DownloadLoadFiles(tableName string) ([]string, error) {
 			Provider:         storageProvider,
 			Config:           pg.Warehouse.Destination.Config,
 			UseRudderStorage: pg.Uploader.UseRudderStorage(),
+			WorkspaceID:      pg.Warehouse.Destination.WorkspaceID,
 		}),
 	})
 	if err != nil {
@@ -232,7 +233,7 @@ func (pg *HandleT) DownloadLoadFiles(tableName string) ([]string, error) {
 }
 
 func handleRollbackTimeout(tags map[string]string) {
-	stats.NewTaggedStat("pg_rollback_timeout", stats.CountType, tags).Count(1)
+	stats.Default.NewTaggedStat("pg_rollback_timeout", stats.CountType, tags).Count(1)
 }
 
 func runRollbackWithTimeout(f func() error, onTimeout func(map[string]string), d time.Duration, tags map[string]string) {
@@ -591,7 +592,7 @@ func (pg *HandleT) loadUserTables() (errorMap map[string]error) {
 	return
 }
 
-func (pg *HandleT) schemaExists(schemaname string) (exists bool, err error) {
+func (pg *HandleT) schemaExists(_ string) (exists bool, err error) {
 	sqlStatement := fmt.Sprintf(`SELECT EXISTS (SELECT 1 FROM pg_catalog.pg_namespace WHERE nspname = '%s');`, pg.Namespace)
 	err = pg.Db.QueryRow(sqlStatement).Scan(&exists)
 	return
@@ -667,7 +668,7 @@ func (pg *HandleT) AddColumn(tableName, columnName, columnType string) (err erro
 	return err
 }
 
-func (pg *HandleT) AlterColumn(tableName, columnName, columnType string) (err error) {
+func (*HandleT) AlterColumn(_, _, _ string) (err error) {
 	return
 }
 
@@ -828,15 +829,15 @@ func (pg *HandleT) Cleanup() {
 	}
 }
 
-func (pg *HandleT) LoadIdentityMergeRulesTable() (err error) {
+func (*HandleT) LoadIdentityMergeRulesTable() (err error) {
 	return
 }
 
-func (pg *HandleT) LoadIdentityMappingsTable() (err error) {
+func (*HandleT) LoadIdentityMappingsTable() (err error) {
 	return
 }
 
-func (pg *HandleT) DownloadIdentityRules(*misc.GZipWriter) (err error) {
+func (*HandleT) DownloadIdentityRules(*misc.GZipWriter) (err error) {
 	return
 }
 
@@ -871,7 +872,7 @@ func (pg *HandleT) Connect(warehouse warehouseutils.WarehouseT) (client.Client, 
 	return client.Client{Type: client.SQLClient, SQL: dbHandle}, err
 }
 
-func (pg *HandleT) LoadTestTable(location, tableName string, payloadMap map[string]interface{}, format string) (err error) {
+func (pg *HandleT) LoadTestTable(_, tableName string, payloadMap map[string]interface{}, _ string) (err error) {
 	sqlStatement := fmt.Sprintf(`INSERT INTO %q.%q (%v) VALUES (%s)`,
 		pg.Namespace,
 		tableName,

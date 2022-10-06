@@ -12,10 +12,10 @@ import (
 )
 
 type TrackingPlanStatT struct {
-	numEvents                  stats.RudderStats
-	numValidationSuccessEvents stats.RudderStats
-	numValidationFailedEvents  stats.RudderStats
-	tpValidationTime           stats.RudderStats
+	numEvents                  stats.Measurement
+	numValidationSuccessEvents stats.Measurement
+	numValidationFailedEvents  stats.Measurement
+	tpValidationTime           stats.Measurement
 }
 
 // reportViolations It is going add violationErrors in context depending upon certain criteria:

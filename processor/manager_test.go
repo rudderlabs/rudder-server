@@ -19,6 +19,7 @@ import (
 	"github.com/ory/dockertest/v3"
 	"github.com/stretchr/testify/require"
 
+	"github.com/rudderlabs/rudder-server/enterprise/reporting"
 	"github.com/rudderlabs/rudder-server/jobsdb/prebackup"
 	"github.com/rudderlabs/rudder-server/services/rsources"
 	"github.com/rudderlabs/rudder-server/services/transientsource"
@@ -31,9 +32,7 @@ import (
 	"github.com/rudderlabs/rudder-server/processor/stash"
 	"github.com/rudderlabs/rudder-server/services/archiver"
 	"github.com/rudderlabs/rudder-server/services/multitenant"
-	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/logger"
-	utilTypes "github.com/rudderlabs/rudder-server/utils/types"
 )
 
 var (
@@ -41,17 +40,6 @@ var (
 	db    *sql.DB
 	dbDsn = "root@tcp(127.0.0.1:3306)/service"
 )
-
-type reportingNOOP struct{}
-
-func (*reportingNOOP) WaitForSetup(_ context.Context, _ string) {
-}
-
-func (*reportingNOOP) Report(_ []*utilTypes.PUReportedMetric, _ *sql.Tx) {
-}
-
-func (*reportingNOOP) AddClient(_ context.Context, _ utilTypes.Config) {
-}
 
 func TestMain(m *testing.M) {
 	flag.BoolVar(&hold, "hold", false, "hold environment clean-up after test execution until Ctrl+C is provided")
@@ -159,7 +147,6 @@ func TestProcessorManager(t *testing.T) {
 	temp := isUnLocked
 	defer func() { isUnLocked = temp }()
 	initJobsDB()
-	stats.Setup()
 	mockCtrl := gomock.NewController(t)
 	mockBackendConfig := mocksBackendConfig.NewMockBackendConfig(mockCtrl)
 	mockTransformer := mocksTransformer.NewMockTransformer(mockCtrl)
@@ -213,7 +200,7 @@ func TestProcessorManager(t *testing.T) {
 			"batch_rt": &jobsdb.MultiTenantLegacy{HandleT: brtDB},
 		},
 	}
-	processor := New(ctx, &clearDb, gwDB, rtDB, brtDB, errDB, mtStat, &reportingNOOP{}, transientsource.NewEmptyService(), mockRsourcesService)
+	processor := New(ctx, &clearDb, gwDB, rtDB, brtDB, errDB, mtStat, &reporting.NOOP{}, transientsource.NewEmptyService(), mockRsourcesService)
 
 	t.Run("jobs are already there in GW DB before processor starts", func(t *testing.T) {
 		require.NoError(t, gwDB.Start())
