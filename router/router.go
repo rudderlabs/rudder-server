@@ -1111,7 +1111,12 @@ func (worker *workerT) postStatusOnResponseQ(respStatusCode int, respBody string
 
 func (worker *workerT) sendRouterResponseCountStat(status *jobsdb.JobStatusT, destination *backendconfig.DestinationT, errorAt string) {
 	destinationTag := misc.GetTagName(destination.ID, destination.Name)
-	alert := worker.allowRouterAbortedAlert(errorAt)
+	var alert bool
+	alert = worker.allowRouterAbortedAlert(errorAt)
+	if status.JobState == jobsdb.Succeeded.State {
+		alert = !worker.rt.skipRtAbortAlertForTransformation || !worker.rt.skipRtAbortAlertForDelivery
+		errorAt = ""
+	}
 	routerResponseStat := stats.Default.NewTaggedStat("router_response_counts", stats.CountType, stats.Tags{
 		"destType":       worker.rt.destName,
 		"respStatusCode": status.ErrorCode,
