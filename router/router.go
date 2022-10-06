@@ -997,30 +997,24 @@ func (worker *workerT) updateReqMetrics(respStatusCode int, diagnosisStartTime *
 	worker.rt.trackRequestMetrics(reqMetric)
 }
 
-type allowedRtTags struct {
-	alert string
-}
-
-func (worker *workerT) getAllowedRtTags(errorAt string) allowedRtTags {
+func (worker *workerT) allowRouterAbortedAlert(errorAt string) bool {
 	// when error occur during transformation(rt or batch)
 	// when proxy is not enabled or when skipRtAbortAlertForTransformation is false(default)
 	allowTf := errorAt == ERROR_AT_TF && !worker.rt.skipRtAbortAlertForTransformation
 	// (when error occur during delivery and (when proxy is not enabled or when skipRtAbortAlertForDelivery is false(default)))
 	// or when destination is managed custom destination manager
 	allowDel := (errorAt == ERROR_AT_DEL && (!worker.rt.transformerProxy || !worker.rt.skipRtAbortAlertForDelivery)) || errorAt == ERROR_AT_CUST
-	return allowedRtTags{
-		alert: strconv.FormatBool(allowTf || allowDel),
-	}
+	return allowTf || allowDel
 }
 
 func (worker *workerT) updateAbortedMetrics(destinationID, statusCode, errorAt string) {
-	allowedTags := worker.getAllowedRtTags(errorAt)
+	alert := worker.allowRouterAbortedAlert(errorAt)
 	eventsAbortedStat := stats.Default.NewTaggedStat(`router_aborted_events`, stats.CountType, stats.Tags{
 		"destType":       worker.rt.destName,
 		"respStatusCode": statusCode,
 		"destId":         destinationID,
 		// To indicate if the failure should be alerted for router-aborted-count
-		"alert": allowedTags.alert,
+		"alert": strconv.FormatBool(alert),
 		// To specify at which point failure happened
 		"errorAt": errorAt,
 	})
@@ -1117,7 +1111,7 @@ func (worker *workerT) postStatusOnResponseQ(respStatusCode int, respBody string
 
 func (worker *workerT) sendRouterResponseCountStat(status *jobsdb.JobStatusT, destination *backendconfig.DestinationT, errorAt string) {
 	destinationTag := misc.GetTagName(destination.ID, destination.Name)
-	allowedTags := worker.getAllowedRtTags(errorAt)
+	alert := worker.allowRouterAbortedAlert(errorAt)
 	routerResponseStat := stats.Default.NewTaggedStat("router_response_counts", stats.CountType, stats.Tags{
 		"destType":       worker.rt.destName,
 		"respStatusCode": status.ErrorCode,
@@ -1125,7 +1119,7 @@ func (worker *workerT) sendRouterResponseCountStat(status *jobsdb.JobStatusT, de
 		"attempt_number": strconv.Itoa(status.AttemptNum),
 		"workspaceId":    status.WorkspaceId,
 		// To indicate if the failure should be alerted for router-aborted-count
-		"alert": allowedTags.alert,
+		"alert": strconv.FormatBool(alert),
 		// To specify at which point failure happened
 		"errorAt": errorAt,
 	})
