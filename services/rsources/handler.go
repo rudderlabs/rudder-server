@@ -420,14 +420,14 @@ func (sh *sourcesHandler) Monitor(ctx context.Context, lagGauge, replicationSlot
 		case <-ctx.Done():
 			return
 		case <-logicalReplicationTrigger():
-			var lag float64
+			var lag sql.NullFloat64
 			err := sh.localDB.QueryRowContext(
 				ctx,
 				`select EXTRACT(epoch from replay_lag)
 					from pg_stat_replication;`).Scan(&lag)
 			switch err {
 			case nil:
-				lagGauge.Gauge(lag)
+				lagGauge.Gauge(lag.Float64)
 			case sql.ErrNoRows:
 				// Indicates that shared db is unavailable
 				lagGauge.Gauge(-1.0)

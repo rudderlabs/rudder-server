@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"os"
 	"reflect"
 	"sort"
 	"strings"
@@ -19,6 +18,7 @@ import (
 	. "github.com/onsi/gomega"
 	"github.com/ory/dockertest/v3"
 	"github.com/ory/dockertest/v3/docker"
+	"github.com/rudderlabs/rudder-server/config"
 )
 
 type postgresResource struct {
@@ -744,40 +744,14 @@ var _ = Describe("Using sources handler", Ordered, func() {
 			}
 		})
 
-		It("should always have one replication slot on the localdb for replication", func() {
-			var replicationSlot int64
-			err := pgA.db.QueryRow(`select count(*) from pg_replication_slots;`).Scan(&replicationSlot)
-			Expect(err).ToNot(HaveOccurred())
-			Expect(replicationSlot).To(Equal(int64(1)))
-		})
-
 		It("should be able to monitor lag when shared db is configured", func() {
-			jobRunId := newJobRunId()
 			lagGauge := new(mockGauge)
 			replicationSlotGauge := new(mockGauge)
-			os.Setenv("RSERVER_RSOURCES_STATS_MONITORING_INTERVAL", "500ms")
-			go serviceA.Monitor(context.Background(), lagGauge, replicationSlotGauge)
+			config.Set("Rsources.stats.monitoringInterval", 10*time.Millisecond)
+			defer config.Reset()
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
-			go func() {
-				i := 0
-				for {
-					select {
-					case <-ctx.Done():
-						return
-					default:
-						addFailedRecords(pgA.db, jobRunId, defaultJobTargetKey, serviceA, []json.RawMessage{
-							[]byte(fmt.Sprintf(`{"record-%d": "id-%d"}`, i, i)),
-							[]byte(fmt.Sprintf(`{"record-%d": "id-%d"}`, i+1, i+1)),
-						})
-						i = i + 2
-					}
-				}
-			}()
-			go addFailedRecords(pgA.db, jobRunId, defaultJobTargetKey, serviceA, []json.RawMessage{
-				[]byte(`{"record-1": "id-1"}`),
-				[]byte(`{"record-2": "id-2"}`),
-			})
+			go serviceA.Monitor(ctx, lagGauge, replicationSlotGauge)
 
 			Eventually(func() bool {
 				return replicationSlotGauge.value() == int64(1) && lagGauge.wasGauged()
@@ -785,12 +759,16 @@ var _ = Describe("Using sources handler", Ordered, func() {
 		})
 
 		It("unavailability of shared db is handled via -1 replication slot gauge", func() {
+			pgB.resource.Close()
+
 			lagGauge := new(mockGauge)
 			replicationSlotGauge := new(mockGauge)
 			// kill shared db
-			os.Setenv("RSERVER_RSOURCES_STATS_MONITORING_INTERVAL", "500ms")
-			go serviceA.Monitor(context.Background(), lagGauge, replicationSlotGauge)
-			pgB.resource.Close()
+			config.Set("Rsources.stats.monitoringInterval", 10*time.Millisecond)
+			defer config.Reset()
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			go serviceA.Monitor(ctx, lagGauge, replicationSlotGauge)
 			Eventually(func() bool {
 				return lagGauge.value() == float64(-1)
 			}, "30s", "1s").Should(BeTrue(), "should have -1 replication slot")
