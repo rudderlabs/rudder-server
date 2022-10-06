@@ -220,20 +220,16 @@ func (job *UploadJobT) recordLoadFileGenerationTimeStat(startID, endID int64) (e
 	return nil
 }
 
-func recordStagedRowsStat(totalEvents int, destType, destID, sourceName, destName, sourceID string) {
+func getUploadStatusStat(name string, warehouse warehouseutils.WarehouseT) stats.Measurement {
 	tags := map[string]string{
-		"module":      moduleName,
-		"destType":    destType,
-		"warehouseID": getWarehouseTagName(destID, sourceName, destName, sourceID),
-	}
-	stats.Default.NewTaggedStat("rows_staged", stats.CountType, tags).Count(totalEvents)
-}
-
-func getUploadStatusStat(name, destType, destID, sourceName, destName, sourceID string) stats.Measurement {
-	tags := map[string]string{
-		"module":      moduleName,
-		"destType":    destType,
-		"warehouseID": getWarehouseTagName(destID, sourceName, destName, sourceID),
+		"module":   moduleName,
+		"destType": warehouse.Type,
+		"warehouseID": getWarehouseTagName(
+			warehouse.Destination.ID,
+			warehouse.Source.Name,
+			warehouse.Destination.Name,
+			warehouse.Source.ID,
+		),
 	}
 	return stats.Default.NewTaggedStat(name, stats.CountType, tags)
 }

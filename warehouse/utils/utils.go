@@ -176,6 +176,7 @@ func loadConfig() {
 }
 
 type WarehouseT struct {
+	WorkspaceID string
 	Source      backendconfig.SourceT
 	Destination backendconfig.DestinationT
 	Namespace   string
@@ -208,7 +209,8 @@ type KeyValue struct {
 	Value interface{}
 }
 
-type StagingFileT struct {
+type StagingFile struct {
+	WorkspaceID           string
 	Schema                map[string]map[string]interface{}
 	BatchDestination      DestinationT
 	Location              string

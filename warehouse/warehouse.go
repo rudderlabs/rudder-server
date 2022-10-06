@@ -281,6 +281,7 @@ func (wh *HandleT) backendConfigSubscriber() {
 				}
 				namespace := wh.getNamespace(destination.Config, source, destination, wh.destType)
 				warehouse := warehouseutils.WarehouseT{
+					WorkspaceID: source.WorkspaceID,
 					Source:      source,
 					Destination: destination,
 					Namespace:   namespace,
@@ -439,8 +440,8 @@ func (wh *HandleT) getPendingStagingFiles(warehouse warehouseutils.WarehouseT) (
 }
 
 func (wh *HandleT) initUpload(warehouse warehouseutils.WarehouseT, jsonUploadsList []*StagingFileT, isUploadTriggered bool, priority int, uploadStartAfter time.Time) {
-	sqlStatement := fmt.Sprintf(`INSERT INTO %s (source_id, namespace, destination_id, destination_type, start_staging_file_id, end_staging_file_id, start_load_file_id, end_load_file_id, status, schema, error, metadata, first_event_at, last_event_at, created_at, updated_at)
-	VALUES ($1, $2, $3, $4, $5, $6 ,$7, $8, $9, $10, $11, $12, $13, $14, $15, $16) RETURNING id`, warehouseutils.WarehouseUploadsTable)
+	sqlStatement := fmt.Sprintf(`INSERT INTO %s (source_id, namespace, workspace_id, destination_id, destination_type, start_staging_file_id, end_staging_file_id, start_load_file_id, end_load_file_id, status, schema, error, metadata, first_event_at, last_event_at, created_at, updated_at)
+	VALUES ($1, $2, $3, $4, $5, $6 ,$7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17) RETURNING id`, warehouseutils.WarehouseUploadsTable)
 	pkgLogger.Infof("WH: %s: Creating record in %s table: %v", wh.destType, warehouseutils.WarehouseUploadsTable, sqlStatement)
 	stmt, err := wh.dbHandle.Prepare(sqlStatement)
 	if err != nil {
@@ -482,7 +483,17 @@ func (wh *HandleT) initUpload(warehouse warehouseutils.WarehouseT, jsonUploadsLi
 	if err != nil {
 		panic(err)
 	}
-	row := stmt.QueryRow(warehouse.Source.ID, namespace, warehouse.Destination.ID, wh.destType, startJSONID, endJSONID, 0, 0, Waiting, "{}", "{}", metadata, firstEventAt, lastEventAt, now, now)
+	row := stmt.QueryRow(
+		warehouse.Source.ID,
+		namespace,
+		warehouse.WorkspaceID,
+		warehouse.Destination.ID,
+		wh.destType,
+
+		startJSONID,
+		endJSONID,
+
+		0, 0, Waiting, "{}", "{}", metadata, firstEventAt, lastEventAt, now, now)
 
 	var uploadID int64
 	err = row.Scan(&uploadID)
@@ -1099,7 +1110,7 @@ func (wh *HandleT) uploadStatusTrack(ctx context.Context) {
 				uploaded = 1
 			}
 
-			getUploadStatusStat("warehouse_successful_upload_exists", warehouse.Type, warehouse.Destination.ID, warehouse.Source.Name, warehouse.Destination.Name, warehouse.Source.ID).Count(uploaded)
+			getUploadStatusStat("warehouse_successful_upload_exists", warehouse).Count(uploaded)
 		}
 		select {
 		case <-ctx.Done():
@@ -1354,7 +1365,7 @@ func processHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	defer r.Body.Close()
 
-	var stagingFile warehouseutils.StagingFileT
+	var stagingFile warehouseutils.StagingFile
 	json.Unmarshal(body, &stagingFile)
 
 	var firstEventAt, lastEventAt interface{}
@@ -1384,19 +1395,41 @@ func processHandler(w http.ResponseWriter, r *http.Request) {
 
 	pkgLogger.Debugf("BRT: Creating record for uploaded json in %s table with schema: %+v", warehouseutils.WarehouseStagingFilesTable, stagingFile.Schema)
 	schemaPayload, _ := json.Marshal(stagingFile.Schema)
-	sqlStatement := fmt.Sprintf(`INSERT INTO %s (location, schema, source_id, destination_id, status, total_events, first_event_at, last_event_at, created_at, updated_at, metadata)
-									   VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $9, $10)`, warehouseutils.WarehouseStagingFilesTable)
+	sqlStatement := fmt.Sprintf(`INSERT INTO %s (location, schema, workspace_id, source_id, destination_id, status, total_events, first_event_at, last_event_at, created_at, updated_at, metadata)
+									   VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $9, $10, $11)`, warehouseutils.WarehouseStagingFilesTable)
 	stmt, err := dbHandle.Prepare(sqlStatement)
 	if err != nil {
 		panic(err)
 	}
 	defer stmt.Close()
 
-	_, err = stmt.Exec(stagingFile.Location, schemaPayload, stagingFile.BatchDestination.Source.ID, stagingFile.BatchDestination.Destination.ID, warehouseutils.StagingFileWaitingState, stagingFile.TotalEvents, firstEventAt, lastEventAt, timeutil.Now(), metadata)
+	_, err = stmt.Exec(
+		stagingFile.Location,
+		schemaPayload,
+		stagingFile.WorkspaceID,
+		stagingFile.BatchDestination.Source.ID,
+		stagingFile.BatchDestination.Destination.ID,
+		warehouseutils.StagingFileWaitingState,
+		stagingFile.TotalEvents,
+		firstEventAt,
+		lastEventAt,
+		timeutil.Now(),
+		metadata,
+	)
 	if err != nil {
 		panic(err)
 	}
-	recordStagedRowsStat(stagingFile.TotalEvents, stagingFile.BatchDestination.Destination.DestinationDefinition.Name, stagingFile.BatchDestination.Destination.ID, stagingFile.BatchDestination.Source.Name, stagingFile.BatchDestination.Destination.Name, stagingFile.BatchDestination.Source.ID)
+
+	stats.Default.NewTaggedStat("rows_staged", stats.CountType, map[string]string{
+		"workspace_id": stagingFile.WorkspaceID,
+		"module":       "warehouse",
+		"destType":     stagingFile.BatchDestination.Destination.DestinationDefinition.Name,
+		"warehouseID": getWarehouseTagName(
+			stagingFile.BatchDestination.Destination.ID,
+			stagingFile.BatchDestination.Source.Name,
+			stagingFile.BatchDestination.Destination.Name,
+			stagingFile.BatchDestination.Source.ID),
+	}).Count(stagingFile.TotalEvents)
 }
 
 func setConfigHandler(w http.ResponseWriter, r *http.Request) {

@@ -272,7 +272,7 @@ func (wh *HandleT) initPrePopulateDestIdentitiesUpload(warehouse warehouseutils.
 		panic(err)
 	}
 
-	sqlStatement := fmt.Sprintf(`INSERT INTO %s (source_id, namespace, destination_id, destination_type, status, schema, error, metadata, created_at, updated_at, start_staging_file_id, end_staging_file_id, start_load_file_id, end_load_file_id)	VALUES ($1, $2, $3, $4, $5, $6 ,$7, $8, $9, $10, $11, $12, $13, $14) RETURNING id`, warehouseutils.WarehouseUploadsTable)
+	sqlStatement := fmt.Sprintf(`INSERT INTO %s (source_id, namespace, workspace_id, destination_id, destination_type, status, schema, error, metadata, created_at, updated_at, start_staging_file_id, end_staging_file_id, start_load_file_id, end_load_file_id)	VALUES ($1, $2, $3, $4, $5, $6 ,$7, $8, $9, $10, $11, $12, $13, $14) RETURNING id`, warehouseutils.WarehouseUploadsTable)
 	stmt, err := wh.dbHandle.Prepare(sqlStatement)
 	if err != nil {
 		panic(fmt.Errorf("Query: %s\nfailed to prepare with Error : %w", sqlStatement, err))
@@ -280,7 +280,7 @@ func (wh *HandleT) initPrePopulateDestIdentitiesUpload(warehouse warehouseutils.
 	defer stmt.Close()
 
 	now := timeutil.Now()
-	row := stmt.QueryRow(warehouse.Source.ID, warehouse.Namespace, warehouse.Destination.ID, wh.poulateHistoricIdentitiesDestType(), Waiting, marshalledSchema, "{}", "{}", now, now, 0, 0, 0, 0)
+	row := stmt.QueryRow(warehouse.Source.ID, warehouse.Namespace, warehouse.WorkspaceID, warehouse.Destination.ID, wh.poulateHistoricIdentitiesDestType(), Waiting, marshalledSchema, "{}", "{}", now, now, 0, 0, 0, 0)
 
 	var uploadID int64
 	err = row.Scan(&uploadID)
@@ -291,6 +291,7 @@ func (wh *HandleT) initPrePopulateDestIdentitiesUpload(warehouse warehouseutils.
 	upload := Upload{
 		ID:              uploadID,
 		Namespace:       warehouse.Namespace,
+		WorkspaceID:     warehouse.WorkspaceID,
 		SourceID:        warehouse.Source.ID,
 		DestinationID:   warehouse.Destination.ID,
 		DestinationType: wh.poulateHistoricIdentitiesDestType(),
