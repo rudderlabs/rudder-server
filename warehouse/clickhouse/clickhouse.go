@@ -166,6 +166,7 @@ func (proc *HandleT) newClickHouseStat(tableName string) *clickHouseStatT {
 	warehouse := proc.Warehouse
 
 	tags := map[string]string{
+		"workspaceId": warehouse.WorkspaceID,
 		"destination": warehouse.Destination.ID,
 		"destType":    warehouse.Type,
 		"source":      warehouse.Source.ID,

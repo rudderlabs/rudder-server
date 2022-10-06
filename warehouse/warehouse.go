@@ -308,7 +308,7 @@ func (wh *HandleT) backendConfigSubscriber() {
 				if warehouse.Destination.Config["sslMode"] == "verify-ca" {
 					if err := warehouseutils.WriteSSLKeys(warehouse.Destination); err.IsError() {
 						pkgLogger.Error(err.Error())
-						persisteSSLFileErrorStat(wh.destType, destination.Name, destination.ID, source.Name, source.ID, err.GetErrTag())
+						persisteSSLFileErrorStat(source.WorkspaceID, wh.destType, destination.Name, destination.ID, source.Name, source.ID, err.GetErrTag())
 					}
 				}
 				connectionsMap[destination.ID][source.ID] = warehouse
@@ -657,6 +657,7 @@ func (wh *HandleT) createJobs(warehouse warehouseutils.WarehouseT) (err error) {
 	wh.areBeingEnqueuedLock.Unlock()
 
 	stagingFilesFetchStat := stats.Default.NewTaggedStat("wh_scheduler.pending_staging_files", stats.TimerType, stats.Tags{
+		"workspaceId":   warehouse.WorkspaceID,
 		"destinationID": warehouse.Destination.ID,
 		"destType":      warehouse.Destination.DestinationDefinition.Name,
 	})
@@ -674,6 +675,7 @@ func (wh *HandleT) createJobs(warehouse warehouseutils.WarehouseT) (err error) {
 	}
 
 	uploadJobCreationStat := stats.Default.NewTaggedStat("wh_scheduler.create_upload_jobs", stats.TimerType, stats.Tags{
+		"workspaceId":   warehouse.WorkspaceID,
 		"destinationID": warehouse.Destination.ID,
 		"destType":      warehouse.Destination.DestinationDefinition.Name,
 	})

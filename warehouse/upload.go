@@ -212,7 +212,15 @@ func (job *UploadJobT) trackLongRunningUpload() chan struct{} {
 			// do nothing
 		case <-time.After(longRunningUploadStatThresholdInMin):
 			pkgLogger.Infof("[WH]: Registering stat for long running upload: %d, dest: %s", job.upload.ID, job.warehouse.Identifier)
-			warehouseutils.DestStat(stats.CountType, "long_running_upload", job.warehouse.Destination.ID).Count(1)
+
+			stats.Default.NewTaggedStat(
+				"warehouse.long_running_upload",
+				stats.CountType,
+				stats.Tags{
+					"workspaceId": job.warehouse.WorkspaceID,
+					"destID":      job.warehouse.Destination.ID,
+				},
+			).Count(1)
 		}
 	})
 	return ch

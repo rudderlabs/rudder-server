@@ -768,10 +768,11 @@ func NewCounterStat(name string, extraTags ...Tag) stats.Measurement {
 
 func WHCounterStat(name string, warehouse *WarehouseT, extraTags ...Tag) stats.Measurement {
 	tags := map[string]string{
-		"module":   WAREHOUSE,
-		"destType": warehouse.Type,
-		"destID":   warehouse.Destination.ID,
-		"sourceID": warehouse.Source.ID,
+		"module":      WAREHOUSE,
+		"destType":    warehouse.Type,
+		"workspaceId": warehouse.WorkspaceID,
+		"destID":      warehouse.Destination.ID,
+		"sourceID":    warehouse.Source.ID,
 	}
 	for _, extraTag := range extraTags {
 		tags[extraTag.Name] = extraTag.Value

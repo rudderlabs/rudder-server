@@ -129,6 +129,7 @@ func (wh *HandleT) getPendingPopulateIdentitiesLoad(warehouse warehouseutils.War
 	found = true
 	upload.UploadSchema = warehouseutils.JSONSchemaToMap(schema)
 
+	// TODO: remove this once the migration is complete
 	if upload.WorkspaceID == "" {
 		var ok bool
 		wh.sourceIDToWorkspaceIDLock.RLock()

@@ -263,6 +263,7 @@ func (pg *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 
 	// tags
 	tags := map[string]string{
+		"workspaceId":   pg.Warehouse.WorkspaceID,
 		"namepsace":     pg.Namespace,
 		"destinationID": pg.Warehouse.Destination.ID,
 		"tableName":     tableName,

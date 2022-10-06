@@ -268,6 +268,7 @@ func Connect(cred *databricks.CredentialsT, connectTimeout time.Duration) (dbHan
 // fetchTables fetch tables with tableNames
 func (dl *HandleT) fetchTables(dbT *databricks.DBHandleT, schema string) (tableNames []string, err error) {
 	fetchTablesExecTime := stats.Default.NewTaggedStat("warehouse.deltalake.grpcExecTime", stats.TimerType, map[string]string{
+		"workspaceId": dl.Warehouse.WorkspaceID,
 		"destination": dl.Warehouse.Destination.ID,
 		"destType":    dl.Warehouse.Type,
 		"source":      dl.Warehouse.Source.ID,
@@ -352,6 +353,7 @@ func (dl *HandleT) partitionQuery(tableName string) (string, error) {
 // ExecuteSQL executes sql using grpc Client
 func (dl *HandleT) ExecuteSQL(sqlStatement, queryType string) (err error) {
 	execSqlStatTime := stats.Default.NewTaggedStat("warehouse.deltalake.grpcExecTime", stats.TimerType, map[string]string{
+		"workspaceId": dl.Warehouse.WorkspaceID,
 		"destination": dl.Warehouse.Destination.ID,
 		"destType":    dl.Warehouse.Type,
 		"source":      dl.Warehouse.Source.ID,
@@ -386,6 +388,7 @@ func (*HandleT) ExecuteSQLClient(dbClient *databricks.DBHandleT, sqlStatement st
 // schemaExists checks it schema exists or not.
 func (dl *HandleT) schemaExists(schemaName string) (exists bool, err error) {
 	fetchSchemasExecTime := stats.Default.NewTaggedStat("warehouse.deltalake.grpcExecTime", stats.TimerType, map[string]string{
+		"workspaceId": dl.Warehouse.WorkspaceID,
 		"destination": dl.Warehouse.Destination.ID,
 		"destType":    dl.Warehouse.Type,
 		"source":      dl.Warehouse.Source.ID,
@@ -424,6 +427,7 @@ func (dl *HandleT) createSchema() (err error) {
 // dropStagingTables drops staging tables
 func (dl *HandleT) dropStagingTables(tableNames []string) {
 	dropTablesExecTime := stats.Default.NewTaggedStat("warehouse.deltalake.grpcExecTime", stats.TimerType, map[string]string{
+		"workspaceId": dl.Warehouse.WorkspaceID,
 		"destination": dl.Warehouse.Destination.ID,
 		"destType":    dl.Warehouse.Type,
 		"source":      dl.Warehouse.Source.ID,
@@ -798,6 +802,7 @@ func (dl *HandleT) connectToWarehouse() (dbHandleT *databricks.DBHandleT, err er
 		Token: warehouseutils.GetConfigValue(DLToken, dl.Warehouse),
 	}
 	connStat := stats.Default.NewTaggedStat("warehouse.deltalake.grpcExecTime", stats.TimerType, map[string]string{
+		"workspaceId": dl.Warehouse.WorkspaceID,
 		"destination": dl.Warehouse.Destination.ID,
 		"destType":    dl.Warehouse.Type,
 		"source":      dl.Warehouse.Source.ID,
@@ -809,6 +814,7 @@ func (dl *HandleT) connectToWarehouse() (dbHandleT *databricks.DBHandleT, err er
 	defer connStat.End()
 
 	closeConnStat := stats.Default.NewTaggedStat("warehouse.deltalake.grpcExecTime", stats.TimerType, map[string]string{
+		"workspaceId": dl.Warehouse.WorkspaceID,
 		"destination": dl.Warehouse.Destination.ID,
 		"destType":    dl.Warehouse.Type,
 		"source":      dl.Warehouse.Source.ID,
@@ -927,6 +933,7 @@ func (dl *HandleT) FetchSchema(warehouse warehouseutils.WarehouseT) (schema ware
 	}
 
 	fetchTablesAttributesExecTime := stats.Default.NewTaggedStat("warehouse.deltalake.grpcExecTime", stats.TimerType, map[string]string{
+		"workspaceId": dl.Warehouse.WorkspaceID,
 		"destination": dl.Warehouse.Destination.ID,
 		"destType":    dl.Warehouse.Type,
 		"source":      dl.Warehouse.Source.ID,
@@ -1044,6 +1051,7 @@ func (*HandleT) DownloadIdentityRules(*misc.GZipWriter) (err error) {
 // GetTotalCountInTable returns total count in tables.
 func (dl *HandleT) GetTotalCountInTable(tableName string) (total int64, err error) {
 	fetchTotalCountExecTime := stats.Default.NewTaggedStat("warehouse.deltalake.grpcExecTime", stats.TimerType, map[string]string{
+		"workspaceId": dl.Warehouse.WorkspaceID,
 		"destination": dl.Warehouse.Destination.ID,
 		"destType":    dl.Warehouse.Type,
 		"source":      dl.Warehouse.Source.ID,
