@@ -12,6 +12,7 @@ import (
 
 	"github.com/lib/pq"
 	"github.com/rudderlabs/rudder-server/config"
+	"github.com/rudderlabs/rudder-server/utils/logger"
 )
 
 const defaultRetentionPeriodInHours = 3 * 24
@@ -23,6 +24,7 @@ var ErrOperationNotSupported = errors.New("rsources: operation not supported")
 var replSlotDisallowedChars *regexp.Regexp = regexp.MustCompile(`[^a-z0-9_]`)
 
 type sourcesHandler struct {
+	log            logger.Logger
 	config         JobServiceConfig
 	localDB        *sql.DB
 	sharedDB       *sql.DB
@@ -403,4 +405,46 @@ func sqlFilters(jobRunId string, filter JobFilter) (fragment string, params []in
 		filterParams = append(filterParams, pq.Array(filter.SourceID))
 	}
 	return filters, filterParams
+}
+
+func (sh *sourcesHandler) Monitor(ctx context.Context, lagGauge, replicationSlotGauge Gauger) {
+	if sh.sharedDB == nil {
+		sh.log.Warn("shared database is not configured, skipping logical replication monitoring")
+		return
+	}
+	logicalReplicationTrigger := func() <-chan time.Time {
+		return time.After(config.GetDuration("Rsources.stats.monitoringInterval", 10, time.Second))
+	}
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-logicalReplicationTrigger():
+			var lag sql.NullFloat64
+			err := sh.localDB.QueryRowContext(
+				ctx,
+				`select EXTRACT(epoch from replay_lag)
+					from pg_stat_replication;`).Scan(&lag)
+			switch err {
+			case nil:
+				lagGauge.Gauge(lag.Float64)
+			case sql.ErrNoRows:
+				// Indicates that shared db is unavailable
+				lagGauge.Gauge(-1.0)
+			default:
+				sh.log.Warnf("failed to get replication lag: %v", err)
+			}
+
+			var replicationSlotCount int64
+			err = sh.localDB.QueryRowContext(
+				ctx,
+				`select count(*) from pg_replication_slots;`).
+				Scan(&replicationSlotCount)
+			if err != nil {
+				sh.log.Warnf("failed to get replication slot count: %v", err)
+			} else {
+				replicationSlotGauge.Gauge(replicationSlotCount)
+			}
+		}
+	}
 }
