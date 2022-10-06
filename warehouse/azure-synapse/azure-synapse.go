@@ -25,9 +25,7 @@ import (
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
-var (
-	pkgLogger logger.Logger
-)
+var pkgLogger logger.Logger
 
 const (
 	host                   = "host"
