@@ -2089,8 +2089,8 @@ func (rt *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB jobsd
 	config.RegisterBoolConfigVariable(false, &rt.enableBatching, false, "Router."+rt.destName+"."+"enableBatching")
 	config.RegisterBoolConfigVariable(false, &rt.savePayloadOnError, true, savePayloadOnErrorKeys...)
 	config.RegisterBoolConfigVariable(false, &rt.transformerProxy, true, transformerProxyKeys...)
-	config.RegisterBoolConfigVariable(false, &rt.skipRtAbortAlertForDelivery, true, rtAbortTransformationKeys...)
-	config.RegisterBoolConfigVariable(false, &rt.skipRtAbortAlertForTransformation, true, rtAbortDeliveryKeys...)
+	config.RegisterBoolConfigVariable(false, &rt.skipRtAbortAlertForTransformation, true, rtAbortTransformationKeys...)
+	config.RegisterBoolConfigVariable(false, &rt.skipRtAbortAlertForDelivery, true, rtAbortDeliveryKeys...)
 	config.RegisterBoolConfigVariable(false, &rt.saveDestinationResponseOverride, true, saveDestinationResponseOverrideKeys...)
 	rt.allowAbortedUserJobsCountForProcessing = getRouterConfigInt("allowAbortedUserJobsCountForProcessing", destName, 1)
 
