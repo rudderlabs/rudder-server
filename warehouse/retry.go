@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
 
 	"github.com/lib/pq"
 	"github.com/rudderlabs/rudder-server/utils/misc"
@@ -39,7 +40,7 @@ func (retryReq *RetryRequest) RetryWHUploads(ctx context.Context) (response Retr
 			)
 			response = RetryResponse{
 				Message:    err.Error(),
-				StatusCode: 400,
+				StatusCode: http.StatusBadRequest,
 			}
 		}
 	}()
@@ -72,7 +73,7 @@ func (retryReq *RetryRequest) RetryWHUploads(ctx context.Context) (response Retr
 
 	response = RetryResponse{
 		Count:      uploadsRetried,
-		StatusCode: 200,
+		StatusCode: http.StatusOK,
 	}
 	return
 }
@@ -90,7 +91,7 @@ func (retryReq *RetryRequest) UploadsToRetry(ctx context.Context) (response Retr
 			)
 			response = RetryResponse{
 				Message:    err.Error(),
-				StatusCode: 400,
+				StatusCode: http.StatusBadRequest,
 			}
 		}
 	}()
@@ -123,7 +124,7 @@ func (retryReq *RetryRequest) UploadsToRetry(ctx context.Context) (response Retr
 
 	response = RetryResponse{
 		Count:      count,
-		StatusCode: 200,
+		StatusCode: http.StatusOK,
 	}
 	return
 }

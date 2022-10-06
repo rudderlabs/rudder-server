@@ -11,7 +11,6 @@ import (
 	"net/http"
 	"os"
 	"runtime"
-	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -298,7 +297,7 @@ func (wh *HandleT) backendConfigSubscriber() {
 				if warehouse.Destination.Config["sslMode"] == "verify-ca" {
 					if err := warehouseutils.WriteSSLKeys(warehouse.Destination); err.IsError() {
 						pkgLogger.Error(err.Error())
-						persisteSSLFileErrorStat(wh.destType, destination.Name, destination.ID, source.Name, source.ID, err.GetErrTag())
+						persistSSLFileErrorStat(wh.destType, destination.Name, destination.ID, source.Name, source.ID, err.GetErrTag())
 					}
 				}
 				connectionsMap[destination.ID][source.ID] = warehouse
@@ -665,60 +664,6 @@ func (wh *HandleT) createJobs(warehouse warehouseutils.WarehouseT) (err error) {
 	uploadJobCreationStat.End()
 
 	return nil
-}
-
-func (wh *HandleT) sortWarehousesByOldestUnSyncedEventAt() (err error) {
-	sqlStatement := fmt.Sprintf(`
-		SELECT
-			concat('%s', ':', source_id, ':', destination_id) as wh_identifier,
-			CASE
-				WHEN (status='exported_data' or status='aborted') THEN last_event_at
-				ELSE first_event_at
-				END AS oldest_unsynced_event
-		FROM (
-			SELECT
-				ROW_NUMBER() OVER (PARTITION BY source_id, destination_id ORDER BY id desc) AS row_number,
-				t.source_id, t.destination_id, t.last_event_at, t.first_event_at, t.status
-			FROM
-				wh_uploads t) grouped_uploads
-		WHERE
-			grouped_uploads.row_number = 1;`,
-		wh.destType)
-
-	rows, err := wh.dbHandle.Query(sqlStatement)
-	if err != nil && !errors.Is(err, sql.ErrNoRows) {
-		return err
-	}
-	defer rows.Close()
-
-	oldestEventAtMap := map[string]time.Time{}
-
-	for rows.Next() {
-		var whIdentifier string
-		var oldestUnSyncedEventAtNullTime sql.NullTime
-		err := rows.Scan(&whIdentifier, &oldestUnSyncedEventAtNullTime)
-		if err != nil {
-			return err
-		}
-		oldestUnSyncedEventAt := oldestUnSyncedEventAtNullTime.Time
-		if !oldestUnSyncedEventAtNullTime.Valid {
-			oldestUnSyncedEventAt = timeutil.Now()
-		}
-		oldestEventAtMap[whIdentifier] = oldestUnSyncedEventAt
-	}
-
-	sort.Slice(wh.warehouses, func(i, j int) bool {
-		var firstTime, secondTime time.Time
-		var ok bool
-		if firstTime, ok = oldestEventAtMap[warehouseutils.GetWarehouseIdentifier(wh.destType, wh.warehouses[i].Source.ID, wh.warehouses[i].Destination.ID)]; !ok {
-			firstTime = timeutil.Now()
-		}
-		if secondTime, ok = oldestEventAtMap[warehouseutils.GetWarehouseIdentifier(wh.destType, wh.warehouses[j].Source.ID, wh.warehouses[j].Destination.ID)]; !ok {
-			secondTime = timeutil.Now()
-		}
-		return firstTime.Before(secondTime)
-	})
-	return
 }
 
 func (wh *HandleT) mainLoop(ctx context.Context) {
@@ -1519,11 +1464,11 @@ func getPendingUploadCount(filters ...warehouseutils.FilterBy) (uploadCount int6
 	pkgLogger.Debugf("Fetching pending upload count with filters: %v", filters)
 
 	query := fmt.Sprintf(`
-	SELECT 
-		COUNT(*) 
-	FROM 
-		%[1]s 
-	WHERE 
+	SELECT
+		COUNT(*)
+	FROM
+		%[1]s
+	WHERE
 		%[1]s.status NOT IN ('%[2]s', '%[3]s')
 	`, warehouseutils.WarehouseUploadsTable, ExportedData, Aborted)
 

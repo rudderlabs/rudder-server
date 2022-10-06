@@ -17,11 +17,6 @@ enabled = true
   [analyzers.meta]
   import_paths = ["github.com/rudderlabs/rudder-server"]
 
-[[analyzers]]
-name = "javascript"
+[[transformers]]
+name = "gofumpt"
 enabled = true
-
-  [analyzers.meta]
-  plugins = ["react"]
-  dialect = "typescript"
-  environment = ["browser"]

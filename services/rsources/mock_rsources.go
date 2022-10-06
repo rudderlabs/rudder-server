@@ -158,3 +158,50 @@ func (mr *MockJobServiceMockRecorder) IncrementStats(ctx, tx, jobRunId, key, sta
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "IncrementStats", reflect.TypeOf((*MockJobService)(nil).IncrementStats), ctx, tx, jobRunId, key, stats)
 }
+
+// Monitor mocks base method.
+func (m *MockJobService) Monitor(ctx context.Context, lagGauge, replicationSlotGauge Gauger) {
+	m.ctrl.T.Helper()
+	m.ctrl.Call(m, "Monitor", ctx, lagGauge, replicationSlotGauge)
+}
+
+// Monitor indicates an expected call of Monitor.
+func (mr *MockJobServiceMockRecorder) Monitor(ctx, lagGauge, replicationSlotGauge interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Monitor", reflect.TypeOf((*MockJobService)(nil).Monitor), ctx, lagGauge, replicationSlotGauge)
+}
+
+// MockGauger is a mock of Gauger interface.
+type MockGauger struct {
+	ctrl     *gomock.Controller
+	recorder *MockGaugerMockRecorder
+}
+
+// MockGaugerMockRecorder is the mock recorder for MockGauger.
+type MockGaugerMockRecorder struct {
+	mock *MockGauger
+}
+
+// NewMockGauger creates a new mock instance.
+func NewMockGauger(ctrl *gomock.Controller) *MockGauger {
+	mock := &MockGauger{ctrl: ctrl}
+	mock.recorder = &MockGaugerMockRecorder{mock}
+	return mock
+}
+
+// EXPECT returns an object that allows the caller to indicate expected use.
+func (m *MockGauger) EXPECT() *MockGaugerMockRecorder {
+	return m.recorder
+}
+
+// Gauge mocks base method.
+func (m *MockGauger) Gauge(arg0 interface{}) {
+	m.ctrl.T.Helper()
+	m.ctrl.Call(m, "Gauge", arg0)
+}
+
+// Gauge indicates an expected call of Gauge.
+func (mr *MockGaugerMockRecorder) Gauge(arg0 interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Gauge", reflect.TypeOf((*MockGauger)(nil).Gauge), arg0)
+}
