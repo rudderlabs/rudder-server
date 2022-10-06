@@ -12,7 +12,6 @@ import (
 	"strings"
 	"time"
 
-	uuid "github.com/gofrs/uuid"
 	"github.com/lib/pq"
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/services/filemanager"
@@ -24,7 +23,6 @@ import (
 )
 
 var (
-	stagingTablePrefix              string
 	pkgLogger                       logger.Logger
 	skipComputingUserLatestTraits   bool
 	enableSQLStatementExecutionPlan bool
@@ -39,6 +37,10 @@ const (
 	port     = "port"
 	sslMode  = "sslMode"
 	verifyCA = "verify-ca"
+)
+
+const (
+	provider = warehouseutils.POSTGRES
 )
 
 // load table transaction stages
@@ -143,7 +145,6 @@ func Init() {
 }
 
 func loadConfig() {
-	stagingTablePrefix = "rudder_staging_"
 	config.RegisterBoolConfigVariable(false, &skipComputingUserLatestTraits, true, "Warehouse.postgres.skipComputingUserLatestTraits")
 	config.RegisterDurationConfigVariable(30, &txnRollbackTimeout, true, time.Second, "Warehouse.postgres.txnRollbackTimeout")
 	config.RegisterBoolConfigVariable(false, &enableSQLStatementExecutionPlan, true, "Warehouse.postgres.enableSQLStatementExecutionPlan")
@@ -282,7 +283,7 @@ func (pg *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 		return
 	}
 	// create temporary table
-	stagingTableName = misc.TruncateStr(fmt.Sprintf(`%s%s_%s`, stagingTablePrefix, tableName, strings.ReplaceAll(uuid.Must(uuid.NewV4()).String(), "-", "")), 63)
+	stagingTableName = warehouseutils.StagingTableName(provider, tableName)
 	sqlStatement = fmt.Sprintf(`CREATE TABLE "%[1]s".%[2]s (LIKE "%[1]s"."%[3]s")`, pg.Namespace, stagingTableName, tableName)
 	pkgLogger.Debugf("PG: Creating temporary table for table:%s at %s\n", tableName, sqlStatement)
 	_, err = txn.Exec(sqlStatement)
@@ -388,7 +389,7 @@ func (pg *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 	}
 	sqlStatement = fmt.Sprintf(`DELETE FROM "%[1]s"."%[2]s" USING "%[1]s"."%[3]s" as  _source where (_source.%[4]s = "%[1]s"."%[2]s"."%[4]s" %[5]s)`, pg.Namespace, tableName, stagingTableName, primaryKey, additionalJoinClause)
 	pkgLogger.Infof("PG: Deduplicate records for table:%s using staging table: %s\n", tableName, sqlStatement)
-	_, err = handleExec(&QueryParams{txn: txn, query: sqlStatement, enableWithQueryPlan: enableSQLStatementExecutionPlan})
+	err = handleExec(&QueryParams{txn: txn, query: sqlStatement, enableWithQueryPlan: enableSQLStatementExecutionPlan})
 	if err != nil {
 		pkgLogger.Errorf("PG: Error deleting from original table for dedup: %v\n", err)
 		tags["stage"] = deleteDedup
@@ -403,7 +404,7 @@ func (pg *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 									) AS _ where _rudder_staging_row_number = 1
 									`, pg.Namespace, tableName, quotedColumnNames, stagingTableName, partitionKey)
 	pkgLogger.Infof("PG: Inserting records for table:%s using staging table: %s\n", tableName, sqlStatement)
-	_, err = handleExec(&QueryParams{txn: txn, query: sqlStatement, enableWithQueryPlan: enableSQLStatementExecutionPlan})
+	err = handleExec(&QueryParams{txn: txn, query: sqlStatement, enableWithQueryPlan: enableSQLStatementExecutionPlan})
 
 	if err != nil {
 		pkgLogger.Errorf("PG: Error inserting into original table: %v\n", err)
@@ -453,8 +454,8 @@ func (pg *HandleT) loadUserTables() (errorMap map[string]error) {
 		return
 	}
 
-	unionStagingTableName := misc.TruncateStr(fmt.Sprintf(`%s%s_%s`, stagingTablePrefix, strings.ReplaceAll(uuid.Must(uuid.NewV4()).String(), "-", ""), "users_identifies_union"), 63)
-	stagingTableName := misc.TruncateStr(fmt.Sprintf(`%s%s_%s`, stagingTablePrefix, strings.ReplaceAll(uuid.Must(uuid.NewV4()).String(), "-", ""), warehouseutils.UsersTable), 63)
+	unionStagingTableName := warehouseutils.StagingTableName(provider, "users_identifies_union")
+	stagingTableName := warehouseutils.StagingTableName(provider, warehouseutils.UsersTable)
 	defer pg.dropStagingTable(stagingTableName)
 	defer pg.dropStagingTable(unionStagingTableName)
 
@@ -528,7 +529,7 @@ func (pg *HandleT) loadUserTables() (errorMap map[string]error) {
 		"destId":    pg.Warehouse.Destination.ID,
 		"tableName": warehouseutils.UsersTable,
 	}
-	_, err = handleExec(&QueryParams{txn: tx, query: sqlStatement, enableWithQueryPlan: enableSQLStatementExecutionPlan})
+	err = handleExec(&QueryParams{txn: tx, query: sqlStatement, enableWithQueryPlan: enableSQLStatementExecutionPlan})
 	if err != nil {
 		pkgLogger.Errorf("PG: Error deleting from original table for dedup: %v\n", err)
 		tags["stage"] = deleteDedup
@@ -539,7 +540,7 @@ func (pg *HandleT) loadUserTables() (errorMap map[string]error) {
 
 	sqlStatement = fmt.Sprintf(`INSERT INTO "%[1]s"."%[2]s" (%[4]s) SELECT %[4]s FROM  "%[1]s"."%[3]s"`, pg.Namespace, warehouseutils.UsersTable, stagingTableName, strings.Join(append([]string{"id"}, userColNames...), ","))
 	pkgLogger.Infof("PG: Inserting records for table:%s using staging table: %s\n", warehouseutils.UsersTable, sqlStatement)
-	_, err = handleExec(&QueryParams{txn: tx, query: sqlStatement, enableWithQueryPlan: enableSQLStatementExecutionPlan})
+	err = handleExec(&QueryParams{txn: tx, query: sqlStatement, enableWithQueryPlan: enableSQLStatementExecutionPlan})
 
 	if err != nil {
 		pkgLogger.Errorf("PG: Error inserting into users table from staging table: %v\n", err)
@@ -692,9 +693,19 @@ func (pg *HandleT) CrashRecover(warehouse warehouseutils.WarehouseT) (err error)
 }
 
 func (pg *HandleT) dropDanglingStagingTables() bool {
-	sqlStatement := fmt.Sprintf(`select table_name
-								 from information_schema.tables
-								 where table_schema = '%s' AND table_name like '%s';`, pg.Namespace, fmt.Sprintf("%s%s", stagingTablePrefix, "%"))
+	sqlStatement := fmt.Sprintf(`
+		select
+		  table_name
+		from
+		  information_schema.tables
+		where
+		  table_schema = '%s'
+		  AND table_name like '%s%s';
+	`,
+		pg.Namespace,
+		warehouseutils.StagingTablePrefix(provider),
+		"%",
+	)
 	rows, err := pg.Db.Query(sqlStatement)
 	if err != nil {
 		pkgLogger.Errorf("WH: PG: Error dropping dangling staging tables in PG: %v\nQuery: %s\n", err, sqlStatement)
@@ -735,18 +746,22 @@ func (pg *HandleT) FetchSchema(warehouse warehouseutils.WarehouseT) (schema ware
 
 	schema = make(warehouseutils.SchemaT)
 	sqlStatement := fmt.Sprintf(`
-		SELECT
-		  table_name,
-		  column_name,
-		  data_type
-		FROM
-		  INFORMATION_SCHEMA.COLUMNS
+		select
+		  t.table_name,
+		  c.column_name,
+		  c.data_type
+		from
+		  INFORMATION_SCHEMA.TABLES t
+		  LEFT JOIN INFORMATION_SCHEMA.COLUMNS c ON (
+			t.table_name = c.table_name
+			and t.table_schema = c.table_schema
+		  )
 		WHERE
-		  table_schema = '%s'
-		  AND table_name NOT LIKE '%s%s'
+		  t.table_schema = '%s'
+		  and t.table_name not like '%s%s'
 	`,
 		pg.Namespace,
-		stagingTablePrefix,
+		warehouseutils.StagingTablePrefix(provider),
 		"%",
 	)
 

@@ -11,12 +11,7 @@ import (
 
 var (
 	// config
-	AWSAccessKey        = "accessKey"
-	AWSAccessKeyID      = "accessKeyID"
-	AWSBucketNameConfig = "bucketName"
-	AWSS3Prefix         = "prefix"
-	AWSRegion           = "region"
-	UseGlueConfig       = "useGlue"
+	UseGlueConfig = "useGlue"
 
 	// glue
 	glueSerdeName             = "ParquetHiveSerDe"
@@ -35,8 +30,8 @@ type GlueSchemaRepository struct {
 
 func NewGlueSchemaRepository(wh warehouseutils.WarehouseT) (*GlueSchemaRepository, error) {
 	gl := GlueSchemaRepository{
-		s3bucket:  warehouseutils.GetConfigValue(AWSBucketNameConfig, wh),
-		s3prefix:  warehouseutils.GetConfigValue(AWSS3Prefix, wh),
+		s3bucket:  warehouseutils.GetConfigValue(warehouseutils.AWSBucketNameConfig, wh),
+		s3prefix:  warehouseutils.GetConfigValue(warehouseutils.AWSS3Prefix, wh),
 		Warehouse: wh,
 		Namespace: wh.Namespace,
 	}
