@@ -735,8 +735,7 @@ func (ch *HandleT) createSchema() (err error) {
 	if err != nil {
 		return err
 	}
-	defer func() { _ = dbHandle.Close() }()
-
+	defer dbHandle.Close()
 	cluster := warehouseutils.GetConfigValue(Cluster, ch.Warehouse)
 	clusterClause := ""
 	if len(strings.TrimSpace(cluster)) > 0 {
@@ -867,7 +866,7 @@ func (ch *HandleT) TestConnection(warehouse warehouseutils.WarehouseT) (err erro
 	if err != nil {
 		return
 	}
-	defer func() { _ = ch.Db.Close() }()
+	defer ch.Db.Close()
 
 	ctx, cancel := context.WithTimeout(context.TODO(), ch.ConnectTimeout)
 	defer cancel()
@@ -906,7 +905,7 @@ func (ch *HandleT) FetchSchema(warehouse warehouseutils.WarehouseT) (schema ware
 	if err != nil {
 		return
 	}
-	defer func() { _ = dbHandle.Close() }()
+	defer dbHandle.Close()
 
 	schema = make(warehouseutils.SchemaT)
 	sqlStatement := fmt.Sprintf(`select table, name, type
@@ -926,7 +925,7 @@ func (ch *HandleT) FetchSchema(warehouse warehouseutils.WarehouseT) (schema ware
 		pkgLogger.Infof("CH: No rows, while fetching schema: %s from destination:%v, query: %v", ch.Namespace, ch.Warehouse.Destination.Name, sqlStatement)
 		return schema, nil
 	}
-	defer func() { _ = rows.Close() }()
+	defer rows.Close()
 	for rows.Next() {
 		var tName, cName, cType string
 		err = rows.Scan(&tName, &cName, &cType)

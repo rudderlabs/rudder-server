@@ -277,10 +277,10 @@ func (sf *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 		partitionKey = column
 	}
 
-	stagingColumnNames := warehouseutils.JoinWithFormatting(strKeys, func(idx int, name string) string {
+	stagingColumnNames := warehouseutils.JoinWithFormatting(strKeys, func(_ int, name string) string {
 		return fmt.Sprintf(`staging."%s"`, name)
 	}, ",")
-	columnsWithValues := warehouseutils.JoinWithFormatting(strKeys, func(idx int, name string) string {
+	columnsWithValues := warehouseutils.JoinWithFormatting(strKeys, func(_ int, name string) string {
 		return fmt.Sprintf(`original."%[1]s" = staging."%[1]s"`, name)
 	}, ",")
 

@@ -273,7 +273,7 @@ func (rs *HandleT) loadTable(tableName string, tableSchemaInUpload, tableSchemaA
 
 	strKeys := warehouseutils.GetColumnsFromTableSchema(tableSchemaInUpload)
 	sort.Strings(strKeys)
-	sortedColumnNames := warehouseutils.JoinWithFormatting(strKeys, func(idx int, name string) string {
+	sortedColumnNames := warehouseutils.JoinWithFormatting(strKeys, func(_ int, name string) string {
 		return fmt.Sprintf(`%q`, name)
 	}, ",")
 

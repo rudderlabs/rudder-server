@@ -25,10 +25,7 @@ import (
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
-var (
-	pkgLogger            logger.Logger
-	diacriticLengthLimit = diacriticLimit()
-)
+var pkgLogger logger.Logger
 
 const (
 	host                   = "host"
@@ -43,14 +40,6 @@ const (
 const (
 	provider = warehouseutils.MSSQL
 )
-
-func diacriticLimit() int {
-	if mssqlStringLengthLimit%2 != 0 {
-		return mssqlStringLengthLimit - 1
-	} else {
-		return mssqlStringLengthLimit
-	}
-}
 
 var rudderDataTypesMapToMssql = map[string]string{
 	"int":      "bigint",
@@ -388,8 +377,8 @@ func (ms *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 							pkgLogger.Debug("diacritics " + strValue)
 							byteArr = str2ucs2(strValue)
 							// This is needed as with above operation every character occupies 2 bytes
-							if len(byteArr) > diacriticLengthLimit {
-								byteArr = byteArr[:diacriticLengthLimit]
+							if len(byteArr) > mssqlStringLengthLimit {
+								byteArr = byteArr[:mssqlStringLengthLimit]
 							}
 							finalColumnValues = append(finalColumnValues, byteArr)
 						} else {
