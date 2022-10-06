@@ -3,7 +3,7 @@ package warehouseutils
 import (
 	"bytes"
 	"context"
-	"crypto/sha1"
+	"crypto/sha512"
 	"database/sql"
 	"encoding/json"
 	"errors"
@@ -832,7 +832,7 @@ func WriteSSLKeys(destination backendconfig.DestinationT) WriteSSLKeyError {
 		return WriteSSLKeyError{fmt.Sprintf("Error creating SSL root directory for destination %s %v", destination.ID, err), "dest_ssl_create_err"}
 	}
 	combinedString := fmt.Sprintf("%s%s%s", clientKey, clientCert, serverCert)
-	h := sha1.New()
+	h := sha512.New()
 	h.Write([]byte(combinedString))
 	sslHash := fmt.Sprintf("%x", h.Sum(nil))
 	clientCertPemFile := fmt.Sprintf("%s/client-cert.pem", sslDirPath)
@@ -855,7 +855,7 @@ func WriteSSLKeys(destination backendconfig.DestinationT) WriteSSLKeyError {
 	if err = os.WriteFile(serverCertPemFile, []byte(serverCert), 0o600); err != nil {
 		return WriteSSLKeyError{fmt.Sprintf("Error saving file %s error::%v", serverCertPemFile, err), "server_cert_create_err"}
 	}
-	if err = os.WriteFile(checkSumFile, []byte(sslHash), 0o700); err != nil {
+	if err = os.WriteFile(checkSumFile, []byte(sslHash), 0o600); err != nil {
 		return WriteSSLKeyError{fmt.Sprintf("Error saving file %s error::%v", checkSumFile, err), "ssl_hash_create_err"}
 	}
 	return WriteSSLKeyError{}
