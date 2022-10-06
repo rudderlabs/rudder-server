@@ -2069,11 +2069,6 @@ func (rt *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB jobsd
 	retryTimeWindowKeys := []string{"Router." + rt.destName + "." + "retryTimeWindow", "Router." + rt.destName + "." + "retryTimeWindowInMins", "Router." + "retryTimeWindow", "Router." + "retryTimeWindowInMins"}
 	savePayloadOnErrorKeys := []string{"Router." + rt.destName + "." + "savePayloadOnError", "Router." + "savePayloadOnError"}
 	transformerProxyKeys := []string{"Router." + rt.destName + "." + "transformerProxy", "Router." + "transformerProxy"}
-	// START: Alert configuration
-	// We want to use these configurations to control what alerts we show via router-abort-count alert definition
-	rtAbortTransformationKeys := []string{"Router." + rt.destName + "." + "skipRtAbortAlertForTf", "Router." + "skipRtAbortAlertForTf"}
-	rtAbortDeliveryKeys := []string{"Router." + rt.destName + "." + "skipRtAbortAlertForDelivery", "Router." + "skipRtAbortAlertForDelivery"}
-	// END: Alert configuration
 
 	saveDestinationResponseOverrideKeys := []string{"Router." + rt.destName + "." + "saveDestinationResponseOverride", "Router." + "saveDestinationResponseOverride"}
 	batchJobCountKeys := []string{"Router." + rt.destName + "." + "noOfJobsToBatchInAWorker", "Router." + "noOfJobsToBatchInAWorker"}
@@ -2089,8 +2084,14 @@ func (rt *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB jobsd
 	config.RegisterBoolConfigVariable(false, &rt.enableBatching, false, "Router."+rt.destName+"."+"enableBatching")
 	config.RegisterBoolConfigVariable(false, &rt.savePayloadOnError, true, savePayloadOnErrorKeys...)
 	config.RegisterBoolConfigVariable(false, &rt.transformerProxy, true, transformerProxyKeys...)
+	// START: Alert configuration
+	// We want to use these configurations to control what alerts we show via router-abort-count alert definition
+	rtAbortTransformationKeys := []string{"Router." + rt.destName + "." + "skipRtAbortAlertForTf", "Router.skipRtAbortAlertForTf"}
+	rtAbortDeliveryKeys := []string{"Router." + rt.destName + "." + "skipRtAbortAlertForDelivery", "Router.skipRtAbortAlertForDelivery"}
+
 	config.RegisterBoolConfigVariable(false, &rt.skipRtAbortAlertForTransformation, true, rtAbortTransformationKeys...)
 	config.RegisterBoolConfigVariable(false, &rt.skipRtAbortAlertForDelivery, true, rtAbortDeliveryKeys...)
+	// END: Alert configuration
 	config.RegisterBoolConfigVariable(false, &rt.saveDestinationResponseOverride, true, saveDestinationResponseOverrideKeys...)
 	rt.allowAbortedUserJobsCountForProcessing = getRouterConfigInt("allowAbortedUserJobsCountForProcessing", destName, 1)
 
