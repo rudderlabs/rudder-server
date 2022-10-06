@@ -297,7 +297,7 @@ func (wh *HandleT) backendConfigSubscriber() {
 				if warehouse.Destination.Config["sslMode"] == "verify-ca" {
 					if err := warehouseutils.WriteSSLKeys(warehouse.Destination); err.IsError() {
 						pkgLogger.Error(err.Error())
-						persisteSSLFileErrorStat(wh.destType, destination.Name, destination.ID, source.Name, source.ID, err.GetErrTag())
+						persistSSLFileErrorStat(wh.destType, destination.Name, destination.ID, source.Name, source.ID, err.GetErrTag())
 					}
 				}
 				connectionsMap[destination.ID][source.ID] = warehouse
@@ -1464,11 +1464,11 @@ func getPendingUploadCount(filters ...warehouseutils.FilterBy) (uploadCount int6
 	pkgLogger.Debugf("Fetching pending upload count with filters: %v", filters)
 
 	query := fmt.Sprintf(`
-	SELECT 
-		COUNT(*) 
-	FROM 
-		%[1]s 
-	WHERE 
+	SELECT
+		COUNT(*)
+	FROM
+		%[1]s
+	WHERE
 		%[1]s.status NOT IN ('%[2]s', '%[3]s')
 	`, warehouseutils.WarehouseUploadsTable, ExportedData, Aborted)
 
