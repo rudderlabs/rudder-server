@@ -7,6 +7,7 @@ import (
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/jobsdb/internal/lock"
 	migrator "github.com/rudderlabs/rudder-server/services/sql-migrator"
+	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
 // SchemaMigrationTable returns the table name used for storing current schema version.
@@ -38,7 +39,7 @@ func (jd *HandleT) setupDatabaseTables(l lock.LockToken, clearAll bool) {
 		"Datasets": datasetIndices,
 	}
 
-	psqlInfo := GetConnectionString()
+	psqlInfo := misc.GetConnectionString()
 	db, err := sql.Open("postgres", psqlInfo)
 	if err != nil {
 		panic(fmt.Errorf("Error DB for migrate open: %w", err))

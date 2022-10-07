@@ -150,7 +150,7 @@ func (*GatewayRPCHandler) GetDSStats(dsName string, result *string) (err error) 
 
 	var completeErr error
 	jobTableName := prefix + dsName
-	dbHandle, err := sql.Open("postgres", jobsdb.GetConnectionString())
+	dbHandle, err := sql.Open("postgres", misc.GetConnectionString())
 	if err != nil {
 		return err
 	}

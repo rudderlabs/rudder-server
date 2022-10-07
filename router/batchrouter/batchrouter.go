@@ -174,40 +174,42 @@ type JobParametersT struct {
 func (brt *HandleT) backendConfigSubscriber() {
 	ch := brt.backendConfig.Subscribe(context.TODO(), backendconfig.TopicBackendConfig)
 	for {
-		config := <-ch
+		data := <-ch
 		brt.configSubscriberLock.Lock()
 		brt.destinationsMap = map[string]*router_utils.BatchDestinationT{}
 		brt.connectionWHNamespaceMap = map[string]string{}
-		allSources := config.Data.(backendconfig.ConfigT)
-		for _, source := range allSources.Sources {
-			if len(source.Destinations) > 0 {
-				for _, destination := range source.Destinations {
-					if destination.DestinationDefinition.Name == brt.destType {
-						if _, ok := brt.destinationsMap[destination.ID]; !ok {
-							brt.destinationsMap[destination.ID] = &router_utils.BatchDestinationT{Destination: destination, Sources: []backendconfig.SourceT{}}
-							brt.uploadIntervalMap[destination.ID] = brt.parseUploadIntervalFromConfig(destination.Config)
-						}
-						brt.destinationsMap[destination.ID].Sources = append(brt.destinationsMap[destination.ID].Sources, source)
-
-						// initialize map to track encountered anonymousIds for a warehouse destination
-						if warehouseutils.IDResolutionEnabled() && misc.Contains(warehouseutils.IdentityEnabledWarehouses, brt.destType) {
-							connIdentifier := connectionIdentifier(DestinationT{Destination: destination, Source: source})
-							warehouseConnIdentifier := brt.warehouseConnectionIdentifier(connIdentifier, source, destination)
-							brt.connectionWHNamespaceMap[connIdentifier] = warehouseConnIdentifier
-
-							brt.encounteredMergeRuleMapLock.Lock()
-							if _, ok := brt.encounteredMergeRuleMap[warehouseConnIdentifier]; !ok {
-								brt.encounteredMergeRuleMap[warehouseConnIdentifier] = make(map[string]bool)
+		config := data.Data.(map[string]backendconfig.ConfigT)
+		for _, wConfig := range config {
+			for _, source := range wConfig.Sources {
+				if len(source.Destinations) > 0 {
+					for _, destination := range source.Destinations {
+						if destination.DestinationDefinition.Name == brt.destType {
+							if _, ok := brt.destinationsMap[destination.ID]; !ok {
+								brt.destinationsMap[destination.ID] = &router_utils.BatchDestinationT{Destination: destination, Sources: []backendconfig.SourceT{}}
+								brt.uploadIntervalMap[destination.ID] = brt.parseUploadIntervalFromConfig(destination.Config)
 							}
-							brt.encounteredMergeRuleMapLock.Unlock()
-						}
+							brt.destinationsMap[destination.ID].Sources = append(brt.destinationsMap[destination.ID].Sources, source)
 
-						if val, ok := destination.Config["testConnection"].(bool); ok && val && misc.Contains(objectStorageDestinations, destination.DestinationDefinition.Name) {
-							destination := destination
-							rruntime.Go(func() {
-								testResponse := destinationConnectionTester.TestBatchDestinationConnection(destination)
-								destinationConnectionTester.UploadDestinationConnectionTesterResponse(testResponse, destination.ID)
-							})
+							// initialize map to track encountered anonymousIds for a warehouse destination
+							if warehouseutils.IDResolutionEnabled() && misc.Contains(warehouseutils.IdentityEnabledWarehouses, brt.destType) {
+								connIdentifier := connectionIdentifier(DestinationT{Destination: destination, Source: source})
+								warehouseConnIdentifier := brt.warehouseConnectionIdentifier(connIdentifier, source, destination)
+								brt.connectionWHNamespaceMap[connIdentifier] = warehouseConnIdentifier
+
+								brt.encounteredMergeRuleMapLock.Lock()
+								if _, ok := brt.encounteredMergeRuleMap[warehouseConnIdentifier]; !ok {
+									brt.encounteredMergeRuleMap[warehouseConnIdentifier] = make(map[string]bool)
+								}
+								brt.encounteredMergeRuleMapLock.Unlock()
+							}
+
+							if val, ok := destination.Config["testConnection"].(bool); ok && val && misc.Contains(objectStorageDestinations, destination.DestinationDefinition.Name) {
+								destination := destination
+								rruntime.Go(func() {
+									testResponse := destinationConnectionTester.TestBatchDestinationConnection(destination)
+									destinationConnectionTester.UploadDestinationConnectionTesterResponse(testResponse, destination.ID)
+								})
+							}
 						}
 					}
 				}
@@ -1267,7 +1269,7 @@ func (brt *HandleT) setJobStatus(batchJobs *BatchJobsT, isWarehouse bool, errOcc
 			// Update metrics maps
 			errorCode := getBRTErrorCode(jobState)
 			var cd *types.ConnectionDetails
-			workspaceID := brt.backendConfig.GetWorkspaceIDForSourceID(parameters.SourceID)
+			workspaceID := job.WorkspaceId
 			_, ok := batchRouterWorkspaceJobStatusCount[workspaceID]
 			if !ok {
 				batchRouterWorkspaceJobStatusCount[workspaceID] = make(map[string]int)
