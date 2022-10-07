@@ -29,12 +29,10 @@ const (
 	DLPath                 = "path"
 	DLToken                = "token"
 	AWSTokens              = "useSTSTokens"
+	AWSAccessKey           = "accessKey"
+	AWSAccessSecret        = "accessKeyID"
 	EnableExternalLocation = "enableExternalLocation"
 	ExternalLocation       = "externalLocation"
-)
-
-const (
-	provider = warehouseutils.DELTALAKE
 )
 
 // Reference: https://docs.oracle.com/cd/E17952_01/connector-odbc-en/connector-odbc-reference-errorcodes.html
@@ -45,7 +43,8 @@ const (
 )
 
 var (
-	pkgLogger              logger.LoggerI
+	stagingTablePrefix     string
+	pkgLogger              logger.Logger
 	schema                 string
 	sparkServerType        string
 	authMech               string
@@ -128,6 +127,7 @@ func Init() {
 
 // loadConfig loads config
 func loadConfig() {
+	stagingTablePrefix = "rudder_staging_"
 	config.RegisterStringConfigVariable("default", &schema, false, "Warehouse.deltalake.schema")
 	config.RegisterStringConfigVariable("3", &sparkServerType, false, "Warehouse.deltalake.sparkServerType")
 	config.RegisterStringConfigVariable("3", &authMech, false, "Warehouse.deltalake.authMech")
@@ -186,7 +186,7 @@ func columnsWithValues(keys []string) string {
 
 // GetDatabricksConnectorURL returns databricks connector url.
 func GetDatabricksConnectorURL() string {
-	return config.GetEnv("DATABRICKS_CONNECTOR_URL", "localhost:50051")
+	return config.GetString("DATABRICKS_CONNECTOR_URL", "localhost:50051")
 }
 
 // checkAndIgnoreAlreadyExistError checks and ignores native errors.
@@ -230,7 +230,7 @@ func Connect(cred *databricks.CredentialsT, connectTimeout time.Duration) (dbHan
 	// Creating grpc connection using timeout context
 	conn, err := grpc.DialContext(tCtx, GetDatabricksConnectorURL(), grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithBlock())
 	if err == context.DeadlineExceeded {
-		execTimeouts := stats.DefaultStats.NewStat("warehouse.deltalake.grpcTimeouts", stats.CountType)
+		execTimeouts := stats.Default.NewStat("warehouse.deltalake.grpcTimeouts", stats.CountType)
 		execTimeouts.Count(1)
 
 		err = fmt.Errorf("connection timed out to Delta lake: %w", err)
@@ -267,7 +267,7 @@ func Connect(cred *databricks.CredentialsT, connectTimeout time.Duration) (dbHan
 
 // fetchTables fetch tables with tableNames
 func (dl *HandleT) fetchTables(dbT *databricks.DBHandleT, schema string) (tableNames []string, err error) {
-	fetchTablesExecTime := stats.NewTaggedStat("warehouse.deltalake.grpcExecTime", stats.TimerType, map[string]string{
+	fetchTablesExecTime := stats.Default.NewTaggedStat("warehouse.deltalake.grpcExecTime", stats.TimerType, map[string]string{
 		"destination": dl.Warehouse.Destination.ID,
 		"destType":    dl.Warehouse.Type,
 		"source":      dl.Warehouse.Source.ID,
@@ -314,7 +314,7 @@ func (dl *HandleT) fetchPartitionColumns(dbT *databricks.DBHandleT, tableName st
 }
 
 func isPartitionedByEventDate(partitionedColumns []string) bool {
-	return misc.ContainsString(partitionedColumns, "event_date")
+	return misc.Contains(partitionedColumns, "event_date")
 }
 
 // partitionQuery
@@ -351,7 +351,7 @@ func (dl *HandleT) partitionQuery(tableName string) (string, error) {
 
 // ExecuteSQL executes sql using grpc Client
 func (dl *HandleT) ExecuteSQL(sqlStatement, queryType string) (err error) {
-	execSqlStatTime := stats.NewTaggedStat("warehouse.deltalake.grpcExecTime", stats.TimerType, map[string]string{
+	execSqlStatTime := stats.Default.NewTaggedStat("warehouse.deltalake.grpcExecTime", stats.TimerType, map[string]string{
 		"destination": dl.Warehouse.Destination.ID,
 		"destType":    dl.Warehouse.Type,
 		"source":      dl.Warehouse.Source.ID,
@@ -367,7 +367,7 @@ func (dl *HandleT) ExecuteSQL(sqlStatement, queryType string) (err error) {
 }
 
 // ExecuteSQLClient executes sql client using grpc Client
-func (dl *HandleT) ExecuteSQLClient(dbClient *databricks.DBHandleT, sqlStatement string) (err error) {
+func (*HandleT) ExecuteSQLClient(dbClient *databricks.DBHandleT, sqlStatement string) (err error) {
 	executeResponse, err := dbClient.Client.Execute(dbClient.Context, &proto.ExecuteRequest{
 		Config:       dbClient.CredConfig,
 		Identifier:   dbClient.CredIdentifier,
@@ -385,7 +385,7 @@ func (dl *HandleT) ExecuteSQLClient(dbClient *databricks.DBHandleT, sqlStatement
 
 // schemaExists checks it schema exists or not.
 func (dl *HandleT) schemaExists(schemaName string) (exists bool, err error) {
-	fetchSchemasExecTime := stats.NewTaggedStat("warehouse.deltalake.grpcExecTime", stats.TimerType, map[string]string{
+	fetchSchemasExecTime := stats.Default.NewTaggedStat("warehouse.deltalake.grpcExecTime", stats.TimerType, map[string]string{
 		"destination": dl.Warehouse.Destination.ID,
 		"destType":    dl.Warehouse.Type,
 		"source":      dl.Warehouse.Source.ID,
@@ -423,7 +423,7 @@ func (dl *HandleT) createSchema() (err error) {
 
 // dropStagingTables drops staging tables
 func (dl *HandleT) dropStagingTables(tableNames []string) {
-	dropTablesExecTime := stats.NewTaggedStat("warehouse.deltalake.grpcExecTime", stats.TimerType, map[string]string{
+	dropTablesExecTime := stats.Default.NewTaggedStat("warehouse.deltalake.grpcExecTime", stats.TimerType, map[string]string{
 		"destination": dl.Warehouse.Destination.ID,
 		"destType":    dl.Warehouse.Type,
 		"source":      dl.Warehouse.Source.ID,
@@ -484,31 +484,27 @@ func (dl *HandleT) sortedColumnNames(tableSchemaInUpload warehouseutils.TableSch
 // credentialsStr return authentication for AWS STS and SSE-C encryption
 // STS authentication is only supported with S3A client.
 func (dl *HandleT) credentialsStr() (auth string, err error) {
-	switch dl.ObjectStorage {
-	case warehouseutils.S3:
+	if dl.ObjectStorage == "S3" {
 		useSTSTokens := warehouseutils.GetConfigValueBoolString(AWSTokens, dl.Warehouse)
 		if useSTSTokens == "true" {
-			awsAccessKey := warehouseutils.GetConfigValue(warehouseutils.AWSAccessKey, dl.Warehouse)
-			awsSecretKey := warehouseutils.GetConfigValue(warehouseutils.AWSAccessSecret, dl.Warehouse)
-			if awsAccessKey != "" && awsSecretKey != "" {
-				var tempAccessKeyId, tempSecretAccessKey, token string
-				tempAccessKeyId, tempSecretAccessKey, token, err = warehouseutils.GetTemporaryS3Cred(awsSecretKey, awsAccessKey)
-				if err != nil {
-					return
-				}
-				auth = fmt.Sprintf(`CREDENTIALS ( 'awsKeyId' = '%s', 'awsSecretKey' = '%s', 'awsSessionToken' = '%s' )`, tempAccessKeyId, tempSecretAccessKey, token)
+			tempAccessKeyId, tempSecretAccessKey, token, err := warehouseutils.GetTemporaryS3Cred(&dl.Warehouse.Destination)
+			if err != nil {
+				return "", err
 			}
+			auth := fmt.Sprintf(`CREDENTIALS ( 'awsKeyId' = '%s', 'awsSecretKey' = '%s', 'awsSessionToken' = '%s' )`, tempAccessKeyId, tempSecretAccessKey, token)
+			return auth, nil
+
 		}
 	}
-	return
+	return "", nil
 }
 
 // getLoadFolder return the load folder where the load files are present
 func (dl *HandleT) getLoadFolder(location string) (loadFolder string, err error) {
 	loadFolder = warehouseutils.GetObjectFolderForDeltalake(dl.ObjectStorage, location)
-	if dl.ObjectStorage == warehouseutils.S3 {
-		awsAccessKey := warehouseutils.GetConfigValue(warehouseutils.AWSAccessKey, dl.Warehouse)
-		awsSecretKey := warehouseutils.GetConfigValue(warehouseutils.AWSAccessSecret, dl.Warehouse)
+	if dl.ObjectStorage == "S3" {
+		awsAccessKey := warehouseutils.GetConfigValue(AWSAccessKey, dl.Warehouse)
+		awsSecretKey := warehouseutils.GetConfigValue(AWSAccessSecret, dl.Warehouse)
 		if awsAccessKey != "" && awsSecretKey != "" {
 			loadFolder = strings.Replace(loadFolder, "s3://", "s3a://", 1)
 		}
@@ -535,7 +531,7 @@ func (dl *HandleT) loadTable(tableName string, tableSchemaInUpload, tableSchemaA
 	sortedColumnKeys := warehouseutils.SortColumnKeysFromColumnMap(tableSchemaInUpload)
 
 	// Creating staging table
-	stagingTableName = warehouseutils.StagingTableName(provider, tableName)
+	stagingTableName = misc.TruncateStr(fmt.Sprintf(`%s%s_%s`, stagingTablePrefix, strings.ReplaceAll(uuid.Must(uuid.NewV4()).String(), "-", ""), tableName), 127)
 	err = dl.CreateTable(stagingTableName, tableSchemaAfterUpload)
 	if err != nil {
 		return
@@ -602,7 +598,7 @@ func (dl *HandleT) loadTable(tableName string, tableSchemaInUpload, tableSchemaA
 	}
 
 	if loadTableStrategy == "APPEND" {
-		sqlStatement = appendLoadTableSQLStatement(
+		sqlStatement = appendableLTSQLStatement(
 			dl.Namespace,
 			tableName,
 			stagingTableName,
@@ -617,7 +613,7 @@ func (dl *HandleT) loadTable(tableName string, tableSchemaInUpload, tableSchemaA
 			return
 		}
 
-		sqlStatement = mergeLoadTableSQLStatement(
+		sqlStatement = mergeableLTSQLStatement(
 			dl.Namespace,
 			tableName,
 			stagingTableName,
@@ -671,7 +667,7 @@ func (dl *HandleT) loadUserTables() (errorMap map[string]error) {
 		userColNames = append(userColNames, colName)
 		firstValProps = append(firstValProps, fmt.Sprintf(`FIRST_VALUE(%[1]s , TRUE) OVER (PARTITION BY id ORDER BY received_at DESC ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) AS %[1]s`, colName))
 	}
-	stagingTableName := warehouseutils.StagingTableName(provider, warehouseutils.UsersTable)
+	stagingTableName := misc.TruncateStr(fmt.Sprintf(`%s%s_%s`, stagingTablePrefix, strings.ReplaceAll(uuid.Must(uuid.NewV4()).String(), "-", ""), warehouseutils.UsersTable), 127)
 
 	tableLocationSql := dl.getTableLocationSql(stagingTableName)
 
@@ -715,7 +711,7 @@ func (dl *HandleT) loadUserTables() (errorMap map[string]error) {
 	columnKeys := append([]string{`id`}, userColNames...)
 
 	if loadTableStrategy == "APPEND" {
-		sqlStatement = appendLoadTableSQLStatement(
+		sqlStatement = appendableLTSQLStatement(
 			dl.Namespace,
 			warehouseutils.UsersTable,
 			stagingTableName,
@@ -731,7 +727,7 @@ func (dl *HandleT) loadUserTables() (errorMap map[string]error) {
 			return
 		}
 
-		sqlStatement = mergeLoadTableSQLStatement(
+		sqlStatement = mergeableLTSQLStatement(
 			dl.Namespace,
 			warehouseutils.UsersTable,
 			stagingTableName,
@@ -782,7 +778,7 @@ func (dl *HandleT) dropDanglingStagingTables() {
 	var filteredTablesNames []string
 	for _, tableName := range tableNames {
 		// Ignoring the staging tables
-		if !strings.HasPrefix(tableName, warehouseutils.StagingTablePrefix(provider)) {
+		if !strings.HasPrefix(tableName, stagingTablePrefix) {
 			continue
 		}
 		filteredTablesNames = append(filteredTablesNames, tableName)
@@ -800,7 +796,7 @@ func (dl *HandleT) connectToWarehouse() (dbHandleT *databricks.DBHandleT, err er
 		Path:  warehouseutils.GetConfigValue(DLPath, dl.Warehouse),
 		Token: warehouseutils.GetConfigValue(DLToken, dl.Warehouse),
 	}
-	connStat := stats.NewTaggedStat("warehouse.deltalake.grpcExecTime", stats.TimerType, map[string]string{
+	connStat := stats.Default.NewTaggedStat("warehouse.deltalake.grpcExecTime", stats.TimerType, map[string]string{
 		"destination": dl.Warehouse.Destination.ID,
 		"destType":    dl.Warehouse.Type,
 		"source":      dl.Warehouse.Source.ID,
@@ -811,7 +807,7 @@ func (dl *HandleT) connectToWarehouse() (dbHandleT *databricks.DBHandleT, err er
 	connStat.Start()
 	defer connStat.End()
 
-	closeConnStat := stats.NewTaggedStat("warehouse.deltalake.grpcExecTime", stats.TimerType, map[string]string{
+	closeConnStat := stats.Default.NewTaggedStat("warehouse.deltalake.grpcExecTime", stats.TimerType, map[string]string{
 		"destination": dl.Warehouse.Destination.ID,
 		"destType":    dl.Warehouse.Type,
 		"source":      dl.Warehouse.Source.ID,
@@ -896,7 +892,7 @@ func (dl *HandleT) CreateSchema() (err error) {
 }
 
 // AlterColumn alter table with column name and type
-func (dl *HandleT) AlterColumn(_, _, _ string) (err error) {
+func (*HandleT) AlterColumn(_, _, _ string) (err error) {
 	return
 }
 
@@ -923,13 +919,13 @@ func (dl *HandleT) FetchSchema(warehouse warehouseutils.WarehouseT) (schema ware
 	var filteredTablesNames []string
 	for _, tableName := range tableNames {
 		// Ignoring the staging tables
-		if strings.HasPrefix(tableName, warehouseutils.StagingTablePrefix(provider)) {
+		if strings.HasPrefix(tableName, stagingTablePrefix) {
 			continue
 		}
 		filteredTablesNames = append(filteredTablesNames, tableName)
 	}
 
-	fetchTablesAttributesExecTime := stats.NewTaggedStat("warehouse.deltalake.grpcExecTime", stats.TimerType, map[string]string{
+	fetchTablesAttributesExecTime := stats.Default.NewTaggedStat("warehouse.deltalake.grpcExecTime", stats.TimerType, map[string]string{
 		"destination": dl.Warehouse.Destination.ID,
 		"destType":    dl.Warehouse.Type,
 		"source":      dl.Warehouse.Source.ID,
@@ -1014,7 +1010,7 @@ func (dl *HandleT) CrashRecover(warehouse warehouseutils.WarehouseT) (err error)
 }
 
 // IsEmpty checks if the warehouse is empty or not
-func (dl *HandleT) IsEmpty(warehouseutils.WarehouseT) (empty bool, err error) {
+func (*HandleT) IsEmpty(warehouseutils.WarehouseT) (empty bool, err error) {
 	return
 }
 
@@ -1030,23 +1026,23 @@ func (dl *HandleT) LoadTable(tableName string) error {
 }
 
 // LoadIdentityMergeRulesTable loads identifies merge rules tables
-func (dl *HandleT) LoadIdentityMergeRulesTable() (err error) {
+func (*HandleT) LoadIdentityMergeRulesTable() (err error) {
 	return
 }
 
 // LoadIdentityMappingsTable loads identifies mappings table
-func (dl *HandleT) LoadIdentityMappingsTable() (err error) {
+func (*HandleT) LoadIdentityMappingsTable() (err error) {
 	return
 }
 
 // DownloadIdentityRules download identity rules
-func (dl *HandleT) DownloadIdentityRules(*misc.GZipWriter) (err error) {
+func (*HandleT) DownloadIdentityRules(*misc.GZipWriter) (err error) {
 	return
 }
 
 // GetTotalCountInTable returns total count in tables.
 func (dl *HandleT) GetTotalCountInTable(tableName string) (total int64, err error) {
-	fetchTotalCountExecTime := stats.NewTaggedStat("warehouse.deltalake.grpcExecTime", stats.TimerType, map[string]string{
+	fetchTotalCountExecTime := stats.Default.NewTaggedStat("warehouse.deltalake.grpcExecTime", stats.TimerType, map[string]string{
 		"destination": dl.Warehouse.Destination.ID,
 		"destType":    dl.Warehouse.Type,
 		"source":      dl.Warehouse.Source.ID,
@@ -1129,7 +1125,7 @@ func checkHealth() (err error) {
 	ctx := context.Background()
 	defer func() {
 		if err != nil {
-			healthTimeouts := stats.DefaultStats.NewStat("warehouse.deltalake.healthTimeouts", stats.CountType)
+			healthTimeouts := stats.Default.NewStat("warehouse.deltalake.healthTimeouts", stats.CountType)
 			healthTimeouts.Count(1)
 		}
 	}()

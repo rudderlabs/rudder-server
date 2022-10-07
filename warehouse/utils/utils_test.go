@@ -7,21 +7,17 @@ import (
 	"os"
 	"reflect"
 	"regexp"
-	"sort"
 	"strings"
 	"testing"
 	"time"
 
-	"github.com/rudderlabs/rudder-server/utils/logger"
-
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-
-	"github.com/gofrs/uuid"
 
 	"github.com/stretchr/testify/require"
 
 	"github.com/rudderlabs/rudder-server/config"
+	"github.com/rudderlabs/rudder-server/utils/awsutils"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
@@ -35,7 +31,7 @@ func TestDestinationConfigKeys(t *testing.T) {
 
 			whName := WHDestNameMap[whType]
 			configKey := fmt.Sprintf("Warehouse.%s.feature", whName)
-			got := config.TransformKey(configKey)
+			got := config.ConfigKeyToEnv(configKey)
 			expected := fmt.Sprintf("RSERVER_WAREHOUSE_%s_FEATURE", strings.ToUpper(whName))
 			require.Equal(t, got, expected)
 		})
@@ -1191,154 +1187,91 @@ func TestGetWarehouseIdentifier(t *testing.T) {
 	}
 }
 
-var _ = Describe("Utils", func() {
-	DescribeTable("Get columns from table schema", func(schema TableSchemaT, expected []string) {
-		columns := GetColumnsFromTableSchema(schema)
-		sort.Strings(columns)
-		sort.Strings(expected)
-		Expect(columns).To(Equal(expected))
-	},
-		Entry(nil, TableSchemaT{"k1": "v1", "k2": "v2"}, []string{"k1", "k2"}),
-		Entry(nil, TableSchemaT{"k2": "v1", "k1": "v2"}, []string{"k2", "k1"}),
-	)
+func TestCreateAWSSessionConfig(t *testing.T) {
+	rudderAccessKeyID := "rudderAccessKeyID"
+	rudderAccessKey := "rudderAccessKey"
+	t.Setenv("RUDDER_AWS_S3_COPY_USER_ACCESS_KEY_ID", rudderAccessKeyID)
+	t.Setenv("RUDDER_AWS_S3_COPY_USER_ACCESS_KEY", rudderAccessKey)
 
+	someAccessKeyID := "someAccessKeyID"
+	someAccessKey := "someAccessKey"
+	someIAMRoleARN := "someIAMRoleARN"
+	someWorkspaceID := "someWorkspaceID"
+
+	inputs := []struct {
+		destination    *backendconfig.DestinationT
+		service        string
+		expectedConfig *awsutils.SessionConfig
+	}{
+		{
+			destination: &backendconfig.DestinationT{
+				Config: map[string]interface{}{
+					"useRudderStorage": true,
+				},
+			},
+			service: "s3",
+			expectedConfig: &awsutils.SessionConfig{
+				AccessKeyID: rudderAccessKeyID,
+				AccessKey:   rudderAccessKey,
+				Service:     "s3",
+			},
+		},
+		{
+			destination: &backendconfig.DestinationT{
+				Config: map[string]interface{}{
+					"accessKeyID": someAccessKeyID,
+					"accessKey":   someAccessKey,
+				},
+			},
+			service: "glue",
+			expectedConfig: &awsutils.SessionConfig{
+				AccessKeyID: someAccessKeyID,
+				AccessKey:   someAccessKey,
+				Service:     "glue",
+			},
+		},
+		{
+			destination: &backendconfig.DestinationT{
+				Config: map[string]interface{}{
+					"iamRoleARN": someIAMRoleARN,
+				},
+				WorkspaceID: someWorkspaceID,
+			},
+			service: "redshift",
+			expectedConfig: &awsutils.SessionConfig{
+				IAMRoleARN: someIAMRoleARN,
+				ExternalID: someWorkspaceID,
+				Service:    "redshift",
+			},
+		},
+	}
+	for _, input := range inputs {
+		config, err := CreateAWSSessionConfig(input.destination, input.service)
+		require.Nil(t, err)
+		require.Equal(t, config, input.expectedConfig)
+	}
+}
+
+var _ = Describe("Utils", func() {
 	DescribeTable("JSON schema to Map", func(rawMsg json.RawMessage, expected map[string]map[string]string) {
-		Expect(JSONSchemaToMap(rawMsg)).To(Equal(expected))
+		got := JSONSchemaToMap(rawMsg)
+		Expect(got).To(Equal(expected))
 	},
 		Entry(nil, json.RawMessage(`{"k1": { "k2": "v2" }}`), map[string]map[string]string{"k1": {"k2": "v2"}}),
 	)
 
 	DescribeTable("Get date range list", func(start, end time.Time, format string, expected []string) {
-		Expect(GetDateRangeList(start, end, format)).To(Equal(expected))
+		got := GetDateRangeList(start, end, format)
+		Expect(got).To(Equal(expected))
 	},
 		Entry("Same day", time.Now(), time.Now(), "2006-01-02", []string{time.Now().Format("2006-01-02")}),
 		Entry("Multiple days", time.Now(), time.Now().AddDate(0, 0, 1), "2006-01-02", []string{time.Now().Format("2006-01-02"), time.Now().AddDate(0, 0, 1).Format("2006-01-02")}),
 		Entry("No days", nil, nil, "2006-01-02", nil),
 	)
-
-	DescribeTable("Staging table prefix", func(provider string) {
-		Expect(StagingTablePrefix(provider)).To(Equal(ToProviderCase(provider, "rudder_staging_")))
-	},
-		Entry(nil, BQ),
-		Entry(nil, RS),
-		Entry(nil, SNOWFLAKE),
-		Entry(nil, POSTGRES),
-		Entry(nil, CLICKHOUSE),
-		Entry(nil, MSSQL),
-		Entry(nil, AZURE_SYNAPSE),
-		Entry(nil, DELTALAKE),
-		Entry(nil, S3_DATALAKE),
-		Entry(nil, GCS_DATALAKE),
-		Entry(nil, AZURE_DATALAKE),
-	)
-
-	DescribeTable("Staging table name", func(provider, tableName, expected string) {
-		Expect(StagingTableName(provider, tableName)).To(HavePrefix(expected))
-		Expect(StagingTableName(provider, tableName)).To(HavePrefix(expected))
-	},
-		Entry(nil, BQ, "demo", "rudder_staging_demo_"),
-		Entry(nil, BQ, "abcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyz", "rudder_staging_abcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyz"),
-		Entry(nil, RS, "demo", "rudder_staging_demo_"),
-		Entry(nil, RS, "abcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyz", "rudder_staging_abcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyz"),
-		Entry(nil, SNOWFLAKE, "DEMO", "RUDDER_STAGING_DEMO_"),
-		Entry(nil, SNOWFLAKE, "ABCDEFGHIJLKMNOPQRSTUVWXYZABCDEFGHIJLKMNOPQRSTUVWXYZABCDEFGHIJLKMNOPQRSTUVWXYZABCDEFGHIJLKMNOPQRSTUVWXYZABCDEFGHIJLKMNOPQRSTUVWXYZ", "RUDDER_STAGING_ABCDEFGHIJLKMNOPQRSTUVWXYZABCDEFGHIJLKMNOPQRSTUVWXYZABCDEFGHIJLKMNOPQRSTUVWXYZABCDEFGHIJLKMNOPQRSTUVWXYZ"),
-		Entry(nil, POSTGRES, "demo", "rudder_staging_demo_"),
-		Entry(nil, POSTGRES, "abcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyz", "rudder_staging_abcdefghijlkmnopqrstuvwxyz"),
-		Entry(nil, CLICKHOUSE, "demo", "rudder_staging_demo_"),
-		Entry(nil, CLICKHOUSE, "abcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyz", "rudder_staging_abcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyz"),
-		Entry(nil, MSSQL, "demo", "rudder_staging_demo_"),
-		Entry(nil, MSSQL, "abcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyz", "rudder_staging_abcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyz"),
-		Entry(nil, AZURE_SYNAPSE, "demo", "rudder_staging_demo_"),
-		Entry(nil, AZURE_SYNAPSE, "abcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyz", "rudder_staging_abcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyz"),
-		Entry(nil, DELTALAKE, "demo", "rudder_staging_demo_"),
-		Entry(nil, DELTALAKE, "abcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyz", "rudder_staging_abcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyz"),
-		Entry(nil, S3_DATALAKE, "demo", "rudder_staging_demo_"),
-		Entry(nil, S3_DATALAKE, "abcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyz", "rudder_staging_abcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyz"),
-		Entry(nil, GCS_DATALAKE, "demo", "rudder_staging_demo_"),
-		Entry(nil, GCS_DATALAKE, "abcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyz", "rudder_staging_abcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyz"),
-		Entry(nil, AZURE_DATALAKE, "demo", "rudder_staging_demo_"),
-		Entry(nil, AZURE_DATALAKE, "abcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyz", "rudder_staging_abcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyz"),
-	)
-
-	DescribeTable("Identity mapping unique mapping constraints name", func(warehouse WarehouseT, expected string) {
-		Expect(IdentityMappingsUniqueMappingConstraintName(warehouse)).To(Equal(expected))
-	},
-		Entry(nil, WarehouseT{Namespace: "namespace", Destination: backendconfig.DestinationT{ID: "id"}}, "unique_merge_property_namespace_id"),
-	)
-
-	DescribeTable("Identity mapping table name", func(warehouse WarehouseT, expected string) {
-		Expect(IdentityMappingsTableName(warehouse)).To(Equal(expected))
-	},
-		Entry(nil, WarehouseT{Namespace: "namespace", Destination: backendconfig.DestinationT{ID: "id"}}, "rudder_identity_mappings_namespace_id"),
-	)
-
-	DescribeTable("Identity merge rules table name", func(warehouse WarehouseT, expected string) {
-		Expect(IdentityMergeRulesTableName(warehouse)).To(Equal(expected))
-	},
-		Entry(nil, WarehouseT{Namespace: "namespace", Destination: backendconfig.DestinationT{ID: "id"}}, "rudder_identity_merge_rules_namespace_id"),
-	)
-
-	DescribeTable("Identity merge rules warehouse table name", func(provider string) {
-		Expect(IdentityMergeRulesWarehouseTableName(provider)).To(Equal(ToProviderCase(provider, IdentityMergeRulesTable)))
-	},
-		Entry(nil, BQ),
-		Entry(nil, RS),
-		Entry(nil, SNOWFLAKE),
-		Entry(nil, POSTGRES),
-		Entry(nil, CLICKHOUSE),
-		Entry(nil, MSSQL),
-		Entry(nil, AZURE_SYNAPSE),
-		Entry(nil, DELTALAKE),
-		Entry(nil, S3_DATALAKE),
-		Entry(nil, GCS_DATALAKE),
-		Entry(nil, AZURE_DATALAKE),
-	)
-
-	DescribeTable("Identity mappings warehouse table name", func(provider string) {
-		Expect(IdentityMappingsWarehouseTableName(provider)).To(Equal(ToProviderCase(provider, IdentityMappingsTable)))
-	},
-		Entry(nil, BQ),
-		Entry(nil, RS),
-		Entry(nil, SNOWFLAKE),
-		Entry(nil, POSTGRES),
-		Entry(nil, CLICKHOUSE),
-		Entry(nil, MSSQL),
-		Entry(nil, AZURE_SYNAPSE),
-		Entry(nil, DELTALAKE),
-		Entry(nil, S3_DATALAKE),
-		Entry(nil, GCS_DATALAKE),
-		Entry(nil, AZURE_DATALAKE),
-	)
-
-	DescribeTable("Get object name", func(location string, config interface{}, objectProvider, objectName string) {
-		Expect(GetObjectName(location, config, objectProvider)).To(Equal(objectName))
-	},
-		Entry(GCS, "https://storage.googleapis.com/bucket-name/key", map[string]interface{}{"bucketName": "bucket-name"}, GCS, "key"),
-		Entry(S3, "https://bucket-name.s3.amazonaws.com/key", map[string]interface{}{"bucketName": "bucket-name"}, S3, "key"),
-		Entry(AZURE_BLOB, "https://account-name.blob.core.windows.net/container-name/key", map[string]interface{}{"containerName": "container-name"}, AZURE_BLOB, "key"),
-		Entry(MINIO, "https://minio-endpoint/bucket-name/key", map[string]interface{}{"bucketName": "bucket-name", "useSSL": true, "endPoint": "minio-endpoint"}, MINIO, "key"),
-	)
-
-	It("SSL keys", func() {
-		destinationID := "destID"
-		clientKey := uuid.Must(uuid.NewV4()).String()
-		clientCert := uuid.Must(uuid.NewV4()).String()
-		serverCA := uuid.Must(uuid.NewV4()).String()
-
-		err := WriteSSLKeys(backendconfig.DestinationT{ID: destinationID, Config: map[string]interface{}{"clientKey": clientKey, "clientCert": clientCert, "serverCA": serverCA}})
-		Expect(err).To(Equal(WriteSSLKeyError{}))
-
-		path := GetSSLKeyDirPath(destinationID)
-		Expect(path).NotTo(BeEmpty())
-
-		Expect(os.RemoveAll(path)).NotTo(HaveOccurred())
-	})
 })
 
 func TestMain(m *testing.M) {
-	config.Load()
-	logger.Init()
-	misc.Init()
+	config.Reset()
 	Init()
 	os.Exit(m.Run())
 }

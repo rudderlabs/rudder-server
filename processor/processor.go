@@ -61,7 +61,7 @@ type HandleT struct {
 	routerDB                  jobsdb.JobsDB
 	batchRouterDB             jobsdb.JobsDB
 	errorDB                   jobsdb.JobsDB
-	logger                    logger.LoggerI
+	logger                    logger.Logger
 	eventSchemaHandler        types.EventSchemasI
 	dedupHandler              dedup.DedupI
 	reporting                 types.ReportingI
@@ -89,44 +89,44 @@ type processorStats struct {
 	userTransformEventsByTimeTaken transformRequestPQ
 	pStatsJobs                     *misc.PerfStats
 	pStatsDBR                      *misc.PerfStats
-	statGatewayDBR                 stats.RudderStats
+	statGatewayDBR                 stats.Measurement
 	pStatsDBW                      *misc.PerfStats
-	statGatewayDBW                 stats.RudderStats
-	statRouterDBW                  stats.RudderStats
-	statBatchRouterDBW             stats.RudderStats
-	statProcErrDBW                 stats.RudderStats
-	statDBR                        stats.RudderStats
-	statDBW                        stats.RudderStats
-	statLoopTime                   stats.RudderStats
-	eventSchemasTime               stats.RudderStats
-	validateEventsTime             stats.RudderStats
-	processJobsTime                stats.RudderStats
-	statSessionTransform           stats.RudderStats
-	statUserTransform              stats.RudderStats
-	statDestTransform              stats.RudderStats
-	marshalSingularEvents          stats.RudderStats
-	destProcessing                 stats.RudderStats
-	pipeProcessing                 stats.RudderStats
-	statNumRequests                stats.RudderStats
-	statNumEvents                  stats.RudderStats
-	statDBReadRequests             stats.RudderStats
-	statDBReadEvents               stats.RudderStats
-	statDBReadPayloadBytes         stats.RudderStats
-	statDBReadOutOfOrder           stats.RudderStats
-	statDBReadOutOfSequence        stats.RudderStats
-	statMarkExecuting              stats.RudderStats
-	statDBWriteStatusTime          stats.RudderStats
-	statDBWriteJobsTime            stats.RudderStats
-	statDBWriteRouterPayloadBytes  stats.RudderStats
-	statDBWriteBatchPayloadBytes   stats.RudderStats
-	statDBWriteRouterEvents        stats.RudderStats
-	statDBWriteBatchEvents         stats.RudderStats
-	statDestNumOutputEvents        stats.RudderStats
-	statBatchDestNumOutputEvents   stats.RudderStats
-	DBReadThroughput               stats.RudderStats
-	processJobThroughput           stats.RudderStats
-	transformationsThroughput      stats.RudderStats
-	DBWriteThroughput              stats.RudderStats
+	statGatewayDBW                 stats.Measurement
+	statRouterDBW                  stats.Measurement
+	statBatchRouterDBW             stats.Measurement
+	statProcErrDBW                 stats.Measurement
+	statDBR                        stats.Measurement
+	statDBW                        stats.Measurement
+	statLoopTime                   stats.Measurement
+	eventSchemasTime               stats.Measurement
+	validateEventsTime             stats.Measurement
+	processJobsTime                stats.Measurement
+	statSessionTransform           stats.Measurement
+	statUserTransform              stats.Measurement
+	statDestTransform              stats.Measurement
+	marshalSingularEvents          stats.Measurement
+	destProcessing                 stats.Measurement
+	pipeProcessing                 stats.Measurement
+	statNumRequests                stats.Measurement
+	statNumEvents                  stats.Measurement
+	statDBReadRequests             stats.Measurement
+	statDBReadEvents               stats.Measurement
+	statDBReadPayloadBytes         stats.Measurement
+	statDBReadOutOfOrder           stats.Measurement
+	statDBReadOutOfSequence        stats.Measurement
+	statMarkExecuting              stats.Measurement
+	statDBWriteStatusTime          stats.Measurement
+	statDBWriteJobsTime            stats.Measurement
+	statDBWriteRouterPayloadBytes  stats.Measurement
+	statDBWriteBatchPayloadBytes   stats.Measurement
+	statDBWriteRouterEvents        stats.Measurement
+	statDBWriteBatchEvents         stats.Measurement
+	statDestNumOutputEvents        stats.Measurement
+	statBatchDestNumOutputEvents   stats.Measurement
+	DBReadThroughput               stats.Measurement
+	processJobThroughput           stats.Measurement
+	transformationsThroughput      stats.Measurement
+	DBWriteThroughput              stats.Measurement
 }
 
 var defaultTransformerFeatures = `{
@@ -142,10 +142,10 @@ var (
 )
 
 type DestStatT struct {
-	numEvents              stats.RudderStats
-	numOutputSuccessEvents stats.RudderStats
-	numOutputFailedEvents  stats.RudderStats
-	transformTime          stats.RudderStats
+	numEvents              stats.Measurement
+	numOutputSuccessEvents stats.Measurement
+	numOutputFailedEvents  stats.Measurement
+	transformTime          stats.Measurement
 }
 
 type ParametersT struct {
@@ -338,7 +338,7 @@ func (proc *HandleT) Setup(
 	proc.rsourcesService = rsourcesService
 
 	// Stats
-	proc.statsFactory = stats.DefaultStats
+	proc.statsFactory = stats.Default
 	proc.stats.pStatsJobs = &misc.PerfStats{}
 	proc.stats.pStatsDBR = &misc.PerfStats{}
 	proc.stats.pStatsDBW = &misc.PerfStats{}
@@ -481,7 +481,7 @@ var (
 	batchDestinations         []string
 	configSubscriberLock      sync.RWMutex
 	customDestinations        []string
-	pkgLogger                 logger.LoggerI
+	pkgLogger                 logger.Logger
 	enableEventSchemasFeature bool
 	enableEventSchemasAPIOnly bool
 	enableDedup               bool
@@ -520,7 +520,7 @@ func loadConfig() {
 	config.RegisterIntConfigVariable(5, &transformTimesPQLength, false, 1, "Processor.transformTimesPQLength")
 	// Capture event name as a tag in event level stats
 	config.RegisterBoolConfigVariable(false, &captureEventNameStats, true, "Processor.Stats.captureEventName")
-	transformerURL = config.GetEnv("DEST_TRANSFORM_URL", "http://localhost:9090")
+	transformerURL = config.GetString("DEST_TRANSFORM_URL", "http://localhost:9090")
 	config.RegisterDurationConfigVariable(5, &pollInterval, false, time.Second, []string{"Processor.pollInterval", "Processor.pollIntervalInS"}...)
 	// GWCustomVal is used as a key in the jobsDB customval column
 	config.RegisterStringConfigVariable("GW", &GWCustomVal, false, "Gateway.CustomVal")
@@ -1025,7 +1025,7 @@ func (proc *HandleT) getFailedEventJobs(response transformer.ResponseT, commonMe
 		}
 		failedEventsToStore = append(failedEventsToStore, &newFailedJob)
 
-		procErrorStat := stats.NewTaggedStat("proc_error_counts", stats.CountType, stats.Tags{
+		procErrorStat := stats.Default.NewTaggedStat("proc_error_counts", stats.CountType, stats.Tags{
 			"destName":   commonMetaData.DestinationType,
 			"statusCode": strconv.Itoa(failedEvent.StatusCode),
 			"stage":      stage,
@@ -1215,7 +1215,7 @@ func (proc *HandleT) processJobsForDest(subJobs subJob, parsedEventList [][]type
 			// Iterate through all the events in the batch
 			for eventIndex, singularEvent := range singularEvents {
 				messageId := misc.GetStringifiedData(singularEvent["messageId"])
-				if enableDedup && misc.ContainsInt(duplicateIndexes, eventIndex) {
+				if enableDedup && misc.Contains(duplicateIndexes, eventIndex) {
 					proc.logger.Debugf("Dropping event with duplicate messageId: %s", messageId)
 					misc.IncrementMapByKey(sourceDupStats, writeKey, 1)
 					continue
@@ -1394,7 +1394,7 @@ func (proc *HandleT) processJobsForDest(subJobs subJob, parsedEventList [][]type
 					certificate chain. So, that will make the payload huge while sending a batch of events to transformer,
 					it may result into payload larger than accepted by transformer. So, discarding destination config from being
 					sent to transformer for such destination. */
-					if misc.ContainsString(customDestinations, *destType) {
+					if misc.Contains(customDestinations, *destType) {
 						shallowEventCopy.Destination.Config = nil
 					}
 
@@ -1552,6 +1552,21 @@ type storeMessage struct {
 	rsourcesStats rsources.StatsCollector
 }
 
+func sendRetryStoreStats(attempt int) {
+	pkgLogger.Warnf("Timeout during store jobs in processor module, attempt %d", attempt)
+	stats.Default.NewTaggedStat("jobsdb_store_timeout", stats.CountType, stats.Tags{"attempt": fmt.Sprint(attempt), "module": "processor"}).Count(1)
+}
+
+func sendRetryUpdateStats(attempt int) {
+	pkgLogger.Warnf("Timeout during update job status in processor module, attempt %d", attempt)
+	stats.Default.NewTaggedStat("jobsdb_update_timeout", stats.CountType, stats.Tags{"attempt": fmt.Sprint(attempt), "module": "processor"}).Count(1)
+}
+
+func sendQueryRetryStats(attempt int) {
+	pkgLogger.Warnf("Timeout during query jobs in processor module, attempt %d", attempt)
+	stats.Default.NewTaggedStat("jobsdb_query_timeout", stats.CountType, stats.Tags{"attempt": fmt.Sprint(attempt), "module": "processor"}).Count(1)
+}
+
 func (proc *HandleT) Store(in *storeMessage) {
 	statusList, destJobs, batchDestJobs := in.statusList, in.destJobs, in.batchDestJobs
 	processorLoopStats := make(map[string]map[string]map[string]int)
@@ -1560,7 +1575,7 @@ func (proc *HandleT) Store(in *storeMessage) {
 	if len(batchDestJobs) > 0 {
 		proc.logger.Debug("[Processor] Total jobs written to batch router : ", len(batchDestJobs))
 
-		err := misc.RetryWith(context.Background(), proc.jobsDBCommandTimeout, proc.jobdDBMaxRetries, func(ctx context.Context) error {
+		err := misc.RetryWithNotify(context.Background(), proc.jobsDBCommandTimeout, proc.jobdDBMaxRetries, func(ctx context.Context) error {
 			return proc.batchRouterDB.WithStoreSafeTx(func(tx jobsdb.StoreSafeTx) error {
 				err := proc.batchRouterDB.StoreInTx(ctx, tx, batchDestJobs)
 				if err != nil {
@@ -1574,7 +1589,7 @@ func (proc *HandleT) Store(in *storeMessage) {
 				}
 				return nil
 			})
-		})
+		}, sendRetryStoreStats)
 		if err != nil {
 			panic(err)
 		}
@@ -1599,7 +1614,7 @@ func (proc *HandleT) Store(in *storeMessage) {
 	if len(destJobs) > 0 {
 		proc.logger.Debug("[Processor] Total jobs written to router : ", len(destJobs))
 
-		err := misc.RetryWith(context.Background(), proc.jobsDBCommandTimeout, proc.jobdDBMaxRetries, func(ctx context.Context) error {
+		err := misc.RetryWithNotify(context.Background(), proc.jobsDBCommandTimeout, proc.jobdDBMaxRetries, func(ctx context.Context) error {
 			return proc.routerDB.WithStoreSafeTx(func(tx jobsdb.StoreSafeTx) error {
 				err := proc.routerDB.StoreInTx(ctx, tx, destJobs)
 				if err != nil {
@@ -1613,7 +1628,7 @@ func (proc *HandleT) Store(in *storeMessage) {
 				}
 				return nil
 			})
-		})
+		}, sendRetryStoreStats)
 		if err != nil {
 			panic(err)
 		}
@@ -1640,9 +1655,9 @@ func (proc *HandleT) Store(in *storeMessage) {
 	}
 	if len(in.procErrorJobs) > 0 {
 		proc.logger.Debug("[Processor] Total jobs written to proc_error: ", len(in.procErrorJobs))
-		err := misc.RetryWith(context.Background(), proc.jobsDBCommandTimeout, proc.jobdDBMaxRetries, func(ctx context.Context) error {
+		err := misc.RetryWithNotify(context.Background(), proc.jobsDBCommandTimeout, proc.jobdDBMaxRetries, func(ctx context.Context) error {
 			return proc.errorDB.Store(ctx, in.procErrorJobs)
-		})
+		}, sendRetryStoreStats)
 		if err != nil {
 			proc.logger.Errorf("Store into proc error table failed with error: %v", err)
 			proc.logger.Errorf("procErrorJobs: %v", in.procErrorJobs)
@@ -1653,7 +1668,7 @@ func (proc *HandleT) Store(in *storeMessage) {
 	writeJobsTime := time.Since(beforeStoreStatus)
 
 	txnStart := time.Now()
-	err := misc.RetryWith(context.Background(), proc.jobsDBCommandTimeout, proc.jobdDBMaxRetries, func(ctx context.Context) error {
+	err := misc.RetryWithNotify(context.Background(), proc.jobsDBCommandTimeout, proc.jobdDBMaxRetries, func(ctx context.Context) error {
 		return proc.gatewayDB.WithUpdateSafeTx(func(tx jobsdb.UpdateSafeTx) error {
 			err := proc.gatewayDB.UpdateJobStatusInTx(ctx, tx, statusList, []string{GWCustomVal}, nil)
 			if err != nil {
@@ -1686,7 +1701,7 @@ func (proc *HandleT) Store(in *storeMessage) {
 			}
 			return nil
 		})
-	})
+	}, sendRetryUpdateStats)
 	if err != nil {
 		panic(err)
 	}
@@ -2068,7 +2083,7 @@ func (proc *HandleT) transformSrcDest(
 				EventPayload: destEventJSON,
 				WorkspaceId:  workspaceId,
 			}
-			if misc.ContainsString(batchDestinations, newJob.CustomVal) {
+			if misc.Contains(batchDestinations, newJob.CustomVal) {
 				batchDestJobs = append(batchDestJobs, &newJob)
 			} else {
 				destJobs = append(destJobs, &newJob)
@@ -2087,7 +2102,7 @@ func (proc *HandleT) saveFailedJobs(failedJobs []*jobsdb.JobT) {
 	if len(failedJobs) > 0 {
 		jobRunIDAbortedEventsMap := make(map[string][]*router.FailedEventRowT)
 		for _, failedJob := range failedJobs {
-			router.PrepareJobRunIdAbortedEventsMap(failedJob.Parameters, jobRunIDAbortedEventsMap)
+			router.PrepareJobRunIDAbortedEventsMap(failedJob.Parameters, jobRunIDAbortedEventsMap)
 		}
 
 		rsourcesStats := rsources.NewFailedJobsCollector(proc.rsourcesService)
@@ -2136,7 +2151,7 @@ func ConvertToFilteredTransformerResponse(events []transformer.TransformerEventT
 					continue
 				}
 				messageType = strings.TrimSpace(strings.ToLower(messageType))
-				if !misc.ContainsString(supportedTypes.values, messageType) {
+				if !misc.Contains(supportedTypes.values, messageType) {
 					continue
 				}
 			}
@@ -2157,7 +2172,7 @@ func ConvertToFilteredTransformerResponse(events []transformer.TransformerEventT
 					failedEvents = append(failedEvents, resp)
 					continue
 				}
-				if !misc.ContainsString(supportedEvents.values, messageEvent) {
+				if !misc.Contains(supportedEvents.values, messageEvent) {
 					continue
 				}
 			}
@@ -2194,14 +2209,14 @@ func (proc *HandleT) getJobs() jobsdb.JobsResult {
 	if !enableEventCount {
 		eventCount = 0
 	}
-	unprocessedList, err := jobsdb.QueryJobsResultWithRetries(context.Background(), proc.jobdDBQueryRequestTimeout, proc.jobdDBMaxRetries, func(ctx context.Context) (jobsdb.JobsResult, error) {
+	unprocessedList, err := misc.QueryWithRetriesAndNotify(context.Background(), proc.jobdDBQueryRequestTimeout, proc.jobdDBMaxRetries, func(ctx context.Context) (jobsdb.JobsResult, error) {
 		return proc.gatewayDB.GetUnprocessed(ctx, jobsdb.GetQueryParamsT{
 			CustomValFilters: []string{GWCustomVal},
 			JobsLimit:        maxEventsToProcess,
 			EventsLimit:      eventCount,
 			PayloadSizeLimit: proc.payloadLimit,
 		})
-	})
+	}, sendQueryRetryStats)
 	if err != nil {
 		proc.logger.Errorf("Failed to get unprocessed jobs from DB. Error: %v", err)
 		panic(err)
@@ -2270,9 +2285,9 @@ func (proc *HandleT) markExecuting(jobs []*jobsdb.JobT) error {
 		}
 	}
 	// Mark the jobs as executing
-	err := misc.RetryWith(context.Background(), proc.jobsDBCommandTimeout, proc.jobdDBMaxRetries, func(ctx context.Context) error {
+	err := misc.RetryWithNotify(context.Background(), proc.jobsDBCommandTimeout, proc.jobdDBMaxRetries, func(ctx context.Context) error {
 		return proc.gatewayDB.UpdateJobStatus(ctx, statusList, []string{GWCustomVal}, nil)
-	})
+	}, sendRetryUpdateStats)
 	if err != nil {
 		return fmt.Errorf("marking jobs as executing: %w", err)
 	}
@@ -2312,7 +2327,9 @@ func (proc *HandleT) handlePendingGatewayJobs() bool {
 func (proc *HandleT) mainLoop(ctx context.Context) {
 	// waiting for reporting client setup
 	if proc.reporting != nil && proc.reportingEnabled {
-		proc.reporting.WaitForSetup(ctx, types.CORE_REPORTING_CLIENT)
+		if err := proc.reporting.WaitForSetup(ctx, types.CORE_REPORTING_CLIENT); err != nil {
+			return
+		}
 	}
 
 	proc.logger.Info("Processor loop started")
@@ -2402,7 +2419,9 @@ func (proc *HandleT) mainPipeline(ctx context.Context) {
 	proc.logger.Infof("Processor mainPipeline started, subJobSize=%d pipelineBufferedItems=%d", subJobSize, pipelineBufferedItems)
 
 	if proc.reporting != nil && proc.reportingEnabled {
-		proc.reporting.WaitForSetup(ctx, types.CORE_REPORTING_CLIENT)
+		if err := proc.reporting.WaitForSetup(ctx, types.CORE_REPORTING_CLIENT); err != nil {
+			return
+		}
 	}
 	wg := sync.WaitGroup{}
 	bufferSize := pipelineBufferedItems

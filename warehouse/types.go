@@ -5,14 +5,10 @@ import (
 	"sync"
 	"time"
 
+	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
-
-// type StagingFileEntryT struct {
-// 	ID       int64
-// 	Location string
-// }
 
 type PayloadT struct {
 	BatchID                      string
@@ -28,7 +24,7 @@ type PayloadT struct {
 	DestinationNamespace         string
 	DestinationRevisionID        string
 	StagingDestinationRevisionID string
-	DestinationConfig            interface{}
+	Destination                  backendconfig.DestinationT
 	StagingDestinationConfig     interface{}
 	UseRudderStorage             bool
 	StagingUseRudderStorage      bool
@@ -95,4 +91,9 @@ type DataT map[string]interface{}
 type ColumnInfoT struct {
 	ColumnVal  interface{}
 	ColumnType string
+}
+
+type FilterClause struct {
+	Clause    string
+	ClauseArg interface{}
 }

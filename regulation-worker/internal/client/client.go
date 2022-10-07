@@ -64,13 +64,18 @@ func (j *JobAPI) Get(ctx context.Context) (model.Job, error) {
 	// if successful
 
 	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+		if resp.StatusCode == http.StatusNoContent {
+			pkgLogger.Debugf("no runnable job found")
+			return model.Job{}, model.ErrNoRunnableJob
+		}
+
 		var jobSchema jobSchema
 		if err := json.NewDecoder(resp.Body).Decode(&jobSchema); err != nil {
 			pkgLogger.Errorf("error while decoding response body: %v", err)
 			return model.Job{}, fmt.Errorf("error while decoding job: %w", err)
 		}
 
-		userCountPerJob := stats.NewTaggedStat("user_count_per_job", stats.CountType, stats.Tags{"jobId": jobSchema.JobID, "workspaceId": j.WorkspaceID})
+		userCountPerJob := stats.Default.NewTaggedStat("user_count_per_job", stats.CountType, stats.Tags{"jobId": jobSchema.JobID, "workspaceId": j.WorkspaceID})
 		userCountPerJob.Count(len(jobSchema.UserAttributes))
 
 		job, err := mapPayloadToJob(jobSchema, j.WorkspaceID)
@@ -83,10 +88,12 @@ func (j *JobAPI) Get(ctx context.Context) (model.Job, error) {
 		return job, nil
 
 	} else if resp.StatusCode == http.StatusNotFound {
+		// NOTE: `http.StatusNotFound` has to be deprecated once,
+		// regulation manager is updated with the latest changes to respond with `http.StatusNoContent`204`
+		// when no job is found.
 		pkgLogger.Debugf("no runnable job found")
 		return model.Job{}, model.ErrNoRunnableJob
 	} else {
-
 		body, err := io.ReadAll(resp.Body)
 		if err != nil {
 			pkgLogger.Errorf("error while reading response body: %v", err)
@@ -157,12 +164,15 @@ func prepURL(url string, params ...string) string {
 }
 
 func mapPayloadToJob(wjs jobSchema, workspaceID string) (model.Job, error) {
-	usrAttribute := make([]model.UserAttribute, len(wjs.UserAttributes))
-	for i := 0; i < len(wjs.UserAttributes); i++ {
-		usrAttribute[i] = model.UserAttribute{
-			UserID: wjs.UserAttributes[i].UserID,
-			Phone:  wjs.UserAttributes[i].Phone,
-			Email:  wjs.UserAttributes[i].Email,
+	usrAttribute := make([]model.User, len(wjs.UserAttributes))
+	for i, usrAttr := range wjs.UserAttributes {
+		usrAttribute[i].Attributes = make(map[string]string)
+		for key, value := range usrAttr {
+			if key == "userId" {
+				usrAttribute[i].ID = value
+			} else {
+				usrAttribute[i].Attributes[key] = value
+			}
 		}
 	}
 	jobID, err := strconv.Atoi(wjs.JobID)
@@ -172,10 +182,10 @@ func mapPayloadToJob(wjs jobSchema, workspaceID string) (model.Job, error) {
 	}
 
 	return model.Job{
-		ID:             jobID,
-		WorkspaceID:    workspaceID,
-		DestinationID:  wjs.DestinationID,
-		Status:         model.JobStatusRunning,
-		UserAttributes: usrAttribute,
+		ID:            jobID,
+		WorkspaceID:   workspaceID,
+		DestinationID: wjs.DestinationID,
+		Status:        model.JobStatusRunning,
+		Users:         usrAttribute,
 	}, nil
 }

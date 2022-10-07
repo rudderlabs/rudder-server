@@ -29,7 +29,7 @@ var (
 	webhookRetryMax            int
 	webhookRetryWaitMax        time.Duration
 	webhookRetryWaitMin        time.Duration
-	pkgLogger                  logger.LoggerI
+	pkgLogger                  logger.Logger
 	sourceListForParsingParams []string
 )
 
@@ -52,6 +52,7 @@ type batchWebhookT struct {
 }
 
 type HandleT struct {
+	requestQMu    sync.RWMutex
 	requestQ      map[string]chan *webhookT
 	batchRequestQ chan *batchWebhookT
 	netClient     *retryablehttp.Client
@@ -66,16 +67,16 @@ type HandleT struct {
 
 type webhookSourceStatT struct {
 	id              string
-	numEvents       stats.RudderStats
-	numOutputEvents stats.RudderStats
-	sourceTransform stats.RudderStats
+	numEvents       stats.Measurement
+	numOutputEvents stats.Measurement
+	sourceTransform stats.Measurement
 }
 
 type webhookStatsT struct {
-	sentStat           stats.RudderStats
-	receivedStat       stats.RudderStats
-	failedStat         stats.RudderStats
-	transformTimerStat stats.RudderStats
+	sentStat           stats.Measurement
+	receivedStat       stats.Measurement
+	failedStat         stats.Measurement
+	transformTimerStat stats.Measurement
 	sourceStats        map[string]*webhookSourceStatT
 }
 
@@ -179,7 +180,10 @@ func (webhook *HandleT) RequestHandler(w http.ResponseWriter, r *http.Request) {
 
 	done := make(chan transformerResponse)
 	req := webhookT{request: r, writer: w, done: done, sourceType: sourceDefName, writeKey: writeKey}
-	webhook.requestQ[sourceDefName] <- &req
+	webhook.requestQMu.RLock()
+	requestQ := webhook.requestQ[sourceDefName]
+	requestQ <- &req
+	webhook.requestQMu.RUnlock()
 
 	// Wait for batcher process to be done
 	resp := <-done
@@ -206,12 +210,12 @@ func (webhook *HandleT) RequestHandler(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write(payload)
 }
 
-func (webhook *HandleT) batchRequests(sourceDef string) {
+func (webhook *HandleT) batchRequests(sourceDef string, requestQ chan *webhookT) {
 	reqBuffer := make([]*webhookT, 0)
 	timeout := time.After(webhookBatchTimeout)
 	for {
 		select {
-		case req, hasMore := <-webhook.requestQ[sourceDef]:
+		case req, hasMore := <-requestQ:
 			if !hasMore {
 				if len(reqBuffer) > 0 {
 					// If there are requests in the buffer, send them to the batcher
@@ -253,7 +257,7 @@ func (bt *batchWebhookTransformerT) batchTransformLoop() {
 				continue
 			}
 
-			if misc.ContainsString(sourceListForParsingParams, strings.ToLower(breq.sourceType)) {
+			if misc.Contains(sourceListForParsingParams, strings.ToLower(breq.sourceType)) {
 				queryParams := req.request.URL.Query()
 				paramsBytes, err := json.Marshal(queryParams)
 				if err != nil {
@@ -344,24 +348,30 @@ func (webhook *HandleT) enqueueInGateway(req *webhookT, payload []byte) string {
 }
 
 func (webhook *HandleT) Register(name string) {
+	webhook.requestQMu.Lock()
+	defer webhook.requestQMu.Unlock()
 	if _, ok := webhook.requestQ[name]; !ok {
-		webhook.requestQ[name] = make(chan *webhookT)
+		requestQ := make(chan *webhookT)
+		webhook.requestQ[name] = requestQ
 
 		webhook.batchRequestsWg.Add(1)
 		go (func() {
 			defer webhook.batchRequestsWg.Done()
-			webhook.batchRequests(name)
+			webhook.batchRequests(name, requestQ)
 		})()
 	}
 }
 
 func (webhook *HandleT) Shutdown() error {
 	webhook.backgroundCancel()
+	webhook.requestQMu.Lock()
+	defer webhook.requestQMu.Unlock()
 	for _, q := range webhook.requestQ {
 		close(q)
 	}
 	webhook.batchRequestsWg.Wait()
 	close(webhook.batchRequestQ)
+	webhook.requestQ = make(map[string](chan *webhookT))
 
 	return webhook.backgroundWait()
 }
@@ -371,9 +381,9 @@ func newWebhookStat(sourceType string) *webhookSourceStatT {
 	tags := map[string]string{
 		"sourceType": sourceType,
 	}
-	numEvents := stats.NewTaggedStat("webhook_num_events", stats.CountType, tags)
-	numOutputEvents := stats.NewTaggedStat("webhook_num_output_events", stats.CountType, tags)
-	sourceTransform := stats.NewTaggedStat("webhook_dest_transform", stats.TimerType, tags)
+	numEvents := stats.Default.NewTaggedStat("webhook_num_events", stats.CountType, tags)
+	numOutputEvents := stats.Default.NewTaggedStat("webhook_num_output_events", stats.CountType, tags)
+	sourceTransform := stats.Default.NewTaggedStat("webhook_dest_transform", stats.TimerType, tags)
 	return &webhookSourceStatT{
 		id:              sourceType,
 		numEvents:       numEvents,

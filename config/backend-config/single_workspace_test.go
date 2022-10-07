@@ -9,6 +9,7 @@ import (
 	"os"
 	"testing"
 
+	"github.com/rudderlabs/rudder-server/services/controlplane/identity"
 	"github.com/stretchr/testify/require"
 )
 
@@ -42,6 +43,12 @@ func TestSingleWorkspaceGetFromAPI(t *testing.T) {
 		conf, err := wc.getFromAPI(context.Background(), "")
 		require.NoError(t, err)
 		require.Equal(t, sampleBackendConfig, conf)
+
+		ident := wc.Identity()
+		require.Equal(t, &identity.Workspace{
+			WorkspaceID:    sampleBackendConfig.WorkspaceID,
+			WorkspaceToken: token,
+		}, ident)
 	})
 
 	t.Run("invalid url", func(t *testing.T) {
@@ -98,6 +105,7 @@ func TestSingleWorkspaceGetFromFile(t *testing.T) {
 
 	t.Run("valid file", func(t *testing.T) {
 		data := []byte(`{
+			"workspaceID": "sampleWorkspaceID",
 			"sources": [
 				{
 					"id": "1",
@@ -128,7 +136,7 @@ func TestSingleWorkspaceGetFromFile(t *testing.T) {
 		t.Cleanup(func() { require.NoError(t, tmpFile.Close()) })
 		t.Cleanup(func() { require.NoError(t, os.Remove(tmpFile.Name())) })
 
-		err = os.WriteFile(tmpFile.Name(), data, 0o644)
+		err = os.WriteFile(tmpFile.Name(), data, 0o600)
 		require.NoError(t, err)
 
 		wc := &singleWorkspaceConfig{

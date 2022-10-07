@@ -11,7 +11,6 @@ import (
 	"net/http"
 	"os"
 	"runtime"
-	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -27,8 +26,10 @@ import (
 	"github.com/rudderlabs/rudder-server/app"
 	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
+	"github.com/rudderlabs/rudder-server/info"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/rruntime"
+	"github.com/rudderlabs/rudder-server/services/controlplane/features"
 	"github.com/rudderlabs/rudder-server/services/db"
 	destinationdebugger "github.com/rudderlabs/rudder-server/services/debugger/destination"
 	"github.com/rudderlabs/rudder-server/services/pgnotifier"
@@ -48,7 +49,7 @@ import (
 )
 
 var (
-	application                         app.Interface
+	application                         app.App
 	webPort                             int
 	dbHandle                            *sql.DB
 	notifier                            pgnotifier.PgNotifierT
@@ -74,7 +75,7 @@ var (
 	sourceIDsByWorkspace                map[string][]string // workspaceID -> []sourceIDs
 	sourceIDsByWorkspaceLock            sync.RWMutex
 	longRunningUploadStatThresholdInMin time.Duration
-	pkgLogger                           logger.LoggerI
+	pkgLogger                           logger.Logger
 	numLoadFileUploadWorkers            int
 	slaveUploadTimeout                  time.Duration
 	runningMode                         string
@@ -159,12 +160,12 @@ func loadConfig() {
 	inRecoveryMap = map[string]bool{}
 	lastProcessedMarkerMap = map[string]int64{}
 	config.RegisterStringConfigVariable("embedded", &warehouseMode, false, "Warehouse.mode")
-	host = config.GetEnv("WAREHOUSE_JOBS_DB_HOST", "localhost")
-	user = config.GetEnv("WAREHOUSE_JOBS_DB_USER", "ubuntu")
-	dbname = config.GetEnv("WAREHOUSE_JOBS_DB_DB_NAME", "ubuntu")
-	port, _ = strconv.Atoi(config.GetEnv("WAREHOUSE_JOBS_DB_PORT", "5432"))
-	password = config.GetEnv("WAREHOUSE_JOBS_DB_PASSWORD", "ubuntu") // Reading secrets from
-	sslmode = config.GetEnv("WAREHOUSE_JOBS_DB_SSL_MODE", "disable")
+	host = config.GetString("WAREHOUSE_JOBS_DB_HOST", "localhost")
+	user = config.GetString("WAREHOUSE_JOBS_DB_USER", "ubuntu")
+	dbname = config.GetString("WAREHOUSE_JOBS_DB_DB_NAME", "ubuntu")
+	port = config.GetInt("WAREHOUSE_JOBS_DB_PORT", 5432)
+	password = config.GetString("WAREHOUSE_JOBS_DB_PASSWORD", "ubuntu") // Reading secrets from
+	sslmode = config.GetString("WAREHOUSE_JOBS_DB_SSL_MODE", "disable")
 	config.RegisterIntConfigVariable(10, &warehouseSyncPreFetchCount, true, 1, "Warehouse.warehouseSyncPreFetchCount")
 	config.RegisterIntConfigVariable(100, &stagingFilesSchemaPaginationSize, true, 1, "Warehouse.stagingFilesSchemaPaginationSize")
 	config.RegisterBoolConfigVariable(false, &warehouseSyncFreqIgnore, true, "Warehouse.warehouseSyncFreqIgnore")
@@ -177,7 +178,7 @@ func loadConfig() {
 	config.RegisterDurationConfigVariable(120, &longRunningUploadStatThresholdInMin, true, time.Minute, []string{"Warehouse.longRunningUploadStatThreshold", "Warehouse.longRunningUploadStatThresholdInMin"}...)
 	config.RegisterDurationConfigVariable(10, &slaveUploadTimeout, true, time.Minute, []string{"Warehouse.slaveUploadTimeout", "Warehouse.slaveUploadTimeoutInMin"}...)
 	config.RegisterIntConfigVariable(8, &numLoadFileUploadWorkers, true, 1, "Warehouse.numLoadFileUploadWorkers")
-	runningMode = config.GetEnv("RSERVER_WAREHOUSE_RUNNING_MODE", "")
+	runningMode = config.GetString("Warehouse.runningMode", "")
 	config.RegisterDurationConfigVariable(30, &uploadStatusTrackFrequency, false, time.Minute, []string{"Warehouse.uploadStatusTrackFrequency", "Warehouse.uploadStatusTrackFrequencyInMin"}...)
 	config.RegisterIntConfigVariable(180, &uploadBufferTimeInMin, false, 1, "Warehouse.uploadBufferTimeInMin")
 	config.RegisterDurationConfigVariable(5, &uploadAllocatorSleep, false, time.Second, []string{"Warehouse.uploadAllocatorSleep", "Warehouse.uploadAllocatorSleepInS"}...)
@@ -188,7 +189,7 @@ func loadConfig() {
 	config.RegisterIntConfigVariable(8, &maxParallelJobCreation, true, 1, "Warehouse.maxParallelJobCreation")
 	config.RegisterBoolConfigVariable(false, &enableJitterForSyncs, true, "Warehouse.enableJitterForSyncs")
 	appName = misc.DefaultString("rudder-server").OnError(os.Hostname())
-	configBackendURL = config.GetEnv("CONFIG_BACKEND_URL", "https://api.rudderlabs.com")
+	configBackendURL = config.GetString("CONFIG_BACKEND_URL", "https://api.rudderlabs.com")
 }
 
 // get name of the worker (`destID_namespace`) to be stored in map wh.workerChannelMap
@@ -240,7 +241,7 @@ func (wh *HandleT) initWorker() chan *UploadJobT {
 	return workerChan
 }
 
-func (wh *HandleT) handleUploadJob(uploadJob *UploadJobT) (err error) {
+func (*HandleT) handleUploadJob(uploadJob *UploadJobT) (err error) {
 	// Process the upload job
 	err = uploadJob.run()
 	return
@@ -296,13 +297,13 @@ func (wh *HandleT) backendConfigSubscriber() {
 				if warehouse.Destination.Config["sslMode"] == "verify-ca" {
 					if err := warehouseutils.WriteSSLKeys(warehouse.Destination); err.IsError() {
 						pkgLogger.Error(err.Error())
-						persisteSSLFileErrorStat(wh.destType, destination.Name, destination.ID, source.Name, source.ID, err.GetErrTag())
+						persistSSLFileErrorStat(wh.destType, destination.Name, destination.ID, source.Name, source.ID, err.GetErrTag())
 					}
 				}
 				connectionsMap[destination.ID][source.ID] = warehouse
 				connectionsMapLock.Unlock()
 
-				if warehouseutils.IDResolutionEnabled() && misc.ContainsString(warehouseutils.IdentityEnabledWarehouses, warehouse.Type) {
+				if warehouseutils.IDResolutionEnabled() && misc.Contains(warehouseutils.IdentityEnabledWarehouses, warehouse.Type) {
 					wh.setupIdentityTables(warehouse)
 					if shouldPopulateHistoricIdentities && warehouse.Destination.Enabled {
 						// non blocking populate historic identities
@@ -536,7 +537,7 @@ func setLastProcessedMarker(warehouse warehouseutils.WarehouseT, lastProcessedTi
 	lastProcessedMarkerMap[warehouse.Identifier] = lastProcessedTime.Unix()
 }
 
-func (wh *HandleT) createUploadJobsFromStagingFiles(warehouse warehouseutils.WarehouseT, whManager manager.ManagerI, stagingFilesList []*StagingFileT, priority int, uploadStartAfter time.Time) {
+func (wh *HandleT) createUploadJobsFromStagingFiles(warehouse warehouseutils.WarehouseT, _ manager.ManagerI, stagingFilesList []*StagingFileT, priority int, uploadStartAfter time.Time) {
 	// count := 0
 	// Process staging files in batches of stagingFilesBatchSize
 	// Eg. If there are 1000 pending staging files and stagingFilesBatchSize is 100,
@@ -633,7 +634,7 @@ func (wh *HandleT) createJobs(warehouse warehouseutils.WarehouseT) (err error) {
 
 	wh.areBeingEnqueuedLock.Unlock()
 
-	stagingFilesFetchStat := stats.DefaultStats.NewTaggedStat("wh_scheduler.pending_staging_files", stats.TimerType, stats.Tags{
+	stagingFilesFetchStat := stats.Default.NewTaggedStat("wh_scheduler.pending_staging_files", stats.TimerType, stats.Tags{
 		"destinationID": warehouse.Destination.ID,
 		"destType":      warehouse.Destination.DestinationDefinition.Name,
 	})
@@ -650,7 +651,7 @@ func (wh *HandleT) createJobs(warehouse warehouseutils.WarehouseT) (err error) {
 		return nil
 	}
 
-	uploadJobCreationStat := stats.DefaultStats.NewTaggedStat("wh_scheduler.create_upload_jobs", stats.TimerType, stats.Tags{
+	uploadJobCreationStat := stats.Default.NewTaggedStat("wh_scheduler.create_upload_jobs", stats.TimerType, stats.Tags{
 		"destinationID": warehouse.Destination.ID,
 		"destType":      warehouse.Destination.DestinationDefinition.Name,
 	})
@@ -663,60 +664,6 @@ func (wh *HandleT) createJobs(warehouse warehouseutils.WarehouseT) (err error) {
 	uploadJobCreationStat.End()
 
 	return nil
-}
-
-func (wh *HandleT) sortWarehousesByOldestUnSyncedEventAt() (err error) {
-	sqlStatement := fmt.Sprintf(`
-		SELECT
-			concat('%s', ':', source_id, ':', destination_id) as wh_identifier,
-			CASE
-				WHEN (status='exported_data' or status='aborted') THEN last_event_at
-				ELSE first_event_at
-				END AS oldest_unsynced_event
-		FROM (
-			SELECT
-				ROW_NUMBER() OVER (PARTITION BY source_id, destination_id ORDER BY id desc) AS row_number,
-				t.source_id, t.destination_id, t.last_event_at, t.first_event_at, t.status
-			FROM
-				wh_uploads t) grouped_uploads
-		WHERE
-			grouped_uploads.row_number = 1;`,
-		wh.destType)
-
-	rows, err := wh.dbHandle.Query(sqlStatement)
-	if err != nil && err != sql.ErrNoRows {
-		return err
-	}
-	defer rows.Close()
-
-	oldestEventAtMap := map[string]time.Time{}
-
-	for rows.Next() {
-		var whIdentifier string
-		var oldestUnSyncedEventAtNullTime sql.NullTime
-		err := rows.Scan(&whIdentifier, &oldestUnSyncedEventAtNullTime)
-		if err != nil {
-			return err
-		}
-		oldestUnSyncedEventAt := oldestUnSyncedEventAtNullTime.Time
-		if !oldestUnSyncedEventAtNullTime.Valid {
-			oldestUnSyncedEventAt = timeutil.Now()
-		}
-		oldestEventAtMap[whIdentifier] = oldestUnSyncedEventAt
-	}
-
-	sort.Slice(wh.warehouses, func(i, j int) bool {
-		var firstTime, secondTime time.Time
-		var ok bool
-		if firstTime, ok = oldestEventAtMap[warehouseutils.GetWarehouseIdentifier(wh.destType, wh.warehouses[i].Source.ID, wh.warehouses[i].Destination.ID)]; !ok {
-			firstTime = timeutil.Now()
-		}
-		if secondTime, ok = oldestEventAtMap[warehouseutils.GetWarehouseIdentifier(wh.destType, wh.warehouses[j].Source.ID, wh.warehouses[j].Destination.ID)]; !ok {
-			secondTime = timeutil.Now()
-		}
-		return firstTime.Before(secondTime)
-	})
-	return
 }
 
 func (wh *HandleT) mainLoop(ctx context.Context) {
@@ -735,7 +682,7 @@ func (wh *HandleT) mainLoop(ctx context.Context) {
 		wg := sync.WaitGroup{}
 		wg.Add(len(wh.warehouses))
 
-		whTotalSchedulingStats := stats.DefaultStats.NewStat("wh_scheduler.total_scheduling_time", stats.TimerType)
+		whTotalSchedulingStats := stats.Default.NewStat("wh_scheduler.total_scheduling_time", stats.TimerType)
 		whTotalSchedulingStats.Start()
 
 		for _, warehouse := range wh.warehouses {
@@ -758,13 +705,12 @@ func (wh *HandleT) mainLoop(ctx context.Context) {
 		wg.Wait()
 
 		whTotalSchedulingStats.End()
-		stats.DefaultStats.NewStat("wh_scheduler.warehouse_length", stats.CountType).Count(len(wh.warehouses)) // Correlation between number of warehouses and scheduling time.
+		stats.Default.NewStat("wh_scheduler.warehouse_length", stats.CountType).Count(len(wh.warehouses)) // Correlation between number of warehouses and scheduling time.
 		select {
 		case <-ctx.Done():
 			return
 		case <-time.After(mainLoopSleep):
 		}
-
 	}
 }
 
@@ -811,11 +757,11 @@ func (wh *HandleT) getUploadsToProcess(availableWorkers int, skipIdentifiers []s
 		rows, err = wh.dbHandle.Query(sqlStatement)
 	}
 
-	if err != nil && err != sql.ErrNoRows {
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return []*UploadJobT{}, err
 	}
 
-	if err == sql.ErrNoRows {
+	if errors.Is(err, sql.ErrNoRows) {
 		return []*UploadJobT{}, nil
 	}
 	defer rows.Close()
@@ -864,7 +810,7 @@ func (wh *HandleT) getUploadsToProcess(availableWorkers int, skipIdentifiers []s
 				dbHandle: wh.dbHandle,
 			}
 			err := fmt.Errorf("Unable to find source : %s or destination : %s, both or the connection between them", upload.SourceID, upload.DestinationID)
-			uploadJob.setUploadError(err, Aborted)
+			_, _ = uploadJob.setUploadError(err, Aborted)
 			pkgLogger.Errorf("%v", err)
 			continue
 		}
@@ -1058,7 +1004,7 @@ func (wh *HandleT) Disable() {
 }
 
 func (wh *HandleT) setInterruptedDestinations() {
-	if !misc.ContainsString(crashRecoverWarehouses, wh.destType) {
+	if !misc.Contains(crashRecoverWarehouses, wh.destType) {
 		return
 	}
 	sqlStatement := fmt.Sprintf(`SELECT destination_id FROM %s WHERE destination_type='%s' AND (status='%s' OR status='%s') and in_progress=%t`, warehouseutils.WarehouseUploadsTable, wh.destType, getInProgressState(ExportedData), getFailedState(ExportedData), true)
@@ -1149,7 +1095,7 @@ func minimalConfigSubscriber() {
 			}
 			sourceIDsByWorkspace[source.WorkspaceID] = append(sourceIDsByWorkspace[source.WorkspaceID], source.ID)
 			for _, destination := range source.Destinations {
-				if misc.ContainsString(warehouseutils.WarehouseDestinations, destination.DestinationDefinition.Name) {
+				if misc.Contains(warehouseutils.WarehouseDestinations, destination.DestinationDefinition.Name) {
 					wh := &HandleT{
 						dbHandle: dbHandle,
 						destType: destination.DestinationDefinition.Name,
@@ -1206,7 +1152,7 @@ func onConfigDataEvent(config pubsub.DataEvent, dstToWhRouter map[string]*Handle
 	for _, source := range sources.Sources {
 		for _, destination := range source.Destinations {
 			enabledDestinations[destination.DestinationDefinition.Name] = true
-			if misc.ContainsString(warehouseutils.WarehouseDestinations, destination.DestinationDefinition.Name) {
+			if misc.Contains(warehouseutils.WarehouseDestinations, destination.DestinationDefinition.Name) {
 				wh, ok := dstToWhRouter[destination.DestinationDefinition.Name]
 				if !ok {
 					pkgLogger.Info("Starting a new Warehouse Destination Router: ", destination.DestinationDefinition.Name)
@@ -1353,7 +1299,7 @@ func setConfigHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	for _, kv := range kvs {
-		config.SetHotReloadablesForcefully(kv.Key, kv.Value)
+		config.Set(kv.Key, kv.Value)
 	}
 	w.WriteHeader(http.StatusOK)
 }
@@ -1361,6 +1307,11 @@ func setConfigHandler(w http.ResponseWriter, r *http.Request) {
 func pendingEventsHandler(w http.ResponseWriter, r *http.Request) {
 	// TODO : respond with errors in a common way
 	pkgLogger.LogRequest(r)
+
+	if r.Method != "POST" {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
 
 	// read body
 	body, err := io.ReadAll(r.Body)
@@ -1399,19 +1350,21 @@ func pendingEventsHandler(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		err := fmt.Errorf("Error getting pending staging file count : %v", err)
 		pkgLogger.Errorf("[WH]: %v", err)
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
-	// get pending uploads only if there are no pending staging files
-	if pendingStagingFileCount == 0 {
-		pendingUploadCount, err = getPendingUploadCount(sourceID, true)
-		if err != nil {
-			err := fmt.Errorf("Error getting pending uploads : %v", err)
-			pkgLogger.Errorf("[WH]: %v", err)
-			http.Error(w, err.Error(), http.StatusBadRequest)
-			return
-		}
+	filterBy := []warehouseutils.FilterBy{{Key: "source_id", Value: sourceID}}
+	if pendingEventsReq.TaskRunID != "" {
+		filterBy = append(filterBy, warehouseutils.FilterBy{Key: "metadata->>'source_task_run_id'", Value: pendingEventsReq.TaskRunID})
+	}
+
+	pendingUploadCount, err = getPendingUploadCount(filterBy...)
+	if err != nil {
+		err := fmt.Errorf("Error getting pending uploads : %v", err)
+		pkgLogger.Errorf("[WH]: %v", err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
 	}
 
 	// if there are any pending staging files or uploads, set pending events as true
@@ -1466,7 +1419,7 @@ func pendingEventsHandler(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		err := fmt.Errorf("Failed to marshall pending events response : %v", err)
 		pkgLogger.Errorf("[WH]: %v", err)
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
@@ -1507,21 +1460,27 @@ func getPendingStagingFileCount(sourceOrDestId string, isSourceId bool) (fileCou
 	return fileCount, nil
 }
 
-func getPendingUploadCount(sourceOrDestId string, isSourceId bool) (uploadCount int64, err error) {
-	sourceOrDestColumn := ""
-	if isSourceId {
-		sourceOrDestColumn = "source_id"
-	} else {
-		sourceOrDestColumn = "destination_id"
-	}
-	sqlStatement := fmt.Sprintf(`SELECT COUNT(*)
-								FROM %[1]s
-								WHERE %[1]s.status NOT IN ('%[2]s', '%[3]s') AND %[1]s.%[5]s='%[4]s'
-	`, warehouseutils.WarehouseUploadsTable, ExportedData, Aborted, sourceOrDestId, sourceOrDestColumn)
+func getPendingUploadCount(filters ...warehouseutils.FilterBy) (uploadCount int64, err error) {
+	pkgLogger.Debugf("Fetching pending upload count with filters: %v", filters)
 
-	err = dbHandle.QueryRow(sqlStatement).Scan(&uploadCount)
+	query := fmt.Sprintf(`
+	SELECT
+		COUNT(*)
+	FROM
+		%[1]s
+	WHERE
+		%[1]s.status NOT IN ('%[2]s', '%[3]s')
+	`, warehouseutils.WarehouseUploadsTable, ExportedData, Aborted)
+
+	args := make([]interface{}, 0)
+	for i, filter := range filters {
+		query += fmt.Sprintf(" AND %s=$%d", filter.Key, i+1)
+		args = append(args, filter.Value)
+	}
+
+	err = dbHandle.QueryRow(query, args...).Scan(&uploadCount)
 	if err != nil && err != sql.ErrNoRows {
-		err = fmt.Errorf("Query: %s failed with Error : %w", sqlStatement, err)
+		err = fmt.Errorf("Query: %s failed with Error : %w", query, err)
 		return
 	}
 
@@ -1606,7 +1565,7 @@ func TriggerUploadHandler(sourceID, destID string) error {
 	return nil
 }
 
-func databricksVersionHandler(w http.ResponseWriter, r *http.Request) {
+func databricksVersionHandler(w http.ResponseWriter, _ *http.Request) {
 	w.WriteHeader(http.StatusOK)
 	w.Write([]byte(deltalake.GetDatabricksVersion()))
 }
@@ -1631,7 +1590,7 @@ func clearTriggeredUpload(wh warehouseutils.WarehouseT) {
 	triggerUploadsMapLock.Unlock()
 }
 
-func healthHandler(w http.ResponseWriter, r *http.Request) {
+func healthHandler(w http.ResponseWriter, _ *http.Request) {
 	dbService := ""
 	pgNotifierService := ""
 	if runningMode != DegradedMode {
@@ -1700,10 +1659,10 @@ func startWebHandler(ctx context.Context) error {
 
 // CheckForWarehouseEnvVars Checks if all the required Env Variables for Warehouse are present
 func CheckForWarehouseEnvVars() bool {
-	return config.IsEnvSet("WAREHOUSE_JOBS_DB_HOST") &&
-		config.IsEnvSet("WAREHOUSE_JOBS_DB_USER") &&
-		config.IsEnvSet("WAREHOUSE_JOBS_DB_DB_NAME") &&
-		config.IsEnvSet("WAREHOUSE_JOBS_DB_PASSWORD")
+	return config.IsSet("WAREHOUSE_JOBS_DB_HOST") &&
+		config.IsSet("WAREHOUSE_JOBS_DB_USER") &&
+		config.IsSet("WAREHOUSE_JOBS_DB_DB_NAME") &&
+		config.IsSet("WAREHOUSE_JOBS_DB_PASSWORD")
 }
 
 // This checks if gateway is running or not
@@ -1755,7 +1714,7 @@ func setupDB(ctx context.Context, connInfo string) error {
 	return setupTables(dbHandle)
 }
 
-func Start(ctx context.Context, app app.Interface) error {
+func Start(ctx context.Context, app app.App) error {
 	application = app
 
 	// do not start warehouse service if rudder core is not in normal mode and warehouse is running in same process as rudder core
@@ -1777,14 +1736,18 @@ func Start(ctx context.Context, app app.Interface) error {
 		}
 	}()
 
-	runningMode := config.GetEnv("RSERVER_WAREHOUSE_RUNNING_MODE", "")
+	runningMode := config.GetString("Warehouse.runningMode", "")
 	if runningMode == DegradedMode {
 		pkgLogger.Infof("WH: Running warehouse service in degraded mode...")
 		if isMaster() {
 			rruntime.GoForWarehouse(func() {
 				minimalConfigSubscriber()
 			})
-			InitWarehouseAPI(dbHandle, pkgLogger.Child("upload_api"))
+			err := InitWarehouseAPI(dbHandle, pkgLogger.Child("upload_api"))
+			if err != nil {
+				pkgLogger.Errorf("WH: Failed to start warehouse api: %v", err)
+				return err
+			}
 		}
 		return startWebHandler(ctx)
 	}
@@ -1810,6 +1773,24 @@ func Start(ctx context.Context, app app.Interface) error {
 
 	if isStandAlone() && isMaster() {
 		destinationdebugger.Setup(backendconfig.DefaultBackendConfig)
+
+		// Report warehouse features
+		g.Go(func() error {
+			backendconfig.DefaultBackendConfig.WaitForConfig(ctx)
+
+			c := features.NewClient(
+				config.GetString("CONFIG_BACKEND_URL", "https://api.rudderlabs.com"),
+				backendconfig.DefaultBackendConfig.Identity(),
+			)
+
+			err := c.Send(ctx, info.WarehouseComponent.Name, info.WarehouseComponent.Features)
+			if err != nil {
+				pkgLogger.Errorf("error sending warehouse features: %v", err)
+			}
+
+			// We don't want to exit if we fail to send features
+			return nil
+		})
 	}
 
 	if isSlave() {
@@ -1833,7 +1814,11 @@ func Start(ctx context.Context, app app.Interface) error {
 			runArchiver(ctx, dbHandle)
 			return nil
 		}))
-		InitWarehouseAPI(dbHandle, pkgLogger.Child("upload_api"))
+		err := InitWarehouseAPI(dbHandle, pkgLogger.Child("upload_api"))
+		if err != nil {
+			pkgLogger.Errorf("WH: Failed to start warehouse api: %v", err)
+			return err
+		}
 	}
 
 	g.Go(func() error {

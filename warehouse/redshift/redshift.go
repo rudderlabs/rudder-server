@@ -7,14 +7,11 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"sort"
 	"strings"
 	"time"
 
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/aws/credentials"
-	"github.com/aws/aws-sdk-go/aws/session"
-	"github.com/aws/aws-sdk-go/service/sts"
 	"github.com/tidwall/gjson"
 
 	uuid "github.com/gofrs/uuid"
@@ -28,7 +25,8 @@ import (
 
 var (
 	setVarCharMax                 bool
-	pkgLogger                     logger.LoggerI
+	stagingTablePrefix            string
+	pkgLogger                     logger.Logger
 	skipComputingUserLatestTraits bool
 )
 
@@ -38,6 +36,7 @@ func Init() {
 }
 
 func loadConfig() {
+	stagingTablePrefix = "rudder_staging_"
 	setVarCharMax = config.GetBool("Warehouse.redshift.setVarCharMax", false)
 	config.RegisterBoolConfigVariable(false, &skipComputingUserLatestTraits, true, "Warehouse.redshift.skipComputingUserLatestTraits")
 }
@@ -52,16 +51,15 @@ type HandleT struct {
 
 // String constants for redshift destination config
 const (
-	RSHost             = "host"
-	RSPort             = "port"
-	RSDbName           = "database"
-	RSUserName         = "user"
-	RSPassword         = "password"
-	rudderStringLength = 512
-)
-
-const (
-	provider = warehouseutils.RS
+	AWSAccessKey        = "accessKey"
+	AWSAccessKeyID      = "accessKeyID"
+	AWSBucketNameConfig = "bucketName"
+	RSHost              = "host"
+	RSPort              = "port"
+	RSDbName            = "database"
+	RSUserName          = "user"
+	RSPassword          = "password"
+	rudderStringLength  = 512
 )
 
 var dataTypesMap = map[string]string{
@@ -159,7 +157,7 @@ func (rs *HandleT) DropTable(tableName string) (err error) {
 	return
 }
 
-func (rs *HandleT) schemaExists(schemaname string) (exists bool, err error) {
+func (rs *HandleT) schemaExists(_ string) (exists bool, err error) {
 	sqlStatement := fmt.Sprintf(`SELECT EXISTS (SELECT 1 FROM pg_catalog.pg_namespace WHERE nspname = '%s');`, rs.Namespace)
 	err = rs.Db.QueryRow(sqlStatement).Scan(&exists)
 	return
@@ -202,7 +200,7 @@ type S3ManifestT struct {
 	Entries []S3ManifestEntryT `json:"entries"`
 }
 
-func (rs *HandleT) generateManifest(tableName string, columnMap map[string]string) (string, error) {
+func (rs *HandleT) generateManifest(tableName string, _ map[string]string) (string, error) {
 	loadFiles := rs.Uploader.GetLoadFilesMetadata(warehouseutils.GetLoadFilesOptionsT{Table: tableName})
 	loadFiles = warehouseutils.GetS3Locations(loadFiles)
 	var manifest S3ManifestT
@@ -238,11 +236,12 @@ func (rs *HandleT) generateManifest(tableName string, columnMap map[string]strin
 	}
 	defer file.Close()
 	uploader, err := filemanager.DefaultFileManagerFactory.New(&filemanager.SettingsT{
-		Provider: warehouseutils.S3,
+		Provider: "S3",
 		Config: misc.GetObjectStorageConfig(misc.ObjectStorageOptsT{
-			Provider:         warehouseutils.S3,
+			Provider:         "S3",
 			Config:           rs.Warehouse.Destination.Config,
 			UseRudderStorage: rs.Uploader.UseRudderStorage(),
+			WorkspaceID:      rs.Warehouse.Destination.WorkspaceID,
 		}),
 	})
 	if err != nil {
@@ -274,13 +273,23 @@ func (rs *HandleT) loadTable(tableName string, tableSchemaInUpload, tableSchemaA
 	}
 	pkgLogger.Infof("RS: Generated and stored manifest for table:%s at %s\n", tableName, manifestLocation)
 
-	strKeys := warehouseutils.GetColumnsFromTableSchema(tableSchemaInUpload)
-	sort.Strings(strKeys)
-	sortedColumnNames := warehouseutils.JoinWithFormatting(strKeys, func(idx int, name string) string {
-		return fmt.Sprintf(`%q`, name)
-	}, ",")
+	// sort columnnames
+	keys := reflect.ValueOf(tableSchemaInUpload).MapKeys()
+	strkeys := make([]string, len(keys))
+	for i := 0; i < len(keys); i++ {
+		strkeys[i] = keys[i].String()
+	}
+	sort.Strings(strkeys)
+	var sortedColumnNames string
+	// TODO: use strings.Join() instead
+	for index, key := range strkeys {
+		if index > 0 {
+			sortedColumnNames += `, `
+		}
+		sortedColumnNames += fmt.Sprintf(`%q`, key)
+	}
 
-	stagingTableName = warehouseutils.StagingTableName(provider, tableName)
+	stagingTableName = misc.TruncateStr(fmt.Sprintf(`%s%s_%s`, stagingTablePrefix, strings.ReplaceAll(uuid.Must(uuid.NewV4()).String(), "-", ""), tableName), 127)
 	err = rs.CreateTable(stagingTableName, tableSchemaAfterUpload)
 	if err != nil {
 		return
@@ -300,7 +309,7 @@ func (rs *HandleT) loadTable(tableName string, tableSchemaInUpload, tableSchemaA
 		return
 	}
 	// create session token and temporary credentials
-	tempAccessKeyId, tempSecretAccessKey, token, err := rs.getTemporaryCredForCopy()
+	tempAccessKeyId, tempSecretAccessKey, token, err := warehouseutils.GetTemporaryS3Cred(&rs.Warehouse.Destination)
 	if err != nil {
 		pkgLogger.Errorf("RS: Failed to create temp credentials before copying, while create load for table %v, err%v", tableName, err)
 		tx.Rollback()
@@ -320,6 +329,7 @@ func (rs *HandleT) loadTable(tableName string, tableSchemaInUpload, tableSchemaA
 	sanitisedSQLStmt, regexErr := misc.ReplaceMultiRegex(sqlStatement, map[string]string{
 		"ACCESS_KEY_ID '[^']*'":     "ACCESS_KEY_ID '***'",
 		"SECRET_ACCESS_KEY '[^']*'": "SECRET_ACCESS_KEY '***'",
+		"SESSION_TOKEN '[^']*'":     "SESSION_TOKEN '***'",
 	})
 	if regexErr == nil {
 		pkgLogger.Infof("RS: Running COPY command for table:%s at %s\n", tableName, sanitisedSQLStmt)
@@ -356,7 +366,7 @@ func (rs *HandleT) loadTable(tableName string, tableSchemaInUpload, tableSchemaA
 		return
 	}
 
-	quotedColumnNames := warehouseutils.DoubleQuoteAndJoinByComma(strKeys)
+	quotedColumnNames := warehouseutils.DoubleQuoteAndJoinByComma(strkeys)
 
 	sqlStatement = fmt.Sprintf(`INSERT INTO "%[1]s"."%[2]s" (%[3]s) SELECT %[3]s FROM ( SELECT *, row_number() OVER (PARTITION BY %[5]s ORDER BY received_at ASC) AS _rudder_staging_row_number FROM "%[1]s"."%[4]s" ) AS _ where _rudder_staging_row_number = 1`, rs.Namespace, tableName, quotedColumnNames, stagingTableName, partitionKey)
 	pkgLogger.Infof("RS: Inserting records for table:%s using staging table: %s\n", tableName, sqlStatement)
@@ -413,8 +423,7 @@ func (rs *HandleT) loadUserTables() (errorMap map[string]error) {
 		firstValProps = append(firstValProps, fmt.Sprintf(`FIRST_VALUE("%[1]s" IGNORE NULLS) OVER (PARTITION BY id ORDER BY received_at DESC ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) AS "%[1]s"`, colName))
 	}
 	quotedUserColNames := warehouseutils.DoubleQuoteAndJoinByComma(userColNames)
-
-	stagingTableName := warehouseutils.StagingTableName(provider, warehouseutils.UsersTable)
+	stagingTableName := misc.TruncateStr(fmt.Sprintf(`%s%s_%s`, stagingTablePrefix, strings.ReplaceAll(uuid.Must(uuid.NewV4()).String(), "-", ""), warehouseutils.UsersTable), 127)
 
 	sqlStatement := fmt.Sprintf(`CREATE TABLE "%[1]s"."%[2]s" AS (SELECT DISTINCT * FROM
 										(
@@ -489,27 +498,6 @@ func (rs *HandleT) loadUserTables() (errorMap map[string]error) {
 	return
 }
 
-func (rs *HandleT) getTemporaryCredForCopy() (string, string, string, error) {
-	var accessKey, accessKeyID string
-	if misc.HasAWSKeysInConfig(rs.Warehouse.Destination.Config) && !misc.IsConfiguredToUseRudderObjectStorage(rs.Warehouse.Destination.Config) {
-		accessKey = warehouseutils.GetConfigValue(warehouseutils.AWSAccessKey, rs.Warehouse)
-		accessKeyID = warehouseutils.GetConfigValue(warehouseutils.AWSAccessSecret, rs.Warehouse)
-	} else {
-		accessKeyID = config.GetEnv("RUDDER_AWS_S3_COPY_USER_ACCESS_KEY_ID", "")
-		accessKey = config.GetEnv("RUDDER_AWS_S3_COPY_USER_ACCESS_KEY", "")
-	}
-	mySession := session.Must(session.NewSession())
-	// Create a STS client from just a session.
-	svc := sts.New(mySession, aws.NewConfig().WithCredentials(credentials.NewStaticCredentials(accessKeyID, accessKey, "")))
-
-	// sts.New(mySession, aws.NewConfig().WithRegion("us-west-2"))
-	SessionTokenOutput, err := svc.GetSessionToken(&sts.GetSessionTokenInput{DurationSeconds: &warehouseutils.AWSCredsExpiryInS})
-	if err != nil {
-		return "", "", "", err
-	}
-	return *SessionTokenOutput.Credentials.AccessKeyId, *SessionTokenOutput.Credentials.SecretAccessKey, *SessionTokenOutput.Credentials.SessionToken, err
-}
-
 // RedshiftCredentialsT ...
 type RedshiftCredentialsT struct {
 	Host     string
@@ -546,7 +534,9 @@ func Connect(cred RedshiftCredentialsT) (*sql.DB, error) {
 }
 
 func (rs *HandleT) dropDanglingStagingTables() bool {
-	sqlStatement := dropDanglingTablesSQLStatement(rs.Namespace)
+	sqlStatement := fmt.Sprintf(`select table_name
+								 from information_schema.tables
+								 where table_schema = '%s' AND table_name like '%s';`, rs.Namespace, fmt.Sprintf("%s%s", stagingTablePrefix, "%"))
 	rows, err := rs.Db.Query(sqlStatement)
 	if err != nil {
 		pkgLogger.Errorf("WH: RS: Error dropping dangling staging tables in redshift: %v\nQuery: %s\n", err, sqlStatement)
@@ -622,7 +612,9 @@ func (rs *HandleT) FetchSchema(warehouse warehouseutils.WarehouseT) (schema ware
 	defer dbHandle.Close()
 
 	schema = make(warehouseutils.SchemaT)
-	sqlStatement := fetchSchemaSQLStatement(rs.Namespace)
+	sqlStatement := fmt.Sprintf(`SELECT table_name, column_name, data_type, character_maximum_length
+									FROM INFORMATION_SCHEMA.COLUMNS
+									WHERE table_schema = '%s' and table_name not like '%s%s'`, rs.Namespace, stagingTablePrefix, "%")
 
 	rows, err := dbHandle.Query(sqlStatement)
 	if err != nil && err != sql.ErrNoRows {
@@ -708,7 +700,7 @@ func (rs *HandleT) CrashRecover(warehouse warehouseutils.WarehouseT) (err error)
 	return
 }
 
-func (rs *HandleT) IsEmpty(warehouse warehouseutils.WarehouseT) (empty bool, err error) {
+func (*HandleT) IsEmpty(_ warehouseutils.WarehouseT) (empty bool, err error) {
 	return
 }
 
@@ -721,15 +713,15 @@ func (rs *HandleT) LoadTable(tableName string) error {
 	return err
 }
 
-func (rs *HandleT) LoadIdentityMergeRulesTable() (err error) {
+func (*HandleT) LoadIdentityMergeRulesTable() (err error) {
 	return
 }
 
-func (rs *HandleT) LoadIdentityMappingsTable() (err error) {
+func (*HandleT) LoadIdentityMappingsTable() (err error) {
 	return
 }
 
-func (rs *HandleT) DownloadIdentityRules(*misc.GZipWriter) (err error) {
+func (*HandleT) DownloadIdentityRules(*misc.GZipWriter) (err error) {
 	return
 }
 
@@ -753,8 +745,8 @@ func (rs *HandleT) Connect(warehouse warehouseutils.WarehouseT) (client.Client, 
 	return client.Client{Type: client.SQLClient, SQL: dbHandle}, err
 }
 
-func (rs *HandleT) LoadTestTable(location, tableName string, payloadMap map[string]interface{}, format string) (err error) {
-	tempAccessKeyId, tempSecretAccessKey, token, err := rs.getTemporaryCredForCopy()
+func (rs *HandleT) LoadTestTable(location, tableName string, _ map[string]interface{}, format string) (err error) {
+	tempAccessKeyId, tempSecretAccessKey, token, err := warehouseutils.GetTemporaryS3Cred(&rs.Warehouse.Destination)
 	if err != nil {
 		pkgLogger.Errorf("RS: Failed to create temp credentials before copying, while create load for table %v, err%v", tableName, err)
 		return
@@ -790,6 +782,7 @@ func (rs *HandleT) LoadTestTable(location, tableName string, payloadMap map[stri
 	sanitisedSQLStmt, regexErr := misc.ReplaceMultiRegex(sqlStatement, map[string]string{
 		"ACCESS_KEY_ID '[^']*'":     "ACCESS_KEY_ID '***'",
 		"SECRET_ACCESS_KEY '[^']*'": "SECRET_ACCESS_KEY '***'",
+		"SESSION_TOKEN '[^']*'":     "SESSION_TOKEN '***'",
 	})
 	if regexErr == nil {
 		pkgLogger.Infof("RS: Running COPY command for load test table: %s with sqlStatement: %s", tableName, sanitisedSQLStmt)

@@ -49,7 +49,7 @@ func GetFailedEventsManager() FailedEventsManagerI {
 	return failedEventsManager
 }
 
-func (fem *FailedEventsManagerT) SaveFailedRecordIDs(taskRunIDFailedEventsMap map[string][]*FailedEventRowT, txn *sql.Tx) {
+func (*FailedEventsManagerT) SaveFailedRecordIDs(taskRunIDFailedEventsMap map[string][]*FailedEventRowT, txn *sql.Tx) {
 	if !failedKeysEnabled {
 		return
 	}

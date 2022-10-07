@@ -9,13 +9,16 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"reflect"
+	"testing"
 	"time"
 
 	"github.com/gofrs/uuid"
 	"github.com/golang/mock/gomock"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
 
@@ -31,7 +34,6 @@ import (
 	mocksRateLimiter "github.com/rudderlabs/rudder-server/mocks/rate-limiter"
 	mocksTypes "github.com/rudderlabs/rudder-server/mocks/utils/types"
 	"github.com/rudderlabs/rudder-server/services/rsources"
-	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/pubsub"
@@ -76,13 +78,13 @@ type testContext struct {
 	mockCtrl          *gomock.Controller
 	mockJobsDB        *mocksJobsDB.MockJobsDB
 	mockBackendConfig *mocksBackendConfig.MockBackendConfig
-	mockApp           *mocksApp.MockInterface
+	mockApp           *mocksApp.MockApp
 	mockRateLimiter   *mocksRateLimiter.MockRateLimiter
 
 	mockVersionHandler func(w http.ResponseWriter, r *http.Request)
 
 	// Enterprise mocks
-	mockSuppressUser        *mocksTypes.MockSuppressUserI
+	mockSuppressUser        *mocksTypes.MockUserSuppression
 	mockSuppressUserFeature *mocksApp.MockSuppressUserFeature
 }
 
@@ -107,7 +109,7 @@ func (c *testContext) Setup() {
 	c.mockCtrl = gomock.NewController(GinkgoT())
 	c.mockJobsDB = mocksJobsDB.NewMockJobsDB(c.mockCtrl)
 	c.mockBackendConfig = mocksBackendConfig.NewMockBackendConfig(c.mockCtrl)
-	c.mockApp = mocksApp.NewMockInterface(c.mockCtrl)
+	c.mockApp = mocksApp.NewMockApp(c.mockCtrl)
 	c.mockRateLimiter = mocksRateLimiter.NewMockRateLimiter(c.mockCtrl)
 
 	tFunc := c.asyncHelper.ExpectAndNotifyCallbackWithName("process_config")
@@ -158,9 +160,9 @@ var _ = Describe("Reconstructing JSON for ServerSide SDK", func() {
 })
 
 func initGW() {
-	config.Load()
+	config.Reset()
 	admin.Init()
-	logger.Init()
+	logger.Reset()
 	misc.Init()
 	Init()
 }
@@ -174,16 +176,13 @@ var _ = Describe("Gateway Enterprise", func() {
 		c = &testContext{}
 		c.Setup()
 
-		c.mockSuppressUser = mocksTypes.NewMockSuppressUserI(c.mockCtrl)
+		c.mockSuppressUser = mocksTypes.NewMockUserSuppression(c.mockCtrl)
 		c.mockSuppressUserFeature = mocksApp.NewMockSuppressUserFeature(c.mockCtrl)
 		c.initializeEnterpriseAppFeatures()
 
 		c.mockSuppressUserFeature.EXPECT().Setup(gomock.Any()).AnyTimes().Return(c.mockSuppressUser, nil)
-		c.mockSuppressUser.EXPECT().IsSuppressedUser(NormalUserID, SourceIDEnabled, WriteKeyEnabled).Return(false).AnyTimes()
-		c.mockSuppressUser.EXPECT().IsSuppressedUser(SuppressedUserID, SourceIDEnabled, WriteKeyEnabled).Return(true).AnyTimes()
-
-		// setup static requirements of dependencies
-		stats.Setup()
+		c.mockSuppressUser.EXPECT().IsSuppressedUser(NormalUserID, SourceIDEnabled).Return(false).AnyTimes()
+		c.mockSuppressUser.EXPECT().IsSuppressedUser(SuppressedUserID, SourceIDEnabled).Return(true).AnyTimes()
 
 		// setup common environment, override in BeforeEach when required
 		SetEnableRateLimit(false)
@@ -237,9 +236,6 @@ var _ = Describe("Gateway", func() {
 		c.Setup()
 		c.initializeAppFeatures()
 
-		// setup static requirements of dependencies
-		stats.Setup()
-
 		// setup common environment, override in BeforeEach when required
 		SetEnableRateLimit(false)
 		SetEnableEventSchemasFeature(false)
@@ -250,17 +246,18 @@ var _ = Describe("Gateway", func() {
 	})
 
 	Context("Initialization", func() {
-		gateway := &HandleT{}
-
 		It("should wait for backend config", func() {
+			gateway := &HandleT{}
 			err := gateway.Setup(c.mockApp, c.mockBackendConfig, c.mockJobsDB, nil, c.mockVersionHandler, rsources.NewNoOpService())
+			Expect(err).To(BeNil())
+			err = gateway.Shutdown()
 			Expect(err).To(BeNil())
 		})
 	})
 
 	Context("Valid requests", func() {
 		var (
-			gateway           = &HandleT{}
+			gateway           *HandleT
 			gatewayBatchCalls = 1
 		)
 
@@ -272,7 +269,13 @@ var _ = Describe("Gateway", func() {
 		}
 
 		BeforeEach(func() {
+			gateway = &HandleT{}
 			err := gateway.Setup(c.mockApp, c.mockBackendConfig, c.mockJobsDB, nil, c.mockVersionHandler, rsources.NewNoOpService())
+			Expect(err).To(BeNil())
+		})
+
+		AfterEach(func() {
+			err := gateway.Shutdown()
 			Expect(err).To(BeNil())
 		})
 
@@ -326,53 +329,56 @@ var _ = Describe("Gateway", func() {
 		}
 
 		// common tests for all web handlers
-		assertSingleMessageHandler := func(handlerType string, handler http.HandlerFunc) {
-			It("should accept valid requests on a single endpoint (except batch), and store to jobsdb", func() {
-				validBody := createValidBody("custom-property", "custom-value")
+		It("should accept valid requests on a single endpoint (except batch), and store to jobsdb", func() {
+			for handlerType, handler := range allHandlers(gateway) {
+				if !(handlerType == "batch" || handlerType == "import") {
 
-				c.mockJobsDB.EXPECT().WithStoreSafeTx(gomock.Any()).Times(1).Do(func(f func(tx jobsdb.StoreSafeTx) error) {
-					_ = f(jobsdb.EmptyStoreSafeTx())
-				}).Return(nil)
-				c.mockJobsDB.
-					EXPECT().StoreWithRetryEachInTx(gomock.Any(), gomock.Any(), gomock.Any()).
-					DoAndReturn(func(ctx context.Context, tx jobsdb.StoreSafeTx, jobs []*jobsdb.JobT) map[uuid.UUID]string {
-						for _, job := range jobs {
-							// each call should be included in a separate batch, with a separate batch_id
-							expectedBatchID := nextBatchID()
-							assertJobMetadata(job, 1, expectedBatchID)
+					validBody := createValidBody("custom-property", "custom-value")
 
-							responseData := []byte(job.EventPayload)
-							payload := gjson.GetBytes(responseData, "batch.0")
+					c.mockJobsDB.EXPECT().WithStoreSafeTx(gomock.Any()).Times(1).Do(func(f func(tx jobsdb.StoreSafeTx) error) {
+						_ = f(jobsdb.EmptyStoreSafeTx())
+					}).Return(nil)
+					c.mockJobsDB.
+						EXPECT().StoreWithRetryEachInTx(gomock.Any(), gomock.Any(), gomock.Any()).
+						DoAndReturn(func(ctx context.Context, tx jobsdb.StoreSafeTx, jobs []*jobsdb.JobT) (map[uuid.UUID]string, error) {
+							for _, job := range jobs {
+								// each call should be included in a separate batch, with a separate batch_id
+								expectedBatchID := nextBatchID()
+								assertJobMetadata(job, 1, expectedBatchID)
 
-							assertJobBatchItem(payload)
+								responseData := []byte(job.EventPayload)
+								payload := gjson.GetBytes(responseData, "batch.0")
 
-							messageType := payload.Get("type")
-							Expect(messageType.String()).To(Equal(handlerType))
-							Expect(stripJobPayload(payload)).To(MatchJSON(validBody))
-						}
-						c.asyncHelper.ExpectAndNotifyCallbackWithName("jobsdb_store")()
+								assertJobBatchItem(payload)
 
-						return jobsToEmptyErrors(ctx, tx, jobs)
-					}).
-					Times(1)
+								messageType := payload.Get("type")
+								Expect(messageType.String()).To(Equal(handlerType))
+								Expect(stripJobPayload(payload)).To(MatchJSON(validBody))
+							}
+							c.asyncHelper.ExpectAndNotifyCallbackWithName("jobsdb_store")()
 
-				expectHandlerResponse(handler, authorizedRequest(WriteKeyEnabled, bytes.NewBuffer(validBody)), 200, "OK")
-			})
-		}
+							return jobsToEmptyErrors(ctx, tx, jobs)
+						}).
+						Times(1)
 
-		for handlerType, handler := range allHandlers(gateway) {
-			if !(handlerType == "batch" || handlerType == "import") {
-				assertSingleMessageHandler(handlerType, handler)
+					expectHandlerResponse(handler, authorizedRequest(WriteKeyEnabled, bytes.NewBuffer(validBody)), 200, "OK")
+				}
 			}
-		}
+		})
 	})
 
 	Context("Rate limits", func() {
-		gateway := &HandleT{}
+		var gateway *HandleT
 
 		BeforeEach(func() {
+			gateway = &HandleT{}
 			SetEnableRateLimit(true)
 			err := gateway.Setup(c.mockApp, c.mockBackendConfig, c.mockJobsDB, c.mockRateLimiter, c.mockVersionHandler, rsources.NewNoOpService())
+			Expect(err).To(BeNil())
+		})
+
+		AfterEach(func() {
+			err := gateway.Shutdown()
 			Expect(err).To(BeNil())
 		})
 
@@ -413,10 +419,16 @@ var _ = Describe("Gateway", func() {
 	})
 
 	Context("Invalid requests", func() {
-		gateway := &HandleT{}
+		var gateway *HandleT
 
 		BeforeEach(func() {
+			gateway = &HandleT{}
 			err := gateway.Setup(c.mockApp, c.mockBackendConfig, c.mockJobsDB, nil, c.mockVersionHandler, rsources.NewNoOpService())
+			Expect(err).To(BeNil())
+		})
+
+		AfterEach(func() {
+			err := gateway.Shutdown()
 			Expect(err).To(BeNil())
 		})
 
@@ -428,16 +440,20 @@ var _ = Describe("Gateway", func() {
 		}
 
 		// common tests for all web handlers
-		assertHandler := func(handlerType string, handler http.HandlerFunc) {
-			It("should reject requests without Authorization header", func() {
+		It("should reject requests without Authorization header", func() {
+			for _, handler := range allHandlers(gateway) {
 				expectHandlerResponse(handler, unauthorizedRequest(nil), 401, response.NoWriteKeyInBasicAuth+"\n")
-			})
+			}
+		})
 
-			It("should reject requests without username in Authorization header", func() {
+		It("should reject requests without username in Authorization header", func() {
+			for _, handler := range allHandlers(gateway) {
 				expectHandlerResponse(handler, authorizedRequest(WriteKeyEmpty, nil), 401, response.NoWriteKeyInBasicAuth+"\n")
-			})
+			}
+		})
 
-			It("should reject requests without valid rudder event in request body", func() {
+		It("should reject requests without valid rudder event in request body", func() {
+			for handlerType, handler := range allHandlers(gateway) {
 				notRudderEvent := `[{"data": "valid-json","foo":"bar"}]`
 				if handlerType == "batch" || handlerType == "import" {
 					notRudderEvent = `{"batch": [[{"data": "valid-json","foo":"bar"}]]}`
@@ -445,26 +461,34 @@ var _ = Describe("Gateway", func() {
 				setAllowReqsWithoutUserIDAndAnonymousID(true)
 				expectHandlerResponse(handler, authorizedRequest(WriteKeyEnabled, bytes.NewBufferString(notRudderEvent)), 400, response.NotRudderEvent+"\n")
 				setAllowReqsWithoutUserIDAndAnonymousID(false)
-			})
+			}
+		})
 
-			It("should reject requests with both userId and anonymousId not present", func() {
+		It("should reject requests with both userId and anonymousId not present", func() {
+			for handlerType, handler := range allHandlers(gateway) {
 				validBody := `{"data": "valid-json"}`
 				if handlerType == "batch" || handlerType == "import" {
 					validBody = `{"batch": [{"data": "valid-json"}]}`
 				}
 				expectHandlerResponse(handler, authorizedRequest(WriteKeyEnabled, bytes.NewBufferString(validBody)), 400, response.NonIdentifiableRequest+"\n")
-			})
+			}
+		})
 
-			It("should reject requests without request body", func() {
+		It("should reject requests without request body", func() {
+			for _, handler := range allHandlers(gateway) {
 				expectHandlerResponse(handler, authorizedRequest(WriteKeyInvalid, nil), 400, response.RequestBodyNil+"\n")
-			})
+			}
+		})
 
-			It("should reject requests without valid json in request body", func() {
+		It("should reject requests without valid json in request body", func() {
+			for _, handler := range allHandlers(gateway) {
 				invalidBody := "not-a-valid-json"
 				expectHandlerResponse(handler, authorizedRequest(WriteKeyInvalid, bytes.NewBufferString(invalidBody)), 400, response.InvalidJSON+"\n")
-			})
+			}
+		})
 
-			It("should reject requests with request bodies larger than configured limit", func() {
+		It("should reject requests with request bodies larger than configured limit", func() {
+			for handlerType, handler := range allHandlers(gateway) {
 				data := make([]byte, gateway.MaxReqSize())
 				for i := range data {
 					data[i] = 'a'
@@ -479,67 +503,104 @@ var _ = Describe("Gateway", func() {
 				if handlerType != "audiencelist" {
 					expectHandlerResponse(handler, authorizedRequest(WriteKeyEnabled, bytes.NewBufferString(body)), 413, response.RequestBodyTooLarge+"\n")
 				}
-			})
+			}
+		})
 
-			It("should reject requests with invalid write keys", func() {
+		It("should reject requests with invalid write keys", func() {
+			for handlerType, handler := range allHandlers(gateway) {
 				validBody := `{"data":"valid-json"}`
 				if handlerType == "batch" || handlerType == "import" {
 					validBody = `{"batch":[{"data":"valid-json"}]}`
 				}
 				expectHandlerResponse(handler, authorizedRequest(WriteKeyInvalid, bytes.NewBufferString(validBody)), 401, response.InvalidWriteKey+"\n")
-			})
+			}
+		})
 
-			It("should reject requests with disabled write keys (source)", func() {
+		It("should reject requests with disabled write keys (source)", func() {
+			for handlerType, handler := range allHandlers(gateway) {
 				validBody := `{"data":"valid-json"}`
 				if handlerType == "batch" || handlerType == "import" {
 					validBody = `{"batch":[{"data":"valid-json"}]}`
 				}
 				expectHandlerResponse(handler, authorizedRequest(WriteKeyDisabled, bytes.NewBufferString(validBody)), 404, response.SourceDisabled+"\n")
-			})
-		}
+			}
+		})
 
-		for handlerType, handler := range allHandlers(gateway) {
-			Context(handlerType, func() {
-				assertHandler(handlerType, handler)
-			})
-		}
-
-		assertHandler = func(_ string, handler http.HandlerFunc) {
-			It("should reject requests with 500 if jobsdb store returns an error", func() {
-				validBody := createJSONBody("custom-property", "custom-value")
-
-				c.mockJobsDB.EXPECT().WithStoreSafeTx(gomock.Any()).Times(1).Do(func(f func(tx jobsdb.StoreSafeTx) error) {
-					_ = f(jobsdb.EmptyStoreSafeTx())
-				}).Return(nil)
-				c.mockJobsDB.
-					EXPECT().StoreWithRetryEachInTx(gomock.Any(), gomock.Any(), gomock.Any()).
-					DoAndReturn(jobsToJobsdbErrors).
-					Times(1)
-
-				expectHandlerResponse(handler, authorizedRequest(WriteKeyEnabled, bytes.NewBuffer(validBody)), 500, "tx error"+"\n")
-			})
-		}
-
-		for handlerType, handler := range allHandlers(gateway) {
-			Context(handlerType, func() {
+		It("should reject requests with 500 if jobsdb store returns an error", func() {
+			for handlerType, handler := range allHandlers(gateway) {
 				if handlerType != "import" {
-					assertHandler(handlerType, handler)
+					validBody := createJSONBody("custom-property", "custom-value")
+
+					c.mockJobsDB.EXPECT().WithStoreSafeTx(gomock.Any()).Times(1).Do(func(f func(tx jobsdb.StoreSafeTx) error) {
+						_ = f(jobsdb.EmptyStoreSafeTx())
+					}).Return(nil)
+					c.mockJobsDB.
+						EXPECT().StoreWithRetryEachInTx(gomock.Any(), gomock.Any(), gomock.Any()).
+						DoAndReturn(jobsToJobsdbErrors).
+						Times(1)
+
+					expectHandlerResponse(handler, authorizedRequest(WriteKeyEnabled, bytes.NewBuffer(validBody)), 500, "tx error"+"\n")
 				}
-			})
-		}
+			}
+		})
 	})
 
 	Context("Robots", func() {
-		gateway := &HandleT{}
+		var gateway *HandleT
 
 		BeforeEach(func() {
+			gateway = &HandleT{}
 			err := gateway.Setup(c.mockApp, c.mockBackendConfig, c.mockJobsDB, nil, c.mockVersionHandler, rsources.NewNoOpService())
+			Expect(err).To(BeNil())
+		})
+
+		AfterEach(func() {
+			err := gateway.Shutdown()
 			Expect(err).To(BeNil())
 		})
 
 		It("should return a robots.txt", func() {
 			expectHandlerResponse(gateway.robots, nil, 200, "User-agent: * \nDisallow: / \n")
 		})
+	})
+
+	Context("Warehouse proxy", func() {
+		DescribeTable("forwarding requests to warehouse with different response codes",
+			func(url string, code int, payload string) {
+				gateway := &HandleT{}
+				whMock := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					Expect(r.URL.String()).To(Equal(url))
+					Expect(r.Body)
+					Expect(r.Body).To(Not(BeNil()))
+					defer r.Body.Close()
+					reqBody, err := io.ReadAll(r.Body)
+					Expect(err).To(BeNil())
+					Expect(string(reqBody)).To(Equal(payload))
+					w.WriteHeader(code)
+				}))
+				err := os.Setenv("WAREHOUSE_URL", whMock.URL)
+				Expect(err).To(BeNil())
+				err = os.Setenv("RSERVER_WAREHOUSE_MODE", config.OffMode)
+				Expect(err).To(BeNil())
+				err = gateway.Setup(c.mockApp, c.mockBackendConfig, c.mockJobsDB, nil, c.mockVersionHandler, rsources.NewNoOpService())
+				Expect(err).To(BeNil())
+
+				defer func() {
+					err := gateway.Shutdown()
+					Expect(err).To(BeNil())
+					whMock.Close()
+				}()
+
+				req := httptest.NewRequest("POST", "http://rudder-server"+url, bytes.NewBufferString(payload))
+				w := httptest.NewRecorder()
+				gateway.whProxy.ServeHTTP(w, req)
+				resp := w.Result()
+				Expect(resp.StatusCode).To(Equal(code))
+			},
+			Entry("successful request", "/v1/warehouse/pending-events", http.StatusOK, `{"source_id": "1", "task_run_id":"2"}`),
+			Entry("failed request", "/v1/warehouse/pending-events", http.StatusBadRequest, `{"source_id": "3", "task_run_id":"4"}`),
+			Entry("request with query parameters", "/v1/warehouse/pending-events?triggerUpload=true", http.StatusOK, `{"source_id": "5", "task_run_id":"6"}`),
+		)
 	})
 })
 
@@ -592,16 +653,33 @@ func allHandlers(gateway *HandleT) map[string]http.HandlerFunc {
 }
 
 // converts a job list to a map of empty errors, to emulate a successful jobsdb.Store response
-func jobsToEmptyErrors(_ context.Context, _ jobsdb.StoreSafeTx, _ []*jobsdb.JobT) map[uuid.UUID]string {
-	return make(map[uuid.UUID]string)
+func jobsToEmptyErrors(_ context.Context, _ jobsdb.StoreSafeTx, _ []*jobsdb.JobT) (map[uuid.UUID]string, error) {
+	return make(map[uuid.UUID]string), nil
 }
 
 // converts a job list to a map of empty errors, to emulate a successful jobsdb.Store response
-func jobsToJobsdbErrors(_ context.Context, _ jobsdb.StoreSafeTx, jobs []*jobsdb.JobT) map[uuid.UUID]string {
+func jobsToJobsdbErrors(_ context.Context, _ jobsdb.StoreSafeTx, jobs []*jobsdb.JobT) (map[uuid.UUID]string, error) {
 	errorsMap := make(map[uuid.UUID]string, len(jobs))
 	for _, job := range jobs {
 		errorsMap[job.UUID] = "tx error"
 	}
 
-	return errorsMap
+	return errorsMap, nil
+}
+
+func TestContentTypeFunction(t *testing.T) {
+	expectedContentType := "application/json; charset=utf-8"
+	expectedStatus := http.StatusOK
+	nextHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// setting it custom to verify that next handler is called
+		w.WriteHeader(expectedStatus)
+	})
+	handlerToTest := WithContentType(expectedContentType, nextHandler)
+	respRecorder := httptest.NewRecorder()
+	req := httptest.NewRequest("GET", "http://testing", nil)
+
+	handlerToTest.ServeHTTP(respRecorder, req)
+	receivedContentType := respRecorder.Header()["Content-Type"][0]
+	require.Equal(t, expectedContentType, receivedContentType, "actual content type different than expected.")
+	require.Equal(t, expectedStatus, respRecorder.Code, "actual response code different than expected.")
 }

@@ -41,7 +41,7 @@ var (
 	readTimeout                 string
 	writeTimeout                string
 	compress                    bool
-	pkgLogger                   logger.LoggerI
+	pkgLogger                   logger.Logger
 	disableNullable             bool
 	execTimeOutInSeconds        time.Duration
 	commitTimeOutInSeconds      time.Duration
@@ -159,13 +159,13 @@ type CredentialsT struct {
 }
 
 type clickHouseStatT struct {
-	numRowsLoadFile       stats.RudderStats
-	downloadLoadFilesTime stats.RudderStats
-	syncLoadFileTime      stats.RudderStats
-	commitTime            stats.RudderStats
-	failRetries           stats.RudderStats
-	execTimeouts          stats.RudderStats
-	commitTimeouts        stats.RudderStats
+	numRowsLoadFile       stats.Measurement
+	downloadLoadFilesTime stats.Measurement
+	syncLoadFileTime      stats.Measurement
+	commitTime            stats.Measurement
+	failRetries           stats.Measurement
+	execTimeouts          stats.Measurement
+	commitTimeouts        stats.Measurement
 }
 
 // newClickHouseStat Creates a new clickHouseStatT instance
@@ -297,15 +297,14 @@ func ColumnsWithDataTypes(tableName string, columns map[string]string, notNullab
 	var arr []string
 	for columnName, dataType := range columns {
 		codec := getClickHouseCodecForColumnType(dataType, tableName)
-		columnType := getClickHouseColumnTypeForSpecificTable(tableName, columnName, rudderDataTypesMapToClickHouse[dataType], misc.ContainsString(notNullableColumns, columnName))
+		columnType := getClickHouseColumnTypeForSpecificTable(tableName, columnName, rudderDataTypesMapToClickHouse[dataType], misc.Contains(notNullableColumns, columnName))
 		arr = append(arr, fmt.Sprintf(`%q %s %s`, columnName, columnType, codec))
 	}
 	return strings.Join(arr, ",")
 }
 
 func getClickHouseCodecForColumnType(columnType, tableName string) string {
-	switch columnType {
-	case "datetime":
+	if columnType == "datetime" {
 		if disableNullable && !(tableName == warehouseutils.IdentifiesTable || tableName == warehouseutils.UsersTable) {
 			return "Codec(DoubleDelta, LZ4)"
 		}
@@ -352,6 +351,7 @@ func (ch *HandleT) DownloadLoadFiles(tableName string) ([]string, error) {
 			Provider:         storageProvider,
 			Config:           ch.Warehouse.Destination.Config,
 			UseRudderStorage: ch.Uploader.UseRudderStorage(),
+			WorkspaceID:      ch.Warehouse.Destination.WorkspaceID,
 		}),
 	})
 	if err != nil {
@@ -429,7 +429,7 @@ func (ch *HandleT) downloadLoadFile(object *warehouseutils.LoadFileT, tableName 
 	return fileName, err
 }
 
-func generateArgumentString(length int) string {
+func generateArgumentString(_ string, length int) string {
 	var args []string
 	for i := 0; i < length; i++ {
 		args = append(args, "?")
@@ -482,14 +482,6 @@ func castStringToArray(data, dataType string) interface{} {
 		if err != nil {
 			pkgLogger.Error("Error while unmarshalling data into array of bool: %s", err.Error())
 			return dataBool
-		}
-		dataInt := make([]int32, len(dataBool))
-		for _, val := range dataBool {
-			if val {
-				dataInt = append(dataInt, 1)
-			} else {
-				dataInt = append(dataInt, 0)
-			}
 		}
 		return dataBool
 	}
@@ -933,7 +925,7 @@ func (ch *HandleT) CreateSchema() (err error) {
 	return err
 }
 
-func (ch *HandleT) AlterColumn(string, string, string) (err error) {
+func (*HandleT) AlterColumn(_, _, _ string) (err error) {
 	return
 }
 
@@ -964,14 +956,14 @@ func (ch *HandleT) Setup(warehouse warehouseutils.WarehouseT, uploader warehouse
 	ch.Warehouse = warehouse
 	ch.Namespace = warehouse.Namespace
 	ch.Uploader = uploader
-	ch.stats = stats.DefaultStats
+	ch.stats = stats.Default
 	ch.ObjectStorage = warehouseutils.ObjectStorageType(warehouseutils.CLICKHOUSE, warehouse.Destination.Config, ch.Uploader.UseRudderStorage())
 
 	ch.Db, err = Connect(ch.getConnectionCredentials(), true)
 	return err
 }
 
-func (ch *HandleT) CrashRecover(_ warehouseutils.WarehouseT) (err error) {
+func (*HandleT) CrashRecover(_ warehouseutils.WarehouseT) (err error) {
 	return
 }
 
@@ -1054,19 +1046,19 @@ func (ch *HandleT) Cleanup() {
 	}
 }
 
-func (ch *HandleT) LoadIdentityMergeRulesTable() (err error) {
+func (*HandleT) LoadIdentityMergeRulesTable() (err error) {
 	return
 }
 
-func (ch *HandleT) LoadIdentityMappingsTable() (err error) {
+func (*HandleT) LoadIdentityMappingsTable() (err error) {
 	return
 }
 
-func (ch *HandleT) DownloadIdentityRules(*misc.GZipWriter) (err error) {
+func (*HandleT) DownloadIdentityRules(*misc.GZipWriter) (err error) {
 	return
 }
 
-func (ch *HandleT) IsEmpty(_ warehouseutils.WarehouseT) (empty bool, err error) {
+func (*HandleT) IsEmpty(_ warehouseutils.WarehouseT) (empty bool, err error) {
 	return
 }
 

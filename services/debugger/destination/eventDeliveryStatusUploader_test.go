@@ -174,8 +174,8 @@ func (c *eventDeliveryStatusUploaderContext) Setup() {
 }
 
 func initEventDeliveryStatusUploader() {
-	config.Load()
-	logger.Init()
+	config.Reset()
+	logger.Reset()
 	Init()
 }
 

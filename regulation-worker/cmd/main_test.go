@@ -392,7 +392,7 @@ func insertRedisData(t *testing.T, address string) {
 func insertMinioData(t *testing.T) {
 	t.Helper()
 
-	// getting list of files in `testData` directory while will be used to testing filemanager.
+	// getting list of files in `testData` directory which will be used to test filemanager.
 	err := filepath.Walk(searchDir, func(path string, f os.FileInfo, err error) error {
 		if regexRequiredSuffix.MatchString(path) {
 			fileList = append(fileList, path)

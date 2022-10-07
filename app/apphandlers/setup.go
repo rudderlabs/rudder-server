@@ -34,7 +34,7 @@ var (
 	asyncDestinations                                          []string
 	routerLoaded                                               utilsync.First
 	processorLoaded                                            utilsync.First
-	pkgLogger                                                  logger.LoggerI
+	pkgLogger                                                  logger.Logger
 	Diagnostics                                                diagnostics.DiagnosticsI
 	readonlyGatewayDB, readonlyRouterDB, readonlyBatchRouterDB jobsdb.ReadonlyHandleT
 	readonlyProcErrorDB                                        jobsdb.ReadonlyHandleT
@@ -47,7 +47,7 @@ type AppHandler interface {
 	StartRudderCore(context.Context, *app.Options) error
 }
 
-func GetAppHandler(application app.Interface, appType string, versionHandler func(w http.ResponseWriter, r *http.Request)) AppHandler {
+func GetAppHandler(application app.App, appType string, versionHandler func(w http.ResponseWriter, r *http.Request)) AppHandler {
 	var handler AppHandler
 	switch appType {
 	case app.GATEWAY:
@@ -178,8 +178,8 @@ func monitorDestRouters(ctx context.Context, routerFactory *router.Factory, batc
 	routerFactory.RouterDB.DeleteExecuting()
 	batchRouterFactory.RouterDB.DeleteExecuting()
 
-	for config := range ch {
-		sources := config.Data.(backendconfig.ConfigT)
+	for workspaceConfig := range ch {
+		sources := workspaceConfig.Data.(backendconfig.ConfigT)
 		enabledDestinations := make(map[string]bool)
 		for i := range sources.Sources {
 			source := &sources.Sources[i] // Copy of large value inside loop: CRT-P0006
@@ -187,9 +187,9 @@ func monitorDestRouters(ctx context.Context, routerFactory *router.Factory, batc
 				destination := &source.Destinations[k] // Copy of large value inside loop: CRT-P0006
 				enabledDestinations[destination.DestinationDefinition.Name] = true
 				// For batch router destinations
-				if misc.ContainsString(objectStorageDestinations, destination.DestinationDefinition.Name) ||
-					misc.ContainsString(warehouseutils.WarehouseDestinations, destination.DestinationDefinition.Name) ||
-					misc.ContainsString(asyncDestinations, destination.DestinationDefinition.Name) {
+				if misc.Contains(objectStorageDestinations, destination.DestinationDefinition.Name) ||
+					misc.Contains(warehouseutils.WarehouseDestinations, destination.DestinationDefinition.Name) ||
+					misc.Contains(asyncDestinations, destination.DestinationDefinition.Name) {
 					_, ok := dstToBatchRouter[destination.DestinationDefinition.Name]
 					if !ok {
 						pkgLogger.Info("Starting a new Batch Destination Router ", destination.DestinationDefinition.Name)
@@ -199,13 +199,14 @@ func monitorDestRouters(ctx context.Context, routerFactory *router.Factory, batc
 						dstToBatchRouter[destination.DestinationDefinition.Name] = brt
 					}
 				} else {
-					_, ok := dstToRouter[destination.DestinationDefinition.Name]
+					routerIdentifier := destination.DestinationDefinition.Name
+					_, ok := dstToRouter[routerIdentifier]
 					if !ok {
-						pkgLogger.Info("Starting a new Destination ", destination.DestinationDefinition.Name)
-						router := routerFactory.New(destination.DestinationDefinition)
-						router.Start()
-						cleanup = append(cleanup, router.Shutdown)
-						dstToRouter[destination.DestinationDefinition.Name] = router
+						pkgLogger.Infof("Starting a new Destination: %s", routerIdentifier)
+						rt := routerFactory.New(destination, routerIdentifier)
+						rt.Start()
+						cleanup = append(cleanup, rt.Shutdown)
+						dstToRouter[routerIdentifier] = rt
 					}
 				}
 			}
@@ -229,15 +230,15 @@ func NewRsourcesService(deploymentType deployment.Type) (rsources.JobService, er
 	var rsourcesConfig rsources.JobServiceConfig
 	rsourcesConfig.MaxPoolSize = config.GetInt("Rsources.PoolSize", 5)
 	rsourcesConfig.LocalConn = jobsdb.GetConnectionString()
-	rsourcesConfig.LocalHostname = config.GetEnv("JOBS_DB_HOST", "localhost")
-	rsourcesConfig.SharedConn = config.GetEnv("SHARED_DB_DSN", "")
+	rsourcesConfig.LocalHostname = config.GetString("DB.host", "localhost")
+	rsourcesConfig.SharedConn = config.GetString("SharedDB.dsn", "")
 	rsourcesConfig.SkipFailedRecordsCollection = !config.GetBool("Router.failedKeysEnabled", false)
 
 	if deploymentType == deployment.MultiTenantType {
 		// For multitenant deployment type we shall require the existence of a SHARED_DB
 		// TODO: change default value of Rsources.FailOnMissingSharedDB to true, when shared DB is provisioned
 		if rsourcesConfig.SharedConn == "" && config.GetBool("Rsources.FailOnMissingSharedDB", false) {
-			return nil, fmt.Errorf("deployment type %s requires SHARED_DB_DSN to be provided", deploymentType)
+			return nil, fmt.Errorf("deployment type %s requires SharedDB.dsn to be provided", deploymentType)
 		}
 	}
 

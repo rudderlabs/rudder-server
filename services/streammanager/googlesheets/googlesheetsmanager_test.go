@@ -15,6 +15,7 @@ import (
 
 	"github.com/golang/mock/gomock"
 	"github.com/ory/dockertest/v3"
+	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	mock_logger "github.com/rudderlabs/rudder-server/mocks/utils/logger"
 	"github.com/rudderlabs/rudder-server/services/streammanager/common"
 	"github.com/rudderlabs/rudder-server/testhelper"
@@ -38,22 +39,23 @@ const (
 
 func Test_Timeout(t *testing.T) {
 	mockCtrl := gomock.NewController(t)
-	mockLogger := mock_logger.NewMockLoggerI(mockCtrl)
+	mockLogger := mock_logger.NewMockLogger(mockCtrl)
 	mockLogger.EXPECT().Errorf(gomock.Any(), gomock.Any()).AnyTimes()
 	pkgLogger = mockLogger
 
-	config := Config{
-		SheetId:     sheetId,
-		SheetName:   sheetName,
-		DestID:      destinationId,
-		Credentials: "",
-		EventKeyMap: []map[string]string{
+	config := map[string]interface{}{
+		"SheetId":     sheetId,
+		"SheetName":   sheetName,
+		"DestID":      destinationId,
+		"Credentials": "",
+		"EventKeyMap": []map[string]string{
 			{"to": header1},
 			{"to": header2},
 		},
-		TestConfig: testConfig,
+		"TestConfig": testConfig,
 	}
-	producer, err := NewProducer(config, common.Opts{Timeout: 10 * time.Second})
+	destination := backendconfig.DestinationT{Config: config}
+	producer, err := NewProducer(&destination, common.Opts{Timeout: 10 * time.Second})
 	if err != nil {
 		t.Fatalf(" %+v", err)
 	}

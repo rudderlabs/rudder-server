@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"math/rand"
-	"strconv"
 	"time"
 
 	"github.com/allisson/go-pglock/v2"
@@ -29,15 +28,15 @@ var (
 	trackBatchInterval time.Duration
 	maxPollSleep       time.Duration
 	jobOrphanTimeout   time.Duration
-	pkgLogger          logger.LoggerI
+	pkgLogger          logger.Logger
 )
 
 var (
 	pgNotifierDBhost, pgNotifierDBuser, pgNotifierDBpassword, pgNotifierDBname, pgNotifierDBsslmode          string
 	pgNotifierDBport                                                                                         int
-	pgNotifierPublish, pgNotifierPublishTime                                                                 stats.RudderStats
-	pgNotifierClaimSucceeded, pgNotifierClaimSucceededTime, pgNotifierClaimFailed, pgNotifierClaimFailedTime stats.RudderStats
-	pgNotifierClaimUpdateFailed                                                                              stats.RudderStats
+	pgNotifierPublish, pgNotifierPublishTime                                                                 stats.Measurement
+	pgNotifierClaimSucceeded, pgNotifierClaimSucceededTime, pgNotifierClaimFailed, pgNotifierClaimFailedTime stats.Measurement
+	pgNotifierClaimUpdateFailed                                                                              stats.Measurement
 )
 
 const (
@@ -84,12 +83,12 @@ type ClaimResponseT struct {
 }
 
 func loadPGNotifierConfig() {
-	pgNotifierDBhost = config.GetEnv("PGNOTIFIER_DB_HOST", "localhost")
-	pgNotifierDBuser = config.GetEnv("PGNOTIFIER_DB_USER", "ubuntu")
-	pgNotifierDBname = config.GetEnv("PGNOTIFIER_DB_NAME", "ubuntu")
-	pgNotifierDBport, _ = strconv.Atoi(config.GetEnv("PGNOTIFIER_DB_PORT", "5432"))
-	pgNotifierDBpassword = config.GetEnv("PGNOTIFIER_DB_PASSWORD", "ubuntu") // Reading secrets from
-	pgNotifierDBsslmode = config.GetEnv("PGNOTIFIER_DB_SSL_MODE", "disable")
+	pgNotifierDBhost = config.GetString("PGNOTIFIER_DB_HOST", "localhost")
+	pgNotifierDBuser = config.GetString("PGNOTIFIER_DB_USER", "ubuntu")
+	pgNotifierDBname = config.GetString("PGNOTIFIER_DB_NAME", "ubuntu")
+	pgNotifierDBport = config.GetInt("PGNOTIFIER_DB_PORT", 5432)
+	pgNotifierDBpassword = config.GetString("PGNOTIFIER_DB_PASSWORD", "ubuntu") // Reading secrets from
+	pgNotifierDBsslmode = config.GetString("PGNOTIFIER_DB_SSL_MODE", "disable")
 	config.RegisterIntConfigVariable(3, &maxAttempt, false, 1, "PgNotifier.maxAttempt")
 	trackBatchInterval = time.Duration(config.GetInt("PgNotifier.trackBatchIntervalInS", 2)) * time.Second
 	config.RegisterDurationConfigVariable(5000, &maxPollSleep, true, time.Millisecond, "PgNotifier.maxPollSleep")
@@ -153,10 +152,10 @@ func (notifier PgNotifierT) ClearJobs(ctx context.Context) (err error) {
 
 // CheckForPGNotifierEnvVars Checks if all the required Env Variables for PG Notifier are present
 func CheckForPGNotifierEnvVars() bool {
-	return config.IsEnvSet("PGNOTIFIER_DB_HOST") &&
-		config.IsEnvSet("PGNOTIFIER_DB_USER") &&
-		config.IsEnvSet("PGNOTIFIER_DB_NAME") &&
-		config.IsEnvSet("PGNOTIFIER_DB_PASSWORD")
+	return config.IsSet("PGNOTIFIER_DB_HOST") &&
+		config.IsSet("PGNOTIFIER_DB_USER") &&
+		config.IsSet("PGNOTIFIER_DB_NAME") &&
+		config.IsSet("PGNOTIFIER_DB_PASSWORD")
 }
 
 // GetPGNotifierConnectionString Returns PG Notifier DB Connection Configuration
@@ -234,7 +233,7 @@ func (notifier *PgNotifierT) UpdateClaimedEvent(claim *ClaimT, response *ClaimRe
 
 		// Sending stats when we mark pg_notifier status as aborted.
 		if claim.Attempt > maxAttempt {
-			stats.NewTaggedStat("pg_notifier_aborted_records", stats.CountType, map[string]string{
+			stats.Default.NewTaggedStat("pg_notifier_aborted_records", stats.CountType, map[string]string{
 				"queueName": queueName,
 				"workspace": claim.Workspace,
 				"module":    "pg_notifier",
@@ -395,7 +394,7 @@ func (notifier *PgNotifierT) Publish(jobs []JobPayload, schema *whUtils.SchemaT,
 	}
 
 	pkgLogger.Infof("PgNotifier: Inserted %d records into %s as batch: %s", len(jobs), queueName, batchID)
-	stats.NewTaggedStat("pg_notifier_insert_records", stats.CountType, map[string]string{
+	stats.Default.NewTaggedStat("pg_notifier_insert_records", stats.CountType, map[string]string{
 		"queueName": queueName,
 		"module":    "pg_notifier",
 	}).Count(len(jobs))

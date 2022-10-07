@@ -18,6 +18,7 @@ import (
 	. "github.com/onsi/gomega"
 	"github.com/ory/dockertest/v3"
 	"github.com/ory/dockertest/v3/docker"
+	"github.com/rudderlabs/rudder-server/config"
 )
 
 type postgresResource struct {
@@ -454,11 +455,11 @@ var _ = Describe("Using sources handler", Ordered, func() {
 			Expect(err).NotTo(HaveOccurred())
 			_, err = stmt.Exec(ts)
 			Expect(err).NotTo(HaveOccurred())
-			defer stmt.Close()
+			defer func() { _ = stmt.Close() }()
 			stmt2, err := resource.db.Prepare(`update "rsources_failed_keys" set ts = $1`)
 			Expect(err).NotTo(HaveOccurred())
 			_, err = stmt2.Exec(ts)
-			defer stmt2.Close()
+			defer func() { _ = stmt2.Close() }()
 			Expect(err).NotTo(HaveOccurred())
 
 			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Minute)
@@ -698,6 +699,82 @@ var _ = Describe("Using sources handler", Ordered, func() {
 		})
 	})
 
+	Context("monitoring lag when shared db is configured", func() {
+		var (
+			pool     *dockertest.Pool
+			network  *docker.Network
+			pgA, pgB postgresResource
+			configA  JobServiceConfig
+			serviceA JobService
+		)
+
+		BeforeAll(func() {
+			var err error
+			pool, err = dockertest.NewPool("")
+			Expect(err).NotTo(HaveOccurred())
+			const networkId = "TestMultitenantSourcesHandler"
+			network, _ = pool.Client.NetworkInfo(networkId)
+			if network == nil {
+				network, err = pool.Client.CreateNetwork(docker.CreateNetworkOptions{Name: networkId})
+				Expect(err).NotTo(HaveOccurred())
+			}
+			for containerID := range network.Containers { // Remove any containers left from previous runs
+				_ = pool.Client.RemoveContainer(docker.RemoveContainerOptions{ID: containerID, Force: true, RemoveVolumes: true})
+			}
+
+			pgA = newDBResource(pool, network.ID, "postgres-1", "wal_level=logical")
+			pgB = newDBResource(pool, network.ID, "postgres-2")
+
+			configA = JobServiceConfig{
+				LocalHostname:          "postgres-1",
+				MaxPoolSize:            1,
+				LocalConn:              pgA.externalDSN,
+				SharedConn:             pgB.externalDSN,
+				SubscriptionTargetConn: pgA.internalDSN,
+			}
+			serviceA = createService(configA)
+		})
+
+		AfterAll(func() {
+			if network != nil {
+				_ = pool.Client.RemoveNetwork(network.ID)
+			}
+			if pgA.resource != nil {
+				purgeResource(pool, pgA.resource, pgB.resource)
+			}
+		})
+
+		It("should be able to monitor lag when shared db is configured", func() {
+			lagGauge := new(mockGauge)
+			replicationSlotGauge := new(mockGauge)
+			config.Set("Rsources.stats.monitoringInterval", 10*time.Millisecond)
+			defer config.Reset()
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			go serviceA.Monitor(ctx, lagGauge, replicationSlotGauge)
+
+			Eventually(func() bool {
+				return replicationSlotGauge.value() == int64(1) && lagGauge.wasGauged()
+			}, "30s", "500ms").Should(BeTrue(), "should have one replication slot and some non-nil lag")
+		})
+
+		It("unavailability of shared db is handled via -1 replication slot gauge", func() {
+			pgB.resource.Close()
+
+			lagGauge := new(mockGauge)
+			replicationSlotGauge := new(mockGauge)
+			// kill shared db
+			config.Set("Rsources.stats.monitoringInterval", 10*time.Millisecond)
+			defer config.Reset()
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			go serviceA.Monitor(ctx, lagGauge, replicationSlotGauge)
+			Eventually(func() bool {
+				return lagGauge.value() == float64(-1)
+			}, "30s", "1s").Should(BeTrue(), "should have -1 replication slot")
+		})
+	})
+
 	Context("adding failed_keys to the publication alongside stats", Ordered, func() {
 		It("should be able to add rsources_failed_keys table to the publication and subscription seamlessly", func() {
 			pool, err := dockertest.NewPool("")
@@ -744,11 +821,11 @@ var _ = Describe("Using sources handler", Ordered, func() {
 			// Setting up previous environment before adding failedkeys table to the publication
 			// setup databases
 			databaseA := getDB(configA.LocalConn, configA.MaxPoolSize)
-			defer databaseA.Close()
+			defer func() { _ = databaseA.Close() }()
 			databaseB := getDB(configB.LocalConn, configB.MaxPoolSize)
-			defer databaseB.Close()
+			defer func() { _ = databaseB.Close() }()
 			databaseC := getDB(configB.SharedConn, configB.MaxPoolSize) // shared
-			defer databaseC.Close()
+			defer func() { _ = databaseC.Close() }()
 
 			// create tables
 			err = setupStatsTable(context.Background(), databaseA, configA.LocalHostname)
@@ -831,6 +908,25 @@ var _ = Describe("Using sources handler", Ordered, func() {
 	})
 })
 
+// mock Gauges
+type mockGauge struct {
+	gauge  interface{}
+	gauged bool
+}
+
+func (g *mockGauge) Gauge(value interface{}) {
+	g.gauge = value
+	g.gauged = true
+}
+
+func (g *mockGauge) value() interface{} {
+	return g.gauge
+}
+
+func (g *mockGauge) wasGauged() bool {
+	return g.gauged
+}
+
 func createService(config JobServiceConfig) JobService {
 	service, err := NewJobService(config)
 	Expect(err).NotTo(HaveOccurred(), "it should be able to create the service")
@@ -889,19 +985,19 @@ func newDBResource(pool *dockertest.Pool, networkId, hostname string, params ...
 	port := resource.GetPort("5432/tcp")
 	externalDSN := fmt.Sprintf("postgres://rudder:password@localhost:%s/%s?sslmode=disable", port, database)
 	internalDSN := fmt.Sprintf("postgres://rudder:password@%s:5432/%s?sslmode=disable", hostname, database)
-	var db *sql.DB
+	var (
+		db  *sql.DB
+		dsn = fmt.Sprintf("host=localhost port=%s user=rudder password=password dbname=jobsdb sslmode=disable", port)
+	)
 	// exponential backoff-retry, because the application in the container might not be ready to accept connections yet
-	if err := pool.Retry(func() error {
-		var err error
-		db, err = sql.Open("postgres", fmt.Sprintf(
-			"host=localhost port=%s user=rudder password=password dbname=jobsdb sslmode=disable",
-			port))
+	if err := pool.Retry(func() (err error) {
+		db, err = sql.Open("postgres", dsn)
 		if err != nil {
 			return err
 		}
 		return db.Ping()
 	}); err != nil {
-		Expect(err).NotTo(HaveOccurred())
+		Expect(err).NotTo(HaveOccurred(), dsn)
 	}
 	return postgresResource{
 		db:          db,

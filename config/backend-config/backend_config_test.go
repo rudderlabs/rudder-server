@@ -23,6 +23,7 @@ import (
 )
 
 var sampleBackendConfig = ConfigT{
+	WorkspaceID: "sampleWorkspaceID",
 	Sources: []SourceT{
 		{
 			ID:       "1",
@@ -103,10 +104,7 @@ func TestBadResponse(t *testing.T) {
 			ConfigBackendURL: parsedURL,
 			Namespace:        "some-namespace",
 			Client:           http.DefaultClient,
-			Logger:           &logger.NOP{},
-		},
-		"multi-tenant": &multiTenantWorkspacesConfig{
-			configBackendURL: parsedURL,
+			Logger:           logger.NOP,
 		},
 		"single-workspace": &singleWorkspaceConfig{
 			configBackendURL: parsedURL,
@@ -116,7 +114,7 @@ func TestBadResponse(t *testing.T) {
 	for name, conf := range configs {
 		t.Run(name, func(t *testing.T) {
 			ctx := context.Background()
-			pkgLogger = &logger.NOP{}
+			pkgLogger = logger.NOP
 			atomic.StoreInt32(&calls, 0)
 
 			bc := &backendConfigImpl{
@@ -141,6 +139,7 @@ func TestBadResponse(t *testing.T) {
 }
 
 func TestNewForDeployment(t *testing.T) {
+	initBackendConfig()
 	t.Run("dedicated", func(t *testing.T) {
 		t.Setenv("WORKSPACE_TOKEN", "foobar")
 		conf, err := newForDeployment(deployment.DedicatedType, nil)
@@ -152,17 +151,6 @@ func TestNewForDeployment(t *testing.T) {
 	})
 
 	t.Run("multi-tenant", func(t *testing.T) {
-		t.Setenv("HOSTED_SERVICE_SECRET", "foobar")
-		conf, err := newForDeployment(deployment.MultiTenantType, nil)
-		require.NoError(t, err)
-
-		cb, ok := conf.(*backendConfigImpl)
-		require.True(t, ok)
-		_, ok = cb.workspaceConfig.(*multiTenantWorkspacesConfig)
-		require.True(t, ok)
-	})
-
-	t.Run("multi-tenant-with-namespace", func(t *testing.T) {
 		t.Setenv("WORKSPACE_NAMESPACE", "spaghetti")
 		t.Setenv("HOSTED_SERVICE_SECRET", "foobar")
 		conf, err := newForDeployment(deployment.MultiTenantType, nil)
@@ -194,7 +182,7 @@ func TestConfigUpdate(t *testing.T) {
 
 		wc := NewMockworkspaceConfig(ctrl)
 		wc.EXPECT().Get(gomock.Eq(ctx), workspaces).Return(ConfigT{}, fakeError).Times(1)
-		statConfigBackendError := stats.DefaultStats.NewStat("config_backend.errors", stats.CountType)
+		statConfigBackendError := stats.Default.NewStat("config_backend.errors", stats.CountType)
 
 		bc := &backendConfigImpl{workspaceConfig: wc}
 		bc.configUpdate(ctx, statConfigBackendError, workspaces)
@@ -211,7 +199,7 @@ func TestConfigUpdate(t *testing.T) {
 
 		wc := NewMockworkspaceConfig(ctrl)
 		wc.EXPECT().Get(gomock.Eq(ctx), workspaces).Return(sampleBackendConfig, nil).Times(1)
-		statConfigBackendError := stats.DefaultStats.NewStat("config_backend.errors", stats.CountType)
+		statConfigBackendError := stats.Default.NewStat("config_backend.errors", stats.CountType)
 
 		bc := &backendConfigImpl{
 			workspaceConfig: wc,
@@ -232,7 +220,7 @@ func TestConfigUpdate(t *testing.T) {
 
 		wc := NewMockworkspaceConfig(ctrl)
 		wc.EXPECT().Get(gomock.Eq(ctx), workspaces).Return(sampleBackendConfig, nil).Times(1)
-		statConfigBackendError := stats.DefaultStats.NewStat("config_backend.errors", stats.CountType)
+		statConfigBackendError := stats.Default.NewStat("config_backend.errors", stats.CountType)
 
 		pubSub := pubsub.PublishSubscriber{}
 		bc := &backendConfigImpl{
@@ -314,7 +302,7 @@ func TestWaitForConfig(t *testing.T) {
 		)
 		defer ctrl.Finish()
 
-		pkgLogger = &logger.NOP{}
+		pkgLogger = logger.NOP
 		pollInterval = time.Millisecond
 		bc := &backendConfigImpl{initialized: false}
 
@@ -341,10 +329,9 @@ func TestWaitForConfig(t *testing.T) {
 }
 
 func initBackendConfig() {
-	config.Load()
+	config.Reset()
 	adminpkg.Init()
 	diagnostics.Init()
-	logger.Init()
-	stats.Setup()
+	logger.Reset()
 	Init()
 }

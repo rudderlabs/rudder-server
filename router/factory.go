@@ -7,6 +7,22 @@ import (
 	"github.com/rudderlabs/rudder-server/services/transientsource"
 )
 
+type destinationConfig struct {
+	name          string
+	responseRules map[string]interface{}
+	config        map[string]interface{}
+	destinationID string
+}
+
+func getRouterConfig(destination *backendconfig.DestinationT, identifier string) destinationConfig {
+	return destinationConfig{
+		name:          destination.DestinationDefinition.Name,
+		destinationID: identifier,
+		config:        destination.DestinationDefinition.Config,
+		responseRules: destination.DestinationDefinition.ResponseRules,
+	}
+}
+
 type Factory struct {
 	Reporting        reporter
 	Multitenant      tenantStats
@@ -17,11 +33,12 @@ type Factory struct {
 	RsourcesService  rsources.JobService
 }
 
-func (f *Factory) New(destinationDefinition backendconfig.DestinationDefinitionT) *HandleT {
+func (f *Factory) New(destination *backendconfig.DestinationT, identifier string) *HandleT {
 	r := &HandleT{
 		Reporting:    f.Reporting,
 		MultitenantI: f.Multitenant,
 	}
-	r.Setup(f.BackendConfig, f.RouterDB, f.ProcErrorDB, destinationDefinition, f.TransientSources, f.RsourcesService)
+	destConfig := getRouterConfig(destination, identifier)
+	r.Setup(f.BackendConfig, f.RouterDB, f.ProcErrorDB, destConfig, f.TransientSources, f.RsourcesService)
 	return r
 }

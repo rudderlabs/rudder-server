@@ -11,12 +11,15 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/rudderlabs/rudder-server/config"
+	"github.com/rudderlabs/rudder-server/services/controlplane/identity"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 )
 
 func Test_Namespace_SetUp(t *testing.T) {
 	var (
-		client           = &namespaceConfig{}
+		client = &namespaceConfig{
+			Logger: logger.NOP,
+		}
 		configBackendURL = "https://api.test.rudderlabs.com"
 	)
 	parsedConfigBackendURL, err := url.Parse(configBackendURL)
@@ -34,8 +37,8 @@ func Test_Namespace_SetUp(t *testing.T) {
 }
 
 func Test_Namespace_Get(t *testing.T) {
-	config.Load()
-	logger.Init()
+	config.Reset()
+	logger.Reset()
 
 	var (
 		namespace    = "free-us-1"
@@ -55,7 +58,7 @@ func Test_Namespace_Get(t *testing.T) {
 	require.NoError(t, err)
 
 	client := &namespaceConfig{
-		Logger: logger.NewLogger(),
+		Logger: logger.NOP,
 
 		Client:           ts.Client(),
 		ConfigBackendURL: httpSrvURL,
@@ -128,6 +131,45 @@ func Test_Namespace_Get(t *testing.T) {
 		require.EqualError(t, err, "backend config request failed with 404")
 		require.Empty(t, c)
 	})
+}
+
+func Test_Namespace_Identity(t *testing.T) {
+	config.Reset()
+	logger.Reset()
+
+	var (
+		namespace = "free-us-1"
+		secret    = "service-secret"
+	)
+
+	be := &backendConfigServer{
+		token: secret,
+	}
+
+	ts := httptest.NewServer(be)
+	defer ts.Close()
+	httpSrvURL, err := url.Parse(ts.URL)
+	require.NoError(t, err)
+
+	client := &namespaceConfig{
+		Logger: logger.NOP,
+
+		Client:           ts.Client(),
+		ConfigBackendURL: httpSrvURL,
+
+		Namespace: namespace,
+
+		HostedServiceSecret: "service-secret",
+		cpRouterURL:         cpRouterURL,
+	}
+	require.NoError(t, client.SetUp())
+
+	ident := client.Identity()
+
+	require.Equal(t, &identity.Namespace{
+		Namespace:    namespace,
+		HostedSecret: secret,
+	}, ident)
 }
 
 type backendConfigServer struct {

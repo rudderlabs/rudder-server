@@ -20,7 +20,6 @@ import (
 	"github.com/rudderlabs/rudder-server/app"
 	"github.com/rudderlabs/rudder-server/app/cluster/state"
 	"github.com/rudderlabs/rudder-server/config"
-	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/testhelper"
 	thEtcd "github.com/rudderlabs/rudder-server/testhelper/etcd"
 	"github.com/rudderlabs/rudder-server/utils/logger"
@@ -81,9 +80,8 @@ func blockOnHold() {
 }
 
 func Init() {
-	config.Load()
-	stats.Setup()
-	logger.Init()
+	config.Reset()
+	logger.Reset()
 }
 
 func Test_Ping(t *testing.T) {
@@ -238,7 +236,7 @@ func Test_Workspaces(t *testing.T) {
 			},
 		}
 		defer provider.Close()
-		appType := strings.ToUpper(config.GetEnv("APP_TYPE", app.PROCESSOR))
+		appType := strings.ToUpper(config.GetString("APP_TYPE", app.PROCESSOR))
 		requestKey := fmt.Sprintf("/%s/SERVER/%s/%s/WORKSPACES", provider.Config.ReleaseName,
 			provider.Config.ServerIndex, appType)
 
@@ -263,7 +261,7 @@ func Test_Workspaces(t *testing.T) {
 	}
 	defer provider.Close()
 
-	appType := strings.ToUpper(config.GetEnv("APP_TYPE", app.PROCESSOR))
+	appType := strings.ToUpper(config.GetString("APP_TYPE", app.PROCESSOR))
 	requestKey := fmt.Sprintf("/%s/SERVER/%s/%s/WORKSPACES", provider.Config.ReleaseName, provider.Config.ServerIndex,
 		appType)
 
