@@ -205,5 +205,6 @@ require (
 
 require (
 	github.com/foxcpp/go-mockdns v1.0.0
+	github.com/viney-shih/go-lock v1.1.2
 	github.com/zenizh/go-capturer v0.0.0-20211219060012-52ea6c8fed04
 )
