@@ -2,7 +2,7 @@
 -- wh_staging_files
 --
 
-CREATE TABLE wh_async_jobs (
+CREATE TABLE IF NOT EXISTS wh_async_jobs (
     id BIGSERIAL PRIMARY KEY,
     source_id character varying(64) NOT NULL,
     destination_id character varying(64) NOT NULL,
@@ -16,4 +16,4 @@ CREATE TABLE wh_async_jobs (
     attempt integer DEFAULT 0
 );
 
-CREATE UNIQUE INDEX asyncjobindex ON wh_async_jobs (source_id,destination_id, (metadata->>'job_run_id'),(metadata->>'task_run_id'),tablename) WHERE metadata->>'job_run_id'!='' AND metadata->>'task_run_id'!='' ;
+CREATE UNIQUE INDEX IF NOT EXISTS asyncjobindex ON wh_async_jobs (source_id,destination_id, (metadata->>'job_run_id'),(metadata->>'task_run_id'),tablename) WHERE metadata->>'job_run_id'!='' AND metadata->>'task_run_id'!='' ;
