@@ -6,13 +6,14 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"io"
 	"io/ioutil"
 	"os"
 	"strings"
 	"testing"
 	"time"
+
+	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/services/filemanager"
@@ -91,7 +92,6 @@ func (factory *TestFileManagerFactory) New(settings *filemanager.SettingsT) (fil
 }
 
 func TestStagingFileCreatesLoadObjects(t *testing.T) {
-
 	setup()
 	t.Setenv("RUDDER_TMPDIR", "testdata") // use the testdata local directory.
 	// TODO: Write mainly implementation for the filemanager
@@ -154,7 +154,6 @@ func TestStagingFileCreatesLoadObjects(t *testing.T) {
 }
 
 func compareLoadFiles(baseDir string, inputFiles map[string]string) (bool, error) {
-
 	generatedFiles, err := ioutil.ReadDir(baseDir)
 	if err != nil {
 		return false, err
@@ -187,7 +186,6 @@ func compareLoadFiles(baseDir string, inputFiles map[string]string) (bool, error
 }
 
 func sameFile(loc1, loc2 string) (bool, error) {
-
 	byt1, err := ioutil.ReadFile(loc1)
 	if err != nil {
 		return false, fmt.Errorf("unable to read complete file: %s, err: %w", loc1, err)
@@ -211,7 +209,6 @@ func setup() {
 }
 
 func BenchmarkEventLoaders(b *testing.B) {
-
 	setup()
 	b.Setenv("RUDDER_TMPDIR", "testdata") // use the testdata local directory.
 	// TODO: Write mainly implementation for the filemanager

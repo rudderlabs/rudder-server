@@ -5,8 +5,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/rudderlabs/rudder-server/services/filemanager"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
+	"github.com/rudderlabs/rudder-server/services/filemanager"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
