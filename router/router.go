@@ -1444,7 +1444,7 @@ func (rt *HandleT) commitStatusList(responseList *[]jobResponseT) {
 		}
 		// Update the status
 		err := misc.RetryWithNotify(context.Background(), rt.jobsDBCommandTimeout, rt.jobdDBMaxRetries, func(ctx context.Context) error {
-			return rt.jobsDB.WithUpdateSafeTx(func(tx jobsdb.UpdateSafeTx) error {
+			return rt.jobsDB.WithUpdateSafeTx(ctx, func(tx jobsdb.UpdateSafeTx) error {
 				err := rt.jobsDB.UpdateJobStatusInTx(ctx, tx, statusList, []string{rt.destName}, nil)
 				if err != nil {
 					return fmt.Errorf("updating %s jobs statuses: %w", rt.destName, err)
@@ -1894,7 +1894,7 @@ func (rt *HandleT) readAndProcess() int {
 		// REPORTING - ROUTER - END
 
 		err = misc.RetryWithNotify(context.Background(), rt.jobsDBCommandTimeout, rt.jobdDBMaxRetries, func(ctx context.Context) error {
-			return rt.jobsDB.WithUpdateSafeTx(func(tx jobsdb.UpdateSafeTx) error {
+			return rt.jobsDB.WithUpdateSafeTx(ctx, func(tx jobsdb.UpdateSafeTx) error {
 				err := rt.jobsDB.UpdateJobStatusInTx(ctx, tx, drainList, []string{rt.destName}, nil)
 				if err != nil {
 					return fmt.Errorf("marking %s job statuses as aborted: %w", rt.destName, err)

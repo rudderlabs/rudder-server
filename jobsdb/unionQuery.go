@@ -21,7 +21,7 @@ type MultiTenantHandleT struct {
 type MultiTenantJobsDB interface {
 	GetAllJobs(context.Context, map[string]int, GetQueryParamsT, int) ([]*JobT, error)
 
-	WithUpdateSafeTx(func(tx UpdateSafeTx) error) error
+	WithUpdateSafeTx(context.Context, func(tx UpdateSafeTx) error) error
 	UpdateJobStatusInTx(ctx context.Context, tx UpdateSafeTx, statusList []*JobStatusT, customValFilters []string, parameterFilters []ParameterFilterT) error
 	UpdateJobStatus(ctx context.Context, statusList []*JobStatusT, customValFilters []string, parameterFilters []ParameterFilterT) error
 
@@ -67,9 +67,14 @@ func (mj *MultiTenantHandleT) GetAllJobs(ctx context.Context, workspaceCount map
 	// The order of lock is very important. The migrateDSLoop
 	// takes lock in this order so reversing this will cause
 	// deadlocks
-	mj.dsMigrationLock.RLock()
-	mj.dsListLock.RLock()
+	if !mj.dsMigrationLock.RTryLockWithCtx(ctx) {
+		return nil, fmt.Errorf("could not acquire a migration read lock: %w", ctx.Err())
+	}
 	defer mj.dsMigrationLock.RUnlock()
+
+	if !mj.dsListLock.RTryLockWithCtx(ctx) {
+		return nil, fmt.Errorf("could not acquire a dslist read lock: %w", ctx.Err())
+	}
 	defer mj.dsListLock.RUnlock()
 
 	dsList := mj.getDSList()
