@@ -13,7 +13,7 @@ require (
 	github.com/Nvveen/Gotty v0.0.0-20120604004816-cd527374f1e5 // indirect
 	github.com/allisson/go-pglock/v2 v2.0.1
 	github.com/araddon/dateparse v0.0.0-20190622164848-0fb0a474d195
-	github.com/aws/aws-sdk-go v1.44.110
+	github.com/aws/aws-sdk-go v1.44.113
 	github.com/bugsnag/bugsnag-go/v2 v2.1.2
 	github.com/cenkalti/backoff v2.2.1+incompatible
 	github.com/cenkalti/backoff/v4 v4.1.3
@@ -205,5 +205,6 @@ require (
 
 require (
 	github.com/foxcpp/go-mockdns v1.0.0
+	github.com/viney-shih/go-lock v1.1.2
 	github.com/zenizh/go-capturer v0.0.0-20211219060012-52ea6c8fed04
 )
