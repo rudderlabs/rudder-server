@@ -4,17 +4,9 @@ import (
 	"bufio"
 	"compress/gzip"
 	"context"
-	"encoding/json"
 	"fmt"
-	"os"
-	"path/filepath"
-	"reflect"
-	"sort"
-	"strconv"
-	"strings"
-	"time"
-
 	uuid "github.com/gofrs/uuid"
+	jsoniter "github.com/json-iterator/go"
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/services/filemanager"
 	"github.com/rudderlabs/rudder-server/services/pgnotifier"
@@ -22,6 +14,13 @@ import (
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 	"github.com/rudderlabs/rudder-server/warehouse/utils/parquet"
 	"golang.org/x/sync/errgroup"
+	"os"
+	"path/filepath"
+	"reflect"
+	"sort"
+	"strconv"
+	"strings"
+	"time"
 )
 
 const (
@@ -35,6 +34,8 @@ const (
 const (
 	WorkerProcessingDownloadStagingFileFailed = "worker_processing_download_staging_file_failed"
 )
+
+var jsonFast = jsoniter.ConfigCompatibleWithStandardLibrary
 
 // JobRunT Temporary store for processing staging file to load file
 type JobRunT struct {
@@ -462,7 +463,7 @@ func processStagingFile(ctx context.Context, job *PayloadT, jobRun *JobRunT, wor
 		}
 
 		var batchRouterEvent BatchRouterEventT
-		err := json.Unmarshal(lineBytes, &batchRouterEvent)
+		err := jsonFast.Unmarshal(lineBytes, &batchRouterEvent)
 		if err != nil {
 			pkgLogger.Errorf("[WH]: Failed to unmarshal JSON line to batchrouter event: %+v, err: %s", batchRouterEvent, err.Error())
 			continue
@@ -470,12 +471,6 @@ func processStagingFile(ctx context.Context, job *PayloadT, jobRun *JobRunT, wor
 
 		tableName := batchRouterEvent.Metadata.Table
 		columnData := batchRouterEvent.Data
-
-		if job.DestinationType == warehouseutils.S3_DATALAKE && len(sortedTableColumnMap[tableName]) > columnCountThresholds[warehouseutils.S3_DATALAKE] {
-			err = fmt.Errorf("WH: Staging file schema column limit exceeded")
-			pkgLogger.Errorf("[WH]: Huge staging file columns : columns in upload schema for table name: %s, upload schema: %v for staging file id %v at %s for %s", tableName, len(sortedTableColumnMap[tableName]), job.StagingFileID, job.StagingFileLocation, jobRun.whIdentifier)
-			return nil, err
-		}
 
 		// Create separate load file for each table
 		writer, err := jobRun.GetWriter(tableName)
@@ -545,7 +540,7 @@ func processStagingFile(ctx context.Context, job *PayloadT, jobRun *JobRunT, wor
 			// Special handling for JSON arrays
 			// TODO: Will this work for both BQ and RS?
 			if reflect.TypeOf(columnVal) == reflect.TypeOf(interfaceSliceSample) {
-				marshalledVal, err := json.Marshal(columnVal)
+				marshalledVal, err := jsonFast.Marshal(columnVal)
 				if err != nil {
 					pkgLogger.Errorf("[WH]: Error in marshalling []interface{} columnVal: %v", err)
 					eventLoader.AddEmptyColumn(columnName)
@@ -631,7 +626,7 @@ func processClaimedJob(ctx context.Context, claimedJob pgnotifier.ClaimT, worker
 	}
 
 	var job PayloadT
-	err := json.Unmarshal(claimedJob.Payload, &job)
+	err := jsonFast.Unmarshal(claimedJob.Payload, &job)
 	if err != nil {
 		handleErr(err, claimedJob)
 		return
@@ -658,7 +653,7 @@ func processClaimedJob(ctx context.Context, claimedJob pgnotifier.ClaimT, worker
 		return
 	}
 	job.Output = loadFileOutputs
-	output, err := json.Marshal(job)
+	output, err := jsonFast.Marshal(job)
 	response := pgnotifier.ClaimResponseT{
 		Err:     err,
 		Payload: output,

@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"io"
 	"io/ioutil"
 	"os"
@@ -15,7 +16,6 @@ import (
 
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/services/filemanager"
-	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
@@ -110,7 +110,7 @@ func TestStagingFileCreatesLoadObjects(t *testing.T) {
 		DestinationNamespace:         "rudder-schema",
 		DestinationRevisionID:        "",
 		StagingDestinationRevisionID: "",
-		DestinationConfig:            map[string]interface{}{},
+		Destination:                  backendconfig.DestinationT{},
 		StagingDestinationConfig:     map[string]interface{}{},
 		UseRudderStorage:             false,
 		StagingUseRudderStorage:      false,
@@ -202,13 +202,11 @@ func sameFile(loc1, loc2 string) (bool, error) {
 }
 
 func setup() {
-	config.Load()
-	logger.Init()
+	config.Reset()
+	logger.Reset()
 	Init4()
 	Init()
 	misc.Init()
-	stats.Init()
-	stats.Setup()
 	warehouseutils.Init()
 }
 
@@ -231,7 +229,7 @@ func BenchmarkEventLoaders(b *testing.B) {
 		DestinationNamespace:         "rudder-schema",
 		DestinationRevisionID:        "",
 		StagingDestinationRevisionID: "",
-		DestinationConfig:            map[string]interface{}{},
+		Destination:                  backendconfig.DestinationT{},
 		StagingDestinationConfig:     map[string]interface{}{},
 		UseRudderStorage:             false,
 		StagingUseRudderStorage:      false,

@@ -184,7 +184,6 @@ func setMaxParallelLoads() {
 		warehouseutils.POSTGRES:      config.GetInt("Warehouse.postgres.columnCountThreshold", 1200),
 		warehouseutils.RS:            config.GetInt("Warehouse.redshift.columnCountThreshold", 1200),
 		warehouseutils.SNOWFLAKE:     config.GetInt("Warehouse.snowflake.columnCountThreshold", 1600),
-		warehouseutils.S3_DATALAKE:   config.GetInt("Warehouse.s3_datalake.columnCountThreshold", 5000),
 	}
 }
 

@@ -64,7 +64,6 @@ import (
 	"github.com/rudderlabs/rudder-server/warehouse/bigquery"
 	"github.com/rudderlabs/rudder-server/warehouse/clickhouse"
 	"github.com/rudderlabs/rudder-server/warehouse/configuration_testing"
-	"github.com/rudderlabs/rudder-server/warehouse/datalake"
 	"github.com/rudderlabs/rudder-server/warehouse/deltalake"
 	"github.com/rudderlabs/rudder-server/warehouse/mssql"
 	"github.com/rudderlabs/rudder-server/warehouse/postgres"
@@ -169,7 +168,6 @@ func runAllInit() {
 	redshift.Init()
 	snowflake.Init()
 	deltalake.Init()
-	datalake.Init()
 	transformer.Init()
 	webhook.Init()
 	batchrouter.Init()
