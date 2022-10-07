@@ -46,8 +46,6 @@ func (l *ReusableParquetLoader) AddColumn(colName, colType string, val interface
 		l.columns[l.colIdx] = val
 		l.colIdx++
 	}
-
-	fmt.Println(l.columns)
 }
 
 func (l *ReusableParquetLoader) AddEmptyColumn(colName string) {
