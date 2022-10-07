@@ -108,6 +108,7 @@ var (
 	}
 	// This configuration is assumed by all router tests and, is returned on Subscribe of mocked backend config
 	sampleBackendConfig = backendconfig.ConfigT{
+		WorkspaceID: workspaceID,
 		Sources: []backendconfig.SourceT{
 			{
 				WorkspaceID: workspaceID,
@@ -153,7 +154,7 @@ func (c *testContext) Setup() {
 		DoAndReturn(func(ctx context.Context, topic backendconfig.Topic) pubsub.DataChannel {
 			tFunc()
 			ch := make(chan pubsub.DataEvent, 1)
-			ch <- pubsub.DataEvent{Data: sampleBackendConfig, Topic: string(topic)}
+			ch <- pubsub.DataEvent{Data: map[string]backendconfig.ConfigT{workspaceID: sampleBackendConfig}, Topic: string(topic)}
 			// on Subscribe, emulate a backend configuration event
 			go func() {
 				<-ctx.Done()

@@ -62,7 +62,7 @@ func (embedded *EmbeddedApp) StartRudderCore(ctx context.Context, options *app.O
 	reporting := embedded.App.Features().Reporting.Setup(backendconfig.DefaultBackendConfig)
 
 	g.Go(func() error {
-		reporting.AddClient(ctx, types.Config{ConnInfo: jobsdb.GetConnectionString()})
+		reporting.AddClient(ctx, types.Config{ConnInfo: misc.GetConnectionString()})
 		return nil
 	})
 

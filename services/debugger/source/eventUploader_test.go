@@ -75,7 +75,7 @@ var _ = Describe("eventUploader", func() {
 				tFunc()
 
 				ch := make(chan pubsub.DataEvent, 1)
-				ch <- pubsub.DataEvent{Data: sampleBackendConfig, Topic: string(topic)}
+				ch <- pubsub.DataEvent{Data: map[string]backendconfig.ConfigT{workspaceID: sampleBackendConfig}, Topic: string(topic)}
 				// on Subscribe, emulate a backend configuration event
 				c.configInitialised = true
 
@@ -135,7 +135,10 @@ var _ = Describe("eventUploader", func() {
 
 type sourceConfigMap map[string]interface{}
 
+var workspaceID = "workspace"
+
 var sampleBackendConfig = backendconfig.ConfigT{
+	WorkspaceID: workspaceID,
 	Sources: []backendconfig.SourceT{
 		{
 			ID:       SourceIDDisabled,
