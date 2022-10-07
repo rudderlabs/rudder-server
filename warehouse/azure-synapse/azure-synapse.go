@@ -612,7 +612,7 @@ func (as *HandleT) loadUserTables() (errorMap map[string]error) {
 	return
 }
 
-func (as *HandleT) DeleteBy([]string, warehouseutils.DeleteByParams) error {
+func (_ *HandleT) DeleteBy([]string, warehouseutils.DeleteByParams) error {
 	return fmt.Errorf(warehouseutils.NotImplementedErrorCode)
 }
 
