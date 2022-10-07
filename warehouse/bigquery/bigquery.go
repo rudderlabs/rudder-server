@@ -27,6 +27,7 @@ var (
 	customPartitionsEnabled               bool
 	isUsersTableDedupEnabled              bool
 	isDedupEnabled                        bool
+	enableDeleteByJobs                    bool
 )
 
 type HandleT struct {
@@ -268,19 +269,21 @@ func (bq *HandleT) DeleteBy(tableNames []string, params warehouseutils.DeleteByP
 			{Name: "sourceid", Value: params.SourceId},
 			{Name: "starttime", Value: params.StartTime},
 		}
-		// job, err := query.Run(bq.BQContext)
-		// if err != nil {
-		// 	pkgLogger.Errorf("BQ: Error initiating load job: %v\n", err)
-		// 	return err
-		// }
-		// status, err := job.Wait(bq.BQContext)
-		// if err != nil {
-		// 	pkgLogger.Errorf("BQ: Error running job: %v\n", err)
-		// 	return err
-		// }
-		// if status.Err() != nil {
-		// 	return status.Err()
-		// }
+		if enableDeleteByJobs {
+			job, err := query.Run(bq.BQContext)
+			if err != nil {
+				pkgLogger.Errorf("BQ: Error initiating load job: %v\n", err)
+				return err
+			}
+			status, err := job.Wait(bq.BQContext)
+			if err != nil {
+				pkgLogger.Errorf("BQ: Error running job: %v\n", err)
+				return err
+			}
+			if status.Err() != nil {
+				return status.Err()
+			}
+		}
 
 	}
 	return nil
@@ -667,6 +670,7 @@ func loadConfig() {
 	config.RegisterBoolConfigVariable(false, &customPartitionsEnabled, true, "Warehouse.bigquery.customPartitionsEnabled")
 	config.RegisterBoolConfigVariable(false, &isUsersTableDedupEnabled, true, "Warehouse.bigquery.isUsersTableDedupEnabled") // TODO: Depricate with respect to isDedupEnabled
 	config.RegisterBoolConfigVariable(false, &isDedupEnabled, true, "Warehouse.bigquery.isDedupEnabled")
+	config.RegisterBoolConfigVariable(false, &enableDeleteByJobs, true, "Warehouse.bigquery.enableDeleteByJobs")
 }
 
 func Init() {

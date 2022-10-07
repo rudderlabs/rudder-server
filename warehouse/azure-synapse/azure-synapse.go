@@ -613,29 +613,30 @@ func (as *HandleT) loadUserTables() (errorMap map[string]error) {
 }
 
 func (as *HandleT) DeleteBy(tableNames []string, params warehouseutils.DeleteByParams) (err error) {
-	pkgLogger.Infof("AS: Cleaning up the followng tables in azure synapse for AS:%s : %v", tableNames)
-	for _, tb := range tableNames {
+	// pkgLogger.Infof("AS: Cleaning up the followng tables in azure synapse for AS:%s : %v", tableNames)
+	// for _, tb := range tableNames {
 
-		sqlStatement := fmt.Sprintf(`DELETE FROM "%[1]s"."%[2]s" WHERE 
-		context_sources_job_run_id <> '%[3]s' AND 
-		context_sources_task_run_id <> '%[4]s' AND
-		context_source_id='%[5]s AND
-		 '`,
-			as.Namespace,
-			tb,
-			params.JobRunId,
-			params.TaskRunId,
-			params.SourceId,
-		)
-		pkgLogger.Infof("AS: Deleting rows in table in azure synapse for AS:%s", as.Warehouse.Destination.ID)
-		pkgLogger.Debugf("AS: Executing the query in the deleteby %v", sqlStatement)
-		// _, err = as.Db.Exec(sqlStatement)
-		// if err != nil {
-		// 	return err
-		// }
+	// 	sqlStatement := fmt.Sprintf(`DELETE FROM "%[1]s"."%[2]s" WHERE
+	// 	context_sources_job_run_id <> '%[3]s' AND
+	// 	context_sources_task_run_id <> '%[4]s' AND
+	// 	context_source_id='%[5]s AND
+	// 	 '`,
+	// 		as.Namespace,
+	// 		tb,
+	// 		params.JobRunId,
+	// 		params.TaskRunId,
+	// 		params.SourceId,
+	// 	)
+	// 	pkgLogger.Infof("AS: Deleting rows in table in azure synapse for AS:%s", as.Warehouse.Destination.ID)
+	// 	pkgLogger.Debugf("AS: Executing the query in the deleteby %v", sqlStatement)
+	// 	// _, err = as.Db.Exec(sqlStatement)
+	// 	// if err != nil {
+	// 	// 	return err
+	// 	// }
 
-	}
-	return nil
+	// }
+	// return nil
+	return fmt.Errorf(warehouseutils.NotImplementedErrorCode)
 }
 
 func (as *HandleT) CreateSchema() (err error) {
