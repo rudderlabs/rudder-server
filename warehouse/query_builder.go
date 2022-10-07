@@ -5,7 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 
-	"github.com/rudderlabs/rudder-server/warehouse/utils"
+	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
 func distinctDestinationRevisionIdsFromStagingFiles(ctx context.Context, d struct {
@@ -43,7 +43,7 @@ func distinctDestinationRevisionIdsFromStagingFiles(ctx context.Context, d struc
 		err = fmt.Errorf("error occurred while executing destination revisionID query %+v with err: %w", d, err)
 		return
 	}
-	defer func() { _ = rows.Close() }()
+	defer rows.Close()
 
 	for rows.Next() {
 		var revisionID string

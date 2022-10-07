@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"reflect"
 	"regexp"
 	"sort"
 	"strings"
@@ -20,6 +21,7 @@ import (
 	"github.com/Azure/azure-storage-blob-go/azblob"
 	"github.com/aws/aws-sdk-go/service/s3"
 	"github.com/aws/aws-sdk-go/service/sts"
+	"github.com/gofrs/uuid"
 	"github.com/iancoleman/strcase"
 	"github.com/tidwall/gjson"
 
@@ -96,6 +98,35 @@ const (
 	RUDDER_MISSING_DATATYPE = "warehouse_rudder_missing_datatype"
 )
 
+const (
+	stagingTablePrefix = "rudder_staging_"
+)
+
+// Object storages
+const (
+	S3         = "S3"
+	AZURE_BLOB = "AZURE_BLOB"
+	GCS        = "GCS"
+	MINIO      = "MINIO"
+)
+
+// Cloud providers
+const (
+	AWS   = "AWS"
+	GCP   = "GCP"
+	AZURE = "AZURE"
+)
+
+const (
+	AWSAccessKey         = "accessKey"
+	AWSAccessSecret      = "accessKeyID"
+	AWSBucketNameConfig  = "bucketName"
+	AWSRegion            = "region"
+	AWSS3Prefix          = "prefix"
+	MinioAccessKeyID     = "accessKeyID"
+	MinioSecretAccessKey = "secretAccessKey"
+)
+
 var (
 	IdentityEnabledWarehouses []string
 	enableIDResolution        bool
@@ -117,17 +148,17 @@ var WHDestNameMap = map[string]string{
 }
 
 var ObjectStorageMap = map[string]string{
-	RS:             "S3",
-	S3_DATALAKE:    "S3",
-	BQ:             "GCS",
-	GCS_DATALAKE:   "GCS",
-	AZURE_DATALAKE: "AZURE_BLOB",
+	RS:             S3,
+	S3_DATALAKE:    S3,
+	BQ:             GCS,
+	GCS_DATALAKE:   GCS,
+	AZURE_DATALAKE: AZURE_BLOB,
 }
 
 var SnowflakeStorageMap = map[string]string{
-	"AWS":   "S3",
-	"GCP":   "GCS",
-	"AZURE": "AZURE_BLOB",
+	AWS:   S3,
+	GCP:   GCS,
+	AZURE: AZURE_BLOB,
 }
 
 var DiscardsSchema = map[string]string{
@@ -139,11 +170,22 @@ var DiscardsSchema = map[string]string{
 	"uuid_ts":      "datetime",
 }
 
+var tableNameLimitMap = map[string]int{
+	AZURE_SYNAPSE: 127,
+	BQ:            127,
+	DELTALAKE:     127,
+	MSSQL:         127,
+	POSTGRES:      63,
+	RS:            127,
+	SNOWFLAKE:     127,
+}
+
 const (
 	LOAD_FILE_TYPE_CSV     = "csv"
 	LOAD_FILE_TYPE_JSON    = "json"
 	LOAD_FILE_TYPE_PARQUET = "parquet"
 	TestConnectionTimeout  = 15 * time.Second
+	defaultTableNameLimit  = 127
 )
 
 var (
@@ -344,11 +386,11 @@ func GetNamespace(source backendconfig.SourceT, destination backendconfig.Destin
 // eg. For provider as S3: https://test-bucket.s3.amazonaws.com/test-object.csv --> s3://test-bucket/test-object.csv
 func GetObjectFolder(provider, location string) (folder string) {
 	switch provider {
-	case "S3":
+	case S3:
 		folder = GetS3LocationFolder(location)
-	case "GCS":
+	case GCS:
 		folder = GetGCSLocationFolder(location, GCSLocationOptionsT{TLDFormat: "gcs"})
-	case "AZURE_BLOB":
+	case AZURE_BLOB:
 		folder = GetAzureBlobLocationFolder(location)
 	}
 	return
@@ -360,11 +402,11 @@ func GetObjectFolder(provider, location string) (folder string) {
 // eg. For provider as AZURE_BLOB: https://<storage-account-name>.blob.core.windows.net/<container-name>/<directory-name> --> wasbs://<container-name>@<storage-account-name>.blob.core.windows.net/<directory-name>
 func GetObjectFolderForDeltalake(provider, location string) (folder string) {
 	switch provider {
-	case "S3":
+	case S3:
 		folder = GetS3LocationFolder(location)
-	case "GCS":
+	case GCS:
 		folder = GetGCSLocationFolder(location, GCSLocationOptionsT{TLDFormat: "gs"})
-	case "AZURE_BLOB":
+	case AZURE_BLOB:
 		blobUrl, _ := url.Parse(location)
 		blobUrlParts := azblob.NewBlobURLParts(*blobUrl)
 		accountName := strings.Replace(blobUrlParts.Host, ".blob.core.windows.net", "", 1)
@@ -375,15 +417,24 @@ func GetObjectFolderForDeltalake(provider, location string) (folder string) {
 	return
 }
 
+func GetColumnsFromTableSchema(schema TableSchemaT) []string {
+	keys := reflect.ValueOf(schema).MapKeys()
+	strKeys := make([]string, len(keys))
+	for i := 0; i < len(keys); i++ {
+		strKeys[i] = keys[i].String()
+	}
+	return strKeys
+}
+
 // GetObjectLocation returns the folder path for the storage object based on the storage provider
 // eg. For provider as S3: https://test-bucket.s3.amazonaws.com/test-object.csv --> s3://test-bucket/test-object.csv
 func GetObjectLocation(provider, location string) (objectLocation string) {
 	switch provider {
-	case "S3":
+	case S3:
 		objectLocation, _ = GetS3Location(location)
-	case "GCS":
+	case GCS:
 		objectLocation = GetGCSLocation(location, GCSLocationOptionsT{TLDFormat: "gcs"})
-	case "AZURE_BLOB":
+	case AZURE_BLOB:
 		objectLocation = GetAzureBlobLocation(location)
 	}
 	return
@@ -582,7 +633,7 @@ func SnowflakeCloudProvider(config interface{}) string {
 	c := config.(map[string]interface{})
 	provider, ok := c["cloudProvider"].(string)
 	if provider == "" || !ok {
-		provider = "AWS"
+		provider = AWS
 	}
 	return provider
 }
@@ -590,7 +641,7 @@ func SnowflakeCloudProvider(config interface{}) string {
 func ObjectStorageType(destType string, config interface{}, useRudderStorage bool) string {
 	c := config.(map[string]interface{})
 	if useRudderStorage {
-		return "S3"
+		return S3
 	}
 	if _, ok := ObjectStorageMap[destType]; ok {
 		return ObjectStorageMap[destType]
@@ -598,7 +649,7 @@ func ObjectStorageType(destType string, config interface{}, useRudderStorage boo
 	if destType == SNOWFLAKE {
 		provider, ok := c["cloudProvider"].(string)
 		if provider == "" || !ok {
-			provider = "AWS"
+			provider = AWS
 		}
 		return SnowflakeStorageMap[provider]
 	}
@@ -989,4 +1040,19 @@ func GetDateRangeList(start, end time.Time, dateFormat string) (dateRange []stri
 type FilterBy struct {
 	Key   string
 	Value interface{}
+}
+
+func StagingTablePrefix(provider string) string {
+	return ToProviderCase(provider, stagingTablePrefix)
+}
+
+func StagingTableName(provider, tableName string) string {
+	randomNess := strings.ReplaceAll(uuid.Must(uuid.NewV4()).String(), "-", "")
+	tableNameLimit := defaultTableNameLimit
+	if limit, ok := tableNameLimitMap[provider]; ok {
+		tableNameLimit = limit
+	}
+	prefix := StagingTablePrefix(provider)
+	stagingTableName := fmt.Sprintf(`%s%s_%s`, prefix, tableName, randomNess)
+	return misc.TruncateStr(stagingTableName, tableNameLimit)
 }

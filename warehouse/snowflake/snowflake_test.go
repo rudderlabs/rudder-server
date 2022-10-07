@@ -1,5 +1,3 @@
-//go:build warehouse_integration
-
 package snowflake_test
 
 import (

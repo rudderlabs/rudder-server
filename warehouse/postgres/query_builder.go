@@ -4,8 +4,6 @@ import (
 	"database/sql"
 	"fmt"
 	"strings"
-
-	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
 type QueryParams struct {
@@ -26,7 +24,7 @@ func (q *QueryParams) validate() (err error) {
 // Print execution plan if enableWithQueryPlan is set to true else return result set.
 // Currently, these statements are supported by EXPLAIN
 // Any INSERT, UPDATE, DELETE whose execution plan you wish to see.
-func handleExec(e *QueryParams) (err error) {
+func handleExec(e *QueryParams) (result sql.Result, err error) {
 	sqlStatement := e.query
 
 	if err = e.validate(); err != nil {
@@ -62,47 +60,9 @@ func handleExec(e *QueryParams) (err error) {
 `)))
 	}
 	if e.txn != nil {
-		_, err = e.txn.Exec(sqlStatement)
+		result, err = e.txn.Exec(sqlStatement)
 	} else if e.db != nil {
-		_, err = e.db.Exec(sqlStatement)
+		result, err = e.db.Exec(sqlStatement)
 	}
 	return
-}
-
-func dropDanglingTablesSQLStatement(namespace string) string {
-	return fmt.Sprintf(`
-		select
-		  table_name
-		from
-		  information_schema.tables
-		where
-		  table_schema = '%s'
-		  AND table_name like '%s%s';
-	`,
-		namespace,
-		warehouseutils.StagingTablePrefix(provider),
-		"%",
-	)
-}
-
-func fetchSchemaSQLStatement(namespace string) string {
-	return fmt.Sprintf(`
-		select
-		  t.table_name,
-		  c.column_name,
-		  c.data_type
-		from
-		  INFORMATION_SCHEMA.TABLES t
-		  LEFT JOIN INFORMATION_SCHEMA.COLUMNS c ON (
-			t.table_name = c.table_name
-			and t.table_schema = c.table_schema
-		  )
-		WHERE
-		  t.table_schema = '%s'
-		  and t.table_name not like '%s%s'
-	`,
-		namespace,
-		warehouseutils.StagingTablePrefix(provider),
-		"%",
-	)
 }

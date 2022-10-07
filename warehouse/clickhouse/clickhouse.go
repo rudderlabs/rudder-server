@@ -47,8 +47,9 @@ var (
 	commitTimeOutInSeconds      time.Duration
 	loadTableFailureRetries     int
 	numWorkersDownloadLoadFiles int
-	enabledS3EngineForLoading   bool
+	enableS3EngineForLoading    bool
 )
+
 var clickhouseDefaultDateTime, _ = time.Parse(time.RFC3339, "1970-01-01 00:00:00")
 
 const (
@@ -253,7 +254,7 @@ func loadConfig() {
 	config.RegisterDurationConfigVariable(600, &commitTimeOutInSeconds, true, time.Second, "Warehouse.clickhouse.commitTimeOutInSeconds")
 	config.RegisterIntConfigVariable(3, &loadTableFailureRetries, true, 1, "Warehouse.clickhouse.loadTableFailureRetries")
 	config.RegisterIntConfigVariable(8, &numWorkersDownloadLoadFiles, true, 1, "Warehouse.clickhouse.numWorkersDownloadLoadFiles")
-	config.RegisterBoolConfigVariable(false, &enabledS3EngineForLoading, true, "Warehouse.clickhouse.enabledS3EngineForLoading")
+	config.RegisterBoolConfigVariable(false, &enableS3EngineForLoading, true, "Warehouse.clickhouse.enableS3EngineForLoading")
 }
 
 /*
@@ -429,7 +430,7 @@ func (ch *HandleT) downloadLoadFile(object *warehouseutils.LoadFileT, tableName 
 	return fileName, err
 }
 
-func generateArgumentString(_ string, length int) string {
+func generateArgumentString(length int) string {
 	var args []string
 	for i := 0; i < length; i++ {
 		args = append(args, "?")
@@ -532,7 +533,7 @@ func (ch *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 }
 
 func (ch *HandleT) useS3CopyEngineForLoading() bool {
-	if !enabledS3EngineForLoading {
+	if !enableS3EngineForLoading {
 		return false
 	}
 	if ch.ObjectStorage != warehouseutils.S3 && ch.ObjectStorage != warehouseutils.MINIO {
@@ -612,7 +613,30 @@ func (ch *HandleT) loadByCopyCommand(tableName string, tableSchemaInUpload wareh
 		return
 	}
 
-	sqlStatement := loadTableWithS3EngineSQLStatement(ch.Namespace, tableName, loadFolder, accessKeyID, secretAccessKey, sortedColumnNames, sortedColumnNamesWithDataTypes)
+	sqlStatement := fmt.Sprintf(`
+		INSERT INTO %[1]q.%[2]q (
+			%[3]s
+		)
+		SELECT
+		  *
+		FROM
+		  s3(
+			'%[4]s',
+		  	'%[5]s',
+		  	'%[6]s',
+			'CSV',
+			'%[7]s',
+			'gz'
+		  ) settings date_time_input_format = 'best_effort';
+		`,
+		ch.Namespace,                   // 1
+		tableName,                      // 2
+		sortedColumnNames,              // 3
+		loadFolder,                     // 4
+		accessKeyID,                    // 5
+		secretAccessKey,                // 6
+		sortedColumnNamesWithDataTypes, // 7
+	)
 	_, err = ch.Db.Exec(sqlStatement)
 	if err != nil {
 		pkgLogger.Errorf("Failed to load table: %s: with error: %s", tableName, err.Error())
@@ -804,8 +828,7 @@ func (ch *HandleT) createSchema() (err error) {
 	if err != nil {
 		return err
 	}
-	defer func() { _ = dbHandle.Close() }()
-
+	defer dbHandle.Close()
 	cluster := warehouseutils.GetConfigValue(Cluster, ch.Warehouse)
 	clusterClause := ""
 	if len(strings.TrimSpace(cluster)) > 0 {
@@ -936,7 +959,7 @@ func (ch *HandleT) TestConnection(warehouse warehouseutils.WarehouseT) (err erro
 	if err != nil {
 		return
 	}
-	defer func() { _ = ch.Db.Close() }()
+	defer ch.Db.Close()
 
 	ctx, cancel := context.WithTimeout(context.TODO(), ch.ConnectTimeout)
 	defer cancel()
@@ -975,7 +998,7 @@ func (ch *HandleT) FetchSchema(warehouse warehouseutils.WarehouseT) (schema ware
 	if err != nil {
 		return
 	}
-	defer func() { _ = dbHandle.Close() }()
+	defer dbHandle.Close()
 
 	schema = make(warehouseutils.SchemaT)
 	sqlStatement := fmt.Sprintf(`select table, name, type
@@ -995,7 +1018,7 @@ func (ch *HandleT) FetchSchema(warehouse warehouseutils.WarehouseT) (schema ware
 		pkgLogger.Infof("CH: No rows, while fetching schema: %s from destination:%v, query: %v", ch.Namespace, ch.Warehouse.Destination.Name, sqlStatement)
 		return schema, nil
 	}
-	defer func() { _ = rows.Close() }()
+	defer rows.Close()
 	for rows.Next() {
 		var tName, cName, cType string
 		err = rows.Scan(&tName, &cName, &cType)
