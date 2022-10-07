@@ -5,6 +5,14 @@ import (
 	"compress/gzip"
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
+	"reflect"
+	"sort"
+	"strconv"
+	"strings"
+	"time"
+
 	uuid "github.com/gofrs/uuid"
 	jsoniter "github.com/json-iterator/go"
 	"github.com/rudderlabs/rudder-server/config"
@@ -14,13 +22,6 @@ import (
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 	"github.com/rudderlabs/rudder-server/warehouse/utils/parquet"
 	"golang.org/x/sync/errgroup"
-	"os"
-	"path/filepath"
-	"reflect"
-	"sort"
-	"strconv"
-	"strings"
-	"time"
 )
 
 const (
@@ -323,7 +324,6 @@ func (job *PayloadT) getSortedColumnMapForAllTables() map[string][]string {
 }
 
 func (jobRun *JobRunT) GetWriter(tableName string) (warehouseutils.LoadFileWriterI, error) {
-
 	writer, ok := jobRun.outputFileWritersMap[tableName]
 	if ok {
 		return writer, nil
@@ -582,13 +582,12 @@ func (run *JobRunT) captureColumnInLoader(
 	columnName string,
 	columnInfo *ColumnInfoT,
 	uploadSchemaType *string,
-	loader warehouseutils.EventLoader) error {
+	loader warehouseutils.EventLoader,
+) error {
 	return nil
-
 }
 
 func (run *JobRunT) getEventLoader(fileType, destType, tableName string, writer warehouseutils.LoadFileWriterI, count int) warehouseutils.EventLoader {
-
 	// Controlled via an env value ?
 	useReusableLoader := true
 
