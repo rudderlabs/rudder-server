@@ -119,16 +119,18 @@ func (*EventDeliveryStatusUploader) Transform(data interface{}) ([]byte, error) 
 	return rawJSON, nil
 }
 
-func updateConfig(sources backendconfig.ConfigT) {
+func updateConfig(config map[string]backendconfig.ConfigT) {
 	configSubscriberLock.Lock()
 	uploadEnabledDestinationIDs = make(map[string]bool)
 	var uploadEnabledDestinationIdsList []string
-	for _, source := range sources.Sources {
-		for _, destination := range source.Destinations {
-			if destination.Config != nil {
-				if destination.Enabled && destination.Config["eventDelivery"] == true {
-					uploadEnabledDestinationIdsList = append(uploadEnabledDestinationIdsList, destination.ID)
-					uploadEnabledDestinationIDs[destination.ID] = true
+	for _, wConfig := range config {
+		for _, source := range wConfig.Sources {
+			for _, destination := range source.Destinations {
+				if destination.Config != nil {
+					if destination.Enabled && destination.Config["eventDelivery"] == true {
+						uploadEnabledDestinationIdsList = append(uploadEnabledDestinationIdsList, destination.ID)
+						uploadEnabledDestinationIDs[destination.ID] = true
+					}
 				}
 			}
 		}
@@ -140,7 +142,7 @@ func updateConfig(sources backendconfig.ConfigT) {
 func backendConfigSubscriber(backendConfig backendconfig.BackendConfig) {
 	configChannel := backendConfig.Subscribe(context.TODO(), "backendConfig")
 	for config := range configChannel {
-		updateConfig(config.Data.(backendconfig.ConfigT))
+		updateConfig(config.Data.(map[string]backendconfig.ConfigT))
 	}
 }
 

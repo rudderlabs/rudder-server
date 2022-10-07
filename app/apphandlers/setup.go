@@ -178,35 +178,35 @@ func monitorDestRouters(ctx context.Context, routerFactory *router.Factory, batc
 	routerFactory.RouterDB.DeleteExecuting()
 	batchRouterFactory.RouterDB.DeleteExecuting()
 
-	for workspaceConfig := range ch {
-		sources := workspaceConfig.Data.(backendconfig.ConfigT)
-		enabledDestinations := make(map[string]bool)
-		for i := range sources.Sources {
-			source := &sources.Sources[i] // Copy of large value inside loop: CRT-P0006
-			for k := range source.Destinations {
-				destination := &source.Destinations[k] // Copy of large value inside loop: CRT-P0006
-				enabledDestinations[destination.DestinationDefinition.Name] = true
-				// For batch router destinations
-				if misc.Contains(objectStorageDestinations, destination.DestinationDefinition.Name) ||
-					misc.Contains(warehouseutils.WarehouseDestinations, destination.DestinationDefinition.Name) ||
-					misc.Contains(asyncDestinations, destination.DestinationDefinition.Name) {
-					_, ok := dstToBatchRouter[destination.DestinationDefinition.Name]
-					if !ok {
-						pkgLogger.Info("Starting a new Batch Destination Router ", destination.DestinationDefinition.Name)
-						brt := batchRouterFactory.New(destination.DestinationDefinition.Name)
-						brt.Start()
-						cleanup = append(cleanup, brt.Shutdown)
-						dstToBatchRouter[destination.DestinationDefinition.Name] = brt
-					}
-				} else {
-					routerIdentifier := destination.DestinationDefinition.Name
-					_, ok := dstToRouter[routerIdentifier]
-					if !ok {
-						pkgLogger.Infof("Starting a new Destination: %s", routerIdentifier)
-						rt := routerFactory.New(destination, routerIdentifier)
-						rt.Start()
-						cleanup = append(cleanup, rt.Shutdown)
-						dstToRouter[routerIdentifier] = rt
+	for data := range ch {
+		config := data.Data.(map[string]backendconfig.ConfigT)
+		for _, wConfig := range config {
+			for i := range wConfig.Sources {
+				source := &wConfig.Sources[i] // Copy of large value inside loop: CRT-P0006
+				for k := range source.Destinations {
+					destination := &source.Destinations[k] // Copy of large value inside loop: CRT-P0006
+					// For batch router destinations
+					if misc.Contains(objectStorageDestinations, destination.DestinationDefinition.Name) ||
+						misc.Contains(warehouseutils.WarehouseDestinations, destination.DestinationDefinition.Name) ||
+						misc.Contains(asyncDestinations, destination.DestinationDefinition.Name) {
+						_, ok := dstToBatchRouter[destination.DestinationDefinition.Name]
+						if !ok {
+							pkgLogger.Info("Starting a new Batch Destination Router ", destination.DestinationDefinition.Name)
+							brt := batchRouterFactory.New(destination.DestinationDefinition.Name)
+							brt.Start()
+							cleanup = append(cleanup, brt.Shutdown)
+							dstToBatchRouter[destination.DestinationDefinition.Name] = brt
+						}
+					} else {
+						routerIdentifier := destination.DestinationDefinition.Name
+						_, ok := dstToRouter[routerIdentifier]
+						if !ok {
+							pkgLogger.Infof("Starting a new Destination: %s", routerIdentifier)
+							rt := routerFactory.New(destination, routerIdentifier)
+							rt.Start()
+							cleanup = append(cleanup, rt.Shutdown)
+							dstToRouter[routerIdentifier] = rt
+						}
 					}
 				}
 			}
@@ -229,7 +229,7 @@ func monitorDestRouters(ctx context.Context, routerFactory *router.Factory, batc
 func NewRsourcesService(deploymentType deployment.Type) (rsources.JobService, error) {
 	var rsourcesConfig rsources.JobServiceConfig
 	rsourcesConfig.MaxPoolSize = config.GetInt("Rsources.PoolSize", 5)
-	rsourcesConfig.LocalConn = jobsdb.GetConnectionString()
+	rsourcesConfig.LocalConn = misc.GetConnectionString()
 	rsourcesConfig.LocalHostname = config.GetString("DB.host", "localhost")
 	rsourcesConfig.SharedConn = config.GetString("SharedDB.dsn", "")
 	rsourcesConfig.SkipFailedRecordsCollection = !config.GetBool("Router.failedKeysEnabled", false)

@@ -77,7 +77,7 @@ func (c *testContext) Setup() {
 		DoAndReturn(func(ctx context.Context, topic backendconfig.Topic) pubsub.DataChannel {
 			tFunc()
 			ch := make(chan pubsub.DataEvent, 1)
-			ch <- pubsub.DataEvent{Data: sampleBackendConfig, Topic: string(topic)}
+			ch <- pubsub.DataEvent{Data: map[string]backendconfig.ConfigT{sampleWorkspaceID: sampleBackendConfig}, Topic: string(topic)}
 			c.configInitialised = true
 
 			go func() {
@@ -138,8 +138,11 @@ func setMainLoopTimeout(timeout time.Duration) {
 	mainLoopTimeout = timeout
 }
 
+var sampleWorkspaceID = "some-workspace-id"
+
 // This configuration is assumed by all processor tests and, is returned on Subscribe of mocked backend config
 var sampleBackendConfig = backendconfig.ConfigT{
+	WorkspaceID: sampleWorkspaceID,
 	Sources: []backendconfig.SourceT{
 		{
 			ID:       SourceIDDisabled,
@@ -560,8 +563,6 @@ var _ = Describe("Processor", func() {
 			processor := &HandleT{
 				transformer: mockTransformer,
 			}
-			c.mockBackendConfig.EXPECT().GetWorkspaceIDForWriteKey(WriteKeyEnabledNoUT).Return(WorkspaceID).AnyTimes()
-			c.mockBackendConfig.EXPECT().GetWorkspaceLibrariesForWorkspaceID(WorkspaceID).Return(backendconfig.LibrariesT{}).AnyTimes()
 
 			processorSetupAndAssertJobHandling(processor, c)
 		})
@@ -755,8 +756,6 @@ var _ = Describe("Processor", func() {
 						assertJobStatus(unprocessedJobsList[i], statuses[i], jobsdb.Succeeded.State)
 					}
 				})
-			c.mockBackendConfig.EXPECT().GetWorkspaceIDForWriteKey(WriteKeyEnabledOnlyUT).Return(WorkspaceID).AnyTimes()
-			c.mockBackendConfig.EXPECT().GetWorkspaceLibrariesForWorkspaceID(WorkspaceID).Return(backendconfig.LibrariesT{}).AnyTimes()
 
 			processor := &HandleT{
 				transformer: mockTransformer,
@@ -852,8 +851,7 @@ var _ = Describe("Processor", func() {
 			processor := &HandleT{
 				transformer: mockTransformer,
 			}
-			c.mockBackendConfig.EXPECT().GetWorkspaceIDForWriteKey(WriteKeyEnabled).Return(WorkspaceID).AnyTimes()
-			c.mockBackendConfig.EXPECT().GetWorkspaceLibrariesForWorkspaceID(WorkspaceID).Return(backendconfig.LibrariesT{}).AnyTimes()
+
 			Setup(processor, c, true, false)
 			processor.dedupHandler = c.MockDedup
 			processor.multitenantI = c.MockMultitenantHandle
@@ -987,8 +985,6 @@ var _ = Describe("Processor", func() {
 						assertErrStoreJob(job, i)
 					}
 				})
-			c.mockBackendConfig.EXPECT().GetWorkspaceIDForWriteKey(WriteKeyEnabled).Return(WorkspaceID).AnyTimes()
-			c.mockBackendConfig.EXPECT().GetWorkspaceLibrariesForWorkspaceID(WorkspaceID).Return(backendconfig.LibrariesT{}).AnyTimes()
 
 			processor := &HandleT{
 				transformer: mockTransformer,
@@ -1121,8 +1117,6 @@ var _ = Describe("Processor", func() {
 						assertErrStoreJob(job)
 					}
 				})
-			c.mockBackendConfig.EXPECT().GetWorkspaceIDForWriteKey(WriteKeyEnabled).Return(WorkspaceID).AnyTimes()
-			c.mockBackendConfig.EXPECT().GetWorkspaceLibrariesForWorkspaceID(WorkspaceID).Return(backendconfig.LibrariesT{}).AnyTimes()
 
 			processor := &HandleT{
 				transformer: mockTransformer,
@@ -1196,8 +1190,6 @@ var _ = Describe("Processor", func() {
 			// One Store call is expected for all events
 			c.mockProcErrorsDB.EXPECT().Store(gomock.Any(), gomock.Any()).Times(0).
 				Do(func(ctx context.Context, jobs []*jobsdb.JobT) {})
-			c.mockBackendConfig.EXPECT().GetWorkspaceIDForWriteKey(WriteKeyEnabledNoUT2).Return(WorkspaceID).AnyTimes()
-			c.mockBackendConfig.EXPECT().GetWorkspaceLibrariesForWorkspaceID(WorkspaceID).Return(backendconfig.LibrariesT{}).AnyTimes()
 
 			processor := &HandleT{
 				transformer: mockTransformer,
