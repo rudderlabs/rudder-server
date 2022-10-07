@@ -45,7 +45,7 @@ prepare-build: build-sql-migrations
 ./services/sql-migrator/migrations_vfsdata.go: $(shell find sql/migrations)
 	$(GO) run -tags=dev cmd/generate-migrations/generate-sql-migrations.go
 
-build: prepare-build ## Build rudder-server binary
+build: prepare-build security ## Build rudder-server binary
 	$(eval BUILD_OPTIONS = )
 ifeq ($(RACE_ENABLED), TRUE)
 	$(eval BUILD_OPTIONS = $(BUILD_OPTIONS) -race -o rudder-server-with-race)
@@ -71,6 +71,7 @@ install-tools:
 	GO111MODULE=on go install github.com/golang/mock/mockgen@v1.6.0
 
 	go install mvdan.cc/gofumpt@latest
+	go install golang.org/x/vuln/cmd/govulncheck@latest
 
 .PHONY: lint
 lint: fmt
@@ -80,6 +81,10 @@ lint: fmt
 .PHONY: fmt
 fmt: install-tools
 	gofumpt -l -w -extra  .
+
+.PHONY: security
+security: install-tools
+	govulncheck ./...
 
 cleanup-warehouse-integration:
 	docker-compose -f warehouse/docker-compose.test.yml down --remove-orphans --volumes
