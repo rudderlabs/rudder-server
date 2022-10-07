@@ -7,6 +7,7 @@ import (
 	"encoding/csv"
 	"fmt"
 	"io"
+	"net"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -137,7 +138,7 @@ func Connect(cred CredentialsT) (*sql.DB, error) {
 	connUrl := &url.URL{
 		Scheme:   "sqlserver",
 		User:     url.UserPassword(cred.User, cred.Password),
-		Host:     fmt.Sprintf("%s:%d", cred.Host, port),
+		Host:     net.JoinHostPort(cred.Host, strconv.Itoa(port)),
 		RawQuery: query.Encode(),
 	}
 	pkgLogger.Debugf("mssql connection string : %s", connUrl.String())
@@ -483,7 +484,7 @@ func str2ucs2(s string) []byte {
 
 func hasDiacritics(str string) bool {
 	for _, x := range str {
-		if utf8.RuneLen(rune(x)) > 1 {
+		if utf8.RuneLen(x) > 1 {
 			return true
 		}
 	}
