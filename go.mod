@@ -13,7 +13,7 @@ require (
 	github.com/Nvveen/Gotty v0.0.0-20120604004816-cd527374f1e5 // indirect
 	github.com/allisson/go-pglock/v2 v2.0.1
 	github.com/araddon/dateparse v0.0.0-20190622164848-0fb0a474d195
-	github.com/aws/aws-sdk-go v1.44.110
+	github.com/aws/aws-sdk-go v1.44.113
 	github.com/bugsnag/bugsnag-go/v2 v2.1.2
 	github.com/cenkalti/backoff v2.2.1+incompatible
 	github.com/cenkalti/backoff/v4 v4.1.3
@@ -60,7 +60,7 @@ require (
 	go.etcd.io/etcd/client/v3 v3.5.4
 	go.uber.org/automaxprocs v1.4.0
 	go.uber.org/zap v1.23.0
-	golang.org/x/net v0.0.0-20221002022538-bcab6841153b
+	golang.org/x/net v0.0.0-20221004154528-8021a29435af
 	golang.org/x/oauth2 v0.0.0-20220909003341-f21342109be1
 	golang.org/x/sync v0.0.0-20220923202941-7f9b1623fab7
 	google.golang.org/api v0.95.0
@@ -98,7 +98,7 @@ require (
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/dgraph-io/ristretto v0.0.3-0.20200630154024-f66de99634de // indirect
 	github.com/dgryski/go-farm v0.0.0-20200201041132-a6ae2369ad13 // indirect
-	github.com/docker/cli v20.10.14+incompatible // indirect
+	github.com/docker/cli v20.10.18+incompatible // indirect
 	github.com/docker/docker v20.10.13+incompatible // indirect
 	github.com/docker/go-connections v0.4.0 // indirect
 	github.com/docker/go-units v0.4.0 // indirect
@@ -135,7 +135,7 @@ require (
 	github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd // indirect
 	github.com/modern-go/reflect2 v1.0.2 // indirect
 	github.com/opencontainers/go-digest v1.0.0 // indirect
-	github.com/opencontainers/image-spec v1.0.3-0.20211202183452-c5a74bcca799 // indirect
+	github.com/opencontainers/image-spec v1.1.0-rc2 // indirect
 	github.com/opencontainers/runc v1.1.4 // indirect
 	github.com/ory/dockertest/v3 v3.9.1
 	github.com/patrickmn/go-cache v2.1.0+incompatible // indirect
@@ -165,7 +165,7 @@ require (
 	go.opencensus.io v0.23.0 // indirect
 	go.uber.org/atomic v1.10.0 // indirect
 	go.uber.org/multierr v1.8.0 // indirect
-	golang.org/x/crypto v0.0.0-20220926161630-eccd6366d1be // indirect
+	golang.org/x/crypto v0.0.0-20221005025214-4161e89ecf1b // indirect
 	golang.org/x/sys v0.0.0-20220928140112-f11e5e49a4ec // indirect
 	golang.org/x/text v0.3.7 // indirect
 	golang.org/x/xerrors v0.0.0-20220907171357-04be3eba64a2 // indirect
@@ -194,13 +194,34 @@ require (
 	github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream v1.0.0 // indirect
 	github.com/aws/aws-sdk-go-v2/internal/configsources v1.1.0 // indirect
 	github.com/aws/aws-sdk-go-v2/internal/endpoints/v2 v2.0.0 // indirect
+	github.com/checkpoint-restore/go-criu/v5 v5.3.0 // indirect
+	github.com/cilium/ebpf v0.7.0 // indirect
+	github.com/containerd/console v1.0.3 // indirect
 	github.com/containerd/containerd v1.6.8 // indirect
+	github.com/containernetworking/cni v1.1.2 // indirect
+	github.com/cyphar/filepath-securejoin v0.2.3 // indirect
+	github.com/dgrijalva/jwt-go v3.2.0+incompatible // indirect
+	github.com/emicklei/go-restful v2.16.0+incompatible // indirect
+	github.com/godbus/dbus/v5 v5.0.6 // indirect
 	github.com/golang-jwt/jwt/v4 v4.2.0 // indirect
 	github.com/googleapis/enterprise-certificate-proxy v0.1.0 // indirect
+	github.com/gorilla/websocket v1.5.0 // indirect
 	github.com/klauspost/cpuid/v2 v2.1.0 // indirect
+	github.com/kr/fs v0.1.0 // indirect
 	github.com/miekg/dns v1.1.25 // indirect
+	github.com/moby/sys/mountinfo v0.6.0 // indirect
+	github.com/mrunalp/fileutils v0.5.0 // indirect
+	github.com/opencontainers/runtime-spec v1.0.3-0.20210326190908-1c3f411f0417 // indirect
+	github.com/opencontainers/selinux v1.10.1 // indirect
+	github.com/pkg/sftp v1.13.5 // indirect
 	github.com/rs/xid v1.4.0 // indirect
+	github.com/seccomp/libseccomp-golang v0.9.2-0.20220502022130-f33da4d89646 // indirect
+	github.com/syndtr/gocapability v0.0.0-20200815063812-42c35b437635 // indirect
+	github.com/urfave/cli v1.22.2 // indirect
+	github.com/vishvananda/netlink v1.1.1-0.20210330154013-f5de75959ad5 // indirect
+	github.com/vishvananda/netns v0.0.0-20210104183010-2eb08e3e575f // indirect
 	golang.org/x/exp v0.0.0-20210220032938-85be41e4509f // indirect
+	k8s.io/kubernetes v1.25.2 // indirect
 )
 
 require (
