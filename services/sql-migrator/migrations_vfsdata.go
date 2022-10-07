@@ -570,6 +570,7 @@ func (f *vfsgen۰CompressedFile) Read(p []byte) (n int, err error) {
 	f.seekPos = f.grPos
 	return n, err
 }
+
 func (f *vfsgen۰CompressedFile) Seek(offset int64, whence int) (int64, error) {
 	switch whence {
 	case io.SeekStart:
@@ -583,6 +584,7 @@ func (f *vfsgen۰CompressedFile) Seek(offset int64, whence int) (int64, error) {
 	}
 	return f.seekPos, nil
 }
+
 func (f *vfsgen۰CompressedFile) Close() error {
 	return f.gr.Close()
 }
