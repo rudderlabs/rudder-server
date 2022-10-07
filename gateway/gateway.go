@@ -1368,7 +1368,7 @@ func (gateway *HandleT) StartWebHandler(ctx context.Context) error {
 
 	srvMux := mux.NewRouter()
 	srvMux.Use(
-		middleware.StatMiddleware(ctx),
+		middleware.StatMiddleware(ctx, srvMux),
 		middleware.LimitConcurrentRequests(maxConcurrentRequests),
 	)
 	srvMux.HandleFunc("/v1/batch", gateway.webBatchHandler).Methods("POST")
@@ -1444,7 +1444,7 @@ func (gateway *HandleT) StartAdminHandler(ctx context.Context) error {
 
 	srvMux := mux.NewRouter()
 	srvMux.Use(
-		middleware.StatMiddleware(ctx),
+		middleware.StatMiddleware(ctx, srvMux),
 		middleware.LimitConcurrentRequests(maxConcurrentRequests),
 	)
 	srvMux.HandleFunc("/v1/pending-events", gateway.pendingEventsHandler).Methods("POST")
