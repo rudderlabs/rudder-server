@@ -201,7 +201,6 @@ require (
 	github.com/miekg/dns v1.1.25 // indirect
 	github.com/rs/xid v1.4.0 // indirect
 	golang.org/x/exp v0.0.0-20210220032938-85be41e4509f // indirect
-	github.com/viney-shih/go-lock v1.1.2 // indirect
 )
 
 require (
