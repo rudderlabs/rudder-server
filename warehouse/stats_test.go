@@ -128,7 +128,7 @@ var _ = Describe("Stats", Ordered, func() {
 		mockStats, mockMeasurement := getMockStats(g)
 		mockStats.EXPECT().NewTaggedStat(gomock.Any(), gomock.Any(), gomock.Any()).Times(3).Return(mockMeasurement)
 		mockMeasurement.EXPECT().Count(4).Times(2)
-		mockMeasurement.EXPECT().SendTiming(gomock.Any()).Times(1)
+		mockMeasurement.EXPECT().Since(gomock.Any()).Times(1)
 
 		stats.Default = mockStats
 
