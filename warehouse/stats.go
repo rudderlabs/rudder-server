@@ -235,7 +235,7 @@ func getUploadStatusStat(name string, warehouse warehouseutils.Warehouse) stats.
 	return stats.Default.NewTaggedStat(name, stats.CountType, tags)
 }
 
-func persisteSSLFileErrorStat(workspaceID, destType, destName, destID, sourceName, sourceID, errTag string) {
+func persistSSLFileErrorStat(workspaceID, destType, destName, destID, sourceName, sourceID, errTag string) {
 	tags := map[string]string{
 		"workspaceId":   workspaceID,
 		"module":        moduleName,

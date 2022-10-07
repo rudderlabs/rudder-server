@@ -284,7 +284,7 @@ var _ = Describe("Router", func() {
 			mockMultitenantHandle.EXPECT().CalculateSuccessFailureCounts(gomock.Any(), gomock.Any(), true, false).AnyTimes()
 			done := make(chan struct{})
 
-			c.mockRouterJobsDB.EXPECT().WithUpdateSafeTx(gomock.Any()).Times(1).Do(func(f func(tx jobsdb.UpdateSafeTx) error) {
+			c.mockRouterJobsDB.EXPECT().WithUpdateSafeTx(gomock.Any(), gomock.Any()).Times(1).Do(func(ctx context.Context, f func(tx jobsdb.UpdateSafeTx) error) {
 				_ = f(jobsdb.EmptyUpdateSafeTx())
 				close(done)
 			}).Return(nil)
@@ -370,7 +370,7 @@ var _ = Describe("Router", func() {
 				})
 			mockMultitenantHandle.EXPECT().CalculateSuccessFailureCounts(gomock.Any(), gomock.Any(), false, true).AnyTimes()
 			done := make(chan struct{})
-			c.mockRouterJobsDB.EXPECT().WithUpdateSafeTx(gomock.Any()).Times(1).Do(func(f func(tx jobsdb.UpdateSafeTx) error) {
+			c.mockRouterJobsDB.EXPECT().WithUpdateSafeTx(gomock.Any(), gomock.Any()).Times(1).Do(func(ctx context.Context, f func(tx jobsdb.UpdateSafeTx) error) {
 				_ = f(jobsdb.EmptyUpdateSafeTx())
 				close(done)
 			}).Return(nil)
@@ -451,7 +451,7 @@ var _ = Describe("Router", func() {
 					Expect(job.UserID).To(Equal(unprocessedJobsList[0].UserID))
 				})
 
-			c.mockRouterJobsDB.EXPECT().WithUpdateSafeTx(gomock.Any()).Do(func(f func(tx jobsdb.UpdateSafeTx) error) {
+			c.mockRouterJobsDB.EXPECT().WithUpdateSafeTx(gomock.Any(), gomock.Any()).Do(func(ctx context.Context, f func(tx jobsdb.UpdateSafeTx) error) {
 				_ = f(jobsdb.EmptyUpdateSafeTx())
 			}).Return(nil).Times(1)
 
@@ -580,7 +580,7 @@ var _ = Describe("Router", func() {
 			mockNetHandle.EXPECT().SendPost(gomock.Any(), gomock.Any()).Times(0)
 			done := make(chan struct{})
 			mockMultitenantHandle.EXPECT().CalculateSuccessFailureCounts(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
-			c.mockRouterJobsDB.EXPECT().WithUpdateSafeTx(gomock.Any()).Times(1).Do(func(f func(tx jobsdb.UpdateSafeTx) error) {
+			c.mockRouterJobsDB.EXPECT().WithUpdateSafeTx(gomock.Any(), gomock.Any()).Times(1).Do(func(ctx context.Context, f func(tx jobsdb.UpdateSafeTx) error) {
 				_ = f(jobsdb.EmptyUpdateSafeTx())
 				close(done)
 			}).Return(nil)
@@ -725,7 +725,7 @@ var _ = Describe("Router", func() {
 			mockMultitenantHandle.EXPECT().UpdateWorkspaceLatencyMap(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
 			done := make(chan struct{})
 			mockMultitenantHandle.EXPECT().CalculateSuccessFailureCounts(gomock.Any(), gomock.Any(), true, false).AnyTimes()
-			c.mockRouterJobsDB.EXPECT().WithUpdateSafeTx(gomock.Any()).Times(1).Do(func(f func(tx jobsdb.UpdateSafeTx) error) {
+			c.mockRouterJobsDB.EXPECT().WithUpdateSafeTx(gomock.Any(), gomock.Any()).Times(1).Do(func(ctx context.Context, f func(tx jobsdb.UpdateSafeTx) error) {
 				_ = f(jobsdb.EmptyUpdateSafeTx())
 				close(done)
 			}).Return(nil)
@@ -876,7 +876,7 @@ var _ = Describe("Router", func() {
 			done := make(chan struct{})
 			mockMultitenantHandle.EXPECT().CalculateSuccessFailureCounts(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
 
-			c.mockRouterJobsDB.EXPECT().WithUpdateSafeTx(gomock.Any()).Times(1).Do(func(f func(tx jobsdb.UpdateSafeTx) error) {
+			c.mockRouterJobsDB.EXPECT().WithUpdateSafeTx(gomock.Any(), gomock.Any()).Times(1).Do(func(ctx context.Context, f func(tx jobsdb.UpdateSafeTx) error) {
 				_ = f(jobsdb.EmptyUpdateSafeTx())
 				close(done)
 			}).Return(nil)
@@ -1108,7 +1108,7 @@ var _ = Describe("Router", func() {
 			mockMultitenantHandle.EXPECT().UpdateWorkspaceLatencyMap(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
 			done := make(chan struct{})
 			mockMultitenantHandle.EXPECT().CalculateSuccessFailureCounts(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
-			c.mockRouterJobsDB.EXPECT().WithUpdateSafeTx(gomock.Any()).Times(1).Do(func(f func(tx jobsdb.UpdateSafeTx) error) {
+			c.mockRouterJobsDB.EXPECT().WithUpdateSafeTx(gomock.Any(), gomock.Any()).Times(1).Do(func(ctx context.Context, f func(tx jobsdb.UpdateSafeTx) error) {
 				_ = f(jobsdb.EmptyUpdateSafeTx())
 				close(done)
 			}).Return(nil)
@@ -1267,7 +1267,7 @@ var _ = Describe("Router", func() {
 			done := make(chan struct{})
 			mockMultitenantHandle.EXPECT().CalculateSuccessFailureCounts(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
 
-			c.mockRouterJobsDB.EXPECT().WithUpdateSafeTx(gomock.Any()).Times(1).Do(func(f func(tx jobsdb.UpdateSafeTx) error) {
+			c.mockRouterJobsDB.EXPECT().WithUpdateSafeTx(gomock.Any(), gomock.Any()).Times(1).Do(func(ctx context.Context, f func(tx jobsdb.UpdateSafeTx) error) {
 				_ = f(jobsdb.EmptyUpdateSafeTx())
 				close(done)
 			}).Return(nil)

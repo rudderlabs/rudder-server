@@ -119,8 +119,8 @@ func deleteFilesInStorage(locations []string) error {
 	return err
 }
 
-func usedRudderStorage(uploadMetdata []byte) bool {
-	return gjson.GetBytes(uploadMetdata, "use_rudder_storage").Bool()
+func usedRudderStorage(metadata []byte) bool {
+	return gjson.GetBytes(metadata, "use_rudder_storage").Bool()
 }
 
 func archiveUploads(dbHandle *sql.DB) {

@@ -59,10 +59,10 @@ func HandleSchemaChange(existingDataType, columnType string, columnVal interface
 	return newColumnVal, true
 }
 
-func (sHandle *SchemaHandleT) getLocalSchema() (currentSchema warehouseutils.SchemaT) {
-	sourceID := sHandle.warehouse.Source.ID
-	destID := sHandle.warehouse.Destination.ID
-	namespace := sHandle.warehouse.Namespace
+func (sh *SchemaHandleT) getLocalSchema() (currentSchema warehouseutils.SchemaT) {
+	sourceID := sh.warehouse.Source.ID
+	destID := sh.warehouse.Destination.ID
+	namespace := sh.warehouse.Namespace
 
 	var rawSchema json.RawMessage
 	sqlStatement := fmt.Sprintf(`SELECT schema FROM %[1]s WHERE (%[1]s.destination_id='%[2]s' AND %[1]s.namespace='%[3]s' AND %[1]s.source_id='%[4]s') ORDER BY %[1]s.id DESC`, warehouseutils.WarehouseSchemasTable, destID, namespace, sourceID)
@@ -81,7 +81,7 @@ func (sHandle *SchemaHandleT) getLocalSchema() (currentSchema warehouseutils.Sch
 	var schemaMapInterface map[string]interface{}
 	err = json.Unmarshal(rawSchema, &schemaMapInterface)
 	if err != nil {
-		panic(fmt.Errorf("Unmarshalling: %s failed with Error : %w", rawSchema, err))
+		panic(fmt.Errorf("unmarshalling: %s failed with Error : %w", rawSchema, err))
 	}
 	currentSchema = warehouseutils.SchemaT{}
 	for tname, columnMapInterface := range schemaMapInterface {
@@ -95,11 +95,11 @@ func (sHandle *SchemaHandleT) getLocalSchema() (currentSchema warehouseutils.Sch
 	return currentSchema
 }
 
-func (sHandle *SchemaHandleT) updateLocalSchema(updatedSchema warehouseutils.SchemaT) error {
-	namespace := sHandle.warehouse.Namespace
-	sourceID := sHandle.warehouse.Source.ID
-	destID := sHandle.warehouse.Destination.ID
-	destType := sHandle.warehouse.Type
+func (sh *SchemaHandleT) updateLocalSchema(updatedSchema warehouseutils.SchemaT) error {
+	namespace := sh.warehouse.Namespace
+	sourceID := sh.warehouse.Source.ID
+	destID := sh.warehouse.Destination.ID
+	destType := sh.warehouse.Type
 	marshalledSchema, err := json.Marshal(updatedSchema)
 	defer func() {
 		if err != nil {
@@ -121,8 +121,8 @@ func (sHandle *SchemaHandleT) updateLocalSchema(updatedSchema warehouseutils.Sch
 	return err
 }
 
-func (sHandle *SchemaHandleT) fetchSchemaFromWarehouse(whManager manager.ManagerI) (schemaInWarehouse warehouseutils.SchemaT, err error) {
-	schemaInWarehouse, err = whManager.FetchSchema(sHandle.warehouse)
+func (sh *SchemaHandleT) fetchSchemaFromWarehouse(whManager manager.ManagerI) (schemaInWarehouse warehouseutils.SchemaT, err error) {
+	schemaInWarehouse, err = whManager.FetchSchema(sh.warehouse)
 	if err != nil {
 		pkgLogger.Errorf(`[WH]: Failed fetching schema from warehouse: %v`, err)
 		return warehouseutils.SchemaT{}, err
@@ -196,8 +196,8 @@ func mergeSchema(currentSchema warehouseutils.SchemaT, schemaList []warehouseuti
 	return currentMergedSchema
 }
 
-func (sHandle *SchemaHandleT) safeName(columnName string) string {
-	return warehouseutils.ToProviderCase(sHandle.warehouse.Type, columnName)
+func (sh *SchemaHandleT) safeName(columnName string) string {
+	return warehouseutils.ToProviderCase(sh.warehouse.Type, columnName)
 }
 
 func (sh *SchemaHandleT) getDiscardsSchema() map[string]string {
@@ -267,12 +267,12 @@ func (sh *SchemaHandleT) consolidateStagingFilesSchemaUsingWarehouseSchema() war
 			var schema warehouseutils.SchemaT
 			err = json.Unmarshal(s, &schema)
 			if err != nil {
-				panic(fmt.Errorf("Unmarshalling: %s failed with Error : %w", string(s), err))
+				panic(fmt.Errorf("unmarshalling: %s failed with Error : %w", string(s), err))
 			}
 
 			schemas = append(schemas, schema)
 		}
-		rows.Close()
+		_ = rows.Close()
 
 		consolidatedSchema = mergeSchema(schemaInLocalDB, schemas, consolidatedSchema, sh.warehouse.Type)
 

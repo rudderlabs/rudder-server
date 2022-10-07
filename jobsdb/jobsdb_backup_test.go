@@ -187,7 +187,7 @@ func (*backupTestCase) insertRTData(t *testing.T, jobs []*JobT, statusList []*Jo
 	require.NoError(t, err)
 
 	rtDS2 := newDataSet("rt", "2")
-	jobsDB.dsListLock.WithLock(func(l lock.DSListLockToken) {
+	jobsDB.dsListLock.WithLock(func(l lock.LockToken) {
 		jobsDB.addNewDS(l, rtDS2)
 	})
 	err = jobsDB.WithTx(func(tx *sql.Tx) error {
@@ -224,7 +224,7 @@ func (*backupTestCase) insertBatchRTData(t *testing.T, jobs []*JobT, statusList 
 	require.NoError(t, err)
 
 	ds2 := newDataSet("batch_rt", "2")
-	jobsDB.dsListLock.WithLock(func(l lock.DSListLockToken) {
+	jobsDB.dsListLock.WithLock(func(l lock.LockToken) {
 		jobsDB.addNewDS(l, ds2)
 	})
 	err = jobsDB.WithTx(func(tx *sql.Tx) error {

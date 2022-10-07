@@ -15,6 +15,7 @@ services:
       interval: 1s
       retries: 25
   wh-transformer:
+    hostname: wh-transformer
     container_name: wh-transformer
     image: rudderlabs/rudder-transformer:latest
     ports:
@@ -86,7 +87,7 @@ services:
       retries: 25
   wh-mssql:
     container_name: wh-mssql
-    image: mcr.microsoft.com/azure-sql-edge:1.0.5
+    image: cagrin/azure-sql-edge-arm64:latest
     environment:
       - ACCEPT_EULA=Y
       - SA_PASSWORD=reallyStrongPwd123
