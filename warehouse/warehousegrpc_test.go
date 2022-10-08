@@ -11,7 +11,6 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/ory/dockertest/v3"
-
 	proto "github.com/rudderlabs/rudder-server/proto/warehouse"
 	"github.com/rudderlabs/rudder-server/testhelper"
 	"github.com/rudderlabs/rudder-server/testhelper/destination"
@@ -399,7 +398,7 @@ var _ = Describe("WarehouseGrpc", func() {
 				})
 			})
 
-			Describe("Triggering warehouse uploads with interval", func() {
+			Describe("Configuration validations", func() {
 				var req *proto.WHValidationRequest
 
 				BeforeEach(func() {
@@ -444,54 +443,89 @@ var _ = Describe("WarehouseGrpc", func() {
 					}
 				})
 
-				It("validate", func() {
-					res, err := w.Validate(c, req)
-					Expect(err).To(BeNil())
-					Expect(res.Error).To(BeEmpty())
-					Expect(res.Data).To(MatchJSON(fmt.Sprintf(`
-						{
-						  "success": true,
-						  "error": "",
-						  "steps": [
-							{
-							  "id": 1,
-							  "name": "Verifying Object Storage",
+				When("Validating with steps", func() {
+					DescribeTable("Validate", func(stepID, stepName string) {
+						req.Step = stepID
+
+						res, err := w.Validate(c, req)
+
+						Expect(err).To(BeNil())
+						Expect(res.Error).To(BeEmpty())
+						Expect(res.Data).To(MatchJSON(fmt.Sprintf(`{
 							  "success": true,
-							  "error": ""
-							},
-							{
-							  "id": 2,
-							  "name": "Verifying Connections",
-							  "success": true,
-							  "error": ""
-							},
-							{
-							  "id": 3,
-							  "name": "Verifying Create Schema",
-							  "success": true,
-							  "error": ""
-							},
-							{
-							  "id": 4,
-							  "name": "Verifying Create and Alter Table",
-							  "success": true,
-							  "error": ""
-							},
-							{
-							  "id": 5,
-							  "name": "Verifying Fetch Schema",
-							  "success": true,
-							  "error": ""
-							},
-							{
-							  "id": 6,
-							  "name": "Verifying Load Table",
-							  "success": true,
-							  "error": ""
-							}
-						  ]
-						}
-					`)))
+							  "error": "",
+							  "steps": [
+								{
+								  "id": %s,
+								  "name": %q,
+								  "success": true,
+								  "error": ""
+								}
+							  ]
+							}`,
+							stepID,
+							stepName,
+						)))
+					},
+						Entry("Verifying Object Storage", "1", "Verifying Object Storage"),
+						Entry("Verifying Connections", "2", "Verifying Connections"),
+						Entry("Verifying Create Schema", "3", "Verifying Create Schema"),
+						Entry("Verifying Create and Alter Table", "4", "Verifying Create and Alter Table"),
+						Entry("Verifying Fetch Schema", "5", "Verifying Fetch Schema"),
+						Entry("Load Table", "6", "Verifying Load Table"),
+					)
+				})
+
+				When("Validating without steps", func() {
+					It("Validate", func() {
+						res, err := w.Validate(c, req)
+						Expect(err).To(BeNil())
+						Expect(res.Error).To(BeEmpty())
+						Expect(res.Data).To(MatchJSON(`
+											{
+											  "success": true,
+											  "error": "",
+											  "steps": [
+												{
+												  "id": 1,
+												  "name": "Verifying Object Storage",
+												  "success": true,
+												  "error": ""
+												},
+												{
+												  "id": 2,
+												  "name": "Verifying Connections",
+												  "success": true,
+												  "error": ""
+												},
+												{
+												  "id": 3,
+												  "name": "Verifying Create Schema",
+												  "success": true,
+												  "error": ""
+												},
+												{
+												  "id": 4,
+												  "name": "Verifying Create and Alter Table",
+												  "success": true,
+												  "error": ""
+												},
+												{
+												  "id": 5,
+												  "name": "Verifying Fetch Schema",
+												  "success": true,
+												  "error": ""
+												},
+												{
+												  "id": 6,
+												  "name": "Verifying Load Table",
+												  "success": true,
+												  "error": ""
+												}
+											  ]
+											}
+										`))
+					})
 				})
 			})
 		})
