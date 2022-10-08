@@ -252,7 +252,7 @@ func runRollbackWithTimeout(f func() error, onTimeout func(map[string]string), d
 	}
 }
 
-func (pg *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutils.TableSchemaT, skipTempTableDelete bool) (stagingTableName string, err error) {
+func (pg *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutils.TableSchemaT) (stagingTableName string, err error) {
 	sqlStatement := fmt.Sprintf(`SET search_path to %q`, pg.Namespace)
 	_, err = pg.Db.Exec(sqlStatement)
 	if err != nil {
@@ -283,7 +283,7 @@ func (pg *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 	}
 	// create temporary table
 	stagingTableName = misc.TruncateStr(fmt.Sprintf(`%s%s_%s`, stagingTablePrefix, tableName, strings.ReplaceAll(uuid.Must(uuid.NewV4()).String(), "-", "")), 63)
-	sqlStatement = fmt.Sprintf(`CREATE TABLE "%[1]s".%[2]s (LIKE "%[1]s"."%[3]s")`, pg.Namespace, stagingTableName, tableName)
+	sqlStatement = fmt.Sprintf(`CREATE TEMPORARY TABLE "%[1]s".%[2]s (LIKE "%[1]s"."%[3]s")`, pg.Namespace, stagingTableName, tableName)
 	pkgLogger.Debugf("PG: Creating temporary table for table:%s at %s\n", tableName, sqlStatement)
 	_, err = txn.Exec(sqlStatement)
 	if err != nil {
@@ -291,9 +291,6 @@ func (pg *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 		tags["stage"] = createStagingTable
 		runRollbackWithTimeout(txn.Rollback, handleRollbackTimeout, txnRollbackTimeout, tags)
 		return
-	}
-	if !skipTempTableDelete {
-		defer pg.dropStagingTable(stagingTableName)
 	}
 
 	stmt, err := txn.Prepare(pq.CopyInSchema(pg.Namespace, stagingTableName, sortedColumnKeys...))
@@ -433,8 +430,7 @@ func (pg *HandleT) loadUserTables() (errorMap map[string]error) {
 	}
 	pkgLogger.Infof("PG: Updated search_path to %s in postgres for PG:%s : %v", pg.Namespace, pg.Warehouse.Destination.ID, sqlStatement)
 	pkgLogger.Infof("PG: Starting load for identifies and users tables\n")
-	identifyStagingTable, err := pg.loadTable(warehouseutils.IdentifiesTable, pg.Uploader.GetTableSchemaInUpload(warehouseutils.IdentifiesTable), true)
-	defer pg.dropStagingTable(identifyStagingTable)
+	identifyStagingTable, err := pg.loadTable(warehouseutils.IdentifiesTable, pg.Uploader.GetTableSchemaInUpload(warehouseutils.IdentifiesTable))
 	if err != nil {
 		errorMap[warehouseutils.IdentifiesTable] = err
 		return
@@ -446,7 +442,7 @@ func (pg *HandleT) loadUserTables() (errorMap map[string]error) {
 	errorMap[warehouseutils.UsersTable] = nil
 
 	if skipComputingUserLatestTraits {
-		_, err := pg.loadTable(warehouseutils.UsersTable, pg.Uploader.GetTableSchemaInUpload(warehouseutils.UsersTable), false)
+		_, err := pg.loadTable(warehouseutils.UsersTable, pg.Uploader.GetTableSchemaInUpload(warehouseutils.UsersTable))
 		if err != nil {
 			errorMap[warehouseutils.UsersTable] = err
 		}
@@ -455,8 +451,6 @@ func (pg *HandleT) loadUserTables() (errorMap map[string]error) {
 
 	unionStagingTableName := misc.TruncateStr(fmt.Sprintf(`%s%s_%s`, stagingTablePrefix, strings.ReplaceAll(uuid.Must(uuid.NewV4()).String(), "-", ""), "users_identifies_union"), 63)
 	stagingTableName := misc.TruncateStr(fmt.Sprintf(`%s%s_%s`, stagingTablePrefix, strings.ReplaceAll(uuid.Must(uuid.NewV4()).String(), "-", ""), warehouseutils.UsersTable), 63)
-	defer pg.dropStagingTable(stagingTableName)
-	defer pg.dropStagingTable(unionStagingTableName)
 
 	userColMap := pg.Uploader.GetTableSchemaInWarehouse(warehouseutils.UsersTable)
 	var userColNames, firstValProps []string
@@ -476,7 +470,7 @@ func (pg *HandleT) loadUserTables() (errorMap map[string]error) {
 		firstValProps = append(firstValProps, caseSubQuery)
 	}
 
-	sqlStatement = fmt.Sprintf(`CREATE TABLE "%[1]s".%[5]s as (
+	sqlStatement = fmt.Sprintf(`CREATE TEMPORARY TABLE "%[1]s".%[5]s as (
 												(
 													SELECT id, %[4]s FROM "%[1]s"."%[2]s" WHERE id in (SELECT user_id FROM "%[1]s"."%[3]s" WHERE user_id IS NOT NULL)
 												) UNION
@@ -492,7 +486,7 @@ func (pg *HandleT) loadUserTables() (errorMap map[string]error) {
 		return
 	}
 
-	sqlStatement = fmt.Sprintf(`CREATE TABLE %[4]s.%[1]s AS (SELECT DISTINCT * FROM
+	sqlStatement = fmt.Sprintf(`CREATE TEMPORARY TABLE %[4]s.%[1]s AS (SELECT DISTINCT * FROM
 										(
 											SELECT
 											x.id, %[2]s
@@ -581,14 +575,6 @@ func (pg *HandleT) CreateSchema() (err error) {
 	pkgLogger.Infof("PG: Creating schema name in postgres for PG:%s : %v", pg.Warehouse.Destination.ID, sqlStatement)
 	_, err = pg.Db.Exec(sqlStatement)
 	return
-}
-
-func (pg *HandleT) dropStagingTable(stagingTableName string) {
-	pkgLogger.Infof("PG: dropping table %+v\n", stagingTableName)
-	_, err := pg.Db.Exec(fmt.Sprintf(`DROP TABLE IF EXISTS "%[1]s"."%[2]s"`, pg.Namespace, stagingTableName))
-	if err != nil {
-		pkgLogger.Errorf("PG:  Error dropping staging table %s in postgres: %v", stagingTableName, err)
-	}
 }
 
 func (pg *HandleT) createTable(name string, columns map[string]string) (err error) {
@@ -680,47 +666,7 @@ func (pg *HandleT) Setup(warehouse warehouseutils.WarehouseT, uploader warehouse
 }
 
 func (pg *HandleT) CrashRecover(warehouse warehouseutils.WarehouseT) (err error) {
-	pg.Warehouse = warehouse
-	pg.Namespace = warehouse.Namespace
-	pg.Db, err = Connect(pg.getConnectionCredentials())
-	if err != nil {
-		return err
-	}
-	defer pg.Db.Close()
-	pg.dropDanglingStagingTables()
 	return
-}
-
-func (pg *HandleT) dropDanglingStagingTables() bool {
-	sqlStatement := fmt.Sprintf(`select table_name
-								 from information_schema.tables
-								 where table_schema = '%s' AND table_name like '%s';`, pg.Namespace, fmt.Sprintf("%s%s", stagingTablePrefix, "%"))
-	rows, err := pg.Db.Query(sqlStatement)
-	if err != nil {
-		pkgLogger.Errorf("WH: PG: Error dropping dangling staging tables in PG: %v\nQuery: %s\n", err, sqlStatement)
-		return false
-	}
-	defer rows.Close()
-
-	var stagingTableNames []string
-	for rows.Next() {
-		var tableName string
-		err := rows.Scan(&tableName)
-		if err != nil {
-			panic(fmt.Errorf("Failed to scan result from query: %s\nwith Error : %w", sqlStatement, err))
-		}
-		stagingTableNames = append(stagingTableNames, tableName)
-	}
-	pkgLogger.Infof("WH: PG: Dropping dangling staging tables: %+v  %+v\n", len(stagingTableNames), stagingTableNames)
-	delSuccess := true
-	for _, stagingTableName := range stagingTableNames {
-		_, err := pg.Db.Exec(fmt.Sprintf(`DROP TABLE "%[1]s"."%[2]s"`, pg.Namespace, stagingTableName))
-		if err != nil {
-			pkgLogger.Errorf("WH: PG:  Error dropping dangling staging table: %s in PG: %v\n", stagingTableName, err)
-			delSuccess = false
-		}
-	}
-	return delSuccess
 }
 
 // FetchSchema queries postgres and returns the schema associated with provided namespace
@@ -786,13 +732,12 @@ func (pg *HandleT) LoadUserTables() map[string]error {
 }
 
 func (pg *HandleT) LoadTable(tableName string) error {
-	_, err := pg.loadTable(tableName, pg.Uploader.GetTableSchemaInUpload(tableName), false)
+	_, err := pg.loadTable(tableName, pg.Uploader.GetTableSchemaInUpload(tableName))
 	return err
 }
 
 func (pg *HandleT) Cleanup() {
 	if pg.Db != nil {
-		pg.dropDanglingStagingTables()
 		pg.Db.Close()
 	}
 }

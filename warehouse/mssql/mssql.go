@@ -237,7 +237,7 @@ func (ms *HandleT) DownloadLoadFiles(tableName string) ([]string, error) {
 	return fileNames, nil
 }
 
-func (ms *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutils.TableSchemaT, skipTempTableDelete bool) (stagingTableName string, err error) {
+func (ms *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutils.TableSchemaT) (stagingTableName string, err error) {
 	pkgLogger.Infof("MS: Starting load for table:%s", tableName)
 
 	// sort column names
@@ -260,7 +260,7 @@ func (ms *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 	// https://github.com/denisenkom/go-mssqldb/issues/149, https://docs.microsoft.com/en-us/previous-versions/sql/sql-server-2008-r2/ms175528(v=sql.105)?redirectedfrom=MSDN
 	// sqlStatement := fmt.Sprintf(`CREATE  TABLE ##%[2]s like %[1]s.%[3]s`, ms.Namespace, stagingTableName, tableName)
 	// Hence falling back to creating normal tables
-	sqlStatement := fmt.Sprintf(`select top 0 * into %[1]s.%[2]s from %[1]s.%[3]s`, ms.Namespace, stagingTableName, tableName)
+	sqlStatement := fmt.Sprintf(`select top 0 * into #%[1]s.%[2]s from %[1]s.%[3]s`, ms.Namespace, stagingTableName, tableName)
 
 	pkgLogger.Debugf("MS: Creating temporary table for table:%s at %s\n", tableName, sqlStatement)
 	_, err = txn.Exec(sqlStatement)
@@ -268,9 +268,6 @@ func (ms *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 		pkgLogger.Errorf("MS: Error creating temporary table for table:%s: %v\n", tableName, err)
 		txn.Rollback()
 		return
-	}
-	if !skipTempTableDelete {
-		defer ms.dropStagingTable(stagingTableName)
 	}
 
 	stmt, err := txn.Prepare(mssql.CopyIn(ms.Namespace+"."+stagingTableName, mssql.BulkOptions{CheckConstraints: false}, sortedColumnKeys...))
@@ -447,9 +444,9 @@ func (ms *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 	}
 
 	quotedColumnNames := warehouseutils.DoubleQuoteAndJoinByComma(sortedColumnKeys)
-	sqlStatement = fmt.Sprintf(`INSERT INTO "%[1]s"."%[2]s" (%[3]s) 
-									SELECT %[3]s FROM ( 
-										SELECT *, row_number() OVER (PARTITION BY %[5]s ORDER BY received_at DESC) AS _rudder_staging_row_number FROM "%[1]s"."%[4]s" 
+	sqlStatement = fmt.Sprintf(`INSERT INTO "%[1]s"."%[2]s" (%[3]s)
+									SELECT %[3]s FROM (
+										SELECT *, row_number() OVER (PARTITION BY %[5]s ORDER BY received_at DESC) AS _rudder_staging_row_number FROM "%[1]s"."%[4]s"
 									) AS _ where _rudder_staging_row_number = 1
 									`, ms.Namespace, tableName, quotedColumnNames, stagingTableName, partitionKey)
 	pkgLogger.Infof("MS: Inserting records for table:%s using staging table: %s\n", tableName, sqlStatement)
@@ -494,7 +491,7 @@ func hasDiacritics(str string) bool {
 func (ms *HandleT) loadUserTables() (errorMap map[string]error) {
 	errorMap = map[string]error{warehouseutils.IdentifiesTable: nil}
 	pkgLogger.Infof("MS: Starting load for identifies and users tables\n")
-	identifyStagingTable, err := ms.loadTable(warehouseutils.IdentifiesTable, ms.Uploader.GetTableSchemaInUpload(warehouseutils.IdentifiesTable), true)
+	identifyStagingTable, err := ms.loadTable(warehouseutils.IdentifiesTable, ms.Uploader.GetTableSchemaInUpload(warehouseutils.IdentifiesTable))
 	if err != nil {
 		errorMap[warehouseutils.IdentifiesTable] = err
 		return
@@ -507,9 +504,6 @@ func (ms *HandleT) loadUserTables() (errorMap map[string]error) {
 
 	unionStagingTableName := misc.TruncateStr(fmt.Sprintf(`%s%s_%s`, stagingTablePrefix, strings.ReplaceAll(uuid.Must(uuid.NewV4()).String(), "-", ""), "users_identifies_union"), 127)
 	stagingTableName := misc.TruncateStr(fmt.Sprintf(`%s%s_%s`, stagingTablePrefix, strings.ReplaceAll(uuid.Must(uuid.NewV4()).String(), "-", ""), warehouseutils.UsersTable), 127)
-	defer ms.dropStagingTable(stagingTableName)
-	defer ms.dropStagingTable(unionStagingTableName)
-	defer ms.dropStagingTable(identifyStagingTable)
 
 	userColMap := ms.Uploader.GetTableSchemaInWarehouse(warehouseutils.UsersTable)
 	var userColNames, firstValProps []string
@@ -534,8 +528,7 @@ func (ms *HandleT) loadUserTables() (errorMap map[string]error) {
 		firstValProps = append(firstValProps, caseSubQuery)
 	}
 
-	// TODO: skipped top level temporary table for now
-	sqlStatement := fmt.Sprintf(`SELECT * into %[5]s FROM
+	sqlStatement := fmt.Sprintf(`SELECT * into #%[5]s FROM
 												((
 													SELECT id, %[4]s FROM %[2]s WHERE id in (SELECT user_id FROM %[3]s WHERE user_id IS NOT NULL)
 												) UNION
@@ -551,7 +544,7 @@ func (ms *HandleT) loadUserTables() (errorMap map[string]error) {
 		return
 	}
 
-	sqlStatement = fmt.Sprintf(`SELECT * INTO %[1]s FROM (SELECT DISTINCT * FROM
+	sqlStatement = fmt.Sprintf(`SELECT * INTO #%[1]s FROM (SELECT DISTINCT * FROM
 										(
 											SELECT
 											x.id, %[2]s
@@ -622,14 +615,6 @@ func (ms *HandleT) CreateSchema() (err error) {
 	return
 }
 
-func (ms *HandleT) dropStagingTable(stagingTableName string) {
-	pkgLogger.Infof("MS: dropping table %+v\n", stagingTableName)
-	_, err := ms.Db.Exec(fmt.Sprintf(`DROP TABLE IF EXISTS %s`, ms.Namespace+"."+stagingTableName))
-	if err != nil {
-		pkgLogger.Errorf("MS:  Error dropping staging table %s in mssql: %v", ms.Namespace+"."+stagingTableName, err)
-	}
-}
-
 func (ms *HandleT) createTable(name string, columns map[string]string) (err error) {
 	sqlStatement := fmt.Sprintf(`IF  NOT EXISTS (SELECT 1 FROM sys.objects WHERE object_id = OBJECT_ID(N'%[1]s') AND type = N'U')
 	CREATE TABLE %[1]s ( %v )`, name, ColumnsWithDataTypes(columns, ""))
@@ -651,13 +636,6 @@ func (ms *HandleT) CreateTable(tableName string, columnMap map[string]string) (e
 	// Search paths doesnt exist unlike Postgres, default is dbo. Hence use namespace wherever possible
 	err = ms.createTable(ms.Namespace+"."+tableName, columnMap)
 	return err
-}
-
-func (ms *HandleT) DropTable(tableName string) (err error) {
-	sqlStatement := `DROP TABLE "%[1]s"."%[2]s"`
-	pkgLogger.Infof("AZ: Dropping table in synapse for AZ:%s : %v", ms.Warehouse.Destination.ID, sqlStatement)
-	_, err = ms.Db.Exec(fmt.Sprintf(sqlStatement, ms.Namespace, tableName))
-	return
 }
 
 func (ms *HandleT) AddColumn(tableName, columnName, columnType string) (err error) {
@@ -708,47 +686,7 @@ func (ms *HandleT) Setup(warehouse warehouseutils.WarehouseT, uploader warehouse
 }
 
 func (ms *HandleT) CrashRecover(warehouse warehouseutils.WarehouseT) (err error) {
-	ms.Warehouse = warehouse
-	ms.Namespace = warehouse.Namespace
-	ms.Db, err = Connect(ms.getConnectionCredentials())
-	if err != nil {
-		return err
-	}
-	defer ms.Db.Close()
-	ms.dropDanglingStagingTables()
 	return
-}
-
-func (ms *HandleT) dropDanglingStagingTables() bool {
-	sqlStatement := fmt.Sprintf(`select table_name
-								 from information_schema.tables
-								 where table_schema = '%s' AND table_name like '%s';`, ms.Namespace, fmt.Sprintf("%s%s", stagingTablePrefix, "%"))
-	rows, err := ms.Db.Query(sqlStatement)
-	if err != nil {
-		pkgLogger.Errorf("WH: MSSQL: Error dropping dangling staging tables in MSSQL: %v\nQuery: %s\n", err, sqlStatement)
-		return false
-	}
-	defer rows.Close()
-
-	var stagingTableNames []string
-	for rows.Next() {
-		var tableName string
-		err := rows.Scan(&tableName)
-		if err != nil {
-			panic(fmt.Errorf("Failed to scan result from query: %s\nwith Error : %w", sqlStatement, err))
-		}
-		stagingTableNames = append(stagingTableNames, tableName)
-	}
-	pkgLogger.Infof("WH: MSSQL: Dropping dangling staging tables: %+v  %+v\n", len(stagingTableNames), stagingTableNames)
-	delSuccess := true
-	for _, stagingTableName := range stagingTableNames {
-		_, err := ms.Db.Exec(fmt.Sprintf(`DROP TABLE "%[1]s"."%[2]s"`, ms.Namespace, stagingTableName))
-		if err != nil {
-			pkgLogger.Errorf("WH: MSSQL:  Error dropping dangling staging table: %s in redshift: %v\n", stagingTableName, err)
-			delSuccess = false
-		}
-	}
-	return delSuccess
 }
 
 // FetchSchema queries mssql and returns the schema associated with provided namespace
@@ -800,14 +738,12 @@ func (ms *HandleT) LoadUserTables() map[string]error {
 }
 
 func (ms *HandleT) LoadTable(tableName string) error {
-	_, err := ms.loadTable(tableName, ms.Uploader.GetTableSchemaInUpload(tableName), false)
+	_, err := ms.loadTable(tableName, ms.Uploader.GetTableSchemaInUpload(tableName))
 	return err
 }
 
 func (ms *HandleT) Cleanup() {
 	if ms.Db != nil {
-		// extra check aside dropStagingTable(table)
-		ms.dropDanglingStagingTables()
 		ms.Db.Close()
 	}
 }
