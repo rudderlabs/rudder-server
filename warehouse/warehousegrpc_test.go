@@ -5,9 +5,6 @@ package warehouse
 import (
 	"context"
 	"fmt"
-	"net/http"
-	"os"
-
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/ory/dockertest/v3"
@@ -17,6 +14,8 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 	"google.golang.org/protobuf/types/known/emptypb"
+	"net/http"
+	"os"
 )
 
 var _ = Describe("WarehouseGrpc", func() {
@@ -444,7 +443,7 @@ var _ = Describe("WarehouseGrpc", func() {
 				})
 
 				When("Validating with steps", func() {
-					DescribeTable("Validate", func(stepID, stepName string) {
+					DescribeTable("Validate", func(stepID string, stepName string) {
 						req.Step = stepID
 
 						res, err := w.Validate(c, req)
