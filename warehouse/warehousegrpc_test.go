@@ -4,6 +4,7 @@ package warehouse
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"os"
 
@@ -30,13 +31,14 @@ var _ = Describe("WarehouseGrpc", func() {
 	Describe("Warehouse GRPC round trip", Ordered, func() {
 		Describe("Dedicated workspace", Ordered, func() {
 			var (
-				pgResource *destination.PostgresResource
-				err        error
-				cleanup    = &testhelper.Cleanup{}
-				w          *warehouseGRPC
-				c          context.Context
-				limit      = int32(2)
-				uploadID   = int64(1)
+				pgResource    *destination.PostgresResource
+				minioResource *destination.MINIOResource
+				err           error
+				cleanup       = &testhelper.Cleanup{}
+				w             *warehouseGRPC
+				c             context.Context
+				limit         = int32(2)
+				uploadID      = int64(1)
 			)
 
 			BeforeAll(func() {
@@ -44,6 +46,9 @@ var _ = Describe("WarehouseGrpc", func() {
 				Expect(err).To(BeNil())
 
 				pgResource = setupWarehouseJobs(pool, GinkgoT(), cleanup)
+
+				minioResource, err = destination.SetupMINIO(pool, cleanup)
+				Expect(err).To(BeNil())
 
 				initWarehouse()
 
@@ -391,6 +396,102 @@ var _ = Describe("WarehouseGrpc", func() {
 					Expect(res).NotTo(BeNil())
 					Expect(res.Message).Should(BeEquivalentTo(TriggeredSuccessfully))
 					Expect(res.StatusCode).Should(BeEquivalentTo(http.StatusOK))
+				})
+			})
+
+			Describe("Triggering warehouse uploads with interval", func() {
+				var req *proto.WHValidationRequest
+
+				BeforeEach(func() {
+					req = &proto.WHValidationRequest{
+						Path: "validate",
+						Body: fmt.Sprintf(`{
+								"destination": {
+									"config": {
+										"host":             %q,
+										"database":         %q,
+										"user":             %q,
+										"password":         %q,
+										"port":             %q,
+										"sslMode":          "disable",
+										"namespace":        "",
+										"bucketProvider":   "MINIO",
+										"bucketName":       %q,
+										"accessKeyID":      %q,
+										"secretAccessKey":  %q,
+										"useSSL":           false,
+										"endPoint":         %q,
+										"syncFrequency":    "30",
+										"useRudderStorage": false
+									},
+									"destinationDefinition": {
+										"id":          "1bJ4YC7INdkvBTzotNh0zta5jDm",
+										"name":        "POSTGRES",
+										"displayName": "Postgres"
+									}
+								}
+						}`,
+							pgResource.Host,
+							pgResource.Database,
+							pgResource.User,
+							pgResource.Password,
+							pgResource.Port,
+							minioResource.BucketName,
+							minioResource.AccessKey,
+							minioResource.SecretKey,
+							minioResource.Endpoint,
+						),
+					}
+				})
+
+				It("validate", func() {
+					res, err := w.Validate(c, req)
+					Expect(err).To(BeNil())
+					Expect(res.Error).To(BeEmpty())
+					Expect(res.Data).To(MatchJSON(fmt.Sprintf(`
+						{
+						  "success": true,
+						  "error": "",
+						  "steps": [
+							{
+							  "id": 1,
+							  "name": "Verifying Object Storage",
+							  "success": true,
+							  "error": ""
+							},
+							{
+							  "id": 2,
+							  "name": "Verifying Connections",
+							  "success": true,
+							  "error": ""
+							},
+							{
+							  "id": 3,
+							  "name": "Verifying Create Schema",
+							  "success": true,
+							  "error": ""
+							},
+							{
+							  "id": 4,
+							  "name": "Verifying Create and Alter Table",
+							  "success": true,
+							  "error": ""
+							},
+							{
+							  "id": 5,
+							  "name": "Verifying Fetch Schema",
+							  "success": true,
+							  "error": ""
+							},
+							{
+							  "id": 6,
+							  "name": "Verifying Load Table",
+							  "success": true,
+							  "error": ""
+							}
+						  ]
+						}
+					`)))
 				})
 			})
 		})

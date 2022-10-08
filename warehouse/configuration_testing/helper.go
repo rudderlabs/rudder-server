@@ -12,22 +12,6 @@ import (
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
-var (
-	TestTableSchemaMap = map[string]string{
-		"id":  "int",
-		"val": "string",
-	}
-	TestPayloadMap = map[string]interface{}{
-		"id":  1,
-		"val": "RudderStack",
-	}
-	TestNamespace  = "_rudderstack_setup_test"
-	AlterColumnMap = map[string]string{
-		"val_alter": "string",
-	}
-)
-
-// warehouseAdapter returns warehouseT from info request
 func warehouse(req *DestinationValidationRequest) warehouseutils.WarehouseT {
 	destination := req.Destination
 
@@ -45,7 +29,6 @@ func warehouse(req *DestinationValidationRequest) warehouseutils.WarehouseT {
 	}
 }
 
-// fileManager returns fileManager from validation request
 func fileManager(req *DestinationValidationRequest) (fileManager filemanager.FileManager, err error) {
 	destination := req.Destination
 
