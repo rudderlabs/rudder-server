@@ -668,10 +668,10 @@ func (bq *HandleT) dropDanglingStagingTables() bool {
 		  % [1]s.INFORMATION_SCHEMA.TABLES
 		WHERE
 		  table_schema = '%[1]s'
-		  AND table_name LIKE '%[2]s%%'
+		  AND table_name LIKE '%[2]s';
 	`,
 		bq.Namespace,
-		warehouseutils.StagingTablePrefix(provider),
+		fmt.Sprintf(`%s%%`, warehouseutils.StagingTablePrefix(provider)),
 	)
 	query := bq.Db.Query(sqlStatement)
 	it, err := query.Read(bq.BQContext)

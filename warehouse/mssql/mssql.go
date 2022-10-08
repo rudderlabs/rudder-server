@@ -713,13 +713,13 @@ func (ms *HandleT) dropDanglingStagingTables() bool {
 		from
 		  information_schema.tables
 		where
-		  table_schema = '$1'
-		  AND table_name like '$2%%';
+		  table_schema = $1
+		  AND table_name like $2;
 	`)
 	rows, err := ms.Db.Query(
 		sqlStatement,
 		ms.Namespace,
-		warehouseutils.StagingTablePrefix(provider),
+		fmt.Sprintf(`%s%%`, warehouseutils.StagingTablePrefix(provider)),
 	)
 	if err != nil {
 		pkgLogger.Errorf("WH: MSSQL: Error dropping dangling staging tables in MSSQL: %v\nQuery: %s\n", err, sqlStatement)
@@ -767,14 +767,14 @@ func (ms *HandleT) FetchSchema(warehouse warehouseutils.WarehouseT) (schema ware
 		FROM
 		  INFORMATION_SCHEMA.COLUMNS
 		WHERE
-		  table_schema = '$1'
-		  and table_name not like '$2%%'
+		  table_schema = $1
+		  and table_name not like $2;
 	`)
 
 	rows, err := dbHandle.Query(
 		sqlStatement,
 		ms.Namespace,
-		warehouseutils.StagingTablePrefix(provider),
+		fmt.Sprintf(`%s%%`, warehouseutils.StagingTablePrefix(provider)),
 	)
 	if err != nil && err != io.EOF {
 		pkgLogger.Errorf("MS: Error in fetching schema from mssql destination:%v, query: %v", ms.Warehouse.Destination.ID, sqlStatement)

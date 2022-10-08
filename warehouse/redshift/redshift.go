@@ -530,14 +530,14 @@ func (rs *HandleT) dropDanglingStagingTables() bool {
 		from
 		  information_schema.tables
 		where
-		  table_schema = '$1'
-		  AND table_name like '$2%%';
+		  table_schema = $1
+		  AND table_name like $2;
 	`,
 	)
 	rows, err := rs.Db.Query(
 		sqlStatement,
 		rs.Namespace,
-		warehouseutils.StagingTablePrefix(provider),
+		fmt.Sprintf(`%s%%`, warehouseutils.StagingTablePrefix(provider)),
 	)
 	if err != nil {
 		pkgLogger.Errorf("WH: RS: Error dropping dangling staging tables in redshift: %v\nQuery: %s\n", err, sqlStatement)
@@ -622,14 +622,14 @@ func (rs *HandleT) FetchSchema(warehouse warehouseutils.WarehouseT) (schema ware
 		FROM
 		  INFORMATION_SCHEMA.COLUMNS
 		WHERE
-		  table_schema = '$1'
-		  and table_name not like '$2%%'
+		  table_schema = $1
+		  and table_name not like $2;
 	`)
 
 	rows, err := dbHandle.Query(
 		sqlStatement,
 		rs.Namespace,
-		warehouseutils.StagingTablePrefix(provider),
+		fmt.Sprintf(`%s%%`, warehouseutils.StagingTablePrefix(provider)),
 	)
 	if err != nil && err != sql.ErrNoRows {
 		pkgLogger.Errorf("RS: Error in fetching schema from redshift destination:%v, query: %v", rs.Warehouse.Destination.ID, sqlStatement)

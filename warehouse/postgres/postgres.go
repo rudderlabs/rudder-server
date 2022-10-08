@@ -700,13 +700,13 @@ func (pg *HandleT) dropDanglingStagingTables() bool {
 		from
 		  information_schema.tables
 		where
-		  table_schema = '$1'
-		  AND table_name like '$2%%';
+		  table_schema = $1
+		  AND table_name like $2;
 	`)
 	rows, err := pg.Db.Query(
 		sqlStatement,
 		pg.Namespace,
-		warehouseutils.StagingTablePrefix(provider),
+		fmt.Sprintf(`%s%%`, warehouseutils.StagingTablePrefix(provider)),
 	)
 	if err != nil {
 		pkgLogger.Errorf("WH: PG: Error dropping dangling staging tables in PG: %v\nQuery: %s\n", err, sqlStatement)
@@ -758,14 +758,14 @@ func (pg *HandleT) FetchSchema(warehouse warehouseutils.WarehouseT) (schema ware
 			and t.table_schema = c.table_schema
 		  )
 		WHERE
-		  t.table_schema = '$1'
-		  and t.table_name not like '$2%%'
+		  t.table_schema = $1
+		  and t.table_name not like $2;
 	`)
 
 	rows, err := dbHandle.Query(
 		sqlStatement,
 		pg.Namespace,
-		warehouseutils.StagingTablePrefix(provider),
+		fmt.Sprintf(`%s%%`, warehouseutils.StagingTablePrefix(provider)),
 	)
 	if err != nil && err != sql.ErrNoRows {
 		pkgLogger.Errorf("PG: Error in fetching schema from postgres destination:%v, query: %v", pg.Warehouse.Destination.ID, sqlStatement)

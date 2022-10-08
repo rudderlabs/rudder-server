@@ -709,13 +709,13 @@ func (as *HandleT) dropDanglingStagingTables() bool {
 		from
 		  information_schema.tables
 		where
-		  table_schema = '$1'
-		  AND table_name like '$2%%';
+		  table_schema = $1
+		  AND table_name like $2;
 	`)
 	rows, err := as.Db.Query(
 		sqlStatement,
 		as.Namespace,
-		warehouseutils.StagingTablePrefix(provider),
+		fmt.Sprintf(`%s%%`, warehouseutils.StagingTablePrefix(provider)),
 	)
 	if err != nil {
 		pkgLogger.Errorf("WH: SYNAPSE: Error dropping dangling staging tables in synapse: %v\nQuery: %s\n", err, sqlStatement)
@@ -763,13 +763,13 @@ func (as *HandleT) FetchSchema(warehouse warehouseutils.WarehouseT) (schema ware
 		FROM
 		  INFORMATION_SCHEMA.COLUMNS
 		WHERE
-		  table_schema = '$1'
-		  and table_name not like '$2%%'
+		  table_schema = $1
+		  and table_name not like $2;
 	`)
 	rows, err := dbHandle.Query(
 		sqlStatement,
 		as.Namespace,
-		warehouseutils.StagingTablePrefix(provider),
+		fmt.Sprintf(`%s%%`, warehouseutils.StagingTablePrefix(provider)),
 	)
 	if err != nil && err != io.EOF {
 		pkgLogger.Errorf("AZ: Error in fetching schema from synapse destination:%v, query: %v", as.Warehouse.Destination.ID, sqlStatement)
