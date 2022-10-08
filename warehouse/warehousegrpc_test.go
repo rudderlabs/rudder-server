@@ -444,7 +444,7 @@ var _ = Describe("WarehouseGrpc", func() {
 				})
 
 				When("Validating with steps", func() {
-					DescribeTable("Validate", func(stepID string, stepName string) {
+					DescribeTable("Validate", func(stepID, stepName string) {
 						req.Step = stepID
 
 						res, err := w.Validate(c, req)
