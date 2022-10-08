@@ -648,7 +648,7 @@ func (rs *HandleT) Cleanup() {
 	}
 }
 
-func (rs *HandleT) CrashRecover(warehouse warehouseutils.WarehouseT) (err error) {
+func (*HandleT) CrashRecover(warehouseutils.WarehouseT) (err error) {
 	return
 }
 

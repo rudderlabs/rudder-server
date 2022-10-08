@@ -687,7 +687,7 @@ func (as *HandleT) Setup(warehouse warehouseutils.WarehouseT, uploader warehouse
 	return err
 }
 
-func (as *HandleT) CrashRecover(warehouse warehouseutils.WarehouseT) (err error) {
+func (*HandleT) CrashRecover(warehouseutils.WarehouseT) (err error) {
 	return
 }
 
