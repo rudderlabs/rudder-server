@@ -694,15 +694,15 @@ func (pg *HandleT) CrashRecover(warehouse warehouseutils.WarehouseT) (err error)
 }
 
 func (pg *HandleT) dropDanglingStagingTables() bool {
-	sqlStatement := fmt.Sprint(`
-		select
-		  table_name
-		from
-		  information_schema.tables
-		where
-		  table_schema = $1
-		  AND table_name like $2;
-	`)
+	sqlStatement := `
+			select
+			  table_name
+			from
+			  information_schema.tables
+			where
+			  table_schema = $1
+			  AND table_name like $2;
+		`
 	rows, err := pg.Db.Query(
 		sqlStatement,
 		pg.Namespace,
@@ -746,21 +746,21 @@ func (pg *HandleT) FetchSchema(warehouse warehouseutils.WarehouseT) (schema ware
 	defer dbHandle.Close()
 
 	schema = make(warehouseutils.SchemaT)
-	sqlStatement := fmt.Sprint(`
-		select
-		  t.table_name,
-		  c.column_name,
-		  c.data_type
-		from
-		  INFORMATION_SCHEMA.TABLES t
-		  LEFT JOIN INFORMATION_SCHEMA.COLUMNS c ON (
-			t.table_name = c.table_name
-			and t.table_schema = c.table_schema
-		  )
-		WHERE
-		  t.table_schema = $1
-		  and t.table_name not like $2;
-	`)
+	sqlStatement := `
+			select
+			  t.table_name,
+			  c.column_name,
+			  c.data_type
+			from
+			  INFORMATION_SCHEMA.TABLES t
+			  LEFT JOIN INFORMATION_SCHEMA.COLUMNS c ON (
+				t.table_name = c.table_name
+				and t.table_schema = c.table_schema
+			  )
+			WHERE
+			  t.table_schema = $1
+			  and t.table_name not like $2;
+		`
 
 	rows, err := dbHandle.Query(
 		sqlStatement,
