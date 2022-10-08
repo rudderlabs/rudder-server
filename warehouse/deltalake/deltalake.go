@@ -34,7 +34,8 @@ const (
 )
 
 const (
-	provider = warehouseutils.DELTALAKE
+	provider       = warehouseutils.DELTALAKE
+	tableNameLimit = 127
 )
 
 // Reference: https://docs.oracle.com/cd/E17952_01/connector-odbc-en/connector-odbc-reference-errorcodes.html
@@ -531,7 +532,7 @@ func (dl *HandleT) loadTable(tableName string, tableSchemaInUpload, tableSchemaA
 	sortedColumnKeys := warehouseutils.SortColumnKeysFromColumnMap(tableSchemaInUpload)
 
 	// Creating staging table
-	stagingTableName = warehouseutils.StagingTableName(provider, tableName)
+	stagingTableName = warehouseutils.StagingTableName(provider, tableName, tableNameLimit)
 	err = dl.CreateTable(stagingTableName, tableSchemaAfterUpload)
 	if err != nil {
 		return
@@ -667,7 +668,7 @@ func (dl *HandleT) loadUserTables() (errorMap map[string]error) {
 		userColNames = append(userColNames, colName)
 		firstValProps = append(firstValProps, fmt.Sprintf(`FIRST_VALUE(%[1]s , TRUE) OVER (PARTITION BY id ORDER BY received_at DESC ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) AS %[1]s`, colName))
 	}
-	stagingTableName := warehouseutils.StagingTableName(provider, warehouseutils.UsersTable)
+	stagingTableName := warehouseutils.StagingTableName(provider, warehouseutils.UsersTable, tableNameLimit)
 
 	tableLocationSql := dl.getTableLocationSql(stagingTableName)
 

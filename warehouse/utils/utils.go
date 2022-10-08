@@ -170,22 +170,11 @@ var DiscardsSchema = map[string]string{
 	"uuid_ts":      "datetime",
 }
 
-var tableNameLimitMap = map[string]int{
-	AZURE_SYNAPSE: 127,
-	BQ:            127,
-	DELTALAKE:     127,
-	MSSQL:         127,
-	POSTGRES:      63,
-	RS:            127,
-	SNOWFLAKE:     127,
-}
-
 const (
 	LOAD_FILE_TYPE_CSV     = "csv"
 	LOAD_FILE_TYPE_JSON    = "json"
 	LOAD_FILE_TYPE_PARQUET = "parquet"
 	TestConnectionTimeout  = 15 * time.Second
-	defaultTableNameLimit  = 127
 )
 
 var (
@@ -1046,12 +1035,8 @@ func StagingTablePrefix(provider string) string {
 	return ToProviderCase(provider, stagingTablePrefix)
 }
 
-func StagingTableName(provider, tableName string) string {
+func StagingTableName(provider, tableName string, tableNameLimit int) string {
 	randomNess := strings.ReplaceAll(uuid.Must(uuid.NewV4()).String(), "-", "")
-	tableNameLimit := defaultTableNameLimit
-	if limit, ok := tableNameLimitMap[provider]; ok {
-		tableNameLimit = limit
-	}
 	prefix := StagingTablePrefix(provider)
 	stagingTableName := fmt.Sprintf(`%s%s_%s`, prefix, tableName, randomNess)
 	return misc.TruncateStr(stagingTableName, tableNameLimit)

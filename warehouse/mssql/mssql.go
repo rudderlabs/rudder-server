@@ -28,17 +28,18 @@ import (
 var pkgLogger logger.Logger
 
 const (
-	host                   = "host"
-	dbName                 = "database"
-	user                   = "user"
-	password               = "password"
-	port                   = "port"
-	sslMode                = "sslMode"
-	mssqlStringLengthLimit = 512
+	host     = "host"
+	dbName   = "database"
+	user     = "user"
+	password = "password"
+	port     = "port"
+	sslMode  = "sslMode"
 )
 
 const (
-	provider = warehouseutils.MSSQL
+	mssqlStringLengthLimit = 512
+	provider               = warehouseutils.MSSQL
+	tableNameLimit         = 127
 )
 
 var rudderDataTypesMapToMssql = map[string]string{
@@ -241,7 +242,7 @@ func (ms *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 		return
 	}
 	// create temporary table
-	stagingTableName = warehouseutils.StagingTableName(provider, tableName)
+	stagingTableName = warehouseutils.StagingTableName(provider, tableName, tableNameLimit)
 	// prepared stmts cannot be used to create temp objects here. Will work in a txn, but will be purged after commit.
 	// https://github.com/denisenkom/go-mssqldb/issues/149, https://docs.microsoft.com/en-us/previous-versions/sql/sql-server-2008-r2/ms175528(v=sql.105)?redirectedfrom=MSDN
 	// sqlStatement := fmt.Sprintf(`CREATE  TABLE ##%[2]s like %[1]s.%[3]s`, ms.Namespace, stagingTableName, tableName)
@@ -491,8 +492,8 @@ func (ms *HandleT) loadUserTables() (errorMap map[string]error) {
 	}
 	errorMap[warehouseutils.UsersTable] = nil
 
-	unionStagingTableName := warehouseutils.StagingTableName(provider, "users_identifies_union")
-	stagingTableName := warehouseutils.StagingTableName(provider, warehouseutils.UsersTable)
+	unionStagingTableName := warehouseutils.StagingTableName(provider, "users_identifies_union", tableNameLimit)
+	stagingTableName := warehouseutils.StagingTableName(provider, warehouseutils.UsersTable, tableNameLimit)
 	defer ms.dropStagingTable(stagingTableName)
 	defer ms.dropStagingTable(unionStagingTableName)
 	defer ms.dropStagingTable(identifyStagingTable)
@@ -712,14 +713,14 @@ func (ms *HandleT) dropDanglingStagingTables() bool {
 		from
 		  information_schema.tables
 		where
-		  table_schema = '%s'
-		  AND table_name like '%s%s';
-	`,
+		  table_schema = '$1'
+		  AND table_name like '$2%%';
+	`)
+	rows, err := ms.Db.Query(
+		sqlStatement,
 		ms.Namespace,
 		warehouseutils.StagingTablePrefix(provider),
-		"%",
 	)
-	rows, err := ms.Db.Query(sqlStatement)
 	if err != nil {
 		pkgLogger.Errorf("WH: MSSQL: Error dropping dangling staging tables in MSSQL: %v\nQuery: %s\n", err, sqlStatement)
 		return false
@@ -766,15 +767,15 @@ func (ms *HandleT) FetchSchema(warehouse warehouseutils.WarehouseT) (schema ware
 		FROM
 		  INFORMATION_SCHEMA.COLUMNS
 		WHERE
-		  table_schema = '%s'
-		  and table_name not like '%s%s'
-	`,
+		  table_schema = '$1'
+		  and table_name not like '$2%%'
+	`)
+
+	rows, err := dbHandle.Query(
+		sqlStatement,
 		ms.Namespace,
 		warehouseutils.StagingTablePrefix(provider),
-		"%",
 	)
-
-	rows, err := dbHandle.Query(sqlStatement)
 	if err != nil && err != io.EOF {
 		pkgLogger.Errorf("MS: Error in fetching schema from mssql destination:%v, query: %v", ms.Warehouse.Destination.ID, sqlStatement)
 		return

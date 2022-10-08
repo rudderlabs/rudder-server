@@ -40,7 +40,8 @@ const (
 )
 
 const (
-	provider = warehouseutils.POSTGRES
+	provider       = warehouseutils.POSTGRES
+	tableNameLimit = 127
 )
 
 // load table transaction stages
@@ -283,7 +284,7 @@ func (pg *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 		return
 	}
 	// create temporary table
-	stagingTableName = warehouseutils.StagingTableName(provider, tableName)
+	stagingTableName = warehouseutils.StagingTableName(provider, tableName, tableNameLimit)
 	sqlStatement = fmt.Sprintf(`CREATE TABLE "%[1]s".%[2]s (LIKE "%[1]s"."%[3]s")`, pg.Namespace, stagingTableName, tableName)
 	pkgLogger.Debugf("PG: Creating temporary table for table:%s at %s\n", tableName, sqlStatement)
 	_, err = txn.Exec(sqlStatement)
@@ -454,8 +455,8 @@ func (pg *HandleT) loadUserTables() (errorMap map[string]error) {
 		return
 	}
 
-	unionStagingTableName := warehouseutils.StagingTableName(provider, "users_identifies_union")
-	stagingTableName := warehouseutils.StagingTableName(provider, warehouseutils.UsersTable)
+	unionStagingTableName := warehouseutils.StagingTableName(provider, "users_identifies_union", tableNameLimit)
+	stagingTableName := warehouseutils.StagingTableName(provider, warehouseutils.UsersTable, tableNameLimit)
 	defer pg.dropStagingTable(stagingTableName)
 	defer pg.dropStagingTable(unionStagingTableName)
 
@@ -699,14 +700,14 @@ func (pg *HandleT) dropDanglingStagingTables() bool {
 		from
 		  information_schema.tables
 		where
-		  table_schema = '%s'
-		  AND table_name like '%s%s';
-	`,
+		  table_schema = '$1'
+		  AND table_name like '$2%%';
+	`)
+	rows, err := pg.Db.Query(
+		sqlStatement,
 		pg.Namespace,
 		warehouseutils.StagingTablePrefix(provider),
-		"%",
 	)
-	rows, err := pg.Db.Query(sqlStatement)
 	if err != nil {
 		pkgLogger.Errorf("WH: PG: Error dropping dangling staging tables in PG: %v\nQuery: %s\n", err, sqlStatement)
 		return false
@@ -757,15 +758,15 @@ func (pg *HandleT) FetchSchema(warehouse warehouseutils.WarehouseT) (schema ware
 			and t.table_schema = c.table_schema
 		  )
 		WHERE
-		  t.table_schema = '%s'
-		  and t.table_name not like '%s%s'
-	`,
+		  t.table_schema = '$1'
+		  and t.table_name not like '$2%%'
+	`)
+
+	rows, err := dbHandle.Query(
+		sqlStatement,
 		pg.Namespace,
 		warehouseutils.StagingTablePrefix(provider),
-		"%",
 	)
-
-	rows, err := dbHandle.Query(sqlStatement)
 	if err != nil && err != sql.ErrNoRows {
 		pkgLogger.Errorf("PG: Error in fetching schema from postgres destination:%v, query: %v", pg.Warehouse.Destination.ID, sqlStatement)
 		return

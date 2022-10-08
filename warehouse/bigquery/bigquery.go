@@ -49,7 +49,8 @@ const (
 )
 
 const (
-	provider = warehouseutils.BQ
+	provider       = warehouseutils.BQ
+	tableNameLimit = 127
 )
 
 // maps datatype stored in rudder to datatype in bigquery
@@ -302,7 +303,7 @@ func (bq *HandleT) loadTable(tableName string, _, getLoadFileLocFromTableUploads
 	}
 
 	loadTableByMerge := func() (err error) {
-		stagingTableName := warehouseutils.StagingTableName(provider, tableName)
+		stagingTableName := warehouseutils.StagingTableName(provider, tableName, tableNameLimit)
 		stagingLoadTable.stagingTableName = stagingTableName
 		pkgLogger.Infof("BQ: Loading data into temporary table: %s in bigquery dataset: %s in project: %s", stagingTableName, bq.Namespace, bq.ProjectID)
 		stagingTableColMap := bq.Uploader.GetTableSchemaInWarehouse(tableName)
@@ -518,7 +519,7 @@ func (bq *HandleT) LoadUserTables() (errorMap map[string]error) {
 	}
 
 	loadUserTableByMerge := func() {
-		stagingTableName := warehouseutils.StagingTableName(provider, warehouseutils.UsersTable)
+		stagingTableName := warehouseutils.StagingTableName(provider, warehouseutils.UsersTable, tableNameLimit)
 		pkgLogger.Infof(`BQ: Creating staging table for users: %v`, sqlStatement)
 		query := bq.Db.Query(sqlStatement)
 		query.QueryConfig.Dst = bq.Db.Dataset(bq.Namespace).Table(stagingTableName)
@@ -667,11 +668,10 @@ func (bq *HandleT) dropDanglingStagingTables() bool {
 		  % [1]s.INFORMATION_SCHEMA.TABLES
 		WHERE
 		  table_schema = '%[1]s'
-		  AND table_name LIKE '%[2]s%[3]s'
+		  AND table_name LIKE '%[2]s%%'
 	`,
 		bq.Namespace,
 		warehouseutils.StagingTablePrefix(provider),
-		"%",
 	)
 	query := bq.Db.Query(sqlStatement)
 	it, err := query.Read(bq.BQContext)

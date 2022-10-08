@@ -28,14 +28,18 @@ import (
 var pkgLogger logger.Logger
 
 const (
-	host                   = "host"
-	dbName                 = "database"
-	user                   = "user"
-	password               = "password"
-	port                   = "port"
-	sslMode                = "sslMode"
+	host     = "host"
+	dbName   = "database"
+	user     = "user"
+	password = "password"
+	port     = "port"
+	sslMode  = "sslMode"
+)
+
+const (
 	mssqlStringLengthLimit = 512
 	provider               = warehouseutils.AZURE_SYNAPSE
+	tableNameLimit         = 127
 )
 
 var rudderDataTypesMapToMssql = map[string]string{
@@ -241,7 +245,7 @@ func (as *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 	}
 
 	// create temporary table
-	stagingTableName = warehouseutils.StagingTableName(provider, tableName)
+	stagingTableName = warehouseutils.StagingTableName(provider, tableName, tableNameLimit)
 	// prepared stmts cannot be used to create temp objects here. Will work in a txn, but will be purged after commit.
 	// https://github.com/denisenkom/go-mssqldb/issues/149, https://docs.microsoft.com/en-us/previous-versions/sql/sql-server-2008-r2/ms175528(v=sql.105)?redirectedfrom=MSDN
 	// sqlStatement := fmt.Sprintf(`CREATE  TABLE ##%[2]s like %[1]s.%[3]s`, AZ.Namespace, stagingTableName, tableName)
@@ -492,8 +496,8 @@ func (as *HandleT) loadUserTables() (errorMap map[string]error) {
 	}
 	errorMap[warehouseutils.UsersTable] = nil
 
-	unionStagingTableName := warehouseutils.StagingTableName(provider, "users_identifies_union")
-	stagingTableName := warehouseutils.StagingTableName(provider, warehouseutils.UsersTable)
+	unionStagingTableName := warehouseutils.StagingTableName(provider, "users_identifies_union", tableNameLimit)
+	stagingTableName := warehouseutils.StagingTableName(provider, warehouseutils.UsersTable, tableNameLimit)
 	defer as.dropStagingTable(stagingTableName)
 	defer as.dropStagingTable(unionStagingTableName)
 	defer as.dropStagingTable(identifyStagingTable)
@@ -705,14 +709,14 @@ func (as *HandleT) dropDanglingStagingTables() bool {
 		from
 		  information_schema.tables
 		where
-		  table_schema = '%s'
-		  AND table_name like '%s%s';
-	`,
+		  table_schema = '$1'
+		  AND table_name like '$2%%';
+	`)
+	rows, err := as.Db.Query(
+		sqlStatement,
 		as.Namespace,
 		warehouseutils.StagingTablePrefix(provider),
-		"%",
 	)
-	rows, err := as.Db.Query(sqlStatement)
 	if err != nil {
 		pkgLogger.Errorf("WH: SYNAPSE: Error dropping dangling staging tables in synapse: %v\nQuery: %s\n", err, sqlStatement)
 		return false
@@ -759,15 +763,14 @@ func (as *HandleT) FetchSchema(warehouse warehouseutils.WarehouseT) (schema ware
 		FROM
 		  INFORMATION_SCHEMA.COLUMNS
 		WHERE
-		  table_schema = '%s'
-		  and table_name not like '%s%s'
-	`,
+		  table_schema = '$1'
+		  and table_name not like '$2%%'
+	`)
+	rows, err := dbHandle.Query(
+		sqlStatement,
 		as.Namespace,
 		warehouseutils.StagingTablePrefix(provider),
-		"%",
 	)
-
-	rows, err := dbHandle.Query(sqlStatement)
 	if err != nil && err != io.EOF {
 		pkgLogger.Errorf("AZ: Error in fetching schema from synapse destination:%v, query: %v", as.Warehouse.Destination.ID, sqlStatement)
 		return

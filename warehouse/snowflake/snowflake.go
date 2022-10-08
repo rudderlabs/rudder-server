@@ -18,7 +18,8 @@ import (
 )
 
 const (
-	provider = warehouseutils.SNOWFLAKE
+	provider       = warehouseutils.SNOWFLAKE
+	tableNameLimit = 127
 )
 
 var pkgLogger logger.Logger
@@ -231,7 +232,7 @@ func (sf *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 	}, ",")
 
 	schemaIdentifier := sf.schemaIdentifier()
-	stagingTableName := warehouseutils.StagingTableName(provider, tableName)
+	stagingTableName := warehouseutils.StagingTableName(provider, tableName, tableNameLimit)
 	sqlStatement := fmt.Sprintf(`CREATE TEMPORARY TABLE %[1]s."%[2]s" LIKE %[1]s."%[3]s"`, schemaIdentifier, stagingTableName, tableName)
 
 	pkgLogger.Debugf("SF: Creating temporary table for table:%s at %s\n", tableName, sqlStatement)
@@ -383,7 +384,7 @@ func (sf *HandleT) LoadIdentityMappingsTable() (err error) {
 	}
 
 	schemaIdentifier := sf.schemaIdentifier()
-	stagingTableName := warehouseutils.StagingTableName(provider, identityMappingsTable)
+	stagingTableName := warehouseutils.StagingTableName(provider, identityMappingsTable, tableNameLimit)
 	sqlStatement := fmt.Sprintf(`CREATE TEMPORARY TABLE %[1]s."%[2]s" LIKE %[1]s."%[3]s"`, schemaIdentifier, stagingTableName, identityMappingsTable)
 
 	pkgLogger.Infof("SF: Creating temporary table for table:%s at %s\n", identityMappingsTable, sqlStatement)
@@ -470,7 +471,7 @@ func (sf *HandleT) loadUserTables() (errorMap map[string]error) {
 	}
 	schemaIdentifier := sf.schemaIdentifier()
 
-	stagingTableName := warehouseutils.StagingTableName(provider, usersTable)
+	stagingTableName := warehouseutils.StagingTableName(provider, usersTable, tableNameLimit)
 	sqlStatement := fmt.Sprintf(`CREATE TEMPORARY TABLE %[1]s."%[2]s" AS (SELECT DISTINCT * FROM
 										(
 											SELECT

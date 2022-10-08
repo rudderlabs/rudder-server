@@ -1298,32 +1298,28 @@ var _ = Describe("Utils", func() {
 		Entry(nil, AZURE_DATALAKE),
 	)
 
-	DescribeTable("Staging table name", func(provider, tableName, expected string) {
-		Expect(StagingTableName(provider, tableName)).To(HavePrefix(expected))
-		Expect(StagingTableName(provider, tableName)).To(HavePrefix(expected))
+	DescribeTable("Staging table name", func(provider string, limit int) {
+		By("Within limits")
+		tableName := ToProviderCase(provider, "demo")
+		expectedTableName := ToProviderCase(provider, "rudder_staging_demo_")
+		Expect(StagingTableName(provider, tableName, limit)).To(HavePrefix(expectedTableName))
+
+		By("Beyond limits")
+		tableName = ToProviderCase(provider, "abcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyz")
+		expectedTableName = ToProviderCase(provider, "rudder_staging_abcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyz"[:limit])
+		Expect(StagingTableName(provider, tableName, limit)).To(HavePrefix(expectedTableName))
 	},
-		Entry(nil, BQ, "demo", "rudder_staging_demo_"),
-		Entry(nil, BQ, "abcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyz", "rudder_staging_abcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyz"),
-		Entry(nil, RS, "demo", "rudder_staging_demo_"),
-		Entry(nil, RS, "abcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyz", "rudder_staging_abcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyz"),
-		Entry(nil, SNOWFLAKE, "DEMO", "RUDDER_STAGING_DEMO_"),
-		Entry(nil, SNOWFLAKE, "ABCDEFGHIJLKMNOPQRSTUVWXYZABCDEFGHIJLKMNOPQRSTUVWXYZABCDEFGHIJLKMNOPQRSTUVWXYZABCDEFGHIJLKMNOPQRSTUVWXYZABCDEFGHIJLKMNOPQRSTUVWXYZ", "RUDDER_STAGING_ABCDEFGHIJLKMNOPQRSTUVWXYZABCDEFGHIJLKMNOPQRSTUVWXYZABCDEFGHIJLKMNOPQRSTUVWXYZABCDEFGHIJLKMNOPQRSTUVWXYZ"),
-		Entry(nil, POSTGRES, "demo", "rudder_staging_demo_"),
-		Entry(nil, POSTGRES, "abcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyz", "rudder_staging_abcdefghijlkmnopqrstuvwxyz"),
-		Entry(nil, CLICKHOUSE, "demo", "rudder_staging_demo_"),
-		Entry(nil, CLICKHOUSE, "abcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyz", "rudder_staging_abcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyz"),
-		Entry(nil, MSSQL, "demo", "rudder_staging_demo_"),
-		Entry(nil, MSSQL, "abcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyz", "rudder_staging_abcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyz"),
-		Entry(nil, AZURE_SYNAPSE, "demo", "rudder_staging_demo_"),
-		Entry(nil, AZURE_SYNAPSE, "abcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyz", "rudder_staging_abcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyz"),
-		Entry(nil, DELTALAKE, "demo", "rudder_staging_demo_"),
-		Entry(nil, DELTALAKE, "abcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyz", "rudder_staging_abcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyz"),
-		Entry(nil, S3_DATALAKE, "demo", "rudder_staging_demo_"),
-		Entry(nil, S3_DATALAKE, "abcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyz", "rudder_staging_abcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyz"),
-		Entry(nil, GCS_DATALAKE, "demo", "rudder_staging_demo_"),
-		Entry(nil, GCS_DATALAKE, "abcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyz", "rudder_staging_abcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyz"),
-		Entry(nil, AZURE_DATALAKE, "demo", "rudder_staging_demo_"),
-		Entry(nil, AZURE_DATALAKE, "abcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyz", "rudder_staging_abcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyz"),
+		Entry(nil, BQ, 127),
+		Entry(nil, RS, 127),
+		Entry(nil, SNOWFLAKE, 127),
+		Entry(nil, POSTGRES, 63),
+		Entry(nil, CLICKHOUSE, 127),
+		Entry(nil, MSSQL, 127),
+		Entry(nil, AZURE_SYNAPSE, 127),
+		Entry(nil, DELTALAKE, 127),
+		Entry(nil, S3_DATALAKE, 127),
+		Entry(nil, GCS_DATALAKE, 127),
+		Entry(nil, AZURE_DATALAKE, 127),
 	)
 
 	DescribeTable("Identity mapping unique mapping constraints name", func(warehouse WarehouseT, expected string) {

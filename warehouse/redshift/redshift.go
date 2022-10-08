@@ -48,16 +48,17 @@ type HandleT struct {
 
 // String constants for redshift destination config
 const (
-	RSHost             = "host"
-	RSPort             = "port"
-	RSDbName           = "database"
-	RSUserName         = "user"
-	RSPassword         = "password"
-	rudderStringLength = 512
+	RSHost     = "host"
+	RSPort     = "port"
+	RSDbName   = "database"
+	RSUserName = "user"
+	RSPassword = "password"
 )
 
 const (
-	provider = warehouseutils.RS
+	rudderStringLength = 512
+	provider           = warehouseutils.RS
+	tableNameLimit     = 127
 )
 
 var dataTypesMap = map[string]string{
@@ -277,7 +278,7 @@ func (rs *HandleT) loadTable(tableName string, tableSchemaInUpload, tableSchemaA
 		return fmt.Sprintf(`%q`, name)
 	}, ",")
 
-	stagingTableName = warehouseutils.StagingTableName(provider, tableName)
+	stagingTableName = warehouseutils.StagingTableName(provider, tableName, tableNameLimit)
 	err = rs.CreateTable(stagingTableName, tableSchemaAfterUpload)
 	if err != nil {
 		return
@@ -412,7 +413,7 @@ func (rs *HandleT) loadUserTables() (errorMap map[string]error) {
 	}
 	quotedUserColNames := warehouseutils.DoubleQuoteAndJoinByComma(userColNames)
 
-	stagingTableName := warehouseutils.StagingTableName(provider, warehouseutils.UsersTable)
+	stagingTableName := warehouseutils.StagingTableName(provider, warehouseutils.UsersTable, tableNameLimit)
 
 	sqlStatement := fmt.Sprintf(`CREATE TABLE "%[1]s"."%[2]s" AS (SELECT DISTINCT * FROM
 										(
@@ -529,14 +530,15 @@ func (rs *HandleT) dropDanglingStagingTables() bool {
 		from
 		  information_schema.tables
 		where
-		  table_schema = '%s'
-		  AND table_name like '%s%s';
+		  table_schema = '$1'
+		  AND table_name like '$2%%';
 	`,
+	)
+	rows, err := rs.Db.Query(
+		sqlStatement,
 		rs.Namespace,
 		warehouseutils.StagingTablePrefix(provider),
-		"%",
 	)
-	rows, err := rs.Db.Query(sqlStatement)
 	if err != nil {
 		pkgLogger.Errorf("WH: RS: Error dropping dangling staging tables in redshift: %v\nQuery: %s\n", err, sqlStatement)
 		return false
@@ -620,15 +622,15 @@ func (rs *HandleT) FetchSchema(warehouse warehouseutils.WarehouseT) (schema ware
 		FROM
 		  INFORMATION_SCHEMA.COLUMNS
 		WHERE
-		  table_schema = '%s'
-		  and table_name not like '%s%s'
-	`,
+		  table_schema = '$1'
+		  and table_name not like '$2%%'
+	`)
+
+	rows, err := dbHandle.Query(
+		sqlStatement,
 		rs.Namespace,
 		warehouseutils.StagingTablePrefix(provider),
-		"%",
 	)
-
-	rows, err := dbHandle.Query(sqlStatement)
 	if err != nil && err != sql.ErrNoRows {
 		pkgLogger.Errorf("RS: Error in fetching schema from redshift destination:%v, query: %v", rs.Warehouse.Destination.ID, sqlStatement)
 		return
