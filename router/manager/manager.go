@@ -103,39 +103,39 @@ loop:
 		case <-ctx.Done():
 			pkgLogger.Infof("Router monitor stopped Context Cancelled")
 			break loop
-		case workspaceConfig, open := <-ch:
+		case data, open := <-ch:
 			if !open {
 				pkgLogger.Infof("Router monitor stopped, Config Channel Closed")
 				break loop
 			}
-			sources := workspaceConfig.Data.(backendconfig.ConfigT)
-			enabledDestinations := make(map[string]bool)
-			for i := range sources.Sources {
-				source := &sources.Sources[i]
-				for k := range source.Destinations {
-					destination := &source.Destinations[k]
-					enabledDestinations[destination.DestinationDefinition.Name] = true
-					// For batch router destinations
-					if misc.Contains(objectStorageDestinations, destination.DestinationDefinition.Name) ||
-						misc.Contains(warehouseDestinations, destination.DestinationDefinition.Name) ||
-						misc.Contains(asyncDestinations, destination.DestinationDefinition.Name) {
-						_, ok := dstToBatchRouter[destination.DestinationDefinition.Name]
-						if !ok {
-							pkgLogger.Infof("Starting a new Batch Destination Router: %s", destination.DestinationDefinition.Name)
-							brt := batchrouterFactory.New(destination.DestinationDefinition.Name)
-							brt.Start()
-							cleanup = append(cleanup, brt.Shutdown)
-							dstToBatchRouter[destination.DestinationDefinition.Name] = brt
-						}
-					} else {
-						routerIdentifier := r.RouterIdentifier(destination.ID, destination.DestinationDefinition.Name)
-						_, ok := dstToRouter[routerIdentifier]
-						if !ok {
-							pkgLogger.Infof("Starting a new Destination: %s", destination.DestinationDefinition.Name)
-							rt := routerFactory.New(destination, routerIdentifier)
-							rt.Start()
-							cleanup = append(cleanup, rt.Shutdown)
-							dstToRouter[routerIdentifier] = rt
+			config := data.Data.(map[string]backendconfig.ConfigT)
+			for _, wConfig := range config {
+				for i := range wConfig.Sources {
+					source := &wConfig.Sources[i]
+					for k := range source.Destinations {
+						destination := &source.Destinations[k]
+						// For batch router destinations
+						if misc.Contains(objectStorageDestinations, destination.DestinationDefinition.Name) ||
+							misc.Contains(warehouseDestinations, destination.DestinationDefinition.Name) ||
+							misc.Contains(asyncDestinations, destination.DestinationDefinition.Name) {
+							_, ok := dstToBatchRouter[destination.DestinationDefinition.Name]
+							if !ok {
+								pkgLogger.Infof("Starting a new Batch Destination Router: %s", destination.DestinationDefinition.Name)
+								brt := batchrouterFactory.New(destination.DestinationDefinition.Name)
+								brt.Start()
+								cleanup = append(cleanup, brt.Shutdown)
+								dstToBatchRouter[destination.DestinationDefinition.Name] = brt
+							}
+						} else {
+							routerIdentifier := r.RouterIdentifier(destination.ID, destination.DestinationDefinition.Name)
+							_, ok := dstToRouter[routerIdentifier]
+							if !ok {
+								pkgLogger.Infof("Starting a new Destination: %s", destination.DestinationDefinition.Name)
+								rt := routerFactory.New(destination, routerIdentifier)
+								rt.Start()
+								cleanup = append(cleanup, rt.Shutdown)
+								dstToRouter[routerIdentifier] = rt
+							}
 						}
 					}
 				}

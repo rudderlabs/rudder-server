@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/rudderlabs/rudder-server/config"
-	"github.com/rudderlabs/rudder-server/jobsdb"
 	migrator "github.com/rudderlabs/rudder-server/services/sql-migrator"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
@@ -130,7 +129,7 @@ func getWorkspaceFromDB(dbHandle *sql.DB) string {
 }
 
 func createDBConnection() *sql.DB {
-	psqlInfo := jobsdb.GetConnectionString()
+	psqlInfo := misc.GetConnectionString()
 	var err error
 	dbHandle, err := sql.Open("postgres", psqlInfo)
 	if err != nil {
