@@ -624,6 +624,13 @@ func (ms *HandleT) createTable(name string, columns map[string]string) (err erro
 	return
 }
 
+func (ms *HandleT) DropTable(tableName string) (err error) {
+	sqlStatement := `DROP TABLE "%[1]s"."%[2]s"`
+	pkgLogger.Infof("AZ: Dropping table in synapse for AZ:%s : %v", ms.Warehouse.Destination.ID, sqlStatement)
+	_, err = ms.Db.Exec(fmt.Sprintf(sqlStatement, ms.Namespace, tableName))
+	return
+}
+
 func (ms *HandleT) addColumn(tableName, columnName, columnType string) (err error) {
 	sqlStatement := fmt.Sprintf(`IF NOT EXISTS (SELECT 1  FROM SYS.COLUMNS WHERE OBJECT_ID = OBJECT_ID(N'%[1]s') AND name = '%[2]s')
 			ALTER TABLE %[1]s ADD "%[2]s" %[3]s`, tableName, columnName, rudderDataTypesMapToMssql[columnType])
