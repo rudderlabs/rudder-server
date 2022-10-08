@@ -88,6 +88,27 @@ type ConfigT struct {
 	Sources         []SourceT       `json:"sources"`
 	Libraries       LibrariesT      `json:"libraries"`
 	ConnectionFlags ConnectionFlags `json:"flags"`
+	Settings        SettingsT       `json:"settings"`
+}
+
+type SettingsT struct {
+	DataRetention DataRetentionT `json:"dataRetention"`
+}
+
+type DataRetentionT struct {
+	UseSelfStorage     bool                `json:"useSelfStorage"`
+	StorageBucket      StorageBucketT      `json:"storageBucket"`
+	StoragePreferences StoragePreferencesT `json:"storagePreferences"`
+}
+
+type StorageBucketT struct {
+	Type   string `json:"type"`
+	Config map[string]interface{}
+}
+
+type StoragePreferencesT struct {
+	ProcErrors   bool `json:"procErrors"`
+	GatewayDumps bool `json:"gatewayDumps"`
 }
 
 type ConnectionFlags struct {
