@@ -524,7 +524,7 @@ func Connect(cred RedshiftCredentialsT) (*sql.DB, error) {
 }
 
 func (rs *HandleT) dropDanglingStagingTables() bool {
-	sqlStatement := fmt.Sprintf(`
+	sqlStatement := fmt.Sprint(`
 		select
 		  table_name
 		from
@@ -613,7 +613,7 @@ func (rs *HandleT) FetchSchema(warehouse warehouseutils.WarehouseT) (schema ware
 	defer dbHandle.Close()
 
 	schema = make(warehouseutils.SchemaT)
-	sqlStatement := fmt.Sprintf(`
+	sqlStatement := fmt.Sprint(`
 		SELECT
 		  table_name,
 		  column_name,

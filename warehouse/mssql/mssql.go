@@ -707,7 +707,7 @@ func (ms *HandleT) CrashRecover(warehouse warehouseutils.WarehouseT) (err error)
 }
 
 func (ms *HandleT) dropDanglingStagingTables() bool {
-	sqlStatement := fmt.Sprintf(`
+	sqlStatement := fmt.Sprint(`
 		select
 		  table_name
 		from
@@ -759,7 +759,7 @@ func (ms *HandleT) FetchSchema(warehouse warehouseutils.WarehouseT) (schema ware
 	defer dbHandle.Close()
 
 	schema = make(warehouseutils.SchemaT)
-	sqlStatement := fmt.Sprintf(`
+	sqlStatement := fmt.Sprint(`
 		SELECT
 		  table_name,
 		  column_name,
