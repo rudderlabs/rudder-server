@@ -281,20 +281,22 @@ func (job *UploadJobT) getTotalRowsInStagingFiles() int64 {
 		SELECT 
 		  sum(total_events) 
 		FROM 
-		  %[1]s 
+		  %[1]s ST
 		WHERE 
-		  %[1]s.id >= %[2]v 
-		  AND %[1]s.id <= %[3]v 
-		  AND %[1]s.source_id = '%[4]s' 
-		  AND %[1]s.destination_id = '%[5]s';
+		  ST.id >= $1
+		  AND ST.id <= $2
+		  AND ST.source_id = $3 
+		  AND ST.destination_id = $4;
 	`,
 		warehouseutils.WarehouseStagingFilesTable,
+	)
+	err := dbHandle.QueryRow(
+		sqlStatement,
 		job.upload.StartStagingFileID,
 		job.upload.EndStagingFileID,
 		job.warehouse.Source.ID,
 		job.warehouse.Destination.ID,
-	)
-	err := dbHandle.QueryRow(sqlStatement).Scan(&total)
+	).Scan(&total)
 	if err != nil {
 		pkgLogger.Errorf(`Error in getTotalRowsInStagingFiles: %v`, err)
 	}
@@ -719,41 +721,43 @@ func (job *UploadJobT) fetchPendingUploadTableStatus() []*TableUploadStatusT {
 	}
 	sqlStatement := fmt.Sprintf(`
 		SELECT 
-		  %[1]s.id, 
-		  %[1]s.destination_id, 
-		  %[1]s.namespace, 
-		  %[2]s.table_name, 
-		  %[2]s.status, 
-		  %[2]s.error 
+		  UT.id, 
+		  UT.destination_id, 
+		  UT.namespace, 
+		  TU.table_name, 
+		  TU.status, 
+		  TU.error 
 		FROM 
-		  %[1]s 
-		  INNER JOIN %[2]s ON %[1]s.id = %[2]s.wh_upload_id 
+		  %[1]s UT
+		  INNER JOIN %[2]s TU ON UT.id = TU.wh_upload_id 
 		WHERE 
-		  %[1]s.id <= '%[3]d' 
-		  AND %[1]s.destination_id = '%[4]s' 
-		  AND % [1]s.namespace = '%[5]s' 
-		  AND %[1]s.status != '%[6]s' 
-		  AND %[1]s.status != '%[7]s' 
-		  AND %[2]s.table_name in (
+		  UT.id <= $1 
+		  AND UT.destination_id = $2 
+		  AND UT.namespace = $3
+		  AND UT.status != $4
+		  AND UT.status != $5 
+		  AND TU.table_name in (
 			SELECT 
 			  table_name 
 			FROM 
 			  %[2]s 
 			WHERE 
-			  %[2]s.wh_upload_id = '%[3]d'
+			  TU.wh_upload_id = $1
 		  ) 
 		ORDER BY 
-		  %[1]s.id ASC;
+		  UT.id ASC;
 `,
 		warehouseutils.WarehouseUploadsTable,
 		warehouseutils.WarehouseTableUploadsTable,
+	)
+	rows, err := job.dbHandle.Query(
+		sqlStatement,
 		job.upload.ID,
 		job.upload.DestinationID,
 		job.upload.Namespace,
 		ExportedData,
 		Aborted,
 	)
-	rows, err := job.dbHandle.Query(sqlStatement)
 	if err != nil && err != sql.ErrNoRows {
 		panic(err)
 	}
