@@ -26,6 +26,7 @@ import (
 	sourcedebugger "github.com/rudderlabs/rudder-server/services/debugger/source"
 	transformationdebugger "github.com/rudderlabs/rudder-server/services/debugger/transformation"
 	"github.com/rudderlabs/rudder-server/services/multitenant"
+	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/services/transientsource"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/types"
@@ -61,7 +62,7 @@ func (embedded *EmbeddedApp) StartRudderCore(ctx context.Context, options *app.O
 	reporting := embedded.App.Features().Reporting.Setup(backendconfig.DefaultBackendConfig)
 
 	g.Go(func() error {
-		reporting.AddClient(ctx, types.Config{ConnInfo: jobsdb.GetConnectionString()})
+		reporting.AddClient(ctx, types.Config{ConnInfo: misc.GetConnectionString()})
 		return nil
 	})
 
@@ -243,6 +244,13 @@ func (embedded *EmbeddedApp) StartRudderCore(ctx context.Context, options *app.O
 
 	g.Go(func() error {
 		return rsourcesService.CleanupLoop(ctx)
+	})
+
+	g.Go(func() error {
+		replicationLagStat := stats.Default.NewStat("rsources_log_replication_lag", stats.GaugeType)
+		replicationSlotStat := stats.Default.NewStat("rsources_log_replication_slot", stats.GaugeType)
+		rsourcesService.Monitor(ctx, replicationLagStat, replicationSlotStat)
+		return nil
 	})
 
 	return g.Wait()

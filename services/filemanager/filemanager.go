@@ -61,7 +61,7 @@ func init() {
 }
 
 // New returns FileManager backed by configured provider
-func (factory *FileManagerFactoryT) New(settings *SettingsT) (FileManager, error) {
+func (*FileManagerFactoryT) New(settings *SettingsT) (FileManager, error) {
 	switch settings.Provider {
 	case "S3":
 		return &S3Manager{
@@ -102,7 +102,7 @@ func GetProviderConfigForBackupsFromEnv(ctx context.Context) map[string]interfac
 		providerConfig["iamRoleArn"] = config.GetString("BACKUP_IAM_ROLE_ARN", "")
 		if providerConfig["iamRoleArn"] != "" {
 			backendconfig.DefaultBackendConfig.WaitForConfig(ctx)
-			providerConfig["externalId"] = backendconfig.DefaultBackendConfig.GetWorkspaceIDForWriteKey("")
+			providerConfig["externalId"] = backendconfig.DefaultBackendConfig.Identity().ID()
 		}
 	case "GCS":
 		providerConfig["bucketName"] = config.GetString("JOBS_BACKUP_BUCKET", "")

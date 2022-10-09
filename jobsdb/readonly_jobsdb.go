@@ -11,6 +11,7 @@ import (
 
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/utils/logger"
+	"github.com/rudderlabs/rudder-server/utils/misc"
 
 	"github.com/rudderlabs/rudder-server/services/stats"
 )
@@ -90,7 +91,7 @@ Setup is used to initialize the ReadonlyHandleT structure.
 func (jd *ReadonlyHandleT) Setup(tablePrefix string) {
 	jd.logger = pkgLogger.Child("readonly-" + tablePrefix)
 	var err error
-	psqlInfo := GetConnectionString()
+	psqlInfo := misc.GetConnectionString()
 	jd.tablePrefix = tablePrefix
 
 	jd.DbHandle, err = sql.Open("postgres", psqlInfo)
@@ -113,7 +114,7 @@ func (jd *ReadonlyHandleT) TearDown() {
 }
 
 // Some helper functions
-func (jd *ReadonlyHandleT) assertError(err error) {
+func (*ReadonlyHandleT) assertError(err error) {
 	if err != nil {
 		panic(err)
 	}
@@ -154,12 +155,12 @@ haveUnprocessedJobs returns true if there are unprocessed events, else false. Un
 those whose state hasn't been marked in the DB
 */
 func (jd *ReadonlyHandleT) haveUnprocessedJobs(ctx context.Context, customValFilters []string, parameterFilters []ParameterFilterT) (bool, error) {
-	var queryStat stats.RudderStats
+	var queryStat stats.Measurement
 	statName := ""
 	if len(customValFilters) > 0 {
 		statName = statName + customValFilters[0] + "_"
 	}
-	queryStat = stats.NewTaggedStat(statName+"unprocessed_count", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix})
+	queryStat = stats.Default.NewTaggedStat(statName+"unprocessed_count", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix})
 	queryStat.Start()
 	defer queryStat.End()
 
@@ -176,7 +177,7 @@ func (jd *ReadonlyHandleT) haveUnprocessedJobs(ctx context.Context, customValFil
 	return totalCount > 0, nil // If totalCount is 0, then there are no unprocessed events
 }
 
-func (jd *ReadonlyHandleT) prepareAndExecStmtInTxn(txn *sql.Tx, sqlStatement string) error {
+func (*ReadonlyHandleT) prepareAndExecStmtInTxn(txn *sql.Tx, sqlStatement string) error {
 	stmt, err := txn.Prepare(sqlStatement)
 	if err != nil {
 		return err
@@ -196,12 +197,12 @@ stateFilters and customValFilters do a OR query on values passed in array
 parameterFilters do a AND query on values included in the map
 */
 func (jd *ReadonlyHandleT) getUnprocessedJobsDSCount(ctx context.Context, ds dataSetT, customValFilters []string, parameterFilters []ParameterFilterT) (int64, error) {
-	var queryStat stats.RudderStats
+	var queryStat stats.Measurement
 	statName := ""
 	if len(customValFilters) > 0 {
 		statName = statName + customValFilters[0] + "_"
 	}
-	queryStat = stats.NewTaggedStat(statName+"unprocessed_jobs_count", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix})
+	queryStat = stats.Default.NewTaggedStat(statName+"unprocessed_jobs_count", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix})
 	queryStat.Start()
 	defer queryStat.End()
 
@@ -291,7 +292,7 @@ func (jd *ReadonlyHandleT) haveNonSucceededJobs(ctx context.Context, customValFi
 haveProcessedJobs returns true if there are events of a given state, else false.
 */
 func (jd *ReadonlyHandleT) haveProcessedJobs(ctx context.Context, stateFilter, customValFilters []string, parameterFilters []ParameterFilterT) (bool, error) {
-	var queryStat stats.RudderStats
+	var queryStat stats.Measurement
 	statName := ""
 	if len(customValFilters) > 0 {
 		statName = statName + customValFilters[0] + "_"
@@ -299,7 +300,7 @@ func (jd *ReadonlyHandleT) haveProcessedJobs(ctx context.Context, stateFilter, c
 	if len(stateFilter) > 0 {
 		statName = statName + stateFilter[0] + "_"
 	}
-	queryStat = stats.NewTaggedStat(statName+"processed_count", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix})
+	queryStat = stats.Default.NewTaggedStat(statName+"processed_count", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix})
 	queryStat.Start()
 	defer queryStat.End()
 
@@ -325,7 +326,7 @@ func (jd *ReadonlyHandleT) getProcessedJobsDSCount(ctx context.Context, ds dataS
 ) (int64, error) {
 	checkValidJobState(jd, stateFilters)
 
-	var queryStat stats.RudderStats
+	var queryStat stats.Measurement
 	statName := ""
 	if len(customValFilters) > 0 {
 		statName = statName + customValFilters[0] + "_"
@@ -333,7 +334,7 @@ func (jd *ReadonlyHandleT) getProcessedJobsDSCount(ctx context.Context, ds dataS
 	if len(stateFilters) > 0 {
 		statName = statName + stateFilters[0] + "_"
 	}
-	queryStat = stats.NewTaggedStat(statName+"processed_jobs_count", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix})
+	queryStat = stats.Default.NewTaggedStat(statName+"processed_jobs_count", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix})
 	queryStat.Start()
 	defer queryStat.End()
 

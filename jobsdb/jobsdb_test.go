@@ -3,6 +3,7 @@ package jobsdb
 import (
 	"bytes"
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -28,7 +29,6 @@ import (
 	"github.com/rudderlabs/rudder-server/jobsdb/internal/lock"
 	"github.com/rudderlabs/rudder-server/jobsdb/prebackup"
 	"github.com/rudderlabs/rudder-server/services/archiver"
-	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/testhelper/destination"
 	rsRand "github.com/rudderlabs/rudder-server/testhelper/rand"
 	"github.com/rudderlabs/rudder-server/utils/logger"
@@ -453,9 +453,11 @@ func TestRefreshDSList(t *testing.T) {
 	defer jobsDB.TearDown()
 
 	require.Equal(t, 1, len(jobsDB.getDSList()), "jobsDB should start with a ds list size of 1")
-	jobsDB.addDS(newDataSet(prefix, "2"))
+	require.NoError(t, jobsDB.WithTx(func(tx *sql.Tx) error {
+		return jobsDB.addDSInTx(tx, newDataSet(prefix, "2"))
+	}))
 	require.Equal(t, 1, len(jobsDB.getDSList()), "addDS should not refresh the ds list")
-	jobsDB.dsListLock.WithLock(func(l lock.DSListLockToken) {
+	jobsDB.dsListLock.WithLock(func(l lock.LockToken) {
 		require.Equal(t, 2, len(jobsDB.refreshDSList(l)), "after refreshing the ds list jobsDB should have a ds list size of 2")
 	})
 }
@@ -1082,6 +1084,4 @@ func initJobsDB() {
 	Init2()
 	Init3()
 	archiver.Init()
-	stats.Init()
-	stats.Setup()
 }

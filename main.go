@@ -58,6 +58,7 @@ import (
 	"github.com/rudderlabs/rudder-server/services/streammanager/kafka"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
+	"github.com/rudderlabs/rudder-server/utils/types/deployment"
 	"github.com/rudderlabs/rudder-server/warehouse"
 	azuresynapse "github.com/rudderlabs/rudder-server/warehouse/azure-synapse"
 	"github.com/rudderlabs/rudder-server/warehouse/bigquery"
@@ -140,8 +141,6 @@ func canStartWarehouse() bool {
 func runAllInit() {
 	admin.Init()
 	misc.Init()
-	stats.Init()
-	stats.Setup()
 	db.Init()
 	diagnostics.Init()
 	backendconfig.Init()
@@ -225,7 +224,6 @@ func Run(ctx context.Context) int {
 	appHandler = apphandlers.GetAppHandler(application, appTypeStr, versionHandler)
 
 	versionDetail := versionInfo()
-	stats.NewTaggedStat("rudder_server_config", stats.GaugeType, stats.Tags{"version": version, "major": major, "minor": minor, "patch": patch, "commit": commit, "buildDate": buildDate, "builtBy": builtBy, "gitUrl": gitURL, "TransformerVersion": transformer.GetVersion(), "DatabricksVersion": misc.GetDatabricksVersion()}).Gauge(1)
 	bugsnag.Configure(bugsnag.Configuration{
 		APIKey:       config.GetString("BUGSNAG_KEY", ""),
 		ReleaseStage: config.GetString("GO_ENV", "development"),
@@ -238,6 +236,18 @@ func Run(ctx context.Context) int {
 	})
 	ctx = bugsnag.StartSession(ctx)
 	defer misc.BugsnagNotify(ctx, "Core")()
+
+	deploymentType, err := deployment.GetFromEnv()
+	if err != nil {
+		pkgLogger.Errorf("failed to get deployment type: %w", err)
+		return 1
+	}
+	// TODO: remove as soon as we update the configuration with statsExcludedTags where necessary
+	if !config.IsSet("statsExcludedTags") && deploymentType == deployment.MultiTenantType && (!config.IsSet("WORKSPACE_NAMESPACE") || strings.Contains(config.GetString("WORKSPACE_NAMESPACE", ""), "free")) {
+		config.Set("statsExcludedTags", []string{"workspaceId"})
+	}
+	stats.Default.Start(ctx)
+	stats.Default.NewTaggedStat("rudder_server_config", stats.GaugeType, stats.Tags{"version": version, "major": major, "minor": minor, "patch": patch, "commit": commit, "buildDate": buildDate, "builtBy": builtBy, "gitUrl": gitURL, "TransformerVersion": transformer.GetVersion(), "DatabricksVersion": misc.GetDatabricksVersion()}).Gauge(1)
 
 	configEnvHandler := application.Features().ConfigEnv.Setup()
 
@@ -328,7 +338,7 @@ func Run(ctx context.Context) int {
 		)
 		// clearing zap Log buffer to std output
 		logger.Sync()
-		stats.StopPeriodicStats()
+		stats.Default.Stop()
 	case <-time.After(gracefulShutdownTimeout):
 		// Assume graceful shutdown failed, log remain goroutines and force kill
 		pkgLogger.Errorf(
@@ -342,7 +352,7 @@ func Run(ctx context.Context) int {
 
 		application.Stop()
 		logger.Sync()
-		stats.StopPeriodicStats()
+		stats.Default.Stop()
 		if config.GetBool("RUDDER_GRACEFUL_SHUTDOWN_TIMEOUT_EXIT", true) {
 			return 1
 		}

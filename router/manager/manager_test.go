@@ -21,7 +21,7 @@ import (
 
 	"github.com/rudderlabs/rudder-server/admin"
 	"github.com/rudderlabs/rudder-server/config"
-	backendConfig "github.com/rudderlabs/rudder-server/config/backend-config"
+	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/enterprise/reporting"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	mocksBackendConfig "github.com/rudderlabs/rudder-server/mocks/config/backend-config"
@@ -31,7 +31,6 @@ import (
 	"github.com/rudderlabs/rudder-server/router/batchrouter"
 	"github.com/rudderlabs/rudder-server/services/archiver"
 	"github.com/rudderlabs/rudder-server/services/rsources"
-	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/services/transientsource"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/pubsub"
@@ -125,22 +124,23 @@ const (
 
 var (
 	workspaceID             = uuid.Must(uuid.NewV4()).String()
-	gaDestinationDefinition = backendConfig.DestinationDefinitionT{
+	gaDestinationDefinition = backendconfig.DestinationDefinitionT{
 		ID: GADestinationDefinitionID, Name: "GA",
 		DisplayName: "Google Analytics", Config: nil, ResponseRules: nil,
 	}
-	gcsDestinationDefinition = backendConfig.DestinationDefinitionT{
+	gcsDestinationDefinition = backendconfig.DestinationDefinitionT{
 		ID: GADestinationDefinitionID, Name: "GCS",
 		DisplayName: "Google Analytics", Config: nil, ResponseRules: nil,
 	}
-	sampleBackendConfig = backendConfig.ConfigT{
-		Sources: []backendConfig.SourceT{
+	sampleBackendConfig = backendconfig.ConfigT{
+		WorkspaceID: workspaceID,
+		Sources: []backendconfig.SourceT{
 			{
 				WorkspaceID: workspaceID,
 				ID:          SourceIDEnabled,
 				WriteKey:    WriteKeyEnabled,
 				Enabled:     true,
-				Destinations: []backendConfig.DestinationT{{
+				Destinations: []backendconfig.DestinationT{{
 					ID:   GADestinationID,
 					Name: "GCS DEst", DestinationDefinition: gcsDestinationDefinition, Enabled: true, IsProcessorEnabled: true,
 				}},
@@ -150,7 +150,7 @@ var (
 				ID:          SourceIDEnabled,
 				WriteKey:    WriteKeyEnabled,
 				Enabled:     true,
-				Destinations: []backendConfig.DestinationT{{
+				Destinations: []backendconfig.DestinationT{{
 					ID: GADestinationID, Name: "ga dest",
 					DestinationDefinition: gaDestinationDefinition, Enabled: true, IsProcessorEnabled: true,
 				}},
@@ -177,7 +177,6 @@ func initRouter() {
 func TestRouterManager(t *testing.T) {
 	RegisterTestingT(t)
 	initRouter()
-	stats.Setup()
 	pkgLogger = logger.NewLogger().Child("router")
 	c := make(chan bool)
 	once := sync.Once{}
@@ -189,13 +188,13 @@ func TestRouterManager(t *testing.T) {
 	mockRsourcesService := rsources.NewMockJobService(mockCtrl)
 	mockMTI := mock_tenantstats.NewMockMultiTenantI(mockCtrl)
 
-	mockBackendConfig.EXPECT().Subscribe(gomock.Any(), backendConfig.TopicBackendConfig).DoAndReturn(func(
-		ctx context.Context, topic backendConfig.Topic,
+	mockBackendConfig.EXPECT().Subscribe(gomock.Any(), backendconfig.TopicBackendConfig).DoAndReturn(func(
+		ctx context.Context, topic backendconfig.Topic,
 	) pubsub.DataChannel {
 		// on Subscribe, emulate a backend configuration event
 
 		ch := make(chan pubsub.DataEvent, 1)
-		ch <- pubsub.DataEvent{Data: sampleBackendConfig, Topic: string(topic)}
+		ch <- pubsub.DataEvent{Data: map[string]backendconfig.ConfigT{workspaceID: sampleBackendConfig}, Topic: string(topic)}
 		go func() {
 			<-ctx.Done()
 			close(ch)

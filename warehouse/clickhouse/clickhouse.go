@@ -152,13 +152,13 @@ type CredentialsT struct {
 }
 
 type clickHouseStatT struct {
-	numRowsLoadFile       stats.RudderStats
-	downloadLoadFilesTime stats.RudderStats
-	syncLoadFileTime      stats.RudderStats
-	commitTime            stats.RudderStats
-	failRetries           stats.RudderStats
-	execTimeouts          stats.RudderStats
-	commitTimeouts        stats.RudderStats
+	numRowsLoadFile       stats.Measurement
+	downloadLoadFilesTime stats.Measurement
+	syncLoadFileTime      stats.Measurement
+	commitTime            stats.Measurement
+	failRetries           stats.Measurement
+	execTimeouts          stats.Measurement
+	commitTimeouts        stats.Measurement
 }
 
 // newClickHouseStat Creates a new clickHouseStatT instance
@@ -296,8 +296,7 @@ func ColumnsWithDataTypes(tableName string, columns map[string]string, notNullab
 }
 
 func getClickHouseCodecForColumnType(columnType, tableName string) string {
-	switch columnType {
-	case "datetime":
+	if columnType == "datetime" {
 		if disableNullable && !(tableName == warehouseutils.IdentifiesTable || tableName == warehouseutils.UsersTable) {
 			return "Codec(DoubleDelta, LZ4)"
 		}
@@ -344,6 +343,7 @@ func (ch *HandleT) DownloadLoadFiles(tableName string) ([]string, error) {
 			Provider:         storageProvider,
 			Config:           ch.Warehouse.Destination.Config,
 			UseRudderStorage: ch.Uploader.UseRudderStorage(),
+			WorkspaceID:      ch.Warehouse.Destination.WorkspaceID,
 		}),
 	})
 	if err != nil {
@@ -474,14 +474,6 @@ func castStringToArray(data, dataType string) interface{} {
 		if err != nil {
 			pkgLogger.Error("Error while unmarshalling data into array of bool: %s", err.Error())
 			return dataBool
-		}
-		dataInt := make([]int32, len(dataBool))
-		for _, val := range dataBool {
-			if val {
-				dataInt = append(dataInt, 1)
-			} else {
-				dataInt = append(dataInt, 0)
-			}
 		}
 		return dataBool
 	}
@@ -906,7 +898,7 @@ func (ch *HandleT) Setup(warehouse warehouseutils.WarehouseT, uploader warehouse
 	ch.Warehouse = warehouse
 	ch.Namespace = warehouse.Namespace
 	ch.Uploader = uploader
-	ch.stats = stats.DefaultStats
+	ch.stats = stats.Default
 	ch.ObjectStorage = warehouseutils.ObjectStorageType(warehouseutils.CLICKHOUSE, warehouse.Destination.Config, ch.Uploader.UseRudderStorage())
 
 	ch.Db, err = Connect(ch.getConnectionCredentials(), true)

@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"github.com/rudderlabs/rudder-server/jobsdb"
+	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
 type StashRpcHandler struct {
@@ -32,7 +33,7 @@ func (s *StashRpcHandler) GetDSStats(dsName string, result *string) (err error) 
 		}
 	}()
 	jobTableName := prefix + dsName
-	dbHandle, err := sql.Open("postgres", jobsdb.GetConnectionString())
+	dbHandle, err := sql.Open("postgres", misc.GetConnectionString())
 	// skipcq: SCC-SA5001
 	defer func() { _ = dbHandle.Close() }()
 	if err != nil {
@@ -106,7 +107,7 @@ type DestinationCountResult struct {
 	Error    string
 }
 
-func (s *StashRpcHandler) getErrorCountByDest(dbHandle *sql.DB, jobTableName string) ([]DestinationCountResult, error) {
+func (*StashRpcHandler) getErrorCountByDest(dbHandle *sql.DB, jobTableName string) ([]DestinationCountResult, error) {
 	results := make([]DestinationCountResult, 0)
 	uniqueSourceValsStmt := fmt.Sprintf(`select count(*) as count, custom_val as dest, parameters -> 'error' as error from %s group by custom_val, parameters -> 'error'`, jobTableName)
 	var rows *sql.Rows

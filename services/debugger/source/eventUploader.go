@@ -106,7 +106,7 @@ func RecordEvent(writeKey, eventBatch string) bool {
 	return true
 }
 
-func (eventUploader *EventUploader) Transform(data interface{}) ([]byte, error) {
+func (*EventUploader) Transform(data interface{}) ([]byte, error) {
 	eventBuffer := data.([]interface{})
 	res := make(map[string]interface{})
 	res["version"] = "v2"
@@ -157,13 +157,15 @@ func (eventUploader *EventUploader) Transform(data interface{}) ([]byte, error) 
 	return rawJSON, nil
 }
 
-func updateConfig(sources backendconfig.ConfigT) {
+func updateConfig(config map[string]backendconfig.ConfigT) {
 	configSubscriberLock.Lock()
 	uploadEnabledWriteKeys = []string{}
-	for _, source := range sources.Sources {
-		if source.Config != nil {
-			if source.Enabled && source.Config["eventUpload"] == true {
-				uploadEnabledWriteKeys = append(uploadEnabledWriteKeys, source.WriteKey)
+	for _, wConfig := range config {
+		for _, source := range wConfig.Sources {
+			if source.Config != nil {
+				if source.Enabled && source.Config["eventUpload"] == true {
+					uploadEnabledWriteKeys = append(uploadEnabledWriteKeys, source.WriteKey)
+				}
 			}
 		}
 	}
@@ -175,6 +177,6 @@ func updateConfig(sources backendconfig.ConfigT) {
 func backendConfigSubscriber(backendConfig backendconfig.BackendConfig) {
 	ch := backendConfig.Subscribe(context.TODO(), backendconfig.TopicProcessConfig)
 	for config := range ch {
-		updateConfig(config.Data.(backendconfig.ConfigT))
+		updateConfig(config.Data.(map[string]backendconfig.ConfigT))
 	}
 }

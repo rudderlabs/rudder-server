@@ -78,7 +78,7 @@ func TestGetDestDetails(t *testing.T) {
 	defer mockCtrl.Finish()
 
 	mockDestMiddleware := destination.NewMockdestinationMiddleware(mockCtrl)
-	mockDestMiddleware.EXPECT().Get(context.TODO(), "").Return(testConfig, nil).Times(1)
+	mockDestMiddleware.EXPECT().Get(context.TODO(), "").Return(map[string]backendconfig.ConfigT{testConfig.WorkspaceID: testConfig}, nil).Times(1)
 
 	dest := destination.DestMiddleware{
 		Dest: mockDestMiddleware,

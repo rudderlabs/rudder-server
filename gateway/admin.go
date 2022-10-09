@@ -140,7 +140,7 @@ AvgBatchSize :  1
 TableSize :  65536
 NumRows :  8
 */
-func (g *GatewayRPCHandler) GetDSStats(dsName string, result *string) (err error) {
+func (*GatewayRPCHandler) GetDSStats(dsName string, result *string) (err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			pkgLogger.Error(r)
@@ -150,7 +150,7 @@ func (g *GatewayRPCHandler) GetDSStats(dsName string, result *string) (err error
 
 	var completeErr error
 	jobTableName := prefix + dsName
-	dbHandle, err := sql.Open("postgres", jobsdb.GetConnectionString())
+	dbHandle, err := sql.Open("postgres", misc.GetConnectionString())
 	if err != nil {
 		return err
 	}
