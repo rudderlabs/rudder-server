@@ -277,10 +277,23 @@ func (job *UploadJobT) syncRemoteSchema() (schemaChanged bool, err error) {
 
 func (job *UploadJobT) getTotalRowsInStagingFiles() int64 {
 	var total sql.NullInt64
-	sqlStatement := fmt.Sprintf(`SELECT sum(total_events)
-                                FROM %[1]s
-								WHERE %[1]s.id >= %[2]v AND %[1]s.id <= %[3]v AND %[1]s.source_id='%[4]s' AND %[1]s.destination_id='%[5]s'`,
-		warehouseutils.WarehouseStagingFilesTable, job.upload.StartStagingFileID, job.upload.EndStagingFileID, job.warehouse.Source.ID, job.warehouse.Destination.ID)
+	sqlStatement := fmt.Sprintf(`
+		SELECT 
+		  sum(total_events) 
+		FROM 
+		  %[1]s 
+		WHERE 
+		  %[1]s.id >= %[2]v 
+		  AND %[1]s.id <= %[3]v 
+		  AND %[1]s.source_id = '%[4]s' 
+		  AND %[1]s.destination_id = '%[5]s';
+	`,
+		warehouseutils.WarehouseStagingFilesTable,
+		job.upload.StartStagingFileID,
+		job.upload.EndStagingFileID,
+		job.warehouse.Source.ID,
+		job.warehouse.Destination.ID,
+	)
 	err := dbHandle.QueryRow(sqlStatement).Scan(&total)
 	if err != nil {
 		pkgLogger.Errorf(`Error in getTotalRowsInStagingFiles: %v`, err)
@@ -293,18 +306,32 @@ func (job *UploadJobT) getTotalRowsInLoadFiles() int64 {
 
 	sqlStatement := fmt.Sprintf(`
 		WITH row_numbered_load_files as (
-			SELECT
-				total_events,
-				table_name,
-				row_number() OVER (PARTITION BY staging_file_id, table_name ORDER BY id DESC) AS row_number
-				FROM %[1]s
-				WHERE staging_file_id IN (%[2]v)
-		)
-		SELECT SUM(total_events)
-			FROM row_numbered_load_files
-			WHERE
-				row_number=1 AND table_name != '%[3]s'`,
-		warehouseutils.WarehouseLoadFilesTable, misc.IntArrayToString(job.stagingFileIDs, ","), warehouseutils.ToProviderCase(job.warehouse.Type, warehouseutils.DiscardsTable))
+		  SELECT 
+			total_events, 
+			table_name, 
+			row_number() OVER (
+			  PARTITION BY staging_file_id, 
+			  table_name 
+			  ORDER BY 
+				id DESC
+			) AS row_number 
+		  FROM 
+			%[1]s 
+		  WHERE 
+			staging_file_id IN (%[2]v)
+		) 
+		SELECT 
+		  SUM(total_events) 
+		FROM 
+		  row_numbered_load_files 
+		WHERE 
+		  row_number = 1 
+		  AND table_name != '%[3]s';
+	`,
+		warehouseutils.WarehouseLoadFilesTable,
+		misc.IntArrayToString(job.stagingFileIDs, ","),
+		warehouseutils.ToProviderCase(job.warehouse.Type, warehouseutils.DiscardsTable),
+	)
 	err := dbHandle.QueryRow(sqlStatement).Scan(&total)
 	if err != nil {
 		pkgLogger.Errorf(`Error in getTotalRowsInLoadFiles: %v`, err)
@@ -691,33 +718,41 @@ func (job *UploadJobT) fetchPendingUploadTableStatus() []*TableUploadStatusT {
 		return job.tableUploadStatuses
 	}
 	sqlStatement := fmt.Sprintf(`
-		SELECT
-			%[1]s.id,
-			%[1]s.destination_id,
-			%[1]s.namespace,
-			%[2]s.table_name,
-			%[2]s.status,
-			%[2]s.error
-		FROM
-			%[1]s INNER JOIN %[2]s
-		ON
-			%[1]s.id = %[2]s.wh_upload_id
-		WHERE
-			%[1]s.id <= '%[3]d'
-			AND %[1]s.destination_id = '%[4]s'
-			AND %[1]s.namespace = '%[5]s'
-			AND %[1]s.status != '%[6]s'
-			AND %[1]s.status != '%[7]s'
-			AND %[2]s.table_name in (SELECT table_name FROM %[2]s WHERE %[2]s.wh_upload_id = '%[3]d')
-		ORDER BY
-			%[1]s.id ASC`,
+		SELECT 
+		  %[1]s.id, 
+		  %[1]s.destination_id, 
+		  %[1]s.namespace, 
+		  %[2]s.table_name, 
+		  %[2]s.status, 
+		  %[2]s.error 
+		FROM 
+		  %[1]s 
+		  INNER JOIN %[2]s ON %[1]s.id = %[2]s.wh_upload_id 
+		WHERE 
+		  %[1]s.id <= '%[3]d' 
+		  AND %[1]s.destination_id = '%[4]s' 
+		  AND % [1]s.namespace = '%[5]s' 
+		  AND %[1]s.status != '%[6]s' 
+		  AND %[1]s.status != '%[7]s' 
+		  AND %[2]s.table_name in (
+			SELECT 
+			  table_name 
+			FROM 
+			  %[2]s 
+			WHERE 
+			  %[2]s.wh_upload_id = '%[3]d'
+		  ) 
+		ORDER BY 
+		  %[1]s.id ASC;
+`,
 		warehouseutils.WarehouseUploadsTable,
 		warehouseutils.WarehouseTableUploadsTable,
 		job.upload.ID,
 		job.upload.DestinationID,
 		job.upload.Namespace,
 		ExportedData,
-		Aborted)
+		Aborted,
+	)
 	rows, err := job.dbHandle.Query(sqlStatement)
 	if err != nil && err != sql.ErrNoRows {
 		panic(err)
@@ -1173,7 +1208,17 @@ func (job *UploadJobT) processLoadTableResponse(errorMap map[string]error) (erro
 // eg. timings: [{exporting_data: 2020-04-21 15:16:19.687716, exported_data: 2020-04-21 15:26:34.344356}]
 func (job *UploadJobT) getUploadTimings() (timings []map[string]string) {
 	var rawJSON json.RawMessage
-	sqlStatement := fmt.Sprintf(`SELECT timings FROM %s WHERE id=%d`, warehouseutils.WarehouseUploadsTable, job.upload.ID)
+	sqlStatement := fmt.Sprintf(`
+		SELECT 
+		  timings 
+		FROM 
+		  %s 
+		WHERE 
+		  id = %d;
+`,
+		warehouseutils.WarehouseUploadsTable,
+		job.upload.ID,
+	)
 	err := job.dbHandle.QueryRow(sqlStatement).Scan(&rawJSON)
 	if err != nil {
 		return
@@ -1197,7 +1242,17 @@ func (job *UploadJobT) getNewTimings(status string) ([]byte, []map[string]string
 
 func (job *UploadJobT) getUploadFirstAttemptTime() (timing time.Time) {
 	var firstTiming sql.NullString
-	sqlStatement := fmt.Sprintf(`SELECT timings->0 as firstTimingObj FROM %s WHERE id=%d`, warehouseutils.WarehouseUploadsTable, job.upload.ID)
+	sqlStatement := fmt.Sprintf(`
+		SELECT 
+		  timings -> 0 as firstTimingObj 
+		FROM 
+		  %s 
+		WHERE 
+		  id = %d;
+`,
+		warehouseutils.WarehouseUploadsTable,
+		job.upload.ID,
+	)
 	err := job.dbHandle.QueryRow(sqlStatement).Scan(&firstTiming)
 	if err != nil {
 		return
@@ -1302,7 +1357,17 @@ func (job *UploadJobT) setUploadColumns(opts UploadColumnsOpts) (err error) {
 		}
 		values = append(values, f.Value)
 	}
-	sqlStatement := fmt.Sprintf(`UPDATE %s SET %s WHERE id=$1`, warehouseutils.WarehouseUploadsTable, columns)
+	sqlStatement := fmt.Sprintf(`
+		UPDATE 
+		  %s 
+		SET 
+		  %s 
+		WHERE 
+		  id = $1;
+`,
+		warehouseutils.WarehouseUploadsTable,
+		columns,
+	)
 	if opts.Txn != nil {
 		_, err = opts.Txn.Exec(sqlStatement, values...)
 	} else {
@@ -1440,7 +1505,6 @@ func (job *UploadJobT) setUploadError(statusError error, state string) (string, 
 	}
 
 	serializedErr, _ := json.Marshal(&uploadErrors)
-	// sqlStatement := fmt.Sprintf(`UPDATE %s SET status=$1, error=$2, metadata=$3, updated_at=$4 WHERE id=$5`, warehouseutils.WarehouseUploadsTable)
 
 	uploadColumns := []UploadColumnT{
 		{Column: "status", Value: state},
@@ -1520,9 +1584,6 @@ func (job *UploadJobT) setUploadError(statusError error, state string) (string, 
 	}
 	err = txn.Commit()
 
-	// TODO: Add reporting metrics in txn
-	// _, err = job.dbHandle.Exec(sqlStatement, state, serializedErr, metadataJSON, timeutil.Now(), upload.ID)
-
 	job.upload.Status = state
 	job.upload.Error = serializedErr
 
@@ -1581,7 +1642,17 @@ func (*UploadJobT) setStagingFilesStatus(stagingFiles []*StagingFileT, status st
 	for _, stagingFile := range stagingFiles {
 		ids = append(ids, stagingFile.ID)
 	}
-	sqlStatement := fmt.Sprintf(`UPDATE %s SET status=$1, updated_at=$2 WHERE id=ANY($3)`, warehouseutils.WarehouseStagingFilesTable)
+	sqlStatement := fmt.Sprintf(`
+		UPDATE 
+		  %s 
+		SET 
+		  status = $1, 
+		  updated_at = $2 
+		WHERE 
+		  id = ANY($3)
+`,
+		warehouseutils.WarehouseStagingFilesTable,
+	)
 	_, err = dbHandle.Exec(sqlStatement, status, timeutil.Now(), pq.Array(ids))
 	if err != nil {
 		panic(err)
