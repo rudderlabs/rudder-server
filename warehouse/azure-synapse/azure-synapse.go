@@ -263,7 +263,7 @@ func (as *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 	// https://github.com/denisenkom/go-mssqldb/issues/149, https://docs.microsoft.com/en-us/previous-versions/sql/sql-server-2008-r2/ms175528(v=sql.105)?redirectedfrom=MSDN
 	// sqlStatement := fmt.Sprintf(`CREATE  TABLE ##%[2]s like %[1]s.%[3]s`, AZ.Namespace, stagingTableName, tableName)
 	// Hence falling back to creating normal tables
-	sqlStatement := fmt.Sprintf(`select top 0 * into #%[1]s.%[2]s from %[1]s.%[3]s`, as.Namespace, stagingTableName, tableName)
+	sqlStatement := fmt.Sprintf(`select top 0 * into #%[2]s from %[1]s.%[3]s`, as.Namespace, stagingTableName, tableName)
 
 	pkgLogger.Debugf("AZ: Creating temporary table for table:%s at %s\n", tableName, sqlStatement)
 	_, err = as.Db.Exec(sqlStatement)
@@ -536,7 +536,7 @@ func (as *HandleT) loadUserTables() (errorMap map[string]error) {
 												(
 													SELECT user_id, %[4]s FROM %[3]s  WHERE user_id IS NOT NULL
 												)) a
-											`, as.Namespace, as.Namespace+"."+warehouseutils.UsersTable, as.Namespace+"."+identifyStagingTable, strings.Join(userColNames, ","), as.Namespace+"."+unionStagingTableName)
+											`, as.Namespace, as.Namespace+"."+warehouseutils.UsersTable, as.Namespace+"."+identifyStagingTable, strings.Join(userColNames, ","), unionStagingTableName)
 
 	pkgLogger.Debugf("AZ: Creating staging table for union of users table with identify staging table: %s\n", sqlStatement)
 	_, err = as.Db.Exec(sqlStatement)
@@ -552,7 +552,7 @@ func (as *HandleT) loadUserTables() (errorMap map[string]error) {
 											FROM %[3]s as x
 										) as xyz
 									) a`,
-		as.Namespace+"."+stagingTableName,
+		stagingTableName,
 		strings.Join(firstValProps, ","),
 		as.Namespace+"."+unionStagingTableName,
 	)

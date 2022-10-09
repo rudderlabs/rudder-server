@@ -283,7 +283,7 @@ func (pg *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 	}
 	// create temporary table
 	stagingTableName = misc.TruncateStr(fmt.Sprintf(`%s%s_%s`, stagingTablePrefix, tableName, strings.ReplaceAll(uuid.Must(uuid.NewV4()).String(), "-", "")), 63)
-	sqlStatement = fmt.Sprintf(`CREATE TEMPORARY TABLE "%[1]s".%[2]s (LIKE "%[1]s"."%[3]s")`, pg.Namespace, stagingTableName, tableName)
+	sqlStatement = fmt.Sprintf(`CREATE TEMPORARY TABLE %[2]s (LIKE "%[1]s"."%[3]s")`, pg.Namespace, stagingTableName, tableName)
 	pkgLogger.Debugf("PG: Creating temporary table for table:%s at %s\n", tableName, sqlStatement)
 	_, err = txn.Exec(sqlStatement)
 	if err != nil {
@@ -470,7 +470,7 @@ func (pg *HandleT) loadUserTables() (errorMap map[string]error) {
 		firstValProps = append(firstValProps, caseSubQuery)
 	}
 
-	sqlStatement = fmt.Sprintf(`CREATE TEMPORARY TABLE "%[1]s".%[5]s as (
+	sqlStatement = fmt.Sprintf(`CREATE TEMPORARY TABLE %[5]s as (
 												(
 													SELECT id, %[4]s FROM "%[1]s"."%[2]s" WHERE id in (SELECT user_id FROM "%[1]s"."%[3]s" WHERE user_id IS NOT NULL)
 												) UNION
@@ -486,7 +486,7 @@ func (pg *HandleT) loadUserTables() (errorMap map[string]error) {
 		return
 	}
 
-	sqlStatement = fmt.Sprintf(`CREATE TEMPORARY TABLE %[4]s.%[1]s AS (SELECT DISTINCT * FROM
+	sqlStatement = fmt.Sprintf(`CREATE TEMPORARY TABLE %[1]s AS (SELECT DISTINCT * FROM
 										(
 											SELECT
 											x.id, %[2]s

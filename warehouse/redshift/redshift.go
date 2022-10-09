@@ -151,6 +151,7 @@ func (rs *HandleT) createTable(tableName string, columns map[string]string, isTe
 	var temporaryStatementSQL string
 	if isTemporary {
 		temporaryStatementSQL = "TEMPORARY"
+		name = fmt.Sprintf(`%q`, tableName)
 	}
 	sqlStatement := fmt.Sprintf(`CREATE %s TABLE IF NOT EXISTS %s ( %v ) %s SORTKEY(%q) `, temporaryStatementSQL, name, ColumnsWithDataTypes(columns, ""), distKeySql, sortKeyField)
 	pkgLogger.Infof("Creating table in redshift for RS:%s : %v", rs.Warehouse.Destination.ID, sqlStatement)
@@ -419,7 +420,7 @@ func (rs *HandleT) loadUserTables() (errorMap map[string]error) {
 	quotedUserColNames := warehouseutils.DoubleQuoteAndJoinByComma(userColNames)
 	stagingTableName := misc.TruncateStr(fmt.Sprintf(`%s%s_%s`, stagingTablePrefix, strings.ReplaceAll(uuid.Must(uuid.NewV4()).String(), "-", ""), warehouseutils.UsersTable), 127)
 
-	sqlStatement := fmt.Sprintf(`CREATE TEMPORARY TABLE "%[1]s"."%[2]s" AS (SELECT DISTINCT * FROM
+	sqlStatement := fmt.Sprintf(`CREATE TEMPORARY TABLE "%[2]s" AS (SELECT DISTINCT * FROM
 										(
 											SELECT
 											id, %[3]s
