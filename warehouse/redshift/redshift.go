@@ -171,7 +171,16 @@ func (rs *HandleT) AddColumns(name string, columnsInfo warehouseutils.ColumnsInt
 	tableName := fmt.Sprintf(`%q.%q`, rs.Namespace, name)
 
 	for _, columnInfo := range columnsInfo {
-		sqlStatement := addColumnSQLStatement(tableName, columnInfo.Name, columnInfo.Type)
+		sqlStatement := fmt.Sprintf(`
+		ALTER TABLE
+		  %v
+		ADD
+		  COLUMN %q %s
+	`,
+			tableName,
+			columnInfo.Name,
+			getRSDataType(columnInfo.Type),
+		)
 		pkgLogger.Infof("Adding column in redshift for RS:%s : %v", rs.Warehouse.Destination.ID, sqlStatement)
 
 		if _, err := rs.Db.Exec(sqlStatement); err != nil {

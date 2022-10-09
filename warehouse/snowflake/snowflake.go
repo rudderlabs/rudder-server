@@ -626,7 +626,21 @@ func (sf *HandleT) DropTable(tableName string) (err error) {
 
 func (sf *HandleT) AddColumns(tableName string, columnsInfo warehouseutils.ColumnsInto) (err error) {
 	schemaIdentifier := sf.schemaIdentifier()
-	sqlStatement := addColumnsSQLStatement(schemaIdentifier, tableName, columnsInfo)
+	format := func(_ int, columnInfo warehouseutils.ColumnInfoT) string {
+		return fmt.Sprintf(`
+		%q %s`,
+			columnInfo.Name,
+			dataTypesMap[columnInfo.Type],
+		)
+	}
+	sqlStatement := fmt.Sprintf(`
+		ALTER TABLE
+		%s.%q
+		ADD COLUMN %s;`,
+		schemaIdentifier,
+		tableName,
+		columnsInfo.JoinColumns(format, ","),
+	)
 	pkgLogger.Infof("SF: Adding columns in snowflake for %s:%s : %v", sf.Warehouse.Namespace, sf.Warehouse.Destination.ID, sqlStatement)
 	_, err = sf.Db.Exec(sqlStatement)
 	return

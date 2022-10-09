@@ -651,7 +651,17 @@ func (ms *HandleT) DropTable(tableName string) (err error) {
 }
 
 func (ms *HandleT) AddColumns(tableName string, columnsInfo warehouseutils.ColumnsInto) (err error) {
-	sqlStatement := addColumnsSQLStatement(ms.Namespace, tableName, columnsInfo)
+	format := func(_ int, columnInfo warehouseutils.ColumnInfoT) string {
+		return fmt.Sprintf(`%s %s`, columnInfo.Name, rudderDataTypesMapToMssql[columnInfo.Type])
+	}
+	sqlStatement := fmt.Sprintf(`
+		ALTER TABLE
+		%s.%s
+		ADD %s;`,
+		ms.Namespace,
+		tableName,
+		columnsInfo.JoinColumns(format, ","),
+	)
 	pkgLogger.Infof("MS: Adding column in mssql for MS:%s : %v", ms.Warehouse.Destination.ID, sqlStatement)
 	_, err = ms.Db.Exec(sqlStatement)
 	return
