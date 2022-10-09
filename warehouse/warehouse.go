@@ -11,7 +11,6 @@ import (
 	"net/http"
 	"os"
 	"runtime"
-	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -28,7 +27,6 @@ import (
 	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/info"
-	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/services/controlplane/features"
 	"github.com/rudderlabs/rudder-server/services/db"
@@ -250,65 +248,67 @@ func (*HandleT) handleUploadJob(uploadJob *UploadJobT) (err error) {
 
 func (wh *HandleT) backendConfigSubscriber() {
 	ch := backendconfig.DefaultBackendConfig.Subscribe(context.TODO(), backendconfig.TopicBackendConfig)
-	for config := range ch {
+	for data := range ch {
 		wh.configSubscriberLock.Lock()
 		wh.warehouses = []warehouseutils.WarehouseT{}
-		allSources := config.Data.(backendconfig.ConfigT)
+		config := data.Data.(map[string]backendconfig.ConfigT)
 		sourceIDsByWorkspaceLock.Lock()
 		sourceIDsByWorkspace = map[string][]string{}
 		pkgLogger.Infof(`Received updated workspace config`)
-		for _, source := range allSources.Sources {
-			if _, ok := sourceIDsByWorkspace[source.WorkspaceID]; !ok {
-				sourceIDsByWorkspace[source.WorkspaceID] = []string{}
-			}
-			sourceIDsByWorkspace[source.WorkspaceID] = append(sourceIDsByWorkspace[source.WorkspaceID], source.ID)
+		for workspaceID, wConfig := range config {
+			for _, source := range wConfig.Sources {
+				if _, ok := sourceIDsByWorkspace[workspaceID]; !ok {
+					sourceIDsByWorkspace[workspaceID] = []string{}
+				}
+				sourceIDsByWorkspace[workspaceID] = append(sourceIDsByWorkspace[workspaceID], source.ID)
 
-			if len(source.Destinations) == 0 {
-				continue
-			}
-			for _, destination := range source.Destinations {
-				if destination.DestinationDefinition.Name != wh.destType {
+				if len(source.Destinations) == 0 {
 					continue
 				}
-				namespace := wh.getNamespace(destination.Config, source, destination, wh.destType)
-				warehouse := warehouseutils.WarehouseT{
-					Source:      source,
-					Destination: destination,
-					Namespace:   namespace,
-					Type:        wh.destType,
-					Identifier:  warehouseutils.GetWarehouseIdentifier(wh.destType, source.ID, destination.ID),
-				}
-				wh.warehouses = append(wh.warehouses, warehouse)
-
-				workerName := wh.workerIdentifier(warehouse)
-				wh.workerChannelMapLock.Lock()
-				// spawn one worker for each unique destID_namespace
-				// check this commit to https://github.com/rudderlabs/rudder-server/pull/476/commits/fbfddf167aa9fc63485fe006d34e6881f5019667
-				// to avoid creating goroutine for disabled sources/destinations
-				if _, ok := wh.workerChannelMap[workerName]; !ok {
-					workerChan := wh.initWorker()
-					wh.workerChannelMap[workerName] = workerChan
-				}
-				wh.workerChannelMapLock.Unlock()
-
-				connectionsMapLock.Lock()
-				if connectionsMap[destination.ID] == nil {
-					connectionsMap[destination.ID] = map[string]warehouseutils.WarehouseT{}
-				}
-				if warehouse.Destination.Config["sslMode"] == "verify-ca" {
-					if err := warehouseutils.WriteSSLKeys(warehouse.Destination); err.IsError() {
-						pkgLogger.Error(err.Error())
-						persisteSSLFileErrorStat(wh.destType, destination.Name, destination.ID, source.Name, source.ID, err.GetErrTag())
+				for _, destination := range source.Destinations {
+					if destination.DestinationDefinition.Name != wh.destType {
+						continue
 					}
-				}
-				connectionsMap[destination.ID][source.ID] = warehouse
-				connectionsMapLock.Unlock()
+					namespace := wh.getNamespace(destination.Config, source, destination, wh.destType)
+					warehouse := warehouseutils.WarehouseT{
+						Source:      source,
+						Destination: destination,
+						Namespace:   namespace,
+						Type:        wh.destType,
+						Identifier:  warehouseutils.GetWarehouseIdentifier(wh.destType, source.ID, destination.ID),
+					}
+					wh.warehouses = append(wh.warehouses, warehouse)
 
-				if warehouseutils.IDResolutionEnabled() && misc.Contains(warehouseutils.IdentityEnabledWarehouses, warehouse.Type) {
-					wh.setupIdentityTables(warehouse)
-					if shouldPopulateHistoricIdentities && warehouse.Destination.Enabled {
-						// non blocking populate historic identities
-						wh.populateHistoricIdentities(warehouse)
+					workerName := wh.workerIdentifier(warehouse)
+					wh.workerChannelMapLock.Lock()
+					// spawn one worker for each unique destID_namespace
+					// check this commit to https://github.com/rudderlabs/rudder-server/pull/476/commits/fbfddf167aa9fc63485fe006d34e6881f5019667
+					// to avoid creating goroutine for disabled sources/destinations
+					if _, ok := wh.workerChannelMap[workerName]; !ok {
+						workerChan := wh.initWorker()
+						wh.workerChannelMap[workerName] = workerChan
+					}
+					wh.workerChannelMapLock.Unlock()
+
+					connectionsMapLock.Lock()
+					if connectionsMap[destination.ID] == nil {
+						connectionsMap[destination.ID] = map[string]warehouseutils.WarehouseT{}
+					}
+					if warehouse.Destination.Config["sslMode"] == "verify-ca" {
+						if err := warehouseutils.WriteSSLKeys(warehouse.Destination); err.IsError() {
+							pkgLogger.Error(err.Error())
+							persistSSLFileErrorStat(wh.destType, destination.Name, destination.ID, source.Name, source.ID, err.GetErrTag())
+						}
+					}
+					connectionsMap[destination.ID][source.ID] = warehouse
+					connectionsMapLock.Unlock()
+
+					if warehouseutils.IDResolutionEnabled() && misc.Contains(warehouseutils.IdentityEnabledWarehouses, warehouse.Type) {
+						wh.setupIdentityTables(warehouse)
+						if shouldPopulateHistoricIdentities && warehouse.Destination.Enabled {
+							// non blocking populate historic identities
+							wh.populateHistoricIdentities(warehouse)
+						}
 					}
 				}
 			}
@@ -665,60 +665,6 @@ func (wh *HandleT) createJobs(warehouse warehouseutils.WarehouseT) (err error) {
 	uploadJobCreationStat.End()
 
 	return nil
-}
-
-func (wh *HandleT) sortWarehousesByOldestUnSyncedEventAt() (err error) {
-	sqlStatement := fmt.Sprintf(`
-		SELECT
-			concat('%s', ':', source_id, ':', destination_id) as wh_identifier,
-			CASE
-				WHEN (status='exported_data' or status='aborted') THEN last_event_at
-				ELSE first_event_at
-				END AS oldest_unsynced_event
-		FROM (
-			SELECT
-				ROW_NUMBER() OVER (PARTITION BY source_id, destination_id ORDER BY id desc) AS row_number,
-				t.source_id, t.destination_id, t.last_event_at, t.first_event_at, t.status
-			FROM
-				wh_uploads t) grouped_uploads
-		WHERE
-			grouped_uploads.row_number = 1;`,
-		wh.destType)
-
-	rows, err := wh.dbHandle.Query(sqlStatement)
-	if err != nil && !errors.Is(err, sql.ErrNoRows) {
-		return err
-	}
-	defer rows.Close()
-
-	oldestEventAtMap := map[string]time.Time{}
-
-	for rows.Next() {
-		var whIdentifier string
-		var oldestUnSyncedEventAtNullTime sql.NullTime
-		err := rows.Scan(&whIdentifier, &oldestUnSyncedEventAtNullTime)
-		if err != nil {
-			return err
-		}
-		oldestUnSyncedEventAt := oldestUnSyncedEventAtNullTime.Time
-		if !oldestUnSyncedEventAtNullTime.Valid {
-			oldestUnSyncedEventAt = timeutil.Now()
-		}
-		oldestEventAtMap[whIdentifier] = oldestUnSyncedEventAt
-	}
-
-	sort.Slice(wh.warehouses, func(i, j int) bool {
-		var firstTime, secondTime time.Time
-		var ok bool
-		if firstTime, ok = oldestEventAtMap[warehouseutils.GetWarehouseIdentifier(wh.destType, wh.warehouses[i].Source.ID, wh.warehouses[i].Destination.ID)]; !ok {
-			firstTime = timeutil.Now()
-		}
-		if secondTime, ok = oldestEventAtMap[warehouseutils.GetWarehouseIdentifier(wh.destType, wh.warehouses[j].Source.ID, wh.warehouses[j].Destination.ID)]; !ok {
-			secondTime = timeutil.Now()
-		}
-		return firstTime.Before(secondTime)
-	})
-	return
 }
 
 func (wh *HandleT) mainLoop(ctx context.Context) {
@@ -1139,42 +1085,46 @@ func (wh *HandleT) resetInProgressJobs() {
 
 func minimalConfigSubscriber() {
 	ch := backendconfig.DefaultBackendConfig.Subscribe(context.TODO(), backendconfig.TopicBackendConfig)
-	for config := range ch {
-		pkgLogger.Debug("Got config from config-backend", config)
-		sources := config.Data.(backendconfig.ConfigT)
+	for data := range ch {
+		pkgLogger.Debug("Got config from config-backend", data)
+		config := data.Data.(map[string]backendconfig.ConfigT)
 		sourceIDsByWorkspaceLock.Lock()
 		sourceIDsByWorkspace = map[string][]string{}
-		for _, source := range sources.Sources {
-			if _, ok := sourceIDsByWorkspace[source.WorkspaceID]; !ok {
-				sourceIDsByWorkspace[source.WorkspaceID] = []string{}
-			}
-			sourceIDsByWorkspace[source.WorkspaceID] = append(sourceIDsByWorkspace[source.WorkspaceID], source.ID)
-			for _, destination := range source.Destinations {
-				if misc.Contains(warehouseutils.WarehouseDestinations, destination.DestinationDefinition.Name) {
-					wh := &HandleT{
-						dbHandle: dbHandle,
-						destType: destination.DestinationDefinition.Name,
+		var connectionFlags backendconfig.ConnectionFlags
+		for workspaceID, wConfig := range config {
+			connectionFlags = wConfig.ConnectionFlags // the last connection flags should be enough, since they are all the same in multi-workspace environments
+			for _, source := range wConfig.Sources {
+				if _, ok := sourceIDsByWorkspace[workspaceID]; !ok {
+					sourceIDsByWorkspace[workspaceID] = []string{}
+				}
+				sourceIDsByWorkspace[workspaceID] = append(sourceIDsByWorkspace[workspaceID], source.ID)
+				for _, destination := range source.Destinations {
+					if misc.Contains(warehouseutils.WarehouseDestinations, destination.DestinationDefinition.Name) {
+						wh := &HandleT{
+							dbHandle: dbHandle,
+							destType: destination.DestinationDefinition.Name,
+						}
+						namespace := wh.getNamespace(destination.Config, source, destination, wh.destType)
+						connectionsMapLock.Lock()
+						if connectionsMap[destination.ID] == nil {
+							connectionsMap[destination.ID] = map[string]warehouseutils.WarehouseT{}
+						}
+						connectionsMap[destination.ID][source.ID] = warehouseutils.WarehouseT{
+							Destination: destination,
+							Namespace:   namespace,
+							Type:        wh.destType,
+							Source:      source,
+							Identifier:  warehouseutils.GetWarehouseIdentifier(wh.destType, source.ID, destination.ID),
+						}
+						connectionsMapLock.Unlock()
 					}
-					namespace := wh.getNamespace(destination.Config, source, destination, wh.destType)
-					connectionsMapLock.Lock()
-					if connectionsMap[destination.ID] == nil {
-						connectionsMap[destination.ID] = map[string]warehouseutils.WarehouseT{}
-					}
-					connectionsMap[destination.ID][source.ID] = warehouseutils.WarehouseT{
-						Destination: destination,
-						Namespace:   namespace,
-						Type:        wh.destType,
-						Source:      source,
-						Identifier:  warehouseutils.GetWarehouseIdentifier(wh.destType, source.ID, destination.ID),
-					}
-					connectionsMapLock.Unlock()
 				}
 			}
 		}
 		sourceIDsByWorkspaceLock.Unlock()
-		if val, ok := sources.ConnectionFlags.Services["warehouse"]; ok {
+		if val, ok := connectionFlags.Services["warehouse"]; ok {
 			if UploadAPI.connectionManager != nil {
-				UploadAPI.connectionManager.Apply(sources.ConnectionFlags.URL, val)
+				UploadAPI.connectionManager.Apply(connectionFlags.URL, val)
 			}
 		}
 	}
@@ -1200,34 +1150,39 @@ func monitorDestRouters(ctx context.Context) {
 	g.Wait()
 }
 
-func onConfigDataEvent(config pubsub.DataEvent, dstToWhRouter map[string]*HandleT) {
-	pkgLogger.Debug("Got config from config-backend", config)
-	sources := config.Data.(backendconfig.ConfigT)
+func onConfigDataEvent(data pubsub.DataEvent, dstToWhRouter map[string]*HandleT) {
+	pkgLogger.Debug("Got config from config-backend", data)
+	config := data.Data.(map[string]backendconfig.ConfigT)
+
 	enabledDestinations := make(map[string]bool)
-	for _, source := range sources.Sources {
-		for _, destination := range source.Destinations {
-			enabledDestinations[destination.DestinationDefinition.Name] = true
-			if misc.Contains(warehouseutils.WarehouseDestinations, destination.DestinationDefinition.Name) {
-				wh, ok := dstToWhRouter[destination.DestinationDefinition.Name]
-				if !ok {
-					pkgLogger.Info("Starting a new Warehouse Destination Router: ", destination.DestinationDefinition.Name)
-					wh = &HandleT{}
-					wh.configSubscriberLock.Lock()
-					wh.Setup(destination.DestinationDefinition.Name)
-					wh.configSubscriberLock.Unlock()
-					dstToWhRouter[destination.DestinationDefinition.Name] = wh
-				} else {
-					pkgLogger.Debug("Enabling existing Destination: ", destination.DestinationDefinition.Name)
-					wh.configSubscriberLock.Lock()
-					wh.Enable()
-					wh.configSubscriberLock.Unlock()
+	var connectionFlags backendconfig.ConnectionFlags
+	for _, wConfig := range config {
+		connectionFlags = wConfig.ConnectionFlags // the last connection flags should be enough, since they are all the same in multi-workspace environments
+		for _, source := range wConfig.Sources {
+			for _, destination := range source.Destinations {
+				enabledDestinations[destination.DestinationDefinition.Name] = true
+				if misc.Contains(warehouseutils.WarehouseDestinations, destination.DestinationDefinition.Name) {
+					wh, ok := dstToWhRouter[destination.DestinationDefinition.Name]
+					if !ok {
+						pkgLogger.Info("Starting a new Warehouse Destination Router: ", destination.DestinationDefinition.Name)
+						wh = &HandleT{}
+						wh.configSubscriberLock.Lock()
+						wh.Setup(destination.DestinationDefinition.Name)
+						wh.configSubscriberLock.Unlock()
+						dstToWhRouter[destination.DestinationDefinition.Name] = wh
+					} else {
+						pkgLogger.Debug("Enabling existing Destination: ", destination.DestinationDefinition.Name)
+						wh.configSubscriberLock.Lock()
+						wh.Enable()
+						wh.configSubscriberLock.Unlock()
+					}
 				}
 			}
 		}
 	}
-	if val, ok := sources.ConnectionFlags.Services["warehouse"]; ok {
+	if val, ok := connectionFlags.Services["warehouse"]; ok {
 		if UploadAPI.connectionManager != nil {
-			UploadAPI.connectionManager.Apply(sources.ConnectionFlags.URL, val)
+			UploadAPI.connectionManager.Apply(connectionFlags.URL, val)
 		}
 	}
 
@@ -1519,11 +1474,11 @@ func getPendingUploadCount(filters ...warehouseutils.FilterBy) (uploadCount int6
 	pkgLogger.Debugf("Fetching pending upload count with filters: %v", filters)
 
 	query := fmt.Sprintf(`
-	SELECT 
-		COUNT(*) 
-	FROM 
-		%[1]s 
-	WHERE 
+	SELECT
+		COUNT(*)
+	FROM
+		%[1]s
+	WHERE
 		%[1]s.status NOT IN ('%[2]s', '%[3]s')
 	`, warehouseutils.WarehouseUploadsTable, ExportedData, Aborted)
 
@@ -1673,7 +1628,7 @@ func healthHandler(w http.ResponseWriter, _ *http.Request) {
 
 func getConnectionString() string {
 	if !CheckForWarehouseEnvVars() {
-		return jobsdb.GetConnectionString()
+		return misc.GetConnectionString()
 	}
 	return fmt.Sprintf("host=%s port=%d user=%s "+
 		"password=%s dbname=%s sslmode=%s application_name=%s",
@@ -1817,7 +1772,7 @@ func Start(ctx context.Context, app app.App) error {
 
 	// Setting up reporting client
 	// only if standalone or embedded connecting to diff DB for warehouse
-	if (isStandAlone() && isMaster()) || (jobsdb.GetConnectionString() != psqlInfo) {
+	if (isStandAlone() && isMaster()) || (misc.GetConnectionString() != psqlInfo) {
 		reporting := application.Features().Reporting.Setup(backendconfig.DefaultBackendConfig)
 
 		g.Go(misc.WithBugsnagForWarehouse(func() error {

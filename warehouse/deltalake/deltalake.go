@@ -483,9 +483,8 @@ func (dl *HandleT) sortedColumnNames(tableSchemaInUpload warehouseutils.TableSch
 
 // credentialsStr return authentication for AWS STS and SSE-C encryption
 // STS authentication is only supported with S3A client.
-func (dl *HandleT) credentialsStr() (string, error) {
-	switch dl.ObjectStorage {
-	case "S3":
+func (dl *HandleT) credentialsStr() (auth string, err error) {
+	if dl.ObjectStorage == "S3" {
 		useSTSTokens := warehouseutils.GetConfigValueBoolString(AWSTokens, dl.Warehouse)
 		if useSTSTokens == "true" {
 			tempAccessKeyId, tempSecretAccessKey, token, err := warehouseutils.GetTemporaryS3Cred(&dl.Warehouse.Destination)

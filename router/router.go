@@ -1444,7 +1444,7 @@ func (rt *HandleT) commitStatusList(responseList *[]jobResponseT) {
 		}
 		// Update the status
 		err := misc.RetryWithNotify(context.Background(), rt.jobsDBCommandTimeout, rt.jobdDBMaxRetries, func(ctx context.Context) error {
-			return rt.jobsDB.WithUpdateSafeTx(func(tx jobsdb.UpdateSafeTx) error {
+			return rt.jobsDB.WithUpdateSafeTx(ctx, func(tx jobsdb.UpdateSafeTx) error {
 				err := rt.jobsDB.UpdateJobStatusInTx(ctx, tx, statusList, []string{rt.destName}, nil)
 				if err != nil {
 					return fmt.Errorf("updating %s jobs statuses: %w", rt.destName, err)
@@ -1894,7 +1894,7 @@ func (rt *HandleT) readAndProcess() int {
 		// REPORTING - ROUTER - END
 
 		err = misc.RetryWithNotify(context.Background(), rt.jobsDBCommandTimeout, rt.jobdDBMaxRetries, func(ctx context.Context) error {
-			return rt.jobsDB.WithUpdateSafeTx(func(tx jobsdb.UpdateSafeTx) error {
+			return rt.jobsDB.WithUpdateSafeTx(ctx, func(tx jobsdb.UpdateSafeTx) error {
 				err := rt.jobsDB.UpdateJobStatusInTx(ctx, tx, drainList, []string{rt.destName}, nil)
 				if err != nil {
 					return fmt.Errorf("marking %s job statuses as aborted: %w", rt.destName, err)
@@ -2150,28 +2150,29 @@ func (rt *HandleT) backendConfigSubscriber() {
 	for configEvent := range ch {
 		rt.configSubscriberLock.Lock()
 		rt.destinationsMap = map[string]*routerutils.BatchDestinationT{}
-		allSources := configEvent.Data.(backendconfig.ConfigT)
+		config := configEvent.Data.(map[string]backendconfig.ConfigT)
 		rt.sourceIDWorkspaceMap = map[string]string{}
-		for i := range allSources.Sources {
-			source := &allSources.Sources[i]
-			workspaceID := source.WorkspaceID
-			rt.sourceIDWorkspaceMap[source.ID] = source.WorkspaceID
-			if _, ok := rt.workspaceSet[workspaceID]; !ok {
-				rt.workspaceSet[workspaceID] = struct{}{}
-				rt.MultitenantI.UpdateWorkspaceLatencyMap(rt.destName, workspaceID, 0)
-			}
-			if len(source.Destinations) > 0 {
-				for i := range source.Destinations {
-					destination := &source.Destinations[i]
-					if destination.DestinationDefinition.Name == rt.destName {
-						if _, ok := rt.destinationsMap[destination.ID]; !ok {
-							rt.destinationsMap[destination.ID] = &routerutils.BatchDestinationT{Destination: *destination, Sources: []backendconfig.SourceT{}}
-						}
-						rt.destinationsMap[destination.ID].Sources = append(rt.destinationsMap[destination.ID].Sources, *source)
+		for workspaceID, wConfig := range config {
+			for i := range wConfig.Sources {
+				source := &wConfig.Sources[i]
+				rt.sourceIDWorkspaceMap[source.ID] = workspaceID
+				if _, ok := rt.workspaceSet[workspaceID]; !ok {
+					rt.workspaceSet[workspaceID] = struct{}{}
+					rt.MultitenantI.UpdateWorkspaceLatencyMap(rt.destName, workspaceID, 0)
+				}
+				if len(source.Destinations) > 0 {
+					for i := range source.Destinations {
+						destination := &source.Destinations[i]
+						if destination.DestinationDefinition.Name == rt.destName {
+							if _, ok := rt.destinationsMap[destination.ID]; !ok {
+								rt.destinationsMap[destination.ID] = &routerutils.BatchDestinationT{Destination: *destination, Sources: []backendconfig.SourceT{}}
+							}
+							rt.destinationsMap[destination.ID].Sources = append(rt.destinationsMap[destination.ID].Sources, *source)
 
-						rt.destinationResponseHandler = New(destination.DestinationDefinition.ResponseRules)
-						if value, ok := destination.DestinationDefinition.Config["saveDestinationResponse"].(bool); ok {
-							rt.saveDestinationResponse = value
+							rt.destinationResponseHandler = New(destination.DestinationDefinition.ResponseRules)
+							if value, ok := destination.DestinationDefinition.Config["saveDestinationResponse"].(bool); ok {
+								rt.saveDestinationResponse = value
+							}
 						}
 					}
 				}

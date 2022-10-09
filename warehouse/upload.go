@@ -1967,13 +1967,6 @@ func (job *UploadJobT) GetLoadFilesMetadata(options warehouseutils.GetLoadFilesO
 		tableFilterSQL = fmt.Sprintf(` AND table_name='%s'`, options.Table)
 	}
 
-	startID := options.StartID
-	endID := options.EndID
-	if startID == 0 || endID == 0 {
-		startID = job.upload.StartLoadFileID
-		endID = job.upload.EndLoadFileID
-	}
-
 	var limitSQL string
 	if options.Limit != 0 {
 		limitSQL = fmt.Sprintf(`LIMIT %d`, options.Limit)

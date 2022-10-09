@@ -137,6 +137,7 @@ var (
 		DisplayName: "Google Analytics", Config: nil, ResponseRules: nil,
 	}
 	sampleBackendConfig = backendConfig.ConfigT{
+		WorkspaceID: workspaceID,
 		Sources: []backendConfig.SourceT{
 			{
 				WorkspaceID: workspaceID,
@@ -227,7 +228,7 @@ func TestDynamicClusterManager(t *testing.T) {
 		ctx context.Context, topic backendConfig.Topic,
 	) pubsub.DataChannel {
 		ch := make(chan pubsub.DataEvent, 1)
-		ch <- pubsub.DataEvent{Data: sampleBackendConfig, Topic: string(topic)}
+		ch <- pubsub.DataEvent{Data: map[string]backendConfig.ConfigT{workspaceID: sampleBackendConfig}, Topic: string(topic)}
 
 		go func() {
 			<-ctx.Done()
