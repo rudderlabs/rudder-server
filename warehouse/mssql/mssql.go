@@ -270,7 +270,7 @@ func (ms *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 		return
 	}
 
-	stmt, err := txn.Prepare(mssql.CopyIn(ms.Namespace+"."+stagingTableName, mssql.BulkOptions{CheckConstraints: false}, sortedColumnKeys...))
+	stmt, err := txn.Prepare(mssql.CopyIn(stagingTableName, mssql.BulkOptions{CheckConstraints: false}, sortedColumnKeys...))
 	if err != nil {
 		pkgLogger.Errorf("MS: Error while preparing statement for  transaction in db for loading in staging table:%s: %v\nstmt: %v", stagingTableName, err, stmt)
 		txn.Rollback()
@@ -434,7 +434,7 @@ func (ms *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 	if tableName == warehouseutils.DiscardsTable {
 		additionalJoinClause = fmt.Sprintf(`AND _source.%[3]s = "%[1]s"."%[2]s"."%[3]s" AND _source.%[4]s = "%[1]s"."%[2]s"."%[4]s"`, ms.Namespace, tableName, "table_name", "column_name")
 	}
-	sqlStatement = fmt.Sprintf(`DELETE FROM "%[1]s"."%[2]s" FROM "%[1]s"."%[3]s" as  _source where (_source.%[4]s = "%[1]s"."%[2]s"."%[4]s" %[5]s)`, ms.Namespace, tableName, stagingTableName, primaryKey, additionalJoinClause)
+	sqlStatement = fmt.Sprintf(`DELETE FROM "%[1]s"."%[2]s" FROM "%[3]s" as _source where (_source.%[4]s = "%[1]s"."%[2]s"."%[4]s" %[5]s)`, ms.Namespace, tableName, stagingTableName, primaryKey, additionalJoinClause)
 	pkgLogger.Infof("MS: Deduplicate records for table:%s using staging table: %s\n", tableName, sqlStatement)
 	_, err = txn.Exec(sqlStatement)
 	if err != nil {
@@ -446,7 +446,7 @@ func (ms *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 	quotedColumnNames := warehouseutils.DoubleQuoteAndJoinByComma(sortedColumnKeys)
 	sqlStatement = fmt.Sprintf(`INSERT INTO "%[1]s"."%[2]s" (%[3]s)
 									SELECT %[3]s FROM (
-										SELECT *, row_number() OVER (PARTITION BY %[5]s ORDER BY received_at DESC) AS _rudder_staging_row_number FROM "%[1]s"."%[4]s"
+										SELECT *, row_number() OVER (PARTITION BY %[5]s ORDER BY received_at DESC) AS _rudder_staging_row_number FROM "%[4]s"
 									) AS _ where _rudder_staging_row_number = 1
 									`, ms.Namespace, tableName, quotedColumnNames, stagingTableName, partitionKey)
 	pkgLogger.Infof("MS: Inserting records for table:%s using staging table: %s\n", tableName, sqlStatement)
@@ -520,7 +520,7 @@ func (ms *HandleT) loadUserTables() (errorMap map[string]error) {
 							  order by received_at desc
 						  	OFFSET 0 ROWS
 							FETCH NEXT 1 ROWS ONLY)
-						  end as "%[1]s"`, colName, ms.Namespace+"."+unionStagingTableName)
+						  end as "%[1]s"`, colName, unionStagingTableName)
 
 		// IGNORE NULLS only supported in Azure SQL edge, in which case the query can be shortedened to below
 		// https://docs.microsoft.com/en-us/sql/t-sql/functions/first-value-transact-sql?view=sql-server-ver15
@@ -530,12 +530,12 @@ func (ms *HandleT) loadUserTables() (errorMap map[string]error) {
 
 	sqlStatement := fmt.Sprintf(`SELECT * into #%[5]s FROM
 												((
-													SELECT id, %[4]s FROM %[2]s WHERE id in (SELECT user_id FROM %[3]s WHERE user_id IS NOT NULL)
+													SELECT id, %[4]s FROM %[1]s.%[2]s WHERE id in (SELECT user_id FROM %[3]s WHERE user_id IS NOT NULL)
 												) UNION
 												(
-													SELECT user_id, %[4]s FROM %[3]s  WHERE user_id IS NOT NULL
+													SELECT user_id, %[4]s FROM %[3]s WHERE user_id IS NOT NULL
 												)) a
-											`, ms.Namespace, ms.Namespace+"."+warehouseutils.UsersTable, ms.Namespace+"."+identifyStagingTable, strings.Join(userColNames, ","), unionStagingTableName)
+											`, ms.Namespace, warehouseutils.UsersTable, identifyStagingTable, strings.Join(userColNames, ","), unionStagingTableName)
 
 	pkgLogger.Debugf("MS: Creating staging table for union of users table with identify staging table: %s\n", sqlStatement)
 	_, err = ms.Db.Exec(sqlStatement)
@@ -553,7 +553,7 @@ func (ms *HandleT) loadUserTables() (errorMap map[string]error) {
 									) a`,
 		stagingTableName,
 		strings.Join(firstValProps, ","),
-		ms.Namespace+"."+unionStagingTableName,
+		unionStagingTableName,
 	)
 
 	pkgLogger.Debugf("MS: Creating staging table for users: %s\n", sqlStatement)
@@ -572,7 +572,7 @@ func (ms *HandleT) loadUserTables() (errorMap map[string]error) {
 	}
 
 	primaryKey := "id"
-	sqlStatement = fmt.Sprintf(`DELETE FROM %[1]s."%[2]s" FROM %[3]s _source where (_source.%[4]s = %[1]s.%[2]s.%[4]s)`, ms.Namespace, warehouseutils.UsersTable, ms.Namespace+"."+stagingTableName, primaryKey)
+	sqlStatement = fmt.Sprintf(`DELETE FROM %[1]s."%[2]s" FROM %[3]s _source where (_source.%[4]s = %[1]s.%[2]s.%[4]s)`, ms.Namespace, warehouseutils.UsersTable, stagingTableName, primaryKey)
 	pkgLogger.Infof("MS: Dedup records for table:%s using staging table: %s\n", warehouseutils.UsersTable, sqlStatement)
 	_, err = tx.Exec(sqlStatement)
 	if err != nil {
@@ -582,7 +582,7 @@ func (ms *HandleT) loadUserTables() (errorMap map[string]error) {
 		return
 	}
 
-	sqlStatement = fmt.Sprintf(`INSERT INTO "%[1]s"."%[2]s" (%[4]s) SELECT %[4]s FROM  %[3]s`, ms.Namespace, warehouseutils.UsersTable, ms.Namespace+"."+stagingTableName, strings.Join(append([]string{"id"}, userColNames...), ","))
+	sqlStatement = fmt.Sprintf(`INSERT INTO "%[1]s"."%[2]s" (%[4]s) SELECT %[4]s FROM %[3]s`, ms.Namespace, warehouseutils.UsersTable, stagingTableName, strings.Join(append([]string{"id"}, userColNames...), ","))
 	pkgLogger.Infof("MS: Inserting records for table:%s using staging table: %s\n", warehouseutils.UsersTable, sqlStatement)
 	_, err = tx.Exec(sqlStatement)
 

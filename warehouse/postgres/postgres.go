@@ -43,7 +43,6 @@ const (
 
 // load table transaction stages
 const (
-	createStagingTable       = "staging_table_creation"
 	copyInSchemaStagingTable = "staging_table_copy_in_schema"
 	openLoadFiles            = "load_files_opening"
 	readGzipLoadFiles        = "load_files_gzip_reading"
@@ -276,24 +275,23 @@ func (pg *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 		return
 	}
 
+	// create temporary table
+	stagingTableName = misc.TruncateStr(fmt.Sprintf(`%s%s_%s`, stagingTablePrefix, tableName, strings.ReplaceAll(uuid.Must(uuid.NewV4()).String(), "-", "")), 63)
+	sqlStatement = fmt.Sprintf(`CREATE TEMPORARY TABLE %[2]s (LIKE "%[1]s"."%[3]s")`, pg.Namespace, stagingTableName, tableName)
+	pkgLogger.Debugf("PG: Creating temporary table for table:%s at %s\n", tableName, sqlStatement)
+	_, err = pg.Db.Exec(sqlStatement)
+	if err != nil {
+		pkgLogger.Errorf("PG: Error creating temporary table for table:%s: %v\n", tableName, err)
+		return
+	}
+
 	txn, err := pg.Db.Begin()
 	if err != nil {
 		pkgLogger.Errorf("PG: Error while beginning a transaction in db for loading in table:%s: %v", tableName, err)
 		return
 	}
-	// create temporary table
-	stagingTableName = misc.TruncateStr(fmt.Sprintf(`%s%s_%s`, stagingTablePrefix, tableName, strings.ReplaceAll(uuid.Must(uuid.NewV4()).String(), "-", "")), 63)
-	sqlStatement = fmt.Sprintf(`CREATE TEMPORARY TABLE %[2]s (LIKE "%[1]s"."%[3]s")`, pg.Namespace, stagingTableName, tableName)
-	pkgLogger.Debugf("PG: Creating temporary table for table:%s at %s\n", tableName, sqlStatement)
-	_, err = txn.Exec(sqlStatement)
-	if err != nil {
-		pkgLogger.Errorf("PG: Error creating temporary table for table:%s: %v\n", tableName, err)
-		tags["stage"] = createStagingTable
-		runRollbackWithTimeout(txn.Rollback, handleRollbackTimeout, txnRollbackTimeout, tags)
-		return
-	}
 
-	stmt, err := txn.Prepare(pq.CopyInSchema(pg.Namespace, stagingTableName, sortedColumnKeys...))
+	stmt, err := txn.Prepare(pq.CopyIn(stagingTableName, sortedColumnKeys...))
 	if err != nil {
 		pkgLogger.Errorf("PG: Error while preparing statement for  transaction in db for loading in staging table:%s: %v\nstmt: %v", stagingTableName, err, stmt)
 		tags["stage"] = copyInSchemaStagingTable
@@ -383,7 +381,7 @@ func (pg *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 	if tableName == warehouseutils.DiscardsTable {
 		additionalJoinClause = fmt.Sprintf(`AND _source.%[3]s = "%[1]s"."%[2]s"."%[3]s" AND _source.%[4]s = "%[1]s"."%[2]s"."%[4]s"`, pg.Namespace, tableName, "table_name", "column_name")
 	}
-	sqlStatement = fmt.Sprintf(`DELETE FROM "%[1]s"."%[2]s" USING "%[1]s"."%[3]s" as  _source where (_source.%[4]s = "%[1]s"."%[2]s"."%[4]s" %[5]s)`, pg.Namespace, tableName, stagingTableName, primaryKey, additionalJoinClause)
+	sqlStatement = fmt.Sprintf(`DELETE FROM "%[1]s"."%[2]s" USING "%[3]s" as  _source where (_source.%[4]s = "%[1]s"."%[2]s"."%[4]s" %[5]s)`, pg.Namespace, tableName, stagingTableName, primaryKey, additionalJoinClause)
 	pkgLogger.Infof("PG: Deduplicate records for table:%s using staging table: %s\n", tableName, sqlStatement)
 	_, err = handleExec(&QueryParams{txn: txn, query: sqlStatement, enableWithQueryPlan: enableSQLStatementExecutionPlan})
 	if err != nil {
@@ -396,7 +394,7 @@ func (pg *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 	quotedColumnNames := warehouseutils.DoubleQuoteAndJoinByComma(sortedColumnKeys)
 	sqlStatement = fmt.Sprintf(`INSERT INTO "%[1]s"."%[2]s" (%[3]s)
 									SELECT %[3]s FROM (
-										SELECT *, row_number() OVER (PARTITION BY %[5]s ORDER BY received_at DESC) AS _rudder_staging_row_number FROM "%[1]s"."%[4]s"
+										SELECT *, row_number() OVER (PARTITION BY %[5]s ORDER BY received_at DESC) AS _rudder_staging_row_number FROM "%[4]s"
 									) AS _ where _rudder_staging_row_number = 1
 									`, pg.Namespace, tableName, quotedColumnNames, stagingTableName, partitionKey)
 	pkgLogger.Infof("PG: Inserting records for table:%s using staging table: %s\n", tableName, sqlStatement)
@@ -461,21 +459,21 @@ func (pg *HandleT) loadUserTables() (errorMap map[string]error) {
 		userColNames = append(userColNames, fmt.Sprintf(`%q`, colName))
 		caseSubQuery := fmt.Sprintf(`case
 						  when (select true) then (
-						  	select "%[1]s" from "%[3]s"."%[2]s" as staging_table
+						  	select "%[1]s" from "%[2]s" as staging_table
 						  	where x.id = staging_table.id
 							  and "%[1]s" is not null
 							  order by received_at desc
 						  	limit 1)
-						  end as "%[1]s"`, colName, unionStagingTableName, pg.Namespace)
+						  end as "%[1]s"`, colName, unionStagingTableName)
 		firstValProps = append(firstValProps, caseSubQuery)
 	}
 
 	sqlStatement = fmt.Sprintf(`CREATE TEMPORARY TABLE %[5]s as (
 												(
-													SELECT id, %[4]s FROM "%[1]s"."%[2]s" WHERE id in (SELECT user_id FROM "%[1]s"."%[3]s" WHERE user_id IS NOT NULL)
+													SELECT id, %[4]s FROM "%[1]s"."%[2]s" WHERE id in (SELECT user_id FROM "%[3]s" WHERE user_id IS NOT NULL)
 												) UNION
 												(
-													SELECT user_id, %[4]s FROM "%[1]s"."%[3]s"  WHERE user_id IS NOT NULL
+													SELECT user_id, %[4]s FROM "%[3]s"  WHERE user_id IS NOT NULL
 												)
 											)`, pg.Namespace, warehouseutils.UsersTable, identifyStagingTable, strings.Join(userColNames, ","), unionStagingTableName)
 
@@ -490,13 +488,12 @@ func (pg *HandleT) loadUserTables() (errorMap map[string]error) {
 										(
 											SELECT
 											x.id, %[2]s
-											FROM %[4]s.%[3]s as x
+											FROM %[3]s as x
 										) as xyz
 									)`,
 		stagingTableName,
 		strings.Join(firstValProps, ","),
 		unionStagingTableName,
-		pg.Namespace,
 	)
 
 	pkgLogger.Debugf("PG: Creating staging table for users: %s\n", sqlStatement)
@@ -514,7 +511,7 @@ func (pg *HandleT) loadUserTables() (errorMap map[string]error) {
 	}
 
 	primaryKey := "id"
-	sqlStatement = fmt.Sprintf(`DELETE FROM "%[1]s"."%[2]s" using "%[1]s"."%[3]s" _source where (_source.%[4]s = %[1]s.%[2]s.%[4]s)`, pg.Namespace, warehouseutils.UsersTable, stagingTableName, primaryKey)
+	sqlStatement = fmt.Sprintf(`DELETE FROM "%[1]s"."%[2]s" using "%[3]s" _source where (_source.%[4]s = %[1]s.%[2]s.%[4]s)`, pg.Namespace, warehouseutils.UsersTable, stagingTableName, primaryKey)
 	pkgLogger.Infof("PG: Dedup records for table:%s using staging table: %s\n", warehouseutils.UsersTable, sqlStatement)
 	// tags
 	tags := map[string]string{
@@ -531,7 +528,7 @@ func (pg *HandleT) loadUserTables() (errorMap map[string]error) {
 		return
 	}
 
-	sqlStatement = fmt.Sprintf(`INSERT INTO "%[1]s"."%[2]s" (%[4]s) SELECT %[4]s FROM  "%[1]s"."%[3]s"`, pg.Namespace, warehouseutils.UsersTable, stagingTableName, strings.Join(append([]string{"id"}, userColNames...), ","))
+	sqlStatement = fmt.Sprintf(`INSERT INTO "%[1]s"."%[2]s" (%[4]s) SELECT %[4]s FROM "%[3]s"`, pg.Namespace, warehouseutils.UsersTable, stagingTableName, strings.Join(append([]string{"id"}, userColNames...), ","))
 	pkgLogger.Infof("PG: Inserting records for table:%s using staging table: %s\n", warehouseutils.UsersTable, sqlStatement)
 	_, err = handleExec(&QueryParams{txn: tx, query: sqlStatement, enableWithQueryPlan: enableSQLStatementExecutionPlan})
 
@@ -603,10 +600,10 @@ func (pg *HandleT) CreateTable(tableName string, columnMap map[string]string) (e
 	return err
 }
 
-func (as *HandleT) DropTable(tableName string) (err error) {
+func (pg *HandleT) DropTable(tableName string) (err error) {
 	sqlStatement := `DROP TABLE "%[1]s"."%[2]s"`
-	pkgLogger.Infof("PG: Dropping table in postgres for PG:%s : %v", as.Warehouse.Destination.ID, sqlStatement)
-	_, err = as.Db.Exec(fmt.Sprintf(sqlStatement, as.Namespace, tableName))
+	pkgLogger.Infof("PG: Dropping table in postgres for PG:%s : %v", pg.Warehouse.Destination.ID, sqlStatement)
+	_, err = pg.Db.Exec(fmt.Sprintf(sqlStatement, pg.Namespace, tableName))
 	return
 }
 
