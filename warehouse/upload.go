@@ -738,9 +738,9 @@ func (job *UploadJobT) fetchPendingUploadTableStatus() []*TableUploadStatusT {
 			SELECT 
 			  table_name 
 			FROM 
-			  %[2]s 
+			  %[2]s TU1
 			WHERE 
-			  TU.wh_upload_id = '%[3]d'
+			  TU1.wh_upload_id = '%[3]d'
 		  ) 
 		ORDER BY 
 		  UT.id ASC;
