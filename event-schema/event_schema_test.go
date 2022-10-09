@@ -17,7 +17,6 @@ import (
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	migrator "github.com/rudderlabs/rudder-server/services/sql-migrator"
-	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/testhelper"
 	"github.com/rudderlabs/rudder-server/testhelper/destination"
 	"github.com/rudderlabs/rudder-server/utils/logger"
@@ -53,14 +52,13 @@ func setupDB(es envSetter, cleanup *testhelper.Cleanup) (*destination.PostgresRe
 	}
 
 	// Load self configuration.
-	config.Load()
+	config.Reset()
 
-	logger.Init() // Initialize the logger
+	logger.Reset() // Initialize the logger
 	Init2()
 	Init()
 
-	// Setup the supporting services like stats and jobsdb
-	stats.Setup()
+	// Setup the supporting services like jobsdb
 	jobsDBInit(es, pgResource)
 
 	return pgResource, nil

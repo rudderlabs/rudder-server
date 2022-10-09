@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"net/http"
 	"strings"
 	"time"
 
@@ -87,35 +88,42 @@ type TableUploadResT struct {
 type UploadAPIT struct {
 	enabled           bool
 	dbHandle          *sql.DB
-	log               logger.LoggerI
+	warehouseDBHandle *DB
+	log               logger.Logger
 	connectionManager *controlplane.ConnectionManager
 	isMultiWorkspace  bool
 }
 
 var UploadAPI UploadAPIT
 
-func InitWarehouseAPI(dbHandle *sql.DB, log logger.LoggerI) error {
+const (
+	TriggeredSuccessfully = "Triggered successfully"
+	NoPendingEvents       = "No pending events to sync for this destination"
+)
+
+func InitWarehouseAPI(dbHandle *sql.DB, log logger.Logger) error {
 	connectionToken, tokenType, isMultiWorkspace, err := deployment.GetConnectionToken()
 	if err != nil {
 		return err
 	}
 	UploadAPI = UploadAPIT{
-		enabled:          true,
-		dbHandle:         dbHandle,
-		log:              log,
-		isMultiWorkspace: isMultiWorkspace,
+		enabled:           true,
+		dbHandle:          dbHandle,
+		warehouseDBHandle: NewWarehouseDB(dbHandle),
+		log:               log,
+		isMultiWorkspace:  isMultiWorkspace,
 		connectionManager: &controlplane.ConnectionManager{
 			AuthInfo: controlplane.AuthInfo{
 				Service:         "warehouse",
 				ConnectionToken: connectionToken,
-				InstanceID:      config.GetEnv("instance_id", "1"),
+				InstanceID:      config.GetString("INSTANCE_ID", "1"),
 				TokenType:       tokenType,
 			},
 			RetryInterval: 0,
-			UseTLS:        config.GetEnvAsBool("CP_ROUTER_USE_TLS", true),
+			UseTLS:        config.GetBool("CP_ROUTER_USE_TLS", true),
 			Logger:        log,
 			RegisterService: func(srv *grpc.Server) {
-				proto.RegisterWarehouseServer(srv, &warehouseGrpc{})
+				proto.RegisterWarehouseServer(srv, &warehouseGRPC{})
 			},
 		},
 	}
@@ -162,11 +170,11 @@ func (uploadsReq *UploadsReqT) GetWhUploads() (uploadsRes *proto.WHUploadsRespon
 	}
 
 	if UploadAPI.isMultiWorkspace {
-		uploadsRes, err = uploadsReq.getWhUploadsForHosted(authorizedSourceIDs, `id, source_id, destination_id, destination_type, namespace, status, error, first_event_at, last_event_at, last_exec_at, updated_at, timings, metadata->>'nextRetryTime', metadata->>'archivedStagingAndLoadFiles'`)
+		uploadsRes, err = uploadsReq.warehouseUploadsForHosted(authorizedSourceIDs, `id, source_id, destination_id, destination_type, namespace, status, error, first_event_at, last_event_at, last_exec_at, updated_at, timings, metadata->>'nextRetryTime', metadata->>'archivedStagingAndLoadFiles'`)
 		return
 	}
 
-	uploadsRes, err = uploadsReq.getWhUploads(`id, source_id, destination_id, destination_type, namespace, status, error, first_event_at, last_event_at, last_exec_at, updated_at, timings, metadata->>'nextRetryTime', metadata->>'archivedStagingAndLoadFiles'`)
+	uploadsRes, err = uploadsReq.warehouseUploads(`id, source_id, destination_id, destination_type, namespace, status, error, first_event_at, last_event_at, last_exec_at, updated_at, timings, metadata->>'nextRetryTime', metadata->>'archivedStagingAndLoadFiles'`)
 	return
 }
 
@@ -176,7 +184,7 @@ func (uploadsReq *UploadsReqT) TriggerWhUploads() (response *proto.TriggerWhUplo
 		if err != nil {
 			response = &proto.TriggerWhUploadsResponse{
 				Message:    err.Error(),
-				StatusCode: 400,
+				StatusCode: http.StatusBadRequest,
 			}
 		}
 	}()
@@ -194,7 +202,9 @@ func (uploadsReq *UploadsReqT) TriggerWhUploads() (response *proto.TriggerWhUplo
 		return
 	}
 	var pendingStagingFileCount int64
-	pendingUploadCount, err := getPendingUploadCount(uploadsReq.DestinationID, false)
+
+	filterBy := []warehouseutils.FilterBy{{Key: "destination_id", Value: uploadsReq.DestinationID}}
+	pendingUploadCount, err := getPendingUploadCount(filterBy...)
 	if err != nil {
 		return
 	}
@@ -207,8 +217,8 @@ func (uploadsReq *UploadsReqT) TriggerWhUploads() (response *proto.TriggerWhUplo
 	if (pendingUploadCount + pendingStagingFileCount) == int64(0) {
 		err = nil
 		response = &proto.TriggerWhUploadsResponse{
-			Message:    "No pending events to sync for this destination",
-			StatusCode: 200,
+			Message:    NoPendingEvents,
+			StatusCode: http.StatusOK,
 		}
 		return
 	}
@@ -217,8 +227,8 @@ func (uploadsReq *UploadsReqT) TriggerWhUploads() (response *proto.TriggerWhUplo
 		return
 	}
 	response = &proto.TriggerWhUploadsResponse{
-		Message:    "Triggered successfully",
-		StatusCode: 200,
+		Message:    TriggeredSuccessfully,
+		StatusCode: http.StatusOK,
 	}
 	return
 }
@@ -322,7 +332,7 @@ func (uploadReq UploadReqT) TriggerWHUpload() (response *proto.TriggerWhUploadsR
 		if err != nil {
 			response = &proto.TriggerWhUploadsResponse{
 				Message:    err.Error(),
-				StatusCode: 400,
+				StatusCode: http.StatusBadRequest,
 			}
 		}
 	}()
@@ -368,8 +378,8 @@ func (uploadReq UploadReqT) TriggerWHUpload() (response *proto.TriggerWhUploadsR
 	}
 
 	response = &proto.TriggerWhUploadsResponse{
-		Message:    "Triggered successfully",
-		StatusCode: 200,
+		Message:    TriggeredSuccessfully,
+		StatusCode: http.StatusOK,
 	}
 	return
 }
@@ -580,7 +590,7 @@ func (uploadsReq *UploadsReqT) getTotalUploadCount(whereClause string) (int32, e
 }
 
 // for hosted workspaces - we get the uploads and the total upload count using the same query
-func (uploadsReq *UploadsReqT) getWhUploadsForHosted(authorizedSourceIDs []string, selectFields string) (uploadsRes *proto.WHUploadsResponse, err error) {
+func (uploadsReq *UploadsReqT) warehouseUploadsForHosted(authorizedSourceIDs []string, selectFields string) (uploadsRes *proto.WHUploadsResponse, err error) {
 	var (
 		uploads          []*proto.WHUploadResponse
 		totalUploadCount int32
@@ -643,7 +653,7 @@ func (uploadsReq *UploadsReqT) getWhUploadsForHosted(authorizedSourceIDs []strin
 }
 
 // for non hosted workspaces - we get the uploads and the total upload count using separate queries
-func (uploadsReq *UploadsReqT) getWhUploads(selectFields string) (uploadsRes *proto.WHUploadsResponse, err error) {
+func (uploadsReq *UploadsReqT) warehouseUploads(selectFields string) (uploadsRes *proto.WHUploadsResponse, err error) {
 	var (
 		uploads          []*proto.WHUploadResponse
 		totalUploadCount int32

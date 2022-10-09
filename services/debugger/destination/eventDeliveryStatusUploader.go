@@ -40,7 +40,7 @@ var (
 	eventsDeliveryCache               debugger.Cache
 )
 
-var pkgLogger logger.LoggerI
+var pkgLogger logger.Logger
 
 func Init() {
 	loadConfig()
@@ -48,7 +48,7 @@ func Init() {
 }
 
 func loadConfig() {
-	configBackendURL = config.GetEnv("CONFIG_BACKEND_URL", "https://api.rudderlabs.com")
+	configBackendURL = config.GetString("CONFIG_BACKEND_URL", "https://api.rudderlabs.com")
 	config.RegisterBoolConfigVariable(false, &disableEventDeliveryStatusUploads, true, "DestinationDebugger.disableEventDeliveryStatusUploads")
 }
 
@@ -94,7 +94,7 @@ func Setup(backendConfig backendconfig.BackendConfig) {
 	})
 }
 
-func (eventDeliveryStatusUploader *EventDeliveryStatusUploader) Transform(data interface{}) ([]byte, error) {
+func (*EventDeliveryStatusUploader) Transform(data interface{}) ([]byte, error) {
 	deliveryStatusesBuffer := data.([]interface{})
 	res := make(map[string]interface{})
 	res["version"] = "v2"
@@ -119,16 +119,18 @@ func (eventDeliveryStatusUploader *EventDeliveryStatusUploader) Transform(data i
 	return rawJSON, nil
 }
 
-func updateConfig(sources backendconfig.ConfigT) {
+func updateConfig(config map[string]backendconfig.ConfigT) {
 	configSubscriberLock.Lock()
 	uploadEnabledDestinationIDs = make(map[string]bool)
 	var uploadEnabledDestinationIdsList []string
-	for _, source := range sources.Sources {
-		for _, destination := range source.Destinations {
-			if destination.Config != nil {
-				if destination.Enabled && destination.Config["eventDelivery"] == true {
-					uploadEnabledDestinationIdsList = append(uploadEnabledDestinationIdsList, destination.ID)
-					uploadEnabledDestinationIDs[destination.ID] = true
+	for _, wConfig := range config {
+		for _, source := range wConfig.Sources {
+			for _, destination := range source.Destinations {
+				if destination.Config != nil {
+					if destination.Enabled && destination.Config["eventDelivery"] == true {
+						uploadEnabledDestinationIdsList = append(uploadEnabledDestinationIdsList, destination.ID)
+						uploadEnabledDestinationIDs[destination.ID] = true
+					}
 				}
 			}
 		}
@@ -140,7 +142,7 @@ func updateConfig(sources backendconfig.ConfigT) {
 func backendConfigSubscriber(backendConfig backendconfig.BackendConfig) {
 	configChannel := backendConfig.Subscribe(context.TODO(), "backendConfig")
 	for config := range configChannel {
-		updateConfig(config.Data.(backendconfig.ConfigT))
+		updateConfig(config.Data.(map[string]backendconfig.ConfigT))
 	}
 }
 

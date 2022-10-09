@@ -3,6 +3,7 @@ package configenv
 import (
 	"encoding/json"
 	"fmt"
+	"os"
 	"reflect"
 	"strings"
 
@@ -17,7 +18,7 @@ type HandleT struct{}
 
 var (
 	configEnvReplacer string
-	pkgLogger         logger.LoggerI
+	pkgLogger         logger.Logger
 )
 
 func loadConfig() {
@@ -25,7 +26,7 @@ func loadConfig() {
 }
 
 // ReplaceConfigWithEnvVariables : Replaces all env variables in the config
-func (handle *HandleT) ReplaceConfigWithEnvVariables(workspaceConfig []byte) (updatedConfig []byte) {
+func (*HandleT) ReplaceConfigWithEnvVariables(workspaceConfig []byte) (updatedConfig []byte) {
 	configMap := make(map[string]interface{}, 0)
 
 	err := json.Unmarshal(workspaceConfig, &configMap)
@@ -47,7 +48,7 @@ func (handle *HandleT) ReplaceConfigWithEnvVariables(workspaceConfig []byte) (up
 			shouldReplace := strings.HasPrefix(strings.TrimSpace(valString), configEnvReplacer)
 			if shouldReplace {
 				envVariable := valString[len(configEnvReplacer):]
-				envVarValue := config.GetEnv(envVariable, "")
+				envVarValue := os.Getenv(envVariable)
 				if envVarValue == "" {
 					errorMessage := fmt.Sprintf("[ConfigEnv] Missing envVariable: %s. Either set it as envVariable or remove %s from the destination config.", envVariable, configEnvReplacer)
 					pkgLogger.Errorf(errorMessage)

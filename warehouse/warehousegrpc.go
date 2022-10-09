@@ -11,11 +11,11 @@ import (
 	proto "github.com/rudderlabs/rudder-server/proto/warehouse"
 )
 
-type warehouseGrpc struct {
+type warehouseGRPC struct {
 	proto.UnimplementedWarehouseServer
 }
 
-func (w *warehouseGrpc) GetWHUploads(_ context.Context, request *proto.WHUploadsRequest) (*proto.WHUploadsResponse, error) {
+func (*warehouseGRPC) GetWHUploads(_ context.Context, request *proto.WHUploadsRequest) (*proto.WHUploadsResponse, error) {
 	uploadsReq := UploadsReqT{
 		WorkspaceID:     request.WorkspaceId,
 		SourceID:        request.SourceId,
@@ -31,7 +31,7 @@ func (w *warehouseGrpc) GetWHUploads(_ context.Context, request *proto.WHUploads
 	return res, err
 }
 
-func (w *warehouseGrpc) TriggerWHUploads(_ context.Context, request *proto.WHUploadsRequest) (*proto.TriggerWhUploadsResponse, error) {
+func (*warehouseGRPC) TriggerWHUploads(_ context.Context, request *proto.WHUploadsRequest) (*proto.TriggerWhUploadsResponse, error) {
 	uploadsReq := UploadsReqT{
 		WorkspaceID:   request.WorkspaceId,
 		SourceID:      request.SourceId,
@@ -43,7 +43,7 @@ func (w *warehouseGrpc) TriggerWHUploads(_ context.Context, request *proto.WHUpl
 	return res, err
 }
 
-func (w *warehouseGrpc) GetWHUpload(_ context.Context, request *proto.WHUploadRequest) (*proto.WHUploadResponse, error) {
+func (*warehouseGRPC) GetWHUpload(_ context.Context, request *proto.WHUploadRequest) (*proto.WHUploadResponse, error) {
 	uploadReq := UploadReqT{
 		UploadId:    request.UploadId,
 		WorkspaceID: request.WorkspaceId,
@@ -54,11 +54,11 @@ func (w *warehouseGrpc) GetWHUpload(_ context.Context, request *proto.WHUploadRe
 	return res, err
 }
 
-func (w *warehouseGrpc) GetHealth(context.Context, *emptypb.Empty) (*wrapperspb.BoolValue, error) {
+func (*warehouseGRPC) GetHealth(context.Context, *emptypb.Empty) (*wrapperspb.BoolValue, error) {
 	return wrapperspb.Bool(UploadAPI.enabled), nil
 }
 
-func (w *warehouseGrpc) TriggerWHUpload(_ context.Context, request *proto.WHUploadRequest) (*proto.TriggerWhUploadsResponse, error) {
+func (*warehouseGRPC) TriggerWHUpload(_ context.Context, request *proto.WHUploadRequest) (*proto.TriggerWhUploadsResponse, error) {
 	uploadReq := UploadReqT{
 		UploadId:    request.UploadId,
 		WorkspaceID: request.WorkspaceId,
@@ -69,12 +69,31 @@ func (w *warehouseGrpc) TriggerWHUpload(_ context.Context, request *proto.WHUplo
 	return res, err
 }
 
-func (w *warehouseGrpc) Validate(_ context.Context, req *proto.WHValidationRequest) (*proto.WHValidationResponse, error) {
+func (*warehouseGRPC) Validate(_ context.Context, req *proto.WHValidationRequest) (*proto.WHValidationResponse, error) {
 	handleT := configuration_testing.CTHandleT{}
 	return handleT.Validating(req)
 }
 
-func (w *warehouseGrpc) RetryWHUploads(_ context.Context, req *proto.RetryWHUploadsRequest) (response *proto.RetryWHUploadsResponse, err error) {
+func (*warehouseGRPC) RetryWHUploads(ctx context.Context, req *proto.RetryWHUploadsRequest) (response *proto.RetryWHUploadsResponse, err error) {
+	retryReq := &RetryRequest{
+		WorkspaceID:     req.WorkspaceId,
+		SourceID:        req.SourceId,
+		DestinationID:   req.DestinationId,
+		DestinationType: req.DestinationType,
+		IntervalInHours: req.IntervalInHours,
+		ForceRetry:      req.ForceRetry,
+		UploadIds:       req.UploadIds,
+		API:             UploadAPI,
+	}
+	r, err := retryReq.RetryWHUploads(ctx)
+	response = &proto.RetryWHUploadsResponse{
+		Message:    r.Message,
+		StatusCode: r.StatusCode,
+	}
+	return
+}
+
+func (*warehouseGRPC) CountWHUploadsToRetry(ctx context.Context, req *proto.RetryWHUploadsRequest) (response *proto.RetryWHUploadsResponse, err error) {
 	retryReq := &RetryRequest{
 		WorkspaceID:     req.WorkspaceId,
 		SourceID:        req.SourceId,
@@ -86,8 +105,9 @@ func (w *warehouseGrpc) RetryWHUploads(_ context.Context, req *proto.RetryWHUplo
 		API:             UploadAPI,
 	}
 	retryReq.API.log.Info("[RetryWHUploads] Retrying warehouse uploads for WorkspaceId: %s, SourceId: %s, DestinationId: %s, IntervalInHours: %d", retryReq.WorkspaceID, retryReq.SourceID, retryReq.DestinationID, retryReq.IntervalInHours)
-	r, err := retryReq.RetryWHUploads()
+	r, err := retryReq.UploadsToRetry(ctx)
 	response = &proto.RetryWHUploadsResponse{
+		Count:      r.Count,
 		Message:    r.Message,
 		StatusCode: r.StatusCode,
 	}

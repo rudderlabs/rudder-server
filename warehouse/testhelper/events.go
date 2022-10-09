@@ -7,6 +7,8 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+
+	"github.com/stretchr/testify/require"
 )
 
 const (
@@ -269,51 +271,60 @@ const (
 	}`
 )
 
-func SendEvents(t testing.TB, wareHouseTest *WareHouseTest) {
+func SendEvents(t testing.TB, wareHouseTest *WareHouseTest, eventsMap EventsCountMap) {
 	t.Helper()
 
-	if count, exists := wareHouseTest.EventsCountMap["identifies"]; exists {
-		t.Logf("Sending identifies events")
+	require.NotNil(t, eventsMap)
+	require.NotEmpty(t, eventsMap)
+
+	if count, exists := eventsMap["identifies"]; exists {
+		t.Logf("Sending %d identifies events", count)
+
 		for i := 0; i < count; i++ {
 			payloadIdentify := strings.NewReader(fmt.Sprintf(IdentifyPayload, wareHouseTest.UserId, wareHouseTest.MsgId()))
 			send(t, payloadIdentify, "identify", wareHouseTest.WriteKey)
 		}
 	}
 
-	if count, exists := wareHouseTest.EventsCountMap["tracks"]; exists {
-		t.Logf("Sending tracks events")
+	if count, exists := eventsMap["tracks"]; exists {
+		t.Logf("Sending %d tracks events", count)
+
 		for i := 0; i < count; i++ {
 			payloadTrack := strings.NewReader(fmt.Sprintf(TrackPayload, wareHouseTest.UserId, wareHouseTest.MsgId()))
 			send(t, payloadTrack, "track", wareHouseTest.WriteKey)
 		}
 	}
 
-	if count, exists := wareHouseTest.EventsCountMap["pages"]; exists {
-		t.Logf("Sending pages events")
+	if count, exists := eventsMap["pages"]; exists {
+		t.Logf("Sending %d pages events", count)
+
 		for i := 0; i < count; i++ {
 			payloadPage := strings.NewReader(fmt.Sprintf(PagePayload, wareHouseTest.UserId, wareHouseTest.MsgId()))
 			send(t, payloadPage, "page", wareHouseTest.WriteKey)
 		}
 	}
 
-	if count, exists := wareHouseTest.EventsCountMap["screens"]; exists {
-		t.Logf("Sending screens events")
+	if count, exists := eventsMap["screens"]; exists {
+		t.Logf("Sending %d screens events", count)
+
 		for i := 0; i < count; i++ {
 			payloadScreen := strings.NewReader(fmt.Sprintf(ScreenPayload, wareHouseTest.UserId, wareHouseTest.MsgId()))
 			send(t, payloadScreen, "screen", wareHouseTest.WriteKey)
 		}
 	}
 
-	if count, exists := wareHouseTest.EventsCountMap["aliases"]; exists {
-		t.Logf("Sending aliases events")
+	if count, exists := eventsMap["aliases"]; exists {
+		t.Logf("Sending %d aliases events", count)
+
 		for i := 0; i < count; i++ {
 			payloadAlias := strings.NewReader(fmt.Sprintf(AliasPayload, wareHouseTest.UserId, wareHouseTest.MsgId()))
 			send(t, payloadAlias, "alias", wareHouseTest.WriteKey)
 		}
 	}
 
-	if count, exists := wareHouseTest.EventsCountMap["groups"]; exists {
-		t.Logf("Sending groups events")
+	if count, exists := eventsMap["groups"]; exists {
+		t.Logf("Sending %d groups events", count)
+
 		for i := 0; i < count; i++ {
 			payloadGroup := strings.NewReader(fmt.Sprintf(GroupPayload, wareHouseTest.UserId, wareHouseTest.MsgId()))
 			send(t, payloadGroup, "group", wareHouseTest.WriteKey)
@@ -321,51 +332,60 @@ func SendEvents(t testing.TB, wareHouseTest *WareHouseTest) {
 	}
 }
 
-func SendModifiedEvents(t testing.TB, wareHouseTest *WareHouseTest) {
+func SendModifiedEvents(t testing.TB, wareHouseTest *WareHouseTest, eventsMap EventsCountMap) {
 	t.Helper()
 
-	if count, exists := wareHouseTest.EventsCountMap["identifies"]; exists {
-		t.Logf("Sending modified identifies events")
+	require.NotNil(t, eventsMap)
+	require.NotEmpty(t, eventsMap)
+
+	if count, exists := eventsMap["identifies"]; exists {
+		t.Logf("Sending %d modified identifies events", count)
+
 		for i := 0; i < count; i++ {
 			payloadIdentify := strings.NewReader(fmt.Sprintf(ModifiedIdentifyPayload, wareHouseTest.UserId, wareHouseTest.MsgId()))
 			send(t, payloadIdentify, "identify", wareHouseTest.WriteKey)
 		}
 	}
 
-	if count, exists := wareHouseTest.EventsCountMap["tracks"]; exists {
-		t.Logf("Sending modified tracks events")
+	if count, exists := eventsMap["tracks"]; exists {
+		t.Logf("Sending %d modified tracks events", count)
+
 		for i := 0; i < count; i++ {
 			payloadTrack := strings.NewReader(fmt.Sprintf(ModifiedTrackPayload, wareHouseTest.UserId, wareHouseTest.MsgId()))
 			send(t, payloadTrack, "track", wareHouseTest.WriteKey)
 		}
 	}
 
-	if count, exists := wareHouseTest.EventsCountMap["pages"]; exists {
-		t.Logf("Sending modified pages events")
+	if count, exists := eventsMap["pages"]; exists {
+		t.Logf("Sending %d modified pages events", count)
+
 		for i := 0; i < count; i++ {
 			payloadPage := strings.NewReader(fmt.Sprintf(ModifiedPagePayload, wareHouseTest.UserId, wareHouseTest.MsgId()))
 			send(t, payloadPage, "page", wareHouseTest.WriteKey)
 		}
 	}
 
-	if count, exists := wareHouseTest.EventsCountMap["screens"]; exists {
-		t.Logf("Sending modified screens events")
+	if count, exists := eventsMap["screens"]; exists {
+		t.Logf("Sending %d modified screens events", count)
+
 		for i := 0; i < count; i++ {
 			payloadScreen := strings.NewReader(fmt.Sprintf(ModifiedScreenPayload, wareHouseTest.UserId, wareHouseTest.MsgId()))
 			send(t, payloadScreen, "screen", wareHouseTest.WriteKey)
 		}
 	}
 
-	if count, exists := wareHouseTest.EventsCountMap["aliases"]; exists {
-		t.Logf("Sending modified aliases events")
+	if count, exists := eventsMap["aliases"]; exists {
+		t.Logf("Sending %d modified aliases events", count)
+
 		for i := 0; i < count; i++ {
 			payloadAlias := strings.NewReader(fmt.Sprintf(ModifiedAliasPayload, wareHouseTest.UserId, wareHouseTest.MsgId()))
 			send(t, payloadAlias, "alias", wareHouseTest.WriteKey)
 		}
 	}
 
-	if count, exists := wareHouseTest.EventsCountMap["groups"]; exists {
-		t.Logf("Sending modified groups events")
+	if count, exists := eventsMap["groups"]; exists {
+		t.Logf("Sending %d modified groups events", count)
+
 		for i := 0; i < count; i++ {
 			payloadGroup := strings.NewReader(fmt.Sprintf(ModifiedGroupPayload, wareHouseTest.UserId, wareHouseTest.MsgId()))
 			send(t, payloadGroup, "group", wareHouseTest.WriteKey)
@@ -373,51 +393,60 @@ func SendModifiedEvents(t testing.TB, wareHouseTest *WareHouseTest) {
 	}
 }
 
-func SendIntegratedEvents(t testing.TB, wareHouseTest *WareHouseTest) {
+func SendIntegratedEvents(t testing.TB, wareHouseTest *WareHouseTest, eventsMap EventsCountMap) {
 	t.Helper()
 
-	if count, exists := wareHouseTest.EventsCountMap["identifies"]; exists {
-		t.Logf("Sending modified identifies events")
+	require.NotNil(t, eventsMap)
+	require.NotEmpty(t, eventsMap)
+
+	if count, exists := eventsMap["identifies"]; exists {
+		t.Logf("Sending %d integrated identifies events", count)
+
 		for i := 0; i < count; i++ {
 			payloadIdentify := strings.NewReader(fmt.Sprintf(ReservedKeywordsIdentifyPayload, wareHouseTest.UserId, wareHouseTest.MsgId(), wareHouseTest.Provider))
 			send(t, payloadIdentify, "identify", wareHouseTest.WriteKey)
 		}
 	}
 
-	if count, exists := wareHouseTest.EventsCountMap["tracks"]; exists {
-		t.Logf("Sending modified tracks events")
+	if count, exists := eventsMap["tracks"]; exists {
+		t.Logf("Sending %d integrated tracks events", count)
+
 		for i := 0; i < count; i++ {
 			payloadTrack := strings.NewReader(fmt.Sprintf(ReservedKeywordsTrackPayload, wareHouseTest.UserId, wareHouseTest.MsgId(), wareHouseTest.Provider))
 			send(t, payloadTrack, "track", wareHouseTest.WriteKey)
 		}
 	}
 
-	if count, exists := wareHouseTest.EventsCountMap["pages"]; exists {
-		t.Logf("Sending modified pages events")
+	if count, exists := eventsMap["pages"]; exists {
+		t.Logf("Sending %d integrated pages events", count)
+
 		for i := 0; i < count; i++ {
 			payloadPage := strings.NewReader(fmt.Sprintf(ReservedKeywordsPagePayload, wareHouseTest.UserId, wareHouseTest.MsgId(), wareHouseTest.Provider))
 			send(t, payloadPage, "page", wareHouseTest.WriteKey)
 		}
 	}
 
-	if count, exists := wareHouseTest.EventsCountMap["screens"]; exists {
-		t.Logf("Sending modified screens events")
+	if count, exists := eventsMap["screens"]; exists {
+		t.Logf("Sending %d integrated screens events", count)
+
 		for i := 0; i < count; i++ {
 			payloadScreen := strings.NewReader(fmt.Sprintf(ReservedKeywordsScreenPayload, wareHouseTest.UserId, wareHouseTest.MsgId(), wareHouseTest.Provider))
 			send(t, payloadScreen, "screen", wareHouseTest.WriteKey)
 		}
 	}
 
-	if count, exists := wareHouseTest.EventsCountMap["aliases"]; exists {
-		t.Logf("Sending modified aliases events")
+	if count, exists := eventsMap["aliases"]; exists {
+		t.Logf("Sending %d integrated aliases events", count)
+
 		for i := 0; i < count; i++ {
 			payloadAlias := strings.NewReader(fmt.Sprintf(AliasPayload, wareHouseTest.UserId, wareHouseTest.MsgId()))
 			send(t, payloadAlias, "alias", wareHouseTest.WriteKey)
 		}
 	}
 
-	if count, exists := wareHouseTest.EventsCountMap["groups"]; exists {
-		t.Logf("Sending modified groups events")
+	if count, exists := eventsMap["groups"]; exists {
+		t.Logf("Sending %d integrated groups events", count)
+
 		for i := 0; i < count; i++ {
 			payloadGroup := strings.NewReader(fmt.Sprintf(ReservedKeywordsGroupPayload, wareHouseTest.UserId, wareHouseTest.MsgId(), wareHouseTest.Provider))
 			send(t, payloadGroup, "group", wareHouseTest.WriteKey)

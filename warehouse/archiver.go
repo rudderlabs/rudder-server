@@ -80,11 +80,11 @@ func backupRecords(args backupRecordsArgs) (backupLocation string, err error) {
 	defer misc.RemoveFilePaths(path)
 
 	fManager, err := filemanager.DefaultFileManagerFactory.New(&filemanager.SettingsT{
-		Provider: config.GetEnv("JOBS_BACKUP_STORAGE_PROVIDER", "S3"),
+		Provider: config.GetString("JOBS_BACKUP_STORAGE_PROVIDER", "S3"),
 		Config:   filemanager.GetProviderConfigForBackupsFromEnv(context.TODO()),
 	})
 	if err != nil {
-		err = fmt.Errorf("Error in creating a file manager for:%s. Error: %w", config.GetEnv("JOBS_BACKUP_STORAGE_PROVIDER", "S3"), err)
+		err = fmt.Errorf("Error in creating a file manager for:%s. Error: %w", config.GetString("JOBS_BACKUP_STORAGE_PROVIDER", "S3"), err)
 		return
 	}
 
@@ -119,8 +119,8 @@ func deleteFilesInStorage(locations []string) error {
 	return err
 }
 
-func usedRudderStorage(uploadMetdata []byte) bool {
-	return gjson.GetBytes(uploadMetdata, "use_rudder_storage").Bool()
+func usedRudderStorage(metadata []byte) bool {
+	return gjson.GetBytes(metadata, "use_rudder_storage").Bool()
 }
 
 func archiveUploads(dbHandle *sql.DB) {
@@ -131,7 +131,7 @@ func archiveUploads(dbHandle *sql.DB) {
 	defer func() {
 		if err != nil {
 			pkgLogger.Errorf(`Error occurred while archiving for warehouse uploads with error: %v`, err)
-			stats.NewTaggedStat("warehouse.archiver.archiveFailed", stats.CountType, stats.Tags{}).Count(1)
+			stats.Default.NewTaggedStat("warehouse.archiver.archiveFailed", stats.CountType, stats.Tags{}).Count(1)
 		}
 	}()
 	if err == sql.ErrNoRows {
@@ -297,7 +297,7 @@ func archiveUploads(dbHandle *sql.DB) {
 			pkgLogger.Debugf(`[Archiver]: Archived upload: %d related staging files at: %s`, u.uploadID, storedStagingFilesLocation)
 		}
 
-		stats.NewTaggedStat("warehouse.archiver.numArchivedUploads", stats.CountType, map[string]string{
+		stats.Default.NewTaggedStat("warehouse.archiver.numArchivedUploads", stats.CountType, map[string]string{
 			"destination": u.destID,
 			"source":      u.sourceID,
 		}).Count(1)

@@ -7,6 +7,7 @@ import (
 	"encoding/csv"
 	"fmt"
 	"io"
+	"net"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -27,7 +28,7 @@ import (
 
 var (
 	stagingTablePrefix   string
-	pkgLogger            logger.LoggerI
+	pkgLogger            logger.Logger
 	diacriticLengthLimit = diacriticLimit()
 )
 
@@ -137,7 +138,7 @@ func Connect(cred CredentialsT) (*sql.DB, error) {
 	connUrl := &url.URL{
 		Scheme:   "sqlserver",
 		User:     url.UserPassword(cred.User, cred.Password),
-		Host:     fmt.Sprintf("%s:%d", cred.Host, port),
+		Host:     net.JoinHostPort(cred.Host, strconv.Itoa(port)),
 		RawQuery: query.Encode(),
 	}
 	pkgLogger.Debugf("mssql connection string : %s", connUrl.String())
@@ -177,7 +178,7 @@ func ColumnsWithDataTypes(columns map[string]string, prefix string) string {
 	return strings.Join(arr, ",")
 }
 
-func (bq *HandleT) IsEmpty(warehouse warehouseutils.WarehouseT) (empty bool, err error) {
+func (*HandleT) IsEmpty(_ warehouseutils.WarehouseT) (empty bool, err error) {
 	return
 }
 
@@ -190,6 +191,7 @@ func (ms *HandleT) DownloadLoadFiles(tableName string) ([]string, error) {
 			Provider:         storageProvider,
 			Config:           ms.Warehouse.Destination.Config,
 			UseRudderStorage: ms.Uploader.UseRudderStorage(),
+			WorkspaceID:      ms.Warehouse.Destination.WorkspaceID,
 		}),
 	})
 	if err != nil {
@@ -482,7 +484,7 @@ func str2ucs2(s string) []byte {
 
 func hasDiacritics(str string) bool {
 	for _, x := range str {
-		if utf8.RuneLen(rune(x)) > 1 {
+		if utf8.RuneLen(x) > 1 {
 			return true
 		}
 	}
@@ -663,7 +665,7 @@ func (ms *HandleT) AddColumn(tableName, columnName, columnType string) (err erro
 	return err
 }
 
-func (ms *HandleT) AlterColumn(tableName, columnName, columnType string) (err error) {
+func (*HandleT) AlterColumn(_, _, _ string) (err error) {
 	return
 }
 
@@ -810,15 +812,15 @@ func (ms *HandleT) Cleanup() {
 	}
 }
 
-func (ms *HandleT) LoadIdentityMergeRulesTable() (err error) {
+func (*HandleT) LoadIdentityMergeRulesTable() (err error) {
 	return
 }
 
-func (ms *HandleT) LoadIdentityMappingsTable() (err error) {
+func (*HandleT) LoadIdentityMappingsTable() (err error) {
 	return
 }
 
-func (ms *HandleT) DownloadIdentityRules(*misc.GZipWriter) (err error) {
+func (*HandleT) DownloadIdentityRules(*misc.GZipWriter) (err error) {
 	return
 }
 
@@ -847,7 +849,7 @@ func (ms *HandleT) Connect(warehouse warehouseutils.WarehouseT) (client.Client, 
 	return client.Client{Type: client.SQLClient, SQL: dbHandle}, err
 }
 
-func (ms *HandleT) LoadTestTable(location, tableName string, payloadMap map[string]interface{}, format string) (err error) {
+func (ms *HandleT) LoadTestTable(_, tableName string, payloadMap map[string]interface{}, _ string) (err error) {
 	sqlStatement := fmt.Sprintf(`INSERT INTO "%s"."%s" (%v) VALUES (%s)`,
 		ms.Namespace,
 		tableName,

@@ -53,7 +53,6 @@ var (
 	disableDestinationWebhookURL string
 	webhook                      *whUtil.Recorder
 	disableDestinationWebhook    *whUtil.Recorder
-	runSlow                      bool
 	overrideArm64Check           bool
 	writeKey                     string
 	workspaceID                  string
@@ -85,12 +84,11 @@ type event struct {
 }
 
 func TestMainFlow(t *testing.T) {
-	runSlow = config.GetEnvAsBool("SLOW", true)
-	if !runSlow {
+	if os.Getenv("SLOW") == "0" {
 		t.Skip("Skipping tests. Remove 'SLOW=0' env var to run them.")
 	}
 
-	hold = config.GetEnvAsBool("HOLD", false)
+	hold = os.Getenv("HOLD") == "true"
 	if os.Getenv("OVERRIDE_ARM64_CHECK") == "1" {
 		overrideArm64Check = true
 	}
@@ -383,8 +381,8 @@ func setupMainFlow(svcCtx context.Context, t *testing.T) <-chan struct{} {
 		t.Setenv("LOG_LEVEL", "DEBUG")
 	}
 
-	config.Load()
-	logger.Init()
+	config.Reset()
+	logger.Reset()
 
 	// uses a sensible default on windows (tcp/http) and linux/osx (socket)
 	pool, err := dockertest.NewPool("")
@@ -805,6 +803,6 @@ func waitForKafka(ctx context.Context, t *testing.T, port string) error {
 	}
 }
 
-type testLogger struct{ logger.LoggerI }
+type testLogger struct{ logger.Logger }
 
 func (t *testLogger) Log(args ...interface{}) { t.Info(args...) }

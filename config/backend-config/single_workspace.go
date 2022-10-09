@@ -13,19 +13,17 @@ import (
 	"github.com/cenkalti/backoff"
 
 	"github.com/rudderlabs/rudder-server/config"
+	"github.com/rudderlabs/rudder-server/services/controlplane/identity"
 	"github.com/rudderlabs/rudder-server/utils/types"
 )
 
 type singleWorkspaceConfig struct {
-	logOnce          sync.Once
+	doOnce           sync.Once
 	Token            string
 	workspaceID      string
 	configBackendURL *url.URL
 	configJSONPath   string
 	configEnvHandler types.ConfigEnvI
-
-	workspaceIDToLibrariesMap map[string]LibrariesT
-	workspaceIDLock           sync.RWMutex
 }
 
 func (wc *singleWorkspaceConfig) SetUp() error {
@@ -48,32 +46,8 @@ func (wc *singleWorkspaceConfig) AccessToken() string {
 	return wc.Token
 }
 
-func (wc *singleWorkspaceConfig) GetWorkspaceIDForWriteKey(_ string) string {
-	wc.workspaceIDLock.RLock()
-	defer wc.workspaceIDLock.RUnlock()
-
-	return wc.workspaceID
-}
-
-func (wc *singleWorkspaceConfig) GetWorkspaceIDForSourceID(_ string) string {
-	wc.workspaceIDLock.RLock()
-	defer wc.workspaceIDLock.RUnlock()
-
-	return wc.workspaceID
-}
-
-// GetWorkspaceLibrariesForWorkspaceID returns workspaceLibraries for workspaceID
-func (wc *singleWorkspaceConfig) GetWorkspaceLibrariesForWorkspaceID(workspaceID string) LibrariesT {
-	wc.workspaceIDLock.RLock()
-	defer wc.workspaceIDLock.RUnlock()
-	if wc.workspaceIDToLibrariesMap[workspaceID] == nil {
-		return LibrariesT{}
-	}
-	return wc.workspaceIDToLibrariesMap[workspaceID]
-}
-
 // Get returns sources from the workspace
-func (wc *singleWorkspaceConfig) Get(ctx context.Context, workspace string) (ConfigT, error) {
+func (wc *singleWorkspaceConfig) Get(ctx context.Context, workspace string) (map[string]ConfigT, error) {
 	if configFromFile {
 		return wc.getFromFile()
 	} else {
@@ -82,9 +56,10 @@ func (wc *singleWorkspaceConfig) Get(ctx context.Context, workspace string) (Con
 }
 
 // getFromApi gets the workspace config from api
-func (wc *singleWorkspaceConfig) getFromAPI(ctx context.Context, _ string) (ConfigT, error) {
+func (wc *singleWorkspaceConfig) getFromAPI(ctx context.Context, _ string) (map[string]ConfigT, error) {
+	config := make(map[string]ConfigT)
 	if wc.configBackendURL == nil {
-		return ConfigT{}, fmt.Errorf("single workspace: config backend url is nil")
+		return config, fmt.Errorf("single workspace: config backend url is nil")
 	}
 
 	var (
@@ -106,7 +81,7 @@ func (wc *singleWorkspaceConfig) getFromAPI(ctx context.Context, _ string) (Conf
 		if ctx.Err() == nil {
 			pkgLogger.Errorf("Error sending request to the server: %v", err)
 		}
-		return ConfigT{}, err
+		return config, err
 	}
 
 	configEnvHandler := wc.configEnvHandler
@@ -118,34 +93,39 @@ func (wc *singleWorkspaceConfig) getFromAPI(ctx context.Context, _ string) (Conf
 	err = json.Unmarshal(respBody, &sourcesJSON)
 	if err != nil {
 		pkgLogger.Errorf("Error while parsing request: %v", err)
-		return ConfigT{}, err
+		return config, err
 	}
+	workspaceID := sourcesJSON.WorkspaceID
 
-	wc.workspaceIDLock.Lock()
-	wc.workspaceID = sourcesJSON.WorkspaceID
-	wc.workspaceIDToLibrariesMap = make(map[string]LibrariesT)
-	wc.workspaceIDToLibrariesMap[sourcesJSON.WorkspaceID] = sourcesJSON.Libraries
-	wc.workspaceIDLock.Unlock()
+	wc.doOnce.Do(func() {
+		wc.workspaceID = workspaceID
+	})
+	config[workspaceID] = sourcesJSON
 
-	return sourcesJSON, nil
+	return config, nil
 }
 
 // getFromFile reads the workspace config from JSON file
-func (wc *singleWorkspaceConfig) getFromFile() (ConfigT, error) {
-	wc.logOnce.Do(func() {
-		pkgLogger.Info("Reading workspace config from JSON file")
-	})
+func (wc *singleWorkspaceConfig) getFromFile() (map[string]ConfigT, error) {
+	pkgLogger.Debug("Reading workspace config from JSON file")
+	config := make(map[string]ConfigT)
 	data, err := IoUtil.ReadFile(wc.configJSONPath)
 	if err != nil {
 		pkgLogger.Errorf("Unable to read backend config from file: %s with error : %s", wc.configJSONPath, err.Error())
-		return ConfigT{}, err
+		return config, err
 	}
 	var configJSON ConfigT
 	if err = json.Unmarshal(data, &configJSON); err != nil {
 		pkgLogger.Errorf("Unable to parse backend config from file: %s", wc.configJSONPath)
-		return ConfigT{}, err
+		return config, err
 	}
-	return configJSON, nil
+	workspaceID := configJSON.WorkspaceID
+	wc.doOnce.Do(func() {
+		pkgLogger.Info("Read workspace config from JSON file")
+		wc.workspaceID = workspaceID
+	})
+	config[workspaceID] = configJSON
+	return config, nil
 }
 
 func (wc *singleWorkspaceConfig) makeHTTPRequest(ctx context.Context, url string) ([]byte, error) {
@@ -175,4 +155,11 @@ func (wc *singleWorkspaceConfig) makeHTTPRequest(ctx context.Context, url string
 	}
 
 	return respBody, nil
+}
+
+func (wc *singleWorkspaceConfig) Identity() identity.Identifier {
+	return &identity.Workspace{
+		WorkspaceID:    wc.workspaceID,
+		WorkspaceToken: wc.Token,
+	}
 }
