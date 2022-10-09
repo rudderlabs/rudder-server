@@ -707,20 +707,19 @@ func (ms *HandleT) CrashRecover(warehouse warehouseutils.WarehouseT) (err error)
 }
 
 func (ms *HandleT) dropDanglingStagingTables() bool {
-	sqlStatement := `
+	sqlStatement := fmt.Sprintf(`
 		select
 		  table_name
 		from
 		  information_schema.tables
 		where
-		  table_schema = $1
-		  AND table_name like $2;
-	`
-	rows, err := ms.Db.Query(
-		sqlStatement,
+		  table_schema = '%s'
+		  AND table_name like '%s';
+	`,
 		ms.Namespace,
 		fmt.Sprintf(`%s%%`, warehouseutils.StagingTablePrefix(provider)),
 	)
+	rows, err := ms.Db.Query(sqlStatement)
 	if err != nil {
 		pkgLogger.Errorf("WH: MSSQL: Error dropping dangling staging tables in MSSQL: %v\nQuery: %s\n", err, sqlStatement)
 		return false
@@ -759,7 +758,7 @@ func (ms *HandleT) FetchSchema(warehouse warehouseutils.WarehouseT) (schema ware
 	defer dbHandle.Close()
 
 	schema = make(warehouseutils.SchemaT)
-	sqlStatement := `
+	sqlStatement := fmt.Sprintf(`
 			SELECT
 			  table_name,
 			  column_name,
@@ -767,15 +766,13 @@ func (ms *HandleT) FetchSchema(warehouse warehouseutils.WarehouseT) (schema ware
 			FROM
 			  INFORMATION_SCHEMA.COLUMNS
 			WHERE
-			  table_schema = $1
-			  and table_name not like $2;
-		`
-
-	rows, err := dbHandle.Query(
-		sqlStatement,
+			  table_schema = '%s'
+			  and table_name not like '%s'
+		`,
 		ms.Namespace,
 		fmt.Sprintf(`%s%%`, warehouseutils.StagingTablePrefix(provider)),
 	)
+	rows, err := dbHandle.Query(sqlStatement)
 	if err != nil && err != io.EOF {
 		pkgLogger.Errorf("MS: Error in fetching schema from mssql destination:%v, query: %v", ms.Warehouse.Destination.ID, sqlStatement)
 		return
