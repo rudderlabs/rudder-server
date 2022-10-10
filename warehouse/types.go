@@ -25,7 +25,6 @@ type Payload struct {
 	DestinationRevisionID        string
 	StagingDestinationRevisionID string
 	DestinationConfig            map[string]interface{}
-	WorkspaceID                  string
 	StagingDestinationConfig     interface{}
 	UseRudderStorage             bool
 	StagingUseRudderStorage      bool

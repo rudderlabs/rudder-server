@@ -1773,7 +1773,6 @@ func (job *UploadJobT) createLoadFiles(generateAll bool) (startLoadFileID, endLo
 				StagingFileID:                stagingFile.ID,
 				StagingFileLocation:          stagingFile.Location,
 				LoadFileType:                 job.upload.LoadFileType,
-				WorkspaceID:                  job.upload.WorkspaceID,
 				SourceID:                     job.warehouse.Source.ID,
 				SourceName:                   job.warehouse.Source.Name,
 				DestinationID:                destID,

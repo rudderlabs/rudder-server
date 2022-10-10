@@ -133,9 +133,9 @@ func (wh *HandleT) getPendingPopulateIdentitiesLoad(warehouse warehouseutils.War
 	// TODO: remove this once the migration is complete
 	if upload.WorkspaceID == "" {
 		var ok bool
-		wh.sourceIDToWorkspaceIDLock.RLock()
-		upload.WorkspaceID, ok = wh.sourceIDToWorkspaceID[upload.SourceID]
-		wh.sourceIDToWorkspaceIDLock.Unlock()
+		wh.workspaceBySourceIDsLock.RLock()
+		upload.WorkspaceID, ok = wh.workspaceBySourceIDs[upload.SourceID]
+		wh.workspaceBySourceIDsLock.Unlock()
 
 		if !ok {
 			pkgLogger.Warnf("Workspace not found for source id: %q", upload.SourceID)

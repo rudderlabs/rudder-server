@@ -133,8 +133,8 @@ type HandleT struct {
 	activeWorkerCountLock             sync.RWMutex
 	maxConcurrentUploadJobs           int
 	allowMultipleSourcesForJobsPickup bool
-	sourceIDToWorkspaceID             map[string]string
-	sourceIDToWorkspaceIDLock         sync.RWMutex
+	workspaceBySourceIDs              map[string]string
+	workspaceBySourceIDsLock          sync.RWMutex
 
 	backgroundCancel context.CancelFunc
 	backgroundGroup  errgroup.Group
@@ -257,8 +257,8 @@ func (wh *HandleT) backendConfigSubscriber() {
 		sourceIDsByWorkspaceLock.Lock()
 		sourceIDsByWorkspace = map[string][]string{}
 
-		wh.sourceIDToWorkspaceIDLock.Lock()
-		wh.sourceIDToWorkspaceID = map[string]string{}
+		wh.workspaceBySourceIDsLock.Lock()
+		wh.workspaceBySourceIDs = map[string]string{}
 
 		pkgLogger.Infof(`Received updated workspace config`)
 		for workspaceID, wConfig := range config {
@@ -267,6 +267,7 @@ func (wh *HandleT) backendConfigSubscriber() {
 					sourceIDsByWorkspace[workspaceID] = []string{}
 				}
 				sourceIDsByWorkspace[workspaceID] = append(sourceIDsByWorkspace[workspaceID], source.ID)
+				wh.workspaceBySourceIDs[source.ID] = workspaceID
 
 				if len(source.Destinations) == 0 {
 					continue
@@ -320,7 +321,7 @@ func (wh *HandleT) backendConfigSubscriber() {
 			}
 		}
 		pkgLogger.Infof("Releasing config subscriber lock: %s", wh.destType)
-		wh.sourceIDToWorkspaceIDLock.Unlock()
+		wh.workspaceBySourceIDsLock.Unlock()
 		sourceIDsByWorkspaceLock.Unlock()
 		wh.configSubscriberLock.Unlock()
 		wh.initialConfigFetched = true
@@ -862,9 +863,9 @@ func (wh *HandleT) getUploadsToProcess(availableWorkers int, skipIdentifiers []s
 
 		if upload.WorkspaceID == "" {
 			var ok bool
-			wh.sourceIDToWorkspaceIDLock.Lock()
-			upload.WorkspaceID, ok = wh.sourceIDToWorkspaceID[upload.SourceID]
-			wh.sourceIDToWorkspaceIDLock.Unlock()
+			wh.workspaceBySourceIDsLock.Lock()
+			upload.WorkspaceID, ok = wh.workspaceBySourceIDs[upload.SourceID]
+			wh.workspaceBySourceIDsLock.Unlock()
 
 			if !ok {
 				pkgLogger.Warnf("could not find workspace id for source id: %s", upload.SourceID)
