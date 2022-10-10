@@ -774,6 +774,16 @@ func (bq *HandleT) AddColumns(tableName string, columnsInfo warehouseutils.Colum
 		Schema: newSchema,
 	}
 	_, err = tableRef.Update(bq.BQContext, tableMetadataToUpdate, meta.ETag)
+
+	// Handle error in case of single column
+	if len(columnsInfo) == 1 {
+		if err != nil {
+			if checkAndIgnoreAlreadyExistError(err) {
+				pkgLogger.Infof("BQ: Column %s already exists on %s.%s \nResponse: %v", columnsInfo[0].Name, bq.Namespace, tableName, err)
+				err = nil
+			}
+		}
+	}
 	return
 }
 
