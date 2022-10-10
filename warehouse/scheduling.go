@@ -33,7 +33,7 @@ func loadConfigScheduling() {
 }
 
 // ScheduledTimes returns all possible start times (minutes from start of day) as per schedule
-// eg. Syncing every 3hrs starting at 13:00 (scheduled times: 13:00, 16:00, 19:00, 22:00, 01:00, 04:00, 07:00, 10:00)
+// e.g. Syncing every 3hrs starting at 13:00 (scheduled times: 13:00, 16:00, 19:00, 22:00, 01:00, 04:00, 07:00, 10:00)
 func ScheduledTimes(syncFrequency, syncStartAt string) []int {
 	scheduledTimesCacheLock.RLock()
 	cachedTimes, ok := scheduledTimesCache[fmt.Sprintf(`%s-%s`, syncFrequency, syncStartAt)]
@@ -72,8 +72,8 @@ func ScheduledTimes(syncFrequency, syncStartAt string) []int {
 }
 
 // GetPrevScheduledTime returns closest previous scheduled time
-// eg. Syncing every 3hrs starting at 13:00 (scheduled times: 13:00, 16:00, 19:00, 22:00, 01:00, 04:00, 07:00, 10:00)
-// prev scheduled time for current time (eg. 18:00 -> 16:00 same day, 00:30 -> 22:00 prev day)
+// e.g. Syncing every 3hrs starting at 13:00 (scheduled times: 13:00, 16:00, 19:00, 22:00, 01:00, 04:00, 07:00, 10:00)
+// prev scheduled time for current time (e.g. 18:00 -> 16:00 same day, 00:30 -> 22:00 prev day)
 func GetPrevScheduledTime(syncFrequency, syncStartAt string, currTime time.Time) time.Time {
 	allStartTimes := ScheduledTimes(syncFrequency, syncStartAt)
 
@@ -107,7 +107,23 @@ func GetPrevScheduledTime(syncFrequency, syncStartAt string, currTime time.Time)
 // getLastUploadCreatedAt returns the start time of the last upload
 func (wh *HandleT) getLastUploadCreatedAt(warehouse warehouseutils.WarehouseT) time.Time {
 	var t sql.NullTime
-	sqlStatement := fmt.Sprintf(`select created_at from %s where source_id='%s' and destination_id='%s' order by id desc limit 1`, warehouseutils.WarehouseUploadsTable, warehouse.Source.ID, warehouse.Destination.ID)
+	sqlStatement := fmt.Sprintf(`
+		SELECT 
+		  created_at 
+		FROM 
+		  %s 
+		WHERE 
+		  source_id = '%s' 
+		  AND destination_id = '%s' 
+		ORDER BY
+		  id DESC 
+		LIMIT 
+		  1;
+`,
+		warehouseutils.WarehouseUploadsTable,
+		warehouse.Source.ID,
+		warehouse.Destination.ID,
+	)
 	err := wh.dbHandle.QueryRow(sqlStatement).Scan(&t)
 	if err != nil && err != sql.ErrNoRows {
 		panic(fmt.Errorf("Query: %s\nfailed with Error : %w", sqlStatement, err))
@@ -151,7 +167,7 @@ func CheckCurrentTimeExistsInExcludeWindow(currentTime time.Time, windowStartTim
 	return false
 }
 
-// canCreateUpload indicates if a upload can be started now for the warehouse based on its configured schedule
+// canCreateUpload indicates if an upload can be started now for the warehouse based on its configured schedule
 func (wh *HandleT) canCreateUpload(warehouse warehouseutils.WarehouseT) bool {
 	// can be set from rudder-cli to force uploads always
 	if startUploadAlways {
@@ -178,11 +194,11 @@ func (wh *HandleT) canCreateUpload(warehouse warehouseutils.WarehouseT) bool {
 	prevScheduledTime := GetPrevScheduledTime(syncFrequency, syncStartAt, time.Now())
 	lastUploadCreatedAt := wh.getLastUploadCreatedAt(warehouse)
 	// start upload only if no upload has started in current window
-	// eg. with prev scheduled time 14:00 and current time 15:00, start only if prev upload hasn't started after 14:00
+	// e.g. with prev scheduled time 14:00 and current time 15:00, start only if prev upload hasn't started after 14:00
 	return lastUploadCreatedAt.Before(prevScheduledTime)
 }
 
-func DurationBeforeNextAttempt(attempt int64) time.Duration { // Add state(retryable/non-retryable) as an argument to decide backoff etc)
+func DurationBeforeNextAttempt(attempt int64) time.Duration { // Add state(retryable/non-retryable) as an argument to decide backoff etc.)
 	var d time.Duration
 	b := backoff.NewExponentialBackOff()
 	b.InitialInterval = minUploadBackoff

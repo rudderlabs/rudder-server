@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/rudderlabs/rudder-server/config"
+	"github.com/rudderlabs/rudder-server/gateway/response"
 	"github.com/rudderlabs/rudder-server/processor/transformer"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/stretchr/testify/require"
@@ -125,4 +126,83 @@ func Test_Transformer(t *testing.T) {
 		rsp := tr.Transform(context.TODO(), events, srv.URL, batchSize)
 		require.Equal(t, expectedResponse, rsp)
 	}
+}
+
+func Test_EndlessLoopIf809(t *testing.T) {
+	transformer.Init()
+
+	ft := &endlessLoopTransformer{
+		maxRetryCount: 3,
+		t:             t,
+	}
+
+	srv := httptest.NewServer(ft)
+	defer srv.Close()
+
+	tr := transformer.NewTransformer()
+	tr.Client = srv.Client()
+
+	tr.Setup()
+
+	msgID := "messageID-0"
+	events := make([]transformer.TransformerEventT, 1)
+	events[0] = transformer.TransformerEventT{
+		Metadata: transformer.MetadataT{
+			MessageID: msgID,
+		},
+		Message: map[string]interface{}{
+			"src-key-1": msgID,
+		},
+	}
+
+	rsp := tr.Transform(context.TODO(), events, srv.URL, 10)
+	require.Equal(
+		t,
+		transformer.ResponseT{
+			Events: []transformer.TransformerResponseT{
+				{
+					Metadata: transformer.MetadataT{
+						MessageID: msgID,
+					},
+					StatusCode: 200,
+					Output: map[string]interface{}{
+						"src-key-1": msgID,
+					},
+				},
+			},
+		},
+		rsp,
+	)
+	require.Equal(t, ft.retryCount, ft.maxRetryCount)
+}
+
+type endlessLoopTransformer struct {
+	retryCount    int
+	maxRetryCount int
+	t             *testing.T
+}
+
+func (elt *endlessLoopTransformer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	var reqBody []transformer.TransformerEventT
+	require.NoError(elt.t, json.NewDecoder(r.Body).Decode(&reqBody))
+
+	resps := make([]transformer.TransformerResponseT, len(reqBody))
+	var statusCode int
+	if elt.retryCount < elt.maxRetryCount {
+		elt.retryCount++
+		http.Error(w, response.MakeResponse("control plane not reachable"), 809)
+		return
+	} else {
+		for i := range reqBody {
+			statusCode = 200
+			resps[i] = transformer.TransformerResponseT{
+				Output:     reqBody[i].Message,
+				Metadata:   reqBody[i].Metadata,
+				StatusCode: statusCode,
+				Error:      "",
+			}
+		}
+	}
+	w.Header().Set("apiVersion", "2")
+	require.NoError(elt.t, json.NewEncoder(w).Encode(resps))
 }

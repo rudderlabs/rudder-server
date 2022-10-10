@@ -134,17 +134,19 @@ func (*TransformationStatusUploader) Transform(data interface{}) ([]byte, error)
 	return rawJSON, nil
 }
 
-func updateConfig(sources backendconfig.ConfigT) {
+func updateConfig(config map[string]backendconfig.ConfigT) {
 	configSubscriberLock.Lock()
 	uploadEnabledTransformations = make(map[string]bool)
 	var uploadEnabledTransformationsIDs []string
-	for _, source := range sources.Sources {
-		for _, destination := range source.Destinations {
-			for _, transformation := range destination.Transformations {
-				eventTransform, ok := transformation.Config["eventTransform"].(bool)
-				if ok && eventTransform {
-					uploadEnabledTransformations[transformation.ID] = true
-					uploadEnabledTransformationsIDs = append(uploadEnabledTransformationsIDs, transformation.ID)
+	for _, wConfig := range config {
+		for _, source := range wConfig.Sources {
+			for _, destination := range source.Destinations {
+				for _, transformation := range destination.Transformations {
+					eventTransform, ok := transformation.Config["eventTransform"].(bool)
+					if ok && eventTransform {
+						uploadEnabledTransformations[transformation.ID] = true
+						uploadEnabledTransformationsIDs = append(uploadEnabledTransformationsIDs, transformation.ID)
+					}
 				}
 			}
 		}
@@ -156,7 +158,7 @@ func updateConfig(sources backendconfig.ConfigT) {
 func backendConfigSubscriber() {
 	ch := backendconfig.DefaultBackendConfig.Subscribe(context.TODO(), backendconfig.TopicProcessConfig)
 	for config := range ch {
-		updateConfig(config.Data.(backendconfig.ConfigT))
+		updateConfig(config.Data.(map[string]backendconfig.ConfigT))
 	}
 }
 

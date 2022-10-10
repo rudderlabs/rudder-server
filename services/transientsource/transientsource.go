@@ -90,8 +90,11 @@ func (r *service) updateLoop(ctx context.Context, config backendconfig.BackendCo
 	ch := config.Subscribe(ctx, backendconfig.TopicBackendConfig)
 
 	for ev := range ch {
-		c := ev.Data.(backendconfig.ConfigT)
-		newSourceIds := transientSourceIds(&c)
+		configs := ev.Data.(map[string]backendconfig.ConfigT)
+		var newSourceIds []string
+		for _, c := range configs {
+			newSourceIds = append(newSourceIds, transientSourceIds(&c)...)
+		}
 		r.sourceIds = newSourceIds
 		r.sourceIdsMap = asMap(newSourceIds)
 		r.onceInit.Do(func() {

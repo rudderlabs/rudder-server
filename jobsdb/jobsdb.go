@@ -40,6 +40,7 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	"github.com/rudderlabs/rudder-server/admin"
+	"github.com/rudderlabs/rudder-server/jobsdb/internal/dsindex"
 	"github.com/rudderlabs/rudder-server/jobsdb/internal/lock"
 	"github.com/rudderlabs/rudder-server/jobsdb/prebackup"
 	"github.com/rudderlabs/rudder-server/utils/bytesize"
@@ -617,11 +618,6 @@ func init() {
 }
 
 var (
-	host, user, password, dbname, sslmode, appName string
-	port                                           int
-)
-
-var (
 	maxDSSize, maxMigrateOnce, maxMigrateDSProbe int
 	maxTableSize                                 int64
 	jobDoneMigrateThres, jobStatusMigrateThres   float64
@@ -635,21 +631,10 @@ var (
 	backupRowsBatchSize                          int64
 	backupMaxTotalPayloadSize                    int64
 	pkgLogger                                    logger.Logger
-	skipZeroAssertionForMultitenant              bool
 )
 
 // Loads db config and migration related config from config file
 func loadConfig() {
-	host = config.GetString("DB.host", "localhost")
-	user = config.GetString("DB.user", "ubuntu")
-	dbname = config.GetString("DB.name", "ubuntu")
-	port = config.GetInt("DB.port", 5432)
-	password = config.GetString("DB.password", "ubuntu") // Reading secrets from
-	sslmode = config.GetString("DB.sslMode", "disable")
-	// Application Name can be any string of less than NAMEDATALEN characters (64 characters in a standard PostgreSQL build).
-	// There is no need to truncate the string on our own though since PostgreSQL auto-truncates this identifier and issues a relevant notice if necessary.
-	appName = misc.DefaultString("rudder-server").OnError(os.Hostname())
-
 	/*Migration related parameters
 	jobDoneMigrateThres: A DS is migrated when this fraction of the jobs have been processed
 	jobStatusMigrateThres: A DS is migrated if the job_status exceeds this (* no_of_jobs)
@@ -680,19 +665,11 @@ func loadConfig() {
 	config.RegisterDurationConfigVariable(5, &backupCheckSleepDuration, true, time.Second, []string{"JobsDB.backupCheckSleepDuration", "JobsDB.backupCheckSleepDurationIns"}...)
 	config.RegisterDurationConfigVariable(60, &cacheExpiration, true, time.Minute, []string{"JobsDB.cacheExpiration"}...)
 	useJoinForUnprocessed = config.GetBool("JobsDB.useJoinForUnprocessed", true)
-	config.RegisterBoolConfigVariable(false, &skipZeroAssertionForMultitenant, true, "JobsDB.skipZeroAssertionForMultitenant")
 }
 
 func Init2() {
 	loadConfig()
 	pkgLogger = logger.NewLogger().Child("jobsdb")
-}
-
-// GetConnectionString Returns Jobs DB connection configuration
-func GetConnectionString() string {
-	return fmt.Sprintf("host=%s port=%d user=%s "+
-		"password=%s dbname=%s sslmode=%s application_name=%s",
-		host, port, user, password, dbname, sslmode, appName)
 }
 
 type OptsFunc func(jd *HandleT)
@@ -798,7 +775,7 @@ func (jd *HandleT) init() {
 	// Initialize dbHandle if not already set
 	if jd.dbHandle == nil {
 		var err error
-		psqlInfo := GetConnectionString()
+		psqlInfo := misc.GetConnectionString()
 		sqlDB, err := sql.Open("postgres", psqlInfo)
 		jd.assertError(err)
 
@@ -1206,15 +1183,17 @@ func (jd *HandleT) getTableSize(jobTable string) int64 {
 }
 
 func (jd *HandleT) checkIfFullDSInTx(tx *sql.Tx, ds dataSetT) (bool, error) {
-	var minJobCreatedAt sql.NullTime
-	sqlStatement := fmt.Sprintf(`SELECT MIN(created_at) FROM %q`, ds.JobTable)
-	row := tx.QueryRow(sqlStatement)
-	err := row.Scan(&minJobCreatedAt)
-	if err != nil && err != sql.ErrNoRows {
-		return false, err
-	}
-	if err == nil && minJobCreatedAt.Valid && time.Since(minJobCreatedAt.Time) > jd.MaxDSRetentionPeriod {
-		return true, nil
+	if jd.MaxDSRetentionPeriod > 0 {
+		var minJobCreatedAt sql.NullTime
+		sqlStatement := fmt.Sprintf(`SELECT MIN(created_at) FROM %q`, ds.JobTable)
+		row := tx.QueryRow(sqlStatement)
+		err := row.Scan(&minJobCreatedAt)
+		if err != nil && err != sql.ErrNoRows {
+			return false, err
+		}
+		if err == nil && minJobCreatedAt.Valid && time.Since(minJobCreatedAt.Time) > jd.MaxDSRetentionPeriod {
+			return true, nil
+		}
 	}
 
 	tableSize := jd.getTableSize(ds.JobTable)
@@ -1353,94 +1332,23 @@ func (jd *HandleT) doComputeNewIdxForAppend(dList []dataSetT) string {
 	return newDSIdx
 }
 
-// Tries to give a slice between before and after by incrementing last value in before. If the order doesn't maintain, it adds a level and recurses.
-func computeInsertVals(before, after []string) ([]string, error) {
-	for {
-		if before == nil || after == nil {
-			return nil, fmt.Errorf("before or after is nil")
-		}
-		// Safe check: In the current jobsdb implementation, indices don't go more
-		// than 3 levels deep. Breaking out of the loop if the before is of size more than 4.
-		if len(before) > 4 {
-			return before, fmt.Errorf("can't compute insert index due to bad inputs. before: %v, after: %v", before, after)
-		}
-
-		calculatedVals := make([]string, len(before))
-		copy(calculatedVals, before)
-		lastVal, err := strconv.Atoi(calculatedVals[len(calculatedVals)-1])
-		if err != nil {
-			return calculatedVals, err
-		}
-		// Just increment the last value of the index as a possible candidate
-		calculatedVals[len(calculatedVals)-1] = fmt.Sprintf("%d", lastVal+1)
-		var equals bool
-		if len(calculatedVals) == len(after) {
-			equals = true
-			for k := 0; k < len(calculatedVals); k++ {
-				if calculatedVals[k] == after[k] {
-					continue
-				}
-				equals = false
-			}
-		}
-		if !equals {
-			comparison, err := dsComparitor(calculatedVals, after)
-			if err != nil {
-				return calculatedVals, err
-			}
-			if !comparison {
-				return calculatedVals, fmt.Errorf("computed index is invalid. before: %v, after: %v, calculatedVals: %v", before, after, calculatedVals)
-			}
-		}
-		// Only when the index starts with 0, we allow three levels and when we are using the legacy migration
-		// In all other cases, we allow only two levels
-		var comparatorBool bool
-		if skipZeroAssertionForMultitenant {
-			comparatorBool = len(calculatedVals) == 2
-		} else {
-			comparatorBool = (before[0] == "0" && len(calculatedVals) == 3) ||
-				(before[0] != "0" && len(calculatedVals) == 2)
-		}
-
-		if comparatorBool {
-			if equals {
-				return calculatedVals, fmt.Errorf("calculatedVals and after are same. computed index is invalid. before: %v, after: %v, calculatedVals: %v", before, after, calculatedVals)
-			} else {
-				return calculatedVals, nil
-			}
-		}
-
-		before = append(before, "0")
-	}
-}
-
 func computeInsertIdx(beforeIndex, afterIndex string) (string, error) {
-	comparison, err := dsComparitor(strings.Split(beforeIndex, "_"), strings.Split(afterIndex, "_"))
+	before, err := dsindex.Parse(beforeIndex)
 	if err != nil {
-		return "", fmt.Errorf("Error while comparing beforeIndex: %s and afterIndex: %s with error : %w", beforeIndex, afterIndex, err)
+		return "", fmt.Errorf("could not parse before index: %w", err)
 	}
-	if !comparison {
-		return "", fmt.Errorf("Not a valid insert request between %s and %s", beforeIndex, afterIndex)
-	}
-
-	// No dataset should have 0 as the index.
-	// 0_1, 0_2 are allowed.
-	if beforeIndex == "0" && !skipZeroAssertionForMultitenant {
-		return "", fmt.Errorf("Unsupported beforeIndex: %s", beforeIndex)
-	}
-
-	beforeVals := strings.Split(beforeIndex, "_")
-	afterVals := strings.Split(afterIndex, "_")
-	calculatedInsertVals, err := computeInsertVals(beforeVals, afterVals)
+	after, err := dsindex.Parse(afterIndex)
 	if err != nil {
-		return "", fmt.Errorf("Failed to calculate InserVals with error: %w", err)
+		return "", fmt.Errorf("could not parse after index: %w", err)
 	}
-	calculatedIdx := strings.Join(calculatedInsertVals, "_")
-	if len(calculatedInsertVals) > 3 {
-		return "", fmt.Errorf("We don't expect a ds to be computed to Level3. We got %s while trying to insert between %s and %s", calculatedIdx, beforeIndex, afterIndex)
+	result, err := before.Bump(after)
+	if err != nil {
+		return "", fmt.Errorf("could not compute insert index: %w", err)
 	}
-
-	return calculatedIdx, nil
+	if result.Length() > 2 {
+		return "", fmt.Errorf("unsupported resulting index %s level (3) between %s and %s", result, beforeIndex, afterIndex)
+	}
+	return result.String(), nil
 }
 
 func (jd *HandleT) computeNewIdxForIntraNodeMigration(l lock.LockToken, insertBeforeDS dataSetT) string { // Within the node
@@ -3730,7 +3638,7 @@ func (jd *HandleT) getBackupDSRange() *dataSetRangeT {
 	}
 	jd.statPreDropTableCount.Gauge(len(dnumList))
 
-	sortDnumList(jd, dnumList)
+	sortDnumList(dnumList)
 
 	backupDS = dataSetT{
 		JobTable:       fmt.Sprintf("%s%s_jobs_%s", preDropTablePrefix, jd.tablePrefix, dnumList[0]),

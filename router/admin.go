@@ -127,7 +127,7 @@ func (r *RouterRpcHandler) GetDSStats(dsName string, result *string) (err error)
 		make([]JobCountsByStateAndDestination, 0), make([]ErrorCodeCountsByDestination, 0), make([]JobCountByConnections, 0),
 		make([]LatestJobStatusCounts, 0), 0,
 	}
-	dbHandle, err := sql.Open("postgres", jobsdb.GetConnectionString())
+	dbHandle, err := sql.Open("postgres", misc.GetConnectionString())
 	if err != nil {
 		return err
 	}
