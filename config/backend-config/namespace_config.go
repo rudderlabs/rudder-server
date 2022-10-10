@@ -7,7 +7,6 @@ import (
 	"io"
 	"net/http"
 	"net/url"
-	"sync"
 	"time"
 
 	"github.com/cenkalti/backoff"
@@ -22,12 +21,8 @@ import (
 var jsonfast = jsoniter.ConfigCompatibleWithStandardLibrary
 
 type namespaceConfig struct {
-	configEnvHandler          types.ConfigEnvI
-	mapsMutex                 sync.RWMutex
-	writeKeyToWorkspaceIDMap  map[string]string
-	workspaceIDToLibrariesMap map[string]LibrariesT
-	sourceToWorkspaceIDMap    map[string]string
-	cpRouterURL               string
+	configEnvHandler types.ConfigEnvI
+	cpRouterURL      string
 
 	Logger logger.Logger
 	Client *http.Client
@@ -39,8 +34,6 @@ type namespaceConfig struct {
 }
 
 func (nc *namespaceConfig) SetUp() (err error) {
-	nc.writeKeyToWorkspaceIDMap = make(map[string]string)
-
 	if nc.Namespace == "" {
 		if !config.IsSet("WORKSPACE_NAMESPACE") {
 			return errors.New("workspaceNamespace is not configured")
@@ -74,48 +67,16 @@ func (nc *namespaceConfig) SetUp() (err error) {
 	return nil
 }
 
-func (nc *namespaceConfig) GetWorkspaceIDForWriteKey(writeKey string) string {
-	nc.mapsMutex.RLock()
-	defer nc.mapsMutex.RUnlock()
-
-	if workspaceID, ok := nc.writeKeyToWorkspaceIDMap[writeKey]; ok {
-		return workspaceID
-	}
-
-	return ""
-}
-
-func (nc *namespaceConfig) GetWorkspaceIDForSourceID(source string) string {
-	nc.mapsMutex.RLock()
-	defer nc.mapsMutex.RUnlock()
-
-	if workspaceID, ok := nc.sourceToWorkspaceIDMap[source]; ok {
-		return workspaceID
-	}
-
-	return ""
-}
-
-// GetWorkspaceLibrariesForWorkspaceID returns workspaceLibraries for workspaceID
-func (nc *namespaceConfig) GetWorkspaceLibrariesForWorkspaceID(workspaceID string) LibrariesT {
-	nc.mapsMutex.RLock()
-	defer nc.mapsMutex.RUnlock()
-
-	if workspaceLibraries, ok := nc.workspaceIDToLibrariesMap[workspaceID]; ok {
-		return workspaceLibraries
-	}
-	return LibrariesT{}
-}
-
 // Get returns sources from the workspace
-func (nc *namespaceConfig) Get(ctx context.Context, workspaces string) (ConfigT, error) {
+func (nc *namespaceConfig) Get(ctx context.Context, workspaces string) (map[string]ConfigT, error) {
 	return nc.getFromAPI(ctx, workspaces)
 }
 
 // getFromApi gets the workspace config from api
-func (nc *namespaceConfig) getFromAPI(ctx context.Context, _ string) (ConfigT, error) {
+func (nc *namespaceConfig) getFromAPI(ctx context.Context, _ string) (map[string]ConfigT, error) {
+	config := make(map[string]ConfigT)
 	if nc.Namespace == "" {
-		return ConfigT{}, fmt.Errorf("namespace is not configured")
+		return config, fmt.Errorf("namespace is not configured")
 	}
 
 	var respBody []byte
@@ -135,7 +96,7 @@ func (nc *namespaceConfig) getFromAPI(ctx context.Context, _ string) (ConfigT, e
 		if ctx.Err() == nil {
 			nc.Logger.Errorf("Error sending request to the server: %v", err)
 		}
-		return ConfigT{}, err
+		return config, err
 	}
 	configEnvHandler := nc.configEnvHandler
 	if configEnvReplacementEnabled && configEnvHandler != nil {
@@ -146,33 +107,17 @@ func (nc *namespaceConfig) getFromAPI(ctx context.Context, _ string) (ConfigT, e
 	err = jsonfast.Unmarshal(respBody, &workspacesConfig)
 	if err != nil {
 		nc.Logger.Errorf("Error while parsing request: %v", err)
-		return ConfigT{}, err
+		return config, err
 	}
 
-	writeKeyToWorkspaceIDMap := make(map[string]string)
-	sourceToWorkspaceIDMap := make(map[string]string)
-	workspaceIDToLibrariesMap := make(map[string]LibrariesT)
-	sourcesJSON := ConfigT{}
-	sourcesJSON.Sources = make([]SourceT, 0)
-	for workspaceID, nc := range workspacesConfig {
-		for i := range nc.Sources {
-			source := &nc.Sources[i]
-			writeKeyToWorkspaceIDMap[source.WriteKey] = workspaceID
-			sourceToWorkspaceIDMap[source.ID] = workspaceID
-			workspaceIDToLibrariesMap[workspaceID] = nc.Libraries
-		}
-		sourcesJSON.Sources = append(sourcesJSON.Sources, nc.Sources...)
+	for workspaceID, wc := range workspacesConfig {
+		// always set connection flags to true for hosted and multi-tenant warehouse service
+		wc.ConnectionFlags.URL = nc.cpRouterURL
+		wc.ConnectionFlags.Services = map[string]bool{"warehouse": true}
+		workspacesConfig[workspaceID] = wc
 	}
-	sourcesJSON.ConnectionFlags.URL = nc.cpRouterURL
-	// always set connection flags to true for hosted and multi-tenant warehouse service
-	sourcesJSON.ConnectionFlags.Services = map[string]bool{"warehouse": true}
-	nc.mapsMutex.Lock()
-	nc.writeKeyToWorkspaceIDMap = writeKeyToWorkspaceIDMap
-	nc.sourceToWorkspaceIDMap = sourceToWorkspaceIDMap
-	nc.workspaceIDToLibrariesMap = workspaceIDToLibrariesMap
-	nc.mapsMutex.Unlock()
 
-	return sourcesJSON, nil
+	return workspacesConfig, nil
 }
 
 func (nc *namespaceConfig) makeHTTPRequest(ctx context.Context, url string) ([]byte, error) {
