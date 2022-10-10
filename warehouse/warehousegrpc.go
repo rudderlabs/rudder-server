@@ -132,7 +132,7 @@ func validateObjectStorageRequestBody(request *proto.ValidateObjectStorageReques
 	return r, nil
 }
 
-func (*warehousegrpc) ValidateObjectStorageDestination(ctx context.Context, request *proto.ValidateObjectStorageRequest) (response *proto.ValidateObjectStorageResponse, err error) {
+func (*warehouseGRPC) ValidateObjectStorageDestination(ctx context.Context, request *proto.ValidateObjectStorageRequest) (response *proto.ValidateObjectStorageResponse, err error) {
 	r, err := validateObjectStorageRequestBody(request)
 	if err != nil {
 		return nil, err
@@ -158,7 +158,7 @@ func (*warehousegrpc) ValidateObjectStorageDestination(ctx context.Context, requ
 	}, nil
 }
 
-func (*warehousegrpc) CountWHUploadsToRetry(ctx context.Context, req *proto.RetryWHUploadsRequest) (response *proto.RetryWHUploadsResponse, err error) {
+func (*warehouseGRPC) CountWHUploadsToRetry(ctx context.Context, req *proto.RetryWHUploadsRequest) (response *proto.RetryWHUploadsResponse, err error) {
 	retryReq := &RetryRequest{
 		WorkspaceID:     req.WorkspaceId,
 		SourceID:        req.SourceId,
