@@ -109,7 +109,6 @@ func (producer *BQStreamProducer) Produce(jsonData json.RawMessage, _ interface{
 	ctx, cancel := context.WithTimeout(context.Background(), o.Timeout)
 	defer cancel()
 	err := bqInserter.Put(ctx, genericRecs)
-
 	if err != nil {
 		if ctx.Err() != nil && errors.Is(err, context.DeadlineExceeded) {
 			return http.StatusGatewayTimeout, "Failure", createErr(err, "timeout in data insertion").Error()
