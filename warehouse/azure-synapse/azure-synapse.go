@@ -665,24 +665,6 @@ func (as *HandleT) AddColumns(tableName string, columnsInfo warehouseutils.Colum
 		return fmt.Sprintf(`%s %s`, columnInfo.Name, rudderDataTypesMapToMssql[columnInfo.Type])
 	}
 
-	if len(columnsInfo) == 1 {
-		notExistsStatement = fmt.Sprintf(`
-			IF NOT EXISTS (
-			  SELECT 
-				1 
-			  FROM 
-				SYS.COLUMNS 
-			  WHERE 
-				OBJECT_ID = OBJECT_ID(N '%[1]s') 
-				AND name = '%[2]s'
-			)
-`,
-			as.Namespace,
-			tableName,
-			columnsInfo[0].Name,
-		)
-	}
-
 	sqlStatement = fmt.Sprintf(`
 		%s
 		ALTER TABLE
