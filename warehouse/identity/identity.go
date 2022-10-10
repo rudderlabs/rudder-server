@@ -20,7 +20,7 @@ import (
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
-var pkgLogger logger.LoggerI
+var pkgLogger logger.Logger
 
 func init() {
 	pkgLogger = logger.NewLogger().Child("warehouse").Child("identity")
@@ -325,7 +325,12 @@ func (idr *HandleT) writeTableToFile(tableName string, txn *sql.Tx, gzWriter *mi
 			var rowData []string
 			eventLoader := warehouseutils.GetNewEventLoader(idr.Warehouse.Type, idr.Uploader.GetLoadFileType(), gzWriter)
 			var prop1Val, prop2Val, prop1Type, prop2Type sql.NullString
-			err = rows.Scan(&prop1Type, &prop1Val, &prop2Type, &prop2Val)
+			err = rows.Scan(
+				&prop1Type,
+				&prop1Val,
+				&prop2Type,
+				&prop2Val,
+			)
 			if err != nil {
 				return
 			}
@@ -379,6 +384,7 @@ func (idr *HandleT) downloadLoadFiles(tableName string) ([]string, error) {
 				Provider:         storageProvider,
 				Config:           idr.Warehouse.Destination.Config,
 				UseRudderStorage: idr.Uploader.UseRudderStorage(),
+				WorkspaceID:      idr.Warehouse.Destination.WorkspaceID,
 			}),
 		})
 		if err != nil {
@@ -418,7 +424,7 @@ func (idr *HandleT) uploadFile(filePath string, txn *sql.Tx, tableName string, t
 		pkgLogger.Errorf("IDR: Error in creating a file manager for :%s: , %v", idr.Warehouse.Destination.DestinationDefinition.Name, err)
 		return err
 	}
-	output, err := uploader.Upload(context.TODO(), outputFile, config.GetEnv("WAREHOUSE_BUCKET_LOAD_OBJECTS_FOLDER_NAME", "rudder-warehouse-load-objects"), tableName, idr.Warehouse.Source.ID, tableName)
+	output, err := uploader.Upload(context.TODO(), outputFile, config.GetString("WAREHOUSE_BUCKET_LOAD_OBJECTS_FOLDER_NAME", "rudder-warehouse-load-objects"), tableName, idr.Warehouse.Source.ID, tableName)
 	if err != nil {
 		return
 	}

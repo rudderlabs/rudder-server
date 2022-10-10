@@ -3,10 +3,10 @@ package middleware
 import (
 	"context"
 	"net/http"
-	"strings"
 	"sync/atomic"
 	"time"
 
+	"github.com/gorilla/mux"
 	"github.com/rudderlabs/rudder-server/services/stats"
 )
 
@@ -32,9 +32,9 @@ func LimitConcurrentRequests(maxRequests int) func(http.Handler) http.Handler {
 	}
 }
 
-func StatMiddleware(ctx context.Context) func(http.Handler) http.Handler {
+func StatMiddleware(ctx context.Context, router *mux.Router) func(http.Handler) http.Handler {
 	var concurrentRequests int32
-	activeClientCount := stats.DefaultStats.NewStat("gateway.concurrent_requests_count", stats.GaugeType)
+	activeClientCount := stats.Default.NewStat("gateway.concurrent_requests_count", stats.GaugeType)
 	go func() {
 		for {
 			select {
@@ -46,28 +46,28 @@ func StatMiddleware(ctx context.Context) func(http.Handler) http.Handler {
 		}
 	}()
 
+	// getPath retrieves the path from the request.
+	// The matched route's template is used if a match is found,
+	// otherwise the request's URL path is used instead.
+	getPath := func(r *http.Request) string {
+		var match mux.RouteMatch
+		if router.Match(r, &match) {
+			if path, err := match.Route.GetPathTemplate(); err != nil {
+				return path
+			}
+		}
+		return r.URL.Path
+	}
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			latencyStat := stats.DefaultStats.NewSampledTaggedStat("gateway.response_time", stats.TimerType, map[string]string{"reqType": r.URL.Path})
+			path := getPath(r)
+			latencyStat := stats.Default.NewSampledTaggedStat("gateway.response_time", stats.TimerType, map[string]string{"reqType": path, "method": r.Method})
 			latencyStat.Start()
 			defer latencyStat.End()
 
 			atomic.AddInt32(&concurrentRequests, 1)
 			defer atomic.AddInt32(&concurrentRequests, -1)
 
-			next.ServeHTTP(w, r)
-		})
-	}
-}
-
-// ContentType currently sets the content-type only for eventSchemas, health responses.
-// Note : responses via http.Error aren't affected. They default to text/plain
-func ContentType() func(http.Handler) http.Handler {
-	return func(next http.Handler) http.Handler {
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if strings.HasPrefix(r.URL.Path, "/schemas") || strings.HasPrefix(r.URL.Path, "/health") {
-				w.Header().Add("Content-Type", "application/json; charset=utf-8")
-			}
 			next.ServeHTTP(w, r)
 		})
 	}

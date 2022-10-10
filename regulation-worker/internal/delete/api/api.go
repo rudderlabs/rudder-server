@@ -20,7 +20,7 @@ import (
 
 var (
 	pkgLogger             = logger.NewLogger().Child("api")
-	supportedDestinations = []string{"BRAZE", "AM", "INTERCOM"}
+	supportedDestinations = []string{"BRAZE", "AM", "INTERCOM", "CLEVERTAP", "AF", "MP"}
 )
 
 type APIManager struct {
@@ -53,7 +53,7 @@ func (api *APIManager) Delete(ctx context.Context, job model.Job, destConfig map
 	}
 	req.Header.Set("Content-Type", "application/json")
 
-	fileCleaningTime := stats.NewTaggedStat("file_cleaning_time", stats.TimerType, stats.Tags{
+	fileCleaningTime := stats.Default.NewTaggedStat("file_cleaning_time", stats.TimerType, stats.Tags{
 		"jobId":       fmt.Sprintf("%d", job.ID),
 		"workspaceId": job.WorkspaceID,
 		"destType":    "api",
@@ -109,18 +109,17 @@ func (api *APIManager) Delete(ctx context.Context, job model.Job, destConfig map
 	}
 }
 
-func (bm *APIManager) GetSupportedDestinations() []string {
+func (*APIManager) GetSupportedDestinations() []string {
 	return supportedDestinations
 }
 
 func mapJobToPayload(job model.Job, destName string, destConfig map[string]interface{}) []apiDeletionPayloadSchema {
-	uas := make([]userAttributesSchema, len(job.UserAttributes))
-	for i, ua := range job.UserAttributes {
-		uas[i] = userAttributesSchema{
-			UserID: ua.UserID,
-
-			Phone: ua.Phone,
-			Email: ua.Email,
+	uas := make([]userAttributesSchema, len(job.Users))
+	for i, ua := range job.Users {
+		uas[i] = make(map[string]string)
+		uas[i]["userId"] = ua.ID
+		for k, v := range ua.Attributes {
+			uas[i][k] = v
 		}
 	}
 

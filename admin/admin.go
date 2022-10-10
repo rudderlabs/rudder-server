@@ -50,6 +50,7 @@ import (
 
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/services/db"
+	"github.com/rudderlabs/rudder-server/utils/httputil"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
@@ -81,7 +82,7 @@ type Admin struct {
 
 var (
 	instance  *Admin
-	pkgLogger logger.LoggerI
+	pkgLogger logger.Logger
 )
 
 func Init() {
@@ -115,7 +116,7 @@ func (a *Admin) Status(_ struct{}, reply *string) (err error) {
 }
 
 // PrintStack fetches stack traces of all running goroutines
-func (a *Admin) PrintStack(_ struct{}, reply *string) (err error) {
+func (*Admin) PrintStack(_ struct{}, reply *string) (err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			pkgLogger.Error(r)
@@ -129,7 +130,7 @@ func (a *Admin) PrintStack(_ struct{}, reply *string) (err error) {
 }
 
 // HeapDump creates heap profile at given path using pprof
-func (a *Admin) HeapDump(path, reply *string) (err error) {
+func (*Admin) HeapDump(path, reply *string) (err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			pkgLogger.Error(r)
@@ -147,7 +148,7 @@ func (a *Admin) HeapDump(path, reply *string) (err error) {
 }
 
 // StartCpuProfile starts writing cpu profile at given path using pprof
-func (a *Admin) StartCpuProfile(path, reply *string) (err error) {
+func (*Admin) StartCpuProfile(path, reply *string) (err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			pkgLogger.Error(r)
@@ -170,7 +171,7 @@ func (a *Admin) StartCpuProfile(path, reply *string) (err error) {
 }
 
 // StopCpuProfile stops writing already cpu profile
-func (a *Admin) StopCpuProfile(_ struct{}, reply *string) (err error) {
+func (*Admin) StopCpuProfile(_ struct{}, reply *string) (err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			pkgLogger.Error(r)
@@ -184,7 +185,7 @@ func (a *Admin) StopCpuProfile(_ struct{}, reply *string) (err error) {
 }
 
 // ServerConfig fetches current configuration as set in viper
-func (a *Admin) ServerConfig(_ struct{}, reply *string) (err error) {
+func (*Admin) ServerConfig(_ struct{}, reply *string) (err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			pkgLogger.Error(r)
@@ -206,14 +207,14 @@ type LogLevel struct {
 	Level  string
 }
 
-func (a *Admin) SetLogLevel(l LogLevel, reply *string) (err error) {
+func (*Admin) SetLogLevel(l LogLevel, reply *string) (err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			pkgLogger.Error(r)
 			err = fmt.Errorf("internal Rudder server error: %v", r)
 		}
 	}()
-	err = logger.SetModuleLevel(l.Module, l.Level)
+	err = logger.SetLogLevel(l.Module, l.Level)
 	if err == nil {
 		*reply = fmt.Sprintf("Module %s log level set to %s", l.Module, l.Level)
 	}
@@ -221,7 +222,7 @@ func (a *Admin) SetLogLevel(l LogLevel, reply *string) (err error) {
 }
 
 // GetLoggingConfig returns the logging configuration
-func (a *Admin) GetLoggingConfig(_ struct{}, reply *string) (err error) {
+func (*Admin) GetLoggingConfig(_ struct{}, reply *string) (err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			pkgLogger.Error(r)
@@ -235,8 +236,8 @@ func (a *Admin) GetLoggingConfig(_ struct{}, reply *string) (err error) {
 }
 
 // GetFormattedEnv return the formatted env
-func (a *Admin) GetFormattedEnv(env string, reply *string) (err error) {
-	*reply = config.TransformKey(env)
+func (*Admin) GetFormattedEnv(env string, reply *string) (err error) {
+	*reply = config.ConfigKeyToEnv(env)
 	return nil
 }
 
@@ -273,10 +274,6 @@ func StartServer(ctx context.Context) error {
 	srvMux.Handle(rpc.DefaultRPCPath, instance.rpcServer)
 
 	srv := &http.Server{Handler: srvMux, ReadHeaderTimeout: 3 * time.Second}
-	go func() {
-		<-ctx.Done()
-		_ = srv.Shutdown(context.Background()) // @TODO no wait nor timeout on shutdown
-	}()
 
-	return srv.Serve(l)
+	return httputil.Serve(ctx, srv, l, time.Second)
 }

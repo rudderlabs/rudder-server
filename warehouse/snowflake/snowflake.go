@@ -21,7 +21,7 @@ import (
 
 var (
 	stagingTablePrefix string
-	pkgLogger          logger.LoggerI
+	pkgLogger          logger.Logger
 )
 
 func Init() {
@@ -132,9 +132,7 @@ func ColumnsWithDataTypes(columns map[string]string, prefix string) string {
 
 // schemaIdentifier returns [DATABASE_NAME].[NAMESPACE] format to access the schema directly.
 func (sf *HandleT) schemaIdentifier() string {
-	DatabaseName := warehouseutils.GetConfigValue(SFDbName, sf.Warehouse)
-	return fmt.Sprintf(`"%s"."%s"`,
-		DatabaseName,
+	return fmt.Sprintf(`"%s"`,
 		sf.Namespace,
 	)
 }
@@ -210,11 +208,8 @@ func checkAndIgnoreAlreadyExistError(err error) bool {
 
 func (sf *HandleT) authString() string {
 	var auth string
-	if misc.IsConfiguredToUseRudderObjectStorage(sf.Warehouse.Destination.Config) {
-		tempAccessKeyId, tempSecretAccessKey, token, _ := warehouseutils.GetTemporaryS3Cred(misc.GetRudderObjectStorageAccessKeys())
-		auth = fmt.Sprintf(`CREDENTIALS = (AWS_KEY_ID='%s' AWS_SECRET_KEY='%s' AWS_TOKEN='%s')`, tempAccessKeyId, tempSecretAccessKey, token)
-	} else if sf.CloudProvider == "AWS" && warehouseutils.GetConfigValue(StorageIntegration, sf.Warehouse) == "" {
-		tempAccessKeyId, tempSecretAccessKey, token, _ := warehouseutils.GetTemporaryS3Cred(warehouseutils.GetConfigValue(AWSAccessSecret, sf.Warehouse), warehouseutils.GetConfigValue(AWSAccessKey, sf.Warehouse))
+	if misc.IsConfiguredToUseRudderObjectStorage(sf.Warehouse.Destination.Config) || (sf.CloudProvider == "AWS" && warehouseutils.GetConfigValue(StorageIntegration, sf.Warehouse) == "") {
+		tempAccessKeyId, tempSecretAccessKey, token, _ := warehouseutils.GetTemporaryS3Cred(&sf.Warehouse.Destination)
 		auth = fmt.Sprintf(`CREDENTIALS = (AWS_KEY_ID='%s' AWS_SECRET_KEY='%s' AWS_TOKEN='%s')`, tempAccessKeyId, tempSecretAccessKey, token)
 	} else {
 		auth = fmt.Sprintf(`STORAGE_INTEGRATION = %s`, warehouseutils.GetConfigValue(StorageIntegration, sf.Warehouse))
@@ -380,6 +375,7 @@ func (sf *HandleT) LoadIdentityMergeRulesTable() (err error) {
 	sanitisedSQLStmt, regexErr := misc.ReplaceMultiRegex(sqlStatement, map[string]string{
 		"AWS_KEY_ID='[^']*'":     "AWS_KEY_ID='***'",
 		"AWS_SECRET_KEY='[^']*'": "AWS_SECRET_KEY='***'",
+		"AWS_TOKEN='[^']*'":      "AWS_TOKEN='***'",
 	})
 	if regexErr == nil {
 		pkgLogger.Infof("SF: Dedup records for table:%s using staging table: %s\n", identityMergeRulesTable, sanitisedSQLStmt)
@@ -645,7 +641,7 @@ func (sf *HandleT) AddColumn(tableName, columnName, columnType string) (err erro
 	return err
 }
 
-func (sf *HandleT) AlterColumn(_, _, _ string) (err error) {
+func (*HandleT) AlterColumn(_, _, _ string) (err error) {
 	return
 }
 
@@ -744,7 +740,7 @@ func (sf *HandleT) DownloadIdentityRules(gzWriter *misc.GZipWriter) (err error) 
 	return nil
 }
 
-func (sf *HandleT) CrashRecover(_ warehouseutils.WarehouseT) (err error) {
+func (*HandleT) CrashRecover(_ warehouseutils.WarehouseT) (err error) {
 	return
 }
 
@@ -844,11 +840,18 @@ func (sf *HandleT) FetchSchema(warehouse warehouseutils.WarehouseT) (schema ware
 	defer dbHandle.Close()
 
 	schema = make(warehouseutils.SchemaT)
-	sqlStatement := fmt.Sprintf(`SELECT t.table_name, c.column_name, c.data_type
-									FROM INFORMATION_SCHEMA.TABLES as t
-									JOIN INFORMATION_SCHEMA.COLUMNS as c
-									ON t.table_schema = c.table_schema and t.table_name = c.table_name
-									WHERE t.table_schema = '%s'`, sf.Namespace)
+	sqlStatement := fmt.Sprintf(`
+		SELECT
+		  table_name,
+		  column_name,
+		  data_type
+		FROM
+		  INFORMATION_SCHEMA.COLUMNS
+		WHERE
+		  table_schema = '%s'
+	`,
+		sf.Namespace,
+	)
 
 	rows, err := dbHandle.Query(sqlStatement)
 	if err != nil && err != sql.ErrNoRows {

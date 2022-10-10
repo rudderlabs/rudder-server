@@ -9,11 +9,6 @@ import (
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
-// type StagingFileEntryT struct {
-// 	ID       int64
-// 	Location string
-// }
-
 type PayloadT struct {
 	BatchID                      string
 	UploadID                     int64
@@ -28,7 +23,8 @@ type PayloadT struct {
 	DestinationNamespace         string
 	DestinationRevisionID        string
 	StagingDestinationRevisionID string
-	DestinationConfig            interface{}
+	DestinationConfig            map[string]interface{}
+	WorkspaceID                  string
 	StagingDestinationConfig     interface{}
 	UseRudderStorage             bool
 	StagingUseRudderStorage      bool
@@ -95,4 +91,9 @@ type DataT map[string]interface{}
 type ColumnInfoT struct {
 	ColumnVal  interface{}
 	ColumnType string
+}
+
+type FilterClause struct {
+	Clause    string
+	ClauseArg interface{}
 }

@@ -48,7 +48,7 @@ func NewIo() IoI {
 // the copy is implemented by calling src.WriteTo(dst).
 // Otherwise, if dst implements the ReaderFrom interface,
 // the copy is implemented by calling dst.ReadFrom(src).
-func (i *Io) Copy(dst io.Writer, src io.Reader) (written int64, err error) {
+func (*Io) Copy(dst io.Writer, src io.Reader) (written int64, err error) {
 	return io.Copy(dst, src)
 }
 
@@ -70,14 +70,14 @@ func NewIoUtil() IoUtilI {
 // A successful call returns err == nil, not err == EOF. Because ReadFile
 // reads the whole file, it does not treat an EOF from Read as an error
 // to be reported.
-func (iu *IoUtil) ReadFile(filename string) ([]byte, error) {
+func (*IoUtil) ReadFile(filename string) ([]byte, error) {
 	return os.ReadFile(filename)
 }
 
 // WriteFile writes data to a file named by filename.
 // If the file does not exist, WriteFile creates it with permissions perm
 // (before umask); otherwise WriteFile truncates it before writing.
-func (iu *IoUtil) WriteFile(filename string, data []byte, perm os.FileMode) error {
+func (*IoUtil) WriteFile(filename string, data []byte, perm os.FileMode) error {
 	return os.WriteFile(filename, data, perm)
 }
 
@@ -85,12 +85,12 @@ func (iu *IoUtil) WriteFile(filename string, data []byte, perm os.FileMode) erro
 // A successful call returns err == nil, not err == EOF. Because ReadAll is
 // defined to read from src until EOF, it does not treat an EOF from Read
 // as an error to be reported.
-func (iu *IoUtil) ReadAll(r io.Reader) ([]byte, error) {
+func (*IoUtil) ReadAll(r io.Reader) ([]byte, error) {
 	return io.ReadAll(r)
 }
 
 // NopCloser returns a ReadCloser with a no-op Close method wrapping
 // the provided Reader r.
-func (iu *IoUtil) NopCloser(r io.Reader) io.ReadCloser {
+func (*IoUtil) NopCloser(r io.Reader) io.ReadCloser {
 	return io.NopCloser(r)
 }

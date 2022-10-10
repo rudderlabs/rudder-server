@@ -1,0 +1,8 @@
+{
+    "components": [
+        {
+            "name": "server",
+            "features": ["features"]
+        }
+    ]
+}

@@ -30,10 +30,10 @@ type WebHookI interface {
 
 func newWebhookStats() *webhookStatsT {
 	wStats := webhookStatsT{}
-	wStats.sentStat = stats.DefaultStats.NewStat("webhook.transformer_sent", stats.CountType)
-	wStats.receivedStat = stats.DefaultStats.NewStat("webhook.transformer_received", stats.CountType)
-	wStats.failedStat = stats.DefaultStats.NewStat("webhook.transformer_failed", stats.CountType)
-	wStats.transformTimerStat = stats.DefaultStats.NewStat("webhook.transformation_time", stats.TimerType)
+	wStats.sentStat = stats.Default.NewStat("webhook.transformer_sent", stats.CountType)
+	wStats.receivedStat = stats.Default.NewStat("webhook.transformer_received", stats.CountType)
+	wStats.failedStat = stats.Default.NewStat("webhook.transformer_failed", stats.CountType)
+	wStats.transformTimerStat = stats.Default.NewStat("webhook.transformation_time", stats.TimerType)
 	wStats.sourceStats = make(map[string]*webhookSourceStatT)
 	return &wStats
 }

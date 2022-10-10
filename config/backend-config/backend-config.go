@@ -5,6 +5,8 @@ package backendconfig
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/json"
 	"fmt"
 	"net/url"
 	"reflect"
@@ -14,7 +16,9 @@ import (
 
 	adminpkg "github.com/rudderlabs/rudder-server/admin"
 	"github.com/rudderlabs/rudder-server/config"
+	"github.com/rudderlabs/rudder-server/config/backend-config/internal/cache"
 	"github.com/rudderlabs/rudder-server/rruntime"
+	"github.com/rudderlabs/rudder-server/services/controlplane/identity"
 	"github.com/rudderlabs/rudder-server/services/diagnostics"
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/logger"
@@ -42,15 +46,25 @@ var (
 	pkgLogger            = logger.NewLogger().Child("backend-config")
 	IoUtil               = sysUtils.NewIoUtil()
 	Diagnostics          diagnostics.DiagnosticsI
+	cacheOverride        cache.Cache
 )
+
+func disableCache() {
+	cacheOverride = new(noCache)
+}
+
+type noCache struct{}
+
+func (*noCache) Get(context.Context) ([]byte, error) {
+	return nil, nil
+}
 
 type workspaceConfig interface {
 	SetUp() error
+	// Deprecated: use Identity() instead.
 	AccessToken() string
-	Get(context.Context, string) (ConfigT, error)
-	GetWorkspaceIDForWriteKey(string) string
-	GetWorkspaceIDForSourceID(string) string
-	GetWorkspaceLibrariesForWorkspaceID(string) LibrariesT
+	Get(context.Context, string) (map[string]ConfigT, error)
+	Identity() identity.Identifier
 }
 
 type BackendConfig interface {
@@ -69,13 +83,15 @@ type backendConfigImpl struct {
 	blockChan         chan struct{}
 	initializedLock   sync.RWMutex
 	initialized       bool
-	curSourceJSON     ConfigT
+	curSourceJSON     map[string]ConfigT
 	curSourceJSONLock sync.RWMutex
+	usingCache        bool
+	cache             cache.Cache
 }
 
 func loadConfig() {
-	configBackendURL = config.GetEnv("CONFIG_BACKEND_URL", "https://api.rudderlabs.com")
-	cpRouterURL = config.GetEnv("CP_ROUTER_URL", "https://cp-router.rudderlabs.com")
+	configBackendURL = config.GetString("CONFIG_BACKEND_URL", "https://api.rudderlabs.com")
+	cpRouterURL = config.GetString("CP_ROUTER_URL", "https://cp-router.rudderlabs.com")
 	config.RegisterDurationConfigVariable(5, &pollInterval, true, time.Second, []string{"BackendConfig.pollInterval", "BackendConfig.pollIntervalInS"}...)
 	config.RegisterDurationConfigVariable(300, &regulationsPollInterval, true, time.Second, []string{"BackendConfig.regulationsPollInterval", "BackendConfig.regulationsPollIntervalInS"}...)
 	config.RegisterStringConfigVariable("/etc/rudderstack/workspaceConfig.json", &configJSONPath, false, "BackendConfig.configJSONPath")
@@ -111,12 +127,20 @@ func trackConfig(preConfig, curConfig ConfigT) {
 	}
 }
 
+func filterProcessorEnabledWorkspaceConfig(config map[string]ConfigT) map[string]ConfigT {
+	filterConfig := make(map[string]ConfigT, len(config))
+	for workspaceID, wConfig := range config {
+		filterConfig[workspaceID] = filterProcessorEnabledDestinations(wConfig)
+	}
+	return filterConfig
+}
+
 func filterProcessorEnabledDestinations(config ConfigT) ConfigT {
 	var modifiedConfig ConfigT
 	modifiedConfig.Libraries = config.Libraries
 	modifiedConfig.Sources = make([]SourceT, 0)
 	for _, source := range config.Sources {
-		destinations := make([]DestinationT, 0)
+		var destinations []DestinationT
 		for _, destination := range source.Destinations { // TODO skipcq: CRT-P0006
 			pkgLogger.Debug(destination.Name, " IsProcessorEnabled: ", destination.IsProcessorEnabled)
 			if destination.IsProcessorEnabled {
@@ -129,25 +153,72 @@ func filterProcessorEnabledDestinations(config ConfigT) ConfigT {
 	return modifiedConfig
 }
 
-func (bc *backendConfigImpl) configUpdate(ctx context.Context, statConfigBackendError stats.RudderStats, workspaces string) {
-	sourceJSON, err := bc.workspaceConfig.Get(ctx, workspaces)
+func (bc *backendConfigImpl) configUpdate(ctx context.Context, workspaces string) {
+	statConfigBackendError := stats.Default.NewStat("config_backend.errors", stats.CountType)
+
+	var (
+		sourceJSON map[string]ConfigT
+		err        error
+	)
+	defer func() {
+		cacheConfigGauge := stats.Default.NewStat("config_from_cache", stats.GaugeType)
+		if bc.usingCache {
+			cacheConfigGauge.Gauge(1)
+		} else {
+			cacheConfigGauge.Gauge(0)
+		}
+	}()
+
+	sourceJSON, err = bc.workspaceConfig.Get(ctx, workspaces)
 	if err != nil {
 		statConfigBackendError.Increment()
 		pkgLogger.Warnf("Error fetching config from backend: %v", err)
-		return
+
+		bc.initializedLock.RLock()
+		if bc.initialized {
+			bc.initializedLock.RUnlock()
+			return
+		}
+		bc.initializedLock.RUnlock()
+
+		// try to get config from cache
+		sourceJSONBytes, cacheErr := bc.cache.Get(ctx)
+		if cacheErr != nil {
+			pkgLogger.Warnf("Error fetching config from cache: %v", cacheErr)
+			return
+		}
+		err = json.Unmarshal(sourceJSONBytes, &sourceJSON)
+		if err != nil {
+			pkgLogger.Warnf("Error unmarshalling cached config: %v", cacheErr)
+			return
+		}
+		bc.usingCache = true
+	} else {
+		bc.usingCache = false
 	}
 
 	// sorting the sourceJSON.
 	// json unmarshal does not guarantee order. For DeepEqual to work as expected, sorting is necessary
-	sort.Slice(sourceJSON.Sources, func(i, j int) bool {
-		return sourceJSON.Sources[i].ID < sourceJSON.Sources[j].ID
-	})
+	for workspace := range sourceJSON {
+		sort.Slice(sourceJSON[workspace].Sources, func(i, j int) bool {
+			return sourceJSON[workspace].Sources[i].ID < sourceJSON[workspace].Sources[j].ID
+		})
+	}
 
 	bc.curSourceJSONLock.Lock()
 	if !reflect.DeepEqual(bc.curSourceJSON, sourceJSON) {
-		pkgLogger.Infof("Workspace Config changed: %s", workspaces)
-		trackConfig(bc.curSourceJSON, sourceJSON)
-		filteredSourcesJSON := filterProcessorEnabledDestinations(sourceJSON)
+		if len(workspaces) > 0 {
+			pkgLogger.Infof("Workspace Config changed: %d", len(workspaces))
+		} else {
+			pkgLogger.Infof("Workspace Config changed")
+		}
+
+		if len(sourceJSON) == 1 { // only use diagnostics if there is one workspace
+			for _, wConfig := range sourceJSON {
+				trackConfig(bc.curSourceJSON[wConfig.WorkspaceID], wConfig)
+			}
+		}
+		filteredSourcesJSON := filterProcessorEnabledWorkspaceConfig(sourceJSON)
 		bc.curSourceJSON = sourceJSON
 		bc.curSourceJSONLock.Unlock()
 		LastSync = time.Now().Format(time.RFC3339) // TODO fix concurrent access
@@ -163,9 +234,8 @@ func (bc *backendConfigImpl) configUpdate(ctx context.Context, statConfigBackend
 }
 
 func (bc *backendConfigImpl) pollConfigUpdate(ctx context.Context, workspaces string) {
-	statConfigBackendError := stats.DefaultStats.NewStat("config_backend.errors", stats.CountType)
 	for {
-		bc.configUpdate(ctx, statConfigBackendError, workspaces)
+		bc.configUpdate(ctx, workspaces)
 
 		select {
 		case <-ctx.Done():
@@ -175,7 +245,7 @@ func (bc *backendConfigImpl) pollConfigUpdate(ctx context.Context, workspaces st
 	}
 }
 
-func getConfig() ConfigT {
+func getConfig() map[string]ConfigT {
 	bc, _ := DefaultBackendConfig.(*backendConfigImpl)
 	bc.curSourceJSONLock.RLock()
 	defer bc.curSourceJSONLock.RUnlock()
@@ -184,11 +254,17 @@ func getConfig() ConfigT {
 
 /*
 Subscribe subscribes a channel to a specific topic of backend config updates.
+
 Channel will receive a new pubsub.DataEvent each time the backend configuration is updated.
+
 Data of the DataEvent should be a backendconfig.ConfigT struct.
+
 Available topics are:
+
 - TopicBackendConfig: Will receive complete backend configuration
+
 - TopicProcessConfig: Will receive only backend configuration of processor enabled destinations
+
 - TopicRegulations: Will receive all regulations
 */
 func (bc *backendConfigImpl) Subscribe(ctx context.Context, topic Topic) pubsub.DataChannel {
@@ -212,20 +288,10 @@ func newForDeployment(deploymentType deployment.Type, configEnvHandler types.Con
 			configEnvHandler: configEnvHandler,
 		}
 	case deployment.MultiTenantType:
-		isNamespaced := config.IsEnvSet("WORKSPACE_NAMESPACE")
-		if isNamespaced {
-			backendConfig.workspaceConfig = &namespaceConfig{
-				ConfigBackendURL: parsedConfigBackendURL,
-				configEnvHandler: configEnvHandler,
-				cpRouterURL:      cpRouterURL,
-			}
-		} else {
-			// DEPRECATED: This is the old way of configuring multi-tenant.
-			backendConfig.workspaceConfig = &multiTenantWorkspacesConfig{
-				configBackendURL: parsedConfigBackendURL,
-				configEnvHandler: configEnvHandler,
-				cpRouterURL:      cpRouterURL,
-			}
+		backendConfig.workspaceConfig = &namespaceConfig{
+			ConfigBackendURL: parsedConfigBackendURL,
+			configEnvHandler: configEnvHandler,
+			cpRouterURL:      cpRouterURL,
 		}
 	default:
 		return nil, fmt.Errorf("deployment type %q not supported", deploymentType)
@@ -257,6 +323,19 @@ func (bc *backendConfigImpl) StartWithIDs(ctx context.Context, workspaces string
 	bc.ctx = ctx
 	bc.cancel = cancel
 	bc.blockChan = make(chan struct{})
+	bc.cache = cacheOverride
+	if bc.cache == nil {
+		identifier := bc.Identity()
+		u, _ := identifier.BasicAuth()
+		secret := sha256.Sum256([]byte(u))
+		cacheKey := identifier.ID()
+		bc.cache = cache.Start(
+			ctx,
+			secret,
+			cacheKey,
+			bc.Subscribe(ctx, TopicBackendConfig),
+		)
+	}
 	rruntime.Go(func() {
 		bc.pollConfigUpdate(ctx, workspaces)
 		close(bc.blockChan)
@@ -302,4 +381,23 @@ func getNotOKError(respBody []byte, statusCode int) error {
 		errMsg = fmt.Sprintf(": %s", respBody)
 	}
 	return fmt.Errorf("backend config request failed with %d%s", statusCode, errMsg)
+}
+
+func (bc *backendConfigImpl) Identity() identity.Identifier {
+	result := bc.workspaceConfig.Identity()
+	if result.ID() == "" && bc.usingCache { // in case of a cached config the ID is not set when operating in single workspace mode
+		bc.curSourceJSONLock.RLock()
+		curConfig := bc.curSourceJSON
+		bc.curSourceJSONLock.RUnlock()
+		if len(curConfig) == 1 {
+			for workspaceID := range curConfig {
+				return &identity.IdentifierDecorator{
+					Identifier: result,
+					Id:         workspaceID,
+				}
+			}
+		}
+		return bc.workspaceConfig.Identity()
+	}
+	return result
 }

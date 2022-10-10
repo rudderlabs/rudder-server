@@ -26,26 +26,27 @@ import (
 	"github.com/stretchr/testify/require"
 	"google.golang.org/api/option"
 
+	"github.com/Azure/azure-storage-blob-go/azblob"
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/services/filemanager"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 )
 
 var (
-	AzuriteEndpoint, gcsURL, minioEndpoint string
-	base64Secret                           = base64.StdEncoding.EncodeToString([]byte(secretAccessKey))
-	bucket                                 = "filemanager-test-1"
-	region                                 = "us-east-1"
-	accessKeyId                            = "MYACCESSKEY"
-	secretAccessKey                        = "MYSECRETKEY"
-	hold                                   bool
-	regexRequiredSuffix                    = regexp.MustCompile(".json.gz$")
-	fileList                               []string
+	AzuriteEndpoint, gcsURL, minioEndpoint, azureSASTokens string
+	base64Secret                                           = base64.StdEncoding.EncodeToString([]byte(secretAccessKey))
+	bucket                                                 = "filemanager-test-1"
+	region                                                 = "us-east-1"
+	accessKeyId                                            = "MYACCESSKEY"
+	secretAccessKey                                        = "MYSECRETKEY"
+	hold                                                   bool
+	regexRequiredSuffix                                    = regexp.MustCompile(".json.gz$")
+	fileList                                               []string
 )
 
 func TestMain(m *testing.M) {
-	config.Load()
-	logger.Init()
+	config.Reset()
+	logger.Reset()
 
 	os.Exit(run(m))
 }
@@ -90,6 +91,8 @@ func run(m *testing.M) int {
 		if err != nil {
 			return err
 		}
+		defer resp.Body.Close()
+
 		if resp.StatusCode != http.StatusOK {
 			return fmt.Errorf("status code not OK")
 		}
@@ -133,6 +136,11 @@ func run(m *testing.M) int {
 	AzuriteEndpoint = fmt.Sprintf("localhost:%s", AzuriteResource.GetPort("10000/tcp"))
 	fmt.Println("Azurite endpoint", AzuriteEndpoint)
 	fmt.Println("azurite resource successfully created")
+
+	azureSASTokens, err = createAzureSASTokens()
+	if err != nil {
+		log.Fatalf("Could not create azure sas tokens: %s", err)
+	}
 
 	// Running GCS emulator
 	GCSResource, err := pool.RunWithOptions(&dockertest.RunOptions{
@@ -183,6 +191,26 @@ func run(m *testing.M) int {
 	code := m.Run()
 	blockOnHold()
 	return code
+}
+
+func createAzureSASTokens() (string, error) {
+	credential, err := azblob.NewSharedKeyCredential(accessKeyId, base64Secret)
+	if err != nil {
+		return "", err
+	}
+
+	sasQueryParams, err := azblob.AccountSASSignatureValues{
+		Protocol:      azblob.SASProtocolHTTPSandHTTP,
+		ExpiryTime:    time.Now().UTC().Add(1 * time.Hour),
+		Permissions:   azblob.AccountSASPermissions{Read: true, List: true, Write: true, Delete: true}.String(),
+		Services:      azblob.AccountSASServices{Blob: true}.String(),
+		ResourceTypes: azblob.AccountSASResourceTypes{Container: true, Object: true}.String(),
+	}.NewSASQueryParameters(credential)
+	if err != nil {
+		return "", err
+	}
+
+	return sasQueryParams.Encode(), nil
 }
 
 func TestFileManager(t *testing.T) {
@@ -238,7 +266,7 @@ func TestFileManager(t *testing.T) {
 			},
 		},
 		{
-			name:     "testing Azure blob storage filemanager functionality",
+			name:     "testing Azure blob storage filemanager functionality with account keys configured",
 			destName: "AZURE_BLOB",
 			config: map[string]interface{}{
 				"containerName":  bucket,
@@ -260,6 +288,20 @@ func TestFileManager(t *testing.T) {
 				"endPoint":         gcsURL,
 				"s3ForcePathStyle": true,
 				"disableSSL":       true,
+			},
+		},
+		{
+			name:     "testing Azure blob storage filemanager functionality with sas tokens configured",
+			destName: "AZURE_BLOB",
+			config: map[string]interface{}{
+				"containerName":  bucket,
+				"prefix":         "some-prefix",
+				"accountName":    accessKeyId,
+				"useSASTokens":   true,
+				"sasToken":       azureSASTokens,
+				"endPoint":       AzuriteEndpoint,
+				"forcePathStyle": true,
+				"disableSSL":     true,
 			},
 		},
 	}
@@ -294,9 +336,43 @@ func TestFileManager(t *testing.T) {
 				filePtr.Close()
 			}
 			// list files using ListFilesWithPrefix
-			originalFileObject, err := fm.ListFilesWithPrefix(context.TODO(), "", "", 1000)
-			require.Equal(t, len(fileList), len(originalFileObject), "actual number of files different than expected")
-			require.NoError(t, err, "expected no error while listing files")
+			originalFileObject := make([]*filemanager.FileObject, 0)
+			originalFileNames := make(map[string]int)
+			fileListNames := make(map[string]int)
+			for i := 0; i < len(fileList); i++ {
+				files, err := fm.ListFilesWithPrefix(context.TODO(), "some-prefix/another-prefix1/another-prefix2/", "", 1)
+				require.NoError(t, err, "expected no error while listing files")
+				require.Equal(t, 1, len(files), "number of files should be 1")
+				originalFileObject = append(originalFileObject, files[0])
+				originalFileNames[files[0].Key]++
+				fileListNames[path.Join("some-prefix/another-prefix1/another-prefix2/", path.Base(fileList[i]))]++
+			}
+			require.Equal(t, len(originalFileObject), len(fileList), "actual number of files different than expected")
+			for fileListName, count := range fileListNames {
+				require.Equal(t, count, originalFileNames[fileListName], "files different than expected when listed")
+			}
+
+			tempFm, err := fmFactory.New(&filemanager.SettingsT{
+				Provider: tt.destName,
+				Config:   tt.config,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			iteratorMap := make(map[string]int)
+			iteratorCount := 0
+			iter := filemanager.IterateFilesWithPrefix(context.TODO(), "some-prefix/another-prefix1/another-prefix2/", "", int64(len(fileList)), &tempFm)
+			for iter.Next() {
+				iteratorFile := iter.Get().Key
+				iteratorMap[iteratorFile]++
+				iteratorCount++
+			}
+			require.NoError(t, iter.Err(), "no error expected while iterating files")
+			require.Equal(t, len(fileList), iteratorCount, "actual number of files different than expected")
+			for fileListName, count := range fileListNames {
+				require.Equal(t, count, iteratorMap[fileListName], "files different than expected when iterated")
+			}
 
 			// based on the obtained location, get object name by calling GetObjectNameFromLocation
 			objectName, err := fm.GetObjectNameFromLocation(uploadOutputs[0].Location)
@@ -416,6 +492,12 @@ func TestFileManager(t *testing.T) {
 				cancel()
 				_, err = fm.ListFilesWithPrefix(ctx1, "", "", 1000)
 				require.Error(t, err, "expected error while listing files")
+
+				iter := filemanager.IterateFilesWithPrefix(ctx1, "", "", 1000, &fm)
+				next := iter.Next()
+				require.Equal(t, false, next, "next should be false when context is cancelled")
+				err = iter.Err()
+				require.Error(t, err, "expected error while iterating files")
 			}
 		})
 

@@ -1,7 +1,6 @@
 package utils
 
 import (
-	"encoding/base64"
 	"strings"
 	"time"
 
@@ -20,6 +19,12 @@ var (
 
 const (
 	DRAIN_ERROR_CODE int = 410
+	// transformation(router or batch)
+	ERROR_AT_TF = "transformation"
+	// event delivery
+	ERROR_AT_DEL = "delivery"
+	// custom destination manager
+	ERROR_AT_CUST = "custom"
 )
 
 type BatchDestinationT struct {
@@ -74,7 +79,7 @@ func ToBeDrained(job *jobsdb.JobT, destID, toAbortDestinationIDs string, destina
 
 	if toAbortDestinationIDs != "" {
 		abortIDs := strings.Split(toAbortDestinationIDs, ",")
-		if misc.ContainsString(abortIDs, destID) {
+		if misc.Contains(abortIDs, destID) {
 			return true, "destination configured to abort"
 		}
 	}
@@ -108,11 +113,6 @@ func GetAuthType(dest backendconfig.DestinationT) (authType string) {
 		return ""
 	}
 	return authType
-}
-
-func BasicAuth(username, password string) string {
-	auth := username + ":" + password
-	return base64.StdEncoding.EncodeToString([]byte(auth))
 }
 
 func GetRudderAccountId(destination *backendconfig.DestinationT) string {

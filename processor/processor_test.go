@@ -32,7 +32,6 @@ import (
 	"github.com/rudderlabs/rudder-server/processor/transformer"
 	"github.com/rudderlabs/rudder-server/services/dedup"
 	"github.com/rudderlabs/rudder-server/services/rsources"
-	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/services/transientsource"
 	"github.com/rudderlabs/rudder-server/utils/bytesize"
 	"github.com/rudderlabs/rudder-server/utils/logger"
@@ -78,7 +77,7 @@ func (c *testContext) Setup() {
 		DoAndReturn(func(ctx context.Context, topic backendconfig.Topic) pubsub.DataChannel {
 			tFunc()
 			ch := make(chan pubsub.DataEvent, 1)
-			ch <- pubsub.DataEvent{Data: sampleBackendConfig, Topic: string(topic)}
+			ch <- pubsub.DataEvent{Data: map[string]backendconfig.ConfigT{sampleWorkspaceID: sampleBackendConfig}, Topic: string(topic)}
 			c.configInitialised = true
 
 			go func() {
@@ -139,8 +138,11 @@ func setMainLoopTimeout(timeout time.Duration) {
 	mainLoopTimeout = timeout
 }
 
+var sampleWorkspaceID = "some-workspace-id"
+
 // This configuration is assumed by all processor tests and, is returned on Subscribe of mocked backend config
 var sampleBackendConfig = backendconfig.ConfigT{
+	WorkspaceID: sampleWorkspaceID,
 	Sources: []backendconfig.SourceT{
 		{
 			ID:       SourceIDDisabled,
@@ -305,8 +307,8 @@ var sampleBackendConfig = backendconfig.ConfigT{
 }
 
 func initProcessor() {
-	config.Load()
-	logger.Init()
+	config.Reset()
+	logger.Reset()
 	stash.Init()
 	admin.Init()
 	dedup.Init()
@@ -325,9 +327,6 @@ var _ = Describe("Processor", func() {
 
 		c = &testContext{}
 		c.Setup()
-
-		// setup static requirements of dependencies
-		stats.Setup()
 
 		setEnableEventSchemasFeature(false)
 	})
@@ -537,7 +536,7 @@ var _ = Describe("Processor", func() {
 				Expect(string(job.Parameters)).To(Equal(`{"source_id":"source-from-transformer","destination_id":"destination-from-transformer","received_at":"","transform_at":"processor","message_id":"","gateway_job_id":0,"source_batch_id":"","source_task_id":"","source_task_run_id":"","source_job_id":"","source_job_run_id":"","event_name":"","event_type":"","source_definition_id":"","destination_definition_id":"","source_category":"","record_id":null,"workspaceId":""}`))
 			}
 			// One Store call is expected for all events
-			c.mockRouterJobsDB.EXPECT().WithStoreSafeTx(gomock.Any()).Times(1).Do(func(f func(tx jobsdb.StoreSafeTx) error) {
+			c.mockRouterJobsDB.EXPECT().WithStoreSafeTx(gomock.Any(), gomock.Any()).Times(1).Do(func(ctx context.Context, f func(tx jobsdb.StoreSafeTx) error) {
 				_ = f(jobsdb.EmptyStoreSafeTx())
 			}).Return(nil)
 
@@ -551,23 +550,21 @@ var _ = Describe("Processor", func() {
 
 			c.MockMultitenantHandle.EXPECT().ReportProcLoopAddStats(gomock.Any(), gomock.Any()).Times(1)
 
-			c.mockGatewayJobsDB.EXPECT().WithUpdateSafeTx(gomock.Any()).Do(func(f func(tx jobsdb.UpdateSafeTx) error) {
+			c.mockGatewayJobsDB.EXPECT().WithUpdateSafeTx(gomock.Any(), gomock.Any()).Do(func(ctx context.Context, f func(tx jobsdb.UpdateSafeTx) error) {
 				_ = f(jobsdb.EmptyUpdateSafeTx())
 			}).Return(nil).Times(1)
 			c.mockGatewayJobsDB.EXPECT().UpdateJobStatusInTx(gomock.Any(), gomock.Any(), gomock.Len(len(unprocessedJobsList)), gatewayCustomVal, nil).Times(1).After(callStoreRouter).
 				Do(func(ctx context.Context, txn jobsdb.UpdateSafeTx, statuses []*jobsdb.JobStatusT, _, _ interface{}) {
 					// jobs should be sorted by jobid, so order of statuses is different than order of jobs
 					for i := range unprocessedJobsList {
-						assertJobStatus(unprocessedJobsList[i], statuses[i], jobsdb.Succeeded.State, "200", `{"success":"OK"}`, 1)
+						assertJobStatus(unprocessedJobsList[i], statuses[i], jobsdb.Succeeded.State)
 					}
 				})
 			processor := &HandleT{
 				transformer: mockTransformer,
 			}
-			c.mockBackendConfig.EXPECT().GetWorkspaceIDForWriteKey(WriteKeyEnabledNoUT).Return(WorkspaceID).AnyTimes()
-			c.mockBackendConfig.EXPECT().GetWorkspaceLibrariesForWorkspaceID(WorkspaceID).Return(backendconfig.LibrariesT{}).AnyTimes()
 
-			processorSetupAndAssertJobHandling(processor, c, false, false)
+			processorSetupAndAssertJobHandling(processor, c)
 		})
 
 		It("should process unprocessed jobs to destination with only user transformation", func() {
@@ -737,7 +734,7 @@ var _ = Describe("Processor", func() {
 				Expect(string(job.Parameters)).To(Equal(`{"source_id":"source-from-transformer","destination_id":"destination-from-transformer","received_at":"","transform_at":"processor","message_id":"","gateway_job_id":0,"source_batch_id":"","source_task_id":"","source_task_run_id":"","source_job_id":"","source_job_run_id":"","event_name":"","event_type":"","source_definition_id":"","destination_definition_id":"","source_category":"","record_id":null,"workspaceId":""}`))
 			}
 
-			c.mockBatchRouterJobsDB.EXPECT().WithStoreSafeTx(gomock.Any()).Times(1).Do(func(f func(tx jobsdb.StoreSafeTx) error) {
+			c.mockBatchRouterJobsDB.EXPECT().WithStoreSafeTx(gomock.Any(), gomock.Any()).Times(1).Do(func(ctx context.Context, f func(tx jobsdb.StoreSafeTx) error) {
 				_ = f(jobsdb.EmptyStoreSafeTx())
 			}).Return(nil)
 			callStoreBatchRouter := c.mockBatchRouterJobsDB.EXPECT().StoreInTx(gomock.Any(), gomock.Any(), gomock.Any()).Times(1).
@@ -750,23 +747,21 @@ var _ = Describe("Processor", func() {
 
 			c.MockMultitenantHandle.EXPECT().ReportProcLoopAddStats(gomock.Any(), gomock.Any()).Times(1)
 
-			c.mockGatewayJobsDB.EXPECT().WithUpdateSafeTx(gomock.Any()).Do(func(f func(tx jobsdb.UpdateSafeTx) error) {
+			c.mockGatewayJobsDB.EXPECT().WithUpdateSafeTx(gomock.Any(), gomock.Any()).Do(func(ctx context.Context, f func(tx jobsdb.UpdateSafeTx) error) {
 				_ = f(jobsdb.EmptyUpdateSafeTx())
 			}).Return(nil).Times(1)
 			c.mockGatewayJobsDB.EXPECT().UpdateJobStatusInTx(gomock.Any(), gomock.Any(), gomock.Len(len(unprocessedJobsList)), gatewayCustomVal, nil).Times(1).After(callStoreBatchRouter).
 				Do(func(ctx context.Context, txn jobsdb.UpdateSafeTx, statuses []*jobsdb.JobStatusT, _, _ interface{}) {
 					for i := range unprocessedJobsList {
-						assertJobStatus(unprocessedJobsList[i], statuses[i], jobsdb.Succeeded.State, "200", `{"success":"OK"}`, 1)
+						assertJobStatus(unprocessedJobsList[i], statuses[i], jobsdb.Succeeded.State)
 					}
 				})
-			c.mockBackendConfig.EXPECT().GetWorkspaceIDForWriteKey(WriteKeyEnabledOnlyUT).Return(WorkspaceID).AnyTimes()
-			c.mockBackendConfig.EXPECT().GetWorkspaceLibrariesForWorkspaceID(WorkspaceID).Return(backendconfig.LibrariesT{}).AnyTimes()
 
 			processor := &HandleT{
 				transformer: mockTransformer,
 			}
 
-			processorSetupAndAssertJobHandling(processor, c, false, false)
+			processorSetupAndAssertJobHandling(processor, c)
 		})
 
 		It("should process unprocessed jobs to destination without user transformation with enabled Dedup", func() {
@@ -842,22 +837,21 @@ var _ = Describe("Processor", func() {
 			// We expect one transform call to destination A, after callUnprocessed.
 			mockTransformer.EXPECT().Transform(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Times(0).After(callUnprocessed)
 			// One Store call is expected for all events
-			c.mockRouterJobsDB.EXPECT().WithStoreSafeTx(gomock.Any()).Do(func(f func(tx jobsdb.StoreSafeTx) error) {
+			c.mockRouterJobsDB.EXPECT().WithStoreSafeTx(gomock.Any(), gomock.Any()).Do(func(ctx context.Context, f func(tx jobsdb.StoreSafeTx) error) {
 				_ = f(jobsdb.EmptyStoreSafeTx())
 			}).Return(nil).Times(1)
 			callStoreRouter := c.mockRouterJobsDB.EXPECT().StoreInTx(gomock.Any(), gomock.Any(), gomock.Len(2)).Times(1)
 
 			c.MockMultitenantHandle.EXPECT().ReportProcLoopAddStats(gomock.Any(), gomock.Any()).Times(1)
 
-			c.mockGatewayJobsDB.EXPECT().WithUpdateSafeTx(gomock.Any()).Do(func(f func(tx jobsdb.UpdateSafeTx) error) {
+			c.mockGatewayJobsDB.EXPECT().WithUpdateSafeTx(gomock.Any(), gomock.Any()).Do(func(ctx context.Context, f func(tx jobsdb.UpdateSafeTx) error) {
 				_ = f(jobsdb.EmptyUpdateSafeTx())
 			}).Return(nil).Times(1)
 			c.mockGatewayJobsDB.EXPECT().UpdateJobStatusInTx(gomock.Any(), gomock.Any(), gomock.Len(len(unprocessedJobsList)), gatewayCustomVal, nil).Times(1).After(callStoreRouter)
 			processor := &HandleT{
 				transformer: mockTransformer,
 			}
-			c.mockBackendConfig.EXPECT().GetWorkspaceIDForWriteKey(WriteKeyEnabled).Return(WorkspaceID).AnyTimes()
-			c.mockBackendConfig.EXPECT().GetWorkspaceLibrariesForWorkspaceID(WorkspaceID).Return(backendconfig.LibrariesT{}).AnyTimes()
+
 			Setup(processor, c, true, false)
 			processor.dedupHandler = c.MockDedup
 			processor.multitenantI = c.MockMultitenantHandle
@@ -920,7 +914,7 @@ var _ = Describe("Processor", func() {
 				},
 			}
 
-			assertErrStoreJob := func(job *jobsdb.JobT, i int, destination string) {
+			assertErrStoreJob := func(job *jobsdb.JobT, i int) {
 				Expect(job.UUID.String()).To(testutils.BeValidUUID())
 				Expect(job.JobID).To(Equal(int64(0)))
 				Expect(job.CreatedAt).To(BeTemporally("~", time.Now(), 200*time.Millisecond))
@@ -969,13 +963,13 @@ var _ = Describe("Processor", func() {
 
 			c.MockMultitenantHandle.EXPECT().ReportProcLoopAddStats(gomock.Any(), gomock.Any()).Times(0)
 
-			c.mockGatewayJobsDB.EXPECT().WithUpdateSafeTx(gomock.Any()).Do(func(f func(tx jobsdb.UpdateSafeTx) error) {
+			c.mockGatewayJobsDB.EXPECT().WithUpdateSafeTx(gomock.Any(), gomock.Any()).Do(func(ctx context.Context, f func(tx jobsdb.UpdateSafeTx) error) {
 				_ = f(jobsdb.EmptyUpdateSafeTx())
 			}).Return(nil).Times(1)
 			c.mockGatewayJobsDB.EXPECT().UpdateJobStatusInTx(gomock.Any(), gomock.Any(), gomock.Len(len(unprocessedJobsList)), gatewayCustomVal, nil).Times(1).
 				Do(func(ctx context.Context, txn jobsdb.UpdateSafeTx, statuses []*jobsdb.JobStatusT, _, _ interface{}) {
 					// job should be marked as successful regardless of transformer response
-					assertJobStatus(unprocessedJobsList[0], statuses[0], jobsdb.Succeeded.State, "200", `{"success":"OK"}`, 1)
+					assertJobStatus(unprocessedJobsList[0], statuses[0], jobsdb.Succeeded.State)
 				})
 
 			// will be used to save failed events to failed keys table
@@ -988,17 +982,15 @@ var _ = Describe("Processor", func() {
 				Do(func(ctx context.Context, jobs []*jobsdb.JobT) {
 					Expect(jobs).To(HaveLen(2))
 					for i, job := range jobs {
-						assertErrStoreJob(job, i, "value-enabled-destination-a")
+						assertErrStoreJob(job, i)
 					}
 				})
-			c.mockBackendConfig.EXPECT().GetWorkspaceIDForWriteKey(WriteKeyEnabled).Return(WorkspaceID).AnyTimes()
-			c.mockBackendConfig.EXPECT().GetWorkspaceLibrariesForWorkspaceID(WorkspaceID).Return(backendconfig.LibrariesT{}).AnyTimes()
 
 			processor := &HandleT{
 				transformer: mockTransformer,
 			}
 
-			processorSetupAndAssertJobHandling(processor, c, false, false)
+			processorSetupAndAssertJobHandling(processor, c)
 		})
 
 		It("messages should be skipped on user transform failures, without failing the job", func() {
@@ -1104,13 +1096,13 @@ var _ = Describe("Processor", func() {
 
 			c.MockMultitenantHandle.EXPECT().ReportProcLoopAddStats(gomock.Any(), gomock.Any()).Times(0)
 
-			c.mockGatewayJobsDB.EXPECT().WithUpdateSafeTx(gomock.Any()).Do(func(f func(tx jobsdb.UpdateSafeTx) error) {
+			c.mockGatewayJobsDB.EXPECT().WithUpdateSafeTx(gomock.Any(), gomock.Any()).Do(func(ctx context.Context, f func(tx jobsdb.UpdateSafeTx) error) {
 				_ = f(jobsdb.EmptyUpdateSafeTx())
 			}).Return(nil).Times(1)
 			c.mockGatewayJobsDB.EXPECT().UpdateJobStatusInTx(gomock.Any(), gomock.Any(), gomock.Len(len(toRetryJobsList)+len(unprocessedJobsList)), gatewayCustomVal, nil).Times(1).
 				Do(func(ctx context.Context, txn jobsdb.UpdateSafeTx, statuses []*jobsdb.JobStatusT, _, _ interface{}) {
 					// job should be marked as successful regardless of transformer response
-					assertJobStatus(unprocessedJobsList[0], statuses[0], jobsdb.Succeeded.State, "200", `{"success":"OK"}`, 1)
+					assertJobStatus(unprocessedJobsList[0], statuses[0], jobsdb.Succeeded.State)
 				})
 
 			c.mockProcErrorsDB.EXPECT().WithTx(gomock.Any()).Do(func(f func(tx *sql.Tx) error) {
@@ -1125,14 +1117,12 @@ var _ = Describe("Processor", func() {
 						assertErrStoreJob(job)
 					}
 				})
-			c.mockBackendConfig.EXPECT().GetWorkspaceIDForWriteKey(WriteKeyEnabled).Return(WorkspaceID).AnyTimes()
-			c.mockBackendConfig.EXPECT().GetWorkspaceLibrariesForWorkspaceID(WorkspaceID).Return(backendconfig.LibrariesT{}).AnyTimes()
 
 			processor := &HandleT{
 				transformer: mockTransformer,
 			}
 
-			processorSetupAndAssertJobHandling(processor, c, false, false)
+			processorSetupAndAssertJobHandling(processor, c)
 		})
 
 		It("should drop messages that the destination doesn't support", func() {
@@ -1184,13 +1174,13 @@ var _ = Describe("Processor", func() {
 
 			c.MockMultitenantHandle.EXPECT().ReportProcLoopAddStats(gomock.Any(), gomock.Any()).Times(0)
 
-			c.mockGatewayJobsDB.EXPECT().WithUpdateSafeTx(gomock.Any()).Do(func(f func(tx jobsdb.UpdateSafeTx) error) {
+			c.mockGatewayJobsDB.EXPECT().WithUpdateSafeTx(gomock.Any(), gomock.Any()).Do(func(ctx context.Context, f func(tx jobsdb.UpdateSafeTx) error) {
 				_ = f(jobsdb.EmptyUpdateSafeTx())
 			}).Return(nil).Times(1)
 			c.mockGatewayJobsDB.EXPECT().UpdateJobStatusInTx(gomock.Any(), gomock.Any(), gomock.Len(len(toRetryJobsList)+len(unprocessedJobsList)), gatewayCustomVal, nil).Times(1).
 				Do(func(ctx context.Context, txn jobsdb.UpdateSafeTx, statuses []*jobsdb.JobStatusT, _, _ interface{}) {
 					// job should be marked as successful regardless of transformer response
-					assertJobStatus(unprocessedJobsList[0], statuses[0], jobsdb.Succeeded.State, "200", `{"success":"OK"}`, 1)
+					assertJobStatus(unprocessedJobsList[0], statuses[0], jobsdb.Succeeded.State)
 				})
 
 			c.mockProcErrorsDB.EXPECT().WithTx(gomock.Any()).Do(func(f func(tx *sql.Tx) error) {
@@ -1200,14 +1190,12 @@ var _ = Describe("Processor", func() {
 			// One Store call is expected for all events
 			c.mockProcErrorsDB.EXPECT().Store(gomock.Any(), gomock.Any()).Times(0).
 				Do(func(ctx context.Context, jobs []*jobsdb.JobT) {})
-			c.mockBackendConfig.EXPECT().GetWorkspaceIDForWriteKey(WriteKeyEnabledNoUT2).Return(WorkspaceID).AnyTimes()
-			c.mockBackendConfig.EXPECT().GetWorkspaceLibrariesForWorkspaceID(WorkspaceID).Return(backendconfig.LibrariesT{}).AnyTimes()
 
 			processor := &HandleT{
 				transformer: mockTransformer,
 			}
 
-			processorSetupAndAssertJobHandling(processor, c, false, false)
+			processorSetupAndAssertJobHandling(processor, c)
 		})
 	})
 
@@ -1877,14 +1865,11 @@ func createBatchParameters(sourceId string) []byte {
 	return []byte(fmt.Sprintf(`{"source_id":%q}`, sourceId))
 }
 
-func assertJobStatus(job *jobsdb.JobT, status *jobsdb.JobStatusT, expectedState, errorCode, errorResponse string, attemptNum int) {
+func assertJobStatus(job *jobsdb.JobT, status *jobsdb.JobStatusT, expectedState string) {
 	Expect(status.JobID).To(Equal(job.JobID))
 	Expect(status.JobState).To(Equal(expectedState))
-	Expect(status.ErrorCode).To(Equal(errorCode))
-	Expect(status.ErrorResponse).To(MatchJSON(errorResponse))
 	Expect(status.RetryTime).To(BeTemporally("~", time.Now(), 200*time.Millisecond))
 	Expect(status.ExecTime).To(BeTemporally("~", time.Now(), 200*time.Millisecond))
-	Expect(status.AttemptNum).To(Equal(attemptNum))
 }
 
 func assertReportMetric(expectedMetric, actualMetric []*types.PUReportedMetric) {
@@ -2031,8 +2016,8 @@ func assertDestinationTransform(messages map[string]mockEventData, sourceId, des
 	}
 }
 
-func processorSetupAndAssertJobHandling(processor *HandleT, c *testContext, enableDedup, enableReporting bool) {
-	Setup(processor, c, enableDedup, enableReporting)
+func processorSetupAndAssertJobHandling(processor *HandleT, c *testContext) {
+	Setup(processor, c, false, false)
 	processor.multitenantI = c.MockMultitenantHandle
 	handlePendingGatewayJobs(processor)
 }

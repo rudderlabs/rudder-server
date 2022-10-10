@@ -1,38 +1,44 @@
-.PHONY: help default build run run-dev test mocks prepare-build
+.PHONY: help default build run run-mt test test-run test-teardown mocks
 
 GO=go
 GINKGO=ginkgo
 LDFLAGS?=-s -w
+TESTFILE=_testok
 
 default: build
 
 mocks: install-tools ## Generate all mocks
 	$(GO) generate ./...
 
-test: ## Run all unit tests
+test: test-run test-teardown
+
+test-run: ## Run all unit tests
+	$(eval TEST_CMD = SLOW=0 go test)
+	$(eval TEST_OPTIONS = -p=1 -v -failfast -shuffle=on -coverprofile=profile.out -covermode=atomic -vet=all --timeout=15m)
 ifdef package
-	SLOW=0 $(GINKGO) -p --randomize-all --randomize-suites --fail-on-pending --cover  \
-		-coverprofile=profile.out -covermode=atomic --trace -keep-separate-coverprofiles $(package)
+	$(TEST_CMD) $(TEST_OPTIONS) $(package) && touch $(TESTFILE) || true
 else
-	SLOW=0 $(GINKGO) -p --randomize-all --randomize-suites --fail-on-pending --cover  \
-		-coverprofile=profile.out -covermode=atomic --trace -keep-separate-coverprofiles ./...
+	$(TEST_CMD) -count=1 $(TEST_OPTIONS) ./... && touch $(TESTFILE) || true
 endif
-	echo "mode: atomic" > coverage.txt
-	find . -name "profile.out" | while read file;do grep -v 'mode: atomic' $${file} >> coverage.txt; rm $${file};done
+
+test-teardown:
+	@if [ -f "$(TESTFILE)" ]; then \
+    	echo "Tests passed, tearing down..." ;\
+		rm -f $(TESTFILE) ;\
+		echo "mode: atomic" > coverage.txt ;\
+		find . -name "profile.out" | while read file; do grep -v 'mode: atomic' $${file} >> coverage.txt; rm -f $${file}; done ;\
+	else \
+    	rm -f coverage.txt coverage.html ; find . -name "profile.out" | xargs rm -f ;\
+		echo "Tests failed :-(" ;\
+		exit 1 ;\
+	fi
 
 coverage:
 	go tool cover -html=coverage.txt -o coverage.html
 
 test-with-coverage: test coverage
 
-build-sql-migrations: ./services/sql-migrator/migrations_vfsdata.go ## Prepare sql migrations embedded scripts
-
-prepare-build: build-sql-migrations
-
-./services/sql-migrator/migrations_vfsdata.go: $(shell find sql/migrations)
-	$(GO) run -tags=dev cmd/generate-migrations/generate-sql-migrations.go
-
-build: prepare-build ## Build rudder-server binary
+build: ## Build rudder-server binary
 	$(eval BUILD_OPTIONS = )
 ifeq ($(RACE_ENABLED), TRUE)
 	$(eval BUILD_OPTIONS = $(BUILD_OPTIONS) -race -o rudder-server-with-race)
@@ -41,11 +47,13 @@ endif
 	$(GO) build -o build/wait-for-go/wait-for-go build/wait-for-go/wait-for.go
 	$(GO) build -o build/regulation-worker ./regulation-worker/cmd/
 
-run: prepare-build ## Run rudder-server using go run
+run: ## Run rudder-server using go run
 	$(GO) run main.go
 
-run-dev: prepare-build ## Run rudder-server using go run with 'dev' build tag
-	$(GO) run -tags=dev main.go
+run-mt: ## Run rudder-server in multi-tenant deployment type
+	$(GO) run ./cmd/devtool etcd mode --no-wait normal 
+	$(GO) run ./cmd/devtool etcd workspaces --no-wait none
+	DEPLOYMENT_TYPE=MULTITENANT $(GO) run main.go
 
 help: ## Show the available commands
 	@grep -E '^[0-9a-zA-Z_-]+:.*?## .*$$' ./Makefile | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-30s\033[0m %s\n", $$1, $$2}'
@@ -57,13 +65,13 @@ install-tools:
 
 	go install mvdan.cc/gofumpt@latest
 
-.PHONY: lint
-lint: fmt
-	docker run --rm -v $(shell pwd):/app:ro -w /app golangci/golangci-lint:v1.46.2 bash -e -c \
+.PHONY: lint 
+lint: fmt ## Run linters on all go files
+	docker run --rm -v $(shell pwd):/app:ro -w /app golangci/golangci-lint:v1.49.0 bash -e -c \
 		'golangci-lint run -v --timeout 5m'
 
-.PHONY: fmt
-fmt: install-tools
+.PHONY: fmt 
+fmt: install-tools ## Formats all go files
 	gofumpt -l -w -extra  .
 
 cleanup-warehouse-integration:

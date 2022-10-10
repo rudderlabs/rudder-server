@@ -25,7 +25,7 @@ import (
 
 var (
 	stagingTablePrefix              string
-	pkgLogger                       logger.LoggerI
+	pkgLogger                       logger.Logger
 	skipComputingUserLatestTraits   bool
 	enableSQLStatementExecutionPlan bool
 	txnRollbackTimeout              time.Duration
@@ -171,7 +171,7 @@ func ColumnsWithDataTypes(columns map[string]string, prefix string) string {
 	return strings.Join(arr, ",")
 }
 
-func (bq *HandleT) IsEmpty(warehouse warehouseutils.WarehouseT) (empty bool, err error) {
+func (*HandleT) IsEmpty(_ warehouseutils.WarehouseT) (empty bool, err error) {
 	return
 }
 
@@ -184,6 +184,7 @@ func (pg *HandleT) DownloadLoadFiles(tableName string) ([]string, error) {
 			Provider:         storageProvider,
 			Config:           pg.Warehouse.Destination.Config,
 			UseRudderStorage: pg.Uploader.UseRudderStorage(),
+			WorkspaceID:      pg.Warehouse.Destination.WorkspaceID,
 		}),
 	})
 	if err != nil {
@@ -230,7 +231,7 @@ func (pg *HandleT) DownloadLoadFiles(tableName string) ([]string, error) {
 }
 
 func handleRollbackTimeout(tags map[string]string) {
-	stats.NewTaggedStat("pg_rollback_timeout", stats.CountType, tags).Count(1)
+	stats.Default.NewTaggedStat("pg_rollback_timeout", stats.CountType, tags).Count(1)
 }
 
 func runRollbackWithTimeout(f func() error, onTimeout func(map[string]string), d time.Duration, tags map[string]string) {
@@ -396,9 +397,9 @@ func (pg *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 	}
 
 	quotedColumnNames := warehouseutils.DoubleQuoteAndJoinByComma(sortedColumnKeys)
-	sqlStatement = fmt.Sprintf(`INSERT INTO "%[1]s"."%[2]s" (%[3]s) 
-									SELECT %[3]s FROM ( 
-										SELECT *, row_number() OVER (PARTITION BY %[5]s ORDER BY received_at DESC) AS _rudder_staging_row_number FROM "%[1]s"."%[4]s" 
+	sqlStatement = fmt.Sprintf(`INSERT INTO "%[1]s"."%[2]s" (%[3]s)
+									SELECT %[3]s FROM (
+										SELECT *, row_number() OVER (PARTITION BY %[5]s ORDER BY received_at DESC) AS _rudder_staging_row_number FROM "%[1]s"."%[4]s"
 									) AS _ where _rudder_staging_row_number = 1
 									`, pg.Namespace, tableName, quotedColumnNames, stagingTableName, partitionKey)
 	pkgLogger.Infof("PG: Inserting records for table:%s using staging table: %s\n", tableName, sqlStatement)
@@ -559,7 +560,7 @@ func (pg *HandleT) loadUserTables() (errorMap map[string]error) {
 	return
 }
 
-func (pg *HandleT) schemaExists(schemaname string) (exists bool, err error) {
+func (pg *HandleT) schemaExists(_ string) (exists bool, err error) {
 	sqlStatement := fmt.Sprintf(`SELECT EXISTS (SELECT 1 FROM pg_catalog.pg_namespace WHERE nspname = '%s');`, pg.Namespace)
 	err = pg.Db.QueryRow(sqlStatement).Scan(&exists)
 	return
@@ -635,7 +636,7 @@ func (pg *HandleT) AddColumn(tableName, columnName, columnType string) (err erro
 	return err
 }
 
-func (pg *HandleT) AlterColumn(tableName, columnName, columnType string) (err error) {
+func (*HandleT) AlterColumn(_, _, _ string) (err error) {
 	return
 }
 
@@ -733,7 +734,21 @@ func (pg *HandleT) FetchSchema(warehouse warehouseutils.WarehouseT) (schema ware
 	defer dbHandle.Close()
 
 	schema = make(warehouseutils.SchemaT)
-	sqlStatement := fmt.Sprintf(`select t.table_name, c.column_name, c.data_type from INFORMATION_SCHEMA.TABLES t LEFT JOIN INFORMATION_SCHEMA.COLUMNS c ON (t.table_name = c.table_name and t.table_schema = c.table_schema) WHERE t.table_schema = '%s' and t.table_name not like '%s%s'`, pg.Namespace, stagingTablePrefix, "%")
+	sqlStatement := fmt.Sprintf(`
+		SELECT
+		  table_name,
+		  column_name,
+		  data_type
+		FROM
+		  INFORMATION_SCHEMA.COLUMNS
+		WHERE
+		  table_schema = '%s'
+		  AND table_name NOT LIKE '%s%s'
+	`,
+		pg.Namespace,
+		stagingTablePrefix,
+		"%",
+	)
 
 	rows, err := dbHandle.Query(sqlStatement)
 	if err != nil && err != sql.ErrNoRows {
@@ -782,15 +797,15 @@ func (pg *HandleT) Cleanup() {
 	}
 }
 
-func (pg *HandleT) LoadIdentityMergeRulesTable() (err error) {
+func (*HandleT) LoadIdentityMergeRulesTable() (err error) {
 	return
 }
 
-func (pg *HandleT) LoadIdentityMappingsTable() (err error) {
+func (*HandleT) LoadIdentityMappingsTable() (err error) {
 	return
 }
 
-func (pg *HandleT) DownloadIdentityRules(*misc.GZipWriter) (err error) {
+func (*HandleT) DownloadIdentityRules(*misc.GZipWriter) (err error) {
 	return
 }
 
@@ -825,7 +840,7 @@ func (pg *HandleT) Connect(warehouse warehouseutils.WarehouseT) (client.Client, 
 	return client.Client{Type: client.SQLClient, SQL: dbHandle}, err
 }
 
-func (pg *HandleT) LoadTestTable(location, tableName string, payloadMap map[string]interface{}, format string) (err error) {
+func (pg *HandleT) LoadTestTable(_, tableName string, payloadMap map[string]interface{}, _ string) (err error) {
 	sqlStatement := fmt.Sprintf(`INSERT INTO %q.%q (%v) VALUES (%s)`,
 		pg.Namespace,
 		tableName,

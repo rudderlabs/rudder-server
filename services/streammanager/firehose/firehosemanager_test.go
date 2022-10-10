@@ -11,6 +11,7 @@ import (
 	"github.com/aws/aws-sdk-go/service/firehose"
 
 	"github.com/golang/mock/gomock"
+	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	mock_firehose "github.com/rudderlabs/rudder-server/mocks/services/streammanager/firehose"
 
 	mock_logger "github.com/rudderlabs/rudder-server/mocks/utils/logger"
@@ -29,8 +30,12 @@ func TestNewProducer(t *testing.T) {
 		"IAMRoleARN": "sampleRoleArn",
 		"ExternalID": "sampleExternalID",
 	}
+	destination := backendconfig.DestinationT{
+		Config:      destinationConfig,
+		WorkspaceID: "sampleWorkspaceID",
+	}
 	timeOut := 10 * time.Second
-	producer, err := NewProducer(destinationConfig, common.Opts{Timeout: timeOut})
+	producer, err := NewProducer(&destination, common.Opts{Timeout: timeOut})
 	assert.Nil(t, err)
 	assert.NotNil(t, producer)
 	assert.NotNil(t, producer.client)
@@ -98,7 +103,7 @@ func TestProduceWithServiceResponse(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	mockClient := mock_firehose.NewMockFireHoseClient(ctrl)
 	producer := &FireHoseProducer{client: mockClient}
-	mockLogger := mock_logger.NewMockLoggerI(ctrl)
+	mockLogger := mock_logger.NewMockLogger(ctrl)
 	pkgLogger = mockLogger
 
 	sampleEventJson, _ := json.Marshal(map[string]string{

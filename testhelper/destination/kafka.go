@@ -8,7 +8,7 @@ import (
 	_ "github.com/lib/pq"
 	"github.com/ory/dockertest/v3"
 	dc "github.com/ory/dockertest/v3/docker"
-	"github.com/phayes/freeport"
+	"github.com/rudderlabs/rudder-server/testhelper"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -120,6 +120,7 @@ func (k *KafkaResource) Destroy() error {
 }
 
 func SetupKafka(pool *dockertest.Pool, cln cleaner, opts ...Option) (*KafkaResource, error) {
+	// lock so no two tests can run at the same time and try to listen on the same port
 	var c config
 	for _, opt := range opts {
 		opt.apply(&c)
@@ -136,7 +137,7 @@ func SetupKafka(pool *dockertest.Pool, cln cleaner, opts ...Option) (*KafkaResou
 		}
 	})
 
-	zookeeperPortInt, err := freeport.GetFreePort()
+	zookeeperPortInt, err := testhelper.GetFreePort()
 	if err != nil {
 		return nil, err
 	}
@@ -245,7 +246,7 @@ func SetupKafka(pool *dockertest.Pool, cln cleaner, opts ...Option) (*KafkaResou
 	containers := make([]*dockertest.Resource, c.brokers)
 	for i := uint(0); i < c.brokers; i++ {
 		i := i
-		localhostPortInt, err := freeport.GetFreePort()
+		localhostPortInt, err := testhelper.GetFreePort()
 		if err != nil {
 			return nil, err
 		}

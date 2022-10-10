@@ -35,7 +35,7 @@ func NewZip() ZipI {
 }
 
 // NewWriter returns a new Writer writing a zip file to w.
-func (iu *Zip) NewWriter(w io.Writer) *zip.Writer {
+func (*Zip) NewWriter(w io.Writer) *zip.Writer {
 	return zip.NewWriter(w)
 }
 
@@ -46,11 +46,11 @@ func (iu *Zip) NewWriter(w io.Writer) *zip.Writer {
 // of the returned header to provide the full path name of the file.
 // If compression is desired, callers should set the FileHeader.Method
 // field; it is unset by default.
-func (iu *Zip) FileInfoHeader(fi os.FileInfo) (*zip.FileHeader, error) {
+func (*Zip) FileInfoHeader(fi os.FileInfo) (*zip.FileHeader, error) {
 	return zip.FileInfoHeader(fi)
 }
 
 // OpenReader will open the Zip file specified by name and return a ReadCloser.
-func (iu *Zip) OpenReader(name string) (*zip.ReadCloser, error) {
+func (*Zip) OpenReader(name string) (*zip.ReadCloser, error) {
 	return zip.OpenReader(name)
 }

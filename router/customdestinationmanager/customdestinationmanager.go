@@ -3,6 +3,7 @@ package customdestinationmanager
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"reflect"
 	"sync"
@@ -30,7 +31,7 @@ var (
 	ObjectStreamDestinations    []string
 	KVStoreDestinations         []string
 	Destinations                []string
-	pkgLogger                   logger.LoggerI
+	pkgLogger                   logger.Logger
 	disableEgress               bool
 	skipBackendConfigSubscriber bool
 )
@@ -48,7 +49,7 @@ type CustomManagerT struct {
 
 	stateMu  sync.RWMutex // protecting all 4 maps below
 	config   map[string]backendconfig.DestinationT
-	breaker  map[string]breakerHolder
+	breaker  map[string]*breakerHolder
 	clientMu map[string]*sync.RWMutex
 	client   map[string]*clientHolder
 
@@ -59,13 +60,14 @@ type CustomManagerT struct {
 
 // clientHolder keeps the config of a destination and corresponding producer for a stream destination
 type clientHolder struct {
-	config interface{}
+	config map[string]interface{}
 	client interface{}
 }
 
 type breakerHolder struct {
-	config  map[string]interface{}
-	breaker *gobreaker.CircuitBreaker
+	config    map[string]interface{}
+	breaker   *gobreaker.CircuitBreaker
+	lastError error
 }
 
 func Init() {
@@ -82,7 +84,8 @@ func loadConfig() {
 
 // newClient delegates the call to the appropriate manager
 func (customManager *CustomManagerT) newClient(destID string) error {
-	destConfig := customManager.config[destID].Config
+	destination := customManager.config[destID]
+	destConfig := destination.Config
 	_, err := customManager.breaker[destID].breaker.Execute(func() (interface{}, error) {
 		var customDestination *clientHolder
 		var err error
@@ -90,7 +93,7 @@ func (customManager *CustomManagerT) newClient(destID string) error {
 		switch customManager.managerType {
 		case STREAM:
 			var producer interface{}
-			producer, err = streammanager.NewProducer(destConfig, customManager.destType, common.Opts{
+			producer, err = streammanager.NewProducer(&destination, common.Opts{
 				Timeout: customManager.timeout,
 			})
 			if err == nil {
@@ -110,20 +113,25 @@ func (customManager *CustomManagerT) newClient(destID string) error {
 		default:
 			return nil, fmt.Errorf("no provider configured for Custom Destination Manager")
 		}
+		customManager.breaker[destID].lastError = err
 		return nil, err
 	})
+	if errors.Is(err, gobreaker.ErrOpenState) && customManager.breaker[destID].lastError != nil {
+		return fmt.Errorf("%s, last error: %w", err, customManager.breaker[destID].lastError)
+	}
 	return err
 }
 
-func (customManager *CustomManagerT) send(jsonData json.RawMessage, destType string, client, config interface{}) (int, string) {
+func (customManager *CustomManagerT) send(jsonData json.RawMessage, client interface{}, config map[string]interface{}) (int, string) {
 	var statusCode int
 	var respBody string
 	switch customManager.managerType {
 	case STREAM:
-		statusCode, _, respBody = streammanager.Produce(jsonData, destType, client, config)
+		// If client is not properly initialized then it won't reach here
+		streamProducer, _ := client.(common.StreamProducer)
+		statusCode, _, respBody = streamProducer.Produce(jsonData, config)
 	case KV:
 		kvManager, _ := client.(kvstoremanager.KVStoreManager)
-
 		key, fields := kvstoremanager.EventToKeyValue(jsonData)
 		err := kvManager.HMSet(key, fields)
 		statusCode = kvManager.StatusCode(err)
@@ -169,7 +177,7 @@ func (customManager *CustomManagerT) SendData(jsonData json.RawMessage, destID s
 	}
 	clientLock.RUnlock()
 
-	respStatusCode, respBody := customManager.send(jsonData, customManager.destType, customDestination.client, customDestination.config)
+	respStatusCode, respBody := customManager.send(jsonData, customDestination.client, customDestination.config)
 
 	if respStatusCode == CLIENT_EXPIRED_CODE {
 		clientLock.Lock()
@@ -181,7 +189,7 @@ func (customManager *CustomManagerT) SendData(jsonData json.RawMessage, destID s
 		clientLock.RLock()
 		customDestination = customManager.client[destID]
 		clientLock.RUnlock()
-		respStatusCode, respBody = customManager.send(jsonData, customManager.destType, customDestination.client, customDestination.config)
+		respStatusCode, respBody = customManager.send(jsonData, customDestination.client, customDestination.config)
 	}
 
 	return respStatusCode, respBody
@@ -191,7 +199,8 @@ func (customManager *CustomManagerT) close(destID string) {
 	customDestination := customManager.client[destID]
 	switch customManager.managerType {
 	case STREAM:
-		_ = streammanager.Close(customDestination.client, customManager.destType)
+		streamProducer, _ := customDestination.client.(common.StreamProducer)
+		_ = streamProducer.Close()
 	case KV:
 		kvManager, _ := customDestination.client.(kvstoremanager.KVStoreManager)
 		_ = kvManager.Close()
@@ -206,7 +215,8 @@ func (customManager *CustomManagerT) refreshClient(destID string) error {
 		pkgLogger.Infof("[CDM %s] [Token Expired] Closing Existing client for destination id: %s", customManager.destType, destID)
 		switch customManager.managerType {
 		case STREAM:
-			_ = streammanager.Close(customDestination.client, customManager.destType)
+			streamProducer, _ := customDestination.client.(common.StreamProducer)
+			streamProducer.Close()
 		case KV:
 			kvManager, _ := customDestination.client.(kvstoremanager.KVStoreManager)
 			_ = kvManager.Close()
@@ -254,7 +264,7 @@ func (customManager *CustomManagerT) onConfigChange(destID string, newDestConfig
 			customManager.close(destID)
 		}
 	}
-	customManager.breaker[destID] = breakerHolder{
+	customManager.breaker[destID] = &breakerHolder{
 		config: newDestConfig,
 		breaker: gobreaker.NewCircuitBreaker(gobreaker.Settings{
 			Name:    destID,
@@ -275,10 +285,10 @@ type Opts struct {
 
 // New returns CustomdestinationManager
 func New(destType string, o Opts) DestinationManager {
-	if misc.ContainsString(Destinations, destType) {
+	if misc.Contains(Destinations, destType) {
 
 		managerType := STREAM
-		if misc.ContainsString(KVStoreDestinations, destType) {
+		if misc.Contains(KVStoreDestinations, destType) {
 			managerType = KV
 		}
 
@@ -289,7 +299,7 @@ func New(destType string, o Opts) DestinationManager {
 			client:                   make(map[string]*clientHolder),
 			clientMu:                 make(map[string]*sync.RWMutex),
 			config:                   make(map[string]backendconfig.DestinationT),
-			breaker:                  make(map[string]breakerHolder),
+			breaker:                  make(map[string]*breakerHolder),
 			backendConfigInitialized: make(chan struct{}),
 		}
 
@@ -314,17 +324,19 @@ func (customManager *CustomManagerT) BackendConfigInitialized() <-chan struct{} 
 func (customManager *CustomManagerT) backendConfigSubscriber() {
 	var once sync.Once
 	ch := backendconfig.DefaultBackendConfig.Subscribe(context.TODO(), "backendConfig")
-	for conf := range ch {
-		allSources := conf.Data.(backendconfig.ConfigT)
-		for _, source := range allSources.Sources {
-			for _, destination := range source.Destinations {
-				if destination.DestinationDefinition.Name == customManager.destType {
-					err := customManager.onNewDestination(destination)
-					if err != nil {
-						pkgLogger.Errorf(
-							"[CDM %s] Error while subscribing to BackendConfig for destination id: %s",
-							customManager.destType, destination.ID,
-						)
+	for data := range ch {
+		config := data.Data.(map[string]backendconfig.ConfigT)
+		for _, wConfig := range config {
+			for _, source := range wConfig.Sources {
+				for _, destination := range source.Destinations {
+					if destination.DestinationDefinition.Name == customManager.destType {
+						err := customManager.onNewDestination(destination)
+						if err != nil {
+							pkgLogger.Errorf(
+								"[CDM %s] Error while subscribing to BackendConfig for destination id: %s",
+								customManager.destType, destination.ID,
+							)
+						}
 					}
 				}
 			}

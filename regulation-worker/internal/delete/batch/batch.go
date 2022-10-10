@@ -63,7 +63,7 @@ func getDeleteManager(destName string) (*S3DeleteManager, error) {
 // NOTE: assuming that all of batch destination have same file system as S3, i.e. flat.
 func (b *Batch) listFiles(ctx context.Context) ([]*filemanager.FileObject, error) {
 	pkgLogger.Debugf("getting a list of files from destination")
-	fileObjects, err := b.FM.ListFilesWithPrefix(context.TODO(), "", "", listMaxItem)
+	fileObjects, err := b.FM.ListFilesWithPrefix(ctx, "", "", listMaxItem)
 	if err != nil {
 		pkgLogger.Errorf("error while getting list of files: %v", err)
 		return []*filemanager.FileObject{}, fmt.Errorf("failed to fetch object list from S3: %v", err)
@@ -130,7 +130,7 @@ func removeCleanedFiles(files []*filemanager.FileObject, cleanedFiles []string) 
 }
 
 // append <fileName> to <statusTrackerFile> locally for which deletion has completed.
-func (b *Batch) updateStatusTrackerFile(absStatusTrackerFileName, fileName string) error {
+func (*Batch) updateStatusTrackerFile(absStatusTrackerFileName, fileName string) error {
 	statusTrackerPtr, err := os.OpenFile(absStatusTrackerFileName, os.O_WRONLY|os.O_APPEND, 0o644)
 	if err != nil {
 		return fmt.Errorf("error while opening file, %w", err)
@@ -146,7 +146,7 @@ func (b *Batch) updateStatusTrackerFile(absStatusTrackerFileName, fileName strin
 
 // downloads `fileName` locally. And returns empty file, if file not found.
 // Note: download happens concurrently in 5 go routine by default.
-func (b *Batch) download(ctx context.Context, completeFileName string) (string, error) {
+func (b *Batch) download(_ context.Context, completeFileName string) (string, error) {
 	pkgLogger.Debugf("downloading file: %v", completeFileName)
 
 	tmpFilePathPrefix, err := os.MkdirTemp(b.TmpDirPath, "")
@@ -211,7 +211,7 @@ func (b *Batch) decompress(compressedFileName string) (string, error) {
 }
 
 // compress & write `cleanedBytes` of type []byte to `fileName`
-func (b *Batch) compress(fileName string, cleanedBytes []byte) error {
+func (*Batch) compress(fileName string, cleanedBytes []byte) error {
 	// compressing
 	var buffer bytes.Buffer
 	w := gzip.NewWriter(&buffer)
@@ -303,7 +303,7 @@ func uploadWithExpBackoff(ctx context.Context, fu func(ctx context.Context, uplo
 
 // replace old json.gz & statusTrackerFile with the new during upload.
 // Note: upload happens concurrently in 5 go routine by default
-func (b *Batch) upload(ctx context.Context, uploadFileAbsPath, actualFileName, absStatusTrackerFileName string) error {
+func (b *Batch) upload(_ context.Context, uploadFileAbsPath, actualFileName, absStatusTrackerFileName string) error {
 	pkgLogger.Debugf("uploading file")
 	fileNamePrefixes := strings.Split(actualFileName, "/")
 
@@ -338,7 +338,7 @@ func (b *Batch) upload(ctx context.Context, uploadFileAbsPath, actualFileName, a
 	return nil
 }
 
-func (b *Batch) createPatternFile(userAttributes []model.UserAttribute) (string, error) {
+func (b *Batch) createPatternFile(userAttributes []model.User) (string, error) {
 	pkgLogger.Debug("creating a file with pattern to be searched & deleted.")
 
 	searchObject := make([]byte, 0)
@@ -346,22 +346,8 @@ func (b *Batch) createPatternFile(userAttributes []model.UserAttribute) (string,
 	for _, users := range userAttributes {
 		searchObject = append(searchObject, "/"...)
 		searchObject = append(searchObject, "\"userId\": *\""...)
-		searchObject = append(searchObject, users.UserID...)
+		searchObject = append(searchObject, users.ID...)
 		searchObject = append(searchObject, "\"/d;"...)
-
-		if users.Email != nil {
-			searchObject = append(searchObject, "/"...)
-			searchObject = append(searchObject, "\"email\": *\""...)
-			searchObject = append(searchObject, []byte(*users.Email)...)
-			searchObject = append(searchObject, "\"/d;"...)
-		}
-
-		if users.Phone != nil {
-			searchObject = append(searchObject, "/"...)
-			searchObject = append(searchObject, "\"phone\": *\""...)
-			searchObject = append(searchObject, []byte(*users.Phone)...)
-			searchObject = append(searchObject, "\"/d;"...)
-		}
 	}
 
 	PatternFilePtr, err := os.CreateTemp(b.TmpDirPath, "")
@@ -385,7 +371,7 @@ type BatchManager struct {
 	FMFactory filemanager.FileManagerFactory
 }
 
-func (bm *BatchManager) GetSupportedDestinations() []string {
+func (*BatchManager) GetSupportedDestinations() []string {
 	return supportedDestinations
 }
 
@@ -423,7 +409,7 @@ func (bm *BatchManager) Delete(ctx context.Context, job model.Job, destConfig ma
 	defer batch.cleanup(destConfig["prefix"].(string))
 
 	// file with pattern to be searched & deleted from all downloaded files.
-	absPatternFile, err := batch.createPatternFile(job.UserAttributes)
+	absPatternFile, err := batch.createPatternFile(job.Users)
 	if err != nil {
 		pkgLogger.Errorf("error while creating pattern file: %v", err)
 		return model.JobStatusFailed
@@ -514,7 +500,7 @@ func (bm *BatchManager) Delete(ctx context.Context, job model.Job, destConfig ma
 
 		g, gCtx := errgroup.WithContext(ctx)
 
-		procAllocated, err := strconv.Atoi(config.GetEnv("GOMAXPROCS", "32"))
+		procAllocated, err := strconv.Atoi(config.GetString("GOMAXPROCS", "32"))
 		if err != nil {
 			pkgLogger.Errorf("error while getting maximum number of go routines to be created: %v", err)
 			return model.JobStatusFailed
@@ -529,7 +515,7 @@ func (bm *BatchManager) Delete(ctx context.Context, job model.Job, destConfig ma
 			goRoutineCount <- true
 			g.Go(func() error {
 				// TODO: add file size stats
-				fileCleaningTime := stats.NewTaggedStat("file_cleaning_time", stats.TimerType, stats.Tags{"jobId": fmt.Sprintf("%d", job.ID), "workspaceId": job.WorkspaceID, "destType": "batch", "destName": destName})
+				fileCleaningTime := stats.Default.NewTaggedStat("file_cleaning_time", stats.TimerType, stats.Tags{"jobId": fmt.Sprintf("%d", job.ID), "workspaceId": job.WorkspaceID, "destType": "batch", "destName": destName})
 				fileCleaningTime.Start()
 
 				defer func() {
@@ -543,7 +529,7 @@ func (bm *BatchManager) Delete(ctx context.Context, job model.Job, destConfig ma
 					return fmt.Errorf("error: %w, while downloading file:%s", err, files[_i].Key)
 				}
 
-				fileSizeStats := stats.NewTaggedStat("file_size_mb", stats.CountType, stats.Tags{"jobId": fmt.Sprintf("%d", job.ID)})
+				fileSizeStats := stats.Default.NewTaggedStat("file_size_mb", stats.CountType, stats.Tags{"jobId": fmt.Sprintf("%d", job.ID)})
 				fileSizeStats.Count(getFileSize(FileAbsPath))
 
 				getFileSize(FileAbsPath)

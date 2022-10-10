@@ -24,11 +24,11 @@ var (
 func loadConfig() {
 	config.RegisterDurationConfigVariable(300, &regulationsPollInterval, true, time.Second, "BackendConfig.Regulations.pollInterval")
 	config.RegisterIntConfigVariable(50, &suppressionApiPageSize, false, 1, "BackendConfig.Regulations.pageSize")
-	configBackendURL = config.GetEnv("CONFIG_BACKEND_URL", "https://api.rudderlabs.com")
+	configBackendURL = config.GetString("CONFIG_BACKEND_URL", "https://api.rudderlabs.com")
 }
 
 // Setup initializes Suppress User feature
-func (m *Factory) Setup(backendConfig backendconfig.BackendConfig) (types.SuppressUserI, error) {
+func (m *Factory) Setup(backendConfig backendconfig.BackendConfig) (types.UserSuppression, error) {
 	pkgLogger = logger.NewLogger().Child("enterprise").Child("suppress-user")
 
 	if m.EnterpriseToken == "" {
@@ -40,7 +40,7 @@ func (m *Factory) Setup(backendConfig backendconfig.BackendConfig) (types.Suppre
 	loadConfig()
 	ctx := context.TODO()
 	backendConfig.WaitForConfig(ctx)
-	workspaceId := backendConfig.GetWorkspaceIDForWriteKey("")
+	workspaceId := backendConfig.Identity().ID()
 	suppressUser := &SuppressRegulationHandler{
 		RegulationBackendURL:    configBackendURL,
 		RegulationsPollInterval: regulationsPollInterval,

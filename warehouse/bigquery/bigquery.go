@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
-	"sync"
 	"time"
 
 	"cloud.google.com/go/bigquery"
@@ -22,9 +21,7 @@ import (
 )
 
 var (
-	partitionExpiryUpdated                map[string]bool
-	partitionExpiryUpdatedLock            sync.RWMutex
-	pkgLogger                             logger.LoggerI
+	pkgLogger                             logger.Logger
 	setUsersLoadPartitionFirstEventFilter bool
 	stagingTablePrefix                    string
 	customPartitionsEnabled               bool
@@ -181,7 +178,7 @@ func (bq *HandleT) addColumn(tableName, columnName, columnType string) (err erro
 	return
 }
 
-func (bq *HandleT) schemaExists(schemaname, location string) (exists bool, err error) {
+func (bq *HandleT) schemaExists(_, _ string) (exists bool, err error) {
 	ds := bq.Db.Dataset(bq.Namespace)
 	_, err = ds.Metadata(bq.BQContext)
 	if err != nil {
@@ -254,7 +251,7 @@ func partitionedTable(tableName, partitionDate string) string {
 	return fmt.Sprintf(`%s$%v`, tableName, strings.ReplaceAll(partitionDate, "-", ""))
 }
 
-func (bq *HandleT) loadTable(tableName string, forceLoad, getLoadFileLocFromTableUploads, skipTempTableDelete bool) (stagingLoadTable StagingLoadTableT, err error) {
+func (bq *HandleT) loadTable(tableName string, _, getLoadFileLocFromTableUploads, skipTempTableDelete bool) (stagingLoadTable StagingLoadTableT, err error) {
 	pkgLogger.Infof("BQ: Starting load for table:%s\n", tableName)
 	var loadFiles []warehouseutils.LoadFileT
 	if getLoadFileLocFromTableUploads {
@@ -626,7 +623,6 @@ func (bq *HandleT) connect(cred BQCredentialsT) (*bigquery.Client, error) {
 }
 
 func loadConfig() {
-	partitionExpiryUpdated = make(map[string]bool)
 	stagingTablePrefix = "RUDDER_STAGING_"
 	config.RegisterBoolConfigVariable(true, &setUsersLoadPartitionFirstEventFilter, true, "Warehouse.bigquery.setUsersLoadPartitionFirstEventFilter")
 	config.RegisterBoolConfigVariable(false, &customPartitionsEnabled, true, "Warehouse.bigquery.customPartitionsEnabled")
@@ -637,30 +633,6 @@ func loadConfig() {
 func Init() {
 	loadConfig()
 	pkgLogger = logger.NewLogger().Child("warehouse").Child("bigquery")
-}
-
-func (bq *HandleT) removePartitionExpiry() (err error) {
-	partitionExpiryUpdatedLock.Lock()
-	defer partitionExpiryUpdatedLock.Unlock()
-	identifier := fmt.Sprintf(`%s::%s`, bq.Warehouse.Source.ID, bq.Warehouse.Destination.ID)
-	if _, ok := partitionExpiryUpdated[identifier]; ok {
-		return
-	}
-	for tName := range bq.Uploader.GetSchemaInWarehouse() {
-		var m *bigquery.TableMetadata
-		m, err = bq.Db.Dataset(bq.Namespace).Table(tName).Metadata(bq.BQContext)
-		if err != nil {
-			return
-		}
-		if m.TimePartitioning != nil && m.TimePartitioning.Expiration > 0 {
-			_, err = bq.Db.Dataset(bq.Namespace).Table(tName).Update(bq.BQContext, bigquery.TableMetadataToUpdate{TimePartitioning: &bigquery.TimePartitioning{Expiration: time.Duration(0)}}, "")
-			if err != nil {
-				return
-			}
-		}
-	}
-	partitionExpiryUpdated[identifier] = true
-	return
 }
 
 func dedupEnabled() bool {
@@ -790,8 +762,11 @@ func (bq *HandleT) TestConnection(warehouse warehouseutils.WarehouseT) (err erro
 
 func (bq *HandleT) LoadTable(tableName string) error {
 	var getLoadFileLocFromTableUploads bool
-	if misc.ContainsString([]string{warehouseutils.IdentityMappingsTable, warehouseutils.IdentityMergeRulesTable}, tableName) {
+	switch tableName {
+	case warehouseutils.IdentityMappingsTable, warehouseutils.IdentityMergeRulesTable:
 		getLoadFileLocFromTableUploads = true
+	default:
+		getLoadFileLocFromTableUploads = false
 	}
 	_, err := bq.loadTable(tableName, false, getLoadFileLocFromTableUploads, false)
 	return err
@@ -808,7 +783,7 @@ func (bq *HandleT) AddColumn(tableName, columnName, columnType string) (err erro
 	return err
 }
 
-func (bq *HandleT) AlterColumn(tableName, columnName, columnType string) (err error) {
+func (*HandleT) AlterColumn(_, _, _ string) (err error) {
 	return
 }
 
@@ -830,7 +805,7 @@ func (bq *HandleT) FetchSchema(warehouse warehouseutils.WarehouseT) (schema ware
 	schema = make(warehouseutils.SchemaT)
 	query := dbClient.Query(fmt.Sprintf(`SELECT t.table_name, c.column_name, c.data_type
 							 FROM %[1]s.INFORMATION_SCHEMA.TABLES as t LEFT JOIN %[1]s.INFORMATION_SCHEMA.COLUMNS as c
-							 ON (t.table_name = c.table_name) and (t.table_type != 'VIEW') and (c.column_name != '_PARTITIONTIME' OR c.column_name IS NULL)`, bq.Namespace))
+							 ON (t.table_name = c.table_name) WHERE (t.table_type != 'VIEW') and (c.column_name != '_PARTITIONTIME' OR c.column_name IS NULL)`, bq.Namespace))
 
 	it, err := query.Read(bq.BQContext)
 	if err != nil {
@@ -1069,7 +1044,7 @@ func (bq *HandleT) Connect(warehouse warehouseutils.WarehouseT) (client.Client, 
 	return client.Client{Type: client.BQClient, BQ: dbClient}, err
 }
 
-func (bq *HandleT) LoadTestTable(location, tableName string, payloadMap map[string]interface{}, format string) (err error) {
+func (bq *HandleT) LoadTestTable(location, tableName string, _ map[string]interface{}, _ string) (err error) {
 	gcsLocations := warehouseutils.GetGCSLocation(location, warehouseutils.GCSLocationOptionsT{})
 	gcsRef := bigquery.NewGCSReference([]string{gcsLocations}...)
 	gcsRef.SourceFormat = bigquery.JSON
@@ -1095,5 +1070,5 @@ func (bq *HandleT) LoadTestTable(location, tableName string, payloadMap map[stri
 	return
 }
 
-func (bq *HandleT) SetConnectionTimeout(timeout time.Duration) {
+func (*HandleT) SetConnectionTimeout(_ time.Duration) {
 }

@@ -10,6 +10,8 @@ import (
 	"math"
 	"strings"
 	"time"
+
+	"github.com/rudderlabs/rudder-server/services/stats"
 )
 
 type MultiTenantHandleT struct {
@@ -19,7 +21,7 @@ type MultiTenantHandleT struct {
 type MultiTenantJobsDB interface {
 	GetAllJobs(context.Context, map[string]int, GetQueryParamsT, int) ([]*JobT, error)
 
-	WithUpdateSafeTx(func(tx UpdateSafeTx) error) error
+	WithUpdateSafeTx(context.Context, func(tx UpdateSafeTx) error) error
 	UpdateJobStatusInTx(ctx context.Context, tx UpdateSafeTx, statusList []*JobStatusT, customValFilters []string, parameterFilters []ParameterFilterT) error
 	UpdateJobStatus(ctx context.Context, statusList []*JobStatusT, customValFilters []string, parameterFilters []ParameterFilterT) error
 
@@ -65,9 +67,14 @@ func (mj *MultiTenantHandleT) GetAllJobs(ctx context.Context, workspaceCount map
 	// The order of lock is very important. The migrateDSLoop
 	// takes lock in this order so reversing this will cause
 	// deadlocks
-	mj.dsMigrationLock.RLock()
-	mj.dsListLock.RLock()
+	if !mj.dsMigrationLock.RTryLockWithCtx(ctx) {
+		return nil, fmt.Errorf("could not acquire a migration read lock: %w", ctx.Err())
+	}
 	defer mj.dsMigrationLock.RUnlock()
+
+	if !mj.dsListLock.RTryLockWithCtx(ctx) {
+		return nil, fmt.Errorf("could not acquire a dslist read lock: %w", ctx.Err())
+	}
 	defer mj.dsListLock.RUnlock()
 
 	dsList := mj.getDSList()
@@ -109,7 +116,12 @@ func (mj *MultiTenantHandleT) GetAllJobs(ctx context.Context, workspaceCount map
 
 	mj.unionQueryTime.SendTiming(time.Since(start))
 
-	mj.tablesQueriedStat.Gauge(tablesQueried)
+	unionQueryTablesQueriedStat := stats.Default.NewTaggedStat("tables_queried_gauge", stats.GaugeType, stats.Tags{
+		"state":     "nonterminal",
+		"query":     "union",
+		"customVal": mj.tablePrefix,
+	})
+	unionQueryTablesQueriedStat.Gauge(tablesQueried)
 
 	return outJobs, nil
 }
@@ -253,7 +265,7 @@ func (mj *MultiTenantHandleT) getUnionQuerystring(workspaceCount map[string]int,
 	return queryInitial + `(` + strings.Join(queries, `) UNION (`) + `)`, workspacesToQuery
 }
 
-func (mj *MultiTenantHandleT) getInitialSingleWorkspaceQueryString(ds dataSetT, conditions QueryConditions, workspaceCount map[string]int) string {
+func (*MultiTenantHandleT) getInitialSingleWorkspaceQueryString(ds dataSetT, conditions QueryConditions, workspaceCount map[string]int) string {
 	customValFilters := conditions.CustomValFilters
 	parameterFilters := conditions.ParameterFilters
 	stateFilters := conditions.StateFilters
@@ -277,7 +289,7 @@ func (mj *MultiTenantHandleT) getInitialSingleWorkspaceQueryString(ds dataSetT, 
 	if len(customValFilters) > 0 && !conditions.IgnoreCustomValFiltersInQuery {
 		// mj.assert(!getAll, "getAll is true")
 		customValQuery = " AND " +
-			constructQuery(mj, "jobs.custom_val", customValFilters, "OR")
+			constructQueryOR("jobs.custom_val", customValFilters)
 	} else {
 		customValQuery = ""
 	}

@@ -280,11 +280,12 @@ func (mr *MockJobsDBMockRecorder) StoreWithRetryEach(arg0, arg1 interface{}) *go
 }
 
 // StoreWithRetryEachInTx mocks base method.
-func (m *MockJobsDB) StoreWithRetryEachInTx(arg0 context.Context, arg1 jobsdb.StoreSafeTx, arg2 []*jobsdb.JobT) map[uuid.UUID]string {
+func (m *MockJobsDB) StoreWithRetryEachInTx(arg0 context.Context, arg1 jobsdb.StoreSafeTx, arg2 []*jobsdb.JobT) (map[uuid.UUID]string, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "StoreWithRetryEachInTx", arg0, arg1, arg2)
 	ret0, _ := ret[0].(map[uuid.UUID]string)
-	return ret0
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
 }
 
 // StoreWithRetryEachInTx indicates an expected call of StoreWithRetryEachInTx.
@@ -322,17 +323,17 @@ func (mr *MockJobsDBMockRecorder) UpdateJobStatusInTx(arg0, arg1, arg2, arg3, ar
 }
 
 // WithStoreSafeTx mocks base method.
-func (m *MockJobsDB) WithStoreSafeTx(arg0 func(jobsdb.StoreSafeTx) error) error {
+func (m *MockJobsDB) WithStoreSafeTx(arg0 context.Context, arg1 func(jobsdb.StoreSafeTx) error) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "WithStoreSafeTx", arg0)
+	ret := m.ctrl.Call(m, "WithStoreSafeTx", arg0, arg1)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
 // WithStoreSafeTx indicates an expected call of WithStoreSafeTx.
-func (mr *MockJobsDBMockRecorder) WithStoreSafeTx(arg0 interface{}) *gomock.Call {
+func (mr *MockJobsDBMockRecorder) WithStoreSafeTx(arg0, arg1 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "WithStoreSafeTx", reflect.TypeOf((*MockJobsDB)(nil).WithStoreSafeTx), arg0)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "WithStoreSafeTx", reflect.TypeOf((*MockJobsDB)(nil).WithStoreSafeTx), arg0, arg1)
 }
 
 // WithTx mocks base method.
@@ -350,15 +351,15 @@ func (mr *MockJobsDBMockRecorder) WithTx(arg0 interface{}) *gomock.Call {
 }
 
 // WithUpdateSafeTx mocks base method.
-func (m *MockJobsDB) WithUpdateSafeTx(arg0 func(jobsdb.UpdateSafeTx) error) error {
+func (m *MockJobsDB) WithUpdateSafeTx(arg0 context.Context, arg1 func(jobsdb.UpdateSafeTx) error) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "WithUpdateSafeTx", arg0)
+	ret := m.ctrl.Call(m, "WithUpdateSafeTx", arg0, arg1)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
 // WithUpdateSafeTx indicates an expected call of WithUpdateSafeTx.
-func (mr *MockJobsDBMockRecorder) WithUpdateSafeTx(arg0 interface{}) *gomock.Call {
+func (mr *MockJobsDBMockRecorder) WithUpdateSafeTx(arg0, arg1 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "WithUpdateSafeTx", reflect.TypeOf((*MockJobsDB)(nil).WithUpdateSafeTx), arg0)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "WithUpdateSafeTx", reflect.TypeOf((*MockJobsDB)(nil).WithUpdateSafeTx), arg0, arg1)
 }

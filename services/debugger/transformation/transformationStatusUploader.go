@@ -69,7 +69,7 @@ var (
 	configBackendURL             string
 	disableTransformationUploads bool
 	uploader                     debugger.UploaderI
-	pkgLogger                    logger.LoggerI
+	pkgLogger                    logger.Logger
 	transformationCacheMap       debugger.Cache
 )
 
@@ -84,7 +84,7 @@ func Init() {
 }
 
 func loadConfig() {
-	configBackendURL = config.GetEnv("CONFIG_BACKEND_URL", "https://api.rudderlabs.com")
+	configBackendURL = config.GetString("CONFIG_BACKEND_URL", "https://api.rudderlabs.com")
 	config.RegisterBoolConfigVariable(false, &disableTransformationUploads, true, "TransformationDebugger.disableTransformationStatusUploads")
 }
 
@@ -121,7 +121,7 @@ func RecordTransformationStatus(transformStatus *TransformStatusT) bool {
 	return true
 }
 
-func (transformationStatusUploader *TransformationStatusUploader) Transform(data interface{}) ([]byte, error) {
+func (*TransformationStatusUploader) Transform(data interface{}) ([]byte, error) {
 	eventBuffer := data.([]interface{})
 	uploadT := UploadT{Payload: eventBuffer}
 
@@ -134,17 +134,19 @@ func (transformationStatusUploader *TransformationStatusUploader) Transform(data
 	return rawJSON, nil
 }
 
-func updateConfig(sources backendconfig.ConfigT) {
+func updateConfig(config map[string]backendconfig.ConfigT) {
 	configSubscriberLock.Lock()
 	uploadEnabledTransformations = make(map[string]bool)
 	var uploadEnabledTransformationsIDs []string
-	for _, source := range sources.Sources {
-		for _, destination := range source.Destinations {
-			for _, transformation := range destination.Transformations {
-				eventTransform, ok := transformation.Config["eventTransform"].(bool)
-				if ok && eventTransform {
-					uploadEnabledTransformations[transformation.ID] = true
-					uploadEnabledTransformationsIDs = append(uploadEnabledTransformationsIDs, transformation.ID)
+	for _, wConfig := range config {
+		for _, source := range wConfig.Sources {
+			for _, destination := range source.Destinations {
+				for _, transformation := range destination.Transformations {
+					eventTransform, ok := transformation.Config["eventTransform"].(bool)
+					if ok && eventTransform {
+						uploadEnabledTransformations[transformation.ID] = true
+						uploadEnabledTransformationsIDs = append(uploadEnabledTransformationsIDs, transformation.ID)
+					}
 				}
 			}
 		}
@@ -156,7 +158,7 @@ func updateConfig(sources backendconfig.ConfigT) {
 func backendConfigSubscriber() {
 	ch := backendconfig.DefaultBackendConfig.Subscribe(context.TODO(), backendconfig.TopicProcessConfig)
 	for config := range ch {
-		updateConfig(config.Data.(backendconfig.ConfigT))
+		updateConfig(config.Data.(map[string]backendconfig.ConfigT))
 	}
 }
 

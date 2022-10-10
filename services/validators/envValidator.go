@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/rudderlabs/rudder-server/config"
-	"github.com/rudderlabs/rudder-server/jobsdb"
 	migrator "github.com/rudderlabs/rudder-server/services/sql-migrator"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
@@ -23,7 +22,7 @@ const (
 	minPostgresVersion = 100000
 )
 
-var pkgLogger logger.LoggerI
+var pkgLogger logger.Logger
 
 func init() {
 	pkgLogger = logger.NewLogger().Child("validators").Child("envValidator")
@@ -74,7 +73,6 @@ func insertTokenIfNotExists(dbHandle *sql.DB) {
 func setWHSchemaVersionIfNotExists(dbHandle *sql.DB) {
 	hashedToken := misc.GetMD5Hash(config.GetWorkspaceToken())
 	whSchemaVersion := config.GetString("Warehouse.schemaVersion", "v1")
-	config.SetWHSchemaVersion(whSchemaVersion)
 
 	var parameters sql.NullString
 	sqlStatement := fmt.Sprintf(`SELECT parameters FROM workspace WHERE token = '%s'`, hashedToken)
@@ -102,7 +100,7 @@ func setWHSchemaVersionIfNotExists(dbHandle *sql.DB) {
 		}
 		if version, ok := parametersMap["wh_schema_version"]; ok {
 			whSchemaVersion = version.(string)
-			config.SetWHSchemaVersion(whSchemaVersion)
+			config.Set("Warehouse.schemaVersion", whSchemaVersion)
 			return
 		}
 		parametersMap["wh_schema_version"] = whSchemaVersion
@@ -131,7 +129,7 @@ func getWorkspaceFromDB(dbHandle *sql.DB) string {
 }
 
 func createDBConnection() *sql.DB {
-	psqlInfo := jobsdb.GetConnectionString()
+	psqlInfo := misc.GetConnectionString()
 	var err error
 	dbHandle, err := sql.Open("postgres", psqlInfo)
 	if err != nil {
@@ -153,7 +151,7 @@ func closeDBConnection(handle *sql.DB) {
 }
 
 func killDanglingDBConnections(db *sql.DB) {
-	rows, err := db.Query(`SELECT PID, QUERY_START, COALESCE(WAIT_EVENT_TYPE,''), COALESCE(WAIT_EVENT, ''), STATE, QUERY, PG_TERMINATE_BACKEND(PID)
+	rows, err := db.Query(`SELECT PID, QUERY_START, COALESCE(WAIT_EVENT_TYPE,''), COALESCE(WAIT_EVENT, ''), COALESCE(STATE, ''), QUERY, PG_TERMINATE_BACKEND(PID)
 							FROM PG_STAT_ACTIVITY
 							WHERE PID <> PG_BACKEND_PID()
 							AND APPLICATION_NAME = CURRENT_SETTING('APPLICATION_NAME')
@@ -258,7 +256,7 @@ func CheckAndValidateWorkspaceToken() {
 
 	pkgLogger.Warn("Previous workspace token is not same as the current workspace token. Parking current jobsdb aside and creating a new one")
 
-	dbName := config.GetEnv("JOBS_DB_DB_NAME", "ubuntu")
+	dbName := config.GetString("DB.name", "ubuntu")
 	misc.ReplaceDB(dbName, dbName+"_"+strconv.FormatInt(time.Now().Unix(), 10)+"_"+workspaceTokenHashInDB)
 
 	dbHandle = createDBConnection()

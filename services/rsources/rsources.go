@@ -6,7 +6,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"time"
+
+	"github.com/rudderlabs/rudder-server/utils/logger"
 )
 
 //go:generate mockgen -source=rsources.go -destination=mock_rsources.go -package=rsources github.com/rudderlabs/rudder-server/services/rsources JobService
@@ -20,6 +21,10 @@ type JobTargetKey struct {
 	TaskRunID     string `json:"source_task_run_id"`
 	SourceID      string `json:"source_id"`
 	DestinationID string `json:"destination_id"`
+}
+
+func (k JobTargetKey) String() string {
+	return fmt.Sprintf("%s:%s:%s", k.TaskRunID, k.SourceID, k.DestinationID)
 }
 
 type Stats struct {
@@ -69,16 +74,27 @@ type DestinationStatus struct {
 	Stats     Stats  `json:"stats"`
 }
 
-type FailedRecords []FailedRecord
-
-type FailedRecord struct {
-	JobRunID      string          `json:"job_run_id"`
-	TaskRunID     string          `json:"task_run_id"`
-	SourceID      string          `json:"source_id"`
-	DestinationID string          `json:"destination_id"`
-	RecordID      json.RawMessage `json:"record_id"`
-	CreatedAt     time.Time       `json:"-"`
+type JobFailedRecords struct {
+	ID    string              `json:"id"`
+	Tasks []TaskFailedRecords `json:"tasks"`
 }
+
+type TaskFailedRecords struct {
+	ID      string                `json:"id"`
+	Sources []SourceFailedRecords `json:"sources"`
+}
+
+type SourceFailedRecords struct {
+	ID           string                     `json:"id"`
+	Records      FailedRecords              `json:"records"`
+	Destinations []DestinationFailedRecords `json:"destinations"`
+}
+
+type DestinationFailedRecords struct {
+	ID      string        `json:"id"`
+	Records FailedRecords `json:"records"`
+}
+type FailedRecords []json.RawMessage
 
 var StatusNotFoundError = errors.New("Status not found")
 
@@ -96,6 +112,7 @@ type JobServiceConfig struct {
 	SharedConn                  string
 	SubscriptionTargetConn      string
 	SkipFailedRecordsCollection bool
+	Log                         logger.Logger
 }
 
 // JobService manages information about jobs created by rudder-sources
@@ -103,7 +120,7 @@ type JobService interface {
 	StatsIncrementer
 
 	// Delete deletes all relevant information for a given jobRunId
-	Delete(ctx context.Context, jobRunId string) error
+	Delete(ctx context.Context, jobRunId string, filter JobFilter) error
 
 	// GetStatus gets the current status of a job
 	GetStatus(ctx context.Context, jobRunId string, filter JobFilter) (JobStatus, error)
@@ -112,13 +129,23 @@ type JobService interface {
 	AddFailedRecords(ctx context.Context, tx *sql.Tx, jobRunId string, key JobTargetKey, records []json.RawMessage) error
 
 	// GetFailedRecords gets the failed records for a jobRunID, with filters on taskRunId and sourceId
-	GetFailedRecords(ctx context.Context, jobRunId string, filter JobFilter) (FailedRecords, error)
+	GetFailedRecords(ctx context.Context, jobRunId string, filter JobFilter) (JobFailedRecords, error)
 
 	// CleanupLoop starts the cleanup loop in the background which will stop upon context termination or in case of an error
 	CleanupLoop(ctx context.Context) error
+
+	// Monitor monitors the logical replication slot and lag when a shared database is configured
+	Monitor(ctx context.Context, lagGauge, replicationSlotGauge Gauger)
+}
+
+type Gauger interface {
+	Gauge(interface{})
 }
 
 func NewJobService(config JobServiceConfig) (JobService, error) {
+	if config.Log == nil {
+		config.Log = logger.NewLogger().Child("rsources")
+	}
 	var (
 		localDB, sharedDB *sql.DB
 		err               error
@@ -138,6 +165,7 @@ func NewJobService(config JobServiceConfig) (JobService, error) {
 		sharedDB.SetMaxOpenConns(config.MaxPoolSize)
 	}
 	handler := &sourcesHandler{
+		log:      config.Log,
 		config:   config,
 		localDB:  localDB,
 		sharedDB: sharedDB,
@@ -151,7 +179,7 @@ func NewNoOpService() JobService {
 
 type noopService struct{}
 
-func (*noopService) Delete(_ context.Context, _ string) error {
+func (*noopService) Delete(_ context.Context, _ string, _ JobFilter) error {
 	return nil
 }
 
@@ -167,11 +195,13 @@ func (*noopService) AddFailedRecords(_ context.Context, _ *sql.Tx, _ string, _ J
 	return nil
 }
 
-func (*noopService) GetFailedRecords(_ context.Context, _ string, _ JobFilter) (FailedRecords, error) {
-	return FailedRecords{}, nil
+func (*noopService) GetFailedRecords(_ context.Context, _ string, _ JobFilter) (JobFailedRecords, error) {
+	return JobFailedRecords{}, nil
 }
 
 func (*noopService) CleanupLoop(ctx context.Context) error {
 	<-ctx.Done()
 	return nil
 }
+
+func (*noopService) Monitor(_ context.Context, _, _ Gauger) {}

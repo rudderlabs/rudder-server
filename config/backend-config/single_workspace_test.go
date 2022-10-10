@@ -9,6 +9,7 @@ import (
 	"os"
 	"testing"
 
+	"github.com/rudderlabs/rudder-server/services/controlplane/identity"
 	"github.com/stretchr/testify/require"
 )
 
@@ -41,7 +42,13 @@ func TestSingleWorkspaceGetFromAPI(t *testing.T) {
 		}
 		conf, err := wc.getFromAPI(context.Background(), "")
 		require.NoError(t, err)
-		require.Equal(t, sampleBackendConfig, conf)
+		require.Equal(t, map[string]ConfigT{sampleWorkspaceID: sampleBackendConfig}, conf)
+
+		ident := wc.Identity()
+		require.Equal(t, &identity.Workspace{
+			WorkspaceID:    sampleBackendConfig.WorkspaceID,
+			WorkspaceToken: token,
+		}, ident)
 	})
 
 	t.Run("invalid url", func(t *testing.T) {
@@ -54,7 +61,7 @@ func TestSingleWorkspaceGetFromAPI(t *testing.T) {
 		}
 		conf, err := wc.getFromAPI(context.Background(), "")
 		require.ErrorContains(t, err, "unsupported protocol scheme")
-		require.Equal(t, ConfigT{}, conf)
+		require.Equal(t, map[string]ConfigT{}, conf)
 	})
 
 	t.Run("nil url", func(t *testing.T) {
@@ -64,7 +71,7 @@ func TestSingleWorkspaceGetFromAPI(t *testing.T) {
 		}
 		conf, err := wc.getFromAPI(context.Background(), "")
 		require.ErrorContains(t, err, "config backend url is nil")
-		require.Equal(t, ConfigT{}, conf)
+		require.Equal(t, map[string]ConfigT{}, conf)
 	})
 }
 
@@ -78,7 +85,7 @@ func TestSingleWorkspaceGetFromFile(t *testing.T) {
 		}
 		conf, err := wc.getFromFile()
 		require.Error(t, err)
-		require.Equal(t, ConfigT{}, conf)
+		require.Equal(t, map[string]ConfigT{}, conf)
 	})
 
 	t.Run("valid file but cannot parse", func(t *testing.T) {
@@ -93,11 +100,12 @@ func TestSingleWorkspaceGetFromFile(t *testing.T) {
 		}
 		conf, err := wc.getFromFile()
 		require.Error(t, err)
-		require.Equal(t, ConfigT{}, conf)
+		require.Equal(t, map[string]ConfigT{}, conf)
 	})
 
 	t.Run("valid file", func(t *testing.T) {
 		data := []byte(`{
+			"workspaceID": "sampleWorkspaceID",
 			"sources": [
 				{
 					"id": "1",
@@ -128,7 +136,7 @@ func TestSingleWorkspaceGetFromFile(t *testing.T) {
 		t.Cleanup(func() { require.NoError(t, tmpFile.Close()) })
 		t.Cleanup(func() { require.NoError(t, os.Remove(tmpFile.Name())) })
 
-		err = os.WriteFile(tmpFile.Name(), data, 0o644)
+		err = os.WriteFile(tmpFile.Name(), data, 0o600)
 		require.NoError(t, err)
 
 		wc := &singleWorkspaceConfig{
@@ -137,6 +145,6 @@ func TestSingleWorkspaceGetFromFile(t *testing.T) {
 		}
 		conf, err := wc.getFromFile()
 		require.NoError(t, err)
-		require.Equal(t, sampleBackendConfig, conf)
+		require.Equal(t, map[string]ConfigT{sampleWorkspaceID: sampleBackendConfig}, conf)
 	})
 }

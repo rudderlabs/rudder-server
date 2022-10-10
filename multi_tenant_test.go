@@ -24,7 +24,7 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	"github.com/rudderlabs/rudder-server/app"
-	"github.com/rudderlabs/rudder-server/testhelper"
+	th "github.com/rudderlabs/rudder-server/testhelper"
 	"github.com/rudderlabs/rudder-server/testhelper/destination"
 	thEtcd "github.com/rudderlabs/rudder-server/testhelper/etcd"
 	"github.com/rudderlabs/rudder-server/testhelper/health"
@@ -38,6 +38,18 @@ func TestMultiTenant(t *testing.T) {
 		t.Run(appType, func(t *testing.T) {
 			testMultiTenantByAppType(t, appType)
 		})
+	}
+}
+
+func requireAuth(t *testing.T, secret string, handler http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		u, _, ok := r.BasicAuth()
+		require.True(t, ok, "Auth should be present")
+		require.Equalf(t, secret, u,
+			"Expected HTTP basic authentication to be %q, got %q instead",
+			secret, u)
+
+		handler(w, r)
 	}
 }
 
@@ -79,7 +91,7 @@ func testMultiTenantByAppType(t *testing.T, appType string) {
 
 	writeKey := rand.String(27)
 	workspaceID := rand.String(27)
-	marshalledWorkspaces := testhelper.FillTemplateAndReturn(t, "testdata/mtGatewayTest01.json", map[string]string{
+	marshalledWorkspaces := th.FillTemplateAndReturn(t, "testdata/mtGatewayTest01.json", map[string]string{
 		"writeKey":    writeKey,
 		"workspaceId": workspaceID,
 		"webhookUrl":  webhook.Server.URL,
@@ -96,21 +108,27 @@ func testMultiTenantByAppType(t *testing.T, appType string) {
 		})
 	}
 
-	multiTenantSvcSecret := "so-secret"
-	backedConfigHandler := func(w http.ResponseWriter, r *http.Request) {
-		u, _, ok := r.BasicAuth()
-		require.True(t, ok, "Auth should be present")
-		require.Equalf(t, hostedServiceSecret, u,
-			"Expected HTTP basic authentication to be %q, got %q instead",
-			hostedServiceSecret, u)
-
-		n, err := w.Write(marshalledWorkspaces.Bytes())
-		require.NoError(t, err)
-		require.Equal(t, marshalledWorkspaces.Len(), n)
-	}
 	backendConfRouter.
-		HandleFunc("/data-plane/v1/namespaces/"+workspaceNamespace+"/config", backedConfigHandler).
+		HandleFunc("/data-plane/v1/namespaces/"+workspaceNamespace+"/config", requireAuth(t, hostedServiceSecret, func(w http.ResponseWriter, r *http.Request) {
+			n, err := w.Write(marshalledWorkspaces.Bytes())
+			require.NoError(t, err)
+			require.Equal(t, marshalledWorkspaces.Len(), n)
+		})).
 		Methods("GET")
+	backendConfRouter.
+		HandleFunc("/data-plane/v1/namespaces/"+workspaceNamespace+"/settings", requireAuth(t, hostedServiceSecret, func(w http.ResponseWriter, r *http.Request) {
+			expectBody, err := os.ReadFile("testdata/expected_features.json")
+			require.NoError(t, err)
+
+			actualBody, err := io.ReadAll(r.Body)
+			require.NoError(t, err)
+
+			require.JSONEq(t, string(expectBody), string(actualBody))
+
+			w.WriteHeader(http.StatusNoContent)
+		})).
+		Methods("POST")
+
 	backendConfRouter.NotFoundHandler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		require.FailNowf(t, "backend config", "unexpected request to backend config, not found: %+v", r.URL)
 		w.WriteHeader(http.StatusNotFound)
@@ -120,50 +138,50 @@ func testMultiTenantByAppType(t *testing.T, appType string) {
 	t.Logf("BackendConfig server listening on: %s", backendConfigSrv.URL)
 	t.Cleanup(backendConfigSrv.Close)
 
-	httpPort, err := testhelper.GetFreePort()
+	httpPort, err := th.GetFreePort()
 	require.NoError(t, err)
-	httpAdminPort, err := testhelper.GetFreePort()
+	httpAdminPort, err := th.GetFreePort()
 	require.NoError(t, err)
-	debugPort, err := testhelper.GetFreePort()
+	debugPort, err := th.GetFreePort()
 	require.NoError(t, err)
 
 	rudderTmpDir, err := os.MkdirTemp("", "rudder_server_*_test")
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = os.RemoveAll(rudderTmpDir) })
 
-	releaseName := t.Name() + "_" + appType
-	t.Setenv("APP_TYPE", appType)
-	t.Setenv("INSTANCE_ID", serverInstanceID)
-	t.Setenv("RELEASE_NAME", releaseName)
-	t.Setenv("ETCD_HOSTS", etcdContainer.Hosts[0])
-	t.Setenv("JOBS_DB_PORT", postgresContainer.Port)
-	t.Setenv("JOBS_DB_USER", postgresContainer.User)
-	t.Setenv("JOBS_DB_DB_NAME", postgresContainer.Database)
-	t.Setenv("JOBS_DB_PASSWORD", postgresContainer.Password)
-	t.Setenv("CONFIG_BACKEND_URL", backendConfigSrv.URL)
-	t.Setenv("RSERVER_GATEWAY_WEB_PORT", strconv.Itoa(httpPort))
-	t.Setenv("RSERVER_GATEWAY_ADMIN_WEB_PORT", strconv.Itoa(httpAdminPort))
-	t.Setenv("RSERVER_PROFILER_PORT", strconv.Itoa(debugPort))
-	t.Setenv("RSERVER_ENABLE_STATS", "false")
-	t.Setenv("RSERVER_BACKEND_CONFIG_USE_HOSTED_BACKEND_CONFIG", "false")
-	t.Setenv("RUDDER_TMPDIR", rudderTmpDir)
-	t.Setenv("HOSTED_SERVICE_SECRET", multiTenantSvcSecret)
-	t.Setenv("DEPLOYMENT_TYPE", string(deployment.MultiTenantType))
-	t.Setenv("DEST_TRANSFORM_URL", transformerContainer.TransformURL)
-
-	t.Setenv("HOSTED_SERVICE_SECRET", hostedServiceSecret)
-
-	t.Setenv("WORKSPACE_NAMESPACE", workspaceNamespace)
-	if testing.Verbose() {
-		require.NoError(t, os.Setenv("LOG_LEVEL", "DEBUG"))
-	}
-
-	done := make(chan struct{})
+	var (
+		done        = make(chan struct{})
+		releaseName = t.Name() + "_" + appType
+	)
 	go func() {
 		defer close(done)
 		defer cancel()
 		cmd := exec.CommandContext(ctx, "go", "run", "main.go")
-		cmd.Env = os.Environ()
+		cmd.Env = append(os.Environ(),
+			"APP_TYPE="+appType,
+			"INSTANCE_ID="+serverInstanceID,
+			"RELEASE_NAME="+releaseName,
+			"ETCD_HOSTS="+etcdContainer.Hosts[0],
+			"JOBS_DB_PORT="+postgresContainer.Port,
+			"JOBS_DB_USER="+postgresContainer.User,
+			"JOBS_DB_DB_NAME="+postgresContainer.Database,
+			"JOBS_DB_PASSWORD="+postgresContainer.Password,
+			"CONFIG_BACKEND_URL="+backendConfigSrv.URL,
+			"RSERVER_GATEWAY_WEB_PORT="+strconv.Itoa(httpPort),
+			"RSERVER_GATEWAY_ADMIN_WEB_PORT="+strconv.Itoa(httpAdminPort),
+			"RSERVER_PROFILER_PORT="+strconv.Itoa(debugPort),
+			"RSERVER_ENABLE_STATS=false",
+			"RSERVER_BACKEND_CONFIG_USE_HOSTED_BACKEND_CONFIG=false",
+			"RUDDER_TMPDIR="+rudderTmpDir,
+			"DEPLOYMENT_TYPE="+string(deployment.MultiTenantType),
+			"DEST_TRANSFORM_URL="+transformerContainer.TransformURL,
+			"HOSTED_SERVICE_SECRET="+hostedServiceSecret,
+			"WORKSPACE_NAMESPACE="+workspaceNamespace,
+			"RSERVER_WAREHOUSE_MODE=off",
+		)
+		if testing.Verbose() {
+			cmd.Env = append(cmd.Env, "LOG_LEVEL=debug")
+		}
 
 		stdout, err := cmd.StdoutPipe()
 		require.NoError(t, err)
@@ -195,6 +213,9 @@ func testMultiTenantByAppType(t *testing.T, appType string) {
 	resp, err := http.Get(healthEndpoint)
 	require.ErrorContains(t, err, "connection refused")
 	require.Nil(t, resp)
+	if err == nil {
+		defer func() { _ = resp.Body.Close() }()
+	}
 
 	// Pushing valid configuration via ETCD
 	etcdReqKey := getETCDWorkspacesReqKey(releaseName, serverInstanceID, appType)

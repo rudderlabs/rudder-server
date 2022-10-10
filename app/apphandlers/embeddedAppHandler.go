@@ -26,6 +26,7 @@ import (
 	sourcedebugger "github.com/rudderlabs/rudder-server/services/debugger/source"
 	transformationdebugger "github.com/rudderlabs/rudder-server/services/debugger/transformation"
 	"github.com/rudderlabs/rudder-server/services/multitenant"
+	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/services/transientsource"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/types"
@@ -34,7 +35,7 @@ import (
 
 // EmbeddedApp is the type for embedded type implementation
 type EmbeddedApp struct {
-	App            app.Interface
+	App            app.App
 	VersionHandler func(w http.ResponseWriter, r *http.Request)
 }
 
@@ -61,7 +62,7 @@ func (embedded *EmbeddedApp) StartRudderCore(ctx context.Context, options *app.O
 	reporting := embedded.App.Features().Reporting.Setup(backendconfig.DefaultBackendConfig)
 
 	g.Go(func() error {
-		reporting.AddClient(ctx, types.Config{ConnInfo: jobsdb.GetConnectionString()})
+		reporting.AddClient(ctx, types.Config{ConnInfo: misc.GetConnectionString()})
 		return nil
 	})
 
@@ -71,7 +72,6 @@ func (embedded *EmbeddedApp) StartRudderCore(ctx context.Context, options *app.O
 	destinationdebugger.Setup(backendconfig.DefaultBackendConfig)
 	sourcedebugger.Setup(backendconfig.DefaultBackendConfig)
 
-	migrationMode := embedded.App.Options().MigrationMode
 	reportingI := embedded.App.Features().Reporting.GetReportingInstance()
 	transientSources := transientsource.NewService(ctx, backendconfig.DefaultBackendConfig)
 	prebackupHandlers := []prebackup.Handler{
@@ -82,43 +82,38 @@ func (embedded *EmbeddedApp) StartRudderCore(ctx context.Context, options *app.O
 		return err
 	}
 
-	// IMP NOTE: All the jobsdb setups must happen before migrator setup.
 	// This gwDBForProcessor should only be used by processor as this is supposed to be stopped and started with the
 	// Processor.
 	gwDBForProcessor := jobsdb.NewForRead(
 		"gw",
 		jobsdb.WithClearDB(options.ClearDB),
-		jobsdb.WithMigrationMode(migrationMode),
 		jobsdb.WithStatusHandler(),
-		jobsdb.WithQueryFilterKeys(jobsdb.QueryFiltersT{}),
 		jobsdb.WithPreBackupHandlers(prebackupHandlers),
+		jobsdb.WithDSLimit(&gatewayDSLimit),
 	)
 	defer gwDBForProcessor.Close()
 	routerDB := jobsdb.NewForReadWrite(
 		"rt",
 		jobsdb.WithClearDB(options.ClearDB),
-		jobsdb.WithMigrationMode(migrationMode),
 		jobsdb.WithStatusHandler(),
-		jobsdb.WithQueryFilterKeys(router.QueryFilters),
 		jobsdb.WithPreBackupHandlers(prebackupHandlers),
+		jobsdb.WithDSLimit(&routerDSLimit),
 	)
 	defer routerDB.Close()
 	batchRouterDB := jobsdb.NewForReadWrite(
 		"batch_rt",
 		jobsdb.WithClearDB(options.ClearDB),
-		jobsdb.WithMigrationMode(migrationMode),
 		jobsdb.WithStatusHandler(),
-		jobsdb.WithQueryFilterKeys(batchrouter.QueryFilters),
 		jobsdb.WithPreBackupHandlers(prebackupHandlers),
+		jobsdb.WithDSLimit(&batchRouterDSLimit),
 	)
 	defer batchRouterDB.Close()
 	errDB := jobsdb.NewForReadWrite(
 		"proc_error",
 		jobsdb.WithClearDB(options.ClearDB),
-		jobsdb.WithMigrationMode(migrationMode),
 		jobsdb.WithStatusHandler(),
-		jobsdb.WithQueryFilterKeys(jobsdb.QueryFiltersT{}),
 		jobsdb.WithPreBackupHandlers(prebackupHandlers),
+		jobsdb.WithDSLimit(&processorDSLimit),
 	)
 
 	var tenantRouterDB jobsdb.MultiTenantJobsDB
@@ -138,41 +133,6 @@ func (embedded *EmbeddedApp) StartRudderCore(ctx context.Context, options *app.O
 	}
 
 	enableGateway := true
-	if embedded.App.Features().Migrator != nil {
-		if migrationMode == db.IMPORT || migrationMode == db.EXPORT || migrationMode == db.IMPORT_EXPORT {
-			startProcessorFunc := func() {
-				clearDB := false
-				if enableProcessor {
-					g.Go(misc.WithBugsnag(func() error {
-						return StartProcessor(
-							ctx, &clearDB, gwDBForProcessor, routerDB, batchRouterDB, errDB,
-							reportingI, multitenant.NOOP, transientSources, rsourcesService,
-						)
-					}))
-				}
-			}
-			startRouterFunc := func() {
-				if enableRouter {
-					g.Go(misc.WithBugsnag(func() error {
-						StartRouter(ctx, tenantRouterDB, batchRouterDB, errDB, reportingI, multitenant.NOOP, transientSources, rsourcesService)
-						return nil
-					}))
-				}
-			}
-			enableRouter = false
-			enableProcessor = false
-			enableGateway = migrationMode != db.EXPORT
-
-			embedded.App.Features().Migrator.PrepareJobsdbsForImport(gwDBForProcessor, routerDB, batchRouterDB)
-
-			g.Go(func() error {
-				embedded.App.Features().Migrator.Run(ctx, gwDBForProcessor, routerDB, batchRouterDB, startProcessorFunc,
-					startRouterFunc) // TODO
-				return nil
-			})
-		}
-	}
-
 	var modeProvider cluster.ChangeEventProvider
 
 	switch deploymentType {
@@ -233,9 +193,7 @@ func (embedded *EmbeddedApp) StartRudderCore(ctx context.Context, options *app.O
 		gatewayDB = jobsdb.NewForWrite(
 			"gw",
 			jobsdb.WithClearDB(options.ClearDB),
-			jobsdb.WithMigrationMode(migrationMode),
 			jobsdb.WithStatusHandler(),
-			jobsdb.WithQueryFilterKeys(jobsdb.QueryFiltersT{}),
 		)
 		defer gwDBForProcessor.Close()
 		if err = gatewayDB.Start(); err != nil {
@@ -268,7 +226,7 @@ func (embedded *EmbeddedApp) StartRudderCore(ctx context.Context, options *app.O
 		var replayDB jobsdb.HandleT
 		err := replayDB.Setup(
 			jobsdb.ReadWrite, options.ClearDB, "replay",
-			migrationMode, true, jobsdb.QueryFiltersT{}, prebackupHandlers,
+			true, prebackupHandlers,
 		)
 		if err != nil {
 			return fmt.Errorf("could not setup replayDB: %w", err)
@@ -288,9 +246,16 @@ func (embedded *EmbeddedApp) StartRudderCore(ctx context.Context, options *app.O
 		return rsourcesService.CleanupLoop(ctx)
 	})
 
+	g.Go(func() error {
+		replicationLagStat := stats.Default.NewStat("rsources_log_replication_lag", stats.GaugeType)
+		replicationSlotStat := stats.Default.NewStat("rsources_log_replication_slot", stats.GaugeType)
+		rsourcesService.Monitor(ctx, replicationLagStat, replicationSlotStat)
+		return nil
+	})
+
 	return g.Wait()
 }
 
 func (*EmbeddedApp) HandleRecovery(options *app.Options) {
-	db.HandleEmbeddedRecovery(options.NormalMode, options.DegradedMode, options.MigrationMode, misc.AppStartTime, app.EMBEDDED)
+	db.HandleEmbeddedRecovery(options.NormalMode, options.DegradedMode, misc.AppStartTime, app.EMBEDDED)
 }

@@ -9,15 +9,19 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path"
 	"strconv"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/config"
+	"github.com/rudderlabs/rudder-server/testhelper/health"
+
 	"github.com/ory/dockertest/v3"
-	"github.com/phayes/freeport"
 	main "github.com/rudderlabs/rudder-server"
+	"github.com/rudderlabs/rudder-server/testhelper"
 	"github.com/rudderlabs/rudder-server/testhelper/destination"
 	trand "github.com/rudderlabs/rudder-server/testhelper/rand"
 	"github.com/rudderlabs/rudder-server/testhelper/workspaceConfig"
@@ -42,8 +46,12 @@ import (
 // After sending the jobs to the server, we verify that the destination has received the jobs in the
 // correct order. We also verify that the server has not sent any job twice.
 func TestEventOrderGuarantee(t *testing.T) {
+	// necessary until we move away from a singleton config
+	config.Reset()
+	defer config.Reset()
+
 	const (
-		users         = 50                   // how many different userIDs we will send jobs for
+		users         = 50                   // how many userIDs we will send jobs for
 		jobsPerUser   = 40                   // how many jobs per user we will send
 		batchSize     = 10                   // how many jobs for the same user we will send in each batch request
 		responseDelay = 0 * time.Millisecond // how long we will the webhook wait before sending a response
@@ -95,47 +103,46 @@ func TestEventOrderGuarantee(t *testing.T) {
 		"workspaceId": workspaceID,
 	}
 	configJsonPath := workspaceConfig.CreateTempFile(t, "testdata/eventOrderTestTemplate.json", templateCtx)
-	t.Setenv("RSERVER_BACKEND_CONFIG_CONFIG_FROM_FILE", "true")
-	t.Setenv("RSERVER_BACKEND_CONFIG_CONFIG_JSONPATH", configJsonPath)
+	config.Set("BackendConfig.configFromFile", true)
+	config.Set("BackendConfig.configJSONPath", configJsonPath)
 
 	t.Logf("Starting rudder-server")
-	t.Setenv("DEPLOYMENT_TYPE", string(deployment.DedicatedType))
+	config.Set("DEPLOYMENT_TYPE", string(deployment.DedicatedType))
+	config.Set("recovery.storagePath", path.Join(t.TempDir(), "/recovery_data.json"))
 
-	t.Setenv("JOBS_DB_PORT", postgresContainer.Port)
-	t.Setenv("JOBS_DB_USER", postgresContainer.User)
-	t.Setenv("JOBS_DB_DB_NAME", postgresContainer.Database)
-	t.Setenv("JOBS_DB_PASSWORD", postgresContainer.Password)
-	t.Setenv("DEST_TRANSFORM_URL", transformerContainer.TransformURL)
+	config.Set("DB.port", postgresContainer.Port)
+	config.Set("DB.user", postgresContainer.User)
+	config.Set("DB.name", postgresContainer.Database)
+	config.Set("DB.password", postgresContainer.Password)
+	config.Set("DEST_TRANSFORM_URL", transformerContainer.TransformURL)
 
-	t.Setenv("RSERVER_WAREHOUSE_MODE", "off")
-	t.Setenv("RSERVER_ENABLE_STATS", "false")
-	t.Setenv("RSERVER_JOBS_DB_BACKUP_ENABLED", "false")
+	config.Set("Warehouse.mode", "off")
+	config.Set("enableStats", false)
+	config.Set("JobsDB.backup.enabled", false)
 
 	// generatorLoop
-	t.Setenv("RSERVER_ROUTER_JOB_QUERY_BATCH_SIZE", "500")
-	t.Setenv("RSERVER_ROUTER_READ_SLEEP", "10ms")
-	t.Setenv("RSERVER_ROUTER_MIN_RETRY_BACKOFF", "5ms")
-	t.Setenv("RSERVER_ROUTER_MAX_RETRY_BACKOFF", "10ms")
-	t.Setenv("RSERVER_ROUTER_ALLOW_ABORTED_USER_JOBS_COUNT_FOR_PROCESSING", "1")
+	config.Set("Router.jobQueryBatchSize", 500)
+	config.Set("Router.readSleep", "10ms")
+	config.Set("Router.minRetryBackoff", "5ms")
+	config.Set("Router.maxRetryBackoff", "10ms")
 
 	// worker
-	t.Setenv("RSERVER_ROUTER_NO_OF_JOBS_PER_CHANNEL", "100")
-	t.Setenv("RSERVER_ROUTER_JOBS_BATCH_TIMEOUT", "100ms")
+	config.Set("Router.noOfJobsPerChannel", "100")
+	config.Set("Router.jobsBatchTimeout", "100ms")
 
 	// statusInsertLoop
-	t.Setenv("RSERVER_ROUTER_UPDATE_STATUS_BATCH_SIZE", "100")
-	t.Setenv("RSERVER_ROUTER_MAX_STATUS_UPDATE_WAIT", "10ms")
+	config.Set("Router.updateStatusBatchSize", 100)
+	config.Set("Router.maxStatusUpdateWait", "10ms")
 
-	// hack
-	// t.Setenv("RSERVER_ROUTER_GUARANTEE_USER_EVENT_ORDER", "false")
+	defer config.Reset()
 
 	// find free port for gateway http server to listen on
-	httpPortInt, err := freeport.GetFreePort()
+	httpPortInt, err := testhelper.GetFreePort()
 	require.NoError(t, err)
 	gatewayPort = strconv.Itoa(httpPortInt)
 
-	t.Setenv("RSERVER_GATEWAY_WEB_PORT", gatewayPort)
-	t.Setenv("RUDDER_TMPDIR", os.TempDir())
+	config.Set("Gateway.webPort", gatewayPort)
+	config.Set("RUDDER_TMPDIR", os.TempDir())
 
 	svcDone := make(chan struct{})
 	go func() {
@@ -154,14 +161,12 @@ func TestEventOrderGuarantee(t *testing.T) {
 	}()
 
 	t.Logf("waiting rudder-server to start properly")
-	require.Eventually(t, func() bool {
-		url := fmt.Sprintf("http://localhost:%s/health", gatewayPort)
-		if resp, err := http.Get(url); err == nil {
-			resp.Body.Close()
-			return resp.StatusCode == 200
-		}
-		return false
-	}, 20*time.Second, 100*time.Millisecond, "server should be able to start")
+	health.WaitUntilReady(ctx, t,
+		fmt.Sprintf("http://localhost:%s/health", gatewayPort),
+		200*time.Second,
+		100*time.Millisecond,
+		t.Name(),
+	)
 
 	t.Logf("rudder-server started")
 
@@ -192,7 +197,7 @@ func TestEventOrderGuarantee(t *testing.T) {
 			t.Logf("%d/%d done", done, total)
 		}
 		return done == total
-	}, 180*time.Second, 2*time.Second, "webhook should receive all events and process them till the end")
+	}, 300*time.Second, 2*time.Second, "webhook should receive all events and process them till the end")
 
 	require.False(t, t.Failed(), "webhook shouldn't have failed")
 
@@ -253,7 +258,7 @@ func (m eventOrderMethods) newTestSpec(users, jobsPerUser int) *eventOrderSpec {
 func (eventOrderMethods) randomStatus() (status int, terminal bool) {
 	// playing with probabilities: 50% HTTP 500, 40% HTTP 200, 10% HTTP 400
 	statuses := []int{
-		http.StatusBadRequest, http.StatusBadRequest, http.StatusBadRequest, http.StatusBadRequest, http.StatusBadRequest,
+		http.StatusBadRequest, http.StatusBadRequest, http.StatusBadRequest, http.StatusBadRequest,
 		http.StatusOK, http.StatusOK, http.StatusOK, http.StatusOK,
 		http.StatusInternalServerError,
 	}
@@ -273,7 +278,6 @@ func (eventOrderMethods) newWebhook(t *testing.T, spec *eventOrderSpec) *eventOr
 		require.True(t, testJobId.Exists(), "should have testJobId in the request", body)
 		require.Equal(t, gjson.Number, testJobId.Type, "testJobId should be a number", body)
 		jobID := int(gjson.GetBytes(body, "testJobId").Int())
-
 		userIdResult := gjson.GetBytes(body, "userId")
 		require.True(t, userIdResult.Exists(), "should have userId in the request", body)
 		require.Equal(t, gjson.String, userIdResult.Type, "userId should be a string", body)
@@ -299,7 +303,7 @@ func (eventOrderMethods) newWebhook(t *testing.T, spec *eventOrderSpec) *eventOr
 			if len(wh.spec.doneOrdered[userID]) > 0 {
 				lastDoneId = wh.spec.doneOrdered[userID][len(wh.spec.doneOrdered[userID])-1]
 			}
-			require.Greater(t, jobID, lastDoneId, "received out-of-order event for job %d after job %d", jobID, lastDoneId)
+			require.Greater(t, jobID, lastDoneId, "received out-of-order event for user %s: job %d after jobs %+v", userID, jobID, wh.spec.doneOrdered[userID])
 			wh.spec.done[jobID] = struct{}{}
 			wh.spec.doneOrdered[userID] = append(wh.spec.doneOrdered[userID], jobID)
 			// t.Logf("job %d done", jobID)
@@ -319,7 +323,7 @@ func (eventOrderMethods) newWebhook(t *testing.T, spec *eventOrderSpec) *eventOr
 // for the same user do not appear one after the other. The shuffling algorithm respects ordering of
 // batches at user level
 func (eventOrderMethods) splitInBatches(jobs []*eventOrderJobSpec, batchSize int) [][]byte {
-	var payloads map[string][]string = map[string][]string{}
+	payloads := map[string][]string{}
 	for _, job := range jobs {
 		payloads[job.userID] = append(payloads[job.userID], job.payload())
 	}
