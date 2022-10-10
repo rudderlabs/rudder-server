@@ -22,12 +22,12 @@ func TestSimulateBarrier(t *testing.T) {
 	rand.Seed(time.Now().UnixNano())
 	const (
 		channelSize = 200
-		batchSize   = 10
+		batchSize   = 50
 	)
 	workerQueue := make(chan *job, channelSize)
 	statusQueue := make(chan *job, channelSize)
 
-	jobs := newRandomJobs(100)
+	jobs := newRandomJobs(200)
 	for _, job := range jobs {
 		t.Logf("%+v", *job)
 	}
@@ -36,7 +36,7 @@ func TestSimulateBarrier(t *testing.T) {
 	defer cancel()
 
 	var logger log = t
-	barrier := eventorder.NewBarrier(eventorder.WithConcurrencyLimit(2))
+	barrier := eventorder.NewBarrier(eventorder.WithConcurrencyLimit(1))
 	generator := &generatorLoop{ctx: ctx, barrier: barrier, batchSize: batchSize, pending: jobs, out: workerQueue, logger: logger}
 	worker := &workerProcess{ctx: ctx, barrier: barrier, in: workerQueue, out: statusQueue, logger: logger}
 	commit := &commitStatusLoop{ctx: ctx, barrier: barrier, in: statusQueue, putBack: generator.putBack, logger: logger}
@@ -47,7 +47,7 @@ func TestSimulateBarrier(t *testing.T) {
 
 	require.Eventually(t, func() bool {
 		committed := commit.getCommitted()
-		return len(committed) == len(jobs)
+		return len(committed)+len(generator.drained) == len(jobs)
 	}, 60*time.Second, 1*time.Second, "all jobs should be committed")
 
 	committed := commit.getCommitted()
@@ -74,6 +74,7 @@ type generatorLoop struct {
 	pendingMu sync.Mutex
 	pending   []*job
 	out       chan *job
+	drained   []*job
 	runtime   struct {
 		batchSize int
 		minJobID  int64
@@ -108,9 +109,20 @@ func (g *generatorLoop) run() {
 				if i == 0 {
 					g.runtime.minJobID = job.id
 				}
+
 				if accept, blockJobID := g.barrier.Enter(job.user, job.id); accept {
 					if blockJobID != nil && *blockJobID > job.id {
 						panic(fmt.Errorf("job.JobID:%d < blockJobID:%d", job.id, *blockJobID))
+					}
+					if blockJobID != nil && *blockJobID == job.id {
+						if rand.Intn(100) < 10 { // randomly drain 10% of previously failed jobs (non-previously failed jobs do not pose a risk for event ordering guarantees)
+							if err := g.barrier.StateChanged(job.user, job.id, jobsdb.Aborted.State); err != nil {
+								panic(fmt.Errorf("could not drain job:%d: %w", job.id, err))
+							}
+							g.drained = append(g.drained, job)
+							g.logger.Logf("drained job:%d", job.id)
+							continue
+						}
 					}
 					job.loop = loop
 					acceptedJobs = append(acceptedJobs, job)
@@ -186,14 +198,16 @@ func (wp *workerProcess) run() {
 
 func (wp *workerProcess) processJobs() {
 	for _, job := range wp.jobs {
-
+		// introduce some random delay during processing so that buffers don't empty at a steady pace
+		time.Sleep(time.Duration(rand.Intn(10)) * time.Millisecond)
 		if wait, _ := wp.barrier.Wait(job.user, job.id); wait {
 			job.states = append([]string{jobsdb.Waiting.State}, job.states...)
+			// wp.logger.Logf("job: %d is waiting", job.id)
+
 			wp.out <- job
 			continue
 		}
 		// simulate request delay
-		time.Sleep(5 * time.Millisecond)
 		if job.states[0] == jobsdb.Failed.State {
 			_ = wp.barrier.StateChanged(job.user, job.id, jobsdb.Failed.State)
 		}
@@ -245,7 +259,7 @@ func (cl *commitStatusLoop) run() {
 func (cl *commitStatusLoop) commit() {
 	var putBack []*job
 	for _, job := range cl.jobs {
-
+		time.Sleep(time.Duration(rand.Intn(2)) * time.Millisecond)
 		switch job.states[0] {
 		case "aborted", "succeeded", "waiting":
 			_ = cl.barrier.StateChanged(job.user, job.id, job.states[0])
@@ -298,7 +312,7 @@ func newRandomJobs(num int) []*job {
 
 func randomState() (state string, terminal bool) {
 	states := []string{
-		jobsdb.Failed.State,
+		jobsdb.Failed.State, jobsdb.Failed.State, jobsdb.Failed.State,
 		jobsdb.Aborted.State, jobsdb.Aborted.State, jobsdb.Aborted.State,
 		jobsdb.Succeeded.State, jobsdb.Succeeded.State, jobsdb.Succeeded.State,
 	}
