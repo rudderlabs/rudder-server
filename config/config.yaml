@@ -154,7 +154,6 @@ Warehouse:
   redshift:
     maxParallelLoads: 3
     setVarCharMax: false
-    enableDeleteByJobs: true
   snowflake:
     maxParallelLoads: 3
   bigquery:
@@ -162,10 +161,8 @@ Warehouse:
   postgres:
     maxParallelLoads: 3
     enableSQLStatementExecutionPlan: false
-    enableDeleteByJobs: false
   mssql:
     maxParallelLoads: 3
-    enableDeleteByJobs: false
   azure_synapse:
     maxParallelLoads: 3
   clickhouse:
