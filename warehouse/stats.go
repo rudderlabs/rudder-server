@@ -221,7 +221,7 @@ func getUploadStatusStat(name, destType, destID, sourceName, destName, sourceID 
 	return stats.Default.NewTaggedStat(name, stats.CountType, tags)
 }
 
-func persisteSSLFileErrorStat(destType, destName, destID, sourceName, sourceID, errTag string) {
+func persistSSLFileErrorStat(destType, destName, destID, sourceName, sourceID, errTag string) {
 	tags := map[string]string{
 		"module":        moduleName,
 		"destType":      destType,
