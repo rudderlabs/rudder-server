@@ -56,15 +56,6 @@ type tenantStats interface {
 	UpdateWorkspaceLatencyMap(destType, workspaceID string, val float64)
 }
 
-const (
-	// transformation(router or batch)
-	ERROR_AT_TF = "transformation"
-	// event delivery
-	ERROR_AT_DEL = "delivery"
-	// custom destination manager
-	ERROR_AT_CUST = "custom"
-)
-
 type HandleDestOAuthRespParamsT struct {
 	ctx            context.Context
 	destinationJob types.DestinationJobT
@@ -611,24 +602,24 @@ func (worker *workerT) processDestinationJobs() {
 						}
 					}
 					respStatusCode, respBody = worker.rt.customDestinationManager.SendData(destinationJob.Message, destinationID)
-					errorAt = ERROR_AT_CUST
+					errorAt = routerutils.ERROR_AT_CUST
 				} else {
 					result, err := getIterableStruct(destinationJob.Message, transformAt)
 					if err != nil {
-						errorAt = ERROR_AT_TF
+						errorAt = routerutils.ERROR_AT_TF
 						respStatusCode, respBody = types.RouterUnMarshalErrorCode, fmt.Errorf("transformer response unmarshal error: %w", err).Error()
 					} else {
 						for _, val := range result {
 							err := integrations.ValidatePostInfo(val)
 							if err != nil {
-								errorAt = ERROR_AT_TF
+								errorAt = routerutils.ERROR_AT_TF
 								respStatusCode, respBodyTemp = http.StatusBadRequest, fmt.Sprintf(`400 GetPostInfoFailed with error: %s`, err.Error())
 								respBodyArr = append(respBodyArr, respBodyTemp)
 							} else {
 								// stat start
 								pkgLogger.Debugf(`responseTransform status :%v, %s`, worker.rt.transformerProxy, worker.rt.destName)
 								// transformer proxy start
-								errorAt = ERROR_AT_DEL
+								errorAt = routerutils.ERROR_AT_DEL
 								if worker.rt.transformerProxy {
 									jobID := destinationJob.JobMetadataArray[0].JobID
 									pkgLogger.Debugf(`[TransformerProxy] (Dest-%[1]v) {Job - %[2]v} Request started`, worker.rt.destName, jobID)
@@ -731,12 +722,12 @@ func (worker *workerT) processDestinationJobs() {
 				if !worker.rt.enableBatching {
 					respBody = "skipping sending to destination because previous job (of user) in batch is failed."
 				}
-				errorAt = ERROR_AT_TF
+				errorAt = routerutils.ERROR_AT_TF
 			}
 		} else {
 			respStatusCode = destinationJob.StatusCode
 			respBody = destinationJob.Error
-			errorAt = ERROR_AT_TF
+			errorAt = routerutils.ERROR_AT_TF
 		}
 
 		prevRespStatusCode = respStatusCode
@@ -998,12 +989,11 @@ func (worker *workerT) updateReqMetrics(respStatusCode int, diagnosisStartTime *
 }
 
 func (worker *workerT) allowRouterAbortedAlert(errorAt string) bool {
-	// when error occur during transformation(rt or batch)
-	// when proxy is not enabled or when skipRtAbortAlertForTransformation is false(default)
-	allowTf := errorAt == ERROR_AT_TF && !worker.rt.skipRtAbortAlertForTransformation
+	// when error occur during transformation(rt or batch) or when skipRtAbortAlertForTransformation is false(default)
+	allowTf := errorAt == routerutils.ERROR_AT_TF && !worker.rt.skipRtAbortAlertForTransformation
 	// (when error occur during delivery and (when proxy is not enabled or when skipRtAbortAlertForDelivery is false(default)))
 	// or when destination is managed custom destination manager
-	allowDel := (errorAt == ERROR_AT_DEL && (!worker.rt.transformerProxy || !worker.rt.skipRtAbortAlertForDelivery)) || errorAt == ERROR_AT_CUST
+	allowDel := (errorAt == routerutils.ERROR_AT_DEL && (!worker.rt.transformerProxy || !worker.rt.skipRtAbortAlertForDelivery)) || errorAt == routerutils.ERROR_AT_CUST
 	return allowTf || allowDel
 }
 
