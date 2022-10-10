@@ -22,7 +22,7 @@ func TestDelete(t *testing.T) {
 	mockCtrl := gomock.NewController(t)
 	defer mockCtrl.Finish()
 	service := rsources.NewMockJobService(mockCtrl)
-	handler := rsources_http.NewHandler(service, mock_logger.NewMockLoggerI(mockCtrl))
+	handler := rsources_http.NewHandler(service, mock_logger.NewMockLogger(mockCtrl))
 
 	tests := []struct {
 		name                 string
@@ -90,7 +90,7 @@ func TestGetStatus(t *testing.T) {
 	mockCtrl := gomock.NewController(t)
 	defer mockCtrl.Finish()
 	service := rsources.NewMockJobService(mockCtrl)
-	handler := rsources_http.NewHandler(service, mock_logger.NewMockLoggerI(mockCtrl))
+	handler := rsources_http.NewHandler(service, mock_logger.NewMockLogger(mockCtrl))
 
 	tests := []struct {
 		name                 string
@@ -228,7 +228,7 @@ func TestGetFailedRecords(t *testing.T) {
 	mockCtrl := gomock.NewController(t)
 	defer mockCtrl.Finish()
 	service := rsources.NewMockJobService(mockCtrl)
-	handler := rsources_http.NewHandler(service, mock_logger.NewMockLoggerI(mockCtrl))
+	handler := rsources_http.NewHandler(service, mock_logger.NewMockLogger(mockCtrl))
 
 	tests := []struct {
 		name                 string
@@ -324,7 +324,7 @@ func TestFailedRecordsDisabled(t *testing.T) {
 	mockCtrl := gomock.NewController(t)
 	defer mockCtrl.Finish()
 	service := rsources.NewMockJobService(mockCtrl)
-	handler := rsources_http.NewHandler(service, mock_logger.NewMockLoggerI(mockCtrl))
+	handler := rsources_http.NewHandler(service, mock_logger.NewMockLogger(mockCtrl))
 
 	service.EXPECT().GetFailedRecords(gomock.Any(), gomock.Any(), gomock.Any()).Return(rsources.JobFailedRecords{}, rsources.ErrOperationNotSupported).Times(1)
 

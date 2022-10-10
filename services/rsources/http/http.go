@@ -10,7 +10,7 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/logger"
 )
 
-func NewHandler(service rsources.JobService, logger logger.LoggerI) http.Handler {
+func NewHandler(service rsources.JobService, logger logger.Logger) http.Handler {
 	h := &handler{
 		service: service,
 		logger:  logger,
@@ -23,7 +23,7 @@ func NewHandler(service rsources.JobService, logger logger.LoggerI) http.Handler
 }
 
 type handler struct {
-	logger  logger.LoggerI
+	logger  logger.Logger
 	service rsources.JobService
 }
 

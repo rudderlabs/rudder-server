@@ -8,8 +8,8 @@ import (
 )
 
 func setupDegradedMode() {
-	config.SetBool("enableProcessor", false)
-	config.SetBool("enableRouter", false)
+	config.Set("enableProcessor", false)
+	config.Set("enableRouter", false)
 }
 
 func (handler *DegradedModeHandler) RecordAppStart(currTime int64) {
@@ -17,11 +17,11 @@ func (handler *DegradedModeHandler) RecordAppStart(currTime int64) {
 	handler.recoveryData.ReadableDegradedModeStartTimes = append(handler.recoveryData.ReadableDegradedModeStartTimes, fmt.Sprint(time.Unix(currTime, 0)))
 }
 
-func (handler *DegradedModeHandler) HasThresholdReached() bool {
+func (*DegradedModeHandler) HasThresholdReached() bool {
 	return false
 }
 
-func (handler *DegradedModeHandler) Handle() {
+func (*DegradedModeHandler) Handle() {
 	setupDegradedMode()
 }
 

@@ -8,7 +8,17 @@ import (
 )
 
 func getFirstStagedEventAt(stagingFileID int64) (time.Time, error) {
-	sqlStatement := fmt.Sprintf(`SELECT first_event_at FROM %[1]s where id = %[2]v`, warehouseutils.WarehouseStagingFilesTable, stagingFileID)
+	sqlStatement := fmt.Sprintf(`
+	SELECT 
+	  first_event_at 
+	FROM 
+	  %[1]s 
+	WHERE 
+	  id = %[2]v;
+`,
+		warehouseutils.WarehouseStagingFilesTable,
+		stagingFileID,
+	)
 
 	var firstEventAt time.Time
 	err := dbHandle.QueryRow(sqlStatement).Scan(&firstEventAt)
@@ -16,7 +26,19 @@ func getFirstStagedEventAt(stagingFileID int64) (time.Time, error) {
 }
 
 func getTotalEventsStaged(startFileID, endFileID int64) (total int64, err error) {
-	sqlStatement := fmt.Sprintf(`select sum(total_events) from %[1]s where id >= %[2]v and id <= %[3]v`, warehouseutils.WarehouseStagingFilesTable, startFileID, endFileID)
+	sqlStatement := fmt.Sprintf(`
+		SELECT 
+		  sum(total_events) 
+		FROM 
+		  %[1]s 
+		WHERE 
+		  id >= %[2]v 
+		  AND id <= %[3]v;
+`,
+		warehouseutils.WarehouseStagingFilesTable,
+		startFileID,
+		endFileID,
+	)
 
 	err = dbHandle.QueryRow(sqlStatement).Scan(&total)
 	return total, err

@@ -40,7 +40,7 @@ func (a *authService) GetConnectionToken(_ context.Context, _ *proto.GetConnecti
 	}, nil
 }
 
-func (a *authService) GetWorkspaceToken(ctx context.Context, request *proto.GetWorkspaceTokenRequest) (*proto.GetWorkspaceTokenResponse, error) {
+func (a *authService) GetWorkspaceToken(_ context.Context, _ *proto.GetWorkspaceTokenRequest) (*proto.GetWorkspaceTokenResponse, error) {
 	return &proto.GetWorkspaceTokenResponse{
 		WorkspaceToken: a.authInfo.ConnectionToken,
 		Service:        a.authInfo.Service,

@@ -17,22 +17,22 @@ var (
 
 type KVDeleteManager struct{}
 
-func (kv *KVDeleteManager) GetSupportedDestinations() []string {
+func (*KVDeleteManager) GetSupportedDestinations() []string {
 	return supportedDestinations
 }
 
-func (kv *KVDeleteManager) Delete(ctx context.Context, job model.Job, destConfig map[string]interface{}, destName string) model.JobStatus {
+func (*KVDeleteManager) Delete(_ context.Context, job model.Job, destConfig map[string]interface{}, destName string) model.JobStatus {
 	pkgLogger.Debugf("deleting job: %v", job, " from kvstore")
 	kvm := kvstoremanager.New(destName, destConfig)
 	var err error
-	fileCleaningTime := stats.NewTaggedStat("file_cleaning_time", stats.TimerType, stats.Tags{"jobId": fmt.Sprintf("%d", job.ID), "workspaceId": job.WorkspaceID, "destType": "kvstore", "destName": destName})
+	fileCleaningTime := stats.Default.NewTaggedStat("file_cleaning_time", stats.TimerType, stats.Tags{"jobId": fmt.Sprintf("%d", job.ID), "workspaceId": job.WorkspaceID, "destType": "kvstore", "destName": destName})
 	fileCleaningTime.Start()
 	defer fileCleaningTime.End()
-	for _, user := range job.UserAttributes {
-		key := fmt.Sprintf("user:%s", user.UserID)
+	for _, user := range job.Users {
+		key := fmt.Sprintf("user:%s", user.ID)
 		err = kvm.DeleteKey(key)
 		if err != nil {
-			pkgLogger.Errorf("failed to delete user: %v", user.UserID, "with error: %v", err)
+			pkgLogger.Errorf("failed to delete user: %v", user.ID, "with error: %v", err)
 			return model.JobStatusFailed
 		}
 	}

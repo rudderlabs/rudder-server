@@ -51,6 +51,23 @@ func TestRetryWith(t *testing.T) {
 	})
 }
 
+func TestRetryWithNotify(t *testing.T) {
+	t.Run("test if notify func is called", func(t *testing.T) {
+		expectedAttempt := []int{1, 2}
+		receivedAttempt := make([]int, 0)
+		notify := func(attempt int) {
+			receivedAttempt = append(receivedAttempt, attempt)
+		}
+		op := operation{
+			timeout:             time.Second,
+			timeoutAfterAttempt: 2,
+		}
+		err := misc.RetryWithNotify(context.Background(), time.Millisecond, 3, op.do, notify)
+		require.NoError(t, err)
+		require.Equal(t, expectedAttempt, receivedAttempt)
+	})
+}
+
 type operation struct {
 	attempts            int
 	timeout             time.Duration
@@ -111,6 +128,23 @@ func TestQueryWithRetries(t *testing.T) {
 		_, err := misc.QueryWithRetries(context.Background(), time.Millisecond, 3, op.doAndReturn)
 		require.Equal(t, 2, op.attempts)
 		require.NoError(t, err)
+	})
+}
+
+func TestQueryWithRetriesNotify(t *testing.T) {
+	t.Run("test if notify func is called", func(t *testing.T) {
+		expectedAttempt := []int{1, 2}
+		receivedAttempt := make([]int, 0)
+		notify := func(attempt int) {
+			receivedAttempt = append(receivedAttempt, attempt)
+		}
+		op := operation{
+			timeout:             time.Second,
+			timeoutAfterAttempt: 2,
+		}
+		_, err := misc.QueryWithRetriesAndNotify(context.Background(), time.Millisecond, 3, op.doAndReturn, notify)
+		require.NoError(t, err)
+		require.Equal(t, expectedAttempt, receivedAttempt)
 	})
 }
 

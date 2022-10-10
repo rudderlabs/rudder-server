@@ -3,7 +3,6 @@ package router
 import (
 	"bytes"
 	"context"
-	"database/sql"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -19,6 +18,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/enterprise/reporting"
 	"github.com/rudderlabs/rudder-server/testhelper/health"
 
 	trand "github.com/rudderlabs/rudder-server/testhelper/rand"
@@ -56,12 +56,10 @@ import (
 	"github.com/rudderlabs/rudder-server/router/types"
 	routerUtils "github.com/rudderlabs/rudder-server/router/utils"
 	"github.com/rudderlabs/rudder-server/services/rsources"
-	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/services/transientsource"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/pubsub"
 	testutils "github.com/rudderlabs/rudder-server/utils/tests"
-	utilTypes "github.com/rudderlabs/rudder-server/utils/types"
 )
 
 const (
@@ -110,6 +108,7 @@ var (
 	}
 	// This configuration is assumed by all router tests and, is returned on Subscribe of mocked backend config
 	sampleBackendConfig = backendconfig.ConfigT{
+		WorkspaceID: workspaceID,
 		Sources: []backendconfig.SourceT{
 			{
 				WorkspaceID: workspaceID,
@@ -129,11 +128,6 @@ var (
 		},
 	}
 )
-
-type reportingNOOP struct{}
-
-func (*reportingNOOP) WaitForSetup(_ context.Context, _ string)          {}
-func (*reportingNOOP) Report(_ []*utilTypes.PUReportedMetric, _ *sql.Tx) {}
 
 type testContext struct {
 	asyncHelper     testutils.AsyncTestHelper
@@ -160,7 +154,7 @@ func (c *testContext) Setup() {
 		DoAndReturn(func(ctx context.Context, topic backendconfig.Topic) pubsub.DataChannel {
 			tFunc()
 			ch := make(chan pubsub.DataEvent, 1)
-			ch <- pubsub.DataEvent{Data: sampleBackendConfig, Topic: string(topic)}
+			ch <- pubsub.DataEvent{Data: map[string]backendconfig.ConfigT{workspaceID: sampleBackendConfig}, Topic: string(topic)}
 			// on Subscribe, emulate a backend configuration event
 			go func() {
 				<-ctx.Done()
@@ -177,9 +171,9 @@ func (c *testContext) Finish() {
 }
 
 func initRouter() {
-	config.Load()
+	config.Reset()
 	admin.Init()
-	logger.Init()
+	logger.Reset()
 	Init()
 	InitRouterAdmin()
 }
@@ -193,8 +187,6 @@ var _ = Describe("Router", func() {
 		routerUtils.JobRetention = time.Duration(175200) * time.Hour // 20 Years(20*365*24)
 		c = &testContext{}
 		c.Setup()
-		// setup static requirements of dependencies
-		stats.Setup()
 	})
 
 	AfterEach(func() {
@@ -205,7 +197,7 @@ var _ = Describe("Router", func() {
 		It("should initialize and recover after crash", func() {
 			mockMultitenantHandle := mocksMultitenant.NewMockMultiTenantI(c.mockCtrl)
 			router := &HandleT{
-				Reporting:    &reportingNOOP{},
+				Reporting:    &reporting.NOOP{},
 				MultitenantI: mockMultitenantHandle,
 			}
 			mockMultitenantHandle.EXPECT().UpdateWorkspaceLatencyMap(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
@@ -223,7 +215,7 @@ var _ = Describe("Router", func() {
 			mockMultitenantHandle := mocksMultitenant.NewMockMultiTenantI(c.mockCtrl)
 			mockNetHandle := mocksRouter.NewMockNetHandleI(c.mockCtrl)
 			router := &HandleT{
-				Reporting:    &reportingNOOP{},
+				Reporting:    &reporting.NOOP{},
 				MultitenantI: mockMultitenantHandle,
 				netHandle:    mockNetHandle,
 			}
@@ -293,7 +285,7 @@ var _ = Describe("Router", func() {
 			mockMultitenantHandle.EXPECT().CalculateSuccessFailureCounts(gomock.Any(), gomock.Any(), true, false).AnyTimes()
 			done := make(chan struct{})
 
-			c.mockRouterJobsDB.EXPECT().WithUpdateSafeTx(gomock.Any()).Times(1).Do(func(f func(tx jobsdb.UpdateSafeTx) error) {
+			c.mockRouterJobsDB.EXPECT().WithUpdateSafeTx(gomock.Any(), gomock.Any()).Times(1).Do(func(ctx context.Context, f func(tx jobsdb.UpdateSafeTx) error) {
 				_ = f(jobsdb.EmptyUpdateSafeTx())
 				close(done)
 			}).Return(nil)
@@ -313,7 +305,7 @@ var _ = Describe("Router", func() {
 			mockMultitenantHandle := mocksMultitenant.NewMockMultiTenantI(c.mockCtrl)
 
 			router := &HandleT{
-				Reporting:    &reportingNOOP{},
+				Reporting:    &reporting.NOOP{},
 				MultitenantI: mockMultitenantHandle,
 			}
 			mockMultitenantHandle.EXPECT().UpdateWorkspaceLatencyMap(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
@@ -379,7 +371,7 @@ var _ = Describe("Router", func() {
 				})
 			mockMultitenantHandle.EXPECT().CalculateSuccessFailureCounts(gomock.Any(), gomock.Any(), false, true).AnyTimes()
 			done := make(chan struct{})
-			c.mockRouterJobsDB.EXPECT().WithUpdateSafeTx(gomock.Any()).Times(1).Do(func(f func(tx jobsdb.UpdateSafeTx) error) {
+			c.mockRouterJobsDB.EXPECT().WithUpdateSafeTx(gomock.Any(), gomock.Any()).Times(1).Do(func(ctx context.Context, f func(tx jobsdb.UpdateSafeTx) error) {
 				_ = f(jobsdb.EmptyUpdateSafeTx())
 				close(done)
 			}).Return(nil)
@@ -399,7 +391,7 @@ var _ = Describe("Router", func() {
 			routerUtils.JobRetention = time.Duration(24) * time.Hour
 			mockMultitenantHandle := mocksMultitenant.NewMockMultiTenantI(c.mockCtrl)
 			router := &HandleT{
-				Reporting:    &reportingNOOP{},
+				Reporting:    &reporting.NOOP{},
 				MultitenantI: mockMultitenantHandle,
 			}
 			mockMultitenantHandle.EXPECT().UpdateWorkspaceLatencyMap(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
@@ -460,7 +452,7 @@ var _ = Describe("Router", func() {
 					Expect(job.UserID).To(Equal(unprocessedJobsList[0].UserID))
 				})
 
-			c.mockRouterJobsDB.EXPECT().WithUpdateSafeTx(gomock.Any()).Do(func(f func(tx jobsdb.UpdateSafeTx) error) {
+			c.mockRouterJobsDB.EXPECT().WithUpdateSafeTx(gomock.Any(), gomock.Any()).Do(func(ctx context.Context, f func(tx jobsdb.UpdateSafeTx) error) {
 				_ = f(jobsdb.EmptyUpdateSafeTx())
 			}).Return(nil).Times(1)
 
@@ -480,7 +472,7 @@ var _ = Describe("Router", func() {
 			mockNetHandle := mocksRouter.NewMockNetHandleI(c.mockCtrl)
 			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
 			router := &HandleT{
-				Reporting:    &reportingNOOP{},
+				Reporting:    &reporting.NOOP{},
 				MultitenantI: mockMultitenantHandle,
 				netHandle:    mockNetHandle,
 			}
@@ -589,7 +581,7 @@ var _ = Describe("Router", func() {
 			mockNetHandle.EXPECT().SendPost(gomock.Any(), gomock.Any()).Times(0)
 			done := make(chan struct{})
 			mockMultitenantHandle.EXPECT().CalculateSuccessFailureCounts(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
-			c.mockRouterJobsDB.EXPECT().WithUpdateSafeTx(gomock.Any()).Times(1).Do(func(f func(tx jobsdb.UpdateSafeTx) error) {
+			c.mockRouterJobsDB.EXPECT().WithUpdateSafeTx(gomock.Any(), gomock.Any()).Times(1).Do(func(ctx context.Context, f func(tx jobsdb.UpdateSafeTx) error) {
 				_ = f(jobsdb.EmptyUpdateSafeTx())
 				close(done)
 			}).Return(nil)
@@ -612,7 +604,7 @@ var _ = Describe("Router", func() {
 			mockNetHandle := mocksRouter.NewMockNetHandleI(c.mockCtrl)
 			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
 			router := &HandleT{
-				Reporting:    &reportingNOOP{},
+				Reporting:    &reporting.NOOP{},
 				MultitenantI: mockMultitenantHandle,
 				netHandle:    mockNetHandle,
 			}
@@ -734,7 +726,7 @@ var _ = Describe("Router", func() {
 			mockMultitenantHandle.EXPECT().UpdateWorkspaceLatencyMap(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
 			done := make(chan struct{})
 			mockMultitenantHandle.EXPECT().CalculateSuccessFailureCounts(gomock.Any(), gomock.Any(), true, false).AnyTimes()
-			c.mockRouterJobsDB.EXPECT().WithUpdateSafeTx(gomock.Any()).Times(1).Do(func(f func(tx jobsdb.UpdateSafeTx) error) {
+			c.mockRouterJobsDB.EXPECT().WithUpdateSafeTx(gomock.Any(), gomock.Any()).Times(1).Do(func(ctx context.Context, f func(tx jobsdb.UpdateSafeTx) error) {
 				_ = f(jobsdb.EmptyUpdateSafeTx())
 				close(done)
 			}).Return(nil)
@@ -756,7 +748,7 @@ var _ = Describe("Router", func() {
 			mockNetHandle := mocksRouter.NewMockNetHandleI(c.mockCtrl)
 			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
 			router := &HandleT{
-				Reporting:    &reportingNOOP{},
+				Reporting:    &reporting.NOOP{},
 				MultitenantI: mockMultitenantHandle,
 				netHandle:    mockNetHandle,
 			}
@@ -885,7 +877,7 @@ var _ = Describe("Router", func() {
 			done := make(chan struct{})
 			mockMultitenantHandle.EXPECT().CalculateSuccessFailureCounts(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
 
-			c.mockRouterJobsDB.EXPECT().WithUpdateSafeTx(gomock.Any()).Times(1).Do(func(f func(tx jobsdb.UpdateSafeTx) error) {
+			c.mockRouterJobsDB.EXPECT().WithUpdateSafeTx(gomock.Any(), gomock.Any()).Times(1).Do(func(ctx context.Context, f func(tx jobsdb.UpdateSafeTx) error) {
 				_ = f(jobsdb.EmptyUpdateSafeTx())
 				close(done)
 			}).Return(nil)
@@ -928,7 +920,7 @@ var _ = Describe("Router", func() {
 			mockNetHandle := mocksRouter.NewMockNetHandleI(c.mockCtrl)
 			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
 			router := &HandleT{
-				Reporting:    &reportingNOOP{},
+				Reporting:    &reporting.NOOP{},
 				MultitenantI: mockMultitenantHandle,
 				netHandle:    mockNetHandle,
 			}
@@ -1117,7 +1109,7 @@ var _ = Describe("Router", func() {
 			mockMultitenantHandle.EXPECT().UpdateWorkspaceLatencyMap(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
 			done := make(chan struct{})
 			mockMultitenantHandle.EXPECT().CalculateSuccessFailureCounts(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
-			c.mockRouterJobsDB.EXPECT().WithUpdateSafeTx(gomock.Any()).Times(1).Do(func(f func(tx jobsdb.UpdateSafeTx) error) {
+			c.mockRouterJobsDB.EXPECT().WithUpdateSafeTx(gomock.Any(), gomock.Any()).Times(1).Do(func(ctx context.Context, f func(tx jobsdb.UpdateSafeTx) error) {
 				_ = f(jobsdb.EmptyUpdateSafeTx())
 				close(done)
 			}).Return(nil)
@@ -1143,7 +1135,7 @@ var _ = Describe("Router", func() {
 			mockMultitenantHandle := mocksMultitenant.NewMockMultiTenantI(c.mockCtrl)
 			mockNetHandle := mocksRouter.NewMockNetHandleI(c.mockCtrl)
 			router := &HandleT{
-				Reporting:    &reportingNOOP{},
+				Reporting:    &reporting.NOOP{},
 				MultitenantI: mockMultitenantHandle,
 				netHandle:    mockNetHandle,
 			}
@@ -1276,7 +1268,7 @@ var _ = Describe("Router", func() {
 			done := make(chan struct{})
 			mockMultitenantHandle.EXPECT().CalculateSuccessFailureCounts(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
 
-			c.mockRouterJobsDB.EXPECT().WithUpdateSafeTx(gomock.Any()).Times(1).Do(func(f func(tx jobsdb.UpdateSafeTx) error) {
+			c.mockRouterJobsDB.EXPECT().WithUpdateSafeTx(gomock.Any(), gomock.Any()).Times(1).Do(func(ctx context.Context, f func(tx jobsdb.UpdateSafeTx) error) {
 				_ = f(jobsdb.EmptyUpdateSafeTx())
 				close(done)
 			}).Return(nil)
