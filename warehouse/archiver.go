@@ -84,11 +84,32 @@ func backupRecords(args backupRecordsArgs) (backupLocation string, err error) {
 		Config:   filemanager.GetProviderConfigForBackupsFromEnv(context.TODO()),
 	})
 	if err != nil {
-		err = fmt.Errorf("Error in creating a file manager for:%s. Error: %w", config.GetString("JOBS_BACKUP_STORAGE_PROVIDER", "S3"), err)
+		err = fmt.Errorf("error in creating a file manager for:%s. Error: %w", config.GetString("JOBS_BACKUP_STORAGE_PROVIDER", "S3"), err)
 		return
 	}
 
-	tmpl := fmt.Sprintf(`SELECT json_agg(dump_table) FROM (select * from %[1]s WHERE %[2]s order by id asc limit %[3]s offset %[4]s) AS dump_table`, args.tableName, args.tableFilterSQL, tablearchiver.PaginationAction, tablearchiver.OffsetAction)
+	tmpl := fmt.Sprintf(`
+		SELECT 
+		  json_agg(dump_table) 
+		FROM 
+		  (
+			SELECT 
+			  * 
+			FROM 
+			  %[1]s 
+			WHERE 
+			  %[2]s 
+			ORDER BY 
+			  id ASC 
+			LIMIT 
+			  %[3]s offset %[4]s
+		  ) AS dump_table
+`,
+		args.tableName,
+		args.tableFilterSQL,
+		tablearchiver.PaginationAction,
+		tablearchiver.OffsetAction,
+	)
 	tableJSONArchiver := tablearchiver.TableJSONArchiver{
 		DbHandle:      dbHandle,
 		Pagination:    config.GetInt("Warehouse.Archiver.backupRowsBatchSize", 100),
@@ -108,7 +129,7 @@ func deleteFilesInStorage(locations []string) error {
 		Config:   misc.GetRudderObjectStorageConfig(""),
 	})
 	if err != nil {
-		err = fmt.Errorf("Error in creating a file manager for Rudder Storage. Error: %w", err)
+		err = fmt.Errorf("error in creating a file manager for Rudder Storage. Error: %w", err)
 		return err
 	}
 
@@ -125,7 +146,35 @@ func usedRudderStorage(metadata []byte) bool {
 
 func archiveUploads(dbHandle *sql.DB) {
 	pkgLogger.Infof(`Started archiving for warehouse`)
-	sqlStatement := fmt.Sprintf(`SELECT id,source_id, destination_id, start_staging_file_id, end_staging_file_id, start_load_file_id, end_load_file_id, metadata FROM %s WHERE ((metadata->>'archivedStagingAndLoadFiles')::bool IS DISTINCT FROM TRUE) AND created_at < NOW() -INTERVAL '%d DAY' AND status = '%s' LIMIT 10000`, warehouseutils.WarehouseUploadsTable, uploadsArchivalTimeInDays, ExportedData)
+	sqlStatement := fmt.Sprintf(`
+		SELECT 
+		  id, 
+		  source_id, 
+		  destination_id, 
+		  start_staging_file_id, 
+		  end_staging_file_id, 
+		  start_load_file_id, 
+		  end_load_file_id, 
+		  metadata 
+		FROM 
+		  %s 
+		WHERE 
+		  (
+			(
+			  metadata ->> 'archivedStagingAndLoadFiles'
+			):: bool IS DISTINCT 
+			FROM 
+			  TRUE
+		  ) 
+		  AND created_at < NOW() - INTERVAL '%d DAY' 
+		  AND status = '%s' 
+		LIMIT 
+		  10000;
+`,
+		warehouseutils.WarehouseUploadsTable,
+		uploadsArchivalTimeInDays,
+		ExportedData,
+	)
 
 	rows, err := dbHandle.Query(sqlStatement)
 	defer func() {
@@ -145,9 +194,16 @@ func archiveUploads(dbHandle *sql.DB) {
 	var uploadsToArchive []*uploadRecord
 	for rows.Next() {
 		var u uploadRecord
-		err := rows.Scan(&u.uploadID, &u.sourceID, &u.destID,
-			&u.startStagingFileId, &u.endStagingFileId, &u.startLoadFileID,
-			&u.endLoadFileID, &u.uploadMetdata)
+		err := rows.Scan(
+			&u.uploadID,
+			&u.sourceID,
+			&u.destID,
+			&u.startStagingFileId,
+			&u.endStagingFileId,
+			&u.startLoadFileID,
+			&u.endLoadFileID,
+			&u.uploadMetdata,
+		)
 		if err != nil {
 			pkgLogger.Errorf(`Error scanning wh_upload for archival. Error: %v`, err)
 			continue
@@ -168,7 +224,24 @@ func archiveUploads(dbHandle *sql.DB) {
 		hasUsedRudderStorage := usedRudderStorage(u.uploadMetdata)
 
 		// archive staging files
-		stmt := fmt.Sprintf(`SELECT id, location FROM %s WHERE source_id='%s' AND destination_id='%s' AND id >= %d and id <= %d`, warehouseutils.WarehouseStagingFilesTable, u.sourceID, u.destID, u.startStagingFileId, u.endStagingFileId)
+		stmt := fmt.Sprintf(`
+			SELECT 
+			  id, 
+			  location 
+			FROM 
+			  %s 
+			WHERE 
+			  source_id = '%s' 
+			  AND destination_id = '%s' 
+			  AND id >= %d 
+			  and id <= %d;
+`,
+			warehouseutils.WarehouseStagingFilesTable,
+			u.sourceID,
+			u.destID,
+			u.startStagingFileId,
+			u.endStagingFileId,
+		)
 
 		stagingFileRows, err := txn.Query(stmt)
 		if err != nil {
@@ -183,7 +256,10 @@ func archiveUploads(dbHandle *sql.DB) {
 		for stagingFileRows.Next() {
 			var stagingFileID int64
 			var stagingFileLocation string
-			err = stagingFileRows.Scan(&stagingFileID, &stagingFileLocation)
+			err = stagingFileRows.Scan(
+				&stagingFileID,
+				&stagingFileLocation,
+			)
 			if err != nil {
 				pkgLogger.Errorf(`Error scanning staging file id in archiveUploadFiles. Error: %v`, err)
 				txn.Rollback()
@@ -225,7 +301,15 @@ func archiveUploads(dbHandle *sql.DB) {
 			}
 
 			// delete staging file records
-			stmt = fmt.Sprintf(`DELETE FROM %s WHERE id IN (%v)`, warehouseutils.WarehouseStagingFilesTable, misc.IntArrayToString(stagingFileIDs, ","))
+			stmt = fmt.Sprintf(`
+				DELETE FROM 
+				  %s 
+				WHERE 
+				  id IN (%v);
+`,
+				warehouseutils.WarehouseStagingFilesTable,
+				misc.IntArrayToString(stagingFileIDs, ","),
+			)
 			_, err = txn.Query(stmt)
 			if err != nil {
 				pkgLogger.Errorf(`Error running txn in archiveUploadFiles. Query: %s Error: %v`, stmt, err)
@@ -234,7 +318,14 @@ func archiveUploads(dbHandle *sql.DB) {
 			}
 
 			// delete load file records
-			stmt = fmt.Sprintf(`DELETE FROM %s WHERE staging_file_id = ANY($1) RETURNING location`, warehouseutils.WarehouseLoadFilesTable)
+			stmt = fmt.Sprintf(`
+				DELETE FROM 
+				  %s 
+				WHERE 
+				  staging_file_id = ANY($1) RETURNING location;
+`,
+				warehouseutils.WarehouseLoadFilesTable,
+			)
 			loadLocationRows, err := txn.Query(stmt, pq.Array(stagingFileIDs))
 			if err != nil {
 				pkgLogger.Errorf(`Error running txn in archiveUploadFiles. Query: %s Error: %v`, stmt, err)
@@ -279,7 +370,17 @@ func archiveUploads(dbHandle *sql.DB) {
 
 		// update upload metadata
 		u.uploadMetdata, _ = sjson.SetBytes(u.uploadMetdata, "archivedStagingAndLoadFiles", true)
-		stmt = fmt.Sprintf(`UPDATE %s SET metadata = $1 WHERE id = %d`, warehouseutils.WarehouseUploadsTable, u.uploadID)
+		stmt = fmt.Sprintf(`
+			UPDATE 
+			  %s 
+			SET 
+			  metadata = $1 
+			WHERE 
+			  id = %d;
+`,
+			warehouseutils.WarehouseUploadsTable,
+			u.uploadID,
+		)
 		_, err = txn.Exec(stmt, u.uploadMetdata)
 		if err != nil {
 			pkgLogger.Errorf(`Error running txn in archiveUploadFiles. Query: %s Error: %v`, stmt, err)

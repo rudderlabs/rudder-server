@@ -43,8 +43,8 @@ var _ = Describe("Calculate newDSIdx for internal migrations", Ordered, func() {
 	DescribeTable("newDSIdx tests",
 		func(before, after, expected string) {
 			computedIdx, err := computeInsertIdx(before, after)
-			Expect(computedIdx).To(Equal(expected))
-			Expect(err).To(BeNil())
+			Expect(err).To(BeNil(), "No error should occur when computing newDSIdx for before: %s, after: %s", before, after)
+			Expect(computedIdx).To(Equal(expected), "unexpected result using before: %s, after: %s", before, after)
 		},
 		// dList => 1 2 3 4 5
 		Entry("Internal Migration for regular tables 1 Test 1 : ", "1", "2", "1_1"),
@@ -63,71 +63,55 @@ var _ = Describe("Calculate newDSIdx for internal migrations", Ordered, func() {
 		Entry("Internal Migration for regular tables 4 Test 1 : ", "1_1", "2_1", "1_2"),
 
 		// dList => 0_1 1 2 3 4 5
-		Entry("Internal Migration for import tables Case 1 Test 1 : ", "0_1", "1", "0_1_1"),
+		Entry("Internal Migration for import tables Case 1 Test 1 : ", "0_1", "1", "0_2"),
 		Entry("Internal Migration for import tables Case 1 Test 2 : ", "1", "2", "1_1"),
 
-		// dList => 0_1 0_2 1 2 3 4 5
-		Entry("Internal Migration for import tables Case 2 Test 1 : ", "0_1", "0_2", "0_1_1"),
-		Entry("Internal Migration for import tables Case 2 Test 2 : ", "0_2", "1", "0_2_1"),
+		Entry("Internal Migration for import tables Case 2 Test 2 : ", "0_2", "1", "0_3"),
 		Entry("Internal Migration for import tables Case 2 Test 3 : ", "1", "2", "1_1"),
 
-		// dList => 0_1_1 0_2 1 2 3 4 5
-		Entry("Internal Migration for import tables Case 3 Test 1 : ", "0_1_1", "0_2", "0_1_2"),
-		Entry("Internal Migration for import tables Case 3 Test 2 : ", "0_2", "1", "0_2_1"),
-
-		// dList => 0_1_1 0_2_1 1 2 3 4 5
-		Entry("Internal Migration for import tables Case 4 Test 1 : ", "0_2_1", "1", "0_2_2"),
-		Entry("Internal Migration for import tables Case 4 Test 2 : ", "0_1_1", "0_2_1", "0_1_2"),
-
-		// dList => 0_1 0_2_1 1 2 3
-		Entry("Internal Migration for import tables Case 5 Test 1 : ", "0_1", "0_2_1", "0_1_1"),
+		Entry("Internal Migration for import tables Case 3 Test 2 : ", "0_2", "1", "0_3"),
 
 		Entry("OrderTest Case 1 Test 1 : ", "9", "10", "9_1"),
 
 		Entry("Internal Migration for tables : ", "10_1", "11_3", "10_2"),
-		Entry("Internal Migration for tables : ", "0_1", "1", "0_1_1"),
-		Entry("Internal Migration for tables : ", "0_1", "20", "0_1_1"),
-		Entry("Internal Migration for tables : ", "0_1", "0_2", "0_1_1"),
+		Entry("Internal Migration for tables : ", "0_1", "1", "0_2"),
+		Entry("Internal Migration for tables : ", "0_1", "20", "0_2"),
+
+		Entry("Excotic scenario 1 - bumping from level 3 to level 2", "10_1_2", "11_3", "10_2"),
 	)
 
 	Context("computeInsertIdx - bad input tests", func() {
 		It("Should throw error for input 1, 1_1", func() {
-			_, err := computeInsertIdx("1", "1_1")
-			Expect(err).To(HaveOccurred())
+			idx, err := computeInsertIdx("1", "1_1")
+			Expect(err).To(HaveOccurred(), "got %s instead of error", idx)
 		})
 		It("Should throw error for input 10_1, 10_2", func() {
-			_, err := computeInsertIdx("10_1", "10_2")
-			Expect(err).To(HaveOccurred())
+			idx, err := computeInsertIdx("10_1", "10_2")
+			Expect(err).To(HaveOccurred(), "got %s instead of error", idx)
 		})
 		It("Should throw error for input 10_1, 10_1", func() {
-			_, err := computeInsertIdx("10_1", "10_1")
-			Expect(err).To(HaveOccurred())
+			idx, err := computeInsertIdx("10_1", "10_1")
+			Expect(err).To(HaveOccurred(), "got %s instead of error", idx)
 		})
 		It("Should throw error for input 10, 9", func() {
-			_, err := computeInsertIdx("10", "9")
-			Expect(err).To(HaveOccurred())
+			idx, err := computeInsertIdx("10", "9")
+			Expect(err).To(HaveOccurred(), "got %s instead of error", idx)
 		})
-		It("Should throw error for input 10_1_2, 11_3", func() {
-			_, err := computeInsertIdx("10_1_2", "11_3")
-			Expect(err).To(HaveOccurred())
-		})
-		It("Should throw error for input 0, 1", func() {
-			_, err := computeInsertIdx("0", "1")
-			Expect(err).To(HaveOccurred())
+		It("Should throw error for input 0_1, 0_2", func() {
+			idx, err := computeInsertIdx("0_1", "0_2")
+			Expect(err).To(HaveOccurred(), "got %s instead of error", idx)
 		})
 		It("Should throw error for input 0_1, 0", func() {
-			_, err := computeInsertIdx("0_1", "0")
-			Expect(err).To(HaveOccurred())
+			idx, err := computeInsertIdx("0_1", "0")
+			Expect(err).To(HaveOccurred(), "got %s instead of error", idx)
 		})
 	})
 
 	DescribeTable("newDSIdx tests with skipZeroAssertionForMultitenant",
 		func(before, after, expected string) {
-			setSkipZeroAssertionForMultitenant(true)
 			computedIdx, err := computeInsertIdx(before, after)
 			Expect(computedIdx).To(Equal(expected))
 			Expect(err).To(BeNil())
-			setSkipZeroAssertionForMultitenant(false)
 		},
 		// dList => 1 2 3 4 5
 		Entry("Internal Migration for regular tables 1 Test 1 with skipZeroAssertionForMultitenant: ", "1", "2", "1_1"),
@@ -162,45 +146,6 @@ var _ = Describe("Calculate newDSIdx for internal migrations", Ordered, func() {
 		Entry("Internal Migration for tables with Negative Indexes and skipZeroAssertionForMultitenant: ", "-2_1", "0", "-2_2"),
 		Entry("Internal Migration for tables with Negative Indexes and skipZeroAssertionForMultitenant: ", "-2_1", "20", "-2_2"),
 	)
-
-	Context("computeInsertVals - good input tests", func() {
-		It("Should not throw error for input 0_1, 0_2", func() {
-			calculatedIdx, err := computeInsertVals([]string{"0", "1"}, []string{"0", "2"})
-			Expect(err).To(BeNil())
-			Expect(calculatedIdx).To(Equal([]string{"0", "1", "1"}))
-		})
-	})
-
-	Context("computeInsertVals - bad input tests", func() {
-		It("Should throw error for nil inputs", func() {
-			_, err := computeInsertVals(nil, nil)
-			Expect(err).To(HaveOccurred())
-		})
-		It("Should throw error for nil before input", func() {
-			_, err := computeInsertVals(nil, []string{"1"})
-			Expect(err).To(HaveOccurred())
-		})
-		It("Should throw error for nil after input", func() {
-			_, err := computeInsertVals([]string{"1"}, nil)
-			Expect(err).To(HaveOccurred())
-		})
-		It("Should throw error for input 1, 1_1", func() {
-			_, err := computeInsertVals([]string{"1"}, []string{"1", "1"})
-			Expect(err).To(HaveOccurred())
-		})
-		It("Should throw error for input 10_1, 10_2", func() {
-			_, err := computeInsertVals([]string{"10", "1"}, []string{"10", "2"})
-			Expect(err).To(HaveOccurred())
-		})
-		It("Should throw error for input 10_1, 10_1", func() {
-			_, err := computeInsertVals([]string{"10", "1"}, []string{"10", "1"})
-			Expect(err).To(HaveOccurred())
-		})
-		It("Should throw error for input 10, 9", func() {
-			_, err := computeInsertVals([]string{"10"}, []string{"9"})
-			Expect(err).To(HaveOccurred())
-		})
-	})
 })
 
 var _ = Describe("jobsdb", Ordered, func() {
@@ -432,10 +377,6 @@ var sanitizeRegexp = regexp.MustCompile(`\\u0000`)
 
 func sanitizedJsonUsingRegexp(input json.RawMessage) json.RawMessage {
 	return json.RawMessage(sanitizeRegexp.ReplaceAllString(string(input), ""))
-}
-
-func setSkipZeroAssertionForMultitenant(b bool) {
-	skipZeroAssertionForMultitenant = b
 }
 
 func TestRefreshDSList(t *testing.T) {
@@ -1018,6 +959,12 @@ func TestCacheScenarios(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, 2, len(res.Jobs), "jobsDB should report 2 unprocessed jobs when using destination_id as filter, after we added 2 jobs")
 	})
+}
+
+func Test_SortDnumList(t *testing.T) {
+	l := []string{"1", "0_1", "0_1_1", "-2"}
+	sortDnumList(l)
+	require.Equal(t, []string{"-2", "0_1", "0_1_1", "1"}, l)
 }
 
 type testingT interface {

@@ -1244,9 +1244,10 @@ func TestCreateAWSSessionConfig(t *testing.T) {
 			},
 			service: "redshift",
 			expectedConfig: &awsutils.SessionConfig{
-				IAMRoleARN: someIAMRoleARN,
-				ExternalID: someWorkspaceID,
-				Service:    "redshift",
+				RoleBasedAuth: true,
+				IAMRoleARN:    someIAMRoleARN,
+				ExternalID:    someWorkspaceID,
+				Service:       "redshift",
 			},
 		},
 	}

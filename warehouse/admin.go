@@ -47,20 +47,20 @@ func (*WarehouseAdmin) TriggerUpload(off bool, reply *string) error {
 // Query the underlying warehouse
 func (*WarehouseAdmin) Query(s QueryInput, reply *warehouseutils.QueryResult) error {
 	if strings.TrimSpace(s.DestID) == "" {
-		return errors.New("Please specify the destination ID to query the warehouse")
+		return errors.New("please specify the destination ID to query the warehouse")
 	}
 
 	var warehouse warehouseutils.WarehouseT
 	srcMap, ok := connectionsMap[s.DestID]
 	if !ok {
-		return errors.New("Please specify a valid and existing destination ID")
+		return errors.New("please specify a valid and existing destination ID")
 	}
 
 	// use the sourceID-destID connection if sourceID is not empty
 	if s.SourceID != "" {
 		w, ok := srcMap[s.SourceID]
 		if !ok {
-			return errors.New("Please specify a valid (sourceID, destination ID) pair")
+			return errors.New("please specify a valid (sourceID, destination ID) pair")
 		}
 		warehouse = w
 	} else {

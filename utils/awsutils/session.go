@@ -21,6 +21,7 @@ type SessionConfig struct {
 	AccessKeyID      string         `mapstructure:"accessKeyID"`
 	AccessKey        string         `mapstructure:"accessKey"`
 	SecretAccessKey  string         `mapstructure:"secretAccessKey"`
+	RoleBasedAuth    bool           `mapstructure:"roleBasedAuth"`
 	IAMRoleARN       string         `mapstructure:"iamRoleARN"`
 	ExternalID       string         `mapstructure:"externalID"`
 	Endpoint         *string        `mapstructure:"endpoint"`
@@ -71,7 +72,7 @@ func CreateSession(config *SessionConfig) (*session.Session, error) {
 		awsCredentials *credentials.Credentials
 		err            error
 	)
-	if config.IAMRoleARN != "" {
+	if config.RoleBasedAuth {
 		awsCredentials, err = createCredentailsForRole(config)
 	} else if config.AccessKey != "" && config.AccessKeyID != "" {
 		awsCredentials, err = credentials.NewStaticCredentials(config.AccessKeyID, config.AccessKey, ""), nil
@@ -90,6 +91,11 @@ func CreateSession(config *SessionConfig) (*session.Session, error) {
 	})
 }
 
+func isRoleBasedAuthFieldExist(config map[string]interface{}) bool {
+	_, ok := config["roleBasedAuth"].(bool)
+	return ok
+}
+
 func NewSimpleSessionConfigForDestination(destination *backendconfig.DestinationT, serviceName string) (*SessionConfig, error) {
 	if destination == nil {
 		return nil, errors.New("destination should not be nil")
@@ -98,6 +104,15 @@ func NewSimpleSessionConfigForDestination(destination *backendconfig.Destination
 	if err := mapstructure.Decode(destination.Config, &sessionConfig); err != nil {
 		return nil, fmt.Errorf("unable to populate session config using destinationConfig: %w", err)
 	}
+
+	if sessionConfig.RoleBasedAuth && sessionConfig.IAMRoleARN == "" {
+		return nil, errors.New("incompatible role configuration")
+	}
+
+	if !isRoleBasedAuthFieldExist(destination.Config) {
+		sessionConfig.RoleBasedAuth = sessionConfig.IAMRoleARN != ""
+	}
+
 	// Some AWS destinations are using SecretAccessKey instead of accessKey
 	if sessionConfig.SecretAccessKey != "" {
 		sessionConfig.AccessKey = sessionConfig.SecretAccessKey
