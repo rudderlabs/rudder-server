@@ -247,7 +247,23 @@ func (uploadReq UploadReqT) GetWHUpload() (*proto.WHUploadResponse, error) {
 	var uploadError string
 	var isUploadArchived sql.NullBool
 	row := uploadReq.API.dbHandle.QueryRow(query)
-	err = row.Scan(&upload.Id, &upload.SourceId, &upload.DestinationId, &upload.DestinationType, &upload.Namespace, &upload.Status, &uploadError, &createdAt, &firstEventAt, &lastEventAt, &lastExecAt, &updatedAt, &timingsObject, &nextRetryTimeStr, &isUploadArchived)
+	err = row.Scan(
+		&upload.Id,
+		&upload.SourceId,
+		&upload.DestinationId,
+		&upload.DestinationType,
+		&upload.Namespace,
+		&upload.Status,
+		&uploadError,
+		&createdAt,
+		&firstEventAt,
+		&lastEventAt,
+		&lastExecAt,
+		&updatedAt,
+		&timingsObject,
+		&nextRetryTimeStr,
+		&isUploadArchived,
+	)
 	if err != nil {
 		uploadReq.API.log.Errorf(err.Error())
 		return &proto.WHUploadResponse{}, err
@@ -319,7 +335,12 @@ func (uploadReq UploadReqT) TriggerWHUpload() (response *proto.TriggerWhUploadsR
 	var upload UploadT
 
 	row := uploadReq.API.dbHandle.QueryRow(query)
-	err = row.Scan(&upload.ID, &upload.SourceID, &upload.DestinationID, &upload.Metadata)
+	err = row.Scan(
+		&upload.ID,
+		&upload.SourceID,
+		&upload.DestinationID,
+		&upload.Metadata,
+	)
 	if err != nil {
 		uploadReq.API.log.Errorf(err.Error())
 		return
@@ -359,7 +380,16 @@ func (tableUploadReq TableUploadReqT) GetWhTableUploads() ([]*proto.WHTable, err
 		var tableUpload proto.WHTable
 		var count sql.NullInt32
 		var lastExecTime, updatedAt sql.NullTime
-		err = rows.Scan(&tableUpload.Id, &tableUpload.UploadId, &tableUpload.Name, &count, &tableUpload.Status, &tableUpload.Error, &lastExecTime, &updatedAt)
+		err = rows.Scan(
+			&tableUpload.Id,
+			&tableUpload.UploadId,
+			&tableUpload.Name,
+			&count,
+			&tableUpload.Status,
+			&tableUpload.Error,
+			&lastExecTime,
+			&updatedAt,
+		)
 		if err != nil {
 			tableUploadReq.API.log.Errorf(err.Error())
 			return []*proto.WHTable{}, err
@@ -385,7 +415,18 @@ func (tableUploadReq TableUploadReqT) GetWhTableUploads() ([]*proto.WHTable, err
 }
 
 func (tableUploadReq TableUploadReqT) generateQuery(selectFields string) string {
-	query := fmt.Sprintf(`select %s from %s where wh_upload_id = %d`, selectFields, warehouseutils.WarehouseTableUploadsTable, tableUploadReq.UploadID)
+	query := fmt.Sprintf(`
+	SELECT 
+	  %s 
+	FROM 
+	  %s 
+	WHERE 
+	  wh_upload_id = %d
+`,
+		selectFields,
+		warehouseutils.WarehouseTableUploadsTable,
+		tableUploadReq.UploadID,
+	)
 	if len(strings.TrimSpace(tableUploadReq.Name)) > 0 {
 		query = fmt.Sprintf(`%s and table_name = %s`, query, tableUploadReq.Name)
 	}
@@ -403,7 +444,18 @@ func (tableUploadReq TableUploadReqT) validateReq() error {
 }
 
 func (uploadReq UploadReqT) generateQuery(selectedFields string) string {
-	return fmt.Sprintf(`select %s from %s  where id = %d`, selectedFields, warehouseutils.WarehouseUploadsTable, uploadReq.UploadId)
+	return fmt.Sprintf(`
+		SELECT 
+		  %s 
+		FROM 
+		  %s 
+		WHERE 
+		  id = %d
+`,
+		selectedFields,
+		warehouseutils.WarehouseUploadsTable,
+		uploadReq.UploadId,
+	)
 }
 
 func (uploadReq UploadReqT) validateReq() error {
@@ -462,14 +514,45 @@ func (uploadsReq *UploadsReqT) getUploadsFromDb(isMultiWorkspace bool, query str
 
 		// total upload count is also a part of these rows if the query was made for a hosted workspace
 		if isMultiWorkspace {
-			err = rows.Scan(&upload.Id, &upload.SourceId, &upload.DestinationId, &upload.DestinationType, &upload.Namespace, &upload.Status, &uploadError, &firstEventAt, &lastEventAt, &lastExecAt, &updatedAt, &timingsObject, &nextRetryTimeStr, &isUploadArchived, &totalUploads)
+			err = rows.Scan(
+				&upload.Id,
+				&upload.SourceId,
+				&upload.DestinationId,
+				&upload.DestinationType,
+				&upload.Namespace,
+				&upload.Status,
+				&uploadError,
+				&firstEventAt,
+				&lastEventAt,
+				&lastExecAt,
+				&updatedAt,
+				&timingsObject,
+				&nextRetryTimeStr,
+				&isUploadArchived,
+				&totalUploads,
+			)
 			if err != nil {
 				uploadsReq.API.log.Errorf(err.Error())
 				return nil, totalUploadCount, err
 			}
 			totalUploadCount = totalUploads
 		} else {
-			err = rows.Scan(&upload.Id, &upload.SourceId, &upload.DestinationId, &upload.DestinationType, &upload.Namespace, &upload.Status, &uploadError, &firstEventAt, &lastEventAt, &lastExecAt, &updatedAt, &timingsObject, &nextRetryTimeStr, &isUploadArchived)
+			err = rows.Scan(
+				&upload.Id,
+				&upload.SourceId,
+				&upload.DestinationId,
+				&upload.DestinationType,
+				&upload.Namespace,
+				&upload.Status,
+				&uploadError,
+				&firstEventAt,
+				&lastEventAt,
+				&lastExecAt,
+				&updatedAt,
+				&timingsObject,
+				&nextRetryTimeStr,
+				&isUploadArchived,
+			)
 			if err != nil {
 				uploadsReq.API.log.Errorf(err.Error())
 				return nil, totalUploadCount, err
@@ -513,7 +596,14 @@ func (uploadsReq *UploadsReqT) getUploadsFromDb(isMultiWorkspace bool, query str
 
 func (uploadsReq *UploadsReqT) getTotalUploadCount(whereClause string) (int32, error) {
 	var totalUploadCount int32
-	query := fmt.Sprintf(`select count(*) from %s`, warehouseutils.WarehouseUploadsTable)
+	query := fmt.Sprintf(`
+	select 
+	  count(*) 
+	from 
+	  %s
+`,
+		warehouseutils.WarehouseUploadsTable,
+	)
 	if whereClause != "" {
 		query += fmt.Sprintf(` %s`, whereClause)
 	}
@@ -528,7 +618,17 @@ func (uploadsReq *UploadsReqT) warehouseUploadsForHosted(authorizedSourceIDs []s
 	var totalUploadCount int32
 
 	// create query
-	subQuery := fmt.Sprintf(`select %s, count(*) OVER() AS total_uploads from %s WHERE `, selectFields, warehouseutils.WarehouseUploadsTable)
+	subQuery := fmt.Sprintf(`
+		SELECT 
+		  %s, 
+		  COUNT(*) OVER() AS total_uploads 
+		FROM 
+		  %s 
+		WHERE
+`,
+		selectFields,
+		warehouseutils.WarehouseUploadsTable,
+	)
 	var whereClauses []string
 	if uploadsReq.SourceID == "" {
 		whereClauses = append(whereClauses, fmt.Sprintf(`source_id IN (%v)`, misc.SingleQuoteLiteralJoin(authorizedSourceIDs)))
@@ -546,7 +646,20 @@ func (uploadsReq *UploadsReqT) warehouseUploadsForHosted(authorizedSourceIDs []s
 	}
 
 	subQuery = subQuery + strings.Join(whereClauses, " AND ")
-	query := fmt.Sprintf(`select * from (%s)p order by id desc limit %d offset %d`, subQuery, uploadsReq.Limit, uploadsReq.Offset)
+	query := fmt.Sprintf(`
+		SELECT 
+		  * 
+		FROM 
+		  (%s) p 
+		ORDER BY 
+		  id DESC 
+		LIMIT 
+		  %d OFFSET %d
+`,
+		subQuery,
+		uploadsReq.Limit,
+		uploadsReq.Offset,
+	)
 	uploadsReq.API.log.Info(query)
 
 	// get uploads from db
@@ -574,7 +687,15 @@ func (uploadsReq *UploadsReqT) warehouseUploads(selectFields string) (uploadsRes
 	var totalUploadCount int32
 
 	// create query
-	query := fmt.Sprintf(`select %s from %s`, selectFields, warehouseutils.WarehouseUploadsTable)
+	query := fmt.Sprintf(`
+		select 
+		  %s 
+		from 
+		  %s
+`,
+		selectFields,
+		warehouseutils.WarehouseUploadsTable,
+	)
 	whereClause := ""
 	var whereClauses []string
 	if uploadsReq.SourceID != "" {
