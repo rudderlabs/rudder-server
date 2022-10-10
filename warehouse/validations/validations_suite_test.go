@@ -1,6 +1,6 @@
 //go:build !warehouse_integration
 
-package validations
+package validations_test
 
 import (
 	"testing"
@@ -9,7 +9,7 @@ import (
 	. "github.com/onsi/gomega"
 )
 
-func TestConfigurationTesting(t *testing.T) {
+func TestValidations(t *testing.T) {
 	RegisterFailHandler(Fail)
-	RunSpecs(t, "ConfigurationTesting Suite")
+	RunSpecs(t, "Validations Suite")
 }
