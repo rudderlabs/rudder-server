@@ -87,17 +87,27 @@ func (producer *BQStreamProducer) Produce(jsonData json.RawMessage, _ interface{
 	parsedJSON := gjson.ParseBytes(jsonData)
 	dsId := parsedJSON.Get("datasetId").String()
 	tblId := parsedJSON.Get("tableId").String()
-	props := parsedJSON.Get("properties").String()
+	props := parsedJSON.Get("properties")
 
-	var genericRec []*genericRecord
-	err := json.Unmarshal([]byte(props), &genericRec)
-	if err != nil {
-		return http.StatusBadRequest, "Failure", createErr(err, "error in unmarshalling data").Error()
+	var genericRecs []*genericRecord
+	if props.IsArray() {
+		err := json.Unmarshal([]byte(props.String()), &genericRecs)
+		if err != nil {
+			return http.StatusBadRequest, "Failure", createErr(err, "error in unmarshalling data").Error()
+		}
+	} else {
+		var genericRec *genericRecord
+		err := json.Unmarshal([]byte(props.String()), &genericRec)
+		if err != nil {
+			return http.StatusBadRequest, "Failure", createErr(err, "error in unmarshalling data").Error()
+		}
+		genericRecs = append(genericRecs, genericRec)
 	}
+
 	bqInserter := bqClient.Dataset(dsId).Table(tblId).Inserter()
 	ctx, cancel := context.WithTimeout(context.Background(), o.Timeout)
 	defer cancel()
-	err = bqInserter.Put(ctx, genericRec)
+	err := bqInserter.Put(ctx, genericRecs)
 
 	if err != nil {
 		if ctx.Err() != nil && errors.Is(err, context.DeadlineExceeded) {
