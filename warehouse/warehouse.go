@@ -1352,12 +1352,14 @@ func processHandler(w http.ResponseWriter, r *http.Request) {
 	pkgLogger.Debugf("BRT: Creating record for uploaded json in %s table with schema: %+v", warehouseutils.WarehouseStagingFilesTable, stagingFile.Schema)
 	schemaPayload, _ := json.Marshal(stagingFile.Schema)
 	sqlStatement := fmt.Sprintf(`INSERT INTO %s (location, schema, workspace_id, source_id, destination_id, status, total_events, first_event_at, last_event_at, created_at, updated_at, metadata)
-									   VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $10, $11)`, warehouseutils.WarehouseStagingFilesTable)
+									   VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`, warehouseutils.WarehouseStagingFilesTable)
 	stmt, err := dbHandle.Prepare(sqlStatement)
 	if err != nil {
 		panic(err)
 	}
 	defer stmt.Close()
+
+	now := timeutil.Now()
 
 	_, err = stmt.Exec(
 		stagingFile.Location,
@@ -1369,7 +1371,8 @@ func processHandler(w http.ResponseWriter, r *http.Request) {
 		stagingFile.TotalEvents,
 		firstEventAt,
 		lastEventAt,
-		timeutil.Now(),
+		now,
+		now,
 		metadata,
 	)
 	if err != nil {
