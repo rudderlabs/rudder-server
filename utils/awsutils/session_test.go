@@ -65,22 +65,98 @@ func TestNewSessionConfigWithSecretAccessKey(t *testing.T) {
 
 func TestNewSessionConfigWithRole(t *testing.T) {
 	serviceName := "s3"
-	destinationWithRole := backendconfig.DestinationT{
-		Config: map[string]interface{}{
-			"region":     someRegion,
-			"iamRoleARN": someIAMRoleARN,
-		},
-		WorkspaceID: someWorkspaceID,
-	}
-	sessionConfig, err := NewSessionConfigForDestination(&destinationWithRole, httpTimeout, serviceName)
-	assert.Nil(t, err)
-	assert.NotNil(t, sessionConfig)
-	assert.Equal(t, *sessionConfig, SessionConfig{
-		Region:     someRegion,
-		IAMRoleARN: someIAMRoleARN,
-		ExternalID: someWorkspaceID,
-		Timeout:    &httpTimeout,
-		Service:    serviceName,
+	t.Run("Without RoleBasedAuth", func(t *testing.T) {
+		destinationWithRole := backendconfig.DestinationT{
+			Config: map[string]interface{}{
+				"region":     someRegion,
+				"iamRoleARN": someIAMRoleARN,
+			},
+			WorkspaceID: someWorkspaceID,
+		}
+		sessionConfig, err := NewSessionConfigForDestination(&destinationWithRole, httpTimeout, serviceName)
+		assert.Nil(t, err)
+		assert.NotNil(t, sessionConfig)
+		assert.Equal(t, *sessionConfig, SessionConfig{
+			Region:        someRegion,
+			RoleBasedAuth: true,
+			IAMRoleARN:    someIAMRoleARN,
+			ExternalID:    someWorkspaceID,
+			Timeout:       &httpTimeout,
+			Service:       serviceName,
+		})
+	})
+
+	t.Run("With RoleBasedAuth false", func(t *testing.T) {
+		destinationWithRole := backendconfig.DestinationT{
+			Config: map[string]interface{}{
+				"region":        someRegion,
+				"roleBasedAuth": false,
+				"iamRoleARN":    someIAMRoleARN,
+			},
+			WorkspaceID: someWorkspaceID,
+		}
+		sessionConfig, err := NewSessionConfigForDestination(&destinationWithRole, httpTimeout, serviceName)
+		assert.Nil(t, err)
+		assert.NotNil(t, sessionConfig)
+		assert.Equal(t, *sessionConfig, SessionConfig{
+			Region:        someRegion,
+			RoleBasedAuth: false,
+			IAMRoleARN:    someIAMRoleARN,
+			ExternalID:    someWorkspaceID,
+			Timeout:       &httpTimeout,
+			Service:       serviceName,
+		})
+	})
+}
+
+func TestNewSessionConfigWithRoleBasedAuth(t *testing.T) {
+	serviceName := "s3"
+	t.Run("invalid RoleBasedAuth flag", func(t *testing.T) {
+		destinationWithRole := backendconfig.DestinationT{
+			Config: map[string]interface{}{
+				"region":        someRegion,
+				"iamRoleARN":    someIAMRoleARN,
+				"roleBasedAuth": "no", // should be bool
+			},
+			WorkspaceID: someWorkspaceID,
+		}
+		_, err := NewSessionConfigForDestination(&destinationWithRole, httpTimeout, serviceName)
+		assert.NotNil(t, err)
+		assert.ErrorContains(t, err, "'roleBasedAuth' expected type 'bool'")
+	})
+	t.Run("With iamRoleARN", func(t *testing.T) {
+		destinationWithRole := backendconfig.DestinationT{
+			Config: map[string]interface{}{
+				"region":        someRegion,
+				"iamRoleARN":    someIAMRoleARN,
+				"roleBasedAuth": true,
+			},
+			WorkspaceID: someWorkspaceID,
+		}
+		sessionConfig, err := NewSessionConfigForDestination(&destinationWithRole, httpTimeout, serviceName)
+		assert.Nil(t, err)
+		assert.NotNil(t, sessionConfig)
+		assert.Equal(t, *sessionConfig, SessionConfig{
+			Region:        someRegion,
+			RoleBasedAuth: true,
+			IAMRoleARN:    someIAMRoleARN,
+			ExternalID:    someWorkspaceID,
+			Timeout:       &httpTimeout,
+			Service:       serviceName,
+		})
+	})
+
+	t.Run("Without iamRoleARN", func(t *testing.T) {
+		destinationWithRole := backendconfig.DestinationT{
+			Config: map[string]interface{}{
+				"region":        someRegion,
+				"roleBasedAuth": true,
+			},
+			WorkspaceID: someWorkspaceID,
+		}
+		_, err := NewSessionConfigForDestination(&destinationWithRole, httpTimeout, serviceName)
+		assert.NotNil(t, err)
+		assert.EqualError(t, err, "incompatible role configuration")
 	})
 }
 
@@ -115,30 +191,43 @@ func TestNewSessionConfigWithBadDestination(t *testing.T) {
 }
 
 func TestCreateSessionWithRole(t *testing.T) {
-	sessionConfig := SessionConfig{
-		Region:     someRegion,
-		IAMRoleARN: someIAMRoleARN,
-		ExternalID: someWorkspaceID,
-		Timeout:    &httpTimeout,
-	}
-	awsSession, err := CreateSession(&sessionConfig)
-	assert.Nil(t, err)
-	assert.NotNil(t, awsSession)
-	assert.NotNil(t, awsSession.Config.Credentials)
-	assert.Equal(t, sessionConfig.Region, *awsSession.Config.Region)
-	assert.Equal(t, *sessionConfig.Timeout, awsSession.Config.HTTPClient.Timeout)
-}
+	t.Run("With RoleBasedAuth but without ExternalID", func(t *testing.T) {
+		sessionConfig := SessionConfig{
+			Region:        someRegion,
+			RoleBasedAuth: true,
+			IAMRoleARN:    someIAMRoleARN,
+			Timeout:       &httpTimeout,
+		}
+		awsSession, err := CreateSession(&sessionConfig)
+		assert.NotNil(t, err)
+		assert.Nil(t, awsSession)
+		assert.EqualError(t, err, "externalID is required for IAM role")
+	})
 
-func TestCreateSessionWithRoleButWithoutExternalID(t *testing.T) {
-	sessionConfig := SessionConfig{
-		Region:     someRegion,
-		IAMRoleARN: someIAMRoleARN,
-		Timeout:    &httpTimeout,
-	}
-	awsSession, err := CreateSession(&sessionConfig)
-	assert.NotNil(t, err)
-	assert.Nil(t, awsSession)
-	assert.EqualError(t, err, "externalID is required for IAM role")
+	t.Run("With RoleBasedAuth false and without ExternalID", func(t *testing.T) {
+		sessionConfig := SessionConfig{
+			Region:        someRegion,
+			RoleBasedAuth: false,
+			IAMRoleARN:    someIAMRoleARN,
+			Timeout:       &httpTimeout,
+		}
+		awsSession, err := CreateSession(&sessionConfig)
+		assert.Nil(t, err)
+		assert.NotNil(t, awsSession)
+	})
+
+	t.Run("With RoleBasedAuth true auth and ExternalID", func(t *testing.T) {
+		sessionConfig := SessionConfig{
+			Region:        someRegion,
+			RoleBasedAuth: true,
+			ExternalID:    someWorkspaceID,
+			IAMRoleARN:    someIAMRoleARN,
+			Timeout:       &httpTimeout,
+		}
+		awsSession, err := CreateSession(&sessionConfig)
+		assert.Nil(t, err)
+		assert.NotNil(t, awsSession)
+	})
 }
 
 func TestCreateSessionWithAccessKeys(t *testing.T) {
