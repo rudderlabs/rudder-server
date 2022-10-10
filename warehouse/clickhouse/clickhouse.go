@@ -296,8 +296,7 @@ func ColumnsWithDataTypes(tableName string, columns map[string]string, notNullab
 }
 
 func getClickHouseCodecForColumnType(columnType, tableName string) string {
-	switch columnType {
-	case "datetime":
+	if columnType == "datetime" {
 		if disableNullable && !(tableName == warehouseutils.IdentifiesTable || tableName == warehouseutils.UsersTable) {
 			return "Codec(DoubleDelta, LZ4)"
 		}
@@ -475,14 +474,6 @@ func castStringToArray(data, dataType string) interface{} {
 		if err != nil {
 			pkgLogger.Error("Error while unmarshalling data into array of bool: %s", err.Error())
 			return dataBool
-		}
-		dataInt := make([]int32, len(dataBool))
-		for _, val := range dataBool {
-			if val {
-				dataInt = append(dataInt, 1)
-			} else {
-				dataInt = append(dataInt, 0)
-			}
 		}
 		return dataBool
 	}

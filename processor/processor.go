@@ -477,6 +477,7 @@ var (
 	userTransformBatchSize    int
 	writeKeyDestinationMap    map[string][]backendconfig.DestinationT
 	writeKeySourceMap         map[string]backendconfig.SourceT
+	workspaceLibrariesMap     map[string]backendconfig.LibrariesT
 	destinationIDtoTypeMap    map[string]string
 	batchDestinations         []string
 	configSubscriberLock      sync.RWMutex
@@ -597,25 +598,35 @@ func SetFeaturesRetryAttempts(overrideAttempts int) {
 
 func (proc *HandleT) backendConfigSubscriber() {
 	ch := proc.backendConfig.Subscribe(context.TODO(), backendconfig.TopicProcessConfig)
-	for config := range ch {
+	for data := range ch {
+		config := data.Data.(map[string]backendconfig.ConfigT)
 		configSubscriberLock.Lock()
+		workspaceLibrariesMap = make(map[string]backendconfig.LibrariesT, len(config))
 		writeKeyDestinationMap = make(map[string][]backendconfig.DestinationT)
 		writeKeySourceMap = map[string]backendconfig.SourceT{}
 		destinationIDtoTypeMap = make(map[string]string)
-		sources := config.Data.(backendconfig.ConfigT)
-		for i := range sources.Sources {
-			source := &sources.Sources[i]
-			writeKeySourceMap[source.WriteKey] = *source
-			if source.Enabled {
-				writeKeyDestinationMap[source.WriteKey] = source.Destinations
-				for j := range source.Destinations {
-					destination := &source.Destinations[j]
-					destinationIDtoTypeMap[destination.ID] = destination.DestinationDefinition.Name
+		for workspaceID, wConfig := range config {
+			for i := range wConfig.Sources {
+				source := &wConfig.Sources[i]
+				writeKeySourceMap[source.WriteKey] = *source
+				if source.Enabled {
+					writeKeyDestinationMap[source.WriteKey] = source.Destinations
+					for j := range source.Destinations {
+						destination := &source.Destinations[j]
+						destinationIDtoTypeMap[destination.ID] = destination.DestinationDefinition.Name
+					}
 				}
 			}
+			workspaceLibrariesMap[workspaceID] = wConfig.Libraries
 		}
 		configSubscriberLock.Unlock()
 	}
+}
+
+func getWorkspaceLibraries(workspaceID string) backendconfig.LibrariesT {
+	configSubscriberLock.RLock()
+	defer configSubscriberLock.RUnlock()
+	return workspaceLibrariesMap[workspaceID]
 }
 
 func getSourceByWriteKey(writeKey string) (*backendconfig.SourceT, error) {
@@ -1369,8 +1380,8 @@ func (proc *HandleT) processJobsForDest(subJobs subJob, parsedEventList [][]type
 
 			backendEnabledDestTypes := getBackendEnabledDestinationTypes(writeKey)
 			enabledDestTypes := integrations.FilterClientIntegrations(singularEvent, backendEnabledDestTypes)
-			workspaceID := proc.backendConfig.GetWorkspaceIDForWriteKey(writeKey)
-			workspaceLibraries := proc.backendConfig.GetWorkspaceLibrariesForWorkspaceID(workspaceID)
+			workspaceID := eventList[idx].Metadata.WorkspaceID
+			workspaceLibraries := getWorkspaceLibraries(workspaceID)
 
 			for i := range enabledDestTypes {
 				destType := &enabledDestTypes[i]
@@ -1576,7 +1587,7 @@ func (proc *HandleT) Store(in *storeMessage) {
 		proc.logger.Debug("[Processor] Total jobs written to batch router : ", len(batchDestJobs))
 
 		err := misc.RetryWithNotify(context.Background(), proc.jobsDBCommandTimeout, proc.jobdDBMaxRetries, func(ctx context.Context) error {
-			return proc.batchRouterDB.WithStoreSafeTx(func(tx jobsdb.StoreSafeTx) error {
+			return proc.batchRouterDB.WithStoreSafeTx(ctx, func(tx jobsdb.StoreSafeTx) error {
 				err := proc.batchRouterDB.StoreInTx(ctx, tx, batchDestJobs)
 				if err != nil {
 					return fmt.Errorf("storing batch router jobs: %w", err)
@@ -1615,7 +1626,7 @@ func (proc *HandleT) Store(in *storeMessage) {
 		proc.logger.Debug("[Processor] Total jobs written to router : ", len(destJobs))
 
 		err := misc.RetryWithNotify(context.Background(), proc.jobsDBCommandTimeout, proc.jobdDBMaxRetries, func(ctx context.Context) error {
-			return proc.routerDB.WithStoreSafeTx(func(tx jobsdb.StoreSafeTx) error {
+			return proc.routerDB.WithStoreSafeTx(ctx, func(tx jobsdb.StoreSafeTx) error {
 				err := proc.routerDB.StoreInTx(ctx, tx, destJobs)
 				if err != nil {
 					return fmt.Errorf("storing router jobs: %w", err)
@@ -1669,7 +1680,7 @@ func (proc *HandleT) Store(in *storeMessage) {
 
 	txnStart := time.Now()
 	err := misc.RetryWithNotify(context.Background(), proc.jobsDBCommandTimeout, proc.jobdDBMaxRetries, func(ctx context.Context) error {
-		return proc.gatewayDB.WithUpdateSafeTx(func(tx jobsdb.UpdateSafeTx) error {
+		return proc.gatewayDB.WithUpdateSafeTx(ctx, func(tx jobsdb.UpdateSafeTx) error {
 			err := proc.gatewayDB.UpdateJobStatusInTx(ctx, tx, statusList, []string{GWCustomVal}, nil)
 			if err != nil {
 				return fmt.Errorf("updating gateway jobs statuses: %w", err)

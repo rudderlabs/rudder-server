@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"net/http"
 	"strings"
 	"time"
 
@@ -99,7 +100,11 @@ type UploadAPIT struct {
 
 var UploadAPI UploadAPIT
 
-const DownloadFileNamePattern = "downloadfile.*.tmp"
+const (
+	TriggeredSuccessfully = "Triggered successfully"
+	NoPendingEvents       = "No pending events to sync for this destination"
+  DownloadFileNamePattern = "downloadfile.*.tmp"
+)
 
 func InitWarehouseAPI(dbHandle *sql.DB, log logger.Logger) error {
 	connectionToken, tokenType, isMultiWorkspace, err := deployment.GetConnectionToken()
@@ -123,7 +128,7 @@ func InitWarehouseAPI(dbHandle *sql.DB, log logger.Logger) error {
 			UseTLS:        config.GetBool("CP_ROUTER_USE_TLS", true),
 			Logger:        log,
 			RegisterService: func(srv *grpc.Server) {
-				proto.RegisterWarehouseServer(srv, &warehousegrpc{})
+				proto.RegisterWarehouseServer(srv, &warehouseGRPC{})
 			},
 		},
 	}
@@ -184,7 +189,7 @@ func (uploadsReq *UploadsReqT) TriggerWhUploads() (response *proto.TriggerWhUplo
 		if err != nil {
 			response = &proto.TriggerWhUploadsResponse{
 				Message:    err.Error(),
-				StatusCode: 400,
+				StatusCode: http.StatusBadRequest,
 			}
 		}
 	}()
@@ -217,8 +222,8 @@ func (uploadsReq *UploadsReqT) TriggerWhUploads() (response *proto.TriggerWhUplo
 	if (pendingUploadCount + pendingStagingFileCount) == int64(0) {
 		err = nil
 		response = &proto.TriggerWhUploadsResponse{
-			Message:    "No pending events to sync for this destination",
-			StatusCode: 200,
+			Message:    NoPendingEvents,
+			StatusCode: http.StatusOK,
 		}
 		return
 	}
@@ -227,8 +232,8 @@ func (uploadsReq *UploadsReqT) TriggerWhUploads() (response *proto.TriggerWhUplo
 		return
 	}
 	response = &proto.TriggerWhUploadsResponse{
-		Message:    "Triggered successfully",
-		StatusCode: 200,
+		Message:    TriggeredSuccessfully,
+		StatusCode: http.StatusOK,
 	}
 	return
 }
@@ -306,7 +311,7 @@ func (uploadReq UploadReqT) TriggerWHUpload() (response *proto.TriggerWhUploadsR
 		if err != nil {
 			response = &proto.TriggerWhUploadsResponse{
 				Message:    err.Error(),
-				StatusCode: 400,
+				StatusCode: http.StatusBadRequest,
 			}
 		}
 	}()
@@ -336,8 +341,8 @@ func (uploadReq UploadReqT) TriggerWHUpload() (response *proto.TriggerWhUploadsR
 		return
 	}
 	response = &proto.TriggerWhUploadsResponse{
-		Message:    "Triggered successfully",
-		StatusCode: 200,
+		Message:    TriggeredSuccessfully,
+		StatusCode: http.StatusOK,
 	}
 	return
 }

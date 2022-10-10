@@ -1770,7 +1770,8 @@ func (job *UploadJobT) createLoadFiles(generateAll bool) (startLoadFileID, endLo
 				DestinationName:              job.warehouse.Destination.Name,
 				DestinationType:              destType,
 				DestinationNamespace:         job.warehouse.Namespace,
-				Destination:                  job.warehouse.Destination,
+				DestinationConfig:            job.warehouse.Destination.Config,
+				WorkspaceID:                  job.warehouse.Destination.WorkspaceID,
 				UniqueLoadGenID:              uniqueLoadGenID,
 				RudderStoragePrefix:          misc.GetRudderObjectStoragePrefix(),
 				UseRudderStorage:             job.upload.UseRudderStorage,
@@ -1965,13 +1966,6 @@ func (job *UploadJobT) GetLoadFilesMetadata(options warehouseutils.GetLoadFilesO
 	var tableFilterSQL string
 	if options.Table != "" {
 		tableFilterSQL = fmt.Sprintf(` AND table_name='%s'`, options.Table)
-	}
-
-	startID := options.StartID
-	endID := options.EndID
-	if startID == 0 || endID == 0 {
-		startID = job.upload.StartLoadFileID
-		endID = job.upload.EndLoadFileID
 	}
 
 	var limitSQL string
