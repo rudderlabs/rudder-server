@@ -112,7 +112,7 @@ func (job *Payload) getFileManager(config interface{}, useRudderStorage bool) (f
 			Config:                      config,
 			UseRudderStorage:            useRudderStorage,
 			RudderStoragePrefixOverride: job.RudderStoragePrefix,
-			WorkspaceID:                 job.Destination.WorkspaceID,
+			WorkspaceID:                 job.WorkspaceID,
 		}),
 	})
 	return fileManager, err
@@ -159,7 +159,7 @@ func (jobRun *JobRunT) downloadStagingFile() error {
 		return
 	}
 
-	err := downloadTask(job.Destination.Config, job.UseRudderStorage)
+	err := downloadTask(job.DestinationConfig, job.UseRudderStorage)
 	if err != nil {
 		if PickupStagingConfiguration(&job) {
 			pkgLogger.Infof("[WH]: Starting processing staging file with revision config for StagingFileID: %d, DestinationRevisionID: %s, StagingDestinationRevisionID: %s, whIdentifier: %s", job.StagingFileID, job.DestinationRevisionID, job.StagingDestinationRevisionID, jobRun.whIdentifier)
@@ -210,7 +210,7 @@ type loadFileUploadOutputT struct {
 
 func (jobRun *JobRunT) uploadLoadFilesToObjectStorage() ([]loadFileUploadOutputT, error) {
 	job := jobRun.job
-	uploader, err := job.getFileManager(job.Destination.Config, job.UseRudderStorage)
+	uploader, err := job.getFileManager(job.DestinationConfig, job.UseRudderStorage)
 	if err != nil {
 		return []loadFileUploadOutputT{}, err
 	}
@@ -295,7 +295,7 @@ func (jobRun *JobRunT) uploadLoadFileToObjectStorage(uploader filemanager.FileMa
 		return filemanager.UploadOutput{}, err
 	}
 	defer file.Close()
-	pkgLogger.Debugf("[WH]: %s: Uploading load_file to %s for table: %s with staging_file id: %v", job.DestinationType, warehouseutils.ObjectStorageType(job.DestinationType, job.Destination.Config, job.UseRudderStorage), tableName, job.StagingFileID)
+	pkgLogger.Debugf("[WH]: %s: Uploading load_file to %s for table: %s with staging_file id: %v", job.DestinationType, warehouseutils.ObjectStorageType(job.DestinationType, job.DestinationConfig, job.UseRudderStorage), tableName, job.StagingFileID)
 	var uploadLocation filemanager.UploadOutput
 	if misc.Contains(warehouseutils.TimeWindowDestinations, job.DestinationType) {
 		uploadLocation, err = uploader.Upload(context.TODO(), file, warehouseutils.GetTablePathInObjectStorage(jobRun.job.DestinationNamespace, tableName), job.LoadFilePrefix)
