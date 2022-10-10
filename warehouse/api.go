@@ -5,8 +5,8 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"os"
 	"net/http"
+	"os"
 	"strings"
 	"time"
 
@@ -101,9 +101,9 @@ type UploadAPIT struct {
 var UploadAPI UploadAPIT
 
 const (
-	TriggeredSuccessfully = "Triggered successfully"
-	NoPendingEvents       = "No pending events to sync for this destination"
-  DownloadFileNamePattern = "downloadfile.*.tmp"
+	TriggeredSuccessfully   = "Triggered successfully"
+	NoPendingEvents         = "No pending events to sync for this destination"
+	DownloadFileNamePattern = "downloadfile.*.tmp"
 )
 
 func InitWarehouseAPI(dbHandle *sql.DB, log logger.Logger) error {
