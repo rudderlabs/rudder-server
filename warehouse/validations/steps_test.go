@@ -1,6 +1,6 @@
 //go:build !warehouse_integration
 
-package configuration_testing
+package validations
 
 import (
 	. "github.com/onsi/ginkgo/v2"

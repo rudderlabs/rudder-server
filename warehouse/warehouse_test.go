@@ -5,8 +5,8 @@ package warehouse
 import (
 	"github.com/golang/mock/gomock"
 	"github.com/rudderlabs/rudder-server/utils/misc"
-	"github.com/rudderlabs/rudder-server/warehouse/configuration_testing"
 	"github.com/rudderlabs/rudder-server/warehouse/postgres"
+	"github.com/rudderlabs/rudder-server/warehouse/validations"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -45,7 +45,7 @@ func initWarehouse() {
 	Init3()
 	Init4()
 	Init5()
-	configuration_testing.Init()
+	validations.Init()
 	misc.Init()
 	postgres.Init()
 }

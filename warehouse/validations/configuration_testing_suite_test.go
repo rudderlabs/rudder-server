@@ -1,6 +1,6 @@
 //go:build !warehouse_integration
 
-package configuration_testing
+package validations
 
 import (
 	"testing"

@@ -1,4 +1,4 @@
-package configuration_testing
+package validations
 
 import (
 	"context"

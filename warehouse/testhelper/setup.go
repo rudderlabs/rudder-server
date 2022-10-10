@@ -18,8 +18,8 @@ import (
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/services/pgnotifier"
 	"github.com/rudderlabs/rudder-server/warehouse"
-	"github.com/rudderlabs/rudder-server/warehouse/configuration_testing"
 	"github.com/rudderlabs/rudder-server/warehouse/deltalake/databricks"
+	"github.com/rudderlabs/rudder-server/warehouse/validations"
 
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
@@ -134,7 +134,7 @@ func initialize() {
 	warehouse.Init6()
 
 	pgnotifier.Init()
-	configuration_testing.Init()
+	validations.Init()
 
 	azuresynapse.Init()
 	bigquery.Init()
@@ -418,8 +418,8 @@ func VerifyingConfigurationTest(t *testing.T, destination backendconfig.Destinat
 	t.Logf("Started configuration tests for destination type: %s", destination.DestinationDefinition.Name)
 
 	require.NoError(t, WithConstantBackoff(func() error {
-		destinationValidator := configuration_testing.NewDestinationValidator()
-		req := &configuration_testing.DestinationValidationRequest{Destination: destination}
+		destinationValidator := validations.NewDestinationValidator()
+		req := &validations.DestinationValidationRequest{Destination: destination}
 		response, err := destinationValidator.ValidateCredentials(req)
 		if err != nil || response.Error != "" {
 			return fmt.Errorf("failed to validate credentials for destination: %s with error: %s", destination.DestinationDefinition.Name, response.Error)

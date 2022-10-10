@@ -1,4 +1,4 @@
-package configuration_testing
+package validations
 
 import (
 	"encoding/json"
@@ -45,7 +45,7 @@ const (
 
 func Init() {
 	connectionTestingFolder = config.GetString("RUDDER_CONNECTION_TESTING_BUCKET_FOLDER_NAME", misc.RudderTestPayload)
-	pkgLogger = logger.NewLogger().Child("warehouse").Child("configuration_testing")
+	pkgLogger = logger.NewLogger().Child("warehouse").Child("validations")
 	fileManagerFactory = filemanager.DefaultFileManagerFactory
 	fileManagerTimeout = 15 * time.Second
 }
