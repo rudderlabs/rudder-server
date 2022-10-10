@@ -20,7 +20,6 @@ import (
 	"github.com/rudderlabs/rudder-server/jobsdb/internal/lock"
 	"github.com/rudderlabs/rudder-server/jobsdb/prebackup"
 	"github.com/rudderlabs/rudder-server/services/filemanager"
-	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/testhelper"
 	"github.com/rudderlabs/rudder-server/testhelper/destination"
 )
@@ -57,8 +56,8 @@ func TestBackupTable(t *testing.T) {
 		t.Setenv("RSERVER_JOBS_DB_BACKUP_RT_ENABLED", "true")
 		t.Setenv("JOBS_BACKUP_BUCKET", "backup-test")
 		t.Setenv("RUDDER_TMPDIR", tmpDir)
-		t.Setenv(config.TransformKey("JobsDB.maxDSSize"), "10")
-		t.Setenv(config.TransformKey("JobsDB.migrateDSLoopSleepDuration"), "3")
+		t.Setenv(config.ConfigKeyToEnv("JobsDB.maxDSSize"), "10")
+		t.Setenv(config.ConfigKeyToEnv("JobsDB.migrateDSLoopSleepDuration"), "3")
 		t.Setenv("JOBS_BACKUP_BUCKET", minioResource.BucketName)
 		t.Setenv("JOBS_BACKUP_PREFIX", prefix)
 
@@ -75,7 +74,6 @@ func TestBackupTable(t *testing.T) {
 		t.Setenv("JOBS_DB_PASSWORD", postgresResource.Password)
 
 		initJobsDB()
-		stats.Setup()
 	}
 
 	t.Log("reading jobs")
@@ -114,6 +112,17 @@ func TestBackupTable(t *testing.T) {
 
 		if len(file) != 3 {
 			t.Log("file list: ", file, " err: ", err)
+			fm, _ = fmFactory.New(&filemanager.SettingsT{
+				Provider: "MINIO",
+				Config: map[string]interface{}{
+					"bucketName":      minioResource.BucketName,
+					"prefix":          prefix,
+					"endPoint":        minioResource.Endpoint,
+					"accessKeyID":     minioResource.AccessKey,
+					"secretAccessKey": minioResource.SecretKey,
+					"useSSL":          false,
+				},
+			})
 			return false
 		}
 		return true
@@ -157,7 +166,6 @@ func TestBackupTable(t *testing.T) {
 type backupTestCase struct{}
 
 func (*backupTestCase) insertRTData(t *testing.T, jobs []*JobT, statusList []*JobStatusT, cleanup *testhelper.Cleanup) {
-	migrationMode := ""
 	triggerAddNewDS := make(chan time.Time)
 
 	jobsDB := &HandleT{
@@ -165,7 +173,7 @@ func (*backupTestCase) insertRTData(t *testing.T, jobs []*JobT, statusList []*Jo
 			return triggerAddNewDS
 		},
 	}
-	err := jobsDB.Setup(ReadWrite, false, "rt", migrationMode, true, []prebackup.Handler{})
+	err := jobsDB.Setup(ReadWrite, false, "rt", true, []prebackup.Handler{})
 	require.NoError(t, err)
 
 	rtDS := newDataSet("rt", "1")
@@ -179,7 +187,7 @@ func (*backupTestCase) insertRTData(t *testing.T, jobs []*JobT, statusList []*Jo
 	require.NoError(t, err)
 
 	rtDS2 := newDataSet("rt", "2")
-	jobsDB.dsListLock.WithLock(func(l lock.DSListLockToken) {
+	jobsDB.dsListLock.WithLock(func(l lock.LockToken) {
 		jobsDB.addNewDS(l, rtDS2)
 	})
 	err = jobsDB.WithTx(func(tx *sql.Tx) error {
@@ -195,8 +203,6 @@ func (*backupTestCase) insertRTData(t *testing.T, jobs []*JobT, statusList []*Jo
 }
 
 func (*backupTestCase) insertBatchRTData(t *testing.T, jobs []*JobT, statusList []*JobStatusT, cleanup *testhelper.Cleanup) {
-	migrationMode := ""
-
 	triggerAddNewDS := make(chan time.Time)
 	jobsDB := &HandleT{
 		TriggerAddNewDS: func() <-chan time.Time {
@@ -204,7 +210,7 @@ func (*backupTestCase) insertBatchRTData(t *testing.T, jobs []*JobT, statusList 
 		},
 	}
 
-	err := jobsDB.Setup(ReadWrite, false, "batch_rt", migrationMode, true, []prebackup.Handler{})
+	err := jobsDB.Setup(ReadWrite, false, "batch_rt", true, []prebackup.Handler{})
 	require.NoError(t, err)
 
 	ds := newDataSet("batch_rt", "1")
@@ -218,7 +224,7 @@ func (*backupTestCase) insertBatchRTData(t *testing.T, jobs []*JobT, statusList 
 	require.NoError(t, err)
 
 	ds2 := newDataSet("batch_rt", "2")
-	jobsDB.dsListLock.WithLock(func(l lock.DSListLockToken) {
+	jobsDB.dsListLock.WithLock(func(l lock.LockToken) {
 		jobsDB.addNewDS(l, ds2)
 	})
 	err = jobsDB.WithTx(func(tx *sql.Tx) error {
@@ -325,7 +331,7 @@ func (*backupTestCase) readGzipJobFile(filename string) ([]*JobT, error) {
 	if err != nil {
 		return []*JobT{}, err
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 
 	gz, err := gzip.NewReader(file)
 	if err != nil {
@@ -367,7 +373,7 @@ func (*backupTestCase) readGzipStatusFile(fileName string) ([]*JobStatusT, error
 	if err != nil {
 		return []*JobStatusT{}, err
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 
 	gz, err := gzip.NewReader(file)
 	if err != nil {

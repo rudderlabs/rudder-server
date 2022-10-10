@@ -1,3 +1,5 @@
+//go:build !warehouse_integration
+
 package warehouse_test
 
 import (
@@ -10,8 +12,8 @@ import (
 )
 
 var _ = Describe("Constraint", func() {
-	config.Load()
-	logger.Init()
+	config.Reset()
+	logger.Reset()
 	Init6()
 
 	DescribeTable("DurationBeforeNextAttempt", func(destinationType string, brEvent *BatchRouterEventT, columnName string, expected *ConstraintsViolationT) {

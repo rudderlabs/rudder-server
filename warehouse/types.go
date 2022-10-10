@@ -23,7 +23,8 @@ type PayloadT struct {
 	DestinationNamespace         string
 	DestinationRevisionID        string
 	StagingDestinationRevisionID string
-	DestinationConfig            interface{}
+	DestinationConfig            map[string]interface{}
+	WorkspaceID                  string
 	StagingDestinationConfig     interface{}
 	UseRudderStorage             bool
 	StagingUseRudderStorage      bool

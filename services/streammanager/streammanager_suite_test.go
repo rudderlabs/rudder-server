@@ -10,7 +10,6 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/logger"
 
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
-	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/services/streammanager"
 	"github.com/rudderlabs/rudder-server/services/streammanager/bqstream"
 	"github.com/rudderlabs/rudder-server/services/streammanager/common"
@@ -28,9 +27,8 @@ var once sync.Once
 
 func initStreamManager() {
 	once.Do(func() {
-		config.Load()
-		logger.Init()
-		stats.Setup()
+		config.Reset()
+		logger.Reset()
 		kafka.Init()
 	})
 }

@@ -20,8 +20,8 @@ import (
 )
 
 func initMisc() {
-	config.Load()
-	logger.Init()
+	config.Reset()
+	logger.Reset()
 	Init()
 }
 
@@ -521,6 +521,27 @@ func TestContains(t *testing.T) {
 		}
 
 		require.False(t, Contains(list, -1))
+	})
+}
+
+func TestHasAWSRoleARNInConfig(t *testing.T) {
+	t.Run("Config has valid IAM Role ARN", func(t *testing.T) {
+		configMap := map[string]interface{}{
+			"iamRoleARN": "someRole",
+		}
+		require.True(t, HasAWSRoleARNInConfig(configMap))
+	})
+
+	t.Run("Config has empty IAM Role ARN", func(t *testing.T) {
+		configMap := map[string]interface{}{
+			"iamRoleARN": "",
+		}
+		require.False(t, HasAWSRoleARNInConfig(configMap))
+	})
+
+	t.Run("Config has no IAM Role ARN", func(t *testing.T) {
+		configMap := map[string]interface{}{}
+		require.False(t, HasAWSRoleARNInConfig(configMap))
 	})
 }
 

@@ -17,6 +17,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/rudderlabs/rudder-server/config"
+	"github.com/rudderlabs/rudder-server/utils/awsutils"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
@@ -30,7 +31,7 @@ func TestDestinationConfigKeys(t *testing.T) {
 
 			whName := WHDestNameMap[whType]
 			configKey := fmt.Sprintf("Warehouse.%s.feature", whName)
-			got := config.TransformKey(configKey)
+			got := config.ConfigKeyToEnv(configKey)
 			expected := fmt.Sprintf("RSERVER_WAREHOUSE_%s_FEATURE", strings.ToUpper(whName))
 			require.Equal(t, got, expected)
 		})
@@ -1186,6 +1187,72 @@ func TestGetWarehouseIdentifier(t *testing.T) {
 	}
 }
 
+func TestCreateAWSSessionConfig(t *testing.T) {
+	rudderAccessKeyID := "rudderAccessKeyID"
+	rudderAccessKey := "rudderAccessKey"
+	t.Setenv("RUDDER_AWS_S3_COPY_USER_ACCESS_KEY_ID", rudderAccessKeyID)
+	t.Setenv("RUDDER_AWS_S3_COPY_USER_ACCESS_KEY", rudderAccessKey)
+
+	someAccessKeyID := "someAccessKeyID"
+	someAccessKey := "someAccessKey"
+	someIAMRoleARN := "someIAMRoleARN"
+	someWorkspaceID := "someWorkspaceID"
+
+	inputs := []struct {
+		destination    *backendconfig.DestinationT
+		service        string
+		expectedConfig *awsutils.SessionConfig
+	}{
+		{
+			destination: &backendconfig.DestinationT{
+				Config: map[string]interface{}{
+					"useRudderStorage": true,
+				},
+			},
+			service: "s3",
+			expectedConfig: &awsutils.SessionConfig{
+				AccessKeyID: rudderAccessKeyID,
+				AccessKey:   rudderAccessKey,
+				Service:     "s3",
+			},
+		},
+		{
+			destination: &backendconfig.DestinationT{
+				Config: map[string]interface{}{
+					"accessKeyID": someAccessKeyID,
+					"accessKey":   someAccessKey,
+				},
+			},
+			service: "glue",
+			expectedConfig: &awsutils.SessionConfig{
+				AccessKeyID: someAccessKeyID,
+				AccessKey:   someAccessKey,
+				Service:     "glue",
+			},
+		},
+		{
+			destination: &backendconfig.DestinationT{
+				Config: map[string]interface{}{
+					"iamRoleARN": someIAMRoleARN,
+				},
+				WorkspaceID: someWorkspaceID,
+			},
+			service: "redshift",
+			expectedConfig: &awsutils.SessionConfig{
+				RoleBasedAuth: true,
+				IAMRoleARN:    someIAMRoleARN,
+				ExternalID:    someWorkspaceID,
+				Service:       "redshift",
+			},
+		},
+	}
+	for _, input := range inputs {
+		config, err := CreateAWSSessionConfig(input.destination, input.service)
+		require.Nil(t, err)
+		require.Equal(t, config, input.expectedConfig)
+	}
+}
+
 var _ = Describe("Utils", func() {
 	DescribeTable("JSON schema to Map", func(rawMsg json.RawMessage, expected map[string]map[string]string) {
 		got := JSONSchemaToMap(rawMsg)
@@ -1205,7 +1272,7 @@ var _ = Describe("Utils", func() {
 })
 
 func TestMain(m *testing.M) {
-	config.Load()
+	config.Reset()
 	Init()
 	os.Exit(m.Run())
 }

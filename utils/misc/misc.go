@@ -108,7 +108,7 @@ type RFP struct {
 	levelsToKeep int
 }
 
-var pkgLogger logger.LoggerI
+var pkgLogger logger.Logger
 
 func init() {
 	gluuid.EnableRandPool()
@@ -331,7 +331,7 @@ func GetReservedFolderPaths() []*RFP {
 		{path: RudderIdentityMappingsTmp, levelsToKeep: 1},
 		{path: RudderRedshiftManifests, levelsToKeep: 0},
 		{path: RudderWarehouseJsonUploadsTmp, levelsToKeep: 2},
-		{path: config.GetEnv("RUDDER_CONNECTION_TESTING_BUCKET_FOLDER_NAME", RudderTestPayload), levelsToKeep: 0},
+		{path: config.GetString("RUDDER_CONNECTION_TESTING_BUCKET_FOLDER_NAME", RudderTestPayload), levelsToKeep: 0},
 	}
 }
 
@@ -401,7 +401,7 @@ var logOnce sync.Once
 
 // CreateTMPDIR creates tmp dir at path configured via RUDDER_TMPDIR env var
 func CreateTMPDIR() (string, error) {
-	tmpdirPath := strings.TrimSuffix(config.GetEnv("RUDDER_TMPDIR", ""), "/")
+	tmpdirPath := strings.TrimSuffix(config.GetString("RUDDER_TMPDIR", ""), "/")
 	// second chance: fallback to /tmp if this folder exists
 	if tmpdirPath == "" {
 		fallbackPath := "/tmp"
@@ -566,37 +566,6 @@ func TailTruncateStr(str string, count int) string {
 		str = str[len(str)-count:]
 	}
 	return str
-}
-
-func SortedMapKeys(input interface{}) []string {
-	inValue := reflect.ValueOf(input)
-	mapKeys := inValue.MapKeys()
-	keys := make([]string, 0, len(mapKeys))
-	for _, key := range mapKeys {
-		keys = append(keys, key.String())
-	}
-	sort.Strings(keys)
-	return keys
-}
-
-func SortedStructSliceValues(input interface{}, filedName string) []string {
-	items := reflect.ValueOf(input)
-	var keys []string
-	if items.Kind() == reflect.Slice {
-		for i := 0; i < items.Len(); i++ {
-			item := items.Index(i)
-			if item.Kind() == reflect.Struct {
-				v := reflect.Indirect(item)
-				for j := 0; j < v.NumField(); j++ {
-					if v.Type().Field(j).Name == "Name" {
-						keys = append(keys, v.Field(j).String())
-					}
-				}
-			}
-		}
-	}
-	sort.Strings(keys)
-	return keys
 }
 
 func ReplaceMultiRegex(str string, expList map[string]string) (string, error) {
@@ -791,7 +760,7 @@ func (w GZipWriter) Write(b []byte) (count int, err error) {
 	return
 }
 
-func (w GZipWriter) WriteRow(row []interface{}) error {
+func (GZipWriter) WriteRow(_ []interface{}) error {
 	return errors.New("not implemented")
 }
 
@@ -954,6 +923,20 @@ func FastUUID() uuid.UUID {
 	return uuid.FromBytesOrNil(b)
 }
 
+func HasAWSRoleARNInConfig(configMap map[string]interface{}) bool {
+	if configMap["iamRoleARN"] == nil {
+		return false
+	}
+	iamRoleARN, ok := configMap["iamRoleARN"].(string)
+	if !ok {
+		return false
+	}
+	if iamRoleARN == "" {
+		return false
+	}
+	return true
+}
+
 func HasAWSKeysInConfig(config interface{}) bool {
 	configMap := config.(map[string]interface{})
 	if configMap["useSTSTokens"] == false {
@@ -977,25 +960,25 @@ func HasAWSRegionInConfig(config interface{}) bool {
 }
 
 func GetRudderObjectStorageAccessKeys() (accessKeyID, accessKey string) {
-	return config.GetEnv("RUDDER_AWS_S3_COPY_USER_ACCESS_KEY_ID", ""), config.GetEnv("RUDDER_AWS_S3_COPY_USER_ACCESS_KEY", "")
+	return config.GetString("RUDDER_AWS_S3_COPY_USER_ACCESS_KEY_ID", ""), config.GetString("RUDDER_AWS_S3_COPY_USER_ACCESS_KEY", "")
 }
 
 func GetRudderObjectStoragePrefix() (prefix string) {
-	return config.GetEnv("RUDDER_WAREHOUSE_BUCKET_PREFIX", config.GetNamespaceIdentifier())
+	return config.GetString("RUDDER_WAREHOUSE_BUCKET_PREFIX", config.GetNamespaceIdentifier())
 }
 
 func GetRudderObjectStorageConfig(prefixOverride string) (storageConfig map[string]interface{}) {
 	// TODO: add error log if s3 keys are not available
 	storageConfig = make(map[string]interface{})
-	storageConfig["bucketName"] = config.GetEnv("RUDDER_WAREHOUSE_BUCKET", "rudder-warehouse-storage")
-	storageConfig["accessKeyID"] = config.GetEnv("RUDDER_AWS_S3_COPY_USER_ACCESS_KEY_ID", "")
-	storageConfig["accessKey"] = config.GetEnv("RUDDER_AWS_S3_COPY_USER_ACCESS_KEY", "")
-	storageConfig["enableSSE"] = config.GetEnvAsBool("RUDDER_WAREHOUSE_BUCKET_SSE", true)
+	storageConfig["bucketName"] = config.GetString("RUDDER_WAREHOUSE_BUCKET", "rudder-warehouse-storage")
+	storageConfig["accessKeyID"] = config.GetString("RUDDER_AWS_S3_COPY_USER_ACCESS_KEY_ID", "")
+	storageConfig["accessKey"] = config.GetString("RUDDER_AWS_S3_COPY_USER_ACCESS_KEY", "")
+	storageConfig["enableSSE"] = config.GetBool("RUDDER_WAREHOUSE_BUCKET_SSE", true)
 	// set prefix from override for shared slave type nodes
 	if prefixOverride != "" {
 		storageConfig["prefix"] = prefixOverride
 	} else {
-		storageConfig["prefix"] = config.GetEnv("RUDDER_WAREHOUSE_BUCKET_PREFIX", config.GetNamespaceIdentifier())
+		storageConfig["prefix"] = config.GetString("RUDDER_WAREHOUSE_BUCKET_PREFIX", config.GetNamespaceIdentifier())
 	}
 	return
 }
@@ -1028,9 +1011,10 @@ func GetObjectStorageConfig(opts ObjectStorageOptsT) map[string]interface{} {
 			clonedObjectStorageConfig[k] = v
 		}
 		clonedObjectStorageConfig["externalID"] = opts.WorkspaceID
-		if !HasAWSKeysInConfig(objectStorageConfigMap) {
-			clonedObjectStorageConfig["accessKeyID"] = config.GetEnv("RUDDER_AWS_S3_COPY_USER_ACCESS_KEY_ID", "")
-			clonedObjectStorageConfig["accessKey"] = config.GetEnv("RUDDER_AWS_S3_COPY_USER_ACCESS_KEY", "")
+		if !HasAWSRoleARNInConfig(objectStorageConfigMap) &&
+			!HasAWSKeysInConfig(objectStorageConfigMap) {
+			clonedObjectStorageConfig["accessKeyID"] = config.GetString("RUDDER_AWS_S3_COPY_USER_ACCESS_KEY_ID", "")
+			clonedObjectStorageConfig["accessKey"] = config.GetString("RUDDER_AWS_S3_COPY_USER_ACCESS_KEY", "")
 		}
 		objectStorageConfigMap = clonedObjectStorageConfig
 	}
@@ -1049,7 +1033,7 @@ func GetSpacesLocation(location string) (region string) {
 
 // GetNodeID returns the nodeId of the current node
 func GetNodeID() string {
-	nodeID := config.GetRequiredEnv("INSTANCE_ID")
+	nodeID := config.MustGetString("INSTANCE_ID")
 	return nodeID
 }
 
@@ -1193,7 +1177,7 @@ func GetWarehouseURL() (url string) {
 	if isWarehouseMasterEnabled() {
 		url = fmt.Sprintf(`http://localhost:%d`, config.GetInt("Warehouse.webPort", 8082))
 	} else {
-		url = config.GetEnv("WAREHOUSE_URL", "http://localhost:8082")
+		url = config.GetString("WAREHOUSE_URL", "http://localhost:8082")
 	}
 	return
 }
@@ -1354,12 +1338,15 @@ func SortMap(inputMap map[string]metric.MovingAverage) []string {
 	return sortedWorkspaceList
 }
 
-func SleepCtx(ctx context.Context, delay time.Duration) bool {
+// SleepCtx sleeps for the given duration or until the context is canceled.
+//
+//	the context error is returned if context is canceled.
+func SleepCtx(ctx context.Context, delay time.Duration) error {
 	select {
 	case <-ctx.Done():
-		return true
+		return ctx.Err()
 	case <-time.After(delay):
-		return false
+		return nil
 	}
 }
 

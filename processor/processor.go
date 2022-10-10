@@ -61,7 +61,7 @@ type HandleT struct {
 	routerDB                  jobsdb.JobsDB
 	batchRouterDB             jobsdb.JobsDB
 	errorDB                   jobsdb.JobsDB
-	logger                    logger.LoggerI
+	logger                    logger.Logger
 	eventSchemaHandler        types.EventSchemasI
 	dedupHandler              dedup.DedupI
 	reporting                 types.ReportingI
@@ -89,44 +89,44 @@ type processorStats struct {
 	userTransformEventsByTimeTaken transformRequestPQ
 	pStatsJobs                     *misc.PerfStats
 	pStatsDBR                      *misc.PerfStats
-	statGatewayDBR                 stats.RudderStats
+	statGatewayDBR                 stats.Measurement
 	pStatsDBW                      *misc.PerfStats
-	statGatewayDBW                 stats.RudderStats
-	statRouterDBW                  stats.RudderStats
-	statBatchRouterDBW             stats.RudderStats
-	statProcErrDBW                 stats.RudderStats
-	statDBR                        stats.RudderStats
-	statDBW                        stats.RudderStats
-	statLoopTime                   stats.RudderStats
-	eventSchemasTime               stats.RudderStats
-	validateEventsTime             stats.RudderStats
-	processJobsTime                stats.RudderStats
-	statSessionTransform           stats.RudderStats
-	statUserTransform              stats.RudderStats
-	statDestTransform              stats.RudderStats
-	marshalSingularEvents          stats.RudderStats
-	destProcessing                 stats.RudderStats
-	pipeProcessing                 stats.RudderStats
-	statNumRequests                stats.RudderStats
-	statNumEvents                  stats.RudderStats
-	statDBReadRequests             stats.RudderStats
-	statDBReadEvents               stats.RudderStats
-	statDBReadPayloadBytes         stats.RudderStats
-	statDBReadOutOfOrder           stats.RudderStats
-	statDBReadOutOfSequence        stats.RudderStats
-	statMarkExecuting              stats.RudderStats
-	statDBWriteStatusTime          stats.RudderStats
-	statDBWriteJobsTime            stats.RudderStats
-	statDBWriteRouterPayloadBytes  stats.RudderStats
-	statDBWriteBatchPayloadBytes   stats.RudderStats
-	statDBWriteRouterEvents        stats.RudderStats
-	statDBWriteBatchEvents         stats.RudderStats
-	statDestNumOutputEvents        stats.RudderStats
-	statBatchDestNumOutputEvents   stats.RudderStats
-	DBReadThroughput               stats.RudderStats
-	processJobThroughput           stats.RudderStats
-	transformationsThroughput      stats.RudderStats
-	DBWriteThroughput              stats.RudderStats
+	statGatewayDBW                 stats.Measurement
+	statRouterDBW                  stats.Measurement
+	statBatchRouterDBW             stats.Measurement
+	statProcErrDBW                 stats.Measurement
+	statDBR                        stats.Measurement
+	statDBW                        stats.Measurement
+	statLoopTime                   stats.Measurement
+	eventSchemasTime               stats.Measurement
+	validateEventsTime             stats.Measurement
+	processJobsTime                stats.Measurement
+	statSessionTransform           stats.Measurement
+	statUserTransform              stats.Measurement
+	statDestTransform              stats.Measurement
+	marshalSingularEvents          stats.Measurement
+	destProcessing                 stats.Measurement
+	pipeProcessing                 stats.Measurement
+	statNumRequests                stats.Measurement
+	statNumEvents                  stats.Measurement
+	statDBReadRequests             stats.Measurement
+	statDBReadEvents               stats.Measurement
+	statDBReadPayloadBytes         stats.Measurement
+	statDBReadOutOfOrder           stats.Measurement
+	statDBReadOutOfSequence        stats.Measurement
+	statMarkExecuting              stats.Measurement
+	statDBWriteStatusTime          stats.Measurement
+	statDBWriteJobsTime            stats.Measurement
+	statDBWriteRouterPayloadBytes  stats.Measurement
+	statDBWriteBatchPayloadBytes   stats.Measurement
+	statDBWriteRouterEvents        stats.Measurement
+	statDBWriteBatchEvents         stats.Measurement
+	statDestNumOutputEvents        stats.Measurement
+	statBatchDestNumOutputEvents   stats.Measurement
+	DBReadThroughput               stats.Measurement
+	processJobThroughput           stats.Measurement
+	transformationsThroughput      stats.Measurement
+	DBWriteThroughput              stats.Measurement
 }
 
 var defaultTransformerFeatures = `{
@@ -142,10 +142,10 @@ var (
 )
 
 type DestStatT struct {
-	numEvents              stats.RudderStats
-	numOutputSuccessEvents stats.RudderStats
-	numOutputFailedEvents  stats.RudderStats
-	transformTime          stats.RudderStats
+	numEvents              stats.Measurement
+	numOutputSuccessEvents stats.Measurement
+	numOutputFailedEvents  stats.Measurement
+	transformTime          stats.Measurement
 }
 
 type ParametersT struct {
@@ -338,7 +338,7 @@ func (proc *HandleT) Setup(
 	proc.rsourcesService = rsourcesService
 
 	// Stats
-	proc.statsFactory = stats.DefaultStats
+	proc.statsFactory = stats.Default
 	proc.stats.pStatsJobs = &misc.PerfStats{}
 	proc.stats.pStatsDBR = &misc.PerfStats{}
 	proc.stats.pStatsDBW = &misc.PerfStats{}
@@ -477,11 +477,12 @@ var (
 	userTransformBatchSize    int
 	writeKeyDestinationMap    map[string][]backendconfig.DestinationT
 	writeKeySourceMap         map[string]backendconfig.SourceT
+	workspaceLibrariesMap     map[string]backendconfig.LibrariesT
 	destinationIDtoTypeMap    map[string]string
 	batchDestinations         []string
 	configSubscriberLock      sync.RWMutex
 	customDestinations        []string
-	pkgLogger                 logger.LoggerI
+	pkgLogger                 logger.Logger
 	enableEventSchemasFeature bool
 	enableEventSchemasAPIOnly bool
 	enableDedup               bool
@@ -520,7 +521,7 @@ func loadConfig() {
 	config.RegisterIntConfigVariable(5, &transformTimesPQLength, false, 1, "Processor.transformTimesPQLength")
 	// Capture event name as a tag in event level stats
 	config.RegisterBoolConfigVariable(false, &captureEventNameStats, true, "Processor.Stats.captureEventName")
-	transformerURL = config.GetEnv("DEST_TRANSFORM_URL", "http://localhost:9090")
+	transformerURL = config.GetString("DEST_TRANSFORM_URL", "http://localhost:9090")
 	config.RegisterDurationConfigVariable(5, &pollInterval, false, time.Second, []string{"Processor.pollInterval", "Processor.pollIntervalInS"}...)
 	// GWCustomVal is used as a key in the jobsDB customval column
 	config.RegisterStringConfigVariable("GW", &GWCustomVal, false, "Gateway.CustomVal")
@@ -597,25 +598,35 @@ func SetFeaturesRetryAttempts(overrideAttempts int) {
 
 func (proc *HandleT) backendConfigSubscriber() {
 	ch := proc.backendConfig.Subscribe(context.TODO(), backendconfig.TopicProcessConfig)
-	for config := range ch {
+	for data := range ch {
+		config := data.Data.(map[string]backendconfig.ConfigT)
 		configSubscriberLock.Lock()
+		workspaceLibrariesMap = make(map[string]backendconfig.LibrariesT, len(config))
 		writeKeyDestinationMap = make(map[string][]backendconfig.DestinationT)
 		writeKeySourceMap = map[string]backendconfig.SourceT{}
 		destinationIDtoTypeMap = make(map[string]string)
-		sources := config.Data.(backendconfig.ConfigT)
-		for i := range sources.Sources {
-			source := &sources.Sources[i]
-			writeKeySourceMap[source.WriteKey] = *source
-			if source.Enabled {
-				writeKeyDestinationMap[source.WriteKey] = source.Destinations
-				for j := range source.Destinations {
-					destination := &source.Destinations[j]
-					destinationIDtoTypeMap[destination.ID] = destination.DestinationDefinition.Name
+		for workspaceID, wConfig := range config {
+			for i := range wConfig.Sources {
+				source := &wConfig.Sources[i]
+				writeKeySourceMap[source.WriteKey] = *source
+				if source.Enabled {
+					writeKeyDestinationMap[source.WriteKey] = source.Destinations
+					for j := range source.Destinations {
+						destination := &source.Destinations[j]
+						destinationIDtoTypeMap[destination.ID] = destination.DestinationDefinition.Name
+					}
 				}
 			}
+			workspaceLibrariesMap[workspaceID] = wConfig.Libraries
 		}
 		configSubscriberLock.Unlock()
 	}
+}
+
+func getWorkspaceLibraries(workspaceID string) backendconfig.LibrariesT {
+	configSubscriberLock.RLock()
+	defer configSubscriberLock.RUnlock()
+	return workspaceLibrariesMap[workspaceID]
 }
 
 func getSourceByWriteKey(writeKey string) (*backendconfig.SourceT, error) {
@@ -1025,7 +1036,7 @@ func (proc *HandleT) getFailedEventJobs(response transformer.ResponseT, commonMe
 		}
 		failedEventsToStore = append(failedEventsToStore, &newFailedJob)
 
-		procErrorStat := stats.NewTaggedStat("proc_error_counts", stats.CountType, stats.Tags{
+		procErrorStat := stats.Default.NewTaggedStat("proc_error_counts", stats.CountType, stats.Tags{
 			"destName":   commonMetaData.DestinationType,
 			"statusCode": strconv.Itoa(failedEvent.StatusCode),
 			"stage":      stage,
@@ -1369,8 +1380,8 @@ func (proc *HandleT) processJobsForDest(subJobs subJob, parsedEventList [][]type
 
 			backendEnabledDestTypes := getBackendEnabledDestinationTypes(writeKey)
 			enabledDestTypes := integrations.FilterClientIntegrations(singularEvent, backendEnabledDestTypes)
-			workspaceID := proc.backendConfig.GetWorkspaceIDForWriteKey(writeKey)
-			workspaceLibraries := proc.backendConfig.GetWorkspaceLibrariesForWorkspaceID(workspaceID)
+			workspaceID := eventList[idx].Metadata.WorkspaceID
+			workspaceLibraries := getWorkspaceLibraries(workspaceID)
 
 			for i := range enabledDestTypes {
 				destType := &enabledDestTypes[i]
@@ -1554,17 +1565,17 @@ type storeMessage struct {
 
 func sendRetryStoreStats(attempt int) {
 	pkgLogger.Warnf("Timeout during store jobs in processor module, attempt %d", attempt)
-	stats.NewTaggedStat("jobsdb_store_timeout", stats.CountType, stats.Tags{"attempt": fmt.Sprint(attempt), "module": "processor"}).Count(1)
+	stats.Default.NewTaggedStat("jobsdb_store_timeout", stats.CountType, stats.Tags{"attempt": fmt.Sprint(attempt), "module": "processor"}).Count(1)
 }
 
 func sendRetryUpdateStats(attempt int) {
 	pkgLogger.Warnf("Timeout during update job status in processor module, attempt %d", attempt)
-	stats.NewTaggedStat("jobsdb_update_timeout", stats.CountType, stats.Tags{"attempt": fmt.Sprint(attempt), "module": "processor"}).Count(1)
+	stats.Default.NewTaggedStat("jobsdb_update_timeout", stats.CountType, stats.Tags{"attempt": fmt.Sprint(attempt), "module": "processor"}).Count(1)
 }
 
 func sendQueryRetryStats(attempt int) {
 	pkgLogger.Warnf("Timeout during query jobs in processor module, attempt %d", attempt)
-	stats.NewTaggedStat("jobsdb_query_timeout", stats.CountType, stats.Tags{"attempt": fmt.Sprint(attempt), "module": "processor"}).Count(1)
+	stats.Default.NewTaggedStat("jobsdb_query_timeout", stats.CountType, stats.Tags{"attempt": fmt.Sprint(attempt), "module": "processor"}).Count(1)
 }
 
 func (proc *HandleT) Store(in *storeMessage) {
@@ -1576,7 +1587,7 @@ func (proc *HandleT) Store(in *storeMessage) {
 		proc.logger.Debug("[Processor] Total jobs written to batch router : ", len(batchDestJobs))
 
 		err := misc.RetryWithNotify(context.Background(), proc.jobsDBCommandTimeout, proc.jobdDBMaxRetries, func(ctx context.Context) error {
-			return proc.batchRouterDB.WithStoreSafeTx(func(tx jobsdb.StoreSafeTx) error {
+			return proc.batchRouterDB.WithStoreSafeTx(ctx, func(tx jobsdb.StoreSafeTx) error {
 				err := proc.batchRouterDB.StoreInTx(ctx, tx, batchDestJobs)
 				if err != nil {
 					return fmt.Errorf("storing batch router jobs: %w", err)
@@ -1615,7 +1626,7 @@ func (proc *HandleT) Store(in *storeMessage) {
 		proc.logger.Debug("[Processor] Total jobs written to router : ", len(destJobs))
 
 		err := misc.RetryWithNotify(context.Background(), proc.jobsDBCommandTimeout, proc.jobdDBMaxRetries, func(ctx context.Context) error {
-			return proc.routerDB.WithStoreSafeTx(func(tx jobsdb.StoreSafeTx) error {
+			return proc.routerDB.WithStoreSafeTx(ctx, func(tx jobsdb.StoreSafeTx) error {
 				err := proc.routerDB.StoreInTx(ctx, tx, destJobs)
 				if err != nil {
 					return fmt.Errorf("storing router jobs: %w", err)
@@ -1669,7 +1680,7 @@ func (proc *HandleT) Store(in *storeMessage) {
 
 	txnStart := time.Now()
 	err := misc.RetryWithNotify(context.Background(), proc.jobsDBCommandTimeout, proc.jobdDBMaxRetries, func(ctx context.Context) error {
-		return proc.gatewayDB.WithUpdateSafeTx(func(tx jobsdb.UpdateSafeTx) error {
+		return proc.gatewayDB.WithUpdateSafeTx(ctx, func(tx jobsdb.UpdateSafeTx) error {
 			err := proc.gatewayDB.UpdateJobStatusInTx(ctx, tx, statusList, []string{GWCustomVal}, nil)
 			if err != nil {
 				return fmt.Errorf("updating gateway jobs statuses: %w", err)
@@ -2327,7 +2338,9 @@ func (proc *HandleT) handlePendingGatewayJobs() bool {
 func (proc *HandleT) mainLoop(ctx context.Context) {
 	// waiting for reporting client setup
 	if proc.reporting != nil && proc.reportingEnabled {
-		proc.reporting.WaitForSetup(ctx, types.CORE_REPORTING_CLIENT)
+		if err := proc.reporting.WaitForSetup(ctx, types.CORE_REPORTING_CLIENT); err != nil {
+			return
+		}
 	}
 
 	proc.logger.Info("Processor loop started")
@@ -2417,7 +2430,9 @@ func (proc *HandleT) mainPipeline(ctx context.Context) {
 	proc.logger.Infof("Processor mainPipeline started, subJobSize=%d pipelineBufferedItems=%d", subJobSize, pipelineBufferedItems)
 
 	if proc.reporting != nil && proc.reportingEnabled {
-		proc.reporting.WaitForSetup(ctx, types.CORE_REPORTING_CLIENT)
+		if err := proc.reporting.WaitForSetup(ctx, types.CORE_REPORTING_CLIENT); err != nil {
+			return
+		}
 	}
 	wg := sync.WaitGroup{}
 	bufferSize := pipelineBufferedItems

@@ -41,6 +41,18 @@ func TestMultiTenant(t *testing.T) {
 	}
 }
 
+func requireAuth(t *testing.T, secret string, handler http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		u, _, ok := r.BasicAuth()
+		require.True(t, ok, "Auth should be present")
+		require.Equalf(t, secret, u,
+			"Expected HTTP basic authentication to be %q, got %q instead",
+			secret, u)
+
+		handler(w, r)
+	}
+}
+
 func testMultiTenantByAppType(t *testing.T, appType string) {
 	ctx, _ := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
 	ctx, cancel := context.WithTimeout(ctx, 3*time.Minute)
@@ -96,21 +108,27 @@ func testMultiTenantByAppType(t *testing.T, appType string) {
 		})
 	}
 
-	multiTenantSvcSecret := "so-secret"
-	backedConfigHandler := func(w http.ResponseWriter, r *http.Request) {
-		u, _, ok := r.BasicAuth()
-		require.True(t, ok, "Auth should be present")
-		require.Equalf(t, hostedServiceSecret, u,
-			"Expected HTTP basic authentication to be %q, got %q instead",
-			hostedServiceSecret, u)
-
-		n, err := w.Write(marshalledWorkspaces.Bytes())
-		require.NoError(t, err)
-		require.Equal(t, marshalledWorkspaces.Len(), n)
-	}
 	backendConfRouter.
-		HandleFunc("/data-plane/v1/namespaces/"+workspaceNamespace+"/config", backedConfigHandler).
+		HandleFunc("/data-plane/v1/namespaces/"+workspaceNamespace+"/config", requireAuth(t, hostedServiceSecret, func(w http.ResponseWriter, r *http.Request) {
+			n, err := w.Write(marshalledWorkspaces.Bytes())
+			require.NoError(t, err)
+			require.Equal(t, marshalledWorkspaces.Len(), n)
+		})).
 		Methods("GET")
+	backendConfRouter.
+		HandleFunc("/data-plane/v1/namespaces/"+workspaceNamespace+"/settings", requireAuth(t, hostedServiceSecret, func(w http.ResponseWriter, r *http.Request) {
+			expectBody, err := os.ReadFile("testdata/expected_features.json")
+			require.NoError(t, err)
+
+			actualBody, err := io.ReadAll(r.Body)
+			require.NoError(t, err)
+
+			require.JSONEq(t, string(expectBody), string(actualBody))
+
+			w.WriteHeader(http.StatusNoContent)
+		})).
+		Methods("POST")
+
 	backendConfRouter.NotFoundHandler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		require.FailNowf(t, "backend config", "unexpected request to backend config, not found: %+v", r.URL)
 		w.WriteHeader(http.StatusNotFound)
@@ -155,7 +173,6 @@ func testMultiTenantByAppType(t *testing.T, appType string) {
 			"RSERVER_ENABLE_STATS=false",
 			"RSERVER_BACKEND_CONFIG_USE_HOSTED_BACKEND_CONFIG=false",
 			"RUDDER_TMPDIR="+rudderTmpDir,
-			"HOSTED_SERVICE_SECRET="+multiTenantSvcSecret,
 			"DEPLOYMENT_TYPE="+string(deployment.MultiTenantType),
 			"DEST_TRANSFORM_URL="+transformerContainer.TransformURL,
 			"HOSTED_SERVICE_SECRET="+hostedServiceSecret,

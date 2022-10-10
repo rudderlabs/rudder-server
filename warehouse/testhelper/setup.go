@@ -33,7 +33,6 @@ import (
 	"github.com/rudderlabs/rudder-server/warehouse/datalake"
 
 	"github.com/rudderlabs/rudder-server/config"
-	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/warehouse/bigquery"
 	"github.com/rudderlabs/rudder-server/warehouse/clickhouse"
@@ -59,7 +58,6 @@ type WareHouseTest struct {
 	Client                       *client.Client
 	WriteKey                     string
 	Schema                       string
-	TablesQueryFrequency         time.Duration
 	UserId                       string
 	SourceID                     string
 	DestinationID                string
@@ -120,12 +118,10 @@ func loadEnv() {
 }
 
 func initialize() {
-	config.Load()
+	config.Reset()
+	logger.Reset()
 	admin.Init()
-	logger.Init()
 	misc.Init()
-	stats.Init()
-	stats.Setup()
 
 	backendconfig.Init()
 	warehouseutils.Init()
@@ -583,10 +579,11 @@ func PopulateTemplateConfigurations() map[string]string {
 
 		"gcsDatalakeWriteKey": "9zZFfcRqr2LpwerxICilhQmMybn",
 
-		"bigqueryWriteKey":  "J77aX7tLFJ84qYU6UrN8ctecwZt",
-		"snowflakeWriteKey": "2eSJyYtqwcFiUILzXv2fcNIrWO7",
-		"redshiftWriteKey":  "JAAwdCxmM8BIabKERsUhPNmMmdf",
-		"deltalakeWriteKey": "sToFgoilA0U1WxNeW1gdgUVDsEW",
+		"bigqueryWriteKey":               "J77aX7tLFJ84qYU6UrN8ctecwZt",
+		"snowflakeWriteKey":              "2eSJyYtqwcFiUILzXv2fcNIrWO7",
+		"snowflakeCaseSensitiveWriteKey": "2eSJyYtqwcFYUILzXv2fcNIrWO7",
+		"redshiftWriteKey":               "JAAwdCxmM8BIabKERsUhPNmMmdf",
+		"deltalakeWriteKey":              "sToFgoilA0U1WxNeW1gdgUVDsEW",
 
 		"minioBucketName":      "devintegrationtest",
 		"minioAccesskeyID":     "MYACCESSKEY",
@@ -594,24 +591,46 @@ func PopulateTemplateConfigurations() map[string]string {
 		"minioEndpoint":        "wh-minio:9000",
 	}
 
-	for k, v := range credentialsFromKey(SnowflakeIntegrationTestCredentials) {
-		configurations[fmt.Sprintf("snowflake%s", k)] = v
-	}
-	for k, v := range credentialsFromKey(RedshiftIntegrationTestCredentials) {
-		configurations[fmt.Sprintf("redshift%s", k)] = v
-	}
-	for k, v := range credentialsFromKey(DeltalakeIntegrationTestCredentials) {
-		configurations[fmt.Sprintf("deltalake%s", k)] = v
-	}
-	for k, v := range credentialsFromKey(BigqueryIntegrationTestCredentials) {
-		configurations[fmt.Sprintf("bigquery%s", k)] = v
-	}
-	enhanceBQCredentials(configurations)
-	enhanceNamespace(configurations)
+	enhanceWithRedshiftConfigurations(configurations)
+	enhanceWithSnowflakeConfigurations(configurations)
+	enhanceWithDeltalakeConfigurations(configurations)
+	enhanceWithBQConfigurations(configurations)
 	return configurations
 }
 
-func enhanceBQCredentials(values map[string]string) {
+func enhanceWithSnowflakeConfigurations(values map[string]string) {
+	for k, v := range credentialsFromKey(SnowflakeIntegrationTestCredentials) {
+		values[fmt.Sprintf("snowflake%s", k)] = v
+	}
+
+	values["snowflakeCaseSensitiveDBName"] = strings.ToLower(values["snowflakeDBName"])
+	values["snowflakeNamespace"] = Schema(warehouseutils.SNOWFLAKE, SnowflakeIntegrationTestSchema)
+	values["snowflakeCaseSensitiveNamespace"] = fmt.Sprintf("%s_%s", values["snowflakeNamespace"], "CS")
+}
+
+func enhanceWithRedshiftConfigurations(values map[string]string) {
+	for k, v := range credentialsFromKey(RedshiftIntegrationTestCredentials) {
+		values[fmt.Sprintf("redshift%s", k)] = v
+	}
+
+	values["redshiftNamespace"] = Schema(warehouseutils.RS, RedshiftIntegrationTestSchema)
+}
+
+func enhanceWithDeltalakeConfigurations(values map[string]string) {
+	for k, v := range credentialsFromKey(DeltalakeIntegrationTestCredentials) {
+		values[fmt.Sprintf("deltalake%s", k)] = v
+	}
+
+	values["deltalakeNamespace"] = Schema(warehouseutils.DELTALAKE, DeltalakeIntegrationTestSchema)
+}
+
+func enhanceWithBQConfigurations(values map[string]string) {
+	for k, v := range credentialsFromKey(BigqueryIntegrationTestCredentials) {
+		values[fmt.Sprintf("bigquery%s", k)] = v
+	}
+
+	values["bigqueryNamespace"] = Schema(warehouseutils.BQ, BigqueryIntegrationTestSchema)
+
 	key := "bigqueryCredentials"
 	if credentials, exists := values[key]; exists {
 		escapedCredentials, err := json.Marshal(credentials)
@@ -622,19 +641,12 @@ func enhanceBQCredentials(values map[string]string) {
 	}
 }
 
-func enhanceNamespace(values map[string]string) {
-	values["snowflakeNamespace"] = Schema(warehouseutils.SNOWFLAKE, SnowflakeIntegrationTestSchema)
-	values["redshiftNamespace"] = Schema(warehouseutils.RS, RedshiftIntegrationTestSchema)
-	values["bigqueryNamespace"] = Schema(warehouseutils.BQ, BigqueryIntegrationTestSchema)
-	values["deltalakeNamespace"] = Schema(warehouseutils.DELTALAKE, DeltalakeIntegrationTestSchema)
-}
-
 func Schema(provider, schemaKey string) string {
 	return warehouseutils.ToProviderCase(
 		provider,
 		warehouseutils.ToSafeNamespace(
 			provider,
-			config.GetRequiredEnv(schemaKey),
+			config.MustGetString(schemaKey),
 		),
 	)
 }

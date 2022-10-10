@@ -13,6 +13,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/info"
 	"github.com/rudderlabs/rudder-server/warehouse/datalake"
 
 	"github.com/bugsnag/bugsnag-go/v2"
@@ -43,6 +44,7 @@ import (
 	batchrouterutils "github.com/rudderlabs/rudder-server/router/utils"
 	"github.com/rudderlabs/rudder-server/services/alert"
 	"github.com/rudderlabs/rudder-server/services/archiver"
+	"github.com/rudderlabs/rudder-server/services/controlplane/features"
 	"github.com/rudderlabs/rudder-server/services/db"
 	destinationdebugger "github.com/rudderlabs/rudder-server/services/debugger/destination"
 	sourcedebugger "github.com/rudderlabs/rudder-server/services/debugger/source"
@@ -56,6 +58,7 @@ import (
 	"github.com/rudderlabs/rudder-server/services/streammanager/kafka"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
+	"github.com/rudderlabs/rudder-server/utils/types/deployment"
 	"github.com/rudderlabs/rudder-server/warehouse"
 	azuresynapse "github.com/rudderlabs/rudder-server/warehouse/azure-synapse"
 	"github.com/rudderlabs/rudder-server/warehouse/bigquery"
@@ -70,10 +73,10 @@ import (
 )
 
 var (
-	application               app.Interface
+	application               app.App
 	warehouseMode             string
 	enableSuppressUserFeature bool
-	pkgLogger                 logger.LoggerI
+	pkgLogger                 logger.Logger
 	appHandler                apphandlers.AppHandler
 	ReadTimeout               time.Duration
 	ReadHeaderTimeout         time.Duration
@@ -98,7 +101,7 @@ func loadConfig() {
 	config.RegisterDurationConfigVariable(15, &gracefulShutdownTimeout, false, time.Second, "GracefulShutdownTimeout")
 	config.RegisterIntConfigVariable(524288, &MaxHeaderBytes, false, 1, "MaxHeaderBytes")
 
-	enterpriseToken = config.GetEnv("ENTERPRISE_TOKEN", enterpriseToken)
+	enterpriseToken = config.GetString("ENTERPRISE_TOKEN", enterpriseToken)
 }
 
 func Init() {
@@ -122,7 +125,7 @@ func printVersion() {
 	fmt.Printf("Version Info %s\n", versionFormatted)
 }
 
-func startWarehouseService(ctx context.Context, application app.Interface) error {
+func startWarehouseService(ctx context.Context, application app.App) error {
 	return warehouse.Start(ctx, application)
 }
 
@@ -136,13 +139,8 @@ func canStartWarehouse() bool {
 }
 
 func runAllInit() {
-	config.Load()
 	admin.Init()
-	app.Init()
-	logger.Init()
 	misc.Init()
-	stats.Init()
-	stats.Setup()
 	db.Init()
 	diagnostics.Init()
 	backendconfig.Init()
@@ -222,26 +220,38 @@ func Run(ctx context.Context) int {
 	// application & backend setup should be done before starting any new goroutines.
 	application.Setup()
 
-	appTypeStr := strings.ToUpper(config.GetEnv("APP_TYPE", app.EMBEDDED))
+	appTypeStr := strings.ToUpper(config.GetString("APP_TYPE", app.EMBEDDED))
 	appHandler = apphandlers.GetAppHandler(application, appTypeStr, versionHandler)
 
-	version := versionInfo()
+	versionDetail := versionInfo()
 	bugsnag.Configure(bugsnag.Configuration{
-		APIKey:       config.GetEnv("BUGSNAG_KEY", ""),
-		ReleaseStage: config.GetEnv("GO_ENV", "development"),
+		APIKey:       config.GetString("BUGSNAG_KEY", ""),
+		ReleaseStage: config.GetString("GO_ENV", "development"),
 		// The import paths for the Go packages containing your source files
 		ProjectPackages: []string{"main", "github.com/rudderlabs/rudder-server"},
 		// more configuration options
 		AppType:      appHandler.GetAppType(),
-		AppVersion:   version["Version"].(string),
+		AppVersion:   versionDetail["Version"].(string),
 		PanicHandler: func() {},
 	})
 	ctx = bugsnag.StartSession(ctx)
 	defer misc.BugsnagNotify(ctx, "Core")()
 
+	deploymentType, err := deployment.GetFromEnv()
+	if err != nil {
+		pkgLogger.Errorf("failed to get deployment type: %w", err)
+		return 1
+	}
+	// TODO: remove as soon as we update the configuration with statsExcludedTags where necessary
+	if !config.IsSet("statsExcludedTags") && deploymentType == deployment.MultiTenantType && (!config.IsSet("WORKSPACE_NAMESPACE") || strings.Contains(config.GetString("WORKSPACE_NAMESPACE", ""), "free")) {
+		config.Set("statsExcludedTags", []string{"workspaceId"})
+	}
+	stats.Default.Start(ctx)
+	stats.Default.NewTaggedStat("rudder_server_config", stats.GaugeType, stats.Tags{"version": version, "major": major, "minor": minor, "patch": patch, "commit": commit, "buildDate": buildDate, "builtBy": builtBy, "gitUrl": gitURL, "TransformerVersion": transformer.GetVersion(), "DatabricksVersion": misc.GetDatabricksVersion()}).Gauge(1)
+
 	configEnvHandler := application.Features().ConfigEnv.Setup()
 
-	if config.GetEnv("RSERVER_WAREHOUSE_MODE", "") != "slave" {
+	if config.GetString("Warehouse.mode", "") != "slave" {
 		if err := backendconfig.Setup(configEnvHandler); err != nil {
 			pkgLogger.Errorf("Unable to setup backend config: %s", err)
 			return 1
@@ -273,6 +283,22 @@ func Run(ctx context.Context) int {
 			if err := appHandler.StartRudderCore(ctx, options); err != nil {
 				return fmt.Errorf("rudder core: %w", err)
 			}
+			return nil
+		}))
+		g.Go(misc.WithBugsnag(func() error {
+			backendconfig.DefaultBackendConfig.WaitForConfig(ctx)
+
+			c := features.NewClient(
+				config.GetString("CONFIG_BACKEND_URL", "https://api.rudderlabs.com"),
+				backendconfig.DefaultBackendConfig.Identity(),
+			)
+
+			err := c.Send(ctx, info.ServerComponent.Name, info.ServerComponent.Features)
+			if err != nil {
+				pkgLogger.Errorf("error sending server features: %v", err)
+			}
+
+			// we don't want to exit if we can't send server features
 			return nil
 		}))
 	}
@@ -311,10 +337,8 @@ func Run(ctx context.Context) int {
 			runtime.NumGoroutine(),
 		)
 		// clearing zap Log buffer to std output
-		if logger.Log != nil {
-			_ = logger.Log.Sync()
-		}
-		stats.StopPeriodicStats()
+		logger.Sync()
+		stats.Default.Stop()
 	case <-time.After(gracefulShutdownTimeout):
 		// Assume graceful shutdown failed, log remain goroutines and force kill
 		pkgLogger.Errorf(
@@ -327,11 +351,9 @@ func Run(ctx context.Context) int {
 		fmt.Print("\n\n")
 
 		application.Stop()
-		if logger.Log != nil {
-			_ = logger.Log.Sync()
-		}
-		stats.StopPeriodicStats()
-		if config.GetEnvAsBool("RUDDER_GRACEFUL_SHUTDOWN_TIMEOUT_EXIT", true) {
+		logger.Sync()
+		stats.Default.Stop()
+		if config.GetBool("RUDDER_GRACEFUL_SHUTDOWN_TIMEOUT_EXIT", true) {
 			return 1
 		}
 	}

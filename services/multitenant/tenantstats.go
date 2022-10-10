@@ -18,7 +18,7 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
-var pkgLogger logger.LoggerI
+var pkgLogger logger.Logger
 
 type Stats struct {
 	routerJobCountMutex sync.RWMutex
@@ -54,7 +54,7 @@ type lifecycle interface {
 
 func (*Stats) Stop() {
 	// reset the store sync map
-	metric.GetManager().Reset()
+	metric.Instance.Reset()
 }
 
 func (t *Stats) Start() error {
@@ -98,7 +98,7 @@ func Init() {
 
 func sendQueryRetryStats(attempt int) {
 	pkgLogger.Warnf("Timeout during query jobs in multitenant module, attempt %d", attempt)
-	stats.NewTaggedStat("jobsdb_query_timeout", stats.CountType, stats.Tags{"attempt": fmt.Sprint(attempt), "module": "multitenant"}).Count(1)
+	stats.Default.NewTaggedStat("jobsdb_query_timeout", stats.CountType, stats.Tags{"attempt": fmt.Sprint(attempt), "module": "multitenant"}).Count(1)
 }
 
 func NewStats(routerDBs map[string]jobsdb.MultiTenantJobsDB) *Stats {

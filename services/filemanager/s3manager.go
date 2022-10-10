@@ -228,8 +228,6 @@ func (manager *S3Manager) ListFilesWithPrefix(ctx context.Context, startAfter, p
 	// startAfter is to resume a paused task.
 	if startAfter != "" {
 		listObjectsV2Input.StartAfter = aws.String(startAfter)
-	} else if manager.Config.StartAfter != "" {
-		listObjectsV2Input.StartAfter = aws.String(manager.Config.StartAfter)
 	}
 
 	if manager.Config.ContinuationToken != nil {
@@ -283,7 +281,7 @@ func GetS3Config(config map[string]interface{}) *S3Config {
 		pkgLogger.Errorf("unable to code config into S3Config: %w", err)
 		s3Config = S3Config{}
 	}
-	regionHint := appConfig.GetEnv("AWS_S3_REGION_HINT", "us-east-1")
+	regionHint := appConfig.GetString("AWS_S3_REGION_HINT", "us-east-1")
 	s3Config.RegionHint = regionHint
 	s3Config.IsTruncated = true
 
@@ -304,7 +302,6 @@ type S3Config struct {
 	EnableSSE         bool    `mapstructure:"enableSSE"`
 	RegionHint        string  `mapstructure:"regionHint"`
 	ContinuationToken *string `mapstructure:"continuationToken"`
-	StartAfter        string  `mapstructure:"startAfter"`
 	IsTruncated       bool    `mapstructure:"isTruncated"`
 	UseGlue           bool    `mapstructure:"useGlue"`
 }

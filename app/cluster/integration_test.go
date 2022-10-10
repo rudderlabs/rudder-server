@@ -36,7 +36,6 @@ import (
 	routermanager "github.com/rudderlabs/rudder-server/router/manager"
 	"github.com/rudderlabs/rudder-server/services/archiver"
 	"github.com/rudderlabs/rudder-server/services/multitenant"
-	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/pubsub"
 	"github.com/rudderlabs/rudder-server/utils/types/servermode"
@@ -138,6 +137,7 @@ var (
 		DisplayName: "Google Analytics", Config: nil, ResponseRules: nil,
 	}
 	sampleBackendConfig = backendConfig.ConfigT{
+		WorkspaceID: workspaceID,
 		Sources: []backendConfig.SourceT{
 			{
 				WorkspaceID: workspaceID,
@@ -154,15 +154,14 @@ var (
 )
 
 func initJobsDB() {
-	config.Load()
-	logger.Init()
+	config.Reset()
+	logger.Reset()
 	stash.Init()
 	admin.Init()
 	jobsdb.Init()
 	jobsdb.Init2()
 	jobsdb.Init3()
 	archiver.Init()
-	stats.Setup()
 	router.Init()
 	router.InitRouterAdmin()
 	batchrouter.Init()
@@ -229,7 +228,7 @@ func TestDynamicClusterManager(t *testing.T) {
 		ctx context.Context, topic backendConfig.Topic,
 	) pubsub.DataChannel {
 		ch := make(chan pubsub.DataEvent, 1)
-		ch <- pubsub.DataEvent{Data: sampleBackendConfig, Topic: string(topic)}
+		ch <- pubsub.DataEvent{Data: map[string]backendConfig.ConfigT{workspaceID: sampleBackendConfig}, Topic: string(topic)}
 
 		go func() {
 			<-ctx.Done()

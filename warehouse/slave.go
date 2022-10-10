@@ -112,6 +112,7 @@ func (job *PayloadT) getFileManager(config interface{}, useRudderStorage bool) (
 			Config:                      config,
 			UseRudderStorage:            useRudderStorage,
 			RudderStoragePrefixOverride: job.RudderStoragePrefix,
+			WorkspaceID:                 job.WorkspaceID,
 		}),
 	})
 	return fileManager, err
@@ -281,7 +282,7 @@ func (jobRun *JobRunT) uploadLoadFilesToObjectStorage() ([]loadFileUploadOutputT
 			pkgLogger.Errorf("received error while uploading load file to bucket for staging file ids %s, cancelling the context: err %v", stagingFileId, err)
 			return []loadFileUploadOutputT{}, err
 		case <-time.After(slaveUploadTimeout):
-			return []loadFileUploadOutputT{}, fmt.Errorf("Load files upload timed out for staging file idsx: %v", stagingFileId)
+			return []loadFileUploadOutputT{}, fmt.Errorf("load files upload timed out for staging file idsx: %v", stagingFileId)
 		}
 	}
 }
@@ -299,7 +300,7 @@ func (jobRun *JobRunT) uploadLoadFileToObjectStorage(uploader filemanager.FileMa
 	if misc.Contains(warehouseutils.TimeWindowDestinations, job.DestinationType) {
 		uploadLocation, err = uploader.Upload(context.TODO(), file, warehouseutils.GetTablePathInObjectStorage(jobRun.job.DestinationNamespace, tableName), job.LoadFilePrefix)
 	} else {
-		uploadLocation, err = uploader.Upload(context.TODO(), file, config.GetEnv("WAREHOUSE_BUCKET_LOAD_OBJECTS_FOLDER_NAME", "rudder-warehouse-load-objects"), tableName, job.SourceID, getBucketFolder(job.UniqueLoadGenID, tableName))
+		uploadLocation, err = uploader.Upload(context.TODO(), file, config.GetString("WAREHOUSE_BUCKET_LOAD_OBJECTS_FOLDER_NAME", "rudder-warehouse-load-objects"), tableName, job.SourceID, getBucketFolder(job.UniqueLoadGenID, tableName))
 	}
 	return uploadLocation, err
 }

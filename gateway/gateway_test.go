@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"reflect"
 	"testing"
 	"time"
@@ -33,7 +34,6 @@ import (
 	mocksRateLimiter "github.com/rudderlabs/rudder-server/mocks/rate-limiter"
 	mocksTypes "github.com/rudderlabs/rudder-server/mocks/utils/types"
 	"github.com/rudderlabs/rudder-server/services/rsources"
-	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/pubsub"
@@ -52,12 +52,14 @@ const (
 
 	SuppressedUserID = "suppressed-user-2"
 	NormalUserID     = "normal-user-1"
+	WorkspaceID      = "workspace"
 )
 
 var testTimeout = 15 * time.Second
 
 // This configuration is assumed by all gateway tests and, is returned on Subscribe of mocked backend config
 var sampleBackendConfig = backendconfig.ConfigT{
+	WorkspaceID: WorkspaceID,
 	Sources: []backendconfig.SourceT{
 		{
 			ID:       SourceIDDisabled,
@@ -78,13 +80,13 @@ type testContext struct {
 	mockCtrl          *gomock.Controller
 	mockJobsDB        *mocksJobsDB.MockJobsDB
 	mockBackendConfig *mocksBackendConfig.MockBackendConfig
-	mockApp           *mocksApp.MockInterface
+	mockApp           *mocksApp.MockApp
 	mockRateLimiter   *mocksRateLimiter.MockRateLimiter
 
 	mockVersionHandler func(w http.ResponseWriter, r *http.Request)
 
 	// Enterprise mocks
-	mockSuppressUser        *mocksTypes.MockSuppressUserI
+	mockSuppressUser        *mocksTypes.MockUserSuppression
 	mockSuppressUserFeature *mocksApp.MockSuppressUserFeature
 }
 
@@ -109,7 +111,7 @@ func (c *testContext) Setup() {
 	c.mockCtrl = gomock.NewController(GinkgoT())
 	c.mockJobsDB = mocksJobsDB.NewMockJobsDB(c.mockCtrl)
 	c.mockBackendConfig = mocksBackendConfig.NewMockBackendConfig(c.mockCtrl)
-	c.mockApp = mocksApp.NewMockInterface(c.mockCtrl)
+	c.mockApp = mocksApp.NewMockApp(c.mockCtrl)
 	c.mockRateLimiter = mocksRateLimiter.NewMockRateLimiter(c.mockCtrl)
 
 	tFunc := c.asyncHelper.ExpectAndNotifyCallbackWithName("process_config")
@@ -119,7 +121,7 @@ func (c *testContext) Setup() {
 			tFunc()
 
 			ch := make(chan pubsub.DataEvent, 1)
-			ch <- pubsub.DataEvent{Data: sampleBackendConfig, Topic: string(topic)}
+			ch <- pubsub.DataEvent{Data: map[string]backendconfig.ConfigT{WorkspaceID: sampleBackendConfig}, Topic: string(topic)}
 			// on Subscribe, emulate a backend configuration event
 			go func() {
 				<-ctx.Done()
@@ -160,9 +162,9 @@ var _ = Describe("Reconstructing JSON for ServerSide SDK", func() {
 })
 
 func initGW() {
-	config.Load()
+	config.Reset()
 	admin.Init()
-	logger.Init()
+	logger.Reset()
 	misc.Init()
 	Init()
 }
@@ -176,16 +178,13 @@ var _ = Describe("Gateway Enterprise", func() {
 		c = &testContext{}
 		c.Setup()
 
-		c.mockSuppressUser = mocksTypes.NewMockSuppressUserI(c.mockCtrl)
+		c.mockSuppressUser = mocksTypes.NewMockUserSuppression(c.mockCtrl)
 		c.mockSuppressUserFeature = mocksApp.NewMockSuppressUserFeature(c.mockCtrl)
 		c.initializeEnterpriseAppFeatures()
 
 		c.mockSuppressUserFeature.EXPECT().Setup(gomock.Any()).AnyTimes().Return(c.mockSuppressUser, nil)
-		c.mockSuppressUser.EXPECT().IsSuppressedUser(NormalUserID, SourceIDEnabled, WriteKeyEnabled).Return(false).AnyTimes()
-		c.mockSuppressUser.EXPECT().IsSuppressedUser(SuppressedUserID, SourceIDEnabled, WriteKeyEnabled).Return(true).AnyTimes()
-
-		// setup static requirements of dependencies
-		stats.Setup()
+		c.mockSuppressUser.EXPECT().IsSuppressedUser(NormalUserID, SourceIDEnabled).Return(false).AnyTimes()
+		c.mockSuppressUser.EXPECT().IsSuppressedUser(SuppressedUserID, SourceIDEnabled).Return(true).AnyTimes()
 
 		// setup common environment, override in BeforeEach when required
 		SetEnableRateLimit(false)
@@ -216,7 +215,7 @@ var _ = Describe("Gateway Enterprise", func() {
 		It("should accept events from normal users", func() {
 			allowedUserEventData := fmt.Sprintf(`{"batch":[{"userId":%q}]}`, NormalUserID)
 
-			c.mockJobsDB.EXPECT().WithStoreSafeTx(gomock.Any()).Times(1).Do(func(f func(tx jobsdb.StoreSafeTx) error) {
+			c.mockJobsDB.EXPECT().WithStoreSafeTx(gomock.Any(), gomock.Any()).Times(1).Do(func(ctx context.Context, f func(tx jobsdb.StoreSafeTx) error) {
 				_ = f(jobsdb.EmptyStoreSafeTx())
 			}).Return(nil)
 			mockCall := c.mockJobsDB.EXPECT().StoreWithRetryEachInTx(gomock.Any(), gomock.Any(), gomock.Any()).DoAndReturn(jobsToEmptyErrors).Times(1)
@@ -238,9 +237,6 @@ var _ = Describe("Gateway", func() {
 		c = &testContext{}
 		c.Setup()
 		c.initializeAppFeatures()
-
-		// setup static requirements of dependencies
-		stats.Setup()
 
 		// setup common environment, override in BeforeEach when required
 		SetEnableRateLimit(false)
@@ -341,7 +337,7 @@ var _ = Describe("Gateway", func() {
 
 					validBody := createValidBody("custom-property", "custom-value")
 
-					c.mockJobsDB.EXPECT().WithStoreSafeTx(gomock.Any()).Times(1).Do(func(f func(tx jobsdb.StoreSafeTx) error) {
+					c.mockJobsDB.EXPECT().WithStoreSafeTx(gomock.Any(), gomock.Any()).Times(1).Do(func(ctx context.Context, f func(tx jobsdb.StoreSafeTx) error) {
 						_ = f(jobsdb.EmptyStoreSafeTx())
 					}).Return(nil)
 					c.mockJobsDB.
@@ -389,17 +385,11 @@ var _ = Describe("Gateway", func() {
 		})
 
 		It("should store messages successfully if rate limit is not reached for workspace", func() {
-			workspaceID := "some-workspace-id"
-
-			mockCall := c.mockBackendConfig.EXPECT().GetWorkspaceIDForWriteKey(WriteKeyEnabled).Return(workspaceID).AnyTimes()
+			mockCall := c.mockRateLimiter.EXPECT().LimitReached(WorkspaceID).Return(false).Times(1)
 			tFunc := c.asyncHelper.ExpectAndNotifyCallbackWithName("")
 			mockCall.Do(func(interface{}) { tFunc() })
 
-			mockCall = c.mockRateLimiter.EXPECT().LimitReached(workspaceID).Return(false).Times(1)
-			tFunc = c.asyncHelper.ExpectAndNotifyCallbackWithName("")
-			mockCall.Do(func(interface{}) { tFunc() })
-
-			c.mockJobsDB.EXPECT().WithStoreSafeTx(gomock.Any()).Times(1).Do(func(f func(tx jobsdb.StoreSafeTx) error) {
+			c.mockJobsDB.EXPECT().WithStoreSafeTx(gomock.Any(), gomock.Any()).Times(1).Do(func(ctx context.Context, f func(tx jobsdb.StoreSafeTx) error) {
 				_ = f(jobsdb.EmptyStoreSafeTx())
 			}).Return(nil)
 			mockCall = c.mockJobsDB.EXPECT().StoreWithRetryEachInTx(gomock.Any(), gomock.Any(), gomock.Any()).DoAndReturn(jobsToEmptyErrors).Times(1)
@@ -410,15 +400,7 @@ var _ = Describe("Gateway", func() {
 		})
 
 		It("should reject messages if rate limit is reached for workspace", func() {
-			workspaceID := "some-workspace-id"
-
-			mockCall := c.mockBackendConfig.EXPECT().GetWorkspaceIDForWriteKey(WriteKeyEnabled).Return(workspaceID).AnyTimes()
-			tFunc := c.asyncHelper.ExpectAndNotifyCallbackWithName("")
-			mockCall.Do(func(interface{}) { tFunc() })
-
-			c.mockRateLimiter.EXPECT().LimitReached(workspaceID).Return(true).Times(1)
-			tFunc = c.asyncHelper.ExpectAndNotifyCallbackWithName("")
-			mockCall.Do(func(interface{}) { tFunc() })
+			c.mockRateLimiter.EXPECT().LimitReached(WorkspaceID).Return(true).Times(1)
 
 			expectHandlerResponse(gateway.webAliasHandler, authorizedRequest(WriteKeyEnabled, bytes.NewBufferString("{}")), 429, response.TooManyRequests+"\n")
 		})
@@ -537,7 +519,7 @@ var _ = Describe("Gateway", func() {
 				if handlerType != "import" {
 					validBody := createJSONBody("custom-property", "custom-value")
 
-					c.mockJobsDB.EXPECT().WithStoreSafeTx(gomock.Any()).Times(1).Do(func(f func(tx jobsdb.StoreSafeTx) error) {
+					c.mockJobsDB.EXPECT().WithStoreSafeTx(gomock.Any(), gomock.Any()).Times(1).Do(func(ctx context.Context, f func(tx jobsdb.StoreSafeTx) error) {
 						_ = f(jobsdb.EmptyStoreSafeTx())
 					}).Return(nil)
 					c.mockJobsDB.
@@ -568,6 +550,45 @@ var _ = Describe("Gateway", func() {
 		It("should return a robots.txt", func() {
 			expectHandlerResponse(gateway.robots, nil, 200, "User-agent: * \nDisallow: / \n")
 		})
+	})
+
+	Context("Warehouse proxy", func() {
+		DescribeTable("forwarding requests to warehouse with different response codes",
+			func(url string, code int, payload string) {
+				gateway := &HandleT{}
+				whMock := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					Expect(r.URL.String()).To(Equal(url))
+					Expect(r.Body)
+					Expect(r.Body).To(Not(BeNil()))
+					defer r.Body.Close()
+					reqBody, err := io.ReadAll(r.Body)
+					Expect(err).To(BeNil())
+					Expect(string(reqBody)).To(Equal(payload))
+					w.WriteHeader(code)
+				}))
+				err := os.Setenv("WAREHOUSE_URL", whMock.URL)
+				Expect(err).To(BeNil())
+				err = os.Setenv("RSERVER_WAREHOUSE_MODE", config.OffMode)
+				Expect(err).To(BeNil())
+				err = gateway.Setup(c.mockApp, c.mockBackendConfig, c.mockJobsDB, nil, c.mockVersionHandler, rsources.NewNoOpService())
+				Expect(err).To(BeNil())
+
+				defer func() {
+					err := gateway.Shutdown()
+					Expect(err).To(BeNil())
+					whMock.Close()
+				}()
+
+				req := httptest.NewRequest("POST", "http://rudder-server"+url, bytes.NewBufferString(payload))
+				w := httptest.NewRecorder()
+				gateway.whProxy.ServeHTTP(w, req)
+				resp := w.Result()
+				Expect(resp.StatusCode).To(Equal(code))
+			},
+			Entry("successful request", "/v1/warehouse/pending-events", http.StatusOK, `{"source_id": "1", "task_run_id":"2"}`),
+			Entry("failed request", "/v1/warehouse/pending-events", http.StatusBadRequest, `{"source_id": "3", "task_run_id":"4"}`),
+			Entry("request with query parameters", "/v1/warehouse/pending-events?triggerUpload=true", http.StatusOK, `{"source_id": "5", "task_run_id":"6"}`),
+		)
 	})
 })
 

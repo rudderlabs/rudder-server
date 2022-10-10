@@ -1,3 +1,5 @@
+//go:build !warehouse_integration
+
 package warehouse_test
 
 import (
@@ -13,9 +15,9 @@ import (
 )
 
 func initWarehouse() {
-	config.Load()
+	config.Reset()
 	admin.Init()
-	logger.Init()
+	logger.Reset()
 	Init()
 	Init2()
 	Init3()

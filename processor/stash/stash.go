@@ -28,7 +28,7 @@ var (
 	errDBReadBatchSize      int
 	noOfErrStashWorkers     int
 	maxFailedCountForErrJob int
-	pkgLogger               logger.LoggerI
+	pkgLogger               logger.Logger
 	payloadLimit            int64
 )
 
@@ -55,8 +55,8 @@ type HandleT struct {
 	errorDB                   jobsdb.JobsDB
 	errProcessQ               chan []*jobsdb.JobT
 	errFileUploader           filemanager.FileManager
-	statErrDBR                stats.RudderStats
-	logger                    logger.LoggerI
+	statErrDBR                stats.Measurement
+	logger                    logger.Logger
 	transientSource           transientsource.Service
 	jobsDBCommandTimeout      time.Duration
 	jobdDBQueryRequestTimeout time.Duration
@@ -70,7 +70,7 @@ func New() *HandleT {
 func (st *HandleT) Setup(errorDB jobsdb.JobsDB, transientSource transientsource.Service) {
 	st.logger = pkgLogger
 	st.errorDB = errorDB
-	st.statErrDBR = stats.DefaultStats.NewStat("processor.err_db_read_time", stats.TimerType)
+	st.statErrDBR = stats.Default.NewStat("processor.err_db_read_time", stats.TimerType)
 	st.transientSource = transientSource
 	config.RegisterIntConfigVariable(3, &st.jobdDBMaxRetries, true, 1, []string{"JobsDB.Processor.MaxRetries", "JobsDB.MaxRetries"}...)
 	config.RegisterDurationConfigVariable(60, &st.jobdDBQueryRequestTimeout, true, time.Second, []string{"JobsDB.Processor.QueryRequestTimeout", "JobsDB.QueryRequestTimeout"}...)
@@ -102,12 +102,12 @@ func (st *HandleT) Start(ctx context.Context) {
 
 func sendRetryUpdateStats(attempt int) {
 	pkgLogger.Warnf("Timeout during update job status in stash module, attempt %d", attempt)
-	stats.NewTaggedStat("jobsdb_update_timeout", stats.CountType, stats.Tags{"attempt": fmt.Sprint(attempt), "module": "stash"}).Count(1)
+	stats.Default.NewTaggedStat("jobsdb_update_timeout", stats.CountType, stats.Tags{"attempt": fmt.Sprint(attempt), "module": "stash"}).Count(1)
 }
 
 func sendQueryRetryStats(attempt int) {
 	pkgLogger.Warnf("Timeout during query jobs in stash module, attempt %d", attempt)
-	stats.NewTaggedStat("jobsdb_query_timeout", stats.CountType, stats.Tags{"attempt": fmt.Sprint(attempt), "module": "stash"}).Count(1)
+	stats.Default.NewTaggedStat("jobsdb_query_timeout", stats.CountType, stats.Tags{"attempt": fmt.Sprint(attempt), "module": "stash"}).Count(1)
 }
 
 func (st *HandleT) getFileUploader(ctx context.Context) filemanager.FileManager {
@@ -123,8 +123,8 @@ func backupEnabled() bool {
 
 func (st *HandleT) setupFileUploader(ctx context.Context) {
 	if backupEnabled() {
-		provider := config.GetEnv("JOBS_BACKUP_STORAGE_PROVIDER", "")
-		bucket := config.GetEnv("JOBS_BACKUP_BUCKET", "")
+		provider := config.GetString("JOBS_BACKUP_STORAGE_PROVIDER", "")
+		bucket := config.GetString("JOBS_BACKUP_BUCKET", "")
 		if provider != "" && bucket != "" {
 			var err error
 			st.errFileUploader, err = filemanager.DefaultFileManagerFactory.New(&filemanager.SettingsT{
@@ -144,7 +144,7 @@ func (st *HandleT) runErrWorkers(ctx context.Context) {
 	for i := 0; i < noOfErrStashWorkers; i++ {
 		g.Go(misc.WithBugsnag(func() error {
 			for jobs := range st.errProcessQ {
-				uploadStat := stats.DefaultStats.NewStat("Processor.err_upload_time", stats.TimerType)
+				uploadStat := stats.Default.NewStat("Processor.err_upload_time", stats.TimerType)
 				uploadStat.Start()
 				output := st.storeErrorsToObjectStorage(jobs)
 				st.setErrJobStatus(jobs, output)
@@ -168,7 +168,7 @@ func (st *HandleT) storeErrorsToObjectStorage(jobs []*jobsdb.JobT) StoreErrorOut
 	if err != nil {
 		panic(err)
 	}
-	path := fmt.Sprintf("%v%v.json", tmpDirPath+localTmpDirName, fmt.Sprintf("%v.%v.%v.%v", time.Now().Unix(), config.GetEnv("INSTANCE_ID", "1"), fmt.Sprintf("%v-%v", jobs[0].JobID, jobs[len(jobs)-1].JobID), uuid))
+	path := fmt.Sprintf("%v%v.json", tmpDirPath+localTmpDirName, fmt.Sprintf("%v.%v.%v.%v", time.Now().Unix(), config.GetString("INSTANCE_ID", "1"), fmt.Sprintf("%v-%v", jobs[0].JobID, jobs[len(jobs)-1].JobID), uuid))
 
 	gzipFilePath := fmt.Sprintf(`%v.gz`, path)
 	err = os.MkdirAll(filepath.Dir(gzipFilePath), os.ModePerm)

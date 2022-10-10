@@ -13,7 +13,6 @@ import (
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/services/multitenant"
-	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/types/servermode"
 	"github.com/rudderlabs/rudder-server/utils/types/workspace"
@@ -58,9 +57,8 @@ func (m *mockLifecycle) Stop() {
 }
 
 func Init() {
-	config.Load()
-	stats.Setup()
-	logger.Init()
+	config.Reset()
+	logger.Reset()
 }
 
 func TestDynamicCluster(t *testing.T) {
