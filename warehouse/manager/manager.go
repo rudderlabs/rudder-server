@@ -1,6 +1,7 @@
 package manager
 
 import (
+	"context"
 	"fmt"
 	"time"
 
@@ -35,7 +36,7 @@ type ManagerI interface {
 	IsEmpty(warehouse warehouseutils.WarehouseT) (bool, error)
 	TestConnection(warehouse warehouseutils.WarehouseT) error
 	DownloadIdentityRules(*misc.GZipWriter) error
-	GetTotalCountInTable(tableName string) (int64, error)
+	GetTotalCountInTable(ctx context.Context, tableName string) (int64, error)
 	Connect(warehouse warehouseutils.WarehouseT) (client.Client, error)
 	LoadTestTable(location, stagingTableName string, payloadMap map[string]interface{}, loadFileFormat string) error
 	SetConnectionTimeout(timeout time.Duration)

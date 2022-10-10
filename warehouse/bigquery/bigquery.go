@@ -721,7 +721,7 @@ func (bq *HandleT) IsEmpty(warehouse warehouseutils.WarehouseT) (empty bool, err
 		if !exists {
 			continue
 		}
-		count, err := bq.GetTotalCountInTable(tableName)
+		count, err := bq.GetTotalCountInTable(bq.BQContext, tableName)
 		if err != nil {
 			return empty, err
 		}
@@ -1010,9 +1010,9 @@ func (bq *HandleT) DownloadIdentityRules(gzWriter *misc.GZipWriter) (err error) 
 	return
 }
 
-func (bq *HandleT) GetTotalCountInTable(tableName string) (total int64, err error) {
+func (bq *HandleT) GetTotalCountInTable(ctx context.Context, tableName string) (total int64, err error) {
 	sqlStatement := fmt.Sprintf(`SELECT count(*) FROM %[1]s.%[2]s`, bq.Namespace, tableName)
-	it, err := bq.Db.Query(sqlStatement).Read(bq.BQContext)
+	it, err := bq.Db.Query(sqlStatement).Read(ctx)
 	if err != nil {
 		return 0, err
 	}

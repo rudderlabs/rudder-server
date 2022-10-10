@@ -1,6 +1,7 @@
 package datalake
 
 import (
+	"context"
 	"fmt"
 	"time"
 
@@ -104,7 +105,7 @@ func (*HandleT) DownloadIdentityRules(*misc.GZipWriter) error {
 	return fmt.Errorf("datalake err :not implemented")
 }
 
-func (*HandleT) GetTotalCountInTable(_ string) (int64, error) {
+func (*HandleT) GetTotalCountInTable(context.Context, string) (int64, error) {
 	return 0, nil
 }
 
