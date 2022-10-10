@@ -325,7 +325,12 @@ func (idr *HandleT) writeTableToFile(tableName string, txn *sql.Tx, gzWriter *mi
 			var rowData []string
 			eventLoader := warehouseutils.GetNewEventLoader(idr.Warehouse.Type, idr.Uploader.GetLoadFileType(), gzWriter)
 			var prop1Val, prop2Val, prop1Type, prop2Type sql.NullString
-			err = rows.Scan(&prop1Type, &prop1Val, &prop2Type, &prop2Val)
+			err = rows.Scan(
+				&prop1Type,
+				&prop1Val,
+				&prop2Type,
+				&prop2Val,
+			)
 			if err != nil {
 				return
 			}
