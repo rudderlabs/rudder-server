@@ -99,6 +99,7 @@ var UploadAPI UploadAPIT
 const (
 	TriggeredSuccessfully = "Triggered successfully"
 	NoPendingEvents       = "No pending events to sync for this destination"
+	NoSuchSyncs           = "No such sync exist"
 )
 
 func InitWarehouseAPI(dbHandle *sql.DB, log logger.Logger) error {
@@ -238,7 +239,7 @@ func (uploadReq UploadReqT) GetWHUpload() (response *proto.WHUploadResponse, err
 	defer func() {
 		if err != nil {
 			response = &proto.WHUploadResponse{
-				StatusCode: 400,
+				StatusCode: http.StatusBadRequest,
 			}
 		}
 	}()
@@ -251,12 +252,12 @@ func (uploadReq UploadReqT) GetWHUpload() (response *proto.WHUploadResponse, err
 	uploadReq.API.log.Debug(query)
 
 	var (
+		upload                                                      proto.WHUploadResponse
 		nextRetryTimeStr                                            sql.NullString
 		firstEventAt, lastEventAt, createdAt, lastExecAt, updatedAt sql.NullTime
 		timingsObject                                               sql.NullString
 		uploadError                                                 string
 		isUploadArchived                                            sql.NullBool
-		upload                                                      proto.WHUploadResponse
 	)
 
 	row := uploadReq.API.dbHandle.QueryRow(query)
@@ -322,7 +323,7 @@ func (uploadReq UploadReqT) GetWHUpload() (response *proto.WHUploadResponse, err
 	}
 
 	response = &upload
-	response.StatusCode = 200
+	response.StatusCode = http.StatusOK
 	return
 }
 
@@ -353,8 +354,8 @@ func (uploadReq UploadReqT) TriggerWHUpload() (response *proto.TriggerWhUploadsR
 	if err == sql.ErrNoRows {
 		err = nil
 		response = &proto.TriggerWhUploadsResponse{
-			Message:    "No such sync exist",
-			StatusCode: 200,
+			Message:    NoSuchSyncs,
+			StatusCode: http.StatusOK,
 		}
 		return
 	}
@@ -430,18 +431,7 @@ func (tableUploadReq TableUploadReqT) GetWhTableUploads() ([]*proto.WHTable, err
 }
 
 func (tableUploadReq TableUploadReqT) generateQuery(selectFields string) string {
-	query := fmt.Sprintf(`
-		select
-		  %s
-		from
-		  %s
-		where
-		  wh_upload_id = %d
-	`,
-		selectFields,
-		warehouseutils.WarehouseTableUploadsTable,
-		tableUploadReq.UploadID,
-	)
+	query := fmt.Sprintf(`select %s from %s where wh_upload_id = %d`, selectFields, warehouseutils.WarehouseTableUploadsTable, tableUploadReq.UploadID)
 	if len(strings.TrimSpace(tableUploadReq.Name)) > 0 {
 		query = fmt.Sprintf(`%s and table_name = %s`, query, tableUploadReq.Name)
 	}
@@ -459,18 +449,7 @@ func (tableUploadReq TableUploadReqT) validateReq() error {
 }
 
 func (uploadReq UploadReqT) generateQuery(selectedFields string) string {
-	return fmt.Sprintf(`
-		select
-		  %s
-		from
-		  %s
-		where
-		  id = %d
-	`,
-		selectedFields,
-		warehouseutils.WarehouseUploadsTable,
-		uploadReq.UploadId,
-	)
+	return fmt.Sprintf(`select %s from %s  where id = %d`, selectedFields, warehouseutils.WarehouseUploadsTable, uploadReq.UploadId)
 }
 
 func (uploadReq UploadReqT) validateReq() error {
@@ -617,20 +596,7 @@ func (uploadsReq *UploadsReqT) warehouseUploadsForHosted(authorizedSourceIDs []s
 	}
 
 	subQuery = subQuery + strings.Join(whereClauses, " AND ")
-	query = fmt.Sprintf(`
-		select
-		  *
-		from
-		  (%s) p
-		order by
-		  id desc
-		limit
-		  %d offset %d
-	`,
-		subQuery,
-		uploadsReq.Limit,
-		uploadsReq.Offset,
-	)
+	query = fmt.Sprintf(`select * from (%s)p order by id desc limit %d offset %d`, subQuery, uploadsReq.Limit, uploadsReq.Offset)
 	uploadsReq.API.log.Info(query)
 
 	// get uploads from db
