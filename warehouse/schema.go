@@ -65,7 +65,25 @@ func (sh *SchemaHandleT) getLocalSchema() (currentSchema warehouseutils.SchemaT)
 	namespace := sh.warehouse.Namespace
 
 	var rawSchema json.RawMessage
-	sqlStatement := fmt.Sprintf(`SELECT schema FROM %[1]s WHERE (%[1]s.destination_id='%[2]s' AND %[1]s.namespace='%[3]s' AND %[1]s.source_id='%[4]s') ORDER BY %[1]s.id DESC`, warehouseutils.WarehouseSchemasTable, destID, namespace, sourceID)
+	sqlStatement := fmt.Sprintf(`
+		SELECT 
+		  schema 
+		FROM 
+		  %[1]s ST
+		WHERE 
+		  (
+			ST.destination_id = '%[2]s' 
+			AND ST.namespace = '%[3]s' 
+			AND ST.source_id = '%[4]s'
+		  ) 
+		ORDER BY 
+		  ST.id DESC;
+`,
+		warehouseutils.WarehouseSchemasTable,
+		destID,
+		namespace,
+		sourceID,
+	)
 	pkgLogger.Infof("[WH]: Fetching current schema from wh postgresql: %s", sqlStatement)
 
 	err := dbHandle.QueryRow(sqlStatement).Scan(&rawSchema)
@@ -110,14 +128,34 @@ func (sh *SchemaHandleT) updateLocalSchema(updatedSchema warehouseutils.SchemaT)
 		return err
 	}
 
-	sqlStatement := fmt.Sprintf(`INSERT INTO %s (source_id, namespace, destination_id, destination_type, schema, created_at, updated_at)
-								VALUES ($1, $2, $3, $4, $5, $6, $7)
-								ON CONFLICT (source_id, destination_id, namespace)
-								DO
-								UPDATE SET schema=$5, updated_at = $7 RETURNING id
-								`, warehouseutils.WarehouseSchemasTable)
+	sqlStatement := fmt.Sprintf(`
+		INSERT INTO %s (
+		  source_id, namespace, destination_id, 
+		  destination_type, schema, created_at, 
+		  updated_at
+		) 
+		VALUES 
+		  ($1, $2, $3, $4, $5, $6, $7) ON CONFLICT (
+			source_id, destination_id, namespace
+		  ) DO 
+		UPDATE 
+		SET 
+		  schema = $5, 
+		  updated_at = $7 RETURNING id;
+`,
+		warehouseutils.WarehouseSchemasTable,
+	)
 	updatedAt := timeutil.Now()
-	_, err = dbHandle.Exec(sqlStatement, sourceID, namespace, destID, destType, marshalledSchema, timeutil.Now(), updatedAt)
+	_, err = dbHandle.Exec(
+		sqlStatement,
+		sourceID,
+		namespace,
+		destID,
+		destType,
+		marshalledSchema,
+		timeutil.Now(),
+		updatedAt,
+	)
 	return err
 }
 
@@ -251,7 +289,17 @@ func (sh *SchemaHandleT) consolidateStagingFilesSchemaUsingWarehouseSchema() war
 			ids = append(ids, stagingFile.ID)
 		}
 
-		sqlStatement := fmt.Sprintf(`SELECT schema FROM %s WHERE id IN (%s)`, warehouseutils.WarehouseStagingFilesTable, misc.IntArrayToString(ids, ","))
+		sqlStatement := fmt.Sprintf(`
+			SELECT 
+			  schema 
+			FROM 
+			  %s 
+			WHERE 
+			  id IN (%s);
+`,
+			warehouseutils.WarehouseStagingFilesTable,
+			misc.IntArrayToString(ids, ","),
+		)
 		rows, err := sh.dbHandle.Query(sqlStatement)
 		if err != nil && err != sql.ErrNoRows {
 			panic(fmt.Errorf("Query: %s\nfailed with Error : %w", sqlStatement, err))

@@ -332,10 +332,24 @@ func GetLoadFileGenTime(str sql.NullString) (t time.Time) {
 }
 
 func GetNamespace(source backendconfig.SourceT, destination backendconfig.DestinationT, dbHandle *sql.DB) (namespace string, exists bool) {
-	sqlStatement := fmt.Sprintf(`SELECT namespace FROM %s WHERE source_id='%s' AND destination_id='%s' ORDER BY id DESC`, WarehouseSchemasTable, source.ID, destination.ID)
+	sqlStatement := fmt.Sprintf(`
+		SELECT 
+		  namespace 
+		FROM 
+		  %s 
+		WHERE 
+		  source_id = '%s' 
+		  AND destination_id = '%s' 
+		ORDER BY 
+		  id DESC;
+`,
+		WarehouseSchemasTable,
+		source.ID,
+		destination.ID,
+	)
 	err := dbHandle.QueryRow(sqlStatement).Scan(&namespace)
 	if err != nil && err != sql.ErrNoRows {
-		panic(fmt.Errorf("Query: %s failed with Error : %w", sqlStatement, err))
+		panic(fmt.Errorf("query: %s failed with Error : %w", sqlStatement, err))
 	}
 	return namespace, len(namespace) > 0
 }
@@ -376,7 +390,7 @@ func GetObjectFolderForDeltalake(provider, location string) (folder string) {
 }
 
 // GetObjectLocation returns the folder path for the storage object based on the storage provider
-// eg. For provider as S3: https://test-bucket.s3.amazonaws.com/test-object.csv --> s3://test-bucket/test-object.csv
+// e.g. For provider as S3: https://test-bucket.s3.amazonaws.com/test-object.csv --> s3://test-bucket/test-object.csv
 func GetObjectLocation(provider, location string) (objectLocation string) {
 	switch provider {
 	case "S3":
@@ -443,7 +457,7 @@ func GetS3Location(location string) (s3Location, region string) {
 	return
 }
 
-// GetS3LocationFolder returns the folder path for an s3 object
+// GetS3LocationFolder returns the folder path for a s3 object
 // https://test-bucket.s3.amazonaws.com/myfolder/test-object.csv --> s3://test-bucket/myfolder
 func GetS3LocationFolder(location string) string {
 	s3Location, _ := GetS3Location(location)
@@ -468,7 +482,7 @@ func GetGCSLocation(location string, options GCSLocationOptionsT) string {
 	return str2
 }
 
-// GetGCSLocationFolder returns the folder path for an gcs object
+// GetGCSLocationFolder returns the folder path for a gcs object
 // https://storage.googleapis.com/test-bucket/myfolder/test-object.csv --> gcs://test-bucket/myfolder
 func GetGCSLocationFolder(location string, options GCSLocationOptionsT) string {
 	s3Location := GetGCSLocation(location, options)
@@ -509,7 +523,7 @@ func JSONSchemaToMap(rawMsg json.RawMessage) map[string]map[string]string {
 	schema := make(map[string]map[string]string)
 	err := json.Unmarshal(rawMsg, &schema)
 	if err != nil {
-		panic(fmt.Errorf("Unmarshalling: %s failed with Error : %w", string(rawMsg), err))
+		panic(fmt.Errorf("unmarshalling: %s failed with Error : %w", string(rawMsg), err))
 	}
 	return schema
 }
@@ -520,7 +534,7 @@ func DestStat(statType, statName, id string) stats.Measurement {
 
 /*
 ToSafeNamespace convert name of the namespace to one acceptable by warehouse
-1. removes symbols and joins continuous letters and numbers with single underscore and if first char is a number will append a underscore before the first number
+1. Remove symbols and joins continuous letters and numbers with single underscore and if first char is a number will append an underscore before the first number
 2. adds an underscore if the name is a reserved keyword in the warehouse
 3. truncate the length of namespace to 127 characters
 4. return "stringempty" if name is empty after conversion
@@ -568,8 +582,8 @@ func ToSafeNamespace(provider, name string) string {
 }
 
 /*
-ToProviderCase converts string provided to case generally accepted in the warehouse for table, column, schema names etc
-eg. columns are uppercased in SNOWFLAKE and lowercased etc in REDSHIFT, BIGQUERY etc
+ToProviderCase converts string provided to case generally accepted in the warehouse for table, column, schema names etc.
+e.g. columns are uppercased in SNOWFLAKE and lowercased etc. in REDSHIFT, BIGQUERY etc
 */
 func ToProviderCase(provider, str string) string {
 	if strings.ToUpper(provider) == SNOWFLAKE {
@@ -729,7 +743,7 @@ func GetTemporaryS3Cred(destination *backendconfig.DestinationT) (string, string
 		return "", "", "", err
 	}
 
-	// Create a STS client from just a session.
+	// Create an STS client from just a session.
 	svc := sts.New(awsSession)
 
 	sessionTokenOutput, err := svc.GetSessionToken(&sts.GetSessionTokenInput{DurationSeconds: &AWSCredsExpiryInS})
