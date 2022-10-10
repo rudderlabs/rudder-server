@@ -4,10 +4,10 @@ import (
 	"database/sql"
 	"fmt"
 	"sort"
-	"strconv"
 	"strings"
 
 	"github.com/rudderlabs/rudder-server/admin"
+	"github.com/rudderlabs/rudder-server/jobsdb/internal/dsindex"
 	"github.com/rudderlabs/rudder-server/services/stats"
 )
 
@@ -47,7 +47,7 @@ func getDSList(jd assertInterface, dbHandle sqlDbOrTx, tablePrefix string) []dat
 		}
 	}
 
-	sortDnumList(jd, dnumList)
+	sortDnumList(dnumList)
 
 	// Create the structure
 	for _, dnum := range dnumList {
@@ -71,59 +71,10 @@ sortDnumList Function to sort table suffixes. We should not have any use case
 for having > 2 len suffixes (e.g. 1_1_1 - see comment below)
 but this sort handles the general case
 */
-func sortDnumList(jd assertInterface, dnumList []string) {
+func sortDnumList(dnumList []string) {
 	sort.Slice(dnumList, func(i, j int) bool {
-		src := strings.Split(dnumList[i], "_")
-		dst := strings.Split(dnumList[j], "_")
-		comparison, err := dsComparitor(src, dst)
-		jd.assertError(err)
-		return comparison
+		return dsindex.MustParse(dnumList[i]).Less(dsindex.MustParse(dnumList[j]))
 	})
-}
-
-// returns true, nil if src is less than dst
-// returns false, nil if src is greater than dst
-// returns false, someError if src is equal to dst
-var dsComparitor = func(src, dst []string) (bool, error) {
-	k := 0
-	for {
-		if k >= len(src) {
-			// src has same prefix but is shorter
-			// For example, src=1.1 while dest=1.1.1
-			if k >= len(dst) {
-				return false, fmt.Errorf("k:%d >= len(dst):%d", k, len(dst))
-			}
-			if k <= 0 {
-				return false, fmt.Errorf("k:%d <= 0", k)
-			}
-			return true, nil
-		}
-		if k >= len(dst) {
-			// Opposite of case above
-			if k <= 0 {
-				return false, fmt.Errorf("k:%d <= 0", k)
-			}
-			if k >= len(src) {
-				return false, fmt.Errorf("k:%d >= len(src):%d", k, len(src))
-			}
-			return false, nil
-		}
-		if src[k] == dst[k] {
-			// Loop
-			k++
-			continue
-		}
-		// Strictly ordered. Return
-		srcInt, err := strconv.Atoi(src[k])
-		if err != nil {
-			return false, fmt.Errorf("string to int conversion failed for source %v. with error %w", src, err)
-		}
-		dstInt, err := strconv.Atoi(dst[k])
-		if err != nil {
-			return false, fmt.Errorf("string to int conversion failed for destination %v. with error %w", dst, err)
-		}
-		return srcInt < dstInt, nil
-	}
 }
 
 // mustGetAllTableNames gets all table names from Postgres and panics in case of an error
