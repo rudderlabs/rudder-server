@@ -532,7 +532,7 @@ func (wh *HandleT) getPendingStagingFiles(warehouse warehouseutils.Warehouse) ([
 func (wh *HandleT) initUpload(warehouse warehouseutils.Warehouse, jsonUploadsList []*StagingFileT, isUploadTriggered bool, priority int, uploadStartAfter time.Time) {
 	sqlStatement := fmt.Sprintf(`
 		INSERT INTO %s (
-		  source_id, namespace, destination_id, 
+		  source_id, namespace, workspace_id, destination_id, 
 		  destination_type, start_staging_file_id, 
 		  end_staging_file_id, start_load_file_id, 
 		  end_load_file_id, status, schema, 
@@ -542,7 +542,7 @@ func (wh *HandleT) initUpload(warehouse warehouseutils.Warehouse, jsonUploadsLis
 		VALUES 
 		  (
 			$1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 
-			$11, $12, $13, $14, $15, $16
+			$11, $12, $13, $14, $15, $16, $17
 		  ) RETURNING id;
 `,
 		warehouseutils.WarehouseUploadsTable,
