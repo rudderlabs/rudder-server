@@ -19,6 +19,12 @@ var (
 
 const (
 	DRAIN_ERROR_CODE int = 410
+	// transformation(router or batch)
+	ERROR_AT_TF = "transformation"
+	// event delivery
+	ERROR_AT_DEL = "delivery"
+	// custom destination manager
+	ERROR_AT_CUST = "custom"
 )
 
 type BatchDestinationT struct {

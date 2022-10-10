@@ -151,7 +151,17 @@ func (wh *HandleT) poulateHistoricIdentitiesDestType() string {
 }
 
 func (wh *HandleT) hasLocalIdentityData(warehouse warehouseutils.Warehouse) (exists bool) {
-	sqlStatement := fmt.Sprintf(`SELECT EXISTS ( SELECT 1 FROM %s )`, warehouseutils.IdentityMergeRulesTableName(warehouse))
+	sqlStatement := fmt.Sprintf(`
+		SELECT 
+		  EXISTS (
+			SELECT 
+			  1 
+			FROM 
+			  %s
+		  );
+`,
+		warehouseutils.IdentityMergeRulesTableName(warehouse),
+	)
 	err := wh.dbHandle.QueryRow(sqlStatement).Scan(&exists)
 	if err != nil {
 		// TODO: Handle this
@@ -201,7 +211,14 @@ func (wh *HandleT) setupIdentityTables(warehouse warehouseutils.Warehouse) {
 		panic(fmt.Errorf("Query: %s\nfailed with Error : %w", sqlStatement, err))
 	}
 
-	sqlStatement = fmt.Sprintf(`CREATE INDEX IF NOT EXISTS merge_properties_index_%[1]s ON %[1]s (merge_property_1_type, merge_property_1_value, merge_property_2_type, merge_property_2_value)`, warehouseutils.IdentityMergeRulesTableName(warehouse))
+	sqlStatement = fmt.Sprintf(`
+		CREATE INDEX IF NOT EXISTS merge_properties_index_ %[1]s ON %[1]s (
+		  merge_property_1_type, merge_property_1_value, 
+		  merge_property_2_type, merge_property_2_value
+		);
+`,
+		warehouseutils.IdentityMergeRulesTableName(warehouse),
+	)
 
 	_, err = wh.dbHandle.Exec(sqlStatement)
 	if err != nil {
@@ -210,12 +227,14 @@ func (wh *HandleT) setupIdentityTables(warehouse warehouseutils.Warehouse) {
 
 	sqlStatement = fmt.Sprintf(`
 		CREATE TABLE IF NOT EXISTS %s (
-			id BIGSERIAL PRIMARY KEY,
-			merge_property_type VARCHAR(64) NOT NULL,
-			merge_property_value TEXT NOT NULL,
-			rudder_id VARCHAR(64) NOT NULL,
-			updated_at TIMESTAMP NOT NULL DEFAULT NOW());
-		`, warehouseutils.IdentityMappingsTableName(warehouse),
+		  id BIGSERIAL PRIMARY KEY, 
+		  merge_property_type VARCHAR(64) NOT NULL, 
+		  merge_property_value TEXT NOT NULL, 
+		  rudder_id VARCHAR(64) NOT NULL, 
+		  updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+		);
+		`,
+		warehouseutils.IdentityMappingsTableName(warehouse),
 	)
 
 	_, err = wh.dbHandle.Exec(sqlStatement)
@@ -224,9 +243,15 @@ func (wh *HandleT) setupIdentityTables(warehouse warehouseutils.Warehouse) {
 	}
 
 	sqlStatement = fmt.Sprintf(`
-		ALTER TABLE %s
-			ADD CONSTRAINT %s UNIQUE (merge_property_type, merge_property_value);
-		`, warehouseutils.IdentityMappingsTableName(warehouse), warehouseutils.IdentityMappingsUniqueMappingConstraintName(warehouse),
+		ALTER TABLE 
+		  %s 
+		ADD 
+		  CONSTRAINT %s UNIQUE (
+			merge_property_type, merge_property_value
+		  );
+		`,
+		warehouseutils.IdentityMappingsTableName(warehouse),
+		warehouseutils.IdentityMappingsUniqueMappingConstraintName(warehouse),
 	)
 
 	_, err = wh.dbHandle.Exec(sqlStatement)
@@ -234,14 +259,24 @@ func (wh *HandleT) setupIdentityTables(warehouse warehouseutils.Warehouse) {
 		panic(fmt.Errorf("Query: %s\nfailed with Error : %w", sqlStatement, err))
 	}
 
-	sqlStatement = fmt.Sprintf(`CREATE INDEX IF NOT EXISTS rudder_id_index_%[1]s ON %[1]s (rudder_id)`, warehouseutils.IdentityMappingsTableName(warehouse))
+	sqlStatement = fmt.Sprintf(`
+		CREATE INDEX IF NOT EXISTS rudder_id_index_ %[1]s ON %[1]s (rudder_id);
+`,
+		warehouseutils.IdentityMappingsTableName(warehouse),
+	)
 
 	_, err = wh.dbHandle.Exec(sqlStatement)
 	if err != nil {
 		panic(fmt.Errorf("Query: %s\nfailed with Error : %w", sqlStatement, err))
 	}
 
-	sqlStatement = fmt.Sprintf(`CREATE INDEX IF NOT EXISTS merge_property_index_%[1]s ON %[1]s (merge_property_type, merge_property_value)`, warehouseutils.IdentityMappingsTableName(warehouse))
+	sqlStatement = fmt.Sprintf(`
+		CREATE INDEX IF NOT EXISTS merge_property_index_ %[1]s ON %[1]s (
+		  merge_property_type, merge_property_value
+		);
+`,
+		warehouseutils.IdentityMappingsTableName(warehouse),
+	)
 
 	_, err = wh.dbHandle.Exec(sqlStatement)
 	if err != nil {
@@ -274,7 +309,16 @@ func (wh *HandleT) initPrePopulateDestIdentitiesUpload(warehouse warehouseutils.
 		panic(err)
 	}
 
-	sqlStatement := fmt.Sprintf(`INSERT INTO %s (source_id, namespace, workspace_id, destination_id, destination_type, status, schema, error, metadata, created_at, updated_at, start_staging_file_id, end_staging_file_id, start_load_file_id, end_load_file_id)	VALUES ($1, $2, $3, $4, $5, $6 ,$7, $8, $9, $10, $11, $12, $13, $14) RETURNING id`, warehouseutils.WarehouseUploadsTable)
+	sqlStatement := fmt.Sprintf(`INSERT INTO %s (
+		source_id, namespace, workspace_id, destination_id, 
+		destination_type, status, schema, error, metadata, 
+		created_at, updated_at, 
+		start_staging_file_id, end_staging_file_id, 
+		start_load_file_id, end_load_file_id)
+	VALUES 
+		($1, $2, $3, $4, $5, $6 ,$7, $8, $9, $10, $11, $12, $13, $14) 
+	RETURNING id
+	`, warehouseutils.WarehouseUploadsTable)
 	stmt, err := wh.dbHandle.Prepare(sqlStatement)
 	if err != nil {
 		panic(fmt.Errorf("Query: %s\nfailed to prepare with Error : %w", sqlStatement, err))
@@ -282,7 +326,23 @@ func (wh *HandleT) initPrePopulateDestIdentitiesUpload(warehouse warehouseutils.
 	defer stmt.Close()
 
 	now := timeutil.Now()
-	row := stmt.QueryRow(warehouse.Source.ID, warehouse.Namespace, warehouse.WorkspaceID, warehouse.Destination.ID, wh.poulateHistoricIdentitiesDestType(), Waiting, marshalledSchema, "{}", "{}", now, now, 0, 0, 0, 0)
+	row := stmt.QueryRow(
+		warehouse.Source.ID,
+		warehouse.Namespace,
+		warehouse.WorkspaceID,
+		warehouse.Destination.ID,
+		wh.poulateHistoricIdentitiesDestType(),
+		Waiting,
+		marshalledSchema,
+		"{}",
+		"{}",
+		now,
+		now,
+		0,
+		0,
+		0,
+		0,
+	)
 
 	var uploadID int64
 	err = row.Scan(&uploadID)

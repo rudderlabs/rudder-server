@@ -282,7 +282,7 @@ func (jobRun *JobRunT) uploadLoadFilesToObjectStorage() ([]loadFileUploadOutputT
 			pkgLogger.Errorf("received error while uploading load file to bucket for staging file ids %s, cancelling the context: err %v", stagingFileId, err)
 			return []loadFileUploadOutputT{}, err
 		case <-time.After(slaveUploadTimeout):
-			return []loadFileUploadOutputT{}, fmt.Errorf("Load files upload timed out for staging file idsx: %v", stagingFileId)
+			return []loadFileUploadOutputT{}, fmt.Errorf("load files upload timed out for staging file idsx: %v", stagingFileId)
 		}
 	}
 }
