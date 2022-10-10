@@ -834,19 +834,27 @@ func (ch *HandleT) DropTable(tableName string) (err error) {
 }
 
 func (ch *HandleT) AddColumns(tableName string, columnsInfo warehouseutils.ColumnsInto) (err error) {
-	cluster := warehouseutils.GetConfigValue(Cluster, ch.Warehouse)
-	clusterClause := ""
+	var (
+		format        func(_ int, columnInfo warehouseutils.ColumnInfoT) string
+		sqlStatement  string
+		cluster       string
+		clusterClause string
+	)
+
+	cluster = warehouseutils.GetConfigValue(Cluster, ch.Warehouse)
 	if len(strings.TrimSpace(cluster)) > 0 {
 		clusterClause = fmt.Sprintf(`ON CLUSTER %q`, cluster)
 	}
-	format := func(_ int, columnInfo warehouseutils.ColumnInfoT) string {
+
+	format = func(_ int, columnInfo warehouseutils.ColumnInfoT) string {
 		return fmt.Sprintf(`
 		ADD COLUMN IF NOT EXISTS %q %s`,
 			columnInfo.Name,
 			getClickHouseColumnTypeForSpecificTable(tableName, columnInfo.Name, rudderDataTypesMapToClickHouse[columnInfo.Type], false),
 		)
 	}
-	sqlStatement := fmt.Sprintf(`
+
+	sqlStatement = fmt.Sprintf(`
 		ALTER TABLE
 		%q.%q %s %s;`,
 		ch.Namespace,
@@ -854,6 +862,7 @@ func (ch *HandleT) AddColumns(tableName string, columnsInfo warehouseutils.Colum
 		clusterClause,
 		columnsInfo.JoinColumns(format, ","),
 	)
+
 	pkgLogger.Infof("CH: Adding column in clickhouse for ch:%s : %v", ch.Warehouse.Destination.ID, sqlStatement)
 	_, err = ch.Db.Exec(sqlStatement)
 	return

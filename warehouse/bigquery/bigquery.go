@@ -770,10 +770,10 @@ func (bq *HandleT) AddColumns(tableName string, columnsInfo warehouseutils.Colum
 		)
 	}
 
-	update := bigquery.TableMetadataToUpdate{
+	tableMetadataToUpdate := bigquery.TableMetadataToUpdate{
 		Schema: newSchema,
 	}
-	_, err = tableRef.Update(bq.BQContext, update, meta.ETag)
+	_, err = tableRef.Update(bq.BQContext, tableMetadataToUpdate, meta.ETag)
 	return
 }
 

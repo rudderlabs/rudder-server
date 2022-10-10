@@ -865,10 +865,16 @@ func (dl *HandleT) DropTable(tableName string) (err error) {
 }
 
 func (dl *HandleT) AddColumns(tableName string, columnsInfo warehouseutils.ColumnsInto) (err error) {
-	format := func(_ int, columnInfo warehouseutils.ColumnInfoT) string {
+	var (
+		format       func(_ int, columnInfo warehouseutils.ColumnInfoT) string
+		sqlStatement string
+	)
+
+	format = func(_ int, columnInfo warehouseutils.ColumnInfoT) string {
 		return fmt.Sprintf(`%s %s`, columnInfo.Name, getDeltaLakeDataType(columnInfo.Type))
 	}
-	sqlStatement := fmt.Sprintf(`
+
+	sqlStatement = fmt.Sprintf(`
 		ALTER TABLE
 		%s.%s
 		ADD COLUMNS ( %s );`,
@@ -876,6 +882,7 @@ func (dl *HandleT) AddColumns(tableName string, columnsInfo warehouseutils.Colum
 		tableName,
 		columnsInfo.JoinColumns(format, ","),
 	)
+
 	pkgLogger.Infof("%s Adding column in delta lake with SQL:%v", dl.GetLogIdentifier(tableName), sqlStatement)
 	err = dl.ExecuteSQL(sqlStatement, "AddColumn")
 	return
