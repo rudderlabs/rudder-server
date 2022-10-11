@@ -6,12 +6,10 @@ import (
 	"database/sql"
 	"encoding/csv"
 	"fmt"
-	"reflect"
 	"sort"
 	"strings"
 	"time"
 
-	"github.com/gofrs/uuid"
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
@@ -20,8 +18,12 @@ import (
 	snowflake "github.com/snowflakedb/gosnowflake" // blank comment
 )
 
+const (
+	provider       = warehouseutils.SNOWFLAKE
+	tableNameLimit = 127
+)
+
 var (
-	stagingTablePrefix string
 	pkgLogger          logger.Logger
 	enableDeleteByJobs bool
 )
@@ -32,7 +34,6 @@ func Init() {
 }
 
 func loadConfig() {
-	stagingTablePrefix = "RUDDER_STAGING_"
 	config.RegisterBoolConfigVariable(false, &enableDeleteByJobs, true, "Warehouse.snowflake.enableDeleteByJobs")
 }
 
@@ -48,8 +49,6 @@ type HandleT struct {
 
 // String constants for snowflake destination config
 const (
-	AWSAccessKey       = "accessKey"
-	AWSAccessSecret    = "accessKeyID"
 	StorageIntegration = "storageIntegration"
 	SFAccount          = "account"
 	SFWarehouse        = "warehouse"
@@ -266,24 +265,14 @@ func (sf *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 		defer dbHandle.Close()
 	}
 
-	// sort column names
-	keys := reflect.ValueOf(tableSchemaInUpload).MapKeys()
-	strkeys := make([]string, len(keys))
-	for i := 0; i < len(keys); i++ {
-		strkeys[i] = keys[i].String()
-	}
-	sort.Strings(strkeys)
-	var sortedColumnNames string
-	// TODO: use strings.Join() instead
-	for index, key := range strkeys {
-		if index > 0 {
-			sortedColumnNames += `, `
-		}
-		sortedColumnNames += fmt.Sprintf(`"%s"`, key)
-	}
+	strKeys := warehouseutils.GetColumnsFromTableSchema(tableSchemaInUpload)
+	sort.Strings(strKeys)
+	sortedColumnNames := warehouseutils.JoinWithFormatting(strKeys, func(idx int, name string) string {
+		return fmt.Sprintf(`%q`, name)
+	}, ",")
 
 	schemaIdentifier := sf.schemaIdentifier()
-	stagingTableName := misc.TruncateStr(fmt.Sprintf(`%s%s_%s`, stagingTablePrefix, strings.ReplaceAll(uuid.Must(uuid.NewV4()).String(), "-", ""), tableName), 127)
+	stagingTableName := warehouseutils.StagingTableName(provider, tableName, tableNameLimit)
 	sqlStatement := fmt.Sprintf(`CREATE TEMPORARY TABLE %[1]s."%[2]s" LIKE %[1]s."%[3]s"`, schemaIdentifier, stagingTableName, tableName)
 
 	pkgLogger.Debugf("SF: Creating temporary table for table:%s at %s\n", tableName, sqlStatement)
@@ -329,18 +318,12 @@ func (sf *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 		partitionKey = column
 	}
 
-	var columnNames, stagingColumnNames, columnsWithValues string
-	// TODO: use strings.Join() instead
-	for idx, str := range strkeys {
-		columnNames += fmt.Sprintf(`"%s"`, str)
-		stagingColumnNames += fmt.Sprintf(`staging."%s"`, str)
-		columnsWithValues += fmt.Sprintf(`original."%[1]s" = staging."%[1]s"`, str)
-		if idx != len(strkeys)-1 {
-			columnNames += `,`
-			stagingColumnNames += `,`
-			columnsWithValues += `,`
-		}
-	}
+	stagingColumnNames := warehouseutils.JoinWithFormatting(strKeys, func(_ int, name string) string {
+		return fmt.Sprintf(`staging."%s"`, name)
+	}, ",")
+	columnsWithValues := warehouseutils.JoinWithFormatting(strKeys, func(_ int, name string) string {
+		return fmt.Sprintf(`original."%[1]s" = staging."%[1]s"`, name)
+	}, ",")
 
 	var additionalJoinClause string
 	if tableName == discardsTable {
@@ -360,7 +343,7 @@ func (sf *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 									WHEN MATCHED THEN
 									UPDATE SET %[6]s
 									WHEN NOT MATCHED THEN
-									INSERT (%[4]s) VALUES (%[5]s)`, tableName, stagingTableName, primaryKey, columnNames, stagingColumnNames, columnsWithValues, additionalJoinClause, partitionKey, schemaIdentifier)
+									INSERT (%[4]s) VALUES (%[5]s)`, tableName, stagingTableName, primaryKey, sortedColumnNames, stagingColumnNames, columnsWithValues, additionalJoinClause, partitionKey, schemaIdentifier)
 	} else {
 		sqlStatement = fmt.Sprintf(`MERGE INTO %[8]s."%[1]s" AS original
 										USING (
@@ -370,7 +353,7 @@ func (sf *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 										) AS staging
 										ON (original."%[3]s" = staging."%[3]s" %[6]s)
 										WHEN NOT MATCHED THEN
-										INSERT (%[4]s) VALUES (%[5]s)`, tableName, stagingTableName, primaryKey, columnNames, stagingColumnNames, additionalJoinClause, partitionKey, schemaIdentifier)
+										INSERT (%[4]s) VALUES (%[5]s)`, tableName, stagingTableName, primaryKey, sortedColumnNames, stagingColumnNames, additionalJoinClause, partitionKey, schemaIdentifier)
 	}
 
 	pkgLogger.Infof("SF: Dedup records for table:%s using staging table: %s\n", tableName, sqlStatement)
@@ -441,7 +424,7 @@ func (sf *HandleT) LoadIdentityMappingsTable() (err error) {
 	}
 
 	schemaIdentifier := sf.schemaIdentifier()
-	stagingTableName := misc.TruncateStr(fmt.Sprintf(`%s%s_%s`, stagingTablePrefix, strings.ReplaceAll(uuid.Must(uuid.NewV4()).String(), "-", ""), identityMappingsTable), 127)
+	stagingTableName := warehouseutils.StagingTableName(provider, identityMappingsTable, tableNameLimit)
 	sqlStatement := fmt.Sprintf(`CREATE TEMPORARY TABLE %[1]s."%[2]s" LIKE %[1]s."%[3]s"`, schemaIdentifier, stagingTableName, identityMappingsTable)
 
 	pkgLogger.Infof("SF: Creating temporary table for table:%s at %s\n", identityMappingsTable, sqlStatement)
@@ -527,7 +510,8 @@ func (sf *HandleT) loadUserTables() (errorMap map[string]error) {
 		firstValProps = append(firstValProps, fmt.Sprintf(`FIRST_VALUE("%[1]s" IGNORE NULLS) OVER (PARTITION BY ID ORDER BY RECEIVED_AT DESC ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) AS "%[1]s"`, colName))
 	}
 	schemaIdentifier := sf.schemaIdentifier()
-	stagingTableName := misc.TruncateStr(fmt.Sprintf(`%s%s_%s`, stagingTablePrefix, strings.ReplaceAll(uuid.Must(uuid.NewV4()).String(), "-", ""), usersTable), 127)
+
+	stagingTableName := warehouseutils.StagingTableName(provider, usersTable, tableNameLimit)
 	sqlStatement := fmt.Sprintf(`CREATE TEMPORARY TABLE %[1]s."%[2]s" AS (SELECT DISTINCT * FROM
 										(
 											SELECT

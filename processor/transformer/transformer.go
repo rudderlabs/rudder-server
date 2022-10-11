@@ -337,8 +337,8 @@ func (trans *HandleT) request(ctx context.Context, url string, data []Transforme
 		http.StatusBadRequest,
 		http.StatusNotFound,
 		http.StatusRequestEntityTooLarge:
-		trans.logger.Errorf("Transformer returned status code: %v", statusCode)
 	default:
+		trans.logger.Errorf("Transformer returned status code: %v", statusCode)
 	}
 
 	var transformerResponses []TransformerResponseT
