@@ -25,10 +25,10 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
 	"github.com/rudderlabs/rudder-server/utils/types"
-	"github.com/rudderlabs/rudder-server/warehouse/configuration_testing"
 	"github.com/rudderlabs/rudder-server/warehouse/identity"
 	"github.com/rudderlabs/rudder-server/warehouse/manager"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
+	"github.com/rudderlabs/rudder-server/warehouse/validations"
 )
 
 // Upload Status
@@ -132,7 +132,7 @@ type UploadJobT struct {
 	uploadLock           sync.Mutex
 	hasAllTablesSkipped  bool
 	tableUploadStatuses  []*TableUploadStatusT
-	destinationValidator configuration_testing.DestinationValidator
+	destinationValidator validations.DestinationValidator
 }
 
 type UploadColumnT struct {
@@ -1623,7 +1623,7 @@ func (job *UploadJobT) validateDestinationCredentials() (bool, error) {
 	if job.destinationValidator == nil {
 		return false, errors.New("failed to validate as destinationValidator is not set")
 	}
-	validationResult, err := job.destinationValidator.ValidateCredentials(&configuration_testing.DestinationValidationRequest{Destination: job.warehouse.Destination})
+	validationResult, err := job.destinationValidator.ValidateCredentials(&validations.DestinationValidationRequest{Destination: job.warehouse.Destination})
 	if err != nil {
 		pkgLogger.Errorf("Unable to successfully validate destination: %s credentials, err: %v", job.warehouse.Destination.ID, err)
 		return false, err
@@ -1899,7 +1899,11 @@ func (job *UploadJobT) createLoadFiles(generateAll bool) (startLoadFileID, endLo
 		}
 
 		pkgLogger.Infof("[WH]: Publishing %d staging files for %s:%s to PgNotifier", len(messages), destType, destID)
-		ch, err := job.pgNotifier.Publish(messages, schema, job.upload.Priority)
+		messagePayload := pgnotifier.MessagePayload{
+			Jobs:    messages,
+			JobType: "upload",
+		}
+		ch, err := job.pgNotifier.Publish(messagePayload, schema, job.upload.Priority)
 		if err != nil {
 			panic(err)
 		}

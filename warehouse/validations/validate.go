@@ -1,4 +1,4 @@
-package configuration_testing
+package validations
 
 import (
 	"context"
@@ -92,7 +92,7 @@ func (ct *CTHandleT) validateDestinationFunc(req json.RawMessage, step string) (
 
 func (ct *CTHandleT) verifyingObjectStorage() (err error) {
 	// creating load file
-	tempPath, err := createLoadFile(ct.infoRequest)
+	tempPath, err := CreateTempLoadFile(ct.infoRequest)
 	if err != nil {
 		return
 	}
@@ -162,7 +162,7 @@ func (ct *CTHandleT) verifyingCreateAlterTable() (err error) {
 	}
 
 	// Drop table
-	defer ct.manager.DropTable(stagingTableName)
+	defer func() { _ = ct.manager.DropTable(stagingTableName) }()
 
 	// Alter table
 	for columnName, columnType := range AlterColumnMap {
@@ -191,7 +191,7 @@ func (ct *CTHandleT) verifyingLoadTable() (err error) {
 	}
 
 	// creating load file
-	tempPath, err := createLoadFile(ct.infoRequest)
+	tempPath, err := CreateTempLoadFile(ct.infoRequest)
 	if err != nil {
 		return
 	}
@@ -207,7 +207,7 @@ func (ct *CTHandleT) verifyingLoadTable() (err error) {
 	return
 }
 
-func createLoadFile(req *DestinationValidationRequest) (filePath string, err error) {
+func CreateTempLoadFile(req *DestinationValidationRequest) (filePath string, err error) {
 	destination := req.Destination
 	destinationType := destination.DestinationDefinition.Name
 
@@ -279,7 +279,7 @@ func uploadLoadFile(req *DestinationValidationRequest, filePath string) (uploadO
 
 	// cleanup
 	defer misc.RemoveFilePaths(filePath)
-	defer uploadFile.Close()
+	defer func() { _ = uploadFile.Close() }()
 
 	// uploading file to object storage
 	keyPrefixes := []string{connectionTestingFolder, destinationType, randomString(), time.Now().Format("01-02-2006")}
@@ -326,7 +326,7 @@ func downloadLoadFile(req *DestinationValidationRequest, location string) (err e
 
 	// cleanup
 	defer misc.RemoveFilePaths(testFilePath)
-	defer testFile.Close()
+	defer func() { _ = testFile.Close() }()
 
 	// downloading temporary file to specified from object storage location
 	err = fm.Download(context.TODO(), testFile, location)
@@ -350,7 +350,7 @@ func (ct *CTHandleT) loadTable(loadFileLocation string) (err error) {
 	}
 
 	// Drop table
-	defer ct.manager.DropTable(stagingTableName)
+	defer func() { _ = ct.manager.DropTable(stagingTableName) }()
 
 	// loading test table from staging file
 	err = ct.manager.LoadTestTable(loadFileLocation, stagingTableName, TestPayloadMap, warehouseutils.GetLoadFileFormat(destinationType))

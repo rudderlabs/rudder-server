@@ -29,10 +29,13 @@ const (
 	DLPath                 = "path"
 	DLToken                = "token"
 	AWSTokens              = "useSTSTokens"
-	AWSAccessKey           = "accessKey"
-	AWSAccessSecret        = "accessKeyID"
 	EnableExternalLocation = "enableExternalLocation"
 	ExternalLocation       = "externalLocation"
+)
+
+const (
+	provider       = warehouseutils.DELTALAKE
+	tableNameLimit = 127
 )
 
 // Reference: https://docs.oracle.com/cd/E17952_01/connector-odbc-en/connector-odbc-reference-errorcodes.html
@@ -43,7 +46,6 @@ const (
 )
 
 var (
-	stagingTablePrefix     string
 	pkgLogger              logger.Logger
 	schema                 string
 	sparkServerType        string
@@ -127,7 +129,6 @@ func Init() {
 
 // loadConfig loads config
 func loadConfig() {
-	stagingTablePrefix = "rudder_staging_"
 	config.RegisterStringConfigVariable("default", &schema, false, "Warehouse.deltalake.schema")
 	config.RegisterStringConfigVariable("3", &sparkServerType, false, "Warehouse.deltalake.sparkServerType")
 	config.RegisterStringConfigVariable("3", &authMech, false, "Warehouse.deltalake.authMech")
@@ -263,6 +264,10 @@ func Connect(cred *databricks.CredentialsT, connectTimeout time.Duration) (dbHan
 		Context:        ctx,
 	}
 	return
+}
+
+func (*HandleT) DeleteBy([]string, warehouseutils.DeleteByParams) error {
+	return fmt.Errorf(warehouseutils.NotImplementedErrorCode)
 }
 
 // fetchTables fetch tables with tableNames
@@ -488,7 +493,7 @@ func (dl *HandleT) sortedColumnNames(tableSchemaInUpload warehouseutils.TableSch
 // credentialsStr return authentication for AWS STS and SSE-C encryption
 // STS authentication is only supported with S3A client.
 func (dl *HandleT) credentialsStr() (auth string, err error) {
-	if dl.ObjectStorage == "S3" {
+	if dl.ObjectStorage == warehouseutils.S3 {
 		useSTSTokens := warehouseutils.GetConfigValueBoolString(AWSTokens, dl.Warehouse)
 		if useSTSTokens == "true" {
 			tempAccessKeyId, tempSecretAccessKey, token, err := warehouseutils.GetTemporaryS3Cred(&dl.Warehouse.Destination)
@@ -506,9 +511,9 @@ func (dl *HandleT) credentialsStr() (auth string, err error) {
 // getLoadFolder return the load folder where the load files are present
 func (dl *HandleT) getLoadFolder(location string) (loadFolder string, err error) {
 	loadFolder = warehouseutils.GetObjectFolderForDeltalake(dl.ObjectStorage, location)
-	if dl.ObjectStorage == "S3" {
-		awsAccessKey := warehouseutils.GetConfigValue(AWSAccessKey, dl.Warehouse)
-		awsSecretKey := warehouseutils.GetConfigValue(AWSAccessSecret, dl.Warehouse)
+	if dl.ObjectStorage == warehouseutils.S3 {
+		awsAccessKey := warehouseutils.GetConfigValue(warehouseutils.AWSAccessKey, dl.Warehouse)
+		awsSecretKey := warehouseutils.GetConfigValue(warehouseutils.AWSAccessSecret, dl.Warehouse)
 		if awsAccessKey != "" && awsSecretKey != "" {
 			loadFolder = strings.Replace(loadFolder, "s3://", "s3a://", 1)
 		}
@@ -535,7 +540,7 @@ func (dl *HandleT) loadTable(tableName string, tableSchemaInUpload, tableSchemaA
 	sortedColumnKeys := warehouseutils.SortColumnKeysFromColumnMap(tableSchemaInUpload)
 
 	// Creating staging table
-	stagingTableName = misc.TruncateStr(fmt.Sprintf(`%s%s_%s`, stagingTablePrefix, strings.ReplaceAll(uuid.Must(uuid.NewV4()).String(), "-", ""), tableName), 127)
+	stagingTableName = warehouseutils.StagingTableName(provider, tableName, tableNameLimit)
 	err = dl.CreateTable(stagingTableName, tableSchemaAfterUpload)
 	if err != nil {
 		return
@@ -602,7 +607,7 @@ func (dl *HandleT) loadTable(tableName string, tableSchemaInUpload, tableSchemaA
 	}
 
 	if loadTableStrategy == "APPEND" {
-		sqlStatement = appendableLTSQLStatement(
+		sqlStatement = appendLoadTableSQLStatement(
 			dl.Namespace,
 			tableName,
 			stagingTableName,
@@ -617,7 +622,7 @@ func (dl *HandleT) loadTable(tableName string, tableSchemaInUpload, tableSchemaA
 			return
 		}
 
-		sqlStatement = mergeableLTSQLStatement(
+		sqlStatement = mergeLoadTableSQLStatement(
 			dl.Namespace,
 			tableName,
 			stagingTableName,
@@ -671,7 +676,7 @@ func (dl *HandleT) loadUserTables() (errorMap map[string]error) {
 		userColNames = append(userColNames, colName)
 		firstValProps = append(firstValProps, fmt.Sprintf(`FIRST_VALUE(%[1]s , TRUE) OVER (PARTITION BY id ORDER BY received_at DESC ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) AS %[1]s`, colName))
 	}
-	stagingTableName := misc.TruncateStr(fmt.Sprintf(`%s%s_%s`, stagingTablePrefix, strings.ReplaceAll(uuid.Must(uuid.NewV4()).String(), "-", ""), warehouseutils.UsersTable), 127)
+	stagingTableName := warehouseutils.StagingTableName(provider, warehouseutils.UsersTable, tableNameLimit)
 
 	tableLocationSql := dl.getTableLocationSql(stagingTableName)
 
@@ -715,7 +720,7 @@ func (dl *HandleT) loadUserTables() (errorMap map[string]error) {
 	columnKeys := append([]string{`id`}, userColNames...)
 
 	if loadTableStrategy == "APPEND" {
-		sqlStatement = appendableLTSQLStatement(
+		sqlStatement = appendLoadTableSQLStatement(
 			dl.Namespace,
 			warehouseutils.UsersTable,
 			stagingTableName,
@@ -731,7 +736,7 @@ func (dl *HandleT) loadUserTables() (errorMap map[string]error) {
 			return
 		}
 
-		sqlStatement = mergeableLTSQLStatement(
+		sqlStatement = mergeLoadTableSQLStatement(
 			dl.Namespace,
 			warehouseutils.UsersTable,
 			stagingTableName,
@@ -782,7 +787,7 @@ func (dl *HandleT) dropDanglingStagingTables() {
 	var filteredTablesNames []string
 	for _, tableName := range tableNames {
 		// Ignoring the staging tables
-		if !strings.HasPrefix(tableName, stagingTablePrefix) {
+		if !strings.HasPrefix(tableName, warehouseutils.StagingTablePrefix(provider)) {
 			continue
 		}
 		filteredTablesNames = append(filteredTablesNames, tableName)
@@ -925,7 +930,7 @@ func (dl *HandleT) FetchSchema(warehouse warehouseutils.Warehouse) (schema wareh
 	var filteredTablesNames []string
 	for _, tableName := range tableNames {
 		// Ignoring the staging tables
-		if strings.HasPrefix(tableName, stagingTablePrefix) {
+		if strings.HasPrefix(tableName, warehouseutils.StagingTablePrefix(provider)) {
 			continue
 		}
 		filteredTablesNames = append(filteredTablesNames, tableName)

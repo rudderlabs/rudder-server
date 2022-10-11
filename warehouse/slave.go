@@ -20,6 +20,8 @@ import (
 	"github.com/rudderlabs/rudder-server/services/pgnotifier"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
+	"github.com/rudderlabs/rudder-server/warehouse/jobs"
+	"github.com/rudderlabs/rudder-server/warehouse/manager"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 	"golang.org/x/sync/errgroup"
 )
@@ -552,7 +554,7 @@ func processStagingFile(job Payload, workerIndex int) (loadFileUploadOutputs []l
 	return loadFileUploadOutputs, err
 }
 
-func processClaimedJob(claimedJob pgnotifier.ClaimT, workerIndex int) {
+func processClaimedUploadJob(claimedJob pgnotifier.ClaimT, workerIndex int) {
 	claimProcessTimeStart := time.Now()
 	defer func() {
 		warehouseutils.NewTimerStat(STATS_WORKER_CLAIM_PROCESSING_TIME, warehouseutils.Tag{Name: TAG_WORKERID, Value: fmt.Sprintf("%d", workerIndex)}).Since(claimProcessTimeStart)
@@ -593,6 +595,83 @@ func processClaimedJob(claimedJob pgnotifier.ClaimT, workerIndex int) {
 	notifier.UpdateClaimedEvent(&claimedJob, &response)
 }
 
+type AsyncJobRunResult struct {
+	Result bool
+	Id     string
+}
+
+func runAsyncJob(asyncjob jobs.AsyncJobPayloadT) (AsyncJobRunResult, error) {
+	warehouse, err := getDestinationFromConnectionMap(asyncjob.DestinationID, asyncjob.SourceID)
+	if err != nil {
+		return AsyncJobRunResult{Id: asyncjob.Id, Result: false}, err
+	}
+	destType := warehouse.Destination.DestinationDefinition.Name
+	whManager, err := manager.NewWarehouseOperations(destType)
+	if err != nil {
+		return AsyncJobRunResult{Id: asyncjob.Id, Result: false}, err
+	}
+	whasyncjob := &jobs.WhAsyncJob{}
+
+	var metadata warehouseutils.DeleteByMetaData
+	err = json.Unmarshal(asyncjob.MetaData, &metadata)
+	if err != nil {
+		return AsyncJobRunResult{Id: asyncjob.Id, Result: false}, err
+	}
+	whManager.Setup(warehouse, whasyncjob)
+	defer whManager.Cleanup()
+	tableNames := []string{asyncjob.TableName}
+	if asyncjob.AsyncJobType == "deletebyjobrunid" {
+		pkgLogger.Info("[WH-Jobs]: Running DeleteByJobRunID on slave worker")
+
+		params := warehouseutils.DeleteByParams{
+			SourceId:  asyncjob.SourceID,
+			TaskRunId: metadata.TaskRunId,
+			JobRunId:  metadata.JobRunId,
+			StartTime: metadata.StartTime,
+		}
+		err = whManager.DeleteBy(tableNames, params)
+	}
+	asyncJobRunResult := AsyncJobRunResult{
+		Result: err == nil,
+		Id:     asyncjob.Id,
+	}
+	return asyncJobRunResult, err
+}
+
+func processClaimedAsyncJob(claimedJob pgnotifier.ClaimT) {
+	pkgLogger.Infof("[WH-Jobs]: Got request for processing Async Job with Batch ID %s", claimedJob.BatchID)
+	handleErr := func(err error, claim pgnotifier.ClaimT) {
+		pkgLogger.Errorf("[WH]: Error processing claim: %v", err)
+		response := pgnotifier.ClaimResponseT{
+			Err: err,
+		}
+		// warehouseutils.NewCounterStat(STATS_WORKER_CLAIM_PROCESSING_FAILED, warehouseutils.Tag{Name: TAG_WORKERID, Value: strconv.Itoa(workerIndex)}).Increment()
+		notifier.UpdateClaimedEvent(&claimedJob, &response)
+	}
+	var job jobs.AsyncJobPayloadT
+	err := json.Unmarshal(claimedJob.Payload, &job)
+	if err != nil {
+		handleErr(err, claimedJob)
+		return
+	}
+	result, err := runAsyncJob(job)
+	if err != nil {
+		handleErr(err, claimedJob)
+		return
+	}
+
+	marshalled_result, err := json.Marshal(result)
+	if err != nil {
+		handleErr(err, claimedJob)
+		return
+	}
+	response := pgnotifier.ClaimResponseT{
+		Err:     err,
+		Payload: marshalled_result,
+	}
+	notifier.UpdateClaimedEvent(&claimedJob, &response)
+}
+
 func setupSlave(ctx context.Context) error {
 	g, ctx := errgroup.WithContext(ctx)
 
@@ -606,10 +685,14 @@ func setupSlave(ctx context.Context) error {
 			workerIdleTimeStart := time.Now()
 			for claimedJob := range jobNotificationChannel {
 				workerIdleTimer.Since(workerIdleTimeStart)
-				pkgLogger.Infof("[WH]: Successfully claimed job:%v by slave worker-%v-%v", claimedJob.ID, idx, slaveID)
+				pkgLogger.Infof("[WH]: Successfully claimed job:%v by slave worker-%v-%v & job type %s", claimedJob.ID, idx, slaveID, claimedJob.JobType)
 
-				// process job
-				processClaimedJob(claimedJob, idx)
+				if claimedJob.JobType == jobs.AsyncJobType {
+					processClaimedAsyncJob(claimedJob)
+				} else {
+					processClaimedUploadJob(claimedJob, idx)
+				}
+
 				pkgLogger.Infof("[WH]: Successfully processed job:%v by slave worker-%v-%v", claimedJob.ID, idx, slaveID)
 				workerIdleTimeStart = time.Now()
 			}

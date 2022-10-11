@@ -41,10 +41,11 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/pubsub"
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
 	"github.com/rudderlabs/rudder-server/utils/types"
-	"github.com/rudderlabs/rudder-server/warehouse/configuration_testing"
 	"github.com/rudderlabs/rudder-server/warehouse/deltalake"
+	"github.com/rudderlabs/rudder-server/warehouse/jobs"
 	"github.com/rudderlabs/rudder-server/warehouse/manager"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
+	"github.com/rudderlabs/rudder-server/warehouse/validations"
 )
 
 var (
@@ -88,6 +89,7 @@ var (
 	maxParallelJobCreation              int
 	enableJitterForSyncs                bool
 	configBackendURL                    string
+	asyncWh                             *jobs.AsyncJobWhT
 )
 
 var (
@@ -203,6 +205,23 @@ func (wh *HandleT) workerIdentifier(warehouse warehouseutils.Warehouse) (identif
 	return
 }
 
+func getDestinationFromConnectionMap(DestinationId, SourceId string) (warehouseutils.Warehouse, error) {
+	if DestinationId == "" || SourceId == "" {
+		return warehouseutils.Warehouse{}, errors.New("Invalid Parameters")
+	}
+	srcmap, ok := connectionsMap[DestinationId]
+	if !ok {
+		return warehouseutils.Warehouse{}, errors.New("Invalid Destination Id")
+	}
+
+	conn, ok := srcmap[SourceId]
+	if !ok {
+		return warehouseutils.Warehouse{}, errors.New("Invalid Source Id")
+	}
+
+	return conn, nil
+}
+
 func (wh *HandleT) getActiveWorkerCount() int {
 	wh.activeWorkerCountLock.Lock()
 	defer wh.activeWorkerCountLock.Unlock()
@@ -248,6 +267,7 @@ func (*HandleT) handleUploadJob(uploadJob *UploadJobT) (err error) {
 	return
 }
 
+// Backend Config subscriber subscribes to backend-config and gets all the configurations that includes all sources, destinations and their latest values.
 func (wh *HandleT) backendConfigSubscriber() {
 	ch := backendconfig.DefaultBackendConfig.Subscribe(context.TODO(), backendconfig.TopicBackendConfig)
 	for data := range ch {
@@ -1047,7 +1067,7 @@ func (wh *HandleT) getUploadsToProcess(availableWorkers int, skipIdentifiers []s
 			whManager:            whManager,
 			dbHandle:             wh.dbHandle,
 			pgNotifier:           &wh.notifier,
-			destinationValidator: configuration_testing.NewDestinationValidator(),
+			destinationValidator: validations.NewDestinationValidator(),
 		}
 
 		uploadJobs = append(uploadJobs, &uploadJob)
@@ -1993,6 +2013,11 @@ func startWebHandler(ctx context.Context) error {
 			mux.HandleFunc("/v1/warehouse/trigger-upload", triggerUploadHandler)
 			mux.HandleFunc("/databricksVersion", databricksVersionHandler)
 			mux.HandleFunc("/v1/setConfig", setConfigHandler)
+
+			// Warehouse Async Job end-points
+			mux.HandleFunc("/v1/warehouse/jobs", asyncWh.AddWarehouseJobHandler)
+			mux.HandleFunc("/v1/warehouse/jobs/status", asyncWh.StatusWarehouseJobHandler)
+
 			pkgLogger.Infof("WH: Starting warehouse master service in %d", webPort)
 		} else {
 			pkgLogger.Infof("WH: Starting warehouse slave service in %d", webPort)
@@ -2164,11 +2189,17 @@ func Start(ctx context.Context, app app.App) error {
 			runArchiver(ctx, dbHandle)
 			return nil
 		}))
+
 		err := InitWarehouseAPI(dbHandle, pkgLogger.Child("upload_api"))
 		if err != nil {
 			pkgLogger.Errorf("WH: Failed to start warehouse api: %v", err)
 			return err
 		}
+		asyncWh = jobs.InitWarehouseJobsAPI(ctx, dbHandle, &notifier)
+
+		g.Go(misc.WithBugsnagForWarehouse(func() error {
+			return asyncWh.InitAsyncJobRunner()
+		}))
 	}
 
 	g.Go(func() error {
