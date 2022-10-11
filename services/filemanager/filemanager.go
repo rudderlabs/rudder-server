@@ -102,7 +102,7 @@ func GetProviderConfigForBackupsFromEnv(ctx context.Context) map[string]interfac
 		providerConfig["iamRoleArn"] = config.GetString("BACKUP_IAM_ROLE_ARN", "")
 		if providerConfig["iamRoleArn"] != "" {
 			backendconfig.DefaultBackendConfig.WaitForConfig(ctx)
-			providerConfig["externalId"] = backendconfig.DefaultBackendConfig.GetWorkspaceIDForWriteKey("")
+			providerConfig["externalId"] = backendconfig.DefaultBackendConfig.Identity().ID()
 		}
 	case "GCS":
 		providerConfig["bucketName"] = config.GetString("JOBS_BACKUP_BUCKET", "")

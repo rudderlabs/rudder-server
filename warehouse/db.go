@@ -27,18 +27,27 @@ func NewWarehouseDB(handle *sql.DB) *DB {
 func (db *DB) GetLatestUploadStatus(ctx context.Context, destType, sourceID, destinationID string) (int64, string, int, error) {
 	pkgLogger.Debugf("Fetching latest upload status for: destType: %s, sourceID: %s, destID: %s", destType, sourceID, destinationID)
 
-	query := fmt.Sprintf(`
-		SELECT
-			id,
-			status,
-			COALESCE(metadata->>'priority', '100')::int
-		FROM %[1]s
-		WHERE
-				%[1]s.destination_type='%[2]s' AND
-				%[1]s.source_id='%[3]s' AND
-				%[1]s.destination_id='%[4]s'
-		ORDER BY id DESC LIMIT 1`, warehouseutils.WarehouseUploadsTable,
-		destType, sourceID, destinationID)
+	query := fmt.Sprintf(`	
+		SELECT 
+		  id, 
+		  status, 
+		  COALESCE(metadata ->> 'priority', '100'):: int 
+		FROM 
+		  %[1]s UT
+		WHERE 
+		  UT.destination_type = '%[2]s' 
+		  AND UT.source_id = '%[3]s' 
+		  AND UT.destination_id = '%[4]s' 
+		ORDER BY 
+		  id DESC 
+		LIMIT 
+		  1;
+`,
+		warehouseutils.WarehouseUploadsTable,
+		destType,
+		sourceID,
+		destinationID,
+	)
 
 	var (
 		uploadID int64
@@ -73,7 +82,7 @@ func (db *DB) RetryUploads(ctx context.Context, filterClauses ...FilterClause) (
 			metadata = metadata || '{"retried": true, "priority": 50}' || jsonb_build_object('nextRetryTime', NOW() - INTERVAL '1 HOUR'),
 			status = 'waiting',
 			updated_at = NOW()
-		WHERE %[1]s`,
+		WHERE %[1]s;`,
 		clausesQuery,
 	)
 	pkgLogger.Debugf("[RetryUploads] sqlStatement: %s", preparedStatement)
@@ -108,7 +117,7 @@ func (db *DB) GetUploadsCount(ctx context.Context, filterClauses ...FilterClause
 		  count(*)
 		FROM
 		  wh_uploads
-		%[1]s`,
+		%[1]s;`,
 		whereClausesQuery,
 	)
 	pkgLogger.Debugf("[GetUploadsCount] sqlStatement: %s", preparedStatement)

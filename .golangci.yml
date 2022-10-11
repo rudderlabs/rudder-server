@@ -2,7 +2,6 @@ run:
   timeout: 5m
   go: '1.18'
   skip-dirs:
-    - warehouse
     - enterprise
     - event-schema
 
@@ -52,3 +51,8 @@ issues:
       linters:
         - bodyclose
 
+    # Temporary disable until we fix the number of issues
+    - path: 'warehouse'
+      linters:
+        - errcheck
+        - unparam

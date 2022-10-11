@@ -315,7 +315,7 @@ func (gateway *HandleT) dbWriterWorkerProcess() {
 		}
 
 		ctx, cancel := context.WithTimeout(context.Background(), WriteTimeout)
-		err := gateway.jobsDB.WithStoreSafeTx(func(tx jobsdb.StoreSafeTx) error {
+		err := gateway.jobsDB.WithStoreSafeTx(ctx, func(tx jobsdb.StoreSafeTx) error {
 			if gwAllowPartialWriteWithErrors {
 				var err error
 				errorMessagesMap, err = gateway.jobsDB.StoreWithRetryEachInTx(ctx, tx, jobList)
@@ -507,8 +507,7 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 
 			if enableRateLimit {
 				// In case of "batch" requests, if rate-limiter returns true for LimitReached, just drop the event batch and continue.
-				restrictorKey := gateway.backendConfig.GetWorkspaceIDForWriteKey(writeKey)
-				if gateway.rateLimiter.LimitReached(restrictorKey) {
+				if gateway.rateLimiter.LimitReached(workspaceId) {
 					req.done <- response.GetStatus(response.TooManyRequests)
 					preDbStoreCount++
 					misc.IncrementMapByKey(workspaceDropRequestStats, sourceTag, 1)
@@ -940,6 +939,20 @@ func (gateway *HandleT) pendingEventsHandler(w http.ResponseWriter, r *http.Requ
 	_, _ = w.Write([]byte(fmt.Sprintf("{ \"pending_events\": %d }", getIntResponseFromBool(gateway.getWarehousePending(payload)))))
 }
 
+func warehouseHandler(w http.ResponseWriter, r *http.Request) {
+	origin, err := url.Parse(misc.GetWarehouseURL())
+	if err != nil {
+		http.Error(w, err.Error(), 404)
+	}
+	// gateway.logger.LogRequest(r)
+	director := func(req *http.Request) {
+		req.URL.Scheme = "http"
+		req.URL.Host = origin.Host
+	}
+	proxy := &httputil.ReverseProxy{Director: director}
+	proxy.ServeHTTP(w, r)
+}
+
 func getIntResponseFromBool(resp bool) int {
 	if resp {
 		return 1
@@ -1369,7 +1382,7 @@ func (gateway *HandleT) StartWebHandler(ctx context.Context) error {
 
 	srvMux := mux.NewRouter()
 	srvMux.Use(
-		middleware.StatMiddleware(ctx),
+		middleware.StatMiddleware(ctx, srvMux),
 		middleware.LimitConcurrentRequests(maxConcurrentRequests),
 	)
 	srvMux.HandleFunc("/v1/batch", gateway.webBatchHandler).Methods("POST")
@@ -1388,7 +1401,7 @@ func (gateway *HandleT) StartWebHandler(ctx context.Context) error {
 	srvMux.HandleFunc("/pixel/v1/page", gateway.pixelPageHandler).Methods("GET")
 	srvMux.HandleFunc("/v1/webhook", gateway.webhookHandler.RequestHandler).Methods("POST", "GET")
 	srvMux.HandleFunc("/beacon/v1/batch", gateway.beaconBatchHandler).Methods("POST")
-
+	srvMux.PathPrefix("/v1/warehouse").Handler(http.HandlerFunc(warehouseHandler)).Methods("GET", "POST")
 	srvMux.HandleFunc("/version", WithContentType("application/json; charset=utf-8", gateway.versionHandler)).Methods("GET")
 	srvMux.HandleFunc("/robots.txt", gateway.robots).Methods("GET")
 
@@ -1445,7 +1458,7 @@ func (gateway *HandleT) StartAdminHandler(ctx context.Context) error {
 
 	srvMux := mux.NewRouter()
 	srvMux.Use(
-		middleware.StatMiddleware(ctx),
+		middleware.StatMiddleware(ctx, srvMux),
 		middleware.LimitConcurrentRequests(maxConcurrentRequests),
 	)
 	srvMux.HandleFunc("/v1/pending-events", gateway.pendingEventsHandler).Methods("POST")
@@ -1461,25 +1474,33 @@ func (gateway *HandleT) StartAdminHandler(ctx context.Context) error {
 // Gets the config from config backend and extracts enabled writekeys
 func (gateway *HandleT) backendConfigSubscriber() {
 	ch := gateway.backendConfig.Subscribe(context.TODO(), backendconfig.TopicProcessConfig)
-	for config := range ch {
-		configSubscriberLock.Lock()
-		writeKeysSourceMap = map[string]backendconfig.SourceT{}
-		enabledWriteKeyWebhookMap = map[string]string{}
-		enabledWriteKeyWorkspaceMap = map[string]string{}
-		sources := config.Data.(backendconfig.ConfigT)
-		sourceIDToNameMap = map[string]string{}
-		for _, source := range sources.Sources {
-			sourceIDToNameMap[source.ID] = source.Name
-			writeKeysSourceMap[source.WriteKey] = source
+	for data := range ch {
+		var (
+			newWriteKeysSourceMap          = map[string]backendconfig.SourceT{}
+			newEnabledWriteKeyWebhookMap   = map[string]string{}
+			newEnabledWriteKeyWorkspaceMap = map[string]string{}
+			newSourceIDToNameMap           = map[string]string{}
+		)
+		config := data.Data.(map[string]backendconfig.ConfigT)
+		for workspaceID, wsConfig := range config {
+			for _, source := range wsConfig.Sources {
+				newSourceIDToNameMap[source.ID] = source.Name
+				newWriteKeysSourceMap[source.WriteKey] = source
 
-			if source.Enabled {
-				enabledWriteKeyWorkspaceMap[source.WriteKey] = source.WorkspaceID
-				if source.SourceDefinition.Category == "webhook" {
-					enabledWriteKeyWebhookMap[source.WriteKey] = source.SourceDefinition.Name
-					gateway.webhookHandler.Register(source.SourceDefinition.Name)
+				if source.Enabled {
+					newEnabledWriteKeyWorkspaceMap[source.WriteKey] = workspaceID
+					if source.SourceDefinition.Category == "webhook" {
+						newEnabledWriteKeyWebhookMap[source.WriteKey] = source.SourceDefinition.Name
+						gateway.webhookHandler.Register(source.SourceDefinition.Name)
+					}
 				}
 			}
 		}
+		configSubscriberLock.Lock()
+		writeKeysSourceMap = newWriteKeysSourceMap
+		enabledWriteKeyWebhookMap = newEnabledWriteKeyWebhookMap
+		enabledWriteKeyWorkspaceMap = newEnabledWriteKeyWorkspaceMap
+		sourceIDToNameMap = newSourceIDToNameMap
 		configSubscriberLock.Unlock()
 	}
 }
