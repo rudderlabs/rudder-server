@@ -15,9 +15,6 @@ type Factory struct {
 
 	once              sync.Once
 	reportingInstance types.ReportingI
-
-	// for debug purposes, to be removed
-	init uint32
 }
 
 // Setup initializes Suppress User feature
