@@ -860,15 +860,13 @@ func (sf *HandleT) FetchSchema(warehouse warehouseutils.Warehouse) (schema wareh
 	schema = make(warehouseutils.SchemaT)
 	sqlStatement := fmt.Sprintf(`
 		SELECT
-		  t.table_name,
-		  c.column_name,
-		  c.data_type
+		  table_name,
+		  column_name,
+		  data_type
 		FROM
-		  INFORMATION_SCHEMA.TABLES as t
-		  JOIN INFORMATION_SCHEMA.COLUMNS as c ON t.table_schema = c.table_schema
-		  and t.table_name = c.table_name
+		  INFORMATION_SCHEMA.COLUMNS
 		WHERE
-		  t.table_schema = '%s'
+		  table_schema = '%s'
 	`,
 		sf.Namespace,
 	)

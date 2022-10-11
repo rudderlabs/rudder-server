@@ -23,9 +23,9 @@ func stagingSqlStatement(namespace, tableName, stagingTableName string, columnKe
 			FROM
 			  %[1]s.%[2]s
 		`,
-			namespace,               // 1
-			stagingTableName,        // 2
-			columnNames(columnKeys), // 3
+			namespace,
+			stagingTableName,
+			columnNames(columnKeys),
 		)
 	} else {
 		sqlStatement = fmt.Sprintf(`
@@ -46,9 +46,9 @@ func stagingSqlStatement(namespace, tableName, stagingTableName string, columnKe
 			WHERE
 			  _rudder_staging_row_number = 1
 		`,
-			namespace,        // 1
-			stagingTableName, // 2
-			pk,               // 3
+			namespace,
+			stagingTableName,
+			pk,
 		)
 	}
 	return
@@ -73,14 +73,14 @@ func mergeLoadTableSQLStatement(namespace, tableName, stagingTableName string, c
 		VALUES
 		  (%[7]s);
 		`,
-		namespace,                      // 1
-		tableName,                      // 2
-		stagingTableSqlStatement,       // 3
-		pk,                             // 4
-		columnsWithValues(columnKeys),  // 5
-		columnNames(columnKeys),        // 6
-		stagingColumnNames(columnKeys), // 7
-		partitionQuery,                 // 8
+		namespace,
+		tableName,
+		stagingTableSqlStatement,
+		pk,
+		columnsWithValues(columnKeys),
+		columnNames(columnKeys),
+		stagingColumnNames(columnKeys),
+		partitionQuery,
 	)
 	return
 }
@@ -95,11 +95,11 @@ func appendLoadTableSQLStatement(namespace, tableName, stagingTableName string, 
 		FROM
 		  (%[5]s);
 		`,
-		namespace,                // 1
-		tableName,                // 2
-		stagingTableName,         // 3
-		columnNames(columnKeys),  // 4
-		stagingTableSqlStatement, // 5
+		namespace,
+		tableName,
+		stagingTableName,
+		columnNames(columnKeys),
+		stagingTableSqlStatement,
 	)
 	return
 }

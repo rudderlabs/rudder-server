@@ -707,20 +707,19 @@ func (as *HandleT) CrashRecover(warehouse warehouseutils.Warehouse) (err error) 
 }
 
 func (as *HandleT) dropDanglingStagingTables() bool {
-	sqlStatement := `
-			select
-			  table_name
-			from
-			  information_schema.tables
-			where
-			  table_schema = $1
-			  AND table_name like $2;
-		`
-	rows, err := as.Db.Query(
-		sqlStatement,
+	sqlStatement := fmt.Sprintf(`
+		select
+		  table_name
+		from
+		  information_schema.tables
+		where
+		  table_schema = '%s'
+		  AND table_name like '%s';
+	`,
 		as.Namespace,
 		fmt.Sprintf(`%s%%`, warehouseutils.StagingTablePrefix(provider)),
 	)
+	rows, err := as.Db.Query(sqlStatement)
 	if err != nil {
 		pkgLogger.Errorf("WH: SYNAPSE: Error dropping dangling staging tables in synapse: %v\nQuery: %s\n", err, sqlStatement)
 		return false
@@ -759,7 +758,7 @@ func (as *HandleT) FetchSchema(warehouse warehouseutils.Warehouse) (schema wareh
 	defer dbHandle.Close()
 
 	schema = make(warehouseutils.SchemaT)
-	sqlStatement := `
+	sqlStatement := fmt.Sprintf(`
 			SELECT
 			  table_name,
 			  column_name,
@@ -767,14 +766,14 @@ func (as *HandleT) FetchSchema(warehouse warehouseutils.Warehouse) (schema wareh
 			FROM
 			  INFORMATION_SCHEMA.COLUMNS
 			WHERE
-			  table_schema = $1
-			  and table_name not like $2;
-		`
-	rows, err := dbHandle.Query(
-		sqlStatement,
+			  table_schema = '%s'
+			  and table_name not like '%s'
+		`,
 		as.Namespace,
 		fmt.Sprintf(`%s%%`, warehouseutils.StagingTablePrefix(provider)),
 	)
+	rows, err := dbHandle.Query(sqlStatement)
+
 	if err != nil && err != io.EOF {
 		pkgLogger.Errorf("AZ: Error in fetching schema from synapse destination:%v, query: %v", as.Warehouse.Destination.ID, sqlStatement)
 		return
