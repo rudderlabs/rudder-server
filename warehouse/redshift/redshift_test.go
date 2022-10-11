@@ -59,7 +59,7 @@ func TestRedshiftIntegration(t *testing.T) {
 			Value: true,
 		},
 		{
-			Key:   "Warehouse.redshift.dedupWindowInDays",
+			Key:   "Warehouse.redshift.dedupWindowInHours",
 			Value: 5,
 		},
 	}))
