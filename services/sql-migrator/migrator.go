@@ -14,7 +14,8 @@ import (
 	"github.com/golang-migrate/migrate/v4/database/postgres"
 	"github.com/golang-migrate/migrate/v4/source"
 	bindata "github.com/golang-migrate/migrate/v4/source/go_bindata"
-	"github.com/golang-migrate/migrate/v4/source/httpfs"
+	"github.com/golang-migrate/migrate/v4/source/iofs"
+	"github.com/rudderlabs/rudder-server/sql/migrations"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 )
 
@@ -42,16 +43,15 @@ func init() {
 func (m *Migrator) Migrate(migrationsDir string) error {
 	destinationDriver, err := m.getDestinationDriver()
 	if err != nil {
-		return fmt.Errorf("Error while getting destination driver for migrator: %w", err)
+		return fmt.Errorf("destination driver for %q migrator: %w", migrationsDir, err)
 	}
 
-	path := filepath.Join("/", migrationsDir)
-	sourceDriver, err := httpfs.New(MigrationAssets, path)
+	sourceDriver, err := iofs.New(migrations.FS, migrationsDir)
 	if err != nil {
-		return fmt.Errorf("Could not create migration source for script directory '%v': %w", migrationsDir, err)
+		return fmt.Errorf("source driver for %q migrator: %w", migrationsDir, err)
 	}
 
-	migration, err := migrate.NewWithInstance("httpfs", sourceDriver, "postgres", destinationDriver)
+	migration, err := migrate.NewWithInstance("iofs", sourceDriver, "postgres", destinationDriver)
 	if err != nil {
 		return fmt.Errorf("Could not execute migrations from migration directory '%v': %w", migrationsDir, err)
 	}
@@ -68,7 +68,7 @@ func (m *Migrator) Migrate(migrationsDir string) error {
 		if err == os.ErrNotExist {
 			pkgLogger.Infof("\n*****************\nMigrate could not find migration file for the version in db.\nPlease set env RSERVER_SQLMIGRATOR_FORCE_SET_LOWER_VERSION to true and restart to force set version in DB to latest version of migration sql files\nAlso please keep in mind that this does not undo the additional migrations done in version specified in DB. It just sets the value in MigrationsTable and marks it as dirty false.\n*****************\n")
 		}
-		return fmt.Errorf("Could not run migration from directory '%v', %w", migrationsDir, err)
+		return fmt.Errorf("run migration from directory %q, %w", migrationsDir, err)
 	}
 
 	return nil
@@ -79,18 +79,13 @@ func (m *Migrator) Migrate(migrationsDir string) error {
 // Directories inside templates directory are ignored.
 func (m *Migrator) MigrateFromTemplates(templatesDir string, context interface{}) error {
 	// look in templatesDir for migration template files
-	templates, err := MigrationAssets.Open(templatesDir)
+	fileInfos, err := migrations.FS.ReadDir(templatesDir)
 	if err != nil {
-		return fmt.Errorf("Could not open migration template directory '%v': '%w'", templatesDir, err)
-	}
-
-	fileInfos, err := templates.Readdir(-1)
-	if err != nil {
-		return fmt.Errorf("Could not read migration template directory '%v': %w", templatesDir, err)
+		return fmt.Errorf("read migration template directory %q: %w", templatesDir, err)
 	}
 
 	if len(fileInfos) == 0 {
-		return fmt.Errorf("Migration template directory '%v' is empty", templatesDir)
+		return fmt.Errorf("empty migration template directory %q", templatesDir)
 	}
 
 	templateNames := make([]string, 0)
@@ -105,27 +100,27 @@ func (m *Migrator) MigrateFromTemplates(templatesDir string, context interface{}
 		func(name string) ([]byte, error) {
 			// read template file
 			path := filepath.Join(templatesDir, name)
-			file, err := MigrationAssets.Open(path)
+			file, err := migrations.FS.Open(path)
 			if err != nil {
-				return nil, fmt.Errorf("Could not open migration template '%v': '%w'", path, err)
+				return nil, fmt.Errorf("open migration template %q: %w", path, err)
 			}
 
 			templateData, err := io.ReadAll(file)
 			if err != nil {
-				return nil, fmt.Errorf("Could not read migration template '%v': %w", name, err)
+				return nil, fmt.Errorf("read migration template %q: %w", name, err)
 			}
 
 			// parse template
 			tmpl, err := template.New(name).Parse(string(templateData))
 			if err != nil {
-				return nil, fmt.Errorf("Could not parse migration template '%v': %w", name, err)
+				return nil, fmt.Errorf("parse migration template %q: %w", name, err)
 			}
 
 			// execute template with given context
 			buffer := new(bytes.Buffer)
 			err = tmpl.Execute(buffer, context)
 			if err != nil {
-				return nil, fmt.Errorf("Could not execute migration template '%v': %w", name, err)
+				return nil, fmt.Errorf("execute migration template %q: %w", name, err)
 			}
 
 			script := buffer.Bytes()
@@ -135,19 +130,19 @@ func (m *Migrator) MigrateFromTemplates(templatesDir string, context interface{}
 
 	sourceDriver, err := bindata.WithInstance(assetSource)
 	if err != nil {
-		return fmt.Errorf("Could not create migration source from template directory '%v': %w", templatesDir, err)
+		return fmt.Errorf("create migration source from template directory %q: %w", templatesDir, err)
 	}
 
 	// create destination driver from db.handle
 	destinationDriver, err := m.getDestinationDriver()
 	if err != nil {
-		return fmt.Errorf("Could not create migration destination: %w", err)
+		return fmt.Errorf("create migration destination: %w", err)
 	}
 
 	// run the migration scripts
 	migration, err := migrate.NewWithInstance("go-bindata", sourceDriver, "postgres", destinationDriver)
 	if err != nil {
-		return fmt.Errorf("Could not setup migration from template directory '%v': %w", templatesDir, err)
+		return fmt.Errorf("setup migration from template directory %q: %w", templatesDir, err)
 	}
 
 	if m.ShouldForceSetLowerVersion {
@@ -159,7 +154,7 @@ func (m *Migrator) MigrateFromTemplates(templatesDir string, context interface{}
 
 	err = migration.Up()
 	if err != nil && err != migrate.ErrNoChange { // migrate library reports that no change was required, using ErrNoChange
-		return fmt.Errorf("Could not run migration from template directory '%v', %w", templatesDir, err)
+		return fmt.Errorf("run migration from template directory %q, %w", templatesDir, err)
 	}
 
 	return nil
@@ -196,13 +191,13 @@ func (m *Migrator) forceSetLowerVersion(migration *migrate.Migrate, sourceDriver
 	// get current version in database migrations table
 	versionInDB, _, err := destinationDriver.Version()
 	if err != nil {
-		return fmt.Errorf("Could not get current migration version in DB: %w", err)
+		return fmt.Errorf("get current migration version in DB: %w", err)
 	}
 
 	// check latest version on file
 	latestVersionOnFile, err := latestSourceVersion(sourceDriver)
 	if err != nil {
-		return fmt.Errorf("Could not check latest migration version on file: %w", err)
+		return fmt.Errorf("check latest migration version on file: %w", err)
 	}
 
 	// force set version in DB to latestSourceVersion
@@ -212,7 +207,7 @@ func (m *Migrator) forceSetLowerVersion(migration *migrate.Migrate, sourceDriver
 		pkgLogger.Infof("Force setting migration version to %d in %s", latestVersionOnFile, m.MigrationsTable)
 		err = migration.Force(latestVersionOnFile)
 		if err != nil {
-			return fmt.Errorf("Could not force set migration to latest version on file: %w", err)
+			return fmt.Errorf("force set migration to latest version on file: %w", err)
 		}
 	}
 
