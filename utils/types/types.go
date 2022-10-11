@@ -30,13 +30,13 @@ type UserSuppression interface {
 // EventSchemasI is interface to access EventSchemas feature
 type EventSchemasI interface {
 	RecordEventSchema(writeKey, eventBatch string) bool
-	GetEventModels(w http.ResponseWriter, r *http.Request)
-	GetEventVersions(w http.ResponseWriter, r *http.Request)
-	GetSchemaVersionMetadata(w http.ResponseWriter, r *http.Request)
-	GetSchemaVersionMissingKeys(w http.ResponseWriter, r *http.Request)
-	GetKeyCounts(w http.ResponseWriter, r *http.Request)
-	GetEventModelMetadata(w http.ResponseWriter, r *http.Request)
-	GetJsonSchemas(w http.ResponseWriter, r *http.Request)
+	HandleGetEventModels(w http.ResponseWriter, r *http.Request)
+	HandleGetEventVersions(w http.ResponseWriter, r *http.Request)
+	HandleGetSchemaVersionMetadata(w http.ResponseWriter, r *http.Request)
+	HandleGetSchemaVersionMissingKeys(w http.ResponseWriter, r *http.Request)
+	HandleGetKeyCounts(w http.ResponseWriter, r *http.Request)
+	HandleGetEventModelMetadata(w http.ResponseWriter, r *http.Request)
+	HandleGetJSONSchemas(w http.ResponseWriter, r *http.Request)
 }
 
 // ConfigEnvI is interface to inject env variables into config

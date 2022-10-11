@@ -210,7 +210,7 @@ func TestFlow(t *testing.T) {
 	})
 }
 
-func getJob(w http.ResponseWriter, _ *http.Request) {
+func handleGetJob(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	testDataMu.Lock()
 	defer testDataMu.Unlock()
@@ -225,7 +225,7 @@ func getJob(w http.ResponseWriter, _ *http.Request) {
 	w.WriteHeader(404)
 }
 
-func updateJobStatus(w http.ResponseWriter, r *http.Request) {
+func handlePatchJobStatus(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	jobID, _ := strconv.Atoi(mux.Vars(r)["job_id"])
 	var status statusJobSchema
@@ -250,7 +250,7 @@ func updateJobStatus(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write(body)
 }
 
-func getWorkspaceConfig(w http.ResponseWriter, _ *http.Request) {
+func handleGetWorkspaceConfig(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	config := backendconfig.ConfigT{
 		WorkspaceID: "reg-test-workspaceId",
@@ -335,9 +335,9 @@ func verifyBatchDelete(t *testing.T) {
 func handler(t *testing.T) http.Handler {
 	t.Helper()
 	srvMux := mux.NewRouter()
-	srvMux.HandleFunc("/dataplane/workspaces/{workspace_id}/regulations/workerJobs", getJob).Methods("GET")
-	srvMux.HandleFunc("/dataplane/workspaces/{workspace_id}/regulations/workerJobs/{job_id}", updateJobStatus).Methods("PATCH")
-	srvMux.HandleFunc("/workspaceConfig", getWorkspaceConfig).Methods("GET")
+	srvMux.HandleFunc("/dataplane/workspaces/{workspace_id}/regulations/workerJobs", handleGetJob).Methods("GET")
+	srvMux.HandleFunc("/dataplane/workspaces/{workspace_id}/regulations/workerJobs/{job_id}", handlePatchJobStatus).Methods("PATCH")
+	srvMux.HandleFunc("/workspaceConfig", handleGetWorkspaceConfig).Methods("GET")
 	srvMux.Use(func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 			t.Logf("Got call to %s", req.URL.Path)

@@ -1450,13 +1450,13 @@ func (gateway *HandleT) StartWebHandler(ctx context.Context) error {
 	srvMux.HandleFunc("/robots.txt", gateway.robots).Methods("GET")
 
 	if enableEventSchemasFeature {
-		srvMux.HandleFunc("/schemas/event-models", WithContentType("application/json; charset=utf-8", gateway.eventSchemaWebHandler(gateway.eventSchemaHandler.GetEventModels))).Methods("GET")
-		srvMux.HandleFunc("/schemas/event-versions", WithContentType("application/json; charset=utf-8", gateway.eventSchemaWebHandler(gateway.eventSchemaHandler.GetEventVersions))).Methods("GET")
-		srvMux.HandleFunc("/schemas/event-model/{EventID}/key-counts", WithContentType("application/json; charset=utf-8", gateway.eventSchemaWebHandler(gateway.eventSchemaHandler.GetKeyCounts))).Methods("GET")
-		srvMux.HandleFunc("/schemas/event-model/{EventID}/metadata", WithContentType("application/json; charset=utf-8", gateway.eventSchemaWebHandler(gateway.eventSchemaHandler.GetEventModelMetadata))).Methods("GET")
-		srvMux.HandleFunc("/schemas/event-version/{VersionID}/metadata", WithContentType("application/json; charset=utf-8", gateway.eventSchemaWebHandler(gateway.eventSchemaHandler.GetSchemaVersionMetadata))).Methods("GET")
-		srvMux.HandleFunc("/schemas/event-version/{VersionID}/missing-keys", WithContentType("application/json; charset=utf-8", gateway.eventSchemaWebHandler(gateway.eventSchemaHandler.GetSchemaVersionMissingKeys))).Methods("GET")
-		srvMux.HandleFunc("/schemas/event-models/json-schemas", WithContentType("application/json; charset=utf-8", gateway.eventSchemaWebHandler(gateway.eventSchemaHandler.GetJsonSchemas))).Methods("GET")
+		srvMux.HandleFunc("/schemas/event-models", WithContentType("application/json; charset=utf-8", gateway.eventSchemaWebHandler(gateway.eventSchemaHandler.HandleGetEventModels))).Methods("GET")
+		srvMux.HandleFunc("/schemas/event-versions", WithContentType("application/json; charset=utf-8", gateway.eventSchemaWebHandler(gateway.eventSchemaHandler.HandleGetEventVersions))).Methods("GET")
+		srvMux.HandleFunc("/schemas/event-model/{EventID}/key-counts", WithContentType("application/json; charset=utf-8", gateway.eventSchemaWebHandler(gateway.eventSchemaHandler.HandleGetKeyCounts))).Methods("GET")
+		srvMux.HandleFunc("/schemas/event-model/{EventID}/metadata", WithContentType("application/json; charset=utf-8", gateway.eventSchemaWebHandler(gateway.eventSchemaHandler.HandleGetEventModelMetadata))).Methods("GET")
+		srvMux.HandleFunc("/schemas/event-version/{VersionID}/metadata", WithContentType("application/json; charset=utf-8", gateway.eventSchemaWebHandler(gateway.eventSchemaHandler.HandleGetSchemaVersionMetadata))).Methods("GET")
+		srvMux.HandleFunc("/schemas/event-version/{VersionID}/missing-keys", WithContentType("application/json; charset=utf-8", gateway.eventSchemaWebHandler(gateway.eventSchemaHandler.HandleGetSchemaVersionMissingKeys))).Methods("GET")
+		srvMux.HandleFunc("/schemas/event-models/json-schemas", WithContentType("application/json; charset=utf-8", gateway.eventSchemaWebHandler(gateway.eventSchemaHandler.HandleGetJSONSchemas))).Methods("GET")
 	}
 
 	srvMux.HandleFunc("/v1/pending-events", WithContentType("application/json; charset=utf-8", gateway.pendingEventsHandler)).Methods("POST")

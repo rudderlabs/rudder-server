@@ -16,9 +16,9 @@ func NewHandler(service rsources.JobService, logger logger.Logger) http.Handler 
 		logger:  logger,
 	}
 	srvMux := mux.NewRouter()
-	srvMux.HandleFunc("/v1/job-status/{job_run_id}", h.getStatus).Methods("GET")
-	srvMux.HandleFunc("/v1/job-status/{job_run_id}", h.delete).Methods("DELETE")
-	srvMux.HandleFunc("/v1/job-status/{job_run_id}/failed-records", h.failedRecords).Methods("GET")
+	srvMux.HandleFunc("/v1/job-status/{job_run_id}", h.handleGetStatus).Methods("GET")
+	srvMux.HandleFunc("/v1/job-status/{job_run_id}", h.handleDelete).Methods("DELETE")
+	srvMux.HandleFunc("/v1/job-status/{job_run_id}/failed-records", h.handleGetFailedRecords).Methods("GET")
 	return srvMux
 }
 
@@ -27,7 +27,7 @@ type handler struct {
 	service rsources.JobService
 }
 
-func (h *handler) delete(w http.ResponseWriter, r *http.Request) {
+func (h *handler) handleDelete(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	jobRunId, taskRunId, sourceId := getQueryParams(r)
 	if jobRunId == "" {
@@ -43,7 +43,7 @@ func (h *handler) delete(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func (h *handler) getStatus(w http.ResponseWriter, r *http.Request) {
+func (h *handler) handleGetStatus(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	var jobRunId string
 	var taskRunId, sourceId []string
@@ -79,7 +79,7 @@ func (h *handler) getStatus(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (h *handler) failedRecords(w http.ResponseWriter, r *http.Request) {
+func (h *handler) handleGetFailedRecords(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	var jobRunId string
 	var taskRunId, sourceId []string
