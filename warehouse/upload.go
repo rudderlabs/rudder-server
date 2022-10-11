@@ -977,7 +977,7 @@ func (job *UploadJobT) getTotalCount(tName string) (int64, error) {
 	)
 
 	operation := func() error {
-		ctx, cancel := context.WithTimeout(context.TODO(), totalCountInTableTimeout)
+		ctx, cancel := context.WithTimeout(context.TODO(), tableCountQueryTimeout)
 		defer cancel()
 
 		total, countErr = job.whManager.GetTotalCountInTable(ctx, tName)
