@@ -1339,7 +1339,7 @@ func (rt *HandleT) findWorker(job *jobsdb.JobT, throttledAtTime time.Time) (toSe
 
 	if !rt.guaranteeUserEventOrder {
 		// if guaranteeUserEventOrder is false, assigning worker randomly and returning here.
-		toSendWorker = rt.workers[rand.Intn(rt.noOfWorkers)]
+		toSendWorker = rt.workers[rand.Intn(rt.noOfWorkers)] // skipcq: GSC-G404
 		return
 	}
 

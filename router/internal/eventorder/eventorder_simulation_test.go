@@ -110,7 +110,7 @@ func (g *generatorLoop) run() {
 					g.runtime.minJobID = job.id
 				}
 				// randomly drain 0.1% of non-previously failed jobs (previously failed jobs cannot be drained at this stage)
-				if previousFailedJobID := g.barrier.Peek(job.user); previousFailedJobID != nil && *previousFailedJobID != job.id && rand.Intn(1000) < 1 {
+				if previousFailedJobID := g.barrier.Peek(job.user); previousFailedJobID != nil && *previousFailedJobID != job.id && rand.Intn(1000) < 1 { // skipcq: GSC-G404
 					if err := g.barrier.StateChanged(job.user, job.id, jobsdb.Aborted.State); err != nil {
 						panic(fmt.Errorf("could not drain job:%d: %w", job.id, err))
 					}
@@ -198,7 +198,7 @@ func (wp *workerProcess) run() {
 func (wp *workerProcess) processJobs() {
 	for _, job := range wp.jobs {
 		// introduce some random delay during processing so that buffers don't empty at a steady pace
-		time.Sleep(time.Duration(rand.Intn(10)) * time.Millisecond)
+		time.Sleep(time.Duration(rand.Intn(10)) * time.Millisecond) // skipcq: GSC-G404
 		wait, previousFailedJobID := wp.barrier.Wait(job.user, job.id)
 
 		if wait {
@@ -208,7 +208,7 @@ func (wp *workerProcess) processJobs() {
 			continue
 		}
 		// randomly drain 10% of previously failed jobs in worker process
-		if previousFailedJobID != nil && *previousFailedJobID == job.id && rand.Intn(100) < 10 {
+		if previousFailedJobID != nil && *previousFailedJobID == job.id && rand.Intn(100) < 10 { // skipcq: GSC-G404
 			wp.logger.Logf("drained failed job:%d", job.id)
 			job.states = []string{jobsdb.Aborted.State}
 			wp.out <- job
@@ -265,7 +265,7 @@ func (cl *commitStatusLoop) run() {
 func (cl *commitStatusLoop) commit() {
 	var putBack []*job
 	for _, job := range cl.jobs {
-		time.Sleep(time.Duration(rand.Intn(2)) * time.Millisecond)
+		time.Sleep(time.Duration(rand.Intn(2)) * time.Millisecond) // skipcq: GSC-G404
 		switch job.states[0] {
 		case "aborted", "succeeded", "waiting":
 			_ = cl.barrier.StateChanged(job.user, job.id, job.states[0])
