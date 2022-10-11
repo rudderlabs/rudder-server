@@ -332,8 +332,7 @@ func (job *UploadJobT) getTotalRowsInLoadFiles() int64 {
 		SELECT 
 		  SUM(total_events) 
 		FROM 
-		  row_numbered_load_files 
-		WHERE 
+		  row_numbered_load_files WHERE 
 		  row_number = 1 
 		  AND table_name != '%[3]s';
 	`,
@@ -975,16 +974,24 @@ func (job *UploadJobT) updateSchema(tName string) (alteredSchema bool, err error
 }
 
 func (job *UploadJobT) getTotalCount(tName string) (int64, error) {
-	var total int64
+	var (
+		total    int64
+		countErr error
+	)
+
 	operation := func() error {
-		var countErr error
-		total, countErr = job.whManager.GetTotalCountInTable(tName)
+		ctx, cancel := context.WithTimeout(context.TODO(), tableCountQueryTimeout)
+		defer cancel()
+
+		total, countErr = job.whManager.GetTotalCountInTable(ctx, tName)
 		return countErr
 	}
+
 	expBackoff := backoff.NewExponentialBackOff()
 	expBackoff.InitialInterval = 5 * time.Second
 	expBackoff.RandomizationFactor = 0
 	expBackoff.Reset()
+
 	backoffWithMaxRetry := backoff.WithMaxRetries(expBackoff, 5)
 	err := backoff.RetryNotify(operation, backoffWithMaxRetry, func(err error, t time.Duration) {
 		pkgLogger.Errorf(`Error getting total count in table:%s error: %v`, tName, err)
