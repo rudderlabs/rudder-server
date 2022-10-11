@@ -119,7 +119,7 @@ var _ = Describe("Upload", Ordered, func() {
 
 	BeforeEach(func() {
 		job = &UploadJobT{
-			warehouse: warehouseutils.WarehouseT{
+			warehouse: warehouseutils.Warehouse{
 				Type: destinationType,
 				Destination: backendconfig.DestinationT{
 					ID:   destinationID,
@@ -130,7 +130,7 @@ var _ = Describe("Upload", Ordered, func() {
 					Name: destinationName,
 				},
 			},
-			upload: &UploadT{
+			upload: &Upload{
 				ID:                 1,
 				DestinationID:      destinationID,
 				SourceID:           sourceID,

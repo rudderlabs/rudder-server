@@ -164,6 +164,8 @@ func (uploadsReq *UploadsReqT) GetWhUploads() (uploadsRes *proto.WHUploadsRespon
 		Limit:  uploadsReq.Limit,
 		Offset: uploadsReq.Offset,
 	}
+
+	// TODO: workspace ID can be used
 	authorizedSourceIDs := uploadsReq.authorizedSources()
 	if len(authorizedSourceIDs) == 0 {
 		return uploadsRes, nil
@@ -332,7 +334,7 @@ func (uploadReq UploadReqT) TriggerWHUpload() (response *proto.TriggerWhUploadsR
 	query := uploadReq.generateQuery(`id, source_id, destination_id, metadata`)
 	uploadReq.API.log.Debug(query)
 	var uploadJobT UploadJobT
-	var upload UploadT
+	var upload Upload
 
 	row := uploadReq.API.dbHandle.QueryRow(query)
 	err = row.Scan(

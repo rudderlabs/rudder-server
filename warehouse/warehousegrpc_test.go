@@ -63,9 +63,9 @@ var _ = Describe("WarehouseGrpc", func() {
 				sourceIDsByWorkspace = map[string][]string{
 					workspaceID: {sourceID},
 				}
-				connectionsMap = map[string]map[string]warehouseutils.WarehouseT{
+				connectionsMap = map[string]map[string]warehouseutils.Warehouse{
 					destinationID: {
-						sourceID: warehouseutils.WarehouseT{
+						sourceID: warehouseutils.Warehouse{
 							Identifier: warehouseutils.GetWarehouseIdentifier(destinationType, sourceID, destinationID),
 						},
 					},
@@ -430,9 +430,9 @@ var _ = Describe("WarehouseGrpc", func() {
 				sourceIDsByWorkspace = map[string][]string{
 					workspaceID: {sourceID},
 				}
-				connectionsMap = map[string]map[string]warehouseutils.WarehouseT{
+				connectionsMap = map[string]map[string]warehouseutils.Warehouse{
 					destinationID: {
-						sourceID: warehouseutils.WarehouseT{
+						sourceID: warehouseutils.Warehouse{
 							Identifier: warehouseutils.GetWarehouseIdentifier(destinationType, sourceID, destinationID),
 						},
 					},
