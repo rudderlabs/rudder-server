@@ -385,11 +385,11 @@ func (rs *HandleT) loadTable(tableName string, tableSchemaInUpload, tableSchemaA
 
 	sqlStatement = fmt.Sprintf(`
 		DELETE FROM
-			%[1]s."%[2]s" MAIN 
+			%[1]s.%[2]q 
 		USING 
-			%[1]s."%[3]s" SOURCE    
+			%[1]s.%[3]q _source  
 		WHERE
-			SOURCE.%[4]s = MAIN.%[4]s
+			_source.%[4]s = %[1]s.%[2]q.%[4]s
 `,
 		rs.Namespace,
 		tableName,
@@ -400,8 +400,10 @@ func (rs *HandleT) loadTable(tableName string, tableSchemaInUpload, tableSchemaA
 	if dedupWindow {
 		if _, ok := tableSchemaAfterUpload["received_at"]; ok {
 			sqlStatement += fmt.Sprintf(`
-				AND MAIN.received_at > GETDATE() - INTERVAL '%[1]d DAY'
+				AND %[1]s.%[2]q.received_at > GETDATE() - INTERVAL '%[3]d DAY'
 `,
+				rs.Namespace,
+				tableName,
 				dedupWindowInHours/time.Hour,
 			)
 		}
@@ -409,9 +411,11 @@ func (rs *HandleT) loadTable(tableName string, tableSchemaInUpload, tableSchemaA
 
 	if tableName == warehouseutils.DiscardsTable {
 		sqlStatement += fmt.Sprintf(`
-			AND SOURCE.%[1]s = MAIN.%[1]s 
-			AND SOURCE.%[2]s = MAIN.%[2]s
+			AND _source.%[3]s = %[1]s.%[2]q.%[3]s 
+			AND _source.%[4]s = %[1]s.%[2]q.%[4]s
 `,
+			rs.Namespace,
+			tableName,
 			"table_name",
 			"column_name",
 		)
