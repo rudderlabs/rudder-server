@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"reflect"
 	"sort"
 	"strings"
 	"time"
@@ -25,7 +24,6 @@ import (
 
 var (
 	setVarCharMax                 bool
-	stagingTablePrefix            string
 	pkgLogger                     logger.Logger
 	skipComputingUserLatestTraits bool
 	enableDeleteByJobs            bool
@@ -37,7 +35,6 @@ func Init() {
 }
 
 func loadConfig() {
-	stagingTablePrefix = "rudder_staging_"
 	setVarCharMax = config.GetBool("Warehouse.redshift.setVarCharMax", false)
 	config.RegisterBoolConfigVariable(false, &skipComputingUserLatestTraits, true, "Warehouse.redshift.skipComputingUserLatestTraits")
 	config.RegisterBoolConfigVariable(false, &enableDeleteByJobs, true, "Warehouse.redshift.enableDeleteByJobs")
@@ -53,15 +50,17 @@ type HandleT struct {
 
 // String constants for redshift destination config
 const (
-	AWSAccessKey        = "accessKey"
-	AWSAccessKeyID      = "accessKeyID"
-	AWSBucketNameConfig = "bucketName"
-	RSHost              = "host"
-	RSPort              = "port"
-	RSDbName            = "database"
-	RSUserName          = "user"
-	RSPassword          = "password"
-	rudderStringLength  = 512
+	RSHost     = "host"
+	RSPort     = "port"
+	RSDbName   = "database"
+	RSUserName = "user"
+	RSPassword = "password"
+)
+
+const (
+	rudderStringLength = 512
+	provider           = warehouseutils.RS
+	tableNameLimit     = 127
 )
 
 var dataTypesMap = map[string]string{
@@ -271,9 +270,9 @@ func (rs *HandleT) generateManifest(tableName string, _ map[string]string) (stri
 	}
 	defer file.Close()
 	uploader, err := filemanager.DefaultFileManagerFactory.New(&filemanager.SettingsT{
-		Provider: "S3",
+		Provider: warehouseutils.S3,
 		Config: misc.GetObjectStorageConfig(misc.ObjectStorageOptsT{
-			Provider:         "S3",
+			Provider:         warehouseutils.S3,
 			Config:           rs.Warehouse.Destination.Config,
 			UseRudderStorage: rs.Uploader.UseRudderStorage(),
 			WorkspaceID:      rs.Warehouse.Destination.WorkspaceID,
@@ -308,23 +307,13 @@ func (rs *HandleT) loadTable(tableName string, tableSchemaInUpload, tableSchemaA
 	}
 	pkgLogger.Infof("RS: Generated and stored manifest for table:%s at %s\n", tableName, manifestLocation)
 
-	// sort columnnames
-	keys := reflect.ValueOf(tableSchemaInUpload).MapKeys()
-	strkeys := make([]string, len(keys))
-	for i := 0; i < len(keys); i++ {
-		strkeys[i] = keys[i].String()
-	}
-	sort.Strings(strkeys)
-	var sortedColumnNames string
-	// TODO: use strings.Join() instead
-	for index, key := range strkeys {
-		if index > 0 {
-			sortedColumnNames += `, `
-		}
-		sortedColumnNames += fmt.Sprintf(`%q`, key)
-	}
+	strKeys := warehouseutils.GetColumnsFromTableSchema(tableSchemaInUpload)
+	sort.Strings(strKeys)
+	sortedColumnNames := warehouseutils.JoinWithFormatting(strKeys, func(_ int, name string) string {
+		return fmt.Sprintf(`%q`, name)
+	}, ",")
 
-	stagingTableName = misc.TruncateStr(fmt.Sprintf(`%s%s_%s`, stagingTablePrefix, strings.ReplaceAll(uuid.Must(uuid.NewV4()).String(), "-", ""), tableName), 127)
+	stagingTableName = warehouseutils.StagingTableName(provider, tableName, tableNameLimit)
 	err = rs.CreateTable(stagingTableName, tableSchemaAfterUpload)
 	if err != nil {
 		return
@@ -401,7 +390,7 @@ func (rs *HandleT) loadTable(tableName string, tableSchemaInUpload, tableSchemaA
 		return
 	}
 
-	quotedColumnNames := warehouseutils.DoubleQuoteAndJoinByComma(strkeys)
+	quotedColumnNames := warehouseutils.DoubleQuoteAndJoinByComma(strKeys)
 
 	sqlStatement = fmt.Sprintf(`INSERT INTO "%[1]s"."%[2]s" (%[3]s) SELECT %[3]s FROM ( SELECT *, row_number() OVER (PARTITION BY %[5]s ORDER BY received_at ASC) AS _rudder_staging_row_number FROM "%[1]s"."%[4]s" ) AS _ where _rudder_staging_row_number = 1`, rs.Namespace, tableName, quotedColumnNames, stagingTableName, partitionKey)
 	pkgLogger.Infof("RS: Inserting records for table:%s using staging table: %s\n", tableName, sqlStatement)
@@ -458,7 +447,8 @@ func (rs *HandleT) loadUserTables() (errorMap map[string]error) {
 		firstValProps = append(firstValProps, fmt.Sprintf(`FIRST_VALUE("%[1]s" IGNORE NULLS) OVER (PARTITION BY id ORDER BY received_at DESC ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) AS "%[1]s"`, colName))
 	}
 	quotedUserColNames := warehouseutils.DoubleQuoteAndJoinByComma(userColNames)
-	stagingTableName := misc.TruncateStr(fmt.Sprintf(`%s%s_%s`, stagingTablePrefix, strings.ReplaceAll(uuid.Must(uuid.NewV4()).String(), "-", ""), warehouseutils.UsersTable), 127)
+
+	stagingTableName := warehouseutils.StagingTableName(provider, warehouseutils.UsersTable, tableNameLimit)
 
 	sqlStatement := fmt.Sprintf(`CREATE TABLE "%[1]s"."%[2]s" AS (SELECT DISTINCT * FROM
 										(
@@ -569,10 +559,20 @@ func Connect(cred RedshiftCredentialsT) (*sql.DB, error) {
 }
 
 func (rs *HandleT) dropDanglingStagingTables() bool {
-	sqlStatement := fmt.Sprintf(`select table_name
-								 from information_schema.tables
-								 where table_schema = '%s' AND table_name like '%s';`, rs.Namespace, fmt.Sprintf("%s%s", stagingTablePrefix, "%"))
-	rows, err := rs.Db.Query(sqlStatement)
+	sqlStatement := `
+		select
+		  table_name
+		from
+		  information_schema.tables
+		where
+		  table_schema = $1
+		  AND table_name like $2;
+	`
+	rows, err := rs.Db.Query(
+		sqlStatement,
+		rs.Namespace,
+		fmt.Sprintf(`%s%%`, warehouseutils.StagingTablePrefix(provider)),
+	)
 	if err != nil {
 		pkgLogger.Errorf("WH: RS: Error dropping dangling staging tables in redshift: %v\nQuery: %s\n", err, sqlStatement)
 		return false
@@ -647,11 +647,24 @@ func (rs *HandleT) FetchSchema(warehouse warehouseutils.Warehouse) (schema wareh
 	defer dbHandle.Close()
 
 	schema = make(warehouseutils.SchemaT)
-	sqlStatement := fmt.Sprintf(`SELECT table_name, column_name, data_type, character_maximum_length
-									FROM INFORMATION_SCHEMA.COLUMNS
-									WHERE table_schema = '%s' and table_name not like '%s%s'`, rs.Namespace, stagingTablePrefix, "%")
+	sqlStatement := `
+			SELECT
+			  table_name,
+			  column_name,
+			  data_type,
+			  character_maximum_length
+			FROM
+			  INFORMATION_SCHEMA.COLUMNS
+			WHERE
+			  table_schema = $1
+			  and table_name not like $2;
+		`
 
-	rows, err := dbHandle.Query(sqlStatement)
+	rows, err := dbHandle.Query(
+		sqlStatement,
+		rs.Namespace,
+		fmt.Sprintf(`%s%%`, warehouseutils.StagingTablePrefix(provider)),
+	)
 	if err != nil && err != sql.ErrNoRows {
 		pkgLogger.Errorf("RS: Error in fetching schema from redshift destination:%v, query: %v", rs.Warehouse.Destination.ID, sqlStatement)
 		return
