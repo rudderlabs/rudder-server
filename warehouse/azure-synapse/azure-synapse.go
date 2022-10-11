@@ -612,6 +612,10 @@ func (as *HandleT) loadUserTables() (errorMap map[string]error) {
 	return
 }
 
+func (*HandleT) DeleteBy([]string, warehouseutils.DeleteByParams) error {
+	return fmt.Errorf(warehouseutils.NotImplementedErrorCode)
+}
+
 func (as *HandleT) CreateSchema() (err error) {
 	sqlStatement := fmt.Sprintf(`IF NOT EXISTS ( SELECT  * FROM  sys.schemas WHERE   name = N'%s' )
     EXEC('CREATE SCHEMA [%s]');

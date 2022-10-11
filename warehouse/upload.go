@@ -1899,7 +1899,11 @@ func (job *UploadJobT) createLoadFiles(generateAll bool) (startLoadFileID, endLo
 		}
 
 		pkgLogger.Infof("[WH]: Publishing %d staging files for %s:%s to PgNotifier", len(messages), destType, destID)
-		ch, err := job.pgNotifier.Publish(messages, schema, job.upload.Priority)
+		messagePayload := pgnotifier.MessagePayload{
+			Jobs:    messages,
+			JobType: "upload",
+		}
+		ch, err := job.pgNotifier.Publish(messagePayload, schema, job.upload.Priority)
 		if err != nil {
 			panic(err)
 		}

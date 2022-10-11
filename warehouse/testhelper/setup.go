@@ -57,14 +57,16 @@ type EventsCountMap map[string]int
 type WareHouseTest struct {
 	Client                       *client.Client
 	WriteKey                     string
+	SourceWriteKey               string
 	Schema                       string
 	UserId                       string
-	SourceID                     string
-	DestinationID                string
-	TimestampBeforeSendingEvents time.Time
 	MessageId                    string
 	Tables                       []string
 	Provider                     string
+	LatestSourceRunConfig        map[string]string
+	SourceID                     string
+	DestinationID                string
+	TimestampBeforeSendingEvents time.Time
 }
 
 type WarehouseTestSetup interface {
@@ -373,7 +375,6 @@ func VerifyEventsInWareHouse(t testing.TB, wareHouseTest *WareHouseTest, eventsM
 		require.Contains(t, eventsMap, table)
 
 		tableCount := eventsMap[table]
-
 		sqlStatement := fmt.Sprintf(`
 			select
 			  count(*)
@@ -393,7 +394,6 @@ func VerifyEventsInWareHouse(t testing.TB, wareHouseTest *WareHouseTest, eventsM
 			wareHouseTest.UserId,
 			sqlStatement,
 		)
-
 		require.NoError(t, WithConstantBackoff(func() error {
 			count, countErr = queryCount(wareHouseTest.Client, sqlStatement)
 			if countErr != nil {
@@ -441,6 +441,12 @@ func queryCount(cl *client.Client, statement string) (int64, error) {
 func WithConstantBackoff(operation func() error) error {
 	backoffWithMaxRetry := backoff.WithMaxRetries(backoff.NewConstantBackOff(BackoffDuration), uint64(BackoffRetryMax))
 	return backoff.Retry(operation, backoffWithMaxRetry)
+}
+
+func DefaultSourceEventMap() EventsCountMap {
+	return EventsCountMap{
+		"google_sheet": 1,
+	}
 }
 
 func SendEventsMap() EventsCountMap {
@@ -497,6 +503,21 @@ func WarehouseEventsMap() EventsCountMap {
 		"aliases":       4,
 		"groups":        4,
 	}
+}
+
+func WarehouseSourceEventsMap() EventsCountMap {
+	return EventsCountMap{
+		"google_sheet": 1,
+		"tracks":       1,
+	}
+}
+
+func DefaultSourceRunConfig() map[string]string {
+	srcrunconfig := make(map[string]string)
+	srcrunconfig["job_run_id"] = ""
+	srcrunconfig["task_run_id"] = ""
+
+	return srcrunconfig
 }
 
 func GetUserId(userType string) string {
