@@ -205,18 +205,18 @@ func (wh *HandleT) workerIdentifier(warehouse warehouseutils.Warehouse) (identif
 	return
 }
 
-func getDestinationFromConnectionMap(DestinationId, SourceId string) (warehouseutils.WarehouseT, error) {
+func getDestinationFromConnectionMap(DestinationId, SourceId string) (warehouseutils.Warehouse, error) {
 	if DestinationId == "" || SourceId == "" {
-		return warehouseutils.WarehouseT{}, errors.New("Invalid Parameters")
+		return warehouseutils.Warehouse{}, errors.New("Invalid Parameters")
 	}
 	srcmap, ok := connectionsMap[DestinationId]
 	if !ok {
-		return warehouseutils.WarehouseT{}, errors.New("Invalid Destination Id")
+		return warehouseutils.Warehouse{}, errors.New("Invalid Destination Id")
 	}
 
 	conn, ok := srcmap[SourceId]
 	if !ok {
-		return warehouseutils.WarehouseT{}, errors.New("Invalid Source Id")
+		return warehouseutils.Warehouse{}, errors.New("Invalid Source Id")
 	}
 
 	return conn, nil
