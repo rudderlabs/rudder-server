@@ -167,17 +167,17 @@ func setUpJobsDB() *JobsDBResource {
 
 	var err error
 	if jobsDB.DB, err = postgres.Connect(*pgCredentials); err != nil {
-		log.Fatalf("could not connect to jobsDb with error: %s", err.Error())
+		log.Panicf("could not connect to jobsDb with error: %s", err.Error())
 	}
 	if err = jobsDB.DB.Ping(); err != nil {
-		log.Fatalf("could not connect to jobsDb while pinging with error: %s", err.Error())
+		log.Panicf("could not connect to jobsDb while pinging with error: %s", err.Error())
 	}
 	return jobsDB
 }
 
 func initConnection(setup WarehouseTestSetup) {
 	if err := setup.VerifyConnection(); err != nil {
-		log.Fatalf("Could not complete test connection with err: %s", err.Error())
+		log.Panicf("Could not complete test connection with err: %s", err.Error())
 	}
 }
 

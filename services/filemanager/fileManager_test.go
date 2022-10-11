@@ -126,7 +126,7 @@ func run(m *testing.M) int {
 		},
 	})
 	if err != nil {
-		log.Fatalf("Could not start azure resource: %s", err)
+		log.Panicf("Could not start azure resource: %s", err)
 	}
 	defer func() {
 		if err := pool.Purge(AzuriteResource); err != nil {
@@ -139,7 +139,7 @@ func run(m *testing.M) int {
 
 	azureSASTokens, err = createAzureSASTokens()
 	if err != nil {
-		log.Fatalf("Could not create azure sas tokens: %s", err)
+		log.Panicf("Could not create azure sas tokens: %s", err)
 	}
 
 	// Running GCS emulator
@@ -149,7 +149,7 @@ func run(m *testing.M) int {
 		Cmd:        []string{"-scheme", "http"},
 	})
 	if err != nil {
-		log.Fatalf("Could not start resource: %s", err)
+		log.Panicf("Could not start resource: %s", err)
 	}
 	defer func() {
 		if err := pool.Purge(GCSResource); err != nil {
@@ -163,7 +163,7 @@ func run(m *testing.M) int {
 	os.Setenv("STORAGE_EMULATOR_HOST", fmt.Sprintf("%s/storage/v1/", GCSEndpoint))
 	client, err := storage.NewClient(context.TODO(), option.WithEndpoint(gcsURL))
 	if err != nil {
-		log.Fatalf("failed to create client: %v", err)
+		log.Panicf("failed to create client: %v", err)
 	}
 	bkt := client.Bucket(bucket)
 	err = bkt.Create(context.Background(), "test", &storage.BucketAttrs{Name: bucket})
