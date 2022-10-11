@@ -43,6 +43,7 @@ type ManagerI interface {
 
 type WarehouseDelete interface {
 	DropTable(tableName string) (err error)
+	DeleteBy(tableName []string, params warehouseutils.DeleteByParams) error
 }
 
 type WarehouseOperations interface {
