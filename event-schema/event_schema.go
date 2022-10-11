@@ -41,7 +41,6 @@ import (
 	"github.com/lib/pq"
 
 	"github.com/rudderlabs/rudder-server/config"
-	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/logger"
@@ -892,7 +891,7 @@ func (manager *EventSchemaManagerT) reloadSchemaVersion(offloadedVersion *Offloa
 
 // TODO: Move this into some DB manager
 func createDBConnection() *sql.DB {
-	psqlInfo := jobsdb.GetConnectionString()
+	psqlInfo := misc.GetConnectionString()
 	var err error
 	dbHandle, err := sql.Open("postgres", psqlInfo)
 	if err != nil {

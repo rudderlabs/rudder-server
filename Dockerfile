@@ -1,7 +1,8 @@
 
 # syntax=docker/dockerfile:1
 ARG GO_VERSION=1.18
-FROM golang:${GO_VERSION} AS builder
+ARG ALPINE_VERSION=3.16
+FROM golang:${GO_VERSION}-alpine${ALPINE_VERSION} AS builder
 ARG VERSION
 ARG REVISION
 ARG COMMIT_HASH
@@ -9,6 +10,8 @@ ARG ENTERPRISE_TOKEN
 ARG RACE_ENABLED=false
 ARG CGO_ENABLED=0
 ARG PKG_NAME=github.com/rudderlabs/release-demo
+
+RUN apk add --update make tzdata ca-certificates
 
 WORKDIR /rudder-server
 
@@ -25,7 +28,8 @@ RUN BUILD_DATE=$(date "+%F,%T") \
 
 RUN go build -o devtool ./cmd/devtool/
 
-FROM frolvlad/alpine-glibc:alpine-3.15_glibc-2.34
+
+FROM alpine:${ALPINE_VERSION}
 
 RUN apk update && apk add tzdata
 RUN apk -U --no-cache upgrade && \

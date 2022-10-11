@@ -18,8 +18,8 @@ import (
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/services/pgnotifier"
 	"github.com/rudderlabs/rudder-server/warehouse"
-	"github.com/rudderlabs/rudder-server/warehouse/configuration_testing"
 	"github.com/rudderlabs/rudder-server/warehouse/deltalake/databricks"
+	"github.com/rudderlabs/rudder-server/warehouse/validations"
 
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
@@ -57,15 +57,16 @@ type EventsCountMap map[string]int
 type WareHouseTest struct {
 	Client                       *client.Client
 	WriteKey                     string
+	SourceWriteKey               string
 	Schema                       string
-	TablesQueryFrequency         time.Duration
 	UserId                       string
-	SourceID                     string
-	DestinationID                string
-	TimestampBeforeSendingEvents time.Time
 	MessageId                    string
 	Tables                       []string
 	Provider                     string
+	LatestSourceRunConfig        map[string]string
+	SourceID                     string
+	DestinationID                string
+	TimestampBeforeSendingEvents time.Time
 }
 
 type WarehouseTestSetup interface {
@@ -135,7 +136,7 @@ func initialize() {
 	warehouse.Init6()
 
 	pgnotifier.Init()
-	configuration_testing.Init()
+	validations.Init()
 
 	azuresynapse.Init()
 	bigquery.Init()
@@ -374,7 +375,6 @@ func VerifyEventsInWareHouse(t testing.TB, wareHouseTest *WareHouseTest, eventsM
 		require.Contains(t, eventsMap, table)
 
 		tableCount := eventsMap[table]
-
 		sqlStatement := fmt.Sprintf(`
 			select
 			  count(*)
@@ -394,7 +394,6 @@ func VerifyEventsInWareHouse(t testing.TB, wareHouseTest *WareHouseTest, eventsM
 			wareHouseTest.UserId,
 			sqlStatement,
 		)
-
 		require.NoError(t, WithConstantBackoff(func() error {
 			count, countErr = queryCount(wareHouseTest.Client, sqlStatement)
 			if countErr != nil {
@@ -419,8 +418,8 @@ func VerifyingConfigurationTest(t *testing.T, destination backendconfig.Destinat
 	t.Logf("Started configuration tests for destination type: %s", destination.DestinationDefinition.Name)
 
 	require.NoError(t, WithConstantBackoff(func() error {
-		destinationValidator := configuration_testing.NewDestinationValidator()
-		req := &configuration_testing.DestinationValidationRequest{Destination: destination}
+		destinationValidator := validations.NewDestinationValidator()
+		req := &validations.DestinationValidationRequest{Destination: destination}
 		response, err := destinationValidator.ValidateCredentials(req)
 		if err != nil || response.Error != "" {
 			return fmt.Errorf("failed to validate credentials for destination: %s with error: %s", destination.DestinationDefinition.Name, response.Error)
@@ -442,6 +441,12 @@ func queryCount(cl *client.Client, statement string) (int64, error) {
 func WithConstantBackoff(operation func() error) error {
 	backoffWithMaxRetry := backoff.WithMaxRetries(backoff.NewConstantBackOff(BackoffDuration), uint64(BackoffRetryMax))
 	return backoff.Retry(operation, backoffWithMaxRetry)
+}
+
+func DefaultSourceEventMap() EventsCountMap {
+	return EventsCountMap{
+		"google_sheet": 1,
+	}
 }
 
 func SendEventsMap() EventsCountMap {
@@ -498,6 +503,21 @@ func WarehouseEventsMap() EventsCountMap {
 		"aliases":       4,
 		"groups":        4,
 	}
+}
+
+func WarehouseSourceEventsMap() EventsCountMap {
+	return EventsCountMap{
+		"google_sheet": 1,
+		"tracks":       1,
+	}
+}
+
+func DefaultSourceRunConfig() map[string]string {
+	srcrunconfig := make(map[string]string)
+	srcrunconfig["job_run_id"] = ""
+	srcrunconfig["task_run_id"] = ""
+
+	return srcrunconfig
 }
 
 func GetUserId(userType string) string {
@@ -580,10 +600,11 @@ func PopulateTemplateConfigurations() map[string]string {
 
 		"gcsDatalakeWriteKey": "9zZFfcRqr2LpwerxICilhQmMybn",
 
-		"bigqueryWriteKey":  "J77aX7tLFJ84qYU6UrN8ctecwZt",
-		"snowflakeWriteKey": "2eSJyYtqwcFiUILzXv2fcNIrWO7",
-		"redshiftWriteKey":  "JAAwdCxmM8BIabKERsUhPNmMmdf",
-		"deltalakeWriteKey": "sToFgoilA0U1WxNeW1gdgUVDsEW",
+		"bigqueryWriteKey":               "J77aX7tLFJ84qYU6UrN8ctecwZt",
+		"snowflakeWriteKey":              "2eSJyYtqwcFiUILzXv2fcNIrWO7",
+		"snowflakeCaseSensitiveWriteKey": "2eSJyYtqwcFYUILzXv2fcNIrWO7",
+		"redshiftWriteKey":               "JAAwdCxmM8BIabKERsUhPNmMmdf",
+		"deltalakeWriteKey":              "sToFgoilA0U1WxNeW1gdgUVDsEW",
 
 		"minioBucketName":      "devintegrationtest",
 		"minioAccesskeyID":     "MYACCESSKEY",
@@ -591,24 +612,46 @@ func PopulateTemplateConfigurations() map[string]string {
 		"minioEndpoint":        "wh-minio:9000",
 	}
 
-	for k, v := range credentialsFromKey(SnowflakeIntegrationTestCredentials) {
-		configurations[fmt.Sprintf("snowflake%s", k)] = v
-	}
-	for k, v := range credentialsFromKey(RedshiftIntegrationTestCredentials) {
-		configurations[fmt.Sprintf("redshift%s", k)] = v
-	}
-	for k, v := range credentialsFromKey(DeltalakeIntegrationTestCredentials) {
-		configurations[fmt.Sprintf("deltalake%s", k)] = v
-	}
-	for k, v := range credentialsFromKey(BigqueryIntegrationTestCredentials) {
-		configurations[fmt.Sprintf("bigquery%s", k)] = v
-	}
-	enhanceBQCredentials(configurations)
-	enhanceNamespace(configurations)
+	enhanceWithRedshiftConfigurations(configurations)
+	enhanceWithSnowflakeConfigurations(configurations)
+	enhanceWithDeltalakeConfigurations(configurations)
+	enhanceWithBQConfigurations(configurations)
 	return configurations
 }
 
-func enhanceBQCredentials(values map[string]string) {
+func enhanceWithSnowflakeConfigurations(values map[string]string) {
+	for k, v := range credentialsFromKey(SnowflakeIntegrationTestCredentials) {
+		values[fmt.Sprintf("snowflake%s", k)] = v
+	}
+
+	values["snowflakeCaseSensitiveDBName"] = strings.ToLower(values["snowflakeDBName"])
+	values["snowflakeNamespace"] = Schema(warehouseutils.SNOWFLAKE, SnowflakeIntegrationTestSchema)
+	values["snowflakeCaseSensitiveNamespace"] = fmt.Sprintf("%s_%s", values["snowflakeNamespace"], "CS")
+}
+
+func enhanceWithRedshiftConfigurations(values map[string]string) {
+	for k, v := range credentialsFromKey(RedshiftIntegrationTestCredentials) {
+		values[fmt.Sprintf("redshift%s", k)] = v
+	}
+
+	values["redshiftNamespace"] = Schema(warehouseutils.RS, RedshiftIntegrationTestSchema)
+}
+
+func enhanceWithDeltalakeConfigurations(values map[string]string) {
+	for k, v := range credentialsFromKey(DeltalakeIntegrationTestCredentials) {
+		values[fmt.Sprintf("deltalake%s", k)] = v
+	}
+
+	values["deltalakeNamespace"] = Schema(warehouseutils.DELTALAKE, DeltalakeIntegrationTestSchema)
+}
+
+func enhanceWithBQConfigurations(values map[string]string) {
+	for k, v := range credentialsFromKey(BigqueryIntegrationTestCredentials) {
+		values[fmt.Sprintf("bigquery%s", k)] = v
+	}
+
+	values["bigqueryNamespace"] = Schema(warehouseutils.BQ, BigqueryIntegrationTestSchema)
+
 	key := "bigqueryCredentials"
 	if credentials, exists := values[key]; exists {
 		escapedCredentials, err := json.Marshal(credentials)
@@ -617,13 +660,6 @@ func enhanceBQCredentials(values map[string]string) {
 		}
 		values[key] = strings.Trim(string(escapedCredentials), `"`)
 	}
-}
-
-func enhanceNamespace(values map[string]string) {
-	values["snowflakeNamespace"] = Schema(warehouseutils.SNOWFLAKE, SnowflakeIntegrationTestSchema)
-	values["redshiftNamespace"] = Schema(warehouseutils.RS, RedshiftIntegrationTestSchema)
-	values["bigqueryNamespace"] = Schema(warehouseutils.BQ, BigqueryIntegrationTestSchema)
-	values["deltalakeNamespace"] = Schema(warehouseutils.DELTALAKE, DeltalakeIntegrationTestSchema)
 }
 
 func Schema(provider, schemaKey string) string {

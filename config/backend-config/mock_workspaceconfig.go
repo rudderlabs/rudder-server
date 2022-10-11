@@ -51,10 +51,10 @@ func (mr *MockworkspaceConfigMockRecorder) AccessToken() *gomock.Call {
 }
 
 // Get mocks base method.
-func (m *MockworkspaceConfig) Get(arg0 context.Context, arg1 string) (ConfigT, error) {
+func (m *MockworkspaceConfig) Get(arg0 context.Context, arg1 string) (map[string]ConfigT, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "Get", arg0, arg1)
-	ret0, _ := ret[0].(ConfigT)
+	ret0, _ := ret[0].(map[string]ConfigT)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
@@ -63,48 +63,6 @@ func (m *MockworkspaceConfig) Get(arg0 context.Context, arg1 string) (ConfigT, e
 func (mr *MockworkspaceConfigMockRecorder) Get(arg0, arg1 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Get", reflect.TypeOf((*MockworkspaceConfig)(nil).Get), arg0, arg1)
-}
-
-// GetWorkspaceIDForSourceID mocks base method.
-func (m *MockworkspaceConfig) GetWorkspaceIDForSourceID(arg0 string) string {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "GetWorkspaceIDForSourceID", arg0)
-	ret0, _ := ret[0].(string)
-	return ret0
-}
-
-// GetWorkspaceIDForSourceID indicates an expected call of GetWorkspaceIDForSourceID.
-func (mr *MockworkspaceConfigMockRecorder) GetWorkspaceIDForSourceID(arg0 interface{}) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetWorkspaceIDForSourceID", reflect.TypeOf((*MockworkspaceConfig)(nil).GetWorkspaceIDForSourceID), arg0)
-}
-
-// GetWorkspaceIDForWriteKey mocks base method.
-func (m *MockworkspaceConfig) GetWorkspaceIDForWriteKey(arg0 string) string {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "GetWorkspaceIDForWriteKey", arg0)
-	ret0, _ := ret[0].(string)
-	return ret0
-}
-
-// GetWorkspaceIDForWriteKey indicates an expected call of GetWorkspaceIDForWriteKey.
-func (mr *MockworkspaceConfigMockRecorder) GetWorkspaceIDForWriteKey(arg0 interface{}) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetWorkspaceIDForWriteKey", reflect.TypeOf((*MockworkspaceConfig)(nil).GetWorkspaceIDForWriteKey), arg0)
-}
-
-// GetWorkspaceLibrariesForWorkspaceID mocks base method.
-func (m *MockworkspaceConfig) GetWorkspaceLibrariesForWorkspaceID(arg0 string) LibrariesT {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "GetWorkspaceLibrariesForWorkspaceID", arg0)
-	ret0, _ := ret[0].(LibrariesT)
-	return ret0
-}
-
-// GetWorkspaceLibrariesForWorkspaceID indicates an expected call of GetWorkspaceLibrariesForWorkspaceID.
-func (mr *MockworkspaceConfigMockRecorder) GetWorkspaceLibrariesForWorkspaceID(arg0 interface{}) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetWorkspaceLibrariesForWorkspaceID", reflect.TypeOf((*MockworkspaceConfig)(nil).GetWorkspaceLibrariesForWorkspaceID), arg0)
 }
 
 // Identity mocks base method.
@@ -173,10 +131,10 @@ func (mr *MockBackendConfigMockRecorder) AccessToken() *gomock.Call {
 }
 
 // Get mocks base method.
-func (m *MockBackendConfig) Get(arg0 context.Context, arg1 string) (ConfigT, error) {
+func (m *MockBackendConfig) Get(arg0 context.Context, arg1 string) (map[string]ConfigT, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "Get", arg0, arg1)
-	ret0, _ := ret[0].(ConfigT)
+	ret0, _ := ret[0].(map[string]ConfigT)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
@@ -185,48 +143,6 @@ func (m *MockBackendConfig) Get(arg0 context.Context, arg1 string) (ConfigT, err
 func (mr *MockBackendConfigMockRecorder) Get(arg0, arg1 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Get", reflect.TypeOf((*MockBackendConfig)(nil).Get), arg0, arg1)
-}
-
-// GetWorkspaceIDForSourceID mocks base method.
-func (m *MockBackendConfig) GetWorkspaceIDForSourceID(arg0 string) string {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "GetWorkspaceIDForSourceID", arg0)
-	ret0, _ := ret[0].(string)
-	return ret0
-}
-
-// GetWorkspaceIDForSourceID indicates an expected call of GetWorkspaceIDForSourceID.
-func (mr *MockBackendConfigMockRecorder) GetWorkspaceIDForSourceID(arg0 interface{}) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetWorkspaceIDForSourceID", reflect.TypeOf((*MockBackendConfig)(nil).GetWorkspaceIDForSourceID), arg0)
-}
-
-// GetWorkspaceIDForWriteKey mocks base method.
-func (m *MockBackendConfig) GetWorkspaceIDForWriteKey(arg0 string) string {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "GetWorkspaceIDForWriteKey", arg0)
-	ret0, _ := ret[0].(string)
-	return ret0
-}
-
-// GetWorkspaceIDForWriteKey indicates an expected call of GetWorkspaceIDForWriteKey.
-func (mr *MockBackendConfigMockRecorder) GetWorkspaceIDForWriteKey(arg0 interface{}) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetWorkspaceIDForWriteKey", reflect.TypeOf((*MockBackendConfig)(nil).GetWorkspaceIDForWriteKey), arg0)
-}
-
-// GetWorkspaceLibrariesForWorkspaceID mocks base method.
-func (m *MockBackendConfig) GetWorkspaceLibrariesForWorkspaceID(arg0 string) LibrariesT {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "GetWorkspaceLibrariesForWorkspaceID", arg0)
-	ret0, _ := ret[0].(LibrariesT)
-	return ret0
-}
-
-// GetWorkspaceLibrariesForWorkspaceID indicates an expected call of GetWorkspaceLibrariesForWorkspaceID.
-func (mr *MockBackendConfigMockRecorder) GetWorkspaceLibrariesForWorkspaceID(arg0 interface{}) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetWorkspaceLibrariesForWorkspaceID", reflect.TypeOf((*MockBackendConfig)(nil).GetWorkspaceLibrariesForWorkspaceID), arg0)
 }
 
 // Identity mocks base method.
