@@ -246,10 +246,8 @@ func Test_Measurement_Operations(t *testing.T) {
 			// playing with probabilities, we might or might not get the sample (0.5 -> 50% chance)
 			counterSampled.Increment()
 			return false
-
 		}, 2*time.Second, time.Millisecond)
 	})
-
 }
 
 func Test_Periodic_stats(t *testing.T) {
