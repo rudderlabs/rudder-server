@@ -668,11 +668,11 @@ func (bq *HandleT) connect(cred BQCredentialsT) (*bigquery.Client, error) {
 }
 
 func loadConfig() {
-	config.RegisterBoolConfigVariable(true, &setUsersLoadPartitionFirstEventFilter, true, "warehouse.bigquery.setUsersLoadPartitionFirstEventFilter")
-	config.RegisterBoolConfigVariable(false, &customPartitionsEnabled, true, "warehouse.bigquery.customPartitionsEnabled")
-	config.RegisterBoolConfigVariable(false, &isUsersTableDedupEnabled, true, "warehouse.bigquery.isUsersTableDedupEnabled") // TODO: Depricate with respect to isDedupEnabled
-	config.RegisterBoolConfigVariable(false, &isDedupEnabled, true, "warehouse.bigquery.isDedupEnabled")
-	config.RegisterBoolConfigVariable(false, &enableDeleteByJobs, true, "warehouse.bigquery.enableDeleteByJobs")
+	config.RegisterBoolConfigVariable(true, &setUsersLoadPartitionFirstEventFilter, true, "Warehouse.bigquery.setUsersLoadPartitionFirstEventFilter")
+	config.RegisterBoolConfigVariable(false, &customPartitionsEnabled, true, "Warehouse.bigquery.customPartitionsEnabled")
+	config.RegisterBoolConfigVariable(false, &isUsersTableDedupEnabled, true, "Warehouse.bigquery.isUsersTableDedupEnabled") // TODO: Depricate with respect to isDedupEnabled
+	config.RegisterBoolConfigVariable(false, &isDedupEnabled, true, "Warehouse.bigquery.isDedupEnabled")
+	config.RegisterBoolConfigVariable(false, &enableDeleteByJobs, true, "Warehouse.bigquery.enableDeleteByJobs")
 }
 
 func Init() {
