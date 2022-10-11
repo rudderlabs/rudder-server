@@ -43,7 +43,6 @@ func Test_Namespace_Get(t *testing.T) {
 	var (
 		namespace    = "free-us-1"
 		workspaceID1 = "2CCgbmvBSa8Mv81YaIgtR36M7aW"
-		workspaceID2 = "2CChLejq5aIWi3qsKVm1PjHkyTj"
 		cpRouterURL  = "mockCpRouterURL"
 	)
 
@@ -72,32 +71,11 @@ func Test_Namespace_Get(t *testing.T) {
 
 	c, err := client.Get(context.Background(), workspaceID1)
 	require.NoError(t, err)
-	require.Equal(t, "", c.WorkspaceID)
-	require.Len(t, c.Sources, 3)
+	require.Len(t, c, 2)
 
-	t.Log("correct writeKey to workspaceID mapping")
-	require.Equal(t, workspaceID1, client.GetWorkspaceIDForWriteKey("2CCggSFf....jBLNxmXtSlvZ"))
-	require.Equal(t, workspaceID1, client.GetWorkspaceIDForWriteKey("2CCgpXME....WBD9C5nQtsFg"))
-	require.Equal(t, workspaceID2, client.GetWorkspaceIDForWriteKey("2CChOrwP....9qESA9FgLFXL"))
-
-	t.Log("correct sourceID to workspaceID mapping")
-	require.Equal(t, workspaceID1, client.GetWorkspaceIDForSourceID("2CCggVGqbSRLhqP8trntINSihFe"))
-	require.Equal(t, workspaceID1, client.GetWorkspaceIDForSourceID("2CCgpZlqlXRDRz8rChhQKtuwqKA"))
-	require.Equal(t, workspaceID2, client.GetWorkspaceIDForSourceID("2CChOtDTWeXIQiRmHMU56C3htPf"))
-
-	require.Equal(t, c.ConnectionFlags.URL, cpRouterURL)
-	require.True(t, c.ConnectionFlags.Services["warehouse"])
-
-	for _, workspaceID := range []string{workspaceID1, workspaceID2} {
-		require.Equal(t,
-			LibrariesT{
-				{VersionID: "20MirO0IhCtS39Qjva2PSAbA9KM"},
-				{VersionID: "ghi"},
-				{VersionID: "2AWJpFCIGcpZhOrsIp7Kasw72vb"},
-				{VersionID: "2AWIMafC3YPKHXazWWvVn5hSGnR"},
-			},
-			client.GetWorkspaceLibrariesForWorkspaceID(workspaceID),
-		)
+	for workspace := range c {
+		require.Equal(t, cpRouterURL, c[workspace].ConnectionFlags.URL)
+		require.True(t, c[workspace].ConnectionFlags.Services["warehouse"])
 	}
 
 	t.Run("Invalid credentials", func(t *testing.T) {

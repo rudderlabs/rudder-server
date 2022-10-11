@@ -30,6 +30,7 @@ const (
 )
 
 var sampleBackendConfig = backendconfig.ConfigT{
+	WorkspaceID: WorkspaceID,
 	Sources: []backendconfig.SourceT{
 		{
 			ID:       SourceIDDisabled,
@@ -208,7 +209,7 @@ var _ = Describe("eventDeliveryStatusUploader", func() {
 			DoAndReturn(func(ctx context.Context, topic backendconfig.Topic) pubsub.DataChannel {
 				// on Subscribe, emulate a backend configuration event
 				ch := make(chan pubsub.DataEvent, 1)
-				ch <- pubsub.DataEvent{Data: sampleBackendConfig, Topic: string(topic)}
+				ch <- pubsub.DataEvent{Data: map[string]backendconfig.ConfigT{WorkspaceID: sampleBackendConfig}, Topic: string(topic)}
 				c.configInitialised = true
 				close(ch)
 

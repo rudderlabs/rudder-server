@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/rudderlabs/rudder-server/jobsdb"
+	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
 var failedEventsManager FailedEventsManagerI
@@ -38,7 +38,7 @@ type FailedEventsManagerT struct {
 func GetFailedEventsManager() FailedEventsManagerI {
 	if failedEventsManager == nil {
 		fem := new(FailedEventsManagerT)
-		dbHandle, err := sql.Open("postgres", jobsdb.GetConnectionString())
+		dbHandle, err := sql.Open("postgres", misc.GetConnectionString())
 		if err != nil {
 			panic(err)
 		}
@@ -142,7 +142,7 @@ func CleanFailedRecordsTableProcess(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-time.After(failedKeysCleanUpSleep):
-			dbHandle, err := sql.Open("postgres", jobsdb.GetConnectionString())
+			dbHandle, err := sql.Open("postgres", misc.GetConnectionString())
 			if err != nil {
 				panic(err)
 			}

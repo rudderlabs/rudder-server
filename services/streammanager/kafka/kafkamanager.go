@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"strconv"
 	"strings"
@@ -58,10 +59,14 @@ func (c *configuration) validate() error {
 	return nil
 }
 
-// azureEventHubConfig is the config that is required to send data to Azure Event Hub
+// azureEventHubConfig is the config that is required to send data to Azure Event Hub.
+// Make sure to select at least the Standard tier since the Basic tier does not support Kafka.
 type azureEventHubConfig struct {
-	Topic                     string
-	BootstrapServer           string
+	// Topic is the name of the Event Hub on Azure (not the Event Hubs Namespace)
+	Topic string
+	// BootstrapServer should be in the form of "host:port" (the port is usually 9093 on Azure Event Hubs)
+	BootstrapServer string
+	// EventHubsConnectionString starts with "Endpoint=sb://" and contains the SharedAccessKey
 	EventHubsConnectionString string
 }
 
@@ -102,39 +107,36 @@ func (c *confluentCloudConfig) validate() error {
 	return nil
 }
 
-type producer interface {
-	Close(context.Context) error
+type publisher interface {
 	Publish(context.Context, ...client.Message) error
+}
 
+type producerManager interface {
+	io.Closer
+	publisher
 	getTimeout() time.Duration
 	getCodecs() map[string]*goavro.Codec
 }
 
-type producerImpl struct {
-	p       *client.Producer
+type internalProducer interface {
+	publisher
+	Close(context.Context) error
+}
+
+type ProducerManager struct {
+	p       internalProducer
 	timeout time.Duration
 	codecs  map[string]*goavro.Codec
 }
 
-func (p *producerImpl) getTimeout() time.Duration {
+func (p *ProducerManager) getTimeout() time.Duration {
 	if p.timeout < 1 {
 		return defaultPublishTimeout
 	}
 	return p.timeout
 }
 
-func (p *producerImpl) Close(ctx context.Context) error {
-	if p == nil || p.p == nil {
-		return nil
-	}
-	return p.p.Close(ctx)
-}
-
-func (p *producerImpl) Publish(ctx context.Context, msgs ...client.Message) error {
-	return p.p.Publish(ctx, msgs...)
-}
-
-func (p *producerImpl) getCodecs() map[string]*goavro.Codec {
+func (p *ProducerManager) getCodecs() map[string]*goavro.Codec {
 	return p.codecs
 }
 
@@ -162,7 +164,7 @@ const (
 )
 
 var (
-	_ producer = &producerImpl{}
+	_ producerManager = &ProducerManager{}
 
 	clientCert, clientKey                []byte
 	kafkaDialTimeout                     = 10 * time.Second
@@ -226,12 +228,8 @@ func Init() {
 	}
 }
 
-type KafkaProducer struct {
-	client producer
-}
-
 // NewProducer creates a producer based on destination config
-func NewProducer(destination *backendconfig.DestinationT, o common.Opts) (*KafkaProducer, error) { // skipcq: RVV-B0011
+func NewProducer(destination *backendconfig.DestinationT, o common.Opts) (*ProducerManager, error) {
 	start := now()
 	defer func() { kafkaStats.creationTime.SendTiming(since(start)) }()
 
@@ -321,11 +319,11 @@ func NewProducer(destination *backendconfig.DestinationT, o common.Opts) (*Kafka
 	if err != nil {
 		return nil, err
 	}
-	return &KafkaProducer{client: &producerImpl{p: p, timeout: o.Timeout, codecs: codecs}}, nil
+	return &ProducerManager{p: p, timeout: o.Timeout, codecs: codecs}, nil
 }
 
 // NewProducerForAzureEventHubs creates a producer for Azure event hub based on destination config
-func NewProducerForAzureEventHubs(destination *backendconfig.DestinationT, o common.Opts) (*KafkaProducer, error) { // skipcq: RVV-B0011
+func NewProducerForAzureEventHubs(destination *backendconfig.DestinationT, o common.Opts) (*ProducerManager, error) {
 	start := now()
 	defer func() { kafkaStats.creationTimeAzureEventHubs.SendTiming(since(start)) }()
 
@@ -372,11 +370,11 @@ func NewProducerForAzureEventHubs(destination *backendconfig.DestinationT, o com
 	if err != nil {
 		return nil, err
 	}
-	return &KafkaProducer{client: &producerImpl{p: p, timeout: o.Timeout}}, nil
+	return &ProducerManager{p: p, timeout: o.Timeout}, nil
 }
 
 // NewProducerForConfluentCloud creates a producer for Confluent cloud based on destination config
-func NewProducerForConfluentCloud(destination *backendconfig.DestinationT, o common.Opts) (*KafkaProducer, error) { // skipcq: RVV-B0011
+func NewProducerForConfluentCloud(destination *backendconfig.DestinationT, o common.Opts) (*ProducerManager, error) {
 	start := now()
 	defer func() { kafkaStats.creationTimeConfluentCloud.SendTiming(since(start)) }()
 
@@ -424,7 +422,7 @@ func NewProducerForConfluentCloud(destination *backendconfig.DestinationT, o com
 	if err != nil {
 		return nil, err
 	}
-	return &KafkaProducer{client: &producerImpl{p: p, timeout: o.Timeout}}, nil
+	return &ProducerManager{p: p, timeout: o.Timeout}, nil
 }
 
 func prepareMessage(topic, key string, message []byte, timestamp time.Time) client.Message {
@@ -452,7 +450,7 @@ func serializeAvroMessage(value []byte, codec goavro.Codec) ([]byte, error) {
 	return binary, nil
 }
 
-func prepareBatchOfMessages(topic string, batch []map[string]interface{}, timestamp time.Time, p producer) (
+func prepareBatchOfMessages(topic string, batch []map[string]interface{}, timestamp time.Time, p producerManager) (
 	[]client.Message, error,
 ) {
 	start := now()
@@ -508,33 +506,36 @@ func prepareBatchOfMessages(topic string, batch []map[string]interface{}, timest
 }
 
 // Close closes a given producer
-func (producer *KafkaProducer) Close() error {
+func (p *ProducerManager) Close() error {
+	if p == nil || p.p == nil {
+		return nil
+	}
+
 	start := now()
 	defer func() { kafkaStats.closeProducerTime.SendTiming(since(start)) }()
 
-	client := producer.client
-	if client == nil {
-		return fmt.Errorf("error while closing producer")
-	}
-
 	ctx, cancel := context.WithTimeout(context.TODO(), 10*time.Second)
-	err := client.Close(ctx)
-	cancel()
-	if err != nil {
-		pkgLogger.Errorf("error in closing Kafka producer: %v", err)
+	defer cancel()
+	if err := p.p.Close(ctx); err != nil {
+		return fmt.Errorf("failed to close producer: %w", err)
 	}
-	return err
+	return nil
+}
+
+// Publish publishes a given message to Kafka
+func (p *ProducerManager) Publish(ctx context.Context, msgs ...client.Message) error {
+	return p.p.Publish(ctx, msgs...)
 }
 
 // Produce creates a producer and send data to Kafka.
-func (producer *KafkaProducer) Produce(jsonData json.RawMessage, destConfig interface{}) (int, string, string) {
-	start := now()
-	defer func() { kafkaStats.produceTime.SendTiming(since(start)) }()
-	client := producer.client
-	if client == nil {
+func (p *ProducerManager) Produce(jsonData json.RawMessage, destConfig interface{}) (int, string, string) {
+	if p.p == nil {
 		// return 400 if producer is invalid
 		return 400, "Could not create producer", "Could not create producer"
 	}
+
+	start := now()
+	defer func() { kafkaStats.produceTime.SendTiming(since(start)) }()
 
 	conf := configuration{}
 	jsonConfig, err := json.Marshal(destConfig)
@@ -550,15 +551,15 @@ func (producer *KafkaProducer) Produce(jsonData json.RawMessage, destConfig inte
 		return makeErrorResponse(fmt.Errorf("invalid destination configuration: no topic"))
 	}
 
-	ctx, cancel := context.WithTimeout(context.TODO(), client.getTimeout())
+	ctx, cancel := context.WithTimeout(context.TODO(), p.getTimeout())
 	defer cancel()
 	if kafkaBatchingEnabled {
-		return sendBatchedMessage(ctx, jsonData, client, conf.Topic)
+		return sendBatchedMessage(ctx, jsonData, p, conf.Topic)
 	}
-	return sendMessage(ctx, jsonData, client, conf.Topic)
+	return sendMessage(ctx, jsonData, p, conf.Topic)
 }
 
-func sendBatchedMessage(ctx context.Context, jsonData json.RawMessage, p producer, topic string) (int, string, string) {
+func sendBatchedMessage(ctx context.Context, jsonData json.RawMessage, p producerManager, topic string) (int, string, string) {
 	var batch []map[string]interface{}
 	err := json.Unmarshal(jsonData, &batch)
 	if err != nil {
@@ -580,7 +581,7 @@ func sendBatchedMessage(ctx context.Context, jsonData json.RawMessage, p produce
 	return 200, returnMessage, returnMessage
 }
 
-func sendMessage(ctx context.Context, jsonData json.RawMessage, p producer, topic string) (int, string, string) {
+func sendMessage(ctx context.Context, jsonData json.RawMessage, p producerManager, topic string) (int, string, string) {
 	parsedJSON := gjson.ParseBytes(jsonData)
 	messageValue := parsedJSON.Get("message").Value()
 	if messageValue == nil {
@@ -619,7 +620,7 @@ func sendMessage(ctx context.Context, jsonData json.RawMessage, p producer, topi
 	return 200, returnMessage, returnMessage
 }
 
-func publish(ctx context.Context, p producer, msgs ...client.Message) error {
+func publish(ctx context.Context, p producerManager, msgs ...client.Message) error {
 	start := now()
 	defer func() { kafkaStats.publishTime.SendTiming(since(start)) }()
 	return p.Publish(ctx, msgs...)

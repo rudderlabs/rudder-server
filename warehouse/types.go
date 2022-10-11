@@ -5,17 +5,17 @@ import (
 	"sync"
 	"time"
 
-	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
-type PayloadT struct {
+type Payload struct {
 	BatchID                      string
 	UploadID                     int64
 	StagingFileID                int64
 	StagingFileLocation          string
 	UploadSchema                 map[string]map[string]string
+	WorkspaceID                  string
 	SourceID                     string
 	SourceName                   string
 	DestinationID                string
@@ -24,7 +24,7 @@ type PayloadT struct {
 	DestinationNamespace         string
 	DestinationRevisionID        string
 	StagingDestinationRevisionID string
-	Destination                  backendconfig.DestinationT
+	DestinationConfig            map[string]interface{}
 	StagingDestinationConfig     interface{}
 	UseRudderStorage             bool
 	StagingUseRudderStorage      bool
@@ -36,16 +36,16 @@ type PayloadT struct {
 }
 
 type ProcessStagingFilesJobT struct {
-	Upload    UploadT
+	Upload    Upload
 	List      []*StagingFileT
-	Warehouse warehouseutils.WarehouseT
+	Warehouse warehouseutils.Warehouse
 }
 
 type LoadFileJobT struct {
-	Upload                     UploadT
+	Upload                     Upload
 	StagingFile                *StagingFileT
 	Schema                     map[string]map[string]string
-	Warehouse                  warehouseutils.WarehouseT
+	Warehouse                  warehouseutils.Warehouse
 	Wg                         *misc.WaitGroup
 	LoadFileIDsChan            chan []int64
 	TableToBucketFolderMap     map[string]string

@@ -40,6 +40,7 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	"github.com/rudderlabs/rudder-server/admin"
+	"github.com/rudderlabs/rudder-server/jobsdb/internal/dsindex"
 	"github.com/rudderlabs/rudder-server/jobsdb/internal/lock"
 	"github.com/rudderlabs/rudder-server/jobsdb/prebackup"
 	"github.com/rudderlabs/rudder-server/utils/bytesize"
@@ -198,14 +199,14 @@ type JobsDB interface {
 
 	// WithStoreSafeTx prepares a store-safe environment and then starts a transaction
 	// that can be used by the provided function.
-	WithStoreSafeTx(func(tx StoreSafeTx) error) error
+	WithStoreSafeTx(context.Context, func(tx StoreSafeTx) error) error
 
 	// Store stores the provided jobs to the database
 	Store(ctx context.Context, jobList []*JobT) error
 
 	// StoreInTx stores the provided jobs to the database using an existing transaction.
 	// Please ensure that you are using an StoreSafeTx, e.g.
-	//    jobsdb.WithStoreSafeTx(func(tx StoreSafeTx) error {
+	//    jobsdb.WithStoreSafeTx(ctx, func(tx StoreSafeTx) error {
 	//	      jobsdb.StoreInTx(ctx, tx, jobList)
 	//    })
 	StoreInTx(ctx context.Context, tx StoreSafeTx, jobList []*JobT) error
@@ -223,14 +224,14 @@ type JobsDB interface {
 	// WithUpdateSafeTx prepares an update-safe environment and then starts a transaction
 	// that can be used by the provided function. An update-safe transaction shall be used if the provided function
 	// needs to call UpdateJobStatusInTx.
-	WithUpdateSafeTx(func(tx UpdateSafeTx) error) error
+	WithUpdateSafeTx(context.Context, func(tx UpdateSafeTx) error) error
 
 	// UpdateJobStatus updates the provided job statuses
 	UpdateJobStatus(ctx context.Context, statusList []*JobStatusT, customValFilters []string, parameterFilters []ParameterFilterT) error
 
 	// UpdateJobStatusInTx updates the provided job statuses in an existing transaction.
 	// Please ensure that you are using an UpdateSafeTx, e.g.
-	//    jobsdb.WithUpdateSafeTx(func(tx UpdateSafeTx) error {
+	//    jobsdb.WithUpdateSafeTx(ctx, func(tx UpdateSafeTx) error {
 	//	      jobsdb.UpdateJobStatusInTx(ctx, tx, statusList, customValFilters, parameterFilters)
 	//    })
 	UpdateJobStatusInTx(ctx context.Context, tx UpdateSafeTx, statusList []*JobStatusT, customValFilters []string, parameterFilters []ParameterFilterT) error
@@ -310,7 +311,7 @@ func (jd *HandleT) UpdateJobStatusInTx(ctx context.Context, tx UpdateSafeTx, sta
 	}
 
 	if tx.updateSafeTxSealIdentifier() != jd.Identifier() {
-		return jd.inUpdateSafeCtx(func() error {
+		return jd.inUpdateSafeCtx(ctx, func() error {
 			return updateCmd()
 		})
 	}
@@ -394,8 +395,8 @@ type HandleT struct {
 	tablePrefix                   string
 	datasetList                   []dataSetT
 	datasetRangeList              []dataSetRangeT
-	dsListLock                    lock.DSListLocker
-	dsMigrationLock               sync.RWMutex
+	dsListLock                    *lock.Locker
+	dsMigrationLock               *lock.Locker
 	MinDSRetentionPeriod          time.Duration
 	MaxDSRetentionPeriod          time.Duration
 	dsEmptyResultCache            map[dataSetT]map[string]map[string]map[string]map[string]cacheEntry // DS -> workspace -> customVal -> params -> state -> cacheEntry
@@ -411,7 +412,6 @@ type HandleT struct {
 	statDropDSPeriod              stats.Measurement
 	unionQueryTime                stats.Measurement
 	isStatDropDSPeriodInitialized bool
-	inProgressMigrationTargetDS   *dataSetT
 	logger                        logger.Logger
 	writeCapacity                 chan struct{}
 	readCapacity                  chan struct{}
@@ -437,7 +437,10 @@ type HandleT struct {
 	// TODO: Ideally we should refactor the code to not use this override.
 	TriggerAddNewDS  func() <-chan time.Time
 	TriggerMigrateDS func() <-chan time.Time
+	migrateDSTimeout time.Duration
+
 	TriggerRefreshDS func() <-chan time.Time
+	refreshDSTimeout time.Duration
 
 	lifecycle struct {
 		mu      sync.Mutex
@@ -475,6 +478,9 @@ func (jd *HandleT) registerBackUpSettings() {
 	config.RegisterBoolConfigVariable(false, &jd.BackupSettings.FailedOnly, false, fmt.Sprintf("JobsDB.backup.%v.failedOnly", jd.tablePrefix))
 	config.RegisterStringConfigVariable(jd.tablePrefix, &pathPrefix, false, fmt.Sprintf("JobsDB.backup.%v.pathPrefix", jd.tablePrefix))
 	config.RegisterDurationConfigVariable(10, &jd.maxBackupRetryTime, false, time.Minute, "JobsDB.backup.maxRetry")
+	config.RegisterDurationConfigVariable(1, &jd.refreshDSTimeout, false, time.Minute, "JobsDB.refreshDS.timeout")
+	config.RegisterDurationConfigVariable(2, &jd.migrateDSTimeout, false, time.Minute, "JobsDB.migrateDS.timeout")
+
 	jd.BackupSettings.PathPrefix = strings.TrimSpace(pathPrefix)
 }
 
@@ -612,11 +618,6 @@ func init() {
 }
 
 var (
-	host, user, password, dbname, sslmode, appName string
-	port                                           int
-)
-
-var (
 	maxDSSize, maxMigrateOnce, maxMigrateDSProbe int
 	maxTableSize                                 int64
 	jobDoneMigrateThres, jobStatusMigrateThres   float64
@@ -630,21 +631,10 @@ var (
 	backupRowsBatchSize                          int64
 	backupMaxTotalPayloadSize                    int64
 	pkgLogger                                    logger.Logger
-	skipZeroAssertionForMultitenant              bool
 )
 
 // Loads db config and migration related config from config file
 func loadConfig() {
-	host = config.GetString("DB.host", "localhost")
-	user = config.GetString("DB.user", "ubuntu")
-	dbname = config.GetString("DB.name", "ubuntu")
-	port = config.GetInt("DB.port", 5432)
-	password = config.GetString("DB.password", "ubuntu") // Reading secrets from
-	sslmode = config.GetString("DB.sslMode", "disable")
-	// Application Name can be any string of less than NAMEDATALEN characters (64 characters in a standard PostgreSQL build).
-	// There is no need to truncate the string on our own though since PostgreSQL auto-truncates this identifier and issues a relevant notice if necessary.
-	appName = misc.DefaultString("rudder-server").OnError(os.Hostname())
-
 	/*Migration related parameters
 	jobDoneMigrateThres: A DS is migrated when this fraction of the jobs have been processed
 	jobStatusMigrateThres: A DS is migrated if the job_status exceeds this (* no_of_jobs)
@@ -675,19 +665,11 @@ func loadConfig() {
 	config.RegisterDurationConfigVariable(5, &backupCheckSleepDuration, true, time.Second, []string{"JobsDB.backupCheckSleepDuration", "JobsDB.backupCheckSleepDurationIns"}...)
 	config.RegisterDurationConfigVariable(60, &cacheExpiration, true, time.Minute, []string{"JobsDB.cacheExpiration"}...)
 	useJoinForUnprocessed = config.GetBool("JobsDB.useJoinForUnprocessed", true)
-	config.RegisterBoolConfigVariable(false, &skipZeroAssertionForMultitenant, true, "JobsDB.skipZeroAssertionForMultitenant")
 }
 
 func Init2() {
 	loadConfig()
 	pkgLogger = logger.NewLogger().Child("jobsdb")
-}
-
-// GetConnectionString Returns Jobs DB connection configuration
-func GetConnectionString() string {
-	return fmt.Sprintf("host=%s port=%d user=%s "+
-		"password=%s dbname=%s sslmode=%s application_name=%s",
-		host, port, user, password, dbname, sslmode, appName)
 }
 
 type OptsFunc func(jd *HandleT)
@@ -760,12 +742,13 @@ func (jd *HandleT) Setup(
 	jd.tablePrefix = tablePrefix
 	jd.registerStatusHandler = registerStatusHandler
 	jd.preBackupHandlers = preBackupHandlers
-
 	jd.init()
 	return jd.Start()
 }
 
 func (jd *HandleT) init() {
+	jd.dsListLock = lock.NewLocker()
+	jd.dsMigrationLock = lock.NewLocker()
 	if jd.MaxDSSize == nil {
 		// passing `maxDSSize` by reference, so it can be hot reloaded
 		jd.MaxDSSize = &maxDSSize
@@ -792,7 +775,7 @@ func (jd *HandleT) init() {
 	// Initialize dbHandle if not already set
 	if jd.dbHandle == nil {
 		var err error
-		psqlInfo := GetConnectionString()
+		psqlInfo := misc.GetConnectionString()
 		sqlDB, err := sql.Open("postgres", psqlInfo)
 		jd.assertError(err)
 
@@ -823,7 +806,6 @@ func (jd *HandleT) init() {
 
 		jd.dbHandle = sqlDB
 	}
-
 	jd.workersAndAuxSetup()
 }
 
@@ -898,7 +880,7 @@ func (jd *HandleT) Start() error {
 }
 
 func (jd *HandleT) setUpForOwnerType(ctx context.Context, ownerType OwnerType, clearAll bool) {
-	jd.dsListLock.WithLock(func(l lock.DSListLockToken) {
+	jd.dsListLock.WithLock(func(l lock.LockToken) {
 		switch ownerType {
 		case Read:
 			jd.readerSetup(ctx, l)
@@ -932,7 +914,7 @@ func (jd *HandleT) startMigrateDSLoop(ctx context.Context) {
 	}))
 }
 
-func (jd *HandleT) readerSetup(ctx context.Context, l lock.DSListLockToken) {
+func (jd *HandleT) readerSetup(ctx context.Context, l lock.LockToken) {
 	jd.recoverFromJournal(Read)
 
 	// This is a thread-safe operation.
@@ -957,7 +939,7 @@ func (jd *HandleT) readerSetup(ctx context.Context, l lock.DSListLockToken) {
 	}))
 }
 
-func (jd *HandleT) writerSetup(ctx context.Context, l lock.DSListLockToken) {
+func (jd *HandleT) writerSetup(ctx context.Context, l lock.LockToken) {
 	jd.recoverFromJournal(Write)
 	// This is a thread-safe operation.
 	// Even if two different services (gateway and processor) perform this operation, there should not be any problem.
@@ -975,7 +957,7 @@ func (jd *HandleT) writerSetup(ctx context.Context, l lock.DSListLockToken) {
 	}))
 }
 
-func (jd *HandleT) readerWriterSetup(ctx context.Context, l lock.DSListLockToken) {
+func (jd *HandleT) readerWriterSetup(ctx context.Context, l lock.LockToken) {
 	jd.recoverFromJournal(Read)
 
 	jd.writerSetup(ctx, l)
@@ -1027,7 +1009,7 @@ func (jd *HandleT) getDSList() []dataSetT {
 }
 
 // refreshDSList refreshes the ds list from the database
-func (jd *HandleT) refreshDSList(l lock.DSListLockToken) []dataSetT {
+func (jd *HandleT) refreshDSList(l lock.LockToken) []dataSetT {
 	jd.assert(l != nil, "cannot refresh DS list without a valid lock token")
 	// Reset the global list
 	jd.datasetList = getDSList(jd, jd.dbHandle, jd.tablePrefix)
@@ -1053,7 +1035,7 @@ func (jd *HandleT) getDSRangeList() []dataSetRangeT {
 }
 
 // refreshDSRangeList first refreshes the DS list and then calculate the DS range list
-func (jd *HandleT) refreshDSRangeList(l lock.DSListLockToken) {
+func (jd *HandleT) refreshDSRangeList(l lock.LockToken) {
 	var minID, maxID sql.NullInt64
 	var prevMax int64
 
@@ -1087,7 +1069,7 @@ func (jd *HandleT) refreshDSRangeList(l lock.DSListLockToken) {
 			continue
 		}
 
-		if idx < len(dsList)-1 && (jd.inProgressMigrationTargetDS == nil || jd.inProgressMigrationTargetDS.Index != ds.Index) {
+		if idx < len(dsList)-1 {
 			// TODO: Cleanup - Remove the line below and jd.inProgressMigrationTargetDS
 			jd.assert(minID.Valid && maxID.Valid, fmt.Sprintf("minID.Valid: %v, maxID.Valid: %v. Either of them is false for table: %s", minID.Valid, maxID.Valid, ds.JobTable))
 			jd.assert(idx == 0 || prevMax < minID.Int64, fmt.Sprintf("idx: %d != 0 and prevMax: %d >= minID.Int64: %v of table: %s", idx, prevMax, minID.Int64, ds.JobTable))
@@ -1201,15 +1183,17 @@ func (jd *HandleT) getTableSize(jobTable string) int64 {
 }
 
 func (jd *HandleT) checkIfFullDSInTx(tx *sql.Tx, ds dataSetT) (bool, error) {
-	var minJobCreatedAt sql.NullTime
-	sqlStatement := fmt.Sprintf(`SELECT MIN(created_at) FROM %q`, ds.JobTable)
-	row := tx.QueryRow(sqlStatement)
-	err := row.Scan(&minJobCreatedAt)
-	if err != nil && err != sql.ErrNoRows {
-		return false, err
-	}
-	if err == nil && minJobCreatedAt.Valid && time.Since(minJobCreatedAt.Time) > jd.MaxDSRetentionPeriod {
-		return true, nil
+	if jd.MaxDSRetentionPeriod > 0 {
+		var minJobCreatedAt sql.NullTime
+		sqlStatement := fmt.Sprintf(`SELECT MIN(created_at) FROM %q`, ds.JobTable)
+		row := tx.QueryRow(sqlStatement)
+		err := row.Scan(&minJobCreatedAt)
+		if err != nil && err != sql.ErrNoRows {
+			return false, err
+		}
+		if err == nil && minJobCreatedAt.Valid && time.Since(minJobCreatedAt.Time) > jd.MaxDSRetentionPeriod {
+			return true, nil
+		}
 	}
 
 	tableSize := jd.getTableSize(ds.JobTable)
@@ -1280,7 +1264,7 @@ func newDataSet(tablePrefix, dsIdx string) dataSetT {
 	}
 }
 
-func (jd *HandleT) addNewDS(l lock.DSListLockToken, ds dataSetT) {
+func (jd *HandleT) addNewDS(l lock.LockToken, ds dataSetT) {
 	err := jd.WithTx(func(tx *sql.Tx) error {
 		return jd.addNewDSInTx(tx, l, jd.refreshDSList(l), ds)
 	})
@@ -1289,7 +1273,7 @@ func (jd *HandleT) addNewDS(l lock.DSListLockToken, ds dataSetT) {
 }
 
 // NOTE: If addNewDSInTx is directly called, make sure to explicitly call refreshDSRangeList(l) to update the DS list in cache, once transaction has completed.
-func (jd *HandleT) addNewDSInTx(tx *sql.Tx, l lock.DSListLockToken, dsList []dataSetT, ds dataSetT) error {
+func (jd *HandleT) addNewDSInTx(tx *sql.Tx, l lock.LockToken, dsList []dataSetT, ds dataSetT) error {
 	if l == nil {
 		return errors.New("nil ds list lock token provided")
 	}
@@ -1315,14 +1299,12 @@ func (jd *HandleT) addNewDSInTx(tx *sql.Tx, l lock.DSListLockToken, dsList []dat
 	return nil
 }
 
-func (jd *HandleT) addDS(ds dataSetT) {
+func (jd *HandleT) addDSInTx(tx *sql.Tx, ds dataSetT) error {
 	jd.logger.Infof("Creating DS %+v", ds)
 	queryStat := stats.Default.NewTaggedStat("add_new_ds", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix})
 	queryStat.Start()
 	defer queryStat.End()
-	jd.assertError(jd.WithTx(func(tx *sql.Tx) error {
-		return jd.createDSInTx(tx, ds)
-	}))
+	return jd.createDSInTx(tx, ds)
 }
 
 // mustDropDS drops a dataset and panics if it fails to do so
@@ -1331,7 +1313,7 @@ func (jd *HandleT) mustDropDS(ds dataSetT) {
 	jd.assertError(err)
 }
 
-func (jd *HandleT) computeNewIdxForAppend(l lock.DSListLockToken) string {
+func (jd *HandleT) computeNewIdxForAppend(l lock.LockToken) string {
 	dList := jd.refreshDSList(l)
 	return jd.doComputeNewIdxForAppend(dList)
 }
@@ -1350,97 +1332,26 @@ func (jd *HandleT) doComputeNewIdxForAppend(dList []dataSetT) string {
 	return newDSIdx
 }
 
-// Tries to give a slice between before and after by incrementing last value in before. If the order doesn't maintain, it adds a level and recurses.
-func computeInsertVals(before, after []string) ([]string, error) {
-	for {
-		if before == nil || after == nil {
-			return nil, fmt.Errorf("before or after is nil")
-		}
-		// Safe check: In the current jobsdb implementation, indices don't go more
-		// than 3 levels deep. Breaking out of the loop if the before is of size more than 4.
-		if len(before) > 4 {
-			return before, fmt.Errorf("can't compute insert index due to bad inputs. before: %v, after: %v", before, after)
-		}
-
-		calculatedVals := make([]string, len(before))
-		copy(calculatedVals, before)
-		lastVal, err := strconv.Atoi(calculatedVals[len(calculatedVals)-1])
-		if err != nil {
-			return calculatedVals, err
-		}
-		// Just increment the last value of the index as a possible candidate
-		calculatedVals[len(calculatedVals)-1] = fmt.Sprintf("%d", lastVal+1)
-		var equals bool
-		if len(calculatedVals) == len(after) {
-			equals = true
-			for k := 0; k < len(calculatedVals); k++ {
-				if calculatedVals[k] == after[k] {
-					continue
-				}
-				equals = false
-			}
-		}
-		if !equals {
-			comparison, err := dsComparitor(calculatedVals, after)
-			if err != nil {
-				return calculatedVals, err
-			}
-			if !comparison {
-				return calculatedVals, fmt.Errorf("computed index is invalid. before: %v, after: %v, calculatedVals: %v", before, after, calculatedVals)
-			}
-		}
-		// Only when the index starts with 0, we allow three levels and when we are using the legacy migration
-		// In all other cases, we allow only two levels
-		var comparatorBool bool
-		if skipZeroAssertionForMultitenant {
-			comparatorBool = len(calculatedVals) == 2
-		} else {
-			comparatorBool = (before[0] == "0" && len(calculatedVals) == 3) ||
-				(before[0] != "0" && len(calculatedVals) == 2)
-		}
-
-		if comparatorBool {
-			if equals {
-				return calculatedVals, fmt.Errorf("calculatedVals and after are same. computed index is invalid. before: %v, after: %v, calculatedVals: %v", before, after, calculatedVals)
-			} else {
-				return calculatedVals, nil
-			}
-		}
-
-		before = append(before, "0")
-	}
-}
-
 func computeInsertIdx(beforeIndex, afterIndex string) (string, error) {
-	comparison, err := dsComparitor(strings.Split(beforeIndex, "_"), strings.Split(afterIndex, "_"))
+	before, err := dsindex.Parse(beforeIndex)
 	if err != nil {
-		return "", fmt.Errorf("Error while comparing beforeIndex: %s and afterIndex: %s with error : %w", beforeIndex, afterIndex, err)
+		return "", fmt.Errorf("could not parse before index: %w", err)
 	}
-	if !comparison {
-		return "", fmt.Errorf("Not a valid insert request between %s and %s", beforeIndex, afterIndex)
-	}
-
-	// No dataset should have 0 as the index.
-	// 0_1, 0_2 are allowed.
-	if beforeIndex == "0" && !skipZeroAssertionForMultitenant {
-		return "", fmt.Errorf("Unsupported beforeIndex: %s", beforeIndex)
-	}
-
-	beforeVals := strings.Split(beforeIndex, "_")
-	afterVals := strings.Split(afterIndex, "_")
-	calculatedInsertVals, err := computeInsertVals(beforeVals, afterVals)
+	after, err := dsindex.Parse(afterIndex)
 	if err != nil {
-		return "", fmt.Errorf("Failed to calculate InserVals with error: %w", err)
+		return "", fmt.Errorf("could not parse after index: %w", err)
 	}
-	calculatedIdx := strings.Join(calculatedInsertVals, "_")
-	if len(calculatedInsertVals) > 3 {
-		return "", fmt.Errorf("We don't expect a ds to be computed to Level3. We got %s while trying to insert between %s and %s", calculatedIdx, beforeIndex, afterIndex)
+	result, err := before.Bump(after)
+	if err != nil {
+		return "", fmt.Errorf("could not compute insert index: %w", err)
 	}
-
-	return calculatedIdx, nil
+	if result.Length() > 2 {
+		return "", fmt.Errorf("unsupported resulting index %s level (3) between %s and %s", result, beforeIndex, afterIndex)
+	}
+	return result.String(), nil
 }
 
-func (jd *HandleT) computeNewIdxForIntraNodeMigration(l lock.DSListLockToken, insertBeforeDS dataSetT) string { // Within the node
+func (jd *HandleT) computeNewIdxForIntraNodeMigration(l lock.LockToken, insertBeforeDS dataSetT) string { // Within the node
 	jd.logger.Debugf("computeNewIdxForIntraNodeMigration, insertBeforeDS : %v", insertBeforeDS)
 	dList := jd.refreshDSList(l)
 	jd.logger.Debugf("dlist in which we are trying to find %v is %v", insertBeforeDS, dList)
@@ -1531,7 +1442,7 @@ func (jd *HandleT) createDSInTx(tx *sql.Tx, newDS dataSetT) error {
 	return nil
 }
 
-func (jd *HandleT) setSequenceNumberInTx(tx *sql.Tx, l lock.DSListLockToken, dsList []dataSetT, newDSIdx string) error {
+func (jd *HandleT) setSequenceNumberInTx(tx *sql.Tx, l lock.LockToken, dsList []dataSetT, newDSIdx string) error {
 	if l == nil {
 		return errors.New("nil ds list lock token provided")
 	}
@@ -1608,25 +1519,29 @@ func (jd *HandleT) prepareAndExecStmtInTxAllowMissing(tx *sql.Tx, sqlStatement s
 	}
 }
 
-// dropDS drops a dataset
 func (jd *HandleT) dropDS(ds dataSetT) error {
 	return jd.WithTx(func(tx *sql.Tx) error {
-		var err error
-		if _, err = tx.Exec(fmt.Sprintf(`LOCK TABLE %q IN ACCESS EXCLUSIVE MODE;`, ds.JobStatusTable)); err != nil {
-			return err
-		}
-		if _, err = tx.Exec(fmt.Sprintf(`LOCK TABLE %q IN ACCESS EXCLUSIVE MODE;`, ds.JobTable)); err != nil {
-			return err
-		}
-		if _, err = tx.Exec(fmt.Sprintf(`DROP TABLE %q`, ds.JobStatusTable)); err != nil {
-			return err
-		}
-		if _, err = tx.Exec(fmt.Sprintf(`DROP TABLE %q`, ds.JobTable)); err != nil {
-			return err
-		}
-		jd.postDropDs(ds)
-		return nil
+		return jd.dropDSInTx(tx, ds)
 	})
+}
+
+// dropDS drops a dataset
+func (jd *HandleT) dropDSInTx(tx *sql.Tx, ds dataSetT) error {
+	var err error
+	if _, err = tx.Exec(fmt.Sprintf(`LOCK TABLE %q IN ACCESS EXCLUSIVE MODE;`, ds.JobStatusTable)); err != nil {
+		return err
+	}
+	if _, err = tx.Exec(fmt.Sprintf(`LOCK TABLE %q IN ACCESS EXCLUSIVE MODE;`, ds.JobTable)); err != nil {
+		return err
+	}
+	if _, err = tx.Exec(fmt.Sprintf(`DROP TABLE %q`, ds.JobStatusTable)); err != nil {
+		return err
+	}
+	if _, err = tx.Exec(fmt.Sprintf(`DROP TABLE %q`, ds.JobTable)); err != nil {
+		return err
+	}
+	jd.postDropDs(ds)
+	return nil
 }
 
 // Drop a dataset and ignore if a table is missing
@@ -1675,45 +1590,49 @@ func (jd *HandleT) invalidateCache(ds dataSetT) {
 	}
 }
 
-// mustRenameDS renames a dataset
 func (jd *HandleT) mustRenameDS(ds dataSetT) error {
+	return jd.WithTx(func(tx *sql.Tx) error {
+		return jd.mustRenameDSInTx(tx, ds)
+	})
+}
+
+// mustRenameDS renames a dataset
+func (jd *HandleT) mustRenameDSInTx(tx *sql.Tx, ds dataSetT) error {
 	var sqlStatement string
 	renamedJobStatusTable := fmt.Sprintf(`%s%s`, preDropTablePrefix, ds.JobStatusTable)
 	renamedJobTable := fmt.Sprintf(`%s%s`, preDropTablePrefix, ds.JobTable)
-	return jd.WithTx(func(tx *sql.Tx) error {
-		sqlStatement = fmt.Sprintf(`ALTER TABLE %q RENAME TO %q`, ds.JobStatusTable, renamedJobStatusTable)
-		_, err := tx.Exec(sqlStatement)
+	sqlStatement = fmt.Sprintf(`ALTER TABLE %q RENAME TO %q`, ds.JobStatusTable, renamedJobStatusTable)
+	_, err := tx.Exec(sqlStatement)
+	if err != nil {
+		return fmt.Errorf("could not rename status table %s to %s: %w", ds.JobStatusTable, renamedJobStatusTable, err)
+	}
+	sqlStatement = fmt.Sprintf(`ALTER TABLE %q RENAME TO %q`, ds.JobTable, renamedJobTable)
+	_, err = tx.Exec(sqlStatement)
+	if err != nil {
+		return fmt.Errorf("could not rename job table %s to %s: %w", ds.JobTable, renamedJobTable, err)
+	}
+	for _, preBackupHandler := range jd.preBackupHandlers {
+		err = preBackupHandler.Handle(context.TODO(), tx, renamedJobTable, renamedJobStatusTable)
 		if err != nil {
-			return fmt.Errorf("could not rename status table %s to %s: %w", ds.JobStatusTable, renamedJobStatusTable, err)
+			return err
 		}
-		sqlStatement = fmt.Sprintf(`ALTER TABLE %q RENAME TO %q`, ds.JobTable, renamedJobTable)
-		_, err = tx.Exec(sqlStatement)
-		if err != nil {
-			return fmt.Errorf("could not rename job table %s to %s: %w", ds.JobTable, renamedJobTable, err)
+	}
+	// if jobs table is left empty after prebackup handlers, drop the dataset
+	sqlStatement = fmt.Sprintf(`SELECT CASE WHEN EXISTS (SELECT * FROM %q) THEN 1 ELSE 0 END`, renamedJobTable)
+	row := tx.QueryRow(sqlStatement)
+	var count int
+	if err = row.Scan(&count); err != nil {
+		return fmt.Errorf("could not rename job table %s to %s: %w", ds.JobTable, renamedJobTable, err)
+	}
+	if count == 0 {
+		if _, err = tx.Exec(fmt.Sprintf(`DROP TABLE %q`, renamedJobStatusTable)); err != nil {
+			return fmt.Errorf("could not drop empty pre_drop job status table %s: %w", renamedJobStatusTable, err)
 		}
-		for _, preBackupHandler := range jd.preBackupHandlers {
-			err = preBackupHandler.Handle(context.TODO(), tx, renamedJobTable, renamedJobStatusTable)
-			if err != nil {
-				return err
-			}
+		if _, err = tx.Exec(fmt.Sprintf(`DROP TABLE %q`, renamedJobTable)); err != nil {
+			return fmt.Errorf("could not drop empty pre_drop job table %s: %w", renamedJobTable, err)
 		}
-		// if jobs table is left empty after prebackup handlers, drop the dataset
-		sqlStatement = fmt.Sprintf(`SELECT CASE WHEN EXISTS (SELECT * FROM %q) THEN 1 ELSE 0 END`, renamedJobTable)
-		row := tx.QueryRow(sqlStatement)
-		var count int
-		if err = row.Scan(&count); err != nil {
-			return fmt.Errorf("could not rename job table %s to %s: %w", ds.JobTable, renamedJobTable, err)
-		}
-		if count == 0 {
-			if _, err = tx.Exec(fmt.Sprintf(`DROP TABLE %q`, renamedJobStatusTable)); err != nil {
-				return fmt.Errorf("could not drop empty pre_drop job status table %s: %w", renamedJobStatusTable, err)
-			}
-			if _, err = tx.Exec(fmt.Sprintf(`DROP TABLE %q`, renamedJobTable)); err != nil {
-				return fmt.Errorf("could not drop empty pre_drop job table %s: %w", renamedJobTable, err)
-			}
-		}
-		return nil
-	})
+	}
+	return nil
 }
 
 // renameDS renames a dataset if it exists
@@ -1787,7 +1706,7 @@ func (jd *HandleT) dropAllBackupDS() error {
 	return nil
 }
 
-func (jd *HandleT) dropAllDS(l lock.DSListLockToken) error {
+func (jd *HandleT) dropAllDS(l lock.LockToken) error {
 	var err error
 	dList := jd.refreshDSList(l)
 	for _, ds := range dList {
@@ -1809,11 +1728,13 @@ completed (state is failed or waiting or waiting_retry or executiong) are copied
 over. Then the status (only the latest) is set for those jobs
 */
 
-func (jd *HandleT) migrateJobs(ctx context.Context, srcDS, destDS dataSetT) (noJobsMigrated int, err error) {
+func (jd *HandleT) migrateJobsInTx(ctx context.Context, tx *sql.Tx, srcDS, destDS dataSetT) (noJobsMigrated int, err error) {
 	queryStat := stats.Default.NewTaggedStat("migration_jobs", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix})
 	queryStat.Start()
 	defer queryStat.End()
-	jd.dsListLock.RLock()
+	if !jd.dsListLock.RTryLockWithCtx(ctx) {
+		return 0, fmt.Errorf("could not acquire a dslist read lock: %w", ctx.Err())
+	}
 	defer jd.dsListLock.RUnlock()
 
 	// Unprocessed jobs
@@ -1830,53 +1751,47 @@ func (jd *HandleT) migrateJobs(ctx context.Context, srcDS, destDS dataSetT) (noJ
 	jobsToMigrate := append(unprocessedList.Jobs, retryList.Jobs...)
 	noJobsMigrated = len(jobsToMigrate)
 
-	err = jd.WithTx(func(tx *sql.Tx) error {
-		if err := jd.copyJobsDS(tx, destDS, jobsToMigrate); err != nil {
-			return err
+	if err := jd.copyJobsDS(tx, destDS, jobsToMigrate); err != nil {
+		return 0, err
+	}
+	// Now copy over the latest status of the unfinished jobs
+	var statusList []*JobStatusT
+	for _, job := range retryList.Jobs {
+		newStatus := JobStatusT{
+			JobID:         job.JobID,
+			JobState:      job.LastJobStatus.JobState,
+			AttemptNum:    job.LastJobStatus.AttemptNum,
+			ExecTime:      job.LastJobStatus.ExecTime,
+			RetryTime:     job.LastJobStatus.RetryTime,
+			ErrorCode:     job.LastJobStatus.ErrorCode,
+			ErrorResponse: job.LastJobStatus.ErrorResponse,
+			Parameters:    job.LastJobStatus.Parameters,
+			WorkspaceId:   job.WorkspaceId,
 		}
-		// Now copy over the latest status of the unfinished jobs
-		var statusList []*JobStatusT
-		for _, job := range retryList.Jobs {
-			newStatus := JobStatusT{
-				JobID:         job.JobID,
-				JobState:      job.LastJobStatus.JobState,
-				AttemptNum:    job.LastJobStatus.AttemptNum,
-				ExecTime:      job.LastJobStatus.ExecTime,
-				RetryTime:     job.LastJobStatus.RetryTime,
-				ErrorCode:     job.LastJobStatus.ErrorCode,
-				ErrorResponse: job.LastJobStatus.ErrorResponse,
-				Parameters:    job.LastJobStatus.Parameters,
-				WorkspaceId:   job.WorkspaceId,
-			}
-			statusList = append(statusList, &newStatus)
-		}
-		return jd.copyJobStatusDS(ctx, tx, destDS, statusList, []string{})
-	})
+		statusList = append(statusList, &newStatus)
+	}
+	err = jd.copyJobStatusDS(ctx, tx, destDS, statusList, []string{})
 	if err != nil {
 		return 0, err
 	}
 	return noJobsMigrated, nil
 }
 
-func (jd *HandleT) postMigrateHandleDS(l lock.DSListLockToken, migrateFrom []dataSetT) error {
+func (jd *HandleT) postMigrateHandleDS(tx *sql.Tx, migrateFrom []dataSetT) error {
 	// Rename datasets before dropping them, so that they can be uploaded to s3
 	for _, ds := range migrateFrom {
 		if jd.BackupSettings.isBackupEnabled() && isBackupConfigured() {
-			if err := jd.mustRenameDS(ds); err != nil {
+			jd.logger.Debugf("renaming dataset %s to %s", ds.JobTable, ds.JobTable+preDropTablePrefix+ds.JobTable)
+			if err := jd.mustRenameDSInTx(tx, ds); err != nil {
 				return err
 			}
 		} else {
-			if err := jd.dropDS(ds); err != nil {
+			jd.logger.Debugf("dropping dataset %s", ds.JobTable)
+			if err := jd.dropDSInTx(tx, ds); err != nil {
 				return err
 			}
 		}
 	}
-
-	jd.inProgressMigrationTargetDS = nil
-
-	// Refresh the in-memory lists
-	jd.refreshDSRangeList(l)
-
 	return nil
 }
 
@@ -1907,16 +1822,18 @@ func (jd *HandleT) copyJobsDS(tx *sql.Tx, ds dataSetT, jobList []*JobT) error { 
 	return jd.copyJobsDSInTx(tx, ds, jobList)
 }
 
-func (jd *HandleT) WithStoreSafeTx(f func(tx StoreSafeTx) error) error {
-	return jd.inStoreSafeCtx(func() error {
+func (jd *HandleT) WithStoreSafeTx(ctx context.Context, f func(tx StoreSafeTx) error) error {
+	return jd.inStoreSafeCtx(ctx, func() error {
 		return jd.WithTx(func(tx *sql.Tx) error { return f(&storeSafeTx{tx: tx, identity: jd.tablePrefix}) })
 	})
 }
 
-func (jd *HandleT) inStoreSafeCtx(f func() error) error {
+func (jd *HandleT) inStoreSafeCtx(ctx context.Context, f func() error) error {
 	// Only locks the list
 	op := func() error {
-		jd.dsListLock.RLock()
+		if !jd.dsListLock.RTryLockWithCtx(ctx) {
+			return fmt.Errorf("could not acquire a dslist read lock: %w", ctx.Err())
+		}
 		defer jd.dsListLock.RUnlock()
 		return f()
 	}
@@ -1924,28 +1841,36 @@ func (jd *HandleT) inStoreSafeCtx(f func() error) error {
 		err := op()
 		if err != nil && errors.Is(err, errStaleDsList) {
 			jd.logger.Errorf("[JobsDB] :: Store failed: %v. Retrying after refreshing DS cache", errStaleDsList)
-			jd.dsListLock.WithLock(func(l lock.DSListLockToken) {
+			if err := jd.dsListLock.WithLockInCtx(ctx, func(l lock.LockToken) error {
 				_ = jd.refreshDSList(l)
-			})
+				return nil
+			}); err != nil {
+				return err
+			}
 		} else {
 			return err
 		}
 	}
 }
 
-func (jd *HandleT) WithUpdateSafeTx(f func(tx UpdateSafeTx) error) error {
-	return jd.inUpdateSafeCtx(func() error {
+func (jd *HandleT) WithUpdateSafeTx(ctx context.Context, f func(tx UpdateSafeTx) error) error {
+	return jd.inUpdateSafeCtx(ctx, func() error {
 		return jd.WithTx(func(tx *sql.Tx) error { return f(&updateSafeTx{tx: tx, identity: jd.tablePrefix}) })
 	})
 }
 
-func (jd *HandleT) inUpdateSafeCtx(f func() error) error {
+func (jd *HandleT) inUpdateSafeCtx(ctx context.Context, f func() error) error {
 	// The order of lock is very important. The migrateDSLoop
 	// takes lock in this order so reversing this will cause
 	// deadlocks
-	jd.dsMigrationLock.RLock()
-	jd.dsListLock.RLock()
+	if !jd.dsMigrationLock.RTryLockWithCtx(ctx) {
+		return fmt.Errorf("could not acquire a migration read lock: %w", ctx.Err())
+	}
 	defer jd.dsMigrationLock.RUnlock()
+
+	if !jd.dsListLock.RTryLockWithCtx(ctx) {
+		return fmt.Errorf("could not acquire a dslist read lock: %w", ctx.Err())
+	}
 	defer jd.dsListLock.RUnlock()
 	return f()
 }
@@ -2089,9 +2014,13 @@ func (jd *HandleT) doClearCache(ds dataSetT, CVPMap map[string]map[string]map[st
 }
 
 func (jd *HandleT) GetPileUpCounts(ctx context.Context) (map[string]map[string]int, error) {
-	jd.dsMigrationLock.RLock()
-	jd.dsListLock.RLock()
+	if !jd.dsMigrationLock.RTryLockWithCtx(ctx) {
+		return nil, fmt.Errorf("could not acquire a migration read lock: %w", ctx.Err())
+	}
 	defer jd.dsMigrationLock.RUnlock()
+	if !jd.dsListLock.RTryLockWithCtx(ctx) {
+		return nil, fmt.Errorf("could not acquire a dslist read lock: %w", ctx.Err())
+	}
 	defer jd.dsListLock.RUnlock()
 	dsList := jd.getDSList()
 	statMap := make(map[string]map[string]int)
@@ -2977,8 +2906,8 @@ func (jd *HandleT) addNewDSLoop(ctx context.Context) {
 		}
 
 		// Adding a new DS only creates a new DS & updates the cache. It doesn't move any data so we only take the list lock.
-		var dsListLock lock.DSListLockToken
-		var releaseDsListLock chan<- lock.DSListLockToken
+		var dsListLock lock.LockToken
+		var releaseDsListLock chan<- lock.LockToken
 		// start a transaction
 		err := jd.WithTx(func(tx *sql.Tx) error {
 			// acquire a advisory transaction level blocking lock, which is released once the transaction ends.
@@ -2990,7 +2919,10 @@ func (jd *HandleT) addNewDSLoop(ctx context.Context) {
 
 			// We acquire the list lock only after we have acquired the advisory lock.
 			// We will release the list lock after the transaction ends, that's why we need to use an async lock
-			dsListLock, releaseDsListLock = jd.dsListLock.AsyncLock()
+			dsListLock, releaseDsListLock, err = jd.dsListLock.AsyncLockWithCtx(ctx)
+			if err != nil {
+				return err
+			}
 			// refresh ds list
 			var dsList []dataSetT
 			var nextDSIdx string
@@ -3046,11 +2978,18 @@ func (jd *HandleT) refreshDSListLoop(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		}
-
-		jd.logger.Debugf("[[ %s : refreshDSListLoop ]]: Start", jd.tablePrefix)
-		jd.dsListLock.WithLock(func(l lock.DSListLockToken) {
+		start := time.Now()
+		jd.logger.Debugw("Start", "operation", "refreshDSListLoop")
+		timeoutCtx, cancel := context.WithTimeout(ctx, jd.refreshDSTimeout)
+		err := jd.dsListLock.WithLockInCtx(timeoutCtx, func(l lock.LockToken) error {
 			jd.refreshDSRangeList(l)
+			return nil
 		})
+		cancel()
+		if err != nil {
+			jd.logger.Errorf("Failed to refresh ds list: %v", err)
+		}
+		stats.Default.NewTaggedStat("refresh_ds_loop", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix, "error": strconv.FormatBool(err != nil)}).Since(start)
 	}
 }
 
@@ -3061,142 +3000,171 @@ func (jd *HandleT) migrateDSLoop(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		}
-		jd.logger.Debugf("[[ %s : migrateDSLoop ]]: Start", jd.tablePrefix)
-		jd.dsListLock.RLock()
-		dsList := jd.getDSList()
-		jd.dsListLock.RUnlock()
-
-		var (
-			migrateFrom                                    []dataSetT
-			insertBeforeDS                                 dataSetT
-			liveJobCount, liveDSCount, migrateDSProbeCount int
-			// we don't want `maxDSSize` value to change, during dsList loop
-			maxDSSize = *jd.MaxDSSize
-			waiting   *smallDS
-		)
-
-		jd.logger.Debugf("[[ %s : migrateDSLoop ]]: DS list %+v", jd.tablePrefix, dsList)
-
-		for idx, ds := range dsList {
-			var idxCheck bool
-			if jd.ownerType == Read {
-				// if jobsdb owner is read, exempting the last two datasets from migration.
-				// This is done to avoid dsList conflicts between reader and writer
-				idxCheck = idx == len(dsList)-1 || idx == len(dsList)-2
-			} else {
-				idxCheck = idx == len(dsList)-1
-			}
-
-			if liveDSCount >= maxMigrateOnce || liveJobCount >= maxDSSize || idxCheck {
-				break
-			}
-
-			migrate, isSmall, recordsLeft := jd.checkIfMigrateDS(ds)
-			jd.logger.Debugf(
-				"[[ %s : migrateDSLoop ]]: Migrate check %v, is small: %v, records left: %d, ds: %v",
-				jd.tablePrefix, migrate, isSmall, recordsLeft, ds,
-			)
-
-			if migrate {
-				if waiting != nil { // add current and waiting DS, no matter if the current ds is small or not, it doesn't matter
-					migrateFrom = append(migrateFrom, waiting.ds, ds)
-					insertBeforeDS = dsList[idx+1]
-					liveJobCount += waiting.recordsLeft + recordsLeft
-					liveDSCount += 2
-					waiting = nil
-				} else if !isSmall || len(migrateFrom) > 0 { // add only if the current DS is not small or if we already have some DS in the list
-					migrateFrom = append(migrateFrom, ds)
-					insertBeforeDS = dsList[idx+1]
-					liveJobCount += recordsLeft
-					liveDSCount++
-				} else { // add the current small DS as waiting for the next iteration to pickup
-					waiting = &smallDS{ds: ds, recordsLeft: recordsLeft}
-				}
-			} else {
-				waiting = nil // if there was a small DS waiting, we should remove it since its next dataset is not eligible for migration
-				if liveDSCount > 0 || migrateDSProbeCount > maxMigrateDSProbe {
-					// DS is not eligible for migration. But there are data sets on the left eligible to migrate, so break.
-					break
-				}
-			}
-			migrateDSProbeCount++
+		start := time.Now()
+		jd.logger.Debugw("Start", "operation", "migrateDSLoop")
+		timeoutCtx, cancel := context.WithTimeout(ctx, jd.migrateDSTimeout)
+		err := jd.doMigrateDS(timeoutCtx)
+		cancel()
+		if err != nil {
+			jd.logger.Errorf("Failed to migrate ds: %v", err)
 		}
+		stats.Default.NewTaggedStat("migration_loop", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix, "error": strconv.FormatBool(err != nil)}).Since(start)
 
+	}
+}
+
+func (jd *HandleT) doMigrateDS(ctx context.Context) error {
+	if !jd.dsListLock.RTryLockWithCtx(ctx) {
+		return fmt.Errorf("could not acquire a dslist read lock: %w", ctx.Err())
+	}
+	dsList := jd.getDSList()
+	jd.dsListLock.RUnlock()
+
+	migrateFrom, pendingJobsCount, insertBeforeDS := jd.getMigrationList(dsList)
+
+	if len(migrateFrom) == 0 {
+		return nil
+	}
+	var l lock.LockToken
+	var lockChan chan<- lock.LockToken
+	err := jd.WithTx(func(tx *sql.Tx) error {
 		// Take the lock and run actual migration
-		jd.dsMigrationLock.Lock()
+		if !jd.dsMigrationLock.TryLockWithCtx(ctx) {
+			return fmt.Errorf("failed to acquire lock: %w", ctx.Err())
+		}
+		defer jd.dsMigrationLock.Unlock()
 
-		migrationLoopStat := stats.Default.NewTaggedStat("migration_loop", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix})
-		migrationLoopStat.Start()
-		var opID int64
-		// Add a temp DS to append to
-		if len(migrateFrom) > 0 {
-			if liveJobCount > 0 {
-				var migrateTo dataSetT
-				jd.dsListLock.WithLock(func(l lock.DSListLockToken) {
-					migrateTo = newDataSet(jd.tablePrefix, jd.computeNewIdxForIntraNodeMigration(l, insertBeforeDS))
-
-					jd.logger.Infof("[[ %s : migrateDSLoop ]]: Migrate from: %v", jd.tablePrefix, migrateFrom)
-					jd.logger.Infof("[[ %s : migrateDSLoop ]]: Next: %v", jd.tablePrefix, insertBeforeDS)
-					jd.logger.Infof("[[ %s : migrateDSLoop ]]: To: %v", jd.tablePrefix, migrateTo)
-					// Mark the start of copy operation. If we fail here
-					// we just delete the new DS being copied into. The
-					// sources are still around
-					opPayload, err := json.Marshal(&journalOpPayloadT{From: migrateFrom, To: migrateTo})
-					jd.assertError(err)
-					opID = jd.JournalMarkStart(migrateCopyOperation, opPayload)
-
-					jd.addDS(migrateTo)
-					jd.inProgressMigrationTargetDS = &migrateTo
-				})
-
-				totalJobsMigrated := 0
-				for _, ds := range migrateFrom {
-					jd.logger.Infof("[[ %s : migrateDSLoop ]]: Migrate: %v to: %v", jd.tablePrefix, ds, migrateTo)
-					noJobsMigrated, _ := jd.migrateJobs(ctx, ds, migrateTo)
-					totalJobsMigrated += noJobsMigrated
-				}
-				jd.logger.Infof("[[ %s : migrateDSLoop ]]: Total migrated %d jobs", jd.tablePrefix, totalJobsMigrated)
-
-				if totalJobsMigrated <= 0 {
-					jd.dsListLock.WithLock(func(_ lock.DSListLockToken) {
-						jd.mustDropDS(migrateTo)
-						jd.inProgressMigrationTargetDS = nil
-					})
-				}
-				jd.logger.Infof("[[ %s : migrateDSLoop ]]: Migrate DONE", jd.tablePrefix)
+		if pendingJobsCount > 0 { // migrate incomplete jobs
+			var destination dataSetT
+			err := jd.dsListLock.WithLockInCtx(ctx, func(l lock.LockToken) error {
+				destination = newDataSet(jd.tablePrefix, jd.computeNewIdxForIntraNodeMigration(l, insertBeforeDS))
+				return nil
+			})
+			if err != nil {
+				return err
 			}
 
-			err := jd.WithTx(func(tx *sql.Tx) error {
-				if opID > 0 {
-					// marking the previous operation as done and
-					// starting the next operation must be performed
-					// as a single atomic action (all or nothing)
-					err := jd.journalMarkDoneInTx(tx, opID)
-					if err != nil {
-						return err
-					}
-				}
-				// Mark the start of del operation. If we fail in between
-				// we need to finish deleting the source datasets. Cannot
-				// del the destination as some sources may have been deleted
-				opPayload, err := json.Marshal(&journalOpPayloadT{From: migrateFrom})
+			jd.logger.Infof("[[ migrateDSLoop ]]: Migrate from: %v", migrateFrom)
+			jd.logger.Infof("[[ migrateDSLoop ]]: To: %v", destination)
+			jd.logger.Infof("[[ migrateDSLoop ]]: Next: %v", insertBeforeDS)
+
+			opPayload, err := json.Marshal(&journalOpPayloadT{From: migrateFrom, To: destination})
+			if err != nil {
+				return err
+			}
+			opID, err := jd.JournalMarkStartInTx(tx, migrateCopyOperation, opPayload)
+			if err != nil {
+				return err
+			}
+
+			err = jd.addDSInTx(tx, destination)
+			if err != nil {
+				return err
+			}
+
+			totalJobsMigrated := 0
+			var noJobsMigrated int
+			for _, source := range migrateFrom {
+				jd.logger.Infof("[[ migrateDSLoop ]]: Migrate: %v to: %v", source, destination)
+				noJobsMigrated, err = jd.migrateJobsInTx(ctx, tx, source, destination)
 				if err != nil {
 					return err
 				}
-				opID, err = jd.JournalMarkStartInTx(tx, postMigrateDSOperation, opPayload)
+				totalJobsMigrated += noJobsMigrated
+			}
+			err = jd.journalMarkDoneInTx(tx, opID)
+			if err != nil {
 				return err
-			})
-			jd.assertError(err)
-
-			jd.dsListLock.WithLock(func(l lock.DSListLockToken) {
-				jd.assertError(jd.postMigrateHandleDS(l, migrateFrom))
-			})
-
-			jd.JournalMarkDone(opID)
+			}
+			jd.logger.Infof("[[ migrateDSLoop ]]: Total migrated %d jobs", totalJobsMigrated)
 		}
-		migrationLoopStat.End()
-		jd.dsMigrationLock.Unlock()
+
+		opPayload, err := json.Marshal(&journalOpPayloadT{From: migrateFrom})
+		if err != nil {
+			return err
+		}
+		opID, err := jd.JournalMarkStartInTx(tx, postMigrateDSOperation, opPayload)
+		if err != nil {
+			return err
+		}
+		// acquire an async lock, as this needs to be released after the transaction commits
+		l, lockChan, err = jd.dsListLock.AsyncLockWithCtx(ctx)
+		if err != nil {
+			return err
+		}
+		err = jd.postMigrateHandleDS(tx, migrateFrom)
+		if err != nil {
+			return err
+		}
+		return jd.journalMarkDoneInTx(tx, opID)
+	})
+	if l != nil {
+		if err == nil {
+			jd.refreshDSRangeList(l)
+		}
+		lockChan <- l
 	}
+	return err
+}
+
+// getMigrationList returns the list of datasets to migrate from,
+// the number of unfinished jobs contained in these datasets
+// and the dataset before which the new (migrated) dataset that will hold these jobs needs to be created
+func (jd *HandleT) getMigrationList(dsList []dataSetT) (migrateFrom []dataSetT, pendingJobsCount int, insertBeforeDS dataSetT) {
+	var (
+		liveDSCount, migrateDSProbeCount int
+		// we don't want `maxDSSize` value to change, during dsList loop
+		maxDSSize = *jd.MaxDSSize
+		waiting   *smallDS
+	)
+
+	jd.logger.Debugf("[[ migrateDSLoop ]]: DS list %+v", dsList)
+
+	for idx, ds := range dsList {
+		var idxCheck bool
+		if jd.ownerType == Read {
+			// if jobsdb owner is read, exempting the last two datasets from migration.
+			// This is done to avoid dsList conflicts between reader and writer
+			idxCheck = idx == len(dsList)-1 || idx == len(dsList)-2
+		} else {
+			idxCheck = idx == len(dsList)-1
+		}
+
+		if liveDSCount >= maxMigrateOnce || pendingJobsCount >= maxDSSize || idxCheck {
+			break
+		}
+
+		migrate, isSmall, recordsLeft := jd.checkIfMigrateDS(ds)
+		jd.logger.Debugf(
+			"[[ migrateDSLoop ]]: Migrate check %v, is small: %v, records left: %d, ds: %v",
+			migrate, isSmall, recordsLeft, ds,
+		)
+
+		if migrate {
+			if waiting != nil { // add current and waiting DS, no matter if the current ds is small or not, it doesn't matter
+				migrateFrom = append(migrateFrom, waiting.ds, ds)
+				insertBeforeDS = dsList[idx+1]
+				pendingJobsCount += waiting.recordsLeft + recordsLeft
+				liveDSCount += 2
+				waiting = nil
+			} else if !isSmall || len(migrateFrom) > 0 { // add only if the current DS is not small or if we already have some DS in the list
+				migrateFrom = append(migrateFrom, ds)
+				insertBeforeDS = dsList[idx+1]
+				pendingJobsCount += recordsLeft
+				liveDSCount++
+			} else { // add the current small DS as waiting for the next iteration to pickup
+				waiting = &smallDS{ds: ds, recordsLeft: recordsLeft}
+			}
+		} else {
+			waiting = nil // if there was a small DS waiting, we should remove it since its next dataset is not eligible for migration
+			if liveDSCount > 0 || migrateDSProbeCount > maxMigrateDSProbe {
+				// DS is not eligible for migration. But there are data sets on the left eligible to migrate, so break.
+				break
+			}
+		}
+		migrateDSProbeCount++
+	}
+	return
 }
 
 func (jd *HandleT) backupDSLoop(ctx context.Context) {
@@ -3670,7 +3638,7 @@ func (jd *HandleT) getBackupDSRange() *dataSetRangeT {
 	}
 	jd.statPreDropTableCount.Gauge(len(dnumList))
 
-	sortDnumList(jd, dnumList)
+	sortDnumList(dnumList)
 
 	backupDS = dataSetT{
 		JobTable:       fmt.Sprintf("%s%s_jobs_%s", preDropTablePrefix, jd.tablePrefix, dnumList[0]),
@@ -3918,7 +3886,7 @@ func (jd *HandleT) recoverFromJournal(owner OwnerType) {
 }
 
 func (jd *HandleT) UpdateJobStatus(ctx context.Context, statusList []*JobStatusT, customValFilters []string, parameterFilters []ParameterFilterT) error {
-	return jd.WithUpdateSafeTx(func(tx UpdateSafeTx) error {
+	return jd.WithUpdateSafeTx(ctx, func(tx UpdateSafeTx) error {
 		return jd.UpdateJobStatusInTx(ctx, tx, statusList, customValFilters, parameterFilters)
 	})
 }
@@ -4043,7 +4011,7 @@ func (jd *HandleT) doUpdateJobStatusInTx(ctx context.Context, tx *sql.Tx, status
 // Store stores new jobs to the jobsdb.
 // If enableWriterQueue is true, this goes through writer worker pool.
 func (jd *HandleT) Store(ctx context.Context, jobList []*JobT) error {
-	return jd.WithStoreSafeTx(func(tx StoreSafeTx) error {
+	return jd.WithStoreSafeTx(ctx, func(tx StoreSafeTx) error {
 		return jd.StoreInTx(ctx, tx, jobList)
 	})
 }
@@ -4062,14 +4030,14 @@ func (jd *HandleT) StoreInTx(ctx context.Context, tx StoreSafeTx, jobList []*Job
 	}
 
 	if tx.storeSafeTxIdentifier() != jd.Identifier() {
-		return jd.inStoreSafeCtx(storeCmd)
+		return jd.inStoreSafeCtx(ctx, storeCmd)
 	}
 	return storeCmd()
 }
 
 func (jd *HandleT) StoreWithRetryEach(ctx context.Context, jobList []*JobT) map[uuid.UUID]string {
 	var res map[uuid.UUID]string
-	_ = jd.WithStoreSafeTx(func(tx StoreSafeTx) error {
+	_ = jd.WithStoreSafeTx(ctx, func(tx StoreSafeTx) error {
 		var err error
 		res, err = jd.StoreWithRetryEachInTx(ctx, tx, jobList)
 		return err
@@ -4091,7 +4059,7 @@ func (jd *HandleT) StoreWithRetryEachInTx(ctx context.Context, tx StoreSafeTx, j
 	}
 
 	if tx.storeSafeTxIdentifier() != jd.Identifier() {
-		_ = jd.inStoreSafeCtx(storeCmd)
+		_ = jd.inStoreSafeCtx(ctx, storeCmd)
 		return res, err
 	}
 	_ = storeCmd()
@@ -4147,9 +4115,13 @@ func (jd *HandleT) getUnprocessed(ctx context.Context, params GetQueryParamsT) (
 	// The order of lock is very important. The migrateDSLoop
 	// takes lock in this order so reversing this will cause
 	// deadlocks
-	jd.dsMigrationLock.RLock()
-	jd.dsListLock.RLock()
+	if !jd.dsMigrationLock.RTryLockWithCtx(ctx) {
+		return JobsResult{}, fmt.Errorf("could not acquire a migration read lock: %w", ctx.Err())
+	}
 	defer jd.dsMigrationLock.RUnlock()
+	if !jd.dsListLock.RTryLockWithCtx(ctx) {
+		return JobsResult{}, fmt.Errorf("could not acquire a dslist read lock: %w", ctx.Err())
+	}
 	defer jd.dsListLock.RUnlock()
 
 	dsList := jd.getDSList()
@@ -4260,9 +4232,14 @@ func (jd *HandleT) deleteJobStatusInTx(txHandler transactionHandler, conditions 
 	// The order of lock is very important. The migrateDSLoop
 	// takes lock in this order so reversing this will cause
 	// deadlocks
-	jd.dsMigrationLock.RLock()
-	jd.dsListLock.RLock()
+	ctx := context.TODO()
+	if !jd.dsMigrationLock.RTryLockWithCtx(ctx) {
+		panic(fmt.Errorf("could not acquire a migration lock: %w", ctx.Err()))
+	}
 	defer jd.dsMigrationLock.RUnlock()
+	if !jd.dsListLock.RTryLockWithCtx(ctx) {
+		panic(fmt.Errorf("could not acquire a dslist lock: %w", ctx.Err()))
+	}
 	defer jd.dsListLock.RUnlock()
 
 	dsList := jd.getDSList()
@@ -4370,9 +4347,13 @@ func (jd *HandleT) GetProcessed(ctx context.Context, params GetQueryParamsT) (Jo
 	// The order of lock is very important. The migrateDSLoop
 	// takes lock in this order so reversing this will cause
 	// deadlocks
-	jd.dsMigrationLock.RLock()
-	jd.dsListLock.RLock()
+	if !jd.dsMigrationLock.RTryLockWithCtx(ctx) {
+		return JobsResult{}, fmt.Errorf("could not acquire a migration read lock: %w", ctx.Err())
+	}
 	defer jd.dsMigrationLock.RUnlock()
+	if !jd.dsListLock.RTryLockWithCtx(ctx) {
+		return JobsResult{}, fmt.Errorf("could not acquire a dslist read lock: %w", ctx.Err())
+	}
 	defer jd.dsListLock.RUnlock()
 
 	dsList := jd.getDSList()
@@ -4546,13 +4527,6 @@ func (jd *HandleT) Ping() error {
 	return nil
 }
 
-func (jd *HandleT) GetLastJobID() int64 {
-	jd.dsListLock.RLock()
-	dsList := jd.getDSList()
-	jd.dsListLock.RUnlock()
-	return jd.getMaxIDForDs(dsList[len(dsList)-1])
-}
-
 func (jd *HandleT) getMaxIDForDs(ds dataSetT) int64 {
 	var maxID sql.NullInt64
 	sqlStatement := fmt.Sprintf(`SELECT MAX(job_id) FROM %s`, ds.JobTable)
@@ -4569,11 +4543,13 @@ func (jd *HandleT) getMaxIDForDs(ds dataSetT) int64 {
 }
 
 func (jd *HandleT) GetLastJob() *JobT {
-	jd.dsListLock.RLock()
+	ctx := context.TODO()
+	if !jd.dsListLock.RTryLockWithCtx(ctx) {
+		panic(fmt.Errorf("could not acquire a dslist lock: %w", ctx.Err()))
+	}
 	defer jd.dsListLock.RUnlock()
 	dsList := jd.getDSList()
 	maxID := jd.getMaxIDForDs(dsList[len(dsList)-1])
-
 	var job JobT
 	sqlStatement := fmt.Sprintf(`SELECT %[1]s.job_id, %[1]s.uuid, %[1]s.user_id, %[1]s.parameters, %[1]s.custom_val, %[1]s.event_payload, %[1]s.created_at, %[1]s.expire_at FROM %[1]s WHERE %[1]s.job_id = %[2]d`, dsList[len(dsList)-1].JobTable, maxID)
 	err := jd.dbHandle.QueryRow(sqlStatement).Scan(&job.JobID, &job.UUID, &job.UserID, &job.Parameters, &job.CustomVal, &job.EventPayload, &job.CreatedAt, &job.ExpireAt)
