@@ -780,21 +780,16 @@ func (pg *HandleT) FetchSchema(warehouse warehouseutils.Warehouse) (schema wareh
 
 	schema = make(warehouseutils.SchemaT)
 	sqlStatement := `
-			select
-			  t.table_name,
-			  c.column_name,
-			  c.data_type
-			from
-			  INFORMATION_SCHEMA.TABLES t
-			  LEFT JOIN INFORMATION_SCHEMA.COLUMNS c ON (
-				t.table_name = c.table_name
-				and t.table_schema = c.table_schema
-			  )
-			WHERE
-			  t.table_schema = $1
-			  and t.table_name not like $2;
+		SELECT
+		  table_name,
+		  column_name,
+		  data_type
+		FROM
+		  INFORMATION_SCHEMA.COLUMNS
+		WHERE
+		  table_schema = $1
+		  AND table_name NOT LIKE $2;
 		`
-
 	rows, err := dbHandle.Query(
 		sqlStatement,
 		pg.Namespace,
