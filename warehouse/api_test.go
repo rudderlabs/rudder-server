@@ -8,7 +8,7 @@ import (
 
 var _ = Describe("warehouse_api", func() {
 	Context("Testing objectStorageValidation ", func() {
-		It("Should fallback to backup credentials when fields missing", func() {
+		It("Should fallback to backup credentials when fields missing(as of now backup only supported for s3)", func() {
 			fm := &filemanager.SettingsT{
 				Provider: "AZURE_BLOB",
 				Config:   map[string]interface{}{"containerName": "containerName1", "prefix": "prefix1", "accountKey": "accountKey1"},
