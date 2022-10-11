@@ -699,8 +699,8 @@ func (ms *HandleT) AddColumns(tableName string, columnsInfo warehouseutils.Colum
 			  FROM 
 				SYS.COLUMNS 
 			  WHERE 
-				OBJECT_ID = OBJECT_ID(N '%[1]s') 
-				AND name = '%[2]s'
+				OBJECT_ID = OBJECT_ID(N '%[1]s.%[2]s') 
+				AND name = '%[3]s'
 			)
 `,
 			ms.Namespace,
@@ -719,6 +719,9 @@ func (ms *HandleT) AddColumns(tableName string, columnsInfo warehouseutils.Colum
 		tableName,
 		columnsInfo.JoinColumns(format, ","),
 	)
+
+	sqlStatement := fmt.Sprintf(`IF NOT EXISTS (SELECT 1  FROM SYS.COLUMNS WHERE OBJECT_ID = OBJECT_ID(N'%[1]s') AND name = '%[2]s')
+			ALTER TABLE %[1]s ADD "%[2]s" %[3]s`, tableName, columnName, rudderDataTypesMapToMssql[columnType])
 
 	pkgLogger.Infof("MS: Adding column in mssql for MS:%s : %v", ms.Warehouse.Destination.ID, sqlStatement)
 	_, err = ms.Db.Exec(sqlStatement)
