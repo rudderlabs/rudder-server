@@ -10,6 +10,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/warehouse/validations"
+
 	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/controlplane"
@@ -19,7 +21,6 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
 	"github.com/rudderlabs/rudder-server/utils/types/deployment"
-	"github.com/rudderlabs/rudder-server/warehouse/configuration_testing"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 	"github.com/tidwall/gjson"
 	"google.golang.org/grpc"
@@ -774,13 +775,13 @@ func validateObjectStorage(ctx context.Context, request *ObjectStorageValidation
 		return fmt.Errorf("unable to create file manager: %s", err.Error())
 	}
 
-	req := configuration_testing.DestinationValidationRequest{
+	req := validations.DestinationValidationRequest{
 		Destination: backendconfig.DestinationT{
 			DestinationDefinition: backendconfig.DestinationDefinitionT{Name: request.Type},
 		},
 	}
 
-	filePath, err := configuration_testing.CreateTempLoadFile(&req)
+	filePath, err := validations.CreateTempLoadFile(&req)
 	if err != nil {
 		return fmt.Errorf("unable to create temp load file: %w", err)
 	}

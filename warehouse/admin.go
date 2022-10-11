@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/rudderlabs/rudder-server/warehouse/configuration_testing"
+	"github.com/rudderlabs/rudder-server/warehouse/validations"
 
 	"github.com/rudderlabs/rudder-server/admin"
 	"github.com/rudderlabs/rudder-server/warehouse/manager"
@@ -105,8 +105,8 @@ func (*WarehouseAdmin) ConfigurationTest(s ConfigurationTestInput, reply *Config
 
 	pkgLogger.Infof(`[WH Admin]: Validating warehouse destination: %s:%s`, warehouse.Type, warehouse.Destination.ID)
 
-	destinationValidator := configuration_testing.NewDestinationValidator()
-	req := &configuration_testing.DestinationValidationRequest{Destination: warehouse.Destination}
+	destinationValidator := validations.NewDestinationValidator()
+	req := &validations.DestinationValidationRequest{Destination: warehouse.Destination}
 	res, err := destinationValidator.ValidateCredentials(req)
 	if err != nil {
 		return fmt.Errorf("unable to successfully validate destination: %s credentials, err: %v", warehouse.Destination.ID, err)

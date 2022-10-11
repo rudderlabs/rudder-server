@@ -7,7 +7,7 @@ import (
 	"fmt"
 
 	proto "github.com/rudderlabs/rudder-server/proto/warehouse"
-	"github.com/rudderlabs/rudder-server/warehouse/configuration_testing"
+	"github.com/rudderlabs/rudder-server/warehouse/validations"
 	"google.golang.org/genproto/googleapis/rpc/code"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -70,7 +70,7 @@ func (*warehouseGRPC) TriggerWHUpload(_ context.Context, request *proto.WHUpload
 }
 
 func (*warehouseGRPC) Validate(_ context.Context, req *proto.WHValidationRequest) (*proto.WHValidationResponse, error) {
-	handleT := configuration_testing.CTHandleT{}
+	handleT := validations.CTHandleT{}
 	return handleT.Validating(req)
 }
 
