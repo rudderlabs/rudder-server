@@ -21,7 +21,7 @@ import (
 //	  	rt.workerProcess(worker)
 //	})
 func Go(function func()) {
-	go func() {
+	go func() { // skipcq: GO-E1007
 		ctx := bugsnag.StartSession(context.Background())
 		defer misc.BugsnagNotify(ctx, "Core")()
 		function()
@@ -29,7 +29,7 @@ func Go(function func()) {
 }
 
 func GoForWarehouse(function func()) {
-	go func() {
+	go func() { // skipcq: GO-E1007
 		ctx := bugsnag.StartSession(context.Background())
 		defer misc.BugsnagNotify(ctx, "Warehouse")()
 		function()
