@@ -29,6 +29,7 @@ var (
 	skipComputingUserLatestTraits   bool
 	enableSQLStatementExecutionPlan bool
 	txnRollbackTimeout              time.Duration
+	enableDeleteByJobs              bool
 )
 
 const (
@@ -147,6 +148,7 @@ func loadConfig() {
 	config.RegisterBoolConfigVariable(false, &skipComputingUserLatestTraits, true, "Warehouse.postgres.skipComputingUserLatestTraits")
 	config.RegisterDurationConfigVariable(30, &txnRollbackTimeout, true, time.Second, "Warehouse.postgres.txnRollbackTimeout")
 	config.RegisterBoolConfigVariable(false, &enableSQLStatementExecutionPlan, true, "Warehouse.postgres.enableSQLStatementExecutionPlan")
+	config.RegisterBoolConfigVariable(false, &enableDeleteByJobs, true, "Warehouse.postgres.enableDeleteByJobs")
 }
 
 func (pg *HandleT) getConnectionCredentials() CredentialsT {
@@ -422,6 +424,36 @@ func (pg *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 
 	pkgLogger.Infof("PG: Complete load for table:%s", tableName)
 	return
+}
+
+// Need to create a structure with delete parameters instead of simply adding a long list of params
+func (pq *HandleT) DeleteBy(tableNames []string, params warehouseutils.DeleteByParams) (err error) {
+	pkgLogger.Infof("PG: Cleaning up the followng tables in postgres for PG:%s : %+v", tableNames, params)
+	for _, tb := range tableNames {
+		sqlStatement := fmt.Sprintf(`DELETE FROM "%[1]s"."%[2]s" WHERE 
+		context_sources_job_run_id <> $1 AND
+		context_sources_task_run_id <> $2 AND
+		context_source_id = $3 AND
+		received_at < $4`,
+			pq.Namespace,
+			tb,
+		)
+		pkgLogger.Infof("PG: Deleting rows in table in postgres for PG:%s", pq.Warehouse.Destination.ID)
+		pkgLogger.Debugf("PG: Executing the sqlstatement  %v", sqlStatement)
+		if enableDeleteByJobs {
+			_, err = pq.Db.Exec(sqlStatement,
+				params.JobRunId,
+				params.TaskRunId,
+				params.SourceId,
+				params.StartTime)
+			if err != nil {
+				pkgLogger.Errorf("Error %s", err)
+				return err
+			}
+		}
+
+	}
+	return nil
 }
 
 func (pg *HandleT) loadUserTables() (errorMap map[string]error) {
