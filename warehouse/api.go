@@ -165,6 +165,8 @@ func (uploadsReq *UploadsReqT) GetWhUploads() (uploadsRes *proto.WHUploadsRespon
 		Limit:  uploadsReq.Limit,
 		Offset: uploadsReq.Offset,
 	}
+
+	// TODO: workspace ID can be used
 	authorizedSourceIDs := uploadsReq.authorizedSources()
 	if len(authorizedSourceIDs) == 0 {
 		return uploadsRes, nil

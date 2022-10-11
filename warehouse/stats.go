@@ -37,6 +37,7 @@ func (job *UploadJobT) timerStat(name string, extraTags ...tag) stats.Measuremen
 		"module":      moduleName,
 		"destType":    job.warehouse.Type,
 		"warehouseID": job.warehouseID(),
+		"workspaceId": job.upload.WorkspaceID,
 		"destID":      job.upload.DestinationID,
 		"sourceID":    job.upload.SourceID,
 	}
@@ -51,6 +52,7 @@ func (job *UploadJobT) counterStat(name string, extraTags ...tag) stats.Measurem
 		"module":      moduleName,
 		"destType":    job.warehouse.Type,
 		"warehouseID": job.warehouseID(),
+		"workspaceId": job.upload.WorkspaceID,
 		"destID":      job.upload.DestinationID,
 		"sourceID":    job.upload.SourceID,
 	}
@@ -65,6 +67,7 @@ func (job *UploadJobT) guageStat(name string, extraTags ...tag) stats.Measuremen
 		"module":         moduleName,
 		"destType":       job.warehouse.Type,
 		"warehouseID":    job.warehouseID(),
+		"workspaceId":    job.upload.WorkspaceID,
 		"destID":         job.upload.DestinationID,
 		"sourceID":       job.upload.SourceID,
 		"sourceCategory": job.upload.SourceCategory,
@@ -80,6 +83,7 @@ func (jobRun *JobRunT) timerStat(name string, extraTags ...tag) stats.Measuremen
 		"module":      moduleName,
 		"destType":    jobRun.job.DestinationType,
 		"warehouseID": jobRun.warehouseID(),
+		"workspaceId": jobRun.job.WorkspaceID,
 		"destID":      jobRun.job.DestinationID,
 		"sourceID":    jobRun.job.SourceID,
 	}
@@ -94,6 +98,7 @@ func (jobRun *JobRunT) counterStat(name string, extraTags ...tag) stats.Measurem
 		"module":      moduleName,
 		"destType":    jobRun.job.DestinationType,
 		"warehouseID": jobRun.warehouseID(),
+		"workspaceId": jobRun.job.WorkspaceID,
 		"destID":      jobRun.job.DestinationID,
 		"sourceID":    jobRun.job.SourceID,
 	}
@@ -120,7 +125,10 @@ func (job *UploadJobT) generateUploadSuccessMetrics() {
 	}
 	job.counterStat("num_staged_events").Count(int(numStagedEvents))
 	attempts := job.getAttemptNumber()
-	job.counterStat("upload_success", tag{name: "attempt_number", value: strconv.Itoa(attempts)}).Count(1)
+	job.counterStat("upload_success", tag{
+		name:  "attempt_number",
+		value: strconv.Itoa(attempts),
+	}).Count(1)
 }
 
 func (job *UploadJobT) generateUploadAbortedMetrics() {
@@ -157,7 +165,10 @@ func (job *UploadJobT) recordTableLoad(tableName string, numEvents int64) {
 	rudderAPISupportedEventTypes := []string{"tracks", "identifies", "pages", "screens", "aliases", "groups"}
 	if misc.Contains(rudderAPISupportedEventTypes, strings.ToLower(tableName)) {
 		// record total events synced (ignoring additional row synced to event table for eg.track call)
-		job.counterStat(`event_delivery`, tag{name: "tableName", value: strings.ToLower(tableName)}).Count(int(numEvents))
+		job.counterStat(`event_delivery`, tag{
+			name:  "tableName",
+			value: strings.ToLower(tableName),
+		}).Count(int(numEvents))
 	}
 
 	skipMetricTagForEachEventTable := config.GetBool("Warehouse.skipMetricTagForEachEventTable", false)
@@ -169,7 +180,10 @@ func (job *UploadJobT) recordTableLoad(tableName string, numEvents int64) {
 		}
 	}
 
-	job.counterStat(`rows_synced`, tag{name: "tableName", value: strings.ToLower(tableName)}).Count(int(numEvents))
+	job.counterStat(`rows_synced`, tag{
+		name:  "tableName",
+		value: strings.ToLower(tableName),
+	}).Count(int(numEvents))
 	// Delay for the oldest event in the batch
 	firstEventAt, err := getFirstStagedEventAt(job.upload.StartStagingFileID)
 	if err != nil {
@@ -184,7 +198,10 @@ func (job *UploadJobT) recordTableLoad(tableName string, numEvents int64) {
 		if config[warehouseutils.SyncFrequency] != nil {
 			syncFrequency, _ = config[warehouseutils.SyncFrequency].(string)
 		}
-		job.timerStat("event_delivery_time", tag{name: "tableName", value: strings.ToLower(tableName)}, tag{name: "syncFrequency", value: syncFrequency}).SendTiming(time.Since(firstEventAt))
+		job.timerStat("event_delivery_time",
+			tag{name: "tableName", value: strings.ToLower(tableName)},
+			tag{name: "syncFrequency", value: syncFrequency},
+		).Since(firstEventAt)
 	}
 }
 
@@ -203,26 +220,24 @@ func (job *UploadJobT) recordLoadFileGenerationTimeStat(startID, endID int64) (e
 	return nil
 }
 
-func recordStagedRowsStat(totalEvents int, destType, destID, sourceName, destName, sourceID string) {
+func getUploadStatusStat(name string, warehouse warehouseutils.Warehouse) stats.Measurement {
 	tags := map[string]string{
+		"workspaceId": warehouse.WorkspaceID,
 		"module":      moduleName,
-		"destType":    destType,
-		"warehouseID": getWarehouseTagName(destID, sourceName, destName, sourceID),
-	}
-	stats.Default.NewTaggedStat("rows_staged", stats.CountType, tags).Count(totalEvents)
-}
-
-func getUploadStatusStat(name, destType, destID, sourceName, destName, sourceID string) stats.Measurement {
-	tags := map[string]string{
-		"module":      moduleName,
-		"destType":    destType,
-		"warehouseID": getWarehouseTagName(destID, sourceName, destName, sourceID),
+		"destType":    warehouse.Type,
+		"warehouseID": getWarehouseTagName(
+			warehouse.Destination.ID,
+			warehouse.Source.Name,
+			warehouse.Destination.Name,
+			warehouse.Source.ID,
+		),
 	}
 	return stats.Default.NewTaggedStat(name, stats.CountType, tags)
 }
 
-func persistSSLFileErrorStat(destType, destName, destID, sourceName, sourceID, errTag string) {
+func persistSSLFileErrorStat(workspaceID, destType, destName, destID, sourceName, sourceID, errTag string) {
 	tags := map[string]string{
+		"workspaceId":   workspaceID,
 		"module":        moduleName,
 		"destType":      destType,
 		"warehouseID":   getWarehouseTagName(destID, sourceName, destName, sourceID),

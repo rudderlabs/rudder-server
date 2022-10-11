@@ -11,6 +11,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	"github.com/ory/dockertest/v3"
+	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/testhelper"
 	"github.com/rudderlabs/rudder-server/testhelper/destination"
@@ -75,16 +76,19 @@ var _ = Describe("Stats", Ordered, func() {
 			stats.Default = mockStats
 		})
 
-		It("Record staged rows stat", func() {
-			recordStagedRowsStat(100, destinationType, destinationID, sourceName, destinationName, sourceID)
-		})
-
 		It("Upload status stat", func() {
-			getUploadStatusStat(statName, destinationType, destinationID, sourceName, destinationName, sourceID)
+			getUploadStatusStat(statName, warehouseutils.Warehouse{
+				WorkspaceID: "workspaceID",
+				Source:      backendconfig.SourceT{ID: sourceID, Name: sourceName},
+				Destination: backendconfig.DestinationT{ID: destinationID, Name: destinationName},
+				Namespace:   "",
+				Type:        destinationType,
+				Identifier:  "",
+			})
 		})
 
 		It("Persist ssl file error stat", func() {
-			persistSSLFileErrorStat(destinationType, destinationName, destinationID, sourceName, sourceID, "")
+			persistSSLFileErrorStat("workspaceID", destinationType, destinationName, destinationID, sourceName, sourceID, "")
 		})
 	})
 
@@ -100,12 +104,12 @@ var _ = Describe("Stats", Ordered, func() {
 			stats.Default = mockStats
 
 			job = &UploadJobT{
-				upload: &UploadT{
+				upload: &Upload{
 					ID:                 uploadID,
 					StartStagingFileID: 1,
 					EndStagingFileID:   4,
 				},
-				warehouse: warehouseutils.WarehouseT{
+				warehouse: warehouseutils.Warehouse{
 					Type: "POSTGRES",
 				},
 			}
@@ -124,17 +128,18 @@ var _ = Describe("Stats", Ordered, func() {
 		mockStats, mockMeasurement := getMockStats(g)
 		mockStats.EXPECT().NewTaggedStat(gomock.Any(), gomock.Any(), gomock.Any()).Times(3).Return(mockMeasurement)
 		mockMeasurement.EXPECT().Count(4).Times(2)
-		mockMeasurement.EXPECT().SendTiming(gomock.Any()).Times(1)
+		mockMeasurement.EXPECT().Since(gomock.Any()).Times(1)
 
 		stats.Default = mockStats
 
 		job := &UploadJobT{
-			upload: &UploadT{
+			upload: &Upload{
+				WorkspaceID:        "workspaceID",
 				ID:                 uploadID,
 				StartStagingFileID: 1,
 				EndStagingFileID:   4,
 			},
-			warehouse: warehouseutils.WarehouseT{
+			warehouse: warehouseutils.Warehouse{
 				Type: "POSTGRES",
 			},
 		}
@@ -149,12 +154,12 @@ var _ = Describe("Stats", Ordered, func() {
 		stats.Default = mockStats
 
 		job := &UploadJobT{
-			upload: &UploadT{
+			upload: &Upload{
 				ID:                 uploadID,
 				StartStagingFileID: 1,
 				EndStagingFileID:   4,
 			},
-			warehouse: warehouseutils.WarehouseT{
+			warehouse: warehouseutils.Warehouse{
 				Type: "POSTGRES",
 			},
 			dbHandle: pgResource.DB,
