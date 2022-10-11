@@ -1323,22 +1323,22 @@ var _ = Describe("Utils", func() {
 		Entry(nil, AZURE_DATALAKE, 127),
 	)
 
-	DescribeTable("Identity mapping unique mapping constraints name", func(warehouse WarehouseT, expected string) {
+	DescribeTable("Identity mapping unique mapping constraints name", func(warehouse Warehouse, expected string) {
 		Expect(IdentityMappingsUniqueMappingConstraintName(warehouse)).To(Equal(expected))
 	},
-		Entry(nil, WarehouseT{Namespace: "namespace", Destination: backendconfig.DestinationT{ID: "id"}}, "unique_merge_property_namespace_id"),
+		Entry(nil, Warehouse{Namespace: "namespace", Destination: backendconfig.DestinationT{ID: "id"}}, "unique_merge_property_namespace_id"),
 	)
 
-	DescribeTable("Identity mapping table name", func(warehouse WarehouseT, expected string) {
+	DescribeTable("Identity mapping table name", func(warehouse Warehouse, expected string) {
 		Expect(IdentityMappingsTableName(warehouse)).To(Equal(expected))
 	},
-		Entry(nil, WarehouseT{Namespace: "namespace", Destination: backendconfig.DestinationT{ID: "id"}}, "rudder_identity_mappings_namespace_id"),
+		Entry(nil, Warehouse{Namespace: "namespace", Destination: backendconfig.DestinationT{ID: "id"}}, "rudder_identity_mappings_namespace_id"),
 	)
 
-	DescribeTable("Identity merge rules table name", func(warehouse WarehouseT, expected string) {
+	DescribeTable("Identity merge rules table name", func(warehouse Warehouse, expected string) {
 		Expect(IdentityMergeRulesTableName(warehouse)).To(Equal(expected))
 	},
-		Entry(nil, WarehouseT{Namespace: "namespace", Destination: backendconfig.DestinationT{ID: "id"}}, "rudder_identity_merge_rules_namespace_id"),
+		Entry(nil, Warehouse{Namespace: "namespace", Destination: backendconfig.DestinationT{ID: "id"}}, "rudder_identity_merge_rules_namespace_id"),
 	)
 
 	DescribeTable("Identity merge rules warehouse table name", func(provider string) {
