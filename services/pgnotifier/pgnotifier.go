@@ -447,7 +447,8 @@ func (notifier *PgNotifierT) claim(workerID string) (claim ClaimT, err error) {
 		  status, 
 		  payload, 
 		  workspace, 
-		  attempt;
+		  attempt,
+		  job_type;
 `,
 		queueName,
 		ExecutingState,
