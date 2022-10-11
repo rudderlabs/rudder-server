@@ -1111,6 +1111,7 @@ func (worker *workerT) sendRouterResponseCountStat(status *jobsdb.JobStatusT, de
 		"destType":       worker.rt.destName,
 		"respStatusCode": status.ErrorCode,
 		"destination":    destinationTag,
+		"destId":         destination.ID,
 		"attempt_number": strconv.Itoa(status.AttemptNum),
 		"workspaceId":    status.WorkspaceId,
 		// To indicate if the failure should be alerted for router-aborted-count
@@ -1127,6 +1128,7 @@ func (worker *workerT) sendEventDeliveryStat(destinationJobMetadata *types.JobMe
 		eventsDeliveredStat := stats.Default.NewTaggedStat("event_delivery", stats.CountType, stats.Tags{
 			"module":         "router",
 			"destType":       worker.rt.destName,
+			"destID":         destination.ID,
 			"destination":    destinationTag,
 			"attempt_number": strconv.Itoa(status.AttemptNum),
 			"workspaceId":    status.WorkspaceId,
@@ -1139,6 +1141,7 @@ func (worker *workerT) sendEventDeliveryStat(destinationJobMetadata *types.JobMe
 					"event_delivery_time", stats.TimerType, map[string]string{
 						"module":         "router",
 						"destType":       worker.rt.destName,
+						"destID":         destination.ID,
 						"destination":    destinationTag,
 						"attempt_number": strconv.Itoa(status.AttemptNum),
 						"workspaceId":    status.WorkspaceId,
