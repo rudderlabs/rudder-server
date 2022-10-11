@@ -34,7 +34,7 @@ type HandleT struct {
 	BQContext context.Context
 	Db        *bigquery.Client
 	Namespace string
-	Warehouse warehouseutils.WarehouseT
+	Warehouse warehouseutils.Warehouse
 	ProjectID string
 	Uploader  warehouseutils.UploaderI
 }
@@ -682,7 +682,7 @@ func dedupEnabled() bool {
 	return isDedupEnabled || isUsersTableDedupEnabled
 }
 
-func (bq *HandleT) CrashRecover(warehouse warehouseutils.WarehouseT) (err error) {
+func (bq *HandleT) CrashRecover(warehouse warehouseutils.Warehouse) (err error) {
 	if !dedupEnabled() {
 		return
 	}
@@ -739,7 +739,7 @@ func (bq *HandleT) dropDanglingStagingTables() bool {
 	return delSuccess
 }
 
-func (bq *HandleT) IsEmpty(warehouse warehouseutils.WarehouseT) (empty bool, err error) {
+func (bq *HandleT) IsEmpty(warehouse warehouseutils.Warehouse) (empty bool, err error) {
 	empty = true
 	bq.Warehouse = warehouse
 	bq.Namespace = warehouse.Namespace
@@ -776,7 +776,7 @@ func (bq *HandleT) IsEmpty(warehouse warehouseutils.WarehouseT) (empty bool, err
 	return
 }
 
-func (bq *HandleT) Setup(warehouse warehouseutils.WarehouseT, uploader warehouseutils.UploaderI) (err error) {
+func (bq *HandleT) Setup(warehouse warehouseutils.Warehouse, uploader warehouseutils.UploaderI) (err error) {
 	bq.Warehouse = warehouse
 	bq.Namespace = warehouse.Namespace
 	bq.Uploader = uploader
@@ -790,7 +790,7 @@ func (bq *HandleT) Setup(warehouse warehouseutils.WarehouseT, uploader warehouse
 	return err
 }
 
-func (bq *HandleT) TestConnection(warehouse warehouseutils.WarehouseT) (err error) {
+func (bq *HandleT) TestConnection(warehouse warehouseutils.Warehouse) (err error) {
 	bq.Warehouse = warehouse
 	bq.Db, err = bq.connect(BQCredentialsT{
 		ProjectID:   bq.ProjectID,
@@ -831,7 +831,7 @@ func (*HandleT) AlterColumn(_, _, _ string) (err error) {
 }
 
 // FetchSchema queries bigquery and returns the schema assoiciated with provided namespace
-func (bq *HandleT) FetchSchema(warehouse warehouseutils.WarehouseT) (schema warehouseutils.SchemaT, err error) {
+func (bq *HandleT) FetchSchema(warehouse warehouseutils.Warehouse) (schema warehouseutils.SchemaT, err error) {
 	bq.Warehouse = warehouse
 	bq.Namespace = warehouse.Namespace
 	bq.ProjectID = strings.TrimSpace(warehouseutils.GetConfigValue(GCPProjectID, bq.Warehouse))
@@ -1072,7 +1072,7 @@ func (bq *HandleT) GetTotalCountInTable(tableName string) (total int64, err erro
 	return
 }
 
-func (bq *HandleT) Connect(warehouse warehouseutils.WarehouseT) (client.Client, error) {
+func (bq *HandleT) Connect(warehouse warehouseutils.Warehouse) (client.Client, error) {
 	bq.Warehouse = warehouse
 	bq.Namespace = warehouse.Namespace
 	bq.ProjectID = strings.TrimSpace(warehouseutils.GetConfigValue(GCPProjectID, bq.Warehouse))

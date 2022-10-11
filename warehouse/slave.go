@@ -40,7 +40,7 @@ const (
 
 // JobRunT Temporary store for processing staging file to load file
 type JobRunT struct {
-	job                  PayloadT
+	job                  Payload
 	stagingFilePath      string
 	uuidTS               time.Time
 	outputFileWritersMap map[string]warehouseutils.LoadFileWriterI
@@ -90,7 +90,7 @@ func (jobRun *JobRunT) setStagingFileDownloadPath(index int) (filePath string) {
 	return filePath
 }
 
-func (job *PayloadT) sendDownloadStagingFileFailedStat() {
+func (job *Payload) sendDownloadStagingFileFailedStat() {
 	tags := []warehouseutils.Tag{
 		{
 			Name:  "destID",
@@ -105,7 +105,7 @@ func (job *PayloadT) sendDownloadStagingFileFailedStat() {
 }
 
 // Get fileManager
-func (job *PayloadT) getFileManager(config interface{}, useRudderStorage bool) (filemanager.FileManager, error) {
+func (job *Payload) getFileManager(config interface{}, useRudderStorage bool) (filemanager.FileManager, error) {
 	storageProvider := warehouseutils.ObjectStorageType(job.DestinationType, config, useRudderStorage)
 	fileManager, err := filemanager.DefaultFileManagerFactory.New(&filemanager.SettingsT{
 		Provider: storageProvider,
@@ -177,11 +177,11 @@ func (jobRun *JobRunT) downloadStagingFile() error {
 	return nil
 }
 
-func PickupStagingConfiguration(job *PayloadT) bool {
+func PickupStagingConfiguration(job *Payload) bool {
 	return job.StagingDestinationRevisionID != job.DestinationRevisionID && job.StagingDestinationConfig != nil
 }
 
-func (job *PayloadT) getDiscardsTable() string {
+func (job *Payload) getDiscardsTable() string {
 	return warehouseutils.ToProviderCase(job.DestinationType, warehouseutils.DiscardsTable)
 }
 
@@ -191,7 +191,7 @@ func (jobRun *JobRunT) getLoadFilePath(tableName string) string {
 	return strings.TrimSuffix(jobRun.stagingFilePath, "json.gz") + tableName + fmt.Sprintf(`.%s`, randomness) + fmt.Sprintf(`.%s`, warehouseutils.GetLoadFileFormat(job.DestinationType))
 }
 
-func (job *PayloadT) getColumnName(columnName string) string {
+func (job *Payload) getColumnName(columnName string) string {
 	return warehouseutils.ToProviderCase(job.DestinationType, columnName)
 }
 
@@ -308,7 +308,7 @@ func (jobRun *JobRunT) uploadLoadFileToObjectStorage(uploader filemanager.FileMa
 }
 
 // Sort columns per table to maintain same order in load file (needed in case of csv load file)
-func (job *PayloadT) getSortedColumnMapForAllTables() map[string][]string {
+func (job *Payload) getSortedColumnMapForAllTables() map[string][]string {
 	sortedTableColumnMap := make(map[string][]string)
 
 	for tableName, columnMap := range job.UploadSchema {
@@ -381,7 +381,7 @@ func (event *BatchRouterEventT) GetColumnInfo(columnName string) (columnInfo Col
 // 5. Delete the staging and load files from tmp directory
 //
 
-func processStagingFile(job PayloadT, workerIndex int) (loadFileUploadOutputs []loadFileUploadOutputT, err error) {
+func processStagingFile(job Payload, workerIndex int) (loadFileUploadOutputs []loadFileUploadOutputT, err error) {
 	processStartTime := time.Now()
 	jobRun := JobRunT{
 		job:          job,
@@ -568,7 +568,7 @@ func processClaimedUploadJob(claimedJob pgnotifier.ClaimT, workerIndex int) {
 		notifier.UpdateClaimedEvent(&claimedJob, &response)
 	}
 
-	var job PayloadT
+	var job Payload
 	err := json.Unmarshal(claimedJob.Payload, &job)
 	if err != nil {
 		handleErr(err, claimedJob)

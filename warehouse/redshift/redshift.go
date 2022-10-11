@@ -46,7 +46,7 @@ func loadConfig() {
 type HandleT struct {
 	Db             *sql.DB
 	Namespace      string
-	Warehouse      warehouseutils.WarehouseT
+	Warehouse      warehouseutils.Warehouse
 	Uploader       warehouseutils.UploaderI
 	ConnectTimeout time.Duration
 }
@@ -637,7 +637,7 @@ func (rs *HandleT) getConnectionCredentials() RedshiftCredentialsT {
 }
 
 // FetchSchema queries redshift and returns the schema assoiciated with provided namespace
-func (rs *HandleT) FetchSchema(warehouse warehouseutils.WarehouseT) (schema warehouseutils.SchemaT, err error) {
+func (rs *HandleT) FetchSchema(warehouse warehouseutils.Warehouse) (schema warehouseutils.SchemaT, err error) {
 	rs.Warehouse = warehouse
 	rs.Namespace = warehouse.Namespace
 	dbHandle, err := Connect(rs.getConnectionCredentials())
@@ -685,7 +685,7 @@ func (rs *HandleT) FetchSchema(warehouse warehouseutils.WarehouseT) (schema ware
 	return
 }
 
-func (rs *HandleT) Setup(warehouse warehouseutils.WarehouseT, uploader warehouseutils.UploaderI) (err error) {
+func (rs *HandleT) Setup(warehouse warehouseutils.Warehouse, uploader warehouseutils.UploaderI) (err error) {
 	rs.Warehouse = warehouse
 	rs.Namespace = warehouse.Namespace
 	rs.Uploader = uploader
@@ -694,7 +694,7 @@ func (rs *HandleT) Setup(warehouse warehouseutils.WarehouseT, uploader warehouse
 	return err
 }
 
-func (rs *HandleT) TestConnection(warehouse warehouseutils.WarehouseT) (err error) {
+func (rs *HandleT) TestConnection(warehouse warehouseutils.Warehouse) (err error) {
 	rs.Warehouse = warehouse
 	rs.Db, err = Connect(rs.getConnectionCredentials())
 	if err != nil {
@@ -723,7 +723,7 @@ func (rs *HandleT) Cleanup() {
 	}
 }
 
-func (rs *HandleT) CrashRecover(warehouse warehouseutils.WarehouseT) (err error) {
+func (rs *HandleT) CrashRecover(warehouse warehouseutils.Warehouse) (err error) {
 	rs.Warehouse = warehouse
 	rs.Namespace = warehouse.Namespace
 	rs.Db, err = Connect(rs.getConnectionCredentials())
@@ -735,7 +735,7 @@ func (rs *HandleT) CrashRecover(warehouse warehouseutils.WarehouseT) (err error)
 	return
 }
 
-func (*HandleT) IsEmpty(_ warehouseutils.WarehouseT) (empty bool, err error) {
+func (*HandleT) IsEmpty(_ warehouseutils.Warehouse) (empty bool, err error) {
 	return
 }
 
@@ -769,7 +769,7 @@ func (rs *HandleT) GetTotalCountInTable(tableName string) (total int64, err erro
 	return
 }
 
-func (rs *HandleT) Connect(warehouse warehouseutils.WarehouseT) (client.Client, error) {
+func (rs *HandleT) Connect(warehouse warehouseutils.Warehouse) (client.Client, error) {
 	rs.Warehouse = warehouse
 	rs.Namespace = warehouse.Namespace
 	dbHandle, err := Connect(rs.getConnectionCredentials())
