@@ -98,7 +98,7 @@ func run(m *testing.M) int {
 		}
 		return nil
 	}); err != nil {
-		log.Fatalf("Could not connect to docker: %s", err)
+		panic(fmt.Errorf("Could not connect to docker: %s", err))
 	}
 	fmt.Println("minio is up & running properly")
 
