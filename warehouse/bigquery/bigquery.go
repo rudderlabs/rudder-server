@@ -29,12 +29,12 @@ var (
 )
 
 type HandleT struct {
-	bgContext context.Context
-	db        *bigquery.Client
-	namespace string
-	warehouse warehouseutils.Warehouse
-	projectID string
-	uploader  warehouseutils.UploaderI
+	backgroundContext context.Context
+	db                *bigquery.Client
+	namespace         string
+	warehouse         warehouseutils.Warehouse
+	projectID         string
+	uploader          warehouseutils.UploaderI
 }
 
 type StagingLoadTableT struct {
@@ -106,7 +106,7 @@ func getTableSchema(columns map[string]string) []*bigquery.FieldSchema {
 
 func (bq *HandleT) DeleteTable(tableName string) (err error) {
 	tableRef := bq.db.Dataset(bq.namespace).Table(tableName)
-	err = tableRef.Delete(bq.bgContext)
+	err = tableRef.Delete(bq.backgroundContext)
 	return
 }
 
@@ -118,7 +118,7 @@ func (bq *HandleT) CreateTable(tableName string, columnMap map[string]string) (e
 		TimePartitioning: &bigquery.TimePartitioning{},
 	}
 	tableRef := bq.db.Dataset(bq.namespace).Table(tableName)
-	err = tableRef.Create(bq.bgContext, metaData)
+	err = tableRef.Create(bq.backgroundContext, metaData)
 	if !checkAndIgnoreAlreadyExistError(err) {
 		return
 	}
@@ -161,14 +161,14 @@ func (bq *HandleT) createTableView(tableName string, columnMap map[string]string
 		ViewQuery: viewQuery,
 	}
 	tableRef := bq.db.Dataset(bq.namespace).Table(tableName + "_view")
-	err = tableRef.Create(bq.bgContext, metaData)
+	err = tableRef.Create(bq.backgroundContext, metaData)
 	return
 }
 
 func (bq *HandleT) addColumn(tableName, columnName, columnType string) (err error) {
 	pkgLogger.Infof("BQ: Adding columns in table %s in bigquery dataset: %s in project: %s", tableName, bq.namespace, bq.projectID)
 	tableRef := bq.db.Dataset(bq.namespace).Table(tableName)
-	meta, err := tableRef.Metadata(bq.bgContext)
+	meta, err := tableRef.Metadata(bq.backgroundContext)
 	if err != nil {
 		return err
 	}
@@ -178,13 +178,13 @@ func (bq *HandleT) addColumn(tableName, columnName, columnType string) (err erro
 	update := bigquery.TableMetadataToUpdate{
 		Schema: newSchema,
 	}
-	_, err = tableRef.Update(bq.bgContext, update, meta.ETag)
+	_, err = tableRef.Update(bq.backgroundContext, update, meta.ETag)
 	return
 }
 
 func (bq *HandleT) schemaExists(_, _ string) (exists bool, err error) {
 	ds := bq.db.Dataset(bq.namespace)
-	_, err = ds.Metadata(bq.bgContext)
+	_, err = ds.Metadata(bq.backgroundContext)
 	if err != nil {
 		if e, ok := err.(*googleapi.Error); ok && e.Code == 404 {
 			pkgLogger.Debugf("BQ: Dataset %s not found", bq.namespace)
@@ -218,7 +218,7 @@ func (bq *HandleT) CreateSchema() (err error) {
 		Location: location,
 	}
 	pkgLogger.Infof("BQ: Creating schema: %s ...", bq.namespace)
-	err = ds.Create(bq.bgContext, meta)
+	err = ds.Create(bq.backgroundContext, meta)
 	if err != nil {
 		if e, ok := err.(*googleapi.Error); ok && e.Code == 409 {
 			pkgLogger.Infof("BQ: Create schema %s failed as schema already exists", bq.namespace)
@@ -273,12 +273,12 @@ func (bq *HandleT) DeleteBy(tableNames []string, params warehouseutils.DeleteByP
 			{Name: "starttime", Value: params.StartTime},
 		}
 		if enableDeleteByJobs {
-			job, err := query.Run(bq.bgContext)
+			job, err := query.Run(bq.backgroundContext)
 			if err != nil {
 				pkgLogger.Errorf("BQ: Error initiating load job: %v\n", err)
 				return err
 			}
-			status, err := job.Wait(bq.bgContext)
+			status, err := job.Wait(bq.backgroundContext)
 			if err != nil {
 				pkgLogger.Errorf("BQ: Error running job: %v\n", err)
 				return err
@@ -327,12 +327,12 @@ func (bq *HandleT) loadTable(tableName string, _, getLoadFileLocFromTableUploads
 
 		loader := bq.db.Dataset(bq.namespace).Table(outputTable).LoaderFrom(gcsRef)
 
-		job, err := loader.Run(bq.bgContext)
+		job, err := loader.Run(bq.backgroundContext)
 		if err != nil {
 			pkgLogger.Errorf("BQ: Error initiating append load job: %v\n", err)
 			return
 		}
-		status, err := job.Wait(bq.bgContext)
+		status, err := job.Wait(bq.backgroundContext)
 		if err != nil {
 			pkgLogger.Errorf("BQ: Error running append load job: %v\n", err)
 			return
@@ -355,19 +355,19 @@ func (bq *HandleT) loadTable(tableName string, _, getLoadFileLocFromTableUploads
 			TimePartitioning: &bigquery.TimePartitioning{},
 		}
 		tableRef := bq.db.Dataset(bq.namespace).Table(stagingTableName)
-		err = tableRef.Create(bq.bgContext, metaData)
+		err = tableRef.Create(bq.backgroundContext, metaData)
 		if err != nil {
 			pkgLogger.Infof("BQ: Error creating temporary staging table %s", stagingTableName)
 			return
 		}
 
 		loader := bq.db.Dataset(bq.namespace).Table(stagingTableName).LoaderFrom(gcsRef)
-		job, err := loader.Run(bq.bgContext)
+		job, err := loader.Run(bq.backgroundContext)
 		if err != nil {
 			pkgLogger.Errorf("BQ: Error initiating staging table load job: %v\n", err)
 			return
 		}
-		status, err := job.Wait(bq.bgContext)
+		status, err := job.Wait(bq.backgroundContext)
 		if err != nil {
 			pkgLogger.Errorf("BQ: Error running staging table load job: %v\n", err)
 			return
@@ -427,12 +427,12 @@ func (bq *HandleT) loadTable(tableName string, _, getLoadFileLocFromTableUploads
 		pkgLogger.Infof("BQ: Dedup records for table:%s using staging table: %s\n", tableName, sqlStatement)
 
 		q := bq.db.Query(sqlStatement)
-		job, err = q.Run(bq.bgContext)
+		job, err = q.Run(bq.backgroundContext)
 		if err != nil {
 			pkgLogger.Errorf("BQ: Error initiating merge load job: %v\n", err)
 			return
 		}
-		status, err = job.Wait(bq.bgContext)
+		status, err = job.Wait(bq.backgroundContext)
 		if err != nil {
 			pkgLogger.Errorf("BQ: Error running merge load job: %v\n", err)
 			return
@@ -541,13 +541,13 @@ func (bq *HandleT) LoadUserTables() (errorMap map[string]error) {
 		query.QueryConfig.Dst = bq.db.Dataset(bq.namespace).Table(partitionedUsersTable)
 		query.WriteDisposition = bigquery.WriteAppend
 
-		job, err := query.Run(bq.bgContext)
+		job, err := query.Run(bq.backgroundContext)
 		if err != nil {
 			pkgLogger.Errorf("BQ: Error initiating load job: %v\n", err)
 			errorMap[warehouseutils.UsersTable] = err
 			return
 		}
-		status, err := job.Wait(bq.bgContext)
+		status, err := job.Wait(bq.backgroundContext)
 		if err != nil {
 			pkgLogger.Errorf("BQ: Error running load job: %v\n", err)
 			errorMap[warehouseutils.UsersTable] = fmt.Errorf(`append: %v`, err.Error())
@@ -566,14 +566,14 @@ func (bq *HandleT) LoadUserTables() (errorMap map[string]error) {
 		query := bq.db.Query(sqlStatement)
 		query.QueryConfig.Dst = bq.db.Dataset(bq.namespace).Table(stagingTableName)
 		query.WriteDisposition = bigquery.WriteAppend
-		job, err := query.Run(bq.bgContext)
+		job, err := query.Run(bq.backgroundContext)
 		if err != nil {
 			pkgLogger.Errorf("BQ: Error initiating staging table for users : %v\n", err)
 			errorMap[warehouseutils.UsersTable] = err
 			return
 		}
 
-		status, err := job.Wait(bq.bgContext)
+		status, err := job.Wait(bq.backgroundContext)
 		if err != nil {
 			pkgLogger.Errorf("BQ: Error initiating staging table for users %v\n", err)
 			errorMap[warehouseutils.UsersTable] = fmt.Errorf(`merge: %v`, err.Error())
@@ -614,13 +614,13 @@ func (bq *HandleT) LoadUserTables() (errorMap map[string]error) {
 		pkgLogger.Infof(`BQ: Loading data into users table: %v`, sqlStatement)
 		// partitionedUsersTable := partitionedTable(warehouseutils.UsersTable, partitionDate)
 		q := bq.db.Query(sqlStatement)
-		job, err = q.Run(bq.bgContext)
+		job, err = q.Run(bq.backgroundContext)
 		if err != nil {
 			pkgLogger.Errorf("BQ: Error initiating merge load job: %v\n", err)
 			errorMap[warehouseutils.UsersTable] = err
 			return
 		}
-		status, err = job.Wait(bq.bgContext)
+		status, err = job.Wait(bq.backgroundContext)
 		if err != nil {
 			pkgLogger.Errorf("BQ: Error running merge load job: %v\n", err)
 			errorMap[warehouseutils.UsersTable] = fmt.Errorf(`merge: %v`, err.Error())
@@ -662,8 +662,8 @@ func Connect(context context.Context, cred *BQCredentialsT) (*bigquery.Client, e
 
 func (bq *HandleT) connect(cred BQCredentialsT) (*bigquery.Client, error) {
 	pkgLogger.Infof("BQ: Connecting to BigQuery in project: %s", cred.ProjectID)
-	bq.bgContext = context.Background()
-	client, err := Connect(bq.bgContext, &cred)
+	bq.backgroundContext = context.Background()
+	client, err := Connect(bq.backgroundContext, &cred)
 	return client, err
 }
 
@@ -717,7 +717,7 @@ func (bq *HandleT) dropDanglingStagingTables() bool {
 		fmt.Sprintf(`%s%%`, warehouseutils.StagingTablePrefix(provider)),
 	)
 	query := bq.db.Query(sqlStatement)
-	it, err := query.Read(bq.bgContext)
+	it, err := query.Read(bq.backgroundContext)
 	if err != nil {
 		pkgLogger.Errorf("WH: BQ: Error dropping dangling staging tables in BQ: %v\nQuery: %s\n", err, sqlStatement)
 		return false
@@ -793,7 +793,7 @@ func (bq *HandleT) Setup(warehouse warehouseutils.Warehouse, uploader warehouseu
 	bq.uploader = uploader
 	bq.projectID = strings.TrimSpace(warehouseutils.GetConfigValue(GCPProjectID, bq.warehouse))
 
-	bq.bgContext = context.Background()
+	bq.backgroundContext = context.Background()
 	bq.db, err = bq.connect(BQCredentialsT{
 		ProjectID:   bq.projectID,
 		Credentials: warehouseutils.GetConfigValue(GCPCredentials, bq.warehouse),
@@ -876,7 +876,7 @@ func (bq *HandleT) FetchSchema(warehouse warehouseutils.Warehouse) (schema wareh
 	)
 	query := dbClient.Query(sqlStatement)
 
-	it, err := query.Read(bq.bgContext)
+	it, err := query.Read(bq.backgroundContext)
 	if err != nil {
 		if e, ok := err.(*googleapi.Error); ok {
 			// if dataset resource is not found, return empty schema
@@ -1123,11 +1123,11 @@ func (bq *HandleT) LoadTestTable(location, tableName string, _ map[string]interf
 	outputTable := partitionedTable(tableName, time.Now().Format("2006-01-02"))
 	loader := bq.db.Dataset(bq.namespace).Table(outputTable).LoaderFrom(gcsRef)
 
-	job, err := loader.Run(bq.bgContext)
+	job, err := loader.Run(bq.backgroundContext)
 	if err != nil {
 		return
 	}
-	status, err := job.Wait(bq.bgContext)
+	status, err := job.Wait(bq.backgroundContext)
 	if err != nil {
 		return
 	}
