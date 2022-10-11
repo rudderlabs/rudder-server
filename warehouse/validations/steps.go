@@ -1,4 +1,4 @@
-package configuration_testing
+package validations
 
 import (
 	"encoding/json"
@@ -23,7 +23,7 @@ func (ct *CTHandleT) validationStepsFunc(req json.RawMessage, _ string) (json.Ra
 func (ct *CTHandleT) validationSteps() []*validationStep {
 	steps := []*validationStep{{
 		ID:        1,
-		Name:      "Verifying Object Storage",
+		Name:      verifyingObjectStorage,
 		Validator: ct.verifyingObjectStorage,
 	}}
 
@@ -35,27 +35,27 @@ func (ct *CTHandleT) validationSteps() []*validationStep {
 	steps = append(steps,
 		&validationStep{
 			ID:        2,
-			Name:      "Verifying Connections",
+			Name:      verifyingConnections,
 			Validator: ct.verifyingConnections,
 		},
 		&validationStep{
 			ID:        3,
-			Name:      "Verifying Create Schema",
+			Name:      verifyingCreateSchema,
 			Validator: ct.verifyingCreateSchema,
 		},
 		&validationStep{
 			ID:        4,
-			Name:      "Verifying Create and Alter Table",
+			Name:      verifyingCreateAndAlterTable,
 			Validator: ct.verifyingCreateAlterTable,
 		},
 		&validationStep{
 			ID:        5,
-			Name:      "Verifying Fetch Schema",
+			Name:      verifyingFetchSchema,
 			Validator: ct.verifyingFetchSchema,
 		},
 		&validationStep{
 			ID:        6,
-			Name:      "Verifying Load Table",
+			Name:      verifyingLoadTable,
 			Validator: ct.verifyingLoadTable,
 		},
 	)

@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"reflect"
 	"regexp"
 	"sort"
 	"strings"
@@ -20,6 +21,7 @@ import (
 	"github.com/Azure/azure-storage-blob-go/azblob"
 	"github.com/aws/aws-sdk-go/service/s3"
 	"github.com/aws/aws-sdk-go/service/sts"
+	"github.com/gofrs/uuid"
 	"github.com/iancoleman/strcase"
 	"github.com/tidwall/gjson"
 
@@ -61,6 +63,7 @@ const (
 	WarehouseUploadsTable      = "wh_uploads"
 	WarehouseTableUploadsTable = "wh_table_uploads"
 	WarehouseSchemasTable      = "wh_schemas"
+	WarehouseAsyncJobTable     = "wh_async_jobs"
 )
 
 const (
@@ -96,6 +99,35 @@ const (
 	RUDDER_MISSING_DATATYPE = "warehouse_rudder_missing_datatype"
 )
 
+const (
+	stagingTablePrefix = "rudder_staging_"
+)
+
+// Object storages
+const (
+	S3         = "S3"
+	AZURE_BLOB = "AZURE_BLOB"
+	GCS        = "GCS"
+	MINIO      = "MINIO"
+)
+
+// Cloud providers
+const (
+	AWS   = "AWS"
+	GCP   = "GCP"
+	AZURE = "AZURE"
+)
+
+const (
+	AWSAccessKey         = "accessKey"
+	AWSAccessSecret      = "accessKeyID"
+	AWSBucketNameConfig  = "bucketName"
+	AWSRegion            = "region"
+	AWSS3Prefix          = "prefix"
+	MinioAccessKeyID     = "accessKeyID"
+	MinioSecretAccessKey = "secretAccessKey"
+)
+
 var (
 	IdentityEnabledWarehouses []string
 	enableIDResolution        bool
@@ -117,17 +149,17 @@ var WHDestNameMap = map[string]string{
 }
 
 var ObjectStorageMap = map[string]string{
-	RS:             "S3",
-	S3_DATALAKE:    "S3",
-	BQ:             "GCS",
-	GCS_DATALAKE:   "GCS",
-	AZURE_DATALAKE: "AZURE_BLOB",
+	RS:             S3,
+	S3_DATALAKE:    S3,
+	BQ:             GCS,
+	GCS_DATALAKE:   GCS,
+	AZURE_DATALAKE: AZURE_BLOB,
 }
 
 var SnowflakeStorageMap = map[string]string{
-	"AWS":   "S3",
-	"GCP":   "GCS",
-	"AZURE": "AZURE_BLOB",
+	AWS:   S3,
+	GCP:   GCS,
+	AZURE: AZURE_BLOB,
 }
 
 var DiscardsSchema = map[string]string{
@@ -175,7 +207,8 @@ func loadConfig() {
 	config.RegisterInt64ConfigVariable(8, &parquetParallelWriters, true, 1, "Warehouse.parquetParallelWriters")
 }
 
-type WarehouseT struct {
+type Warehouse struct {
+	WorkspaceID string
 	Source      backendconfig.SourceT
 	Destination backendconfig.DestinationT
 	Namespace   string
@@ -183,7 +216,20 @@ type WarehouseT struct {
 	Identifier  string
 }
 
-func (w *WarehouseT) GetBoolDestinationConfig(key string) bool {
+type DeleteByMetaData struct {
+	JobRunId  string `json:"job_run_id"`
+	TaskRunId string `json:"task_run_id"`
+	StartTime string `json:"start_time"`
+}
+
+type DeleteByParams struct {
+	SourceId  string
+	JobRunId  string
+	TaskRunId string
+	StartTime string
+}
+
+func (w *Warehouse) GetBoolDestinationConfig(key string) bool {
 	destConfig := w.Destination.Config
 	if destConfig[key] != nil {
 		if val, ok := destConfig[key].(bool); ok {
@@ -208,7 +254,8 @@ type KeyValue struct {
 	Value interface{}
 }
 
-type StagingFileT struct {
+type StagingFile struct {
+	WorkspaceID           string
 	Schema                map[string]map[string]interface{}
 	BatchDestination      DestinationT
 	Location              string
@@ -358,11 +405,11 @@ func GetNamespace(source backendconfig.SourceT, destination backendconfig.Destin
 // eg. For provider as S3: https://test-bucket.s3.amazonaws.com/test-object.csv --> s3://test-bucket/test-object.csv
 func GetObjectFolder(provider, location string) (folder string) {
 	switch provider {
-	case "S3":
+	case S3:
 		folder = GetS3LocationFolder(location)
-	case "GCS":
+	case GCS:
 		folder = GetGCSLocationFolder(location, GCSLocationOptionsT{TLDFormat: "gcs"})
-	case "AZURE_BLOB":
+	case AZURE_BLOB:
 		folder = GetAzureBlobLocationFolder(location)
 	}
 	return
@@ -374,11 +421,11 @@ func GetObjectFolder(provider, location string) (folder string) {
 // eg. For provider as AZURE_BLOB: https://<storage-account-name>.blob.core.windows.net/<container-name>/<directory-name> --> wasbs://<container-name>@<storage-account-name>.blob.core.windows.net/<directory-name>
 func GetObjectFolderForDeltalake(provider, location string) (folder string) {
 	switch provider {
-	case "S3":
+	case S3:
 		folder = GetS3LocationFolder(location)
-	case "GCS":
+	case GCS:
 		folder = GetGCSLocationFolder(location, GCSLocationOptionsT{TLDFormat: "gs"})
-	case "AZURE_BLOB":
+	case AZURE_BLOB:
 		blobUrl, _ := url.Parse(location)
 		blobUrlParts := azblob.NewBlobURLParts(*blobUrl)
 		accountName := strings.Replace(blobUrlParts.Host, ".blob.core.windows.net", "", 1)
@@ -389,15 +436,24 @@ func GetObjectFolderForDeltalake(provider, location string) (folder string) {
 	return
 }
 
+func GetColumnsFromTableSchema(schema TableSchemaT) []string {
+	keys := reflect.ValueOf(schema).MapKeys()
+	strKeys := make([]string, len(keys))
+	for i := 0; i < len(keys); i++ {
+		strKeys[i] = keys[i].String()
+	}
+	return strKeys
+}
+
 // GetObjectLocation returns the folder path for the storage object based on the storage provider
 // e.g. For provider as S3: https://test-bucket.s3.amazonaws.com/test-object.csv --> s3://test-bucket/test-object.csv
 func GetObjectLocation(provider, location string) (objectLocation string) {
 	switch provider {
-	case "S3":
+	case S3:
 		objectLocation, _ = GetS3Location(location)
-	case "GCS":
+	case GCS:
 		objectLocation = GetGCSLocation(location, GCSLocationOptionsT{TLDFormat: "gcs"})
-	case "AZURE_BLOB":
+	case AZURE_BLOB:
 		objectLocation = GetAzureBlobLocation(location)
 	}
 	return
@@ -596,7 +652,7 @@ func SnowflakeCloudProvider(config interface{}) string {
 	c := config.(map[string]interface{})
 	provider, ok := c["cloudProvider"].(string)
 	if provider == "" || !ok {
-		provider = "AWS"
+		provider = AWS
 	}
 	return provider
 }
@@ -604,7 +660,7 @@ func SnowflakeCloudProvider(config interface{}) string {
 func ObjectStorageType(destType string, config interface{}, useRudderStorage bool) string {
 	c := config.(map[string]interface{})
 	if useRudderStorage {
-		return "S3"
+		return S3
 	}
 	if _, ok := ObjectStorageMap[destType]; ok {
 		return ObjectStorageMap[destType]
@@ -612,7 +668,7 @@ func ObjectStorageType(destType string, config interface{}, useRudderStorage boo
 	if destType == SNOWFLAKE {
 		provider, ok := c["cloudProvider"].(string)
 		if provider == "" || !ok {
-			provider = "AWS"
+			provider = AWS
 		}
 		return SnowflakeStorageMap[provider]
 	}
@@ -620,7 +676,7 @@ func ObjectStorageType(destType string, config interface{}, useRudderStorage boo
 	return provider
 }
 
-func GetConfigValue(key string, warehouse WarehouseT) (val string) {
+func GetConfigValue(key string, warehouse Warehouse) (val string) {
 	config := warehouse.Destination.Config
 	if config[key] != nil {
 		val, _ = config[key].(string)
@@ -628,7 +684,7 @@ func GetConfigValue(key string, warehouse WarehouseT) (val string) {
 	return val
 }
 
-func GetConfigValueBoolString(key string, warehouse WarehouseT) string {
+func GetConfigValueBoolString(key string, warehouse Warehouse) string {
 	config := warehouse.Destination.Config
 	if config[key] != nil {
 		if val, ok := config[key].(bool); ok {
@@ -659,7 +715,7 @@ func SortColumnKeysFromColumnMap(columnMap map[string]string) []string {
 	return columnKeys
 }
 
-func IdentityMergeRulesTableName(warehouse WarehouseT) string {
+func IdentityMergeRulesTableName(warehouse Warehouse) string {
 	return fmt.Sprintf(`%s_%s_%s`, IdentityMergeRulesTable, warehouse.Namespace, warehouse.Destination.ID)
 }
 
@@ -671,11 +727,11 @@ func IdentityMappingsWarehouseTableName(provider string) string {
 	return ToProviderCase(provider, IdentityMappingsTable)
 }
 
-func IdentityMappingsTableName(warehouse WarehouseT) string {
+func IdentityMappingsTableName(warehouse Warehouse) string {
 	return fmt.Sprintf(`%s_%s_%s`, IdentityMappingsTable, warehouse.Namespace, warehouse.Destination.ID)
 }
 
-func IdentityMappingsUniqueMappingConstraintName(warehouse WarehouseT) string {
+func IdentityMappingsUniqueMappingConstraintName(warehouse Warehouse) string {
 	return fmt.Sprintf(`unique_merge_property_%s_%s`, warehouse.Namespace, warehouse.Destination.ID)
 }
 
@@ -778,12 +834,13 @@ func NewCounterStat(name string, extraTags ...Tag) stats.Measurement {
 	return stats.Default.NewTaggedStat(name, stats.CountType, tags)
 }
 
-func WHCounterStat(name string, warehouse *WarehouseT, extraTags ...Tag) stats.Measurement {
+func WHCounterStat(name string, warehouse *Warehouse, extraTags ...Tag) stats.Measurement {
 	tags := map[string]string{
-		"module":   WAREHOUSE,
-		"destType": warehouse.Type,
-		"destID":   warehouse.Destination.ID,
-		"sourceID": warehouse.Source.ID,
+		"module":      WAREHOUSE,
+		"destType":    warehouse.Type,
+		"workspaceId": warehouse.WorkspaceID,
+		"destID":      warehouse.Destination.ID,
+		"sourceID":    warehouse.Source.ID,
 	}
 	for _, extraTag := range extraTags {
 		tags[extraTag.Name] = extraTag.Value
@@ -922,7 +979,7 @@ func GetLoadFileFormat(whType string) string {
 	}
 }
 
-func GetLoadFilePrefix(timeWindow time.Time, warehouse WarehouseT) (timeWindowFormat string) {
+func GetLoadFilePrefix(timeWindow time.Time, warehouse Warehouse) (timeWindowFormat string) {
 	whType := warehouse.Type
 	switch whType {
 	case GCS_DATALAKE:
@@ -1003,4 +1060,15 @@ func GetDateRangeList(start, end time.Time, dateFormat string) (dateRange []stri
 type FilterBy struct {
 	Key   string
 	Value interface{}
+}
+
+func StagingTablePrefix(provider string) string {
+	return ToProviderCase(provider, stagingTablePrefix)
+}
+
+func StagingTableName(provider, tableName string, tableNameLimit int) string {
+	randomNess := strings.ReplaceAll(uuid.Must(uuid.NewV4()).String(), "-", "")
+	prefix := StagingTablePrefix(provider)
+	stagingTableName := fmt.Sprintf(`%s%s_%s`, prefix, tableName, randomNess)
+	return misc.TruncateStr(stagingTableName, tableNameLimit)
 }

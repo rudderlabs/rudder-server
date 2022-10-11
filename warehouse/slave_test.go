@@ -10,29 +10,29 @@ import (
 
 func TestPickupStagingFileBucket(t *testing.T) {
 	inputs := []struct {
-		job      *PayloadT
+		job      *Payload
 		expected bool
 	}{
 		{
-			job:      &PayloadT{},
+			job:      &Payload{},
 			expected: false,
 		},
 		{
-			job: &PayloadT{
+			job: &Payload{
 				StagingDestinationRevisionID: "1liYatjkkCEVkEMYUmSWOE9eZ4n",
 				DestinationRevisionID:        "1liYatjkkCEVkEMYUmSWOE9eZ4n",
 			},
 			expected: false,
 		},
 		{
-			job: &PayloadT{
+			job: &Payload{
 				StagingDestinationRevisionID: "1liYatjkkCEVkEMYUmSWOE9eZ4n",
 				DestinationRevisionID:        "2liYatjkkCEVkEMYUmSWOE9eZ4n",
 			},
 			expected: false,
 		},
 		{
-			job: &PayloadT{
+			job: &Payload{
 				StagingDestinationRevisionID: "1liYatjkkCEVkEMYUmSWOE9eZ4n",
 				DestinationRevisionID:        "2liYatjkkCEVkEMYUmSWOE9eZ4n",
 				StagingDestinationConfig:     map[string]string{},

@@ -47,6 +47,11 @@ const (
 	AbortedState   = "aborted"
 )
 
+const (
+	AsyncJobType  = "async_job"
+	UploadJobType = "upload"
+)
+
 func Init() {
 	loadPGNotifierConfig()
 	queueName = "pg_notifier_queue"
@@ -61,13 +66,24 @@ type PgNotifierT struct {
 
 type JobPayload json.RawMessage
 
+const MaxTrackAsyncBatchRetries = 5
+
 type ResponseT struct {
-	JobID  int64
-	Status string
-	Output json.RawMessage
-	Error  string
+	JobID   int64
+	Status  string
+	Output  json.RawMessage
+	Error   string
+	JobType string
 }
 
+type JobsResponse struct {
+	Status    string
+	Output    json.RawMessage
+	Error     string
+	JobType   string
+	JobRunID  string
+	TaskRunID string
+}
 type ClaimT struct {
 	ID        int64
 	BatchID   string
@@ -75,11 +91,17 @@ type ClaimT struct {
 	Workspace string
 	Payload   json.RawMessage
 	Attempt   int
+	JobType   string
 }
 
 type ClaimResponseT struct {
 	Payload json.RawMessage
 	Err     error
+}
+
+type MessagePayload struct {
+	Jobs    []JobPayload
+	JobType string
 }
 
 func loadPGNotifierConfig() {
@@ -175,7 +197,8 @@ func GetPGNotifierConnectionString() string {
 		pgNotifierDBPassword, pgNotifierDBName, pgNotifierDBSSLMode)
 }
 
-func (notifier *PgNotifierT) trackBatch(batchID string, ch *chan []ResponseT) {
+// trackUploadBatch tracks the upload batches until they are complete and triggers output through channel of type ResponseT
+func (notifier *PgNotifierT) trackUploadBatch(batchID string, ch *chan []ResponseT) {
 	rruntime.GoForWarehouse(func() {
 		for {
 			time.Sleep(trackBatchInterval)
@@ -250,6 +273,62 @@ func (notifier *PgNotifierT) trackBatch(batchID string, ch *chan []ResponseT) {
 					batchID,
 				)
 				_, err = notifier.dbHandle.Exec(stmt)
+				if err != nil {
+					pkgLogger.Errorf("PgNotifier: Error deleting from %s for batch_id:%s : %v", queueName, batchID, err)
+				}
+				break
+			}
+			pkgLogger.Debugf("PgNotifier: Pending %d files to process in batch: %s", count, batchID)
+		}
+	})
+}
+
+// trackAsyncBatch tracks the upload batches until they are complete and triggers output through channel of type ResponseT
+func (notifier *PgNotifierT) trackAsyncBatch(batchID string, ch *chan []ResponseT) {
+	rruntime.GoForWarehouse(func() {
+		// retry := 0
+		var responses []ResponseT
+		for {
+			time.Sleep(trackBatchInterval)
+			// keep polling db for batch status
+			// or subscribe to triggers
+			stmt := fmt.Sprintf(`SELECT count(*) FROM %s WHERE batch_id=$1 AND status!=$2 AND status!=$3`, queueName)
+			var count int
+			err := notifier.dbHandle.QueryRow(stmt, batchID, SucceededState, AbortedState).Scan(&count)
+			if err != nil {
+				*ch <- responses
+				pkgLogger.Errorf("PgNotifier: Failed to query for tracking jobs by batch_id: %s, connInfo: %s, error : %s", stmt, notifier.URI, err.Error())
+				break
+			}
+
+			if count == 0 {
+				stmt = fmt.Sprintf(`SELECT payload, status, error FROM %s WHERE batch_id = $1`, queueName)
+				rows, err := notifier.dbHandle.Query(stmt, batchID)
+				if err != nil {
+					*ch <- responses
+					pkgLogger.Errorf("PgNotifier: Failed to query for getting jobs for payload, status & error: %s, connInfo: %s, error : %s", stmt, notifier.URI, err.Error())
+					break
+				}
+				for rows.Next() {
+					var status, jobError sql.NullString
+					var payload json.RawMessage
+					err = rows.Scan(&payload, &status, &jobError)
+					if err != nil {
+						continue
+					}
+					responses = append(responses, ResponseT{
+						JobID:  0, // Not required for this as there is no concept of BatchFileId
+						Output: payload,
+						Status: status.String,
+						Error:  jobError.String,
+					})
+				}
+				_ = rows.Close()
+				*ch <- responses
+				pkgLogger.Infof("PgNotifier: Completed processing asyncjobs in batch: %s", batchID)
+				stmt = fmt.Sprintf(`DELETE FROM %s WHERE batch_id = $1`, queueName)
+				pkgLogger.Infof("Query for deleting pgnotifier rows is %s for batchId : %s in queueName: %s", stmt, batchID, queueName)
+				_, err = notifier.dbHandle.Exec(stmt, batchID)
 				if err != nil {
 					pkgLogger.Errorf("PgNotifier: Error deleting from %s for batch_id:%s : %v", queueName, batchID, err)
 				}
@@ -337,7 +416,7 @@ func (notifier *PgNotifierT) claim(workerID string) (claim ClaimT, err error) {
 	}()
 	var claimedID int64
 	var attempt int
-	var batchID, status, workspace string
+	var batchID, status, workspace, job_type string
 	var payload json.RawMessage
 	stmt := fmt.Sprintf(`
 		UPDATE 
@@ -368,7 +447,8 @@ func (notifier *PgNotifierT) claim(workerID string) (claim ClaimT, err error) {
 		  status, 
 		  payload, 
 		  workspace, 
-		  attempt;
+		  attempt,
+		  job_type;
 `,
 		queueName,
 		ExecutingState,
@@ -382,7 +462,7 @@ func (notifier *PgNotifierT) claim(workerID string) (claim ClaimT, err error) {
 	if err != nil {
 		return
 	}
-	err = tx.QueryRow(stmt).Scan(&claimedID, &batchID, &status, &payload, &workspace, &attempt)
+	err = tx.QueryRow(stmt).Scan(&claimedID, &batchID, &status, &payload, &workspace, &attempt, &job_type)
 	defer func() {
 		if err != nil {
 			if rollbackErr := tx.Rollback(); rollbackErr != nil {
@@ -411,12 +491,14 @@ func (notifier *PgNotifierT) claim(workerID string) (claim ClaimT, err error) {
 		Payload:   payload,
 		Attempt:   attempt,
 		Workspace: workspace,
+		JobType:   job_type,
 	}
 	return claim, nil
 }
 
-func (notifier *PgNotifierT) Publish(jobs []JobPayload, schema *whUtils.SchemaT, priority int) (ch chan []ResponseT, err error) {
+func (notifier *PgNotifierT) Publish(payload MessagePayload, schema *whUtils.SchemaT, priority int) (ch chan []ResponseT, err error) {
 	publishStartTime := time.Now()
+	jobs := payload.Jobs
 	defer func() {
 		if err == nil {
 			pgNotifierPublishTime.Since(publishStartTime)
@@ -440,7 +522,7 @@ func (notifier *PgNotifierT) Publish(jobs []JobPayload, schema *whUtils.SchemaT,
 		}
 	}()
 
-	stmt, err := txn.Prepare(pq.CopyIn(queueName, "batch_id", "status", "payload", "workspace", "priority"))
+	stmt, err := txn.Prepare(pq.CopyIn(queueName, "batch_id", "status", "payload", "workspace", "priority", "job_type"))
 	if err != nil {
 		err = fmt.Errorf("PgNotifier: Failed creating prepared statement for publishing with error: %w", err)
 		return
@@ -450,7 +532,7 @@ func (notifier *PgNotifierT) Publish(jobs []JobPayload, schema *whUtils.SchemaT,
 	batchID := uuid.Must(uuid.NewV4()).String()
 	pkgLogger.Infof("PgNotifier: Inserting %d records into %s as batch: %s", len(jobs), queueName, batchID)
 	for _, job := range jobs {
-		_, err = stmt.Exec(batchID, WaitingState, string(job), notifier.workspaceIdentifier, priority)
+		_, err = stmt.Exec(batchID, WaitingState, string(job), notifier.workspaceIdentifier, priority, payload.JobType)
 		if err != nil {
 			err = fmt.Errorf("PgNotifier: Failed executing prepared statement for publishing with error: %w", err)
 			return
@@ -496,8 +578,11 @@ func (notifier *PgNotifierT) Publish(jobs []JobPayload, schema *whUtils.SchemaT,
 		"queueName": queueName,
 		"module":    "pg_notifier",
 	}).Count(len(jobs))
-
-	notifier.trackBatch(batchID, &ch)
+	if payload.JobType == AsyncJobType {
+		notifier.trackAsyncBatch(batchID, &ch)
+		return
+	}
+	notifier.trackUploadBatch(batchID, &ch)
 	return
 }
 
