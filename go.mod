@@ -4,7 +4,7 @@ go 1.18
 
 require (
 	cloud.google.com/go/bigquery v1.42.0
-	cloud.google.com/go/pubsub v1.3.1
+	cloud.google.com/go/pubsub v1.25.1
 	cloud.google.com/go/storage v1.24.0
 	github.com/Azure/azure-storage-blob-go v0.14.0
 	github.com/ClickHouse/clickhouse-go v1.5.1
@@ -71,10 +71,9 @@ require (
 )
 
 require (
-	cloud.google.com/go v0.103.0 // indirect
+	cloud.google.com/go v0.104.0 // indirect
 	cloud.google.com/go/compute v1.8.0 // indirect
 	cloud.google.com/go/iam v0.3.0 // indirect
-	cloud.google.com/go/kms v1.4.0 // indirect
 	github.com/Azure/azure-pipeline-go v0.2.3 // indirect
 	github.com/Azure/go-ansiterm v0.0.0-20210617225240-d185dfc1b5a1 // indirect
 	github.com/EagleChen/mapmutex v0.0.0-20180418073615-e1a5ae258d8d // indirect
