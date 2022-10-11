@@ -28,12 +28,12 @@ var (
 )
 
 // warehouseAdapter returns warehouseT from info request
-func warehouse(req *DestinationValidationRequest) warehouseutils.WarehouseT {
+func warehouse(req *DestinationValidationRequest) warehouseutils.Warehouse {
 	destination := req.Destination
 
 	randomSourceId := randomString()
 	randomSourceName := randomString()
-	return warehouseutils.WarehouseT{
+	return warehouseutils.Warehouse{
 		Source: backendconfig.SourceT{
 			ID:   randomSourceId,
 			Name: randomSourceName,
@@ -57,6 +57,7 @@ func fileManager(req *DestinationValidationRequest) (fileManager filemanager.Fil
 			Provider:         provider,
 			Config:           destination.Config,
 			UseRudderStorage: misc.IsConfiguredToUseRudderObjectStorage(destination.Config),
+			WorkspaceID:      req.Destination.WorkspaceID,
 		}),
 	})
 	fileManager.SetTimeout(fileManagerTimeout)

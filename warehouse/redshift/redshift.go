@@ -12,10 +12,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/aws/credentials"
-	"github.com/aws/aws-sdk-go/aws/session"
-	"github.com/aws/aws-sdk-go/service/sts"
 	"github.com/tidwall/gjson"
 
 	uuid "github.com/gofrs/uuid"
@@ -32,6 +28,7 @@ var (
 	stagingTablePrefix            string
 	pkgLogger                     logger.Logger
 	skipComputingUserLatestTraits bool
+	enableDeleteByJobs            bool
 )
 
 func Init() {
@@ -43,12 +40,13 @@ func loadConfig() {
 	stagingTablePrefix = "rudder_staging_"
 	setVarCharMax = config.GetBool("Warehouse.redshift.setVarCharMax", false)
 	config.RegisterBoolConfigVariable(false, &skipComputingUserLatestTraits, true, "Warehouse.redshift.skipComputingUserLatestTraits")
+	config.RegisterBoolConfigVariable(false, &enableDeleteByJobs, true, "Warehouse.redshift.enableDeleteByJobs")
 }
 
 type HandleT struct {
 	Db             *sql.DB
 	Namespace      string
-	Warehouse      warehouseutils.WarehouseT
+	Warehouse      warehouseutils.Warehouse
 	Uploader       warehouseutils.UploaderI
 	ConnectTimeout time.Duration
 }
@@ -175,6 +173,39 @@ func (rs *HandleT) AddColumn(name, columnName, columnType string) (err error) {
 	return
 }
 
+func (rs *HandleT) DeleteBy(tableNames []string, params warehouseutils.DeleteByParams) (err error) {
+	pkgLogger.Infof("RS: Cleaning up the followng tables in redshift for RS:%s : %+v", tableNames, params)
+	pkgLogger.Infof("RS: Flag for enableDeleteByJobs is %t", enableDeleteByJobs)
+	for _, tb := range tableNames {
+		sqlStatement := fmt.Sprintf(`DELETE FROM "%[1]s"."%[2]s" WHERE 
+		context_sources_job_run_id <> $1 AND
+		context_sources_task_run_id <> $2 AND
+		context_source_id = $3 AND
+		received_at < $4`,
+			rs.Namespace,
+			tb,
+		)
+
+		pkgLogger.Infof("RS: Deleting rows in table in redshift for RS:%s", rs.Warehouse.Destination.ID)
+		pkgLogger.Debugf("RS: Executing the query %v", sqlStatement)
+
+		if enableDeleteByJobs {
+			_, err = rs.Db.Exec(sqlStatement,
+				params.JobRunId,
+				params.TaskRunId,
+				params.SourceId,
+				params.StartTime,
+			)
+			if err != nil {
+				pkgLogger.Errorf("Error in executing the query %s", err.Error)
+				return err
+			}
+		}
+
+	}
+	return nil
+}
+
 // alterStringToText alters column data type string(varchar(512)) to text which is varchar(max) in redshift
 func (rs *HandleT) alterStringToText(tableName, columnName string) (err error) {
 	sqlStatement := fmt.Sprintf(`ALTER TABLE %v ALTER COLUMN %q TYPE %s`, tableName, columnName, getRSDataType("text"))
@@ -245,6 +276,7 @@ func (rs *HandleT) generateManifest(tableName string, _ map[string]string) (stri
 			Provider:         "S3",
 			Config:           rs.Warehouse.Destination.Config,
 			UseRudderStorage: rs.Uploader.UseRudderStorage(),
+			WorkspaceID:      rs.Warehouse.Destination.WorkspaceID,
 		}),
 	})
 	if err != nil {
@@ -312,7 +344,7 @@ func (rs *HandleT) loadTable(tableName string, tableSchemaInUpload, tableSchemaA
 		return
 	}
 	// create session token and temporary credentials
-	tempAccessKeyId, tempSecretAccessKey, token, err := rs.getTemporaryCredForCopy()
+	tempAccessKeyId, tempSecretAccessKey, token, err := warehouseutils.GetTemporaryS3Cred(&rs.Warehouse.Destination)
 	if err != nil {
 		pkgLogger.Errorf("RS: Failed to create temp credentials before copying, while create load for table %v, err%v", tableName, err)
 		tx.Rollback()
@@ -501,27 +533,6 @@ func (rs *HandleT) loadUserTables() (errorMap map[string]error) {
 	return
 }
 
-func (rs *HandleT) getTemporaryCredForCopy() (string, string, string, error) {
-	var accessKey, accessKeyID string
-	if misc.HasAWSKeysInConfig(rs.Warehouse.Destination.Config) && !misc.IsConfiguredToUseRudderObjectStorage(rs.Warehouse.Destination.Config) {
-		accessKey = warehouseutils.GetConfigValue(AWSAccessKey, rs.Warehouse)
-		accessKeyID = warehouseutils.GetConfigValue(AWSAccessKeyID, rs.Warehouse)
-	} else {
-		accessKeyID = config.GetString("RUDDER_AWS_S3_COPY_USER_ACCESS_KEY_ID", "")
-		accessKey = config.GetString("RUDDER_AWS_S3_COPY_USER_ACCESS_KEY", "")
-	}
-	mySession := session.Must(session.NewSession())
-	// Create a STS client from just a session.
-	svc := sts.New(mySession, aws.NewConfig().WithCredentials(credentials.NewStaticCredentials(accessKeyID, accessKey, "")))
-
-	// sts.New(mySession, aws.NewConfig().WithRegion("us-west-2"))
-	SessionTokenOutput, err := svc.GetSessionToken(&sts.GetSessionTokenInput{DurationSeconds: &warehouseutils.AWSCredsExpiryInS})
-	if err != nil {
-		return "", "", "", err
-	}
-	return *SessionTokenOutput.Credentials.AccessKeyId, *SessionTokenOutput.Credentials.SecretAccessKey, *SessionTokenOutput.Credentials.SessionToken, err
-}
-
 // RedshiftCredentialsT ...
 type RedshiftCredentialsT struct {
 	Host     string
@@ -626,7 +637,7 @@ func (rs *HandleT) getConnectionCredentials() RedshiftCredentialsT {
 }
 
 // FetchSchema queries redshift and returns the schema assoiciated with provided namespace
-func (rs *HandleT) FetchSchema(warehouse warehouseutils.WarehouseT) (schema warehouseutils.SchemaT, err error) {
+func (rs *HandleT) FetchSchema(warehouse warehouseutils.Warehouse) (schema warehouseutils.SchemaT, err error) {
 	rs.Warehouse = warehouse
 	rs.Namespace = warehouse.Namespace
 	dbHandle, err := Connect(rs.getConnectionCredentials())
@@ -674,7 +685,7 @@ func (rs *HandleT) FetchSchema(warehouse warehouseutils.WarehouseT) (schema ware
 	return
 }
 
-func (rs *HandleT) Setup(warehouse warehouseutils.WarehouseT, uploader warehouseutils.UploaderI) (err error) {
+func (rs *HandleT) Setup(warehouse warehouseutils.Warehouse, uploader warehouseutils.UploaderI) (err error) {
 	rs.Warehouse = warehouse
 	rs.Namespace = warehouse.Namespace
 	rs.Uploader = uploader
@@ -683,7 +694,7 @@ func (rs *HandleT) Setup(warehouse warehouseutils.WarehouseT, uploader warehouse
 	return err
 }
 
-func (rs *HandleT) TestConnection(warehouse warehouseutils.WarehouseT) (err error) {
+func (rs *HandleT) TestConnection(warehouse warehouseutils.Warehouse) (err error) {
 	rs.Warehouse = warehouse
 	rs.Db, err = Connect(rs.getConnectionCredentials())
 	if err != nil {
@@ -712,7 +723,7 @@ func (rs *HandleT) Cleanup() {
 	}
 }
 
-func (rs *HandleT) CrashRecover(warehouse warehouseutils.WarehouseT) (err error) {
+func (rs *HandleT) CrashRecover(warehouse warehouseutils.Warehouse) (err error) {
 	rs.Warehouse = warehouse
 	rs.Namespace = warehouse.Namespace
 	rs.Db, err = Connect(rs.getConnectionCredentials())
@@ -724,7 +735,7 @@ func (rs *HandleT) CrashRecover(warehouse warehouseutils.WarehouseT) (err error)
 	return
 }
 
-func (*HandleT) IsEmpty(_ warehouseutils.WarehouseT) (empty bool, err error) {
+func (*HandleT) IsEmpty(_ warehouseutils.Warehouse) (empty bool, err error) {
 	return
 }
 
@@ -758,7 +769,7 @@ func (rs *HandleT) GetTotalCountInTable(tableName string) (total int64, err erro
 	return
 }
 
-func (rs *HandleT) Connect(warehouse warehouseutils.WarehouseT) (client.Client, error) {
+func (rs *HandleT) Connect(warehouse warehouseutils.Warehouse) (client.Client, error) {
 	rs.Warehouse = warehouse
 	rs.Namespace = warehouse.Namespace
 	dbHandle, err := Connect(rs.getConnectionCredentials())
@@ -770,7 +781,7 @@ func (rs *HandleT) Connect(warehouse warehouseutils.WarehouseT) (client.Client, 
 }
 
 func (rs *HandleT) LoadTestTable(location, tableName string, _ map[string]interface{}, format string) (err error) {
-	tempAccessKeyId, tempSecretAccessKey, token, err := rs.getTemporaryCredForCopy()
+	tempAccessKeyId, tempSecretAccessKey, token, err := warehouseutils.GetTemporaryS3Cred(&rs.Warehouse.Destination)
 	if err != nil {
 		pkgLogger.Errorf("RS: Failed to create temp credentials before copying, while create load for table %v, err%v", tableName, err)
 		return

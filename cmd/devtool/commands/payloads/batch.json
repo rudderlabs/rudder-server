@@ -1,0 +1,65 @@
+{
+  "batch": [
+    {
+      "anonymousId": "{{.AnonymousId}}",
+      "channel": "android-sdk",
+      "context": {
+        "app": {
+          "build": "1",
+          "name": "RudderAndroidClient",
+          "namespace": "com.rudderlabs.android.sdk",
+          "version": "1.0"
+        },
+        "device": {
+          "id": "49e4bdd1c280bc00",
+          "manufacturer": "Google",
+          "model": "Android SDK built for x86",
+          "name": "generic_x86"
+        },
+        "locale": "en-US",
+        "network": {
+          "carrier": "Android"
+        },
+        "screen": {
+          "density": 420,
+          "height": 1794,
+          "width": 1080
+        },
+        "library": {
+          "name": "com.rudderstack.android.sdk.core"
+        },
+        "traits": {
+          "anonymousId": "{{.AnonymousId}}"
+        },
+        "user_agent": "Dalvik/2.1.0 (Linux; U; Android 9; Android SDK built for x86 Build/PSR1.180720.075)"
+      },
+      "event": "Demo Track",
+      "integrations": {
+        "All": true
+      },
+      "properties": {
+        "label": "Demo Label",
+        "category": "Demo Category",
+        "value": 5,
+        "testMap": {
+          "t1": "a",
+          "t2": 4
+        },
+        "floatVal": 4.501,
+        "testArray": [
+          {
+            "id": "elem1",
+            "value": "e1"
+          },
+          {
+            "id": "elem2",
+            "value": "e2"
+          }
+        ]
+      },
+      "type": "track",
+      "originalTimestamp": "{{.Timestamp}}",
+      "sentAt": "{{.Timestamp}}"
+    }
+  ]
+}

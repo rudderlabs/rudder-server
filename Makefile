@@ -1,4 +1,4 @@
-.PHONY: help default build run run-dev test test-run test-teardown mocks prepare-build
+.PHONY: help default build run run-mt test test-run test-teardown mocks
 
 GO=go
 GINKGO=ginkgo
@@ -38,14 +38,7 @@ coverage:
 
 test-with-coverage: test coverage
 
-build-sql-migrations: ./services/sql-migrator/migrations_vfsdata.go ## Prepare sql migrations embedded scripts
-
-prepare-build: build-sql-migrations
-
-./services/sql-migrator/migrations_vfsdata.go: $(shell find sql/migrations)
-	$(GO) run -tags=dev cmd/generate-migrations/generate-sql-migrations.go
-
-build: prepare-build ## Build rudder-server binary
+build: ## Build rudder-server binary
 	$(eval BUILD_OPTIONS = )
 ifeq ($(RACE_ENABLED), TRUE)
 	$(eval BUILD_OPTIONS = $(BUILD_OPTIONS) -race -o rudder-server-with-race)
@@ -54,11 +47,13 @@ endif
 	$(GO) build -o build/wait-for-go/wait-for-go build/wait-for-go/wait-for.go
 	$(GO) build -o build/regulation-worker ./regulation-worker/cmd/
 
-run: prepare-build ## Run rudder-server using go run
+run: ## Run rudder-server using go run
 	$(GO) run main.go
 
-run-dev: prepare-build ## Run rudder-server using go run with 'dev' build tag
-	$(GO) run -tags=dev main.go
+run-mt: ## Run rudder-server in multi-tenant deployment type
+	$(GO) run ./cmd/devtool etcd mode --no-wait normal 
+	$(GO) run ./cmd/devtool etcd workspaces --no-wait none
+	DEPLOYMENT_TYPE=MULTITENANT $(GO) run main.go
 
 help: ## Show the available commands
 	@grep -E '^[0-9a-zA-Z_-]+:.*?## .*$$' ./Makefile | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-30s\033[0m %s\n", $$1, $$2}'
@@ -70,13 +65,13 @@ install-tools:
 
 	go install mvdan.cc/gofumpt@latest
 
-.PHONY: lint
-lint: fmt
+.PHONY: lint 
+lint: fmt ## Run linters on all go files
 	docker run --rm -v $(shell pwd):/app:ro -w /app golangci/golangci-lint:v1.49.0 bash -e -c \
 		'golangci-lint run -v --timeout 5m'
 
-.PHONY: fmt
-fmt: install-tools
+.PHONY: fmt 
+fmt: install-tools ## Formats all go files
 	gofumpt -l -w -extra  .
 
 cleanup-warehouse-integration:
@@ -100,6 +95,18 @@ run-warehouse-integration: setup-warehouse-integration
     else \
       	echo "Failed running Warehouse Integration Test. Getting all logs from all containers"; \
       	make logs-warehouse-integration; \
+      	make cleanup-warehouse-integration; \
+      	exit 1; \
+ 	fi
+
+run-source-integration: setup-warehouse-integration
+	if docker-compose -f warehouse/docker-compose.test.yml exec -T wh-backend go test -v ./warehouse/... -tags=sources_integration -p 8 -timeout 30m -count 1; then \
+      	echo "Successfully ran Warehouse Integration Test. Getting backend container logs only."; \
+		make logs-warehouse-integration; \
+      	make cleanup-warehouse-integration; \
+    else \
+      	echo "Failed running Warehouse Integration Test. Getting all logs from all containers"; \
+		make logs-warehouse-integration; \
       	make cleanup-warehouse-integration; \
       	exit 1; \
  	fi

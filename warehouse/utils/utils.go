@@ -3,7 +3,7 @@ package warehouseutils
 import (
 	"bytes"
 	"context"
-	"crypto/sha1"
+	"crypto/sha512"
 	"database/sql"
 	"encoding/json"
 	"errors"
@@ -18,9 +18,7 @@ import (
 	"time"
 
 	"github.com/Azure/azure-storage-blob-go/azblob"
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/aws/credentials"
-	"github.com/aws/aws-sdk-go/aws/session"
+	"github.com/aws/aws-sdk-go/service/s3"
 	"github.com/aws/aws-sdk-go/service/sts"
 	"github.com/iancoleman/strcase"
 	"github.com/tidwall/gjson"
@@ -29,6 +27,7 @@ import (
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/services/filemanager"
 	"github.com/rudderlabs/rudder-server/services/stats"
+	"github.com/rudderlabs/rudder-server/utils/awsutils"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
@@ -62,6 +61,7 @@ const (
 	WarehouseUploadsTable      = "wh_uploads"
 	WarehouseTableUploadsTable = "wh_table_uploads"
 	WarehouseSchemasTable      = "wh_schemas"
+	WarehouseAsyncJobTable     = "wh_async_jobs"
 )
 
 const (
@@ -176,7 +176,8 @@ func loadConfig() {
 	config.RegisterInt64ConfigVariable(8, &parquetParallelWriters, true, 1, "Warehouse.parquetParallelWriters")
 }
 
-type WarehouseT struct {
+type Warehouse struct {
+	WorkspaceID string
 	Source      backendconfig.SourceT
 	Destination backendconfig.DestinationT
 	Namespace   string
@@ -184,7 +185,20 @@ type WarehouseT struct {
 	Identifier  string
 }
 
-func (w *WarehouseT) GetBoolDestinationConfig(key string) bool {
+type DeleteByMetaData struct {
+	JobRunId  string `json:"job_run_id"`
+	TaskRunId string `json:"task_run_id"`
+	StartTime string `json:"start_time"`
+}
+
+type DeleteByParams struct {
+	SourceId  string
+	JobRunId  string
+	TaskRunId string
+	StartTime string
+}
+
+func (w *Warehouse) GetBoolDestinationConfig(key string) bool {
 	destConfig := w.Destination.Config
 	if destConfig[key] != nil {
 		if val, ok := destConfig[key].(bool); ok {
@@ -209,7 +223,8 @@ type KeyValue struct {
 	Value interface{}
 }
 
-type StagingFileT struct {
+type StagingFile struct {
+	WorkspaceID           string
 	Schema                map[string]map[string]interface{}
 	BatchDestination      DestinationT
 	Location              string
@@ -333,10 +348,24 @@ func GetLoadFileGenTime(str sql.NullString) (t time.Time) {
 }
 
 func GetNamespace(source backendconfig.SourceT, destination backendconfig.DestinationT, dbHandle *sql.DB) (namespace string, exists bool) {
-	sqlStatement := fmt.Sprintf(`SELECT namespace FROM %s WHERE source_id='%s' AND destination_id='%s' ORDER BY id DESC`, WarehouseSchemasTable, source.ID, destination.ID)
+	sqlStatement := fmt.Sprintf(`
+		SELECT 
+		  namespace 
+		FROM 
+		  %s 
+		WHERE 
+		  source_id = '%s' 
+		  AND destination_id = '%s' 
+		ORDER BY 
+		  id DESC;
+`,
+		WarehouseSchemasTable,
+		source.ID,
+		destination.ID,
+	)
 	err := dbHandle.QueryRow(sqlStatement).Scan(&namespace)
 	if err != nil && err != sql.ErrNoRows {
-		panic(fmt.Errorf("Query: %s failed with Error : %w", sqlStatement, err))
+		panic(fmt.Errorf("query: %s failed with Error : %w", sqlStatement, err))
 	}
 	return namespace, len(namespace) > 0
 }
@@ -377,7 +406,7 @@ func GetObjectFolderForDeltalake(provider, location string) (folder string) {
 }
 
 // GetObjectLocation returns the folder path for the storage object based on the storage provider
-// eg. For provider as S3: https://test-bucket.s3.amazonaws.com/test-object.csv --> s3://test-bucket/test-object.csv
+// e.g. For provider as S3: https://test-bucket.s3.amazonaws.com/test-object.csv --> s3://test-bucket/test-object.csv
 func GetObjectLocation(provider, location string) (objectLocation string) {
 	switch provider {
 	case "S3":
@@ -444,7 +473,7 @@ func GetS3Location(location string) (s3Location, region string) {
 	return
 }
 
-// GetS3LocationFolder returns the folder path for an s3 object
+// GetS3LocationFolder returns the folder path for a s3 object
 // https://test-bucket.s3.amazonaws.com/myfolder/test-object.csv --> s3://test-bucket/myfolder
 func GetS3LocationFolder(location string) string {
 	s3Location, _ := GetS3Location(location)
@@ -469,7 +498,7 @@ func GetGCSLocation(location string, options GCSLocationOptionsT) string {
 	return str2
 }
 
-// GetGCSLocationFolder returns the folder path for an gcs object
+// GetGCSLocationFolder returns the folder path for a gcs object
 // https://storage.googleapis.com/test-bucket/myfolder/test-object.csv --> gcs://test-bucket/myfolder
 func GetGCSLocationFolder(location string, options GCSLocationOptionsT) string {
 	s3Location := GetGCSLocation(location, options)
@@ -510,7 +539,7 @@ func JSONSchemaToMap(rawMsg json.RawMessage) map[string]map[string]string {
 	schema := make(map[string]map[string]string)
 	err := json.Unmarshal(rawMsg, &schema)
 	if err != nil {
-		panic(fmt.Errorf("Unmarshalling: %s failed with Error : %w", string(rawMsg), err))
+		panic(fmt.Errorf("unmarshalling: %s failed with Error : %w", string(rawMsg), err))
 	}
 	return schema
 }
@@ -521,7 +550,7 @@ func DestStat(statType, statName, id string) stats.Measurement {
 
 /*
 ToSafeNamespace convert name of the namespace to one acceptable by warehouse
-1. removes symbols and joins continuous letters and numbers with single underscore and if first char is a number will append a underscore before the first number
+1. Remove symbols and joins continuous letters and numbers with single underscore and if first char is a number will append an underscore before the first number
 2. adds an underscore if the name is a reserved keyword in the warehouse
 3. truncate the length of namespace to 127 characters
 4. return "stringempty" if name is empty after conversion
@@ -569,8 +598,8 @@ func ToSafeNamespace(provider, name string) string {
 }
 
 /*
-ToProviderCase converts string provided to case generally accepted in the warehouse for table, column, schema names etc
-eg. columns are uppercased in SNOWFLAKE and lowercased etc in REDSHIFT, BIGQUERY etc
+ToProviderCase converts string provided to case generally accepted in the warehouse for table, column, schema names etc.
+e.g. columns are uppercased in SNOWFLAKE and lowercased etc. in REDSHIFT, BIGQUERY etc
 */
 func ToProviderCase(provider, str string) string {
 	if strings.ToUpper(provider) == SNOWFLAKE {
@@ -607,7 +636,7 @@ func ObjectStorageType(destType string, config interface{}, useRudderStorage boo
 	return provider
 }
 
-func GetConfigValue(key string, warehouse WarehouseT) (val string) {
+func GetConfigValue(key string, warehouse Warehouse) (val string) {
 	config := warehouse.Destination.Config
 	if config[key] != nil {
 		val, _ = config[key].(string)
@@ -615,7 +644,7 @@ func GetConfigValue(key string, warehouse WarehouseT) (val string) {
 	return val
 }
 
-func GetConfigValueBoolString(key string, warehouse WarehouseT) string {
+func GetConfigValueBoolString(key string, warehouse Warehouse) string {
 	config := warehouse.Destination.Config
 	if config[key] != nil {
 		if val, ok := config[key].(bool); ok {
@@ -646,7 +675,7 @@ func SortColumnKeysFromColumnMap(columnMap map[string]string) []string {
 	return columnKeys
 }
 
-func IdentityMergeRulesTableName(warehouse WarehouseT) string {
+func IdentityMergeRulesTableName(warehouse Warehouse) string {
 	return fmt.Sprintf(`%s_%s_%s`, IdentityMergeRulesTable, warehouse.Namespace, warehouse.Destination.ID)
 }
 
@@ -658,11 +687,11 @@ func IdentityMappingsWarehouseTableName(provider string) string {
 	return ToProviderCase(provider, IdentityMappingsTable)
 }
 
-func IdentityMappingsTableName(warehouse WarehouseT) string {
+func IdentityMappingsTableName(warehouse Warehouse) string {
 	return fmt.Sprintf(`%s_%s_%s`, IdentityMappingsTable, warehouse.Namespace, warehouse.Destination.ID)
 }
 
-func IdentityMappingsUniqueMappingConstraintName(warehouse WarehouseT) string {
+func IdentityMappingsUniqueMappingConstraintName(warehouse Warehouse) string {
 	return fmt.Sprintf(`unique_merge_property_%s_%s`, warehouse.Namespace, warehouse.Destination.ID)
 }
 
@@ -707,14 +736,37 @@ func JoinWithFormatting(keys []string, format func(idx int, str string) string, 
 	return strings.Join(output, separator)
 }
 
-func GetTemporaryS3Cred(accessKeyID, accessKey string) (string, string, string, error) {
-	mySession := session.Must(session.NewSession())
-	svc := sts.New(mySession, aws.NewConfig().WithCredentials(credentials.NewStaticCredentials(accessKeyID, accessKey, "")))
-	SessionTokenOutput, err := svc.GetSessionToken(&sts.GetSessionTokenInput{DurationSeconds: &AWSCredsExpiryInS})
+func CreateAWSSessionConfig(destination *backendconfig.DestinationT, serviceName string) (*awsutils.SessionConfig, error) {
+	if !misc.IsConfiguredToUseRudderObjectStorage(destination.Config) {
+		return awsutils.NewSimpleSessionConfigForDestination(destination, serviceName)
+	}
+	accessKeyID, accessKey := misc.GetRudderObjectStorageAccessKeys()
+	return &awsutils.SessionConfig{
+		AccessKeyID: accessKeyID,
+		AccessKey:   accessKey,
+		Service:     serviceName,
+	}, nil
+}
+
+func GetTemporaryS3Cred(destination *backendconfig.DestinationT) (string, string, string, error) {
+	sessionConfig, err := CreateAWSSessionConfig(destination, s3.ServiceID)
 	if err != nil {
 		return "", "", "", err
 	}
-	return *SessionTokenOutput.Credentials.AccessKeyId, *SessionTokenOutput.Credentials.SecretAccessKey, *SessionTokenOutput.Credentials.SessionToken, err
+
+	awsSession, err := awsutils.CreateSession(sessionConfig)
+	if err != nil {
+		return "", "", "", err
+	}
+
+	// Create an STS client from just a session.
+	svc := sts.New(awsSession)
+
+	sessionTokenOutput, err := svc.GetSessionToken(&sts.GetSessionTokenInput{DurationSeconds: &AWSCredsExpiryInS})
+	if err != nil {
+		return "", "", "", err
+	}
+	return *sessionTokenOutput.Credentials.AccessKeyId, *sessionTokenOutput.Credentials.SecretAccessKey, *sessionTokenOutput.Credentials.SessionToken, err
 }
 
 type Tag struct {
@@ -742,12 +794,13 @@ func NewCounterStat(name string, extraTags ...Tag) stats.Measurement {
 	return stats.Default.NewTaggedStat(name, stats.CountType, tags)
 }
 
-func WHCounterStat(name string, warehouse *WarehouseT, extraTags ...Tag) stats.Measurement {
+func WHCounterStat(name string, warehouse *Warehouse, extraTags ...Tag) stats.Measurement {
 	tags := map[string]string{
-		"module":   WAREHOUSE,
-		"destType": warehouse.Type,
-		"destID":   warehouse.Destination.ID,
-		"sourceID": warehouse.Source.ID,
+		"module":      WAREHOUSE,
+		"destType":    warehouse.Type,
+		"workspaceId": warehouse.WorkspaceID,
+		"destID":      warehouse.Destination.ID,
+		"sourceID":    warehouse.Source.ID,
 	}
 	for _, extraTag := range extraTags {
 		tags[extraTag.Name] = extraTag.Value
@@ -810,7 +863,7 @@ func WriteSSLKeys(destination backendconfig.DestinationT) WriteSSLKeyError {
 		return WriteSSLKeyError{fmt.Sprintf("Error creating SSL root directory for destination %s %v", destination.ID, err), "dest_ssl_create_err"}
 	}
 	combinedString := fmt.Sprintf("%s%s%s", clientKey, clientCert, serverCert)
-	h := sha1.New()
+	h := sha512.New()
 	h.Write([]byte(combinedString))
 	sslHash := fmt.Sprintf("%x", h.Sum(nil))
 	clientCertPemFile := fmt.Sprintf("%s/client-cert.pem", sslDirPath)
@@ -833,7 +886,7 @@ func WriteSSLKeys(destination backendconfig.DestinationT) WriteSSLKeyError {
 	if err = os.WriteFile(serverCertPemFile, []byte(serverCert), 0o600); err != nil {
 		return WriteSSLKeyError{fmt.Sprintf("Error saving file %s error::%v", serverCertPemFile, err), "server_cert_create_err"}
 	}
-	if err = os.WriteFile(checkSumFile, []byte(sslHash), 0o700); err != nil {
+	if err = os.WriteFile(checkSumFile, []byte(sslHash), 0o600); err != nil {
 		return WriteSSLKeyError{fmt.Sprintf("Error saving file %s error::%v", checkSumFile, err), "ssl_hash_create_err"}
 	}
 	return WriteSSLKeyError{}
@@ -886,7 +939,7 @@ func GetLoadFileFormat(whType string) string {
 	}
 }
 
-func GetLoadFilePrefix(timeWindow time.Time, warehouse WarehouseT) (timeWindowFormat string) {
+func GetLoadFilePrefix(timeWindow time.Time, warehouse Warehouse) (timeWindowFormat string) {
 	whType := warehouse.Type
 	switch whType {
 	case GCS_DATALAKE:

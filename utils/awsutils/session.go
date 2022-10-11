@@ -17,29 +17,38 @@ import (
 
 // Some AWS destinations are using SecretAccessKey instead of accessKey
 type SessionConfig struct {
-	Region           string        `mapstructure:"region"`
-	AccessKeyID      string        `mapstructure:"accessKeyID"`
-	AccessKey        string        `mapstructure:"accessKey"`
-	SecretAccessKey  string        `mapstructure:"secretAccessKey"`
-	IAMRoleARN       string        `mapstructure:"iamRoleARN"`
-	ExternalID       string        `mapstructure:"externalID"`
-	Endpoint         *string       `mapstructure:"endpoint"`
-	S3ForcePathStyle *bool         `mapstructure:"s3ForcePathStyle"`
-	DisableSSL       *bool         `mapstructure:"disableSSL"`
-	Service          string        `mapstructure:"service"`
-	Timeout          time.Duration `mapstructure:"timeout"`
+	Region           string         `mapstructure:"region"`
+	AccessKeyID      string         `mapstructure:"accessKeyID"`
+	AccessKey        string         `mapstructure:"accessKey"`
+	SecretAccessKey  string         `mapstructure:"secretAccessKey"`
+	RoleBasedAuth    bool           `mapstructure:"roleBasedAuth"`
+	IAMRoleARN       string         `mapstructure:"iamRoleARN"`
+	ExternalID       string         `mapstructure:"externalID"`
+	Endpoint         *string        `mapstructure:"endpoint"`
+	S3ForcePathStyle *bool          `mapstructure:"s3ForcePathStyle"`
+	DisableSSL       *bool          `mapstructure:"disableSSL"`
+	Service          string         `mapstructure:"service"`
+	Timeout          *time.Duration `mapstructure:"timeout"`
 }
 
 func createRoleSessionName(serviceName string) string {
 	return fmt.Sprintf("rudderstack-aws-%s-access", strings.ToLower(serviceName))
 }
 
+func getHttpClient(config *SessionConfig) *http.Client {
+	var httpClient *http.Client
+	if config.Timeout != nil {
+		httpClient = &http.Client{
+			Timeout: *config.Timeout,
+		}
+	}
+	return httpClient
+}
+
 func createDefaultSession(config *SessionConfig) (*session.Session, error) {
 	return session.NewSession(&aws.Config{
-		HTTPClient: &http.Client{
-			Timeout: config.Timeout,
-		},
-		Region: aws.String(config.Region),
+		HTTPClient: getHttpClient(config),
+		Region:     aws.String(config.Region),
 	})
 }
 
@@ -63,7 +72,7 @@ func CreateSession(config *SessionConfig) (*session.Session, error) {
 		awsCredentials *credentials.Credentials
 		err            error
 	)
-	if config.IAMRoleARN != "" {
+	if config.RoleBasedAuth {
 		awsCredentials, err = createCredentailsForRole(config)
 	} else if config.AccessKey != "" && config.AccessKeyID != "" {
 		awsCredentials, err = credentials.NewStaticCredentials(config.AccessKeyID, config.AccessKey, ""), nil
@@ -72,9 +81,7 @@ func CreateSession(config *SessionConfig) (*session.Session, error) {
 		return nil, err
 	}
 	return session.NewSession(&aws.Config{
-		HTTPClient: &http.Client{
-			Timeout: config.Timeout,
-		},
+		HTTPClient:                    getHttpClient(config),
 		Region:                        aws.String(config.Region),
 		CredentialsChainVerboseErrors: aws.Bool(true),
 		Credentials:                   awsCredentials,
@@ -84,7 +91,12 @@ func CreateSession(config *SessionConfig) (*session.Session, error) {
 	})
 }
 
-func NewSessionConfigForDestination(destination *backendconfig.DestinationT, timeout time.Duration, serviceName string) (*SessionConfig, error) {
+func isRoleBasedAuthFieldExist(config map[string]interface{}) bool {
+	_, ok := config["roleBasedAuth"].(bool)
+	return ok
+}
+
+func NewSimpleSessionConfigForDestination(destination *backendconfig.DestinationT, serviceName string) (*SessionConfig, error) {
 	if destination == nil {
 		return nil, errors.New("destination should not be nil")
 	}
@@ -92,14 +104,19 @@ func NewSessionConfigForDestination(destination *backendconfig.DestinationT, tim
 	if err := mapstructure.Decode(destination.Config, &sessionConfig); err != nil {
 		return nil, fmt.Errorf("unable to populate session config using destinationConfig: %w", err)
 	}
-	if sessionConfig.Region == "" {
-		return nil, errors.New("could not find region configuration")
+
+	if sessionConfig.RoleBasedAuth && sessionConfig.IAMRoleARN == "" {
+		return nil, errors.New("incompatible role configuration")
 	}
+
+	if !isRoleBasedAuthFieldExist(destination.Config) {
+		sessionConfig.RoleBasedAuth = sessionConfig.IAMRoleARN != ""
+	}
+
 	// Some AWS destinations are using SecretAccessKey instead of accessKey
 	if sessionConfig.SecretAccessKey != "" {
 		sessionConfig.AccessKey = sessionConfig.SecretAccessKey
 	}
-	sessionConfig.Timeout = timeout
 	sessionConfig.Service = serviceName
 	if sessionConfig.IAMRoleARN != "" {
 		/**
@@ -110,4 +127,16 @@ func NewSessionConfigForDestination(destination *backendconfig.DestinationT, tim
 		sessionConfig.ExternalID = destination.WorkspaceID
 	}
 	return &sessionConfig, nil
+}
+
+func NewSessionConfigForDestination(destination *backendconfig.DestinationT, timeout time.Duration, serviceName string) (*SessionConfig, error) {
+	sessionConfig, err := NewSimpleSessionConfigForDestination(destination, serviceName)
+	if err != nil {
+		return nil, err
+	}
+	if sessionConfig.Region == "" {
+		return nil, errors.New("could not find region configuration")
+	}
+	sessionConfig.Timeout = &timeout
+	return sessionConfig, nil
 }

@@ -31,7 +31,7 @@ type WarehouseManager interface {
 }
 
 type HandleT struct {
-	Warehouse        warehouseutils.WarehouseT
+	Warehouse        warehouseutils.Warehouse
 	DbHandle         *sql.DB
 	Uploader         warehouseutils.UploaderI
 	UploadID         int64
@@ -325,7 +325,12 @@ func (idr *HandleT) writeTableToFile(tableName string, txn *sql.Tx, gzWriter *mi
 			var rowData []string
 			eventLoader := warehouseutils.GetNewEventLoader(idr.Warehouse.Type, idr.Uploader.GetLoadFileType(), gzWriter)
 			var prop1Val, prop2Val, prop1Type, prop2Type sql.NullString
-			err = rows.Scan(&prop1Type, &prop1Val, &prop2Type, &prop2Val)
+			err = rows.Scan(
+				&prop1Type,
+				&prop1Val,
+				&prop2Type,
+				&prop2Val,
+			)
 			if err != nil {
 				return
 			}
@@ -379,6 +384,7 @@ func (idr *HandleT) downloadLoadFiles(tableName string) ([]string, error) {
 				Provider:         storageProvider,
 				Config:           idr.Warehouse.Destination.Config,
 				UseRudderStorage: idr.Uploader.UseRudderStorage(),
+				WorkspaceID:      idr.Warehouse.Destination.WorkspaceID,
 			}),
 		})
 		if err != nil {

@@ -101,17 +101,20 @@ func Test_SourceIdsSupplier_Normal_Flow(t *testing.T) {
 	// Then source ids are still empty
 	Expect(sourceIds).To(BeEmpty())
 
+	sampleWorkspaceID := `workspaceID`
 	// When the config backend publishes an event with two skipped sources
 	configCh <- pubsub.DataEvent{
-		Data: backendconfig.ConfigT{
-			Sources: []backendconfig.SourceT{
-				{
-					ID:        "one",
-					Transient: true,
-				},
-				{
-					ID:        "two",
-					Transient: true,
+		Data: map[string]backendconfig.ConfigT{
+			sampleWorkspaceID: {
+				Sources: []backendconfig.SourceT{
+					{
+						ID:        "one",
+						Transient: true,
+					},
+					{
+						ID:        "two",
+						Transient: true,
+					},
 				},
 			},
 		},

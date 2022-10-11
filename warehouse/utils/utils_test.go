@@ -17,6 +17,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/rudderlabs/rudder-server/config"
+	"github.com/rudderlabs/rudder-server/utils/awsutils"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
@@ -598,12 +599,12 @@ func TestGetConfigValue(t *testing.T) {
 	inputs := []struct {
 		key       string
 		value     string
-		warehouse WarehouseT
+		warehouse Warehouse
 	}{
 		{
 			key:   "k1",
 			value: "v1",
-			warehouse: WarehouseT{
+			warehouse: Warehouse{
 				Destination: backendconfig.DestinationT{
 					Config: map[string]interface{}{
 						"k1": "v1",
@@ -613,7 +614,7 @@ func TestGetConfigValue(t *testing.T) {
 		},
 		{
 			key: "u1",
-			warehouse: WarehouseT{
+			warehouse: Warehouse{
 				Destination: backendconfig.DestinationT{
 					Config: map[string]interface{}{},
 				},
@@ -630,12 +631,12 @@ func TestGetConfigValueBoolString(t *testing.T) {
 	inputs := []struct {
 		key       string
 		value     string
-		warehouse WarehouseT
+		warehouse Warehouse
 	}{
 		{
 			key:   "k1",
 			value: "true",
-			warehouse: WarehouseT{
+			warehouse: Warehouse{
 				Destination: backendconfig.DestinationT{
 					Config: map[string]interface{}{
 						"k1": true,
@@ -646,7 +647,7 @@ func TestGetConfigValueBoolString(t *testing.T) {
 		{
 			key:   "k1",
 			value: "false",
-			warehouse: WarehouseT{
+			warehouse: Warehouse{
 				Destination: backendconfig.DestinationT{
 					Config: map[string]interface{}{
 						"k1": false,
@@ -657,7 +658,7 @@ func TestGetConfigValueBoolString(t *testing.T) {
 		{
 			key:   "u1",
 			value: "false",
-			warehouse: WarehouseT{
+			warehouse: Warehouse{
 				Destination: backendconfig.DestinationT{
 					Config: map[string]interface{}{},
 				},
@@ -923,11 +924,11 @@ func TestGetTempFileExtension(t *testing.T) {
 
 func TestGetLoadFilePrefix(t *testing.T) {
 	inputs := []struct {
-		warehouse WarehouseT
+		warehouse Warehouse
 		expected  string
 	}{
 		{
-			warehouse: WarehouseT{
+			warehouse: Warehouse{
 				Destination: backendconfig.DestinationT{
 					Config: map[string]interface{}{
 						"tableSuffix": "key=val",
@@ -938,7 +939,7 @@ func TestGetLoadFilePrefix(t *testing.T) {
 			expected: "2022/08/06/14",
 		},
 		{
-			warehouse: WarehouseT{
+			warehouse: Warehouse{
 				Destination: backendconfig.DestinationT{
 					Config: map[string]interface{}{
 						"tableSuffix": "key=val",
@@ -949,7 +950,7 @@ func TestGetLoadFilePrefix(t *testing.T) {
 			expected: "2022/08/06/14",
 		},
 		{
-			warehouse: WarehouseT{
+			warehouse: Warehouse{
 				Destination: backendconfig.DestinationT{
 					Config: map[string]interface{}{
 						"tableSuffix": "key=val",
@@ -960,7 +961,7 @@ func TestGetLoadFilePrefix(t *testing.T) {
 			expected: "key=val/2022/08/06/14",
 		},
 		{
-			warehouse: WarehouseT{
+			warehouse: Warehouse{
 				Destination: backendconfig.DestinationT{
 					Config: map[string]interface{}{
 						"tableSuffix":      "key=val",
@@ -981,17 +982,17 @@ func TestGetLoadFilePrefix(t *testing.T) {
 
 func TestWarehouseT_GetBoolDestinationConfig(t *testing.T) {
 	inputs := []struct {
-		warehouse WarehouseT
+		warehouse Warehouse
 		expected  bool
 	}{
 		{
-			warehouse: WarehouseT{
+			warehouse: Warehouse{
 				Destination: backendconfig.DestinationT{},
 			},
 			expected: false,
 		},
 		{
-			warehouse: WarehouseT{
+			warehouse: Warehouse{
 				Destination: backendconfig.DestinationT{
 					Config: map[string]interface{}{},
 				},
@@ -999,7 +1000,7 @@ func TestWarehouseT_GetBoolDestinationConfig(t *testing.T) {
 			expected: false,
 		},
 		{
-			warehouse: WarehouseT{
+			warehouse: Warehouse{
 				Destination: backendconfig.DestinationT{
 					Config: map[string]interface{}{
 						"k1": "true",
@@ -1009,7 +1010,7 @@ func TestWarehouseT_GetBoolDestinationConfig(t *testing.T) {
 			expected: false,
 		},
 		{
-			warehouse: WarehouseT{
+			warehouse: Warehouse{
 				Destination: backendconfig.DestinationT{
 					Config: map[string]interface{}{
 						"k1": false,
@@ -1019,7 +1020,7 @@ func TestWarehouseT_GetBoolDestinationConfig(t *testing.T) {
 			expected: false,
 		},
 		{
-			warehouse: WarehouseT{
+			warehouse: Warehouse{
 				Destination: backendconfig.DestinationT{
 					Config: map[string]interface{}{
 						"k1": true,
@@ -1183,6 +1184,72 @@ func TestGetWarehouseIdentifier(t *testing.T) {
 	for _, input := range inputs {
 		got := GetWarehouseIdentifier(input.destType, input.sourceID, input.destinationID)
 		require.Equal(t, got, input.expected)
+	}
+}
+
+func TestCreateAWSSessionConfig(t *testing.T) {
+	rudderAccessKeyID := "rudderAccessKeyID"
+	rudderAccessKey := "rudderAccessKey"
+	t.Setenv("RUDDER_AWS_S3_COPY_USER_ACCESS_KEY_ID", rudderAccessKeyID)
+	t.Setenv("RUDDER_AWS_S3_COPY_USER_ACCESS_KEY", rudderAccessKey)
+
+	someAccessKeyID := "someAccessKeyID"
+	someAccessKey := "someAccessKey"
+	someIAMRoleARN := "someIAMRoleARN"
+	someWorkspaceID := "someWorkspaceID"
+
+	inputs := []struct {
+		destination    *backendconfig.DestinationT
+		service        string
+		expectedConfig *awsutils.SessionConfig
+	}{
+		{
+			destination: &backendconfig.DestinationT{
+				Config: map[string]interface{}{
+					"useRudderStorage": true,
+				},
+			},
+			service: "s3",
+			expectedConfig: &awsutils.SessionConfig{
+				AccessKeyID: rudderAccessKeyID,
+				AccessKey:   rudderAccessKey,
+				Service:     "s3",
+			},
+		},
+		{
+			destination: &backendconfig.DestinationT{
+				Config: map[string]interface{}{
+					"accessKeyID": someAccessKeyID,
+					"accessKey":   someAccessKey,
+				},
+			},
+			service: "glue",
+			expectedConfig: &awsutils.SessionConfig{
+				AccessKeyID: someAccessKeyID,
+				AccessKey:   someAccessKey,
+				Service:     "glue",
+			},
+		},
+		{
+			destination: &backendconfig.DestinationT{
+				Config: map[string]interface{}{
+					"iamRoleARN": someIAMRoleARN,
+				},
+				WorkspaceID: someWorkspaceID,
+			},
+			service: "redshift",
+			expectedConfig: &awsutils.SessionConfig{
+				RoleBasedAuth: true,
+				IAMRoleARN:    someIAMRoleARN,
+				ExternalID:    someWorkspaceID,
+				Service:       "redshift",
+			},
+		},
+	}
+	for _, input := range inputs {
+		config, err := CreateAWSSessionConfig(input.destination, input.service)
+		require.Nil(t, err)
+		require.Equal(t, config, input.expectedConfig)
 	}
 }
 
