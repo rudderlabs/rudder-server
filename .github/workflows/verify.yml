@@ -35,6 +35,7 @@ jobs:
       - name: install protoc compiler
         uses: arduino/setup-protoc@v1
         with:
+          include-pre-releases: true
           version: '3.21.7'
       - run: make proto
       - run: git diff --exit-code
