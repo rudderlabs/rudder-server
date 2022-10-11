@@ -393,7 +393,21 @@ func (rs *HandleT) loadTable(tableName string, tableSchemaInUpload, tableSchemaA
 		additionalJoinClause = fmt.Sprintf(`AND _source.%[3]s = %[1]s.%[2]s.%[3]s AND _source.%[4]s = %[1]s.%[2]s.%[4]s`, rs.Namespace, tableName, "table_name", "column_name")
 	}
 
-	sqlStatement = fmt.Sprintf(`DELETE FROM %[1]s."%[2]s" using %[1]s."%[3]s" _source where (_source.%[4]s = %[1]s.%[2]s.%[4]s %[5]s %[6]s)`, rs.Namespace, tableName, stagingTableName, primaryKey, additionalJoinClause, skipEntireTableClause)
+	sqlStatement = fmt.Sprintf(`
+		DELETE FROM 
+		  %[1]s."%[2]s" using %[1]s."%[3]s" _source 
+		where 
+		  (
+			_source.%[4]s = %[1]s.%[2]s.%[4]s %[5]s %[6]s
+		  )
+`,
+		rs.Namespace,
+		tableName,
+		stagingTableName,
+		primaryKey,
+		additionalJoinClause,
+		skipEntireTableClause,
+	)
 	pkgLogger.Infof("RS: Dedup records for table:%s using staging table: %s\n", tableName, sqlStatement)
 	_, err = tx.Exec(sqlStatement)
 	if err != nil {
