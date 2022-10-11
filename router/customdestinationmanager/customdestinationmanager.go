@@ -105,12 +105,14 @@ func (customManager *CustomManagerT) newClient(destID string) error {
 				customManager.client[destID] = customDestination
 			}
 		case KV:
-			kvManager := kvstoremanager.New(customManager.destType, destConfig)
-			customDestination = &clientHolder{
-				config: destConfig,
-				client: kvManager,
+			kvManager, err := kvstoremanager.New(customManager.destType, destConfig)
+			if err == nil {
+				customDestination = &clientHolder{
+					config: destConfig,
+					client: kvManager,
+				}
+				customManager.client[destID] = customDestination
 			}
-			customManager.client[destID] = customDestination
 		default:
 			return nil, fmt.Errorf("no provider configured for Custom Destination Manager")
 		}

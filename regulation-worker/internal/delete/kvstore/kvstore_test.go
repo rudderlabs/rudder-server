@@ -119,7 +119,8 @@ func TestRedisDeletion(t *testing.T) {
 		"address":     redisAddress,
 	}
 
-	manager := kvstoremanager.New(destName, destConfig)
+	manager, err := kvstoremanager.New(destName, destConfig)
+	require.NoError(t, err)
 
 	// inserting test data in Redis
 	for _, test := range inputTestData {
