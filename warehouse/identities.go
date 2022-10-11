@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/rudderlabs/rudder-server/warehouse/configuration_testing"
+	"github.com/rudderlabs/rudder-server/warehouse/validations"
 
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/rruntime"
@@ -422,7 +422,7 @@ func (wh *HandleT) populateHistoricIdentities(warehouse warehouseutils.Warehouse
 			whManager:            whManager,
 			dbHandle:             wh.dbHandle,
 			pgNotifier:           &wh.notifier,
-			destinationValidator: configuration_testing.NewDestinationValidator(),
+			destinationValidator: validations.NewDestinationValidator(),
 		}
 
 		tableUploadsCreated := areTableUploadsCreated(job.upload.ID)
