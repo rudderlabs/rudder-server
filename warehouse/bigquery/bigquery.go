@@ -27,13 +27,14 @@ var (
 	customPartitionsEnabled               bool
 	isUsersTableDedupEnabled              bool
 	isDedupEnabled                        bool
+	enableDeleteByJobs                    bool
 )
 
 type HandleT struct {
 	BQContext context.Context
 	Db        *bigquery.Client
 	Namespace string
-	Warehouse warehouseutils.WarehouseT
+	Warehouse warehouseutils.Warehouse
 	ProjectID string
 	Uploader  warehouseutils.UploaderI
 }
@@ -245,6 +246,47 @@ func (bq *HandleT) dropStagingTable(stagingTableName string) {
 	if err != nil {
 		pkgLogger.Errorf("BQ:  Error dropping staging table %s in bigquery dataset %s in project %s : %v", stagingTableName, bq.Namespace, bq.ProjectID, err)
 	}
+}
+
+func (bq *HandleT) DeleteBy(tableNames []string, params warehouseutils.DeleteByParams) error {
+	pkgLogger.Infof("BQ: Cleaning up the followng tables in bigquery for BQ:%s : %v", tableNames)
+	for _, tb := range tableNames {
+		sqlStatement := fmt.Sprintf(`DELETE FROM "%[1]s"."%[2]s" WHERE 
+		context_sources_job_run_id <> @jobrunid AND
+		context_sources_task_run_id <> @taskrunid AND
+		context_source_id = @sourceid AND
+		received_at < @starttime`,
+			bq.Namespace,
+			tb,
+		)
+
+		pkgLogger.Infof("PG: Deleting rows in table in bigquery for BQ:%s", bq.Warehouse.Destination.ID)
+		pkgLogger.Debugf("PG: Executing the sql statement %v", sqlStatement)
+		query := bq.Db.Query(sqlStatement)
+		query.Parameters = []bigquery.QueryParameter{
+			{Name: "jobrunid", Value: params.JobRunId},
+			{Name: "taskrunid", Value: params.TaskRunId},
+			{Name: "sourceid", Value: params.SourceId},
+			{Name: "starttime", Value: params.StartTime},
+		}
+		if enableDeleteByJobs {
+			job, err := query.Run(bq.BQContext)
+			if err != nil {
+				pkgLogger.Errorf("BQ: Error initiating load job: %v\n", err)
+				return err
+			}
+			status, err := job.Wait(bq.BQContext)
+			if err != nil {
+				pkgLogger.Errorf("BQ: Error running job: %v\n", err)
+				return err
+			}
+			if status.Err() != nil {
+				return status.Err()
+			}
+		}
+
+	}
+	return nil
 }
 
 func partitionedTable(tableName, partitionDate string) string {
@@ -628,6 +670,7 @@ func loadConfig() {
 	config.RegisterBoolConfigVariable(false, &customPartitionsEnabled, true, "Warehouse.bigquery.customPartitionsEnabled")
 	config.RegisterBoolConfigVariable(false, &isUsersTableDedupEnabled, true, "Warehouse.bigquery.isUsersTableDedupEnabled") // TODO: Depricate with respect to isDedupEnabled
 	config.RegisterBoolConfigVariable(false, &isDedupEnabled, true, "Warehouse.bigquery.isDedupEnabled")
+	config.RegisterBoolConfigVariable(false, &enableDeleteByJobs, true, "Warehouse.bigquery.enableDeleteByJobs")
 }
 
 func Init() {
@@ -639,7 +682,7 @@ func dedupEnabled() bool {
 	return isDedupEnabled || isUsersTableDedupEnabled
 }
 
-func (bq *HandleT) CrashRecover(warehouse warehouseutils.WarehouseT) (err error) {
+func (bq *HandleT) CrashRecover(warehouse warehouseutils.Warehouse) (err error) {
 	if !dedupEnabled() {
 		return
 	}
@@ -696,7 +739,7 @@ func (bq *HandleT) dropDanglingStagingTables() bool {
 	return delSuccess
 }
 
-func (bq *HandleT) IsEmpty(warehouse warehouseutils.WarehouseT) (empty bool, err error) {
+func (bq *HandleT) IsEmpty(warehouse warehouseutils.Warehouse) (empty bool, err error) {
 	empty = true
 	bq.Warehouse = warehouse
 	bq.Namespace = warehouse.Namespace
@@ -733,7 +776,7 @@ func (bq *HandleT) IsEmpty(warehouse warehouseutils.WarehouseT) (empty bool, err
 	return
 }
 
-func (bq *HandleT) Setup(warehouse warehouseutils.WarehouseT, uploader warehouseutils.UploaderI) (err error) {
+func (bq *HandleT) Setup(warehouse warehouseutils.Warehouse, uploader warehouseutils.UploaderI) (err error) {
 	bq.Warehouse = warehouse
 	bq.Namespace = warehouse.Namespace
 	bq.Uploader = uploader
@@ -747,7 +790,7 @@ func (bq *HandleT) Setup(warehouse warehouseutils.WarehouseT, uploader warehouse
 	return err
 }
 
-func (bq *HandleT) TestConnection(warehouse warehouseutils.WarehouseT) (err error) {
+func (bq *HandleT) TestConnection(warehouse warehouseutils.Warehouse) (err error) {
 	bq.Warehouse = warehouse
 	bq.Db, err = bq.connect(BQCredentialsT{
 		ProjectID:   bq.ProjectID,
@@ -788,7 +831,7 @@ func (*HandleT) AlterColumn(_, _, _ string) (err error) {
 }
 
 // FetchSchema queries bigquery and returns the schema assoiciated with provided namespace
-func (bq *HandleT) FetchSchema(warehouse warehouseutils.WarehouseT) (schema warehouseutils.SchemaT, err error) {
+func (bq *HandleT) FetchSchema(warehouse warehouseutils.Warehouse) (schema warehouseutils.SchemaT, err error) {
 	bq.Warehouse = warehouse
 	bq.Namespace = warehouse.Namespace
 	bq.ProjectID = strings.TrimSpace(warehouseutils.GetConfigValue(GCPProjectID, bq.Warehouse))
@@ -1029,7 +1072,7 @@ func (bq *HandleT) GetTotalCountInTable(tableName string) (total int64, err erro
 	return
 }
 
-func (bq *HandleT) Connect(warehouse warehouseutils.WarehouseT) (client.Client, error) {
+func (bq *HandleT) Connect(warehouse warehouseutils.Warehouse) (client.Client, error) {
 	bq.Warehouse = warehouse
 	bq.Namespace = warehouse.Namespace
 	bq.ProjectID = strings.TrimSpace(warehouseutils.GetConfigValue(GCPProjectID, bq.Warehouse))

@@ -19,6 +19,7 @@ import (
 
 	mssql "github.com/denisenkom/go-mssqldb"
 	uuid "github.com/gofrs/uuid"
+	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/services/filemanager"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
@@ -30,6 +31,7 @@ var (
 	stagingTablePrefix   string
 	pkgLogger            logger.Logger
 	diacriticLengthLimit = diacriticLimit()
+	enableDeleteByJobs   bool
 )
 
 const (
@@ -88,7 +90,7 @@ type HandleT struct {
 	Db             *sql.DB
 	Namespace      string
 	ObjectStorage  string
-	Warehouse      warehouseutils.WarehouseT
+	Warehouse      warehouseutils.Warehouse
 	Uploader       warehouseutils.UploaderI
 	ConnectTimeout time.Duration
 }
@@ -156,6 +158,7 @@ func Init() {
 
 func loadConfig() {
 	stagingTablePrefix = "rudder_staging_"
+	config.RegisterBoolConfigVariable(false, &enableDeleteByJobs, true, "Warehouse.mssql.enableDeleteByJobs")
 }
 
 func (ms *HandleT) getConnectionCredentials() CredentialsT {
@@ -178,7 +181,7 @@ func ColumnsWithDataTypes(columns map[string]string, prefix string) string {
 	return strings.Join(arr, ",")
 }
 
-func (*HandleT) IsEmpty(_ warehouseutils.WarehouseT) (empty bool, err error) {
+func (*HandleT) IsEmpty(_ warehouseutils.Warehouse) (empty bool, err error) {
 	return
 }
 
@@ -235,6 +238,38 @@ func (ms *HandleT) DownloadLoadFiles(tableName string) ([]string, error) {
 		fileNames = append(fileNames, fileName)
 	}
 	return fileNames, nil
+}
+
+func (ms *HandleT) DeleteBy(tableNames []string, params warehouseutils.DeleteByParams) (err error) {
+	pkgLogger.Infof("MS: Cleaning up the followng tables in mysql for MS for tables %s and params %+v", tableNames, params)
+	for _, tb := range tableNames {
+		sqlStatement := fmt.Sprintf(`DELETE FROM "%[1]s"."%[2]s" WHERE 
+		context_sources_job_run_id <> @jobrunid AND
+		context_sources_task_run_id <> @taskrunid AND
+		context_source_id = @sourceid AND
+		received_at < @starttime`,
+			ms.Namespace,
+			tb,
+		)
+
+		pkgLogger.Infof("MSSQL: Deleting rows in table in mysql for MS:%s ", ms.Warehouse.Destination.ID)
+		pkgLogger.Debugf("MSSQL: Executing the statement %v", sqlStatement)
+
+		if enableDeleteByJobs {
+			_, err = ms.Db.Exec(sqlStatement,
+				sql.Named("jobrunid", params.JobRunId),
+				sql.Named("taskrunid", params.TaskRunId),
+				sql.Named("sourceid", params.SourceId),
+				sql.Named("starttime", params.StartTime),
+			)
+			if err != nil {
+				pkgLogger.Errorf("Error %s", err)
+				return err
+			}
+		}
+
+	}
+	return nil
 }
 
 func (ms *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutils.TableSchemaT, skipTempTableDelete bool) (stagingTableName string, err error) {
@@ -669,7 +704,7 @@ func (*HandleT) AlterColumn(_, _, _ string) (err error) {
 	return
 }
 
-func (ms *HandleT) TestConnection(warehouse warehouseutils.WarehouseT) (err error) {
+func (ms *HandleT) TestConnection(warehouse warehouseutils.Warehouse) (err error) {
 	ms.Warehouse = warehouse
 	ms.Namespace = warehouse.Namespace
 	ms.ObjectStorage = warehouseutils.ObjectStorageType(
@@ -697,7 +732,7 @@ func (ms *HandleT) TestConnection(warehouse warehouseutils.WarehouseT) (err erro
 	return nil
 }
 
-func (ms *HandleT) Setup(warehouse warehouseutils.WarehouseT, uploader warehouseutils.UploaderI) (err error) {
+func (ms *HandleT) Setup(warehouse warehouseutils.Warehouse, uploader warehouseutils.UploaderI) (err error) {
 	ms.Warehouse = warehouse
 	ms.Namespace = warehouse.Namespace
 	ms.Uploader = uploader
@@ -707,7 +742,7 @@ func (ms *HandleT) Setup(warehouse warehouseutils.WarehouseT, uploader warehouse
 	return err
 }
 
-func (ms *HandleT) CrashRecover(warehouse warehouseutils.WarehouseT) (err error) {
+func (ms *HandleT) CrashRecover(warehouse warehouseutils.Warehouse) (err error) {
 	ms.Warehouse = warehouse
 	ms.Namespace = warehouse.Namespace
 	ms.Db, err = Connect(ms.getConnectionCredentials())
@@ -752,7 +787,7 @@ func (ms *HandleT) dropDanglingStagingTables() bool {
 }
 
 // FetchSchema queries mssql and returns the schema associated with provided namespace
-func (ms *HandleT) FetchSchema(warehouse warehouseutils.WarehouseT) (schema warehouseutils.SchemaT, err error) {
+func (ms *HandleT) FetchSchema(warehouse warehouseutils.Warehouse) (schema warehouseutils.SchemaT, err error) {
 	ms.Warehouse = warehouse
 	ms.Namespace = warehouse.Namespace
 	dbHandle, err := Connect(ms.getConnectionCredentials())
@@ -833,7 +868,7 @@ func (ms *HandleT) GetTotalCountInTable(tableName string) (total int64, err erro
 	return
 }
 
-func (ms *HandleT) Connect(warehouse warehouseutils.WarehouseT) (client.Client, error) {
+func (ms *HandleT) Connect(warehouse warehouseutils.Warehouse) (client.Client, error) {
 	ms.Warehouse = warehouse
 	ms.Namespace = warehouse.Namespace
 	ms.ObjectStorage = warehouseutils.ObjectStorageType(
