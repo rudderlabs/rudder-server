@@ -4,6 +4,9 @@ package warehouse
 
 import (
 	"context"
+	"net/http"
+	"os"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/ory/dockertest/v3"
@@ -17,8 +20,6 @@ import (
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/emptypb"
 	"google.golang.org/protobuf/types/known/structpb"
-	"net/http"
-	"os"
 )
 
 var _ = Describe("WarehouseGrpc", func() {
@@ -536,7 +537,7 @@ var _ = Describe("WarehouseGrpc", func() {
 			It("should throw Code_INVALID_ARGUMENT when received no bucketName(Not applicable for AZURE_BLOB)", func() {
 				configMap := &structpb.Struct{
 					Fields: map[string]*structpb.Value{
-						"containerName": &structpb.Value{
+						"containerName": {
 							Kind: &structpb.Value_StringValue{
 								StringValue: "tempContainerName",
 							},
@@ -550,7 +551,7 @@ var _ = Describe("WarehouseGrpc", func() {
 			It("should throw Code_INVALID_ARGUMENT when received no containerName(For AZURE_BLOB only)", func() {
 				configMap := &structpb.Struct{
 					Fields: map[string]*structpb.Value{
-						"bucketName": &structpb.Value{
+						"bucketName": {
 							Kind: &structpb.Value_StringValue{
 								StringValue: "tempbucket",
 							},
@@ -562,8 +563,6 @@ var _ = Describe("WarehouseGrpc", func() {
 				Expect(statusError.Code()).To(BeIdenticalTo(codes.Code(code.Code_INVALID_ARGUMENT)))
 				Expect(statusError.Err().Error()).To(BeIdenticalTo("rpc error: code = InvalidArgument desc = invalid argument err: containerName invalid or not present"))
 			})
-
 		})
-
 	})
 })

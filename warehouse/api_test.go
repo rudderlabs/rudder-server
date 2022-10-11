@@ -29,7 +29,6 @@ var _ = Describe("warehouse_api", func() {
 			ifNotExistThenSet("config", configValue, jsonMap)
 			Expect(jsonMap["type"]).To(BeIdenticalTo(typeValue))
 			Expect(jsonMap["config"]).To(BeIdenticalTo("{}"))
-
 		})
 	})
 })
