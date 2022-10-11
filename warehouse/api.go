@@ -361,7 +361,7 @@ func (uploadReq UploadReqT) TriggerWHUpload() (response *proto.TriggerWhUploadsR
 
 	var (
 		uploadJobT UploadJobT
-		upload     UploadT
+		upload     Upload
 	)
 
 	query := uploadReq.generateQuery(`id, source_id, destination_id, metadata`)
