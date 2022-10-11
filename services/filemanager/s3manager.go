@@ -140,10 +140,7 @@ func (manager *S3Manager) DeleteObjects(ctx context.Context, keys []string) (err
 		_, err := svc.DeleteObjectsWithContext(_ctx, input)
 		if err != nil {
 			if aerr, ok := err.(awserr.Error); ok {
-				switch aerr.Code() {
-				default:
-					pkgLogger.Errorf(`Error while deleting S3 objects: %v, error code: %v`, aerr.Error(), aerr.Code())
-				}
+				pkgLogger.Errorf(`Error while deleting S3 objects: %v, error code: %v`, aerr.Error(), aerr.Code())
 			} else {
 				// Print the error, cast err to awserr.Error to get the Code and
 				// Message from an error.

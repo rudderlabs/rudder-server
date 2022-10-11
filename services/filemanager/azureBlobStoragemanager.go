@@ -17,8 +17,7 @@ import (
 func suppressMinorErrors(err error) error {
 	if err != nil {
 		if storageError, ok := err.(azblob.StorageError); ok { // This error is a Service-specific
-			switch storageError.ServiceCode() { // Compare serviceCode to ServiceCodeXxx constants
-			case azblob.ServiceCodeContainerAlreadyExists:
+			if storageError.ServiceCode() == azblob.ServiceCodeContainerAlreadyExists {
 				pkgLogger.Debug("Received 409. Container already exists")
 				return nil
 			}
