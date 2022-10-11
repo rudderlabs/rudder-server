@@ -74,7 +74,7 @@ fmt: install-tools ## Formats all go files
 	gofumpt -l -w -extra  .
 
 .PHONY: proto
-proto: ## Generate protobuf files
+proto: install-tools ## Generate protobuf files
 	protoc --go_out=paths=source_relative:. proto/**/*.proto
 	protoc --go-grpc_out=paths=source_relative:. proto/**/*.proto
 
