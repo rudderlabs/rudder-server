@@ -34,7 +34,6 @@ import (
 var (
 	testData               []test
 	testDataMu             sync.Mutex
-	manager                kvstoremanager.KVStoreManager
 	fieldCountBeforeDelete []int
 	fieldCountAfterDelete  []int
 	redisInputTestData     []struct {
@@ -98,7 +97,16 @@ func TestFlow(t *testing.T) {
 	})
 	require.NoError(t, err)
 	t.Log("Redis server is up and running")
-	insertRedisData(t, redisAddress)
+
+	destName := "REDIS"
+	destConfig := map[string]interface{}{
+		"clusterMode": false,
+		"address":     redisAddress,
+	}
+	manager, err := kvstoremanager.New(destName, destConfig)
+	require.NoError(t, err, "failed to create kvstore manager")
+
+	insertRedisData(t, manager)
 
 	// starting minio server for batch-destination
 	minioResource, err := pool.RunWithOptions(&dockertest.RunOptions{
@@ -348,7 +356,7 @@ func handler(t *testing.T) http.Handler {
 	return srvMux
 }
 
-func insertRedisData(t *testing.T, address string) {
+func insertRedisData(t *testing.T, manager kvstoremanager.KVStoreManager) {
 	t.Helper()
 
 	redisInputTestData = []struct {
@@ -363,14 +371,6 @@ func insertRedisData(t *testing.T, address string) {
 			},
 		},
 	}
-
-	destName := "REDIS"
-	destConfig := map[string]interface{}{
-		"clusterMode": false,
-		"address":     address,
-	}
-	manager, err := kvstoremanager.New(destName, destConfig)
-	require.NoError(t, err, "failed to create kvstore manager")
 
 	// inserting test data in Redis
 	for _, test := range redisInputTestData {
