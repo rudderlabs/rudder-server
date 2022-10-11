@@ -92,7 +92,7 @@ func (ct *CTHandleT) validateDestinationFunc(req json.RawMessage, step string) (
 
 func (ct *CTHandleT) verifyingObjectStorage() (err error) {
 	// creating load file
-	tempPath, err := createLoadFile(ct.infoRequest)
+	tempPath, err := CreateTempLoadFile(ct.infoRequest)
 	if err != nil {
 		return
 	}
@@ -191,7 +191,7 @@ func (ct *CTHandleT) verifyingLoadTable() (err error) {
 	}
 
 	// creating load file
-	tempPath, err := createLoadFile(ct.infoRequest)
+	tempPath, err := CreateTempLoadFile(ct.infoRequest)
 	if err != nil {
 		return
 	}
@@ -207,7 +207,7 @@ func (ct *CTHandleT) verifyingLoadTable() (err error) {
 	return
 }
 
-func createLoadFile(req *DestinationValidationRequest) (filePath string, err error) {
+func CreateTempLoadFile(req *DestinationValidationRequest) (filePath string, err error) {
 	destination := req.Destination
 	destinationType := destination.DestinationDefinition.Name
 

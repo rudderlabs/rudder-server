@@ -18,6 +18,7 @@ import (
 	"unicode/utf8"
 
 	mssql "github.com/denisenkom/go-mssqldb"
+	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/services/filemanager"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
@@ -25,7 +26,10 @@ import (
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
-var pkgLogger logger.Logger
+var (
+	pkgLogger          logger.Logger
+	enableDeleteByJobs bool
+)
 
 const (
 	host     = "host"
@@ -142,7 +146,12 @@ func Connect(cred CredentialsT) (*sql.DB, error) {
 }
 
 func Init() {
+	loadConfig()
 	pkgLogger = logger.NewLogger().Child("warehouse").Child("mssql")
+}
+
+func loadConfig() {
+	config.RegisterBoolConfigVariable(false, &enableDeleteByJobs, true, "Warehouse.mssql.enableDeleteByJobs")
 }
 
 func (ms *HandleT) getConnectionCredentials() CredentialsT {
@@ -222,6 +231,38 @@ func (ms *HandleT) DownloadLoadFiles(tableName string) ([]string, error) {
 		fileNames = append(fileNames, fileName)
 	}
 	return fileNames, nil
+}
+
+func (ms *HandleT) DeleteBy(tableNames []string, params warehouseutils.DeleteByParams) (err error) {
+	pkgLogger.Infof("MS: Cleaning up the followng tables in mysql for MS for tables %s and params %+v", tableNames, params)
+	for _, tb := range tableNames {
+		sqlStatement := fmt.Sprintf(`DELETE FROM "%[1]s"."%[2]s" WHERE 
+		context_sources_job_run_id <> @jobrunid AND
+		context_sources_task_run_id <> @taskrunid AND
+		context_source_id = @sourceid AND
+		received_at < @starttime`,
+			ms.Namespace,
+			tb,
+		)
+
+		pkgLogger.Infof("MSSQL: Deleting rows in table in mysql for MS:%s ", ms.Warehouse.Destination.ID)
+		pkgLogger.Debugf("MSSQL: Executing the statement %v", sqlStatement)
+
+		if enableDeleteByJobs {
+			_, err = ms.Db.Exec(sqlStatement,
+				sql.Named("jobrunid", params.JobRunId),
+				sql.Named("taskrunid", params.TaskRunId),
+				sql.Named("sourceid", params.SourceId),
+				sql.Named("starttime", params.StartTime),
+			)
+			if err != nil {
+				pkgLogger.Errorf("Error %s", err)
+				return err
+			}
+		}
+
+	}
+	return nil
 }
 
 func (ms *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutils.TableSchemaT, skipTempTableDelete bool) (stagingTableName string, err error) {

@@ -26,6 +26,7 @@ var (
 	setVarCharMax                 bool
 	pkgLogger                     logger.Logger
 	skipComputingUserLatestTraits bool
+	enableDeleteByJobs            bool
 )
 
 func Init() {
@@ -36,6 +37,7 @@ func Init() {
 func loadConfig() {
 	setVarCharMax = config.GetBool("Warehouse.redshift.setVarCharMax", false)
 	config.RegisterBoolConfigVariable(false, &skipComputingUserLatestTraits, true, "Warehouse.redshift.skipComputingUserLatestTraits")
+	config.RegisterBoolConfigVariable(false, &enableDeleteByJobs, true, "Warehouse.redshift.enableDeleteByJobs")
 }
 
 type HandleT struct {
@@ -168,6 +170,39 @@ func (rs *HandleT) AddColumn(name, columnName, columnType string) (err error) {
 	pkgLogger.Infof("Adding column in redshift for RS:%s : %v", rs.Warehouse.Destination.ID, sqlStatement)
 	_, err = rs.Db.Exec(sqlStatement)
 	return
+}
+
+func (rs *HandleT) DeleteBy(tableNames []string, params warehouseutils.DeleteByParams) (err error) {
+	pkgLogger.Infof("RS: Cleaning up the followng tables in redshift for RS:%s : %+v", tableNames, params)
+	pkgLogger.Infof("RS: Flag for enableDeleteByJobs is %t", enableDeleteByJobs)
+	for _, tb := range tableNames {
+		sqlStatement := fmt.Sprintf(`DELETE FROM "%[1]s"."%[2]s" WHERE 
+		context_sources_job_run_id <> $1 AND
+		context_sources_task_run_id <> $2 AND
+		context_source_id = $3 AND
+		received_at < $4`,
+			rs.Namespace,
+			tb,
+		)
+
+		pkgLogger.Infof("RS: Deleting rows in table in redshift for RS:%s", rs.Warehouse.Destination.ID)
+		pkgLogger.Debugf("RS: Executing the query %v", sqlStatement)
+
+		if enableDeleteByJobs {
+			_, err = rs.Db.Exec(sqlStatement,
+				params.JobRunId,
+				params.TaskRunId,
+				params.SourceId,
+				params.StartTime,
+			)
+			if err != nil {
+				pkgLogger.Errorf("Error in executing the query %s", err.Error)
+				return err
+			}
+		}
+
+	}
+	return nil
 }
 
 // alterStringToText alters column data type string(varchar(512)) to text which is varchar(max) in redshift

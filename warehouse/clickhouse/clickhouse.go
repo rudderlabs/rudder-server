@@ -380,6 +380,10 @@ func (ch *HandleT) DownloadLoadFiles(tableName string) ([]string, error) {
 	return fileNames, dErr
 }
 
+func (*HandleT) DeleteBy([]string, warehouseutils.DeleteByParams) error {
+	return fmt.Errorf(warehouseutils.NotImplementedErrorCode)
+}
+
 func (ch *HandleT) downloadLoadFile(object *warehouseutils.LoadFileT, tableName string, downloader filemanager.FileManager, storageProvider string) (fileName string, err error) {
 	pkgLogger.Debugf("%s DownloadLoadFile Started", ch.GetLogIdentifier(tableName, storageProvider))
 	defer pkgLogger.Debugf("%s DownloadLoadFile Completed", ch.GetLogIdentifier(tableName, storageProvider))

@@ -266,6 +266,10 @@ func Connect(cred *databricks.CredentialsT, connectTimeout time.Duration) (dbHan
 	return
 }
 
+func (*HandleT) DeleteBy([]string, warehouseutils.DeleteByParams) error {
+	return fmt.Errorf(warehouseutils.NotImplementedErrorCode)
+}
+
 // fetchTables fetch tables with tableNames
 func (dl *HandleT) fetchTables(dbT *databricks.DBHandleT, schema string) (tableNames []string, err error) {
 	fetchTablesExecTime := stats.Default.NewTaggedStat("warehouse.deltalake.grpcExecTime", stats.TimerType, map[string]string{
