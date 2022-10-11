@@ -2028,8 +2028,9 @@ func startWebHandler(ctx context.Context) error {
 	}
 
 	srv := &http.Server{
-		Addr:    fmt.Sprintf(":%d", webPort),
-		Handler: bugsnag.Handler(mux),
+		Addr:              fmt.Sprintf(":%d", webPort),
+		Handler:           bugsnag.Handler(mux),
+		ReadHeaderTimeout: 3 * time.Second,
 	}
 
 	return httputil.ListenAndServe(ctx, srv)

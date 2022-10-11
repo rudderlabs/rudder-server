@@ -75,8 +75,9 @@ func (p *Profiler) StartServer(ctx context.Context) error {
 	})
 
 	srv := &http.Server{
-		Handler: mux,
-		Addr:    ":" + strconv.Itoa(p.port),
+		Handler:           mux,
+		Addr:              ":" + strconv.Itoa(p.port),
+		ReadHeaderTimeout: 3 * time.Second,
 	}
 
 	pkgLogger.Infof("Starting server on port %d", p.port)

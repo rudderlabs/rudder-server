@@ -1508,8 +1508,9 @@ func (gateway *HandleT) StartAdminHandler(ctx context.Context) error {
 	srvMux.HandleFunc("/v1/pending-events", gateway.pendingEventsHandler).Methods("POST")
 
 	srv := &http.Server{
-		Addr:    ":" + strconv.Itoa(adminWebPort),
-		Handler: bugsnag.Handler(srvMux),
+		Addr:              ":" + strconv.Itoa(adminWebPort),
+		Handler:           bugsnag.Handler(srvMux),
+		ReadHeaderTimeout: 3 * time.Second,
 	}
 
 	return rs_httputil.ListenAndServe(ctx, srv)
