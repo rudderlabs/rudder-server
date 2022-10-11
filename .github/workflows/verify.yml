@@ -41,6 +41,7 @@ jobs:
       - name: Error message
         if: ${{ failure() }}
         run: echo 'proto files are not generated correctly. Ensure you have run `make proto` and committed the files locally.'
+      - run: git checkout proto ## cleanup tree due to protoc version comment
 
       - run: make fmt
       - run: git diff --exit-code
