@@ -35,10 +35,9 @@ jobs:
       - name: install protoc compiler
         uses: arduino/setup-protoc@v1
         with:
-          include-pre-releases: true
-          version: '21.7'
+          version: '3.x'
       - run: make proto
-      - run: git diff --exit-code
+      - run: git diff -I '^\/\/\s+-?\s+protoc\s+v' --exit-code ## Ignore protoc version comment
       - name: Error message
         if: ${{ failure() }}
         run: echo 'proto files are not generated correctly. Ensure you have run `make proto` and committed the files locally.'
