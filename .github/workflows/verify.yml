@@ -35,7 +35,7 @@ jobs:
       - name: install protoc compiler
         uses: arduino/setup-protoc@v1
         with:
-          version: '3.x'
+          version: '3.21.7'
       - run: make proto
       - run: git diff --exit-code
       - name: Error message
