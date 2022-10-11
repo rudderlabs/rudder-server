@@ -1,4 +1,4 @@
-package configuration_testing
+package validations
 
 import (
 	"encoding/json"
@@ -19,16 +19,38 @@ var (
 	fileManagerTimeout      time.Duration
 )
 
+var (
+	TestTableSchemaMap = map[string]string{
+		"id":  "int",
+		"val": "string",
+	}
+	TestPayloadMap = map[string]interface{}{
+		"id":  1,
+		"val": "RudderStack",
+	}
+	TestNamespace  = "rudderstack_setup_test"
+	AlterColumnMap = map[string]string{
+		"val_alter": "string",
+	}
+)
+
+const (
+	verifyingObjectStorage       = "Verifying Object Storage"
+	verifyingConnections         = "Verifying Connections"
+	verifyingCreateSchema        = "Verifying Create Schema"
+	verifyingCreateAndAlterTable = "Verifying Create and Alter Table"
+	verifyingFetchSchema         = "Verifying Fetch Schema"
+	verifyingLoadTable           = "Verifying Load Table"
+)
+
 func Init() {
 	connectionTestingFolder = config.GetString("RUDDER_CONNECTION_TESTING_BUCKET_FOLDER_NAME", misc.RudderTestPayload)
-	pkgLogger = logger.NewLogger().Child("warehouse").Child("configuration_testing")
+	pkgLogger = logger.NewLogger().Child("warehouse").Child("validations")
 	fileManagerFactory = filemanager.DefaultFileManagerFactory
 	fileManagerTimeout = 15 * time.Second
 }
 
-/*
-Validation Facade: Global invoking function for validation
-*/
+// Validating Facade for Global invoking validation
 func (ct *CTHandleT) Validating(req *proto.WHValidationRequest) (response *proto.WHValidationResponse, err error) {
 	f, ok := ct.validationFunctions()[req.Path]
 	if !ok {
