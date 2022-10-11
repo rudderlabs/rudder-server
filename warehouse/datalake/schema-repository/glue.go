@@ -24,11 +24,11 @@ type GlueSchemaRepository struct {
 	glueClient *glue.Glue
 	s3bucket   string
 	s3prefix   string
-	Warehouse  warehouseutils.WarehouseT
+	Warehouse  warehouseutils.Warehouse
 	Namespace  string
 }
 
-func NewGlueSchemaRepository(wh warehouseutils.WarehouseT) (*GlueSchemaRepository, error) {
+func NewGlueSchemaRepository(wh warehouseutils.Warehouse) (*GlueSchemaRepository, error) {
 	gl := GlueSchemaRepository{
 		s3bucket:  warehouseutils.GetConfigValue(warehouseutils.AWSBucketNameConfig, wh),
 		s3prefix:  warehouseutils.GetConfigValue(warehouseutils.AWSS3Prefix, wh),
@@ -45,7 +45,7 @@ func NewGlueSchemaRepository(wh warehouseutils.WarehouseT) (*GlueSchemaRepositor
 	return &gl, nil
 }
 
-func (gl *GlueSchemaRepository) FetchSchema(warehouse warehouseutils.WarehouseT) (warehouseutils.SchemaT, error) {
+func (gl *GlueSchemaRepository) FetchSchema(warehouse warehouseutils.Warehouse) (warehouseutils.SchemaT, error) {
 	schema := warehouseutils.SchemaT{}
 	var err error
 
@@ -164,7 +164,7 @@ func (gl *GlueSchemaRepository) AlterColumn(tableName, columnName, columnType st
 	return gl.AddColumn(tableName, columnName, columnType)
 }
 
-func getGlueClient(wh warehouseutils.WarehouseT) (*glue.Glue, error) {
+func getGlueClient(wh warehouseutils.Warehouse) (*glue.Glue, error) {
 	sessionConfig, err := awsutils.NewSimpleSessionConfigForDestination(&wh.Destination, glue.ServiceID)
 	if err != nil {
 		return nil, err

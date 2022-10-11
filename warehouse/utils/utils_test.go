@@ -604,12 +604,12 @@ func TestGetConfigValue(t *testing.T) {
 	inputs := []struct {
 		key       string
 		value     string
-		warehouse WarehouseT
+		warehouse Warehouse
 	}{
 		{
 			key:   "k1",
 			value: "v1",
-			warehouse: WarehouseT{
+			warehouse: Warehouse{
 				Destination: backendconfig.DestinationT{
 					Config: map[string]interface{}{
 						"k1": "v1",
@@ -619,7 +619,7 @@ func TestGetConfigValue(t *testing.T) {
 		},
 		{
 			key: "u1",
-			warehouse: WarehouseT{
+			warehouse: Warehouse{
 				Destination: backendconfig.DestinationT{
 					Config: map[string]interface{}{},
 				},
@@ -636,12 +636,12 @@ func TestGetConfigValueBoolString(t *testing.T) {
 	inputs := []struct {
 		key       string
 		value     string
-		warehouse WarehouseT
+		warehouse Warehouse
 	}{
 		{
 			key:   "k1",
 			value: "true",
-			warehouse: WarehouseT{
+			warehouse: Warehouse{
 				Destination: backendconfig.DestinationT{
 					Config: map[string]interface{}{
 						"k1": true,
@@ -652,7 +652,7 @@ func TestGetConfigValueBoolString(t *testing.T) {
 		{
 			key:   "k1",
 			value: "false",
-			warehouse: WarehouseT{
+			warehouse: Warehouse{
 				Destination: backendconfig.DestinationT{
 					Config: map[string]interface{}{
 						"k1": false,
@@ -663,7 +663,7 @@ func TestGetConfigValueBoolString(t *testing.T) {
 		{
 			key:   "u1",
 			value: "false",
-			warehouse: WarehouseT{
+			warehouse: Warehouse{
 				Destination: backendconfig.DestinationT{
 					Config: map[string]interface{}{},
 				},
@@ -929,11 +929,11 @@ func TestGetTempFileExtension(t *testing.T) {
 
 func TestGetLoadFilePrefix(t *testing.T) {
 	inputs := []struct {
-		warehouse WarehouseT
+		warehouse Warehouse
 		expected  string
 	}{
 		{
-			warehouse: WarehouseT{
+			warehouse: Warehouse{
 				Destination: backendconfig.DestinationT{
 					Config: map[string]interface{}{
 						"tableSuffix": "key=val",
@@ -944,7 +944,7 @@ func TestGetLoadFilePrefix(t *testing.T) {
 			expected: "2022/08/06/14",
 		},
 		{
-			warehouse: WarehouseT{
+			warehouse: Warehouse{
 				Destination: backendconfig.DestinationT{
 					Config: map[string]interface{}{
 						"tableSuffix": "key=val",
@@ -955,7 +955,7 @@ func TestGetLoadFilePrefix(t *testing.T) {
 			expected: "2022/08/06/14",
 		},
 		{
-			warehouse: WarehouseT{
+			warehouse: Warehouse{
 				Destination: backendconfig.DestinationT{
 					Config: map[string]interface{}{
 						"tableSuffix": "key=val",
@@ -966,7 +966,7 @@ func TestGetLoadFilePrefix(t *testing.T) {
 			expected: "key=val/2022/08/06/14",
 		},
 		{
-			warehouse: WarehouseT{
+			warehouse: Warehouse{
 				Destination: backendconfig.DestinationT{
 					Config: map[string]interface{}{
 						"tableSuffix":      "key=val",
@@ -987,17 +987,17 @@ func TestGetLoadFilePrefix(t *testing.T) {
 
 func TestWarehouseT_GetBoolDestinationConfig(t *testing.T) {
 	inputs := []struct {
-		warehouse WarehouseT
+		warehouse Warehouse
 		expected  bool
 	}{
 		{
-			warehouse: WarehouseT{
+			warehouse: Warehouse{
 				Destination: backendconfig.DestinationT{},
 			},
 			expected: false,
 		},
 		{
-			warehouse: WarehouseT{
+			warehouse: Warehouse{
 				Destination: backendconfig.DestinationT{
 					Config: map[string]interface{}{},
 				},
@@ -1005,7 +1005,7 @@ func TestWarehouseT_GetBoolDestinationConfig(t *testing.T) {
 			expected: false,
 		},
 		{
-			warehouse: WarehouseT{
+			warehouse: Warehouse{
 				Destination: backendconfig.DestinationT{
 					Config: map[string]interface{}{
 						"k1": "true",
@@ -1015,7 +1015,7 @@ func TestWarehouseT_GetBoolDestinationConfig(t *testing.T) {
 			expected: false,
 		},
 		{
-			warehouse: WarehouseT{
+			warehouse: Warehouse{
 				Destination: backendconfig.DestinationT{
 					Config: map[string]interface{}{
 						"k1": false,
@@ -1025,7 +1025,7 @@ func TestWarehouseT_GetBoolDestinationConfig(t *testing.T) {
 			expected: false,
 		},
 		{
-			warehouse: WarehouseT{
+			warehouse: Warehouse{
 				Destination: backendconfig.DestinationT{
 					Config: map[string]interface{}{
 						"k1": true,
