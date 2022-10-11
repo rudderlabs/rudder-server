@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/rudderlabs/rudder-server/warehouse/configuration_testing"
+	"github.com/rudderlabs/rudder-server/warehouse/validations"
 
 	"github.com/rudderlabs/rudder-server/admin"
 	"github.com/rudderlabs/rudder-server/warehouse/manager"
@@ -50,7 +50,7 @@ func (*WarehouseAdmin) Query(s QueryInput, reply *warehouseutils.QueryResult) er
 		return errors.New("please specify the destination ID to query the warehouse")
 	}
 
-	var warehouse warehouseutils.WarehouseT
+	var warehouse warehouseutils.Warehouse
 	srcMap, ok := connectionsMap[s.DestID]
 	if !ok {
 		return errors.New("please specify a valid and existing destination ID")
@@ -92,7 +92,7 @@ func (*WarehouseAdmin) ConfigurationTest(s ConfigurationTestInput, reply *Config
 		return errors.New("please specify the destination ID to query the warehouse")
 	}
 
-	var warehouse warehouseutils.WarehouseT
+	var warehouse warehouseutils.Warehouse
 	srcMap, ok := connectionsMap[s.DestID]
 	if !ok {
 		return fmt.Errorf("please specify a valid and existing destinationID: %s", s.DestID)
@@ -105,8 +105,8 @@ func (*WarehouseAdmin) ConfigurationTest(s ConfigurationTestInput, reply *Config
 
 	pkgLogger.Infof(`[WH Admin]: Validating warehouse destination: %s:%s`, warehouse.Type, warehouse.Destination.ID)
 
-	destinationValidator := configuration_testing.NewDestinationValidator()
-	req := &configuration_testing.DestinationValidationRequest{Destination: warehouse.Destination}
+	destinationValidator := validations.NewDestinationValidator()
+	req := &validations.DestinationValidationRequest{Destination: warehouse.Destination}
 	res, err := destinationValidator.ValidateCredentials(req)
 	if err != nil {
 		return fmt.Errorf("unable to successfully validate destination: %s credentials, err: %v", warehouse.Destination.ID, err)

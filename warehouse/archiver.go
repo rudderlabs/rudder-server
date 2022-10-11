@@ -125,7 +125,7 @@ func backupRecords(args backupRecordsArgs) (backupLocation string, err error) {
 
 func deleteFilesInStorage(locations []string) error {
 	fManager, err := filemanager.DefaultFileManagerFactory.New(&filemanager.SettingsT{
-		Provider: "S3",
+		Provider: warehouseutils.S3,
 		Config:   misc.GetRudderObjectStorageConfig(""),
 	})
 	if err != nil {

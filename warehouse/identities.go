@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/rudderlabs/rudder-server/warehouse/configuration_testing"
+	"github.com/rudderlabs/rudder-server/warehouse/validations"
 
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/rruntime"
@@ -31,11 +31,11 @@ func Init2() {
 	populatedHistoricIdentitiesMap = map[string]bool{}
 }
 
-func uniqueWarehouseNamespaceString(warehouse warehouseutils.WarehouseT) string {
+func uniqueWarehouseNamespaceString(warehouse warehouseutils.Warehouse) string {
 	return fmt.Sprintf(`namespace:%s:destination:%s`, warehouse.Namespace, warehouse.Destination.ID)
 }
 
-func isDestHistoricIdentitiesPopulated(warehouse warehouseutils.WarehouseT) bool {
+func isDestHistoricIdentitiesPopulated(warehouse warehouseutils.Warehouse) bool {
 	populatedHistoricIdentitiesMapLock.RLock()
 	if populatedHistoricIdentitiesMap[uniqueWarehouseNamespaceString(warehouse)] {
 		populatedHistoricIdentitiesMapLock.RUnlock()
@@ -45,13 +45,13 @@ func isDestHistoricIdentitiesPopulated(warehouse warehouseutils.WarehouseT) bool
 	return false
 }
 
-func setDestHistoricIndetitiesPopulated(warehouse warehouseutils.WarehouseT) {
+func setDestHistoricIndetitiesPopulated(warehouse warehouseutils.Warehouse) {
 	populatedHistoricIdentitiesMapLock.Lock()
 	populatedHistoricIdentitiesMap[uniqueWarehouseNamespaceString(warehouse)] = true
 	populatedHistoricIdentitiesMapLock.Unlock()
 }
 
-func setDestHistoricIdentitiesPopulateInProgress(warehouse warehouseutils.WarehouseT, starting bool) {
+func setDestHistoricIdentitiesPopulateInProgress(warehouse warehouseutils.Warehouse, starting bool) {
 	populatingHistoricIdentitiesProgressMapLock.Lock()
 	if starting {
 		populatingHistoricIdentitiesProgressMap[uniqueWarehouseNamespaceString(warehouse)] = true
@@ -61,7 +61,7 @@ func setDestHistoricIdentitiesPopulateInProgress(warehouse warehouseutils.Wareho
 	populatingHistoricIdentitiesProgressMapLock.Unlock()
 }
 
-func isDestHistoricIdentitiesPopulateInProgress(warehouse warehouseutils.WarehouseT) bool {
+func isDestHistoricIdentitiesPopulateInProgress(warehouse warehouseutils.Warehouse) bool {
 	populatingHistoricIdentitiesProgressMapLock.RLock()
 	if populatingHistoricIdentitiesProgressMap[uniqueWarehouseNamespaceString(warehouse)] {
 		populatingHistoricIdentitiesProgressMapLock.RUnlock()
@@ -71,34 +71,32 @@ func isDestHistoricIdentitiesPopulateInProgress(warehouse warehouseutils.Warehou
 	return false
 }
 
-func (wh *HandleT) getPendingPopulateIdentitiesLoad(warehouse warehouseutils.WarehouseT) (upload UploadT, found bool) {
+func (wh *HandleT) getPendingPopulateIdentitiesLoad(warehouse warehouseutils.Warehouse) (upload Upload, found bool) {
 	sqlStatement := fmt.Sprintf(`
 		SELECT 
-		  id, 
-		  status, 
-		  schema, 
-		  namespace, 
-		  source_id, 
-		  destination_id, 
-		  destination_type, 
-		  start_staging_file_id, 
-		  end_staging_file_id, 
-		  start_load_file_id, 
-		  end_load_file_id, 
-		  error 
-		FROM 
-		  %[1]s UT
-		WHERE 
-		  (
-			UT.source_id = '%[2]s' 
-			AND UT.destination_id = '%[3]s' 
-			AND UT.destination_type = '%[4]s' 
-			AND UT.status != '%[5]s' 
-			AND UT.status != '%[6]s'
-		  ) 
-		ORDER BY 
-		  id ASC;
-`,
+			id, 
+			status, 
+			schema, 
+			namespace,
+			workspace_id,
+			source_id, 
+			destination_id, 
+			destination_type, 
+			start_staging_file_id, 
+			end_staging_file_id, 
+			start_load_file_id, 
+			end_load_file_id, 
+			error 
+		FROM %[1]s UT
+		WHERE (
+			UT.source_id='%[2]s' AND 
+			UT.destination_id='%[3]s' AND 
+			UT.destination_type='%[4]s' AND 
+			UT.status != '%[5]s' AND 
+			UT.status != '%[6]s'
+		) 
+		ORDER BY id asc
+	`,
 		warehouseutils.WarehouseUploadsTable,
 		warehouse.Source.ID,
 		warehouse.Destination.ID,
@@ -109,10 +107,11 @@ func (wh *HandleT) getPendingPopulateIdentitiesLoad(warehouse warehouseutils.War
 
 	var schema json.RawMessage
 	err := wh.dbHandle.QueryRow(sqlStatement).Scan(
-		upload.ID,
+		&upload.ID,
 		&upload.Status,
 		&schema,
 		&upload.Namespace,
+		&upload.WorkspaceID,
 		&upload.SourceID,
 		&upload.DestinationID,
 		&upload.DestinationType,
@@ -130,6 +129,20 @@ func (wh *HandleT) getPendingPopulateIdentitiesLoad(warehouse warehouseutils.War
 	}
 	found = true
 	upload.UploadSchema = warehouseutils.JSONSchemaToMap(schema)
+
+	// TODO: remove this once the migration is complete
+	if upload.WorkspaceID == "" {
+		var ok bool
+		wh.workspaceBySourceIDsLock.RLock()
+		upload.WorkspaceID, ok = wh.workspaceBySourceIDs[upload.SourceID]
+		wh.workspaceBySourceIDsLock.Unlock()
+
+		if !ok {
+			pkgLogger.Warnf("Workspace not found for source id: %q", upload.SourceID)
+		}
+
+	}
+
 	return
 }
 
@@ -137,7 +150,7 @@ func (wh *HandleT) poulateHistoricIdentitiesDestType() string {
 	return wh.destType + "_IDENTITY_PRE_LOAD"
 }
 
-func (wh *HandleT) hasLocalIdentityData(warehouse warehouseutils.WarehouseT) (exists bool) {
+func (wh *HandleT) hasLocalIdentityData(warehouse warehouseutils.Warehouse) (exists bool) {
 	sqlStatement := fmt.Sprintf(`
 		SELECT 
 		  EXISTS (
@@ -157,7 +170,7 @@ func (wh *HandleT) hasLocalIdentityData(warehouse warehouseutils.WarehouseT) (ex
 	return
 }
 
-func (wh *HandleT) hasWarehouseData(warehouse warehouseutils.WarehouseT) (bool, error) {
+func (wh *HandleT) hasWarehouseData(warehouse warehouseutils.Warehouse) (bool, error) {
 	whManager, err := manager.New(wh.destType)
 	if err != nil {
 		panic(err)
@@ -170,7 +183,7 @@ func (wh *HandleT) hasWarehouseData(warehouse warehouseutils.WarehouseT) (bool, 
 	return !empty, nil
 }
 
-func (wh *HandleT) setupIdentityTables(warehouse warehouseutils.WarehouseT) {
+func (wh *HandleT) setupIdentityTables(warehouse warehouseutils.Warehouse) {
 	var name sql.NullString
 	sqlStatement := fmt.Sprintf(`SELECT to_regclass('%s')`, warehouseutils.IdentityMappingsTableName(warehouse))
 	err := wh.dbHandle.QueryRow(sqlStatement).Scan(&name)
@@ -271,7 +284,7 @@ func (wh *HandleT) setupIdentityTables(warehouse warehouseutils.WarehouseT) {
 	}
 }
 
-func (wh *HandleT) initPrePopulateDestIdentitiesUpload(warehouse warehouseutils.WarehouseT) UploadT {
+func (wh *HandleT) initPrePopulateDestIdentitiesUpload(warehouse warehouseutils.Warehouse) Upload {
 	schema := make(map[string]map[string]string)
 	// TODO: DRY this code
 	identityRules := map[string]string{
@@ -296,22 +309,16 @@ func (wh *HandleT) initPrePopulateDestIdentitiesUpload(warehouse warehouseutils.
 		panic(err)
 	}
 
-	sqlStatement := fmt.Sprintf(`
-		INSERT INTO %s (
-		  source_id, namespace, destination_id, 
-		  destination_type, status, schema, 
-		  error, metadata, created_at, updated_at, 
-		  start_staging_file_id, end_staging_file_id, 
-		  start_load_file_id, end_load_file_id
-		) 
-		VALUES 
-		  (
-			$1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 
-			$11, $12, $13, $14
-		  ) RETURNING id;
-`,
-		warehouseutils.WarehouseUploadsTable,
-	)
+	sqlStatement := fmt.Sprintf(`INSERT INTO %s (
+		source_id, namespace, workspace_id, destination_id, 
+		destination_type, status, schema, error, metadata, 
+		created_at, updated_at, 
+		start_staging_file_id, end_staging_file_id, 
+		start_load_file_id, end_load_file_id)
+	VALUES 
+		($1, $2, $3, $4, $5, $6 ,$7, $8, $9, $10, $11, $12, $13, $14, $15) 
+	RETURNING id
+	`, warehouseutils.WarehouseUploadsTable)
 	stmt, err := wh.dbHandle.Prepare(sqlStatement)
 	if err != nil {
 		panic(fmt.Errorf("Query: %s\nfailed to prepare with Error : %w", sqlStatement, err))
@@ -322,6 +329,7 @@ func (wh *HandleT) initPrePopulateDestIdentitiesUpload(warehouse warehouseutils.
 	row := stmt.QueryRow(
 		warehouse.Source.ID,
 		warehouse.Namespace,
+		warehouse.WorkspaceID,
 		warehouse.Destination.ID,
 		wh.poulateHistoricIdentitiesDestType(),
 		Waiting,
@@ -342,9 +350,10 @@ func (wh *HandleT) initPrePopulateDestIdentitiesUpload(warehouse warehouseutils.
 		panic(err)
 	}
 
-	upload := UploadT{
+	upload := Upload{
 		ID:              uploadID,
 		Namespace:       warehouse.Namespace,
+		WorkspaceID:     warehouse.WorkspaceID,
 		SourceID:        warehouse.Source.ID,
 		DestinationID:   warehouse.Destination.ID,
 		DestinationType: wh.poulateHistoricIdentitiesDestType(),
@@ -355,13 +364,13 @@ func (wh *HandleT) initPrePopulateDestIdentitiesUpload(warehouse warehouseutils.
 	return upload
 }
 
-func (*HandleT) setFailedStat(warehouse warehouseutils.WarehouseT, err error) {
+func (*HandleT) setFailedStat(warehouse warehouseutils.Warehouse, err error) {
 	if err != nil {
 		warehouseutils.DestStat(stats.CountType, "failed_uploads", warehouse.Identifier).Count(1)
 	}
 }
 
-func (wh *HandleT) populateHistoricIdentities(warehouse warehouseutils.WarehouseT) {
+func (wh *HandleT) populateHistoricIdentities(warehouse warehouseutils.Warehouse) {
 	if isDestHistoricIdentitiesPopulated(warehouse) || isDestHistoricIdentitiesPopulateInProgress(warehouse) {
 		return
 	}
@@ -377,7 +386,7 @@ func (wh *HandleT) populateHistoricIdentities(warehouse warehouseutils.Warehouse
 
 		// check for pending loads (populateHistoricIdentities)
 		var hasPendingLoad bool
-		var upload UploadT
+		var upload Upload
 		upload, hasPendingLoad = wh.getPendingPopulateIdentitiesLoad(warehouse)
 
 		if hasPendingLoad {
@@ -413,7 +422,7 @@ func (wh *HandleT) populateHistoricIdentities(warehouse warehouseutils.Warehouse
 			whManager:            whManager,
 			dbHandle:             wh.dbHandle,
 			pgNotifier:           &wh.notifier,
-			destinationValidator: configuration_testing.NewDestinationValidator(),
+			destinationValidator: validations.NewDestinationValidator(),
 		}
 
 		tableUploadsCreated := areTableUploadsCreated(job.upload.ID)

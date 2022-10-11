@@ -25,10 +25,10 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
 	"github.com/rudderlabs/rudder-server/utils/types"
-	"github.com/rudderlabs/rudder-server/warehouse/configuration_testing"
 	"github.com/rudderlabs/rudder-server/warehouse/identity"
 	"github.com/rudderlabs/rudder-server/warehouse/manager"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
+	"github.com/rudderlabs/rudder-server/warehouse/validations"
 )
 
 // Upload Status
@@ -80,9 +80,10 @@ type uploadStateT struct {
 	nextState  *uploadStateT
 }
 
-type UploadT struct {
+type Upload struct {
 	ID                   int64
 	Namespace            string
+	WorkspaceID          string
 	SourceID             string
 	SourceType           string
 	SourceCategory       string
@@ -119,9 +120,9 @@ type UploadT struct {
 type tableNameT string
 
 type UploadJobT struct {
-	upload               *UploadT
+	upload               *Upload
 	dbHandle             *sql.DB
-	warehouse            warehouseutils.WarehouseT
+	warehouse            warehouseutils.Warehouse
 	whManager            manager.ManagerI
 	stagingFiles         []*StagingFileT
 	stagingFileIDs       []int64
@@ -131,7 +132,7 @@ type UploadJobT struct {
 	uploadLock           sync.Mutex
 	hasAllTablesSkipped  bool
 	tableUploadStatuses  []*TableUploadStatusT
-	destinationValidator configuration_testing.DestinationValidator
+	destinationValidator validations.DestinationValidator
 }
 
 type UploadColumnT struct {
@@ -211,7 +212,15 @@ func (job *UploadJobT) trackLongRunningUpload() chan struct{} {
 			// do nothing
 		case <-time.After(longRunningUploadStatThresholdInMin):
 			pkgLogger.Infof("[WH]: Registering stat for long running upload: %d, dest: %s", job.upload.ID, job.warehouse.Identifier)
-			warehouseutils.DestStat(stats.CountType, "long_running_upload", job.warehouse.Destination.ID).Count(1)
+
+			stats.Default.NewTaggedStat(
+				"warehouse.long_running_upload",
+				stats.CountType,
+				stats.Tags{
+					"workspaceId": job.warehouse.WorkspaceID,
+					"destID":      job.warehouse.Destination.ID,
+				},
+			).Count(1)
 		}
 	})
 	return ch
@@ -1614,7 +1623,7 @@ func (job *UploadJobT) validateDestinationCredentials() (bool, error) {
 	if job.destinationValidator == nil {
 		return false, errors.New("failed to validate as destinationValidator is not set")
 	}
-	validationResult, err := job.destinationValidator.ValidateCredentials(&configuration_testing.DestinationValidationRequest{Destination: job.warehouse.Destination})
+	validationResult, err := job.destinationValidator.ValidateCredentials(&validations.DestinationValidationRequest{Destination: job.warehouse.Destination})
 	if err != nil {
 		pkgLogger.Errorf("Unable to successfully validate destination: %s credentials, err: %v", job.warehouse.Destination.ID, err)
 		return false, err
@@ -1850,7 +1859,7 @@ func (job *UploadJobT) createLoadFiles(generateAll bool) (startLoadFileID, endLo
 		// td : add prefix to payload for s3 dest
 		var messages []pgnotifier.JobPayload
 		for _, stagingFile := range toProcessStagingFiles[i:j] {
-			payload := PayloadT{
+			payload := Payload{
 				UploadID:                     job.upload.ID,
 				StagingFileID:                stagingFile.ID,
 				StagingFileLocation:          stagingFile.Location,
@@ -1890,7 +1899,11 @@ func (job *UploadJobT) createLoadFiles(generateAll bool) (startLoadFileID, endLo
 		}
 
 		pkgLogger.Infof("[WH]: Publishing %d staging files for %s:%s to PgNotifier", len(messages), destType, destID)
-		ch, err := job.pgNotifier.Publish(messages, schema, job.upload.Priority)
+		messagePayload := pgnotifier.MessagePayload{
+			Jobs:    messages,
+			JobType: "upload",
+		}
+		ch, err := job.pgNotifier.Publish(messagePayload, schema, job.upload.Priority)
 		if err != nil {
 			panic(err)
 		}

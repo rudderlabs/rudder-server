@@ -1,21 +1,26 @@
 package warehouse
 
 import (
+	"context"
 	"database/sql"
 	"errors"
 	"fmt"
 	"net/http"
+	"os"
 	"strings"
 	"time"
 
-	"github.com/rudderlabs/rudder-server/utils/types/deployment"
+	"github.com/rudderlabs/rudder-server/warehouse/validations"
 
 	"github.com/rudderlabs/rudder-server/config"
+	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/controlplane"
 	proto "github.com/rudderlabs/rudder-server/proto/warehouse"
+	"github.com/rudderlabs/rudder-server/services/filemanager"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
+	"github.com/rudderlabs/rudder-server/utils/types/deployment"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 	"github.com/tidwall/gjson"
 	"google.golang.org/grpc"
@@ -97,8 +102,9 @@ type UploadAPIT struct {
 var UploadAPI UploadAPIT
 
 const (
-	TriggeredSuccessfully = "Triggered successfully"
-	NoPendingEvents       = "No pending events to sync for this destination"
+	TriggeredSuccessfully   = "Triggered successfully"
+	NoPendingEvents         = "No pending events to sync for this destination"
+	DownloadFileNamePattern = "downloadfile.*.tmp"
 )
 
 func InitWarehouseAPI(dbHandle *sql.DB, log logger.Logger) error {
@@ -164,6 +170,8 @@ func (uploadsReq *UploadsReqT) GetWhUploads() (uploadsRes *proto.WHUploadsRespon
 		Limit:  uploadsReq.Limit,
 		Offset: uploadsReq.Offset,
 	}
+
+	// TODO: workspace ID can be used
 	authorizedSourceIDs := uploadsReq.authorizedSources()
 	if len(authorizedSourceIDs) == 0 {
 		return uploadsRes, nil
@@ -332,7 +340,7 @@ func (uploadReq UploadReqT) TriggerWHUpload() (response *proto.TriggerWhUploadsR
 	query := uploadReq.generateQuery(`id, source_id, destination_id, metadata`)
 	uploadReq.API.log.Debug(query)
 	var uploadJobT UploadJobT
-	var upload UploadT
+	var upload Upload
 
 	row := uploadReq.API.dbHandle.QueryRow(query)
 	err = row.Scan(
@@ -742,4 +750,106 @@ func (uploadsReq *UploadsReqT) warehouseUploads(selectFields string) (uploadsRes
 		},
 	}
 	return
+}
+
+// checkMapForValidKey checks the presence of key in map
+// and if yes verifies that the key is string and non-empty.
+func checkMapForValidKey(configMap map[string]interface{}, key string) bool {
+	value, ok := configMap[key]
+	if !ok {
+		return false
+	}
+
+	if valStr, ok := value.(string); ok {
+		return len(valStr) != 0
+	}
+	return false
+}
+
+func validateObjectStorage(ctx context.Context, request *ObjectStorageValidationRequest) error {
+	pkgLogger.Infof("Received call to validate object storage for type: %s\n", request.Type)
+
+	factory := &filemanager.FileManagerFactoryT{}
+	fileManager, err := factory.New(getFileManagerSettings(request.Type, request.Config))
+	if err != nil {
+		return fmt.Errorf("unable to create file manager: %s", err.Error())
+	}
+
+	req := validations.DestinationValidationRequest{
+		Destination: backendconfig.DestinationT{
+			DestinationDefinition: backendconfig.DestinationDefinitionT{Name: request.Type},
+		},
+	}
+
+	filePath, err := validations.CreateTempLoadFile(&req)
+	if err != nil {
+		return fmt.Errorf("unable to create temp load file: %w", err)
+	}
+	defer os.Remove(filePath)
+
+	f, err := os.Open(filePath)
+	if err != nil {
+		return fmt.Errorf("unable to open path to temporary file: %w", err)
+	}
+
+	uploadOutput, err := fileManager.Upload(ctx, f)
+	if err != nil {
+		return InvalidDestinationCredErr{Base: err, Operation: "upload"}
+	}
+	_ = f.Close()
+
+	key := fileManager.GetDownloadKeyFromFileLocation(uploadOutput.Location)
+
+	tmpDirectory, err := misc.CreateTMPDIR()
+	if err != nil {
+		return fmt.Errorf("error while Creating file to download data")
+	}
+	f, err = os.CreateTemp(tmpDirectory, DownloadFileNamePattern)
+	if err != nil {
+		return fmt.Errorf("error while Creating file to download data")
+	}
+
+	defer os.Remove(f.Name())
+
+	err = fileManager.Download(ctx, f, key)
+	if err != nil {
+		return InvalidDestinationCredErr{Base: err, Operation: "download"}
+	}
+	_ = f.Close()
+
+	return nil
+}
+
+func getFileManagerSettings(provider string, inputConfig map[string]interface{}) *filemanager.SettingsT {
+	settings := &filemanager.SettingsT{
+		Provider: provider,
+		Config:   inputConfig,
+	}
+
+	overrideWithEnv(settings)
+	return settings
+}
+
+// overrideWithEnv overrides the config keys in the filemanager settings
+// with fallback values pulled from env. Only supported for S3 for now.
+func overrideWithEnv(settings *filemanager.SettingsT) {
+	envConfig := filemanager.GetProviderConfigFromEnv(context.TODO(), settings.Provider)
+
+	if settings.Provider == "S3" {
+		ifNotExistThenSet("prefix", envConfig["prefix"], settings.Config)
+		ifNotExistThenSet("accessKeyID", envConfig["accessKeyID"], settings.Config)
+		ifNotExistThenSet("accessKey", envConfig["accessKey"], settings.Config)
+		ifNotExistThenSet("enableSSE", envConfig["enableSSE"], settings.Config)
+		ifNotExistThenSet("iamRoleARN", envConfig["iamRoleArn"], settings.Config)
+		ifNotExistThenSet("externalID", envConfig["externalId"], settings.Config)
+		ifNotExistThenSet("regionHint", envConfig["regionHint"], settings.Config)
+	}
+}
+
+//
+func ifNotExistThenSet(keyToReplace string, replaceWith interface{}, configMap map[string]interface{}) {
+	if _, ok := configMap[keyToReplace]; !ok {
+		// In case we don't have the key, simply replace it with replaceWith
+		configMap[keyToReplace] = replaceWith
+	}
 }
