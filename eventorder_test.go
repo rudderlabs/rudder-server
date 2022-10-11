@@ -313,8 +313,8 @@ func (eventOrderMethods) newWebhook(t *testing.T, spec *eventOrderSpec) *eventOr
 		}
 
 		w.WriteHeader(responseCode)
-		_, error := w.Write([]byte(fmt.Sprintf("%d", responseCode)))
-		require.NoError(t, error, "should be able to write the response code to the response")
+		_, err = w.Write([]byte(fmt.Sprintf("%d", responseCode)))
+		require.NoError(t, err, "should be able to write the response code to the response")
 	}))
 	return &wh
 }
