@@ -66,7 +66,7 @@ func run(m *testing.M) int {
 		"POSTGRES_USER=rudder",
 	})
 	if err != nil {
-		log.Fatalf("Could not start resource: %s", err)
+		log.Panicf("Could not start resource: %s", err)
 	}
 	defer func() {
 		if err := pool.Purge(resourcePostgres); err != nil {
@@ -92,7 +92,7 @@ func run(m *testing.M) int {
 		}
 		return db.Ping()
 	}); err != nil {
-		log.Fatalf("Could not connect to docker: %s", err)
+		log.Panicf("Could not connect to docker: %s", err)
 	}
 
 	code := m.Run()
