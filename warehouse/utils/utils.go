@@ -61,6 +61,7 @@ const (
 	WarehouseUploadsTable      = "wh_uploads"
 	WarehouseTableUploadsTable = "wh_table_uploads"
 	WarehouseSchemasTable      = "wh_schemas"
+	WarehouseAsyncJobTable     = "wh_async_jobs"
 )
 
 const (
@@ -182,6 +183,19 @@ type Warehouse struct {
 	Namespace   string
 	Type        string
 	Identifier  string
+}
+
+type DeleteByMetaData struct {
+	JobRunId  string `json:"job_run_id"`
+	TaskRunId string `json:"task_run_id"`
+	StartTime string `json:"start_time"`
+}
+
+type DeleteByParams struct {
+	SourceId  string
+	JobRunId  string
+	TaskRunId string
+	StartTime string
 }
 
 func (w *Warehouse) GetBoolDestinationConfig(key string) bool {

@@ -69,6 +69,10 @@ func (wh *HandleT) LoadTable(tableName string) error {
 	return nil
 }
 
+func (*HandleT) DeleteBy([]string, warehouseutils.DeleteByParams) (err error) {
+	return fmt.Errorf(warehouseutils.NotImplementedErrorCode)
+}
+
 func (wh *HandleT) LoadUserTables() map[string]error {
 	pkgLogger.Infof("Skipping load for user tables : %s is a datalake destination", wh.Warehouse.Destination.ID)
 	// return map with nil error entries for identifies and users(if any) tables
