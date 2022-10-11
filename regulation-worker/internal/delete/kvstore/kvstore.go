@@ -23,8 +23,13 @@ func (*KVDeleteManager) GetSupportedDestinations() []string {
 
 func (*KVDeleteManager) Delete(_ context.Context, job model.Job, destConfig map[string]interface{}, destName string) model.JobStatus {
 	pkgLogger.Debugf("deleting job: %v", job, " from kvstore")
-	kvm := kvstoremanager.New(destName, destConfig)
 	var err error
+	kvm, err := kvstoremanager.New(destName, destConfig)
+	if err != nil {
+		pkgLogger.Errorf("failed to create manager for %q: %v", destName, err)
+		return model.JobStatusAborted
+	}
+
 	fileCleaningTime := stats.Default.NewTaggedStat("file_cleaning_time", stats.TimerType, stats.Tags{"jobId": fmt.Sprintf("%d", job.ID), "workspaceId": job.WorkspaceID, "destType": "kvstore", "destName": destName})
 	fileCleaningTime.Start()
 	defer fileCleaningTime.End()
@@ -32,7 +37,7 @@ func (*KVDeleteManager) Delete(_ context.Context, job model.Job, destConfig map[
 		key := fmt.Sprintf("user:%s", user.ID)
 		err = kvm.DeleteKey(key)
 		if err != nil {
-			pkgLogger.Errorf("failed to delete user: %v", user.ID, "with error: %v", err)
+			pkgLogger.Errorf("failed to delete user %q: %v", user.ID, err)
 			return model.JobStatusFailed
 		}
 	}

@@ -2,8 +2,13 @@ package kvstoremanager
 
 import (
 	"encoding/json"
+	"fmt"
 
 	"github.com/tidwall/gjson"
+)
+
+var (
+	ProviderNotSupported = fmt.Errorf("Provider not supported")
 )
 
 type KVStoreManager interface {
@@ -16,27 +21,17 @@ type KVStoreManager interface {
 	HGetAll(key string) (result map[string]string, err error)
 }
 
-type SettingsT struct {
-	Provider string
-	Config   map[string]interface{}
-}
-
-func New(provider string, config map[string]interface{}) (m KVStoreManager) {
-	return newManager(SettingsT{
-		Provider: provider,
-		Config:   config,
-	})
-}
-
-func newManager(settings SettingsT) (m KVStoreManager) {
-	switch settings.Provider {
+func New(provider string, config map[string]interface{}) (KVStoreManager, error) {
+	switch provider {
 	case "REDIS":
-		m = &redisManagerT{
-			config: settings.Config,
+		m := &redisManagerT{
+			config: config,
 		}
 		m.Connect()
+		return m, nil
+	default:
+		return nil, ProviderNotSupported
 	}
-	return m
 }
 
 func EventToKeyValue(jsonData json.RawMessage) (string, map[string]interface{}) {

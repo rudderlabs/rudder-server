@@ -369,7 +369,8 @@ func insertRedisData(t *testing.T, address string) {
 		"clusterMode": false,
 		"address":     address,
 	}
-	manager = kvstoremanager.New(destName, destConfig)
+	manager, err := kvstoremanager.New(destName, destConfig)
+	require.NoError(t, err, "failed to create kvstore manager")
 
 	// inserting test data in Redis
 	for _, test := range redisInputTestData {
