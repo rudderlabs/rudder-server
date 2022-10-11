@@ -7,9 +7,7 @@ import (
 	"github.com/tidwall/gjson"
 )
 
-var (
-	ProviderNotSupported = fmt.Errorf("Provider not supported")
-)
+var ProviderNotSupported = fmt.Errorf("Provider not supported")
 
 type KVStoreManager interface {
 	Connect()
