@@ -86,7 +86,7 @@ type HandleT struct {
 	Db             *sql.DB
 	Namespace      string
 	ObjectStorage  string
-	Warehouse      warehouseutils.WarehouseT
+	Warehouse      warehouseutils.Warehouse
 	Uploader       warehouseutils.UploaderI
 	ConnectTimeout time.Duration
 }
@@ -171,7 +171,7 @@ func ColumnsWithDataTypes(columns map[string]string, prefix string) string {
 	return strings.Join(arr, ",")
 }
 
-func (*HandleT) IsEmpty(_ warehouseutils.WarehouseT) (empty bool, err error) {
+func (*HandleT) IsEmpty(_ warehouseutils.Warehouse) (empty bool, err error) {
 	return
 }
 
@@ -263,6 +263,7 @@ func (pg *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 
 	// tags
 	tags := map[string]string{
+		"workspaceId":   pg.Warehouse.WorkspaceID,
 		"namepsace":     pg.Namespace,
 		"destinationID": pg.Warehouse.Destination.ID,
 		"tableName":     tableName,
@@ -640,7 +641,7 @@ func (*HandleT) AlterColumn(_, _, _ string) (err error) {
 	return
 }
 
-func (pg *HandleT) TestConnection(warehouse warehouseutils.WarehouseT) (err error) {
+func (pg *HandleT) TestConnection(warehouse warehouseutils.Warehouse) (err error) {
 	if warehouse.Destination.Config["sslMode"] == "verify-ca" {
 		if sslKeyError := warehouseutils.WriteSSLKeys(warehouse.Destination); sslKeyError.IsError() {
 			pkgLogger.Error(sslKeyError.Error())
@@ -669,7 +670,7 @@ func (pg *HandleT) TestConnection(warehouse warehouseutils.WarehouseT) (err erro
 	return nil
 }
 
-func (pg *HandleT) Setup(warehouse warehouseutils.WarehouseT, uploader warehouseutils.UploaderI) (err error) {
+func (pg *HandleT) Setup(warehouse warehouseutils.Warehouse, uploader warehouseutils.UploaderI) (err error) {
 	pg.Warehouse = warehouse
 	pg.Namespace = warehouse.Namespace
 	pg.Uploader = uploader
@@ -679,7 +680,7 @@ func (pg *HandleT) Setup(warehouse warehouseutils.WarehouseT, uploader warehouse
 	return err
 }
 
-func (pg *HandleT) CrashRecover(warehouse warehouseutils.WarehouseT) (err error) {
+func (pg *HandleT) CrashRecover(warehouse warehouseutils.Warehouse) (err error) {
 	pg.Warehouse = warehouse
 	pg.Namespace = warehouse.Namespace
 	pg.Db, err = Connect(pg.getConnectionCredentials())
@@ -724,7 +725,7 @@ func (pg *HandleT) dropDanglingStagingTables() bool {
 }
 
 // FetchSchema queries postgres and returns the schema associated with provided namespace
-func (pg *HandleT) FetchSchema(warehouse warehouseutils.WarehouseT) (schema warehouseutils.SchemaT, err error) {
+func (pg *HandleT) FetchSchema(warehouse warehouseutils.Warehouse) (schema warehouseutils.SchemaT, err error) {
 	pg.Warehouse = warehouse
 	pg.Namespace = warehouse.Namespace
 	dbHandle, err := Connect(pg.getConnectionCredentials())
@@ -818,7 +819,7 @@ func (pg *HandleT) GetTotalCountInTable(ctx context.Context, tableName string) (
 	return
 }
 
-func (pg *HandleT) Connect(warehouse warehouseutils.WarehouseT) (client.Client, error) {
+func (pg *HandleT) Connect(warehouse warehouseutils.Warehouse) (client.Client, error) {
 	if warehouse.Destination.Config["sslMode"] == "verify-ca" {
 		if err := warehouseutils.WriteSSLKeys(warehouse.Destination); err.IsError() {
 			pkgLogger.Error(err.Error())

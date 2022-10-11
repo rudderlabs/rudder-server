@@ -23,11 +23,11 @@ func Init() {
 
 type HandleT struct {
 	SchemaRepository schemarepository.SchemaRepository
-	Warehouse        warehouseutils.WarehouseT
+	Warehouse        warehouseutils.Warehouse
 	Uploader         warehouseutils.UploaderI
 }
 
-func (wh *HandleT) Setup(warehouse warehouseutils.WarehouseT, uploader warehouseutils.UploaderI) (err error) {
+func (wh *HandleT) Setup(warehouse warehouseutils.Warehouse, uploader warehouseutils.UploaderI) (err error) {
 	wh.Warehouse = warehouse
 	wh.Uploader = uploader
 
@@ -36,11 +36,11 @@ func (wh *HandleT) Setup(warehouse warehouseutils.WarehouseT, uploader warehouse
 	return err
 }
 
-func (*HandleT) CrashRecover(_ warehouseutils.WarehouseT) (err error) {
+func (*HandleT) CrashRecover(_ warehouseutils.Warehouse) (err error) {
 	return nil
 }
 
-func (wh *HandleT) FetchSchema(warehouse warehouseutils.WarehouseT) (warehouseutils.SchemaT, error) {
+func (wh *HandleT) FetchSchema(warehouse warehouseutils.Warehouse) (warehouseutils.SchemaT, error) {
 	return wh.SchemaRepository.FetchSchema(warehouse)
 }
 
@@ -93,11 +93,11 @@ func (wh *HandleT) LoadIdentityMappingsTable() error {
 func (*HandleT) Cleanup() {
 }
 
-func (*HandleT) IsEmpty(_ warehouseutils.WarehouseT) (bool, error) {
+func (*HandleT) IsEmpty(_ warehouseutils.Warehouse) (bool, error) {
 	return false, nil
 }
 
-func (*HandleT) TestConnection(_ warehouseutils.WarehouseT) error {
+func (*HandleT) TestConnection(_ warehouseutils.Warehouse) error {
 	return fmt.Errorf("datalake err :not implemented")
 }
 
@@ -109,7 +109,7 @@ func (*HandleT) GetTotalCountInTable(context.Context, string) (int64, error) {
 	return 0, nil
 }
 
-func (*HandleT) Connect(_ warehouseutils.WarehouseT) (client.Client, error) {
+func (*HandleT) Connect(_ warehouseutils.Warehouse) (client.Client, error) {
 	return client.Client{}, fmt.Errorf("datalake err :not implemented")
 }
 
