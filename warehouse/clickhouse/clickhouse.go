@@ -133,7 +133,7 @@ type HandleT struct {
 	Db             *sql.DB
 	Namespace      string
 	ObjectStorage  string
-	Warehouse      warehouseutils.WarehouseT
+	Warehouse      warehouseutils.Warehouse
 	Uploader       warehouseutils.UploaderI
 	stats          stats.Stats
 	ConnectTimeout time.Duration
@@ -166,6 +166,7 @@ func (proc *HandleT) newClickHouseStat(tableName string) *clickHouseStatT {
 	warehouse := proc.Warehouse
 
 	tags := map[string]string{
+		"workspaceId": warehouse.WorkspaceID,
 		"destination": warehouse.Destination.ID,
 		"destType":    warehouse.Type,
 		"source":      warehouse.Source.ID,
@@ -296,8 +297,7 @@ func ColumnsWithDataTypes(tableName string, columns map[string]string, notNullab
 }
 
 func getClickHouseCodecForColumnType(columnType, tableName string) string {
-	switch columnType {
-	case "datetime":
+	if columnType == "datetime" {
 		if disableNullable && !(tableName == warehouseutils.IdentifiesTable || tableName == warehouseutils.UsersTable) {
 			return "Codec(DoubleDelta, LZ4)"
 		}
@@ -377,6 +377,10 @@ func (ch *HandleT) DownloadLoadFiles(tableName string) ([]string, error) {
 		},
 	})
 	return fileNames, dErr
+}
+
+func (*HandleT) DeleteBy([]string, warehouseutils.DeleteByParams) error {
+	return fmt.Errorf(warehouseutils.NotImplementedErrorCode)
 }
 
 func (ch *HandleT) downloadLoadFile(object *warehouseutils.LoadFileT, tableName string, downloader filemanager.FileManager, storageProvider string) (fileName string, err error) {
@@ -475,14 +479,6 @@ func castStringToArray(data, dataType string) interface{} {
 		if err != nil {
 			pkgLogger.Error("Error while unmarshalling data into array of bool: %s", err.Error())
 			return dataBool
-		}
-		dataInt := make([]int32, len(dataBool))
-		for _, val := range dataBool {
-			if val {
-				dataInt = append(dataInt, 1)
-			} else {
-				dataInt = append(dataInt, 0)
-			}
 		}
 		return dataBool
 	}
@@ -868,7 +864,7 @@ func (*HandleT) AlterColumn(_, _, _ string) (err error) {
 }
 
 // TestConnection is used destination connection tester to test the clickhouse connection
-func (ch *HandleT) TestConnection(warehouse warehouseutils.WarehouseT) (err error) {
+func (ch *HandleT) TestConnection(warehouse warehouseutils.Warehouse) (err error) {
 	ch.Warehouse = warehouse
 	ch.Db, err = Connect(ch.getConnectionCredentials(), true)
 	if err != nil {
@@ -890,7 +886,7 @@ func (ch *HandleT) TestConnection(warehouse warehouseutils.WarehouseT) (err erro
 	return nil
 }
 
-func (ch *HandleT) Setup(warehouse warehouseutils.WarehouseT, uploader warehouseutils.UploaderI) (err error) {
+func (ch *HandleT) Setup(warehouse warehouseutils.Warehouse, uploader warehouseutils.UploaderI) (err error) {
 	ch.Warehouse = warehouse
 	ch.Namespace = warehouse.Namespace
 	ch.Uploader = uploader
@@ -901,12 +897,12 @@ func (ch *HandleT) Setup(warehouse warehouseutils.WarehouseT, uploader warehouse
 	return err
 }
 
-func (*HandleT) CrashRecover(_ warehouseutils.WarehouseT) (err error) {
+func (*HandleT) CrashRecover(_ warehouseutils.Warehouse) (err error) {
 	return
 }
 
 // FetchSchema queries clickhouse and returns the schema associated with provided namespace
-func (ch *HandleT) FetchSchema(warehouse warehouseutils.WarehouseT) (schema warehouseutils.SchemaT, err error) {
+func (ch *HandleT) FetchSchema(warehouse warehouseutils.Warehouse) (schema warehouseutils.SchemaT, err error) {
 	ch.Warehouse = warehouse
 	ch.Namespace = warehouse.Namespace
 	dbHandle, err := Connect(ch.getConnectionCredentials(), true)
@@ -996,7 +992,7 @@ func (*HandleT) DownloadIdentityRules(*misc.GZipWriter) (err error) {
 	return
 }
 
-func (*HandleT) IsEmpty(_ warehouseutils.WarehouseT) (empty bool, err error) {
+func (*HandleT) IsEmpty(_ warehouseutils.Warehouse) (empty bool, err error) {
 	return
 }
 
@@ -1009,7 +1005,7 @@ func (ch *HandleT) GetTotalCountInTable(tableName string) (total int64, err erro
 	return
 }
 
-func (ch *HandleT) Connect(warehouse warehouseutils.WarehouseT) (client.Client, error) {
+func (ch *HandleT) Connect(warehouse warehouseutils.Warehouse) (client.Client, error) {
 	ch.Warehouse = warehouse
 	ch.Namespace = warehouse.Namespace
 	ch.ObjectStorage = warehouseutils.ObjectStorageType(

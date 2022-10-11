@@ -42,7 +42,7 @@ func TestSingleWorkspaceGetFromAPI(t *testing.T) {
 		}
 		conf, err := wc.getFromAPI(context.Background(), "")
 		require.NoError(t, err)
-		require.Equal(t, sampleBackendConfig, conf)
+		require.Equal(t, map[string]ConfigT{sampleWorkspaceID: sampleBackendConfig}, conf)
 
 		ident := wc.Identity()
 		require.Equal(t, &identity.Workspace{
@@ -61,7 +61,7 @@ func TestSingleWorkspaceGetFromAPI(t *testing.T) {
 		}
 		conf, err := wc.getFromAPI(context.Background(), "")
 		require.ErrorContains(t, err, "unsupported protocol scheme")
-		require.Equal(t, ConfigT{}, conf)
+		require.Equal(t, map[string]ConfigT{}, conf)
 	})
 
 	t.Run("nil url", func(t *testing.T) {
@@ -71,7 +71,7 @@ func TestSingleWorkspaceGetFromAPI(t *testing.T) {
 		}
 		conf, err := wc.getFromAPI(context.Background(), "")
 		require.ErrorContains(t, err, "config backend url is nil")
-		require.Equal(t, ConfigT{}, conf)
+		require.Equal(t, map[string]ConfigT{}, conf)
 	})
 }
 
@@ -85,7 +85,7 @@ func TestSingleWorkspaceGetFromFile(t *testing.T) {
 		}
 		conf, err := wc.getFromFile()
 		require.Error(t, err)
-		require.Equal(t, ConfigT{}, conf)
+		require.Equal(t, map[string]ConfigT{}, conf)
 	})
 
 	t.Run("valid file but cannot parse", func(t *testing.T) {
@@ -100,7 +100,7 @@ func TestSingleWorkspaceGetFromFile(t *testing.T) {
 		}
 		conf, err := wc.getFromFile()
 		require.Error(t, err)
-		require.Equal(t, ConfigT{}, conf)
+		require.Equal(t, map[string]ConfigT{}, conf)
 	})
 
 	t.Run("valid file", func(t *testing.T) {
@@ -145,6 +145,6 @@ func TestSingleWorkspaceGetFromFile(t *testing.T) {
 		}
 		conf, err := wc.getFromFile()
 		require.NoError(t, err)
-		require.Equal(t, sampleBackendConfig, conf)
+		require.Equal(t, map[string]ConfigT{sampleWorkspaceID: sampleBackendConfig}, conf)
 	})
 }

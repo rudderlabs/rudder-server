@@ -11,6 +11,7 @@ import (
 
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/utils/logger"
+	"github.com/rudderlabs/rudder-server/utils/misc"
 
 	"github.com/rudderlabs/rudder-server/services/stats"
 )
@@ -90,7 +91,7 @@ Setup is used to initialize the ReadonlyHandleT structure.
 func (jd *ReadonlyHandleT) Setup(tablePrefix string) {
 	jd.logger = pkgLogger.Child("readonly-" + tablePrefix)
 	var err error
-	psqlInfo := GetConnectionString()
+	psqlInfo := misc.GetConnectionString()
 	jd.tablePrefix = tablePrefix
 
 	jd.DbHandle, err = sql.Open("postgres", psqlInfo)
