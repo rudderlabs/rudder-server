@@ -109,20 +109,19 @@ func (g *generatorLoop) run() {
 				if i == 0 {
 					g.runtime.minJobID = job.id
 				}
+				// randomly drain 0.1% of non-previously failed jobs (previously failed jobs cannot be drained at this stage)
+				if previousFailedJobID := g.barrier.Peek(job.user); previousFailedJobID != nil && *previousFailedJobID != job.id && rand.Intn(1000) < 1 {
+					if err := g.barrier.StateChanged(job.user, job.id, jobsdb.Aborted.State); err != nil {
+						panic(fmt.Errorf("could not drain job:%d: %w", job.id, err))
+					}
+					g.drained = append(g.drained, job)
+					g.logger.Logf("drained job:%d", job.id)
+					continue
+				}
 
 				if accept, blockJobID := g.barrier.Enter(job.user, job.id); accept {
 					if blockJobID != nil && *blockJobID > job.id {
 						panic(fmt.Errorf("job.JobID:%d < blockJobID:%d", job.id, *blockJobID))
-					}
-					if blockJobID != nil && *blockJobID == job.id {
-						if rand.Intn(100) < 10 { // randomly drain 10% of previously failed jobs (non-previously failed jobs do not pose a risk for event ordering guarantees)
-							if err := g.barrier.StateChanged(job.user, job.id, jobsdb.Aborted.State); err != nil {
-								panic(fmt.Errorf("could not drain job:%d: %w", job.id, err))
-							}
-							g.drained = append(g.drained, job)
-							g.logger.Logf("drained job:%d", job.id)
-							continue
-						}
 					}
 					job.loop = loop
 					acceptedJobs = append(acceptedJobs, job)
@@ -200,14 +199,21 @@ func (wp *workerProcess) processJobs() {
 	for _, job := range wp.jobs {
 		// introduce some random delay during processing so that buffers don't empty at a steady pace
 		time.Sleep(time.Duration(rand.Intn(10)) * time.Millisecond)
-		if wait, _ := wp.barrier.Wait(job.user, job.id); wait {
+		wait, previousFailedJobID := wp.barrier.Wait(job.user, job.id)
+
+		if wait {
 			job.states = append([]string{jobsdb.Waiting.State}, job.states...)
 			// wp.logger.Logf("job: %d is waiting", job.id)
-
 			wp.out <- job
 			continue
 		}
-		// simulate request delay
+		// randomly drain 10% of previously failed jobs in worker process
+		if previousFailedJobID != nil && *previousFailedJobID == job.id && rand.Intn(100) < 10 {
+			wp.logger.Logf("drained failed job:%d", job.id)
+			job.states = []string{jobsdb.Aborted.State}
+			wp.out <- job
+			continue
+		}
 		if job.states[0] == jobsdb.Failed.State {
 			_ = wp.barrier.StateChanged(job.user, job.id, jobsdb.Failed.State)
 		}
