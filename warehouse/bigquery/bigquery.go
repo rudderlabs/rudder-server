@@ -172,7 +172,10 @@ func (bq *HandleT) addColumn(tableName, columnName, columnType string) (err erro
 	if err != nil {
 		return err
 	}
-	newSchema := append(meta.Schema,
+
+	var newSchema bigquery.Schema
+	newSchema = append(newSchema, meta.Schema...)
+	newSchema = append(newSchema,
 		&bigquery.FieldSchema{Name: columnName, Type: dataTypesMap[columnType]},
 	)
 	update := bigquery.TableMetadataToUpdate{

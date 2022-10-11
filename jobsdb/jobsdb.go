@@ -1767,7 +1767,9 @@ func (jd *HandleT) migrateJobsInTx(ctx context.Context, tx *sql.Tx, srcDS, destD
 	if err != nil {
 		return 0, err
 	}
-	jobsToMigrate := append(unprocessedList.Jobs, retryList.Jobs...)
+	var jobsToMigrate []*JobT
+	jobsToMigrate = append(jobsToMigrate, unprocessedList.Jobs...)
+	jobsToMigrate = append(jobsToMigrate, retryList.Jobs...)
 	noJobsMigrated = len(jobsToMigrate)
 
 	if err := jd.copyJobsDS(tx, destDS, jobsToMigrate); err != nil {
