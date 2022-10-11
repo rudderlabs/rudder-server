@@ -283,7 +283,7 @@ func (uploadReq UploadReqT) GetWHUpload() (response *proto.WHUploadResponse, err
 	if err == sql.ErrNoRows {
 		err = nil
 		response = &proto.WHUploadResponse{
-			StatusCode: 204,
+			StatusCode: http.StatusNoContent,
 		}
 		return
 	}
