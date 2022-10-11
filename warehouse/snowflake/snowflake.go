@@ -38,7 +38,7 @@ type HandleT struct {
 	Namespace      string
 	CloudProvider  string
 	ObjectStorage  string
-	Warehouse      warehouseutils.WarehouseT
+	Warehouse      warehouseutils.Warehouse
 	Uploader       warehouseutils.UploaderI
 	ConnectTimeout time.Duration
 }
@@ -761,11 +761,11 @@ func (sf *HandleT) DownloadIdentityRules(gzWriter *misc.GZipWriter) (err error) 
 	return nil
 }
 
-func (*HandleT) CrashRecover(_ warehouseutils.WarehouseT) (err error) {
+func (*HandleT) CrashRecover(_ warehouseutils.Warehouse) (err error) {
 	return
 }
 
-func (sf *HandleT) IsEmpty(warehouse warehouseutils.WarehouseT) (empty bool, err error) {
+func (sf *HandleT) IsEmpty(warehouse warehouseutils.Warehouse) (empty bool, err error) {
 	empty = true
 
 	sf.Warehouse = warehouse
@@ -817,7 +817,7 @@ func (sf *HandleT) getConnectionCredentials(opts OptionalCredsT) SnowflakeCreden
 	}
 }
 
-func (sf *HandleT) Setup(warehouse warehouseutils.WarehouseT, uploader warehouseutils.UploaderI) (err error) {
+func (sf *HandleT) Setup(warehouse warehouseutils.Warehouse, uploader warehouseutils.UploaderI) (err error) {
 	sf.Warehouse = warehouse
 	sf.Namespace = warehouse.Namespace
 	sf.CloudProvider = warehouseutils.SnowflakeCloudProvider(warehouse.Destination.Config)
@@ -828,7 +828,7 @@ func (sf *HandleT) Setup(warehouse warehouseutils.WarehouseT, uploader warehouse
 	return err
 }
 
-func (sf *HandleT) TestConnection(warehouse warehouseutils.WarehouseT) (err error) {
+func (sf *HandleT) TestConnection(warehouse warehouseutils.Warehouse) (err error) {
 	sf.Warehouse = warehouse
 	sf.Db, err = Connect(sf.getConnectionCredentials(OptionalCredsT{}))
 	if err != nil {
@@ -851,7 +851,7 @@ func (sf *HandleT) TestConnection(warehouse warehouseutils.WarehouseT) (err erro
 }
 
 // FetchSchema queries snowflake and returns the schema assoiciated with provided namespace
-func (sf *HandleT) FetchSchema(warehouse warehouseutils.WarehouseT) (schema warehouseutils.SchemaT, err error) {
+func (sf *HandleT) FetchSchema(warehouse warehouseutils.Warehouse) (schema warehouseutils.SchemaT, err error) {
 	sf.Warehouse = warehouse
 	sf.Namespace = warehouse.Namespace
 	dbHandle, err := Connect(sf.getConnectionCredentials(OptionalCredsT{}))
@@ -928,7 +928,7 @@ func (sf *HandleT) GetTotalCountInTable(tableName string) (total int64, err erro
 	return
 }
 
-func (sf *HandleT) Connect(warehouse warehouseutils.WarehouseT) (client.Client, error) {
+func (sf *HandleT) Connect(warehouse warehouseutils.Warehouse) (client.Client, error) {
 	sf.Warehouse = warehouse
 	sf.Namespace = warehouse.Namespace
 	sf.CloudProvider = warehouseutils.SnowflakeCloudProvider(warehouse.Destination.Config)

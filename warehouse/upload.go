@@ -80,9 +80,10 @@ type uploadStateT struct {
 	nextState  *uploadStateT
 }
 
-type UploadT struct {
+type Upload struct {
 	ID                   int64
 	Namespace            string
+	WorkspaceID          string
 	SourceID             string
 	SourceType           string
 	SourceCategory       string
@@ -119,9 +120,9 @@ type UploadT struct {
 type tableNameT string
 
 type UploadJobT struct {
-	upload               *UploadT
+	upload               *Upload
 	dbHandle             *sql.DB
-	warehouse            warehouseutils.WarehouseT
+	warehouse            warehouseutils.Warehouse
 	whManager            manager.ManagerI
 	stagingFiles         []*StagingFileT
 	stagingFileIDs       []int64
@@ -211,7 +212,15 @@ func (job *UploadJobT) trackLongRunningUpload() chan struct{} {
 			// do nothing
 		case <-time.After(longRunningUploadStatThresholdInMin):
 			pkgLogger.Infof("[WH]: Registering stat for long running upload: %d, dest: %s", job.upload.ID, job.warehouse.Identifier)
-			warehouseutils.DestStat(stats.CountType, "long_running_upload", job.warehouse.Destination.ID).Count(1)
+
+			stats.Default.NewTaggedStat(
+				"warehouse.long_running_upload",
+				stats.CountType,
+				stats.Tags{
+					"workspaceId": job.warehouse.WorkspaceID,
+					"destID":      job.warehouse.Destination.ID,
+				},
+			).Count(1)
 		}
 	})
 	return ch
@@ -1869,7 +1878,7 @@ func (job *UploadJobT) createLoadFiles(generateAll bool) (startLoadFileID, endLo
 		// td : add prefix to payload for s3 dest
 		var messages []pgnotifier.JobPayload
 		for _, stagingFile := range toProcessStagingFiles[i:j] {
-			payload := PayloadT{
+			payload := Payload{
 				UploadID:                     job.upload.ID,
 				StagingFileID:                stagingFile.ID,
 				StagingFileLocation:          stagingFile.Location,

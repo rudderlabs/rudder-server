@@ -88,7 +88,7 @@ type HandleT struct {
 	Db             *sql.DB
 	Namespace      string
 	ObjectStorage  string
-	Warehouse      warehouseutils.WarehouseT
+	Warehouse      warehouseutils.Warehouse
 	Uploader       warehouseutils.UploaderI
 	ConnectTimeout time.Duration
 }
@@ -178,7 +178,7 @@ func columnsWithDataTypes(columns map[string]string, prefix string) string {
 	return strings.Join(arr, ",")
 }
 
-func (*HandleT) IsEmpty(_ warehouseutils.WarehouseT) (empty bool, err error) {
+func (*HandleT) IsEmpty(_ warehouseutils.Warehouse) (empty bool, err error) {
 	return
 }
 
@@ -703,7 +703,7 @@ func (*HandleT) AlterColumn(_, _, _ string) (err error) {
 	return
 }
 
-func (as *HandleT) TestConnection(warehouse warehouseutils.WarehouseT) (err error) {
+func (as *HandleT) TestConnection(warehouse warehouseutils.Warehouse) (err error) {
 	as.Warehouse = warehouse
 	as.Db, err = connect(as.getConnectionCredentials())
 	if err != nil {
@@ -725,7 +725,7 @@ func (as *HandleT) TestConnection(warehouse warehouseutils.WarehouseT) (err erro
 	return nil
 }
 
-func (as *HandleT) Setup(warehouse warehouseutils.WarehouseT, uploader warehouseutils.UploaderI) (err error) {
+func (as *HandleT) Setup(warehouse warehouseutils.Warehouse, uploader warehouseutils.UploaderI) (err error) {
 	as.Warehouse = warehouse
 	as.Namespace = warehouse.Namespace
 	as.Uploader = uploader
@@ -735,7 +735,7 @@ func (as *HandleT) Setup(warehouse warehouseutils.WarehouseT, uploader warehouse
 	return err
 }
 
-func (as *HandleT) CrashRecover(warehouse warehouseutils.WarehouseT) (err error) {
+func (as *HandleT) CrashRecover(warehouse warehouseutils.Warehouse) (err error) {
 	as.Warehouse = warehouse
 	as.Namespace = warehouse.Namespace
 	as.Db, err = connect(as.getConnectionCredentials())
@@ -780,7 +780,7 @@ func (as *HandleT) dropDanglingStagingTables() bool {
 }
 
 // FetchSchema queries SYNAPSE and returns the schema associated with provided namespace
-func (as *HandleT) FetchSchema(warehouse warehouseutils.WarehouseT) (schema warehouseutils.SchemaT, err error) {
+func (as *HandleT) FetchSchema(warehouse warehouseutils.Warehouse) (schema warehouseutils.SchemaT, err error) {
 	as.Warehouse = warehouse
 	as.Namespace = warehouse.Namespace
 	dbHandle, err := connect(as.getConnectionCredentials())
@@ -861,7 +861,7 @@ func (as *HandleT) GetTotalCountInTable(tableName string) (total int64, err erro
 	return
 }
 
-func (as *HandleT) Connect(warehouse warehouseutils.WarehouseT) (client.Client, error) {
+func (as *HandleT) Connect(warehouse warehouseutils.Warehouse) (client.Client, error) {
 	as.Warehouse = warehouse
 	as.Namespace = warehouse.Namespace
 	dbHandle, err := connect(as.getConnectionCredentials())

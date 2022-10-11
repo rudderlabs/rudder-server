@@ -175,7 +175,8 @@ func loadConfig() {
 	config.RegisterInt64ConfigVariable(8, &parquetParallelWriters, true, 1, "Warehouse.parquetParallelWriters")
 }
 
-type WarehouseT struct {
+type Warehouse struct {
+	WorkspaceID string
 	Source      backendconfig.SourceT
 	Destination backendconfig.DestinationT
 	Namespace   string
@@ -183,7 +184,7 @@ type WarehouseT struct {
 	Identifier  string
 }
 
-func (w *WarehouseT) GetBoolDestinationConfig(key string) bool {
+func (w *Warehouse) GetBoolDestinationConfig(key string) bool {
 	destConfig := w.Destination.Config
 	if destConfig[key] != nil {
 		if val, ok := destConfig[key].(bool); ok {
@@ -208,7 +209,8 @@ type KeyValue struct {
 	Value interface{}
 }
 
-type StagingFileT struct {
+type StagingFile struct {
+	WorkspaceID           string
 	Schema                map[string]map[string]interface{}
 	BatchDestination      DestinationT
 	Location              string
@@ -620,7 +622,7 @@ func ObjectStorageType(destType string, config interface{}, useRudderStorage boo
 	return provider
 }
 
-func GetConfigValue(key string, warehouse WarehouseT) (val string) {
+func GetConfigValue(key string, warehouse Warehouse) (val string) {
 	config := warehouse.Destination.Config
 	if config[key] != nil {
 		val, _ = config[key].(string)
@@ -628,7 +630,7 @@ func GetConfigValue(key string, warehouse WarehouseT) (val string) {
 	return val
 }
 
-func GetConfigValueBoolString(key string, warehouse WarehouseT) string {
+func GetConfigValueBoolString(key string, warehouse Warehouse) string {
 	config := warehouse.Destination.Config
 	if config[key] != nil {
 		if val, ok := config[key].(bool); ok {
@@ -659,7 +661,7 @@ func SortColumnKeysFromColumnMap(columnMap map[string]string) []string {
 	return columnKeys
 }
 
-func IdentityMergeRulesTableName(warehouse WarehouseT) string {
+func IdentityMergeRulesTableName(warehouse Warehouse) string {
 	return fmt.Sprintf(`%s_%s_%s`, IdentityMergeRulesTable, warehouse.Namespace, warehouse.Destination.ID)
 }
 
@@ -671,11 +673,11 @@ func IdentityMappingsWarehouseTableName(provider string) string {
 	return ToProviderCase(provider, IdentityMappingsTable)
 }
 
-func IdentityMappingsTableName(warehouse WarehouseT) string {
+func IdentityMappingsTableName(warehouse Warehouse) string {
 	return fmt.Sprintf(`%s_%s_%s`, IdentityMappingsTable, warehouse.Namespace, warehouse.Destination.ID)
 }
 
-func IdentityMappingsUniqueMappingConstraintName(warehouse WarehouseT) string {
+func IdentityMappingsUniqueMappingConstraintName(warehouse Warehouse) string {
 	return fmt.Sprintf(`unique_merge_property_%s_%s`, warehouse.Namespace, warehouse.Destination.ID)
 }
 
@@ -778,12 +780,13 @@ func NewCounterStat(name string, extraTags ...Tag) stats.Measurement {
 	return stats.Default.NewTaggedStat(name, stats.CountType, tags)
 }
 
-func WHCounterStat(name string, warehouse *WarehouseT, extraTags ...Tag) stats.Measurement {
+func WHCounterStat(name string, warehouse *Warehouse, extraTags ...Tag) stats.Measurement {
 	tags := map[string]string{
-		"module":   WAREHOUSE,
-		"destType": warehouse.Type,
-		"destID":   warehouse.Destination.ID,
-		"sourceID": warehouse.Source.ID,
+		"module":      WAREHOUSE,
+		"destType":    warehouse.Type,
+		"workspaceId": warehouse.WorkspaceID,
+		"destID":      warehouse.Destination.ID,
+		"sourceID":    warehouse.Source.ID,
 	}
 	for _, extraTag := range extraTags {
 		tags[extraTag.Name] = extraTag.Value
@@ -922,7 +925,7 @@ func GetLoadFileFormat(whType string) string {
 	}
 }
 
-func GetLoadFilePrefix(timeWindow time.Time, warehouse WarehouseT) (timeWindowFormat string) {
+func GetLoadFilePrefix(timeWindow time.Time, warehouse Warehouse) (timeWindowFormat string) {
 	whType := warehouse.Type
 	switch whType {
 	case GCS_DATALAKE:

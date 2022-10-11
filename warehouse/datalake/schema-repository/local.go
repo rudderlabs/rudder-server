@@ -7,11 +7,11 @@ import (
 )
 
 type LocalSchemaRepository struct {
-	warehouse warehouseutils.WarehouseT
+	warehouse warehouseutils.Warehouse
 	uploader  warehouseutils.UploaderI
 }
 
-func NewLocalSchemaRepository(wh warehouseutils.WarehouseT, uploader warehouseutils.UploaderI) (*LocalSchemaRepository, error) {
+func NewLocalSchemaRepository(wh warehouseutils.Warehouse, uploader warehouseutils.UploaderI) (*LocalSchemaRepository, error) {
 	ls := LocalSchemaRepository{
 		warehouse: wh,
 		uploader:  uploader,
@@ -20,7 +20,7 @@ func NewLocalSchemaRepository(wh warehouseutils.WarehouseT, uploader warehouseut
 	return &ls, nil
 }
 
-func (ls *LocalSchemaRepository) FetchSchema(_ warehouseutils.WarehouseT) (warehouseutils.SchemaT, error) {
+func (ls *LocalSchemaRepository) FetchSchema(_ warehouseutils.Warehouse) (warehouseutils.SchemaT, error) {
 	schema := ls.uploader.GetLocalSchema()
 	if schema == nil {
 		schema = warehouseutils.SchemaT{}
