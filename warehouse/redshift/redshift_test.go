@@ -55,11 +55,11 @@ func TestRedshiftIntegration(t *testing.T) {
 
 	require.NoError(t, testhelper.SetConfig([]warehouseutils.KeyValue{
 		{
-			Key:   "Warehouse.redshift.skipScanningEntireTableForDedup",
+			Key:   "Warehouse.redshift.dedupWindow",
 			Value: true,
 		},
 		{
-			Key:   "Warehouse.redshift.scanningIntervalForDedupInDays",
+			Key:   "Warehouse.redshift.dedupWindowInDays",
 			Value: 5,
 		},
 	}))

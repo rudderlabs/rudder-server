@@ -23,12 +23,12 @@ import (
 )
 
 var (
-	setVarCharMax                   bool
-	skipScanningEntireTableForDedup bool
-	scanningIntervalForDedupInDays  int
-	pkgLogger                       logger.Logger
-	skipComputingUserLatestTraits   bool
-	enableDeleteByJobs              bool
+	setVarCharMax                 bool
+	dedupWindow                   bool
+	dedupWindowInDays             int
+	pkgLogger                     logger.Logger
+	skipComputingUserLatestTraits bool
+	enableDeleteByJobs            bool
 )
 
 func Init() {
@@ -39,8 +39,8 @@ func Init() {
 func loadConfig() {
 	setVarCharMax = config.GetBool("Warehouse.redshift.setVarCharMax", false)
 
-	config.RegisterBoolConfigVariable(false, &skipScanningEntireTableForDedup, true, "Warehouse.redshift.skipScanningEntireTableForDedup")
-	config.RegisterIntConfigVariable(30, &scanningIntervalForDedupInDays, true, 1, "Warehouse.redshift.scanningIntervalForDedupInDays")
+	config.RegisterBoolConfigVariable(false, &dedupWindow, true, "Warehouse.redshift.dedupWindow")
+	config.RegisterIntConfigVariable(30, &dedupWindowInDays, true, 1, "Warehouse.redshift.dedupWindowInDays")
 	config.RegisterBoolConfigVariable(false, &skipComputingUserLatestTraits, true, "Warehouse.redshift.skipComputingUserLatestTraits")
 	config.RegisterBoolConfigVariable(false, &enableDeleteByJobs, true, "Warehouse.redshift.enableDeleteByJobs")
 }
@@ -382,9 +382,9 @@ func (rs *HandleT) loadTable(tableName string, tableSchemaInUpload, tableSchemaA
 	}
 
 	var skipEntireTableClause string
-	if skipScanningEntireTableForDedup {
+	if dedupWindow {
 		if _, ok := tableSchemaAfterUpload["received_at"]; ok {
-			skipEntireTableClause = fmt.Sprintf(`AND %[1]s.%[2]s.received_at > GETDATE() - INTERVAL '%d DAY'`, rs.Namespace, tableName, scanningIntervalForDedupInDays)
+			skipEntireTableClause = fmt.Sprintf(`AND %[1]s.%[2]s.received_at > GETDATE() - INTERVAL '%d DAY'`, rs.Namespace, tableName, dedupWindowInDays)
 		}
 	}
 
