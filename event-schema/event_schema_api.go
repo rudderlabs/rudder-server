@@ -27,7 +27,7 @@ func handleBasicAuth(r *http.Request) error {
 	return nil
 }
 
-func (manager *EventSchemaManagerT) GetEventModels(w http.ResponseWriter, r *http.Request) {
+func (manager *EventSchemaManagerT) HandleGetEventModels(w http.ResponseWriter, r *http.Request) {
 	err := handleBasicAuth(r)
 	if err != nil {
 		http.Error(w, response.MakeResponse(err.Error()), 400)
@@ -56,7 +56,7 @@ func (manager *EventSchemaManagerT) GetEventModels(w http.ResponseWriter, r *htt
 	_, _ = w.Write(eventTypesJSON)
 }
 
-func (manager *EventSchemaManagerT) GetJsonSchemas(w http.ResponseWriter, r *http.Request) {
+func (manager *EventSchemaManagerT) HandleGetJSONSchemas(w http.ResponseWriter, r *http.Request) {
 	err := handleBasicAuth(r)
 	if err != nil {
 		http.Error(w, response.MakeResponse(err.Error()), 400)
@@ -275,7 +275,7 @@ func unflatten(flat map[string]interface{}) (map[string]interface{}, error) {
 	return unflat, nil
 }
 
-func (manager *EventSchemaManagerT) GetEventVersions(w http.ResponseWriter, r *http.Request) {
+func (manager *EventSchemaManagerT) HandleGetEventVersions(w http.ResponseWriter, r *http.Request) {
 	err := handleBasicAuth(r)
 	if err != nil {
 		http.Error(w, response.MakeResponse(err.Error()), 400)
@@ -305,7 +305,7 @@ func (manager *EventSchemaManagerT) GetEventVersions(w http.ResponseWriter, r *h
 }
 
 // TODO: Complete this
-func (manager *EventSchemaManagerT) GetKeyCounts(w http.ResponseWriter, r *http.Request) {
+func (manager *EventSchemaManagerT) HandleGetKeyCounts(w http.ResponseWriter, r *http.Request) {
 	err := handleBasicAuth(r)
 	if err != nil {
 		http.Error(w, response.MakeResponse(err.Error()), 400)
@@ -363,7 +363,7 @@ func (manager *EventSchemaManagerT) getKeyCounts(eventID string) (keyCounts map[
 	return
 }
 
-func (manager *EventSchemaManagerT) GetEventModelMetadata(w http.ResponseWriter, r *http.Request) {
+func (manager *EventSchemaManagerT) HandleGetEventModelMetadata(w http.ResponseWriter, r *http.Request) {
 	err := handleBasicAuth(r)
 	if err != nil {
 		http.Error(w, response.MakeResponse(err.Error()), 400)
@@ -397,7 +397,7 @@ func (manager *EventSchemaManagerT) GetEventModelMetadata(w http.ResponseWriter,
 	_, _ = w.Write(metadataJSON)
 }
 
-func (manager *EventSchemaManagerT) GetSchemaVersionMetadata(w http.ResponseWriter, r *http.Request) {
+func (manager *EventSchemaManagerT) HandleGetSchemaVersionMetadata(w http.ResponseWriter, r *http.Request) {
 	err := handleBasicAuth(r)
 	if err != nil {
 		http.Error(w, response.MakeResponse(err.Error()), 400)
@@ -431,7 +431,7 @@ func (manager *EventSchemaManagerT) GetSchemaVersionMetadata(w http.ResponseWrit
 	_, _ = w.Write(metadataJSON)
 }
 
-func (manager *EventSchemaManagerT) GetSchemaVersionMissingKeys(w http.ResponseWriter, r *http.Request) {
+func (manager *EventSchemaManagerT) HandleGetSchemaVersionMissingKeys(w http.ResponseWriter, r *http.Request) {
 	err := handleBasicAuth(r)
 	if err != nil {
 		http.Error(w, response.MakeResponse(err.Error()), 400)
