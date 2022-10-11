@@ -4,19 +4,21 @@ package warehouse
 
 import (
 	"context"
-	"net/http"
-	"os"
-
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/ory/dockertest/v3"
-
 	proto "github.com/rudderlabs/rudder-server/proto/warehouse"
 	"github.com/rudderlabs/rudder-server/testhelper"
 	"github.com/rudderlabs/rudder-server/testhelper/destination"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
+	"google.golang.org/genproto/googleapis/rpc/code"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/emptypb"
+	"google.golang.org/protobuf/types/known/structpb"
+	"net/http"
+	"os"
 )
 
 var _ = Describe("WarehouseGrpc", func() {
@@ -522,5 +524,46 @@ var _ = Describe("WarehouseGrpc", func() {
 				})
 			})
 		})
+	})
+	Describe("Test for validation of  proto message for  object storage destination validation", func() {
+		Context("Handling error cases", func() {
+			It("should throw Code_INVALID_ARGUMENT when received unsupported/invalid object storage destination type", func() {
+				_, err := validateObjectStorageRequestBody(&proto.ValidateObjectStorageRequest{Type: "ABC"})
+				statusError, _ := status.FromError(err)
+				Expect(statusError.Err().Error()).To(BeIdenticalTo("rpc error: code = InvalidArgument desc = invalid argument err: type: ABC not supported"))
+				Expect(statusError.Code()).To(BeIdenticalTo(codes.Code(code.Code_INVALID_ARGUMENT)))
+			})
+			It("should throw Code_INVALID_ARGUMENT when received no bucketName(Not applicable for AZURE_BLOB)", func() {
+				configMap := &structpb.Struct{
+					Fields: map[string]*structpb.Value{
+						"containerName": &structpb.Value{
+							Kind: &structpb.Value_StringValue{
+								StringValue: "tempContainerName",
+							},
+						},
+					},
+				}
+				_, err := validateObjectStorageRequestBody(&proto.ValidateObjectStorageRequest{Type: "S3", Config: configMap})
+				statusError, _ := status.FromError(err)
+				Expect(statusError.Code()).To(BeIdenticalTo(codes.Code(code.Code_INVALID_ARGUMENT)))
+			})
+			It("should throw Code_INVALID_ARGUMENT when received no containerName(For AZURE_BLOB only)", func() {
+				configMap := &structpb.Struct{
+					Fields: map[string]*structpb.Value{
+						"bucketName": &structpb.Value{
+							Kind: &structpb.Value_StringValue{
+								StringValue: "tempbucket",
+							},
+						},
+					},
+				}
+				_, err := validateObjectStorageRequestBody(&proto.ValidateObjectStorageRequest{Type: "AZURE_BLOB", Config: configMap})
+				statusError, _ := status.FromError(err)
+				Expect(statusError.Code()).To(BeIdenticalTo(codes.Code(code.Code_INVALID_ARGUMENT)))
+				Expect(statusError.Err().Error()).To(BeIdenticalTo("rpc error: code = InvalidArgument desc = invalid argument err: containerName invalid or not present"))
+			})
+
+		})
+
 	})
 })

@@ -107,7 +107,7 @@ func validateObjectStorageRequestBody(request *proto.ValidateObjectStorageReques
 	}
 
 	r := &ObjectStorageValidationRequest{}
-	if err := json.Unmarshal(byt, &r); err != nil {
+	if err := json.Unmarshal(byt, r); err != nil {
 		return nil, status.Errorf(
 			codes.Code(code.Code_INTERNAL),
 			"unable to extract data into validation request with error: %s", err)
