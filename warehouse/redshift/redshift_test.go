@@ -53,6 +53,17 @@ func TestRedshiftIntegration(t *testing.T) {
 		}), fmt.Sprintf("Failed dropping schema %s for Redshift", handle.Schema))
 	})
 
+	require.NoError(t, testhelper.SetConfig([]warehouseutils.KeyValue{
+		{
+			Key:   "Warehouse.redshift.skipScanningEntireTableForDedup",
+			Value: true,
+		},
+		{
+			Key:   "Warehouse.redshift.scanningIntervalForDedupInDays",
+			Value: 5,
+		},
+	}))
+
 	warehouseTest := &testhelper.WareHouseTest{
 		Client: &client.Client{
 			SQL:  handle.DB,
