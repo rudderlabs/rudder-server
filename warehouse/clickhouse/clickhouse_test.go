@@ -22,9 +22,7 @@ import (
 
 type TestHandle struct{}
 
-var (
-	testTables = []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"}
-)
+var testTables = []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"}
 
 func (*TestHandle) VerifyConnection() error {
 	for _, host := range []string{"wh-clickhouse", "wh-clickhouse01", "wh-clickhouse02", "wh-clickhouse03", "wh-clickhouse04"} {
