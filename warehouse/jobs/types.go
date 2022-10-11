@@ -86,10 +86,10 @@ type AsyncJobsStatusMap struct {
 }
 
 const (
-	MaxBatchSizeToProcess int           = 10
-	MaxCleanUpRetries     int           = 5
-	MaxQueryRetries       int           = 3
-	RetryTimeInterval     time.Duration = 10 * time.Second
-	MaxAttemptsPerJob     int           = 3
-	WhAsyncJobTimeOut     time.Duration = 10 * time.Second
+	MaxBatchSizeToProcess int = 10
+	MaxCleanUpRetries     int = 5
+	MaxQueryRetries       int = 3
+	RetryTimeInterval         = 10 * time.Second
+	MaxAttemptsPerJob     int = 3
+	WhAsyncJobTimeOut         = 10 * time.Second
 )

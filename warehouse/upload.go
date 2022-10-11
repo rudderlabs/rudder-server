@@ -25,10 +25,10 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
 	"github.com/rudderlabs/rudder-server/utils/types"
-	"github.com/rudderlabs/rudder-server/warehouse/configuration_testing"
 	"github.com/rudderlabs/rudder-server/warehouse/identity"
 	"github.com/rudderlabs/rudder-server/warehouse/manager"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
+	"github.com/rudderlabs/rudder-server/warehouse/validations"
 )
 
 // Upload Status
@@ -132,7 +132,7 @@ type UploadJobT struct {
 	uploadLock           sync.Mutex
 	hasAllTablesSkipped  bool
 	tableUploadStatuses  []*TableUploadStatusT
-	destinationValidator configuration_testing.DestinationValidator
+	destinationValidator validations.DestinationValidator
 }
 
 type UploadColumnT struct {
@@ -332,8 +332,7 @@ func (job *UploadJobT) getTotalRowsInLoadFiles() int64 {
 		SELECT 
 		  SUM(total_events) 
 		FROM 
-		  row_numbered_load_files 
-		WHERE 
+		  row_numbered_load_files WHERE 
 		  row_number = 1 
 		  AND table_name != '%[3]s';
 	`,
@@ -972,16 +971,24 @@ func (job *UploadJobT) updateSchema(tName string) (alteredSchema bool, err error
 }
 
 func (job *UploadJobT) getTotalCount(tName string) (int64, error) {
-	var total int64
+	var (
+		total    int64
+		countErr error
+	)
+
 	operation := func() error {
-		var countErr error
-		total, countErr = job.whManager.GetTotalCountInTable(tName)
+		ctx, cancel := context.WithTimeout(context.TODO(), tableCountQueryTimeout)
+		defer cancel()
+
+		total, countErr = job.whManager.GetTotalCountInTable(ctx, tName)
 		return countErr
 	}
+
 	expBackoff := backoff.NewExponentialBackOff()
 	expBackoff.InitialInterval = 5 * time.Second
 	expBackoff.RandomizationFactor = 0
 	expBackoff.Reset()
+
 	backoffWithMaxRetry := backoff.WithMaxRetries(expBackoff, 5)
 	err := backoff.RetryNotify(operation, backoffWithMaxRetry, func(err error, t time.Duration) {
 		pkgLogger.Errorf(`Error getting total count in table:%s error: %v`, tName, err)
@@ -1623,7 +1630,7 @@ func (job *UploadJobT) validateDestinationCredentials() (bool, error) {
 	if job.destinationValidator == nil {
 		return false, errors.New("failed to validate as destinationValidator is not set")
 	}
-	validationResult, err := job.destinationValidator.ValidateCredentials(&configuration_testing.DestinationValidationRequest{Destination: job.warehouse.Destination})
+	validationResult, err := job.destinationValidator.ValidateCredentials(&validations.DestinationValidationRequest{Destination: job.warehouse.Destination})
 	if err != nil {
 		pkgLogger.Errorf("Unable to successfully validate destination: %s credentials, err: %v", job.warehouse.Destination.ID, err)
 		return false, err

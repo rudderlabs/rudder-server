@@ -41,11 +41,11 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/pubsub"
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
 	"github.com/rudderlabs/rudder-server/utils/types"
-	"github.com/rudderlabs/rudder-server/warehouse/configuration_testing"
 	"github.com/rudderlabs/rudder-server/warehouse/deltalake"
 	"github.com/rudderlabs/rudder-server/warehouse/jobs"
 	"github.com/rudderlabs/rudder-server/warehouse/manager"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
+	"github.com/rudderlabs/rudder-server/warehouse/validations"
 )
 
 var (
@@ -78,6 +78,7 @@ var (
 	pkgLogger                           logger.Logger
 	numLoadFileUploadWorkers            int
 	slaveUploadTimeout                  time.Duration
+	tableCountQueryTimeout              time.Duration
 	runningMode                         string
 	uploadStatusTrackFrequency          time.Duration
 	uploadAllocatorSleep                time.Duration
@@ -191,6 +192,8 @@ func loadConfig() {
 	config.RegisterBoolConfigVariable(false, &skipDeepEqualSchemas, true, "Warehouse.skipDeepEqualSchemas")
 	config.RegisterIntConfigVariable(8, &maxParallelJobCreation, true, 1, "Warehouse.maxParallelJobCreation")
 	config.RegisterBoolConfigVariable(false, &enableJitterForSyncs, true, "Warehouse.enableJitterForSyncs")
+	config.RegisterDurationConfigVariable(30, &tableCountQueryTimeout, true, time.Second, []string{"Warehouse.tableCountQueryTimeout", "Warehouse.tableCountQueryTimeoutInS"}...)
+
 	appName = misc.DefaultString("rudder-server").OnError(os.Hostname())
 	configBackendURL = config.GetString("CONFIG_BACKEND_URL", "https://api.rudderlabs.com")
 }
@@ -1067,7 +1070,7 @@ func (wh *HandleT) getUploadsToProcess(availableWorkers int, skipIdentifiers []s
 			whManager:            whManager,
 			dbHandle:             wh.dbHandle,
 			pgNotifier:           &wh.notifier,
-			destinationValidator: configuration_testing.NewDestinationValidator(),
+			destinationValidator: validations.NewDestinationValidator(),
 		}
 
 		uploadJobs = append(uploadJobs, &uploadJob)
