@@ -25,7 +25,7 @@ import (
 var (
 	setVarCharMax                 bool
 	dedupWindow                   bool
-	dedupWindowInDays             int
+	dedupWindowInHours            time.Duration
 	pkgLogger                     logger.Logger
 	skipComputingUserLatestTraits bool
 	enableDeleteByJobs            bool
@@ -40,7 +40,7 @@ func loadConfig() {
 	setVarCharMax = config.GetBool("Warehouse.redshift.setVarCharMax", false)
 
 	config.RegisterBoolConfigVariable(false, &dedupWindow, true, "Warehouse.redshift.dedupWindow")
-	config.RegisterIntConfigVariable(30, &dedupWindowInDays, true, 1, "Warehouse.redshift.dedupWindowInDays")
+	config.RegisterDurationConfigVariable(720, &dedupWindowInHours, true, time.Hour, "Warehouse.redshift.dedupWindowInHours")
 	config.RegisterBoolConfigVariable(false, &skipComputingUserLatestTraits, true, "Warehouse.redshift.skipComputingUserLatestTraits")
 	config.RegisterBoolConfigVariable(false, &enableDeleteByJobs, true, "Warehouse.redshift.enableDeleteByJobs")
 }
@@ -371,43 +371,52 @@ func (rs *HandleT) loadTable(tableName string, tableSchemaInUpload, tableSchemaA
 		return
 	}
 
-	primaryKey := "id"
+	var (
+		primaryKey   = "id"
+		partitionKey = "id"
+	)
+
 	if column, ok := primaryKeyMap[tableName]; ok {
 		primaryKey = column
 	}
-
-	partitionKey := "id"
 	if column, ok := partitionKeyMap[tableName]; ok {
 		partitionKey = column
 	}
 
-	var skipEntireTableClause string
-	if dedupWindow {
-		if _, ok := tableSchemaAfterUpload["received_at"]; ok {
-			skipEntireTableClause = fmt.Sprintf(`AND %[1]s.%[2]s.received_at > GETDATE() - INTERVAL '%d DAY'`, rs.Namespace, tableName, dedupWindowInDays)
-		}
-	}
-
-	var additionalJoinClause string
-	if tableName == warehouseutils.DiscardsTable {
-		additionalJoinClause = fmt.Sprintf(`AND _source.%[3]s = %[1]s.%[2]s.%[3]s AND _source.%[4]s = %[1]s.%[2]s.%[4]s`, rs.Namespace, tableName, "table_name", "column_name")
-	}
-
 	sqlStatement = fmt.Sprintf(`
-		DELETE FROM 
-		  %[1]s."%[2]s" using %[1]s."%[3]s" _source 
-		where 
-		  (
-			_source.%[4]s = %[1]s.%[2]s.%[4]s %[5]s %[6]s
-		  )
+		DELETE FROM
+			%[1]s."%[2]s" MAIN 
+		USING 
+			%[1]s."%[3]s" SOURCE    
+		WHERE
+			SOURCE.%[4]s = MAIN.%[4]s
 `,
 		rs.Namespace,
 		tableName,
 		stagingTableName,
 		primaryKey,
-		additionalJoinClause,
-		skipEntireTableClause,
 	)
+
+	if dedupWindow {
+		if _, ok := tableSchemaAfterUpload["received_at"]; ok {
+			sqlStatement += fmt.Sprintf(`
+				AND MAIN.received_at > GETDATE() - INTERVAL '%[1]d DAY'
+`,
+				dedupWindowInHours/time.Hour,
+			)
+		}
+	}
+
+	if tableName == warehouseutils.DiscardsTable {
+		sqlStatement += fmt.Sprintf(`
+			AND SOURCE.%[1]s = MAIN.%[1]s 
+			AND SOURCE.%[2]s = MAIN.%[2]s
+`,
+			"table_name",
+			"column_name",
+		)
+	}
+
 	pkgLogger.Infof("RS: Dedup records for table:%s using staging table: %s\n", tableName, sqlStatement)
 	_, err = tx.Exec(sqlStatement)
 	if err != nil {
