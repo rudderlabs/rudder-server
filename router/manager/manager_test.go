@@ -55,7 +55,7 @@ func run(m *testing.M) int {
 	// uses a sensible default on windows (tcp/http) and linux/osx (socket)
 	pool, err := dockertest.NewPool("")
 	if err != nil {
-		log.Fatalf("Could not connect to docker: %s", err)
+		panic(fmt.Errorf("Could not connect to docker: %s", err))
 	}
 
 	database := "jobsdb"
