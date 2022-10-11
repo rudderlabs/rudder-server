@@ -60,9 +60,9 @@ help: ## Show the available commands
 
 
 install-tools:
-	export PATH='$(PATH):$(shell go env GOPATH)/bin'
 	go install github.com/golang/mock/mockgen@v1.6.0
 	go install mvdan.cc/gofumpt@latest
+	go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.28.1
 	go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.2.0
 
 .PHONY: lint 
