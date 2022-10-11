@@ -12,12 +12,12 @@ import (
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
-func warehouse(req *DestinationValidationRequest) warehouseutils.WarehouseT {
+func warehouse(req *DestinationValidationRequest) warehouseutils.Warehouse {
 	destination := req.Destination
 
 	randomSourceId := randomString()
 	randomSourceName := randomString()
-	return warehouseutils.WarehouseT{
+	return warehouseutils.Warehouse{
 		Source: backendconfig.SourceT{
 			ID:   randomSourceId,
 			Name: randomSourceName,

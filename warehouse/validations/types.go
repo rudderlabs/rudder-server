@@ -84,7 +84,7 @@ type DestinationValidationResponse struct {
 
 type CTHandleT struct {
 	infoRequest *DestinationValidationRequest
-	warehouse   warehouseutils.WarehouseT
+	warehouse   warehouseutils.Warehouse
 	manager     manager.WarehouseOperations
 }
 
