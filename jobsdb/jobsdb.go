@@ -74,7 +74,7 @@ type backupSettings struct {
 }
 
 func (b *backupSettings) isBackupEnabled() bool {
-	return masterBackupEnabled && b.instanceBackupEnabled
+	return masterBackupEnabled && b.instanceBackupEnabled && config.GetString("JOBS_BACKUP_BUCKET", "") != ""
 }
 
 func IsMasterBackupEnabled() bool {
@@ -1780,7 +1780,7 @@ func (jd *HandleT) migrateJobsInTx(ctx context.Context, tx *sql.Tx, srcDS, destD
 func (jd *HandleT) postMigrateHandleDS(tx *sql.Tx, migrateFrom []dataSetT) error {
 	// Rename datasets before dropping them, so that they can be uploaded to s3
 	for _, ds := range migrateFrom {
-		if jd.BackupSettings.isBackupEnabled() && isBackupConfigured() {
+		if jd.BackupSettings.isBackupEnabled() {
 			jd.logger.Debugf("renaming dataset %s to %s", ds.JobTable, ds.JobTable+preDropTablePrefix+ds.JobTable)
 			if err := jd.mustRenameDSInTx(tx, ds); err != nil {
 				return err
@@ -3198,16 +3198,13 @@ func (jd *HandleT) backupDSLoop(ctx context.Context) {
 		opPayload, err := json.Marshal(&backupDS)
 		jd.assertError(err)
 
-		var opID int64
-		if isBackupConfigured() {
-			opID = jd.JournalMarkStart(backupDSOperation, opPayload)
-			err := jd.backupDS(ctx, backupDSRange)
-			if err != nil {
-				stats.Default.NewTaggedStat("backup_ds_failed", stats.CountType, stats.Tags{"customVal": jd.tablePrefix, "provider": config.GetString("JOBS_BACKUP_STORAGE_PROVIDER", "S3")}).Increment()
-				jd.logger.Errorf("[JobsDB] :: Failed to backup jobs table %v. Err: %v", backupDSRange.ds.JobStatusTable, err)
-			}
-			jd.JournalMarkDone(opID)
+		opID := jd.JournalMarkStart(backupDSOperation, opPayload)
+		err = jd.backupDS(ctx, backupDSRange)
+		if err != nil {
+			stats.Default.NewTaggedStat("backup_ds_failed", stats.CountType, stats.Tags{"customVal": jd.tablePrefix, "provider": config.GetString("JOBS_BACKUP_STORAGE_PROVIDER", "S3")}).Increment()
+			jd.logger.Errorf("[JobsDB] :: Failed to backup jobs table %v. Err: %v", backupDSRange.ds.JobStatusTable, err)
 		}
+		jd.JournalMarkDone(opID)
 
 		// drop dataset after successfully uploading both jobs and jobs_status to s3
 		opID = jd.JournalMarkStart(backupDropDSOperation, opPayload)
@@ -3449,10 +3446,6 @@ func (jd *HandleT) getFileUploader(ctx context.Context) (filemanager.FileManager
 		})
 	}
 	return jd.jobsFileUploader, err
-}
-
-func isBackupConfigured() bool {
-	return config.GetString("JOBS_BACKUP_BUCKET", "") != ""
 }
 
 // Identifier returns the identifier of the jobsdb. Here it is tablePrefix.

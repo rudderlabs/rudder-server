@@ -56,7 +56,7 @@ func disableCache() {
 type noCache struct{}
 
 func (*noCache) Get(context.Context) ([]byte, error) {
-	return nil, nil
+	return nil, fmt.Errorf(`noCache: cache disabled`)
 }
 
 type workspaceConfig interface {
@@ -319,6 +319,7 @@ func Setup(configEnvHandler types.ConfigEnvI) (err error) {
 }
 
 func (bc *backendConfigImpl) StartWithIDs(ctx context.Context, workspaces string) {
+	var err error
 	ctx, cancel := context.WithCancel(ctx)
 	bc.ctx = ctx
 	bc.cancel = cancel
@@ -329,13 +330,24 @@ func (bc *backendConfigImpl) StartWithIDs(ctx context.Context, workspaces string
 		u, _ := identifier.BasicAuth()
 		secret := sha256.Sum256([]byte(u))
 		cacheKey := identifier.ID()
-		bc.cache = cache.Start(
+		bc.cache, err = cache.Start(
 			ctx,
 			secret,
 			cacheKey,
-			bc.Subscribe(ctx, TopicBackendConfig),
+			func() pubsub.DataChannel { return bc.Subscribe(ctx, TopicBackendConfig) },
 		)
+		if err != nil {
+			// the only reason why we should resume by using no cache,
+			// would be if no database configuration has been set
+			if config.IsSet("DB.host") {
+				panic(fmt.Errorf("error starting backend config cache: %w", err))
+			} else {
+				pkgLogger.Warnf("Failed to start backend config cache, no cache will be used: %w", err)
+				bc.cache = &noCache{}
+			}
+		}
 	}
+
 	rruntime.Go(func() {
 		bc.pollConfigUpdate(ctx, workspaces)
 		close(bc.blockChan)
