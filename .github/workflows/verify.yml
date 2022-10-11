@@ -36,7 +36,7 @@ jobs:
         uses: arduino/setup-protoc@v1
         with:
           include-pre-releases: true
-          version: '3.21'
+          version: '3.x'
       - run: make proto
       - run: git diff --exit-code
       - name: Error message
