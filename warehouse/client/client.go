@@ -55,6 +55,8 @@ func (cl *Client) sqlQuery(statement string) (result warehouseutils.QueryResult,
 			switch t := values[i].(type) {
 			case []uint8:
 				values[i] = string(t)
+			default:
+				return result, fmt.Errorf("unexpected type %T", t)
 			}
 		}
 		if err != nil {
