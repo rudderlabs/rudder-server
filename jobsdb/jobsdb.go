@@ -180,7 +180,10 @@ type HandleInspector struct {
 func (h *HandleInspector) DSList() []dataSetT {
 	h.HandleT.dsListLock.RLock()
 	defer h.HandleT.dsListLock.RUnlock()
-	return h.HandleT.getDSList()
+	actualDSList := h.HandleT.getDSList()
+	tmpDataSetList := make([]dataSetT, len(actualDSList))
+	copy(tmpDataSetList, actualDSList)
+	return tmpDataSetList
 }
 
 /*
