@@ -1747,7 +1747,7 @@ completed (state is failed or waiting or waiting_retry or executiong) are copied
 over. Then the status (only the latest) is set for those jobs
 */
 
-func (jd *HandleT) migrateJobsInTx(ctx context.Context, tx *sql.Tx, srcDS, destDS dataSetT) (noJobsMigrated int, err error) {
+func (jd *HandleT) migrateJobsInTx(ctx context.Context, tx *sql.Tx, srcDS, destDS dataSetT) (int, error) {
 	queryStat := stats.Default.NewTaggedStat("migration_jobs", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix})
 	queryStat.Start()
 	defer queryStat.End()
@@ -1756,44 +1756,37 @@ func (jd *HandleT) migrateJobsInTx(ctx context.Context, tx *sql.Tx, srcDS, destD
 	}
 	defer jd.dsListLock.RUnlock()
 
-	// Unprocessed jobs
-	unprocessedList, _, err := jd.getUnprocessedJobsDS(ctx, srcDS, false, GetQueryParamsT{})
-	if err != nil {
-		return 0, err
-	}
-	// Jobs which haven't finished processing
-	retryList, _, err := jd.getProcessedJobsDS(ctx, srcDS, true,
-		GetQueryParamsT{StateFilters: validNonTerminalStates})
-	if err != nil {
-		return 0, err
-	}
-	jobsToMigrate := append(unprocessedList.Jobs, retryList.Jobs...)
-	noJobsMigrated = len(jobsToMigrate)
+	compactDSQuery := fmt.Sprintf(
+		`with last_status as 
+		(
+			select * from %[1]q where id in (select max(id) from %[1]q group by job_id)
+		),
+		inserted_jobs as
+		(
+			insert into %[3]q (select j.* from %[2]q j left join last_status js on js.job_id = j.job_id
+				where js.job_id is null or js.job_state = ANY('{%[5]s}') order by j.job_id) returning 1
+		),
+		insertedStatuses as 
+		(
+			insert into %[4]q (select * from last_status where job_state = ANY('{%[5]s}'))
+		)
+		select count(*) from inserted_jobs;`,
+		srcDS.JobStatusTable,
+		srcDS.JobTable,
+		destDS.JobTable,
+		destDS.JobStatusTable,
+		strings.Join(validNonTerminalStates, ","),
+	)
 
-	if err := jd.copyJobsDS(tx, destDS, jobsToMigrate); err != nil {
-		return 0, err
-	}
-	// Now copy over the latest status of the unfinished jobs
-	var statusList []*JobStatusT
-	for _, job := range retryList.Jobs {
-		newStatus := JobStatusT{
-			JobID:         job.JobID,
-			JobState:      job.LastJobStatus.JobState,
-			AttemptNum:    job.LastJobStatus.AttemptNum,
-			ExecTime:      job.LastJobStatus.ExecTime,
-			RetryTime:     job.LastJobStatus.RetryTime,
-			ErrorCode:     job.LastJobStatus.ErrorCode,
-			ErrorResponse: job.LastJobStatus.ErrorResponse,
-			Parameters:    job.LastJobStatus.Parameters,
-			WorkspaceId:   job.WorkspaceId,
-		}
-		statusList = append(statusList, &newStatus)
-	}
-	err = jd.copyJobStatusDS(ctx, tx, destDS, statusList, []string{})
+	var numJobsMigrated int64
+	err := tx.QueryRowContext(
+		ctx,
+		compactDSQuery,
+	).Scan(&numJobsMigrated)
 	if err != nil {
 		return 0, err
 	}
-	return noJobsMigrated, nil
+	return int(numJobsMigrated), nil
 }
 
 func (jd *HandleT) postMigrateHandleDS(tx *sql.Tx, migrateFrom []dataSetT) error {
