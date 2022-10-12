@@ -1,13 +1,6 @@
 name: builds
 
-on:
-  release:
-    types: [created]
-  push:
-    branches:
-      - master
-      - main
-  pull_request:
+on: workflow_dispatch
 
 jobs:
   docker-oss:
