@@ -846,7 +846,6 @@ func overrideWithEnv(settings *filemanager.SettingsT) {
 	}
 }
 
-//
 func ifNotExistThenSet(keyToReplace string, replaceWith interface{}, configMap map[string]interface{}) {
 	if _, ok := configMap[keyToReplace]; !ok {
 		// In case we don't have the key, simply replace it with replaceWith
