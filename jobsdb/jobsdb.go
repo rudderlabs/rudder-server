@@ -176,14 +176,16 @@ type HandleInspector struct {
 	*HandleT
 }
 
-// DSList returns the current dsList
-func (h *HandleInspector) DSList() []dataSetT {
+// DSIndicesList returns the slice of current ds indices
+func (h *HandleInspector) DSIndicesList() []string {
 	h.HandleT.dsListLock.RLock()
 	defer h.HandleT.dsListLock.RUnlock()
-	actualDSList := h.HandleT.getDSList()
-	tmpDataSetList := make([]dataSetT, len(actualDSList))
-	copy(tmpDataSetList, actualDSList)
-	return tmpDataSetList
+	var indicesList []string
+	for _, ds := range h.HandleT.getDSList() {
+		indicesList = append(indicesList, ds.Index)
+	}
+
+	return indicesList
 }
 
 /*
@@ -1144,16 +1146,20 @@ func (jd *HandleT) checkIfMigrateDS(ds dataSetT) (
 	}
 
 	if jd.MaxDSRetentionPeriod > 0 {
-		var terminalJobsExist sql.NullBool
+		var terminalJobsExist bool
 		sqlStatement = fmt.Sprintf(`SELECT EXISTS (
 									SELECT id
 										FROM %q
-										WHERE job_state IN ('%s') and now() - exec_time > interval '%d second' LIMIT 1)`,
-			ds.JobStatusTable, strings.Join(validTerminalStates, "', '"), jd.MaxDSRetentionPeriod/time.Second)
-		row = jd.dbHandle.QueryRow(sqlStatement)
+										WHERE job_state = ANY($1) and exec_time < $2)`,
+			ds.JobStatusTable)
+		stmt, err := jd.dbHandle.Prepare(sqlStatement)
+		jd.assertError(err)
+		defer func() { _ = stmt.Close() }()
+
+		row = stmt.QueryRow(pq.Array(validTerminalStates), time.Now().Add(-1*jd.MaxDSRetentionPeriod))
 		err = row.Scan(&terminalJobsExist)
 		jd.assertError(err)
-		if terminalJobsExist.Valid && terminalJobsExist.Bool {
+		if terminalJobsExist {
 			return true, false, recordsLeft
 		}
 	}

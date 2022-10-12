@@ -504,7 +504,7 @@ func TestJobsDB(t *testing.T) {
 		triggerAddNewDS <- time.Now() // Second time, waits for the first loop to finish
 
 		jobDBInspector := HandleInspector{HandleT: &jobDB}
-		require.EqualValues(t, 2, len(jobDBInspector.DSList()))
+		require.EqualValues(t, 2, len(jobDBInspector.DSIndicesList()))
 		require.EqualValues(t, 2, jobDB.GetMaxDSIndex())
 
 		jobs = genJobs(defaultWorkspaceID, customVal, 10000, 1)
@@ -538,10 +538,10 @@ func TestJobsDB(t *testing.T) {
 		triggerMigrateDS <- time.Now() // trigger migrateDSLoop to run
 		triggerMigrateDS <- time.Now() // Second time, waits for the first loop to finish
 
-		dsList := jobDBInspector.DSList()
-		require.EqualValues(t, "1_1", dsList[0].Index)
-		require.EqualValues(t, "2", dsList[1].Index)
-		require.EqualValues(t, 2, len(jobDBInspector.DSList()))
+		dsIndicesList := jobDBInspector.DSIndicesList()
+		require.EqualValues(t, "1_1", dsIndicesList[0])
+		require.EqualValues(t, "2", dsIndicesList[1])
+		require.EqualValues(t, 2, len(jobDBInspector.DSIndicesList()))
 		require.EqualValues(t, 2, jobDB.GetMaxDSIndex())
 
 		jobsResult, err = jobDB.GetUnprocessed(context.Background(), GetQueryParamsT{
