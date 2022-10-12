@@ -244,7 +244,7 @@ func Run(ctx context.Context) int {
 	}
 	// TODO: remove as soon as we update the configuration with statsExcludedTags where necessary
 	if !config.IsSet("statsExcludedTags") && deploymentType == deployment.MultiTenantType && (!config.IsSet("WORKSPACE_NAMESPACE") || strings.Contains(config.GetString("WORKSPACE_NAMESPACE", ""), "free")) {
-		config.Set("statsExcludedTags", []string{"workspaceId", "sourceID"})
+		config.Set("statsExcludedTags", []string{"workspaceId", "sourceID", "destId"})
 	}
 	stats.Default.Start(ctx)
 	stats.Default.NewTaggedStat("rudder_server_config", stats.GaugeType, stats.Tags{"version": version, "major": major, "minor": minor, "patch": patch, "commit": commit, "buildDate": buildDate, "builtBy": builtBy, "gitUrl": gitURL, "TransformerVersion": transformer.GetVersion(), "DatabricksVersion": misc.GetDatabricksVersion()}).Gauge(1)
