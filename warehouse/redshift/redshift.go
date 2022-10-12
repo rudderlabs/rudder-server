@@ -710,9 +710,8 @@ func (rs *HandleT) FetchSchema(warehouse warehouseutils.Warehouse) (schema wareh
 			sqlStatement)
 		return schema, nil
 	}
-	defer func(rows *sql.Rows) {
-		_ = rows.Close()
-	}(rows)
+	defer func() { _ = rows.Close() }()
+
 	for rows.Next() {
 		var tName, cName, cType string
 		var charLength sql.NullInt64
@@ -751,9 +750,7 @@ func (rs *HandleT) TestConnection(warehouse warehouseutils.Warehouse) (err error
 	if err != nil {
 		return
 	}
-	defer func(Db *sql.DB) {
-		_ = Db.Close()
-	}(rs.Db)
+	defer func() { _ = rs.Db.Close() }()
 
 	ctx, cancel := context.WithTimeout(context.TODO(), rs.ConnectTimeout)
 	defer cancel()
@@ -783,9 +780,8 @@ func (rs *HandleT) CrashRecover(warehouse warehouseutils.Warehouse) (err error) 
 	if err != nil {
 		return err
 	}
-	defer func(Db *sql.DB) {
-		_ = Db.Close()
-	}(rs.Db)
+	defer func() { _ = rs.Db.Close() }()
+
 	rs.dropDanglingStagingTables()
 	return
 }

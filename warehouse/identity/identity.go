@@ -217,12 +217,13 @@ func (idr *HandleT) addRules(txn *sql.Tx, loadFileNames []string, gzWriter *misc
 			var record []string
 			record, err = eventReader.Read(columnNames)
 			if err != nil {
-				_ = gzipFile.Close()
-				_ = gzipReader.Close()
-
 				if err == io.EOF {
 					break
 				}
+
+				_ = gzipReader.Close()
+				_ = gzipFile.Close()
+
 				pkgLogger.Errorf("IDR: Error while reading merge rule file %s for loading in staging table locally:%s: %v", loadFileName, mergeRulesStagingTable, err)
 				return
 			}
@@ -237,16 +238,16 @@ func (idr *HandleT) addRules(txn *sql.Tx, loadFileNames []string, gzWriter *misc
 			recordInterface[4] = rowID
 			_, err = stmt.Exec(recordInterface[:]...)
 			if err != nil {
-				_ = gzipFile.Close()
 				_ = gzipReader.Close()
+				_ = gzipFile.Close()
 
 				pkgLogger.Errorf("IDR: Error while adding rowID to merge_rules table: %v", err)
 				return
 			}
 		}
 
-		_ = gzipFile.Close()
 		_ = gzipReader.Close()
+		_ = gzipFile.Close()
 	}
 
 	_, err = stmt.Exec()

@@ -724,9 +724,8 @@ func (pg *HandleT) CrashRecover(warehouse warehouseutils.Warehouse) (err error) 
 	if err != nil {
 		return err
 	}
-	defer func(Db *sql.DB) {
-		_ = Db.Close()
-	}(pg.Db)
+	defer func() { _ = pg.Db.Close() }()
+
 	pg.dropDanglingStagingTables()
 	return
 }
