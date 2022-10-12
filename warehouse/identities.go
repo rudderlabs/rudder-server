@@ -385,8 +385,11 @@ func (wh *HandleT) populateHistoricIdentities(warehouse warehouseutils.Warehouse
 		defer wh.setFailedStat(warehouse, err)
 
 		// check for pending loads (populateHistoricIdentities)
-		var hasPendingLoad bool
-		var upload Upload
+		var (
+			hasPendingLoad bool
+			upload         Upload
+		)
+
 		upload, hasPendingLoad = wh.getPendingPopulateIdentitiesLoad(warehouse)
 
 		if hasPendingLoad {

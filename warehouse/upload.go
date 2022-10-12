@@ -404,8 +404,11 @@ func (job *UploadJobT) run() (err error) {
 	userTables := []string{job.identifiesTableName(), job.usersTableName()}
 	identityTables := []string{job.identityMergeRulesTableName(), job.identityMappingsTableName()}
 
-	var newStatus string
-	var nextUploadState *uploadStateT
+	var (
+		newStatus       string
+		nextUploadState *uploadStateT
+	)
+
 	// do not set nextUploadState if hasSchemaChanged to make it start from 1st step again
 	if !hasSchemaChanged {
 		nextUploadState = getNextUploadState(job.upload.Status)
@@ -489,9 +492,11 @@ func (job *UploadJobT) run() (err error) {
 			newStatus = nextUploadState.failed
 			_, currentJobSucceededTables := job.getTablesToSkip()
 
-			var loadErrors []error
-			var loadErrorLock sync.Mutex
-			var loadFilesTableMap map[tableNameT]bool
+			var (
+				loadErrors        []error
+				loadErrorLock     sync.Mutex
+				loadFilesTableMap map[tableNameT]bool
+			)
 
 			loadFilesTableMap, err = job.getLoadFilesTableMap()
 			if err != nil {

@@ -133,8 +133,11 @@ func Connect(cred CredentialsT) (*sql.DB, error) {
 	if cred.SSLMode == verifyCA {
 		url = fmt.Sprintf("%s sslrootcert=%[2]s/server-ca.pem sslcert=%[2]s/client-cert.pem sslkey=%[2]s/client-key.pem", url, cred.SSLDir)
 	}
-	var err error
-	var db *sql.DB
+	var (
+		err error
+		db  *sql.DB
+	)
+
 	if db, err = sql.Open("postgres", url); err != nil {
 		return nil, fmt.Errorf("postgres connection error : (%v)", err)
 	}
