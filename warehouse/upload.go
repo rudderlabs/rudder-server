@@ -812,20 +812,6 @@ func (job *UploadJobT) fetchPendingUploadTableStatus() []*TableUploadStatusT {
 	return tableUploadStatuses
 }
 
-func getTableUploadStatusMap(tableUploadStatuses []*TableUploadStatusT) map[int64]map[string]*TableUploadStatusInfoT {
-	tableUploadStatus := make(map[int64]map[string]*TableUploadStatusInfoT)
-	for _, tUploadStatus := range tableUploadStatuses {
-		if _, ok := tableUploadStatus[tUploadStatus.uploadID]; !ok {
-			tableUploadStatus[tUploadStatus.uploadID] = make(map[string]*TableUploadStatusInfoT)
-		}
-		tableUploadStatus[tUploadStatus.uploadID][tUploadStatus.tableName] = &TableUploadStatusInfoT{
-			status: tUploadStatus.status,
-			error:  tUploadStatus.error,
-		}
-	}
-	return tableUploadStatus
-}
-
 func (job *UploadJobT) getTablesToSkip() (map[string]*TableUploadIDInfoT, map[string]bool) {
 	tableUploadStatuses := job.fetchPendingUploadTableStatus()
 	tableUploadStatus := getTableUploadStatusMap(tableUploadStatuses)
@@ -1455,42 +1441,6 @@ func (job *UploadJobT) triggerUploadNow() (err error) {
 	return err
 }
 
-// extractAndUpdateUploadErrorsByState extracts and augment errors in format
-// { "internal_processing_failed": { "errors": ["account-locked", "account-locked"] }}
-// from a particular upload.
-func extractAndUpdateUploadErrorsByState(message json.RawMessage, state string, statusError error) (map[string]map[string]interface{}, error) {
-	var uploadErrors map[string]map[string]interface{}
-	err := json.Unmarshal(message, &uploadErrors)
-	if err != nil {
-		return nil, fmt.Errorf("unable to unmarshal error into upload errors: %v", err)
-	}
-
-	if uploadErrors == nil {
-		uploadErrors = make(map[string]map[string]interface{})
-	}
-
-	if _, ok := uploadErrors[state]; !ok {
-		uploadErrors[state] = make(map[string]interface{})
-	}
-	errorByState := uploadErrors[state]
-
-	// increment attempts for errored stage
-	if attempt, ok := errorByState["attempt"]; ok {
-		errorByState["attempt"] = int(attempt.(float64)) + 1
-	} else {
-		errorByState["attempt"] = 1
-	}
-
-	// append errors for errored stage
-	if errList, ok := errorByState["errors"]; ok {
-		errorByState["errors"] = append(errList.([]interface{}), statusError.Error())
-	} else {
-		errorByState["errors"] = []string{statusError.Error()}
-	}
-
-	return uploadErrors, nil
-}
-
 // Aborted makes a check that if the state of the job
 // should be aborted
 func (job *UploadJobT) Aborted(attempts int, startTime time.Time) bool {
@@ -1956,7 +1906,7 @@ func (job *UploadJobT) createLoadFiles(generateAll bool) (startLoadFileID, endLo
 				if resp.Status == "aborted" {
 					pkgLogger.Errorf("[WH]: Error in generating load files: %v", resp.Error)
 					sampleError = fmt.Errorf(resp.Error)
-					job.setStagingFileErr(resp.JobID, sampleError)
+					setStagingFileErr(resp.JobID, sampleError)
 					continue
 				}
 				var output []loadFileUploadOutputT
@@ -1975,7 +1925,7 @@ func (job *UploadJobT) createLoadFiles(generateAll bool) (startLoadFileID, endLo
 			if err != nil {
 				saveLoadFileErrs = append(saveLoadFileErrs, err)
 			}
-			job.setStagingFileSuccess(successfulStagingFileIDs)
+			setStagingFileSuccess(successfulStagingFileIDs)
 			wg.Done()
 		})
 	}
@@ -2013,45 +1963,6 @@ func (job *UploadJobT) createLoadFiles(generateAll bool) (startLoadFileID, endLo
 	}
 
 	return startLoadFileID, endLoadFileID, nil
-}
-
-func (*UploadJobT) setStagingFileSuccess(stagingFileIDs []int64) {
-	// using ANY instead of IN as WHERE clause filtering on primary key index uses index scan in both cases
-	// use IN for cases where filtering on composite indexes
-	sqlStatement := fmt.Sprintf(`
-		UPDATE
-		  %s
-		SET
-		  status = $1,
-		  updated_at = $2
-		WHERE
-		  id = ANY($3);
-`,
-		warehouseutils.WarehouseStagingFilesTable,
-	)
-	_, err := dbHandle.Exec(sqlStatement, warehouseutils.StagingFileSucceededState, timeutil.Now(), pq.Array(stagingFileIDs))
-	if err != nil {
-		panic(err)
-	}
-}
-
-func (*UploadJobT) setStagingFileErr(stagingFileID int64, statusErr error) {
-	sqlStatement := fmt.Sprintf(`
-		UPDATE
-		  %s
-		SET
-		  status = $1,
-		  error = $2,
-		  updated_at = $3
-		WHERE
-		  id = $4;
-`,
-		warehouseutils.WarehouseStagingFilesTable,
-	)
-	_, err := dbHandle.Exec(sqlStatement, warehouseutils.StagingFileFailedState, misc.QuoteLiteral(statusErr.Error()), timeutil.Now(), stagingFileID)
-	if err != nil {
-		panic(err)
-	}
 }
 
 func (job *UploadJobT) bulkInsertLoadFileRecords(loadFiles []loadFileUploadOutputT) (err error) {
@@ -2272,9 +2183,88 @@ func (job *UploadJobT) GetFirstLastEvent() (time.Time, time.Time) {
 	return job.upload.FirstEventAt, job.upload.LastEventAt
 }
 
-/*
- * State Machine for upload job lifecycle
- */
+func (job *UploadJobT) GetLocalSchema() warehouseutils.SchemaT {
+	return job.schemaHandle.getLocalSchema()
+}
+
+func (job *UploadJobT) UpdateLocalSchema(schema warehouseutils.SchemaT) error {
+	return job.schemaHandle.updateLocalSchema(schema)
+}
+
+// extractAndUpdateUploadErrorsByState extracts and augment errors in format
+// { "internal_processing_failed": { "errors": ["account-locked", "account-locked"] }}
+// from a particular upload.
+func extractAndUpdateUploadErrorsByState(message json.RawMessage, state string, statusError error) (map[string]map[string]interface{}, error) {
+	var uploadErrors map[string]map[string]interface{}
+	err := json.Unmarshal(message, &uploadErrors)
+	if err != nil {
+		return nil, fmt.Errorf("unable to unmarshal error into upload errors: %v", err)
+	}
+
+	if uploadErrors == nil {
+		uploadErrors = make(map[string]map[string]interface{})
+	}
+
+	if _, ok := uploadErrors[state]; !ok {
+		uploadErrors[state] = make(map[string]interface{})
+	}
+	errorByState := uploadErrors[state]
+
+	// increment attempts for errored stage
+	if attempt, ok := errorByState["attempt"]; ok {
+		errorByState["attempt"] = int(attempt.(float64)) + 1
+	} else {
+		errorByState["attempt"] = 1
+	}
+
+	// append errors for errored stage
+	if errList, ok := errorByState["errors"]; ok {
+		errorByState["errors"] = append(errList.([]interface{}), statusError.Error())
+	} else {
+		errorByState["errors"] = []string{statusError.Error()}
+	}
+
+	return uploadErrors, nil
+}
+
+func setStagingFileSuccess(stagingFileIDs []int64) {
+	// using ANY instead of IN as WHERE clause filtering on primary key index uses index scan in both cases
+	// use IN for cases where filtering on composite indexes
+	sqlStatement := fmt.Sprintf(`
+		UPDATE
+		  %s
+		SET
+		  status = $1,
+		  updated_at = $2
+		WHERE
+		  id = ANY($3);
+`,
+		warehouseutils.WarehouseStagingFilesTable,
+	)
+	_, err := dbHandle.Exec(sqlStatement, warehouseutils.StagingFileSucceededState, timeutil.Now(), pq.Array(stagingFileIDs))
+	if err != nil {
+		panic(err)
+	}
+}
+
+func setStagingFileErr(stagingFileID int64, statusErr error) {
+	sqlStatement := fmt.Sprintf(`
+		UPDATE
+		  %s
+		SET
+		  status = $1,
+		  error = $2,
+		  updated_at = $3
+		WHERE
+		  id = $4;
+`,
+		warehouseutils.WarehouseStagingFilesTable,
+	)
+	_, err := dbHandle.Exec(sqlStatement, warehouseutils.StagingFileFailedState, misc.QuoteLiteral(statusErr.Error()), timeutil.Now(), stagingFileID)
+	if err != nil {
+		panic(err)
+	}
+}
 
 func getNextUploadState(dbStatus string) *uploadStateT {
 	for _, uploadState := range stateTransitions {
@@ -2369,10 +2359,16 @@ func initializeStateMachine() {
 	abortState.nextState = nil
 }
 
-func (job *UploadJobT) GetLocalSchema() warehouseutils.SchemaT {
-	return job.schemaHandle.getLocalSchema()
-}
-
-func (job *UploadJobT) UpdateLocalSchema(schema warehouseutils.SchemaT) error {
-	return job.schemaHandle.updateLocalSchema(schema)
+func getTableUploadStatusMap(tableUploadStatuses []*TableUploadStatusT) map[int64]map[string]*TableUploadStatusInfoT {
+	tableUploadStatus := make(map[int64]map[string]*TableUploadStatusInfoT)
+	for _, tUploadStatus := range tableUploadStatuses {
+		if _, ok := tableUploadStatus[tUploadStatus.uploadID]; !ok {
+			tableUploadStatus[tUploadStatus.uploadID] = make(map[string]*TableUploadStatusInfoT)
+		}
+		tableUploadStatus[tUploadStatus.uploadID][tUploadStatus.tableName] = &TableUploadStatusInfoT{
+			status: tUploadStatus.status,
+			error:  tUploadStatus.error,
+		}
+	}
+	return tableUploadStatus
 }
