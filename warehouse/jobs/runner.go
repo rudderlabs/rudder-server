@@ -216,9 +216,9 @@ func (asyncWhJob *AsyncJobWhT) startAsyncJobRunner(ctx context.Context) error {
 
 // Queries the jobsDB and gets active async job and returns it in a
 func (asyncWhJob *AsyncJobWhT) getPendingAsyncJobs(ctx context.Context) ([]AsyncJobPayloadT, error) {
-	asyncJobPayloadS := make([]AsyncJobPayloadT, 0)
+	asyncJobPayloads := make([]AsyncJobPayloadT, 0)
 	if ctx.Err() != nil {
-		return asyncJobPayloadS, ctx.Err()
+		return asyncJobPayloads, ctx.Err()
 	}
 	pkgLogger.Info("[WH-Jobs]: Get pending wh async jobs")
 	// Filter to get most recent row for the sourceId/destinationID combo and remaining ones should relegate to abort.
@@ -235,29 +235,29 @@ func (asyncWhJob *AsyncJobWhT) getPendingAsyncJobs(ctx context.Context) ([]Async
 	rows, err := asyncWhJob.dbHandle.Query(query, WhJobWaiting, WhJobFailed, MaxBatchSizeToProcess)
 	if err != nil {
 		pkgLogger.Errorf("[WH-Jobs]: Error in getting pending wh async jobs with error %s", err.Error())
-		return asyncJobPayloadS, err
+		return asyncJobPayloads, err
 	}
 	defer func() { _ = rows.Close() }()
 
 	for rows.Next() {
-		var asyncJobPayloads AsyncJobPayloadT
+		var asyncJobPayload AsyncJobPayloadT
 		err = rows.Scan(
-			&asyncJobPayloads.Id,
-			&asyncJobPayloads.SourceID,
-			&asyncJobPayloads.DestinationID,
-			&asyncJobPayloads.TableName,
-			&asyncJobPayloads.AsyncJobType,
-			&asyncJobPayloads.MetaData,
+			&asyncJobPayload.Id,
+			&asyncJobPayload.SourceID,
+			&asyncJobPayload.DestinationID,
+			&asyncJobPayload.TableName,
+			&asyncJobPayload.AsyncJobType,
+			&asyncJobPayload.MetaData,
 			&attempt,
 		)
 		if err != nil {
 			pkgLogger.Errorf("[WH-Jobs]: Error scanning rows %s\n", err)
-			return asyncJobPayloadS, err
+			return asyncJobPayloads, err
 		}
-		asyncJobPayloadS = append(asyncJobPayloadS, asyncJobPayloads)
-		pkgLogger.Infof("Adding row with Id = %s & attempt no %d", asyncJobPayloads.Id, attempt)
+		asyncJobPayloads = append(asyncJobPayloads, asyncJobPayload)
+		pkgLogger.Infof("Adding row with Id = %s & attempt no %d", asyncJobPayload.Id, attempt)
 	}
-	return asyncJobPayloadS, nil
+	return asyncJobPayloads, nil
 }
 
 // Updates the warehouse async jobs with the status sent as a parameter

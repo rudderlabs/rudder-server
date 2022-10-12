@@ -9,9 +9,7 @@ import (
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
-var (
-	UseGlueConfig = "useGlue"
-)
+var UseGlueConfig = "useGlue"
 
 // glue specific config
 var (
