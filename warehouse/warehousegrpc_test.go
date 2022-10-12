@@ -667,7 +667,7 @@ var _ = Describe("WarehouseGrpc", func() {
 			It("should throw Code_INVALID_ARGUMENT when received unsupported/invalid object storage destination type", func() {
 				_, err := validateObjectStorageRequestBody(&proto.ValidateObjectStorageRequest{Type: "ABC"})
 				statusError, _ := status.FromError(err)
-				Expect(statusError.Err().Error()).To(BeIdenticalTo("rpc error: code = InvalidArgument desc = invalid argument err: type: ABC not supported"))
+				Expect(statusError.Err().Error()).To(BeIdenticalTo("rpc error: code = InvalidArgument desc = invalid argument err: \ntype: ABC not supported"))
 				Expect(statusError.Code()).To(BeIdenticalTo(codes.Code(code.Code_INVALID_ARGUMENT)))
 			})
 			It("should throw Code_INVALID_ARGUMENT when received no bucketName(Not applicable for AZURE_BLOB)", func() {
@@ -697,7 +697,7 @@ var _ = Describe("WarehouseGrpc", func() {
 				_, err := validateObjectStorageRequestBody(&proto.ValidateObjectStorageRequest{Type: "AZURE_BLOB", Config: configMap})
 				statusError, _ := status.FromError(err)
 				Expect(statusError.Code()).To(BeIdenticalTo(codes.Code(code.Code_INVALID_ARGUMENT)))
-				Expect(statusError.Err().Error()).To(BeIdenticalTo("rpc error: code = InvalidArgument desc = invalid argument err: containerName invalid or not present"))
+				Expect(statusError.Err().Error()).To(BeIdenticalTo("rpc error: code = InvalidArgument desc = invalid argument err: \ncontainerName invalid or not present"))
 			})
 		})
 	})

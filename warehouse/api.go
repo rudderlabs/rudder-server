@@ -772,7 +772,7 @@ func validateObjectStorage(ctx context.Context, request *ObjectStorageValidation
 	factory := &filemanager.FileManagerFactoryT{}
 	fileManager, err := factory.New(getFileManagerSettings(request.Type, request.Config))
 	if err != nil {
-		return fmt.Errorf("unable to create file manager: %s", err.Error())
+		return fmt.Errorf("unable to create file manager: \n%s", err.Error())
 	}
 
 	req := validations.DestinationValidationRequest{
@@ -783,13 +783,13 @@ func validateObjectStorage(ctx context.Context, request *ObjectStorageValidation
 
 	filePath, err := validations.CreateTempLoadFile(&req)
 	if err != nil {
-		return fmt.Errorf("unable to create temp load file: %w", err)
+		return fmt.Errorf("unable to create temp load file: \n%w", err)
 	}
 	defer os.Remove(filePath)
 
 	f, err := os.Open(filePath)
 	if err != nil {
-		return fmt.Errorf("unable to open path to temporary file: %w", err)
+		return fmt.Errorf("unable to open path to temporary file: \n%w", err)
 	}
 
 	uploadOutput, err := fileManager.Upload(ctx, f)
