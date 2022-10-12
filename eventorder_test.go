@@ -54,7 +54,7 @@ func TestEventOrderGuarantee(t *testing.T) {
 
 	const (
 		users         = 50                   // how many userIDs we will send jobs for
-		jobsPerUser   = 50                   // how many jobs per user we will send
+		jobsPerUser   = 40                   // how many jobs per user we will send
 		batchSize     = 10                   // how many jobs for the same user we will send in each batch request
 		responseDelay = 2 * time.Millisecond // how long we will the webhook wait before sending a response
 	)
@@ -173,7 +173,7 @@ func TestEventOrderGuarantee(t *testing.T) {
 			select {
 			case <-ctx.Done():
 				return
-			case <-time.After(50 * time.Millisecond):
+			case <-time.After(150 * time.Millisecond):
 				key := fmt.Sprintf("Router.%s.jobRetention", destinationID)
 				config.Set(key, "1s")
 				time.Sleep(1 * time.Millisecond)
@@ -227,7 +227,7 @@ func TestEventOrderGuarantee(t *testing.T) {
 			t.Logf("%d/%d done (%d drained)", done, total, drained)
 		}
 		return done == total
-	}, 180*time.Second, 2*time.Second, "webhook should receive all events and process them till the end")
+	}, 300*time.Second, 2*time.Second, "webhook should receive all events and process them till the end")
 
 	require.False(t, t.Failed(), "webhook shouldn't have failed")
 
@@ -288,9 +288,9 @@ func (m eventOrderMethods) newTestSpec(users, jobsPerUser int) *eventOrderSpec {
 func (eventOrderMethods) randomStatus() (status int, terminal bool) {
 	// playing with probabilities: 50% HTTP 500, 40% HTTP 200, 10% HTTP 400
 	statuses := []int{
-		http.StatusBadRequest, http.StatusBadRequest, http.StatusBadRequest,
-		http.StatusOK, http.StatusOK, http.StatusOK,
-		http.StatusInternalServerError, http.StatusInternalServerError, http.StatusInternalServerError,
+		http.StatusBadRequest, http.StatusBadRequest, http.StatusBadRequest, http.StatusBadRequest,
+		http.StatusOK, http.StatusOK, http.StatusOK, http.StatusOK,
+		http.StatusInternalServerError,
 	}
 	status = statuses[rand.Intn(len(statuses))]
 	terminal = status != http.StatusInternalServerError
