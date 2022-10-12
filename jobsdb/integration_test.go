@@ -45,8 +45,8 @@ func genJobStatuses(jobs []*JobT, state string) []*JobStatusT {
 			JobID:         job.JobID,
 			JobState:      state,
 			AttemptNum:    1,
-			ExecTime:      time.Now(),
-			RetryTime:     time.Now(),
+			ExecTime:      time.Now().UTC(),
+			RetryTime:     time.Now().UTC(),
 			ErrorCode:     "999",
 			ErrorResponse: []byte(`\u0000{"status": "status"}`),
 			Parameters:    []byte(``),
@@ -104,8 +104,8 @@ func TestJobsDB(t *testing.T) {
 		JobID:         unprocessedList[0].JobID,
 		JobState:      "succeeded",
 		AttemptNum:    1,
-		ExecTime:      time.Now(),
-		RetryTime:     time.Now(),
+		ExecTime:      time.Now().UTC(),
+		RetryTime:     time.Now().UTC(),
 		ErrorCode:     "202",
 		ErrorResponse: []byte(`{"success":"OK"}`),
 		Parameters:    []byte(`{}`),
@@ -495,7 +495,7 @@ func TestJobsDB(t *testing.T) {
 
 		jobDB.MaxDSRetentionPeriod = time.Second
 
-		jobs := genJobs(defaultWorkspaceID, customVal, 1, 1)
+		jobs := genJobs(defaultWorkspaceID, customVal, 10000, 1)
 		require.NoError(t, jobDB.Store(context.Background(), jobs))
 
 		require.EqualValues(t, 1, jobDB.GetMaxDSIndex())
@@ -504,8 +504,11 @@ func TestJobsDB(t *testing.T) {
 		triggerAddNewDS <- time.Now() // Second time, waits for the first loop to finish
 
 		jobDBInspector := HandleInspector{HandleT: &jobDB}
-		require.EqualValues(t, 2, jobDBInspector.DSListSize())
+		require.EqualValues(t, 2, len(jobDBInspector.DSList()))
 		require.EqualValues(t, 2, jobDB.GetMaxDSIndex())
+
+		jobs = genJobs(defaultWorkspaceID, customVal, 10000, 1)
+		require.NoError(t, jobDB.Store(context.Background(), jobs)) // store in 2nd dataset
 
 		jobsResult, err := jobDB.GetUnprocessed(context.Background(), GetQueryParamsT{
 			CustomValFilters: []string{customVal},
@@ -514,14 +517,14 @@ func TestJobsDB(t *testing.T) {
 		})
 		require.NoError(t, err, "GetUnprocessed failed")
 		fetchedJobs := jobsResult.Jobs
-		require.Equal(t, 1, len(fetchedJobs))
+		require.Equal(t, 100, len(fetchedJobs))
 
 		status := JobStatusT{
 			JobID:         fetchedJobs[0].JobID,
 			JobState:      "succeeded",
 			AttemptNum:    1,
-			ExecTime:      time.Now(),
-			RetryTime:     time.Now(),
+			ExecTime:      time.Now().UTC(),
+			RetryTime:     time.Now().UTC(),
 			ErrorCode:     "202",
 			ErrorResponse: []byte(`{"success":"OK"}`),
 			Parameters:    []byte(`{}`),
@@ -530,13 +533,24 @@ func TestJobsDB(t *testing.T) {
 		err = jobDB.UpdateJobStatus(context.Background(), []*JobStatusT{&status}, []string{customVal}, []ParameterFilterT{})
 		require.NoError(t, err)
 
+		time.Sleep(time.Second * 2) // wait for some time to pass so that retention condition satisfies
+
 		triggerMigrateDS <- time.Now() // trigger migrateDSLoop to run
 		triggerMigrateDS <- time.Now() // Second time, waits for the first loop to finish
 
-		require.EqualValues(t, 1, jobDBInspector.DSListSize())
+		dsList := jobDBInspector.DSList()
+		require.EqualValues(t, "1_1", dsList[0].Index)
+		require.EqualValues(t, "2", dsList[1].Index)
+		require.EqualValues(t, 2, len(jobDBInspector.DSList()))
 		require.EqualValues(t, 2, jobDB.GetMaxDSIndex())
-	})
 
+		jobsResult, err = jobDB.GetUnprocessed(context.Background(), GetQueryParamsT{
+			CustomValFilters: []string{customVal},
+			JobsLimit:        100000,
+			ParameterFilters: []ParameterFilterT{},
+		})
+		require.EqualValues(t, 19999, len(jobsResult.Jobs))
+	})
 	t.Run("should migrate small datasets that have been migrated at least once (except right most one)", func(t *testing.T) {
 		customVal := "MOCKDS"
 		triggerAddNewDS := make(chan time.Time)
@@ -887,8 +901,8 @@ func TestStoreAndUpdateStatusExceedingAnalyzeThreshold(t *testing.T) {
 		JobID:         j.JobID,
 		JobState:      "succeeded",
 		AttemptNum:    1,
-		ExecTime:      time.Now(),
-		RetryTime:     time.Now(),
+		ExecTime:      time.Now().UTC(),
+		RetryTime:     time.Now().UTC(),
 		ErrorCode:     "202",
 		ErrorResponse: []byte(`{"success":"OK"}`),
 		Parameters:    []byte(`{}`),
@@ -1133,8 +1147,8 @@ func benchmarkJobsdbConcurrently(b *testing.B, jobsDB *HandleT, totalJobs, pageS
 							JobID:         j.JobID,
 							JobState:      "succeeded",
 							AttemptNum:    1,
-							ExecTime:      time.Now(),
-							RetryTime:     time.Now(),
+							ExecTime:      time.Now().UTC(),
+							RetryTime:     time.Now().UTC(),
 							ErrorCode:     "202",
 							ErrorResponse: []byte(`{"success":"OK"}`),
 							Parameters:    []byte(`{}`),
@@ -1249,8 +1263,8 @@ func consume(t testing.TB, db *HandleT, count int) {
 			JobID:         j.JobID,
 			JobState:      "succeeded",
 			AttemptNum:    1,
-			ExecTime:      time.Now(),
-			RetryTime:     time.Now(),
+			ExecTime:      time.Now().UTC(),
+			RetryTime:     time.Now().UTC(),
 			ErrorCode:     "202",
 			ErrorResponse: []byte(`{"success":"OK"}`),
 			Parameters:    []byte(`{}`),
