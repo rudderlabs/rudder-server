@@ -540,6 +540,7 @@ func CreateBucketForMinio(t testing.TB, bucketName string) {
 	_ = minioClient.MakeBucket(bucketName, "us-east-1")
 }
 
+// SetConfig sets hot reloadable config
 // TODO: Make it retryable
 func SetConfig(kvs []warehouseutils.KeyValue) error {
 	payload, err := json.Marshal(&kvs)

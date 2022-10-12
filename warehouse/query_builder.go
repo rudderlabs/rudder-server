@@ -16,15 +16,15 @@ func distinctDestinationRevisionIdsFromStagingFiles(ctx context.Context, d struc
 },
 ) (revisionIDs []string, err error) {
 	sqlStatement := fmt.Sprintf(`
-		SELECT 
-		  DISTINCT metadata ->> 'destination_revision_id' AS destination_revision_id 
-		FROM 
-		  %s 
-		WHERE 
-		  id >= $1 
-		  AND id <= $2 
-		  AND source_id = $3 
-		  AND destination_id = $4 
+		SELECT
+		  DISTINCT metadata ->> 'destination_revision_id' AS destination_revision_id
+		FROM
+		  %s
+		WHERE
+		  id >= $1
+		  AND id <= $2
+		  AND source_id = $3
+		  AND destination_id = $4
 		  AND metadata ->> 'destination_revision_id' <> '';
 	`,
 		warehouseutils.WarehouseStagingFilesTable,
@@ -43,7 +43,8 @@ func distinctDestinationRevisionIdsFromStagingFiles(ctx context.Context, d struc
 		err = fmt.Errorf("error occurred while executing destination revisionID query %+v with err: %w", d, err)
 		return
 	}
-	defer rows.Close()
+
+	defer func() { _ = rows.Close() }()
 
 	for rows.Next() {
 		var revisionID string

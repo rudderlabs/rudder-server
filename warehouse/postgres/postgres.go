@@ -322,7 +322,7 @@ func (pg *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 		gzipReader, err = gzip.NewReader(gzipFile)
 		if err != nil {
 			pkgLogger.Errorf("PG: Error reading file using gzip.NewReader for file:%s while loading to table %s", gzipFile, tableName)
-			gzipFile.Close()
+			_ = gzipFile.Close()
 			tags["stage"] = readGzipLoadFiles
 			runRollbackWithTimeout(txn.Rollback, handleRollbackTimeout, txnRollbackTimeout, tags)
 			return
@@ -343,7 +343,7 @@ func (pg *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 				return
 			}
 			if len(sortedColumnKeys) != len(record) {
-				err = fmt.Errorf(`Load file CSV columns for a row mismatch number found in upload schema. Columns in CSV row: %d, Columns in upload schema of table-%s: %d. Processed rows in csv file until mismatch: %d`, len(record), tableName, len(sortedColumnKeys), csvRowsProcessedCount)
+				err = fmt.Errorf(`load file CSV columns for a row mismatch number found in upload schema. Columns in CSV row: %d, Columns in upload schema of table-%s: %d. Processed rows in csv file until mismatch: %d`, len(record), tableName, len(sortedColumnKeys), csvRowsProcessedCount)
 				pkgLogger.Error(err)
 				tags["stage"] = csvColumnCountMismatch
 				runRollbackWithTimeout(txn.Rollback, handleRollbackTimeout, txnRollbackTimeout, tags)
@@ -366,8 +366,8 @@ func (pg *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 			}
 			csvRowsProcessedCount++
 		}
-		gzipReader.Close()
-		gzipFile.Close()
+		_ = gzipReader.Close()
+		_ = gzipFile.Close()
 	}
 
 	_, err = stmt.Exec()
@@ -428,22 +428,22 @@ func (pg *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 	return
 }
 
-// Need to create a structure with delete parameters instead of simply adding a long list of params
-func (pq *HandleT) DeleteBy(tableNames []string, params warehouseutils.DeleteByParams) (err error) {
+// DeleteBy Need to create a structure with delete parameters instead of simply adding a long list of params
+func (pg *HandleT) DeleteBy(tableNames []string, params warehouseutils.DeleteByParams) (err error) {
 	pkgLogger.Infof("PG: Cleaning up the followng tables in postgres for PG:%s : %+v", tableNames, params)
 	for _, tb := range tableNames {
-		sqlStatement := fmt.Sprintf(`DELETE FROM "%[1]s"."%[2]s" WHERE 
+		sqlStatement := fmt.Sprintf(`DELETE FROM "%[1]s"."%[2]s" WHERE
 		context_sources_job_run_id <> $1 AND
 		context_sources_task_run_id <> $2 AND
 		context_source_id = $3 AND
 		received_at < $4`,
-			pq.Namespace,
+			pg.Namespace,
 			tb,
 		)
-		pkgLogger.Infof("PG: Deleting rows in table in postgres for PG:%s", pq.Warehouse.Destination.ID)
+		pkgLogger.Infof("PG: Deleting rows in table in postgres for PG:%s", pg.Warehouse.Destination.ID)
 		pkgLogger.Debugf("PG: Executing the sqlstatement  %v", sqlStatement)
 		if enableDeleteByJobs {
-			_, err = pq.Db.Exec(sqlStatement,
+			_, err = pg.Db.Exec(sqlStatement,
 				params.JobRunId,
 				params.TaskRunId,
 				params.SourceId,
@@ -652,10 +652,10 @@ func (pg *HandleT) CreateTable(tableName string, columnMap map[string]string) (e
 	return err
 }
 
-func (as *HandleT) DropTable(tableName string) (err error) {
+func (pg *HandleT) DropTable(tableName string) (err error) {
 	sqlStatement := `DROP TABLE "%[1]s"."%[2]s"`
-	pkgLogger.Infof("PG: Dropping table in postgres for PG:%s : %v", as.Warehouse.Destination.ID, sqlStatement)
-	_, err = as.Db.Exec(fmt.Sprintf(sqlStatement, as.Namespace, tableName))
+	pkgLogger.Infof("PG: Dropping table in postgres for PG:%s : %v", pg.Warehouse.Destination.ID, sqlStatement)
+	_, err = pg.Db.Exec(fmt.Sprintf(sqlStatement, pg.Namespace, tableName))
 	return
 }
 
@@ -688,7 +688,7 @@ func (pg *HandleT) TestConnection(warehouse warehouseutils.Warehouse) (err error
 	if err != nil {
 		return
 	}
-	defer pg.Db.Close()
+	defer func() { _ = pg.Db.Close() }()
 
 	ctx, cancel := context.WithTimeout(context.TODO(), pg.ConnectTimeout)
 	defer cancel()
@@ -721,12 +721,14 @@ func (pg *HandleT) CrashRecover(warehouse warehouseutils.Warehouse) (err error) 
 	if err != nil {
 		return err
 	}
-	defer pg.Db.Close()
+	defer func(Db *sql.DB) {
+		_ = Db.Close()
+	}(pg.Db)
 	pg.dropDanglingStagingTables()
 	return
 }
 
-func (pg *HandleT) dropDanglingStagingTables() bool {
+func (pg *HandleT) dropDanglingStagingTables() {
 	sqlStatement := `
 			select
 			  table_name
@@ -743,9 +745,9 @@ func (pg *HandleT) dropDanglingStagingTables() bool {
 	)
 	if err != nil {
 		pkgLogger.Errorf("WH: PG: Error dropping dangling staging tables in PG: %v\nQuery: %s\n", err, sqlStatement)
-		return false
+		return
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var stagingTableNames []string
 	for rows.Next() {
@@ -757,15 +759,12 @@ func (pg *HandleT) dropDanglingStagingTables() bool {
 		stagingTableNames = append(stagingTableNames, tableName)
 	}
 	pkgLogger.Infof("WH: PG: Dropping dangling staging tables: %+v  %+v\n", len(stagingTableNames), stagingTableNames)
-	delSuccess := true
 	for _, stagingTableName := range stagingTableNames {
 		_, err := pg.Db.Exec(fmt.Sprintf(`DROP TABLE "%[1]s"."%[2]s"`, pg.Namespace, stagingTableName))
 		if err != nil {
 			pkgLogger.Errorf("WH: PG:  Error dropping dangling staging table: %s in PG: %v\n", stagingTableName, err)
-			delSuccess = false
 		}
 	}
-	return delSuccess
 }
 
 // FetchSchema queries postgres and returns the schema associated with provided namespace
@@ -776,7 +775,7 @@ func (pg *HandleT) FetchSchema(warehouse warehouseutils.Warehouse) (schema wareh
 	if err != nil {
 		return
 	}
-	defer dbHandle.Close()
+	defer func() { _ = dbHandle.Close() }()
 
 	schema = make(warehouseutils.SchemaT)
 	sqlStatement := `
@@ -803,7 +802,8 @@ func (pg *HandleT) FetchSchema(warehouse warehouseutils.Warehouse) (schema wareh
 		pkgLogger.Infof("PG: No rows, while fetching schema from  destination:%v, query: %v", pg.Warehouse.Identifier, sqlStatement)
 		return schema, nil
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
+
 	for rows.Next() {
 		var tName, cName, cType sql.NullString
 		err = rows.Scan(&tName, &cName, &cType)
@@ -837,7 +837,7 @@ func (pg *HandleT) LoadTable(tableName string) error {
 func (pg *HandleT) Cleanup() {
 	if pg.Db != nil {
 		pg.dropDanglingStagingTables()
-		pg.Db.Close()
+		_ = pg.Db.Close()
 	}
 }
 

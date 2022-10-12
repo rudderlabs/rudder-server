@@ -236,7 +236,7 @@ func (ms *HandleT) DownloadLoadFiles(tableName string) ([]string, error) {
 func (ms *HandleT) DeleteBy(tableNames []string, params warehouseutils.DeleteByParams) (err error) {
 	pkgLogger.Infof("MS: Cleaning up the followng tables in mysql for MS for tables %s and params %+v", tableNames, params)
 	for _, tb := range tableNames {
-		sqlStatement := fmt.Sprintf(`DELETE FROM "%[1]s"."%[2]s" WHERE 
+		sqlStatement := fmt.Sprintf(`DELETE FROM "%[1]s"."%[2]s" WHERE
 		context_sources_job_run_id <> @jobrunid AND
 		context_sources_task_run_id <> @taskrunid AND
 		context_source_id = @sourceid AND
@@ -294,7 +294,7 @@ func (ms *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 	_, err = txn.Exec(sqlStatement)
 	if err != nil {
 		pkgLogger.Errorf("MS: Error creating temporary table for table:%s: %v\n", tableName, err)
-		txn.Rollback()
+		_ = txn.Rollback()
 		return
 	}
 	if !skipTempTableDelete {
@@ -304,7 +304,7 @@ func (ms *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 	stmt, err := txn.Prepare(mssql.CopyIn(ms.Namespace+"."+stagingTableName, mssql.BulkOptions{CheckConstraints: false}, sortedColumnKeys...))
 	if err != nil {
 		pkgLogger.Errorf("MS: Error while preparing statement for  transaction in db for loading in staging table:%s: %v\nstmt: %v", stagingTableName, err, stmt)
-		txn.Rollback()
+		_ = txn.Rollback()
 		return
 	}
 	for _, objectFileName := range fileNames {
@@ -312,7 +312,7 @@ func (ms *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 		gzipFile, err = os.Open(objectFileName)
 		if err != nil {
 			pkgLogger.Errorf("MS: Error opening file using os.Open for file:%s while loading to table %s", objectFileName, tableName)
-			txn.Rollback()
+			_ = txn.Rollback()
 			return
 		}
 
@@ -320,8 +320,8 @@ func (ms *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 		gzipReader, err = gzip.NewReader(gzipFile)
 		if err != nil {
 			pkgLogger.Errorf("MS: Error reading file using gzip.NewReader for file:%s while loading to table %s", gzipFile, tableName)
-			gzipFile.Close()
-			txn.Rollback()
+			_ = gzipFile.Close()
+			_ = txn.Rollback()
 			return
 
 		}
@@ -336,13 +336,13 @@ func (ms *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 					break
 				}
 				pkgLogger.Errorf("MS: Error while reading csv file %s for loading in staging table:%s: %v", objectFileName, stagingTableName, err)
-				txn.Rollback()
+				_ = txn.Rollback()
 				return
 			}
 			if len(sortedColumnKeys) != len(record) {
-				err = fmt.Errorf(`Load file CSV columns for a row mismatch number found in upload schema. Columns in CSV row: %d, Columns in upload schema of table-%s: %d. Processed rows in csv file until mismatch: %d`, len(record), tableName, len(sortedColumnKeys), csvRowsProcessedCount)
+				err = fmt.Errorf(`load file CSV columns for a row mismatch number found in upload schema. Columns in CSV row: %d, Columns in upload schema of table-%s: %d. Processed rows in csv file until mismatch: %d`, len(record), tableName, len(sortedColumnKeys), csvRowsProcessedCount)
 				pkgLogger.Error(err)
-				txn.Rollback()
+				_ = txn.Rollback()
 				return
 			}
 			var recordInterface []interface{}
@@ -436,18 +436,18 @@ func (ms *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 			_, err = stmt.Exec(finalColumnValues...)
 			if err != nil {
 				pkgLogger.Errorf("MS: Error in exec statement for loading in staging table:%s: %v", stagingTableName, err)
-				txn.Rollback()
+				_ = txn.Rollback()
 				return
 			}
 			csvRowsProcessedCount++
 		}
-		gzipReader.Close()
-		gzipFile.Close()
+		_ = gzipReader.Close()
+		_ = gzipFile.Close()
 	}
 
 	_, err = stmt.Exec()
 	if err != nil {
-		txn.Rollback()
+		_ = txn.Rollback()
 		pkgLogger.Errorf("MS: Rollback transaction as there was error while loading staging table:%s: %v", stagingTableName, err)
 		return
 
@@ -470,7 +470,7 @@ func (ms *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 	_, err = txn.Exec(sqlStatement)
 	if err != nil {
 		pkgLogger.Errorf("MS: Error deleting from original table for dedup: %v\n", err)
-		txn.Rollback()
+		_ = txn.Rollback()
 		return
 	}
 
@@ -485,13 +485,13 @@ func (ms *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 
 	if err != nil {
 		pkgLogger.Errorf("MS: Error inserting into original table: %v\n", err)
-		txn.Rollback()
+		_ = txn.Rollback()
 		return
 	}
 
 	if err = txn.Commit(); err != nil {
 		pkgLogger.Errorf("MS: Error while committing transaction as there was error while loading staging table:%s: %v", stagingTableName, err)
-		txn.Rollback()
+		_ = txn.Rollback()
 		return
 	}
 
@@ -612,7 +612,7 @@ func (ms *HandleT) loadUserTables() (errorMap map[string]error) {
 	_, err = tx.Exec(sqlStatement)
 	if err != nil {
 		pkgLogger.Errorf("MS: Error deleting from original table for dedup: %v\n", err)
-		tx.Rollback()
+		_ = tx.Rollback()
 		errorMap[warehouseutils.UsersTable] = err
 		return
 	}
@@ -623,7 +623,7 @@ func (ms *HandleT) loadUserTables() (errorMap map[string]error) {
 
 	if err != nil {
 		pkgLogger.Errorf("MS: Error inserting into users table from staging table: %v\n", err)
-		tx.Rollback()
+		_ = tx.Rollback()
 		errorMap[warehouseutils.UsersTable] = err
 		return
 	}
@@ -631,7 +631,7 @@ func (ms *HandleT) loadUserTables() (errorMap map[string]error) {
 	err = tx.Commit()
 	if err != nil {
 		pkgLogger.Errorf("MS: Error in transaction commit for users table: %v\n", err)
-		tx.Rollback()
+		_ = tx.Rollback()
 		errorMap[warehouseutils.UsersTable] = err
 		return
 	}
@@ -676,7 +676,7 @@ func (ms *HandleT) addColumn(tableName, columnName, columnType string) (err erro
 }
 
 func (ms *HandleT) CreateTable(tableName string, columnMap map[string]string) (err error) {
-	// Search paths doesnt exist unlike Postgres, default is dbo. Hence use namespace wherever possible
+	// Search paths doesn't exist unlike Postgres, default is dbo. Hence, use namespace wherever possible
 	err = ms.createTable(ms.Namespace+"."+tableName, columnMap)
 	return err
 }
@@ -709,7 +709,7 @@ func (ms *HandleT) TestConnection(warehouse warehouseutils.Warehouse) (err error
 	if err != nil {
 		return
 	}
-	defer ms.Db.Close()
+	defer func() { _ = ms.Db.Close() }()
 
 	ctx, cancel := context.WithTimeout(context.TODO(), ms.ConnectTimeout)
 	defer cancel()
@@ -742,12 +742,12 @@ func (ms *HandleT) CrashRecover(warehouse warehouseutils.Warehouse) (err error) 
 	if err != nil {
 		return err
 	}
-	defer ms.Db.Close()
+	defer func() { _ = ms.Db.Close() }()
 	ms.dropDanglingStagingTables()
 	return
 }
 
-func (ms *HandleT) dropDanglingStagingTables() bool {
+func (ms *HandleT) dropDanglingStagingTables() {
 	sqlStatement := fmt.Sprintf(`
 		select
 		  table_name
@@ -763,9 +763,9 @@ func (ms *HandleT) dropDanglingStagingTables() bool {
 	rows, err := ms.Db.Query(sqlStatement)
 	if err != nil {
 		pkgLogger.Errorf("WH: MSSQL: Error dropping dangling staging tables in MSSQL: %v\nQuery: %s\n", err, sqlStatement)
-		return false
+		return
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var stagingTableNames []string
 	for rows.Next() {
@@ -777,15 +777,12 @@ func (ms *HandleT) dropDanglingStagingTables() bool {
 		stagingTableNames = append(stagingTableNames, tableName)
 	}
 	pkgLogger.Infof("WH: MSSQL: Dropping dangling staging tables: %+v  %+v\n", len(stagingTableNames), stagingTableNames)
-	delSuccess := true
 	for _, stagingTableName := range stagingTableNames {
 		_, err := ms.Db.Exec(fmt.Sprintf(`DROP TABLE "%[1]s"."%[2]s"`, ms.Namespace, stagingTableName))
 		if err != nil {
 			pkgLogger.Errorf("WH: MSSQL:  Error dropping dangling staging table: %s in redshift: %v\n", stagingTableName, err)
-			delSuccess = false
 		}
 	}
-	return delSuccess
 }
 
 // FetchSchema queries mssql and returns the schema associated with provided namespace
@@ -796,7 +793,7 @@ func (ms *HandleT) FetchSchema(warehouse warehouseutils.Warehouse) (schema wareh
 	if err != nil {
 		return
 	}
-	defer dbHandle.Close()
+	defer func() { _ = dbHandle.Close() }()
 
 	schema = make(warehouseutils.SchemaT)
 	sqlStatement := fmt.Sprintf(`
@@ -822,7 +819,8 @@ func (ms *HandleT) FetchSchema(warehouse warehouseutils.Warehouse) (schema wareh
 		pkgLogger.Infof("MS: No rows, while fetching schema from  destination:%v, query: %v", ms.Warehouse.Identifier, sqlStatement)
 		return schema, nil
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
+
 	for rows.Next() {
 		var tName, cName, cType string
 		err = rows.Scan(&tName, &cName, &cType)
@@ -855,7 +853,7 @@ func (ms *HandleT) Cleanup() {
 	if ms.Db != nil {
 		// extra check aside dropStagingTable(table)
 		ms.dropDanglingStagingTables()
-		ms.Db.Close()
+		_ = ms.Db.Close()
 	}
 }
 

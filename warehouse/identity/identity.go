@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	uuid "github.com/gofrs/uuid"
+	"github.com/gofrs/uuid"
 	"github.com/lib/pq"
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/services/filemanager"
@@ -163,7 +163,7 @@ func (idr *HandleT) applyRule(txn *sql.Tx, ruleID int64, gzWriter *misc.GZipWrit
 		// TODO : support add row for parquet loader
 		eventLoader.AddRow(columnNames, row)
 		data, _ := eventLoader.WriteToString()
-		gzWriter.WriteGZ(data)
+		_ = gzWriter.WriteGZ(data)
 	}
 
 	return len(rows), err
@@ -340,7 +340,7 @@ func (idr *HandleT) writeTableToFile(tableName string, txn *sql.Tx, gzWriter *mi
 				eventLoader.AddColumn(columnName, "", rowData[i])
 			}
 			rowString, _ := eventLoader.WriteToString()
-			gzWriter.WriteGZ(rowString)
+			_ = gzWriter.WriteGZ(rowString)
 		}
 
 		offset += batchSize
@@ -471,7 +471,7 @@ func (idr *HandleT) processMergeRules(fileNames []string) (err error) {
 		pkgLogger.Errorf(`IDR: Error adding rules to %s: %v`, idr.mergeRulesTable(), err)
 		return
 	}
-	mergeRulesFileGzWriter.CloseGZ()
+	_ = mergeRulesFileGzWriter.CloseGZ()
 	pkgLogger.Infof(`IDR: Added %d unique rules to %s and file`, len(ruleIDs), idr.mergeRulesTable())
 	// END: Add new merge rules to local pg table and also to file
 
@@ -491,7 +491,7 @@ func (idr *HandleT) processMergeRules(fileNames []string) (err error) {
 			pkgLogger.Infof(`IDR: Applied %d rules out of %d. Total Mapping records added: %d. Namepsace: %s, Destination: %s:%s`, idx+1, len(ruleIDs), totalMappingRecords, idr.Warehouse.Namespace, idr.Warehouse.Type, idr.Warehouse.Destination.ID)
 		}
 	}
-	mappingsFileGzWriter.CloseGZ()
+	_ = mappingsFileGzWriter.CloseGZ()
 	// END: Add new/changed identity mappings to local pg table and also to file
 
 	// upload new merge rules to object storage
@@ -538,7 +538,7 @@ func (idr *HandleT) ResolveHistoricIdentities() (err error) {
 	defer misc.RemoveFilePaths(loadFileNames...)
 	gzWriter, path := idr.createTempGzFile(fmt.Sprintf(`/%s/`, misc.RudderIdentityMergeRulesTmp))
 	err = idr.WarehouseManager.DownloadIdentityRules(&gzWriter)
-	gzWriter.CloseGZ()
+	_ = gzWriter.CloseGZ()
 	if err != nil {
 		pkgLogger.Errorf(`IDR: Failed to download identity information from warehouse with error: %v`, err)
 		return

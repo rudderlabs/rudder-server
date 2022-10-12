@@ -34,7 +34,7 @@ func (cl *Client) sqlQuery(statement string) (result warehouseutils.QueryResult,
 	if err == sql.ErrNoRows {
 		return result, nil
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	result.Columns, err = rows.Columns()
 	if err != nil {
@@ -129,10 +129,10 @@ func (cl *Client) Query(statement string) (result warehouseutils.QueryResult, er
 func (cl *Client) Close() {
 	switch cl.Type {
 	case BQClient:
-		cl.BQ.Close()
+		_ = cl.BQ.Close()
 	case DBClient:
 		cl.DBHandleT.Close()
 	default:
-		cl.SQL.Close()
+		_ = cl.SQL.Close()
 	}
 }

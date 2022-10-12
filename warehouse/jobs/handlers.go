@@ -17,7 +17,7 @@ import (
 	"net/http"
 )
 
-// The following handler gets called for adding async
+// AddWarehouseJobHandler The following handler gets called for adding async
 func (asyncWhJob *AsyncJobWhT) AddWarehouseJobHandler(w http.ResponseWriter, r *http.Request) {
 	pkgLogger.Info("[WH-Jobs] Got Async Job Add Request")
 	pkgLogger.LogRequest(r)
@@ -27,7 +27,8 @@ func (asyncWhJob *AsyncJobWhT) AddWarehouseJobHandler(w http.ResponseWriter, r *
 		http.Error(w, "can't read body", http.StatusBadRequest)
 		return
 	}
-	defer r.Body.Close()
+	defer func() { _ = r.Body.Close() }()
+
 	var startJobPayload StartJobReqPayload
 	err = json.Unmarshal(body, &startJobPayload)
 	if err != nil {
@@ -135,7 +136,7 @@ func (asyncWhJob *AsyncJobWhT) StatusWarehouseJobHandler(w http.ResponseWriter, 
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		w.Write(writeResponse)
+		_, _ = w.Write(writeResponse)
 	} else {
 		pkgLogger.Errorf("[WH]: Error Invalid Method")
 		http.Error(w, "invalid request", http.StatusBadRequest)

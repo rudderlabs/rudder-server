@@ -89,19 +89,19 @@ func backupRecords(args backupRecordsArgs) (backupLocation string, err error) {
 	}
 
 	tmpl := fmt.Sprintf(`
-		SELECT 
-		  json_agg(dump_table) 
-		FROM 
+		SELECT
+		  json_agg(dump_table)
+		FROM
 		  (
-			SELECT 
-			  * 
-			FROM 
-			  %[1]s 
-			WHERE 
-			  %[2]s 
-			ORDER BY 
-			  id ASC 
-			LIMIT 
+			SELECT
+			  *
+			FROM
+			  %[1]s
+			WHERE
+			  %[2]s
+			ORDER BY
+			  id ASC
+			LIMIT
 			  %[3]s offset %[4]s
 		  ) AS dump_table
 `,
@@ -147,28 +147,28 @@ func usedRudderStorage(metadata []byte) bool {
 func archiveUploads(dbHandle *sql.DB) {
 	pkgLogger.Infof(`Started archiving for warehouse`)
 	sqlStatement := fmt.Sprintf(`
-		SELECT 
-		  id, 
-		  source_id, 
-		  destination_id, 
-		  start_staging_file_id, 
-		  end_staging_file_id, 
-		  start_load_file_id, 
-		  end_load_file_id, 
-		  metadata 
-		FROM 
-		  %s 
-		WHERE 
+		SELECT
+		  id,
+		  source_id,
+		  destination_id,
+		  start_staging_file_id,
+		  end_staging_file_id,
+		  start_load_file_id,
+		  end_load_file_id,
+		  metadata
+		FROM
+		  %s
+		WHERE
 		  (
 			(
 			  metadata ->> 'archivedStagingAndLoadFiles'
-			):: bool IS DISTINCT 
-			FROM 
+			):: bool IS DISTINCT
+			FROM
 			  TRUE
-		  ) 
-		  AND created_at < NOW() - INTERVAL '%d DAY' 
-		  AND status = '%s' 
-		LIMIT 
+		  )
+		  AND created_at < NOW() - INTERVAL '%d DAY'
+		  AND status = '%s'
+		LIMIT
 		  10000;
 `,
 		warehouseutils.WarehouseUploadsTable,
@@ -210,7 +210,7 @@ func archiveUploads(dbHandle *sql.DB) {
 		}
 		uploadsToArchive = append(uploadsToArchive, &u)
 	}
-	rows.Close()
+	_ = rows.Close()
 
 	var archivedUploads int
 	for _, u := range uploadsToArchive {
@@ -225,15 +225,15 @@ func archiveUploads(dbHandle *sql.DB) {
 
 		// archive staging files
 		stmt := fmt.Sprintf(`
-			SELECT 
-			  id, 
-			  location 
-			FROM 
-			  %s 
-			WHERE 
-			  source_id = '%s' 
-			  AND destination_id = '%s' 
-			  AND id >= %d 
+			SELECT
+			  id,
+			  location
+			FROM
+			  %s
+			WHERE
+			  source_id = '%s'
+			  AND destination_id = '%s'
+			  AND id >= %d
 			  and id <= %d;
 `,
 			warehouseutils.WarehouseStagingFilesTable,
@@ -246,29 +246,35 @@ func archiveUploads(dbHandle *sql.DB) {
 		stagingFileRows, err := txn.Query(stmt)
 		if err != nil {
 			pkgLogger.Errorf(`Error running txn in archiveUploadFiles. Query: %s Error: %v`, stmt, err)
-			txn.Rollback()
+			_ = txn.Rollback()
 			continue
 		}
-		defer stagingFileRows.Close()
 
-		var stagingFileIDs []int64
-		var stagingFileLocations []string
+		var (
+			stagingFileIDs       []int64
+			stagingFileLocations []string
+		)
+
 		for stagingFileRows.Next() {
-			var stagingFileID int64
-			var stagingFileLocation string
+			var (
+				stagingFileID       int64
+				stagingFileLocation string
+			)
+
 			err = stagingFileRows.Scan(
 				&stagingFileID,
 				&stagingFileLocation,
 			)
 			if err != nil {
 				pkgLogger.Errorf(`Error scanning staging file id in archiveUploadFiles. Error: %v`, err)
-				txn.Rollback()
+				_ = stagingFileRows.Close()
+				_ = txn.Rollback()
 				return
 			}
 			stagingFileIDs = append(stagingFileIDs, stagingFileID)
 			stagingFileLocations = append(stagingFileLocations, stagingFileLocation)
 		}
-		stagingFileRows.Close()
+		_ = stagingFileRows.Close()
 
 		var storedStagingFilesLocation string
 		if len(stagingFileIDs) > 0 {
@@ -284,7 +290,7 @@ func archiveUploads(dbHandle *sql.DB) {
 
 				if err != nil {
 					pkgLogger.Errorf(`Error backing up staging files for upload:%d : %v`, u.uploadID, err)
-					txn.Rollback()
+					_ = txn.Rollback()
 					continue
 				}
 			} else {
@@ -295,16 +301,16 @@ func archiveUploads(dbHandle *sql.DB) {
 				err = deleteFilesInStorage(stagingFileLocations)
 				if err != nil {
 					pkgLogger.Errorf(`Error deleting staging files from Rudder S3. Error: %v`, stmt, err)
-					txn.Rollback()
+					_ = txn.Rollback()
 					continue
 				}
 			}
 
 			// delete staging file records
 			stmt = fmt.Sprintf(`
-				DELETE FROM 
-				  %s 
-				WHERE 
+				DELETE FROM
+				  %s
+				WHERE
 				  id IN (%v);
 `,
 				warehouseutils.WarehouseStagingFilesTable,
@@ -313,15 +319,15 @@ func archiveUploads(dbHandle *sql.DB) {
 			_, err = txn.Query(stmt)
 			if err != nil {
 				pkgLogger.Errorf(`Error running txn in archiveUploadFiles. Query: %s Error: %v`, stmt, err)
-				txn.Rollback()
+				_ = txn.Rollback()
 				continue
 			}
 
 			// delete load file records
 			stmt = fmt.Sprintf(`
-				DELETE FROM 
-				  %s 
-				WHERE 
+				DELETE FROM
+				  %s
+				WHERE
 				  staging_file_id = ANY($1) RETURNING location;
 `,
 				warehouseutils.WarehouseLoadFilesTable,
@@ -329,31 +335,34 @@ func archiveUploads(dbHandle *sql.DB) {
 			loadLocationRows, err := txn.Query(stmt, pq.Array(stagingFileIDs))
 			if err != nil {
 				pkgLogger.Errorf(`Error running txn in archiveUploadFiles. Query: %s Error: %v`, stmt, err)
-				txn.Rollback()
+				_ = txn.Rollback()
 				continue
 			}
 
-			defer loadLocationRows.Close()
-
 			if hasUsedRudderStorage {
-				var loadLocations []string
+				var (
+					loadLocations []string
+					paths         []string
+				)
+
 				for loadLocationRows.Next() {
 					var loc string
 					err = loadLocationRows.Scan(&loc)
 					if err != nil {
 						pkgLogger.Errorf(`Error scanning location in archiveUploadFiles. Error: %v`, err)
-						txn.Rollback()
+						_ = loadLocationRows.Close()
+						_ = txn.Rollback()
 						return
 					}
 					loadLocations = append(loadLocations, loc)
 				}
-				loadLocationRows.Close()
-				var paths []string
+				_ = loadLocationRows.Close()
+
 				for _, loc := range loadLocations {
 					u, err := url.Parse(loc)
 					if err != nil {
 						pkgLogger.Errorf(`Error deleting load files from Rudder S3. Error: %v`, stmt, err)
-						txn.Rollback()
+						_ = txn.Rollback()
 						continue
 					}
 					paths = append(paths, u.Path[1:])
@@ -361,21 +370,22 @@ func archiveUploads(dbHandle *sql.DB) {
 				err = deleteFilesInStorage(paths)
 				if err != nil {
 					pkgLogger.Errorf(`Error deleting load files from Rudder S3. Error: %v`, stmt, err)
-					txn.Rollback()
+					_ = txn.Rollback()
 					continue
 				}
+			} else {
+				_ = loadLocationRows.Close()
 			}
-			loadLocationRows.Close()
 		}
 
 		// update upload metadata
 		u.uploadMetdata, _ = sjson.SetBytes(u.uploadMetdata, "archivedStagingAndLoadFiles", true)
 		stmt = fmt.Sprintf(`
-			UPDATE 
-			  %s 
-			SET 
-			  metadata = $1 
-			WHERE 
+			UPDATE
+			  %s
+			SET
+			  metadata = $1
+			WHERE
 			  id = %d;
 `,
 			warehouseutils.WarehouseUploadsTable,
@@ -384,13 +394,13 @@ func archiveUploads(dbHandle *sql.DB) {
 		_, err = txn.Exec(stmt, u.uploadMetdata)
 		if err != nil {
 			pkgLogger.Errorf(`Error running txn in archiveUploadFiles. Query: %s Error: %v`, stmt, err)
-			txn.Rollback()
+			_ = txn.Rollback()
 			continue
 		}
 
 		err = txn.Commit()
 		if err != nil {
-			txn.Rollback()
+			_ = txn.Rollback()
 			continue
 		}
 		archivedUploads++

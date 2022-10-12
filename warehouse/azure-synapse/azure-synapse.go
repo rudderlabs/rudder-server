@@ -232,7 +232,7 @@ func (as *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 	sortedColumnKeys := warehouseutils.SortColumnKeysFromColumnMap(tableSchemaInUpload)
 	sortedColumnString := strings.Join(sortedColumnKeys, ", ")
 
-	extraColumns := []string{}
+	var extraColumns []string
 	for _, column := range previousColumnKeys {
 		if !misc.Contains(sortedColumnKeys, column) {
 			extraColumns = append(extraColumns, column)
@@ -286,7 +286,7 @@ func (as *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 		gzipReader, err = gzip.NewReader(gzipFile)
 		if err != nil {
 			pkgLogger.Errorf("AZ: Error reading file using gzip.NewReader for file:%s while loading to table %s", gzipFile, tableName)
-			gzipFile.Close()
+			_ = gzipFile.Close()
 			return
 
 		}
@@ -301,13 +301,13 @@ func (as *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 					break
 				}
 				pkgLogger.Errorf("AZ: Error while reading csv file %s for loading in staging table:%s: %v", objectFileName, stagingTableName, err)
-				txn.Rollback()
+				_ = txn.Rollback()
 				return
 			}
 			if len(sortedColumnKeys) != len(record) {
-				err = fmt.Errorf(`Load file CSV columns for a row mismatch number found in upload schema. Columns in CSV row: %d, Columns in upload schema of table-%s: %d. Processed rows in csv file until mismatch: %d`, len(record), tableName, len(sortedColumnKeys), csvRowsProcessedCount)
+				err = fmt.Errorf(`load file CSV columns for a row mismatch number found in upload schema. Columns in CSV row: %d, Columns in upload schema of table-%s: %d. Processed rows in csv file until mismatch: %d`, len(record), tableName, len(sortedColumnKeys), csvRowsProcessedCount)
 				pkgLogger.Error(err)
-				txn.Rollback()
+				_ = txn.Rollback()
 				return
 			}
 			var recordInterface []interface{}
@@ -406,18 +406,18 @@ func (as *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 			_, err = stmt.Exec(finalColumnValues...)
 			if err != nil {
 				pkgLogger.Errorf("AZ: Error in exec statement for loading in staging table:%s: %v", stagingTableName, err)
-				txn.Rollback()
+				_ = txn.Rollback()
 				return
 			}
 			csvRowsProcessedCount++
 		}
-		gzipReader.Close()
-		gzipFile.Close()
+		_ = gzipReader.Close()
+		_ = gzipFile.Close()
 	}
 
 	_, err = stmt.Exec()
 	if err != nil {
-		txn.Rollback()
+		_ = txn.Rollback()
 		pkgLogger.Errorf("AZ: Rollback transaction as there was error while loading staging table:%s: %v", stagingTableName, err)
 		return
 
@@ -440,7 +440,7 @@ func (as *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 	_, err = txn.Exec(sqlStatement)
 	if err != nil {
 		pkgLogger.Errorf("AZ: Error deleting from original table for dedup: %v\n", err)
-		txn.Rollback()
+		_ = txn.Rollback()
 		return
 	}
 	sqlStatement = fmt.Sprintf(`INSERT INTO "%[1]s"."%[2]s" (%[3]s) SELECT %[3]s FROM ( SELECT *, row_number() OVER (PARTITION BY %[5]s ORDER BY received_at DESC) AS _rudder_staging_row_number FROM "%[1]s"."%[4]s" ) AS _ where _rudder_staging_row_number = 1`, as.Namespace, tableName, sortedColumnString, stagingTableName, partitionKey)
@@ -449,7 +449,7 @@ func (as *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 
 	if err != nil {
 		pkgLogger.Errorf("AZ: Error inserting into original table: %v\n", err)
-		txn.Rollback()
+		_ = txn.Rollback()
 		return
 	}
 
@@ -573,7 +573,7 @@ func (as *HandleT) loadUserTables() (errorMap map[string]error) {
 	_, err = tx.Exec(sqlStatement)
 	if err != nil {
 		pkgLogger.Errorf("AZ: Error deleting from original table for dedup: %v\n", err)
-		tx.Rollback()
+		_ = tx.Rollback()
 		errorMap[warehouseutils.UsersTable] = err
 		return
 	}
@@ -584,7 +584,7 @@ func (as *HandleT) loadUserTables() (errorMap map[string]error) {
 
 	if err != nil {
 		pkgLogger.Errorf("AZ: Error inserting into users table from staging table: %v\n", err)
-		tx.Rollback()
+		_ = tx.Rollback()
 		errorMap[warehouseutils.UsersTable] = err
 		return
 	}
@@ -592,7 +592,7 @@ func (as *HandleT) loadUserTables() (errorMap map[string]error) {
 	err = tx.Commit()
 	if err != nil {
 		pkgLogger.Errorf("AZ: Error in transaction commit for users table: %v\n", err)
-		tx.Rollback()
+		_ = tx.Rollback()
 		errorMap[warehouseutils.UsersTable] = err
 		return
 	}
@@ -668,7 +668,7 @@ func (as *HandleT) TestConnection(warehouse warehouseutils.Warehouse) (err error
 	if err != nil {
 		return
 	}
-	defer as.Db.Close()
+	defer func() { _ = as.Db.Close() }()
 
 	ctx, cancel := context.WithTimeout(context.TODO(), as.ConnectTimeout)
 	defer cancel()
@@ -701,12 +701,12 @@ func (as *HandleT) CrashRecover(warehouse warehouseutils.Warehouse) (err error) 
 	if err != nil {
 		return err
 	}
-	defer as.Db.Close()
+	defer func() { _ = as.Db.Close() }()
 	as.dropDanglingStagingTables()
 	return
 }
 
-func (as *HandleT) dropDanglingStagingTables() bool {
+func (as *HandleT) dropDanglingStagingTables() {
 	sqlStatement := fmt.Sprintf(`
 		select
 		  table_name
@@ -722,9 +722,9 @@ func (as *HandleT) dropDanglingStagingTables() bool {
 	rows, err := as.Db.Query(sqlStatement)
 	if err != nil {
 		pkgLogger.Errorf("WH: SYNAPSE: Error dropping dangling staging tables in synapse: %v\nQuery: %s\n", err, sqlStatement)
-		return false
+		return
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var stagingTableNames []string
 	for rows.Next() {
@@ -736,15 +736,12 @@ func (as *HandleT) dropDanglingStagingTables() bool {
 		stagingTableNames = append(stagingTableNames, tableName)
 	}
 	pkgLogger.Infof("WH: SYNAPSE: Dropping dangling staging tables: %+v  %+v\n", len(stagingTableNames), stagingTableNames)
-	delSuccess := true
 	for _, stagingTableName := range stagingTableNames {
 		_, err := as.Db.Exec(fmt.Sprintf(`DROP TABLE "%[1]s"."%[2]s"`, as.Namespace, stagingTableName))
 		if err != nil {
 			pkgLogger.Errorf("WH: SYNAPSE:  Error dropping dangling staging table: %s in redshift: %v\n", stagingTableName, err)
-			delSuccess = false
 		}
 	}
-	return delSuccess
 }
 
 // FetchSchema queries SYNAPSE and returns the schema associated with provided namespace
@@ -755,7 +752,7 @@ func (as *HandleT) FetchSchema(warehouse warehouseutils.Warehouse) (schema wareh
 	if err != nil {
 		return
 	}
-	defer dbHandle.Close()
+	defer func() { _ = dbHandle.Close() }()
 
 	schema = make(warehouseutils.SchemaT)
 	sqlStatement := fmt.Sprintf(`
@@ -782,7 +779,8 @@ func (as *HandleT) FetchSchema(warehouse warehouseutils.Warehouse) (schema wareh
 		pkgLogger.Infof("AZ: No rows, while fetching schema from  destination:%v, query: %v", as.Warehouse.Identifier, sqlStatement)
 		return schema, nil
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
+
 	for rows.Next() {
 		var tName, cName, cType string
 		err = rows.Scan(&tName, &cName, &cType)
@@ -815,7 +813,7 @@ func (as *HandleT) Cleanup() {
 	if as.Db != nil {
 		// extra check aside dropStagingTable(table)
 		as.dropDanglingStagingTables()
-		as.Db.Close()
+		_ = as.Db.Close()
 	}
 }
 

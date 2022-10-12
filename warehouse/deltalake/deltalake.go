@@ -509,7 +509,7 @@ func (dl *HandleT) credentialsStr() (auth string, err error) {
 }
 
 // getLoadFolder return the load folder where the load files are present
-func (dl *HandleT) getLoadFolder(location string) (loadFolder string, err error) {
+func (dl *HandleT) getLoadFolder(location string) (loadFolder string) {
 	loadFolder = warehouseutils.GetObjectFolderForDeltalake(dl.ObjectStorage, location)
 	if dl.ObjectStorage == warehouseutils.S3 {
 		awsAccessKey := warehouseutils.GetConfigValue(warehouseutils.AWSAccessKey, dl.Warehouse)
@@ -563,10 +563,7 @@ func (dl *HandleT) loadTable(tableName string, tableSchemaInUpload, tableSchemaA
 		return
 	}
 
-	loadFolder, err := dl.getLoadFolder(objectsLocation)
-	if err != nil {
-		return
-	}
+	loadFolder := dl.getLoadFolder(objectsLocation)
 
 	// Creating copy sql statement to copy from load folder to the staging table
 	tableSchemaDiff := getTableSchemaDiff(tableSchemaInUpload, tableSchemaAfterUpload)
@@ -1173,10 +1170,7 @@ func (dl *HandleT) LoadTestTable(location, tableName string, _ map[string]interf
 		return
 	}
 
-	loadFolder, err := dl.getLoadFolder(location)
-	if err != nil {
-		return
-	}
+	loadFolder := dl.getLoadFolder(location)
 
 	var sqlStatement string
 	if format == warehouseutils.LOAD_FILE_TYPE_PARQUET {

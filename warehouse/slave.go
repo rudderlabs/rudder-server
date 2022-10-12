@@ -14,7 +14,7 @@ import (
 	"strings"
 	"time"
 
-	uuid "github.com/gofrs/uuid"
+	"github.com/gofrs/uuid"
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/services/filemanager"
 	"github.com/rudderlabs/rudder-server/services/pgnotifier"
@@ -148,7 +148,7 @@ func (jobRun *JobRunT) downloadStagingFile() error {
 			pkgLogger.Errorf("[WH]: Failed to download file")
 			return err
 		}
-		file.Close()
+		_ = file.Close()
 		timer.End()
 
 		fi, err := os.Stat(filePath)
@@ -296,7 +296,7 @@ func (jobRun *JobRunT) uploadLoadFileToObjectStorage(uploader filemanager.FileMa
 		pkgLogger.Errorf("[WH]: Failed to Open File: %s", uploadFile.GetLoadFile().Name())
 		return filemanager.UploadOutput{}, err
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 	pkgLogger.Debugf("[WH]: %s: Uploading load_file to %s for table: %s with staging_file id: %v", job.DestinationType, warehouseutils.ObjectStorageType(job.DestinationType, job.DestinationConfig, job.UseRudderStorage), tableName, job.StagingFileID)
 	var uploadLocation filemanager.UploadOutput
 	if misc.Contains(warehouseutils.TimeWindowDestinations, job.DestinationType) {
@@ -559,7 +559,7 @@ func processClaimedUploadJob(claimedJob pgnotifier.ClaimT, workerIndex int) {
 	defer func() {
 		warehouseutils.NewTimerStat(STATS_WORKER_CLAIM_PROCESSING_TIME, warehouseutils.Tag{Name: TAG_WORKERID, Value: fmt.Sprintf("%d", workerIndex)}).Since(claimProcessTimeStart)
 	}()
-	handleErr := func(err error, claim pgnotifier.ClaimT) {
+	handleErr := func(err error) {
 		pkgLogger.Errorf("[WH]: Error processing claim: %v", err)
 		response := pgnotifier.ClaimResponseT{
 			Err: err,
@@ -571,14 +571,14 @@ func processClaimedUploadJob(claimedJob pgnotifier.ClaimT, workerIndex int) {
 	var job Payload
 	err := json.Unmarshal(claimedJob.Payload, &job)
 	if err != nil {
-		handleErr(err, claimedJob)
+		handleErr(err)
 		return
 	}
 	job.BatchID = claimedJob.BatchID
 	pkgLogger.Infof(`Starting processing staging-file:%v from claim:%v`, job.StagingFileID, claimedJob.ID)
 	loadFileOutputs, err := processStagingFile(job, workerIndex)
 	if err != nil {
-		handleErr(err, claimedJob)
+		handleErr(err)
 		return
 	}
 	job.Output = loadFileOutputs
@@ -617,7 +617,7 @@ func runAsyncJob(asyncjob jobs.AsyncJobPayloadT) (AsyncJobRunResult, error) {
 	if err != nil {
 		return AsyncJobRunResult{Id: asyncjob.Id, Result: false}, err
 	}
-	whManager.Setup(warehouse, whasyncjob)
+	_ = whManager.Setup(warehouse, whasyncjob)
 	defer whManager.Cleanup()
 	tableNames := []string{asyncjob.TableName}
 	if asyncjob.AsyncJobType == "deletebyjobrunid" {
@@ -640,7 +640,7 @@ func runAsyncJob(asyncjob jobs.AsyncJobPayloadT) (AsyncJobRunResult, error) {
 
 func processClaimedAsyncJob(claimedJob pgnotifier.ClaimT) {
 	pkgLogger.Infof("[WH-Jobs]: Got request for processing Async Job with Batch ID %s", claimedJob.BatchID)
-	handleErr := func(err error, claim pgnotifier.ClaimT) {
+	handleErr := func(err error) {
 		pkgLogger.Errorf("[WH]: Error processing claim: %v", err)
 		response := pgnotifier.ClaimResponseT{
 			Err: err,
@@ -651,23 +651,23 @@ func processClaimedAsyncJob(claimedJob pgnotifier.ClaimT) {
 	var job jobs.AsyncJobPayloadT
 	err := json.Unmarshal(claimedJob.Payload, &job)
 	if err != nil {
-		handleErr(err, claimedJob)
+		handleErr(err)
 		return
 	}
 	result, err := runAsyncJob(job)
 	if err != nil {
-		handleErr(err, claimedJob)
+		handleErr(err)
 		return
 	}
 
-	marshalled_result, err := json.Marshal(result)
+	marshalledResult, err := json.Marshal(result)
 	if err != nil {
-		handleErr(err, claimedJob)
+		handleErr(err)
 		return
 	}
 	response := pgnotifier.ClaimResponseT{
 		Err:     err,
-		Payload: marshalled_result,
+		Payload: marshalledResult,
 	}
 	notifier.UpdateClaimedEvent(&claimedJob, &response)
 }

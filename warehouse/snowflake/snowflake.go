@@ -222,7 +222,7 @@ func (sf *HandleT) authString() string {
 func (sf *HandleT) DeleteBy(tableNames []string, params warehouseutils.DeleteByParams) (err error) {
 	pkgLogger.Infof("SF: Cleaning up the followng tables in snowflake for SF:%s : %v", tableNames)
 	for _, tb := range tableNames {
-		sqlStatement := fmt.Sprintf(`DELETE FROM "%[1]s"."%[2]s" WHERE 
+		sqlStatement := fmt.Sprintf(`DELETE FROM "%[1]s"."%[2]s" WHERE
 		context_sources_job_run_id <> :jobrunid AND
 		context_sources_task_run_id <> :taskrunid AND
 		context_source_id = :sourceid AND
@@ -735,9 +735,9 @@ func (sf *HandleT) DownloadIdentityRules(gzWriter *misc.GZipWriter) (err error) 
 				} else {
 					csvRow = append(csvRow, "user_id", userID.String, "anonymous_id", anonymousID.String)
 				}
-				csvWriter.Write(csvRow)
+				_ = csvWriter.Write(csvRow)
 				csvWriter.Flush()
-				gzWriter.WriteGZ(buff.String())
+				_ = gzWriter.WriteGZ(buff.String())
 			}
 
 			offset += batchSize
@@ -771,7 +771,7 @@ func (sf *HandleT) IsEmpty(warehouse warehouseutils.Warehouse) (empty bool, err 
 	if err != nil {
 		return
 	}
-	defer sf.Db.Close()
+	defer func() { _ = sf.Db.Close() }()
 
 	tables := []string{"TRACKS", "PAGES", "SCREENS", "IDENTIFIES", "ALIASES"}
 	for _, tableName := range tables {
@@ -831,7 +831,7 @@ func (sf *HandleT) TestConnection(warehouse warehouseutils.Warehouse) (err error
 	if err != nil {
 		return
 	}
-	defer sf.Db.Close()
+	defer func() { _ = sf.Db.Close() }()
 
 	ctx, cancel := context.WithTimeout(context.TODO(), sf.ConnectTimeout)
 	defer cancel()
@@ -855,7 +855,7 @@ func (sf *HandleT) FetchSchema(warehouse warehouseutils.Warehouse) (schema wareh
 	if err != nil {
 		return
 	}
-	defer dbHandle.Close()
+	defer func() { _ = dbHandle.Close() }()
 
 	schema = make(warehouseutils.SchemaT)
 	sqlStatement := fmt.Sprintf(`
@@ -880,7 +880,8 @@ func (sf *HandleT) FetchSchema(warehouse warehouseutils.Warehouse) (schema wareh
 		pkgLogger.Infof("SF: No rows, while fetching schema from  destination:%v, query: %v", sf.Warehouse.Identifier, sqlStatement)
 		return schema, nil
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
+
 	for rows.Next() {
 		var tName, cName, cType string
 		err = rows.Scan(&tName, &cName, &cType)
@@ -902,7 +903,7 @@ func (sf *HandleT) FetchSchema(warehouse warehouseutils.Warehouse) (schema wareh
 
 func (sf *HandleT) Cleanup() {
 	if sf.Db != nil {
-		sf.Db.Close()
+		_ = sf.Db.Close()
 	}
 }
 

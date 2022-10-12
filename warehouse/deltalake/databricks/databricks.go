@@ -53,5 +53,5 @@ func (dbT *DBHandleT) Close() {
 	if closeConnectionResponse.GetErrorCode() != "" {
 		pkgLogger.Errorf("Error closing connection in delta lake with response: %v", err, closeConnectionResponse.GetErrorMessage())
 	}
-	dbT.Conn.Close()
+	_ = dbT.Conn.Close()
 }

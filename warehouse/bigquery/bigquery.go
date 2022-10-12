@@ -254,7 +254,7 @@ func (bq *HandleT) dropStagingTable(stagingTableName string) {
 func (bq *HandleT) DeleteBy(tableNames []string, params warehouseutils.DeleteByParams) error {
 	pkgLogger.Infof("BQ: Cleaning up the followng tables in bigquery for BQ:%s : %v", tableNames)
 	for _, tb := range tableNames {
-		sqlStatement := fmt.Sprintf(`DELETE FROM "%[1]s"."%[2]s" WHERE 
+		sqlStatement := fmt.Sprintf(`DELETE FROM "%[1]s"."%[2]s" WHERE
 		context_sources_job_run_id <> @jobrunid AND
 		context_sources_task_run_id <> @taskrunid AND
 		context_source_id = @sourceid AND
@@ -507,7 +507,7 @@ func (bq *HandleT) LoadUserTables() (errorMap map[string]error) {
 	viewExists, _ := bq.tableExists(warehouseutils.UsersView)
 	if !viewExists {
 		pkgLogger.Infof("BQ: Creating view: %s in bigquery dataset: %s in project: %s", warehouseutils.UsersView, bq.namespace, bq.projectID)
-		bq.createTableView(warehouseutils.UsersTable, userColMap)
+		_ = bq.createTableView(warehouseutils.UsersTable, userColMap)
 	}
 
 	bqIdentifiesTable := bqTable(warehouseutils.IdentifiesTable)
@@ -648,7 +648,7 @@ type BQCredentialsT struct {
 }
 
 func Connect(context context.Context, cred *BQCredentialsT) (*bigquery.Client, error) {
-	opts := []option.ClientOption{}
+	var opts []option.ClientOption
 	if !googleutils.ShouldSkipCredentialsInit(cred.Credentials) {
 		credBytes := []byte(cred.Credentials)
 		if err := googleutils.CompatibleGoogleCredentialsJSON(credBytes); err != nil {
@@ -688,6 +688,7 @@ func (bq *HandleT) CrashRecover(warehouse warehouseutils.Warehouse) (err error) 
 	if !dedupEnabled() {
 		return
 	}
+
 	bq.warehouse = warehouse
 	bq.namespace = warehouse.Namespace
 	bq.projectID = strings.TrimSpace(warehouseutils.GetConfigValue(GCPProjectID, bq.warehouse))
@@ -698,7 +699,8 @@ func (bq *HandleT) CrashRecover(warehouse warehouseutils.Warehouse) (err error) 
 	if err != nil {
 		return
 	}
-	defer bq.db.Close()
+	defer func() { _ = bq.db.Close() }()
+
 	bq.dropDanglingStagingTables()
 	return
 }
@@ -708,7 +710,7 @@ func (bq *HandleT) dropDanglingStagingTables() bool {
 		SELECT
 		  table_name
 		FROM
-		  % [1]s.INFORMATION_SCHEMA.TABLES
+		  %[1]s.INFORMATION_SCHEMA.TABLES
 		WHERE
 		  table_schema = '%[1]s'
 		  AND table_name LIKE '%[2]s';
@@ -763,7 +765,7 @@ func (bq *HandleT) IsEmpty(warehouse warehouseutils.Warehouse) (empty bool, err 
 	if err != nil {
 		return
 	}
-	defer bq.db.Close()
+	defer func() { _ = bq.db.Close() }()
 
 	tables := []string{"tracks", "pages", "screens", "identifies", "aliases"}
 	for _, tableName := range tables {
@@ -810,7 +812,7 @@ func (bq *HandleT) TestConnection(warehouse warehouseutils.Warehouse) (err error
 	if err != nil {
 		return
 	}
-	defer bq.db.Close()
+	defer func() { _ = bq.db.Close() }()
 	return
 }
 
@@ -854,7 +856,7 @@ func (bq *HandleT) FetchSchema(warehouse warehouseutils.Warehouse) (schema wareh
 	if err != nil {
 		return
 	}
-	defer dbClient.Close()
+	defer func() { _ = dbClient.Close() }()
 
 	schema = make(warehouseutils.SchemaT)
 	sqlStatement := fmt.Sprintf(`
@@ -921,7 +923,7 @@ func (bq *HandleT) FetchSchema(warehouse warehouseutils.Warehouse) (schema wareh
 
 func (bq *HandleT) Cleanup() {
 	if bq.db != nil {
-		bq.db.Close()
+		_ = bq.db.Close()
 	}
 }
 
@@ -1058,7 +1060,7 @@ func (bq *HandleT) DownloadIdentityRules(gzWriter *misc.GZipWriter) (err error) 
 				if err != nil {
 					break
 				}
-				gzWriter.WriteGZ(string(bytes) + "\n")
+				_ = gzWriter.WriteGZ(string(bytes) + "\n")
 			}
 
 			offset += batchSize
