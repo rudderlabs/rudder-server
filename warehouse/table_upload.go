@@ -31,12 +31,12 @@ func (job *UploadJobT) getTotalEventsUploaded(includeDiscards bool) (int64, erro
 		discardsStatement = fmt.Sprintf(`and table_name != '%s'`, warehouseutils.ToProviderCase(job.warehouse.Type, warehouseutils.DiscardsTable))
 	}
 	sqlStatement := fmt.Sprintf(`
-		SELECT 
-		  sum(total_events) 
-		FROM 
-		  wh_table_uploads 
-		WHERE 
-		  wh_upload_id = %d 
+		SELECT
+		  sum(total_events)
+		FROM
+		  wh_table_uploads
+		WHERE
+		  wh_upload_id = %d
 		  AND status = '%s' %s;
 `,
 		job.upload.ID,
@@ -49,11 +49,11 @@ func (job *UploadJobT) getTotalEventsUploaded(includeDiscards bool) (int64, erro
 
 func areTableUploadsCreated(uploadID int64) bool {
 	sqlStatement := fmt.Sprintf(`
-		SELECT 
-		  COUNT(*) 
-		FROM 
-		  %s 
-		WHERE 
+		SELECT
+		  COUNT(*)
+		FROM
+		  %s
+		WHERE
 		  wh_upload_id = %d;
 `,
 		warehouseutils.WarehouseTableUploadsTable,
@@ -83,10 +83,10 @@ func createTableUploadsForBatch(uploadID int64, tableNames []string) (err error)
 
 	sqlStatement := fmt.Sprintf(`
 		INSERT INTO %s (
-		  wh_upload_id, table_name, status, 
+		  wh_upload_id, table_name, status,
 		  error, created_at, updated_at
-		) 
-		VALUES 
+		)
+		VALUES
 		  %s ON CONFLICT ON CONSTRAINT %s DO NOTHING;
 `,
 		warehouseutils.WarehouseTableUploadsTable,
@@ -121,18 +121,18 @@ func (tableUpload *TableUploadT) setStatus(status string) (err error) {
 	execValues := []interface{}{status, timeutil.Now(), tableUpload.uploadID, tableUpload.tableName}
 	var lastExec string
 	if status == TableUploadExecuting {
-		// setting values using syntax $n since Exec can correctlt format time.Time strings
+		// setting values using syntax $n since Exec can correctly format time.Time strings
 		lastExec = fmt.Sprintf(`, last_exec_time=$%d`, len(execValues)+1)
 		execValues = append(execValues, timeutil.Now())
 	}
 	sqlStatement := fmt.Sprintf(`
-		UPDATE 
-		  %s 
-		SET 
-		  status = $1, 
-		  updated_at = $2 %s 
-		WHERE 
-		  wh_upload_id = $3 
+		UPDATE
+		  %s
+		SET
+		  status = $1,
+		  updated_at = $2 %s
+		WHERE
+		  wh_upload_id = $3
 		  AND table_name = $4;
 `,
 		warehouseutils.WarehouseTableUploadsTable,
@@ -145,12 +145,12 @@ func (tableUpload *TableUploadT) setStatus(status string) (err error) {
 
 func (tableUpload *TableUploadT) getTotalEvents() (int64, error) {
 	sqlStatement := fmt.Sprintf(`
-		SELECT 
-		  total_events 
-		FROM 
-		  %s 
-		WHERE 
-		  wh_upload_id = %d 
+		SELECT
+		  total_events
+		FROM
+		  %s
+		WHERE
+		  wh_upload_id = %d
 		  AND table_name = '%s';
 `,
 		warehouseutils.WarehouseTableUploadsTable,
@@ -167,14 +167,14 @@ func (tableUpload *TableUploadT) setError(status string, statusError error) (err
 	uploadID := tableUpload.uploadID
 	pkgLogger.Errorf("[WH]: Failed uploading table-%s for upload-%v: %v", tableName, uploadID, statusError.Error())
 	sqlStatement := fmt.Sprintf(`
-		UPDATE 
-		  %s 
-		SET 
-		  status = $1, 
-		  updated_at = $2, 
-		  error = $3 
-		WHERE 
-		  wh_upload_id = $4 
+		UPDATE
+		  %s
+		SET
+		  status = $1,
+		  updated_at = $2,
+		  error = $3
+		WHERE
+		  wh_upload_id = $4
 		  AND table_name = $5;
 `,
 		warehouseutils.WarehouseTableUploadsTable,
@@ -194,25 +194,25 @@ func (tableUpload *TableUploadT) setError(status string, statusError error) (err
 func (tableUpload *TableUploadT) updateTableEventsCount(job *UploadJobT) (err error) {
 	subQuery := fmt.Sprintf(`
 		WITH row_numbered_load_files as (
-		  SELECT 
-			total_events, 
+		  SELECT
+			total_events,
 			row_number() OVER (
-			  PARTITION BY staging_file_id, 
-			  table_name 
-			  ORDER BY 
+			  PARTITION BY staging_file_id,
+			  table_name
+			  ORDER BY
 				id DESC
-			) AS row_number 
-		  FROM 
-			%[1]s 
-		  WHERE 
-			staging_file_id IN (%[2]v) 
+			) AS row_number
+		  FROM
+			%[1]s
+		  WHERE
+			staging_file_id IN (%[2]v)
 			AND table_name = '%[3]s'
-		) 
-		SELECT 
-		  sum(total_events) as total 
-		FROM 
-		  row_numbered_load_files 
-		WHERE 
+		)
+		SELECT
+		  sum(total_events) as total
+		FROM
+		  row_numbered_load_files
+		WHERE
 		  row_number = 1
 `,
 		warehouseutils.WarehouseLoadFilesTable,
@@ -221,14 +221,14 @@ func (tableUpload *TableUploadT) updateTableEventsCount(job *UploadJobT) (err er
 	)
 
 	sqlStatement := fmt.Sprintf(`
-		UPDATE 
-		  %[1]s 
-		SET 
-		  total_events = subquery.total 
-		FROM 
-		  (%[2]s) AS subquery 
-		WHERE 
-		  table_name = '%[3]s' 
+		UPDATE
+		  %[1]s
+		SET
+		  total_events = subquery.total
+		FROM
+		  (%[2]s) AS subquery
+		WHERE
+		  table_name = '%[3]s'
 		  AND wh_upload_id = %[4]d;
 `,
 		warehouseutils.WarehouseTableUploadsTable,
@@ -243,12 +243,12 @@ func (tableUpload *TableUploadT) updateTableEventsCount(job *UploadJobT) (err er
 
 func (tableUpload *TableUploadT) getNumEvents() (total int64, err error) {
 	sqlStatement := fmt.Sprintf(`
-		SELECT 
-		  total_events 
-		FROM 
-		  wh_table_uploads 
-		WHERE 
-		  wh_upload_id = %d 
+		SELECT
+		  total_events
+		FROM
+		  wh_table_uploads
+		WHERE
+		  wh_upload_id = %d
 		  AND table_name = '%s';
 `,
 		tableUpload.uploadID,

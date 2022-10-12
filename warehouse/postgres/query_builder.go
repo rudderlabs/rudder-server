@@ -45,7 +45,7 @@ func handleExec(e *QueryParams) (err error) {
 			err = fmt.Errorf("[WH][POSTGRES] error occurred while handling transaction for query: %s with err: %w", sqlStatement, err)
 			return
 		}
-		defer rows.Close()
+		defer func() { _ = rows.Close() }()
 
 		var response []string
 		for rows.Next() {

@@ -199,18 +199,17 @@ func (idr *HandleT) addRules(txn *sql.Tx, loadFileNames []string, gzWriter *misc
 		var gzipFile *os.File
 		gzipFile, err = os.Open(loadFileName)
 		if err != nil {
-			pkgLogger.Errorf(`IDR: Error opeining downloaded load file at %s: %v`, loadFileName, err)
+			pkgLogger.Errorf(`IDR: Error opening downloaded load file at %s: %v`, loadFileName, err)
 			return
 		}
-		defer gzipFile.Close()
 
 		var gzipReader *gzip.Reader
 		gzipReader, err = gzip.NewReader(gzipFile)
 		if err != nil {
+			_ = gzipFile.Close()
 			pkgLogger.Errorf(`IDR: Error reading downloaded load file at %s: %v`, loadFileName, err)
 			return
 		}
-		defer gzipReader.Close()
 
 		eventReader := warehouseutils.NewEventReader(gzipReader, idr.Warehouse.Type)
 		columnNames := []string{"merge_property_1_type", "merge_property_1_value", "merge_property_2_type", "merge_property_2_value"}
@@ -218,6 +217,9 @@ func (idr *HandleT) addRules(txn *sql.Tx, loadFileNames []string, gzWriter *misc
 			var record []string
 			record, err = eventReader.Read(columnNames)
 			if err != nil {
+				_ = gzipFile.Close()
+				_ = gzipReader.Close()
+
 				if err == io.EOF {
 					break
 				}
@@ -235,10 +237,16 @@ func (idr *HandleT) addRules(txn *sql.Tx, loadFileNames []string, gzWriter *misc
 			recordInterface[4] = rowID
 			_, err = stmt.Exec(recordInterface[:]...)
 			if err != nil {
+				_ = gzipFile.Close()
+				_ = gzipReader.Close()
+
 				pkgLogger.Errorf("IDR: Error while adding rowID to merge_rules table: %v", err)
 				return
 			}
 		}
+
+		_ = gzipFile.Close()
+		_ = gzipReader.Close()
 	}
 
 	_, err = stmt.Exec()
@@ -488,7 +496,7 @@ func (idr *HandleT) processMergeRules(fileNames []string) (err error) {
 		}
 		totalMappingRecords += count
 		if idx%1000 == 0 {
-			pkgLogger.Infof(`IDR: Applied %d rules out of %d. Total Mapping records added: %d. Namepsace: %s, Destination: %s:%s`, idx+1, len(ruleIDs), totalMappingRecords, idr.Warehouse.Namespace, idr.Warehouse.Type, idr.Warehouse.Destination.ID)
+			pkgLogger.Infof(`IDR: Applied %d rules out of %d. Total Mapping records added: %d. Namespace: %s, Destination: %s:%s`, idx+1, len(ruleIDs), totalMappingRecords, idr.Warehouse.Namespace, idr.Warehouse.Type, idr.Warehouse.Destination.ID)
 		}
 	}
 	_ = mappingsFileGzWriter.CloseGZ()

@@ -195,7 +195,7 @@ func (pg *HandleT) DownloadLoadFiles(tableName string) ([]string, error) {
 		}),
 	})
 	if err != nil {
-		pkgLogger.Errorf("PG: Error in setting up a downloader for destionationID : %s Error : %v", pg.Warehouse.Destination.ID, err)
+		pkgLogger.Errorf("PG: Error in setting up a downloader for destinationID : %s Error : %v", pg.Warehouse.Destination.ID, err)
 		return nil, err
 	}
 	var fileNames []string
@@ -433,7 +433,7 @@ func (pg *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 
 // DeleteBy Need to create a structure with delete parameters instead of simply adding a long list of params
 func (pg *HandleT) DeleteBy(tableNames []string, params warehouseutils.DeleteByParams) (err error) {
-	pkgLogger.Infof("PG: Cleaning up the followng tables in postgres for PG:%s : %+v", tableNames, params)
+	pkgLogger.Infof("PG: Cleaning up the following tables in postgres for PG:%s : %+v", tableNames, params)
 	for _, tb := range tableNames {
 		sqlStatement := fmt.Sprintf(`DELETE FROM "%[1]s"."%[2]s" WHERE
 		context_sources_job_run_id <> $1 AND
@@ -444,7 +444,7 @@ func (pg *HandleT) DeleteBy(tableNames []string, params warehouseutils.DeleteByP
 			tb,
 		)
 		pkgLogger.Infof("PG: Deleting rows in table in postgres for PG:%s", pg.Warehouse.Destination.ID)
-		pkgLogger.Debugf("PG: Executing the sqlstatement  %v", sqlStatement)
+		pkgLogger.Debugf("PG: Executing the statement  %v", sqlStatement)
 		if enableDeleteByJobs {
 			_, err = pg.Db.Exec(sqlStatement,
 				params.JobRunId,

@@ -212,12 +212,12 @@ func getDestinationFromConnectionMap(DestinationId, SourceId string) (warehouseu
 	if DestinationId == "" || SourceId == "" {
 		return warehouseutils.Warehouse{}, errors.New("invalid Parameters")
 	}
-	srcmap, ok := connectionsMap[DestinationId]
+	sourceMap, ok := connectionsMap[DestinationId]
 	if !ok {
 		return warehouseutils.Warehouse{}, errors.New("invalid Destination Id")
 	}
 
-	conn, ok := srcmap[SourceId]
+	conn, ok := sourceMap[SourceId]
 	if !ok {
 		return warehouseutils.Warehouse{}, errors.New("invalid Source Id")
 	}

@@ -71,8 +71,7 @@ func (cl *Client) sqlQuery(statement string) (result warehouseutils.QueryResult,
 
 func (cl *Client) bqQuery(statement string) (result warehouseutils.QueryResult, err error) {
 	query := cl.BQ.Query(statement)
-	context := context.Background()
-	it, err := query.Read(context)
+	it, err := query.Read(context.Background())
 	if err != nil {
 		return
 	}

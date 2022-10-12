@@ -79,7 +79,7 @@ type WhAsyncJobRunner interface {
 	updateMultipleAsyncJobs(*[]AsyncJobPayloadT, string, string)
 }
 
-type AsyncJobsStatusMap struct {
+type AsyncJobStatus struct {
 	Id     string
 	Status string
 	Error  error

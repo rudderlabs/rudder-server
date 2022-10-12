@@ -112,7 +112,7 @@ func connect(cred credentialsT) (*sql.DB, error) {
 	// url := fmt.Sprintf("server=%s;user id=%s;password=%s;port=%s;database=%s;encrypt=%s;TrustServerCertificate=true", cred.host, cred.user, cred.password, cred.port, cred.dbName, cred.sslMode)
 	// Encryption options : disable, false, true.  https://github.com/denisenkom/go-mssqldb
 	// TrustServerCertificate=true ; all options(disable, false, true) work with this
-	// if rds.forcessl=1; disable option doesnt work. true, false works alongside TrustServerCertificate=true
+	// if rds.forcessl=1; disable option doesn't work. true, false works alongside TrustServerCertificate=true
 	//		https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/SQLServer.Concepts.General.SSL.Using.html
 	// more combination explanations here: https://docs.microsoft.com/en-us/sql/connect/odbc/linux-mac/connection-string-keywords-and-data-source-names-dsns?view=sql-server-ver15
 	query := url.Values{}
@@ -182,7 +182,7 @@ func (as *HandleT) DownloadLoadFiles(tableName string) ([]string, error) {
 		}),
 	})
 	if err != nil {
-		pkgLogger.Errorf("AZ: Error in setting up a downloader for destionationID : %s Error : %v", as.Warehouse.Destination.ID, err)
+		pkgLogger.Errorf("AZ: Error in setting up a downloader for destinationID : %s Error : %v", as.Warehouse.Destination.ID, err)
 		return nil, err
 	}
 	var fileNames []string
@@ -247,7 +247,7 @@ func (as *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 	// create temporary table
 	stagingTableName = warehouseutils.StagingTableName(provider, tableName, tableNameLimit)
 	// prepared stmts cannot be used to create temp objects here. Will work in a txn, but will be purged after commit.
-	// https://github.com/denisenkom/go-mssqldb/issues/149, https://docs.microsoft.com/en-us/previous-versions/sql/sql-server-2008-r2/ms175528(v=sql.105)?redirectedfrom=MSDN
+	// https://github.com/denisenkom/go-mssqldb/issues/149, https://docs.microsoft.com/en-us/previous-versions/sql/sql-server-2008-r2/ms175528(v=sql.105)?redirected from=MSDN
 	// sqlStatement := fmt.Sprintf(`CREATE  TABLE ##%[2]s like %[1]s.%[3]s`, AZ.Namespace, stagingTableName, tableName)
 	// Hence falling back to creating normal tables
 	sqlStatement := fmt.Sprintf(`select top 0 * into %[1]s.%[2]s from %[1]s.%[3]s`, as.Namespace, stagingTableName, tableName)
@@ -517,7 +517,7 @@ func (as *HandleT) loadUserTables() (errorMap map[string]error) {
 							order by X.received_at desc
 							)
 						  end as %[1]s`, colName, as.Namespace+"."+unionStagingTableName)
-		// IGNORE NULLS only supported in Azure SQL edge, in which case the query can be shortedened to below
+		// IGNORE NULLS only supported in Azure SQL edge, in which case the query can be shortened to below
 		// https://docs.microsoft.com/en-us/sql/t-sql/functions/first-value-transact-sql?view=sql-server-ver15
 		// caseSubQuery := fmt.Sprintf(`FIRST_VALUE(%[1]s) IGNORE NULLS OVER (PARTITION BY id ORDER BY received_at DESC ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) AS "%[1]s"`, colName)
 		firstValProps = append(firstValProps, caseSubQuery)
@@ -641,7 +641,7 @@ func (as *HandleT) addColumn(tableName, columnName, columnType string) (err erro
 }
 
 func (as *HandleT) CreateTable(tableName string, columnMap map[string]string) (err error) {
-	// Search paths doesnt exist unlike Postgres, default is dbo. Hence use namespace wherever possible
+	// Search paths doesn't exist unlike Postgres, default is dbo. Hence, use namespace wherever possible
 	err = as.createTable(as.Namespace+"."+tableName, columnMap)
 	return err
 }

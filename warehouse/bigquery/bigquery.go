@@ -252,7 +252,7 @@ func (bq *HandleT) dropStagingTable(stagingTableName string) {
 }
 
 func (bq *HandleT) DeleteBy(tableNames []string, params warehouseutils.DeleteByParams) error {
-	pkgLogger.Infof("BQ: Cleaning up the followng tables in bigquery for BQ:%s : %v", tableNames)
+	pkgLogger.Infof("BQ: Cleaning up the following tables in bigquery for BQ:%s : %v", tableNames)
 	for _, tb := range tableNames {
 		sqlStatement := fmt.Sprintf(`DELETE FROM "%[1]s"."%[2]s" WHERE
 		context_sources_job_run_id <> @jobrunid AND
@@ -318,7 +318,7 @@ func (bq *HandleT) loadTable(tableName string, _, getLoadFileLocFromTableUploads
 	loadTableByAppend := func() (err error) {
 		stagingLoadTable.partitionDate = time.Now().Format("2006-01-02")
 		outputTable := tableName
-		// Tables created by Rudderstack are ingestion-time partitioned table with pseudocolumn named _PARTITIONTIME. BigQuery automatically assigns rows to partitions based
+		// Tables created by RudderStack are ingestion-time partitioned table with pseudo column named _PARTITIONTIME. BigQuery automatically assigns rows to partitions based
 		// on the time when BigQuery ingests the data. To support custom field partitions, omitting loading into partitioned table like tableName$20191221
 		// TODO: Support custom field partition on users & identifies tables
 		if !customPartitionsEnabled {
@@ -656,21 +656,19 @@ func Connect(context context.Context, cred *BQCredentialsT) (*bigquery.Client, e
 		}
 		opts = append(opts, option.WithCredentialsJSON(credBytes))
 	}
-	client, err := bigquery.NewClient(context, cred.ProjectID, opts...)
-	return client, err
+	return bigquery.NewClient(context, cred.ProjectID, opts...)
 }
 
 func (bq *HandleT) connect(cred BQCredentialsT) (*bigquery.Client, error) {
 	pkgLogger.Infof("BQ: Connecting to BigQuery in project: %s", cred.ProjectID)
 	bq.backgroundContext = context.Background()
-	client, err := Connect(bq.backgroundContext, &cred)
-	return client, err
+	return Connect(bq.backgroundContext, &cred)
 }
 
 func loadConfig() {
 	config.RegisterBoolConfigVariable(true, &setUsersLoadPartitionFirstEventFilter, true, "Warehouse.bigquery.setUsersLoadPartitionFirstEventFilter")
 	config.RegisterBoolConfigVariable(false, &customPartitionsEnabled, true, "Warehouse.bigquery.customPartitionsEnabled")
-	config.RegisterBoolConfigVariable(false, &isUsersTableDedupEnabled, true, "Warehouse.bigquery.isUsersTableDedupEnabled") // TODO: Depricate with respect to isDedupEnabled
+	config.RegisterBoolConfigVariable(false, &isUsersTableDedupEnabled, true, "Warehouse.bigquery.isUsersTableDedupEnabled") // TODO: Deprecate with respect to isDedupEnabled
 	config.RegisterBoolConfigVariable(false, &isDedupEnabled, true, "Warehouse.bigquery.isDedupEnabled")
 	config.RegisterBoolConfigVariable(false, &enableDeleteByJobs, true, "Warehouse.bigquery.enableDeleteByJobs")
 }
@@ -843,7 +841,7 @@ func (*HandleT) AlterColumn(_, _, _ string) (err error) {
 	return
 }
 
-// FetchSchema queries bigquery and returns the schema assoiciated with provided namespace
+// FetchSchema queries bigquery and returns the schema associated with provided namespace
 func (bq *HandleT) FetchSchema(warehouse warehouseutils.Warehouse) (schema warehouseutils.SchemaT, err error) {
 	bq.warehouse = warehouse
 	bq.namespace = warehouse.Namespace
@@ -851,7 +849,6 @@ func (bq *HandleT) FetchSchema(warehouse warehouseutils.Warehouse) (schema wareh
 	dbClient, err := bq.connect(BQCredentialsT{
 		ProjectID:   bq.projectID,
 		Credentials: warehouseutils.GetConfigValue(GCPCredentials, bq.warehouse),
-		// location:    warehouseutils.GetConfigValue(GCPLocation, bq.warehouse),
 	})
 	if err != nil {
 		return

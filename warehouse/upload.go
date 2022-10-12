@@ -367,11 +367,6 @@ func (job *UploadJobT) run() (err error) {
 		ch <- struct{}{}
 	}()
 
-	// set last_exec_at to record last upload start time
-	// sync scheduling with syncStartAt depends on this determine to start upload or not
-	// job.setUploadColumns(
-	// 	UploadColumnT{Column: UploadLastExecAtField, Value: timeutil.Now()},
-	// )
 	job.uploadLock.Lock()
 	defer job.uploadLock.Unlock()
 	_ = job.setUploadColumns(UploadColumnsOpts{Fields: []UploadColumnT{{Column: UploadLastExecAtField, Value: timeutil.Now()}, {Column: UploadInProgress, Value: true}}})
@@ -908,7 +903,7 @@ func (job *UploadJobT) loadAllTablesExcept(skipLoadForTables []string, loadFiles
 	var wg sync.WaitGroup
 	wg.Add(len(uploadSchema))
 
-	var alteredSchemaInAtleastOneTable bool
+	var alteredSchemaInAtLeastOneTable bool
 	loadChan := make(chan struct{}, parallelLoads)
 	previouslyFailedTables, currentJobSucceededTables := job.getTablesToSkip()
 	for tableName := range uploadSchema {
@@ -939,7 +934,7 @@ func (job *UploadJobT) loadAllTablesExcept(skipLoadForTables []string, loadFiles
 		rruntime.GoForWarehouse(func() {
 			alteredSchema, err := job.loadTable(tName)
 			if alteredSchema {
-				alteredSchemaInAtleastOneTable = true
+				alteredSchemaInAtLeastOneTable = true
 			}
 
 			if err != nil {
@@ -953,7 +948,7 @@ func (job *UploadJobT) loadAllTablesExcept(skipLoadForTables []string, loadFiles
 	}
 	wg.Wait()
 
-	if alteredSchemaInAtleastOneTable {
+	if alteredSchemaInAtLeastOneTable {
 		pkgLogger.Infof("loadAllTablesExcept: schema changed - updating local schema for %s", job.warehouse.Identifier)
 		_ = job.schemaHandle.updateLocalSchema(job.schemaHandle.schemaInWarehouse)
 	}
@@ -1402,7 +1397,7 @@ func (job *UploadJobT) triggerUploadNow() (err error) {
 	job.uploadLock.Lock()
 	defer job.uploadLock.Unlock()
 	upload := job.upload
-	newjobState := Waiting
+	newJobState := Waiting
 	var metadata map[string]interface{}
 	unmarshallErr := json.Unmarshal(upload.Metadata, &metadata)
 	if unmarshallErr != nil {
@@ -1417,7 +1412,7 @@ func (job *UploadJobT) triggerUploadNow() (err error) {
 	}
 
 	uploadColumns := []UploadColumnT{
-		{Column: "status", Value: newjobState},
+		{Column: "status", Value: newJobState},
 		{Column: "metadata", Value: metadataJSON},
 		{Column: "updated_at", Value: timeutil.Now()},
 	}
@@ -1432,7 +1427,7 @@ func (job *UploadJobT) triggerUploadNow() (err error) {
 	}
 	err = txn.Commit()
 
-	job.upload.Status = newjobState
+	job.upload.Status = newJobState
 	return err
 }
 
