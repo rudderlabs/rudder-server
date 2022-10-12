@@ -27,7 +27,7 @@ type StartJobReqPayload struct {
 type AsyncJobWhT struct {
 	dbHandle   *sql.DB
 	enabled    bool
-	pgnotifier *pgnotifier.PgNotifierT
+	pgnotifier pgnotifier.PgNotifier
 	context    context.Context
 }
 

@@ -93,7 +93,7 @@ type TableUploadResT struct {
 type UploadAPIT struct {
 	enabled           bool
 	dbHandle          *sql.DB
-	warehouseDBHandle *DB
+	warehouseDBHandle DB
 	log               logger.Logger
 	connectionManager *controlplane.ConnectionManager
 	isMultiWorkspace  bool
@@ -339,7 +339,7 @@ func (uploadReq UploadReqT) TriggerWHUpload() (response *proto.TriggerWhUploadsR
 	}
 	query := uploadReq.generateQuery(`id, source_id, destination_id, metadata`)
 	uploadReq.API.log.Debug(query)
-	var uploadJobT UploadJobT
+	var uploadJobT UploadJobImpl
 	var upload Upload
 
 	row := uploadReq.API.dbHandle.QueryRow(query)
@@ -424,11 +424,11 @@ func (tableUploadReq TableUploadReqT) GetWhTableUploads() ([]*proto.WHTable, err
 
 func (tableUploadReq TableUploadReqT) generateQuery(selectFields string) string {
 	query := fmt.Sprintf(`
-	SELECT 
-	  %s 
-	FROM 
-	  %s 
-	WHERE 
+	SELECT
+	  %s
+	FROM
+	  %s
+	WHERE
 	  wh_upload_id = %d
 `,
 		selectFields,
@@ -453,11 +453,11 @@ func (tableUploadReq TableUploadReqT) validateReq() error {
 
 func (uploadReq UploadReqT) generateQuery(selectedFields string) string {
 	return fmt.Sprintf(`
-		SELECT 
-		  %s 
-		FROM 
-		  %s 
-		WHERE 
+		SELECT
+		  %s
+		FROM
+		  %s
+		WHERE
 		  id = %d
 `,
 		selectedFields,
@@ -605,9 +605,9 @@ func (uploadsReq *UploadsReqT) getUploadsFromDb(isMultiWorkspace bool, query str
 func (uploadsReq *UploadsReqT) getTotalUploadCount(whereClause string) (int32, error) {
 	var totalUploadCount int32
 	query := fmt.Sprintf(`
-	select 
-	  count(*) 
-	from 
+	select
+	  count(*)
+	from
 	  %s
 `,
 		warehouseutils.WarehouseUploadsTable,
@@ -627,11 +627,11 @@ func (uploadsReq *UploadsReqT) warehouseUploadsForHosted(authorizedSourceIDs []s
 
 	// create query
 	subQuery := fmt.Sprintf(`
-		SELECT 
-		  %s, 
-		  COUNT(*) OVER() AS total_uploads 
-		FROM 
-		  %s 
+		SELECT
+		  %s,
+		  COUNT(*) OVER() AS total_uploads
+		FROM
+		  %s
 		WHERE
 `,
 		selectFields,
@@ -655,13 +655,13 @@ func (uploadsReq *UploadsReqT) warehouseUploadsForHosted(authorizedSourceIDs []s
 
 	subQuery = subQuery + strings.Join(whereClauses, " AND ")
 	query := fmt.Sprintf(`
-		SELECT 
-		  * 
-		FROM 
-		  (%s) p 
-		ORDER BY 
-		  id DESC 
-		LIMIT 
+		SELECT
+		  *
+		FROM
+		  (%s) p
+		ORDER BY
+		  id DESC
+		LIMIT
 		  %d OFFSET %d
 `,
 		subQuery,
@@ -696,9 +696,9 @@ func (uploadsReq *UploadsReqT) warehouseUploads(selectFields string) (uploadsRes
 
 	// create query
 	query := fmt.Sprintf(`
-		select 
-		  %s 
-		from 
+		select
+		  %s
+		from
 		  %s
 `,
 		selectFields,

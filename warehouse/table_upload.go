@@ -1,3 +1,5 @@
+//go:generate mockgen -source=table_upload.go -destination=../mocks/warehouse/mock_table_upload.go -package=warehouse github.com/rudderlabs/rudder-server/warehouse TableUpload
+
 package warehouse
 
 import (
@@ -19,7 +21,6 @@ type TableUpload interface {
 	setStatus(status string) (err error)
 	getTotalEvents() (int64, error)
 	setError(status string, statusError error) (err error)
-	updateTableEventsCount(job *UploadJobT) (err error)
 	getNumEvents() (total int64, err error)
 }
 
@@ -107,56 +108,6 @@ func (tableUpload *TableUploadImpl) setError(status string, statusError error) (
 		tableName,
 	)
 	return err
-}
-
-func (tableUpload *TableUploadImpl) updateTableEventsCount(job *UploadJobT) (err error) {
-	subQuery := fmt.Sprintf(`
-		WITH row_numbered_load_files as (
-		  SELECT
-			total_events,
-			row_number() OVER (
-			  PARTITION BY staging_file_id,
-			  table_name
-			  ORDER BY
-				id DESC
-			) AS row_number
-		  FROM
-			%[1]s
-		  WHERE
-			staging_file_id IN (%[2]v)
-			AND table_name = '%[3]s'
-		)
-		SELECT
-		  sum(total_events) as total
-		FROM
-		  row_numbered_load_files
-		WHERE
-		  row_number = 1
-`,
-		warehouseutils.WarehouseLoadFilesTable,
-		misc.IntArrayToString(job.stagingFileIDs, ","),
-		tableUpload.tableName,
-	)
-
-	sqlStatement := fmt.Sprintf(`
-		UPDATE
-		  %[1]s
-		SET
-		  total_events = subquery.total
-		FROM
-		  (%[2]s) AS subquery
-		WHERE
-		  table_name = '%[3]s'
-		  AND wh_upload_id = %[4]d;
-`,
-		warehouseutils.WarehouseTableUploadsTable,
-		subQuery,
-		tableUpload.tableName,
-		job.upload.ID,
-	)
-	pkgLogger.Debugf(`Updating table event counts for table:%s in upload:%d, sqlStatement: %v`, tableUpload.tableName, job.upload.ID, sqlStatement)
-	_, err = job.dbHandle.Exec(sqlStatement)
-	return
 }
 
 func (tableUpload *TableUploadImpl) getNumEvents() (total int64, err error) {

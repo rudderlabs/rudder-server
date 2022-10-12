@@ -93,7 +93,7 @@ var _ = Describe("Stats", Ordered, func() {
 	})
 
 	Describe("Generate upload success/aborted metrics", func() {
-		var job *UploadJobT
+		var job *UploadJobImpl
 
 		BeforeEach(func() {
 			mockStats, mockMeasurement := getMockStats(g)
@@ -103,7 +103,7 @@ var _ = Describe("Stats", Ordered, func() {
 
 			stats.Default = mockStats
 
-			job = &UploadJobT{
+			job = &UploadJobImpl{
 				upload: &Upload{
 					ID:                 uploadID,
 					StartStagingFileID: 1,
@@ -132,7 +132,7 @@ var _ = Describe("Stats", Ordered, func() {
 
 		stats.Default = mockStats
 
-		job := &UploadJobT{
+		job := &UploadJobImpl{
 			upload: &Upload{
 				WorkspaceID:        "workspaceID",
 				ID:                 uploadID,
@@ -153,7 +153,7 @@ var _ = Describe("Stats", Ordered, func() {
 
 		stats.Default = mockStats
 
-		job := &UploadJobT{
+		job := &UploadJobImpl{
 			upload: &Upload{
 				ID:                 uploadID,
 				StartStagingFileID: 1,

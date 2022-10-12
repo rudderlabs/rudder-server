@@ -16,31 +16,37 @@ const (
 
 // DB encapsulate interactions of warehouse operations
 // with the database.
-type DB struct {
+type DB interface {
+	GetLatestUploadStatus(ctx context.Context, destType, sourceID, destinationID string) (int64, string, int, error)
+	RetryUploads(ctx context.Context, filterClauses ...FilterClause) (rowsAffected int64, err error)
+	GetUploadsCount(ctx context.Context, filterClauses ...FilterClause) (count int64, err error)
+}
+
+type DBImpl struct {
 	handle *sql.DB
 }
 
-func NewWarehouseDB(handle *sql.DB) *DB {
-	return &DB{handle}
+func NewWarehouseDB(handle *sql.DB) DB {
+	return &DBImpl{handle}
 }
 
-func (db *DB) GetLatestUploadStatus(ctx context.Context, destType, sourceID, destinationID string) (int64, string, int, error) {
+func (db *DBImpl) GetLatestUploadStatus(ctx context.Context, destType, sourceID, destinationID string) (int64, string, int, error) {
 	pkgLogger.Debugf("Fetching latest upload status for: destType: %s, sourceID: %s, destID: %s", destType, sourceID, destinationID)
 
-	query := fmt.Sprintf(`	
-		SELECT 
-		  id, 
-		  status, 
-		  COALESCE(metadata ->> 'priority', '100'):: int 
-		FROM 
+	query := fmt.Sprintf(`
+		SELECT
+		  id,
+		  status,
+		  COALESCE(metadata ->> 'priority', '100'):: int
+		FROM
 		  %[1]s UT
-		WHERE 
-		  UT.destination_type = '%[2]s' 
-		  AND UT.source_id = '%[3]s' 
-		  AND UT.destination_id = '%[4]s' 
-		ORDER BY 
-		  id DESC 
-		LIMIT 
+		WHERE
+		  UT.destination_type = '%[2]s'
+		  AND UT.source_id = '%[3]s'
+		  AND UT.destination_id = '%[4]s'
+		ORDER BY
+		  id DESC
+		LIMIT
 		  1;
 `,
 		warehouseutils.WarehouseUploadsTable,
@@ -64,7 +70,7 @@ func (db *DB) GetLatestUploadStatus(ctx context.Context, destType, sourceID, des
 	return uploadID, status, priority, nil
 }
 
-func (db *DB) RetryUploads(ctx context.Context, filterClauses ...FilterClause) (rowsAffected int64, err error) {
+func (db *DBImpl) RetryUploads(ctx context.Context, filterClauses ...FilterClause) (rowsAffected int64, err error) {
 	if len(filterClauses) == 0 {
 		return 0, errors.New("no filter clauses are present to retry uploads")
 	}
@@ -96,7 +102,7 @@ func (db *DB) RetryUploads(ctx context.Context, filterClauses ...FilterClause) (
 	return
 }
 
-func (db *DB) GetUploadsCount(ctx context.Context, filterClauses ...FilterClause) (count int64, err error) {
+func (db *DBImpl) GetUploadsCount(ctx context.Context, filterClauses ...FilterClause) (count int64, err error) {
 	var (
 		clausesQuery      string
 		clausesArgs       []interface{}

@@ -1,3 +1,5 @@
+//go:generate mockgen -source=schema.go -destination=../mocks/warehouse/mock_schema_handle.go -package=warehouse github.com/rudderlabs/rudder-server/warehouse SchemaHandle
+
 package warehouse
 
 import (
@@ -12,13 +14,43 @@ import (
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
-type SchemaHandleT struct {
-	dbHandle          *sql.DB
-	stagingFiles      []*StagingFileT
-	warehouse         warehouseutils.Warehouse
-	localSchema       warehouseutils.SchemaT
-	schemaInWarehouse warehouseutils.SchemaT
-	uploadSchema      warehouseutils.SchemaT
+type SchemaHandle interface {
+	fetchLocalSchema() (currentSchema warehouseutils.SchemaT)
+	updateLocalSchema(updatedSchema warehouseutils.SchemaT) error
+	fetchSchemaFromWarehouse(whManager manager.ManagerI) (schemaInWarehouse warehouseutils.SchemaT, err error)
+	safeName(columnName string) string
+	getDiscardsSchema() map[string]string
+	getMergeRulesSchema() map[string]string
+	getIdentitiesMappingsSchema() map[string]string
+	isIDResolutionEnabled() bool
+	consolidateStagingFilesSchemaUsingWarehouseSchema() warehouseutils.SchemaT
+	setLocalSchema(currentSchema warehouseutils.SchemaT)
+	setUploadSchema(currentSchema warehouseutils.SchemaT)
+	setSchemaFromWarehouse(schemaInWarehouse warehouseutils.SchemaT)
+	localSchema() (currentSchema warehouseutils.SchemaT)
+	uploadSchema() (currentSchema warehouseutils.SchemaT)
+	warehouseSchema() (schemaInWarehouse warehouseutils.SchemaT)
+}
+
+type SchemaHandleImpl struct {
+	dbHandle     *sql.DB
+	stagingFiles []*StagingFileT
+	warehouse    warehouseutils.Warehouse
+	lSchema      warehouseutils.SchemaT
+	wSchema      warehouseutils.SchemaT
+	uSchema      warehouseutils.SchemaT
+}
+
+func NewSchemaHandle(
+	dbHandle *sql.DB,
+	stagingFiles []*StagingFileT,
+	warehouse warehouseutils.Warehouse,
+) SchemaHandle {
+	return &SchemaHandleImpl{
+		dbHandle:     dbHandle,
+		stagingFiles: stagingFiles,
+		warehouse:    warehouse,
+	}
 }
 
 func HandleSchemaChange(existingDataType, columnType string, columnVal interface{}) (newColumnVal interface{}, ok bool) {
@@ -59,24 +91,24 @@ func HandleSchemaChange(existingDataType, columnType string, columnVal interface
 	return newColumnVal, true
 }
 
-func (sh *SchemaHandleT) getLocalSchema() (currentSchema warehouseutils.SchemaT) {
+func (sh *SchemaHandleImpl) fetchLocalSchema() (currentSchema warehouseutils.SchemaT) {
 	sourceID := sh.warehouse.Source.ID
 	destID := sh.warehouse.Destination.ID
 	namespace := sh.warehouse.Namespace
 
 	var rawSchema json.RawMessage
 	sqlStatement := fmt.Sprintf(`
-		SELECT 
-		  schema 
-		FROM 
+		SELECT
+		  schema
+		FROM
 		  %[1]s ST
-		WHERE 
+		WHERE
 		  (
-			ST.destination_id = '%[2]s' 
-			AND ST.namespace = '%[3]s' 
+			ST.destination_id = '%[2]s'
+			AND ST.namespace = '%[3]s'
 			AND ST.source_id = '%[4]s'
-		  ) 
-		ORDER BY 
+		  )
+		ORDER BY
 		  ST.id DESC;
 `,
 		warehouseutils.WarehouseSchemasTable,
@@ -113,7 +145,27 @@ func (sh *SchemaHandleT) getLocalSchema() (currentSchema warehouseutils.SchemaT)
 	return currentSchema
 }
 
-func (sh *SchemaHandleT) updateLocalSchema(updatedSchema warehouseutils.SchemaT) error {
+func (sh *SchemaHandleImpl) setLocalSchema(currentSchema warehouseutils.SchemaT) {
+	sh.lSchema = currentSchema
+}
+
+func (sh *SchemaHandleImpl) localSchema() warehouseutils.SchemaT {
+	return sh.lSchema
+}
+
+func (sh *SchemaHandleImpl) uploadSchema() warehouseutils.SchemaT {
+	return sh.uSchema
+}
+
+func (sh *SchemaHandleImpl) warehouseSchema() warehouseutils.SchemaT {
+	return sh.wSchema
+}
+
+func (sh *SchemaHandleImpl) setUploadSchema(currentSchema warehouseutils.SchemaT) {
+	sh.uSchema = currentSchema
+}
+
+func (sh *SchemaHandleImpl) updateLocalSchema(updatedSchema warehouseutils.SchemaT) error {
 	namespace := sh.warehouse.Namespace
 	sourceID := sh.warehouse.Source.ID
 	destID := sh.warehouse.Destination.ID
@@ -130,17 +182,17 @@ func (sh *SchemaHandleT) updateLocalSchema(updatedSchema warehouseutils.SchemaT)
 
 	sqlStatement := fmt.Sprintf(`
 		INSERT INTO %s (
-		  source_id, namespace, destination_id, 
-		  destination_type, schema, created_at, 
+		  source_id, namespace, destination_id,
+		  destination_type, schema, created_at,
 		  updated_at
-		) 
-		VALUES 
+		)
+		VALUES
 		  ($1, $2, $3, $4, $5, $6, $7) ON CONFLICT (
 			source_id, destination_id, namespace
-		  ) DO 
-		UPDATE 
-		SET 
-		  schema = $5, 
+		  ) DO
+		UPDATE
+		SET
+		  schema = $5,
 		  updated_at = $7 RETURNING id;
 `,
 		warehouseutils.WarehouseSchemasTable,
@@ -159,13 +211,127 @@ func (sh *SchemaHandleT) updateLocalSchema(updatedSchema warehouseutils.SchemaT)
 	return err
 }
 
-func (sh *SchemaHandleT) fetchSchemaFromWarehouse(whManager manager.ManagerI) (schemaInWarehouse warehouseutils.SchemaT, err error) {
+func (sh *SchemaHandleImpl) fetchSchemaFromWarehouse(whManager manager.ManagerI) (schemaInWarehouse warehouseutils.SchemaT, err error) {
 	schemaInWarehouse, err = whManager.FetchSchema(sh.warehouse)
 	if err != nil {
 		pkgLogger.Errorf(`[WH]: Failed fetching schema from warehouse: %v`, err)
 		return warehouseutils.SchemaT{}, err
 	}
 	return schemaInWarehouse, nil
+}
+
+func (sh *SchemaHandleImpl) setSchemaFromWarehouse(schemaInWarehouse warehouseutils.SchemaT) {
+	sh.wSchema = schemaInWarehouse
+}
+
+func (sh *SchemaHandleImpl) safeName(columnName string) string {
+	return warehouseutils.ToProviderCase(sh.warehouse.Type, columnName)
+}
+
+func (sh *SchemaHandleImpl) getDiscardsSchema() map[string]string {
+	discards := map[string]string{}
+	for colName, colType := range warehouseutils.DiscardsSchema {
+		discards[sh.safeName(colName)] = colType
+	}
+
+	// add loaded_at for bq to be segment compatible
+	if sh.warehouse.Type == warehouseutils.BQ {
+		discards[sh.safeName("loaded_at")] = "datetime"
+	}
+	return discards
+}
+
+func (sh *SchemaHandleImpl) getMergeRulesSchema() map[string]string {
+	return map[string]string{
+		sh.safeName("merge_property_1_type"):  "string",
+		sh.safeName("merge_property_1_value"): "string",
+		sh.safeName("merge_property_2_type"):  "string",
+		sh.safeName("merge_property_2_value"): "string",
+	}
+}
+
+func (sh *SchemaHandleImpl) getIdentitiesMappingsSchema() map[string]string {
+	return map[string]string{
+		sh.safeName("merge_property_type"):  "string",
+		sh.safeName("merge_property_value"): "string",
+		sh.safeName("rudder_id"):            "string",
+		sh.safeName("updated_at"):           "datetime",
+	}
+}
+
+func (sh *SchemaHandleImpl) isIDResolutionEnabled() bool {
+	return warehouseutils.IDResolutionEnabled() && misc.Contains(warehouseutils.IdentityEnabledWarehouses, sh.warehouse.Type)
+}
+
+func (sh *SchemaHandleImpl) consolidateStagingFilesSchemaUsingWarehouseSchema() warehouseutils.SchemaT {
+	schemaInLocalDB := sh.lSchema
+
+	consolidatedSchema := warehouseutils.SchemaT{}
+	count := 0
+	for {
+		lastIndex := count + stagingFilesSchemaPaginationSize
+		if lastIndex >= len(sh.stagingFiles) {
+			lastIndex = len(sh.stagingFiles)
+		}
+
+		var ids []int64
+		for _, stagingFile := range sh.stagingFiles[count:lastIndex] {
+			ids = append(ids, stagingFile.ID)
+		}
+
+		sqlStatement := fmt.Sprintf(`
+			SELECT
+			  schema
+			FROM
+			  %s
+			WHERE
+			  id IN (%s);
+`,
+			warehouseutils.WarehouseStagingFilesTable,
+			misc.IntArrayToString(ids, ","),
+		)
+		rows, err := sh.dbHandle.Query(sqlStatement)
+		if err != nil && err != sql.ErrNoRows {
+			panic(fmt.Errorf("Query: %s\nfailed with Error : %w", sqlStatement, err))
+		}
+
+		var schemas []warehouseutils.SchemaT
+		for rows.Next() {
+			var s json.RawMessage
+			err := rows.Scan(&s)
+			if err != nil {
+				panic(fmt.Errorf("Failed to scan result from query: %s\nwith Error : %w", sqlStatement, err))
+			}
+			var schema warehouseutils.SchemaT
+			err = json.Unmarshal(s, &schema)
+			if err != nil {
+				panic(fmt.Errorf("unmarshalling: %s failed with Error : %w", string(s), err))
+			}
+
+			schemas = append(schemas, schema)
+		}
+		_ = rows.Close()
+
+		consolidatedSchema = mergeSchema(schemaInLocalDB, schemas, consolidatedSchema, sh.warehouse.Type)
+
+		count += stagingFilesSchemaPaginationSize
+		if count >= len(sh.stagingFiles) {
+			break
+		}
+	}
+
+	// add rudder_discards Schema
+	consolidatedSchema[sh.safeName(warehouseutils.DiscardsTable)] = sh.getDiscardsSchema()
+
+	// add rudder_identity_mappings Schema
+	if sh.isIDResolutionEnabled() {
+		if _, ok := consolidatedSchema[sh.safeName(warehouseutils.IdentityMergeRulesTable)]; ok {
+			consolidatedSchema[sh.safeName(warehouseutils.IdentityMergeRulesTable)] = sh.getMergeRulesSchema()
+			consolidatedSchema[sh.safeName(warehouseutils.IdentityMappingsTable)] = sh.getIdentitiesMappingsSchema()
+		}
+	}
+
+	return consolidatedSchema
 }
 
 func mergeSchema(currentSchema warehouseutils.SchemaT, schemaList []warehouseutils.SchemaT, currentMergedSchema warehouseutils.SchemaT, warehouseType string) warehouseutils.SchemaT {
@@ -234,116 +400,6 @@ func mergeSchema(currentSchema warehouseutils.SchemaT, schemaList []warehouseuti
 	return currentMergedSchema
 }
 
-func (sh *SchemaHandleT) safeName(columnName string) string {
-	return warehouseutils.ToProviderCase(sh.warehouse.Type, columnName)
-}
-
-func (sh *SchemaHandleT) getDiscardsSchema() map[string]string {
-	discards := map[string]string{}
-	for colName, colType := range warehouseutils.DiscardsSchema {
-		discards[sh.safeName(colName)] = colType
-	}
-
-	// add loaded_at for bq to be segment compatible
-	if sh.warehouse.Type == warehouseutils.BQ {
-		discards[sh.safeName("loaded_at")] = "datetime"
-	}
-	return discards
-}
-
-func (sh *SchemaHandleT) getMergeRulesSchema() map[string]string {
-	return map[string]string{
-		sh.safeName("merge_property_1_type"):  "string",
-		sh.safeName("merge_property_1_value"): "string",
-		sh.safeName("merge_property_2_type"):  "string",
-		sh.safeName("merge_property_2_value"): "string",
-	}
-}
-
-func (sh *SchemaHandleT) getIdentitiesMappingsSchema() map[string]string {
-	return map[string]string{
-		sh.safeName("merge_property_type"):  "string",
-		sh.safeName("merge_property_value"): "string",
-		sh.safeName("rudder_id"):            "string",
-		sh.safeName("updated_at"):           "datetime",
-	}
-}
-
-func (sh *SchemaHandleT) isIDResolutionEnabled() bool {
-	return warehouseutils.IDResolutionEnabled() && misc.Contains(warehouseutils.IdentityEnabledWarehouses, sh.warehouse.Type)
-}
-
-func (sh *SchemaHandleT) consolidateStagingFilesSchemaUsingWarehouseSchema() warehouseutils.SchemaT {
-	schemaInLocalDB := sh.localSchema
-
-	consolidatedSchema := warehouseutils.SchemaT{}
-	count := 0
-	for {
-		lastIndex := count + stagingFilesSchemaPaginationSize
-		if lastIndex >= len(sh.stagingFiles) {
-			lastIndex = len(sh.stagingFiles)
-		}
-
-		var ids []int64
-		for _, stagingFile := range sh.stagingFiles[count:lastIndex] {
-			ids = append(ids, stagingFile.ID)
-		}
-
-		sqlStatement := fmt.Sprintf(`
-			SELECT 
-			  schema 
-			FROM 
-			  %s 
-			WHERE 
-			  id IN (%s);
-`,
-			warehouseutils.WarehouseStagingFilesTable,
-			misc.IntArrayToString(ids, ","),
-		)
-		rows, err := sh.dbHandle.Query(sqlStatement)
-		if err != nil && err != sql.ErrNoRows {
-			panic(fmt.Errorf("Query: %s\nfailed with Error : %w", sqlStatement, err))
-		}
-
-		var schemas []warehouseutils.SchemaT
-		for rows.Next() {
-			var s json.RawMessage
-			err := rows.Scan(&s)
-			if err != nil {
-				panic(fmt.Errorf("Failed to scan result from query: %s\nwith Error : %w", sqlStatement, err))
-			}
-			var schema warehouseutils.SchemaT
-			err = json.Unmarshal(s, &schema)
-			if err != nil {
-				panic(fmt.Errorf("unmarshalling: %s failed with Error : %w", string(s), err))
-			}
-
-			schemas = append(schemas, schema)
-		}
-		_ = rows.Close()
-
-		consolidatedSchema = mergeSchema(schemaInLocalDB, schemas, consolidatedSchema, sh.warehouse.Type)
-
-		count += stagingFilesSchemaPaginationSize
-		if count >= len(sh.stagingFiles) {
-			break
-		}
-	}
-
-	// add rudder_discards Schema
-	consolidatedSchema[sh.safeName(warehouseutils.DiscardsTable)] = sh.getDiscardsSchema()
-
-	// add rudder_identity_mappings Schema
-	if sh.isIDResolutionEnabled() {
-		if _, ok := consolidatedSchema[sh.safeName(warehouseutils.IdentityMergeRulesTable)]; ok {
-			consolidatedSchema[sh.safeName(warehouseutils.IdentityMergeRulesTable)] = sh.getMergeRulesSchema()
-			consolidatedSchema[sh.safeName(warehouseutils.IdentityMappingsTable)] = sh.getIdentitiesMappingsSchema()
-		}
-	}
-
-	return consolidatedSchema
-}
-
 // hasSchemaChanged Default behaviour is to do the deep equals.
 // If we are skipping deep equals, then we are validating local schemas against warehouse schemas only.
 // Not the other way around.
@@ -352,7 +408,7 @@ func hasSchemaChanged(localSchema, schemaInWarehouse warehouseutils.SchemaT) boo
 		eq := reflect.DeepEqual(localSchema, schemaInWarehouse)
 		return !eq
 	}
-	// Iterating through all tableName in the localSchema
+	// Iterating through all tableName in the lSchema
 	for tableName := range localSchema {
 		localColumns := localSchema[tableName]
 		warehouseColumns, whColumnsExist := schemaInWarehouse[tableName]
@@ -413,37 +469,37 @@ func getTableSchemaDiff(tableName string, currentSchema, uploadSchema warehouseu
 	return diff
 }
 
-// returns the merged schema(uploadSchema+schemaInWarehousePreUpload) for all tables in uploadSchema
+// returns the merged schema(uSchema+schemaInWarehousePreUpload) for all tables in uSchema
 func mergeUploadAndLocalSchemas(uploadSchema, schemaInWarehousePreUpload warehouseutils.SchemaT) warehouseutils.SchemaT {
 	mergedSchema := warehouseutils.SchemaT{}
-	// iterate over all tables in uploadSchema
+	// iterate over all tables in uSchema
 	for uploadTableName, uploadTableSchema := range uploadSchema {
 		if _, ok := mergedSchema[uploadTableName]; !ok {
 			// init map if it does not exist
 			mergedSchema[uploadTableName] = map[string]string{}
 		}
 
-		// uploadSchema becomes the merged schema if the table does not exist in local Schema
+		// uSchema becomes the merged schema if the table does not exist in local Schema
 		localTableSchema, ok := schemaInWarehousePreUpload[uploadTableName]
 		if !ok {
 			mergedSchema[uploadTableName] = uploadTableSchema
 			continue
 		}
 
-		// iterate over all columns in localSchema and add them to merged schema
+		// iterate over all columns in lSchema and add them to merged schema
 		for localColName, localColType := range localTableSchema {
 			mergedSchema[uploadTableName][localColName] = localColType
 		}
 
-		// iterate over all columns in uploadSchema and add them to merged schema if required
+		// iterate over all columns in uSchema and add them to merged schema if required
 		for uploadColName, uploadColType := range uploadTableSchema {
 			localColType, ok := localTableSchema[uploadColName]
-			// add uploadCol to mergedSchema if the col does not exist in localSchema
+			// add uploadCol to mergedSchema if the col does not exist in lSchema
 			if !ok {
 				mergedSchema[uploadTableName][uploadColName] = uploadColType
 				continue
 			}
-			// change type of uploadCol to text if it was string in localSchema
+			// change type of uploadCol to text if it was string in lSchema
 			if uploadColType == "text" && localColType == "string" {
 				mergedSchema[uploadTableName][uploadColName] = uploadColType
 			}

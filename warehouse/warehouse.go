@@ -46,7 +46,7 @@ var (
 	application                         app.App
 	webPort                             int
 	dbHandle                            *sql.DB
-	notifier                            pgnotifier.PgNotifierT
+	notifier                            pgnotifier.PgNotifier
 	noOfSlaveWorkerRoutines             int
 	uploadFreqInS                       int64
 	stagingFilesSchemaPaginationSize    int
@@ -114,11 +114,11 @@ type HandleT struct {
 	destType                          string
 	warehouses                        []warehouseutils.Warehouse
 	dbHandle                          *sql.DB
-	warehouseDBHandle                 *DB
-	notifier                          pgnotifier.PgNotifierT
+	warehouseDBHandle                 DB
+	notifier                          pgnotifier.PgNotifier
 	isEnabled                         bool
 	configSubscriberLock              sync.RWMutex
-	workerChannelMap                  map[string]chan *UploadJobT
+	workerChannelMap                  map[string]chan UploadJob
 	workerChannelMapLock              sync.RWMutex
 	initialConfigFetched              bool
 	inProgressMap                     map[WorkerIdentifierT][]JobIDT
@@ -239,8 +239,8 @@ func (wh *HandleT) incrementActiveWorkers() {
 	wh.activeWorkerCountLock.Unlock()
 }
 
-func (wh *HandleT) initWorker() chan *UploadJobT {
-	workerChan := make(chan *UploadJobT, 1000)
+func (wh *HandleT) initWorker() chan UploadJob {
+	workerChan := make(chan UploadJob, 1000)
 	for i := 0; i < wh.maxConcurrentUploadJobs; i++ {
 		wh.backgroundGroup.Go(func() error {
 			for uploadJob := range workerChan {
@@ -249,7 +249,7 @@ func (wh *HandleT) initWorker() chan *UploadJobT {
 				if err != nil {
 					pkgLogger.Errorf("[WH] Failed in handle Upload jobs for worker: %+w", err)
 				}
-				wh.removeDestInProgress(uploadJob.warehouse, uploadJob.upload.ID)
+				wh.removeDestInProgress(uploadJob.wh(), uploadJob.id())
 				wh.decrementActiveWorkers()
 			}
 			return nil
@@ -258,7 +258,7 @@ func (wh *HandleT) initWorker() chan *UploadJobT {
 	return workerChan
 }
 
-func (*HandleT) handleUploadJob(uploadJob *UploadJobT) (err error) {
+func (*HandleT) handleUploadJob(uploadJob UploadJob) (err error) {
 	// Process the upload job
 	err = uploadJob.run()
 	return
@@ -499,12 +499,12 @@ loop:
 		}
 
 		for _, uploadJob := range uploadJobsToProcess {
-			wh.setDestInProgress(uploadJob.warehouse, uploadJob.upload.ID)
+			wh.setDestInProgress(uploadJob.wh(), uploadJob.id())
 		}
 		wh.areBeingEnqueuedLock.Unlock()
 
 		for _, uploadJob := range uploadJobsToProcess {
-			workerName := wh.workerIdentifier(uploadJob.warehouse)
+			workerName := wh.workerIdentifier(uploadJob.wh())
 			wh.workerChannelMapLock.Lock()
 			wh.workerChannelMap[workerName] <- uploadJob
 			wh.workerChannelMapLock.Unlock()
@@ -698,7 +698,7 @@ func (wh *HandleT) Setup(whType string) {
 		&wh.workspaceBySourceIDsLock,
 		wh.destType,
 		wh.dbHandle,
-		&wh.notifier,
+		wh.notifier,
 		wh.allowMultipleSourcesForJobsPickup,
 	)
 	wh.scheduler = NewScheduler(
@@ -712,7 +712,7 @@ func (wh *HandleT) Setup(whType string) {
 	wh.setInterruptedDestinations()
 	wh.resetInProgressJobs()
 	wh.Enable()
-	wh.workerChannelMap = make(map[string]chan *UploadJobT)
+	wh.workerChannelMap = make(map[string]chan UploadJob)
 	wh.inProgressMap = make(map[WorkerIdentifierT][]JobIDT)
 
 	whName := warehouseutils.WHDestNameMap[whType]
@@ -1578,7 +1578,7 @@ func Start(ctx context.Context, app app.App) error {
 			pkgLogger.Errorf("WH: Failed to start warehouse api: %v", err)
 			return err
 		}
-		asyncWh = jobs.InitWarehouseJobsAPI(ctx, dbHandle, &notifier)
+		asyncWh = jobs.InitWarehouseJobsAPI(ctx, dbHandle, notifier)
 
 		g.Go(misc.WithBugsnagForWarehouse(func() error {
 			return asyncWh.InitAsyncJobRunner()

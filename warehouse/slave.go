@@ -200,7 +200,7 @@ type loadFileUploadJob struct {
 	outputFile warehouseutils.LoadFileWriterI
 }
 
-type loadFileUploadOutputT struct {
+type LoadFileUploadOutputT struct {
 	TableName             string
 	Location              string
 	TotalRows             int
@@ -210,20 +210,20 @@ type loadFileUploadOutputT struct {
 	UseRudderStorage      bool
 }
 
-func (jobRun *JobRunT) uploadLoadFilesToObjectStorage() ([]loadFileUploadOutputT, error) {
+func (jobRun *JobRunT) uploadLoadFilesToObjectStorage() ([]LoadFileUploadOutputT, error) {
 	job := jobRun.job
 	uploader, err := job.getFileManager(job.DestinationConfig, job.UseRudderStorage)
 	if err != nil {
-		return []loadFileUploadOutputT{}, err
+		return []LoadFileUploadOutputT{}, err
 	}
 	// var loadFileIDs []int64
-	var loadFileUploadOutputs []loadFileUploadOutputT
+	var loadFileUploadOutputs []LoadFileUploadOutputT
 
 	// take the first staging file id in upload
 	// TODO: support multiple staging files in one upload
 	stagingFileId := jobRun.job.StagingFileID
 
-	loadFileOutputChan := make(chan loadFileUploadOutputT, len(jobRun.outputFileWritersMap))
+	loadFileOutputChan := make(chan LoadFileUploadOutputT, len(jobRun.outputFileWritersMap))
 	loadFileUploadTimer := jobRun.timerStat("load_file_upload_time")
 	uploadJobChan := make(chan *loadFileUploadJob, len(jobRun.outputFileWritersMap))
 	// close chan to avoid memory leak ranging over it
@@ -252,7 +252,7 @@ func (jobRun *JobRunT) uploadLoadFilesToObjectStorage() ([]loadFileUploadOutputT
 						uploadErrorChan <- err
 						return
 					}
-					loadFileOutputChan <- loadFileUploadOutputT{
+					loadFileOutputChan <- LoadFileUploadOutputT{
 						TableName:             tableName,
 						Location:              uploadOutput.Location,
 						ContentLength:         loadFileStats.Size(),
@@ -282,9 +282,9 @@ func (jobRun *JobRunT) uploadLoadFilesToObjectStorage() ([]loadFileUploadOutputT
 			}
 		case err := <-uploadErrorChan:
 			pkgLogger.Errorf("received error while uploading load file to bucket for staging file ids %s, cancelling the context: err %v", stagingFileId, err)
-			return []loadFileUploadOutputT{}, err
+			return []LoadFileUploadOutputT{}, err
 		case <-time.After(slaveUploadTimeout):
-			return []loadFileUploadOutputT{}, fmt.Errorf("load files upload timed out for staging file idsx: %v", stagingFileId)
+			return []LoadFileUploadOutputT{}, fmt.Errorf("load files upload timed out for staging file idsx: %v", stagingFileId)
 		}
 	}
 }
@@ -381,7 +381,7 @@ func (event *BatchRouterEventT) GetColumnInfo(columnName string) (columnInfo Col
 // 5. Delete the staging and load files from tmp directory
 //
 
-func processStagingFile(job Payload, workerIndex int) (loadFileUploadOutputs []loadFileUploadOutputT, err error) {
+func processStagingFile(job Payload, workerIndex int) (loadFileUploadOutputs []LoadFileUploadOutputT, err error) {
 	processStartTime := time.Now()
 	jobRun := JobRunT{
 		job:          job,

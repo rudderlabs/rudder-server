@@ -1,3 +1,5 @@
+//go:generate mockgen -source=scheduler.go -destination=../mocks/warehouse/mock_scheduler.go -package=warehouse github.com/rudderlabs/rudder-server/warehouse Scheduler
+
 package warehouse
 
 import (
@@ -5,6 +7,11 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"math/rand"
+	"strconv"
+	"sync"
+	"time"
+
 	"github.com/cenkalti/backoff/v4"
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/services/stats"
@@ -12,10 +19,6 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
 	"github.com/rudderlabs/rudder-server/warehouse/manager"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
-	"math/rand"
-	"strconv"
-	"sync"
-	"time"
 )
 
 var (
@@ -28,21 +31,21 @@ var (
 )
 
 type Scheduler interface {
-	createUploadJobsFromStagingFiles(warehouse warehouseutils.Warehouse, stagingFilesList []*StagingFileT, priority int, uploadStartAfter time.Time)
-	createJobs(warehouse warehouseutils.Warehouse) (err error)
-	getLatestUploadStatus(warehouse *warehouseutils.Warehouse) (int64, string, int)
-	canCreateUpload(warehouse warehouseutils.Warehouse) bool
-	getLastUploadCreatedAt(warehouse warehouseutils.Warehouse) time.Time
-	getPendingStagingFiles(warehouse warehouseutils.Warehouse) ([]*StagingFileT, error)
-	initUpload(warehouse warehouseutils.Warehouse, jsonUploadsList []*StagingFileT, isUploadTriggered bool, priority int, uploadStartAfter time.Time)
-	isUploadJobInProgress(warehouse warehouseutils.Warehouse, jobID int64) (inProgressIdx int, inProgress bool)
+	createUploadJobsFromStagingFiles(w warehouseutils.Warehouse, stagingFilesList []*StagingFileT, priority int, uploadStartAfter time.Time)
+	createJobs(w warehouseutils.Warehouse) (err error)
+	getLatestUploadStatus(w *warehouseutils.Warehouse) (int64, string, int)
+	canCreateUpload(w warehouseutils.Warehouse) bool
+	getLastUploadCreatedAt(w warehouseutils.Warehouse) time.Time
+	getPendingStagingFiles(w warehouseutils.Warehouse) ([]*StagingFileT, error)
+	initUpload(w warehouseutils.Warehouse, jsonUploadsList []*StagingFileT, isUploadTriggered bool, priority int, uploadStartAfter time.Time)
+	isUploadJobInProgress(w warehouseutils.Warehouse, jobID int64) (inProgressIdx int, inProgress bool)
 	deleteWaitingUploadJob(jobID int64)
 }
 
 type SchedulerImpl struct {
 	destType                          string
 	dbHandle                          *sql.DB
-	warehouseDBHandle                 *DB
+	warehouseDBHandle                 DB
 	areBeingEnqueuedLock              *sync.RWMutex
 	inProgressMap                     map[WorkerIdentifierT][]JobIDT
 	allowMultipleSourcesForJobsPickup bool
@@ -62,7 +65,7 @@ func loadConfigScheduling() {
 func NewScheduler(
 	destType string,
 	dbHandle *sql.DB,
-	warehouseDBHandle *DB,
+	warehouseDBHandle DB,
 	areBeingEnqueuedLock *sync.RWMutex,
 	inProgressMap map[WorkerIdentifierT][]JobIDT,
 	allowMultipleSourcesForJobsPickup bool,

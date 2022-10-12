@@ -90,7 +90,7 @@ var _ = Describe("Upload", Ordered, func() {
 	var (
 		pgResource *destination.PostgresResource
 		cleanup    = &testhelper.Cleanup{}
-		job        *UploadJobT
+		job        *UploadJobImpl
 	)
 
 	BeforeAll(func() {
@@ -118,7 +118,7 @@ var _ = Describe("Upload", Ordered, func() {
 	})
 
 	BeforeEach(func() {
-		job = &UploadJobT{
+		job = &UploadJobImpl{
 			warehouse: warehouseutils.Warehouse{
 				Type: destinationType,
 				Destination: backendconfig.DestinationT{

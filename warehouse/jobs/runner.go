@@ -16,7 +16,7 @@ import (
 )
 
 // Initializes AsyncJobWh structure with appropriate variabless
-func InitWarehouseJobsAPI(ctx context.Context, dbHandle *sql.DB, notifier *pgnotifier.PgNotifierT) *AsyncJobWhT {
+func InitWarehouseJobsAPI(ctx context.Context, dbHandle *sql.DB, notifier pgnotifier.PgNotifier) *AsyncJobWhT {
 	AsyncJobWh := AsyncJobWhT{
 		dbHandle:   dbHandle,
 		enabled:    false,
@@ -229,7 +229,7 @@ func (asyncWhJob *AsyncJobWhT) getPendingAsyncJobs(ctx context.Context) ([]Async
 	// Filter to get most recent row for the sourceId/destinationID combo and remaining ones should relegated to aborted.
 	var attempt int
 	query := fmt.Sprintf(
-		`select 
+		`select
 	id,
 	source_id,
 	destination_id,
@@ -291,7 +291,7 @@ func (asyncWhJob *AsyncJobWhT) updateAsyncJobStatus(ctx context.Context, Id, sta
 															WHEN attempt >= $1
 															THEN $2
 															ELSE  $3
-															END) , 
+															END) ,
 															error=$4 WHERE id=$5 AND status!=$6 AND status!=$7 `, warehouseutils.WarehouseAsyncJobTable)
 	var err error
 	for queryretry := 0; queryretry < MaxQueryRetries; queryretry++ {

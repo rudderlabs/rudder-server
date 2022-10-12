@@ -30,7 +30,7 @@ type Payload struct {
 	StagingUseRudderStorage      bool
 	UniqueLoadGenID              string
 	RudderStoragePrefix          string
-	Output                       []loadFileUploadOutputT
+	Output                       []LoadFileUploadOutputT
 	LoadFilePrefix               string // prefix for the load file name
 	LoadFileType                 string
 }

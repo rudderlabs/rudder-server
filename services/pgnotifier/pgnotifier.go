@@ -58,7 +58,20 @@ func Init() {
 	pkgLogger = logger.NewLogger().Child("warehouse").Child("pgnotifier")
 }
 
-type PgNotifierT struct {
+type PgNotifier interface {
+	GetDBHandle() *sql.DB
+	ClearJobs(ctx context.Context) (err error)
+	trackUploadBatch(batchID string, ch *chan []ResponseT)
+	UpdateClaimedEvent(claim *ClaimT, response *ClaimResponseT)
+	trackAsyncBatch(batchID string, ch *chan []ResponseT)
+	claim(workerID string) (claim ClaimT, err error)
+	Publish(payload MessagePayload, schema *whUtils.SchemaT, priority int) (ch chan []ResponseT, err error)
+	Subscribe(ctx context.Context, workerId string, jobsBufferSize int) chan ClaimT
+	setupQueue() (err error)
+	RunMaintenanceWorker(ctx context.Context) error
+}
+
+type PgNotifierImpl struct {
 	URI                 string
 	dbHandle            *sql.DB
 	workspaceIdentifier string
@@ -118,7 +131,7 @@ func loadPGNotifierConfig() {
 }
 
 // New Given default connection info return pg notifier object from it
-func New(workspaceIdentifier, fallbackConnectionInfo string) (notifier PgNotifierT, err error) {
+func New(workspaceIdentifier, fallbackConnectionInfo string) (notifier PgNotifier, err error) {
 	// by default connection info is fallback connection info
 	connectionInfo := fallbackConnectionInfo
 
@@ -144,7 +157,7 @@ func New(workspaceIdentifier, fallbackConnectionInfo string) (notifier PgNotifie
 	pgNotifierClaimFailedTime = whUtils.NewTimerStat("pgnotifier_claim_time", pgNotifierModuleTag, whUtils.Tag{Name: "status", Value: "failed"})
 	pgNotifierClaimUpdateFailed = whUtils.NewCounterStat("pgnotifier_claim_update_failed", pgNotifierModuleTag)
 
-	notifier = PgNotifierT{
+	notifier = &PgNotifierImpl{
 		dbHandle:            dbHandle,
 		URI:                 connectionInfo,
 		workspaceIdentifier: workspaceIdentifier,
@@ -153,18 +166,18 @@ func New(workspaceIdentifier, fallbackConnectionInfo string) (notifier PgNotifie
 	return
 }
 
-func (notifier PgNotifierT) GetDBHandle() *sql.DB {
+func (notifier *PgNotifierImpl) GetDBHandle() *sql.DB {
 	return notifier.dbHandle
 }
 
-func (notifier PgNotifierT) ClearJobs(ctx context.Context) (err error) {
+func (notifier *PgNotifierImpl) ClearJobs(ctx context.Context) (err error) {
 	// clean up all jobs in pgnotifier for same workspace
 	// additional safety check to not delete all jobs with empty workspaceIdentifier
 	if notifier.workspaceIdentifier != "" {
 		stmt := fmt.Sprintf(`
-			DELETE FROM 
-			  %s 
-			WHERE 
+			DELETE FROM
+			  %s
+			WHERE
 			  workspace = '%s';
 `,
 			queueName,
@@ -198,20 +211,20 @@ func GetPGNotifierConnectionString() string {
 }
 
 // trackUploadBatch tracks the upload batches until they are complete and triggers output through channel of type ResponseT
-func (notifier *PgNotifierT) trackUploadBatch(batchID string, ch *chan []ResponseT) {
+func (notifier *PgNotifierImpl) trackUploadBatch(batchID string, ch *chan []ResponseT) {
 	rruntime.GoForWarehouse(func() {
 		for {
 			time.Sleep(trackBatchInterval)
 			// keep polling db for batch status
 			// or subscribe to triggers
 			stmt := fmt.Sprintf(`
-				SELECT 
-				  count(*) 
-				FROM 
-				  %s 
-				WHERE 
-				  batch_id = '%s' 
-				  AND status != '%s' 
+				SELECT
+				  count(*)
+				FROM
+				  %s
+				WHERE
+				  batch_id = '%s'
+				  AND status != '%s'
 				  AND status != '%s';
 `,
 				queueName,
@@ -228,14 +241,14 @@ func (notifier *PgNotifierT) trackUploadBatch(batchID string, ch *chan []Respons
 
 			if count == 0 {
 				stmt = fmt.Sprintf(`
-					SELECT 
-					  payload -> 'StagingFileID', 
-					  payload -> 'Output', 
-					  status, 
-					  error 
-					FROM 
-					  %s 
-					WHERE 
+					SELECT
+					  payload -> 'StagingFileID',
+					  payload -> 'Output',
+					  status,
+					  error
+					FROM
+					  %s
+					WHERE
 					  batch_id = '%s';
 `,
 					queueName,
@@ -264,9 +277,9 @@ func (notifier *PgNotifierT) trackUploadBatch(batchID string, ch *chan []Respons
 				*ch <- responses
 				pkgLogger.Infof("PgNotifier: Completed processing all files  in batch: %s", batchID)
 				stmt = fmt.Sprintf(`
-					DELETE FROM 
-					  %s 
-					WHERE 
+					DELETE FROM
+					  %s
+					WHERE
 					  batch_id = '%s';
 `,
 					queueName,
@@ -284,7 +297,7 @@ func (notifier *PgNotifierT) trackUploadBatch(batchID string, ch *chan []Respons
 }
 
 // trackAsyncBatch tracks the upload batches until they are complete and triggers output through channel of type ResponseT
-func (notifier *PgNotifierT) trackAsyncBatch(batchID string, ch *chan []ResponseT) {
+func (notifier *PgNotifierImpl) trackAsyncBatch(batchID string, ch *chan []ResponseT) {
 	rruntime.GoForWarehouse(func() {
 		// retry := 0
 		var responses []ResponseT
@@ -339,25 +352,25 @@ func (notifier *PgNotifierT) trackAsyncBatch(batchID string, ch *chan []Response
 	})
 }
 
-func (notifier *PgNotifierT) UpdateClaimedEvent(claim *ClaimT, response *ClaimResponseT) {
+func (notifier *PgNotifierImpl) UpdateClaimedEvent(claim *ClaimT, response *ClaimResponseT) {
 	var err error
 	if response.Err != nil {
 		pkgLogger.Error(response.Err.Error())
 		stmt := fmt.Sprintf(`
-			UPDATE 
-			  %[1]s 
-			SET 
+			UPDATE
+			  %[1]s
+			SET
 			  status =(
 				CASE WHEN attempt > %[2]d THEN CAST (
 				  '%[3]s' AS pg_notifier_status_type
 				) ELSE CAST(
 				  '%[4]s' AS pg_notifier_status_type
 				) END
-			  ), 
-			  attempt = attempt + 1, 
-			  updated_at = '%[5]s', 
-			  error = %[6]s 
-			WHERE 
+			  ),
+			  attempt = attempt + 1,
+			  updated_at = '%[5]s',
+			  error = %[6]s
+			WHERE
 			  id = %[7]v;
 `,
 			queueName,
@@ -380,13 +393,13 @@ func (notifier *PgNotifierT) UpdateClaimedEvent(claim *ClaimT, response *ClaimRe
 		}
 	} else {
 		stmt := fmt.Sprintf(`
-			UPDATE 
-			  %[1]s 
-			SET 
-			  status = '%[2]s', 
-			  updated_at = '%[3]s', 
-			  payload = $1 
-			WHERE 
+			UPDATE
+			  %[1]s
+			SET
+			  status = '%[2]s',
+			  updated_at = '%[3]s',
+			  payload = $1
+			WHERE
 			  id = %[4]v;
 `,
 			queueName,
@@ -403,7 +416,7 @@ func (notifier *PgNotifierT) UpdateClaimedEvent(claim *ClaimT, response *ClaimRe
 	}
 }
 
-func (notifier *PgNotifierT) claim(workerID string) (claim ClaimT, err error) {
+func (notifier *PgNotifierImpl) claim(workerID string) (claim ClaimT, err error) {
 	claimStartTime := time.Now()
 	defer func() {
 		if err != nil {
@@ -419,34 +432,34 @@ func (notifier *PgNotifierT) claim(workerID string) (claim ClaimT, err error) {
 	var batchID, status, workspace, job_type string
 	var payload json.RawMessage
 	stmt := fmt.Sprintf(`
-		UPDATE 
-		  %[1]s 
-		SET 
-		  status = '%[2]s', 
-		  updated_at = '%[3]s', 
-		  last_exec_time = '%[3]s', 
-		  worker_id = '%[4]v' 
-		WHERE 
+		UPDATE
+		  %[1]s
+		SET
+		  status = '%[2]s',
+		  updated_at = '%[3]s',
+		  last_exec_time = '%[3]s',
+		  worker_id = '%[4]v'
+		WHERE
 		  id = (
-			SELECT 
-			  id 
-			FROM 
-			  %[1]s 
-			WHERE 
-			  status = '%[5]s' 
-			  OR status = '%[6]s' 
-			ORDER BY 
-			  priority ASC, 
-			  id ASC FOR 
-			UPDATE 
-			  SKIP LOCKED 
-			LIMIT 
+			SELECT
+			  id
+			FROM
+			  %[1]s
+			WHERE
+			  status = '%[5]s'
+			  OR status = '%[6]s'
+			ORDER BY
+			  priority ASC,
+			  id ASC FOR
+			UPDATE
+			  SKIP LOCKED
+			LIMIT
 			  1
-		  ) RETURNING id, 
-		  batch_id, 
-		  status, 
-		  payload, 
-		  workspace, 
+		  ) RETURNING id,
+		  batch_id,
+		  status,
+		  payload,
+		  workspace,
 		  attempt,
 		  job_type;
 `,
@@ -496,7 +509,7 @@ func (notifier *PgNotifierT) claim(workerID string) (claim ClaimT, err error) {
 	return claim, nil
 }
 
-func (notifier *PgNotifierT) Publish(payload MessagePayload, schema *whUtils.SchemaT, priority int) (ch chan []ResponseT, err error) {
+func (notifier *PgNotifierImpl) Publish(payload MessagePayload, schema *whUtils.SchemaT, priority int) (ch chan []ResponseT, err error) {
 	publishStartTime := time.Now()
 	jobs := payload.Jobs
 	defer func() {
@@ -586,7 +599,7 @@ func (notifier *PgNotifierT) Publish(payload MessagePayload, schema *whUtils.Sch
 	return
 }
 
-func (notifier *PgNotifierT) Subscribe(ctx context.Context, workerId string, jobsBufferSize int) chan ClaimT {
+func (notifier *PgNotifierImpl) Subscribe(ctx context.Context, workerId string, jobsBufferSize int) chan ClaimT {
 	jobs := make(chan ClaimT, jobsBufferSize)
 	rruntime.GoForWarehouse(func() {
 		pollSleep := time.Duration(0)
@@ -612,7 +625,7 @@ func (notifier *PgNotifierT) Subscribe(ctx context.Context, workerId string, job
 	return jobs
 }
 
-func (notifier *PgNotifierT) setupQueue() (err error) {
+func (notifier *PgNotifierImpl) setupQueue() (err error) {
 	pkgLogger.Infof("PgNotifier: Creating Job Queue Tables ")
 
 	m := &migrator.Migrator{
@@ -636,7 +649,7 @@ func GetCurrentSQLTimestamp() string {
 
 // RunMaintenanceWorker (blocking - to be called from go routine) re-triggers zombie jobs
 // which were left behind by dead workers in executing state
-func (notifier *PgNotifierT) RunMaintenanceWorker(ctx context.Context) error {
+func (notifier *PgNotifierImpl) RunMaintenanceWorker(ctx context.Context) error {
 	maintenanceWorkerLockID := murmur3.Sum32([]byte(queueName))
 	maintenanceWorkerLock, err := pglock.NewLock(ctx, int64(maintenanceWorkerLockID), notifier.dbHandle)
 	if err != nil {
@@ -668,21 +681,21 @@ func (notifier *PgNotifierT) RunMaintenanceWorker(ctx context.Context) error {
 	}
 	for {
 		stmt := fmt.Sprintf(`
-			UPDATE 
-			  %[1]s 
-			SET 
-			  status = '%[3]s', 
-			  updated_at = '%[2]s' 
-			WHERE 
+			UPDATE
+			  %[1]s
+			SET
+			  status = '%[3]s',
+			  updated_at = '%[2]s'
+			WHERE
 			  id IN (
-				SELECT 
-				  id 
-				FROM 
-				  %[1]s 
-				WHERE 
-				  status = '%[4]s' 
-				  AND last_exec_time <= NOW() - INTERVAL '%[5]v seconds' FOR 
-				UPDATE 
+				SELECT
+				  id
+				FROM
+				  %[1]s
+				WHERE
+				  status = '%[4]s'
+				  AND last_exec_time <= NOW() - INTERVAL '%[5]v seconds' FOR
+				UPDATE
 				  SKIP LOCKED
 			  ) RETURNING id;
 `,

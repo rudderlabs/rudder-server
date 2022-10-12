@@ -74,7 +74,7 @@ var _ = Describe("TableUpload", func() {
 			})
 
 			It("Create table upload", func() {
-				err = tu.updateTableEventsCount(&UploadJobT{
+				err = tu.updateTableEventsCount(&UploadJobImpl{
 					stagingFileIDs: stagingFileIDs,
 					upload: &Upload{
 						ID: uploadID,
@@ -107,10 +107,10 @@ var _ = Describe("TableUpload", func() {
 			})
 
 			Describe("Getting number of events", func() {
-				var job *UploadJobT
+				var job *UploadJobImpl
 
 				BeforeEach(func() {
-					job = &UploadJobT{
+					job = &UploadJobImpl{
 						upload: &Upload{
 							ID: uploadID,
 						},

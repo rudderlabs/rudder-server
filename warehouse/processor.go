@@ -1,3 +1,5 @@
+//go:generate mockgen -source=processor.go -destination=../mocks/warehouse/mock_processor.go -package=warehouse github.com/rudderlabs/rudder-server/warehouse Processor
+
 package warehouse
 
 import (
@@ -5,21 +7,22 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sync"
+	"time"
+
 	"github.com/lib/pq"
 	"github.com/rudderlabs/rudder-server/services/pgnotifier"
 	"github.com/rudderlabs/rudder-server/warehouse/manager"
 	"github.com/rudderlabs/rudder-server/warehouse/validations"
 	"github.com/thoas/go-funk"
 	"github.com/tidwall/gjson"
-	"sync"
-	"time"
 
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
 type Processor interface {
-	uploadToProcess(availableWorkers int, skipIdentifiers []string) ([]*UploadJobT, error)
-	stagingFiles(warehouse warehouseutils.Warehouse, startID, endID int64) ([]*StagingFileT, error)
+	uploadToProcess(availableWorkers int, skipIdentifiers []string) ([]UploadJob, error)
+	stagingFiles(w warehouseutils.Warehouse, startID, endID int64) ([]*StagingFileT, error)
 }
 
 type ProcessorImpl struct {
@@ -29,7 +32,7 @@ type ProcessorImpl struct {
 	workspaceBySourceIDsLock          *sync.RWMutex
 	destType                          string
 	dbHandle                          *sql.DB
-	notifier                          *pgnotifier.PgNotifierT
+	notifier                          pgnotifier.PgNotifier
 	allowMultipleSourcesForJobsPickup bool
 }
 
@@ -40,7 +43,7 @@ func NewProcessor(
 	workspaceBySourceIDsLock *sync.RWMutex,
 	destType string,
 	dbHandle *sql.DB,
-	notifier *pgnotifier.PgNotifierT,
+	notifier pgnotifier.PgNotifier,
 	allowMultipleSourcesForJobsPickup bool,
 ) Processor {
 	return &ProcessorImpl{
@@ -58,8 +61,7 @@ func NewProcessor(
 func (s *ProcessorImpl) uploadToProcess(
 	availableWorkers int,
 	skipIdentifiers []string,
-) ([]*UploadJobT, error) {
-
+) ([]UploadJob, error) {
 	var skipIdentifiersSQL string
 	partitionIdentifierSQL := `destination_id, namespace`
 
@@ -137,15 +139,15 @@ func (s *ProcessorImpl) uploadToProcess(
 	}
 
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
-		return []*UploadJobT{}, err
+		return []UploadJob{}, err
 	}
 
 	if errors.Is(err, sql.ErrNoRows) {
-		return []*UploadJobT{}, nil
+		return []UploadJob{}, nil
 	}
 	defer rows.Close()
 
-	var uploadJobs []*UploadJobT
+	var uploadJobs []UploadJob
 	for rows.Next() {
 		var upload Upload
 		var schema json.RawMessage
@@ -219,7 +221,7 @@ func (s *ProcessorImpl) uploadToProcess(
 		upload.UseRudderStorage = warehouse.GetBoolDestinationConfig("useRudderStorage")
 
 		if !ok {
-			uploadJob := UploadJobT{
+			uploadJob := UploadJobImpl{
 				upload:   &upload,
 				dbHandle: s.dbHandle,
 			}
@@ -246,18 +248,18 @@ func (s *ProcessorImpl) uploadToProcess(
 			return nil, err
 		}
 
-		uploadJob := UploadJobT{
-			upload:               &upload,
-			stagingFiles:         stagingFilesList,
-			stagingFileIDs:       stagingFileIDs,
-			warehouse:            warehouse,
-			whManager:            whManager,
-			dbHandle:             s.dbHandle,
-			pgNotifier:           s.notifier,
-			destinationValidator: validations.NewDestinationValidator(),
-		}
+		uploadJob := NewUploadJob(
+			&upload,
+			s.dbHandle,
+			warehouse,
+			whManager,
+			stagingFilesList,
+			stagingFileIDs,
+			s.notifier,
+			validations.NewDestinationValidator(),
+		)
 
-		uploadJobs = append(uploadJobs, &uploadJob)
+		uploadJobs = append(uploadJobs, uploadJob)
 	}
 
 	return uploadJobs, nil

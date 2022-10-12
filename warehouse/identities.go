@@ -73,28 +73,28 @@ func isDestHistoricIdentitiesPopulateInProgress(warehouse warehouseutils.Warehou
 
 func (wh *HandleT) getPendingPopulateIdentitiesLoad(warehouse warehouseutils.Warehouse) (upload Upload, found bool) {
 	sqlStatement := fmt.Sprintf(`
-		SELECT 
-			id, 
-			status, 
-			schema, 
+		SELECT
+			id,
+			status,
+			schema,
 			namespace,
 			workspace_id,
-			source_id, 
-			destination_id, 
-			destination_type, 
-			start_staging_file_id, 
-			end_staging_file_id, 
-			start_load_file_id, 
-			end_load_file_id, 
-			error 
+			source_id,
+			destination_id,
+			destination_type,
+			start_staging_file_id,
+			end_staging_file_id,
+			start_load_file_id,
+			end_load_file_id,
+			error
 		FROM %[1]s UT
 		WHERE (
-			UT.source_id='%[2]s' AND 
-			UT.destination_id='%[3]s' AND 
-			UT.destination_type='%[4]s' AND 
-			UT.status != '%[5]s' AND 
+			UT.source_id='%[2]s' AND
+			UT.destination_id='%[3]s' AND
+			UT.destination_type='%[4]s' AND
+			UT.status != '%[5]s' AND
 			UT.status != '%[6]s'
-		) 
+		)
 		ORDER BY id asc
 	`,
 		warehouseutils.WarehouseUploadsTable,
@@ -152,11 +152,11 @@ func (wh *HandleT) poulateHistoricIdentitiesDestType() string {
 
 func (wh *HandleT) hasLocalIdentityData(warehouse warehouseutils.Warehouse) (exists bool) {
 	sqlStatement := fmt.Sprintf(`
-		SELECT 
+		SELECT
 		  EXISTS (
-			SELECT 
-			  1 
-			FROM 
+			SELECT
+			  1
+			FROM
 			  %s
 		  );
 `,
@@ -213,7 +213,7 @@ func (wh *HandleT) setupIdentityTables(warehouse warehouseutils.Warehouse) {
 
 	sqlStatement = fmt.Sprintf(`
 		CREATE INDEX IF NOT EXISTS merge_properties_index_ %[1]s ON %[1]s (
-		  merge_property_1_type, merge_property_1_value, 
+		  merge_property_1_type, merge_property_1_value,
 		  merge_property_2_type, merge_property_2_value
 		);
 `,
@@ -227,10 +227,10 @@ func (wh *HandleT) setupIdentityTables(warehouse warehouseutils.Warehouse) {
 
 	sqlStatement = fmt.Sprintf(`
 		CREATE TABLE IF NOT EXISTS %s (
-		  id BIGSERIAL PRIMARY KEY, 
-		  merge_property_type VARCHAR(64) NOT NULL, 
-		  merge_property_value TEXT NOT NULL, 
-		  rudder_id VARCHAR(64) NOT NULL, 
+		  id BIGSERIAL PRIMARY KEY,
+		  merge_property_type VARCHAR(64) NOT NULL,
+		  merge_property_value TEXT NOT NULL,
+		  rudder_id VARCHAR(64) NOT NULL,
 		  updated_at TIMESTAMP NOT NULL DEFAULT NOW()
 		);
 		`,
@@ -243,9 +243,9 @@ func (wh *HandleT) setupIdentityTables(warehouse warehouseutils.Warehouse) {
 	}
 
 	sqlStatement = fmt.Sprintf(`
-		ALTER TABLE 
-		  %s 
-		ADD 
+		ALTER TABLE
+		  %s
+		ADD
 		  CONSTRAINT %s UNIQUE (
 			merge_property_type, merge_property_value
 		  );
@@ -310,13 +310,13 @@ func (wh *HandleT) initPrePopulateDestIdentitiesUpload(warehouse warehouseutils.
 	}
 
 	sqlStatement := fmt.Sprintf(`INSERT INTO %s (
-		source_id, namespace, workspace_id, destination_id, 
-		destination_type, status, schema, error, metadata, 
-		created_at, updated_at, 
-		start_staging_file_id, end_staging_file_id, 
+		source_id, namespace, workspace_id, destination_id,
+		destination_type, status, schema, error, metadata,
+		created_at, updated_at,
+		start_staging_file_id, end_staging_file_id,
 		start_load_file_id, end_load_file_id)
-	VALUES 
-		($1, $2, $3, $4, $5, $6 ,$7, $8, $9, $10, $11, $12, $13, $14, $15) 
+	VALUES
+		($1, $2, $3, $4, $5, $6 ,$7, $8, $9, $10, $11, $12, $13, $14, $15)
 	RETURNING id
 	`, warehouseutils.WarehouseUploadsTable)
 	stmt, err := wh.dbHandle.Prepare(sqlStatement)
@@ -416,12 +416,12 @@ func (wh *HandleT) populateHistoricIdentities(warehouse warehouseutils.Warehouse
 			panic(err)
 		}
 
-		job := UploadJobT{
+		job := UploadJobImpl{
 			upload:               &upload,
 			warehouse:            warehouse,
 			whManager:            whManager,
 			dbHandle:             wh.dbHandle,
-			pgNotifier:           &wh.notifier,
+			pgNotifier:           wh.notifier,
 			destinationValidator: validations.NewDestinationValidator(),
 		}
 
@@ -441,19 +441,19 @@ func (wh *HandleT) populateHistoricIdentities(warehouse warehouseutils.Warehouse
 		}
 		defer whManager.Cleanup()
 
-		schemaHandle := SchemaHandleT{
-			warehouse:    job.warehouse,
-			stagingFiles: job.stagingFiles,
-			dbHandle:     job.dbHandle,
-		}
-		job.schemaHandle = &schemaHandle
+		job.schemaHandle = NewSchemaHandle(
+			job.dbHandle,
+			job.stagingFiles,
+			job.warehouse,
+		)
 
-		job.schemaHandle.schemaInWarehouse, err = whManager.FetchSchema(job.warehouse)
+		schemaInWarehouse, err := whManager.FetchSchema(job.warehouse)
 		if err != nil {
 			pkgLogger.Errorf(`[WH]: Failed fetching schema from warehouse: %v`, err)
 			job.setUploadError(err, Aborted)
 			return
 		}
+		job.schemaHandle.setSchemaFromWarehouse(schemaInWarehouse)
 
 		job.setUploadStatus(UploadStatusOpts{Status: getInProgressState(ExportedData)})
 		loadErrors, err := job.loadIdentityTables(true)
