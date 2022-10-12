@@ -1413,8 +1413,8 @@ func (jd *HandleT) createDSInTx(tx *sql.Tx, newDS dataSetT) error {
                                       custom_val VARCHAR(64) NOT NULL,
                                       event_payload JSONB NOT NULL,
 									  event_count INTEGER NOT NULL DEFAULT 1,
-                                      created_at TIMESTAMP NOT NULL DEFAULT NOW(),
-                                      expire_at TIMESTAMP NOT NULL DEFAULT NOW());`, newDS.JobTable)
+                                      created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+                                      expire_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW());`, newDS.JobTable)
 
 	_, err = tx.ExecContext(context.TODO(), sqlStatement)
 	if err != nil {
@@ -1435,8 +1435,8 @@ func (jd *HandleT) createDSInTx(tx *sql.Tx, newDS dataSetT) error {
                                      job_id BIGINT REFERENCES %q(job_id),
                                      job_state VARCHAR(64),
                                      attempt SMALLINT,
-                                     exec_time TIMESTAMP NOT NULL DEFAULT NOW(),
-                                     retry_time TIMESTAMP NOT NULL DEFAULT NOW(),
+                                     exec_time TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+                                     retry_time TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
                                      error_code VARCHAR(32),
                                      error_response JSONB DEFAULT '{}'::JSONB,
 									 parameters JSONB DEFAULT '{}'::JSONB,
