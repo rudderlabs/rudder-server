@@ -44,8 +44,8 @@ func (worker *SourceWorkerT) workerProcess(ctx context.Context) {
 		status := jobsdb.JobStatusT{
 			JobID:         job.JobID,
 			JobState:      jobsdb.Succeeded.State,
-			ExecTime:      time.Now(),
-			RetryTime:     time.Now(),
+			ExecTime:      time.Now().UTC(),
+			RetryTime:     time.Now().UTC(),
 			ErrorCode:     "",
 			ErrorResponse: []byte(`{}`), // check
 			Parameters:    []byte(`{}`), // check
