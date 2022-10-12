@@ -254,7 +254,7 @@ func (bq *HandleT) dropStagingTable(stagingTableName string) {
 func (bq *HandleT) DeleteBy(tableNames []string, params warehouseutils.DeleteByParams) error {
 	pkgLogger.Infof("BQ: Cleaning up the followng tables in bigquery for BQ:%s : %v", tableNames)
 	for _, tb := range tableNames {
-		sqlStatement := fmt.Sprintf(`DELETE FROM "%[1]s"."%[2]s" WHERE 
+		sqlStatement := fmt.Sprintf(`DELETE FROM "%[1]s"."%[2]s" WHERE
 		context_sources_job_run_id <> @jobrunid AND
 		context_sources_task_run_id <> @taskrunid AND
 		context_source_id = @sourceid AND
@@ -708,7 +708,7 @@ func (bq *HandleT) dropDanglingStagingTables() bool {
 		SELECT
 		  table_name
 		FROM
-		  % [1]s.INFORMATION_SCHEMA.TABLES
+		  %[1]s.INFORMATION_SCHEMA.TABLES
 		WHERE
 		  table_schema = '%[1]s'
 		  AND table_name LIKE '%[2]s';

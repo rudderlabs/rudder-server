@@ -433,6 +433,8 @@ var _ = Describe("Router", func() {
 				CustomValFilters: []string{customVal["GA"]}, PayloadSizeLimit: payloadLimit, JobsLimit: workspaceCount[workspaceID],
 			}, 10).Times(1).Return(unprocessedJobsList, nil).After(callGetRouterPickupJobs)
 
+			var routerAborted bool
+			var procErrorStored bool
 			mockMultitenantHandle.EXPECT().CalculateSuccessFailureCounts(gomock.Any(), gomock.Any(), gomock.Any(),
 				gomock.Any()).Times(1)
 
@@ -450,6 +452,7 @@ var _ = Describe("Router", func() {
 					Expect(job.JobID).To(Equal(unprocessedJobsList[0].JobID))
 					Expect(job.CustomVal).To(Equal(unprocessedJobsList[0].CustomVal))
 					Expect(job.UserID).To(Equal(unprocessedJobsList[0].UserID))
+					procErrorStored = true
 				})
 
 			c.mockRouterJobsDB.EXPECT().WithUpdateSafeTx(gomock.Any(), gomock.Any()).Do(func(ctx context.Context, f func(tx jobsdb.UpdateSafeTx) error) {
@@ -460,11 +463,13 @@ var _ = Describe("Router", func() {
 				Do(func(ctx context.Context, tx jobsdb.UpdateSafeTx, drainList []*jobsdb.JobStatusT, _, _ interface{}) {
 					Expect(drainList).To(HaveLen(1))
 					assertJobStatus(unprocessedJobsList[0], drainList[0], jobsdb.Aborted.State, "410", `{"reason": "job expired"}`, 0)
+					routerAborted = true
 				})
 
 			<-router.backendConfigInitialized
 			count := router.readAndProcess()
-			Expect(count).To(Equal(0))
+			Expect(count).To(Equal(len(unprocessedJobsList)))
+			Eventually(func() bool { return routerAborted && procErrorStored }, 5*time.Second, 100*time.Millisecond).Should(Equal(true))
 		})
 
 		It("can fail jobs if time is more than router timeout", func() {
