@@ -1,4 +1,4 @@
-package configuration_testing
+package validations
 
 import (
 	"encoding/json"
@@ -84,7 +84,7 @@ type DestinationValidationResponse struct {
 
 type CTHandleT struct {
 	infoRequest *DestinationValidationRequest
-	warehouse   warehouseutils.WarehouseT
+	warehouse   warehouseutils.Warehouse
 	manager     manager.WarehouseOperations
 }
 

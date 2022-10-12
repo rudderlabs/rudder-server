@@ -3,6 +3,7 @@ package main_test
 import (
 	"bytes"
 	"context"
+	"database/sql"
 	"fmt"
 	"io"
 	"math/rand"
@@ -17,6 +18,7 @@ import (
 	"time"
 
 	"github.com/rudderlabs/rudder-server/config"
+	"github.com/rudderlabs/rudder-server/router/utils"
 	"github.com/rudderlabs/rudder-server/testhelper/health"
 
 	"github.com/ory/dockertest/v3"
@@ -54,7 +56,7 @@ func TestEventOrderGuarantee(t *testing.T) {
 		users         = 50                   // how many userIDs we will send jobs for
 		jobsPerUser   = 40                   // how many jobs per user we will send
 		batchSize     = 10                   // how many jobs for the same user we will send in each batch request
-		responseDelay = 0 * time.Millisecond // how long we will the webhook wait before sending a response
+		responseDelay = 2 * time.Millisecond // how long we will the webhook wait before sending a response
 	)
 	var (
 		m      eventOrderMethods
@@ -97,10 +99,12 @@ func TestEventOrderGuarantee(t *testing.T) {
 	t.Logf("Preparing rudder-server config")
 	writeKey := trand.String(27)
 	workspaceID := trand.String(27)
+	destinationID := trand.String(27)
 	templateCtx := map[string]string{
-		"webhookUrl":  webhook.Server.URL,
-		"writeKey":    writeKey,
-		"workspaceId": workspaceID,
+		"webhookUrl":    webhook.Server.URL,
+		"writeKey":      writeKey,
+		"workspaceId":   workspaceID,
+		"destinationId": destinationID,
 	}
 	configJsonPath := workspaceConfig.CreateTempFile(t, "testdata/eventOrderTestTemplate.json", templateCtx)
 	config.Set("BackendConfig.configFromFile", true)
@@ -156,8 +160,26 @@ func TestEventOrderGuarantee(t *testing.T) {
 				}
 			}
 		}()
-		_ = main.Run(ctx)
+		c := main.Run(ctx)
+		t.Logf("server stopped: %d", c)
+		if c != 0 {
+			t.Errorf("server exited with a non-0 exit code: %d", c)
+		}
 		close(svcDone)
+	}()
+
+	go func() { // randomly drain jobs
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-time.After(150 * time.Millisecond):
+				key := fmt.Sprintf("Router.%s.jobRetention", destinationID)
+				config.Set(key, "1s")
+				time.Sleep(1 * time.Millisecond)
+				config.Set(key, "10m")
+			}
+		}
 	}()
 
 	t.Logf("waiting rudder-server to start properly")
@@ -171,30 +193,38 @@ func TestEventOrderGuarantee(t *testing.T) {
 	t.Logf("rudder-server started")
 
 	batches := m.splitInBatches(spec.jobsOrdered, batchSize)
-	t.Logf("Sending %d total events for %d total users in %d batches", len(spec.jobsOrdered), users, len(batches))
-	client := &http.Client{}
-	for _, payload := range batches {
+	go func() {
+		t.Logf("Sending %d total events for %d total users in %d batches", len(spec.jobsOrdered), users, len(batches))
+		client := &http.Client{}
 		url := fmt.Sprintf("http://localhost:%s/v1/batch", gatewayPort)
-		req, err := http.NewRequest("POST", url, bytes.NewReader(payload))
-		require.NoError(t, err, "should be able to create a new request")
-		req.SetBasicAuth(writeKey, "password")
-		resp, err := client.Do(req)
-		require.NoError(t, err, "should be able to send the request to gateway")
-		require.Equal(t, http.StatusOK, resp.StatusCode, "should be able to send the request to gateway successfully", payload)
-		resp.Body.Close()
-	}
+		for _, payload := range batches {
+			req, err := http.NewRequest("POST", url, bytes.NewReader(payload))
+			require.NoError(t, err, "should be able to create a new request")
+			req.SetBasicAuth(writeKey, "password")
+			resp, err := client.Do(req)
+			require.NoError(t, err, "should be able to send the request to gateway")
+			require.Equal(t, http.StatusOK, resp.StatusCode, "should be able to send the request to gateway successfully", payload)
+			resp.Body.Close()
+		}
+	}()
 
 	t.Logf("Waiting for the magic to happen... eventually")
 
 	var done int
 	require.Eventually(t, func() bool {
+		select {
+		case <-svcDone: // server has exited, no point in keep trying
+			return true
+		default:
+		}
 		if t.Failed() { // webhook failed, no point in keep retrying
 			return true
 		}
 		total := len(spec.jobs)
-		if done != len(spec.done) {
-			done = len(spec.done)
-			t.Logf("%d/%d done", done, total)
+		drained := m.countDrainedJobs(postgresContainer.DB)
+		if done != len(spec.done)+drained {
+			done = len(spec.done) + drained
+			t.Logf("%d/%d done (%d drained)", done, total, drained)
 		}
 		return done == total
 	}, 300*time.Second, 2*time.Second, "webhook should receive all events and process them till the end")
@@ -357,6 +387,30 @@ func (eventOrderMethods) splitInBatches(jobs []*eventOrderJobSpec, batchSize int
 	}
 
 	return jsonBatches
+}
+
+func (eventOrderMethods) countDrainedJobs(db *sql.DB) int {
+	var tables []string
+	var count int
+
+	rows, err := db.Query(`SELECT tablename
+									FROM pg_catalog.pg_tables
+									WHERE tablename like 'rt_job_status_%'`)
+	if err == nil {
+		for rows.Next() {
+			var table string
+			err = rows.Scan(&table)
+			if err == nil {
+				tables = append(tables, table)
+			}
+		}
+	}
+	for _, table := range tables {
+		var dsCount int
+		_ = db.QueryRow(fmt.Sprintf(`SELECT COUNT(*) FROM %s WHERE error_code = '%s'`, table, strconv.Itoa(utils.DRAIN_ERROR_CODE))).Scan(&count)
+		count += dsCount
+	}
+	return count
 }
 
 type eventOrderWebhook struct {

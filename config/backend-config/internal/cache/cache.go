@@ -36,40 +36,40 @@ type cacheStore struct {
 // key is the key to use to store and fetch the config from the cache store
 //
 // ch is the channel to listen on for config updates and store them
-func Start(ctx context.Context, secret [32]byte, key string, ch pubsub.DataChannel) Cache {
+func Start(ctx context.Context, secret [32]byte, key string, channelProvider func() pubsub.DataChannel) (Cache, error) {
 	var (
 		err    error
 		dbConn *sql.DB
 	)
 	// setup db connection
 	dbConn, err = setupDBConn()
+	if err != nil {
+		pkgLogger.Errorf("failed to setup db: %v", err)
+		return nil, err
+	}
 	dbStore := cacheStore{
 		dbConn,
 		secret,
 		key,
-	}
-	if err != nil {
-		pkgLogger.Errorf("failed to setup db: %v", err)
-		return &dbStore
 	}
 
 	// apply migrations
 	err = migrate(dbConn)
 	if err != nil {
 		pkgLogger.Errorf("failed to apply db migrations: %v", err)
-		return &dbStore
+		return nil, err
 	}
 
 	// clear config for other keys
 	err = dbStore.clear(ctx)
 	if err != nil {
 		pkgLogger.Errorf("failed to clear previous config: %v", err)
-		return &dbStore
+		return nil, err
 	}
 
 	go func() {
 		// subscribe to config and write to db
-		for config := range ch {
+		for config := range channelProvider() {
 			// persist to database
 			err = dbStore.set(ctx, config.Data)
 			if err != nil {
@@ -78,7 +78,7 @@ func Start(ctx context.Context, secret [32]byte, key string, ch pubsub.DataChann
 		}
 		dbStore.Close()
 	}()
-	return &dbStore
+	return &dbStore, nil
 }
 
 // Encrypt and store the config to the database

@@ -24,7 +24,7 @@ func (q *QueryParams) validate() (err error) {
 // Print execution plan if enableWithQueryPlan is set to true else return result set.
 // Currently, these statements are supported by EXPLAIN
 // Any INSERT, UPDATE, DELETE whose execution plan you wish to see.
-func handleExec(e *QueryParams) (result sql.Result, err error) {
+func handleExec(e *QueryParams) (err error) {
 	sqlStatement := e.query
 
 	if err = e.validate(); err != nil {
@@ -60,9 +60,9 @@ func handleExec(e *QueryParams) (result sql.Result, err error) {
 `)))
 	}
 	if e.txn != nil {
-		result, err = e.txn.Exec(sqlStatement)
+		_, err = e.txn.Exec(sqlStatement)
 	} else if e.db != nil {
-		result, err = e.db.Exec(sqlStatement)
+		_, err = e.db.Exec(sqlStatement)
 	}
 	return
 }

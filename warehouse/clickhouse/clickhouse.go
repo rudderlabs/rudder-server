@@ -28,6 +28,7 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/warehouse/client"
+
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
@@ -45,23 +46,23 @@ var (
 	loadTableFailureRetries     int
 	numWorkersDownloadLoadFiles int
 )
-var clikhouseDefaultDateTime, _ = time.Parse(time.RFC3339, "1970-01-01 00:00:00")
+
+var clickhouseDefaultDateTime, _ = time.Parse(time.RFC3339, "1970-01-01 00:00:00")
 
 const (
-	host          = "host"
-	dbName        = "database"
-	user          = "user"
-	password      = "password"
-	port          = "port"
-	secure        = "secure"
-	skipVerify    = "skipVerify"
-	caCertificate = "caCertificate"
-	Cluster       = "cluster"
+	host           = "host"
+	dbName         = "database"
+	user           = "user"
+	password       = "password"
+	port           = "port"
+	secure         = "secure"
+	skipVerify     = "skipVerify"
+	caCertificate  = "caCertificate"
+	Cluster        = "cluster"
+	partitionField = "received_at"
 )
-const partitionField = "received_at"
 
-// clickhouse doesnt support bool, they recommend to use Uint8 and set 1,0
-
+// clickhouse doesn't support bool, they recommend to use Uint8 and set 1,0
 var rudderDataTypesMapToClickHouse = map[string]string{
 	"int":             "Int64",
 	"array(int)":      "Array(Int64)",
@@ -84,7 +85,7 @@ var datatypeDefaultValuesMap = map[string]interface{}{
 	"int":      0,
 	"float":    0.0,
 	"boolean":  0,
-	"datetime": clikhouseDefaultDateTime,
+	"datetime": clickhouseDefaultDateTime,
 }
 
 var clickhouseDataTypesMapToRudder = map[string]string{
@@ -133,7 +134,7 @@ type HandleT struct {
 	Db             *sql.DB
 	Namespace      string
 	ObjectStorage  string
-	Warehouse      warehouseutils.WarehouseT
+	Warehouse      warehouseutils.Warehouse
 	Uploader       warehouseutils.UploaderI
 	stats          stats.Stats
 	ConnectTimeout time.Duration
@@ -162,10 +163,11 @@ type clickHouseStatT struct {
 }
 
 // newClickHouseStat Creates a new clickHouseStatT instance
-func (proc *HandleT) newClickHouseStat(tableName string) *clickHouseStatT {
-	warehouse := proc.Warehouse
+func (ch *HandleT) newClickHouseStat(tableName string) *clickHouseStatT {
+	warehouse := ch.Warehouse
 
 	tags := map[string]string{
+		"workspaceId": warehouse.WorkspaceID,
 		"destination": warehouse.Destination.ID,
 		"destType":    warehouse.Type,
 		"source":      warehouse.Source.ID,
@@ -174,13 +176,13 @@ func (proc *HandleT) newClickHouseStat(tableName string) *clickHouseStatT {
 		"tableName":   tableName,
 	}
 
-	numRowsLoadFile := proc.stats.NewTaggedStat("warehouse.clickhouse.numRowsLoadFile", stats.CountType, tags)
-	downloadLoadFilesTime := proc.stats.NewTaggedStat("warehouse.clickhouse.downloadLoadFilesTime", stats.TimerType, tags)
-	syncLoadFileTime := proc.stats.NewTaggedStat("warehouse.clickhouse.syncLoadFileTime", stats.TimerType, tags)
-	commitTime := proc.stats.NewTaggedStat("warehouse.clickhouse.commitTime", stats.TimerType, tags)
-	failRetries := proc.stats.NewTaggedStat("warehouse.clickhouse.failedRetries", stats.CountType, tags)
-	execTimeouts := proc.stats.NewTaggedStat("warehouse.clickhouse.execTimeouts", stats.CountType, tags)
-	commitTimeouts := proc.stats.NewTaggedStat("warehouse.clickhouse.commitTimeouts", stats.CountType, tags)
+	numRowsLoadFile := ch.stats.NewTaggedStat("warehouse.clickhouse.numRowsLoadFile", stats.CountType, tags)
+	downloadLoadFilesTime := ch.stats.NewTaggedStat("warehouse.clickhouse.downloadLoadFilesTime", stats.TimerType, tags)
+	syncLoadFileTime := ch.stats.NewTaggedStat("warehouse.clickhouse.syncLoadFileTime", stats.TimerType, tags)
+	commitTime := ch.stats.NewTaggedStat("warehouse.clickhouse.commitTime", stats.TimerType, tags)
+	failRetries := ch.stats.NewTaggedStat("warehouse.clickhouse.failedRetries", stats.CountType, tags)
+	execTimeouts := ch.stats.NewTaggedStat("warehouse.clickhouse.execTimeouts", stats.CountType, tags)
+	commitTimeouts := ch.stats.NewTaggedStat("warehouse.clickhouse.commitTimeouts", stats.CountType, tags)
 
 	return &clickHouseStatT{
 		numRowsLoadFile:       numRowsLoadFile,
@@ -258,7 +260,7 @@ func registerTLSConfig(key, certificate string) {
 	caCertPool := x509.NewCertPool()
 	caCertPool.AppendCertsFromPEM(caCert)
 	tlsConfig.RootCAs = caCertPool
-	clickhouse.RegisterTLSConfig(key, tlsConfig)
+	_ = clickhouse.RegisterTLSConfig(key, tlsConfig)
 }
 
 // getConnectionCredentials gives clickhouse credentials
@@ -378,6 +380,10 @@ func (ch *HandleT) DownloadLoadFiles(tableName string) ([]string, error) {
 	return fileNames, dErr
 }
 
+func (*HandleT) DeleteBy([]string, warehouseutils.DeleteByParams) error {
+	return fmt.Errorf(warehouseutils.NotImplementedErrorCode)
+}
+
 func (ch *HandleT) downloadLoadFile(object *warehouseutils.LoadFileT, tableName string, downloader filemanager.FileManager, storageProvider string) (fileName string, err error) {
 	pkgLogger.Debugf("%s DownloadLoadFile Started", ch.GetLogIdentifier(tableName, storageProvider))
 	defer pkgLogger.Debugf("%s DownloadLoadFile Completed", ch.GetLogIdentifier(tableName, storageProvider))
@@ -421,7 +427,7 @@ func (ch *HandleT) downloadLoadFile(object *warehouseutils.LoadFileT, tableName 
 	return fileName, err
 }
 
-func generateArgumentString(_ string, length int) string {
+func generateArgumentString(length int) string {
 	var args []string
 	for i := 0; i < length; i++ {
 		args = append(args, "?")
@@ -568,7 +574,7 @@ func (ch *HandleT) loadTablesFromFilesNamesWithRetry(tableName string, tableSche
 		if txn != nil {
 			go func() {
 				pkgLogger.Debugf("%s Rollback Started for loading in table", ch.GetLogIdentifier(tableName))
-				txn.Rollback()
+				_ = txn.Rollback()
 				pkgLogger.Debugf("%s Rollback Completed for loading in table", ch.GetLogIdentifier(tableName))
 			}()
 		}
@@ -589,7 +595,7 @@ func (ch *HandleT) loadTablesFromFilesNamesWithRetry(tableName string, tableSche
 	sortedColumnKeys := warehouseutils.SortColumnKeysFromColumnMap(tableSchemaInUpload)
 	sortedColumnString := warehouseutils.DoubleQuoteAndJoinByComma(sortedColumnKeys)
 
-	sqlStatement := fmt.Sprintf(`INSERT INTO %q.%q (%v) VALUES (%s)`, ch.Namespace, tableName, sortedColumnString, generateArgumentString("?", len(sortedColumnKeys)))
+	sqlStatement := fmt.Sprintf(`INSERT INTO %q.%q (%v) VALUES (%s)`, ch.Namespace, tableName, sortedColumnString, generateArgumentString(len(sortedColumnKeys)))
 	pkgLogger.Debugf("%s Preparing statement exec in db for loading in table for query:%s", ch.GetLogIdentifier(tableName), sqlStatement)
 	stmt, err := txn.Prepare(sqlStatement)
 	if err != nil {
@@ -616,7 +622,7 @@ func (ch *HandleT) loadTablesFromFilesNamesWithRetry(tableName string, tableSche
 			rruntime.GoForWarehouse(func() {
 				misc.RemoveFilePaths(objectFileName)
 			})
-			gzipFile.Close()
+			_ = gzipFile.Close()
 			err = fmt.Errorf("%s Error reading file using gzip.NewReader for file:%s while loading to table with error:%v", ch.GetLogIdentifier(tableName), gzipFile.Name(), err.Error())
 			onError(err)
 			return
@@ -658,7 +664,7 @@ func (ch *HandleT) loadTablesFromFilesNamesWithRetry(tableName string, tableSche
 				pkgLogger.Debugf("%s Cancelling and closing statement", ch.GetLogIdentifier(tableName))
 				stmtCancel()
 				go func() {
-					stmt.Close()
+					_ = stmt.Close()
 				}()
 				err = fmt.Errorf("%s Timed out exec table for objectFileName: %s", ch.GetLogIdentifier(tableName), objectFileName)
 				terr.enableRetry = true
@@ -675,8 +681,8 @@ func (ch *HandleT) loadTablesFromFilesNamesWithRetry(tableName string, tableSche
 
 		chStats.numRowsLoadFile.Count(csvRowsProcessedCount)
 
-		gzipReader.Close()
-		gzipFile.Close()
+		_ = gzipReader.Close()
+		_ = gzipFile.Close()
 
 		chStats.syncLoadFileTime.End()
 	}
@@ -747,9 +753,9 @@ func (ch *HandleT) createSchema() (err error) {
 }
 
 /*
-createUsersTable creates a users table with engine AggregatingMergeTree,
+createUsersTable creates a user's table with engine AggregatingMergeTree,
 this lets us choose aggregation logic before merging records with same user id.
-current behaviour is to replace user  properties with latest non null values
+current behaviour is to replace user  properties with the latest non-null values
 */
 func (ch *HandleT) createUsersTable(name string, columns map[string]string) (err error) {
 	sortKeyFields := []string{"id"}
@@ -782,7 +788,7 @@ func getSortKeyTuple(sortKeyFields []string) string {
 	return tuple
 }
 
-// createTable creates table with engine ReplacingMergeTree(), this is used for dedupe event data and replace it will latest data if duplicate data found. This logic is handled by clickhouse
+// CreateTable creates table with engine ReplacingMergeTree(), this is used for dedupe event data and replace it will the latest data if duplicate data found. This logic is handled by clickhouse
 // The engine differs from MergeTree in that it removes duplicate entries with the same sorting key value.
 func (ch *HandleT) CreateTable(tableName string, columns map[string]string) (err error) {
 	sortKeyFields := []string{"received_at", "id"}
@@ -859,7 +865,7 @@ func (*HandleT) AlterColumn(_, _, _ string) (err error) {
 }
 
 // TestConnection is used destination connection tester to test the clickhouse connection
-func (ch *HandleT) TestConnection(warehouse warehouseutils.WarehouseT) (err error) {
+func (ch *HandleT) TestConnection(warehouse warehouseutils.Warehouse) (err error) {
 	ch.Warehouse = warehouse
 	ch.Db, err = Connect(ch.getConnectionCredentials(), true)
 	if err != nil {
@@ -881,7 +887,7 @@ func (ch *HandleT) TestConnection(warehouse warehouseutils.WarehouseT) (err erro
 	return nil
 }
 
-func (ch *HandleT) Setup(warehouse warehouseutils.WarehouseT, uploader warehouseutils.UploaderI) (err error) {
+func (ch *HandleT) Setup(warehouse warehouseutils.Warehouse, uploader warehouseutils.UploaderI) (err error) {
 	ch.Warehouse = warehouse
 	ch.Namespace = warehouse.Namespace
 	ch.Uploader = uploader
@@ -892,12 +898,12 @@ func (ch *HandleT) Setup(warehouse warehouseutils.WarehouseT, uploader warehouse
 	return err
 }
 
-func (*HandleT) CrashRecover(_ warehouseutils.WarehouseT) (err error) {
+func (*HandleT) CrashRecover(_ warehouseutils.Warehouse) (err error) {
 	return
 }
 
 // FetchSchema queries clickhouse and returns the schema associated with provided namespace
-func (ch *HandleT) FetchSchema(warehouse warehouseutils.WarehouseT) (schema warehouseutils.SchemaT, err error) {
+func (ch *HandleT) FetchSchema(warehouse warehouseutils.Warehouse) (schema warehouseutils.SchemaT, err error) {
 	ch.Warehouse = warehouse
 	ch.Namespace = warehouse.Namespace
 	dbHandle, err := Connect(ch.getConnectionCredentials(), true)
@@ -971,7 +977,7 @@ func (ch *HandleT) LoadTable(tableName string) error {
 
 func (ch *HandleT) Cleanup() {
 	if ch.Db != nil {
-		ch.Db.Close()
+		_ = ch.Db.Close()
 	}
 }
 
@@ -987,20 +993,20 @@ func (*HandleT) DownloadIdentityRules(*misc.GZipWriter) (err error) {
 	return
 }
 
-func (*HandleT) IsEmpty(_ warehouseutils.WarehouseT) (empty bool, err error) {
+func (*HandleT) IsEmpty(_ warehouseutils.Warehouse) (empty bool, err error) {
 	return
 }
 
-func (ch *HandleT) GetTotalCountInTable(tableName string) (total int64, err error) {
+func (ch *HandleT) GetTotalCountInTable(ctx context.Context, tableName string) (total int64, err error) {
 	sqlStatement := fmt.Sprintf(`SELECT count(*) FROM "%[1]s"."%[2]s"`, ch.Namespace, tableName)
-	err = ch.Db.QueryRow(sqlStatement).Scan(&total)
+	err = ch.Db.QueryRowContext(ctx, sqlStatement).Scan(&total)
 	if err != nil {
 		pkgLogger.Errorf(`CH: Error getting total count in table %s:%s`, ch.Namespace, tableName)
 	}
 	return
 }
 
-func (ch *HandleT) Connect(warehouse warehouseutils.WarehouseT) (client.Client, error) {
+func (ch *HandleT) Connect(warehouse warehouseutils.Warehouse) (client.Client, error) {
 	ch.Warehouse = warehouse
 	ch.Namespace = warehouse.Namespace
 	ch.ObjectStorage = warehouseutils.ObjectStorageType(
@@ -1036,7 +1042,7 @@ func (ch *HandleT) LoadTestTable(_, tableName string, payloadMap map[string]inte
 		ch.Namespace,
 		tableName,
 		strings.Join(columns, ","),
-		generateArgumentString("?", len(columns)),
+		generateArgumentString(len(columns)),
 	)
 	txn, err := ch.Db.Begin()
 	if err != nil {

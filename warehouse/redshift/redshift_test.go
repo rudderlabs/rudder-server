@@ -1,4 +1,4 @@
-//go:build warehouse_integration
+//go:build warehouse_integration && !sources_integration
 
 package redshift_test
 
@@ -52,6 +52,17 @@ func TestRedshiftIntegration(t *testing.T) {
 			return
 		}), fmt.Sprintf("Failed dropping schema %s for Redshift", handle.Schema))
 	})
+
+	require.NoError(t, testhelper.SetConfig([]warehouseutils.KeyValue{
+		{
+			Key:   "Warehouse.redshift.dedupWindow",
+			Value: true,
+		},
+		{
+			Key:   "Warehouse.redshift.dedupWindowInHours",
+			Value: 5,
+		},
+	}))
 
 	warehouseTest := &testhelper.WareHouseTest{
 		Client: &client.Client{

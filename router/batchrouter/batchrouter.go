@@ -1095,8 +1095,9 @@ func (brt *HandleT) postToWarehouse(batchJobs *BatchJobsT, output StorageUploadO
 	if err != nil {
 		brt.logger.Error("Unmarshal of job parameters failed in postToWarehouse function. ", string(batchJobs.Jobs[0].Parameters))
 	}
-	payload := warehouseutils.StagingFileT{
-		Schema: schemaMap,
+	payload := warehouseutils.StagingFile{
+		WorkspaceID: batchJobs.Jobs[0].WorkspaceId,
+		Schema:      schemaMap,
 		BatchDestination: warehouseutils.DestinationT{
 			Source:      batchJobs.BatchDestination.Source,
 			Destination: batchJobs.BatchDestination.Destination,

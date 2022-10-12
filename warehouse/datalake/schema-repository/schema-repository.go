@@ -37,14 +37,14 @@ var (
 )
 
 type SchemaRepository interface {
-	FetchSchema(warehouse warehouseutils.WarehouseT) (warehouseutils.SchemaT, error)
+	FetchSchema(warehouse warehouseutils.Warehouse) (warehouseutils.SchemaT, error)
 	CreateSchema() (err error)
 	CreateTable(tableName string, columnMap map[string]string) (err error)
 	AddColumn(tableName, columnName, columnType string) (err error)
 	AlterColumn(tableName, columnName, columnType string) (err error)
 }
 
-func NewSchemaRepository(wh warehouseutils.WarehouseT, uploader warehouseutils.UploaderI) (SchemaRepository, error) {
+func NewSchemaRepository(wh warehouseutils.Warehouse, uploader warehouseutils.UploaderI) (SchemaRepository, error) {
 	if warehouseutils.GetConfigValueBoolString(UseGlueConfig, wh) == "true" && misc.HasAWSRegionInConfig(wh.Destination.Config) {
 		return NewGlueSchemaRepository(wh)
 	}
