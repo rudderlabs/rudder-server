@@ -549,6 +549,7 @@ func TestJobsDB(t *testing.T) {
 			JobsLimit:        100000,
 			ParameterFilters: []ParameterFilterT{},
 		})
+		require.NoError(t, err, "GetUnprocessed failed")
 		require.EqualValues(t, 19999, len(jobsResult.Jobs))
 	})
 	t.Run("should migrate small datasets that have been migrated at least once (except right most one)", func(t *testing.T) {
