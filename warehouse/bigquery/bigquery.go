@@ -25,8 +25,8 @@ var (
 	customPartitionsEnabled               bool
 	isUsersTableDedupEnabled              bool
 	isDedupEnabled                        bool
-	isClusteringEnabled                   bool
 	enableDeleteByJobs                    bool
+	isClusteringEnabled                   bool
 )
 
 type HandleT struct {
@@ -103,7 +103,6 @@ func getTableSchema(columns map[string]string) []*bigquery.FieldSchema {
 		schema = append(schema, &bigquery.FieldSchema{Name: columnName, Type: dataTypesMap[columnType]})
 	}
 	return schema
-
 }
 
 func (bq *HandleT) DeleteTable(tableName string) (err error) {
@@ -113,19 +112,13 @@ func (bq *HandleT) DeleteTable(tableName string) (err error) {
 }
 
 func (bq *HandleT) CreateTable(tableName string, columnMap map[string]string) (err error) {
-
+	pkgLogger.Infof("BQ: Creating table: %s in bigquery dataset: %s in project: %s", tableName, bq.namespace, bq.projectID)
 	primaryKey := "id"
 	if column, ok := primaryKeyMap[tableName]; ok {
 		primaryKey = column
 	}
 	clusteringColumns := strings.Split(strings.ReplaceAll(primaryKey, " ", ""), ",")
-
-	pkgLogger.Infof("BQ: Creating table: %s in bigquery dataset: %s in project: %s", tableName, bq.Namespace, bq.ProjectID)
-
-	pkgLogger.Infof("BQ: Creating table: %s in bigquery dataset: %s in project: %s", tableName, bq.namespace, bq.projectID)
-
 	sampleSchema := getTableSchema(columnMap)
-
 	metaData := &bigquery.TableMetadata{
 		Schema:           sampleSchema,
 		TimePartitioning: &bigquery.TimePartitioning{},
@@ -136,7 +129,6 @@ func (bq *HandleT) CreateTable(tableName string, columnMap map[string]string) (e
 			Fields: clusteringColumns,
 		}
 	}
-
 	tableRef := bq.db.Dataset(bq.namespace).Table(tableName)
 	err = tableRef.Create(bq.backgroundContext, metaData)
 	if !checkAndIgnoreAlreadyExistError(err) {
@@ -338,7 +330,6 @@ func (bq *HandleT) loadTable(tableName string, _, getLoadFileLocFromTableUploads
 	loadTableByAppend := func() (err error) {
 		stagingLoadTable.partitionDate = time.Now().Format("2006-01-02")
 		outputTable := tableName
-
 		// Tables created by Rudderstack are ingestion-time partitioned table with pseudocolumn named _PARTITIONTIME. BigQuery automatically assigns rows to partitions based
 		// on the time when BigQuery ingests the data. To support custom field partitions, omitting loading into partitioned table like tableName$20191221
 		// TODO: Support custom field partition on users & identifies tables
@@ -414,9 +405,8 @@ func (bq *HandleT) loadTable(tableName string, _, getLoadFileLocFromTableUploads
 
 		tableColMap := bq.uploader.GetTableSchemaInWarehouse(tableName)
 		var tableColNames []string
-
 		for colName := range tableColMap {
-			tableColNames = append(tableColNames, colName)
+			tableColNames = append(tableColNames, fmt.Sprintf("`%s`", colName))
 		}
 
 		var stagingColumnNamesList, columnsWithValuesList []string
@@ -429,15 +419,13 @@ func (bq *HandleT) loadTable(tableName string, _, getLoadFileLocFromTableUploads
 
 		columnNames = fmt.Sprintf("%s %s", columnNames, strings.Join(tableColNames, ","))
 
-		bqTable := func(name string) string { return fmt.Sprintf("`%s`.`%s`", bq.Namespace, name) }
+		bqTable := func(name string) string { return fmt.Sprintf("`%s`.`%s`", bq.namespace, name) }
 
 		var primaryKeyList []string
 		for _, str := range strings.Split(primaryKey, ",") {
 			primaryKeyList = append(primaryKeyList, fmt.Sprintf(`original.%[1]s = staging.%[1]s`, strings.Trim(str, " ")))
 		}
 		primaryJoinClause := strings.Join(primaryKeyList, " AND ")
-		bqTable := func(name string) string { return fmt.Sprintf("`%s`.`%s`", bq.namespace, name) }
-
 
 		sqlStatement := fmt.Sprintf(`BEGIN TRANSACTION;
 			DELETE FROM %[1]s as original
@@ -465,12 +453,12 @@ func (bq *HandleT) loadTable(tableName string, _, getLoadFileLocFromTableUploads
 		q := bq.db.Query(sqlStatement)
 		job, err = q.Run(bq.backgroundContext)
 		if err != nil {
-			pkgLogger.Errorf("BQ: Error initiating update  load job: %v\n", err)
+			pkgLogger.Errorf("BQ: Error initiating merge load job: %v\n", err)
 			return
 		}
 		status, err = job.Wait(bq.backgroundContext)
 		if err != nil {
-			pkgLogger.Errorf("BQ: Error running update  load job: %v\n", err)
+			pkgLogger.Errorf("BQ: Error running merge load job: %v\n", err)
 			return
 		}
 
@@ -506,7 +494,7 @@ func (bq *HandleT) LoadUserTables() (errorMap map[string]error) {
 	pkgLogger.Infof("BQ: Starting load for %s table", warehouseutils.UsersTable)
 
 	firstValueSQL := func(column string) string {
-		return fmt.Sprintf(`FIRST_VALUE(%[1]s IGNORE NULLS) OVER (PARTITION BY id ORDER BY received_at DESC ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) AS %[1]s`, column)
+		return fmt.Sprintf("FIRST_VALUE(`%[1]s` IGNORE NULLS) OVER (PARTITION BY id ORDER BY received_at DESC ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) AS `%[1]s`", column)
 	}
 
 	loadedAtFilter := func() string {
@@ -533,7 +521,7 @@ func (bq *HandleT) LoadUserTables() (errorMap map[string]error) {
 		if colName == "id" {
 			continue
 		}
-		userColNames = append(userColNames, colName)
+		userColNames = append(userColNames, fmt.Sprintf("`%s`", colName))
 		firstValProps = append(firstValProps, firstValueSQL(colName))
 	}
 
@@ -623,8 +611,8 @@ func (bq *HandleT) LoadUserTables() (errorMap map[string]error) {
 		defer bq.dropStagingTable(identifyLoadTable.stagingTableName)
 		defer bq.dropStagingTable(stagingTableName)
 
-		primaryKey := `ID`
-		columnNames := append([]string{`ID`}, userColNames...)
+		primaryKey := "ID"
+		columnNames := append([]string{"ID"}, userColNames...)
 
 		var columnsWithValues, stagingColumnValues string
 		for idx, colName := range columnNames {
@@ -725,8 +713,8 @@ func loadConfig() {
 	config.RegisterBoolConfigVariable(false, &customPartitionsEnabled, true, "Warehouse.bigquery.customPartitionsEnabled")
 	config.RegisterBoolConfigVariable(false, &isUsersTableDedupEnabled, true, "Warehouse.bigquery.isUsersTableDedupEnabled") // TODO: Depricate with respect to isDedupEnabled
 	config.RegisterBoolConfigVariable(false, &isDedupEnabled, true, "Warehouse.bigquery.isDedupEnabled")
-	config.RegisterBoolConfigVariable(false, &isClusteringEnabled, false, "Warehouse.bigquery.isClusteringEnabled")
 	config.RegisterBoolConfigVariable(false, &enableDeleteByJobs, true, "Warehouse.bigquery.enableDeleteByJobs")
+	config.RegisterBoolConfigVariable(false, &isClusteringEnabled, false, "Warehouse.bigquery.isClusteringEnabled")
 }
 
 func Init() {
