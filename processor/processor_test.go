@@ -103,7 +103,6 @@ const (
 	WriteKeyEnabledNoUT   = "enabled-write-key-no-ut"
 	WriteKeyEnabledNoUT2  = "enabled-write-key-no-ut2"
 	WriteKeyEnabledOnlyUT = "enabled-write-key-only-ut"
-	WorkspaceID           = "some-workspace-id"
 	SourceIDEnabled       = "enabled-source"
 	SourceIDEnabledNoUT   = "enabled-source-no-ut"
 	SourceIDEnabledOnlyUT = "enabled-source-only-ut"
@@ -132,10 +131,6 @@ func setDisableDedupFeature(b bool) bool {
 	prev := enableDedup
 	enableDedup = b
 	return prev
-}
-
-func setMainLoopTimeout(timeout time.Duration) {
-	mainLoopTimeout = timeout
 }
 
 var sampleWorkspaceID = "some-workspace-id"
@@ -1214,12 +1209,10 @@ var _ = Describe("Processor", func() {
 			SetFeaturesRetryAttempts(0)
 			processor.Setup(c.mockBackendConfig, c.mockGatewayJobsDB, c.mockRouterJobsDB, c.mockBatchRouterJobsDB, c.mockProcErrorsDB, &clearDB, nil, c.MockMultitenantHandle, transientsource.NewEmptyService(), c.MockRsourcesService)
 
-			setMainLoopTimeout(1 * time.Second)
-
 			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 			defer cancel()
 
-			go processor.mainLoop(ctx)
+			go processor.mainPipeline(ctx)
 			Eventually(func() bool { return isUnLocked }, 30*time.Second, 10*time.Millisecond).Should(BeFalse())
 		})
 	})
@@ -2037,7 +2030,7 @@ func Setup(processor *HandleT, c *testContext, enableDedup, enableReporting bool
 }
 
 func handlePendingGatewayJobs(processor *HandleT) {
-	didWork := processor.handlePendingGatewayJobs()
+	didWork := processor.Start()
 	Expect(didWork).To(Equal(true))
 }
 

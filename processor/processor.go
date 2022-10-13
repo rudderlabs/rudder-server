@@ -136,10 +136,7 @@ var defaultTransformerFeatures = `{
 	}
   }`
 
-var (
-	mainLoopTimeout          = 200 * time.Millisecond
-	featuresRetryMaxAttempts = 10
-)
+var featuresRetryMaxAttempts = 10
 
 type DestStatT struct {
 	numEvents              stats.Measurement
@@ -433,11 +430,7 @@ func (proc *HandleT) Start(ctx context.Context) error {
 
 	g.Go(misc.WithBugsnag(func() error {
 		proc.backendConfig.WaitForConfig(ctx)
-		if enablePipelining {
-			proc.mainPipeline(ctx)
-		} else {
-			proc.mainLoop(ctx)
-		}
+		proc.mainPipeline(ctx)
 		return nil
 	}))
 
@@ -457,14 +450,11 @@ func (proc *HandleT) Shutdown() {
 }
 
 var (
-	enablePipelining          bool
 	pipelineBufferedItems     int
 	subJobSize                int
 	readLoopSleep             time.Duration
 	maxLoopSleep              time.Duration
 	storeTimeout              time.Duration
-	loopSleep                 time.Duration // DEPRECATED: used only on the old mainLoop
-	fixedLoopSleep            time.Duration // DEPRECATED: used only on the old mainLoop
 	maxEventsToProcess        int
 	transformBatchSize        int
 	userTransformBatchSize    int
@@ -489,17 +479,12 @@ var (
 )
 
 func loadConfig() {
-	config.RegisterBoolConfigVariable(true, &enablePipelining, false, "Processor.enablePipelining")
 	config.RegisterIntConfigVariable(0, &pipelineBufferedItems, false, 1, "Processor.pipelineBufferedItems")
 	config.RegisterIntConfigVariable(2000, &subJobSize, false, 1, "Processor.subJobSize")
 	config.RegisterDurationConfigVariable(5000, &maxLoopSleep, true, time.Millisecond, []string{"Processor.maxLoopSleep", "Processor.maxLoopSleepInMS"}...)
 	config.RegisterDurationConfigVariable(5, &storeTimeout, true, time.Minute, "Processor.storeTimeout")
 
 	config.RegisterDurationConfigVariable(200, &readLoopSleep, true, time.Millisecond, "Processor.readLoopSleep")
-	// DEPRECATED: used only on the old mainLoop:
-	config.RegisterDurationConfigVariable(10, &loopSleep, true, time.Millisecond, []string{"Processor.loopSleep", "Processor.loopSleepInMS"}...)
-	// DEPRECATED: used only on the old mainLoop:
-	config.RegisterDurationConfigVariable(0, &fixedLoopSleep, true, time.Millisecond, []string{"Processor.fixedLoopSleep", "Processor.fixedLoopSleepInMS"}...)
 	config.RegisterIntConfigVariable(100, &transformBatchSize, true, 1, "Processor.transformBatchSize")
 	config.RegisterIntConfigVariable(200, &userTransformBatchSize, true, 1, "Processor.userTransformBatchSize")
 	// Enable dedup of incoming events by default
@@ -592,13 +577,13 @@ func SetFeaturesRetryAttempts(overrideAttempts int) {
 func (proc *HandleT) backendConfigSubscriber() {
 	ch := proc.backendConfig.Subscribe(context.TODO(), backendconfig.TopicProcessConfig)
 	for data := range ch {
-		config := data.Data.(map[string]backendconfig.ConfigT)
+		configData := data.Data.(map[string]backendconfig.ConfigT)
 		configSubscriberLock.Lock()
-		workspaceLibrariesMap = make(map[string]backendconfig.LibrariesT, len(config))
+		workspaceLibrariesMap = make(map[string]backendconfig.LibrariesT, len(configData))
 		writeKeyDestinationMap = make(map[string][]backendconfig.DestinationT)
 		writeKeySourceMap = map[string]backendconfig.SourceT{}
 		destinationIDtoTypeMap = make(map[string]string)
-		for workspaceID, wConfig := range config {
+		for workspaceID, wConfig := range configData {
 			for i := range wConfig.Sources {
 				source := &wConfig.Sources[i]
 				writeKeySourceMap[source.WriteKey] = *source
@@ -1394,7 +1379,7 @@ func (proc *HandleT) processJobsForDest(subJobs subJob, parsedEventList [][]type
 
 					//TODO: Test for multiple workspaces ex: hosted data plane
 					/* Stream destinations does not need config in transformer. As the Kafka destination config
-					holds the ca-certificate and it depends on user input, it may happen that they provide entire
+					holds the ca-certificate, and it depends on user input, it may happen that they provide entire
 					certificate chain. So, that will make the payload huge while sending a batch of events to transformer,
 					it may result into payload larger than accepted by transformer. So, discarding destination config from being
 					sent to transformer for such destination. */
@@ -2297,82 +2282,6 @@ func (proc *HandleT) markExecuting(jobs []*jobsdb.JobT) error {
 	}
 
 	return nil
-}
-
-// handlePendingGatewayJobs is checking for any pending gateway jobs (failed and unprocessed), and routes them appropriately
-// Returns true if any job is handled, otherwise returns false.
-func (proc *HandleT) handlePendingGatewayJobs() bool {
-	s := time.Now()
-
-	unprocessedList := proc.getJobs()
-
-	if len(unprocessedList.Jobs) == 0 {
-		return false
-	}
-
-	rsourcesStats := rsources.NewStatsCollector(proc.rsourcesService)
-	rsourcesStats.BeginProcessing(unprocessedList.Jobs)
-
-	proc.Store(
-		proc.transformations(
-			proc.processJobsForDest(subJob{
-				subJobs:       unprocessedList.Jobs,
-				hasMore:       false,
-				rsourcesStats: rsourcesStats,
-			}, nil),
-		),
-	)
-	proc.stats.statLoopTime.Since(s)
-
-	return true
-}
-
-// mainLoop: legacy way of handling jobs
-func (proc *HandleT) mainLoop(ctx context.Context) {
-	// waiting for reporting client setup
-	if proc.reporting != nil && proc.reportingEnabled {
-		if err := proc.reporting.WaitForSetup(ctx, types.CORE_REPORTING_CLIENT); err != nil {
-			return
-		}
-	}
-
-	proc.logger.Info("Processor loop started")
-	var currLoopSleep time.Duration
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-time.After(mainLoopTimeout):
-			if isUnLocked {
-				found := proc.handlePendingGatewayJobs()
-				if found {
-					currLoopSleep = 0
-				} else {
-					currLoopSleep = 2*currLoopSleep + loopSleep
-					if currLoopSleep > maxLoopSleep {
-						currLoopSleep = maxLoopSleep
-					}
-					if sleepTrueOnDone(ctx, currLoopSleep) {
-						return
-					}
-				}
-				if sleepTrueOnDone(ctx, fixedLoopSleep) { // adding sleep here to reduce cpu load on postgres when we have less rps
-					return
-				}
-			} else if sleepTrueOnDone(ctx, fixedLoopSleep) {
-				return
-			}
-		}
-	}
-}
-
-func sleepTrueOnDone(ctx context.Context, duration time.Duration) bool {
-	select {
-	case <-ctx.Done():
-		return true
-	case <-time.After(duration):
-		return false
-	}
 }
 
 // `jobSplitter` func Splits the read Jobs into sub-batches after reading from DB to process.

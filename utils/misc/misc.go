@@ -1,7 +1,6 @@
 package misc
 
 import (
-	"archive/zip"
 	"bufio"
 	"bytes"
 	"compress/gzip"
@@ -21,7 +20,6 @@ import (
 	"regexp"
 	"runtime"
 	"runtime/debug"
-	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -36,12 +34,10 @@ import (
 	"github.com/cenkalti/backoff"
 	"github.com/gofrs/uuid"
 	gluuid "github.com/google/uuid"
-	"github.com/hashicorp/go-retryablehttp"
 	"github.com/mkmik/multierror"
 	"github.com/tidwall/sjson"
 
 	"github.com/rudderlabs/rudder-server/config"
-	"github.com/rudderlabs/rudder-server/services/metric"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 
 	"github.com/thoas/go-funk"
@@ -91,17 +87,6 @@ type RudderError struct {
 	StackTrace        string
 	Code              int
 }
-
-type pair struct {
-	key   string
-	value float64
-}
-
-type pairList []pair
-
-func (p pairList) Len() int           { return len(p) }
-func (p pairList) Swap(i, j int)      { p[i], p[j] = p[j], p[i] }
-func (p pairList) Less(i, j int) bool { return p[i].value < p[j].value }
 
 type RFP struct {
 	path         string
@@ -206,7 +191,7 @@ func RecordAppError(err error) {
 
 func GetHash(s string) int {
 	h := fnv.New32a()
-	h.Write([]byte(s))
+	_, _ = h.Write([]byte(s))
 	return int(h.Sum32())
 }
 
@@ -235,77 +220,6 @@ func ParseRudderEventBatch(eventPayload json.RawMessage) ([]types.SingularEventT
 	}
 
 	return gatewayBatchEvent.Batch, true
-}
-
-// GetRudderID return the UserID from the object
-func GetRudderID(event types.SingularEventT) (string, bool) {
-	userID, ok := GetRudderEventVal("rudderId", event)
-	if !ok {
-		// TODO: Remove this in next build.
-		// This is for backwards compatibility, esp for those with sessions.
-		userID, ok = GetRudderEventVal("anonymousId", event)
-		if !ok {
-			return "", false
-		}
-	}
-	userIDStr, ok := userID.(string)
-	return userIDStr, ok
-}
-
-// ZipFiles compresses files[] into zip at filename
-func ZipFiles(filename string, files []string) error {
-	newZipFile, err := os.Create(filename)
-	if err != nil {
-		return err
-	}
-	defer newZipFile.Close()
-
-	zipWriter := zip.NewWriter(newZipFile)
-	defer zipWriter.Close()
-
-	// Add files to zip
-	for _, file := range files {
-		if err = AddFileToZip(zipWriter, file); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-// AddFileToZip adds file to zip including size header stats
-func AddFileToZip(zipWriter *zip.Writer, filename string) error {
-	fileToZip, err := os.Open(filename)
-	if err != nil {
-		return err
-	}
-	defer fileToZip.Close()
-
-	// Get the file information
-	info, err := fileToZip.Stat()
-	if err != nil {
-		return err
-	}
-
-	header, err := zip.FileInfoHeader(info)
-	if err != nil {
-		return err
-	}
-
-	// Using FileInfoHeader() above only uses the basename of the file. If we want
-	// to preserve the folder structure we can overwrite this with the full path.
-	// uncomment this line to preserve folder structure
-	// header.Name = filename
-
-	// Change to deflate to gain better compression
-	// see http://golang.org/pkg/archive/zip/#pkg-constants
-	header.Method = zip.Deflate
-
-	writer, err := zipWriter.CreateHeader(header)
-	if err != nil {
-		return err
-	}
-	_, err = io.Copy(writer, fileToZip)
-	return err
 }
 
 // RemoveFilePaths removes filePaths as well as cleans up the empty folder structure.
@@ -378,23 +292,6 @@ func RemoveEmptyFolderStructureForFilePath(fp string) {
 		}
 		currDir = parentDir
 	}
-}
-
-// ReadLines reads a whole file into memory
-// and returns a slice of its lines.
-func ReadLines(path string) ([]string, error) {
-	file, err := os.Open(path)
-	if err != nil {
-		return nil, err
-	}
-	defer file.Close()
-
-	var lines []string
-	scanner := bufio.NewScanner(file)
-	for scanner.Scan() {
-		lines = append(lines, scanner.Text())
-	}
-	return lines, scanner.Err()
 }
 
 var logOnce sync.Once
@@ -545,14 +442,6 @@ func StringKeys(input interface{}) []string {
 	return stringKeys
 }
 
-func MapStringKeys(input map[string]interface{}) []string {
-	keys := make([]string, 0, len(input))
-	for k := range input {
-		keys = append(keys, k)
-	}
-	return keys
-}
-
 func TruncateStr(str string, limit int) string {
 	if len(str) > limit {
 		str = str[:limit]
@@ -621,14 +510,10 @@ func MakeHTTPRequestWithTimeout(url string, payload io.Reader, timeout time.Dura
 	var respBody []byte
 	if resp != nil && resp.Body != nil {
 		respBody, _ = io.ReadAll(resp.Body)
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 	}
 
 	return respBody, resp.StatusCode, nil
-}
-
-func HTTPCallWithRetry(url string, payload []byte) ([]byte, int) {
-	return HTTPCallWithRetryWithTimeout(url, payload, time.Second*150)
 }
 
 func ConvertInterfaceToStringArray(input []interface{}) []string {
@@ -837,25 +722,6 @@ func GetMacAddress() string {
 	return macAddress.String()
 }
 
-func KeepProcessAlive() {
-	var ch chan int
-	<-ch
-}
-
-// GetOutboundIP returns preferred outbound ip of this machine
-// https://stackoverflow.com/a/37382208
-func GetOutboundIP() (net.IP, error) {
-	conn, err := net.Dial("udp", "8.8.8.8:80")
-	if err != nil {
-		return nil, err
-	}
-	defer conn.Close()
-
-	localAddr := conn.LocalAddr().(*net.UDPAddr)
-
-	return localAddr.IP, nil
-}
-
 /*
 RunWithTimeout runs provided function f until provided timeout d.
 If the timeout is reached, onTimeout callback will be called.
@@ -1031,29 +897,6 @@ func GetSpacesLocation(location string) (region string) {
 	return region
 }
 
-// GetNodeID returns the nodeId of the current node
-func GetNodeID() string {
-	nodeID := config.MustGetString("INSTANCE_ID")
-	return nodeID
-}
-
-// MakeRetryablePostRequest is Util function to make a post request.
-func MakeRetryablePostRequest(url, endpoint string, data interface{}) (response []byte, statusCode int, err error) {
-	backendURL := fmt.Sprintf("%s%s", url, endpoint)
-	dataJSON, err := json.Marshal(data)
-
-	resp, err := retryablehttp.Post(backendURL, "application/json", dataJSON)
-	if err != nil {
-		return nil, -1, err
-	}
-
-	body, err := io.ReadAll(resp.Body)
-	defer resp.Body.Close()
-
-	pkgLogger.Debugf("Post request: Successful %s", string(body))
-	return body, resp.StatusCode, nil
-}
-
 // GetMD5UUID hashes the given string into md5 and returns it as auuid
 func GetMD5UUID(str string) (uuid.UUID, error) {
 	md5Sum := md5.Sum([]byte(str))
@@ -1200,7 +1043,7 @@ func GetDatabricksVersion() (version string) {
 		version = "No response from warehouse."
 		return
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode == http.StatusOK {
 		bodyBytes, err := io.ReadAll(resp.Body)
 		if err != nil {
@@ -1319,25 +1162,6 @@ func GetJsonSchemaDTFromGoDT(goType string) string {
 	return "object"
 }
 
-func SortMap(inputMap map[string]metric.MovingAverage) []string {
-	pairArr := make(pairList, len(inputMap))
-
-	i := 0
-	for k, v := range inputMap {
-		pairArr[i] = pair{k, v.Value()}
-		i++
-	}
-
-	sort.Sort(pairArr)
-	var sortedWorkspaceList []string
-	// p is sorted
-	for _, k := range pairArr {
-		// Workspace ID - RS Check
-		sortedWorkspaceList = append(sortedWorkspaceList, k.key)
-	}
-	return sortedWorkspaceList
-}
-
 // SleepCtx sleeps for the given duration or until the context is canceled.
 //
 //	the context error is returned if context is canceled.
@@ -1352,7 +1176,7 @@ func SleepCtx(ctx context.Context, delay time.Duration) error {
 
 func Unique(stringSlice []string) []string {
 	keys := make(map[string]struct{})
-	list := []string{}
+	var list []string
 	for _, entry := range stringSlice {
 		if _, ok := keys[entry]; !ok {
 			keys[entry] = struct{}{}
