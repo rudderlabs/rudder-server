@@ -1,4 +1,4 @@
-package throttling
+package memory
 
 import (
 	"sync"
@@ -18,7 +18,7 @@ func TestGCRA(t *testing.T) {
 	}
 	ticker := time.NewTicker(time.Second)
 	for {
-		allowed, _, _, _, err := g.gcraLimit("test", 1, 1, 1, 5)
+		allowed, _, _, _, err := g.limit("test", 1, 1, 1, 5)
 		require.NoError(t, err)
 		t.Log(allowed)
 		<-ticker.C
