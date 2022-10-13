@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"strconv"
 
 	"github.com/rudderlabs/rudder-server/admin"
 	"github.com/rudderlabs/rudder-server/jobsdb"
@@ -53,16 +54,14 @@ func (ra *Admin) Status() interface{} {
 		if len(routerFailedList) > 0 {
 			routerStatus["recent-failedstatuses"] = routerFailedList
 		}
-		abortedUsersMap := make(map[string]int, 0)
-		for _, worker := range router.workers {
-			worker.abortedUserMutex.RLock()
-			for k, v := range worker.abortedUserIDMap {
-				abortedUsersMap[k] = v
+		barriersMap := make(map[string]string, 0)
+		for i, worker := range router.workers {
+			if worker.barrier.Size() > 0 {
+				barriersMap[strconv.Itoa(i)] = worker.barrier.String()
 			}
-			worker.abortedUserMutex.RUnlock()
 		}
-		if len(abortedUsersMap) > 0 {
-			routerStatus["aborted-usersmap"] = abortedUsersMap
+		if len(barriersMap) > 0 {
+			routerStatus["worker-barriers"] = barriersMap
 		}
 
 		statusList = append(statusList, routerStatus)
@@ -128,7 +127,7 @@ func (r *RouterRpcHandler) GetDSStats(dsName string, result *string) (err error)
 		make([]JobCountsByStateAndDestination, 0), make([]ErrorCodeCountsByDestination, 0), make([]JobCountByConnections, 0),
 		make([]LatestJobStatusCounts, 0), 0,
 	}
-	dbHandle, err := sql.Open("postgres", jobsdb.GetConnectionString())
+	dbHandle, err := sql.Open("postgres", misc.GetConnectionString())
 	if err != nil {
 		return err
 	}

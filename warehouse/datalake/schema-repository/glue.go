@@ -4,21 +4,14 @@ import (
 	"fmt"
 
 	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/aws/credentials"
-	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/glue"
-	"github.com/rudderlabs/rudder-server/utils/misc"
+	"github.com/rudderlabs/rudder-server/utils/awsutils"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
 var (
 	// config
-	AWSAccessKey        = "accessKey"
-	AWSAccessKeyID      = "accessKeyID"
-	AWSBucketNameConfig = "bucketName"
-	AWSS3Prefix         = "prefix"
-	AWSRegion           = "region"
-	UseGlueConfig       = "useGlue"
+	UseGlueConfig = "useGlue"
 
 	// glue
 	glueSerdeName             = "ParquetHiveSerDe"
@@ -31,14 +24,14 @@ type GlueSchemaRepository struct {
 	glueClient *glue.Glue
 	s3bucket   string
 	s3prefix   string
-	Warehouse  warehouseutils.WarehouseT
+	Warehouse  warehouseutils.Warehouse
 	Namespace  string
 }
 
-func NewGlueSchemaRepository(wh warehouseutils.WarehouseT) (*GlueSchemaRepository, error) {
+func NewGlueSchemaRepository(wh warehouseutils.Warehouse) (*GlueSchemaRepository, error) {
 	gl := GlueSchemaRepository{
-		s3bucket:  warehouseutils.GetConfigValue(AWSBucketNameConfig, wh),
-		s3prefix:  warehouseutils.GetConfigValue(AWSS3Prefix, wh),
+		s3bucket:  warehouseutils.GetConfigValue(warehouseutils.AWSBucketNameConfig, wh),
+		s3prefix:  warehouseutils.GetConfigValue(warehouseutils.AWSS3Prefix, wh),
 		Warehouse: wh,
 		Namespace: wh.Namespace,
 	}
@@ -52,7 +45,7 @@ func NewGlueSchemaRepository(wh warehouseutils.WarehouseT) (*GlueSchemaRepositor
 	return &gl, nil
 }
 
-func (gl *GlueSchemaRepository) FetchSchema(warehouse warehouseutils.WarehouseT) (warehouseutils.SchemaT, error) {
+func (gl *GlueSchemaRepository) FetchSchema(warehouse warehouseutils.Warehouse) (warehouseutils.SchemaT, error) {
 	schema := warehouseutils.SchemaT{}
 	var err error
 
@@ -107,11 +100,9 @@ func (gl *GlueSchemaRepository) CreateSchema() (err error) {
 			Name: &gl.Namespace,
 		},
 	})
-	if err != nil {
-		if _, ok := err.(*glue.AlreadyExistsException); ok {
-			pkgLogger.Infof("Skipping database creation : database %s already exists", gl.Namespace)
-			err = nil
-		}
+	if _, ok := err.(*glue.AlreadyExistsException); ok {
+		pkgLogger.Infof("Skipping database creation : database %s already exists", gl.Namespace)
+		err = nil
 	}
 	return
 }
@@ -173,33 +164,16 @@ func (gl *GlueSchemaRepository) AlterColumn(tableName, columnName, columnType st
 	return gl.AddColumn(tableName, columnName, columnType)
 }
 
-func getGlueClient(wh warehouseutils.WarehouseT) (*glue.Glue, error) {
-	var accessKey, accessKeyID string
-
-	// create session using default credentials - for vpc and open source deployments
-	sess, err := session.NewSession()
+func getGlueClient(wh warehouseutils.Warehouse) (*glue.Glue, error) {
+	sessionConfig, err := awsutils.NewSimpleSessionConfigForDestination(&wh.Destination, glue.ServiceID)
 	if err != nil {
 		return nil, err
 	}
-
-	// create config for glue
-	config := aws.NewConfig()
-
-	// read credentials from config if they exist
-	if misc.HasAWSKeysInConfig(wh.Destination.Config) {
-		accessKey = warehouseutils.GetConfigValue(AWSAccessKey, wh)
-		accessKeyID = warehouseutils.GetConfigValue(AWSAccessKeyID, wh)
-		config = config.WithCredentials(credentials.NewStaticCredentials(accessKeyID, accessKey, ""))
+	awsSession, err := awsutils.CreateSession(sessionConfig)
+	if err != nil {
+		return nil, err
 	}
-
-	// read region from config
-	if misc.HasAWSRegionInConfig(wh.Destination.Config) {
-		region := warehouseutils.GetConfigValue(AWSRegion, wh)
-		config = config.WithRegion(region)
-	}
-
-	svc := glue.New(sess, config)
-	return svc, nil
+	return glue.New(awsSession), nil
 }
 
 func (gl *GlueSchemaRepository) getStorageDescriptor(tableName string, columnMap map[string]string) *glue.StorageDescriptor {

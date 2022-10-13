@@ -20,7 +20,7 @@ import (
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
-var pkgLogger logger.LoggerI
+var pkgLogger logger.Logger
 
 func init() {
 	pkgLogger = logger.NewLogger().Child("warehouse").Child("identity")
@@ -31,7 +31,7 @@ type WarehouseManager interface {
 }
 
 type HandleT struct {
-	Warehouse        warehouseutils.WarehouseT
+	Warehouse        warehouseutils.Warehouse
 	DbHandle         *sql.DB
 	Uploader         warehouseutils.UploaderI
 	UploadID         int64
@@ -220,10 +220,9 @@ func (idr *HandleT) addRules(txn *sql.Tx, loadFileNames []string, gzWriter *misc
 			if err != nil {
 				if err == io.EOF {
 					break
-				} else {
-					pkgLogger.Errorf("IDR: Error while reading merge rule file %s for loading in staging table locally:%s: %v", loadFileName, mergeRulesStagingTable, err)
-					return
 				}
+				pkgLogger.Errorf("IDR: Error while reading merge rule file %s for loading in staging table locally:%s: %v", loadFileName, mergeRulesStagingTable, err)
+				return
 			}
 			var recordInterface [5]interface{}
 			for idx, value := range record {
@@ -326,7 +325,12 @@ func (idr *HandleT) writeTableToFile(tableName string, txn *sql.Tx, gzWriter *mi
 			var rowData []string
 			eventLoader := warehouseutils.GetNewEventLoader(idr.Warehouse.Type, idr.Uploader.GetLoadFileType(), gzWriter)
 			var prop1Val, prop2Val, prop1Type, prop2Type sql.NullString
-			err = rows.Scan(&prop1Type, &prop1Val, &prop2Type, &prop2Val)
+			err = rows.Scan(
+				&prop1Type,
+				&prop1Val,
+				&prop2Type,
+				&prop2Val,
+			)
 			if err != nil {
 				return
 			}
@@ -380,6 +384,7 @@ func (idr *HandleT) downloadLoadFiles(tableName string) ([]string, error) {
 				Provider:         storageProvider,
 				Config:           idr.Warehouse.Destination.Config,
 				UseRudderStorage: idr.Uploader.UseRudderStorage(),
+				WorkspaceID:      idr.Warehouse.Destination.WorkspaceID,
 			}),
 		})
 		if err != nil {
@@ -419,7 +424,7 @@ func (idr *HandleT) uploadFile(filePath string, txn *sql.Tx, tableName string, t
 		pkgLogger.Errorf("IDR: Error in creating a file manager for :%s: , %v", idr.Warehouse.Destination.DestinationDefinition.Name, err)
 		return err
 	}
-	output, err := uploader.Upload(context.TODO(), outputFile, config.GetEnv("WAREHOUSE_BUCKET_LOAD_OBJECTS_FOLDER_NAME", "rudder-warehouse-load-objects"), tableName, idr.Warehouse.Source.ID, tableName)
+	output, err := uploader.Upload(context.TODO(), outputFile, config.GetString("WAREHOUSE_BUCKET_LOAD_OBJECTS_FOLDER_NAME", "rudder-warehouse-load-objects"), tableName, idr.Warehouse.Source.ID, tableName)
 	if err != nil {
 		return
 	}
@@ -505,7 +510,7 @@ func (idr *HandleT) processMergeRules(fileNames []string) (err error) {
 
 	err = txn.Commit()
 	if err != nil {
-		pkgLogger.Errorf(`IDR: Error commiting transaction: %v`, err)
+		pkgLogger.Errorf(`IDR: Error committing transaction: %v`, err)
 		return
 	}
 	return

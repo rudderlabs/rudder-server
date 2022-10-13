@@ -10,7 +10,7 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/logger"
 )
 
-func NewHandler(service rsources.JobService, logger logger.LoggerI) http.Handler {
+func NewHandler(service rsources.JobService, logger logger.Logger) http.Handler {
 	h := &handler{
 		service: service,
 		logger:  logger,
@@ -23,20 +23,19 @@ func NewHandler(service rsources.JobService, logger logger.LoggerI) http.Handler
 }
 
 type handler struct {
-	logger  logger.LoggerI
+	logger  logger.Logger
 	service rsources.JobService
 }
 
 func (h *handler) delete(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	var jobRunId string
-	var ok bool
-	jobRunId, ok = mux.Vars(r)["job_run_id"]
-	if !ok {
+	jobRunId, taskRunId, sourceId := getQueryParams(r)
+	if jobRunId == "" {
 		http.Error(w, "job_run_id not found", http.StatusBadRequest)
+		return
 	}
 
-	err := h.service.Delete(ctx, jobRunId)
+	err := h.service.Delete(ctx, jobRunId, rsources.JobFilter{TaskRunID: taskRunId, SourceID: sourceId})
 	if err != nil {
 		http.Error(w, "internal server error", http.StatusInternalServerError)
 	}

@@ -127,6 +127,7 @@ func TestFlow(t *testing.T) {
 		if err != nil {
 			return err
 		}
+		defer resp.Body.Close()
 		if resp.StatusCode != http.StatusOK {
 			return fmt.Errorf("status code not OK")
 		}
@@ -291,7 +292,7 @@ func verifyBatchDelete(t *testing.T) {
 	t.Helper()
 	var goldenFileList []string
 	err := filepath.Walk(goldenDir, func(path string, f os.FileInfo, err error) error {
-		if regexRequiredSuffix.Match([]byte(path)) {
+		if regexRequiredSuffix.MatchString(path) {
 			goldenFileList = append(goldenFileList, path)
 		}
 		return nil
@@ -391,7 +392,7 @@ func insertRedisData(t *testing.T, address string) {
 func insertMinioData(t *testing.T) {
 	t.Helper()
 
-	// getting list of files in `testData` directory while will be used to testing filemanager.
+	// getting list of files in `testData` directory which will be used to test filemanager.
 	err := filepath.Walk(searchDir, func(path string, f os.FileInfo, err error) error {
 		if regexRequiredSuffix.MatchString(path) {
 			fileList = append(fileList, path)

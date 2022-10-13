@@ -2,12 +2,13 @@ package asyncdestinationmanager
 
 import (
 	"bufio"
-	"encoding/json"
+	stdjson "encoding/json"
 	"os"
 	"strings"
 	"sync"
 	"time"
 
+	jsoniter "github.com/json-iterator/go"
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/services/rsources"
@@ -20,7 +21,7 @@ import (
 type AsyncUploadOutput struct {
 	Key                 string
 	ImportingJobIDs     []int64
-	ImportingParameters json.RawMessage
+	ImportingParameters stdjson.RawMessage
 	SuccessJobIDs       []int64
 	FailedJobIDs        []int64
 	SucceededJobIDs     []int64
@@ -83,9 +84,11 @@ type Parameters struct {
 	MetaData MetaDataT `json:"metadata"`
 }
 
+var json = jsoniter.ConfigCompatibleWithStandardLibrary
+
 var (
 	HTTPTimeout time.Duration
-	pkgLogger   logger.LoggerI
+	pkgLogger   logger.Logger
 )
 
 func loadConfig() {
@@ -147,12 +150,12 @@ func Upload(url, filePath string, config map[string]interface{}, destType string
 		panic("BRT: JSON Marshal Failed " + err.Error())
 	}
 
-	uploadTimeStat := stats.NewTaggedStat("async_upload_time", stats.TimerType, map[string]string{
+	uploadTimeStat := stats.Default.NewTaggedStat("async_upload_time", stats.TimerType, map[string]string{
 		"module":   "batch_router",
 		"destType": destType,
 	})
 
-	payloadSizeStat := stats.NewTaggedStat("payload_size", stats.TimerType, map[string]string{
+	payloadSizeStat := stats.Default.NewTaggedStat("payload_size", stats.TimerType, map[string]string{
 		"module":   "batch_router",
 		"destType": destType,
 	})
@@ -207,7 +210,7 @@ func Upload(url, filePath string, config map[string]interface{}, destType string
 			ImportingJobIDs:     successfulJobIDs,
 			FailedJobIDs:        append(failedJobIDs, failedJobIDsTrans...),
 			FailedReason:        `{"error":"Jobs flowed over the prescribed limit"}`,
-			ImportingParameters: json.RawMessage(importParameters),
+			ImportingParameters: stdjson.RawMessage(importParameters),
 			importingCount:      len(importingJobIDs),
 			FailedCount:         len(failedJobIDs) + len(failedJobIDsTrans),
 			DestinationID:       destinationID,
@@ -218,7 +221,7 @@ func Upload(url, filePath string, config map[string]interface{}, destType string
 		if err != nil {
 			panic("Incorrect Response from Transformer: " + err.Error())
 		}
-		eventsAbortedStat := stats.NewTaggedStat("events_delivery_aborted", stats.CountType, map[string]string{
+		eventsAbortedStat := stats.Default.NewTaggedStat("events_delivery_aborted", stats.CountType, map[string]string{
 			"module":   "batch_router",
 			"destType": destType,
 		})
@@ -244,7 +247,7 @@ func Upload(url, filePath string, config map[string]interface{}, destType string
 	return uploadResponse
 }
 
-func GetTransformedData(payload json.RawMessage) string {
+func GetTransformedData(payload stdjson.RawMessage) string {
 	return gjson.Get(string(payload), "body.JSON").String()
 }
 

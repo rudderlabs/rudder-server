@@ -1,6 +1,7 @@
 package datalake
 
 import (
+	"context"
 	"fmt"
 	"time"
 
@@ -13,7 +14,7 @@ import (
 
 // TODO: Handle error using error types.
 var (
-	pkgLogger logger.LoggerI
+	pkgLogger logger.Logger
 )
 
 func Init() {
@@ -22,11 +23,11 @@ func Init() {
 
 type HandleT struct {
 	SchemaRepository schemarepository.SchemaRepository
-	Warehouse        warehouseutils.WarehouseT
+	Warehouse        warehouseutils.Warehouse
 	Uploader         warehouseutils.UploaderI
 }
 
-func (wh *HandleT) Setup(warehouse warehouseutils.WarehouseT, uploader warehouseutils.UploaderI) (err error) {
+func (wh *HandleT) Setup(warehouse warehouseutils.Warehouse, uploader warehouseutils.UploaderI) (err error) {
 	wh.Warehouse = warehouse
 	wh.Uploader = uploader
 
@@ -35,11 +36,11 @@ func (wh *HandleT) Setup(warehouse warehouseutils.WarehouseT, uploader warehouse
 	return err
 }
 
-func (wh *HandleT) CrashRecover(warehouse warehouseutils.WarehouseT) (err error) {
+func (*HandleT) CrashRecover(_ warehouseutils.Warehouse) (err error) {
 	return nil
 }
 
-func (wh *HandleT) FetchSchema(warehouse warehouseutils.WarehouseT) (warehouseutils.SchemaT, error) {
+func (wh *HandleT) FetchSchema(warehouse warehouseutils.Warehouse) (warehouseutils.SchemaT, error) {
 	return wh.SchemaRepository.FetchSchema(warehouse)
 }
 
@@ -51,7 +52,7 @@ func (wh *HandleT) CreateTable(tableName string, columnMap map[string]string) (e
 	return wh.SchemaRepository.CreateTable(tableName, columnMap)
 }
 
-func (wh *HandleT) DropTable(tableName string) (err error) {
+func (*HandleT) DropTable(_ string) (err error) {
 	return fmt.Errorf("datalake err :not implemented")
 }
 
@@ -66,6 +67,10 @@ func (wh *HandleT) AlterColumn(tableName, columnName, columnType string) (err er
 func (wh *HandleT) LoadTable(tableName string) error {
 	pkgLogger.Infof("Skipping load for table %s : %s is a datalake destination", tableName, wh.Warehouse.Destination.ID)
 	return nil
+}
+
+func (*HandleT) DeleteBy([]string, warehouseutils.DeleteByParams) (err error) {
+	return fmt.Errorf(warehouseutils.NotImplementedErrorCode)
 }
 
 func (wh *HandleT) LoadUserTables() map[string]error {
@@ -89,32 +94,32 @@ func (wh *HandleT) LoadIdentityMappingsTable() error {
 	return nil
 }
 
-func (wh *HandleT) Cleanup() {
+func (*HandleT) Cleanup() {
 }
 
-func (wh *HandleT) IsEmpty(warehouse warehouseutils.WarehouseT) (bool, error) {
+func (*HandleT) IsEmpty(_ warehouseutils.Warehouse) (bool, error) {
 	return false, nil
 }
 
-func (wh *HandleT) TestConnection(warehouse warehouseutils.WarehouseT) error {
+func (*HandleT) TestConnection(_ warehouseutils.Warehouse) error {
 	return fmt.Errorf("datalake err :not implemented")
 }
 
-func (wh *HandleT) DownloadIdentityRules(*misc.GZipWriter) error {
+func (*HandleT) DownloadIdentityRules(*misc.GZipWriter) error {
 	return fmt.Errorf("datalake err :not implemented")
 }
 
-func (wh *HandleT) GetTotalCountInTable(tableName string) (int64, error) {
+func (*HandleT) GetTotalCountInTable(context.Context, string) (int64, error) {
 	return 0, nil
 }
 
-func (wh *HandleT) Connect(warehouse warehouseutils.WarehouseT) (client.Client, error) {
+func (*HandleT) Connect(_ warehouseutils.Warehouse) (client.Client, error) {
 	return client.Client{}, fmt.Errorf("datalake err :not implemented")
 }
 
-func (wh *HandleT) LoadTestTable(location, tableName string, payloadMap map[string]interface{}, format string) error {
+func (*HandleT) LoadTestTable(_, _ string, _ map[string]interface{}, _ string) error {
 	return fmt.Errorf("datalake err :not implemented")
 }
 
-func (wh *HandleT) SetConnectionTimeout(timeout time.Duration) {
+func (*HandleT) SetConnectionTimeout(_ time.Duration) {
 }

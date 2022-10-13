@@ -3,8 +3,6 @@
 // It then runs the service ensuring it is configured to use the dependencies.
 // Finally, it sends events and observe the destinations expecting to get the events back.
 
-//go:build integration
-
 package main_test
 
 import (
@@ -14,7 +12,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"net/http"
 	"os"
 	"os/signal"
@@ -25,13 +22,13 @@ import (
 	"testing"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/testhelper"
 	"github.com/rudderlabs/rudder-server/testhelper/workspaceConfig"
 
 	redigo "github.com/gomodule/redigo/redis"
 	"github.com/joho/godotenv"
 	_ "github.com/lib/pq"
 	"github.com/ory/dockertest/v3"
-	"github.com/phayes/freeport"
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
 	"golang.org/x/sync/errgroup"
@@ -56,7 +53,6 @@ var (
 	disableDestinationWebhookURL string
 	webhook                      *whUtil.Recorder
 	disableDestinationWebhook    *whUtil.Recorder
-	runSlow                      bool
 	overrideArm64Check           bool
 	writeKey                     string
 	workspaceID                  string
@@ -88,12 +84,11 @@ type event struct {
 }
 
 func TestMainFlow(t *testing.T) {
-	runSlow = config.GetEnvAsBool("SLOW", true)
-	if !runSlow {
+	if os.Getenv("SLOW") == "0" {
 		t.Skip("Skipping tests. Remove 'SLOW=0' env var to run them.")
 	}
 
-	hold = config.GetEnvAsBool("HOLD", false)
+	hold = os.Getenv("HOLD") == "true"
 	if os.Getenv("OVERRIDE_ARM64_CHECK") == "1" {
 		overrideArm64Check = true
 	}
@@ -237,7 +232,7 @@ func TestMainFlow(t *testing.T) {
 		messages, errors := consume(t, c, topics)
 
 		signals := make(chan os.Signal, 1)
-		signal.Notify(signals, os.Interrupt, os.Kill) // Get signal for finish
+		signal.Notify(signals, os.Interrupt, syscall.SIGTERM) // Get signal for finish
 
 		var (
 			msgCount      = 0 // Count how many message processed
@@ -386,8 +381,8 @@ func setupMainFlow(svcCtx context.Context, t *testing.T) <-chan struct{} {
 		t.Setenv("LOG_LEVEL", "DEBUG")
 	}
 
-	config.Load()
-	logger.Init()
+	config.Reset()
+	logger.Reset()
 
 	// uses a sensible default on windows (tcp/http) and linux/osx (socket)
 	pool, err := dockertest.NewPool("")
@@ -427,14 +422,6 @@ func setupMainFlow(svcCtx context.Context, t *testing.T) <-chan struct{} {
 	})
 	require.NoError(t, containersGroup.Wait())
 
-	health.WaitUntilReady(
-		context.Background(), t,
-		fmt.Sprintf("%s/health", transformerContainer.TransformURL),
-		time.Minute,
-		time.Second,
-		"transformer",
-	)
-
 	if err := godotenv.Load("testhelper/.env"); err != nil {
 		t.Log("INFO: No .env file found.")
 	}
@@ -444,12 +431,12 @@ func setupMainFlow(svcCtx context.Context, t *testing.T) <-chan struct{} {
 	t.Setenv("DEST_TRANSFORM_URL", transformerContainer.TransformURL)
 	t.Setenv("DEPLOYMENT_TYPE", string(deployment.DedicatedType))
 
-	httpPortInt, err := freeport.GetFreePort()
+	httpPortInt, err := testhelper.GetFreePort()
 	require.NoError(t, err)
 
 	httpPort = strconv.Itoa(httpPortInt)
 	t.Setenv("RSERVER_GATEWAY_WEB_PORT", httpPort)
-	httpAdminPort, err := freeport.GetFreePort()
+	httpAdminPort, err := testhelper.GetFreePort()
 	require.NoError(t, err)
 
 	t.Setenv("RSERVER_GATEWAY_ADMIN_WEB_PORT", strconv.Itoa(httpAdminPort))
@@ -483,7 +470,7 @@ func setupMainFlow(svcCtx context.Context, t *testing.T) <-chan struct{} {
 		mapWorkspaceConfig,
 	)
 	if testing.Verbose() {
-		data, err := ioutil.ReadFile(workspaceConfigPath)
+		data, err := os.ReadFile(workspaceConfigPath)
 		require.NoError(t, err)
 		t.Logf("Workspace config: %s", string(data))
 	}
@@ -766,7 +753,7 @@ func consume(t *testing.T, client *kafkaClient.Client, topics []testutil.TopicPa
 		})
 
 		t.Logf("Start consuming topic %s:%d", topic.Topic, topic.Partition)
-		go func(topic testutil.TopicPartition, consumer *kafkaClient.Consumer) {
+		go func(consumer *kafkaClient.Consumer) {
 			for {
 				msg, err := consumer.Receive(context.TODO())
 				if err != nil {
@@ -775,7 +762,7 @@ func consume(t *testing.T, client *kafkaClient.Client, topics []testutil.TopicPa
 					messages <- msg
 				}
 			}
-		}(topic, consumer)
+		}(consumer)
 	}
 
 	return messages, errors
@@ -816,6 +803,6 @@ func waitForKafka(ctx context.Context, t *testing.T, port string) error {
 	}
 }
 
-type testLogger struct{ logger.LoggerI }
+type testLogger struct{ logger.Logger }
 
 func (t *testLogger) Log(args ...interface{}) { t.Info(args...) }

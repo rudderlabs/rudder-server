@@ -11,6 +11,7 @@ import (
 
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/utils/logger"
+	"github.com/rudderlabs/rudder-server/utils/misc"
 
 	"github.com/rudderlabs/rudder-server/services/stats"
 )
@@ -36,7 +37,7 @@ type ReadonlyJobsDB interface {
 type ReadonlyHandleT struct {
 	DbHandle    *sql.DB
 	tablePrefix string
-	logger      logger.LoggerI
+	logger      logger.Logger
 }
 
 type DSPair struct {
@@ -90,7 +91,7 @@ Setup is used to initialize the ReadonlyHandleT structure.
 func (jd *ReadonlyHandleT) Setup(tablePrefix string) {
 	jd.logger = pkgLogger.Child("readonly-" + tablePrefix)
 	var err error
-	psqlInfo := GetConnectionString()
+	psqlInfo := misc.GetConnectionString()
 	jd.tablePrefix = tablePrefix
 
 	jd.DbHandle, err = sql.Open("postgres", psqlInfo)
@@ -113,7 +114,7 @@ func (jd *ReadonlyHandleT) TearDown() {
 }
 
 // Some helper functions
-func (jd *ReadonlyHandleT) assertError(err error) {
+func (*ReadonlyHandleT) assertError(err error) {
 	if err != nil {
 		panic(err)
 	}
@@ -140,7 +141,7 @@ Count queries
 HavePendingJobs returns the true if there are pending events, else false. Pending events are
 those whose jobs don't have a state or whose jobs status is neither succeeded nor aborted
 */
-func (jd *ReadonlyHandleT) HavePendingJobs(ctx context.Context, customValFilters []string, count int, parameterFilters []ParameterFilterT) (bool, error) {
+func (jd *ReadonlyHandleT) HavePendingJobs(ctx context.Context, customValFilters []string, _ int, parameterFilters []ParameterFilterT) (bool, error) {
 	haveUnprocessed, err := jd.haveUnprocessedJobs(ctx, customValFilters, parameterFilters)
 	if haveUnprocessed || err != nil {
 		return true, err
@@ -154,12 +155,12 @@ haveUnprocessedJobs returns true if there are unprocessed events, else false. Un
 those whose state hasn't been marked in the DB
 */
 func (jd *ReadonlyHandleT) haveUnprocessedJobs(ctx context.Context, customValFilters []string, parameterFilters []ParameterFilterT) (bool, error) {
-	var queryStat stats.RudderStats
+	var queryStat stats.Measurement
 	statName := ""
 	if len(customValFilters) > 0 {
 		statName = statName + customValFilters[0] + "_"
 	}
-	queryStat = stats.NewTaggedStat(statName+"unprocessed_count", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix})
+	queryStat = stats.Default.NewTaggedStat(statName+"unprocessed_count", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix})
 	queryStat.Start()
 	defer queryStat.End()
 
@@ -176,7 +177,7 @@ func (jd *ReadonlyHandleT) haveUnprocessedJobs(ctx context.Context, customValFil
 	return totalCount > 0, nil // If totalCount is 0, then there are no unprocessed events
 }
 
-func (jd *ReadonlyHandleT) prepareAndExecStmtInTxn(txn *sql.Tx, sqlStatement string) error {
+func (*ReadonlyHandleT) prepareAndExecStmtInTxn(txn *sql.Tx, sqlStatement string) error {
 	stmt, err := txn.Prepare(sqlStatement)
 	if err != nil {
 		return err
@@ -196,12 +197,12 @@ stateFilters and customValFilters do a OR query on values passed in array
 parameterFilters do a AND query on values included in the map
 */
 func (jd *ReadonlyHandleT) getUnprocessedJobsDSCount(ctx context.Context, ds dataSetT, customValFilters []string, parameterFilters []ParameterFilterT) (int64, error) {
-	var queryStat stats.RudderStats
+	var queryStat stats.Measurement
 	statName := ""
 	if len(customValFilters) > 0 {
 		statName = statName + customValFilters[0] + "_"
 	}
-	queryStat = stats.NewTaggedStat(statName+"unprocessed_jobs_count", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix})
+	queryStat = stats.Default.NewTaggedStat(statName+"unprocessed_jobs_count", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix})
 	queryStat.Start()
 	defer queryStat.End()
 
@@ -243,8 +244,7 @@ func (jd *ReadonlyHandleT) getUnprocessedJobsDSCount(ctx context.Context, ds dat
 											 WHERE %[2]s.job_id is NULL`, ds.JobTable, ds.JobStatusTable, selectColumn)
 
 	if len(customValFilters) > 0 {
-		sqlStatement += " AND " + constructQuery(jd, fmt.Sprintf("%s.custom_val", ds.JobTable),
-			customValFilters, "OR")
+		sqlStatement += " AND " + constructQueryOR(fmt.Sprintf("%s.custom_val", ds.JobTable), customValFilters)
 	}
 
 	if len(parameterFilters) > 0 {
@@ -292,7 +292,7 @@ func (jd *ReadonlyHandleT) haveNonSucceededJobs(ctx context.Context, customValFi
 haveProcessedJobs returns true if there are events of a given state, else false.
 */
 func (jd *ReadonlyHandleT) haveProcessedJobs(ctx context.Context, stateFilter, customValFilters []string, parameterFilters []ParameterFilterT) (bool, error) {
-	var queryStat stats.RudderStats
+	var queryStat stats.Measurement
 	statName := ""
 	if len(customValFilters) > 0 {
 		statName = statName + customValFilters[0] + "_"
@@ -300,7 +300,7 @@ func (jd *ReadonlyHandleT) haveProcessedJobs(ctx context.Context, stateFilter, c
 	if len(stateFilter) > 0 {
 		statName = statName + stateFilter[0] + "_"
 	}
-	queryStat = stats.NewTaggedStat(statName+"processed_count", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix})
+	queryStat = stats.Default.NewTaggedStat(statName+"processed_count", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix})
 	queryStat.Start()
 	defer queryStat.End()
 
@@ -326,7 +326,7 @@ func (jd *ReadonlyHandleT) getProcessedJobsDSCount(ctx context.Context, ds dataS
 ) (int64, error) {
 	checkValidJobState(jd, stateFilters)
 
-	var queryStat stats.RudderStats
+	var queryStat stats.Measurement
 	statName := ""
 	if len(customValFilters) > 0 {
 		statName = statName + customValFilters[0] + "_"
@@ -334,21 +334,20 @@ func (jd *ReadonlyHandleT) getProcessedJobsDSCount(ctx context.Context, ds dataS
 	if len(stateFilters) > 0 {
 		statName = statName + stateFilters[0] + "_"
 	}
-	queryStat = stats.NewTaggedStat(statName+"processed_jobs_count", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix})
+	queryStat = stats.Default.NewTaggedStat(statName+"processed_jobs_count", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix})
 	queryStat.Start()
 	defer queryStat.End()
 
 	var stateQuery, customValQuery, sourceQuery string
 
 	if len(stateFilters) > 0 {
-		stateQuery = " AND " + constructQuery(jd, "job_state", stateFilters, "OR")
+		stateQuery = " AND " + constructQueryOR("job_state", stateFilters)
 	} else {
 		stateQuery = ""
 	}
 	if len(customValFilters) > 0 {
 		customValQuery = " AND " +
-			constructQuery(jd, fmt.Sprintf("%s.custom_val", ds.JobTable),
-				customValFilters, "OR")
+			constructQueryOR(fmt.Sprintf("%s.custom_val", ds.JobTable), customValFilters)
 	} else {
 		customValQuery = ""
 	}
@@ -598,7 +597,7 @@ func (jd *ReadonlyHandleT) GetLatestFailedJobs(arg, prefix string) (string, erro
 	return string(response), nil
 }
 
-func (jd *ReadonlyHandleT) GetJobByID(job_id, prefix string) (string, error) {
+func (jd *ReadonlyHandleT) GetJobByID(job_id, _ string) (string, error) {
 	dsListTotal := jd.getDSList()
 	var response []byte
 	for _, dsPair := range dsListTotal {
@@ -663,9 +662,8 @@ func (jd *ReadonlyHandleT) GetJobByID(job_id, prefix string) (string, error) {
 	return string(response), nil
 }
 
-func (jd *ReadonlyHandleT) GetJobIDStatus(job_id, prefix string) (string, error) {
+func (jd *ReadonlyHandleT) GetJobIDStatus(jobID, _ string) (string, error) {
 	dsListTotal := jd.getDSList()
-	var response []byte
 	for _, dsPair := range dsListTotal {
 		var min, max sql.NullInt32
 		sqlStatement := fmt.Sprintf(`SELECT MIN(job_id), MAX(job_id) FROM %s`, dsPair.JobTable)
@@ -677,16 +675,16 @@ func (jd *ReadonlyHandleT) GetJobIDStatus(job_id, prefix string) (string, error)
 		if !min.Valid || !max.Valid {
 			continue
 		}
-		jobId, err := strconv.Atoi(job_id)
+		jobId, err := strconv.Atoi(jobID)
 		if err != nil {
 			return "", err
 		}
 		if jobId < int(min.Int32) || jobId > int(max.Int32) {
 			continue
 		}
-		sqlStatement = fmt.Sprintf(`SELECT job_id, job_state, attempt, exec_time, retry_time,error_code, error_response FROM %[1]s WHERE job_id = %[2]s;`, dsPair.JobStatusTable, job_id)
+		sqlStatement = fmt.Sprintf(`SELECT job_id, job_state, attempt, exec_time, retry_time,error_code, error_response FROM %[1]s WHERE job_id = %[2]s;`, dsPair.JobStatusTable, jobID)
 		var statusCode sql.NullString
-		eventList := []JobStatusT{}
+		var eventList []JobStatusT
 		rows, err := jd.DbHandle.Query(sqlStatement)
 		if err != nil {
 			return "", err
@@ -694,21 +692,27 @@ func (jd *ReadonlyHandleT) GetJobIDStatus(job_id, prefix string) (string, error)
 		defer rows.Close()
 		for rows.Next() {
 			event := JobStatusT{}
-			err = rows.Scan(&event.JobID, &event.JobState, &event.AttemptNum, &event.ExecTime, &event.RetryTime, &statusCode, &event.ErrorResponse)
+			err := rows.Scan(&event.JobID, &event.JobState, &event.AttemptNum, &event.ExecTime, &event.RetryTime, &statusCode, &event.ErrorResponse)
 			if err != nil {
-				return "", nil
+				return "", err
 			}
 			if statusCode.Valid {
 				event.ErrorCode = statusCode.String
 			}
 			eventList = append(eventList, event)
 		}
-		response, err = json.MarshalIndent(FailedStatusStats{FailedStatusStats: eventList}, "", " ")
-		if err != nil {
-			return "", err
+
+		{
+			response, err := json.MarshalIndent(FailedStatusStats{FailedStatusStats: eventList}, "", " ")
+			if err != nil {
+				return "", err
+			}
+			return string(response), nil
 		}
 	}
-	return string(response), nil
+
+	// jobID not found
+	return "", nil
 }
 
 func (jd *ReadonlyHandleT) GetJobIDsForUser(args []string) (string, error) {

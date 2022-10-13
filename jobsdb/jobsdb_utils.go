@@ -4,19 +4,23 @@ import (
 	"database/sql"
 	"fmt"
 	"sort"
-	"strconv"
 	"strings"
 
 	"github.com/rudderlabs/rudder-server/admin"
+	"github.com/rudderlabs/rudder-server/jobsdb/internal/dsindex"
 	"github.com/rudderlabs/rudder-server/services/stats"
 )
+
+type sqlDbOrTx interface {
+	Query(query string, args ...any) (*sql.Rows, error)
+}
 
 /*
 Function to return an ordered list of datasets and datasetRanges
 Most callers use the in-memory list of dataset and datasetRanges
 */
-func getDSList(jd assertInterface, dbHandle *sql.DB, tablePrefix string) []dataSetT {
-	datasetList := []dataSetT{}
+func getDSList(jd assertInterface, dbHandle sqlDbOrTx, tablePrefix string) []dataSetT {
+	var datasetList []dataSetT
 
 	// Read the table names from PG
 	tableNames := mustGetAllTableNames(jd, dbHandle)
@@ -27,7 +31,7 @@ func getDSList(jd assertInterface, dbHandle *sql.DB, tablePrefix string) []dataS
 
 	jobNameMap := map[string]string{}
 	jobStatusNameMap := map[string]string{}
-	dnumList := []string{}
+	var dnumList []string
 
 	for _, t := range tableNames {
 		if strings.HasPrefix(t, tablePrefix+"_jobs_") {
@@ -43,26 +47,7 @@ func getDSList(jd assertInterface, dbHandle *sql.DB, tablePrefix string) []dataS
 		}
 	}
 
-	sortDnumList(jd, dnumList)
-
-	// If any service has crashed while creating DS, this may happen. Handling such case gracefully.
-	if len(jobNameMap) != len(jobStatusNameMap) {
-		jd.assert(len(jobNameMap) == len(jobStatusNameMap)+1, fmt.Sprintf("Length of jobNameMap(%d) - length of jobStatusNameMap(%d) is more than 1", len(jobNameMap), len(jobStatusNameMap)))
-		deletedDNum := removeExtraKey(jobNameMap, jobStatusNameMap)
-		// remove deletedDNum from dnumList
-		var idx int
-		var dnum string
-		var foundDeletedDNum bool
-		for idx, dnum = range dnumList {
-			if dnum == deletedDNum {
-				foundDeletedDNum = true
-				break
-			}
-		}
-		if foundDeletedDNum {
-			dnumList = remove(dnumList, idx)
-		}
-	}
+	sortDnumList(dnumList)
 
 	// Create the structure
 	for _, dnum := range dnumList {
@@ -73,7 +58,8 @@ func getDSList(jd assertInterface, dbHandle *sql.DB, tablePrefix string) []dataS
 		datasetList = append(datasetList,
 			dataSetT{
 				JobTable:       jobName,
-				JobStatusTable: jobStatusName, Index: dnum,
+				JobStatusTable: jobStatusName,
+				Index:          dnum,
 			})
 	}
 
@@ -85,70 +71,21 @@ sortDnumList Function to sort table suffixes. We should not have any use case
 for having > 2 len suffixes (e.g. 1_1_1 - see comment below)
 but this sort handles the general case
 */
-func sortDnumList(jd assertInterface, dnumList []string) {
+func sortDnumList(dnumList []string) {
 	sort.Slice(dnumList, func(i, j int) bool {
-		src := strings.Split(dnumList[i], "_")
-		dst := strings.Split(dnumList[j], "_")
-		comparison, err := dsComparitor(src, dst)
-		jd.assertError(err)
-		return comparison
+		return dsindex.MustParse(dnumList[i]).Less(dsindex.MustParse(dnumList[j]))
 	})
 }
 
-// returns true, nil if src is less than dst
-// returns false, nil if src is greater than dst
-// returns false, someError if src is equal to dst
-var dsComparitor = func(src, dst []string) (bool, error) {
-	k := 0
-	for {
-		if k >= len(src) {
-			// src has same prefix but is shorter
-			// For example, src=1.1 while dest=1.1.1
-			if k >= len(dst) {
-				return false, fmt.Errorf("k:%d >= len(dst):%d", k, len(dst))
-			}
-			if k <= 0 {
-				return false, fmt.Errorf("k:%d <= 0", k)
-			}
-			return true, nil
-		}
-		if k >= len(dst) {
-			// Opposite of case above
-			if k <= 0 {
-				return false, fmt.Errorf("k:%d <= 0", k)
-			}
-			if k >= len(src) {
-				return false, fmt.Errorf("k:%d >= len(src):%d", k, len(src))
-			}
-			return false, nil
-		}
-		if src[k] == dst[k] {
-			// Loop
-			k++
-			continue
-		}
-		// Strictly ordered. Return
-		srcInt, err := strconv.Atoi(src[k])
-		if err != nil {
-			return false, fmt.Errorf("string to int conversion failed for source %v. with error %w", src, err)
-		}
-		dstInt, err := strconv.Atoi(dst[k])
-		if err != nil {
-			return false, fmt.Errorf("string to int conversion failed for destination %v. with error %w", dst, err)
-		}
-		return srcInt < dstInt, nil
-	}
-}
-
 // mustGetAllTableNames gets all table names from Postgres and panics in case of an error
-func mustGetAllTableNames(jd assertInterface, dbHandle *sql.DB) []string {
+func mustGetAllTableNames(jd assertInterface, dbHandle sqlDbOrTx) []string {
 	tableNames, err := getAllTableNames(dbHandle)
 	jd.assertError(err)
 	return tableNames
 }
 
 // getAllTableNames gets all table names from Postgres
-func getAllTableNames(dbHandle *sql.DB) ([]string, error) {
+func getAllTableNames(dbHandle sqlDbOrTx) ([]string, error) {
 	var tableNames []string
 	rows, err := dbHandle.Query(`SELECT tablename
 									FROM pg_catalog.pg_tables
@@ -157,7 +94,7 @@ func getAllTableNames(dbHandle *sql.DB) ([]string, error) {
 	if err != nil {
 		return tableNames, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	for rows.Next() {
 		var tbName string
 		err = rows.Scan(&tbName)
@@ -182,14 +119,13 @@ func checkValidJobState(jd assertInterface, stateFilters []string) {
 	}
 }
 
-// constructQuery construct and return query
-func constructQuery(jd assertInterface, paramKey string, paramList []string, queryType string) string {
-	jd.assert(queryType == "OR" || queryType == "AND", fmt.Sprintf("queryType:%s is neither OR nor AND", queryType))
+// constructQueryOR construct a query were paramKey is any of the values in paramValues
+func constructQueryOR(paramKey string, paramList []string) string {
 	var queryList []string
 	for _, p := range paramList {
 		queryList = append(queryList, "("+paramKey+"='"+p+"')")
 	}
-	return "(" + strings.Join(queryList, " "+queryType+" ") + ")"
+	return "(" + strings.Join(queryList, " OR ") + ")"
 }
 
 // constructStateQuery construct query from provided state filters
@@ -219,16 +155,16 @@ func constructParameterJSONQuery(table string, parameterFilters []ParameterFilte
 	// eg. query with optional destination_id (batch_rt_jobs_1.parameters @> '{"source_id":"<source_id>","destination_id":"<destination_id>"}'  OR (batch_rt_jobs_1.parameters @> '{"source_id":"<source_id>"}' AND batch_rt_jobs_1.parameters -> 'destination_id' IS NULL))
 	var allKeyValues, mandatoryKeyValues, opNullConditions []string
 	for _, parameter := range parameterFilters {
-		allKeyValues = append(allKeyValues, fmt.Sprintf(`"%s":"%s"`, parameter.Name, parameter.Value))
+		allKeyValues = append(allKeyValues, fmt.Sprintf(`%q:%q`, parameter.Name, parameter.Value))
 		if parameter.Optional {
-			opNullConditions = append(opNullConditions, fmt.Sprintf(`"%s".parameters -> '%s' IS NULL`, table, parameter.Name))
+			opNullConditions = append(opNullConditions, fmt.Sprintf(`%q.parameters -> '%s' IS NULL`, table, parameter.Name))
 		} else {
-			mandatoryKeyValues = append(mandatoryKeyValues, fmt.Sprintf(`"%s":"%s"`, parameter.Name, parameter.Value))
+			mandatoryKeyValues = append(mandatoryKeyValues, fmt.Sprintf(`%q:%q`, parameter.Name, parameter.Value))
 		}
 	}
 	opQuery := ""
 	if len(opNullConditions) > 0 {
-		opQuery += fmt.Sprintf(` OR ("%s".parameters @> '{%s}' AND %s)`, table, strings.Join(mandatoryKeyValues, ","), strings.Join(opNullConditions, " AND "))
+		opQuery += fmt.Sprintf(` OR (%q.parameters @> '{%s}' AND %s)`, table, strings.Join(mandatoryKeyValues, ","), strings.Join(opNullConditions, " AND "))
 	}
 	return fmt.Sprintf(`(%s.parameters @> '{%s}' %s)`, table, strings.Join(allKeyValues, ","), opQuery)
 }
@@ -270,7 +206,7 @@ func (*JobsdbUtilsHandler) RunSQLQuery(argString string, reply *string) (err err
 	return err
 }
 
-func (jd *HandleT) getTimerStat(stat string, tags *statTags) stats.RudderStats {
+func (jd *HandleT) getTimerStat(stat string, tags *statTags) stats.Measurement {
 	timingTags := map[string]string{
 		"tablePrefix": jd.tablePrefix,
 	}
@@ -291,5 +227,5 @@ func (jd *HandleT) getTimerStat(stat string, tags *statTags) stats.RudderStats {
 		}
 	}
 
-	return stats.NewTaggedStat(stat, stats.TimerType, timingTags)
+	return stats.Default.NewTaggedStat(stat, stats.TimerType, timingTags)
 }

@@ -40,7 +40,7 @@ func TestPubSub_two_consumers_slow_and_fast(t *testing.T) {
 
 	v = <-slow
 
-	if v.Data.(int) == 2 { // due to pubsub internal channels, the slow consumer may consume 2 before consuming 5
+	if v.Data.(int) < 5 { // due to pubsub internal channels, the slow consumer may consume yet another value before consuming 5
 		v = <-slow
 	}
 

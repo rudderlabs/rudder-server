@@ -19,6 +19,7 @@ import (
 	"github.com/ory/dockertest/v3"
 	"github.com/stretchr/testify/require"
 
+	"github.com/rudderlabs/rudder-server/enterprise/reporting"
 	"github.com/rudderlabs/rudder-server/jobsdb/prebackup"
 	"github.com/rudderlabs/rudder-server/services/rsources"
 	"github.com/rudderlabs/rudder-server/services/transientsource"
@@ -31,9 +32,7 @@ import (
 	"github.com/rudderlabs/rudder-server/processor/stash"
 	"github.com/rudderlabs/rudder-server/services/archiver"
 	"github.com/rudderlabs/rudder-server/services/multitenant"
-	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/logger"
-	utilTypes "github.com/rudderlabs/rudder-server/utils/types"
 )
 
 var (
@@ -41,17 +40,6 @@ var (
 	db    *sql.DB
 	dbDsn = "root@tcp(127.0.0.1:3306)/service"
 )
-
-type reportingNOOP struct{}
-
-func (*reportingNOOP) WaitForSetup(_ context.Context, _ string) {
-}
-
-func (*reportingNOOP) Report(_ []*utilTypes.PUReportedMetric, _ *sql.Tx) {
-}
-
-func (*reportingNOOP) AddClient(_ context.Context, _ utilTypes.Config) {
-}
 
 func TestMain(m *testing.M) {
 	flag.BoolVar(&hold, "hold", false, "hold environment clean-up after test execution until Ctrl+C is provided")
@@ -129,8 +117,8 @@ func blockOnHold() {
 }
 
 func initJobsDB() {
-	config.Load()
-	logger.Init()
+	config.Reset()
+	logger.Reset()
 	stash.Init()
 	admin.Init()
 	jobsdb.Init()
@@ -159,7 +147,6 @@ func TestProcessorManager(t *testing.T) {
 	temp := isUnLocked
 	defer func() { isUnLocked = temp }()
 	initJobsDB()
-	stats.Setup()
 	mockCtrl := gomock.NewController(t)
 	mockBackendConfig := mocksBackendConfig.NewMockBackendConfig(mockCtrl)
 	mockTransformer := mocksTransformer.NewMockTransformer(mockCtrl)
@@ -168,8 +155,6 @@ func TestProcessorManager(t *testing.T) {
 	SetFeaturesRetryAttempts(0)
 	enablePipelining = false
 	RegisterTestingT(t)
-
-	migrationMode := ""
 	triggerAddNewDS := make(chan time.Time)
 	maxDSSize := 10
 	// tempDB is created to observe/manage the GW DB from the outside without touching the actual GW DB.
@@ -179,19 +164,18 @@ func TestProcessorManager(t *testing.T) {
 			return triggerAddNewDS
 		},
 	}
-	queryFilters := jobsdb.QueryFiltersT{
-		CustomVal: true,
-	}
-	err := tempDB.Setup(jobsdb.Write, true, "gw", migrationMode, true, queryFilters, []prebackup.Handler{})
+
+	err := tempDB.Setup(jobsdb.Write, true, "gw", true, []prebackup.Handler{})
 	require.NoError(t, err)
 	defer tempDB.TearDown()
 
 	customVal := "GW"
-	unprocessedListEmpty := tempDB.GetUnprocessed(jobsdb.GetQueryParamsT{
+	unprocessedListEmpty, err := tempDB.GetUnprocessed(context.Background(), jobsdb.GetQueryParamsT{
 		CustomValFilters: []string{customVal},
 		JobsLimit:        1,
 		ParameterFilters: []jobsdb.ParameterFilterT{},
 	})
+	require.NoError(t, err, "GetUnprocessed failed")
 	require.Equal(t, 0, len(unprocessedListEmpty.Jobs))
 
 	jobCountPerDS := 10
@@ -216,7 +200,7 @@ func TestProcessorManager(t *testing.T) {
 			"batch_rt": &jobsdb.MultiTenantLegacy{HandleT: brtDB},
 		},
 	}
-	processor := New(ctx, &clearDb, gwDB, rtDB, brtDB, errDB, mtStat, &reportingNOOP{}, transientsource.NewEmptyService(), mockRsourcesService)
+	processor := New(ctx, &clearDb, gwDB, rtDB, brtDB, errDB, mtStat, &reporting.NOOP{}, transientsource.NewEmptyService(), mockRsourcesService)
 
 	t.Run("jobs are already there in GW DB before processor starts", func(t *testing.T) {
 		require.NoError(t, gwDB.Start())
@@ -238,11 +222,13 @@ func TestProcessorManager(t *testing.T) {
 		require.NoError(t, processor.Start())
 		defer processor.Stop()
 		Eventually(func() int {
-			return len(tempDB.GetUnprocessed(jobsdb.GetQueryParamsT{
+			res, err := tempDB.GetUnprocessed(context.Background(), jobsdb.GetQueryParamsT{
 				CustomValFilters: []string{customVal},
 				JobsLimit:        20,
 				ParameterFilters: []jobsdb.ParameterFilterT{},
-			}).Jobs)
+			})
+			require.NoError(t, err)
+			return len(res.Jobs)
 		}, 10*time.Minute, 100*time.Millisecond).Should(Equal(0))
 	})
 
@@ -265,18 +251,20 @@ func TestProcessorManager(t *testing.T) {
 		require.NoError(t, processor.Start())
 		err = tempDB.Store(context.Background(), genJobs(customVal, jobCountPerDS, eventsPerJob))
 		require.NoError(t, err)
-		unprocessedListEmpty = tempDB.GetUnprocessed(jobsdb.GetQueryParamsT{
+		unprocessedListEmpty, err = tempDB.GetUnprocessed(context.Background(), jobsdb.GetQueryParamsT{
 			CustomValFilters: []string{customVal},
 			JobsLimit:        20,
 			ParameterFilters: []jobsdb.ParameterFilterT{},
 		})
-
+		require.NoError(t, err, "failed to get unprocessed jobs")
 		Eventually(func() int {
-			return len(tempDB.GetUnprocessed(jobsdb.GetQueryParamsT{
+			res, err := tempDB.GetUnprocessed(context.Background(), jobsdb.GetQueryParamsT{
 				CustomValFilters: []string{customVal},
 				JobsLimit:        20,
 				ParameterFilters: []jobsdb.ParameterFilterT{},
-			}).Jobs)
+			})
+			require.NoError(t, err)
+			return len(res.Jobs)
 		}, time.Minute, 100*time.Millisecond).Should(Equal(0))
 		processor.Stop()
 	})

@@ -11,12 +11,15 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/rudderlabs/rudder-server/config"
+	"github.com/rudderlabs/rudder-server/services/controlplane/identity"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 )
 
 func Test_Namespace_SetUp(t *testing.T) {
 	var (
-		client           = &namespaceConfig{}
+		client = &namespaceConfig{
+			Logger: logger.NOP,
+		}
 		configBackendURL = "https://api.test.rudderlabs.com"
 	)
 	parsedConfigBackendURL, err := url.Parse(configBackendURL)
@@ -34,13 +37,12 @@ func Test_Namespace_SetUp(t *testing.T) {
 }
 
 func Test_Namespace_Get(t *testing.T) {
-	config.Load()
-	logger.Init()
+	config.Reset()
+	logger.Reset()
 
 	var (
 		namespace    = "free-us-1"
 		workspaceID1 = "2CCgbmvBSa8Mv81YaIgtR36M7aW"
-		workspaceID2 = "2CChLejq5aIWi3qsKVm1PjHkyTj"
 		cpRouterURL  = "mockCpRouterURL"
 	)
 
@@ -55,7 +57,7 @@ func Test_Namespace_Get(t *testing.T) {
 	require.NoError(t, err)
 
 	client := &namespaceConfig{
-		Logger: logger.NewLogger(),
+		Logger: logger.NOP,
 
 		Client:           ts.Client(),
 		ConfigBackendURL: httpSrvURL,
@@ -69,32 +71,11 @@ func Test_Namespace_Get(t *testing.T) {
 
 	c, err := client.Get(context.Background(), workspaceID1)
 	require.NoError(t, err)
-	require.Equal(t, "", c.WorkspaceID)
-	require.Len(t, c.Sources, 3)
+	require.Len(t, c, 2)
 
-	t.Log("correct writeKey to workspaceID mapping")
-	require.Equal(t, workspaceID1, client.GetWorkspaceIDForWriteKey("2CCggSFf....jBLNxmXtSlvZ"))
-	require.Equal(t, workspaceID1, client.GetWorkspaceIDForWriteKey("2CCgpXME....WBD9C5nQtsFg"))
-	require.Equal(t, workspaceID2, client.GetWorkspaceIDForWriteKey("2CChOrwP....9qESA9FgLFXL"))
-
-	t.Log("correct sourceID to workspaceID mapping")
-	require.Equal(t, workspaceID1, client.GetWorkspaceIDForSourceID("2CCggVGqbSRLhqP8trntINSihFe"))
-	require.Equal(t, workspaceID1, client.GetWorkspaceIDForSourceID("2CCgpZlqlXRDRz8rChhQKtuwqKA"))
-	require.Equal(t, workspaceID2, client.GetWorkspaceIDForSourceID("2CChOtDTWeXIQiRmHMU56C3htPf"))
-
-	require.Equal(t, c.ConnectionFlags.URL, cpRouterURL)
-	require.True(t, c.ConnectionFlags.Services["warehouse"])
-
-	for _, workspaceID := range []string{workspaceID1, workspaceID2} {
-		require.Equal(t,
-			LibrariesT{
-				{VersionID: "20MirO0IhCtS39Qjva2PSAbA9KM"},
-				{VersionID: "ghi"},
-				{VersionID: "2AWJpFCIGcpZhOrsIp7Kasw72vb"},
-				{VersionID: "2AWIMafC3YPKHXazWWvVn5hSGnR"},
-			},
-			client.GetWorkspaceLibrariesForWorkspaceID(workspaceID),
-		)
+	for workspace := range c {
+		require.Equal(t, cpRouterURL, c[workspace].ConnectionFlags.URL)
+		require.True(t, c[workspace].ConnectionFlags.Services["warehouse"])
 	}
 
 	t.Run("Invalid credentials", func(t *testing.T) {
@@ -128,6 +109,45 @@ func Test_Namespace_Get(t *testing.T) {
 		require.EqualError(t, err, "backend config request failed with 404")
 		require.Empty(t, c)
 	})
+}
+
+func Test_Namespace_Identity(t *testing.T) {
+	config.Reset()
+	logger.Reset()
+
+	var (
+		namespace = "free-us-1"
+		secret    = "service-secret"
+	)
+
+	be := &backendConfigServer{
+		token: secret,
+	}
+
+	ts := httptest.NewServer(be)
+	defer ts.Close()
+	httpSrvURL, err := url.Parse(ts.URL)
+	require.NoError(t, err)
+
+	client := &namespaceConfig{
+		Logger: logger.NOP,
+
+		Client:           ts.Client(),
+		ConfigBackendURL: httpSrvURL,
+
+		Namespace: namespace,
+
+		HostedServiceSecret: "service-secret",
+		cpRouterURL:         cpRouterURL,
+	}
+	require.NoError(t, client.SetUp())
+
+	ident := client.Identity()
+
+	require.Equal(t, &identity.Namespace{
+		Namespace:    namespace,
+		HostedSecret: secret,
+	}, ident)
 }
 
 type backendConfigServer struct {

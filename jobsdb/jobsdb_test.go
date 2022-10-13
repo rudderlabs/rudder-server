@@ -2,36 +2,49 @@ package jobsdb
 
 import (
 	"bytes"
+	"context"
+	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math/rand"
+	"os"
 	"regexp"
 	"sort"
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
+	"github.com/gofrs/uuid"
+	"github.com/lib/pq"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"github.com/ory/dockertest/v3"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/rudderlabs/rudder-server/admin"
 	"github.com/rudderlabs/rudder-server/config"
+	"github.com/rudderlabs/rudder-server/jobsdb/internal/lock"
 	"github.com/rudderlabs/rudder-server/jobsdb/prebackup"
-	"github.com/rudderlabs/rudder-server/services/stats"
+	"github.com/rudderlabs/rudder-server/services/archiver"
+	"github.com/rudderlabs/rudder-server/testhelper/destination"
 	rsRand "github.com/rudderlabs/rudder-server/testhelper/rand"
 	"github.com/rudderlabs/rudder-server/utils/logger"
+	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
-var _ = Describe("Calculate newDSIdx for internal migrations", func() {
-	initJobsDB()
+var _ = Describe("Calculate newDSIdx for internal migrations", Ordered, func() {
+	BeforeAll(func() {
+		pkgLogger = logger.NOP
+	})
 
-	_ = DescribeTable("newDSIdx tests",
+	DescribeTable("newDSIdx tests",
 		func(before, after, expected string) {
 			computedIdx, err := computeInsertIdx(before, after)
-			Expect(computedIdx).To(Equal(expected))
-			Expect(err).To(BeNil())
+			Expect(err).To(BeNil(), "No error should occur when computing newDSIdx for before: %s, after: %s", before, after)
+			Expect(computedIdx).To(Equal(expected), "unexpected result using before: %s, after: %s", before, after)
 		},
 		// dList => 1 2 3 4 5
 		Entry("Internal Migration for regular tables 1 Test 1 : ", "1", "2", "1_1"),
@@ -50,71 +63,55 @@ var _ = Describe("Calculate newDSIdx for internal migrations", func() {
 		Entry("Internal Migration for regular tables 4 Test 1 : ", "1_1", "2_1", "1_2"),
 
 		// dList => 0_1 1 2 3 4 5
-		Entry("Internal Migration for import tables Case 1 Test 1 : ", "0_1", "1", "0_1_1"),
+		Entry("Internal Migration for import tables Case 1 Test 1 : ", "0_1", "1", "0_2"),
 		Entry("Internal Migration for import tables Case 1 Test 2 : ", "1", "2", "1_1"),
 
-		// dList => 0_1 0_2 1 2 3 4 5
-		Entry("Internal Migration for import tables Case 2 Test 1 : ", "0_1", "0_2", "0_1_1"),
-		Entry("Internal Migration for import tables Case 2 Test 2 : ", "0_2", "1", "0_2_1"),
+		Entry("Internal Migration for import tables Case 2 Test 2 : ", "0_2", "1", "0_3"),
 		Entry("Internal Migration for import tables Case 2 Test 3 : ", "1", "2", "1_1"),
 
-		// dList => 0_1_1 0_2 1 2 3 4 5
-		Entry("Internal Migration for import tables Case 3 Test 1 : ", "0_1_1", "0_2", "0_1_2"),
-		Entry("Internal Migration for import tables Case 3 Test 2 : ", "0_2", "1", "0_2_1"),
-
-		// dList => 0_1_1 0_2_1 1 2 3 4 5
-		Entry("Internal Migration for import tables Case 4 Test 1 : ", "0_2_1", "1", "0_2_2"),
-		Entry("Internal Migration for import tables Case 4 Test 2 : ", "0_1_1", "0_2_1", "0_1_2"),
-
-		// dList => 0_1 0_2_1 1 2 3
-		Entry("Internal Migration for import tables Case 5 Test 1 : ", "0_1", "0_2_1", "0_1_1"),
+		Entry("Internal Migration for import tables Case 3 Test 2 : ", "0_2", "1", "0_3"),
 
 		Entry("OrderTest Case 1 Test 1 : ", "9", "10", "9_1"),
 
 		Entry("Internal Migration for tables : ", "10_1", "11_3", "10_2"),
-		Entry("Internal Migration for tables : ", "0_1", "1", "0_1_1"),
-		Entry("Internal Migration for tables : ", "0_1", "20", "0_1_1"),
-		Entry("Internal Migration for tables : ", "0_1", "0_2", "0_1_1"),
+		Entry("Internal Migration for tables : ", "0_1", "1", "0_2"),
+		Entry("Internal Migration for tables : ", "0_1", "20", "0_2"),
+
+		Entry("Excotic scenario 1 - bumping from level 3 to level 2", "10_1_2", "11_3", "10_2"),
 	)
 
 	Context("computeInsertIdx - bad input tests", func() {
 		It("Should throw error for input 1, 1_1", func() {
-			_, err := computeInsertIdx("1", "1_1")
-			Expect(err).To(HaveOccurred())
+			idx, err := computeInsertIdx("1", "1_1")
+			Expect(err).To(HaveOccurred(), "got %s instead of error", idx)
 		})
 		It("Should throw error for input 10_1, 10_2", func() {
-			_, err := computeInsertIdx("10_1", "10_2")
-			Expect(err).To(HaveOccurred())
+			idx, err := computeInsertIdx("10_1", "10_2")
+			Expect(err).To(HaveOccurred(), "got %s instead of error", idx)
 		})
 		It("Should throw error for input 10_1, 10_1", func() {
-			_, err := computeInsertIdx("10_1", "10_1")
-			Expect(err).To(HaveOccurred())
+			idx, err := computeInsertIdx("10_1", "10_1")
+			Expect(err).To(HaveOccurred(), "got %s instead of error", idx)
 		})
 		It("Should throw error for input 10, 9", func() {
-			_, err := computeInsertIdx("10", "9")
-			Expect(err).To(HaveOccurred())
+			idx, err := computeInsertIdx("10", "9")
+			Expect(err).To(HaveOccurred(), "got %s instead of error", idx)
 		})
-		It("Should throw error for input 10_1_2, 11_3", func() {
-			_, err := computeInsertIdx("10_1_2", "11_3")
-			Expect(err).To(HaveOccurred())
-		})
-		It("Should throw error for input 0, 1", func() {
-			_, err := computeInsertIdx("0", "1")
-			Expect(err).To(HaveOccurred())
+		It("Should throw error for input 0_1, 0_2", func() {
+			idx, err := computeInsertIdx("0_1", "0_2")
+			Expect(err).To(HaveOccurred(), "got %s instead of error", idx)
 		})
 		It("Should throw error for input 0_1, 0", func() {
-			_, err := computeInsertIdx("0_1", "0")
-			Expect(err).To(HaveOccurred())
+			idx, err := computeInsertIdx("0_1", "0")
+			Expect(err).To(HaveOccurred(), "got %s instead of error", idx)
 		})
 	})
 
-	_ = DescribeTable("newDSIdx tests with skipZeroAssertionForMultitenant",
+	DescribeTable("newDSIdx tests with skipZeroAssertionForMultitenant",
 		func(before, after, expected string) {
-			setSkipZeroAssertionForMultitenant(true)
 			computedIdx, err := computeInsertIdx(before, after)
 			Expect(computedIdx).To(Equal(expected))
 			Expect(err).To(BeNil())
-			setSkipZeroAssertionForMultitenant(false)
 		},
 		// dList => 1 2 3 4 5
 		Entry("Internal Migration for regular tables 1 Test 1 with skipZeroAssertionForMultitenant: ", "1", "2", "1_1"),
@@ -149,219 +146,62 @@ var _ = Describe("Calculate newDSIdx for internal migrations", func() {
 		Entry("Internal Migration for tables with Negative Indexes and skipZeroAssertionForMultitenant: ", "-2_1", "0", "-2_2"),
 		Entry("Internal Migration for tables with Negative Indexes and skipZeroAssertionForMultitenant: ", "-2_1", "20", "-2_2"),
 	)
-
-	Context("computeInsertVals - good input tests", func() {
-		It("Should not throw error for input 0_1, 0_2", func() {
-			calculatedIdx, err := computeInsertVals([]string{"0", "1"}, []string{"0", "2"})
-			Expect(err).To(BeNil())
-			Expect(calculatedIdx).To(Equal([]string{"0", "1", "1"}))
-		})
-	})
-
-	Context("computeInsertVals - bad input tests", func() {
-		It("Should throw error for nil inputs", func() {
-			_, err := computeInsertVals(nil, nil)
-			Expect(err).To(HaveOccurred())
-		})
-		It("Should throw error for nil before input", func() {
-			_, err := computeInsertVals(nil, []string{"1"})
-			Expect(err).To(HaveOccurred())
-		})
-		It("Should throw error for nil after input", func() {
-			_, err := computeInsertVals([]string{"1"}, nil)
-			Expect(err).To(HaveOccurred())
-		})
-		It("Should throw error for input 1, 1_1", func() {
-			_, err := computeInsertVals([]string{"1"}, []string{"1", "1"})
-			Expect(err).To(HaveOccurred())
-		})
-		It("Should throw error for input 10_1, 10_2", func() {
-			_, err := computeInsertVals([]string{"10", "1"}, []string{"10", "2"})
-			Expect(err).To(HaveOccurred())
-		})
-		It("Should throw error for input 10_1, 10_1", func() {
-			_, err := computeInsertVals([]string{"10", "1"}, []string{"10", "1"})
-			Expect(err).To(HaveOccurred())
-		})
-		It("Should throw error for input 10, 9", func() {
-			_, err := computeInsertVals([]string{"10"}, []string{"9"})
-			Expect(err).To(HaveOccurred())
-		})
-	})
 })
 
-var _ = Describe("Calculate newDSIdx for cluster migrations", func() {
-	initJobsDB()
-
-	_ = DescribeTable("newDSIdx tests",
-		func(dList []dataSetT, after dataSetT, expected string) {
-			computedIdx, err := computeIdxForClusterMigration("table_prefix", dList, after)
-			Expect(computedIdx).To(Equal(expected))
-			Expect(err).To(BeNil())
-		},
-
-		Entry("ClusterMigration Case 1",
-			[]dataSetT{
-				{
-					JobTable:       "",
-					JobStatusTable: "",
-					Index:          "1",
-				},
-			},
-			dataSetT{
-				JobTable:       "",
-				JobStatusTable: "",
-				Index:          "1",
-			}, "0_1"),
-
-		Entry("ClusterMigration Case 2",
-			[]dataSetT{
-				{
-					JobTable:       "",
-					JobStatusTable: "",
-					Index:          "0_1",
-				},
-				{
-					JobTable:       "",
-					JobStatusTable: "",
-					Index:          "1",
-				},
-				{
-					JobTable:       "",
-					JobStatusTable: "",
-					Index:          "2",
-				},
-			},
-			dataSetT{
-				JobTable:       "",
-				JobStatusTable: "",
-				Index:          "1",
-			}, "0_2"),
-	)
-
-	_ = DescribeTable("Error cases",
-		func(dList []dataSetT, after dataSetT) {
-			_, err := computeIdxForClusterMigration("table_prefix", dList, after)
-			Expect(err != nil).Should(BeTrue())
-		},
-
-		Entry("ClusterMigration Case 1",
-			[]dataSetT{
-				{
-					JobTable:       "",
-					JobStatusTable: "",
-					Index:          "1_1",
-				},
-			},
-			dataSetT{
-				JobTable:       "",
-				JobStatusTable: "",
-				Index:          "1_1",
-			},
-		),
-
-		Entry("ClusterMigration Case 2",
-			[]dataSetT{
-				{
-					JobTable:       "",
-					JobStatusTable: "",
-					Index:          "1",
-				},
-				{
-					JobTable:       "",
-					JobStatusTable: "",
-					Index:          "1_1",
-				},
-			},
-			dataSetT{
-				JobTable:       "",
-				JobStatusTable: "",
-				Index:          "1_1",
-			},
-		),
-
-		Entry("ClusterMigration Case 4",
-			[]dataSetT{},
-			dataSetT{
-				JobTable:       "",
-				JobStatusTable: "",
-				Index:          "1_1",
-			},
-		),
-
-		Entry("ClusterMigration Case 5",
-			[]dataSetT{},
-			dataSetT{
-				JobTable:       "",
-				JobStatusTable: "",
-				Index:          "1_1_1_1",
-			},
-		),
-
-		Entry("ClusterMigration Case 6",
-			[]dataSetT{},
-			dataSetT{
-				JobTable:       "",
-				JobStatusTable: "",
-				Index:          "1_1_!_1",
-			},
-		),
-	)
-})
-
-func initJobsDB() {
-	config.Load()
-	logger.Init()
-	admin.Init()
-	Init()
-	Init2()
-	Init3()
-}
-
-var _ = Describe("jobsdb", func() {
-	initJobsDB()
-
-	BeforeEach(func() {
-		// setup static requirements of dependencies
-		stats.Setup()
+var _ = Describe("jobsdb", Ordered, func() {
+	BeforeAll(func() {
+		pkgLogger = logger.NOP
 	})
 
 	Context("getDSList", func() {
+		var t *ginkgoTestingT
 		var jd *HandleT
+		var prefix string
 
 		BeforeEach(func() {
+			t = &ginkgoTestingT{}
+			_ = startPostgres(t)
+			prefix = strings.ToLower(rsRand.String(5))
 			jd = &HandleT{}
 
 			jd.skipSetupDBSetup = true
-			err := jd.Setup(ReadWrite, false, "tt", "", false, QueryFiltersT{}, []prebackup.Handler{})
+			err := jd.Setup(ReadWrite, false, prefix, false, []prebackup.Handler{})
 			Expect(err).To(BeNil())
 		})
 
 		AfterEach(func() {
 			jd.TearDown()
+			t.Teardown()
 		})
 
 		It("doesn't make db calls if !refreshFromDB", func() {
 			jd.datasetList = dsListInMemory
-
 			Expect(jd.getDSList()).To(Equal(dsListInMemory))
 		})
 	})
 
 	Context("Start & Stop", Ordered, func() {
+		var t *ginkgoTestingT
 		var jd *HandleT
+		var prefix string
 
+		BeforeAll(func() {
+			t = &ginkgoTestingT{}
+			_ = startPostgres(t)
+		})
 		BeforeEach(func() {
+			prefix = strings.ToLower(rsRand.String(5))
 			jd = &HandleT{}
 			jd.skipSetupDBSetup = true
-			err := jd.Setup(ReadWrite, false, "tt", "", false, QueryFiltersT{}, []prebackup.Handler{})
+			err := jd.Setup(ReadWrite, false, prefix, false, []prebackup.Handler{})
 			Expect(err).To(BeNil())
 		})
-
 		AfterEach(func() {
 			jd.TearDown()
 		})
-
+		AfterAll(func() {
+			t.Teardown()
+		})
 		It("can call Stop before Start without side-effects", func() {
 			jd.Stop()
 			Expect(jd.Start()).To(BeNil())
@@ -509,7 +349,7 @@ func insertStringInString(input, c string, times int) string {
 	}
 	pos := map[int]struct{}{}
 	for len(pos) < times {
-		newPos := rand.Intn(len(input))
+		newPos := rand.Intn(len(input)) // skipcq: GSC-G404
 		pos[newPos] = struct{}{}
 	}
 	keys := make([]int, 0, len(pos))
@@ -526,7 +366,7 @@ func insertStringInString(input, c string, times int) string {
 }
 
 func sanitizedJsonUsingStrings(input json.RawMessage) json.RawMessage {
-	return json.RawMessage(strings.Replace(string(input), `\u0000`, "", -1))
+	return json.RawMessage(strings.ReplaceAll(string(input), `\u0000`, ""))
 }
 
 func sanitizedJsonUsingBytes(input json.RawMessage) json.RawMessage {
@@ -539,6 +379,656 @@ func sanitizedJsonUsingRegexp(input json.RawMessage) json.RawMessage {
 	return json.RawMessage(sanitizeRegexp.ReplaceAllString(string(input), ""))
 }
 
-func setSkipZeroAssertionForMultitenant(b bool) {
-	skipZeroAssertionForMultitenant = b
+func TestRefreshDSList(t *testing.T) {
+	_ = startPostgres(t)
+	triggerAddNewDS := make(chan time.Time)
+	jobsDB := &HandleT{
+		TriggerAddNewDS: func() <-chan time.Time {
+			return triggerAddNewDS
+		},
+	}
+
+	prefix := strings.ToLower(rsRand.String(5))
+	err := jobsDB.Setup(ReadWrite, false, prefix, true, []prebackup.Handler{})
+	require.NoError(t, err)
+	defer jobsDB.TearDown()
+
+	require.Equal(t, 1, len(jobsDB.getDSList()), "jobsDB should start with a ds list size of 1")
+	require.NoError(t, jobsDB.WithTx(func(tx *sql.Tx) error {
+		return jobsDB.addDSInTx(tx, newDataSet(prefix, "2"))
+	}))
+	require.Equal(t, 1, len(jobsDB.getDSList()), "addDS should not refresh the ds list")
+	jobsDB.dsListLock.WithLock(func(l lock.LockToken) {
+		require.Equal(t, 2, len(jobsDB.refreshDSList(l)), "after refreshing the ds list jobsDB should have a ds list size of 2")
+	})
+}
+
+func TestJobsDBTimeout(t *testing.T) {
+	_ = startPostgres(t)
+	defaultWorkspaceID := "workspaceId"
+
+	maxDSSize := 10
+	jobDB := HandleT{
+		MaxDSSize: &maxDSSize,
+	}
+
+	customVal := "MOCKDS"
+	prefix := strings.ToLower(rsRand.String(5))
+	err := jobDB.Setup(ReadWrite, false, prefix, true, []prebackup.Handler{})
+	require.NoError(t, err)
+	defer jobDB.TearDown()
+
+	sampleTestJob := JobT{
+		Parameters:   []byte(`{}`),
+		EventPayload: []byte(`{"receivedAt":"2021-06-06T20:26:39.598+05:30","writeKey":"writeKey","requestIP":"[::1]",  "batch": [{"anonymousId":"anon_id","channel":"android-sdk","context":{"app":{"build":"1","name":"RudderAndroidClient", "device_name":"FooBar\ufffd\u0000\ufffd\u000f\ufffd","namespace":"com.rudderlabs.android.sdk","version":"1.0"},"device":{"id":"49e4bdd1c280bc00","manufacturer":"Google","model":"Android SDK built for x86","name":"generic_x86"},"library":{"name":"com.rudderstack.android.sdk.core"},"locale":"en-US","network":{"carrier":"Android"},"screen":{"density":420,"height":1794,"width":1080},"traits":{"anonymousId":"49e4bdd1c280bc00"},"user_agent":"Dalvik/2.1.0 (Linux; U; Android 9; Android SDK built for x86 Build/PSR1.180720.075)"},"event":"Demo Track","integrations":{"All":true},"messageId":"b96f3d8a-7c26-4329-9671-4e3202f42f15","originalTimestamp":"2019-08-12T05:08:30.909Z","properties":{"category":"Demo Category","floatVal":4.501,"label":"Demo Label","testArray":[{"id":"elem1","value":"e1"},{"id":"elem2","value":"e2"}],"testMap":{"t1":"a","t2":4},"value":5},"rudderId":"a-292e-4e79-9880-f8009e0ae4a3","sentAt":"2019-08-12T05:08:30.909Z","type":"track"}]}`),
+		UserID:       "a-292e-4e79-9880-f8009e0ae4a3",
+		UUID:         uuid.Must(uuid.NewV4()),
+		CustomVal:    customVal,
+		WorkspaceId:  defaultWorkspaceID,
+		EventCount:   1,
+	}
+
+	err = jobDB.Store(context.Background(), []*JobT{&sampleTestJob})
+	require.NoError(t, err)
+
+	t.Run("Test jobsDB GET request context timeout & retry ", func(t *testing.T) {
+		tx, err := jobDB.dbHandle.Begin()
+		require.NoError(t, err, "Error in starting transaction to lock the table")
+		_, err = tx.Exec(fmt.Sprintf(`LOCK TABLE "%s_jobs_1" IN ACCESS EXCLUSIVE MODE;`, prefix))
+		require.NoError(t, err, "Error in locking the table")
+		defer func() { _ = tx.Rollback() }()
+
+		ctx, cancelCtx := context.WithTimeout(context.Background(), time.Millisecond*10)
+		defer cancelCtx()
+
+		expectedRetries := 2
+		var errorsCount int
+
+		jobs, err := misc.QueryWithRetries(context.Background(), 10*time.Millisecond, expectedRetries, func(ctx context.Context) (JobsResult, error) {
+			jobs, err := jobDB.GetUnprocessed(ctx, GetQueryParamsT{
+				CustomValFilters: []string{customVal},
+				JobsLimit:        1,
+				ParameterFilters: []ParameterFilterT{},
+			})
+			if err != nil {
+				errorsCount++
+			}
+			return jobs, err
+		})
+		require.True(t, len(jobs.Jobs) == 0, "Error in getting unprocessed jobs")
+		require.Error(t, err)
+		require.True(t, errors.Is(ctx.Err(), context.DeadlineExceeded))
+		require.Equal(t, expectedRetries, errorsCount)
+	})
+
+	t.Run("Test jobsDB STORE request context timeout & retry ", func(t *testing.T) {
+		tx, err := jobDB.dbHandle.Begin()
+		require.NoError(t, err, "Error in starting transaction to lock the table")
+		defer func() { _ = tx.Rollback() }()
+		_, err = tx.Exec(fmt.Sprintf(`LOCK TABLE "%s_jobs_1" IN ACCESS EXCLUSIVE MODE;`, prefix))
+		require.NoError(t, err, "Error in locking the table")
+
+		ctx, cancelCtx := context.WithTimeout(context.Background(), time.Millisecond*10)
+		defer cancelCtx()
+
+		expectedRetries := 2
+		var errorsCount int
+		err = misc.RetryWith(context.Background(), 10*time.Millisecond, expectedRetries, func(ctx context.Context) error {
+			err := jobDB.Store(ctx, []*JobT{&sampleTestJob})
+			if err != nil {
+				errorsCount++
+			}
+			return err
+		})
+		require.Error(t, err)
+		require.True(t, errors.Is(ctx.Err(), context.DeadlineExceeded))
+		require.Equal(t, expectedRetries, errorsCount)
+	})
+}
+
+func TestThreadSafeAddNewDSLoop(t *testing.T) {
+	_ = startPostgres(t)
+	maxDSSize := 1
+	triggerAddNewDS1 := make(chan time.Time)
+	// jobsDB-1 setup
+	jobsDB1 := &HandleT{
+		TriggerAddNewDS: func() <-chan time.Time {
+			return triggerAddNewDS1
+		},
+		MaxDSSize: &maxDSSize,
+	}
+	prefix := strings.ToLower(rsRand.String(5))
+	err := jobsDB1.Setup(ReadWrite, false, prefix, true, []prebackup.Handler{})
+	require.NoError(t, err)
+	require.Equal(t, 1, len(jobsDB1.getDSList()), "expected cache to be auto-updated with DS list length 1")
+	defer jobsDB1.TearDown()
+
+	// jobsDB-2 setup
+	triggerAddNewDS2 := make(chan time.Time)
+	jobsDB2 := &HandleT{
+		TriggerAddNewDS: func() <-chan time.Time {
+			return triggerAddNewDS2
+		},
+		MaxDSSize: &maxDSSize,
+	}
+	err = jobsDB2.Setup(ReadWrite, false, prefix, true, []prebackup.Handler{})
+	require.NoError(t, err)
+	defer jobsDB2.TearDown()
+	require.Equal(t, 1, len(jobsDB2.getDSList()), "expected cache to be auto-updated with DS list length 1")
+
+	generateJobs := func(numOfJob int) []*JobT {
+		customVal := "MOCKDS"
+		js := make([]*JobT, numOfJob)
+		for i := 0; i < numOfJob; i++ {
+			js[i] = &JobT{
+				Parameters:   []byte(`{"batch_id":1,"source_id":"sourceID","source_job_run_id":""}`),
+				EventPayload: []byte(`{"testKey":"testValue"}`),
+				UserID:       "a-292e-4e79-9880-f8009e0ae4a3",
+				UUID:         uuid.Must(uuid.NewV4()),
+				CustomVal:    customVal,
+				EventCount:   1,
+			}
+		}
+		return js
+	}
+
+	// adding mock jobs to jobsDB-1
+	err = jobsDB1.Store(context.Background(), generateJobs(2))
+	require.NoError(t, err)
+
+	// triggerAddNewDS1 to trigger jobsDB-1 to add new DS
+	triggerAddNewDS1 <- time.Now()
+	require.Eventually(
+		t,
+		func() bool {
+			return len(jobsDB1.getDSList()) == 2
+		},
+		time.Second, time.Millisecond,
+		"expected cache to be auto-updated with DS list length 2")
+
+	// adding mock jobs to jobsDB-1
+	// TODO: we should add them to jobsDB-2, but currently it is not possible to do that until we implement the next phase
+	err = jobsDB1.Store(context.Background(), generateJobs(2))
+	require.NoError(t, err)
+
+	// triggerAddNewDS2 to trigger jobsDB-2 to add new DS after refreshing cache
+	triggerAddNewDS2 <- time.Now()
+	require.Eventually(
+		t,
+		func() bool {
+			return len(jobsDB2.getDSList()) == 3
+		},
+		10*time.Second, time.Millisecond,
+		"expected jobsDB2 to be refresh the cache before adding new DS, to get to know about the DS-2 already present & hence add DS-3")
+
+	// adding mock jobs to jobsDB-2
+	err = jobsDB2.Store(context.Background(), generateJobs(2))
+	require.NoError(t, err)
+
+	go func() {
+		triggerAddNewDS1 <- time.Now()
+	}()
+	go func() {
+		triggerAddNewDS2 <- time.Now()
+	}()
+	var dsLen1, dsLen2 int
+	require.Eventually(
+		t,
+		func() bool {
+			dsLen1 = len(jobsDB1.getDSList())
+			dsLen2 = len(jobsDB2.getDSList())
+			return dsLen1 == 4 && dsLen2 == 4
+		},
+		time.Second, time.Millisecond,
+		"expected only one DS to be added, even though both jobsDB-1 & jobsDB-2 are triggered to add new DS (dsLen1: %d, dsLen2: %d)", dsLen1, dsLen2)
+}
+
+func TestThreadSafeJobStorage(t *testing.T) {
+	_ = startPostgres(t)
+
+	t.Run("verify that `pgErrorCodeTableReadonly` exception is triggered, if we try to insert in any DS other than latest.", func(t *testing.T) {
+		maxDSSize := 1
+		triggerAddNewDS := make(chan time.Time)
+		jobsDB := &HandleT{
+			TriggerAddNewDS: func() <-chan time.Time {
+				return triggerAddNewDS
+			},
+			MaxDSSize: &maxDSSize,
+		}
+		err := jobsDB.Setup(ReadWrite, true, strings.ToLower(rsRand.String(5)), true, []prebackup.Handler{})
+		require.NoError(t, err)
+		defer jobsDB.TearDown()
+		require.Equal(t, 1, len(jobsDB.getDSList()), "expected cache to be auto-updated with DS list length 1")
+
+		generateJobs := func(numOfJob int) []*JobT {
+			customVal := "MOCKDS"
+			js := make([]*JobT, numOfJob)
+			for i := 0; i < numOfJob; i++ {
+				js[i] = &JobT{
+					Parameters:   []byte(`{"batch_id":1,"source_id":"sourceID","source_job_run_id":""}`),
+					EventPayload: []byte(`{"testKey":"testValue"}`),
+					UserID:       "a-292e-4e79-9880-f8009e0ae4a3",
+					UUID:         uuid.Must(uuid.NewV4()),
+					CustomVal:    customVal,
+					EventCount:   1,
+				}
+			}
+			return js
+		}
+
+		// adding mock jobs to jobsDB
+		jobs := generateJobs(2)
+		err = jobsDB.Store(context.Background(), jobs)
+		require.NoError(t, err)
+
+		// triggerAddNewDS to trigger jobsDB to add new DS
+		triggerAddNewDS <- time.Now()
+		require.Eventually(
+			t,
+			func() bool {
+				return len(jobsDB.getDSList()) == 2
+			},
+			time.Second*5, time.Millisecond,
+			"expected number of tables to be 2")
+		ds := jobsDB.getDSList()
+		sqlStatement := fmt.Sprintf(`INSERT INTO %q (uuid, user_id, custom_val, parameters, event_payload, workspace_id)
+										   VALUES ($1, $2, $3, $4, $5, $6) RETURNING job_id`, ds[0].JobTable)
+		stmt, err := jobsDB.dbHandle.Prepare(sqlStatement)
+		require.NoError(t, err)
+		defer stmt.Close()
+		_, err = stmt.Exec(jobs[0].UUID, jobs[0].UserID, jobs[0].CustomVal, string(jobs[0].Parameters), string(jobs[0].EventPayload), jobs[0].WorkspaceId)
+		require.Error(t, err, "expected error as trigger is set on DS")
+		require.Equal(t, "pq: table is readonly", err.Error())
+		var e *pq.Error
+		errors.As(err, &e)
+		require.EqualValues(t, e.Code, pgErrorCodeTableReadonly)
+	})
+
+	t.Run(`verify that even if jobsDB instance is unaware of new DS addition by other jobsDB instance.
+	 And, it tries to Store() in postgres, then the exception thrown is handled properly & DS cache is refreshed`, func(t *testing.T) {
+		maxDSSize := 1
+
+		triggerRefreshDS := make(chan time.Time)
+		triggerAddNewDS1 := make(chan time.Time)
+
+		// jobsDB-1 setup
+		jobsDB1 := &HandleT{
+			TriggerAddNewDS: func() <-chan time.Time {
+				return triggerAddNewDS1
+			},
+			MaxDSSize: &maxDSSize,
+		}
+		clearAllDS := true
+		prefix := strings.ToLower(rsRand.String(5))
+		// setting clearAllDS to true to clear all DS, since we are using the same postgres as previous test.
+		err := jobsDB1.Setup(ReadWrite, true, prefix, true, []prebackup.Handler{})
+		require.NoError(t, err)
+		defer jobsDB1.TearDown()
+		require.Equal(t, 1, len(jobsDB1.getDSList()), "expected cache to be auto-updated with DS list length 1")
+
+		// jobsDB-2 setup
+		triggerAddNewDS2 := make(chan time.Time)
+		jobsDB2 := &HandleT{
+			TriggerAddNewDS: func() <-chan time.Time {
+				return triggerAddNewDS2
+			},
+			TriggerRefreshDS: func() <-chan time.Time {
+				return triggerRefreshDS
+			},
+			MaxDSSize: &maxDSSize,
+		}
+		err = jobsDB2.Setup(ReadWrite, !clearAllDS, prefix, true, []prebackup.Handler{})
+		require.NoError(t, err)
+		defer jobsDB2.TearDown()
+		require.Equal(t, 1, len(jobsDB2.getDSList()), "expected cache to be auto-updated with DS list length 1")
+
+		// jobsDB-3 setup
+		triggerAddNewDS3 := make(chan time.Time)
+		jobsDB3 := &HandleT{
+			TriggerAddNewDS: func() <-chan time.Time {
+				return triggerAddNewDS3
+			},
+			TriggerRefreshDS: func() <-chan time.Time {
+				return triggerRefreshDS
+			},
+			MaxDSSize: &maxDSSize,
+		}
+		err = jobsDB3.Setup(ReadWrite, !clearAllDS, prefix, true, []prebackup.Handler{})
+		require.NoError(t, err)
+		defer jobsDB3.TearDown()
+		require.Equal(t, 1, len(jobsDB3.getDSList()), "expected cache to be auto-updated with DS list length 1")
+
+		generateJobs := func(numOfJob int) []*JobT {
+			customVal := "MOCKDS"
+			js := make([]*JobT, numOfJob)
+			for i := 0; i < numOfJob; i++ {
+				js[i] = &JobT{
+					Parameters:   []byte(`{"batch_id":1,"source_id":"sourceID","source_job_run_id":""}`),
+					EventPayload: []byte(`{"testKey":"testValue"}`),
+					UserID:       "a-292e-4e79-9880-f8009e0ae4a3",
+					UUID:         uuid.Must(uuid.NewV4()),
+					CustomVal:    customVal,
+					EventCount:   1,
+				}
+			}
+			return js
+		}
+
+		// adding mock jobs to jobsDB-1
+		err = jobsDB1.Store(context.Background(), generateJobs(2))
+		require.NoError(t, err)
+
+		// triggerAddNewDS1 to trigger jobsDB-1 to add new DS
+		triggerAddNewDS1 <- time.Now()
+		require.Eventually(
+			t,
+			func() bool {
+				return len(jobsDB1.getDSList()) == 2
+			},
+			10*time.Second, time.Millisecond,
+			"expected cache to be auto-updated with DS list length 2")
+
+		require.Equal(t, 1, len(jobsDB2.getDSList()), "expected jobsDB2 to still have a list length of 1")
+		err = jobsDB2.Store(context.Background(), generateJobs(2))
+		require.NoError(t, err)
+		require.Equal(t, 2, len(jobsDB2.getDSList()), "expected jobsDB2 to have refreshed its ds list")
+
+		require.Equal(t, 1, len(jobsDB3.getDSList()), "expected jobsDB3 to still have a list length of 1")
+		errorsMap := jobsDB3.StoreWithRetryEach(context.Background(), generateJobs(2))
+		require.Equal(t, 0, len(errorsMap))
+
+		require.Equal(t, 2, len(jobsDB3.getDSList()), "expected jobsDB3 to have refreshed its ds list")
+
+		// since DS-2 is added, if storing jobs from jobsDB-2, should automatically add DS-2. So, both DS-1 and DS-2 should have 2 jobs
+		row := jobsDB2.dbHandle.QueryRow(fmt.Sprintf("select count(*) from %q", jobsDB2.getDSList()[0].JobTable))
+		var count int
+		err = row.Scan(&count)
+		require.NoError(t, err, "expected no error while scanning rows")
+		require.Equal(t, 2, count, "expected 2 jobs in DS-1")
+
+		row = jobsDB1.dbHandle.QueryRow(fmt.Sprintf("select count(*) from %q", jobsDB1.getDSList()[1].JobTable))
+		err = row.Scan(&count)
+		require.NoError(t, err, "expected no error while scanning rows")
+		require.Equal(t, 4, count, "expected 4 jobs in DS-2")
+	})
+}
+
+func TestCacheScenarios(t *testing.T) {
+	_ = startPostgres(t)
+
+	customVal := "CUSTOMVAL"
+	generateJobs := func(numOfJob int, destinationID string) []*JobT {
+		js := make([]*JobT, numOfJob)
+		for i := 0; i < numOfJob; i++ {
+			js[i] = &JobT{
+				Parameters:   []byte(fmt.Sprintf(`{"batch_id":1,"source_id":"sourceID","destination_id":"%s"}`, destinationID)),
+				EventPayload: []byte(`{"testKey":"testValue"}`),
+				UserID:       "a-292e-4e79-9880-f8009e0ae4a3",
+				UUID:         uuid.Must(uuid.NewV4()),
+				CustomVal:    customVal,
+				EventCount:   1,
+			}
+		}
+		return js
+	}
+
+	checkDSLimitJobs := func(t *testing.T, limit int) []*JobT {
+		maxDSSize := 1
+		var dbWithOneLimit *HandleT
+		triggerAddNewDS := make(chan time.Time)
+		if limit > 0 {
+			dbWithOneLimit = NewForReadWrite(
+				"cache",
+				WithDSLimit(&limit),
+			)
+		} else {
+			dbWithOneLimit = NewForReadWrite(
+				"cache",
+			)
+		}
+		dbWithOneLimit.MaxDSSize = &maxDSSize
+		dbWithOneLimit.TriggerAddNewDS = func() <-chan time.Time {
+			return triggerAddNewDS
+		}
+
+		prefix := strings.ToLower(rsRand.String(5))
+		err := dbWithOneLimit.Setup(ReadWrite, false, prefix, true, []prebackup.Handler{})
+		require.NoError(t, err)
+		require.Equal(t, 1, len(dbWithOneLimit.getDSList()), "expected cache to be auto-updated with DS list length 1")
+		defer dbWithOneLimit.TearDown()
+
+		err = dbWithOneLimit.Store(context.Background(), generateJobs(2, ""))
+		require.NoError(t, err)
+
+		res, err := dbWithOneLimit.getUnprocessed(context.Background(), GetQueryParamsT{CustomValFilters: []string{customVal}, JobsLimit: 100})
+		require.NoError(t, err)
+		require.Equal(t, 2, len(res.Jobs))
+
+		triggerAddNewDS <- time.Now()
+		require.Eventually(
+			t,
+			func() bool {
+				return len(dbWithOneLimit.getDSList()) == 2
+			},
+			time.Second, time.Millisecond,
+			"expected cache to be auto-updated with DS list length 2")
+
+		require.NoError(t, dbWithOneLimit.Store(context.Background(), generateJobs(3, "")))
+
+		res, err = dbWithOneLimit.getUnprocessed(context.Background(), GetQueryParamsT{CustomValFilters: []string{customVal}, JobsLimit: 100})
+		require.NoError(t, err)
+		fmt.Println("res jobs:", len(res.Jobs))
+		return res.Jobs
+	}
+
+	t.Run("Test cache with ds limit as one", func(t *testing.T) {
+		limit := 1
+		jobs := checkDSLimitJobs(t, limit)
+		fmt.Println("jobs:", jobs)
+		require.Equal(t, 2, len(jobs)) // Should return only 2 jobs since ds limit is 1
+	})
+
+	t.Run("Test cache with no ds limit i.e. using default limit", func(t *testing.T) {
+		limit := -1
+		jobs := checkDSLimitJobs(t, limit)
+		require.Equal(t, 5, len(jobs)) // Should return all jobs since there is no ds limit
+	})
+
+	t.Run("Test cache with 1 writer and 1 reader jobsdb (gateway, processor scenario)", func(t *testing.T) {
+		gwDB := NewForWrite("gw_cache")
+		require.NoError(t, gwDB.Start())
+		defer gwDB.TearDown()
+
+		gwDBForProcessor := NewForRead("gw_cache")
+		require.NoError(t, gwDBForProcessor.Start())
+		defer gwDBForProcessor.TearDown()
+
+		res, err := gwDB.getUnprocessed(context.Background(), GetQueryParamsT{CustomValFilters: []string{customVal}, JobsLimit: 100})
+		require.NoError(t, err)
+		require.Equal(t, 0, len(res.Jobs), "gwDB should report 0 unprocessed jobs")
+		res, err = gwDBForProcessor.getUnprocessed(context.Background(), GetQueryParamsT{CustomValFilters: []string{customVal}, JobsLimit: 100})
+		require.NoError(t, err)
+		require.Equal(t, 0, len(res.Jobs), "gwDBForProcessor should report 0 unprocessed jobs")
+
+		require.NoError(t, gwDB.Store(context.Background(), generateJobs(2, "")))
+
+		res, err = gwDBForProcessor.getUnprocessed(context.Background(), GetQueryParamsT{CustomValFilters: []string{customVal}, JobsLimit: 100})
+		require.NoError(t, err)
+		require.Equal(t, 2, len(res.Jobs), "gwDBForProcessor should report 2 unprocessed jobs since we added 2 jobs through gwDB")
+		res, err = gwDB.getUnprocessed(context.Background(), GetQueryParamsT{CustomValFilters: []string{customVal}, JobsLimit: 100})
+		require.NoError(t, err)
+		require.Equal(t, 2, len(res.Jobs), "gwDB should report 2 unprocessed jobs since we added 2 jobs through gwDB")
+	})
+
+	t.Run("Test readonly jobsdb", func(t *testing.T) {
+		jobsDB := NewForReadWrite("readonly_cache")
+		require.NoError(t, jobsDB.Start())
+		defer jobsDB.TearDown()
+
+		readOnlyDB := &ReadonlyHandleT{}
+		readOnlyDB.Setup("readonly_cache")
+
+		destinationID := "destinationID"
+
+		pending, err := readOnlyDB.HavePendingJobs(context.Background(), []string{customVal}, 100, []ParameterFilterT{{Name: "source_id", Value: "sourceID"}})
+		require.NoError(t, err)
+		require.False(t, pending, "readOnlyDB should report no pending jobs when using source_id as filter")
+
+		pending, err = readOnlyDB.HavePendingJobs(context.Background(), []string{customVal}, 100, []ParameterFilterT{{Name: "destination_id", Value: destinationID}, {Name: "source_id", Value: "sourceID"}})
+		require.NoError(t, err)
+		require.False(t, pending, "readOnlyDB should report no pending jobs when using both destination_id and source_id as filters")
+
+		// store jobs
+		require.NoError(t, jobsDB.Store(context.Background(), generateJobs(2, destinationID)))
+
+		pending, err = readOnlyDB.HavePendingJobs(context.Background(), []string{customVal}, 100, []ParameterFilterT{{Name: "source_id", Value: "sourceID"}})
+		require.NoError(t, err)
+		require.True(t, pending, "readOnlyDB should report it has pending jobs when using source_id as filter")
+
+		pending, err = readOnlyDB.HavePendingJobs(context.Background(), []string{customVal}, 100, []ParameterFilterT{{Name: "destination_id", Value: destinationID}, {Name: "source_id", Value: "sourceID"}})
+		require.NoError(t, err)
+		require.True(t, pending, "readOnlyDB should report it has pending jobs when using both destination_id and source_id as filters")
+	})
+
+	t.Run("Test cache with and without using parameter filters", func(t *testing.T) {
+		jobsDB := NewForReadWrite("params_cache")
+		require.NoError(t, jobsDB.Start())
+		defer jobsDB.TearDown()
+
+		destinationID := "destinationID"
+
+		res, err := jobsDB.getUnprocessed(context.Background(), GetQueryParamsT{CustomValFilters: []string{customVal}, JobsLimit: 100})
+		require.NoError(t, err)
+		require.Equal(t, 0, len(res.Jobs), "jobsDB should report 0 unprocessed jobs when not using parameter filters")
+		res, err = jobsDB.getUnprocessed(context.Background(), GetQueryParamsT{CustomValFilters: []string{customVal}, ParameterFilters: []ParameterFilterT{{Name: "destination_id", Value: destinationID}}, JobsLimit: 100})
+		require.NoError(t, err)
+		require.Equal(t, 0, len(res.Jobs), "jobsDB should report 0 unprocessed jobs when using destination_id in parameter filters")
+
+		require.NoError(t, jobsDB.Store(context.Background(), generateJobs(2, "")))
+		res, err = jobsDB.getUnprocessed(context.Background(), GetQueryParamsT{CustomValFilters: []string{customVal}, JobsLimit: 100})
+		require.NoError(t, err)
+		require.Equal(t, 2, len(res.Jobs), "jobsDB should report 2 unprocessed jobs when not using parameter filters, after we added 2 jobs")
+		res, err = jobsDB.getUnprocessed(context.Background(), GetQueryParamsT{CustomValFilters: []string{customVal}, ParameterFilters: []ParameterFilterT{{Name: "destination_id", Value: destinationID}}, JobsLimit: 100})
+		require.NoError(t, err)
+		require.Equal(t, 0, len(res.Jobs), "jobsDB should report 0 unprocessed jobs when using destination_id in parameter filters, after we added 2 jobs but for another destination_id")
+
+		require.NoError(t, jobsDB.Store(context.Background(), generateJobs(2, destinationID)))
+		res, err = jobsDB.getUnprocessed(context.Background(), GetQueryParamsT{CustomValFilters: []string{customVal}, JobsLimit: 100})
+		require.NoError(t, err)
+		require.Equal(t, 4, len(res.Jobs), "jobsDB should report 4 unprocessed jobs when not using parameter filters, after we added 2 more jobs")
+		res, err = jobsDB.getUnprocessed(context.Background(), GetQueryParamsT{CustomValFilters: []string{customVal}, ParameterFilters: []ParameterFilterT{{Name: "destination_id", Value: destinationID}}, JobsLimit: 100})
+		require.NoError(t, err)
+		require.Equal(t, 2, len(res.Jobs), "jobsDB should report 2 unprocessed jobs when using destination_id in parameter filters, after we added 2 jobs for this destination_id")
+	})
+
+	t.Run("Test cache with two parameter filters (destination_id & source_id)", func(t *testing.T) {
+		jobsDB := NewForReadWrite("two_params_cache")
+		require.NoError(t, jobsDB.Start())
+		defer jobsDB.TearDown()
+
+		destinationID := "destinationID"
+
+		res, err := jobsDB.getUnprocessed(context.Background(), GetQueryParamsT{CustomValFilters: []string{customVal}, ParameterFilters: []ParameterFilterT{{Name: "destination_id", Value: destinationID}, {Name: "source_id", Value: "sourceID"}}, JobsLimit: 100})
+		require.NoError(t, err)
+		require.Equal(t, 0, len(res.Jobs), "jobsDB should report 0 unprocessed jobs when using both destination_id and source_id as filters")
+
+		require.NoError(t, jobsDB.Store(context.Background(), generateJobs(2, destinationID)))
+		res, err = jobsDB.getUnprocessed(context.Background(), GetQueryParamsT{CustomValFilters: []string{customVal}, ParameterFilters: []ParameterFilterT{{Name: "destination_id", Value: destinationID}, {Name: "source_id", Value: "sourceID"}}, JobsLimit: 100})
+		require.NoError(t, err)
+		require.Equal(t, 2, len(res.Jobs), "jobsDB should report 2 unprocessed jobs when using both destination_id and source_id as filters, after we added 2 jobs")
+	})
+
+	t.Run("Test cache with two less parameter filters (destination_id & source_id)", func(t *testing.T) {
+		previousParameterFilters := CacheKeyParameterFilters
+		CacheKeyParameterFilters = []string{"destination_id", "source_id"}
+		defer func() {
+			CacheKeyParameterFilters = previousParameterFilters
+		}()
+		jobsDB := NewForReadWrite("two_params_cache_query_less")
+		require.NoError(t, jobsDB.Start())
+		defer jobsDB.TearDown()
+
+		destinationID := "destinationID"
+
+		res, err := jobsDB.getUnprocessed(context.Background(), GetQueryParamsT{CustomValFilters: []string{customVal}, ParameterFilters: []ParameterFilterT{{Name: "destination_id", Value: destinationID}}, JobsLimit: 100})
+		require.NoError(t, err)
+		require.Equal(t, 0, len(res.Jobs), "jobsDB should report 0 unprocessed jobs when using destination_id as filter")
+
+		require.NoError(t, jobsDB.Store(context.Background(), generateJobs(2, destinationID)))
+		res, err = jobsDB.getUnprocessed(context.Background(), GetQueryParamsT{CustomValFilters: []string{customVal}, ParameterFilters: []ParameterFilterT{{Name: "destination_id", Value: destinationID}}, JobsLimit: 100})
+		require.NoError(t, err)
+		require.Equal(t, 2, len(res.Jobs), "jobsDB should report 2 unprocessed jobs when using destination_id as filter, after we added 2 jobs")
+	})
+}
+
+func Test_SortDnumList(t *testing.T) {
+	l := []string{"1", "0_1", "0_1_1", "-2"}
+	sortDnumList(l)
+	require.Equal(t, []string{"-2", "0_1", "0_1_1", "1"}, l)
+}
+
+type testingT interface {
+	Errorf(format string, args ...interface{})
+	FailNow()
+	Setenv(key, value string)
+	Log(...interface{})
+	Cleanup(func())
+}
+
+type ginkgoTestingT struct {
+	cleanups []func()
+}
+
+func (t *ginkgoTestingT) Teardown() {
+	for _, f := range t.cleanups {
+		f()
+	}
+}
+
+func (*ginkgoTestingT) Errorf(format string, args ...interface{}) {
+	Fail(fmt.Sprintf(format, args...))
+}
+
+func (*ginkgoTestingT) FailNow() {
+	Fail("FailNow called")
+}
+
+func (*ginkgoTestingT) Setenv(key, value string) {
+	os.Setenv(key, value)
+}
+
+func (*ginkgoTestingT) Log(args ...interface{}) {
+	fmt.Print(args...)
+}
+
+func (t *ginkgoTestingT) Cleanup(f func()) {
+	t.cleanups = append(t.cleanups, f)
+}
+
+// startPostgres starts a postgres container and (re)initializes global vars
+func startPostgres(t testingT) *destination.PostgresResource {
+	pool, err := dockertest.NewPool("")
+	require.NoError(t, err)
+	postgresContainer, err := destination.SetupPostgres(pool, t)
+	require.NoError(t, err)
+	t.Setenv("LOG_LEVEL", "DEBUG")
+	t.Setenv("JOBS_DB_DB_NAME", postgresContainer.Database)
+	t.Setenv("JOBS_DB_NAME", postgresContainer.Database)
+	t.Setenv("JOBS_DB_HOST", postgresContainer.Host)
+	t.Setenv("JOBS_DB_USER", postgresContainer.User)
+	t.Setenv("JOBS_DB_PASSWORD", postgresContainer.Password)
+	t.Setenv("JOBS_DB_PORT", postgresContainer.Port)
+	initJobsDB()
+	return postgresContainer
+}
+
+func initJobsDB() {
+	config.Reset()
+	logger.Reset()
+	admin.Init()
+	misc.Init()
+	Init()
+	Init2()
+	Init3()
+	archiver.Init()
 }

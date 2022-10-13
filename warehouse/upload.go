@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -24,10 +25,10 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
 	"github.com/rudderlabs/rudder-server/utils/types"
-	"github.com/rudderlabs/rudder-server/warehouse/configuration_testing"
 	"github.com/rudderlabs/rudder-server/warehouse/identity"
 	"github.com/rudderlabs/rudder-server/warehouse/manager"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
+	"github.com/rudderlabs/rudder-server/warehouse/validations"
 )
 
 // Upload Status
@@ -79,9 +80,10 @@ type uploadStateT struct {
 	nextState  *uploadStateT
 }
 
-type UploadT struct {
+type Upload struct {
 	ID                   int64
 	Namespace            string
+	WorkspaceID          string
 	SourceID             string
 	SourceType           string
 	SourceCategory       string
@@ -118,9 +120,9 @@ type UploadT struct {
 type tableNameT string
 
 type UploadJobT struct {
-	upload               *UploadT
+	upload               *Upload
 	dbHandle             *sql.DB
-	warehouse            warehouseutils.WarehouseT
+	warehouse            warehouseutils.Warehouse
 	whManager            manager.ManagerI
 	stagingFiles         []*StagingFileT
 	stagingFileIDs       []int64
@@ -130,7 +132,7 @@ type UploadJobT struct {
 	uploadLock           sync.Mutex
 	hasAllTablesSkipped  bool
 	tableUploadStatuses  []*TableUploadStatusT
-	destinationValidator configuration_testing.DestinationValidator
+	destinationValidator validations.DestinationValidator
 }
 
 type UploadColumnT struct {
@@ -210,7 +212,15 @@ func (job *UploadJobT) trackLongRunningUpload() chan struct{} {
 			// do nothing
 		case <-time.After(longRunningUploadStatThresholdInMin):
 			pkgLogger.Infof("[WH]: Registering stat for long running upload: %d, dest: %s", job.upload.ID, job.warehouse.Identifier)
-			warehouseutils.DestStat(stats.CountType, "long_running_upload", job.warehouse.Destination.ID).Count(1)
+
+			stats.Default.NewTaggedStat(
+				"warehouse.long_running_upload",
+				stats.CountType,
+				stats.Tags{
+					"workspaceId": job.warehouse.WorkspaceID,
+					"destID":      job.warehouse.Destination.ID,
+				},
+			).Count(1)
 		}
 	})
 	return ch
@@ -238,7 +248,7 @@ func (job *UploadJobT) initTableUploads() error {
 	for t := range schemaForUpload {
 		tables = append(tables, t)
 		// also track upload to rudder_identity_mappings if the upload has records for rudder_identity_merge_rules
-		if misc.ContainsString(warehouseutils.IdentityEnabledWarehouses, destType) && t == warehouseutils.ToProviderCase(destType, warehouseutils.IdentityMergeRulesTable) {
+		if misc.Contains(warehouseutils.IdentityEnabledWarehouses, destType) && t == warehouseutils.ToProviderCase(destType, warehouseutils.IdentityMergeRulesTable) {
 			if _, ok := schemaForUpload[warehouseutils.ToProviderCase(destType, warehouseutils.IdentityMappingsTable)]; !ok {
 				tables = append(tables, warehouseutils.ToProviderCase(destType, warehouseutils.IdentityMappingsTable))
 			}
@@ -276,10 +286,23 @@ func (job *UploadJobT) syncRemoteSchema() (schemaChanged bool, err error) {
 
 func (job *UploadJobT) getTotalRowsInStagingFiles() int64 {
 	var total sql.NullInt64
-	sqlStatement := fmt.Sprintf(`SELECT sum(total_events)
-                                FROM %[1]s
-								WHERE %[1]s.id >= %[2]v AND %[1]s.id <= %[3]v AND %[1]s.source_id='%[4]s' AND %[1]s.destination_id='%[5]s'`,
-		warehouseutils.WarehouseStagingFilesTable, job.upload.StartStagingFileID, job.upload.EndStagingFileID, job.warehouse.Source.ID, job.warehouse.Destination.ID)
+	sqlStatement := fmt.Sprintf(`
+		SELECT 
+		  sum(total_events) 
+		FROM 
+		  %[1]s ST 
+		WHERE 
+		  ST.id >= %[2]v 
+		  AND ST.id <= %[3]v 
+		  AND ST.source_id = '%[4]s' 
+		  AND ST.destination_id = '%[5]s';
+	`,
+		warehouseutils.WarehouseStagingFilesTable,
+		job.upload.StartStagingFileID,
+		job.upload.EndStagingFileID,
+		job.warehouse.Source.ID,
+		job.warehouse.Destination.ID,
+	)
 	err := dbHandle.QueryRow(sqlStatement).Scan(&total)
 	if err != nil {
 		pkgLogger.Errorf(`Error in getTotalRowsInStagingFiles: %v`, err)
@@ -292,18 +315,31 @@ func (job *UploadJobT) getTotalRowsInLoadFiles() int64 {
 
 	sqlStatement := fmt.Sprintf(`
 		WITH row_numbered_load_files as (
-			SELECT
-				total_events,
-				table_name,
-				row_number() OVER (PARTITION BY staging_file_id, table_name ORDER BY id DESC) AS row_number
-				FROM %[1]s
-				WHERE staging_file_id IN (%[2]v)
-		)
-		SELECT SUM(total_events)
-			FROM row_numbered_load_files
-			WHERE
-				row_number=1 AND table_name != '%[3]s'`,
-		warehouseutils.WarehouseLoadFilesTable, misc.IntArrayToString(job.stagingFileIDs, ","), warehouseutils.ToProviderCase(job.warehouse.Type, warehouseutils.DiscardsTable))
+		  SELECT 
+			total_events, 
+			table_name, 
+			row_number() OVER (
+			  PARTITION BY staging_file_id, 
+			  table_name 
+			  ORDER BY 
+				id DESC
+			) AS row_number 
+		  FROM 
+			%[1]s 
+		  WHERE 
+			staging_file_id IN (%[2]v)
+		) 
+		SELECT 
+		  SUM(total_events) 
+		FROM 
+		  row_numbered_load_files WHERE 
+		  row_number = 1 
+		  AND table_name != '%[3]s';
+	`,
+		warehouseutils.WarehouseLoadFilesTable,
+		misc.IntArrayToString(job.stagingFileIDs, ","),
+		warehouseutils.ToProviderCase(job.warehouse.Type, warehouseutils.DiscardsTable),
+	)
 	err := dbHandle.QueryRow(sqlStatement).Scan(&total)
 	if err != nil {
 		pkgLogger.Errorf(`Error in getTotalRowsInLoadFiles: %v`, err)
@@ -341,7 +377,7 @@ func (job *UploadJobT) run() (err error) {
 	job.setUploadColumns(UploadColumnsOpts{Fields: []UploadColumnT{{Column: UploadLastExecAtField, Value: timeutil.Now()}, {Column: UploadInProgress, Value: true}}})
 
 	if len(job.stagingFiles) == 0 {
-		err := fmt.Errorf("No staging files found")
+		err := fmt.Errorf("no staging files found")
 		job.setUploadError(err, InternalProcessingFailed)
 		return err
 	}
@@ -407,7 +443,7 @@ func (job *UploadJobT) run() (err error) {
 		case GeneratedLoadFiles:
 			newStatus = nextUploadState.failed
 			// generate load files for all staging files(including succeeded) if hasSchemaChanged or if its snowflake(to have all load files in same folder in bucket) or set via toml/env
-			generateAll := hasSchemaChanged || misc.ContainsString(warehousesToAlwaysRegenerateAllLoadFilesOnResume, job.warehouse.Type) || config.GetBool("Warehouse.alwaysRegenerateAllLoadFiles", true)
+			generateAll := hasSchemaChanged || misc.Contains(warehousesToAlwaysRegenerateAllLoadFilesOnResume, job.warehouse.Type) || config.GetBool("Warehouse.alwaysRegenerateAllLoadFiles", true)
 			var startLoadFileID, endLoadFileID int64
 			startLoadFileID, endLoadFileID, err = job.createLoadFiles(generateAll)
 			if err != nil {
@@ -581,7 +617,7 @@ func (job *UploadJobT) run() (err error) {
 	}
 
 	if newStatus != ExportedData {
-		return fmt.Errorf("Upload Job failed: %w", err)
+		return fmt.Errorf("upload Job failed: %w", err)
 	}
 
 	return nil
@@ -610,9 +646,9 @@ func (job *UploadJobT) exportUserTables(loadFilesTableMap map[tableNameT]bool) (
 }
 
 func (job *UploadJobT) exportIdentities() (err error) {
-	// Load Identitties if enabled
+	// Load Identities if enabled
 	uploadSchema := job.upload.UploadSchema
-	if warehouseutils.IDResolutionEnabled() && misc.ContainsString(warehouseutils.IdentityEnabledWarehouses, job.warehouse.Type) {
+	if warehouseutils.IDResolutionEnabled() && misc.Contains(warehouseutils.IdentityEnabledWarehouses, job.warehouse.Type) {
 		if _, ok := uploadSchema[job.identityMergeRulesTableName()]; ok {
 			loadTimeStat := job.timerStat("identity_tables_load_time")
 			loadTimeStat.Start()
@@ -663,7 +699,7 @@ func areAllTableSkipErrors(loadErrors []error) bool {
 	return res
 }
 
-// TableUploadStatusT captures the status of each table upload along with its parent upload_job's info like destionation_id and namespace
+// TableUploadStatusT captures the status of each table upload along with its parent upload_job's info like destination_id and namespace
 type TableUploadStatusT struct {
 	uploadID      int64
 	destinationID string
@@ -690,33 +726,41 @@ func (job *UploadJobT) fetchPendingUploadTableStatus() []*TableUploadStatusT {
 		return job.tableUploadStatuses
 	}
 	sqlStatement := fmt.Sprintf(`
-		SELECT
-			%[1]s.id,
-			%[1]s.destination_id,
-			%[1]s.namespace,
-			%[2]s.table_name,
-			%[2]s.status,
-			%[2]s.error
-		FROM
-			%[1]s INNER JOIN %[2]s
-		ON
-			%[1]s.id = %[2]s.wh_upload_id
-		WHERE
-			%[1]s.id <= '%[3]d'
-			AND %[1]s.destination_id = '%[4]s'
-			AND %[1]s.namespace = '%[5]s'
-			AND %[1]s.status != '%[6]s'
-			AND %[1]s.status != '%[7]s'
-			AND %[2]s.table_name in (SELECT table_name FROM %[2]s WHERE %[2]s.wh_upload_id = '%[3]d')
-		ORDER BY
-			%[1]s.id ASC`,
+		SELECT 
+		  UT.id, 
+		  UT.destination_id, 
+		  UT.namespace, 
+		  TU.table_name, 
+		  TU.status, 
+		  TU.error 
+		FROM 
+		  %[1]s UT 
+		  INNER JOIN %[2]s TU ON UT.id = TU.wh_upload_id 
+		WHERE 
+		  UT.id <= '%[3]d'
+		  AND UT.destination_id = '%[4]s'
+		  AND UT.namespace = '%[5]s'
+		  AND UT.status != '%[6]s'
+		  AND UT.status != '%[7]s'
+		  AND TU.table_name in (
+			SELECT 
+			  table_name 
+			FROM 
+			  %[2]s TU1
+			WHERE 
+			  TU1.wh_upload_id = '%[3]d'
+		  ) 
+		ORDER BY 
+		  UT.id ASC;
+`,
 		warehouseutils.WarehouseUploadsTable,
 		warehouseutils.WarehouseTableUploadsTable,
 		job.upload.ID,
 		job.upload.DestinationID,
 		job.upload.Namespace,
 		ExportedData,
-		Aborted)
+		Aborted,
+	)
 	rows, err := job.dbHandle.Query(sqlStatement)
 	if err != nil && err != sql.ErrNoRows {
 		panic(err)
@@ -863,7 +907,7 @@ func (job *UploadJobT) loadAllTablesExcept(skipLoadForTables []string, loadFiles
 	loadChan := make(chan struct{}, parallelLoads)
 	previouslyFailedTables, currentJobSucceededTables := job.getTablesToSkip()
 	for tableName := range uploadSchema {
-		if misc.ContainsString(skipLoadForTables, tableName) {
+		if misc.Contains(skipLoadForTables, tableName) {
 			wg.Done()
 			continue
 		}
@@ -879,7 +923,7 @@ func (job *UploadJobT) loadAllTablesExcept(skipLoadForTables []string, loadFiles
 		hasLoadFiles := loadFilesTableMap[tableNameT(tableName)]
 		if !hasLoadFiles {
 			wg.Done()
-			if misc.ContainsString(alwaysMarkExported, strings.ToLower(tableName)) {
+			if misc.Contains(alwaysMarkExported, strings.ToLower(tableName)) {
 				tableUpload := NewTableUpload(job.upload.ID, tableName)
 				tableUpload.setStatus(TableUploadExported)
 			}
@@ -927,16 +971,24 @@ func (job *UploadJobT) updateSchema(tName string) (alteredSchema bool, err error
 }
 
 func (job *UploadJobT) getTotalCount(tName string) (int64, error) {
-	var total int64
+	var (
+		total    int64
+		countErr error
+	)
+
 	operation := func() error {
-		var countErr error
-		total, countErr = job.whManager.GetTotalCountInTable(tName)
+		ctx, cancel := context.WithTimeout(context.TODO(), tableCountQueryTimeout)
+		defer cancel()
+
+		total, countErr = job.whManager.GetTotalCountInTable(ctx, tName)
 		return countErr
 	}
+
 	expBackoff := backoff.NewExponentialBackOff()
 	expBackoff.InitialInterval = 5 * time.Second
 	expBackoff.RandomizationFactor = 0
 	expBackoff.Reset()
+
 	backoffWithMaxRetry := backoff.WithMaxRetries(expBackoff, 5)
 	err := backoff.RetryNotify(operation, backoffWithMaxRetry, func(err error, t time.Duration) {
 		pkgLogger.Errorf(`Error getting total count in table:%s error: %v`, tName, err)
@@ -1169,10 +1221,20 @@ func (job *UploadJobT) processLoadTableResponse(errorMap map[string]error) (erro
 }
 
 // getUploadTimings returns timings json column
-// eg. timings: [{exporting_data: 2020-04-21 15:16:19.687716, exported_data: 2020-04-21 15:26:34.344356}]
+// e.g. timings: [{exporting_data: 2020-04-21 15:16:19.687716, exported_data: 2020-04-21 15:26:34.344356}]
 func (job *UploadJobT) getUploadTimings() (timings []map[string]string) {
 	var rawJSON json.RawMessage
-	sqlStatement := fmt.Sprintf(`SELECT timings FROM %s WHERE id=%d`, warehouseutils.WarehouseUploadsTable, job.upload.ID)
+	sqlStatement := fmt.Sprintf(`
+		SELECT 
+		  timings 
+		FROM 
+		  %s 
+		WHERE 
+		  id = %d;
+`,
+		warehouseutils.WarehouseUploadsTable,
+		job.upload.ID,
+	)
 	err := job.dbHandle.QueryRow(sqlStatement).Scan(&rawJSON)
 	if err != nil {
 		return
@@ -1182,7 +1244,7 @@ func (job *UploadJobT) getUploadTimings() (timings []map[string]string) {
 }
 
 // getNewTimings appends current status with current time to timings column
-// eg. status: exported_data, timings: [{exporting_data: 2020-04-21 15:16:19.687716] -> [{exporting_data: 2020-04-21 15:16:19.687716, exported_data: 2020-04-21 15:26:34.344356}]
+// e.g. status: exported_data, timings: [{exporting_data: 2020-04-21 15:16:19.687716] -> [{exporting_data: 2020-04-21 15:16:19.687716, exported_data: 2020-04-21 15:26:34.344356}]
 func (job *UploadJobT) getNewTimings(status string) ([]byte, []map[string]string) {
 	timings := job.getUploadTimings()
 	timing := map[string]string{status: timeutil.Now().Format(misc.RFC3339Milli)}
@@ -1196,7 +1258,17 @@ func (job *UploadJobT) getNewTimings(status string) ([]byte, []map[string]string
 
 func (job *UploadJobT) getUploadFirstAttemptTime() (timing time.Time) {
 	var firstTiming sql.NullString
-	sqlStatement := fmt.Sprintf(`SELECT timings->0 as firstTimingObj FROM %s WHERE id=%d`, warehouseutils.WarehouseUploadsTable, job.upload.ID)
+	sqlStatement := fmt.Sprintf(`
+		SELECT 
+		  timings -> 0 as firstTimingObj 
+		FROM 
+		  %s 
+		WHERE 
+		  id = %d;
+`,
+		warehouseutils.WarehouseUploadsTable,
+		job.upload.ID,
+	)
 	err := job.dbHandle.QueryRow(sqlStatement).Scan(&firstTiming)
 	if err != nil {
 		return
@@ -1301,7 +1373,17 @@ func (job *UploadJobT) setUploadColumns(opts UploadColumnsOpts) (err error) {
 		}
 		values = append(values, f.Value)
 	}
-	sqlStatement := fmt.Sprintf(`UPDATE %s SET %s WHERE id=$1`, warehouseutils.WarehouseUploadsTable, columns)
+	sqlStatement := fmt.Sprintf(`
+		UPDATE 
+		  %s 
+		SET 
+		  %s 
+		WHERE 
+		  id = $1;
+`,
+		warehouseutils.WarehouseUploadsTable,
+		columns,
+	)
 	if opts.Txn != nil {
 		_, err = opts.Txn.Exec(sqlStatement, values...)
 	} else {
@@ -1432,14 +1514,13 @@ func (job *UploadJobT) setUploadError(statusError error, state string) (string, 
 	if unmarshallErr != nil {
 		metadata = make(map[string]interface{})
 	}
-	metadata["nextRetryTime"] = timeutil.Now().Add(durationBeforeNextAttempt(upload.Attempts + 1)).Format(time.RFC3339)
+	metadata["nextRetryTime"] = timeutil.Now().Add(DurationBeforeNextAttempt(upload.Attempts + 1)).Format(time.RFC3339)
 	metadataJSON, err := json.Marshal(metadata)
 	if err != nil {
 		metadataJSON = []byte("{}")
 	}
 
 	serializedErr, _ := json.Marshal(&uploadErrors)
-	// sqlStatement := fmt.Sprintf(`UPDATE %s SET status=$1, error=$2, metadata=$3, updated_at=$4 WHERE id=$5`, warehouseutils.WarehouseUploadsTable)
 
 	uploadColumns := []UploadColumnT{
 		{Column: "status", Value: state},
@@ -1519,9 +1600,6 @@ func (job *UploadJobT) setUploadError(statusError error, state string) (string, 
 	}
 	err = txn.Commit()
 
-	// TODO: Add reporting metrics in txn
-	// _, err = job.dbHandle.Exec(sqlStatement, state, serializedErr, metadataJSON, timeutil.Now(), upload.ID)
-
 	job.upload.Status = state
 	job.upload.Error = serializedErr
 
@@ -1549,7 +1627,10 @@ func (job *UploadJobT) setUploadError(statusError error, state string) (string, 
 }
 
 func (job *UploadJobT) validateDestinationCredentials() (bool, error) {
-	validationResult, err := job.destinationValidator.ValidateCredentials(&configuration_testing.DestinationValidationRequest{Destination: job.warehouse.Destination})
+	if job.destinationValidator == nil {
+		return false, errors.New("failed to validate as destinationValidator is not set")
+	}
+	validationResult, err := job.destinationValidator.ValidateCredentials(&validations.DestinationValidationRequest{Destination: job.warehouse.Destination})
 	if err != nil {
 		pkgLogger.Errorf("Unable to successfully validate destination: %s credentials, err: %v", job.warehouse.Destination.ID, err)
 		return false, err
@@ -1572,12 +1653,22 @@ func (job *UploadJobT) getAttemptNumber() int {
 	return int(attempts)
 }
 
-func (job *UploadJobT) setStagingFilesStatus(stagingFiles []*StagingFileT, status string) (err error) {
+func (*UploadJobT) setStagingFilesStatus(stagingFiles []*StagingFileT, status string) (err error) {
 	var ids []int64
 	for _, stagingFile := range stagingFiles {
 		ids = append(ids, stagingFile.ID)
 	}
-	sqlStatement := fmt.Sprintf(`UPDATE %s SET status=$1, updated_at=$2 WHERE id=ANY($3)`, warehouseutils.WarehouseStagingFilesTable)
+	sqlStatement := fmt.Sprintf(`
+		UPDATE 
+		  %s 
+		SET 
+		  status = $1, 
+		  updated_at = $2 
+		WHERE 
+		  id = ANY($3);
+`,
+		warehouseutils.WarehouseStagingFilesTable,
+	)
 	_, err = dbHandle.Exec(sqlStatement, status, timeutil.Now(), pq.Array(ids))
 	if err != nil {
 		panic(err)
@@ -1591,7 +1682,19 @@ func (job *UploadJobT) getLoadFilesTableMap() (loadFilesMap map[tableNameT]bool,
 	sourceID := job.warehouse.Source.ID
 	destID := job.warehouse.Destination.ID
 
-	sqlStatement := fmt.Sprintf(`SELECT distinct table_name FROM %s WHERE ( source_id = $1 AND destination_id = $2 AND id >= $3 AND id <= $4 );`,
+	sqlStatement := fmt.Sprintf(`
+		SELECT 
+		  distinct table_name 
+		FROM 
+		  %s 
+		WHERE 
+		  (
+			source_id = $1 
+			AND destination_id = $2 
+			AND id >= $3 
+			AND id <= $4
+		  );
+`,
 		warehouseutils.WarehouseLoadFilesTable,
 	)
 	sqlStatementArgs := []interface{}{
@@ -1690,7 +1793,7 @@ func (job *UploadJobT) getLoadFileIDRange() (startLoadFileID, endLoadFileID int6
 	var minID, maxID sql.NullInt64
 	err = job.dbHandle.QueryRow(stmt, pq.Array(job.stagingFileIDs)).Scan(&minID, &maxID)
 	if err != nil {
-		return 0, 0, fmt.Errorf("Error while querying for load_file_id range for uploadJob:%d with stagingFileIDs:%v : %w", job.upload.ID, job.stagingFileIDs, err)
+		return 0, 0, fmt.Errorf("error while querying for load_file_id range for uploadJob:%d with stagingFileIDs:%v : %w", job.upload.ID, job.stagingFileIDs, err)
 	}
 	return minID.Int64, maxID.Int64, nil
 }
@@ -1701,7 +1804,15 @@ func (job *UploadJobT) deleteLoadFiles(stagingFiles []*StagingFileT) {
 		stagingFileIDs = append(stagingFileIDs, stagingFile.ID)
 	}
 
-	sqlStatement := fmt.Sprintf(`DELETE FROM %[1]s WHERE staging_file_id IN (%v)`, warehouseutils.WarehouseLoadFilesTable, misc.IntArrayToString(stagingFileIDs, ","))
+	sqlStatement := fmt.Sprintf(`
+		DELETE FROM 
+		  %[1]s 
+		WHERE 
+		  staging_file_id IN (%v);
+`,
+		warehouseutils.WarehouseLoadFilesTable,
+		misc.IntArrayToString(stagingFileIDs, ","),
+	)
 	pkgLogger.Debugf(`Deleting any load files present for staging files (upload:%d) before generating them for the staging files again. Query: %s`, job.upload.ID, sqlStatement)
 
 	_, err := job.dbHandle.Exec(sqlStatement)
@@ -1744,7 +1855,7 @@ func (job *UploadJobT) createLoadFiles(generateAll bool) (startLoadFileID, endLo
 
 	job.setStagingFilesStatus(toProcessStagingFiles, warehouseutils.StagingFileExecutingState)
 
-	saveLoadFileErrs := []error{}
+	var saveLoadFileErrs []error
 	var sampleError error
 	for i := 0; i < len(toProcessStagingFiles); i += publishBatchSize {
 		j := i + publishBatchSize
@@ -1755,7 +1866,7 @@ func (job *UploadJobT) createLoadFiles(generateAll bool) (startLoadFileID, endLo
 		// td : add prefix to payload for s3 dest
 		var messages []pgnotifier.JobPayload
 		for _, stagingFile := range toProcessStagingFiles[i:j] {
-			payload := PayloadT{
+			payload := Payload{
 				UploadID:                     job.upload.ID,
 				StagingFileID:                stagingFile.ID,
 				StagingFileLocation:          stagingFile.Location,
@@ -1767,6 +1878,7 @@ func (job *UploadJobT) createLoadFiles(generateAll bool) (startLoadFileID, endLo
 				DestinationType:              destType,
 				DestinationNamespace:         job.warehouse.Namespace,
 				DestinationConfig:            job.warehouse.Destination.Config,
+				WorkspaceID:                  job.warehouse.Destination.WorkspaceID,
 				UniqueLoadGenID:              uniqueLoadGenID,
 				RudderStoragePrefix:          misc.GetRudderObjectStoragePrefix(),
 				UseRudderStorage:             job.upload.UseRudderStorage,
@@ -1777,7 +1889,7 @@ func (job *UploadJobT) createLoadFiles(generateAll bool) (startLoadFileID, endLo
 			if revisionConfig, ok := destinationRevisionIDMap[stagingFile.DestinationRevisionID]; ok {
 				payload.StagingDestinationConfig = revisionConfig.Config
 			}
-			if misc.ContainsString(warehouseutils.TimeWindowDestinations, job.warehouse.Type) {
+			if misc.Contains(warehouseutils.TimeWindowDestinations, job.warehouse.Type) {
 				payload.LoadFilePrefix = warehouseutils.GetLoadFilePrefix(stagingFile.TimeWindow, job.warehouse)
 			}
 
@@ -1794,7 +1906,11 @@ func (job *UploadJobT) createLoadFiles(generateAll bool) (startLoadFileID, endLo
 		}
 
 		pkgLogger.Infof("[WH]: Publishing %d staging files for %s:%s to PgNotifier", len(messages), destType, destID)
-		ch, err := job.pgNotifier.Publish(messages, schema, job.upload.Priority)
+		messagePayload := pgnotifier.MessagePayload{
+			Jobs:    messages,
+			JobType: "upload",
+		}
+		ch, err := job.pgNotifier.Publish(messagePayload, schema, job.upload.Priority)
 		if err != nil {
 			panic(err)
 		}
@@ -1810,11 +1926,11 @@ func (job *UploadJobT) createLoadFiles(generateAll bool) (startLoadFileID, endLo
 			var successfulStagingFileIDs []int64
 			for _, resp := range responses {
 				// Error handling during generating_load_files step:
-				// 1. any error returned by pgnotifier is set on corresponding staging_gile
-				// 2. any error effecting a batch/all of the staging files like saving load file records to wh db
+				// 1. any error returned by pgnotifier is set on corresponding staging_file
+				// 2. any error effecting a batch/all the staging files like saving load file records to wh db
 				//    is returned as error to caller of the func to set error on all staging files and the whole generating_load_files step
 				if resp.Status == "aborted" {
-					pkgLogger.Errorf("[WH]: Error in genrating load files: %v", resp.Error)
+					pkgLogger.Errorf("[WH]: Error in generating load files: %v", resp.Error)
 					sampleError = fmt.Errorf(resp.Error)
 					job.setStagingFileErr(resp.JobID, sampleError)
 					continue
@@ -1854,19 +1970,19 @@ func (job *UploadJobT) createLoadFiles(generateAll bool) (startLoadFileID, endLo
 	}
 
 	if startLoadFileID == 0 || endLoadFileID == 0 {
-		err = fmt.Errorf(`No load files generated. Sample error: %v`, sampleError)
+		err = fmt.Errorf(`no load files generated. Sample error: %v`, sampleError)
 		return startLoadFileID, endLoadFileID, err
 	}
 
 	// verify if all load files are in same folder in object storage
-	if misc.ContainsString(warehousesToVerifyLoadFilesFolder, job.warehouse.Type) {
+	if misc.Contains(warehousesToVerifyLoadFilesFolder, job.warehouse.Type) {
 		locations := job.GetLoadFilesMetadata(warehouseutils.GetLoadFilesOptionsT{
 			StartID: startLoadFileID,
 			EndID:   endLoadFileID,
 		})
 		for _, location := range locations {
 			if !strings.Contains(location.Location, uniqueLoadGenID) {
-				err = fmt.Errorf(`All loadfiles do not contain the same uniqueLoadGenID: %s`, uniqueLoadGenID)
+				err = fmt.Errorf(`all loadfiles do not contain the same uniqueLoadGenID: %s`, uniqueLoadGenID)
 				return
 			}
 		}
@@ -1875,18 +1991,39 @@ func (job *UploadJobT) createLoadFiles(generateAll bool) (startLoadFileID, endLo
 	return startLoadFileID, endLoadFileID, nil
 }
 
-func (job *UploadJobT) setStagingFileSuccess(stagingFileIDs []int64) {
+func (*UploadJobT) setStagingFileSuccess(stagingFileIDs []int64) {
 	// using ANY instead of IN as WHERE clause filtering on primary key index uses index scan in both cases
 	// use IN for cases where filtering on composite indexes
-	sqlStatement := fmt.Sprintf(`UPDATE %s SET status=$1, updated_at=$2 WHERE id=ANY($3)`, warehouseutils.WarehouseStagingFilesTable)
+	sqlStatement := fmt.Sprintf(`
+		UPDATE 
+		  %s 
+		SET 
+		  status = $1, 
+		  updated_at = $2 
+		WHERE 
+		  id = ANY($3);
+`,
+		warehouseutils.WarehouseStagingFilesTable,
+	)
 	_, err := dbHandle.Exec(sqlStatement, warehouseutils.StagingFileSucceededState, timeutil.Now(), pq.Array(stagingFileIDs))
 	if err != nil {
 		panic(err)
 	}
 }
 
-func (job *UploadJobT) setStagingFileErr(stagingFileID int64, statusErr error) {
-	sqlStatement := fmt.Sprintf(`UPDATE %s SET status=$1, error=$2, updated_at=$3 WHERE id=$4`, warehouseutils.WarehouseStagingFilesTable)
+func (*UploadJobT) setStagingFileErr(stagingFileID int64, statusErr error) {
+	sqlStatement := fmt.Sprintf(`
+		UPDATE 
+		  %s 
+		SET 
+		  status = $1, 
+		  error = $2, 
+		  updated_at = $3 
+		WHERE 
+		  id = $4;
+`,
+		warehouseutils.WarehouseStagingFilesTable,
+	)
 	_, err := dbHandle.Exec(sqlStatement, warehouseutils.StagingFileFailedState, misc.QuoteLiteral(statusErr.Error()), timeutil.Now(), stagingFileID)
 	if err != nil {
 		panic(err)
@@ -1911,7 +2048,7 @@ func (job *UploadJobT) bulkInsertLoadFileRecords(loadFiles []loadFileUploadOutpu
 		metadata := fmt.Sprintf(`{"content_length": %d, "destination_revision_id": %q, "use_rudder_storage": %t}`, loadFile.ContentLength, loadFile.DestinationRevisionID, loadFile.UseRudderStorage)
 		_, err = stmt.Exec(loadFile.StagingFileID, loadFile.Location, job.upload.SourceID, job.upload.DestinationID, job.upload.DestinationType, loadFile.TableName, loadFile.TotalRows, timeutil.Now(), metadata)
 		if err != nil {
-			pkgLogger.Errorf(`[WH]: Error copying row in pq.CopyIn for loadFules: %v Error: %v`, loadFile, err)
+			pkgLogger.Errorf(`[WH]: Error copying row in pq.CopyIn for loadFiles: %v Error: %v`, loadFile, err)
 			txn.Rollback()
 			return
 		}
@@ -1933,7 +2070,19 @@ func (job *UploadJobT) bulkInsertLoadFileRecords(loadFiles []loadFileUploadOutpu
 
 func (job *UploadJobT) areIdentityTablesLoadFilesGenerated() (generated bool, err error) {
 	var mergeRulesLocation sql.NullString
-	sqlStatement := fmt.Sprintf(`SELECT location FROM %s WHERE wh_upload_id=%d AND table_name='%s'`, warehouseutils.WarehouseTableUploadsTable, job.upload.ID, warehouseutils.ToProviderCase(job.warehouse.Type, warehouseutils.IdentityMergeRulesTable))
+	sqlStatement := fmt.Sprintf(`
+		SELECT 
+		  location 
+		FROM 
+		  %s 
+		WHERE 
+		  wh_upload_id = %d 
+		  AND table_name = '%s';
+`,
+		warehouseutils.WarehouseTableUploadsTable,
+		job.upload.ID,
+		warehouseutils.ToProviderCase(job.warehouse.Type, warehouseutils.IdentityMergeRulesTable),
+	)
 	err = job.dbHandle.QueryRow(sqlStatement).Scan(&mergeRulesLocation)
 	if err != nil {
 		return
@@ -1944,7 +2093,19 @@ func (job *UploadJobT) areIdentityTablesLoadFilesGenerated() (generated bool, er
 	}
 
 	var mappingsLocation sql.NullString
-	sqlStatement = fmt.Sprintf(`SELECT location FROM %s WHERE wh_upload_id=%d AND table_name='%s'`, warehouseutils.WarehouseTableUploadsTable, job.upload.ID, warehouseutils.ToProviderCase(job.warehouse.Type, warehouseutils.IdentityMappingsTable))
+	sqlStatement = fmt.Sprintf(`
+		SELECT 
+		  location 
+		FROM 
+		  %s 
+		WHERE 
+		  wh_upload_id = %d 
+		  AND table_name = '%s';
+`,
+		warehouseutils.WarehouseTableUploadsTable,
+		job.upload.ID,
+		warehouseutils.ToProviderCase(job.warehouse.Type, warehouseutils.IdentityMappingsTable),
+	)
 	err = job.dbHandle.QueryRow(sqlStatement).Scan(&mappingsLocation)
 	if err != nil {
 		return
@@ -1963,32 +2124,41 @@ func (job *UploadJobT) GetLoadFilesMetadata(options warehouseutils.GetLoadFilesO
 		tableFilterSQL = fmt.Sprintf(` AND table_name='%s'`, options.Table)
 	}
 
-	startID := options.StartID
-	endID := options.EndID
-	if startID == 0 || endID == 0 {
-		startID = job.upload.StartLoadFileID
-		endID = job.upload.EndLoadFileID
-	}
-
 	var limitSQL string
 	if options.Limit != 0 {
 		limitSQL = fmt.Sprintf(`LIMIT %d`, options.Limit)
 	}
 
-	sqlStatement := fmt.Sprintf(`
+	sqlStatement := fmt.Sprintf(`	
 		WITH row_numbered_load_files as (
-			SELECT
-				location, metadata,
-				row_number() OVER (PARTITION BY staging_file_id, table_name ORDER BY id DESC) AS row_number
-				FROM %[1]s
-				WHERE staging_file_id IN (%[2]v) %[3]s
-		)
-		SELECT location, metadata
-			FROM row_numbered_load_files
-			WHERE
-				row_number=1
-			%[4]s`,
-		warehouseutils.WarehouseLoadFilesTable, misc.IntArrayToString(job.stagingFileIDs, ","), tableFilterSQL, limitSQL)
+		  SELECT 
+			location, 
+			metadata, 
+			row_number() OVER (
+			  PARTITION BY staging_file_id, 
+			  table_name 
+			  ORDER BY 
+				id DESC
+			) AS row_number 
+		  FROM 
+			%[1]s 
+		  WHERE 
+			staging_file_id IN (%[2]v) %[3]s
+		) 
+		SELECT 
+		  location, 
+		  metadata 
+		FROM 
+		  row_numbered_load_files 
+		WHERE 
+		  row_number = 1 
+		%[4]s;
+`,
+		warehouseutils.WarehouseLoadFilesTable,
+		misc.IntArrayToString(job.stagingFileIDs, ","),
+		tableFilterSQL,
+		limitSQL,
+	)
 
 	pkgLogger.Debugf(`Fetching loadFileLocations: %v`, sqlStatement)
 	rows, err := dbHandle.Query(sqlStatement)
@@ -2015,7 +2185,7 @@ func (job *UploadJobT) GetLoadFilesMetadata(options warehouseutils.GetLoadFilesO
 func (job *UploadJobT) GetSampleLoadFileLocation(tableName string) (location string, err error) {
 	locations := job.GetLoadFilesMetadata(warehouseutils.GetLoadFilesOptionsT{Table: tableName, Limit: 1})
 	if len(locations) == 0 {
-		return "", fmt.Errorf(`No load file found for table:%s`, tableName)
+		return "", fmt.Errorf(`no load file found for table:%s`, tableName)
 	}
 	return locations[0].Location, nil
 }
@@ -2036,7 +2206,19 @@ func (job *UploadJobT) GetTableSchemaInUpload(tableName string) warehouseutils.T
 }
 
 func (job *UploadJobT) GetSingleLoadFile(tableName string) (warehouseutils.LoadFileT, error) {
-	sqlStatement := fmt.Sprintf(`SELECT location FROM %s WHERE wh_upload_id=%d AND table_name='%s'`, warehouseutils.WarehouseTableUploadsTable, job.upload.ID, tableName)
+	sqlStatement := fmt.Sprintf(`
+		SELECT 
+		  location 
+		FROM 
+		  %s 
+		WHERE 
+		  wh_upload_id = %d 
+		  AND table_name = '%s';
+`,
+		warehouseutils.WarehouseTableUploadsTable,
+		job.upload.ID,
+		tableName,
+	)
 	pkgLogger.Infof("SF: Fetching load file location for %s: %s", tableName, sqlStatement)
 	var location string
 	err := job.dbHandle.QueryRow(sqlStatement).Scan(&location)
@@ -2044,10 +2226,7 @@ func (job *UploadJobT) GetSingleLoadFile(tableName string) (warehouseutils.LoadF
 }
 
 func (job *UploadJobT) ShouldOnDedupUseNewRecord() bool {
-	if job.upload.SourceCategory == CloudSourceCateogry {
-		return true
-	}
-	return false
+	return job.upload.SourceCategory == CloudSourceCateogry
 }
 
 func (job *UploadJobT) UseRudderStorage() bool {
@@ -2063,6 +2242,10 @@ func (job *UploadJobT) GetLoadFileGenStartTIme() time.Time {
 
 func (job *UploadJobT) GetLoadFileType() string {
 	return job.upload.LoadFileType
+}
+
+func (job *UploadJobT) GetFirstLastEvent() (time.Time, time.Time) {
+	return job.upload.FirstEventAt, job.upload.LastEventAt
 }
 
 /*
@@ -2084,7 +2267,7 @@ func getNextUploadState(dbStatus string) *uploadStateT {
 func getInProgressState(state string) string {
 	uploadState, ok := stateTransitions[state]
 	if !ok {
-		panic(fmt.Errorf("Invalid Upload state: %s", state))
+		panic(fmt.Errorf("invalid Upload state: %s", state))
 	}
 	return uploadState.inProgress
 }
@@ -2092,7 +2275,7 @@ func getInProgressState(state string) string {
 func getFailedState(state string) string {
 	uploadState, ok := stateTransitions[state]
 	if !ok {
-		panic(fmt.Errorf("Invalid Upload state : %s", state))
+		panic(fmt.Errorf("invalid Upload state : %s", state))
 	}
 	return uploadState.failed
 }

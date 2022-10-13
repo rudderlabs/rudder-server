@@ -7,15 +7,10 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"reflect"
 	"sort"
 	"strings"
 	"time"
 
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/aws/credentials"
-	"github.com/aws/aws-sdk-go/aws/session"
-	"github.com/aws/aws-sdk-go/service/sts"
 	"github.com/tidwall/gjson"
 
 	uuid "github.com/gofrs/uuid"
@@ -29,9 +24,11 @@ import (
 
 var (
 	setVarCharMax                 bool
-	stagingTablePrefix            string
-	pkgLogger                     logger.LoggerI
+	dedupWindow                   bool
+	dedupWindowInHours            time.Duration
+	pkgLogger                     logger.Logger
 	skipComputingUserLatestTraits bool
+	enableDeleteByJobs            bool
 )
 
 func Init() {
@@ -40,30 +37,35 @@ func Init() {
 }
 
 func loadConfig() {
-	stagingTablePrefix = "rudder_staging_"
 	setVarCharMax = config.GetBool("Warehouse.redshift.setVarCharMax", false)
+
+	config.RegisterBoolConfigVariable(false, &dedupWindow, true, "Warehouse.redshift.dedupWindow")
+	config.RegisterDurationConfigVariable(720, &dedupWindowInHours, true, time.Hour, "Warehouse.redshift.dedupWindowInHours")
 	config.RegisterBoolConfigVariable(false, &skipComputingUserLatestTraits, true, "Warehouse.redshift.skipComputingUserLatestTraits")
+	config.RegisterBoolConfigVariable(false, &enableDeleteByJobs, true, "Warehouse.redshift.enableDeleteByJobs")
 }
 
 type HandleT struct {
 	Db             *sql.DB
 	Namespace      string
-	Warehouse      warehouseutils.WarehouseT
+	Warehouse      warehouseutils.Warehouse
 	Uploader       warehouseutils.UploaderI
 	ConnectTimeout time.Duration
 }
 
 // String constants for redshift destination config
 const (
-	AWSAccessKey        = "accessKey"
-	AWSAccessKeyID      = "accessKeyID"
-	AWSBucketNameConfig = "bucketName"
-	RSHost              = "host"
-	RSPort              = "port"
-	RSDbName            = "database"
-	RSUserName          = "user"
-	RSPassword          = "password"
-	rudderStringLength  = 512
+	RSHost     = "host"
+	RSPort     = "port"
+	RSDbName   = "database"
+	RSUserName = "user"
+	RSPassword = "password"
+)
+
+const (
+	rudderStringLength = 512
+	provider           = warehouseutils.RS
+	tableNameLimit     = 127
 )
 
 var dataTypesMap = map[string]string{
@@ -132,11 +134,11 @@ func ColumnsWithDataTypes(columns map[string]string, prefix string) string {
 	for _, name := range keys {
 		arr = append(arr, fmt.Sprintf(`"%s%s" %s`, prefix, name, getRSDataType(columns[name])))
 	}
-	return strings.Join(arr[:], ",")
+	return strings.Join(arr, ",")
 }
 
 func (rs *HandleT) CreateTable(tableName string, columns map[string]string) (err error) {
-	name := fmt.Sprintf(`"%s"."%s"`, rs.Namespace, tableName)
+	name := fmt.Sprintf(`%q.%q`, rs.Namespace, tableName)
 	sortKeyField := "received_at"
 	if _, ok := columns["received_at"]; !ok {
 		sortKeyField = "uuid_ts"
@@ -148,7 +150,7 @@ func (rs *HandleT) CreateTable(tableName string, columns map[string]string) (err
 	if _, ok := columns["id"]; ok {
 		distKeySql = `DISTSTYLE KEY DISTKEY("id")`
 	}
-	sqlStatement := fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s ( %v ) %s SORTKEY("%s") `, name, ColumnsWithDataTypes(columns, ""), distKeySql, sortKeyField)
+	sqlStatement := fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s ( %v ) %s SORTKEY(%q) `, name, ColumnsWithDataTypes(columns, ""), distKeySql, sortKeyField)
 	pkgLogger.Infof("Creating table in redshift for RS:%s : %v", rs.Warehouse.Destination.ID, sqlStatement)
 	_, err = rs.Db.Exec(sqlStatement)
 	return
@@ -161,30 +163,63 @@ func (rs *HandleT) DropTable(tableName string) (err error) {
 	return
 }
 
-func (rs *HandleT) schemaExists(schemaname string) (exists bool, err error) {
+func (rs *HandleT) schemaExists(_ string) (exists bool, err error) {
 	sqlStatement := fmt.Sprintf(`SELECT EXISTS (SELECT 1 FROM pg_catalog.pg_namespace WHERE nspname = '%s');`, rs.Namespace)
 	err = rs.Db.QueryRow(sqlStatement).Scan(&exists)
 	return
 }
 
 func (rs *HandleT) AddColumn(name, columnName, columnType string) (err error) {
-	tableName := fmt.Sprintf(`"%s"."%s"`, rs.Namespace, name)
-	sqlStatement := fmt.Sprintf(`ALTER TABLE %v ADD COLUMN "%s" %s`, tableName, columnName, getRSDataType(columnType))
+	tableName := fmt.Sprintf(`%q.%q`, rs.Namespace, name)
+	sqlStatement := fmt.Sprintf(`ALTER TABLE %v ADD COLUMN %q %s`, tableName, columnName, getRSDataType(columnType))
 	pkgLogger.Infof("Adding column in redshift for RS:%s : %v", rs.Warehouse.Destination.ID, sqlStatement)
 	_, err = rs.Db.Exec(sqlStatement)
 	return
 }
 
+func (rs *HandleT) DeleteBy(tableNames []string, params warehouseutils.DeleteByParams) (err error) {
+	pkgLogger.Infof("RS: Cleaning up the followng tables in redshift for RS:%s : %+v", tableNames, params)
+	pkgLogger.Infof("RS: Flag for enableDeleteByJobs is %t", enableDeleteByJobs)
+	for _, tb := range tableNames {
+		sqlStatement := fmt.Sprintf(`DELETE FROM "%[1]s"."%[2]s" WHERE 
+		context_sources_job_run_id <> $1 AND
+		context_sources_task_run_id <> $2 AND
+		context_source_id = $3 AND
+		received_at < $4`,
+			rs.Namespace,
+			tb,
+		)
+
+		pkgLogger.Infof("RS: Deleting rows in table in redshift for RS:%s", rs.Warehouse.Destination.ID)
+		pkgLogger.Debugf("RS: Executing the query %v", sqlStatement)
+
+		if enableDeleteByJobs {
+			_, err = rs.Db.Exec(sqlStatement,
+				params.JobRunId,
+				params.TaskRunId,
+				params.SourceId,
+				params.StartTime,
+			)
+			if err != nil {
+				pkgLogger.Errorf("Error in executing the query %s", err.Error)
+				return err
+			}
+		}
+
+	}
+	return nil
+}
+
 // alterStringToText alters column data type string(varchar(512)) to text which is varchar(max) in redshift
 func (rs *HandleT) alterStringToText(tableName, columnName string) (err error) {
-	sqlStatement := fmt.Sprintf(`ALTER TABLE %v ALTER COLUMN "%s" TYPE %s`, tableName, columnName, getRSDataType("text"))
+	sqlStatement := fmt.Sprintf(`ALTER TABLE %v ALTER COLUMN %q TYPE %s`, tableName, columnName, getRSDataType("text"))
 	pkgLogger.Infof("Altering column type in redshift from string to text(varchar(max)) RS:%s : %v", rs.Warehouse.Destination.ID, sqlStatement)
 	_, err = rs.Db.Exec(sqlStatement)
 	return
 }
 
 func (rs *HandleT) createSchema() (err error) {
-	sqlStatement := fmt.Sprintf(`CREATE SCHEMA IF NOT EXISTS "%s"`, rs.Namespace)
+	sqlStatement := fmt.Sprintf(`CREATE SCHEMA IF NOT EXISTS %q`, rs.Namespace)
 	pkgLogger.Infof("Creating schemaname in redshift for RS:%s : %v", rs.Warehouse.Destination.ID, sqlStatement)
 	_, err = rs.Db.Exec(sqlStatement)
 	return
@@ -204,7 +239,7 @@ type S3ManifestT struct {
 	Entries []S3ManifestEntryT `json:"entries"`
 }
 
-func (rs *HandleT) generateManifest(tableName string, columnMap map[string]string) (string, error) {
+func (rs *HandleT) generateManifest(tableName string, _ map[string]string) (string, error) {
 	loadFiles := rs.Uploader.GetLoadFilesMetadata(warehouseutils.GetLoadFilesOptionsT{Table: tableName})
 	loadFiles = warehouseutils.GetS3Locations(loadFiles)
 	var manifest S3ManifestT
@@ -240,11 +275,12 @@ func (rs *HandleT) generateManifest(tableName string, columnMap map[string]strin
 	}
 	defer file.Close()
 	uploader, err := filemanager.DefaultFileManagerFactory.New(&filemanager.SettingsT{
-		Provider: "S3",
+		Provider: warehouseutils.S3,
 		Config: misc.GetObjectStorageConfig(misc.ObjectStorageOptsT{
-			Provider:         "S3",
+			Provider:         warehouseutils.S3,
 			Config:           rs.Warehouse.Destination.Config,
 			UseRudderStorage: rs.Uploader.UseRudderStorage(),
+			WorkspaceID:      rs.Warehouse.Destination.WorkspaceID,
 		}),
 	})
 	if err != nil {
@@ -276,23 +312,13 @@ func (rs *HandleT) loadTable(tableName string, tableSchemaInUpload, tableSchemaA
 	}
 	pkgLogger.Infof("RS: Generated and stored manifest for table:%s at %s\n", tableName, manifestLocation)
 
-	// sort columnnames
-	keys := reflect.ValueOf(tableSchemaInUpload).MapKeys()
-	strkeys := make([]string, len(keys))
-	for i := 0; i < len(keys); i++ {
-		strkeys[i] = keys[i].String()
-	}
-	sort.Strings(strkeys)
-	var sortedColumnNames string
-	// TODO: use strings.Join() instead
-	for index, key := range strkeys {
-		if index > 0 {
-			sortedColumnNames += `, `
-		}
-		sortedColumnNames += fmt.Sprintf(`"%s"`, key)
-	}
+	strKeys := warehouseutils.GetColumnsFromTableSchema(tableSchemaInUpload)
+	sort.Strings(strKeys)
+	sortedColumnNames := warehouseutils.JoinWithFormatting(strKeys, func(_ int, name string) string {
+		return fmt.Sprintf(`%q`, name)
+	}, ",")
 
-	stagingTableName = misc.TruncateStr(fmt.Sprintf(`%s%s_%s`, stagingTablePrefix, strings.ReplaceAll(uuid.Must(uuid.NewV4()).String(), "-", ""), tableName), 127)
+	stagingTableName = warehouseutils.StagingTableName(provider, tableName, tableNameLimit)
 	err = rs.CreateTable(stagingTableName, tableSchemaAfterUpload)
 	if err != nil {
 		return
@@ -312,7 +338,7 @@ func (rs *HandleT) loadTable(tableName string, tableSchemaInUpload, tableSchemaA
 		return
 	}
 	// create session token and temporary credentials
-	tempAccessKeyId, tempSecretAccessKey, token, err := rs.getTemporaryCredForCopy()
+	tempAccessKeyId, tempSecretAccessKey, token, err := warehouseutils.GetTemporaryS3Cred(&rs.Warehouse.Destination)
 	if err != nil {
 		pkgLogger.Errorf("RS: Failed to create temp credentials before copying, while create load for table %v, err%v", tableName, err)
 		tx.Rollback()
@@ -322,16 +348,17 @@ func (rs *HandleT) loadTable(tableName string, tableSchemaInUpload, tableSchemaA
 	var sqlStatement string
 	if rs.Uploader.GetLoadFileType() == warehouseutils.LOAD_FILE_TYPE_PARQUET {
 		// copy statement for parquet load files
-		sqlStatement = fmt.Sprintf(`COPY %v FROM '%s' ACCESS_KEY_ID '%s' SECRET_ACCESS_KEY '%s' SESSION_TOKEN '%s' MANIFEST FORMAT PARQUET`, fmt.Sprintf(`"%s"."%s"`, rs.Namespace, stagingTableName), manifestS3Location, tempAccessKeyId, tempSecretAccessKey, token)
+		sqlStatement = fmt.Sprintf(`COPY %v FROM '%s' ACCESS_KEY_ID '%s' SECRET_ACCESS_KEY '%s' SESSION_TOKEN '%s' MANIFEST FORMAT PARQUET`, fmt.Sprintf(`%q.%q`, rs.Namespace, stagingTableName), manifestS3Location, tempAccessKeyId, tempSecretAccessKey, token)
 	} else {
 		// copy statement for csv load files
 		sqlStatement = fmt.Sprintf(`COPY %v(%v) FROM '%v' CSV GZIP ACCESS_KEY_ID '%s' SECRET_ACCESS_KEY '%s' SESSION_TOKEN '%s' REGION '%s'  DATEFORMAT 'auto' TIMEFORMAT 'auto' MANIFEST TRUNCATECOLUMNS EMPTYASNULL BLANKSASNULL FILLRECORD ACCEPTANYDATE TRIMBLANKS ACCEPTINVCHARS COMPUPDATE OFF STATUPDATE OFF`,
-			fmt.Sprintf(`"%s"."%s"`, rs.Namespace, stagingTableName), sortedColumnNames, manifestS3Location, tempAccessKeyId, tempSecretAccessKey, token, region)
+			fmt.Sprintf(`%q.%q`, rs.Namespace, stagingTableName), sortedColumnNames, manifestS3Location, tempAccessKeyId, tempSecretAccessKey, token, region)
 	}
 
 	sanitisedSQLStmt, regexErr := misc.ReplaceMultiRegex(sqlStatement, map[string]string{
 		"ACCESS_KEY_ID '[^']*'":     "ACCESS_KEY_ID '***'",
 		"SECRET_ACCESS_KEY '[^']*'": "SECRET_ACCESS_KEY '***'",
+		"SESSION_TOKEN '[^']*'":     "SESSION_TOKEN '***'",
 	})
 	if regexErr == nil {
 		pkgLogger.Infof("RS: Running COPY command for table:%s at %s\n", tableName, sanitisedSQLStmt)
@@ -344,22 +371,56 @@ func (rs *HandleT) loadTable(tableName string, tableSchemaInUpload, tableSchemaA
 		return
 	}
 
-	primaryKey := "id"
+	var (
+		primaryKey   = "id"
+		partitionKey = "id"
+	)
+
 	if column, ok := primaryKeyMap[tableName]; ok {
 		primaryKey = column
 	}
-
-	partitionKey := "id"
 	if column, ok := partitionKeyMap[tableName]; ok {
 		partitionKey = column
 	}
 
-	var additionalJoinClause string
-	if tableName == warehouseutils.DiscardsTable {
-		additionalJoinClause = fmt.Sprintf(`AND _source.%[3]s = %[1]s.%[2]s.%[3]s AND _source.%[4]s = %[1]s.%[2]s.%[4]s`, rs.Namespace, tableName, "table_name", "column_name")
+	sqlStatement = fmt.Sprintf(`
+		DELETE FROM
+			%[1]s.%[2]q 
+		USING 
+			%[1]s.%[3]q _source  
+		WHERE
+			_source.%[4]s = %[1]s.%[2]q.%[4]s
+`,
+		rs.Namespace,
+		tableName,
+		stagingTableName,
+		primaryKey,
+	)
+
+	if dedupWindow {
+		if _, ok := tableSchemaAfterUpload["received_at"]; ok {
+			sqlStatement += fmt.Sprintf(`
+				AND %[1]s.%[2]q.received_at > GETDATE() - INTERVAL '%[3]d DAY'
+`,
+				rs.Namespace,
+				tableName,
+				dedupWindowInHours/time.Hour,
+			)
+		}
 	}
 
-	sqlStatement = fmt.Sprintf(`DELETE FROM %[1]s."%[2]s" using %[1]s."%[3]s" _source where (_source.%[4]s = %[1]s.%[2]s.%[4]s %[5]s)`, rs.Namespace, tableName, stagingTableName, primaryKey, additionalJoinClause)
+	if tableName == warehouseutils.DiscardsTable {
+		sqlStatement += fmt.Sprintf(`
+			AND _source.%[3]s = %[1]s.%[2]q.%[3]s 
+			AND _source.%[4]s = %[1]s.%[2]q.%[4]s
+`,
+			rs.Namespace,
+			tableName,
+			"table_name",
+			"column_name",
+		)
+	}
+
 	pkgLogger.Infof("RS: Dedup records for table:%s using staging table: %s\n", tableName, sqlStatement)
 	_, err = tx.Exec(sqlStatement)
 	if err != nil {
@@ -368,7 +429,7 @@ func (rs *HandleT) loadTable(tableName string, tableSchemaInUpload, tableSchemaA
 		return
 	}
 
-	quotedColumnNames := warehouseutils.DoubleQuoteAndJoinByComma(strkeys)
+	quotedColumnNames := warehouseutils.DoubleQuoteAndJoinByComma(strKeys)
 
 	sqlStatement = fmt.Sprintf(`INSERT INTO "%[1]s"."%[2]s" (%[3]s) SELECT %[3]s FROM ( SELECT *, row_number() OVER (PARTITION BY %[5]s ORDER BY received_at ASC) AS _rudder_staging_row_number FROM "%[1]s"."%[4]s" ) AS _ where _rudder_staging_row_number = 1`, rs.Namespace, tableName, quotedColumnNames, stagingTableName, partitionKey)
 	pkgLogger.Infof("RS: Inserting records for table:%s using staging table: %s\n", tableName, sqlStatement)
@@ -425,7 +486,8 @@ func (rs *HandleT) loadUserTables() (errorMap map[string]error) {
 		firstValProps = append(firstValProps, fmt.Sprintf(`FIRST_VALUE("%[1]s" IGNORE NULLS) OVER (PARTITION BY id ORDER BY received_at DESC ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) AS "%[1]s"`, colName))
 	}
 	quotedUserColNames := warehouseutils.DoubleQuoteAndJoinByComma(userColNames)
-	stagingTableName := misc.TruncateStr(fmt.Sprintf(`%s%s_%s`, stagingTablePrefix, strings.ReplaceAll(uuid.Must(uuid.NewV4()).String(), "-", ""), warehouseutils.UsersTable), 127)
+
+	stagingTableName := warehouseutils.StagingTableName(provider, warehouseutils.UsersTable, tableNameLimit)
 
 	sqlStatement := fmt.Sprintf(`CREATE TABLE "%[1]s"."%[2]s" AS (SELECT DISTINCT * FROM
 										(
@@ -500,27 +562,6 @@ func (rs *HandleT) loadUserTables() (errorMap map[string]error) {
 	return
 }
 
-func (rs *HandleT) getTemporaryCredForCopy() (string, string, string, error) {
-	var accessKey, accessKeyID string
-	if misc.HasAWSKeysInConfig(rs.Warehouse.Destination.Config) && !misc.IsConfiguredToUseRudderObjectStorage(rs.Warehouse.Destination.Config) {
-		accessKey = warehouseutils.GetConfigValue(AWSAccessKey, rs.Warehouse)
-		accessKeyID = warehouseutils.GetConfigValue(AWSAccessKeyID, rs.Warehouse)
-	} else {
-		accessKeyID = config.GetEnv("RUDDER_AWS_S3_COPY_USER_ACCESS_KEY_ID", "")
-		accessKey = config.GetEnv("RUDDER_AWS_S3_COPY_USER_ACCESS_KEY", "")
-	}
-	mySession := session.Must(session.NewSession())
-	// Create a STS client from just a session.
-	svc := sts.New(mySession, aws.NewConfig().WithCredentials(credentials.NewStaticCredentials(accessKeyID, accessKey, "")))
-
-	// sts.New(mySession, aws.NewConfig().WithRegion("us-west-2"))
-	SessionTokenOutput, err := svc.GetSessionToken(&sts.GetSessionTokenInput{DurationSeconds: &warehouseutils.AWSCredsExpiryInS})
-	if err != nil {
-		return "", "", "", err
-	}
-	return *SessionTokenOutput.Credentials.AccessKeyId, *SessionTokenOutput.Credentials.SecretAccessKey, *SessionTokenOutput.Credentials.SessionToken, err
-}
-
 // RedshiftCredentialsT ...
 type RedshiftCredentialsT struct {
 	Host     string
@@ -557,10 +598,20 @@ func Connect(cred RedshiftCredentialsT) (*sql.DB, error) {
 }
 
 func (rs *HandleT) dropDanglingStagingTables() bool {
-	sqlStatement := fmt.Sprintf(`select table_name
-								 from information_schema.tables
-								 where table_schema = '%s' AND table_name like '%s';`, rs.Namespace, fmt.Sprintf("%s%s", stagingTablePrefix, "%"))
-	rows, err := rs.Db.Query(sqlStatement)
+	sqlStatement := `
+		select
+		  table_name
+		from
+		  information_schema.tables
+		where
+		  table_schema = $1
+		  AND table_name like $2;
+	`
+	rows, err := rs.Db.Query(
+		sqlStatement,
+		rs.Namespace,
+		fmt.Sprintf(`%s%%`, warehouseutils.StagingTablePrefix(provider)),
+	)
 	if err != nil {
 		pkgLogger.Errorf("WH: RS: Error dropping dangling staging tables in redshift: %v\nQuery: %s\n", err, sqlStatement)
 		return false
@@ -608,7 +659,7 @@ func (rs *HandleT) CreateSchema() (err error) {
 
 func (rs *HandleT) AlterColumn(tableName, columnName, columnType string) (err error) {
 	if setVarCharMax && columnType == "text" {
-		err = rs.alterStringToText(fmt.Sprintf(`"%s"."%s"`, rs.Namespace, tableName), columnName)
+		err = rs.alterStringToText(fmt.Sprintf(`%q.%q`, rs.Namespace, tableName), columnName)
 	}
 	return
 }
@@ -625,7 +676,7 @@ func (rs *HandleT) getConnectionCredentials() RedshiftCredentialsT {
 }
 
 // FetchSchema queries redshift and returns the schema assoiciated with provided namespace
-func (rs *HandleT) FetchSchema(warehouse warehouseutils.WarehouseT) (schema warehouseutils.SchemaT, err error) {
+func (rs *HandleT) FetchSchema(warehouse warehouseutils.Warehouse) (schema warehouseutils.SchemaT, err error) {
 	rs.Warehouse = warehouse
 	rs.Namespace = warehouse.Namespace
 	dbHandle, err := Connect(rs.getConnectionCredentials())
@@ -635,11 +686,24 @@ func (rs *HandleT) FetchSchema(warehouse warehouseutils.WarehouseT) (schema ware
 	defer dbHandle.Close()
 
 	schema = make(warehouseutils.SchemaT)
-	sqlStatement := fmt.Sprintf(`SELECT table_name, column_name, data_type, character_maximum_length
-									FROM INFORMATION_SCHEMA.COLUMNS
-									WHERE table_schema = '%s' and table_name not like '%s%s'`, rs.Namespace, stagingTablePrefix, "%")
+	sqlStatement := `
+			SELECT
+			  table_name,
+			  column_name,
+			  data_type,
+			  character_maximum_length
+			FROM
+			  INFORMATION_SCHEMA.COLUMNS
+			WHERE
+			  table_schema = $1
+			  and table_name not like $2;
+		`
 
-	rows, err := dbHandle.Query(sqlStatement)
+	rows, err := dbHandle.Query(
+		sqlStatement,
+		rs.Namespace,
+		fmt.Sprintf(`%s%%`, warehouseutils.StagingTablePrefix(provider)),
+	)
 	if err != nil && err != sql.ErrNoRows {
 		pkgLogger.Errorf("RS: Error in fetching schema from redshift destination:%v, query: %v", rs.Warehouse.Destination.ID, sqlStatement)
 		return
@@ -673,7 +737,7 @@ func (rs *HandleT) FetchSchema(warehouse warehouseutils.WarehouseT) (schema ware
 	return
 }
 
-func (rs *HandleT) Setup(warehouse warehouseutils.WarehouseT, uploader warehouseutils.UploaderI) (err error) {
+func (rs *HandleT) Setup(warehouse warehouseutils.Warehouse, uploader warehouseutils.UploaderI) (err error) {
 	rs.Warehouse = warehouse
 	rs.Namespace = warehouse.Namespace
 	rs.Uploader = uploader
@@ -682,7 +746,7 @@ func (rs *HandleT) Setup(warehouse warehouseutils.WarehouseT, uploader warehouse
 	return err
 }
 
-func (rs *HandleT) TestConnection(warehouse warehouseutils.WarehouseT) (err error) {
+func (rs *HandleT) TestConnection(warehouse warehouseutils.Warehouse) (err error) {
 	rs.Warehouse = warehouse
 	rs.Db, err = Connect(rs.getConnectionCredentials())
 	if err != nil {
@@ -711,7 +775,7 @@ func (rs *HandleT) Cleanup() {
 	}
 }
 
-func (rs *HandleT) CrashRecover(warehouse warehouseutils.WarehouseT) (err error) {
+func (rs *HandleT) CrashRecover(warehouse warehouseutils.Warehouse) (err error) {
 	rs.Warehouse = warehouse
 	rs.Namespace = warehouse.Namespace
 	rs.Db, err = Connect(rs.getConnectionCredentials())
@@ -723,7 +787,7 @@ func (rs *HandleT) CrashRecover(warehouse warehouseutils.WarehouseT) (err error)
 	return
 }
 
-func (rs *HandleT) IsEmpty(warehouse warehouseutils.WarehouseT) (empty bool, err error) {
+func (*HandleT) IsEmpty(_ warehouseutils.Warehouse) (empty bool, err error) {
 	return
 }
 
@@ -736,28 +800,28 @@ func (rs *HandleT) LoadTable(tableName string) error {
 	return err
 }
 
-func (rs *HandleT) LoadIdentityMergeRulesTable() (err error) {
+func (*HandleT) LoadIdentityMergeRulesTable() (err error) {
 	return
 }
 
-func (rs *HandleT) LoadIdentityMappingsTable() (err error) {
+func (*HandleT) LoadIdentityMappingsTable() (err error) {
 	return
 }
 
-func (rs *HandleT) DownloadIdentityRules(*misc.GZipWriter) (err error) {
+func (*HandleT) DownloadIdentityRules(*misc.GZipWriter) (err error) {
 	return
 }
 
-func (rs *HandleT) GetTotalCountInTable(tableName string) (total int64, err error) {
+func (rs *HandleT) GetTotalCountInTable(ctx context.Context, tableName string) (total int64, err error) {
 	sqlStatement := fmt.Sprintf(`SELECT count(*) FROM "%[1]s"."%[2]s"`, rs.Namespace, tableName)
-	err = rs.Db.QueryRow(sqlStatement).Scan(&total)
+	err = rs.Db.QueryRowContext(ctx, sqlStatement).Scan(&total)
 	if err != nil {
 		pkgLogger.Errorf(`RS: Error getting total count in table %s:%s`, rs.Namespace, tableName)
 	}
 	return
 }
 
-func (rs *HandleT) Connect(warehouse warehouseutils.WarehouseT) (client.Client, error) {
+func (rs *HandleT) Connect(warehouse warehouseutils.Warehouse) (client.Client, error) {
 	rs.Warehouse = warehouse
 	rs.Namespace = warehouse.Namespace
 	dbHandle, err := Connect(rs.getConnectionCredentials())
@@ -768,8 +832,8 @@ func (rs *HandleT) Connect(warehouse warehouseutils.WarehouseT) (client.Client, 
 	return client.Client{Type: client.SQLClient, SQL: dbHandle}, err
 }
 
-func (rs *HandleT) LoadTestTable(location, tableName string, payloadMap map[string]interface{}, format string) (err error) {
-	tempAccessKeyId, tempSecretAccessKey, token, err := rs.getTemporaryCredForCopy()
+func (rs *HandleT) LoadTestTable(location, tableName string, _ map[string]interface{}, format string) (err error) {
+	tempAccessKeyId, tempSecretAccessKey, token, err := warehouseutils.GetTemporaryS3Cred(&rs.Warehouse.Destination)
 	if err != nil {
 		pkgLogger.Errorf("RS: Failed to create temp credentials before copying, while create load for table %v, err%v", tableName, err)
 		return
@@ -784,7 +848,7 @@ func (rs *HandleT) LoadTestTable(location, tableName string, payloadMap map[stri
 	if format == warehouseutils.LOAD_FILE_TYPE_PARQUET {
 		// copy statement for parquet load files
 		sqlStatement = fmt.Sprintf(`COPY %v FROM '%s' ACCESS_KEY_ID '%s' SECRET_ACCESS_KEY '%s' SESSION_TOKEN '%s' FORMAT PARQUET`,
-			fmt.Sprintf(`"%s"."%s"`, rs.Namespace, tableName),
+			fmt.Sprintf(`%q.%q`, rs.Namespace, tableName),
 			manifestS3Location,
 			tempAccessKeyId,
 			tempSecretAccessKey,
@@ -793,8 +857,8 @@ func (rs *HandleT) LoadTestTable(location, tableName string, payloadMap map[stri
 	} else {
 		// copy statement for csv load files
 		sqlStatement = fmt.Sprintf(`COPY %v(%v) FROM '%v' CSV GZIP ACCESS_KEY_ID '%s' SECRET_ACCESS_KEY '%s' SESSION_TOKEN '%s' REGION '%s'  DATEFORMAT 'auto' TIMEFORMAT 'auto' TRUNCATECOLUMNS EMPTYASNULL BLANKSASNULL FILLRECORD ACCEPTANYDATE TRIMBLANKS ACCEPTINVCHARS COMPUPDATE OFF STATUPDATE OFF`,
-			fmt.Sprintf(`"%s"."%s"`, rs.Namespace, tableName),
-			fmt.Sprintf(`"%s", "%s"`, "id", "val"),
+			fmt.Sprintf(`%q.%q`, rs.Namespace, tableName),
+			fmt.Sprintf(`%q, %q`, "id", "val"),
 			manifestS3Location,
 			tempAccessKeyId,
 			tempSecretAccessKey,
@@ -805,6 +869,7 @@ func (rs *HandleT) LoadTestTable(location, tableName string, payloadMap map[stri
 	sanitisedSQLStmt, regexErr := misc.ReplaceMultiRegex(sqlStatement, map[string]string{
 		"ACCESS_KEY_ID '[^']*'":     "ACCESS_KEY_ID '***'",
 		"SECRET_ACCESS_KEY '[^']*'": "SECRET_ACCESS_KEY '***'",
+		"SESSION_TOKEN '[^']*'":     "SESSION_TOKEN '***'",
 	})
 	if regexErr == nil {
 		pkgLogger.Infof("RS: Running COPY command for load test table: %s with sqlStatement: %s", tableName, sanitisedSQLStmt)

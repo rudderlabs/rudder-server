@@ -151,21 +151,17 @@ func generateJsonSchFromEM(eventModels []*EventModelT) ([]byte, error) {
 func getETSchProp(eventType string, eventModelSch map[string]interface{}) (map[string]interface{}, error) {
 	switch eventType {
 	case "track", "screen", "page":
-		{
-			filtered, ok := eventModelSch["properties"].(map[string]interface{})
-			if ok {
-				return filtered, nil
-			}
-			return nil, fmt.Errorf("invalid properties")
+		filtered, ok := eventModelSch["properties"].(map[string]interface{})
+		if ok {
+			return filtered, nil
 		}
+		return nil, fmt.Errorf("invalid properties")
 	case "identify", "group":
-		{
-			filtered, ok := eventModelSch["traits"].(map[string]interface{})
-			if ok {
-				return filtered, nil
-			}
-			return nil, fmt.Errorf("invalid traits")
+		filtered, ok := eventModelSch["traits"].(map[string]interface{})
+		if ok {
+			return filtered, nil
 		}
+		return nil, fmt.Errorf("invalid traits")
 	}
 	return nil, fmt.Errorf("invalid eventType")
 }

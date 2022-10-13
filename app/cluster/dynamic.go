@@ -55,13 +55,13 @@ type Dynamic struct {
 	currentMode         servermode.Mode
 	currentWorkspaceIDs string
 
-	serverStartTimeStat  stats.RudderStats
-	serverStopTimeStat   stats.RudderStats
-	serverStartCountStat stats.RudderStats
-	serverStopCountStat  stats.RudderStats
+	serverStartTimeStat  stats.Measurement
+	serverStopTimeStat   stats.Measurement
+	serverStartCountStat stats.Measurement
+	serverStopCountStat  stats.Measurement
 	BackendConfig        configLifecycle
 
-	logger logger.LoggerI
+	logger logger.Logger
 
 	once sync.Once
 }
@@ -73,10 +73,10 @@ func (d *Dynamic) init() {
 		"controlled_by":   controller,
 		"controller_type": controllerType,
 	}
-	d.serverStartTimeStat = stats.NewTaggedStat("cluster.server_start_time", stats.TimerType, tag)
-	d.serverStopTimeStat = stats.NewTaggedStat("cluster.server_stop_time", stats.TimerType, tag)
-	d.serverStartCountStat = stats.NewTaggedStat("cluster.server_start_count", stats.CountType, tag)
-	d.serverStopCountStat = stats.NewTaggedStat("cluster.server_stop_count", stats.CountType, tag)
+	d.serverStartTimeStat = stats.Default.NewTaggedStat("cluster.server_start_time", stats.TimerType, tag)
+	d.serverStopTimeStat = stats.Default.NewTaggedStat("cluster.server_stop_time", stats.TimerType, tag)
+	d.serverStartCountStat = stats.Default.NewTaggedStat("cluster.server_start_count", stats.CountType, tag)
+	d.serverStopCountStat = stats.Default.NewTaggedStat("cluster.server_stop_count", stats.CountType, tag)
 
 	if d.BackendConfig == nil {
 		d.BackendConfig = backendconfig.DefaultBackendConfig
@@ -183,13 +183,20 @@ func (d *Dynamic) stop() {
 	d.logger.Info("Stopping the server")
 	start := time.Now()
 	d.Processor.Stop()
+	d.logger.Debug("Processor stopped")
 	d.Router.Stop()
+	d.logger.Debug("Router stopped")
 	d.MultiTenantStat.Stop()
+	d.logger.Debug("MultiTenantStat stopped")
 
 	d.RouterDB.Stop()
+	d.logger.Debug("RouterDB stopped")
 	d.BatchRouterDB.Stop()
+	d.logger.Debug("BatchRouterDB stopped")
 	d.ErrorDB.Stop()
+	d.logger.Debug("ErrorDB stopped")
 	d.GatewayDB.Stop()
+	d.logger.Debug("GatewayDB stopped")
 	d.serverStopTimeStat.Since(start)
 	d.serverStopCountStat.Increment()
 }

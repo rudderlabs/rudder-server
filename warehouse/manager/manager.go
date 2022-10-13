@@ -1,6 +1,7 @@
 package manager
 
 import (
+	"context"
 	"fmt"
 	"time"
 
@@ -20,9 +21,9 @@ import (
 )
 
 type ManagerI interface {
-	Setup(warehouse warehouseutils.WarehouseT, uploader warehouseutils.UploaderI) error
-	CrashRecover(warehouse warehouseutils.WarehouseT) (err error)
-	FetchSchema(warehouse warehouseutils.WarehouseT) (warehouseutils.SchemaT, error)
+	Setup(warehouse warehouseutils.Warehouse, uploader warehouseutils.UploaderI) error
+	CrashRecover(warehouse warehouseutils.Warehouse) (err error)
+	FetchSchema(warehouse warehouseutils.Warehouse) (warehouseutils.SchemaT, error)
 	CreateSchema() (err error)
 	CreateTable(tableName string, columnMap map[string]string) (err error)
 	AddColumn(tableName, columnName, columnType string) (err error)
@@ -32,17 +33,18 @@ type ManagerI interface {
 	LoadIdentityMergeRulesTable() error
 	LoadIdentityMappingsTable() error
 	Cleanup()
-	IsEmpty(warehouse warehouseutils.WarehouseT) (bool, error)
-	TestConnection(warehouse warehouseutils.WarehouseT) error
+	IsEmpty(warehouse warehouseutils.Warehouse) (bool, error)
+	TestConnection(warehouse warehouseutils.Warehouse) error
 	DownloadIdentityRules(*misc.GZipWriter) error
-	GetTotalCountInTable(tableName string) (int64, error)
-	Connect(warehouse warehouseutils.WarehouseT) (client.Client, error)
+	GetTotalCountInTable(ctx context.Context, tableName string) (int64, error)
+	Connect(warehouse warehouseutils.Warehouse) (client.Client, error)
 	LoadTestTable(location, stagingTableName string, payloadMap map[string]interface{}, loadFileFormat string) error
 	SetConnectionTimeout(timeout time.Duration)
 }
 
 type WarehouseDelete interface {
 	DropTable(tableName string) (err error)
+	DeleteBy(tableName []string, params warehouseutils.DeleteByParams) error
 }
 
 type WarehouseOperations interface {

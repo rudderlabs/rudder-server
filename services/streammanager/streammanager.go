@@ -1,10 +1,10 @@
 package streammanager
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 
+	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/services/streammanager/bqstream"
 	"github.com/rudderlabs/rudder-server/services/streammanager/common"
 	"github.com/rudderlabs/rudder-server/services/streammanager/eventbridge"
@@ -18,63 +18,34 @@ import (
 )
 
 // NewProducer delegates the call to the appropriate based on parameter destination for creating producer
-func NewProducer(destinationConfig map[string]interface{}, destType string, opts common.Opts) (common.StreamProducer, error) {
-	switch destType {
+func NewProducer(destination *backendconfig.DestinationT, opts common.Opts) (common.StreamProducer, error) {
+	if destination == nil {
+		return nil, errors.New("destination should not be nil")
+	}
+	switch destination.DestinationDefinition.Name {
 	case "AZURE_EVENT_HUB":
-		return kafka.NewProducerForAzureEventHubs(destinationConfig, opts)
+		return kafka.NewProducerForAzureEventHubs(destination, opts)
 	case "CONFLUENT_CLOUD":
-		return kafka.NewProducerForConfluentCloud(destinationConfig, opts)
+		return kafka.NewProducerForConfluentCloud(destination, opts)
 	case "EVENTBRIDGE":
-		return eventbridge.NewProducer(destinationConfig, opts)
+		return eventbridge.NewProducer(destination, opts)
 	case "FIREHOSE":
-		return firehose.NewProducer(destinationConfig, opts)
+		return firehose.NewProducer(destination, opts)
 	case "KAFKA":
-		return kafka.NewProducer(destinationConfig, opts)
+		return kafka.NewProducer(destination, opts)
 	case "KINESIS":
-		return kinesis.NewProducer(destinationConfig, opts)
+		return kinesis.NewProducer(destination, opts)
 	case "GOOGLEPUBSUB":
-		return googlepubsub.NewProducer(destinationConfig, opts)
+		return googlepubsub.NewProducer(destination, opts)
 	case "GOOGLESHEETS":
-		return googlesheets.NewProducer(destinationConfig, opts)
+		return googlesheets.NewProducer(destination, opts)
 	case "PERSONALIZE":
-		return personalize.NewProducer(destinationConfig, opts)
+		return personalize.NewProducer(destination, opts)
 	case "BQSTREAM":
-		return bqstream.NewProducer(destinationConfig, opts)
+		return bqstream.NewProducer(destination, opts)
 	case "LAMBDA":
-		return lambda.NewProducer(destinationConfig, opts)
+		return lambda.NewProducer(destination, opts)
 	default:
 		return nil, fmt.Errorf("no provider configured for StreamManager") // 404, "No provider configured for StreamManager", ""
-	}
-}
-
-// Close delegates the call to the appropriate manager based on parameter destination to close a given producer
-// TODO check if it's possible to pass a context
-func Close(producer interface{}, destType string) error {
-	switch destType {
-	case "KINESIS", "FIREHOSE", "EVENTBRIDGE", "PERSONALIZE", "GOOGLESHEETS", "LAMBDA":
-		return nil
-	case "BQSTREAM", "KAFKA", "AZURE_EVENT_HUB", "CONFLUENT_CLOUD", "GOOGLEPUBSUB":
-		streamProducer, ok := producer.(common.ClosableStreamProducer)
-		if !ok {
-			return errors.New("producer is not closable")
-		}
-		return streamProducer.Close()
-	default:
-		return fmt.Errorf("no provider configured for StreamManager") // 404, "no provider configured for StreamManager", ""
-	}
-}
-
-// Produce delegates call to appropriate manager based on parameter destination
-func Produce(jsonData json.RawMessage, destType string, producer, config interface{}) (int, string, string) {
-	switch destType {
-	case "KINESIS", "KAFKA", "AZURE_EVENT_HUB", "CONFLUENT_CLOUD", "PERSONALIZE",
-		"FIREHOSE", "EVENTBRIDGE", "GOOGLEPUBSUB", "GOOGLESHEETS", "BQSTREAM", "LAMBDA":
-		streamProducer, ok := producer.(common.StreamProducer)
-		if !ok {
-			return 400, "Could not create stream producer", "Could not create stream producer"
-		}
-		return streamProducer.Produce(jsonData, config)
-	default:
-		return 404, "No provider configured for StreamManager", "No provider configured for StreamManager"
 	}
 }

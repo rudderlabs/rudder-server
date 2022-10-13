@@ -62,7 +62,7 @@ func (worker *SourceWorkerT) replayJobsInFile(ctx context.Context, filePath stri
 
 	var err error
 	dumpDownloadPathDirName := "/rudder-s3-dumps/"
-	tmpdirPath := strings.TrimSuffix(config.GetEnv("RUDDER_TMPDIR", "/tmp"), "/")
+	tmpdirPath := strings.TrimSuffix(config.GetString("RUDDER_TMPDIR", "/tmp"), "/")
 	if tmpdirPath == "" {
 		tmpdirPath, err = os.UserHomeDir()
 		if err != nil {
@@ -110,7 +110,7 @@ func (worker *SourceWorkerT) replayJobsInFile(ctx context.Context, filePath stri
 	var jobs []*jobsdb.JobT
 
 	var transEvents []transformer.TransformerEventT
-	transformationVersionID := config.GetEnv("TRANSFORMATION_VERSION_ID", "")
+	transformationVersionID := config.GetString("TRANSFORMATION_VERSION_ID", "")
 
 	for sc.Scan() {
 		lineBytes := sc.Bytes()
@@ -151,7 +151,7 @@ func (worker *SourceWorkerT) replayJobsInFile(ctx context.Context, filePath stri
 			DestinationID: gjson.GetBytes(copyLineBytes, "parameters.destination_id").String(),
 		}
 
-		transformation := backendconfig.TransformationT{VersionID: config.GetEnv("TRANSFORMATION_VERSION_ID", "")}
+		transformation := backendconfig.TransformationT{VersionID: config.GetString("TRANSFORMATION_VERSION_ID", "")}
 
 		transEvent := transformer.TransformerEventT{
 			Message:     message,

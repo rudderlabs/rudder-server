@@ -7,13 +7,22 @@ import (
 	"os"
 	"reflect"
 	"regexp"
+	"sort"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/utils/logger"
+
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
+
+	"github.com/gofrs/uuid"
+
 	"github.com/stretchr/testify/require"
 
 	"github.com/rudderlabs/rudder-server/config"
+	"github.com/rudderlabs/rudder-server/utils/awsutils"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
@@ -27,7 +36,7 @@ func TestDestinationConfigKeys(t *testing.T) {
 
 			whName := WHDestNameMap[whType]
 			configKey := fmt.Sprintf("Warehouse.%s.feature", whName)
-			got := config.TransformKey(configKey)
+			got := config.ConfigKeyToEnv(configKey)
 			expected := fmt.Sprintf("RSERVER_WAREHOUSE_%s_FEATURE", strings.ToUpper(whName))
 			require.Equal(t, got, expected)
 		})
@@ -595,12 +604,12 @@ func TestGetConfigValue(t *testing.T) {
 	inputs := []struct {
 		key       string
 		value     string
-		warehouse WarehouseT
+		warehouse Warehouse
 	}{
 		{
 			key:   "k1",
 			value: "v1",
-			warehouse: WarehouseT{
+			warehouse: Warehouse{
 				Destination: backendconfig.DestinationT{
 					Config: map[string]interface{}{
 						"k1": "v1",
@@ -610,7 +619,7 @@ func TestGetConfigValue(t *testing.T) {
 		},
 		{
 			key: "u1",
-			warehouse: WarehouseT{
+			warehouse: Warehouse{
 				Destination: backendconfig.DestinationT{
 					Config: map[string]interface{}{},
 				},
@@ -627,12 +636,12 @@ func TestGetConfigValueBoolString(t *testing.T) {
 	inputs := []struct {
 		key       string
 		value     string
-		warehouse WarehouseT
+		warehouse Warehouse
 	}{
 		{
 			key:   "k1",
 			value: "true",
-			warehouse: WarehouseT{
+			warehouse: Warehouse{
 				Destination: backendconfig.DestinationT{
 					Config: map[string]interface{}{
 						"k1": true,
@@ -643,7 +652,7 @@ func TestGetConfigValueBoolString(t *testing.T) {
 		{
 			key:   "k1",
 			value: "false",
-			warehouse: WarehouseT{
+			warehouse: Warehouse{
 				Destination: backendconfig.DestinationT{
 					Config: map[string]interface{}{
 						"k1": false,
@@ -654,7 +663,7 @@ func TestGetConfigValueBoolString(t *testing.T) {
 		{
 			key:   "u1",
 			value: "false",
-			warehouse: WarehouseT{
+			warehouse: Warehouse{
 				Destination: backendconfig.DestinationT{
 					Config: map[string]interface{}{},
 				},
@@ -920,11 +929,11 @@ func TestGetTempFileExtension(t *testing.T) {
 
 func TestGetLoadFilePrefix(t *testing.T) {
 	inputs := []struct {
-		warehouse WarehouseT
+		warehouse Warehouse
 		expected  string
 	}{
 		{
-			warehouse: WarehouseT{
+			warehouse: Warehouse{
 				Destination: backendconfig.DestinationT{
 					Config: map[string]interface{}{
 						"tableSuffix": "key=val",
@@ -935,7 +944,7 @@ func TestGetLoadFilePrefix(t *testing.T) {
 			expected: "2022/08/06/14",
 		},
 		{
-			warehouse: WarehouseT{
+			warehouse: Warehouse{
 				Destination: backendconfig.DestinationT{
 					Config: map[string]interface{}{
 						"tableSuffix": "key=val",
@@ -946,7 +955,7 @@ func TestGetLoadFilePrefix(t *testing.T) {
 			expected: "2022/08/06/14",
 		},
 		{
-			warehouse: WarehouseT{
+			warehouse: Warehouse{
 				Destination: backendconfig.DestinationT{
 					Config: map[string]interface{}{
 						"tableSuffix": "key=val",
@@ -957,7 +966,7 @@ func TestGetLoadFilePrefix(t *testing.T) {
 			expected: "key=val/2022/08/06/14",
 		},
 		{
-			warehouse: WarehouseT{
+			warehouse: Warehouse{
 				Destination: backendconfig.DestinationT{
 					Config: map[string]interface{}{
 						"tableSuffix":      "key=val",
@@ -978,17 +987,17 @@ func TestGetLoadFilePrefix(t *testing.T) {
 
 func TestWarehouseT_GetBoolDestinationConfig(t *testing.T) {
 	inputs := []struct {
-		warehouse WarehouseT
+		warehouse Warehouse
 		expected  bool
 	}{
 		{
-			warehouse: WarehouseT{
+			warehouse: Warehouse{
 				Destination: backendconfig.DestinationT{},
 			},
 			expected: false,
 		},
 		{
-			warehouse: WarehouseT{
+			warehouse: Warehouse{
 				Destination: backendconfig.DestinationT{
 					Config: map[string]interface{}{},
 				},
@@ -996,7 +1005,7 @@ func TestWarehouseT_GetBoolDestinationConfig(t *testing.T) {
 			expected: false,
 		},
 		{
-			warehouse: WarehouseT{
+			warehouse: Warehouse{
 				Destination: backendconfig.DestinationT{
 					Config: map[string]interface{}{
 						"k1": "true",
@@ -1006,7 +1015,7 @@ func TestWarehouseT_GetBoolDestinationConfig(t *testing.T) {
 			expected: false,
 		},
 		{
-			warehouse: WarehouseT{
+			warehouse: Warehouse{
 				Destination: backendconfig.DestinationT{
 					Config: map[string]interface{}{
 						"k1": false,
@@ -1016,7 +1025,7 @@ func TestWarehouseT_GetBoolDestinationConfig(t *testing.T) {
 			expected: false,
 		},
 		{
-			warehouse: WarehouseT{
+			warehouse: Warehouse{
 				Destination: backendconfig.DestinationT{
 					Config: map[string]interface{}{
 						"k1": true,
@@ -1183,28 +1192,216 @@ func TestGetWarehouseIdentifier(t *testing.T) {
 	}
 }
 
-func TestJSONSchemaToMap(t *testing.T) {
+func TestCreateAWSSessionConfig(t *testing.T) {
+	rudderAccessKeyID := "rudderAccessKeyID"
+	rudderAccessKey := "rudderAccessKey"
+	t.Setenv("RUDDER_AWS_S3_COPY_USER_ACCESS_KEY_ID", rudderAccessKeyID)
+	t.Setenv("RUDDER_AWS_S3_COPY_USER_ACCESS_KEY", rudderAccessKey)
+
+	someAccessKeyID := "someAccessKeyID"
+	someAccessKey := "someAccessKey"
+	someIAMRoleARN := "someIAMRoleARN"
+	someWorkspaceID := "someWorkspaceID"
+
 	inputs := []struct {
-		rawMsg   json.RawMessage
-		expected map[string]map[string]string
+		destination    *backendconfig.DestinationT
+		service        string
+		expectedConfig *awsutils.SessionConfig
 	}{
 		{
-			rawMsg: json.RawMessage(`{"k1": { "k2": "v2" }}`),
-			expected: map[string]map[string]string{
-				"k1": {
-					"k2": "v2",
+			destination: &backendconfig.DestinationT{
+				Config: map[string]interface{}{
+					"useRudderStorage": true,
 				},
+			},
+			service: "s3",
+			expectedConfig: &awsutils.SessionConfig{
+				AccessKeyID: rudderAccessKeyID,
+				AccessKey:   rudderAccessKey,
+				Service:     "s3",
+			},
+		},
+		{
+			destination: &backendconfig.DestinationT{
+				Config: map[string]interface{}{
+					"accessKeyID": someAccessKeyID,
+					"accessKey":   someAccessKey,
+				},
+			},
+			service: "glue",
+			expectedConfig: &awsutils.SessionConfig{
+				AccessKeyID: someAccessKeyID,
+				AccessKey:   someAccessKey,
+				Service:     "glue",
+			},
+		},
+		{
+			destination: &backendconfig.DestinationT{
+				Config: map[string]interface{}{
+					"iamRoleARN": someIAMRoleARN,
+				},
+				WorkspaceID: someWorkspaceID,
+			},
+			service: "redshift",
+			expectedConfig: &awsutils.SessionConfig{
+				RoleBasedAuth: true,
+				IAMRoleARN:    someIAMRoleARN,
+				ExternalID:    someWorkspaceID,
+				Service:       "redshift",
 			},
 		},
 	}
 	for _, input := range inputs {
-		got := JSONSchemaToMap(input.rawMsg)
-		require.Equal(t, got, input.expected)
+		config, err := CreateAWSSessionConfig(input.destination, input.service)
+		require.Nil(t, err)
+		require.Equal(t, config, input.expectedConfig)
 	}
 }
 
+var _ = Describe("Utils", func() {
+	DescribeTable("Get columns from table schema", func(schema TableSchemaT, expected []string) {
+		columns := GetColumnsFromTableSchema(schema)
+		sort.Strings(columns)
+		sort.Strings(expected)
+		Expect(columns).To(Equal(expected))
+	},
+		Entry(nil, TableSchemaT{"k1": "v1", "k2": "v2"}, []string{"k1", "k2"}),
+		Entry(nil, TableSchemaT{"k2": "v1", "k1": "v2"}, []string{"k2", "k1"}),
+	)
+
+	DescribeTable("JSON schema to Map", func(rawMsg json.RawMessage, expected map[string]map[string]string) {
+		Expect(JSONSchemaToMap(rawMsg)).To(Equal(expected))
+	},
+		Entry(nil, json.RawMessage(`{"k1": { "k2": "v2" }}`), map[string]map[string]string{"k1": {"k2": "v2"}}),
+	)
+
+	DescribeTable("Get date range list", func(start, end time.Time, format string, expected []string) {
+		Expect(GetDateRangeList(start, end, format)).To(Equal(expected))
+	},
+		Entry("Same day", time.Now(), time.Now(), "2006-01-02", []string{time.Now().Format("2006-01-02")}),
+		Entry("Multiple days", time.Now(), time.Now().AddDate(0, 0, 1), "2006-01-02", []string{time.Now().Format("2006-01-02"), time.Now().AddDate(0, 0, 1).Format("2006-01-02")}),
+		Entry("No days", nil, nil, "2006-01-02", nil),
+	)
+
+	DescribeTable("Staging table prefix", func(provider string) {
+		Expect(StagingTablePrefix(provider)).To(Equal(ToProviderCase(provider, "rudder_staging_")))
+	},
+		Entry(nil, BQ),
+		Entry(nil, RS),
+		Entry(nil, SNOWFLAKE),
+		Entry(nil, POSTGRES),
+		Entry(nil, CLICKHOUSE),
+		Entry(nil, MSSQL),
+		Entry(nil, AZURE_SYNAPSE),
+		Entry(nil, DELTALAKE),
+		Entry(nil, S3_DATALAKE),
+		Entry(nil, GCS_DATALAKE),
+		Entry(nil, AZURE_DATALAKE),
+	)
+
+	DescribeTable("Staging table name", func(provider string, limit int) {
+		By("Within limits")
+		tableName := ToProviderCase(provider, "demo")
+		expectedTableName := ToProviderCase(provider, "rudder_staging_demo_")
+		Expect(StagingTableName(provider, tableName, limit)).To(HavePrefix(expectedTableName))
+
+		By("Beyond limits")
+		tableName = ToProviderCase(provider, "abcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyz")
+		expectedTableName = ToProviderCase(provider, "rudder_staging_abcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyz"[:limit])
+		Expect(StagingTableName(provider, tableName, limit)).To(HavePrefix(expectedTableName))
+	},
+		Entry(nil, BQ, 127),
+		Entry(nil, RS, 127),
+		Entry(nil, SNOWFLAKE, 127),
+		Entry(nil, POSTGRES, 63),
+		Entry(nil, CLICKHOUSE, 127),
+		Entry(nil, MSSQL, 127),
+		Entry(nil, AZURE_SYNAPSE, 127),
+		Entry(nil, DELTALAKE, 127),
+		Entry(nil, S3_DATALAKE, 127),
+		Entry(nil, GCS_DATALAKE, 127),
+		Entry(nil, AZURE_DATALAKE, 127),
+	)
+
+	DescribeTable("Identity mapping unique mapping constraints name", func(warehouse Warehouse, expected string) {
+		Expect(IdentityMappingsUniqueMappingConstraintName(warehouse)).To(Equal(expected))
+	},
+		Entry(nil, Warehouse{Namespace: "namespace", Destination: backendconfig.DestinationT{ID: "id"}}, "unique_merge_property_namespace_id"),
+	)
+
+	DescribeTable("Identity mapping table name", func(warehouse Warehouse, expected string) {
+		Expect(IdentityMappingsTableName(warehouse)).To(Equal(expected))
+	},
+		Entry(nil, Warehouse{Namespace: "namespace", Destination: backendconfig.DestinationT{ID: "id"}}, "rudder_identity_mappings_namespace_id"),
+	)
+
+	DescribeTable("Identity merge rules table name", func(warehouse Warehouse, expected string) {
+		Expect(IdentityMergeRulesTableName(warehouse)).To(Equal(expected))
+	},
+		Entry(nil, Warehouse{Namespace: "namespace", Destination: backendconfig.DestinationT{ID: "id"}}, "rudder_identity_merge_rules_namespace_id"),
+	)
+
+	DescribeTable("Identity merge rules warehouse table name", func(provider string) {
+		Expect(IdentityMergeRulesWarehouseTableName(provider)).To(Equal(ToProviderCase(provider, IdentityMergeRulesTable)))
+	},
+		Entry(nil, BQ),
+		Entry(nil, RS),
+		Entry(nil, SNOWFLAKE),
+		Entry(nil, POSTGRES),
+		Entry(nil, CLICKHOUSE),
+		Entry(nil, MSSQL),
+		Entry(nil, AZURE_SYNAPSE),
+		Entry(nil, DELTALAKE),
+		Entry(nil, S3_DATALAKE),
+		Entry(nil, GCS_DATALAKE),
+		Entry(nil, AZURE_DATALAKE),
+	)
+
+	DescribeTable("Identity mappings warehouse table name", func(provider string) {
+		Expect(IdentityMappingsWarehouseTableName(provider)).To(Equal(ToProviderCase(provider, IdentityMappingsTable)))
+	},
+		Entry(nil, BQ),
+		Entry(nil, RS),
+		Entry(nil, SNOWFLAKE),
+		Entry(nil, POSTGRES),
+		Entry(nil, CLICKHOUSE),
+		Entry(nil, MSSQL),
+		Entry(nil, AZURE_SYNAPSE),
+		Entry(nil, DELTALAKE),
+		Entry(nil, S3_DATALAKE),
+		Entry(nil, GCS_DATALAKE),
+		Entry(nil, AZURE_DATALAKE),
+	)
+
+	DescribeTable("Get object name", func(location string, config interface{}, objectProvider, objectName string) {
+		Expect(GetObjectName(location, config, objectProvider)).To(Equal(objectName))
+	},
+		Entry(GCS, "https://storage.googleapis.com/bucket-name/key", map[string]interface{}{"bucketName": "bucket-name"}, GCS, "key"),
+		Entry(S3, "https://bucket-name.s3.amazonaws.com/key", map[string]interface{}{"bucketName": "bucket-name"}, S3, "key"),
+		Entry(AZURE_BLOB, "https://account-name.blob.core.windows.net/container-name/key", map[string]interface{}{"containerName": "container-name"}, AZURE_BLOB, "key"),
+		Entry(MINIO, "https://minio-endpoint/bucket-name/key", map[string]interface{}{"bucketName": "bucket-name", "useSSL": true, "endPoint": "minio-endpoint"}, MINIO, "key"),
+	)
+
+	It("SSL keys", func() {
+		destinationID := "destID"
+		clientKey := uuid.Must(uuid.NewV4()).String()
+		clientCert := uuid.Must(uuid.NewV4()).String()
+		serverCA := uuid.Must(uuid.NewV4()).String()
+
+		err := WriteSSLKeys(backendconfig.DestinationT{ID: destinationID, Config: map[string]interface{}{"clientKey": clientKey, "clientCert": clientCert, "serverCA": serverCA}})
+		Expect(err).To(Equal(WriteSSLKeyError{}))
+
+		path := GetSSLKeyDirPath(destinationID)
+		Expect(path).NotTo(BeEmpty())
+
+		Expect(os.RemoveAll(path)).NotTo(HaveOccurred())
+	})
+})
+
 func TestMain(m *testing.M) {
-	config.Load()
+	config.Reset()
+	logger.Reset()
+	misc.Init()
 	Init()
 	os.Exit(m.Run())
 }

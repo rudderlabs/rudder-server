@@ -20,6 +20,8 @@ import (
 	"github.com/rudderlabs/rudder-server/services/pgnotifier"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
+	"github.com/rudderlabs/rudder-server/warehouse/jobs"
+	"github.com/rudderlabs/rudder-server/warehouse/manager"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 	"golang.org/x/sync/errgroup"
 )
@@ -38,7 +40,7 @@ const (
 
 // JobRunT Temporary store for processing staging file to load file
 type JobRunT struct {
-	job                  PayloadT
+	job                  Payload
 	stagingFilePath      string
 	uuidTS               time.Time
 	outputFileWritersMap map[string]warehouseutils.LoadFileWriterI
@@ -88,7 +90,7 @@ func (jobRun *JobRunT) setStagingFileDownloadPath(index int) (filePath string) {
 	return filePath
 }
 
-func (job *PayloadT) sendDownloadStagingFileFailedStat() {
+func (job *Payload) sendDownloadStagingFileFailedStat() {
 	tags := []warehouseutils.Tag{
 		{
 			Name:  "destID",
@@ -103,7 +105,7 @@ func (job *PayloadT) sendDownloadStagingFileFailedStat() {
 }
 
 // Get fileManager
-func (job *PayloadT) getFileManager(config interface{}, useRudderStorage bool) (filemanager.FileManager, error) {
+func (job *Payload) getFileManager(config interface{}, useRudderStorage bool) (filemanager.FileManager, error) {
 	storageProvider := warehouseutils.ObjectStorageType(job.DestinationType, config, useRudderStorage)
 	fileManager, err := filemanager.DefaultFileManagerFactory.New(&filemanager.SettingsT{
 		Provider: storageProvider,
@@ -112,6 +114,7 @@ func (job *PayloadT) getFileManager(config interface{}, useRudderStorage bool) (
 			Config:                      config,
 			UseRudderStorage:            useRudderStorage,
 			RudderStoragePrefixOverride: job.RudderStoragePrefix,
+			WorkspaceID:                 job.WorkspaceID,
 		}),
 	})
 	return fileManager, err
@@ -174,11 +177,11 @@ func (jobRun *JobRunT) downloadStagingFile() error {
 	return nil
 }
 
-func PickupStagingConfiguration(job *PayloadT) bool {
+func PickupStagingConfiguration(job *Payload) bool {
 	return job.StagingDestinationRevisionID != job.DestinationRevisionID && job.StagingDestinationConfig != nil
 }
 
-func (job *PayloadT) getDiscardsTable() string {
+func (job *Payload) getDiscardsTable() string {
 	return warehouseutils.ToProviderCase(job.DestinationType, warehouseutils.DiscardsTable)
 }
 
@@ -188,7 +191,7 @@ func (jobRun *JobRunT) getLoadFilePath(tableName string) string {
 	return strings.TrimSuffix(jobRun.stagingFilePath, "json.gz") + tableName + fmt.Sprintf(`.%s`, randomness) + fmt.Sprintf(`.%s`, warehouseutils.GetLoadFileFormat(job.DestinationType))
 }
 
-func (job *PayloadT) getColumnName(columnName string) string {
+func (job *Payload) getColumnName(columnName string) string {
 	return warehouseutils.ToProviderCase(job.DestinationType, columnName)
 }
 
@@ -281,7 +284,7 @@ func (jobRun *JobRunT) uploadLoadFilesToObjectStorage() ([]loadFileUploadOutputT
 			pkgLogger.Errorf("received error while uploading load file to bucket for staging file ids %s, cancelling the context: err %v", stagingFileId, err)
 			return []loadFileUploadOutputT{}, err
 		case <-time.After(slaveUploadTimeout):
-			return []loadFileUploadOutputT{}, fmt.Errorf("Load files upload timed out for staging file idsx: %v", stagingFileId)
+			return []loadFileUploadOutputT{}, fmt.Errorf("load files upload timed out for staging file idsx: %v", stagingFileId)
 		}
 	}
 }
@@ -296,16 +299,16 @@ func (jobRun *JobRunT) uploadLoadFileToObjectStorage(uploader filemanager.FileMa
 	defer file.Close()
 	pkgLogger.Debugf("[WH]: %s: Uploading load_file to %s for table: %s with staging_file id: %v", job.DestinationType, warehouseutils.ObjectStorageType(job.DestinationType, job.DestinationConfig, job.UseRudderStorage), tableName, job.StagingFileID)
 	var uploadLocation filemanager.UploadOutput
-	if misc.ContainsString(warehouseutils.TimeWindowDestinations, job.DestinationType) {
+	if misc.Contains(warehouseutils.TimeWindowDestinations, job.DestinationType) {
 		uploadLocation, err = uploader.Upload(context.TODO(), file, warehouseutils.GetTablePathInObjectStorage(jobRun.job.DestinationNamespace, tableName), job.LoadFilePrefix)
 	} else {
-		uploadLocation, err = uploader.Upload(context.TODO(), file, config.GetEnv("WAREHOUSE_BUCKET_LOAD_OBJECTS_FOLDER_NAME", "rudder-warehouse-load-objects"), tableName, job.SourceID, getBucketFolder(job.UniqueLoadGenID, tableName))
+		uploadLocation, err = uploader.Upload(context.TODO(), file, config.GetString("WAREHOUSE_BUCKET_LOAD_OBJECTS_FOLDER_NAME", "rudder-warehouse-load-objects"), tableName, job.SourceID, getBucketFolder(job.UniqueLoadGenID, tableName))
 	}
 	return uploadLocation, err
 }
 
 // Sort columns per table to maintain same order in load file (needed in case of csv load file)
-func (job *PayloadT) getSortedColumnMapForAllTables() map[string][]string {
+func (job *Payload) getSortedColumnMapForAllTables() map[string][]string {
 	sortedTableColumnMap := make(map[string][]string)
 
 	for tableName, columnMap := range job.UploadSchema {
@@ -378,7 +381,7 @@ func (event *BatchRouterEventT) GetColumnInfo(columnName string) (columnInfo Col
 // 5. Delete the staging and load files from tmp directory
 //
 
-func processStagingFile(job PayloadT, workerIndex int) (loadFileUploadOutputs []loadFileUploadOutputT, err error) {
+func processStagingFile(job Payload, workerIndex int) (loadFileUploadOutputs []loadFileUploadOutputT, err error) {
 	processStartTime := time.Now()
 	jobRun := JobRunT{
 		job:          job,
@@ -483,11 +486,11 @@ func processStagingFile(job PayloadT, workerIndex int) (loadFileUploadOutputs []
 
 			dataTypeInSchema, ok := job.UploadSchema[tableName][columnName]
 			violatedConstraints := ViolatedConstraints(job.DestinationType, &batchRouterEvent, columnName)
-			if ok && ((columnType != dataTypeInSchema) || (violatedConstraints.isViolated)) {
+			if ok && ((columnType != dataTypeInSchema) || (violatedConstraints.IsViolated)) {
 				newColumnVal, ok := HandleSchemaChange(dataTypeInSchema, columnType, columnVal)
-				if !ok || violatedConstraints.isViolated {
-					if violatedConstraints.isViolated {
-						eventLoader.AddColumn(columnName, job.UploadSchema[tableName][columnName], violatedConstraints.violatedIdentifier)
+				if !ok || violatedConstraints.IsViolated {
+					if violatedConstraints.IsViolated {
+						eventLoader.AddColumn(columnName, job.UploadSchema[tableName][columnName], violatedConstraints.ViolatedIdentifier)
 					} else {
 						eventLoader.AddEmptyColumn(columnName)
 					}
@@ -551,7 +554,7 @@ func processStagingFile(job PayloadT, workerIndex int) (loadFileUploadOutputs []
 	return loadFileUploadOutputs, err
 }
 
-func processClaimedJob(claimedJob pgnotifier.ClaimT, workerIndex int) {
+func processClaimedUploadJob(claimedJob pgnotifier.ClaimT, workerIndex int) {
 	claimProcessTimeStart := time.Now()
 	defer func() {
 		warehouseutils.NewTimerStat(STATS_WORKER_CLAIM_PROCESSING_TIME, warehouseutils.Tag{Name: TAG_WORKERID, Value: fmt.Sprintf("%d", workerIndex)}).Since(claimProcessTimeStart)
@@ -565,7 +568,7 @@ func processClaimedJob(claimedJob pgnotifier.ClaimT, workerIndex int) {
 		notifier.UpdateClaimedEvent(&claimedJob, &response)
 	}
 
-	var job PayloadT
+	var job Payload
 	err := json.Unmarshal(claimedJob.Payload, &job)
 	if err != nil {
 		handleErr(err, claimedJob)
@@ -592,6 +595,83 @@ func processClaimedJob(claimedJob pgnotifier.ClaimT, workerIndex int) {
 	notifier.UpdateClaimedEvent(&claimedJob, &response)
 }
 
+type AsyncJobRunResult struct {
+	Result bool
+	Id     string
+}
+
+func runAsyncJob(asyncjob jobs.AsyncJobPayloadT) (AsyncJobRunResult, error) {
+	warehouse, err := getDestinationFromConnectionMap(asyncjob.DestinationID, asyncjob.SourceID)
+	if err != nil {
+		return AsyncJobRunResult{Id: asyncjob.Id, Result: false}, err
+	}
+	destType := warehouse.Destination.DestinationDefinition.Name
+	whManager, err := manager.NewWarehouseOperations(destType)
+	if err != nil {
+		return AsyncJobRunResult{Id: asyncjob.Id, Result: false}, err
+	}
+	whasyncjob := &jobs.WhAsyncJob{}
+
+	var metadata warehouseutils.DeleteByMetaData
+	err = json.Unmarshal(asyncjob.MetaData, &metadata)
+	if err != nil {
+		return AsyncJobRunResult{Id: asyncjob.Id, Result: false}, err
+	}
+	whManager.Setup(warehouse, whasyncjob)
+	defer whManager.Cleanup()
+	tableNames := []string{asyncjob.TableName}
+	if asyncjob.AsyncJobType == "deletebyjobrunid" {
+		pkgLogger.Info("[WH-Jobs]: Running DeleteByJobRunID on slave worker")
+
+		params := warehouseutils.DeleteByParams{
+			SourceId:  asyncjob.SourceID,
+			TaskRunId: metadata.TaskRunId,
+			JobRunId:  metadata.JobRunId,
+			StartTime: metadata.StartTime,
+		}
+		err = whManager.DeleteBy(tableNames, params)
+	}
+	asyncJobRunResult := AsyncJobRunResult{
+		Result: err == nil,
+		Id:     asyncjob.Id,
+	}
+	return asyncJobRunResult, err
+}
+
+func processClaimedAsyncJob(claimedJob pgnotifier.ClaimT) {
+	pkgLogger.Infof("[WH-Jobs]: Got request for processing Async Job with Batch ID %s", claimedJob.BatchID)
+	handleErr := func(err error, claim pgnotifier.ClaimT) {
+		pkgLogger.Errorf("[WH]: Error processing claim: %v", err)
+		response := pgnotifier.ClaimResponseT{
+			Err: err,
+		}
+		// warehouseutils.NewCounterStat(STATS_WORKER_CLAIM_PROCESSING_FAILED, warehouseutils.Tag{Name: TAG_WORKERID, Value: strconv.Itoa(workerIndex)}).Increment()
+		notifier.UpdateClaimedEvent(&claimedJob, &response)
+	}
+	var job jobs.AsyncJobPayloadT
+	err := json.Unmarshal(claimedJob.Payload, &job)
+	if err != nil {
+		handleErr(err, claimedJob)
+		return
+	}
+	result, err := runAsyncJob(job)
+	if err != nil {
+		handleErr(err, claimedJob)
+		return
+	}
+
+	marshalled_result, err := json.Marshal(result)
+	if err != nil {
+		handleErr(err, claimedJob)
+		return
+	}
+	response := pgnotifier.ClaimResponseT{
+		Err:     err,
+		Payload: marshalled_result,
+	}
+	notifier.UpdateClaimedEvent(&claimedJob, &response)
+}
+
 func setupSlave(ctx context.Context) error {
 	g, ctx := errgroup.WithContext(ctx)
 
@@ -605,10 +685,14 @@ func setupSlave(ctx context.Context) error {
 			workerIdleTimeStart := time.Now()
 			for claimedJob := range jobNotificationChannel {
 				workerIdleTimer.Since(workerIdleTimeStart)
-				pkgLogger.Infof("[WH]: Successfully claimed job:%v by slave worker-%v-%v", claimedJob.ID, idx, slaveID)
+				pkgLogger.Infof("[WH]: Successfully claimed job:%v by slave worker-%v-%v & job type %s", claimedJob.ID, idx, slaveID, claimedJob.JobType)
 
-				// process job
-				processClaimedJob(claimedJob, idx)
+				if claimedJob.JobType == jobs.AsyncJobType {
+					processClaimedAsyncJob(claimedJob)
+				} else {
+					processClaimedUploadJob(claimedJob, idx)
+				}
+
 				pkgLogger.Infof("[WH]: Successfully processed job:%v by slave worker-%v-%v", claimedJob.ID, idx, slaveID)
 				workerIdleTimeStart = time.Now()
 			}
@@ -625,9 +709,9 @@ func (jobRun *JobRunT) handleDiscardTypes(tableName, columnName string, columnVa
 	job := jobRun.job
 	rowID, hasID := columnData[job.getColumnName("id")]
 	receivedAt, hasReceivedAt := columnData[job.getColumnName("received_at")]
-	if violatedConstraints.isViolated {
+	if violatedConstraints.IsViolated {
 		if !hasID {
-			rowID = violatedConstraints.violatedIdentifier
+			rowID = violatedConstraints.ViolatedIdentifier
 			hasID = true
 		}
 		if !hasReceivedAt {

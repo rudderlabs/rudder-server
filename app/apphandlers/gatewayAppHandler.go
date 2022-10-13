@@ -23,7 +23,7 @@ import (
 
 // GatewayApp is the type for Gateway type implementation
 type GatewayApp struct {
-	App            app.Interface
+	App            app.App
 	VersionHandler func(w http.ResponseWriter, r *http.Request)
 }
 
@@ -48,29 +48,17 @@ func (gatewayApp *GatewayApp) StartRudderCore(ctx context.Context, options *app.
 
 	sourcedebugger.Setup(backendconfig.DefaultBackendConfig)
 
-	migrationMode := gatewayApp.App.Options().MigrationMode
-
 	gatewayDB := jobsdb.NewForWrite(
 		"gw",
 		jobsdb.WithClearDB(options.ClearDB),
-		jobsdb.WithMigrationMode(migrationMode),
 		jobsdb.WithStatusHandler(),
-		jobsdb.WithQueryFilterKeys(jobsdb.QueryFiltersT{}),
+		jobsdb.WithDSLimit(&gatewayDSLimit),
 	)
 	defer gatewayDB.Close()
 	if err := gatewayDB.Start(); err != nil {
 		return fmt.Errorf("could not start gatewayDB: %w", err)
 	}
 	defer gatewayDB.Stop()
-
-	enableGateway := true
-	if gatewayApp.App.Features().Migrator != nil {
-		if migrationMode == db.IMPORT || migrationMode == db.EXPORT || migrationMode == db.IMPORT_EXPORT {
-			enableGateway = migrationMode != db.EXPORT
-
-			gatewayApp.App.Features().Migrator.PrepareJobsdbsForImport(gatewayDB, nil, nil)
-		}
-	}
 
 	g, ctx := errgroup.WithContext(ctx)
 
@@ -99,40 +87,37 @@ func (gatewayApp *GatewayApp) StartRudderCore(ctx context.Context, options *app.
 		return dm.Run(ctx)
 	})
 
-	if enableGateway {
-		var gw gateway.HandleT
-		var rateLimiter ratelimiter.HandleT
+	var gw gateway.HandleT
+	var rateLimiter ratelimiter.HandleT
 
-		rateLimiter.SetUp()
-		gw.SetReadonlyDBs(&readonlyGatewayDB, &readonlyRouterDB, &readonlyBatchRouterDB)
-		rsourcesService, err := NewRsourcesService(deploymentType)
-		if err != nil {
-			return err
-		}
-		err = gw.Setup(
-			gatewayApp.App, backendconfig.DefaultBackendConfig, gatewayDB,
-			&rateLimiter, gatewayApp.VersionHandler, rsourcesService,
-		)
-		if err != nil {
-			return fmt.Errorf("failed to setup gateway: %w", err)
-		}
-		defer func() {
-			if err := gw.Shutdown(); err != nil {
-				pkgLogger.Warnf("Gateway shutdown error: %v", err)
-			}
-		}()
-
-		g.Go(func() error {
-			return gw.StartAdminHandler(ctx)
-		})
-		g.Go(func() error {
-			return gw.StartWebHandler(ctx)
-		})
+	rateLimiter.SetUp()
+	gw.SetReadonlyDBs(&readonlyGatewayDB, &readonlyRouterDB, &readonlyBatchRouterDB)
+	rsourcesService, err := NewRsourcesService(deploymentType)
+	if err != nil {
+		return err
 	}
-	// go readIOforResume(router) //keeping it as input from IO, to be replaced by UI
+	err = gw.Setup(
+		gatewayApp.App, backendconfig.DefaultBackendConfig, gatewayDB,
+		&rateLimiter, gatewayApp.VersionHandler, rsourcesService,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to setup gateway: %w", err)
+	}
+	defer func() {
+		if err := gw.Shutdown(); err != nil {
+			pkgLogger.Warnf("Gateway shutdown error: %v", err)
+		}
+	}()
+
+	g.Go(func() error {
+		return gw.StartAdminHandler(ctx)
+	})
+	g.Go(func() error {
+		return gw.StartWebHandler(ctx)
+	})
 	return g.Wait()
 }
 
 func (*GatewayApp) HandleRecovery(options *app.Options) {
-	db.HandleNullRecovery(options.NormalMode, options.DegradedMode, options.MigrationMode, misc.AppStartTime, app.GATEWAY)
+	db.HandleNullRecovery(options.NormalMode, options.DegradedMode, misc.AppStartTime, app.GATEWAY)
 }

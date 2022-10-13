@@ -32,39 +32,42 @@ func (jobRun *JobRunT) warehouseID() string {
 	return getWarehouseTagName(jobRun.job.DestinationID, jobRun.job.SourceName, jobRun.job.DestinationName, jobRun.job.SourceID)
 }
 
-func (job *UploadJobT) timerStat(name string, extraTags ...tag) stats.RudderStats {
+func (job *UploadJobT) timerStat(name string, extraTags ...tag) stats.Measurement {
 	tags := map[string]string{
 		"module":      moduleName,
 		"destType":    job.warehouse.Type,
 		"warehouseID": job.warehouseID(),
+		"workspaceId": job.upload.WorkspaceID,
 		"destID":      job.upload.DestinationID,
 		"sourceID":    job.upload.SourceID,
 	}
 	for _, extraTag := range extraTags {
 		tags[extraTag.name] = extraTag.value
 	}
-	return stats.NewTaggedStat(name, stats.TimerType, tags)
+	return stats.Default.NewTaggedStat(name, stats.TimerType, tags)
 }
 
-func (job *UploadJobT) counterStat(name string, extraTags ...tag) stats.RudderStats {
+func (job *UploadJobT) counterStat(name string, extraTags ...tag) stats.Measurement {
 	tags := map[string]string{
 		"module":      moduleName,
 		"destType":    job.warehouse.Type,
 		"warehouseID": job.warehouseID(),
+		"workspaceId": job.upload.WorkspaceID,
 		"destID":      job.upload.DestinationID,
 		"sourceID":    job.upload.SourceID,
 	}
 	for _, extraTag := range extraTags {
 		tags[extraTag.name] = extraTag.value
 	}
-	return stats.NewTaggedStat(name, stats.CountType, tags)
+	return stats.Default.NewTaggedStat(name, stats.CountType, tags)
 }
 
-func (job *UploadJobT) guageStat(name string, extraTags ...tag) stats.RudderStats {
+func (job *UploadJobT) guageStat(name string, extraTags ...tag) stats.Measurement {
 	tags := map[string]string{
 		"module":         moduleName,
 		"destType":       job.warehouse.Type,
 		"warehouseID":    job.warehouseID(),
+		"workspaceId":    job.upload.WorkspaceID,
 		"destID":         job.upload.DestinationID,
 		"sourceID":       job.upload.SourceID,
 		"sourceCategory": job.upload.SourceCategory,
@@ -72,35 +75,37 @@ func (job *UploadJobT) guageStat(name string, extraTags ...tag) stats.RudderStat
 	for _, extraTag := range extraTags {
 		tags[extraTag.name] = extraTag.value
 	}
-	return stats.NewTaggedStat(name, stats.GaugeType, tags)
+	return stats.Default.NewTaggedStat(name, stats.GaugeType, tags)
 }
 
-func (jobRun *JobRunT) timerStat(name string, extraTags ...tag) stats.RudderStats {
+func (jobRun *JobRunT) timerStat(name string, extraTags ...tag) stats.Measurement {
 	tags := map[string]string{
 		"module":      moduleName,
 		"destType":    jobRun.job.DestinationType,
 		"warehouseID": jobRun.warehouseID(),
+		"workspaceId": jobRun.job.WorkspaceID,
 		"destID":      jobRun.job.DestinationID,
 		"sourceID":    jobRun.job.SourceID,
 	}
 	for _, extraTag := range extraTags {
 		tags[extraTag.name] = extraTag.value
 	}
-	return stats.NewTaggedStat(name, stats.TimerType, tags)
+	return stats.Default.NewTaggedStat(name, stats.TimerType, tags)
 }
 
-func (jobRun *JobRunT) counterStat(name string, extraTags ...tag) stats.RudderStats {
+func (jobRun *JobRunT) counterStat(name string, extraTags ...tag) stats.Measurement {
 	tags := map[string]string{
 		"module":      moduleName,
 		"destType":    jobRun.job.DestinationType,
 		"warehouseID": jobRun.warehouseID(),
+		"workspaceId": jobRun.job.WorkspaceID,
 		"destID":      jobRun.job.DestinationID,
 		"sourceID":    jobRun.job.SourceID,
 	}
 	for _, extraTag := range extraTags {
 		tags[extraTag.name] = extraTag.value
 	}
-	return stats.NewTaggedStat(name, stats.CountType, tags)
+	return stats.Default.NewTaggedStat(name, stats.CountType, tags)
 }
 
 func (job *UploadJobT) generateUploadSuccessMetrics() {
@@ -120,7 +125,10 @@ func (job *UploadJobT) generateUploadSuccessMetrics() {
 	}
 	job.counterStat("num_staged_events").Count(int(numStagedEvents))
 	attempts := job.getAttemptNumber()
-	job.counterStat("upload_success", tag{name: "attempt_number", value: strconv.Itoa(attempts)}).Count(1)
+	job.counterStat("upload_success", tag{
+		name:  "attempt_number",
+		value: strconv.Itoa(attempts),
+	}).Count(1)
 }
 
 func (job *UploadJobT) generateUploadAbortedMetrics() {
@@ -155,21 +163,27 @@ func (job *UploadJobT) generateUploadAbortedMetrics() {
 
 func (job *UploadJobT) recordTableLoad(tableName string, numEvents int64) {
 	rudderAPISupportedEventTypes := []string{"tracks", "identifies", "pages", "screens", "aliases", "groups"}
-	if misc.ContainsString(rudderAPISupportedEventTypes, strings.ToLower(tableName)) {
+	if misc.Contains(rudderAPISupportedEventTypes, strings.ToLower(tableName)) {
 		// record total events synced (ignoring additional row synced to event table for eg.track call)
-		job.counterStat(`event_delivery`, tag{name: "tableName", value: strings.ToLower(tableName)}).Count(int(numEvents))
+		job.counterStat(`event_delivery`, tag{
+			name:  "tableName",
+			value: strings.ToLower(tableName),
+		}).Count(int(numEvents))
 	}
 
 	skipMetricTagForEachEventTable := config.GetBool("Warehouse.skipMetricTagForEachEventTable", false)
 	if skipMetricTagForEachEventTable {
 		standardTablesToRecordEventsMetric := []string{"tracks", "users", "identifies", "pages", "screens", "aliases", "groups", "rudder_discards"}
-		if !misc.ContainsString(standardTablesToRecordEventsMetric, strings.ToLower(tableName)) {
+		if !misc.Contains(standardTablesToRecordEventsMetric, strings.ToLower(tableName)) {
 			// club all event table metric tags under one tag to avoid too many tags
 			tableName = "others"
 		}
 	}
 
-	job.counterStat(`rows_synced`, tag{name: "tableName", value: strings.ToLower(tableName)}).Count(int(numEvents))
+	job.counterStat(`rows_synced`, tag{
+		name:  "tableName",
+		value: strings.ToLower(tableName),
+	}).Count(int(numEvents))
 	// Delay for the oldest event in the batch
 	firstEventAt, err := getFirstStagedEventAt(job.upload.StartStagingFileID)
 	if err != nil {
@@ -184,7 +198,10 @@ func (job *UploadJobT) recordTableLoad(tableName string, numEvents int64) {
 		if config[warehouseutils.SyncFrequency] != nil {
 			syncFrequency, _ = config[warehouseutils.SyncFrequency].(string)
 		}
-		job.timerStat("event_delivery_time", tag{name: "tableName", value: strings.ToLower(tableName)}, tag{name: "syncFrequency", value: syncFrequency}).SendTiming(time.Since(firstEventAt))
+		job.timerStat("event_delivery_time",
+			tag{name: "tableName", value: strings.ToLower(tableName)},
+			tag{name: "syncFrequency", value: syncFrequency},
+		).Since(firstEventAt)
 	}
 }
 
@@ -203,31 +220,29 @@ func (job *UploadJobT) recordLoadFileGenerationTimeStat(startID, endID int64) (e
 	return nil
 }
 
-func recordStagedRowsStat(totalEvents int, destType, destID, sourceName, destName, sourceID string) {
+func getUploadStatusStat(name string, warehouse warehouseutils.Warehouse) stats.Measurement {
 	tags := map[string]string{
+		"workspaceId": warehouse.WorkspaceID,
 		"module":      moduleName,
-		"destType":    destType,
-		"warehouseID": getWarehouseTagName(destID, sourceName, destName, sourceID),
+		"destType":    warehouse.Type,
+		"warehouseID": getWarehouseTagName(
+			warehouse.Destination.ID,
+			warehouse.Source.Name,
+			warehouse.Destination.Name,
+			warehouse.Source.ID,
+		),
 	}
-	stats.NewTaggedStat("rows_staged", stats.CountType, tags).Count(totalEvents)
+	return stats.Default.NewTaggedStat(name, stats.CountType, tags)
 }
 
-func getUploadStatusStat(name, destType, destID, sourceName, destName, sourceID string) stats.RudderStats {
+func persistSSLFileErrorStat(workspaceID, destType, destName, destID, sourceName, sourceID, errTag string) {
 	tags := map[string]string{
-		"module":      moduleName,
-		"destType":    destType,
-		"warehouseID": getWarehouseTagName(destID, sourceName, destName, sourceID),
-	}
-	return stats.NewTaggedStat(name, stats.CountType, tags)
-}
-
-func persisteSSLFileErrorStat(destType, destName, destID, sourceName, sourceID, errTag string) {
-	tags := map[string]string{
+		"workspaceId":   workspaceID,
 		"module":        moduleName,
 		"destType":      destType,
 		"warehouseID":   getWarehouseTagName(destID, sourceName, destName, sourceID),
 		"destinationID": destID,
 		"errTag":        errTag,
 	}
-	stats.NewTaggedStat("persist_ssl_file_failure", stats.CountType, tags).Count(1)
+	stats.Default.NewTaggedStat("persist_ssl_file_failure", stats.CountType, tags).Count(1)
 }

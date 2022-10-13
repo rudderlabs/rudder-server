@@ -1,6 +1,6 @@
 package app
 
-//go:generate mockgen -destination=../mocks/app/mock_features.go -package=mock_app github.com/rudderlabs/rudder-server/app MigratorFeature,SuppressUserFeature
+//go:generate mockgen -destination=../mocks/app/mock_features.go -package=mock_app github.com/rudderlabs/rudder-server/app SuppressUserFeature
 
 import (
 	"context"
@@ -10,18 +10,9 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/types"
 )
 
-// MigratorFeature handles migration of nodes during cluster's scale up/down.
-type MigratorFeature interface {
-	Run(context.Context, *jobsdb.HandleT, *jobsdb.HandleT, *jobsdb.HandleT, func(), func())
-	PrepareJobsdbsForImport(*jobsdb.HandleT, *jobsdb.HandleT, *jobsdb.HandleT)
-}
-
-// MigratorFeatureSetup is a function that initializes a Migrator feature, based on application instance
-type MigratorFeatureSetup func(Interface) MigratorFeature
-
 // SuppressUserFeature handles webhook event requests
 type SuppressUserFeature interface {
-	Setup(backendConfig backendconfig.BackendConfig) (types.SuppressUserI, error)
+	Setup(backendConfig backendconfig.BackendConfig) (types.UserSuppression, error)
 }
 
 /*********************************
@@ -53,11 +44,10 @@ type ReplayFeature interface {
 }
 
 // ReplayFeatureSetup is a function that initializes a Replay feature
-type ReplayFeatureSetup func(Interface) ReplayFeature
+type ReplayFeatureSetup func(App) ReplayFeature
 
 // Features contains optional implementations of Enterprise only features.
 type Features struct {
-	Migrator     MigratorFeature
 	SuppressUser SuppressUserFeature
 	ConfigEnv    ConfigEnvFeature
 	Reporting    ReportingFeature

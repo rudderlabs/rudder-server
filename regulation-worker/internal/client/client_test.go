@@ -3,7 +3,7 @@ package client_test
 import (
 	"context"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -28,9 +28,9 @@ func TestGet(t *testing.T) {
 		{
 			name:                      "Get request to get job: successful",
 			workspaceID:               "1001",
-			respBody:                  `{"jobId":"1","destinationId":"23","userAttributes":[{"userId":"1","phone":"555-555-5555"},{"userId":"2","email":"john@example.com"}]}`,
+			respBody:                  `{"jobId":"1","destinationId":"23","userAttributes":[{"userId":"1","phone":"555-555-5555"},{"userId":"2","email":"john@example.com"},{"userId":"3","randomKey":"randomValue"}]}`,
 			respCode:                  200,
-			expectedUsrAttributeCount: 2,
+			expectedUsrAttributeCount: 3,
 		},
 		{
 			name:        "Get request to get job: NoRunnableJob found",
@@ -60,7 +60,7 @@ func TestGet(t *testing.T) {
 			}
 			job, err := c.Get(context.Background())
 			require.Equal(t, tt.expectedErr, err)
-			require.Equal(t, tt.expectedUsrAttributeCount, len(job.UserAttributes), "no of users different than expected")
+			require.Equal(t, tt.expectedUsrAttributeCount, len(job.Users), "no of users different than expected")
 			t.Log("actual job:", job)
 		})
 	}
@@ -100,7 +100,7 @@ func TestUpdateStatus(t *testing.T) {
 			var body []byte
 			svr := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				w.WriteHeader(tt.respCode)
-				body, _ = ioutil.ReadAll(r.Body)
+				body, _ = io.ReadAll(r.Body)
 			}))
 			defer svr.Close()
 

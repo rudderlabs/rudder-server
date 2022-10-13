@@ -20,8 +20,8 @@ import (
 )
 
 func initMisc() {
-	config.Load()
-	logger.Init()
+	config.Reset()
+	logger.Reset()
 	Init()
 }
 
@@ -502,6 +502,49 @@ var _ = Describe("Misc", func() {
 	)
 })
 
+func TestContains(t *testing.T) {
+	t.Run("strings", func(t *testing.T) {
+		list := []string{"a", "b", "c"}
+
+		for _, item := range list {
+			require.True(t, Contains(list, item))
+		}
+
+		require.False(t, Contains(list, "0"))
+	})
+
+	t.Run("int", func(t *testing.T) {
+		list := []int{1, 2, 3}
+
+		for _, item := range list {
+			require.True(t, Contains(list, item))
+		}
+
+		require.False(t, Contains(list, -1))
+	})
+}
+
+func TestHasAWSRoleARNInConfig(t *testing.T) {
+	t.Run("Config has valid IAM Role ARN", func(t *testing.T) {
+		configMap := map[string]interface{}{
+			"iamRoleARN": "someRole",
+		}
+		require.True(t, HasAWSRoleARNInConfig(configMap))
+	})
+
+	t.Run("Config has empty IAM Role ARN", func(t *testing.T) {
+		configMap := map[string]interface{}{
+			"iamRoleARN": "",
+		}
+		require.False(t, HasAWSRoleARNInConfig(configMap))
+	})
+
+	t.Run("Config has no IAM Role ARN", func(t *testing.T) {
+		configMap := map[string]interface{}{}
+		require.False(t, HasAWSRoleARNInConfig(configMap))
+	})
+}
+
 func TestReplaceMultiRegex(t *testing.T) {
 	inputs := []struct {
 		expression string
@@ -550,32 +593,62 @@ func TestReplaceMultiRegex(t *testing.T) {
 	}
 }
 
+func TestGetObjectStorageConfig(t *testing.T) {
+	sampleWorkspaceID := "someWorkspaceID"
+	sampleAccessKeyID := "someAccessKeyID"
+	sampleAccessKey := "someAccessKey"
+	t.Setenv("RUDDER_AWS_S3_COPY_USER_ACCESS_KEY_ID", sampleAccessKeyID)
+	t.Setenv("RUDDER_AWS_S3_COPY_USER_ACCESS_KEY", sampleAccessKey)
+	t.Run("S3 without AccessKeys", func(t *testing.T) {
+		config := GetObjectStorageConfig(ObjectStorageOptsT{
+			Provider:    "S3",
+			Config:      map[string]interface{}{},
+			WorkspaceID: sampleWorkspaceID,
+		})
+		require.NotNil(t, config)
+		require.Equal(t, sampleWorkspaceID, config["externalID"])
+		require.Equal(t, sampleAccessKeyID, config["accessKeyID"])
+		require.Equal(t, sampleAccessKey, config["accessKey"])
+	})
+
+	t.Run("S3 with AccessKeys", func(t *testing.T) {
+		config := GetObjectStorageConfig(ObjectStorageOptsT{
+			Provider: "S3",
+			Config: map[string]interface{}{
+				"accessKeyID": "someOtherAccessKeyID",
+				"accessKey":   "someOtherAccessKey",
+			},
+			WorkspaceID: sampleWorkspaceID,
+		})
+		require.NotNil(t, config)
+		require.Equal(t, sampleWorkspaceID, config["externalID"])
+		require.Equal(t, "someOtherAccessKeyID", config["accessKeyID"])
+		require.Equal(t, "someOtherAccessKey", config["accessKey"])
+	})
+}
+
 // FolderExists Check if folder exists at particular path
-func FolderExists(path string) (exists bool, err error) {
+func FolderExists(path string) (bool, error) {
 	fileInfo, err := os.Stat(path)
-	if err == nil {
-		exists = fileInfo.IsDir()
-		return
-	}
 	if errors.Is(err, os.ErrNotExist) {
-		exists = false
-		err = nil
-		return
+		return false, nil
 	}
-	return
+	if err != nil {
+		return false, err
+	}
+
+	return fileInfo.IsDir(), nil
 }
 
 // FileExists Check if file exists at particular path
-func FileExists(path string) (exists bool, err error) {
+func FileExists(path string) (bool, error) {
 	fileInfo, err := os.Stat(path)
-	if err == nil {
-		exists = !fileInfo.IsDir()
-		return
-	}
 	if errors.Is(err, os.ErrNotExist) {
-		exists = false
-		err = nil
-		return
+		return false, nil
 	}
-	return
+	if err != nil {
+		return false, err
+	}
+
+	return !fileInfo.IsDir(), nil
 }

@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/rudderlabs/rudder-server/warehouse/configuration_testing"
+	"github.com/rudderlabs/rudder-server/warehouse/validations"
 
 	"github.com/rudderlabs/rudder-server/admin"
 	"github.com/rudderlabs/rudder-server/warehouse/manager"
@@ -34,7 +34,7 @@ func Init5() {
 }
 
 // TriggerUpload sets uploads to start without delay
-func (wh *WarehouseAdmin) TriggerUpload(off bool, reply *string) error {
+func (*WarehouseAdmin) TriggerUpload(off bool, reply *string) error {
 	startUploadAlways = !off
 	if off {
 		*reply = "Turned off explicit warehouse upload triggers.\nWarehouse uploads will continue to be done as per schedule in control plane."
@@ -45,22 +45,22 @@ func (wh *WarehouseAdmin) TriggerUpload(off bool, reply *string) error {
 }
 
 // Query the underlying warehouse
-func (wh *WarehouseAdmin) Query(s QueryInput, reply *warehouseutils.QueryResult) error {
+func (*WarehouseAdmin) Query(s QueryInput, reply *warehouseutils.QueryResult) error {
 	if strings.TrimSpace(s.DestID) == "" {
-		return errors.New("Please specify the destination ID to query the warehouse")
+		return errors.New("please specify the destination ID to query the warehouse")
 	}
 
-	var warehouse warehouseutils.WarehouseT
+	var warehouse warehouseutils.Warehouse
 	srcMap, ok := connectionsMap[s.DestID]
 	if !ok {
-		return errors.New("Please specify a valid and existing destination ID")
+		return errors.New("please specify a valid and existing destination ID")
 	}
 
 	// use the sourceID-destID connection if sourceID is not empty
 	if s.SourceID != "" {
 		w, ok := srcMap[s.SourceID]
 		if !ok {
-			return errors.New("Please specify a valid (sourceID, destination ID) pair")
+			return errors.New("please specify a valid (sourceID, destination ID) pair")
 		}
 		warehouse = w
 	} else {
@@ -87,12 +87,12 @@ func (wh *WarehouseAdmin) Query(s QueryInput, reply *warehouseutils.QueryResult)
 }
 
 // ConfigurationTest test the underlying warehouse destination
-func (wh *WarehouseAdmin) ConfigurationTest(s ConfigurationTestInput, reply *ConfigurationTestOutput) error {
+func (*WarehouseAdmin) ConfigurationTest(s ConfigurationTestInput, reply *ConfigurationTestOutput) error {
 	if strings.TrimSpace(s.DestID) == "" {
 		return errors.New("please specify the destination ID to query the warehouse")
 	}
 
-	var warehouse warehouseutils.WarehouseT
+	var warehouse warehouseutils.Warehouse
 	srcMap, ok := connectionsMap[s.DestID]
 	if !ok {
 		return fmt.Errorf("please specify a valid and existing destinationID: %s", s.DestID)
@@ -105,8 +105,8 @@ func (wh *WarehouseAdmin) ConfigurationTest(s ConfigurationTestInput, reply *Con
 
 	pkgLogger.Infof(`[WH Admin]: Validating warehouse destination: %s:%s`, warehouse.Type, warehouse.Destination.ID)
 
-	destinationValidator := configuration_testing.NewDestinationValidator()
-	req := &configuration_testing.DestinationValidationRequest{Destination: warehouse.Destination}
+	destinationValidator := validations.NewDestinationValidator()
+	req := &validations.DestinationValidationRequest{Destination: warehouse.Destination}
 	res, err := destinationValidator.ValidateCredentials(req)
 	if err != nil {
 		return fmt.Errorf("unable to successfully validate destination: %s credentials, err: %v", warehouse.Destination.ID, err)

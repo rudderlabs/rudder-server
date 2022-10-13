@@ -102,24 +102,24 @@ func (mr *MockJobServiceMockRecorder) CleanupLoop(ctx interface{}) *gomock.Call 
 }
 
 // Delete mocks base method.
-func (m *MockJobService) Delete(ctx context.Context, jobRunId string) error {
+func (m *MockJobService) Delete(ctx context.Context, jobRunId string, filter JobFilter) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "Delete", ctx, jobRunId)
+	ret := m.ctrl.Call(m, "Delete", ctx, jobRunId, filter)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
 // Delete indicates an expected call of Delete.
-func (mr *MockJobServiceMockRecorder) Delete(ctx, jobRunId interface{}) *gomock.Call {
+func (mr *MockJobServiceMockRecorder) Delete(ctx, jobRunId, filter interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Delete", reflect.TypeOf((*MockJobService)(nil).Delete), ctx, jobRunId)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Delete", reflect.TypeOf((*MockJobService)(nil).Delete), ctx, jobRunId, filter)
 }
 
 // GetFailedRecords mocks base method.
-func (m *MockJobService) GetFailedRecords(ctx context.Context, jobRunId string, filter JobFilter) (FailedRecords, error) {
+func (m *MockJobService) GetFailedRecords(ctx context.Context, jobRunId string, filter JobFilter) (JobFailedRecords, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "GetFailedRecords", ctx, jobRunId, filter)
-	ret0, _ := ret[0].(FailedRecords)
+	ret0, _ := ret[0].(JobFailedRecords)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
@@ -157,4 +157,51 @@ func (m *MockJobService) IncrementStats(ctx context.Context, tx *sql.Tx, jobRunI
 func (mr *MockJobServiceMockRecorder) IncrementStats(ctx, tx, jobRunId, key, stats interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "IncrementStats", reflect.TypeOf((*MockJobService)(nil).IncrementStats), ctx, tx, jobRunId, key, stats)
+}
+
+// Monitor mocks base method.
+func (m *MockJobService) Monitor(ctx context.Context, lagGauge, replicationSlotGauge Gauger) {
+	m.ctrl.T.Helper()
+	m.ctrl.Call(m, "Monitor", ctx, lagGauge, replicationSlotGauge)
+}
+
+// Monitor indicates an expected call of Monitor.
+func (mr *MockJobServiceMockRecorder) Monitor(ctx, lagGauge, replicationSlotGauge interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Monitor", reflect.TypeOf((*MockJobService)(nil).Monitor), ctx, lagGauge, replicationSlotGauge)
+}
+
+// MockGauger is a mock of Gauger interface.
+type MockGauger struct {
+	ctrl     *gomock.Controller
+	recorder *MockGaugerMockRecorder
+}
+
+// MockGaugerMockRecorder is the mock recorder for MockGauger.
+type MockGaugerMockRecorder struct {
+	mock *MockGauger
+}
+
+// NewMockGauger creates a new mock instance.
+func NewMockGauger(ctrl *gomock.Controller) *MockGauger {
+	mock := &MockGauger{ctrl: ctrl}
+	mock.recorder = &MockGaugerMockRecorder{mock}
+	return mock
+}
+
+// EXPECT returns an object that allows the caller to indicate expected use.
+func (m *MockGauger) EXPECT() *MockGaugerMockRecorder {
+	return m.recorder
+}
+
+// Gauge mocks base method.
+func (m *MockGauger) Gauge(arg0 interface{}) {
+	m.ctrl.T.Helper()
+	m.ctrl.Call(m, "Gauge", arg0)
+}
+
+// Gauge indicates an expected call of Gauge.
+func (mr *MockGaugerMockRecorder) Gauge(arg0 interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Gauge", reflect.TypeOf((*MockGauger)(nil).Gauge), arg0)
 }

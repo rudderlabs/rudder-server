@@ -7,6 +7,7 @@ import (
 	"encoding/csv"
 	"fmt"
 	"io"
+	"net"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -17,7 +18,6 @@ import (
 	"unicode/utf8"
 
 	mssql "github.com/denisenkom/go-mssqldb"
-	uuid "github.com/gofrs/uuid"
 	"github.com/rudderlabs/rudder-server/services/filemanager"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
@@ -25,29 +25,22 @@ import (
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
-var (
-	stagingTablePrefix   string
-	pkgLogger            logger.LoggerI
-	diacriticLengthLimit = diacriticLimit()
+var pkgLogger logger.Logger
+
+const (
+	host     = "host"
+	dbName   = "database"
+	user     = "user"
+	password = "password"
+	port     = "port"
+	sslMode  = "sslMode"
 )
 
 const (
-	host                   = "host"
-	dbName                 = "database"
-	user                   = "user"
-	password               = "password"
-	port                   = "port"
-	sslMode                = "sslMode"
 	mssqlStringLengthLimit = 512
+	provider               = warehouseutils.AZURE_SYNAPSE
+	tableNameLimit         = 127
 )
-
-func diacriticLimit() int {
-	if mssqlStringLengthLimit%2 != 0 {
-		return mssqlStringLengthLimit - 1
-	} else {
-		return mssqlStringLengthLimit
-	}
-}
 
 var rudderDataTypesMapToMssql = map[string]string{
 	"int":      "bigint",
@@ -87,7 +80,7 @@ type HandleT struct {
 	Db             *sql.DB
 	Namespace      string
 	ObjectStorage  string
-	Warehouse      warehouseutils.WarehouseT
+	Warehouse      warehouseutils.Warehouse
 	Uploader       warehouseutils.UploaderI
 	ConnectTimeout time.Duration
 }
@@ -137,7 +130,7 @@ func connect(cred credentialsT) (*sql.DB, error) {
 	connUrl := &url.URL{
 		Scheme:   "sqlserver",
 		User:     url.UserPassword(cred.user, cred.password),
-		Host:     fmt.Sprintf("%s:%d", cred.host, port),
+		Host:     net.JoinHostPort(cred.host, strconv.Itoa(port)),
 		RawQuery: query.Encode(),
 	}
 	pkgLogger.Debugf("synapse connection string : %s", connUrl.String())
@@ -149,12 +142,7 @@ func connect(cred credentialsT) (*sql.DB, error) {
 }
 
 func Init() {
-	loadConfig()
 	pkgLogger = logger.NewLogger().Child("warehouse").Child("synapse")
-}
-
-func loadConfig() {
-	stagingTablePrefix = "rudder_staging_"
 }
 
 func (as *HandleT) getConnectionCredentials() credentialsT {
@@ -177,7 +165,7 @@ func columnsWithDataTypes(columns map[string]string, prefix string) string {
 	return strings.Join(arr, ",")
 }
 
-func (as *HandleT) IsEmpty(warehouse warehouseutils.WarehouseT) (empty bool, err error) {
+func (*HandleT) IsEmpty(_ warehouseutils.Warehouse) (empty bool, err error) {
 	return
 }
 
@@ -190,6 +178,7 @@ func (as *HandleT) DownloadLoadFiles(tableName string) ([]string, error) {
 			Provider:         storageProvider,
 			Config:           as.Warehouse.Destination.Config,
 			UseRudderStorage: as.Uploader.UseRudderStorage(),
+			WorkspaceID:      as.Warehouse.Destination.WorkspaceID,
 		}),
 	})
 	if err != nil {
@@ -245,7 +234,7 @@ func (as *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 
 	extraColumns := []string{}
 	for _, column := range previousColumnKeys {
-		if !misc.ContainsString(sortedColumnKeys, column) {
+		if !misc.Contains(sortedColumnKeys, column) {
 			extraColumns = append(extraColumns, column)
 		}
 	}
@@ -256,7 +245,7 @@ func (as *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 	}
 
 	// create temporary table
-	stagingTableName = fmt.Sprintf(`%s%s_%s`, stagingTablePrefix, tableName, strings.ReplaceAll(uuid.Must(uuid.NewV4()).String(), "-", ""))
+	stagingTableName = warehouseutils.StagingTableName(provider, tableName, tableNameLimit)
 	// prepared stmts cannot be used to create temp objects here. Will work in a txn, but will be purged after commit.
 	// https://github.com/denisenkom/go-mssqldb/issues/149, https://docs.microsoft.com/en-us/previous-versions/sql/sql-server-2008-r2/ms175528(v=sql.105)?redirectedfrom=MSDN
 	// sqlStatement := fmt.Sprintf(`CREATE  TABLE ##%[2]s like %[1]s.%[3]s`, AZ.Namespace, stagingTableName, tableName)
@@ -310,11 +299,10 @@ func (as *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 				if err == io.EOF {
 					pkgLogger.Debugf("AZ: File reading completed while reading csv file for loading in staging table:%s: %s", stagingTableName, objectFileName)
 					break
-				} else {
-					pkgLogger.Errorf("AZ: Error while reading csv file %s for loading in staging table:%s: %v", objectFileName, stagingTableName, err)
-					txn.Rollback()
-					return
 				}
+				pkgLogger.Errorf("AZ: Error while reading csv file %s for loading in staging table:%s: %v", objectFileName, stagingTableName, err)
+				txn.Rollback()
+				return
 			}
 			if len(sortedColumnKeys) != len(record) {
 				err = fmt.Errorf(`Load file CSV columns for a row mismatch number found in upload schema. Columns in CSV row: %d, Columns in upload schema of table-%s: %d. Processed rows in csv file until mismatch: %d`, len(record), tableName, len(sortedColumnKeys), csvRowsProcessedCount)
@@ -396,8 +384,8 @@ func (as *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 							pkgLogger.Debug("diacritics " + strValue)
 							byteArr = str2ucs2(strValue)
 							// This is needed as with above operation every character occupies 2 bytes
-							if len(byteArr) > diacriticLengthLimit {
-								byteArr = byteArr[:diacriticLengthLimit]
+							if len(byteArr) > mssqlStringLengthLimit {
+								byteArr = byteArr[:mssqlStringLengthLimit]
 							}
 							finalColumnValues = append(finalColumnValues, byteArr)
 						} else {
@@ -487,7 +475,7 @@ func str2ucs2(s string) []byte {
 
 func hasDiacritics(str string) bool {
 	for _, x := range str {
-		if utf8.RuneLen(rune(x)) > 1 {
+		if utf8.RuneLen(x) > 1 {
 			return true
 		}
 	}
@@ -508,8 +496,8 @@ func (as *HandleT) loadUserTables() (errorMap map[string]error) {
 	}
 	errorMap[warehouseutils.UsersTable] = nil
 
-	unionStagingTableName := misc.TruncateStr(fmt.Sprintf(`%s%s_%s`, stagingTablePrefix, strings.ReplaceAll(uuid.Must(uuid.NewV4()).String(), "-", ""), "users_identifies_union"), 127)
-	stagingTableName := misc.TruncateStr(fmt.Sprintf(`%s%s_%s`, stagingTablePrefix, strings.ReplaceAll(uuid.Must(uuid.NewV4()).String(), "-", ""), warehouseutils.UsersTable), 127)
+	unionStagingTableName := warehouseutils.StagingTableName(provider, "users_identifies_union", tableNameLimit)
+	stagingTableName := warehouseutils.StagingTableName(provider, warehouseutils.UsersTable, tableNameLimit)
 	defer as.dropStagingTable(stagingTableName)
 	defer as.dropStagingTable(unionStagingTableName)
 	defer as.dropStagingTable(identifyStagingTable)
@@ -611,6 +599,10 @@ func (as *HandleT) loadUserTables() (errorMap map[string]error) {
 	return
 }
 
+func (*HandleT) DeleteBy([]string, warehouseutils.DeleteByParams) error {
+	return fmt.Errorf(warehouseutils.NotImplementedErrorCode)
+}
+
 func (as *HandleT) CreateSchema() (err error) {
 	sqlStatement := fmt.Sprintf(`IF NOT EXISTS ( SELECT  * FROM  sys.schemas WHERE   name = N'%s' )
     EXEC('CREATE SCHEMA [%s]');
@@ -649,7 +641,7 @@ func (as *HandleT) addColumn(tableName, columnName, columnType string) (err erro
 }
 
 func (as *HandleT) CreateTable(tableName string, columnMap map[string]string) (err error) {
-	// Search paths doesnt exist unlike Postgres, default is dbo. Hence use namespace whereever possible
+	// Search paths doesnt exist unlike Postgres, default is dbo. Hence use namespace wherever possible
 	err = as.createTable(as.Namespace+"."+tableName, columnMap)
 	return err
 }
@@ -666,11 +658,11 @@ func (as *HandleT) AddColumn(tableName, columnName, columnType string) (err erro
 	return err
 }
 
-func (as *HandleT) AlterColumn(tableName, columnName, columnType string) (err error) {
+func (*HandleT) AlterColumn(_, _, _ string) (err error) {
 	return
 }
 
-func (as *HandleT) TestConnection(warehouse warehouseutils.WarehouseT) (err error) {
+func (as *HandleT) TestConnection(warehouse warehouseutils.Warehouse) (err error) {
 	as.Warehouse = warehouse
 	as.Db, err = connect(as.getConnectionCredentials())
 	if err != nil {
@@ -692,7 +684,7 @@ func (as *HandleT) TestConnection(warehouse warehouseutils.WarehouseT) (err erro
 	return nil
 }
 
-func (as *HandleT) Setup(warehouse warehouseutils.WarehouseT, uploader warehouseutils.UploaderI) (err error) {
+func (as *HandleT) Setup(warehouse warehouseutils.Warehouse, uploader warehouseutils.UploaderI) (err error) {
 	as.Warehouse = warehouse
 	as.Namespace = warehouse.Namespace
 	as.Uploader = uploader
@@ -702,7 +694,7 @@ func (as *HandleT) Setup(warehouse warehouseutils.WarehouseT, uploader warehouse
 	return err
 }
 
-func (as *HandleT) CrashRecover(warehouse warehouseutils.WarehouseT) (err error) {
+func (as *HandleT) CrashRecover(warehouse warehouseutils.Warehouse) (err error) {
 	as.Warehouse = warehouse
 	as.Namespace = warehouse.Namespace
 	as.Db, err = connect(as.getConnectionCredentials())
@@ -715,9 +707,18 @@ func (as *HandleT) CrashRecover(warehouse warehouseutils.WarehouseT) (err error)
 }
 
 func (as *HandleT) dropDanglingStagingTables() bool {
-	sqlStatement := fmt.Sprintf(`select table_name
-								 from information_schema.tables
-								 where table_schema = '%s' AND table_name like '%s';`, as.Namespace, fmt.Sprintf("%s%s", stagingTablePrefix, "%"))
+	sqlStatement := fmt.Sprintf(`
+		select
+		  table_name
+		from
+		  information_schema.tables
+		where
+		  table_schema = '%s'
+		  AND table_name like '%s';
+	`,
+		as.Namespace,
+		fmt.Sprintf(`%s%%`, warehouseutils.StagingTablePrefix(provider)),
+	)
 	rows, err := as.Db.Query(sqlStatement)
 	if err != nil {
 		pkgLogger.Errorf("WH: SYNAPSE: Error dropping dangling staging tables in synapse: %v\nQuery: %s\n", err, sqlStatement)
@@ -747,7 +748,7 @@ func (as *HandleT) dropDanglingStagingTables() bool {
 }
 
 // FetchSchema queries SYNAPSE and returns the schema associated with provided namespace
-func (as *HandleT) FetchSchema(warehouse warehouseutils.WarehouseT) (schema warehouseutils.SchemaT, err error) {
+func (as *HandleT) FetchSchema(warehouse warehouseutils.Warehouse) (schema warehouseutils.SchemaT, err error) {
 	as.Warehouse = warehouse
 	as.Namespace = warehouse.Namespace
 	dbHandle, err := connect(as.getConnectionCredentials())
@@ -757,11 +758,22 @@ func (as *HandleT) FetchSchema(warehouse warehouseutils.WarehouseT) (schema ware
 	defer dbHandle.Close()
 
 	schema = make(warehouseutils.SchemaT)
-	sqlStatement := fmt.Sprintf(`SELECT table_name, column_name, data_type
-									FROM INFORMATION_SCHEMA.COLUMNS
-									WHERE table_schema = '%s' and table_name not like '%s%s'`, as.Namespace, stagingTablePrefix, "%")
-
+	sqlStatement := fmt.Sprintf(`
+			SELECT
+			  table_name,
+			  column_name,
+			  data_type
+			FROM
+			  INFORMATION_SCHEMA.COLUMNS
+			WHERE
+			  table_schema = '%s'
+			  and table_name not like '%s'
+		`,
+		as.Namespace,
+		fmt.Sprintf(`%s%%`, warehouseutils.StagingTablePrefix(provider)),
+	)
 	rows, err := dbHandle.Query(sqlStatement)
+
 	if err != nil && err != io.EOF {
 		pkgLogger.Errorf("AZ: Error in fetching schema from synapse destination:%v, query: %v", as.Warehouse.Destination.ID, sqlStatement)
 		return
@@ -807,28 +819,28 @@ func (as *HandleT) Cleanup() {
 	}
 }
 
-func (as *HandleT) LoadIdentityMergeRulesTable() (err error) {
+func (*HandleT) LoadIdentityMergeRulesTable() (err error) {
 	return
 }
 
-func (as *HandleT) LoadIdentityMappingsTable() (err error) {
+func (*HandleT) LoadIdentityMappingsTable() (err error) {
 	return
 }
 
-func (as *HandleT) DownloadIdentityRules(*misc.GZipWriter) (err error) {
+func (*HandleT) DownloadIdentityRules(*misc.GZipWriter) (err error) {
 	return
 }
 
-func (as *HandleT) GetTotalCountInTable(tableName string) (total int64, err error) {
+func (as *HandleT) GetTotalCountInTable(ctx context.Context, tableName string) (total int64, err error) {
 	sqlStatement := fmt.Sprintf(`SELECT count(*) FROM "%[1]s"."%[2]s"`, as.Namespace, tableName)
-	err = as.Db.QueryRow(sqlStatement).Scan(&total)
+	err = as.Db.QueryRowContext(ctx, sqlStatement).Scan(&total)
 	if err != nil {
 		pkgLogger.Errorf(`AZ: Error getting total count in table %s:%s`, as.Namespace, tableName)
 	}
 	return
 }
 
-func (as *HandleT) Connect(warehouse warehouseutils.WarehouseT) (client.Client, error) {
+func (as *HandleT) Connect(warehouse warehouseutils.Warehouse) (client.Client, error) {
 	as.Warehouse = warehouse
 	as.Namespace = warehouse.Namespace
 	dbHandle, err := connect(as.getConnectionCredentials())
@@ -839,7 +851,7 @@ func (as *HandleT) Connect(warehouse warehouseutils.WarehouseT) (client.Client, 
 	return client.Client{Type: client.SQLClient, SQL: dbHandle}, err
 }
 
-func (as *HandleT) LoadTestTable(location, tableName string, payloadMap map[string]interface{}, format string) (err error) {
+func (as *HandleT) LoadTestTable(_, tableName string, payloadMap map[string]interface{}, _ string) (err error) {
 	sqlStatement := fmt.Sprintf(`INSERT INTO "%s"."%s" (%v) VALUES (%s)`,
 		as.Namespace,
 		tableName,
