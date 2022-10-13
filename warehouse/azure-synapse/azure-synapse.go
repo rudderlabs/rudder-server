@@ -647,9 +647,8 @@ func (as *HandleT) DropTable(tableName string) (err error) {
 
 func (as *HandleT) AddColumns(tableName string, columnsInfo warehouseutils.ColumnsInto) (err error) {
 	var (
-		format             func(_ int, columnInfo warehouseutils.ColumnInfoT) string
-		sqlStatement       string
-		notExistsStatement string
+		format       func(_ int, columnInfo warehouseutils.ColumnInfoT) string
+		sqlStatement string
 	)
 
 	format = func(_ int, columnInfo warehouseutils.ColumnInfoT) string {
@@ -657,14 +656,14 @@ func (as *HandleT) AddColumns(tableName string, columnsInfo warehouseutils.Colum
 	}
 
 	if len(columnsInfo) == 1 {
-		notExistsStatement = fmt.Sprintf(`
+		sqlStatement += fmt.Sprintf(`
 			IF NOT EXISTS (
-			  SELECT 
-				1 
-			  FROM 
-				SYS.COLUMNS 
-			  WHERE 
-				OBJECT_ID = OBJECT_ID(N '%[1]s.%[2]s') 
+			  SELECT
+				1
+			  FROM
+				SYS.COLUMNS
+			  WHERE
+				OBJECT_ID = OBJECT_ID(N '%[1]s.%[2]s')
 				AND name = '%[3]s'
 			)
 `,
@@ -674,12 +673,10 @@ func (as *HandleT) AddColumns(tableName string, columnsInfo warehouseutils.Colum
 		)
 	}
 
-	sqlStatement = fmt.Sprintf(`
-		%s
+	sqlStatement += fmt.Sprintf(`
 		ALTER TABLE
 		%s.%s
 		ADD %s;`,
-		notExistsStatement,
 		as.Namespace,
 		tableName,
 		columnsInfo.JoinColumns(format, ","),
