@@ -174,3 +174,49 @@ func TestCloseWithInvalidClient(t *testing.T) {
 	producer := &bqstream.BQStreamProducer{}
 	assert.ErrorContains(t, producer.Close(), "error while trying to close the client")
 }
+
+func TestProduceConfig(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	mockClient := mock_bqstream.NewMockBQClient(ctrl)
+	producer := &bqstream.BQStreamProducer{Client: mockClient}
+
+	// properties -> array of objects
+	sampleEventJson, _ := json.Marshal(map[string]interface{}{
+		"datasetId":  "bigquery_batching",
+		"tableId":    "Streaming",
+		"properties": json.RawMessage(`[{"id":"25","name":"rudder"}, {"id":"50","name":"ruddertest"}]`),
+	})
+
+	var genericRecs []*bqstream.GenericRecord
+	json.Unmarshal([]byte("[{\"id\":\"25\",\"name\":\"rudder\"}, {\"id\":\"50\",\"name\":\"ruddertest\"}]"), &genericRecs)
+
+	mockClient.
+		EXPECT().
+		Put(gomock.Any(), "bigquery_batching", "Streaming", genericRecs).
+		Return(nil)
+	statusCode, statusMsg, respMsg := producer.Produce(sampleEventJson, map[string]string{})
+	assert.Equal(t, 200, statusCode)
+	assert.Equal(t, "Success", statusMsg)
+	assert.NotEmpty(t, respMsg)
+
+	// properties -> json objects
+	sampleEventJson, _ = json.Marshal(map[string]interface{}{
+		"datasetId":  "bigquery_batching",
+		"tableId":    "Streaming",
+		"properties": json.RawMessage(`{"id":"25","name":"rudder"}`),
+	})
+
+	var genericRecords []*bqstream.GenericRecord
+	var genericRec *bqstream.GenericRecord
+	json.Unmarshal([]byte("{\"id\":\"25\",\"name\":\"rudder\"}"), &genericRec)
+	genericRecords = append(genericRecords, genericRec)
+
+	mockClient.
+		EXPECT().
+		Put(gomock.Any(), "bigquery_batching", "Streaming", genericRecords).
+		Return(nil)
+	statusCode, statusMsg, respMsg = producer.Produce(sampleEventJson, map[string]string{})
+	assert.Equal(t, 200, statusCode)
+	assert.Equal(t, "Success", statusMsg)
+	assert.NotEmpty(t, respMsg)
+}
