@@ -810,7 +810,7 @@ func (bq *HandleT) LoadTable(tableName string) error {
 }
 
 func (bq *HandleT) AddColumns(tableName string, columnsInfo warehouseutils.ColumnsInto) (err error) {
-	pkgLogger.Infof("BQ: Adding columns in table %s in bigquery dataset: %s in project: %s", tableName, bq.Namespace, bq.ProjectID)
+	pkgLogger.Infof("BQ: Adding columns in table %s in bigquery dataset: %s in project: %s", tableName, bq.namespace, bq.projectID)
 	tableRef := bq.db.Dataset(bq.namespace).Table(tableName)
 	meta, err := tableRef.Metadata(bq.backgroundContext)
 	if err != nil {
@@ -833,7 +833,7 @@ func (bq *HandleT) AddColumns(tableName string, columnsInfo warehouseutils.Colum
 	if len(columnsInfo) == 1 {
 		if err != nil {
 			if checkAndIgnoreAlreadyExistError(err) {
-			pkgLogger.Infof("BQ: Column %s already exists on %s.%s \nResponse: %v", columnsInfo[0].Name, bq.namespace, tableName, err)
+				pkgLogger.Infof("BQ: Column %s already exists on %s.%s \nResponse: %v", columnsInfo[0].Name, bq.namespace, tableName, err)
 				err = nil
 			}
 		}

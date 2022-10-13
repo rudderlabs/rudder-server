@@ -236,7 +236,7 @@ func (ms *HandleT) DownloadLoadFiles(tableName string) ([]string, error) {
 func (ms *HandleT) DeleteBy(tableNames []string, params warehouseutils.DeleteByParams) (err error) {
 	pkgLogger.Infof("MS: Cleaning up the followng tables in mysql for MS for tables %s and params %+v", tableNames, params)
 	for _, tb := range tableNames {
-		sqlStatement := fmt.Sprintf(`DELETE FROM "%[1]s"."%[2]s" WHERE 
+		sqlStatement := fmt.Sprintf(`DELETE FROM "%[1]s"."%[2]s" WHERE
 		context_sources_job_run_id <> @jobrunid AND
 		context_sources_task_run_id <> @taskrunid AND
 		context_source_id = @sourceid AND
@@ -694,12 +694,12 @@ func (ms *HandleT) AddColumns(tableName string, columnsInfo warehouseutils.Colum
 	if len(columnsInfo) == 1 {
 		notExistsStatement = fmt.Sprintf(`
 			IF NOT EXISTS (
-			  SELECT 
-				1 
-			  FROM 
-				SYS.COLUMNS 
-			  WHERE 
-				OBJECT_ID = OBJECT_ID(N '%[1]s.%[2]s') 
+			  SELECT
+				1
+			  FROM
+				SYS.COLUMNS
+			  WHERE
+				OBJECT_ID = OBJECT_ID(N '%[1]s.%[2]s')
 				AND name = '%[3]s'
 			)
 `,
@@ -719,9 +719,6 @@ func (ms *HandleT) AddColumns(tableName string, columnsInfo warehouseutils.Colum
 		tableName,
 		columnsInfo.JoinColumns(format, ","),
 	)
-
-	sqlStatement := fmt.Sprintf(`IF NOT EXISTS (SELECT 1  FROM SYS.COLUMNS WHERE OBJECT_ID = OBJECT_ID(N'%[1]s') AND name = '%[2]s')
-			ALTER TABLE %[1]s ADD "%[2]s" %[3]s`, tableName, columnName, rudderDataTypesMapToMssql[columnType])
 
 	pkgLogger.Infof("MS: Adding column in mssql for MS:%s : %v", ms.Warehouse.Destination.ID, sqlStatement)
 	_, err = ms.Db.Exec(sqlStatement)
