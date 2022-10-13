@@ -58,12 +58,10 @@ func (r *RedisLimiter) sortedSetLimit(ctx context.Context, cost, rate, window in
 	if members == "0" {
 		return nil, nil
 	}
-	return &sortedSetZRemRangeByLexReturn{
-		sortedSetReturn: sortedSetReturn{
-			key:     key,
-			members: strings.Split(members, ","),
-			remover: r.sortedSetRemover,
-		},
+	return &sortedSetZRemReturn{
+		key:     key,
+		members: strings.Split(members, ","),
+		remover: r.sortedSetRemover,
 	}, nil
 }
 
