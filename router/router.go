@@ -2082,9 +2082,9 @@ func (rt *HandleT) backendConfigSubscriber() {
 	for configEvent := range ch {
 		rt.configSubscriberLock.Lock()
 		rt.destinationsMap = map[string]*routerutils.BatchDestinationT{}
-		config := configEvent.Data.(map[string]backendconfig.ConfigT)
+		configData := configEvent.Data.(map[string]backendconfig.ConfigT)
 		rt.sourceIDWorkspaceMap = map[string]string{}
-		for workspaceID, wConfig := range config {
+		for workspaceID, wConfig := range configData {
 			for i := range wConfig.Sources {
 				source := &wConfig.Sources[i]
 				rt.sourceIDWorkspaceMap[source.ID] = workspaceID

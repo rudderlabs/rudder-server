@@ -132,7 +132,6 @@ func (embedded *EmbeddedApp) StartRudderCore(ctx context.Context, options *app.O
 		}))
 	}
 
-	enableGateway := true
 	var modeProvider cluster.ChangeEventProvider
 
 	switch deploymentType {
@@ -183,45 +182,43 @@ func (embedded *EmbeddedApp) StartRudderCore(ctx context.Context, options *app.O
 		MultiTenantStat: multitenantStats,
 	}
 
-	if enableGateway {
-		rateLimiter := ratelimiter.HandleT{}
-		rateLimiter.SetUp()
-		gw := gateway.HandleT{}
-		// This separate gateway db is created just to be used with gateway because in case of degraded mode,
-		// the earlier created gwDb (which was created to be used mainly with processor) will not be running, and it
-		// will cause issues for gateway because gateway is supposed to receive jobs even in degraded mode.
-		gatewayDB = jobsdb.NewForWrite(
-			"gw",
-			jobsdb.WithClearDB(options.ClearDB),
-			jobsdb.WithStatusHandler(),
-		)
-		defer gwDBForProcessor.Close()
-		if err = gatewayDB.Start(); err != nil {
-			return fmt.Errorf("could not start gateway: %w", err)
-		}
-		defer gatewayDB.Stop()
-
-		gw.SetReadonlyDBs(&readonlyGatewayDB, &readonlyRouterDB, &readonlyBatchRouterDB)
-		err = gw.Setup(
-			embedded.App, backendconfig.DefaultBackendConfig, gatewayDB,
-			&rateLimiter, embedded.VersionHandler, rsourcesService,
-		)
-		if err != nil {
-			return fmt.Errorf("could not setup gateway: %w", err)
-		}
-		defer func() {
-			if err := gw.Shutdown(); err != nil {
-				pkgLogger.Warnf("Gateway shutdown error: %v", err)
-			}
-		}()
-
-		g.Go(func() error {
-			return gw.StartAdminHandler(ctx)
-		})
-		g.Go(func() error {
-			return gw.StartWebHandler(ctx)
-		})
+	rateLimiter := ratelimiter.HandleT{}
+	rateLimiter.SetUp()
+	gw := gateway.HandleT{}
+	// This separate gateway db is created just to be used with gateway because in case of degraded mode,
+	// the earlier created gwDb (which was created to be used mainly with processor) will not be running, and it
+	// will cause issues for gateway because gateway is supposed to receive jobs even in degraded mode.
+	gatewayDB = jobsdb.NewForWrite(
+		"gw",
+		jobsdb.WithClearDB(options.ClearDB),
+		jobsdb.WithStatusHandler(),
+	)
+	defer gwDBForProcessor.Close()
+	if err = gatewayDB.Start(); err != nil {
+		return fmt.Errorf("could not start gateway: %w", err)
 	}
+	defer gatewayDB.Stop()
+
+	gw.SetReadonlyDBs(&readonlyGatewayDB, &readonlyRouterDB, &readonlyBatchRouterDB)
+	err = gw.Setup(
+		embedded.App, backendconfig.DefaultBackendConfig, gatewayDB,
+		&rateLimiter, embedded.VersionHandler, rsourcesService,
+	)
+	if err != nil {
+		return fmt.Errorf("could not setup gateway: %w", err)
+	}
+	defer func() {
+		if err := gw.Shutdown(); err != nil {
+			pkgLogger.Warnf("Gateway shutdown error: %v", err)
+		}
+	}()
+
+	g.Go(func() error {
+		return gw.StartAdminHandler(ctx)
+	})
+	g.Go(func() error {
+		return gw.StartWebHandler(ctx)
+	})
 	if enableReplay {
 		var replayDB jobsdb.HandleT
 		err := replayDB.Setup(
