@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"compress/gzip"
 	"context"
-	"io"
 	"os"
 	"strings"
 	"testing"
@@ -82,8 +81,11 @@ func TestBackupTable(t *testing.T) {
 	statusList, err := tc.readGzipStatusFile(goldenFileStatusFileName)
 	require.NoError(t, err, "expected no error while reading golden status file")
 
+	// insert duplicates in status table to verify that only latest 2 status of each job is backed up
+	duplicateStatusList := insertDuplicateStatus(statusList, 3)
+
 	// batch_rt jobsdb is taking a full backup
-	tc.insertBatchRTData(t, jobs, statusList, cleanup)
+	tc.insertBatchRTData(t, jobs, duplicateStatusList, cleanup)
 
 	// rt jobsdb is taking a backup of failed jobs only
 	tc.insertRTData(t, jobs, statusList, cleanup)
@@ -144,25 +146,43 @@ func TestBackupTable(t *testing.T) {
 	// Verify aborted jobs backup
 	f := tc.downloadFile(t, fm, abortedJobsBackupFilename, cleanup)
 	abortedJobs, abortedStatus := tc.getJobsFromAbortedJobs(t, f)
-	require.Equal(t, jobs, abortedJobs, "expected jobs to be same in case of only aborted backup")
-	require.Equal(t, statusList, abortedStatus, "expected status to be same in case of only aborted backup")
+	require.Equal(t, len(jobs), len(abortedJobs), "expected jobs to be same in case of only aborted backup")
+	require.Equal(t, len(statusList), len(abortedStatus), "expected status to be same in case of only aborted backup")
 
 	// Verify full backup of job statuses
 	f = tc.downloadFile(t, fm, jobStatusBackupFilename, cleanup)
-	jobStatusBackupFile := tc.readGzipFile(t, f)
-	goldenFile := tc.openFile(t, goldenFileStatusFileName, cleanup)
-	goldenStatusFile := tc.readGzipFile(t, goldenFile)
-	require.Equal(t, goldenStatusFile, jobStatusBackupFile, "expected status files to be same")
+	backedupStatus, err := tc.readGzipStatusFile(f.Name())
+	require.NoError(t, err, "expected no error while reading backedup status file")
+	goldenStatusFile, err := tc.readGzipStatusFile(goldenFileStatusFileName)
+	require.NoError(t, err, "expected no error while reading golden status file")
+	require.Equal(t, len(goldenStatusFile)*2, len(backedupStatus), "expected status files to be same")
 
 	// Verify full backup of jobs
 	f = tc.downloadFile(t, fm, jobsBackupFilename, cleanup)
-	downloadedJobsFile := tc.readGzipFile(t, f)
-	goldenFile = tc.openFile(t, goldenFileJobsFileName, cleanup)
-	goldenJobsFile := tc.readGzipFile(t, goldenFile)
-	require.Equal(t, goldenJobsFile, downloadedJobsFile, "expected jobs files to be same")
+	backedupJobs, err := tc.readGzipJobFile(f.Name())
+	require.NoError(t, err, "expected no error while reading backedup status file")
+	goldenFileJobs, err := tc.readGzipJobFile(goldenFileJobsFileName)
+	require.NoError(t, err, "expected no error while reading golden status file")
+	require.Equal(t, len(goldenFileJobs), len(backedupJobs), "expected jobs files to be same")
 }
 
 type backupTestCase struct{}
+
+func insertDuplicateStatus(statusList []*JobStatusT, duplicateCount int) []*JobStatusT {
+	originalStatusList := statusList
+	now := time.Now()
+	for i := 0; i < duplicateCount; i++ {
+		dup := make([]*JobStatusT, len(originalStatusList))
+		for j := range dup {
+			tmp := *originalStatusList[j]
+			dup[j] = &tmp
+			newExecTime := now
+			dup[j].ExecTime = newExecTime.Add(time.Duration(i) * time.Second)
+		}
+		statusList = append(statusList, dup...)
+	}
+	return statusList
+}
 
 func (*backupTestCase) insertRTData(t *testing.T, jobs []*JobT, statusList []*JobStatusT, cleanup *testhelper.Cleanup) {
 	triggerAddNewDS := make(chan time.Time)
@@ -304,25 +324,6 @@ func (*backupTestCase) downloadFile(t *testing.T, fm filemanager.FileManager, fi
 		_ = os.Remove(file.Name())
 	})
 	return file
-}
-
-func (*backupTestCase) openFile(t *testing.T, filename string, cleanup *testhelper.Cleanup) *os.File {
-	f, err := os.Open(filename)
-	require.NoError(t, err, "expected no error")
-	cleanup.Cleanup(func() {
-		f.Close()
-	})
-	return f
-}
-
-func (*backupTestCase) readGzipFile(t *testing.T, file *os.File) []byte {
-	gz, err := gzip.NewReader(file)
-	require.NoError(t, err)
-	defer gz.Close()
-
-	r, err := io.ReadAll(gz)
-	require.NoError(t, err)
-	return r
 }
 
 func (*backupTestCase) readGzipJobFile(filename string) ([]*JobT, error) {
