@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/golang/mock/gomock"
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 
 	"github.com/rudderlabs/rudder-server/config"
@@ -32,10 +33,7 @@ func initCustomerManager() {
 }
 
 func TestCircuitBreaker(t *testing.T) {
-	const (
-		normalError  = "could not ping: could not dial any of the addresses"
-		breakerError = "circuit breaker is open, last error: could not ping: could not dial any of the addresses"
-	)
+	const ()
 
 	// init various packages
 	initCustomerManager()
@@ -43,80 +41,112 @@ func TestCircuitBreaker(t *testing.T) {
 	skipBackendConfigSubscriber = true
 
 	// set a custom circuit breaker timeout (default is 60 seconds)
-	breakerTimeout := 1 * time.Second
+	breakerTimeout := 100 * time.Millisecond
 
-	manager := New("KAFKA", Opts{Timeout: 1 * time.Microsecond}).(*CustomManagerT)
-	manager.breakerTimeout = breakerTimeout
-
-	dest := getDestConfig()
-	// during the first 6 failed attempts the circuit is closed
-	count := 1
-	newDestination(t, manager, dest, count, normalError)
-	count++
-	for ; count <= 6; count++ {
-		newClientAttempt(t, manager, dest.ID, count, normalError)
+	testcases := []struct {
+		dest        backendconfig.DestinationT
+		expectedErr error
+	}{
+		{
+			dest: backendconfig.DestinationT{
+				DestinationDefinition: backendconfig.DestinationDefinitionT{
+					Name: "KAFKA",
+				},
+				Config: map[string]interface{}{
+					"hostName": "unknown.example.com", // <- minimum valid configuration
+					"port":     "9999",
+					"topic":    "topic",
+				},
+				Enabled: true,
+			},
+			expectedErr: fmt.Errorf("could not ping: could not dial any of the addresses tcp/unknown.example.com:9999:"),
+		},
+		{
+			dest: backendconfig.DestinationT{
+				DestinationDefinition: backendconfig.DestinationDefinitionT{
+					Name: "REDIS",
+				},
+				Config: map[string]interface{}{
+					"hostName": "unknown.example.com",
+				},
+				Enabled: true,
+			},
+			expectedErr: fmt.Errorf("dial tcp [::1]:6379: connect: connection refused"),
+		},
 	}
-	// after the 6th failed attempt the circuit opens
-	newClientAttempt(t, manager, dest.ID, count, breakerError)
-	count++
-	<-time.After(breakerTimeout)
-	// after the circuit breaker's timeout passes the circuit becomes half-open
-	newClientAttempt(t, manager, dest.ID, count, normalError)
-	count++
-	// after another failure the circuit opens again
-	newClientAttempt(t, manager, dest.ID, count, breakerError)
-	count++
 
-	// sending the same destination again should not try to create a client
-	assert.Nil(t, manager.onNewDestination(dest))
-	// and shouldn't reset the circuit breaker either
-	newClientAttempt(t, manager, dest.ID, count, breakerError)
+	for _, tc := range testcases {
+		t.Run(tc.dest.DestinationDefinition.Name, func(t *testing.T) {
+			tc.dest.ID = uuid.New().String()
+			tc.dest.Name = tc.dest.DestinationDefinition.Name
 
-	// sending a modified destination should reset the circuit breaker
-	dest = getDestConfig()
-	dest.Config["modified"] = true
-	count = 1
-	newDestination(t, manager, dest, count, normalError)
-	count++
-	for ; count <= 6; count++ {
-		newClientAttempt(t, manager, dest.ID, count, normalError)
+			normalError := tc.expectedErr.Error()
+			breakerError := fmt.Sprintf("circuit breaker is open, last error: %s", normalError)
+
+			manager := New(tc.dest.DestinationDefinition.Name, Opts{Timeout: 1 * time.Microsecond}).(*CustomManagerT)
+			manager.breakerTimeout = breakerTimeout
+
+			// during the first 6 failed attempts the circuit is closed
+			count := 1
+			newDestination(t, manager, tc.dest, count, normalError)
+			count++
+			for ; count <= 6; count++ {
+				newClientAttempt(t, manager, tc.dest.ID, count, normalError)
+			}
+			// after the 6th failed attempt the circuit opens
+			newClientAttempt(t, manager, tc.dest.ID, count, breakerError)
+			count++
+			<-time.After(breakerTimeout)
+			// after the circuit breaker's timeout passes the circuit becomes half-open
+			newClientAttempt(t, manager, tc.dest.ID, count, normalError)
+			count++
+			// after another failure the circuit opens again
+			newClientAttempt(t, manager, tc.dest.ID, count, breakerError)
+			count++
+
+			// sending the same destination again should not try to create a client
+			assert.Nil(t, manager.onNewDestination(tc.dest))
+			// and shouldn't reset the circuit breaker either
+			newClientAttempt(t, manager, tc.dest.ID, count, breakerError)
+
+			t.Run("reset breaker on modified destination", func(t *testing.T) {
+				// sending a modified destination should reset the circuit breaker
+				modifiedDest := backendconfig.DestinationT{
+					ID:                    tc.dest.ID,
+					Name:                  tc.dest.Name,
+					DestinationDefinition: tc.dest.DestinationDefinition,
+					Enabled:               true,
+					Config:                map[string]interface{}{},
+				}
+				for k, v := range tc.dest.Config {
+					modifiedDest.Config[k] = v
+				}
+				modifiedDest.Config["modified"] = true
+
+				count := 1
+				newDestination(t, manager, modifiedDest, count, normalError)
+				count++
+				for ; count <= 6; count++ {
+					newClientAttempt(t, manager, tc.dest.ID, count, normalError)
+				}
+				// after the 6th attempt the new circuit opens
+				newClientAttempt(t, manager, tc.dest.ID, count, breakerError)
+			})
+		})
 	}
-	// after the 6th attempt the new circuit opens
-	newClientAttempt(t, manager, dest.ID, count, breakerError)
 }
 
 func newDestination(t *testing.T, manager *CustomManagerT, dest backendconfig.DestinationT, attempt int, errorString string) { // skipcq: CRT-P0003
 	err := manager.onNewDestination(dest)
 	assert.NotNil(t, err, "it should return an error for attempt no %d", attempt)
-	assert.True(t, strings.HasPrefix(err.Error(), errorString), fmt.Sprintf("error %s should start with %s for attempt no %d", err.Error(), errorString, attempt))
+	assert.True(t, strings.HasPrefix(err.Error(), errorString), fmt.Sprintf("error %q should start with %q for attempt no %d", err.Error(), errorString, attempt))
 }
 
 func newClientAttempt(t *testing.T, manager *CustomManagerT, destId string, attempt int, errorString string) {
 	err := manager.newClient(destId)
 	assert.NotNil(t, err, "it should return an error for attempt no %d", attempt)
-	assert.True(t, strings.HasPrefix(err.Error(), errorString), fmt.Sprintf("error %s should start with %s for attempt no %d", err.Error(), errorString, attempt))
-}
-
-func getDestConfig() backendconfig.DestinationT {
-	return backendconfig.DestinationT{
-		ID:   "test",
-		Name: "test",
-		DestinationDefinition: backendconfig.DestinationDefinitionT{
-			Name: "KAFKA",
-		},
-		Config: map[string]interface{}{
-			"hostName":      "unknown.example.com",
-			"port":          "9999",
-			"topic":         "topic",
-			"sslEnabled":    true,
-			"useSASL":       true,
-			"caCertificate": "",
-			"saslType":      "plain",
-			"username":      "username",
-			"password":      "password",
-		},
-		Enabled: true,
-	}
+	t.Log(err.Error())
+	assert.True(t, strings.HasPrefix(err.Error(), errorString), fmt.Sprintf("error %q should start with %q for attempt no %d", err.Error(), errorString, attempt))
 }
 
 func TestSendDataWithStreamDestination(t *testing.T) {

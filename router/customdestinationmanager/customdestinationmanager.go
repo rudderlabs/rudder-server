@@ -70,6 +70,23 @@ type breakerHolder struct {
 	lastError error
 }
 
+// Execute wraps the CircuitBreaker.Execute to enforce type safety and improved error logic
+func (b *breakerHolder) Execute(fn func() (*clientHolder, error)) (*clientHolder, error) {
+	c, err := b.breaker.Execute(func() (interface{}, error) {
+		return fn()
+	})
+
+	// preserve the last error in case the circuit breaker is open
+	if errors.Is(err, gobreaker.ErrOpenState) && b.lastError != nil {
+		return nil, fmt.Errorf("%s, last error: %w", err, b.lastError)
+	} else if !errors.Is(err, gobreaker.ErrOpenState) {
+		b.lastError = err
+	}
+
+	// since fn returns a clientHolder, we can safely cast the result
+	return c.(*clientHolder), err
+}
+
 func Init() {
 	loadConfig()
 	pkgLogger = logger.NewLogger().Child("router").Child("customdestinationmanager")
@@ -87,42 +104,39 @@ func loadConfig() {
 func (customManager *CustomManagerT) newClient(destID string) error {
 	destination := customManager.config[destID]
 	destConfig := destination.Config
-	_, err := customManager.breaker[destID].breaker.Execute(func() (interface{}, error) {
-		var customDestination *clientHolder
-		var err error
 
+	client, err := customManager.breaker[destID].Execute(func() (*clientHolder, error) {
 		switch customManager.managerType {
 		case STREAM:
-			var producer interface{}
-			producer, err = streammanager.NewProducer(&destination, common.Opts{
+			producer, err := streammanager.NewProducer(&destination, common.Opts{
 				Timeout: customManager.timeout,
 			})
-			if err == nil {
-				customDestination = &clientHolder{
-					config: destConfig,
-					client: producer,
-				}
-				customManager.client[destID] = customDestination
+			if err != nil {
+				return nil, err
 			}
+			return &clientHolder{
+				config: destConfig,
+				client: producer,
+			}, nil
 		case KV:
 			kvManager, err := kvstoremanager.New(customManager.destType, destConfig)
-			if err == nil {
-				customDestination = &clientHolder{
-					config: destConfig,
-					client: kvManager,
-				}
-				customManager.client[destID] = customDestination
+			if err != nil {
+				return nil, err
 			}
+			return &clientHolder{
+				config: destConfig,
+				client: kvManager,
+			}, nil
 		default:
 			return nil, fmt.Errorf("no provider configured for Custom Destination Manager")
 		}
-		customManager.breaker[destID].lastError = err
-		return nil, err
 	})
-	if errors.Is(err, gobreaker.ErrOpenState) && customManager.breaker[destID].lastError != nil {
-		return fmt.Errorf("%s, last error: %w", err, customManager.breaker[destID].lastError)
+	if err != nil {
+		return err
 	}
-	return err
+
+	customManager.client[destID] = client
+	return nil
 }
 
 func (customManager *CustomManagerT) send(jsonData json.RawMessage, client interface{}, config map[string]interface{}) (int, string) {

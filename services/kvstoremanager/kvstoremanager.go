@@ -10,7 +10,7 @@ import (
 var ProviderNotSupported = fmt.Errorf("Provider not supported")
 
 type KVStoreManager interface {
-	Connect()
+	Connect() error
 	Close() error
 	HMSet(key string, fields map[string]interface{}) error
 	StatusCode(err error) int
@@ -25,7 +25,9 @@ func New(provider string, config map[string]interface{}) (KVStoreManager, error)
 		m := &redisManagerT{
 			config: config,
 		}
-		m.Connect()
+		if err := m.Connect(); err != nil {
+			return nil, err
+		}
 		return m, nil
 	default:
 		return nil, ProviderNotSupported

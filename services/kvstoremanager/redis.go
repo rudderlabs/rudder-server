@@ -24,7 +24,7 @@ func init() {
 	abortableErrors = []string{"connection refused", "invalid password"}
 }
 
-func (m *redisManagerT) Connect() {
+func (m *redisManagerT) Connect() error {
 	var ok bool
 	if m.clusterMode, ok = m.config["clusterMode"].(bool); !ok {
 		// setting redis to cluster mode by default if setting missing in config
@@ -60,6 +60,7 @@ func (m *redisManagerT) Connect() {
 			opts.TLSConfig = &tlsConfig
 		}
 		m.clusterClient = redis.NewClusterClient(&opts)
+		return m.clusterClient.Ping().Err()
 	} else {
 		var db int
 		if dbStr, ok := m.config["database"].(string); ok {
@@ -74,7 +75,10 @@ func (m *redisManagerT) Connect() {
 			opts.TLSConfig = &tlsConfig
 		}
 		m.client = redis.NewClient(&opts)
+		return m.client.Ping().Err()
 	}
+
+	return nil
 }
 
 func (m *redisManagerT) Close() error {
