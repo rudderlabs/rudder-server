@@ -9,6 +9,7 @@ import (
 )
 
 func TestGCRA(t *testing.T) {
+	// @TODO finish this test
 	g := gcra{
 		getterSetter: &inMemoryGetterSetter{
 			m:  make(map[string]interface{}),

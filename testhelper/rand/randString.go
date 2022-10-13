@@ -2,6 +2,7 @@ package rand
 
 import (
 	"math/rand"
+	"sync"
 	"time"
 	"unsafe"
 )
@@ -13,11 +14,11 @@ const (
 	letterIdxMax  = 63 / letterIdxBits   // # of letter indices fitting in 63 bits
 )
 
-var src rand.Source
-
-func init() {
-	src = rand.NewSource(time.Now().UnixNano())
-}
+var (
+	src                   = rand.NewSource(time.Now().UnixNano())
+	uniqueRandomStrings   = make(map[string]struct{})
+	uniqueRandomStringsMu sync.Mutex
+)
 
 // String returns a random string
 // Credits to https://stackoverflow.com/a/31832326/828366
@@ -37,4 +38,20 @@ func String(n int) string {
 	}
 
 	return *(*string)(unsafe.Pointer(&b)) // skipcq: GSC-G103
+}
+
+// UniqueString returns a random string that is unique
+func UniqueString(n int) string {
+	str := String(n)
+
+	uniqueRandomStringsMu.Lock()
+	defer uniqueRandomStringsMu.Unlock()
+
+	for {
+		if _, ok := uniqueRandomStrings[str]; !ok {
+			uniqueRandomStrings[str] = struct{}{}
+			return str
+		}
+		str = String(n)
+	}
 }
