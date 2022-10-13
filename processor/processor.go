@@ -283,13 +283,6 @@ func Init() {
 	pkgLogger = logger.NewLogger().Child("processor")
 }
 
-// NewProcessor creates a new Processor instance
-func NewProcessor() *HandleT {
-	return &HandleT{
-		transformer: transformer.NewTransformer(),
-	}
-}
-
 func (proc *HandleT) Status() interface{} {
 	proc.stats.transformEventsByTimeMutex.RLock()
 	defer proc.stats.transformEventsByTimeMutex.RUnlock()
@@ -2287,8 +2280,8 @@ func (proc *HandleT) markExecuting(jobs []*jobsdb.JobT) error {
 			JobID:         job.JobID,
 			AttemptNum:    job.LastJobStatus.AttemptNum,
 			JobState:      jobsdb.Executing.State,
-			ExecTime:      start,
-			RetryTime:     start,
+			ExecTime:      time.Now(),
+			RetryTime:     time.Now(),
 			ErrorCode:     "",
 			ErrorResponse: []byte(`{}`),
 			Parameters:    []byte(`{}`),

@@ -495,7 +495,7 @@ func TestJobsDB(t *testing.T) {
 
 		jobDB.MaxDSRetentionPeriod = time.Second
 
-		jobs := genJobs(defaultWorkspaceID, customVal, 1, 1)
+		jobs := genJobs(defaultWorkspaceID, customVal, 10, 1)
 		require.NoError(t, jobDB.Store(context.Background(), jobs))
 
 		require.EqualValues(t, 1, jobDB.GetMaxDSIndex())
@@ -504,8 +504,11 @@ func TestJobsDB(t *testing.T) {
 		triggerAddNewDS <- time.Now() // Second time, waits for the first loop to finish
 
 		jobDBInspector := HandleInspector{HandleT: &jobDB}
-		require.EqualValues(t, 2, jobDBInspector.DSListSize())
+		require.EqualValues(t, 2, len(jobDBInspector.DSIndicesList()))
 		require.EqualValues(t, 2, jobDB.GetMaxDSIndex())
+
+		jobs = genJobs(defaultWorkspaceID, customVal, 10, 1)
+		require.NoError(t, jobDB.Store(context.Background(), jobs)) // store in 2nd dataset
 
 		jobsResult, err := jobDB.GetUnprocessed(context.Background(), GetQueryParamsT{
 			CustomValFilters: []string{customVal},
@@ -514,7 +517,7 @@ func TestJobsDB(t *testing.T) {
 		})
 		require.NoError(t, err, "GetUnprocessed failed")
 		fetchedJobs := jobsResult.Jobs
-		require.Equal(t, 1, len(fetchedJobs))
+		require.Equal(t, 20, len(fetchedJobs))
 
 		status := JobStatusT{
 			JobID:         fetchedJobs[0].JobID,
@@ -530,13 +533,25 @@ func TestJobsDB(t *testing.T) {
 		err = jobDB.UpdateJobStatus(context.Background(), []*JobStatusT{&status}, []string{customVal}, []ParameterFilterT{})
 		require.NoError(t, err)
 
+		time.Sleep(time.Second * 2) // wait for some time to pass so that retention condition satisfies
+
 		triggerMigrateDS <- time.Now() // trigger migrateDSLoop to run
 		triggerMigrateDS <- time.Now() // Second time, waits for the first loop to finish
 
-		require.EqualValues(t, 1, jobDBInspector.DSListSize())
+		dsIndicesList := jobDBInspector.DSIndicesList()
+		require.EqualValues(t, "1_1", dsIndicesList[0])
+		require.EqualValues(t, "2", dsIndicesList[1])
+		require.EqualValues(t, 2, len(jobDBInspector.DSIndicesList()))
 		require.EqualValues(t, 2, jobDB.GetMaxDSIndex())
-	})
 
+		jobsResult, err = jobDB.GetUnprocessed(context.Background(), GetQueryParamsT{
+			CustomValFilters: []string{customVal},
+			JobsLimit:        100,
+			ParameterFilters: []ParameterFilterT{},
+		})
+		require.NoError(t, err, "GetUnprocessed failed")
+		require.EqualValues(t, 19, len(jobsResult.Jobs))
+	})
 	t.Run("should migrate small datasets that have been migrated at least once (except right most one)", func(t *testing.T) {
 		customVal := "MOCKDS"
 		triggerAddNewDS := make(chan time.Time)

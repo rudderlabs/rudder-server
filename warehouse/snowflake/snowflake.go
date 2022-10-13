@@ -936,10 +936,10 @@ func (sf *HandleT) LoadTable(tableName string) error {
 	return err
 }
 
-func (sf *HandleT) GetTotalCountInTable(tableName string) (total int64, err error) {
+func (sf *HandleT) GetTotalCountInTable(ctx context.Context, tableName string) (total int64, err error) {
 	schemaIdentifier := sf.schemaIdentifier()
 	sqlStatement := fmt.Sprintf(`SELECT count(*) FROM %[1]s."%[2]s"`, schemaIdentifier, tableName)
-	err = sf.Db.QueryRow(sqlStatement).Scan(&total)
+	err = sf.Db.QueryRowContext(ctx, sqlStatement).Scan(&total)
 	if err != nil {
 		pkgLogger.Errorf(`SF: Error getting total count in table %s:%s`, schemaIdentifier, tableName)
 	}

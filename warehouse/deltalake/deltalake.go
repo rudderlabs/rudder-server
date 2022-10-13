@@ -1068,7 +1068,7 @@ func (*HandleT) DownloadIdentityRules(*misc.GZipWriter) (err error) {
 }
 
 // GetTotalCountInTable returns total count in tables.
-func (dl *HandleT) GetTotalCountInTable(tableName string) (total int64, err error) {
+func (dl *HandleT) GetTotalCountInTable(ctx context.Context, tableName string) (total int64, err error) {
 	fetchTotalCountExecTime := stats.Default.NewTaggedStat("warehouse.deltalake.grpcExecTime", stats.TimerType, map[string]string{
 		"workspaceId": dl.Warehouse.WorkspaceID,
 		"destination": dl.Warehouse.Destination.ID,
@@ -1082,7 +1082,7 @@ func (dl *HandleT) GetTotalCountInTable(tableName string) (total int64, err erro
 	defer fetchTotalCountExecTime.End()
 
 	sqlStatement := fmt.Sprintf(`SELECT COUNT(*) FROM %[1]s.%[2]s;`, dl.Namespace, tableName)
-	response, err := dl.dbHandleT.Client.FetchTotalCountInTable(dl.dbHandleT.Context, &proto.FetchTotalCountInTableRequest{
+	response, err := dl.dbHandleT.Client.FetchTotalCountInTable(ctx, &proto.FetchTotalCountInTableRequest{
 		Config:       dl.dbHandleT.CredConfig,
 		Identifier:   dl.dbHandleT.CredIdentifier,
 		SqlStatement: sqlStatement,
