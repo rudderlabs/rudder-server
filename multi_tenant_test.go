@@ -21,7 +21,9 @@ import (
 	"github.com/ory/dockertest/v3"
 	"github.com/stretchr/testify/require"
 	clientv3 "go.etcd.io/etcd/client/v3"
+	etcd "go.etcd.io/etcd/client/v3"
 	"golang.org/x/sync/errgroup"
+	"google.golang.org/grpc"
 
 	"github.com/rudderlabs/rudder-server/app"
 	th "github.com/rudderlabs/rudder-server/testhelper"
@@ -238,7 +240,13 @@ func testMultiTenantByAppType(t *testing.T, appType string) {
 		require.Equal(t, "RELOADED", v.Status)
 		require.Equal(t, "", v.Error)
 	case <-time.After(20 * time.Second):
-		t.Fatal("Timeout waiting for test-ack/1")
+		_, err = etcd.New(etcd.Config{
+			Endpoints: etcdContainer.Hosts,
+			DialOptions: []grpc.DialOption{
+				grpc.WithBlock(), // block until the underlying connection is up
+			},
+		})
+		t.Fatalf("Timeout waiting for test-ack/1 (etcd status error: %v)", err)
 	}
 
 	cleanupGwJobs := func() {
