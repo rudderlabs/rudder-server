@@ -5,20 +5,24 @@ package warehouse
 import (
 	"context"
 	"errors"
+	"github.com/rudderlabs/rudder-server/mocks/warehouse"
+	"github.com/rudderlabs/rudder-server/mocks/warehouse/validations"
 	"os"
 	"testing"
 
+	"github.com/rudderlabs/rudder-server/mocks/services/pgNotifier"
+	"github.com/rudderlabs/rudder-server/mocks/warehouse/manager"
 	"github.com/rudderlabs/rudder-server/services/stats"
 
 	"github.com/golang/mock/gomock"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/ory/dockertest/v3"
-	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
+	"github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/testhelper"
 	"github.com/rudderlabs/rudder-server/testhelper/destination"
 	"github.com/rudderlabs/rudder-server/utils/logger"
-	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
+	"github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
 func TestExtractUploadErrorsByState(t *testing.T) {
@@ -75,6 +79,22 @@ func TestExtractUploadErrorsByState(t *testing.T) {
 			t.Errorf("expected attempts to be: %d, got: %d", ip.ErrorCount, stateErrors["attempt"].(int))
 		}
 	}
+}
+
+func TestStateMachine(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	mockValidator := mock_validations.NewMockDestinationValidator(ctrl)
+	mockManager := mock_manager.NewMockManagerI(ctrl)
+	mockPGNotifier := mock_pgnotifier.NewMockPgNotifier(ctrl)
+	mockDB := mock_warehouse.NewMockDB(ctrl)
+	upload := &Upload{}
+	warehouse := warehouseutils.Warehouse{}
+	stagingFiles := []*StagingFileT{}
+	stagingFileIDs := []int64{}
+
+	mockDB.EXPECT().SetUploadColumns(gomock.Any(), gomock.Any()).Return(stagingFiles, nil).AnyTimes()
+	u := NewUploadJob(upload, nil, mockDB, warehouse, mockManager, stagingFiles, stagingFileIDs, mockPGNotifier, mockValidator)
+	Expect(u.run()).To(BeNil())
 }
 
 var _ = Describe("Upload", Ordered, func() {

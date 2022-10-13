@@ -1,4 +1,4 @@
-//go:generate mockgen -source=scheduler.go -destination=../mocks/warehouse/mock_scheduler.go -package=warehouse github.com/rudderlabs/rudder-server/warehouse Scheduler
+//go:generate mockgen -source=scheduler.go -destination=../mocks/warehouse/mock_scheduler.go -package=mock_warehouse github.com/rudderlabs/rudder-server/warehouse Scheduler
 
 package warehouse
 
@@ -7,6 +7,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"github.com/rudderlabs/rudder-server/warehouse/db"
 	"math/rand"
 	"strconv"
 	"sync"
@@ -45,7 +46,7 @@ type Scheduler interface {
 type SchedulerImpl struct {
 	destType                          string
 	dbHandle                          *sql.DB
-	warehouseDBHandle                 DB
+	warehouseDBHandle                 db.DB
 	areBeingEnqueuedLock              *sync.RWMutex
 	inProgressMap                     map[WorkerIdentifierT][]JobIDT
 	allowMultipleSourcesForJobsPickup bool
@@ -65,7 +66,7 @@ func loadConfigScheduling() {
 func NewScheduler(
 	destType string,
 	dbHandle *sql.DB,
-	warehouseDBHandle DB,
+	warehouseDBHandle db.DB,
 	areBeingEnqueuedLock *sync.RWMutex,
 	inProgressMap map[WorkerIdentifierT][]JobIDT,
 	allowMultipleSourcesForJobsPickup bool,

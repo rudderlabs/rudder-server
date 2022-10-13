@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	db2 "github.com/rudderlabs/rudder-server/warehouse/db"
 	"io"
 	"net/http"
 	"os"
@@ -114,7 +115,7 @@ type HandleT struct {
 	destType                          string
 	warehouses                        []warehouseutils.Warehouse
 	dbHandle                          *sql.DB
-	warehouseDBHandle                 DB
+	warehouseDBHandle                 db2.DB
 	notifier                          pgnotifier.PgNotifier
 	isEnabled                         bool
 	configSubscriberLock              sync.RWMutex
@@ -688,7 +689,7 @@ func (wh *HandleT) Setup(whType string) {
 	wh.dbHandle = dbHandle
 	// We now have access to the warehouseDBHandle through
 	// which we will be running the db calls.
-	wh.warehouseDBHandle = NewWarehouseDB(dbHandle)
+	wh.warehouseDBHandle = db2.NewWarehouseDB(dbHandle)
 	wh.notifier = notifier
 	wh.destType = whType
 	wh.processor = NewProcessor(
@@ -698,6 +699,7 @@ func (wh *HandleT) Setup(whType string) {
 		&wh.workspaceBySourceIDsLock,
 		wh.destType,
 		wh.dbHandle,
+		wh.warehouseDBHandle,
 		wh.notifier,
 		wh.allowMultipleSourcesForJobsPickup,
 	)

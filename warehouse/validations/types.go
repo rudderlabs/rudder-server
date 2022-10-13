@@ -1,3 +1,5 @@
+//go:generate mockgen -source=types.go -destination=../../mocks/warehouse/validations/mock_validations.go -package=mock_validations github.com/rudderlabs/rudder-server/warehouse/validations DestinationValidator
+
 package validations
 
 import (

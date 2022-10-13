@@ -441,7 +441,7 @@ var _ = Describe("Schema", func() {
 	})
 
 	DescribeTable("Safe name", func(warehouseType, columnName, expected string) {
-		handle := SchemaHandleT{
+		handle := SchemaHandleImpl{
 			warehouse: warehouseutils.Warehouse{
 				Type: warehouseType,
 			},
@@ -453,7 +453,7 @@ var _ = Describe("Schema", func() {
 	)
 
 	DescribeTable("Merge rules schema", func(warehouseType string, expected map[string]string) {
-		handle := SchemaHandleT{
+		handle := SchemaHandleImpl{
 			warehouse: warehouseutils.Warehouse{
 				Type: warehouseType,
 			},
@@ -475,7 +475,7 @@ var _ = Describe("Schema", func() {
 	)
 
 	DescribeTable("Identities Mappings schema", func(warehouseType string, expected map[string]string) {
-		handle := SchemaHandleT{
+		handle := SchemaHandleImpl{
 			warehouse: warehouseutils.Warehouse{
 				Type: warehouseType,
 			},
@@ -497,7 +497,7 @@ var _ = Describe("Schema", func() {
 	)
 
 	DescribeTable("Discards schema", func(warehouseType string, expected map[string]string) {
-		handle := SchemaHandleT{
+		handle := SchemaHandleImpl{
 			warehouse: warehouseutils.Warehouse{
 				Type: warehouseType,
 			},

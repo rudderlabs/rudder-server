@@ -1,4 +1,4 @@
-//go:generate mockgen -source=processor.go -destination=../mocks/warehouse/mock_processor.go -package=warehouse github.com/rudderlabs/rudder-server/warehouse Processor
+//go:generate mockgen -source=processor.go -destination=../mocks/warehouse/mock_processor.go -package=mock_warehouse github.com/rudderlabs/rudder-server/warehouse Processor
 
 package warehouse
 
@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/rudderlabs/rudder-server/warehouse/db"
 	"sync"
 	"time"
 
@@ -32,6 +33,7 @@ type ProcessorImpl struct {
 	workspaceBySourceIDsLock          *sync.RWMutex
 	destType                          string
 	dbHandle                          *sql.DB
+	warehouseDBHandle                 db.DB
 	notifier                          pgnotifier.PgNotifier
 	allowMultipleSourcesForJobsPickup bool
 }
@@ -43,6 +45,7 @@ func NewProcessor(
 	workspaceBySourceIDsLock *sync.RWMutex,
 	destType string,
 	dbHandle *sql.DB,
+	warehouseDBHandle db.DB,
 	notifier pgnotifier.PgNotifier,
 	allowMultipleSourcesForJobsPickup bool,
 ) Processor {
@@ -53,6 +56,7 @@ func NewProcessor(
 		workspaceBySourceIDsLock:          workspaceBySourceIDsLock,
 		destType:                          destType,
 		dbHandle:                          dbHandle,
+		warehouseDBHandle:                 warehouseDBHandle,
 		notifier:                          notifier,
 		allowMultipleSourcesForJobsPickup: allowMultipleSourcesForJobsPickup,
 	}
@@ -251,6 +255,7 @@ func (s *ProcessorImpl) uploadToProcess(
 		uploadJob := NewUploadJob(
 			&upload,
 			s.dbHandle,
+			s.warehouseDBHandle,
 			warehouse,
 			whManager,
 			stagingFilesList,

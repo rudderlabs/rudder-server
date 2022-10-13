@@ -1,3 +1,5 @@
+//go:generate mockgen -source=manager.go -destination=../../mocks/warehouse/manager/mock_manager.go -package=mock_manager github.com/rudderlabs/rudder-server/warehouse/manager ManagerI
+
 package manager
 
 import (

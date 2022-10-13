@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/rudderlabs/rudder-server/warehouse/db"
+	"github.com/rudderlabs/rudder-server/warehouse/utils"
 	"net/http"
 
 	"github.com/lib/pq"
@@ -139,55 +141,55 @@ func (retryReq *RetryRequest) getSourceIDs() (sourceIDs []string) {
 	return sourceIDs
 }
 
-func (retryReq *RetryRequest) clausesQuery(sourceIDs []string) []FilterClause {
-	var clauses []FilterClause
+func (retryReq *RetryRequest) clausesQuery(sourceIDs []string) []warehouseutils.FilterClause {
+	var clauses []warehouseutils.FilterClause
 
 	// SourceID
 	if retryReq.SourceID != "" {
-		clauses = append(clauses, FilterClause{
-			Clause:    fmt.Sprintf(`source_id = %s`, queryPlaceHolder),
+		clauses = append(clauses, warehouseutils.FilterClause{
+			Clause:    fmt.Sprintf(`source_id = %s`, db.queryPlaceHolder),
 			ClauseArg: retryReq.SourceID,
 		})
 	} else {
-		clauses = append(clauses, FilterClause{
-			Clause:    fmt.Sprintf(`source_id = ANY(%s)`, queryPlaceHolder),
+		clauses = append(clauses, warehouseutils.FilterClause{
+			Clause:    fmt.Sprintf(`source_id = ANY(%s)`, db.queryPlaceHolder),
 			ClauseArg: pq.Array(sourceIDs),
 		})
 	}
 
 	// DestinationID
 	if retryReq.DestinationID != "" {
-		clauses = append(clauses, FilterClause{
-			Clause:    fmt.Sprintf(`destination_id = %s`, queryPlaceHolder),
+		clauses = append(clauses, warehouseutils.FilterClause{
+			Clause:    fmt.Sprintf(`destination_id = %s`, db.queryPlaceHolder),
 			ClauseArg: retryReq.DestinationID,
 		})
 	}
 
 	// DestinationType
 	if retryReq.DestinationType != "" {
-		clauses = append(clauses, FilterClause{
-			Clause:    fmt.Sprintf(`destination_type = %s`, queryPlaceHolder),
+		clauses = append(clauses, warehouseutils.FilterClause{
+			Clause:    fmt.Sprintf(`destination_type = %s`, db.queryPlaceHolder),
 			ClauseArg: retryReq.DestinationType,
 		})
 	}
 
 	// Status deciding based on forcefully retrying
 	if !retryReq.ForceRetry {
-		clauses = append(clauses, FilterClause{
-			Clause:    fmt.Sprintf("status = %s", queryPlaceHolder),
+		clauses = append(clauses, warehouseutils.FilterClause{
+			Clause:    fmt.Sprintf("status = %s", db.queryPlaceHolder),
 			ClauseArg: Aborted,
 		})
 	}
 
 	// UploadIDs or Retry Interval
 	if len(retryReq.UploadIds) != 0 {
-		clauses = append(clauses, FilterClause{
-			Clause:    fmt.Sprintf("id = ANY(%s)", queryPlaceHolder),
+		clauses = append(clauses, warehouseutils.FilterClause{
+			Clause:    fmt.Sprintf("id = ANY(%s)", db.queryPlaceHolder),
 			ClauseArg: pq.Array(retryReq.UploadIds),
 		})
 	} else {
-		clauses = append(clauses, FilterClause{
-			Clause:    fmt.Sprintf("created_at > NOW() - %s * INTERVAL '1 HOUR'", queryPlaceHolder),
+		clauses = append(clauses, warehouseutils.FilterClause{
+			Clause:    fmt.Sprintf("created_at > NOW() - %s * INTERVAL '1 HOUR'", db.queryPlaceHolder),
 			ClauseArg: retryReq.IntervalInHours,
 		})
 	}

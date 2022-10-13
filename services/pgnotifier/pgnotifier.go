@@ -1,3 +1,5 @@
+//go:generate mockgen -source=pgnotifier.go -destination=../../mocks/services/pgnotifier/mock_pgnotifier.go -package=mock_pgnotifier github.com/rudderlabs/rudder-server/services/pgnotifier PgNotifier
+
 package pgnotifier
 
 import (
@@ -61,13 +63,13 @@ func Init() {
 type PgNotifier interface {
 	GetDBHandle() *sql.DB
 	ClearJobs(ctx context.Context) (err error)
-	trackUploadBatch(batchID string, ch *chan []ResponseT)
+	TrackUploadBatch(batchID string, ch *chan []ResponseT)
 	UpdateClaimedEvent(claim *ClaimT, response *ClaimResponseT)
-	trackAsyncBatch(batchID string, ch *chan []ResponseT)
-	claim(workerID string) (claim ClaimT, err error)
+	TrackAsyncBatch(batchID string, ch *chan []ResponseT)
+	Claim(workerID string) (claim ClaimT, err error)
 	Publish(payload MessagePayload, schema *whUtils.SchemaT, priority int) (ch chan []ResponseT, err error)
 	Subscribe(ctx context.Context, workerId string, jobsBufferSize int) chan ClaimT
-	setupQueue() (err error)
+	SetupQueue() (err error)
 	RunMaintenanceWorker(ctx context.Context) error
 }
 
@@ -78,8 +80,6 @@ type PgNotifierImpl struct {
 }
 
 type JobPayload json.RawMessage
-
-const MaxTrackAsyncBatchRetries = 5
 
 type ResponseT struct {
 	JobID   int64
@@ -150,7 +150,7 @@ func New(workspaceIdentifier, fallbackConnectionInfo string) (notifier PgNotifie
 	// publish metrics
 	pgNotifierPublish = whUtils.NewCounterStat("pgnotifier_publish", pgNotifierModuleTag)
 	pgNotifierPublishTime = whUtils.NewTimerStat("pgnotifier_publish_time", pgNotifierModuleTag)
-	// claim metrics
+	// Claim metrics
 	pgNotifierClaimSucceeded = whUtils.NewCounterStat("pgnotifier_claim", pgNotifierModuleTag, whUtils.Tag{Name: "status", Value: "succeeded"})
 	pgNotifierClaimFailed = whUtils.NewCounterStat("pgnotifier_claim", pgNotifierModuleTag, whUtils.Tag{Name: "status", Value: "failed"})
 	pgNotifierClaimSucceededTime = whUtils.NewTimerStat("pgnotifier_claim_time", pgNotifierModuleTag, whUtils.Tag{Name: "status", Value: "succeeded"})
@@ -162,7 +162,7 @@ func New(workspaceIdentifier, fallbackConnectionInfo string) (notifier PgNotifie
 		URI:                 connectionInfo,
 		workspaceIdentifier: workspaceIdentifier,
 	}
-	err = notifier.setupQueue()
+	err = notifier.SetupQueue()
 	return
 }
 
@@ -211,7 +211,7 @@ func GetPGNotifierConnectionString() string {
 }
 
 // trackUploadBatch tracks the upload batches until they are complete and triggers output through channel of type ResponseT
-func (notifier *PgNotifierImpl) trackUploadBatch(batchID string, ch *chan []ResponseT) {
+func (notifier *PgNotifierImpl) TrackUploadBatch(batchID string, ch *chan []ResponseT) {
 	rruntime.GoForWarehouse(func() {
 		for {
 			time.Sleep(trackBatchInterval)
@@ -297,7 +297,7 @@ func (notifier *PgNotifierImpl) trackUploadBatch(batchID string, ch *chan []Resp
 }
 
 // trackAsyncBatch tracks the upload batches until they are complete and triggers output through channel of type ResponseT
-func (notifier *PgNotifierImpl) trackAsyncBatch(batchID string, ch *chan []ResponseT) {
+func (notifier *PgNotifierImpl) TrackAsyncBatch(batchID string, ch *chan []ResponseT) {
 	rruntime.GoForWarehouse(func() {
 		// retry := 0
 		var responses []ResponseT
@@ -416,7 +416,7 @@ func (notifier *PgNotifierImpl) UpdateClaimedEvent(claim *ClaimT, response *Clai
 	}
 }
 
-func (notifier *PgNotifierImpl) claim(workerID string) (claim ClaimT, err error) {
+func (notifier *PgNotifierImpl) Claim(workerID string) (claim ClaimT, err error) {
 	claimStartTime := time.Now()
 	defer func() {
 		if err != nil {
@@ -493,7 +493,7 @@ func (notifier *PgNotifierImpl) claim(workerID string) (claim ClaimT, err error)
 
 	err = tx.Commit()
 	if err != nil {
-		pkgLogger.Errorf("PgNotifier: Error committing claim txn: %v", err)
+		pkgLogger.Errorf("PgNotifier: Error committing Claim txn: %v", err)
 		return
 	}
 
@@ -592,10 +592,10 @@ func (notifier *PgNotifierImpl) Publish(payload MessagePayload, schema *whUtils.
 		"module":    "pg_notifier",
 	}).Count(len(jobs))
 	if payload.JobType == AsyncJobType {
-		notifier.trackAsyncBatch(batchID, &ch)
+		notifier.TrackAsyncBatch(batchID, &ch)
 		return
 	}
-	notifier.trackUploadBatch(batchID, &ch)
+	notifier.TrackUploadBatch(batchID, &ch)
 	return
 }
 
@@ -605,7 +605,7 @@ func (notifier *PgNotifierImpl) Subscribe(ctx context.Context, workerId string, 
 		pollSleep := time.Duration(0)
 		defer close(jobs)
 		for {
-			claimedJob, err := notifier.claim(workerId)
+			claimedJob, err := notifier.Claim(workerId)
 			if err == nil {
 				jobs <- claimedJob
 				pollSleep = time.Duration(0)
@@ -625,7 +625,7 @@ func (notifier *PgNotifierImpl) Subscribe(ctx context.Context, workerId string, 
 	return jobs
 }
 
-func (notifier *PgNotifierImpl) setupQueue() (err error) {
+func (notifier *PgNotifierImpl) SetupQueue() (err error) {
 	pkgLogger.Infof("PgNotifier: Creating Job Queue Tables ")
 
 	m := &migrator.Migrator{

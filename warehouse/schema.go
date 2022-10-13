@@ -1,4 +1,4 @@
-//go:generate mockgen -source=schema.go -destination=../mocks/warehouse/mock_schema_handle.go -package=warehouse github.com/rudderlabs/rudder-server/warehouse SchemaHandle
+//go:generate mockgen -source=schema.go -destination=../mocks/warehouse/mock_schema_handle.go -package=mock_warehouse github.com/rudderlabs/rudder-server/warehouse SchemaHandle
 
 package warehouse
 

@@ -1,4 +1,6 @@
-package warehouse
+//go:generate mockgen -source=db.go -destination=../../mocks/warehouse/mock_db.go -package=mock_warehouse github.com/rudderlabs/rudder-server/warehouse/db DB
+
+package db
 
 import (
 	"context"
@@ -18,8 +20,9 @@ const (
 // with the database.
 type DB interface {
 	GetLatestUploadStatus(ctx context.Context, destType, sourceID, destinationID string) (int64, string, int, error)
-	RetryUploads(ctx context.Context, filterClauses ...FilterClause) (rowsAffected int64, err error)
-	GetUploadsCount(ctx context.Context, filterClauses ...FilterClause) (count int64, err error)
+	RetryUploads(ctx context.Context, filterClauses ...warehouseutils.FilterClause) (rowsAffected int64, err error)
+	GetUploadsCount(ctx context.Context, filterClauses ...warehouseutils.FilterClause) (count int64, err error)
+	SetUploadColumns(uploadID int64, opts warehouseutils.UploadColumnsOpts) (err error)
 }
 
 type DBImpl struct {
@@ -31,7 +34,7 @@ func NewWarehouseDB(handle *sql.DB) DB {
 }
 
 func (db *DBImpl) GetLatestUploadStatus(ctx context.Context, destType, sourceID, destinationID string) (int64, string, int, error) {
-	pkgLogger.Debugf("Fetching latest upload status for: destType: %s, sourceID: %s, destID: %s", destType, sourceID, destinationID)
+	//warehouse.pkgLogger.Debugf("Fetching latest upload status for: destType: %s, sourceID: %s, destID: %s", destType, sourceID, destinationID)
 
 	query := fmt.Sprintf(`
 		SELECT
@@ -63,14 +66,14 @@ func (db *DBImpl) GetLatestUploadStatus(ctx context.Context, destType, sourceID,
 
 	err := db.handle.QueryRowContext(ctx, query).Scan(&uploadID, &status, &priority)
 	if err != nil && err != sql.ErrNoRows {
-		pkgLogger.Errorf(`Error getting latest upload status for warehouse: %v`, err)
+		//warehouse.pkgLogger.Errorf(`Error getting latest upload status for warehouse: %v`, err)
 		return 0, "", 0, fmt.Errorf("unable to get latest upload status for warehouse: %w", err)
 	}
 
 	return uploadID, status, priority, nil
 }
 
-func (db *DBImpl) RetryUploads(ctx context.Context, filterClauses ...FilterClause) (rowsAffected int64, err error) {
+func (db *DBImpl) RetryUploads(ctx context.Context, filterClauses ...warehouseutils.FilterClause) (rowsAffected int64, err error) {
 	if len(filterClauses) == 0 {
 		return 0, errors.New("no filter clauses are present to retry uploads")
 	}
@@ -91,7 +94,7 @@ func (db *DBImpl) RetryUploads(ctx context.Context, filterClauses ...FilterClaus
 		WHERE %[1]s;`,
 		clausesQuery,
 	)
-	pkgLogger.Debugf("[RetryUploads] sqlStatement: %s", preparedStatement)
+	//warehouse.pkgLogger.Debugf("[RetryUploads] sqlStatement: %s", preparedStatement)
 
 	result, err := db.handle.ExecContext(ctx, preparedStatement, clausesArgs...)
 	if err != nil {
@@ -102,7 +105,7 @@ func (db *DBImpl) RetryUploads(ctx context.Context, filterClauses ...FilterClaus
 	return
 }
 
-func (db *DBImpl) GetUploadsCount(ctx context.Context, filterClauses ...FilterClause) (count int64, err error) {
+func (db *DBImpl) GetUploadsCount(ctx context.Context, filterClauses ...warehouseutils.FilterClause) (count int64, err error) {
 	var (
 		clausesQuery      string
 		clausesArgs       []interface{}
@@ -126,13 +129,45 @@ func (db *DBImpl) GetUploadsCount(ctx context.Context, filterClauses ...FilterCl
 		%[1]s;`,
 		whereClausesQuery,
 	)
-	pkgLogger.Debugf("[GetUploadsCount] sqlStatement: %s", preparedStatement)
+	//warehouse.pkgLogger.Debugf("[GetUploadsCount] sqlStatement: %s", preparedStatement)
 
 	err = db.handle.QueryRowContext(ctx, preparedStatement, clausesArgs...).Scan(&count)
 	return
 }
 
-func ClauseQueryArgs(filterClauses ...FilterClause) (string, []interface{}) {
+func (db *DBImpl) SetUploadColumns(uploadID int64, opts warehouseutils.UploadColumnsOpts) (err error) {
+	var columns string
+	values := []interface{}{uploadID}
+	// setting values using syntax $n since Exec can correctly format time.Time strings
+	for idx, f := range opts.Fields {
+		// start with $2 as $1 is upload.ID
+		columns += fmt.Sprintf(`%s=$%d`, f.Column, idx+2)
+		if idx < len(opts.Fields)-1 {
+			columns += ","
+		}
+		values = append(values, f.Value)
+	}
+	sqlStatement := fmt.Sprintf(`
+		UPDATE
+		  %s
+		SET
+		  %s
+		WHERE
+		  id = $1;
+`,
+		warehouseutils.WarehouseUploadsTable,
+		columns,
+	)
+	if opts.Txn != nil {
+		_, err = opts.Txn.Exec(sqlStatement, values...)
+	} else {
+		_, err = db.handle.Exec(sqlStatement, values...)
+	}
+
+	return err
+}
+
+func ClauseQueryArgs(filterClauses ...warehouseutils.FilterClause) (string, []interface{}) {
 	var (
 		clausesQuery string
 		clausesArgs  []interface{}

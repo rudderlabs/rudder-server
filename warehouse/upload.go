@@ -1,4 +1,4 @@
-//go:generate mockgen -source=upload.go -destination=../mocks/warehouse/mock_upload.go -package=warehouse github.com/rudderlabs/rudder-server/warehouse UploadJob
+//go:generate mockgen -source=upload.go -destination=../mocks/warehouse/mock_upload.go -package=mock_warehouse github.com/rudderlabs/rudder-server/warehouse UploadJob
 
 package warehouse
 
@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/rudderlabs/rudder-server/warehouse/db"
 	"strconv"
 	"strings"
 	"sync"
@@ -160,7 +161,6 @@ type UploadJob interface {
 	setUploadSchema(consolidatedSchema warehouseutils.SchemaT) error
 	setMergedSchema(mergedSchema warehouseutils.SchemaT) error
 	setLoadFileIDs(startLoadFileID, endLoadFileID int64) error
-	setUploadColumns(opts UploadColumnsOpts) (err error)
 	triggerUploadNow() (err error)
 	Aborted(attempts int, startTime time.Time) bool
 	setUploadError(statusError error, state string) (string, error)
@@ -179,6 +179,7 @@ type UploadJob interface {
 type UploadJobImpl struct {
 	upload               *Upload
 	dbHandle             *sql.DB
+	warehouseDBHandle    db.DB
 	warehouse            warehouseutils.Warehouse
 	whManager            manager.ManagerI
 	stagingFiles         []*StagingFileT
@@ -191,11 +192,6 @@ type UploadJobImpl struct {
 	tableUploadStatuses  []*TableUploadStatusT
 	destinationValidator validations.DestinationValidator
 	tableUploadFactory   TableUploadFactory
-}
-
-type UploadColumnT struct {
-	Column string
-	Value  interface{}
 }
 
 const (
@@ -249,6 +245,7 @@ func setMaxParallelLoads() {
 func NewUploadJob(
 	upload *Upload,
 	dbHandle *sql.DB,
+	warehouseDBHandle db.DB,
 	warehouse warehouseutils.Warehouse,
 	whManager manager.ManagerI,
 	stagingFiles []*StagingFileT,
@@ -263,8 +260,10 @@ func NewUploadJob(
 		warehouse:            warehouse,
 		whManager:            whManager,
 		dbHandle:             dbHandle,
+		warehouseDBHandle:    warehouseDBHandle,
 		pgNotifier:           notifier,
 		destinationValidator: destinationValidator,
+		tableUploadFactory:   &TableUploadFactoryImpl{},
 	}
 }
 
@@ -453,7 +452,7 @@ func (job *UploadJobImpl) run() (err error) {
 	timerStat.Start()
 	ch := job.trackLongRunningUpload()
 	defer func() {
-		job.setUploadColumns(UploadColumnsOpts{Fields: []UploadColumnT{{Column: UploadInProgress, Value: false}}})
+		job.warehouseDBHandle.SetUploadColumns(job.upload.ID, warehouseutils.UploadColumnsOpts{Fields: []warehouseutils.UploadColumnT{{Column: UploadInProgress, Value: false}}})
 
 		timerStat.End()
 		ch <- struct{}{}
@@ -461,12 +460,12 @@ func (job *UploadJobImpl) run() (err error) {
 
 	// set last_exec_at to record last upload start time
 	// sync scheduling with syncStartAt depends on this determine to start upload or not
-	// job.setUploadColumns(
+	// job.warehouseDBHandle.SetUploadColumns(job.upload.ID,
 	// 	UploadColumnT{Column: UploadLastExecAtField, Value: timeutil.Now()},
 	// )
 	job.uploadLock.Lock()
 	defer job.uploadLock.Unlock()
-	job.setUploadColumns(UploadColumnsOpts{Fields: []UploadColumnT{{Column: UploadLastExecAtField, Value: timeutil.Now()}, {Column: UploadInProgress, Value: true}}})
+	job.warehouseDBHandle.SetUploadColumns(job.upload.ID, warehouseutils.UploadColumnsOpts{Fields: []warehouseutils.UploadColumnT{{Column: UploadLastExecAtField, Value: timeutil.Now()}, {Column: UploadInProgress, Value: true}}})
 
 	if len(job.stagingFiles) == 0 {
 		err := fmt.Errorf("no staging files found")
@@ -1429,14 +1428,14 @@ func (job *UploadJobImpl) getUploadFirstAttemptTime() (timing time.Time) {
 
 type UploadStatusOpts struct {
 	Status           string
-	AdditionalFields []UploadColumnT
+	AdditionalFields []warehouseutils.UploadColumnT
 	ReportingMetric  types.PUReportedMetric
 }
 
 func (job *UploadJobImpl) setUploadStatus(statusOpts UploadStatusOpts) (err error) {
 	pkgLogger.Debugf("[WH]: Setting status of %s for wh_upload:%v", statusOpts.Status, job.upload.ID)
 	marshalledTimings, timings := job.getNewTimings(statusOpts.Status)
-	opts := []UploadColumnT{
+	opts := []warehouseutils.UploadColumnT{
 		{Column: UploadStatusField, Value: statusOpts.Status},
 		{Column: UploadTimingsField, Value: marshalledTimings},
 		{Column: UploadUpdatedAtField, Value: timeutil.Now()},
@@ -1446,7 +1445,7 @@ func (job *UploadJobImpl) setUploadStatus(statusOpts UploadStatusOpts) (err erro
 	job.upload.Timings = timings
 	additionalFields := append(statusOpts.AdditionalFields, opts...)
 
-	uploadColumnOpts := UploadColumnsOpts{Fields: additionalFields}
+	uploadColumnOpts := warehouseutils.UploadColumnsOpts{Fields: additionalFields}
 
 	if statusOpts.ReportingMetric != (types.PUReportedMetric{}) {
 		txn, err := dbHandle.Begin()
@@ -1454,7 +1453,7 @@ func (job *UploadJobImpl) setUploadStatus(statusOpts UploadStatusOpts) (err erro
 			return err
 		}
 		uploadColumnOpts.Txn = txn
-		err = job.setUploadColumns(uploadColumnOpts)
+		err = job.warehouseDBHandle.SetUploadColumns(job.upload.ID, uploadColumnOpts)
 		if err != nil {
 			return err
 		}
@@ -1465,8 +1464,8 @@ func (job *UploadJobImpl) setUploadStatus(statusOpts UploadStatusOpts) (err erro
 		err = txn.Commit()
 		return err
 	}
-	return job.setUploadColumns(uploadColumnOpts)
-	// return job.setUploadColumns(
+	return job.warehouseDBHandle.SetUploadColumns(job.upload.ID, uploadColumnOpts)
+	// return job.warehouseDBHandle.SetUploadColumns(job.upload.ID,
 	// 	additionalFields...,
 	// )
 }
@@ -1478,10 +1477,10 @@ func (job *UploadJobImpl) setUploadSchema(consolidatedSchema warehouseutils.Sche
 		panic(err)
 	}
 	job.upload.UploadSchema = consolidatedSchema
-	// return job.setUploadColumns(
+	// return job.warehouseDBHandle.SetUploadColumns(job.upload.ID,
 	// 	UploadColumnT{Column: UploadSchemaField, Value: marshalledSchema},
 	// )
-	return job.setUploadColumns(UploadColumnsOpts{Fields: []UploadColumnT{{Column: UploadSchemaField, Value: marshalledSchema}}})
+	return job.warehouseDBHandle.SetUploadColumns(job.upload.ID, warehouseutils.UploadColumnsOpts{Fields: []warehouseutils.UploadColumnT{{Column: UploadSchemaField, Value: marshalledSchema}}})
 }
 
 func (job *UploadJobImpl) setMergedSchema(mergedSchema warehouseutils.SchemaT) error {
@@ -1490,7 +1489,7 @@ func (job *UploadJobImpl) setMergedSchema(mergedSchema warehouseutils.SchemaT) e
 		panic(err)
 	}
 	job.upload.MergedSchema = mergedSchema
-	return job.setUploadColumns(UploadColumnsOpts{Fields: []UploadColumnT{{Column: MergedSchemaField, Value: marshalledSchema}}})
+	return job.warehouseDBHandle.SetUploadColumns(job.upload.ID, warehouseutils.UploadColumnsOpts{Fields: []warehouseutils.UploadColumnT{{Column: MergedSchemaField, Value: marshalledSchema}}})
 }
 
 // Set LoadFileIDs
@@ -1498,49 +1497,11 @@ func (job *UploadJobImpl) setLoadFileIDs(startLoadFileID, endLoadFileID int64) e
 	job.upload.StartLoadFileID = startLoadFileID
 	job.upload.EndLoadFileID = endLoadFileID
 
-	// return job.setUploadColumns(
+	// return job.warehouseDBHandle.SetUploadColumns(job.upload.ID,
 	// 	UploadColumnT{Column: UploadStartLoadFileIDField, Value: startLoadFileID},
 	// 	UploadColumnT{Column: UploadEndLoadFileIDField, Value: endLoadFileID},
 	// )
-	return job.setUploadColumns(UploadColumnsOpts{Fields: []UploadColumnT{{Column: UploadStartLoadFileIDField, Value: startLoadFileID}, {Column: UploadEndLoadFileIDField, Value: endLoadFileID}}})
-}
-
-type UploadColumnsOpts struct {
-	Fields []UploadColumnT
-	Txn    *sql.Tx
-}
-
-// SetUploadColumns sets any column values passed as args in UploadColumnT format for WarehouseUploadsTable
-func (job *UploadJobImpl) setUploadColumns(opts UploadColumnsOpts) (err error) {
-	var columns string
-	values := []interface{}{job.upload.ID}
-	// setting values using syntax $n since Exec can correctly format time.Time strings
-	for idx, f := range opts.Fields {
-		// start with $2 as $1 is upload.ID
-		columns += fmt.Sprintf(`%s=$%d`, f.Column, idx+2)
-		if idx < len(opts.Fields)-1 {
-			columns += ","
-		}
-		values = append(values, f.Value)
-	}
-	sqlStatement := fmt.Sprintf(`
-		UPDATE
-		  %s
-		SET
-		  %s
-		WHERE
-		  id = $1;
-`,
-		warehouseutils.WarehouseUploadsTable,
-		columns,
-	)
-	if opts.Txn != nil {
-		_, err = opts.Txn.Exec(sqlStatement, values...)
-	} else {
-		_, err = dbHandle.Exec(sqlStatement, values...)
-	}
-
-	return err
+	return job.warehouseDBHandle.SetUploadColumns(job.upload.ID, warehouseutils.UploadColumnsOpts{Fields: []warehouseutils.UploadColumnT{{Column: UploadStartLoadFileIDField, Value: startLoadFileID}, {Column: UploadEndLoadFileIDField, Value: endLoadFileID}}})
 }
 
 func (job *UploadJobImpl) triggerUploadNow() (err error) {
@@ -1561,7 +1522,7 @@ func (job *UploadJobImpl) triggerUploadNow() (err error) {
 		return err
 	}
 
-	uploadColumns := []UploadColumnT{
+	uploadColumns := []warehouseutils.UploadColumnT{
 		{Column: "status", Value: newjobState},
 		{Column: "metadata", Value: metadataJSON},
 		{Column: "updated_at", Value: timeutil.Now()},
@@ -1571,7 +1532,7 @@ func (job *UploadJobImpl) triggerUploadNow() (err error) {
 	if err != nil {
 		panic(err)
 	}
-	err = job.setUploadColumns(UploadColumnsOpts{Fields: uploadColumns, Txn: txn})
+	err = job.warehouseDBHandle.SetUploadColumns(job.upload.ID, warehouseutils.UploadColumnsOpts{Fields: uploadColumns, Txn: txn})
 	if err != nil {
 		panic(err)
 	}
@@ -1636,7 +1597,7 @@ func (job *UploadJobImpl) setUploadError(statusError error, state string) (strin
 
 	serializedErr, _ := json.Marshal(&uploadErrors)
 
-	uploadColumns := []UploadColumnT{
+	uploadColumns := []warehouseutils.UploadColumnT{
 		{Column: "status", Value: state},
 		{Column: "metadata", Value: metadataJSON},
 		{Column: "error", Value: serializedErr},
@@ -1648,7 +1609,7 @@ func (job *UploadJobImpl) setUploadError(statusError error, state string) (strin
 		return "", fmt.Errorf("unable to start transaction: %w", err)
 	}
 
-	err = job.setUploadColumns(UploadColumnsOpts{Fields: uploadColumns, Txn: txn})
+	err = job.warehouseDBHandle.SetUploadColumns(job.upload.ID, warehouseutils.UploadColumnsOpts{Fields: uploadColumns, Txn: txn})
 	if err != nil {
 		return "", fmt.Errorf("unable to change upload columns: %w", err)
 	}

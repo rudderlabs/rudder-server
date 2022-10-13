@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"github.com/rudderlabs/rudder-server/warehouse/db"
 	"net/http"
 	"os"
 	"strings"
@@ -93,7 +94,7 @@ type TableUploadResT struct {
 type UploadAPIT struct {
 	enabled           bool
 	dbHandle          *sql.DB
-	warehouseDBHandle DB
+	warehouseDBHandle db.DB
 	log               logger.Logger
 	connectionManager *controlplane.ConnectionManager
 	isMultiWorkspace  bool
@@ -115,7 +116,7 @@ func InitWarehouseAPI(dbHandle *sql.DB, log logger.Logger) error {
 	UploadAPI = UploadAPIT{
 		enabled:           true,
 		dbHandle:          dbHandle,
-		warehouseDBHandle: NewWarehouseDB(dbHandle),
+		warehouseDBHandle: db.NewWarehouseDB(dbHandle),
 		log:               log,
 		isMultiWorkspace:  isMultiWorkspace,
 		connectionManager: &controlplane.ConnectionManager{

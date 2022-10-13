@@ -1,4 +1,4 @@
-//go:generate mockgen -source=table_upload.go -destination=../mocks/warehouse/mock_table_upload.go -package=warehouse github.com/rudderlabs/rudder-server/warehouse TableUpload
+//go:generate mockgen -source=table_upload.go -destination=../mocks/warehouse/mock_table_upload.go -package=mock_warehouse github.com/rudderlabs/rudder-server/warehouse TableUpload
 
 package warehouse
 
