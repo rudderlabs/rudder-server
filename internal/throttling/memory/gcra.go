@@ -1,4 +1,4 @@
-package throttling
+package memory
 
 import (
 	"math"
@@ -27,7 +27,7 @@ type gcra struct {
 	getterSetter
 }
 
-func (g *gcra) gcraLimit(key string, cost, burst, rate, period int64) (
+func (g *gcra) limit(key string, cost, burst, rate, period int64) (
 	allowed, remaining, retryAfter, resetAfter int64, err error,
 ) {
 	var (

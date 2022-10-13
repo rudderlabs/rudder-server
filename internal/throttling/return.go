@@ -12,7 +12,7 @@ var ErrorUnsupportedReturn = errors.New("token return not supported")
 
 type unsupportedReturn struct{}
 
-func (r *unsupportedReturn) Return(ctx context.Context) error { return ErrorUnsupportedReturn }
+func (*unsupportedReturn) Return(_ context.Context) error { return ErrorUnsupportedReturn }
 
 type sortedSetRemover interface {
 	ZRem(ctx context.Context, key string, members ...interface{}) *redis.IntCmd
