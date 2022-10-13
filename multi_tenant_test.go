@@ -21,7 +21,6 @@ import (
 	"github.com/ory/dockertest/v3"
 	"github.com/stretchr/testify/require"
 	clientv3 "go.etcd.io/etcd/client/v3"
-	etcd "go.etcd.io/etcd/client/v3"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc"
 
@@ -240,7 +239,7 @@ func testMultiTenantByAppType(t *testing.T, appType string) {
 		require.Equal(t, "RELOADED", v.Status)
 		require.Equal(t, "", v.Error)
 	case <-time.After(20 * time.Second):
-		_, err = etcd.New(etcd.Config{
+		_, err = clientv3.New(clientv3.Config{
 			Endpoints: etcdContainer.Hosts,
 			DialOptions: []grpc.DialOption{
 				grpc.WithBlock(), // block until the underlying connection is up
