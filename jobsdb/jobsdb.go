@@ -74,7 +74,7 @@ type backupSettings struct {
 }
 
 func (b *backupSettings) isBackupEnabled() bool {
-	return masterBackupEnabled && b.instanceBackupEnabled
+	return masterBackupEnabled && b.instanceBackupEnabled && config.GetString("JOBS_BACKUP_BUCKET", "") != ""
 }
 
 func IsMasterBackupEnabled() bool {
@@ -176,11 +176,16 @@ type HandleInspector struct {
 	*HandleT
 }
 
-// DSListSize returns the current size of the handle's dsList
-func (h *HandleInspector) DSListSize() int {
+// DSIndicesList returns the slice of current ds indices
+func (h *HandleInspector) DSIndicesList() []string {
 	h.HandleT.dsListLock.RLock()
 	defer h.HandleT.dsListLock.RUnlock()
-	return len(h.HandleT.getDSList())
+	var indicesList []string
+	for _, ds := range h.HandleT.getDSList() {
+		indicesList = append(indicesList, ds.Index)
+	}
+
+	return indicesList
 }
 
 /*
@@ -1128,21 +1133,35 @@ func (jd *HandleT) checkIfMigrateDS(ds dataSetT) (
 
 	recordsLeft = totalCount - delCount
 
-	// If records are newer than what is required. One example use case is
-	// gateway DB where records are kept to dedup
+	if jd.MinDSRetentionPeriod > 0 {
+		var maxCreatedAt time.Time
+		sqlStatement = fmt.Sprintf(`SELECT MAX(created_at) from %q`, ds.JobTable)
+		row = jd.dbHandle.QueryRow(sqlStatement)
+		err = row.Scan(&maxCreatedAt)
+		jd.assertError(err)
 
-	var minCreatedAt, maxCreatedAt time.Time
-	sqlStatement = fmt.Sprintf(`SELECT MIN(created_at), MAX(created_at) from %q`, ds.JobTable)
-	row = jd.dbHandle.QueryRow(sqlStatement)
-	err = row.Scan(&minCreatedAt, &maxCreatedAt)
-	jd.assertError(err)
-
-	if jd.MinDSRetentionPeriod > 0 && time.Since(maxCreatedAt) < jd.MinDSRetentionPeriod {
-		return false, false, recordsLeft
+		if time.Since(maxCreatedAt) < jd.MinDSRetentionPeriod {
+			return false, false, recordsLeft
+		}
 	}
 
-	if jd.MaxDSRetentionPeriod > 0 && time.Since(minCreatedAt) > jd.MaxDSRetentionPeriod {
-		return true, false, recordsLeft
+	if jd.MaxDSRetentionPeriod > 0 {
+		var terminalJobsExist bool
+		sqlStatement = fmt.Sprintf(`SELECT EXISTS (
+									SELECT id
+										FROM %q
+										WHERE job_state = ANY($1) and exec_time < $2)`,
+			ds.JobStatusTable)
+		stmt, err := jd.dbHandle.Prepare(sqlStatement)
+		jd.assertError(err)
+		defer func() { _ = stmt.Close() }()
+
+		row = stmt.QueryRow(pq.Array(validTerminalStates), time.Now().Add(-1*jd.MaxDSRetentionPeriod))
+		err = row.Scan(&terminalJobsExist)
+		jd.assertError(err)
+		if terminalJobsExist {
+			return true, false, recordsLeft
+		}
 	}
 
 	smallThreshold := jobMinRowsMigrateThres * float64(*jd.MaxDSSize)
@@ -1400,8 +1419,8 @@ func (jd *HandleT) createDSInTx(tx *sql.Tx, newDS dataSetT) error {
                                       custom_val VARCHAR(64) NOT NULL,
                                       event_payload JSONB NOT NULL,
 									  event_count INTEGER NOT NULL DEFAULT 1,
-                                      created_at TIMESTAMP NOT NULL DEFAULT NOW(),
-                                      expire_at TIMESTAMP NOT NULL DEFAULT NOW());`, newDS.JobTable)
+                                      created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+                                      expire_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW());`, newDS.JobTable)
 
 	_, err = tx.ExecContext(context.TODO(), sqlStatement)
 	if err != nil {
@@ -1422,8 +1441,8 @@ func (jd *HandleT) createDSInTx(tx *sql.Tx, newDS dataSetT) error {
                                      job_id BIGINT REFERENCES %q(job_id),
                                      job_state VARCHAR(64),
                                      attempt SMALLINT,
-                                     exec_time TIMESTAMP,
-                                     retry_time TIMESTAMP,
+                                     exec_time TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+                                     retry_time TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
                                      error_code VARCHAR(32),
                                      error_response JSONB DEFAULT '{}'::JSONB,
 									 parameters JSONB DEFAULT '{}'::JSONB,
@@ -1780,7 +1799,7 @@ func (jd *HandleT) migrateJobsInTx(ctx context.Context, tx *sql.Tx, srcDS, destD
 func (jd *HandleT) postMigrateHandleDS(tx *sql.Tx, migrateFrom []dataSetT) error {
 	// Rename datasets before dropping them, so that they can be uploaded to s3
 	for _, ds := range migrateFrom {
-		if jd.BackupSettings.isBackupEnabled() && isBackupConfigured() {
+		if jd.BackupSettings.isBackupEnabled() {
 			jd.logger.Debugf("renaming dataset %s to %s", ds.JobTable, ds.JobTable+preDropTablePrefix+ds.JobTable)
 			if err := jd.mustRenameDSInTx(tx, ds); err != nil {
 				return err
@@ -3198,16 +3217,13 @@ func (jd *HandleT) backupDSLoop(ctx context.Context) {
 		opPayload, err := json.Marshal(&backupDS)
 		jd.assertError(err)
 
-		var opID int64
-		if isBackupConfigured() {
-			opID = jd.JournalMarkStart(backupDSOperation, opPayload)
-			err := jd.backupDS(ctx, backupDSRange)
-			if err != nil {
-				stats.Default.NewTaggedStat("backup_ds_failed", stats.CountType, stats.Tags{"customVal": jd.tablePrefix, "provider": config.GetString("JOBS_BACKUP_STORAGE_PROVIDER", "S3")}).Increment()
-				jd.logger.Errorf("[JobsDB] :: Failed to backup jobs table %v. Err: %v", backupDSRange.ds.JobStatusTable, err)
-			}
-			jd.JournalMarkDone(opID)
+		opID := jd.JournalMarkStart(backupDSOperation, opPayload)
+		err = jd.backupDS(ctx, backupDSRange)
+		if err != nil {
+			stats.Default.NewTaggedStat("backup_ds_failed", stats.CountType, stats.Tags{"customVal": jd.tablePrefix, "provider": config.GetString("JOBS_BACKUP_STORAGE_PROVIDER", "S3")}).Increment()
+			jd.logger.Errorf("[JobsDB] :: Failed to backup jobs table %v. Err: %v", backupDSRange.ds.JobStatusTable, err)
 		}
+		jd.JournalMarkDone(opID)
 
 		// drop dataset after successfully uploading both jobs and jobs_status to s3
 		opID = jd.JournalMarkStart(backupDropDSOperation, opPayload)
@@ -3449,10 +3465,6 @@ func (jd *HandleT) getFileUploader(ctx context.Context) (filemanager.FileManager
 		})
 	}
 	return jd.jobsFileUploader, err
-}
-
-func isBackupConfigured() bool {
-	return config.GetString("JOBS_BACKUP_BUCKET", "") != ""
 }
 
 // Identifier returns the identifier of the jobsdb. Here it is tablePrefix.

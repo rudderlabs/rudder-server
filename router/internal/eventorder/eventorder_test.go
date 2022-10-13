@@ -10,6 +10,8 @@ import (
 func Test_Job_Failed_Scenario(t *testing.T) {
 	barrier := NewBarrier(WithMetadata(map[string]string{"key1": "value1"}))
 
+	require.Nil(t, barrier.Peek("user1"), "peek should return nil since no barrier exists")
+
 	enter, previousFailedJobID := barrier.Enter("user1", 1)
 	require.True(t, enter, "job 1 for user1 should be accepted since no barrier exists")
 	require.Nil(t, previousFailedJobID)
@@ -25,15 +27,16 @@ func Test_Job_Failed_Scenario(t *testing.T) {
 
 	require.True(t, firstBool(barrier.Wait("user1", 2)), "job 2 for user1 should wait after job 1 has failed")
 	require.Equal(t, 1, barrier.Size(), "barrier should have size of 1")
-	require.Equal(t, `Barrier{map[key1:value1][{userID: user1, failedJobID: 1, concurrentJobs: map[]}]}`, barrier.String(), "the barrier's string representation should be human readable")
+	require.Equal(t, `Barrier{map[key1:value1][{key: user1, failedJobID: 1, concurrentJobs: map[]}]}`, barrier.String(), "the barrier's string representation should be human readable")
 	require.NoError(t, barrier.StateChanged("user1", 2, jobsdb.Waiting.State))
 
 	barrier.Sync()
 
+	require.EqualValues(t, 1, *barrier.Peek("user1"), "peek should return failed job id 1")
 	enter, previousFailedJobID = barrier.Enter("user1", 1)
 	require.True(t, enter, "job 1 for user1 should be accepted even if previously failed")
 	require.NotNil(t, previousFailedJobID)
-	require.Equal(t, int64(1), *previousFailedJobID, "previously failed job id should be 1")
+	require.EqualValues(t, 1, *previousFailedJobID, "previously failed job id should be 1")
 
 	require.False(t, firstBool(barrier.Wait("user1", 1)), "job 1 for user1 shouldn't wait since it is the previously failed one")
 
@@ -42,7 +45,7 @@ func Test_Job_Failed_Scenario(t *testing.T) {
 	enter, previousFailedJobID = barrier.Enter("user1", 2)
 	require.False(t, enter, "job 2 for user1 shouldn't be accepted even after job 1 has succeeded until barrier is synced")
 	require.NotNil(t, previousFailedJobID)
-	require.Equal(t, int64(1), *previousFailedJobID, "previously failed job id should be 1")
+	require.EqualValues(t, 1, *previousFailedJobID, "previously failed job id should be 1")
 
 	barrier.Sync()
 	enter, previousFailedJobID = barrier.Enter("user1", 2)
@@ -63,14 +66,14 @@ func Test_Job_Aborted_Scenario(t *testing.T) {
 	enter, previousFailedJobID = barrier.Enter("user1", 1)
 	require.True(t, enter, "job 1 for user1 should be accepted even if previously failed")
 	require.NotNil(t, previousFailedJobID)
-	require.Equal(t, int64(1), *previousFailedJobID, "previously failed job id should be 1")
+	require.EqualValues(t, 1, *previousFailedJobID, "previously failed job id should be 1")
 	require.False(t, firstBool(barrier.Wait("user1", 1)), "job 1 for user1 shouldn't wait since it is the previously failed one")
 
 	// Abort job 1
 	enter, previousFailedJobID = barrier.Enter("user1", 1)
 	require.True(t, enter, "job 1 for user1 should be accepted even if previously failed")
 	require.NotNil(t, previousFailedJobID)
-	require.Equal(t, int64(1), *previousFailedJobID, "previously failed job id should be 1")
+	require.EqualValues(t, 1, *previousFailedJobID, "previously failed job id should be 1")
 	require.False(t, firstBool(barrier.Wait("user1", 1)), "job 1 for user1 shouldn't wait since it is the previously failed one")
 	require.NoError(t, barrier.StateChanged("user1", 1, jobsdb.Aborted.State))
 
@@ -78,7 +81,7 @@ func Test_Job_Aborted_Scenario(t *testing.T) {
 	enter, previousFailedJobID = barrier.Enter("user1", 2)
 	require.False(t, enter, "job 2 for user1 shouldn't be accepted before the barrier is synced")
 	require.NotNil(t, previousFailedJobID)
-	require.Equal(t, int64(1), *previousFailedJobID, "previously failed job id should be 1")
+	require.EqualValues(t, 1, *previousFailedJobID, "previously failed job id should be 1")
 
 	// Try to enter job 2 after sync
 	require.Equal(t, 1, barrier.Sync())
@@ -152,7 +155,7 @@ func Test_Job_Abort_then_Fail(t *testing.T) {
 	enter, previousFailedJobID = barrier.Enter("user1", 2)
 	require.True(t, enter, "job 2 for user1 should be accepted")
 	require.NotNil(t, previousFailedJobID)
-	require.Equal(t, int64(2), *previousFailedJobID, "previously failed job id should be 2")
+	require.EqualValues(t, 2, *previousFailedJobID, "previously failed job id should be 2")
 }
 
 func Test_Job_Fail_then_Abort(t *testing.T) {
@@ -169,11 +172,11 @@ func Test_Job_Fail_then_Abort(t *testing.T) {
 
 	enter, previousFailedJobID = barrier.Enter("user1", 1)
 	require.True(t, enter, "job 1 for user1 should be accepted after job 1 has failed")
-	require.Equal(t, int64(1), *previousFailedJobID, "previously failed job id should be 1")
+	require.EqualValues(t, 1, *previousFailedJobID, "previously failed job id should be 1")
 
 	enter, previousFailedJobID = barrier.Enter("user1", 2)
 	require.False(t, enter, "job 2 for user1 shouldn't be accepted after job 1 has failed")
-	require.Equal(t, int64(1), *previousFailedJobID, "previously failed job id should be 1")
+	require.EqualValues(t, 1, *previousFailedJobID, "previously failed job id should be 1")
 
 	require.False(t, firstBool(barrier.Wait("user1", 1)), "job 1 for user1 shouldn't wait")
 	require.NoError(t, barrier.StateChanged("user1", 1, jobsdb.Aborted.State))
@@ -181,7 +184,7 @@ func Test_Job_Fail_then_Abort(t *testing.T) {
 	enter, previousFailedJobID = barrier.Enter("user1", 2)
 	require.False(t, enter, "job 2 for user1 shouldn't be accepted after job 1 has aborted until it is synced")
 	require.NotNil(t, previousFailedJobID)
-	require.Equal(t, int64(1), *previousFailedJobID)
+	require.EqualValues(t, 1, *previousFailedJobID)
 
 	require.Equal(t, 1, barrier.Sync(), "barrier should sync 1 command")
 

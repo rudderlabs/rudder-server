@@ -871,9 +871,9 @@ func (*HandleT) DownloadIdentityRules(*misc.GZipWriter) (err error) {
 	return
 }
 
-func (ms *HandleT) GetTotalCountInTable(tableName string) (total int64, err error) {
+func (ms *HandleT) GetTotalCountInTable(ctx context.Context, tableName string) (total int64, err error) {
 	sqlStatement := fmt.Sprintf(`SELECT count(*) FROM "%[1]s"."%[2]s"`, ms.Namespace, tableName)
-	err = ms.Db.QueryRow(sqlStatement).Scan(&total)
+	err = ms.Db.QueryRowContext(ctx, sqlStatement).Scan(&total)
 	if err != nil {
 		pkgLogger.Errorf(`MS: Error getting total count in table %s:%s`, ms.Namespace, tableName)
 	}

@@ -20,7 +20,7 @@ Function to return an ordered list of datasets and datasetRanges
 Most callers use the in-memory list of dataset and datasetRanges
 */
 func getDSList(jd assertInterface, dbHandle sqlDbOrTx, tablePrefix string) []dataSetT {
-	datasetList := []dataSetT{}
+	var datasetList []dataSetT
 
 	// Read the table names from PG
 	tableNames := mustGetAllTableNames(jd, dbHandle)
@@ -31,7 +31,7 @@ func getDSList(jd assertInterface, dbHandle sqlDbOrTx, tablePrefix string) []dat
 
 	jobNameMap := map[string]string{}
 	jobStatusNameMap := map[string]string{}
-	dnumList := []string{}
+	var dnumList []string
 
 	for _, t := range tableNames {
 		if strings.HasPrefix(t, tablePrefix+"_jobs_") {
@@ -94,7 +94,7 @@ func getAllTableNames(dbHandle sqlDbOrTx) ([]string, error) {
 	if err != nil {
 		return tableNames, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	for rows.Next() {
 		var tbName string
 		err = rows.Scan(&tbName)

@@ -133,7 +133,6 @@ func (asyncWhJob *AsyncJobWhT) InitAsyncJobRunner() error {
 	return errors.New("unable to enable warehouse Async Job")
 }
 
-//
 func (asyncWhJob *AsyncJobWhT) cleanUpAsyncTable(ctx context.Context) error {
 	if ctx.Err() != nil {
 		return ctx.Err()
