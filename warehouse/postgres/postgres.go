@@ -432,7 +432,7 @@ func (pg *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 func (pq *HandleT) DeleteBy(tableNames []string, params warehouseutils.DeleteByParams) (err error) {
 	pkgLogger.Infof("PG: Cleaning up the followng tables in postgres for PG:%s : %+v", tableNames, params)
 	for _, tb := range tableNames {
-		sqlStatement := fmt.Sprintf(`DELETE FROM "%[1]s"."%[2]s" WHERE 
+		sqlStatement := fmt.Sprintf(`DELETE FROM "%[1]s"."%[2]s" WHERE
 		context_sources_job_run_id <> $1 AND
 		context_sources_task_run_id <> $2 AND
 		context_source_id = $3 AND
@@ -652,37 +652,32 @@ func (pg *HandleT) DropTable(tableName string) (err error) {
 	return
 }
 
-func (pg *HandleT) AddColumns(tableName string, columnsInfo warehouseutils.ColumnsInto) (err error) {
-	var (
-		format       func(_ int, columnInfo warehouseutils.ColumnInfoT) string
-		sqlStatement string
-	)
+func (pg *HandleT) AddColumns(tableName string, columnsInfo warehouseutils.ColumnsInfo) (err error) {
+	var query string
 
 	// set the schema in search path. so that we can query table with unqualified name which is just the table name rather than using schema.table in queries
-	sqlStatement = fmt.Sprintf(`SET search_path to %q`, pg.Namespace)
-	if _, err = pg.Db.Exec(sqlStatement); err != nil {
+	query = fmt.Sprintf(`SET search_path to %q`, pg.Namespace)
+	if _, err = pg.Db.Exec(query); err != nil {
 		return
 	}
-	pkgLogger.Infof("PG: Updated search_path to %s in postgres for PG:%s : %v", pg.Namespace, pg.Warehouse.Destination.ID, sqlStatement)
+	pkgLogger.Infof("PG: Updated search_path to %s in postgres for PG:%s : %v", pg.Namespace, pg.Warehouse.Destination.ID, query)
 
-	format = func(_ int, columnInfo warehouseutils.ColumnInfoT) string {
-		return fmt.Sprintf(`
-		ADD COLUMN IF NOT EXISTS %q %s`,
-			columnInfo.Name,
-			rudderDataTypesMapToPostgres[columnInfo.Type],
-		)
-	}
-
-	sqlStatement = fmt.Sprintf(`
+	query = fmt.Sprintf(`
 		ALTER TABLE
-		%s.%s %s;`,
+		  %s.%s`,
 		pg.Namespace,
 		tableName,
-		columnsInfo.JoinColumns(format, ","),
 	)
 
-	pkgLogger.Infof("PG: Adding columns in postgres for PG:%s : %v", pg.Warehouse.Destination.ID, sqlStatement)
-	_, err = pg.Db.Exec(sqlStatement)
+	for _, columnInfo := range columnsInfo {
+		query += fmt.Sprintf(` ADD COLUMN IF NOT EXISTS %q %s,`, columnInfo.Name, rudderDataTypesMapToPostgres[columnInfo.Type])
+	}
+
+	query = strings.TrimSuffix(query, ",")
+	query += ";"
+
+	pkgLogger.Infof("PG: Adding columns in postgres for PG:%s : %v", pg.Warehouse.Destination.ID, query)
+	_, err = pg.Db.Exec(query)
 	return
 }
 

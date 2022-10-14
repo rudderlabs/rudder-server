@@ -214,7 +214,7 @@ func (sf *HandleT) authString() string {
 func (sf *HandleT) DeleteBy(tableNames []string, params warehouseutils.DeleteByParams) (err error) {
 	pkgLogger.Infof("SF: Cleaning up the followng tables in snowflake for SF:%s : %v", tableNames)
 	for _, tb := range tableNames {
-		sqlStatement := fmt.Sprintf(`DELETE FROM "%[1]s"."%[2]s" WHERE 
+		sqlStatement := fmt.Sprintf(`DELETE FROM "%[1]s"."%[2]s" WHERE
 		context_sources_job_run_id <> :jobrunid AND
 		context_sources_task_run_id <> :taskrunid AND
 		context_source_id = :sourceid AND
@@ -639,34 +639,31 @@ func (sf *HandleT) DropTable(tableName string) (err error) {
 	return
 }
 
-func (sf *HandleT) AddColumns(tableName string, columnsInfo warehouseutils.ColumnsInto) (err error) {
+func (sf *HandleT) AddColumns(tableName string, columnsInfo warehouseutils.ColumnsInfo) (err error) {
 	var (
-		format           func(_ int, columnInfo warehouseutils.ColumnInfoT) string
-		sqlStatement     string
+		query            string
 		schemaIdentifier string
 	)
 
 	schemaIdentifier = sf.schemaIdentifier()
 
-	format = func(_ int, columnInfo warehouseutils.ColumnInfoT) string {
-		return fmt.Sprintf(`
-		%q %s`,
-			columnInfo.Name,
-			dataTypesMap[columnInfo.Type],
-		)
-	}
-
-	sqlStatement = fmt.Sprintf(`
+	query = fmt.Sprintf(`
 		ALTER TABLE
-		%s.%q
-		ADD COLUMN %s;`,
+		  %s.%q
+		ADD COLUMN`,
 		schemaIdentifier,
 		tableName,
-		columnsInfo.JoinColumns(format, ","),
 	)
 
-	pkgLogger.Infof("SF: Adding columns in snowflake for %s:%s : %v", sf.Warehouse.Namespace, sf.Warehouse.Destination.ID, sqlStatement)
-	_, err = sf.Db.Exec(sqlStatement)
+	for _, columnInfo := range columnsInfo {
+		query += fmt.Sprintf(` %q %s,`, columnInfo.Name, dataTypesMap[columnInfo.Type])
+	}
+
+	query = strings.TrimSuffix(query, ",")
+	query += ";"
+
+	pkgLogger.Infof("SF: Adding columns in snowflake for %s:%s : %v", sf.Warehouse.Namespace, sf.Warehouse.Destination.ID, query)
+	_, err = sf.Db.Exec(query)
 
 	// Handle error in case of single column
 	if len(columnsInfo) == 1 {

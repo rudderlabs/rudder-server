@@ -56,7 +56,7 @@ func (*HandleT) DropTable(_ string) (err error) {
 	return fmt.Errorf("datalake err :not implemented")
 }
 
-func (wh *HandleT) AddColumns(tableName string, columnsInfo warehouseutils.ColumnsInto) (err error) {
+func (wh *HandleT) AddColumns(tableName string, columnsInfo warehouseutils.ColumnsInfo) (err error) {
 	return wh.SchemaRepository.AddColumns(tableName, columnsInfo)
 }
 

@@ -50,7 +50,7 @@ func (ls *LocalSchemaRepository) CreateTable(tableName string, columnMap map[str
 	return ls.uploader.UpdateLocalSchema(schema)
 }
 
-func (ls *LocalSchemaRepository) AddColumns(tableName string, columnsInfo warehouseutils.ColumnsInto) (err error) {
+func (ls *LocalSchemaRepository) AddColumns(tableName string, columnsInfo warehouseutils.ColumnsInfo) (err error) {
 	// fetch schema from local db
 	schema, err := ls.FetchSchema(ls.warehouse)
 	if err != nil {

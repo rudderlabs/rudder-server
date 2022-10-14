@@ -40,7 +40,7 @@ type SchemaRepository interface {
 	FetchSchema(warehouse warehouseutils.Warehouse) (warehouseutils.SchemaT, error)
 	CreateSchema() (err error)
 	CreateTable(tableName string, columnMap map[string]string) (err error)
-	AddColumns(tableName string, columnsInfo warehouseutils.ColumnsInto) (err error)
+	AddColumns(tableName string, columnsInfo warehouseutils.ColumnsInfo) (err error)
 	AlterColumn(tableName, columnName, columnType string) (err error)
 }
 

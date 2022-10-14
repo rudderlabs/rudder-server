@@ -380,14 +380,14 @@ func GetLoadFileGenTime(str sql.NullString) (t time.Time) {
 
 func GetNamespace(source backendconfig.SourceT, destination backendconfig.DestinationT, dbHandle *sql.DB) (namespace string, exists bool) {
 	sqlStatement := fmt.Sprintf(`
-		SELECT 
-		  namespace 
-		FROM 
-		  %s 
-		WHERE 
-		  source_id = '%s' 
-		  AND destination_id = '%s' 
-		ORDER BY 
+		SELECT
+		  namespace
+		FROM
+		  %s
+		WHERE
+		  source_id = '%s'
+		  AND destination_id = '%s'
+		ORDER BY
 		  id DESC;
 `,
 		WarehouseSchemasTable,
@@ -1068,15 +1068,7 @@ type ColumnInfoT struct {
 	Type  string
 }
 
-type ColumnsInto []ColumnInfoT
-
-func (c ColumnsInto) JoinColumns(format func(idx int, columnInfo ColumnInfoT) string, separator string) string {
-	output := make([]string, len(c))
-	for idx, columnInfo := range c {
-		output[idx] += format(idx, columnInfo)
-	}
-	return strings.Join(output, separator)
-}
+type ColumnsInfo []ColumnInfoT
 
 func StagingTablePrefix(provider string) string {
 	return ToProviderCase(provider, stagingTablePrefix)

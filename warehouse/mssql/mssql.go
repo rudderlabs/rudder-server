@@ -680,18 +680,10 @@ func (ms *HandleT) DropTable(tableName string) (err error) {
 	return
 }
 
-func (ms *HandleT) AddColumns(tableName string, columnsInfo warehouseutils.ColumnsInto) (err error) {
-	var (
-		format       func(_ int, columnInfo warehouseutils.ColumnInfoT) string
-		sqlStatement string
-	)
-
-	format = func(_ int, columnInfo warehouseutils.ColumnInfoT) string {
-		return fmt.Sprintf(`%q %s`, columnInfo.Name, rudderDataTypesMapToMssql[columnInfo.Type])
-	}
-
+func (ms *HandleT) AddColumns(tableName string, columnsInfo warehouseutils.ColumnsInfo) (err error) {
+	var query string
 	if len(columnsInfo) == 1 {
-		sqlStatement += fmt.Sprintf(`
+		query += fmt.Sprintf(`
 			IF NOT EXISTS (
 			  SELECT
 				1
@@ -708,17 +700,23 @@ func (ms *HandleT) AddColumns(tableName string, columnsInfo warehouseutils.Colum
 		)
 	}
 
-	sqlStatement += fmt.Sprintf(`
+	query += fmt.Sprintf(`
 		ALTER TABLE
-		%s.%s
-		ADD %s;`,
+		  %s.%s
+		ADD`,
 		ms.Namespace,
 		tableName,
-		columnsInfo.JoinColumns(format, ","),
 	)
 
-	pkgLogger.Infof("MS: Adding column in mssql for MS:%s : %v", ms.Warehouse.Destination.ID, sqlStatement)
-	_, err = ms.Db.Exec(sqlStatement)
+	for _, columnInfo := range columnsInfo {
+		query += fmt.Sprintf(` %s %s,`, columnInfo.Name, rudderDataTypesMapToMssql[columnInfo.Type])
+	}
+
+	query = strings.TrimSuffix(query, ",")
+	query += ";"
+
+	pkgLogger.Infof("MS: Adding column in mssql for MS:%s : %v", ms.Warehouse.Destination.ID, query)
+	_, err = ms.Db.Exec(query)
 	return
 }
 

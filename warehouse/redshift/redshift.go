@@ -169,23 +169,22 @@ func (rs *HandleT) schemaExists(_ string) (exists bool, err error) {
 	return
 }
 
-func (rs *HandleT) AddColumns(name string, columnsInfo warehouseutils.ColumnsInto) error {
-	tableName := fmt.Sprintf(`%q.%q`, rs.Namespace, name)
-
+func (rs *HandleT) AddColumns(tableName string, columnsInfo warehouseutils.ColumnsInfo) error {
 	for _, columnInfo := range columnsInfo {
-		sqlStatement := fmt.Sprintf(`
+		query := fmt.Sprintf(`
 		ALTER TABLE
-		  %v
+		  %q.%q
 		ADD
-		  COLUMN %q %s
+		  COLUMN %q %s;
 	`,
+			rs.Namespace,
 			tableName,
 			columnInfo.Name,
 			getRSDataType(columnInfo.Type),
 		)
-		pkgLogger.Infof("Adding column in redshift for RS:%s : %v", rs.Warehouse.Destination.ID, sqlStatement)
+		pkgLogger.Infof("Adding column in redshift for RS:%s : %v", rs.Warehouse.Destination.ID, query)
 
-		if _, err := rs.Db.Exec(sqlStatement); err != nil {
+		if _, err := rs.Db.Exec(query); err != nil {
 			return err
 		}
 	}
@@ -196,7 +195,7 @@ func (rs *HandleT) DeleteBy(tableNames []string, params warehouseutils.DeleteByP
 	pkgLogger.Infof("RS: Cleaning up the followng tables in redshift for RS:%s : %+v", tableNames, params)
 	pkgLogger.Infof("RS: Flag for enableDeleteByJobs is %t", enableDeleteByJobs)
 	for _, tb := range tableNames {
-		sqlStatement := fmt.Sprintf(`DELETE FROM "%[1]s"."%[2]s" WHERE 
+		sqlStatement := fmt.Sprintf(`DELETE FROM "%[1]s"."%[2]s" WHERE
 		context_sources_job_run_id <> $1 AND
 		context_sources_task_run_id <> $2 AND
 		context_source_id = $3 AND
@@ -400,9 +399,9 @@ func (rs *HandleT) loadTable(tableName string, tableSchemaInUpload, tableSchemaA
 
 	sqlStatement = fmt.Sprintf(`
 		DELETE FROM
-			%[1]s.%[2]q 
-		USING 
-			%[1]s.%[3]q _source  
+			%[1]s.%[2]q
+		USING
+			%[1]s.%[3]q _source
 		WHERE
 			_source.%[4]s = %[1]s.%[2]q.%[4]s
 `,
@@ -426,7 +425,7 @@ func (rs *HandleT) loadTable(tableName string, tableSchemaInUpload, tableSchemaA
 
 	if tableName == warehouseutils.DiscardsTable {
 		sqlStatement += fmt.Sprintf(`
-			AND _source.%[3]s = %[1]s.%[2]q.%[3]s 
+			AND _source.%[3]s = %[1]s.%[2]q.%[3]s
 			AND _source.%[4]s = %[1]s.%[2]q.%[4]s
 `,
 			rs.Namespace,

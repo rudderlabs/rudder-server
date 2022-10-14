@@ -875,27 +875,25 @@ func (dl *HandleT) DropTable(tableName string) (err error) {
 	return
 }
 
-func (dl *HandleT) AddColumns(tableName string, columnsInfo warehouseutils.ColumnsInto) (err error) {
-	var (
-		format       func(_ int, columnInfo warehouseutils.ColumnInfoT) string
-		sqlStatement string
-	)
-
-	format = func(_ int, columnInfo warehouseutils.ColumnInfoT) string {
-		return fmt.Sprintf(`%s %s`, columnInfo.Name, getDeltaLakeDataType(columnInfo.Type))
-	}
-
-	sqlStatement = fmt.Sprintf(`
+func (dl *HandleT) AddColumns(tableName string, columnsInfo warehouseutils.ColumnsInfo) (err error) {
+	var query string
+	query += fmt.Sprintf(`
 		ALTER TABLE
-		%s.%s
-		ADD COLUMNS ( %s );`,
+		  %s.%s
+		ADD COLUMNS(`,
 		dl.Namespace,
 		tableName,
-		columnsInfo.JoinColumns(format, ","),
 	)
 
-	pkgLogger.Infof("%s Adding column in delta lake with SQL:%v", dl.GetLogIdentifier(tableName), sqlStatement)
-	err = dl.ExecuteSQL(sqlStatement, "AddColumn")
+	for _, columnInfo := range columnsInfo {
+		query += fmt.Sprintf(` %s %s,`, columnInfo.Name, getDeltaLakeDataType(columnInfo.Type))
+	}
+
+	query = strings.TrimSuffix(query, ",")
+	query += ");"
+
+	pkgLogger.Infof("%s Adding column in delta lake with SQL:%v", dl.GetLogIdentifier(tableName), query)
+	err = dl.ExecuteSQL(query, "AddColumn")
 	return
 }
 

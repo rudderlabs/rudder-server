@@ -129,7 +129,7 @@ func (gl *GlueSchemaRepository) CreateTable(tableName string, columnMap map[stri
 	return
 }
 
-func (gl *GlueSchemaRepository) AddColumns(tableName string, columnsInfo warehouseutils.ColumnsInto) (err error) {
+func (gl *GlueSchemaRepository) AddColumns(tableName string, columnsInfo warehouseutils.ColumnsInfo) (err error) {
 	updateTableInput := glue.UpdateTableInput{
 		DatabaseName: aws.String(gl.Namespace),
 		TableInput: &glue.TableInput{
@@ -163,7 +163,7 @@ func (gl *GlueSchemaRepository) AddColumns(tableName string, columnsInfo warehou
 }
 
 func (gl *GlueSchemaRepository) AlterColumn(tableName, columnName, columnType string) (err error) {
-	return gl.AddColumns(tableName, warehouseutils.ColumnsInto{{Name: columnName, Type: columnType}})
+	return gl.AddColumns(tableName, warehouseutils.ColumnsInfo{{Name: columnName, Type: columnType}})
 }
 
 func getGlueClient(wh warehouseutils.Warehouse) (*glue.Glue, error) {
