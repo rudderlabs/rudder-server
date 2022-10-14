@@ -124,20 +124,24 @@ type statTags struct {
 
 var getTimeNowFunc = time.Now
 
+// Tx is a wrapper around sql.Tx that supports registering and executing
+// post-commit actions, a.k.a. success listeners.
 type Tx struct {
 	*sql.Tx
-	completionListeners []func()
+	successListeners []func()
 }
 
-func (tx *Tx) AddCompletionListener(listener func()) {
-	tx.completionListeners = append(tx.completionListeners, listener)
+// AddSuccessListener registers a listener to be executed after the transaction has been committed successfully.
+func (tx *Tx) AddSuccessListener(listener func()) {
+	tx.successListeners = append(tx.successListeners, listener)
 }
 
+// Commit commits the transaction and executes all listeners.
 func (tx *Tx) Commit() error {
 	err := tx.Tx.Commit()
 	if err == nil {
-		for _, listener := range tx.completionListeners {
-			listener()
+		for _, successListener := range tx.successListeners {
+			successListener()
 		}
 	}
 	return err
@@ -1848,7 +1852,7 @@ func (jd *HandleT) internalStoreJobsInTx(ctx context.Context, tx *Tx, ds dataSet
 	queryStat.Start()
 	defer queryStat.End()
 
-	tx.AddCompletionListener(func() {
+	tx.AddSuccessListener(func() {
 		jd.clearCache(ds, jobList)
 	})
 
@@ -1864,7 +1868,7 @@ func (jd *HandleT) copyJobsDS(tx *Tx, ds dataSetT, jobList []*JobT) error { // W
 	queryStat.Start()
 	defer queryStat.End()
 
-	tx.AddCompletionListener(func() {
+	tx.AddSuccessListener(func() {
 		jd.clearCache(ds, jobList)
 	})
 	return jd.copyJobsDSInTx(tx, ds, jobList)
@@ -2247,7 +2251,7 @@ func (jd *HandleT) storeJob(ctx context.Context, tx *Tx, ds dataSetT, job *JobT)
 	job.sanitizeJson()
 	_, err = stmt.ExecContext(ctx, job.UUID, job.UserID, job.CustomVal, string(job.Parameters), string(job.EventPayload), job.WorkspaceId)
 	if err == nil {
-		tx.AddCompletionListener(func() {
+		tx.AddSuccessListener(func() {
 			// Empty customValFilters means we want to clear for all
 			jd.markClearEmptyResult(ds, allWorkspaces, []string{}, []string{}, nil, hasJobs, nil)
 			jd.markClearEmptyResult(ds, job.WorkspaceId, []string{}, []string{}, nil, hasJobs, nil)
@@ -2841,7 +2845,7 @@ func (jd *HandleT) copyJobStatusDS(ctx context.Context, tx *Tx, ds dataSetT, sta
 		return err
 	}
 
-	tx.AddCompletionListener(func() {
+	tx.AddSuccessListener(func() {
 		var allUpdatedStates []string
 		for workspaceID, stateFilters := range stateFiltersByWorkspace {
 			jd.markClearEmptyResult(ds, workspaceID, stateFilters, customValFilters, parameterFilters, hasJobs, nil)
@@ -3956,7 +3960,7 @@ func (jd *HandleT) internalUpdateJobStatusInTx(ctx context.Context, tx *Tx, stat
 		return err
 	}
 
-	tx.AddCompletionListener(func() {
+	tx.AddSuccessListener(func() {
 		// clear cache
 		for ds, stateListByWorkspace := range updatedStatesByDS {
 			var allUpdatedStates []string
