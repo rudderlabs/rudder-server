@@ -11,9 +11,11 @@ import (
 	"strconv"
 	"sync"
 	"time"
+	"unsafe"
 
 	"github.com/cenkalti/backoff"
 	"github.com/rudderlabs/rudder-server/config"
+	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 
 	"github.com/rudderlabs/rudder-server/utils/logger"
@@ -95,6 +97,8 @@ func (suppressUser *SuppressRegulationHandler) regulationSyncLoop(ctx context.Co
 			misc.SleepCtx(ctx, regulationsPollInterval)
 			continue
 		}
+		stats.Default.NewStat("suppressUser_count", stats.CountType).Count(len(regulations))
+
 		// need to discuss the correct place tp put this lock
 		suppressUser.regulationsSubscriberLock.Lock()
 		for _, sourceRegulation := range regulations {
@@ -144,6 +148,7 @@ func (suppressUser *SuppressRegulationHandler) regulationSyncLoop(ctx context.Co
 			}
 		}
 		suppressUser.regulationsSubscriberLock.Unlock()
+		stats.Default.NewStat("suppress_user_map_size", stats.GaugeType).Gauge(unsafe.Sizeof(suppressUser.userSpecificSuppressedSourceMap))
 
 		if len(regulations) == 0 || len(regulations) < pageSize {
 			misc.SleepCtx(ctx, regulationsPollInterval)
@@ -209,6 +214,7 @@ func (suppressUser *SuppressRegulationHandler) getSourceRegulationsFromRegulatio
 	}
 
 	backoffWithMaxRetry := backoff.WithMaxRetries(backoff.NewExponentialBackOff(), 3)
+	regulationReqTime := time.Now()
 	err := backoff.RetryNotify(operation, backoffWithMaxRetry, func(err error, t time.Duration) {
 		pkgLogger.Errorf("[[ Workspace-config ]] Failed to fetch source regulations from API with error: %v, retrying after %v", err, t)
 	})
@@ -220,6 +226,8 @@ func (suppressUser *SuppressRegulationHandler) getSourceRegulationsFromRegulatio
 		pkgLogger.Error("nil response body, returning")
 		return []sourceRegulation{}, errors.New("nil response body")
 	}
+	stats.Default.NewStat("suppress_regulation_request_latency", stats.TimerType).Since(regulationReqTime)
+
 	var sourceRegulationsJSON apiResponse
 	err = json.Unmarshal(respBody, &sourceRegulationsJSON)
 	if err != nil {
