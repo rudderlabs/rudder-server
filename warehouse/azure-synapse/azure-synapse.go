@@ -663,7 +663,7 @@ func (as *HandleT) AddColumns(tableName string, columnsInfo warehouseutils.Colum
 			  FROM
 				SYS.COLUMNS
 			  WHERE
-				OBJECT_ID = OBJECT_ID(N '%[1]s.%[2]s')
+				OBJECT_ID = OBJECT_ID(N'%[1]s.%[2]s')
 				AND name = '%[3]s'
 			)
 `,

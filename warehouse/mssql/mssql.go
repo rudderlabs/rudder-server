@@ -687,7 +687,7 @@ func (ms *HandleT) AddColumns(tableName string, columnsInfo warehouseutils.Colum
 	)
 
 	format = func(_ int, columnInfo warehouseutils.ColumnInfoT) string {
-		return fmt.Sprintf(`%s %s`, columnInfo.Name, rudderDataTypesMapToMssql[columnInfo.Type])
+		return fmt.Sprintf(`%q %s`, columnInfo.Name, rudderDataTypesMapToMssql[columnInfo.Type])
 	}
 
 	if len(columnsInfo) == 1 {
@@ -698,7 +698,7 @@ func (ms *HandleT) AddColumns(tableName string, columnsInfo warehouseutils.Colum
 			  FROM
 				SYS.COLUMNS
 			  WHERE
-				OBJECT_ID = OBJECT_ID(N '%[1]s.%[2]s')
+				OBJECT_ID = OBJECT_ID(N'%[1]s.%[2]s')
 				AND name = '%[3]s'
 			)
 `,
