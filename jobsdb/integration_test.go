@@ -732,22 +732,15 @@ func TestJobsDB(t *testing.T) {
 		require.EqualValues(t, 2, len(jobDBInspector.DSIndicesList()))
 		require.EqualValues(t, 2, jobDB.GetMaxDSIndex())
 
-		// time.Sleep(time.Second * 2)   // wait for some time to pass
-		// triggerAddNewDS <- time.Now() // trigger addNewDSLoop to run
-		// triggerAddNewDS <- time.Now() // Second time, waits for the first loop to finish
-
-		// require.EqualValues(t, 3, len(jobDBInspector.DSIndicesList()))
-		// require.EqualValues(t, 3, jobDB.GetMaxDSIndex())
-
 		time.Sleep(time.Second * 2) // wait for some time to pass so that retention condition satisfies
 
 		triggerMigrateDS <- time.Now() // trigger migrateDSLoop to run
 		triggerMigrateDS <- time.Now() // Second time, waits for the first loop to finish
 
 		dsIndicesList := jobDBInspector.DSIndicesList()
+		require.EqualValues(t, 2, len(jobDBInspector.DSIndicesList()))
 		require.EqualValues(t, "1_1", dsIndicesList[0])
 		require.EqualValues(t, "2", dsIndicesList[1])
-		require.EqualValues(t, 2, len(jobDBInspector.DSIndicesList()))
 		require.EqualValues(t, 2, jobDB.GetMaxDSIndex())
 
 		// only non-terminal jobs should be migrated
