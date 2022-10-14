@@ -327,7 +327,7 @@ func SendEvents(t testing.TB, wareHouseTest *WareHouseTest, eventsMap EventsCoun
 
 		for i := 0; i < count; i++ {
 			payloadIdentify := strings.NewReader(fmt.Sprintf(IdentifyPayload, wareHouseTest.UserId, wareHouseTest.MsgId()))
-			sendEvent(t, payloadIdentify, "identify", wareHouseTest.WriteKey)
+			send(t, payloadIdentify, "identify", wareHouseTest.WriteKey, "POST")
 		}
 	}
 
@@ -336,7 +336,7 @@ func SendEvents(t testing.TB, wareHouseTest *WareHouseTest, eventsMap EventsCoun
 
 		for i := 0; i < count; i++ {
 			payloadTrack := strings.NewReader(fmt.Sprintf(TrackPayload, wareHouseTest.UserId, wareHouseTest.MsgId()))
-			sendEvent(t, payloadTrack, "track", wareHouseTest.WriteKey)
+			send(t, payloadTrack, "track", wareHouseTest.WriteKey, "POST")
 		}
 	}
 
@@ -345,7 +345,7 @@ func SendEvents(t testing.TB, wareHouseTest *WareHouseTest, eventsMap EventsCoun
 
 		for i := 0; i < count; i++ {
 			payloadPage := strings.NewReader(fmt.Sprintf(PagePayload, wareHouseTest.UserId, wareHouseTest.MsgId()))
-			sendEvent(t, payloadPage, "page", wareHouseTest.WriteKey)
+			send(t, payloadPage, "page", wareHouseTest.WriteKey, "POST")
 		}
 	}
 
@@ -354,7 +354,7 @@ func SendEvents(t testing.TB, wareHouseTest *WareHouseTest, eventsMap EventsCoun
 
 		for i := 0; i < count; i++ {
 			payloadScreen := strings.NewReader(fmt.Sprintf(ScreenPayload, wareHouseTest.UserId, wareHouseTest.MsgId()))
-			sendEvent(t, payloadScreen, "screen", wareHouseTest.WriteKey)
+			send(t, payloadScreen, "screen", wareHouseTest.WriteKey, "POST")
 		}
 	}
 
@@ -363,7 +363,7 @@ func SendEvents(t testing.TB, wareHouseTest *WareHouseTest, eventsMap EventsCoun
 
 		for i := 0; i < count; i++ {
 			payloadAlias := strings.NewReader(fmt.Sprintf(AliasPayload, wareHouseTest.UserId, wareHouseTest.MsgId()))
-			sendEvent(t, payloadAlias, "alias", wareHouseTest.WriteKey)
+			send(t, payloadAlias, "alias", wareHouseTest.WriteKey, "POST")
 		}
 	}
 
@@ -372,7 +372,7 @@ func SendEvents(t testing.TB, wareHouseTest *WareHouseTest, eventsMap EventsCoun
 
 		for i := 0; i < count; i++ {
 			payloadGroup := strings.NewReader(fmt.Sprintf(GroupPayload, wareHouseTest.UserId, wareHouseTest.MsgId()))
-			sendEvent(t, payloadGroup, "group", wareHouseTest.WriteKey)
+			send(t, payloadGroup, "group", wareHouseTest.WriteKey, "POST")
 		}
 	}
 
@@ -382,7 +382,7 @@ func SendEvents(t testing.TB, wareHouseTest *WareHouseTest, eventsMap EventsCoun
 			job_run_id := wareHouseTest.MsgId()
 			task_run_id := wareHouseTest.MsgId()
 			payloadGroup := strings.NewReader(fmt.Sprintf(GoogleSheetsPayload, wareHouseTest.UserId, wareHouseTest.MsgId(), job_run_id, task_run_id))
-			sendEvent(t, payloadGroup, "import", wareHouseTest.SourceWriteKey)
+			send(t, payloadGroup, "import", wareHouseTest.SourceWriteKey, "POST")
 			wareHouseTest.LatestSourceRunConfig["job_run_id"] = job_run_id
 			wareHouseTest.LatestSourceRunConfig["task_run_id"] = task_run_id
 			for {
@@ -408,7 +408,7 @@ func SendModifiedEvents(t testing.TB, wareHouseTest *WareHouseTest, eventsMap Ev
 
 		for i := 0; i < count; i++ {
 			payloadIdentify := strings.NewReader(fmt.Sprintf(ModifiedIdentifyPayload, wareHouseTest.UserId, wareHouseTest.MsgId()))
-			sendEvent(t, payloadIdentify, "identify", wareHouseTest.WriteKey)
+			send(t, payloadIdentify, "identify", wareHouseTest.WriteKey, "POST")
 		}
 	}
 
@@ -417,7 +417,7 @@ func SendModifiedEvents(t testing.TB, wareHouseTest *WareHouseTest, eventsMap Ev
 
 		for i := 0; i < count; i++ {
 			payloadTrack := strings.NewReader(fmt.Sprintf(ModifiedTrackPayload, wareHouseTest.UserId, wareHouseTest.MsgId()))
-			sendEvent(t, payloadTrack, "track", wareHouseTest.WriteKey)
+			send(t, payloadTrack, "track", wareHouseTest.WriteKey, "POST")
 		}
 	}
 
@@ -426,7 +426,7 @@ func SendModifiedEvents(t testing.TB, wareHouseTest *WareHouseTest, eventsMap Ev
 
 		for i := 0; i < count; i++ {
 			payloadPage := strings.NewReader(fmt.Sprintf(ModifiedPagePayload, wareHouseTest.UserId, wareHouseTest.MsgId()))
-			sendEvent(t, payloadPage, "page", wareHouseTest.WriteKey)
+			send(t, payloadPage, "page", wareHouseTest.WriteKey, "POST")
 		}
 	}
 
@@ -435,7 +435,7 @@ func SendModifiedEvents(t testing.TB, wareHouseTest *WareHouseTest, eventsMap Ev
 
 		for i := 0; i < count; i++ {
 			payloadScreen := strings.NewReader(fmt.Sprintf(ModifiedScreenPayload, wareHouseTest.UserId, wareHouseTest.MsgId()))
-			sendEvent(t, payloadScreen, "screen", wareHouseTest.WriteKey)
+			send(t, payloadScreen, "screen", wareHouseTest.WriteKey, "POST")
 		}
 	}
 
@@ -444,7 +444,7 @@ func SendModifiedEvents(t testing.TB, wareHouseTest *WareHouseTest, eventsMap Ev
 
 		for i := 0; i < count; i++ {
 			payloadAlias := strings.NewReader(fmt.Sprintf(ModifiedAliasPayload, wareHouseTest.UserId, wareHouseTest.MsgId()))
-			sendEvent(t, payloadAlias, "alias", wareHouseTest.WriteKey)
+			send(t, payloadAlias, "alias", wareHouseTest.WriteKey, "POST")
 		}
 	}
 
@@ -453,7 +453,7 @@ func SendModifiedEvents(t testing.TB, wareHouseTest *WareHouseTest, eventsMap Ev
 
 		for i := 0; i < count; i++ {
 			payloadGroup := strings.NewReader(fmt.Sprintf(ModifiedGroupPayload, wareHouseTest.UserId, wareHouseTest.MsgId()))
-			sendEvent(t, payloadGroup, "group", wareHouseTest.WriteKey)
+			send(t, payloadGroup, "group", wareHouseTest.WriteKey, "POST")
 		}
 	}
 }
@@ -469,7 +469,7 @@ func SendIntegratedEvents(t testing.TB, wareHouseTest *WareHouseTest, eventsMap 
 
 		for i := 0; i < count; i++ {
 			payloadIdentify := strings.NewReader(fmt.Sprintf(ReservedKeywordsIdentifyPayload, wareHouseTest.UserId, wareHouseTest.MsgId(), wareHouseTest.Provider))
-			sendEvent(t, payloadIdentify, "identify", wareHouseTest.WriteKey)
+			send(t, payloadIdentify, "identify", wareHouseTest.WriteKey, "POST")
 		}
 	}
 
@@ -478,7 +478,7 @@ func SendIntegratedEvents(t testing.TB, wareHouseTest *WareHouseTest, eventsMap 
 
 		for i := 0; i < count; i++ {
 			payloadTrack := strings.NewReader(fmt.Sprintf(ReservedKeywordsTrackPayload, wareHouseTest.UserId, wareHouseTest.MsgId(), wareHouseTest.Provider))
-			sendEvent(t, payloadTrack, "track", wareHouseTest.WriteKey)
+			send(t, payloadTrack, "track", wareHouseTest.WriteKey, "POST")
 		}
 	}
 
@@ -487,7 +487,7 @@ func SendIntegratedEvents(t testing.TB, wareHouseTest *WareHouseTest, eventsMap 
 
 		for i := 0; i < count; i++ {
 			payloadPage := strings.NewReader(fmt.Sprintf(ReservedKeywordsPagePayload, wareHouseTest.UserId, wareHouseTest.MsgId(), wareHouseTest.Provider))
-			sendEvent(t, payloadPage, "page", wareHouseTest.WriteKey)
+			send(t, payloadPage, "page", wareHouseTest.WriteKey, "POST")
 		}
 	}
 
@@ -496,7 +496,7 @@ func SendIntegratedEvents(t testing.TB, wareHouseTest *WareHouseTest, eventsMap 
 
 		for i := 0; i < count; i++ {
 			payloadScreen := strings.NewReader(fmt.Sprintf(ReservedKeywordsScreenPayload, wareHouseTest.UserId, wareHouseTest.MsgId(), wareHouseTest.Provider))
-			sendEvent(t, payloadScreen, "screen", wareHouseTest.WriteKey)
+			send(t, payloadScreen, "screen", wareHouseTest.WriteKey, "POST")
 		}
 	}
 
@@ -505,7 +505,7 @@ func SendIntegratedEvents(t testing.TB, wareHouseTest *WareHouseTest, eventsMap 
 
 		for i := 0; i < count; i++ {
 			payloadAlias := strings.NewReader(fmt.Sprintf(AliasPayload, wareHouseTest.UserId, wareHouseTest.MsgId()))
-			sendEvent(t, payloadAlias, "alias", wareHouseTest.WriteKey)
+			send(t, payloadAlias, "alias", wareHouseTest.WriteKey, "POST")
 		}
 	}
 
@@ -514,21 +514,18 @@ func SendIntegratedEvents(t testing.TB, wareHouseTest *WareHouseTest, eventsMap 
 
 		for i := 0; i < count; i++ {
 			payloadGroup := strings.NewReader(fmt.Sprintf(ReservedKeywordsGroupPayload, wareHouseTest.UserId, wareHouseTest.MsgId(), wareHouseTest.Provider))
-			sendEvent(t, payloadGroup, "group", wareHouseTest.WriteKey)
+			send(t, payloadGroup, "group", wareHouseTest.WriteKey, "POST")
 		}
 	}
 }
 
-func sendEvent(t testing.TB, payload *strings.Reader, eventType, writeKey string) {
+func send(t testing.TB, payload *strings.Reader, eventType, writeKey, method string) {
 	t.Helper()
 
 	t.Logf("Sending event: %s for writeKey: %s", eventType, writeKey)
 
-	var (
-		httpClient = &http.Client{}
-		method     = "POST"
-		url        = fmt.Sprintf("http://localhost:%s/v1/%s", "8080", eventType)
-	)
+	url := fmt.Sprintf("http://localhost:%s/v1/%s", "8080", eventType)
+	httpClient := &http.Client{}
 
 	req, err := http.NewRequest(method, url, payload)
 	if err != nil {
@@ -563,8 +560,8 @@ func sendEvent(t testing.TB, payload *strings.Reader, eventType, writeKey string
 }
 
 func SendAsyncRequest(t testing.TB, wareHouseTest *WareHouseTest) {
-	asyncPayload := strings.NewReader(fmt.Sprintf(AsyncWhPayload, wareHouseTest.SourceID, wareHouseTest.LatestSourceRunConfig["job_run_id"], wareHouseTest.LatestSourceRunConfig["task_run_id"], wareHouseTest.DestinationID, time.Now().UTC().Format("01-02-2006 15:04:05")))
-	sendEvent(t, asyncPayload, "warehouse/jobs", wareHouseTest.SourceWriteKey)
+	asyncwhpayload := strings.NewReader(fmt.Sprintf(AsyncWhPayload, wareHouseTest.SourceID, wareHouseTest.LatestSourceRunConfig["job_run_id"], wareHouseTest.LatestSourceRunConfig["task_run_id"], wareHouseTest.DestinationID, time.Now().UTC().Format("01-02-2006 15:04:05")))
+	send(t, asyncwhpayload, "warehouse/jobs", wareHouseTest.SourceWriteKey, "POST")
 }
 
 func SendAsyncStatusRequest(t testing.TB, wareHouseTest *WareHouseTest) {

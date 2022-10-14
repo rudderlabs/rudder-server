@@ -559,7 +559,7 @@ func processClaimedUploadJob(claimedJob pgnotifier.ClaimT, workerIndex int) {
 	defer func() {
 		warehouseutils.NewTimerStat(STATS_WORKER_CLAIM_PROCESSING_TIME, warehouseutils.Tag{Name: TAG_WORKERID, Value: fmt.Sprintf("%d", workerIndex)}).Since(claimProcessTimeStart)
 	}()
-	handleErr := func(err error) {
+	handleErr := func(err error, claim pgnotifier.ClaimT) {
 		pkgLogger.Errorf("[WH]: Error processing claim: %v", err)
 		response := pgnotifier.ClaimResponseT{
 			Err: err,
@@ -571,14 +571,14 @@ func processClaimedUploadJob(claimedJob pgnotifier.ClaimT, workerIndex int) {
 	var job Payload
 	err := json.Unmarshal(claimedJob.Payload, &job)
 	if err != nil {
-		handleErr(err)
+		handleErr(err, claimedJob)
 		return
 	}
 	job.BatchID = claimedJob.BatchID
 	pkgLogger.Infof(`Starting processing staging-file:%v from claim:%v`, job.StagingFileID, claimedJob.ID)
 	loadFileOutputs, err := processStagingFile(job, workerIndex)
 	if err != nil {
-		handleErr(err)
+		handleErr(err, claimedJob)
 		return
 	}
 	job.Output = loadFileOutputs
@@ -640,7 +640,7 @@ func runAsyncJob(asyncjob jobs.AsyncJobPayloadT) (AsyncJobRunResult, error) {
 
 func processClaimedAsyncJob(claimedJob pgnotifier.ClaimT) {
 	pkgLogger.Infof("[WH-Jobs]: Got request for processing Async Job with Batch ID %s", claimedJob.BatchID)
-	handleErr := func(err error) {
+	handleErr := func(err error, claim pgnotifier.ClaimT) {
 		pkgLogger.Errorf("[WH]: Error processing claim: %v", err)
 		response := pgnotifier.ClaimResponseT{
 			Err: err,
@@ -650,18 +650,18 @@ func processClaimedAsyncJob(claimedJob pgnotifier.ClaimT) {
 	var job jobs.AsyncJobPayloadT
 	err := json.Unmarshal(claimedJob.Payload, &job)
 	if err != nil {
-		handleErr(err)
+		handleErr(err, claimedJob)
 		return
 	}
 	result, err := runAsyncJob(job)
 	if err != nil {
-		handleErr(err)
+		handleErr(err, claimedJob)
 		return
 	}
 
 	marshalledResult, err := json.Marshal(result)
 	if err != nil {
-		handleErr(err)
+		handleErr(err, claimedJob)
 		return
 	}
 	response := pgnotifier.ClaimResponseT{
