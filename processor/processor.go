@@ -3,7 +3,6 @@ package processor
 import (
 	"bytes"
 	"context"
-	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -1681,13 +1680,13 @@ func (proc *HandleT) Store(in *storeMessage) {
 
 			// rsources stats
 			in.rsourcesStats.JobStatusesUpdated(statusList)
-			err = in.rsourcesStats.Publish(ctx, tx.Tx())
+			err = in.rsourcesStats.Publish(ctx, tx.SqlTx())
 			if err != nil {
 				return fmt.Errorf("publishing rsources stats: %w", err)
 			}
 
 			if proc.isReportingEnabled() {
-				proc.reporting.Report(in.reportMetrics, tx.Tx())
+				proc.reporting.Report(in.reportMetrics, tx.SqlTx())
 			}
 
 			if enableDedup {
@@ -2111,10 +2110,10 @@ func (proc *HandleT) saveFailedJobs(failedJobs []*jobsdb.JobT) {
 
 		rsourcesStats := rsources.NewFailedJobsCollector(proc.rsourcesService)
 		rsourcesStats.JobsFailed(failedJobs)
-		_ = proc.errorDB.WithTx(func(tx *sql.Tx) error {
+		_ = proc.errorDB.WithTx(func(tx *jobsdb.Tx) error {
 			// TODO: error propagation
-			router.GetFailedEventsManager().SaveFailedRecordIDs(jobRunIDAbortedEventsMap, tx)
-			return rsourcesStats.Publish(context.TODO(), tx)
+			router.GetFailedEventsManager().SaveFailedRecordIDs(jobRunIDAbortedEventsMap, tx.Tx)
+			return rsourcesStats.Publish(context.TODO(), tx.Tx)
 		})
 
 	}
@@ -2587,6 +2586,6 @@ func (proc *HandleT) isReportingEnabled() bool {
 func (proc *HandleT) updateRudderSourcesStats(ctx context.Context, tx jobsdb.StoreSafeTx, jobs []*jobsdb.JobT) error {
 	rsourcesStats := rsources.NewStatsCollector(proc.rsourcesService)
 	rsourcesStats.JobsStored(jobs)
-	err := rsourcesStats.Publish(ctx, tx.Tx())
+	err := rsourcesStats.Publish(ctx, tx.SqlTx())
 	return err
 }
