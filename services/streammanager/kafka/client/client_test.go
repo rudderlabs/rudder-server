@@ -126,7 +126,7 @@ func TestProducerBatchConsumerGroup(t *testing.T) {
 		producerConf.Logger = &testLogger{t}
 		producerConf.ErrorLogger = producerConf.Logger
 	}
-	p, err := c.NewProducer(t.Name(), producerConf)
+	p, err := c.NewProducer(t.Name(), producerConf, false)
 	require.NoError(t, err)
 	publishMessages(ctx, t, p, noOfMessages)
 	messagesWaitGroup.Add(noOfMessages)
@@ -257,7 +257,7 @@ func TestConsumer_Partition(t *testing.T) {
 		producerConf.Logger = &testLogger{t}
 		producerConf.ErrorLogger = producerConf.Logger
 	}
-	p, err := c.NewProducer(t.Name(), producerConf)
+	p, err := c.NewProducer(t.Name(), producerConf, false)
 	require.NoError(t, err)
 	publishMessages(ctx, t, p, noOfMessages)
 	messagesWaitGroup.Add(noOfMessages)
@@ -403,7 +403,7 @@ func TestWithSASL(t *testing.T) {
 				producerConf.Logger = &testLogger{t}
 				producerConf.ErrorLogger = producerConf.Logger
 			}
-			p, err := c.NewProducer("some-topic", producerConf)
+			p, err := c.NewProducer("some-topic", producerConf, false)
 			require.NoError(t, err)
 			t.Cleanup(func() {
 				ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -520,7 +520,7 @@ func TestProducer_Timeout(t *testing.T) {
 		producerConf.Logger = &testLogger{t}
 		producerConf.ErrorLogger = producerConf.Logger
 	}
-	p, err := c.NewProducer(t.Name(), producerConf)
+	p, err := c.NewProducer(t.Name(), producerConf, false)
 	require.NoError(t, err)
 	t.Cleanup(func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -588,7 +588,7 @@ func TestIsProducerErrTemporary(t *testing.T) {
 		producerConf.Logger = &testLogger{t}
 		producerConf.ErrorLogger = producerConf.Logger
 	}
-	p, err := c.NewProducer("non-existent-topic", producerConf)
+	p, err := c.NewProducer("non-existent-topic", producerConf, false)
 	require.NoError(t, err)
 	t.Cleanup(func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -647,6 +647,7 @@ func TestConfluentAzureCloud(t *testing.T) {
 	p, err := c.NewProducer(
 		t.Name(), // the topic needs to be created beforehand via the ConfluentCloud admin panel
 		producerConf,
+		false,
 	)
 	require.NoError(t, err)
 
@@ -689,7 +690,7 @@ func TestAzureEventHubsCloud(t *testing.T) {
 		producerConf.Logger = &testLogger{t}
 		producerConf.ErrorLogger = producerConf.Logger
 	}
-	p, err := c.NewProducer(azureEventHubName, producerConf)
+	p, err := c.NewProducer(azureEventHubName, producerConf, false)
 	require.NoError(t, err)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)

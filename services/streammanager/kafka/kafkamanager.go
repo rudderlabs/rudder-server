@@ -29,17 +29,18 @@ type avroSchema struct {
 
 // configuration is the config that is required to send data to Kafka
 type configuration struct {
-	Topic         string
-	HostName      string
-	Port          string
-	SslEnabled    bool
-	CACertificate string
-	UseSASL       bool
-	SaslType      string
-	Username      string
-	Password      string
-	ConvertToAvro bool
-	AvroSchemas   []avroSchema
+	Topic             string
+	HostName          string
+	Port              string
+	SslEnabled        bool
+	CACertificate     string
+	UseSASL           bool
+	SaslType          string
+	Username          string
+	Password          string
+	MultiTopicSupport bool
+	ConvertToAvro     bool
+	AvroSchemas       []avroSchema
 }
 
 func (c *configuration) validate() error {
@@ -311,11 +312,14 @@ func NewProducer(destination *backendconfig.DestinationT, o common.Opts) (*Produ
 	if err = c.Ping(ctx); err != nil {
 		return nil, fmt.Errorf("could not ping: %w", err)
 	}
-
+	skipTopicInitialisation := false
+	if destConfig.MultiTopicSupport {
+		skipTopicInitialisation = true
+	}
 	p, err := c.NewProducer(destConfig.Topic, client.ProducerConfig{
 		ReadTimeout:  kafkaReadTimeout,
 		WriteTimeout: kafkaWriteTimeout,
-	})
+	}, skipTopicInitialisation)
 	if err != nil {
 		return nil, err
 	}
@@ -366,7 +370,7 @@ func NewProducerForAzureEventHubs(destination *backendconfig.DestinationT, o com
 	p, err := c.NewProducer(destConfig.Topic, client.ProducerConfig{
 		ReadTimeout:  kafkaReadTimeout,
 		WriteTimeout: kafkaWriteTimeout,
-	})
+	}, false)
 	if err != nil {
 		return nil, err
 	}
@@ -418,7 +422,7 @@ func NewProducerForConfluentCloud(destination *backendconfig.DestinationT, o com
 	p, err := c.NewProducer(destConfig.Topic, client.ProducerConfig{
 		ReadTimeout:  kafkaReadTimeout,
 		WriteTimeout: kafkaWriteTimeout,
-	})
+	}, false)
 	if err != nil {
 		return nil, err
 	}

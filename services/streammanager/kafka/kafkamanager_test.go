@@ -408,7 +408,7 @@ func TestClose(t *testing.T) {
 
 		c, err := client.New("tcp", []string{"localhost:9092"}, client.Config{})
 		require.NoError(t, err)
-		p, err := c.NewProducer("some-topic", client.ProducerConfig{})
+		p, err := c.NewProducer("some-topic", client.ProducerConfig{}, false)
 		require.NoError(t, err)
 		pm := &ProducerManager{p: p}
 		require.NoError(t, pm.Close())
