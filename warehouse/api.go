@@ -500,7 +500,7 @@ func (uploadsReq UploadsReqT) authorizedSources() (sourceIDs []string) {
 	return sourceIDs
 }
 
-func (uploadsReq *UploadsReqT) getUploadsFromDb(isMultiWorkspace bool, query string) ([]*proto.WHUploadResponse, int32, error) {
+func (uploadsReq *UploadsReqT) getUploadsFromDB(isMultiWorkspace bool, query string) ([]*proto.WHUploadResponse, int32, error) {
 	var totalUploadCount int32
 	var err error
 	uploads := make([]*proto.WHUploadResponse, 0)
@@ -671,7 +671,7 @@ func (uploadsReq *UploadsReqT) warehouseUploadsForHosted(authorizedSourceIDs []s
 	uploadsReq.API.log.Info(query)
 
 	// get uploads from db
-	uploads, totalUploadCount, err = uploadsReq.getUploadsFromDb(true, query)
+	uploads, totalUploadCount, err = uploadsReq.getUploadsFromDB(true, query)
 	if err != nil {
 		uploadsReq.API.log.Errorf(err.Error())
 		return &proto.WHUploadsResponse{}, err
@@ -728,7 +728,7 @@ func (uploadsReq *UploadsReqT) warehouseUploads(selectFields string) (uploadsRes
 	// we get uploads for non hosted workspaces in two steps
 	// this is because getting this info via 2 queries is faster than getting it via one query(using the 'count(*) OVER()' clause)
 	// step1 - get all uploads
-	uploads, _, err = uploadsReq.getUploadsFromDb(false, query)
+	uploads, _, err = uploadsReq.getUploadsFromDB(false, query)
 	if err != nil {
 		uploadsReq.API.log.Errorf(err.Error())
 		return &proto.WHUploadsResponse{}, err

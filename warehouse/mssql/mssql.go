@@ -340,7 +340,7 @@ func (ms *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 				return
 			}
 			if len(sortedColumnKeys) != len(record) {
-				err = fmt.Errorf(`Load file CSV columns for a row mismatch number found in upload schema. Columns in CSV row: %d, Columns in upload schema of table-%s: %d. Processed rows in csv file until mismatch: %d`, len(record), tableName, len(sortedColumnKeys), csvRowsProcessedCount)
+				err = fmt.Errorf(`load file CSV columns for a row mismatch number found in upload schema. Columns in CSV row: %d, Columns in upload schema of table-%s: %d. Processed rows in csv file until mismatch: %d`, len(record), tableName, len(sortedColumnKeys), csvRowsProcessedCount)
 				pkgLogger.Error(err)
 				txn.Rollback()
 				return
@@ -772,7 +772,7 @@ func (ms *HandleT) dropDanglingStagingTables() bool {
 		var tableName string
 		err := rows.Scan(&tableName)
 		if err != nil {
-			panic(fmt.Errorf("Failed to scan result from query: %s\nwith Error : %w", sqlStatement, err))
+			panic(fmt.Errorf("failed to scan result from query: %s\nwith Error : %w", sqlStatement, err))
 		}
 		stagingTableNames = append(stagingTableNames, tableName)
 	}
