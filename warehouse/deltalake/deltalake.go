@@ -112,12 +112,12 @@ var primaryKeyMap = map[string]string{
 }
 
 type HandleT struct {
-	dbHandleT      *databricks.DBHandleT
-	Namespace      string
-	ObjectStorage  string
-	Warehouse      warehouseutils.Warehouse
-	Uploader       warehouseutils.UploaderI
-	ConnectTimeout time.Duration
+	dbHandle       *databricks.DBHandleT
+	namespace      string
+	objectStorage  string
+	warehouse      warehouseutils.Warehouse
+	uploader       warehouseutils.UploaderI
+	connectTimeout time.Duration
 }
 
 // Init initializes the delta lake warehouse
@@ -273,12 +273,12 @@ func (*HandleT) DeleteBy([]string, warehouseutils.DeleteByParams) error {
 // fetchTables fetch tables with tableNames
 func (dl *HandleT) fetchTables(dbT *databricks.DBHandleT, schema string) (tableNames []string, err error) {
 	fetchTablesExecTime := stats.Default.NewTaggedStat("warehouse.deltalake.grpcExecTime", stats.TimerType, map[string]string{
-		"workspaceId": dl.Warehouse.WorkspaceID,
-		"destination": dl.Warehouse.Destination.ID,
-		"destType":    dl.Warehouse.Type,
-		"source":      dl.Warehouse.Source.ID,
-		"namespace":   dl.Warehouse.Namespace,
-		"identifier":  dl.Warehouse.Identifier,
+		"workspaceId": dl.warehouse.WorkspaceID,
+		"destination": dl.warehouse.Destination.ID,
+		"destType":    dl.warehouse.Type,
+		"source":      dl.warehouse.Source.ID,
+		"namespace":   dl.warehouse.Namespace,
+		"identifier":  dl.warehouse.Identifier,
 		"queryType":   "FetchTables",
 	})
 	fetchTablesExecTime.Start()
@@ -302,7 +302,7 @@ func (dl *HandleT) fetchTables(dbT *databricks.DBHandleT, schema string) (tableN
 
 // fetchPartitionColumns return the partition columns for the corresponding tables
 func (dl *HandleT) fetchPartitionColumns(dbT *databricks.DBHandleT, tableName string) ([]string, error) {
-	sqlStatement := fmt.Sprintf(`SHOW PARTITIONS %s.%s`, dl.Warehouse.Namespace, tableName)
+	sqlStatement := fmt.Sprintf(`SHOW PARTITIONS %s.%s`, dl.warehouse.Namespace, tableName)
 
 	columnsResponse, err := dbT.Client.FetchPartitionColumns(dbT.Context, &proto.FetchPartitionColumnsRequest{
 		Config:       dbT.CredConfig,
@@ -332,7 +332,7 @@ func (dl *HandleT) partitionQuery(tableName string) (string, error) {
 		return "", nil
 	}
 
-	partitionColumns, err := dl.fetchPartitionColumns(dl.dbHandleT, tableName)
+	partitionColumns, err := dl.fetchPartitionColumns(dl.dbHandle, tableName)
 	if err != nil {
 		return "", fmt.Errorf("failed to prepare partition query, error: %w", err)
 	}
@@ -341,7 +341,7 @@ func (dl *HandleT) partitionQuery(tableName string) (string, error) {
 		return "", nil
 	}
 
-	firstEvent, lastEvent := dl.Uploader.GetFirstLastEvent()
+	firstEvent, lastEvent := dl.uploader.GetFirstLastEvent()
 
 	dateRange := warehouseutils.GetDateRangeList(firstEvent, lastEvent, "2006-01-02")
 	if len(dateRange) == 0 {
@@ -358,18 +358,18 @@ func (dl *HandleT) partitionQuery(tableName string) (string, error) {
 // ExecuteSQL executes sql using grpc Client
 func (dl *HandleT) ExecuteSQL(sqlStatement, queryType string) (err error) {
 	execSqlStatTime := stats.Default.NewTaggedStat("warehouse.deltalake.grpcExecTime", stats.TimerType, map[string]string{
-		"workspaceId": dl.Warehouse.WorkspaceID,
-		"destination": dl.Warehouse.Destination.ID,
-		"destType":    dl.Warehouse.Type,
-		"source":      dl.Warehouse.Source.ID,
-		"namespace":   dl.Warehouse.Namespace,
-		"identifier":  dl.Warehouse.Identifier,
+		"workspaceId": dl.warehouse.WorkspaceID,
+		"destination": dl.warehouse.Destination.ID,
+		"destType":    dl.warehouse.Type,
+		"source":      dl.warehouse.Source.ID,
+		"namespace":   dl.warehouse.Namespace,
+		"identifier":  dl.warehouse.Identifier,
 		"queryType":   queryType,
 	})
 	execSqlStatTime.Start()
 	defer execSqlStatTime.End()
 
-	err = dl.ExecuteSQLClient(dl.dbHandleT, sqlStatement)
+	err = dl.ExecuteSQLClient(dl.dbHandle, sqlStatement)
 	return
 }
 
@@ -393,21 +393,21 @@ func (*HandleT) ExecuteSQLClient(dbClient *databricks.DBHandleT, sqlStatement st
 // schemaExists checks it schema exists or not.
 func (dl *HandleT) schemaExists(schemaName string) (exists bool, err error) {
 	fetchSchemasExecTime := stats.Default.NewTaggedStat("warehouse.deltalake.grpcExecTime", stats.TimerType, map[string]string{
-		"workspaceId": dl.Warehouse.WorkspaceID,
-		"destination": dl.Warehouse.Destination.ID,
-		"destType":    dl.Warehouse.Type,
-		"source":      dl.Warehouse.Source.ID,
-		"namespace":   dl.Warehouse.Namespace,
-		"identifier":  dl.Warehouse.Identifier,
+		"workspaceId": dl.warehouse.WorkspaceID,
+		"destination": dl.warehouse.Destination.ID,
+		"destType":    dl.warehouse.Type,
+		"source":      dl.warehouse.Source.ID,
+		"namespace":   dl.warehouse.Namespace,
+		"identifier":  dl.warehouse.Identifier,
 		"queryType":   "FetchSchemas",
 	})
 	fetchSchemasExecTime.Start()
 	defer fetchSchemasExecTime.End()
 
 	sqlStatement := fmt.Sprintf(`SHOW SCHEMAS LIKE '%s';`, schemaName)
-	fetchSchemasResponse, err := dl.dbHandleT.Client.FetchSchemas(dl.dbHandleT.Context, &proto.FetchSchemasRequest{
-		Config:       dl.dbHandleT.CredConfig,
-		Identifier:   dl.dbHandleT.CredIdentifier,
+	fetchSchemasResponse, err := dl.dbHandle.Client.FetchSchemas(dl.dbHandle.Context, &proto.FetchSchemasRequest{
+		Config:       dl.dbHandle.CredConfig,
+		Identifier:   dl.dbHandle.CredIdentifier,
 		SqlStatement: sqlStatement,
 	})
 	if err != nil {
@@ -423,7 +423,7 @@ func (dl *HandleT) schemaExists(schemaName string) (exists bool, err error) {
 
 // createSchema creates schema
 func (dl *HandleT) createSchema() (err error) {
-	sqlStatement := fmt.Sprintf(`CREATE SCHEMA IF NOT EXISTS %s;`, dl.Namespace)
+	sqlStatement := fmt.Sprintf(`CREATE SCHEMA IF NOT EXISTS %s;`, dl.namespace)
 	pkgLogger.Infof("%s Creating schema in delta lake with SQL:%v", dl.GetLogIdentifier(), sqlStatement)
 	err = dl.ExecuteSQL(sqlStatement, "CreateSchema")
 	return
@@ -432,12 +432,12 @@ func (dl *HandleT) createSchema() (err error) {
 // dropStagingTables drops staging tables
 func (dl *HandleT) dropStagingTables(tableNames []string) {
 	dropTablesExecTime := stats.Default.NewTaggedStat("warehouse.deltalake.grpcExecTime", stats.TimerType, map[string]string{
-		"workspaceId": dl.Warehouse.WorkspaceID,
-		"destination": dl.Warehouse.Destination.ID,
-		"destType":    dl.Warehouse.Type,
-		"source":      dl.Warehouse.Source.ID,
-		"namespace":   dl.Warehouse.Namespace,
-		"identifier":  dl.Warehouse.Identifier,
+		"workspaceId": dl.warehouse.WorkspaceID,
+		"destination": dl.warehouse.Destination.ID,
+		"destType":    dl.warehouse.Type,
+		"source":      dl.warehouse.Source.ID,
+		"namespace":   dl.warehouse.Namespace,
+		"identifier":  dl.warehouse.Identifier,
 		"queryType":   "DropStagingTables",
 	})
 	dropTablesExecTime.Start()
@@ -445,10 +445,10 @@ func (dl *HandleT) dropStagingTables(tableNames []string) {
 
 	for _, stagingTableName := range tableNames {
 		pkgLogger.Infof("%s Dropping table %+v\n", dl.GetLogIdentifier(), stagingTableName)
-		sqlStatement := fmt.Sprintf(`DROP TABLE %[1]s.%[2]s;`, dl.Namespace, stagingTableName)
-		dropTableResponse, err := dl.dbHandleT.Client.Execute(dl.dbHandleT.Context, &proto.ExecuteRequest{
-			Config:       dl.dbHandleT.CredConfig,
-			Identifier:   dl.dbHandleT.CredIdentifier,
+		sqlStatement := fmt.Sprintf(`DROP TABLE %[1]s.%[2]s;`, dl.namespace, stagingTableName)
+		dropTableResponse, err := dl.dbHandle.Client.Execute(dl.dbHandle.Context, &proto.ExecuteRequest{
+			Config:       dl.dbHandle.CredConfig,
+			Identifier:   dl.dbHandle.CredIdentifier,
 			SqlStatement: sqlStatement,
 		})
 		if err != nil {
@@ -463,7 +463,7 @@ func (dl *HandleT) dropStagingTables(tableNames []string) {
 
 // sortedColumnNames returns sorted column names
 func (dl *HandleT) sortedColumnNames(tableSchemaInUpload warehouseutils.TableSchemaT, sortedColumnKeys []string, diff warehouseutils.TableSchemaDiffT) (sortedColumnNames string) {
-	if dl.Uploader.GetLoadFileType() == warehouseutils.LOAD_FILE_TYPE_PARQUET {
+	if dl.uploader.GetLoadFileType() == warehouseutils.LOAD_FILE_TYPE_PARQUET {
 		sortedColumnNames = strings.Join(sortedColumnKeys, ",")
 	} else {
 		// TODO: Explore adding headers to csv.
@@ -493,10 +493,10 @@ func (dl *HandleT) sortedColumnNames(tableSchemaInUpload warehouseutils.TableSch
 // credentialsStr return authentication for AWS STS and SSE-C encryption
 // STS authentication is only supported with S3A client.
 func (dl *HandleT) credentialsStr() (auth string, err error) {
-	if dl.ObjectStorage == warehouseutils.S3 {
-		useSTSTokens := warehouseutils.GetConfigValueBoolString(AWSTokens, dl.Warehouse)
+	if dl.objectStorage == warehouseutils.S3 {
+		useSTSTokens := warehouseutils.GetConfigValueBoolString(AWSTokens, dl.warehouse)
 		if useSTSTokens == "true" {
-			tempAccessKeyId, tempSecretAccessKey, token, err := warehouseutils.GetTemporaryS3Cred(&dl.Warehouse.Destination)
+			tempAccessKeyId, tempSecretAccessKey, token, err := warehouseutils.GetTemporaryS3Cred(&dl.warehouse.Destination)
 			if err != nil {
 				return "", err
 			}
@@ -510,10 +510,10 @@ func (dl *HandleT) credentialsStr() (auth string, err error) {
 
 // getLoadFolder return the load folder where the load files are present
 func (dl *HandleT) getLoadFolder(location string) (loadFolder string, err error) {
-	loadFolder = warehouseutils.GetObjectFolderForDeltalake(dl.ObjectStorage, location)
-	if dl.ObjectStorage == warehouseutils.S3 {
-		awsAccessKey := warehouseutils.GetConfigValue(warehouseutils.AWSAccessKey, dl.Warehouse)
-		awsSecretKey := warehouseutils.GetConfigValue(warehouseutils.AWSAccessSecret, dl.Warehouse)
+	loadFolder = warehouseutils.GetObjectFolderForDeltalake(dl.objectStorage, location)
+	if dl.objectStorage == warehouseutils.S3 {
+		awsAccessKey := warehouseutils.GetConfigValue(warehouseutils.AWSAccessKey, dl.warehouse)
+		awsSecretKey := warehouseutils.GetConfigValue(warehouseutils.AWSAccessSecret, dl.warehouse)
 		if awsAccessKey != "" && awsSecretKey != "" {
 			loadFolder = strings.Replace(loadFolder, "s3://", "s3a://", 1)
 		}
@@ -558,7 +558,7 @@ func (dl *HandleT) loadTable(tableName string, tableSchemaInUpload, tableSchemaA
 	}
 
 	// Getting objects location
-	objectsLocation, err := dl.Uploader.GetSampleLoadFileLocation(tableName)
+	objectsLocation, err := dl.uploader.GetSampleLoadFileLocation(tableName)
 	if err != nil {
 		return
 	}
@@ -572,13 +572,13 @@ func (dl *HandleT) loadTable(tableName string, tableSchemaInUpload, tableSchemaA
 	tableSchemaDiff := getTableSchemaDiff(tableSchemaInUpload, tableSchemaAfterUpload)
 	sortedColumnNames := dl.sortedColumnNames(tableSchemaInUpload, sortedColumnKeys, tableSchemaDiff)
 	var sqlStatement string
-	if dl.Uploader.GetLoadFileType() == warehouseutils.LOAD_FILE_TYPE_PARQUET {
+	if dl.uploader.GetLoadFileType() == warehouseutils.LOAD_FILE_TYPE_PARQUET {
 		sqlStatement = fmt.Sprintf("COPY INTO %v FROM ( SELECT %v FROM '%v' ) "+
 			"FILEFORMAT = PARQUET "+
 			"PATTERN = '*.parquet' "+
 			"COPY_OPTIONS ('force' = 'true') "+
 			"%s;",
-			fmt.Sprintf(`%s.%s`, dl.Namespace, stagingTableName), sortedColumnNames, loadFolder, auth)
+			fmt.Sprintf(`%s.%s`, dl.namespace, stagingTableName), sortedColumnNames, loadFolder, auth)
 	} else {
 		sqlStatement = fmt.Sprintf("COPY INTO %v FROM ( SELECT %v FROM '%v' ) "+
 			"FILEFORMAT = CSV "+
@@ -586,7 +586,7 @@ func (dl *HandleT) loadTable(tableName string, tableSchemaInUpload, tableSchemaA
 			"FORMAT_OPTIONS ( 'compression' = 'gzip', 'quote' = '\"', 'escape' = '\"', 'multiLine' = 'true' ) "+
 			"COPY_OPTIONS ('force' = 'true') "+
 			"%s;",
-			fmt.Sprintf(`%s.%s`, dl.Namespace, stagingTableName), sortedColumnNames, loadFolder, auth)
+			fmt.Sprintf(`%s.%s`, dl.namespace, stagingTableName), sortedColumnNames, loadFolder, auth)
 	}
 
 	// Sanitising copy sql statement for logging
@@ -608,7 +608,7 @@ func (dl *HandleT) loadTable(tableName string, tableSchemaInUpload, tableSchemaA
 
 	if loadTableStrategy == "APPEND" {
 		sqlStatement = appendLoadTableSQLStatement(
-			dl.Namespace,
+			dl.namespace,
 			tableName,
 			stagingTableName,
 			warehouseutils.SortColumnKeysFromColumnMap(tableSchemaAfterUpload),
@@ -623,7 +623,7 @@ func (dl *HandleT) loadTable(tableName string, tableSchemaInUpload, tableSchemaA
 		}
 
 		sqlStatement = mergeLoadTableSQLStatement(
-			dl.Namespace,
+			dl.namespace,
 			tableName,
 			stagingTableName,
 			sortedColumnKeys,
@@ -650,7 +650,7 @@ func (dl *HandleT) loadUserTables() (errorMap map[string]error) {
 	pkgLogger.Infof("%s Starting load for identifies and users tables\n", dl.GetLogIdentifier())
 
 	// Loading identifies tables
-	identifyStagingTable, err := dl.loadTable(warehouseutils.IdentifiesTable, dl.Uploader.GetTableSchemaInUpload(warehouseutils.IdentifiesTable), dl.Uploader.GetTableSchemaInWarehouse(warehouseutils.IdentifiesTable), true)
+	identifyStagingTable, err := dl.loadTable(warehouseutils.IdentifiesTable, dl.uploader.GetTableSchemaInUpload(warehouseutils.IdentifiesTable), dl.uploader.GetTableSchemaInWarehouse(warehouseutils.IdentifiesTable), true)
 	if err != nil {
 		errorMap[warehouseutils.IdentifiesTable] = err
 		return
@@ -660,13 +660,13 @@ func (dl *HandleT) loadUserTables() (errorMap map[string]error) {
 	defer dl.dropStagingTables([]string{identifyStagingTable})
 
 	// Checking if users schema is present in GetTableSchemaInUpload
-	if len(dl.Uploader.GetTableSchemaInUpload(warehouseutils.UsersTable)) == 0 {
+	if len(dl.uploader.GetTableSchemaInUpload(warehouseutils.UsersTable)) == 0 {
 		return
 	}
 	errorMap[warehouseutils.UsersTable] = nil
 
 	// Creating userColNames and firstValProps for create table sql statement
-	userColMap := dl.Uploader.GetTableSchemaInWarehouse(warehouseutils.UsersTable)
+	userColMap := dl.uploader.GetTableSchemaInWarehouse(warehouseutils.UsersTable)
 	var userColNames, firstValProps []string
 	for colName := range userColMap {
 		// do not reference uuid in queries as it can be an auto incrementing field set by segment compatible tables
@@ -695,7 +695,7 @@ func (dl *HandleT) loadUserTables() (errorMap map[string]error) {
 											)
 										)
 									);`,
-		dl.Namespace,
+		dl.namespace,
 		stagingTableName,
 		strings.Join(firstValProps, ","),
 		warehouseutils.UsersTable,
@@ -721,7 +721,7 @@ func (dl *HandleT) loadUserTables() (errorMap map[string]error) {
 
 	if loadTableStrategy == "APPEND" {
 		sqlStatement = appendLoadTableSQLStatement(
-			dl.Namespace,
+			dl.namespace,
 			warehouseutils.UsersTable,
 			stagingTableName,
 			columnKeys,
@@ -737,7 +737,7 @@ func (dl *HandleT) loadUserTables() (errorMap map[string]error) {
 		}
 
 		sqlStatement = mergeLoadTableSQLStatement(
-			dl.Namespace,
+			dl.namespace,
 			warehouseutils.UsersTable,
 			stagingTableName,
 			columnKeys,
@@ -758,9 +758,9 @@ func (dl *HandleT) loadUserTables() (errorMap map[string]error) {
 
 // getExternalLocation returns external location where we need to create the tables
 func (dl *HandleT) getExternalLocation() (externalLocation string) {
-	enableExternalLocation := warehouseutils.GetConfigValueBoolString(EnableExternalLocation, dl.Warehouse)
+	enableExternalLocation := warehouseutils.GetConfigValueBoolString(EnableExternalLocation, dl.warehouse)
 	if enableExternalLocation == "true" {
-		externalLocation := warehouseutils.GetConfigValue(ExternalLocation, dl.Warehouse)
+		externalLocation := warehouseutils.GetConfigValue(ExternalLocation, dl.warehouse)
 		return externalLocation
 	}
 	return
@@ -772,13 +772,13 @@ func (dl *HandleT) getTableLocationSql(tableName string) (tableLocation string) 
 	if externalLocation == "" {
 		return
 	}
-	return fmt.Sprintf("LOCATION '%s/%s/%s'", externalLocation, dl.Namespace, tableName)
+	return fmt.Sprintf("LOCATION '%s/%s/%s'", externalLocation, dl.namespace, tableName)
 }
 
 // dropDanglingStagingTables drop dandling staging tables.
 func (dl *HandleT) dropDanglingStagingTables() {
 	// Fetching the staging tables
-	tableNames, err := dl.fetchTables(dl.dbHandleT, dl.Namespace)
+	tableNames, err := dl.fetchTables(dl.dbHandle, dl.namespace)
 	if err != nil {
 		return
 	}
@@ -800,34 +800,34 @@ func (dl *HandleT) dropDanglingStagingTables() {
 // connectToWarehouse returns the database connection configured with CredentialsT
 func (dl *HandleT) connectToWarehouse() (dbHandleT *databricks.DBHandleT, err error) {
 	credT := &databricks.CredentialsT{
-		Host:  warehouseutils.GetConfigValue(DLHost, dl.Warehouse),
-		Port:  warehouseutils.GetConfigValue(DLPort, dl.Warehouse),
-		Path:  warehouseutils.GetConfigValue(DLPath, dl.Warehouse),
-		Token: warehouseutils.GetConfigValue(DLToken, dl.Warehouse),
+		Host:  warehouseutils.GetConfigValue(DLHost, dl.warehouse),
+		Port:  warehouseutils.GetConfigValue(DLPort, dl.warehouse),
+		Path:  warehouseutils.GetConfigValue(DLPath, dl.warehouse),
+		Token: warehouseutils.GetConfigValue(DLToken, dl.warehouse),
 	}
 	connStat := stats.Default.NewTaggedStat("warehouse.deltalake.grpcExecTime", stats.TimerType, map[string]string{
-		"workspaceId": dl.Warehouse.WorkspaceID,
-		"destination": dl.Warehouse.Destination.ID,
-		"destType":    dl.Warehouse.Type,
-		"source":      dl.Warehouse.Source.ID,
-		"namespace":   dl.Warehouse.Namespace,
-		"identifier":  dl.Warehouse.Identifier,
+		"workspaceId": dl.warehouse.WorkspaceID,
+		"destination": dl.warehouse.Destination.ID,
+		"destType":    dl.warehouse.Type,
+		"source":      dl.warehouse.Source.ID,
+		"namespace":   dl.warehouse.Namespace,
+		"identifier":  dl.warehouse.Identifier,
 		"queryType":   "Connect",
 	})
 	connStat.Start()
 	defer connStat.End()
 
 	closeConnStat := stats.Default.NewTaggedStat("warehouse.deltalake.grpcExecTime", stats.TimerType, map[string]string{
-		"workspaceId": dl.Warehouse.WorkspaceID,
-		"destination": dl.Warehouse.Destination.ID,
-		"destType":    dl.Warehouse.Type,
-		"source":      dl.Warehouse.Source.ID,
-		"namespace":   dl.Warehouse.Namespace,
-		"identifier":  dl.Warehouse.Identifier,
+		"workspaceId": dl.warehouse.WorkspaceID,
+		"destination": dl.warehouse.Destination.ID,
+		"destType":    dl.warehouse.Type,
+		"source":      dl.warehouse.Source.ID,
+		"namespace":   dl.warehouse.Namespace,
+		"identifier":  dl.warehouse.Identifier,
 		"queryType":   "Close",
 	})
 
-	dbHandleT, err = Connect(credT, dl.ConnectTimeout)
+	dbHandleT, err = Connect(credT, dl.connectTimeout)
 	if err != nil {
 		return
 	}
@@ -838,7 +838,7 @@ func (dl *HandleT) connectToWarehouse() (dbHandleT *databricks.DBHandleT, err er
 
 // CreateTable creates tables with table name and columns
 func (dl *HandleT) CreateTable(tableName string, columns map[string]string) (err error) {
-	name := fmt.Sprintf(`%s.%s`, dl.Namespace, tableName)
+	name := fmt.Sprintf(`%s.%s`, dl.namespace, tableName)
 
 	tableLocationSql := dl.getTableLocationSql(tableName)
 	var partitionedSql string
@@ -859,10 +859,10 @@ func (dl *HandleT) CreateTable(tableName string, columns map[string]string) (err
 
 func (dl *HandleT) DropTable(tableName string) (err error) {
 	pkgLogger.Infof("%s Dropping table %s", dl.GetLogIdentifier(), tableName)
-	sqlStatement := fmt.Sprintf(`DROP TABLE %[1]s.%[2]s;`, dl.Namespace, tableName)
-	dropTableResponse, err := dl.dbHandleT.Client.Execute(dl.dbHandleT.Context, &proto.ExecuteRequest{
-		Config:       dl.dbHandleT.CredConfig,
-		Identifier:   dl.dbHandleT.CredIdentifier,
+	sqlStatement := fmt.Sprintf(`DROP TABLE %[1]s.%[2]s;`, dl.namespace, tableName)
+	dropTableResponse, err := dl.dbHandle.Client.Execute(dl.dbHandle.Context, &proto.ExecuteRequest{
+		Config:       dl.dbHandle.CredConfig,
+		Identifier:   dl.dbHandle.CredIdentifier,
 		SqlStatement: sqlStatement,
 	})
 	if err != nil {
@@ -877,7 +877,7 @@ func (dl *HandleT) DropTable(tableName string) (err error) {
 
 // AddColumn adds column for column name and type
 func (dl *HandleT) AddColumn(name, columnName, columnType string) (err error) {
-	tableName := fmt.Sprintf(`%s.%s`, dl.Namespace, name)
+	tableName := fmt.Sprintf(`%s.%s`, dl.namespace, name)
 	sqlStatement := fmt.Sprintf(`ALTER TABLE %v ADD COLUMNS ( %s %s );`, tableName, columnName, getDeltaLakeDataType(columnType))
 	pkgLogger.Infof("%s Adding column in delta lake with SQL:%v", dl.GetLogIdentifier(tableName, columnName), sqlStatement)
 	err = dl.ExecuteSQL(sqlStatement, "AddColumn")
@@ -888,13 +888,13 @@ func (dl *HandleT) AddColumn(name, columnName, columnType string) (err error) {
 func (dl *HandleT) CreateSchema() (err error) {
 	// Checking if schema exists or not
 	var schemaExists bool
-	schemaExists, err = dl.schemaExists(dl.Namespace)
+	schemaExists, err = dl.schemaExists(dl.namespace)
 	if err != nil {
-		pkgLogger.Errorf("%s Error checking if schema exists: %s, error: %v", dl.GetLogIdentifier(), dl.Namespace, err)
+		pkgLogger.Errorf("%s Error checking if schema exists: %s, error: %v", dl.GetLogIdentifier(), dl.namespace, err)
 		return err
 	}
 	if schemaExists {
-		pkgLogger.Infof("%s Skipping creating schema: %s since it already exists", dl.GetLogIdentifier(), dl.Namespace)
+		pkgLogger.Infof("%s Skipping creating schema: %s since it already exists", dl.GetLogIdentifier(), dl.namespace)
 		return
 	}
 
@@ -909,8 +909,8 @@ func (*HandleT) AlterColumn(_, _, _ string) (err error) {
 
 // FetchSchema queries delta lake and returns the schema associated with provided namespace
 func (dl *HandleT) FetchSchema(warehouse warehouseutils.Warehouse) (schema warehouseutils.SchemaT, err error) {
-	dl.Warehouse = warehouse
-	dl.Namespace = warehouse.Namespace
+	dl.warehouse = warehouse
+	dl.namespace = warehouse.Namespace
 	dbHandle, err := dl.connectToWarehouse()
 	if err != nil {
 		return
@@ -921,7 +921,7 @@ func (dl *HandleT) FetchSchema(warehouse warehouseutils.Warehouse) (schema wareh
 	schema = make(warehouseutils.SchemaT)
 
 	// Fetching the tables
-	tableNames, err := dl.fetchTables(dbHandle, dl.Namespace)
+	tableNames, err := dl.fetchTables(dbHandle, dl.namespace)
 	if err != nil {
 		return
 	}
@@ -937,12 +937,12 @@ func (dl *HandleT) FetchSchema(warehouse warehouseutils.Warehouse) (schema wareh
 	}
 
 	fetchTablesAttributesExecTime := stats.Default.NewTaggedStat("warehouse.deltalake.grpcExecTime", stats.TimerType, map[string]string{
-		"workspaceId": dl.Warehouse.WorkspaceID,
-		"destination": dl.Warehouse.Destination.ID,
-		"destType":    dl.Warehouse.Type,
-		"source":      dl.Warehouse.Source.ID,
-		"namespace":   dl.Warehouse.Namespace,
-		"identifier":  dl.Warehouse.Identifier,
+		"workspaceId": dl.warehouse.WorkspaceID,
+		"destination": dl.warehouse.Destination.ID,
+		"destType":    dl.warehouse.Type,
+		"source":      dl.warehouse.Source.ID,
+		"namespace":   dl.warehouse.Namespace,
+		"identifier":  dl.warehouse.Identifier,
 		"queryType":   "FetchTableAttributes",
 	})
 	fetchTablesAttributesExecTime.Start()
@@ -953,7 +953,7 @@ func (dl *HandleT) FetchSchema(warehouse warehouseutils.Warehouse) (schema wareh
 		fetchTableAttributesResponse, err := dbHandle.Client.FetchTableAttributes(dbHandle.Context, &proto.FetchTableAttributesRequest{
 			Config:     dbHandle.CredConfig,
 			Identifier: dbHandle.CredIdentifier,
-			Schema:     dl.Namespace,
+			Schema:     dl.namespace,
 			Table:      tableName,
 		})
 		if err != nil {
@@ -975,7 +975,7 @@ func (dl *HandleT) FetchSchema(warehouse warehouseutils.Warehouse) (schema wareh
 			if datatype, ok := dataTypesMapToRudder[item.GetDataType()]; ok {
 				schema[tableName][item.GetColName()] = datatype
 			} else {
-				warehouseutils.WHCounterStat(warehouseutils.RUDDER_MISSING_DATATYPE, &dl.Warehouse, warehouseutils.Tag{Name: "datatype", Value: item.GetDataType()}).Count(1)
+				warehouseutils.WHCounterStat(warehouseutils.RUDDER_MISSING_DATATYPE, &dl.warehouse, warehouseutils.Tag{Name: "datatype", Value: item.GetDataType()}).Count(1)
 			}
 		}
 	}
@@ -984,39 +984,39 @@ func (dl *HandleT) FetchSchema(warehouse warehouseutils.Warehouse) (schema wareh
 
 // Setup populate the HandleT
 func (dl *HandleT) Setup(warehouse warehouseutils.Warehouse, uploader warehouseutils.UploaderI) (err error) {
-	dl.Warehouse = warehouse
-	dl.Namespace = warehouse.Namespace
-	dl.Uploader = uploader
-	dl.ObjectStorage = warehouseutils.ObjectStorageType(warehouseutils.DELTALAKE, warehouse.Destination.Config, dl.Uploader.UseRudderStorage())
+	dl.warehouse = warehouse
+	dl.namespace = warehouse.Namespace
+	dl.uploader = uploader
+	dl.objectStorage = warehouseutils.ObjectStorageType(warehouseutils.DELTALAKE, warehouse.Destination.Config, dl.uploader.UseRudderStorage())
 
-	dl.dbHandleT, err = dl.connectToWarehouse()
+	dl.dbHandle, err = dl.connectToWarehouse()
 	return err
 }
 
 // TestConnection test the connection for the warehouse
 func (dl *HandleT) TestConnection(warehouse warehouseutils.Warehouse) (err error) {
-	dl.Warehouse = warehouse
-	dl.dbHandleT, err = dl.connectToWarehouse()
+	dl.warehouse = warehouse
+	dl.dbHandle, err = dl.connectToWarehouse()
 	return
 }
 
 // Cleanup handle cleanup when upload is done.
 func (dl *HandleT) Cleanup() {
-	if dl.dbHandleT != nil {
+	if dl.dbHandle != nil {
 		dl.dropDanglingStagingTables()
-		dl.dbHandleT.Close()
+		dl.dbHandle.Close()
 	}
 }
 
 // CrashRecover handle crash recover scenarios
 func (dl *HandleT) CrashRecover(warehouse warehouseutils.Warehouse) (err error) {
-	dl.Warehouse = warehouse
-	dl.Namespace = warehouse.Namespace
-	dl.dbHandleT, err = dl.connectToWarehouse()
+	dl.warehouse = warehouse
+	dl.namespace = warehouse.Namespace
+	dl.dbHandle, err = dl.connectToWarehouse()
 	if err != nil {
 		return err
 	}
-	defer dl.dbHandleT.Close()
+	defer dl.dbHandle.Close()
 	dl.dropDanglingStagingTables()
 	return
 }
@@ -1033,7 +1033,7 @@ func (dl *HandleT) LoadUserTables() map[string]error {
 
 // LoadTable loads table for table name
 func (dl *HandleT) LoadTable(tableName string) error {
-	_, err := dl.loadTable(tableName, dl.Uploader.GetTableSchemaInUpload(tableName), dl.Uploader.GetTableSchemaInWarehouse(tableName), false)
+	_, err := dl.loadTable(tableName, dl.uploader.GetTableSchemaInUpload(tableName), dl.uploader.GetTableSchemaInWarehouse(tableName), false)
 	return err
 }
 
@@ -1055,21 +1055,21 @@ func (*HandleT) DownloadIdentityRules(*misc.GZipWriter) (err error) {
 // GetTotalCountInTable returns total count in tables.
 func (dl *HandleT) GetTotalCountInTable(ctx context.Context, tableName string) (total int64, err error) {
 	fetchTotalCountExecTime := stats.Default.NewTaggedStat("warehouse.deltalake.grpcExecTime", stats.TimerType, map[string]string{
-		"workspaceId": dl.Warehouse.WorkspaceID,
-		"destination": dl.Warehouse.Destination.ID,
-		"destType":    dl.Warehouse.Type,
-		"source":      dl.Warehouse.Source.ID,
-		"namespace":   dl.Warehouse.Namespace,
-		"identifier":  dl.Warehouse.Identifier,
+		"workspaceId": dl.warehouse.WorkspaceID,
+		"destination": dl.warehouse.Destination.ID,
+		"destType":    dl.warehouse.Type,
+		"source":      dl.warehouse.Source.ID,
+		"namespace":   dl.warehouse.Namespace,
+		"identifier":  dl.warehouse.Identifier,
 		"queryType":   "FetchTotalCountInTable",
 	})
 	fetchTotalCountExecTime.Start()
 	defer fetchTotalCountExecTime.End()
 
-	sqlStatement := fmt.Sprintf(`SELECT COUNT(*) FROM %[1]s.%[2]s;`, dl.Namespace, tableName)
-	response, err := dl.dbHandleT.Client.FetchTotalCountInTable(ctx, &proto.FetchTotalCountInTableRequest{
-		Config:       dl.dbHandleT.CredConfig,
-		Identifier:   dl.dbHandleT.CredIdentifier,
+	sqlStatement := fmt.Sprintf(`SELECT COUNT(*) FROM %[1]s.%[2]s;`, dl.namespace, tableName)
+	response, err := dl.dbHandle.Client.FetchTotalCountInTable(ctx, &proto.FetchTotalCountInTableRequest{
+		Config:       dl.dbHandle.CredConfig,
+		Identifier:   dl.dbHandle.CredIdentifier,
 		SqlStatement: sqlStatement,
 	})
 	if err != nil {
@@ -1086,12 +1086,12 @@ func (dl *HandleT) GetTotalCountInTable(ctx context.Context, tableName string) (
 
 // Connect returns Client
 func (dl *HandleT) Connect(warehouse warehouseutils.Warehouse) (client.Client, error) {
-	dl.Warehouse = warehouse
-	dl.Namespace = warehouse.Namespace
-	dl.ObjectStorage = warehouseutils.ObjectStorageType(
+	dl.warehouse = warehouse
+	dl.namespace = warehouse.Namespace
+	dl.objectStorage = warehouseutils.ObjectStorageType(
 		warehouseutils.DELTALAKE,
 		warehouse.Destination.Config,
-		misc.IsConfiguredToUseRudderObjectStorage(dl.Warehouse.Destination.Config),
+		misc.IsConfiguredToUseRudderObjectStorage(dl.warehouse.Destination.Config),
 	)
 	dbHandleT, err := dl.connectToWarehouse()
 	if err != nil {
@@ -1104,9 +1104,9 @@ func (dl *HandleT) Connect(warehouse warehouseutils.Warehouse) (client.Client, e
 // GetLogIdentifier returns log identifier
 func (dl *HandleT) GetLogIdentifier(args ...string) string {
 	if len(args) == 0 {
-		return fmt.Sprintf("[%s][%s][%s][%s]", dl.Warehouse.Type, dl.Warehouse.Source.ID, dl.Warehouse.Destination.ID, dl.Warehouse.Namespace)
+		return fmt.Sprintf("[%s][%s][%s][%s]", dl.warehouse.Type, dl.warehouse.Source.ID, dl.warehouse.Destination.ID, dl.warehouse.Namespace)
 	}
-	return fmt.Sprintf("[%s][%s][%s][%s][%s]", dl.Warehouse.Type, dl.Warehouse.Source.ID, dl.Warehouse.Destination.ID, dl.Warehouse.Namespace, strings.Join(args, "]["))
+	return fmt.Sprintf("[%s][%s][%s][%s][%s]", dl.warehouse.Type, dl.warehouse.Source.ID, dl.warehouse.Destination.ID, dl.warehouse.Namespace, strings.Join(args, "]["))
 }
 
 // GetDatabricksVersion Gets the databricks version by making a grpc call to Version stub.
@@ -1185,7 +1185,7 @@ func (dl *HandleT) LoadTestTable(location, tableName string, _ map[string]interf
 			"PATTERN = '*.parquet' "+
 			"COPY_OPTIONS ('force' = 'true') "+
 			"%s;",
-			fmt.Sprintf(`%s.%s`, dl.Namespace, tableName),
+			fmt.Sprintf(`%s.%s`, dl.namespace, tableName),
 			fmt.Sprintf(`%s, %s`, "id", "val"),
 			loadFolder,
 			auth,
@@ -1197,17 +1197,17 @@ func (dl *HandleT) LoadTestTable(location, tableName string, _ map[string]interf
 			"FORMAT_OPTIONS ( 'compression' = 'gzip', 'quote' = '\"', 'escape' = '\"', 'multiLine' = 'true' ) "+
 			"COPY_OPTIONS ('force' = 'true') "+
 			"%s;",
-			fmt.Sprintf(`%s.%s`, dl.Namespace, tableName),
+			fmt.Sprintf(`%s.%s`, dl.namespace, tableName),
 			"CAST ( '_c0' AS BIGINT ) AS id, CAST ( '_c1' AS STRING ) AS val",
 			loadFolder,
 			auth,
 		)
 	}
 
-	err = dl.ExecuteSQLClient(dl.dbHandleT, sqlStatement)
+	err = dl.ExecuteSQLClient(dl.dbHandle, sqlStatement)
 	return
 }
 
 func (dl *HandleT) SetConnectionTimeout(timeout time.Duration) {
-	dl.ConnectTimeout = timeout
+	dl.connectTimeout = timeout
 }
