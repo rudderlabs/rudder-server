@@ -52,11 +52,15 @@ func TestTimeout(t *testing.T) {
 		"ProjectId":   bqCredentials.ProjectID,
 	}
 	destination := backendconfig.DestinationT{Config: config}
-	producer, err := bqstream.NewProducer(&destination, common.Opts{Timeout: 1 * time.Microsecond})
+	opts := common.Opts{Timeout: 1 * time.Microsecond};
+	producer, err := bqstream.NewProducer(&destination, opts)
 	if err != nil {
 		t.Errorf(" %+v", err)
 		return
 	}
+
+	assert.NotNil(t, producer.Client);
+	assert.Equal(t, opts,  producer.Opts);
 
 	payload := `{
 		"datasetId": "timeout_test",
