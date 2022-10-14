@@ -110,6 +110,7 @@ func (c *confluentCloudConfig) validate() error {
 
 type publisher interface {
 	Publish(context.Context, ...client.Message) error
+	PublishWithTopic(context.Context, ...client.Message) error
 }
 
 type producerManager interface {
@@ -530,6 +531,9 @@ func (p *ProducerManager) Close() error {
 func (p *ProducerManager) Publish(ctx context.Context, msgs ...client.Message) error {
 	return p.p.Publish(ctx, msgs...)
 }
+func (p *ProducerManager) PublishWithTopic(ctx context.Context, msgs ...client.Message) error {
+	return p.p.PublishWithTopic(ctx, msgs...)
+}
 
 // Produce creates a producer and send data to Kafka.
 func (p *ProducerManager) Produce(jsonData json.RawMessage, destConfig interface{}) (int, string, string) {
@@ -560,7 +564,8 @@ func (p *ProducerManager) Produce(jsonData json.RawMessage, destConfig interface
 	if kafkaBatchingEnabled {
 		return sendBatchedMessage(ctx, jsonData, p, conf.Topic)
 	}
-	return sendMessage(ctx, jsonData, p, conf.Topic)
+
+	return sendMessage(ctx, jsonData, p, conf.Topic, conf)
 }
 
 func sendBatchedMessage(ctx context.Context, jsonData json.RawMessage, p producerManager, topic string) (int, string, string) {
@@ -585,7 +590,7 @@ func sendBatchedMessage(ctx context.Context, jsonData json.RawMessage, p produce
 	return 200, returnMessage, returnMessage
 }
 
-func sendMessage(ctx context.Context, jsonData json.RawMessage, p producerManager, topic string) (int, string, string) {
+func sendMessage(ctx context.Context, jsonData json.RawMessage, p producerManager, topic string, config configuration) (int, string, string) {
 	parsedJSON := gjson.ParseBytes(jsonData)
 	messageValue := parsedJSON.Get("message").Value()
 	if messageValue == nil {
@@ -615,6 +620,9 @@ func sendMessage(ctx context.Context, jsonData json.RawMessage, p producerManage
 			return makeErrorResponse(fmt.Errorf("unable to serialize event with messageId: %s, with error %s", messageId, err))
 		}
 	}
+	if config.MultiTopicSupport {
+		topic = parsedJSON.Get("topic").Value().(string)
+	}
 	message := prepareMessage(topic, userID, value, timestamp)
 	if err = publish(ctx, p, message); err != nil {
 		return makeErrorResponse(fmt.Errorf("could not publish to %q: %w", topic, err))
@@ -628,6 +636,12 @@ func publish(ctx context.Context, p producerManager, msgs ...client.Message) err
 	start := now()
 	defer func() { kafkaStats.publishTime.SendTiming(since(start)) }()
 	return p.Publish(ctx, msgs...)
+}
+
+func publishWithTopic(ctx context.Context, p producerManager, msgs ...client.Message) error {
+	start := now()
+	defer func() { kafkaStats.publishTime.SendTiming(since(start)) }()
+	return p.PublishWithTopic(ctx, msgs...)
 }
 
 func makeErrorResponse(err error) (int, string, string) {

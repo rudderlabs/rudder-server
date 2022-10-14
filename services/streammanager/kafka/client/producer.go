@@ -113,16 +113,7 @@ func (p *Producer) Close(ctx context.Context) error {
 func (p *Producer) Publish(ctx context.Context, msgs ...Message) error {
 	messages := make([]kafka.Message, len(msgs))
 	for i := range msgs {
-		var headers []kafka.Header
-		if l := len(msgs[i].Headers); l > 0 {
-			headers = make([]kafka.Header, l)
-			for k := range msgs[i].Headers {
-				headers[k] = kafka.Header{
-					Key:   msgs[i].Headers[k].Key,
-					Value: msgs[i].Headers[k].Value,
-				}
-			}
-		}
+		headers := processHeaderForEachMessage(msgs[i])
 		messages[i] = kafka.Message{
 			Key:     msgs[i].Key,
 			Value:   msgs[i].Value,
@@ -134,7 +125,38 @@ func (p *Producer) Publish(ctx context.Context, msgs ...Message) error {
 	return p.writer.WriteMessages(ctx, messages...)
 }
 
+// PublishWithTopic allows the production of one or more message to Kafka
+// with a specific topic.
+func (p *Producer) PublishWithTopic(ctx context.Context, msgs ...Message) error {
+	messages := make([]kafka.Message, len(msgs))
+	for i := range msgs {
+		headers := processHeaderForEachMessage(msgs[i])
+		messages[i] = kafka.Message{
+			Topic:   msgs[i].Topic,
+			Key:     msgs[i].Key,
+			Value:   msgs[i].Value,
+			Time:    msgs[i].Timestamp,
+			Headers: headers,
+		}
+	}
+
+	return p.writer.WriteMessages(ctx, messages...)
+}
+
 var tempError interface{ Temporary() bool }
+
+func processHeaderForEachMessage(msg Message) (headers []kafka.Header) {
+	if l := len(msg.Headers); l > 0 {
+		headers = make([]kafka.Header, l)
+		for k := range msg.Headers {
+			headers[k] = kafka.Header{
+				Key:   msg.Headers[k].Key,
+				Value: msg.Headers[k].Value,
+			}
+		}
+	}
+	return headers
+}
 
 func isErrTemporary(err error) bool {
 	isTransientNetworkError := errors.Is(err, io.ErrUnexpectedEOF) ||
