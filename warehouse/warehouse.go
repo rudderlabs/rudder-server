@@ -210,16 +210,16 @@ func (wh *HandleT) workerIdentifier(warehouse warehouseutils.Warehouse) (identif
 
 func getDestinationFromConnectionMap(DestinationId, SourceId string) (warehouseutils.Warehouse, error) {
 	if DestinationId == "" || SourceId == "" {
-		return warehouseutils.Warehouse{}, errors.New("Invalid Parameters")
+		return warehouseutils.Warehouse{}, errors.New("invalid Parameters")
 	}
-	srcmap, ok := connectionsMap[DestinationId]
+	sourceMap, ok := connectionsMap[DestinationId]
 	if !ok {
-		return warehouseutils.Warehouse{}, errors.New("Invalid Destination Id")
+		return warehouseutils.Warehouse{}, errors.New("invalid Destination Id")
 	}
 
-	conn, ok := srcmap[SourceId]
+	conn, ok := sourceMap[SourceId]
 	if !ok {
-		return warehouseutils.Warehouse{}, errors.New("Invalid Source Id")
+		return warehouseutils.Warehouse{}, errors.New("invalid Source Id")
 	}
 
 	return conn, nil
@@ -382,24 +382,24 @@ func (wh *HandleT) getNamespace(configI interface{}, source backendconfig.Source
 
 func (wh *HandleT) getStagingFiles(warehouse warehouseutils.Warehouse, startID, endID int64) ([]*StagingFileT, error) {
 	sqlStatement := fmt.Sprintf(`
-		SELECT 
-		  id, 
-		  location, 
-		  status, 
-		  metadata ->> 'time_window_year', 
-		  metadata ->> 'time_window_month', 
-		  metadata ->> 'time_window_day', 
-		  metadata ->> 'time_window_hour', 
-		  metadata ->> 'use_rudder_storage', 
-		  metadata ->> 'destination_revision_id' 
-		FROM 
+		SELECT
+		  id,
+		  location,
+		  status,
+		  metadata ->> 'time_window_year',
+		  metadata ->> 'time_window_month',
+		  metadata ->> 'time_window_day',
+		  metadata ->> 'time_window_hour',
+		  metadata ->> 'use_rudder_storage',
+		  metadata ->> 'destination_revision_id'
+		FROM
 		  %[1]s ST
-		WHERE 
-		  ST.id >= %[2]v 
-		  AND ST.id <= %[3]v 
-		  AND ST.source_id = '%[4]s' 
-		  AND ST.destination_id = '%[5]s' 
-		ORDER BY 
+		WHERE
+		  ST.id >= %[2]v
+		  AND ST.id <= %[3]v
+		  AND ST.source_id = '%[4]s'
+		  AND ST.destination_id = '%[5]s'
+		ORDER BY
 		  id ASC;
 `,
 
@@ -417,10 +417,13 @@ func (wh *HandleT) getStagingFiles(warehouse warehouseutils.Warehouse, startID, 
 
 	var stagingFilesList []*StagingFileT
 	for rows.Next() {
-		var jsonUpload StagingFileT
-		var timeWindowYear, timeWindowMonth, timeWindowDay, timeWindowHour sql.NullInt64
-		var destinationRevisionID sql.NullString
-		var UseRudderStorage sql.NullBool
+		var (
+			jsonUpload                                                     StagingFileT
+			timeWindowYear, timeWindowMonth, timeWindowDay, timeWindowHour sql.NullInt64
+			destinationRevisionID                                          sql.NullString
+			UseRudderStorage                                               sql.NullBool
+		)
+
 		err := rows.Scan(
 			&jsonUpload.ID,
 			&jsonUpload.Location,
@@ -447,15 +450,15 @@ func (wh *HandleT) getStagingFiles(warehouse warehouseutils.Warehouse, startID, 
 func (wh *HandleT) getPendingStagingFiles(warehouse warehouseutils.Warehouse) ([]*StagingFileT, error) {
 	var lastStagingFileID int64
 	sqlStatement := fmt.Sprintf(`
-	SELECT 
-	  end_staging_file_id 
-	FROM 
+	SELECT
+	  end_staging_file_id
+	FROM
 	  %[1]s UT
-	WHERE 
-	  UT.destination_type = '%[2]s' 
-	  AND UT.source_id = '%[3]s' 
-	  AND UT.destination_id = '%[4]s' 
-	ORDER BY 
+	WHERE
+	  UT.destination_type = '%[2]s'
+	  AND UT.source_id = '%[3]s'
+	  AND UT.destination_id = '%[4]s'
+	ORDER BY
 	  UT.id DESC;
 `,
 		warehouseutils.WarehouseUploadsTable,
@@ -470,30 +473,30 @@ func (wh *HandleT) getPendingStagingFiles(warehouse warehouseutils.Warehouse) ([
 	}
 
 	sqlStatement = fmt.Sprintf(`
-		SELECT 
-		  id, 
-		  location, 
-		  status, 
-		  first_event_at, 
-		  last_event_at, 
-		  metadata ->> 'source_batch_id', 
-		  metadata ->> 'source_task_id', 
-		  metadata ->> 'source_task_run_id', 
-		  metadata ->> 'source_job_id', 
-		  metadata ->> 'source_job_run_id', 
-		  metadata ->> 'use_rudder_storage', 
-		  metadata ->> 'time_window_year', 
-		  metadata ->> 'time_window_month', 
-		  metadata ->> 'time_window_day', 
-		  metadata ->> 'time_window_hour', 
-		  metadata ->> 'destination_revision_id' 
-		FROM 
+		SELECT
+		  id,
+		  location,
+		  status,
+		  first_event_at,
+		  last_event_at,
+		  metadata ->> 'source_batch_id',
+		  metadata ->> 'source_task_id',
+		  metadata ->> 'source_task_run_id',
+		  metadata ->> 'source_job_id',
+		  metadata ->> 'source_job_run_id',
+		  metadata ->> 'use_rudder_storage',
+		  metadata ->> 'time_window_year',
+		  metadata ->> 'time_window_month',
+		  metadata ->> 'time_window_day',
+		  metadata ->> 'time_window_hour',
+		  metadata ->> 'destination_revision_id'
+		FROM
 		  %[1]s ST
-		WHERE 
-		  ST.id > %[2]v 
-		  AND ST.source_id = '%[3]s' 
-		  AND ST.destination_id = '%[4]s' 
-		ORDER BY 
+		WHERE
+		  ST.id > %[2]v
+		  AND ST.source_id = '%[3]s'
+		  AND ST.destination_id = '%[4]s'
+		ORDER BY
 		  id ASC;
 `,
 		warehouseutils.WarehouseStagingFilesTable,
@@ -507,11 +510,14 @@ func (wh *HandleT) getPendingStagingFiles(warehouse warehouseutils.Warehouse) ([
 	}
 	defer rows.Close()
 
-	var stagingFilesList []*StagingFileT
-	var firstEventAt, lastEventAt sql.NullTime
-	var sourceBatchID, sourceTaskID, sourceTaskRunID, sourceJobID, sourceJobRunID, destinationRevisionID sql.NullString
-	var timeWindowYear, timeWindowMonth, timeWindowDay, timeWindowHour sql.NullInt64
-	var UseRudderStorage sql.NullBool
+	var (
+		stagingFilesList                                                                                 []*StagingFileT
+		firstEventAt, lastEventAt                                                                        sql.NullTime
+		sourceBatchID, sourceTaskID, sourceTaskRunID, sourceJobID, sourceJobRunID, destinationRevisionID sql.NullString
+		timeWindowYear, timeWindowMonth, timeWindowDay, timeWindowHour                                   sql.NullInt64
+		UseRudderStorage                                                                                 sql.NullBool
+	)
+
 	for rows.Next() {
 		var jsonUpload StagingFileT
 		err := rows.Scan(
@@ -555,16 +561,16 @@ func (wh *HandleT) getPendingStagingFiles(warehouse warehouseutils.Warehouse) ([
 func (wh *HandleT) initUpload(warehouse warehouseutils.Warehouse, jsonUploadsList []*StagingFileT, isUploadTriggered bool, priority int, uploadStartAfter time.Time) {
 	sqlStatement := fmt.Sprintf(`
 		INSERT INTO %s (
-		  source_id, namespace, workspace_id, destination_id, 
-		  destination_type, start_staging_file_id, 
-		  end_staging_file_id, start_load_file_id, 
-		  end_load_file_id, status, schema, 
-		  error, metadata, first_event_at, 
+		  source_id, namespace, workspace_id, destination_id,
+		  destination_type, start_staging_file_id,
+		  end_staging_file_id, start_load_file_id,
+		  end_load_file_id, status, schema,
+		  error, metadata, first_event_at,
 		  last_event_at, created_at, updated_at
-		) 
-		VALUES 
+		)
+		VALUES
 		  (
-			$1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 
+			$1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
 			$11, $12, $13, $14, $15, $16, $17
 		  ) RETURNING id;
 `,
@@ -700,8 +706,10 @@ func (wh *HandleT) createUploadJobsFromStagingFiles(warehouse warehouseutils.War
 	// Process staging files in batches of stagingFilesBatchSize
 	// E.g. If there are 1000 pending staging files and stagingFilesBatchSize is 100,
 	// Then we create 10 new entries in wh_uploads table each with 100 staging files
-	var stagingFilesInUpload []*StagingFileT
-	var counter int
+	var (
+		stagingFilesInUpload []*StagingFileT
+		counter              int
+	)
 	uploadTriggered := isUploadTriggered(warehouse)
 
 	initUpload := func() {
@@ -749,10 +757,10 @@ func (wh *HandleT) getLatestUploadStatus(warehouse *warehouseutils.Warehouse) (i
 
 func (wh *HandleT) deleteWaitingUploadJob(jobID int64) {
 	sqlStatement := fmt.Sprintf(`
-		DELETE FROM 
-		  %s 
-		WHERE 
-		  id = %d 
+		DELETE FROM
+		  %s
+		WHERE
+		  id = %d
 		  AND status = '%s';
 `,
 		warehouseutils.WarehouseUploadsTable,
@@ -939,8 +947,10 @@ func (wh *HandleT) getUploadsToProcess(availableWorkers int, skipIdentifiers []s
 
 		`, partitionIdentifierSQL, warehouseutils.WarehouseUploadsTable, wh.destType, false, ExportedData, Aborted, skipIdentifiersSQL, availableWorkers)
 
-	var rows *sql.Rows
-	var err error
+	var (
+		rows *sql.Rows
+		err  error
+	)
 	if len(skipIdentifiers) > 0 {
 		rows, err = wh.dbHandle.Query(
 			sqlStatement,
@@ -963,12 +973,15 @@ func (wh *HandleT) getUploadsToProcess(availableWorkers int, skipIdentifiers []s
 
 	var uploadJobs []*UploadJobT
 	for rows.Next() {
-		var upload Upload
-		var schema json.RawMessage
-		var mergedSchema json.RawMessage
-		var firstTiming sql.NullString
-		var lastTiming sql.NullString
-		var firstEventAt, lastEventAt sql.NullTime
+		var (
+			upload                    Upload
+			schema                    json.RawMessage
+			mergedSchema              json.RawMessage
+			firstTiming               sql.NullString
+			lastTiming                sql.NullString
+			firstEventAt, lastEventAt sql.NullTime
+		)
+
 		err := rows.Scan(
 			&upload.ID,
 			&upload.Status,
@@ -1172,18 +1185,18 @@ func (wh *HandleT) uploadStatusTrack(ctx context.Context) {
 			}
 
 			sqlStatement := fmt.Sprintf(`
-				select 
-				  created_at 
-				from 
-				  %[1]s 
-				where 
-				  source_id = '%[2]s' 
-				  and destination_id = '%[3]s' 
-				  and created_at > now() - interval '%[4]d MIN' 
-				  and created_at < now() - interval '%[5]d MIN' 
-				order by 
-				  created_at desc 
-				limit 
+				select
+				  created_at
+				from
+				  %[1]s
+				where
+				  source_id = '%[2]s'
+				  and destination_id = '%[3]s'
+				  and created_at > now() - interval '%[4]d MIN'
+				  and created_at < now() - interval '%[5]d MIN'
+				order by
+				  created_at desc
+				limit
 				  1;
 `,
 
@@ -1208,20 +1221,20 @@ func (wh *HandleT) uploadStatusTrack(ctx context.Context) {
 			}
 
 			sqlStatement = fmt.Sprintf(`
-				SELECT 
+				SELECT
 				  EXISTS (
-					SELECT 
-					  1 
-					FROM 
-					  %s 
-					WHERE 
-					  source_id = $1 
-					  AND destination_id = $2 
+					SELECT
+					  1
+					FROM
+					  %s
+					WHERE
+					  source_id = $1
+					  AND destination_id = $2
 					  AND (
-						status = $3 
-						OR status = $4 
+						status = $3
+						OR status = $4
 						OR status LIKE $5
-					  ) 
+					  )
 					  AND updated_at > $6
 				  );
 `,
@@ -1235,8 +1248,10 @@ func (wh *HandleT) uploadStatusTrack(ctx context.Context) {
 				"%_failed",
 				createdAt.Time.Format(misc.RFC3339Milli),
 			}
-			var exists bool
-			var uploaded int
+			var (
+				exists   bool
+				uploaded int
+			)
 			err = wh.dbHandle.QueryRow(sqlStatement, sqlStatementArgs...).Scan(&exists)
 			if err != nil && err != sql.ErrNoRows {
 				panic(fmt.Errorf("Query: %s\nfailed with Error : %w", sqlStatement, err))
@@ -1274,16 +1289,16 @@ func (wh *HandleT) setInterruptedDestinations() {
 		return
 	}
 	sqlStatement := fmt.Sprintf(`
-		SELECT 
-		  destination_id 
-		FROM 
-		  %s 
-		WHERE 
-		  destination_type = '%s' 
+		SELECT
+		  destination_id
+		FROM
+		  %s
+		WHERE
+		  destination_type = '%s'
 		  AND (
-			status = '%s' 
+			status = '%s'
 			OR status = '%s'
-		  ) 
+		  )
 		  and in_progress = %t;
 `,
 		warehouseutils.WarehouseUploadsTable,
@@ -1360,12 +1375,12 @@ func (wh *HandleT) Shutdown() {
 
 func (wh *HandleT) resetInProgressJobs() {
 	sqlStatement := fmt.Sprintf(`
-		UPDATE 
-		  %s 
-		SET 
-		  in_progress = %t 
-		WHERE 
-		  destination_type = '%s' 
+		UPDATE
+		  %s
+		SET
+		  in_progress = %t
+		WHERE
+		  destination_type = '%s'
 		  AND in_progress = %t;
 `,
 		warehouseutils.WarehouseUploadsTable,
@@ -1689,8 +1704,10 @@ func pendingEventsHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	pendingEvents := false
-	var pendingStagingFileCount int64
-	var pendingUploadCount int64
+	var (
+		pendingStagingFileCount int64
+		pendingUploadCount      int64
+	)
 
 	// check whether there are any pending staging files or uploads for the given source id
 	// get pending staging files
@@ -1783,11 +1800,11 @@ func getPendingStagingFileCount(sourceOrDestId string, isSourceId bool) (fileCou
 	}
 	var lastStagingFileIDRes sql.NullInt64
 	sqlStatement := fmt.Sprintf(`
-		SELECT 
-		  MAX(end_staging_file_id) 
-		FROM 
-		  %[1]s 
-		WHERE 
+		SELECT
+		  MAX(end_staging_file_id)
+		FROM
+		  %[1]s
+		WHERE
 		  %[1]s.%[3]s = '%[2]s';
 `,
 		warehouseutils.WarehouseUploadsTable,
@@ -1806,12 +1823,12 @@ func getPendingStagingFileCount(sourceOrDestId string, isSourceId bool) (fileCou
 	}
 
 	sqlStatement = fmt.Sprintf(`
-		SELECT 
-		  COUNT(*) 
-		FROM 
-		  %[1]s 
-		WHERE 
-		  %[1]s.id > %[2]v 
+		SELECT
+		  COUNT(*)
+		FROM
+		  %[1]s
+		WHERE
+		  %[1]s.id > %[2]v
 		  AND %[1]s.%[4]s = '%[3]s';
 `,
 		warehouseutils.WarehouseStagingFilesTable,
@@ -1833,11 +1850,11 @@ func getPendingUploadCount(filters ...warehouseutils.FilterBy) (uploadCount int6
 	pkgLogger.Debugf("Fetching pending upload count with filters: %v", filters)
 
 	query := fmt.Sprintf(`
-		SELECT 
-		  COUNT(*) 
-		FROM 
-		  %[1]s 
-		WHERE 
+		SELECT
+		  COUNT(*)
+		FROM
+		  %[1]s
+		WHERE
 		  %[1]s.status NOT IN ('%[2]s', '%[3]s')
 	`,
 		warehouseutils.WarehouseUploadsTable,

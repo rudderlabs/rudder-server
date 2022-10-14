@@ -138,7 +138,7 @@ func InitWarehouseAPI(dbHandle *sql.DB, log logger.Logger) error {
 
 func (uploadsReq *UploadsReqT) validateReq() error {
 	if !uploadsReq.API.enabled || uploadsReq.API.log == nil || uploadsReq.API.dbHandle == nil {
-		return errors.New(`warehouse api's are not initialized`)
+		return errors.New(`warehouse api are not initialized`)
 	}
 	if uploadsReq.Limit < 1 {
 		uploadsReq.Limit = 10
@@ -424,11 +424,11 @@ func (tableUploadReq TableUploadReqT) GetWhTableUploads() ([]*proto.WHTable, err
 
 func (tableUploadReq TableUploadReqT) generateQuery(selectFields string) string {
 	query := fmt.Sprintf(`
-	SELECT 
-	  %s 
-	FROM 
-	  %s 
-	WHERE 
+	SELECT
+	  %s
+	FROM
+	  %s
+	WHERE
 	  wh_upload_id = %d
 `,
 		selectFields,
@@ -443,7 +443,7 @@ func (tableUploadReq TableUploadReqT) generateQuery(selectFields string) string 
 
 func (tableUploadReq TableUploadReqT) validateReq() error {
 	if !tableUploadReq.API.enabled || tableUploadReq.API.log == nil || tableUploadReq.API.dbHandle == nil {
-		return errors.New("warehouse api's are not initialized")
+		return errors.New("warehouse api are not initialized")
 	}
 	if tableUploadReq.UploadID == 0 {
 		return errors.New("upload_id is empty or should be greater than 0")
@@ -453,11 +453,11 @@ func (tableUploadReq TableUploadReqT) validateReq() error {
 
 func (uploadReq UploadReqT) generateQuery(selectedFields string) string {
 	return fmt.Sprintf(`
-		SELECT 
-		  %s 
-		FROM 
-		  %s 
-		WHERE 
+		SELECT
+		  %s
+		FROM
+		  %s
+		WHERE
 		  id = %d
 `,
 		selectedFields,
@@ -468,7 +468,7 @@ func (uploadReq UploadReqT) generateQuery(selectedFields string) string {
 
 func (uploadReq UploadReqT) validateReq() error {
 	if !uploadReq.API.enabled || uploadReq.API.log == nil || uploadReq.API.dbHandle == nil {
-		return errors.New("warehouse api's are not initialized")
+		return errors.New("warehouse api are not initialized")
 	}
 	if uploadReq.UploadId < 1 {
 		return errors.New(`upload_id is empty or should be greater than 0 `)
@@ -605,9 +605,9 @@ func (uploadsReq *UploadsReqT) getUploadsFromDb(isMultiWorkspace bool, query str
 func (uploadsReq *UploadsReqT) getTotalUploadCount(whereClause string) (int32, error) {
 	var totalUploadCount int32
 	query := fmt.Sprintf(`
-	select 
-	  count(*) 
-	from 
+	select
+	  count(*)
+	from
 	  %s
 `,
 		warehouseutils.WarehouseUploadsTable,
@@ -627,11 +627,11 @@ func (uploadsReq *UploadsReqT) warehouseUploadsForHosted(authorizedSourceIDs []s
 
 	// create query
 	subQuery := fmt.Sprintf(`
-		SELECT 
-		  %s, 
-		  COUNT(*) OVER() AS total_uploads 
-		FROM 
-		  %s 
+		SELECT
+		  %s,
+		  COUNT(*) OVER() AS total_uploads
+		FROM
+		  %s
 		WHERE
 `,
 		selectFields,
@@ -655,13 +655,13 @@ func (uploadsReq *UploadsReqT) warehouseUploadsForHosted(authorizedSourceIDs []s
 
 	subQuery = subQuery + strings.Join(whereClauses, " AND ")
 	query := fmt.Sprintf(`
-		SELECT 
-		  * 
-		FROM 
-		  (%s) p 
-		ORDER BY 
-		  id DESC 
-		LIMIT 
+		SELECT
+		  *
+		FROM
+		  (%s) p
+		ORDER BY
+		  id DESC
+		LIMIT
 		  %d OFFSET %d
 `,
 		subQuery,
@@ -696,9 +696,9 @@ func (uploadsReq *UploadsReqT) warehouseUploads(selectFields string) (uploadsRes
 
 	// create query
 	query := fmt.Sprintf(`
-		select 
-		  %s 
-		from 
+		select
+		  %s
+		from
 		  %s
 `,
 		selectFields,

@@ -9,11 +9,10 @@ import (
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
-var (
-	// config
-	UseGlueConfig = "useGlue"
+var UseGlueConfig = "useGlue"
 
-	// glue
+// glue specific config
+var (
 	glueSerdeName             = "ParquetHiveSerDe"
 	glueSerdeSerializationLib = "org.apache.hadoop.hive.ql.io.parquet.serde.ParquetHiveSerDe"
 	glueParquetInputFormat    = "org.apache.hadoop.hive.ql.io.parquet.MapredParquetInputFormat"
