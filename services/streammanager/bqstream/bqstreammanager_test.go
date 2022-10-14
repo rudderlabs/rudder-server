@@ -52,15 +52,15 @@ func TestTimeout(t *testing.T) {
 		"ProjectId":   bqCredentials.ProjectID,
 	}
 	destination := backendconfig.DestinationT{Config: config}
-	opts := common.Opts{Timeout: 1 * time.Microsecond};
+	opts := common.Opts{Timeout: 1 * time.Microsecond}
 	producer, err := bqstream.NewProducer(&destination, opts)
 	if err != nil {
 		t.Errorf(" %+v", err)
 		return
 	}
 
-	assert.NotNil(t, producer.Client);
-	assert.Equal(t, opts,  producer.Opts);
+	assert.NotNil(t, producer.Client)
+	assert.Equal(t, opts, producer.Opts)
 
 	payload := `{
 		"datasetId": "timeout_test",
@@ -253,4 +253,22 @@ func TestProduceWithWithSingleRecord(t *testing.T) {
 	assert.Equal(t, 200, statusCode)
 	assert.Equal(t, "Success", statusMsg)
 	assert.NotEmpty(t, respMsg)
+}
+
+func TestProduceFailedCase(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	mockClient := mock_bqstream.NewMockBQClient(ctrl)
+	producer := &bqstream.BQStreamProducer{Client: mockClient}
+
+	// properties -> string
+	sampleEventJson, _ := json.Marshal(map[string]interface{}{
+		"datasetId":  "bigquery_batching",
+		"tableId":    "Streaming",
+		"properties": json.RawMessage(`"id"`),
+	})
+
+	statusCode, statusMsg, respMsg := producer.Produce(sampleEventJson, map[string]string{})
+	assert.Equal(t, 400, statusCode)
+	assert.Equal(t, "Failure", statusMsg)
+	assert.Contains(t, respMsg, "error in unmarshalling data")
 }
