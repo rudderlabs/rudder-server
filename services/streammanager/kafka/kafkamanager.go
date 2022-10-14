@@ -455,14 +455,17 @@ func serializeAvroMessage(value []byte, codec goavro.Codec) ([]byte, error) {
 	return binary, nil
 }
 
-func prepareBatchOfMessages(topic string, batch []map[string]interface{}, timestamp time.Time, p producerManager) (
+func prepareBatchOfMessages(conf configuration, batch []map[string]interface{}, timestamp time.Time, p producerManager) (
 	[]client.Message, error,
 ) {
 	start := now()
 	defer func() { kafkaStats.prepareBatchTime.SendTiming(since(start)) }()
-
 	var messages []client.Message
+	topic := conf.Topic
 	for i, data := range batch {
+		if conf.MultiTopicSupport {
+			topic = data["topic"].(string)
+		}
 		message, ok := data["message"]
 		if !ok {
 			kafkaStats.missingMessage.Increment()
@@ -562,13 +565,14 @@ func (p *ProducerManager) Produce(jsonData json.RawMessage, destConfig interface
 	ctx, cancel := context.WithTimeout(context.TODO(), p.getTimeout())
 	defer cancel()
 	if kafkaBatchingEnabled {
-		return sendBatchedMessage(ctx, jsonData, p, conf.Topic)
+		return sendBatchedMessage(ctx, jsonData, p, conf)
 	}
 
 	return sendMessage(ctx, jsonData, p, conf.Topic, conf)
 }
 
-func sendBatchedMessage(ctx context.Context, jsonData json.RawMessage, p producerManager, topic string) (int, string, string) {
+func sendBatchedMessage(ctx context.Context, jsonData json.RawMessage, p producerManager, conf configuration) (int, string, string) {
+
 	var batch []map[string]interface{}
 	err := json.Unmarshal(jsonData, &batch)
 	if err != nil {
@@ -576,7 +580,7 @@ func sendBatchedMessage(ctx context.Context, jsonData json.RawMessage, p produce
 	}
 
 	timestamp := time.Now()
-	batchOfMessages, err := prepareBatchOfMessages(topic, batch, timestamp, p)
+	batchOfMessages, err := prepareBatchOfMessages(conf, batch, timestamp, p)
 	if err != nil {
 		return 400, "Failure", "Error while preparing batched message: " + err.Error()
 	}
@@ -624,8 +628,15 @@ func sendMessage(ctx context.Context, jsonData json.RawMessage, p producerManage
 		topic = parsedJSON.Get("topic").Value().(string)
 	}
 	message := prepareMessage(topic, userID, value, timestamp)
-	if err = publish(ctx, p, message); err != nil {
-		return makeErrorResponse(fmt.Errorf("could not publish to %q: %w", topic, err))
+
+	if config.MultiTopicSupport {
+		if err = publishWithTopic(ctx, p, message); err != nil {
+			return makeErrorResponse(fmt.Errorf("could not publish to %q: %w", topic, err))
+		}
+	} else {
+		if err = publish(ctx, p, message); err != nil {
+			return makeErrorResponse(fmt.Errorf("could not publish to %q: %w", topic, err))
+		}
 	}
 
 	returnMessage := fmt.Sprintf("Message delivered to topic: %s", topic)
