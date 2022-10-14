@@ -4,7 +4,7 @@ const UUID_TS_COLUMN = "uuid_ts"
 
 type EventLoader interface {
 	IsLoadTimeColumn(columnName string) bool
-	GetLoadTimeFormat(columnName string) string
+	GetLoadTimeFomat(columnName string) string
 	AddColumn(columnName, columnType string, val interface{})
 	AddRow(columnNames, values []string)
 	AddEmptyColumn(columnName string)

@@ -2,11 +2,11 @@ package warehouseutils
 
 import "io"
 
-type EventReader interface {
+type eventReader interface {
 	Read(columnNames []string) (record []string, err error)
 }
 
-func NewEventReader(r io.Reader, provider string) EventReader {
+func NewEventReader(r io.Reader, provider string) eventReader {
 	if provider == BQ {
 		return NewJSONReader(r)
 	}

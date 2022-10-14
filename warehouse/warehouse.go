@@ -210,16 +210,16 @@ func (wh *HandleT) workerIdentifier(warehouse warehouseutils.Warehouse) (identif
 
 func getDestinationFromConnectionMap(DestinationId, SourceId string) (warehouseutils.Warehouse, error) {
 	if DestinationId == "" || SourceId == "" {
-		return warehouseutils.Warehouse{}, errors.New("invalid Parameters")
+		return warehouseutils.Warehouse{}, errors.New("Invalid Parameters")
 	}
-	sourceMap, ok := connectionsMap[DestinationId]
+	srcmap, ok := connectionsMap[DestinationId]
 	if !ok {
-		return warehouseutils.Warehouse{}, errors.New("invalid Destination Id")
+		return warehouseutils.Warehouse{}, errors.New("Invalid Destination Id")
 	}
 
-	conn, ok := sourceMap[SourceId]
+	conn, ok := srcmap[SourceId]
 	if !ok {
-		return warehouseutils.Warehouse{}, errors.New("invalid Source Id")
+		return warehouseutils.Warehouse{}, errors.New("Invalid Source Id")
 	}
 
 	return conn, nil
@@ -418,13 +418,10 @@ func (wh *HandleT) getStagingFiles(warehouse warehouseutils.Warehouse, startID, 
 
 	var stagingFilesList []*StagingFileT
 	for rows.Next() {
-		var (
-			jsonUpload                                                     StagingFileT
-			timeWindowYear, timeWindowMonth, timeWindowDay, timeWindowHour sql.NullInt64
-			destinationRevisionID                                          sql.NullString
-			UseRudderStorage                                               sql.NullBool
-		)
-
+		var jsonUpload StagingFileT
+		var timeWindowYear, timeWindowMonth, timeWindowDay, timeWindowHour sql.NullInt64
+		var destinationRevisionID sql.NullString
+		var UseRudderStorage sql.NullBool
 		err := rows.Scan(
 			&jsonUpload.ID,
 			&jsonUpload.Location,
@@ -515,14 +512,11 @@ func (wh *HandleT) getPendingStagingFiles(warehouse warehouseutils.Warehouse) ([
 	}
 	defer func() { _ = rows.Close() }()
 
-	var (
-		stagingFilesList                                                                                 []*StagingFileT
-		firstEventAt, lastEventAt                                                                        sql.NullTime
-		sourceBatchID, sourceTaskID, sourceTaskRunID, sourceJobID, sourceJobRunID, destinationRevisionID sql.NullString
-		timeWindowYear, timeWindowMonth, timeWindowDay, timeWindowHour                                   sql.NullInt64
-		UseRudderStorage                                                                                 sql.NullBool
-	)
-
+	var stagingFilesList []*StagingFileT
+	var firstEventAt, lastEventAt sql.NullTime
+	var sourceBatchID, sourceTaskID, sourceTaskRunID, sourceJobID, sourceJobRunID, destinationRevisionID sql.NullString
+	var timeWindowYear, timeWindowMonth, timeWindowDay, timeWindowHour sql.NullInt64
+	var UseRudderStorage sql.NullBool
 	for rows.Next() {
 		var jsonUpload StagingFileT
 		err := rows.Scan(
@@ -713,10 +707,8 @@ func (wh *HandleT) createUploadJobsFromStagingFiles(warehouse warehouseutils.War
 	// Process staging files in batches of stagingFilesBatchSize
 	// E.g. If there are 1000 pending staging files and stagingFilesBatchSize is 100,
 	// Then we create 10 new entries in wh_uploads table each with 100 staging files
-	var (
-		stagingFilesInUpload []*StagingFileT
-		counter              int
-	)
+	var stagingFilesInUpload []*StagingFileT
+	var counter int
 	uploadTriggered := isUploadTriggered(warehouse)
 
 	initUpload := func() {
@@ -955,10 +947,8 @@ func (wh *HandleT) getUploadsToProcess(availableWorkers int, skipIdentifiers []s
 
 		`, partitionIdentifierSQL, warehouseutils.WarehouseUploadsTable, wh.destType, false, ExportedData, Aborted, skipIdentifiersSQL, availableWorkers)
 
-	var (
-		rows *sql.Rows
-		err  error
-	)
+	var rows *sql.Rows
+	var err error
 	if len(skipIdentifiers) > 0 {
 		rows, err = wh.dbHandle.Query(
 			sqlStatement,
@@ -981,15 +971,12 @@ func (wh *HandleT) getUploadsToProcess(availableWorkers int, skipIdentifiers []s
 
 	var uploadJobs []*UploadJobT
 	for rows.Next() {
-		var (
-			upload                    Upload
-			schema                    json.RawMessage
-			mergedSchema              json.RawMessage
-			firstTiming               sql.NullString
-			lastTiming                sql.NullString
-			firstEventAt, lastEventAt sql.NullTime
-		)
-
+		var upload Upload
+		var schema json.RawMessage
+		var mergedSchema json.RawMessage
+		var firstTiming sql.NullString
+		var lastTiming sql.NullString
+		var firstEventAt, lastEventAt sql.NullTime
 		err := rows.Scan(
 			&upload.ID,
 			&upload.Status,
@@ -1256,10 +1243,8 @@ func (wh *HandleT) uploadStatusTrack(ctx context.Context) {
 				"%_failed",
 				createdAt.Time.Format(misc.RFC3339Milli),
 			}
-			var (
-				exists   bool
-				uploaded int
-			)
+			var exists bool
+			var uploaded int
 			err = wh.dbHandle.QueryRow(sqlStatement, sqlStatementArgs...).Scan(&exists)
 			if err != nil && err != sql.ErrNoRows {
 				panic(fmt.Errorf("Query: %s\nfailed with Error : %w", sqlStatement, err))
@@ -1712,10 +1697,8 @@ func pendingEventsHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	pendingEvents := false
-	var (
-		pendingStagingFileCount int64
-		pendingUploadCount      int64
-	)
+	var pendingStagingFileCount int64
+	var pendingUploadCount int64
 
 	// check whether there are any pending staging files or uploads for the given source id
 	// get pending staging files

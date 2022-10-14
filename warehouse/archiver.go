@@ -250,17 +250,11 @@ func archiveUploads(dbHandle *sql.DB) {
 			continue
 		}
 
-		var (
-			stagingFileIDs       []int64
-			stagingFileLocations []string
-		)
-
+		var stagingFileIDs []int64
+		var stagingFileLocations []string
 		for stagingFileRows.Next() {
-			var (
-				stagingFileID       int64
-				stagingFileLocation string
-			)
-
+			var stagingFileID int64
+			var stagingFileLocation string
 			err = stagingFileRows.Scan(
 				&stagingFileID,
 				&stagingFileLocation,
@@ -340,11 +334,7 @@ func archiveUploads(dbHandle *sql.DB) {
 			}
 
 			if hasUsedRudderStorage {
-				var (
-					loadLocations []string
-					paths         []string
-				)
-
+				var loadLocations []string
 				for loadLocationRows.Next() {
 					var loc string
 					err = loadLocationRows.Scan(&loc)
@@ -357,7 +347,7 @@ func archiveUploads(dbHandle *sql.DB) {
 					loadLocations = append(loadLocations, loc)
 				}
 				_ = loadLocationRows.Close()
-
+				var paths []string
 				for _, loc := range loadLocations {
 					u, err := url.Parse(loc)
 					if err != nil {

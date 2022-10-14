@@ -71,7 +71,7 @@ func ScheduledTimes(syncFrequency, syncStartAt string) []int {
 	return times
 }
 
-// GetPrevScheduledTime returns the closest previous scheduled time
+// GetPrevScheduledTime returns closest previous scheduled time
 // e.g. Syncing every 3hrs starting at 13:00 (scheduled times: 13:00, 16:00, 19:00, 22:00, 01:00, 04:00, 07:00, 10:00)
 // prev scheduled time for current time (e.g. 18:00 -> 16:00 same day, 00:30 -> 22:00 prev day)
 func GetPrevScheduledTime(syncFrequency, syncStartAt string, currTime time.Time) time.Time {
@@ -86,13 +86,13 @@ func GetPrevScheduledTime(syncFrequency, syncStartAt string, currTime time.Time)
 	pos := 0
 	for idx, t := range allStartTimes {
 		if currMins >= t {
-			// case when currTime is greater than all the day's start time
+			// case when currTime is greater than all of the day's start time
 			if idx == len(allStartTimes)-1 {
 				pos = idx
 			}
 			continue
 		}
-		// case when currTime is less than all the day's start time
+		// case when currTime is less than all of the day's start time
 		pos = idx - 1
 		break
 	}

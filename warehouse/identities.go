@@ -45,7 +45,7 @@ func isDestHistoricIdentitiesPopulated(warehouse warehouseutils.Warehouse) bool 
 	return false
 }
 
-func setDestHistoricIdentitiesPopulated(warehouse warehouseutils.Warehouse) {
+func setDestHistoricIndetitiesPopulated(warehouse warehouseutils.Warehouse) {
 	populatedHistoricIdentitiesMapLock.Lock()
 	populatedHistoricIdentitiesMap[uniqueWarehouseNamespaceString(warehouse)] = true
 	populatedHistoricIdentitiesMapLock.Unlock()
@@ -100,7 +100,7 @@ func (wh *HandleT) getPendingPopulateIdentitiesLoad(warehouse warehouseutils.War
 		warehouseutils.WarehouseUploadsTable,
 		warehouse.Source.ID,
 		warehouse.Destination.ID,
-		wh.populateHistoricIdentitiesDestType(),
+		wh.poulateHistoricIdentitiesDestType(),
 		ExportedData,
 		Aborted,
 	)
@@ -146,7 +146,7 @@ func (wh *HandleT) getPendingPopulateIdentitiesLoad(warehouse warehouseutils.War
 	return
 }
 
-func (wh *HandleT) populateHistoricIdentitiesDestType() string {
+func (wh *HandleT) poulateHistoricIdentitiesDestType() string {
 	return wh.destType + "_IDENTITY_PRE_LOAD"
 }
 
@@ -331,7 +331,7 @@ func (wh *HandleT) initPrePopulateDestIdentitiesUpload(warehouse warehouseutils.
 		warehouse.Namespace,
 		warehouse.WorkspaceID,
 		warehouse.Destination.ID,
-		wh.populateHistoricIdentitiesDestType(),
+		wh.poulateHistoricIdentitiesDestType(),
 		Waiting,
 		marshalledSchema,
 		"{}",
@@ -356,7 +356,7 @@ func (wh *HandleT) initPrePopulateDestIdentitiesUpload(warehouse warehouseutils.
 		WorkspaceID:     warehouse.WorkspaceID,
 		SourceID:        warehouse.Source.ID,
 		DestinationID:   warehouse.Destination.ID,
-		DestinationType: wh.populateHistoricIdentitiesDestType(),
+		DestinationType: wh.poulateHistoricIdentitiesDestType(),
 		Status:          Waiting,
 		UploadSchema:    schema,
 	}
@@ -381,22 +381,19 @@ func (wh *HandleT) populateHistoricIdentities(warehouse warehouseutils.Warehouse
 		var err error
 		defer wh.removeDestInProgress(warehouse, 0)
 		defer setDestHistoricIdentitiesPopulateInProgress(warehouse, false)
-		defer setDestHistoricIdentitiesPopulated(warehouse)
+		defer setDestHistoricIndetitiesPopulated(warehouse)
 		defer wh.setFailedStat(warehouse, err)
 
 		// check for pending loads (populateHistoricIdentities)
-		var (
-			hasPendingLoad bool
-			upload         Upload
-		)
-
+		var hasPendingLoad bool
+		var upload Upload
 		upload, hasPendingLoad = wh.getPendingPopulateIdentitiesLoad(warehouse)
 
 		if hasPendingLoad {
-			pkgLogger.Infof("[WH]: Found pending load (populateHistoricIdentities) for %s:%s", wh.destType, warehouse.Destination.ID)
+			pkgLogger.Infof("[WH]: Found pending load (populateHistoricIdentites) for %s:%s", wh.destType, warehouse.Destination.ID)
 		} else {
 			if wh.hasLocalIdentityData(warehouse) {
-				pkgLogger.Infof("[WH]: Skipping identity tables load (populateHistoricIdentities) for %s:%s as data exists locally", wh.destType, warehouse.Destination.ID)
+				pkgLogger.Infof("[WH]: Skipping identity tables load (populateHistoricIdentites) for %s:%s as data exists locally", wh.destType, warehouse.Destination.ID)
 				return
 			}
 			var hasData bool
@@ -406,7 +403,7 @@ func (wh *HandleT) populateHistoricIdentities(warehouse warehouseutils.Warehouse
 				return
 			}
 			if !hasData {
-				pkgLogger.Infof("[WH]: Skipping identity tables load (populateHistoricIdentities) for %s:%s as warehouse does not have any data", wh.destType, warehouse.Destination.ID)
+				pkgLogger.Infof("[WH]: Skipping identity tables load (populateHistoricIdentites) for %s:%s as warehouse does not have any data", wh.destType, warehouse.Destination.ID)
 				return
 			}
 			pkgLogger.Infof("[WH]: Did not find local identity tables..")

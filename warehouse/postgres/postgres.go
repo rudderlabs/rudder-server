@@ -133,11 +133,8 @@ func Connect(cred CredentialsT) (*sql.DB, error) {
 	if cred.SSLMode == verifyCA {
 		url = fmt.Sprintf("%s sslrootcert=%[2]s/server-ca.pem sslcert=%[2]s/client-cert.pem sslkey=%[2]s/client-key.pem", url, cred.SSLDir)
 	}
-	var (
-		err error
-		db  *sql.DB
-	)
-
+	var err error
+	var db *sql.DB
 	if db, err = sql.Open("postgres", url); err != nil {
 		return nil, fmt.Errorf("postgres connection error : (%v)", err)
 	}
@@ -195,7 +192,7 @@ func (pg *HandleT) DownloadLoadFiles(tableName string) ([]string, error) {
 		}),
 	})
 	if err != nil {
-		pkgLogger.Errorf("PG: Error in setting up a downloader for destinationID : %s Error : %v", pg.Warehouse.Destination.ID, err)
+		pkgLogger.Errorf("PG: Error in setting up a downloader for destionationID : %s Error : %v", pg.Warehouse.Destination.ID, err)
 		return nil, err
 	}
 	var fileNames []string
@@ -431,22 +428,22 @@ func (pg *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 	return
 }
 
-// DeleteBy Need to create a structure with delete parameters instead of simply adding a long list of params
-func (pg *HandleT) DeleteBy(tableNames []string, params warehouseutils.DeleteByParams) (err error) {
-	pkgLogger.Infof("PG: Cleaning up the following tables in postgres for PG:%s : %+v", tableNames, params)
+// Need to create a structure with delete parameters instead of simply adding a long list of params
+func (pq *HandleT) DeleteBy(tableNames []string, params warehouseutils.DeleteByParams) (err error) {
+	pkgLogger.Infof("PG: Cleaning up the followng tables in postgres for PG:%s : %+v", tableNames, params)
 	for _, tb := range tableNames {
 		sqlStatement := fmt.Sprintf(`DELETE FROM "%[1]s"."%[2]s" WHERE
 		context_sources_job_run_id <> $1 AND
 		context_sources_task_run_id <> $2 AND
 		context_source_id = $3 AND
 		received_at < $4`,
-			pg.Namespace,
+			pq.Namespace,
 			tb,
 		)
-		pkgLogger.Infof("PG: Deleting rows in table in postgres for PG:%s", pg.Warehouse.Destination.ID)
-		pkgLogger.Debugf("PG: Executing the statement  %v", sqlStatement)
+		pkgLogger.Infof("PG: Deleting rows in table in postgres for PG:%s", pq.Warehouse.Destination.ID)
+		pkgLogger.Debugf("PG: Executing the sqlstatement  %v", sqlStatement)
 		if enableDeleteByJobs {
-			_, err = pg.Db.Exec(sqlStatement,
+			_, err = pq.Db.Exec(sqlStatement,
 				params.JobRunId,
 				params.TaskRunId,
 				params.SourceId,
@@ -655,10 +652,10 @@ func (pg *HandleT) CreateTable(tableName string, columnMap map[string]string) (e
 	return err
 }
 
-func (pg *HandleT) DropTable(tableName string) (err error) {
+func (as *HandleT) DropTable(tableName string) (err error) {
 	sqlStatement := `DROP TABLE "%[1]s"."%[2]s"`
-	pkgLogger.Infof("PG: Dropping table in postgres for PG:%s : %v", pg.Warehouse.Destination.ID, sqlStatement)
-	_, err = pg.Db.Exec(fmt.Sprintf(sqlStatement, pg.Namespace, tableName))
+	pkgLogger.Infof("PG: Dropping table in postgres for PG:%s : %v", as.Warehouse.Destination.ID, sqlStatement)
+	_, err = as.Db.Exec(fmt.Sprintf(sqlStatement, as.Namespace, tableName))
 	return
 }
 

@@ -227,10 +227,8 @@ func Connect(cred CredentialsT, includeDBInConn bool) (*sql.DB, error) {
 		url += fmt.Sprintf("&timeout=%d", cred.timeout/time.Second)
 	}
 
-	var (
-		err error
-		db  *sql.DB
-	)
+	var err error
+	var db *sql.DB
 
 	if db, err = sql.Open("clickhouse", url); err != nil {
 		return nil, fmt.Errorf("clickhouse connection error : (%v)", err)
@@ -354,11 +352,9 @@ func (ch *HandleT) DownloadLoadFiles(tableName string) ([]string, error) {
 		pkgLogger.Errorf("%s Error in setting up a downloader with Error: %v", ch.GetLogIdentifier(tableName, storageProvider), err)
 		return nil, err
 	}
-	var (
-		fileNames     []string
-		dErr          error
-		fileNamesLock sync.RWMutex
-	)
+	var fileNames []string
+	var dErr error
+	var fileNamesLock sync.RWMutex
 
 	jobs := make([]misc.RWCJob, 0)
 	for _, object := range objects {
