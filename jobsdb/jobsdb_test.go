@@ -3,7 +3,6 @@ package jobsdb
 import (
 	"bytes"
 	"context"
-	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -394,7 +393,7 @@ func TestRefreshDSList(t *testing.T) {
 	defer jobsDB.TearDown()
 
 	require.Equal(t, 1, len(jobsDB.getDSList()), "jobsDB should start with a ds list size of 1")
-	require.NoError(t, jobsDB.WithTx(func(tx *sql.Tx) error {
+	require.NoError(t, jobsDB.WithTx(func(tx *Tx) error {
 		return jobsDB.addDSInTx(tx, newDataSet(prefix, "2"))
 	}))
 	require.Equal(t, 1, len(jobsDB.getDSList()), "addDS should not refresh the ds list")

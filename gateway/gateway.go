@@ -350,7 +350,7 @@ func (gateway *HandleT) dbWriterWorkerProcess() {
 			// rsources stats
 			rsourcesStats := rsources.NewStatsCollector(gateway.rsourcesService)
 			rsourcesStats.JobsStoredWithErrors(jobList, errorMessagesMap)
-			return rsourcesStats.Publish(ctx, tx.Tx())
+			return rsourcesStats.Publish(ctx, tx.SqlTx())
 		})
 		cancel()
 		if err != nil {
