@@ -108,16 +108,16 @@ func GetPrevScheduledTime(syncFrequency, syncStartAt string, currTime time.Time)
 func (wh *HandleT) getLastUploadCreatedAt(warehouse warehouseutils.Warehouse) time.Time {
 	var t sql.NullTime
 	sqlStatement := fmt.Sprintf(`
-		SELECT
-		  created_at
-		FROM
-		  %s
-		WHERE
-		  source_id = '%s'
-		  AND destination_id = '%s'
+		SELECT 
+		  created_at 
+		FROM 
+		  %s 
+		WHERE 
+		  source_id = '%s' 
+		  AND destination_id = '%s' 
 		ORDER BY
-		  id DESC
-		LIMIT
+		  id DESC 
+		LIMIT 
 		  1;
 `,
 		warehouseutils.WarehouseUploadsTable,
