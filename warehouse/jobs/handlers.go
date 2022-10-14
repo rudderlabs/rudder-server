@@ -1,6 +1,6 @@
 /*
 	Warehouse jobs package provides the capability to running arbitrary jobs on the warehouses using the query parameters provided.
-	Some of the jobs that can be run are
+	Some jobs that can be run are
 	1) delete by task run id,
 	2) delete by job run id,
 	3) delete by update_at
@@ -17,7 +17,7 @@ import (
 	"net/http"
 )
 
-// The following handler gets called for adding async
+// AddWarehouseJobHandler The following handler gets called for adding async
 func (asyncWhJob *AsyncJobWhT) AddWarehouseJobHandler(w http.ResponseWriter, r *http.Request) {
 	pkgLogger.Info("[WH-Jobs] Got Async Job Add Request")
 	pkgLogger.LogRequest(r)
@@ -55,13 +55,13 @@ func (asyncWhJob *AsyncJobWhT) AddWarehouseJobHandler(w http.ResponseWriter, r *
 	// Add to wh_async_job queue each of the tables
 	for _, th := range tableNames {
 		if !skipTable(th) {
-			whmetadata := WhJobsMetaData{
+			metaData := WhJobsMetaData{
 				JobRunID:  startJobPayload.JobRunID,
 				TaskRunID: startJobPayload.TaskRunID,
 				StartTime: startJobPayload.StartTime,
 				JobType:   AsyncJobType,
 			}
-			metadata, err := json.Marshal(whmetadata)
+			metadata, err := json.Marshal(metaData)
 			if err != nil {
 				http.Error(w, err.Error(), http.StatusBadRequest)
 				return
@@ -73,7 +73,7 @@ func (asyncWhJob *AsyncJobWhT) AddWarehouseJobHandler(w http.ResponseWriter, r *
 				AsyncJobType:  startJobPayload.AsyncJobType,
 				MetaData:      metadata,
 			}
-			id, err := asyncWhJob.addJobstoDB(asyncWhJob.context, &payload)
+			id, err := asyncWhJob.addJobsToDB(asyncWhJob.context, &payload)
 			if err != nil {
 				http.Error(w, err.Error(), http.StatusBadRequest)
 				return
