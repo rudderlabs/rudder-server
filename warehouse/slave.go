@@ -452,11 +452,19 @@ func processStagingFile(job *Payload, jobRun *JobRunT, workerIndex int) (loadFil
 			break
 		}
 
+		timer1 := jobRun.timerStat("process_staging_file_scanner_bytes_time", tag{name: "worker_id", value: strconv.Itoa(workerIndex)})
+		timer1.Start()
 		lineBytes := scanner.Bytes()
+		timer1.End()
+
 		lineBytesCounter += len(lineBytes)
 
 		var batchRouterEvent BatchRouterEventT
+		timer2 := jobRun.timerStat("process_staging_file_json_unmarshall_time", tag{name: "worker_id", value: strconv.Itoa(workerIndex)})
+		timer2.Start()
 		err := jsonFast.Unmarshal(lineBytes, &batchRouterEvent)
+		timer2.End()
+
 		if err != nil {
 			pkgLogger.Errorf("[WH]: Failed to unmarshal JSON line to batchrouter event: %+v, err: %s", batchRouterEvent, err.Error())
 			continue
@@ -466,13 +474,21 @@ func processStagingFile(job *Payload, jobRun *JobRunT, workerIndex int) (loadFil
 		columnData := batchRouterEvent.Data
 
 		// Create separate load file for each table
+		timer3 := jobRun.timerStat("process_staging_file_create_gz_writer_time", tag{name: "worker_id", value: strconv.Itoa(workerIndex)})
+		timer3.Start()
 		writer, err := jobRun.GetWriter(tableName)
+		timer3.End()
 		if err != nil {
 			return nil, err
 		}
 
+		timer7 := jobRun.timerStat("process_staging_file_get_ev_time", tag{name: "worker_id", value: strconv.Itoa(workerIndex)})
+		timer7.Start()
 		eventLoader := jobRun.getEventLoader(job.LoadFileType, job.DestinationType, tableName, writer, len(sortedTableColumnMap[tableName]))
+		timer7.End()
 
+		timer6 := jobRun.timerStat("process_staging_file_compute_time", tag{name: "worker_id", value: strconv.Itoa(workerIndex)})
+		timer6.Start()
 		for _, columnName := range sortedTableColumnMap[tableName] {
 			if eventLoader.IsLoadTimeColumn(columnName) {
 				timestampFormat := eventLoader.GetLoadTimeFomat(columnName)
@@ -544,16 +560,25 @@ func processStagingFile(job *Payload, jobRun *JobRunT, workerIndex int) (loadFil
 
 			eventLoader.AddColumn(columnName, job.UploadSchema[tableName][columnName], columnVal)
 		}
+		timer6.End()
 
 		// Completed parsing all columns, write single event to the file
+		timer4 := jobRun.timerStat("process_staging_file_create_event_loader_write_time", tag{name: "worker_id", value: strconv.Itoa(workerIndex)})
+		timer4.Start()
 		err = eventLoader.Write()
+		timer4.End()
+
 		if err != nil {
 			pkgLogger.Errorf("[WH]: Failed to write event: %v", err)
 			return loadFileUploadOutputs, err
 		}
 
 		// For a reusable event loader, this is indication to clean up the array
+		timer5 := jobRun.timerStat("process_staging_file_create_event_loader_reset_time", tag{name: "worker_id", value: strconv.Itoa(workerIndex)})
+		timer5.Start()
 		eventLoader.Reset()
+		timer5.End()
+
 		jobRun.tableEventCountMap[tableName]++
 	}
 	timer.End()
