@@ -966,6 +966,21 @@ func Test_SortDnumList(t *testing.T) {
 	require.Equal(t, []string{"-2", "0_1", "0_1_1", "1"}, l)
 }
 
+func Test_GetAdvisoryLockForOperation_Unique(t *testing.T) {
+	calculated := map[int64]string{}
+	for _, operation := range []string{"add_ds", "migrate_ds"} {
+		for _, prefix := range []string{"gw", "rt", "batch_rt", "proc_error"} {
+			h := &HandleT{tablePrefix: prefix}
+			key := fmt.Sprintf("%s_%s", prefix, operation)
+			advLock := h.getAdvisoryLockForOperation(operation)
+			if dupKey, ok := calculated[advLock]; ok {
+				t.Errorf("Duplicate advisory lock calculated for different keys %s and %s: %d", key, dupKey, advLock)
+			}
+			calculated[advLock] = key
+		}
+	}
+}
+
 type testingT interface {
 	Errorf(format string, args ...interface{})
 	FailNow()

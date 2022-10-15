@@ -22,7 +22,9 @@ package jobsdb
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"database/sql"
+	"encoding/binary"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -2913,6 +2915,7 @@ Other functions are impacted by movement of data across DS in background
 so take both the list and data lock
 */
 func (jd *HandleT) addNewDSLoop(ctx context.Context) {
+	advisoryLock := jd.getAdvisoryLockForOperation("add_ds")
 	for {
 		select {
 		case <-ctx.Done():
@@ -2926,10 +2929,10 @@ func (jd *HandleT) addNewDSLoop(ctx context.Context) {
 		// start a transaction
 		err := jd.WithTx(func(tx *Tx) error {
 			// acquire a advisory transaction level blocking lock, which is released once the transaction ends.
-			sqlStatement := fmt.Sprintf(`SELECT pg_advisory_xact_lock(%d);`, misc.JobsDBAddDsAdvisoryLock)
+			sqlStatement := fmt.Sprintf(`SELECT pg_advisory_xact_lock(%d);`, advisoryLock)
 			_, err := tx.ExecContext(context.TODO(), sqlStatement)
 			if err != nil {
-				return fmt.Errorf("error while acquiring advisory lock %d: %w", misc.JobsDBAddDsAdvisoryLock, err)
+				return fmt.Errorf("error while acquiring advisory lock %d: %w", advisoryLock, err)
 			}
 
 			// We acquire the list lock only after we have acquired the advisory lock.
@@ -2973,6 +2976,13 @@ func (jd *HandleT) addNewDSLoop(ctx context.Context) {
 		jd.refreshDSRangeList(dsListLock)
 		releaseDsListLock <- dsListLock
 	}
+}
+
+func (jd *HandleT) getAdvisoryLockForOperation(operation string) int64 {
+	key := fmt.Sprintf("%s_%s", jd.tablePrefix, operation)
+	h := sha256.New()
+	h.Write([]byte(key))
+	return int64(binary.BigEndian.Uint32(h.Sum(nil)))
 }
 
 func setReadonlyDsInTx(tx *Tx, latestDS dataSetT) error {
