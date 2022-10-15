@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"math/rand"
+	"sync"
 	"time"
 
 	"github.com/allisson/go-pglock/v2"
@@ -59,9 +60,12 @@ func Init() {
 }
 
 type PgNotifierT struct {
-	URI                 string
-	dbHandle            *sql.DB
-	workspaceIdentifier string
+	URI                   string
+	dbHandle              *sql.DB
+	workspaceIdentifier   string
+	noOfWorkers           int
+	activeWorkerCount     int
+	activeWorkerCountLock sync.RWMutex
 }
 
 type JobPayload json.RawMessage
@@ -403,6 +407,24 @@ func (notifier *PgNotifierT) UpdateClaimedEvent(claim *ClaimT, response *ClaimRe
 	}
 }
 
+func (wh *PgNotifierT) DecrementActiveWorkers() {
+	wh.activeWorkerCountLock.Lock()
+	wh.activeWorkerCount--
+	wh.activeWorkerCountLock.Unlock()
+}
+
+func (wh *PgNotifierT) IncrementActiveWorkers() {
+	wh.activeWorkerCountLock.Lock()
+	wh.activeWorkerCount++
+	wh.activeWorkerCountLock.Unlock()
+}
+
+func (wh *PgNotifierT) getActiveWorkerCount() int {
+	wh.activeWorkerCountLock.Lock()
+	defer wh.activeWorkerCountLock.Unlock()
+	return wh.activeWorkerCount
+}
+
 func (notifier *PgNotifierT) claim(workerID string) (claim ClaimT, err error) {
 	claimStartTime := time.Now()
 	defer func() {
@@ -592,15 +614,20 @@ func (notifier *PgNotifierT) Subscribe(ctx context.Context, workerId string, job
 		pollSleep := time.Duration(0)
 		defer close(jobs)
 		for {
-			claimedJob, err := notifier.claim(workerId)
-			if err == nil {
-				jobs <- claimedJob
-				pollSleep = time.Duration(0)
-			} else {
-				pollSleep = 2*pollSleep + time.Duration(rand.Intn(100))*time.Millisecond
-				if pollSleep > maxPollSleep {
-					pollSleep = maxPollSleep
+			availableWorkers := jobsBufferSize - notifier.getActiveWorkerCount()
+			if availableWorkers > 0 {
+				claimedJob, err := notifier.claim(workerId)
+				if err == nil {
+					jobs <- claimedJob
+					pollSleep = time.Duration(0)
+				} else {
+					pollSleep = 2*pollSleep + time.Duration(rand.Intn(100))*time.Millisecond
+					if pollSleep > maxPollSleep {
+						pollSleep = maxPollSleep
+					}
 				}
+			} else {
+				pollSleep = 5 * time.Millisecond
 			}
 			select {
 			case <-ctx.Done():

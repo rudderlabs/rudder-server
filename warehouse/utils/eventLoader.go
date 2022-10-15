@@ -10,6 +10,7 @@ type EventLoader interface {
 	AddEmptyColumn(columnName string)
 	WriteToString() (string, error)
 	Write() error
+	Reset()
 }
 
 func GetNewEventLoader(destinationType, loadFileType string, w LoadFileWriterI) EventLoader {
