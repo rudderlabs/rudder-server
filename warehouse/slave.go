@@ -454,15 +454,6 @@ func processStagingFile(job *Payload, jobRun *JobRunT, workerIndex int) (loadFil
 
 		lineBytes := scanner.Bytes()
 		lineBytesCounter += len(lineBytes)
-		if lineBytesCounter > 50*maxStagingFileReadBufferCapacityInK*1024 {
-			pkgLogger.Errorf("[WH]: Huge staging file alert : size in bytes: %v for staging file id %v at %s for %s",
-				lineBytesCounter,
-				job.StagingFileID,
-				job.StagingFileLocation,
-				jobRun.whIdentifier)
-			err = fmt.Errorf("WH: Staging file read buffer capacity exceeded")
-			return nil, err
-		}
 
 		var batchRouterEvent BatchRouterEventT
 		err := jsonFast.Unmarshal(lineBytes, &batchRouterEvent)
@@ -607,8 +598,6 @@ func (run *JobRunT) getEventLoader(fileType, destType, tableName string, writer 
 		l = parquet.NewReusableParquetLoader(destType, writer)
 		run.eventLoaderTableMap[tableName] = l
 	}
-
-	// fmt.Println(l)
 	return l
 }
 

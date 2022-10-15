@@ -26,6 +26,7 @@ import (
 var (
 	queueName          string
 	maxAttempt         int
+	equalDistribution  bool
 	trackBatchInterval time.Duration
 	maxPollSleep       time.Duration
 	jobOrphanTimeout   time.Duration
@@ -119,6 +120,7 @@ func loadPGNotifierConfig() {
 	trackBatchInterval = time.Duration(config.GetInt("PgNotifier.trackBatchIntervalInS", 2)) * time.Second
 	config.RegisterDurationConfigVariable(5000, &maxPollSleep, true, time.Millisecond, "PgNotifier.maxPollSleep")
 	config.RegisterDurationConfigVariable(120, &jobOrphanTimeout, true, time.Second, "PgNotifier.jobOrphanTimeout")
+	config.RegisterBoolConfigVariable(false, &equalDistribution, true, "PgNotifier.equalDistribution")
 }
 
 // New Given default connection info return pg notifier object from it
@@ -166,9 +168,9 @@ func (notifier PgNotifierT) ClearJobs(ctx context.Context) (err error) {
 	// additional safety check to not delete all jobs with empty workspaceIdentifier
 	if notifier.workspaceIdentifier != "" {
 		stmt := fmt.Sprintf(`
-			DELETE FROM 
-			  %s 
-			WHERE 
+			DELETE FROM
+			  %s
+			WHERE
 			  workspace = '%s';
 `,
 			queueName,
@@ -209,13 +211,13 @@ func (notifier *PgNotifierT) trackUploadBatch(batchID string, ch *chan []Respons
 			// keep polling db for batch status
 			// or subscribe to triggers
 			stmt := fmt.Sprintf(`
-				SELECT 
-				  count(*) 
-				FROM 
-				  %s 
-				WHERE 
-				  batch_id = '%s' 
-				  AND status != '%s' 
+				SELECT
+				  count(*)
+				FROM
+				  %s
+				WHERE
+				  batch_id = '%s'
+				  AND status != '%s'
 				  AND status != '%s';
 `,
 				queueName,
@@ -232,14 +234,14 @@ func (notifier *PgNotifierT) trackUploadBatch(batchID string, ch *chan []Respons
 
 			if count == 0 {
 				stmt = fmt.Sprintf(`
-					SELECT 
-					  payload -> 'StagingFileID', 
-					  payload -> 'Output', 
-					  status, 
-					  error 
-					FROM 
-					  %s 
-					WHERE 
+					SELECT
+					  payload -> 'StagingFileID',
+					  payload -> 'Output',
+					  status,
+					  error
+					FROM
+					  %s
+					WHERE
 					  batch_id = '%s';
 `,
 					queueName,
@@ -268,9 +270,9 @@ func (notifier *PgNotifierT) trackUploadBatch(batchID string, ch *chan []Respons
 				*ch <- responses
 				pkgLogger.Infof("PgNotifier: Completed processing all files  in batch: %s", batchID)
 				stmt = fmt.Sprintf(`
-					DELETE FROM 
-					  %s 
-					WHERE 
+					DELETE FROM
+					  %s
+					WHERE
 					  batch_id = '%s';
 `,
 					queueName,
@@ -348,20 +350,20 @@ func (notifier *PgNotifierT) UpdateClaimedEvent(claim *ClaimT, response *ClaimRe
 	if response.Err != nil {
 		pkgLogger.Error(response.Err.Error())
 		stmt := fmt.Sprintf(`
-			UPDATE 
-			  %[1]s 
-			SET 
+			UPDATE
+			  %[1]s
+			SET
 			  status =(
 				CASE WHEN attempt > %[2]d THEN CAST (
 				  '%[3]s' AS pg_notifier_status_type
 				) ELSE CAST(
 				  '%[4]s' AS pg_notifier_status_type
 				) END
-			  ), 
-			  attempt = attempt + 1, 
-			  updated_at = '%[5]s', 
-			  error = %[6]s 
-			WHERE 
+			  ),
+			  attempt = attempt + 1,
+			  updated_at = '%[5]s',
+			  error = %[6]s
+			WHERE
 			  id = %[7]v;
 `,
 			queueName,
@@ -384,13 +386,13 @@ func (notifier *PgNotifierT) UpdateClaimedEvent(claim *ClaimT, response *ClaimRe
 		}
 	} else {
 		stmt := fmt.Sprintf(`
-			UPDATE 
-			  %[1]s 
-			SET 
-			  status = '%[2]s', 
-			  updated_at = '%[3]s', 
-			  payload = $1 
-			WHERE 
+			UPDATE
+			  %[1]s
+			SET
+			  status = '%[2]s',
+			  updated_at = '%[3]s',
+			  payload = $1
+			WHERE
 			  id = %[4]v;
 `,
 			queueName,
@@ -441,34 +443,34 @@ func (notifier *PgNotifierT) claim(workerID string) (claim ClaimT, err error) {
 	var batchID, status, workspace, job_type string
 	var payload json.RawMessage
 	stmt := fmt.Sprintf(`
-		UPDATE 
-		  %[1]s 
-		SET 
-		  status = '%[2]s', 
-		  updated_at = '%[3]s', 
-		  last_exec_time = '%[3]s', 
-		  worker_id = '%[4]v' 
-		WHERE 
+		UPDATE
+		  %[1]s
+		SET
+		  status = '%[2]s',
+		  updated_at = '%[3]s',
+		  last_exec_time = '%[3]s',
+		  worker_id = '%[4]v'
+		WHERE
 		  id = (
-			SELECT 
-			  id 
-			FROM 
-			  %[1]s 
-			WHERE 
-			  status = '%[5]s' 
-			  OR status = '%[6]s' 
-			ORDER BY 
-			  priority ASC, 
-			  id ASC FOR 
-			UPDATE 
-			  SKIP LOCKED 
-			LIMIT 
+			SELECT
+			  id
+			FROM
+			  %[1]s
+			WHERE
+			  status = '%[5]s'
+			  OR status = '%[6]s'
+			ORDER BY
+			  priority ASC,
+			  id ASC FOR
+			UPDATE
+			  SKIP LOCKED
+			LIMIT
 			  1
-		  ) RETURNING id, 
-		  batch_id, 
-		  status, 
-		  payload, 
-		  workspace, 
+		  ) RETURNING id,
+		  batch_id,
+		  status,
+		  payload,
+		  workspace,
 		  attempt,
 		  job_type;
 `,
@@ -615,7 +617,7 @@ func (notifier *PgNotifierT) Subscribe(ctx context.Context, workerId string, job
 		defer close(jobs)
 		for {
 			availableWorkers := jobsBufferSize - notifier.getActiveWorkerCount()
-			if availableWorkers > 0 {
+			if !equalDistribution || availableWorkers > 0 {
 				claimedJob, err := notifier.claim(workerId)
 				if err == nil {
 					jobs <- claimedJob
@@ -695,21 +697,21 @@ func (notifier *PgNotifierT) RunMaintenanceWorker(ctx context.Context) error {
 	}
 	for {
 		stmt := fmt.Sprintf(`
-			UPDATE 
-			  %[1]s 
-			SET 
-			  status = '%[3]s', 
-			  updated_at = '%[2]s' 
-			WHERE 
+			UPDATE
+			  %[1]s
+			SET
+			  status = '%[3]s',
+			  updated_at = '%[2]s'
+			WHERE
 			  id IN (
-				SELECT 
-				  id 
-				FROM 
-				  %[1]s 
-				WHERE 
-				  status = '%[4]s' 
-				  AND last_exec_time <= NOW() - INTERVAL '%[5]v seconds' FOR 
-				UPDATE 
+				SELECT
+				  id
+				FROM
+				  %[1]s
+				WHERE
+				  status = '%[4]s'
+				  AND last_exec_time <= NOW() - INTERVAL '%[5]v seconds' FOR
+				UPDATE
 				  SKIP LOCKED
 			  ) RETURNING id;
 `,

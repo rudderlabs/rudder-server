@@ -13,8 +13,6 @@ import (
 	"testing"
 	"time"
 
-	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
-
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/services/filemanager"
 	"github.com/rudderlabs/rudder-server/utils/logger"
@@ -96,7 +94,7 @@ func TestStagingFileCreatesLoadObjects(t *testing.T) {
 	t.Setenv("RUDDER_TMPDIR", "testdata") // use the testdata local directory.
 	// TODO: Write mainly implementation for the filemanager
 	// which will be only looking for downloading a specific implementation for the staging file.
-	job := PayloadT{
+	job := Payload{
 		BatchID:                      "ff139f07-5948-4220-a019-0e660a05cda5",
 		UploadID:                     1,
 		StagingFileID:                1,
@@ -110,7 +108,7 @@ func TestStagingFileCreatesLoadObjects(t *testing.T) {
 		DestinationNamespace:         "rudder-schema",
 		DestinationRevisionID:        "",
 		StagingDestinationRevisionID: "",
-		Destination:                  backendconfig.DestinationT{},
+		DestinationConfig:            map[string]interface{}{},
 		StagingDestinationConfig:     map[string]interface{}{},
 		UseRudderStorage:             false,
 		StagingUseRudderStorage:      false,
@@ -213,7 +211,7 @@ func BenchmarkEventLoaders(b *testing.B) {
 	b.Setenv("RUDDER_TMPDIR", "testdata") // use the testdata local directory.
 	// TODO: Write mainly implementation for the filemanager
 	// which will be only looking for downloading a specific implementation for the staging file.
-	job := PayloadT{
+	job := Payload{
 		BatchID:                      "ff139f07-5948-4220-a019-0e660a05cda5",
 		UploadID:                     1,
 		StagingFileID:                1,
@@ -226,7 +224,7 @@ func BenchmarkEventLoaders(b *testing.B) {
 		DestinationNamespace:         "rudder-schema",
 		DestinationRevisionID:        "",
 		StagingDestinationRevisionID: "",
-		Destination:                  backendconfig.DestinationT{},
+		DestinationConfig:            map[string]interface{}{},
 		StagingDestinationConfig:     map[string]interface{}{},
 		UseRudderStorage:             false,
 		StagingUseRudderStorage:      false,
