@@ -437,7 +437,7 @@ func processStagingFile(job *Payload, jobRun *JobRunT, workerIndex int) (loadFil
 	discardsTable := job.getDiscardsTable()
 	jobRun.tableEventCountMap[discardsTable] = 0
 
-	timer := jobRun.timerStat("process_staging_file_time")
+	timer := jobRun.timerStat("process_staging_file_time", tag{name: "worker_id", value: strconv.Itoa(workerIndex)})
 	timer.Start()
 
 	lineBytesCounter := 0
