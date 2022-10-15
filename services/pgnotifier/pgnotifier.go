@@ -621,6 +621,7 @@ func (notifier *PgNotifierT) Subscribe(ctx context.Context, workerId string, job
 				claimedJob, err := notifier.claim(workerId)
 				if err == nil {
 					jobs <- claimedJob
+					notifier.IncrementActiveWorkers()
 					pollSleep = time.Duration(0)
 				} else {
 					pollSleep = 2*pollSleep + time.Duration(rand.Intn(100))*time.Millisecond

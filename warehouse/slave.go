@@ -748,8 +748,6 @@ func setupSlave(ctx context.Context) error {
 				workerIdleTimer.Since(workerIdleTimeStart)
 				pkgLogger.Infof("[WH]: Successfully claimed job:%v by slave worker-%v-%v & job type %s", claimedJob.ID, idx, slaveID, claimedJob.JobType)
 
-				notifier.IncrementActiveWorkers()
-
 				if claimedJob.JobType == jobs.AsyncJobType {
 					processClaimedAsyncJob(claimedJob)
 				} else {
