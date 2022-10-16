@@ -80,8 +80,8 @@ func CreateParquetWriter(schema TableSchemaT, outputFilePath, destType string) (
 	}, nil
 }
 
-func (p *ParquetWriter) WriteRow(row []interface{}) error {
-	return p.writer.Write(row)
+func (p *ParquetWriter) WriteRow(row *[]interface{}) error {
+	return p.writer.Write(*row)
 }
 
 func (p *ParquetWriter) Close() error {

@@ -10,15 +10,14 @@ type EventLoader interface {
 	AddEmptyColumn(columnName string)
 	WriteToString() (string, error)
 	Write() error
-	Reset()
 }
 
-func GetNewEventLoader(destinationType, loadFileType string, w LoadFileWriterI) EventLoader {
+func GetNewEventLoader(destinationType, loadFileType string, w LoadFileWriterI, c int) EventLoader {
 	switch loadFileType {
 	case LOAD_FILE_TYPE_JSON:
 		return NewJSONLoader(destinationType, w)
 	case LOAD_FILE_TYPE_PARQUET:
-		return NewParquetLoader(destinationType, w)
+		return NewParquetLoader(destinationType, w, c)
 	default:
 		return NewCSVLoader(destinationType, w)
 	}

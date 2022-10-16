@@ -11,20 +11,19 @@ import (
 // ParquetLoader is used for generating parquet load files.
 type ParquetLoader struct {
 	destType   string
-	Schema     []string
 	Values     []interface{}
+	colIdx     int
 	FileWriter LoadFileWriterI
 }
 
-func NewParquetLoader(destType string, w LoadFileWriterI) *ParquetLoader {
+func NewParquetLoader(destType string, w LoadFileWriterI, c int) *ParquetLoader {
 	loader := &ParquetLoader{
 		destType:   destType,
 		FileWriter: w,
+		Values:     make([]interface{}, c),
+		colIdx:     0,
 	}
 	return loader
-}
-
-func (loader *ParquetLoader) Reset() {
 }
 
 func (loader *ParquetLoader) IsLoadTimeColumn(columnName string) bool {
@@ -46,7 +45,8 @@ func (loader *ParquetLoader) AddColumn(columnName, colType string, val interface
 			val = nil
 		}
 	}
-	loader.Values = append(loader.Values, val)
+	loader.Values[loader.colIdx] = val
+	loader.colIdx++
 }
 
 func (*ParquetLoader) AddRow(_, _ []string) {
@@ -62,7 +62,7 @@ func (*ParquetLoader) WriteToString() (string, error) {
 }
 
 func (loader *ParquetLoader) Write() error {
-	return loader.FileWriter.WriteRow(loader.Values)
+	return loader.FileWriter.WriteRow(&loader.Values)
 }
 
 func getInt64(val interface{}) (int64, error) {

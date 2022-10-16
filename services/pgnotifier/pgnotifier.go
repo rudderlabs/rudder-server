@@ -26,7 +26,6 @@ import (
 var (
 	queueName          string
 	maxAttempt         int
-	equalDistribution  bool
 	trackBatchInterval time.Duration
 	maxPollSleep       time.Duration
 	jobOrphanTimeout   time.Duration
@@ -120,7 +119,6 @@ func loadPGNotifierConfig() {
 	trackBatchInterval = time.Duration(config.GetInt("PgNotifier.trackBatchIntervalInS", 2)) * time.Second
 	config.RegisterDurationConfigVariable(5000, &maxPollSleep, true, time.Millisecond, "PgNotifier.maxPollSleep")
 	config.RegisterDurationConfigVariable(120, &jobOrphanTimeout, true, time.Second, "PgNotifier.jobOrphanTimeout")
-	config.RegisterBoolConfigVariable(false, &equalDistribution, true, "PgNotifier.equalDistribution")
 }
 
 // New Given default connection info return pg notifier object from it
@@ -407,15 +405,17 @@ func (notifier *PgNotifierT) UpdateClaimedEvent(claim *ClaimT, response *ClaimRe
 		pgNotifierClaimUpdateFailed.Increment()
 		pkgLogger.Errorf("PgNotifier: Failed to update claimed event: %v", err)
 	}
+
+	notifier.decrementActiveWorkers()
 }
 
-func (wh *PgNotifierT) DecrementActiveWorkers() {
+func (wh *PgNotifierT) decrementActiveWorkers() {
 	wh.activeWorkerCountLock.Lock()
 	wh.activeWorkerCount--
 	wh.activeWorkerCountLock.Unlock()
 }
 
-func (wh *PgNotifierT) IncrementActiveWorkers() {
+func (wh *PgNotifierT) incrementActiveWorkers() {
 	wh.activeWorkerCountLock.Lock()
 	wh.activeWorkerCount++
 	wh.activeWorkerCountLock.Unlock()
@@ -617,11 +617,11 @@ func (notifier *PgNotifierT) Subscribe(ctx context.Context, workerId string, job
 		defer close(jobs)
 		for {
 			availableWorkers := jobsBufferSize - notifier.getActiveWorkerCount()
-			if !equalDistribution || availableWorkers > 0 {
+			if availableWorkers > 0 {
 				claimedJob, err := notifier.claim(workerId)
 				if err == nil {
 					jobs <- claimedJob
-					notifier.IncrementActiveWorkers()
+					notifier.incrementActiveWorkers()
 					pollSleep = time.Duration(0)
 				} else {
 					pollSleep = 2*pollSleep + time.Duration(rand.Intn(100))*time.Millisecond

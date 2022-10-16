@@ -239,7 +239,7 @@ func CreateTempLoadFile(req *DestinationValidationRequest) (filePath string, err
 	}
 
 	// creating event loader to add columns to temporary file
-	eventLoader := warehouseutils.GetNewEventLoader(destination.DestinationDefinition.Name, warehouseutils.GetLoadFileType(destination.DestinationDefinition.Name), writer)
+	eventLoader := warehouseutils.GetNewEventLoader(destination.DestinationDefinition.Name, warehouseutils.GetLoadFileType(destination.DestinationDefinition.Name), writer, 0)
 	eventLoader.AddColumn("id", TestTableSchemaMap["id"], TestPayloadMap["id"])
 	eventLoader.AddColumn("val", TestTableSchemaMap["val"], TestPayloadMap["val"])
 

@@ -20,9 +20,6 @@ func NewJSONLoader(destType string, writer LoadFileWriterI) *JsonLoader {
 	return loader
 }
 
-func (loader *JsonLoader) Reset() {
-}
-
 func (loader *JsonLoader) IsLoadTimeColumn(columnName string) bool {
 	return columnName == ToProviderCase(loader.destType, UUID_TS_COLUMN) || columnName == ToProviderCase(loader.destType, LOADED_AT_COLUMN)
 }

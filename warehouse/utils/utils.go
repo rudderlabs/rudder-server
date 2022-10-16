@@ -337,7 +337,7 @@ type TriggerUploadRequestT struct {
 type LoadFileWriterI interface {
 	WriteGZ(s string) error
 	Write(p []byte) (int, error)
-	WriteRow(r []interface{}) error
+	WriteRow(r *[]interface{}) error
 	Close() error
 	GetLoadFile() *os.File
 }
@@ -380,14 +380,14 @@ func GetLoadFileGenTime(str sql.NullString) (t time.Time) {
 
 func GetNamespace(source backendconfig.SourceT, destination backendconfig.DestinationT, dbHandle *sql.DB) (namespace string, exists bool) {
 	sqlStatement := fmt.Sprintf(`
-		SELECT 
-		  namespace 
-		FROM 
-		  %s 
-		WHERE 
-		  source_id = '%s' 
-		  AND destination_id = '%s' 
-		ORDER BY 
+		SELECT
+		  namespace
+		FROM
+		  %s
+		WHERE
+		  source_id = '%s'
+		  AND destination_id = '%s'
+		ORDER BY
 		  id DESC;
 `,
 		WarehouseSchemasTable,

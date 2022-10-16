@@ -5,7 +5,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/rudderlabs/rudder-server/services/filemanager"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
@@ -34,7 +33,6 @@ type Payload struct {
 	Output                       []loadFileUploadOutputT
 	LoadFilePrefix               string // prefix for the load file name
 	LoadFileType                 string
-	FileManagerFactory           filemanager.FileManagerFactory
 }
 
 type ProcessStagingFilesJobT struct {
