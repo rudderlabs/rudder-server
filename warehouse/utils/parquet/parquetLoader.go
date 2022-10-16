@@ -35,17 +35,8 @@ func (l *ReusableParquetLoader) AddColumn(colName, colType string, val interface
 		}
 	}
 
-	if l.colIdx >= len(l.columns) {
-		// Ideally this shouldn't happen as every row should
-		// have similar column count which should be set initially.
-		// panic("This shouldn't have happened")
-		l.columns = append(l.columns, val)
-		l.colIdx++
-	} else {
-
-		l.columns[l.colIdx] = val
-		l.colIdx++
-	}
+	l.columns[l.colIdx] = val
+	l.colIdx++
 }
 
 func (l *ReusableParquetLoader) AddEmptyColumn(colName string) {
@@ -61,10 +52,7 @@ func (l *ReusableParquetLoader) WriteToString() (string, error) {
 }
 
 func (l *ReusableParquetLoader) Write() error {
-	copyOfColumns := make([]interface{}, 0)
-	copyOfColumns = append(copyOfColumns, l.columns...)
-
-	return l.writer.WriteRow(copyOfColumns)
+	return l.writer.WriteRow(l.columns)
 }
 
 func (l *ReusableParquetLoader) Reset() {
@@ -74,11 +62,11 @@ func (l *ReusableParquetLoader) Reset() {
 	l.colIdx = 0
 }
 
-func NewReusableParquetLoader(destType string, writer warehouseutils.LoadFileWriterI) warehouseutils.EventLoader {
+func NewReusableParquetLoader(destType string, writer warehouseutils.LoadFileWriterI, count int) warehouseutils.EventLoader {
 	return &ReusableParquetLoader{
 		writer:   writer,
 		destType: destType,
-		columns:  make([]interface{}, 0),
+		columns:  make([]interface{}, count),
 		colIdx:   0,
 	}
 }
