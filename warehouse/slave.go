@@ -432,7 +432,7 @@ func processStagingFile(job Payload, workerIndex int) (loadFileUploadOutputs []l
 
 	lineBytesCounter := 0
 	var interfaceSliceSample []interface{}
-	sendStats := strings.Compare(config.GetInstanceID(), "warehouse-st-rudderstack-warehouse-slave-877f9b5f9-4zvcv") == 0
+	sendStats := strings.Compare(config.GetInstanceID(), "warehouse-st-rudderstack-warehouse-slave-877f9b5f9-mhcqc") == 0
 	for {
 		now := time.Now()
 		ok := scanner.Scan()
