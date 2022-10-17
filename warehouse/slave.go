@@ -441,7 +441,7 @@ func processStagingFile(job Payload, workerIndex int) (loadFileUploadOutputs []l
 	for {
 		t := time.Now()
 		ok := scanner.Scan()
-		scannerTime = scannerTime + time.Since(t)
+		scannerTime += time.Since(t)
 		if !ok {
 			scanErr := scanner.Err()
 			if scanErr != nil {
@@ -455,7 +455,7 @@ func processStagingFile(job Payload, workerIndex int) (loadFileUploadOutputs []l
 		var batchRouterEvent BatchRouterEventT
 		t = time.Now()
 		err := json.Unmarshal(lineBytes, &batchRouterEvent)
-		unmarshallTime = unmarshallTime + time.Since(t)
+		unmarshallTime += time.Since(t)
 		if err != nil {
 			pkgLogger.Errorf("[WH]: Failed to unmarshal JSON line to batchrouter event: %+v", batchRouterEvent)
 			continue
@@ -544,7 +544,7 @@ func processStagingFile(job Payload, workerIndex int) (loadFileUploadOutputs []l
 
 		t = time.Now()
 		err = eventLoader.Write()
-		writeTime = writeTime + time.Since(t)
+		writeTime += time.Since(t)
 		if err != nil {
 			pkgLogger.Errorf("[WH]: Failed to write event: %v", err)
 			return loadFileUploadOutputs, err
