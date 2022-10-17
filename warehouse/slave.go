@@ -432,13 +432,13 @@ func processStagingFile(job Payload, workerIndex int) (loadFileUploadOutputs []l
 
 	lineBytesCounter := 0
 	var interfaceSliceSample []interface{}
-	sendStats := true
+	//sendStats := true
 	for {
-		now := time.Now()
+		//now := time.Now()
 		ok := scanner.Scan()
-		if sendStats {
-			warehouseutils.NewTimerStat("process_staging_file_time_scanner_scan", warehouseutils.Tag{Name: TAG_WORKERID, Value: fmt.Sprintf("%d", workerIndex)}).Since(now)
-		}
+		//if sendStats {
+		//	warehouseutils.NewTimerStat("process_staging_file_time_scanner_scan", warehouseutils.Tag{Name: TAG_WORKERID, Value: fmt.Sprintf("%d", workerIndex)}).Since(now)
+		//}
 		if !ok {
 			scanErr := scanner.Err()
 			if scanErr != nil {
@@ -450,11 +450,11 @@ func processStagingFile(job Payload, workerIndex int) (loadFileUploadOutputs []l
 		lineBytes := scanner.Bytes()
 		lineBytesCounter += len(lineBytes)
 		var batchRouterEvent BatchRouterEventT
-		now = time.Now()
+		//now = time.Now()
 		err := json.Unmarshal(lineBytes, &batchRouterEvent)
-		if sendStats {
-			warehouseutils.NewTimerStat("process_staging_file_time_unmarshall", warehouseutils.Tag{Name: TAG_WORKERID, Value: fmt.Sprintf("%d", workerIndex)}).Since(now)
-		}
+		//if sendStats {
+		//	warehouseutils.NewTimerStat("process_staging_file_time_unmarshall", warehouseutils.Tag{Name: TAG_WORKERID, Value: fmt.Sprintf("%d", workerIndex)}).Since(now)
+		//}
 		if err != nil {
 			pkgLogger.Errorf("[WH]: Failed to unmarshal JSON line to batchrouter event: %+v", batchRouterEvent)
 			continue
@@ -542,11 +542,11 @@ func processStagingFile(job Payload, workerIndex int) (loadFileUploadOutputs []l
 		}
 
 		// Completed parsing all columns, write single event to the file
-		now = time.Now()
+		//now = time.Now()
 		err = eventLoader.Write()
-		if sendStats {
-			warehouseutils.NewTimerStat("process_staging_file_time_write", warehouseutils.Tag{Name: TAG_WORKERID, Value: fmt.Sprintf("%d", workerIndex)}).Since(now)
-		}
+		//if sendStats {
+		//	warehouseutils.NewTimerStat("process_staging_file_time_write", warehouseutils.Tag{Name: TAG_WORKERID, Value: fmt.Sprintf("%d", workerIndex)}).Since(now)
+		//}
 		if err != nil {
 			pkgLogger.Errorf("[WH]: Failed to write event: %v", err)
 			return loadFileUploadOutputs, err
