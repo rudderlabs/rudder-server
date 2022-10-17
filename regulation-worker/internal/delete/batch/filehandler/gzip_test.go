@@ -52,6 +52,12 @@ func TestRemoveIdentityRecordsFromGZIPFileWithSingleUserId(t *testing.T) {
 			[]byte("{\"user_id\": \"invalid-user-id\"}\n"),
 			[]byte("{\"user_id\": \"invalid-user-id\"}\n"),
 		},
+		{
+			SnakeCase,
+			"my-^-user-id",
+			[]byte("{\"user_id\": \"my-^-user-id\"}\n"),
+			[]byte(""), // This change uses regex variables in matched string
+		},
 	}
 
 	for _, ip := range inputs {
@@ -64,7 +70,45 @@ func TestRemoveIdentityRecordsFromGZIPFileWithSingleUserId(t *testing.T) {
 	}
 }
 
-// router -> batch_router ( 30 second batching ) -> warehouse ( s3datalake )
+func TestRemoveIdentityRecordsFromGZIPByMultipleUserId(t *testing.T) {
+	inputs := []struct {
+		casing       Case
+		userIds      []model.User
+		inputByte    []byte
+		expectedByte []byte
+	}{
+		{
+			casing: SnakeCase,
+			userIds: []model.User{
+				{ID: "user-id-1"},
+				{ID: "user-id-3"},
+			},
+			inputByte:    []byte("{\"user_id\": \"user-id-1\"}\n{\"user_id\": \"user-id-2\"}\n{\"user_id\": \"user-id-3\"}\n"),
+			expectedByte: []byte("{\"user_id\": \"user-id-2\"}\n"),
+		},
+
+		{
+			casing: CamelCase,
+			userIds: []model.User{
+				{ID: "user-id-1"},
+				{ID: "user-id-3"},
+			},
+			inputByte:    []byte("{\"userId\": \"user-id-1\"}\n{\"userId\": \"user-id-2\"}\n{\"userId\": \"user-id-3\"}\n"),
+			expectedByte: []byte("{\"userId\": \"user-id-2\"}\n"),
+		},
+	}
+
+	for _, ip := range inputs {
+
+		h := NewGZIPLocalFileHandler(ip.casing)
+		h.records = ip.inputByte
+		err := h.RemoveIdentity(context.TODO(), ip.userIds)
+		require.Nil(t, err)
+		require.Equal(t, true, bytes.Equal(h.records, ip.expectedByte))
+	}
+
+}
+
 func TestIdentityDeletePattern(t *testing.T) {
 	inputs := []struct {
 		casing          Case
@@ -80,6 +124,11 @@ func TestIdentityDeletePattern(t *testing.T) {
 			SnakeCase,
 			"my-user-id",
 			"'/\"user_id\": *\"my-user-id\"/d'",
+		},
+		{
+			SnakeCase,
+			"my-^-user-id",
+			"'/\"user_id\": *\"my-^-user-id\"/d'",
 		},
 	}
 
