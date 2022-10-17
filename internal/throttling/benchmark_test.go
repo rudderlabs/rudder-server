@@ -13,7 +13,47 @@ import (
 	"github.com/rudderlabs/rudder-server/testhelper/rand"
 )
 
-func BenchmarkSortedSetRemovers(b *testing.B) {
+/*
+* BenchmarkInMemoryLimiters/go_rate-24         	 7424371	       162.7 ns/op
+* BenchmarkInMemoryLimiters/gcra-24            	 9857386	       121.5 ns/op
+* BenchmarkInMemoryLimiters/sorted_set-24      	 4144581	       287.3 ns/op
+ */
+func BenchmarkInMemoryLimiters(b *testing.B) {
+	var (
+		ctx          = context.Background()
+		rate   int64 = 100
+		window int64 = 10
+	)
+
+	rateLimiter := InMemoryLimiter{
+		gcra:      &gcra{getterSetter: &inMemoryGetterSetter{}},
+		sortedSet: &sortedSet{},
+		goRate:    &goRate{},
+	}
+
+	b.Run("go rate", func(b *testing.B) {
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			_, _ = rateLimiter.goRateLimit(ctx, 1, rate, window, "some-key")
+		}
+	})
+
+	b.Run("gcra", func(b *testing.B) {
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			_, _ = rateLimiter.gcraLimit(ctx, 1, rate, window, "some-key")
+		}
+	})
+
+	b.Run("sorted set", func(b *testing.B) {
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			_, _ = rateLimiter.sortedSetLimit(ctx, 1, rate, window, "some-key")
+		}
+	})
+}
+
+func BenchmarkRedisSortedSetRemover(b *testing.B) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 

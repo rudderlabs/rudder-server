@@ -98,6 +98,7 @@ func (r *RedisLimiter) gcraLimit(ctx context.Context, cost, rate, window int64, 
 type InMemoryLimiter struct {
 	gcra      *gcra
 	sortedSet *sortedSet
+	goRate    *goRate
 }
 
 func (i *InMemoryLimiter) Limit(ctx context.Context, cost, rate, window int64, key string) (
@@ -107,7 +108,7 @@ func (i *InMemoryLimiter) Limit(ctx context.Context, cost, rate, window int64, k
 	return i.gcraLimit(ctx, cost, rate, window, key)
 }
 
-func (i *InMemoryLimiter) gcraLimit(ctx context.Context, cost, rate, window int64, key string) (
+func (i *InMemoryLimiter) gcraLimit(_ context.Context, cost, rate, window int64, key string) (
 	interface{ Return(context.Context) error },
 	error,
 ) {
@@ -135,4 +136,19 @@ func (i *InMemoryLimiter) sortedSetLimit(_ context.Context, cost, rate, window i
 		members: members,
 		remover: i.sortedSet,
 	}, nil
+}
+
+func (i *InMemoryLimiter) goRateLimit(_ context.Context, cost, rate, window int64, key string) (
+	interface{ Return(context.Context) error },
+	error,
+) {
+	res := i.goRate.limit(key, cost, rate, window)
+	if !res.OK() {
+		return nil, nil // limit exceeded
+	}
+	if res.Delay() > 0 {
+		res.Cancel()
+		return nil, nil // limit exceeded
+	}
+	return &goRateReturn{reservation: res}, nil
 }

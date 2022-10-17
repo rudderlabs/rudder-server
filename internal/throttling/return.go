@@ -58,3 +58,16 @@ func (r *sortedSetInMemoryReturn) Return(_ context.Context) error {
 	r.remover.remove(r.key, r.members)
 	return nil
 }
+
+type goRateRemover interface {
+	Cancel()
+}
+
+type goRateReturn struct {
+	reservation goRateRemover
+}
+
+func (r *goRateReturn) Return(_ context.Context) error {
+	r.reservation.Cancel()
+	return nil
+}
