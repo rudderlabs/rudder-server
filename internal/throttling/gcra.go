@@ -14,7 +14,7 @@ const janFirst2017 = 1483228800
 // TODO add expiration mechanism? if we don't touch a key anymore it will stay in memory forever
 type gcra struct {
 	mu sync.Mutex
-	m  map[string]interface{}
+	m  map[string]int64
 	ex map[string]time.Time
 }
 
@@ -36,12 +36,11 @@ func (g *gcra) limit(key string, cost, burst, rate, period int64) (
 	microseconds := timeNow.UnixMicro() - nowSecondsInMicro
 	now := (timeNow.Unix() - janFirst2017) + (microseconds / 1000000)
 
-	value, err := g.get(key)
+	tat, err := g.get(key)
 	if err != nil {
 		return 0, 0, 0, 0, err
 	}
-	tat, ok := value.(int64)
-	if !ok || now > tat {
+	if tat == -1 || now > tat {
 		tat = now
 	}
 
@@ -67,22 +66,22 @@ func (g *gcra) limit(key string, cost, burst, rate, period int64) (
 	return cost, remaining, retryAfter, resetAfter, nil
 }
 
-func (g *gcra) get(key string) (interface{}, error) {
+func (g *gcra) get(key string) (int64, error) {
 	v, ok := g.m[key]
 	if !ok {
-		return 0, nil
+		return -1, nil
 	}
 	if time.Now().UnixNano() > g.ex[key].UnixNano() {
 		delete(g.m, key)
 		delete(g.ex, key)
-		return 0, nil
+		return -1, nil
 	}
 	return v, nil
 }
 
-func (g *gcra) set(key string, value interface{}, expiration int64) error {
+func (g *gcra) set(key string, value, expiration int64) error {
 	if g.m == nil {
-		g.m = make(map[string]interface{})
+		g.m = make(map[string]int64)
 		g.ex = make(map[string]time.Time)
 	}
 	g.m[key] = value
