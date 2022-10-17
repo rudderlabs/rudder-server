@@ -215,4 +215,46 @@ require (
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
 
-require github.com/morikuni/aec v1.0.0 // indirect
+require (
+	github.com/benbjohnson/clock v1.1.0 // indirect
+	github.com/beorn7/perks v1.0.1 // indirect
+	github.com/bgentry/speakeasy v0.1.0 // indirect
+	github.com/cespare/xxhash/v2 v2.1.1 // indirect
+	github.com/google/btree v1.0.1 // indirect
+	github.com/gorilla/websocket v1.4.2 // indirect
+	github.com/grpc-ecosystem/go-grpc-middleware v1.3.0 // indirect
+	github.com/grpc-ecosystem/go-grpc-prometheus v1.2.0 // indirect
+	github.com/grpc-ecosystem/grpc-gateway v1.16.0 // indirect
+	github.com/inconshreveable/mousetrap v1.0.0 // indirect
+	github.com/jonboulle/clockwork v0.2.2 // indirect
+	github.com/matttproud/golang_protobuf_extensions v1.0.2-0.20181231171920-c182affec369 // indirect
+	github.com/morikuni/aec v1.0.0 // indirect
+	github.com/olekukonko/tablewriter v0.0.5 // indirect
+	github.com/prometheus/client_golang v1.11.1 // indirect
+	github.com/prometheus/client_model v0.2.0 // indirect
+	github.com/prometheus/common v0.26.0 // indirect
+	github.com/prometheus/procfs v0.6.0 // indirect
+	github.com/soheilhy/cmux v0.1.5 // indirect
+	github.com/spf13/cobra v1.1.3 // indirect
+	github.com/tmc/grpc-websocket-proxy v0.0.0-20201229170055-e5319fda7802 // indirect
+	github.com/xiang90/probing v0.0.0-20190116061207-43a291ad63a2 // indirect
+	go.etcd.io/bbolt v1.3.6 // indirect
+	go.etcd.io/etcd/client/v2 v2.305.5 // indirect
+	go.etcd.io/etcd/etcdctl/v3 v3.5.5 // indirect
+	go.etcd.io/etcd/etcdutl/v3 v3.5.5 // indirect
+	go.etcd.io/etcd/pkg/v3 v3.5.5 // indirect
+	go.etcd.io/etcd/raft/v3 v3.5.5 // indirect
+	go.etcd.io/etcd/server/v3 v3.5.5 // indirect
+	go.etcd.io/etcd/tests/v3 v3.5.5 // indirect
+	go.etcd.io/etcd/v3 v3.5.5 // indirect
+	go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.25.0 // indirect
+	go.opentelemetry.io/otel v1.0.1 // indirect
+	go.opentelemetry.io/otel/exporters/otlp/otlptrace v1.0.1 // indirect
+	go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc v1.0.1 // indirect
+	go.opentelemetry.io/otel/sdk v1.0.1 // indirect
+	go.opentelemetry.io/otel/trace v1.0.1 // indirect
+	go.opentelemetry.io/proto/otlp v0.9.0 // indirect
+	golang.org/x/time v0.0.0-20220224211638-0e9765cccd65 // indirect
+	gopkg.in/cheggaaa/pb.v1 v1.0.28 // indirect
+	sigs.k8s.io/yaml v1.2.0 // indirect
+)
