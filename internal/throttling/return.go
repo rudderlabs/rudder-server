@@ -12,6 +12,7 @@ var ErrorUnsupportedReturn = errors.New("token return not supported")
 
 type unsupportedReturn struct{}
 
+// Return TODO for reviewer(we could return nil instead and pretend that tokens were returned simplifying client logic)
 func (*unsupportedReturn) Return(_ context.Context) error { return ErrorUnsupportedReturn }
 
 type sortedSetRemover interface {
