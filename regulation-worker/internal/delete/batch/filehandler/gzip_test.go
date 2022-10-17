@@ -10,7 +10,6 @@ import (
 )
 
 func TestRemoveIdentityRecordsFromGZIPFileWithSingleUserId(t *testing.T) {
-
 	inputs := []struct {
 		casing       Case
 		userID       string
@@ -67,7 +66,6 @@ func TestRemoveIdentityRecordsFromGZIPFileWithSingleUserId(t *testing.T) {
 
 // router -> batch_router ( 30 second batching ) -> warehouse ( s3datalake )
 func TestIdentityDeletePattern(t *testing.T) {
-
 	inputs := []struct {
 		casing          Case
 		userId          string

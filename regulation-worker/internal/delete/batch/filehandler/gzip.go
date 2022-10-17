@@ -24,7 +24,6 @@ func NewGZIPLocalFileHandler(casing Case) *GZIPLocalFileHandler {
 }
 
 func (h *GZIPLocalFileHandler) Read(_ context.Context, path string) error {
-
 	f, err := os.OpenFile(path, os.O_RDWR, 0o644)
 	if err != nil {
 		return fmt.Errorf("error while opening compressed file, %w", err)
