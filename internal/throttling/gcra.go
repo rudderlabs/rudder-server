@@ -26,9 +26,9 @@ func (g *gcra) limit(key string, cost, burst, rate, period int64) (
 	defer g.mu.Unlock()
 
 	var (
-		emissionInterval = float64(period) / float64(rate)
-		increment        = float64(cost) * emissionInterval
-		burstOffset      = float64(burst) * emissionInterval
+		emissionInterval = int64(math.Ceil(float64(period) / float64(rate)))
+		increment        = cost * emissionInterval
+		burstOffset      = burst * emissionInterval
 	)
 
 	timeNow := time.Now()
@@ -45,27 +45,26 @@ func (g *gcra) limit(key string, cost, burst, rate, period int64) (
 		tat = now
 	}
 
-	newTat := float64(tat) + increment
+	newTat := tat + increment
 	allowAt := newTat - burstOffset
-	diff := float64(now) - allowAt
-	remainingFloat := diff / emissionInterval
-	if remainingFloat < 0 {
+	diff := now - allowAt
+	remaining = diff / emissionInterval
+	if remaining < 0 {
 		resetAfter := tat - now
-		retryAfter := int64(math.Ceil(diff * -1))
+		retryAfter := int64(math.Ceil(float64(diff * -1)))
 		return 0, 0, retryAfter, resetAfter, nil
 	}
 
-	resetAfterFloat := newTat - float64(now)
-	resetAfter = int64(math.Ceil(resetAfterFloat))
-	if resetAfterFloat > 0 {
-		err = g.set(key, int64(newTat), resetAfter)
+	resetAfter = newTat - now
+	if resetAfter > 0 {
+		err = g.set(key, newTat, resetAfter)
 		if err != nil {
 			return 0, 0, 0, 0, err
 		}
 	}
 
 	retryAfter = -1
-	return cost, int64(remainingFloat), retryAfter, resetAfter, nil
+	return cost, remaining, retryAfter, resetAfter, nil
 }
 
 func (g *gcra) get(key string) (interface{}, error) {
