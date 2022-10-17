@@ -8,8 +8,7 @@ import (
 	"github.com/wangjia184/sortedset"
 )
 
-// TODO add expiration mechanism, if we don't touch a key anymore it will stay in memory forever
-//
+// TODO add expiration mechanism? if we don't touch a key anymore it will stay in memory forever
 type sortedSet struct {
 	sets    map[string]*sortedset.SortedSet
 	expires map[string]time.Time

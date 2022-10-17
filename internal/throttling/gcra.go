@@ -2,35 +2,29 @@ package throttling
 
 import (
 	"math"
+	"sync"
 	"time"
 )
-
-type getter interface {
-	Get(key string) (interface{}, error)
-}
-
-type setter interface {
-	Set(key string, value interface{}, expireAfter int64) error
-}
-
-type getterSetter interface {
-	getter
-	setter
-}
 
 // adjust the epoch to be relative to Jan 1, 2017 00:00:00 GMT to avoid floating
 // point problems. this approach is good until "now" is 2,483,228,799 (Wed, 09
 // Sep 2048 01:46:39 GMT), when the adjusted value is 16 digits.
 const janFirst2017 = 1483228800
 
-// TODO add expiration mechanism, if we don't touch a key anymore it will stay in memory forever
+// TODO add expiration mechanism? if we don't touch a key anymore it will stay in memory forever
 type gcra struct {
-	getterSetter
+	mu sync.Mutex
+	m  map[string]interface{}
+	ex map[string]time.Time
 }
 
+// TODO some of this logic can be simplified since we're not interested on remaining,retryAfter,resetAfter
 func (g *gcra) limit(key string, cost, burst, rate, period int64) (
 	allowed, remaining, retryAfter, resetAfter int64, err error,
 ) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+
 	var (
 		emissionInterval = float64(period) / float64(rate)
 		increment        = float64(cost) * emissionInterval
@@ -42,7 +36,7 @@ func (g *gcra) limit(key string, cost, burst, rate, period int64) (
 	microseconds := timeNow.UnixMicro() - nowSecondsInMicro
 	now := (timeNow.Unix() - janFirst2017) + (microseconds / 1000000)
 
-	value, err := g.Get(key)
+	value, err := g.get(key)
 	if err != nil {
 		return 0, 0, 0, 0, err
 	}
@@ -55,15 +49,16 @@ func (g *gcra) limit(key string, cost, burst, rate, period int64) (
 	allowAt := newTat - burstOffset
 	diff := float64(now) - allowAt
 	remainingFloat := diff / emissionInterval
-	if remainingFloat < 1 {
+	if remainingFloat < 0 {
 		resetAfter := tat - now
 		retryAfter := int64(math.Ceil(diff * -1))
 		return 0, 0, retryAfter, resetAfter, nil
 	}
 
-	resetAfter = int64(math.Ceil(newTat - float64(now)))
-	if resetAfter > 0 {
-		err = g.Set(key, int64(newTat), resetAfter)
+	resetAfterFloat := newTat - float64(now)
+	resetAfter = int64(math.Ceil(resetAfterFloat))
+	if resetAfterFloat > 0 {
+		err = g.set(key, int64(newTat), resetAfter)
 		if err != nil {
 			return 0, 0, 0, 0, err
 		}
@@ -71,4 +66,27 @@ func (g *gcra) limit(key string, cost, burst, rate, period int64) (
 
 	retryAfter = -1
 	return cost, int64(remainingFloat), retryAfter, resetAfter, nil
+}
+
+func (g *gcra) get(key string) (interface{}, error) {
+	v, ok := g.m[key]
+	if !ok {
+		return 0, nil
+	}
+	if time.Now().UnixNano() > g.ex[key].UnixNano() {
+		delete(g.m, key)
+		delete(g.ex, key)
+		return 0, nil
+	}
+	return v, nil
+}
+
+func (g *gcra) set(key string, value interface{}, expiration int64) error {
+	if g.m == nil {
+		g.m = make(map[string]interface{})
+		g.ex = make(map[string]time.Time)
+	}
+	g.m[key] = value
+	g.ex[key] = time.Now().Add(time.Duration(expiration) * time.Second)
+	return nil
 }

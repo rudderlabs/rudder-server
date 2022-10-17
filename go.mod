@@ -197,6 +197,7 @@ require (
 	github.com/dgryski/go-rendezvous v0.0.0-20200823014737-9f7001d12a5f // indirect
 	github.com/golang-jwt/jwt/v4 v4.2.0 // indirect
 	github.com/googleapis/enterprise-certificate-proxy v0.1.0 // indirect
+	github.com/gotestyourself/gotestyourself v2.2.0+incompatible // indirect
 	github.com/klauspost/cpuid/v2 v2.1.0 // indirect
 	github.com/miekg/dns v1.1.25 // indirect
 	github.com/rs/xid v1.4.0 // indirect
@@ -206,6 +207,7 @@ require (
 require (
 	github.com/foxcpp/go-mockdns v1.0.0
 	github.com/go-redis/redis/v9 v9.0.0-beta.3
+	github.com/ory/dockertest v3.3.5+incompatible
 	github.com/viney-shih/go-lock v1.1.2
 	github.com/wangjia184/sortedset v0.0.0-20220209072355-af6d6d227aa7
 	github.com/zenizh/go-capturer v0.0.0-20211219060012-52ea6c8fed04
