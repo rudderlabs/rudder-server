@@ -23,7 +23,7 @@ var (
 
 func loadConfig() {
 	config.RegisterDurationConfigVariable(300, &regulationsPollInterval, true, time.Second, "BackendConfig.Regulations.pollInterval")
-	config.RegisterIntConfigVariable(50, &suppressionApiPageSize, false, 1, "BackendConfig.Regulations.pageSize")
+	config.RegisterIntConfigVariable(1000, &suppressionApiPageSize, false, 1, "BackendConfig.Regulations.pageSize")
 	configBackendURL = config.GetString("CONFIG_BACKEND_URL", "https://api.rudderlabs.com")
 }
 
