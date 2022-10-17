@@ -8,8 +8,8 @@ replace (
 	github.com/containernetworking/cni => github.com/containernetworking/cni v0.8.1
 	github.com/dgrijalva/jwt-go => github.com/dgrijalva/jwt-go/v4 v4.0.0-preview1
 	github.com/emicklei/go-restful => github.com/emicklei/go-restful/v3 v3.9.0
-	github.com/go.etcd.io/etcd => github.com/go.etcd.io/etcd/v3 v3.4.0
-	github.com/gobuffalo/packr => github.com/gobuffalo/packr v1.26.0
+	github.com/go.etcd.io/etcd => github.com/go.etcd.io/etcd/v3 v3.4.1
+	github.com/gobuffalo/packr => github.com/gobuffalo/packr/v2 v2.3.2
 	github.com/gorilla/websocket => github.com/gorilla/websocket v1.4.1
 	github.com/miekg/dns => github.com/miekg/dns v1.1.25
 	github.com/opencontainers/runc => github.com/opencontainers/runc v1.0.3
