@@ -63,9 +63,8 @@ type PgNotifierT struct {
 	URI                   string
 	dbHandle              *sql.DB
 	workspaceIdentifier   string
-	noOfWorkers           int
 	activeWorkerCount     int
-	activeWorkerCountLock sync.RWMutex
+	activeWorkerCountLock *sync.RWMutex
 }
 
 type JobPayload json.RawMessage
