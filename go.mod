@@ -2,6 +2,11 @@ module github.com/rudderlabs/rudder-server
 
 go 1.18
 
+replace (
+	golang.org/x/net => golang.org/x/net v0.0.0-20221004154528-8021a29435af
+	k8s.io/kubernetes => k8s.io/kubernetes v1.13.5
+)
+
 require (
 	cloud.google.com/go/bigquery v1.42.0
 	cloud.google.com/go/pubsub v1.3.1
