@@ -9,6 +9,7 @@ import (
 )
 
 // TODO add expiration mechanism, if we don't touch a key anymore it will stay in memory forever
+//
 type sortedSet struct {
 	sets    map[string]*sortedset.SortedSet
 	expires map[string]time.Time
@@ -42,7 +43,7 @@ func (s *sortedSet) limit(key string, cost, rate, period int64) (
 	}
 
 	members = make([]string, cost)
-	for i := int64(0); i <= cost; i++ {
+	for i := int64(0); i < cost; i++ {
 		members[i] = strconv.FormatInt((now.UnixMicro()*10)+i, 10)
 		set.AddOrUpdate(members[i], sortedset.SCORE(now.Unix()), members[i])
 	}

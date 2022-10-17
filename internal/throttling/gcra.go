@@ -23,6 +23,7 @@ type getterSetter interface {
 // Sep 2048 01:46:39 GMT), when the adjusted value is 16 digits.
 const janFirst2017 = 1483228800
 
+// TODO add expiration mechanism, if we don't touch a key anymore it will stay in memory forever
 type gcra struct {
 	getterSetter
 }
@@ -53,8 +54,8 @@ func (g *gcra) limit(key string, cost, burst, rate, period int64) (
 	newTat := float64(tat) + increment
 	allowAt := newTat - burstOffset
 	diff := float64(now) - allowAt
-	remaining = int64(diff) / int64(emissionInterval)
-	if remaining < 0 {
+	remainingFloat := diff / emissionInterval
+	if remainingFloat < 1 {
 		resetAfter := tat - now
 		retryAfter := int64(math.Ceil(diff * -1))
 		return 0, 0, retryAfter, resetAfter, nil
@@ -69,5 +70,5 @@ func (g *gcra) limit(key string, cost, burst, rate, period int64) (
 	}
 
 	retryAfter = -1
-	return cost, remaining, retryAfter, resetAfter, nil
+	return cost, int64(remainingFloat), retryAfter, resetAfter, nil
 }
