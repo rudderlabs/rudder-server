@@ -92,13 +92,16 @@ func (suppressUser *SuppressRegulationHandler) regulationSyncLoop(ctx context.Co
 			return
 		}
 		pkgLogger.Info("Fetching Regulations")
+		completeGetRegulationTime := time.Now()
 		regulations, err := suppressUser.getSourceRegulationsFromRegulationService()
 		if err != nil {
 			misc.SleepCtx(ctx, regulationsPollInterval)
 			continue
 		}
-		stats.Default.NewStat("suppressUser_count", stats.CountType).Count(len(regulations))
+		stats.Default.NewStat("suppress_regulation_network_unmarshal_latency", stats.TimerType).Since(completeGetRegulationTime)
+		stats.Default.NewStat("suppress_user_count", stats.CountType).Count(len(regulations))
 
+		regulationInsertTime := time.Now()
 		// need to discuss the correct place tp put this lock
 		suppressUser.regulationsSubscriberLock.Lock()
 		for _, sourceRegulation := range regulations {
@@ -148,6 +151,7 @@ func (suppressUser *SuppressRegulationHandler) regulationSyncLoop(ctx context.Co
 			}
 		}
 		suppressUser.regulationsSubscriberLock.Unlock()
+		stats.Default.NewStat("suppress_regulation_memory_insert_latency", stats.TimerType).Since(regulationInsertTime)
 		stats.Default.NewStat("suppress_user_map_size", stats.GaugeType).Gauge(unsafe.Sizeof(suppressUser.userSpecificSuppressedSourceMap))
 
 		if len(regulations) == 0 || len(regulations) < pageSize {
@@ -226,7 +230,7 @@ func (suppressUser *SuppressRegulationHandler) getSourceRegulationsFromRegulatio
 		pkgLogger.Error("nil response body, returning")
 		return []sourceRegulation{}, errors.New("nil response body")
 	}
-	stats.Default.NewStat("suppress_regulation_request_latency", stats.TimerType).Since(regulationReqTime)
+	stats.Default.NewStat("suppress_regulation_network_latency", stats.TimerType).Since(regulationReqTime)
 
 	var sourceRegulationsJSON apiResponse
 	err = json.Unmarshal(respBody, &sourceRegulationsJSON)
@@ -247,7 +251,7 @@ func (suppressUser *SuppressRegulationHandler) init() {
 	suppressUser.once.Do(func() {
 		pkgLogger.Info("init Regulations")
 		if len(suppressUser.userSpecificSuppressedSourceMap) == 0 {
-			suppressUser.userSpecificSuppressedSourceMap = map[string]sourceFilter{}
+			suppressUser.userSpecificSuppressedSourceMap = make(map[string]sourceFilter, 40000000)
 		}
 		if suppressUser.Client == nil {
 			suppressUser.Client = &http.Client{Timeout: config.GetDuration("HttpClient.suppressUser.timeout", 30, time.Second)}
