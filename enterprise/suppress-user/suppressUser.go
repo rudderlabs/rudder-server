@@ -86,6 +86,7 @@ func (suppressUser *SuppressRegulationHandler) regulationSyncLoop(ctx context.Co
 		suppressUser.pageSize = ""
 		pageSize = 0
 	}
+	pkgLogger.Info("regulation request page size: ", pageSize)
 
 	for {
 		if ctx.Err() != nil {
