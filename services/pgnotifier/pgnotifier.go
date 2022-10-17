@@ -148,9 +148,10 @@ func New(workspaceIdentifier, fallbackConnectionInfo string) (notifier PgNotifie
 	pgNotifierClaimUpdateFailed = whUtils.NewCounterStat("pgnotifier_claim_update_failed", pgNotifierModuleTag)
 
 	notifier = PgNotifierT{
-		dbHandle:            dbHandle,
-		URI:                 connectionInfo,
-		workspaceIdentifier: workspaceIdentifier,
+		dbHandle:              dbHandle,
+		URI:                   connectionInfo,
+		workspaceIdentifier:   workspaceIdentifier,
+		activeWorkerCountLock: &sync.RWMutex{},
 	}
 	err = notifier.setupQueue()
 	return
@@ -408,22 +409,22 @@ func (notifier *PgNotifierT) UpdateClaimedEvent(claim *ClaimT, response *ClaimRe
 	notifier.decrementActiveWorkers()
 }
 
-func (wh *PgNotifierT) decrementActiveWorkers() {
-	wh.activeWorkerCountLock.Lock()
-	wh.activeWorkerCount--
-	wh.activeWorkerCountLock.Unlock()
+func (notifier *PgNotifierT) decrementActiveWorkers() {
+	notifier.activeWorkerCountLock.Lock()
+	notifier.activeWorkerCount--
+	notifier.activeWorkerCountLock.Unlock()
 }
 
-func (wh *PgNotifierT) incrementActiveWorkers() {
-	wh.activeWorkerCountLock.Lock()
-	wh.activeWorkerCount++
-	wh.activeWorkerCountLock.Unlock()
+func (notifier *PgNotifierT) incrementActiveWorkers() {
+	notifier.activeWorkerCountLock.Lock()
+	notifier.activeWorkerCount++
+	notifier.activeWorkerCountLock.Unlock()
 }
 
-func (wh *PgNotifierT) getActiveWorkerCount() int {
-	wh.activeWorkerCountLock.Lock()
-	defer wh.activeWorkerCountLock.Unlock()
-	return wh.activeWorkerCount
+func (notifier *PgNotifierT) getActiveWorkerCount() int {
+	notifier.activeWorkerCountLock.Lock()
+	defer notifier.activeWorkerCountLock.Unlock()
+	return notifier.activeWorkerCount
 }
 
 func (notifier *PgNotifierT) claim(workerID string) (claim ClaimT, err error) {
