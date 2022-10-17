@@ -6,6 +6,7 @@ replace (
 	github.com/buger/jsonparser => github.com/buger/jsonparser v1.0.0
 	github.com/containerd/containerd => github.com/containerd/containerd v1.5.9
 	github.com/containernetworking/cni => github.com/containernetworking/cni v0.8.1
+	github.com/coreos/etcd => github.com/fredczj/etcd v3.4.6+incompatible
 	github.com/dgrijalva/jwt-go => github.com/dgrijalva/jwt-go/v4 v4.0.0-preview1
 	github.com/emicklei/go-restful => github.com/emicklei/go-restful/v3 v3.9.0
 	github.com/go.etcd.io/etcd => github.com/go.etcd.io/etcd/v3 v3.4.1
