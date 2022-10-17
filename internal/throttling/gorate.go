@@ -7,7 +7,7 @@ import (
 	gorate "golang.org/x/time/rate"
 )
 
-// TODO add expiration mechanism, if we don't touch a key anymore it will stay in memory forever
+// TODO add expiration mechanism? if we don't touch a key anymore it will stay in memory forever
 type goRate struct {
 	mu sync.Mutex
 	m  map[string]*gorate.Limiter

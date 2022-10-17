@@ -14,10 +14,10 @@ import (
 )
 
 /*
-* BenchmarkInMemoryLimiters/go_rate-24         	 7424371	       162.7 ns/op
-* BenchmarkInMemoryLimiters/gcra-24            	 9857386	       121.5 ns/op
-* BenchmarkInMemoryLimiters/sorted_set-24      	 4144581	       287.3 ns/op
- */
+BenchmarkInMemoryLimiters/go_rate-24         	 6978067	       164.0 ns/op
+BenchmarkInMemoryLimiters/gcra-24            	10721114	       110.8 ns/op
+BenchmarkInMemoryLimiters/sorted_set-24      	 4254432	       281.0 ns/op
+*/
 func BenchmarkInMemoryLimiters(b *testing.B) {
 	var (
 		ctx          = context.Background()
@@ -26,7 +26,7 @@ func BenchmarkInMemoryLimiters(b *testing.B) {
 	)
 
 	rateLimiter := InMemoryLimiter{
-		gcra:      &gcra{getterSetter: &inMemoryGetterSetter{}},
+		gcra:      &gcra{},
 		sortedSet: &sortedSet{},
 		goRate:    &goRate{},
 	}
