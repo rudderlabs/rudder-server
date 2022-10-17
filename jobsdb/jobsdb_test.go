@@ -3,7 +3,6 @@ package jobsdb
 import (
 	"bytes"
 	"context"
-	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -394,7 +393,7 @@ func TestRefreshDSList(t *testing.T) {
 	defer jobsDB.TearDown()
 
 	require.Equal(t, 1, len(jobsDB.getDSList()), "jobsDB should start with a ds list size of 1")
-	require.NoError(t, jobsDB.WithTx(func(tx *sql.Tx) error {
+	require.NoError(t, jobsDB.WithTx(func(tx *Tx) error {
 		return jobsDB.addDSInTx(tx, newDataSet(prefix, "2"))
 	}))
 	require.Equal(t, 1, len(jobsDB.getDSList()), "addDS should not refresh the ds list")
@@ -965,6 +964,21 @@ func Test_SortDnumList(t *testing.T) {
 	l := []string{"1", "0_1", "0_1_1", "-2"}
 	sortDnumList(l)
 	require.Equal(t, []string{"-2", "0_1", "0_1_1", "1"}, l)
+}
+
+func Test_GetAdvisoryLockForOperation_Unique(t *testing.T) {
+	calculated := map[int64]string{}
+	for _, operation := range []string{"add_ds", "migrate_ds"} {
+		for _, prefix := range []string{"gw", "rt", "batch_rt", "proc_error"} {
+			h := &HandleT{tablePrefix: prefix}
+			key := fmt.Sprintf("%s_%s", prefix, operation)
+			advLock := h.getAdvisoryLockForOperation(operation)
+			if dupKey, ok := calculated[advLock]; ok {
+				t.Errorf("Duplicate advisory lock calculated for different keys %s and %s: %d", key, dupKey, advLock)
+			}
+			calculated[advLock] = key
+		}
+	}
 }
 
 type testingT interface {
