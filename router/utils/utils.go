@@ -53,8 +53,7 @@ func loadConfig() {
 }
 
 func getRetentionTimeForDestination(destID string) time.Duration {
-	destJobRetentionFound := config.IsSet("Router." + destID + ".jobRetention")
-	if destJobRetentionFound {
+	if config.IsSet("Router." + destID + ".jobRetention") {
 		return config.GetDuration("Router."+destID+".jobRetention", 720, time.Hour)
 	}
 
@@ -62,7 +61,7 @@ func getRetentionTimeForDestination(destID string) time.Duration {
 }
 
 func ToBeDrained(job *jobsdb.JobT, destID, toAbortDestinationIDs string, destinationsMap map[string]*BatchDestinationT) (bool, string) {
-	// drain if job is older than a day
+	// drain if job is older than the destination's retention time
 	jobReceivedAt := gjson.GetBytes(job.Parameters, "received_at")
 	if jobReceivedAt.Exists() {
 		jobReceivedAtTime, err := time.Parse(misc.RFC3339Milli, jobReceivedAt.String())
