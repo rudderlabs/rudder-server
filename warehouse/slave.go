@@ -690,7 +690,7 @@ func setupSlave(ctx context.Context) error {
 	g, ctx := errgroup.WithContext(ctx)
 
 	slaveID := uuid.Must(uuid.NewV4()).String()
-	jobNotificationChannel := notifier.Subscribe(ctx, slaveID, 0)
+	jobNotificationChannel := notifier.Subscribe(ctx, slaveID, noOfSlaveWorkerRoutines)
 	for workerIdx := 0; workerIdx <= noOfSlaveWorkerRoutines-1; workerIdx++ {
 		idx := workerIdx
 		g.Go(misc.WithBugsnagForWarehouse(func() error {

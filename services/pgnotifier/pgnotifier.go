@@ -611,7 +611,7 @@ func (notifier *PgNotifierT) Publish(payload MessagePayload, schema *whUtils.Sch
 }
 
 func (notifier *PgNotifierT) Subscribe(ctx context.Context, workerId string, jobsBufferSize int) chan ClaimT {
-	jobs := make(chan ClaimT, jobsBufferSize)
+	jobs := make(chan ClaimT)
 	rruntime.GoForWarehouse(func() {
 		pollSleep := time.Duration(0)
 		defer close(jobs)
