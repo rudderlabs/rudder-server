@@ -62,7 +62,7 @@ func (*ParquetLoader) WriteToString() (string, error) {
 }
 
 func (loader *ParquetLoader) Write() error {
-	return loader.FileWriter.WriteRow(&loader.Values)
+	return loader.FileWriter.WriteRow(loader.Values)
 }
 
 func getInt64(val interface{}) (int64, error) {
