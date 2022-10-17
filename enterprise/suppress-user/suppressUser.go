@@ -2,7 +2,6 @@ package suppression
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -12,6 +11,8 @@ import (
 	"sync"
 	"time"
 	"unsafe"
+
+	jsoniter "github.com/json-iterator/go"
 
 	"github.com/cenkalti/backoff"
 	"github.com/rudderlabs/rudder-server/config"
@@ -234,7 +235,7 @@ func (suppressUser *SuppressRegulationHandler) getSourceRegulationsFromRegulatio
 	stats.Default.NewStat("suppress_regulation_network_latency", stats.TimerType).Since(regulationReqTime)
 
 	var sourceRegulationsJSON apiResponse
-	err = json.Unmarshal(respBody, &sourceRegulationsJSON)
+	err = jsoniter.Unmarshal(respBody, &sourceRegulationsJSON)
 	if err != nil {
 		pkgLogger.Error("Error while parsing request: ", err, resp.StatusCode)
 		return []sourceRegulation{}, err
