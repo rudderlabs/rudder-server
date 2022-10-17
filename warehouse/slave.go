@@ -432,13 +432,16 @@ func processStagingFile(job Payload, workerIndex int) (loadFileUploadOutputs []l
 
 	lineBytesCounter := 0
 	var interfaceSliceSample []interface{}
-	//sendStats := true
+
+	var (
+		scannerTime    time.Duration
+		unmarshallTime time.Duration
+		writeTime      time.Duration
+	)
 	for {
-		//now := time.Now()
+		t := time.Now()
 		ok := scanner.Scan()
-		//if sendStats {
-		//	warehouseutils.NewTimerStat("process_staging_file_time_scanner_scan", warehouseutils.Tag{Name: TAG_WORKERID, Value: fmt.Sprintf("%d", workerIndex)}).Since(now)
-		//}
+		scannerTime = scannerTime + time.Since(t)
 		if !ok {
 			scanErr := scanner.Err()
 			if scanErr != nil {
@@ -450,11 +453,9 @@ func processStagingFile(job Payload, workerIndex int) (loadFileUploadOutputs []l
 		lineBytes := scanner.Bytes()
 		lineBytesCounter += len(lineBytes)
 		var batchRouterEvent BatchRouterEventT
-		//now = time.Now()
+		t = time.Now()
 		err := json.Unmarshal(lineBytes, &batchRouterEvent)
-		//if sendStats {
-		//	warehouseutils.NewTimerStat("process_staging_file_time_unmarshall", warehouseutils.Tag{Name: TAG_WORKERID, Value: fmt.Sprintf("%d", workerIndex)}).Since(now)
-		//}
+		unmarshallTime = unmarshallTime + time.Since(t)
 		if err != nil {
 			pkgLogger.Errorf("[WH]: Failed to unmarshal JSON line to batchrouter event: %+v", batchRouterEvent)
 			continue
@@ -541,12 +542,9 @@ func processStagingFile(job Payload, workerIndex int) (loadFileUploadOutputs []l
 			eventLoader.AddColumn(columnName, job.UploadSchema[tableName][columnName], columnVal)
 		}
 
-		// Completed parsing all columns, write single event to the file
-		//now = time.Now()
+		t = time.Now()
 		err = eventLoader.Write()
-		//if sendStats {
-		//	warehouseutils.NewTimerStat("process_staging_file_time_write", warehouseutils.Tag{Name: TAG_WORKERID, Value: fmt.Sprintf("%d", workerIndex)}).Since(now)
-		//}
+		writeTime = writeTime + time.Since(t)
 		if err != nil {
 			pkgLogger.Errorf("[WH]: Failed to write event: %v", err)
 			return loadFileUploadOutputs, err
@@ -554,6 +552,9 @@ func processStagingFile(job Payload, workerIndex int) (loadFileUploadOutputs []l
 		jobRun.tableEventCountMap[tableName]++
 	}
 	timer.End()
+	warehouseutils.NewTimerStat("process_staging_file_time_scanner", warehouseutils.Tag{Name: TAG_WORKERID, Value: fmt.Sprintf("%d", workerIndex)}).SendTiming(scannerTime)
+	warehouseutils.NewTimerStat("process_staging_file_time_unmarshall", warehouseutils.Tag{Name: TAG_WORKERID, Value: fmt.Sprintf("%d", workerIndex)}).SendTiming(unmarshallTime)
+	warehouseutils.NewTimerStat("process_staging_file_time_write", warehouseutils.Tag{Name: TAG_WORKERID, Value: fmt.Sprintf("%d", workerIndex)}).SendTiming(writeTime)
 
 	pkgLogger.Debugf("[WH]: Process %v bytes from downloaded staging file: %s", lineBytesCounter, job.StagingFileLocation)
 	jobRun.counterStat("bytes_processed_in_staging_file").Count(lineBytesCounter)
