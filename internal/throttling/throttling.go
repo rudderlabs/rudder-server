@@ -31,6 +31,7 @@ func init() {
 	sortedSetScript = redis.NewScript(sortedSetLua)
 }
 
+// RedisLimiter TODO constructor
 type RedisLimiter struct {
 	scripter         redis.Scripter
 	sortedSetRemover sortedSetRemover
@@ -92,5 +93,46 @@ func (r *RedisLimiter) gcraLimit(ctx context.Context, cost, rate, window int64, 
 	return &unsupportedReturn{}, nil
 }
 
-// InMemoryLimiter TODO implement
-type InMemoryLimiter struct{}
+// InMemoryLimiter TODO constructor
+// It allows to use the throttling package without Redis with GCRA or SortedSets.
+type InMemoryLimiter struct {
+	gcra      *gcra
+	sortedSet *sortedSet
+}
+
+func (i *InMemoryLimiter) Limit(ctx context.Context, cost, rate, window int64, key string) (
+	interface{ Return(context.Context) error },
+	error,
+) {
+	return i.gcraLimit(ctx, cost, rate, window, key)
+}
+
+func (i *InMemoryLimiter) gcraLimit(ctx context.Context, cost, rate, window int64, key string) (
+	interface{ Return(context.Context) error },
+	error,
+) {
+	allowed, _, _, _, err := i.gcra.limit(key, cost, rate, rate, window)
+	if err != nil {
+		return nil, fmt.Errorf("could not limit: %w", err)
+	}
+	if allowed < 1 {
+		return nil, nil // limit exceeded
+	}
+	return &unsupportedReturn{}, nil
+}
+
+func (i *InMemoryLimiter) sortedSetLimit(_ context.Context, cost, rate, window int64, key string) (
+	interface{ Return(context.Context) error },
+	error,
+) {
+	members, err := i.sortedSet.limit(key, cost, rate, window)
+	if err != nil {
+		return nil, fmt.Errorf("could not limit: %w", err)
+	}
+
+	return &sortedSetInMemoryReturn{
+		key:     key,
+		members: members,
+		remover: i.sortedSet,
+	}, nil
+}

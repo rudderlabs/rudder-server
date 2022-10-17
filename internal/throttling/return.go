@@ -43,3 +43,18 @@ func (r *sortedSetZRemReturn) Return(ctx context.Context) error {
 	}
 	return nil
 }
+
+type sortedSetMemoryRemover interface {
+	remove(key string, members []string)
+}
+
+type sortedSetInMemoryReturn struct {
+	key     string
+	members []string
+	remover sortedSetMemoryRemover
+}
+
+func (r *sortedSetInMemoryReturn) Return(_ context.Context) error {
+	r.remover.remove(r.key, r.members)
+	return nil
+}
