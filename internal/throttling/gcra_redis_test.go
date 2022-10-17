@@ -1,15 +1,30 @@
 package throttling
 
 import (
+	"context"
 	"testing"
 	"time"
 
+	"github.com/ory/dockertest/v3"
 	"github.com/stretchr/testify/require"
 )
 
-// TODO add more test scenarios
-func TestGCRA(t *testing.T) {
-	delta := 50 * time.Millisecond
+func TestRedisGCRA(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	pool, err := dockertest.NewPool("")
+	require.NoError(t, err)
+
+	var (
+		delta = 50 * time.Millisecond
+		rc    = bootstrapRedis(ctx, t, pool)
+		rl    = &RedisLimiter{
+			scripter:         rc,
+			sortedSetRemover: rc,
+		}
+	)
+
 	for _, tc := range []testCase{
 		{name: "1 token each 1s", rate: 1, window: 1, expected: 1},
 		{name: "2 tokens each 2s", rate: 2, window: 2, expected: 2},
@@ -18,7 +33,6 @@ func TestGCRA(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			var (
-				g       gcra
 				passed  int64
 				endTest = time.NewTimer(time.Duration(tc.window)*time.Second + delta)
 			)
@@ -28,9 +42,12 @@ func TestGCRA(t *testing.T) {
 				case <-endTest.C:
 					break loop
 				default:
-					allowed, _, _, _, err := g.limit(tc.name, 1, 1, tc.rate, tc.window)
+					cost := int64(1)
+					returner, err := rl.Limit(ctx, cost, tc.rate, tc.window, tc.name)
 					require.NoError(t, err)
-					passed += allowed
+					if returner != nil {
+						passed += cost
+					}
 					time.Sleep(time.Millisecond)
 				}
 			}
@@ -41,12 +58,4 @@ func TestGCRA(t *testing.T) {
 			)
 		})
 	}
-}
-
-type testCase struct {
-	name string
-	rate,
-	window,
-	expected,
-	errorMargin int64
 }

@@ -72,7 +72,7 @@ func (r *RedisLimiter) gcraLimit(ctx context.Context, cost, rate, window int64, 
 ) {
 	// rate is repeated twice because we are using the rate parameter also for burst.
 	// this is done to keep compatibility between GCRA and the SortedSet approach.
-	res, err := gcraRedisScript.Run(ctx, r.scripter, []string{key}, rate, rate, window, cost).Result()
+	res, err := gcraRedisScript.Run(ctx, r.scripter, []string{key}, 1, rate, window, cost).Result()
 	if err != nil {
 		return nil, fmt.Errorf("could not run GCRA Redis script: %v", err)
 	}

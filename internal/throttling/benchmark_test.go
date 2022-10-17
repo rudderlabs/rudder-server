@@ -61,7 +61,7 @@ func BenchmarkRedisSortedSetRemover(b *testing.B) {
 	require.NoError(b, err)
 
 	prepare := func(b *testing.B) (*redis.Client, string, []redis.Z) {
-		rc := bootstrapBenchmark(ctx, b, pool)
+		rc := bootstrapRedis(ctx, b, pool)
 
 		key := rand.UniqueString(10)
 		members := make([]redis.Z, b.N*3)
@@ -109,25 +109,34 @@ func BenchmarkRedisSortedSetRemover(b *testing.B) {
 	})
 }
 
-func bootstrapBenchmark(
-	ctx context.Context, b *testing.B, pool *dockertest.Pool, opts ...destination.RedisOption,
+type tester interface {
+	Helper()
+	Log(...interface{})
+	Errorf(format string, args ...interface{})
+	Fatalf(format string, args ...any)
+	FailNow()
+	Cleanup(f func())
+}
+
+func bootstrapRedis(
+	ctx context.Context, t tester, pool *dockertest.Pool, opts ...destination.RedisOption,
 ) *redis.Client {
-	b.Helper()
-	redisContainer, err := destination.SetupRedis(ctx, pool, b, opts...)
-	require.NoError(b, err)
+	t.Helper()
+	redisContainer, err := destination.SetupRedis(ctx, pool, t, opts...)
+	require.NoError(t, err)
 
 	rc := redis.NewClient(&redis.Options{
 		Network: "tcp",
 		Addr:    redisContainer.Addr,
 	})
-	b.Cleanup(func() { _ = rc.Close() })
+	t.Cleanup(func() { _ = rc.Close() })
 
 	pong, err := rc.Ping(ctx).Result()
 	if err != nil {
-		b.Fatalf("Could not ping Redis cluster: %v", err)
+		t.Fatalf("Could not ping Redis cluster: %v", err)
 	}
 
-	require.Equal(b, "PONG", pong)
+	require.Equal(t, "PONG", pong)
 
 	return rc
 }
