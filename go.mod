@@ -3,8 +3,12 @@ module github.com/rudderlabs/rudder-server
 go 1.18
 
 replace (
+	github.com/emicklei/go-restful => github.com/emicklei/go-restful/v3 v3.9.0
+	golang.org/x/crypto => golang.org/x/crypto v0.0.0-20221010152910-d6f0a8c073c2
 	golang.org/x/net => golang.org/x/net v0.0.0-20221004154528-8021a29435af
-	k8s.io/kubernetes => k8s.io/kubernetes v1.13.5
+	golang.org/x/text => golang.org/x/text v0.3.8
+	gopkg.in/yaml.v3 => gopkg.in/yaml.v3 v3.0.1
+	k8s.io/kubernetes => k8s.io/kubernetes v1.13.12
 )
 
 require (
