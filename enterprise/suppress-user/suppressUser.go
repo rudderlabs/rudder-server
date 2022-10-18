@@ -1,6 +1,8 @@
 package suppression
 
 import (
+	"bytes"
+	"compress/gzip"
 	"context"
 	"errors"
 	"fmt"
@@ -211,11 +213,15 @@ func (suppressUser *SuppressRegulationHandler) getSourceRegulationsFromRegulatio
 			}
 		}(resp.Body)
 
-		respBody, err = io.ReadAll(resp.Body)
+		gzipReader, err := gzip.NewReader(resp.Body)
 		if err != nil {
 			pkgLogger.Error(err)
 			return err
 		}
+		var buffer bytes.Buffer
+
+		io.Copy(&buffer, gzipReader)
+		respBody = buffer.Bytes()
 		return err
 	}
 
