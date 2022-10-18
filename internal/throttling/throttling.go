@@ -41,7 +41,8 @@ type TokenReturner interface {
 type Limiter struct {
 	// for Redis configurations
 	// a default redisTalker should always be provided for Redis configurations
-	redisTalker         redisTalker
+	redisTalker redisTalker
+	// redisToClientMap does not require a Mutex because it is only read from and written once in the constructor
 	redisKeyToClientMap map[string]redisTalker
 
 	// for in-memory configurations
