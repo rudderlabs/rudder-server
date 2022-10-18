@@ -31,24 +31,68 @@ func init() {
 	sortedSetScript = redis.NewScript(sortedSetLua)
 }
 
-// RedisLimiter TODO constructor
-type RedisLimiter struct {
-	scripter         redis.Scripter
-	sortedSetRemover sortedSetRemover
+type TokenReturner interface {
+	Return(context.Context) error
 }
 
-func (r *RedisLimiter) Limit(ctx context.Context, cost, rate, window int64, key string) (
-	interface{ Return(context.Context) error }, // TODO see if more convenient to return real interface
-	error,
-) {
-	return r.gcraLimit(ctx, cost, rate, window, key)
+type Limiter struct {
+	// for Redis configurations
+	redisScripter         redis.Scripter
+	redisSortedSetRemover redisSortedSetRemover
+
+	// for in-memory configurations
+	gcra      *gcra
+	sortedSet *sortedSet
+	goRate    *goRate
+
+	// other flags
+	useGCRA               bool
+	useGCRABurstAsRate    bool
+	useInMemorySortedSets bool
+	useGoRate             bool
 }
 
-func (r *RedisLimiter) sortedSetLimit(ctx context.Context, cost, rate, window int64, key string) (
-	interface{ Return(context.Context) error },
-	error,
-) {
-	res, err := sortedSetScript.Run(ctx, r.scripter, []string{key}, cost, rate, window).Result()
+func New(options ...Option) (*Limiter, error) {
+	rl := &Limiter{}
+	for i := range options {
+		options[i].apply(rl)
+	}
+	if rl.redisScripter != nil {
+		if rl.useGoRate || rl.useInMemorySortedSets {
+			return nil, fmt.Errorf("cannot use Redis client with go rate or in-memory sorted sets")
+		}
+		return rl, nil
+	}
+
+	switch {
+	case rl.useInMemorySortedSets:
+		rl.sortedSet = &sortedSet{}
+	case rl.useGCRA:
+		rl.gcra = &gcra{}
+	default:
+		rl.goRate = &goRate{}
+	}
+	return rl, nil
+}
+
+func (l *Limiter) Limit(ctx context.Context, cost, rate, window int64, key string) (TokenReturner, error) {
+	if l.redisScripter != nil && l.redisSortedSetRemover != nil {
+		if l.useGCRA {
+			return l.redisGCRA(ctx, cost, rate, window, key)
+		}
+		return l.redisSortedSet(ctx, cost, rate, window, key)
+	}
+	if l.useInMemorySortedSets {
+		return l.sortedSetLimit(ctx, cost, rate, window, key)
+	}
+	if l.useGCRA {
+		return l.gcraLimit(ctx, cost, rate, window, key)
+	}
+	return l.goRateLimit(ctx, cost, rate, window, key)
+}
+
+func (l *Limiter) redisSortedSet(ctx context.Context, cost, rate, window int64, key string) (TokenReturner, error) {
+	res, err := sortedSetScript.Run(ctx, l.redisScripter, []string{key}, cost, rate, window).Result()
 	if err != nil {
 		return nil, fmt.Errorf("could not run SortedSet Redis script: %v", err)
 	}
@@ -59,20 +103,19 @@ func (r *RedisLimiter) sortedSetLimit(ctx context.Context, cost, rate, window in
 	if members == "0" {
 		return nil, nil
 	}
-	return &sortedSetZRemReturn{
+	return &sortedSetRedisReturn{
 		key:     key,
 		members: strings.Split(members, ","),
-		remover: r.sortedSetRemover,
+		remover: l.redisSortedSetRemover,
 	}, nil
 }
 
-func (r *RedisLimiter) gcraLimit(ctx context.Context, cost, rate, window int64, key string) (
-	interface{ Return(context.Context) error },
-	error,
-) {
-	// rate is repeated twice because we are using the rate parameter also for burst.
-	// this is done to keep compatibility between GCRA and the SortedSet approach.
-	res, err := gcraRedisScript.Run(ctx, r.scripter, []string{key}, 1, rate, window, cost).Result()
+func (l *Limiter) redisGCRA(ctx context.Context, cost, rate, window int64, key string) (TokenReturner, error) {
+	burst := int64(1)
+	if l.useGCRABurstAsRate {
+		burst = rate
+	}
+	res, err := gcraRedisScript.Run(ctx, l.redisScripter, []string{key}, burst, rate, window, cost).Result()
 	if err != nil {
 		return nil, fmt.Errorf("could not run GCRA Redis script: %v", err)
 	}
@@ -93,40 +136,23 @@ func (r *RedisLimiter) gcraLimit(ctx context.Context, cost, rate, window int64, 
 	return &unsupportedReturn{}, nil
 }
 
-// InMemoryLimiter TODO constructor
-// It allows to use the throttling package without Redis with GCRA or SortedSets.
-type InMemoryLimiter struct {
-	gcra      *gcra
-	sortedSet *sortedSet
-	goRate    *goRate
-}
-
-func (i *InMemoryLimiter) Limit(ctx context.Context, cost, rate, window int64, key string) (
-	interface{ Return(context.Context) error },
-	error,
-) {
-	return i.gcraLimit(ctx, cost, rate, window, key)
-}
-
-func (i *InMemoryLimiter) gcraLimit(_ context.Context, cost, rate, window int64, key string) (
-	interface{ Return(context.Context) error },
-	error,
-) {
-	allowed, _, _, _, err := i.gcra.limit(key, cost, rate, rate, window)
+func (l *Limiter) gcraLimit(_ context.Context, cost, rate, window int64, key string) (TokenReturner, error) {
+	burst := int64(1)
+	if l.useGCRABurstAsRate {
+		burst = rate
+	}
+	allowed, err := l.gcra.limit(key, cost, burst, rate, window)
 	if err != nil {
 		return nil, fmt.Errorf("could not limit: %w", err)
 	}
-	if allowed < 1 {
+	if !allowed {
 		return nil, nil // limit exceeded
 	}
 	return &unsupportedReturn{}, nil
 }
 
-func (i *InMemoryLimiter) sortedSetLimit(_ context.Context, cost, rate, window int64, key string) (
-	interface{ Return(context.Context) error },
-	error,
-) {
-	members, err := i.sortedSet.limit(key, cost, rate, window)
+func (l *Limiter) sortedSetLimit(_ context.Context, cost, rate, window int64, key string) (TokenReturner, error) {
+	members, err := l.sortedSet.limit(key, cost, rate, window)
 	if err != nil {
 		return nil, fmt.Errorf("could not limit: %w", err)
 	}
@@ -134,16 +160,14 @@ func (i *InMemoryLimiter) sortedSetLimit(_ context.Context, cost, rate, window i
 	return &sortedSetInMemoryReturn{
 		key:     key,
 		members: members,
-		remover: i.sortedSet,
+		remover: l.sortedSet,
 	}, nil
 }
 
-func (i *InMemoryLimiter) goRateLimit(_ context.Context, cost, rate, window int64, key string) (
-	interface{ Return(context.Context) error },
-	error,
-) {
-	res := i.goRate.limit(key, cost, rate, window)
+func (l *Limiter) goRateLimit(_ context.Context, cost, rate, window int64, key string) (TokenReturner, error) {
+	res := l.goRate.limit(key, cost, rate, window)
 	if !res.OK() {
+		res.Cancel()
 		return nil, nil // limit exceeded
 	}
 	if res.Delay() > 0 {

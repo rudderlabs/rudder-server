@@ -1,0 +1,48 @@
+package throttling
+
+import "github.com/go-redis/redis/v9"
+
+// Option is a functional option for the limiter, see With* functions for reference
+type Option interface {
+	apply(*Limiter)
+}
+
+type withOption struct{ setup func(*Limiter) }
+
+func (w withOption) apply(c *Limiter) { w.setup(c) }
+
+// WithGoRate allows to setup a limiter with golang.org/x/time/rate (supports returning tokens)
+func WithGoRate() Option {
+	return withOption{setup: func(l *Limiter) {
+		l.useGoRate = true
+	}}
+}
+
+// WithInMemorySortedSets allows to setup a limiter with in-memory sorted sets (supports returning tokens)
+func WithInMemorySortedSets() Option {
+	return withOption{setup: func(l *Limiter) {
+		l.useInMemorySortedSets = true
+	}}
+}
+
+// WithGCRA allows to use the GCRA algorithm
+func WithGCRA() Option {
+	return withOption{setup: func(l *Limiter) {
+		l.useGCRA = true
+	}}
+}
+
+// WithGCRABurstAsRate allows to use the GCRA algorithm with burst as rate
+func WithGCRABurstAsRate() Option {
+	return withOption{setup: func(l *Limiter) {
+		l.useGCRABurstAsRate = true
+	}}
+}
+
+// WithRedisClient allows to setup a limiter for Distributed Throttling with Redis
+func WithRedisClient(rc *redis.Client) Option {
+	return withOption{setup: func(l *Limiter) {
+		l.redisScripter = rc
+		l.redisSortedSetRemover = rc
+	}}
+}

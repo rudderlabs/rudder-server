@@ -14,9 +14,9 @@ import (
 )
 
 /*
-BenchmarkInMemoryLimiters/go_rate-24         	 6978067	       164.0 ns/op
-BenchmarkInMemoryLimiters/gcra-24            	10721114	       110.8 ns/op
-BenchmarkInMemoryLimiters/sorted_set-24      	 4254432	       281.0 ns/op
+BenchmarkInMemoryLimiters/go_rate-24			6938620			164.2 ns/op
+BenchmarkInMemoryLimiters/gcra-24				17227336		68.81 ns/op
+BenchmarkInMemoryLimiters/sorted_set-24			4286954			279.6 ns/op
 */
 func BenchmarkInMemoryLimiters(b *testing.B) {
 	var (
@@ -25,7 +25,7 @@ func BenchmarkInMemoryLimiters(b *testing.B) {
 		window int64 = 10
 	)
 
-	rateLimiter := InMemoryLimiter{
+	rateLimiter := Limiter{
 		gcra:      &gcra{},
 		sortedSet: &sortedSet{},
 		goRate:    &goRate{},
@@ -81,10 +81,10 @@ func BenchmarkRedisSortedSetRemover(b *testing.B) {
 		return rc, key, members
 	}
 
-	b.Run("sortedSetZRemReturn", func(b *testing.B) {
+	b.Run("sortedSetRedisReturn", func(b *testing.B) {
 		rc, key, members := prepare(b)
-		rem := func(members ...string) *sortedSetZRemReturn {
-			return &sortedSetZRemReturn{
+		rem := func(members ...string) *sortedSetRedisReturn {
+			return &sortedSetRedisReturn{
 				key:     key,
 				remover: rc,
 				members: members,
