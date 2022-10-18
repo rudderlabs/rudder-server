@@ -41,15 +41,13 @@ type Limiter struct {
 	redisSortedSetRemover redisSortedSetRemover
 
 	// for in-memory configurations
-	gcra      *gcra
-	sortedSet *sortedSet
-	goRate    *goRate
+	gcra   *gcra
+	goRate *goRate
 
 	// other flags
-	useGCRA               bool
-	useGCRABurstAsRate    bool
-	useInMemorySortedSets bool
-	useGoRate             bool
+	useGCRA            bool
+	useGCRABurstAsRate bool
+	useGoRate          bool
 }
 
 func New(options ...Option) (*Limiter, error) {
@@ -58,15 +56,13 @@ func New(options ...Option) (*Limiter, error) {
 		options[i].apply(rl)
 	}
 	if rl.redisScripter != nil {
-		if rl.useGoRate || rl.useInMemorySortedSets {
-			return nil, fmt.Errorf("cannot use Redis client with go rate or in-memory sorted sets")
+		if rl.useGoRate {
+			return nil, fmt.Errorf("cannot use Redis client with GoRate")
 		}
 		return rl, nil
 	}
 
 	switch {
-	case rl.useInMemorySortedSets:
-		rl.sortedSet = &sortedSet{}
 	case rl.useGCRA:
 		rl.gcra = &gcra{}
 	default:
@@ -81,9 +77,6 @@ func (l *Limiter) Limit(ctx context.Context, cost, rate, window int64, key strin
 			return l.redisGCRA(ctx, cost, rate, window, key)
 		}
 		return l.redisSortedSet(ctx, cost, rate, window, key)
-	}
-	if l.useInMemorySortedSets {
-		return l.sortedSetLimit(ctx, cost, rate, window, key)
 	}
 	if l.useGCRA {
 		return l.gcraLimit(ctx, cost, rate, window, key)
@@ -151,27 +144,9 @@ func (l *Limiter) gcraLimit(_ context.Context, cost, rate, window int64, key str
 	return &unsupportedReturn{}, nil
 }
 
-func (l *Limiter) sortedSetLimit(_ context.Context, cost, rate, window int64, key string) (TokenReturner, error) {
-	members, err := l.sortedSet.limit(key, cost, rate, window)
-	if err != nil {
-		return nil, fmt.Errorf("could not limit: %w", err)
-	}
-
-	return &sortedSetInMemoryReturn{
-		key:     key,
-		members: members,
-		remover: l.sortedSet,
-	}, nil
-}
-
 func (l *Limiter) goRateLimit(_ context.Context, cost, rate, window int64, key string) (TokenReturner, error) {
 	res := l.goRate.limit(key, cost, rate, window)
-	if !res.OK() {
-		res.Cancel()
-		return nil, nil // limit exceeded
-	}
-	if res.Delay() > 0 {
-		res.Cancel()
+	if !res.Allowed() {
 		return nil, nil // limit exceeded
 	}
 	return &goRateReturn{reservation: res}, nil

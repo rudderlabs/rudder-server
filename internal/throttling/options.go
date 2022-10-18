@@ -18,13 +18,6 @@ func WithGoRate() Option {
 	}}
 }
 
-// WithInMemorySortedSets allows to setup a limiter with in-memory sorted sets (supports returning tokens)
-func WithInMemorySortedSets() Option {
-	return withOption{setup: func(l *Limiter) {
-		l.useInMemorySortedSets = true
-	}}
-}
-
 // WithGCRA allows to use the GCRA algorithm
 func WithGCRA() Option {
 	return withOption{setup: func(l *Limiter) {

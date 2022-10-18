@@ -13,16 +13,36 @@ type goRate struct {
 	m  map[string]*gorate.Limiter
 }
 
-func (i *goRate) limit(key string, cost, rate, period int64) *gorate.Reservation {
-	i.mu.Lock()
-	defer i.mu.Unlock()
-	if i.m == nil {
-		i.m = make(map[string]*gorate.Limiter)
+func (r *goRate) limit(key string, cost, rate, periodInSecs int64) *goRateReservation {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if r.m == nil {
+		r.m = make(map[string]*gorate.Limiter)
 	}
-	window := time.Duration(period) * time.Second
-	if _, ok := i.m[key]; !ok {
-		i.m[key] = gorate.NewLimiter(gorate.Every(window), int(rate))
+
+	window := time.Duration(periodInSecs) * time.Second
+	l, ok := r.m[key]
+	if !ok {
+		l = gorate.NewLimiter(gorate.Every(window), int(rate))
+		r.m[key] = l
 	}
-	res := i.m[key].ReserveN(time.Now().Add(window), int(cost))
-	return res
+
+	resWindow := time.Now().Add(window)
+	res := l.ReserveN(resWindow, int(cost))
+
+	return &goRateReservation{
+		reservation: res,
+		window:      resWindow,
+	}
+}
+
+type goRateReservation struct {
+	reservation *gorate.Reservation
+	window      time.Time
+}
+
+func (r *goRateReservation) Cancel() { r.reservation.Cancel() }
+func (r *goRateReservation) Allowed() bool {
+	return r.reservation.OK() && r.reservation.DelayFrom(r.window) == 0
 }
