@@ -50,14 +50,13 @@ func (gatewayApp *GatewayApp) StartRudderCore(ctx context.Context, options *app.
 	sourcedebugger.Setup(backendconfig.DefaultBackendConfig)
 
 	storageSettings := backup.NewService(ctx, backendconfig.DefaultBackendConfig)
-	storageSupplier := storageSettings.StorageSupplier()
 
 	gatewayDB := jobsdb.NewForWrite(
 		"gw",
 		jobsdb.WithClearDB(options.ClearDB),
 		jobsdb.WithStatusHandler(),
 		jobsdb.WithDSLimit(&gatewayDSLimit),
-		jobsdb.WithStorageSettings(storageSupplier),
+		jobsdb.WithStorageSettings(storageSettings),
 	)
 	defer gatewayDB.Close()
 	if err := gatewayDB.Start(); err != nil {

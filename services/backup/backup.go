@@ -17,7 +17,8 @@ type StorageService interface {
 
 func NewService(ctx context.Context, config backendconfig.BackendConfig) StorageService {
 	s := &service{
-		init: make(chan struct{}),
+		init:    make(chan struct{}),
+		storage: make(StorageSettings),
 	}
 	go s.updateLoop(ctx, config)
 	return s
@@ -54,10 +55,11 @@ func (s *service) updateLoop(ctx context.Context, config backendconfig.BackendCo
 
 	for ev := range ch {
 		configs := ev.Data.(map[string]backendconfig.ConfigT)
-
+		storage := make(StorageSettings)
 		for _, c := range configs {
-			s.storage[c.WorkspaceID] = getStorage(ctx, c.Settings)
+			storage[c.WorkspaceID] = getStorage(ctx, c.Settings)
 		}
+		s.storage = storage
 
 		s.onceInit.Do(func() {
 			close(s.init)
