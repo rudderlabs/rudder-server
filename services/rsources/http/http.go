@@ -104,6 +104,9 @@ func (h *handler) failedRecords(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), httpStatus)
 		return
 	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "no-store")
+	w.WriteHeader(http.StatusOK)
 
 	err = marshalAndWriteResponse(w, failedRecords)
 	if err != nil {
