@@ -451,11 +451,11 @@ func (worker *workerT) workerProcess() {
 				status := jobsdb.JobStatusT{
 					JobID:         job.JobID,
 					AttemptNum:    job.LastJobStatus.AttemptNum,
-					JobState:      jobsdb.Aborted.State,
+					JobState:      jobsdb.Failed.State,
 					ExecTime:      time.Now(),
 					RetryTime:     time.Now(),
 					ErrorCode:     "",
-					ErrorResponse: []byte(`{"reason": "Aborted because destination is not available in the config" }`),
+					ErrorResponse: []byte(`{"reason": "failed because destination is not available in the config" }`),
 					Parameters:    routerutils.EmptyPayload,
 					WorkspaceId:   job.WorkspaceId,
 				}
