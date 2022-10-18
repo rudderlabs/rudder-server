@@ -20,9 +20,10 @@ func TestThrottling(t *testing.T) {
 		ctx      = context.Background()
 		rc       = bootstrapRedis(ctx, t, pool)
 		limiters = map[string]limiter{
-			"gcra":       newLimiter(t, WithGCRA()),
-			"gcra redis": newLimiter(t, WithGCRA(), WithRedisClient(rc)),
-			"go rate":    newLimiter(t, WithGoRate()),
+			"go rate":           newLimiter(t, WithGoRate()),
+			"gcra":              newLimiter(t, WithGCRA()),
+			"gcra redis":        newLimiter(t, WithGCRA(), WithRedisClient(rc)),
+			"sorted sets redis": newLimiter(t, WithRedisClient(rc)),
 		}
 	)
 

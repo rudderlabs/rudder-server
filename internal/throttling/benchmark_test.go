@@ -14,9 +14,8 @@ import (
 )
 
 /*
-BenchmarkInMemoryLimiters/go_rate-24			6938620			164.2 ns/op
-BenchmarkInMemoryLimiters/gcra-24				17227336		68.81 ns/op
-BenchmarkInMemoryLimiters/sorted_set-24			4286954			279.6 ns/op
+BenchmarkInMemoryLimiters/go_rate-24         	10668271	       111.1 ns/op
+BenchmarkInMemoryLimiters/gcra-24            	17358770	        68.67 ns/op
 */
 func BenchmarkInMemoryLimiters(b *testing.B) {
 	var (
@@ -26,9 +25,8 @@ func BenchmarkInMemoryLimiters(b *testing.B) {
 	)
 
 	rateLimiter := Limiter{
-		gcra:      &gcra{},
-		sortedSet: &sortedSet{},
-		goRate:    &goRate{},
+		gcra:   &gcra{},
+		goRate: &goRate{},
 	}
 
 	b.Run("go rate", func(b *testing.B) {
@@ -42,13 +40,6 @@ func BenchmarkInMemoryLimiters(b *testing.B) {
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
 			_, _ = rateLimiter.gcraLimit(ctx, 1, rate, window, "some-key")
-		}
-	})
-
-	b.Run("sorted set", func(b *testing.B) {
-		b.ResetTimer()
-		for i := 0; i < b.N; i++ {
-			_, _ = rateLimiter.sortedSetLimit(ctx, 1, rate, window, "some-key")
 		}
 	})
 }
