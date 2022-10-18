@@ -42,7 +42,8 @@ type goRateReservation struct {
 	window      time.Time
 }
 
-func (r *goRateReservation) Cancel() { r.reservation.Cancel() }
+func (r *goRateReservation) Cancel()       { r.reservation.Cancel() }
+func (r *goRateReservation) CancelFuture() { r.reservation.CancelAt(r.window) }
 func (r *goRateReservation) Allowed() bool {
 	return r.reservation.OK() && r.reservation.DelayFrom(r.window) == 0
 }

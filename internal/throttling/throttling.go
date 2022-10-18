@@ -166,6 +166,7 @@ func (l *Limiter) gcraLimit(_ context.Context, cost, rate, window int64, key str
 func (l *Limiter) goRateLimit(_ context.Context, cost, rate, window int64, key string) (TokenReturner, error) {
 	res := l.goRate.limit(key, cost, rate, window)
 	if !res.Allowed() {
+		res.CancelFuture()
 		return nil, nil // limit exceeded
 	}
 	return &goRateReturn{reservation: res}, nil
