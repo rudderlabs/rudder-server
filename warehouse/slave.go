@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math/rand"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -240,6 +241,8 @@ func (jobRun *JobRunT) uploadLoadFilesToObjectStorage() ([]loadFileUploadOutputT
 					return // stop further processing
 				default:
 					tableName := uploadJob.tableName
+					time.Sleep(time.Duration(rand.Intn(10)) * time.Second)
+
 					loadFileUploadStart := time.Now()
 					uploadOutput, err := jobRun.uploadLoadFileToObjectStorage(uploader, uploadJob.outputFile, tableName)
 					if err != nil {
