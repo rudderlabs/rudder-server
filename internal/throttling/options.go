@@ -35,7 +35,6 @@ func WithGCRABurstAsRate() Option {
 // WithRedisClient allows to setup a limiter for Distributed Throttling with Redis
 func WithRedisClient(rc *redis.Client) Option {
 	return withOption{setup: func(l *Limiter) {
-		l.redisScripter = rc
-		l.redisSortedSetRemover = rc
+		l.redisTalker = rc
 	}}
 }

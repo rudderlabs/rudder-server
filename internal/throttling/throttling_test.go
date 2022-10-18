@@ -28,10 +28,9 @@ func TestThrottling(t *testing.T) {
 	)
 
 	for _, tc := range []testCase{
-		{rate: 1, window: 1, errorMargin: 1},
-		{rate: 2, window: 2, errorMargin: 1},
-		{rate: 100, window: 1, errorMargin: 5},
-		{rate: 100, window: 3, errorMargin: 5},
+		{rate: 1, window: 1, errorMargin: 2},
+		{rate: 100, window: 1, errorMargin: 10},
+		{rate: 200, window: 3, errorMargin: 10},
 	} {
 		for name, l := range limiters {
 			l := l
