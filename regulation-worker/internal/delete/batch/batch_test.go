@@ -28,6 +28,41 @@ var (
 
 const mockBucket = "mockBucket"
 
+func TestBatchDeleteForUnsupportedDestinationFails(t *testing.T) {
+	input := struct {
+		name           string
+		job            model.Job
+		dest           model.Destination
+		expectedErr    error
+		expectedStatus model.JobStatus
+	}{
+		name: "testing batch delete for unsupported destination",
+		job: model.Job{
+			ID:            1,
+			WorkspaceID:   "1001",
+			DestinationID: "1234",
+			Status:        model.JobStatusPending,
+			Users: []model.User{
+				{
+					ID: "Jermaine1473336609491897794707338",
+				},
+			},
+		},
+		dest: model.Destination{
+			Config: map[string]interface{}{},
+			Name:   "UNSUPPORTED",
+		},
+	}
+
+	bm := batch.BatchManager{
+		FMFactory: mockFileManagerFactory{},
+	}
+
+	status := bm.Delete(context.TODO(), input.job, input.dest.Config, input.dest.Name)
+	require.Equal(t, model.JobStatusNotSupported, status)
+
+}
+
 func TestBatchDelete(t *testing.T) {
 	initialize.Init()
 

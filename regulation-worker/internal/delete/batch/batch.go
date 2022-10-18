@@ -50,7 +50,6 @@ type Batch struct {
 func (b *Batch) listFiles(ctx context.Context) ([]*filemanager.FileObject, error) {
 	pkgLogger.Debugf("getting a list of files from destination")
 
-	// TODO: What happens if we have files greater than 1000 ?
 	fileObjects, err := b.FM.ListFilesWithPrefix(ctx, "", "", listMaxItem)
 	if err != nil {
 		pkgLogger.Errorf("error while getting list of files: %v", err)
@@ -154,22 +153,24 @@ func (b *Batch) cleanedFiles(_ context.Context, f io.ReadWriteCloser, job *model
 		// check if our <jobID> matches with the one in file.
 		// if not, then truncate the file & write new current jobID.
 
-		// TODO: Why would this happen ? ( remanent of the past )
+		// This might happen when we have a job partially working on the
+		// suppress with delete and then it fails and second job starts in the meantime.
+		// So we keep the latest state in here.
 		if lines[0] != jobID {
 			f.Close()
 
 			statusTrackerTmpDir, err := os.MkdirTemp(b.TmpDirPath, "")
 			if err != nil {
-				return nil, fmt.Errorf("error while creating temporary directory: %w", err)
+				return nil, fmt.Errorf("create temporary directory: %w", err)
 			}
 
 			f, err = os.OpenFile(filepath.Join(statusTrackerTmpDir, StatusTrackerFileName), os.O_CREATE|os.O_RDWR, 0o644)
 			if err != nil {
-				return nil, fmt.Errorf("error while opening file to create status tracker, %w", err)
+				return nil, fmt.Errorf("create status tracker: %w", err)
 			}
 
 			if _, err := io.WriteString(f, jobID+"\n"); err != nil {
-				return nil, fmt.Errorf("error while writing to status tracker file:%s, err: %w", StatusTrackerFileName, err)
+				return nil, fmt.Errorf("writing to status tracker file:%s, err: %w", StatusTrackerFileName, err)
 			}
 
 		} else {
@@ -184,23 +185,23 @@ func (b *Batch) cleanedFiles(_ context.Context, f io.ReadWriteCloser, job *model
 // downloads `fileName` locally. And returns empty file, if file not found.
 // Note: download happens concurrently in 5 go routine by default.
 func (b *Batch) download(_ context.Context, completeFileName string) (string, error) {
-	pkgLogger.Debugf("downloading file: %v", completeFileName)
+	pkgLogger.Debugf("downloading file: %s", completeFileName)
 
 	tmpFilePathPrefix, err := os.MkdirTemp(b.TmpDirPath, "")
 	if err != nil {
-		return "", fmt.Errorf("error while creating temporary directory: %w", err)
+		return "", fmt.Errorf("create temporary directory: %w", err)
 	}
 
 	_, fileName := filepath.Split(completeFileName)
 	tmpFilePtr, err := os.OpenFile(filepath.Join(tmpFilePathPrefix, fileName), os.O_CREATE|os.O_RDWR, 0o644)
 	if err != nil {
-		return "", fmt.Errorf("error while opening file, %w", err)
+		return "", fmt.Errorf("opening file: %s, %w", fileName, err)
 	}
 	defer tmpFilePtr.Close()
 
 	absPath, err := filepath.Abs(tmpFilePtr.Name())
 	if err != nil {
-		return "", fmt.Errorf("error while getting absolute path: %w", err)
+		return "", fmt.Errorf("getting absolute path for: %s, %w", tmpFilePtr.Name(), err)
 	}
 
 	err = b.FM.Download(context.TODO(), tmpFilePtr, completeFileName)
@@ -209,14 +210,15 @@ func (b *Batch) download(_ context.Context, completeFileName string) (string, er
 			pkgLogger.Debugf("file not found")
 			return absPath, nil
 		}
-		return "", fmt.Errorf("error while downloading object using file manager: %w", err)
+		return "", fmt.Errorf("downloading object: %s using file manager: %w", completeFileName, err)
 	}
 
 	return absPath, nil
 }
 
 func downloadWithExpBackoff(ctx context.Context, fu func(context.Context, string) (string, error), fileName string) (string, error) {
-	pkgLogger.Debugf("downloading file with exponential backoff")
+	pkgLogger.Debugf("downloading file: %s with exponential backoff", fileName)
+
 	maxWait := time.Minute * 10
 	bo := backoff.NewExponentialBackOff()
 	boCtx := backoff.WithContext(bo, ctx)
@@ -308,22 +310,23 @@ func (*BatchManager) GetSupportedDestinations() []string {
 }
 
 func getLocalFileHandlers(destType string) map[string]filehandler.LocalFileHandler {
-	var gzipHandler filehandler.LocalFileHandler
-
-	if destType == "S3" {
-		gzipHandler = filehandler.NewGZIPLocalFileHandler(filehandler.CamelCase)
-	}
+	switch destType {
+	case "S3":
+		return map[string]filehandler.LocalFileHandler{
+			".json.gz": filehandler.NewGZIPLocalFileHandler(filehandler.CamelCase),
+		}
 
 	// S3_DATALAKE is a warehouse destination, so in order
 	// to send events into a warehouse destination, we simply snake_cased
 	// so the gziphandler needs to be created with Snakecasing `user_id` in mind
-	if destType == "S3_DATALAKE" {
-		gzipHandler = filehandler.NewGZIPLocalFileHandler(filehandler.SnakeCase)
-	}
+	case "S3_DATALAKE":
+		return map[string]filehandler.LocalFileHandler{
+			".json.gz": filehandler.NewGZIPLocalFileHandler(filehandler.SnakeCase),
+			".parquet": filehandler.NewParquetLocalFileHandler(),
+		}
 
-	return map[string]filehandler.LocalFileHandler{
-		".json.gz": gzipHandler,
-		".parquet": filehandler.NewParquetLocalFileHandler(),
+	default:
+		return nil
 	}
 }
 
@@ -333,8 +336,8 @@ func (bm *BatchManager) Delete(ctx context.Context, job model.Job, destConfig ma
 
 	fm, err := bm.FMFactory.New(&filemanager.SettingsT{Provider: destName, Config: destConfig})
 	if err != nil {
-		pkgLogger.Errorf("error while getting file manager: %v", err)
-		return model.JobStatusFailed
+		pkgLogger.Errorf("fetching file manager for destination: %s,  %w", destName, err)
+		return model.JobStatusNotSupported // terminal state
 	}
 
 	// parent directory of all the temporary files created/downloaded in the process of deletion.
@@ -344,15 +347,23 @@ func (bm *BatchManager) Delete(ctx context.Context, job model.Job, destConfig ma
 		return model.JobStatusFailed
 	}
 
+	// fetch list of file handlers which we
+	// have present in our system, which would aid the system in filtering
+	// the files.
+	filehandlers := getLocalFileHandlers(destName)
+	if len(filehandlers) == 0 {
+		pkgLogger.Warnf("unsupported destination: %s for filehandlers", destName)
+		return model.JobStatusNotSupported // terminal state
+	}
+
 	batch := Batch{
 		FM:         fm,
 		TmpDirPath: tmpDirPath,
 	}
-	defer batch.cleanup(destConfig["prefix"].(string))
 
-	// fetch list of file handlers which we
-	// have present in our system, which would aid the system in filtering
-	filehandlers := getLocalFileHandlers(destName)
+	// Get the prefix which should be the base of the
+	// of the cleanup operations.
+	defer batch.cleanup(ctx, destConfig)
 
 	for {
 		files, err := batch.listFiles(ctx)
@@ -500,10 +511,19 @@ func getFileSize(fileAbsPath string) int {
 	return int(fileSize)
 }
 
-func (b *Batch) cleanup(prefix string) {
-	pkgLogger.Debugf("removing all temporary files & directory locally & from destination.")
+func (b *Batch) cleanup(ctx context.Context, config map[string]interface{}) {
+	pkgLogger.Debugf("cleaning up temp files created during the operation")
 
-	err := b.FM.DeleteObjects(context.TODO(), []string{filepath.Join(prefix, StatusTrackerFileName)})
+	prefix := ""
+	if val, ok := config["prefix"]; ok {
+		prefix = val.(string)
+	}
+
+	err := b.FM.DeleteObjects(
+		ctx,
+		[]string{filepath.Join(prefix, StatusTrackerFileName)},
+	)
+
 	if err != nil {
 		pkgLogger.Errorf("error while deleting delete status tracker file from destination: %v", err)
 	}

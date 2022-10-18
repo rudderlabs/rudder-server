@@ -36,7 +36,7 @@ func (j *JobAPI) Get(ctx context.Context) (model.Job, error) {
 	url := fmt.Sprintf("%s/dataplane/workspaces/%s/regulations/workerJobs", j.URLPrefix, j.WorkspaceID)
 	pkgLogger.Debugf("making GET request to URL: %v", url)
 
-	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		pkgLogger.Errorf("error while create new http request: %v", err)
 		return model.Job{}, err
