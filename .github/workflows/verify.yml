@@ -13,17 +13,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v2
-      - uses: actions/setup-go@v2
+      - uses: actions/setup-go@v3
         with:
+          check-latest: true
+          cache: true
           go-version: '~1.18.5'
-      - uses: actions/cache@v2
-        with:
-          path: |
-            ~/.cache/go-build
-            ~/go/pkg/mod
-          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
-          restore-keys: |
-            ${{ runner.os }}-go-
       - run: go version
 
       - run: go mod tidy
@@ -38,6 +32,17 @@ jobs:
         if: ${{ failure() }}
         run: echo '::error file=Makefile,line=11,col=1::Incorrectly generated files. Ensure you have run `make mocks` and committed the files locally.'
 
+      - name: install protoc compiler
+        uses: arduino/setup-protoc@v1
+        with:
+          version: '3.x'
+      - run: make proto
+      - run: git diff -I '^\/\/\s+-?\s+protoc\s+v' --exit-code ## Ignore protoc version comment
+      - name: Error message
+        if: ${{ failure() }}
+        run: echo 'proto files are not generated correctly. Ensure you have run `make proto` and committed the files locally.'
+      - run: git checkout proto ## cleanup tree due to protoc version comment
+
       - run: make fmt
       - run: git diff --exit-code
       - name: Error message
@@ -47,10 +52,12 @@ jobs:
     name: lint
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v3
       - uses: actions/setup-go@v3
         with:
-          go-version: 1.18
-      - uses: actions/checkout@v3
+          go-version: '~1.18.5'
+          check-latest: true
+          cache: true
       - name: golangci-lint
         uses: golangci/golangci-lint-action@v3
         with:
