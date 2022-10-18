@@ -31,14 +31,19 @@ func init() {
 	sortedSetScript = redis.NewScript(sortedSetLua)
 }
 
+type redisTalker interface {
+	redis.Scripter
+	redisSortedSetRemover
+}
+
 type TokenReturner interface {
 	Return(context.Context) error
 }
 
 type Limiter struct {
 	// for Redis configurations
-	redisScripter         redis.Scripter
-	redisSortedSetRemover redisSortedSetRemover
+	redisTalker         redisTalker
+	redisKeyToClientMap map[string]redisTalker
 
 	// for in-memory configurations
 	gcra   *gcra
@@ -55,9 +60,9 @@ func New(options ...Option) (*Limiter, error) {
 	for i := range options {
 		options[i].apply(rl)
 	}
-	if rl.redisScripter != nil {
+	if rl.redisTalker != nil {
 		if rl.useGoRate {
-			return nil, fmt.Errorf("cannot use Redis client with GoRate")
+			return nil, fmt.Errorf("redis and go-rate are mutually exclusive")
 		}
 		return rl, nil
 	}
@@ -72,7 +77,7 @@ func New(options ...Option) (*Limiter, error) {
 }
 
 func (l *Limiter) Limit(ctx context.Context, cost, rate, window int64, key string) (TokenReturner, error) {
-	if l.redisScripter != nil && l.redisSortedSetRemover != nil {
+	if l.redisTalker != nil {
 		if l.useGCRA {
 			return l.redisGCRA(ctx, cost, rate, window, key)
 		}
@@ -85,7 +90,7 @@ func (l *Limiter) Limit(ctx context.Context, cost, rate, window int64, key strin
 }
 
 func (l *Limiter) redisSortedSet(ctx context.Context, cost, rate, window int64, key string) (TokenReturner, error) {
-	res, err := sortedSetScript.Run(ctx, l.redisScripter, []string{key}, cost, rate, window).Result()
+	res, err := sortedSetScript.Run(ctx, l.redisTalker, []string{key}, cost, rate, window).Result()
 	if err != nil {
 		return nil, fmt.Errorf("could not run SortedSet Redis script: %v", err)
 	}
@@ -99,7 +104,7 @@ func (l *Limiter) redisSortedSet(ctx context.Context, cost, rate, window int64, 
 	return &sortedSetRedisReturn{
 		key:     key,
 		members: strings.Split(members, ","),
-		remover: l.redisSortedSetRemover,
+		remover: l.redisTalker,
 	}, nil
 }
 
@@ -108,7 +113,7 @@ func (l *Limiter) redisGCRA(ctx context.Context, cost, rate, window int64, key s
 	if l.useGCRABurstAsRate {
 		burst = rate
 	}
-	res, err := gcraRedisScript.Run(ctx, l.redisScripter, []string{key}, burst, rate, window, cost).Result()
+	res, err := gcraRedisScript.Run(ctx, l.redisTalker, []string{key}, burst, rate, window, cost).Result()
 	if err != nil {
 		return nil, fmt.Errorf("could not run GCRA Redis script: %v", err)
 	}
