@@ -28,18 +28,27 @@ func TestThrottling(t *testing.T) {
 	)
 
 	for _, tc := range []testCase{
-		{rate: 1, window: 1, expected: 1, errorMargin: 1},
-		{rate: 2, window: 2, expected: 2, errorMargin: 1},
-		{rate: 100, window: 1, expected: 100, errorMargin: 4},
-		{rate: 100, window: 3, expected: 100, errorMargin: 4},
+		{rate: 1, window: 1, errorMargin: 1},
+		{rate: 2, window: 2, errorMargin: 1},
+		{rate: 100, window: 1, errorMargin: 5},
+		{rate: 100, window: 3, errorMargin: 5},
 	} {
 		for name, l := range limiters {
 			l := l
 			t.Run(testName(name, tc.rate, tc.window), func(t *testing.T) {
-				testLimiter(ctx, t, l, tc.rate, tc.window, tc.expected, tc.errorMargin)
+				expected := tc.rate
+				testLimiter(ctx, t, l, tc.rate, tc.window, expected, tc.errorMargin)
 			})
 		}
 	}
+}
+
+func TestThrottlingReturn(t *testing.T) {
+	t.Skip("TODO")
+}
+
+func TestThrottlingBadData(t *testing.T) {
+	t.Skip("TODO")
 }
 
 func testLimiter(ctx context.Context, t *testing.T, l limiter, rate, window, expected, errorMargin int64) {
@@ -71,25 +80,6 @@ loop:
 	}
 }
 
-func newLimiter(t *testing.T, opts ...Option) limiter {
-	t.Helper()
-	l, err := New(opts...)
-	require.NoError(t, err)
-	return l
-}
-
 func testName(name string, rate, window int64) string {
 	return fmt.Sprintf("%s/%d tokens per %ds", name, rate, window)
-}
-
-type limiter interface {
-	Limit(ctx context.Context, cost, rate, window int64, key string) (TokenReturner, error)
-}
-
-type testCase struct {
-	name string
-	rate,
-	window,
-	expected,
-	errorMargin int64
 }

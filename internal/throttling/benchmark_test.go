@@ -9,41 +9,52 @@ import (
 	"github.com/ory/dockertest/v3"
 	"github.com/stretchr/testify/require"
 
-	"github.com/rudderlabs/rudder-server/testhelper/destination"
 	"github.com/rudderlabs/rudder-server/testhelper/rand"
 )
 
 /*
-BenchmarkInMemoryLimiters/go_rate-24         	10668271	       111.1 ns/op
-BenchmarkInMemoryLimiters/gcra-24            	17358770	        68.67 ns/op
+goos: linux, goarch: amd64
+cpu: 12th Gen Intel(R) Core(TM) i9-12900K
+BenchmarkLimiters/go_rate-24				9535816			121.0 ns/op
+BenchmarkLimiters/gcra-24					16373722		74.00 ns/op
+BenchmarkLimiters/gcra_redis-24				50640			20674 ns/op
+BenchmarkLimiters/sorted_sets_redis-24		59044			20475 ns/op
 */
-func BenchmarkInMemoryLimiters(b *testing.B) {
+func BenchmarkLimiters(b *testing.B) {
+	pool, err := dockertest.NewPool("")
+	require.NoError(b, err)
+
 	var (
-		ctx          = context.Background()
-		rate   int64 = 100
-		window int64 = 10
+		rate     int64 = 10
+		window   int64 = 1
+		ctx            = context.Background()
+		rc             = bootstrapRedis(ctx, b, pool)
+		limiters       = map[string]limiter{
+			"go rate":           newLimiter(b, WithGoRate()),
+			"gcra":              newLimiter(b, WithGCRA()),
+			"gcra redis":        newLimiter(b, WithGCRA(), WithRedisClient(rc)),
+			"sorted sets redis": newLimiter(b, WithRedisClient(rc)),
+		}
 	)
 
-	rateLimiter := Limiter{
-		gcra:   &gcra{},
-		goRate: &goRate{},
+	for name, l := range limiters {
+		l := l
+		b.Run(name, func(b *testing.B) {
+			key := rand.UniqueString(10)
+
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				_, _ = l.Limit(ctx, 1, rate, window, key)
+			}
+		})
 	}
-
-	b.Run("go rate", func(b *testing.B) {
-		b.ResetTimer()
-		for i := 0; i < b.N; i++ {
-			_, _ = rateLimiter.goRateLimit(ctx, 1, rate, window, "some-key")
-		}
-	})
-
-	b.Run("gcra", func(b *testing.B) {
-		b.ResetTimer()
-		for i := 0; i < b.N; i++ {
-			_, _ = rateLimiter.gcraLimit(ctx, 1, rate, window, "some-key")
-		}
-	})
 }
 
+/*
+goos: linux, goarch: amd64
+cpu: 12th Gen Intel(R) Core(TM) i9-12900K
+BenchmarkRedisSortedSetRemover/sortedSetRedisReturn-24		74870		14740 ns/op
+*/
 func BenchmarkRedisSortedSetRemover(b *testing.B) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -98,36 +109,4 @@ func BenchmarkRedisSortedSetRemover(b *testing.B) {
 		require.NoError(b, err)
 		require.EqualValues(b, 0, count)
 	})
-}
-
-type tester interface {
-	Helper()
-	Log(...interface{})
-	Errorf(format string, args ...interface{})
-	Fatalf(format string, args ...any)
-	FailNow()
-	Cleanup(f func())
-}
-
-func bootstrapRedis(
-	ctx context.Context, t tester, pool *dockertest.Pool, opts ...destination.RedisOption,
-) *redis.Client {
-	t.Helper()
-	redisContainer, err := destination.SetupRedis(ctx, pool, t, opts...)
-	require.NoError(t, err)
-
-	rc := redis.NewClient(&redis.Options{
-		Network: "tcp",
-		Addr:    redisContainer.Addr,
-	})
-	t.Cleanup(func() { _ = rc.Close() })
-
-	pong, err := rc.Ping(ctx).Result()
-	if err != nil {
-		t.Fatalf("Could not ping Redis cluster: %v", err)
-	}
-
-	require.Equal(t, "PONG", pong)
-
-	return rc
 }
