@@ -10,14 +10,13 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sort"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/cenkalti/backoff"
-	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/delete/batch/filehandler"
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/model"
 	"github.com/rudderlabs/rudder-server/services/filemanager"
@@ -396,13 +395,7 @@ func (bm *BatchManager) Delete(ctx context.Context, job model.Job, destConfig ma
 
 		g, gCtx := errgroup.WithContext(ctx)
 
-		count, err := maxRoutines()
-		if err != nil {
-			pkgLogger.Errorf("unable to get max go routines count: %w", err.Error())
-			return model.JobStatusFailed
-		}
-
-		goRoutineCount := make(chan bool, count)
+		goRoutineCount := make(chan bool, maxRoutines())
 		defer close(goRoutineCount)
 
 		for i := 0; i < len(files); i++ {
@@ -493,14 +486,8 @@ func handleIdentityRemoval(
 	return nil
 }
 
-func maxRoutines() (int, error) {
-	procAllocated, err := strconv.Atoi(config.GetString("GOMAXPROCS", "32"))
-	if err != nil {
-		return 0, fmt.Errorf("fetching maximum number of go routines: %w", err)
-	}
-
-	maxGoRoutine := 8 * procAllocated
-	return maxGoRoutine, nil
+func maxRoutines() int {
+	return 8 * runtime.GOMAXPROCS(0)
 }
 
 func getFileSize(fileAbsPath string) int {
