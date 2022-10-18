@@ -32,9 +32,20 @@ func WithGCRABurstAsRate() Option {
 	}}
 }
 
+type keyToRedisTalker = string
+
 // WithRedisClient allows to setup a limiter for Distributed Throttling with Redis
-func WithRedisClient(rc *redis.Client) Option {
+func WithRedisClient(rc *redis.Client, mappings ...keyToRedisTalker) Option {
 	return withOption{setup: func(l *Limiter) {
-		l.redisTalker = rc
+		if len(mappings) == 0 {
+			l.redisTalker = rc
+			return
+		}
+		if l.redisKeyToClientMap == nil {
+			l.redisKeyToClientMap = make(map[string]redisTalker)
+		}
+		for i := range mappings {
+			l.redisKeyToClientMap[mappings[i]] = rc
+		}
 	}}
 }

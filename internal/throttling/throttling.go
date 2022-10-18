@@ -11,8 +11,6 @@ import (
 
 /*
 TODOs:
-* support for multiple clients (for org level limits)
-* generic API to be able to switch from GCRA to custom implementation seamlessly
 * metrics inside client (especially for returning tokens)
 * benchmark AWS Elasticache Redis
 */
@@ -42,6 +40,7 @@ type TokenReturner interface {
 
 type Limiter struct {
 	// for Redis configurations
+	// a default redisTalker should always be provided for Redis configurations
 	redisTalker         redisTalker
 	redisKeyToClientMap map[string]redisTalker
 
@@ -66,6 +65,9 @@ func New(options ...Option) (*Limiter, error) {
 		}
 		return rl, nil
 	}
+	if len(rl.redisKeyToClientMap) > 0 {
+		return nil, fmt.Errorf("redis key to client map is configured without a default client")
+	}
 
 	switch {
 	case rl.useGCRA:
@@ -89,8 +91,18 @@ func (l *Limiter) Limit(ctx context.Context, cost, rate, window int64, key strin
 	return l.goRateLimit(ctx, cost, rate, window, key)
 }
 
+func (l *Limiter) getRedisTalker(key string) redisTalker {
+	if l.redisKeyToClientMap != nil {
+		if client, ok := l.redisKeyToClientMap[key]; ok {
+			return client
+		}
+	}
+	return l.redisTalker
+}
+
 func (l *Limiter) redisSortedSet(ctx context.Context, cost, rate, window int64, key string) (TokenReturner, error) {
-	res, err := sortedSetScript.Run(ctx, l.redisTalker, []string{key}, cost, rate, window).Result()
+	talker := l.getRedisTalker(key)
+	res, err := sortedSetScript.Run(ctx, talker, []string{key}, cost, rate, window).Result()
 	if err != nil {
 		return nil, fmt.Errorf("could not run SortedSet Redis script: %v", err)
 	}
@@ -104,7 +116,7 @@ func (l *Limiter) redisSortedSet(ctx context.Context, cost, rate, window int64, 
 	return &sortedSetRedisReturn{
 		key:     key,
 		members: strings.Split(members, ","),
-		remover: l.redisTalker,
+		remover: talker,
 	}, nil
 }
 
@@ -113,7 +125,8 @@ func (l *Limiter) redisGCRA(ctx context.Context, cost, rate, window int64, key s
 	if l.useGCRABurstAsRate {
 		burst = rate
 	}
-	res, err := gcraRedisScript.Run(ctx, l.redisTalker, []string{key}, burst, rate, window, cost).Result()
+	talker := l.getRedisTalker(key)
+	res, err := gcraRedisScript.Run(ctx, talker, []string{key}, burst, rate, window, cost).Result()
 	if err != nil {
 		return nil, fmt.Errorf("could not run GCRA Redis script: %v", err)
 	}

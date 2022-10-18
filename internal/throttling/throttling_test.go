@@ -42,11 +42,15 @@ func TestThrottling(t *testing.T) {
 	}
 }
 
-func TestThrottlingReturn(t *testing.T) {
+func TestReturn(t *testing.T) {
 	t.Skip("TODO")
 }
 
-func TestThrottlingBadData(t *testing.T) {
+func TestBadData(t *testing.T) {
+	t.Skip("TODO")
+}
+
+func TestMultipleRedisClients(t *testing.T) {
 	t.Skip("TODO")
 }
 
