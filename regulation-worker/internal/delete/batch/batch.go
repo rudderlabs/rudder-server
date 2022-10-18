@@ -35,10 +35,6 @@ var (
 
 const listMaxItem int64 = 1000
 
-type PatternDeleter interface {
-	DeletePattern(ctx context.Context, pattern []string, source []byte) ([]byte, error)
-}
-
 type Batch struct {
 	mu         sync.Mutex
 	FM         filemanager.FileManager
@@ -112,31 +108,30 @@ func (*Batch) updateStatusTrackerFile(absStatusTrackerFileName, fileName string)
 	return nil
 }
 
-func (b *Batch) getStatusTracker(ctx context.Context, prefix string) (string, io.ReadWriteCloser, error) {
-	pkgLogger.Debugf("fetching contents of status tracker file")
+func (b *Batch) getStatusTracker(ctx context.Context, location string) (string, error) {
+	pkgLogger.Debugf("downloading status tracker file from upstream")
 
-	trackerFilePath, err := b.download(ctx, filepath.Join(prefix, StatusTrackerFileName))
+	fPath, err := b.download(ctx, location)
 	if err != nil {
-		return "", nil, fmt.Errorf("error while downloading statusTrackerFile: %w", err)
+		return "", fmt.Errorf("downloading status tracker file: %s from upstream: %w", location, err)
 	}
 
-	f, err := os.OpenFile(trackerFilePath, os.O_RDWR, 0o644)
-	if err != nil {
-		return "", nil, fmt.Errorf("unable to open status tracker file")
-	}
-
-	return f.Name(), f, nil
+	return fPath, nil
 }
 
-func (b *Batch) cleanedFiles(_ context.Context, f io.ReadWriteCloser, job *model.Job) ([]string, error) {
-	pkgLogger.Debugf("fetching already cleaned files based on the status tracker file")
+func (b *Batch) cleanedFiles(_ context.Context, path string, job *model.Job) ([]string, error) {
+	pkgLogger.Debugf("fetching already cleaned files based on contents of the status tracker file")
 
-	var response []string
+	f, err := os.OpenFile(path, os.O_RDWR, 0o644)
+	if err != nil {
+		return nil, fmt.Errorf("open status tracker file: %s, err: %w", path, err)
+	}
+
 	defer f.Close()
 
 	byt, err := io.ReadAll(f)
 	if err != nil {
-		return nil, fmt.Errorf("unable to read contents of status tracker file, err: %w", err)
+		return nil, fmt.Errorf("read contents of status tracker file: %s, err: %w", path, err)
 	}
 	// if statusTracker.txt exists then read it & remove all those files name from above gzFilesObjects,
 	// since those files are already cleaned.
@@ -145,46 +140,49 @@ func (b *Batch) cleanedFiles(_ context.Context, f io.ReadWriteCloser, job *model
 
 	if len(byt) == 0 {
 		// insert <jobID> in 1st line
-		if _, err := io.WriteString(f, jobID+"\n"); err != nil {
-			return nil, fmt.Errorf("error while writing to jobId to statusTrackerFile: %w", err)
+		if _, err := io.WriteString(f, fmt.Sprintf("%s\n", jobID)); err != nil {
+			return nil, fmt.Errorf("writing jobId: %s to status tracker file: %s, err: %w", jobID, StatusTrackerFileName, err)
 		}
-	} else {
-		lines := strings.Split(string(byt), "\n")
-		// check if our <jobID> matches with the one in file.
-		// if not, then truncate the file & write new current jobID.
-
-		// This might happen when we have a job partially working on the
-		// suppress with delete and then it fails and second job starts in the meantime.
-		// So we keep the latest state in here.
-		if lines[0] != jobID {
-			f.Close()
-
-			statusTrackerTmpDir, err := os.MkdirTemp(b.TmpDirPath, "")
-			if err != nil {
-				return nil, fmt.Errorf("create temporary directory: %w", err)
-			}
-
-			f, err = os.OpenFile(filepath.Join(statusTrackerTmpDir, StatusTrackerFileName), os.O_CREATE|os.O_RDWR, 0o644)
-			if err != nil {
-				return nil, fmt.Errorf("create status tracker: %w", err)
-			}
-
-			if _, err := io.WriteString(f, jobID+"\n"); err != nil {
-				return nil, fmt.Errorf("writing to status tracker file:%s, err: %w", StatusTrackerFileName, err)
-			}
-
-		} else {
-			// if yes, then simply read it.
-			response = lines[1 : len(lines)-1]
-		}
+		return nil, nil
 	}
 
-	return response, nil
+	lines := strings.Split(string(byt), "\n")
+	// check if our <jobID> matches with the one in file.
+	// if not, then truncate the file & write new current jobID.
+
+	// This might happen when we have a job partially working on the
+	// suppress with delete and then it fails and second job starts in the meantime.
+	// So we keep the latest state in here.
+	if lines[0] != jobID {
+
+		// truncate the contents of the file, to start writing for another
+		// <jobID> information.
+		if err := f.Truncate(0); err != nil {
+			return nil, fmt.Errorf("truncate the original file: %s, err: %w", path, err)
+		}
+
+		if _, err := f.Seek(0, 0); err != nil {
+			return nil, fmt.Errorf("moving seek pointer: %s to zero location: %w", path, err)
+		}
+
+		if _, err := io.WriteString(f, fmt.Sprintf("%s\n", jobID)); err != nil {
+			return nil, fmt.Errorf("writing to status tracker file:%s, err: %w", StatusTrackerFileName, err)
+		}
+
+		return nil, nil
+	}
+
+	// if we have entries then read it.
+	if len(lines) >= 1 {
+		return lines[1:], nil
+	}
+
+	return nil, nil
 }
 
 // downloads `fileName` locally. And returns empty file, if file not found.
 // Note: download happens concurrently in 5 go routine by default.
-func (b *Batch) download(_ context.Context, completeFileName string) (string, error) {
+func (b *Batch) download(ctx context.Context, completeFileName string) (string, error) {
 	pkgLogger.Debugf("downloading file: %s", completeFileName)
 
 	tmpFilePathPrefix, err := os.MkdirTemp(b.TmpDirPath, "")
@@ -204,7 +202,7 @@ func (b *Batch) download(_ context.Context, completeFileName string) (string, er
 		return "", fmt.Errorf("getting absolute path for: %s, %w", tmpFilePtr.Name(), err)
 	}
 
-	err = b.FM.Download(context.TODO(), tmpFilePtr, completeFileName)
+	err = b.FM.Download(ctx, tmpFilePtr, completeFileName)
 	if err != nil {
 		if err == filemanager.ErrKeyNotFound {
 			pkgLogger.Debugf("file not found")
@@ -361,9 +359,13 @@ func (bm *BatchManager) Delete(ctx context.Context, job model.Job, destConfig ma
 		TmpDirPath: tmpDirPath,
 	}
 
+	prefix := ""
+	if val, ok := destConfig["prefix"]; ok {
+		prefix = val.(string)
+	}
 	// Get the prefix which should be the base of the
 	// of the cleanup operations.
-	defer batch.cleanup(ctx, destConfig)
+	defer batch.cleanup(ctx, prefix)
 
 	for {
 		files, err := batch.listFiles(ctx)
@@ -377,14 +379,12 @@ func (bm *BatchManager) Delete(ctx context.Context, job model.Job, destConfig ma
 			break
 		}
 
-		fName, fPtr, err := batch.getStatusTracker(ctx, destConfig["prefix"].(string))
+		fName, err := batch.download(ctx, filepath.Join(prefix, StatusTrackerFileName))
 		if err != nil {
 			return model.JobStatusFailed
 		}
 
-		defer fPtr.Close()
-
-		cleanedFiles, err := batch.cleanedFiles(ctx, fPtr, &job)
+		cleanedFiles, err := batch.cleanedFiles(ctx, fName, &job)
 		if err != nil {
 			pkgLogger.Errorf("error while getting status tracker file: %v", err)
 			return model.JobStatusFailed
@@ -479,15 +479,15 @@ func handleIdentityRemoval(
 	pkgLogger.Debugf("Handling identity removal for source: %s, destination: %s", sourceFile, targetFile)
 
 	if err := handler.Read(ctx, sourceFile); err != nil {
-		return fmt.Errorf("unable to parse contents of local file: %s, err: %w", sourceFile, err)
+		return fmt.Errorf("parsing contents of local file: %s, err: %w", sourceFile, err)
 	}
 
 	if err := handler.RemoveIdentity(ctx, attributes); err != nil {
-		return fmt.Errorf("unable to handle identity removal for attributes: %v, err: %w", nil, err)
+		return fmt.Errorf("handle identity removal for attributes: %v, err: %w", nil, err)
 	}
 
 	if err := handler.Write(ctx, targetFile); err != nil {
-		return fmt.Errorf("unable to write to local file: %s, err: %w", targetFile, err)
+		return fmt.Errorf("writing to local file: %s, err: %w", targetFile, err)
 	}
 
 	return nil
@@ -511,13 +511,8 @@ func getFileSize(fileAbsPath string) int {
 	return int(fileSize)
 }
 
-func (b *Batch) cleanup(ctx context.Context, config map[string]interface{}) {
+func (b *Batch) cleanup(ctx context.Context, prefix string) {
 	pkgLogger.Debugf("cleaning up temp files created during the operation")
-
-	prefix := ""
-	if val, ok := config["prefix"]; ok {
-		prefix = val.(string)
-	}
 
 	err := b.FM.DeleteObjects(
 		ctx,
