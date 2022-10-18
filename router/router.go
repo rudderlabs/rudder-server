@@ -446,7 +446,6 @@ func (worker *workerT) workerProcess() {
 
 			worker.rt.configSubscriberLock.RLock()
 			batchDestination, ok := worker.rt.destinationsMap[parameters.DestinationID]
-			destination := batchDestination.Destination
 			worker.rt.configSubscriberLock.RUnlock()
 			if !ok {
 				status := jobsdb.JobStatusT{
@@ -463,6 +462,7 @@ func (worker *workerT) workerProcess() {
 				worker.rt.responseQ <- jobResponseT{status: &status, worker: worker, userID: userID, JobT: job}
 				continue
 			}
+			destination := batchDestination.Destination
 			if authType := routerutils.GetAuthType(destination); routerutils.IsNotEmptyString(authType) && authType == "OAuth" {
 				rudderAccountID := routerutils.GetRudderAccountId(&destination)
 				if routerutils.IsNotEmptyString(rudderAccountID) {
