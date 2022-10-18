@@ -60,10 +60,10 @@ help: ## Show the available commands
 
 
 install-tools:
-	go install github.com/golang/mock/mockgen@v1.6.0 || \
-	GO111MODULE=on go install github.com/golang/mock/mockgen@v1.6.0
-
+	go install github.com/golang/mock/mockgen@v1.6.0
 	go install mvdan.cc/gofumpt@latest
+	go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.28.1
+	go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.2.0
 
 .PHONY: lint 
 lint: fmt ## Run linters on all go files
@@ -73,6 +73,11 @@ lint: fmt ## Run linters on all go files
 .PHONY: fmt 
 fmt: install-tools ## Formats all go files
 	gofumpt -l -w -extra  .
+
+.PHONY: proto
+proto: install-tools ## Generate protobuf files
+	protoc --go_out=paths=source_relative:. proto/**/*.proto
+	protoc --go-grpc_out=paths=source_relative:. proto/**/*.proto
 
 cleanup-warehouse-integration:
 	docker-compose -f warehouse/docker-compose.test.yml down --remove-orphans --volumes
