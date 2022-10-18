@@ -170,7 +170,7 @@ func (suppressUser *SuppressRegulationHandler) getSourceRegulationsFromRegulatio
 		return []sourceRegulation{}, nil
 	}
 
-	urlStr := fmt.Sprintf("%s/dataplane/workspaces/%s/regulations/suppressions", suppressUser.RegulationBackendURL, suppressUser.WorkspaceID)
+	urlStr := fmt.Sprintf("%s/dataplane/workspaces/%s/regulations/suppressions/gzip", suppressUser.RegulationBackendURL, suppressUser.WorkspaceID)
 	urlValQuery := url.Values{}
 	if suppressUser.suppressAPIToken != "" {
 		urlValQuery.Set("pageToken", suppressUser.suppressAPIToken)
