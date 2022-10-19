@@ -3058,6 +3058,11 @@ func (jd *HandleT) doMigrateDS(ctx context.Context) error {
 			return fmt.Errorf("failed to acquire lock: %w", ctx.Err())
 		}
 		defer jd.dsMigrationLock.Unlock()
+		// repeat the check after the dsMigrationLock is acquired to get correct pending jobs count.
+		// the pending jobs count cannot change after the dsMigrationLock is acquired
+		if migrateFrom, pendingJobsCount, insertBeforeDS = jd.getMigrationList(dsList); len(migrateFrom) == 0 {
+			return nil
+		}
 
 		if pendingJobsCount > 0 { // migrate incomplete jobs
 			var destination dataSetT
