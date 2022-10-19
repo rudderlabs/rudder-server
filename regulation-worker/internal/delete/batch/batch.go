@@ -505,7 +505,6 @@ func (b *Batch) cleanup(ctx context.Context, prefix string) {
 		ctx,
 		[]string{filepath.Join(prefix, StatusTrackerFileName)},
 	)
-
 	if err != nil {
 		pkgLogger.Errorf("error while deleting delete status tracker file from destination: %v", err)
 	}

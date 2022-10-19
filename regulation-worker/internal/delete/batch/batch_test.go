@@ -60,7 +60,6 @@ func TestBatchDeleteForUnsupportedDestinationFails(t *testing.T) {
 
 	status := bm.Delete(context.TODO(), input.job, input.dest.Config, input.dest.Name)
 	require.Equal(t, model.JobStatusNotSupported, status)
-
 }
 
 func TestBatchDelete(t *testing.T) {

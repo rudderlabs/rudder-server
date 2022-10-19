@@ -106,7 +106,6 @@ func TestRemoveIdentityRecordsFromGZIPByMultipleUserId(t *testing.T) {
 		require.Nil(t, err)
 		require.Equal(t, true, bytes.Equal(h.records, ip.expectedByte))
 	}
-
 }
 
 func TestIdentityDeletePattern(t *testing.T) {
