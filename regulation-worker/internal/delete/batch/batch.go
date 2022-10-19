@@ -42,10 +42,10 @@ type Batch struct {
 
 // returns list of all .json.gz files.
 // NOTE: assuming that all of batch destination have same file system as S3, i.e. flat.
-func (b *Batch) listFiles(ctx context.Context) ([]*filemanager.FileObject, error) {
+func (b *Batch) listFiles(ctx context.Context, prefix string) ([]*filemanager.FileObject, error) {
 	pkgLogger.Debugf("getting a list of files from destination")
 
-	fileObjects, err := b.FM.ListFilesWithPrefix(ctx, "", "", listMaxItem)
+	fileObjects, err := b.FM.ListFilesWithPrefix(ctx, "", prefix, listMaxItem)
 	if err != nil {
 		pkgLogger.Errorf("error while getting list of files: %v", err)
 		return []*filemanager.FileObject{}, fmt.Errorf("failed to fetch object list from S3: %v", err)
@@ -182,7 +182,7 @@ func (b *Batch) cleanedFiles(_ context.Context, path string, job *model.Job) ([]
 // downloads `fileName` locally. And returns empty file, if file not found.
 // Note: download happens concurrently in 5 go routine by default.
 func (b *Batch) download(ctx context.Context, completeFileName string) (string, error) {
-	pkgLogger.Debugf("downloading file: %s", completeFileName)
+	pkgLogger.Infof("downloading file: %s locally", completeFileName)
 
 	tmpFilePathPrefix, err := os.MkdirTemp(b.TmpDirPath, "")
 	if err != nil {
@@ -367,16 +367,18 @@ func (bm *BatchManager) Delete(ctx context.Context, job model.Job, destConfig ma
 	defer batch.cleanup(ctx, prefix)
 
 	for {
-		files, err := batch.listFiles(ctx)
+		files, err := batch.listFiles(ctx, prefix)
 		if err != nil {
 			pkgLogger.Errorf("error while getting files list: %v", err)
 			return model.JobStatusFailed
 		}
 
 		if len(files) == 0 {
-			pkgLogger.Debug("no new files found")
+			pkgLogger.Info("no new files found")
 			break
 		}
+
+		pkgLogger.Infof("found %d files to process as part of loop", len(files))
 
 		fName, err := batch.download(ctx, filepath.Join(prefix, StatusTrackerFileName))
 		if err != nil {
@@ -442,6 +444,8 @@ func (bm *BatchManager) Delete(ctx context.Context, job model.Job, destConfig ma
 			pkgLogger.Errorf("user identity deletion job failed with error: %v", err)
 			return model.JobStatusFailed
 		}
+
+		pkgLogger.Infof("successfully completed the loop of file processing")
 	}
 
 	return model.JobStatusComplete
