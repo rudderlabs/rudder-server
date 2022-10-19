@@ -561,7 +561,7 @@ func (p *ProducerManager) Produce(jsonData json.RawMessage, destConfig interface
 		return sendBatchedMessage(ctx, jsonData, p, conf)
 	}
 
-	return sendMessage(ctx, jsonData, p, conf.Topic, conf)
+	return sendMessage(ctx, jsonData, p, conf)
 }
 
 func sendBatchedMessage(ctx context.Context, jsonData json.RawMessage, p producerManager, conf configuration) (int, string, string) {
@@ -586,7 +586,8 @@ func sendBatchedMessage(ctx context.Context, jsonData json.RawMessage, p produce
 	return 200, returnMessage, returnMessage
 }
 
-func sendMessage(ctx context.Context, jsonData json.RawMessage, p producerManager, topic string, config configuration) (int, string, string) {
+func sendMessage(ctx context.Context, jsonData json.RawMessage, p producerManager, config configuration) (int, string, string) {
+	topic := config.Topic
 	parsedJSON := gjson.ParseBytes(jsonData)
 	messageValue := parsedJSON.Get("message").Value()
 	if messageValue == nil {
