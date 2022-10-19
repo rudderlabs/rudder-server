@@ -1,7 +1,6 @@
 .PHONY: help default build run run-mt test test-run test-teardown mocks
 
 GO=go
-GINKGO=ginkgo
 LDFLAGS?=-s -w
 TESTFILE=_testok
 
@@ -10,11 +9,16 @@ default: build
 mocks: install-tools ## Generate all mocks
 	$(GO) generate ./...
 
-test: test-run test-teardown
+test: install-tools test-run test-teardown
 
 test-run: ## Run all unit tests
+ifeq ($(filter 1,$(debug) $(RUNNER_DEBUG)),)
+	$(eval TEST_CMD = SLOW=0 gotestsum --format pkgname-and-test-fails --)
+	$(eval TEST_OPTIONS = -p=1 -v -failfast -shuffle=on -coverprofile=profile.out -covermode=atomic -vet=all --timeout=15m)
+else
 	$(eval TEST_CMD = SLOW=0 go test)
 	$(eval TEST_OPTIONS = -p=1 -v -failfast -shuffle=on -coverprofile=profile.out -covermode=atomic -vet=all --timeout=15m)
+endif
 ifdef package
 	$(TEST_CMD) $(TEST_OPTIONS) $(package) && touch $(TESTFILE) || true
 else
@@ -64,6 +68,7 @@ install-tools:
 	go install mvdan.cc/gofumpt@latest
 	go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.28.1
 	go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.2.0
+	go install gotest.tools/gotestsum@v1.8.2
 
 .PHONY: lint 
 lint: fmt ## Run linters on all go files
