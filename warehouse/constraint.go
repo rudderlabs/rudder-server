@@ -2,8 +2,8 @@ package warehouse
 
 import (
 	"fmt"
+	"github.com/rudderlabs/rudder-server/utils/misc"
 
-	"github.com/gofrs/uuid"
 	"github.com/iancoleman/strcase"
 	"github.com/rudderlabs/rudder-server/config"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
@@ -102,6 +102,6 @@ func (ic *IndexConstraintT) violates(brEvent *BatchRouterEventT, columnName stri
 	}
 	return &ConstraintsViolationT{
 		IsViolated:         concatenatedLength > ic.Limit,
-		ViolatedIdentifier: fmt.Sprintf(`%s-%s`, strcase.ToKebab(warehouseutils.DiscardsTable), uuid.Must(uuid.NewV4()).String()),
+		ViolatedIdentifier: fmt.Sprintf(`%s-%s`, strcase.ToKebab(warehouseutils.DiscardsTable), misc.FastUUID().String()),
 	}
 }

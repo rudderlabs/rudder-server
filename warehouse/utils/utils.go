@@ -21,7 +21,6 @@ import (
 	"github.com/Azure/azure-storage-blob-go/azblob"
 	"github.com/aws/aws-sdk-go/service/s3"
 	"github.com/aws/aws-sdk-go/service/sts"
-	"github.com/gofrs/uuid"
 	"github.com/iancoleman/strcase"
 	"github.com/tidwall/gjson"
 
@@ -380,14 +379,14 @@ func GetLoadFileGenTime(str sql.NullString) (t time.Time) {
 
 func GetNamespace(source backendconfig.SourceT, destination backendconfig.DestinationT, dbHandle *sql.DB) (namespace string, exists bool) {
 	sqlStatement := fmt.Sprintf(`
-		SELECT 
-		  namespace 
-		FROM 
-		  %s 
-		WHERE 
-		  source_id = '%s' 
-		  AND destination_id = '%s' 
-		ORDER BY 
+		SELECT
+		  namespace
+		FROM
+		  %s
+		WHERE
+		  source_id = '%s'
+		  AND destination_id = '%s'
+		ORDER BY
 		  id DESC;
 `,
 		WarehouseSchemasTable,
@@ -1067,7 +1066,7 @@ func StagingTablePrefix(provider string) string {
 }
 
 func StagingTableName(provider, tableName string, tableNameLimit int) string {
-	randomNess := strings.ReplaceAll(uuid.Must(uuid.NewV4()).String(), "-", "")
+	randomNess := strings.ReplaceAll(misc.FastUUID().String(), "-", "")
 	prefix := StagingTablePrefix(provider)
 	stagingTableName := fmt.Sprintf(`%s%s_%s`, prefix, tableName, randomNess)
 	return misc.TruncateStr(stagingTableName, tableNameLimit)

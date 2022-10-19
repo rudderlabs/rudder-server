@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/gofrs/uuid"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/services/filemanager"
 	"github.com/rudderlabs/rudder-server/utils/misc"
@@ -59,7 +58,7 @@ func parseOptions(req json.RawMessage, v interface{}) error {
 }
 
 func randomString() string {
-	return strings.ReplaceAll(uuid.Must(uuid.NewV4()).String(), "-", "")
+	return strings.ReplaceAll(misc.FastUUID().String(), "-", "")
 }
 
 func stagingTableName() string {

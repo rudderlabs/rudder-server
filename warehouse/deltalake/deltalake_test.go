@@ -4,6 +4,7 @@ package deltalake_test
 
 import (
 	"fmt"
+	"github.com/rudderlabs/rudder-server/utils/misc"
 	"log"
 	"os"
 	"testing"
@@ -11,8 +12,6 @@ import (
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
-
-	"github.com/gofrs/uuid"
 
 	proto "github.com/rudderlabs/rudder-server/proto/databricks"
 
@@ -84,7 +83,7 @@ func TestDeltalakeIntegration(t *testing.T) {
 			WriteKey:      handle.WriteKey,
 			Schema:        handle.Schema,
 			Tables:        handle.Tables,
-			MessageId:     uuid.Must(uuid.NewV4()).String(),
+			MessageId:     misc.FastUUID().String(),
 			Provider:      warehouseutils.DELTALAKE,
 			SourceID:      "25H5EpYzojqQSepRSaGBrrPx3e4",
 			DestinationID: "25IDjdnoEus6DDNrth3SWO1FOpu",
@@ -137,7 +136,7 @@ func TestDeltalakeIntegration(t *testing.T) {
 			WriteKey:      handle.WriteKey,
 			Schema:        handle.Schema,
 			Tables:        handle.Tables,
-			MessageId:     uuid.Must(uuid.NewV4()).String(),
+			MessageId:     misc.FastUUID().String(),
 			Provider:      warehouseutils.DELTALAKE,
 			SourceID:      "25H5EpYzojqQSepRSaGBrrPx3e4",
 			DestinationID: "25IDjdnoEus6DDNrth3SWO1FOpu",

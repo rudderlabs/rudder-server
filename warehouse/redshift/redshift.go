@@ -13,7 +13,6 @@ import (
 
 	"github.com/tidwall/gjson"
 
-	uuid "github.com/gofrs/uuid"
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/services/filemanager"
 	"github.com/rudderlabs/rudder-server/utils/logger"
@@ -181,7 +180,7 @@ func (rs *HandleT) DeleteBy(tableNames []string, params warehouseutils.DeleteByP
 	pkgLogger.Infof("RS: Cleaning up the followng tables in redshift for RS:%s : %+v", tableNames, params)
 	pkgLogger.Infof("RS: Flag for enableDeleteByJobs is %t", enableDeleteByJobs)
 	for _, tb := range tableNames {
-		sqlStatement := fmt.Sprintf(`DELETE FROM "%[1]s"."%[2]s" WHERE 
+		sqlStatement := fmt.Sprintf(`DELETE FROM "%[1]s"."%[2]s" WHERE
 		context_sources_job_run_id <> $1 AND
 		context_sources_task_run_id <> $2 AND
 		context_source_id = $3 AND
@@ -261,7 +260,7 @@ func (rs *HandleT) generateManifest(tableName string, _ map[string]string) (stri
 	if err != nil {
 		panic(err)
 	}
-	localManifestPath := fmt.Sprintf("%v%v", tmpDirPath+dirName, uuid.Must(uuid.NewV4()).String())
+	localManifestPath := fmt.Sprintf("%v%v", tmpDirPath+dirName, misc.FastUUID().String())
 	err = os.MkdirAll(filepath.Dir(localManifestPath), os.ModePerm)
 	if err != nil {
 		panic(err)
@@ -287,7 +286,7 @@ func (rs *HandleT) generateManifest(tableName string, _ map[string]string) (stri
 		return "", err
 	}
 
-	uploadOutput, err := uploader.Upload(context.TODO(), file, manifestFolder, rs.Warehouse.Source.ID, rs.Warehouse.Destination.ID, time.Now().Format("01-02-2006"), tableName, uuid.Must(uuid.NewV4()).String())
+	uploadOutput, err := uploader.Upload(context.TODO(), file, manifestFolder, rs.Warehouse.Source.ID, rs.Warehouse.Destination.ID, time.Now().Format("01-02-2006"), tableName, misc.FastUUID().String())
 	if err != nil {
 		return "", err
 	}
@@ -385,9 +384,9 @@ func (rs *HandleT) loadTable(tableName string, tableSchemaInUpload, tableSchemaA
 
 	sqlStatement = fmt.Sprintf(`
 		DELETE FROM
-			%[1]s.%[2]q 
-		USING 
-			%[1]s.%[3]q _source  
+			%[1]s.%[2]q
+		USING
+			%[1]s.%[3]q _source
 		WHERE
 			_source.%[4]s = %[1]s.%[2]q.%[4]s
 `,
@@ -411,7 +410,7 @@ func (rs *HandleT) loadTable(tableName string, tableSchemaInUpload, tableSchemaA
 
 	if tableName == warehouseutils.DiscardsTable {
 		sqlStatement += fmt.Sprintf(`
-			AND _source.%[3]s = %[1]s.%[2]q.%[3]s 
+			AND _source.%[3]s = %[1]s.%[2]q.%[3]s
 			AND _source.%[4]s = %[1]s.%[2]q.%[4]s
 `,
 			rs.Namespace,

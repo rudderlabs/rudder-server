@@ -5,6 +5,7 @@ package bigquery_test
 import (
 	"context"
 	"fmt"
+	"github.com/rudderlabs/rudder-server/utils/misc"
 	"log"
 	"os"
 	"testing"
@@ -17,7 +18,6 @@ import (
 
 	"cloud.google.com/go/bigquery"
 
-	"github.com/gofrs/uuid"
 	bigquery2 "github.com/rudderlabs/rudder-server/warehouse/bigquery"
 	"github.com/rudderlabs/rudder-server/warehouse/client"
 	"github.com/rudderlabs/rudder-server/warehouse/testhelper"
@@ -72,7 +72,7 @@ func TestBigQueryIntegration(t *testing.T) {
 			WriteKey:      handle.WriteKey,
 			Schema:        handle.Schema,
 			Tables:        handle.Tables,
-			MessageId:     uuid.Must(uuid.NewV4()).String(),
+			MessageId:     misc.FastUUID().String(),
 			Provider:      warehouseutils.BQ,
 			SourceID:      "24p1HhPk09FW25Kuzxv7GshCLKR",
 			DestinationID: "26Bgm9FrQDZjvadSwAlpd35atwn",
@@ -125,7 +125,7 @@ func TestBigQueryIntegration(t *testing.T) {
 			WriteKey:      handle.WriteKey,
 			Schema:        handle.Schema,
 			Tables:        handle.Tables,
-			MessageId:     uuid.Must(uuid.NewV4()).String(),
+			MessageId:     misc.FastUUID().String(),
 			Provider:      warehouseutils.BQ,
 			SourceID:      "24p1HhPk09FW25Kuzxv7GshCLKR",
 			DestinationID: "26Bgm9FrQDZjvadSwAlpd35atwn",
