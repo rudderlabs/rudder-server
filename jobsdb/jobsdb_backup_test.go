@@ -147,8 +147,8 @@ func TestBackupTable(t *testing.T) {
 	// Verify aborted jobs backup
 	f := tc.downloadFile(t, fm, abortedJobsBackupFilename, cleanup)
 	abortedJobs, abortedStatus := tc.getJobsFromAbortedJobs(t, f)
-	require.Equal(t, len(jobs), len(abortedJobs), "expected jobs to be same in case of only aborted backup")
-	require.Equal(t, len(statusList), len(abortedStatus), "expected status to be same in case of only aborted backup")
+	require.Equal(t, jobs, abortedJobs, "expected jobs to be same in case of only aborted backup")
+	require.Equal(t, statusList, abortedStatus, "expected status to be same in case of only aborted backup")
 
 	// Verify full backup of job statuses
 	f = tc.downloadFile(t, fm, jobStatusBackupFilename, cleanup)
