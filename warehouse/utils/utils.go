@@ -229,6 +229,12 @@ type DeleteByParams struct {
 	StartTime string
 }
 
+type ColumnInfo struct {
+	Name  string
+	Value interface{}
+	Type  string
+}
+
 func (w *Warehouse) GetBoolDestinationConfig(key string) bool {
 	destConfig := w.Destination.Config
 	if destConfig[key] != nil {
@@ -1061,14 +1067,6 @@ type FilterBy struct {
 	Key   string
 	Value interface{}
 }
-
-type ColumnInfoT struct {
-	Name  string
-	Value interface{}
-	Type  string
-}
-
-type ColumnsInfo []ColumnInfoT
 
 func StagingTablePrefix(provider string) string {
 	return ToProviderCase(provider, stagingTablePrefix)

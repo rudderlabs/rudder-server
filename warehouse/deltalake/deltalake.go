@@ -875,7 +875,7 @@ func (dl *HandleT) DropTable(tableName string) (err error) {
 	return
 }
 
-func (dl *HandleT) AddColumns(tableName string, columnsInfo warehouseutils.ColumnsInfo) (err error) {
+func (dl *HandleT) AddColumns(tableName string, columnsInfo []warehouseutils.ColumnInfo) (err error) {
 	var query string
 	query += fmt.Sprintf(`
 		ALTER TABLE
@@ -892,7 +892,7 @@ func (dl *HandleT) AddColumns(tableName string, columnsInfo warehouseutils.Colum
 	query = strings.TrimSuffix(query, ",")
 	query += ");"
 
-	pkgLogger.Infof("%s Adding column in delta lake with SQL:%v", dl.GetLogIdentifier(tableName), query)
+	pkgLogger.Infof("DL: Adding columns for destinationID: %s, tableName: %s with query: %v", dl.Warehouse.Destination.ID, tableName, query)
 	err = dl.ExecuteSQL(query, "AddColumn")
 	return
 }

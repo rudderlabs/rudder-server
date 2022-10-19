@@ -2,7 +2,6 @@ package schemarepository
 
 import (
 	"fmt"
-
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/glue"
 	"github.com/rudderlabs/rudder-server/utils/awsutils"
@@ -129,7 +128,7 @@ func (gl *GlueSchemaRepository) CreateTable(tableName string, columnMap map[stri
 	return
 }
 
-func (gl *GlueSchemaRepository) AddColumns(tableName string, columnsInfo warehouseutils.ColumnsInfo) (err error) {
+func (gl *GlueSchemaRepository) AddColumns(tableName string, columnsInfo []warehouseutils.ColumnInfo) (err error) {
 	updateTableInput := glue.UpdateTableInput{
 		DatabaseName: aws.String(gl.Namespace),
 		TableInput: &glue.TableInput{
@@ -163,7 +162,7 @@ func (gl *GlueSchemaRepository) AddColumns(tableName string, columnsInfo warehou
 }
 
 func (gl *GlueSchemaRepository) AlterColumn(tableName, columnName, columnType string) (err error) {
-	return gl.AddColumns(tableName, warehouseutils.ColumnsInfo{{Name: columnName, Type: columnType}})
+	return gl.AddColumns(tableName, []warehouseutils.ColumnInfo{{Name: columnName, Type: columnType}})
 }
 
 func getGlueClient(wh warehouseutils.Warehouse) (*glue.Glue, error) {

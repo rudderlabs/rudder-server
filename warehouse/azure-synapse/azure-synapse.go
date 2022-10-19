@@ -645,7 +645,7 @@ func (as *HandleT) DropTable(tableName string) (err error) {
 	return
 }
 
-func (as *HandleT) AddColumns(tableName string, columnsInfo warehouseutils.ColumnsInfo) (err error) {
+func (as *HandleT) AddColumns(tableName string, columnsInfo []warehouseutils.ColumnInfo) (err error) {
 	var query string
 	if len(columnsInfo) == 1 {
 		query += fmt.Sprintf(`
@@ -680,7 +680,7 @@ func (as *HandleT) AddColumns(tableName string, columnsInfo warehouseutils.Colum
 	query = strings.TrimSuffix(query, ",")
 	query += ";"
 
-	pkgLogger.Infof("AZ: Adding column in synapse for AZ:%s : %v", as.Warehouse.Destination.ID, query)
+	pkgLogger.Infof("AZ: Adding columns for destinationID: %s, tableName: %s with query: %v", as.Warehouse.Destination.ID, tableName, query)
 	_, err = as.Db.Exec(query)
 	return
 }

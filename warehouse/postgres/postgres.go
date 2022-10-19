@@ -652,7 +652,7 @@ func (pg *HandleT) DropTable(tableName string) (err error) {
 	return
 }
 
-func (pg *HandleT) AddColumns(tableName string, columnsInfo warehouseutils.ColumnsInfo) (err error) {
+func (pg *HandleT) AddColumns(tableName string, columnsInfo []warehouseutils.ColumnInfo) (err error) {
 	var query string
 
 	// set the schema in search path. so that we can query table with unqualified name which is just the table name rather than using schema.table in queries
@@ -676,7 +676,7 @@ func (pg *HandleT) AddColumns(tableName string, columnsInfo warehouseutils.Colum
 	query = strings.TrimSuffix(query, ",")
 	query += ";"
 
-	pkgLogger.Infof("PG: Adding columns in postgres for PG:%s : %v", pg.Warehouse.Destination.ID, query)
+	pkgLogger.Infof("PG: Adding columns for destinationID: %s, tableName: %s with query: %v", pg.Warehouse.Destination.ID, tableName, query)
 	_, err = pg.Db.Exec(query)
 	return
 }

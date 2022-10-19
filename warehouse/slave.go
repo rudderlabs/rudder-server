@@ -358,16 +358,16 @@ func (jobRun *JobRunT) cleanup() {
 	}
 }
 
-func (event *BatchRouterEventT) GetColumnInfo(columnName string) (columnInfo warehouseutils.ColumnInfoT, ok bool) {
+func (event *BatchRouterEventT) GetColumnInfo(columnName string) (columnInfo warehouseutils.ColumnInfo, ok bool) {
 	columnVal, ok := event.Data[columnName]
 	if !ok {
-		return warehouseutils.ColumnInfoT{}, false
+		return warehouseutils.ColumnInfo{}, false
 	}
 	columnType, ok := event.Metadata.Columns[columnName]
 	if !ok {
-		return warehouseutils.ColumnInfoT{}, false
+		return warehouseutils.ColumnInfo{}, false
 	}
-	return warehouseutils.ColumnInfoT{Value: columnVal, Type: columnType}, true
+	return warehouseutils.ColumnInfo{Value: columnVal, Type: columnType}, true
 }
 
 //

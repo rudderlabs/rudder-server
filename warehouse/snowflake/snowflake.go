@@ -639,7 +639,7 @@ func (sf *HandleT) DropTable(tableName string) (err error) {
 	return
 }
 
-func (sf *HandleT) AddColumns(tableName string, columnsInfo warehouseutils.ColumnsInfo) (err error) {
+func (sf *HandleT) AddColumns(tableName string, columnsInfo []warehouseutils.ColumnInfo) (err error) {
 	var (
 		query            string
 		schemaIdentifier string
@@ -662,7 +662,7 @@ func (sf *HandleT) AddColumns(tableName string, columnsInfo warehouseutils.Colum
 	query = strings.TrimSuffix(query, ",")
 	query += ";"
 
-	pkgLogger.Infof("SF: Adding columns in snowflake for %s:%s : %v", sf.Warehouse.Namespace, sf.Warehouse.Destination.ID, query)
+	pkgLogger.Infof("SF: Adding columns for destinationID: %s, tableName: %s with query: %v", sf.Warehouse.Destination.ID, tableName, query)
 	_, err = sf.Db.Exec(query)
 
 	// Handle error in case of single column

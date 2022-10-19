@@ -680,7 +680,7 @@ func (ms *HandleT) DropTable(tableName string) (err error) {
 	return
 }
 
-func (ms *HandleT) AddColumns(tableName string, columnsInfo warehouseutils.ColumnsInfo) (err error) {
+func (ms *HandleT) AddColumns(tableName string, columnsInfo []warehouseutils.ColumnInfo) (err error) {
 	var query string
 	if len(columnsInfo) == 1 {
 		query += fmt.Sprintf(`
@@ -715,7 +715,7 @@ func (ms *HandleT) AddColumns(tableName string, columnsInfo warehouseutils.Colum
 	query = strings.TrimSuffix(query, ",")
 	query += ";"
 
-	pkgLogger.Infof("MS: Adding column in mssql for MS:%s : %v", ms.Warehouse.Destination.ID, query)
+	pkgLogger.Infof("MS: Adding columns for destinationID: %s, tableName: %s with query: %v", ms.Warehouse.Destination.ID, tableName, query)
 	_, err = ms.Db.Exec(query)
 	return
 }

@@ -169,7 +169,7 @@ func (rs *HandleT) schemaExists(_ string) (exists bool, err error) {
 	return
 }
 
-func (rs *HandleT) AddColumns(tableName string, columnsInfo warehouseutils.ColumnsInfo) error {
+func (rs *HandleT) AddColumns(tableName string, columnsInfo []warehouseutils.ColumnInfo) error {
 	for _, columnInfo := range columnsInfo {
 		query := fmt.Sprintf(`
 		ALTER TABLE
@@ -182,7 +182,7 @@ func (rs *HandleT) AddColumns(tableName string, columnsInfo warehouseutils.Colum
 			columnInfo.Name,
 			getRSDataType(columnInfo.Type),
 		)
-		pkgLogger.Infof("Adding column in redshift for RS:%s : %v", rs.Warehouse.Destination.ID, query)
+		pkgLogger.Infof("AZ: Adding column for destinationID: %s, tableName: %s with query: %v", rs.Warehouse.Destination.ID, tableName, query)
 
 		if _, err := rs.Db.Exec(query); err != nil {
 			return err
