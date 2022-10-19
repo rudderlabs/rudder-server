@@ -135,7 +135,7 @@ func (wh *HandleT) getPendingPopulateIdentitiesLoad(warehouse warehouseutils.War
 		var ok bool
 		wh.workspaceBySourceIDsLock.RLock()
 		upload.WorkspaceID, ok = wh.workspaceBySourceIDs[upload.SourceID]
-		wh.workspaceBySourceIDsLock.Unlock()
+		wh.workspaceBySourceIDsLock.RUnlock()
 
 		if !ok {
 			pkgLogger.Warnf("Workspace not found for source id: %q", upload.SourceID)
