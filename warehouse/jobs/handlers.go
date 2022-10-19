@@ -55,13 +55,13 @@ func (asyncWhJob *AsyncJobWhT) AddWarehouseJobHandler(w http.ResponseWriter, r *
 	// Add to wh_async_job queue each of the tables
 	for _, th := range tableNames {
 		if !skipTable(th) {
-			metaData := WhJobsMetaData{
+			jobsMetaData := WhJobsMetaData{
 				JobRunID:  startJobPayload.JobRunID,
 				TaskRunID: startJobPayload.TaskRunID,
 				StartTime: startJobPayload.StartTime,
 				JobType:   AsyncJobType,
 			}
-			metadata, err := json.Marshal(metaData)
+			metadataJson, err := json.Marshal(jobsMetaData)
 			if err != nil {
 				http.Error(w, err.Error(), http.StatusBadRequest)
 				return
@@ -71,7 +71,7 @@ func (asyncWhJob *AsyncJobWhT) AddWarehouseJobHandler(w http.ResponseWriter, r *
 				DestinationID: startJobPayload.DestinationID,
 				TableName:     th,
 				AsyncJobType:  startJobPayload.AsyncJobType,
-				MetaData:      metadata,
+				MetaData:      metadataJson,
 			}
 			id, err := asyncWhJob.addJobsToDB(asyncWhJob.context, &payload)
 			if err != nil {

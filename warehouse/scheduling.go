@@ -136,11 +136,11 @@ func (wh *HandleT) getLastUploadCreatedAt(warehouse warehouseutils.Warehouse) ti
 
 func GetExcludeWindowStartEndTimes(excludeWindow map[string]interface{}) (string, string) {
 	var startTime, endTime string
-	if time, ok := excludeWindow[warehouseutils.ExcludeWindowStartTime].(string); ok {
-		startTime = time
+	if st, ok := excludeWindow[warehouseutils.ExcludeWindowStartTime].(string); ok {
+		startTime = st
 	}
-	if time, ok := excludeWindow[warehouseutils.ExcludeWindowEndTime].(string); ok {
-		endTime = time
+	if et, ok := excludeWindow[warehouseutils.ExcludeWindowEndTime].(string); ok {
+		endTime = et
 	}
 	return startTime, endTime
 }

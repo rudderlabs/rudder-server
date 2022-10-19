@@ -830,7 +830,7 @@ func getFileManagerSettings(provider string, inputConfig map[string]interface{})
 	return settings
 }
 
-// overrideWithEnv overrides the config keys in the filemanager settings
+// overrideWithEnv overrides the config keys in the fileManager settings
 // with fallback values pulled from env. Only supported for S3 for now.
 func overrideWithEnv(settings *filemanager.SettingsT) {
 	envConfig := filemanager.GetProviderConfigFromEnv(context.TODO(), settings.Provider)

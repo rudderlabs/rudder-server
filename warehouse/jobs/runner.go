@@ -74,7 +74,7 @@ func (asyncWhJob *AsyncJobWhT) addJobsToDB(ctx context.Context, payload *AsyncJo
 	if ctx.Err() != nil {
 		return
 	}
-	pkgLogger.Infof("[WH-Jobs]: Adding job to the wh_asnc_jobs %s for % tableName: %s", payload.MetaData, payload.TableName)
+	pkgLogger.Infof("[WH-Jobs]: Adding job to the wh_async_jobs %s for tableName: %s", payload.MetaData, payload.TableName)
 
 	sqlStatement := fmt.Sprintf(`INSERT INTO %s (source_id, destination_id, tablename, status, created_at, updated_at, async_job_type, metadata)
 	VALUES ($1, $2, $3, $4, $5, $6 ,$7, $8 ) RETURNING id`, warehouseutils.WarehouseAsyncJobTable)
