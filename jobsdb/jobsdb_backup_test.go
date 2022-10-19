@@ -146,8 +146,8 @@ func TestBackupTable(t *testing.T) {
 	// Verify aborted jobs backup
 	f := tc.downloadFile(t, fm, abortedJobsBackupFilename, cleanup)
 	abortedJobs, abortedStatus := tc.getJobsFromAbortedJobs(t, f)
-	require.Equal(t, len(jobs), len(abortedJobs), "expected jobs to be same in case of only aborted backup")
-	require.Equal(t, len(statusList), len(abortedStatus), "expected status to be same in case of only aborted backup")
+	require.Equal(t, jobs, abortedJobs, "expected jobs to be same in case of only aborted backup")
+	require.Equal(t, statusList, abortedStatus, "expected status to be same in case of only aborted backup")
 
 	// Verify full backup of job statuses
 	f = tc.downloadFile(t, fm, jobStatusBackupFilename, cleanup)
@@ -155,6 +155,7 @@ func TestBackupTable(t *testing.T) {
 	require.NoError(t, err, "expected no error while reading backedup status file")
 	goldenStatusFile, err := tc.readGzipStatusFile(goldenFileStatusFileName)
 	require.NoError(t, err, "expected no error while reading golden status file")
+	verifyStatus(t, backedupStatus, goldenStatusFile)
 	require.Equal(t, len(goldenStatusFile)*2, len(backedupStatus), "expected status files to be same")
 
 	// Verify full backup of jobs
@@ -163,7 +164,15 @@ func TestBackupTable(t *testing.T) {
 	require.NoError(t, err, "expected no error while reading backedup status file")
 	goldenFileJobs, err := tc.readGzipJobFile(goldenFileJobsFileName)
 	require.NoError(t, err, "expected no error while reading golden status file")
-	require.Equal(t, len(goldenFileJobs), len(backedupJobs), "expected jobs files to be same")
+	require.Equal(t, goldenFileJobs, backedupJobs, "expected jobs files to be same")
+}
+
+func verifyStatus(t *testing.T, backedupStatus, goldenStatusFile []*JobStatusT) {
+	// verify that the backed up status is same as the golden status
+	for i := 0; i < len(goldenStatusFile); i++ {
+		require.Equal(t, goldenStatusFile[i], backedupStatus[i*2], "expected job state to be same")
+		require.Equal(t, goldenStatusFile[i], backedupStatus[i*2+1], "expected job state to be same")
+	}
 }
 
 type backupTestCase struct{}
