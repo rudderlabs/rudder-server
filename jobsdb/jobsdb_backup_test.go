@@ -82,7 +82,7 @@ func TestBackupTable(t *testing.T) {
 	require.NoError(t, err, "expected no error while reading golden status file")
 
 	// insert duplicates in status table to verify that only latest 2 status of each job is backed up
-	duplicateStatusList := insertDuplicateStatus(statusList, 3)
+	duplicateStatusList := duplicateStatuses(statusList, 3)
 
 	// batch_rt jobsdb is taking a full backup
 	tc.insertBatchRTData(t, jobs, duplicateStatusList, cleanup)
@@ -177,20 +177,21 @@ func verifyStatus(t *testing.T, backedupStatus, goldenStatusFile []*JobStatusT) 
 
 type backupTestCase struct{}
 
-func insertDuplicateStatus(statusList []*JobStatusT, duplicateCount int) []*JobStatusT {
-	originalStatusList := statusList
+func duplicateStatuses(statusList []*JobStatusT, duplicateCount int) []*JobStatusT {
+	var res []*JobStatusT
+	res = append(res, statusList...)
 	now := time.Now()
 	for i := 0; i < duplicateCount; i++ {
-		dup := make([]*JobStatusT, len(originalStatusList))
+		dup := make([]*JobStatusT, len(statusList))
 		for j := range dup {
-			tmp := *originalStatusList[j]
+			tmp := *statusList[j]
 			dup[j] = &tmp
 			newExecTime := now
 			dup[j].ExecTime = newExecTime.Add(time.Duration(i) * time.Second)
 		}
-		statusList = append(statusList, dup...)
+		res = append(res, dup...)
 	}
-	return statusList
+	return res
 }
 
 func (*backupTestCase) insertRTData(t *testing.T, jobs []*JobT, statusList []*JobStatusT, cleanup *testhelper.Cleanup) {
