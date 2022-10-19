@@ -36,7 +36,7 @@ type Producer struct {
 }
 
 // NewProducer instantiates a new producer. To use it asynchronously just do "go p.Publish(ctx, msgs)".
-func (c *Client) NewProducer(topic string, producerConf ProducerConfig, skipTopicInitialisation bool) (p *Producer, err error) { // skipcq: CRT-P0003
+func (c *Client) NewProducer(topic string, producerConf ProducerConfig) (p *Producer, err error) { // skipcq: CRT-P0003
 	producerConf.defaults()
 
 	dialer := &net.Dialer{
@@ -64,9 +64,10 @@ func (c *Client) NewProducer(topic string, producerConf ProducerConfig, skipTopi
 		}
 	}
 
-	producer := &Producer{
+	p = &Producer{
 		config: producerConf,
 		writer: &kafka.Writer{
+			Topic:                  topic,
 			Addr:                   kafka.TCP(c.addresses...),
 			Balancer:               &kafka.ReferenceHash{},
 			BatchTimeout:           time.Nanosecond,
@@ -80,11 +81,6 @@ func (c *Client) NewProducer(topic string, producerConf ProducerConfig, skipTopi
 			Transport:              transport,
 		},
 	}
-
-	if !skipTopicInitialisation {
-		producer.writer.Topic = topic
-	}
-	p = producer
 	return
 }
 
@@ -111,23 +107,6 @@ func (p *Producer) Close(ctx context.Context) error {
 // Publish allows the production of one or more message to Kafka.
 // To use it asynchronously just do "go p.Publish(ctx, msgs)".
 func (p *Producer) Publish(ctx context.Context, msgs ...Message) error {
-	messages := make([]kafka.Message, len(msgs))
-	for i := range msgs {
-		headers := processHeaderForEachMessage(msgs[i])
-		messages[i] = kafka.Message{
-			Key:     msgs[i].Key,
-			Value:   msgs[i].Value,
-			Time:    msgs[i].Timestamp,
-			Headers: headers,
-		}
-	}
-
-	return p.writer.WriteMessages(ctx, messages...)
-}
-
-// PublishWithTopic allows the production of one or more message to Kafka
-// with a specific topic.
-func (p *Producer) PublishWithTopic(ctx context.Context, msgs ...Message) error {
 	messages := make([]kafka.Message, len(msgs))
 	for i := range msgs {
 		headers := processHeaderForEachMessage(msgs[i])

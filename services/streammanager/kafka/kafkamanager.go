@@ -110,7 +110,6 @@ func (c *confluentCloudConfig) validate() error {
 
 type publisher interface {
 	Publish(context.Context, ...client.Message) error
-	PublishWithTopic(context.Context, ...client.Message) error
 }
 
 type producerManager interface {
@@ -313,14 +312,11 @@ func NewProducer(destination *backendconfig.DestinationT, o common.Opts) (*Produ
 	if err = c.Ping(ctx); err != nil {
 		return nil, fmt.Errorf("could not ping: %w", err)
 	}
-	skipTopicInitialisation := false
-	if destConfig.MultiTopicSupport {
-		skipTopicInitialisation = true
-	}
-	p, err := c.NewProducer(destConfig.Topic, client.ProducerConfig{
+
+	p, err := c.NewProducer("", client.ProducerConfig{
 		ReadTimeout:  kafkaReadTimeout,
 		WriteTimeout: kafkaWriteTimeout,
-	}, skipTopicInitialisation)
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -371,7 +367,7 @@ func NewProducerForAzureEventHubs(destination *backendconfig.DestinationT, o com
 	p, err := c.NewProducer(destConfig.Topic, client.ProducerConfig{
 		ReadTimeout:  kafkaReadTimeout,
 		WriteTimeout: kafkaWriteTimeout,
-	}, false)
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -423,7 +419,7 @@ func NewProducerForConfluentCloud(destination *backendconfig.DestinationT, o com
 	p, err := c.NewProducer(destConfig.Topic, client.ProducerConfig{
 		ReadTimeout:  kafkaReadTimeout,
 		WriteTimeout: kafkaWriteTimeout,
-	}, false)
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -534,9 +530,6 @@ func (p *ProducerManager) Close() error {
 func (p *ProducerManager) Publish(ctx context.Context, msgs ...client.Message) error {
 	return p.p.Publish(ctx, msgs...)
 }
-func (p *ProducerManager) PublishWithTopic(ctx context.Context, msgs ...client.Message) error {
-	return p.p.PublishWithTopic(ctx, msgs...)
-}
 
 // Produce creates a producer and send data to Kafka.
 func (p *ProducerManager) Produce(jsonData json.RawMessage, destConfig interface{}) (int, string, string) {
@@ -572,7 +565,6 @@ func (p *ProducerManager) Produce(jsonData json.RawMessage, destConfig interface
 }
 
 func sendBatchedMessage(ctx context.Context, jsonData json.RawMessage, p producerManager, conf configuration) (int, string, string) {
-
 	var batch []map[string]interface{}
 	err := json.Unmarshal(jsonData, &batch)
 	if err != nil {
@@ -629,14 +621,8 @@ func sendMessage(ctx context.Context, jsonData json.RawMessage, p producerManage
 	}
 	message := prepareMessage(topic, userID, value, timestamp)
 
-	if config.MultiTopicSupport {
-		if err = publishWithTopic(ctx, p, message); err != nil {
-			return makeErrorResponse(fmt.Errorf("could not publish to %q: %w", topic, err))
-		}
-	} else {
-		if err = publish(ctx, p, message); err != nil {
-			return makeErrorResponse(fmt.Errorf("could not publish to %q: %w", topic, err))
-		}
+	if err = publish(ctx, p, message); err != nil {
+		return makeErrorResponse(fmt.Errorf("could not publish to %q: %w", topic, err))
 	}
 
 	returnMessage := fmt.Sprintf("Message delivered to topic: %s", topic)
@@ -647,12 +633,6 @@ func publish(ctx context.Context, p producerManager, msgs ...client.Message) err
 	start := now()
 	defer func() { kafkaStats.publishTime.SendTiming(since(start)) }()
 	return p.Publish(ctx, msgs...)
-}
-
-func publishWithTopic(ctx context.Context, p producerManager, msgs ...client.Message) error {
-	start := now()
-	defer func() { kafkaStats.publishTime.SendTiming(since(start)) }()
-	return p.PublishWithTopic(ctx, msgs...)
 }
 
 func makeErrorResponse(err error) (int, string, string) {
