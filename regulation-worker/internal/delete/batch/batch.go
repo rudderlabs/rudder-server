@@ -381,11 +381,16 @@ func (bm *BatchManager) Delete(
 		}
 
 		if len(files) == 0 {
-			pkgLogger.Info("no new files found")
+			pkgLogger.Info("no new files found, breaking")
 			break
 		}
 
-		pkgLogger.Infof("found %d files to process as part of loop", len(files))
+		// Only handle files for which we have available handlers
+		files = filterByAvailableHandlers(files, filehandlers)
+		if len(files) == 0 {
+			pkgLogger.Info("no filtered files found, continuing")
+			continue
+		}
 
 		fName, err := batch.download(ctx, filepath.Join(prefix, StatusTrackerFileName))
 		if err != nil {
@@ -412,7 +417,6 @@ func (bm *BatchManager) Delete(
 			_i := i
 			goRoutineCount <- true
 			g.Go(func() error {
-
 				cleanTime := stats.Default.NewTaggedStat("file_cleaning_time", stats.TimerType, stats.Tags{"jobId": fmt.Sprintf("%d", job.ID), "workspaceId": job.WorkspaceID, "destType": "batch", "destName": destName})
 				cleanTime.Start()
 
@@ -459,6 +463,34 @@ func (bm *BatchManager) Delete(
 	}
 
 	return model.JobStatusComplete
+}
+
+func uploadWorker(data <-chan string, done <-chan bool, extra []interface{}) {
+
+	select {
+	case <-data:
+		handleClean()
+	case <-done:
+		return
+	}
+
+}
+
+func filterByAvailableHandlers(toFilter []*filemanager.FileObject, handlers map[string]filehandler.LocalFileHandler) []*filemanager.FileObject {
+	pkgLogger.Debugf("filtering the upstream files by available handlers: %#v", handlers)
+
+	filtered := make([]*filemanager.FileObject, 0)
+	for _, item := range toFilter {
+		for suffix := range handlers {
+			// Only if we have the handler of required suffix, does it
+			// gets added to the filtered list.
+			if strings.HasSuffix(item.Key, suffix) {
+				entry := item
+				filtered = append(filtered, entry)
+			}
+		}
+	}
+	return filtered
 }
 
 // getFileHandler extracts the filehandler based on the suffix of the file for which
