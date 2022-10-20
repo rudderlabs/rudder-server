@@ -465,17 +465,6 @@ func (bm *BatchManager) Delete(
 	return model.JobStatusComplete
 }
 
-func uploadWorker(data <-chan string, done <-chan bool, extra []interface{}) {
-
-	select {
-	case <-data:
-		handleClean()
-	case <-done:
-		return
-	}
-
-}
-
 func filterByAvailableHandlers(toFilter []*filemanager.FileObject, handlers map[string]filehandler.LocalFileHandler) []*filemanager.FileObject {
 	pkgLogger.Debugf("filtering the upstream files by available handlers: %#v", handlers)
 
