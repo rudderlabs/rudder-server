@@ -112,7 +112,8 @@ func (processor *ProcessorApp) StartRudderCore(ctx context.Context, options *app
 		prebackup.DropSourceIds(transientSources.SourceIdsSupplier()),
 	}
 
-	storageSettings := backup.NewService(ctx, backendconfig.DefaultBackendConfig)
+	storageService := backup.NewService(ctx, backendconfig.DefaultBackendConfig)
+	storageOverwrites := storageService.StorageOverwrites()
 
 	rsourcesService, err := NewRsourcesService(deploymentType)
 	if err != nil {
@@ -125,7 +126,7 @@ func (processor *ProcessorApp) StartRudderCore(ctx context.Context, options *app
 		jobsdb.WithStatusHandler(),
 		jobsdb.WithPreBackupHandlers(prebackupHandlers),
 		jobsdb.WithDSLimit(&gatewayDSLimit),
-		jobsdb.WithStorageSettings(storageSettings),
+		jobsdb.WithStorageOverwrites(storageOverwrites),
 	)
 	defer gwDBForProcessor.Close()
 	gatewayDB = gwDBForProcessor
@@ -135,7 +136,7 @@ func (processor *ProcessorApp) StartRudderCore(ctx context.Context, options *app
 		jobsdb.WithStatusHandler(),
 		jobsdb.WithPreBackupHandlers(prebackupHandlers),
 		jobsdb.WithDSLimit(&routerDSLimit),
-		jobsdb.WithStorageSettings(storageSettings),
+		jobsdb.WithStorageOverwrites(storageOverwrites),
 	)
 	defer routerDB.Close()
 	batchRouterDB := jobsdb.NewForReadWrite(
@@ -144,7 +145,7 @@ func (processor *ProcessorApp) StartRudderCore(ctx context.Context, options *app
 		jobsdb.WithStatusHandler(),
 		jobsdb.WithPreBackupHandlers(prebackupHandlers),
 		jobsdb.WithDSLimit(&batchRouterDSLimit),
-		jobsdb.WithStorageSettings(storageSettings),
+		jobsdb.WithStorageOverwrites(storageOverwrites),
 	)
 	defer batchRouterDB.Close()
 	errDB := jobsdb.NewForReadWrite(
@@ -153,7 +154,7 @@ func (processor *ProcessorApp) StartRudderCore(ctx context.Context, options *app
 		jobsdb.WithStatusHandler(),
 		jobsdb.WithPreBackupHandlers(prebackupHandlers),
 		jobsdb.WithDSLimit(&processorDSLimit),
-		jobsdb.WithStorageSettings(storageSettings),
+		jobsdb.WithStorageOverwrites(storageOverwrites),
 	)
 	var tenantRouterDB jobsdb.MultiTenantJobsDB
 	var multitenantStats multitenant.MultiTenantI

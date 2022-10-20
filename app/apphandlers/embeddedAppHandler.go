@@ -79,7 +79,8 @@ func (embedded *EmbeddedApp) StartRudderCore(ctx context.Context, options *app.O
 		prebackup.DropSourceIds(transientSources.SourceIdsSupplier()),
 	}
 
-	storageSettings := backup.NewService(ctx, backendconfig.DefaultBackendConfig)
+	storageService := backup.NewService(ctx, backendconfig.DefaultBackendConfig)
+	storageOverwrites := storageService.StorageOverwrites()
 
 	rsourcesService, err := NewRsourcesService(deploymentType)
 	if err != nil {
@@ -94,7 +95,7 @@ func (embedded *EmbeddedApp) StartRudderCore(ctx context.Context, options *app.O
 		jobsdb.WithStatusHandler(),
 		jobsdb.WithPreBackupHandlers(prebackupHandlers),
 		jobsdb.WithDSLimit(&gatewayDSLimit),
-		jobsdb.WithStorageSettings(storageSettings),
+		jobsdb.WithStorageOverwrites(storageOverwrites),
 	)
 	defer gwDBForProcessor.Close()
 	routerDB := jobsdb.NewForReadWrite(
@@ -103,7 +104,7 @@ func (embedded *EmbeddedApp) StartRudderCore(ctx context.Context, options *app.O
 		jobsdb.WithStatusHandler(),
 		jobsdb.WithPreBackupHandlers(prebackupHandlers),
 		jobsdb.WithDSLimit(&routerDSLimit),
-		jobsdb.WithStorageSettings(storageSettings),
+		jobsdb.WithStorageOverwrites(storageOverwrites),
 	)
 	defer routerDB.Close()
 	batchRouterDB := jobsdb.NewForReadWrite(
@@ -112,7 +113,7 @@ func (embedded *EmbeddedApp) StartRudderCore(ctx context.Context, options *app.O
 		jobsdb.WithStatusHandler(),
 		jobsdb.WithPreBackupHandlers(prebackupHandlers),
 		jobsdb.WithDSLimit(&batchRouterDSLimit),
-		jobsdb.WithStorageSettings(storageSettings),
+		jobsdb.WithStorageOverwrites(storageOverwrites),
 	)
 	defer batchRouterDB.Close()
 	errDB := jobsdb.NewForReadWrite(
@@ -121,7 +122,7 @@ func (embedded *EmbeddedApp) StartRudderCore(ctx context.Context, options *app.O
 		jobsdb.WithStatusHandler(),
 		jobsdb.WithPreBackupHandlers(prebackupHandlers),
 		jobsdb.WithDSLimit(&processorDSLimit),
-		jobsdb.WithStorageSettings(storageSettings),
+		jobsdb.WithStorageOverwrites(storageOverwrites),
 	)
 
 	var tenantRouterDB jobsdb.MultiTenantJobsDB
@@ -231,7 +232,7 @@ func (embedded *EmbeddedApp) StartRudderCore(ctx context.Context, options *app.O
 		var replayDB jobsdb.HandleT
 		err := replayDB.Setup(
 			jobsdb.ReadWrite, options.ClearDB, "replay",
-			true, prebackupHandlers,
+			true, prebackupHandlers, storageOverwrites,
 		)
 		if err != nil {
 			return fmt.Errorf("could not setup replayDB: %w", err)

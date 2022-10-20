@@ -1,18 +1,16 @@
-package transientsource
+package backup
 
 import (
 	"context"
 	"sync"
 
-	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
-	"github.com/rudderlabs/rudder-server/services/filemanager"
 )
 
 type StorageSettings map[string]backendconfig.SettingsT
 
 type StorageService interface {
-	StorageSupplier() func() StorageSettings
+	StorageOverwrites() StorageSettings
 }
 
 func NewService(ctx context.Context, config backendconfig.BackendConfig) StorageService {
@@ -43,11 +41,9 @@ type service struct {
 	storage  StorageSettings
 }
 
-func (s *service) StorageSupplier() func() StorageSettings {
+func (s *service) StorageOverwrites() StorageSettings {
 	<-s.init
-	return func() StorageSettings {
-		return s.storage
-	}
+	return s.storage
 }
 
 func (s *service) updateLoop(ctx context.Context, config backendconfig.BackendConfig) {
@@ -57,7 +53,9 @@ func (s *service) updateLoop(ctx context.Context, config backendconfig.BackendCo
 		configs := ev.Data.(map[string]backendconfig.ConfigT)
 		storage := make(StorageSettings)
 		for _, c := range configs {
-			storage[c.WorkspaceID] = getStorage(ctx, c.Settings)
+			if c.Settings.DataRetention.UseSelfStorage {
+				storage[c.WorkspaceID] = c.Settings
+			}
 		}
 		s.storage = storage
 
@@ -69,25 +67,4 @@ func (s *service) updateLoop(ctx context.Context, config backendconfig.BackendCo
 	s.onceInit.Do(func() {
 		close(s.init)
 	})
-}
-
-// TODO: get default values from env if useSelfStorage is false
-func getStorage(ctx context.Context, settings backendconfig.SettingsT) backendconfig.SettingsT {
-	if settings.DataRetention.UseSelfStorage {
-		return settings
-	}
-
-	return backendconfig.SettingsT{
-		DataRetention: backendconfig.DataRetentionT{
-			UseSelfStorage: false,
-			StorageBucket: backendconfig.StorageBucketT{
-				Type:   config.GetString("JOBS_BACKUP_STORAGE_PROVIDER", "S3"),
-				Config: filemanager.GetProviderConfigForBackupsFromEnv(ctx),
-			},
-			StoragePreferences: backendconfig.StoragePreferencesT{
-				ProcErrors:   true,
-				GatewayDumps: true,
-			},
-		},
-	}
 }

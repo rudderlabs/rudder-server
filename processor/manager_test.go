@@ -21,6 +21,7 @@ import (
 
 	"github.com/rudderlabs/rudder-server/enterprise/reporting"
 	"github.com/rudderlabs/rudder-server/jobsdb/prebackup"
+	"github.com/rudderlabs/rudder-server/services/backup"
 	"github.com/rudderlabs/rudder-server/services/rsources"
 	"github.com/rudderlabs/rudder-server/services/transientsource"
 
@@ -165,7 +166,7 @@ func TestProcessorManager(t *testing.T) {
 		},
 	}
 
-	err := tempDB.Setup(jobsdb.Write, true, "gw", true, []prebackup.Handler{})
+	err := tempDB.Setup(jobsdb.Write, true, "gw", true, []prebackup.Handler{}, backup.StorageSettings{})
 	require.NoError(t, err)
 	defer tempDB.TearDown()
 
