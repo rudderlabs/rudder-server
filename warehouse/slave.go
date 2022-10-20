@@ -454,6 +454,11 @@ func processStagingFile(job Payload, workerIndex int) (loadFileUploadOutputs []l
 		tableName := batchRouterEvent.Metadata.Table
 		columnData := batchRouterEvent.Data
 
+		if job.DestinationType == warehouseutils.S3_DATALAKE && len(sortedTableColumnMap[tableName]) > columnCountThresholds[warehouseutils.S3_DATALAKE] {
+			pkgLogger.Errorf("[WH]: Huge staging file columns : columns in upload schema: %v for StagingFileID: %v", len(sortedTableColumnMap[tableName]), job.StagingFileID)
+			return nil, fmt.Errorf("staging file schema limit exceeded for stagingFileID: %d, actualCount: %d", job.StagingFileID, len(sortedTableColumnMap[tableName]))
+		}
+
 		// Create separate load file for each table
 		writer, err := jobRun.GetWriter(tableName)
 		if err != nil {

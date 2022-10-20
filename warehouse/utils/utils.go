@@ -380,14 +380,14 @@ func GetLoadFileGenTime(str sql.NullString) (t time.Time) {
 
 func GetNamespace(source backendconfig.SourceT, destination backendconfig.DestinationT, dbHandle *sql.DB) (namespace string, exists bool) {
 	sqlStatement := fmt.Sprintf(`
-		SELECT 
-		  namespace 
-		FROM 
-		  %s 
-		WHERE 
-		  source_id = '%s' 
-		  AND destination_id = '%s' 
-		ORDER BY 
+		SELECT
+		  namespace
+		FROM
+		  %s
+		WHERE
+		  source_id = '%s'
+		  AND destination_id = '%s'
+		ORDER BY
 		  id DESC;
 `,
 		WarehouseSchemasTable,
@@ -777,7 +777,8 @@ func JoinWithFormatting(keys []string, format func(idx int, str string) string, 
 }
 
 func CreateAWSSessionConfig(destination *backendconfig.DestinationT, serviceName string) (*awsutils.SessionConfig, error) {
-	if !misc.IsConfiguredToUseRudderObjectStorage(destination.Config) {
+	if !misc.IsConfiguredToUseRudderObjectStorage(destination.Config) &&
+		(misc.HasAWSRoleARNInConfig(destination.Config) || misc.HasAWSKeysInConfig(destination.Config)) {
 		return awsutils.NewSimpleSessionConfigForDestination(destination, serviceName)
 	}
 	accessKeyID, accessKey := misc.GetRudderObjectStorageAccessKeys()
