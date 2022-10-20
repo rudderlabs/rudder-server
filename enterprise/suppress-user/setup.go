@@ -7,7 +7,6 @@ import (
 
 	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
-	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/types"
 )
 
@@ -29,7 +28,6 @@ func loadConfig() {
 
 // Setup initializes Suppress User feature
 func (m *Factory) Setup(backendConfig backendconfig.BackendConfig) (types.UserSuppression, error) {
-	pkgLogger = logger.NewLogger().Child("enterprise").Child("suppress-user")
 
 	if m.EnterpriseToken == "" {
 		pkgLogger.Info("Suppress User feature is enterprise only")
@@ -45,7 +43,7 @@ func (m *Factory) Setup(backendConfig backendconfig.BackendConfig) (types.UserSu
 		RegulationBackendURL:    configBackendURL,
 		RegulationsPollInterval: regulationsPollInterval,
 		WorkspaceID:             workspaceId,
-		pageSize:                strconv.Itoa(suppressionApiPageSize),
+		PageSize:                strconv.Itoa(suppressionApiPageSize),
 	}
 	suppressUser.setup(ctx)
 

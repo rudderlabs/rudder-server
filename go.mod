@@ -196,4 +196,8 @@ require (
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
 
-require github.com/golang/protobuf v1.5.2 // indirect
+require (
+	github.com/dghubble/trie v0.0.0-20220811160003-18e0eff3ca7b
+	github.com/goccy/go-json v0.9.11
+	github.com/golang/protobuf v1.5.2 // indirect
+)

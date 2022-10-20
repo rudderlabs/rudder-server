@@ -3,7 +3,6 @@ package suppression
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -13,16 +12,15 @@ import (
 	"time"
 
 	"github.com/cenkalti/backoff"
+	jsonfast "github.com/goccy/go-json"
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/utils/misc"
-
-	"github.com/rudderlabs/rudder-server/utils/logger"
 
 	"github.com/rudderlabs/rudder-server/rruntime"
 )
 
-// SuppressRegulationHandler is a handle to this object
-type SuppressRegulationHandler struct {
+// SuppressFast is a handle to this object
+type SuppressFast struct {
 	Client                          *http.Client
 	RegulationBackendURL            string
 	RegulationsPollInterval         time.Duration
@@ -34,35 +32,19 @@ type SuppressRegulationHandler struct {
 	once                            sync.Once
 }
 
-type sourceFilter struct {
-	all      bool
-	specific map[string]struct{}
-}
-
-var pkgLogger = logger.NewLogger().Child("enterprise").Child("suppress-user")
-
-type apiResponse struct {
-	SourceRegulations []sourceRegulation `json:"items"`
-	Token             string             `json:"token"`
-}
-
-type sourceRegulation struct {
-	Canceled  bool     `json:"canceled"`
-	UserID    string   `json:"userId"`
-	SourceIDs []string `json:"sourceIds"`
-}
-
-func (suppressUser *SuppressRegulationHandler) setup(ctx context.Context) {
+func (suppressUser *SuppressFast) setup(ctx context.Context) {
 	rruntime.Go(func() {
 		suppressUser.regulationSyncLoop(ctx)
 	})
 }
 
-func (suppressUser *SuppressRegulationHandler) Run(ctx context.Context) {
+func (suppressUser *SuppressFast) Run(ctx context.Context) {
 	suppressUser.regulationSyncLoop(ctx)
+
+	fmt.Println(len(suppressUser.userSpecificSuppressedSourceMap))
 }
 
-func (suppressUser *SuppressRegulationHandler) IsSuppressedUser(userID, sourceID string) bool {
+func (suppressUser *SuppressFast) IsSuppressedUser(userID, sourceID string) bool {
 	suppressUser.init()
 	pkgLogger.Debugf("IsSuppressedUser called for %v, %v", sourceID, userID)
 	suppressUser.regulationsSubscriberLock.RLock()
@@ -79,8 +61,107 @@ func (suppressUser *SuppressRegulationHandler) IsSuppressedUser(userID, sourceID
 	return false
 }
 
+type RegulationIter struct {
+	Decoder *jsonfast.Decoder
+	f       io.ReadCloser
+	err     error
+	reg     sourceRegulation
+	count   int
+	inItems bool
+}
+
+func (iter *RegulationIter) Close() {
+
+	if iter.Decoder == nil {
+		// read the end of the array
+		_, err := io.ReadAll(iter.Decoder.Buffered())
+		if err != nil {
+			iter.err = err
+		}
+		iter.Decoder = nil
+	}
+	iter.f.Close()
+}
+
+func (iter *RegulationIter) findItems() bool {
+	t, err := iter.Decoder.Token()
+	if err != nil {
+		iter.err = err
+		return false
+	}
+
+	if t != json.Delim('{') {
+		iter.err = fmt.Errorf("expected {, got %v", t)
+		return false
+	}
+
+	for iter.Decoder.More() {
+		t, err = iter.Decoder.Token()
+		if err != nil {
+			iter.err = err
+			return false
+		}
+		k, ok := t.(string)
+		if !ok {
+			continue
+		}
+		if k == "items" {
+			t, err := iter.Decoder.Token()
+			if err != nil {
+				iter.err = err
+				return false
+			}
+
+			if t != json.Delim('[') {
+				iter.err = fmt.Errorf("expected {, got %v", t)
+				return false
+			}
+
+			iter.inItems = true
+			return true
+		}
+	}
+
+	iter.err = fmt.Errorf("items not found")
+	return false
+}
+
+func (iter *RegulationIter) Next() bool {
+
+	if !iter.inItems {
+		if !iter.findItems() {
+			return false
+		}
+	}
+
+	if iter.Decoder.More() {
+		err := iter.Decoder.Decode(&iter.reg)
+		if err != nil {
+			iter.err = err
+			return false
+		}
+		iter.count++
+		return true
+	} else {
+		iter.Close()
+		return false
+	}
+}
+
+func (iter *RegulationIter) Item() *sourceRegulation {
+	return &iter.reg
+}
+
+func (iter *RegulationIter) Count() int {
+	return iter.count
+}
+
+func (iter *RegulationIter) Error() error {
+	return iter.err
+}
+
 // Gets the regulations from data regulation service
-func (suppressUser *SuppressRegulationHandler) regulationSyncLoop(ctx context.Context) {
+func (suppressUser *SuppressFast) regulationSyncLoop(ctx context.Context) {
 	suppressUser.init()
 	pageSize, err := strconv.Atoi(suppressUser.PageSize)
 	if err != nil {
@@ -93,14 +174,18 @@ func (suppressUser *SuppressRegulationHandler) regulationSyncLoop(ctx context.Co
 		if ctx.Err() != nil {
 			return
 		}
-		regulations, err := suppressUser.getSourceRegulationsFromRegulationService()
+		iter, err := suppressUser.getSourceRegulationsFromRegulationService()
 		if err != nil {
+			pkgLogger.Errorf("Error getting regulations from regulation service: %v", err)
 			misc.SleepCtx(ctx, regulationsPollInterval)
 			continue
 		}
+
 		// need to discuss the correct place tp put this lock
 		suppressUser.regulationsSubscriberLock.Lock()
-		for _, sourceRegulation := range regulations {
+
+		for iter.Next() {
+			sourceRegulation := iter.Item()
 			userId := sourceRegulation.UserID
 			if len(sourceRegulation.SourceIDs) == 0 {
 				if _, ok := suppressUser.userSpecificSuppressedSourceMap[userId]; !ok {
@@ -147,31 +232,39 @@ func (suppressUser *SuppressRegulationHandler) regulationSyncLoop(ctx context.Co
 			}
 		}
 		suppressUser.regulationsSubscriberLock.Unlock()
+		if iter.Error() != nil {
+			pkgLogger.Error(iter.Error())
+			misc.SleepCtx(ctx, regulationsPollInterval)
+			continue
+		}
 
-		if len(regulations) == 0 || len(regulations) < pageSize {
+		iter.Close()
+
+		if iter.Count() == 0 || iter.Count() < pageSize {
 			misc.SleepCtx(ctx, regulationsPollInterval)
 		}
 	}
 }
 
-func (suppressUser *SuppressRegulationHandler) getSourceRegulationsFromRegulationService() ([]sourceRegulation, error) {
+func (suppressUser *SuppressFast) getSourceRegulationsFromRegulationService() (*RegulationIter, error) {
 	if config.GetBool("HOSTED_SERVICE", false) {
 		pkgLogger.Info("[Regulations] Regulations on free tier are not supported at the moment.")
-		return []sourceRegulation{}, nil
+		return nil, nil
 	}
 
 	urlStr := fmt.Sprintf("%s/dataplane/workspaces/%s/regulations/suppressions", suppressUser.RegulationBackendURL, suppressUser.WorkspaceID)
 	urlValQuery := url.Values{}
+
 	if suppressUser.suppressAPIToken != "" {
 		urlValQuery.Set("pageToken", suppressUser.suppressAPIToken)
-		urlValQuery.Set("pageSize", suppressUser.PageSize)
 	}
+	urlValQuery.Set("pageSize", suppressUser.PageSize)
+
 	if len(urlValQuery) > 0 {
 		urlStr += "?" + urlValQuery.Encode()
 	}
 
 	var resp *http.Response
-	var respBody []byte
 
 	operation := func() error {
 		var err error
@@ -196,18 +289,6 @@ func (suppressUser *SuppressRegulationHandler) getSourceRegulationsFromRegulatio
 			return err
 		}
 
-		defer func(Body io.ReadCloser) {
-			err := Body.Close()
-			if err != nil {
-				pkgLogger.Error(err)
-			}
-		}(resp.Body)
-
-		respBody, err = io.ReadAll(resp.Body)
-		if err != nil {
-			pkgLogger.Error(err)
-			return err
-		}
 		return err
 	}
 
@@ -217,28 +298,18 @@ func (suppressUser *SuppressRegulationHandler) getSourceRegulationsFromRegulatio
 	})
 	if err != nil {
 		pkgLogger.Error("Error sending request to the server: ", err)
-		return []sourceRegulation{}, err
-	}
-	if respBody == nil {
-		pkgLogger.Error("nil response body, returning")
-		return []sourceRegulation{}, errors.New("nil response body")
-	}
-	var sourceRegulationsJSON apiResponse
-	err = json.Unmarshal(respBody, &sourceRegulationsJSON)
-	if err != nil {
-		pkgLogger.Error("Error while parsing request: ", err, resp.StatusCode)
-		return []sourceRegulation{}, err
+		return nil, err
 	}
 
-	if sourceRegulationsJSON.Token == "" {
-		pkgLogger.Errorf("[[ Workspace-config ]] No token found in the source regulations response: %v", string(respBody))
-		return sourceRegulationsJSON.SourceRegulations, fmt.Errorf("no token returned in regulation API response")
-	}
-	suppressUser.suppressAPIToken = sourceRegulationsJSON.Token
-	return sourceRegulationsJSON.SourceRegulations, nil
+	suppressUser.suppressAPIToken = resp.Header.Get("X-Page-Token")
+
+	return &RegulationIter{
+		Decoder: jsonfast.NewDecoder(resp.Body),
+		f:       resp.Body,
+	}, nil
 }
 
-func (suppressUser *SuppressRegulationHandler) init() {
+func (suppressUser *SuppressFast) init() {
 	suppressUser.once.Do(func() {
 		pkgLogger.Info("init Regulations")
 		if len(suppressUser.userSpecificSuppressedSourceMap) == 0 {
