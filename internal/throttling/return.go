@@ -16,8 +16,11 @@ type redisSortedSetRemover interface {
 }
 
 type sortedSetRedisReturn struct {
-	key     string
+	// key is the key of the sorted set
+	key string
+	// members are the members (tokens) in the sorted set (bucket)
 	members []string
+	// remover is the redisTalker that removes the members from the sorted set (aka *redis.Client)
 	remover redisSortedSetRemover
 }
 
@@ -33,21 +36,6 @@ func (r *sortedSetRedisReturn) Return(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("could not remove members from sorted set: %v", err)
 	}
-	return nil
-}
-
-type sortedSetMemoryRemover interface {
-	remove(key string, members []string)
-}
-
-type sortedSetInMemoryReturn struct {
-	key     string
-	members []string
-	remover sortedSetMemoryRemover
-}
-
-func (r *sortedSetInMemoryReturn) Return(_ context.Context) error {
-	r.remover.remove(r.key, r.members)
 	return nil
 }
 

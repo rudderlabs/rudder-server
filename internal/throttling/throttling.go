@@ -114,7 +114,7 @@ func (l *Limiter) redisSortedSet(ctx context.Context, cost, rate, window int64, 
 	if !ok {
 		return nil, fmt.Errorf("unexpected result from SortedSet Redis script of type %T: %v", res, res)
 	}
-	if members == "0" {
+	if members == "" {
 		return nil, nil
 	}
 	return &sortedSetRedisReturn{
