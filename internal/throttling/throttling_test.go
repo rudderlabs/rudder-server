@@ -42,6 +42,34 @@ func TestThrottling(t *testing.T) {
 	}
 }
 
+func testLimiter(ctx context.Context, t *testing.T, l limiter, rate, window, expected, errorMargin int64) {
+	t.Helper()
+	var (
+		passed int64
+		cost   int64 = 1
+		key          = rand.UniqueString(10)
+		runFor       = time.NewTimer(time.Duration(window) * time.Second)
+	)
+loop:
+	for {
+		select {
+		case <-runFor.C:
+			break loop
+		default:
+			returner, err := l.Limit(ctx, cost, rate, window, key)
+			require.NoError(t, err)
+			if returner != nil {
+				passed += cost
+			}
+		}
+	}
+
+	diff := expected - passed
+	if passed < 1 || diff < (errorMargin*-1) || diff > errorMargin {
+		t.Errorf("Expected %d, got %d (diff: %d)", expected, passed, diff)
+	}
+}
+
 func TestReturn(t *testing.T) {
 	pool, err := dockertest.NewPool("")
 	require.NoError(t, err)
@@ -100,35 +128,6 @@ func TestBadData(t *testing.T) {
 
 func TestMultipleRedisClients(t *testing.T) {
 	t.Skip("TODO")
-}
-
-func testLimiter(ctx context.Context, t *testing.T, l limiter, rate, window, expected, errorMargin int64) {
-	t.Helper()
-	var (
-		passed int64
-		cost   int64 = 1
-		key          = rand.UniqueString(10)
-		runFor       = time.NewTimer(time.Duration(window) * time.Second)
-	)
-loop:
-	for {
-		select {
-		case <-runFor.C:
-			break loop
-		default:
-			returner, err := l.Limit(ctx, cost, rate, window, key)
-			require.NoError(t, err)
-			if returner != nil {
-				passed += cost
-			}
-			time.Sleep(time.Millisecond)
-		}
-	}
-
-	diff := expected - passed
-	if passed < 1 || diff < (errorMargin*-1) || diff > errorMargin {
-		t.Errorf("Expected %d, got %d (diff: %d)", expected, passed, diff)
-	}
 }
 
 func testName(name string, rate, window int64) string {
