@@ -194,6 +194,7 @@ func (suppressUser *SuppressRegulationHandler) getSourceRegulationsFromRegulatio
 		reqTime := time.Now()
 		resp, err = suppressUser.Client.Do(req)
 		if err != nil {
+			pkgLogger.Debug("regulation request failed: ", err)
 			return err
 		}
 		pkgLogger.Debug("req latency: ", time.Since(reqTime))
