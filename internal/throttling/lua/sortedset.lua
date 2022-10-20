@@ -7,7 +7,7 @@ local current_time_microseconds = tonumber(current_time[1] .. current_time[2])
 local trim_time = current_time_microseconds - period
 
 -- Remove all the requests that are older than the window
-redis.call('ZREMRANGEBYSCORE', key, 0, "(" .. trim_time)
+redis.call('ZREMRANGEBYSCORE', key, 0, trim_time)
 
 -- Check number of requests first
 if cost < 1 then
