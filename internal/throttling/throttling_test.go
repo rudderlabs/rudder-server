@@ -74,28 +74,41 @@ func TestReturn(t *testing.T) {
 	pool, err := dockertest.NewPool("")
 	require.NoError(t, err)
 
+	type testCase struct {
+		name         string
+		limiter      limiter
+		minDeletions int
+	}
+
 	var (
 		rate      int64 = 10
 		window    int64 = 1
 		windowDur       = time.Duration(window) * time.Second
 		ctx             = context.Background()
 		rc              = bootstrapRedis(ctx, t, pool)
-		limiters        = map[string]limiter{
-			"go rate":           newLimiter(t, WithGoRate()),
-			"sorted sets redis": newLimiter(t, WithRedisClient(rc)),
+		testCases       = []testCase{
+			{
+				name:         "go rate",
+				limiter:      newLimiter(t, WithGoRate()),
+				minDeletions: 2,
+			},
+			{
+				name:         "sorted sets redis",
+				limiter:      newLimiter(t, WithRedisClient(rc)),
+				minDeletions: 1,
+			},
 		}
 	)
 
-	for name, l := range limiters {
-		l := l
-		t.Run(testName(name, rate, window), func(t *testing.T) {
+	for _, tc := range testCases {
+		t.Run(testName(tc.name, rate, window), func(t *testing.T) {
 			var (
 				passed int
 				key    = rand.UniqueString(10)
 				tokens []TokenReturner
 			)
 			for i := int64(0); i < rate*10; i++ {
-				returner, err := l.Limit(ctx, 1, rate, window, key)
+				returner, err := tc.limiter.Limit(ctx, 1, rate, window, key)
 				require.NoError(t, err)
 				if returner != nil {
 					passed++
@@ -105,20 +118,20 @@ func TestReturn(t *testing.T) {
 
 			require.EqualValues(t, rate, passed)
 
-			returner, err := l.Limit(ctx, 1, rate, window, key)
+			returner, err := tc.limiter.Limit(ctx, 1, rate, window, key)
 			require.NoError(t, err)
 			require.Nil(t, returner, "this request should not have been allowed")
 
 			// return a couple tokens, sometimes returning a single token does not have an effect with go rate
-			require.NoError(t, tokens[0].Return(ctx))
-			require.NoError(t, tokens[1].Return(ctx))
+			for i := 0; i < tc.minDeletions; i++ {
+				require.NoError(t, tokens[i].Return(ctx))
+			}
 
 			require.Eventually(t, func() bool {
-				returner, err := l.Limit(ctx, 1, rate, window, key)
+				returner, err := tc.limiter.Limit(ctx, 1, rate, window, key)
 				return err == nil && returner != nil
 			}, windowDur/2, time.Millisecond)
 		})
-		break // TODO fix fragile test
 	}
 }
 

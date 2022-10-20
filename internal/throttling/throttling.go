@@ -11,7 +11,8 @@ import (
 
 /*
 TODOs:
-* finish tests
+* finish test bad data
+* finish test multiple redis clients
 * metrics inside client (especially for returning tokens)
 * benchmark AWS Elasticache Redis
 * replace old limiters
