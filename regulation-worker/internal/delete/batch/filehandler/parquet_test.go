@@ -89,6 +89,14 @@ func sameFiles(file1, file2 string) (bool, error) {
 		return false, fmt.Errorf("unable to read contents of file: %s, err: %w", file2, err)
 	}
 
+	if err := f1.Close(); err != nil {
+		return false, err
+	}
+
+	if err := f2.Close(); err != nil {
+		return false, err
+	}
+
 	return bytes.Equal(byt1, byt2), nil
 }
 

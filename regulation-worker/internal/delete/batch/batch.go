@@ -40,18 +40,16 @@ type Batch struct {
 	TmpDirPath string
 }
 
-// returns list of all .json.gz files.
-// NOTE: assuming that all of batch destination have same file system as S3, i.e. flat.
-func (b *Batch) listFiles(ctx context.Context, prefix string) ([]*filemanager.FileObject, error) {
-	pkgLogger.Debugf("getting a list of files from destination")
+// listFiles fetches the files from filemanager under prefix mentioned and for a
+// specified limit.
+func (b *Batch) listFiles(ctx context.Context, prefix string, limit int) (fileObjects []*filemanager.FileObject, err error) {
+	pkgLogger.Debugf("getting a list of files from destination under prefix: %s with limit: %d", prefix, limit)
 
-	fileObjects, err := b.FM.ListFilesWithPrefix(ctx, "", prefix, listMaxItem)
-	if err != nil {
-		pkgLogger.Errorf("error while getting list of files: %v", err)
-		return []*filemanager.FileObject{}, fmt.Errorf("failed to fetch object list from S3: %v", err)
+	if fileObjects, err = b.FM.ListFilesWithPrefix(ctx, "", prefix, int64(limit)); err != nil {
+		return []*filemanager.FileObject{}, fmt.Errorf("list files under prefix: %s and limit: %d from filemanager: %v", prefix, limit, err)
 	}
 
-	return fileObjects, nil
+	return
 }
 
 // two pointer algorithm implementation to remove all the files from which users are already deleted.
@@ -93,32 +91,26 @@ func removeCleanedFiles(files []*filemanager.FileObject, cleanedFiles []string) 
 }
 
 // append <fileName> to <statusTrackerFile> locally for which deletion has completed.
+// updateStatusTrackerFile updates the tracker file with the fileName information
 func (*Batch) updateStatusTrackerFile(absStatusTrackerFileName, fileName string) error {
-	statusTrackerPtr, err := os.OpenFile(absStatusTrackerFileName, os.O_WRONLY|os.O_APPEND, 0o644)
+	f, err := os.OpenFile(absStatusTrackerFileName, os.O_WRONLY|os.O_APPEND, 0o644)
 	if err != nil {
 		return fmt.Errorf("error while opening file, %w", err)
 	}
-	defer statusTrackerPtr.Close()
+	defer f.Close()
 
-	if _, err := io.WriteString(statusTrackerPtr, fileName+"\n"); err != nil {
-		err = fmt.Errorf("error while writing to statusTrackerFile: %w", err)
-		return err
+	if _, err := io.WriteString(f, fmt.Sprintf("%s\n", fileName)); err != nil {
+		return fmt.Errorf("error while writing to statusTrackerFile: %w", err)
 	}
+
+	if err := f.Close(); err != nil {
+		return fmt.Errorf("closing the file:%s, err: %w", absStatusTrackerFileName, err)
+	}
+
 	return nil
 }
 
-func (b *Batch) getStatusTracker(ctx context.Context, location string) (string, error) {
-	pkgLogger.Debugf("downloading status tracker file from upstream")
-
-	fPath, err := b.download(ctx, location)
-	if err != nil {
-		return "", fmt.Errorf("downloading status tracker file: %s from upstream: %w", location, err)
-	}
-
-	return fPath, nil
-}
-
-func (b *Batch) cleanedFiles(_ context.Context, path string, job *model.Job) ([]string, error) {
+func (_ *Batch) cleanedFiles(_ context.Context, path string, job *model.Job) ([]string, error) {
 	pkgLogger.Debugf("fetching already cleaned files based on contents of the status tracker file")
 
 	f, err := os.OpenFile(path, os.O_RDWR, 0o644)
@@ -176,6 +168,10 @@ func (b *Batch) cleanedFiles(_ context.Context, path string, job *model.Job) ([]
 		return lines[1:], nil
 	}
 
+	if err := f.Close(); err != nil {
+		return nil, fmt.Errorf("closing file: %w", err)
+	}
+
 	return nil, nil
 }
 
@@ -194,6 +190,7 @@ func (b *Batch) download(ctx context.Context, completeFileName string) (string, 
 	if err != nil {
 		return "", fmt.Errorf("opening file: %s, %w", fileName, err)
 	}
+
 	defer tmpFilePtr.Close()
 
 	absPath, err := filepath.Abs(tmpFilePtr.Name())
@@ -208,6 +205,10 @@ func (b *Batch) download(ctx context.Context, completeFileName string) (string, 
 			return absPath, nil
 		}
 		return "", fmt.Errorf("downloading object: %s using file manager: %w", completeFileName, err)
+	}
+
+	if err := tmpFilePtr.Close(); err != nil {
+		return "", fmt.Errorf("closing the tmp file: %s", err.Error())
 	}
 
 	return absPath, nil
@@ -299,7 +300,8 @@ func (b *Batch) upload(_ context.Context, uploadFileAbsPath, actualFileName, abs
 }
 
 type BatchManager struct {
-	FMFactory filemanager.FileManagerFactory
+	FilesLimit int
+	FMFactory  filemanager.FileManagerFactory
 }
 
 func (*BatchManager) GetSupportedDestinations() []string {
@@ -328,7 +330,12 @@ func getLocalFileHandlers(destType string) map[string]filehandler.LocalFileHandl
 }
 
 // Delete users corresponding to input userAttributes from a given batch destination
-func (bm *BatchManager) Delete(ctx context.Context, job model.Job, destConfig map[string]interface{}, destName string) model.JobStatus {
+func (bm *BatchManager) Delete(
+	ctx context.Context,
+	job model.Job,
+	destConfig map[string]interface{},
+	destName string,
+) model.JobStatus {
 	pkgLogger.Debugf("deleting job: %v", job, "from batch destination: %v", destName)
 
 	fm, err := bm.FMFactory.New(&filemanager.SettingsT{Provider: destName, Config: destConfig})
@@ -338,7 +345,7 @@ func (bm *BatchManager) Delete(ctx context.Context, job model.Job, destConfig ma
 	}
 
 	// parent directory of all the temporary files created/downloaded in the process of deletion.
-	tmpDirPath, err := os.MkdirTemp("", "")
+	baseDIR, err := os.MkdirTemp("", "")
 	if err != nil {
 		pkgLogger.Errorf("error while creating temporary directory to store all temporary files during deletion: %v", err)
 		return model.JobStatusFailed
@@ -355,7 +362,7 @@ func (bm *BatchManager) Delete(ctx context.Context, job model.Job, destConfig ma
 
 	batch := Batch{
 		FM:         fm,
-		TmpDirPath: tmpDirPath,
+		TmpDirPath: baseDIR,
 	}
 
 	prefix := ""
@@ -367,7 +374,7 @@ func (bm *BatchManager) Delete(ctx context.Context, job model.Job, destConfig ma
 	defer batch.cleanup(ctx, prefix)
 
 	for {
-		files, err := batch.listFiles(ctx, prefix)
+		files, err := batch.listFiles(ctx, prefix, bm.FilesLimit)
 		if err != nil {
 			pkgLogger.Errorf("error while getting files list: %v", err)
 			return model.JobStatusFailed
@@ -405,19 +412,20 @@ func (bm *BatchManager) Delete(ctx context.Context, job model.Job, destConfig ma
 			_i := i
 			goRoutineCount <- true
 			g.Go(func() error {
+
+				cleanTime := stats.Default.NewTaggedStat("file_cleaning_time", stats.TimerType, stats.Tags{"jobId": fmt.Sprintf("%d", job.ID), "workspaceId": job.WorkspaceID, "destType": "batch", "destName": destName})
+				cleanTime.Start()
+
+				defer func() {
+					cleanTime.End()
+					<-goRoutineCount
+				}()
+
 				filehandler := getFileHandler(files[_i].Key, filehandlers)
 				if filehandler == nil {
 					pkgLogger.Warnf("unable to locate filehandler for file: %s ", files[_i].Key)
 					return nil
 				}
-
-				fileCleaningTime := stats.Default.NewTaggedStat("file_cleaning_time", stats.TimerType, stats.Tags{"jobId": fmt.Sprintf("%d", job.ID), "workspaceId": job.WorkspaceID, "destType": "batch", "destName": destName})
-				fileCleaningTime.Start()
-
-				defer func() {
-					fileCleaningTime.End()
-					<-goRoutineCount
-				}()
 
 				absPath, err := downloadWithExpBackoff(gCtx, batch.download, files[_i].Key)
 				if err != nil {
@@ -431,6 +439,8 @@ func (bm *BatchManager) Delete(ctx context.Context, job model.Job, destConfig ma
 					return fmt.Errorf("unable to handle identity removal for destination: %s, on file: %s, err: %w ", destName, files[_i].Key, err)
 				}
 
+				// TODO: Why not have a common function to upload the cleaned files to tracker in one shot ?
+				// Why do it one entry at a time ?
 				err = uploadWithExpBackoff(gCtx, batch.upload, absPath, files[_i].Key, fName)
 				if err != nil {
 					return fmt.Errorf("error: %w, while uploading cleaned file:%s", err, files[_i].Key)
@@ -445,7 +455,7 @@ func (bm *BatchManager) Delete(ctx context.Context, job model.Job, destConfig ma
 			return model.JobStatusFailed
 		}
 
-		pkgLogger.Infof("successfully completed the loop of file processing")
+		pkgLogger.Infof("successfully completed loop of ")
 	}
 
 	return model.JobStatusComplete
