@@ -191,11 +191,12 @@ func (suppressUser *SuppressRegulationHandler) getSourceRegulationsFromRegulatio
 		workspaceToken := config.GetWorkspaceToken()
 		req.SetBasicAuth(workspaceToken, "")
 		req.Header.Set("Content-Type", "application/json")
-
+		reqTime := time.Now()
 		resp, err = suppressUser.Client.Do(req)
 		if err != nil {
 			return err
 		}
+		pkgLogger.Debug("req latency: ", time.Since(reqTime))
 		// If statusCode is not 2xx, then returning empty regulations
 		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 			err = fmt.Errorf("status code %v", resp.StatusCode)
