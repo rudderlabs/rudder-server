@@ -1250,6 +1250,18 @@ func TestCreateAWSSessionConfig(t *testing.T) {
 				Service:       "redshift",
 			},
 		},
+		{
+			destination: &backendconfig.DestinationT{
+				Config:      map[string]interface{}{},
+				WorkspaceID: someWorkspaceID,
+			},
+			service: "redshift",
+			expectedConfig: &awsutils.SessionConfig{
+				AccessKeyID: rudderAccessKeyID,
+				AccessKey:   rudderAccessKey,
+				Service:     "redshift",
+			},
+		},
 	}
 	for _, input := range inputs {
 		config, err := CreateAWSSessionConfig(input.destination, input.service)
