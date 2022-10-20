@@ -26,8 +26,8 @@ type SuppressRegulationHandler struct {
 	Client                          *http.Client
 	RegulationBackendURL            string
 	RegulationsPollInterval         time.Duration
-	WorkspaceID                     string
-	userSpecificSuppressedSourceMap map[string]sourceFilter
+	ID                              string
+	userSpecificSuppressedSourceMap map[string]map[string]sourceFilter
 	regulationsSubscriberLock       sync.RWMutex
 	suppressAPIToken                string
 	pageSize                        string
@@ -47,9 +47,10 @@ type apiResponse struct {
 }
 
 type sourceRegulation struct {
-	Canceled  bool     `json:"canceled"`
-	UserID    string   `json:"userId"`
-	SourceIDs []string `json:"sourceIds"`
+	Canceled    bool     `json:"canceled"`
+	WorkspaceID string   `json:"workspaceId"`
+	UserID      string   `json:"userId"`
+	SourceIDs   []string `json:"sourceIds"`
 }
 
 func (suppressUser *SuppressRegulationHandler) setup(ctx context.Context) {
@@ -58,18 +59,20 @@ func (suppressUser *SuppressRegulationHandler) setup(ctx context.Context) {
 	})
 }
 
-func (suppressUser *SuppressRegulationHandler) IsSuppressedUser(userID, sourceID string) bool {
+func (suppressUser *SuppressRegulationHandler) IsSuppressedUser(workspaceID, userID, sourceID string) bool {
 	suppressUser.init()
-	pkgLogger.Debugf("IsSuppressedUser called for %v, %v", sourceID, userID)
+	pkgLogger.Debugf("IsSuppressedUser called for %v, %v, %v", workspaceID, sourceID, userID)
 	suppressUser.regulationsSubscriberLock.RLock()
 	defer suppressUser.regulationsSubscriberLock.RUnlock()
-	if _, ok := suppressUser.userSpecificSuppressedSourceMap[userID]; ok {
-		m := suppressUser.userSpecificSuppressedSourceMap[userID]
-		if m.all {
-			return true
-		}
-		if _, ok := m.specific[sourceID]; ok {
-			return true
+	if _, ok := suppressUser.userSpecificSuppressedSourceMap[workspaceID]; ok {
+		if _, ok := suppressUser.userSpecificSuppressedSourceMap[workspaceID][userID]; ok {
+			m := suppressUser.userSpecificSuppressedSourceMap[workspaceID][userID]
+			if m.all {
+				return true
+			}
+			if _, ok := m.specific[sourceID]; ok {
+				return true
+			}
 		}
 	}
 	return false
@@ -99,26 +102,31 @@ func (suppressUser *SuppressRegulationHandler) regulationSyncLoop(ctx context.Co
 		suppressUser.regulationsSubscriberLock.Lock()
 		for _, sourceRegulation := range regulations {
 			userId := sourceRegulation.UserID
+			workspaceID := sourceRegulation.WorkspaceID
+			_, ok := suppressUser.userSpecificSuppressedSourceMap[workspaceID]
+			if !ok {
+				suppressUser.userSpecificSuppressedSourceMap[workspaceID] = make(map[string]sourceFilter)
+			}
 			if len(sourceRegulation.SourceIDs) == 0 {
-				if _, ok := suppressUser.userSpecificSuppressedSourceMap[userId]; !ok {
+				if _, ok := suppressUser.userSpecificSuppressedSourceMap[workspaceID][userId]; !ok {
 					if !sourceRegulation.Canceled {
 						m := sourceFilter{
 							all:      true,
 							specific: map[string]struct{}{},
 						}
-						suppressUser.userSpecificSuppressedSourceMap[userId] = m
+						suppressUser.userSpecificSuppressedSourceMap[workspaceID][userId] = m
 						continue
 					}
 				}
-				m := suppressUser.userSpecificSuppressedSourceMap[userId]
+				m := suppressUser.userSpecificSuppressedSourceMap[workspaceID][userId]
 				if sourceRegulation.Canceled {
 					m.all = false
 				} else {
 					m.all = true
 				}
-				suppressUser.userSpecificSuppressedSourceMap[userId] = m
+				suppressUser.userSpecificSuppressedSourceMap[workspaceID][userId] = m
 			} else {
-				if _, ok := suppressUser.userSpecificSuppressedSourceMap[userId]; !ok {
+				if _, ok := suppressUser.userSpecificSuppressedSourceMap[workspaceID][userId]; !ok {
 					if !sourceRegulation.Canceled {
 						m := sourceFilter{
 							specific: map[string]struct{}{},
@@ -126,11 +134,11 @@ func (suppressUser *SuppressRegulationHandler) regulationSyncLoop(ctx context.Co
 						for _, srcId := range sourceRegulation.SourceIDs {
 							m.specific[srcId] = struct{}{}
 						}
-						suppressUser.userSpecificSuppressedSourceMap[userId] = m
+						suppressUser.userSpecificSuppressedSourceMap[workspaceID][userId] = m
 						continue
 					}
 				}
-				m := suppressUser.userSpecificSuppressedSourceMap[userId]
+				m := suppressUser.userSpecificSuppressedSourceMap[workspaceID][userId]
 				if sourceRegulation.Canceled {
 					for _, srcId := range sourceRegulation.SourceIDs {
 						delete(m.specific, srcId) // will be no-op if key is not there in map
@@ -140,7 +148,7 @@ func (suppressUser *SuppressRegulationHandler) regulationSyncLoop(ctx context.Co
 						m.specific[srcId] = struct{}{}
 					}
 				}
-				suppressUser.userSpecificSuppressedSourceMap[userId] = m
+				suppressUser.userSpecificSuppressedSourceMap[workspaceID][userId] = m
 			}
 		}
 		suppressUser.regulationsSubscriberLock.Unlock()
@@ -157,7 +165,7 @@ func (suppressUser *SuppressRegulationHandler) getSourceRegulationsFromRegulatio
 		return []sourceRegulation{}, nil
 	}
 
-	urlStr := fmt.Sprintf("%s/dataplane/workspaces/%s/regulations/suppressions", suppressUser.RegulationBackendURL, suppressUser.WorkspaceID)
+	urlStr := suppressUser.RegulationBackendURL
 	urlValQuery := url.Values{}
 	if suppressUser.pageSize != "" {
 		urlValQuery.Set("pageSize", suppressUser.pageSize)
@@ -241,7 +249,7 @@ func (suppressUser *SuppressRegulationHandler) init() {
 	suppressUser.once.Do(func() {
 		pkgLogger.Info("init Regulations")
 		if len(suppressUser.userSpecificSuppressedSourceMap) == 0 {
-			suppressUser.userSpecificSuppressedSourceMap = map[string]sourceFilter{}
+			suppressUser.userSpecificSuppressedSourceMap = map[string]map[string]sourceFilter{}
 		}
 		if suppressUser.Client == nil {
 			suppressUser.Client = &http.Client{Timeout: config.GetDuration("HttpClient.suppressUser.timeout", 30, time.Second)}

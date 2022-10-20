@@ -27,9 +27,10 @@ var _ = Describe("SuppressUser Test", func() {
 		testSuppressUser = &SuppressRegulationHandler{Client: new(http.Client), RegulationsPollInterval: time.Duration(100)}
 	})
 	expectedRespRegulations := sourceRegulation{
-		Canceled:  false,
-		UserID:    "user-1",
-		SourceIDs: []string{"src-1", "src-2"},
+		WorkspaceID: "workspace1",
+		Canceled:    false,
+		UserID:      "user-1",
+		SourceIDs:   []string{"src-1", "src-2"},
 	}
 	expectedResp := apiResponse{
 		SourceRegulations: []sourceRegulation{expectedRespRegulations},
@@ -117,15 +118,16 @@ var _ = Describe("SuppressUser Test", func() {
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
 			testSuppressUser.setup(ctx)
-			Eventually(func() bool { return testSuppressUser.IsSuppressedUser("user-1", "src-1") }).Should(BeTrue())
+			Eventually(func() bool { return testSuppressUser.IsSuppressedUser("workspace1", "user-1", "src-1") }).Should(BeTrue())
 		})
 
 		It("user suppression cancelled after adding first", func() {
 			tempResp := expectedResp
 			tempResp.SourceRegulations = append(tempResp.SourceRegulations, sourceRegulation{
-				Canceled:  false,
-				UserID:    "user-2",
-				SourceIDs: []string{"src-1", "src-2"},
+				WorkspaceID: "ws-1",
+				Canceled:    false,
+				UserID:      "user-2",
+				SourceIDs:   []string{"src-1", "src-2"},
 			})
 			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				w.WriteHeader(200)
@@ -151,20 +153,22 @@ var _ = Describe("SuppressUser Test", func() {
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
 			testSuppressUser.setup(ctx)
-			Eventually(func() bool { return testSuppressUser.IsSuppressedUser("user-2", "src-1") }).Should(BeTrue())
-			Eventually(func() bool { return testSuppressUser.IsSuppressedUser("user-1", "src-1") }).Should(BeFalse())
+			Eventually(func() bool { return testSuppressUser.IsSuppressedUser("ws-1", "user-2", "src-1") }).Should(BeTrue())
+			Eventually(func() bool { return testSuppressUser.IsSuppressedUser("ws-1", "user-1", "src-1") }).Should(BeFalse())
 		})
 
 		It("user suppression rule added for all the sources", func() {
 			r1 := sourceRegulation{
-				Canceled:  false,
-				UserID:    "user-1",
-				SourceIDs: []string{},
+				WorkspaceID: "ws-1",
+				Canceled:    false,
+				UserID:      "user-1",
+				SourceIDs:   []string{},
 			}
 			r2 := sourceRegulation{
-				Canceled:  false,
-				UserID:    "user-2",
-				SourceIDs: []string{"src-2"},
+				WorkspaceID: "ws-1",
+				Canceled:    false,
+				UserID:      "user-2",
+				SourceIDs:   []string{"src-2"},
 			}
 			expectedResp := apiResponse{
 				SourceRegulations: []sourceRegulation{r1, r2},
@@ -189,21 +193,23 @@ var _ = Describe("SuppressUser Test", func() {
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
 			testSuppressUser.setup(ctx)
-			Eventually(func() bool { return testSuppressUser.IsSuppressedUser("user-1", "src-1") }).Should(BeTrue())
-			Eventually(func() bool { return testSuppressUser.IsSuppressedUser("user-2", "src-2") }).Should(BeTrue())
-			Eventually(func() bool { return testSuppressUser.IsSuppressedUser("user-2", "src-1") }).Should(BeFalse())
+			Eventually(func() bool { return testSuppressUser.IsSuppressedUser("ws-1", "user-1", "src-1") }).Should(BeTrue())
+			Eventually(func() bool { return testSuppressUser.IsSuppressedUser("ws-1", "user-2", "src-2") }).Should(BeTrue())
+			Eventually(func() bool { return testSuppressUser.IsSuppressedUser("ws-1", "user-2", "src-1") }).Should(BeFalse())
 		})
 
 		It("user suppression rule added for all the sources and then cancelled", func() {
 			r1 := sourceRegulation{
-				Canceled:  false,
-				UserID:    "user-1",
-				SourceIDs: []string{},
+				WorkspaceID: "ws-1",
+				Canceled:    false,
+				UserID:      "user-1",
+				SourceIDs:   []string{},
 			}
 			r2 := sourceRegulation{
-				Canceled:  false,
-				UserID:    "user-2",
-				SourceIDs: []string{"src-2"},
+				WorkspaceID: "ws-1",
+				Canceled:    false,
+				UserID:      "user-2",
+				SourceIDs:   []string{"src-2"},
 			}
 			expectedResp := apiResponse{
 				SourceRegulations: []sourceRegulation{r1, r2},
@@ -216,9 +222,10 @@ var _ = Describe("SuppressUser Test", func() {
 				if len(queryParams) != 0 {
 					<-firstCheck
 					r1 = sourceRegulation{
-						Canceled:  true,
-						UserID:    "user-1",
-						SourceIDs: []string{},
+						WorkspaceID: "ws-1",
+						Canceled:    true,
+						UserID:      "user-1",
+						SourceIDs:   []string{},
 					}
 					expectedResp = apiResponse{
 						SourceRegulations: []sourceRegulation{r1},
@@ -236,11 +243,11 @@ var _ = Describe("SuppressUser Test", func() {
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
 			testSuppressUser.setup(ctx)
-			Eventually(func() bool { return testSuppressUser.IsSuppressedUser("user-1", "src-1") }).Should(BeTrue())
-			Eventually(func() bool { return testSuppressUser.IsSuppressedUser("user-2", "src-2") }).Should(BeTrue())
-			Eventually(func() bool { return testSuppressUser.IsSuppressedUser("user-2", "src-1") }).Should(BeFalse())
+			Eventually(func() bool { return testSuppressUser.IsSuppressedUser("ws-1", "user-1", "src-1") }).Should(BeTrue())
+			Eventually(func() bool { return testSuppressUser.IsSuppressedUser("ws-1", "user-2", "src-2") }).Should(BeTrue())
+			Eventually(func() bool { return testSuppressUser.IsSuppressedUser("ws-1", "user-2", "src-1") }).Should(BeFalse())
 			close(firstCheck)
-			Eventually(func() bool { return testSuppressUser.IsSuppressedUser("user-1", "src-1") }).Should(BeFalse())
+			Eventually(func() bool { return testSuppressUser.IsSuppressedUser("ws-1", "user-1", "src-1") }).Should(BeFalse())
 		})
 	})
 })
@@ -268,8 +275,9 @@ func TestSuppressRegulationHandler_IsSuppressedUser(t *testing.T) {
 	logger.Reset()
 	pkgLogger = logger.NewLogger().Child("enterprise").Child("suppress-user")
 
-	suppressUserMap := make(map[string]sourceFilter)
-	suppressUserMap["user1"] = sourceFilter{
+	suppressUserMap := make(map[string]map[string]sourceFilter)
+	suppressUserMap["ws-1"] = make(map[string]sourceFilter)
+	suppressUserMap["ws-1"]["user1"] = sourceFilter{
 		all:      true,
 		specific: nil,
 	}
@@ -277,7 +285,7 @@ func TestSuppressRegulationHandler_IsSuppressedUser(t *testing.T) {
 		"src1": {},
 		"src2": {},
 	}
-	suppressUserMap["user2"] = sourceFilter{
+	suppressUserMap["ws-1"]["user2"] = sourceFilter{
 		all:      false,
 		specific: specificSrc,
 	}
@@ -285,10 +293,10 @@ func TestSuppressRegulationHandler_IsSuppressedUser(t *testing.T) {
 		userSpecificSuppressedSourceMap: suppressUserMap,
 	}
 
-	require.True(t, s.IsSuppressedUser("user1", "src1"))
-	require.True(t, s.IsSuppressedUser("user1", "randomNewSrc"))
-	require.True(t, s.IsSuppressedUser("user2", "src1"))
-	require.True(t, s.IsSuppressedUser("user2", "src2"))
-	require.False(t, s.IsSuppressedUser("user2", "src3"))
-	require.False(t, s.IsSuppressedUser("user2", "randomNewSrc"))
+	require.True(t, s.IsSuppressedUser("ws-1", "user1", "src1"))
+	require.True(t, s.IsSuppressedUser("ws-1", "user1", "randomNewSrc"))
+	require.True(t, s.IsSuppressedUser("ws-1", "user2", "src1"))
+	require.True(t, s.IsSuppressedUser("ws-1", "user2", "src2"))
+	require.False(t, s.IsSuppressedUser("ws-1", "user2", "src3"))
+	require.False(t, s.IsSuppressedUser("ws-1", "user2", "randomNewSrc"))
 }
