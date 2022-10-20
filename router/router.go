@@ -459,6 +459,21 @@ func (worker *workerT) workerProcess() {
 					Parameters:    routerutils.EmptyPayload,
 					WorkspaceId:   job.WorkspaceId,
 				}
+				worker.rt.failedEventsChan <- status
+				if worker.rt.guaranteeUserEventOrder {
+					worker.rt.logger.Debugf(
+						"EventOrder: [%d] job %d for user %s failed",
+						worker.workerID, status.JobID, job.UserID,
+					)
+					err := worker.barrier.StateChanged(
+						job.UserID,
+						job.JobID,
+						status.JobState,
+					)
+					if err != nil {
+						panic(err)
+					}
+				}
 				worker.rt.responseQ <- jobResponseT{status: &status, worker: worker, userID: userID, JobT: job}
 				continue
 			}
