@@ -1,8 +1,6 @@
 package suppression
 
 import (
-	"bytes"
-	"compress/gzip"
 	"context"
 	"errors"
 	"fmt"
@@ -170,7 +168,7 @@ func (suppressUser *SuppressRegulationHandler) getSourceRegulationsFromRegulatio
 		return []sourceRegulation{}, nil
 	}
 
-	urlStr := fmt.Sprintf("%s/dataplane/workspaces/%s/regulations/suppressions/gzip", suppressUser.RegulationBackendURL, suppressUser.WorkspaceID)
+	urlStr := fmt.Sprintf("%s/dataplane/workspaces/%s/regulations/suppressions", suppressUser.RegulationBackendURL, suppressUser.WorkspaceID)
 	urlValQuery := url.Values{}
 	if suppressUser.suppressAPIToken != "" {
 		urlValQuery.Set("pageToken", suppressUser.suppressAPIToken)
@@ -212,16 +210,11 @@ func (suppressUser *SuppressRegulationHandler) getSourceRegulationsFromRegulatio
 				pkgLogger.Error(err)
 			}
 		}(resp.Body)
-
-		gzipReader, err := gzip.NewReader(resp.Body)
+		respBody, err = io.ReadAll(resp.Body)
 		if err != nil {
 			pkgLogger.Error(err)
 			return err
 		}
-		var buffer bytes.Buffer
-
-		io.Copy(&buffer, gzipReader)
-		respBody = buffer.Bytes()
 		return err
 	}
 
