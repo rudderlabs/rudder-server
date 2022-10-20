@@ -10,12 +10,6 @@ import (
 	"github.com/rudderlabs/rudder-server/config"
 )
 
-type AdvisoryLock int
-
-const (
-	JobsDBAddDsAdvisoryLock AdvisoryLock = 11
-)
-
 // GetConnectionString Returns Jobs DB connection configuration
 func GetConnectionString() string {
 	host := config.GetString("DB.host", "localhost")
