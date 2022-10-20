@@ -64,6 +64,11 @@ loop:
 		}
 	}
 
+	// to decrease the error margin (mostly introduced for the Redis algorithms) we can have
+	// the Lua scripts always return the Redis time and measure the test length with that instead
+	// of using the "runFor" timer above, because there is a bit of drift between the time as we measure it
+	// here and the time as it is measured in the Lua scripts.
+
 	diff := expected - passed
 	if passed < 1 || diff < (errorMargin*-1) || diff > errorMargin {
 		t.Errorf("Expected %d, got %d (diff: %d)", expected, passed, diff)
@@ -122,7 +127,9 @@ func TestReturn(t *testing.T) {
 			require.NoError(t, err)
 			require.Nil(t, returner, "this request should not have been allowed")
 
-			// return a couple tokens, sometimes returning a single token does not have an effect with go rate
+			// return as many tokens as minDeletions
+			// this is because sometimes returning a single token does not have an effect with go rate
+			// TODO investigate further when feasible
 			for i := 0; i < tc.minDeletions; i++ {
 				require.NoError(t, tokens[i].Return(ctx))
 			}
