@@ -11,8 +11,11 @@ import (
 
 /*
 TODOs:
+* finish tests
 * metrics inside client (especially for returning tokens)
 * benchmark AWS Elasticache Redis
+* replace old limiters
+* feature flags for algo type
 */
 
 var (
