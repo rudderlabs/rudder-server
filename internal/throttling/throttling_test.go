@@ -147,7 +147,42 @@ func TestReturn(t *testing.T) {
 }
 
 func TestBadData(t *testing.T) {
-	t.Skip("TODO")
+	pool, err := dockertest.NewPool("")
+	require.NoError(t, err)
+
+	var (
+		ctx      = context.Background()
+		rc       = bootstrapRedis(ctx, t, pool)
+		limiters = map[string]limiter{
+			"go rate":           newLimiter(t, WithGoRate()),
+			"gcra":              newLimiter(t, WithGCRA()),
+			"gcra redis":        newLimiter(t, WithGCRA(), WithRedisClient(rc)),
+			"sorted sets redis": newLimiter(t, WithRedisClient(rc)),
+		}
+	)
+
+	for name, l := range limiters {
+		t.Run(name+" cost", func(t *testing.T) {
+			ret, err := l.Limit(ctx, 0, 10, 1, "foo")
+			require.Nil(t, ret)
+			require.Error(t, err, "cost must be greater than 0")
+		})
+		t.Run(name+" rate", func(t *testing.T) {
+			ret, err := l.Limit(ctx, 1, 0, 1, "foo")
+			require.Nil(t, ret)
+			require.Error(t, err, "rate must be greater than 0")
+		})
+		t.Run(name+" window", func(t *testing.T) {
+			ret, err := l.Limit(ctx, 1, 10, 0, "foo")
+			require.Nil(t, ret)
+			require.Error(t, err, "window must be greater than 0")
+		})
+		t.Run(name+" key", func(t *testing.T) {
+			ret, err := l.Limit(ctx, 1, 10, 1, "")
+			require.Nil(t, ret)
+			require.Error(t, err, "key must not be empty")
+		})
+	}
 }
 
 func TestMultipleRedisClients(t *testing.T) {

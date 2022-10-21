@@ -84,16 +84,29 @@ func New(options ...Option) (*Limiter, error) {
 }
 
 func (l *Limiter) Limit(ctx context.Context, cost, rate, window int64, key string) (TokenReturner, error) {
-	if l.redisTalker != nil {
-		if l.useGCRA {
+	if cost < 1 {
+		return nil, fmt.Errorf("cost must be greater than 0")
+	}
+	if rate < 1 {
+		return nil, fmt.Errorf("rate must be greater than 0")
+	}
+	if window < 1 {
+		return nil, fmt.Errorf("window must be greater than 0")
+	}
+	if key == "" {
+		return nil, fmt.Errorf("key must not be empty")
+	}
+	switch {
+	case l.useGCRA:
+		if l.redisTalker != nil {
 			return l.redisGCRA(ctx, cost, rate, window, key)
 		}
-		return l.redisSortedSet(ctx, cost, rate, window, key)
-	}
-	if l.useGCRA {
 		return l.gcraLimit(ctx, cost, rate, window, key)
+	case l.redisTalker != nil:
+		return l.redisSortedSet(ctx, cost, rate, window, key)
+	default:
+		return l.goRateLimit(ctx, cost, rate, window, key)
 	}
-	return l.goRateLimit(ctx, cost, rate, window, key)
 }
 
 func (l *Limiter) getRedisTalker(key string) redisTalker {

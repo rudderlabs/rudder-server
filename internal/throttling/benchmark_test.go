@@ -15,10 +15,10 @@ import (
 /*
 goos: linux, goarch: amd64
 cpu: 12th Gen Intel(R) Core(TM) i9-12900K
-BenchmarkLimiters/go_rate-24				9535816			121.0 ns/op
-BenchmarkLimiters/gcra-24					16373722		74.00 ns/op
-BenchmarkLimiters/gcra_redis-24				50640			20674 ns/op
-BenchmarkLimiters/sorted_sets_redis-24		59044			20475 ns/op
+BenchmarkLimiters/go_rate-24				8315100		143.1 ns/op
+BenchmarkLimiters/gcra-24					16451350	71.83 ns/op
+BenchmarkLimiters/gcra_redis-24				60930		21134 ns/op
+BenchmarkLimiters/sorted_sets_redis-24		61287		18635 ns/op
 */
 func BenchmarkLimiters(b *testing.B) {
 	pool, err := dockertest.NewPool("")
