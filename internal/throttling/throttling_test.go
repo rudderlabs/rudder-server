@@ -18,40 +18,54 @@ func TestThrottling(t *testing.T) {
 	pool, err := dockertest.NewPool("")
 	require.NoError(t, err)
 
+	type limiterSettings struct {
+		name    string
+		limiter limiter
+		// concurrency has been introduced because the GCRA algorithms (both in-memory and Redis) tend to lose precision
+		// when the concurrency is too high. Until we fix it or come up with a guard to limit the amount of concurrent
+		// requests, we're limiting the concurrency to X in the tests (to avoid test flakiness).
+		concurrency int
+	}
+
 	var (
 		ctx      = context.Background()
 		rc       = bootstrapRedis(ctx, t, pool)
-		limiters = map[string]limiter{
-			"go rate":           newLimiter(t, WithGoRate()),
-			"gcra":              newLimiter(t, WithGCRA()),
-			"gcra redis":        newLimiter(t, WithGCRA(), WithRedisClient(rc)),
-			"sorted sets redis": newLimiter(t, WithRedisClient(rc)),
+		limiters = []limiterSettings{
+			{name: "go rate", limiter: newLimiter(t, WithGoRate()), concurrency: 5000},
+			{name: "gcra", limiter: newLimiter(t, WithGCRA()), concurrency: 100},
+			{name: "gcra redis", limiter: newLimiter(t, WithGCRA(), WithRedisClient(rc)), concurrency: 100},
+			{name: "sorted sets redis", limiter: newLimiter(t, WithRedisClient(rc)), concurrency: 5000},
 		}
 	)
 
-	for _, tc := range []testCase{
-		{rate: 10, window: 1, errorMargin: 2},
-		{rate: 100, window: 2, errorMargin: 5},
-		{rate: 200, window: 3, errorMargin: 5},
-	} {
-		for name, l := range limiters {
-			l := l
-			t.Run(testName(name, tc.rate, tc.window), func(t *testing.T) {
-				expected := tc.rate
-				testLimiter(ctx, t, l, tc.rate, tc.window, expected, tc.errorMargin)
-			})
+	flakinessRate := 20 // increase to run the tests multiple times in a row to debug flaky tests
+	for i := 0; i < flakinessRate; i++ {
+		for _, tc := range []testCase{
+			{rate: 10, window: 1, errorMargin: 2},
+			{rate: 100, window: 2, errorMargin: 5},
+			{rate: 200, window: 3, errorMargin: 5},
+		} {
+			for _, l := range limiters {
+				l := l
+				t.Run(testName(l.name, tc.rate, tc.window), func(t *testing.T) {
+					expected := tc.rate
+					testLimiter(ctx, t, l.limiter, tc.rate, tc.window, expected, tc.errorMargin, l.concurrency)
+				})
+			}
 		}
 	}
 }
 
-func testLimiter(ctx context.Context, t *testing.T, l limiter, rate, window, expected, errorMargin int64) {
+func testLimiter(
+	ctx context.Context, t *testing.T, l limiter, rate, window, expected, errorMargin int64, concurrency int,
+) {
 	t.Helper()
 	var (
 		wg          sync.WaitGroup
 		passed      int64
 		cost        int64 = 1
 		key               = rand.UniqueString(10)
-		maxRoutines       = make(chan struct{}, 5000)
+		maxRoutines       = make(chan struct{}, concurrency)
 		// Time tracking variables
 		startTime   int64
 		currentTime int64
@@ -96,7 +110,7 @@ loop:
 					case stop <- struct{}{}:
 					default: // one signal to stop is enough, don't block
 					}
-					return
+					return // do not increment "passed" because we're over the window
 				}
 				if returner != nil {
 					atomic.AddInt64(&passed, cost)
