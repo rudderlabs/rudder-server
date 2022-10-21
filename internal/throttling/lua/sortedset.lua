@@ -1,3 +1,10 @@
+--[[
+To debug this script you can add these entries here in the script and then check the Redis server output:
+redis.log(redis.LOG_NOTICE, "some label", some_variable)
+
+For more information please refer to: https://redis.io/docs/manual/programmability/lua-debugging/
+--]]
+
 local key = tostring(KEYS[1])
 local cost = tonumber(ARGV[1])
 local rate = tonumber(ARGV[2])
@@ -6,11 +13,17 @@ local period = tonumber(ARGV[3]) * 1000 * 1000 -- converting to microseconds
 -- Check number of requests first
 if cost < 1 then
     -- nothing to do, the user didn't ask for any tokens
-    return ""
+    return { 0, "" }
 end
 
 local current_time = redis.call('TIME')
-local current_time_micro = tonumber(current_time[1] .. current_time[2])
+local microseconds = current_time[2]
+while string.len(microseconds) < 6 do
+    -- in case the microseconds part (i.e. current_time[2]) is less than 6 digits
+    microseconds = "0" .. microseconds
+end
+
+local current_time_micro = tonumber(current_time[1] .. microseconds)
 local trim_time = current_time_micro - period
 
 -- Remove all the requests that are older than the window
@@ -21,7 +34,7 @@ local used_tokens = redis.call('ZCARD', key)
 
 -- If the number of requests is greater than the max requests we hit the limit
 if (used_tokens + cost) > tonumber(rate) then
-    return ""
+    return { current_time_micro, "" }
 end
 
 -- seed needed to generate random members in case of collision
@@ -50,4 +63,4 @@ end
 redis.call('EXPIRE', key, period, "GT")
 
 members = members:sub(1, -2) -- remove the last comma
-return members
+return { current_time_micro, members }

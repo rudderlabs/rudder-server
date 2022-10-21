@@ -3,12 +3,17 @@ package throttling
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/go-redis/redis/v9"
 )
 
-type unsupportedReturn struct{}
+type unsupportedReturn struct {
+	// time is the current time in milliseconds from Redis perspective
+	time time.Duration
+}
 
+func (u *unsupportedReturn) getTime() time.Duration       { return u.time }
 func (*unsupportedReturn) Return(_ context.Context) error { return nil }
 
 type redisSortedSetRemover interface {
@@ -18,12 +23,15 @@ type redisSortedSetRemover interface {
 type sortedSetRedisReturn struct {
 	// key is the key of the sorted set
 	key string
+	// time is the current time in milliseconds from Redis perspective
+	time time.Duration
 	// members are the members (tokens) in the sorted set (bucket)
 	members []string
 	// remover is the redisTalker that removes the members from the sorted set (aka *redis.Client)
 	remover redisSortedSetRemover
 }
 
+func (r *sortedSetRedisReturn) getTime() time.Duration { return r.time }
 func (r *sortedSetRedisReturn) Return(ctx context.Context) error {
 	var (
 		length = len(r.members)
