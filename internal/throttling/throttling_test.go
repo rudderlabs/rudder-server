@@ -3,6 +3,8 @@ package throttling
 import (
 	"context"
 	"fmt"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -45,33 +47,68 @@ func TestThrottling(t *testing.T) {
 func testLimiter(ctx context.Context, t *testing.T, l limiter, rate, window, expected, errorMargin int64) {
 	t.Helper()
 	var (
-		passed int64
-		cost   int64 = 1
-		key          = rand.UniqueString(10)
-		runFor       = time.NewTimer(time.Duration(window) * time.Second)
+		wg          sync.WaitGroup
+		passed      int64
+		cost        int64 = 1
+		key               = rand.UniqueString(10)
+		maxRoutines       = make(chan struct{}, 5000)
+		// Time tracking variables
+		startTime   int64
+		currentTime int64
+		timeMutex   sync.Mutex
+		stop        = make(chan struct{}, 1)
 	)
 loop:
 	for {
 		select {
-		case <-runFor.C:
+		case <-stop:
+			// To decrease the error margin (mostly introduced for the Redis algorithms) I'm measuring time in two
+			// different ways depending on whether I'm using an in-memory algorithm or a Redis one.
+			// For the Redis algorithms I measure the elapsed time by keeping track of the timestamps returned by
+			// the Redis Lua scripts.
+			// This is because there is a bit of a drift between the time as we measure it here and the time as it
+			// is measured in the Lua scripts.
 			break loop
-		default:
-			returner, err := l.Limit(ctx, cost, rate, window, key)
-			require.NoError(t, err)
-			if returner != nil {
-				passed += cost
-			}
+		case maxRoutines <- struct{}{}:
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				defer func() { <-maxRoutines }()
+
+				returner, err := l.Limit(ctx, cost, rate, window, key)
+				require.NoError(t, err)
+
+				timer, ok := returner.(interface{ getTime() time.Duration })
+				timeMutex.Lock()
+				defer timeMutex.Unlock()
+				if ok { // Redis limiters have a getTime() function that returns the current time from Redis perspective
+					if timer.getTime() > time.Duration(currentTime) {
+						currentTime = int64(timer.getTime())
+					}
+				} else if now := time.Now().UnixNano(); now > currentTime { // in-memory algorithm, let's use time.Now()
+					currentTime = now
+				}
+				if startTime == 0 {
+					startTime = currentTime
+				}
+				if currentTime-startTime >= window*int64(time.Second) {
+					select {
+					case stop <- struct{}{}:
+					default: // one signal to stop is enough, don't block
+					}
+					return
+				}
+				if returner != nil {
+					atomic.AddInt64(&passed, cost)
+				}
+			}()
 		}
 	}
 
-	// To decrease the error margin (mostly introduced for the Redis algorithms) we can have
-	// the Lua scripts always return the Redis time and measure the test length with that instead
-	// of using the "runFor" timer above.
-	// This is because there is a bit of drift between the time as we measure it here and the time as it
-	// is measured in the Lua scripts.
+	wg.Wait()
 
 	diff := expected - passed
-	if passed < 1 || diff < (errorMargin*-1) || diff > errorMargin {
+	if passed < 1 || diff < -errorMargin || diff > errorMargin {
 		t.Errorf("Expected %d, got %d (diff: %d)", expected, passed, diff)
 	}
 }
