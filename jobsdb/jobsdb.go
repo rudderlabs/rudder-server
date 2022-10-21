@@ -3752,7 +3752,8 @@ func (worker *WorkerT) backupUploadWithExponentialBackoff(ctx context.Context, s
 	bo := backoff.NewExponentialBackOff()
 	bo.MaxInterval = time.Minute
 	bo.MaxElapsedTime = worker.maxBackupRetryTime
-	boCtx := backoff.WithContext(bo, ctx)
+	boRetries := backoff.WithMaxRetries(bo, uint64(config.GetInt64("MAX_BACKOFF_RETRIES", 3)))
+	boCtx := backoff.WithContext(boRetries, ctx)
 
 	var output filemanager.UploadOutput
 	backup := func() error {
