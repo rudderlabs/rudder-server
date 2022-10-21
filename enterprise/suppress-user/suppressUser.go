@@ -88,14 +88,14 @@ func (suppressUser *SuppressRegulationHandler) regulationSyncLoop(ctx context.Co
 		pageSize = 0
 	}
 	pkgLogger.Info("regulation request page size: ", pageSize)
-
+	i := 0
 	for {
 		if ctx.Err() != nil {
 			return
 		}
 		pkgLogger.Info("Fetching Regulations")
 		completeGetRegulationTime := time.Now()
-		regulations, err := suppressUser.getSourceRegulationsFromRegulationService()
+		regulations, err := suppressUser.getSourceRegulationsFromRegulationService(i)
 		if err != nil {
 			misc.SleepCtx(ctx, regulationsPollInterval)
 			continue
@@ -153,16 +153,17 @@ func (suppressUser *SuppressRegulationHandler) regulationSyncLoop(ctx context.Co
 			}
 		}
 		suppressUser.regulationsSubscriberLock.Unlock()
+		pkgLogger.Debug(i, "th map insert latency: ", time.Since(regulationInsertTime))
 		stats.Default.NewStat("suppress_regulation_memory_insert_latency", stats.TimerType).Since(regulationInsertTime)
 		stats.Default.NewStat("suppress_user_map_size", stats.GaugeType).Gauge(unsafe.Sizeof(suppressUser.userSpecificSuppressedSourceMap))
-
+		i++
 		if len(regulations) == 0 || len(regulations) < pageSize {
 			misc.SleepCtx(ctx, regulationsPollInterval)
 		}
 	}
 }
 
-func (suppressUser *SuppressRegulationHandler) getSourceRegulationsFromRegulationService() ([]sourceRegulation, error) {
+func (suppressUser *SuppressRegulationHandler) getSourceRegulationsFromRegulationService(i int) ([]sourceRegulation, error) {
 	if config.GetBool("HOSTED_SERVICE", false) {
 		pkgLogger.Info("[Regulations] Regulations on free tier are not supported at the moment.")
 		return []sourceRegulation{}, nil
@@ -197,7 +198,7 @@ func (suppressUser *SuppressRegulationHandler) getSourceRegulationsFromRegulatio
 			pkgLogger.Debug("regulation request failed: ", err)
 			return err
 		}
-		pkgLogger.Debug("req latency: ", time.Since(reqTime))
+		pkgLogger.Debug(i, "th req latency: ", time.Since(reqTime))
 		// If statusCode is not 2xx, then returning empty regulations
 		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 			err = fmt.Errorf("status code %v", resp.StatusCode)
