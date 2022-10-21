@@ -116,7 +116,7 @@ func Connect(cred CredentialsT) (*sql.DB, error) {
 	// url := fmt.Sprintf("server=%s;user id=%s;password=%s;port=%s;database=%s;encrypt=%s;TrustServerCertificate=true", cred.host, cred.user, cred.password, cred.port, cred.dbName, cred.sslMode)
 	// Encryption options : disable, false, true.  https://github.com/denisenkom/go-mssqldb
 	// TrustServerCertificate=true ; all options(disable, false, true) work with this
-	// if rds.forcessl=1; disable option doesnt work. true, false works alongside TrustServerCertificate=true
+	// if rds.forcessl=1; disable option doesn't work. true, false works alongside TrustServerCertificate=true
 	//		https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/SQLServer.Concepts.General.SSL.Using.html
 	// more combination explanations here: https://docs.microsoft.com/en-us/sql/connect/odbc/linux-mac/connection-string-keywords-and-data-source-names-dsns?view=sql-server-ver15
 	query := url.Values{}
@@ -191,7 +191,7 @@ func (ms *HandleT) DownloadLoadFiles(tableName string) ([]string, error) {
 		}),
 	})
 	if err != nil {
-		pkgLogger.Errorf("MS: Error in setting up a downloader for destionationID : %s Error : %v", ms.Warehouse.Destination.ID, err)
+		pkgLogger.Errorf("MS: Error in setting up a downloader for destinationID : %s Error : %v", ms.Warehouse.Destination.ID, err)
 		return nil, err
 	}
 	var fileNames []string
@@ -234,9 +234,9 @@ func (ms *HandleT) DownloadLoadFiles(tableName string) ([]string, error) {
 }
 
 func (ms *HandleT) DeleteBy(tableNames []string, params warehouseutils.DeleteByParams) (err error) {
-	pkgLogger.Infof("MS: Cleaning up the followng tables in mysql for MS for tables %s and params %+v", tableNames, params)
+	pkgLogger.Infof("MS: Cleaning up the following tables in mysql for MS for tables %s and params %+v", tableNames, params)
 	for _, tb := range tableNames {
-		sqlStatement := fmt.Sprintf(`DELETE FROM "%[1]s"."%[2]s" WHERE 
+		sqlStatement := fmt.Sprintf(`DELETE FROM "%[1]s"."%[2]s" WHERE
 		context_sources_job_run_id <> @jobrunid AND
 		context_sources_task_run_id <> @taskrunid AND
 		context_source_id = @sourceid AND
@@ -340,7 +340,7 @@ func (ms *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 				return
 			}
 			if len(sortedColumnKeys) != len(record) {
-				err = fmt.Errorf(`Load file CSV columns for a row mismatch number found in upload schema. Columns in CSV row: %d, Columns in upload schema of table-%s: %d. Processed rows in csv file until mismatch: %d`, len(record), tableName, len(sortedColumnKeys), csvRowsProcessedCount)
+				err = fmt.Errorf(`load file CSV columns for a row mismatch number found in upload schema. Columns in CSV row: %d, Columns in upload schema of table-%s: %d. Processed rows in csv file until mismatch: %d`, len(record), tableName, len(sortedColumnKeys), csvRowsProcessedCount)
 				pkgLogger.Error(err)
 				txn.Rollback()
 				return
@@ -556,7 +556,7 @@ func (ms *HandleT) loadUserTables() (errorMap map[string]error) {
 							FETCH NEXT 1 ROWS ONLY)
 						  end as "%[1]s"`, colName, ms.Namespace+"."+unionStagingTableName)
 
-		// IGNORE NULLS only supported in Azure SQL edge, in which case the query can be shortedened to below
+		// IGNORE NULLS only supported in Azure SQL edge, in which case the query can be shortened to below
 		// https://docs.microsoft.com/en-us/sql/t-sql/functions/first-value-transact-sql?view=sql-server-ver15
 		// caseSubQuery := fmt.Sprintf(`FIRST_VALUE(%[1]s) IGNORE NULLS OVER (PARTITION BY id ORDER BY received_at DESC ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) AS "%[1]s"`, colName)
 		firstValProps = append(firstValProps, caseSubQuery)
@@ -676,7 +676,7 @@ func (ms *HandleT) addColumn(tableName, columnName, columnType string) (err erro
 }
 
 func (ms *HandleT) CreateTable(tableName string, columnMap map[string]string) (err error) {
-	// Search paths doesnt exist unlike Postgres, default is dbo. Hence use namespace wherever possible
+	// Search paths doesn't exist unlike Postgres, default is dbo. Hence, use namespace wherever possible
 	err = ms.createTable(ms.Namespace+"."+tableName, columnMap)
 	return err
 }
@@ -772,7 +772,7 @@ func (ms *HandleT) dropDanglingStagingTables() bool {
 		var tableName string
 		err := rows.Scan(&tableName)
 		if err != nil {
-			panic(fmt.Errorf("Failed to scan result from query: %s\nwith Error : %w", sqlStatement, err))
+			panic(fmt.Errorf("failed to scan result from query: %s\nwith Error : %w", sqlStatement, err))
 		}
 		stagingTableNames = append(stagingTableNames, tableName)
 	}

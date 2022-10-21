@@ -3,7 +3,7 @@ package deltalake
 import (
 	"fmt"
 
-	"github.com/rudderlabs/rudder-server/warehouse/utils"
+	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
 func primaryKey(tableName string) string {

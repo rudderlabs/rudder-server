@@ -13,7 +13,7 @@ import (
 
 	"github.com/tidwall/gjson"
 
-	uuid "github.com/gofrs/uuid"
+	"github.com/gofrs/uuid"
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/services/filemanager"
 	"github.com/rudderlabs/rudder-server/utils/logger"
@@ -117,20 +117,20 @@ var partitionKeyMap = map[string]string{
 	warehouseutils.DiscardsTable: "row_id, column_name, table_name",
 }
 
-// getRSDataType gets datatype for rs which is mapped with rudderstack datatype
+// getRSDataType gets datatype for rs which is mapped with RudderStack datatype
 func getRSDataType(columnType string) string {
 	return dataTypesMap[columnType]
 }
 
 func ColumnsWithDataTypes(columns map[string]string, prefix string) string {
 	// TODO: do we need sorted order here?
-	keys := []string{}
+	var keys []string
 	for colName := range columns {
 		keys = append(keys, colName)
 	}
 	sort.Strings(keys)
 
-	arr := []string{}
+	var arr []string
 	for _, name := range keys {
 		arr = append(arr, fmt.Sprintf(`"%s%s" %s`, prefix, name, getRSDataType(columns[name])))
 	}
@@ -178,10 +178,10 @@ func (rs *HandleT) AddColumn(name, columnName, columnType string) (err error) {
 }
 
 func (rs *HandleT) DeleteBy(tableNames []string, params warehouseutils.DeleteByParams) (err error) {
-	pkgLogger.Infof("RS: Cleaning up the followng tables in redshift for RS:%s : %+v", tableNames, params)
+	pkgLogger.Infof("RS: Cleaning up the following tables in redshift for RS:%s : %+v", tableNames, params)
 	pkgLogger.Infof("RS: Flag for enableDeleteByJobs is %t", enableDeleteByJobs)
 	for _, tb := range tableNames {
-		sqlStatement := fmt.Sprintf(`DELETE FROM "%[1]s"."%[2]s" WHERE 
+		sqlStatement := fmt.Sprintf(`DELETE FROM "%[1]s"."%[2]s" WHERE
 		context_sources_job_run_id <> $1 AND
 		context_sources_task_run_id <> $2 AND
 		context_source_id = $3 AND
@@ -220,7 +220,7 @@ func (rs *HandleT) alterStringToText(tableName, columnName string) (err error) {
 
 func (rs *HandleT) createSchema() (err error) {
 	sqlStatement := fmt.Sprintf(`CREATE SCHEMA IF NOT EXISTS %q`, rs.Namespace)
-	pkgLogger.Infof("Creating schemaname in redshift for RS:%s : %v", rs.Warehouse.Destination.ID, sqlStatement)
+	pkgLogger.Infof("Creating schema name in redshift for RS:%s : %v", rs.Warehouse.Destination.ID, sqlStatement)
 	_, err = rs.Db.Exec(sqlStatement)
 	return
 }
@@ -385,9 +385,9 @@ func (rs *HandleT) loadTable(tableName string, tableSchemaInUpload, tableSchemaA
 
 	sqlStatement = fmt.Sprintf(`
 		DELETE FROM
-			%[1]s.%[2]q 
-		USING 
-			%[1]s.%[3]q _source  
+			%[1]s.%[2]q
+		USING
+			%[1]s.%[3]q _source
 		WHERE
 			_source.%[4]s = %[1]s.%[2]q.%[4]s
 `,
@@ -411,7 +411,7 @@ func (rs *HandleT) loadTable(tableName string, tableSchemaInUpload, tableSchemaA
 
 	if tableName == warehouseutils.DiscardsTable {
 		sqlStatement += fmt.Sprintf(`
-			AND _source.%[3]s = %[1]s.%[2]q.%[3]s 
+			AND _source.%[3]s = %[1]s.%[2]q.%[3]s
 			AND _source.%[4]s = %[1]s.%[2]q.%[4]s
 `,
 			rs.Namespace,
@@ -478,7 +478,7 @@ func (rs *HandleT) loadUserTables() (errorMap map[string]error) {
 	userColMap := rs.Uploader.GetTableSchemaInWarehouse(warehouseutils.UsersTable)
 	var userColNames, firstValProps []string
 	for colName := range userColMap {
-		// do not reference uuid in queries as it can be an autoincrementing field set by segment compatible tables
+		// do not reference uuid in queries as it can be an autoincrement field set by segment compatible tables
 		if colName == "id" || colName == "user_id" || colName == "uuid" {
 			continue
 		}
@@ -562,7 +562,6 @@ func (rs *HandleT) loadUserTables() (errorMap map[string]error) {
 	return
 }
 
-// RedshiftCredentialsT ...
 type RedshiftCredentialsT struct {
 	Host     string
 	Port     string
@@ -675,7 +674,7 @@ func (rs *HandleT) getConnectionCredentials() RedshiftCredentialsT {
 	}
 }
 
-// FetchSchema queries redshift and returns the schema assoiciated with provided namespace
+// FetchSchema queries redshift and returns the schema associated with provided namespace
 func (rs *HandleT) FetchSchema(warehouse warehouseutils.Warehouse) (schema warehouseutils.SchemaT, err error) {
 	rs.Warehouse = warehouse
 	rs.Namespace = warehouse.Namespace
