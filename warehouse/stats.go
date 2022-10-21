@@ -164,7 +164,7 @@ func (job *UploadJobT) generateUploadAbortedMetrics() {
 func (job *UploadJobT) recordTableLoad(tableName string, numEvents int64) {
 	rudderAPISupportedEventTypes := []string{"tracks", "identifies", "pages", "screens", "aliases", "groups"}
 	if misc.Contains(rudderAPISupportedEventTypes, strings.ToLower(tableName)) {
-		// record total events synced (ignoring additional row synced to event table for eg.track call)
+		// record total events synced (ignoring additional row synced to the event table for e.g.track call)
 		job.counterStat(`event_delivery`, tag{
 			name:  "tableName",
 			value: strings.ToLower(tableName),
