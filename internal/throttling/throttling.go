@@ -12,12 +12,13 @@ import (
 
 /*
 TODOs:
-* finish test bad data
+* expire mechanism for map keys
 * finish test multiple redis clients
 * metrics inside client (especially for returning tokens)
 * benchmark AWS Elasticache Redis
 * replace old limiters
 * feature flags for algo type
+* guard against concurrency?
 */
 
 var (
