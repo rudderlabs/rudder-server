@@ -1384,10 +1384,10 @@ func (brt *HandleT) setJobStatus(batchJobs *BatchJobsT, isWarehouse bool, errOcc
 
 			// Save msgids of aborted jobs
 			if len(jobRunIDAbortedEventsMap) > 0 {
-				router.GetFailedEventsManager().SaveFailedRecordIDs(jobRunIDAbortedEventsMap, tx.Tx())
+				router.GetFailedEventsManager().SaveFailedRecordIDs(jobRunIDAbortedEventsMap, tx.SqlTx())
 			}
 			if brt.reporting != nil && brt.reportingEnabled {
-				brt.reporting.Report(reportMetrics, tx.Tx())
+				brt.reporting.Report(reportMetrics, tx.SqlTx())
 			}
 			return nil
 		})
@@ -1495,7 +1495,7 @@ func (brt *HandleT) setMultipleJobStatus(asyncOutput asyncdestinationmanager.Asy
 			}
 			// rsources stats
 			rsourcesStats.JobStatusesUpdated(statusList)
-			err = rsourcesStats.Publish(context.TODO(), tx.Tx())
+			err = rsourcesStats.Publish(context.TODO(), tx.SqlTx())
 			if err != nil {
 				brt.logger.Errorf("publishing rsources stats: %w", err)
 			}
@@ -2406,7 +2406,7 @@ func (brt *HandleT) updateRudderSourcesStats(ctx context.Context, tx jobsdb.Upda
 	rsourcesStats := rsources.NewStatsCollector(brt.rsourcesService)
 	rsourcesStats.BeginProcessing(jobs)
 	rsourcesStats.JobStatusesUpdated(jobStatuses)
-	err := rsourcesStats.Publish(ctx, tx.Tx())
+	err := rsourcesStats.Publish(ctx, tx.SqlTx())
 	if err != nil {
 		return fmt.Errorf("publishing rsources stats: %w", err)
 	}

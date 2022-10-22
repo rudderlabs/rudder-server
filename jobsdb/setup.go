@@ -42,10 +42,10 @@ func (jd *HandleT) setupDatabaseTables(l lock.LockToken, clearAll bool) {
 	psqlInfo := misc.GetConnectionString()
 	db, err := sql.Open("postgres", psqlInfo)
 	if err != nil {
-		panic(fmt.Errorf("Error DB for migrate open: %w", err))
+		panic(fmt.Errorf("error DB for migrate open: %w", err))
 	}
 
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	// setup migrator with appropriate schema migrations table
 	m := &migrator.Migrator{
@@ -57,7 +57,7 @@ func (jd *HandleT) setupDatabaseTables(l lock.LockToken, clearAll bool) {
 	// execute any necessary migrations
 	err = m.MigrateFromTemplates("jobsdb", templateData)
 	if err != nil {
-		panic(fmt.Errorf("Error while migrating '%v' jobsdb tables: %w", jd.tablePrefix, err))
+		panic(fmt.Errorf("error while migrating '%v' jobsdb tables: %w", jd.tablePrefix, err))
 	}
 }
 

@@ -13,7 +13,7 @@ import (
 
 	"github.com/tidwall/gjson"
 
-	uuid "github.com/gofrs/uuid"
+	"github.com/gofrs/uuid"
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/services/filemanager"
 	"github.com/rudderlabs/rudder-server/utils/logger"
@@ -24,6 +24,8 @@ import (
 
 var (
 	setVarCharMax                 bool
+	dedupWindow                   bool
+	dedupWindowInHours            time.Duration
 	pkgLogger                     logger.Logger
 	skipComputingUserLatestTraits bool
 	enableDeleteByJobs            bool
@@ -36,6 +38,9 @@ func Init() {
 
 func loadConfig() {
 	setVarCharMax = config.GetBool("Warehouse.redshift.setVarCharMax", false)
+
+	config.RegisterBoolConfigVariable(false, &dedupWindow, true, "Warehouse.redshift.dedupWindow")
+	config.RegisterDurationConfigVariable(720, &dedupWindowInHours, true, time.Hour, "Warehouse.redshift.dedupWindowInHours")
 	config.RegisterBoolConfigVariable(false, &skipComputingUserLatestTraits, true, "Warehouse.redshift.skipComputingUserLatestTraits")
 	config.RegisterBoolConfigVariable(false, &enableDeleteByJobs, true, "Warehouse.redshift.enableDeleteByJobs")
 }
@@ -112,20 +117,20 @@ var partitionKeyMap = map[string]string{
 	warehouseutils.DiscardsTable: "row_id, column_name, table_name",
 }
 
-// getRSDataType gets datatype for rs which is mapped with rudderstack datatype
+// getRSDataType gets datatype for rs which is mapped with RudderStack datatype
 func getRSDataType(columnType string) string {
 	return dataTypesMap[columnType]
 }
 
 func ColumnsWithDataTypes(columns map[string]string, prefix string) string {
 	// TODO: do we need sorted order here?
-	keys := []string{}
+	var keys []string
 	for colName := range columns {
 		keys = append(keys, colName)
 	}
 	sort.Strings(keys)
 
-	arr := []string{}
+	var arr []string
 	for _, name := range keys {
 		arr = append(arr, fmt.Sprintf(`"%s%s" %s`, prefix, name, getRSDataType(columns[name])))
 	}
@@ -173,10 +178,10 @@ func (rs *HandleT) AddColumn(name, columnName, columnType string) (err error) {
 }
 
 func (rs *HandleT) DeleteBy(tableNames []string, params warehouseutils.DeleteByParams) (err error) {
-	pkgLogger.Infof("RS: Cleaning up the followng tables in redshift for RS:%s : %+v", tableNames, params)
+	pkgLogger.Infof("RS: Cleaning up the following tables in redshift for RS:%s : %+v", tableNames, params)
 	pkgLogger.Infof("RS: Flag for enableDeleteByJobs is %t", enableDeleteByJobs)
 	for _, tb := range tableNames {
-		sqlStatement := fmt.Sprintf(`DELETE FROM "%[1]s"."%[2]s" WHERE 
+		sqlStatement := fmt.Sprintf(`DELETE FROM "%[1]s"."%[2]s" WHERE
 		context_sources_job_run_id <> $1 AND
 		context_sources_task_run_id <> $2 AND
 		context_source_id = $3 AND
@@ -215,7 +220,7 @@ func (rs *HandleT) alterStringToText(tableName, columnName string) (err error) {
 
 func (rs *HandleT) createSchema() (err error) {
 	sqlStatement := fmt.Sprintf(`CREATE SCHEMA IF NOT EXISTS %q`, rs.Namespace)
-	pkgLogger.Infof("Creating schemaname in redshift for RS:%s : %v", rs.Warehouse.Destination.ID, sqlStatement)
+	pkgLogger.Infof("Creating schema name in redshift for RS:%s : %v", rs.Warehouse.Destination.ID, sqlStatement)
 	_, err = rs.Db.Exec(sqlStatement)
 	return
 }
@@ -366,22 +371,56 @@ func (rs *HandleT) loadTable(tableName string, tableSchemaInUpload, tableSchemaA
 		return
 	}
 
-	primaryKey := "id"
+	var (
+		primaryKey   = "id"
+		partitionKey = "id"
+	)
+
 	if column, ok := primaryKeyMap[tableName]; ok {
 		primaryKey = column
 	}
-
-	partitionKey := "id"
 	if column, ok := partitionKeyMap[tableName]; ok {
 		partitionKey = column
 	}
 
-	var additionalJoinClause string
-	if tableName == warehouseutils.DiscardsTable {
-		additionalJoinClause = fmt.Sprintf(`AND _source.%[3]s = %[1]s.%[2]s.%[3]s AND _source.%[4]s = %[1]s.%[2]s.%[4]s`, rs.Namespace, tableName, "table_name", "column_name")
+	sqlStatement = fmt.Sprintf(`
+		DELETE FROM
+			%[1]s.%[2]q
+		USING
+			%[1]s.%[3]q _source
+		WHERE
+			_source.%[4]s = %[1]s.%[2]q.%[4]s
+`,
+		rs.Namespace,
+		tableName,
+		stagingTableName,
+		primaryKey,
+	)
+
+	if dedupWindow {
+		if _, ok := tableSchemaAfterUpload["received_at"]; ok {
+			sqlStatement += fmt.Sprintf(`
+				AND %[1]s.%[2]q.received_at > GETDATE() - INTERVAL '%[3]d DAY'
+`,
+				rs.Namespace,
+				tableName,
+				dedupWindowInHours/time.Hour,
+			)
+		}
 	}
 
-	sqlStatement = fmt.Sprintf(`DELETE FROM %[1]s."%[2]s" using %[1]s."%[3]s" _source where (_source.%[4]s = %[1]s.%[2]s.%[4]s %[5]s)`, rs.Namespace, tableName, stagingTableName, primaryKey, additionalJoinClause)
+	if tableName == warehouseutils.DiscardsTable {
+		sqlStatement += fmt.Sprintf(`
+			AND _source.%[3]s = %[1]s.%[2]q.%[3]s
+			AND _source.%[4]s = %[1]s.%[2]q.%[4]s
+`,
+			rs.Namespace,
+			tableName,
+			"table_name",
+			"column_name",
+		)
+	}
+
 	pkgLogger.Infof("RS: Dedup records for table:%s using staging table: %s\n", tableName, sqlStatement)
 	_, err = tx.Exec(sqlStatement)
 	if err != nil {
@@ -439,7 +478,7 @@ func (rs *HandleT) loadUserTables() (errorMap map[string]error) {
 	userColMap := rs.Uploader.GetTableSchemaInWarehouse(warehouseutils.UsersTable)
 	var userColNames, firstValProps []string
 	for colName := range userColMap {
-		// do not reference uuid in queries as it can be an autoincrementing field set by segment compatible tables
+		// do not reference uuid in queries as it can be an autoincrement field set by segment compatible tables
 		if colName == "id" || colName == "user_id" || colName == "uuid" {
 			continue
 		}
@@ -523,7 +562,6 @@ func (rs *HandleT) loadUserTables() (errorMap map[string]error) {
 	return
 }
 
-// RedshiftCredentialsT ...
 type RedshiftCredentialsT struct {
 	Host     string
 	Port     string
@@ -636,7 +674,7 @@ func (rs *HandleT) getConnectionCredentials() RedshiftCredentialsT {
 	}
 }
 
-// FetchSchema queries redshift and returns the schema assoiciated with provided namespace
+// FetchSchema queries redshift and returns the schema associated with provided namespace
 func (rs *HandleT) FetchSchema(warehouse warehouseutils.Warehouse) (schema warehouseutils.SchemaT, err error) {
 	rs.Warehouse = warehouse
 	rs.Namespace = warehouse.Namespace
@@ -773,9 +811,9 @@ func (*HandleT) DownloadIdentityRules(*misc.GZipWriter) (err error) {
 	return
 }
 
-func (rs *HandleT) GetTotalCountInTable(tableName string) (total int64, err error) {
+func (rs *HandleT) GetTotalCountInTable(ctx context.Context, tableName string) (total int64, err error) {
 	sqlStatement := fmt.Sprintf(`SELECT count(*) FROM "%[1]s"."%[2]s"`, rs.Namespace, tableName)
-	err = rs.Db.QueryRow(sqlStatement).Scan(&total)
+	err = rs.Db.QueryRowContext(ctx, sqlStatement).Scan(&total)
 	if err != nil {
 		pkgLogger.Errorf(`RS: Error getting total count in table %s:%s`, rs.Namespace, tableName)
 	}

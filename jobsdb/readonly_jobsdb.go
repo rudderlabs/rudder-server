@@ -684,7 +684,7 @@ func (jd *ReadonlyHandleT) GetJobIDStatus(jobID, _ string) (string, error) {
 		}
 		sqlStatement = fmt.Sprintf(`SELECT job_id, job_state, attempt, exec_time, retry_time,error_code, error_response FROM %[1]s WHERE job_id = %[2]s;`, dsPair.JobStatusTable, jobID)
 		var statusCode sql.NullString
-		eventList := []JobStatusT{}
+		var eventList []JobStatusT
 		rows, err := jd.DbHandle.Query(sqlStatement)
 		if err != nil {
 			return "", err
