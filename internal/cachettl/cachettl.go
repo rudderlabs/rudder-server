@@ -45,7 +45,7 @@ func (c *Cache) Get(key string) interface{} {
 			if c.now().After(cn.expiration) {
 				c.removeNode(cn)
 				delete(c.m, cn.key) // remove node from map too
-			} else {
+			} else { // there is nothing else to clean up, no need to iterate further
 				break
 			}
 			cn = cn.next
