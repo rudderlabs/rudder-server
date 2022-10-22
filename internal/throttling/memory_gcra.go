@@ -7,14 +7,15 @@ import (
 
 	"github.com/throttled/throttled/v2"
 	"github.com/throttled/throttled/v2/store/memstore"
+
+	"github.com/rudderlabs/rudder-server/internal/cachettl"
 )
 
 const defaultMaxCASAttemptsLimit = 100
 
-// TODO add expiration mechanism? if we don't touch a key anymore it will stay in memory forever
 type gcra struct {
-	mu sync.Mutex
-	m  map[string]*throttled.GCRARateLimiter
+	mu    sync.Mutex
+	store *cachettl.Cache
 }
 
 func (g *gcra) limit(key string, cost, burst, rate, period int64) (
@@ -37,12 +38,12 @@ func (g *gcra) getLimiter(key string, burst, rate, period int64) (*throttled.GCR
 	g.mu.Lock()
 	defer g.mu.Unlock()
 
-	if g.m == nil {
-		g.m = make(map[string]*throttled.GCRARateLimiter)
+	if g.store == nil {
+		g.store = cachettl.New()
 	}
 
-	rl, ok := g.m[key]
-	if !ok {
+	rl, ok := g.store.Get(key).(*throttled.GCRARateLimiter)
+	if rl == nil || !ok {
 		store, err := memstore.New(0)
 		if err != nil {
 			return nil, fmt.Errorf("could not create store: %w", err)
@@ -55,7 +56,7 @@ func (g *gcra) getLimiter(key string, burst, rate, period int64) (*throttled.GCR
 			return nil, fmt.Errorf("could not create rate limiter: %w", err)
 		}
 		rl.SetMaxCASAttemptsLimit(defaultMaxCASAttemptsLimit)
-		g.m[key] = rl
+		g.store.Put(key, rl, time.Duration(period)*time.Second)
 	}
 
 	return rl, nil

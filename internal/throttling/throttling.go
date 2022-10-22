@@ -12,7 +12,6 @@ import (
 
 /*
 TODOs:
-* expire mechanism for map keys
 * finish test multiple redis clients
 * metrics inside client (especially for returning tokens)
 * benchmark AWS Elasticache Redis
