@@ -5,27 +5,28 @@ import (
 	"time"
 
 	gorate "golang.org/x/time/rate"
+
+	"github.com/rudderlabs/rudder-server/internal/cachettl"
 )
 
-// TODO add expiration mechanism? if we don't touch a key anymore it will stay in memory forever
 type goRate struct {
-	mu sync.Mutex
-	m  map[string]*gorate.Limiter
+	mu    sync.Mutex
+	store *cachettl.Cache
 }
 
 func (r *goRate) limit(key string, cost, rate, periodInSecs int64) *goRateReservation {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	if r.m == nil {
-		r.m = make(map[string]*gorate.Limiter)
+	if r.store == nil {
+		r.store = cachettl.New()
 	}
 
 	window := time.Duration(periodInSecs) * time.Second
-	l, ok := r.m[key]
-	if !ok {
+	l, ok := r.store.Get(key).(*gorate.Limiter)
+	if l == nil || !ok {
 		l = gorate.NewLimiter(gorate.Every(window), int(rate))
-		r.m[key] = l
+		r.store.Put(key, l, window)
 	}
 
 	resWindow := time.Now().Add(window)
