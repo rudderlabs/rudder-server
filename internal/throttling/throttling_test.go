@@ -26,32 +26,52 @@ func TestThrottling(t *testing.T) {
 		// when the concurrency is too high. Until we fix it or come up with a guard to limit the amount of concurrent
 		// requests, we're limiting the concurrency to X in the tests (to avoid test flakiness).
 		concurrency int
-		errorMargin int
+		// GCRA algorithms (both in-memory and Redis) are not as precise, so we add more error margin for them.
+		additionalErrorMargin float64
 	}
 
 	var (
 		ctx      = context.Background()
 		rc       = bootstrapRedis(ctx, t, pool)
 		limiters = []limiterSettings{
-			{name: "go rate", limiter: newLimiter(t, WithGoRate()), concurrency: 5000},
-			{name: "gcra", limiter: newLimiter(t, WithGCRA()), concurrency: 100},
-			{name: "gcra redis", limiter: newLimiter(t, WithGCRA(), WithRedisClient(rc)), concurrency: 100},
-			{name: "sorted sets redis", limiter: newLimiter(t, WithRedisClient(rc)), concurrency: 5000},
+			{
+				name:        "go rate",
+				limiter:     newLimiter(t, WithGoRate()),
+				concurrency: 100,
+			},
+			{
+				name:        "gcra",
+				limiter:     newLimiter(t, WithGCRA()),
+				concurrency: 2, additionalErrorMargin: 0.06,
+			},
+			{
+				name:        "gcra redis",
+				limiter:     newLimiter(t, WithGCRA(), WithRedisClient(rc)),
+				concurrency: 2, additionalErrorMargin: 0.06,
+			},
+			{
+				name:        "sorted sets redis",
+				limiter:     newLimiter(t, WithRedisClient(rc)),
+				concurrency: 5000,
+			},
 		}
 	)
 
 	flakinessRate := 1 // increase to run the tests multiple times in a row to debug flaky tests
 	for i := 0; i < flakinessRate; i++ {
 		for _, tc := range []testCase{
-			{rate: 10, window: 1},
-			{rate: 100, window: 2},
-			{rate: 200, window: 3},
+			// avoid rates that are too small (e.g. 10), that's where there is the most flakiness
+			{rate: 500, window: 1},
+			{rate: 1000, window: 2},
+			{rate: 2000, window: 3},
 		} {
 			for _, l := range limiters {
 				l := l
 				t.Run(testName(l.name, tc.rate, tc.window), func(t *testing.T) {
 					expected := tc.rate
-					testLimiter(ctx, t, l.limiter, tc.rate, tc.window, expected, l.concurrency)
+					testLimiter(
+						ctx, t, l.limiter, tc.rate, tc.window, expected, l.concurrency, l.additionalErrorMargin,
+					)
 				})
 			}
 		}
@@ -60,6 +80,7 @@ func TestThrottling(t *testing.T) {
 
 func testLimiter(
 	ctx context.Context, t *testing.T, l limiter, rate, window, expected int64, concurrency int,
+	additionalErrorMargin float64,
 ) {
 	t.Helper()
 	var (
@@ -124,7 +145,7 @@ loop:
 	wg.Wait()
 
 	diff := expected - passed
-	errorMargin := int64(math.Ceil(0.05*float64(rate))) + 1 // ~5% error margin
+	errorMargin := int64(math.Ceil((0.05+additionalErrorMargin)*float64(rate))) + 1 // ~5% error margin
 	if passed < 1 || diff < -errorMargin || diff > errorMargin {
 		t.Errorf("Expected %d, got %d (diff: %d, error margin: %d)", expected, passed, diff, errorMargin)
 	}
