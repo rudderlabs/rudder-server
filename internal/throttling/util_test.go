@@ -26,8 +26,7 @@ type tester interface {
 type testCase struct {
 	name string
 	rate,
-	window,
-	errorMargin int64
+	window int64
 }
 
 func newLimiter(t tester, opts ...Option) limiter {

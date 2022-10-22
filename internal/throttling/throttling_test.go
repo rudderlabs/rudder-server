@@ -3,6 +3,7 @@ package throttling
 import (
 	"context"
 	"fmt"
+	"math"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -25,6 +26,7 @@ func TestThrottling(t *testing.T) {
 		// when the concurrency is too high. Until we fix it or come up with a guard to limit the amount of concurrent
 		// requests, we're limiting the concurrency to X in the tests (to avoid test flakiness).
 		concurrency int
+		errorMargin int
 	}
 
 	var (
@@ -38,18 +40,18 @@ func TestThrottling(t *testing.T) {
 		}
 	)
 
-	flakinessRate := 20 // increase to run the tests multiple times in a row to debug flaky tests
+	flakinessRate := 1 // increase to run the tests multiple times in a row to debug flaky tests
 	for i := 0; i < flakinessRate; i++ {
 		for _, tc := range []testCase{
-			{rate: 10, window: 1, errorMargin: 2},
-			{rate: 100, window: 2, errorMargin: 5},
-			{rate: 200, window: 3, errorMargin: 5},
+			{rate: 10, window: 1},
+			{rate: 100, window: 2},
+			{rate: 200, window: 3},
 		} {
 			for _, l := range limiters {
 				l := l
 				t.Run(testName(l.name, tc.rate, tc.window), func(t *testing.T) {
 					expected := tc.rate
-					testLimiter(ctx, t, l.limiter, tc.rate, tc.window, expected, tc.errorMargin, l.concurrency)
+					testLimiter(ctx, t, l.limiter, tc.rate, tc.window, expected, l.concurrency)
 				})
 			}
 		}
@@ -57,7 +59,7 @@ func TestThrottling(t *testing.T) {
 }
 
 func testLimiter(
-	ctx context.Context, t *testing.T, l limiter, rate, window, expected, errorMargin int64, concurrency int,
+	ctx context.Context, t *testing.T, l limiter, rate, window, expected int64, concurrency int,
 ) {
 	t.Helper()
 	var (
@@ -122,8 +124,9 @@ loop:
 	wg.Wait()
 
 	diff := expected - passed
+	errorMargin := int64(math.Ceil(0.05*float64(rate))) + 1 // ~5% error margin
 	if passed < 1 || diff < -errorMargin || diff > errorMargin {
-		t.Errorf("Expected %d, got %d (diff: %d)", expected, passed, diff)
+		t.Errorf("Expected %d, got %d (diff: %d, error margin: %d)", expected, passed, diff, errorMargin)
 	}
 }
 
