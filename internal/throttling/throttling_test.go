@@ -199,10 +199,9 @@ func TestReturn(t *testing.T) {
 
 			require.EqualValues(t, rate, passed)
 
-			allowed, returner, err := tc.limiter.Limit(ctx, 1, rate, window, key)
+			allowed, _, err := tc.limiter.Limit(ctx, 1, rate, window, key)
 			require.NoError(t, err)
 			require.False(t, allowed)
-			require.Nil(t, returner, "this request should not have been allowed")
 
 			// Return as many tokens as minDeletions.
 			// This is because returning a single token very quickly does not always have an effect with go rate.
