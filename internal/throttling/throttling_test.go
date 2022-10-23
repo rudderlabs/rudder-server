@@ -112,7 +112,7 @@ loop:
 				defer wg.Done()
 				defer func() { <-maxRoutines }()
 
-				returner, err := l.Limit(ctx, cost, rate, window, key)
+				allowed, returner, err := l.Limit(ctx, cost, rate, window, key)
 				require.NoError(t, err)
 
 				timer, ok := returner.(interface{ getTime() time.Duration })
@@ -135,7 +135,7 @@ loop:
 					}
 					return // do not increment "passed" because we're over the window
 				}
-				if returner != nil {
+				if allowed {
 					atomic.AddInt64(&passed, cost)
 				}
 			}()
@@ -189,9 +189,9 @@ func TestReturn(t *testing.T) {
 				tokens []TokenReturner
 			)
 			for i := int64(0); i < rate*10; i++ {
-				returner, err := tc.limiter.Limit(ctx, 1, rate, window, key)
+				allowed, returner, err := tc.limiter.Limit(ctx, 1, rate, window, key)
 				require.NoError(t, err)
-				if returner != nil {
+				if allowed {
 					passed++
 					tokens = append(tokens, returner)
 				}
@@ -199,8 +199,9 @@ func TestReturn(t *testing.T) {
 
 			require.EqualValues(t, rate, passed)
 
-			returner, err := tc.limiter.Limit(ctx, 1, rate, window, key)
+			allowed, returner, err := tc.limiter.Limit(ctx, 1, rate, window, key)
 			require.NoError(t, err)
+			require.False(t, allowed)
 			require.Nil(t, returner, "this request should not have been allowed")
 
 			// Return as many tokens as minDeletions.
@@ -214,8 +215,8 @@ func TestReturn(t *testing.T) {
 			}
 
 			require.Eventually(t, func() bool {
-				returner, err := tc.limiter.Limit(ctx, 1, rate, window, key)
-				return err == nil && returner != nil
+				allowed, returner, err := tc.limiter.Limit(ctx, 1, rate, window, key)
+				return allowed && err == nil && returner != nil
 			}, windowDur/2, time.Millisecond)
 		})
 	}
@@ -238,22 +239,26 @@ func TestBadData(t *testing.T) {
 
 	for name, l := range limiters {
 		t.Run(name+" cost", func(t *testing.T) {
-			ret, err := l.Limit(ctx, 0, 10, 1, "foo")
+			allowed, ret, err := l.Limit(ctx, 0, 10, 1, "foo")
+			require.False(t, allowed)
 			require.Nil(t, ret)
 			require.Error(t, err, "cost must be greater than 0")
 		})
 		t.Run(name+" rate", func(t *testing.T) {
-			ret, err := l.Limit(ctx, 1, 0, 1, "foo")
+			allowed, ret, err := l.Limit(ctx, 1, 0, 1, "foo")
+			require.False(t, allowed)
 			require.Nil(t, ret)
 			require.Error(t, err, "rate must be greater than 0")
 		})
 		t.Run(name+" window", func(t *testing.T) {
-			ret, err := l.Limit(ctx, 1, 10, 0, "foo")
+			allowed, ret, err := l.Limit(ctx, 1, 10, 0, "foo")
+			require.False(t, allowed)
 			require.Nil(t, ret)
 			require.Error(t, err, "window must be greater than 0")
 		})
 		t.Run(name+" key", func(t *testing.T) {
-			ret, err := l.Limit(ctx, 1, 10, 1, "")
+			allowed, ret, err := l.Limit(ctx, 1, 10, 1, "")
+			require.False(t, allowed)
 			require.Nil(t, ret)
 			require.Error(t, err, "key must not be empty")
 		})

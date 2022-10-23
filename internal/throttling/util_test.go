@@ -11,7 +11,8 @@ import (
 )
 
 type limiter interface {
-	Limit(ctx context.Context, cost, rate, window int64, key string) (TokenReturner, error)
+	// Limit returns true if the limit is not exceeded, false otherwise.
+	Limit(ctx context.Context, cost, rate, window int64, key string) (bool, TokenReturner, error)
 }
 
 type tester interface {
@@ -24,7 +25,6 @@ type tester interface {
 }
 
 type testCase struct {
-	name string
 	rate,
 	window int64
 }
@@ -36,11 +36,9 @@ func newLimiter(t tester, opts ...Option) limiter {
 	return l
 }
 
-func bootstrapRedis(
-	ctx context.Context, t tester, pool *dockertest.Pool, opts ...destination.RedisOption,
-) *redis.Client {
+func bootstrapRedis(ctx context.Context, t tester, pool *dockertest.Pool) *redis.Client {
 	t.Helper()
-	redisContainer, err := destination.SetupRedis(ctx, pool, t, opts...)
+	redisContainer, err := destination.SetupRedis(ctx, pool, t)
 	require.NoError(t, err)
 
 	rc := redis.NewClient(&redis.Options{
