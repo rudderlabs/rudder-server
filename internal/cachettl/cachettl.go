@@ -24,6 +24,11 @@ type node struct {
 	expiration time.Time
 }
 
+func (n *node) remove() {
+	n.prev.next = n.next
+	n.next.prev = n.prev
+}
+
 // New returns a new Cache.
 func New() *Cache {
 	return &Cache{
@@ -43,7 +48,7 @@ func (c *Cache) Get(key string) interface{} {
 		cn := c.root.next // start from head since we're sorting by expiration with the highest expiration at the tail
 		for cn != nil && cn != c.root {
 			if c.now().After(cn.expiration) {
-				c.removeNode(cn)
+				cn.remove()         // removes a node from the linked list (leaves the map untouched)
 				delete(c.m, cn.key) // remove node from map too
 			} else { // there is nothing else to clean up, no need to iterate further
 				break
@@ -83,8 +88,8 @@ func (c *Cache) Put(key string, value interface{}, ttl time.Duration) {
 		return
 	}
 
-	if ok { // remove node from list
-		c.removeNode(n)
+	if ok { // removes a node from the linked list (leaves the map untouched)
+		n.remove()
 	}
 
 	cn := c.root.prev // tail
@@ -100,12 +105,6 @@ func (c *Cache) Put(key string, value interface{}, ttl time.Duration) {
 		}
 		cn = cn.prev
 	}
-}
-
-// removeNode removes a node from the linked list (leaves the map untouched)
-func (c *Cache) removeNode(n *node) {
-	n.prev.next = n.next
-	n.next.prev = n.prev
 }
 
 // slice is used for debugging purposes only
