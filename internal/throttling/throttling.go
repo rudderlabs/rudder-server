@@ -116,16 +116,16 @@ func (l *Limiter) Limit(ctx context.Context, cost, rate, window int64, key strin
 	switch {
 	case l.useGCRA:
 		if l.redisSpeaker != nil {
-			defer l.getTimer(key, "redis-gcra", rate, window)
+			defer l.getTimer(key, "redis-gcra", rate, window)()
 			return l.redisGCRA(ctx, cost, rate, window, key)
 		}
-		defer l.getTimer(key, "gcra", rate, window)
+		defer l.getTimer(key, "gcra", rate, window)()
 		return l.gcraLimit(ctx, cost, rate, window, key)
 	case l.redisSpeaker != nil:
-		defer l.getTimer(key, "redis-sorted-set", rate, window)
+		defer l.getTimer(key, "redis-sorted-set", rate, window)()
 		return l.redisSortedSet(ctx, cost, rate, window, key)
 	default:
-		defer l.getTimer(key, "go-rate", rate, window)
+		defer l.getTimer(key, "go-rate", rate, window)()
 		return l.goRateLimit(ctx, cost, rate, window, key)
 	}
 }
