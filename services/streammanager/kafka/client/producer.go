@@ -36,7 +36,7 @@ type Producer struct {
 }
 
 // NewProducer instantiates a new producer. To use it asynchronously just do "go p.Publish(ctx, msgs)".
-func (c *Client) NewProducer(topic string, producerConf ProducerConfig) (p *Producer, err error) { // skipcq: CRT-P0003
+func (c *Client) NewProducer(producerConf ProducerConfig) (p *Producer, err error) { // skipcq: CRT-P0003
 	producerConf.defaults()
 
 	dialer := &net.Dialer{
@@ -67,7 +67,6 @@ func (c *Client) NewProducer(topic string, producerConf ProducerConfig) (p *Prod
 	p = &Producer{
 		config: producerConf,
 		writer: &kafka.Writer{
-			Topic:                  topic,
 			Addr:                   kafka.TCP(c.addresses...),
 			Balancer:               &kafka.ReferenceHash{},
 			BatchTimeout:           time.Nanosecond,

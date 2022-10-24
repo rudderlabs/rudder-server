@@ -313,7 +313,7 @@ func NewProducer(destination *backendconfig.DestinationT, o common.Opts) (*Produ
 		return nil, fmt.Errorf("could not ping: %w", err)
 	}
 
-	p, err := c.NewProducer("", client.ProducerConfig{
+	p, err := c.NewProducer(client.ProducerConfig{
 		ReadTimeout:  kafkaReadTimeout,
 		WriteTimeout: kafkaWriteTimeout,
 	})
@@ -364,7 +364,7 @@ func NewProducerForAzureEventHubs(destination *backendconfig.DestinationT, o com
 		return nil, fmt.Errorf("[Azure Event Hubs] Cannot connect: %w", err)
 	}
 
-	p, err := c.NewProducer(destConfig.Topic, client.ProducerConfig{
+	p, err := c.NewProducer(client.ProducerConfig{
 		ReadTimeout:  kafkaReadTimeout,
 		WriteTimeout: kafkaWriteTimeout,
 	})
@@ -416,7 +416,7 @@ func NewProducerForConfluentCloud(destination *backendconfig.DestinationT, o com
 		return nil, fmt.Errorf("[Confluent Cloud] Cannot connect: %w", err)
 	}
 
-	p, err := c.NewProducer(destConfig.Topic, client.ProducerConfig{
+	p, err := c.NewProducer(client.ProducerConfig{
 		ReadTimeout:  kafkaReadTimeout,
 		WriteTimeout: kafkaWriteTimeout,
 	})
@@ -457,11 +457,9 @@ func prepareBatchOfMessages(conf configuration, batch []map[string]interface{}, 
 	start := now()
 	defer func() { kafkaStats.prepareBatchTime.SendTiming(since(start)) }()
 	var messages []client.Message
-	topic := conf.Topic
+
 	for i, data := range batch {
-		if conf.MultiTopicSupport {
-			topic = data["topic"].(string)
-		}
+		topic := data["topic"].(string)
 		message, ok := data["message"]
 		if !ok {
 			kafkaStats.missingMessage.Increment()
@@ -551,7 +549,10 @@ func (p *ProducerManager) Produce(jsonData json.RawMessage, destConfig interface
 		return makeErrorResponse(err) // returning 500 for retrying, in case of bad configuration
 	}
 
-	if conf.Topic == "" {
+	parsedJSON := gjson.ParseBytes(jsonData)
+	topic := parsedJSON.Get("topic").Value().(string)
+
+	if topic == "" {
 		return makeErrorResponse(fmt.Errorf("invalid destination configuration: no topic"))
 	}
 
@@ -561,7 +562,7 @@ func (p *ProducerManager) Produce(jsonData json.RawMessage, destConfig interface
 		return sendBatchedMessage(ctx, jsonData, p, conf)
 	}
 
-	return sendMessage(ctx, jsonData, p, conf)
+	return sendMessage(ctx, parsedJSON, p, conf)
 }
 
 func sendBatchedMessage(ctx context.Context, jsonData json.RawMessage, p producerManager, conf configuration) (int, string, string) {
@@ -586,9 +587,7 @@ func sendBatchedMessage(ctx context.Context, jsonData json.RawMessage, p produce
 	return 200, returnMessage, returnMessage
 }
 
-func sendMessage(ctx context.Context, jsonData json.RawMessage, p producerManager, config configuration) (int, string, string) {
-	topic := config.Topic
-	parsedJSON := gjson.ParseBytes(jsonData)
+func sendMessage(ctx context.Context, parsedJSON gjson.Result, p producerManager, config configuration) (int, string, string) {
 	messageValue := parsedJSON.Get("message").Value()
 	if messageValue == nil {
 		return 400, "Failure", "Invalid message"
@@ -617,9 +616,9 @@ func sendMessage(ctx context.Context, jsonData json.RawMessage, p producerManage
 			return makeErrorResponse(fmt.Errorf("unable to serialize event with messageId: %s, with error %s", messageId, err))
 		}
 	}
-	if config.MultiTopicSupport {
-		topic = parsedJSON.Get("topic").Value().(string)
-	}
+
+	topic := parsedJSON.Get("topic").Value().(string)
+
 	message := prepareMessage(topic, userID, value, timestamp)
 
 	if err = publish(ctx, p, message); err != nil {
