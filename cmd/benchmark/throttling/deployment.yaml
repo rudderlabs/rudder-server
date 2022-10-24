@@ -1,0 +1,23 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  labels:
+    run: rudder-server-benchmarks
+  name: rudder-server-benchmarks
+  namespace: fcasula
+spec:
+  template:
+    metadata:
+      labels:
+        run: rudder-server-benchmarks
+    spec:
+      containers:
+        - image: fracasula/rudder-server-benchmarks:latest
+          name: rudder-server-benchmarks
+          imagePullPolicy: IfNotPresent
+          command: ["./throttling"]
+          env:
+            - name: REDIS_ADDR
+              value: "throttling-redis-cluster.012ut9.0001.use1.cache.amazonaws.com:6379"
+      restartPolicy: Never
+  backoffLimit: 1
