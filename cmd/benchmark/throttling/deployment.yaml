@@ -4,7 +4,7 @@ metadata:
   labels:
     run: rudder-server-benchmarks
   name: rudder-server-benchmarks
-  namespace: fcasula
+  namespace: <K8S_NAMESPACE>
 spec:
   template:
     metadata:
@@ -12,7 +12,7 @@ spec:
         run: rudder-server-benchmarks
     spec:
       containers:
-        - image: fracasula/rudder-server-benchmarks:latest
+        - image: "<DOCKER_USER>/rudder-server-benchmarks:latest"
           name: rudder-server-benchmarks
           imagePullPolicy: IfNotPresent
           command: ["./throttling"]
