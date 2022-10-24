@@ -12,7 +12,6 @@ import (
 
 /*
 TODOs:
-* finish test multiple redis clients
 * metrics inside client (especially for returning tokens)
 * benchmark AWS Elasticache Redis
 * replace old limiters
@@ -34,7 +33,7 @@ func init() {
 	sortedSetScript = redis.NewScript(sortedSetLua)
 }
 
-type redisTalker interface {
+type redisSpeaker interface {
 	redis.Scripter
 	redisSortedSetRemover
 }
@@ -45,10 +44,10 @@ type TokenReturner interface {
 
 type Limiter struct {
 	// for Redis configurations
-	// a default redisTalker should always be provided for Redis configurations
-	redisTalker redisTalker
+	// a default redisSpeaker should always be provided for Redis configurations
+	redisSpeaker redisSpeaker
 	// redisToClientMap does not require a Mutex because it is only read from and written once in the constructor
-	redisKeyToClientMap map[string]redisTalker
+	redisKeyToClientMap map[string]redisSpeaker
 
 	// for in-memory configurations
 	gcra   *gcra
@@ -65,7 +64,7 @@ func New(options ...Option) (*Limiter, error) {
 	for i := range options {
 		options[i].apply(rl)
 	}
-	if rl.redisTalker != nil {
+	if rl.redisSpeaker != nil {
 		if rl.useGoRate {
 			return nil, fmt.Errorf("redis and go-rate are mutually exclusive")
 		}
@@ -102,11 +101,11 @@ func (l *Limiter) Limit(ctx context.Context, cost, rate, window int64, key strin
 	}
 	switch {
 	case l.useGCRA:
-		if l.redisTalker != nil {
+		if l.redisSpeaker != nil {
 			return l.redisGCRA(ctx, cost, rate, window, key)
 		}
 		return l.gcraLimit(ctx, cost, rate, window, key)
-	case l.redisTalker != nil:
+	case l.redisSpeaker != nil:
 		return l.redisSortedSet(ctx, cost, rate, window, key)
 	default:
 		return l.goRateLimit(ctx, cost, rate, window, key)
@@ -116,8 +115,8 @@ func (l *Limiter) Limit(ctx context.Context, cost, rate, window int64, key strin
 func (l *Limiter) redisSortedSet(ctx context.Context, cost, rate, window int64, key string) (
 	bool, TokenReturner, error,
 ) {
-	talker := l.getRedisTalker(key)
-	res, err := sortedSetScript.Run(ctx, talker, []string{key}, cost, rate, window).Result()
+	redisSpeaker := l.getRedisSpeaker(key)
+	res, err := sortedSetScript.Run(ctx, redisSpeaker, []string{key}, cost, rate, window).Result()
 	if err != nil {
 		return false, nil, fmt.Errorf("could not run SortedSet Redis script: %v", err)
 	}
@@ -144,7 +143,7 @@ func (l *Limiter) redisSortedSet(ctx context.Context, cost, rate, window int64, 
 	return true, &sortedSetRedisReturn{
 		key:     key,
 		members: strings.Split(members, ","),
-		remover: talker,
+		remover: redisSpeaker,
 		redisTimerReturn: redisTimerReturn{
 			time: time.Duration(t) * time.Microsecond,
 		},
@@ -156,8 +155,8 @@ func (l *Limiter) redisGCRA(ctx context.Context, cost, rate, window int64, key s
 	if l.useGCRABurstAsRate {
 		burst = rate
 	}
-	talker := l.getRedisTalker(key)
-	res, err := gcraRedisScript.Run(ctx, talker, []string{key}, burst, rate, window, cost).Result()
+	redisSpeaker := l.getRedisSpeaker(key)
+	res, err := gcraRedisScript.Run(ctx, redisSpeaker, []string{key}, burst, rate, window, cost).Result()
 	if err != nil {
 		return false, nil, fmt.Errorf("could not run GCRA Redis script: %v", err)
 	}
@@ -210,11 +209,11 @@ func (l *Limiter) goRateLimit(_ context.Context, cost, rate, window int64, key s
 	return true, &goRateReturn{reservation: res}, nil
 }
 
-func (l *Limiter) getRedisTalker(key string) redisTalker {
+func (l *Limiter) getRedisSpeaker(key string) redisSpeaker {
 	if l.redisKeyToClientMap != nil {
 		if client, ok := l.redisKeyToClientMap[key]; ok {
 			return client
 		}
 	}
-	return l.redisTalker
+	return l.redisSpeaker
 }

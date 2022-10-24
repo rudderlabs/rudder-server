@@ -30,7 +30,7 @@ type sortedSetRedisReturn struct {
 	key string
 	// members are the members (tokens) in the sorted set (bucket)
 	members []string
-	// remover is the redisTalker that removes the members from the sorted set (aka *redis.Client)
+	// remover is the redisSpeaker that removes the members from the sorted set (aka *redis.Client)
 	remover redisSortedSetRemover
 
 	redisTimerReturn
