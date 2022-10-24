@@ -177,7 +177,7 @@ func TestGCRABurstAsRate(t *testing.T) {
 		}
 	}
 
-	require.True(t, passed >= rate && passed <= rate+50, "Expected %d, got %d", rate, passed)
+	require.GreaterOrEqual(t, passed, rate)
 	require.LessOrEqual(
 		t, time.Since(start), time.Duration(window*int64(time.Second))/4,
 		"we should've been able to make the required request in less than 1/4th of the window due to the burst setting",
