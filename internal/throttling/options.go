@@ -49,3 +49,10 @@ func WithRedisClient(rc *redis.Client, mappings ...keyToRedisSpeaker) Option {
 		}
 	}}
 }
+
+// WithStatsCollector allows to setup a stats collector for the limiter
+func WithStatsCollector(sc statsCollector) Option {
+	return withOption{setup: func(l *Limiter) {
+		l.statsCollector = sc
+	}}
+}
