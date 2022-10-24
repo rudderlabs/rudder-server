@@ -151,6 +151,39 @@ loop:
 	}
 }
 
+func TestGCRABurstAsRate(t *testing.T) {
+	pool, err := dockertest.NewPool("")
+	require.NoError(t, err)
+
+	var (
+		ctx = context.Background()
+		rc  = bootstrapRedis(ctx, t, pool)
+		l   = newLimiter(t, WithGCRA(), WithRedisClient(rc), WithGCRABurstAsRate())
+		// Configuration variables
+		key          = "foo"
+		cost   int64 = 1
+		rate   int64 = 500
+		window int64 = 1
+		// Expectations
+		passed int64
+		start  = time.Now()
+	)
+
+	for i := int64(0); i < rate*2; i++ {
+		allowed, _, err := l.Limit(ctx, cost, rate, window, key)
+		require.NoError(t, err)
+		if allowed {
+			passed++
+		}
+	}
+
+	require.True(t, passed >= rate && passed <= rate+50, "Expected %d, got %d", rate, passed)
+	require.LessOrEqual(
+		t, time.Since(start), time.Duration(window*int64(time.Second))/4,
+		"we should've been able to make the required request in less than 1/4th of the window due to the burst setting",
+	)
+}
+
 func TestReturn(t *testing.T) {
 	pool, err := dockertest.NewPool("")
 	require.NoError(t, err)
