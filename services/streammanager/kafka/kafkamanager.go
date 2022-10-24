@@ -550,7 +550,7 @@ func (p *ProducerManager) Produce(jsonData json.RawMessage, destConfig interface
 	}
 
 	parsedJSON := gjson.ParseBytes(jsonData)
-	topic := parsedJSON.Get("topic").Value().(string)
+	topic := parsedJSON.Get("topic").String()
 
 	if topic == "" {
 		return makeErrorResponse(fmt.Errorf("invalid destination configuration: no topic"))
@@ -599,11 +599,11 @@ func sendMessage(ctx context.Context, parsedJSON gjson.Result, p producerManager
 	}
 
 	timestamp := time.Now()
-	userID, _ := parsedJSON.Get("userId").Value().(string)
+	userID := parsedJSON.Get("userId").String()
 	codecs := p.getCodecs()
 	if len(codecs) > 0 {
-		schemaId, _ := parsedJSON.Get("schemaId").Value().(string)
-		messageId, _ := parsedJSON.Get("message.messageId").Value().(string)
+		schemaId := parsedJSON.Get("schemaId").String()
+		messageId := parsedJSON.Get("message.messageId").String()
 		if schemaId == "" {
 			return makeErrorResponse(fmt.Errorf("schemaId is not available for event with messageId: %s", messageId))
 		}
@@ -617,7 +617,7 @@ func sendMessage(ctx context.Context, parsedJSON gjson.Result, p producerManager
 		}
 	}
 
-	topic := parsedJSON.Get("topic").Value().(string)
+	topic := parsedJSON.Get("topic").String()
 
 	message := prepareMessage(topic, userID, value, timestamp)
 
