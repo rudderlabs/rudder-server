@@ -108,7 +108,7 @@ func (p *Producer) Close(ctx context.Context) error {
 func (p *Producer) Publish(ctx context.Context, msgs ...Message) error {
 	messages := make([]kafka.Message, len(msgs))
 	for i := range msgs {
-		headers := processHeaderForEachMessage(msgs[i])
+		headers := headers(msgs[i])
 		messages[i] = kafka.Message{
 			Topic:   msgs[i].Topic,
 			Key:     msgs[i].Key,
@@ -123,7 +123,7 @@ func (p *Producer) Publish(ctx context.Context, msgs ...Message) error {
 
 var tempError interface{ Temporary() bool }
 
-func processHeaderForEachMessage(msg Message) (headers []kafka.Header) {
+func headers(msg Message) (headers []kafka.Header) {
 	if l := len(msg.Headers); l > 0 {
 		headers = make([]kafka.Header, l)
 		for k := range msg.Headers {
