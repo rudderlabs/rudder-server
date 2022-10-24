@@ -4,10 +4,13 @@ import (
 	"context"
 	_ "embed"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/go-redis/redis/v9"
+
+	"github.com/rudderlabs/rudder-server/services/stats"
 )
 
 /*
@@ -42,6 +45,10 @@ type TokenReturner interface {
 	Return(context.Context) error
 }
 
+type statsCollector interface {
+	NewTaggedStat(name, statType string, tags stats.Tags) stats.Measurement
+}
+
 type Limiter struct {
 	// for Redis configurations
 	// a default redisSpeaker should always be provided for Redis configurations
@@ -57,6 +64,9 @@ type Limiter struct {
 	useGCRA            bool
 	useGCRABurstAsRate bool
 	useGoRate          bool
+
+	// metrics
+	statsCollector statsCollector
 }
 
 func New(options ...Option) (*Limiter, error) {
@@ -64,6 +74,11 @@ func New(options ...Option) (*Limiter, error) {
 	for i := range options {
 		options[i].apply(rl)
 	}
+
+	if rl.statsCollector == nil {
+		rl.statsCollector = stats.Default
+	}
+
 	if rl.redisSpeaker != nil {
 		if rl.useGoRate {
 			return nil, fmt.Errorf("redis and go-rate are mutually exclusive")
@@ -102,12 +117,16 @@ func (l *Limiter) Limit(ctx context.Context, cost, rate, window int64, key strin
 	switch {
 	case l.useGCRA:
 		if l.redisSpeaker != nil {
+			defer l.getTimer(key, "redis-gcra", rate, window)
 			return l.redisGCRA(ctx, cost, rate, window, key)
 		}
+		defer l.getTimer(key, "gcra", rate, window)
 		return l.gcraLimit(ctx, cost, rate, window, key)
 	case l.redisSpeaker != nil:
+		defer l.getTimer(key, "redis-sorted-set", rate, window)
 		return l.redisSortedSet(ctx, cost, rate, window, key)
 	default:
+		defer l.getTimer(key, "go-rate", rate, window)
 		return l.goRateLimit(ctx, cost, rate, window, key)
 	}
 }
@@ -216,4 +235,17 @@ func (l *Limiter) getRedisSpeaker(key string) redisSpeaker {
 		}
 	}
 	return l.redisSpeaker
+}
+
+func (l *Limiter) getTimer(key, algo string, rate, window int64) func() {
+	m := l.statsCollector.NewTaggedStat("throttling", stats.TimerType, stats.Tags{
+		"key":    key,
+		"algo":   algo,
+		"rate":   strconv.FormatInt(rate, 10),
+		"window": strconv.FormatInt(window, 10),
+	})
+	m.Start()
+	return func() {
+		m.End()
+	}
 }

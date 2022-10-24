@@ -11,11 +11,12 @@ import (
 	"time"
 
 	"github.com/cenkalti/backoff"
+	"gopkg.in/alexcesaro/statsd.v2"
+
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/services/metric"
 	"github.com/rudderlabs/rudder-server/utils/logger"
-	"gopkg.in/alexcesaro/statsd.v2"
 )
 
 const (
@@ -47,7 +48,7 @@ type Stats interface {
 	// If it fails to connect, it will retry in the background indefinitely, however any stats published in the meantime will be lost.
 	Start(ctx context.Context)
 
-	// Stops stops the service and collection of periodic stats.
+	// Stop stops the service and collection of periodic stats.
 	Stop()
 }
 

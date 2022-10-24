@@ -34,26 +34,26 @@ func TestThrottling(t *testing.T) {
 		ctx      = context.Background()
 		rc       = bootstrapRedis(ctx, t, pool)
 		limiters = []limiterSettings{
-			{
-				name:        "go rate",
-				limiter:     newLimiter(t, WithGoRate()),
-				concurrency: 100,
-			},
-			{
-				name:        "gcra",
-				limiter:     newLimiter(t, WithGCRA()),
-				concurrency: 2, additionalErrorMargin: 0.06,
-			},
+			//{
+			//	name:        "go rate",
+			//	limiter:     newLimiter(t, WithGoRate()),
+			//	concurrency: 100,
+			//},
+			//{
+			//	name:        "gcra",
+			//	limiter:     newLimiter(t, WithGCRA()),
+			//	concurrency: 2, additionalErrorMargin: 0.06,
+			//},
 			{
 				name:        "gcra redis",
 				limiter:     newLimiter(t, WithGCRA(), WithRedisClient(rc)),
 				concurrency: 2, additionalErrorMargin: 0.06,
 			},
-			{
-				name:        "sorted sets redis",
-				limiter:     newLimiter(t, WithRedisClient(rc)),
-				concurrency: 5000,
-			},
+			//{
+			//	name:        "sorted sets redis",
+			//	limiter:     newLimiter(t, WithRedisClient(rc)),
+			//	concurrency: 5000,
+			//},
 		}
 	)
 
@@ -62,8 +62,8 @@ func TestThrottling(t *testing.T) {
 		for _, tc := range []testCase{
 			// avoid rates that are too small (e.g. 10), that's where there is the most flakiness
 			{rate: 500, window: 1},
-			{rate: 1000, window: 2},
-			{rate: 2000, window: 3},
+			//{rate: 1000, window: 2},
+			//{rate: 2000, window: 3},
 		} {
 			for _, l := range limiters {
 				l := l
