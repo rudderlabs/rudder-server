@@ -82,13 +82,13 @@ func (c *Client) setLimits() {
 
 	// set eventLimit
 	config.RegisterIntConfigVariable(
-		destSettingsMap[destName].limit, &c.destLimiter.eventLimit, false, 1,
+		defaultDestinationSettings[destName].limit, &c.destLimiter.eventLimit, false, 1,
 		fmt.Sprintf(`Router.throttler.%s.limit`, destName),
 	)
 
 	// set timeWindow
 	config.RegisterDurationConfigVariable(
-		destSettingsMap[destName].timeWindow, &c.destLimiter.timeWindow, false, time.Second,
+		defaultDestinationSettings[destName].timeWindow, &c.destLimiter.timeWindow, false, time.Second,
 		[]string{
 			fmt.Sprintf(`Router.throttler.%s.timeWindow`, destName),
 			fmt.Sprintf(`Router.throttler.%s.timeWindowInS`, destName),
@@ -106,13 +106,13 @@ func (c *Client) setLimits() {
 
 	// set eventLimit
 	config.RegisterIntConfigVariable(
-		destSettingsMap[destName].userLevelLimit, &c.userLimiter.eventLimit, false, 1,
+		defaultDestinationSettings[destName].userLevelLimit, &c.userLimiter.eventLimit, false, 1,
 		fmt.Sprintf(`Router.throttler.%s.userLevelLimit`, destName),
 	)
 
 	// set timeWindow
 	config.RegisterDurationConfigVariable(
-		destSettingsMap[destName].userLevelTimeWindow, &c.userLimiter.timeWindow, false, time.Second,
+		defaultDestinationSettings[destName].userLevelTimeWindow, &c.userLimiter.timeWindow, false, time.Second,
 		[]string{
 			fmt.Sprintf(`Router.throttler.%s.userLevelTimeWindow`, destName),
 			fmt.Sprintf(`Router.throttler.%s.userLevelTimeWindowInS`, destName),
