@@ -38,17 +38,22 @@ type JobSvc struct {
 func (js *JobSvc) JobSvc(ctx context.Context) error {
 	// API request to get new job
 	pkgLogger.Debugf("making API request to get job")
+	regulationManagerReqLatency := time.Now()
 	job, err := js.API.Get(ctx)
 	if err != nil {
 		pkgLogger.Warnf("error while getting job: %v", err)
 		return err
 	}
-
+	pkgLogger.Debugf("regulation manager request latency: %v", time.Since(regulationManagerReqLatency))
+	
+	start := time.Now()
 	totalJobTime := stats.Default.NewTaggedStat("total_job_time", stats.TimerType, stats.Tags{"jobId": fmt.Sprintf("%d", job.ID), "workspaceId": job.WorkspaceID})
 	totalJobTime.Start()
 	defer totalJobTime.End()
 
 	pkgLogger.Debugf("job: %v", job)
+	pkgLogger.Info("got job id: ", job.ID)
+	pkgLogger.Info("number of users: ", len(job.Users))
 	// once job is successfully received, calling updatestatus API to update the status of job to running.
 	status := model.JobStatusRunning
 	err = js.updateStatus(ctx, status, job.ID)
@@ -66,7 +71,7 @@ func (js *JobSvc) JobSvc(ctx context.Context) error {
 	}
 
 	status = js.Deleter.Delete(ctx, job, destDetail)
-
+	pkgLogger.Info("total deletion time: %d for job: %s", time.Since(start), job.ID)
 	return js.updateStatus(ctx, status, job.ID)
 }
 
