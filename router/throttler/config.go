@@ -1,9 +1,9 @@
 package throttler
 
-var destSettingsMap map[string]destinationSettings
+var defaultDestinationSettings map[string]destinationSettings
 
 func init() {
-	destSettingsMap = map[string]destinationSettings{
+	defaultDestinationSettings = map[string]destinationSettings{
 		// TODO: Revisit Customer.io limits as these seem to be soft limits
 		// and not automatically enforced by customer.io
 		// https://customer.io/docs/api/#api-documentationlimits
