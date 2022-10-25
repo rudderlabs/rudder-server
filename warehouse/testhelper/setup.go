@@ -191,6 +191,7 @@ func VerifyEventsInStagingFiles(t testing.TB, wareHouseTest *WareHouseTest, even
 
 	var (
 		tableName         = "wh_staging_files"
+		workspaceID       = "BpLnfgDsc2WD8F2qNfHK5a84jjJ"
 		stagingFileEvents int
 		sqlStatement      string
 		operation         func() bool
@@ -208,15 +209,17 @@ func VerifyEventsInStagingFiles(t testing.TB, wareHouseTest *WareHouseTest, even
 
 	sqlStatement = `
 		SELECT
-		   COALESCE(SUM(total_events)) AS sum
+			COALESCE(SUM(total_events)) AS sum
 		FROM
-		   wh_staging_files
+			wh_staging_files
 		WHERE
-		   source_id = $1
-		   AND destination_id = $2
-		   AND created_at > $3;
+		   	source_id = $1 AND
+		   	workspace_id = $2 AND
+		   	destination_id = $3 AND
+		   	created_at > $4;
 	`
-	t.Logf("Checking events in staging files for sourceID: %s, DestinationID: %s, TimestampBeforeSendingEvents: %s, sqlStatement: %s",
+	t.Logf("Checking events in staging files for workspaceID: %s, sourceID: %s, DestinationID: %s, TimestampBeforeSendingEvents: %s, sqlStatement: %s",
+		workspaceID,
 		wareHouseTest.SourceID,
 		wareHouseTest.DestinationID,
 		wareHouseTest.TimestampBeforeSendingEvents,
@@ -225,6 +228,7 @@ func VerifyEventsInStagingFiles(t testing.TB, wareHouseTest *WareHouseTest, even
 	operation = func() bool {
 		err = jobsDB.DB.QueryRow(
 			sqlStatement,
+			workspaceID,
 			wareHouseTest.SourceID,
 			wareHouseTest.DestinationID,
 			wareHouseTest.TimestampBeforeSendingEvents,
@@ -299,6 +303,7 @@ func VerifyEventsInTableUploads(t testing.TB, wareHouseTest *WareHouseTest, even
 	t.Logf("Started verifying events in table uploads")
 
 	var (
+		workspaceID       = "BpLnfgDsc2WD8F2qNfHK5a84jjJ"
 		tableUploadEvents int
 		sqlStatement      string
 		operation         func() bool
@@ -325,13 +330,15 @@ func VerifyEventsInTableUploads(t testing.TB, wareHouseTest *WareHouseTest, even
 				  wh_uploads
 				  ON wh_uploads.id = wh_table_uploads.wh_upload_id
 			WHERE
-			   wh_uploads.source_id = $1
-			   AND wh_uploads.destination_id = $2
-			   AND wh_uploads.created_at > $3
-			   AND wh_table_uploads.table_name = $4
-			   AND wh_table_uploads.status = 'exported_data';
+			   wh_uploads.workspace_id = $1 AND
+			   wh_uploads.source_id = $2 AND
+			   wh_uploads.destination_id = $3 AND
+			   wh_uploads.created_at > $4 AND
+			   wh_table_uploads.table_name = $5 AND
+			   wh_table_uploads.status = 'exported_data';
 		`
-		t.Logf("Checking events in table uploads for sourceID: %s, DestinationID: %s, TimestampBeforeSendingEvents: %s, table: %s, sqlStatement: %s",
+		t.Logf("Checking events in table uploads for workspaceID: %s, sourceID: %s, DestinationID: %s, TimestampBeforeSendingEvents: %s, table: %s, sqlStatement: %s",
+			workspaceID,
 			wareHouseTest.SourceID,
 			wareHouseTest.DestinationID,
 			wareHouseTest.TimestampBeforeSendingEvents,
@@ -341,6 +348,7 @@ func VerifyEventsInTableUploads(t testing.TB, wareHouseTest *WareHouseTest, even
 		operation = func() bool {
 			err = jobsDB.DB.QueryRow(
 				sqlStatement,
+				workspaceID,
 				wareHouseTest.SourceID,
 				wareHouseTest.DestinationID,
 				wareHouseTest.TimestampBeforeSendingEvents,
