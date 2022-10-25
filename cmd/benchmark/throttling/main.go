@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"log"
 	"os"
 	"os/signal"
@@ -72,7 +73,10 @@ func main() {
 		log.Println("Elapsed time:", elapsed)
 		log.Println("RPS:", float64(numberOfRequests)/elapsed.Seconds())
 	}()
-	defer wg.Wait()
+	defer func() {
+		log.Println("Waiting on all goroutines to finish...")
+		wg.Wait()
+	}()
 	for {
 		select {
 		case <-ctx.Done():
@@ -82,7 +86,16 @@ func main() {
 			log.Println("Timer triggered")
 			return
 		default:
-			maxNoOfRoutines <- struct{}{}
+			select {
+			case <-ctx.Done():
+				log.Println("Context done:", ctx.Err())
+				return
+			case <-runFor.C:
+				log.Println("Timer triggered")
+				return
+			case maxNoOfRoutines <- struct{}{}:
+			}
+
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
@@ -90,7 +103,9 @@ func main() {
 				defer func() { atomic.AddInt32(&numberOfRequests, 1) }()
 				_, _, err := l.Limit(ctx, 1, rate, window, key)
 				if err != nil {
-					log.Printf("Could not limit: %v", err)
+					if !errors.Is(err, context.Canceled) {
+						log.Printf("Could not limit: %v", err)
+					}
 					return
 				}
 			}()
