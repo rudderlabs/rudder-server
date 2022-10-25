@@ -513,7 +513,7 @@ func VerifyingWorkspaceIDInStats(t *testing.T, extraStats ...string) {
 func prometheusStats(t *testing.T) map[string]*promCLient.MetricFamily {
 	t.Helper()
 
-	req, err := http.NewRequestWithContext(context.Background(), "GET", "http://wh-statsd-exporter:9102/metrics", http.NoBody)
+	req, err := http.NewRequestWithContext(context.Background(), "GET", "http://statsd-exporter:9102/metrics", http.NoBody)
 	require.NoError(t, err)
 
 	httpClient := &http.Client{Timeout: 5 * time.Second}

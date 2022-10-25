@@ -161,9 +161,9 @@ services:
       test: wget --no-verbose --tries=1 --spider http://localhost:8123/ping || exit 1
       interval: 1s
       retries: 25
-  wh-statsd-exporter:
+  statsd-exporter:
     image: prom/statsd-exporter:latest
-    container_name: wh-statsd-exporter
+    container_name: statsd-exporter
     ports:
       - "9102"
       - "8125"
@@ -187,7 +187,7 @@ services:
         condition: service_healthy
       wh-minio:
         condition: service_healthy
-      wh-statsd-exporter:
+      statsd-exporter:
         condition: service_healthy
       wh-postgres:
         condition: service_healthy
