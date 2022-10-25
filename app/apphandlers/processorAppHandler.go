@@ -113,7 +113,7 @@ func (processor *ProcessorApp) StartRudderCore(ctx context.Context, options *app
 	}
 
 	storageService := backup.NewService(ctx, backendconfig.DefaultBackendConfig)
-	storageOverwrites := storageService.StorageOverwrites()
+	storageSettings := storageService.StorageSettings()
 
 	rsourcesService, err := NewRsourcesService(deploymentType)
 	if err != nil {
@@ -126,7 +126,7 @@ func (processor *ProcessorApp) StartRudderCore(ctx context.Context, options *app
 		jobsdb.WithStatusHandler(),
 		jobsdb.WithPreBackupHandlers(prebackupHandlers),
 		jobsdb.WithDSLimit(&gatewayDSLimit),
-		jobsdb.WithStorageOverwrites(storageOverwrites),
+		jobsdb.WithStorageSettings(storageSettings),
 	)
 	defer gwDBForProcessor.Close()
 	gatewayDB = gwDBForProcessor
@@ -136,7 +136,7 @@ func (processor *ProcessorApp) StartRudderCore(ctx context.Context, options *app
 		jobsdb.WithStatusHandler(),
 		jobsdb.WithPreBackupHandlers(prebackupHandlers),
 		jobsdb.WithDSLimit(&routerDSLimit),
-		jobsdb.WithStorageOverwrites(storageOverwrites),
+		jobsdb.WithStorageSettings(storageSettings),
 	)
 	defer routerDB.Close()
 	batchRouterDB := jobsdb.NewForReadWrite(
@@ -145,7 +145,7 @@ func (processor *ProcessorApp) StartRudderCore(ctx context.Context, options *app
 		jobsdb.WithStatusHandler(),
 		jobsdb.WithPreBackupHandlers(prebackupHandlers),
 		jobsdb.WithDSLimit(&batchRouterDSLimit),
-		jobsdb.WithStorageOverwrites(storageOverwrites),
+		jobsdb.WithStorageSettings(storageSettings),
 	)
 	defer batchRouterDB.Close()
 	errDB := jobsdb.NewForReadWrite(
@@ -154,7 +154,7 @@ func (processor *ProcessorApp) StartRudderCore(ctx context.Context, options *app
 		jobsdb.WithStatusHandler(),
 		jobsdb.WithPreBackupHandlers(prebackupHandlers),
 		jobsdb.WithDSLimit(&processorDSLimit),
-		jobsdb.WithStorageOverwrites(storageOverwrites),
+		jobsdb.WithStorageSettings(storageSettings),
 	)
 	var tenantRouterDB jobsdb.MultiTenantJobsDB
 	var multitenantStats multitenant.MultiTenantI

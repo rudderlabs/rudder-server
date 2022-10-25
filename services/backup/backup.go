@@ -7,16 +7,23 @@ import (
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 )
 
-type StorageSettings map[string]backendconfig.SettingsT
+type StorageBucket map[string]backendconfig.StorageBucketT
+
+type StoragePreferences map[string]backendconfig.StoragePreferencesT
+
+type StorageSettings struct {
+	StorageBucket      StorageBucket
+	StoragePreferences StoragePreferences
+}
 
 type StorageService interface {
-	StorageOverwrites() StorageSettings
+	StorageSettings() StorageSettings
 }
 
 func NewService(ctx context.Context, config backendconfig.BackendConfig) StorageService {
 	s := &service{
-		init:    make(chan struct{}),
-		storage: make(StorageSettings),
+		init:            make(chan struct{}),
+		storageSettings: StorageSettings{},
 	}
 	go s.updateLoop(ctx, config)
 	return s
@@ -26,24 +33,24 @@ func NewEmptyService() StorageService {
 	return NewStaticService(StorageSettings{})
 }
 
-func NewStaticService(storage StorageSettings) StorageService {
+func NewStaticService(storageSettings StorageSettings) StorageService {
 	s := &service{
-		init:    make(chan struct{}),
-		storage: storage,
+		init:            make(chan struct{}),
+		storageSettings: storageSettings,
 	}
 	close(s.init)
 	return s
 }
 
 type service struct {
-	onceInit sync.Once
-	init     chan struct{}
-	storage  StorageSettings
+	onceInit        sync.Once
+	init            chan struct{}
+	storageSettings StorageSettings
 }
 
-func (s *service) StorageOverwrites() StorageSettings {
+func (s *service) StorageSettings() StorageSettings {
 	<-s.init
-	return s.storage
+	return s.storageSettings
 }
 
 func (s *service) updateLoop(ctx context.Context, config backendconfig.BackendConfig) {
@@ -51,13 +58,18 @@ func (s *service) updateLoop(ctx context.Context, config backendconfig.BackendCo
 
 	for ev := range ch {
 		configs := ev.Data.(map[string]backendconfig.ConfigT)
-		storage := make(StorageSettings)
+		storageBucket := make(StorageBucket)
+		storagePreferences := make(StoragePreferences)
 		for _, c := range configs {
 			if c.Settings.DataRetention.UseSelfStorage {
-				storage[c.WorkspaceID] = c.Settings
+				storageBucket[c.WorkspaceID] = c.Settings.DataRetention.StorageBucket
 			}
+			storagePreferences[c.WorkspaceID] = c.Settings.DataRetention.StoragePreferences
 		}
-		s.storage = storage
+		s.storageSettings = StorageSettings{
+			StorageBucket:      storageBucket,
+			StoragePreferences: storagePreferences,
+		}
 
 		s.onceInit.Do(func() {
 			close(s.init)

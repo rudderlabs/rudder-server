@@ -470,7 +470,7 @@ type HandleT struct {
 	backgroundGroup               *errgroup.Group
 	maxBackupRetryTime            time.Duration
 	preBackupHandlers             []prebackup.Handler
-	storageOverwrites             backup.StorageSettings
+	storageSettings               backup.StorageSettings
 	// skipSetupDBSetup is useful for testing as we mock the database client
 	// TODO: Remove this flag once we have test setup that uses real database
 	skipSetupDBSetup bool
@@ -742,9 +742,9 @@ func WithDSLimit(limit *int) OptsFunc {
 	}
 }
 
-func WithStorageOverwrites(storageOverwrites backup.StorageSettings) OptsFunc {
+func WithStorageSettings(storageSettings backup.StorageSettings) OptsFunc {
 	return func(jd *HandleT) {
-		jd.storageOverwrites = storageOverwrites
+		jd.storageSettings = storageSettings
 	}
 }
 
@@ -783,14 +783,14 @@ multiple users of JobsDB
 */
 func (jd *HandleT) Setup(
 	ownerType OwnerType, clearAll bool, tablePrefix string,
-	registerStatusHandler bool, preBackupHandlers []prebackup.Handler, storageOverwrites backup.StorageSettings,
+	registerStatusHandler bool, preBackupHandlers []prebackup.Handler, storageSettings backup.StorageSettings,
 ) error {
 	jd.ownerType = ownerType
 	jd.clearAll = clearAll
 	jd.tablePrefix = tablePrefix
 	jd.registerStatusHandler = registerStatusHandler
 	jd.preBackupHandlers = preBackupHandlers
-	jd.storageOverwrites = storageOverwrites
+	jd.storageSettings = storageSettings
 	jd.init()
 	return jd.Start()
 }
@@ -3404,7 +3404,7 @@ func (worker *WorkerT) getBackUpQuery(backupDSRange *dataSetRangeT, isJobStatusT
 				WHERE
 					subquery.running_payload_size <= %[7]d OR subquery.row_num = 1
 				) AS failed_jobs
-		  `, backupDSRange.ds.JobStatusTable, backupDSRange.ds.JobTable, Failed.State, Aborted.State, backupRowsBatchSize, offset, backupMaxTotalPayloadSize, worker.workspaceID)
+		  `, backupDSRange.ds.JobStatusTable, backupDSRange.ds.JobTable, Failed.State, Aborted.State, backupRowsBatchSize, offset, backupMaxTotalPayloadSize, worker.job.workspaceID)
 	} else {
 		if isJobStatusTable {
 			stmt = fmt.Sprintf(`
@@ -3439,7 +3439,7 @@ func (worker *WorkerT) getBackUpQuery(backupDSRange *dataSetRangeT, isJobStatusT
 					%[3]d
 				)
 				AS dump_table
-			`, backupDSRange.ds.JobStatusTable, backupRowsBatchSize, offset, backupDSRange.ds.JobTable, worker.workspaceID)
+			`, backupDSRange.ds.JobStatusTable, backupRowsBatchSize, offset, backupDSRange.ds.JobTable, worker.job.workspaceID)
 		} else {
 			stmt = fmt.Sprintf(`
 			SELECT
@@ -3493,7 +3493,7 @@ func (worker *WorkerT) getBackUpQuery(backupDSRange *dataSetRangeT, isJobStatusT
 				WHERE
 					subquery.running_payload_size <= %[4]d OR subquery.row_num = 1
 			) AS dump_table
-			`, backupDSRange.ds.JobTable, backupRowsBatchSize, offset, backupMaxTotalPayloadSize, worker.workspaceID)
+			`, backupDSRange.ds.JobTable, backupRowsBatchSize, offset, backupMaxTotalPayloadSize, worker.job.workspaceID)
 		}
 	}
 
@@ -3501,22 +3501,21 @@ func (worker *WorkerT) getBackUpQuery(backupDSRange *dataSetRangeT, isJobStatusT
 }
 
 // getFileUploader get a file uploader
-func (worker *WorkerT) getFileUploader(ctx context.Context, storageOverwrites backup.StorageSettings) (filemanager.FileManager, error) {
+func (worker *WorkerT) getFileUploader(ctx context.Context, storageSettings backup.StorageSettings, workspaceID string) (filemanager.FileManager, error) {
 	var err error
-	if worker.jobsFileUploader == nil {
-		if settings, ok := storageOverwrites[worker.workspaceID]; ok {
-			worker.jobsFileUploader, err = filemanager.DefaultFileManagerFactory.New(&filemanager.SettingsT{
-				Provider: settings.DataRetention.StorageBucket.Type,
-				Config:   settings.DataRetention.StorageBucket.Config,
-			})
-		} else {
-			worker.jobsFileUploader, err = filemanager.DefaultFileManagerFactory.New(&filemanager.SettingsT{
-				Provider: config.GetString("JOBS_BACKUP_STORAGE_PROVIDER", "S3"),
-				Config:   filemanager.GetProviderConfigForBackupsFromEnv(ctx),
-			})
-		}
+	var fileUploader filemanager.FileManager
+	if bucket, ok := storageSettings.StorageBucket[workspaceID]; ok {
+		fileUploader, err = filemanager.DefaultFileManagerFactory.New(&filemanager.SettingsT{
+			Provider: bucket.Type,
+			Config:   bucket.Config,
+		})
+	} else {
+		fileUploader, err = filemanager.DefaultFileManagerFactory.New(&filemanager.SettingsT{
+			Provider: config.GetString("JOBS_BACKUP_STORAGE_PROVIDER", "S3"),
+			Config:   filemanager.GetProviderConfigForBackupsFromEnv(ctx),
+		})
 	}
-	return worker.jobsFileUploader, err
+	return fileUploader, err
 }
 
 // Identifier returns the identifier of the jobsdb. Here it is tablePrefix.
@@ -3535,11 +3534,11 @@ func (jd *HandleT) backupTable(ctx context.Context, backupDSRange *dataSetRangeT
 	backupPathDirName := "/rudder-s3-dumps/"
 	tmpDirPath, err := misc.CreateTMPDIR()
 	jd.assertError(err)
-	gzPath := tmpDirPath + backupPathDirName
+	gzDir := tmpDirPath + backupPathDirName
 
 	g, _ := errgroup.WithContext(ctx)
 
-	err = os.MkdirAll(strings.TrimSuffix(gzPath, "/"), os.ModePerm)
+	err = os.MkdirAll(strings.TrimSuffix(gzDir, "/"), os.ModePerm)
 	if err != nil {
 		panic(err)
 	}
@@ -3549,32 +3548,47 @@ func (jd *HandleT) backupTable(ctx context.Context, backupDSRange *dataSetRangeT
 		panic(err)
 	}
 
-	// create workers
-	totalWorkspaces := len(workspaces)
-	workers := make([]*WorkerT, totalWorkspaces)
-	for i := 0; i < totalWorkspaces; i++ {
-		idx := i
-		workers[idx] = jd.NewWorker(
-			idx,
-			workspaces[idx],
-			gzPath,
-		)
+	if jd.storageSettings.StoragePreferences == nil {
+		jd.storageSettings.StoragePreferences = make(backup.StoragePreferences)
+	}
 
+	// create workers
+	noOfWorkers := config.GetInt("MULTITENANT_JOBS_BACKUP_WORKERS", 64)
+	workers := make(chan *WorkerT, noOfWorkers)
+	for i := 0; i < noOfWorkers; i++ {
+		workers <- jd.NewWorker(i)
+	}
+	totalWorkspaces := len(workspaces)
+	for i := 0; i < totalWorkspaces; i++ {
+		backupWorker := <-workers
+		idx := i
+		fileUploader, err := backupWorker.getFileUploader(ctx, jd.storageSettings, workspaces[idx])
+		if err != nil {
+			return err
+		}
+		backupWorker.job = &WorkerJob{
+			id:           idx,
+			workspaceID:  workspaces[idx],
+			fileUploader: fileUploader,
+		}
 		g.Go(misc.WithBugsnag(func() error {
-			if storage, ok := jd.storageOverwrites[workers[idx].workspaceID]; ok && !jd.shouldBackUp(storage.DataRetention.StoragePreferences) {
-				jd.logger.Infof("Skipping backup for workspace/tablePrefix: %s/%s", workers[idx].workspaceID, jd.tablePrefix)
+			defer func() {
+				workers <- backupWorker
+			}()
+			if storagePreferences, ok := jd.storageSettings.StoragePreferences[workspaces[idx]]; ok && !jd.shouldBackUp(storagePreferences) {
+				jd.logger.Infof("Skipping backup for workspace/tablePrefix: %s/%s", backupWorker.job.workspaceID, jd.tablePrefix)
 				return nil
 			}
-			tableName, err := workers[idx].createBackupFile(backupDSRange, jd.BackupSettings.FailedOnly, isJobStatusTable, jd.tablePrefix)
+			tableName, err := backupWorker.createBackupFile(backupDSRange, jd.BackupSettings.FailedOnly, isJobStatusTable, gzDir, jd.tablePrefix)
 			if err != nil {
 				return err
 			}
-			err = workers[idx].uploadBackupFile(ctx, jd.storageOverwrites, tableName, jd.tablePrefix, jd.BackupSettings.PathPrefix)
+			err = backupWorker.uploadBackupFile(ctx, jd.storageSettings, tableName, jd.tablePrefix, jd.BackupSettings.PathPrefix)
 			if err != nil {
 				return err
 			}
-			if workers[idx].path != "" {
-				_ = os.Remove(workers[idx].path)
+			if backupWorker.job.path != "" {
+				_ = os.Remove(backupWorker.job.path)
 			}
 			return nil
 		}))
@@ -3584,31 +3598,33 @@ func (jd *HandleT) backupTable(ctx context.Context, backupDSRange *dataSetRangeT
 }
 
 type WorkerT struct {
-	id                 int
-	workspaceID        string
-	dir                string
+	workerId           int
 	dbHandle           *sql.DB
 	logger             logger.Logger
-	path               string
 	maxBackupRetryTime time.Duration
-	jobsFileUploader   filemanager.FileManager
+	job                *WorkerJob
+}
+
+type WorkerJob struct {
+	id           int
+	workspaceID  string
+	path         string
+	fileUploader filemanager.FileManager
 }
 
 // NewWorker creates a new worker
-func (jd *HandleT) NewWorker(id int, workspaceID, dir string) *WorkerT {
+func (jd *HandleT) NewWorker(id int) *WorkerT {
 	return &WorkerT{
-		id:                 id,
-		workspaceID:        workspaceID,
-		dir:                dir,
+		workerId:           id,
 		dbHandle:           jd.dbHandle,
-		logger:             jd.logger.Child(fmt.Sprintf("worker-%s", workspaceID)),
+		logger:             jd.logger.Child(fmt.Sprintf("worker-%d", id)),
 		maxBackupRetryTime: jd.maxBackupRetryTime,
 	}
 }
 
-func (worker *WorkerT) createBackupFile(backupDSRange *dataSetRangeT, failedOnly, isJobStatusTable bool, tablePrefix string) (string, error) {
-	workspaceID := worker.workspaceID
-	tableFileDumpTimeStat := stats.Default.NewTaggedStat("table_FileDump_TimeStat", stats.TimerType, stats.Tags{"customVal": tablePrefix, "workspaceId": worker.workspaceID})
+func (worker *WorkerT) createBackupFile(backupDSRange *dataSetRangeT, failedOnly, isJobStatusTable bool, gzDir, tablePrefix string) (string, error) {
+	workspaceID := worker.job.workspaceID
+	tableFileDumpTimeStat := stats.Default.NewTaggedStat("table_FileDump_TimeStat", stats.TimerType, stats.Tags{"customVal": tablePrefix, "workspaceId": worker.job.workspaceID})
 	tableFileDumpTimeStat.Start()
 	// if backupOnlyAborted, process join of aborted rows of jobstatus with jobs table
 	// else upload entire jobstatus and jobs table from pre_drop
@@ -3617,7 +3633,7 @@ func (worker *WorkerT) createBackupFile(backupDSRange *dataSetRangeT, failedOnly
 		worker.logger.Info("[JobsDB] :: backupTable: backing up aborted/failed entries")
 		tableName = backupDSRange.ds.JobStatusTable
 		pathPrefix = strings.TrimPrefix(tableName, preDropTablePrefix)
-		worker.path = fmt.Sprintf(`%v%v_%v.%v.gz`, worker.dir, pathPrefix, Aborted.State, workspaceID)
+		worker.job.path = fmt.Sprintf(`%v%v_%v.%v.gz`, gzDir, pathPrefix, Aborted.State, workspaceID)
 		// checked failed and aborted state
 		countStmt = fmt.Sprintf(`SELECT COUNT(job_status.*) from %q "job_status" INNER JOIN %q "job" ON job_status.job_id = job.job_id WHERE job_status.job_state in ('%s', '%s') AND job.workspace_id='%s'`, backupDSRange.ds.JobStatusTable, backupDSRange.ds.JobTable, Failed.State, Aborted.State, workspaceID)
 	} else {
@@ -3625,14 +3641,14 @@ func (worker *WorkerT) createBackupFile(backupDSRange *dataSetRangeT, failedOnly
 			worker.logger.Info("[JobsDB] :: backupTable: backing up job_status table")
 			tableName = backupDSRange.ds.JobStatusTable
 			pathPrefix = strings.TrimPrefix(tableName, preDropTablePrefix)
-			worker.path = fmt.Sprintf(`%v%v.%v.gz`, worker.dir, pathPrefix, workspaceID)
+			worker.job.path = fmt.Sprintf(`%v%v.%v.gz`, gzDir, pathPrefix, workspaceID)
 			countStmt = fmt.Sprintf(`SELECT COUNT(job_status.*) from %q "job_status" INNER JOIN %q "job" ON job_status.job_id = job.job_id WHERE job.workspace_id='%s'`, backupDSRange.ds.JobStatusTable, backupDSRange.ds.JobTable, workspaceID)
 		} else {
 			worker.logger.Info("[JobsDB] :: backupTable: backing up job table")
 			tableName = backupDSRange.ds.JobTable
 			pathPrefix = strings.TrimPrefix(tableName, preDropTablePrefix)
-			worker.path = fmt.Sprintf(`%v%v.%v.%v.%v.%v.%v.gz`,
-				worker.dir,
+			worker.job.path = fmt.Sprintf(`%v%v.%v.%v.%v.%v.%v.gz`,
+				gzDir,
 				pathPrefix,
 				backupDSRange.minJobID,
 				backupDSRange.maxJobID,
@@ -3659,9 +3675,9 @@ func (worker *WorkerT) createBackupFile(backupDSRange *dataSetRangeT, failedOnly
 
 	worker.logger.Infof("[JobsDB] :: Backing up table: %v", tableName)
 
-	gzWriter, err := misc.CreateGZ(worker.path)
+	gzWriter, err := misc.CreateGZ(worker.job.path)
 	if err != nil {
-		return tableName, fmt.Errorf("creating gz file %q: %w", worker.path, err)
+		return tableName, fmt.Errorf("creating gz file %q: %w", worker.job.path, err)
 	}
 	var offset int64
 	writeBackupToGz := func() error {
@@ -3681,7 +3697,7 @@ func (worker *WorkerT) createBackupFile(backupDSRange *dataSetRangeT, failedOnly
 			rawJSONRows = append(rawJSONRows, '\n') // appending '\n'
 			_, err = gzWriter.Write(rawJSONRows)
 			if err != nil {
-				return fmt.Errorf("writing gz file %q: %w", worker.path, err)
+				return fmt.Errorf("writing gz file %q: %w", worker.job.path, err)
 			}
 			offset++
 		}
@@ -3697,16 +3713,16 @@ func (worker *WorkerT) createBackupFile(backupDSRange *dataSetRangeT, failedOnly
 	}
 
 	if err := gzWriter.CloseGZ(); err != nil {
-		return tableName, fmt.Errorf("closing gz file %q: %w", worker.path, err)
+		return tableName, fmt.Errorf("closing gz file %q: %w", worker.job.path, err)
 	}
 	tableFileDumpTimeStat.End()
 	return tableName, nil
 }
 
-func (worker *WorkerT) uploadBackupFile(ctx context.Context, storageOverwrites backup.StorageSettings, tableName, tablePrefix, pathPrefix string) error {
-	fileUploadTimeStat := stats.Default.NewTaggedStat("fileUpload_TimeStat", stats.TimerType, stats.Tags{"customVal": tablePrefix, "workspaceId": worker.workspaceID})
+func (worker *WorkerT) uploadBackupFile(ctx context.Context, storageSettings backup.StorageSettings, tableName, tablePrefix, pathPrefix string) error {
+	fileUploadTimeStat := stats.Default.NewTaggedStat("fileUpload_TimeStat", stats.TimerType, stats.Tags{"customVal": tablePrefix, "workspaceId": worker.job.workspaceID})
 	fileUploadTimeStat.Start()
-	file, err := os.Open(worker.path)
+	file, err := os.Open(worker.job.path)
 	if err != nil {
 		return err
 	}
@@ -3720,22 +3736,22 @@ func (worker *WorkerT) uploadBackupFile(ctx context.Context, storageOverwrites b
 		pathPrefixes = append(pathPrefixes, config.GetString("INSTANCE_ID", "1"))
 	}
 
-	worker.logger.Infof("[JobsDB] :: Uploading backup table to object storage: %v/%v", tableName, worker.workspaceID)
+	worker.logger.Infof("[JobsDB] :: Uploading backup table to object storage: %v/%v", tableName, worker.job.workspaceID)
 	var output filemanager.UploadOutput
-	output, err = worker.backupUploadWithExponentialBackoff(ctx, storageOverwrites, file, pathPrefixes...)
+	output, err = worker.backupUploadWithExponentialBackoff(ctx, storageSettings, file, pathPrefixes...)
 	if err != nil {
 		var storageProvider string
-		if settings, ok := storageOverwrites[worker.workspaceID]; ok {
-			storageProvider = settings.DataRetention.StorageBucket.Type
+		if bucket, ok := storageSettings.StorageBucket[worker.job.workspaceID]; ok {
+			storageProvider = bucket.Type
 		} else {
 			storageProvider = config.GetString("JOBS_BACKUP_STORAGE_PROVIDER", "S3")
 		}
-		worker.logger.Errorf("[JobsDB] :: Failed to upload table %v/%v dump to %s. Error: %s", tableName, worker.workspaceID, storageProvider, err.Error())
+		worker.logger.Errorf("[JobsDB] :: Failed to upload table %v/%v dump to %s. Error: %s", tableName, worker.job.workspaceID, storageProvider, err.Error())
 		return err
 	}
 	// Do not record stat in error case as error case time might be low and skew stats
 	fileUploadTimeStat.End()
-	worker.logger.Infof("[JobsDB] :: Backed up table for workspaceid: %v/%v at %v", tableName, worker.workspaceID, output.Location)
+	worker.logger.Infof("[JobsDB] :: Backed up table for workspaceid: %v/%v at %v", tableName, worker.job.workspaceID, output.Location)
 	return nil
 }
 
@@ -3743,12 +3759,7 @@ func (jd *HandleT) shouldBackUp(storagePreferences backendconfig.StoragePreferen
 	return (storagePreferences.GatewayDumps && jd.tablePrefix == "gw") || (storagePreferences.ProcErrors && jd.tablePrefix == "proc_error")
 }
 
-func (worker *WorkerT) backupUploadWithExponentialBackoff(ctx context.Context, storageOverwrites backup.StorageSettings, file *os.File, pathPrefixes ...string) (filemanager.UploadOutput, error) {
-	// get a file uploader
-	fileUploader, err := worker.getFileUploader(ctx, storageOverwrites)
-	if err != nil {
-		return filemanager.UploadOutput{}, err
-	}
+func (worker *WorkerT) backupUploadWithExponentialBackoff(ctx context.Context, storageSettings backup.StorageSettings, file *os.File, pathPrefixes ...string) (filemanager.UploadOutput, error) {
 	bo := backoff.NewExponentialBackOff()
 	bo.MaxInterval = time.Minute
 	bo.MaxElapsedTime = worker.maxBackupRetryTime
@@ -3756,8 +3767,9 @@ func (worker *WorkerT) backupUploadWithExponentialBackoff(ctx context.Context, s
 	boCtx := backoff.WithContext(boRetries, ctx)
 
 	var output filemanager.UploadOutput
+	var err error
 	backup := func() error {
-		output, err = fileUploader.Upload(ctx, file, pathPrefixes...)
+		output, err = worker.job.fileUploader.Upload(ctx, file, pathPrefixes...)
 		return err
 	}
 
