@@ -7,9 +7,9 @@ import (
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 )
 
-type StorageBucket map[string]backendconfig.StorageBucketT
+type StorageBucket map[string]backendconfig.StorageBucket
 
-type StoragePreferences map[string]backendconfig.StoragePreferencesT
+type StoragePreferences map[string]backendconfig.StoragePreferences
 
 type StorageSettings struct {
 	StorageBucket      StorageBucket

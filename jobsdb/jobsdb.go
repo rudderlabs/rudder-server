@@ -3501,10 +3501,10 @@ func (worker *WorkerT) getBackUpQuery(backupDSRange *dataSetRangeT, isJobStatusT
 }
 
 // getFileUploader get a file uploader
-func (worker *WorkerT) getFileUploader(ctx context.Context, storageSettings backup.StorageSettings, workspaceID string) (filemanager.FileManager, error) {
+func (jd *HandleT) getFileUploader(ctx context.Context, workspaceID string) (filemanager.FileManager, error) {
 	var err error
 	var fileUploader filemanager.FileManager
-	if bucket, ok := storageSettings.StorageBucket[workspaceID]; ok {
+	if bucket, ok := jd.storageSettings.StorageBucket[workspaceID]; ok {
 		fileUploader, err = filemanager.DefaultFileManagerFactory.New(&filemanager.SettingsT{
 			Provider: bucket.Type,
 			Config:   bucket.Config,
@@ -3562,7 +3562,7 @@ func (jd *HandleT) backupTable(ctx context.Context, backupDSRange *dataSetRangeT
 	for i := 0; i < totalWorkspaces; i++ {
 		backupWorker := <-workers
 		idx := i
-		fileUploader, err := backupWorker.getFileUploader(ctx, jd.storageSettings, workspaces[idx])
+		fileUploader, err := jd.getFileUploader(ctx, workspaces[idx])
 		if err != nil {
 			return err
 		}
@@ -3738,7 +3738,7 @@ func (worker *WorkerT) uploadBackupFile(ctx context.Context, storageSettings bac
 
 	worker.logger.Infof("[JobsDB] :: Uploading backup table to object storage: %v/%v", tableName, worker.job.workspaceID)
 	var output filemanager.UploadOutput
-	output, err = worker.backupUploadWithExponentialBackoff(ctx, storageSettings, file, pathPrefixes...)
+	output, err = worker.backupUploadWithExponentialBackoff(ctx, file, pathPrefixes...)
 	if err != nil {
 		var storageProvider string
 		if bucket, ok := storageSettings.StorageBucket[worker.job.workspaceID]; ok {
@@ -3755,11 +3755,11 @@ func (worker *WorkerT) uploadBackupFile(ctx context.Context, storageSettings bac
 	return nil
 }
 
-func (jd *HandleT) shouldBackUp(storagePreferences backendconfig.StoragePreferencesT) bool {
+func (jd *HandleT) shouldBackUp(storagePreferences backendconfig.StoragePreferences) bool {
 	return (storagePreferences.GatewayDumps && jd.tablePrefix == "gw") || (storagePreferences.ProcErrors && jd.tablePrefix == "proc_error")
 }
 
-func (worker *WorkerT) backupUploadWithExponentialBackoff(ctx context.Context, storageSettings backup.StorageSettings, file *os.File, pathPrefixes ...string) (filemanager.UploadOutput, error) {
+func (worker *WorkerT) backupUploadWithExponentialBackoff(ctx context.Context, file *os.File, pathPrefixes ...string) (filemanager.UploadOutput, error) {
 	bo := backoff.NewExponentialBackOff()
 	bo.MaxInterval = time.Minute
 	bo.MaxElapsedTime = worker.maxBackupRetryTime
