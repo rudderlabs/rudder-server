@@ -213,8 +213,8 @@ func VerifyEventsInStagingFiles(t testing.TB, wareHouseTest *WareHouseTest, even
 		FROM
 			wh_staging_files
 		WHERE
-		   	source_id = $1 AND
-		   	workspace_id = $2 AND
+		   	workspace_id = $1 AND
+		   	source_id = $2 AND
 		   	destination_id = $3 AND
 		   	created_at > $4;
 	`
