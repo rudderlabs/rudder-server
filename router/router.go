@@ -386,7 +386,7 @@ func (worker *workerT) workerProcess() {
 				job.Parameters = routerutils.EnhanceJSON(job.Parameters, "reason", drainReason)
 				worker.rt.responseQ <- jobResponseT{status: &status, worker: worker, userID: userID, JobT: job}
 				worker.rt.logger.Debugf(`Decrementing in throttle map for destination:%s since job:%d is marked as drained for user:%s`, parameters.DestinationID, job.JobID, userID)
-				worker.rt.throttler.Dec(parameters.DestinationID, userID, 1, worker.throttledAtTime, throttler.ALL_LEVELS)
+				worker.rt.throttler.Dec(parameters.DestinationID, userID, 1, worker.throttledAtTime, throttler.AllLevels)
 
 				stats.Default.NewTaggedStat(`drained_events`, stats.CountType, stats.Tags{
 					"destType":    worker.rt.destName,
@@ -423,7 +423,7 @@ func (worker *workerT) workerProcess() {
 					}
 					worker.rt.responseQ <- jobResponseT{status: &status, worker: worker, userID: userID, JobT: job}
 					worker.rt.logger.Debugf(`Decrementing in throttle map for destination:%s since job:%d is marked as waiting for user:%s`, parameters.DestinationID, job.JobID, userID)
-					worker.rt.throttler.Dec(parameters.DestinationID, userID, 1, worker.throttledAtTime, throttler.ALL_LEVELS)
+					worker.rt.throttler.Dec(parameters.DestinationID, userID, 1, worker.throttledAtTime, throttler.AllLevels)
 					continue
 				}
 			}
@@ -993,7 +993,7 @@ func (worker *workerT) decrementInThrottleMap(apiCallsCount map[string]*destJobC
 						diff /= 2
 					}
 					pkgLogger.Debugf(`Decrementing user level throttle map by %d for dest:%s, user:%s`, diff, destID, userID)
-					worker.rt.throttler.Dec(destID, userID, diff, worker.throttledAtTime, throttler.USER_LEVEL)
+					worker.rt.throttler.Dec(destID, userID, diff, worker.throttledAtTime, throttler.UserLevel)
 				}
 			}
 		}
@@ -1010,7 +1010,7 @@ func (worker *workerT) decrementInThrottleMap(apiCallsCount map[string]*destJobC
 					diff /= 2
 				}
 				pkgLogger.Debugf(`Decrementing destination level throttle map by %d for dest:%s`, diff, destID)
-				worker.rt.throttler.Dec(destID, "", diff, worker.throttledAtTime, throttler.DESTINATION_LEVEL)
+				worker.rt.throttler.Dec(destID, "", diff, worker.throttledAtTime, throttler.DestinationLevel)
 			}
 		}
 	}
@@ -1333,7 +1333,7 @@ func (rt *HandleT) findWorker(job *jobsdb.JobT, throttledUserMap map[string]stru
 
 	defer func() {
 		if toSendWorker == nil {
-			rt.throttler.Dec(parameters.DestinationID, userID, 1, throttledAtTime, throttler.ALL_LEVELS)
+			rt.throttler.Dec(parameters.DestinationID, userID, 1, throttledAtTime, throttler.AllLevels)
 		}
 	}()
 
@@ -2011,9 +2011,7 @@ func (rt *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB jobsd
 	rt.oauth = oauth.NewOAuthErrorHandler(backendConfig)
 	rt.oauth.Setup()
 
-	var t throttler.HandleT
-	t.SetUp(rt.destName)
-	rt.throttler = &t
+	rt.throttler = throttler.New(rt.destName)
 
 	rt.isBackendConfigInitialized = false
 	rt.backendConfigInitialized = make(chan bool)

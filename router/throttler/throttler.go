@@ -10,9 +10,9 @@ import (
 )
 
 const (
-	DESTINATION_LEVEL = "destination"
-	USER_LEVEL        = "user"
-	ALL_LEVELS        = "all"
+	DestinationLevel = "destination"
+	UserLevel        = "user"
+	AllLevels        = "all"
 )
 
 // Throttler is an interface for throttling functions
@@ -25,99 +25,131 @@ type Throttler interface {
 	IsDestLevelEnabled() bool
 }
 
-type Limiter struct {
+type limiterSettings struct {
 	enabled     bool
 	eventLimit  int
 	timeWindow  time.Duration
-	ratelimiter *ratelimiter.RateLimiter
+	rateLimiter *ratelimiter.RateLimiter
 }
 
-type Settings struct {
+type destinationSettings struct {
 	limit               int
 	timeWindow          int64
 	userLevelLimit      int
 	userLevelTimeWindow int64
 }
 
-// HandleT is a Handle for event limiter
-type HandleT struct {
+// Client is a Handle for event limiterSettings
+type Client struct {
 	destinationName string
-	destLimiter     *Limiter
-	userLimiter     *Limiter
+	destLimiter     *limiterSettings
+	userLimiter     *limiterSettings
+	logger          logger.Logger
 }
 
-var pkgLogger logger.Logger
-
-func (throttler *HandleT) setLimits() {
-	destName := throttler.destinationName
-
-	// set eventLimit
-	config.RegisterIntConfigVariable(destSettingsMap[destName].limit, &throttler.destLimiter.eventLimit, false, 1, fmt.Sprintf(`Router.throttler.%s.limit`, destName))
-
-	// set timeWindow
-	config.RegisterDurationConfigVariable(destSettingsMap[destName].timeWindow, &throttler.destLimiter.timeWindow, false, time.Second, []string{fmt.Sprintf(`Router.throttler.%s.timeWindow`, destName), fmt.Sprintf(`Router.throttler.%s.timeWindowInS`, destName)}...)
-
-	// enable dest throttler
-	if throttler.destLimiter.eventLimit != 0 && throttler.destLimiter.timeWindow != 0 {
-		pkgLogger.Infof(`[[ %s-router-throttler: Enabled throttler with eventLimit:%d, timeWindowInS: %v]]`, throttler.destinationName, throttler.destLimiter.eventLimit, throttler.destLimiter.timeWindow)
-		throttler.destLimiter.enabled = true
+// New sets up a new eventLimiter
+func New(destName string, opts ...Option) *Client {
+	var c Client
+	for _, opt := range opts {
+		opt.apply(&c)
+	}
+	if c.logger == nil {
+		c.logger = logger.NewLogger().Child("router").Child("throttler")
 	}
 
-	// set eventLimit
-	config.RegisterIntConfigVariable(destSettingsMap[destName].userLevelLimit, &throttler.userLimiter.eventLimit, false, 1, fmt.Sprintf(`Router.throttler.%s.userLevelLimit`, destName))
-
-	// set timeWindow
-	config.RegisterDurationConfigVariable(destSettingsMap[destName].userLevelTimeWindow, &throttler.userLimiter.timeWindow, false, time.Second, []string{fmt.Sprintf(`Router.throttler.%s.userLevelTimeWindow`, destName), fmt.Sprintf(`Router.throttler.%s.userLevelTimeWindowInS`, destName)}...)
-
-	// enable dest throttler
-	if throttler.userLimiter.eventLimit != 0 && throttler.userLimiter.timeWindow != 0 {
-		pkgLogger.Infof(`[[ %s-router-throttler: Enabled user level throttler with eventLimit:%d, timeWindowInS: %v]]`, throttler.destinationName, throttler.userLimiter.eventLimit, throttler.userLimiter.timeWindow)
-		throttler.userLimiter.enabled = true
-	}
-}
-
-// SetUp eventLimiter
-func (throttler *HandleT) SetUp(destName string) {
-	pkgLogger = logger.NewLogger().Child("router").Child("throttler")
-	throttler.destinationName = destName
-	throttler.destLimiter = &Limiter{}
-	throttler.userLimiter = &Limiter{}
+	c.destinationName = destName
+	c.destLimiter = &limiterSettings{}
+	c.userLimiter = &limiterSettings{}
 
 	// check if it has throttling config for destination
-	throttler.setLimits()
+	c.setLimits()
 
-	if throttler.destLimiter.enabled {
-		dataStore := ratelimiter.NewMapLimitStore(2*throttler.destLimiter.timeWindow, 10*time.Second)
-		throttler.destLimiter.ratelimiter = ratelimiter.New(dataStore, int64(throttler.destLimiter.eventLimit), throttler.destLimiter.timeWindow)
+	if c.destLimiter.enabled {
+		dataStore := ratelimiter.NewMapLimitStore(2*c.destLimiter.timeWindow, 10*time.Second)
+		c.destLimiter.rateLimiter = ratelimiter.New(dataStore, int64(c.destLimiter.eventLimit), c.destLimiter.timeWindow)
 	}
 
-	if throttler.userLimiter.enabled {
-		dataStore := ratelimiter.NewMapLimitStore(2*throttler.userLimiter.timeWindow, 10*time.Second)
-		throttler.userLimiter.ratelimiter = ratelimiter.New(dataStore, int64(throttler.userLimiter.eventLimit), throttler.userLimiter.timeWindow)
+	if c.userLimiter.enabled {
+		dataStore := ratelimiter.NewMapLimitStore(2*c.userLimiter.timeWindow, 10*time.Second)
+		c.userLimiter.rateLimiter = ratelimiter.New(dataStore, int64(c.userLimiter.eventLimit), c.userLimiter.timeWindow)
+	}
+
+	return &c
+}
+
+func (c *Client) setLimits() {
+	destName := c.destinationName
+
+	// set eventLimit
+	config.RegisterIntConfigVariable(
+		destSettingsMap[destName].limit, &c.destLimiter.eventLimit, false, 1,
+		fmt.Sprintf(`Router.throttler.%s.limit`, destName),
+	)
+
+	// set timeWindow
+	config.RegisterDurationConfigVariable(
+		destSettingsMap[destName].timeWindow, &c.destLimiter.timeWindow, false, time.Second,
+		[]string{
+			fmt.Sprintf(`Router.throttler.%s.timeWindow`, destName),
+			fmt.Sprintf(`Router.throttler.%s.timeWindowInS`, destName),
+		}...,
+	)
+
+	// enable dest throttler
+	if c.destLimiter.eventLimit != 0 && c.destLimiter.timeWindow != 0 {
+		c.logger.Infof(
+			`[[ %s-router-throttler: Enabled throttler with eventLimit:%d, timeWindowInS: %v]]`,
+			c.destinationName, c.destLimiter.eventLimit, c.destLimiter.timeWindow,
+		)
+		c.destLimiter.enabled = true
+	}
+
+	// set eventLimit
+	config.RegisterIntConfigVariable(
+		destSettingsMap[destName].userLevelLimit, &c.userLimiter.eventLimit, false, 1,
+		fmt.Sprintf(`Router.throttler.%s.userLevelLimit`, destName),
+	)
+
+	// set timeWindow
+	config.RegisterDurationConfigVariable(
+		destSettingsMap[destName].userLevelTimeWindow, &c.userLimiter.timeWindow, false, time.Second,
+		[]string{
+			fmt.Sprintf(`Router.throttler.%s.userLevelTimeWindow`, destName),
+			fmt.Sprintf(`Router.throttler.%s.userLevelTimeWindowInS`, destName),
+		}...,
+	)
+
+	// enable dest throttler
+	if c.userLimiter.eventLimit != 0 && c.userLimiter.timeWindow != 0 {
+		c.logger.Infof(
+			`[[ %s-router-throttler: Enabled user level throttler with eventLimit:%d, timeWindowInS: %v]]`,
+			c.destinationName, c.userLimiter.eventLimit, c.userLimiter.timeWindow,
+		)
+		c.userLimiter.enabled = true
 	}
 }
 
-// LimitReached returns true if number of events in the rolling window is less than the max events allowed, else false
-func (throttler *HandleT) CheckLimitReached(destID, userID string, currentTime time.Time) bool {
+// CheckLimitReached returns true if number of events in the rolling window is less than the max events allowed, else false
+func (c *Client) CheckLimitReached(destID, userID string, currentTime time.Time) bool {
 	var destLevelLimitReached bool
-	if throttler.destLimiter.enabled {
-		destKey := throttler.getDestKey(destID)
-		limitStatus, err := throttler.destLimiter.ratelimiter.Check(destKey, currentTime)
+	if c.destLimiter.enabled {
+		destKey := c.getDestKey(destID)
+		limitStatus, err := c.destLimiter.rateLimiter.Check(destKey, currentTime)
 		if err != nil {
 			// TODO: handle this
-			pkgLogger.Errorf(`[[ %s-router-throttler: Error checking limitStatus: %v]]`, throttler.destinationName, err)
+			c.logger.Errorf(`[[ %s-router-throttler: Error checking limitStatus: %v]]`, c.destinationName, err)
 		} else {
 			destLevelLimitReached = limitStatus.IsLimited
 		}
 	}
 
 	var userLevelLimitReached bool
-	if !destLevelLimitReached && throttler.userLimiter.enabled {
-		userKey := throttler.getUserKey(destID, userID)
-		limitStatus, err := throttler.userLimiter.ratelimiter.Check(userKey, currentTime)
+	if !destLevelLimitReached && c.userLimiter.enabled {
+		userKey := c.getUserKey(destID, userID)
+		limitStatus, err := c.userLimiter.rateLimiter.Check(userKey, currentTime)
 		if err != nil {
 			// TODO: handle this
-			pkgLogger.Errorf(`[[ %s-router-throttler: Error checking limitStatus: %v]]`, throttler.destinationName, err)
+			c.logger.Errorf(`[[ %s-router-throttler: Error checking limitStatus: %v]]`, c.destinationName, err)
 		} else {
 			userLevelLimitReached = limitStatus.IsLimited
 		}
@@ -128,46 +160,46 @@ func (throttler *HandleT) CheckLimitReached(destID, userID string, currentTime t
 
 // Inc increases the destLimiter and userLimiter counters.
 // If destID or userID passed is empty, we don't increment the counters.
-func (throttler *HandleT) Inc(destID, userID string, currentTime time.Time) {
-	if throttler.destLimiter.enabled && destID != "" {
-		destKey := throttler.getDestKey(destID)
-		_ = throttler.destLimiter.ratelimiter.Inc(destKey, currentTime)
+func (c *Client) Inc(destID, userID string, currentTime time.Time) {
+	if c.destLimiter.enabled && destID != "" {
+		destKey := c.getDestKey(destID)
+		_ = c.destLimiter.rateLimiter.Inc(destKey, currentTime)
 	}
-	if throttler.userLimiter.enabled && userID != "" {
-		userKey := throttler.getUserKey(destID, userID)
-		_ = throttler.userLimiter.ratelimiter.Inc(userKey, currentTime)
+	if c.userLimiter.enabled && userID != "" {
+		userKey := c.getUserKey(destID, userID)
+		_ = c.userLimiter.rateLimiter.Inc(userKey, currentTime)
 	}
 }
 
 // Dec decrements the destLimiter and userLimiter counters by count passed
 // If destID or userID passed is empty, we don't decrement the counters.
-func (throttler *HandleT) Dec(destID, userID string, count int64, currentTime time.Time, atLevel string) {
-	if throttler.destLimiter.enabled && destID != "" && (atLevel == ALL_LEVELS || atLevel == DESTINATION_LEVEL) {
-		destKey := throttler.getDestKey(destID)
-		_ = throttler.destLimiter.ratelimiter.Dec(destKey, count, currentTime)
+func (c *Client) Dec(destID, userID string, count int64, currentTime time.Time, atLevel string) {
+	if c.destLimiter.enabled && destID != "" && (atLevel == AllLevels || atLevel == DestinationLevel) {
+		destKey := c.getDestKey(destID)
+		_ = c.destLimiter.rateLimiter.Dec(destKey, count, currentTime)
 	}
-	if throttler.userLimiter.enabled && userID != "" && (atLevel == ALL_LEVELS || atLevel == USER_LEVEL) {
-		userKey := throttler.getUserKey(destID, userID)
-		_ = throttler.userLimiter.ratelimiter.Dec(userKey, count, currentTime)
+	if c.userLimiter.enabled && userID != "" && (atLevel == AllLevels || atLevel == UserLevel) {
+		userKey := c.getUserKey(destID, userID)
+		_ = c.userLimiter.rateLimiter.Dec(userKey, count, currentTime)
 	}
 }
 
-func (throttler *HandleT) IsEnabled() bool {
-	return throttler.destLimiter.enabled || throttler.userLimiter.enabled
+func (c *Client) IsEnabled() bool {
+	return c.destLimiter.enabled || c.userLimiter.enabled
 }
 
-func (throttler *HandleT) IsUserLevelEnabled() bool {
-	return throttler.userLimiter.enabled
+func (c *Client) IsUserLevelEnabled() bool {
+	return c.userLimiter.enabled
 }
 
-func (throttler *HandleT) IsDestLevelEnabled() bool {
-	return throttler.destLimiter.enabled
+func (c *Client) IsDestLevelEnabled() bool {
+	return c.destLimiter.enabled
 }
 
-func (throttler *HandleT) getDestKey(destID string) string {
-	return fmt.Sprintf(`%s_%s`, throttler.destinationName, destID)
+func (c *Client) getDestKey(destID string) string {
+	return fmt.Sprintf(`%s_%s`, c.destinationName, destID)
 }
 
-func (throttler *HandleT) getUserKey(destID, userID string) string {
-	return fmt.Sprintf(`%s_%s_%s`, throttler.destinationName, destID, userID)
+func (c *Client) getUserKey(destID, userID string) string {
+	return fmt.Sprintf(`%s_%s_%s`, c.destinationName, destID, userID)
 }
