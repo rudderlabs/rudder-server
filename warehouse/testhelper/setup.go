@@ -5,9 +5,6 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
-	promCLient "github.com/prometheus/client_model/go"
-	"github.com/prometheus/common/expfmt"
-
 	"log"
 	"net/http"
 	"os"
@@ -15,6 +12,9 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	promCLient "github.com/prometheus/client_model/go"
+	"github.com/prometheus/common/expfmt"
 
 	"github.com/minio/minio-go/v6"
 
@@ -438,7 +438,11 @@ func VerifyingWorkspaceIDInStats(t *testing.T, extraStats ...string) {
 	t.Helper()
 	t.Logf("Started verifying workspaceID in stats")
 
-	var statsToVerify []string
+	var (
+		statsToVerify []string
+		workspaceID   = "BpLnfgDsc2WD8F2qNfHK5a84jjJ"
+	)
+
 	statsToVerify = append(statsToVerify, extraStats...)
 	statsToVerify = append(statsToVerify, []string{
 		// Miscellaneous
@@ -472,7 +476,7 @@ func VerifyingWorkspaceIDInStats(t *testing.T, extraStats ...string) {
 		"staging_files_processed",
 		"bytes_processed_in_staging_file",
 
-		//Gauge stats
+		// Gauge stats
 		"pre_load_table_rows",
 		"post_load_table_rows_estimate",
 		"post_load_table_rows",
@@ -485,12 +489,12 @@ func VerifyingWorkspaceIDInStats(t *testing.T, extraStats ...string) {
 				found := false
 				for _, label := range metric.GetLabel() {
 					if label.GetName() == "workspaceId" {
-						require.NotEmptyf(t, label.GetValue(), "workspaceId is empty for stat: %s", statToVerify)
+						require.Equalf(t, label.GetValue(), workspaceID, "workspaceId is empty for stat: %s", statToVerify)
 						found = true
 						break
 					}
 				}
-				require.True(t, found, "workspaceId not found in stat: %s", statToVerify)
+				require.Truef(t, found, "workspaceId not found in stat: %s", statToVerify)
 			}
 		}
 	}
