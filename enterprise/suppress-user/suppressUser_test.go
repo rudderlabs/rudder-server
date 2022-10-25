@@ -18,7 +18,7 @@ import (
 )
 
 var _ = Describe("SuppressUser Test", func() {
-	testSuppressUser := new(SuppressRegulationHandler)
+	var testSuppressUser *SuppressRegulationHandler
 	BeforeEach(func() {
 		config.Reset()
 		logger.Reset()
@@ -239,6 +239,7 @@ var _ = Describe("SuppressUser Test", func() {
 				}
 			}))
 			defer srv.Close()
+
 			testSuppressUser.RegulationBackendURL = srv.URL
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
@@ -248,6 +249,45 @@ var _ = Describe("SuppressUser Test", func() {
 			Eventually(func() bool { return testSuppressUser.IsSuppressedUser("ws-1", "user-2", "src-1") }).Should(BeFalse())
 			close(firstCheck)
 			Eventually(func() bool { return testSuppressUser.IsSuppressedUser("ws-1", "user-1", "src-1") }).Should(BeFalse())
+		})
+	})
+
+	Context("adaptations for multi-tenant", func() {
+		It("supports older version of regulation-service", func() {
+			// it doesn't return workspaceID as part of the regulations
+			// (in a single-tenant setup)
+			r := sourceRegulation{
+				Canceled:  false,
+				UserID:    "user-1",
+				SourceIDs: []string{"src-1"},
+			}
+
+			expectedResp := apiResponse{
+				SourceRegulations: []sourceRegulation{r},
+				Token:             "tempToken1234",
+			}
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(200)
+				fmt.Println(r.URL.String())
+				queryParams := r.URL.Query()["pageToken"]
+				if len(queryParams) != 0 {
+					expectedResp = apiResponse{
+						Token: "tempToken1234",
+					}
+					expectedRespBody, _ := json.Marshal(expectedResp)
+					w.Write(expectedRespBody)
+				} else {
+					expectedRespBody, _ := json.Marshal(expectedResp)
+					w.Write(expectedRespBody)
+				}
+			}))
+			defer srv.Close()
+			testSuppressUser.RegulationBackendURL = srv.URL
+			testSuppressUser.ID = "ws-1"
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			testSuppressUser.setup(ctx)
+			Eventually(func() bool { return testSuppressUser.IsSuppressedUser("ws-1", "user-1", "src-1") }).Should(BeTrue())
 		})
 	})
 })

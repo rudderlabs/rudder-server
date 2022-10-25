@@ -236,6 +236,16 @@ func (suppressUser *SuppressRegulationHandler) getSourceRegulationsFromRegulatio
 		pkgLogger.Error("Error while parsing request: ", err, resp.StatusCode)
 		return []sourceRegulation{}, err
 	}
+	for i := range sourceRegulationsJSON.SourceRegulations {
+		sourceRegulation := &sourceRegulationsJSON.SourceRegulations[i]
+		// if workspaceID is not present in the response
+		// then it is a global regulation
+		// (possible with old versions of regulation service)
+		// which is also only a single-tenant setup anyway
+		if sourceRegulation.WorkspaceID == "" {
+			sourceRegulation.WorkspaceID = suppressUser.ID
+		}
+	}
 
 	if sourceRegulationsJSON.Token == "" {
 		pkgLogger.Errorf("[[ Workspace-config ]] No token found in the source regulations response: %v", string(respBody))
