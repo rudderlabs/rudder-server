@@ -1,9 +1,15 @@
-ifeq ($(MAKECMDGOALS),$(filter $(GCC_MINOR),deploy-throttling delete-throttling))
+ifneq (,$(filter $(MAKECMDGOALS),deploy-throttling delete-throttling))
     ifeq ($(DOCKER_USER),)
         $(error DOCKER_USER is not set)
     endif
     ifeq ($(K8S_NAMESPACE),)
         $(error K8S_NAMESPACE is not set)
+    endif
+endif
+
+ifeq ($(MAKECMDGOALS),build-throttling)
+    ifeq ($(DOCKER_USER),)
+        $(error DOCKER_USER is not set)
     endif
 endif
 

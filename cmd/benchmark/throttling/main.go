@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/signal"
 	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"syscall"
@@ -30,6 +31,8 @@ func main() {
 		redisAddr   = getEnvString("REDIS_ADDR", "localhost:6379")
 	)
 
+	log.Println("Trying to connect to Redis at:", redisAddr)
+
 	rc := redis.NewClient(&redis.Options{
 		Addr: redisAddr,
 	})
@@ -38,8 +41,13 @@ func main() {
 			log.Printf("Error while closing Redis client: %v", err)
 		}
 	}()
-	if err := rc.Ping(ctx); err != nil {
-		log.Printf("Error while pinging Redis: %v", err)
+	status := rc.Ping(ctx)
+	if status.Err() != nil {
+		log.Printf("Error while pinging Redis: %v", status.Err())
+		return
+	}
+	if !strings.Contains(status.String(), "PONG") {
+		log.Printf(`Unexpected response from Redis, got %q instead of "PONG"`, status.String())
 		return
 	}
 
@@ -48,6 +56,8 @@ func main() {
 		log.Printf("Could not create throttling client: %v", err)
 		return
 	}
+
+	log.Println("Initiating benchmark on key:", key)
 
 	var (
 		wg               sync.WaitGroup
