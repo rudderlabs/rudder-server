@@ -171,6 +171,9 @@ func (suppressUser *SuppressRegulationHandler) getSourceRegulationsFromRegulatio
 
 	urlStr := fmt.Sprintf("%s/dataplane/workspaces/%s/regulations/suppressions", suppressUser.RegulationBackendURL, suppressUser.WorkspaceID)
 	urlValQuery := url.Values{}
+	if suppressUser.pageSize != "" {
+		urlValQuery.Set("pageSize", suppressUser.pageSize)
+	}
 	if suppressUser.suppressAPIToken != "" {
 		urlValQuery.Set("pageToken", suppressUser.suppressAPIToken)
 		urlValQuery.Set("pageSize", suppressUser.pageSize)
