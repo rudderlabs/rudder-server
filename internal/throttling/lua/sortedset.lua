@@ -60,7 +60,7 @@ for i = 1, cost, 1 do
     end
 end
 
-redis.call('EXPIRE', key, period, "GT")
+redis.call('EXPIRE', key, period)
 
 members = members:sub(1, -2) -- remove the last comma
 return { current_time_micro, members }
