@@ -301,6 +301,7 @@ func (wh *HandleT) backendConfigSubscriber() {
 					}
 					namespace := wh.getNamespace(destination.Config, source, destination, wh.destType)
 					warehouse := warehouseutils.Warehouse{
+						WorkspaceID: workspaceID,
 						Source:      source,
 						Destination: destination,
 						Namespace:   namespace,
@@ -1423,6 +1424,7 @@ func minimalConfigSubscriber() {
 							connectionsMap[destination.ID] = map[string]warehouseutils.Warehouse{}
 						}
 						connectionsMap[destination.ID][source.ID] = warehouseutils.Warehouse{
+							WorkspaceID: workspaceID,
 							Destination: destination,
 							Namespace:   namespace,
 							Type:        wh.destType,
@@ -1630,9 +1632,9 @@ func processHandler(w http.ResponseWriter, r *http.Request) {
 		panic(err)
 	}
 
-	stats.Default.NewTaggedStat("rows_staged", stats.CountType, map[string]string{
+	stats.Default.NewTaggedStat("rows_staged", stats.CountType, stats.Tags{
 		"workspace_id": stagingFile.WorkspaceID,
-		"module":       "warehouse",
+		"module":       moduleName,
 		"destType":     stagingFile.BatchDestination.Destination.DestinationDefinition.Name,
 		"warehouseID": getWarehouseTagName(
 			stagingFile.BatchDestination.Destination.ID,

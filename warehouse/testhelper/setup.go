@@ -5,7 +5,11 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	promCLient "github.com/prometheus/client_model/go"
+	"github.com/prometheus/common/expfmt"
+
 	"log"
+	"net/http"
 	"os"
 	"strconv"
 	"strings"
@@ -428,6 +432,90 @@ func VerifyingConfigurationTest(t *testing.T, destination backendconfig.Destinat
 	}))
 
 	t.Logf("Completed configuration tests for destination type: %s", destination.DestinationDefinition.Name)
+}
+
+func VerifyingWorkspaceIDInStats(t *testing.T, extraStats ...string) {
+	t.Helper()
+	t.Logf("Started verifying workspaceID in stats")
+
+	var statsToVerify []string
+	statsToVerify = append(statsToVerify, extraStats...)
+	statsToVerify = append(statsToVerify, []string{
+		// Miscellaneous
+		"wh_scheduler_create_upload_jobs",
+		"wh_scheduler_pending_staging_files",
+		"warehouse_rudder_missing_datatype",
+		"warehouse_long_running_upload",
+		"warehouse_successful_upload_exists",
+		"persist_ssl_file_failure",
+
+		// Timer stats
+		"load_file_generation_time",
+		"event_delivery_time",
+		"identity_tables_load_time",
+		"other_tables_load_time",
+		"user_tables_load_time",
+		"upload_time",
+		"download_staging_file_time",
+		"staging_files_total_processing_time",
+		"process_staging_file_time",
+		"load_file_upload_time",
+
+		// Counter stats
+		"total_rows_synced",
+		"num_staged_events",
+		"upload_aborted",
+		"num_staged_events",
+		"upload_success",
+		"event_delivery",
+		"rows_synced",
+		"staging_files_processed",
+		"bytes_processed_in_staging_file",
+
+		//Gauge stats
+		"pre_load_table_rows",
+		"post_load_table_rows_estimate",
+		"post_load_table_rows",
+	}...)
+	mf := prometheusStats(t)
+
+	for _, statToVerify := range statsToVerify {
+		if ps, ok := mf[statToVerify]; ok {
+			for _, metric := range ps.GetMetric() {
+				found := false
+				for _, label := range metric.GetLabel() {
+					if label.GetName() == "workspaceId" {
+						require.NotEmptyf(t, label.GetValue(), "workspaceId is empty for stat: %s", statToVerify)
+						found = true
+						break
+					}
+				}
+				require.True(t, found, "workspaceId not found in stat: %s", statToVerify)
+			}
+		}
+	}
+
+	t.Logf("Completed verifying workspaceID in stats")
+}
+
+func prometheusStats(t *testing.T) map[string]*promCLient.MetricFamily {
+	t.Helper()
+
+	req, err := http.NewRequestWithContext(context.Background(), "GET", "http://wh-statsd-exporter:9102/metrics", http.NoBody)
+	require.NoError(t, err)
+
+	httpClient := &http.Client{Timeout: 5 * time.Second}
+	resp, err := httpClient.Do(req)
+	require.NoError(t, err)
+	require.NotNil(t, resp)
+	require.NotNil(t, resp.Body)
+
+	defer func() { _ = resp.Body.Close() }()
+
+	var parser expfmt.TextParser
+	mf, err := parser.TextToMetricFamilies(resp.Body)
+	require.NoError(t, err)
+	return mf
 }
 
 func queryCount(cl *client.Client, statement string) (int64, error) {

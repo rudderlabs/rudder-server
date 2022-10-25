@@ -92,6 +92,8 @@ func TestMSSQLIntegration(t *testing.T) {
 	testhelper.VerifyEventsInLoadFiles(t, warehouseTest, testhelper.LoadFilesEventsMap())
 	testhelper.VerifyEventsInTableUploads(t, warehouseTest, testhelper.TableUploadsEventsMap())
 	testhelper.VerifyEventsInWareHouse(t, warehouseTest, testhelper.WarehouseEventsMap())
+
+	testhelper.VerifyingWorkspaceIDInStats(t)
 }
 
 func TestMSSQLConfigurationValidation(t *testing.T) {
