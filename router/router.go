@@ -446,23 +446,38 @@ func (worker *workerT) workerProcess() {
 
 			worker.rt.configSubscriberLock.RLock()
 			batchDestination, ok := worker.rt.destinationsMap[parameters.DestinationID]
-			destination := batchDestination.Destination
 			worker.rt.configSubscriberLock.RUnlock()
 			if !ok {
 				status := jobsdb.JobStatusT{
 					JobID:         job.JobID,
 					AttemptNum:    job.LastJobStatus.AttemptNum,
-					JobState:      jobsdb.Aborted.State,
+					JobState:      jobsdb.Failed.State,
 					ExecTime:      time.Now(),
 					RetryTime:     time.Now(),
 					ErrorCode:     "",
-					ErrorResponse: []byte(`{"reason": "Aborted because destination is not available in the config" }`),
+					ErrorResponse: []byte(`{"reason": "failed because destination is not available in the config" }`),
 					Parameters:    routerutils.EmptyPayload,
 					WorkspaceId:   job.WorkspaceId,
+				}
+				worker.rt.failedEventsChan <- status
+				if worker.rt.guaranteeUserEventOrder {
+					worker.rt.logger.Debugf(
+						"EventOrder: [%d] job %d for user %s failed",
+						worker.workerID, status.JobID, job.UserID,
+					)
+					err := worker.barrier.StateChanged(
+						job.UserID,
+						job.JobID,
+						status.JobState,
+					)
+					if err != nil {
+						panic(err)
+					}
 				}
 				worker.rt.responseQ <- jobResponseT{status: &status, worker: worker, userID: userID, JobT: job}
 				continue
 			}
+			destination := batchDestination.Destination
 			if authType := routerutils.GetAuthType(destination); routerutils.IsNotEmptyString(authType) && authType == "OAuth" {
 				rudderAccountID := routerutils.GetRudderAccountId(&destination)
 				if routerutils.IsNotEmptyString(rudderAccountID) {

@@ -7,7 +7,7 @@ import (
 const LOADED_AT_COLUMN = "loaded_at"
 
 // JsonLoader is only for BQ now. Treat this is as custom BQ loader.
-// If more warehouses are added in future, change this accordingly.
+// If more warehouses are added in the future, change this accordingly.
 type JsonLoader struct {
 	destType   string
 	columnData map[string]interface{}
@@ -24,7 +24,7 @@ func (loader *JsonLoader) IsLoadTimeColumn(columnName string) bool {
 	return columnName == ToProviderCase(loader.destType, UUID_TS_COLUMN) || columnName == ToProviderCase(loader.destType, LOADED_AT_COLUMN)
 }
 
-func (loader *JsonLoader) GetLoadTimeFomat(columnName string) string {
+func (loader *JsonLoader) GetLoadTimeFormat(columnName string) string {
 	switch columnName {
 	case ToProviderCase(loader.destType, UUID_TS_COLUMN):
 		return BQUuidTSFormat

@@ -14,7 +14,7 @@ import (
 	"strings"
 	"time"
 
-	uuid "github.com/gofrs/uuid"
+	"github.com/gofrs/uuid"
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/services/filemanager"
 	"github.com/rudderlabs/rudder-server/services/pgnotifier"
@@ -52,12 +52,12 @@ type JobRunT struct {
 func (jobRun *JobRunT) setStagingFileReader() (reader *gzip.Reader, endOfFile bool) {
 	job := jobRun.job
 	pkgLogger.Debugf("Starting read from downloaded staging file: %s", job.StagingFileLocation)
-	rawf, err := os.Open(jobRun.stagingFilePath)
+	stagingFile, err := os.Open(jobRun.stagingFilePath)
 	if err != nil {
 		pkgLogger.Errorf("[WH]: Error opening file using os.Open at path:%s downloaded from %s", jobRun.stagingFilePath, job.StagingFileLocation)
 		panic(err)
 	}
-	reader, err = gzip.NewReader(rawf)
+	reader, err = gzip.NewReader(stagingFile)
 	if err != nil {
 		if err.Error() == "EOF" {
 			return nil, true
@@ -423,7 +423,7 @@ func processStagingFile(job Payload, workerIndex int) (loadFileUploadOutputs []l
 	jobRun.tableEventCountMap = make(map[string]int)
 	jobRun.uuidTS = timeutil.Now()
 
-	// Initilize Discards Table
+	// Initialize Discards Table
 	discardsTable := job.getDiscardsTable()
 	jobRun.tableEventCountMap[discardsTable] = 0
 
@@ -454,6 +454,11 @@ func processStagingFile(job Payload, workerIndex int) (loadFileUploadOutputs []l
 		tableName := batchRouterEvent.Metadata.Table
 		columnData := batchRouterEvent.Data
 
+		if job.DestinationType == warehouseutils.S3_DATALAKE && len(sortedTableColumnMap[tableName]) > columnCountThresholds[warehouseutils.S3_DATALAKE] {
+			pkgLogger.Errorf("[WH]: Huge staging file columns : columns in upload schema: %v for StagingFileID: %v", len(sortedTableColumnMap[tableName]), job.StagingFileID)
+			return nil, fmt.Errorf("staging file schema limit exceeded for stagingFileID: %d, actualCount: %d", job.StagingFileID, len(sortedTableColumnMap[tableName]))
+		}
+
 		// Create separate load file for each table
 		writer, err := jobRun.GetWriter(tableName)
 		if err != nil {
@@ -463,7 +468,7 @@ func processStagingFile(job Payload, workerIndex int) (loadFileUploadOutputs []l
 		eventLoader := warehouseutils.GetNewEventLoader(job.DestinationType, job.LoadFileType, writer)
 		for _, columnName := range sortedTableColumnMap[tableName] {
 			if eventLoader.IsLoadTimeColumn(columnName) {
-				timestampFormat := eventLoader.GetLoadTimeFomat(columnName)
+				timestampFormat := eventLoader.GetLoadTimeFormat(columnName)
 				eventLoader.AddColumn(job.getColumnName(columnName), job.UploadSchema[tableName][columnName], jobRun.uuidTS.Format(timestampFormat))
 				continue
 			}
@@ -645,7 +650,6 @@ func processClaimedAsyncJob(claimedJob pgnotifier.ClaimT) {
 		response := pgnotifier.ClaimResponseT{
 			Err: err,
 		}
-		// warehouseutils.NewCounterStat(STATS_WORKER_CLAIM_PROCESSING_FAILED, warehouseutils.Tag{Name: TAG_WORKERID, Value: strconv.Itoa(workerIndex)}).Increment()
 		notifier.UpdateClaimedEvent(&claimedJob, &response)
 	}
 	var job jobs.AsyncJobPayloadT
@@ -660,14 +664,14 @@ func processClaimedAsyncJob(claimedJob pgnotifier.ClaimT) {
 		return
 	}
 
-	marshalled_result, err := json.Marshal(result)
+	marshalledResult, err := json.Marshal(result)
 	if err != nil {
 		handleErr(err, claimedJob)
 		return
 	}
 	response := pgnotifier.ClaimResponseT{
 		Err:     err,
-		Payload: marshalled_result,
+		Payload: marshalledResult,
 	}
 	notifier.UpdateClaimedEvent(&claimedJob, &response)
 }
@@ -727,11 +731,11 @@ func (jobRun *JobRunT) handleDiscardTypes(tableName, columnName string, columnVa
 		eventLoader.AddColumn("row_id", warehouseutils.DiscardsSchema["row_id"], rowID)
 		eventLoader.AddColumn("table_name", warehouseutils.DiscardsSchema["table_name"], tableName)
 		if eventLoader.IsLoadTimeColumn("uuid_ts") {
-			timestampFormat := eventLoader.GetLoadTimeFomat("uuid_ts")
+			timestampFormat := eventLoader.GetLoadTimeFormat("uuid_ts")
 			eventLoader.AddColumn("uuid_ts", warehouseutils.DiscardsSchema["uuid_ts"], jobRun.uuidTS.Format(timestampFormat))
 		}
 		if eventLoader.IsLoadTimeColumn("loaded_at") {
-			timestampFormat := eventLoader.GetLoadTimeFomat("loaded_at")
+			timestampFormat := eventLoader.GetLoadTimeFormat("loaded_at")
 			eventLoader.AddColumn("loaded_at", "datetime", jobRun.uuidTS.Format(timestampFormat))
 		}
 
