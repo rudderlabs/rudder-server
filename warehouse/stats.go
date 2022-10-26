@@ -33,7 +33,7 @@ func (jobRun *JobRunT) warehouseID() string {
 }
 
 func (job *UploadJobT) timerStat(name string, extraTags ...tag) stats.Measurement {
-	tags := map[string]string{
+	tags := stats.Tags{
 		"module":      moduleName,
 		"destType":    job.warehouse.Type,
 		"warehouseID": job.warehouseID(),
@@ -48,7 +48,7 @@ func (job *UploadJobT) timerStat(name string, extraTags ...tag) stats.Measuremen
 }
 
 func (job *UploadJobT) counterStat(name string, extraTags ...tag) stats.Measurement {
-	tags := map[string]string{
+	tags := stats.Tags{
 		"module":      moduleName,
 		"destType":    job.warehouse.Type,
 		"warehouseID": job.warehouseID(),
@@ -63,7 +63,7 @@ func (job *UploadJobT) counterStat(name string, extraTags ...tag) stats.Measurem
 }
 
 func (job *UploadJobT) guageStat(name string, extraTags ...tag) stats.Measurement {
-	tags := map[string]string{
+	tags := stats.Tags{
 		"module":         moduleName,
 		"destType":       job.warehouse.Type,
 		"warehouseID":    job.warehouseID(),
@@ -79,7 +79,7 @@ func (job *UploadJobT) guageStat(name string, extraTags ...tag) stats.Measuremen
 }
 
 func (jobRun *JobRunT) timerStat(name string, extraTags ...tag) stats.Measurement {
-	tags := map[string]string{
+	tags := stats.Tags{
 		"module":      moduleName,
 		"destType":    jobRun.job.DestinationType,
 		"warehouseID": jobRun.warehouseID(),
@@ -94,7 +94,7 @@ func (jobRun *JobRunT) timerStat(name string, extraTags ...tag) stats.Measuremen
 }
 
 func (jobRun *JobRunT) counterStat(name string, extraTags ...tag) stats.Measurement {
-	tags := map[string]string{
+	tags := stats.Tags{
 		"module":      moduleName,
 		"destType":    jobRun.job.DestinationType,
 		"warehouseID": jobRun.warehouseID(),
@@ -221,7 +221,7 @@ func (job *UploadJobT) recordLoadFileGenerationTimeStat(startID, endID int64) (e
 }
 
 func getUploadStatusStat(name string, warehouse warehouseutils.Warehouse) stats.Measurement {
-	tags := map[string]string{
+	tags := stats.Tags{
 		"workspaceId": warehouse.WorkspaceID,
 		"module":      moduleName,
 		"destType":    warehouse.Type,
@@ -236,7 +236,7 @@ func getUploadStatusStat(name string, warehouse warehouseutils.Warehouse) stats.
 }
 
 func persistSSLFileErrorStat(workspaceID, destType, destName, destID, sourceName, sourceID, errTag string) {
-	tags := map[string]string{
+	tags := stats.Tags{
 		"workspaceId":   workspaceID,
 		"module":        moduleName,
 		"destType":      destType,
