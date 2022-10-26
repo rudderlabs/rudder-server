@@ -67,7 +67,7 @@ func TestDatalakeIntegration(t *testing.T) {
 		testhelper.VerifyEventsInLoadFiles(t, warehouseTest, testhelper.LoadFilesEventsMap())
 		testhelper.VerifyEventsInTableUploads(t, warehouseTest, testhelper.TableUploadsEventsMap())
 
-		testhelper.VerifyingWorkspaceIDInStats(t)
+		testhelper.VerifyWorkspaceIDInStats(t)
 	})
 	t.Run("AzureDatalake", func(t *testing.T) {
 		t.Parallel()
@@ -107,7 +107,7 @@ func TestDatalakeIntegration(t *testing.T) {
 		testhelper.VerifyEventsInLoadFiles(t, warehouseTest, testhelper.LoadFilesEventsMap())
 		testhelper.VerifyEventsInTableUploads(t, warehouseTest, testhelper.TableUploadsEventsMap())
 
-		testhelper.VerifyingWorkspaceIDInStats(t)
+		testhelper.VerifyWorkspaceIDInStats(t)
 	})
 	t.Run("GCSDatalake", func(t *testing.T) {
 		t.Parallel()
@@ -151,7 +151,7 @@ func TestDatalakeIntegration(t *testing.T) {
 		testhelper.VerifyEventsInLoadFiles(t, warehouseTest, testhelper.LoadFilesEventsMap())
 		testhelper.VerifyEventsInTableUploads(t, warehouseTest, testhelper.TableUploadsEventsMap())
 
-		testhelper.VerifyingWorkspaceIDInStats(t)
+		testhelper.VerifyWorkspaceIDInStats(t)
 	})
 }
 

@@ -94,7 +94,7 @@ func TestPostgresIntegration(t *testing.T) {
 	testhelper.VerifyEventsInTableUploads(t, warehouseTest, testhelper.TableUploadsEventsMap())
 	testhelper.VerifyEventsInWareHouse(t, warehouseTest, testhelper.WarehouseEventsMap())
 
-	testhelper.VerifyingWorkspaceIDInStats(t, statsToVerify...)
+	testhelper.VerifyWorkspaceIDInStats(t, statsToVerify...)
 }
 
 func TestPostgresConfigurationValidation(t *testing.T) {

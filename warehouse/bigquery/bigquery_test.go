@@ -108,7 +108,7 @@ func TestBigQueryIntegration(t *testing.T) {
 		testhelper.VerifyEventsInTableUploads(t, warehouseTest, tableUploadsEventsMap())
 		testhelper.VerifyEventsInWareHouse(t, warehouseTest, mergeEventsMap())
 
-		testhelper.VerifyingWorkspaceIDInStats(t)
+		testhelper.VerifyWorkspaceIDInStats(t)
 	})
 
 	t.Run("Append Mode", func(t *testing.T) {
@@ -148,7 +148,7 @@ func TestBigQueryIntegration(t *testing.T) {
 		testhelper.VerifyEventsInTableUploads(t, warehouseTest, tableUploadsEventsMap())
 		testhelper.VerifyEventsInWareHouse(t, warehouseTest, appendEventsMap())
 
-		testhelper.VerifyingWorkspaceIDInStats(t)
+		testhelper.VerifyWorkspaceIDInStats(t)
 	})
 }
 

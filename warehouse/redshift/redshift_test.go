@@ -107,7 +107,7 @@ func TestRedshiftIntegration(t *testing.T) {
 	testhelper.VerifyEventsInTableUploads(t, warehouseTest, testhelper.TableUploadsEventsMap())
 	testhelper.VerifyEventsInWareHouse(t, warehouseTest, testhelper.WarehouseEventsMap())
 
-	testhelper.VerifyingWorkspaceIDInStats(t)
+	testhelper.VerifyWorkspaceIDInStats(t)
 }
 
 func TestRedshiftConfigurationValidation(t *testing.T) {

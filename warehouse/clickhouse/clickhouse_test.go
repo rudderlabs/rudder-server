@@ -35,7 +35,6 @@ var statsToVerify = []string{
 	"warehouse_clickhouse_commitTimeouts",
 	"warehouse_clickhouse_execTimeouts",
 	"warehouse_clickhouse_failedRetries",
-	"warehouse_clickhouse_commitTimeouts",
 	"warehouse_clickhouse_syncLoadFileTime",
 	"warehouse_clickhouse_downloadLoadFilesTime",
 	"warehouse_clickhouse_numRowsLoadFile",
@@ -189,7 +188,7 @@ func TestClickHouseIntegration(t *testing.T) {
 		testhelper.VerifyEventsInTableUploads(t, warehouseTest, testhelper.TableUploadsEventsMap())
 		testhelper.VerifyEventsInWareHouse(t, warehouseTest, testhelper.WarehouseEventsMap())
 
-		testhelper.VerifyingWorkspaceIDInStats(t, statsToVerify...)
+		testhelper.VerifyWorkspaceIDInStats(t, statsToVerify...)
 	})
 
 	t.Run("Cluster Mode Setup", func(t *testing.T) {
@@ -243,7 +242,7 @@ func TestClickHouseIntegration(t *testing.T) {
 		testhelper.VerifyEventsInTableUploads(t, warehouseTest, testhelper.TableUploadsEventsMap())
 		testhelper.VerifyEventsInWareHouse(t, warehouseTest, clusterWarehouseEventsMap())
 
-		testhelper.VerifyingWorkspaceIDInStats(t, statsToVerify...)
+		testhelper.VerifyWorkspaceIDInStats(t, statsToVerify...)
 	})
 }
 

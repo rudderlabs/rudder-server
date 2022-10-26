@@ -172,10 +172,6 @@ services:
       - --statsd.listen-udp=:8125
       - --statsd.listen-tcp=:8125
       - --web.listen-address=:9102
-    healthcheck:
-      test: wget --no-verbose --tries=1 --spider http://localhost:9102/metrics || exit 1
-      interval: 1s
-      retries: 25
   wh-backend:
     container_name: wh-backend
     depends_on:

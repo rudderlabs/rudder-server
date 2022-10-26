@@ -442,7 +442,7 @@ func VerifyingConfigurationTest(t *testing.T, destination backendconfig.Destinat
 	t.Logf("Completed configuration tests for destination type: %s", destination.DestinationDefinition.Name)
 }
 
-func VerifyingWorkspaceIDInStats(t *testing.T, extraStats ...string) {
+func VerifyWorkspaceIDInStats(t *testing.T, extraStats ...string) {
 	t.Helper()
 	t.Logf("Started verifying workspaceID in stats")
 

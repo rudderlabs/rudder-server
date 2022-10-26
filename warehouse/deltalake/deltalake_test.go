@@ -36,7 +36,6 @@ var handle *TestHandle
 
 var statsToVerify = []string{
 	"warehouse_deltalake_grpcExecTime",
-	"warehouse_deltalake_grpcExecTime",
 	"warehouse_deltalake_healthTimeouts",
 }
 
@@ -126,7 +125,7 @@ func TestDeltalakeIntegration(t *testing.T) {
 		testhelper.VerifyEventsInTableUploads(t, warehouseTest, testhelper.TableUploadsEventsMap())
 		testhelper.VerifyEventsInWareHouse(t, warehouseTest, mergeEventsMap())
 
-		testhelper.VerifyingWorkspaceIDInStats(t, statsToVerify...)
+		testhelper.VerifyWorkspaceIDInStats(t, statsToVerify...)
 	})
 
 	t.Run("Append Mode", func(t *testing.T) {
@@ -180,7 +179,7 @@ func TestDeltalakeIntegration(t *testing.T) {
 		testhelper.VerifyEventsInTableUploads(t, warehouseTest, testhelper.TableUploadsEventsMap())
 		testhelper.VerifyEventsInWareHouse(t, warehouseTest, appendEventsMap())
 
-		testhelper.VerifyingWorkspaceIDInStats(t, statsToVerify...)
+		testhelper.VerifyWorkspaceIDInStats(t, statsToVerify...)
 	})
 }
 
