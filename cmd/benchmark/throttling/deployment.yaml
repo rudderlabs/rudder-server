@@ -1,5 +1,6 @@
 # redis-throttling-master.fcasula.svc.cluster.local:6379
 # throttling-2-001.012ut9.0001.use1.cache.amazonaws.com:6379
+# throttling-persistent-cluster-10gbit-001.012ut9.0001.use1.cache.amazonaws.com:6379
 apiVersion: batch/v1
 kind: Job
 metadata:

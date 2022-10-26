@@ -44,7 +44,8 @@ delete-throttling: sed-throttling
 .PHONY: install-redis
 install-redis:
 	helm install -n $(K8S_NAMESPACE) redis-throttling bitnami/redis \
-		--set auth.enabled=false
+		--set auth.enabled=false \
+		--set replica.replicaCount=0
 
 .PHONY: uninstall-redis
 uninstall-redis:
