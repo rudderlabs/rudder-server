@@ -13,6 +13,12 @@ ifeq ($(MAKECMDGOALS),build-throttling)
     endif
 endif
 
+ifneq (,$(filter $(MAKECMDGOALS),install-redis uninstall-redis))
+    ifeq ($(K8S_NAMESPACE),)
+        $(error K8S_NAMESPACE is not set)
+    endif
+endif
+
 .PHONY: build-throttling
 build-throttling:
 	cd ../../; \
@@ -34,3 +40,16 @@ deploy-throttling: sed-throttling
 delete-throttling: sed-throttling
 	# e.g. make DOCKER_USER=fracasula K8S_NAMESPACE=fcasula delete-throttling
 	kubectl delete -f /tmp/rudder-benchmarks-throttling-deployment.yaml
+
+.PHONY: install-redis
+install-redis:
+	helm install -n $(K8S_NAMESPACE) redis-throttling bitnami/redis \
+		--set auth.enabled=false
+
+.PHONY: uninstall-redis
+uninstall-redis:
+	helm uninstall -n $(K8S_NAMESPACE) redis-throttling
+
+.PHONY: local-redis
+local-redis:
+	docker run --rm -it -p 6379:6379 -e ALLOW_EMPTY_PASSWORD=yes bitnami/redis:7.0.5-debian-11-r12
