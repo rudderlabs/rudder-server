@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"regexp"
 
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/model"
 )
@@ -72,7 +73,8 @@ func (h *GZIPLocalFileHandler) RemoveIdentity(ctx context.Context, attributes []
 			return fmt.Errorf("failed to get delete pattern: %s", err.Error())
 		}
 
-		cmd := exec.CommandContext(ctx, "bash", "-c", fmt.Sprintf("sed -e %s", pattern))
+		// -r switches extended regular expression given we are quoting based on it.
+		cmd := exec.CommandContext(ctx, "bash", "-c", fmt.Sprintf("sed -r -e %s", pattern))
 		cmd.Stdin = bytes.NewBuffer(h.records)
 
 		filteredContent, err = cmd.CombinedOutput()
@@ -87,14 +89,16 @@ func (h *GZIPLocalFileHandler) RemoveIdentity(ctx context.Context, attributes []
 }
 
 func (h *GZIPLocalFileHandler) getDeletePattern(attribute model.User) (string, error) {
+
+	normalized := regexp.QuoteMeta(attribute.ID)
 	switch h.casing {
 
 	case SnakeCase:
-		return fmt.Sprintf("'/\"user_id\": *\"%s\"/d'", attribute.ID), nil
+		return fmt.Sprintf("'/\"user_id\": *\"%s\"/d'", normalized), nil
 	case CamelCase:
-		return fmt.Sprintf("'/\"userId\": *\"%s\"/d'", attribute.ID), nil
+		return fmt.Sprintf("'/\"userId\": *\"%s\"/d'", normalized), nil
 	case UpperCase:
-		return fmt.Sprintf("'/\"USER_ID\": *\"%s\"/d'", attribute.ID), nil
+		return fmt.Sprintf("'/\"USER_ID\": *\"%s\"/d'", normalized), nil
 	default:
 		return "", fmt.Errorf("casing value: %v supplied not in list of supported cases", h.casing)
 	}

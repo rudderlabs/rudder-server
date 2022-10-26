@@ -3,11 +3,45 @@ package filehandler
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"testing"
 
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/model"
 	"github.com/stretchr/testify/require"
 )
+
+func TestRemoveIdentityRecordsFromGZIPFileWithReseredKeywords(t *testing.T) {
+	inputs := []struct {
+		casing       Case
+		userID       string
+		inputByte    []byte
+		expectedByte []byte
+	}{
+		{
+			CamelCase,
+			"!@#$%^&*()***",
+			[]byte("{\"userId\": \"!@#$%^&*()***\", \"context-app-name\": \"my-app-name\"}\n"),
+			[]byte(""),
+		},
+		{
+			CamelCase,
+			"abc.",
+			[]byte("{\"userId\":\"abc1\"}\n{\"userId\":\"abc.\"}\n"),
+			[]byte("{\"userId\":\"abc1\"}\n"),
+		},
+	}
+
+	for _, ip := range inputs {
+		h := NewGZIPLocalFileHandler(ip.casing)
+
+		h.records = ip.inputByte
+		fmt.Println(h.getDeletePattern(model.User{ID: ip.userID}))
+		err := h.RemoveIdentity(context.TODO(), []model.User{{ID: ip.userID}})
+		require.Nil(t, err)
+		fmt.Println(string(h.records))
+		require.Equal(t, true, bytes.Equal(h.records, ip.expectedByte))
+	}
+}
 
 func TestRemoveIdentityRecordsFromGZIPFileWithSingleUserId(t *testing.T) {
 	inputs := []struct {
@@ -120,6 +154,11 @@ func TestIdentityDeletePattern(t *testing.T) {
 			"'/\"userId\": *\"my-user-id\"/d'",
 		},
 		{
+			CamelCase,
+			"!@#$%^&*()***",
+			"'/\"userId\": *\"!@#\\$%\\^&\\*\\(\\)\\*\\*\\*\"/d'",
+		},
+		{
 			SnakeCase,
 			"my-user-id",
 			"'/\"user_id\": *\"my-user-id\"/d'",
@@ -127,7 +166,12 @@ func TestIdentityDeletePattern(t *testing.T) {
 		{
 			SnakeCase,
 			"my-^-user-id",
-			"'/\"user_id\": *\"my-^-user-id\"/d'",
+			"'/\"user_id\": *\"my-\\^-user-id\"/d'",
+		},
+		{
+			SnakeCase,
+			"!@#$%^&*()***",
+			"'/\"user_id\": *\"!@#\\$%\\^&\\*\\(\\)\\*\\*\\*\"/d'",
 		},
 	}
 
