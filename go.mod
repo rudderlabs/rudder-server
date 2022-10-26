@@ -5,7 +5,6 @@ go 1.18
 replace (
 	github.com/aws/aws-sdk-go => github.com/aws/aws-sdk-go v1.44.123 // xitongsys/parquet-go-source uses a vulenrable version
 	github.com/dhui/dktest => github.com/dhui/dktest v0.3.13 // many dependencies require this for testing
-	github.com/miekg/dns => github.com/miekg/dns v1.1.25 // foxcpp/go-mockdns uses a vulenrable version
 	github.com/prometheus/client_golang => github.com/prometheus/client_golang v1.13.0
 	golang.org/x/crypto => golang.org/x/crypto v0.0.0-20221010152910-d6f0a8c073c2
 	golang.org/x/net => golang.org/x/net v0.0.0-20221004154528-8021a29435af
@@ -206,7 +205,7 @@ require (
 
 require (
 	github.com/aws/aws-sdk-go-v2/service/internal/checksum v1.1.3 // indirect
-	github.com/foxcpp/go-mockdns v1.0.0
+	github.com/foxcpp/go-mockdns v1.0.1-0.20220408113050-3599dc5d2c7d
 	github.com/golang-sql/sqlexp v0.0.0-20170517235910-f1bb20e5a188 // indirect
 	github.com/golang/protobuf v1.5.2 // indirect
 	github.com/matttproud/golang_protobuf_extensions v1.0.2-0.20181231171920-c182affec369 // indirect
