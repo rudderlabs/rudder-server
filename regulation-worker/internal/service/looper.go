@@ -25,7 +25,7 @@ func (l *Looper) Loop(ctx context.Context) error {
 
 		if err == model.ErrNoRunnableJob {
 			pkgLogger.Debugf("no runnable job found... sleeping")
-			if err := misc.SleepCtx(ctx, 10*time.Minute); err != nil {
+			if err := misc.SleepCtx(ctx, 1*time.Minute); err != nil {
 				pkgLogger.Debugf("context cancelled... exiting infinite loop %v", err)
 				return nil
 			}
