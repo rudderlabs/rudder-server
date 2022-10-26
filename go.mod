@@ -6,6 +6,7 @@ replace (
 	github.com/containerd/containerd => github.com/containerd/containerd v1.6.9
 	github.com/containernetworking/cni => github.com/containernetworking/cni v0.8.1
 	github.com/dgrijalva/jwt-go => github.com/dgrijalva/jwt-go/v4 v4.0.0-preview1
+	github.com/dhui/dktest => github.com/dhui/dktest v0.3.13
 	github.com/emicklei/go-restful => github.com/emicklei/go-restful/v3 v3.9.0
 	github.com/go.etcd.io/etcd => github.com/go.etcd.io/etcd/v3 v3.4.1
 	github.com/gobuffalo/packr => github.com/gobuffalo/packr/v2 v2.3.2
@@ -126,7 +127,7 @@ require (
 	github.com/dgraph-io/ristretto v0.0.3-0.20200630154024-f66de99634de // indirect
 	github.com/dgryski/go-farm v0.0.0-20200201041132-a6ae2369ad13 // indirect
 	github.com/docker/cli v20.10.14+incompatible // indirect
-	github.com/docker/docker v20.10.13+incompatible // indirect
+	github.com/docker/docker v20.10.21+incompatible // indirect
 	github.com/docker/go-connections v0.4.0 // indirect
 	github.com/docker/go-units v0.4.0 // indirect
 	github.com/dustin/go-humanize v1.0.0 // indirect
