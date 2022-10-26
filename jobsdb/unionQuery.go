@@ -287,7 +287,6 @@ func (*MultiTenantHandleT) getInitialSingleWorkspaceQueryString(ds dataSetT, con
 	}
 
 	if len(customValFilters) > 0 && !conditions.IgnoreCustomValFiltersInQuery {
-		// mj.assert(!getAll, "getAll is true")
 		customValQuery = " AND " +
 			constructQueryOR("jobs.custom_val", customValFilters)
 	} else {
@@ -295,7 +294,6 @@ func (*MultiTenantHandleT) getInitialSingleWorkspaceQueryString(ds dataSetT, con
 	}
 
 	if len(parameterFilters) > 0 {
-		// mj.assert(!getAll, "getAll is true")
 		sourceQuery += " AND " + constructParameterJSONQuery("jobs", parameterFilters)
 	} else {
 		sourceQuery = ""
