@@ -3,17 +3,15 @@ module github.com/rudderlabs/rudder-server
 go 1.18
 
 replace (
-	github.com/aws/aws-sdk-go => github.com/aws/aws-sdk-go v1.44.123
-	github.com/dhui/dktest => github.com/dhui/dktest v0.3.13
-	github.com/gobuffalo/packr => github.com/gobuffalo/packr/v2 v2.3.2
-	github.com/miekg/dns => github.com/miekg/dns v1.1.25
-	github.com/prometheus/client_golang => github.com/prometheus/client_golang v1.13.0
+	github.com/aws/aws-sdk-go => github.com/aws/aws-sdk-go v1.44.123 // xitongsys/parquet-go-source uses a vulenrable version
+	github.com/dhui/dktest => github.com/dhui/dktest v0.3.13 // many dependencies require this for testing
+	github.com/miekg/dns => github.com/miekg/dns v1.1.25 // foxcpp/go-mockdns uses a vulenrable version
+	github.com/prometheus/client_golang => github.com/prometheus/client_golang v1.13.0 
 	golang.org/x/crypto => golang.org/x/crypto v0.0.0-20221010152910-d6f0a8c073c2
 	golang.org/x/net => golang.org/x/net v0.0.0-20221004154528-8021a29435af
 	golang.org/x/text => golang.org/x/text v0.3.8
-	gopkg.in/yaml.v2 => gopkg.in/yaml.v2 v2.4.0
-	gopkg.in/yaml.v3 => gopkg.in/yaml.v3 v3.0.1
-	k8s.io/kubernetes => k8s.io/kubernetes v1.13.12
+	gopkg.in/yaml.v2 => gopkg.in/yaml.v2 v2.4.0 // github.com/spf13/viper uses a vulenrable version
+	gopkg.in/yaml.v3 => gopkg.in/yaml.v3 v3.0.1 // github.com/spf13/viper uses a vulenrable version
 )
 
 require (
