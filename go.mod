@@ -6,7 +6,7 @@ replace (
 	github.com/aws/aws-sdk-go => github.com/aws/aws-sdk-go v1.44.123 // xitongsys/parquet-go-source uses a vulenrable version
 	github.com/dhui/dktest => github.com/dhui/dktest v0.3.13 // many dependencies require this for testing
 	github.com/miekg/dns => github.com/miekg/dns v1.1.25 // foxcpp/go-mockdns uses a vulenrable version
-	github.com/prometheus/client_golang => github.com/prometheus/client_golang v1.13.0 
+	github.com/prometheus/client_golang => github.com/prometheus/client_golang v1.13.0
 	golang.org/x/crypto => golang.org/x/crypto v0.0.0-20221010152910-d6f0a8c073c2
 	golang.org/x/net => golang.org/x/net v0.0.0-20221004154528-8021a29435af
 	golang.org/x/text => golang.org/x/text v0.3.8
