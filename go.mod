@@ -3,6 +3,7 @@ module github.com/rudderlabs/rudder-server
 go 1.18
 
 replace (
+	github.com/aws/aws-sdk-go => github.com/aws/aws-sdk-go v1.44.123
 	github.com/containerd/containerd => github.com/containerd/containerd v1.6.9
 	github.com/containernetworking/cni => github.com/containernetworking/cni v0.8.1
 	github.com/dhui/dktest => github.com/dhui/dktest v0.3.13
