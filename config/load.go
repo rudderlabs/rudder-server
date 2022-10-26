@@ -13,28 +13,31 @@ func (c *Config) load() {
 	c.hotReloadableConfig = make(map[string][]*configValue)
 	c.envs = make(map[string]string)
 
-	if err := godotenv.Load(); err != nil {
-		fmt.Println("INFO: No .env file found.")
+	if c.dotEnvFiles != nil {
+		fmt.Println(c.dotEnvFiles)
+		if err := godotenv.Load(c.dotEnvFiles...); err != nil {
+			fmt.Println("INFO: No .env file found.")
+		}
 	}
 
-	configPath := getEnv("CONFIG_PATH", "./config/config.yaml")
+	c.v = viper.NewWithOptions(viper.EnvKeyReplacer(&envReplacer{c: c}))
+	c.v.AutomaticEnv()
+	bindLegacyEnv(c.v)
 
-	v := viper.NewWithOptions(viper.EnvKeyReplacer(&envReplacer{c: c}))
-	v.AutomaticEnv()
-	bindLegacyEnv(v)
+	if c.configPath != "" {
+		configPath := getEnv("CONFIG_PATH", c.configPath)
 
-	v.SetConfigFile(configPath)
-	err := v.ReadInConfig() // Find and read the config file
-	// Don't panic if config.yaml is not found or error with parsing. Use the default config values instead
-	if err != nil {
-		fmt.Printf("[Config] :: Failed to parse config file from path %q, using default values: %v\n", configPath, err)
+		c.v.SetConfigFile(configPath)
+		err := c.v.ReadInConfig() // Find and read the config file
+		// Don't panic if config.yaml is not found or error with parsing. Use the default config values instead
+		if err != nil {
+			fmt.Printf("[Config] :: Failed to parse config file from path %q, using default values: %v\n", c.configPath, err)
+		}
+		c.v.OnConfigChange(func(e fsnotify.Event) {
+			c.onConfigChange()
+		})
+		c.v.WatchConfig()
 	}
-	v.OnConfigChange(func(e fsnotify.Event) {
-		c.onConfigChange()
-	})
-	v.WatchConfig()
-
-	c.v = v
 }
 
 func (c *Config) onConfigChange() {

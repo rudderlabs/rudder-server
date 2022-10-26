@@ -1,11 +1,71 @@
 package config
 
 import (
+	"math/rand"
+	"os"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/require"
 )
+
+func init() {
+	rand.Seed(time.Now().UnixNano())
+}
+
+var letterRunes = []rune("ABCDEFGHIJKLMNOPQRSTUVWXYZ")
+
+func randUpperLetters(n int) string {
+	b := make([]rune, n)
+	for i := range b {
+		b[i] = letterRunes[rand.Intn(len(letterRunes))]
+	}
+	return string(b)
+}
+
+func Test_WithFile(t *testing.T) {
+	fileConfig := New(WithFile("./testdata/test_config.yaml"))
+	plainConfig := New()
+
+	value := fileConfig.GetDuration("HttpClient.Timeout", 1, time.Second)
+	require.Equal(t, time.Hour, value)
+
+	value = plainConfig.GetDuration("HttpClient.Timeout", 1, time.Second)
+	require.Equal(t, time.Second, value)
+}
+
+func Test_WithDotEnv(t *testing.T) {
+	// We are using a random name to avoid conflicts with other tests
+	rand := randUpperLetters(10)
+	envName := "RSERVER_RANDOM_" + rand
+	key := "Random." + strings.ToLower(rand)
+
+	f, err := os.CreateTemp("./testdata", "test.*.env")
+	require.NoError(t, err)
+
+	envFile := f.Name()
+	t.Logf("envFile: %s", envFile)
+	t.Cleanup(func() {
+		os.Remove(envFile)
+	})
+
+	_, err = f.WriteString(envName + "=1h")
+	require.NoError(t, err)
+	require.NoError(t, f.Close())
+
+	dotEnvConfig := New(WithDotEnv(envFile))
+
+	value := dotEnvConfig.GetDuration(key, 1, time.Second)
+	require.Equal(t, time.Hour, value)
+
+	os.Unsetenv(envName)
+
+	plainConfig := New()
+
+	value = plainConfig.GetDuration(key, 1, time.Second)
+	require.Equal(t, time.Second, value)
+}
 
 func Test_Getters_Existing_and_Default(t *testing.T) {
 	tc := New()

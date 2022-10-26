@@ -28,6 +28,11 @@ import (
 var pkgLogger = logger.NewLogger().Child("regulation-worker")
 
 func main() {
+	config.Default = config.New(
+		config.WithDotEnv(),
+		config.WithFile("./config/config.yaml"),
+	)
+
 	initialize.Init()
 	backendconfig.Init()
 

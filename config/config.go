@@ -46,9 +46,28 @@ func Reset() {
 	Default = New()
 }
 
+type Opts func(*Config)
+
+// WithFile watch configurations from config file in the given path.
+func WithFile(path string) Opts {
+	return func(c *Config) {
+		c.configPath = path
+	}
+}
+
+// WithDotEvn load environment variables from .env file.
+func WithDotEnv(dotEnvFiles ...string) Opts {
+	return func(c *Config) {
+		c.dotEnvFiles = dotEnvFiles
+	}
+}
+
 // New creates a new config instance
-func New() *Config {
+func New(opts ...Opts) *Config {
 	c := &Config{}
+	for _, opt := range opts {
+		opt(c)
+	}
 	c.load()
 	return c
 }
@@ -61,6 +80,8 @@ type Config struct {
 	hotReloadableConfig     map[string][]*configValue
 	envsLock                sync.RWMutex // protects the envs map below
 	envs                    map[string]string
+	configPath              string
+	dotEnvFiles             []string
 }
 
 // GetBool gets bool value from config

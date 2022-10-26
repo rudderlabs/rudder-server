@@ -1,0 +1,2 @@
+HttpClient:
+  timeout: 1h

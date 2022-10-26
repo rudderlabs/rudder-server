@@ -198,6 +198,11 @@ func runAllInit() {
 }
 
 func main() {
+	config.Default = config.New(
+		config.WithDotEnv(),
+		config.WithFile("./config/config.yaml"),
+	)
+
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	exitCode := Run(ctx)
 	cancel()
