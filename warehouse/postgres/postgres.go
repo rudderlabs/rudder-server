@@ -237,11 +237,11 @@ func (pg *HandleT) DownloadLoadFiles(tableName string) ([]string, error) {
 	return fileNames, nil
 }
 
-func handleRollbackTimeout(tags map[string]string) {
+func handleRollbackTimeout(tags stats.Tags) {
 	stats.Default.NewTaggedStat("pg_rollback_timeout", stats.CountType, tags).Count(1)
 }
 
-func runRollbackWithTimeout(f func() error, onTimeout func(map[string]string), d time.Duration, tags map[string]string) {
+func runRollbackWithTimeout(f func() error, onTimeout func(tags stats.Tags), d time.Duration, tags stats.Tags) {
 	c := make(chan struct{})
 	go func() {
 		defer close(c)
@@ -269,7 +269,7 @@ func (pg *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 	pkgLogger.Infof("PG: Starting load for table:%s", tableName)
 
 	// tags
-	tags := map[string]string{
+	tags := stats.Tags{
 		"workspaceId":   pg.Warehouse.WorkspaceID,
 		"namepsace":     pg.Namespace,
 		"destinationID": pg.Warehouse.Destination.ID,
@@ -561,10 +561,11 @@ func (pg *HandleT) loadUserTables() (errorMap map[string]error) {
 	sqlStatement = fmt.Sprintf(`DELETE FROM "%[1]s"."%[2]s" using "%[1]s"."%[3]s" _source where (_source.%[4]s = %[1]s.%[2]s.%[4]s)`, pg.Namespace, warehouseutils.UsersTable, stagingTableName, primaryKey)
 	pkgLogger.Infof("PG: Dedup records for table:%s using staging table: %s\n", warehouseutils.UsersTable, sqlStatement)
 	// tags
-	tags := map[string]string{
-		"namespace": pg.Namespace,
-		"destId":    pg.Warehouse.Destination.ID,
-		"tableName": warehouseutils.UsersTable,
+	tags := stats.Tags{
+		"workspaceId": pg.Warehouse.WorkspaceID,
+		"namespace":   pg.Namespace,
+		"destId":      pg.Warehouse.Destination.ID,
+		"tableName":   warehouseutils.UsersTable,
 	}
 	err = handleExec(&QueryParams{txn: tx, query: sqlStatement, enableWithQueryPlan: enableSQLStatementExecutionPlan})
 	if err != nil {

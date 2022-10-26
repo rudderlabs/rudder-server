@@ -161,6 +161,17 @@ services:
       test: wget --no-verbose --tries=1 --spider http://localhost:8123/ping || exit 1
       interval: 1s
       retries: 25
+  statsd-exporter:
+    image: prom/statsd-exporter:latest
+    container_name: statsd-exporter
+    ports:
+      - "9102"
+      - "8125"
+      - "8125/udp"
+    command:
+      - --statsd.listen-udp=:8125
+      - --statsd.listen-tcp=:8125
+      - --web.listen-address=:9102
   wh-backend:
     container_name: wh-backend
     depends_on:
@@ -171,6 +182,8 @@ services:
       wh-databricks-connector:
         condition: service_healthy
       wh-minio:
+        condition: service_healthy
+      statsd-exporter:
         condition: service_healthy
       wh-postgres:
         condition: service_healthy

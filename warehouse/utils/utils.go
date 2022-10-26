@@ -816,8 +816,8 @@ type Tag struct {
 }
 
 func NewTimerStat(name string, extraTags ...Tag) stats.Measurement {
-	tags := map[string]string{
-		"module": "warehouse",
+	tags := stats.Tags{
+		"module": WAREHOUSE,
 	}
 	for _, extraTag := range extraTags {
 		tags[extraTag.Name] = extraTag.Value
@@ -826,8 +826,8 @@ func NewTimerStat(name string, extraTags ...Tag) stats.Measurement {
 }
 
 func NewCounterStat(name string, extraTags ...Tag) stats.Measurement {
-	tags := map[string]string{
-		"module": "warehouse",
+	tags := stats.Tags{
+		"module": WAREHOUSE,
 	}
 	for _, extraTag := range extraTags {
 		tags[extraTag.Name] = extraTag.Value
@@ -836,7 +836,7 @@ func NewCounterStat(name string, extraTags ...Tag) stats.Measurement {
 }
 
 func WHCounterStat(name string, warehouse *Warehouse, extraTags ...Tag) stats.Measurement {
-	tags := map[string]string{
+	tags := stats.Tags{
 		"module":      WAREHOUSE,
 		"destType":    warehouse.Type,
 		"workspaceId": warehouse.WorkspaceID,
