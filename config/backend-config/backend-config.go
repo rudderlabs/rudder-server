@@ -170,7 +170,10 @@ func (bc *backendConfigImpl) configUpdate(ctx context.Context, workspaces string
 	}()
 
 	sourceJSON, err = bc.workspaceConfig.Get(ctx, workspaces)
+	pkgLogger.Infof("Config backend response: %v", sourceJSON)
+	pkgLogger.Infof("Config backend error: %v", err)
 	if err != nil {
+		pkgLogger.Infof("Config backend error not nil..... checking cache flow")
 		statConfigBackendError.Increment()
 		pkgLogger.Warnf("Error fetching config from backend: %v", err)
 
@@ -194,6 +197,7 @@ func (bc *backendConfigImpl) configUpdate(ctx context.Context, workspaces string
 		}
 		bc.usingCache = true
 	} else {
+		pkgLogger.Infof("Config backend error is nil..... skipping cache flow")
 		bc.usingCache = false
 	}
 
@@ -229,6 +233,7 @@ func (bc *backendConfigImpl) configUpdate(ctx context.Context, workspaces string
 	}
 
 	bc.initializedLock.Lock()
+	pkgLogger.Infof("Config initialized true")
 	bc.initialized = true
 	bc.initializedLock.Unlock()
 }
@@ -360,6 +365,7 @@ func (bc *backendConfigImpl) Stop() {
 		<-bc.blockChan
 	}
 	bc.initializedLock.Lock()
+	pkgLogger.Infof("Config initialized false")
 	bc.initialized = false
 	bc.initializedLock.Unlock()
 }

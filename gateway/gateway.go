@@ -1658,7 +1658,7 @@ func (gateway *HandleT) Setup(
 
 	whURL, err := url.ParseRequestURI(misc.GetWarehouseURL())
 	if err != nil {
-		return fmt.Errorf("Invalid warehouse URL %s: %w", whURL, err)
+		return fmt.Errorf("invalid warehouse URL %s: %w", whURL, err)
 	}
 	whProxy := httputil.NewSingleHostReverseProxy(whURL)
 	gateway.whProxy = whProxy

@@ -74,6 +74,7 @@ func (nc *namespaceConfig) Get(ctx context.Context, workspaces string) (map[stri
 
 // getFromApi gets the workspace config from api
 func (nc *namespaceConfig) getFromAPI(ctx context.Context, _ string) (map[string]ConfigT, error) {
+	pkgLogger.Infof("Fetching config for namespace %s", nc.Namespace)
 	config := make(map[string]ConfigT)
 	if nc.Namespace == "" {
 		return config, fmt.Errorf("namespace is not configured")
@@ -116,11 +117,12 @@ func (nc *namespaceConfig) getFromAPI(ctx context.Context, _ string) (map[string
 		wc.ConnectionFlags.Services = map[string]bool{"warehouse": true}
 		workspacesConfig[workspaceID] = wc
 	}
-
+	pkgLogger.Infof("Fetched config for namespace %s", nc.Namespace)
 	return workspacesConfig, nil
 }
 
 func (nc *namespaceConfig) makeHTTPRequest(ctx context.Context, url string) ([]byte, error) {
+	pkgLogger.Infof("Making http request to %s", url)
 	req, err := http.NewRequestWithContext(ctx, "GET", url, http.NoBody)
 	if err != nil {
 		return nil, err
@@ -130,20 +132,23 @@ func (nc *namespaceConfig) makeHTTPRequest(ctx context.Context, url string) ([]b
 
 	resp, err := nc.Client.Do(req)
 	if err != nil {
+		pkgLogger.Infof("Error making http request to %s returning", url)
 		return nil, err
 	}
 
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
+		pkgLogger.Infof("Error reading response body from %s returning", url)
 		return nil, err
 	}
 
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode >= 300 {
+		pkgLogger.Infof("Error response from %s returning", url)
 		return nil, getNotOKError(respBody, resp.StatusCode)
 	}
-
+	pkgLogger.Infof("Successfully made http request to %s", url)
 	return respBody, nil
 }
 
