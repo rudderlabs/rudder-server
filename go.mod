@@ -3,7 +3,6 @@ module github.com/rudderlabs/rudder-server
 go 1.18
 
 replace (
-	github.com/buger/jsonparser => github.com/buger/jsonparser v1.0.0
 	github.com/containerd/containerd => github.com/containerd/containerd v1.5.9
 	github.com/containernetworking/cni => github.com/containernetworking/cni v0.8.1
 	github.com/dgrijalva/jwt-go => github.com/dgrijalva/jwt-go/v4 v4.0.0-preview1
