@@ -673,6 +673,7 @@ func (worker *workerT) processDestinationJobs() {
 										DestName:     worker.rt.destName,
 										JobID:        jobID,
 										ResponseData: val,
+										Metadata:     destinationJob.JobMetadataArray[0],
 									}
 									rtlTime := time.Now()
 									respStatusCode, respBodyTemp, respContentType = worker.rt.transformer.ProxyRequest(ctx, proxyReqparams)
