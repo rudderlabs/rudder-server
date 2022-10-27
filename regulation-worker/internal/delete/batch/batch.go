@@ -380,7 +380,6 @@ func (bm *BatchManager) Delete(
 			_i := i
 			goRoutineCount <- true
 			g.Go(func() error {
-
 				defer func() {
 					<-goRoutineCount
 				}()
@@ -439,7 +438,6 @@ func (bm *BatchManager) Delete(
 }
 
 func LocalFileHandlerFactory(dest, upstreamFilePath string) filehandler.LocalFileHandler {
-
 	switch dest {
 	case "S3":
 		if strings.HasSuffix(upstreamFilePath, ".json.gz") {

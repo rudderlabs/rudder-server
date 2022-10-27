@@ -89,7 +89,6 @@ func (h *GZIPLocalFileHandler) RemoveIdentity(ctx context.Context, attributes []
 }
 
 func (h *GZIPLocalFileHandler) getDeletePattern(attribute model.User) (string, error) {
-
 	normalized := regexp.QuoteMeta(attribute.ID)
 	switch h.casing {
 
