@@ -62,9 +62,9 @@ func TestStorageSettingWithRudderstackStorage(t *testing.T) {
 				Settings: backendconfig.Settings{
 					DataRetention: backendconfig.DataRetention{
 						UseSelfStorage: false,
-						StorageBucket: backendconfig.StorageBucket{},
+						StorageBucket:  backendconfig.StorageBucket{},
 						StoragePreferences: backendconfig.StoragePreferences{
-							ProcErrors: true,
+							ProcErrors:   true,
 							GatewayDumps: false,
 						},
 					},
@@ -82,7 +82,7 @@ func TestStorageSettingWithRudderstackStorage(t *testing.T) {
 							},
 						},
 						StoragePreferences: backendconfig.StoragePreferences{
-							ProcErrors: true,
+							ProcErrors:   true,
 							GatewayDumps: true,
 						},
 					},
@@ -104,11 +104,11 @@ func TestStorageSettingWithRudderstackStorage(t *testing.T) {
 		},
 		StoragePreferences: StoragePreferences{
 			"testWorkspaceId-1": {
-				ProcErrors: true,
+				ProcErrors:   true,
 				GatewayDumps: false,
 			},
 			"testWorkspaceId-2": {
-				ProcErrors: true,
+				ProcErrors:   true,
 				GatewayDumps: true,
 			},
 		},

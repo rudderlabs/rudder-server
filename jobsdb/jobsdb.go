@@ -449,7 +449,7 @@ type HandleT struct {
 	maxBackupRetryTime            time.Duration
 	preBackupHandlers             []prebackup.Handler
 	storageSettings               backup.StorageSettings
-	backupWorkers chan *WorkerT
+	backupWorkers                 chan *WorkerT
 	// skipSetupDBSetup is useful for testing as we mock the database client
 	// TODO: Remove this flag once we have test setup that uses real database
 	skipSetupDBSetup bool

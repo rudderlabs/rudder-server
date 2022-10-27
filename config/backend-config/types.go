@@ -88,7 +88,7 @@ type ConfigT struct {
 	Sources         []SourceT       `json:"sources"`
 	Libraries       LibrariesT      `json:"libraries"`
 	ConnectionFlags ConnectionFlags `json:"flags"`
-	Settings        Settings       `json:"settings"`
+	Settings        Settings        `json:"settings"`
 }
 
 type Settings struct {
@@ -96,8 +96,8 @@ type Settings struct {
 }
 
 type DataRetention struct {
-	UseSelfStorage     bool                `json:"useSelfStorage"`
-	StorageBucket      StorageBucket     `json:"storageBucket"`
+	UseSelfStorage     bool               `json:"useSelfStorage"`
+	StorageBucket      StorageBucket      `json:"storageBucket"`
 	StoragePreferences StoragePreferences `json:"storagePreferences"`
 }
 
