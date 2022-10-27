@@ -14,7 +14,9 @@ import (
 
 	"github.com/cenkalti/backoff"
 	"github.com/rudderlabs/rudder-server/config"
+	"github.com/rudderlabs/rudder-server/services/controlplane/identity"
 	"github.com/rudderlabs/rudder-server/utils/misc"
+	"github.com/rudderlabs/rudder-server/utils/types/deployment"
 
 	"github.com/rudderlabs/rudder-server/utils/logger"
 
@@ -26,7 +28,7 @@ type SuppressRegulationHandler struct {
 	Client                          *http.Client
 	RegulationBackendURL            string
 	RegulationsPollInterval         time.Duration
-	ID                              string
+	ID                              identity.Identifier
 	userSpecificSuppressedSourceMap map[string]map[string]sourceFilter
 	regulationsSubscriberLock       sync.RWMutex
 	suppressAPIToken                string
@@ -54,6 +56,15 @@ type sourceRegulation struct {
 }
 
 func (suppressUser *SuppressRegulationHandler) setup(ctx context.Context) {
+	suppressUser.RegulationBackendURL = configBackendURL
+	switch suppressUser.ID.Type() {
+	case deployment.DedicatedType:
+		suppressUser.RegulationBackendURL += fmt.Sprintf("/dataplane/workspaces/%s/regulations/suppressions", suppressUser.ID.ID())
+	case deployment.MultiTenantType:
+		suppressUser.RegulationBackendURL += fmt.Sprintf("/dataplane/namespaces/%s/regulations/suppressions", suppressUser.ID.ID())
+	default:
+		panic("invalid deployment type")
+	}
 	rruntime.Go(func() {
 		suppressUser.regulationSyncLoop(ctx)
 	})
@@ -160,11 +171,6 @@ func (suppressUser *SuppressRegulationHandler) regulationSyncLoop(ctx context.Co
 }
 
 func (suppressUser *SuppressRegulationHandler) getSourceRegulationsFromRegulationService() ([]sourceRegulation, error) {
-	if config.GetBool("HOSTED_SERVICE", false) {
-		pkgLogger.Info("[Regulations] Regulations on free tier are not supported at the moment.")
-		return []sourceRegulation{}, nil
-	}
-
 	urlStr := suppressUser.RegulationBackendURL
 	urlValQuery := url.Values{}
 	if suppressUser.pageSize != "" {
@@ -187,8 +193,8 @@ func (suppressUser *SuppressRegulationHandler) getSourceRegulationsFromRegulatio
 		if err != nil {
 			return err
 		}
-		workspaceToken := config.GetWorkspaceToken()
-		req.SetBasicAuth(workspaceToken, "")
+		workspaceToken, passWord := suppressUser.ID.BasicAuth()
+		req.SetBasicAuth(workspaceToken, passWord)
 		req.Header.Set("Content-Type", "application/json")
 
 		resp, err = suppressUser.Client.Do(req)
@@ -236,14 +242,11 @@ func (suppressUser *SuppressRegulationHandler) getSourceRegulationsFromRegulatio
 		pkgLogger.Error("Error while parsing request: ", err, resp.StatusCode)
 		return []sourceRegulation{}, err
 	}
+	// TODO: remove this once regulation Service is updated
 	for i := range sourceRegulationsJSON.SourceRegulations {
 		sourceRegulation := &sourceRegulationsJSON.SourceRegulations[i]
-		// if workspaceID is not present in the response
-		// then it is a global regulation
-		// (possible with old versions of regulation service)
-		// which is also only a single-tenant setup anyway
 		if sourceRegulation.WorkspaceID == "" {
-			sourceRegulation.WorkspaceID = suppressUser.ID
+			sourceRegulation.WorkspaceID = suppressUser.ID.ID()
 		}
 	}
 

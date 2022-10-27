@@ -591,3 +591,7 @@ func (m *mockIdentifier) ID() string {
 func (m *mockIdentifier) BasicAuth() (string, string) {
 	return m.token, ""
 }
+
+func (*mockIdentifier) Type() deployment.Type {
+	return deployment.Type(`mockType`)
+}

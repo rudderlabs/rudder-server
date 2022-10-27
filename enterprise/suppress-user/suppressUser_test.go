@@ -13,6 +13,7 @@ import (
 	. "github.com/onsi/gomega"
 	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
+	"github.com/rudderlabs/rudder-server/services/controlplane/identity"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/stretchr/testify/require"
 )
@@ -24,7 +25,14 @@ var _ = Describe("SuppressUser Test", func() {
 		logger.Reset()
 		backendconfig.Init()
 		pkgLogger = logger.NewLogger().Child("enterprise").Child("suppress-user")
-		testSuppressUser = &SuppressRegulationHandler{Client: new(http.Client), RegulationsPollInterval: time.Duration(100)}
+		testSuppressUser = &SuppressRegulationHandler{
+			Client:                  new(http.Client),
+			RegulationsPollInterval: time.Duration(100),
+			ID: &identity.Workspace{
+				WorkspaceID:    "workspace1",
+				WorkspaceToken: "token-1",
+			},
+		}
 	})
 	expectedRespRegulations := sourceRegulation{
 		WorkspaceID: "workspace1",
@@ -114,7 +122,7 @@ var _ = Describe("SuppressUser Test", func() {
 				}
 			}))
 			defer srv.Close()
-			testSuppressUser.RegulationBackendURL = srv.URL
+			configBackendURL = srv.URL
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
 			testSuppressUser.setup(ctx)
@@ -147,9 +155,7 @@ var _ = Describe("SuppressUser Test", func() {
 				}
 			}))
 			defer srv.Close()
-			// testSuppressUser := &SuppressRegulationHandler{Client: new(http.Client), RegulationsPollInterval: time.Duration(100),
-			//	RegulationBackendURL: srv.}
-			testSuppressUser.RegulationBackendURL = srv.URL
+			configBackendURL = srv.URL
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
 			testSuppressUser.setup(ctx)
@@ -189,7 +195,7 @@ var _ = Describe("SuppressUser Test", func() {
 				}
 			}))
 			defer srv.Close()
-			testSuppressUser.RegulationBackendURL = srv.URL
+			configBackendURL = srv.URL
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
 			testSuppressUser.setup(ctx)
@@ -240,7 +246,7 @@ var _ = Describe("SuppressUser Test", func() {
 			}))
 			defer srv.Close()
 
-			testSuppressUser.RegulationBackendURL = srv.URL
+			configBackendURL = srv.URL
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
 			testSuppressUser.setup(ctx)
@@ -282,12 +288,11 @@ var _ = Describe("SuppressUser Test", func() {
 				}
 			}))
 			defer srv.Close()
-			testSuppressUser.RegulationBackendURL = srv.URL
-			testSuppressUser.ID = "ws-1"
+			configBackendURL = srv.URL
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
 			testSuppressUser.setup(ctx)
-			Eventually(func() bool { return testSuppressUser.IsSuppressedUser("ws-1", "user-1", "src-1") }).Should(BeTrue())
+			Eventually(func() bool { return testSuppressUser.IsSuppressedUser("workspace1", "user-1", "src-1") }).Should(BeTrue())
 		})
 	})
 })
