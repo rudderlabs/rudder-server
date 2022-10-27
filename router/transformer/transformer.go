@@ -295,14 +295,6 @@ type httpProxyResponse struct {
 	err        error
 }
 
-/*
-Adding metadata along with destinationRequest in the proxyRequest to send destination info in the metadata in case of proxy request
-*/
-type httpProxyRequest struct {
-	DestinationRequest integrations.PostParametersT `json:"destinationRequest"`
-	Metadata           types.JobMetadataT           `json:"metadata"`
-}
-
 func (trans *handle) doProxyRequest(ctx context.Context, proxyReqParams *ProxyRequestParams) httpProxyResponse {
 	var respData []byte
 
@@ -310,13 +302,7 @@ func (trans *handle) doProxyRequest(ctx context.Context, proxyReqParams *ProxyRe
 	destName := proxyReqParams.DestName
 	jobID := proxyReqParams.JobID
 
-	// Forming the data-structure for proxy request
-	httpProxyReq := httpProxyRequest{
-		DestinationRequest: proxyReqParams.ResponseData,
-		Metadata:           proxyReqParams.Metadata,
-	}
-
-	payload, err := jsonfast.Marshal(httpProxyReq)
+	payload, err := jsonfast.Marshal(proxyReqParams.ResponseData)
 	if err != nil {
 		panic(err)
 	}

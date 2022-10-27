@@ -669,11 +669,11 @@ func (worker *workerT) processDestinationJobs() {
 								if worker.rt.transformerProxy {
 									jobID := destinationJob.JobMetadataArray[0].JobID
 									pkgLogger.Debugf(`[TransformerProxy] (Dest-%[1]v) {Job - %[2]v} Request started`, worker.rt.destName, jobID)
+									val.Metadata = destinationJob.JobMetadataArray[0]
 									proxyReqparams := &transformer.ProxyRequestParams{
 										DestName:     worker.rt.destName,
 										JobID:        jobID,
 										ResponseData: val,
-										Metadata:     destinationJob.JobMetadataArray[0],
 									}
 									rtlTime := time.Now()
 									respStatusCode, respBodyTemp, respContentType = worker.rt.transformer.ProxyRequest(ctx, proxyReqparams)
