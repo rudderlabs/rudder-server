@@ -202,18 +202,14 @@ func (jd *HandleT) failedOnlyBackup(ctx context.Context, backupDSRange *dataSetR
 	jd.logger.Infof("[JobsDB] :: Backing up table: %v", tableName)
 
 	start := time.Now()
-	getFileName := func() (string, error) {
+	getFileName := func(workspaceID string) (string, error) {
 		backupPathDirName := "/rudder-s3-dumps/"
 		tmpDirPath, err := misc.CreateTMPDIR()
 		if err != nil {
 			return "", err
 		}
 		pathPrefix = strings.TrimPrefix(tableName, preDropTablePrefix)
-		return fmt.Sprintf(`%v%v_%v.gz`, tmpDirPath+backupPathDirName, pathPrefix, Aborted.State), nil
-	}
-	path, err := getFileName()
-	if err != nil {
-		return fmt.Errorf("error while getting file name: %w", err)
+		return fmt.Sprintf(`%v%v_%v.%v.gz`, tmpDirPath+backupPathDirName, pathPrefix, Aborted.State, workspaceID), nil
 	}
 
 	workspaces, err := jd.getAllWorkspaces(backupDSRange.ds.JobTable)
@@ -249,6 +245,10 @@ func (jd *HandleT) failedOnlyBackup(ctx context.Context, backupDSRange *dataSetR
 			if storagePreferences, ok := jd.storageSettings.StoragePreferences[workspace]; ok && !jd.shouldBackUp(storagePreferences) {
 				jd.logger.Infof("Skipping backup for workspace/tablePrefix: %s/%s", backupWorker.job.workspaceID, jd.tablePrefix)
 				return nil
+			}
+			path, err := getFileName(backupWorker.job.workspaceID)
+			if err != nil {
+				return fmt.Errorf("error while getting file name: %w", err)
 			}
 
 			err = backupWorker.createTableDump(getFailedOnlyBackupQueryFn(backupDSRange, workspace), jd.tablePrefix, path, totalCount)
@@ -286,25 +286,22 @@ func (jd *HandleT) backupJobsTable(ctx context.Context, backupDSRange *dataSetRa
 
 	start := time.Now()
 
-	getFileName := func() (string, error) {
+	getFileName := func(workspaceID string) (string, error) {
 		backupPathDirName := "/rudder-s3-dumps/"
 		tmpDirPath, err := misc.CreateTMPDIR()
 		if err != nil {
 			return "", err
 		}
 		pathPrefix = strings.TrimPrefix(tableName, preDropTablePrefix)
-		return fmt.Sprintf(`%v%v.%v.%v.%v.%v.gz`,
+		return fmt.Sprintf(`%v%v.%v.%v.%v.%v.%v.gz`,
 			tmpDirPath+backupPathDirName,
 			pathPrefix,
 			backupDSRange.minJobID,
 			backupDSRange.maxJobID,
 			backupDSRange.startTime,
 			backupDSRange.endTime,
+			workspaceID,
 		), nil
-	}
-	path, err := getFileName()
-	if err != nil {
-		return fmt.Errorf("error while getting file name: %w", err)
 	}
 
 	workspaces, err := jd.getAllWorkspaces(backupDSRange.ds.JobTable)
@@ -340,6 +337,11 @@ func (jd *HandleT) backupJobsTable(ctx context.Context, backupDSRange *dataSetRa
 			if storagePreferences, ok := jd.storageSettings.StoragePreferences[workspace]; ok && !jd.shouldBackUp(storagePreferences) {
 				jd.logger.Infof("Skipping backup for workspace/tablePrefix: %s/%s", backupWorker.job.workspaceID, jd.tablePrefix)
 				return nil
+			}
+
+			path, err := getFileName(backupWorker.job.workspaceID)
+			if err != nil {
+				return fmt.Errorf("error while getting file name: %w", err)
 			}
 
 			err = backupWorker.createTableDump(getJobsBackupQueryFn(backupDSRange, workspace), jd.tablePrefix, path, totalCount)
@@ -378,19 +380,14 @@ func (jd *HandleT) backupStatusTable(ctx context.Context, backupDSRange *dataSet
 
 	start := time.Now()
 
-	getFileName := func() (string, error) {
+	getFileName := func(workspaceID string) (string, error) {
 		backupPathDirName := "/rudder-s3-dumps/"
 		tmpDirPath, err := misc.CreateTMPDIR()
 		if err != nil {
 			return "", err
 		}
 		pathPrefix = strings.TrimPrefix(tableName, preDropTablePrefix)
-		return fmt.Sprintf(`%v%v.gz`, tmpDirPath+backupPathDirName, pathPrefix), nil
-	}
-
-	path, err := getFileName()
-	if err != nil {
-		return fmt.Errorf("error while getting file name: %w", err)
+		return fmt.Sprintf(`%v%v.%v.gz`, tmpDirPath+backupPathDirName, pathPrefix, workspaceID), nil
 	}
 
 	workspaces, err := jd.getAllWorkspaces(backupDSRange.ds.JobTable)
@@ -426,6 +423,11 @@ func (jd *HandleT) backupStatusTable(ctx context.Context, backupDSRange *dataSet
 			if storagePreferences, ok := jd.storageSettings.StoragePreferences[workspace]; ok && !jd.shouldBackUp(storagePreferences) {
 				jd.logger.Infof("Skipping backup for workspace/tablePrefix: %s/%s", backupWorker.job.workspaceID, jd.tablePrefix)
 				return nil
+			}
+
+			path, err := getFileName(backupWorker.job.workspaceID)
+			if err != nil {
+				return fmt.Errorf("error while getting file name: %w", err)
 			}
 
 			err = backupWorker.createTableDump(getStatusBackupQueryFn(backupDSRange, workspace), jd.tablePrefix, path, totalCount)
