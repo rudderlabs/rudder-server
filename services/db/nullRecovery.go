@@ -6,7 +6,7 @@ import (
 	"github.com/rudderlabs/rudder-server/config"
 )
 
-// HandleNullRecovery decides the recovery Mode (normal/migration) in which app should run
+// HandleNullRecovery decides the recovery Mode (normal/degraded) in which app should run
 func HandleNullRecovery(forceNormal, forceDegraded bool, currTime int64, appType string) {
 	enabled := config.GetBool("recovery.enabled", true)
 	if !enabled {
@@ -18,7 +18,7 @@ func HandleNullRecovery(forceNormal, forceDegraded bool, currTime int64, appType
 	if forceMode != "" {
 		recoveryData.Mode = forceMode
 	} else if recoveryData.Mode != normalMode {
-		// If no mode is forced (through env or cli) and if previous mode is migration then setting server mode to normal.
+		// If no mode is forced (through env or cli) then setting server mode to normal.
 		recoveryData.Mode = normalMode
 	}
 	recoveryHandler := NewRecoveryHandler(&recoveryData)
