@@ -17,7 +17,6 @@ import (
 TODOs:
 * benchmark AWS Elasticache Redis
 * replace old limiters
-* feature flags for algo type
 * guard against concurrency?
 */
 
