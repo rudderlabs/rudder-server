@@ -27,7 +27,7 @@ func TestMTBackup(t *testing.T) {
 	require.NoError(t, err, "Failed to create docker pool")
 	cleanup := &testhelper.Cleanup{}
 	defer cleanup.Run()
-	
+
 	minioResource, err := destination.SetupMINIO(pool, cleanup)
 	require.NoError(t, err)
 
@@ -42,8 +42,8 @@ func TestMTBackup(t *testing.T) {
 	postgresql := startPostgres(t)
 	dbHandle := postgresql.DB
 	jobsdb := &HandleT{
-		tablePrefix:     prefix,
-		dbHandle:        dbHandle,
+		tablePrefix: prefix,
+		dbHandle:    dbHandle,
 		storageSettings: backup.StorageSettings{
 			StorageBucket: backup.StorageBucket{
 				"w-1": backendconfig.StorageBucket{
@@ -81,8 +81,8 @@ func TestMTBackup(t *testing.T) {
 				},
 			},
 		},
-		logger:          logger.NewLogger().Child("jobsdb"),
-		BackupSettings:  &backupSettings{},
+		logger:         logger.NOP,
+		BackupSettings: &backupSettings{},
 	}
 	var (
 		jobsTable      = "pre_drop_" + prefix + "_jobs_0"
@@ -104,9 +104,9 @@ func TestMTBackup(t *testing.T) {
 
 	backupDSRange := dataSetRangeT{
 		ds: dataSetT{
-			JobTable: 	jobsTable,
+			JobTable:       jobsTable,
 			JobStatusTable: jobStatusTable,
-			Index: "0",
+			Index:          "0",
 		},
 	}
 	require.Equal(t, 0, len(jobsdb.backupWorkers))
