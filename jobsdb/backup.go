@@ -67,15 +67,6 @@ func (jd *HandleT) backupDSLoop(ctx context.Context) {
 
 	jd.logger.Info("BackupDS loop is running")
 
-	if jd.backupWorkers == nil {
-		// create workers
-		noOfWorkers := config.GetInt("MULTITENANT_JOBS_BACKUP_WORKERS", 64)
-		jd.backupWorkers = make(chan *WorkerT, noOfWorkers)
-		for i := 0; i < noOfWorkers; i++ {
-			jd.backupWorkers <- jd.NewWorker(i)
-		}
-	}
-
 	for {
 		select {
 		case <-time.After(sleepMultiplier * backupCheckSleepDuration):
@@ -142,6 +133,15 @@ func (jd *HandleT) getAllWorkspaces(jobTable string) ([]string, error) {
 
 // backupDS writes both jobs and job_staus table to JOBS_BACKUP_STORAGE_PROVIDER
 func (jd *HandleT) backupDS(ctx context.Context, backupDSRange *dataSetRangeT) error {
+	if jd.backupWorkers == nil {
+		// create workers
+		noOfWorkers := config.GetInt("MULTITENANT_JOBS_BACKUP_WORKERS", 64)
+		jd.backupWorkers = make(chan *WorkerT, noOfWorkers)
+		for i := 0; i < noOfWorkers; i++ {
+			jd.backupWorkers <- jd.NewWorker(i)
+		}
+	}
+
 	err := jd.cleanStatusTable(backupDSRange)
 	if err != nil {
 		return fmt.Errorf("error while cleaning status table: %w", err)
@@ -225,6 +225,7 @@ func (jd *HandleT) failedOnlyBackup(ctx context.Context, backupDSRange *dataSetR
 		}
 
 		if totalCount == 0 {
+			jd.logger.Infof("[JobsDB] :: Skipping backup for workspace/table since there are no rows: %s/%s", workspace, tableName)
 			return nil
 		}
 		fileUploader, err := jd.getBackupFileUploader(ctx, workspace)
@@ -265,6 +266,11 @@ func (jd *HandleT) failedOnlyBackup(ctx context.Context, backupDSRange *dataSetR
 			return nil
 		}))
 	}
+	err = g.Wait()
+	if err != nil {
+		return err
+	}
+
 
 	stats.Default.NewTaggedStat("total_TableDump_TimeStat", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix}).Since(start)
 	return nil
@@ -317,6 +323,7 @@ func (jd *HandleT) backupJobsTable(ctx context.Context, backupDSRange *dataSetRa
 		}
 
 		if totalCount == 0 {
+			jd.logger.Infof("[JobsDB] :: Skipping backup for workspace/table since there are no rows: %s/%s", workspace, tableName)
 			return nil
 		}
 		fileUploader, err := jd.getBackupFileUploader(ctx, workspace)
@@ -357,6 +364,10 @@ func (jd *HandleT) backupJobsTable(ctx context.Context, backupDSRange *dataSetRa
 			}
 			return nil
 		}))
+	}
+	err = g.Wait()
+	if err != nil {
+		return err
 	}
 
 	// Do not record stat in error case as error case time might be low and skew stats
@@ -403,6 +414,7 @@ func (jd *HandleT) backupStatusTable(ctx context.Context, backupDSRange *dataSet
 		}
 
 		if totalCount == 0 {
+			jd.logger.Infof("[JobsDB] :: Skipping backup for workspace/table since there are no rows: %s/%s", workspace, tableName)
 			return nil
 		}
 		backupWorker := <-jd.backupWorkers
@@ -443,6 +455,10 @@ func (jd *HandleT) backupStatusTable(ctx context.Context, backupDSRange *dataSet
 			}
 			return nil
 		}))
+	}
+	err = g.Wait()
+	if err != nil {
+		return err
 	}
 
 	// Do not record stat in error case as error case time might be low and skew stats

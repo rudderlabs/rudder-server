@@ -142,6 +142,7 @@ func TestBackupTable(t *testing.T) {
 		} else if strings.Contains(filename, "aborted") {
 			abortedJobsBackupFilename = filename
 		}
+		require.Contains(t, filename, "defaultWorkspaceID-1")
 	}
 
 	// Verify aborted jobs backup
