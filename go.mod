@@ -34,7 +34,7 @@ require (
 	github.com/dgraph-io/badger/v2 v2.2007.4
 	github.com/fsnotify/fsnotify v1.5.4
 	github.com/go-redis/redis v6.15.7+incompatible
-	github.com/gofrs/uuid v4.2.0+incompatible
+	github.com/gofrs/uuid v4.3.0+incompatible
 	github.com/golang-migrate/migrate/v4 v4.15.2
 	github.com/golang/mock v1.6.0
 	github.com/gomodule/redigo v1.8.5
