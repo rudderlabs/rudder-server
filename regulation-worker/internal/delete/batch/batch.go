@@ -308,27 +308,6 @@ func (*BatchManager) GetSupportedDestinations() []string {
 	return supportedDestinations
 }
 
-func getLocalFileHandlers(destType string) map[string]filehandler.LocalFileHandler {
-	switch destType {
-	case "S3":
-		return map[string]filehandler.LocalFileHandler{
-			".json.gz": filehandler.NewGZIPLocalFileHandler(filehandler.CamelCase),
-		}
-
-	// S3_DATALAKE is a warehouse destination, so in order
-	// to send events into a warehouse destination, we simply snake_cased
-	// so the gziphandler needs to be created with Snakecasing `user_id` in mind
-	case "S3_DATALAKE":
-		return map[string]filehandler.LocalFileHandler{
-			".json.gz": filehandler.NewGZIPLocalFileHandler(filehandler.SnakeCase),
-			".parquet": filehandler.NewParquetLocalFileHandler(),
-		}
-
-	default:
-		return nil
-	}
-}
-
 // Delete users corresponding to input userAttributes from a given batch destination
 func (bm *BatchManager) Delete(
 	ctx context.Context,
@@ -349,15 +328,6 @@ func (bm *BatchManager) Delete(
 	if err != nil {
 		pkgLogger.Errorf("error while creating temporary directory to store all temporary files during deletion: %v", err)
 		return model.JobStatusFailed
-	}
-
-	// fetch list of file handlers which we
-	// have present in our system, which would aid the system in filtering
-	// the files.
-	filehandlers := getLocalFileHandlers(destName)
-	if len(filehandlers) == 0 {
-		pkgLogger.Warnf("unsupported destination: %s for filehandlers", destName)
-		return model.JobStatusNotSupported // terminal state
 	}
 
 	batch := Batch{
@@ -385,13 +355,6 @@ func (bm *BatchManager) Delete(
 			break
 		}
 
-		// Only handle files for which we have available handlers
-		files = filterByAvailableHandlers(files, filehandlers)
-		if len(files) == 0 {
-			pkgLogger.Info("no filtered files found, continuing")
-			continue
-		}
-
 		fName, err := batch.download(ctx, filepath.Join(prefix, StatusTrackerFileName))
 		if err != nil {
 			return model.JobStatusFailed
@@ -417,19 +380,29 @@ func (bm *BatchManager) Delete(
 			_i := i
 			goRoutineCount <- true
 			g.Go(func() error {
-				cleanTime := stats.Default.NewTaggedStat("file_cleaning_time", stats.TimerType, stats.Tags{"jobId": fmt.Sprintf("%d", job.ID), "workspaceId": job.WorkspaceID, "destType": "batch", "destName": destName})
-				cleanTime.Start()
 
 				defer func() {
-					cleanTime.End()
 					<-goRoutineCount
 				}()
 
-				filehandler := getFileHandler(files[_i].Key, filehandlers)
+				// Get filehandler from a factory on every iteration, to not share the data.
+				filehandler := LocalFileHandlerFactory(destName, files[_i].Key)
 				if filehandler == nil {
-					pkgLogger.Warnf("unable to locate filehandler for file: %s ", files[_i].Key)
+					pkgLogger.Warnf("unable to locate filehandler for file: %s under destination: %s", files[_i].Key, destName)
 					return nil
 				}
+
+				cleanTime := stats.Default.NewTaggedStat(
+					"file_cleaning_time",
+					stats.TimerType,
+					stats.Tags{
+						"jobId":       fmt.Sprintf("%d", job.ID),
+						"workspaceId": job.WorkspaceID,
+						"destType":    "batch",
+						"destName":    destName,
+					})
+				cleanTime.Start()
+				defer cleanTime.End()
 
 				absPath, err := downloadWithExpBackoff(gCtx, batch.download, files[_i].Key)
 				if err != nil {
@@ -465,31 +438,21 @@ func (bm *BatchManager) Delete(
 	return model.JobStatusComplete
 }
 
-func filterByAvailableHandlers(toFilter []*filemanager.FileObject, handlers map[string]filehandler.LocalFileHandler) []*filemanager.FileObject {
-	pkgLogger.Debugf("filtering the upstream files by available handlers: %#v", handlers)
+func LocalFileHandlerFactory(dest, upstreamFilePath string) filehandler.LocalFileHandler {
 
-	filtered := make([]*filemanager.FileObject, 0)
-	for _, item := range toFilter {
-		for suffix := range handlers {
-			// Only if we have the handler of required suffix, does it
-			// gets added to the filtered list.
-			if strings.HasSuffix(item.Key, suffix) {
-				entry := item
-				filtered = append(filtered, entry)
-			}
+	switch dest {
+	case "S3":
+		if strings.HasSuffix(upstreamFilePath, ".json.gz") {
+			return filehandler.NewGZIPLocalFileHandler(filehandler.CamelCase)
 		}
-	}
-	return filtered
-}
 
-// getFileHandler extracts the filehandler based on the suffix of the file for which
-// we need to perform the identity removal.
-func getFileHandler(key string, handlers map[string]filehandler.LocalFileHandler) filehandler.LocalFileHandler {
-	// handlers map are over the file suffix like .json.gz, .parquet
-	// based on the file suffix, allow for the fetch of corresponding handler.
-	for k, v := range handlers {
-		if strings.HasSuffix(key, k) {
-			return v
+	case "S3_DATALAKE":
+		if strings.HasSuffix(upstreamFilePath, ".parquet") {
+			return filehandler.NewParquetLocalFileHandler()
+		}
+
+		if strings.HasSuffix(upstreamFilePath, ".json.gz") {
+			return filehandler.NewGZIPLocalFileHandler(filehandler.SnakeCase)
 		}
 	}
 
