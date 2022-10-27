@@ -21,6 +21,7 @@ import (
 	"github.com/lib/pq"
 	"github.com/thoas/go-funk"
 	"github.com/tidwall/gjson"
+	"golang.org/x/exp/slices"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/rudderlabs/rudder-server/app"
@@ -90,6 +91,7 @@ var (
 	maxParallelJobCreation              int
 	enableJitterForSyncs                bool
 	configBackendURL                    string
+	degradedWorkspaceIDs                []string
 	asyncWh                             *jobs.AsyncJobWhT
 )
 
@@ -138,6 +140,7 @@ type HandleT struct {
 	allowMultipleSourcesForJobsPickup bool
 	workspaceBySourceIDs              map[string]string
 	workspaceBySourceIDsLock          sync.RWMutex
+	degradedWorkspaceIDs              []string
 
 	backgroundCancel context.CancelFunc
 	backgroundGroup  errgroup.Group
@@ -193,6 +196,8 @@ func loadConfig() {
 	config.RegisterIntConfigVariable(8, &maxParallelJobCreation, true, 1, "Warehouse.maxParallelJobCreation")
 	config.RegisterBoolConfigVariable(false, &enableJitterForSyncs, true, "Warehouse.enableJitterForSyncs")
 	config.RegisterDurationConfigVariable(30, &tableCountQueryTimeout, true, time.Second, []string{"Warehouse.tableCountQueryTimeout", "Warehouse.tableCountQueryTimeoutInS"}...)
+
+	config.RegisterStringSliceConfigVariable(nil, &degradedWorkspaceIDs, false, "Warehouse.degradedWorkspaceIDs")
 
 	appName = misc.DefaultString("rudder-server").OnError(os.Hostname())
 	configBackendURL = config.GetString("CONFIG_BACKEND_URL", "https://api.rudderlabs.com")
@@ -270,13 +275,43 @@ func (*HandleT) handleUploadJob(uploadJob *UploadJobT) (err error) {
 	return
 }
 
+func excludeWorkspaceIDs(chIn pubsub.DataChannel, workspaceIDs []string) chan map[string]backendconfig.ConfigT {
+	workspaceIDMap := make(map[string]struct{})
+	for _, workspaceID := range workspaceIDs {
+		workspaceIDMap[workspaceID] = struct{}{}
+	}
+
+	chOut := make(chan map[string]backendconfig.ConfigT)
+
+	go func() {
+		for data := range chIn {
+			input := data.Data.(map[string]backendconfig.ConfigT)
+			filteredConfig := make(map[string]backendconfig.ConfigT, len(input))
+
+			for workspaceID := range input {
+				if _, ok := workspaceIDMap[workspaceID]; !ok {
+					filteredConfig[workspaceID] = input[workspaceID]
+				}
+			}
+
+			chOut <- filteredConfig
+		}
+		close(chOut)
+	}()
+
+	return chOut
+}
+
 // Backend Config subscriber subscribes to backend-config and gets all the configurations that includes all sources, destinations and their latest values.
 func (wh *HandleT) backendConfigSubscriber() {
-	ch := backendconfig.DefaultBackendConfig.Subscribe(context.TODO(), backendconfig.TopicBackendConfig)
-	for data := range ch {
+	configChanges := excludeWorkspaceIDs(
+		backendconfig.DefaultBackendConfig.Subscribe(context.TODO(), backendconfig.TopicBackendConfig),
+		wh.degradedWorkspaceIDs,
+	)
+
+	for config := range configChanges {
 		wh.configSubscriberLock.Lock()
 		wh.warehouses = []warehouseutils.Warehouse{}
-		config := data.Data.(map[string]backendconfig.ConfigT)
 		sourceIDsByWorkspaceLock.Lock()
 		sourceIDsByWorkspace = map[string][]string{}
 
@@ -1337,6 +1372,9 @@ func (wh *HandleT) Setup(whType string) {
 	wh.Enable()
 	wh.workerChannelMap = make(map[string]chan *UploadJobT)
 	wh.inProgressMap = make(map[WorkerIdentifierT][]JobIDT)
+	if wh.degradedWorkspaceIDs == nil {
+		wh.degradedWorkspaceIDs = degradedWorkspaceIDs
+	}
 
 	whName := warehouseutils.WHDestNameMap[whType]
 	config.RegisterIntConfigVariable(8, &wh.noOfWorkers, true, 1, fmt.Sprintf(`Warehouse.%v.noOfWorkers`, whName), "Warehouse.noOfWorkers")
@@ -1562,6 +1600,11 @@ func processHandler(w http.ResponseWriter, r *http.Request) {
 
 	var stagingFile warehouseutils.StagingFile
 	json.Unmarshal(body, &stagingFile)
+
+	if slices.Contains(degradedWorkspaceIDs, stagingFile.WorkspaceID) {
+		http.Error(w, "Workspace is degraded", http.StatusServiceUnavailable)
+		return
+	}
 
 	var firstEventAt, lastEventAt interface{}
 	firstEventAt = stagingFile.FirstEventAt
@@ -2028,17 +2071,17 @@ func startWebHandler(ctx context.Context) error {
 		if isMaster() {
 			pkgLogger.Infof("WH: Warehouse master service waiting for BackendConfig before starting on %d", webPort)
 			backendconfig.DefaultBackendConfig.WaitForConfig(ctx)
-			mux.HandleFunc("/v1/process", processHandler)
+			mux.HandleFunc("/v1/process", processHandler) // degraded mode
 			// triggers upload only when there are pending events and triggerUpload is sent for a sourceId
-			mux.HandleFunc("/v1/warehouse/pending-events", pendingEventsHandler)
+			mux.HandleFunc("/v1/warehouse/pending-events", pendingEventsHandler) // degraded mode
 			// triggers uploads for a source
-			mux.HandleFunc("/v1/warehouse/trigger-upload", triggerUploadHandler)
+			mux.HandleFunc("/v1/warehouse/trigger-upload", triggerUploadHandler) // degraded mode
 			mux.HandleFunc("/databricksVersion", databricksVersionHandler)
 			mux.HandleFunc("/v1/setConfig", setConfigHandler)
 
 			// Warehouse Async Job end-points
-			mux.HandleFunc("/v1/warehouse/jobs", asyncWh.AddWarehouseJobHandler)
-			mux.HandleFunc("/v1/warehouse/jobs/status", asyncWh.StatusWarehouseJobHandler)
+			mux.HandleFunc("/v1/warehouse/jobs", asyncWh.AddWarehouseJobHandler)           // degraded mode
+			mux.HandleFunc("/v1/warehouse/jobs/status", asyncWh.StatusWarehouseJobHandler) // degraded mode
 
 			pkgLogger.Infof("WH: Starting warehouse master service in %d", webPort)
 		} else {
