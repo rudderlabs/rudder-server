@@ -16,8 +16,8 @@ import (
 )
 
 var (
-	jsonfast = jsoniter.ConfigCompatibleWithStandardLibrary
-
+	ConfigKeysToFilter    map[string][]string // Configs which are too large and unnecessary to be sent to transformer
+	jsonfast              = jsoniter.ConfigCompatibleWithStandardLibrary
 	destTransformURL      string
 	postParametersTFields []string
 )
@@ -29,6 +29,7 @@ func Init() {
 	// Since unmarshal doesn't check if the fields are present in the json or not and instead just initialze to zero value, we have to manually do this check on all fields before unmarshaling
 	// This function gets a list of fields tagged as json from the struct and populates in postParametersTFields
 	postParametersTFields = misc.GetMandatoryJSONFieldNames(PostParametersT{})
+	initializeFilterConfigs()
 }
 
 func loadConfig() {
@@ -189,4 +190,17 @@ func GetUserTransformURL() string {
 // GetTrackingPlanValidationURL returns the port of running tracking plan validation
 func GetTrackingPlanValidationURL() string {
 	return destTransformURL + "/v0/validate"
+}
+
+func initializeFilterConfigs() {
+	ConfigKeysToFilter = make(map[string][]string)
+	ConfigKeysToFilter["KAFKA"] = append(ConfigKeysToFilter["KAFKA"], getConfigKeysToFilter("KAFKA")...)
+}
+
+func getConfigKeysToFilter(destType string) []string {
+	switch destType {
+	case "KAFKA":
+		return []string{"caCertificate"}
+	}
+	return []string{}
 }
