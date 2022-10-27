@@ -1423,10 +1423,10 @@ func (gateway *HandleT) StartWebHandler(ctx context.Context) error {
 	gateway.logger.Infof("WebHandler waiting for BackendConfig before starting on %d", webPort)
 	gateway.backendConfig.WaitForConfig(ctx)
 	gateway.logger.Infof("WebHandler Starting on %d", webPort)
-
+	component:="gateway"
 	srvMux := mux.NewRouter()
 	srvMux.Use(
-		middleware.StatMiddleware(ctx, srvMux, stats.Default),
+		middleware.StatMiddleware(ctx, srvMux, stats.Default,component),
 		middleware.LimitConcurrentRequests(maxConcurrentRequests),
 	)
 	srvMux.HandleFunc("/v1/batch", gateway.webBatchHandler).Methods("POST")
