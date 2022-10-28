@@ -53,8 +53,6 @@ type ProxyRequestParams struct {
 	DestName     string
 	JobID        int64
 	BaseUrl      string
-	// job's metadata
-	Metadata types.JobMetadataT
 }
 
 // Transformer provides methods to transform events

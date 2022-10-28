@@ -57,6 +57,7 @@ type PostParametersT struct {
 	QueryParams map[string]interface{} `json:"params"`
 	Body        map[string]interface{} `json:"body"`
 	Files       map[string]interface{} `json:"files"`
+	Metadata map[string]interface{} `json:"metadata"` // This is being added to send metadata as part of the transformed payload in proxy request
 }
 
 type TransStatsT struct {
