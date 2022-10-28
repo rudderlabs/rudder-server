@@ -22,6 +22,7 @@ import (
 
 	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
+	"github.com/rudderlabs/rudder-server/internal/throttling"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/processor/integrations"
 	customDestinationManager "github.com/rudderlabs/rudder-server/router/customdestinationmanager"
@@ -51,9 +52,20 @@ type reporter interface {
 
 type tenantStats interface {
 	CalculateSuccessFailureCounts(workspace, destType string, isSuccess, isDrained bool)
-	GetRouterPickupJobs(destType string, noOfWorkers int, routerTimeOut time.Duration, jobQueryBatchSize int, timeGained float64) (map[string]int, map[string]float64)
+	GetRouterPickupJobs(
+		destType string, noOfWorkers int, routerTimeOut time.Duration, jobQueryBatchSize int, timeGained float64,
+	) (map[string]int, map[string]float64)
 	ReportProcLoopAddStats(stats map[string]map[string]int, tableType string)
 	UpdateWorkspaceLatencyMap(destType, workspaceID string, val float64)
+}
+
+type limiter interface {
+	IsEnabled() bool
+	IsDestLevelEnabled() bool
+	IsUserLevelEnabled() bool
+	CheckLimitReached(destID, userID string, cost int64) (
+		limited bool, tr throttling.TokenReturner, retErr error,
+	)
 }
 
 type HandleDestOAuthRespParamsT struct {
@@ -88,7 +100,7 @@ type HandleT struct {
 	requestsMetric                         []requestMetric
 	failuresMetric                         map[string]map[string]int
 	customDestinationManager               customDestinationManager.DestinationManager
-	throttler                              throttler.Throttler
+	throttler                              limiter
 	guaranteeUserEventOrder                bool
 	netClientTimeout                       time.Duration
 	backendProxyTimeout                    time.Duration
@@ -170,9 +182,9 @@ type JobParametersT struct {
 }
 
 type workerMessageT struct {
-	job                *jobsdb.JobT
-	throttledAtTime    time.Time
-	workerAssignedTime time.Time
+	job                     *jobsdb.JobT
+	workerAssignedTime      time.Time
+	throttlingTokenReturner throttling.TokenReturner
 }
 
 // workerT a structure to define a worker for sending events to sinks
@@ -192,7 +204,6 @@ type workerT struct {
 	routerProxyStat            stats.Measurement
 	batchTimeStat              stats.Measurement
 	jobCountsByDestAndUser     map[string]*destJobCountsT
-	throttledAtTime            time.Time
 	latestAssignedTime         time.Time
 	processingStartTime        time.Time
 	encounteredRouterTransform bool
@@ -312,13 +323,16 @@ func (worker *workerT) recordStatsForFailedTransforms(transformType string, tran
 
 func (worker *workerT) routerTransform(routerJobs []types.RouterJobT) []types.DestinationJobT {
 	worker.rt.routerTransformInputCountStat.Count(len(routerJobs))
-	destinationJobs := worker.rt.transformer.Transform(transformer.ROUTER_TRANSFORM, &types.TransformMessageT{Data: routerJobs, DestType: strings.ToLower(worker.rt.destName)})
+	destinationJobs := worker.rt.transformer.Transform(
+		transformer.ROUTER_TRANSFORM,
+		&types.TransformMessageT{Data: routerJobs, DestType: strings.ToLower(worker.rt.destName)},
+	)
 	worker.rt.routerTransformOutputCountStat.Count(len(destinationJobs))
 	worker.recordStatsForFailedTransforms("routerTransform", destinationJobs)
 	return destinationJobs
 }
 
-func (worker *workerT) batch(routerJobs []types.RouterJobT) []types.DestinationJobT {
+func (worker *workerT) batchRouterTransform(routerJobs []types.RouterJobT) []types.DestinationJobT {
 	inputJobsLength := len(routerJobs)
 	worker.rt.batchInputCountStat.Count(inputJobsLength)
 	destinationJobs := worker.rt.transformer.Transform(
@@ -330,7 +344,6 @@ func (worker *workerT) batch(routerJobs []types.RouterJobT) []types.DestinationJ
 	)
 	worker.rt.batchOutputCountStat.Count(len(destinationJobs))
 	worker.recordStatsForFailedTransforms("batch", destinationJobs)
-
 	return destinationJobs
 }
 
@@ -345,8 +358,9 @@ func (worker *workerT) workerProcess() {
 					return
 				}
 
+				// TODO throttle the transformations here by worker.rt.destName?
 				if worker.rt.enableBatching {
-					worker.destinationJobs = worker.batch(worker.routerJobs)
+					worker.destinationJobs = worker.batchRouterTransform(worker.routerJobs)
 				} else {
 					worker.destinationJobs = worker.routerTransform(worker.routerJobs)
 				}
@@ -356,7 +370,6 @@ func (worker *workerT) workerProcess() {
 			}
 
 			job := message.job
-			worker.throttledAtTime = message.throttledAtTime
 			worker.rt.logger.Debugf("[%v Router] :: performing checks to send payload.", worker.rt.destName)
 
 			userID := job.UserID
@@ -385,8 +398,18 @@ func (worker *workerT) workerProcess() {
 				job.Parameters = routerutils.EnhanceJSON(job.Parameters, "stage", "router")
 				job.Parameters = routerutils.EnhanceJSON(job.Parameters, "reason", drainReason)
 				worker.rt.responseQ <- jobResponseT{status: &status, worker: worker, userID: userID, JobT: job}
-				worker.rt.logger.Debugf(`Decrementing in throttle map for destination:%s since job:%d is marked as drained for user:%s`, parameters.DestinationID, job.JobID, userID)
-				worker.rt.throttler.Dec(parameters.DestinationID, userID, 1, worker.throttledAtTime, throttler.AllLevels)
+				worker.rt.logger.Debugf(
+					`Decrementing in throttle map for destination:%s since job:%d is marked as drained for user:%s`,
+					parameters.DestinationID, job.JobID, userID,
+				)
+				// TODO: decrement was done in ALL_LEVELS
+				// TODO: check if this return makes sense
+				if err := message.throttlingTokenReturner.Return(context.TODO()); err != nil {
+					worker.rt.logger.Warnf(
+						`Failed to return throttling token for destination:%s, job:%d, user:%s`,
+						job.JobID, userID,
+					)
+				}
 
 				stats.Default.NewTaggedStat(`drained_events`, stats.CountType, stats.Tags{
 					"destType":    worker.rt.destName,
@@ -421,8 +444,18 @@ func (worker *workerT) workerProcess() {
 						WorkspaceId:   job.WorkspaceId,
 					}
 					worker.rt.responseQ <- jobResponseT{status: &status, worker: worker, userID: userID, JobT: job}
-					worker.rt.logger.Debugf(`Decrementing in throttle map for destination:%s since job:%d is marked as waiting for user:%s`, parameters.DestinationID, job.JobID, userID)
-					worker.rt.throttler.Dec(parameters.DestinationID, userID, 1, worker.throttledAtTime, throttler.AllLevels)
+					worker.rt.logger.Debugf(
+						`Decrementing in throttle map for destination:%s since job:%d is marked as waiting for user:%s`,
+						parameters.DestinationID, job.JobID, userID,
+					)
+					// TODO: decrement was done in ALL_LEVELS
+					// TODO: check if this return makes sense
+					if err := message.throttlingTokenReturner.Return(context.TODO()); err != nil {
+						worker.rt.logger.Warnf(
+							`Failed to return throttling token for destination:%s, job:%d, user:%s`,
+							job.JobID, userID,
+						)
+					}
 					continue
 				}
 			}
@@ -455,7 +488,7 @@ func (worker *workerT) workerProcess() {
 					ExecTime:      time.Now(),
 					RetryTime:     time.Now(),
 					ErrorCode:     "",
-					ErrorResponse: []byte(`{"reason": "failed because destination is not available in the config" }`),
+					ErrorResponse: []byte(`{"reason":"failed because destination is not available in the config"}`),
 					Parameters:    routerutils.EmptyPayload,
 					WorkspaceId:   job.WorkspaceId,
 				}
@@ -478,11 +511,12 @@ func (worker *workerT) workerProcess() {
 				continue
 			}
 			destination := batchDestination.Destination
-			if authType := routerutils.GetAuthType(destination); routerutils.IsNotEmptyString(authType) && authType == "OAuth" {
+			if authType := routerutils.GetAuthType(destination); authType == "OAuth" {
 				rudderAccountID := routerutils.GetRudderAccountId(&destination)
 				if routerutils.IsNotEmptyString(rudderAccountID) {
 					worker.rt.logger.Debugf(`[%s][FetchToken] Token Fetch Method to be called`, destination.DestinationDefinition.Name)
 					// Get Access Token Information to send it as part of the event
+					// TODO throttling might be needed here
 					tokenStatusCode, accountSecretInfo := worker.rt.oauth.FetchToken(&oauth.RefreshTokenParams{
 						AccountId:       rudderAccountID,
 						WorkspaceId:     jobMetadata.WorkspaceID,
@@ -493,7 +527,7 @@ func (worker *workerT) workerProcess() {
 					if tokenStatusCode == http.StatusOK {
 						jobMetadata.Secret = accountSecretInfo.Account.Secret
 					} else {
-						worker.rt.logger.Errorf(`[%s][FetchToken] Error in Token Fetch statusCode: %d\t error: %s\n`, destination.DestinationDefinition.Name, tokenStatusCode, accountSecretInfo.Err)
+						worker.rt.logger.Errorf(`[%s][FetchToken] Token Fetch Method error (statusCode, error): (%d, %s)`, destination.DestinationDefinition.Name, tokenStatusCode, accountSecretInfo.Err)
 					}
 				}
 			}
@@ -505,7 +539,7 @@ func (worker *workerT) workerProcess() {
 				routerJob := types.RouterJobT{Message: job.EventPayload, JobMetadata: jobMetadata, Destination: destination}
 				worker.routerJobs = append(worker.routerJobs, routerJob)
 				if len(worker.routerJobs) >= worker.rt.noOfJobsToBatchInAWorker {
-					worker.destinationJobs = worker.batch(worker.routerJobs)
+					worker.destinationJobs = worker.batchRouterTransform(worker.routerJobs)
 					worker.processDestinationJobs()
 				}
 			} else if parameters.TransformAt == "router" {
@@ -528,7 +562,7 @@ func (worker *workerT) workerProcess() {
 
 			if len(worker.routerJobs) > 0 {
 				if worker.rt.enableBatching {
-					worker.destinationJobs = worker.batch(worker.routerJobs)
+					worker.destinationJobs = worker.batchRouterTransform(worker.routerJobs)
 				} else {
 					worker.destinationJobs = worker.routerTransform(worker.routerJobs)
 				}
@@ -1310,7 +1344,7 @@ func (rt *HandleT) stopWorkers() {
 	}
 }
 
-func (rt *HandleT) findWorker(job *jobsdb.JobT, throttledAtTime time.Time) (toSendWorker *workerT) {
+func (rt *HandleT) findWorker(job *jobsdb.JobT) (toSendWorker *workerT) {
 	if rt.backgroundCtx.Err() != nil {
 		return nil
 	}
@@ -1331,17 +1365,26 @@ func (rt *HandleT) findWorker(job *jobsdb.JobT, throttledAtTime time.Time) (toSe
 		return nil
 	}
 
-	if rt.shouldThrottle(parameters.DestinationID, userID, throttledAtTime) {
-		rt.throttledUserMap[userID] = struct{}{}
-		rt.logger.Debugf(`[%v Router] :: Skipping processing of job:%d of user:%s as throttled limits exceeded`, rt.destName, job.JobID, userID)
+	var cost int64 = 1 // TODO cost
+	// TODO does it make sense to throttle here?
+	limited, tokenReturner, err := rt.shouldThrottle(parameters.DestinationID, userID, cost)
+	if err != nil {
+		rt.logger.Errorf(`[%v Router] :: Throttling check failed with the error %v . Returning nil worker`, err)
 		return nil
 	}
-
 	defer func() {
-		if toSendWorker == nil {
-			rt.throttler.Dec(parameters.DestinationID, userID, 1, throttledAtTime, throttler.AllLevels)
+		if toSendWorker == nil && tokenReturner != nil {
+			_ = tokenReturner.Return(context.TODO())
 		}
 	}()
+	if limited {
+		rt.throttledUserMap[userID] = struct{}{}
+		rt.logger.Debugf(
+			`[%v Router] :: Skipping processing of job:%d of user:%s as throttled limits exceeded`,
+			rt.destName, job.JobID, userID,
+		)
+		return nil
+	}
 
 	if !rt.guaranteeUserEventOrder {
 		// if guaranteeUserEventOrder is false, assigning worker randomly and returning here.
@@ -1385,17 +1428,14 @@ func (rt *HandleT) getWorkerPartition(userID string) int {
 	return misc.GetHash(userID) % rt.noOfWorkers
 }
 
-func (rt *HandleT) shouldThrottle(destID, userID string, throttledAtTime time.Time) (canBeThrottled bool) {
+func (rt *HandleT) shouldThrottle(destID, userID string, cost int64) (
+	limited bool, tr throttling.TokenReturner, err error,
+) {
 	if !rt.throttler.IsEnabled() {
-		return false
+		return false, nil, nil
 	}
 
-	// No need of locks here, because this is used only by a single goroutine (generatorLoop)
-	limitReached := rt.throttler.CheckLimitReached(destID, userID, throttledAtTime)
-	if !limitReached {
-		rt.throttler.Inc(destID, userID, throttledAtTime)
-	}
-	return limitReached
+	return rt.throttler.CheckLimitReached(destID, userID, cost)
 }
 
 // ResetSleep  this makes the workers reset their sleep
@@ -1849,10 +1889,9 @@ func (rt *HandleT) readAndProcess() int {
 	var toProcess []workerJobT
 
 	rt.throttledUserMap = make(map[string]struct{})
-	throttledAtTime := time.Now()
 	// Identify jobs which can be processed
 	for _, job := range combinedList {
-		w := rt.findWorker(job, throttledAtTime)
+		w := rt.findWorker(job)
 		if w != nil {
 			status := jobsdb.JobStatusT{
 				JobID:         job.JobID,
@@ -1891,7 +1930,7 @@ func (rt *HandleT) readAndProcess() int {
 	workerAssignedTime := time.Now()
 	// Send the jobs to the jobQ
 	for _, wrkJob := range toProcess {
-		wrkJob.worker.channel <- workerMessageT{job: wrkJob.job, throttledAtTime: throttledAtTime, workerAssignedTime: workerAssignedTime}
+		wrkJob.worker.channel <- workerMessageT{job: wrkJob.job, workerAssignedTime: workerAssignedTime}
 	}
 
 	return len(toProcess)
