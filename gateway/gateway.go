@@ -1499,10 +1499,10 @@ func (gateway *HandleT) StartAdminHandler(ctx context.Context) error {
 	gateway.logger.Infof("AdminHandler waiting for BackendConfig before starting on %d", adminWebPort)
 	gateway.backendConfig.WaitForConfig(ctx)
 	gateway.logger.Infof("AdminHandler starting on %d", adminWebPort)
-
+	component := "gateway"
 	srvMux := mux.NewRouter()
 	srvMux.Use(
-		middleware.StatMiddleware(ctx, srvMux, stats.Default),
+		middleware.StatMiddleware(ctx, srvMux, stats.Default, component),
 		middleware.LimitConcurrentRequests(maxConcurrentRequests),
 	)
 	srvMux.HandleFunc("/v1/pending-events", gateway.pendingEventsHandler).Methods("POST")

@@ -103,7 +103,7 @@ func TestStatsMiddleware(t *testing.T) {
 			defer cancel()
 			router := mux.NewRouter()
 			router.Use(
-				middleware.StatMiddleware(ctx, router, mockStats),
+				middleware.StatMiddleware(ctx, router, mockStats, "test"),
 			)
 			router.HandleFunc(pathTemplate, handler).Methods(expectedMethod)
 
