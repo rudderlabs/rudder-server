@@ -21,15 +21,15 @@ func SetupTransformer(pool *dockertest.Pool, d cleaner) (*TransformerResource, e
 	// pulls an image first to make sure we don't have an old cached version locally,
 	// then it creates a container based on it and runs it
 	err := pool.Client.PullImage(docker.PullImageOptions{
-		Repository: "rudderlabs/rudder-transformer",
-		Tag:        "latest",
+		Repository: "rudderlabs/develop-rudder-transformer",
+		Tag:        "feat.kafka-multitopic-support",
 	}, docker.AuthConfiguration{})
 	if err != nil {
 		return nil, fmt.Errorf("failed to pull image: %w", err)
 	}
 	transformerContainer, err := pool.RunWithOptions(&dockertest.RunOptions{
-		Repository:   "rudderlabs/rudder-transformer",
-		Tag:          "latest",
+		Repository:   "rudderlabs/develop-rudder-transformer",
+		Tag:          "feat.kafka-multitopic-support",
 		ExposedPorts: []string{"9090"},
 		Env: []string{
 			"CONFIG_BACKEND_URL=https://api.rudderlabs.com",

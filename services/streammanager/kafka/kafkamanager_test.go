@@ -470,7 +470,7 @@ func TestProduce(t *testing.T) {
 
 		pm := &ProducerManager{p: &pMockErr{error: fmt.Errorf("super bad")}}
 		destConfig := map[string]interface{}{"topic": "foo-bar"}
-		sc, res, err := pm.Produce(json.RawMessage(`{"message":"ciao"}`), destConfig)
+		sc, res, err := pm.Produce(json.RawMessage(`{"message":"ciao","topic": "foo-bar"}`), destConfig)
 		require.Equal(t, 400, sc)
 		require.Contains(t, res, "super bad error occurred.")
 		require.Contains(t, err, "super bad")
@@ -483,7 +483,7 @@ func TestProduce(t *testing.T) {
 
 		pm := &ProducerManager{p: &pMockErr{error: kafka.LeaderNotAvailable}}
 		destConfig := map[string]interface{}{"topic": "foo-bar"}
-		sc, res, err := pm.Produce(json.RawMessage(`{"message":"ciao"}`), destConfig)
+		sc, res, err := pm.Produce(json.RawMessage(`{"message":"ciao","topic": "foo-bar"}`), destConfig)
 		require.Equal(t, 500, sc)
 		require.Contains(t, res, kafka.LeaderNotAvailable.Error()+" error occurred.")
 		require.Contains(t, err, kafka.LeaderNotAvailable.Error())
@@ -496,7 +496,7 @@ func TestProduce(t *testing.T) {
 
 		pm := &ProducerManager{p: &pMockErr{}}
 		destConfig := map[string]interface{}{"topic": "foo-bar"}
-		sc, res, err := pm.Produce(json.RawMessage(`{"message":"ciao"}`), destConfig)
+		sc, res, err := pm.Produce(json.RawMessage(`{"message":"ciao","topic": "foo-bar"}`), destConfig)
 		require.Equal(t, 200, sc)
 		require.Equal(t, "Message delivered to topic: foo-bar", res)
 		require.Equal(t, "Message delivered to topic: foo-bar", err)
