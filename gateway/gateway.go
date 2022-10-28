@@ -1426,7 +1426,7 @@ func (gateway *HandleT) StartWebHandler(ctx context.Context) error {
 	component := "gateway"
 	srvMux := mux.NewRouter()
 	srvMux.Use(
-		middleware.StatMiddleware(ctx, srvMux, stats.Default,component),
+		middleware.StatMiddleware(ctx, srvMux, stats.Default, component),
 		middleware.LimitConcurrentRequests(maxConcurrentRequests),
 	)
 	srvMux.HandleFunc("/v1/batch", gateway.webBatchHandler).Methods("POST")
