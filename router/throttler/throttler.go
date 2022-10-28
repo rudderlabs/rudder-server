@@ -1,49 +1,56 @@
 package throttler
 
 import (
+	"context"
 	"fmt"
 	"time"
 
+	"github.com/go-redis/redis"
+
 	"github.com/rudderlabs/rudder-server/config"
-	"github.com/rudderlabs/rudder-server/router/throttler/ratelimiter"
+	"github.com/rudderlabs/rudder-server/internal/throttling"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 )
 
 const (
 	DestinationLevel = "destination"
 	UserLevel        = "user"
-	AllLevels        = "all"
+	AllLevels        = "all" // TODO
+
+	algoTypeGoRate         = "gorate"
+	algoTypeGCRA           = "gcra"
+	algoTypeRedisGCRA      = "redis-gcra"
+	algoTypeRedisSortedSet = "redis-sorted-set"
 )
 
-// Throttler is an interface for throttling functions
-type Throttler interface {
-	CheckLimitReached(destID, userID string, currentTime time.Time) bool
-	Inc(destID, userID string, currentTime time.Time)
-	Dec(destID, userID string, count int64, currentTime time.Time, atLevel string)
-	IsEnabled() bool
-	IsUserLevelEnabled() bool
-	IsDestLevelEnabled() bool
+type limiter interface {
+	// Limit should return true if the request can be done or false if the limit is reached.
+	Limit(ctx context.Context, cost, rate, window int64, key string) (
+		allowed bool, ret throttling.TokenReturner, err error,
+	)
 }
 
 type limiterSettings struct {
 	enabled     bool
-	eventLimit  int
+	eventLimit  int64
 	timeWindow  time.Duration
-	rateLimiter *ratelimiter.RateLimiter
+	rateLimiter limiter
 }
 
 type destinationSettings struct {
-	limit               int
+	limit               int64
 	timeWindow          int64
-	userLevelLimit      int
+	userLevelLimit      int64
 	userLevelTimeWindow int64
 }
 
 // Client is a Handle for event limiterSettings
 type Client struct {
+	algoType        string
+	redisClient     *redis.Client
 	destinationName string
-	destLimiter     *limiterSettings
-	userLimiter     *limiterSettings
+	destLimiter     limiterSettings
+	userLimiter     limiterSettings
 	logger          logger.Logger
 }
 
@@ -58,30 +65,54 @@ func New(destName string, opts ...Option) *Client {
 	}
 
 	c.destinationName = destName
-	c.destLimiter = &limiterSettings{}
-	c.userLimiter = &limiterSettings{}
-
-	// check if it has throttling config for destination
-	c.setLimits()
+	c.readConfiguration()
 
 	if c.destLimiter.enabled {
-		dataStore := ratelimiter.NewMapLimitStore(2*c.destLimiter.timeWindow, 10*time.Second)
-		c.destLimiter.rateLimiter = ratelimiter.New(dataStore, int64(c.destLimiter.eventLimit), c.destLimiter.timeWindow)
+		c.destLimiter.rateLimiter = c.newLimiter() // TODO use c.destLimiter.eventLimit & c.destLimiter.timeWindow
 	}
-
 	if c.userLimiter.enabled {
-		dataStore := ratelimiter.NewMapLimitStore(2*c.userLimiter.timeWindow, 10*time.Second)
-		c.userLimiter.rateLimiter = ratelimiter.New(dataStore, int64(c.userLimiter.eventLimit), c.userLimiter.timeWindow)
+		c.userLimiter.rateLimiter = c.newLimiter() // TODO use c.userLimiter.eventLimit & c.userLimiter.timeWindow
 	}
 
 	return &c
 }
 
-func (c *Client) setLimits() {
+func (c *Client) readConfiguration() {
 	destName := c.destinationName
 
+	// set algo type
+	config.RegisterStringConfigVariable(
+		algoTypeGoRate, &c.algoType, false, fmt.Sprintf(`Router.throttler.%s.algoType`, destName),
+	)
+
+	// set redis configuration
+	var redisAddr, redisUser, redisPassword string
+	config.RegisterStringConfigVariable("", &redisAddr, false, "Router.throttler.redisAddr")
+	config.RegisterStringConfigVariable("", &redisUser, false, "Router.throttler.redisUser")
+	config.RegisterStringConfigVariable("", &redisPassword, false, "Router.throttler.redisPassword")
+	if redisAddr != "" {
+		switch c.algoType {
+		case algoTypeRedisGCRA, algoTypeRedisSortedSet:
+		default:
+			panic(fmt.Errorf("throttling algorithm type %q is not compatible with redis", c.algoType))
+		}
+
+		opts := redis.Options{Addr: redisAddr}
+		if redisUser != "" {
+			opts.Username = redisUser
+		}
+		if redisPassword != "" {
+			opts.Password = redisPassword
+		}
+		c.redisClient = redis.NewClient(&opts)
+
+		if err := c.redisClient.Ping(context.TODO()).Err(); err != nil {
+			panic(fmt.Errorf("%s-router-throttler: failed to connect to Redis: %w", destName, err))
+		}
+	}
+
 	// set eventLimit
-	config.RegisterIntConfigVariable(
+	config.RegisterInt64ConfigVariable(
 		defaultDestinationSettings[destName].limit, &c.destLimiter.eventLimit, false, 1,
 		fmt.Sprintf(`Router.throttler.%s.limit`, destName),
 	)
@@ -105,7 +136,7 @@ func (c *Client) setLimits() {
 	}
 
 	// set eventLimit
-	config.RegisterIntConfigVariable(
+	config.RegisterInt64ConfigVariable(
 		defaultDestinationSettings[destName].userLevelLimit, &c.userLimiter.eventLimit, false, 1,
 		fmt.Sprintf(`Router.throttler.%s.userLevelLimit`, destName),
 	)
@@ -129,59 +160,101 @@ func (c *Client) setLimits() {
 	}
 }
 
+func (c *Client) newLimiter() *throttling.Limiter {
+	var (
+		err     error
+		limiter *throttling.Limiter
+	)
+	switch c.algoType {
+	case algoTypeGoRate:
+		limiter, err = throttling.New(throttling.WithGoRate())
+	case algoTypeGCRA:
+		limiter, err = throttling.New(throttling.WithGCRA())
+	case algoTypeRedisGCRA:
+		limiter, err = throttling.New(throttling.WithGCRA(), throttling.WithRedisClient(c.redisClient))
+	case algoTypeRedisSortedSet:
+		limiter, err = throttling.New(throttling.WithRedisClient(c.redisClient))
+	default:
+		panic(fmt.Errorf("unknown throttling algorithm type: %s", c.algoType))
+	}
+	if err != nil {
+		panic(fmt.Errorf("failed to create throttling limiter: %v", err))
+	}
+	return limiter
+}
+
 // CheckLimitReached returns true if number of events in the rolling window is less than the max events allowed, else false
-func (c *Client) CheckLimitReached(destID, userID string, currentTime time.Time) bool {
-	var destLevelLimitReached bool
+func (c *Client) CheckLimitReached(destID, userID string, cost int64) (
+	limited bool, tr throttling.TokenReturner, retErr error,
+) {
+	var (
+		ctx = context.TODO()
+		mtr multiTokenReturner
+	)
+
 	if c.destLimiter.enabled {
 		destKey := c.getDestKey(destID)
-		limitStatus, err := c.destLimiter.rateLimiter.Check(destKey, currentTime)
+		allowed, tr, err := c.destLimiter.rateLimiter.Limit(
+			ctx, cost, c.destLimiter.eventLimit, getWindowInSecs(c.destLimiter), destKey,
+		)
 		if err != nil {
-			// TODO: handle this
-			c.logger.Errorf(`[[ %s-router-throttler: Error checking limitStatus: %v]]`, c.destinationName, err)
-		} else {
-			destLevelLimitReached = limitStatus.IsLimited
+			err = fmt.Errorf(`[[ %s-router-throttler: Error checking limitStatus: %w]]`, c.destinationName, err)
+			c.logger.Error(err)
+			return false, nil, err
 		}
+		if !allowed {
+			return true, nil, nil // no token to return, so we don't return trs here
+		}
+		mtr.add(tr)
 	}
 
-	var userLevelLimitReached bool
-	if !destLevelLimitReached && c.userLimiter.enabled {
+	if c.userLimiter.enabled {
 		userKey := c.getUserKey(destID, userID)
-		limitStatus, err := c.userLimiter.rateLimiter.Check(userKey, currentTime)
+		allowed, tr, err := c.userLimiter.rateLimiter.Limit(
+			ctx, cost, c.userLimiter.eventLimit, getWindowInSecs(c.userLimiter), userKey,
+		)
 		if err != nil {
-			// TODO: handle this
-			c.logger.Errorf(`[[ %s-router-throttler: Error checking limitStatus: %v]]`, c.destinationName, err)
-		} else {
-			userLevelLimitReached = limitStatus.IsLimited
+			err = fmt.Errorf(`[[ %s-router-throttler: Error checking limitStatus: %w]]`, c.destinationName, err)
+			c.logger.Error(err)
+			return false, nil, err
 		}
+		if !allowed {
+			// limit reached, in case we had requested a token for dest level throttling, we need to return it
+			_ = mtr.Return(ctx)
+			return true, nil, nil
+		}
+		mtr.add(tr)
 	}
 
-	return destLevelLimitReached || userLevelLimitReached
+	return false, &mtr, nil
 }
 
 // Inc increases the destLimiter and userLimiter counters.
 // If destID or userID passed is empty, we don't increment the counters.
 func (c *Client) Inc(destID, userID string, currentTime time.Time) {
-	if c.destLimiter.enabled && destID != "" {
-		destKey := c.getDestKey(destID)
-		_ = c.destLimiter.rateLimiter.Inc(destKey, currentTime)
-	}
-	if c.userLimiter.enabled && userID != "" {
-		userKey := c.getUserKey(destID, userID)
-		_ = c.userLimiter.rateLimiter.Inc(userKey, currentTime)
-	}
+	// TODO remove?
+	//if c.destLimiter.enabled && destID != "" {
+	//	destKey := c.getDestKey(destID)
+	//	_ = c.destLimiter.rateLimiter.Inc(destKey, currentTime)
+	//}
+	//if c.userLimiter.enabled && userID != "" {
+	//	userKey := c.getUserKey(destID, userID)
+	//	_ = c.userLimiter.rateLimiter.Inc(userKey, currentTime)
+	//}
 }
 
 // Dec decrements the destLimiter and userLimiter counters by count passed
 // If destID or userID passed is empty, we don't decrement the counters.
 func (c *Client) Dec(destID, userID string, count int64, currentTime time.Time, atLevel string) {
-	if c.destLimiter.enabled && destID != "" && (atLevel == AllLevels || atLevel == DestinationLevel) {
-		destKey := c.getDestKey(destID)
-		_ = c.destLimiter.rateLimiter.Dec(destKey, count, currentTime)
-	}
-	if c.userLimiter.enabled && userID != "" && (atLevel == AllLevels || atLevel == UserLevel) {
-		userKey := c.getUserKey(destID, userID)
-		_ = c.userLimiter.rateLimiter.Dec(userKey, count, currentTime)
-	}
+	// TODO remove?
+	//if c.destLimiter.enabled && destID != "" && (atLevel == AllLevels || atLevel == DestinationLevel) {
+	//	destKey := c.getDestKey(destID)
+	//	_ = c.destLimiter.rateLimiter.Dec(destKey, count, currentTime)
+	//}
+	//if c.userLimiter.enabled && userID != "" && (atLevel == AllLevels || atLevel == UserLevel) {
+	//	userKey := c.getUserKey(destID, userID)
+	//	_ = c.userLimiter.rateLimiter.Dec(userKey, count, currentTime)
+	//}
 }
 
 func (c *Client) IsEnabled() bool {
@@ -202,4 +275,25 @@ func (c *Client) getDestKey(destID string) string {
 
 func (c *Client) getUserKey(destID, userID string) string {
 	return fmt.Sprintf(`%s_%s_%s`, c.destinationName, destID, userID)
+}
+
+func getWindowInSecs(l limiterSettings) int64 {
+	return int64(l.timeWindow.Seconds())
+}
+
+type multiTokenReturner struct {
+	trs []throttling.TokenReturner
+}
+
+func (m *multiTokenReturner) add(tr throttling.TokenReturner) {
+	m.trs = append(m.trs, tr)
+}
+
+func (m *multiTokenReturner) Return(ctx context.Context) (retErr error) {
+	for _, tr := range m.trs {
+		if err := tr.Return(ctx); retErr == nil && err != nil {
+			retErr = err
+		}
+	}
+	return
 }
