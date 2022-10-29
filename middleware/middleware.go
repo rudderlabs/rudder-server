@@ -2,7 +2,9 @@ package middleware
 
 import (
 	"context"
+	"fmt"
 	"net/http"
+	"strconv"
 	"sync/atomic"
 	"time"
 
@@ -32,9 +34,9 @@ func LimitConcurrentRequests(maxRequests int) func(http.Handler) http.Handler {
 	}
 }
 
-func StatMiddleware(ctx context.Context, router *mux.Router) func(http.Handler) http.Handler {
+func StatMiddleware(ctx context.Context, router *mux.Router, s stats.Stats, component string) func(http.Handler) http.Handler {
 	var concurrentRequests int32
-	activeClientCount := stats.Default.NewStat("gateway.concurrent_requests_count", stats.GaugeType)
+	activeClientCount := s.NewStat(fmt.Sprintf("%s.concurrent_requests_count", component), stats.GaugeType)
 	go func() {
 		for {
 			select {
@@ -52,7 +54,7 @@ func StatMiddleware(ctx context.Context, router *mux.Router) func(http.Handler) 
 	getPath := func(r *http.Request) string {
 		var match mux.RouteMatch
 		if router.Match(r, &match) {
-			if path, err := match.Route.GetPathTemplate(); err != nil {
+			if path, err := match.Route.GetPathTemplate(); err == nil {
 				return path
 			}
 		}
@@ -60,15 +62,42 @@ func StatMiddleware(ctx context.Context, router *mux.Router) func(http.Handler) 
 	}
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			sw := newStatusCapturingWriter(w)
 			path := getPath(r)
-			latencyStat := stats.Default.NewSampledTaggedStat("gateway.response_time", stats.TimerType, map[string]string{"reqType": path, "method": r.Method})
-			latencyStat.Start()
-			defer latencyStat.End()
-
+			start := time.Now()
 			atomic.AddInt32(&concurrentRequests, 1)
 			defer atomic.AddInt32(&concurrentRequests, -1)
 
-			next.ServeHTTP(w, r)
+			next.ServeHTTP(sw, r)
+
+			s.NewSampledTaggedStat(
+				fmt.Sprintf("%s.response_time", component),
+				stats.TimerType,
+				map[string]string{
+					"reqType": path,
+					"method":  r.Method,
+					"code":    strconv.Itoa(sw.status),
+				}).Since(start)
 		})
 	}
+}
+
+// newStatusCapturingWriter returns a new, properly initialized statusCapturingWriter
+func newStatusCapturingWriter(w http.ResponseWriter) *statusCapturingWriter {
+	return &statusCapturingWriter{
+		ResponseWriter: w,
+		status:         http.StatusOK,
+	}
+}
+
+// statusCapturingWriter is a response writer decorator that captures the status code.
+type statusCapturingWriter struct {
+	http.ResponseWriter
+	status int
+}
+
+// WriteHeader override the http.ResponseWriter's `WriteHeader` method
+func (w *statusCapturingWriter) WriteHeader(status int) {
+	w.status = status
+	w.ResponseWriter.WriteHeader(status)
 }
