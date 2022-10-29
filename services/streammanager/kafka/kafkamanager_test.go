@@ -331,6 +331,7 @@ func TestPrepareBatchOfMessages(t *testing.T) {
 		pm := &ProducerManager{p: &pMockErr{error: nil}}
 		data := []map[string]interface{}{{
 			"not-interesting": "some value",
+			"topic":           "some-topic",
 		}}
 		batch, err := prepareBatchOfMessages(data, time.Now(), pm)
 		require.Equal(t, []client.Message(nil), batch)
@@ -430,27 +431,30 @@ func TestProduce(t *testing.T) {
 		require.Equal(t, "Could not create producer", err)
 	})
 
-	t.Run("invalid destination configuration", func(t *testing.T) {
-		kafkaStats.produceTime = getMockedTimer(t, gomock.NewController(t))
+	// We are not functionally using destination configuration anymore in the producer
+	// it is kept to keep same parity with interface implementation
 
-		pm := ProducerManager{p: &client.Producer{}}
-		destConfig := make(chan struct{}) // channels cannot be JSON marshalled
-		sc, res, err := pm.Produce(nil, destConfig)
-		require.Equal(t, 400, sc)
-		require.Equal(t, "json: unsupported type: chan struct {} error occurred.", res)
-		require.Equal(t, "json: unsupported type: chan struct {}", err)
-	})
+	// t.Run("invalid destination configuration", func(t *testing.T) {
+	// 	kafkaStats.produceTime = getMockedTimer(t, gomock.NewController(t))
 
-	t.Run("empty destination configuration", func(t *testing.T) {
-		kafkaStats.produceTime = getMockedTimer(t, gomock.NewController(t))
+	// 	pm := ProducerManager{p: &client.Producer{}}
+	// 	destConfig := make(chan struct{}) // channels cannot be JSON marshalled
+	// 	sc, res, err := pm.Produce(nil, destConfig)
+	// 	require.Equal(t, 400, sc)
+	// 	require.Equal(t, "json: unsupported type: chan struct {} error occurred.", res)
+	// 	require.Equal(t, "json: unsupported type: chan struct {}", err)
+	// })
 
-		pm := ProducerManager{p: &client.Producer{}}
-		destConfig := map[string]interface{}{"foo": "bar"}
-		sc, res, err := pm.Produce(json.RawMessage(""), destConfig)
-		require.Equal(t, 400, sc)
-		require.Equal(t, "invalid destination configuration: no topic error occurred.", res)
-		require.Equal(t, "invalid destination configuration: no topic", err)
-	})
+	// t.Run("empty destination configuration", func(t *testing.T) {
+	// 	kafkaStats.produceTime = getMockedTimer(t, gomock.NewController(t))
+
+	// 	pm := ProducerManager{p: &client.Producer{}}
+	// 	destConfig := map[string]interface{}{"foo": "bar"}
+	// 	sc, res, err := pm.Produce(json.RawMessage(""), destConfig)
+	// 	require.Equal(t, 400, sc)
+	// 	require.Equal(t, "invalid destination configuration: no topic error occurred.", res)
+	// 	require.Equal(t, "invalid destination configuration: no topic", err)
+	// })
 
 	t.Run("invalid message", func(t *testing.T) {
 		kafkaStats.produceTime = getMockedTimer(t, gomock.NewController(t))

@@ -418,7 +418,7 @@ func TestWithSASL(t *testing.T) {
 				err := p.Publish(context.Background(), Message{
 					Key:   []byte("hello"),
 					Value: []byte("ciao"),
-					Topic: t.Name(),
+					Topic: "some-topic",
 				})
 				if err != nil {
 					t.Logf("Publish error: %v", err)
