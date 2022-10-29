@@ -446,23 +446,38 @@ func (worker *workerT) workerProcess() {
 
 			worker.rt.configSubscriberLock.RLock()
 			batchDestination, ok := worker.rt.destinationsMap[parameters.DestinationID]
-			destination := batchDestination.Destination
 			worker.rt.configSubscriberLock.RUnlock()
 			if !ok {
 				status := jobsdb.JobStatusT{
 					JobID:         job.JobID,
 					AttemptNum:    job.LastJobStatus.AttemptNum,
-					JobState:      jobsdb.Aborted.State,
+					JobState:      jobsdb.Failed.State,
 					ExecTime:      time.Now(),
 					RetryTime:     time.Now(),
 					ErrorCode:     "",
-					ErrorResponse: []byte(`{"reason": "Aborted because destination is not available in the config" }`),
+					ErrorResponse: []byte(`{"reason": "failed because destination is not available in the config" }`),
 					Parameters:    routerutils.EmptyPayload,
 					WorkspaceId:   job.WorkspaceId,
+				}
+				worker.rt.failedEventsChan <- status
+				if worker.rt.guaranteeUserEventOrder {
+					worker.rt.logger.Debugf(
+						"EventOrder: [%d] job %d for user %s failed",
+						worker.workerID, status.JobID, job.UserID,
+					)
+					err := worker.barrier.StateChanged(
+						job.UserID,
+						job.JobID,
+						status.JobState,
+					)
+					if err != nil {
+						panic(err)
+					}
 				}
 				worker.rt.responseQ <- jobResponseT{status: &status, worker: worker, userID: userID, JobT: job}
 				continue
 			}
+			destination := batchDestination.Destination
 			if authType := routerutils.GetAuthType(destination); routerutils.IsNotEmptyString(authType) && authType == "OAuth" {
 				rudderAccountID := routerutils.GetRudderAccountId(&destination)
 				if routerutils.IsNotEmptyString(rudderAccountID) {
@@ -1536,9 +1551,9 @@ func (rt *HandleT) commitStatusList(responseList *[]jobResponseT) {
 
 				// Save msgids of aborted jobs
 				if len(jobRunIDAbortedEventsMap) > 0 {
-					GetFailedEventsManager().SaveFailedRecordIDs(jobRunIDAbortedEventsMap, tx.Tx())
+					GetFailedEventsManager().SaveFailedRecordIDs(jobRunIDAbortedEventsMap, tx.SqlTx())
 				}
-				rt.Reporting.Report(reportMetrics, tx.Tx())
+				rt.Reporting.Report(reportMetrics, tx.SqlTx())
 				return nil
 			})
 		}, sendRetryStoreStats)
@@ -2219,7 +2234,7 @@ func (rt *HandleT) updateRudderSourcesStats(ctx context.Context, tx jobsdb.Updat
 	rsourcesStats := rsources.NewStatsCollector(rt.rsourcesService)
 	rsourcesStats.BeginProcessing(jobs)
 	rsourcesStats.JobStatusesUpdated(jobStatuses)
-	err := rsourcesStats.Publish(ctx, tx.Tx())
+	err := rsourcesStats.Publish(ctx, tx.SqlTx())
 	if err != nil {
 		rt.logger.Errorf("publishing rsources stats: %w", err)
 	}
