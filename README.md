@@ -94,15 +94,15 @@ You can also set up RudderStack on your platform of choice with these two easy s
 
 ### Step 1: Set up RudderStack
 
-- [**Docker**](https://www.rudderstack.com/docs/rudderstack-open-source/installing-and-setting-up-rudderstack/docker/)
-- [**Kubernetes**](https://www.rudderstack.com/docs/rudderstack-open-source/installing-and-setting-up-rudderstack/kubernetes/)
-- [**Developer machine setup**](https://www.rudderstack.com/docs/rudderstack-open-source/installing-and-setting-up-rudderstack/developer-machine-setup/)
+- [**Docker**](https://www.rudderstack.com/docs/get-started/rudderstack-open-source/data-plane-setup/docker/)
+- [**Kubernetes**](https://www.rudderstack.com/docs/get-started/rudderstack-open-source/data-plane-setup/kubernetes/)
+- [**Developer machine setup**](https://www.rudderstack.com/docs/get-started/rudderstack-open-source/data-plane-setup/developer-machine-setup/)
 
 > **Note**: If you are planning to use RudderStack in production, we STRONGLY recommend using our Kubernetes Helm charts. We update our Docker images with bug fixes much more frequently than our GitHub repo.
 
 ### Step 2: Verify the installation
 
-Once you have installed RudderStack, [**send test events**](https://www.rudderstack.com/docs/get-started/installing-and-setting-up-rudderstack/sending-test-events/) to verify the setup.
+Once you have installed RudderStack, [**send test events**](https://www.rudderstack.com/docs/get-started/rudderstack-open-source/sending-test-events/) to verify the setup.
 
 ## Architecture
 
@@ -112,7 +112,7 @@ A high-level view of RudderStack’s architecture is shown below:
 
 ![Architecture](resources/rudder-server-architecture.png)
 
-For more details on the various architectural components, refer to our [**documentation**](https://www.rudderstack.com/docs/get-started/rudderstack-architecture/).
+For more details on the various architectural components, refer to our [**documentation**](https://www.rudderstack.com/docs/resources/rudderstack-architecture/).
 
 ## Contribute
 
