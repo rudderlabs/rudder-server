@@ -1390,11 +1390,12 @@ func (proc *HandleT) processJobsForDest(subJobs subJob, parsedEventList [][]type
 					// At the TP flow we are not having destination information, so adding it here.
 					shallowEventCopy.Metadata.DestinationID = destination.ID
 					shallowEventCopy.Metadata.DestinationType = destination.DestinationDefinition.Name
-					configsToFilter := destination.DestinationDefinition.ConfigFilters
-					for _, configKey := range configsToFilter {
-						shallowEventCopy.Destination.Config[configKey] = ""
+					configsToFilter := destination.DestinationDefinition.Config["configFilters"]
+					if configsToFilter != nil && reflect.TypeOf(configsToFilter).Kind() == reflect.Slice {
+						for _, configKey := range configsToFilter.([]interface{}) {
+							shallowEventCopy.Destination.Config[configKey.(string)] = ""
+						}
 					}
-
 					metadata := shallowEventCopy.Metadata
 					srcAndDestKey := getKeyFromSourceAndDest(metadata.SourceID, metadata.DestinationID)
 					// We have at-least one event so marking it good

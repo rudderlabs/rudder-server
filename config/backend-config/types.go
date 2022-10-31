@@ -34,7 +34,6 @@ type DestinationDefinitionT struct {
 	DisplayName   string
 	Config        map[string]interface{}
 	ResponseRules map[string]interface{}
-	ConfigFilters []string
 }
 
 type SourceDefinitionT struct {
