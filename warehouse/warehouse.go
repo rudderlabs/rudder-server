@@ -21,7 +21,6 @@ import (
 	"github.com/lib/pq"
 	"github.com/thoas/go-funk"
 	"github.com/tidwall/gjson"
-	"golang.org/x/exp/slices"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/rudderlabs/rudder-server/app"
@@ -45,6 +44,7 @@ import (
 	"github.com/rudderlabs/rudder-server/warehouse/deltalake"
 	"github.com/rudderlabs/rudder-server/warehouse/jobs"
 	"github.com/rudderlabs/rudder-server/warehouse/manager"
+	"github.com/rudderlabs/rudder-server/warehouse/multitenant"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 	"github.com/rudderlabs/rudder-server/warehouse/validations"
 )
@@ -54,6 +54,7 @@ var (
 	webPort                             int
 	dbHandle                            *sql.DB
 	notifier                            pgnotifier.PgNotifierT
+	tenantManager                       *multitenant.Manager
 	noOfSlaveWorkerRoutines             int
 	uploadFreqInS                       int64
 	stagingFilesSchemaPaginationSize    int
@@ -91,7 +92,6 @@ var (
 	maxParallelJobCreation              int
 	enableJitterForSyncs                bool
 	configBackendURL                    string
-	degradedWorkspaceIDs                []string
 	asyncWh                             *jobs.AsyncJobWhT
 )
 
@@ -140,7 +140,7 @@ type HandleT struct {
 	allowMultipleSourcesForJobsPickup bool
 	workspaceBySourceIDs              map[string]string
 	workspaceBySourceIDsLock          sync.RWMutex
-	degradedWorkspaceIDs              []string
+	tenantManager                     multitenant.Manager
 
 	backgroundCancel context.CancelFunc
 	backgroundGroup  errgroup.Group
@@ -196,8 +196,6 @@ func loadConfig() {
 	config.RegisterIntConfigVariable(8, &maxParallelJobCreation, true, 1, "Warehouse.maxParallelJobCreation")
 	config.RegisterBoolConfigVariable(false, &enableJitterForSyncs, true, "Warehouse.enableJitterForSyncs")
 	config.RegisterDurationConfigVariable(30, &tableCountQueryTimeout, true, time.Second, []string{"Warehouse.tableCountQueryTimeout", "Warehouse.tableCountQueryTimeoutInS"}...)
-
-	config.RegisterStringSliceConfigVariable(nil, &degradedWorkspaceIDs, false, "Warehouse.degradedWorkspaceIDs")
 
 	appName = misc.DefaultString("rudder-server").OnError(os.Hostname())
 	configBackendURL = config.GetString("CONFIG_BACKEND_URL", "https://api.rudderlabs.com")
@@ -303,13 +301,8 @@ func excludeWorkspaceIDs(chIn pubsub.DataChannel, workspaceIDs []string) chan ma
 }
 
 // Backend Config subscriber subscribes to backend-config and gets all the configurations that includes all sources, destinations and their latest values.
-func (wh *HandleT) backendConfigSubscriber() {
-	configChanges := excludeWorkspaceIDs(
-		backendconfig.DefaultBackendConfig.Subscribe(context.TODO(), backendconfig.TopicBackendConfig),
-		wh.degradedWorkspaceIDs,
-	)
-
-	for config := range configChanges {
+func (wh *HandleT) backendConfigSubscriber(ctx context.Context) {
+	for config := range wh.tenantManager.WatchConfig(ctx) {
 		wh.configSubscriberLock.Lock()
 		wh.warehouses = []warehouseutils.Warehouse{}
 		sourceIDsByWorkspaceLock.Lock()
@@ -1372,8 +1365,8 @@ func (wh *HandleT) Setup(whType string) {
 	wh.Enable()
 	wh.workerChannelMap = make(map[string]chan *UploadJobT)
 	wh.inProgressMap = make(map[WorkerIdentifierT][]JobIDT)
-	if wh.degradedWorkspaceIDs == nil {
-		wh.degradedWorkspaceIDs = degradedWorkspaceIDs
+	wh.tenantManager = multitenant.Manager{
+		BackendConfig: backendconfig.DefaultBackendConfig,
 	}
 
 	whName := warehouseutils.WHDestNameMap[whType]
@@ -1387,9 +1380,14 @@ func (wh *HandleT) Setup(whType string) {
 	wh.backgroundCancel = cancel
 	wh.backgroundWait = g.Wait
 
-	rruntime.GoForWarehouse(func() {
-		wh.backendConfigSubscriber()
-	})
+	g.Go(misc.WithBugsnagForWarehouse(func() error {
+		return wh.tenantManager.Run(ctx)
+	}))
+
+	g.Go(misc.WithBugsnagForWarehouse(func() error {
+		wh.backendConfigSubscriber(ctx)
+		return nil
+	}))
 
 	g.Go(misc.WithBugsnagForWarehouse(func() error {
 		wh.runUploadJobAllocator(ctx)
@@ -1486,9 +1484,9 @@ func minimalConfigSubscriber() {
 
 // Gets the config from config backend and extracts enabled write keys
 func monitorDestRouters(ctx context.Context) {
-	ch := backendconfig.DefaultBackendConfig.Subscribe(ctx, backendconfig.TopicBackendConfig)
 	dstToWhRouter := make(map[string]*HandleT)
 
+	ch := tenantManager.WatchConfig(ctx)
 	for config := range ch {
 		onConfigDataEvent(config, dstToWhRouter)
 	}
@@ -1504,9 +1502,8 @@ func monitorDestRouters(ctx context.Context) {
 	g.Wait()
 }
 
-func onConfigDataEvent(data pubsub.DataEvent, dstToWhRouter map[string]*HandleT) {
-	pkgLogger.Debug("Got config from config-backend", data)
-	config := data.Data.(map[string]backendconfig.ConfigT)
+func onConfigDataEvent(config map[string]backendconfig.ConfigT, dstToWhRouter map[string]*HandleT) {
+	pkgLogger.Debug("Got config from config-backend", config)
 
 	enabledDestinations := make(map[string]bool)
 	var connectionFlags backendconfig.ConnectionFlags
@@ -1601,7 +1598,7 @@ func processHandler(w http.ResponseWriter, r *http.Request) {
 	var stagingFile warehouseutils.StagingFile
 	json.Unmarshal(body, &stagingFile)
 
-	if slices.Contains(degradedWorkspaceIDs, stagingFile.WorkspaceID) {
+	if tenantManager.DegradedWorkspace(stagingFile.WorkspaceID) {
 		http.Error(w, "Workspace is degraded", http.StatusServiceUnavailable)
 		return
 	}
@@ -1745,6 +1742,19 @@ func pendingEventsHandler(w http.ResponseWriter, r *http.Request) {
 	if sourceID == "" {
 		pkgLogger.Errorf("[WH]: pending-events:  Empty source id")
 		http.Error(w, "empty source id", http.StatusBadRequest)
+		return
+	}
+
+	workspaceID, err := tenantManager.SourceToWorkspace(sourceID)
+	if err != nil {
+		pkgLogger.Errorf("[WH]: Error checking if source is degraded: %v", err)
+		http.Error(w, "workspaceID from sourceID not found", http.StatusBadRequest)
+		return
+	}
+
+	if tenantManager.DegradedWorkspace(workspaceID) {
+		pkgLogger.Infof("[WH]: Workspace (id: %q) is degraded: %v", workspaceID, err)
+		http.Error(w, "workspace is in degraded mode", http.StatusServiceUnavailable)
 		return
 	}
 
@@ -1944,6 +1954,19 @@ func triggerUploadHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	workspaceID, err := tenantManager.SourceToWorkspace(triggerUploadReq.SourceID)
+	if err != nil {
+		pkgLogger.Errorf("[WH]: Error checking if source is degraded: %v", err)
+		http.Error(w, "workspaceID from sourceID not found", http.StatusBadRequest)
+		return
+	}
+
+	if tenantManager.DegradedWorkspace(workspaceID) {
+		pkgLogger.Infof("[WH]: Workspace (id: %q) is degraded: %v", workspaceID, err)
+		http.Error(w, "workspace is in degraded mode", http.StatusServiceUnavailable)
+		return
+	}
+
 	err = TriggerUploadHandler(triggerUploadReq.SourceID, triggerUploadReq.DestinationID)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
@@ -2071,11 +2094,11 @@ func startWebHandler(ctx context.Context) error {
 		if isMaster() {
 			pkgLogger.Infof("WH: Warehouse master service waiting for BackendConfig before starting on %d", webPort)
 			backendconfig.DefaultBackendConfig.WaitForConfig(ctx)
-			mux.HandleFunc("/v1/process", processHandler) // degraded mode
+			mux.HandleFunc("/v1/process", processHandler)
 			// triggers upload only when there are pending events and triggerUpload is sent for a sourceId
-			mux.HandleFunc("/v1/warehouse/pending-events", pendingEventsHandler) // degraded mode
+			mux.HandleFunc("/v1/warehouse/pending-events", pendingEventsHandler)
 			// triggers uploads for a source
-			mux.HandleFunc("/v1/warehouse/trigger-upload", triggerUploadHandler) // degraded mode
+			mux.HandleFunc("/v1/warehouse/trigger-upload", triggerUploadHandler)
 			mux.HandleFunc("/databricksVersion", databricksVersionHandler)
 			mux.HandleFunc("/v1/setConfig", setConfigHandler)
 
@@ -2195,10 +2218,12 @@ func Start(ctx context.Context, app app.App) error {
 	workspaceIdentifier := fmt.Sprintf(`%s::%s`, config.GetKubeNamespace(), misc.GetMD5Hash(config.GetWorkspaceToken()))
 	notifier, err = pgnotifier.New(workspaceIdentifier, psqlInfo)
 	if err != nil {
-		panic(err)
+		return fmt.Errorf("cannot setup pgnotifier: %w", err)
 	}
 
 	g, ctx := errgroup.WithContext(ctx)
+	if !isSlave() {
+	}
 
 	// Setting up reporting client
 	// only if standalone or embedded connecting to diff DB for warehouse
@@ -2242,6 +2267,15 @@ func Start(ctx context.Context, app app.App) error {
 
 	if isMaster() {
 		pkgLogger.Infof("[WH]: Starting warehouse master...")
+
+		backendconfig.DefaultBackendConfig.WaitForConfig(ctx)
+
+		tenantManager = &multitenant.Manager{
+			BackendConfig: backendconfig.DefaultBackendConfig,
+		}
+		g.Go(func() error {
+			return tenantManager.Run(ctx)
+		})
 
 		g.Go(misc.WithBugsnagForWarehouse(func() error {
 			return notifier.ClearJobs(ctx)

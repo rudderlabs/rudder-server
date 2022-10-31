@@ -168,6 +168,7 @@ func archiveUploads(dbHandle *sql.DB) {
 		  )
 		  AND created_at < NOW() - INTERVAL '%d DAY'
 		  AND status = '%s'
+		  AND workspace_id NOT IN ( ? )
 		LIMIT
 		  10000;
 `,
@@ -176,7 +177,7 @@ func archiveUploads(dbHandle *sql.DB) {
 		ExportedData,
 	)
 
-	rows, err := dbHandle.Query(sqlStatement)
+	rows, err := dbHandle.Query(sqlStatement, pq.Array(tenantManager.DegradedWorkspaces()))
 	defer func() {
 		if err != nil {
 			pkgLogger.Errorf(`Error occurred while archiving for warehouse uploads with error: %v`, err)
