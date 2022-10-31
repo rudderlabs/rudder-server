@@ -40,7 +40,7 @@ func (ls *LocalSchemaRepository) CreateTable(tableName string, columnMap map[str
 	}
 
 	if _, ok := schema[tableName]; ok {
-		return fmt.Errorf("Failed to create table: table %s already exists", tableName)
+		return fmt.Errorf("failed to create table: table %s already exists", tableName)
 	}
 
 	// add table to schema
@@ -50,7 +50,7 @@ func (ls *LocalSchemaRepository) CreateTable(tableName string, columnMap map[str
 	return ls.uploader.UpdateLocalSchema(schema)
 }
 
-func (ls *LocalSchemaRepository) AddColumn(tableName, columnName, columnType string) (err error) {
+func (ls *LocalSchemaRepository) AddColumns(tableName string, columnsInfo []warehouseutils.ColumnInfo) (err error) {
 	// fetch schema from local db
 	schema, err := ls.FetchSchema(ls.warehouse)
 	if err != nil {
@@ -59,10 +59,12 @@ func (ls *LocalSchemaRepository) AddColumn(tableName, columnName, columnType str
 
 	// check if table exists
 	if _, ok := schema[tableName]; !ok {
-		return fmt.Errorf("Failed to add column: table %s does not exist", tableName)
+		return fmt.Errorf("failed to add column: table %s does not exist", tableName)
 	}
 
-	schema[tableName][columnName] = columnType
+	for _, columnInfo := range columnsInfo {
+		schema[tableName][columnInfo.Name] = columnInfo.Type
+	}
 
 	// update schema
 	return ls.uploader.UpdateLocalSchema(schema)
@@ -77,12 +79,12 @@ func (ls *LocalSchemaRepository) AlterColumn(tableName, columnName, columnType s
 
 	// check if table exists
 	if _, ok := schema[tableName]; !ok {
-		return fmt.Errorf("Failed to add column: table %s does not exist", tableName)
+		return fmt.Errorf("failed to add column: table %s does not exist", tableName)
 	}
 
 	// check if column exists
 	if _, ok := schema[tableName][columnName]; !ok {
-		return fmt.Errorf("Failed to alter column: column %s does not exist in table %s", columnName, tableName)
+		return fmt.Errorf("failed to alter column: column %s does not exist in table %s", columnName, tableName)
 	}
 
 	schema[tableName][columnName] = columnType

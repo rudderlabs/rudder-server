@@ -424,11 +424,11 @@ func (tableUploadReq TableUploadReqT) GetWhTableUploads() ([]*proto.WHTable, err
 
 func (tableUploadReq TableUploadReqT) generateQuery(selectFields string) string {
 	query := fmt.Sprintf(`
-	SELECT 
-	  %s 
-	FROM 
-	  %s 
-	WHERE 
+	SELECT
+	  %s
+	FROM
+	  %s
+	WHERE
 	  wh_upload_id = %d
 `,
 		selectFields,
@@ -453,11 +453,11 @@ func (tableUploadReq TableUploadReqT) validateReq() error {
 
 func (uploadReq UploadReqT) generateQuery(selectedFields string) string {
 	return fmt.Sprintf(`
-		SELECT 
-		  %s 
-		FROM 
-		  %s 
-		WHERE 
+		SELECT
+		  %s
+		FROM
+		  %s
+		WHERE
 		  id = %d
 `,
 		selectedFields,
@@ -500,7 +500,7 @@ func (uploadsReq UploadsReqT) authorizedSources() (sourceIDs []string) {
 	return sourceIDs
 }
 
-func (uploadsReq *UploadsReqT) getUploadsFromDb(isMultiWorkspace bool, query string) ([]*proto.WHUploadResponse, int32, error) {
+func (uploadsReq *UploadsReqT) getUploadsFromDB(isMultiWorkspace bool, query string) ([]*proto.WHUploadResponse, int32, error) {
 	var totalUploadCount int32
 	var err error
 	uploads := make([]*proto.WHUploadResponse, 0)
@@ -605,9 +605,9 @@ func (uploadsReq *UploadsReqT) getUploadsFromDb(isMultiWorkspace bool, query str
 func (uploadsReq *UploadsReqT) getTotalUploadCount(whereClause string) (int32, error) {
 	var totalUploadCount int32
 	query := fmt.Sprintf(`
-	select 
-	  count(*) 
-	from 
+	select
+	  count(*)
+	from
 	  %s
 `,
 		warehouseutils.WarehouseUploadsTable,
@@ -627,11 +627,11 @@ func (uploadsReq *UploadsReqT) warehouseUploadsForHosted(authorizedSourceIDs []s
 
 	// create query
 	subQuery := fmt.Sprintf(`
-		SELECT 
-		  %s, 
-		  COUNT(*) OVER() AS total_uploads 
-		FROM 
-		  %s 
+		SELECT
+		  %s,
+		  COUNT(*) OVER() AS total_uploads
+		FROM
+		  %s
 		WHERE
 `,
 		selectFields,
@@ -655,13 +655,13 @@ func (uploadsReq *UploadsReqT) warehouseUploadsForHosted(authorizedSourceIDs []s
 
 	subQuery = subQuery + strings.Join(whereClauses, " AND ")
 	query := fmt.Sprintf(`
-		SELECT 
-		  * 
-		FROM 
-		  (%s) p 
-		ORDER BY 
-		  id DESC 
-		LIMIT 
+		SELECT
+		  *
+		FROM
+		  (%s) p
+		ORDER BY
+		  id DESC
+		LIMIT
 		  %d OFFSET %d
 `,
 		subQuery,
@@ -671,7 +671,7 @@ func (uploadsReq *UploadsReqT) warehouseUploadsForHosted(authorizedSourceIDs []s
 	uploadsReq.API.log.Info(query)
 
 	// get uploads from db
-	uploads, totalUploadCount, err = uploadsReq.getUploadsFromDb(true, query)
+	uploads, totalUploadCount, err = uploadsReq.getUploadsFromDB(true, query)
 	if err != nil {
 		uploadsReq.API.log.Errorf(err.Error())
 		return &proto.WHUploadsResponse{}, err
@@ -696,9 +696,9 @@ func (uploadsReq *UploadsReqT) warehouseUploads(selectFields string) (uploadsRes
 
 	// create query
 	query := fmt.Sprintf(`
-		select 
-		  %s 
-		from 
+		select
+		  %s
+		from
 		  %s
 `,
 		selectFields,
@@ -728,7 +728,7 @@ func (uploadsReq *UploadsReqT) warehouseUploads(selectFields string) (uploadsRes
 	// we get uploads for non hosted workspaces in two steps
 	// this is because getting this info via 2 queries is faster than getting it via one query(using the 'count(*) OVER()' clause)
 	// step1 - get all uploads
-	uploads, _, err = uploadsReq.getUploadsFromDb(false, query)
+	uploads, _, err = uploadsReq.getUploadsFromDB(false, query)
 	if err != nil {
 		uploadsReq.API.log.Errorf(err.Error())
 		return &proto.WHUploadsResponse{}, err
@@ -830,7 +830,7 @@ func getFileManagerSettings(provider string, inputConfig map[string]interface{})
 	return settings
 }
 
-// overrideWithEnv overrides the config keys in the filemanager settings
+// overrideWithEnv overrides the config keys in the fileManager settings
 // with fallback values pulled from env. Only supported for S3 for now.
 func overrideWithEnv(settings *filemanager.SettingsT) {
 	envConfig := filemanager.GetProviderConfigFromEnv(context.TODO(), settings.Provider)

@@ -89,19 +89,19 @@ func backupRecords(args backupRecordsArgs) (backupLocation string, err error) {
 	}
 
 	tmpl := fmt.Sprintf(`
-		SELECT 
-		  json_agg(dump_table) 
-		FROM 
+		SELECT
+		  json_agg(dump_table)
+		FROM
 		  (
-			SELECT 
-			  * 
-			FROM 
-			  %[1]s 
-			WHERE 
-			  %[2]s 
-			ORDER BY 
-			  id ASC 
-			LIMIT 
+			SELECT
+			  *
+			FROM
+			  %[1]s
+			WHERE
+			  %[2]s
+			ORDER BY
+			  id ASC
+			LIMIT
 			  %[3]s offset %[4]s
 		  ) AS dump_table
 `,
@@ -147,28 +147,28 @@ func usedRudderStorage(metadata []byte) bool {
 func archiveUploads(dbHandle *sql.DB) {
 	pkgLogger.Infof(`Started archiving for warehouse`)
 	sqlStatement := fmt.Sprintf(`
-		SELECT 
-		  id, 
-		  source_id, 
-		  destination_id, 
-		  start_staging_file_id, 
-		  end_staging_file_id, 
-		  start_load_file_id, 
-		  end_load_file_id, 
-		  metadata 
-		FROM 
-		  %s 
-		WHERE 
+		SELECT
+		  id,
+		  source_id,
+		  destination_id,
+		  start_staging_file_id,
+		  end_staging_file_id,
+		  start_load_file_id,
+		  end_load_file_id,
+		  metadata
+		FROM
+		  %s
+		WHERE
 		  (
 			(
 			  metadata ->> 'archivedStagingAndLoadFiles'
-			):: bool IS DISTINCT 
-			FROM 
+			):: bool IS DISTINCT
+			FROM
 			  TRUE
-		  ) 
-		  AND created_at < NOW() - INTERVAL '%d DAY' 
-		  AND status = '%s' 
-		LIMIT 
+		  )
+		  AND created_at < NOW() - INTERVAL '%d DAY'
+		  AND status = '%s'
+		LIMIT
 		  10000;
 `,
 		warehouseutils.WarehouseUploadsTable,
@@ -225,15 +225,15 @@ func archiveUploads(dbHandle *sql.DB) {
 
 		// archive staging files
 		stmt := fmt.Sprintf(`
-			SELECT 
-			  id, 
-			  location 
-			FROM 
-			  %s 
-			WHERE 
-			  source_id = '%s' 
-			  AND destination_id = '%s' 
-			  AND id >= %d 
+			SELECT
+			  id,
+			  location
+			FROM
+			  %s
+			WHERE
+			  source_id = '%s'
+			  AND destination_id = '%s'
+			  AND id >= %d
 			  and id <= %d;
 `,
 			warehouseutils.WarehouseStagingFilesTable,
@@ -302,9 +302,9 @@ func archiveUploads(dbHandle *sql.DB) {
 
 			// delete staging file records
 			stmt = fmt.Sprintf(`
-				DELETE FROM 
-				  %s 
-				WHERE 
+				DELETE FROM
+				  %s
+				WHERE
 				  id IN (%v);
 `,
 				warehouseutils.WarehouseStagingFilesTable,
@@ -319,9 +319,9 @@ func archiveUploads(dbHandle *sql.DB) {
 
 			// delete load file records
 			stmt = fmt.Sprintf(`
-				DELETE FROM 
-				  %s 
-				WHERE 
+				DELETE FROM
+				  %s
+				WHERE
 				  staging_file_id = ANY($1) RETURNING location;
 `,
 				warehouseutils.WarehouseLoadFilesTable,
@@ -371,11 +371,11 @@ func archiveUploads(dbHandle *sql.DB) {
 		// update upload metadata
 		u.uploadMetdata, _ = sjson.SetBytes(u.uploadMetdata, "archivedStagingAndLoadFiles", true)
 		stmt = fmt.Sprintf(`
-			UPDATE 
-			  %s 
-			SET 
-			  metadata = $1 
-			WHERE 
+			UPDATE
+			  %s
+			SET
+			  metadata = $1
+			WHERE
 			  id = %d;
 `,
 			warehouseutils.WarehouseUploadsTable,
@@ -398,7 +398,7 @@ func archiveUploads(dbHandle *sql.DB) {
 			pkgLogger.Debugf(`[Archiver]: Archived upload: %d related staging files at: %s`, u.uploadID, storedStagingFilesLocation)
 		}
 
-		stats.Default.NewTaggedStat("warehouse.archiver.numArchivedUploads", stats.CountType, map[string]string{
+		stats.Default.NewTaggedStat("warehouse.archiver.numArchivedUploads", stats.CountType, stats.Tags{
 			"destination": u.destID,
 			"source":      u.sourceID,
 		}).Count(1)

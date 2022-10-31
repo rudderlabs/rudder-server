@@ -166,7 +166,7 @@ func (ct *CTHandleT) verifyingCreateAlterTable() (err error) {
 
 	// Alter table
 	for columnName, columnType := range AlterColumnMap {
-		err = ct.manager.AddColumn(stagingTableName, columnName, columnType)
+		err = ct.manager.AddColumns(stagingTableName, []warehouseutils.ColumnInfo{{Name: columnName, Type: columnType}})
 		if err != nil {
 			return
 		}

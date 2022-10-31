@@ -228,6 +228,12 @@ type DeleteByParams struct {
 	StartTime string
 }
 
+type ColumnInfo struct {
+	Name  string
+	Value interface{}
+	Type  string
+}
+
 func (w *Warehouse) GetBoolDestinationConfig(key string) bool {
 	destConfig := w.Destination.Config
 	if destConfig[key] != nil {
@@ -568,8 +574,8 @@ func GetAzureBlobLocationFolder(location string) string {
 }
 
 func GetS3Locations(loadFiles []LoadFileT) []LoadFileT {
-	for idx, loadfile := range loadFiles {
-		loadFiles[idx].Location, _ = GetS3Location(loadfile.Location)
+	for idx, loadFile := range loadFiles {
+		loadFiles[idx].Location, _ = GetS3Location(loadFile.Location)
 	}
 	return loadFiles
 }
@@ -638,7 +644,7 @@ func ToSafeNamespace(provider, name string) string {
 
 /*
 ToProviderCase converts string provided to case generally accepted in the warehouse for table, column, schema names etc.
-e.g. columns are uppercased in SNOWFLAKE and lowercased etc. in REDSHIFT, BIGQUERY etc
+e.g. columns are uppercase in SNOWFLAKE and lowercase etc. in REDSHIFT, BIGQUERY etc
 */
 func ToProviderCase(provider, str string) string {
 	if strings.ToUpper(provider) == SNOWFLAKE {
@@ -738,10 +744,10 @@ func GetWarehouseIdentifier(destType, sourceID, destinationID string) string {
 	return fmt.Sprintf("%s:%s:%s", destType, sourceID, destinationID)
 }
 
-func DoubleQuoteAndJoinByComma(strs []string) string {
+func DoubleQuoteAndJoinByComma(elems []string) string {
 	var quotedSlice []string
-	for _, str := range strs {
-		quotedSlice = append(quotedSlice, fmt.Sprintf("%q", str))
+	for _, elem := range elems {
+		quotedSlice = append(quotedSlice, fmt.Sprintf("%q", elem))
 	}
 	return strings.Join(quotedSlice, ",")
 }
@@ -776,7 +782,8 @@ func JoinWithFormatting(keys []string, format func(idx int, str string) string, 
 }
 
 func CreateAWSSessionConfig(destination *backendconfig.DestinationT, serviceName string) (*awsutils.SessionConfig, error) {
-	if !misc.IsConfiguredToUseRudderObjectStorage(destination.Config) {
+	if !misc.IsConfiguredToUseRudderObjectStorage(destination.Config) &&
+		(misc.HasAWSRoleARNInConfig(destination.Config) || misc.HasAWSKeysInConfig(destination.Config)) {
 		return awsutils.NewSimpleSessionConfigForDestination(destination, serviceName)
 	}
 	accessKeyID, accessKey := misc.GetRudderObjectStorageAccessKeys()
@@ -814,8 +821,8 @@ type Tag struct {
 }
 
 func NewTimerStat(name string, extraTags ...Tag) stats.Measurement {
-	tags := map[string]string{
-		"module": "warehouse",
+	tags := stats.Tags{
+		"module": WAREHOUSE,
 	}
 	for _, extraTag := range extraTags {
 		tags[extraTag.Name] = extraTag.Value
@@ -824,8 +831,8 @@ func NewTimerStat(name string, extraTags ...Tag) stats.Measurement {
 }
 
 func NewCounterStat(name string, extraTags ...Tag) stats.Measurement {
-	tags := map[string]string{
-		"module": "warehouse",
+	tags := stats.Tags{
+		"module": WAREHOUSE,
 	}
 	for _, extraTag := range extraTags {
 		tags[extraTag.Name] = extraTag.Value
@@ -834,7 +841,7 @@ func NewCounterStat(name string, extraTags ...Tag) stats.Measurement {
 }
 
 func WHCounterStat(name string, warehouse *Warehouse, extraTags ...Tag) stats.Measurement {
-	tags := map[string]string{
+	tags := stats.Tags{
 		"module":      WAREHOUSE,
 		"destType":    warehouse.Type,
 		"workspaceId": warehouse.WorkspaceID,
@@ -913,7 +920,7 @@ func WriteSSLKeys(destination backendconfig.DestinationT) WriteSSLKeyError {
 		existingChecksum = string(fileContent)
 	}
 	if existingChecksum == sslHash {
-		// Pems files already written to FS
+		// Permission files already written to FS
 		return WriteSSLKeyError{}
 	}
 	if err = os.WriteFile(clientCertPemFile, []byte(clientCert), 0o600); err != nil {

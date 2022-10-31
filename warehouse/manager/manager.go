@@ -26,7 +26,7 @@ type ManagerI interface {
 	FetchSchema(warehouse warehouseutils.Warehouse) (warehouseutils.SchemaT, error)
 	CreateSchema() (err error)
 	CreateTable(tableName string, columnMap map[string]string) (err error)
-	AddColumn(tableName, columnName, columnType string) (err error)
+	AddColumns(tableName string, columnsInfo []warehouseutils.ColumnInfo) (err error)
 	AlterColumn(tableName, columnName, columnType string) (err error)
 	LoadTable(tableName string) error
 	LoadUserTables() map[string]error
@@ -83,7 +83,7 @@ func New(destType string) (ManagerI, error) {
 		var dl deltalake.HandleT
 		return &dl, nil
 	}
-	return nil, fmt.Errorf("Provider of type %s is not configured for WarehouseManager", destType)
+	return nil, fmt.Errorf("provider of type %s is not configured for WarehouseManager", destType)
 }
 
 // NewWarehouseOperations is a Factory function that returns a WarehouseOperations of a given destination-type
@@ -117,5 +117,5 @@ func NewWarehouseOperations(destType string) (WarehouseOperations, error) {
 		var dl deltalake.HandleT
 		return &dl, nil
 	}
-	return nil, fmt.Errorf("Provider of type %s is not configured for WarehouseManager", destType)
+	return nil, fmt.Errorf("provider of type %s is not configured for WarehouseManager", destType)
 }

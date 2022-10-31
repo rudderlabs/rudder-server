@@ -92,8 +92,8 @@ func (ic *IndexConstraintT) violates(brEvent *BatchRouterEventT, columnName stri
 		if !ok {
 			continue
 		}
-		if columnInfo.ColumnType == "string" {
-			columnVal, ok := columnInfo.ColumnVal.(string)
+		if columnInfo.Type == "string" {
+			columnVal, ok := columnInfo.Value.(string)
 			if !ok {
 				continue
 			}

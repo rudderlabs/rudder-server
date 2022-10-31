@@ -7,23 +7,22 @@ import (
 	"github.com/rudderlabs/rudder-server/services/pgnotifier"
 )
 
-func convertToPayloadStatusStructWithSingleStatus(payloads []AsyncJobPayloadT, status string, err error) map[string]AsyncJobsStatusMap {
-	asyncJobsStatusMap := make(map[string]AsyncJobsStatusMap)
+func convertToPayloadStatusStructWithSingleStatus(payloads []AsyncJobPayloadT, status string, err error) map[string]AsyncJobStatus {
+	asyncJobStatusMap := make(map[string]AsyncJobStatus)
 	for _, payload := range payloads {
-		asyncjobmap := AsyncJobsStatusMap{
+		asyncJobStatusMap[payload.Id] = AsyncJobStatus{
 			Id:     payload.Id,
 			Status: status,
 			Error:  err,
 		}
-		asyncJobsStatusMap[payload.Id] = asyncjobmap
 	}
-	return asyncJobsStatusMap
+	return asyncJobStatusMap
 }
 
 // convert to pgNotifier Payload and return the array of payloads
-func getMessagePayloadsFromAsyncJobPayloads(asyncjobs []AsyncJobPayloadT) ([]pgnotifier.JobPayload, error) {
+func getMessagePayloadsFromAsyncJobPayloads(asyncJobPayloads []AsyncJobPayloadT) ([]pgnotifier.JobPayload, error) {
 	var messages []pgnotifier.JobPayload
-	for _, job := range asyncjobs {
+	for _, job := range asyncJobPayloads {
 		message, err := json.Marshal(job)
 		if err != nil {
 			return messages, err
@@ -56,34 +55,33 @@ func contains(sArray []string, s string) bool {
 	return false
 }
 
-func getAsyncStatusMapFromAsyncPayloads(payloads []AsyncJobPayloadT) map[string]AsyncJobsStatusMap {
-	asyncjobsstatusmap := make(map[string]AsyncJobsStatusMap)
+func getAsyncStatusMapFromAsyncPayloads(payloads []AsyncJobPayloadT) map[string]AsyncJobStatus {
+	asyncJobStatusMap := make(map[string]AsyncJobStatus)
 	for _, payload := range payloads {
-		asyncstatus := AsyncJobsStatusMap{
+		asyncJobStatusMap[payload.Id] = AsyncJobStatus{
 			Id:     payload.Id,
 			Status: WhJobFailed,
 		}
-		asyncjobsstatusmap[payload.Id] = asyncstatus
 	}
-	return asyncjobsstatusmap
+	return asyncJobStatusMap
 }
 
-func updateStatusJobPayloadsFromPgnotifierResponse(r []pgnotifier.ResponseT, m map[string]AsyncJobsStatusMap) error {
+func updateStatusJobPayloadsFromPgNotifierResponse(r []pgnotifier.ResponseT, m map[string]AsyncJobStatus) error {
 	var err error
 	for _, resp := range r {
-		var pgoutput PGNotifierOutput
-		err = json.Unmarshal(resp.Output, &pgoutput)
+		var pgNotifierOutput PGNotifierOutput
+		err = json.Unmarshal(resp.Output, &pgNotifierOutput)
 		if err != nil {
-			pkgLogger.Errorf("error unmarshaling pgnotifier payload to AsyncJobStatusMa for Id: %s", pgoutput.Id)
+			pkgLogger.Errorf("error unmarshalling pgnotifier payload to AsyncJobStatusMa for Id: %s", pgNotifierOutput.Id)
 			continue
 		}
-		pkgLogger.Infof("Successfully unmarshaled pgnotifier payload to AsyncJobStatusMa for Id: %s", pgoutput.Id)
-		if output, ok := m[pgoutput.Id]; ok {
+		pkgLogger.Infof("Successfully unmarshalled pgnotifier payload to AsyncJobStatusMa for Id: %s", pgNotifierOutput.Id)
+		if output, ok := m[pgNotifierOutput.Id]; ok {
 			output.Status = resp.Status
 			if resp.Error != "" {
 				output.Error = fmt.Errorf(resp.Error)
 			}
-			m[pgoutput.Id] = output
+			m[pgNotifierOutput.Id] = output
 		}
 	}
 	return err

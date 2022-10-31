@@ -184,6 +184,7 @@ func setMaxParallelLoads() {
 		warehouseutils.POSTGRES:      config.GetInt("Warehouse.postgres.columnCountThreshold", 1200),
 		warehouseutils.RS:            config.GetInt("Warehouse.redshift.columnCountThreshold", 1200),
 		warehouseutils.SNOWFLAKE:     config.GetInt("Warehouse.snowflake.columnCountThreshold", 1600),
+		warehouseutils.S3_DATALAKE:   config.GetInt("Warehouse.s3_datalake.columnCountThreshold", 10000),
 	}
 }
 
@@ -366,11 +367,6 @@ func (job *UploadJobT) run() (err error) {
 		ch <- struct{}{}
 	}()
 
-	// set last_exec_at to record last upload start time
-	// sync scheduling with syncStartAt depends on this determine to start upload or not
-	// job.setUploadColumns(
-	// 	UploadColumnT{Column: UploadLastExecAtField, Value: timeutil.Now()},
-	// )
 	job.uploadLock.Lock()
 	defer job.uploadLock.Unlock()
 	job.setUploadColumns(UploadColumnsOpts{Fields: []UploadColumnT{{Column: UploadLastExecAtField, Value: timeutil.Now()}, {Column: UploadInProgress, Value: true}}})
@@ -403,8 +399,11 @@ func (job *UploadJobT) run() (err error) {
 	userTables := []string{job.identifiesTableName(), job.usersTableName()}
 	identityTables := []string{job.identityMergeRulesTableName(), job.identityMappingsTableName()}
 
-	var newStatus string
-	var nextUploadState *uploadStateT
+	var (
+		newStatus       string
+		nextUploadState *uploadStateT
+	)
+
 	// do not set nextUploadState if hasSchemaChanged to make it start from 1st step again
 	if !hasSchemaChanged {
 		nextUploadState = getNextUploadState(job.upload.Status)
@@ -488,9 +487,11 @@ func (job *UploadJobT) run() (err error) {
 			newStatus = nextUploadState.failed
 			_, currentJobSucceededTables := job.getTablesToSkip()
 
-			var loadErrors []error
-			var loadErrorLock sync.Mutex
-			var loadFilesTableMap map[tableNameT]bool
+			var (
+				loadErrors        []error
+				loadErrorLock     sync.Mutex
+				loadFilesTableMap map[tableNameT]bool
+			)
 
 			loadFilesTableMap, err = job.getLoadFilesTableMap()
 			if err != nil {
@@ -852,16 +853,7 @@ func (job *UploadJobT) updateTableSchema(tName string, tableSchemaDiff warehouse
 		return nil
 	}
 
-	for columnName, columnType := range tableSchemaDiff.ColumnMap {
-		err = job.whManager.AddColumn(tName, columnName, columnType)
-		if err != nil {
-			pkgLogger.Errorf("Column %s already exists on %s.%s \nResponse: %v", columnName, job.warehouse.Namespace, tName, err)
-			break
-		}
-		job.counterStat("columns_added").Increment()
-	}
-
-	if err != nil {
+	if err := job.addColumnsToWarehouse(tName, tableSchemaDiff.ColumnMap); err != nil {
 		return err
 	}
 
@@ -873,6 +865,34 @@ func (job *UploadJobT) updateTableSchema(tName string, tableSchemaDiff warehouse
 		}
 	}
 
+	return err
+}
+
+func (job *UploadJobT) addColumnsToWarehouse(tName string, columnsMap map[string]string) (err error) {
+	pkgLogger.Infof(`[WH]: Adding columns for table %s in namespace %s of destination %s:%s`, tName, job.warehouse.Namespace, job.warehouse.Type, job.warehouse.Destination.ID)
+
+	destType := job.upload.DestinationType
+	columnsBatchSize := config.GetInt(fmt.Sprintf("Warehouse.%s.customDatasetPrefix", warehouseutils.WHDestNameMap[destType]), 100)
+
+	var columnsToAdd []warehouseutils.ColumnInfo
+	for columnName, columnType := range columnsMap {
+		columnsToAdd = append(columnsToAdd, warehouseutils.ColumnInfo{Name: columnName, Type: columnType})
+	}
+
+	for i := 0; i < len(columnsToAdd); i += columnsBatchSize {
+		j := i + columnsBatchSize
+		if j > len(columnsToAdd) {
+			j = len(columnsToAdd)
+		}
+
+		err = job.whManager.AddColumns(tName, columnsToAdd[i:j])
+		if err != nil {
+			err = fmt.Errorf("failed to add columns for table %s in namespace %s of destination %s:%s with error: %w", tName, job.warehouse.Namespace, job.warehouse.Type, job.warehouse.Destination.ID, err)
+			break
+		}
+
+		job.counterStat("columns_added").Count(j - i + 1)
+	}
 	return err
 }
 
@@ -902,7 +922,7 @@ func (job *UploadJobT) loadAllTablesExcept(skipLoadForTables []string, loadFiles
 	var wg sync.WaitGroup
 	wg.Add(len(uploadSchema))
 
-	var alteredSchemaInAtleastOneTable bool
+	var alteredSchemaInAtLeastOneTable bool
 	loadChan := make(chan struct{}, parallelLoads)
 	previouslyFailedTables, currentJobSucceededTables := job.getTablesToSkip()
 	for tableName := range uploadSchema {
@@ -933,7 +953,7 @@ func (job *UploadJobT) loadAllTablesExcept(skipLoadForTables []string, loadFiles
 		rruntime.GoForWarehouse(func() {
 			alteredSchema, err := job.loadTable(tName)
 			if alteredSchema {
-				alteredSchemaInAtleastOneTable = true
+				alteredSchemaInAtLeastOneTable = true
 			}
 
 			if err != nil {
@@ -947,7 +967,7 @@ func (job *UploadJobT) loadAllTablesExcept(skipLoadForTables []string, loadFiles
 	}
 	wg.Wait()
 
-	if alteredSchemaInAtleastOneTable {
+	if alteredSchemaInAtLeastOneTable {
 		pkgLogger.Infof("loadAllTablesExcept: schema changed - updating local schema for %s", job.warehouse.Identifier)
 		job.schemaHandle.updateLocalSchema(job.schemaHandle.schemaInWarehouse)
 	}
@@ -1396,7 +1416,7 @@ func (job *UploadJobT) triggerUploadNow() (err error) {
 	job.uploadLock.Lock()
 	defer job.uploadLock.Unlock()
 	upload := job.upload
-	newjobState := Waiting
+	newJobState := Waiting
 	var metadata map[string]interface{}
 	unmarshallErr := json.Unmarshal(upload.Metadata, &metadata)
 	if unmarshallErr != nil {
@@ -1411,7 +1431,7 @@ func (job *UploadJobT) triggerUploadNow() (err error) {
 	}
 
 	uploadColumns := []UploadColumnT{
-		{Column: "status", Value: newjobState},
+		{Column: "status", Value: newJobState},
 		{Column: "metadata", Value: metadataJSON},
 		{Column: "updated_at", Value: timeutil.Now()},
 	}
@@ -1426,7 +1446,7 @@ func (job *UploadJobT) triggerUploadNow() (err error) {
 	}
 	err = txn.Commit()
 
-	job.upload.Status = newjobState
+	job.upload.Status = newJobState
 	return err
 }
 

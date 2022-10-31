@@ -179,18 +179,10 @@ func (sf *HandleT) schemaExists() (exists bool, err error) {
 	return
 }
 
-func (sf *HandleT) addColumn(tableName, columnName, columnType string) (err error) {
-	schemaIdentifier := sf.schemaIdentifier()
-	sqlStatement := fmt.Sprintf(`ALTER TABLE %s."%s" ADD COLUMN "%s" %s`, schemaIdentifier, tableName, columnName, dataTypesMap[columnType])
-	pkgLogger.Infof("SF: Adding column in snowflake for %s:%s : %v", sf.Warehouse.Namespace, sf.Warehouse.Destination.ID, sqlStatement)
-	_, err = sf.Db.Exec(sqlStatement)
-	return
-}
-
 func (sf *HandleT) createSchema() (err error) {
 	schemaIdentifier := sf.schemaIdentifier()
 	sqlStatement := fmt.Sprintf(`CREATE SCHEMA IF NOT EXISTS %s`, schemaIdentifier)
-	pkgLogger.Infof("SF: Creating schemaname in snowflake for %s:%s : %v", sf.Warehouse.Namespace, sf.Warehouse.Destination.ID, sqlStatement)
+	pkgLogger.Infof("SF: Creating schema name in snowflake for %s:%s : %v", sf.Warehouse.Namespace, sf.Warehouse.Destination.ID, sqlStatement)
 	_, err = sf.Db.Exec(sqlStatement)
 	return
 }
@@ -220,9 +212,9 @@ func (sf *HandleT) authString() string {
 }
 
 func (sf *HandleT) DeleteBy(tableNames []string, params warehouseutils.DeleteByParams) (err error) {
-	pkgLogger.Infof("SF: Cleaning up the followng tables in snowflake for SF:%s : %v", tableNames)
+	pkgLogger.Infof("SF: Cleaning up the following tables in snowflake for SF:%s : %v", tableNames)
 	for _, tb := range tableNames {
-		sqlStatement := fmt.Sprintf(`DELETE FROM "%[1]s"."%[2]s" WHERE 
+		sqlStatement := fmt.Sprintf(`DELETE FROM "%[1]s"."%[2]s" WHERE
 		context_sources_job_run_id <> :jobrunid AND
 		context_sources_task_run_id <> :taskrunid AND
 		context_source_id = :sourceid AND
@@ -288,7 +280,7 @@ func (sf *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 		return
 	}
 	loadFolder := warehouseutils.GetObjectFolder(sf.ObjectStorage, csvObjectLocation)
-	// Truncating the columns by default so as to avoid size limitation errors
+	// Truncating the columns by default to avoid size limitation errors
 	// https://docs.snowflake.com/en/sql-reference/sql/copy-into-table.html#copy-options-copyoptions
 	sqlStatement = fmt.Sprintf(`COPY INTO %v(%v) FROM '%v' %s PATTERN = '.*\.csv\.gz'
 		FILE_FORMAT = ( TYPE = csv FIELD_OPTIONALLY_ENCLOSED_BY = '"' ESCAPE_UNENCLOSED_FIELD = NONE ) TRUNCATECOLUMNS = TRUE`, fmt.Sprintf(`%s."%s"`, schemaIdentifier, stagingTableName), sortedColumnNames, loadFolder, sf.authString())
@@ -371,8 +363,8 @@ func (sf *HandleT) LoadIdentityMergeRulesTable() (err error) {
 	pkgLogger.Infof("SF: Starting load for table:%s\n", identityMergeRulesTable)
 
 	pkgLogger.Infof("SF: Fetching load file location for %s", identityMergeRulesTable)
-	var loadfile warehouseutils.LoadFileT
-	loadfile, err = sf.Uploader.GetSingleLoadFile(identityMergeRulesTable)
+	var loadFile warehouseutils.LoadFileT
+	loadFile, err = sf.Uploader.GetSingleLoadFile(identityMergeRulesTable)
 	if err != nil {
 		return err
 	}
@@ -384,7 +376,7 @@ func (sf *HandleT) LoadIdentityMergeRulesTable() (err error) {
 	}
 
 	sortedColumnNames := strings.Join([]string{"MERGE_PROPERTY_1_TYPE", "MERGE_PROPERTY_1_VALUE", "MERGE_PROPERTY_2_TYPE", "MERGE_PROPERTY_2_VALUE"}, ",")
-	loadLocation := warehouseutils.GetObjectLocation(sf.ObjectStorage, loadfile.Location)
+	loadLocation := warehouseutils.GetObjectLocation(sf.ObjectStorage, loadFile.Location)
 	schemaIdentifier := sf.schemaIdentifier()
 	sqlStatement := fmt.Sprintf(`COPY INTO %v(%v) FROM '%v' %s PATTERN = '.*\.csv\.gz'
 		FILE_FORMAT = ( TYPE = csv FIELD_OPTIONALLY_ENCLOSED_BY = '"' ESCAPE_UNENCLOSED_FIELD = NONE ) TRUNCATECOLUMNS = TRUE`, fmt.Sprintf(`%s."%s"`, schemaIdentifier, identityMergeRulesTable), sortedColumnNames, loadLocation, sf.authString())
@@ -410,9 +402,9 @@ func (sf *HandleT) LoadIdentityMergeRulesTable() (err error) {
 func (sf *HandleT) LoadIdentityMappingsTable() (err error) {
 	pkgLogger.Infof("SF: Starting load for table:%s\n", identityMappingsTable)
 	pkgLogger.Infof("SF: Fetching load file location for %s", identityMappingsTable)
-	var loadfile warehouseutils.LoadFileT
+	var loadFile warehouseutils.LoadFileT
 
-	loadfile, err = sf.Uploader.GetSingleLoadFile(identityMappingsTable)
+	loadFile, err = sf.Uploader.GetSingleLoadFile(identityMappingsTable)
 	if err != nil {
 		return err
 	}
@@ -442,7 +434,7 @@ func (sf *HandleT) LoadIdentityMappingsTable() (err error) {
 		return
 	}
 
-	loadLocation := warehouseutils.GetObjectLocation(sf.ObjectStorage, loadfile.Location)
+	loadLocation := warehouseutils.GetObjectLocation(sf.ObjectStorage, loadFile.Location)
 	sqlStatement = fmt.Sprintf(`COPY INTO %v("MERGE_PROPERTY_TYPE", "MERGE_PROPERTY_VALUE", "RUDDER_ID", "UPDATED_AT") FROM '%v' %s PATTERN = '.*\.csv\.gz'
 		FILE_FORMAT = ( TYPE = csv FIELD_OPTIONALLY_ENCLOSED_BY = '"' ESCAPE_UNENCLOSED_FIELD = NONE ) TRUNCATECOLUMNS = TRUE`, fmt.Sprintf(`%s."%s"`, schemaIdentifier, stagingTableName), loadLocation, sf.authString())
 
@@ -504,7 +496,7 @@ func (sf *HandleT) loadUserTables() (errorMap map[string]error) {
 		if _, ok := identifyColMap[colName]; ok {
 			identifyColNames = append(identifyColNames, fmt.Sprintf(`"%s"`, colName))
 		} else {
-			// This is to handle cases when column in users table not present in inditifies table
+			// This is to handle cases when column in users table not present in identities table
 			identifyColNames = append(identifyColNames, fmt.Sprintf(`NULL as "%s"`, colName))
 		}
 		firstValProps = append(firstValProps, fmt.Sprintf(`FIRST_VALUE("%[1]s" IGNORE NULLS) OVER (PARTITION BY ID ORDER BY RECEIVED_AT DESC ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) AS "%[1]s"`, colName))
@@ -647,16 +639,42 @@ func (sf *HandleT) DropTable(tableName string) (err error) {
 	return
 }
 
-func (sf *HandleT) AddColumn(tableName, columnName, columnType string) (err error) {
-	err = sf.addColumn(tableName, columnName, columnType)
-	schemaIdentifier := sf.schemaIdentifier()
-	if err != nil {
-		if checkAndIgnoreAlreadyExistError(err) {
-			pkgLogger.Infof("SF: Column %s already exists on %s.%s \nResponse: %v", columnName, schemaIdentifier, tableName, err)
-			err = nil
+func (sf *HandleT) AddColumns(tableName string, columnsInfo []warehouseutils.ColumnInfo) (err error) {
+	var (
+		query            string
+		schemaIdentifier string
+	)
+
+	schemaIdentifier = sf.schemaIdentifier()
+
+	query = fmt.Sprintf(`
+		ALTER TABLE
+		  %s.%q
+		ADD COLUMN`,
+		schemaIdentifier,
+		tableName,
+	)
+
+	for _, columnInfo := range columnsInfo {
+		query += fmt.Sprintf(` %q %s,`, columnInfo.Name, dataTypesMap[columnInfo.Type])
+	}
+
+	query = strings.TrimSuffix(query, ",")
+	query += ";"
+
+	pkgLogger.Infof("SF: Adding columns for destinationID: %s, tableName: %s with query: %v", sf.Warehouse.Destination.ID, tableName, query)
+	_, err = sf.Db.Exec(query)
+
+	// Handle error in case of single column
+	if len(columnsInfo) == 1 {
+		if err != nil {
+			if checkAndIgnoreAlreadyExistError(err) {
+				pkgLogger.Infof("SF: Column %s already exists on %s.%s \nResponse: %v", columnsInfo[0].Name, schemaIdentifier, tableName, err)
+				err = nil
+			}
 		}
 	}
-	return err
+	return
 }
 
 func (*HandleT) AlterColumn(_, _, _ string) (err error) {
@@ -847,7 +865,7 @@ func (sf *HandleT) TestConnection(warehouse warehouseutils.Warehouse) (err error
 	return nil
 }
 
-// FetchSchema queries snowflake and returns the schema assoiciated with provided namespace
+// FetchSchema queries snowflake and returns the schema associated with provided namespace
 func (sf *HandleT) FetchSchema(warehouse warehouseutils.Warehouse) (schema warehouseutils.SchemaT, err error) {
 	sf.Warehouse = warehouse
 	sf.Namespace = warehouse.Namespace

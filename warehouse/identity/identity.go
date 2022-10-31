@@ -198,7 +198,7 @@ func (idr *HandleT) addRules(txn *sql.Tx, loadFileNames []string, gzWriter *misc
 		var gzipFile *os.File
 		gzipFile, err = os.Open(loadFileName)
 		if err != nil {
-			pkgLogger.Errorf(`IDR: Error opeining downloaded load file at %s: %v`, loadFileName, err)
+			pkgLogger.Errorf(`IDR: Error opening downloaded load file at %s: %v`, loadFileName, err)
 			return
 		}
 		defer gzipFile.Close()
@@ -487,7 +487,7 @@ func (idr *HandleT) processMergeRules(fileNames []string) (err error) {
 		}
 		totalMappingRecords += count
 		if idx%1000 == 0 {
-			pkgLogger.Infof(`IDR: Applied %d rules out of %d. Total Mapping records added: %d. Namepsace: %s, Destination: %s:%s`, idx+1, len(ruleIDs), totalMappingRecords, idr.Warehouse.Namespace, idr.Warehouse.Type, idr.Warehouse.Destination.ID)
+			pkgLogger.Infof(`IDR: Applied %d rules out of %d. Total Mapping records added: %d. Namespace: %s, Destination: %s:%s`, idx+1, len(ruleIDs), totalMappingRecords, idr.Warehouse.Namespace, idr.Warehouse.Type, idr.Warehouse.Destination.ID)
 		}
 	}
 	mappingsFileGzWriter.CloseGZ()

@@ -415,7 +415,8 @@ func (notifier *PgNotifierT) claim(workerID string) (claim ClaimT, err error) {
 	}()
 	var claimedID int64
 	var attempt int
-	var batchID, status, workspace, job_type string
+	var batchID, status, workspace string
+	var jobType sql.NullString
 	var payload json.RawMessage
 	stmt := fmt.Sprintf(`
 		UPDATE
@@ -461,7 +462,7 @@ func (notifier *PgNotifierT) claim(workerID string) (claim ClaimT, err error) {
 	if err != nil {
 		return
 	}
-	err = tx.QueryRow(stmt).Scan(&claimedID, &batchID, &status, &payload, &workspace, &attempt, &job_type)
+	err = tx.QueryRow(stmt).Scan(&claimedID, &batchID, &status, &payload, &workspace, &attempt, &jobType)
 	defer func() {
 		if err != nil {
 			if rollbackErr := tx.Rollback(); rollbackErr != nil {
@@ -483,6 +484,11 @@ func (notifier *PgNotifierT) claim(workerID string) (claim ClaimT, err error) {
 		return
 	}
 
+	// fallback to upload if jobType is not valid
+	if !jobType.Valid {
+		jobType = sql.NullString{String: "upload", Valid: true}
+	}
+
 	claim = ClaimT{
 		ID:        claimedID,
 		BatchID:   batchID,
@@ -490,7 +496,7 @@ func (notifier *PgNotifierT) claim(workerID string) (claim ClaimT, err error) {
 		Payload:   payload,
 		Attempt:   attempt,
 		Workspace: workspace,
-		JobType:   job_type,
+		JobType:   jobType.String,
 	}
 	return claim, nil
 }
