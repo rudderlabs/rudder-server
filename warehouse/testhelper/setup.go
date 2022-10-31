@@ -620,7 +620,7 @@ func DefaultSourceRunConfig() map[string]string {
 }
 
 func GetUserId(userType string) string {
-	return fmt.Sprintf("userId_%s_%s", strings.ToLower(userType), warehouseutils.RandomStringWithoutQuotes())
+	return fmt.Sprintf("userId_%s_%s", strings.ToLower(userType), warehouseutils.RandStringWithoutQuotes())
 }
 
 func CreateBucketForMinio(t testing.TB, bucketName string) {
