@@ -14,18 +14,20 @@ import (
 	"strings"
 
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/model"
+	oauth "github.com/rudderlabs/rudder-server/router/oauthResponseHandler"
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 )
 
 var (
 	pkgLogger             = logger.NewLogger().Child("api")
-	supportedDestinations = []string{"BRAZE", "AM", "INTERCOM", "CLEVERTAP", "AF", "MP"}
+	supportedDestinations = []string{"BRAZE", "AM", "INTERCOM", "CLEVERTAP", "AF", "MP", "GA"}
 )
 
 type APIManager struct {
 	Client           *http.Client
 	DestTransformURL string
+	OAuth            oauth.Authorizer
 }
 
 // prepares payload based on (job,destDetail) & make an API call to transformer.
@@ -39,6 +41,31 @@ func (api *APIManager) Delete(ctx context.Context, job model.Job, destConfig map
 
 	bodySchema := mapJobToPayload(job, strings.ToLower(destName), destConfig)
 	pkgLogger.Debugf("payload: %#v", bodySchema)
+	pkgLogger.Infof("Regulation Delete API called:\n")
+
+	var tokenStatusCode int
+	var accountSecretInfo *oauth.AuthResponse
+	// identifier to know if the destination supports OAuth
+	// TODO: "rudderAccountId" has to change to "rudderUserDeleteAccountId"
+	rudderUserDeleteAccountId, delAccountIdExists := destConfig["rudderAccountId"]
+	// TODO: This needs to be changed
+	isOauthEnabled := delAccountIdExists || destName == "GA"
+	if isOauthEnabled {
+		// Fetch Token call
+		// Get Access Token Information to send it as part of the event
+		tokenStatusCode, accountSecretInfo = api.OAuth.FetchToken(&oauth.RefreshTokenParams{
+			AccountId:       rudderUserDeleteAccountId.(string),
+			WorkspaceId:     job.WorkspaceID,
+			DestDefName:     destName,
+			EventNamePrefix: "fetch_token",
+		})
+		pkgLogger.Infof(`[%s][FetchToken] Token Fetch Method finished (statusCode, value): (%v, %+v)`, destName, tokenStatusCode, accountSecretInfo)
+		if tokenStatusCode != http.StatusOK {
+			pkgLogger.Errorf(`[%s][FetchToken] Error in Token Fetch statusCode: %d\t error: %s\n`, destName, tokenStatusCode, accountSecretInfo.Err)
+		}
+	} else {
+		pkgLogger.Errorf("[%v] Destination probably doesn't support OAuth or some issue happened while doing OAuth for deletion", destName)
+	}
 
 	reqBody, err := json.Marshal(bodySchema)
 	if err != nil {
@@ -52,6 +79,16 @@ func (api *APIManager) Delete(ctx context.Context, job model.Job, destConfig map
 		return model.JobStatusFailed
 	}
 	req.Header.Set("Content-Type", "application/json")
+
+	// setting oauth related information
+	if isOauthEnabled {
+		payload, unmarshalErr := json.Marshal(accountSecretInfo.Account)
+		if unmarshalErr != nil {
+			pkgLogger.Errorf("error while unmarshalling account secret information: %v", unmarshalErr)
+			return model.JobStatusFailed
+		}
+		req.Header.Set("X-Rudder-Dest-Info", string(payload))
+	}
 
 	fileCleaningTime := stats.Default.NewTaggedStat("file_cleaning_time", stats.TimerType, stats.Tags{
 		"jobId":       fmt.Sprintf("%d", job.ID),
@@ -82,6 +119,39 @@ func (api *APIManager) Delete(ctx context.Context, job model.Job, destConfig map
 		pkgLogger.Errorf("error while decoding response body: %v", err)
 		return model.JobStatusFailed
 	}
+	// Refresh Flow Start
+	var isRefresh bool
+	for _, jobResponse := range jobResp {
+		isRefresh = strings.TrimSpace(jobResponse.AuthErrorCategory) != "" && jobResponse.AuthErrorCategory == oauth.REFRESH_TOKEN
+		if isRefresh {
+			break
+		}
+	}
+	if isRefresh {
+		pkgLogger.Infof("Refresh flow triggered for %v\n", destName)
+		// Refresh OAuth flow
+		var refSecret *oauth.AuthResponse
+		var errCatStatusCode int
+		refTokenParams := &oauth.RefreshTokenParams{
+			Secret:          accountSecretInfo.Account.Secret,
+			WorkspaceId:     job.WorkspaceID,
+			AccountId:       rudderUserDeleteAccountId.(string),
+			DestDefName:     destName,
+			EventNamePrefix: "refresh_token",
+		}
+		errCatStatusCode, refSecret = api.OAuth.RefreshToken(refTokenParams)
+		// TODO: Does it make sense to have disable destination here ?
+		refSec := *refSecret
+		if strings.TrimSpace(refSec.Err) != "" {
+			// There is an error occurring
+			pkgLogger.Warnf("Error: %v, Status: %v", refSec.Err, errCatStatusCode)
+			return model.JobStatusAborted
+		}
+		// Refresh is complete, the job has to be re-tried
+		return model.JobStatusFailed
+	}
+	// Refresh Flow ends
+
 	switch resp.StatusCode {
 
 	case http.StatusOK:

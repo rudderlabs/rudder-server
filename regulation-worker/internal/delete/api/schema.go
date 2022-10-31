@@ -10,6 +10,7 @@ type apiDeletionPayloadSchema struct {
 }
 
 type JobRespSchema struct {
-	Status string `json:"status"`
-	Error  string `json:"error"`
+	Status            string `json:"status"`
+	Error             string `json:"error"`
+	AuthErrorCategory string `json:"authErrorCategory"`
 }

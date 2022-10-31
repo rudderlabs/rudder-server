@@ -21,15 +21,21 @@ import (
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/destination"
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/initialize"
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/service"
+	oauth "github.com/rudderlabs/rudder-server/router/oauthResponseHandler"
 	"github.com/rudderlabs/rudder-server/services/filemanager"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 )
 
 var pkgLogger = logger.NewLogger().Child("regulation-worker")
 
-func main() {
+func InitAll() {
 	initialize.Init()
 	backendconfig.Init()
+	oauth.Init()
+}
+
+func main() {
+	InitAll()
 
 	pkgLogger.Info("starting regulation-worker")
 	ctx, cancel := context.WithCancel(context.Background())
@@ -57,6 +63,9 @@ func Run(ctx context.Context) {
 	if err != nil {
 		panic(fmt.Errorf("error while getting workspaceId: %w", err))
 	}
+	// setting up oauth
+	OAuth := oauth.NewOAuthErrorHandler(backendconfig.DefaultBackendConfig)
+	OAuth.Setup()
 
 	svc := service.JobSvc{
 		API: &client.JobAPI{
@@ -74,11 +83,14 @@ func Run(ctx context.Context) {
 			&api.APIManager{
 				Client:           &http.Client{Timeout: config.GetDuration("HttpClient.regulationWorker.timeout", 30, time.Second)},
 				DestTransformURL: config.MustGetString("DEST_TRANSFORM_URL"),
+				// OAuthResponseHandler instance
+				OAuth: OAuth,
 			}),
 	}
 
 	pkgLogger.Infof("calling looper with service: %v", svc)
 	l := withLoop(svc)
+
 	err = l.Loop(ctx)
 	if err != nil && !errors.Is(err, context.Canceled) {
 		pkgLogger.Errorf("error: %v", err)

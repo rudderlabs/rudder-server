@@ -60,6 +60,8 @@ func (d *DestMiddleware) GetDestDetails(ctx context.Context, destID string) (mod
 					destDetail.Config = dest.Config
 					destDetail.DestinationID = dest.ID
 					destDetail.Name = dest.DestinationDefinition.Name
+					// Destination Definition Config would most likely be needed
+					destDetail.DestDefConfig = dest.DestinationDefinition.Config
 					pkgLogger.Debugf("obtained destination detail: %v", destDetail)
 					return destDetail, nil
 				}
