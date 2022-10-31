@@ -88,9 +88,15 @@ func TestRemoveIdentityRecordsFromGZIPFileWithSingleUserId(t *testing.T) {
 		},
 		{
 			SnakeCase,
-			"my-^-user-id",
-			[]byte("{\"user_id\": \"my-^-user-id\"}\n"),
+			"my-.-user-id",
+			[]byte("{\"user_id\": \"my-.-user-id\"}\n"),
 			[]byte(""), // This change uses regex variables in matched string
+		},
+		{
+			SnakeCase,
+			"",
+			[]byte("{\"user_id\": \"my-^-user-id\"}\n"),
+			[]byte("{\"user_id\": \"my-^-user-id\"}\n"),
 		},
 	}
 
@@ -100,7 +106,7 @@ func TestRemoveIdentityRecordsFromGZIPFileWithSingleUserId(t *testing.T) {
 		h.records = ip.inputByte
 		err := h.RemoveIdentity(context.TODO(), []model.User{{ID: ip.userID}})
 		require.Nil(t, err)
-		require.Equal(t, true, bytes.Equal(h.records, ip.expectedByte))
+		require.Equal(t, string(h.records), string(ip.expectedByte))
 	}
 }
 

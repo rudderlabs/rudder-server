@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"regexp"
+	"strings"
 
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/model"
 )
@@ -67,24 +68,23 @@ func (h *GZIPLocalFileHandler) Write(_ context.Context, path string) error {
 func (h *GZIPLocalFileHandler) RemoveIdentity(ctx context.Context, attributes []model.User) error {
 	var filteredContent []byte
 
-	for _, attribute := range attributes {
+	patterns := make([]string, len(attributes))
+	for idx, attribute := range attributes {
 		pattern, err := h.getDeletePattern(attribute)
 		if err != nil {
-			return fmt.Errorf("failed to get delete pattern: %s", err.Error())
+			return fmt.Errorf("creating delete pattern for userID: %s, %s", attribute.ID, err.Error())
 		}
-
-		// -r switches extended regular expression given we are quoting based on it.
-		cmd := exec.CommandContext(ctx, "bash", "-c", fmt.Sprintf("sed -r -e %s", pattern))
-		cmd.Stdin = bytes.NewBuffer(h.records)
-
-		filteredContent, err = cmd.CombinedOutput()
-		if err != nil {
-			return fmt.Errorf("filtering the content: %w", err)
-		}
-
-		h.records = filteredContent
+		patterns[idx] = pattern
 	}
 
+	cmd := exec.CommandContext(ctx, "bash", "-c", fmt.Sprintf("sed -r -e %s", strings.Join(patterns, " -e ")))
+	cmd.Stdin = bytes.NewBuffer(h.records)
+	filteredContent, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("filtering the content: %w", err)
+	}
+
+	h.records = filteredContent
 	return nil
 }
 
