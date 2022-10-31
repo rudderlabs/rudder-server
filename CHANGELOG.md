@@ -1,5 +1,26 @@
 # Changelog
 
+## [1.2.5](https://github.com/rudderlabs/rudder-server/compare/v1.2.4...v1.2.5) (2022-10-20)
+
+
+### Bug Fixes
+
+* **warehouse:** parquet oom and ftr changes ([#2599](https://github.com/rudderlabs/rudder-server/issues/2599)) ([ff07f37](https://github.com/rudderlabs/rudder-server/commit/ff07f37b299fc320bcfeac697de9a42ace157e6b))
+
+## [1.2.4](https://github.com/rudderlabs/rudder-server/compare/v1.2.3...v1.2.4) (2022-10-19)
+
+
+### Bug Fixes
+
+* **warehouse:** default job type ([#2595](https://github.com/rudderlabs/rudder-server/issues/2595)) ([fd2652a](https://github.com/rudderlabs/rudder-server/commit/fd2652a0849c390879461baf520dc2cdb90dbb9e))
+
+## [1.2.3](https://github.com/rudderlabs/rudder-server/compare/v1.2.2...v1.2.3) (2022-10-19)
+
+
+### Bug Fixes
+
+* **warehouse:** remove bad unlock ([#2590](https://github.com/rudderlabs/rudder-server/issues/2590)) ([aba7893](https://github.com/rudderlabs/rudder-server/commit/aba7893850dbb5ed224bc82bc19f1924b65874d2))
+
 ## [1.2.2](https://github.com/rudderlabs/rudder-server/compare/v1.2.1...v1.2.2) (2022-10-19)
 
 

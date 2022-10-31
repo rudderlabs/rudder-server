@@ -32,13 +32,11 @@ var (
 
 // RecoveryDataT : DS to store the recovery process data
 type RecoveryDataT struct {
-	StartTimes                      []int64
-	ReadableStartTimes              []string
-	DegradedModeStartTimes          []int64
-	ReadableDegradedModeStartTimes  []string
-	MigrationModeStartTimes         []int64
-	ReadableMigrationModeStartTimes []string
-	Mode                            string
+	StartTimes                     []int64
+	ReadableStartTimes             []string
+	DegradedModeStartTimes         []int64
+	ReadableDegradedModeStartTimes []string
+	Mode                           string
 }
 
 var pkgLogger logger.Logger
