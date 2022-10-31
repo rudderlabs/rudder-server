@@ -1074,13 +1074,13 @@ func StagingTablePrefix(provider string) string {
 }
 
 func StagingTableName(provider, tableName string, tableNameLimit int) string {
-	randomNess := RandomNess()
+	randomNess := RandomStringWithoutQuotes()
 	prefix := StagingTablePrefix(provider)
 	stagingTableName := fmt.Sprintf(`%s%s_%s`, prefix, tableName, randomNess)
 	return misc.TruncateStr(stagingTableName, tableNameLimit)
 }
 
-func RandomNess() string {
+func RandomStringWithoutQuotes() string {
 	u := misc.FastUUID()
 	var buf [32]byte
 	hex.Encode(buf[:], u[:])

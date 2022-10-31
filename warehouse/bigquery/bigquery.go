@@ -276,7 +276,7 @@ func (bq *HandleT) DeleteBy(tableNames []string, params warehouseutils.DeleteByP
 }
 
 func partitionedTable(tableName, partitionDate string) string {
-	return fmt.Sprintf(`%s$%v`, tableName, warehouseutils.RandomNess())
+	return fmt.Sprintf(`%s$%v`, tableName, warehouseutils.RandomStringWithoutQuotes())
 }
 
 func (bq *HandleT) loadTable(tableName string, _, getLoadFileLocFromTableUploads, skipTempTableDelete bool) (stagingLoadTable StagingLoadTableT, err error) {
