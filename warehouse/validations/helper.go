@@ -13,8 +13,8 @@ import (
 func warehouse(req *DestinationValidationRequest) warehouseutils.Warehouse {
 	destination := req.Destination
 
-	randomSourceId := warehouseutils.RandStringWithoutQuotes()
-	randomSourceName := warehouseutils.RandStringWithoutQuotes()
+	randomSourceId := warehouseutils.RandHex()
+	randomSourceName := warehouseutils.RandHex()
 	return warehouseutils.Warehouse{
 		Source: backendconfig.SourceT{
 			ID:   randomSourceId,
@@ -57,5 +57,5 @@ func parseOptions(req json.RawMessage, v interface{}) error {
 }
 
 func stagingTableName() string {
-	return fmt.Sprintf(`%s_%s`, warehouseutils.CTStagingTablePrefix, warehouseutils.RandStringWithoutQuotes())
+	return fmt.Sprintf(`%s_%s`, warehouseutils.CTStagingTablePrefix, warehouseutils.RandHex())
 }

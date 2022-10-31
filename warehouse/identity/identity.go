@@ -172,7 +172,7 @@ func (idr *HandleT) addRules(txn *sql.Tx, loadFileNames []string, gzWriter *misc
 	// add rules from load files into temp table
 	// use original table to delete redundant ones from temp table
 	// insert from temp table into original table
-	mergeRulesStagingTable := fmt.Sprintf(`rudder_identity_merge_rules_staging_%s`, warehouseutils.RandStringWithoutQuotes())
+	mergeRulesStagingTable := fmt.Sprintf(`rudder_identity_merge_rules_staging_%s`, warehouseutils.RandHex())
 	sqlStatement := fmt.Sprintf(`CREATE TEMP TABLE %s
 						ON COMMIT DROP
 						AS SELECT * FROM %s
