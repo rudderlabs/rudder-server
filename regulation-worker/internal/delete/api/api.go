@@ -41,7 +41,7 @@ func (api *APIManager) Delete(ctx context.Context, job model.Job, destConfig map
 
 	bodySchema := mapJobToPayload(job, strings.ToLower(destName), destConfig)
 	pkgLogger.Debugf("payload: %#v", bodySchema)
-	pkgLogger.Infof("Regulation Delete API called:\n")
+	pkgLogger.Debugf("Regulation Delete API called:\n")
 
 	var tokenStatusCode int
 	var accountSecretInfo *oauth.AuthResponse
@@ -128,7 +128,7 @@ func (api *APIManager) Delete(ctx context.Context, job model.Job, destConfig map
 		}
 	}
 	if isRefresh {
-		pkgLogger.Infof("Refresh flow triggered for %v\n", destName)
+		pkgLogger.Debugf("Refresh flow triggered for %v\n", destName)
 		// Refresh OAuth flow
 		var refSecret *oauth.AuthResponse
 		var errCatStatusCode int
