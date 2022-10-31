@@ -5,10 +5,11 @@ package bigquery_test
 import (
 	"context"
 	"fmt"
-	"github.com/rudderlabs/rudder-server/utils/misc"
 	"log"
 	"os"
 	"testing"
+
+	"github.com/rudderlabs/rudder-server/utils/misc"
 
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 

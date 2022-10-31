@@ -6,10 +6,11 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
-	"github.com/rudderlabs/rudder-server/utils/misc"
 	"log"
 	"os"
 	"testing"
+
+	"github.com/rudderlabs/rudder-server/utils/misc"
 
 	// "github.com/stretchr/testify/require"
 

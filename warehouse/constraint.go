@@ -2,6 +2,7 @@ package warehouse
 
 import (
 	"fmt"
+
 	"github.com/rudderlabs/rudder-server/utils/misc"
 
 	"github.com/iancoleman/strcase"

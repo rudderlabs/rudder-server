@@ -4,10 +4,11 @@ package deltalake_test
 
 import (
 	"fmt"
-	"github.com/rudderlabs/rudder-server/utils/misc"
 	"log"
 	"os"
 	"testing"
+
+	"github.com/rudderlabs/rudder-server/utils/misc"
 
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 
