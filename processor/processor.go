@@ -1390,8 +1390,7 @@ func (proc *HandleT) processJobsForDest(subJobs subJob, parsedEventList [][]type
 					// At the TP flow we are not having destination information, so adding it here.
 					shallowEventCopy.Metadata.DestinationID = destination.ID
 					shallowEventCopy.Metadata.DestinationType = destination.DestinationDefinition.Name
-
-					configsToFilter := integrations.ConfigKeysToFilter[destination.DestinationDefinition.Name]
+					configsToFilter := destination.DestinationDefinition.ConfigFilters
 					for _, configKey := range configsToFilter {
 						shallowEventCopy.Destination.Config[configKey] = ""
 					}
