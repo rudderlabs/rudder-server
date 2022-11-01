@@ -2582,9 +2582,11 @@ func (proc *HandleT) updateRudderSourcesStats(ctx context.Context, tx jobsdb.Sto
 
 func filterConfig(eventCopy *transformer.TransformerEventT, destination *backendconfig.DestinationT) {
 	if configsToFilterI, ok := destination.DestinationDefinition.Config["configFilters"]; ok {
-		if configsToFilter, ok := configsToFilterI.([]string); ok {
+		if configsToFilter, ok := configsToFilterI.([]interface{}); ok {
 			for _, configKey := range configsToFilter {
-				eventCopy.Destination.Config[configKey] = ""
+				if configKeyStr, ok := configKey.(string); ok {
+					eventCopy.Destination.Config[configKeyStr] = ""
+				}
 			}
 		}
 	}

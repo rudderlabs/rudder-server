@@ -2421,7 +2421,7 @@ var _ = Describe("TestConfigFilter", func() {
 				},
 				DestinationDefinition: backendconfig.DestinationDefinitionT{
 					Config: map[string]interface{}{
-						"configFilters": []string{"long_config1", "long_config2"},
+						"configFilters": []interface{}{"long_config1", "long_config2"},
 					},
 				},
 				Enabled:            true,
@@ -2441,7 +2441,7 @@ var _ = Describe("TestConfigFilter", func() {
 					},
 					DestinationDefinition: backendconfig.DestinationDefinitionT{
 						Config: map[string]interface{}{
-							"configFilters": []string{"long_config1", "long_config2"},
+							"configFilters": []interface{}{"long_config1", "long_config2"},
 						},
 					},
 					Enabled:            true,
