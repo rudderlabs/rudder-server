@@ -679,7 +679,7 @@ func (worker *workerT) processDestinationJobs() {
 										JobID:         firstJobMetadata.JobID,
 										AttemptNum:    firstJobMetadata.AttemptNum,
 										DestInfo:      firstJobMetadata.DestInfo,
-										Secret:        firstJobMetadata.DestInfo,
+										Secret:        firstJobMetadata.Secret,
 									}
 									// forming the proxy request payload
 									proxyReqPayload := transformer.ProxyRequestPayload{
