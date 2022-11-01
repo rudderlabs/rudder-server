@@ -90,9 +90,6 @@ var mssqlDataTypesMapToRudder = map[string]string{
 	"bit":                      "boolean",
 }
 
-//int
-//time
-
 type HandleT struct {
 	Db             *sql.DB
 	Namespace      string
