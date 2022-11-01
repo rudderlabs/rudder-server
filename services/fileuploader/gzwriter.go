@@ -21,6 +21,7 @@ type GZFileHandler struct {
 func NewGzWriter() *GZFileHandler {
 	return &GZFileHandler{
 		gzWriters: make(map[string]misc.GZipWriter),
+		dumps:     make(map[string]string),
 	}
 }
 

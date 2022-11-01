@@ -176,12 +176,15 @@ func (jd *HandleT) failedOnlyBackup(ctx context.Context, backupDSRange *dataSetR
 		semaphore <- struct{}{}
 		g.Go(misc.WithBugsnag(func() error {
 			if err = jd.uploadTableDump(ctx, workspaceID, filePath); err != nil {
-				jd.logger.Errorf("[JobsDB] :: Failed to upload table %v", tableName)
+				jd.logger.Errorf("[JobsDB] :: Failed to upload table %v. Error: %s", tableName, err.Error())
 				stats.Default.NewTaggedStat("backup_ds_failed", stats.CountType, stats.Tags{"customVal": jd.tablePrefix, "workspaceId": workspaceID}).Increment()
 				return err
 			}
 			return nil
 		}))
+	}
+	if err = g.Wait(); err != nil {
+		return fmt.Errorf("error while uploading table dump: %s", err.Error())
 	}
 
 	stats.Default.NewTaggedStat("total_TableDump_TimeStat", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix}).Since(start)
@@ -245,12 +248,15 @@ func (jd *HandleT) backupJobsTable(ctx context.Context, backupDSRange *dataSetRa
 		semaphore <- struct{}{}
 		g.Go(misc.WithBugsnag(func() error {
 			if err = jd.uploadTableDump(ctx, workspaceID, filePath); err != nil {
-				jd.logger.Errorf("[JobsDB] :: Failed to upload table %v", tableName)
+				jd.logger.Errorf("[JobsDB] :: Failed to upload table %v. Error: %s", tableName, err.Error())
 				stats.Default.NewTaggedStat("backup_ds_failed", stats.CountType, stats.Tags{"customVal": jd.tablePrefix, "workspaceId": workspaceID}).Increment()
 				return err
 			}
 			return nil
 		}))
+	}
+	if err = g.Wait(); err != nil {
+		return fmt.Errorf("error while uploading table dump: %s", err.Error())
 	}
 
 	// Do not record stat in error case as error case time might be low and skew stats
@@ -307,12 +313,15 @@ func (jd *HandleT) backupStatusTable(ctx context.Context, backupDSRange *dataSet
 		semaphore <- struct{}{}
 		g.Go(misc.WithBugsnag(func() error {
 			if err = jd.uploadTableDump(ctx, workspaceID, filePath); err != nil {
-				jd.logger.Errorf("[JobsDB] :: Failed to upload table %v", tableName)
+				jd.logger.Errorf("[JobsDB] :: Failed to upload table %v. Error: %s", tableName, err.Error())
 				stats.Default.NewTaggedStat("backup_ds_failed", stats.CountType, stats.Tags{"customVal": jd.tablePrefix, "workspaceId": workspaceID}).Increment()
 				return err
 			}
 			return nil
 		}))
+	}
+	if err = g.Wait(); err != nil {
+		return fmt.Errorf("error while uploading table dump: %s", err.Error())
 	}
 
 	// Do not record stat in error case as error case time might be low and skew stats
@@ -507,7 +516,7 @@ func getStatusBackupQueryFn(backupDSRange *dataSetRangeT) func(int64) string {
 			FROM
 				(
 				SELECT
-					job_status.*
+					job_status.*, job.workspace_id
 				FROM
 				(
 					%[1]q "job_status"

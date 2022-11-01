@@ -28,8 +28,9 @@ func NewService(ctx context.Context, config backendconfig.BackendConfig) FileUpl
 	return s
 }
 
-func NewEmptyService() FileUploader {
-	return NewStaticService(make(map[string]storageSettings))
+func NewDefaultService() FileUploader {
+	d := &defaultservice{}
+	return d
 }
 
 func NewStaticService(storageSettings map[string]storageSettings) FileUploader {
@@ -45,6 +46,23 @@ type service struct {
 	onceInit        sync.Once
 	init            chan struct{}
 	storageSettings map[string]storageSettings
+}
+
+type defaultservice struct{}
+
+func (_ *defaultservice) GetFileUploader(_ string) (filemanager.FileManager, error) {
+	defaultConfig := getDefaultConfig(context.Background())
+	return filemanager.DefaultFileManagerFactory.New(&filemanager.SettingsT{
+		Provider: defaultConfig.Type,
+		Config:   defaultConfig.Config,
+	})
+}
+
+func (_ *defaultservice) GetStoragePreferences(_ string) (backendconfig.StoragePreferences, error) {
+	return backendconfig.StoragePreferences{
+		ProcErrors:   true,
+		GatewayDumps: true,
+	}, nil
 }
 
 func (s *service) GetFileUploader(workspaceID string) (filemanager.FileManager, error) {
