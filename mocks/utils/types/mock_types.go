@@ -37,17 +37,17 @@ func (m *MockUserSuppression) EXPECT() *MockUserSuppressionMockRecorder {
 }
 
 // IsSuppressedUser mocks base method.
-func (m *MockUserSuppression) IsSuppressedUser(arg0, arg1 string) bool {
+func (m *MockUserSuppression) IsSuppressedUser(arg0, arg1, arg2 string) bool {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "IsSuppressedUser", arg0, arg1)
+	ret := m.ctrl.Call(m, "IsSuppressedUser", arg0, arg1, arg2)
 	ret0, _ := ret[0].(bool)
 	return ret0
 }
 
 // IsSuppressedUser indicates an expected call of IsSuppressedUser.
-func (mr *MockUserSuppressionMockRecorder) IsSuppressedUser(arg0, arg1 interface{}) *gomock.Call {
+func (mr *MockUserSuppressionMockRecorder) IsSuppressedUser(arg0, arg1, arg2 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "IsSuppressedUser", reflect.TypeOf((*MockUserSuppression)(nil).IsSuppressedUser), arg0, arg1)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "IsSuppressedUser", reflect.TypeOf((*MockUserSuppression)(nil).IsSuppressedUser), arg0, arg1, arg2)
 }
 
 // MockReportingI is a mock of ReportingI interface.
