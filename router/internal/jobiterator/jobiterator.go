@@ -36,7 +36,7 @@ func WithLegacyOrderGroupKey(legacy bool) IteratorOptFn {
 }
 
 // Iterator is a job iterator with support for fetching more than the original set of jobs requested,
-// if case some of these jobs are discarded, according to the configured discarded percentage tolerance.
+// in case some of these jobs get discarded, according to the configured discarded percentage tolerance.
 type Iterator struct {
 	params                       jobsdb.GetQueryParamsT
 	maxQueries                   int
