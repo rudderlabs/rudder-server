@@ -70,6 +70,7 @@ type QueryConditions struct {
 	CustomValFilters              []string
 	ParameterFilters              []ParameterFilterT
 	StateFilters                  []string
+	AfterJobID                    *int64
 }
 
 // GetQueryParamsT is a struct to hold jobsdb query params.
@@ -81,6 +82,7 @@ type GetQueryParamsT struct {
 	CustomValFilters              []string
 	ParameterFilters              []ParameterFilterT
 	StateFilters                  []string
+	AfterJobID                    *int64
 
 	// query limits
 
@@ -647,7 +649,6 @@ var (
 	refreshDSListLoopSleepDuration               time.Duration
 	backupCheckSleepDuration                     time.Duration
 	cacheExpiration                              time.Duration
-	useJoinForUnprocessed                        bool
 	backupRowsBatchSize                          int64
 	backupMaxTotalPayloadSize                    int64
 	pkgLogger                                    logger.Logger
@@ -684,7 +685,6 @@ func loadConfig() {
 	config.RegisterDurationConfigVariable(5, &refreshDSListLoopSleepDuration, true, time.Second, []string{"JobsDB.refreshDSListLoopSleepDuration", "JobsDB.refreshDSListLoopSleepDurationInS"}...)
 	config.RegisterDurationConfigVariable(5, &backupCheckSleepDuration, true, time.Second, []string{"JobsDB.backupCheckSleepDuration", "JobsDB.backupCheckSleepDurationIns"}...)
 	config.RegisterDurationConfigVariable(5, &cacheExpiration, true, time.Minute, []string{"JobsDB.cacheExpiration"}...)
-	useJoinForUnprocessed = config.GetBool("JobsDB.useJoinForUnprocessed", true)
 }
 
 func Init2() {
@@ -2455,7 +2455,6 @@ func (jd *HandleT) getProcessedJobsDS(ctx context.Context, ds dataSetT, params G
 	stateFilters := params.StateFilters
 	customValFilters := params.CustomValFilters
 	parameterFilters := params.ParameterFilters
-
 	checkValidJobState(jd, stateFilters)
 
 	if jd.isEmptyResult(ds, allWorkspaces, stateFilters, customValFilters, parameterFilters) {
@@ -2464,41 +2463,44 @@ func (jd *HandleT) getProcessedJobsDS(ctx context.Context, ds dataSetT, params G
 	}
 
 	tags := statTags{CustomValFilters: params.CustomValFilters, StateFilters: params.StateFilters, ParameterFilters: params.ParameterFilters}
-	queryStat := jd.getTimerStat("processed_ds_time", &tags)
-	queryStat.Start()
-	defer queryStat.End()
+	start := time.Now()
+	defer jd.getTimerStat("processed_ds_time", &tags).Since(start)
 
-	// We don't reset this in case of error for now, as any error in this function causes panic
-	jd.markClearEmptyResult(ds, allWorkspaces, stateFilters, customValFilters, parameterFilters, willTryToSet, nil)
+	skipCacheResult := params.AfterJobID != nil
+	if !skipCacheResult {
+		// We don't reset this in case of error for now, as any error in this function causes panic
+		jd.markClearEmptyResult(ds, allWorkspaces, stateFilters, customValFilters, parameterFilters, willTryToSet, nil)
+	}
 
-	var stateQuery, customValQuery, limitQuery, sourceQuery string
-
+	var stateQuery string
 	if len(stateFilters) > 0 {
 		stateQuery = " AND " + constructQueryOR("job_state", stateFilters)
-	} else {
-		stateQuery = ""
 	}
+
+	var filterConditions []string
+	if params.AfterJobID != nil {
+		filterConditions = append(filterConditions, fmt.Sprintf("jobs.job_id > %d", *params.AfterJobID))
+	}
+
 	if len(customValFilters) > 0 && !params.IgnoreCustomValFiltersInQuery {
-		customValQuery = " AND " +
-			constructQueryOR("jobs.custom_val", customValFilters)
-	} else {
-		customValQuery = ""
+		filterConditions = append(filterConditions, constructQueryOR("jobs.custom_val", customValFilters))
 	}
 
 	if len(parameterFilters) > 0 {
-		sourceQuery += " AND " + constructParameterJSONQuery("jobs", parameterFilters)
-	} else {
-		sourceQuery = ""
+		filterConditions = append(filterConditions, constructParameterJSONQuery("jobs", parameterFilters))
 	}
 
+	filterQuery := strings.Join(filterConditions, " AND ")
+	if filterQuery != "" {
+		filterQuery = " AND " + filterQuery
+	}
+
+	var limitQuery string
 	if params.JobsLimit > 0 {
 		limitQuery = fmt.Sprintf(" LIMIT %d ", params.JobsLimit)
-	} else {
-		limitQuery = ""
 	}
 
 	var rows *sql.Rows
-
 	sqlStatement := fmt.Sprintf(`SELECT
 									jobs.job_id, jobs.uuid, jobs.user_id, jobs.parameters, jobs.custom_val, jobs.event_payload, jobs.event_count,
 									jobs.created_at, jobs.expire_at, jobs.workspace_id,
@@ -2515,9 +2517,9 @@ func (jd *HandleT) getProcessedJobsDS(ctx context.Context, ds dataSetT, params G
 										(SELECT MAX(id) from %[2]q GROUP BY job_id) %[3]s)
 									AS job_latest_state
 								WHERE jobs.job_id=job_latest_state.job_id
-									%[4]s %[5]s
-									AND job_latest_state.retry_time < $1 ORDER BY jobs.job_id %[6]s`,
-		ds.JobTable, ds.JobStatusTable, stateQuery, customValQuery, sourceQuery, limitQuery)
+									%[4]s
+									AND job_latest_state.retry_time < $1 ORDER BY jobs.job_id %[5]s`,
+		ds.JobTable, ds.JobStatusTable, stateQuery, filterQuery, limitQuery)
 
 	args := []interface{}{getTimeNowFunc()}
 
@@ -2595,13 +2597,15 @@ func (jd *HandleT) getProcessedJobsDS(ctx context.Context, ds dataSetT, params G
 		limitsReached = true
 	}
 
-	result := hasJobs
-	if len(jobList) == 0 {
-		jd.logger.Debugf("[getProcessedJobsDS] Setting empty cache for ds: %v, stateFilters: %v, customValFilters: %v, parameterFilters: %v", ds, stateFilters, customValFilters, parameterFilters)
-		result = noJobs
+	if !skipCacheResult {
+		result := hasJobs
+		if len(jobList) == 0 {
+			jd.logger.Debugf("[getProcessedJobsDS] Setting empty cache for ds: %v, stateFilters: %v, customValFilters: %v, parameterFilters: %v", ds, stateFilters, customValFilters, parameterFilters)
+			result = noJobs
+		}
+		_willTryToSet := willTryToSet
+		jd.markClearEmptyResult(ds, allWorkspaces, stateFilters, customValFilters, parameterFilters, result, &_willTryToSet)
 	}
-	_willTryToSet := willTryToSet
-	jd.markClearEmptyResult(ds, allWorkspaces, stateFilters, customValFilters, parameterFilters, result, &_willTryToSet)
 
 	return JobsResult{
 		Jobs:          jobList,
@@ -2617,7 +2621,7 @@ stateFilters and customValFilters do a OR query on values passed in array
 parameterFilters do a AND query on values included in the map.
 A JobsLimit less than or equal to zero indicates no limit.
 */
-func (jd *HandleT) getUnprocessedJobsDS(ctx context.Context, ds dataSetT, order bool, params GetQueryParamsT) (JobsResult, bool, error) { // skipcq: CRT-P0003
+func (jd *HandleT) getUnprocessedJobsDS(ctx context.Context, ds dataSetT, params GetQueryParamsT) (JobsResult, bool, error) { // skipcq: CRT-P0003
 	customValFilters := params.CustomValFilters
 	parameterFilters := params.ParameterFilters
 
@@ -2627,52 +2631,40 @@ func (jd *HandleT) getUnprocessedJobsDS(ctx context.Context, ds dataSetT, order 
 	}
 
 	tags := statTags{CustomValFilters: params.CustomValFilters, ParameterFilters: params.ParameterFilters}
-	queryStat := jd.getTimerStat("unprocessed_ds_time", &tags)
-	queryStat.Start()
-	defer queryStat.End()
+	start := time.Now()
+	defer jd.getTimerStat("unprocessed_ds_time", &tags).Since(start)
 
-	// We don't reset this in case of error for now, as any error in this function causes panic
-	jd.markClearEmptyResult(ds, allWorkspaces, []string{NotProcessed.State}, customValFilters, parameterFilters, willTryToSet, nil)
+	skipCacheResult := params.AfterJobID != nil
+	if !skipCacheResult {
+		// We don't reset this in case of error for now, as any error in this function causes panic
+		jd.markClearEmptyResult(ds, allWorkspaces, []string{NotProcessed.State}, customValFilters, parameterFilters, willTryToSet, nil)
+	}
 
 	var rows *sql.Rows
 	var err error
 	var args []interface{}
 
-	var sqlStatement string
+	// event_count default 1, number of items in payload
+	sqlStatement := fmt.Sprintf(
+		`SELECT jobs.job_id, jobs.uuid, jobs.user_id, jobs.parameters, jobs.custom_val, jobs.event_payload, jobs.event_count, jobs.created_at, jobs.expire_at, jobs.workspace_id,`+
+			`	pg_column_size(jobs.event_payload) as payload_size, `+
+			`	sum(jobs.event_count) over (order by jobs.job_id asc) as running_event_counts, `+
+			`	sum(pg_column_size(jobs.event_payload)) over (order by jobs.job_id) as running_payload_size `+
+			`FROM %[1]q AS jobs `+
+			`LEFT JOIN %[2]q AS job_status ON jobs.job_id=job_status.job_id `+
+			`WHERE job_status.job_id is NULL `,
+		ds.JobTable, ds.JobStatusTable)
 
-	if useJoinForUnprocessed {
-		// event_count default 1, number of items in payload
-		sqlStatement = fmt.Sprintf(
-			`SELECT jobs.job_id, jobs.uuid, jobs.user_id, jobs.parameters, jobs.custom_val, jobs.event_payload, jobs.event_count, jobs.created_at, jobs.expire_at, jobs.workspace_id,`+
-				`	pg_column_size(jobs.event_payload) as payload_size, `+
-				`	sum(jobs.event_count) over (order by jobs.job_id asc) as running_event_counts, `+
-				`	sum(pg_column_size(jobs.event_payload)) over (order by jobs.job_id) as running_payload_size `+
-				`FROM %[1]q AS jobs `+
-				`LEFT JOIN %[2]q AS job_status ON jobs.job_id=job_status.job_id `+
-				`WHERE job_status.job_id is NULL `,
-			ds.JobTable, ds.JobStatusTable)
-	} else {
-		sqlStatement = fmt.Sprintf(
-			`SELECT jobs.job_id, jobs.uuid, jobs.user_id, jobs.parameters, jobs.custom_val, jobs.event_payload, jobs.event_count, jobs.created_at, jobs.expire_at, jobs.workspace_id,`+
-				`	pg_column_size(jobs.event_payload) as payload_size, `+
-				`	sum(jobs.event_count) over (order by jobs.job_id asc) as running_event_counts, `+
-				`	sum(pg_column_size(jobs.event_payload)) over (order by jobs.job_id) as running_payload_size `+
-				` FROM %[1]q AS jobs `+
-				`WHERE jobs.job_id NOT IN (SELECT DISTINCT(job_status.job_id) FROM %[2]q AS job_status)`,
-			ds.JobTable, ds.JobStatusTable)
+	if params.AfterJobID != nil {
+		sqlStatement += fmt.Sprintf(" AND jobs.job_id > %d", *params.AfterJobID)
 	}
-
 	if len(customValFilters) > 0 && !params.IgnoreCustomValFiltersInQuery {
 		sqlStatement += " AND " + constructQueryOR("jobs.custom_val", customValFilters)
 	}
-
 	if len(parameterFilters) > 0 {
 		sqlStatement += " AND " + constructParameterJSONQuery("jobs", parameterFilters)
 	}
-
-	if order {
-		sqlStatement += " ORDER BY jobs.job_id"
-	}
+	sqlStatement += " ORDER BY jobs.job_id"
 	if params.JobsLimit > 0 {
 		sqlStatement += fmt.Sprintf(" LIMIT $%d", len(args)+1)
 		args = append(args, params.JobsLimit)
@@ -2745,16 +2737,17 @@ func (jd *HandleT) getUnprocessedJobsDS(ctx context.Context, ds dataSetT, order 
 		limitsReached = true
 	}
 
-	result := hasJobs
-	dsList := jd.getDSList()
-	// if jobsdb owner is a reader and if ds is the right most one, ignoring setting result as noJobs
-	if len(jobList) == 0 && (jd.ownerType != Read || ds.Index != dsList[len(dsList)-1].Index) {
-		jd.logger.Debugf("[getUnprocessedJobsDS] Setting empty cache for ds: %v, stateFilters: NP, customValFilters: %v, parameterFilters: %v", ds, customValFilters, parameterFilters)
-		result = noJobs
+	if !skipCacheResult {
+		result := hasJobs
+		dsList := jd.getDSList()
+		// if jobsdb owner is a reader and if ds is the right most one, ignoring setting result as noJobs
+		if len(jobList) == 0 && (jd.ownerType != Read || ds.Index != dsList[len(dsList)-1].Index) {
+			jd.logger.Debugf("[getUnprocessedJobsDS] Setting empty cache for ds: %v, stateFilters: NP, customValFilters: %v, parameterFilters: %v", ds, customValFilters, parameterFilters)
+			result = noJobs
+		}
+		_willTryToSet := willTryToSet
+		jd.markClearEmptyResult(ds, allWorkspaces, []string{NotProcessed.State}, customValFilters, parameterFilters, result, &_willTryToSet)
 	}
-	_willTryToSet := willTryToSet
-	jd.markClearEmptyResult(ds, allWorkspaces, []string{NotProcessed.State}, customValFilters, parameterFilters, result, &_willTryToSet)
-
 	return JobsResult{
 		Jobs:          jobList,
 		LimitsReached: limitsReached,
@@ -3662,7 +3655,7 @@ func (jd *HandleT) getUnprocessed(ctx context.Context, params GetQueryParamsT) (
 		if dsLimit > 0 && dsQueryCount >= dsLimit {
 			break
 		}
-		unprocessedJobs, dsHit, err := jd.getUnprocessedJobsDS(ctx, ds, true, params)
+		unprocessedJobs, dsHit, err := jd.getUnprocessedJobsDS(ctx, ds, params)
 		if err != nil {
 			return JobsResult{}, err
 		}
@@ -3767,6 +3760,7 @@ func (jd *HandleT) deleteJobStatusInTx(txHandler transactionHandler, conditions 
 			return err
 		}
 		totalDeletedCount += deletedCount
+		jd.dropDSFromCache(ds)
 	}
 
 	return nil
@@ -3788,44 +3782,30 @@ func (jd *HandleT) deleteJobStatusDSInTx(txHandler transactionHandler, ds dataSe
 	queryStat.Start()
 	defer queryStat.End()
 
-	var stateQuery, customValQuery, sourceQuery string
-
+	var stateQuery string
+	var sqlFilters []string
 	if len(stateFilters) > 0 {
 		stateQuery = " AND " + constructQueryOR("job_state", stateFilters)
-	} else {
-		stateQuery = ""
+	}
+	if conditions.AfterJobID != nil {
+		sqlFilters = append(sqlFilters, fmt.Sprintf(`job_id > %d`, *conditions.AfterJobID))
 	}
 	if len(customValFilters) > 0 {
-		customValQuery = " WHERE " +
-			constructQueryOR(fmt.Sprintf(`%q.custom_val`, ds.JobTable), customValFilters)
-	} else {
-		customValQuery = ""
+		sqlFilters = append(sqlFilters, constructQueryOR(fmt.Sprintf(`%q.custom_val`, ds.JobTable), customValFilters))
 	}
-
-	if customValQuery == "" {
-		sourceQuery += " WHERE "
-	} else {
-		sourceQuery += " AND "
-	}
-
 	if len(parameterFilters) > 0 {
-		sourceQuery += constructParameterJSONQuery(ds.JobTable, parameterFilters)
-	} else {
-		sourceQuery = ""
+		sqlFilters = append(sqlFilters, constructParameterJSONQuery(ds.JobTable, parameterFilters))
 	}
 
-	var sqlStatement string
-	if customValQuery == "" && sourceQuery == "" {
-		sqlStatement = fmt.Sprintf(`DELETE FROM %[1]q WHERE id IN
-                                                   (SELECT MAX(id) from %[1]q GROUP BY job_id) %[2]s
-                                             AND retry_time < $1`,
-			ds.JobStatusTable, stateQuery)
-	} else {
-		sqlStatement = fmt.Sprintf(`DELETE FROM %[1]q WHERE id IN
-                                                   (SELECT MAX(id) from %[1]q where job_id IN (SELECT job_id from %[2]q %[4]s %[5]s) GROUP BY job_id) %[3]s
-                                             AND retry_time < $1`,
-			ds.JobStatusTable, ds.JobTable, stateQuery, customValQuery, sourceQuery)
+	sqlFiltersString := strings.Join(sqlFilters, " AND ")
+	if len(sqlFiltersString) > 0 {
+		sqlFiltersString = "WHERE " + sqlFiltersString
 	}
+
+	sqlStatement := fmt.Sprintf(`DELETE FROM %[1]q WHERE id IN
+												(SELECT MAX(id) from %[1]q where job_id IN (SELECT job_id from %[2]q %[3]s) GROUP BY job_id) %[4]s
+											AND retry_time < $1`,
+		ds.JobStatusTable, ds.JobTable, sqlFiltersString, stateQuery)
 
 	stmt, err := txHandler.Prepare(sqlStatement)
 	if err != nil {

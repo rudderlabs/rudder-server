@@ -155,9 +155,11 @@ startAsyncJobRunner is the main runner that
 */
 func (asyncWhJob *AsyncJobWhT) startAsyncJobRunner(ctx context.Context) error {
 	pkgLogger.Info("[WH-Jobs]: Starting async job runner")
+
 	var wg sync.WaitGroup
 	for {
-		pkgLogger.Info("[WH-Jobs]: Scanning for waiting async job")
+		pkgLogger.Debug("[WH-Jobs]: Scanning for waiting async job")
+
 		select {
 		case <-ctx.Done():
 			pkgLogger.Info("[WH-Jobs]: Stopping AsyncJobRunner")
@@ -223,18 +225,19 @@ func (asyncWhJob *AsyncJobWhT) getPendingAsyncJobs(ctx context.Context) ([]Async
 	if ctx.Err() != nil {
 		return asyncJobPayloads, ctx.Err()
 	}
-	pkgLogger.Info("[WH-Jobs]: Get pending wh async jobs")
+	pkgLogger.Debug("[WH-Jobs]: Get pending wh async jobs")
 	// Filter to get most recent row for the sourceId/destinationID combo and remaining ones should relegate to abort.
 	var attempt int
 	query := fmt.Sprintf(
-		`select
-	id,
-	source_id,
-	destination_id,
-	tablename,
-	async_job_type,
-	metadata,
-	attempt from %s where (status=$1 OR status=$2) LIMIT $3`, warehouseutils.WarehouseAsyncJobTable)
+		`SELECT
+			id,
+			source_id,
+			destination_id,
+			tablename,
+			async_job_type,
+			metadata,
+			attempt
+		FROM %s WHERE (status=$1 OR status=$2) LIMIT $3`, warehouseutils.WarehouseAsyncJobTable)
 	rows, err := asyncWhJob.dbHandle.Query(query, WhJobWaiting, WhJobFailed, MaxBatchSizeToProcess)
 	if err != nil {
 		pkgLogger.Errorf("[WH-Jobs]: Error in getting pending wh async jobs with error %s", err.Error())

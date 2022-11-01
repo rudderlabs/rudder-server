@@ -229,6 +229,12 @@ type DeleteByParams struct {
 	StartTime string
 }
 
+type ColumnInfo struct {
+	Name  string
+	Value interface{}
+	Type  string
+}
+
 func (w *Warehouse) GetBoolDestinationConfig(key string) bool {
 	destConfig := w.Destination.Config
 	if destConfig[key] != nil {

@@ -854,16 +854,7 @@ func (job *UploadJobT) updateTableSchema(tName string, tableSchemaDiff warehouse
 		return nil
 	}
 
-	for columnName, columnType := range tableSchemaDiff.ColumnMap {
-		err = job.whManager.AddColumn(tName, columnName, columnType)
-		if err != nil {
-			pkgLogger.Errorf("Column %s already exists on %s.%s \nResponse: %v", columnName, job.warehouse.Namespace, tName, err)
-			break
-		}
-		job.counterStat("columns_added").Increment()
-	}
-
-	if err != nil {
+	if err := job.addColumnsToWarehouse(tName, tableSchemaDiff.ColumnMap); err != nil {
 		return err
 	}
 
@@ -875,6 +866,34 @@ func (job *UploadJobT) updateTableSchema(tName string, tableSchemaDiff warehouse
 		}
 	}
 
+	return err
+}
+
+func (job *UploadJobT) addColumnsToWarehouse(tName string, columnsMap map[string]string) (err error) {
+	pkgLogger.Infof(`[WH]: Adding columns for table %s in namespace %s of destination %s:%s`, tName, job.warehouse.Namespace, job.warehouse.Type, job.warehouse.Destination.ID)
+
+	destType := job.upload.DestinationType
+	columnsBatchSize := config.GetInt(fmt.Sprintf("Warehouse.%s.customDatasetPrefix", warehouseutils.WHDestNameMap[destType]), 100)
+
+	var columnsToAdd []warehouseutils.ColumnInfo
+	for columnName, columnType := range columnsMap {
+		columnsToAdd = append(columnsToAdd, warehouseutils.ColumnInfo{Name: columnName, Type: columnType})
+	}
+
+	for i := 0; i < len(columnsToAdd); i += columnsBatchSize {
+		j := i + columnsBatchSize
+		if j > len(columnsToAdd) {
+			j = len(columnsToAdd)
+		}
+
+		err = job.whManager.AddColumns(tName, columnsToAdd[i:j])
+		if err != nil {
+			err = fmt.Errorf("failed to add columns for table %s in namespace %s of destination %s:%s with error: %w", tName, job.warehouse.Namespace, job.warehouse.Type, job.warehouse.Destination.ID, err)
+			break
+		}
+
+		job.counterStat("columns_added").Count(j - i + 1)
+	}
 	return err
 }
 

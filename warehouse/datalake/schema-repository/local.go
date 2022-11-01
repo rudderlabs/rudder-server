@@ -50,7 +50,7 @@ func (ls *LocalSchemaRepository) CreateTable(tableName string, columnMap map[str
 	return ls.uploader.UpdateLocalSchema(schema)
 }
 
-func (ls *LocalSchemaRepository) AddColumn(tableName, columnName, columnType string) (err error) {
+func (ls *LocalSchemaRepository) AddColumns(tableName string, columnsInfo []warehouseutils.ColumnInfo) (err error) {
 	// fetch schema from local db
 	schema, err := ls.FetchSchema(ls.warehouse)
 	if err != nil {
@@ -62,7 +62,9 @@ func (ls *LocalSchemaRepository) AddColumn(tableName, columnName, columnType str
 		return fmt.Errorf("failed to add column: table %s does not exist", tableName)
 	}
 
-	schema[tableName][columnName] = columnType
+	for _, columnInfo := range columnsInfo {
+		schema[tableName][columnInfo.Name] = columnInfo.Type
+	}
 
 	// update schema
 	return ls.uploader.UpdateLocalSchema(schema)

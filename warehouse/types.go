@@ -88,11 +88,6 @@ type MetadataT struct {
 
 type DataT map[string]interface{}
 
-type ColumnInfoT struct {
-	ColumnVal  interface{}
-	ColumnType string
-}
-
 type FilterClause struct {
 	Clause    string
 	ClauseArg interface{}
