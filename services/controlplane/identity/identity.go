@@ -54,7 +54,7 @@ func (n *Namespace) BasicAuth() (string, string) {
 }
 
 func (*Namespace) Type() deployment.Type {
-	return deployment.Type(``)
+	return deployment.MultiTenantType
 }
 
 // NOOP is a no-op implementation of the Identifier interface.
@@ -70,7 +70,7 @@ func (*NOOP) BasicAuth() (string, string) {
 }
 
 func (*NOOP) Type() deployment.Type {
-	return deployment.DedicatedType
+	return ""
 }
 
 type IdentifierDecorator struct {

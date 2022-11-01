@@ -193,8 +193,7 @@ func (suppressUser *SuppressRegulationHandler) getSourceRegulationsFromRegulatio
 		if err != nil {
 			return err
 		}
-		workspaceToken, passWord := suppressUser.ID.BasicAuth()
-		req.SetBasicAuth(workspaceToken, passWord)
+		req.SetBasicAuth(suppressUser.ID.BasicAuth())
 		req.Header.Set("Content-Type", "application/json")
 
 		resp, err = suppressUser.Client.Do(req)

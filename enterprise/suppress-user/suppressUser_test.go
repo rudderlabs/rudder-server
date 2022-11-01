@@ -292,8 +292,57 @@ var _ = Describe("SuppressUser Test", func() {
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
 			testSuppressUser.setup(ctx)
-			Eventually(func() bool { return testSuppressUser.IsSuppressedUser("workspace1", "user-1", "src-1") }).Should(BeTrue())
+			Expect(testSuppressUser.RegulationBackendURL).
+				To(Equal(
+					srv.URL + "/dataplane/workspaces/workspace1/regulations/suppressions",
+				))
+			Eventually(func() bool {
+				return testSuppressUser.IsSuppressedUser("workspace1", "user-1", "src-1")
+			}).Should(BeTrue())
 		})
+	})
+
+	It("supports fetching namespaces' suppressions - contains multiple workspaces' suppressions", func() {
+		r1 := sourceRegulation{
+			WorkspaceID: "ws-1",
+			Canceled:    false,
+			UserID:      "user-1",
+			SourceIDs:   []string{"src-1"},
+		}
+		r2 := sourceRegulation{
+			WorkspaceID: "ws-2",
+			Canceled:    false,
+			UserID:      "user-2",
+			SourceIDs:   []string{"src-2"},
+		}
+		expectedResp := apiResponse{
+			SourceRegulations: []sourceRegulation{r1, r2},
+			Token:             "tempToken123",
+		}
+		testSuppressUser.ID = &identity.Namespace{
+			Namespace:    "ns-1",
+			HostedSecret: `secret`,
+		}
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(200)
+			expectedRespBody, _ := json.Marshal(expectedResp)
+			w.Write(expectedRespBody)
+		}))
+		defer srv.Close()
+		configBackendURL = srv.URL
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		testSuppressUser.setup(ctx)
+		Expect(testSuppressUser.RegulationBackendURL).
+			To(Equal(
+				srv.URL + "/dataplane/namespaces/ns-1/regulations/suppressions",
+			))
+		Eventually(func() bool {
+			return testSuppressUser.IsSuppressedUser("ws-1", "user-1", "src-1")
+		}).Should(BeTrue())
+		Eventually(func() bool {
+			return testSuppressUser.IsSuppressedUser("ws-2", "user-2", "src-2")
+		}).Should(BeTrue())
 	})
 })
 
