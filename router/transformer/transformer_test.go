@@ -94,7 +94,7 @@ func TestProxyRequest(t *testing.T) {
 			},
 			rtTimeout: 10 * time.Millisecond,
 			postParameters: ProxyRequestPayload{
-				PostParametersT: &integrations.PostParametersT{
+				PostParametersT: integrations.PostParametersT{
 					Type:          "REST",
 					URL:           "http://www.good_dest.domain.com",
 					RequestMethod: http.MethodPost,
@@ -128,7 +128,7 @@ func TestProxyRequest(t *testing.T) {
 			},
 			rtTimeout: 8 * time.Millisecond,
 			postParameters: ProxyRequestPayload{
-				PostParametersT: &integrations.PostParametersT{
+				PostParametersT: integrations.PostParametersT{
 					Type:          "REST",
 					URL:           "http://www.good_dest_1.domain.com",
 					RequestMethod: http.MethodPost,
@@ -164,7 +164,7 @@ func TestProxyRequest(t *testing.T) {
 				timeout: 2 * time.Millisecond,
 			},
 			postParameters: ProxyRequestPayload{
-				PostParametersT: &integrations.PostParametersT{
+				PostParametersT: integrations.PostParametersT{
 					Type:          "REST",
 					URL:           "http://www.ctx_timeout_dest.domain.com",
 					RequestMethod: http.MethodPost,
@@ -199,7 +199,7 @@ func TestProxyRequest(t *testing.T) {
 				cancel: true,
 			},
 			postParameters: ProxyRequestPayload{
-				PostParametersT: &integrations.PostParametersT{
+				PostParametersT: integrations.PostParametersT{
 					Type:          "REST",
 					URL:           "http://www.ctx_timeout_dest.domain.com",
 					RequestMethod: http.MethodPost,
@@ -232,7 +232,7 @@ func TestProxyRequest(t *testing.T) {
 			},
 			rtTimeout: 10 * time.Millisecond,
 			postParameters: ProxyRequestPayload{
-				PostParametersT: &integrations.PostParametersT{
+				PostParametersT: integrations.PostParametersT{
 					Type:          "REST",
 					URL:           "http://www.not_found_dest.domain.com",
 					RequestMethod: http.MethodPost,
