@@ -1390,12 +1390,7 @@ func (proc *HandleT) processJobsForDest(subJobs subJob, parsedEventList [][]type
 					// At the TP flow we are not having destination information, so adding it here.
 					shallowEventCopy.Metadata.DestinationID = destination.ID
 					shallowEventCopy.Metadata.DestinationType = destination.DestinationDefinition.Name
-					if configsToFilterI, ok := destination.DestinationDefinition.Config["configFilters"]; ok {
-						if configsToFilter, ok := configsToFilterI.([]string); ok {
-							for _, configKey := range configsToFilter {
-								shallowEventCopy.Destination.Config[configKey] = ""
-							}
-					}
+					filterConfig(&shallowEventCopy, destination)
 					metadata := shallowEventCopy.Metadata
 					srcAndDestKey := getKeyFromSourceAndDest(metadata.SourceID, metadata.DestinationID)
 					// We have at-least one event so marking it good
@@ -2583,4 +2578,14 @@ func (proc *HandleT) updateRudderSourcesStats(ctx context.Context, tx jobsdb.Sto
 	rsourcesStats.JobsStored(jobs)
 	err := rsourcesStats.Publish(ctx, tx.SqlTx())
 	return err
+}
+
+func filterConfig(eventCopy *transformer.TransformerEventT, destination *backendconfig.DestinationT) {
+	if configsToFilterI, ok := destination.DestinationDefinition.Config["configFilters"]; ok {
+		if configsToFilter, ok := configsToFilterI.([]string); ok {
+			for _, configKey := range configsToFilter {
+				eventCopy.Destination.Config[configKey] = ""
+			}
+		}
+	}
 }
