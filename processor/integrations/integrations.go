@@ -8,7 +8,6 @@ import (
 	jsoniter "github.com/json-iterator/go"
 	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
-	routerTypes "github.com/rudderlabs/rudder-server/router/types"
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/types"
@@ -53,12 +52,11 @@ type PostParametersT struct {
 	URL           string `json:"endpoint"`
 	RequestMethod string `json:"method"`
 	// Invalid tag used in struct. skipcq: SCC-SA5008
-	UserID      string                   `json:"userId,,optional"` //nolint:staticcheck
-	Headers     map[string]interface{}   `json:"headers"`
-	QueryParams map[string]interface{}   `json:"params"`
-	Body        map[string]interface{}   `json:"body"`
-	Files       map[string]interface{}   `json:"files"`
-	Metadata    routerTypes.JobMetadataT `json:"metadata,omitempty"` // This is being added to send metadata as part of the transformed payload in proxy request
+	UserID      string                 `json:"userId,,optional"` //nolint:staticcheck
+	Headers     map[string]interface{} `json:"headers"`
+	QueryParams map[string]interface{} `json:"params"`
+	Body        map[string]interface{} `json:"body"`
+	Files       map[string]interface{} `json:"files"`
 }
 
 type TransStatsT struct {
