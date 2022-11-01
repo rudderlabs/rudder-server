@@ -209,6 +209,7 @@ func (embedded *EmbeddedApp) StartRudderCore(ctx context.Context, options *app.O
 
 	gw.SetReadonlyDBs(&readonlyGatewayDB, &readonlyRouterDB, &readonlyBatchRouterDB)
 	err = gw.Setup(
+		ctx,
 		embedded.App, backendconfig.DefaultBackendConfig, gatewayDB,
 		&rateLimiter, embedded.VersionHandler, rsourcesService,
 	)
