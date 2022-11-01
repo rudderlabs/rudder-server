@@ -61,7 +61,7 @@ type ProxyRequestMetadata struct {
 }
 
 type ProxyRequestPayload struct {
-	*integrations.PostParametersT
+	integrations.PostParametersT
 	Metadata ProxyRequestMetadata `json:"metadata,omitempty"`
 }
 type ProxyRequestParams struct {

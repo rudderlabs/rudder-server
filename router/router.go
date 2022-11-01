@@ -649,7 +649,7 @@ func (worker *workerT) processDestinationJobs() {
 						errorAt = routerutils.ERROR_AT_TF
 						respStatusCode, respBody = types.RouterUnMarshalErrorCode, fmt.Errorf("transformer response unmarshal error: %w", err).Error()
 					} else {
-						for resultInd, val := range result {
+						for _, val := range result {
 							err := integrations.ValidatePostInfo(val)
 							if err != nil {
 								errorAt = routerutils.ERROR_AT_TF
@@ -670,7 +670,7 @@ func (worker *workerT) processDestinationJobs() {
 										DestName: worker.rt.destName,
 										JobID:    jobID,
 										ResponseData: transformer.ProxyRequestPayload{
-											PostParametersT: &result[resultInd],
+											PostParametersT: val,
 											Metadata: transformer.ProxyRequestMetadata{
 												SourceID:      firstJobMetadata.SourceID,
 												DestinationID: firstJobMetadata.DestinationID,
