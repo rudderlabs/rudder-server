@@ -32,8 +32,6 @@ var (
 	supportedDestinations = []string{"S3", "S3_DATALAKE"}
 )
 
-const listMaxItem int64 = 1000
-
 type Batch struct {
 	mu         sync.Mutex
 	FM         filemanager.FileManager
