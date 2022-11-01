@@ -2,6 +2,7 @@ package middleware_test
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
@@ -81,6 +82,7 @@ func TestMaxConcurrentRequestsMiddleware(t *testing.T) {
 }
 
 func TestStatsMiddleware(t *testing.T) {
+	component := "test"
 	testCase := func(expectedStatusCode int, pathTemplate, requestPath, expectedReqType, expectedMethod string) func(t *testing.T) {
 		return func(t *testing.T) {
 			ctrl := gomock.NewController(t)
@@ -90,8 +92,8 @@ func TestStatsMiddleware(t *testing.T) {
 			})
 
 			measurement := mock_stats.NewMockMeasurement(ctrl)
-			mockStats.EXPECT().NewStat("gateway.concurrent_requests_count", stats.GaugeType).Return(measurement).Times(1)
-			mockStats.EXPECT().NewSampledTaggedStat("gateway.response_time", stats.TimerType,
+			mockStats.EXPECT().NewStat(fmt.Sprintf("%s.concurrent_requests_count", component), stats.GaugeType).Return(measurement).Times(1)
+			mockStats.EXPECT().NewSampledTaggedStat(fmt.Sprintf("%s.response_time", component), stats.TimerType,
 				map[string]string{
 					"reqType": expectedReqType,
 					"method":  expectedMethod,
@@ -103,7 +105,7 @@ func TestStatsMiddleware(t *testing.T) {
 			defer cancel()
 			router := mux.NewRouter()
 			router.Use(
-				middleware.StatMiddleware(ctx, router, mockStats),
+				middleware.StatMiddleware(ctx, router, mockStats, component),
 			)
 			router.HandleFunc(pathTemplate, handler).Methods(expectedMethod)
 
