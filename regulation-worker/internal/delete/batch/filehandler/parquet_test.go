@@ -70,14 +70,18 @@ func sameFiles(file1, file2 string) (bool, error) {
 		return false, fmt.Errorf("unable to open file: %s, err: %w", file1, err)
 	}
 
-	defer f1.Close()
+	defer func() {
+		_ = f1.Close()
+	}()
 
 	f2, err := os.Open(file2)
 	if err != nil {
 		return false, fmt.Errorf("unable to open file: %s, err: %w", file2, err)
 	}
 
-	defer f2.Close()
+	defer func() {
+		_ = f2.Close()
+	}()
 
 	byt1, err := io.ReadAll(f1)
 	if err != nil {

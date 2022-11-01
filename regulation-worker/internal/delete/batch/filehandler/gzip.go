@@ -30,7 +30,10 @@ func (h *GZIPLocalFileHandler) Read(_ context.Context, path string) error {
 	if err != nil {
 		return fmt.Errorf("error while opening compressed file, %w", err)
 	}
-	defer f.Close()
+
+	defer func() {
+		_ = f.Close()
+	}()
 
 	gzipReader, err := gzip.NewReader(f)
 	if err != nil {
@@ -52,7 +55,9 @@ func (h *GZIPLocalFileHandler) Write(_ context.Context, path string) error {
 		return fmt.Errorf("error while opening file, %w", err)
 	}
 
-	defer f.Close()
+	defer func() {
+		_ = f.Close()
+	}()
 
 	gw := gzip.NewWriter(f)
 	defer gw.Close()

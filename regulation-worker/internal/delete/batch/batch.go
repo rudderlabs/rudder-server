@@ -95,7 +95,10 @@ func (*Batch) updateStatusTrackerFile(absStatusTrackerFileName, fileName string)
 	if err != nil {
 		return fmt.Errorf("error while opening file, %w", err)
 	}
-	defer f.Close()
+
+	defer func() {
+		_ = f.Close()
+	}()
 
 	if _, err := io.WriteString(f, fmt.Sprintf("%s\n", fileName)); err != nil {
 		return fmt.Errorf("error while writing to statusTrackerFile: %w", err)
@@ -108,7 +111,7 @@ func (*Batch) updateStatusTrackerFile(absStatusTrackerFileName, fileName string)
 	return nil
 }
 
-func (_ *Batch) cleanedFiles(_ context.Context, path string, job *model.Job) ([]string, error) {
+func (*Batch) cleanedFiles(_ context.Context, path string, job *model.Job) ([]string, error) {
 	pkgLogger.Debugf("fetching already cleaned files based on contents of the status tracker file")
 
 	f, err := os.OpenFile(path, os.O_RDWR, 0o644)
@@ -189,7 +192,9 @@ func (b *Batch) download(ctx context.Context, completeFileName string) (string, 
 		return "", fmt.Errorf("opening file: %s, %w", fileName, err)
 	}
 
-	defer tmpFilePtr.Close()
+	defer func() {
+		_ = tmpFilePtr.Close()
+	}()
 
 	absPath, err := filepath.Abs(tmpFilePtr.Name())
 	if err != nil {
