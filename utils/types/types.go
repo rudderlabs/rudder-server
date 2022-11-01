@@ -24,7 +24,7 @@ type GatewayBatchRequestT struct {
 
 // UserSuppression is interface to access Suppress user feature
 type UserSuppression interface {
-	IsSuppressedUser(userID, sourceID string) bool
+	IsSuppressedUser(workspaceID, userID, sourceID string) bool
 }
 
 // EventSchemasI is interface to access EventSchemas feature
