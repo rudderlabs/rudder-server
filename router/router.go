@@ -1807,7 +1807,6 @@ func (rt *HandleT) readAndProcess() int {
 		time.Sleep(readSleep)
 		return 0
 	} else {
-		rt.logger.Debugf("[%v Router] :: router is enabled", rt.destName)
 		iteratorStats := iterator.Stats()
 		stats.Default.NewTaggedStat("router_iterator_stats_query_count", stats.GaugeType, stats.Tags{"destType": rt.destName}).Gauge(iteratorStats.QueryCount)
 		stats.Default.NewTaggedStat("router_iterator_stats_total_jobs", stats.GaugeType, stats.Tags{"destType": rt.destName}).Gauge(iteratorStats.TotalJobs)
