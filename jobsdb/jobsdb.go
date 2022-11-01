@@ -46,7 +46,7 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/logger"
 
 	"github.com/rudderlabs/rudder-server/config"
-	backup "github.com/rudderlabs/rudder-server/services/backup"
+	fileuploader "github.com/rudderlabs/rudder-server/services/fileuploader"
 	"github.com/rudderlabs/rudder-server/services/metric"
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/misc"
@@ -448,8 +448,7 @@ type HandleT struct {
 	backgroundGroup               *errgroup.Group
 	maxBackupRetryTime            time.Duration
 	preBackupHandlers             []prebackup.Handler
-	storageSettings               backup.StorageSettings
-	backupWorkers                 chan *WorkerT
+	fileUploader                  fileuploader.FileUploader
 	// skipSetupDBSetup is useful for testing as we mock the database client
 	// TODO: Remove this flag once we have test setup that uses real database
 	skipSetupDBSetup bool
@@ -721,9 +720,9 @@ func WithDSLimit(limit *int) OptsFunc {
 	}
 }
 
-func WithStorageSettings(storageSettings backup.StorageSettings) OptsFunc {
+func WithFileUploader(fileuploader fileuploader.FileUploader) OptsFunc {
 	return func(jd *HandleT) {
-		jd.storageSettings = storageSettings
+		jd.fileUploader = fileuploader
 	}
 }
 
@@ -762,14 +761,14 @@ multiple users of JobsDB
 */
 func (jd *HandleT) Setup(
 	ownerType OwnerType, clearAll bool, tablePrefix string,
-	registerStatusHandler bool, preBackupHandlers []prebackup.Handler, storageSettings backup.StorageSettings,
+	registerStatusHandler bool, preBackupHandlers []prebackup.Handler, fileuploader fileuploader.FileUploader,
 ) error {
 	jd.ownerType = ownerType
 	jd.clearAll = clearAll
 	jd.tablePrefix = tablePrefix
 	jd.registerStatusHandler = registerStatusHandler
 	jd.preBackupHandlers = preBackupHandlers
-	jd.storageSettings = storageSettings
+	jd.fileUploader = fileuploader
 	jd.init()
 	return jd.Start()
 }

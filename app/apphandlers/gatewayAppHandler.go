@@ -14,9 +14,9 @@ import (
 	"github.com/rudderlabs/rudder-server/gateway"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	ratelimiter "github.com/rudderlabs/rudder-server/rate-limiter"
-	backup "github.com/rudderlabs/rudder-server/services/backup"
 	"github.com/rudderlabs/rudder-server/services/db"
 	sourcedebugger "github.com/rudderlabs/rudder-server/services/debugger/source"
+	fileuploader "github.com/rudderlabs/rudder-server/services/fileuploader"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/types/deployment"
 	"github.com/rudderlabs/rudder-server/utils/types/servermode"
@@ -49,15 +49,14 @@ func (gatewayApp *GatewayApp) StartRudderCore(ctx context.Context, options *app.
 
 	sourcedebugger.Setup(backendconfig.DefaultBackendConfig)
 
-	storageService := backup.NewService(ctx, backendconfig.DefaultBackendConfig)
-	storageSettings := storageService.StorageSettings()
+	fileuploader := fileuploader.NewService(ctx, backendconfig.DefaultBackendConfig)
 
 	gatewayDB := jobsdb.NewForWrite(
 		"gw",
 		jobsdb.WithClearDB(options.ClearDB),
 		jobsdb.WithStatusHandler(),
 		jobsdb.WithDSLimit(&gatewayDSLimit),
-		jobsdb.WithStorageSettings(storageSettings),
+		jobsdb.WithFileUploader(fileuploader),
 	)
 	defer gatewayDB.Close()
 	if err := gatewayDB.Start(); err != nil {

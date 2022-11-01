@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"path/filepath"
 	"time"
 
 	"golang.org/x/sync/errgroup"
@@ -15,6 +14,7 @@ import (
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/services/filemanager"
+	"github.com/rudderlabs/rudder-server/services/fileuploader"
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/services/transientsource"
 	"github.com/rudderlabs/rudder-server/utils/bytesize"
@@ -51,13 +51,18 @@ type StoreErrorOutputT struct {
 	Error    error
 }
 
+type ErrorJob struct {
+	jobs        []*jobsdb.JobT
+	errorOutput StoreErrorOutputT
+}
+
 type HandleT struct {
 	errorDB                   jobsdb.JobsDB
 	errProcessQ               chan []*jobsdb.JobT
-	errFileUploader           filemanager.FileManager
 	statErrDBR                stats.Measurement
 	logger                    logger.Logger
 	transientSource           transientsource.Service
+	fileuploader              fileuploader.FileUploader
 	jobsDBCommandTimeout      time.Duration
 	jobdDBQueryRequestTimeout time.Duration
 	jobdDBMaxRetries          int
@@ -67,11 +72,12 @@ func New() *HandleT {
 	return &HandleT{}
 }
 
-func (st *HandleT) Setup(errorDB jobsdb.JobsDB, transientSource transientsource.Service) {
+func (st *HandleT) Setup(errorDB jobsdb.JobsDB, transientSource transientsource.Service, fileuploader fileuploader.FileUploader) {
 	st.logger = pkgLogger
 	st.errorDB = errorDB
 	st.statErrDBR = stats.Default.NewStat("processor.err_db_read_time", stats.TimerType)
 	st.transientSource = transientSource
+	st.fileuploader = fileuploader
 	config.RegisterIntConfigVariable(3, &st.jobdDBMaxRetries, true, 1, []string{"JobsDB.Processor.MaxRetries", "JobsDB.MaxRetries"}...)
 	config.RegisterDurationConfigVariable(60, &st.jobdDBQueryRequestTimeout, true, time.Second, []string{"JobsDB.Processor.QueryRequestTimeout", "JobsDB.QueryRequestTimeout"}...)
 	config.RegisterDurationConfigVariable(90, &st.jobsDBCommandTimeout, true, time.Second, []string{"JobsDB.Processor.CommandRequestTimeout", "JobsDB.CommandRequestTimeout"}...)
@@ -83,9 +89,7 @@ func (st *HandleT) crashRecover() {
 }
 
 func (st *HandleT) Start(ctx context.Context) {
-	st.setupFileUploader(ctx)
 	st.errProcessQ = make(chan []*jobsdb.JobT)
-
 	g, ctx := errgroup.WithContext(ctx)
 	g.Go(func() error {
 		st.runErrWorkers(ctx)
@@ -110,32 +114,12 @@ func sendQueryRetryStats(attempt int) {
 	stats.Default.NewTaggedStat("jobsdb_query_timeout", stats.CountType, stats.Tags{"attempt": fmt.Sprint(attempt), "module": "stash"}).Count(1)
 }
 
-func (st *HandleT) getFileUploader(ctx context.Context) filemanager.FileManager {
-	if st.errFileUploader == nil && backupEnabled() {
-		st.setupFileUploader(ctx)
-	}
-	return st.errFileUploader
+func (st *HandleT) getFileUploader(workspaceID string) (filemanager.FileManager, error) {
+	return st.fileuploader.GetFileUploader(workspaceID)
 }
 
 func backupEnabled() bool {
 	return errorStashEnabled && jobsdb.IsMasterBackupEnabled()
-}
-
-func (st *HandleT) setupFileUploader(ctx context.Context) {
-	if backupEnabled() {
-		provider := config.GetString("JOBS_BACKUP_STORAGE_PROVIDER", "")
-		bucket := config.GetString("JOBS_BACKUP_BUCKET", "")
-		if provider != "" && bucket != "" {
-			var err error
-			st.errFileUploader, err = filemanager.DefaultFileManagerFactory.New(&filemanager.SettingsT{
-				Provider: provider,
-				Config:   filemanager.GetProviderConfigForBackupsFromEnv(ctx),
-			})
-			if err != nil {
-				panic(err)
-			}
-		}
-	}
 }
 
 func (st *HandleT) runErrWorkers(ctx context.Context) {
@@ -146,8 +130,10 @@ func (st *HandleT) runErrWorkers(ctx context.Context) {
 			for jobs := range st.errProcessQ {
 				uploadStat := stats.Default.NewStat("Processor.err_upload_time", stats.TimerType)
 				uploadStat.Start()
-				output := st.storeErrorsToObjectStorage(jobs)
-				st.setErrJobStatus(jobs, output)
+				errorJobs := st.storeErrorsToObjectStorage(jobs)
+				for _, errorJob := range errorJobs {
+					st.setErrJobStatus(errorJob.jobs, errorJob.errorOutput)
+				}
 				uploadStat.End()
 			}
 
@@ -158,7 +144,7 @@ func (st *HandleT) runErrWorkers(ctx context.Context) {
 	_ = g.Wait()
 }
 
-func (st *HandleT) storeErrorsToObjectStorage(jobs []*jobsdb.JobT) StoreErrorOutputT {
+func (st *HandleT) storeErrorsToObjectStorage(jobs []*jobsdb.JobT) (errorJob []ErrorJob) {
 	localTmpDirName := "/rudder-processor-errors/"
 
 	uuid := uuid.Must(uuid.NewV4())
@@ -168,46 +154,82 @@ func (st *HandleT) storeErrorsToObjectStorage(jobs []*jobsdb.JobT) StoreErrorOut
 	if err != nil {
 		panic(err)
 	}
-	path := fmt.Sprintf("%v%v.json", tmpDirPath+localTmpDirName, fmt.Sprintf("%v.%v.%v.%v", time.Now().Unix(), config.GetString("INSTANCE_ID", "1"), fmt.Sprintf("%v-%v", jobs[0].JobID, jobs[len(jobs)-1].JobID), uuid))
+	getFileName := func(workspaceID string) string {
+		path := fmt.Sprintf("%v%v.json", tmpDirPath+localTmpDirName, fmt.Sprintf("%v.%v.%v.%v.%v", time.Now().Unix(), config.GetString("INSTANCE_ID", "1"), fmt.Sprintf("%v-%v", jobs[0].JobID, jobs[len(jobs)-1].JobID), uuid, workspaceID))
 
-	gzipFilePath := fmt.Sprintf(`%v.gz`, path)
-	err = os.MkdirAll(filepath.Dir(gzipFilePath), os.ModePerm)
-	if err != nil {
-		panic(err)
+		gzipFilePath := fmt.Sprintf(`%v.gz`, path)
+		return gzipFilePath
 	}
-	gzWriter, err := misc.CreateGZ(gzipFilePath)
-	if err != nil {
-		panic(err)
-	}
-	defer os.Remove(gzipFilePath)
+	gzWriter := fileuploader.NewGzWriter()
 
-	var contentSlice [][]byte
+	contentSlice := make(map[string][][]byte)
+	workspaceJobs := make(map[string][]*jobsdb.JobT)
 	for _, job := range jobs {
+		preferences, err := st.fileuploader.GetStoragePreferences(job.WorkspaceId)
+		if err != nil {
+			panic(err)
+		}
+		if !preferences.ProcErrors {
+			continue
+		}
 		rawJob, err := json.Marshal(job)
 		if err != nil {
 			panic(err)
 		}
-		contentSlice = append(contentSlice, rawJob)
+		if _, ok := contentSlice[job.WorkspaceId]; !ok {
+			contentSlice[job.WorkspaceId] = make([][]byte, 0)
+		}
+		contentSlice[job.WorkspaceId] = append(contentSlice[job.WorkspaceId], rawJob)
+		workspaceJobs[job.WorkspaceId] = append(workspaceJobs[job.WorkspaceId], job)
 	}
-	content := bytes.Join(contentSlice, []byte("\n"))
-	if _, err := gzWriter.Write(content); err != nil {
-		panic(err)
+	for workspaceID, contentValue := range contentSlice {
+		content := bytes.Join(contentValue, []byte("\n"))
+		if _, err := gzWriter.Write(workspaceID, getFileName(workspaceID), content); err != nil {
+			panic(err)
+		}
 	}
-	if err := gzWriter.CloseGZ(); err != nil {
-		panic(err)
-	}
-
-	outputFile, err := os.Open(gzipFilePath)
+	dumps, err := gzWriter.Close()
 	if err != nil {
 		panic(err)
 	}
-	prefixes := []string{"rudder-proc-err-logs", time.Now().Format("01-02-2006")}
-	uploadOutput, err := st.errFileUploader.Upload(context.TODO(), outputFile, prefixes...)
+	defer func() {
+		for _, filePath := range dumps {
+			os.Remove(filePath)
+		}
+	}()
 
-	return StoreErrorOutputT{
-		Location: uploadOutput.Location,
-		Error:    err,
+	g, _ := errgroup.WithContext(context.Background())
+
+	errorJobs := make([]ErrorJob, 0)
+
+	semaphore := make(chan struct{}, config.GetInt("MULTITENANT_JOBS_BACKUP_WORKERS", 64))
+	for workspaceID, filePath := range dumps {
+		semaphore <- struct{}{}
+		g.Go(misc.WithBugsnag(func() error {
+			outputFile, err := os.Open(filePath)
+			if err != nil {
+				panic(err)
+			}
+			prefixes := []string{"rudder-proc-err-logs", time.Now().Format("01-02-2006")}
+			errFileUploader, err := st.getFileUploader(workspaceID)
+			if err != nil {
+				panic(err)
+			}
+			uploadOutput, err := errFileUploader.Upload(context.TODO(), outputFile, prefixes...)
+			errorJobs = append(errorJobs, ErrorJob{
+				jobs: workspaceJobs[workspaceID],
+				errorOutput: StoreErrorOutputT{
+					Location: uploadOutput.Location,
+					Error:    err,
+				},
+			})
+			return nil
+		}))
 	}
+
+	_ = g.Wait()
+
+	return errorJobs
 }
 
 func (st *HandleT) setErrJobStatus(jobs []*jobsdb.JobT, output StoreErrorOutputT) {
@@ -298,7 +320,7 @@ func (st *HandleT) readErrJobsLoop(ctx context.Context) {
 				continue
 			}
 
-			canUpload := backupEnabled() && st.getFileUploader(ctx) != nil
+			canUpload := backupEnabled()
 
 			jobState := jobsdb.Executing.State
 

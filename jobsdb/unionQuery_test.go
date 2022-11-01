@@ -7,7 +7,6 @@ import (
 
 	"github.com/gofrs/uuid"
 	"github.com/rudderlabs/rudder-server/jobsdb/prebackup"
-	"github.com/rudderlabs/rudder-server/services/backup"
 	"github.com/rudderlabs/rudder-server/utils/bytesize"
 	"github.com/stretchr/testify/require"
 )
@@ -17,7 +16,7 @@ func TestMultiTenantHandleT_GetAllJobs(t *testing.T) {
 	maxDSSize := 2
 	jobDB := MultiTenantHandleT{HandleT: &HandleT{MaxDSSize: &maxDSSize}}
 
-	err := jobDB.Setup(ReadWrite, false, "rt", true, []prebackup.Handler{}, backup.StorageSettings{})
+	err := jobDB.Setup(ReadWrite, false, "rt", true, []prebackup.Handler{}, nil)
 	require.NoError(t, err, "expected no error while jobsDB setup")
 	defer jobDB.TearDown()
 

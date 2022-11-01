@@ -17,7 +17,6 @@ import (
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/jobsdb/internal/lock"
 	"github.com/rudderlabs/rudder-server/jobsdb/prebackup"
-	"github.com/rudderlabs/rudder-server/services/backup"
 	"github.com/rudderlabs/rudder-server/services/filemanager"
 	"github.com/rudderlabs/rudder-server/testhelper"
 	"github.com/rudderlabs/rudder-server/testhelper/destination"
@@ -204,7 +203,7 @@ func (*backupTestCase) insertRTData(t *testing.T, jobs []*JobT, statusList []*Jo
 			return triggerAddNewDS
 		},
 	}
-	err := jobsDB.Setup(ReadWrite, false, "rt", true, []prebackup.Handler{}, backup.StorageSettings{})
+	err := jobsDB.Setup(ReadWrite, false, "rt", true, []prebackup.Handler{}, nil)
 	require.NoError(t, err)
 
 	rtDS := newDataSet("rt", "1")
@@ -241,7 +240,7 @@ func (*backupTestCase) insertBatchRTData(t *testing.T, jobs []*JobT, statusList 
 		},
 	}
 
-	err := jobsDB.Setup(ReadWrite, false, "batch_rt", true, []prebackup.Handler{}, backup.StorageSettings{})
+	err := jobsDB.Setup(ReadWrite, false, "batch_rt", true, []prebackup.Handler{}, nil)
 	require.NoError(t, err)
 
 	ds := newDataSet("batch_rt", "1")

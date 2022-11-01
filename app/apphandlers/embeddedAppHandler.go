@@ -21,11 +21,11 @@ import (
 	"github.com/rudderlabs/rudder-server/router"
 	"github.com/rudderlabs/rudder-server/router/batchrouter"
 	routerManager "github.com/rudderlabs/rudder-server/router/manager"
-	backup "github.com/rudderlabs/rudder-server/services/backup"
 	"github.com/rudderlabs/rudder-server/services/db"
 	destinationdebugger "github.com/rudderlabs/rudder-server/services/debugger/destination"
 	sourcedebugger "github.com/rudderlabs/rudder-server/services/debugger/source"
 	transformationdebugger "github.com/rudderlabs/rudder-server/services/debugger/transformation"
+	fileuploader "github.com/rudderlabs/rudder-server/services/fileuploader"
 	"github.com/rudderlabs/rudder-server/services/multitenant"
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/services/transientsource"
@@ -79,8 +79,7 @@ func (embedded *EmbeddedApp) StartRudderCore(ctx context.Context, options *app.O
 		prebackup.DropSourceIds(transientSources.SourceIdsSupplier()),
 	}
 
-	storageService := backup.NewService(ctx, backendconfig.DefaultBackendConfig)
-	storageSettings := storageService.StorageSettings()
+	fileuploader := fileuploader.NewService(ctx, backendconfig.DefaultBackendConfig)
 
 	rsourcesService, err := NewRsourcesService(deploymentType)
 	if err != nil {
@@ -95,7 +94,7 @@ func (embedded *EmbeddedApp) StartRudderCore(ctx context.Context, options *app.O
 		jobsdb.WithStatusHandler(),
 		jobsdb.WithPreBackupHandlers(prebackupHandlers),
 		jobsdb.WithDSLimit(&gatewayDSLimit),
-		jobsdb.WithStorageSettings(storageSettings),
+		jobsdb.WithFileUploader(fileuploader),
 	)
 	defer gwDBForProcessor.Close()
 	routerDB := jobsdb.NewForReadWrite(
@@ -104,7 +103,7 @@ func (embedded *EmbeddedApp) StartRudderCore(ctx context.Context, options *app.O
 		jobsdb.WithStatusHandler(),
 		jobsdb.WithPreBackupHandlers(prebackupHandlers),
 		jobsdb.WithDSLimit(&routerDSLimit),
-		jobsdb.WithStorageSettings(storageSettings),
+		jobsdb.WithFileUploader(fileuploader),
 	)
 	defer routerDB.Close()
 	batchRouterDB := jobsdb.NewForReadWrite(
@@ -113,7 +112,7 @@ func (embedded *EmbeddedApp) StartRudderCore(ctx context.Context, options *app.O
 		jobsdb.WithStatusHandler(),
 		jobsdb.WithPreBackupHandlers(prebackupHandlers),
 		jobsdb.WithDSLimit(&batchRouterDSLimit),
-		jobsdb.WithStorageSettings(storageSettings),
+		jobsdb.WithFileUploader(fileuploader),
 	)
 	defer batchRouterDB.Close()
 	errDB := jobsdb.NewForReadWrite(
@@ -122,7 +121,7 @@ func (embedded *EmbeddedApp) StartRudderCore(ctx context.Context, options *app.O
 		jobsdb.WithStatusHandler(),
 		jobsdb.WithPreBackupHandlers(prebackupHandlers),
 		jobsdb.WithDSLimit(&processorDSLimit),
-		jobsdb.WithStorageSettings(storageSettings),
+		jobsdb.WithFileUploader(fileuploader),
 	)
 
 	var tenantRouterDB jobsdb.MultiTenantJobsDB
@@ -159,7 +158,7 @@ func (embedded *EmbeddedApp) StartRudderCore(ctx context.Context, options *app.O
 		return fmt.Errorf("unsupported deployment type: %q", deploymentType)
 	}
 
-	proc := processor.New(ctx, &options.ClearDB, gwDBForProcessor, routerDB, batchRouterDB, errDB, multitenantStats, reportingI, transientSources, rsourcesService)
+	proc := processor.New(ctx, &options.ClearDB, gwDBForProcessor, routerDB, batchRouterDB, errDB, multitenantStats, reportingI, transientSources, fileuploader, rsourcesService)
 	rtFactory := &router.Factory{
 		Reporting:        reportingI,
 		Multitenant:      multitenantStats,
@@ -232,7 +231,7 @@ func (embedded *EmbeddedApp) StartRudderCore(ctx context.Context, options *app.O
 		var replayDB jobsdb.HandleT
 		err := replayDB.Setup(
 			jobsdb.ReadWrite, options.ClearDB, "replay",
-			true, prebackupHandlers, storageSettings,
+			true, prebackupHandlers, fileuploader,
 		)
 		if err != nil {
 			return fmt.Errorf("could not setup replayDB: %w", err)
