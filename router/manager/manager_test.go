@@ -203,9 +203,8 @@ func TestRouterManager(t *testing.T) {
 	}).AnyTimes()
 	mockBackendConfig.EXPECT().AccessToken().AnyTimes()
 	mockMTI.EXPECT().UpdateWorkspaceLatencyMap(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
-	mockMTI.EXPECT().GetRouterPickupJobs(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(),
-		gomock.Any()).Do(
-		func(destType string, noOfWorkers int, routerTimeOut time.Duration, jobQueryBatchSize int, timeGained float64) {
+	mockMTI.EXPECT().GetRouterPickupJobs(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Do(
+		func(destType string, noOfWorkers int, routerTimeOut time.Duration, jobQueryBatchSize int) {
 			once.Do(func() {
 				close(c)
 			})

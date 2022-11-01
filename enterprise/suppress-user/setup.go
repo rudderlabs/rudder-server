@@ -40,11 +40,9 @@ func (m *Factory) Setup(backendConfig backendconfig.BackendConfig) (types.UserSu
 	loadConfig()
 	ctx := context.TODO()
 	backendConfig.WaitForConfig(ctx)
-	workspaceId := backendConfig.Identity().ID()
 	suppressUser := &SuppressRegulationHandler{
-		RegulationBackendURL:    configBackendURL,
 		RegulationsPollInterval: regulationsPollInterval,
-		WorkspaceID:             workspaceId,
+		ID:                      backendConfig.Identity(),
 		pageSize:                strconv.Itoa(suppressionApiPageSize),
 	}
 	suppressUser.setup(ctx)
