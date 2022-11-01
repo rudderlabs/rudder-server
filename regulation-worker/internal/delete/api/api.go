@@ -120,35 +120,16 @@ func (api *APIManager) Delete(ctx context.Context, job model.Job, destConfig map
 		return model.JobStatusFailed
 	}
 	// Refresh Flow Start
-	var isRefresh bool
-	for _, jobResponse := range jobResp {
-		isRefresh = jobResponse.AuthErrorCategory == oauth.REFRESH_TOKEN
-		if isRefresh {
-			break
-		}
+	respParams := &handleRefreshFlowParams{
+		jobResp:     jobResp,
+		secret:      accountSecretInfo.Account.Secret,
+		workspaceId: job.WorkspaceID,
+		accountId:   rudderUserDeleteAccountId.(string),
+		destName:    destName,
 	}
-	if isRefresh {
-		pkgLogger.Debugf("Refresh flow triggered for %v\n", destName)
-		// Refresh OAuth flow
-		var refSecret *oauth.AuthResponse
-		var errCatStatusCode int
-		refTokenParams := &oauth.RefreshTokenParams{
-			Secret:          accountSecretInfo.Account.Secret,
-			WorkspaceId:     job.WorkspaceID,
-			AccountId:       rudderUserDeleteAccountId.(string),
-			DestDefName:     destName,
-			EventNamePrefix: "refresh_token",
-		}
-		errCatStatusCode, refSecret = api.OAuth.RefreshToken(refTokenParams)
-		// TODO: Does it make sense to have disable destination here ?
-		refSec := *refSecret
-		if strings.TrimSpace(refSec.Err) != "" {
-			// There is an error occurring
-			pkgLogger.Warnf("Error: %v, Status: %v", refSec.Err, errCatStatusCode)
-			return model.JobStatusAborted
-		}
-		// Refresh is complete, the job has to be re-tried
-		return model.JobStatusFailed
+	refreshFlowStatus := api.handleRefreshFlow(respParams)
+	if refreshFlowStatus != model.JobStatusUndefined {
+		return refreshFlowStatus
 	}
 	// Refresh Flow ends
 
@@ -201,4 +182,53 @@ func mapJobToPayload(job model.Job, destName string, destConfig map[string]inter
 			UserAttributes: uas,
 		},
 	}
+}
+
+type handleRefreshFlowParams struct {
+	secret      json.RawMessage
+	destName    string
+	workspaceId string
+	accountId   string
+	jobResp     []JobRespSchema
+}
+
+/**
+This method handles the refresh flow for OAuth destinations
+When the status undefined(model.JobStatusUndefined) is returned, we can understand it is due to one of two things
+1. The error that was received was not an error that could trigger Refresh flow
+2. The destination itself is not OAuth one in the first place so it doesn't have errorCategory at all
+**/
+func (api *APIManager) handleRefreshFlow(params *handleRefreshFlowParams) model.JobStatus {
+	var isRefresh bool
+	for _, jobResponse := range params.jobResp {
+		isRefresh = jobResponse.AuthErrorCategory == oauth.REFRESH_TOKEN
+		if isRefresh {
+			break
+		}
+	}
+	if isRefresh {
+		pkgLogger.Debugf("Refresh flow triggered for %v\n", params.destName)
+		// Refresh OAuth flow
+		var refSecret *oauth.AuthResponse
+		var errCatStatusCode int
+		refTokenParams := &oauth.RefreshTokenParams{
+			Secret:          params.secret,
+			WorkspaceId:     params.workspaceId,
+			AccountId:       params.accountId,
+			DestDefName:     params.accountId,
+			EventNamePrefix: "refresh_token",
+		}
+		errCatStatusCode, refSecret = api.OAuth.RefreshToken(refTokenParams)
+		// TODO: Does it make sense to have disable destination here ?
+		refSec := *refSecret
+		if strings.TrimSpace(refSec.Err) != "" {
+			// There is an error occurring
+			pkgLogger.Warnf("Error: %v, Status: %v", refSec.Err, errCatStatusCode)
+			return model.JobStatusAborted
+		}
+		// Refresh is complete, the job has to be re-tried
+		return model.JobStatusFailed
+	}
+	// Indicates that OAuth refresh flow is not triggered
+	return model.JobStatusUndefined
 }
