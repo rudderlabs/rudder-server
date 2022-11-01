@@ -169,12 +169,26 @@ func (rs *HandleT) schemaExists(_ string) (exists bool, err error) {
 	return
 }
 
-func (rs *HandleT) AddColumn(name, columnName, columnType string) (err error) {
-	tableName := fmt.Sprintf(`%q.%q`, rs.Namespace, name)
-	sqlStatement := fmt.Sprintf(`ALTER TABLE %v ADD COLUMN %q %s`, tableName, columnName, getRSDataType(columnType))
-	pkgLogger.Infof("Adding column in redshift for RS:%s : %v", rs.Warehouse.Destination.ID, sqlStatement)
-	_, err = rs.Db.Exec(sqlStatement)
-	return
+func (rs *HandleT) AddColumns(tableName string, columnsInfo []warehouseutils.ColumnInfo) error {
+	for _, columnInfo := range columnsInfo {
+		query := fmt.Sprintf(`
+		ALTER TABLE
+		  %q.%q
+		ADD
+		  COLUMN %q %s;
+	`,
+			rs.Namespace,
+			tableName,
+			columnInfo.Name,
+			getRSDataType(columnInfo.Type),
+		)
+		pkgLogger.Infof("AZ: Adding column for destinationID: %s, tableName: %s with query: %v", rs.Warehouse.Destination.ID, tableName, query)
+
+		if _, err := rs.Db.Exec(query); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (rs *HandleT) DeleteBy(tableNames []string, params warehouseutils.DeleteByParams) (err error) {

@@ -3,7 +3,7 @@
 // It then runs the service ensuring it is configured to use the dependencies.
 // Finally, it sends events and observe the destinations expecting to get the events back.
 
-package main_test
+package docker_test
 
 import (
 	"context"
@@ -22,6 +22,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/runner"
 	"github.com/rudderlabs/rudder-server/testhelper"
 	"github.com/rudderlabs/rudder-server/testhelper/workspaceConfig"
 
@@ -33,7 +34,6 @@ import (
 	"github.com/tidwall/gjson"
 	"golang.org/x/sync/errgroup"
 
-	main "github.com/rudderlabs/rudder-server"
 	"github.com/rudderlabs/rudder-server/config"
 	kafkaClient "github.com/rudderlabs/rudder-server/services/streammanager/kafka/client"
 	"github.com/rudderlabs/rudder-server/services/streammanager/kafka/client/testutil"
@@ -422,7 +422,7 @@ func setupMainFlow(svcCtx context.Context, t *testing.T) <-chan struct{} {
 	})
 	require.NoError(t, containersGroup.Wait())
 
-	if err := godotenv.Load("testhelper/.env"); err != nil {
+	if err := godotenv.Load("../../testhelper/.env"); err != nil {
 		t.Log("INFO: No .env file found.")
 	}
 
@@ -484,7 +484,8 @@ func setupMainFlow(svcCtx context.Context, t *testing.T) <-chan struct{} {
 
 	svcDone := make(chan struct{})
 	go func() {
-		_ = main.Run(svcCtx)
+		r := runner.New(runner.ReleaseInfo{})
+		_ = r.Run(svcCtx, []string{"docker-test-rudder-server"})
 		close(svcDone)
 	}()
 
