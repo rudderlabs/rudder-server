@@ -64,7 +64,7 @@ func (api *APIManager) Delete(ctx context.Context, job model.Job, destConfig map
 			pkgLogger.Errorf(`[%s][FetchToken] Error in Token Fetch statusCode: %d\t error: %s\n`, destName, tokenStatusCode, accountSecretInfo.Err)
 		}
 	} else {
-		pkgLogger.Errorf("[%v] Destination probably doesn't support OAuth or some issue happened while doing OAuth for deletion", destName)
+		pkgLogger.Errorf("[%v] Destination probably doesn't support OAuth or some issue happened while doing OAuth for deletion [Enabled: %v]", destName, isOauthEnabled)
 	}
 
 	reqBody, err := json.Marshal(bodySchema)
@@ -121,11 +121,11 @@ func (api *APIManager) Delete(ctx context.Context, job model.Job, destConfig map
 	}
 	// Refresh Flow Start
 	respParams := &handleRefreshFlowParams{
-		jobResp:     jobResp,
-		secret:      accountSecretInfo.Account.Secret,
-		workspaceId: job.WorkspaceID,
-		accountId:   rudderUserDeleteAccountId.(string),
-		destName:    destName,
+		jobResponses: jobResp,
+		secret:       accountSecretInfo.Account.Secret,
+		workspaceId:  job.WorkspaceID,
+		accountId:    rudderUserDeleteAccountId.(string),
+		destName:     destName,
 	}
 	refreshFlowStatus := api.handleRefreshFlow(respParams)
 	if refreshFlowStatus != model.JobStatusUndefined {
@@ -185,22 +185,24 @@ func mapJobToPayload(job model.Job, destName string, destConfig map[string]inter
 }
 
 type handleRefreshFlowParams struct {
-	secret      json.RawMessage
-	destName    string
-	workspaceId string
-	accountId   string
-	jobResp     []JobRespSchema
+	secret       json.RawMessage
+	destName     string
+	workspaceId  string
+	accountId    string
+	jobResponses []JobRespSchema
 }
 
-/**
+/*
+*
 This method handles the refresh flow for OAuth destinations
 When the status undefined(model.JobStatusUndefined) is returned, we can understand it is due to one of two things
 1. The error that was received was not an error that could trigger Refresh flow
 2. The destination itself is not OAuth one in the first place so it doesn't have errorCategory at all
-**/
+*
+*/
 func (api *APIManager) handleRefreshFlow(params *handleRefreshFlowParams) model.JobStatus {
 	var isRefresh bool
-	for _, jobResponse := range params.jobResp {
+	for _, jobResponse := range params.jobResponses {
 		isRefresh = jobResponse.AuthErrorCategory == oauth.REFRESH_TOKEN
 		if isRefresh {
 			break
