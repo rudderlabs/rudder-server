@@ -229,34 +229,6 @@ func (c *Client) CheckLimitReached(destID, userID string, cost int64) (
 	return false, &mtr, nil
 }
 
-// Inc increases the destLimiter and userLimiter counters.
-// If destID or userID passed is empty, we don't increment the counters.
-func (c *Client) Inc(destID, userID string, currentTime time.Time) {
-	// TODO remove?
-	//if c.destLimiter.enabled && destID != "" {
-	//	destKey := c.getDestKey(destID)
-	//	_ = c.destLimiter.rateLimiter.Inc(destKey, currentTime)
-	//}
-	//if c.userLimiter.enabled && userID != "" {
-	//	userKey := c.getUserKey(destID, userID)
-	//	_ = c.userLimiter.rateLimiter.Inc(userKey, currentTime)
-	//}
-}
-
-// Dec decrements the destLimiter and userLimiter counters by count passed
-// If destID or userID passed is empty, we don't decrement the counters.
-func (c *Client) Dec(destID, userID string, count int64, currentTime time.Time, atLevel string) {
-	// TODO remove?
-	//if c.destLimiter.enabled && destID != "" && (atLevel == AllLevels || atLevel == DestinationLevel) {
-	//	destKey := c.getDestKey(destID)
-	//	_ = c.destLimiter.rateLimiter.Dec(destKey, count, currentTime)
-	//}
-	//if c.userLimiter.enabled && userID != "" && (atLevel == AllLevels || atLevel == UserLevel) {
-	//	userKey := c.getUserKey(destID, userID)
-	//	_ = c.userLimiter.rateLimiter.Dec(userKey, count, currentTime)
-	//}
-}
-
 func (c *Client) IsEnabled() bool {
 	return c.destLimiter.enabled || c.userLimiter.enabled
 }
