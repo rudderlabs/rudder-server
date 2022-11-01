@@ -77,10 +77,11 @@ func NewRepository(basePath string, log logger.Logger, opts ...Opt) (*Repository
 // GetToken returns the current token
 func (b *Repository) GetToken() ([]byte, error) {
 	b.restoringLock.RLock()
-	defer b.restoringLock.RUnlock()
+	defer b.restoringLock.RUnlock() // release the read lock at the end of the operation
 	if b.restoring {
 		return nil, model.ErrRestoring
 	}
+
 	var token []byte
 	err := b.db.View(func(txn *badger.Txn) error {
 		item, err := txn.Get([]byte(tokenKey))
@@ -106,8 +107,8 @@ func (b *Repository) Suppress(workspaceID, userID, sourceID string) (bool, error
 	if b.restoring {
 		return false, model.ErrRestoring
 	}
-	keyPrefix := fmt.Sprintf("%s:%s:", workspaceID, userID)
 
+	keyPrefix := fmt.Sprintf("%s:%s:", workspaceID, userID)
 	err := b.db.View(func(txn *badger.Txn) error {
 		_, err := txn.Get([]byte(keyPrefix + model.Wildcard))
 		if err != badger.ErrKeyNotFound {
@@ -184,10 +185,6 @@ func (b *Repository) start() error {
 		DefaultOptions(b.path).
 		WithLogger(blogger{b.log}).
 		WithCompression(options.None).
-		// WithNumMemtables(2).
-		// WithMemTableSize(64 << 20).
-		WithNumLevelZeroTables(5).
-		WithNumLevelZeroTablesStall(10).
 		WithIndexCacheSize(16 << 20).
 		WithNumGoroutines(b.maxGoroutines)
 	var err error
