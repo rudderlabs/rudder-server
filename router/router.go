@@ -666,25 +666,21 @@ func (worker *workerT) processDestinationJobs() {
 
 									// setting metadata
 									firstJobMetadata := destinationJob.JobMetadataArray[0]
-									proxyReqMetadata := transformer.ProxyRequestMetadata{
-										SourceID:      firstJobMetadata.SourceID,
-										DestinationID: firstJobMetadata.DestinationID,
-										WorkspaceID:   firstJobMetadata.WorkspaceID,
-										JobID:         firstJobMetadata.JobID,
-										AttemptNum:    firstJobMetadata.AttemptNum,
-										DestInfo:      firstJobMetadata.DestInfo,
-										Secret:        firstJobMetadata.Secret,
-									}
-									// forming the proxy request payload
-									proxyReqPayload := transformer.ProxyRequestPayload{
-										PostParametersT: &result[resultInd],
-										Metadata:        proxyReqMetadata,
-									}
-									// forming proxy request method parameters
 									proxyReqparams := &transformer.ProxyRequestParams{
-										DestName:     worker.rt.destName,
-										JobID:        jobID,
-										ResponseData: proxyReqPayload,
+										DestName: worker.rt.destName,
+										JobID:    jobID,
+										ResponseData: transformer.ProxyRequestPayload{
+											PostParametersT: &result[resultInd],
+											Metadata: transformer.ProxyRequestMetadata{
+												SourceID:      firstJobMetadata.SourceID,
+												DestinationID: firstJobMetadata.DestinationID,
+												WorkspaceID:   firstJobMetadata.WorkspaceID,
+												JobID:         firstJobMetadata.JobID,
+												AttemptNum:    firstJobMetadata.AttemptNum,
+												DestInfo:      firstJobMetadata.DestInfo,
+												Secret:        firstJobMetadata.Secret,
+											},
+										},
 									}
 									rtlTime := time.Now()
 									respStatusCode, respBodyTemp, respContentType = worker.rt.transformer.ProxyRequest(ctx, proxyReqparams)
