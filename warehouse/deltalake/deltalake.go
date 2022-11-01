@@ -82,6 +82,7 @@ var dataTypesMapToRudder = map[string]string{
 	"DOUBLE":    "float",
 	"BOOLEAN":   "boolean",
 	"STRING":    "string",
+	"VARCHAR":   "string",
 	"DATE":      "date",
 	"TIMESTAMP": "datetime",
 	"tinyint":   "int",
@@ -93,6 +94,7 @@ var dataTypesMapToRudder = map[string]string{
 	"double":    "float",
 	"boolean":   "boolean",
 	"string":    "string",
+	"varchar":   "string",
 	"date":      "date",
 	"timestamp": "datetime",
 }

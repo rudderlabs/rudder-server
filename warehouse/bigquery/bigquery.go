@@ -73,6 +73,7 @@ var dataTypesMapToRudder = map[bigquery.FieldType]string{
 	"FLOAT":     "float",
 	"FLOAT64":   "float",
 	"STRING":    "string",
+	"JSON":      "string",
 	"BYTES":     "string",
 	"DATE":      "datetime",
 	"DATETIME":  "datetime",
