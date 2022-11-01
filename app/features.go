@@ -12,7 +12,7 @@ import (
 
 // SuppressUserFeature handles webhook event requests
 type SuppressUserFeature interface {
-	Setup(backendConfig backendconfig.BackendConfig) (types.UserSuppression, error)
+	Setup(ctx context.Context, backendConfig backendconfig.BackendConfig) (types.UserSuppression, error)
 }
 
 /*********************************

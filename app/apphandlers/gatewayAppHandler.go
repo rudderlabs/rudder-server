@@ -101,6 +101,7 @@ func (gatewayApp *GatewayApp) StartRudderCore(ctx context.Context, options *app.
 		return err
 	}
 	err = gw.Setup(
+		ctx,
 		gatewayApp.App, backendconfig.DefaultBackendConfig, gatewayDB,
 		&rateLimiter, gatewayApp.VersionHandler, rsourcesService,
 	)
