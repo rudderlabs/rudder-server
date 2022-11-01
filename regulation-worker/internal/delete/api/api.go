@@ -82,9 +82,9 @@ func (api *APIManager) Delete(ctx context.Context, job model.Job, destConfig map
 
 	// setting oauth related information
 	if isOauthEnabled {
-		payload, unmarshalErr := json.Marshal(accountSecretInfo.Account)
-		if unmarshalErr != nil {
-			pkgLogger.Errorf("error while unmarshalling account secret information: %v", unmarshalErr)
+		payload, marshalErr := json.Marshal(accountSecretInfo.Account)
+		if marshalErr != nil {
+			pkgLogger.Errorf("error while marshalling account secret information: %v", marshalErr)
 			return model.JobStatusFailed
 		}
 		req.Header.Set("X-Rudder-Dest-Info", string(payload))
@@ -122,7 +122,7 @@ func (api *APIManager) Delete(ctx context.Context, job model.Job, destConfig map
 	// Refresh Flow Start
 	var isRefresh bool
 	for _, jobResponse := range jobResp {
-		isRefresh = strings.TrimSpace(jobResponse.AuthErrorCategory) != "" && jobResponse.AuthErrorCategory == oauth.REFRESH_TOKEN
+		isRefresh = jobResponse.AuthErrorCategory == oauth.REFRESH_TOKEN
 		if isRefresh {
 			break
 		}
