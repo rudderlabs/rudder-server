@@ -13,14 +13,13 @@ import (
 // 1. Create a badgerbd.Repository
 // 2. Restore by reading from the backup file retrieved from the HTTP server
 func main() {
-
 	log := logger.NewLogger().Child("main")
 	repo, err := suppression.NewBadgerRepository("/tmp/badgerdb", logger.NOP)
 	if err != nil {
 		log.Fatal("failed to start badger repository", err)
 		os.Exit(1)
 	}
-	resp, err := http.Get(config.GetString("BACKUP_URL", "http://localhost:8080/backup"))
+	resp, err := http.Get(config.GetString("BACKUP_URL", "http://localhost:8080/backup.badger"))
 	if err != nil {
 		log.Fatal("failed to fetch the backup file", err)
 		os.Exit(1)
@@ -32,5 +31,5 @@ func main() {
 		log.Fatal("failed to restore from backup file", err)
 		os.Exit(1)
 	}
-	log.Infof("restore completed in %d seconds", time.Since(now).Seconds())
+	log.Infof("restore completed in %f seconds", time.Since(now).Seconds())
 }

@@ -1,0 +1,26 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: badgerbackupserver
+  labels:
+    app: badgerbackupserver
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: badgerbackupserver
+  template:
+    metadata:
+      labels:
+        app: badgerbackupserver
+    spec:
+      restartPolicy: Always
+      containers:
+        - name: badgerbackupserver
+          image: "rudderstack/develop-rudder-server-enterprise:exp.badgerBackupBench"
+          imagePullPolicy: Always
+          resources:
+            limits:
+              cpu: "4"
+              memory: "8G"
+          command: ["/backup"]

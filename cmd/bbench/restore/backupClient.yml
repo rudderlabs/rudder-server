@@ -1,0 +1,16 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: badgerbackupclient3
+spec:
+  ttlSecondsAfterFinished: 86400
+  template:
+    spec:
+      containers:
+      - name: badgerbackupclient3
+        image: "rudderstack/develop-rudder-server-enterprise:exp.badgerBackupBench"
+        env:
+            - name: BACKUP_URL
+              value: http://localhost:8080/backup.badger
+        command: ["/restore"]
+      restartPolicy: OnFailure

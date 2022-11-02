@@ -39,6 +39,8 @@ COPY --from=builder rudder-server/rudder-server .
 COPY --from=builder rudder-server/build/wait-for-go/wait-for-go .
 COPY --from=builder rudder-server/build/regulation-worker .
 COPY --from=builder rudder-server/devtool .
+COPY --from=builder rudder-server/build/bbench/backup .
+COPY --from=builder rudder-server/build/bbench/restore .
 
 COPY build/docker-entrypoint.sh /
 COPY build/wait-for /
