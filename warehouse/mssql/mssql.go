@@ -667,14 +667,6 @@ func (ms *HandleT) createTable(name string, columns map[string]string) (err erro
 	return
 }
 
-func (ms *HandleT) addColumn(tableName, columnName, columnType string) (err error) {
-	sqlStatement := fmt.Sprintf(`IF NOT EXISTS (SELECT 1  FROM SYS.COLUMNS WHERE OBJECT_ID = OBJECT_ID(N'%[1]s') AND name = '%[2]s')
-			ALTER TABLE %[1]s ADD "%[2]s" %[3]s`, tableName, columnName, rudderDataTypesMapToMssql[columnType])
-	pkgLogger.Infof("MS: Adding column in mssql for MS:%s : %v", ms.Warehouse.Destination.ID, sqlStatement)
-	_, err = ms.Db.Exec(sqlStatement)
-	return
-}
-
 func (ms *HandleT) CreateTable(tableName string, columnMap map[string]string) (err error) {
 	// Search paths doesn't exist unlike Postgres, default is dbo. Hence, use namespace wherever possible
 	err = ms.createTable(ms.Namespace+"."+tableName, columnMap)
@@ -688,9 +680,44 @@ func (ms *HandleT) DropTable(tableName string) (err error) {
 	return
 }
 
-func (ms *HandleT) AddColumn(tableName, columnName, columnType string) (err error) {
-	err = ms.addColumn(ms.Namespace+"."+tableName, columnName, columnType)
-	return err
+func (ms *HandleT) AddColumns(tableName string, columnsInfo []warehouseutils.ColumnInfo) (err error) {
+	var query string
+	if len(columnsInfo) == 1 {
+		query += fmt.Sprintf(`
+			IF NOT EXISTS (
+			  SELECT
+				1
+			  FROM
+				SYS.COLUMNS
+			  WHERE
+				OBJECT_ID = OBJECT_ID(N'%[1]s.%[2]s')
+				AND name = '%[3]s'
+			)
+`,
+			ms.Namespace,
+			tableName,
+			columnsInfo[0].Name,
+		)
+	}
+
+	query += fmt.Sprintf(`
+		ALTER TABLE
+		  %s.%s
+		ADD`,
+		ms.Namespace,
+		tableName,
+	)
+
+	for _, columnInfo := range columnsInfo {
+		query += fmt.Sprintf(` %s %s,`, columnInfo.Name, rudderDataTypesMapToMssql[columnInfo.Type])
+	}
+
+	query = strings.TrimSuffix(query, ",")
+	query += ";"
+
+	pkgLogger.Infof("MS: Adding columns for destinationID: %s, tableName: %s with query: %v", ms.Warehouse.Destination.ID, tableName, query)
+	_, err = ms.Db.Exec(query)
+	return
 }
 
 func (*HandleT) AlterColumn(_, _, _ string) (err error) {

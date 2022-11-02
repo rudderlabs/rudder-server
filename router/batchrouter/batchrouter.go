@@ -18,6 +18,7 @@ import (
 	"time"
 
 	jsoniter "github.com/json-iterator/go"
+	"github.com/samber/lo"
 	"github.com/thoas/go-funk"
 	"golang.org/x/sync/errgroup"
 
@@ -1212,7 +1213,7 @@ func (brt *HandleT) setJobStatus(batchJobs *BatchJobsT, isWarehouse bool, errOcc
 		}
 
 		var parameters JobParametersT
-		err = tryUnmarshalJSON(job.JobID, job.Parameters, &parameters)
+		err = json.Unmarshal(job.Parameters, &parameters)
 		if err != nil {
 			brt.logger.Error("Unmarshal of job parameters failed. ", string(job.Parameters))
 		}
@@ -1660,18 +1661,7 @@ func (worker *workerT) workerProcess() {
 				brt.logger.Debugf("BRT: %s: DB Read Complete for parameter Filters: %v retryList: %v, unprocessedList: %v, total: %v", brt.destType, parameterFilters, len(toRetry.Jobs), len(combinedList)-len(toRetry.Jobs), len(combinedList))
 			}
 		} else {
-			for _, job := range batchDestData.jobs {
-				var parameters JobParametersT
-				err := tryUnmarshalJSON(job.JobID, job.Parameters, &parameters)
-				if err != nil {
-					worker.brt.logger.Error("BRT: %s: Unmarshal of job parameters failed. ", worker.brt.destType, string(job.Parameters))
-				}
-
-				if parameters.DestinationID == batchDest.Destination.ID {
-					combinedList = append(combinedList, job)
-				}
-			}
-
+			combinedList = batchDestData.jobs
 			brt.logger.Debugf("BRT: %s: length of jobs for destination id: %s is %d", worker.brt.destType, batchDest.Destination.ID, len(combinedList))
 		}
 
@@ -1930,12 +1920,8 @@ func (*HandleT) getNamespace(config interface{}, source backendconfig.SourceT, d
 
 func (brt *HandleT) isDestInProgress(destID string) bool {
 	brt.inProgressMapLock.RLock()
-	if brt.inProgressMap[destID] {
-		brt.inProgressMapLock.RUnlock()
-		return true
-	}
-	brt.inProgressMapLock.RUnlock()
-	return false
+	defer brt.inProgressMapLock.RUnlock()
+	return brt.inProgressMap[destID]
 }
 
 func (brt *HandleT) setDestInProgress(destID string, starting bool) {
@@ -2023,14 +2009,23 @@ func (brt *HandleT) readAndProcess() {
 			brtQueryStat.End()
 			brt.logger.Debugf("BRT: %s: Length of jobs received: %d", brt.destType, len(jobs))
 
+			jobsByDesID := lo.GroupBy(jobs, func(job *jobsdb.JobT) string {
+				var parameters JobParametersT
+				if json.Unmarshal(job.Parameters, &parameters) != nil {
+					brt.logger.Error("BRT: %s: Unmarshal of job parameters failed. ", brt.destType, string(job.Parameters))
+				}
+				return parameters.DestinationID
+			})
 			var wg sync.WaitGroup
-			for destID, batchDest := range destinationsMap {
-				brt.setDestInProgress(destID, true)
-
-				wg.Add(1)
-				brt.processQ <- &BatchDestinationDataT{batchDestination: *batchDest, jobs: jobs, parentWG: &wg}
+			for destID, destJobs := range jobsByDesID {
+				if batchDest, ok := destinationsMap[destID]; ok {
+					brt.setDestInProgress(destID, true)
+					wg.Add(1)
+					brt.processQ <- &BatchDestinationDataT{batchDestination: *batchDest, jobs: destJobs, parentWG: &wg}
+				} else {
+					brt.logger.Errorf("BRT: %s: Destination %s not found in destinationsMap", brt.destType, destID)
+				}
 			}
-
 			wg.Wait()
 		}
 	}
@@ -2433,27 +2428,4 @@ func (brt *HandleT) updateProcessedEventsMetrics(statusList []*jobsdb.JobStatusT
 			}).Count(count)
 		}
 	}
-}
-
-func tryUnmarshalJSON(jobID int64, data []byte, v interface{}) (err error) {
-	c := cap(data)
-	l := len(data)
-
-	startingData := make([]byte, l)
-	copy(startingData, data)
-
-	defer func() {
-		if r := recover(); r != nil {
-			pkgLogger.Warnf(
-				"Panic while unmarshalling json (%d): starting slice [%d:%d]: ending slice: [%d:%d]: %v",
-				jobID, l, c, len(data), cap(data), r,
-			)
-			pkgLogger.Warnf("Starting data before unmarshalling json panic: %s", startingData)
-			pkgLogger.Warnf("Ending data after unmarshalling json panic: %s", data)
-			panic(r)
-		}
-	}()
-
-	err = json.Unmarshal(data, v)
-	return
 }

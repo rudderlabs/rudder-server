@@ -358,16 +358,16 @@ func (jobRun *JobRunT) cleanup() {
 	}
 }
 
-func (event *BatchRouterEventT) GetColumnInfo(columnName string) (columnInfo ColumnInfoT, ok bool) {
+func (event *BatchRouterEventT) GetColumnInfo(columnName string) (columnInfo warehouseutils.ColumnInfo, ok bool) {
 	columnVal, ok := event.Data[columnName]
 	if !ok {
-		return ColumnInfoT{}, false
+		return warehouseutils.ColumnInfo{}, false
 	}
 	columnType, ok := event.Metadata.Columns[columnName]
 	if !ok {
-		return ColumnInfoT{}, false
+		return warehouseutils.ColumnInfo{}, false
 	}
-	return ColumnInfoT{ColumnVal: columnVal, ColumnType: columnType}, true
+	return warehouseutils.ColumnInfo{Value: columnVal, Type: columnType}, true
 }
 
 //
@@ -477,8 +477,8 @@ func processStagingFile(job Payload, workerIndex int) (loadFileUploadOutputs []l
 				eventLoader.AddEmptyColumn(columnName)
 				continue
 			}
-			columnType := columnInfo.ColumnType
-			columnVal := columnInfo.ColumnVal
+			columnType := columnInfo.Type
+			columnVal := columnInfo.Value
 
 			if columnType == "int" || columnType == "bigint" {
 				floatVal, ok := columnVal.(float64)
