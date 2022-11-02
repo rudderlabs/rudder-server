@@ -65,7 +65,7 @@ type limiter interface {
 	IsEnabled() bool
 	IsDestLevelEnabled() bool
 	IsUserLevelEnabled() bool
-	CheckLimitReached(destID, userID string, cost int64) (
+	CheckLimitReached(userID string, cost int64) (
 		limited bool, tr throttling.TokenReturner, retErr error,
 	)
 }
@@ -1293,14 +1293,15 @@ func (rt *HandleT) getWorkerPartition(userID string) int {
 	return misc.GetHash(userID) % rt.noOfWorkers
 }
 
-func (rt *HandleT) shouldThrottle(destID, userID string, cost int64) (
+// TODO use this one or remove it
+func (rt *HandleT) shouldThrottle(userID string, cost int64) (
 	limited bool, tr throttling.TokenReturner, err error,
 ) {
 	if !rt.throttler.IsEnabled() {
 		return false, nil, nil
 	}
 
-	return rt.throttler.CheckLimitReached(destID, userID, cost)
+	return rt.throttler.CheckLimitReached(userID, cost)
 }
 
 // ResetSleep  this makes the workers reset their sleep
@@ -1919,7 +1920,7 @@ func (rt *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB jobsd
 	rt.oauth = oauth.NewOAuthErrorHandler(backendConfig)
 	rt.oauth.Setup()
 
-	rt.throttler = throttler.New(rt.destName)
+	rt.throttler = throttler.New(rt.destinationId)
 
 	rt.isBackendConfigInitialized = false
 	rt.backendConfigInitialized = make(chan bool)
