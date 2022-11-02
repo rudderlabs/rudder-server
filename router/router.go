@@ -592,7 +592,7 @@ func (worker *workerT) processDestinationJobs() {
 	})
 
 	for _, destinationJob := range worker.destinationJobs {
-		var attemptedToSendTheJob bool
+		attemptedToSendTheJob := true
 		var errorAt string
 		respBodyArr := make([]string, 0)
 		if destinationJob.StatusCode == 200 || destinationJob.StatusCode == 0 {
@@ -635,6 +635,7 @@ func (worker *workerT) processDestinationJobs() {
 						"Will drop with %d because of time expiry %v",
 						types.RouterTimedOutStatusCode, destinationJob.JobMetadataArray[0].JobID,
 					)
+					attemptedToSendTheJob = false
 				} else if worker.rt.customDestinationManager != nil {
 					for _, destinationJobMetadata := range destinationJob.JobMetadataArray {
 						if destinationID != destinationJobMetadata.DestinationID {
@@ -647,12 +648,14 @@ func (worker *workerT) processDestinationJobs() {
 					result, err := getIterableStruct(destinationJob.Message, transformAt)
 					if err != nil {
 						errorAt = routerutils.ERROR_AT_TF
+						attemptedToSendTheJob = false
 						respStatusCode, respBody = types.RouterUnMarshalErrorCode, fmt.Errorf("transformer response unmarshal error: %w", err).Error()
 					} else {
 						for _, val := range result {
 							err := integrations.ValidatePostInfo(val)
 							if err != nil {
 								errorAt = routerutils.ERROR_AT_TF
+								attemptedToSendTheJob = false
 								respStatusCode, respBodyTemp = http.StatusBadRequest, fmt.Sprintf(`400 GetPostInfoFailed with error: %s`, err.Error())
 								respBodyArr = append(respBodyArr, respBodyTemp)
 							} else {
@@ -738,8 +741,6 @@ func (worker *workerT) processDestinationJobs() {
 				if !worker.rt.transformerProxy && destinationResponseHandler != nil {
 					respStatusCode = destinationResponseHandler.IsSuccessStatus(respStatusCode, respBody)
 				}
-
-				attemptedToSendTheJob = true
 
 				worker.deliveryTimeStat.End()
 				deliveryLatencyStat.End()
