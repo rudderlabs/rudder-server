@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"github.com/cenkalti/backoff/v4"
 	"math/rand"
 	"net/http"
 	"sort"
@@ -15,7 +16,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/cenkalti/backoff/v4"
 	jsoniter "github.com/json-iterator/go"
 	"github.com/tidwall/gjson"
 	"golang.org/x/sync/errgroup"
@@ -53,7 +53,9 @@ type reporter interface {
 
 type tenantStats interface {
 	CalculateSuccessFailureCounts(workspace, destType string, isSuccess, isDrained bool)
-	GetRouterPickupJobs(destType string, noOfWorkers int, routerTimeOut time.Duration, jobQueryBatchSize int) map[string]int
+	GetRouterPickupJobs(
+		destType string, noOfWorkers int, routerTimeOut time.Duration, jobQueryBatchSize int,
+	) map[string]int
 	ReportProcLoopAddStats(stats map[string]map[string]int, tableType string)
 	UpdateWorkspaceLatencyMap(destType, workspaceID string, val float64)
 }
@@ -100,7 +102,6 @@ type HandleT struct {
 	failuresMetric                          map[string]map[string]int
 	customDestinationManager                customDestinationManager.DestinationManager
 	throttler                               limiter
-	throttledUserMap                        map[string]struct{} // used before calling findWorker. A temp storage to save <userid> whose job can be throttled.
 	guaranteeUserEventOrder                 bool
 	netClientTimeout                        time.Duration
 	backendProxyTimeout                     time.Duration
@@ -525,9 +526,6 @@ func (worker *workerT) workerProcess() {
 				}
 			}
 
-			worker.recordCountsByDestAndUser(destination.ID, userID)
-			worker.encounteredRouterTransform = false
-
 			if worker.rt.enableBatching {
 				routerJob := types.RouterJobT{Message: job.EventPayload, JobMetadata: jobMetadata, Destination: destination}
 				worker.routerJobs = append(worker.routerJobs, routerJob)
@@ -536,7 +534,6 @@ func (worker *workerT) workerProcess() {
 					worker.processDestinationJobs()
 				}
 			} else if parameters.TransformAt == "router" {
-				worker.encounteredRouterTransform = true
 				routerJob := types.RouterJobT{Message: job.EventPayload, JobMetadata: jobMetadata, Destination: destination}
 				worker.routerJobs = append(worker.routerJobs, routerJob)
 
@@ -617,7 +614,6 @@ func (worker *workerT) processDestinationJobs() {
 	*/
 
 	failedUserIDsMap := make(map[string]struct{})
-	apiCallsCount := make(map[string]*destJobCountsT)
 	routerJobResponses := make([]*JobResponse, 0)
 
 	sort.Slice(worker.destinationJobs, func(i, j int) bool {
@@ -632,8 +628,6 @@ func (worker *workerT) processDestinationJobs() {
 			if worker.canSendJobToDestination(prevRespStatusCode, failedUserIDsMap, &destinationJob) {
 				diagnosisStartTime := time.Now()
 				destinationID := destinationJob.JobMetadataArray[0].DestinationID
-
-				worker.recordAPICallCount(apiCallsCount, destinationID, destinationJob.JobMetadataArray)
 				transformAt := destinationJob.JobMetadataArray[0].TransformAt
 
 				// START: request to destination endpoint
@@ -910,7 +904,6 @@ func (worker *workerT) processDestinationJobs() {
 		}
 	}
 
-	worker.decrementInThrottleMap(apiCallsCount)
 	worker.batchTimeStat.End()
 
 	// routerJobs/destinationJobs are processed. Clearing the queues.
@@ -975,78 +968,6 @@ type JobResponse struct {
 	errorAt                string
 	attemptedToSendTheJob  bool
 	status                 *jobsdb.JobStatusT
-}
-
-func (worker *workerT) recordCountsByDestAndUser(destID, userID string) {
-	if _, ok := worker.jobCountsByDestAndUser[destID]; !ok {
-		worker.jobCountsByDestAndUser[destID] = &destJobCountsT{byUser: make(map[string]int)}
-	}
-	worker.jobCountsByDestAndUser[destID].total++
-	if worker.rt.throttler.IsUserLevelEnabled() {
-		if _, ok := worker.jobCountsByDestAndUser[destID].byUser[userID]; !ok {
-			worker.jobCountsByDestAndUser[destID].byUser[userID] = 0
-		}
-		worker.jobCountsByDestAndUser[destID].byUser[userID]++
-	}
-}
-
-func (worker *workerT) recordAPICallCount(apiCallsCount map[string]*destJobCountsT, destinationID string, jobMetadata []types.JobMetadataT) {
-	if _, ok := apiCallsCount[destinationID]; !ok {
-		apiCallsCount[destinationID] = &destJobCountsT{byUser: make(map[string]int)}
-	}
-	apiCallsCount[destinationID].total++
-	if worker.rt.throttler.IsUserLevelEnabled() {
-		var userIDs []string
-		for _, metadata := range jobMetadata {
-			userIDs = append(userIDs, metadata.UserID)
-		}
-		for _, userID := range misc.Unique(userIDs) {
-			if _, ok := apiCallsCount[destinationID].byUser[userID]; !ok {
-				apiCallsCount[destinationID].byUser[userID] = 0
-			}
-			apiCallsCount[destinationID].byUser[userID]++
-		}
-	}
-}
-
-// decrements counts in throttle map by the diff between api calls made to destinations and initial incremented ones in throttler
-func (worker *workerT) decrementInThrottleMap(apiCallsCount map[string]*destJobCountsT) {
-	for destID, incrementedMapByDestID := range worker.jobCountsByDestAndUser {
-		if worker.rt.throttler.IsUserLevelEnabled() {
-			for userID, incrementedCountByUserID := range incrementedMapByDestID.byUser {
-				var sentCountByUserID int
-				var ok bool
-				if sentCountByUserID, ok = apiCallsCount[destID].byUser[userID]; !ok {
-					sentCountByUserID = 0
-				}
-				diff := int64(incrementedCountByUserID - sentCountByUserID)
-				if diff > 0 {
-					// decrement only half to account for api call to be made again in router transform
-					if worker.encounteredRouterTransform {
-						diff /= 2
-					}
-					pkgLogger.Debugf(`Decrementing user level throttle map by %d for dest:%s, user:%s`, diff, destID, userID)
-					worker.rt.throttler.Dec(destID, userID, diff, worker.throttledAtTime, throttler.UserLevel)
-				}
-			}
-		}
-		if worker.rt.throttler.IsDestLevelEnabled() {
-			var sentMapByDestID *destJobCountsT
-			var ok bool
-			if sentMapByDestID, ok = apiCallsCount[destID]; !ok {
-				sentMapByDestID = &destJobCountsT{}
-			}
-			diff := int64(incrementedMapByDestID.total - sentMapByDestID.total)
-			if diff > 0 {
-				// decrement only half to account for api call to be made again in router transform
-				if worker.encounteredRouterTransform {
-					diff /= 2
-				}
-				pkgLogger.Debugf(`Decrementing destination level throttle map by %d for dest:%s`, diff, destID)
-				worker.rt.throttler.Dec(destID, "", diff, worker.throttledAtTime, throttler.DestinationLevel)
-			}
-		}
-	}
 }
 
 func (worker *workerT) updateReqMetrics(respStatusCode int, diagnosisStartTime *time.Time) {
@@ -1337,9 +1258,9 @@ func (rt *HandleT) stopWorkers() {
 	}
 }
 
-func (rt *HandleT) findWorker(job *jobsdb.JobT) (toSendWorker *workerT) {
+func (rt *HandleT) findWorker(job *jobsdb.JobT, throttledUserMap map[string]struct{}) (toSendWorker *workerT) {
 	if rt.backgroundCtx.Err() != nil {
-		return nil
+		return
 	}
 
 	// checking if this job can be throttled
@@ -1349,13 +1270,13 @@ func (rt *HandleT) findWorker(job *jobsdb.JobT) (toSendWorker *workerT) {
 	// this check is done to maintain order.
 	if _, ok := rt.throttledUserMap[userID]; ok && rt.guaranteeUserEventOrder {
 		rt.logger.Debugf(`[%v Router] :: Skipping processing of job:%d of user:%s as user has earlier jobs in throttled map`, rt.destName, job.JobID, userID)
-		return nil
+		return
 	}
 
 	err := json.Unmarshal(job.Parameters, &parameters)
 	if err != nil {
 		rt.logger.Errorf(`[%v Router] :: Unmarshalling parameters failed with the error %v . Returning nil worker`, err)
-		return nil
+		return
 	}
 
 	var cost int64 = 1 // TODO cost
@@ -1363,48 +1284,48 @@ func (rt *HandleT) findWorker(job *jobsdb.JobT) (toSendWorker *workerT) {
 	limited, tokenReturner, err := rt.shouldThrottle(parameters.DestinationID, userID, cost)
 	if err != nil {
 		rt.logger.Errorf(`[%v Router] :: Throttling check failed with the error %v . Returning nil worker`, err)
-		return nil
-	}
-	defer func() {
-		if toSendWorker == nil && tokenReturner != nil {
-			_ = tokenReturner.Return(context.TODO())
+		defer func() {
+			if toSendWorker == nil && tokenReturner != nil {
+				_ = tokenReturner.Return(context.TODO())
+			}
+		}()
+		if limited {
+			throttledUserMap[userID] = struct{}{}
+			rt.logger.Debugf(
+				`[%v Router] :: Skipping processing of job:%d of user:%s as throttled limits exceeded`,
+				rt.destName, job.JobID, userID,
+			)
+			return
 		}
-	}()
-	if limited {
-		rt.throttledUserMap[userID] = struct{}{}
-		rt.logger.Debugf(
-			`[%v Router] :: Skipping processing of job:%d of user:%s as throttled limits exceeded`,
-			rt.destName, job.JobID, userID,
-		)
-		return nil
-	}
 
-	if !rt.guaranteeUserEventOrder {
-		// if guaranteeUserEventOrder is false, assigning worker randomly and returning here.
-		toSendWorker = rt.workers[rand.Intn(rt.noOfWorkers)] // skipcq: GSC-G404
-		return
-	}
+		if !rt.guaranteeUserEventOrder {
+			// if guaranteeUserEventOrder is false, assigning worker randomly and returning here.
+			toSendWorker = rt.workers[rand.Intn(rt.noOfWorkers)] // skipcq: GSC-G404
+			return
+		}
 
-	//#JobOrder (see other #JobOrder comment)
-	index := rt.getWorkerPartition(userID)
-	worker := rt.workers[index]
-	if worker.canBackoff(job) {
+		//#JobOrder (see other #JobOrder comment)
+		index := rt.getWorkerPartition(userID)
+		worker := rt.workers[index]
+		if worker.canBackoff(job) {
+			return
+		}
+		orderKey := fmt.Sprintf(`%s:%s`, userID, parameters.DestinationID)
+		enter, previousFailedJobID := worker.barrier.Enter(orderKey, job.JobID)
+		if enter {
+			rt.logger.Debugf("EventOrder: job %d of user %s is allowed to be processed", job.JobID, userID)
+			toSendWorker = worker
+			return
+		}
+		previousFailedJobIDStr := "<nil>"
+		if previousFailedJobID != nil {
+			previousFailedJobIDStr = strconv.FormatInt(*previousFailedJobID, 10)
+		}
+		rt.logger.Debugf("EventOrder: job %d of user %s is blocked (previousFailedJobID: %s)", job.JobID, userID, previousFailedJobIDStr)
 		return nil
+		//#EndJobOrder
 	}
-	orderKey := fmt.Sprintf(`%s:%s`, userID, parameters.DestinationID)
-	enter, previousFailedJobID := worker.barrier.Enter(orderKey, job.JobID)
-	if enter {
-		rt.logger.Debugf("EventOrder: job %d of user %s is allowed to be processed", job.JobID, userID)
-		toSendWorker = worker
-		return
-	}
-	previousFailedJobIDStr := "<nil>"
-	if previousFailedJobID != nil {
-		previousFailedJobIDStr = strconv.FormatInt(*previousFailedJobID, 10)
-	}
-	rt.logger.Debugf("EventOrder: job %d of user %s is blocked (previousFailedJobID: %s)", job.JobID, userID, previousFailedJobIDStr)
 	return nil
-	//#EndJobOrder
 }
 
 func (worker *workerT) canBackoff(job *jobsdb.JobT) (shouldBackoff bool) {
@@ -1861,11 +1782,11 @@ func (rt *HandleT) readAndProcess() int {
 	var statusList []*jobsdb.JobStatusT
 	var toProcess []workerJobT
 
-	rt.throttledUserMap = make(map[string]struct{})
+	throttledUserMap := make(map[string]struct{})
 	// Identify jobs which can be processed
 	for iterator.HasNext() {
 		job := iterator.Next()
-		w := rt.findWorker(job)
+		w := rt.findWorker(job, throttledUserMap)
 		if w != nil {
 			status := jobsdb.JobStatusT{
 				JobID:         job.JobID,
