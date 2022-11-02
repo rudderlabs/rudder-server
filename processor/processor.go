@@ -473,7 +473,6 @@ var (
 	destinationIDtoTypeMap    map[string]string
 	batchDestinations         []string
 	configSubscriberLock      sync.RWMutex
-	customDestinations        []string
 	pkgLogger                 logger.Logger
 	enableEventSchemasFeature bool
 	enableEventSchemasAPIOnly bool
@@ -509,7 +508,7 @@ func loadConfig() {
 	config.RegisterBoolConfigVariable(false, &enableEventSchemasAPIOnly, true, "EventSchemas.enableEventSchemasAPIOnly")
 	config.RegisterIntConfigVariable(10000, &maxEventsToProcess, true, 1, "Processor.maxLoopProcessEvents")
 
-	batchDestinations, customDestinations = misc.LoadDestinations()
+	batchDestinations = misc.BatchDestinations()
 	config.RegisterIntConfigVariable(5, &transformTimesPQLength, false, 1, "Processor.transformTimesPQLength")
 	// Capture event name as a tag in event level stats
 	config.RegisterBoolConfigVariable(false, &captureEventNameStats, true, "Processor.Stats.captureEventName")
@@ -1390,17 +1389,7 @@ func (proc *HandleT) processJobsForDest(subJobs subJob, parsedEventList [][]type
 					// At the TP flow we are not having destination information, so adding it here.
 					shallowEventCopy.Metadata.DestinationID = destination.ID
 					shallowEventCopy.Metadata.DestinationType = destination.DestinationDefinition.Name
-
-					//TODO: Test for multiple workspaces ex: hosted data plane
-					/* Stream destinations does not need config in transformer. As the Kafka destination config
-					holds the ca-certificate and it depends on user input, it may happen that they provide entire
-					certificate chain. So, that will make the payload huge while sending a batch of events to transformer,
-					it may result into payload larger than accepted by transformer. So, discarding destination config from being
-					sent to transformer for such destination. */
-					if misc.Contains(customDestinations, *destType) {
-						shallowEventCopy.Destination.Config = nil
-					}
-
+					filterConfig(&shallowEventCopy, destination)
 					metadata := shallowEventCopy.Metadata
 					srcAndDestKey := getKeyFromSourceAndDest(metadata.SourceID, metadata.DestinationID)
 					// We have at-least one event so marking it good
@@ -2588,4 +2577,16 @@ func (proc *HandleT) updateRudderSourcesStats(ctx context.Context, tx jobsdb.Sto
 	rsourcesStats.JobsStored(jobs)
 	err := rsourcesStats.Publish(ctx, tx.SqlTx())
 	return err
+}
+
+func filterConfig(eventCopy *transformer.TransformerEventT, destination *backendconfig.DestinationT) {
+	if configsToFilterI, ok := destination.DestinationDefinition.Config["configFilters"]; ok {
+		if configsToFilter, ok := configsToFilterI.([]interface{}); ok {
+			for _, configKey := range configsToFilter {
+				if configKeyStr, ok := configKey.(string); ok {
+					eventCopy.Destination.Config[configKeyStr] = ""
+				}
+			}
+		}
+	}
 }

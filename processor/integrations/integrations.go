@@ -16,8 +16,7 @@ import (
 )
 
 var (
-	jsonfast = jsoniter.ConfigCompatibleWithStandardLibrary
-
+	jsonfast              = jsoniter.ConfigCompatibleWithStandardLibrary
 	destTransformURL      string
 	postParametersTFields []string
 )
