@@ -614,7 +614,7 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 
 			if enableSuppressUserFeature && gateway.suppressUserHandler != nil {
 				userID := gjson.GetBytes(body, "batch.0.userId").String()
-				if gateway.suppressUserHandler.IsSuppressedUser(userID, gateway.getSourceIDForWriteKey(writeKey)) {
+				if gateway.suppressUserHandler.IsSuppressedUser(workspaceId, userID, sourceID) {
 					req.done <- ""
 					preDbStoreCount++
 					continue

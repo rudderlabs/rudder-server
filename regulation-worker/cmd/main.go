@@ -69,7 +69,8 @@ func Run(ctx context.Context) {
 		Deleter: delete.NewRouter(
 			&kvstore.KVDeleteManager{},
 			&batch.BatchManager{
-				FMFactory: &filemanager.FileManagerFactoryT{},
+				FMFactory:  &filemanager.FileManagerFactoryT{},
+				FilesLimit: config.GetInt("REGULATION_WORKER_FILES_LIMIT", 1000),
 			},
 			&api.APIManager{
 				Client:           &http.Client{Timeout: config.GetDuration("HttpClient.regulationWorker.timeout", 30, time.Second)},
