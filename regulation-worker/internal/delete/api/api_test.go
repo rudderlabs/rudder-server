@@ -337,7 +337,9 @@ func TestOAuth(t *testing.T) {
 			// to indicate if refresh token would happen
 			if tt.refreshStCode > 0 {
 				rr := httptest.NewRecorder()
-				if rr.Result().StatusCode > 0 {
+				fetchResult := rr.Result()
+				defer fetchResult.Body.Close()
+				if fetchResult.StatusCode > 0 {
 					// close the earlier server
 					cfgBeSrv.Close()
 
