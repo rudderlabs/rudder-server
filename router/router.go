@@ -1186,6 +1186,7 @@ func (worker *workerT) sendEventDeliveryStat(destinationJobMetadata *types.JobMe
 			"destination":    destinationTag,
 			"attempt_number": strconv.Itoa(status.AttemptNum),
 			"workspaceId":    status.WorkspaceId,
+			"source":         destinationJobMetadata.SourceID,
 		})
 		eventsDeliveredStat.Count(1)
 		if destinationJobMetadata.ReceivedAt != "" {
