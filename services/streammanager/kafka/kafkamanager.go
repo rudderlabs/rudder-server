@@ -460,19 +460,13 @@ func prepareBatchOfMessages(batch []map[string]interface{}, timestamp time.Time,
 
 	for i, data := range batch {
 		topicI, ok := data["topic"]
-
 		if !ok {
 			return nil, fmt.Errorf("topic is empty for message %d", i)
 		}
 
 		topic, ok := topicI.(string)
-		if !ok {
-			return nil, fmt.Errorf("topic is not a string for message %d", i)
-		}
-
-		// we are guranatee presence of topic in each payload this is a fall back handler
-		if topic == "" {
-			return nil, fmt.Errorf("topic is empty for message %d", i)
+		if !ok || topic == "" {
+			return nil, fmt.Errorf("topic is invalid type for message %d", i)
 		}
 
 		message, ok := data["message"]
@@ -546,7 +540,6 @@ func (p *ProducerManager) Publish(ctx context.Context, msgs ...client.Message) e
 
 // Produce creates a producer and send data to Kafka.
 func (p *ProducerManager) Produce(jsonData json.RawMessage, destConfig interface{}) (int, string, string) {
-	fmt.Println("KAFKA KAFKA KAFKA" + string(jsonData))
 	if p.p == nil {
 		// return 400 if producer is invalid
 		return 400, "Could not create producer", "Could not create producer"
