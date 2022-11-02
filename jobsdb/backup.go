@@ -243,7 +243,7 @@ func (jd *HandleT) backupJobsTable(ctx context.Context, backupDSRange *dataSetRa
 			os.Remove(filePath)
 		}
 	}()
-	semaphore := make(chan struct{}, config.GetInt("MULTITENANT_JOBS_BACKUP_WORKERS", 64))
+	semaphore := make(chan struct{}, backupWorkers)
 	for workspaceID, filePath := range dumps {
 		semaphore <- struct{}{}
 		g.Go(misc.WithBugsnag(func() error {
@@ -558,7 +558,10 @@ func (jd *HandleT) createTableDump(queryFunc func(int64) string, pathFunc func(s
 			if err != nil {
 				return fmt.Errorf("getting storage preferences failed with error : %w", err)
 			}
-			if (!preferences.GatewayDumps && jd.tablePrefix == "gw") || (!preferences.ProcErrors && jd.tablePrefix == "proc_error") {
+			if (!preferences.GatewayDumps && jd.tablePrefix == "gw") ||
+				(!preferences.ProcErrorDumps && jd.tablePrefix == "proc_error") ||
+				(!preferences.RouterDumps && jd.tablePrefix == "rt") ||
+				(!preferences.BatchRouterDumps && jd.tablePrefix == "bacth_rt") {
 				continue
 			}
 			rawJSONRows = append(rawJSONRows, '\n') // appending '\n'

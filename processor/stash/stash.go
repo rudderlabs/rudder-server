@@ -30,6 +30,7 @@ var (
 	maxFailedCountForErrJob int
 	pkgLogger               logger.Logger
 	payloadLimit            int64
+	errBackupWorkers        int
 )
 
 func Init() {
@@ -39,6 +40,7 @@ func Init() {
 
 func loadConfig() {
 	config.RegisterBoolConfigVariable(true, &errorStashEnabled, true, "Processor.errorStashEnabled")
+	config.RegisterIntConfigVariable(100, &errBackupWorkers, false, 1, "Processor.errorBackupWorkers")
 	config.RegisterDurationConfigVariable(30, &errReadLoopSleep, true, time.Second, []string{"Processor.errReadLoopSleep", "errReadLoopSleepInS"}...)
 	config.RegisterIntConfigVariable(1000, &errDBReadBatchSize, true, 1, "Processor.errDBReadBatchSize")
 	config.RegisterIntConfigVariable(2, &noOfErrStashWorkers, true, 1, "Processor.noOfErrStashWorkers")
@@ -202,7 +204,7 @@ func (st *HandleT) storeErrorsToObjectStorage(jobs []*jobsdb.JobT) (errorJob []E
 
 	errorJobs := make([]ErrorJob, 0)
 
-	semaphore := make(chan struct{}, config.GetInt("MULTITENANT_JOBS_BACKUP_WORKERS", 64))
+	semaphore := make(chan struct{}, errBackupWorkers)
 	for workspaceID, filePath := range dumps {
 		semaphore <- struct{}{}
 		g.Go(misc.WithBugsnag(func() error {

@@ -50,18 +50,21 @@ type service struct {
 
 type defaultservice struct{}
 
-func (_ *defaultservice) GetFileUploader(_ string) (filemanager.FileManager, error) {
-	defaultConfig := getDefaultConfig(context.Background())
+func (*defaultservice) GetFileUploader(_ string) (filemanager.FileManager, error) {
+	defaultConfig := getDefaultBucket(context.Background())
 	return filemanager.DefaultFileManagerFactory.New(&filemanager.SettingsT{
 		Provider: defaultConfig.Type,
 		Config:   defaultConfig.Config,
 	})
 }
 
-func (_ *defaultservice) GetStoragePreferences(_ string) (backendconfig.StoragePreferences, error) {
+func (*defaultservice) GetStoragePreferences(_ string) (backendconfig.StoragePreferences, error) {
 	return backendconfig.StoragePreferences{
-		ProcErrors:   true,
-		GatewayDumps: true,
+		ProcErrors:       true,
+		GatewayDumps:     true,
+		ProcErrorDumps:   true,
+		RouterDumps:      true,
+		BatchRouterDumps: true,
 	}, nil
 }
 
@@ -89,11 +92,12 @@ func (s *service) updateLoop(ctx context.Context, config backendconfig.BackendCo
 
 	for ev := range ch {
 		configs := ev.Data.(map[string]backendconfig.ConfigT)
+		defaultBucket := getDefaultBucket(ctx)
 		for _, c := range configs {
 			if c.Settings.DataRetention.UseSelfStorage {
-				bucket = c.Settings.DataRetention.StorageBucket
+				bucket = overrideWithSettings(defaultBucket.Config, c.Settings.DataRetention.StorageBucket, c.WorkspaceID)
 			} else {
-				bucket = getDefaultConfig(ctx)
+				bucket = defaultBucket
 			}
 			preferences = c.Settings.DataRetention.StoragePreferences
 			settings[c.WorkspaceID] = storageSettings{
@@ -112,9 +116,27 @@ func (s *service) updateLoop(ctx context.Context, config backendconfig.BackendCo
 	})
 }
 
-func getDefaultConfig(ctx context.Context) backendconfig.StorageBucket {
+func getDefaultBucket(ctx context.Context) backendconfig.StorageBucket {
 	return backendconfig.StorageBucket{
 		Type:   config.GetString("JOBS_BACKUP_STORAGE_PROVIDER", "S3"),
 		Config: filemanager.GetProviderConfigForBackupsFromEnv(ctx),
+	}
+}
+
+func overrideWithSettings(defaultConfig map[string]interface{}, settings backendconfig.StorageBucket, workspaceID string) backendconfig.StorageBucket {
+	config := make(map[string]interface{})
+	for k, v := range defaultConfig {
+		if _, ok := settings.Config[k]; ok {
+			config[k] = settings.Config[k]
+		} else {
+			config[k] = v
+		}
+	}
+	if _, ok := config["externalId"]; ok && settings.Type == "S3" {
+		config["externalId"] = workspaceID
+	}
+	return backendconfig.StorageBucket{
+		Type:   settings.Type,
+		Config: config,
 	}
 }

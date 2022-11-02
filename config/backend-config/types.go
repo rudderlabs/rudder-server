@@ -107,8 +107,11 @@ type StorageBucket struct {
 }
 
 type StoragePreferences struct {
-	ProcErrors   bool `json:"procErrors"`
-	GatewayDumps bool `json:"gatewayDumps"`
+	ProcErrors       bool `json:"procErrors"`
+	GatewayDumps     bool `json:"gatewayDumps"`
+	ProcErrorDumps   bool `json:"procErrorDumps"`
+	RouterDumps      bool `json:"routerDumps"`
+	BatchRouterDumps bool `json:"batchRouterDumps"`
 }
 
 type ConnectionFlags struct {
