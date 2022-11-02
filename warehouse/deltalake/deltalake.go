@@ -921,7 +921,7 @@ func (*HandleT) AlterColumn(_, _, _ string) (err error) {
 }
 
 // FetchSchema queries delta lake and returns the schema associated with provided namespace
-func (dl *HandleT) FetchSchema(warehouse warehouseutils.Warehouse) (schema warehouseutils.SchemaT, err error) {
+func (dl *HandleT) FetchSchema(warehouse warehouseutils.Warehouse) (schema warehouseutils.SchemaT, unRecognizedSchema warehouseutils.SchemaT, err error) {
 	dl.Warehouse = warehouse
 	dl.Namespace = warehouse.Namespace
 	dbHandle, err := dl.connectToWarehouse()
@@ -932,6 +932,7 @@ func (dl *HandleT) FetchSchema(warehouse warehouseutils.Warehouse) (schema wareh
 
 	// Schema Initialization
 	schema = make(warehouseutils.SchemaT)
+	unRecognizedSchema = make(warehouseutils.SchemaT)
 
 	// Fetching the tables
 	tableNames, err := dl.fetchTables(dbHandle, dl.Namespace)
@@ -970,10 +971,10 @@ func (dl *HandleT) FetchSchema(warehouse warehouseutils.Warehouse) (schema wareh
 			Table:      tableName,
 		})
 		if err != nil {
-			return schema, fmt.Errorf("%s Error while fetching table attributes: %v", dl.GetLogIdentifier(), err)
+			return schema, unRecognizedSchema, fmt.Errorf("%s Error while fetching table attributes: %v", dl.GetLogIdentifier(), err)
 		}
 		if !checkAndIgnoreAlreadyExistError(fetchTableAttributesResponse.GetErrorCode(), tableOrViewNotFound) {
-			return schema, fmt.Errorf("%s Error while fetching table attributes with response: %v", dl.GetLogIdentifier(), fetchTableAttributesResponse.GetErrorMessage())
+			return schema, unRecognizedSchema, fmt.Errorf("%s Error while fetching table attributes with response: %v", dl.GetLogIdentifier(), fetchTableAttributesResponse.GetErrorMessage())
 		}
 
 		// Populating the schema for the table
@@ -988,6 +989,11 @@ func (dl *HandleT) FetchSchema(warehouse warehouseutils.Warehouse) (schema wareh
 			if datatype, ok := dataTypesMapToRudder[item.GetDataType()]; ok {
 				schema[tableName][item.GetColName()] = datatype
 			} else {
+				if _, ok := unRecognizedSchema[tableName]; !ok {
+					unRecognizedSchema[tableName] = make(map[string]string)
+				}
+				unRecognizedSchema[tableName][item.GetColName()] = warehouseutils.MISSING_DATATYPE
+
 				warehouseutils.WHCounterStat(warehouseutils.RUDDER_MISSING_DATATYPE, &dl.Warehouse, warehouseutils.Tag{Name: "datatype", Value: item.GetDataType()}).Count(1)
 			}
 		}

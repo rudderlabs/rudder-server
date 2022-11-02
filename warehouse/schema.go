@@ -13,12 +13,13 @@ import (
 )
 
 type SchemaHandleT struct {
-	dbHandle          *sql.DB
-	stagingFiles      []*StagingFileT
-	warehouse         warehouseutils.Warehouse
-	localSchema       warehouseutils.SchemaT
-	schemaInWarehouse warehouseutils.SchemaT
-	uploadSchema      warehouseutils.SchemaT
+	dbHandle                      *sql.DB
+	stagingFiles                  []*StagingFileT
+	warehouse                     warehouseutils.Warehouse
+	localSchema                   warehouseutils.SchemaT
+	schemaInWarehouse             warehouseutils.SchemaT
+	unRecognizedSchemaInWarehouse warehouseutils.SchemaT
+	uploadSchema                  warehouseutils.SchemaT
 }
 
 func HandleSchemaChange(existingDataType, columnType string, columnVal interface{}) (newColumnVal interface{}, ok bool) {
@@ -159,13 +160,13 @@ func (sh *SchemaHandleT) updateLocalSchema(updatedSchema warehouseutils.SchemaT)
 	return err
 }
 
-func (sh *SchemaHandleT) fetchSchemaFromWarehouse(whManager manager.ManagerI) (schemaInWarehouse warehouseutils.SchemaT, err error) {
-	schemaInWarehouse, err = whManager.FetchSchema(sh.warehouse)
+func (sh *SchemaHandleT) fetchSchemaFromWarehouse(whManager manager.ManagerI) (schemaInWarehouse warehouseutils.SchemaT, unRecognizedschemaInWarehouse warehouseutils.SchemaT, err error) {
+	schemaInWarehouse, unRecognizedschemaInWarehouse, err = whManager.FetchSchema(sh.warehouse)
 	if err != nil {
 		pkgLogger.Errorf(`[WH]: Failed fetching schema from warehouse: %v`, err)
-		return warehouseutils.SchemaT{}, err
+		return warehouseutils.SchemaT{}, warehouseutils.SchemaT{}, err
 	}
-	return schemaInWarehouse, nil
+	return schemaInWarehouse, unRecognizedschemaInWarehouse, nil
 }
 
 func mergeSchema(currentSchema warehouseutils.SchemaT, schemaList []warehouseutils.SchemaT, currentMergedSchema warehouseutils.SchemaT, warehouseType string) warehouseutils.SchemaT {
@@ -375,7 +376,7 @@ func hasSchemaChanged(localSchema, schemaInWarehouse warehouseutils.SchemaT) boo
 	return false
 }
 
-func getTableSchemaDiff(tableName string, currentSchema, uploadSchema warehouseutils.SchemaT) (diff warehouseutils.TableSchemaDiffT) {
+func getTableSchemaDiff(tableName string, currentSchema, currentUnRecognizedSchema, uploadSchema warehouseutils.SchemaT) (diff warehouseutils.TableSchemaDiffT) {
 	diff = warehouseutils.TableSchemaDiffT{
 		ColumnMap:     make(map[string]string),
 		UpdatedSchema: make(map[string]string),
@@ -401,6 +402,13 @@ func getTableSchemaDiff(tableName string, currentSchema, uploadSchema warehouseu
 	diff.ColumnMap = make(map[string]string)
 	for columnName, columnType := range uploadSchema[tableName] {
 		if _, ok := currentTableSchema[columnName]; !ok {
+			// columns present in unrecognized schema should be excluded from diff
+			if unRecognizedSchema, ok := currentUnRecognizedSchema[tableName]; ok {
+				if _, ok := unRecognizedSchema[columnName]; ok {
+					continue
+				}
+			}
+
 			diff.ColumnMap[columnName] = columnType
 			diff.UpdatedSchema[columnName] = columnType
 			diff.Exists = true
