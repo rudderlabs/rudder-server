@@ -185,6 +185,10 @@ func (c *Client) newLimiter() *throttling.Limiter {
 func (c *Client) CheckLimitReached(userID string, cost int64) (
 	limited bool, tr throttling.TokenReturner, retErr error,
 ) {
+	if !c.isEnabled() {
+		return false, nil, nil
+	}
+
 	var (
 		ctx = context.TODO()
 		mtr multiTokenReturner
@@ -227,16 +231,17 @@ func (c *Client) CheckLimitReached(userID string, cost int64) (
 	return false, &mtr, nil
 }
 
-func (c *Client) IsEnabled() bool {
+func (c *Client) IsWithinRate(userID string, cost int64) (bool, error) {
+	// TODO implement
+	if !c.isEnabled() {
+		return true, nil
+	}
+
+	return true, nil
+}
+
+func (c *Client) isEnabled() bool {
 	return c.destLimiter.enabled || c.userLimiter.enabled
-}
-
-func (c *Client) IsUserLevelEnabled() bool {
-	return c.userLimiter.enabled
-}
-
-func (c *Client) IsDestLevelEnabled() bool {
-	return c.destLimiter.enabled
 }
 
 func (c *Client) getUserKey(userID string) string {
