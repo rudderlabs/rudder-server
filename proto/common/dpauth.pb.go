@@ -220,6 +220,7 @@ type GetConnectionTokenResponse struct {
 	unknownFields protoimpl.UnknownFields
 
 	// Types that are assignable to Response:
+	//
 	//	*GetConnectionTokenResponse_SuccessResponse
 	//	*GetConnectionTokenResponse_ErrorResponse
 	Response isGetConnectionTokenResponse_Response `protobuf_oneof:"response"`

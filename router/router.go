@@ -190,23 +190,24 @@ type workerMessageT struct {
 
 // workerT a structure to define a worker for sending events to sinks
 type workerT struct {
-	channel                   chan workerMessageT // the worker job channel
-	workerID                  int                 // identifies the worker
-	failedJobs                int                 // counts the failed jobs of a worker till it gets reset by external channel
-	sleepTime                 time.Duration       // the sleep duration for every job of the worker
-	barrier                   *eventorder.Barrier
-	retryForJobMap            map[int64]time.Time     // jobID to next retry time map
-	retryForJobMapMutex       sync.RWMutex            // lock to protect structure above
-	routerJobs                []types.RouterJobT      // slice to hold router jobs to send to destination transformer
-	destinationJobs           []types.DestinationJobT // slice to hold destination jobs
-	rt                        *HandleT                // handle to router
-	deliveryTimeStat          stats.Measurement
-	routerDeliveryLatencyStat stats.Measurement
-	routerProxyStat           stats.Measurement
-	batchTimeStat             stats.Measurement
-	jobCountsByDestAndUser    map[string]*destJobCountsT
-	latestAssignedTime        time.Time
-	processingStartTime       time.Time
+	channel                    chan workerMessageT // the worker job channel
+	workerID                   int                 // identifies the worker
+	failedJobs                 int                 // counts the failed jobs of a worker till it gets reset by external channel
+	sleepTime                  time.Duration       // the sleep duration for every job of the worker
+	barrier                    *eventorder.Barrier
+	retryForJobMap             map[int64]time.Time     // jobID to next retry time map
+	retryForJobMapMutex        sync.RWMutex            // lock to protect structure above
+	routerJobs                 []types.RouterJobT      // slice to hold router jobs to send to destination transformer
+	destinationJobs            []types.DestinationJobT // slice to hold destination jobs
+	rt                         *HandleT                // handle to router
+	deliveryTimeStat           stats.Measurement
+	routerDeliveryLatencyStat  stats.Measurement
+	routerProxyStat            stats.Measurement
+	batchTimeStat              stats.Measurement
+	jobCountsByDestAndUser     map[string]*destJobCountsT
+	latestAssignedTime         time.Time
+	processingStartTime        time.Time
+	encounteredRouterTransform bool
 }
 
 type destJobCountsT struct {
@@ -1267,7 +1268,7 @@ func (rt *HandleT) findWorker(job *jobsdb.JobT, throttledUserMap map[string]stru
 	userID := job.UserID
 	// checking if the user is in throttledMap. If yes, returning nil.
 	// this check is done to maintain order.
-	if _, ok := throttledUserMap[userID]; ok && rt.guaranteeUserEventOrder {
+	if _, ok := rt.throttledUserMap[userID]; ok && rt.guaranteeUserEventOrder {
 		rt.logger.Debugf(`[%v Router] :: Skipping processing of job:%d of user:%s as user has earlier jobs in throttled map`, rt.destName, job.JobID, userID)
 		return
 	}
@@ -1784,7 +1785,6 @@ func (rt *HandleT) readAndProcess() int {
 	throttledUserMap := make(map[string]struct{})
 	// Identify jobs which can be processed
 	for iterator.HasNext() {
-
 		job := iterator.Next()
 		w := rt.findWorker(job, throttledUserMap)
 		if w != nil {
@@ -1805,6 +1805,7 @@ func (rt *HandleT) readAndProcess() int {
 			iterator.Discard(job)
 		}
 	}
+	rt.throttledUserMap = nil
 
 	// Mark the jobs as executing
 	err := misc.RetryWithNotify(context.Background(), rt.jobsDBCommandTimeout, rt.jobdDBMaxRetries, func(ctx context.Context) error {

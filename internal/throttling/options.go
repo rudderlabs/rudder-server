@@ -11,7 +11,7 @@ type withOption struct{ setup func(*Limiter) }
 
 func (w withOption) apply(c *Limiter) { w.setup(c) }
 
-// WithGoRate allows to set up a limiter with golang.org/x/time/rate (supports returning tokens)
+// WithGoRate allows to setup a limiter with golang.org/x/time/rate (supports returning tokens)
 func WithGoRate() Option {
 	return withOption{setup: func(l *Limiter) {
 		l.useGoRate = true
