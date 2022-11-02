@@ -437,10 +437,26 @@ func (worker *workerT) workerProcess() {
 				}
 			}
 
-			// TODO START throttling here
+			var throttlingCost int64
+			for k := range worker.routerJobs {
+				tc, ok := worker.routerJobs[k].Destination.DestinationDefinition.ThrottlingCost["eventType"].(map[string]interface{})
+				if !ok {
+					throttlingCost++
+					continue
+				}
+
+				// TODO get by event type before falling back on "default"
+				if dtc, ok := tc["default"].(int); ok {
+					throttlingCost += int64(dtc)
+					continue
+				}
+
+				throttlingCost++
+			}
+
+			// TODO check if throttlingCost is doable, meaning if within the rate limits
 
 			firstAttemptedAt := gjson.GetBytes(job.LastJobStatus.ErrorResponse, "firstAttemptedAt").Str
-
 			jobMetadata := types.JobMetadataT{
 				UserID:             userID,
 				JobID:              job.JobID,
