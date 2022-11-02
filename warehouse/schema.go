@@ -376,7 +376,7 @@ func hasSchemaChanged(localSchema, schemaInWarehouse warehouseutils.SchemaT) boo
 	return false
 }
 
-func getTableSchemaDiff(tableName string, currentSchema, currentUnRecognizedSchema, uploadSchema warehouseutils.SchemaT) (diff warehouseutils.TableSchemaDiffT) {
+func getTableSchemaDiff(tableName string, currentSchema, uploadSchema warehouseutils.SchemaT) (diff warehouseutils.TableSchemaDiffT) {
 	diff = warehouseutils.TableSchemaDiffT{
 		ColumnMap:     make(map[string]string),
 		UpdatedSchema: make(map[string]string),
@@ -402,13 +402,6 @@ func getTableSchemaDiff(tableName string, currentSchema, currentUnRecognizedSche
 	diff.ColumnMap = make(map[string]string)
 	for columnName, columnType := range uploadSchema[tableName] {
 		if _, ok := currentTableSchema[columnName]; !ok {
-			// columns present in unrecognized schema should be excluded from diff
-			if unRecognizedSchema, ok := currentUnRecognizedSchema[tableName]; ok {
-				if _, ok := unRecognizedSchema[columnName]; ok {
-					continue
-				}
-			}
-
 			diff.ColumnMap[columnName] = columnType
 			diff.UpdatedSchema[columnName] = columnType
 			diff.Exists = true

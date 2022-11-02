@@ -877,6 +877,13 @@ func (job *UploadJobT) addColumnsToWarehouse(tName string, columnsMap map[string
 
 	var columnsToAdd []warehouseutils.ColumnInfo
 	for columnName, columnType := range columnsMap {
+		// columns present in unrecognized schema should be skipped
+		if unRecognizedSchema, ok := job.schemaHandle.unRecognizedSchemaInWarehouse[tName]; ok {
+			if _, ok := unRecognizedSchema[columnName]; ok {
+				continue
+			}
+		}
+
 		columnsToAdd = append(columnsToAdd, warehouseutils.ColumnInfo{Name: columnName, Type: columnType})
 	}
 
@@ -977,7 +984,7 @@ func (job *UploadJobT) loadAllTablesExcept(skipLoadForTables []string, loadFiles
 }
 
 func (job *UploadJobT) updateSchema(tName string) (alteredSchema bool, err error) {
-	tableSchemaDiff := getTableSchemaDiff(tName, job.schemaHandle.schemaInWarehouse, job.schemaHandle.unRecognizedSchemaInWarehouse, job.upload.UploadSchema)
+	tableSchemaDiff := getTableSchemaDiff(tName, job.schemaHandle.schemaInWarehouse, job.upload.UploadSchema)
 	if tableSchemaDiff.Exists {
 		err = job.updateTableSchema(tName, tableSchemaDiff)
 		if err != nil {
@@ -1169,7 +1176,7 @@ func (job *UploadJobT) loadIdentityTables(populateHistoricIdentities bool) (load
 		errorMap[tableName] = nil
 		tableUpload := NewTableUpload(job.upload.ID, tableName)
 
-		tableSchemaDiff := getTableSchemaDiff(tableName, job.schemaHandle.schemaInWarehouse, job.schemaHandle.unRecognizedSchemaInWarehouse, job.upload.UploadSchema)
+		tableSchemaDiff := getTableSchemaDiff(tableName, job.schemaHandle.schemaInWarehouse, job.upload.UploadSchema)
 		if tableSchemaDiff.Exists {
 			err := job.updateTableSchema(tableName, tableSchemaDiff)
 			if err != nil {

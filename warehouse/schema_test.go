@@ -222,15 +222,15 @@ var _ = Describe("Schema", func() {
 		})
 	})
 
-	DescribeTable("Get table schema diff", func(tableName string, currentSchema, unRecognizedSchema, uploadSchema warehouseutils.SchemaT, expected warehouseutils.TableSchemaDiffT) {
-		Expect(getTableSchemaDiff(tableName, currentSchema, unRecognizedSchema, uploadSchema)).To(Equal(expected))
+	DescribeTable("Get table schema diff", func(tableName string, currentSchema, uploadSchema warehouseutils.SchemaT, expected warehouseutils.TableSchemaDiffT) {
+		Expect(getTableSchemaDiff(tableName, currentSchema, uploadSchema)).To(Equal(expected))
 	},
-		Entry(nil, "test-table", warehouseutils.SchemaT{}, warehouseutils.SchemaT{}, warehouseutils.SchemaT{}, warehouseutils.TableSchemaDiffT{
+		Entry(nil, "test-table", warehouseutils.SchemaT{}, warehouseutils.SchemaT{}, warehouseutils.TableSchemaDiffT{
 			ColumnMap:     map[string]string{},
 			UpdatedSchema: map[string]string{},
 		}),
 
-		Entry(nil, "test-table", warehouseutils.SchemaT{}, warehouseutils.SchemaT{}, warehouseutils.SchemaT{
+		Entry(nil, "test-table", warehouseutils.SchemaT{}, warehouseutils.SchemaT{
 			"test-table": map[string]string{
 				"test-column": "test-value",
 			},
@@ -249,7 +249,7 @@ var _ = Describe("Schema", func() {
 			"test-table": map[string]string{
 				"test-column": "test-value-1",
 			},
-		}, warehouseutils.SchemaT{}, warehouseutils.SchemaT{
+		}, warehouseutils.SchemaT{
 			"test-table": map[string]string{
 				"test-column": "test-value-2",
 			},
@@ -267,7 +267,7 @@ var _ = Describe("Schema", func() {
 				"test-column-1": "test-value-1",
 				"test-column-2": "test-value-2",
 			},
-		}, warehouseutils.SchemaT{}, warehouseutils.SchemaT{
+		}, warehouseutils.SchemaT{
 			"test-table": map[string]string{
 				"test-column": "test-value-2",
 			},
@@ -289,7 +289,7 @@ var _ = Describe("Schema", func() {
 				"test-column":   "string",
 				"test-column-2": "test-value-2",
 			},
-		}, warehouseutils.SchemaT{}, warehouseutils.SchemaT{
+		}, warehouseutils.SchemaT{
 			"test-table": map[string]string{
 				"test-column": "text",
 			},
@@ -302,66 +302,6 @@ var _ = Describe("Schema", func() {
 				"test-column":   "text",
 			},
 			StringColumnsToBeAlteredToText: []string{"test-column"},
-		}),
-
-		Entry(nil, "test-table", warehouseutils.SchemaT{}, warehouseutils.SchemaT{
-			"test-table": map[string]string{
-				"test-column": "test-value",
-			},
-		}, warehouseutils.SchemaT{}, warehouseutils.TableSchemaDiffT{
-			ColumnMap:     map[string]string{},
-			UpdatedSchema: map[string]string{},
-		}),
-
-		Entry(nil, "test-table", warehouseutils.SchemaT{
-			"test-table": map[string]string{
-				"test-column-1": "test-value-1",
-			},
-		}, warehouseutils.SchemaT{
-			"test-table": map[string]string{
-				"test-column-2": "test-value-2",
-			},
-		}, warehouseutils.SchemaT{
-			"test-table": map[string]string{
-				"test-column-1": "test-value-1",
-				"test-column-3": "test-value-3",
-			},
-		}, warehouseutils.TableSchemaDiffT{
-			Exists:           true,
-			TableToBeCreated: false,
-			ColumnMap: map[string]string{
-				"test-column-3": "test-value-3",
-			},
-			UpdatedSchema: map[string]string{
-				"test-column-1": "test-value-1",
-				"test-column-3": "test-value-3",
-			},
-		}),
-
-		Entry(nil, "test-table", warehouseutils.SchemaT{
-			"test-table": map[string]string{
-				"test-column-1": "test-value-1",
-			},
-		}, warehouseutils.SchemaT{
-			"test-table": map[string]string{
-				"test-column-2": "test-value-2",
-			},
-		}, warehouseutils.SchemaT{
-			"test-table": map[string]string{
-				"test-column-1": "test-value-1",
-				"test-column-2": "test-value-2",
-				"test-column-3": "test-value-3",
-			},
-		}, warehouseutils.TableSchemaDiffT{
-			Exists:           true,
-			TableToBeCreated: false,
-			ColumnMap: map[string]string{
-				"test-column-3": "test-value-3",
-			},
-			UpdatedSchema: map[string]string{
-				"test-column-1": "test-value-1",
-				"test-column-3": "test-value-3",
-			},
 		}),
 	)
 
