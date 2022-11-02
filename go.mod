@@ -215,3 +215,5 @@ require (
 )
 
 require github.com/samber/lo v1.33.0
+
+require gotest.tools/v3 v3.3.0 // indirect
