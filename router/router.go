@@ -6,7 +6,6 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
-	"github.com/cenkalti/backoff/v4"
 	"math/rand"
 	"net/http"
 	"sort"
@@ -15,6 +14,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/cenkalti/backoff/v4"
 
 	jsoniter "github.com/json-iterator/go"
 	"github.com/tidwall/gjson"
@@ -398,19 +399,6 @@ func (worker *workerT) workerProcess() {
 				job.Parameters = routerutils.EnhanceJSON(job.Parameters, "stage", "router")
 				job.Parameters = routerutils.EnhanceJSON(job.Parameters, "reason", drainReason)
 				worker.rt.responseQ <- jobResponseT{status: &status, worker: worker, userID: userID, JobT: job}
-				worker.rt.logger.Debugf(
-					`Decrementing in throttle map for destination:%s since job:%d is marked as drained for user:%s`,
-					parameters.DestinationID, job.JobID, userID,
-				)
-				// TODO: decrement was done in ALL_LEVELS
-				// TODO: check if this return makes sense
-				if err := message.throttlingTokenReturner.Return(context.TODO()); err != nil {
-					worker.rt.logger.Warnf(
-						`Failed to return throttling token for destination:%s, job:%d, user:%s`,
-						job.JobID, userID,
-					)
-				}
-
 				stats.Default.NewTaggedStat(`drained_events`, stats.CountType, stats.Tags{
 					"destType":    worker.rt.destName,
 					"destId":      parameters.DestinationID,
@@ -445,21 +433,11 @@ func (worker *workerT) workerProcess() {
 						WorkspaceId:   job.WorkspaceId,
 					}
 					worker.rt.responseQ <- jobResponseT{status: &status, worker: worker, userID: userID, JobT: job}
-					worker.rt.logger.Debugf(
-						`Decrementing in throttle map for destination:%s since job:%d is marked as waiting for user:%s`,
-						parameters.DestinationID, job.JobID, userID,
-					)
-					// TODO: decrement was done in ALL_LEVELS
-					// TODO: check if this return makes sense
-					if err := message.throttlingTokenReturner.Return(context.TODO()); err != nil {
-						worker.rt.logger.Warnf(
-							`Failed to return throttling token for destination:%s, job:%d, user:%s`,
-							job.JobID, userID,
-						)
-					}
 					continue
 				}
 			}
+
+			// TODO START throttling here
 
 			firstAttemptedAt := gjson.GetBytes(job.LastJobStatus.ErrorResponse, "firstAttemptedAt").Str
 
@@ -510,7 +488,6 @@ func (worker *workerT) workerProcess() {
 				if routerutils.IsNotEmptyString(rudderAccountID) {
 					worker.rt.logger.Debugf(`[%s][FetchToken] Token Fetch Method to be called`, destination.DestinationDefinition.Name)
 					// Get Access Token Information to send it as part of the event
-					// TODO throttling might be needed here
 					tokenStatusCode, accountSecretInfo := worker.rt.oauth.FetchToken(&oauth.RefreshTokenParams{
 						AccountId:       rudderAccountID,
 						WorkspaceId:     jobMetadata.WorkspaceID,
@@ -1258,7 +1235,7 @@ func (rt *HandleT) stopWorkers() {
 	}
 }
 
-func (rt *HandleT) findWorker(job *jobsdb.JobT, throttledUserMap map[string]struct{}) (toSendWorker *workerT) {
+func (rt *HandleT) findWorker(job *jobsdb.JobT) (toSendWorker *workerT) {
 	if rt.backgroundCtx.Err() != nil {
 		return
 	}
@@ -1266,12 +1243,6 @@ func (rt *HandleT) findWorker(job *jobsdb.JobT, throttledUserMap map[string]stru
 	// checking if this job can be throttled
 	var parameters JobParametersT
 	userID := job.UserID
-	// checking if the user is in throttledMap. If yes, returning nil.
-	// this check is done to maintain order.
-	if _, ok := rt.throttledUserMap[userID]; ok && rt.guaranteeUserEventOrder {
-		rt.logger.Debugf(`[%v Router] :: Skipping processing of job:%d of user:%s as user has earlier jobs in throttled map`, rt.destName, job.JobID, userID)
-		return
-	}
 
 	err := json.Unmarshal(job.Parameters, &parameters)
 	if err != nil {
@@ -1279,53 +1250,32 @@ func (rt *HandleT) findWorker(job *jobsdb.JobT, throttledUserMap map[string]stru
 		return
 	}
 
-	var cost int64 = 1 // TODO cost
-	// TODO does it make sense to throttle here?
-	limited, tokenReturner, err := rt.shouldThrottle(parameters.DestinationID, userID, cost)
-	if err != nil {
-		rt.logger.Errorf(`[%v Router] :: Throttling check failed with the error %v . Returning nil worker`, err)
-		defer func() {
-			if toSendWorker == nil && tokenReturner != nil {
-				_ = tokenReturner.Return(context.TODO())
-			}
-		}()
-		if limited {
-			throttledUserMap[userID] = struct{}{}
-			rt.logger.Debugf(
-				`[%v Router] :: Skipping processing of job:%d of user:%s as throttled limits exceeded`,
-				rt.destName, job.JobID, userID,
-			)
-			return
-		}
-
-		if !rt.guaranteeUserEventOrder {
-			// if guaranteeUserEventOrder is false, assigning worker randomly and returning here.
-			toSendWorker = rt.workers[rand.Intn(rt.noOfWorkers)] // skipcq: GSC-G404
-			return
-		}
-
-		//#JobOrder (see other #JobOrder comment)
-		index := rt.getWorkerPartition(userID)
-		worker := rt.workers[index]
-		if worker.canBackoff(job) {
-			return
-		}
-		orderKey := fmt.Sprintf(`%s:%s`, userID, parameters.DestinationID)
-		enter, previousFailedJobID := worker.barrier.Enter(orderKey, job.JobID)
-		if enter {
-			rt.logger.Debugf("EventOrder: job %d of user %s is allowed to be processed", job.JobID, userID)
-			toSendWorker = worker
-			return
-		}
-		previousFailedJobIDStr := "<nil>"
-		if previousFailedJobID != nil {
-			previousFailedJobIDStr = strconv.FormatInt(*previousFailedJobID, 10)
-		}
-		rt.logger.Debugf("EventOrder: job %d of user %s is blocked (previousFailedJobID: %s)", job.JobID, userID, previousFailedJobIDStr)
-		return nil
-		//#EndJobOrder
+	if !rt.guaranteeUserEventOrder {
+		// if guaranteeUserEventOrder is false, assigning worker randomly and returning here.
+		toSendWorker = rt.workers[rand.Intn(rt.noOfWorkers)] // skipcq: GSC-G404
+		return
 	}
+
+	//#JobOrder (see other #JobOrder comment)
+	index := rt.getWorkerPartition(userID)
+	worker := rt.workers[index]
+	if worker.canBackoff(job) {
+		return
+	}
+	orderKey := fmt.Sprintf(`%s:%s`, userID, parameters.DestinationID)
+	enter, previousFailedJobID := worker.barrier.Enter(orderKey, job.JobID)
+	if enter {
+		rt.logger.Debugf("EventOrder: job %d of user %s is allowed to be processed", job.JobID, userID)
+		toSendWorker = worker
+		return
+	}
+	previousFailedJobIDStr := "<nil>"
+	if previousFailedJobID != nil {
+		previousFailedJobIDStr = strconv.FormatInt(*previousFailedJobID, 10)
+	}
+	rt.logger.Debugf("EventOrder: job %d of user %s is blocked (previousFailedJobID: %s)", job.JobID, userID, previousFailedJobIDStr)
 	return nil
+	//#EndJobOrder
 }
 
 func (worker *workerT) canBackoff(job *jobsdb.JobT) (shouldBackoff bool) {
@@ -1782,11 +1732,10 @@ func (rt *HandleT) readAndProcess() int {
 	var statusList []*jobsdb.JobStatusT
 	var toProcess []workerJobT
 
-	throttledUserMap := make(map[string]struct{})
 	// Identify jobs which can be processed
 	for iterator.HasNext() {
 		job := iterator.Next()
-		w := rt.findWorker(job, throttledUserMap)
+		w := rt.findWorker(job)
 		if w != nil {
 			status := jobsdb.JobStatusT{
 				JobID:         job.JobID,
@@ -1805,7 +1754,6 @@ func (rt *HandleT) readAndProcess() int {
 			iterator.Discard(job)
 		}
 	}
-	rt.throttledUserMap = nil
 
 	// Mark the jobs as executing
 	err := misc.RetryWithNotify(context.Background(), rt.jobsDBCommandTimeout, rt.jobdDBMaxRetries, func(ctx context.Context) error {
