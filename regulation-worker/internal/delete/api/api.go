@@ -45,12 +45,10 @@ func (api *APIManager) Delete(ctx context.Context, job model.Job, destConfig map
 
 	var tokenStatusCode int
 	var accountSecretInfo *oauth.AuthResponse
-	// identifier to know if the destination supports OAuth
-	// TODO: "rudderAccountId" has to change to "rudderUserDeleteAccountId"
-	rudderUserDeleteAccountId, delAccountIdExists := destConfig["rudderAccountId"]
-	// TODO: This needs to be changed
-	isOauthEnabled := delAccountIdExists || destName == "GA"
-	if isOauthEnabled {
+	// identifier to know if the destination supports OAuth for regulation-api
+	rudderUserDeleteAccountId, delAccountIdExists := destConfig["rudderUserDeleteAccountId"]
+	pkgLogger.Infof("Destination Config: %v", destConfig)
+	if delAccountIdExists {
 		// Fetch Token call
 		// Get Access Token Information to send it as part of the event
 		tokenStatusCode, accountSecretInfo = api.OAuth.FetchToken(&oauth.RefreshTokenParams{
@@ -64,7 +62,7 @@ func (api *APIManager) Delete(ctx context.Context, job model.Job, destConfig map
 			pkgLogger.Errorf(`[%s][FetchToken] Error in Token Fetch statusCode: %d\t error: %s\n`, destName, tokenStatusCode, accountSecretInfo.Err)
 		}
 	} else {
-		pkgLogger.Errorf("[%v] Destination probably doesn't support OAuth or some issue happened while doing OAuth for deletion [Enabled: %v]", destName, isOauthEnabled)
+		pkgLogger.Errorf("[%v] Destination probably doesn't support OAuth or some issue happened while doing OAuth for deletion [Enabled: %v]", destName, delAccountIdExists)
 	}
 
 	reqBody, err := json.Marshal(bodySchema)
@@ -81,7 +79,7 @@ func (api *APIManager) Delete(ctx context.Context, job model.Job, destConfig map
 	req.Header.Set("Content-Type", "application/json")
 
 	// setting oauth related information
-	if isOauthEnabled {
+	if delAccountIdExists {
 		payload, marshalErr := json.Marshal(accountSecretInfo.Account)
 		if marshalErr != nil {
 			pkgLogger.Errorf("error while marshalling account secret information: %v", marshalErr)
