@@ -1,11 +1,14 @@
 package identity
 
+import "github.com/rudderlabs/rudder-server/utils/types/deployment"
+
 // Identifier abstracts how data-plane can be identified to the control-plane.
 //
 //	Including both a unique identifier and the authentication method.
 type Identifier interface {
 	ID() string
 	BasicAuth() (string, string)
+	Type() deployment.Type
 }
 
 var (
@@ -29,6 +32,10 @@ func (w *Workspace) BasicAuth() (string, string) {
 	return w.WorkspaceToken, ""
 }
 
+func (*Workspace) Type() deployment.Type {
+	return deployment.DedicatedType
+}
+
 // Namespace identifier represents a group of workspaces that share a common resource.
 //
 //	Namespace is used but is not limited to implemented multi-tenancy.
@@ -46,6 +53,10 @@ func (n *Namespace) BasicAuth() (string, string) {
 	return n.HostedSecret, ""
 }
 
+func (*Namespace) Type() deployment.Type {
+	return deployment.MultiTenantType
+}
+
 // NOOP is a no-op implementation of the Identifier interface.
 // Used only for testing purposes.
 type NOOP struct{}
@@ -56,6 +67,10 @@ func (*NOOP) ID() string {
 
 func (*NOOP) BasicAuth() (string, string) {
 	return "", ""
+}
+
+func (*NOOP) Type() deployment.Type {
+	return ""
 }
 
 type IdentifierDecorator struct {

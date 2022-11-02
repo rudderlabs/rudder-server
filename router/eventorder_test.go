@@ -1,4 +1,4 @@
-package main_test
+package router_test
 
 import (
 	"bytes"
@@ -19,10 +19,10 @@ import (
 
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/router/utils"
+	"github.com/rudderlabs/rudder-server/runner"
 	"github.com/rudderlabs/rudder-server/testhelper/health"
 
 	"github.com/ory/dockertest/v3"
-	main "github.com/rudderlabs/rudder-server"
 	"github.com/rudderlabs/rudder-server/testhelper"
 	"github.com/rudderlabs/rudder-server/testhelper/destination"
 	trand "github.com/rudderlabs/rudder-server/testhelper/rand"
@@ -48,201 +48,212 @@ import (
 // After sending the jobs to the server, we verify that the destination has received the jobs in the
 // correct order. We also verify that the server has not sent any job twice.
 func TestEventOrderGuarantee(t *testing.T) {
-	// necessary until we move away from a singleton config
-	config.Reset()
-	defer config.Reset()
+	eventOrderTest := func(useFairPickup bool) func(t *testing.T) {
+		return func(t *testing.T) {
+			// necessary until we move away from a singleton config
+			config.Reset()
+			defer config.Reset()
 
-	const (
-		users         = 50                   // how many userIDs we will send jobs for
-		jobsPerUser   = 40                   // how many jobs per user we will send
-		batchSize     = 10                   // how many jobs for the same user we will send in each batch request
-		responseDelay = 2 * time.Millisecond // how long we will the webhook wait before sending a response
-	)
-	var (
-		m      eventOrderMethods
-		passed bool
-	)
+			const (
+				users         = 50                   // how many userIDs we will send jobs for
+				jobsPerUser   = 40                   // how many jobs per user we will send
+				batchSize     = 10                   // how many jobs for the same user we will send in each batch request
+				responseDelay = 2 * time.Millisecond // how long we will the webhook wait before sending a response
+			)
+			var (
+				m      eventOrderMethods
+				passed bool
+			)
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
 
-	// generate the spec we are going to use
-	// this will create a number of jobs for a number of users
-	// and prescribe the sequence of status codes that the webhook will return for each one e.g. 500, 500, 200
-	spec := m.newTestSpec(users, jobsPerUser)
-	spec.responseDelay = responseDelay
+			// generate the spec we are going to use
+			// this will create a number of jobs for a number of users
+			// and prescribe the sequence of status codes that the webhook will return for each one e.g. 500, 500, 200
+			spec := m.newTestSpec(users, jobsPerUser)
+			spec.responseDelay = responseDelay
 
-	t.Logf("Starting docker services (postgres & transformer)")
-	var (
-		postgresContainer    *destination.PostgresResource
-		transformerContainer *destination.TransformerResource
-		gatewayPort          string
-	)
-	pool, err := dockertest.NewPool("")
-	require.NoError(t, err)
-	containersGroup, _ := errgroup.WithContext(ctx)
-	containersGroup.Go(func() (err error) {
-		postgresContainer, err = destination.SetupPostgres(pool, t)
-		return err
-	})
-	containersGroup.Go(func() (err error) {
-		transformerContainer, err = destination.SetupTransformer(pool, t)
-		return err
-	})
-	require.NoError(t, containersGroup.Wait())
-	t.Logf("Started docker services")
+			t.Logf("Starting docker services (postgres & transformer)")
+			var (
+				postgresContainer    *destination.PostgresResource
+				transformerContainer *destination.TransformerResource
+				gatewayPort          string
+			)
+			pool, err := dockertest.NewPool("")
+			require.NoError(t, err)
+			containersGroup, _ := errgroup.WithContext(ctx)
+			containersGroup.Go(func() (err error) {
+				postgresContainer, err = destination.SetupPostgres(pool, t)
+				return err
+			})
+			containersGroup.Go(func() (err error) {
+				transformerContainer, err = destination.SetupTransformer(pool, t)
+				return err
+			})
+			require.NoError(t, containersGroup.Wait())
+			t.Logf("Started docker services")
 
-	t.Logf("Starting webhook destination server")
-	webhook := m.newWebhook(t, spec)
-	defer webhook.Server.Close()
+			t.Logf("Starting webhook destination server")
+			webhook := m.newWebhook(t, spec)
+			defer webhook.Server.Close()
 
-	t.Logf("Preparing rudder-server config")
-	writeKey := trand.String(27)
-	workspaceID := trand.String(27)
-	destinationID := trand.String(27)
-	templateCtx := map[string]string{
-		"webhookUrl":    webhook.Server.URL,
-		"writeKey":      writeKey,
-		"workspaceId":   workspaceID,
-		"destinationId": destinationID,
-	}
-	configJsonPath := workspaceConfig.CreateTempFile(t, "testdata/eventOrderTestTemplate.json", templateCtx)
-	config.Set("BackendConfig.configFromFile", true)
-	config.Set("BackendConfig.configJSONPath", configJsonPath)
+			t.Logf("Preparing rudder-server config")
+			writeKey := trand.String(27)
+			workspaceID := trand.String(27)
+			destinationID := trand.String(27)
+			templateCtx := map[string]string{
+				"webhookUrl":    webhook.Server.URL,
+				"writeKey":      writeKey,
+				"workspaceId":   workspaceID,
+				"destinationId": destinationID,
+			}
+			configJsonPath := workspaceConfig.CreateTempFile(t, "testdata/eventOrderTestTemplate.json", templateCtx)
+			config.Set("BackendConfig.configFromFile", true)
+			config.Set("BackendConfig.configJSONPath", configJsonPath)
 
-	t.Logf("Starting rudder-server")
-	config.Set("DEPLOYMENT_TYPE", string(deployment.DedicatedType))
-	config.Set("recovery.storagePath", path.Join(t.TempDir(), "/recovery_data.json"))
+			t.Logf("Starting rudder-server")
+			config.Set("DEPLOYMENT_TYPE", string(deployment.DedicatedType))
+			config.Set("recovery.storagePath", path.Join(t.TempDir(), "/recovery_data.json"))
 
-	config.Set("DB.port", postgresContainer.Port)
-	config.Set("DB.user", postgresContainer.User)
-	config.Set("DB.name", postgresContainer.Database)
-	config.Set("DB.password", postgresContainer.Password)
-	config.Set("DEST_TRANSFORM_URL", transformerContainer.TransformURL)
+			config.Set("DB.port", postgresContainer.Port)
+			config.Set("DB.user", postgresContainer.User)
+			config.Set("DB.name", postgresContainer.Database)
+			config.Set("DB.password", postgresContainer.Password)
+			config.Set("DEST_TRANSFORM_URL", transformerContainer.TransformURL)
 
-	config.Set("Warehouse.mode", "off")
-	config.Set("enableStats", false)
-	config.Set("JobsDB.backup.enabled", false)
+			config.Set("Warehouse.mode", "off")
+			config.Set("enableStats", false)
+			config.Set("JobsDB.backup.enabled", false)
+			config.Set("Router.jobIterator.maxQueries", 100)
+			config.Set("Router.jobIterator.discardedPercentageTolerance", 0)
+			config.Set("JobsDB.fairPickup", useFairPickup)
 
-	// generatorLoop
-	config.Set("Router.jobQueryBatchSize", 500)
-	config.Set("Router.readSleep", "10ms")
-	config.Set("Router.minRetryBackoff", "5ms")
-	config.Set("Router.maxRetryBackoff", "10ms")
+			// generatorLoop
+			config.Set("Router.jobQueryBatchSize", 500)
+			config.Set("Router.readSleep", "10ms")
+			config.Set("Router.minRetryBackoff", "5ms")
+			config.Set("Router.maxRetryBackoff", "10ms")
 
-	// worker
-	config.Set("Router.noOfJobsPerChannel", "100")
-	config.Set("Router.jobsBatchTimeout", "100ms")
+			// worker
+			config.Set("Router.noOfJobsPerChannel", "100")
+			config.Set("Router.jobsBatchTimeout", "100ms")
 
-	// statusInsertLoop
-	config.Set("Router.updateStatusBatchSize", 100)
-	config.Set("Router.maxStatusUpdateWait", "10ms")
+			// statusInsertLoop
+			config.Set("Router.updateStatusBatchSize", 100)
+			config.Set("Router.maxStatusUpdateWait", "10ms")
 
-	defer config.Reset()
+			defer config.Reset()
 
-	// find free port for gateway http server to listen on
-	httpPortInt, err := testhelper.GetFreePort()
-	require.NoError(t, err)
-	gatewayPort = strconv.Itoa(httpPortInt)
+			// find free port for gateway http server to listen on
+			httpPortInt, err := testhelper.GetFreePort()
+			require.NoError(t, err)
+			gatewayPort = strconv.Itoa(httpPortInt)
 
-	config.Set("Gateway.webPort", gatewayPort)
-	config.Set("RUDDER_TMPDIR", os.TempDir())
+			config.Set("Gateway.webPort", gatewayPort)
+			config.Set("RUDDER_TMPDIR", os.TempDir())
 
-	svcDone := make(chan struct{})
-	go func() {
-		defer func() {
-			if r := recover(); r != nil {
-				if passed {
-					t.Logf("server panicked: %v", r)
-					close(svcDone)
-				} else {
-					t.Errorf("server panicked: %v", r)
+			svcDone := make(chan struct{})
+			go func() {
+				defer func() {
+					if r := recover(); r != nil {
+						if passed {
+							t.Logf("server panicked: %v", r)
+							close(svcDone)
+						} else {
+							t.Errorf("server panicked: %v", r)
+						}
+					}
+				}()
+				r := runner.New(runner.ReleaseInfo{})
+				c := r.Run(ctx, []string{"eventorder-test-rudder-server"})
+				t.Logf("server stopped: %d", c)
+				if c != 0 {
+					t.Errorf("server exited with a non-0 exit code: %d", c)
+				}
+				close(svcDone)
+			}()
+
+			go func() { // randomly drain jobs
+				for {
+					select {
+					case <-ctx.Done():
+						return
+					case <-time.After(150 * time.Millisecond):
+						key := fmt.Sprintf("Router.%s.jobRetention", destinationID)
+						config.Set(key, "1s")
+						time.Sleep(1 * time.Millisecond)
+						config.Set(key, "10m")
+					}
+				}
+			}()
+
+			t.Logf("waiting rudder-server to start properly")
+			health.WaitUntilReady(ctx, t,
+				fmt.Sprintf("http://localhost:%s/health", gatewayPort),
+				200*time.Second,
+				100*time.Millisecond,
+				t.Name(),
+			)
+
+			t.Logf("rudder-server started")
+
+			batches := m.splitInBatches(spec.jobsOrdered, batchSize)
+			go func() {
+				t.Logf("Sending %d total events for %d total users in %d batches", len(spec.jobsOrdered), users, len(batches))
+				client := &http.Client{}
+				url := fmt.Sprintf("http://localhost:%s/v1/batch", gatewayPort)
+				for _, payload := range batches {
+					req, err := http.NewRequest("POST", url, bytes.NewReader(payload))
+					require.NoError(t, err, "should be able to create a new request")
+					req.SetBasicAuth(writeKey, "password")
+					resp, err := client.Do(req)
+					require.NoError(t, err, "should be able to send the request to gateway")
+					require.Equal(t, http.StatusOK, resp.StatusCode, "should be able to send the request to gateway successfully", payload)
+					resp.Body.Close()
+				}
+			}()
+
+			t.Logf("Waiting for the magic to happen... eventually")
+
+			var done int
+			require.Eventually(t, func() bool {
+				select {
+				case <-svcDone: // server has exited, no point in keep trying
+					return true
+				default:
+				}
+				if t.Failed() { // webhook failed, no point in keep retrying
+					return true
+				}
+				total := len(spec.jobs)
+				drained := m.countDrainedJobs(postgresContainer.DB)
+				if done != len(spec.done)+drained {
+					done = len(spec.done) + drained
+					t.Logf("%d/%d done (%d drained)", done, total, drained)
+				}
+				return done == total
+			}, 300*time.Second, 2*time.Second, "webhook should receive all events and process them till the end")
+
+			require.False(t, t.Failed(), "webhook shouldn't have failed")
+
+			for userID, jobs := range spec.doneOrdered {
+				var previousJobID int
+				for _, jobID := range jobs {
+					require.Greater(t, jobID, previousJobID, "%s: jobID %d should be greater than previous jobID %d", userID, jobID, previousJobID)
+					previousJobID = jobID
 				}
 			}
-		}()
-		c := main.Run(ctx)
-		t.Logf("server stopped: %d", c)
-		if c != 0 {
-			t.Errorf("server exited with a non-0 exit code: %d", c)
-		}
-		close(svcDone)
-	}()
 
-	go func() { // randomly drain jobs
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-time.After(150 * time.Millisecond):
-				key := fmt.Sprintf("Router.%s.jobRetention", destinationID)
-				config.Set(key, "1s")
-				time.Sleep(1 * time.Millisecond)
-				config.Set(key, "10m")
-			}
-		}
-	}()
-
-	t.Logf("waiting rudder-server to start properly")
-	health.WaitUntilReady(ctx, t,
-		fmt.Sprintf("http://localhost:%s/health", gatewayPort),
-		200*time.Second,
-		100*time.Millisecond,
-		t.Name(),
-	)
-
-	t.Logf("rudder-server started")
-
-	batches := m.splitInBatches(spec.jobsOrdered, batchSize)
-	go func() {
-		t.Logf("Sending %d total events for %d total users in %d batches", len(spec.jobsOrdered), users, len(batches))
-		client := &http.Client{}
-		url := fmt.Sprintf("http://localhost:%s/v1/batch", gatewayPort)
-		for _, payload := range batches {
-			req, err := http.NewRequest("POST", url, bytes.NewReader(payload))
-			require.NoError(t, err, "should be able to create a new request")
-			req.SetBasicAuth(writeKey, "password")
-			resp, err := client.Do(req)
-			require.NoError(t, err, "should be able to send the request to gateway")
-			require.Equal(t, http.StatusOK, resp.StatusCode, "should be able to send the request to gateway successfully", payload)
-			resp.Body.Close()
-		}
-	}()
-
-	t.Logf("Waiting for the magic to happen... eventually")
-
-	var done int
-	require.Eventually(t, func() bool {
-		select {
-		case <-svcDone: // server has exited, no point in keep trying
-			return true
-		default:
-		}
-		if t.Failed() { // webhook failed, no point in keep retrying
-			return true
-		}
-		total := len(spec.jobs)
-		drained := m.countDrainedJobs(postgresContainer.DB)
-		if done != len(spec.done)+drained {
-			done = len(spec.done) + drained
-			t.Logf("%d/%d done (%d drained)", done, total, drained)
-		}
-		return done == total
-	}, 300*time.Second, 2*time.Second, "webhook should receive all events and process them till the end")
-
-	require.False(t, t.Failed(), "webhook shouldn't have failed")
-
-	for userID, jobs := range spec.doneOrdered {
-		var previousJobID int
-		for _, jobID := range jobs {
-			require.Greater(t, jobID, previousJobID, "%s: jobID %d should be greater than previous jobID %d", userID, jobID, previousJobID)
-			previousJobID = jobID
+			t.Logf("All jobs arrived in expected order - test passed!")
+			passed = true
+			cancel()
+			<-svcDone
 		}
 	}
 
-	t.Logf("All jobs arrived in expected order - test passed!")
-	passed = true
-	cancel()
-	<-svcDone
+	t.Run("fair pickup", eventOrderTest(true))
+	t.Run("legacy pickup", eventOrderTest(false))
 }
 
 // Using a struct to keep main_test package clean and
@@ -292,7 +303,7 @@ func (eventOrderMethods) randomStatus() (status int, terminal bool) {
 		http.StatusOK, http.StatusOK, http.StatusOK, http.StatusOK,
 		http.StatusInternalServerError,
 	}
-	status = statuses[rand.Intn(len(statuses))]
+	status = statuses[rand.Intn(len(statuses))] // skipcq: GSC-G404
 	terminal = status != http.StatusInternalServerError
 	return status, terminal
 }
@@ -339,12 +350,11 @@ func (eventOrderMethods) newWebhook(t *testing.T, spec *eventOrderSpec) *eventOr
 			// t.Logf("job %d done", jobID)
 		}
 		if spec.responseDelay > 0 {
-			time.Sleep(time.Duration(rand.Intn(int(spec.responseDelay.Milliseconds()))) * time.Millisecond)
+			time.Sleep(time.Duration(rand.Intn(int(spec.responseDelay.Milliseconds()))) * time.Millisecond) // skipcq: GSC-G404
 		}
-
 		w.WriteHeader(responseCode)
-		_, error := w.Write([]byte(fmt.Sprintf("%d", responseCode)))
-		require.NoError(t, error, "should be able to write the response code to the response")
+		_, err = w.Write([]byte(fmt.Sprintf("%d", responseCode)))
+		require.NoError(t, err, "should be able to write the response code to the response")
 	}))
 	return &wh
 }
