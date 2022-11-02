@@ -1,6 +1,6 @@
 module github.com/rudderlabs/rudder-server
 
-go 1.18
+go 1.19
 
 replace (
 	// FIXME: this is a hacky way to address vulnerabilities in indirect dependencies
@@ -186,14 +186,14 @@ require (
 	github.com/xeipuuv/gojsonpointer v0.0.0-20180127040702-4e3ac2762d5f // indirect
 	github.com/xeipuuv/gojsonreference v0.0.0-20180127040603-bd5ef7bd5415 // indirect
 	github.com/xeipuuv/gojsonschema v1.2.0 // indirect
-	github.com/xitongsys/parquet-go-source v0.0.0-20220803203939-583c0659c569 // indirect
+	github.com/xitongsys/parquet-go-source v0.0.0-20220803203939-583c0659c569
 	github.com/xrash/smetrics v0.0.0-20201216005158-039620a65673 // indirect
 	go.etcd.io/etcd/client/pkg/v3 v3.5.5 // indirect
 	go.opencensus.io v0.23.0 // indirect
 	go.uber.org/atomic v1.10.0 // indirect
 	go.uber.org/multierr v1.8.0 // indirect
 	golang.org/x/crypto v0.0.0-20220926161630-eccd6366d1be // indirect
-	golang.org/x/exp v0.0.0-20210220032938-85be41e4509f // indirect
+	golang.org/x/exp v0.0.0-20220303212507-bbda1eaf7a17 // indirect
 	golang.org/x/sys v0.0.0-20220928140112-f11e5e49a4ec // indirect
 	golang.org/x/text v0.3.7 // indirect
 	golang.org/x/xerrors v0.0.0-20220907171357-04be3eba64a2 // indirect
@@ -213,3 +213,5 @@ require (
 	github.com/matttproud/golang_protobuf_extensions v1.0.2-0.20181231171920-c182affec369 // indirect
 	github.com/pelletier/go-toml/v2 v2.0.5 // indirect
 )
+
+require github.com/samber/lo v1.33.0

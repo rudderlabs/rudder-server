@@ -827,49 +827,49 @@ func TestMultiTenantLegacyGetAllJobs(t *testing.T) {
 
 	t.Run("GetAllJobs with large limits", func(t *testing.T) {
 		params := GetQueryParamsT{JobsLimit: 30}
-		allJobs, err := mtl.GetAllJobs(context.Background(), map[string]int{defaultWorkspaceID: 30}, params, 0)
+		allJobs, err := mtl.GetAllJobs(context.Background(), map[string]int{defaultWorkspaceID: 30}, params, 0, nil)
 		require.NoError(t, err, "failed to get all jobs")
-		require.Equal(t, 30, len(allJobs), "should get all 30 jobs")
+		require.Equal(t, 30, len(allJobs.Jobs), "should get all 30 jobs")
 	})
 
 	t.Run("GetAllJobs with only jobs limit", func(t *testing.T) {
 		jobsLimit := 10
 		params := GetQueryParamsT{JobsLimit: 10}
-		allJobs, err := mtl.GetAllJobs(context.Background(), map[string]int{defaultWorkspaceID: jobsLimit}, params, 0)
+		allJobs, err := mtl.GetAllJobs(context.Background(), map[string]int{defaultWorkspaceID: jobsLimit}, params, 0, nil)
 		require.NoError(t, err, "failed to get all jobs")
-		require.Truef(t, len(allJobs)-jobsLimit == 0, "should get %d jobs", jobsLimit)
+		require.Truef(t, len(allJobs.Jobs)-jobsLimit == 0, "should get %d jobs", jobsLimit)
 	})
 
 	t.Run("GetAllJobs with events limit", func(t *testing.T) {
 		jobsLimit := 10
 		params := GetQueryParamsT{JobsLimit: 10, EventsLimit: 3 * eventsPerJob}
-		allJobs, err := mtl.GetAllJobs(context.Background(), map[string]int{defaultWorkspaceID: jobsLimit}, params, 0)
+		allJobs, err := mtl.GetAllJobs(context.Background(), map[string]int{defaultWorkspaceID: jobsLimit}, params, 0, nil)
 		require.NoError(t, err, "failed to get all jobs")
-		require.Equal(t, 3, len(allJobs), "should get 3 jobs")
+		require.Equal(t, 3, len(allJobs.Jobs), "should get 3 jobs")
 	})
 
 	t.Run("GetAllJobs with events limit less than the events of the first job get one job", func(t *testing.T) {
 		jobsLimit := 10
 		params := GetQueryParamsT{JobsLimit: jobsLimit, EventsLimit: eventsPerJob - 1}
-		allJobs, err := mtl.GetAllJobs(context.Background(), map[string]int{defaultWorkspaceID: jobsLimit}, params, 0)
+		allJobs, err := mtl.GetAllJobs(context.Background(), map[string]int{defaultWorkspaceID: jobsLimit}, params, 0, nil)
 		require.NoError(t, err, "failed to get all jobs")
-		require.Equal(t, 1, len(allJobs), "should get 1 overflown job")
+		require.Equal(t, 1, len(allJobs.Jobs), "should get 1 overflown job")
 	})
 
 	t.Run("GetAllJobs with payload limit", func(t *testing.T) {
 		jobsLimit := 10
 		params := GetQueryParamsT{JobsLimit: jobsLimit, PayloadSizeLimit: 3 * payloadSize}
-		allJobs, err := mtl.GetAllJobs(context.Background(), map[string]int{defaultWorkspaceID: jobsLimit}, params, 0)
+		allJobs, err := mtl.GetAllJobs(context.Background(), map[string]int{defaultWorkspaceID: jobsLimit}, params, 0, nil)
 		require.NoError(t, err, "failed to get all jobs")
-		require.Equal(t, 3, len(allJobs), "should get 3 jobs")
+		require.Equal(t, 3, len(allJobs.Jobs), "should get 3 jobs")
 	})
 
 	t.Run("GetAllJobs with payload limit less than the payload size should get one job", func(t *testing.T) {
 		jobsLimit := 10
 		params := GetQueryParamsT{JobsLimit: jobsLimit, PayloadSizeLimit: payloadSize - 1}
-		allJobs, err := mtl.GetAllJobs(context.Background(), map[string]int{defaultWorkspaceID: jobsLimit}, params, 0)
+		allJobs, err := mtl.GetAllJobs(context.Background(), map[string]int{defaultWorkspaceID: jobsLimit}, params, 0, nil)
 		require.NoError(t, err, "failed to get all jobs")
-		require.Equal(t, 1, len(allJobs), "should get 1 overflown job")
+		require.Equal(t, 1, len(allJobs.Jobs), "should get 1 overflown job")
 	})
 }
 
@@ -933,9 +933,9 @@ func TestMultiTenantGetAllJobs(t *testing.T) {
 			workspaceC: 30,
 		}
 		params := GetQueryParamsT{JobsLimit: 90}
-		allJobs, err := mtl.GetAllJobs(context.Background(), workspaceLimits, params, 100)
+		allJobs, err := mtl.GetAllJobs(context.Background(), workspaceLimits, params, 100, nil)
 		require.NoError(t, err, "failed to get all jobs")
-		require.Equal(t, 90, len(allJobs), "should get all 90 jobs")
+		require.Equal(t, 90, len(allJobs.Jobs), "should get all 90 jobs")
 	})
 
 	t.Run("GetAllJobs with only jobs limit", func(t *testing.T) {
@@ -946,9 +946,9 @@ func TestMultiTenantGetAllJobs(t *testing.T) {
 			workspaceC: 0,
 		}
 		params := GetQueryParamsT{JobsLimit: jobsLimit * 2}
-		allJobs, err := mtl.GetAllJobs(context.Background(), workspaceLimits, params, 100)
+		allJobs, err := mtl.GetAllJobs(context.Background(), workspaceLimits, params, 100, nil)
 		require.NoError(t, err, "failed to get all jobs")
-		require.Truef(t, len(allJobs)-2*jobsLimit == 0, "should get %d jobs", 2*jobsLimit)
+		require.Truef(t, len(allJobs.Jobs)-2*jobsLimit == 0, "should get %d jobs", 2*jobsLimit)
 	})
 
 	t.Run("GetAllJobs with payload limit", func(t *testing.T) {
@@ -958,9 +958,9 @@ func TestMultiTenantGetAllJobs(t *testing.T) {
 			workspaceC: 30,
 		}
 		params := GetQueryParamsT{JobsLimit: 90, PayloadSizeLimit: 6 * payloadSize}
-		allJobs, err := mtl.GetAllJobs(context.Background(), workspaceLimits, params, 100)
+		allJobs, err := mtl.GetAllJobs(context.Background(), workspaceLimits, params, 100, nil)
 		require.NoError(t, err, "failed to get all jobs")
-		require.Equal(t, 6+3, len(allJobs), "should get limit jobs +1 (overflow) per workspace")
+		require.Equal(t, 6+3, len(allJobs.Jobs), "should get limit jobs +1 (overflow) per workspace")
 	})
 
 	t.Run("GetAllJobs with payload limit less than the payload size should get one job", func(t *testing.T) {
@@ -970,9 +970,9 @@ func TestMultiTenantGetAllJobs(t *testing.T) {
 			workspaceC: 30,
 		}
 		params := GetQueryParamsT{JobsLimit: 90, PayloadSizeLimit: payloadSize - 1}
-		allJobs, err := mtl.GetAllJobs(context.Background(), workspaceLimits, params, 100)
+		allJobs, err := mtl.GetAllJobs(context.Background(), workspaceLimits, params, 100, nil)
 		require.NoError(t, err, "failed to get all jobs")
-		require.Equal(t, 3, len(allJobs), "should get limit+1 jobs")
+		require.Equal(t, 3, len(allJobs.Jobs), "should get limit+1 jobs")
 	})
 }
 

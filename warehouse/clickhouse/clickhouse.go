@@ -843,16 +843,36 @@ func (ch *HandleT) DropTable(tableName string) (err error) {
 	return
 }
 
-// AddColumn adds column:columnName with dataType columnType to the tableName
-func (ch *HandleT) AddColumn(tableName, columnName, columnType string) (err error) {
-	cluster := warehouseutils.GetConfigValue(Cluster, ch.Warehouse)
-	clusterClause := ""
+func (ch *HandleT) AddColumns(tableName string, columnsInfo []warehouseutils.ColumnInfo) (err error) {
+	var (
+		query         string
+		cluster       string
+		clusterClause string
+	)
+
+	cluster = warehouseutils.GetConfigValue(Cluster, ch.Warehouse)
 	if len(strings.TrimSpace(cluster)) > 0 {
 		clusterClause = fmt.Sprintf(`ON CLUSTER %q`, cluster)
 	}
-	sqlStatement := fmt.Sprintf(`ALTER TABLE %q.%q %s ADD COLUMN IF NOT EXISTS %q %s`, ch.Namespace, tableName, clusterClause, columnName, getClickHouseColumnTypeForSpecificTable(tableName, columnName, rudderDataTypesMapToClickHouse[columnType], false))
-	pkgLogger.Infof("CH: Adding column in clickhouse for ch:%s : %v", ch.Warehouse.Destination.ID, sqlStatement)
-	_, err = ch.Db.Exec(sqlStatement)
+
+	query = fmt.Sprintf(`
+		ALTER TABLE
+		  %q.%q %s`,
+		ch.Namespace,
+		tableName,
+		clusterClause,
+	)
+
+	for _, columnInfo := range columnsInfo {
+		columnType := getClickHouseColumnTypeForSpecificTable(tableName, columnInfo.Name, rudderDataTypesMapToClickHouse[columnInfo.Type], false)
+		query += fmt.Sprintf(` ADD COLUMN IF NOT EXISTS %q %s,`, columnInfo.Name, columnType)
+	}
+
+	query = strings.TrimSuffix(query, ",")
+	query += ";"
+
+	pkgLogger.Infof("CH: Adding columns for destinationID: %s, tableName: %s with query: %v", ch.Warehouse.Destination.ID, tableName, query)
+	_, err = ch.Db.Exec(query)
 	return
 }
 
