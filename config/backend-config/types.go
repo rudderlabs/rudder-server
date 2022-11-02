@@ -114,6 +114,21 @@ type StoragePreferences struct {
 	BatchRouterDumps bool `json:"batchRouterDumps"`
 }
 
+func (sp StoragePreferences) Backup(tableprefix string) bool {
+	switch tableprefix {
+	case "gw":
+		return sp.GatewayDumps
+	case "rt":
+		return sp.RouterDumps
+	case "batch_rt":
+		return sp.BatchRouterDumps
+	case "proc_error":
+		return sp.ProcErrorDumps
+	default:
+		return false
+	}
+}
+
 type ConnectionFlags struct {
 	URL      string          `json:"url"`
 	Services map[string]bool `json:"services"`

@@ -130,7 +130,6 @@ func (jd *HandleT) cleanStatusTable(backupDSRange *dataSetRangeT) error {
 
 func (jd *HandleT) failedOnlyBackup(ctx context.Context, backupDSRange *dataSetRangeT) error {
 	tableName := backupDSRange.ds.JobStatusTable
-	g, _ := errgroup.WithContext(ctx)
 
 	getRowCount := func() (totalCount int64, err error) {
 		countStmt := fmt.Sprintf(`SELECT COUNT(*) from %q where job_state in ('%s', '%s')`, tableName, Failed.State, Aborted.State)
@@ -162,7 +161,7 @@ func (jd *HandleT) failedOnlyBackup(ctx context.Context, backupDSRange *dataSetR
 		return fmt.Sprintf(`%v%v_%v.%v.gz`, tmpDirPath+backupPathDirName, pathPrefix, Aborted.State, workspaceID), nil
 	}
 
-	dumps, err := jd.createTableDump(getFailedOnlyBackupQueryFn(backupDSRange), getFileName, totalCount, fileuploader.NewGzWriter())
+	dumps, err := jd.createTableDump(getFailedOnlyBackupQueryFn(backupDSRange), getFileName, totalCount)
 	if err != nil {
 		return fmt.Errorf("error while creating table dump: %w", err)
 	}
@@ -171,11 +170,11 @@ func (jd *HandleT) failedOnlyBackup(ctx context.Context, backupDSRange *dataSetR
 			os.Remove(filePath)
 		}
 	}()
-	semaphore := make(chan struct{}, config.GetInt("MULTITENANT_JOBS_BACKUP_WORKERS", 64))
+	g, _ := errgroup.WithContext(ctx)
+	g.SetLimit(config.GetInt("MULTITENANT_JOBS_BACKUP_WORKERS", 64))
 	for workspaceID, filePath := range dumps {
-		semaphore <- struct{}{}
 		g.Go(misc.WithBugsnag(func() error {
-			if err = jd.uploadTableDump(ctx, workspaceID, filePath); err != nil {
+			if err := jd.uploadTableDump(ctx, workspaceID, filePath); err != nil {
 				jd.logger.Errorf("[JobsDB] :: Failed to upload table %v. Error: %s", tableName, err.Error())
 				stats.Default.NewTaggedStat("backup_ds_failed", stats.CountType, stats.Tags{"customVal": jd.tablePrefix, "workspaceId": workspaceID}).Increment()
 				return err
@@ -193,7 +192,6 @@ func (jd *HandleT) failedOnlyBackup(ctx context.Context, backupDSRange *dataSetR
 
 func (jd *HandleT) backupJobsTable(ctx context.Context, backupDSRange *dataSetRangeT) error {
 	tableName := backupDSRange.ds.JobTable
-	g, _ := errgroup.WithContext(ctx)
 
 	getRowCount := func() (totalCount int64, err error) {
 		countStmt := fmt.Sprintf(`SELECT COUNT(*) from %q`, tableName)
@@ -234,7 +232,7 @@ func (jd *HandleT) backupJobsTable(ctx context.Context, backupDSRange *dataSetRa
 		), nil
 	}
 
-	dumps, err := jd.createTableDump(getJobsBackupQueryFn(backupDSRange), getFileName, totalCount, fileuploader.NewGzWriter())
+	dumps, err := jd.createTableDump(getJobsBackupQueryFn(backupDSRange), getFileName, totalCount)
 	if err != nil {
 		return fmt.Errorf("error while creating table dump: %w", err)
 	}
@@ -243,9 +241,11 @@ func (jd *HandleT) backupJobsTable(ctx context.Context, backupDSRange *dataSetRa
 			os.Remove(filePath)
 		}
 	}()
-	semaphore := make(chan struct{}, backupWorkers)
+
+	g, _ := errgroup.WithContext(ctx)
+	g.SetLimit(config.GetInt("JobsDB.JobsBackupWorkers", 100))
+
 	for workspaceID, filePath := range dumps {
-		semaphore <- struct{}{}
 		g.Go(misc.WithBugsnag(func() error {
 			if err = jd.uploadTableDump(ctx, workspaceID, filePath); err != nil {
 				jd.logger.Errorf("[JobsDB] :: Failed to upload table %v. Error: %s", tableName, err.Error())
@@ -266,7 +266,6 @@ func (jd *HandleT) backupJobsTable(ctx context.Context, backupDSRange *dataSetRa
 
 func (jd *HandleT) backupStatusTable(ctx context.Context, backupDSRange *dataSetRangeT) error {
 	tableName := backupDSRange.ds.JobStatusTable
-	g, _ := errgroup.WithContext(ctx)
 
 	getRowCount := func() (totalCount int64, err error) {
 		countStmt := fmt.Sprintf(`SELECT COUNT(*) from %q`, tableName)
@@ -299,7 +298,7 @@ func (jd *HandleT) backupStatusTable(ctx context.Context, backupDSRange *dataSet
 		return fmt.Sprintf(`%v%v.%v.gz`, tmpDirPath+backupPathDirName, pathPrefix, workspaceID), nil
 	}
 
-	dumps, err := jd.createTableDump(getStatusBackupQueryFn(backupDSRange), getFileName, totalCount, fileuploader.NewGzWriter())
+	dumps, err := jd.createTableDump(getStatusBackupQueryFn(backupDSRange), getFileName, totalCount)
 	if err != nil {
 		return fmt.Errorf("error while creating table dump: %w", err)
 	}
@@ -308,9 +307,10 @@ func (jd *HandleT) backupStatusTable(ctx context.Context, backupDSRange *dataSet
 			os.Remove(filePath)
 		}
 	}()
-	semaphore := make(chan struct{}, config.GetInt("MULTITENANT_JOBS_BACKUP_WORKERS", 64))
+
+	g, _ := errgroup.WithContext(ctx)
+	g.SetLimit(config.GetInt("JobsDB.JobsBackupWorkers", 100))
 	for workspaceID, filePath := range dumps {
-		semaphore <- struct{}{}
 		g.Go(misc.WithBugsnag(func() error {
 			if err = jd.uploadTableDump(ctx, workspaceID, filePath); err != nil {
 				jd.logger.Errorf("[JobsDB] :: Failed to upload table %v. Error: %s", tableName, err.Error())
@@ -534,7 +534,8 @@ func getStatusBackupQueryFn(backupDSRange *dataSetRangeT) func(int64) string {
 	}
 }
 
-func (jd *HandleT) createTableDump(queryFunc func(int64) string, pathFunc func(string) (string, error), totalCount int64, fileHandler fileuploader.FileHandler) (map[string]string, error) {
+func (jd *HandleT) createTableDump(queryFunc func(int64) string, pathFunc func(string) (string, error), totalCount int64) (map[string]string, error) {
+	fileHandler := fileuploader.NewGzWriter()
 	tableFileDumpTimeStat := stats.Default.NewTaggedStat("table_FileDump_TimeStat", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix})
 	tableFileDumpTimeStat.Start()
 
@@ -558,10 +559,7 @@ func (jd *HandleT) createTableDump(queryFunc func(int64) string, pathFunc func(s
 			if err != nil {
 				return fmt.Errorf("getting storage preferences failed with error : %w", err)
 			}
-			if (!preferences.GatewayDumps && jd.tablePrefix == "gw") ||
-				(!preferences.ProcErrorDumps && jd.tablePrefix == "proc_error") ||
-				(!preferences.RouterDumps && jd.tablePrefix == "rt") ||
-				(!preferences.BatchRouterDumps && jd.tablePrefix == "bacth_rt") {
+			if !preferences.Backup(jd.tablePrefix) {
 				continue
 			}
 			rawJSONRows = append(rawJSONRows, '\n') // appending '\n'

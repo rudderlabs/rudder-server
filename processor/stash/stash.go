@@ -13,7 +13,6 @@ import (
 	uuid "github.com/gofrs/uuid"
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
-	"github.com/rudderlabs/rudder-server/services/filemanager"
 	"github.com/rudderlabs/rudder-server/services/fileuploader"
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/services/transientsource"
@@ -30,7 +29,6 @@ var (
 	maxFailedCountForErrJob int
 	pkgLogger               logger.Logger
 	payloadLimit            int64
-	errBackupWorkers        int
 )
 
 func Init() {
@@ -40,7 +38,6 @@ func Init() {
 
 func loadConfig() {
 	config.RegisterBoolConfigVariable(true, &errorStashEnabled, true, "Processor.errorStashEnabled")
-	config.RegisterIntConfigVariable(100, &errBackupWorkers, false, 1, "Processor.errorBackupWorkers")
 	config.RegisterDurationConfigVariable(30, &errReadLoopSleep, true, time.Second, []string{"Processor.errReadLoopSleep", "errReadLoopSleepInS"}...)
 	config.RegisterIntConfigVariable(1000, &errDBReadBatchSize, true, 1, "Processor.errDBReadBatchSize")
 	config.RegisterIntConfigVariable(2, &noOfErrStashWorkers, true, 1, "Processor.noOfErrStashWorkers")
@@ -116,10 +113,6 @@ func sendQueryRetryStats(attempt int) {
 	stats.Default.NewTaggedStat("jobsdb_query_timeout", stats.CountType, stats.Tags{"attempt": fmt.Sprint(attempt), "module": "stash"}).Count(1)
 }
 
-func (st *HandleT) getFileUploader(workspaceID string) (filemanager.FileManager, error) {
-	return st.fileuploader.GetFileUploader(workspaceID)
-}
-
 func backupEnabled() bool {
 	return errorStashEnabled && jobsdb.IsMasterBackupEnabled()
 }
@@ -165,7 +158,7 @@ func (st *HandleT) storeErrorsToObjectStorage(jobs []*jobsdb.JobT) (errorJob []E
 	gzWriter := fileuploader.NewGzWriter()
 
 	contentSlice := make(map[string][][]byte)
-	workspaceJobs := make(map[string][]*jobsdb.JobT)
+	workspaceJobs := make(map[string][]*jobsdb.JobT) // TODO: we don't really need it
 	for _, job := range jobs {
 		preferences, err := st.fileuploader.GetStoragePreferences(job.WorkspaceId)
 		if err != nil {
@@ -200,20 +193,18 @@ func (st *HandleT) storeErrorsToObjectStorage(jobs []*jobsdb.JobT) (errorJob []E
 		}
 	}()
 
-	g, _ := errgroup.WithContext(context.Background())
-
 	errorJobs := make([]ErrorJob, 0)
 
-	semaphore := make(chan struct{}, errBackupWorkers)
+	g, _ := errgroup.WithContext(context.Background())
+	g.SetLimit(config.GetInt("Processor.errorBackupWorkers", 100))
 	for workspaceID, filePath := range dumps {
-		semaphore <- struct{}{}
 		g.Go(misc.WithBugsnag(func() error {
 			outputFile, err := os.Open(filePath)
 			if err != nil {
 				panic(err)
 			}
 			prefixes := []string{"rudder-proc-err-logs", time.Now().Format("01-02-2006")}
-			errFileUploader, err := st.getFileUploader(workspaceID)
+			errFileUploader, err := st.fileuploader.GetFileUploader(workspaceID)
 			if err != nil {
 				panic(err)
 			}

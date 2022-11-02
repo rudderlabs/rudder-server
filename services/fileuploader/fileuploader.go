@@ -2,6 +2,7 @@ package fileuploader
 
 import (
 	"context"
+	"fmt"
 	"sync"
 
 	"github.com/rudderlabs/rudder-server/config"
@@ -28,11 +29,6 @@ func NewService(ctx context.Context, config backendconfig.BackendConfig) FileUpl
 	return s
 }
 
-func NewDefaultService() FileUploader {
-	d := &defaultservice{}
-	return d
-}
-
 func NewStaticService(storageSettings map[string]storageSettings) FileUploader {
 	s := &service{
 		init:            make(chan struct{}),
@@ -42,35 +38,23 @@ func NewStaticService(storageSettings map[string]storageSettings) FileUploader {
 	return s
 }
 
+func NewDefaultService() FileUploader {
+	d := &defaultservice{}
+	return d
+}
+
 type service struct {
 	onceInit        sync.Once
 	init            chan struct{}
 	storageSettings map[string]storageSettings
 }
 
-type defaultservice struct{}
-
-func (*defaultservice) GetFileUploader(_ string) (filemanager.FileManager, error) {
-	defaultConfig := getDefaultBucket(context.Background())
-	return filemanager.DefaultFileManagerFactory.New(&filemanager.SettingsT{
-		Provider: defaultConfig.Type,
-		Config:   defaultConfig.Config,
-	})
-}
-
-func (*defaultservice) GetStoragePreferences(_ string) (backendconfig.StoragePreferences, error) {
-	return backendconfig.StoragePreferences{
-		ProcErrors:       true,
-		GatewayDumps:     true,
-		ProcErrorDumps:   true,
-		RouterDumps:      true,
-		BatchRouterDumps: true,
-	}, nil
-}
-
 func (s *service) GetFileUploader(workspaceID string) (filemanager.FileManager, error) {
 	<-s.init
-	settings := s.storageSettings[workspaceID]
+	settings, ok := s.storageSettings[workspaceID]
+	if !ok {
+		return nil, fmt.Errorf("no storage settings found for workspace: %s", workspaceID)
+	}
 	return filemanager.DefaultFileManagerFactory.New(&filemanager.SettingsT{
 		Provider: settings.bucket.Type,
 		Config:   settings.bucket.Config,
@@ -79,7 +63,12 @@ func (s *service) GetFileUploader(workspaceID string) (filemanager.FileManager, 
 
 func (s *service) GetStoragePreferences(workspaceID string) (backendconfig.StoragePreferences, error) {
 	<-s.init
-	return s.storageSettings[workspaceID].preferences, nil
+	var prefs backendconfig.StoragePreferences
+	settings, ok := s.storageSettings[workspaceID]
+	if !ok {
+		return prefs, fmt.Errorf("no storage settings found for workspace: %s", workspaceID)
+	}
+	return settings.preferences, nil
 }
 
 func (s *service) updateLoop(ctx context.Context, config backendconfig.BackendConfig) {
@@ -105,15 +94,35 @@ func (s *service) updateLoop(ctx context.Context, config backendconfig.BackendCo
 				preferences: preferences,
 			}
 		}
-
 		s.onceInit.Do(func() {
 			close(s.init)
 		})
+		s.storageSettings = settings
 	}
 
 	s.onceInit.Do(func() {
 		close(s.init)
 	})
+}
+
+type defaultservice struct{}
+
+func (*defaultservice) GetFileUploader(_ string) (filemanager.FileManager, error) {
+	defaultConfig := getDefaultBucket(context.Background())
+	return filemanager.DefaultFileManagerFactory.New(&filemanager.SettingsT{
+		Provider: defaultConfig.Type,
+		Config:   defaultConfig.Config,
+	})
+}
+
+func (*defaultservice) GetStoragePreferences(_ string) (backendconfig.StoragePreferences, error) {
+	return backendconfig.StoragePreferences{
+		ProcErrors:       true,
+		GatewayDumps:     true,
+		ProcErrorDumps:   true,
+		RouterDumps:      true,
+		BatchRouterDumps: true,
+	}, nil
 }
 
 func getDefaultBucket(ctx context.Context) backendconfig.StorageBucket {
@@ -126,11 +135,10 @@ func getDefaultBucket(ctx context.Context) backendconfig.StorageBucket {
 func overrideWithSettings(defaultConfig map[string]interface{}, settings backendconfig.StorageBucket, workspaceID string) backendconfig.StorageBucket {
 	config := make(map[string]interface{})
 	for k, v := range defaultConfig {
-		if _, ok := settings.Config[k]; ok {
-			config[k] = settings.Config[k]
-		} else {
-			config[k] = v
-		}
+		config[k] = v
+	}
+	for k, v := range settings.Config {
+		config[k] = v
 	}
 	if _, ok := config["externalId"]; ok && settings.Type == "S3" {
 		config["externalId"] = workspaceID

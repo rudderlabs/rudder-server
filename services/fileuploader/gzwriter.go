@@ -8,7 +8,7 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
-type FileHandler interface {
+type MultiFileWriter interface {
 	Write(workspaceID, path string, data []byte) (int, error)
 	Close() (map[string]string, error)
 }
