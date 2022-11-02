@@ -155,10 +155,19 @@ func (st *HandleT) storeErrorsToObjectStorage(jobs []*jobsdb.JobT) (errorJob []E
 		gzipFilePath := fmt.Sprintf(`%v.gz`, path)
 		return gzipFilePath
 	}
+	getJobsForWorkspace := func(workspaceID string) []*jobsdb.JobT {
+		var jobsForWorkspace []*jobsdb.JobT
+		for _, job := range jobs {
+			if job.WorkspaceId == workspaceID {
+				jobsForWorkspace = append(jobsForWorkspace, job)
+			}
+		}
+		return jobsForWorkspace
+	}
 	gzWriter := fileuploader.NewGzWriter()
+	dumps := make(map[string]string)
 
 	contentSlice := make(map[string][][]byte)
-	workspaceJobs := make(map[string][]*jobsdb.JobT) // TODO: we don't really need it
 	for _, job := range jobs {
 		preferences, err := st.fileuploader.GetStoragePreferences(job.WorkspaceId)
 		if err != nil {
@@ -175,21 +184,24 @@ func (st *HandleT) storeErrorsToObjectStorage(jobs []*jobsdb.JobT) (errorJob []E
 			contentSlice[job.WorkspaceId] = make([][]byte, 0)
 		}
 		contentSlice[job.WorkspaceId] = append(contentSlice[job.WorkspaceId], rawJob)
-		workspaceJobs[job.WorkspaceId] = append(workspaceJobs[job.WorkspaceId], job)
 	}
 	for workspaceID, contentValue := range contentSlice {
 		content := bytes.Join(contentValue, []byte("\n"))
-		if _, err := gzWriter.Write(workspaceID, getFileName(workspaceID), content); err != nil {
+		path := getFileName(workspaceID)
+		if _, err := gzWriter.Write(path, content); err != nil {
 			panic(err)
 		}
+		if _, ok := dumps[workspaceID]; !ok {
+			dumps[workspaceID] = path
+		}
 	}
-	dumps, err := gzWriter.Close()
+	err = gzWriter.Close()
 	if err != nil {
 		panic(err)
 	}
 	defer func() {
-		for _, filePath := range dumps {
-			os.Remove(filePath)
+		for _, path := range dumps {
+			os.Remove(path)
 		}
 	}()
 
@@ -210,7 +222,7 @@ func (st *HandleT) storeErrorsToObjectStorage(jobs []*jobsdb.JobT) (errorJob []E
 			}
 			uploadOutput, err := errFileUploader.Upload(context.TODO(), outputFile, prefixes...)
 			errorJobs = append(errorJobs, ErrorJob{
-				jobs: workspaceJobs[workspaceID],
+				jobs: getJobsForWorkspace(workspaceID),
 				errorOutput: StoreErrorOutputT{
 					Location: uploadOutput.Location,
 					Error:    err,

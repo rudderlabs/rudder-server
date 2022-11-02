@@ -16,10 +16,13 @@ type storageSettings struct {
 }
 
 type FileUploader interface {
+	// Gets a file manager for the given workspace.
 	GetFileUploader(workspaceID string) (filemanager.FileManager, error)
+	// Gets the storage preferences for the given workspace.
 	GetStoragePreferences(workspaceID string) (backendconfig.StoragePreferences, error)
 }
 
+// NewService creates a new service that updates its storage settings while backend configuration gets updated.
 func NewService(ctx context.Context, config backendconfig.BackendConfig) FileUploader {
 	s := &service{
 		init:            make(chan struct{}),
@@ -29,6 +32,8 @@ func NewService(ctx context.Context, config backendconfig.BackendConfig) FileUpl
 	return s
 }
 
+// NewStaticService creates a new service that operates against a predefined storage settings.
+// Useful for tests.
 func NewStaticService(storageSettings map[string]storageSettings) FileUploader {
 	s := &service{
 		init:            make(chan struct{}),
@@ -38,6 +43,8 @@ func NewStaticService(storageSettings map[string]storageSettings) FileUploader {
 	return s
 }
 
+// NewDefaultService creates a new service that operates against the default storage settings populated from the env.
+// Useful for tests that populate settings from env.
 func NewDefaultService() FileUploader {
 	d := &defaultservice{}
 	return d
@@ -71,8 +78,9 @@ func (s *service) GetStoragePreferences(workspaceID string) (backendconfig.Stora
 	return settings.preferences, nil
 }
 
-func (s *service) updateLoop(ctx context.Context, config backendconfig.BackendConfig) {
-	ch := config.Subscribe(ctx, backendconfig.TopicBackendConfig)
+// updateLoop uses backend config to retrieve & keep up-to-date the storage settings of all workspaces.
+func (s *service) updateLoop(ctx context.Context, backendConfig backendconfig.BackendConfig) {
+	ch := backendConfig.Subscribe(ctx, backendconfig.TopicBackendConfig)
 
 	settings := make(map[string]storageSettings)
 
@@ -81,12 +89,13 @@ func (s *service) updateLoop(ctx context.Context, config backendconfig.BackendCo
 
 	for ev := range ch {
 		configs := ev.Data.(map[string]backendconfig.ConfigT)
-		defaultBucket := getDefaultBucket(ctx)
 		for _, c := range configs {
 			if c.Settings.DataRetention.UseSelfStorage {
-				bucket = overrideWithSettings(defaultBucket.Config, c.Settings.DataRetention.StorageBucket, c.WorkspaceID)
+				settings := c.Settings.DataRetention.StorageBucket
+				defaultBucket := getDefaultBucket(ctx, settings.Type)
+				bucket = overrideWithSettings(defaultBucket.Config, settings, c.WorkspaceID)
 			} else {
-				bucket = defaultBucket
+				bucket = getDefaultBucket(ctx, config.GetString("JOBS_BACKUP_STORAGE_PROVIDER", "S3"))
 			}
 			preferences = c.Settings.DataRetention.StoragePreferences
 			settings[c.WorkspaceID] = storageSettings{
@@ -108,7 +117,7 @@ func (s *service) updateLoop(ctx context.Context, config backendconfig.BackendCo
 type defaultservice struct{}
 
 func (*defaultservice) GetFileUploader(_ string) (filemanager.FileManager, error) {
-	defaultConfig := getDefaultBucket(context.Background())
+	defaultConfig := getDefaultBucket(context.Background(), config.GetString("JOBS_BACKUP_STORAGE_PROVIDER", "S3"))
 	return filemanager.DefaultFileManagerFactory.New(&filemanager.SettingsT{
 		Provider: defaultConfig.Type,
 		Config:   defaultConfig.Config,
@@ -125,10 +134,10 @@ func (*defaultservice) GetStoragePreferences(_ string) (backendconfig.StoragePre
 	}, nil
 }
 
-func getDefaultBucket(ctx context.Context) backendconfig.StorageBucket {
+func getDefaultBucket(ctx context.Context, provider string) backendconfig.StorageBucket {
 	return backendconfig.StorageBucket{
-		Type:   config.GetString("JOBS_BACKUP_STORAGE_PROVIDER", "S3"),
-		Config: filemanager.GetProviderConfigForBackupsFromEnv(ctx),
+		Type:   provider,
+		Config: filemanager.GetProviderConfigFromEnv(ctx, provider),
 	}
 }
 

@@ -9,44 +9,44 @@ import (
 )
 
 type MultiFileWriter interface {
-	Write(workspaceID, path string, data []byte) (int, error)
-	Close() (map[string]string, error)
+	// Write writes the given data to the file at the given path.
+	Write(path string, data []byte) (int, error)
+	// Close closes all the files.
+	Close() error
 }
 
 type GZFileHandler struct {
+	// gzWriters is a map of path to GZipWriter.
 	gzWriters map[string]misc.GZipWriter
-	dumps     map[string]string
 }
 
 func NewGzWriter() *GZFileHandler {
 	return &GZFileHandler{
 		gzWriters: make(map[string]misc.GZipWriter),
-		dumps:     make(map[string]string),
 	}
 }
 
-func (g *GZFileHandler) Write(workspaceID, path string, data []byte) (count int, err error) {
-	if _, ok := g.gzWriters[workspaceID]; !ok {
+func (g *GZFileHandler) Write(path string, data []byte) (count int, err error) {
+	if _, ok := g.gzWriters[path]; !ok {
 
 		err := os.MkdirAll(filepath.Dir(path), os.ModePerm)
 		if err != nil {
-			return 0, fmt.Errorf("creating gz file %q: %w", path, err)
+			return 0, fmt.Errorf("creating gz file %q: mkdir error: %w", path, err)
 		}
 
-		g.gzWriters[workspaceID], err = misc.CreateGZ(path)
-		g.dumps[workspaceID] = path
+		g.gzWriters[path], err = misc.CreateGZ(path)
 		if err != nil {
 			return 0, err
 		}
 	}
-	return g.gzWriters[workspaceID].Write(data)
+	return g.gzWriters[path].Write(data)
 }
 
-func (g *GZFileHandler) Close() (map[string]string, error) {
-	for workspaceID, path := range g.dumps {
-		if err := g.gzWriters[workspaceID].CloseGZ(); err != nil {
-			return g.dumps, fmt.Errorf("closing gz file %q: %w", path, err)
+func (g *GZFileHandler) Close() error {
+	for path, writer := range g.gzWriters {
+		if err := writer.CloseGZ(); err != nil {
+			return fmt.Errorf("closing gz file %q: %w", path, err)
 		}
 	}
-	return g.dumps, nil
+	return nil
 }

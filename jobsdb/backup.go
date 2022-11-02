@@ -128,6 +128,22 @@ func (jd *HandleT) cleanStatusTable(backupDSRange *dataSetRangeT) error {
 	return err
 }
 
+func (jd *HandleT) uploadDumps(ctx context.Context, dumps map[string]string) error {
+	g, _ := errgroup.WithContext(ctx)
+	g.SetLimit(config.GetInt("JobsDB.JobsBackupWorkers", 100))
+	for workspaceID, filePath := range dumps {
+		g.Go(misc.WithBugsnag(func() error {
+			if err := jd.uploadTableDump(ctx, workspaceID, filePath); err != nil {
+				jd.logger.Errorf("[JobsDB] :: Failed to upload workspaceId %v. Error: %s", workspaceID, err.Error())
+				stats.Default.NewTaggedStat("backup_ds_failed", stats.CountType, stats.Tags{"customVal": jd.tablePrefix, "workspaceId": workspaceID}).Increment()
+				return err
+			}
+			return nil
+		}))
+	}
+	return g.Wait()
+}
+
 func (jd *HandleT) failedOnlyBackup(ctx context.Context, backupDSRange *dataSetRangeT) error {
 	tableName := backupDSRange.ds.JobStatusTable
 
@@ -170,22 +186,10 @@ func (jd *HandleT) failedOnlyBackup(ctx context.Context, backupDSRange *dataSetR
 			os.Remove(filePath)
 		}
 	}()
-	g, _ := errgroup.WithContext(ctx)
-	g.SetLimit(config.GetInt("MULTITENANT_JOBS_BACKUP_WORKERS", 64))
-	for workspaceID, filePath := range dumps {
-		g.Go(misc.WithBugsnag(func() error {
-			if err := jd.uploadTableDump(ctx, workspaceID, filePath); err != nil {
-				jd.logger.Errorf("[JobsDB] :: Failed to upload table %v. Error: %s", tableName, err.Error())
-				stats.Default.NewTaggedStat("backup_ds_failed", stats.CountType, stats.Tags{"customVal": jd.tablePrefix, "workspaceId": workspaceID}).Increment()
-				return err
-			}
-			return nil
-		}))
+	err = jd.uploadDumps(ctx, dumps)
+	if err != nil {
+		return fmt.Errorf("error while uploading dumps for table: %s: %w", tableName, err)
 	}
-	if err = g.Wait(); err != nil {
-		return fmt.Errorf("error while uploading table dump: %s", err.Error())
-	}
-
 	stats.Default.NewTaggedStat("total_TableDump_TimeStat", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix}).Since(start)
 	return nil
 }
@@ -241,22 +245,9 @@ func (jd *HandleT) backupJobsTable(ctx context.Context, backupDSRange *dataSetRa
 			os.Remove(filePath)
 		}
 	}()
-
-	g, _ := errgroup.WithContext(ctx)
-	g.SetLimit(config.GetInt("JobsDB.JobsBackupWorkers", 100))
-
-	for workspaceID, filePath := range dumps {
-		g.Go(misc.WithBugsnag(func() error {
-			if err = jd.uploadTableDump(ctx, workspaceID, filePath); err != nil {
-				jd.logger.Errorf("[JobsDB] :: Failed to upload table %v. Error: %s", tableName, err.Error())
-				stats.Default.NewTaggedStat("backup_ds_failed", stats.CountType, stats.Tags{"customVal": jd.tablePrefix, "workspaceId": workspaceID}).Increment()
-				return err
-			}
-			return nil
-		}))
-	}
-	if err = g.Wait(); err != nil {
-		return fmt.Errorf("error while uploading table dump: %s", err.Error())
+	err = jd.uploadDumps(ctx, dumps)
+	if err != nil {
+		return fmt.Errorf("error while uploading dumps for table: %s: %w", tableName, err)
 	}
 
 	// Do not record stat in error case as error case time might be low and skew stats
@@ -307,21 +298,9 @@ func (jd *HandleT) backupStatusTable(ctx context.Context, backupDSRange *dataSet
 			os.Remove(filePath)
 		}
 	}()
-
-	g, _ := errgroup.WithContext(ctx)
-	g.SetLimit(config.GetInt("JobsDB.JobsBackupWorkers", 100))
-	for workspaceID, filePath := range dumps {
-		g.Go(misc.WithBugsnag(func() error {
-			if err = jd.uploadTableDump(ctx, workspaceID, filePath); err != nil {
-				jd.logger.Errorf("[JobsDB] :: Failed to upload table %v. Error: %s", tableName, err.Error())
-				stats.Default.NewTaggedStat("backup_ds_failed", stats.CountType, stats.Tags{"customVal": jd.tablePrefix, "workspaceId": workspaceID}).Increment()
-				return err
-			}
-			return nil
-		}))
-	}
-	if err = g.Wait(); err != nil {
-		return fmt.Errorf("error while uploading table dump: %s", err.Error())
+	err = jd.uploadDumps(ctx, dumps)
+	if err != nil {
+		return fmt.Errorf("error while uploading dumps for table: %s: %w", tableName, err)
 	}
 
 	// Do not record stat in error case as error case time might be low and skew stats
@@ -355,6 +334,7 @@ func getFailedOnlyBackupQueryFn(backupDSRange *dataSetRangeT) func(int64) string
 	return func(offSet int64) string {
 		return fmt.Sprintf(
 			`SELECT
+			failed_jobs.workspace_id,
 			json_build_object(
 				'job_id', failed_jobs.job_id,
 				'workspace_id',failed_jobs.workspace_id,
@@ -375,7 +355,7 @@ func getFailedOnlyBackupQueryFn(backupDSRange *dataSetRangeT) func(int64) string
 				'error_code',failed_jobs.error_code,
 				'error_response',failed_jobs.error_response,
 				'parameters',failed_jobs.status_parameters
-			), failed_jobs.workspace_id
+			)
 		FROM
 			(
 			SELECT
@@ -446,6 +426,7 @@ func getJobsBackupQueryFn(backupDSRange *dataSetRangeT) func(int64) string {
 	return func(offSet int64) string {
 		return fmt.Sprintf(`
 			SELECT
+				dump_table.workspace_id,
 				jsonb_build_object(
 					'job_id', dump_table.job_id,
 					'workspace_id', dump_table.workspace_id,
@@ -457,7 +438,7 @@ func getJobsBackupQueryFn(backupDSRange *dataSetRangeT) func(int64) string {
 					'event_count', dump_table.event_count,
 					'created_at', dump_table.created_at,
 					'expire_at', dump_table.expire_at
-				), dump_table.workspace_id
+				)
 		  	FROM
 				(
 				SELECT
@@ -502,6 +483,7 @@ func getStatusBackupQueryFn(backupDSRange *dataSetRangeT) func(int64) string {
 	return func(offSet int64) string {
 		return fmt.Sprintf(`
 			SELECT
+				dump_table.workspace_id,
 			 	json_build_object(
 					'id', dump_table.id,
 			 		'job_id', dump_table.job_id,
@@ -512,7 +494,7 @@ func getStatusBackupQueryFn(backupDSRange *dataSetRangeT) func(int64) string {
 			 		'error_code', dump_table.error_code,
 			 		'error_response', dump_table.error_response,
 			 		'parameters', dump_table.parameters
-	), dump_table.workspace_id
+	)
 			FROM
 				(
 				SELECT
@@ -540,6 +522,7 @@ func (jd *HandleT) createTableDump(queryFunc func(int64) string, pathFunc func(s
 	tableFileDumpTimeStat.Start()
 
 	var offset int64
+	dumps := make(map[string]string)
 	writeBackupToGz := func() error {
 		stmt := queryFunc(offset)
 		var rawJSONRows json.RawMessage
@@ -551,7 +534,7 @@ func (jd *HandleT) createTableDump(queryFunc func(int64) string, pathFunc func(s
 		defer func() { _ = rows.Close() }()
 
 		for rows.Next() {
-			err = rows.Scan(&rawJSONRows, &workspaceID)
+			err = rows.Scan(&workspaceID, &rawJSONRows)
 			if err != nil {
 				return fmt.Errorf("scanning row failed with error : %w", err)
 			}
@@ -570,9 +553,12 @@ func (jd *HandleT) createTableDump(queryFunc func(int64) string, pathFunc func(s
 			if err != nil {
 				return fmt.Errorf("error while getting path: %w", err)
 			}
-			_, err = fileHandler.Write(workspaceID, path, rawJSONRows)
+			_, err = fileHandler.Write(path, rawJSONRows)
 			if err != nil {
 				return fmt.Errorf("writing gz file %q: %w", path, err)
+			}
+			if _, ok := dumps[workspaceID]; !ok {
+				dumps[workspaceID] = path
 			}
 			offset++
 		}
@@ -588,7 +574,7 @@ func (jd *HandleT) createTableDump(queryFunc func(int64) string, pathFunc func(s
 		}
 	}
 
-	dumps, err := fileHandler.Close()
+	err := fileHandler.Close()
 	if err != nil {
 		return dumps, err
 	}
