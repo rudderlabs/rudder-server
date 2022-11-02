@@ -2506,5 +2506,4 @@ var _ = Describe("TestConfigFilter", func() {
 			Expect(event).To(Equal(expectedEvent))
 		})
 	})
-
 })

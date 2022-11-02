@@ -473,7 +473,6 @@ var (
 	destinationIDtoTypeMap    map[string]string
 	batchDestinations         []string
 	configSubscriberLock      sync.RWMutex
-	customDestinations        []string
 	pkgLogger                 logger.Logger
 	enableEventSchemasFeature bool
 	enableEventSchemasAPIOnly bool
@@ -509,7 +508,7 @@ func loadConfig() {
 	config.RegisterBoolConfigVariable(false, &enableEventSchemasAPIOnly, true, "EventSchemas.enableEventSchemasAPIOnly")
 	config.RegisterIntConfigVariable(10000, &maxEventsToProcess, true, 1, "Processor.maxLoopProcessEvents")
 
-	batchDestinations, customDestinations = misc.LoadDestinations()
+	batchDestinations, _ = misc.LoadDestinations()
 	config.RegisterIntConfigVariable(5, &transformTimesPQLength, false, 1, "Processor.transformTimesPQLength")
 	// Capture event name as a tag in event level stats
 	config.RegisterBoolConfigVariable(false, &captureEventNameStats, true, "Processor.Stats.captureEventName")
