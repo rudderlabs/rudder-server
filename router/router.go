@@ -592,7 +592,6 @@ func (worker *workerT) processDestinationJobs() {
 	})
 
 	for _, destinationJob := range worker.destinationJobs {
-		var attemptedToSendTheJob bool
 		var errorAt string
 		respBodyArr := make([]string, 0)
 		if destinationJob.StatusCode == 200 || destinationJob.StatusCode == 0 {
@@ -753,8 +752,6 @@ func (worker *workerT) processDestinationJobs() {
 					respStatusCode = destinationResponseHandler.IsSuccessStatus(respStatusCode, respBody)
 				}
 
-				attemptedToSendTheJob = true
-
 				worker.deliveryTimeStat.End()
 				deliveryLatencyStat.End()
 
@@ -807,7 +804,6 @@ func (worker *workerT) processDestinationJobs() {
 				destinationJobMetadata: &_destinationJobMetadata,
 				respStatusCode:         respStatusCode,
 				respBody:               respBody,
-				attemptedToSendTheJob:  attemptedToSendTheJob,
 				errorAt:                errorAt,
 			})
 		}
@@ -823,7 +819,6 @@ func (worker *workerT) processDestinationJobs() {
 	for _, routerJobResponse := range routerJobResponses {
 		destinationJobMetadata := routerJobResponse.destinationJobMetadata
 		destinationJob := routerJobResponse.destinationJob
-		attemptedToSendTheJob := routerJobResponse.attemptedToSendTheJob
 		attemptNum := destinationJobMetadata.AttemptNum
 		respStatusCode = routerJobResponse.respStatusCode
 		status := jobsdb.JobStatusT{
@@ -855,10 +850,7 @@ func (worker *workerT) processDestinationJobs() {
 			userToJobIDMap[destinationJobMetadata.UserID] = destinationJobMetadata.JobID
 		}
 
-		if attemptedToSendTheJob {
-			status.AttemptNum++
-		}
-
+		status.AttemptNum++
 		status.ErrorResponse = routerutils.EmptyPayload
 		status.ErrorCode = strconv.Itoa(respStatusCode)
 
@@ -866,16 +858,14 @@ func (worker *workerT) processDestinationJobs() {
 
 		worker.sendEventDeliveryStat(destinationJobMetadata, &status, &destinationJob.Destination)
 
-		if attemptedToSendTheJob {
-			worker.sendRouterResponseCountStat(&status, &destinationJob.Destination, routerJobResponse.errorAt)
-		}
+		worker.sendRouterResponseCountStat(&status, &destinationJob.Destination, routerJobResponse.errorAt)
 	}
 
 	// NOTE: Sending live events to config backend after the status objects are built completely.
 	destLiveEventSentMap := make(map[*types.DestinationJobT]struct{})
 	for _, routerJobResponse := range routerJobResponses {
-		// Sending only one destination live event for every destinationJob, if it was attemptedToSendTheJob
-		if _, ok := destLiveEventSentMap[routerJobResponse.destinationJob]; !ok && routerJobResponse.attemptedToSendTheJob {
+		// Sending only one destination live event for every destinationJob
+		if _, ok := destLiveEventSentMap[routerJobResponse.destinationJob]; !ok {
 			payload := routerJobResponse.destinationJob.Message
 			if routerJobResponse.destinationJob.Message == nil {
 				payload = routerJobResponse.destinationJobMetadata.JobT.EventPayload
@@ -954,7 +944,6 @@ type JobResponse struct {
 	respStatusCode         int
 	respBody               string
 	errorAt                string
-	attemptedToSendTheJob  bool
 	status                 *jobsdb.JobStatusT
 }
 
