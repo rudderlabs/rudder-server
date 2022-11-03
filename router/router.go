@@ -76,7 +76,6 @@ type HandleT struct {
 	destName              string
 	destinationId         string
 	workers               []*workerT
-	perfStats             *misc.PerfStats
 	successCount          uint64
 	failCount             uint64
 	failedEventsListMutex sync.RWMutex
@@ -93,7 +92,6 @@ type HandleT struct {
 	guaranteeUserEventOrder                 bool
 	netClientTimeout                        time.Duration
 	backendProxyTimeout                     time.Duration
-	jobdDBQueryRequestTimeout               time.Duration
 	jobsDBCommandTimeout                    time.Duration
 	jobdDBMaxRetries                        int
 	enableBatching                          bool
@@ -124,7 +122,6 @@ type HandleT struct {
 	transformerProxy                        bool
 	skipRtAbortAlertForDelivery             bool // represents if transformation(router or batch) should be alerted via router-aborted-count alert def
 	skipRtAbortAlertForTransformation       bool // represents if event delivery(via transformerProxy) should be alerted via router-aborted-count alert def
-	saveDestinationResponseOverride         bool
 	workspaceSet                            map[string]struct{}
 	sourceIDWorkspaceMap                    map[string]string
 	maxDSQuerySize                          int
@@ -544,7 +541,6 @@ func (worker *workerT) processDestinationJobs() {
 	var destinationResponseHandler ResponseHandlerI
 	worker.rt.configSubscriberLock.RLock()
 	destinationResponseHandler = worker.rt.destinationResponseHandler
-	saveDestinationResponse := worker.rt.saveDestinationResponse
 	worker.rt.configSubscriberLock.RUnlock()
 
 	/*
@@ -760,14 +756,13 @@ func (worker *workerT) processDestinationJobs() {
 
 				// END: request to destination endpoint
 
-				if isSuccessStatus(respStatusCode) && !worker.rt.saveDestinationResponseOverride {
-					if saveDestinationResponse {
-						if !getRouterConfigBool("saveDestinationResponse", worker.rt.destName, true) {
-							respBody = ""
-						}
-					} else {
-						respBody = ""
-					}
+				// Failure - Save response body
+				// Success - Skip saving response body
+				// By default we get some config from dest def
+				// We can override via env saveDestinationResponseOverride
+
+				if isSuccessStatus(respStatusCode) && !getRouterConfigBool("saveDestinationResponseOverride", worker.rt.destName, false) && !worker.rt.saveDestinationResponse {
+					respBody = ""
 				}
 
 				worker.updateReqMetrics(respStatusCode, &diagnosisStartTime)
@@ -1602,7 +1597,6 @@ func (rt *HandleT) statusInsertLoop() {
 	timeout := time.After(maxStatusUpdateWait)
 
 	for {
-		rt.perfStats.Start()
 		select {
 		case jobStatus, hasMore := <-rt.responseQ:
 			if !hasMore {
@@ -1617,7 +1611,6 @@ func (rt *HandleT) statusInsertLoop() {
 				responseList = nil
 				statusStat.End()
 
-				rt.perfStats.End(0)
 				rt.logger.Debugf("[%v Router] :: statusInsertLoop exiting", rt.destName)
 				return
 			}
@@ -1629,10 +1622,8 @@ func (rt *HandleT) statusInsertLoop() {
 				jobStatus.status.JobID,
 			)
 			responseList = append(responseList, jobStatus)
-			rt.perfStats.End(1)
 		case <-timeout:
 			timeout = time.After(maxStatusUpdateWait)
-			rt.perfStats.End(0)
 			// Ideally should sleep for duration maxStatusUpdateWait-(time.Now()-lastUpdate)
 			// but approx is good enough at the cost of reduced computation.
 		}
@@ -1889,7 +1880,7 @@ func (rt *HandleT) readAndProcess() int {
 
 func (rt *HandleT) getJobsFn() func(context.Context, map[string]int, jobsdb.GetQueryParamsT, jobsdb.MoreToken) (*jobsdb.GetAllJobsResult, error) {
 	return func(ctx context.Context, pickupMap map[string]int, params jobsdb.GetQueryParamsT, resumeFrom jobsdb.MoreToken) (*jobsdb.GetAllJobsResult, error) {
-		return misc.QueryWithRetriesAndNotify(context.Background(), rt.jobdDBQueryRequestTimeout, rt.jobdDBMaxRetries, func(ctx context.Context) (*jobsdb.GetAllJobsResult, error) {
+		return misc.QueryWithRetriesAndNotify(context.Background(), rt.jobsDBCommandTimeout, rt.jobdDBMaxRetries, func(ctx context.Context) (*jobsdb.GetAllJobsResult, error) {
 			return rt.jobsDB.GetAllJobs(
 				ctx,
 				pickupMap,
@@ -1937,7 +1928,6 @@ func (rt *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB jobsd
 	netClientTimeoutKeys := []string{"Router." + rt.destName + "." + "httpTimeout", "Router." + rt.destName + "." + "httpTimeoutInS", "Router." + "httpTimeout", "Router." + "httpTimeoutInS"}
 	config.RegisterDurationConfigVariable(10, &rt.netClientTimeout, false, time.Second, netClientTimeoutKeys...)
 	config.RegisterDurationConfigVariable(30, &rt.backendProxyTimeout, false, time.Second, "HttpClient.backendProxy.timeout")
-	config.RegisterDurationConfigVariable(60, &rt.jobdDBQueryRequestTimeout, true, time.Second, []string{"JobsDB.Router.QueryRequestTimeout", "JobsDB.QueryRequestTimeout"}...)
 	config.RegisterDurationConfigVariable(90, &rt.jobsDBCommandTimeout, true, time.Second, []string{"JobsDB.Router.CommandRequestTimeout", "JobsDB.CommandRequestTimeout"}...)
 	config.RegisterIntConfigVariable(3, &rt.jobdDBMaxRetries, true, 1, []string{"JobsDB." + "Router." + "MaxRetries", "JobsDB." + "MaxRetries"}...)
 	rt.crashRecover()
@@ -1945,7 +1935,6 @@ func (rt *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB jobsd
 
 	rt.failedEventsList = list.New()
 	rt.failedEventsChan = make(chan jobsdb.JobStatusT)
-
 	if rt.netHandle == nil {
 		netHandle := &NetHandleT{}
 		netHandle.logger = rt.logger.Child("network")
@@ -1953,8 +1942,6 @@ func (rt *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB jobsd
 		rt.netHandle = netHandle
 	}
 
-	rt.perfStats = &misc.PerfStats{}
-	rt.perfStats.Setup("StatsUpdate:" + destName)
 	rt.customDestinationManager = customDestinationManager.New(destName, customDestinationManager.Opts{
 		Timeout: rt.netClientTimeout,
 	})
@@ -1971,7 +1958,6 @@ func (rt *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB jobsd
 	savePayloadOnErrorKeys := []string{"Router." + rt.destName + "." + "savePayloadOnError", "Router." + "savePayloadOnError"}
 	transformerProxyKeys := []string{"Router." + rt.destName + "." + "transformerProxy", "Router." + "transformerProxy"}
 
-	saveDestinationResponseOverrideKeys := []string{"Router." + rt.destName + "." + "saveDestinationResponseOverride", "Router." + "saveDestinationResponseOverride"}
 	batchJobCountKeys := []string{"Router." + rt.destName + "." + "noOfJobsToBatchInAWorker", "Router." + "noOfJobsToBatchInAWorker"}
 	config.RegisterIntConfigVariable(20, &rt.noOfJobsToBatchInAWorker, true, 1, batchJobCountKeys...)
 	config.RegisterIntConfigVariable(3, &rt.maxFailedCountForJob, true, 1, maxFailedCountKeys...)
@@ -1997,7 +1983,6 @@ func (rt *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB jobsd
 	config.RegisterBoolConfigVariable(false, &rt.skipRtAbortAlertForTransformation, true, rtAbortTransformationKeys...)
 	config.RegisterBoolConfigVariable(false, &rt.skipRtAbortAlertForDelivery, true, rtAbortDeliveryKeys...)
 	// END: Alert configuration
-	config.RegisterBoolConfigVariable(false, &rt.saveDestinationResponseOverride, true, saveDestinationResponseOverrideKeys...)
 	rt.allowAbortedUserJobsCountForProcessing = getRouterConfigInt("allowAbortedUserJobsCountForProcessing", destName, 1)
 
 	rt.batchInputCountStat = stats.Default.NewTaggedStat("router_batch_num_input_jobs", stats.CountType, stats.Tags{
