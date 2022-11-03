@@ -643,7 +643,7 @@ func GetCurrentSQLTimestamp() string {
 // RunMaintenanceWorker (blocking - to be called from go routine) re-triggers zombie jobs
 // which were left behind by dead workers in executing state
 func (notifier *PgNotifierT) RunMaintenanceWorker(ctx context.Context) error {
-	maintenanceWorkerLockID := murmur3.Sum32([]byte(queueName))
+	maintenanceWorkerLockID := murmur3.Sum64([]byte(queueName))
 	maintenanceWorkerLock, err := pglock.NewLock(ctx, int64(maintenanceWorkerLockID), notifier.dbHandle)
 	if err != nil {
 		return err
