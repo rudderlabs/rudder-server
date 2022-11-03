@@ -117,17 +117,20 @@ func (api *APIManager) Delete(ctx context.Context, job model.Job, destConfig map
 		pkgLogger.Errorf("error while decoding response body: %v", err)
 		return model.JobStatusFailed
 	}
+
 	// Refresh Flow Start
-	respParams := &handleRefreshFlowParams{
-		jobResponses: jobResp,
-		secret:       accountSecretInfo.Account.Secret,
-		workspaceId:  job.WorkspaceID,
-		accountId:    rudderUserDeleteAccountId.(string),
-		destName:     destName,
-	}
-	refreshFlowStatus := api.handleRefreshFlow(respParams)
-	if refreshFlowStatus != model.JobStatusUndefined {
-		return refreshFlowStatus
+	if delAccountIdExists {
+		respParams := &handleRefreshFlowParams{
+			jobResponses: jobResp,
+			secret:       accountSecretInfo.Account.Secret,
+			workspaceId:  job.WorkspaceID,
+			accountId:    rudderUserDeleteAccountId.(string),
+			destName:     destName,
+		}
+		refreshFlowStatus := api.handleRefreshFlow(respParams)
+		if refreshFlowStatus != model.JobStatusUndefined {
+			return refreshFlowStatus
+		}
 	}
 	// Refresh Flow ends
 
@@ -215,7 +218,7 @@ func (api *APIManager) handleRefreshFlow(params *handleRefreshFlowParams) model.
 			Secret:          params.secret,
 			WorkspaceId:     params.workspaceId,
 			AccountId:       params.accountId,
-			DestDefName:     params.accountId,
+			DestDefName:     params.destName,
 			EventNamePrefix: "refresh_token",
 		}
 		errCatStatusCode, refSecret = api.OAuth.RefreshToken(refTokenParams)

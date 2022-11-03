@@ -202,9 +202,6 @@ func TestOAuth(t *testing.T) {
 	mockCtrl := gomock.NewController(t)
 	mockBackendConfig := mocksBackendConfig.NewMockBackendConfig(mockCtrl)
 	mockBackendConfig.EXPECT().AccessToken().AnyTimes()
-	backendconfig.Init()
-
-	oauth.Init()
 
 	tests := []struct {
 		name                 string
@@ -215,10 +212,7 @@ func TestOAuth(t *testing.T) {
 		respBodyStatus       model.JobStatus
 		authErrorCategory    string
 		respBodyErr          error
-		fetchStCode          int
-		fetchResponse        string
-		refreshStCode        int
-		refreshResponse      string
+		cpResponses          []cpResponseParams
 		expectedDeleteStatus model.JobStatus
 		expectedPayload      string
 	}{
@@ -255,11 +249,15 @@ func TestOAuth(t *testing.T) {
 			destConfig: map[string]interface{}{
 				"rudderUserDeleteAccountId": "xyz",
 			},
-			destName:             "GA",
-			respCode:             200,
+			destName: "GA",
+			respCode: 200,
+			cpResponses: []cpResponseParams{
+				{
+					code:     200,
+					response: `{"secret": {"access_token": "valid_access_token","refresh_token":"valid_refresh_token"}}`,
+				},
+			},
 			respBodyStatus:       "complete",
-			fetchStCode:          200,
-			fetchResponse:        `{"secret": {"access_token": "valid_access_token","refresh_token":"valid_refresh_token"}}`,
 			expectedDeleteStatus: model.JobStatusComplete,
 			expectedPayload:      `[{"jobId":"1","destType":"ga","config":{"rudderUserDeleteAccountId":"xyz"},"userAttributes":[{"email":"dorowane8n285680461479465450293436@gmail.com","phone":"6463633841","randomKey":"randomValue","userId":"Jermaine1473336609491897794707338"},{"email":"dshirilad8536019424659691213279980@gmail.com","userId":"Mercie8221821544021583104106123"},{"phone":"8782905113","userId":"Claiborn443446989226249191822329"}]}]`,
 		},
@@ -295,11 +293,16 @@ func TestOAuth(t *testing.T) {
 			respBodyStatus:    "failed",
 			authErrorCategory: oauth.REFRESH_TOKEN,
 
-			fetchStCode:   200,
-			fetchResponse: `{"secret": {"access_token": "expired_access_token","refresh_token":"valid_refresh_token"}}`,
-
-			refreshStCode:   200,
-			refreshResponse: `{"secret": {"access_token": "refreshed_access_token","refresh_token":"valid_refresh_token"}}`,
+			cpResponses: []cpResponseParams{
+				{
+					code:     200,
+					response: `{"secret": {"access_token": "expired_access_token","refresh_token":"valid_refresh_token"}}`,
+				},
+				{
+					code:     200,
+					response: `{"secret": {"access_token": "refreshed_access_token","refresh_token":"valid_refresh_token"}}`,
+				},
+			},
 
 			expectedDeleteStatus: model.JobStatusFailed,
 			expectedPayload:      `[{"jobId":"2","destType":"ga","config":{"rudderUserDeleteAccountId":"xyz"},"userAttributes":[{"email":"dorowane8n285680461479465450293436@gmail.com","phone":"6463633841","randomKey":"randomValue","userId":"Jermaine1473336609491897794707338"},{"email":"dshirilad8536019424659691213279980@gmail.com","userId":"Mercie8221821544021583104106123"}]}]`,
@@ -308,24 +311,29 @@ func TestOAuth(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			OAuth := oauth.NewOAuthErrorHandler(mockBackendConfig)
-			OAuth.Setup()
 			d := deleteAPI{
 				respStatusCode:  tt.respCode,
 				authErrCategory: tt.authErrorCategory,
 			}
 			ctx := context.Background()
 			svr := httptest.NewServer(d.handler())
-			cfgBeSrv := httptest.NewServer(mockCpRequests(2*time.Second, tt.fetchStCode, tt.fetchResponse))
+
+			cpRespProducer := &cpResponseProducer{
+				responses: tt.cpResponses,
+			}
+			cfgBeSrv := httptest.NewServer(cpRespProducer.mockCpRequests())
 
 			defer svr.Close()
-			if tt.refreshStCode == 0 {
-				defer cfgBeSrv.Close()
-			}
+			defer cfgBeSrv.Close()
 
 			t.Setenv("DEST_TRANSFORM_URL", svr.URL)
 			t.Setenv("CONFIG_BACKEND_URL", cfgBeSrv.URL)
 			t.Setenv("CONFIG_BACKEND_TOKEN", "config_backend_token")
+
+			backendconfig.Init()
+			oauth.Init()
+			OAuth := oauth.NewOAuthErrorHandler(mockBackendConfig)
+			OAuth.Setup()
 			api := api.APIManager{
 				Client:           &http.Client{},
 				DestTransformURL: svr.URL,
@@ -334,27 +342,32 @@ func TestOAuth(t *testing.T) {
 
 			status := api.Delete(ctx, tt.job, tt.destConfig, tt.destName)
 
-			// to indicate if refresh token would happen
-			if tt.refreshStCode > 0 {
-				rr := httptest.NewRecorder()
-				fetchResult := rr.Result()
-				defer fetchResult.Body.Close()
-				if fetchResult.StatusCode > 0 {
-					// close the earlier server
-					cfgBeSrv.Close()
-
-					cfgBeSrv = httptest.NewServer(mockCpRequests(2*time.Second, tt.refreshStCode, tt.refreshResponse))
-					t.Setenv("CONFIG_BACKEND_URL", cfgBeSrv.URL)
-					defer cfgBeSrv.Close()
-				}
-			}
 			require.Equal(t, tt.expectedDeleteStatus, status)
 			require.Equal(t, tt.expectedPayload, d.payload)
 		})
 	}
 }
 
-func mockCpRequests(timeout time.Duration, code int, response string) *mux.Router {
+type cpResponseParams struct {
+	timeout  time.Duration
+	code     int
+	response string
+}
+type cpResponseProducer struct {
+	responses []cpResponseParams
+	callCount int
+}
+
+func (s *cpResponseProducer) GetNext() cpResponseParams {
+	if s.callCount >= len(s.responses) {
+		panic("ran out of responses")
+	}
+	cpResp := s.responses[s.callCount]
+	s.callCount++
+	return cpResp
+}
+
+func (cpRespProducer *cpResponseProducer) mockCpRequests() *mux.Router {
 	srvMux := mux.NewRouter()
 	srvMux.HandleFunc("/destination/workspaces/{workspaceId}/accounts/{accountId}/token", func(w http.ResponseWriter, req *http.Request) {
 		vars := mux.Vars(req)
@@ -368,14 +381,15 @@ func mockCpRequests(timeout time.Duration, code int, response string) *mux.Route
 			}
 		}
 
+		cpResp := cpRespProducer.GetNext()
 		// sleep is being used to mimic the waiting in actual transformer response
-		if timeout > 0 {
-			time.Sleep(timeout)
+		if cpResp.timeout > 0 {
+			time.Sleep(cpResp.timeout)
 		}
 		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(code)
+		w.WriteHeader(cpResp.code)
 		// Lint error fix
-		_, err := w.Write([]byte(response))
+		_, err := w.Write([]byte(cpResp.response))
 		if err != nil {
 			fmt.Printf("I'm here!!!! Some shitty response!!")
 			http.Error(w, fmt.Sprintf("Provided response is faulty, please check it. Err: %v", err.Error()), http.StatusInternalServerError)
