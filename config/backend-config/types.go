@@ -29,15 +29,14 @@ const (
 )
 
 type DestinationDefinitionT struct {
-	ID            string
-	Name          string
-	DisplayName   string
+	ID          string
+	Name        string
+	DisplayName string
+	// Config key "throttlingCost" is expected to have the eventType as the first key and the call type
+	// as the second key (e.g. track, identify, etc...) or default to apply the cost to all call types:
+	// dDT["config"]["throttlingCost"] = `{"eventType":{"default":1,"track":2,"identify":3}}`
 	Config        map[string]interface{}
 	ResponseRules map[string]interface{}
-	// ThrottlingCost is expected to have the eventType as the first key and the call type
-	// as the second key (e.g. track, identify, etc...) or default to apply the cost to all call types:
-	// {"eventType": {"default": 1, "track": 2, "identify": 3}}
-	ThrottlingCost map[string]interface{}
 }
 
 type SourceDefinitionT struct {
