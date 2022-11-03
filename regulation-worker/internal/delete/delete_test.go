@@ -51,7 +51,7 @@ func TestDelete(t *testing.T) {
 	for _, tt := range testData {
 		md1.EXPECT().GetSupportedDestinations().Return([]string{"d1", "d2"}).Times(tt.getSupportedDestinationsCallCount)
 		md2.EXPECT().GetSupportedDestinations().Return([]string{"d3", "d4"}).Times(tt.getSupportedDestinationsCallCount)
-		md1.EXPECT().Delete(ctx, tt.job, tt.destDetail.Config, tt.destDetail.Name).Return(model.JobStatusComplete).Times(tt.md1CallCount)
+		md1.EXPECT().Delete(ctx, tt.job, tt.destDetail).Return(model.JobStatusComplete).Times(tt.md1CallCount)
 		status := r.Delete(ctx, tt.job, tt.destDetail)
 		require.Equal(t, tt.expectedStatus, status, "actual status different than expected")
 	}

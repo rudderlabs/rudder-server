@@ -12,7 +12,7 @@ var pkgLogger = logger.NewLogger().Child("client")
 
 //go:generate mockgen -source=delete.go -destination=mock_delete_test.go -package=delete github.com/rudderlabs/rudder-server/regulation-worker/internal/delete
 type deleteManager interface {
-	Delete(ctx context.Context, job model.Job, destConfig map[string]interface{}, destName string) model.JobStatus
+	Delete(ctx context.Context, job model.Job, destDetail model.Destination) model.JobStatus
 	GetSupportedDestinations() []string
 }
 
@@ -44,7 +44,7 @@ func (r *Router) Delete(ctx context.Context, job model.Job, dest model.Destinati
 	})
 	if _, ok := r.router[dest.Name]; ok {
 		pkgLogger.Debugf("calling deletion manager: %v", r.router[dest.Name])
-		return r.router[dest.Name].Delete(ctx, job, dest.Config, dest.Name)
+		return r.router[dest.Name].Delete(ctx, job, dest)
 	}
 
 	pkgLogger.Errorf("no deletion manager support deletion from destination: %v", dest.Name)

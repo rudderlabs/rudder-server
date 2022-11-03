@@ -148,7 +148,11 @@ func TestDelete(t *testing.T) {
 				Client:           &http.Client{},
 				DestTransformURL: svr.URL,
 			}
-			status := api.Delete(ctx, tt.job, tt.destConfig, tt.destName)
+			dest := model.Destination{
+				Config: tt.destConfig,
+				Name:   tt.destName,
+			}
+			status := api.Delete(ctx, tt.job, dest)
 			require.Equal(t, tt.expectedDeleteStatus, status)
 			require.Equal(t, tt.expectedPayload, d.payload)
 		})
@@ -206,6 +210,7 @@ func TestOAuth(t *testing.T) {
 	tests := []struct {
 		name                 string
 		job                  model.Job
+		dest                 model.Destination
 		destConfig           map[string]interface{}
 		destName             string
 		respCode             int
@@ -246,10 +251,19 @@ func TestOAuth(t *testing.T) {
 					},
 				},
 			},
-			destConfig: map[string]interface{}{
-				"rudderUserDeleteAccountId": "xyz",
+			dest: model.Destination{
+				Config: map[string]interface{}{
+					"rudderUserDeleteAccountId": "xyz",
+				},
+				Name: "GA",
+				DestDefConfig: map[string]interface{}{
+					"Config": map[string]interface{}{
+						"auth": map[string]interface{}{
+							"type": "OAuth",
+						},
+					},
+				},
 			},
-			destName: "GA",
 			respCode: 200,
 			cpResponses: []cpResponseParams{
 				{
@@ -285,10 +299,19 @@ func TestOAuth(t *testing.T) {
 					},
 				},
 			},
-			destConfig: map[string]interface{}{
-				"rudderUserDeleteAccountId": "xyz",
+			dest: model.Destination{
+				Config: map[string]interface{}{
+					"rudderUserDeleteAccountId": "xyz",
+				},
+				Name: "GA",
+				DestDefConfig: map[string]interface{}{
+					"Config": map[string]interface{}{
+						"auth": map[string]interface{}{
+							"type": "OAuth",
+						},
+					},
+				},
 			},
-			destName:          "GA",
 			respCode:          500,
 			respBodyStatus:    "failed",
 			authErrorCategory: oauth.REFRESH_TOKEN,
@@ -340,7 +363,7 @@ func TestOAuth(t *testing.T) {
 				OAuth:            OAuth,
 			}
 
-			status := api.Delete(ctx, tt.job, tt.destConfig, tt.destName)
+			status := api.Delete(ctx, tt.job, tt.dest)
 
 			require.Equal(t, tt.expectedDeleteStatus, status)
 			require.Equal(t, tt.expectedPayload, d.payload)

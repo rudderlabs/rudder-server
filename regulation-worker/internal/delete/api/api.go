@@ -32,37 +32,36 @@ type APIManager struct {
 
 // prepares payload based on (job,destDetail) & make an API call to transformer.
 // gets (status, failure_reason) which is converted to appropriate model.Error & returned to caller.
-func (api *APIManager) Delete(ctx context.Context, job model.Job, destConfig map[string]interface{}, destName string) model.JobStatus {
-	pkgLogger.Debugf("deleting: %v", job, " from API destination: %v", destName)
+func (api *APIManager) Delete(ctx context.Context, job model.Job, destDetail model.Destination) model.JobStatus {
+	pkgLogger.Debugf("deleting: %v", job, " from API destination: %v", destDetail.Name)
 	method := "POST"
 	endpoint := "/deleteUsers"
 	url := fmt.Sprint(api.DestTransformURL, endpoint)
 	pkgLogger.Debugf("transformer url: %s", url)
 
-	bodySchema := mapJobToPayload(job, strings.ToLower(destName), destConfig)
+	bodySchema := mapJobToPayload(job, strings.ToLower(destDetail.Name), destDetail.Config)
 	pkgLogger.Debugf("payload: %#v", bodySchema)
 	pkgLogger.Debugf("Regulation Delete API called:\n")
 
 	var tokenStatusCode int
 	var accountSecretInfo *oauth.AuthResponse
 	// identifier to know if the destination supports OAuth for regulation-api
-	rudderUserDeleteAccountId, delAccountIdExists := destConfig["rudderUserDeleteAccountId"]
-	pkgLogger.Infof("Destination Config: %v", destConfig)
+	rudderUserDeleteAccountId, delAccountIdExists := destDetail.Config["rudderUserDeleteAccountId"]
 	if delAccountIdExists {
 		// Fetch Token call
 		// Get Access Token Information to send it as part of the event
 		tokenStatusCode, accountSecretInfo = api.OAuth.FetchToken(&oauth.RefreshTokenParams{
 			AccountId:       rudderUserDeleteAccountId.(string),
 			WorkspaceId:     job.WorkspaceID,
-			DestDefName:     destName,
+			DestDefName:     destDetail.Name,
 			EventNamePrefix: "fetch_token",
 		})
-		pkgLogger.Infof(`[%s][FetchToken] Token Fetch Method finished (statusCode, value): (%v, %+v)`, destName, tokenStatusCode, accountSecretInfo)
+		pkgLogger.Debugf(`[%s][FetchToken] Token Fetch Method finished (statusCode, value): (%v, %+v)`, destDetail.Name, tokenStatusCode, accountSecretInfo)
 		if tokenStatusCode != http.StatusOK {
-			pkgLogger.Errorf(`[%s][FetchToken] Error in Token Fetch statusCode: %d\t error: %s\n`, destName, tokenStatusCode, accountSecretInfo.Err)
+			pkgLogger.Errorf(`[%s][FetchToken] Error in Token Fetch statusCode: %d\t error: %s\n`, destDetail.Name, tokenStatusCode, accountSecretInfo.Err)
 		}
 	} else {
-		pkgLogger.Errorf("[%v] Destination probably doesn't support OAuth or some issue happened while doing OAuth for deletion [Enabled: %v]", destName, delAccountIdExists)
+		pkgLogger.Errorf("[%v] Destination probably doesn't support OAuth or some issue happened while doing OAuth for deletion [Enabled: %v]", destDetail.Name, delAccountIdExists)
 	}
 
 	reqBody, err := json.Marshal(bodySchema)
@@ -92,7 +91,7 @@ func (api *APIManager) Delete(ctx context.Context, job model.Job, destConfig map
 		"jobId":       fmt.Sprintf("%d", job.ID),
 		"workspaceId": job.WorkspaceID,
 		"destType":    "api",
-		"destName":    strings.ToLower(destName),
+		"destName":    strings.ToLower(destDetail.Name),
 	})
 	fileCleaningTime.Start()
 	defer fileCleaningTime.End()
@@ -125,7 +124,7 @@ func (api *APIManager) Delete(ctx context.Context, job model.Job, destConfig map
 			secret:       accountSecretInfo.Account.Secret,
 			workspaceId:  job.WorkspaceID,
 			accountId:    rudderUserDeleteAccountId.(string),
-			destName:     destName,
+			destName:     destDetail.Name,
 		}
 		refreshFlowStatus := api.handleRefreshFlow(respParams)
 		if refreshFlowStatus != model.JobStatusUndefined {
