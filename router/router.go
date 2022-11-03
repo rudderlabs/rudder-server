@@ -1318,6 +1318,7 @@ func (rt *HandleT) getWorkerPartition(userID string) int {
 	return misc.GetHash(userID) % rt.noOfWorkers
 }
 
+// TODO fix
 // ResetSleep  this makes the workers reset their sleep
 func (rt *HandleT) ResetSleep() {
 	for _, w := range rt.workers {
