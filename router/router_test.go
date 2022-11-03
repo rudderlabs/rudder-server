@@ -4,10 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/tidwall/gjson"
 	"math"
 	"testing"
 	"time"
+
+	"github.com/tidwall/gjson"
 
 	"github.com/rudderlabs/rudder-server/enterprise/reporting"
 
