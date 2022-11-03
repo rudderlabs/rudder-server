@@ -16,7 +16,6 @@ import (
 	"time"
 
 	"github.com/cenkalti/backoff/v4"
-
 	jsoniter "github.com/json-iterator/go"
 	"github.com/tidwall/gjson"
 	"golang.org/x/sync/errgroup"
@@ -30,7 +29,7 @@ import (
 	"github.com/rudderlabs/rudder-server/router/internal/eventorder"
 	"github.com/rudderlabs/rudder-server/router/internal/jobiterator"
 	oauth "github.com/rudderlabs/rudder-server/router/oauthResponseHandler"
-	"github.com/rudderlabs/rudder-server/router/throttler"
+	rtThrottler "github.com/rudderlabs/rudder-server/router/throttler"
 	"github.com/rudderlabs/rudder-server/router/transformer"
 	"github.com/rudderlabs/rudder-server/router/types"
 	routerutils "github.com/rudderlabs/rudder-server/router/utils"
@@ -62,7 +61,6 @@ type tenantStats interface {
 }
 
 type limiter interface {
-	IsWithinRate(userID string, cost int64) (bool, error)
 	CheckLimitReached(userID string, cost int64) (
 		limited bool, tr throttling.TokenReturner, retErr error,
 	)
@@ -100,7 +98,8 @@ type HandleT struct {
 	requestsMetric                          []requestMetric
 	failuresMetric                          map[string]map[string]int
 	customDestinationManager                customDestinationManager.DestinationManager
-	throttler                               limiter
+	throttler                               map[string]limiter // map key is the destinationID
+	throttlerMu                             sync.Mutex
 	guaranteeUserEventOrder                 bool
 	netClientTimeout                        time.Duration
 	backendProxyTimeout                     time.Duration
@@ -358,7 +357,6 @@ func (worker *workerT) workerProcess() {
 					return
 				}
 
-				// TODO throttle the transformations here by worker.rt.destName?
 				if worker.rt.enableBatching {
 					worker.destinationJobs = worker.batchRouterTransform(worker.routerJobs)
 				} else {
@@ -369,9 +367,9 @@ func (worker *workerT) workerProcess() {
 				return
 			}
 
-			job := message.job
 			worker.rt.logger.Debugf("[%v Router] :: performing checks to send payload.", worker.rt.destName)
 
+			job := message.job
 			userID := job.UserID
 
 			var parameters JobParametersT
@@ -414,10 +412,15 @@ func (worker *workerT) workerProcess() {
 					if previousFailedJobID != nil {
 						previousFailedJobIDStr = strconv.FormatInt(*previousFailedJobID, 10)
 					}
-					worker.rt.logger.Debugf("EventOrder: [%d] job %d of key %s must wait (previousFailedJobID: %s)", worker.workerID, job.JobID, orderKey, previousFailedJobIDStr)
+					worker.rt.logger.Debugf("EventOrder: [%d] job %d of key %s must wait (previousFailedJobID: %s)",
+						worker.workerID, job.JobID, orderKey, previousFailedJobIDStr,
+					)
 
 					// mark job as waiting if prev job from same user has not succeeded yet
-					worker.rt.logger.Debugf("[%v Router] :: skipping processing job for userID: %v since prev failed job exists, prev id %v, current id %v", worker.rt.destName, userID, previousFailedJobID, job.JobID)
+					worker.rt.logger.Debugf(
+						"[%v Router] :: skipping processing job for userID: %v since prev failed job exists, prev id %v, current id %v",
+						worker.rt.destName, userID, previousFailedJobID, job.JobID,
+					)
 					resp := misc.UpdateJSONWithNewKeyVal(routerutils.EmptyPayload, "blocking_id", *previousFailedJobID)
 					resp = misc.UpdateJSONWithNewKeyVal(resp, "user_id", userID)
 					status := jobsdb.JobStatusT{
@@ -435,26 +438,41 @@ func (worker *workerT) workerProcess() {
 				}
 			}
 
-			var throttlingCost int64
-			for k := range worker.routerJobs {
-				tcJSON, ok := worker.routerJobs[k].Destination.DestinationDefinition.Config["throttlingCost"].(json.RawMessage)
-				if !ok {
-					throttlingCost++
-					continue
-				}
-
-				// TODO get by event type before falling back on "default"
-				defaultCost := gjson.GetBytes(tcJSON, "eventType.default").Int()
-				if defaultCost > 0 {
-					throttlingCost += defaultCost
-					continue
-				}
-
-				// no explicit throttling cost for this event type, assuming 1
-				throttlingCost++
+			var (
+				err            error
+				limited        bool
+				throttlingCost int64
+				tokensReturner throttling.TokenReturner
+				throttler      = worker.rt.getThrottler(parameters.DestinationID)
+			)
+			if len(worker.routerJobs) > 0 {
+				throttlingCost = worker.getThrottlingCost()
 			}
-
-			// TODO check if throttlingCost is doable, meaning if within the rate limits
+			if throttlingCost > 0 && throttler != nil {
+				limited, tokensReturner, err = throttler.CheckLimitReached(userID, throttlingCost)
+				if err != nil {
+					// we can't throttle, let's hit the destination, worst case we get a 429
+					throttler = nil
+					throttlingCost = 0
+				} else if limited {
+					status := jobsdb.JobStatusT{
+						JobID:         job.JobID,
+						AttemptNum:    job.LastJobStatus.AttemptNum,
+						ExecTime:      time.Now(),
+						RetryTime:     time.Now(),
+						JobState:      jobsdb.Waiting.State,
+						ErrorCode:     strconv.Itoa(http.StatusTooManyRequests),
+						ErrorResponse: routerutils.EmptyPayload,
+						Parameters:    routerutils.EmptyPayload,
+						WorkspaceId:   job.WorkspaceId,
+					}
+					worker.rt.logger.Debugf(`Throttling for destination:%s and job:%d for user:%s`,
+						parameters.DestinationID, job.JobID, userID,
+					)
+					worker.rt.responseQ <- jobResponseT{status: &status, worker: worker, userID: userID, JobT: job}
+					continue
+				}
+			}
 
 			firstAttemptedAt := gjson.GetBytes(job.LastJobStatus.ErrorResponse, "firstAttemptedAt").Str
 			jobMetadata := types.JobMetadataT{
@@ -476,13 +494,15 @@ func (worker *workerT) workerProcess() {
 			batchDestination, ok := worker.rt.destinationsMap[parameters.DestinationID]
 			worker.rt.configSubscriberLock.RUnlock()
 			if !ok {
+				// we won't be using the throttling tokens anymore
+				go worker.rt.returnTokens(context.TODO(), tokensReturner)
+
 				status := jobsdb.JobStatusT{
 					JobID:         job.JobID,
 					AttemptNum:    job.LastJobStatus.AttemptNum,
 					JobState:      jobsdb.Failed.State,
 					ExecTime:      time.Now(),
 					RetryTime:     time.Now(),
-					ErrorCode:     "",
 					ErrorResponse: []byte(`{"reason":"failed because destination is not available in the config"}`),
 					Parameters:    routerutils.EmptyPayload,
 					WorkspaceId:   job.WorkspaceId,
@@ -553,6 +573,28 @@ func (worker *workerT) workerProcess() {
 			}
 		}
 	}
+}
+
+func (worker *workerT) getThrottlingCost() (cost int64) {
+	for k := range worker.routerJobs {
+		tcJSON, ok := worker.routerJobs[k].Destination.DestinationDefinition.Config["throttlingCost"].(json.RawMessage)
+		if !ok {
+			cost++
+			continue
+		}
+
+		// TODO get by event type before falling back on "default"
+		defaultCost := gjson.GetBytes(tcJSON, "eventType.default").Int()
+		if defaultCost > 0 {
+			cost += defaultCost
+			continue
+		}
+
+		// no explicit throttling cost for this event type, assuming 1
+		cost++
+	}
+
+	return
 }
 
 func (worker *workerT) processDestinationJobs() {
@@ -1925,7 +1967,7 @@ func (rt *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB jobsd
 	rt.oauth = oauth.NewOAuthErrorHandler(backendConfig)
 	rt.oauth.Setup()
 
-	rt.throttler = throttler.New(rt.destinationId)
+	rt.throttler = make(map[string]limiter)
 
 	rt.isBackendConfigInitialized = false
 	rt.backendConfigInitialized = make(chan bool)
@@ -2167,4 +2209,25 @@ func (rt *HandleT) updateProcessedEventsMetrics(statusList []*jobsdb.JobStatusT)
 			}).Count(count)
 		}
 	}
+}
+
+func (rt *HandleT) returnTokens(ctx context.Context, tr throttling.TokenReturner) {
+	if tr == nil {
+		return
+	}
+	err := tr.Return(ctx)
+	if err != nil {
+		rt.logger.Errorf("error while returning throttling tokens: %w", err)
+	}
+}
+
+func (rt *HandleT) getThrottler(destID string) limiter {
+	rt.throttlerMu.Lock()
+	defer rt.throttlerMu.Unlock()
+	l, ok := rt.throttler[destID]
+	if !ok {
+		l = rtThrottler.New(destID, rtThrottler.WithLogger(rt.logger))
+		rt.throttler[destID] = l
+	}
+	return l
 }

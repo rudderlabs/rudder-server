@@ -13,10 +13,6 @@ import (
 )
 
 const (
-	DestinationLevel = "destination"
-	UserLevel        = "user"
-	AllLevels        = "all" // TODO
-
 	algoTypeGoRate         = "gorate"
 	algoTypeGCRA           = "gcra"
 	algoTypeRedisGCRA      = "redis-gcra"
@@ -102,7 +98,7 @@ func (c *Client) readConfiguration() {
 		if redisPassword != "" {
 			opts.Password = redisPassword
 		}
-		c.redisClient = redis.NewClient(&opts)
+		c.redisClient = redis.NewClient(&opts) // TODO avoid creating a new client each time, cache by addr
 
 		if err := c.redisClient.Ping(context.TODO()).Err(); err != nil {
 			panic(fmt.Errorf("%s-router-throttler: failed to connect to Redis: %w", c.destinationID, err))
@@ -229,15 +225,6 @@ func (c *Client) CheckLimitReached(userID string, cost int64) (
 	}
 
 	return false, &mtr, nil
-}
-
-func (c *Client) IsWithinRate(userID string, cost int64) (bool, error) {
-	// TODO implement
-	if !c.isEnabled() {
-		return true, nil
-	}
-
-	return true, nil
 }
 
 func (c *Client) isEnabled() bool {
