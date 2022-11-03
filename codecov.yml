@@ -6,3 +6,7 @@ coverage:
     patch:
       default:
         informational: true
+ignore:
+  - "mocks"
+  - "proto"
+  - "cmd/devtool"
