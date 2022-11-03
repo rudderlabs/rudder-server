@@ -540,7 +540,7 @@ func (worker *workerT) workerProcess() {
 				routerJob := types.RouterJobT{Message: job.EventPayload, JobMetadata: jobMetadata, Destination: destination}
 				worker.routerJobs = append(worker.routerJobs, routerJob)
 
-				if len(worker.routerJobs) >= worker.rt.noOfJobsToBatchInAWorker {
+				if len(worker.routerJobs) >= worker.rt.noOfJobsToBatchInAWorker { // TODO add throttling condition
 					worker.destinationJobs = worker.routerTransform(worker.routerJobs)
 					worker.processDestinationJobs()
 				}
