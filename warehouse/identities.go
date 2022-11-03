@@ -451,7 +451,7 @@ func (wh *HandleT) populateHistoricIdentities(warehouse warehouseutils.Warehouse
 		}
 		job.schemaHandle = &schemaHandle
 
-		job.schemaHandle.schemaInWarehouse, err = whManager.FetchSchema(job.warehouse)
+		job.schemaHandle.schemaInWarehouse, job.schemaHandle.unrecognizedSchemaInWarehouse, err = whManager.FetchSchema(job.warehouse)
 		if err != nil {
 			pkgLogger.Errorf(`[WH]: Failed fetching schema from warehouse: %v`, err)
 			job.setUploadError(err, Aborted)
