@@ -55,6 +55,7 @@ type JobMetadataT struct {
 	Secret             json.RawMessage `json:"secret"`
 	JobT               *jobsdb.JobT    `json:"jobsT"`
 	WorkerAssignedTime time.Time       `json:"workerAssignedTime"`
+	DestInfo           json.RawMessage `json:"destInfo,omitempty"`
 }
 
 // TransformMessageT is used to pass message to the transformer workers
