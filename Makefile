@@ -20,9 +20,9 @@ else
 	$(eval TEST_OPTIONS = -p=1 -v -failfast -shuffle=on -coverprofile=profile.out -covermode=atomic -vet=all --timeout=15m)
 endif
 ifdef package
-	$(TEST_CMD) $(TEST_OPTIONS) $(package) && touch $(TESTFILE) || true
+	$(TEST_CMD) --race $(TEST_OPTIONS) $(package) && touch $(TESTFILE) || true
 else
-	$(TEST_CMD) -count=1 $(TEST_OPTIONS) ./... && touch $(TESTFILE) || true
+	$(TEST_CMD) --race -count=1 $(TEST_OPTIONS) ./... && touch $(TESTFILE) || true
 endif
 
 test-teardown:
