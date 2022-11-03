@@ -193,13 +193,12 @@ func TestArchiver(t *testing.T) {
 			} else {
 				require.Empty(t, contents)
 			}
-
 		})
 	}
 }
 
 func minioContents(t require.TestingT, dest *destination.MINIOResource, prefix string) map[string]string {
-	var contents = make(map[string]string)
+	contents := make(map[string]string)
 
 	doneCh := make(chan struct{})
 	defer close(doneCh)
