@@ -250,7 +250,7 @@ func TestMultipleWorkspacesBackupTable(t *testing.T) {
 				},
 			},
 			Preferences: backendconfig.StoragePreferences{
-				GatewayDumps:     true,
+				GatewayDumps:     false,
 				BatchRouterDumps: true,
 				RouterDumps:      true,
 				ProcErrorDumps:   true,
@@ -271,7 +271,7 @@ func TestMultipleWorkspacesBackupTable(t *testing.T) {
 				GatewayDumps:     true,
 				BatchRouterDumps: true,
 				RouterDumps:      true,
-				ProcErrorDumps:   true,
+				ProcErrorDumps:   false,
 			},
 		},
 		"defaultWorkspaceID-3": {
@@ -304,7 +304,7 @@ func TestMultipleWorkspacesBackupTable(t *testing.T) {
 	require.NoError(t, err, "expected no error while inserting rt data")
 
 	// wait for the backup to finish
-	for i := 0; i < 1; i++ {
+	for i := 0; i < uniqueWorkspaces; i++ {
 		workspace := "defaultWorkspaceID-" + strconv.Itoa(i+1)
 		fm, err := fileuploaderProvider.GetFileManager(workspace)
 		require.NoError(t, err)

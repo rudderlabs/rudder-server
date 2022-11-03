@@ -86,6 +86,21 @@ func TestStoreErrorsToObjectStorage(t *testing.T) {
 				ProcErrors: true,
 			},
 		},
+		"defaultWorkspaceID-4": {
+			Bucket: backendconfig.StorageBucket{
+				Type: "MINIO",
+				Config: map[string]interface{}{
+					"bucketName":      minioResource[2].BucketName,
+					"prefix":          prefix,
+					"endPoint":        minioResource[2].Endpoint,
+					"accessKeyID":     minioResource[2].AccessKey,
+					"secretAccessKey": minioResource[2].SecretKey,
+				},
+			},
+			Preferences: backendconfig.StoragePreferences{
+				ProcErrors: false,
+			},
+		},
 	}
 
 	fileuploaderProvider := fileuploader.NewStaticProvider(storageSettings)
@@ -108,6 +123,12 @@ func TestStoreErrorsToObjectStorage(t *testing.T) {
 		},
 		{
 			WorkspaceId: "defaultWorkspaceID-3",
+		},
+		{
+			WorkspaceId: "defaultWorkspaceID-4",
+		},
+		{
+			WorkspaceId: "defaultWorkspaceID-4",
 		},
 	}
 
@@ -139,8 +160,12 @@ func TestStoreErrorsToObjectStorage(t *testing.T) {
 
 		f := downloadFile(t, fm, file[0].Key, cleanup)
 		jobsFromFile, err := readGzipJobFile(f.Name())
-		require.NotZero(t, jobsCount[workspace], "jobsCount for workspace: ", workspace, " is zero")
-		require.Equal(t, jobsCount[workspace], len(jobsFromFile))
+		if storageSettings[workspace].Preferences.ProcErrors {
+			require.NotZero(t, jobsCount[workspace], "jobsCount for workspace: ", workspace, " is zero")
+			require.Equal(t, jobsCount[workspace], len(jobsFromFile))
+		} else {
+			require.Zero(t, jobsCount[workspace], "jobsCount for workspace: ", workspace, " is not zero")
+		}
 	}
 }
 
