@@ -104,3 +104,43 @@ func TestFileUploaderUpdatingWithConfigBackend(t *testing.T) {
 	Expect(err).To(HaveOccurred())
 	Expect(preferences).To(BeEquivalentTo(backendconfig.StoragePreferences{}))
 }
+
+func TestDefaultProvider(t *testing.T) {
+	RegisterTestingT(t)
+	d := NewDefaultProvider()
+
+	prefs, err := d.GetStoragePreferences("")
+	Expect(err).To(BeNil())
+	Expect(prefs).To(BeEquivalentTo(backendconfig.StoragePreferences{
+		ProcErrors:       true,
+		GatewayDumps:     true,
+		ProcErrorDumps:   true,
+		BatchRouterDumps: true,
+		RouterDumps:      true,
+	}))
+}
+
+func TestOverride(t *testing.T) {
+	RegisterTestingT(t)
+	config := map[string]interface{}{
+		"a":          "1",
+		"b":          "2",
+		"c":          "3",
+		"externalId": "externalId",
+	}
+	settings := backendconfig.StorageBucket{
+		Type: "S3",
+		Config: map[string]interface{}{
+			"b": "4",
+			"d": "5",
+		},
+	}
+	bucket := overrideWithSettings(config, settings, "wrk-1")
+	Expect(bucket.Config).To(Equal(map[string]interface{}{
+		"a":          "1",
+		"b":          "4",
+		"c":          "3",
+		"d":          "5",
+		"externalId": "wrk-1",
+	}))
+}

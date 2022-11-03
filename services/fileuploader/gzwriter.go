@@ -14,6 +14,9 @@ type MultiFileWriter interface {
 	Write(path string, data []byte) (int, error)
 	// Close closes all open files.
 	Close() error
+
+	// Count returns the number of open files.
+	Count() int
 }
 
 type gzFileHandler struct {
@@ -50,5 +53,10 @@ func (g *gzFileHandler) Close() error {
 			return fmt.Errorf("closing gz file %q: %w", path, err)
 		}
 	}
+	g.gzWriters = make(map[string]misc.GZipWriter)
 	return nil
+}
+
+func (g *gzFileHandler) Count() int {
+	return len(g.gzWriters)
 }
