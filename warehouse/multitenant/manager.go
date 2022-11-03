@@ -22,12 +22,14 @@ type Manager struct {
 	sourceIDToWorkspaceID map[string]string
 	excludeWorkspaceIDMap map[string]struct{}
 
-	sourceMu sync.Mutex
-	once     sync.Once
+	ready     chan struct{}
+	sourceMu  sync.Mutex
+	readyOnce sync.Once
+	initOnce  sync.Once
 }
 
 func (m *Manager) init() {
-	m.once.Do(func() {
+	m.initOnce.Do(func() {
 		if m.DegradedWorkspaceIDs == nil {
 			m.DegradedWorkspaceIDs = degradedWorkspaceIDs
 		}
@@ -38,9 +40,11 @@ func (m *Manager) init() {
 		for _, workspaceID := range m.DegradedWorkspaceIDs {
 			m.excludeWorkspaceIDMap[workspaceID] = struct{}{}
 		}
+		m.ready = make(chan struct{})
 	})
 }
 
+// Run is a blocking function that executes manager background logic.
 func (m *Manager) Run(ctx context.Context) error {
 	m.init()
 
@@ -50,15 +54,19 @@ func (m *Manager) Run(ctx context.Context) error {
 		config := data.Data.(map[string]backendconfig.ConfigT)
 		for workspaceID := range config {
 			for _, source := range config[workspaceID].Sources {
-				m.sourceIDToWorkspaceID[source.SourceDefinition.ID] = workspaceID
+				m.sourceIDToWorkspaceID[source.ID] = workspaceID
 			}
 		}
 		m.sourceMu.Unlock()
+		m.readyOnce.Do(func() {
+			close(m.ready)
+		})
 	}
 
 	return nil
 }
 
+// DegradedWorkspace returns true if the workspaceID is degraded.
 func (m *Manager) DegradedWorkspace(workspaceID string) bool {
 	m.init()
 
@@ -70,14 +78,25 @@ func (m *Manager) DegradedWorkspace(workspaceID string) bool {
 	return false
 }
 
+// DegradedWorkspaceIDs returns a list of degraded workspaceIDs.
 func (m *Manager) DegradedWorkspaces() []string {
 	m.init()
 
 	return m.DegradedWorkspaceIDs
 }
 
-func (m *Manager) SourceToWorkspace(sourceID string) (string, error) {
+// SourceToWorkspace returns the workspaceID for a given sourceID, even if workspaceID is degraded.
+// An error is returned if the sourceID is not found, or context is canceled.
+//
+//	NOTE: This function blocks until the backend config is loaded.
+func (m *Manager) SourceToWorkspace(ctx context.Context, sourceID string) (string, error) {
 	m.init()
+
+	select {
+	case <-m.ready:
+	case <-ctx.Done():
+		return "", ctx.Err()
+	}
 
 	m.sourceMu.Lock()
 	defer m.sourceMu.Unlock()
@@ -90,7 +109,10 @@ func (m *Manager) SourceToWorkspace(sourceID string) (string, error) {
 	return workspaceID, nil
 }
 
-func (m *Manager) WatchConfig(ctx context.Context) chan map[string]backendconfig.ConfigT {
+// WatchConfig returns a backend config map that excludes degraded workspaces.
+//
+// NOTE: WatchConfig is responsible for closing the channel when context gets cancel.
+func (m *Manager) WatchConfig(ctx context.Context) <-chan map[string]backendconfig.ConfigT {
 	m.init()
 
 	chIn := m.BackendConfig.Subscribe(ctx, backendconfig.TopicBackendConfig)

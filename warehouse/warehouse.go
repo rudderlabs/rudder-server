@@ -38,7 +38,6 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/httputil"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
-	"github.com/rudderlabs/rudder-server/utils/pubsub"
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
 	"github.com/rudderlabs/rudder-server/utils/types"
 	"github.com/rudderlabs/rudder-server/warehouse/deltalake"
@@ -271,33 +270,6 @@ func (*HandleT) handleUploadJob(uploadJob *UploadJobT) (err error) {
 	// Process the upload job
 	err = uploadJob.run()
 	return
-}
-
-func excludeWorkspaceIDs(chIn pubsub.DataChannel, workspaceIDs []string) chan map[string]backendconfig.ConfigT {
-	workspaceIDMap := make(map[string]struct{})
-	for _, workspaceID := range workspaceIDs {
-		workspaceIDMap[workspaceID] = struct{}{}
-	}
-
-	chOut := make(chan map[string]backendconfig.ConfigT)
-
-	go func() {
-		for data := range chIn {
-			input := data.Data.(map[string]backendconfig.ConfigT)
-			filteredConfig := make(map[string]backendconfig.ConfigT, len(input))
-
-			for workspaceID := range input {
-				if _, ok := workspaceIDMap[workspaceID]; !ok {
-					filteredConfig[workspaceID] = input[workspaceID]
-				}
-			}
-
-			chOut <- filteredConfig
-		}
-		close(chOut)
-	}()
-
-	return chOut
 }
 
 // Backend Config subscriber subscribes to backend-config and gets all the configurations that includes all sources, destinations and their latest values.
@@ -1713,6 +1685,8 @@ func pendingEventsHandler(w http.ResponseWriter, r *http.Request) {
 	// TODO : respond with errors in a common way
 	pkgLogger.LogRequest(r)
 
+	ctx := r.Context()
+
 	if r.Method != "POST" {
 		w.WriteHeader(http.StatusMethodNotAllowed)
 		return
@@ -1745,7 +1719,7 @@ func pendingEventsHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	workspaceID, err := tenantManager.SourceToWorkspace(sourceID)
+	workspaceID, err := tenantManager.SourceToWorkspace(ctx, sourceID)
 	if err != nil {
 		pkgLogger.Errorf("[WH]: Error checking if source is degraded: %v", err)
 		http.Error(w, "workspaceID from sourceID not found", http.StatusBadRequest)
@@ -1936,6 +1910,8 @@ func triggerUploadHandler(w http.ResponseWriter, r *http.Request) {
 	// TODO : respond with errors in a common way
 	pkgLogger.LogRequest(r)
 
+	ctx := r.Context()
+
 	// read body
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
@@ -1954,7 +1930,7 @@ func triggerUploadHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	workspaceID, err := tenantManager.SourceToWorkspace(triggerUploadReq.SourceID)
+	workspaceID, err := tenantManager.SourceToWorkspace(ctx, triggerUploadReq.SourceID)
 	if err != nil {
 		pkgLogger.Errorf("[WH]: Error checking if source is degraded: %v", err)
 		http.Error(w, "workspaceID from sourceID not found", http.StatusBadRequest)
@@ -2222,8 +2198,6 @@ func Start(ctx context.Context, app app.App) error {
 	}
 
 	g, ctx := errgroup.WithContext(ctx)
-	if !isSlave() {
-	}
 
 	// Setting up reporting client
 	// only if standalone or embedded connecting to diff DB for warehouse
