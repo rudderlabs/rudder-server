@@ -945,7 +945,7 @@ func (gateway *HandleT) pendingEventsHandler(w http.ResponseWriter, r *http.Requ
 		}
 	}
 
-	ctx, cancel := context.WithTimeout(r.Context(), config.GetDuration("Gateway.pendingEventsQueryTimeout", 10, time.Second))
+	ctx, cancel := context.WithTimeout(r.Context(), WriteTimeout)
 	defer cancel()
 
 	var pending bool
