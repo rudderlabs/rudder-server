@@ -36,7 +36,6 @@ func LoadOptions(args []string) *Options {
 
 	// Ignore errors; flagSet is set for ExitOnError.
 	_ = flagSet.Parse(args[1:])
-	flag.Parse()
 
 	return &Options{
 		NormalMode:   *normalMode,
