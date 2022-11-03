@@ -180,7 +180,7 @@ func (ct *CTHandleT) verifyingFetchSchema() (err error) {
 		return
 	}
 
-	_, err = ct.manager.FetchSchema(ct.warehouse)
+	_, _, err = ct.manager.FetchSchema(ct.warehouse)
 	return
 }
 

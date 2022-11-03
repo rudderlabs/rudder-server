@@ -97,6 +97,7 @@ const (
 const (
 	WAREHOUSE               = "warehouse"
 	RUDDER_MISSING_DATATYPE = "warehouse_rudder_missing_datatype"
+	MISSING_DATATYPE        = "<missing_datatype>"
 )
 
 const (
