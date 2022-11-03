@@ -10,9 +10,9 @@ import (
 	"github.com/rudderlabs/rudder-server/services/filemanager"
 )
 
-type storageSettings struct {
-	bucket      backendconfig.StorageBucket
-	preferences backendconfig.StoragePreferences
+type StorageSettings struct {
+	Bucket      backendconfig.StorageBucket
+	Preferences backendconfig.StoragePreferences
 }
 
 type FileUploader interface {
@@ -26,7 +26,7 @@ type FileUploader interface {
 func NewService(ctx context.Context, config backendconfig.BackendConfig) FileUploader {
 	s := &service{
 		init:            make(chan struct{}),
-		storageSettings: make(map[string]storageSettings),
+		storageSettings: make(map[string]StorageSettings),
 	}
 	go s.updateLoop(ctx, config)
 	return s
@@ -34,7 +34,7 @@ func NewService(ctx context.Context, config backendconfig.BackendConfig) FileUpl
 
 // NewStaticService creates a new service that operates against a predefined storage settings.
 // Useful for tests.
-func NewStaticService(storageSettings map[string]storageSettings) FileUploader {
+func NewStaticService(storageSettings map[string]StorageSettings) FileUploader {
 	s := &service{
 		init:            make(chan struct{}),
 		storageSettings: storageSettings,
@@ -53,7 +53,7 @@ func NewDefaultService() FileUploader {
 type service struct {
 	onceInit        sync.Once
 	init            chan struct{}
-	storageSettings map[string]storageSettings
+	storageSettings map[string]StorageSettings
 }
 
 func (s *service) GetFileUploader(workspaceID string) (filemanager.FileManager, error) {
@@ -63,8 +63,8 @@ func (s *service) GetFileUploader(workspaceID string) (filemanager.FileManager, 
 		return nil, fmt.Errorf("no storage settings found for workspace: %s", workspaceID)
 	}
 	return filemanager.DefaultFileManagerFactory.New(&filemanager.SettingsT{
-		Provider: settings.bucket.Type,
-		Config:   settings.bucket.Config,
+		Provider: settings.Bucket.Type,
+		Config:   settings.Bucket.Config,
 	})
 }
 
@@ -75,14 +75,14 @@ func (s *service) GetStoragePreferences(workspaceID string) (backendconfig.Stora
 	if !ok {
 		return prefs, fmt.Errorf("no storage settings found for workspace: %s", workspaceID)
 	}
-	return settings.preferences, nil
+	return settings.Preferences, nil
 }
 
 // updateLoop uses backend config to retrieve & keep up-to-date the storage settings of all workspaces.
 func (s *service) updateLoop(ctx context.Context, backendConfig backendconfig.BackendConfig) {
 	ch := backendConfig.Subscribe(ctx, backendconfig.TopicBackendConfig)
 
-	settings := make(map[string]storageSettings)
+	settings := make(map[string]StorageSettings)
 
 	var bucket backendconfig.StorageBucket
 	var preferences backendconfig.StoragePreferences
@@ -98,9 +98,9 @@ func (s *service) updateLoop(ctx context.Context, backendConfig backendconfig.Ba
 				bucket = getDefaultBucket(ctx, config.GetString("JOBS_BACKUP_STORAGE_PROVIDER", "S3"))
 			}
 			preferences = c.Settings.DataRetention.StoragePreferences
-			settings[c.WorkspaceID] = storageSettings{
-				bucket:      bucket,
-				preferences: preferences,
+			settings[c.WorkspaceID] = StorageSettings{
+				Bucket:      bucket,
+				Preferences: preferences,
 			}
 		}
 		s.onceInit.Do(func() {

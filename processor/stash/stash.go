@@ -210,13 +210,15 @@ func (st *HandleT) storeErrorsToObjectStorage(jobs []*jobsdb.JobT) (errorJob []E
 	g, _ := errgroup.WithContext(context.Background())
 	g.SetLimit(config.GetInt("Processor.errorBackupWorkers", 100))
 	for workspaceID, filePath := range dumps {
+		wrkId := workspaceID
+		path := filePath
 		g.Go(misc.WithBugsnag(func() error {
-			outputFile, err := os.Open(filePath)
+			outputFile, err := os.Open(path)
 			if err != nil {
 				panic(err)
 			}
 			prefixes := []string{"rudder-proc-err-logs", time.Now().Format("01-02-2006")}
-			errFileUploader, err := st.fileuploader.GetFileUploader(workspaceID)
+			errFileUploader, err := st.fileuploader.GetFileUploader(wrkId)
 			if err != nil {
 				panic(err)
 			}

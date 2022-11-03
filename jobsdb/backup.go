@@ -132,10 +132,12 @@ func (jd *HandleT) uploadDumps(ctx context.Context, dumps map[string]string) err
 	g, _ := errgroup.WithContext(ctx)
 	g.SetLimit(config.GetInt("JobsDB.JobsBackupWorkers", 100))
 	for workspaceID, filePath := range dumps {
+		wrkId := workspaceID
+		path := filePath
 		g.Go(misc.WithBugsnag(func() error {
-			if err := jd.uploadTableDump(ctx, workspaceID, filePath); err != nil {
-				jd.logger.Errorf("[JobsDB] :: Failed to upload workspaceId %v. Error: %s", workspaceID, err.Error())
-				stats.Default.NewTaggedStat("backup_ds_failed", stats.CountType, stats.Tags{"customVal": jd.tablePrefix, "workspaceId": workspaceID}).Increment()
+			if err := jd.uploadTableDump(ctx, wrkId, path); err != nil {
+				jd.logger.Errorf("[JobsDB] :: Failed to upload workspaceId %v. Error: %s", wrkId, err.Error())
+				stats.Default.NewTaggedStat("backup_ds_failed", stats.CountType, stats.Tags{"customVal": jd.tablePrefix, "workspaceId": wrkId}).Increment()
 				return err
 			}
 			return nil
@@ -164,7 +166,7 @@ func (jd *HandleT) failedOnlyBackup(ctx context.Context, backupDSRange *dataSetR
 		return nil
 	}
 
-	jd.logger.Infof("[JobsDB] :: Backing up table: %v", tableName)
+	jd.logger.Infof("[JobsDB] :: Backing up table (failed only backup): %v", tableName)
 
 	start := time.Now()
 	getFileName := func(workspaceID string) (string, error) {
@@ -214,7 +216,7 @@ func (jd *HandleT) backupJobsTable(ctx context.Context, backupDSRange *dataSetRa
 		return nil
 	}
 
-	jd.logger.Infof("[JobsDB] :: Backing up table: %v", tableName)
+	jd.logger.Infof("[JobsDB] :: Backing up table (jobs table): %v", tableName)
 
 	start := time.Now()
 
@@ -275,7 +277,7 @@ func (jd *HandleT) backupStatusTable(ctx context.Context, backupDSRange *dataSet
 		return nil
 	}
 
-	jd.logger.Infof("[JobsDB] :: Backing up table: %v", tableName)
+	jd.logger.Infof("[JobsDB] :: Backing up table (status table): %v", tableName)
 
 	start := time.Now()
 
@@ -543,6 +545,7 @@ func (jd *HandleT) createTableDump(queryFunc func(int64) string, pathFunc func(s
 				return fmt.Errorf("getting storage preferences failed with error : %w", err)
 			}
 			if !preferences.Backup(jd.tablePrefix) {
+				offset++
 				continue
 			}
 			rawJSONRows = append(rawJSONRows, '\n') // appending '\n'
