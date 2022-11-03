@@ -19,9 +19,9 @@ type FailedEventRowT struct {
 
 var (
 	failedKeysTablePrefix  = "failed_keys"
-	failedKeysExpire       = 48 * time.Hour
-	failedKeysCleanUpSleep = 24 * time.Hour
-	failedKeysEnabled      = false
+	failedKeysExpire       time.Duration
+	failedKeysCleanUpSleep time.Duration
+	failedKeysEnabled      bool
 )
 
 type FailedEventsManagerI interface {
