@@ -165,23 +165,6 @@ func (bq *HandleT) createTableView(tableName string, columnMap map[string]string
 	return
 }
 
-func (bq *HandleT) addColumn(tableName, columnName, columnType string) (err error) {
-	pkgLogger.Infof("BQ: Adding columns in table %s in bigquery dataset: %s in project: %s", tableName, bq.namespace, bq.projectID)
-	tableRef := bq.db.Dataset(bq.namespace).Table(tableName)
-	meta, err := tableRef.Metadata(bq.backgroundContext)
-	if err != nil {
-		return err
-	}
-	newSchema := append(meta.Schema,
-		&bigquery.FieldSchema{Name: columnName, Type: dataTypesMap[columnType]},
-	)
-	update := bigquery.TableMetadataToUpdate{
-		Schema: newSchema,
-	}
-	_, err = tableRef.Update(bq.backgroundContext, update, meta.ETag)
-	return
-}
-
 func (bq *HandleT) schemaExists(_, _ string) (exists bool, err error) {
 	ds := bq.db.Dataset(bq.namespace)
 	_, err = ds.Metadata(bq.backgroundContext)
@@ -826,15 +809,36 @@ func (bq *HandleT) LoadTable(tableName string) error {
 	return err
 }
 
-func (bq *HandleT) AddColumn(tableName, columnName, columnType string) (err error) {
-	err = bq.addColumn(tableName, columnName, columnType)
+func (bq *HandleT) AddColumns(tableName string, columnsInfo []warehouseutils.ColumnInfo) (err error) {
+	pkgLogger.Infof("BQ: Adding columns for destinationID: %s, tableName: %s, dataset: %s, project: %s", bq.warehouse.Destination.ID, tableName, bq.namespace, bq.projectID)
+	tableRef := bq.db.Dataset(bq.namespace).Table(tableName)
+	meta, err := tableRef.Metadata(bq.backgroundContext)
 	if err != nil {
-		if checkAndIgnoreAlreadyExistError(err) {
-			pkgLogger.Infof("BQ: Column %s already exists on %s.%s \nResponse: %v", columnName, bq.namespace, tableName, err)
-			err = nil
+		return
+	}
+
+	newSchema := meta.Schema
+	for _, columnInfo := range columnsInfo {
+		newSchema = append(newSchema,
+			&bigquery.FieldSchema{Name: columnInfo.Name, Type: dataTypesMap[columnInfo.Type]},
+		)
+	}
+
+	tableMetadataToUpdate := bigquery.TableMetadataToUpdate{
+		Schema: newSchema,
+	}
+	_, err = tableRef.Update(bq.backgroundContext, tableMetadataToUpdate, meta.ETag)
+
+	// Handle error in case of single column
+	if len(columnsInfo) == 1 {
+		if err != nil {
+			if checkAndIgnoreAlreadyExistError(err) {
+				pkgLogger.Infof("BQ: Column %s already exists on %s.%s \nResponse: %v", columnsInfo[0].Name, bq.namespace, tableName, err)
+				err = nil
+			}
 		}
 	}
-	return err
+	return
 }
 
 func (*HandleT) AlterColumn(_, _, _ string) (err error) {
@@ -842,7 +846,7 @@ func (*HandleT) AlterColumn(_, _, _ string) (err error) {
 }
 
 // FetchSchema queries bigquery and returns the schema associated with provided namespace
-func (bq *HandleT) FetchSchema(warehouse warehouseutils.Warehouse) (schema warehouseutils.SchemaT, err error) {
+func (bq *HandleT) FetchSchema(warehouse warehouseutils.Warehouse) (schema, unrecognizedSchema warehouseutils.SchemaT, err error) {
 	bq.warehouse = warehouse
 	bq.namespace = warehouse.Namespace
 	bq.projectID = strings.TrimSpace(warehouseutils.GetConfigValue(GCPProjectID, bq.warehouse))
@@ -856,6 +860,8 @@ func (bq *HandleT) FetchSchema(warehouse warehouseutils.Warehouse) (schema wareh
 	defer dbClient.Close()
 
 	schema = make(warehouseutils.SchemaT)
+	unrecognizedSchema = make(warehouseutils.SchemaT)
+
 	sqlStatement := fmt.Sprintf(`
 		SELECT
 		  t.table_name,
@@ -881,10 +887,10 @@ func (bq *HandleT) FetchSchema(warehouse warehouseutils.Warehouse) (schema wareh
 			// if dataset resource is not found, return empty schema
 			if e.Code == 404 {
 				pkgLogger.Infof("BQ: No rows, while fetching schema from  destination:%v, query: %v", bq.warehouse.Identifier, query)
-				return schema, nil
+				return schema, unrecognizedSchema, nil
 			}
 			pkgLogger.Errorf("BQ: Error in fetching schema from bigquery destination:%v, query: %v", bq.warehouse.Destination.ID, query)
-			return schema, e
+			return schema, unrecognizedSchema, e
 		}
 		pkgLogger.Errorf("BQ: Error in fetching schema from bigquery destination:%v, query: %v", bq.warehouse.Destination.ID, query)
 		return
@@ -898,7 +904,7 @@ func (bq *HandleT) FetchSchema(warehouse warehouseutils.Warehouse) (schema wareh
 		}
 		if err != nil {
 			pkgLogger.Errorf("BQ: Error in processing fetched schema from redshift destination:%v, error: %v", bq.warehouse.Destination.ID, err)
-			return nil, err
+			return nil, nil, err
 		}
 		var tName, cName, cType string
 		tName, _ = values[0].(string)
@@ -911,6 +917,11 @@ func (bq *HandleT) FetchSchema(warehouse warehouseutils.Warehouse) (schema wareh
 			// lower case all column names from bigquery
 			schema[tName][strings.ToLower(cName)] = datatype
 		} else {
+			if _, ok := unrecognizedSchema[tName]; !ok {
+				unrecognizedSchema[tName] = make(map[string]string)
+			}
+			unrecognizedSchema[tName][strings.ToLower(cName)] = warehouseutils.MISSING_DATATYPE
+
 			warehouseutils.WHCounterStat(warehouseutils.RUDDER_MISSING_DATATYPE, &bq.warehouse, warehouseutils.Tag{Name: "datatype", Value: cType}).Count(1)
 		}
 	}

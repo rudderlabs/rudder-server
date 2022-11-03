@@ -2,6 +2,7 @@ package middleware
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"strconv"
 	"sync/atomic"
@@ -33,9 +34,9 @@ func LimitConcurrentRequests(maxRequests int) func(http.Handler) http.Handler {
 	}
 }
 
-func StatMiddleware(ctx context.Context, router *mux.Router, s stats.Stats) func(http.Handler) http.Handler {
+func StatMiddleware(ctx context.Context, router *mux.Router, s stats.Stats, component string) func(http.Handler) http.Handler {
 	var concurrentRequests int32
-	activeClientCount := s.NewStat("gateway.concurrent_requests_count", stats.GaugeType)
+	activeClientCount := s.NewStat(fmt.Sprintf("%s.concurrent_requests_count", component), stats.GaugeType)
 	go func() {
 		for {
 			select {
@@ -70,7 +71,7 @@ func StatMiddleware(ctx context.Context, router *mux.Router, s stats.Stats) func
 			next.ServeHTTP(sw, r)
 
 			s.NewSampledTaggedStat(
-				"gateway.response_time",
+				fmt.Sprintf("%s.response_time", component),
 				stats.TimerType,
 				map[string]string{
 					"reqType": path,

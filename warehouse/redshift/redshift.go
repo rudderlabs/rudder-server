@@ -169,12 +169,26 @@ func (rs *HandleT) schemaExists(_ string) (exists bool, err error) {
 	return
 }
 
-func (rs *HandleT) AddColumn(name, columnName, columnType string) (err error) {
-	tableName := fmt.Sprintf(`%q.%q`, rs.Namespace, name)
-	sqlStatement := fmt.Sprintf(`ALTER TABLE %v ADD COLUMN %q %s`, tableName, columnName, getRSDataType(columnType))
-	pkgLogger.Infof("Adding column in redshift for RS:%s : %v", rs.Warehouse.Destination.ID, sqlStatement)
-	_, err = rs.Db.Exec(sqlStatement)
-	return
+func (rs *HandleT) AddColumns(tableName string, columnsInfo []warehouseutils.ColumnInfo) error {
+	for _, columnInfo := range columnsInfo {
+		query := fmt.Sprintf(`
+		ALTER TABLE
+		  %q.%q
+		ADD
+		  COLUMN %q %s;
+	`,
+			rs.Namespace,
+			tableName,
+			columnInfo.Name,
+			getRSDataType(columnInfo.Type),
+		)
+		pkgLogger.Infof("AZ: Adding column for destinationID: %s, tableName: %s with query: %v", rs.Warehouse.Destination.ID, tableName, query)
+
+		if _, err := rs.Db.Exec(query); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (rs *HandleT) DeleteBy(tableNames []string, params warehouseutils.DeleteByParams) (err error) {
@@ -675,7 +689,7 @@ func (rs *HandleT) getConnectionCredentials() RedshiftCredentialsT {
 }
 
 // FetchSchema queries redshift and returns the schema associated with provided namespace
-func (rs *HandleT) FetchSchema(warehouse warehouseutils.Warehouse) (schema warehouseutils.SchemaT, err error) {
+func (rs *HandleT) FetchSchema(warehouse warehouseutils.Warehouse) (schema, unrecognizedSchema warehouseutils.SchemaT, err error) {
 	rs.Warehouse = warehouse
 	rs.Namespace = warehouse.Namespace
 	dbHandle, err := Connect(rs.getConnectionCredentials())
@@ -685,6 +699,8 @@ func (rs *HandleT) FetchSchema(warehouse warehouseutils.Warehouse) (schema wareh
 	defer dbHandle.Close()
 
 	schema = make(warehouseutils.SchemaT)
+	unrecognizedSchema = make(warehouseutils.SchemaT)
+
 	sqlStatement := `
 			SELECT
 			  table_name,
@@ -710,7 +726,7 @@ func (rs *HandleT) FetchSchema(warehouse warehouseutils.Warehouse) (schema wareh
 	if err == sql.ErrNoRows {
 		pkgLogger.Infof("RS: No rows, while fetching schema from  destination:%v, query: %v", rs.Warehouse.Identifier,
 			sqlStatement)
-		return schema, nil
+		return schema, unrecognizedSchema, nil
 	}
 	defer rows.Close()
 	for rows.Next() {
@@ -730,6 +746,11 @@ func (rs *HandleT) FetchSchema(warehouse warehouseutils.Warehouse) (schema wareh
 			}
 			schema[tName][cName] = datatype
 		} else {
+			if _, ok := unrecognizedSchema[tName]; !ok {
+				unrecognizedSchema[tName] = make(map[string]string)
+			}
+			unrecognizedSchema[tName][cName] = warehouseutils.MISSING_DATATYPE
+
 			warehouseutils.WHCounterStat(warehouseutils.RUDDER_MISSING_DATATYPE, &rs.Warehouse, warehouseutils.Tag{Name: "datatype", Value: cType}).Count(1)
 		}
 	}

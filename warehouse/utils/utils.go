@@ -97,6 +97,7 @@ const (
 const (
 	WAREHOUSE               = "warehouse"
 	RUDDER_MISSING_DATATYPE = "warehouse_rudder_missing_datatype"
+	MISSING_DATATYPE        = "<missing_datatype>"
 )
 
 const (
@@ -227,6 +228,12 @@ type DeleteByParams struct {
 	JobRunId  string
 	TaskRunId string
 	StartTime string
+}
+
+type ColumnInfo struct {
+	Name  string
+	Value interface{}
+	Type  string
 }
 
 func (w *Warehouse) GetBoolDestinationConfig(key string) bool {
