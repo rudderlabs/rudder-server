@@ -111,10 +111,8 @@ func TestDegradeWorkspace(t *testing.T) {
 			for _, workspace := range tc.degradedWorkspaces {
 				require.True(t, m.DegradedWorkspace(workspace))
 			}
-
 		})
 	}
-
 }
 
 func TestSourceToWorkspace(t *testing.T) {

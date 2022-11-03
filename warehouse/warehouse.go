@@ -2079,8 +2079,8 @@ func startWebHandler(ctx context.Context) error {
 			mux.HandleFunc("/v1/setConfig", setConfigHandler)
 
 			// Warehouse Async Job end-points
-			mux.HandleFunc("/v1/warehouse/jobs", asyncWh.AddWarehouseJobHandler)           // degraded mode
-			mux.HandleFunc("/v1/warehouse/jobs/status", asyncWh.StatusWarehouseJobHandler) // degraded mode
+			mux.HandleFunc("/v1/warehouse/jobs", asyncWh.AddWarehouseJobHandler)           // FIXME: add degraded mode
+			mux.HandleFunc("/v1/warehouse/jobs/status", asyncWh.StatusWarehouseJobHandler) // FIXME: add degraded mode
 
 			pkgLogger.Infof("WH: Starting warehouse master service in %d", webPort)
 		} else {
