@@ -530,7 +530,9 @@ func (worker *workerT) workerProcess() {
 			if worker.rt.enableBatching {
 				routerJob := types.RouterJobT{Message: job.EventPayload, JobMetadata: jobMetadata, Destination: destination}
 				worker.routerJobs = append(worker.routerJobs, routerJob)
-				if len(worker.routerJobs) >= worker.rt.noOfJobsToBatchInAWorker {
+				noOfJobs := len(worker.routerJobs)
+				if noOfJobs >= worker.rt.noOfJobsToBatchInAWorker || // TODO review condition
+					(throttlingCost > 0 && throttler != nil && int64(noOfJobs) >= throttlingCost*int64(noOfJobs)) {
 					worker.destinationJobs = worker.batchRouterTransform(worker.routerJobs)
 					worker.processDestinationJobs()
 				}
