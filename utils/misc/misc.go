@@ -418,50 +418,6 @@ func CreateTMPDIR() (string, error) {
 	return tmpdirPath, nil
 }
 
-// PerfStats is the class for managing performance stats. Not multi-threaded safe now
-type PerfStats struct {
-	eventCount      int64
-	elapsedTime     time.Duration
-	compStr         string
-	tmpStart        time.Time
-	instantRateCall float64
-}
-
-// Setup initializes the stat collector
-func (stats *PerfStats) Setup(comp string) {
-	stats.compStr = comp
-}
-
-// Start marks the start of event collection
-func (stats *PerfStats) Start() {
-	stats.tmpStart = time.Now()
-}
-
-// End marks the end of one round of stat collection. events is number of events processed since start
-func (stats *PerfStats) End(events int) {
-	elapsed := time.Since(stats.tmpStart)
-	stats.elapsedTime += elapsed
-	stats.eventCount += int64(events)
-	stats.instantRateCall = float64(events) * float64(time.Second) / float64(elapsed)
-}
-
-func (stats *PerfStats) Rate(events int, elapsed time.Duration) {
-	stats.elapsedTime += elapsed
-	stats.eventCount += int64(events)
-	stats.instantRateCall = float64(events) * float64(time.Second) / float64(elapsed)
-}
-
-func (stats *PerfStats) Status() map[string]interface{} {
-	overallRate := float64(0)
-	if float64(stats.elapsedTime) > 0 {
-		overallRate = float64(stats.eventCount) * float64(time.Second) / float64(stats.elapsedTime)
-	}
-	return map[string]interface{}{
-		"total-events": stats.eventCount,
-		"overall-rate": overallRate,
-	}
-}
-
 // Copy copies the exported fields from src to dest
 // Used for copying the default transport
 func Copy(dst, src interface{}) {

@@ -20,12 +20,12 @@ func NewLocalSchemaRepository(wh warehouseutils.Warehouse, uploader warehouseuti
 	return &ls, nil
 }
 
-func (ls *LocalSchemaRepository) FetchSchema(_ warehouseutils.Warehouse) (warehouseutils.SchemaT, error) {
+func (ls *LocalSchemaRepository) FetchSchema(_ warehouseutils.Warehouse) (warehouseutils.SchemaT, warehouseutils.SchemaT, error) {
 	schema := ls.uploader.GetLocalSchema()
 	if schema == nil {
 		schema = warehouseutils.SchemaT{}
 	}
-	return schema, nil
+	return schema, warehouseutils.SchemaT{}, nil
 }
 
 func (*LocalSchemaRepository) CreateSchema() (err error) {
@@ -34,7 +34,7 @@ func (*LocalSchemaRepository) CreateSchema() (err error) {
 
 func (ls *LocalSchemaRepository) CreateTable(tableName string, columnMap map[string]string) (err error) {
 	// fetch schema from local db
-	schema, err := ls.FetchSchema(ls.warehouse)
+	schema, _, err := ls.FetchSchema(ls.warehouse)
 	if err != nil {
 		return err
 	}
@@ -52,7 +52,7 @@ func (ls *LocalSchemaRepository) CreateTable(tableName string, columnMap map[str
 
 func (ls *LocalSchemaRepository) AddColumns(tableName string, columnsInfo []warehouseutils.ColumnInfo) (err error) {
 	// fetch schema from local db
-	schema, err := ls.FetchSchema(ls.warehouse)
+	schema, _, err := ls.FetchSchema(ls.warehouse)
 	if err != nil {
 		return err
 	}
@@ -72,7 +72,7 @@ func (ls *LocalSchemaRepository) AddColumns(tableName string, columnsInfo []ware
 
 func (ls *LocalSchemaRepository) AlterColumn(tableName, columnName, columnType string) (err error) {
 	// fetch schema from local db
-	schema, err := ls.FetchSchema(ls.warehouse)
+	schema, _, err := ls.FetchSchema(ls.warehouse)
 	if err != nil {
 		return err
 	}

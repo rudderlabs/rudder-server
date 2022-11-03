@@ -40,7 +40,7 @@ func (*HandleT) CrashRecover(_ warehouseutils.Warehouse) (err error) {
 	return nil
 }
 
-func (wh *HandleT) FetchSchema(warehouse warehouseutils.Warehouse) (warehouseutils.SchemaT, error) {
+func (wh *HandleT) FetchSchema(warehouse warehouseutils.Warehouse) (warehouseutils.SchemaT, warehouseutils.SchemaT, error) {
 	return wh.SchemaRepository.FetchSchema(warehouse)
 }
 
