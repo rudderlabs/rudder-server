@@ -31,6 +31,7 @@ import (
 	"github.com/rudderlabs/rudder-server/services/controlplane/features"
 	"github.com/rudderlabs/rudder-server/services/db"
 	destinationdebugger "github.com/rudderlabs/rudder-server/services/debugger/destination"
+	"github.com/rudderlabs/rudder-server/services/filemanager"
 	"github.com/rudderlabs/rudder-server/services/pgnotifier"
 	migrator "github.com/rudderlabs/rudder-server/services/sql-migrator"
 	"github.com/rudderlabs/rudder-server/services/stats"
@@ -2258,8 +2259,16 @@ func Start(ctx context.Context, app app.App) error {
 			monitorDestRouters(ctx)
 			return nil
 		}))
+
+		archiver := &Archiver{
+			DB:          dbHandle,
+			Stats:       stats.Default,
+			Logger:      pkgLogger.Child("archiver"),
+			FileManager: filemanager.DefaultFileManagerFactory,
+			Multitenant: tenantManager,
+		}
 		g.Go(misc.WithBugsnagForWarehouse(func() error {
-			runArchiver(ctx, dbHandle)
+			CronArchiver(ctx, archiver)
 			return nil
 		}))
 

@@ -14,17 +14,18 @@ import (
 	"github.com/rudderlabs/rudder-server/admin"
 	"github.com/rudderlabs/rudder-server/config"
 	mock_stats "github.com/rudderlabs/rudder-server/mocks/services/stats"
-	"github.com/rudderlabs/rudder-server/testhelper"
 	"github.com/rudderlabs/rudder-server/testhelper/destination"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 )
 
 type testingT interface {
 	Setenv(key, value string)
+	Cleanup(func())
+	Log(...any)
 }
 
-func setupWarehouseJobs(pool *dockertest.Pool, t testingT, cleanup *testhelper.Cleanup) *destination.PostgresResource {
-	pgResource, err := destination.SetupPostgres(pool, cleanup)
+func setupWarehouseJobs(pool *dockertest.Pool, t testingT) *destination.PostgresResource {
+	pgResource, err := destination.SetupPostgres(pool, t)
 	Expect(err).To(BeNil())
 
 	t.Setenv("WAREHOUSE_JOBS_DB_HOST", pgResource.Host)
