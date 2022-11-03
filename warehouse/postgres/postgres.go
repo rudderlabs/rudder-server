@@ -783,7 +783,7 @@ func (pg *HandleT) dropDanglingStagingTables() bool {
 }
 
 // FetchSchema queries postgres and returns the schema associated with provided namespace
-func (pg *HandleT) FetchSchema(warehouse warehouseutils.Warehouse) (schema, unRecognizedSchema warehouseutils.SchemaT, err error) {
+func (pg *HandleT) FetchSchema(warehouse warehouseutils.Warehouse) (schema, unrecognizedSchema warehouseutils.SchemaT, err error) {
 	pg.Warehouse = warehouse
 	pg.Namespace = warehouse.Namespace
 	dbHandle, err := Connect(pg.getConnectionCredentials())
@@ -793,7 +793,7 @@ func (pg *HandleT) FetchSchema(warehouse warehouseutils.Warehouse) (schema, unRe
 	defer dbHandle.Close()
 
 	schema = make(warehouseutils.SchemaT)
-	unRecognizedSchema = make(warehouseutils.SchemaT)
+	unrecognizedSchema = make(warehouseutils.SchemaT)
 
 	sqlStatement := `
 		SELECT
@@ -817,7 +817,7 @@ func (pg *HandleT) FetchSchema(warehouse warehouseutils.Warehouse) (schema, unRe
 	}
 	if err == sql.ErrNoRows {
 		pkgLogger.Infof("PG: No rows, while fetching schema from  destination:%v, query: %v", pg.Warehouse.Identifier, sqlStatement)
-		return schema, unRecognizedSchema, nil
+		return schema, unrecognizedSchema, nil
 	}
 	defer rows.Close()
 	for rows.Next() {
@@ -834,10 +834,10 @@ func (pg *HandleT) FetchSchema(warehouse warehouseutils.Warehouse) (schema, unRe
 			if datatype, ok := postgresDataTypesMapToRudder[cType.String]; ok {
 				schema[tName.String][cName.String] = datatype
 			} else {
-				if _, ok := unRecognizedSchema[tName.String]; !ok {
-					unRecognizedSchema[tName.String] = make(map[string]string)
+				if _, ok := unrecognizedSchema[tName.String]; !ok {
+					unrecognizedSchema[tName.String] = make(map[string]string)
 				}
-				unRecognizedSchema[tName.String][cType.String] = warehouseutils.MISSING_DATATYPE
+				unrecognizedSchema[tName.String][cType.String] = warehouseutils.MISSING_DATATYPE
 
 				warehouseutils.WHCounterStat(warehouseutils.RUDDER_MISSING_DATATYPE, &pg.Warehouse, warehouseutils.Tag{Name: "datatype", Value: cType.String}).Count(1)
 			}

@@ -267,7 +267,7 @@ func (job *UploadJobT) syncRemoteSchema() (schemaChanged bool, err error) {
 	}
 	job.schemaHandle = &schemaHandle
 	schemaHandle.localSchema = schemaHandle.getLocalSchema()
-	schemaHandle.schemaInWarehouse, schemaHandle.unRecognizedSchemaInWarehouse, err = schemaHandle.fetchSchemaFromWarehouse(job.whManager)
+	schemaHandle.schemaInWarehouse, schemaHandle.unrecognizedSchemaInWarehouse, err = schemaHandle.fetchSchemaFromWarehouse(job.whManager)
 	if err != nil {
 		return false, err
 	}
@@ -878,8 +878,8 @@ func (job *UploadJobT) addColumnsToWarehouse(tName string, columnsMap map[string
 	var columnsToAdd []warehouseutils.ColumnInfo
 	for columnName, columnType := range columnsMap {
 		// columns present in unrecognized schema should be skipped
-		if unRecognizedSchema, ok := job.schemaHandle.unRecognizedSchemaInWarehouse[tName]; ok {
-			if _, ok := unRecognizedSchema[columnName]; ok {
+		if unrecognizedSchema, ok := job.schemaHandle.unrecognizedSchemaInWarehouse[tName]; ok {
+			if _, ok := unrecognizedSchema[columnName]; ok {
 				continue
 			}
 		}

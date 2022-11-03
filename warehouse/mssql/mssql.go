@@ -816,7 +816,7 @@ func (ms *HandleT) dropDanglingStagingTables() bool {
 }
 
 // FetchSchema queries mssql and returns the schema associated with provided namespace
-func (ms *HandleT) FetchSchema(warehouse warehouseutils.Warehouse) (schema, unRecognizedSchema warehouseutils.SchemaT, err error) {
+func (ms *HandleT) FetchSchema(warehouse warehouseutils.Warehouse) (schema, unrecognizedSchema warehouseutils.SchemaT, err error) {
 	ms.Warehouse = warehouse
 	ms.Namespace = warehouse.Namespace
 	dbHandle, err := Connect(ms.getConnectionCredentials())
@@ -826,7 +826,7 @@ func (ms *HandleT) FetchSchema(warehouse warehouseutils.Warehouse) (schema, unRe
 	defer dbHandle.Close()
 
 	schema = make(warehouseutils.SchemaT)
-	unRecognizedSchema = make(warehouseutils.SchemaT)
+	unrecognizedSchema = make(warehouseutils.SchemaT)
 
 	sqlStatement := fmt.Sprintf(`
 			SELECT
@@ -849,7 +849,7 @@ func (ms *HandleT) FetchSchema(warehouse warehouseutils.Warehouse) (schema, unRe
 	}
 	if err == io.EOF {
 		pkgLogger.Infof("MS: No rows, while fetching schema from  destination:%v, query: %v", ms.Warehouse.Identifier, sqlStatement)
-		return schema, unRecognizedSchema, nil
+		return schema, unrecognizedSchema, nil
 	}
 	defer rows.Close()
 	for rows.Next() {
@@ -865,10 +865,10 @@ func (ms *HandleT) FetchSchema(warehouse warehouseutils.Warehouse) (schema, unRe
 		if datatype, ok := mssqlDataTypesMapToRudder[cType]; ok {
 			schema[tName][cName] = datatype
 		} else {
-			if _, ok := unRecognizedSchema[tName]; !ok {
-				unRecognizedSchema[tName] = make(map[string]string)
+			if _, ok := unrecognizedSchema[tName]; !ok {
+				unrecognizedSchema[tName] = make(map[string]string)
 			}
-			unRecognizedSchema[tName][cName] = warehouseutils.MISSING_DATATYPE
+			unrecognizedSchema[tName][cName] = warehouseutils.MISSING_DATATYPE
 
 			warehouseutils.WHCounterStat(warehouseutils.RUDDER_MISSING_DATATYPE, &ms.Warehouse, warehouseutils.Tag{Name: "datatype", Value: cType}).Count(1)
 		}

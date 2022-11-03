@@ -846,7 +846,7 @@ func (*HandleT) AlterColumn(_, _, _ string) (err error) {
 }
 
 // FetchSchema queries bigquery and returns the schema associated with provided namespace
-func (bq *HandleT) FetchSchema(warehouse warehouseutils.Warehouse) (schema, unRecognizedSchema warehouseutils.SchemaT, err error) {
+func (bq *HandleT) FetchSchema(warehouse warehouseutils.Warehouse) (schema, unrecognizedSchema warehouseutils.SchemaT, err error) {
 	bq.warehouse = warehouse
 	bq.namespace = warehouse.Namespace
 	bq.projectID = strings.TrimSpace(warehouseutils.GetConfigValue(GCPProjectID, bq.warehouse))
@@ -860,7 +860,7 @@ func (bq *HandleT) FetchSchema(warehouse warehouseutils.Warehouse) (schema, unRe
 	defer dbClient.Close()
 
 	schema = make(warehouseutils.SchemaT)
-	unRecognizedSchema = make(warehouseutils.SchemaT)
+	unrecognizedSchema = make(warehouseutils.SchemaT)
 
 	sqlStatement := fmt.Sprintf(`
 		SELECT
@@ -887,10 +887,10 @@ func (bq *HandleT) FetchSchema(warehouse warehouseutils.Warehouse) (schema, unRe
 			// if dataset resource is not found, return empty schema
 			if e.Code == 404 {
 				pkgLogger.Infof("BQ: No rows, while fetching schema from  destination:%v, query: %v", bq.warehouse.Identifier, query)
-				return schema, unRecognizedSchema, nil
+				return schema, unrecognizedSchema, nil
 			}
 			pkgLogger.Errorf("BQ: Error in fetching schema from bigquery destination:%v, query: %v", bq.warehouse.Destination.ID, query)
-			return schema, unRecognizedSchema, e
+			return schema, unrecognizedSchema, e
 		}
 		pkgLogger.Errorf("BQ: Error in fetching schema from bigquery destination:%v, query: %v", bq.warehouse.Destination.ID, query)
 		return
@@ -917,10 +917,10 @@ func (bq *HandleT) FetchSchema(warehouse warehouseutils.Warehouse) (schema, unRe
 			// lower case all column names from bigquery
 			schema[tName][strings.ToLower(cName)] = datatype
 		} else {
-			if _, ok := unRecognizedSchema[tName]; !ok {
-				unRecognizedSchema[tName] = make(map[string]string)
+			if _, ok := unrecognizedSchema[tName]; !ok {
+				unrecognizedSchema[tName] = make(map[string]string)
 			}
-			unRecognizedSchema[tName][strings.ToLower(cName)] = warehouseutils.MISSING_DATATYPE
+			unrecognizedSchema[tName][strings.ToLower(cName)] = warehouseutils.MISSING_DATATYPE
 
 			warehouseutils.WHCounterStat(warehouseutils.RUDDER_MISSING_DATATYPE, &bq.warehouse, warehouseutils.Tag{Name: "datatype", Value: cType}).Count(1)
 		}
