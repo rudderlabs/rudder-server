@@ -160,13 +160,13 @@ func (sh *SchemaHandleT) updateLocalSchema(updatedSchema warehouseutils.SchemaT)
 	return err
 }
 
-func (sh *SchemaHandleT) fetchSchemaFromWarehouse(whManager manager.ManagerI) (schemaInWarehouse, unRecognizedschemaInWarehouse warehouseutils.SchemaT, err error) {
-	schemaInWarehouse, unRecognizedschemaInWarehouse, err = whManager.FetchSchema(sh.warehouse)
+func (sh *SchemaHandleT) fetchSchemaFromWarehouse(whManager manager.ManagerI) (schemaInWarehouse, unRecognizedSchemaInWarehouse warehouseutils.SchemaT, err error) {
+	schemaInWarehouse, unRecognizedSchemaInWarehouse, err = whManager.FetchSchema(sh.warehouse)
 	if err != nil {
 		pkgLogger.Errorf(`[WH]: Failed fetching schema from warehouse: %v`, err)
 		return warehouseutils.SchemaT{}, warehouseutils.SchemaT{}, err
 	}
-	return schemaInWarehouse, unRecognizedschemaInWarehouse, nil
+	return schemaInWarehouse, unRecognizedSchemaInWarehouse, nil
 }
 
 func mergeSchema(currentSchema warehouseutils.SchemaT, schemaList []warehouseutils.SchemaT, currentMergedSchema warehouseutils.SchemaT, warehouseType string) warehouseutils.SchemaT {

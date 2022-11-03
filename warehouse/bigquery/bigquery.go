@@ -920,7 +920,7 @@ func (bq *HandleT) FetchSchema(warehouse warehouseutils.Warehouse) (schema, unRe
 			if _, ok := unRecognizedSchema[tName]; !ok {
 				unRecognizedSchema[tName] = make(map[string]string)
 			}
-			unRecognizedSchema[tName][cName] = warehouseutils.MISSING_DATATYPE
+			unRecognizedSchema[tName][strings.ToLower(cName)] = warehouseutils.MISSING_DATATYPE
 
 			warehouseutils.WHCounterStat(warehouseutils.RUDDER_MISSING_DATATYPE, &bq.warehouse, warehouseutils.Tag{Name: "datatype", Value: cType}).Count(1)
 		}
