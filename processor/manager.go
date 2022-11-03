@@ -29,7 +29,7 @@ type LifecycleManager struct {
 	BackendConfig    backendconfig.BackendConfig
 	Transformer      transformer.Transformer
 	transientSources transientsource.Service
-	fileuploader     fileuploader.FileUploader
+	fileuploader     fileuploader.Provider
 	rsourcesService  rsources.JobService
 }
 
@@ -71,7 +71,7 @@ func (proc *LifecycleManager) Stop() {
 
 // New creates a new Processor instance
 func New(ctx context.Context, clearDb *bool, gwDb, rtDb, brtDb, errDb *jobsdb.HandleT,
-	tenantDB multitenant.MultiTenantI, reporting types.ReportingI, transientSources transientsource.Service, fileuploader fileuploader.FileUploader,
+	tenantDB multitenant.MultiTenantI, reporting types.ReportingI, transientSources transientsource.Service, fileuploader fileuploader.Provider,
 	rsourcesService rsources.JobService,
 ) *LifecycleManager {
 	proc := &LifecycleManager{

@@ -130,7 +130,7 @@ func (jd *HandleT) cleanStatusTable(backupDSRange *dataSetRangeT) error {
 
 func (jd *HandleT) uploadDumps(ctx context.Context, dumps map[string]string) error {
 	g, _ := errgroup.WithContext(ctx)
-	g.SetLimit(config.GetInt("JobsDB.JobsBackupWorkers", 100))
+	g.SetLimit(config.GetInt("JobsDB.JobsBackupUploadWorkers", 100))
 	for workspaceID, filePath := range dumps {
 		wrkId := workspaceID
 		path := filePath
@@ -179,7 +179,7 @@ func (jd *HandleT) failedOnlyBackup(ctx context.Context, backupDSRange *dataSetR
 		return fmt.Sprintf(`%v%v_%v.%v.gz`, tmpDirPath+backupPathDirName, pathPrefix, Aborted.State, workspaceID), nil
 	}
 
-	dumps, err := jd.createTableDump(getFailedOnlyBackupQueryFn(backupDSRange), getFileName, totalCount)
+	dumps, err := jd.createTableDumps(getFailedOnlyBackupQueryFn(backupDSRange), getFileName, totalCount)
 	if err != nil {
 		return fmt.Errorf("error while creating table dump: %w", err)
 	}
@@ -238,7 +238,7 @@ func (jd *HandleT) backupJobsTable(ctx context.Context, backupDSRange *dataSetRa
 		), nil
 	}
 
-	dumps, err := jd.createTableDump(getJobsBackupQueryFn(backupDSRange), getFileName, totalCount)
+	dumps, err := jd.createTableDumps(getJobsBackupQueryFn(backupDSRange), getFileName, totalCount)
 	if err != nil {
 		return fmt.Errorf("error while creating table dump: %w", err)
 	}
@@ -291,7 +291,7 @@ func (jd *HandleT) backupStatusTable(ctx context.Context, backupDSRange *dataSet
 		return fmt.Sprintf(`%v%v.%v.gz`, tmpDirPath+backupPathDirName, pathPrefix, workspaceID), nil
 	}
 
-	dumps, err := jd.createTableDump(getStatusBackupQueryFn(backupDSRange), getFileName, totalCount)
+	dumps, err := jd.createTableDumps(getStatusBackupQueryFn(backupDSRange), getFileName, totalCount)
 	if err != nil {
 		return fmt.Errorf("error while creating table dump: %w", err)
 	}
@@ -518,8 +518,8 @@ func getStatusBackupQueryFn(backupDSRange *dataSetRangeT) func(int64) string {
 	}
 }
 
-func (jd *HandleT) createTableDump(queryFunc func(int64) string, pathFunc func(string) (string, error), totalCount int64) (map[string]string, error) {
-	fileHandler := fileuploader.NewGzWriter()
+func (jd *HandleT) createTableDumps(queryFunc func(int64) string, pathFunc func(string) (string, error), totalCount int64) (map[string]string, error) {
+	filesWriter := fileuploader.NewGzMultiFileWriter()
 	tableFileDumpTimeStat := stats.Default.NewTaggedStat("table_FileDump_TimeStat", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix})
 	tableFileDumpTimeStat.Start()
 
@@ -540,7 +540,7 @@ func (jd *HandleT) createTableDump(queryFunc func(int64) string, pathFunc func(s
 			if err != nil {
 				return fmt.Errorf("scanning row failed with error : %w", err)
 			}
-			preferences, err := jd.fileUploader.GetStoragePreferences(workspaceID)
+			preferences, err := jd.fileUploaderProvider.GetStoragePreferences(workspaceID)
 			if err != nil {
 				return fmt.Errorf("getting storage preferences failed with error : %w", err)
 			}
@@ -556,7 +556,7 @@ func (jd *HandleT) createTableDump(queryFunc func(int64) string, pathFunc func(s
 			if err != nil {
 				return fmt.Errorf("error while getting path: %w", err)
 			}
-			_, err = fileHandler.Write(path, rawJSONRows)
+			_, err = filesWriter.Write(path, rawJSONRows)
 			if err != nil {
 				return fmt.Errorf("writing gz file %q: %w", path, err)
 			}
@@ -577,7 +577,7 @@ func (jd *HandleT) createTableDump(queryFunc func(int64) string, pathFunc func(s
 		}
 	}
 
-	err := fileHandler.Close()
+	err := filesWriter.Close()
 	if err != nil {
 		return dumps, err
 	}
@@ -616,7 +616,7 @@ func (jd *HandleT) uploadTableDump(ctx context.Context, workspaceID, path string
 
 func (jd *HandleT) backupUploadWithExponentialBackoff(ctx context.Context, file *os.File, workspaceID string, pathPrefixes ...string) (filemanager.UploadOutput, error) {
 	// get a file uploader
-	fileUploader, err := jd.fileUploader.GetFileUploader(workspaceID)
+	fileUploader, err := jd.fileUploaderProvider.GetFileManager(workspaceID)
 	if err != nil {
 		return filemanager.UploadOutput{}, err
 	}

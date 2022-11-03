@@ -49,14 +49,14 @@ func (gatewayApp *GatewayApp) StartRudderCore(ctx context.Context, options *app.
 
 	sourcedebugger.Setup(backendconfig.DefaultBackendConfig)
 
-	fileuploader := fileuploader.NewService(ctx, backendconfig.DefaultBackendConfig)
+	fileUploaderProvider := fileuploader.NewProvider(ctx, backendconfig.DefaultBackendConfig)
 
 	gatewayDB := jobsdb.NewForWrite(
 		"gw",
 		jobsdb.WithClearDB(options.ClearDB),
 		jobsdb.WithStatusHandler(),
 		jobsdb.WithDSLimit(&gatewayDSLimit),
-		jobsdb.WithFileUploader(fileuploader),
+		jobsdb.WithFileUploaderProvider(fileUploaderProvider),
 	)
 	defer gatewayDB.Close()
 	if err := gatewayDB.Start(); err != nil {

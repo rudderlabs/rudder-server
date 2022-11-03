@@ -80,7 +80,7 @@ type HandleT struct {
 	jobdDBQueryRequestTimeout time.Duration
 	jobdDBMaxRetries          int
 	transientSources          transientsource.Service
-	fileuploader              fileuploader.FileUploader
+	fileuploader              fileuploader.Provider
 	rsourcesService           rsources.JobService
 }
 
@@ -307,7 +307,7 @@ func (proc *HandleT) Setup(
 	backendConfig backendconfig.BackendConfig, gatewayDB, routerDB jobsdb.JobsDB,
 	batchRouterDB, errorDB jobsdb.JobsDB, clearDB *bool, reporting types.ReportingI,
 	multiTenantStat multitenant.MultiTenantI, transientSources transientsource.Service,
-	fileuploader fileuploader.FileUploader, rsourcesService rsources.JobService,
+	fileuploader fileuploader.Provider, rsourcesService rsources.JobService,
 ) {
 	proc.reporting = reporting
 	config.RegisterBoolConfigVariable(types.DEFAULT_REPORTING_ENABLED, &proc.reportingEnabled, false, "Reporting.enabled")

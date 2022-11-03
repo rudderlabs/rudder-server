@@ -450,7 +450,7 @@ type HandleT struct {
 	backgroundGroup               *errgroup.Group
 	maxBackupRetryTime            time.Duration
 	preBackupHandlers             []prebackup.Handler
-	fileUploader                  fileuploader.FileUploader
+	fileUploaderProvider          fileuploader.Provider
 	// skipSetupDBSetup is useful for testing as we mock the database client
 	// TODO: Remove this flag once we have test setup that uses real database
 	skipSetupDBSetup bool
@@ -720,9 +720,9 @@ func WithDSLimit(limit *int) OptsFunc {
 	}
 }
 
-func WithFileUploader(fileuploader fileuploader.FileUploader) OptsFunc {
+func WithFileUploaderProvider(fileUploaderProvider fileuploader.Provider) OptsFunc {
 	return func(jd *HandleT) {
-		jd.fileUploader = fileuploader
+		jd.fileUploaderProvider = fileUploaderProvider
 	}
 }
 
@@ -761,14 +761,14 @@ multiple users of JobsDB
 */
 func (jd *HandleT) Setup(
 	ownerType OwnerType, clearAll bool, tablePrefix string,
-	registerStatusHandler bool, preBackupHandlers []prebackup.Handler, fileuploader fileuploader.FileUploader,
+	registerStatusHandler bool, preBackupHandlers []prebackup.Handler, fileUploaderProvider fileuploader.Provider,
 ) error {
 	jd.ownerType = ownerType
 	jd.clearAll = clearAll
 	jd.tablePrefix = tablePrefix
 	jd.registerStatusHandler = registerStatusHandler
 	jd.preBackupHandlers = preBackupHandlers
-	jd.fileUploader = fileuploader
+	jd.fileUploaderProvider = fileUploaderProvider
 	jd.init()
 	return jd.Start()
 }

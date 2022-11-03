@@ -39,14 +39,14 @@ func TestFileUploaderUpdatingWithConfigBackend(t *testing.T) {
 	})
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	// Given I have a service reading from the backend
-	service := NewService(ctx, config)
+	// Given I have a fileUploaderProvider reading from the backend
+	fileUploaderProvider := NewProvider(ctx, config)
 	var err error
 	var preferences backendconfig.StoragePreferences
 
 	go func() {
 		ready.Done()
-		preferences, err = service.GetStoragePreferences("testWorkspaceId-1")
+		preferences, err = fileUploaderProvider.GetStoragePreferences("testWorkspaceId-1")
 		storageSettings.Done()
 	}()
 
@@ -100,7 +100,7 @@ func TestFileUploaderUpdatingWithConfigBackend(t *testing.T) {
 		},
 	))
 
-	preferences, err = service.GetStoragePreferences("testWorkspaceId-0")
+	preferences, err = fileUploaderProvider.GetStoragePreferences("testWorkspaceId-0")
 	Expect(err).To(HaveOccurred())
 	Expect(preferences).To(BeEquivalentTo(backendconfig.StoragePreferences{}))
 }

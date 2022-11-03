@@ -88,7 +88,7 @@ func TestStoreErrorsToObjectStorage(t *testing.T) {
 		},
 	}
 
-	fileuploader := fileuploader.NewStaticService(storageSettings)
+	fileuploaderProvider := fileuploader.NewStaticProvider(storageSettings)
 
 	jobs := []*jobsdb.JobT{
 		{
@@ -112,7 +112,7 @@ func TestStoreErrorsToObjectStorage(t *testing.T) {
 	}
 
 	st := New()
-	st.fileuploader = fileuploader
+	st.fileuploader = fileuploaderProvider
 	st.logger = logger.NOP
 
 	jobsCount := countJobsByWorkspace(jobs)
@@ -122,7 +122,7 @@ func TestStoreErrorsToObjectStorage(t *testing.T) {
 
 	for i := 0; i < uniqueWorkspaces; i++ {
 		workspace := "defaultWorkspaceID-" + strconv.Itoa(i+1)
-		fm, err := st.fileuploader.GetFileUploader(workspace)
+		fm, err := st.fileuploader.GetFileManager(workspace)
 		require.NoError(t, err)
 		var file []*filemanager.FileObject
 		require.Eventually(t, func() bool {
@@ -130,7 +130,7 @@ func TestStoreErrorsToObjectStorage(t *testing.T) {
 
 			if len(file) != 1 {
 				t.Log("file list: ", file, " err: ", err, "len: ", len(file))
-				fm, err = fileuploader.GetFileUploader(workspace)
+				fm, err = fileuploaderProvider.GetFileManager(workspace)
 				require.NoError(t, err)
 				return false
 			}

@@ -88,13 +88,13 @@ func TestBackupTable(t *testing.T) {
 	// insert duplicates in status table to verify that only latest 2 status of each job is backed up
 	duplicateStatusList := duplicateStatuses(statusList, 3)
 
-	fileuploader := fileuploader.NewDefaultService()
+	fileUploaderProvider := fileuploader.NewDefaultProvider()
 
 	// batch_rt jobsdb is taking a full backup
-	tc.insertBatchRTData(t, jobs, duplicateStatusList, cleanup, fileuploader)
+	tc.insertBatchRTData(t, jobs, duplicateStatusList, cleanup, fileUploaderProvider)
 
 	// rt jobsdb is taking a backup of failed jobs only
-	tc.insertRTData(t, jobs, statusList, cleanup, fileuploader)
+	tc.insertRTData(t, jobs, statusList, cleanup, fileUploaderProvider)
 	require.NoError(t, err, "expected no error while inserting rt data")
 
 	// create a filemanager instance
@@ -294,19 +294,19 @@ func TestMultipleWorkspacesBackupTable(t *testing.T) {
 		},
 	}
 
-	fileuploader := fileuploader.NewStaticService(storageSettings)
+	fileuploaderProvider := fileuploader.NewStaticProvider(storageSettings)
 
 	// batch_rt jobsdb is taking a full backup
-	tc.insertBatchRTData(t, jobs, duplicateStatusList, cleanup, fileuploader)
+	tc.insertBatchRTData(t, jobs, duplicateStatusList, cleanup, fileuploaderProvider)
 
 	// rt jobsdb is taking a backup of failed jobs only
-	tc.insertRTData(t, jobs, statusList, cleanup, fileuploader)
+	tc.insertRTData(t, jobs, statusList, cleanup, fileuploaderProvider)
 	require.NoError(t, err, "expected no error while inserting rt data")
 
 	// wait for the backup to finish
 	for i := 0; i < 1; i++ {
 		workspace := "defaultWorkspaceID-" + strconv.Itoa(i+1)
-		fm, err := fileuploader.GetFileUploader(workspace)
+		fm, err := fileuploaderProvider.GetFileManager(workspace)
 		require.NoError(t, err)
 		var file []*filemanager.FileObject
 		require.Eventually(t, func() bool {
@@ -314,7 +314,7 @@ func TestMultipleWorkspacesBackupTable(t *testing.T) {
 
 			if len(file) != 3 {
 				t.Log("file list: ", file, " err: ", err, "len: ", len(file))
-				fm, err = fileuploader.GetFileUploader(workspace)
+				fm, err = fileuploaderProvider.GetFileManager(workspace)
 				require.NoError(t, err)
 				return false
 			}
@@ -392,7 +392,7 @@ func duplicateStatuses(statusList []*JobStatusT, duplicateCount int) []*JobStatu
 	return res
 }
 
-func (*backupTestCase) insertRTData(t *testing.T, jobs []*JobT, statusList []*JobStatusT, cleanup *testhelper.Cleanup, fileuploader fileuploader.FileUploader) {
+func (*backupTestCase) insertRTData(t *testing.T, jobs []*JobT, statusList []*JobStatusT, cleanup *testhelper.Cleanup, fileuploader fileuploader.Provider) {
 	triggerAddNewDS := make(chan time.Time)
 
 	jobsDB := &HandleT{
@@ -429,7 +429,7 @@ func (*backupTestCase) insertRTData(t *testing.T, jobs []*JobT, statusList []*Jo
 	})
 }
 
-func (*backupTestCase) insertBatchRTData(t *testing.T, jobs []*JobT, statusList []*JobStatusT, cleanup *testhelper.Cleanup, fileuploader fileuploader.FileUploader) {
+func (*backupTestCase) insertBatchRTData(t *testing.T, jobs []*JobT, statusList []*JobStatusT, cleanup *testhelper.Cleanup, fileUploaderProvider fileuploader.Provider) {
 	triggerAddNewDS := make(chan time.Time)
 	jobsDB := &HandleT{
 		TriggerAddNewDS: func() <-chan time.Time {
@@ -437,7 +437,7 @@ func (*backupTestCase) insertBatchRTData(t *testing.T, jobs []*JobT, statusList 
 		},
 	}
 
-	err := jobsDB.Setup(ReadWrite, false, "batch_rt", true, []prebackup.Handler{}, fileuploader)
+	err := jobsDB.Setup(ReadWrite, false, "batch_rt", true, []prebackup.Handler{}, fileUploaderProvider)
 	require.NoError(t, err)
 
 	ds := newDataSet("batch_rt", "1")

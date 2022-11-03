@@ -61,7 +61,7 @@ type HandleT struct {
 	statErrDBR                stats.Measurement
 	logger                    logger.Logger
 	transientSource           transientsource.Service
-	fileuploader              fileuploader.FileUploader
+	fileuploader              fileuploader.Provider
 	jobsDBCommandTimeout      time.Duration
 	jobdDBQueryRequestTimeout time.Duration
 	jobdDBMaxRetries          int
@@ -71,7 +71,7 @@ func New() *HandleT {
 	return &HandleT{}
 }
 
-func (st *HandleT) Setup(errorDB jobsdb.JobsDB, transientSource transientsource.Service, fileuploader fileuploader.FileUploader) {
+func (st *HandleT) Setup(errorDB jobsdb.JobsDB, transientSource transientsource.Service, fileuploader fileuploader.Provider) {
 	st.logger = pkgLogger
 	st.errorDB = errorDB
 	st.statErrDBR = stats.Default.NewStat("processor.err_db_read_time", stats.TimerType)
@@ -164,7 +164,7 @@ func (st *HandleT) storeErrorsToObjectStorage(jobs []*jobsdb.JobT) (errorJob []E
 		}
 		return jobsForWorkspace
 	}
-	gzWriter := fileuploader.NewGzWriter()
+	gzWriter := fileuploader.NewGzMultiFileWriter()
 	dumps := make(map[string]string)
 
 	contentSlice := make(map[string][][]byte)
@@ -218,7 +218,7 @@ func (st *HandleT) storeErrorsToObjectStorage(jobs []*jobsdb.JobT) (errorJob []E
 				panic(err)
 			}
 			prefixes := []string{"rudder-proc-err-logs", time.Now().Format("01-02-2006")}
-			errFileUploader, err := st.fileuploader.GetFileUploader(wrkId)
+			errFileUploader, err := st.fileuploader.GetFileManager(wrkId)
 			if err != nil {
 				panic(err)
 			}

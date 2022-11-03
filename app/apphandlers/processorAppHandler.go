@@ -112,7 +112,7 @@ func (processor *ProcessorApp) StartRudderCore(ctx context.Context, options *app
 		prebackup.DropSourceIds(transientSources.SourceIdsSupplier()),
 	}
 
-	fileuploader := fileuploader.NewService(ctx, backendconfig.DefaultBackendConfig)
+	fileUploaderProvider := fileuploader.NewProvider(ctx, backendconfig.DefaultBackendConfig)
 
 	rsourcesService, err := NewRsourcesService(deploymentType)
 	if err != nil {
@@ -125,7 +125,7 @@ func (processor *ProcessorApp) StartRudderCore(ctx context.Context, options *app
 		jobsdb.WithStatusHandler(),
 		jobsdb.WithPreBackupHandlers(prebackupHandlers),
 		jobsdb.WithDSLimit(&gatewayDSLimit),
-		jobsdb.WithFileUploader(fileuploader),
+		jobsdb.WithFileUploaderProvider(fileUploaderProvider),
 	)
 	defer gwDBForProcessor.Close()
 	gatewayDB = gwDBForProcessor
@@ -135,7 +135,7 @@ func (processor *ProcessorApp) StartRudderCore(ctx context.Context, options *app
 		jobsdb.WithStatusHandler(),
 		jobsdb.WithPreBackupHandlers(prebackupHandlers),
 		jobsdb.WithDSLimit(&routerDSLimit),
-		jobsdb.WithFileUploader(fileuploader),
+		jobsdb.WithFileUploaderProvider(fileUploaderProvider),
 	)
 	defer routerDB.Close()
 	batchRouterDB := jobsdb.NewForReadWrite(
@@ -144,7 +144,7 @@ func (processor *ProcessorApp) StartRudderCore(ctx context.Context, options *app
 		jobsdb.WithStatusHandler(),
 		jobsdb.WithPreBackupHandlers(prebackupHandlers),
 		jobsdb.WithDSLimit(&batchRouterDSLimit),
-		jobsdb.WithFileUploader(fileuploader),
+		jobsdb.WithFileUploaderProvider(fileUploaderProvider),
 	)
 	defer batchRouterDB.Close()
 	errDB := jobsdb.NewForReadWrite(
@@ -153,7 +153,7 @@ func (processor *ProcessorApp) StartRudderCore(ctx context.Context, options *app
 		jobsdb.WithStatusHandler(),
 		jobsdb.WithPreBackupHandlers(prebackupHandlers),
 		jobsdb.WithDSLimit(&processorDSLimit),
-		jobsdb.WithFileUploader(fileuploader),
+		jobsdb.WithFileUploaderProvider(fileUploaderProvider),
 	)
 	var tenantRouterDB jobsdb.MultiTenantJobsDB
 	var multitenantStats multitenant.MultiTenantI
@@ -189,7 +189,7 @@ func (processor *ProcessorApp) StartRudderCore(ctx context.Context, options *app
 		return fmt.Errorf("unsupported deployment type: %q", deploymentType)
 	}
 
-	p := proc.New(ctx, &options.ClearDB, gwDBForProcessor, routerDB, batchRouterDB, errDB, multitenantStats, reportingI, transientSources, fileuploader, rsourcesService)
+	p := proc.New(ctx, &options.ClearDB, gwDBForProcessor, routerDB, batchRouterDB, errDB, multitenantStats, reportingI, transientSources, fileUploaderProvider, rsourcesService)
 
 	rtFactory := &router.Factory{
 		Reporting:        reportingI,
