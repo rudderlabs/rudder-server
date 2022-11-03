@@ -5,6 +5,7 @@ package transformer
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -48,8 +49,23 @@ type handle struct {
 	logger                    logger.Logger
 }
 
+type ProxyRequestMetadata struct {
+	JobID         int64           `json:"jobId"`
+	AttemptNum    int             `json:"attemptNum"`
+	UserID        string          `json:"userId"`
+	SourceID      string          `json:"sourceId"`
+	DestinationID string          `json:"destinationId"`
+	WorkspaceID   string          `json:"workspaceId"`
+	Secret        json.RawMessage `json:"secret"`
+	DestInfo      json.RawMessage `json:"destInfo,omitempty"`
+}
+
+type ProxyRequestPayload struct {
+	integrations.PostParametersT
+	Metadata ProxyRequestMetadata `json:"metadata,omitempty"`
+}
 type ProxyRequestParams struct {
-	ResponseData integrations.PostParametersT
+	ResponseData ProxyRequestPayload
 	DestName     string
 	JobID        int64
 	BaseUrl      string
