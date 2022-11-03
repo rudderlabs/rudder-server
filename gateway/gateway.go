@@ -323,8 +323,10 @@ func (gateway *HandleT) userWorkerRequestBatcher() {
 // This in turn sends the error over the done channel of each respective webRequest.
 func (gateway *HandleT) dbWriterWorkerProcess() {
 	for breq := range gateway.batchUserWorkerBatchRequestQ {
-		jobList := make([]*jobsdb.JobT, 0)
-		var errorMessagesMap map[uuid.UUID]string
+		var (
+			jobList          = make([]*jobsdb.JobT, 0)
+			errorMessagesMap = map[uuid.UUID]string{}
+		)
 
 		for _, userWorkerBatchRequest := range breq.batchUserWorkerBatchRequest {
 			jobList = append(jobList, userWorkerBatchRequest.jobList...)
@@ -352,10 +354,16 @@ func (gateway *HandleT) dbWriterWorkerProcess() {
 			rsourcesStats.JobsStoredWithErrors(jobList, errorMessagesMap)
 			return rsourcesStats.Publish(ctx, tx.SqlTx())
 		})
-		cancel()
 		if err != nil {
-			panic(err)
+			errorMessage := err.Error()
+			if ctx.Err() != nil {
+				errorMessage = ctx.Err().Error()
+			}
+			for _, job := range jobList {
+				errorMessagesMap[job.UUID] = errorMessage
+			}
 		}
+		cancel()
 		gateway.dbWritesStat.Count(1)
 
 		for _, userWorkerBatchRequest := range breq.batchUserWorkerBatchRequest {
@@ -937,7 +945,7 @@ func (gateway *HandleT) pendingEventsHandler(w http.ResponseWriter, r *http.Requ
 		}
 	}
 
-	ctx, cancel := context.WithTimeout(r.Context(), config.GetDuration("Gateway.pendingEventsQueryTimeout", 10, time.Second))
+	ctx, cancel := context.WithTimeout(r.Context(), WriteTimeout)
 	defer cancel()
 
 	var pending bool
@@ -1173,7 +1181,7 @@ func (gateway *HandleT) webRequestHandler(rh RequestHandler, w http.ResponseWrit
 	defer func() {
 		if errorMessage != "" {
 			gateway.logger.Infof("IP: %s -- %s -- Response: %d, %s", misc.GetIPFromReq(r), r.URL.Path, response.GetErrorStatusCode(errorMessage), errorMessage)
-			http.Error(w, errorMessage, response.GetErrorStatusCode(errorMessage))
+			http.Error(w, response.GetStatus(errorMessage), response.GetErrorStatusCode(errorMessage))
 		}
 	}()
 	payload, writeKey, err := gateway.getPayloadAndWriteKey(w, r, reqType)

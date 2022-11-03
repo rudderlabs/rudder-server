@@ -44,8 +44,9 @@ func NewGlueSchemaRepository(wh warehouseutils.Warehouse) (*GlueSchemaRepository
 	return &gl, nil
 }
 
-func (gl *GlueSchemaRepository) FetchSchema(warehouse warehouseutils.Warehouse) (warehouseutils.SchemaT, error) {
+func (gl *GlueSchemaRepository) FetchSchema(warehouse warehouseutils.Warehouse) (warehouseutils.SchemaT, warehouseutils.SchemaT, error) {
 	schema := warehouseutils.SchemaT{}
+	unrecognizedSchema := warehouseutils.SchemaT{}
 	var err error
 
 	var getTablesOutput *glue.GetTablesOutput
@@ -64,7 +65,7 @@ func (gl *GlueSchemaRepository) FetchSchema(warehouse warehouseutils.Warehouse) 
 				pkgLogger.Debugf("FetchSchema: database %s not found in glue. returning empty schema", warehouse.Namespace)
 				err = nil
 			}
-			return schema, err
+			return schema, unrecognizedSchema, err
 		}
 
 		for _, table := range getTablesOutput.TableList {
@@ -78,6 +79,11 @@ func (gl *GlueSchemaRepository) FetchSchema(warehouse warehouseutils.Warehouse) 
 					if _, ok := dataTypesMapToRudder[*col.Type]; ok {
 						schema[tableName][*col.Name] = dataTypesMapToRudder[*col.Type]
 					} else {
+						if _, ok := unrecognizedSchema[tableName]; !ok {
+							unrecognizedSchema[tableName] = make(map[string]string)
+						}
+						unrecognizedSchema[tableName][*col.Name] = warehouseutils.MISSING_DATATYPE
+
 						warehouseutils.WHCounterStat(warehouseutils.RUDDER_MISSING_DATATYPE, &warehouse, warehouseutils.Tag{Name: "datatype", Value: *col.Type}).Count(1)
 					}
 				}
@@ -90,7 +96,7 @@ func (gl *GlueSchemaRepository) FetchSchema(warehouse warehouseutils.Warehouse) 
 		}
 	}
 
-	return schema, err
+	return schema, unrecognizedSchema, err
 }
 
 func (gl *GlueSchemaRepository) CreateSchema() (err error) {
@@ -137,7 +143,7 @@ func (gl *GlueSchemaRepository) AddColumns(tableName string, columnsInfo []wareh
 	}
 
 	// fetch schema from glue
-	schema, err := gl.FetchSchema(gl.Warehouse)
+	schema, _, err := gl.FetchSchema(gl.Warehouse)
 	if err != nil {
 		return err
 	}
