@@ -1,7 +1,6 @@
 package stash
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -19,6 +18,7 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/bytesize"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
+	"github.com/samber/lo"
 )
 
 var (
@@ -149,52 +149,35 @@ func (st *HandleT) storeErrorsToObjectStorage(jobs []*jobsdb.JobT) (errorJob []E
 	if err != nil {
 		panic(err)
 	}
-	getFileName := func(workspaceID string) string {
-		path := fmt.Sprintf("%v%v.json", tmpDirPath+localTmpDirName, fmt.Sprintf("%v.%v.%v.%v.%v", time.Now().Unix(), config.GetString("INSTANCE_ID", "1"), fmt.Sprintf("%v-%v", jobs[0].JobID, jobs[len(jobs)-1].JobID), uuid, workspaceID))
 
-		gzipFilePath := fmt.Sprintf(`%v.gz`, path)
-		return gzipFilePath
-	}
-	getJobsForWorkspace := func(workspaceID string) []*jobsdb.JobT {
-		var jobsForWorkspace []*jobsdb.JobT
-		for _, job := range jobs {
-			if job.WorkspaceId == workspaceID {
-				jobsForWorkspace = append(jobsForWorkspace, job)
-			}
-		}
-		return jobsForWorkspace
-	}
+	jobsPerWorkspace := lo.GroupBy(jobs, func(job *jobsdb.JobT) string {
+		return job.WorkspaceId
+	})
 	gzWriter := fileuploader.NewGzMultiFileWriter()
 	dumps := make(map[string]string)
 
-	contentSlice := make(map[string][][]byte)
-	for _, job := range jobs {
-		preferences, err := st.fileuploader.GetStoragePreferences(job.WorkspaceId)
+	for workspaceID, jobsForWorkspace := range jobsPerWorkspace {
+		preferences, err := st.fileuploader.GetStoragePreferences(workspaceID)
 		if err != nil {
 			panic(err)
 		}
 		if !preferences.ProcErrors {
 			continue
 		}
-		rawJob, err := json.Marshal(job)
-		if err != nil {
-			panic(err)
-		}
-		if _, ok := contentSlice[job.WorkspaceId]; !ok {
-			contentSlice[job.WorkspaceId] = make([][]byte, 0)
-		}
-		contentSlice[job.WorkspaceId] = append(contentSlice[job.WorkspaceId], rawJob)
+		path := fmt.Sprintf("%v%v.json.gz", tmpDirPath+localTmpDirName, fmt.Sprintf("%v.%v.%v.%v.%v", time.Now().Unix(), config.GetString("INSTANCE_ID", "1"), fmt.Sprintf("%v-%v", jobs[0].JobID, jobs[len(jobs)-1].JobID), uuid, workspaceID))
+		dumps[workspaceID] = path
+		newline := []byte("\n")
+		lo.ForEach(jobsForWorkspace, func(job *jobsdb.JobT, _ int) {
+			rawJob, err := json.Marshal(job)
+			if err != nil {
+				panic(err)
+			}
+			if _, err := gzWriter.Write(path, append(rawJob, newline...)); err != nil {
+				panic(err)
+			}
+		})
 	}
-	for workspaceID, contentValue := range contentSlice {
-		content := bytes.Join(contentValue, []byte("\n"))
-		path := getFileName(workspaceID)
-		if _, err := gzWriter.Write(path, content); err != nil {
-			panic(err)
-		}
-		if _, ok := dumps[workspaceID]; !ok {
-			dumps[workspaceID] = path
-		}
-	}
+
 	err = gzWriter.Close()
 	if err != nil {
 		panic(err)
@@ -224,7 +207,7 @@ func (st *HandleT) storeErrorsToObjectStorage(jobs []*jobsdb.JobT) (errorJob []E
 			}
 			uploadOutput, err := errFileUploader.Upload(context.TODO(), outputFile, prefixes...)
 			errorJobs = append(errorJobs, ErrorJob{
-				jobs: getJobsForWorkspace(workspaceID),
+				jobs: jobsPerWorkspace[workspaceID],
 				errorOutput: StoreErrorOutputT{
 					Location: uploadOutput.Location,
 					Error:    err,
