@@ -178,22 +178,24 @@ func (a *Archiver) Do(ctx context.Context) error {
 			FROM
 			  TRUE
 		  )
-		  AND created_at < NOW() - INTERVAL '%d DAY'
-		  AND status = '%s'
-		  AND NOT workspace_id = ANY ( $1 )
+		  AND created_at < NOW() - $1::interval
+		  AND status = $2
+		  AND NOT workspace_id = ANY ( $3 )
 		LIMIT
 		  10000;
 `,
-		warehouseutils.WarehouseUploadsTable,
-		uploadsArchivalTimeInDays,
-		ExportedData,
+		pq.QuoteIdentifier(warehouseutils.WarehouseUploadsTable),
 	)
 
 	// empty workspace id should be excluded as a safety measure
 	skipWorkspaceIDs := []string{""}
 	skipWorkspaceIDs = append(skipWorkspaceIDs, a.Multitenant.DegradedWorkspaces()...)
 
-	rows, err := a.DB.QueryContext(ctx, sqlStatement, pq.Array(skipWorkspaceIDs))
+	rows, err := a.DB.QueryContext(ctx, sqlStatement,
+		fmt.Sprintf("%d DAY", uploadsArchivalTimeInDays),
+		ExportedData,
+		pq.Array(skipWorkspaceIDs),
+	)
 	defer func() {
 		if err != nil {
 			a.Logger.Errorf(`Error occurred while archiving for warehouse uploads with error: %v`, err)
