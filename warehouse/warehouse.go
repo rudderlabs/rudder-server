@@ -1356,7 +1356,8 @@ func (wh *HandleT) Setup(whType string) {
 	wh.backgroundWait = g.Wait
 
 	g.Go(misc.WithBugsnagForWarehouse(func() error {
-		return wh.tenantManager.Run(ctx)
+		wh.tenantManager.Run(ctx)
+		return nil
 	}))
 
 	g.Go(misc.WithBugsnagForWarehouse(func() error {
@@ -2248,7 +2249,8 @@ func Start(ctx context.Context, app app.App) error {
 			BackendConfig: backendconfig.DefaultBackendConfig,
 		}
 		g.Go(func() error {
-			return tenantManager.Run(ctx)
+			tenantManager.Run(ctx)
+			return nil
 		})
 
 		g.Go(misc.WithBugsnagForWarehouse(func() error {

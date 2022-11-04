@@ -45,7 +45,7 @@ func (m *Manager) init() {
 }
 
 // Run is a blocking function that executes manager background logic.
-func (m *Manager) Run(ctx context.Context) error {
+func (m *Manager) Run(ctx context.Context) {
 	m.init()
 
 	chIn := m.BackendConfig.Subscribe(ctx, backendconfig.TopicBackendConfig)
@@ -62,20 +62,14 @@ func (m *Manager) Run(ctx context.Context) error {
 			close(m.ready)
 		})
 	}
-
-	return nil
 }
 
 // DegradedWorkspace returns true if the workspaceID is degraded.
 func (m *Manager) DegradedWorkspace(workspaceID string) bool {
 	m.init()
 
-	for _, degradedWorkspaceID := range m.DegradedWorkspaceIDs {
-		if workspaceID == degradedWorkspaceID {
-			return true
-		}
-	}
-	return false
+	_, ok := m.excludeWorkspaceIDMap[workspaceID]
+	return ok
 }
 
 // DegradedWorkspaceIDs returns a list of degraded workspaceIDs.

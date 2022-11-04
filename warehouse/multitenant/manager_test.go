@@ -157,7 +157,8 @@ func TestSourceToWorkspace(t *testing.T) {
 
 	g := errgroup.Group{}
 	g.Go(func() error {
-		return m.Run(ctx)
+		m.Run(ctx)
+		return nil
 	})
 
 	for source, workspace := range mapping {
