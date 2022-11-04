@@ -116,7 +116,7 @@ func TestArchiver(t *testing.T) {
 				mockMeasurement.EXPECT().Count(1).Times(4)
 			}
 
-			now := time.Now()
+			now := time.Now().Truncate(time.Second)
 
 			if tc.status == "" {
 				tc.status = warehouse.ExportedData
