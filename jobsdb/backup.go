@@ -129,7 +129,7 @@ func (jd *HandleT) cleanStatusTable(backupDSRange *dataSetRangeT) error {
 }
 
 func (jd *HandleT) uploadDumps(ctx context.Context, dumps map[string]string) error {
-	g, _ := errgroup.WithContext(ctx)
+	g, ctx := errgroup.WithContext(ctx)
 	g.SetLimit(config.GetInt("JobsDB.JobsBackupUploadWorkers", 100))
 	for workspaceID, filePath := range dumps {
 		wrkId := workspaceID
@@ -185,7 +185,7 @@ func (jd *HandleT) failedOnlyBackup(ctx context.Context, backupDSRange *dataSetR
 	}
 	defer func() {
 		for _, filePath := range dumps {
-			os.Remove(filePath)
+			_ = os.Remove(filePath)
 		}
 	}()
 	err = jd.uploadDumps(ctx, dumps)
@@ -244,7 +244,7 @@ func (jd *HandleT) backupJobsTable(ctx context.Context, backupDSRange *dataSetRa
 	}
 	defer func() {
 		for _, filePath := range dumps {
-			os.Remove(filePath)
+			_ = os.Remove(filePath)
 		}
 	}()
 	err = jd.uploadDumps(ctx, dumps)
@@ -297,7 +297,7 @@ func (jd *HandleT) backupStatusTable(ctx context.Context, backupDSRange *dataSet
 	}
 	defer func() {
 		for _, filePath := range dumps {
-			os.Remove(filePath)
+			_ = os.Remove(filePath)
 		}
 	}()
 	err = jd.uploadDumps(ctx, dumps)

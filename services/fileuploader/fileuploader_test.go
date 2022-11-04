@@ -105,6 +105,59 @@ func TestFileUploaderUpdatingWithConfigBackend(t *testing.T) {
 	Expect(preferences).To(BeEquivalentTo(backendconfig.StoragePreferences{}))
 }
 
+func TestFileUploaderWithoutConfigUpdates(t *testing.T) {
+	RegisterTestingT(t)
+	ctrl := gomock.NewController(t)
+	config := mock_backendconfig.NewMockBackendConfig(ctrl)
+
+	configCh := make(chan pubsub.DataEvent)
+
+	var ready sync.WaitGroup
+	ready.Add(1)
+
+	config.EXPECT().Subscribe(
+		gomock.Any(),
+		gomock.Eq(backendconfig.TopicBackendConfig),
+	).DoAndReturn(func(ctx context.Context, topic backendconfig.Topic) pubsub.DataChannel {
+		ready.Done()
+		close(configCh)
+		return configCh
+	})
+
+	p := NewProvider(context.Background(), config)
+	_, err := p.GetStoragePreferences("testWorkspaceId-1")
+	Expect(err).To(HaveOccurred())
+}
+
+func TestStaticProvider(t *testing.T) {
+	RegisterTestingT(t)
+	prefs := backendconfig.StoragePreferences{
+		ProcErrors:       false,
+		GatewayDumps:     true,
+		ProcErrorDumps:   true,
+		BatchRouterDumps: false,
+		RouterDumps:      true,
+	}
+
+	storageSettings := map[string]StorageSettings{
+		"testWorkspaceId-1": {
+			Bucket: backendconfig.StorageBucket{
+				Type:   "S3",
+				Config: map[string]interface{}{},
+			},
+			Preferences: prefs,
+		},
+	}
+	p := NewStaticProvider(storageSettings)
+
+	prefs, err := p.GetStoragePreferences("testWorkspaceId-1")
+	Expect(err).To(BeNil())
+	Expect(prefs).To(BeEquivalentTo(prefs))
+
+	_, err = p.GetFileManager("testWorkspaceId-1")
+	Expect(err).To(BeNil())
+}
+
 func TestDefaultProvider(t *testing.T) {
 	RegisterTestingT(t)
 	d := NewDefaultProvider()
@@ -118,6 +171,9 @@ func TestDefaultProvider(t *testing.T) {
 		BatchRouterDumps: true,
 		RouterDumps:      true,
 	}))
+
+	_, err = d.GetFileManager("")
+	Expect(err).To(BeNil())
 }
 
 func TestOverride(t *testing.T) {
