@@ -35,6 +35,7 @@ import (
 	destinationdebugger "github.com/rudderlabs/rudder-server/services/debugger/destination"
 	transformationdebugger "github.com/rudderlabs/rudder-server/services/debugger/transformation"
 	"github.com/rudderlabs/rudder-server/services/dedup"
+	"github.com/rudderlabs/rudder-server/services/fileuploader"
 	"github.com/rudderlabs/rudder-server/services/multitenant"
 	"github.com/rudderlabs/rudder-server/services/rsources"
 	"github.com/rudderlabs/rudder-server/services/stats"
@@ -79,6 +80,7 @@ type HandleT struct {
 	jobdDBQueryRequestTimeout time.Duration
 	jobdDBMaxRetries          int
 	transientSources          transientsource.Service
+	fileuploader              fileuploader.Provider
 	rsourcesService           rsources.JobService
 }
 
@@ -302,7 +304,7 @@ func (proc *HandleT) Setup(
 	backendConfig backendconfig.BackendConfig, gatewayDB, routerDB jobsdb.JobsDB,
 	batchRouterDB, errorDB jobsdb.JobsDB, clearDB *bool, reporting types.ReportingI,
 	multiTenantStat multitenant.MultiTenantI, transientSources transientsource.Service,
-	rsourcesService rsources.JobService,
+	fileuploader fileuploader.Provider, rsourcesService rsources.JobService,
 ) {
 	proc.reporting = reporting
 	config.RegisterBoolConfigVariable(types.DEFAULT_REPORTING_ENABLED, &proc.reportingEnabled, false, "Reporting.enabled")
@@ -324,6 +326,7 @@ func (proc *HandleT) Setup(
 	proc.errorDB = errorDB
 
 	proc.transientSources = transientSources
+	proc.fileuploader = fileuploader
 	proc.rsourcesService = rsourcesService
 
 	// Stats
@@ -433,7 +436,7 @@ func (proc *HandleT) Start(ctx context.Context) error {
 
 	g.Go(misc.WithBugsnag(func() error {
 		st := stash.New()
-		st.Setup(proc.errorDB, proc.transientSources)
+		st.Setup(proc.errorDB, proc.transientSources, proc.fileuploader)
 		st.Start(ctx)
 		return nil
 	}))
