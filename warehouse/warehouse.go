@@ -1836,7 +1836,7 @@ func getPendingStagingFileCount(sourceOrDestId string, isSourceId bool) (fileCou
 		lastStagingFileID,
 		sourceOrDestColumn,
 	)
-	err = dbHandle.QueryRow(sourceOrDestId, sourceOrDestId).Scan(&fileCount)
+	err = dbHandle.QueryRow(sqlStatement, sourceOrDestId).Scan(&fileCount)
 	if err != nil && err != sql.ErrNoRows {
 		err = fmt.Errorf("query: %s run failed with Error : %w", sqlStatement, err)
 		return
