@@ -441,7 +441,6 @@ func (worker *workerT) workerProcess() {
 				limited, tokensReturner, err = throttler.CheckLimitReached(userID, throttlingCost)
 				if err != nil {
 					// we can't throttle, let's hit the destination, worst case we get a 429
-					throttler = nil
 					throttlingCost = 0
 				} else if limited {
 					status := jobsdb.JobStatusT{
@@ -528,25 +527,37 @@ func (worker *workerT) workerProcess() {
 			}
 
 			if worker.rt.enableBatching {
-				routerJob := types.RouterJobT{Message: job.EventPayload, JobMetadata: jobMetadata, Destination: destination}
-				worker.routerJobs = append(worker.routerJobs, routerJob)
+				worker.routerJobs = append(worker.routerJobs, types.RouterJobT{
+					Message:     job.EventPayload,
+					JobMetadata: jobMetadata,
+					Destination: destination,
+				})
+
 				noOfJobs := len(worker.routerJobs)
-				if noOfJobs >= worker.rt.noOfJobsToBatchInAWorker || // TODO review condition
-					(throttlingCost > 0 && throttler != nil && int64(noOfJobs) >= throttlingCost*int64(noOfJobs)) {
+				if noOfJobs >= worker.rt.noOfJobsToBatchInAWorker ||
+					(throttlingCost > 0 && int64(noOfJobs) >= throttlingCost*int64(noOfJobs)) {
 					worker.destinationJobs = worker.batchRouterTransform(worker.routerJobs)
 					worker.processDestinationJobs()
 				}
 			} else if parameters.TransformAt == "router" {
-				routerJob := types.RouterJobT{Message: job.EventPayload, JobMetadata: jobMetadata, Destination: destination}
-				worker.routerJobs = append(worker.routerJobs, routerJob)
+				worker.routerJobs = append(worker.routerJobs, types.RouterJobT{
+					Message:     job.EventPayload,
+					JobMetadata: jobMetadata,
+					Destination: destination,
+				})
 
-				if len(worker.routerJobs) >= worker.rt.noOfJobsToBatchInAWorker { // TODO add throttling condition
+				noOfJobs := len(worker.routerJobs)
+				if noOfJobs >= worker.rt.noOfJobsToBatchInAWorker ||
+					(throttlingCost > 0 && int64(noOfJobs) >= throttlingCost*int64(noOfJobs)) {
 					worker.destinationJobs = worker.routerTransform(worker.routerJobs)
 					worker.processDestinationJobs()
 				}
 			} else {
-				destinationJob := types.DestinationJobT{Message: job.EventPayload, JobMetadataArray: []types.JobMetadataT{jobMetadata}, Destination: destination}
-				worker.destinationJobs = append(worker.destinationJobs, destinationJob)
+				worker.destinationJobs = append(worker.destinationJobs, types.DestinationJobT{
+					Message:          job.EventPayload,
+					Destination:      destination,
+					JobMetadataArray: []types.JobMetadataT{jobMetadata},
+				})
 				worker.processDestinationJobs()
 			}
 
