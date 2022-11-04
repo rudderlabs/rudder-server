@@ -1807,7 +1807,7 @@ func getPendingStagingFileCount(sourceOrDestId string, isSourceId bool) (fileCou
 		FROM
 		  %[1]s
 		WHERE
-		  %[1]s.%[2]s = $1;
+		  %[2]s = $1;
 `,
 		warehouseutils.WarehouseUploadsTable,
 		sourceOrDestColumn,
@@ -1828,8 +1828,8 @@ func getPendingStagingFileCount(sourceOrDestId string, isSourceId bool) (fileCou
 		FROM
 		  %[1]s
 		WHERE
-		  %[1]s.id > %[2]v
-		  AND %[1]s.%[3]s = $1;
+		  id > %[2]v
+		  AND %[3]s = $1;
 `,
 		warehouseutils.WarehouseStagingFilesTable,
 		lastStagingFileID,
