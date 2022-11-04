@@ -81,7 +81,7 @@ func (worker *SourceWorkerT) replayJobsInFile(ctx context.Context, filePath stri
 		panic(err) // Cannot open file to write
 	}
 
-	err = worker.uploader.Download(ctx, file, path)
+	err = worker.uploader.Download(ctx, file, filePath)
 	if err != nil {
 		panic(err) // failed to download
 	}
