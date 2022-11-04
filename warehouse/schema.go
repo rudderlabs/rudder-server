@@ -22,8 +22,11 @@ type SchemaHandleT struct {
 	uploadSchema                  warehouseutils.SchemaT
 }
 
-func HandleSchemaChange(existingDataType, currentDataType string, value any) (any, bool) {
-	var newColumnVal any
+func HandleSchemaChange(existingDataType, currentDataType string, value any) (any, error) {
+	var (
+		newColumnVal any
+		err          error
+	)
 
 	if existingDataType == "string" || existingDataType == "text" {
 		// only stringify if the previous type is non-string/text/json
@@ -35,14 +38,14 @@ func HandleSchemaChange(existingDataType, currentDataType string, value any) (an
 	} else if (currentDataType == "int" || currentDataType == "bigint") && existingDataType == "float" {
 		intVal, ok := value.(int)
 		if !ok {
-			newColumnVal = nil
+			err = ErrSchemaChange
 		} else {
 			newColumnVal = float64(intVal)
 		}
 	} else if currentDataType == "float" && (existingDataType == "int" || existingDataType == "bigint") {
 		floatVal, ok := value.(float64)
 		if !ok {
-			newColumnVal = nil
+			err = ErrSchemaChange
 		} else {
 			newColumnVal = int(floatVal)
 		}
@@ -56,10 +59,10 @@ func HandleSchemaChange(existingDataType, currentDataType string, value any) (an
 			newColumnVal = fmt.Sprintf(`"%v"`, value)
 		}
 	} else {
-		return nil, false
+		err = ErrSchemaChange
 	}
 
-	return newColumnVal, true
+	return newColumnVal, err
 }
 
 func (sh *SchemaHandleT) getLocalSchema() (currentSchema warehouseutils.SchemaT) {

@@ -18,24 +18,22 @@ func TestHandleSchemaChange(t *testing.T) {
 		newDataType      string
 		value            any
 
-		newColumnVal  any
-		schemaChanged bool
+		newColumnVal any
+		convError    error
 	}{
 		{
-			name:             "should send int values if existing datatype is int, new datatype is int",
-			existingDatatype: "float",
-			newDataType:      "int",
-			value:            1,
-			newColumnVal:     1.0,
-			schemaChanged:    true,
-		},
-		{
-			name:             "should send float values if existing datatype is float, new datatype is float",
+			name:             "should send int values if existing datatype is int, new datatype is float",
 			existingDatatype: "int",
 			newDataType:      "float",
 			value:            1.501,
 			newColumnVal:     1,
-			schemaChanged:    true,
+		},
+		{
+			name:             "should send float values if existing datatype is float, new datatype is int",
+			existingDatatype: "float",
+			newDataType:      "int",
+			value:            1,
+			newColumnVal:     1.0,
 		},
 		{
 			name:             "should send string values if existing datatype is string, new datatype is boolean",
@@ -43,7 +41,6 @@ func TestHandleSchemaChange(t *testing.T) {
 			newDataType:      "boolean",
 			value:            false,
 			newColumnVal:     "false",
-			schemaChanged:    true,
 		},
 		{
 			name:             "should send string values if existing datatype is string, new datatype is int",
@@ -51,7 +48,6 @@ func TestHandleSchemaChange(t *testing.T) {
 			newDataType:      "int",
 			value:            1,
 			newColumnVal:     "1",
-			schemaChanged:    true,
 		},
 		{
 			name:             "should send string values if existing datatype is string, new datatype is float",
@@ -59,7 +55,6 @@ func TestHandleSchemaChange(t *testing.T) {
 			newDataType:      "float",
 			value:            1.501,
 			newColumnVal:     "1.501",
-			schemaChanged:    true,
 		},
 		{
 			name:             "should send string values if existing datatype is string, new datatype is datetime",
@@ -67,7 +62,6 @@ func TestHandleSchemaChange(t *testing.T) {
 			newDataType:      "datetime",
 			value:            "2022-05-05T00:00:00.000Z",
 			newColumnVal:     "2022-05-05T00:00:00.000Z",
-			schemaChanged:    true,
 		},
 		{
 			name:             "should send string values if existing datatype is string, new datatype is string",
@@ -75,7 +69,6 @@ func TestHandleSchemaChange(t *testing.T) {
 			newDataType:      "json",
 			value:            `{"json":true}`,
 			newColumnVal:     `{"json":true}`,
-			schemaChanged:    true,
 		},
 		{
 			name:             "should send json string values if existing datatype is json, new datatype is boolean",
@@ -83,7 +76,6 @@ func TestHandleSchemaChange(t *testing.T) {
 			newDataType:      "boolean",
 			value:            false,
 			newColumnVal:     "false",
-			schemaChanged:    true,
 		},
 		{
 			name:             "should send json string values if existing datatype is jso, new datatype is int",
@@ -91,7 +83,6 @@ func TestHandleSchemaChange(t *testing.T) {
 			newDataType:      "int",
 			value:            1,
 			newColumnVal:     "1",
-			schemaChanged:    true,
 		},
 		{
 			name:             "should send json string values if existing datatype is json, new datatype is float",
@@ -99,166 +90,164 @@ func TestHandleSchemaChange(t *testing.T) {
 			newDataType:      "float",
 			value:            1.501,
 			newColumnVal:     "1.501",
-			schemaChanged:    true,
 		},
 		{
 			name:             "should send json string values if existing datatype is json, new datatype is json",
 			existingDatatype: "json",
 			newDataType:      "datetime",
 			value:            "2022-05-05T00:00:00.000Z",
-			newColumnVal:     "2022-05-05T00:00:00.000Z",
-			schemaChanged:    true,
+			newColumnVal:     `"2022-05-05T00:00:00.000Z"`,
 		},
 		{
 			name:             "should send json string values if existing datatype is json, new datatype is string",
 			existingDatatype: "json",
 			newDataType:      "string",
 			value:            "string value",
-			newColumnVal:     "string value",
-			schemaChanged:    true,
+			newColumnVal:     `"string value"`,
 		},
 		{
 			name:             "should send json string values if existing datatype is json, new datatype is array",
 			existingDatatype: "json",
-			newDataType:      "string",
-			value:            []interface{}{false, 1, "string value"},
-			newColumnVal:     "false",
-			schemaChanged:    true,
+			newDataType:      "array",
+			value:            []any{false, 1, "string value"},
+			newColumnVal:     []any{false, 1, "string value"},
 		},
 		{
 			name:             "existing datatype is boolean, new datatype is int",
 			existingDatatype: "boolean",
 			newDataType:      "int",
 			value:            1,
-			schemaChanged:    false,
+			convError:        ErrSchemaChange,
 		},
 		{
 			name:             "existing datatype is boolean, new datatype is float",
 			existingDatatype: "boolean",
 			newDataType:      "float",
 			value:            1.501,
-			schemaChanged:    false,
+			convError:        ErrSchemaChange,
 		},
 		{
 			name:             "existing datatype is boolean, new datatype is string",
 			existingDatatype: "boolean",
 			newDataType:      "string",
 			value:            "string value",
-			schemaChanged:    false,
+			convError:        ErrSchemaChange,
 		},
 		{
 			name:             "existing datatype is boolean, new datatype is datetime",
 			existingDatatype: "boolean",
 			newDataType:      "datetime",
 			value:            "2022-05-05T00:00:00.000Z",
-			schemaChanged:    false,
+			convError:        ErrSchemaChange,
 		},
 		{
 			name:             "existing datatype is boolean, new datatype is json",
 			existingDatatype: "boolean",
 			newDataType:      "json",
 			value:            `{"json":true}`,
-			schemaChanged:    false,
+			convError:        ErrSchemaChange,
 		},
 		{
 			name:             "existing datatype is int, new datatype is boolean",
 			existingDatatype: "int",
-			newDataType:      "int",
+			newDataType:      "boolean",
 			value:            false,
-			schemaChanged:    false,
+			convError:        ErrSchemaChange,
 		},
 		{
 			name:             "existing datatype is int, new datatype is string",
 			existingDatatype: "int",
 			newDataType:      "string",
 			value:            "string value",
-			schemaChanged:    false,
+			convError:        ErrSchemaChange,
 		},
 		{
 			name:             "existing datatype is int, new datatype is datetime",
 			existingDatatype: "int",
 			newDataType:      "datetime",
 			value:            "2022-05-05T00:00:00.000Z",
-			schemaChanged:    false,
+			convError:        ErrSchemaChange,
 		},
 		{
 			name:             "existing datatype is int, new datatype is json",
 			existingDatatype: "int",
 			newDataType:      "json",
 			value:            `{"json":true}`,
-			schemaChanged:    false,
+			convError:        ErrSchemaChange,
 		},
 		{
 			name:             "existing datatype is float, new datatype is boolean",
-			existingDatatype: "int",
-			newDataType:      "int",
+			existingDatatype: "float",
+			newDataType:      "boolean",
 			value:            false,
-			schemaChanged:    false,
+			convError:        ErrSchemaChange,
 		},
 		{
 			name:             "existing datatype is float, new datatype is string",
-			existingDatatype: "int",
+			existingDatatype: "float",
 			newDataType:      "string",
 			value:            "string value",
-			schemaChanged:    false,
+			convError:        ErrSchemaChange,
 		},
 		{
 			name:             "existing datatype is float, new datatype is datetime",
-			existingDatatype: "int",
+			existingDatatype: "float",
 			newDataType:      "datetime",
 			value:            "2022-05-05T00:00:00.000Z",
-			schemaChanged:    false,
+			convError:        ErrSchemaChange,
 		},
 		{
 			name:             "existing datatype is float, new datatype is json",
-			existingDatatype: "int",
+			existingDatatype: "float",
 			newDataType:      "json",
 			value:            `{"json":true}`,
-			schemaChanged:    false,
+			convError:        ErrSchemaChange,
 		},
 		{
 			name:             "existing datatype is datetime, new datatype is boolean",
-			existingDatatype: "int",
-			newDataType:      "int",
+			existingDatatype: "datetime",
+			newDataType:      "boolean",
 			value:            false,
-			schemaChanged:    false,
+			convError:        ErrSchemaChange,
 		},
 		{
 			name:             "existing datatype is datetime, new datatype is string",
-			existingDatatype: "int",
+			existingDatatype: "datetime",
 			newDataType:      "string",
 			value:            "string value",
-			schemaChanged:    false,
+			convError:        ErrSchemaChange,
 		},
 		{
 			name:             "existing datatype is datetime, new datatype is int",
-			existingDatatype: "int",
+			existingDatatype: "datetime",
 			newDataType:      "int",
 			value:            1,
-			schemaChanged:    false,
+			convError:        ErrSchemaChange,
 		},
 		{
 			name:             "existing datatype is datetime, new datatype is float",
-			existingDatatype: "int",
+			existingDatatype: "datetime",
 			newDataType:      "float",
 			value:            1.501,
-			schemaChanged:    false,
+			convError:        ErrSchemaChange,
 		},
 		{
 			name:             "existing datatype is datetime, new datatype is json",
-			existingDatatype: "int",
+			existingDatatype: "datetime",
 			newDataType:      "json",
 			value:            `{"json":true}`,
-			schemaChanged:    false,
+			convError:        ErrSchemaChange,
 		},
 	}
 	for _, ip := range inputs {
-		t.Run(ip.name, func(t *testing.T) {
+		tc := ip
+
+		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
-			newColumnVal, schemaChanged := HandleSchemaChange(ip.existingDatatype, ip.newDataType, ip.value)
-			require.Equal(t, newColumnVal, ip.newColumnVal)
-			require.Equal(t, schemaChanged, ip.schemaChanged)
+			newColumnVal, convError := HandleSchemaChange(tc.existingDatatype, tc.newDataType, tc.value)
+			require.Equal(t, newColumnVal, tc.newColumnVal)
+			require.Equal(t, convError, tc.convError)
 		})
 	}
 }

@@ -1,6 +1,11 @@
 package warehouse
 
-import "fmt"
+import (
+	"errors"
+	"fmt"
+)
+
+var ErrSchemaChange = errors.New("incompatible conversion of data")
 
 type InvalidDestinationCredErr struct {
 	Base      error

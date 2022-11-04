@@ -492,8 +492,8 @@ func processStagingFile(job Payload, workerIndex int) (loadFileUploadOutputs []l
 			dataTypeInSchema, ok := job.UploadSchema[tableName][columnName]
 			violatedConstraints := ViolatedConstraints(job.DestinationType, &batchRouterEvent, columnName)
 			if ok && ((columnType != dataTypeInSchema) || (violatedConstraints.IsViolated)) {
-				newColumnVal, schemaChanged := HandleSchemaChange(dataTypeInSchema, columnType, columnVal)
-				if !schemaChanged || violatedConstraints.IsViolated {
+				newColumnVal, convError := HandleSchemaChange(dataTypeInSchema, columnType, columnVal)
+				if convError != nil || violatedConstraints.IsViolated {
 					if violatedConstraints.IsViolated {
 						eventLoader.AddColumn(columnName, job.UploadSchema[tableName][columnName], violatedConstraints.ViolatedIdentifier)
 					} else {
@@ -513,10 +513,6 @@ func processStagingFile(job Payload, workerIndex int) (loadFileUploadOutputs []l
 						pkgLogger.Errorf("[WH]: Failed to write to discards: %v", err)
 					}
 					jobRun.tableEventCountMap[discardsTable]++
-					continue
-				}
-				if newColumnVal == nil {
-					eventLoader.AddEmptyColumn(columnName)
 					continue
 				}
 				columnVal = newColumnVal
