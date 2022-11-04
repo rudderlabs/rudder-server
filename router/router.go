@@ -1318,14 +1318,6 @@ func (rt *HandleT) getWorkerPartition(userID string) int {
 	return misc.GetHash(userID) % rt.noOfWorkers
 }
 
-// TODO fix
-// ResetSleep  this makes the workers reset their sleep
-func (rt *HandleT) ResetSleep() {
-	for _, w := range rt.workers {
-		w.sleepTime = minSleep
-	}
-}
-
 func (rt *HandleT) commitStatusList(responseList *[]jobResponseT) {
 	reportMetrics := make([]*utilTypes.PUReportedMetric, 0)
 	connectionDetailsMap := make(map[string]*utilTypes.ConnectionDetails)
