@@ -224,5 +224,4 @@ func jsonTestData(t require.TestingT, file string, value any) {
 
 	err = json.NewDecoder(f).Decode(value)
 	require.NoError(t, err)
-
 }
