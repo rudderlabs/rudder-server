@@ -18,12 +18,12 @@ type mockBackendConfig struct {
 	config map[string]backendconfig.ConfigT
 }
 
-func (_ *mockBackendConfig) WaitForConfig(_ context.Context)          {}
-func (_ *mockBackendConfig) Stop()                                    {}
-func (_ *mockBackendConfig) StartWithIDs(_ context.Context, _ string) {}
-func (_ *mockBackendConfig) SetUp() error                             { return nil }
-func (_ *mockBackendConfig) AccessToken() string                      { return "" }
-func (_ *mockBackendConfig) Identity() identity.Identifier            { return nil }
+func (*mockBackendConfig) WaitForConfig(_ context.Context)          {}
+func (*mockBackendConfig) Stop()                                    {}
+func (*mockBackendConfig) StartWithIDs(_ context.Context, _ string) {}
+func (*mockBackendConfig) SetUp() error                             { return nil }
+func (*mockBackendConfig) AccessToken() string                      { return "" }
+func (*mockBackendConfig) Identity() identity.Identifier            { return nil }
 
 func (m *mockBackendConfig) Get(context.Context, string) (map[string]backendconfig.ConfigT, error) {
 	return m.config, nil
