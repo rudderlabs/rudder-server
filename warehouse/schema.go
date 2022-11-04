@@ -22,36 +22,38 @@ type SchemaHandleT struct {
 	uploadSchema                  warehouseutils.SchemaT
 }
 
-func HandleSchemaChange(existingDataType, columnType string, columnVal interface{}) (newColumnVal interface{}, ok bool) {
+func HandleSchemaChange(existingDataType, currentDataType string, value any) (any, bool) {
+	var newColumnVal any
+
 	if existingDataType == "string" || existingDataType == "text" {
 		// only stringify if the previous type is non-string/text/json
-		if columnType != "string" && columnType != "text" && columnType != "json" {
-			newColumnVal = fmt.Sprintf("%v", columnVal)
+		if currentDataType != "string" && currentDataType != "text" && currentDataType != "json" {
+			newColumnVal = fmt.Sprintf("%v", value)
 		} else {
-			newColumnVal = columnVal
+			newColumnVal = value
 		}
-	} else if (columnType == "int" || columnType == "bigint") && existingDataType == "float" {
-		intVal, ok := columnVal.(int)
+	} else if (currentDataType == "int" || currentDataType == "bigint") && existingDataType == "float" {
+		intVal, ok := value.(int)
 		if !ok {
 			newColumnVal = nil
 		} else {
 			newColumnVal = float64(intVal)
 		}
-	} else if columnType == "float" && (existingDataType == "int" || existingDataType == "bigint") {
-		floatVal, ok := columnVal.(float64)
+	} else if currentDataType == "float" && (existingDataType == "int" || existingDataType == "bigint") {
+		floatVal, ok := value.(float64)
 		if !ok {
 			newColumnVal = nil
 		} else {
 			newColumnVal = int(floatVal)
 		}
 	} else if existingDataType == "json" {
-		var interfaceSliceSample []interface{}
-		if columnType == "int" || columnType == "float" || columnType == "boolean" {
-			newColumnVal = fmt.Sprintf("%v", columnVal)
-		} else if reflect.TypeOf(columnVal) == reflect.TypeOf(interfaceSliceSample) {
-			newColumnVal = columnVal
+		var interfaceSliceSample []any
+		if currentDataType == "int" || currentDataType == "float" || currentDataType == "boolean" {
+			newColumnVal = fmt.Sprintf("%v", value)
+		} else if reflect.TypeOf(value) == reflect.TypeOf(interfaceSliceSample) {
+			newColumnVal = value
 		} else {
-			newColumnVal = fmt.Sprintf(`"%v"`, columnVal)
+			newColumnVal = fmt.Sprintf(`"%v"`, value)
 		}
 	} else {
 		return nil, false
