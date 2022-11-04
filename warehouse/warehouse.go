@@ -1812,12 +1812,7 @@ func getPendingStagingFileCount(sourceOrDestId string, isSourceId bool) (fileCou
 		warehouseutils.WarehouseUploadsTable,
 		sourceOrDestColumn,
 	)
-	preparedSqlStatement, err := dbHandle.Prepare(sqlStatement)
-	if err != nil {
-		err = fmt.Errorf("query: %s preparation failed with Error: %w", strings.ReplaceAll(sqlStatement, "$1", sourceOrDestId), err)
-		return
-	}
-	err = preparedSqlStatement.QueryRow(sourceOrDestId).Scan(&lastStagingFileIDRes)
+	err = dbHandle.QueryRow(sqlStatement, sourceOrDestId).Scan(&lastStagingFileIDRes)
 	if err != nil && err != sql.ErrNoRows {
 		err = fmt.Errorf("query: %s run failed with Error : %w", sqlStatement, err)
 		return
@@ -1840,12 +1835,7 @@ func getPendingStagingFileCount(sourceOrDestId string, isSourceId bool) (fileCou
 		lastStagingFileID,
 		sourceOrDestColumn,
 	)
-	preparedSqlStatement, err = dbHandle.Prepare(sqlStatement)
-	if err != nil {
-		err = fmt.Errorf("query: %s preparation failed with Error: %w", strings.ReplaceAll(sqlStatement, "$1", sourceOrDestId), err)
-		return
-	}
-	err = preparedSqlStatement.QueryRow(sourceOrDestId).Scan(&fileCount)
+	err = dbHandle.QueryRow(sourceOrDestId, sourceOrDestId).Scan(&fileCount)
 	if err != nil && err != sql.ErrNoRows {
 		err = fmt.Errorf("query: %s run failed with Error : %w", sqlStatement, err)
 		return
