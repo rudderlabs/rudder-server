@@ -41,9 +41,11 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
 	"github.com/rudderlabs/rudder-server/utils/types"
+	"github.com/rudderlabs/rudder-server/warehouse/archive"
 	"github.com/rudderlabs/rudder-server/warehouse/deltalake"
 	"github.com/rudderlabs/rudder-server/warehouse/jobs"
 	"github.com/rudderlabs/rudder-server/warehouse/manager"
+	"github.com/rudderlabs/rudder-server/warehouse/model"
 	"github.com/rudderlabs/rudder-server/warehouse/multitenant"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 	"github.com/rudderlabs/rudder-server/warehouse/validations"
@@ -629,7 +631,7 @@ func (wh *HandleT) initUpload(warehouse warehouseutils.Warehouse, jsonUploadsLis
 		endJSONID,
 		0,
 		0,
-		Waiting,
+		model.Waiting,
 		"{}",
 		"{}",
 		metadata,
@@ -767,7 +769,7 @@ func (wh *HandleT) deleteWaitingUploadJob(jobID int64) {
 `,
 		warehouseutils.WarehouseUploadsTable,
 		jobID,
-		Waiting,
+		model.Waiting,
 	)
 	_, err := wh.dbHandle.Exec(sqlStatement)
 	if err != nil {
@@ -802,7 +804,7 @@ func (wh *HandleT) createJobs(warehouse warehouseutils.Warehouse) (err error) {
 
 	priority := 0
 	uploadID, uploadStatus, uploadPriority := wh.getLatestUploadStatus(&warehouse)
-	if uploadStatus == Waiting {
+	if uploadStatus == model.Waiting {
 		// If it is present do nothing else delete it
 		if _, inProgress := wh.isUploadJobInProgress(warehouse, uploadID); !inProgress {
 			wh.deleteWaitingUploadJob(uploadID)
@@ -947,7 +949,7 @@ func (wh *HandleT) getUploadsToProcess(availableWorkers int, skipIdentifiers []s
 					COALESCE(metadata->>'priority', '100')::int ASC, id ASC
 				LIMIT %d;
 
-		`, partitionIdentifierSQL, warehouseutils.WarehouseUploadsTable, wh.destType, false, ExportedData, Aborted, skipIdentifiersSQL, availableWorkers)
+		`, partitionIdentifierSQL, warehouseutils.WarehouseUploadsTable, wh.destType, false, model.ExportedData, model.Aborted, skipIdentifiersSQL, availableWorkers)
 
 	var (
 		rows *sql.Rows
@@ -1055,7 +1057,7 @@ func (wh *HandleT) getUploadsToProcess(availableWorkers int, skipIdentifiers []s
 				dbHandle: wh.dbHandle,
 			}
 			err := fmt.Errorf("unable to find source : %s or destination : %s, both or the connection between them", upload.SourceID, upload.DestinationID)
-			_, _ = uploadJob.setUploadError(err, Aborted)
+			_, _ = uploadJob.setUploadError(err, model.Aborted)
 			pkgLogger.Errorf("%v", err)
 			continue
 		}
@@ -1245,8 +1247,8 @@ func (wh *HandleT) uploadStatusTrack(ctx context.Context) {
 			sqlStatementArgs := []interface{}{
 				source.ID,
 				destination.ID,
-				ExportedData,
-				Aborted,
+				model.ExportedData,
+				model.Aborted,
 				"%_failed",
 				createdAt.Time.Format(misc.RFC3339Milli),
 			}
@@ -1305,8 +1307,8 @@ func (wh *HandleT) setInterruptedDestinations() {
 `,
 		warehouseutils.WarehouseUploadsTable,
 		wh.destType,
-		getInProgressState(ExportedData),
-		getFailedState(ExportedData),
+		getInProgressState(model.ExportedData),
+		getFailedState(model.ExportedData),
 		true,
 	)
 	rows, err := wh.dbHandle.Query(sqlStatement)
@@ -1888,8 +1890,8 @@ func getPendingUploadCount(filters ...warehouseutils.FilterBy) (uploadCount int6
 		  %[1]s.status NOT IN ('%[2]s', '%[3]s')
 	`,
 		warehouseutils.WarehouseUploadsTable,
-		ExportedData,
-		Aborted,
+		model.ExportedData,
+		model.Aborted,
 	)
 
 	args := make([]interface{}, 0)
@@ -2260,7 +2262,7 @@ func Start(ctx context.Context, app app.App) error {
 			return nil
 		}))
 
-		archiver := &Archiver{
+		archiver := &archive.Archiver{
 			DB:          dbHandle,
 			Stats:       stats.Default,
 			Logger:      pkgLogger.Child("archiver"),
@@ -2268,7 +2270,7 @@ func Start(ctx context.Context, app app.App) error {
 			Multitenant: tenantManager,
 		}
 		g.Go(misc.WithBugsnagForWarehouse(func() error {
-			CronArchiver(ctx, archiver)
+			archive.CronArchiver(ctx, archiver)
 			return nil
 		}))
 

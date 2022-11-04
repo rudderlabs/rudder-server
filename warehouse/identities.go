@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"sync"
 
+	"github.com/rudderlabs/rudder-server/warehouse/model"
 	"github.com/rudderlabs/rudder-server/warehouse/validations"
 
 	"github.com/rudderlabs/rudder-server/config"
@@ -101,8 +102,8 @@ func (wh *HandleT) getPendingPopulateIdentitiesLoad(warehouse warehouseutils.War
 		warehouse.Source.ID,
 		warehouse.Destination.ID,
 		wh.populateHistoricIdentitiesDestType(),
-		ExportedData,
-		Aborted,
+		model.ExportedData,
+		model.Aborted,
 	)
 
 	var schema json.RawMessage
@@ -332,7 +333,7 @@ func (wh *HandleT) initPrePopulateDestIdentitiesUpload(warehouse warehouseutils.
 		warehouse.WorkspaceID,
 		warehouse.Destination.ID,
 		wh.populateHistoricIdentitiesDestType(),
-		Waiting,
+		model.Waiting,
 		marshalledSchema,
 		"{}",
 		"{}",
@@ -357,7 +358,7 @@ func (wh *HandleT) initPrePopulateDestIdentitiesUpload(warehouse warehouseutils.
 		SourceID:        warehouse.Source.ID,
 		DestinationID:   warehouse.Destination.ID,
 		DestinationType: wh.populateHistoricIdentitiesDestType(),
-		Status:          Waiting,
+		Status:          model.Waiting,
 		UploadSchema:    schema,
 	}
 
@@ -439,7 +440,7 @@ func (wh *HandleT) populateHistoricIdentities(warehouse warehouseutils.Warehouse
 
 		err = whManager.Setup(job.warehouse, &job)
 		if err != nil {
-			job.setUploadError(err, Aborted)
+			job.setUploadError(err, model.Aborted)
 			return
 		}
 		defer whManager.Cleanup()
@@ -454,19 +455,19 @@ func (wh *HandleT) populateHistoricIdentities(warehouse warehouseutils.Warehouse
 		job.schemaHandle.schemaInWarehouse, job.schemaHandle.unrecognizedSchemaInWarehouse, err = whManager.FetchSchema(job.warehouse)
 		if err != nil {
 			pkgLogger.Errorf(`[WH]: Failed fetching schema from warehouse: %v`, err)
-			job.setUploadError(err, Aborted)
+			job.setUploadError(err, model.Aborted)
 			return
 		}
 
-		job.setUploadStatus(UploadStatusOpts{Status: getInProgressState(ExportedData)})
+		job.setUploadStatus(UploadStatusOpts{Status: getInProgressState(model.ExportedData)})
 		loadErrors, err := job.loadIdentityTables(true)
 		if err != nil {
 			pkgLogger.Errorf(`[WH]: Identity table upload errors: %v`, err)
 		}
 		if len(loadErrors) > 0 {
-			job.setUploadError(misc.ConcatErrors(loadErrors), Aborted)
+			job.setUploadError(misc.ConcatErrors(loadErrors), model.Aborted)
 			return
 		}
-		job.setUploadStatus(UploadStatusOpts{Status: ExportedData})
+		job.setUploadStatus(UploadStatusOpts{Status: model.ExportedData})
 	})
 }

@@ -1,4 +1,4 @@
-package warehouse
+package archive
 
 import (
 	"context"
@@ -19,6 +19,7 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
+	"github.com/rudderlabs/rudder-server/warehouse/model"
 	"github.com/rudderlabs/rudder-server/warehouse/multitenant"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 	"github.com/tidwall/gjson"
@@ -32,7 +33,6 @@ var (
 )
 
 func Init() {
-	setMaxParallelLoads()
 	loadConfigArchiver()
 }
 
@@ -193,7 +193,7 @@ func (a *Archiver) Do(ctx context.Context) error {
 
 	rows, err := a.DB.QueryContext(ctx, sqlStatement,
 		fmt.Sprintf("%d DAY", uploadsArchivalTimeInDays),
-		ExportedData,
+		model.ExportedData,
 		pq.Array(skipWorkspaceIDs),
 	)
 	defer func() {
@@ -428,21 +428,4 @@ func (a *Archiver) Do(ctx context.Context) error {
 	}
 	a.Logger.Infof(`Successfully archived %d uploads`, archivedUploads)
 	return nil
-}
-
-func CronArchiver(ctx context.Context, a *Archiver) {
-	for {
-		select {
-		case <-ctx.Done():
-			pkgLogger.Infof("context is cancelled, stopped running archiving")
-			return
-		case <-time.After(archiverTickerTime):
-			if archiveUploadRelatedRecords {
-				err := a.Do(ctx)
-				if err != nil {
-					pkgLogger.Errorf(`Error archiving uploads: %v`, err)
-				}
-			}
-		}
-	}
 }

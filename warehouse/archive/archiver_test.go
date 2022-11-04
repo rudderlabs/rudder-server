@@ -1,6 +1,6 @@
 //go:build !warehouse_integration
 
-package warehouse_test
+package archive_test
 
 import (
 	"compress/gzip"
@@ -25,7 +25,8 @@ import (
 	migrator "github.com/rudderlabs/rudder-server/services/sql-migrator"
 	"github.com/rudderlabs/rudder-server/testhelper/destination"
 	"github.com/rudderlabs/rudder-server/utils/logger"
-	"github.com/rudderlabs/rudder-server/warehouse"
+	"github.com/rudderlabs/rudder-server/warehouse/archive"
+	"github.com/rudderlabs/rudder-server/warehouse/model"
 	"github.com/rudderlabs/rudder-server/warehouse/multitenant"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
@@ -46,7 +47,7 @@ func TestArchiver(t *testing.T) {
 		{
 			name:        "skip archive not exported uploads",
 			workspaceID: "1",
-			status:      warehouse.Waiting,
+			status:      model.Waiting,
 		},
 		{
 			name:                 "skip archive degraded uploads",
@@ -119,7 +120,7 @@ func TestArchiver(t *testing.T) {
 			now := time.Now().Truncate(time.Second)
 
 			if tc.status == "" {
-				tc.status = warehouse.ExportedData
+				tc.status = model.ExportedData
 			}
 
 			_, err = pgResource.DB.Exec(`
@@ -138,7 +139,7 @@ func TestArchiver(t *testing.T) {
 			`, tc.workspaceID, now)
 			require.NoError(t, err)
 
-			archiver := warehouse.Archiver{
+			archiver := archive.Archiver{
 				DB:          pgResource.DB,
 				Stats:       mockStats,
 				Logger:      logger.NOP,
