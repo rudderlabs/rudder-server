@@ -578,21 +578,26 @@ func (worker *workerT) workerProcess() {
 
 func (worker *workerT) getThrottlingCost() (cost int64) {
 	for k := range worker.routerJobs {
-		tcJSON, ok := worker.routerJobs[k].Destination.DestinationDefinition.Config["throttlingCost"].(json.RawMessage)
+		tc, ok := worker.routerJobs[k].Destination.DestinationDefinition.Config["throttlingCost"].(map[string]interface{})
 		if !ok {
-			cost++
+			// no throttlingCost configuration, assume 0
+			continue
+		}
+
+		et, ok := tc["eventType"].(map[string]interface{})
+		if !ok {
+			// no eventType in the configuration, assume 0
 			continue
 		}
 
 		// TODO get by event type before falling back on "default"
-		defaultCost := gjson.GetBytes(tcJSON, "eventType.default").Int()
-		if defaultCost > 0 {
-			cost += defaultCost
+		defaultCost, ok := et["default"].(float64)
+		if !ok {
+			// no default cost in the configuration, assume 0
 			continue
 		}
 
-		// no explicit throttling cost for this event type, assuming 1
-		cost++
+		cost += int64(defaultCost)
 	}
 
 	return
