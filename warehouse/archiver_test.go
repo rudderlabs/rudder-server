@@ -220,8 +220,9 @@ func jsonTestData(t require.TestingT, file string, value any) {
 	f, err := os.Open(file)
 	require.NoError(t, err)
 
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	err = json.NewDecoder(f).Decode(value)
 	require.NoError(t, err)
+
 }

@@ -151,7 +151,7 @@ func (a *Archiver) deleteFilesInStorage(locations []string) error {
 	return err
 }
 
-func (a *Archiver) usedRudderStorage(metadata []byte) bool {
+func (_ *Archiver) usedRudderStorage(metadata []byte) bool {
 	return gjson.GetBytes(metadata, "use_rudder_storage").Bool()
 }
 

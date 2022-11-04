@@ -18,18 +18,18 @@ type mockBackendConfig struct {
 	config map[string]backendconfig.ConfigT
 }
 
-func (m *mockBackendConfig) WaitForConfig(ctx context.Context)                   {}
-func (m *mockBackendConfig) Stop()                                               {}
-func (m *mockBackendConfig) StartWithIDs(ctx context.Context, workspaces string) {}
-func (m *mockBackendConfig) SetUp() error                                        { return nil }
-func (m *mockBackendConfig) AccessToken() string                                 { return "" }
-func (m *mockBackendConfig) Identity() identity.Identifier                       { return nil }
+func (_ *mockBackendConfig) WaitForConfig(_ context.Context)          {}
+func (_ *mockBackendConfig) Stop()                                    {}
+func (_ *mockBackendConfig) StartWithIDs(_ context.Context, _ string) {}
+func (_ *mockBackendConfig) SetUp() error                             { return nil }
+func (_ *mockBackendConfig) AccessToken() string                      { return "" }
+func (_ *mockBackendConfig) Identity() identity.Identifier            { return nil }
 
 func (m *mockBackendConfig) Get(context.Context, string) (map[string]backendconfig.ConfigT, error) {
 	return m.config, nil
 }
 
-func (m *mockBackendConfig) Subscribe(ctx context.Context, topic backendconfig.Topic) pubsub.DataChannel {
+func (m *mockBackendConfig) Subscribe(ctx context.Context, _ backendconfig.Topic) pubsub.DataChannel {
 	ch := make(chan pubsub.DataEvent)
 	go func() {
 		ch <- pubsub.DataEvent{
