@@ -82,7 +82,7 @@ func TestArchiver(t *testing.T) {
 				}).Migrate("warehouse")
 				require.NoError(t, err)
 
-				sqlStatement, err := os.ReadFile("testdata/sql/1.sql")
+				sqlStatement, err := os.ReadFile("testdata/dump.sql")
 				require.NoError(t, err)
 
 				_, err = pgResource.DB.Exec(string(sqlStatement))
@@ -173,7 +173,7 @@ func TestArchiver(t *testing.T) {
 			contents := minioContents(t, minioResource, prefix)
 
 			var expectedContents map[string]string
-			jsonTestData(t, "testdata/archive/archive.json", &expectedContents)
+			jsonTestData(t, "testdata/storage.json", &expectedContents)
 
 			// fix time-sensitive fields:
 			for name, file := range expectedContents {
