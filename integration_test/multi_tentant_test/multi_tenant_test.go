@@ -1,4 +1,4 @@
-package main
+package multi_tenant_test
 
 import (
 	"context"
@@ -22,6 +22,7 @@ import (
 	"github.com/stretchr/testify/require"
 	clientv3 "go.etcd.io/etcd/client/v3"
 	"golang.org/x/sync/errgroup"
+	"google.golang.org/grpc"
 
 	"github.com/rudderlabs/rudder-server/app"
 	th "github.com/rudderlabs/rudder-server/testhelper"
@@ -156,7 +157,7 @@ func testMultiTenantByAppType(t *testing.T, appType string) {
 	go func() {
 		defer close(done)
 		defer cancel()
-		cmd := exec.CommandContext(ctx, "go", "run", "main.go")
+		cmd := exec.CommandContext(ctx, "go", "run", "../../main.go")
 		cmd.Env = append(os.Environ(),
 			"APP_TYPE="+appType,
 			"INSTANCE_ID="+serverInstanceID,
@@ -237,8 +238,14 @@ func testMultiTenantByAppType(t *testing.T, appType string) {
 		require.NoError(t, err)
 		require.Equal(t, "RELOADED", v.Status)
 		require.Equal(t, "", v.Error)
-	case <-time.After(20 * time.Second):
-		t.Fatal("Timeout waiting for test-ack/1")
+	case <-time.After(60 * time.Second):
+		_, err = clientv3.New(clientv3.Config{
+			Endpoints: etcdContainer.Hosts,
+			DialOptions: []grpc.DialOption{
+				grpc.WithBlock(), // block until the underlying connection is up
+			},
+		})
+		t.Fatalf("Timeout waiting for test-ack/1 (etcd status error: %v)", err)
 	}
 
 	cleanupGwJobs := func() {
@@ -296,7 +303,7 @@ func testMultiTenantByAppType(t *testing.T, appType string) {
 				require.Len(t, ack.Events, 1)
 				require.Equal(t, "test-ack/normal", string(ack.Events[0].Kv.Key))
 				require.Equal(t, `{"status":"NORMAL"}`, string(ack.Events[0].Kv.Value))
-			case <-time.After(20 * time.Second):
+			case <-time.After(60 * time.Second):
 				t.Fatal("Timeout waiting for server-mode test-ack")
 			}
 			sendEventsToGateway(t, httpPort, writeKey)
@@ -323,7 +330,7 @@ func testMultiTenantByAppType(t *testing.T, appType string) {
 				require.Len(t, ack.Events, 1)
 				require.Equal(t, "test-ack/2", string(ack.Events[0].Kv.Key))
 				require.Equal(t, `{"status":"DEGRADED"}`, string(ack.Events[0].Kv.Value))
-			case <-time.After(20 * time.Second):
+			case <-time.After(60 * time.Second):
 				t.Fatal("Timeout waiting for server-mode test-ack")
 			}
 
@@ -352,7 +359,7 @@ func testMultiTenantByAppType(t *testing.T, appType string) {
 			require.NoError(t, err)
 			require.Equal(t, "RELOADED", v.Status)
 			require.Equal(t, "", v.Error)
-		case <-time.After(20 * time.Second):
+		case <-time.After(60 * time.Second):
 			t.Fatal("Timeout waiting for test-ack/3")
 		}
 	})

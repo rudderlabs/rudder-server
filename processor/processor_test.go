@@ -2,7 +2,6 @@ package processor
 
 import (
 	"context"
-	"database/sql"
 	"encoding/json"
 	"fmt"
 	"reflect"
@@ -973,8 +972,8 @@ var _ = Describe("Processor", func() {
 				})
 
 			// will be used to save failed events to failed keys table
-			c.mockProcErrorsDB.EXPECT().WithTx(gomock.Any()).Do(func(f func(tx *sql.Tx) error) {
-				_ = f(nil)
+			c.mockProcErrorsDB.EXPECT().WithTx(gomock.Any()).Do(func(f func(tx *jobsdb.Tx) error) {
+				_ = f(&jobsdb.Tx{})
 			}).Times(1)
 
 			// One Store call is expected for all events
@@ -1105,8 +1104,8 @@ var _ = Describe("Processor", func() {
 					assertJobStatus(unprocessedJobsList[0], statuses[0], jobsdb.Succeeded.State)
 				})
 
-			c.mockProcErrorsDB.EXPECT().WithTx(gomock.Any()).Do(func(f func(tx *sql.Tx) error) {
-				_ = f(nil)
+			c.mockProcErrorsDB.EXPECT().WithTx(gomock.Any()).Do(func(f func(tx *jobsdb.Tx) error) {
+				_ = f(&jobsdb.Tx{})
 			}).Return(nil).Times(1)
 
 			// One Store call is expected for all events
@@ -1183,8 +1182,8 @@ var _ = Describe("Processor", func() {
 					assertJobStatus(unprocessedJobsList[0], statuses[0], jobsdb.Succeeded.State)
 				})
 
-			c.mockProcErrorsDB.EXPECT().WithTx(gomock.Any()).Do(func(f func(tx *sql.Tx) error) {
-				_ = f(nil)
+			c.mockProcErrorsDB.EXPECT().WithTx(gomock.Any()).Do(func(f func(tx *jobsdb.Tx) error) {
+				_ = f(&jobsdb.Tx{})
 			}).Return(nil).Times(0)
 
 			// One Store call is expected for all events
@@ -2405,6 +2404,159 @@ var _ = Describe("TestSubJobMerger", func() {
 			Expect(mergedJob.sourceDupStats).To(Equal(expectedMergedJob.sourceDupStats))
 			Expect(mergedJob.uniqueMessageIds).To(Equal(expectedMergedJob.uniqueMessageIds))
 			Expect(mergedJob.totalEvents).To(Equal(expectedMergedJob.totalEvents))
+		})
+	})
+})
+
+var _ = Describe("TestConfigFilter", func() {
+	Context("testing config filter", func() {
+		It("success-full test", func() {
+			intgConfig := backendconfig.DestinationT{
+				ID:   "1",
+				Name: "test",
+				Config: map[string]interface{}{
+					"config_key":   "config_value",
+					"long_config1": "long_config1_value..................................",
+					"long_config2": map[string]interface{}{"hello": "world"},
+				},
+				DestinationDefinition: backendconfig.DestinationDefinitionT{
+					Config: map[string]interface{}{
+						"configFilters": []interface{}{"long_config1", "long_config2"},
+					},
+				},
+				Enabled:            true,
+				IsProcessorEnabled: true,
+			}
+			expectedEvent := transformer.TransformerEventT{
+				Message: types.SingularEventT{
+					"MessageID": "messageId-1",
+				},
+				Destination: backendconfig.DestinationT{
+					ID:   "1",
+					Name: "test",
+					Config: map[string]interface{}{
+						"config_key":   "config_value",
+						"long_config1": "",
+						"long_config2": "",
+					},
+					DestinationDefinition: backendconfig.DestinationDefinitionT{
+						Config: map[string]interface{}{
+							"configFilters": []interface{}{"long_config1", "long_config2"},
+						},
+					},
+					Enabled:            true,
+					IsProcessorEnabled: true,
+				},
+			}
+			event := transformer.TransformerEventT{
+				Message: types.SingularEventT{
+					"MessageID": "messageId-1",
+				},
+				Destination: intgConfig,
+			}
+			filterConfig(&event, &intgConfig)
+			Expect(event).To(Equal(expectedEvent))
+		})
+
+		It("success-full test with marshalling", func() {
+			var intgConfig backendconfig.DestinationT
+			var destDef backendconfig.DestinationDefinitionT
+			intgConfigStr := `{
+				"id": "1",
+				"name": "test",
+				"config": {
+					"config_key":"config_value",
+					"long_config1": "long_config1_value..................................",
+					"long_config2": {"hello": "world"}
+				},
+				"enabled": true,
+				"isProcessorEnabled": true
+			}`
+			destDefStr := `{
+				"config": {
+					"configFilters": ["long_config1", "long_config2"]
+				}
+			}`
+			_ = json.Unmarshal([]byte(intgConfigStr), &intgConfig)
+			_ = json.Unmarshal([]byte(destDefStr), &destDef)
+			intgConfig.DestinationDefinition = destDef
+			expectedEvent := transformer.TransformerEventT{
+				Message: types.SingularEventT{
+					"MessageID": "messageId-1",
+				},
+				Destination: backendconfig.DestinationT{
+					ID:   "1",
+					Name: "test",
+					Config: map[string]interface{}{
+						"config_key":   "config_value",
+						"long_config1": "",
+						"long_config2": "",
+					},
+					DestinationDefinition: backendconfig.DestinationDefinitionT{
+						Config: map[string]interface{}{
+							"configFilters": []interface{}{"long_config1", "long_config2"},
+						},
+					},
+					Enabled:            true,
+					IsProcessorEnabled: true,
+				},
+			}
+			event := transformer.TransformerEventT{
+				Message: types.SingularEventT{
+					"MessageID": "messageId-1",
+				},
+				Destination: intgConfig,
+			}
+			filterConfig(&event, &intgConfig)
+			Expect(event).To(Equal(expectedEvent))
+		})
+
+		It("failure test", func() {
+			intgConfig := backendconfig.DestinationT{
+				ID:   "1",
+				Name: "test",
+				Config: map[string]interface{}{
+					"config_key":   "config_value",
+					"long_config1": "long_config1_value..................................",
+					"long_config2": map[string]interface{}{"hello": "world"},
+				},
+				DestinationDefinition: backendconfig.DestinationDefinitionT{
+					Config: map[string]interface{}{
+						"configFilters": nil,
+					},
+				},
+				Enabled:            true,
+				IsProcessorEnabled: true,
+			}
+			expectedEvent := transformer.TransformerEventT{
+				Message: types.SingularEventT{
+					"MessageID": "messageId-1",
+				},
+				Destination: backendconfig.DestinationT{
+					ID:   "1",
+					Name: "test",
+					Config: map[string]interface{}{
+						"config_key":   "config_value",
+						"long_config1": "long_config1_value..................................",
+						"long_config2": map[string]interface{}{"hello": "world"},
+					},
+					DestinationDefinition: backendconfig.DestinationDefinitionT{
+						Config: map[string]interface{}{
+							"configFilters": nil,
+						},
+					},
+					Enabled:            true,
+					IsProcessorEnabled: true,
+				},
+			}
+			event := transformer.TransformerEventT{
+				Message: types.SingularEventT{
+					"MessageID": "messageId-1",
+				},
+				Destination: intgConfig,
+			}
+			filterConfig(&event, &intgConfig)
+			Expect(event).To(Equal(expectedEvent))
 		})
 	})
 })

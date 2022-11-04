@@ -177,23 +177,6 @@ func (bq *HandleT) createTableView(tableName string, columnMap map[string]string
 	return
 }
 
-func (bq *HandleT) addColumn(tableName, columnName, columnType string) (err error) {
-	pkgLogger.Infof("BQ: Adding columns in table %s in bigquery dataset: %s in project: %s", tableName, bq.namespace, bq.projectID)
-	tableRef := bq.db.Dataset(bq.namespace).Table(tableName)
-	meta, err := tableRef.Metadata(bq.backgroundContext)
-	if err != nil {
-		return err
-	}
-	newSchema := append(meta.Schema,
-		&bigquery.FieldSchema{Name: columnName, Type: dataTypesMap[columnType]},
-	)
-	update := bigquery.TableMetadataToUpdate{
-		Schema: newSchema,
-	}
-	_, err = tableRef.Update(bq.backgroundContext, update, meta.ETag)
-	return
-}
-
 func (bq *HandleT) schemaExists(_, _ string) (exists bool, err error) {
 	ds := bq.db.Dataset(bq.namespace)
 	_, err = ds.Metadata(bq.backgroundContext)
@@ -264,7 +247,7 @@ func (bq *HandleT) dropStagingTable(stagingTableName string) {
 }
 
 func (bq *HandleT) DeleteBy(tableNames []string, params warehouseutils.DeleteByParams) error {
-	pkgLogger.Infof("BQ: Cleaning up the followng tables in bigquery for BQ:%s : %v", tableNames)
+	pkgLogger.Infof("BQ: Cleaning up the following tables in bigquery for BQ:%s : %v", tableNames)
 	for _, tb := range tableNames {
 		sqlStatement := fmt.Sprintf(`DELETE FROM "%[1]s"."%[2]s" WHERE
 		context_sources_job_run_id <> @jobrunid AND
@@ -330,7 +313,7 @@ func (bq *HandleT) loadTable(tableName string, _, getLoadFileLocFromTableUploads
 	loadTableByAppend := func() (err error) {
 		stagingLoadTable.partitionDate = time.Now().Format("2006-01-02")
 		outputTable := tableName
-		// Tables created by Rudderstack are ingestion-time partitioned table with pseudocolumn named _PARTITIONTIME. BigQuery automatically assigns rows to partitions based
+		// Tables created by RudderStack are ingestion-time partitioned table with pseudo column named _PARTITIONTIME. BigQuery automatically assigns rows to partitions based
 		// on the time when BigQuery ingests the data. To support custom field partitions, omitting loading into partitioned table like tableName$20191221
 		// TODO: Support custom field partition on users & identifies tables
 		if !customPartitionsEnabled {
@@ -689,7 +672,7 @@ type BQCredentialsT struct {
 }
 
 func Connect(context context.Context, cred *BQCredentialsT) (*bigquery.Client, error) {
-	opts := []option.ClientOption{}
+	var opts []option.ClientOption
 	if !googleutils.ShouldSkipCredentialsInit(cred.Credentials) {
 		credBytes := []byte(cred.Credentials)
 		if err := googleutils.CompatibleGoogleCredentialsJSON(credBytes); err != nil {
@@ -711,7 +694,7 @@ func (bq *HandleT) connect(cred BQCredentialsT) (*bigquery.Client, error) {
 func loadConfig() {
 	config.RegisterBoolConfigVariable(true, &setUsersLoadPartitionFirstEventFilter, true, "Warehouse.bigquery.setUsersLoadPartitionFirstEventFilter")
 	config.RegisterBoolConfigVariable(false, &customPartitionsEnabled, true, "Warehouse.bigquery.customPartitionsEnabled")
-	config.RegisterBoolConfigVariable(false, &isUsersTableDedupEnabled, true, "Warehouse.bigquery.isUsersTableDedupEnabled") // TODO: Depricate with respect to isDedupEnabled
+	config.RegisterBoolConfigVariable(false, &isUsersTableDedupEnabled, true, "Warehouse.bigquery.isUsersTableDedupEnabled") // TODO: Deprecate with respect to isDedupEnabled
 	config.RegisterBoolConfigVariable(false, &isDedupEnabled, true, "Warehouse.bigquery.isDedupEnabled")
 	config.RegisterBoolConfigVariable(false, &enableDeleteByJobs, true, "Warehouse.bigquery.enableDeleteByJobs")
 	config.RegisterBoolConfigVariable(false, &isClusteringEnabled, false, "Warehouse.bigquery.isClusteringEnabled")
@@ -868,30 +851,50 @@ func (bq *HandleT) LoadTable(tableName string) error {
 	return err
 }
 
-func (bq *HandleT) AddColumn(tableName, columnName, columnType string) (err error) {
-	err = bq.addColumn(tableName, columnName, columnType)
+func (bq *HandleT) AddColumns(tableName string, columnsInfo []warehouseutils.ColumnInfo) (err error) {
+	pkgLogger.Infof("BQ: Adding columns for destinationID: %s, tableName: %s, dataset: %s, project: %s", bq.warehouse.Destination.ID, tableName, bq.namespace, bq.projectID)
+	tableRef := bq.db.Dataset(bq.namespace).Table(tableName)
+	meta, err := tableRef.Metadata(bq.backgroundContext)
 	if err != nil {
-		if checkAndIgnoreAlreadyExistError(err) {
-			pkgLogger.Infof("BQ: Column %s already exists on %s.%s \nResponse: %v", columnName, bq.namespace, tableName, err)
-			err = nil
+		return
+	}
+
+	newSchema := meta.Schema
+	for _, columnInfo := range columnsInfo {
+		newSchema = append(newSchema,
+			&bigquery.FieldSchema{Name: columnInfo.Name, Type: dataTypesMap[columnInfo.Type]},
+		)
+	}
+
+	tableMetadataToUpdate := bigquery.TableMetadataToUpdate{
+		Schema: newSchema,
+	}
+	_, err = tableRef.Update(bq.backgroundContext, tableMetadataToUpdate, meta.ETag)
+
+	// Handle error in case of single column
+	if len(columnsInfo) == 1 {
+		if err != nil {
+			if checkAndIgnoreAlreadyExistError(err) {
+				pkgLogger.Infof("BQ: Column %s already exists on %s.%s \nResponse: %v", columnsInfo[0].Name, bq.namespace, tableName, err)
+				err = nil
+			}
 		}
 	}
-	return err
+	return
 }
 
 func (*HandleT) AlterColumn(_, _, _ string) (err error) {
 	return
 }
 
-// FetchSchema queries bigquery and returns the schema assoiciated with provided namespace
-func (bq *HandleT) FetchSchema(warehouse warehouseutils.Warehouse) (schema warehouseutils.SchemaT, err error) {
+// FetchSchema queries bigquery and returns the schema associated with provided namespace
+func (bq *HandleT) FetchSchema(warehouse warehouseutils.Warehouse) (schema, unrecognizedSchema warehouseutils.SchemaT, err error) {
 	bq.warehouse = warehouse
 	bq.namespace = warehouse.Namespace
 	bq.projectID = strings.TrimSpace(warehouseutils.GetConfigValue(GCPProjectID, bq.warehouse))
 	dbClient, err := bq.connect(BQCredentialsT{
 		ProjectID:   bq.projectID,
 		Credentials: warehouseutils.GetConfigValue(GCPCredentials, bq.warehouse),
-		// location:    warehouseutils.GetConfigValue(GCPLocation, bq.warehouse),
 	})
 	if err != nil {
 		return
@@ -899,6 +902,8 @@ func (bq *HandleT) FetchSchema(warehouse warehouseutils.Warehouse) (schema wareh
 	defer dbClient.Close()
 
 	schema = make(warehouseutils.SchemaT)
+	unrecognizedSchema = make(warehouseutils.SchemaT)
+
 	sqlStatement := fmt.Sprintf(`
 		SELECT
 		  t.table_name,
@@ -924,10 +929,10 @@ func (bq *HandleT) FetchSchema(warehouse warehouseutils.Warehouse) (schema wareh
 			// if dataset resource is not found, return empty schema
 			if e.Code == 404 {
 				pkgLogger.Infof("BQ: No rows, while fetching schema from  destination:%v, query: %v", bq.warehouse.Identifier, query)
-				return schema, nil
+				return schema, unrecognizedSchema, nil
 			}
 			pkgLogger.Errorf("BQ: Error in fetching schema from bigquery destination:%v, query: %v", bq.warehouse.Destination.ID, query)
-			return schema, e
+			return schema, unrecognizedSchema, e
 		}
 		pkgLogger.Errorf("BQ: Error in fetching schema from bigquery destination:%v, query: %v", bq.warehouse.Destination.ID, query)
 		return
@@ -941,7 +946,7 @@ func (bq *HandleT) FetchSchema(warehouse warehouseutils.Warehouse) (schema wareh
 		}
 		if err != nil {
 			pkgLogger.Errorf("BQ: Error in processing fetched schema from redshift destination:%v, error: %v", bq.warehouse.Destination.ID, err)
-			return nil, err
+			return nil, nil, err
 		}
 		var tName, cName, cType string
 		tName, _ = values[0].(string)
@@ -954,6 +959,11 @@ func (bq *HandleT) FetchSchema(warehouse warehouseutils.Warehouse) (schema wareh
 			// lower case all column names from bigquery
 			schema[tName][strings.ToLower(cName)] = datatype
 		} else {
+			if _, ok := unrecognizedSchema[tName]; !ok {
+				unrecognizedSchema[tName] = make(map[string]string)
+			}
+			unrecognizedSchema[tName][strings.ToLower(cName)] = warehouseutils.MISSING_DATATYPE
+
 			warehouseutils.WHCounterStat(warehouseutils.RUDDER_MISSING_DATATYPE, &bq.warehouse, warehouseutils.Tag{Name: "datatype", Value: cType}).Count(1)
 		}
 	}

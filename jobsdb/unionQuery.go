@@ -18,8 +18,26 @@ type MultiTenantHandleT struct {
 	*HandleT
 }
 
+type workspacePickup struct {
+	Limit        int
+	PayloadLimit int64
+	AfterJobID   *int64
+}
+
+type (
+	MoreToken interface{}
+	moreToken struct {
+		afterJobIDs map[string]*int64
+	}
+)
+
+type GetAllJobsResult struct {
+	Jobs []*JobT
+	More MoreToken
+}
+
 type MultiTenantJobsDB interface {
-	GetAllJobs(context.Context, map[string]int, GetQueryParamsT, int) ([]*JobT, error)
+	GetAllJobs(context.Context, map[string]int, GetQueryParamsT, int, MoreToken) (*GetAllJobsResult, error)
 
 	WithUpdateSafeTx(context.Context, func(tx UpdateSafeTx) error) error
 	UpdateJobStatusInTx(ctx context.Context, tx UpdateSafeTx, statusList []*JobStatusT, customValFilters []string, parameterFilters []ParameterFilterT) error
@@ -33,12 +51,16 @@ type MultiTenantJobsDB interface {
 	GetPileUpCounts(context.Context) (map[string]map[string]int, error)
 }
 
-func (*MultiTenantHandleT) getSingleWorkspaceQueryString(workspace string, jobsLimit int, payloadLimit int64) string {
+func (*MultiTenantHandleT) getSingleWorkspaceQueryString(workspace string, jobsLimit int, payloadLimit int64, afterJobID *int64) string {
 	var sqlStatement string
 
 	// some stats
 	orderQuery := " ORDER BY jobs.job_id"
 	limitQuery := fmt.Sprintf(" LIMIT %d ", jobsLimit)
+	var jobIDQuery string
+	if afterJobID != nil {
+		jobIDQuery = fmt.Sprintf(" AND jobs.job_id > %d ", *afterJobID)
+	}
 
 	sqlStatement = fmt.Sprintf(
 		`SELECT
@@ -52,8 +74,8 @@ func (*MultiTenantHandleT) getSingleWorkspaceQueryString(workspace string, jobsL
 		FROM
 			%[1]s
 			AS jobs
-		WHERE jobs.workspace_id='%[3]s' %[4]s %[2]s`,
-		"rt_jobs_view", limitQuery, workspace, orderQuery)
+		WHERE jobs.workspace_id='%[3]s' %[5]s %[4]s %[2]s`,
+		"rt_jobs_view", limitQuery, workspace, orderQuery, jobIDQuery)
 
 	if payloadLimit > 0 {
 		return `select * from (` + sqlStatement + fmt.Sprintf(`) subquery where subquery.running_payload_size - subquery.payload_size <= %d`, payloadLimit)
@@ -61,9 +83,26 @@ func (*MultiTenantHandleT) getSingleWorkspaceQueryString(workspace string, jobsL
 	return sqlStatement
 }
 
-// All Jobs
+// GetAllJobs gets jobs from all workspaces according to the pickup map
+func (mj *MultiTenantHandleT) GetAllJobs(ctx context.Context, pickup map[string]int, params GetQueryParamsT, maxDSQuerySize int, more MoreToken) (*GetAllJobsResult, error) { // skipcq: CRT-P0003
 
-func (mj *MultiTenantHandleT) GetAllJobs(ctx context.Context, workspaceCount map[string]int, params GetQueryParamsT, maxDSQuerySize int) ([]*JobT, error) { // skipcq: CRT-P0003
+	mtoken := &moreToken{}
+	if more != nil {
+		var ok bool
+		if mtoken, ok = more.(*moreToken); !ok {
+			return nil, fmt.Errorf("invalid token: %v", more)
+		}
+	}
+	wsPickup := make(map[string]*workspacePickup, len(pickup))
+	for workspace, limit := range pickup {
+		payloadPercentage := math.Max(float64(limit), 0) / float64(params.JobsLimit)
+		payloadLimit := int64(payloadPercentage * float64(params.PayloadSizeLimit))
+		wsPickup[workspace] = &workspacePickup{
+			Limit:        limit,
+			PayloadLimit: payloadLimit,
+			AfterJobID:   mtoken.afterJobIDs[workspace],
+		}
+	}
 	// The order of lock is very important. The migrateDSLoop
 	// takes lock in this order so reversing this will cause
 	// deadlocks
@@ -80,13 +119,6 @@ func (mj *MultiTenantHandleT) GetAllJobs(ctx context.Context, workspaceCount map
 	dsList := mj.getDSList()
 	outJobs := make([]*JobT, 0)
 
-	workspacePayloadLimitMap := make(map[string]int64)
-	for workspace, count := range workspaceCount {
-		percentage := math.Max(float64(count), 0) / float64(params.JobsLimit)
-		payloadLimit := percentage * float64(params.PayloadSizeLimit)
-		workspacePayloadLimitMap[workspace] = int64(payloadLimit)
-	}
-
 	var tablesQueried int
 	params.StateFilters = []string{NotProcessed.State, Waiting.State, Failed.State}
 	conditions := QueryConditions{
@@ -95,18 +127,27 @@ func (mj *MultiTenantHandleT) GetAllJobs(ctx context.Context, workspaceCount map
 		ParameterFilters:              params.ParameterFilters,
 		StateFilters:                  params.StateFilters,
 	}
+	mToken := &moreToken{
+		afterJobIDs: make(map[string]*int64),
+	}
 	start := time.Now()
 	for _, ds := range dsList {
-		jobs, err := mj.getUnionDS(ctx, ds, workspaceCount, workspacePayloadLimitMap, conditions)
+		jobs, err := mj.getUnionDS(ctx, ds, wsPickup, conditions)
 		if err != nil {
 			return nil, err
 		}
 		outJobs = append(outJobs, jobs...)
+		for i := range jobs {
+			job := jobs[i]
+			jobID := job.JobID
+			if _, ok := mToken.afterJobIDs[job.WorkspaceId]; !ok || jobID > *mToken.afterJobIDs[job.WorkspaceId] {
+				mToken.afterJobIDs[job.WorkspaceId] = &jobID
+			}
+		}
 		if len(jobs) > 0 {
 			tablesQueried++
 		}
-
-		if len(workspaceCount) == 0 {
+		if len(wsPickup) == 0 {
 			break
 		}
 		if tablesQueried >= maxDSQuerySize {
@@ -116,26 +157,35 @@ func (mj *MultiTenantHandleT) GetAllJobs(ctx context.Context, workspaceCount map
 
 	mj.unionQueryTime.SendTiming(time.Since(start))
 
-	unionQueryTablesQueriedStat := stats.Default.NewTaggedStat("tables_queried_gauge", stats.GaugeType, stats.Tags{
+	stats.Default.NewTaggedStat("tables_queried_gauge", stats.GaugeType, stats.Tags{
 		"state":     "nonterminal",
 		"query":     "union",
 		"customVal": mj.tablePrefix,
-	})
-	unionQueryTablesQueriedStat.Gauge(tablesQueried)
+	}).Gauge(tablesQueried)
 
-	return outJobs, nil
+	return &GetAllJobsResult{Jobs: outJobs, More: mToken}, nil
 }
 
-func (mj *MultiTenantHandleT) getUnionDS(ctx context.Context, ds dataSetT, workspaceCount map[string]int, workspacePayloadLimitMap map[string]int64, conditions QueryConditions) ([]*JobT, error) { // skipcq: CRT-P0003
+func (mj *MultiTenantHandleT) getUnionDS(ctx context.Context, ds dataSetT, pickup map[string]*workspacePickup, conditions QueryConditions) ([]*JobT, error) { // skipcq: CRT-P0003
+
+	skipCache := map[string]struct{}{}
+	for workspace, wp := range pickup {
+		if wp.AfterJobID != nil {
+			skipCache[workspace] = struct{}{}
+		}
+	}
+
 	var jobList []*JobT
-	queryString, workspacesToQuery := mj.getUnionQuerystring(workspaceCount, workspacePayloadLimitMap, ds, conditions)
+	queryString, workspacesToQuery := mj.getUnionQuerystring(pickup, ds, conditions)
 
 	if len(workspacesToQuery) == 0 {
 		return jobList, nil
 	}
 	for _, workspace := range workspacesToQuery {
-		mj.markClearEmptyResult(ds, workspace, conditions.StateFilters, conditions.CustomValFilters, conditions.ParameterFilters,
-			willTryToSet, nil)
+		if _, ok := skipCache[workspace]; !ok {
+			mj.markClearEmptyResult(ds, workspace, conditions.StateFilters, conditions.CustomValFilters, conditions.ParameterFilters,
+				willTryToSet, nil)
+		}
 	}
 
 	cacheUpdateByWorkspace := make(map[string]string)
@@ -214,22 +264,20 @@ func (mj *MultiTenantHandleT) getUnionDS(ctx context.Context, ds dataSetT, works
 		}
 
 		jobList = append(jobList, &job)
+		if wsPickup := pickup[job.WorkspaceId]; wsPickup != nil {
+			wsPickup.Limit -= 1
+			if wsPickup.Limit == 0 {
+				delete(pickup, job.WorkspaceId)
+			}
 
-		workspaceCount[job.WorkspaceId] -= 1
-		if workspaceCount[job.WorkspaceId] == 0 {
-			delete(workspaceCount, job.WorkspaceId)
-			delete(workspacePayloadLimitMap, job.WorkspaceId)
-		}
-
-		// payload limit is enabled only if > 0
-		if workspacePayloadLimitMap[job.WorkspaceId] > 0 {
-			workspacePayloadLimitMap[job.WorkspaceId] -= job.PayloadSize // decrement
-			if workspacePayloadLimitMap[job.WorkspaceId] <= 0 {          // there is a possibility for an overflow
-				delete(workspaceCount, job.WorkspaceId)
-				delete(workspacePayloadLimitMap, job.WorkspaceId)
+			// payload limit is enabled only if > 0
+			if wsPickup.PayloadLimit > 0 {
+				wsPickup.PayloadLimit -= job.PayloadSize // decrement
+				if wsPickup.PayloadLimit <= 0 {          // there is a possibility for an overflow
+					delete(pickup, job.WorkspaceId)
+				}
 			}
 		}
-
 		cacheUpdateByWorkspace[job.WorkspaceId] = string(hasJobs)
 	}
 	if err = rows.Err(); err != nil {
@@ -239,33 +287,36 @@ func (mj *MultiTenantHandleT) getUnionDS(ctx context.Context, ds dataSetT, works
 	// do cache stuff here
 	_willTryToSet := willTryToSet
 	for workspace, cacheUpdate := range cacheUpdateByWorkspace {
-		mj.markClearEmptyResult(ds, workspace, conditions.StateFilters, conditions.CustomValFilters, conditions.ParameterFilters,
-			cacheValue(cacheUpdate), &_willTryToSet)
+		if _, ok := skipCache[workspace]; !ok {
+			mj.markClearEmptyResult(ds, workspace, conditions.StateFilters, conditions.CustomValFilters, conditions.ParameterFilters,
+				cacheValue(cacheUpdate), &_willTryToSet)
+		}
 	}
 
 	return jobList, err
 }
 
-func (mj *MultiTenantHandleT) getUnionQuerystring(workspaceCount map[string]int, workspacePayloadLimitMap map[string]int64, ds dataSetT, conditions QueryConditions) (string, []string) {
+func (mj *MultiTenantHandleT) getUnionQuerystring(pickup map[string]*workspacePickup, ds dataSetT, conditions QueryConditions) (string, []string) {
 	var queries, workspacesToQuery []string
-	queryInitial := mj.getInitialSingleWorkspaceQueryString(ds, conditions, workspaceCount)
+	queryInitial := mj.getInitialSingleWorkspaceQueryString(ds, conditions, pickup)
 
-	for workspace, count := range workspaceCount {
+	for workspace, wp := range pickup {
+		count := wp.Limit
 		if mj.isEmptyResult(ds, workspace, conditions.StateFilters, conditions.CustomValFilters, conditions.ParameterFilters) {
 			continue
 		}
 		if count <= 0 {
-			mj.logger.Errorf("workspaceCount <= 0 (%d) for workspace: %s. Limiting at 0 jobs for this workspace.", count, workspace)
+			mj.logger.Errorf("workspaceCount <= 0 (%d) for workspace: %s. Limiting at 0 jobs for this workspace.", wp, workspace)
 			continue
 		}
-		queries = append(queries, mj.getSingleWorkspaceQueryString(workspace, count, workspacePayloadLimitMap[workspace]))
+		queries = append(queries, mj.getSingleWorkspaceQueryString(workspace, wp.Limit, wp.PayloadLimit, wp.AfterJobID))
 		workspacesToQuery = append(workspacesToQuery, workspace)
 	}
 
 	return queryInitial + `(` + strings.Join(queries, `) UNION (`) + `)`, workspacesToQuery
 }
 
-func (*MultiTenantHandleT) getInitialSingleWorkspaceQueryString(ds dataSetT, conditions QueryConditions, workspaceCount map[string]int) string {
+func (*MultiTenantHandleT) getInitialSingleWorkspaceQueryString(ds dataSetT, conditions QueryConditions, pickup map[string]*workspacePickup) string {
 	customValFilters := conditions.CustomValFilters
 	parameterFilters := conditions.ParameterFilters
 	stateFilters := conditions.StateFilters
@@ -273,7 +324,7 @@ func (*MultiTenantHandleT) getInitialSingleWorkspaceQueryString(ds dataSetT, con
 
 	// some stats
 	workspaceArray := make([]string, 0)
-	for workspace := range workspaceCount {
+	for workspace := range pickup {
 		workspaceArray = append(workspaceArray, "'"+workspace+"'")
 	}
 	workspaceString := "(" + strings.Join(workspaceArray, ", ") + ")"
@@ -287,7 +338,6 @@ func (*MultiTenantHandleT) getInitialSingleWorkspaceQueryString(ds dataSetT, con
 	}
 
 	if len(customValFilters) > 0 && !conditions.IgnoreCustomValFiltersInQuery {
-		// mj.assert(!getAll, "getAll is true")
 		customValQuery = " AND " +
 			constructQueryOR("jobs.custom_val", customValFilters)
 	} else {
@@ -295,7 +345,6 @@ func (*MultiTenantHandleT) getInitialSingleWorkspaceQueryString(ds dataSetT, con
 	}
 
 	if len(parameterFilters) > 0 {
-		// mj.assert(!getAll, "getAll is true")
 		sourceQuery += " AND " + constructParameterJSONQuery("jobs", parameterFilters)
 	} else {
 		sourceQuery = ""

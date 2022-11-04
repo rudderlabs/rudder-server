@@ -164,7 +164,7 @@ func (network *NetHandleT) SendPost(ctx context.Context, structData integrations
 		if err != nil {
 			return &utils.SendPostResponse{
 				StatusCode:   http.StatusGatewayTimeout,
-				ResponseBody: []byte(fmt.Sprintf(`504 Unable to make "%s" request for URL : "%s"`, requestMethod, postInfo.URL)),
+				ResponseBody: []byte(fmt.Sprintf(`504 Unable to make "%s" request for URL : "%s". Error: %s`, requestMethod, postInfo.URL, err.Error())),
 			}
 		}
 
@@ -174,7 +174,7 @@ func (network *NetHandleT) SendPost(ctx context.Context, structData integrations
 		if err != nil {
 			return &utils.SendPostResponse{
 				StatusCode:   resp.StatusCode,
-				ResponseBody: []byte(fmt.Sprintf(`Failed to read response body for request for URL : "%s"`, postInfo.URL)),
+				ResponseBody: []byte(fmt.Sprintf(`Failed to read response body for request for URL : "%s". Error: %s`, postInfo.URL, err.Error())),
 			}
 		}
 		network.logger.Debug(postInfo.URL, " : ", req.Proto, " : ", resp.Proto, resp.ProtoMajor, resp.ProtoMinor, resp.ProtoAtLeast)
@@ -194,15 +194,6 @@ func (network *NetHandleT) SendPost(ctx context.Context, structData integrations
 		isHumanReadable := contentTypeRegex.MatchString(mediaType)
 		if !isHumanReadable {
 			respBody = []byte("redacted due to unsupported content-type")
-		}
-
-		if err != nil {
-			network.logger.Error("Errored when sending request to the server", err)
-			return &utils.SendPostResponse{
-				StatusCode:          http.StatusGatewayTimeout,
-				ResponseBody:        respBody,
-				ResponseContentType: contentTypeHeader,
-			}
 		}
 
 		return &utils.SendPostResponse{

@@ -4,8 +4,6 @@ import (
 	"bufio"
 	"compress/gzip"
 	"context"
-	"database/sql"
-	"io"
 	"os"
 	"strings"
 	"testing"
@@ -83,8 +81,11 @@ func TestBackupTable(t *testing.T) {
 	statusList, err := tc.readGzipStatusFile(goldenFileStatusFileName)
 	require.NoError(t, err, "expected no error while reading golden status file")
 
+	// insert duplicates in status table to verify that only latest 2 status of each job is backed up
+	duplicateStatusList := duplicateStatuses(statusList, 3)
+
 	// batch_rt jobsdb is taking a full backup
-	tc.insertBatchRTData(t, jobs, statusList, cleanup)
+	tc.insertBatchRTData(t, jobs, duplicateStatusList, cleanup)
 
 	// rt jobsdb is taking a backup of failed jobs only
 	tc.insertRTData(t, jobs, statusList, cleanup)
@@ -150,20 +151,48 @@ func TestBackupTable(t *testing.T) {
 
 	// Verify full backup of job statuses
 	f = tc.downloadFile(t, fm, jobStatusBackupFilename, cleanup)
-	jobStatusBackupFile := tc.readGzipFile(t, f)
-	goldenFile := tc.openFile(t, goldenFileStatusFileName, cleanup)
-	goldenStatusFile := tc.readGzipFile(t, goldenFile)
-	require.Equal(t, goldenStatusFile, jobStatusBackupFile, "expected status files to be same")
+	backedupStatus, err := tc.readGzipStatusFile(f.Name())
+	require.NoError(t, err, "expected no error while reading backedup status file")
+	goldenStatusFile, err := tc.readGzipStatusFile(goldenFileStatusFileName)
+	require.NoError(t, err, "expected no error while reading golden status file")
+	verifyStatus(t, backedupStatus, goldenStatusFile)
+	require.Equal(t, len(goldenStatusFile)*2, len(backedupStatus), "expected status files to be same")
 
 	// Verify full backup of jobs
 	f = tc.downloadFile(t, fm, jobsBackupFilename, cleanup)
-	downloadedJobsFile := tc.readGzipFile(t, f)
-	goldenFile = tc.openFile(t, goldenFileJobsFileName, cleanup)
-	goldenJobsFile := tc.readGzipFile(t, goldenFile)
-	require.Equal(t, goldenJobsFile, downloadedJobsFile, "expected jobs files to be same")
+	backedupJobs, err := tc.readGzipJobFile(f.Name())
+	require.NoError(t, err, "expected no error while reading backedup status file")
+	goldenFileJobs, err := tc.readGzipJobFile(goldenFileJobsFileName)
+	require.NoError(t, err, "expected no error while reading golden status file")
+	require.Equal(t, goldenFileJobs, backedupJobs, "expected jobs files to be same")
+}
+
+func verifyStatus(t *testing.T, backedupStatus, goldenStatusFile []*JobStatusT) {
+	// verify that the backed up status is same as the golden status
+	for i := 0; i < len(goldenStatusFile); i++ {
+		require.Equal(t, goldenStatusFile[i], backedupStatus[i*2], "expected job state to be same")
+		require.Equal(t, goldenStatusFile[i], backedupStatus[i*2+1], "expected job state to be same")
+	}
 }
 
 type backupTestCase struct{}
+
+func duplicateStatuses(statusList []*JobStatusT, duplicateCount int) []*JobStatusT {
+	var res []*JobStatusT
+	res = append(res, statusList...)
+	now := time.Now()
+	for i := 0; i < duplicateCount; i++ {
+		dup := make([]*JobStatusT, len(statusList))
+		for j := range dup {
+			tmp := *statusList[j]
+			dup[j] = &tmp
+			newExecTime := now
+			dup[j].ExecTime = newExecTime.Add(time.Duration(i) * time.Second)
+		}
+		res = append(res, dup...)
+	}
+	return res
+}
 
 func (*backupTestCase) insertRTData(t *testing.T, jobs []*JobT, statusList []*JobStatusT, cleanup *testhelper.Cleanup) {
 	triggerAddNewDS := make(chan time.Time)
@@ -177,7 +206,7 @@ func (*backupTestCase) insertRTData(t *testing.T, jobs []*JobT, statusList []*Jo
 	require.NoError(t, err)
 
 	rtDS := newDataSet("rt", "1")
-	err = jobsDB.WithTx(func(tx *sql.Tx) error {
+	err = jobsDB.WithTx(func(tx *Tx) error {
 		if err := jobsDB.copyJobsDS(tx, rtDS, jobs); err != nil {
 			return err
 		}
@@ -190,7 +219,7 @@ func (*backupTestCase) insertRTData(t *testing.T, jobs []*JobT, statusList []*Jo
 	jobsDB.dsListLock.WithLock(func(l lock.LockToken) {
 		jobsDB.addNewDS(l, rtDS2)
 	})
-	err = jobsDB.WithTx(func(tx *sql.Tx) error {
+	err = jobsDB.WithTx(func(tx *Tx) error {
 		if err := jobsDB.copyJobsDS(tx, rtDS2, jobs); err != nil {
 			return err
 		}
@@ -214,7 +243,7 @@ func (*backupTestCase) insertBatchRTData(t *testing.T, jobs []*JobT, statusList 
 	require.NoError(t, err)
 
 	ds := newDataSet("batch_rt", "1")
-	err = jobsDB.WithTx(func(tx *sql.Tx) error {
+	err = jobsDB.WithTx(func(tx *Tx) error {
 		if err := jobsDB.copyJobsDS(tx, ds, jobs); err != nil {
 			t.Log("error while copying jobs to ds: ", err)
 			return err
@@ -227,7 +256,7 @@ func (*backupTestCase) insertBatchRTData(t *testing.T, jobs []*JobT, statusList 
 	jobsDB.dsListLock.WithLock(func(l lock.LockToken) {
 		jobsDB.addNewDS(l, ds2)
 	})
-	err = jobsDB.WithTx(func(tx *sql.Tx) error {
+	err = jobsDB.WithTx(func(tx *Tx) error {
 		if err := jobsDB.copyJobsDS(tx, ds2, jobs); err != nil {
 			t.Log("error while copying jobs to ds: ", err)
 			return err
@@ -305,25 +334,6 @@ func (*backupTestCase) downloadFile(t *testing.T, fm filemanager.FileManager, fi
 		_ = os.Remove(file.Name())
 	})
 	return file
-}
-
-func (*backupTestCase) openFile(t *testing.T, filename string, cleanup *testhelper.Cleanup) *os.File {
-	f, err := os.Open(filename)
-	require.NoError(t, err, "expected no error")
-	cleanup.Cleanup(func() {
-		f.Close()
-	})
-	return f
-}
-
-func (*backupTestCase) readGzipFile(t *testing.T, file *os.File) []byte {
-	gz, err := gzip.NewReader(file)
-	require.NoError(t, err)
-	defer gz.Close()
-
-	r, err := io.ReadAll(gz)
-	require.NoError(t, err)
-	return r
 }
 
 func (*backupTestCase) readGzipJobFile(filename string) ([]*JobT, error) {
