@@ -239,7 +239,7 @@ func (handle *dumpsLoaderHandleT) Setup(ctx context.Context, db *jobsdb.HandleT,
 	if err != nil {
 		panic("invalid start time format provided")
 	}
-	handle.prefix = strings.TrimSpace(config.GetString("JOBS_BACKUP_PREFIX", ""))
+	handle.prefix = strings.TrimSpace(config.GetString("JOBS_REPLAY_BACKUP_PREFIX", ""))
 	handle.tablePrefix = tablePrefix
 	handle.procError = &ProcErrorRequestHandler{tablePrefix: tablePrefix, handle: handle}
 	handle.gwReplay = &GWReplayRequestHandler{tablePrefix: tablePrefix, handle: handle}
