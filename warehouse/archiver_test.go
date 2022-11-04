@@ -23,7 +23,6 @@ import (
 	mock_stats "github.com/rudderlabs/rudder-server/mocks/services/stats"
 	"github.com/rudderlabs/rudder-server/services/filemanager"
 	migrator "github.com/rudderlabs/rudder-server/services/sql-migrator"
-	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/testhelper/destination"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/warehouse"
@@ -130,16 +129,14 @@ func TestArchiver(t *testing.T) {
 
 			_, err = pgResource.DB.Exec(`
 				UPDATE wh_staging_files 
-				SET 
+				SET
 					workspace_id = $1,
-					first_event_at = $2, 
+					first_event_at = $2,
 					last_event_at = $2,
-					created_at = $2, 
-					updated_at = $2 
+					created_at = $2,
+					updated_at = $2
 			`, tc.workspaceID, now)
 			require.NoError(t, err)
-
-			stats.Default = mockStats
 
 			archiver := warehouse.Archiver{
 				DB:          pgResource.DB,
