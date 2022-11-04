@@ -10,15 +10,18 @@ import (
 func TestGzWriter(t *testing.T) {
 	RegisterTestingT(t)
 	gzWriter := NewGzMultiFileWriter()
-	_, err := gzWriter.Write("test", []byte("test1"))
+	err := os.MkdirAll("./temp", os.ModePerm)
+	Expect(err).To(BeNil())
+
+	_, err = gzWriter.Write("./temp/test", []byte("test1"))
 	Expect(err).To(BeNil())
 	Expect(gzWriter.Count()).To(Equal(1))
 
-	_, err = gzWriter.Write("test", []byte("test2"))
+	_, err = gzWriter.Write("./temp/test", []byte("test2"))
 	Expect(err).To(BeNil())
 	Expect(gzWriter.Count()).To(Equal(1))
 
-	_, err = gzWriter.Write("make", []byte("test3"))
+	_, err = gzWriter.Write("./temp/make", []byte("test3"))
 	Expect(err).To(BeNil())
 	Expect(gzWriter.Count()).To(Equal(2))
 
@@ -26,6 +29,5 @@ func TestGzWriter(t *testing.T) {
 	Expect(err).To(BeNil())
 
 	Expect(gzWriter.Count()).To(Equal(0))
-	os.Remove("test")
-	os.Remove("make")
+	os.RemoveAll("./temp/")
 }
