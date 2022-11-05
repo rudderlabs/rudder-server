@@ -7,6 +7,7 @@ import (
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/processor/transformer"
+	"github.com/rudderlabs/rudder-server/services/fileuploader"
 	"github.com/rudderlabs/rudder-server/services/multitenant"
 	"github.com/rudderlabs/rudder-server/services/rsources"
 	"github.com/rudderlabs/rudder-server/services/transientsource"
@@ -28,6 +29,7 @@ type LifecycleManager struct {
 	BackendConfig    backendconfig.BackendConfig
 	Transformer      transformer.Transformer
 	transientSources transientsource.Service
+	fileuploader     fileuploader.Provider
 	rsourcesService  rsources.JobService
 }
 
@@ -41,7 +43,7 @@ func (proc *LifecycleManager) Start() error {
 
 	proc.HandleT.Setup(
 		proc.BackendConfig, proc.gatewayDB, proc.routerDB, proc.batchRouterDB, proc.errDB,
-		proc.clearDB, proc.ReportingI, proc.MultitenantStats, proc.transientSources, proc.rsourcesService,
+		proc.clearDB, proc.ReportingI, proc.MultitenantStats, proc.transientSources, proc.fileuploader, proc.rsourcesService,
 	)
 
 	currentCtx, cancel := context.WithCancel(context.Background())
@@ -69,7 +71,7 @@ func (proc *LifecycleManager) Stop() {
 
 // New creates a new Processor instance
 func New(ctx context.Context, clearDb *bool, gwDb, rtDb, brtDb, errDb *jobsdb.HandleT,
-	tenantDB multitenant.MultiTenantI, reporting types.ReportingI, transientSources transientsource.Service,
+	tenantDB multitenant.MultiTenantI, reporting types.ReportingI, transientSources transientsource.Service, fileuploader fileuploader.Provider,
 	rsourcesService rsources.JobService,
 ) *LifecycleManager {
 	proc := &LifecycleManager{
@@ -84,6 +86,7 @@ func New(ctx context.Context, clearDb *bool, gwDb, rtDb, brtDb, errDb *jobsdb.Ha
 		BackendConfig:    backendconfig.DefaultBackendConfig,
 		ReportingI:       reporting,
 		transientSources: transientSources,
+		fileuploader:     fileuploader,
 		rsourcesService:  rsourcesService,
 	}
 	return proc
