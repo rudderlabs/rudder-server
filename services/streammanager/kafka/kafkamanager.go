@@ -29,18 +29,17 @@ type avroSchema struct {
 
 // configuration is the config that is required to send data to Kafka
 type configuration struct {
-	Topic             string
-	HostName          string
-	Port              string
-	SslEnabled        bool
-	CACertificate     string
-	UseSASL           bool
-	SaslType          string
-	Username          string
-	Password          string
-	MultiTopicSupport bool
-	ConvertToAvro     bool
-	AvroSchemas       []avroSchema
+	Topic         string
+	HostName      string
+	Port          string
+	SslEnabled    bool
+	CACertificate string
+	UseSASL       bool
+	SaslType      string
+	Username      string
+	Password      string
+	ConvertToAvro bool
+	AvroSchemas   []avroSchema
 }
 
 func (c *configuration) validate() error {
@@ -459,12 +458,7 @@ func prepareBatchOfMessages(batch []map[string]interface{}, timestamp time.Time,
 	var messages []client.Message
 
 	for i, data := range batch {
-		topicI, ok := data["topic"]
-		if !ok {
-			return nil, fmt.Errorf("topic is empty for message %d", i)
-		}
-
-		topic, ok := topicI.(string)
+		topic, ok := data["topic"].(string)
 		if !ok || topic == "" {
 			return nil, fmt.Errorf("topic is invalid type for message %d", i)
 		}

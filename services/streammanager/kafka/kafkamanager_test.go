@@ -768,6 +768,17 @@ func TestSendMessage(t *testing.T) {
 	})
 }
 
+func TestPublish(t *testing.T) {
+	t.Run("no topic publish", func(t *testing.T) {
+		kafkaStats.publishTime = getMockedTimer(t, gomock.NewController(t))
+		p := &client.Producer{}
+		pm := &ProducerManager{p: p}
+		message := prepareMessage("", "userId", []byte(`{"test": "value"}`), time.Now())
+		err := publish(context.Background(), pm, message)
+		require.Equal(t, "no topic provided for message 0", err.Error())
+	})
+}
+
 func getMockedTimer(t *testing.T, ctrl *gomock.Controller) *mockStats.MockMeasurement {
 	t.Helper()
 	mockedTimer := mockStats.NewMockMeasurement(ctrl)

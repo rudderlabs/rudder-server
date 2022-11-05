@@ -108,6 +108,9 @@ func (p *Producer) Close(ctx context.Context) error {
 func (p *Producer) Publish(ctx context.Context, msgs ...Message) error {
 	messages := make([]kafka.Message, len(msgs))
 	for i := range msgs {
+		if msgs[i].Topic == "" {
+			return fmt.Errorf("no topic provided for message %d", i)
+		}
 		headers := headers(msgs[i])
 		messages[i] = kafka.Message{
 			Topic:   msgs[i].Topic,
