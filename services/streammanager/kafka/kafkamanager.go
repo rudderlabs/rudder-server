@@ -450,7 +450,7 @@ func serializeAvroMessage(value []byte, codec goavro.Codec) ([]byte, error) {
 	return binary, nil
 }
 
-func prepareBatchOfMessages(batch []map[string]interface{}, timestamp time.Time, p producerManager) (
+func prepareBatchOfMessages(batch []map[string]interface{}, timestamp time.Time, p producerManager, defaultTopic string) (
 	[]client.Message, error,
 ) {
 	start := now()
@@ -460,7 +460,7 @@ func prepareBatchOfMessages(batch []map[string]interface{}, timestamp time.Time,
 	for i, data := range batch {
 		topic, ok := data["topic"].(string)
 		if !ok || topic == "" {
-			return nil, fmt.Errorf("topic is invalid type for message %d", i)
+			topic = defaultTopic
 		}
 
 		message, ok := data["message"]
@@ -541,16 +541,30 @@ func (p *ProducerManager) Produce(jsonData json.RawMessage, destConfig interface
 	start := now()
 	defer func() { kafkaStats.produceTime.SendTiming(since(start)) }()
 
+	conf := configuration{}
+	jsonConfig, err := json.Marshal(destConfig)
+	if err != nil {
+		return makeErrorResponse(err) // returning 500 for retrying, in case of bad configuration
+	}
+	err = json.Unmarshal(jsonConfig, &conf)
+	if err != nil {
+		return makeErrorResponse(err) // returning 500 for retrying, in case of bad configuration
+	}
+
+	if conf.Topic == "" {
+		return makeErrorResponse(fmt.Errorf("invalid destination configuration: no topic"))
+	}
+
 	ctx, cancel := context.WithTimeout(context.TODO(), p.getTimeout())
 	defer cancel()
 	if kafkaBatchingEnabled {
-		return sendBatchedMessage(ctx, jsonData, p)
+		return sendBatchedMessage(ctx, jsonData, p, conf.Topic)
 	}
 
-	return sendMessage(ctx, jsonData, p)
+	return sendMessage(ctx, jsonData, p, conf.Topic)
 }
 
-func sendBatchedMessage(ctx context.Context, jsonData json.RawMessage, p producerManager) (int, string, string) {
+func sendBatchedMessage(ctx context.Context, jsonData json.RawMessage, p producerManager, defaultTopic string) (int, string, string) {
 	var batch []map[string]interface{}
 	err := json.Unmarshal(jsonData, &batch)
 	if err != nil {
@@ -558,7 +572,7 @@ func sendBatchedMessage(ctx context.Context, jsonData json.RawMessage, p produce
 	}
 
 	timestamp := time.Now()
-	batchOfMessages, err := prepareBatchOfMessages(batch, timestamp, p)
+	batchOfMessages, err := prepareBatchOfMessages(batch, timestamp, p, defaultTopic)
 	if err != nil {
 		return 400, "Failure", "Error while preparing batched message: " + err.Error()
 	}
@@ -572,7 +586,7 @@ func sendBatchedMessage(ctx context.Context, jsonData json.RawMessage, p produce
 	return 200, returnMessage, returnMessage
 }
 
-func sendMessage(ctx context.Context, jsonData json.RawMessage, p producerManager) (int, string, string) {
+func sendMessage(ctx context.Context, jsonData json.RawMessage, p producerManager, defaultTopic string) (int, string, string) {
 	parsedJSON := gjson.ParseBytes(jsonData)
 	messageValue := parsedJSON.Get("message").Value()
 	if messageValue == nil {
@@ -606,7 +620,7 @@ func sendMessage(ctx context.Context, jsonData json.RawMessage, p producerManage
 	topic := parsedJSON.Get("topic").String()
 
 	if topic == "" {
-		return makeErrorResponse(fmt.Errorf("invalid message configuration: no topic"))
+		topic = defaultTopic
 	}
 
 	message := prepareMessage(topic, userID, value, timestamp)

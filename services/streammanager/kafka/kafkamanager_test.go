@@ -320,7 +320,7 @@ func TestPrepareBatchOfMessages(t *testing.T) {
 
 		var data []map[string]interface{}
 		pm := &ProducerManager{p: &pMockErr{error: nil}}
-		batch, err := prepareBatchOfMessages(data, time.Now(), pm)
+		batch, err := prepareBatchOfMessages(data, time.Now(), pm, "some-topic")
 		require.Equal(t, []client.Message(nil), batch)
 		require.Equal(t, fmt.Errorf("unable to process any of the event in the batch"), err)
 	})
@@ -333,7 +333,7 @@ func TestPrepareBatchOfMessages(t *testing.T) {
 			"not-interesting": "some value",
 			"topic":           "some-topic",
 		}}
-		batch, err := prepareBatchOfMessages(data, time.Now(), pm)
+		batch, err := prepareBatchOfMessages(data, time.Now(), pm, "some-topic")
 		require.Equal(t, []client.Message(nil), batch)
 		require.Equal(t, fmt.Errorf("unable to process any of the event in the batch"), err)
 	})
@@ -351,7 +351,7 @@ func TestPrepareBatchOfMessages(t *testing.T) {
 			{"message": map[string]interface{}{"a": 1, "b": 2}, "userId": "456", "topic": "some-topic"},
 		}
 		pm := &ProducerManager{p: &pMockErr{error: nil}}
-		batch, err := prepareBatchOfMessages(data, now, pm)
+		batch, err := prepareBatchOfMessages(data, now, pm, "some-topic")
 		require.NoError(t, err)
 		require.ElementsMatch(t, []client.Message{
 			{
@@ -380,7 +380,7 @@ func TestPrepareBatchOfMessages(t *testing.T) {
 			{"message": "msg01", "topic": "some-topic"},
 		}
 		pm := &ProducerManager{p: &pMockErr{error: nil}}
-		batch, err := prepareBatchOfMessages(data, now, pm)
+		batch, err := prepareBatchOfMessages(data, now, pm, "some-topic")
 		require.NoError(t, err)
 		require.ElementsMatch(t, []client.Message{
 			{
@@ -488,6 +488,7 @@ func TestSendBatchedMessage(t *testing.T) {
 			context.Background(),
 			json.RawMessage("{{{"),
 			nil,
+			"some-topic",
 		)
 		require.Equal(t, 400, sc)
 		require.Equal(t, "Failure", res)
@@ -500,6 +501,7 @@ func TestSendBatchedMessage(t *testing.T) {
 			context.Background(),
 			json.RawMessage(`{"message":"ciao"}`), // not a slice of map[string]interface{}
 			nil,
+			"some-topic",
 		)
 		require.Equal(t, 400, sc)
 		require.Equal(t, "Failure", res)
@@ -518,6 +520,7 @@ func TestSendBatchedMessage(t *testing.T) {
 			context.Background(),
 			json.RawMessage(`[{"message":"ciao","userId":"123","topic":"some-topic"}]`),
 			pm,
+			"some-topic",
 		)
 		require.Equal(t, 400, sc)
 		require.Equal(t, "something bad error occurred.", res)
@@ -541,6 +544,7 @@ func TestSendBatchedMessage(t *testing.T) {
 			context.Background(),
 			json.RawMessage(`[{"message":"ciao","userId":"123","topic":"some-topic"}]`),
 			pm,
+			"some-topic",
 		)
 		require.Equal(t, 500, sc)
 		require.Contains(t, res, kafka.LeaderNotAvailable.Error()+" error occurred.")
@@ -564,6 +568,7 @@ func TestSendBatchedMessage(t *testing.T) {
 			context.Background(),
 			json.RawMessage(`[{"message":"ciao","userId":"123","topic":"some-topic"}]`),
 			pm,
+			"some-topic",
 		)
 		require.Equal(t, 200, sc)
 		require.Equal(t, "Kafka: Message delivered in batch", res)
@@ -599,6 +604,7 @@ func TestSendBatchedMessage(t *testing.T) {
 			context.Background(),
 			json.RawMessage(`[{"message":{"messageId":"message001","data":"ciao"},"userId":"123","topic":"some-topic"}]`),
 			pm,
+			"some-topic",
 		)
 		require.Equal(t, 400, sc)
 		require.Equal(t, "Failure", res)
@@ -628,6 +634,7 @@ func TestSendBatchedMessage(t *testing.T) {
 			context.Background(),
 			json.RawMessage(`[{"message":{"messageId":"message001","data":"ciao"},"userId":"123","schemaId":"schemaId001","topic":"some-topic"}]`),
 			pm,
+			"some-topic",
 		)
 		require.Equal(t, 400, sc)
 		require.Equal(t, "Failure", res)
@@ -657,6 +664,7 @@ func TestSendBatchedMessage(t *testing.T) {
 			context.Background(),
 			json.RawMessage(`[{"message":{"messageId":"message001","data":"ciao"},"userId":"123","schemaId":"schemaId002","topic":"some-topic"}]`),
 			pm,
+			"some-topic",
 		)
 		require.Equal(t, 400, sc)
 		require.Equal(t, "Failure", res)
@@ -666,14 +674,14 @@ func TestSendBatchedMessage(t *testing.T) {
 
 func TestSendMessage(t *testing.T) {
 	t.Run("invalid json", func(t *testing.T) {
-		sc, res, err := sendMessage(context.Background(), json.RawMessage("{{{"), nil)
+		sc, res, err := sendMessage(context.Background(), json.RawMessage("{{{"), nil, "some-topic")
 		require.Equal(t, 400, sc)
 		require.Equal(t, "Failure", res)
 		require.Equal(t, "Invalid message", err)
 	})
 
 	t.Run("no message", func(t *testing.T) {
-		sc, res, err := sendMessage(context.Background(), json.RawMessage("{}"), nil)
+		sc, res, err := sendMessage(context.Background(), json.RawMessage("{}"), nil, "some-topic")
 		require.Equal(t, 400, sc)
 		require.Equal(t, "Failure", res)
 		require.Equal(t, "Invalid message", err)
@@ -684,7 +692,7 @@ func TestSendMessage(t *testing.T) {
 
 		p := &pMockErr{error: nil}
 		pm := &ProducerManager{p: p}
-		sc, res, err := sendMessage(context.Background(), json.RawMessage(`{"message":"ciao", "topic":"some-topic"}`), pm)
+		sc, res, err := sendMessage(context.Background(), json.RawMessage(`{"message":"ciao", "topic":"some-topic"}`), pm, "some-topic")
 		require.Equal(t, 200, sc)
 		require.Equal(t, "Message delivered to topic: some-topic", res)
 		require.Equal(t, "Message delivered to topic: some-topic", err)
@@ -705,6 +713,7 @@ func TestSendMessage(t *testing.T) {
 			context.Background(),
 			json.RawMessage(`{"message":"ciao","userId":"123","topic":"some-topic"}`),
 			pm,
+			"some-topic",
 		)
 		require.Equal(t, 400, sc)
 		require.Contains(t, res, "something bad error occurred.")
@@ -736,6 +745,7 @@ func TestSendMessage(t *testing.T) {
 			context.Background(),
 			json.RawMessage(`{"message":{"messageId":"message001","data":"ciao"},"userId":"123","topic":"some-topic"}`),
 			pm,
+			"some-topic",
 		)
 		require.Equal(t, 400, sc)
 		require.Equal(t, "schemaId is not available for event with messageId: message001 error occurred.", res)
@@ -761,6 +771,7 @@ func TestSendMessage(t *testing.T) {
 			context.Background(),
 			json.RawMessage(`{"message":{"messageId":"message001","data":"ciao"},"userId":"123","schemaId":"schemaId001","topic":"some-topic"}`),
 			pm,
+			"some-topic",
 		)
 		require.Equal(t, 400, sc)
 		require.Equal(t, "unable to serialize event with messageId: message001, with error unable convert the event to native from textual, with error: cannot decode textual record \"kafkaAvroTest.myrecord\": cannot decode textual map: cannot determine codec: \"data\" error occurred.", res)
