@@ -490,6 +490,19 @@ func TestProduce(t *testing.T) {
 		require.Contains(t, err, kafka.LeaderNotAvailable.Error())
 	})
 
+	t.Run("default-topic-test", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		kafkaStats.publishTime = getMockedTimer(t, ctrl)
+		kafkaStats.produceTime = getMockedTimer(t, ctrl)
+
+		pm := &ProducerManager{p: &pMockErr{}}
+		destConfig := map[string]interface{}{"topic": "foo-bar"}
+		sc, res, err := pm.Produce(json.RawMessage(`{"message":"ciao"}`), destConfig)
+		require.Equal(t, 200, sc)
+		require.Equal(t, "Message delivered to topic: foo-bar", res)
+		require.Equal(t, "Message delivered to topic: foo-bar", err)
+	})
+
 	t.Run("ok", func(t *testing.T) {
 		ctrl := gomock.NewController(t)
 		kafkaStats.publishTime = getMockedTimer(t, ctrl)
