@@ -1129,9 +1129,15 @@ func (brt *HandleT) postToWarehouse(batchJobs *BatchJobsT, output StorageUploadO
 		bytes.NewBuffer(jsonPayload))
 	if err != nil {
 		brt.logger.Errorf("BRT: Failed to route staging file URL to warehouse service@%v, error:%v", uri, err)
-	} else {
+		return
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode == 200 {
 		brt.logger.Infof("BRT: Routed successfully staging file URL to warehouse service@%v", uri)
-		defer resp.Body.Close()
+	} else {
+		err = fmt.Errorf("BRT: Failed to route staging file URL to warehouse service@%v, status:%v", uri, resp.Status)
+		brt.logger.Error(err)
 	}
 
 	return
