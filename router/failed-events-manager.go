@@ -56,7 +56,7 @@ func (*FailedEventsManagerT) SaveFailedRecordIDs(taskRunIDFailedEventsMap map[st
 	}
 
 	for taskRunID, failedEvents := range taskRunIDFailedEventsMap {
-		table := `"` + strings.ReplaceAll(fmt.Sprintf(`%s_%s`, failedKeysTablePrefix, taskRunID), `"`, `""`) + `"`
+		table := getSqlSafeTablename(taskRunID)
 		sqlStatement := fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (
 		destination_id TEXT NOT NULL,
 		record_id JSONB NOT NULL,
@@ -94,7 +94,7 @@ func (fem *FailedEventsManagerT) DropFailedRecordIDs(taskRunID string) {
 	}
 
 	// Drop table
-	table := fmt.Sprintf(`%s_%s`, failedKeysTablePrefix, taskRunID)
+	table := getSqlSafeTablename(taskRunID)
 	sqlStatement := fmt.Sprintf(`DROP TABLE IF EXISTS %s`, table)
 	_, err := fem.dbHandle.Exec(sqlStatement)
 	if err != nil {
@@ -111,7 +111,7 @@ func (fem *FailedEventsManagerT) FetchFailedRecordIDs(taskRunID string) []*Faile
 
 	var rows *sql.Rows
 	var err error
-	table := `"` + strings.ReplaceAll(fmt.Sprintf(`%s_%s`, failedKeysTablePrefix, taskRunID), `"`, `""`) + `"`
+	table := getSqlSafeTablename(taskRunID)
 	sqlStatement := fmt.Sprintf(`SELECT %[1]s.destination_id, %[1]s.record_id
                                              FROM %[1]s `, table)
 	rows, err = fem.dbHandle.Query(sqlStatement)
@@ -187,4 +187,8 @@ func CleanFailedRecordsTableProcess(ctx context.Context) {
 
 func (fem *FailedEventsManagerT) GetDBHandle() *sql.DB {
 	return fem.dbHandle
+}
+
+func getSqlSafeTablename(taskRunID string) string {
+	return `"` + strings.ReplaceAll(fmt.Sprintf(`%s_%s`, failedKeysTablePrefix, taskRunID), `"`, `""`) + `"`
 }
