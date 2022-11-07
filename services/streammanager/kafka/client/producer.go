@@ -36,7 +36,7 @@ type Producer struct {
 }
 
 // NewProducer instantiates a new producer. To use it asynchronously just do "go p.Publish(ctx, msgs)".
-func (c *Client) NewProducer(topic string, producerConf ProducerConfig) (p *Producer, err error) { // skipcq: CRT-P0003
+func (c *Client) NewProducer(producerConf ProducerConfig) (p *Producer, err error) { // skipcq: CRT-P0003
 	producerConf.defaults()
 
 	dialer := &net.Dialer{
@@ -68,7 +68,6 @@ func (c *Client) NewProducer(topic string, producerConf ProducerConfig) (p *Prod
 		config: producerConf,
 		writer: &kafka.Writer{
 			Addr:                   kafka.TCP(c.addresses...),
-			Topic:                  topic,
 			Balancer:               &kafka.ReferenceHash{},
 			BatchTimeout:           time.Nanosecond,
 			WriteTimeout:           producerConf.WriteTimeout,
@@ -109,17 +108,12 @@ func (p *Producer) Close(ctx context.Context) error {
 func (p *Producer) Publish(ctx context.Context, msgs ...Message) error {
 	messages := make([]kafka.Message, len(msgs))
 	for i := range msgs {
-		var headers []kafka.Header
-		if l := len(msgs[i].Headers); l > 0 {
-			headers = make([]kafka.Header, l)
-			for k := range msgs[i].Headers {
-				headers[k] = kafka.Header{
-					Key:   msgs[i].Headers[k].Key,
-					Value: msgs[i].Headers[k].Value,
-				}
-			}
+		if msgs[i].Topic == "" {
+			return fmt.Errorf("no topic provided for message %d", i)
 		}
+		headers := headers(msgs[i])
 		messages[i] = kafka.Message{
+			Topic:   msgs[i].Topic,
 			Key:     msgs[i].Key,
 			Value:   msgs[i].Value,
 			Time:    msgs[i].Timestamp,
@@ -131,6 +125,19 @@ func (p *Producer) Publish(ctx context.Context, msgs ...Message) error {
 }
 
 var tempError interface{ Temporary() bool }
+
+func headers(msg Message) (headers []kafka.Header) {
+	if l := len(msg.Headers); l > 0 {
+		headers = make([]kafka.Header, l)
+		for k := range msg.Headers {
+			headers[k] = kafka.Header{
+				Key:   msg.Headers[k].Key,
+				Value: msg.Headers[k].Value,
+			}
+		}
+	}
+	return headers
+}
 
 func isErrTemporary(err error) bool {
 	isTransientNetworkError := errors.Is(err, io.ErrUnexpectedEOF) ||
