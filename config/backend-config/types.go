@@ -96,9 +96,10 @@ type Settings struct {
 }
 
 type DataRetention struct {
-	UseSelfStorage     bool               `json:"useSelfStorage"`
-	StorageBucket      StorageBucket      `json:"storageBucket"`
-	StoragePreferences StoragePreferences `json:"storagePreferences"`
+	DisableReportingPII bool               `json:"disableReportingPii"`
+	UseSelfStorage      bool               `json:"useSelfStorage"`
+	StorageBucket       StorageBucket      `json:"storageBucket"`
+	StoragePreferences  StoragePreferences `json:"storagePreferences"`
 }
 
 type StorageBucket struct {

@@ -8,6 +8,7 @@ import (
 	stdjson "encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"os"
@@ -58,7 +59,6 @@ var (
 	mainLoopSleep, diagnosisTickerTime time.Duration
 	uploadFreqInS                      int64
 	objectStorageDestinations          []string
-	warehouseURL                       string
 	warehouseServiceFailedTime         time.Time
 	warehouseServiceFailedTimeLock     sync.RWMutex
 	warehouseServiceMaxRetryTime       time.Duration
@@ -120,6 +120,7 @@ type HandleT struct {
 	successfulJobCount          stats.Measurement
 	failedJobCount              stats.Measurement
 	abortedJobCount             stats.Measurement
+	warehouseURL                string
 
 	backgroundGroup  *errgroup.Group
 	backgroundCtx    context.Context
@@ -1124,16 +1125,23 @@ func (brt *HandleT) postToWarehouse(batchJobs *BatchJobsT, output StorageUploadO
 	if err != nil {
 		brt.logger.Errorf("BRT: Failed to marshal WH staging file payload error:%v", err)
 	}
-	uri := fmt.Sprintf(`%s/v1/process`, warehouseURL)
+	uri := fmt.Sprintf(`%s/v1/process`, brt.warehouseURL)
 	resp, err := brt.netHandle.Post(uri, "application/json; charset=utf-8",
 		bytes.NewBuffer(jsonPayload))
 	if err != nil {
 		brt.logger.Errorf("BRT: Failed to route staging file URL to warehouse service@%v, error:%v", uri, err)
-	} else {
-		brt.logger.Infof("BRT: Routed successfully staging file URL to warehouse service@%v", uri)
-		defer resp.Body.Close()
+		return
 	}
+	defer func() { _ = resp.Body.Close() }()
 
+	if resp.StatusCode == http.StatusOK {
+		_, err = io.Copy(io.Discard, resp.Body)
+		brt.logger.Infof("BRT: Routed successfully staging file URL to warehouse service@%v", uri)
+	} else {
+		body, _ := io.ReadAll(resp.Body)
+		err = fmt.Errorf("BRT: Failed to route staging file URL to warehouse service@%v, status: %v, body: %v", uri, resp.Status, string(body))
+		brt.logger.Error(err)
+	}
 	return
 }
 
@@ -2252,7 +2260,6 @@ func loadConfig() {
 	config.RegisterInt64ConfigVariable(30, &uploadFreqInS, true, 1, "BatchRouter.uploadFreqInS")
 	objectStorageDestinations = []string{"S3", "GCS", "AZURE_BLOB", "MINIO", "DIGITAL_OCEAN_SPACES"}
 	asyncDestinations = []string{"MARKETO_BULK_UPLOAD"}
-	warehouseURL = misc.GetWarehouseURL()
 	// Time period for diagnosis ticker
 	config.RegisterDurationConfigVariable(600, &diagnosisTickerTime, false, time.Second, []string{"Diagnostics.batchRouterTimePeriod", "Diagnostics.batchRouterTimePeriodInS"}...)
 	config.RegisterDurationConfigVariable(3, &warehouseServiceMaxRetryTime, true, time.Hour, []string{"BatchRouter.warehouseServiceMaxRetryTime", "BatchRouter.warehouseServiceMaxRetryTimeinHr"}...)
@@ -2294,6 +2301,9 @@ func (brt *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB, err
 	if brt.reporting != nil && brt.reportingEnabled {
 		// error is ignored as context.TODO() is passed, err is not expected.
 		_ = brt.reporting.WaitForSetup(context.TODO(), types.CORE_REPORTING_CLIENT)
+	}
+	if brt.warehouseURL == "" {
+		brt.warehouseURL = misc.GetWarehouseURL()
 	}
 
 	brt.inProgressMap = map[string]bool{}
