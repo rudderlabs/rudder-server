@@ -86,7 +86,7 @@ func (worker *SourceWorkerT) replayJobsInFile(ctx context.Context, filePath stri
 		panic(err) // failed to download
 	}
 	pkgLogger.Debugf("file downloaded at %s", path)
-	_ = file.Close()
+	defer func() { _ = file.Close() }()
 
 	rawf, err := os.Open(path)
 	if err != nil {
