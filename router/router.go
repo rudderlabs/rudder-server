@@ -174,35 +174,27 @@ type JobParametersT struct {
 }
 
 type workerMessageT struct {
-	job                     *jobsdb.JobT
-	workerAssignedTime      time.Time
-	throttlingTokenReturner throttling.TokenReturner
+	job                *jobsdb.JobT
+	workerAssignedTime time.Time
 }
 
 // workerT a structure to define a worker for sending events to sinks
 type workerT struct {
-	channel                    chan workerMessageT // the worker job channel
-	workerID                   int                 // identifies the worker
-	failedJobs                 int                 // counts the failed jobs of a worker till it gets reset by external channel
-	barrier                    *eventorder.Barrier
-	retryForJobMap             map[int64]time.Time     // jobID to next retry time map
-	retryForJobMapMutex        sync.RWMutex            // lock to protect structure above
-	routerJobs                 []types.RouterJobT      // slice to hold router jobs to send to destination transformer
-	destinationJobs            []types.DestinationJobT // slice to hold destination jobs
-	rt                         *HandleT                // handle to router
-	deliveryTimeStat           stats.Measurement
-	routerDeliveryLatencyStat  stats.Measurement
-	routerProxyStat            stats.Measurement
-	batchTimeStat              stats.Measurement
-	jobCountsByDestAndUser     map[string]*destJobCountsT
-	latestAssignedTime         time.Time
-	processingStartTime        time.Time
-	encounteredRouterTransform bool
-}
-
-type destJobCountsT struct {
-	total  int
-	byUser map[string]int
+	channel                   chan workerMessageT // the worker job channel
+	workerID                  int                 // identifies the worker
+	failedJobs                int                 // counts the failed jobs of a worker till it gets reset by external channel
+	barrier                   *eventorder.Barrier
+	retryForJobMap            map[int64]time.Time     // jobID to next retry time map
+	retryForJobMapMutex       sync.RWMutex            // lock to protect structure above
+	routerJobs                []types.RouterJobT      // slice to hold router jobs to send to destination transformer
+	destinationJobs           []types.DestinationJobT // slice to hold destination jobs
+	rt                        *HandleT                // handle to router
+	deliveryTimeStat          stats.Measurement
+	routerDeliveryLatencyStat stats.Measurement
+	routerProxyStat           stats.Measurement
+	batchTimeStat             stats.Measurement
+	latestAssignedTime        time.Time
+	processingStartTime       time.Time
 }
 
 var (
@@ -952,7 +944,6 @@ func (worker *workerT) processDestinationJobs() {
 	// routerJobs/destinationJobs are processed. Clearing the queues.
 	worker.routerJobs = make([]types.RouterJobT, 0)
 	worker.destinationJobs = make([]types.DestinationJobT, 0)
-	worker.jobCountsByDestAndUser = make(map[string]*destJobCountsT)
 }
 
 func (worker *workerT) canSendJobToDestination(prevRespStatusCode int, failedUserIDsMap map[string]struct{}, destinationJob *types.DestinationJobT) bool {
@@ -1250,7 +1241,6 @@ func (rt *HandleT) initWorkers() {
 			batchTimeStat:             stats.Default.NewTaggedStat("router_batch_time", stats.TimerType, stats.Tags{"destType": rt.destName}),
 			routerDeliveryLatencyStat: stats.Default.NewTaggedStat("router_delivery_latency", stats.TimerType, stats.Tags{"destType": rt.destName}),
 			routerProxyStat:           stats.Default.NewTaggedStat("router_proxy_latency", stats.TimerType, stats.Tags{"destType": rt.destName}),
-			jobCountsByDestAndUser:    make(map[string]*destJobCountsT),
 		}
 		rt.workers[i] = worker
 
