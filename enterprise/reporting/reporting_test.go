@@ -11,7 +11,6 @@ import (
 	. "github.com/onsi/gomega"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	mock_backendconfig "github.com/rudderlabs/rudder-server/mocks/config/backend-config"
-	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/pubsub"
 	"github.com/rudderlabs/rudder-server/utils/types"
 )
@@ -103,10 +102,7 @@ func TestReportingBasedOnConfigBackend(t *testing.T) {
 	configCh := make(chan pubsub.DataEvent)
 
 	var ready sync.WaitGroup
-	ready.Add(2)
-
-	var reportingSettings sync.WaitGroup
-	reportingSettings.Add(1)
+	ready.Add(1)
 
 	config.EXPECT().Subscribe(
 		gomock.Any(),
@@ -121,27 +117,13 @@ func TestReportingBasedOnConfigBackend(t *testing.T) {
 		return configCh
 	})
 
-	reporting := &HandleT{
-		logger:                    logger.NOP,
-		clients:                   make(map[string]*types.Client),
-		reportingServiceURL:       "http://test.com",
-		namespace:                 "test-namespace",
-		instanceID:                "1",
-		workspaceIDForSourceIDMap: make(map[string]string),
-		piiReportingSettings:      make(map[string]bool),
-		whActionsOnly:             false,
-		sleepInterval:             5 * time.Second,
-		mainLoopSleepInterval:     5 * time.Second,
+	f := &Factory{
+		EnterpriseToken: "dummy-token",
 	}
-	reporting.setup(config)
+	f.Setup(config)
+	reporting := f.GetReportingInstance()
 
 	var reportingDisabled bool
-
-	go func() {
-		ready.Done()
-		reportingDisabled = reporting.IsPIIReportingDisabled("testWorkspaceId-1")
-		reportingSettings.Done()
-	}()
 
 	// When the config backend has not published any event yet
 	ready.Wait()
@@ -161,6 +143,10 @@ func TestReportingBasedOnConfigBackend(t *testing.T) {
 		Topic: string(backendconfig.TopicBackendConfig),
 	}
 
-	reportingSettings.Wait()
+	// TODO fix this
+	time.Sleep(2 * time.Second)
+
+	reportingDisabled = reporting.IsPIIReportingDisabled("testWorkspaceId-1")
+
 	Expect(reportingDisabled).To(BeTrue())
 }

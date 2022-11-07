@@ -96,6 +96,7 @@ func (handle *HandleT) setup(beConfigHandle backendconfig.BackendConfig) {
 	ch := beConfigHandle.Subscribe(context.TODO(), backendconfig.TopicBackendConfig)
 
 	for beconfig := range ch {
+		fmt.Println("config pusheddddd")
 		config := beconfig.Data.(map[string]backendconfig.ConfigT)
 		handle.configSubscriberLock.Lock()
 		newWorkspaceIDForSourceIDMap := make(map[string]string)
