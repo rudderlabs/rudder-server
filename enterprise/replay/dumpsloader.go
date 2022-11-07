@@ -205,6 +205,7 @@ func (procHandle *ProcErrorRequestHandler) fetchDumpsList(ctx context.Context) {
 		}
 		if len(objects) >= int(uploadMaxItems) {
 			storeJobs(ctx, objects, procHandle.handle.dbHandle)
+			objects = nil
 		}
 
 	}
