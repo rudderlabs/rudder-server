@@ -54,7 +54,6 @@ type HandleT struct {
 	instanceID                string
 	workspaceIDForSourceIDMap map[string]string
 	piiReportingSettings      map[string]bool
-	configSubscriberLock      sync.RWMutex
 	whActionsOnly             bool
 	sleepInterval             time.Duration
 	mainLoopSleepInterval     time.Duration
@@ -100,7 +99,6 @@ func (handle *HandleT) setup(beConfigHandle backendconfig.BackendConfig) {
 
 	for beconfig := range ch {
 		config := beconfig.Data.(map[string]backendconfig.ConfigT)
-		handle.configSubscriberLock.Lock()
 		newWorkspaceIDForSourceIDMap := make(map[string]string)
 		newPIIReportingSettings := make(map[string]bool)
 		var newWorkspaceID string
@@ -121,7 +119,6 @@ func (handle *HandleT) setup(beConfigHandle backendconfig.BackendConfig) {
 		handle.onceInit.Do(func() {
 			close(handle.init)
 		})
-		handle.configSubscriberLock.Unlock()
 	}
 
 	handle.onceInit.Do(func() {
@@ -130,8 +127,7 @@ func (handle *HandleT) setup(beConfigHandle backendconfig.BackendConfig) {
 }
 
 func (handle *HandleT) getWorkspaceID(sourceID string) string {
-	handle.configSubscriberLock.RLock()
-	defer handle.configSubscriberLock.RUnlock()
+	<-handle.init
 	return handle.workspaceIDForSourceIDMap[sourceID]
 }
 
@@ -476,8 +472,6 @@ func transformMetricForPII(metric types.PUReportedMetric, piiColumns []string) t
 
 func (handle *HandleT) IsPIIReportingDisabled(workspaceID string) bool {
 	<-handle.init
-	handle.configSubscriberLock.RLock()
-	defer handle.configSubscriberLock.RUnlock()
 	return handle.piiReportingSettings[workspaceID]
 }
 
