@@ -616,7 +616,7 @@ func TestSendBatchedMessage(t *testing.T) {
 		require.InDelta(t, time.Now().Unix(), p.calls[0][0].Timestamp.Unix(), 1)
 	})
 
-	t.Run("default-topic-test", func(t *testing.T) {
+	t.Run("default topic test", func(t *testing.T) {
 		ctrl := gomock.NewController(t)
 		kafkaStats.publishTime = getMockedTimer(t, ctrl)
 		kafkaStats.prepareBatchTime = getMockedTimer(t, ctrl)
@@ -839,13 +839,13 @@ func TestSendMessage(t *testing.T) {
 }
 
 func TestPublish(t *testing.T) {
-	t.Run("no topic publish", func(t *testing.T) {
+	t.Run("no topic", func(t *testing.T) {
 		kafkaStats.publishTime = getMockedTimer(t, gomock.NewController(t))
 		p := &client.Producer{}
 		pm := &ProducerManager{p: p}
 		message := prepareMessage("", "userId", []byte(`{"test": "value"}`), time.Now())
 		err := publish(context.Background(), pm, message)
-		require.Equal(t, "no topic provided for message 0", err.Error())
+		require.ErrorContains(t, err, "no topic provided for message 0")
 	})
 }
 
