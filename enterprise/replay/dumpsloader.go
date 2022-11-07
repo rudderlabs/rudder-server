@@ -100,7 +100,7 @@ func (gwHandle *GWReplayRequestHandler) fetchDumpsList(ctx context.Context) {
 	startTimeMilli := gwHandle.handle.startTime.UnixNano() / int64(time.Millisecond)
 	endTimeMilli := gwHandle.handle.endTime.UnixNano() / int64(time.Millisecond)
 	var err error
-	maxItems := config.GetInt64("MAX_ITEMS", 1000) // MAX_ITEMS is the max number of files to be fetched in one iteration from object storage
+	maxItems := config.GetInt64("MAX_ITEMS", 1000)           // MAX_ITEMS is the max number of files to be fetched in one iteration from object storage
 	uploadMaxItems := config.GetInt64("UPLOAD_MAX_ITEMS", 1) // UPLOAD_MAX_ITEMS is the max number of objects to be uploaded to postgres
 
 	pkgLogger.Info("Fetching gw dump files list")
@@ -168,7 +168,7 @@ func (procHandle *ProcErrorRequestHandler) fetchDumpsList(ctx context.Context) {
 	objects := make([]OrderedJobs, 0)
 	pkgLogger.Info("Fetching proc err files list")
 	var err error
-	maxItems := config.GetInt64("MAX_ITEMS", 1000) // MAX_ITEMS is the max number of files to be fetched in one iteration from object storage
+	maxItems := config.GetInt64("MAX_ITEMS", 1000)           // MAX_ITEMS is the max number of files to be fetched in one iteration from object storage
 	uploadMaxItems := config.GetInt64("UPLOAD_MAX_ITEMS", 1) // UPLOAD_MAX_ITEMS is the max number of objects to be uploaded to postgres
 
 	iter := filemanager.IterateFilesWithPrefix(ctx,
@@ -205,6 +205,7 @@ func (procHandle *ProcErrorRequestHandler) fetchDumpsList(ctx context.Context) {
 		}
 		if len(objects) >= int(uploadMaxItems) {
 			storeJobs(ctx, objects, procHandle.handle.dbHandle)
+			objects = nil
 		}
 
 	}
