@@ -39,6 +39,8 @@ var _ = Describe("Reporting", func() {
 					StatusCode:     0,
 					SampleResponse: `{"some-sample-response-key": "some-sample-response-value"}`,
 					SampleEvent:    []byte(`{"some-sample-event-key": "some-sample-event-value"}`),
+					EventName:      "some-event-name",
+					EventType:      "some-event-type",
 				},
 			}
 
@@ -64,10 +66,12 @@ var _ = Describe("Reporting", func() {
 					StatusCode:     0,
 					SampleResponse: "",
 					SampleEvent:    []byte(`{}`),
+					EventName:      "",
+					EventType:      "",
 				},
 			}
 
-			piiColumnsToExclude := []string{"sample_response", "sample_event"}
+			piiColumnsToExclude := []string{"sample_response", "sample_event", "event_name", "event_type"}
 			transformedMetric := transformMetricForPII(inputMetric, piiColumnsToExclude)
 			assertReportMetric(expectedResponse, transformedMetric)
 		})
@@ -91,6 +95,8 @@ func assertReportMetric(expectedMetric, actualMetric types.PUReportedMetric) {
 	Expect(expectedMetric.StatusDetail.Count).To(Equal(actualMetric.StatusDetail.Count))
 	Expect(expectedMetric.StatusDetail.SampleResponse).To(Equal(actualMetric.StatusDetail.SampleResponse))
 	Expect(expectedMetric.StatusDetail.SampleEvent).To(Equal(actualMetric.StatusDetail.SampleEvent))
+	Expect(expectedMetric.StatusDetail.EventName).To(Equal(actualMetric.StatusDetail.EventName))
+	Expect(expectedMetric.StatusDetail.EventType).To(Equal(actualMetric.StatusDetail.EventType))
 }
 
 func TestReportingBasedOnConfigBackend(t *testing.T) {
