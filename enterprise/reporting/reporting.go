@@ -43,18 +43,20 @@ const (
 )
 
 type HandleT struct {
-	clients                       map[string]*types.Client
-	clientsMapLock                sync.RWMutex
-	logger                        logger.Logger
-	reportingServiceURL           string
-	namespace                     string
-	workspaceID                   string
-	instanceID                    string
-	workspaceIDForSourceIDMap     map[string]string
-	workspaceIDForSourceIDMapLock sync.RWMutex
-	whActionsOnly                 bool
-	sleepInterval                 time.Duration
-	mainLoopSleepInterval         time.Duration
+	init                      chan struct{}
+	onceInit                  sync.Once
+	clients                   map[string]*types.Client
+	clientsMapLock            sync.RWMutex
+	logger                    logger.Logger
+	reportingServiceURL       string
+	namespace                 string
+	workspaceID               string
+	instanceID                string
+	workspaceIDForSourceIDMap map[string]string
+	piiReportingSettings      map[string]bool
+	whActionsOnly             bool
+	sleepInterval             time.Duration
+	mainLoopSleepInterval     time.Duration
 
 	getMinReportedAtQueryTime stats.Measurement
 	getReportsQueryTime       stats.Measurement
@@ -76,12 +78,14 @@ func NewFromEnvConfig() *HandleT {
 	}
 
 	return &HandleT{
+		init:                      make(chan struct{}),
 		logger:                    reportingLogger,
 		clients:                   make(map[string]*types.Client),
 		reportingServiceURL:       reportingServiceURL,
 		namespace:                 config.GetKubeNamespace(),
 		instanceID:                config.GetString("INSTANCE_ID", "1"),
 		workspaceIDForSourceIDMap: make(map[string]string),
+		piiReportingSettings:      make(map[string]bool),
 		whActionsOnly:             whActionsOnly,
 		sleepInterval:             sleepInterval,
 		mainLoopSleepInterval:     mainLoopSleepInterval,
@@ -95,8 +99,8 @@ func (handle *HandleT) setup(beConfigHandle backendconfig.BackendConfig) {
 
 	for beconfig := range ch {
 		config := beconfig.Data.(map[string]backendconfig.ConfigT)
-		handle.workspaceIDForSourceIDMapLock.Lock()
 		newWorkspaceIDForSourceIDMap := make(map[string]string)
+		newPIIReportingSettings := make(map[string]bool)
 		var newWorkspaceID string
 
 		for workspaceID, wConfig := range config {
@@ -104,19 +108,26 @@ func (handle *HandleT) setup(beConfigHandle backendconfig.BackendConfig) {
 			for _, source := range wConfig.Sources {
 				newWorkspaceIDForSourceIDMap[source.ID] = workspaceID
 			}
+			newPIIReportingSettings[workspaceID] = wConfig.Settings.DataRetention.DisableReportingPII
 		}
 		if len(config) > 1 {
 			newWorkspaceID = ""
 		}
 		handle.workspaceID = newWorkspaceID
 		handle.workspaceIDForSourceIDMap = newWorkspaceIDForSourceIDMap
-		handle.workspaceIDForSourceIDMapLock.Unlock()
+		handle.piiReportingSettings = newPIIReportingSettings
+		handle.onceInit.Do(func() {
+			close(handle.init)
+		})
 	}
+
+	handle.onceInit.Do(func() {
+		close(handle.init)
+	})
 }
 
 func (handle *HandleT) getWorkspaceID(sourceID string) string {
-	handle.workspaceIDForSourceIDMapLock.RLock()
-	defer handle.workspaceIDForSourceIDMapLock.RUnlock()
+	<-handle.init
 	return handle.workspaceIDForSourceIDMap[sourceID]
 }
 
@@ -435,7 +446,7 @@ func isMetricPosted(status int) bool {
 }
 
 func getPIIColumnsToExclude() []string {
-	piiColumnsToExclude := strings.Split(config.GetString("REPORTING_PII_COLUMNS_TO_EXCLUDE", ""), ",")
+	piiColumnsToExclude := strings.Split(config.GetString("REPORTING_PII_COLUMNS_TO_EXCLUDE", "sample_event,sample_response"), ",")
 	for i := range piiColumnsToExclude {
 		piiColumnsToExclude[i] = strings.Trim(piiColumnsToExclude[i], " ")
 	}
@@ -444,14 +455,24 @@ func getPIIColumnsToExclude() []string {
 
 func transformMetricForPII(metric types.PUReportedMetric, piiColumns []string) types.PUReportedMetric {
 	for _, col := range piiColumns {
-		if col == "sample_event" {
+		switch col {
+		case "sample_event":
 			metric.StatusDetail.SampleEvent = []byte(`{}`)
-		} else if col == "sample_response" {
+		case "sample_response":
 			metric.StatusDetail.SampleResponse = ""
+		case "event_name":
+			metric.StatusDetail.EventName = ""
+		case "event_type":
+			metric.StatusDetail.EventType = ""
 		}
 	}
 
 	return metric
+}
+
+func (handle *HandleT) IsPIIReportingDisabled(workspaceID string) bool {
+	<-handle.init
+	return handle.piiReportingSettings[workspaceID]
 }
 
 func (handle *HandleT) Report(metrics []*types.PUReportedMetric, txn *sql.Tx) {
@@ -469,7 +490,10 @@ func (handle *HandleT) Report(metrics []*types.PUReportedMetric, txn *sql.Tx) {
 	reportedAt := time.Now().UTC().Unix() / 60
 	for _, metric := range metrics {
 		workspaceID := handle.getWorkspaceID(metric.ConnectionDetails.SourceID)
-		metric := transformMetricForPII(*metric, getPIIColumnsToExclude())
+		metric := *metric
+		if handle.IsPIIReportingDisabled(workspaceID) {
+			metric = transformMetricForPII(metric, getPIIColumnsToExclude())
+		}
 
 		_, err = stmt.Exec(workspaceID, handle.namespace, handle.instanceID, metric.ConnectionDetails.SourceDefinitionId, metric.ConnectionDetails.SourceCategory, metric.ConnectionDetails.SourceID, metric.ConnectionDetails.DestinationDefinitionId, metric.ConnectionDetails.DestinationID, metric.ConnectionDetails.SourceBatchID, metric.ConnectionDetails.SourceTaskID, metric.ConnectionDetails.SourceTaskRunID, metric.ConnectionDetails.SourceJobID, metric.ConnectionDetails.SourceJobRunID, metric.PUDetails.InPU, metric.PUDetails.PU, reportedAt, metric.StatusDetail.Status, metric.StatusDetail.Count, metric.PUDetails.TerminalPU, metric.PUDetails.InitialPU, metric.StatusDetail.StatusCode, metric.StatusDetail.SampleResponse, string(metric.StatusDetail.SampleEvent), metric.StatusDetail.EventName, metric.StatusDetail.EventType)
 		if err != nil {
