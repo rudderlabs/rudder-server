@@ -101,7 +101,10 @@ func TestReportingBasedOnConfigBackend(t *testing.T) {
 	configCh := make(chan pubsub.DataEvent)
 
 	var ready sync.WaitGroup
-	ready.Add(1)
+	ready.Add(2)
+
+	var reportingSettings sync.WaitGroup
+	reportingSettings.Add(1)
 
 	config.EXPECT().Subscribe(
 		gomock.Any(),
@@ -124,6 +127,12 @@ func TestReportingBasedOnConfigBackend(t *testing.T) {
 
 	var reportingDisabled bool
 
+	go func() {
+		ready.Done()
+		reportingDisabled = reporting.IsPIIReportingDisabled("testWorkspaceId-1")
+		reportingSettings.Done()
+	}()
+
 	// When the config backend has not published any event yet
 	ready.Wait()
 	Expect(reportingDisabled).To(BeFalse())
@@ -142,7 +151,6 @@ func TestReportingBasedOnConfigBackend(t *testing.T) {
 		Topic: string(backendconfig.TopicBackendConfig),
 	}
 
-	reportingDisabled = reporting.IsPIIReportingDisabled("testWorkspaceId-1")
-
+	reportingSettings.Wait()
 	Expect(reportingDisabled).To(BeTrue())
 }
