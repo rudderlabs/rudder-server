@@ -76,14 +76,12 @@ func TestFileUploaderUpdatingWithConfigBackend(t *testing.T) {
 					DataRetention: backendconfig.DataRetention{
 						UseSelfStorage: true,
 						StorageBucket: backendconfig.StorageBucket{
-							Type: "some-type",
-							Config: map[string]interface{}{
-								"some-key": "some-value",
-							},
+							Type:   "",
+							Config: map[string]interface{}{},
 						},
 						StoragePreferences: backendconfig.StoragePreferences{
-							ProcErrors:   true,
-							GatewayDumps: true,
+							ProcErrors:   false,
+							GatewayDumps: false,
 						},
 					},
 				},
@@ -102,6 +100,10 @@ func TestFileUploaderUpdatingWithConfigBackend(t *testing.T) {
 
 	preferences, err = fileUploaderProvider.GetStoragePreferences("testWorkspaceId-0")
 	Expect(err).To(HaveOccurred())
+	Expect(preferences).To(BeEquivalentTo(backendconfig.StoragePreferences{}))
+
+	preferences, err = fileUploaderProvider.GetStoragePreferences("testWorkspaceId-2")
+	Expect(err).To(BeNil())
 	Expect(preferences).To(BeEquivalentTo(backendconfig.StoragePreferences{}))
 }
 
