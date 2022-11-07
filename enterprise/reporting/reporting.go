@@ -43,6 +43,8 @@ const (
 )
 
 type HandleT struct {
+	init                      chan struct{}
+	onceInit                  sync.Once
 	clients                   map[string]*types.Client
 	clientsMapLock            sync.RWMutex
 	logger                    logger.Logger
@@ -77,6 +79,7 @@ func NewFromEnvConfig() *HandleT {
 	}
 
 	return &HandleT{
+		init:                      make(chan struct{}),
 		logger:                    reportingLogger,
 		clients:                   make(map[string]*types.Client),
 		reportingServiceURL:       reportingServiceURL,
@@ -96,7 +99,6 @@ func (handle *HandleT) setup(beConfigHandle backendconfig.BackendConfig) {
 	ch := beConfigHandle.Subscribe(context.TODO(), backendconfig.TopicBackendConfig)
 
 	for beconfig := range ch {
-		fmt.Println("config pusheddddd")
 		config := beconfig.Data.(map[string]backendconfig.ConfigT)
 		handle.configSubscriberLock.Lock()
 		newWorkspaceIDForSourceIDMap := make(map[string]string)
@@ -116,8 +118,15 @@ func (handle *HandleT) setup(beConfigHandle backendconfig.BackendConfig) {
 		handle.workspaceID = newWorkspaceID
 		handle.workspaceIDForSourceIDMap = newWorkspaceIDForSourceIDMap
 		handle.piiReportingSettings = newPIIReportingSettings
+		handle.onceInit.Do(func() {
+			close(handle.init)
+		})
 		handle.configSubscriberLock.Unlock()
 	}
+
+	handle.onceInit.Do(func() {
+		close(handle.init)
+	})
 }
 
 func (handle *HandleT) getWorkspaceID(sourceID string) string {
@@ -466,6 +475,7 @@ func transformMetricForPII(metric types.PUReportedMetric, piiColumns []string) t
 }
 
 func (handle *HandleT) IsPIIReportingDisabled(workspaceID string) bool {
+	<-handle.init
 	handle.configSubscriberLock.RLock()
 	defer handle.configSubscriberLock.RUnlock()
 	return handle.piiReportingSettings[workspaceID]

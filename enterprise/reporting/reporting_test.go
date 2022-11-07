@@ -4,7 +4,6 @@ import (
 	"context"
 	"sync"
 	"testing"
-	"time"
 
 	"github.com/golang/mock/gomock"
 	. "github.com/onsi/ginkgo/v2"
@@ -142,9 +141,6 @@ func TestReportingBasedOnConfigBackend(t *testing.T) {
 		},
 		Topic: string(backendconfig.TopicBackendConfig),
 	}
-
-	// TODO fix this
-	time.Sleep(2 * time.Second)
 
 	reportingDisabled = reporting.IsPIIReportingDisabled("testWorkspaceId-1")
 
