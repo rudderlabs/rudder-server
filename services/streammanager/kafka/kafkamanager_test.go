@@ -616,6 +616,30 @@ func TestSendBatchedMessage(t *testing.T) {
 		require.InDelta(t, time.Now().Unix(), p.calls[0][0].Timestamp.Unix(), 1)
 	})
 
+	t.Run("default-topic-test", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		kafkaStats.publishTime = getMockedTimer(t, ctrl)
+		kafkaStats.prepareBatchTime = getMockedTimer(t, ctrl)
+
+		p := &pMockErr{error: nil}
+		pm := &ProducerManager{p: p}
+		sc, res, err := sendBatchedMessage(
+			context.Background(),
+			json.RawMessage(`[{"message":"ciao","userId":"123"}]`),
+			pm,
+			"some-topic",
+		)
+		require.Equal(t, 200, sc)
+		require.Equal(t, "Kafka: Message delivered in batch", res)
+		require.Equal(t, "Kafka: Message delivered in batch", err)
+		require.Len(t, p.calls, 1)
+		require.Len(t, p.calls[0], 1)
+		require.Equal(t, []byte("123"), p.calls[0][0].Key)
+		require.Equal(t, []byte(`"ciao"`), p.calls[0][0].Value)
+		require.Equal(t, "some-topic", p.calls[0][0].Topic)
+		require.InDelta(t, time.Now().Unix(), p.calls[0][0].Timestamp.Unix(), 1)
+	})
+
 	t.Run("schemaId not available", func(t *testing.T) {
 		ctrl := gomock.NewController(t)
 		kafkaStats.prepareBatchTime = getMockedTimer(t, ctrl)
