@@ -26,4 +26,10 @@ func TestFeatureSetup(t *testing.T) {
 	require.Equal(t, instanceA, instanceB)
 	require.Equal(t, instanceB, instanceC)
 	require.Equal(t, instanceC, instanceD)
+
+	f = &Factory{}
+	instanceE := f.Setup(&backendconfig.NOOP{})
+	instanceF := f.GetReportingInstance()
+	require.Equal(t, instanceE, instanceF)
+	require.NotEqual(t, instanceE, backendconfig.NOOP{})
 }

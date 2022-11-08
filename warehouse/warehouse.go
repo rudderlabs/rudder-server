@@ -1794,6 +1794,7 @@ func pendingEventsHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func getPendingStagingFileCount(sourceOrDestId string, isSourceId bool) (fileCount int64, err error) {
+	sourceOrDestId = pq.QuoteIdentifier(sourceOrDestId)
 	sourceOrDestColumn := ""
 	if isSourceId {
 		sourceOrDestColumn = "source_id"
@@ -1807,16 +1808,14 @@ func getPendingStagingFileCount(sourceOrDestId string, isSourceId bool) (fileCou
 		FROM
 		  %[1]s
 		WHERE
-		  %[1]s.%[3]s = '%[2]s';
+		  %[2]s = $1;
 `,
 		warehouseutils.WarehouseUploadsTable,
-		sourceOrDestId,
 		sourceOrDestColumn,
 	)
-
-	err = dbHandle.QueryRow(sqlStatement).Scan(&lastStagingFileIDRes)
+	err = dbHandle.QueryRow(sqlStatement, sourceOrDestId).Scan(&lastStagingFileIDRes)
 	if err != nil && err != sql.ErrNoRows {
-		err = fmt.Errorf("query: %s failed with Error : %w", sqlStatement, err)
+		err = fmt.Errorf("query: %s run failed with Error : %w", sqlStatement, err)
 		return
 	}
 	lastStagingFileID := int64(0)
@@ -1830,18 +1829,16 @@ func getPendingStagingFileCount(sourceOrDestId string, isSourceId bool) (fileCou
 		FROM
 		  %[1]s
 		WHERE
-		  %[1]s.id > %[2]v
-		  AND %[1]s.%[4]s = '%[3]s';
+		  id > %[2]v
+		  AND %[3]s = $1;
 `,
 		warehouseutils.WarehouseStagingFilesTable,
 		lastStagingFileID,
-		sourceOrDestId,
 		sourceOrDestColumn,
 	)
-
-	err = dbHandle.QueryRow(sqlStatement).Scan(&fileCount)
+	err = dbHandle.QueryRow(sqlStatement, sourceOrDestId).Scan(&fileCount)
 	if err != nil && err != sql.ErrNoRows {
-		err = fmt.Errorf("query: %s failed with Error : %w", sqlStatement, err)
+		err = fmt.Errorf("query: %s run failed with Error : %w", sqlStatement, err)
 		return
 	}
 
