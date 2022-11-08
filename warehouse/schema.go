@@ -38,14 +38,14 @@ func HandleSchemaChange(existingDataType, currentDataType string, value any) (an
 	} else if (currentDataType == "int" || currentDataType == "bigint") && existingDataType == "float" {
 		intVal, ok := value.(int)
 		if !ok {
-			err = ErrSchemaChange
+			err = ErrIncompatibleSchemaConv
 		} else {
 			newColumnVal = float64(intVal)
 		}
 	} else if currentDataType == "float" && (existingDataType == "int" || existingDataType == "bigint") {
 		floatVal, ok := value.(float64)
 		if !ok {
-			err = ErrSchemaChange
+			err = ErrIncompatibleSchemaConv
 		} else {
 			newColumnVal = int(floatVal)
 		}
@@ -59,7 +59,7 @@ func HandleSchemaChange(existingDataType, currentDataType string, value any) (an
 			newColumnVal = fmt.Sprintf(`"%v"`, value)
 		}
 	} else {
-		err = ErrSchemaChange
+		err = ErrSchemaConvNotSupported
 	}
 
 	return newColumnVal, err

@@ -5,7 +5,10 @@ import (
 	"fmt"
 )
 
-var ErrSchemaChange = errors.New("incompatible conversion of data")
+var (
+	ErrIncompatibleSchemaConv = errors.New("incompatible schema conversion")
+	ErrSchemaConvNotSupported = errors.New("schema conversion not supported")
+)
 
 type InvalidDestinationCredErr struct {
 	Base      error
