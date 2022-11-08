@@ -45,7 +45,7 @@ func (j *JobAPI) Get(ctx context.Context) (model.Job, error) {
 
 	resp, err := j.Client.Do(req)
 	if err, ok := err.(net.Error); ok && err.Timeout() {
-		stats.Default.NewStat("regulation_worker.manager_request_timeout_count", stats.CountType).Count(1)
+		stats.Default.NewStat("regulation_manager.request_timeout", stats.CountType).Count(1)
 		return model.Job{}, model.ErrRequestTimeout
 	} else if err != nil {
 		return model.Job{}, err
@@ -134,7 +134,7 @@ func (j *JobAPI) UpdateStatus(ctx context.Context, status model.JobStatus, jobID
 
 	resp, err := j.Client.Do(req)
 	if err, ok := err.(net.Error); ok && err.Timeout() {
-		stats.Default.NewStat("regulation_worker.manager_request_timeout_count", stats.CountType).Count(1)
+		stats.Default.NewStat("regulation_manager.request_timeout", stats.CountType).Count(1)
 		return model.ErrRequestTimeout
 	} else if err != nil {
 		return err
