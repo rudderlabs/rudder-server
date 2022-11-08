@@ -2,8 +2,15 @@ package batchrouter
 
 import (
 	"context"
+	jsonb "encoding/json"
+	"errors"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"testing"
 	"time"
+
+	"github.com/stretchr/testify/require"
 
 	"github.com/gofrs/uuid"
 	"github.com/golang/mock/gomock"
@@ -299,4 +306,67 @@ func assertJobStatus(job *jobsdb.JobT, status *jobsdb.JobStatusT, expectedState,
 	Expect(status.RetryTime).To(BeTemporally("~", time.Now(), 10*time.Second))
 	Expect(status.ExecTime).To(BeTemporally("~", time.Now(), 10*time.Second))
 	Expect(status.AttemptNum).To(Equal(attemptNum))
+}
+
+func TestPostToWarehouse(t *testing.T) {
+	// TOT: Decouple this test from the actual warehouse
+	inputs := []struct {
+		name          string
+		responseCode  int
+		responseBody  string
+		expectedError error
+	}{
+		{
+			name:         "should successfully post to warehouse",
+			responseBody: "OK",
+			responseCode: http.StatusOK,
+		},
+		{
+			name:          "should fail to post to warehouse",
+			responseCode:  http.StatusNotFound,
+			responseBody:  "Not Found",
+			expectedError: errors.New("BRT: Failed to route staging file URL to warehouse service@%s/v1/process, status: 404 Not Found, body: Not Found"),
+		},
+	}
+	for _, input := range inputs {
+		t.Run(input.name, func(t *testing.T) {
+			ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(input.responseCode)
+				_, _ = w.Write([]byte(input.responseBody))
+			}))
+			t.Cleanup(ts.Close)
+
+			job := HandleT{
+				netHandle:    ts.Client(),
+				logger:       logger.NOP,
+				warehouseURL: ts.URL,
+			}
+			batchJobs := BatchJobsT{
+				Jobs: []*jobsdb.JobT{
+					{
+						EventPayload: jsonb.RawMessage(`
+					{
+					  "receivedAt": "2019-10-12T07:20:50.52Z",
+					  "metadata": {
+						"columns": {
+						  "id": "string"
+						},
+						"table": "tracks"
+					  }
+					}
+				`),
+						WorkspaceId: "test-workspace",
+						Parameters:  jsonb.RawMessage(`{}`),
+					},
+				},
+				BatchDestination: &DestinationT{},
+			}
+			err := job.postToWarehouse(&batchJobs, StorageUploadOutput{})
+			if input.expectedError != nil {
+				require.Equal(t, fmt.Sprintf(input.expectedError.Error(), ts.URL), err.Error())
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
 }

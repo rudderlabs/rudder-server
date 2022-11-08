@@ -18,6 +18,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/rudderlabs/rudder-server/enterprise/reporting"
+	"github.com/rudderlabs/rudder-server/services/fileuploader"
 	"github.com/rudderlabs/rudder-server/services/rsources"
 	"github.com/rudderlabs/rudder-server/services/transientsource"
 
@@ -197,7 +198,7 @@ func TestDynamicClusterManager(t *testing.T) {
 		"batch_rt": &jobsdb.MultiTenantLegacy{HandleT: brtDB},
 	})
 
-	processor := processor.New(ctx, &clearDb, gwDB, rtDB, brtDB, errDB, mockMTI, &reporting.NOOP{}, transientsource.NewEmptyService(), rsources.NewNoOpService())
+	processor := processor.New(ctx, &clearDb, gwDB, rtDB, brtDB, errDB, mockMTI, &reporting.NOOP{}, transientsource.NewEmptyService(), fileuploader.NewDefaultProvider(), rsources.NewNoOpService())
 	processor.BackendConfig = mockBackendConfig
 	processor.Transformer = mockTransformer
 	mockBackendConfig.EXPECT().WaitForConfig(gomock.Any()).Times(1)
