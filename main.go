@@ -8,6 +8,7 @@ import (
 
 	_ "go.uber.org/automaxprocs"
 
+	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/runner"
 )
 
@@ -27,7 +28,7 @@ func main() {
 		BuildDate:       buildDate,
 		BuiltBy:         builtBy,
 		GitURL:          gitURL,
-		EnterpriseToken: enterpriseToken,
+		EnterpriseToken: config.GetString("ENTERPRISE_TOKEN", enterpriseToken),
 	})
 	exitCode := r.Run(ctx, os.Args)
 	cancel()
