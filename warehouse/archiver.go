@@ -13,7 +13,6 @@ import (
 	"github.com/iancoleman/strcase"
 	"github.com/lib/pq"
 	"github.com/rudderlabs/rudder-server/config"
-	"github.com/rudderlabs/rudder-server/services/archiver"
 	"github.com/rudderlabs/rudder-server/services/archiver/tablearchiver"
 	"github.com/rudderlabs/rudder-server/services/filemanager"
 	"github.com/rudderlabs/rudder-server/utils/misc"
@@ -272,7 +271,7 @@ func archiveUploads(dbHandle *sql.DB) {
 
 		var storedStagingFilesLocation string
 		if len(stagingFileIDs) > 0 {
-			if archiver.IsArchiverObjectStorageConfigured() && !hasUsedRudderStorage {
+			if !hasUsedRudderStorage {
 				filterSQL := fmt.Sprintf(`id IN (%v)`, misc.IntArrayToString(stagingFileIDs, ","))
 				storedStagingFilesLocation, err = backupRecords(backupRecordsArgs{
 					tableName:      warehouseutils.WarehouseStagingFilesTable,
