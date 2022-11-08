@@ -23,7 +23,7 @@ import (
 type ManagerI interface {
 	Setup(warehouse warehouseutils.Warehouse, uploader warehouseutils.UploaderI) error
 	CrashRecover(warehouse warehouseutils.Warehouse) (err error)
-	FetchSchema(warehouse warehouseutils.Warehouse) (warehouseutils.SchemaT, error)
+	FetchSchema(warehouse warehouseutils.Warehouse) (warehouseutils.SchemaT, warehouseutils.SchemaT, error)
 	CreateSchema() (err error)
 	CreateTable(tableName string, columnMap map[string]string) (err error)
 	AddColumns(tableName string, columnsInfo []warehouseutils.ColumnInfo) (err error)

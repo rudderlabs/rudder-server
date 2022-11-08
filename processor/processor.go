@@ -35,6 +35,7 @@ import (
 	destinationdebugger "github.com/rudderlabs/rudder-server/services/debugger/destination"
 	transformationdebugger "github.com/rudderlabs/rudder-server/services/debugger/transformation"
 	"github.com/rudderlabs/rudder-server/services/dedup"
+	"github.com/rudderlabs/rudder-server/services/fileuploader"
 	"github.com/rudderlabs/rudder-server/services/multitenant"
 	"github.com/rudderlabs/rudder-server/services/rsources"
 	"github.com/rudderlabs/rudder-server/services/stats"
@@ -79,6 +80,7 @@ type HandleT struct {
 	jobdDBQueryRequestTimeout time.Duration
 	jobdDBMaxRetries          int
 	transientSources          transientsource.Service
+	fileuploader              fileuploader.Provider
 	rsourcesService           rsources.JobService
 }
 
@@ -86,10 +88,7 @@ type processorStats struct {
 	transformEventsByTimeMutex     sync.RWMutex
 	destTransformEventsByTimeTaken transformRequestPQ
 	userTransformEventsByTimeTaken transformRequestPQ
-	pStatsJobs                     *misc.PerfStats
-	pStatsDBR                      *misc.PerfStats
 	statGatewayDBR                 stats.Measurement
-	pStatsDBW                      *misc.PerfStats
 	statGatewayDBW                 stats.Measurement
 	statRouterDBW                  stats.Measurement
 	statBatchRouterDBW             stats.Measurement
@@ -305,7 +304,7 @@ func (proc *HandleT) Setup(
 	backendConfig backendconfig.BackendConfig, gatewayDB, routerDB jobsdb.JobsDB,
 	batchRouterDB, errorDB jobsdb.JobsDB, clearDB *bool, reporting types.ReportingI,
 	multiTenantStat multitenant.MultiTenantI, transientSources transientsource.Service,
-	rsourcesService rsources.JobService,
+	fileuploader fileuploader.Provider, rsourcesService rsources.JobService,
 ) {
 	proc.reporting = reporting
 	config.RegisterBoolConfigVariable(types.DEFAULT_REPORTING_ENABLED, &proc.reportingEnabled, false, "Reporting.enabled")
@@ -327,18 +326,13 @@ func (proc *HandleT) Setup(
 	proc.errorDB = errorDB
 
 	proc.transientSources = transientSources
+	proc.fileuploader = fileuploader
 	proc.rsourcesService = rsourcesService
 
 	// Stats
 	proc.statsFactory = stats.Default
-	proc.stats.pStatsJobs = &misc.PerfStats{}
-	proc.stats.pStatsDBR = &misc.PerfStats{}
-	proc.stats.pStatsDBW = &misc.PerfStats{}
 	proc.stats.userTransformEventsByTimeTaken = make([]*TransformRequestT, 0, transformTimesPQLength)
 	proc.stats.destTransformEventsByTimeTaken = make([]*TransformRequestT, 0, transformTimesPQLength)
-	proc.stats.pStatsJobs.Setup("ProcessorJobs")
-	proc.stats.pStatsDBR.Setup("ProcessorDBRead")
-	proc.stats.pStatsDBW.Setup("ProcessorDBWrite")
 	proc.stats.statGatewayDBR = proc.statsFactory.NewStat("processor.gateway_db_read", stats.CountType)
 	proc.stats.statGatewayDBW = proc.statsFactory.NewStat("processor.gateway_db_write", stats.CountType)
 	proc.stats.statRouterDBW = proc.statsFactory.NewStat("processor.router_db_write", stats.CountType)
@@ -442,7 +436,7 @@ func (proc *HandleT) Start(ctx context.Context) error {
 
 	g.Go(misc.WithBugsnag(func() error {
 		st := stash.New()
-		st.Setup(proc.errorDB, proc.transientSources)
+		st.Setup(proc.errorDB, proc.transientSources, proc.fileuploader)
 		st.Start(ctx)
 		return nil
 	}))
@@ -1707,9 +1701,6 @@ func (proc *HandleT) Store(in *storeMessage) {
 	proc.logger.Debugf("Processor GW DB Write Complete. Total Processed: %v", len(statusList))
 	// XX: End of transaction
 
-	proc.stats.pStatsDBW.Rate(len(statusList), time.Since(beforeStoreStatus))
-	proc.stats.pStatsJobs.Rate(in.totalEvents, time.Since(in.start))
-
 	proc.stats.statGatewayDBW.Count(len(statusList))
 	proc.stats.statRouterDBW.Count(len(destJobs))
 	proc.stats.statBatchRouterDBW.Count(len(batchDestJobs))
@@ -2233,7 +2224,6 @@ func (proc *HandleT) getJobs() jobsdb.JobsResult {
 	// check if there is work to be done
 	if len(unprocessedList.Jobs) == 0 {
 		proc.logger.Debugf("Processor DB Read Complete. No GW Jobs to process.")
-		proc.stats.pStatsDBR.Rate(0, time.Since(s))
 		return unprocessedList
 	}
 
@@ -2248,7 +2238,6 @@ func (proc *HandleT) getJobs() jobsdb.JobsResult {
 	defer proc.stats.eventSchemasTime.SendTiming(eventSchemasTime)
 
 	proc.logger.Debugf("Processor DB Read Complete. unprocessedList: %v total_events: %d", len(unprocessedList.Jobs), unprocessedList.EventsCount)
-	proc.stats.pStatsDBR.Rate(len(unprocessedList.Jobs), time.Since(s))
 	proc.stats.statGatewayDBR.Count(len(unprocessedList.Jobs))
 
 	proc.stats.statDBReadRequests.Observe(float64(len(unprocessedList.Jobs)))

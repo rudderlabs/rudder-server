@@ -13,12 +13,13 @@ import (
 )
 
 type SchemaHandleT struct {
-	dbHandle          *sql.DB
-	stagingFiles      []*StagingFileT
-	warehouse         warehouseutils.Warehouse
-	localSchema       warehouseutils.SchemaT
-	schemaInWarehouse warehouseutils.SchemaT
-	uploadSchema      warehouseutils.SchemaT
+	dbHandle                      *sql.DB
+	stagingFiles                  []*StagingFileT
+	warehouse                     warehouseutils.Warehouse
+	localSchema                   warehouseutils.SchemaT
+	schemaInWarehouse             warehouseutils.SchemaT
+	unrecognizedSchemaInWarehouse warehouseutils.SchemaT
+	uploadSchema                  warehouseutils.SchemaT
 }
 
 func HandleSchemaChange(existingDataType, columnType string, columnVal interface{}) (newColumnVal interface{}, ok bool) {
@@ -159,13 +160,13 @@ func (sh *SchemaHandleT) updateLocalSchema(updatedSchema warehouseutils.SchemaT)
 	return err
 }
 
-func (sh *SchemaHandleT) fetchSchemaFromWarehouse(whManager manager.ManagerI) (schemaInWarehouse warehouseutils.SchemaT, err error) {
-	schemaInWarehouse, err = whManager.FetchSchema(sh.warehouse)
+func (sh *SchemaHandleT) fetchSchemaFromWarehouse(whManager manager.ManagerI) (schemaInWarehouse, unrecognizedSchemaInWarehouse warehouseutils.SchemaT, err error) {
+	schemaInWarehouse, unrecognizedSchemaInWarehouse, err = whManager.FetchSchema(sh.warehouse)
 	if err != nil {
 		pkgLogger.Errorf(`[WH]: Failed fetching schema from warehouse: %v`, err)
-		return warehouseutils.SchemaT{}, err
+		return warehouseutils.SchemaT{}, warehouseutils.SchemaT{}, err
 	}
-	return schemaInWarehouse, nil
+	return schemaInWarehouse, unrecognizedSchemaInWarehouse, nil
 }
 
 func mergeSchema(currentSchema warehouseutils.SchemaT, schemaList []warehouseutils.SchemaT, currentMergedSchema warehouseutils.SchemaT, warehouseType string) warehouseutils.SchemaT {

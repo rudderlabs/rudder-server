@@ -846,7 +846,7 @@ func (*HandleT) AlterColumn(_, _, _ string) (err error) {
 }
 
 // FetchSchema queries bigquery and returns the schema associated with provided namespace
-func (bq *HandleT) FetchSchema(warehouse warehouseutils.Warehouse) (schema warehouseutils.SchemaT, err error) {
+func (bq *HandleT) FetchSchema(warehouse warehouseutils.Warehouse) (schema, unrecognizedSchema warehouseutils.SchemaT, err error) {
 	bq.warehouse = warehouse
 	bq.namespace = warehouse.Namespace
 	bq.projectID = strings.TrimSpace(warehouseutils.GetConfigValue(GCPProjectID, bq.warehouse))
@@ -860,6 +860,8 @@ func (bq *HandleT) FetchSchema(warehouse warehouseutils.Warehouse) (schema wareh
 	defer dbClient.Close()
 
 	schema = make(warehouseutils.SchemaT)
+	unrecognizedSchema = make(warehouseutils.SchemaT)
+
 	sqlStatement := fmt.Sprintf(`
 		SELECT
 		  t.table_name,
@@ -885,10 +887,10 @@ func (bq *HandleT) FetchSchema(warehouse warehouseutils.Warehouse) (schema wareh
 			// if dataset resource is not found, return empty schema
 			if e.Code == 404 {
 				pkgLogger.Infof("BQ: No rows, while fetching schema from  destination:%v, query: %v", bq.warehouse.Identifier, query)
-				return schema, nil
+				return schema, unrecognizedSchema, nil
 			}
 			pkgLogger.Errorf("BQ: Error in fetching schema from bigquery destination:%v, query: %v", bq.warehouse.Destination.ID, query)
-			return schema, e
+			return schema, unrecognizedSchema, e
 		}
 		pkgLogger.Errorf("BQ: Error in fetching schema from bigquery destination:%v, query: %v", bq.warehouse.Destination.ID, query)
 		return
@@ -902,7 +904,7 @@ func (bq *HandleT) FetchSchema(warehouse warehouseutils.Warehouse) (schema wareh
 		}
 		if err != nil {
 			pkgLogger.Errorf("BQ: Error in processing fetched schema from redshift destination:%v, error: %v", bq.warehouse.Destination.ID, err)
-			return nil, err
+			return nil, nil, err
 		}
 		var tName, cName, cType string
 		tName, _ = values[0].(string)
@@ -915,6 +917,11 @@ func (bq *HandleT) FetchSchema(warehouse warehouseutils.Warehouse) (schema wareh
 			// lower case all column names from bigquery
 			schema[tName][strings.ToLower(cName)] = datatype
 		} else {
+			if _, ok := unrecognizedSchema[tName]; !ok {
+				unrecognizedSchema[tName] = make(map[string]string)
+			}
+			unrecognizedSchema[tName][strings.ToLower(cName)] = warehouseutils.MISSING_DATATYPE
+
 			warehouseutils.WHCounterStat(warehouseutils.RUDDER_MISSING_DATATYPE, &bq.warehouse, warehouseutils.Tag{Name: "datatype", Value: cType}).Count(1)
 		}
 	}
