@@ -44,7 +44,7 @@ func (l *Looper) Loop(ctx context.Context) error {
 		}
 		// this is to make sure that we don't panic when any of the API call fails with deadline exceeded error.
 		if err == model.ErrRequestTimeout {
-			pkgLogger.Errorf("context deadline exceeded... retrying after a minute %v", err)
+			pkgLogger.Errorf("context deadline exceeded... retrying after %d minute(s): %v", retryDelay, err)
 			if err := misc.SleepCtx(ctx, time.Duration(retryDelay)*time.Second); err != nil {
 				pkgLogger.Debugf("context cancelled... exiting infinite loop %v", err)
 				return nil
