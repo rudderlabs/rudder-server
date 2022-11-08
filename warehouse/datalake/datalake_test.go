@@ -14,145 +14,100 @@ import (
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
-type TestHandle struct {
-	S3DatalakeWriteKey    string
-	GCSDatalakeWriteKey   string
-	AZUREDatalakeWriteKey string
-}
-
-var handle *TestHandle
+type TestHandle struct{}
 
 func (*TestHandle) VerifyConnection() error {
 	return nil
 }
 
 func TestDatalakeIntegration(t *testing.T) {
-	t.Run("S3Datalake", func(t *testing.T) {
-		t.Parallel()
+	testCases := []struct {
+		name          string
+		writeKey      string
+		sourceID      string
+		destinationID string
+		provider      string
+		prerequisite  func(t *testing.T)
+	}{
+		{
+			name:          "S3Datalake",
+			writeKey:      "ZapZJHfSxUN96GTIuShnz6bv0zi",
+			sourceID:      "279L3gEKqwruNoKGsXZtSVX7vIy",
+			destinationID: "27SthahyhhqEZ7H4T4NTtNPl06V",
+			provider:      warehouseutils.S3_DATALAKE,
+			prerequisite: func(t *testing.T) {
+				testhelper.CreateBucketForMinio(t, "s3-datalake-test")
+			},
+		},
+		{
+			name:          "GCSDatalake",
+			writeKey:      "9zZFfcRqr2LpwerxICilhQmMybn",
+			sourceID:      "279L3gEKqwruNoKGZXatSVX7vIy",
+			destinationID: "27SthahyhhqEZGHaT4NTtNPl06V",
+			provider:      warehouseutils.GCS_DATALAKE,
+			prerequisite: func(t *testing.T) {
+				if _, exists := os.LookupEnv(testhelper.BigqueryIntegrationTestCredentials); !exists {
+					t.Skip("Skipping GCS Datalake Test as the Test credentials does not exists.")
+				}
+			},
+		},
+		{
+			name:          "AzureDatalake",
+			writeKey:      "Hf4GTz4OiufmUqR1cq6KIeguOdC",
+			sourceID:      "279L3gEKqwruGoKGsXZtSVX7vIy",
+			destinationID: "27SthahyhhqZE7H4T4NTtNPl06V",
+			provider:      warehouseutils.AZURE_DATALAKE,
+		},
+	}
 
-		warehouseTest := &testhelper.WareHouseTest{
-			WriteKey:      handle.S3DatalakeWriteKey,
-			Provider:      warehouseutils.S3_DATALAKE,
-			SourceID:      "279L3gEKqwruNoKGsXZtSVX7vIy",
-			DestinationID: "27SthahyhhqEZ7H4T4NTtNPl06V",
-		}
+	for _, tc := range testCases {
+		tc := tc
 
-		testhelper.CreateBucketForMinio(t, "s3-datalake-test")
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 
-		// Scenario 1
-		warehouseTest.TimestampBeforeSendingEvents = timeutil.Now()
-		warehouseTest.UserId = testhelper.GetUserId(warehouseutils.S3_DATALAKE)
+			if tc.prerequisite != nil {
+				tc.prerequisite(t)
+			}
 
-		sendEventsMap := testhelper.SendEventsMap()
-		testhelper.SendEvents(t, warehouseTest, sendEventsMap)
-		testhelper.SendEvents(t, warehouseTest, sendEventsMap)
-		testhelper.SendEvents(t, warehouseTest, sendEventsMap)
-		testhelper.SendIntegratedEvents(t, warehouseTest, sendEventsMap)
+			warehouseTest := &testhelper.WareHouseTest{
+				WriteKey:      tc.writeKey,
+				Provider:      tc.provider,
+				SourceID:      tc.sourceID,
+				DestinationID: tc.destinationID,
+			}
 
-		testhelper.VerifyEventsInStagingFiles(t, warehouseTest, testhelper.StagingFilesEventsMap())
-		testhelper.VerifyEventsInLoadFiles(t, warehouseTest, testhelper.LoadFilesEventsMap())
-		testhelper.VerifyEventsInTableUploads(t, warehouseTest, testhelper.TableUploadsEventsMap())
+			// Scenario 1
+			warehouseTest.TimestampBeforeSendingEvents = timeutil.Now()
+			warehouseTest.UserId = testhelper.GetUserId(tc.provider)
 
-		// Scenario 2
-		warehouseTest.TimestampBeforeSendingEvents = timeutil.Now()
-		warehouseTest.UserId = testhelper.GetUserId(warehouseutils.S3_DATALAKE)
+			sendEventsMap := testhelper.SendEventsMap()
+			testhelper.SendEvents(t, warehouseTest, sendEventsMap)
+			testhelper.SendEvents(t, warehouseTest, sendEventsMap)
+			testhelper.SendEvents(t, warehouseTest, sendEventsMap)
+			testhelper.SendIntegratedEvents(t, warehouseTest, sendEventsMap)
 
-		sendEventsMap = testhelper.SendEventsMap()
-		testhelper.SendModifiedEvents(t, warehouseTest, sendEventsMap)
-		testhelper.SendModifiedEvents(t, warehouseTest, sendEventsMap)
-		testhelper.SendModifiedEvents(t, warehouseTest, sendEventsMap)
-		testhelper.SendIntegratedEvents(t, warehouseTest, sendEventsMap)
+			testhelper.VerifyEventsInStagingFiles(t, warehouseTest, testhelper.StagingFilesEventsMap())
+			testhelper.VerifyEventsInLoadFiles(t, warehouseTest, testhelper.LoadFilesEventsMap())
+			testhelper.VerifyEventsInTableUploads(t, warehouseTest, testhelper.TableUploadsEventsMap())
 
-		testhelper.VerifyEventsInStagingFiles(t, warehouseTest, testhelper.StagingFilesEventsMap())
-		testhelper.VerifyEventsInLoadFiles(t, warehouseTest, testhelper.LoadFilesEventsMap())
-		testhelper.VerifyEventsInTableUploads(t, warehouseTest, testhelper.TableUploadsEventsMap())
+			// Scenario 2
+			warehouseTest.TimestampBeforeSendingEvents = timeutil.Now()
+			warehouseTest.UserId = testhelper.GetUserId(tc.provider)
 
-		testhelper.VerifyWorkspaceIDInStats(t)
-	})
-	t.Run("AzureDatalake", func(t *testing.T) {
-		t.Parallel()
+			sendEventsMap = testhelper.SendEventsMap()
+			testhelper.SendModifiedEvents(t, warehouseTest, sendEventsMap)
+			testhelper.SendModifiedEvents(t, warehouseTest, sendEventsMap)
+			testhelper.SendModifiedEvents(t, warehouseTest, sendEventsMap)
+			testhelper.SendIntegratedEvents(t, warehouseTest, sendEventsMap)
 
-		warehouseTest := &testhelper.WareHouseTest{
-			WriteKey:      handle.AZUREDatalakeWriteKey,
-			Provider:      warehouseutils.AZURE_DATALAKE,
-			SourceID:      "279L3gEKqwruGoKGsXZtSVX7vIy",
-			DestinationID: "27SthahyhhqZE7H4T4NTtNPl06V",
-		}
+			testhelper.VerifyEventsInStagingFiles(t, warehouseTest, testhelper.StagingFilesEventsMap())
+			testhelper.VerifyEventsInLoadFiles(t, warehouseTest, testhelper.LoadFilesEventsMap())
+			testhelper.VerifyEventsInTableUploads(t, warehouseTest, testhelper.TableUploadsEventsMap())
 
-		// Scenario 1
-		warehouseTest.TimestampBeforeSendingEvents = timeutil.Now()
-		warehouseTest.UserId = testhelper.GetUserId(warehouseutils.AZURE_DATALAKE)
-
-		sendEventsMap := testhelper.SendEventsMap()
-		testhelper.SendEvents(t, warehouseTest, sendEventsMap)
-		testhelper.SendEvents(t, warehouseTest, sendEventsMap)
-		testhelper.SendEvents(t, warehouseTest, sendEventsMap)
-		testhelper.SendIntegratedEvents(t, warehouseTest, sendEventsMap)
-
-		testhelper.VerifyEventsInStagingFiles(t, warehouseTest, testhelper.StagingFilesEventsMap())
-		testhelper.VerifyEventsInLoadFiles(t, warehouseTest, testhelper.LoadFilesEventsMap())
-		testhelper.VerifyEventsInTableUploads(t, warehouseTest, testhelper.TableUploadsEventsMap())
-
-		// Scenario 2
-		warehouseTest.TimestampBeforeSendingEvents = timeutil.Now()
-		warehouseTest.UserId = testhelper.GetUserId(warehouseutils.AZURE_DATALAKE)
-
-		sendEventsMap = testhelper.SendEventsMap()
-		testhelper.SendModifiedEvents(t, warehouseTest, sendEventsMap)
-		testhelper.SendModifiedEvents(t, warehouseTest, sendEventsMap)
-		testhelper.SendModifiedEvents(t, warehouseTest, sendEventsMap)
-		testhelper.SendIntegratedEvents(t, warehouseTest, sendEventsMap)
-
-		testhelper.VerifyEventsInStagingFiles(t, warehouseTest, testhelper.StagingFilesEventsMap())
-		testhelper.VerifyEventsInLoadFiles(t, warehouseTest, testhelper.LoadFilesEventsMap())
-		testhelper.VerifyEventsInTableUploads(t, warehouseTest, testhelper.TableUploadsEventsMap())
-
-		testhelper.VerifyWorkspaceIDInStats(t)
-	})
-	t.Run("GCSDatalake", func(t *testing.T) {
-		t.Parallel()
-
-		if _, exists := os.LookupEnv(testhelper.BigqueryIntegrationTestCredentials); !exists {
-			t.Skip("Skipping GCS Datalake Test as the Test credentials does not exists.")
-		}
-
-		warehouseTest := &testhelper.WareHouseTest{
-			WriteKey:      handle.GCSDatalakeWriteKey,
-			Provider:      warehouseutils.GCS_DATALAKE,
-			SourceID:      "279L3gEKqwruNoKGZXatSVX7vIy",
-			DestinationID: "27SthahyhhqEZGHaT4NTtNPl06V",
-		}
-
-		// Scenario 1
-		warehouseTest.TimestampBeforeSendingEvents = timeutil.Now()
-		warehouseTest.UserId = testhelper.GetUserId(warehouseutils.GCS_DATALAKE)
-
-		sendEventsMap := testhelper.SendEventsMap()
-		testhelper.SendEvents(t, warehouseTest, sendEventsMap)
-		testhelper.SendEvents(t, warehouseTest, sendEventsMap)
-		testhelper.SendEvents(t, warehouseTest, sendEventsMap)
-		testhelper.SendIntegratedEvents(t, warehouseTest, sendEventsMap)
-
-		testhelper.VerifyEventsInStagingFiles(t, warehouseTest, testhelper.StagingFilesEventsMap())
-		testhelper.VerifyEventsInLoadFiles(t, warehouseTest, testhelper.LoadFilesEventsMap())
-		testhelper.VerifyEventsInTableUploads(t, warehouseTest, testhelper.TableUploadsEventsMap())
-
-		// Scenario 2
-		warehouseTest.TimestampBeforeSendingEvents = timeutil.Now()
-		warehouseTest.UserId = testhelper.GetUserId(warehouseutils.GCS_DATALAKE)
-
-		sendEventsMap = testhelper.SendEventsMap()
-		testhelper.SendModifiedEvents(t, warehouseTest, sendEventsMap)
-		testhelper.SendModifiedEvents(t, warehouseTest, sendEventsMap)
-		testhelper.SendModifiedEvents(t, warehouseTest, sendEventsMap)
-		testhelper.SendIntegratedEvents(t, warehouseTest, sendEventsMap)
-
-		testhelper.VerifyEventsInStagingFiles(t, warehouseTest, testhelper.StagingFilesEventsMap())
-		testhelper.VerifyEventsInLoadFiles(t, warehouseTest, testhelper.LoadFilesEventsMap())
-		testhelper.VerifyEventsInTableUploads(t, warehouseTest, testhelper.TableUploadsEventsMap())
-
-		testhelper.VerifyWorkspaceIDInStats(t)
-	})
+			testhelper.VerifyWorkspaceIDInStats(t)
+		})
+	}
 }
 
 func TestDatalakeConfigurationValidation(t *testing.T) {
@@ -246,10 +201,5 @@ func TestDatalakeConfigurationValidation(t *testing.T) {
 }
 
 func TestMain(m *testing.M) {
-	handle = &TestHandle{
-		S3DatalakeWriteKey:    "ZapZJHfSxUN96GTIuShnz6bv0zi",
-		GCSDatalakeWriteKey:   "9zZFfcRqr2LpwerxICilhQmMybn",
-		AZUREDatalakeWriteKey: "Hf4GTz4OiufmUqR1cq6KIeguOdC",
-	}
-	os.Exit(testhelper.Run(m, handle))
+	os.Exit(testhelper.Run(m, &TestHandle{}))
 }
