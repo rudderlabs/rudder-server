@@ -480,7 +480,7 @@ func processStagingFile(job Payload, workerIndex int) (loadFileUploadOutputs []l
 			columnType := columnInfo.Type
 			columnVal := columnInfo.Value
 
-			if columnType == "int" || columnType == "bigint" {
+			if columnType == IntDataType || columnType == BigIntDataType {
 				floatVal, ok := columnVal.(float64)
 				if !ok {
 					eventLoader.AddEmptyColumn(columnName)
@@ -492,7 +492,7 @@ func processStagingFile(job Payload, workerIndex int) (loadFileUploadOutputs []l
 			dataTypeInSchema, ok := job.UploadSchema[tableName][columnName]
 			violatedConstraints := ViolatedConstraints(job.DestinationType, &batchRouterEvent, columnName)
 			if ok && ((columnType != dataTypeInSchema) || (violatedConstraints.IsViolated)) {
-				newColumnVal, convError := HandleSchemaChange(dataTypeInSchema, columnType, columnVal)
+				newColumnVal, convError := HandleSchemaChange(SchemaType(dataTypeInSchema), SchemaType(columnType), columnVal)
 				if convError != nil || violatedConstraints.IsViolated {
 					if violatedConstraints.IsViolated {
 						eventLoader.AddColumn(columnName, job.UploadSchema[tableName][columnName], violatedConstraints.ViolatedIdentifier)

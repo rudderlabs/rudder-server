@@ -22,36 +22,48 @@ type SchemaHandleT struct {
 	uploadSchema                  warehouseutils.SchemaT
 }
 
-func HandleSchemaChange(existingDataType, currentDataType string, value any) (any, error) {
+type SchemaType string
+
+const (
+	StringDataType  = "string"
+	BooleanDataType = "boolean"
+	IntDataType     = "int"
+	BigIntDataType  = "bigint"
+	FloatDataType   = "float"
+	JSONDataType    = "json"
+	TextDataType    = "text"
+)
+
+func HandleSchemaChange(existingDataType, currentDataType SchemaType, value any) (any, error) {
 	var (
 		newColumnVal any
 		err          error
 	)
 
-	if existingDataType == "string" || existingDataType == "text" {
+	if existingDataType == StringDataType || existingDataType == TextDataType {
 		// only stringify if the previous type is non-string/text/json
-		if currentDataType != "string" && currentDataType != "text" && currentDataType != "json" {
+		if currentDataType != StringDataType && currentDataType != TextDataType && currentDataType != JSONDataType {
 			newColumnVal = fmt.Sprintf("%v", value)
 		} else {
 			newColumnVal = value
 		}
-	} else if (currentDataType == "int" || currentDataType == "bigint") && existingDataType == "float" {
+	} else if (currentDataType == IntDataType || currentDataType == BigIntDataType) && existingDataType == FloatDataType {
 		intVal, ok := value.(int)
 		if !ok {
 			err = ErrIncompatibleSchemaConv
 		} else {
 			newColumnVal = float64(intVal)
 		}
-	} else if currentDataType == "float" && (existingDataType == "int" || existingDataType == "bigint") {
+	} else if currentDataType == FloatDataType && (existingDataType == IntDataType || existingDataType == BigIntDataType) {
 		floatVal, ok := value.(float64)
 		if !ok {
 			err = ErrIncompatibleSchemaConv
 		} else {
 			newColumnVal = int(floatVal)
 		}
-	} else if existingDataType == "json" {
+	} else if existingDataType == JSONDataType {
 		var interfaceSliceSample []any
-		if currentDataType == "int" || currentDataType == "float" || currentDataType == "boolean" {
+		if currentDataType == IntDataType || currentDataType == FloatDataType || currentDataType == BooleanDataType {
 			newColumnVal = fmt.Sprintf("%v", value)
 		} else if reflect.TypeOf(value) == reflect.TypeOf(interfaceSliceSample) {
 			newColumnVal = value
