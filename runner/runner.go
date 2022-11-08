@@ -133,9 +133,6 @@ func (r *Runner) Run(ctx context.Context, args []string) int {
 		return 0
 	}
 
-	if r.releaseInfo.EnterpriseToken == "" {
-		r.releaseInfo.EnterpriseToken = os.Getenv("ENTERPRISE_TOKEN")
-	}
 	options.EnterpriseToken = r.releaseInfo.EnterpriseToken
 
 	r.application = app.New(options)
