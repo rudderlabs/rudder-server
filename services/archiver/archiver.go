@@ -29,12 +29,6 @@ func loadConfig() {
 	config.RegisterIntConfigVariable(100, &backupRowsBatchSize, true, 1, "Archiver.backupRowsBatchSize")
 }
 
-func IsArchiverObjectStorageConfigured() bool {
-	provider := config.GetString("JOBS_BACKUP_STORAGE_PROVIDER", "")
-	bucket := config.GetString("JOBS_BACKUP_BUCKET", "")
-	return provider != "" && bucket != ""
-}
-
 // ArchiveOldRecords archives records in the table with the name`tableName` and `tsColumn` provided is used as the timestamp column.
 func ArchiveOldRecords(tableName, tsColumn string, archivalTimeInDays int, dbHandle *sql.DB) {
 	stmt := fmt.Sprintf(`SELECT count(*), COALESCE(MIN(id),0), COALESCE(MAX(id),0) FROM %s WHERE %s < NOW() -INTERVAL '%d DAY'`, tableName, tsColumn, archivalTimeInDays)
@@ -48,18 +42,6 @@ func ArchiveOldRecords(tableName, tsColumn string, archivalTimeInDays int, dbHan
 	}
 	if filesCount == 0 {
 		pkgLogger.Infof(`[Archiver]: No %s records found to archive`, tableName)
-		return
-	}
-
-	// TODO: Should we skip deletion if object storage provider not configured?
-	if !IsArchiverObjectStorageConfigured() {
-		stmt = fmt.Sprintf(`DELETE FROM  %s WHERE id >= %d and id <= %d`, tableName, minID, maxID)
-		_, err = dbHandle.Exec(stmt)
-		if err != nil {
-			pkgLogger.Errorf(`[Archiver]: Error in deleting %s records: %v`, tableName, err)
-			return
-		}
-		pkgLogger.Infof(`[Archiver]: Deleted %s records %d to %d. No object storage was configured for archival`, tableName, minID, maxID)
 		return
 	}
 
