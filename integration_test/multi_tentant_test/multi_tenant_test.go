@@ -220,7 +220,7 @@ func testMultiTenantByAppType(t *testing.T, appType string) {
 
 	// Pushing valid configuration via ETCD
 	etcdReqKey := getETCDWorkspacesReqKey(releaseName, serverInstanceID, appType)
-	_, err = etcdContainer.Client.Put(ctx, etcdReqKey, `{"workspaces":"`+workspaceID+`","ack_key":"test-ack/1"}`)
+	_, err = etcdContainer.Client.Put(ctx, etcdReqKey, `{"workspaces":"`+workspaceID+`","ack_key":"test-ack-1/1"}`)
 	require.NoError(t, err)
 
 	// Checking now that the configuration has been processed and the server can start
@@ -233,7 +233,7 @@ func testMultiTenantByAppType(t *testing.T, appType string) {
 	)
 
 	select {
-	case ack := <-etcdContainer.Client.Watch(ctx, "test-ack/1"):
+	case ack := <-etcdContainer.Client.Watch(ctx, "test-ack-1/1", clientv3.WithRev(1)):
 		v, err := unmarshalWorkspaceAckValue(t, &ack)
 		require.NoError(t, err)
 		require.Equal(t, "RELOADED", v.Status)
@@ -245,7 +245,7 @@ func testMultiTenantByAppType(t *testing.T, appType string) {
 				grpc.WithBlock(), // block until the underlying connection is up
 			},
 		})
-		t.Fatalf("Timeout waiting for test-ack/1 (etcd status error: %v)", err)
+		t.Fatalf("Timeout waiting for test-ack-1/1 (etcd status error: %v)", err)
 	}
 
 	cleanupGwJobs := func() {
@@ -299,7 +299,7 @@ func testMultiTenantByAppType(t *testing.T, appType string) {
 			t.Log("Triggering degraded mode")
 
 			select {
-			case ack := <-etcdContainer.Client.Watch(ctx, "test-ack/", clientv3.WithPrefix()):
+			case ack := <-etcdContainer.Client.Watch(ctx, "test-ack/", clientv3.WithPrefix(), clientv3.WithRev(1)):
 				require.Len(t, ack.Events, 1)
 				require.Equal(t, "test-ack/normal", string(ack.Events[0].Kv.Key))
 				require.Equal(t, `{"status":"NORMAL"}`, string(ack.Events[0].Kv.Value))
@@ -321,17 +321,17 @@ func testMultiTenantByAppType(t *testing.T, appType string) {
 			serverModeReqKey := getETCDServerModeReqKey(releaseName, serverInstanceID)
 			t.Logf("Server mode ETCD key: %s", serverModeReqKey)
 
-			_, err := etcdContainer.Client.Put(ctx, serverModeReqKey, `{"mode":"DEGRADED","ack_key":"test-ack/2"}`)
+			_, err := etcdContainer.Client.Put(ctx, serverModeReqKey, `{"mode":"DEGRADED","ack_key":"test-ack-2/2"}`)
 			require.NoError(t, err)
 			t.Log("Triggering degraded mode")
 
 			select {
-			case ack := <-etcdContainer.Client.Watch(ctx, "test-ack/", clientv3.WithPrefix()):
+			case ack := <-etcdContainer.Client.Watch(ctx, "test-ack-2/", clientv3.WithPrefix(), clientv3.WithRev(1)):
 				require.Len(t, ack.Events, 1)
-				require.Equal(t, "test-ack/2", string(ack.Events[0].Kv.Key))
+				require.Equal(t, "test-ack-2/2", string(ack.Events[0].Kv.Key))
 				require.Equal(t, `{"status":"DEGRADED"}`, string(ack.Events[0].Kv.Value))
 			case <-time.After(60 * time.Second):
-				t.Fatal("Timeout waiting for server-mode test-ack")
+				t.Fatal("Timeout waiting for server-mode test-ack-2")
 			}
 
 			sendEventsToGateway(t, httpPort, writeKey)
@@ -350,17 +350,17 @@ func testMultiTenantByAppType(t *testing.T, appType string) {
 	// workspaces it is serving.
 	t.Run("empty workspaces are accepted", func(t *testing.T) {
 		_, err := etcdContainer.Client.Put(ctx,
-			etcdReqKey, `{"workspaces":"","ack_key":"test-ack/3"}`,
+			etcdReqKey, `{"workspaces":"","ack_key":"test-ack-3/3"}`,
 		)
 		require.NoError(t, err)
 		select {
-		case ack := <-etcdContainer.Client.Watch(ctx, "test-ack/3"):
+		case ack := <-etcdContainer.Client.Watch(ctx, "test-ack-3/3", clientv3.WithRev(1)):
 			v, err := unmarshalWorkspaceAckValue(t, &ack)
 			require.NoError(t, err)
 			require.Equal(t, "RELOADED", v.Status)
 			require.Equal(t, "", v.Error)
 		case <-time.After(60 * time.Second):
-			t.Fatal("Timeout waiting for test-ack/3")
+			t.Fatal("Timeout waiting for test-ack-3/3")
 		}
 	})
 }
