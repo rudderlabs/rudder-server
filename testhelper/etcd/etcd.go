@@ -23,7 +23,7 @@ type Resource struct {
 
 func Setup(pool *dockertest.Pool, cln cleaner) (*Resource, error) {
 	etcdImage := "bitnami/etcd"
-	if runtime.GOARCH != "arm64" {
+	if runtime.GOARCH == "arm64" {
 		etcdImage = "zcube/bitnami-compat-etcd"
 	}
 	container, err := pool.Run(etcdImage, "3.5", []string{

@@ -214,7 +214,6 @@ func TestMainFlow(t *testing.T) {
 	})
 
 	t.Run("kafka", func(t *testing.T) {
-
 		kafkaHost := fmt.Sprintf("localhost:%s", kafkaContainer.Port)
 
 		// Create new consumer
