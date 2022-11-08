@@ -25,7 +25,7 @@ func loadConfig() {
 func initFileManager() (filemanager.FileManager, string, error) {
 	bucket := strings.TrimSpace(config.GetString("JOBS_REPLAY_BACKUP_BUCKET", ""))
 	if bucket == "" {
-		pkgLogger.Error("[[ Replay ]] JOBS_BACKUP_BUCKET is not set")
+		pkgLogger.Error("[[ Replay ]] JOBS_REPLAY_BACKUP_BUCKET is not set")
 		panic("Bucket is not configured.")
 	}
 
