@@ -59,14 +59,14 @@ func TestGet(t *testing.T) {
 				if tt.respCode != 0 {
 					w.WriteHeader(tt.respCode)
 				}
-				time.Sleep(time.Duration(tt.serverDelay) * time.Second)
+				time.Sleep(time.Duration(tt.serverDelay) * time.Millisecond)
 				fmt.Fprintf(w, tt.respBody)
 			}))
 			defer svr.Close()
 			httpClient := &http.Client{}
 			if tt.serverDelay > 0 {
 				httpClient = &http.Client{
-					Timeout: time.Duration(tt.serverDelay) * time.Second / 2,
+					Timeout: time.Duration(tt.serverDelay) * time.Microsecond,
 				}
 			}
 			c := client.JobAPI{
