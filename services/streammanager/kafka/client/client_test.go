@@ -7,7 +7,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -31,10 +30,6 @@ var overrideArm64Check bool
 func TestMain(m *testing.M) {
 	if os.Getenv("OVERRIDE_ARM64_CHECK") == "1" {
 		overrideArm64Check = true
-	}
-	if runtime.GOARCH == "arm64" && !overrideArm64Check {
-		fmt.Println("arm64 is not supported yet")
-		os.Exit(0)
 	}
 	os.Exit(m.Run())
 }
