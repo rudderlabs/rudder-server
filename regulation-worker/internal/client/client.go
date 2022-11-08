@@ -6,8 +6,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"net"
 	"net/http"
+	"os"
 	"regexp"
 	"strconv"
 	"time"
@@ -44,13 +44,13 @@ func (j *JobAPI) Get(ctx context.Context) (model.Job, error) {
 	req.Header.Set("Content-Type", "application/json")
 
 	resp, err := j.Client.Do(req)
-	if err, ok := err.(net.Error); ok && err.Timeout() {
+	if os.IsTimeout(err) {
 		stats.Default.NewStat("regulation_manager.request_timeout", stats.CountType).Count(1)
 		return model.Job{}, model.ErrRequestTimeout
-	} else if err != nil {
+	}
+	if err != nil {
 		return model.Job{}, err
 	}
-
 	defer func() {
 		err := resp.Body.Close()
 		if err != nil {
@@ -133,10 +133,11 @@ func (j *JobAPI) UpdateStatus(ctx context.Context, status model.JobStatus, jobID
 	req.Header.Set("Content-Type", "application/json")
 
 	resp, err := j.Client.Do(req)
-	if err, ok := err.(net.Error); ok && err.Timeout() {
+	if os.IsTimeout(err) {
 		stats.Default.NewStat("regulation_manager.request_timeout", stats.CountType).Count(1)
 		return model.ErrRequestTimeout
-	} else if err != nil {
+	}
+	if err != nil {
 		return err
 	}
 	defer func() { _ = resp.Body.Close() }()

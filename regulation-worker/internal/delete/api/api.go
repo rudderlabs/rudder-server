@@ -10,8 +10,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"net"
 	"net/http"
+	"os"
 	"strings"
 
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/model"
@@ -60,7 +60,7 @@ func (api *APIManager) Delete(ctx context.Context, job model.Job, destConfig map
 
 	resp, err := api.Client.Do(req)
 	if err != nil {
-		if err, ok := err.(net.Error); ok && err.Timeout() {
+		if os.IsTimeout(err) {
 			stats.Default.NewStat("regulation_worker_delete_api_timeout", stats.CountType).Count(1)
 		}
 		return model.JobStatusFailed
