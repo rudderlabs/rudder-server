@@ -87,7 +87,7 @@ func (p *provider) updateLoop(ctx context.Context, backendConfig backendconfig.B
 
 	for ev := range ch {
 		configs := ev.Data.(map[string]backendconfig.ConfigT)
-		for _, c := range configs {
+		for workspaceId, c := range configs {
 
 			var bucket backendconfig.StorageBucket
 			var preferences backendconfig.StoragePreferences
@@ -95,7 +95,7 @@ func (p *provider) updateLoop(ctx context.Context, backendConfig backendconfig.B
 			if c.Settings.DataRetention.UseSelfStorage {
 				settings := c.Settings.DataRetention.StorageBucket
 				defaultBucket := getDefaultBucket(ctx, settings.Type)
-				bucket = overrideWithSettings(defaultBucket.Config, settings, c.WorkspaceID)
+				bucket = overrideWithSettings(defaultBucket.Config, settings, workspaceId)
 			} else {
 				bucket = getDefaultBucket(ctx, config.GetString("JOBS_BACKUP_STORAGE_PROVIDER", "S3"))
 			}
@@ -103,7 +103,7 @@ func (p *provider) updateLoop(ctx context.Context, backendConfig backendconfig.B
 			if bucket.Type != "" && len(bucket.Config) > 0 {
 				preferences = c.Settings.DataRetention.StoragePreferences
 			}
-			settings[c.WorkspaceID] = StorageSettings{
+			settings[workspaceId] = StorageSettings{
 				Bucket:      bucket,
 				Preferences: preferences,
 			}
