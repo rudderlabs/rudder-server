@@ -156,12 +156,23 @@ func (st *HandleT) storeErrorsToObjectStorage(jobs []*jobsdb.JobT) (errorJob []E
 	gzWriter := fileuploader.NewGzMultiFileWriter()
 	dumps := make(map[string]string)
 
+	errorJobs := make([]ErrorJob, 0)
+
 	for workspaceID, jobsForWorkspace := range jobsPerWorkspace {
 		preferences, err := st.fileuploader.GetStoragePreferences(workspaceID)
 		if err != nil {
-			panic(err)
+			pkgLogger.Errorf("Skipping Storing errors for workspace: %s since no storage preferences are found", workspaceID)
+			errorJobs = append(errorJobs, ErrorJob{
+				jobs: jobsForWorkspace,
+				errorOutput: StoreErrorOutputT{
+					Location: "",
+					Error:    err,
+				},
+			})
+			continue
 		}
 		if !preferences.ProcErrors {
+			pkgLogger.Infof("Skipping Storing errors for workspace: %s since ProcErrors is set to false", workspaceID)
 			continue
 		}
 		path := fmt.Sprintf("%v%v.json.gz", tmpDirPath+localTmpDirName, fmt.Sprintf("%v.%v.%v.%v.%v", time.Now().Unix(), config.GetString("INSTANCE_ID", "1"), fmt.Sprintf("%v-%v", jobs[0].JobID, jobs[len(jobs)-1].JobID), uuid, workspaceID))
@@ -188,23 +199,29 @@ func (st *HandleT) storeErrorsToObjectStorage(jobs []*jobsdb.JobT) (errorJob []E
 		}
 	}()
 
-	errorJobs := make([]ErrorJob, 0)
-
 	g, _ := errgroup.WithContext(context.Background())
 	g.SetLimit(config.GetInt("Processor.errorBackupWorkers", 100))
 	for workspaceID, filePath := range dumps {
 		wrkId := workspaceID
 		path := filePath
+		errFileUploader, err := st.fileuploader.GetFileManager(wrkId)
+		if err != nil {
+			pkgLogger.Errorf("Skipping Storing errors for workspace: %s since no file manager is found", workspaceID)
+			errorJobs = append(errorJobs, ErrorJob{
+				jobs: jobsPerWorkspace[workspaceID],
+				errorOutput: StoreErrorOutputT{
+					Location: "",
+					Error:    err,
+				},
+			})
+			continue
+		}
 		g.Go(misc.WithBugsnag(func() error {
 			outputFile, err := os.Open(path)
 			if err != nil {
 				panic(err)
 			}
 			prefixes := []string{"rudder-proc-err-logs", time.Now().Format("01-02-2006")}
-			errFileUploader, err := st.fileuploader.GetFileManager(wrkId)
-			if err != nil {
-				panic(err)
-			}
 			uploadOutput, err := errFileUploader.Upload(context.TODO(), outputFile, prefixes...)
 			errorJobs = append(errorJobs, ErrorJob{
 				jobs: jobsPerWorkspace[workspaceID],
