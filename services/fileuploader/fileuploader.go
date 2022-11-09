@@ -108,10 +108,10 @@ func (p *provider) updateLoop(ctx context.Context, backendConfig backendconfig.B
 				Preferences: preferences,
 			}
 		}
+		p.storageSettings = settings
 		p.onceInit.Do(func() {
 			close(p.init)
 		})
-		p.storageSettings = settings
 	}
 
 	p.onceInit.Do(func() {
