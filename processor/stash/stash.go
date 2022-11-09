@@ -161,7 +161,7 @@ func (st *HandleT) storeErrorsToObjectStorage(jobs []*jobsdb.JobT) (errorJob []E
 	for workspaceID, jobsForWorkspace := range jobsPerWorkspace {
 		preferences, err := st.fileuploader.GetStoragePreferences(workspaceID)
 		if err != nil {
-			pkgLogger.Errorf("Skipping Storing errors for workspace: %s since no storage preferences are found", workspaceID)
+			st.logger.Errorf("Skipping Storing errors for workspace: %s since no storage preferences are found", workspaceID)
 			errorJobs = append(errorJobs, ErrorJob{
 				jobs: jobsForWorkspace,
 				errorOutput: StoreErrorOutputT{
@@ -172,7 +172,14 @@ func (st *HandleT) storeErrorsToObjectStorage(jobs []*jobsdb.JobT) (errorJob []E
 			continue
 		}
 		if !preferences.ProcErrors {
-			pkgLogger.Infof("Skipping Storing errors for workspace: %s since ProcErrors is set to false", workspaceID)
+			st.logger.Infof("Skipping Storing errors for workspace: %s since ProcErrors is set to false", workspaceID)
+			errorJobs = append(errorJobs, ErrorJob{
+				jobs: jobsForWorkspace,
+				errorOutput: StoreErrorOutputT{
+					Location: "",
+					Error:    nil,
+				},
+			})
 			continue
 		}
 		path := fmt.Sprintf("%v%v.json.gz", tmpDirPath+localTmpDirName, fmt.Sprintf("%v.%v.%v.%v.%v", time.Now().Unix(), config.GetString("INSTANCE_ID", "1"), fmt.Sprintf("%v-%v", jobs[0].JobID, jobs[len(jobs)-1].JobID), uuid, workspaceID))
@@ -206,7 +213,7 @@ func (st *HandleT) storeErrorsToObjectStorage(jobs []*jobsdb.JobT) (errorJob []E
 		path := filePath
 		errFileUploader, err := st.fileuploader.GetFileManager(wrkId)
 		if err != nil {
-			pkgLogger.Errorf("Skipping Storing errors for workspace: %s since no file manager is found", workspaceID)
+			st.logger.Errorf("Skipping Storing errors for workspace: %s since no file manager is found", workspaceID)
 			errorJobs = append(errorJobs, ErrorJob{
 				jobs: jobsPerWorkspace[workspaceID],
 				errorOutput: StoreErrorOutputT{
