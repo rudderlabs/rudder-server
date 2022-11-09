@@ -61,6 +61,7 @@ func (p *provider) GetFileManager(workspaceID string) (filemanager.FileManager, 
 	<-p.init
 	settings, ok := p.storageSettings[workspaceID]
 	if !ok {
+		fmt.Println("Current storage settings: ", p.storageSettings)
 		return nil, fmt.Errorf("no storage settings found for workspace: %s", workspaceID)
 	}
 	return filemanager.DefaultFileManagerFactory.New(&filemanager.SettingsT{
@@ -74,6 +75,7 @@ func (p *provider) GetStoragePreferences(workspaceID string) (backendconfig.Stor
 	var prefs backendconfig.StoragePreferences
 	settings, ok := p.storageSettings[workspaceID]
 	if !ok {
+		fmt.Println("Current storage settings: ", p.storageSettings)
 		return prefs, fmt.Errorf("no storage settings found for workspace: %s", workspaceID)
 	}
 	return settings.Preferences, nil
