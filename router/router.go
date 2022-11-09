@@ -2087,10 +2087,12 @@ func (rt *HandleT) HandleOAuthDestResponse(params *HandleDestOAuthRespParamsT) (
 		}
 		workspaceID := destinationJob.JobMetadataArray[0].WorkspaceID
 		var errCatStatusCode int
-		// destErrDetailed := destErrOutput.Output
 		// Check the category
 		// Trigger the refresh endpoint/disable endpoint
 		rudderAccountID := routerutils.GetRudderAccountId(&destinationJob.Destination)
+		if strings.TrimSpace(rudderAccountID) == "" {
+			return trRespStatusCode, trRespBody
+		}
 		switch destErrOutput.AuthErrorCategory {
 		case oauth.DISABLE_DEST:
 			return rt.ExecDisableDestination(&destinationJob.Destination, workspaceID, trRespBody, rudderAccountID)
