@@ -1793,11 +1793,13 @@ func (jd *HandleT) migrateJobsInTx(ctx context.Context, tx *Tx, srcDS, destDS da
 	)
 
 	var numJobsMigrated int64
-	err := tx.QueryRowContext(
+	if err := tx.QueryRowContext(
 		ctx,
 		compactDSQuery,
-	).Scan(&numJobsMigrated)
-	if err != nil {
+	).Scan(&numJobsMigrated); err != nil {
+		return 0, err
+	}
+	if _, err := tx.Exec(fmt.Sprintf(`ANALYZE %q, %q`, destDS.JobTable, destDS.JobStatusTable)); err != nil {
 		return 0, err
 	}
 	return int(numJobsMigrated), nil
