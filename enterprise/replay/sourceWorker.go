@@ -196,6 +196,7 @@ func (worker *SourceWorkerT) replayJobsInFile(ctx context.Context, filePath stri
 				Parameters:   params,
 				CustomVal:    ev.Output[worker.getFieldIdentifier(customVal)].(string),
 				EventPayload: destEventJSON,
+				WorkspaceId: ev.Output[worker.getFieldIdentifier(workspaceID)].(string),
 			}
 			jobs = append(jobs, &job)
 		}
@@ -255,6 +256,8 @@ func (worker *SourceWorkerT) getFieldIdentifier(field string) string {
 		return "CustomVal"
 	case eventPayload:
 		return "EventPayload"
+	case workspaceID:
+		return "WorkspaceID"
 	case createdAt:
 		return "CreatedAt"
 	default:
