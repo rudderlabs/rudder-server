@@ -26,6 +26,7 @@ var (
 	isUsersTableDedupEnabled              bool
 	isDedupEnabled                        bool
 	enableDeleteByJobs                    bool
+	customPartitionsEnabledWorkspaceIDs   []string
 )
 
 type HandleT struct {
@@ -300,12 +301,12 @@ func (bq *HandleT) loadTable(tableName string, _, getLoadFileLocFromTableUploads
 
 	loadTableByAppend := func() (err error) {
 		stagingLoadTable.partitionDate = time.Now().Format("2006-01-02")
-		outputTable := tableName
+		outputTable := partitionedTable(tableName, stagingLoadTable.partitionDate)
 		// Tables created by RudderStack are ingestion-time partitioned table with pseudo column named _PARTITIONTIME. BigQuery automatically assigns rows to partitions based
 		// on the time when BigQuery ingests the data. To support custom field partitions, omitting loading into partitioned table like tableName$20191221
 		// TODO: Support custom field partition on users & identifies tables
-		if !customPartitionsEnabled {
-			outputTable = partitionedTable(tableName, stagingLoadTable.partitionDate)
+		if customPartitionsEnabled || misc.Contains(customPartitionsEnabledWorkspaceIDs, bq.warehouse.WorkspaceID) {
+			outputTable = tableName
 		}
 
 		loader := bq.db.Dataset(bq.namespace).Table(outputTable).LoaderFrom(gcsRef)
@@ -656,6 +657,7 @@ func loadConfig() {
 	config.RegisterBoolConfigVariable(false, &isUsersTableDedupEnabled, true, "Warehouse.bigquery.isUsersTableDedupEnabled") // TODO: Deprecate with respect to isDedupEnabled
 	config.RegisterBoolConfigVariable(false, &isDedupEnabled, true, "Warehouse.bigquery.isDedupEnabled")
 	config.RegisterBoolConfigVariable(false, &enableDeleteByJobs, true, "Warehouse.bigquery.enableDeleteByJobs")
+	config.RegisterStringSliceConfigVariable(nil, &customPartitionsEnabledWorkspaceIDs, true, "Warehouse.bigquery.customPartitionsEnabledWorkspaceIDs")
 }
 
 func Init() {
