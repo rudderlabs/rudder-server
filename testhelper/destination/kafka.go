@@ -3,6 +3,7 @@ package destination
 import (
 	_ "encoding/json"
 	"fmt"
+	"runtime"
 	"strconv"
 
 	_ "github.com/lib/pq"
@@ -141,9 +142,13 @@ func SetupKafka(pool *dockertest.Pool, cln cleaner, opts ...Option) (*KafkaResou
 	if err != nil {
 		return nil, err
 	}
+	zkImage := "bitnami/zookeeper"
+	if runtime.GOARCH == "arm64" {
+		zkImage = "zcube/bitnami-compat-zookeeper"
+	}
 	zookeeperPort := fmt.Sprintf("%s/tcp", strconv.Itoa(zookeeperPortInt))
 	zookeeperContainer, err := pool.RunWithOptions(&dockertest.RunOptions{
-		Repository: "bitnami/zookeeper",
+		Repository: zkImage,
 		Tag:        "latest",
 		NetworkID:  network.ID,
 		Hostname:   "zookeeper",
@@ -255,8 +260,12 @@ func SetupKafka(pool *dockertest.Pool, cln cleaner, opts ...Option) (*KafkaResou
 
 		nodeID := fmt.Sprintf("%d", i+1)
 		hostname := "kafka" + nodeID
+		kImage := "bitnami/kafka"
+		if runtime.GOARCH == "arm64" {
+			kImage = "zcube/bitnami-compat-kafka"
+		}
 		containers[i], err = pool.RunWithOptions(&dockertest.RunOptions{
-			Repository: "bitnami/kafka",
+			Repository: kImage,
 			Tag:        "latest",
 			NetworkID:  network.ID,
 			Hostname:   hostname,
