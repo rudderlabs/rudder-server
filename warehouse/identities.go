@@ -212,7 +212,7 @@ func (wh *HandleT) setupIdentityTables(warehouse warehouseutils.Warehouse) {
 	}
 
 	sqlStatement = fmt.Sprintf(`
-		CREATE INDEX IF NOT EXISTS merge_properties_index_ %[1]s ON %[1]s (
+		CREATE INDEX IF NOT EXISTS merge_properties_index_%[1]s ON %[1]s (
 		  merge_property_1_type, merge_property_1_value,
 		  merge_property_2_type, merge_property_2_value
 		);
@@ -260,7 +260,7 @@ func (wh *HandleT) setupIdentityTables(warehouse warehouseutils.Warehouse) {
 	}
 
 	sqlStatement = fmt.Sprintf(`
-		CREATE INDEX IF NOT EXISTS rudder_id_index_ %[1]s ON %[1]s (rudder_id);
+		CREATE INDEX IF NOT EXISTS rudder_id_index_%[1]s ON %[1]s (rudder_id);
 `,
 		warehouseutils.IdentityMappingsTableName(warehouse),
 	)
@@ -271,7 +271,7 @@ func (wh *HandleT) setupIdentityTables(warehouse warehouseutils.Warehouse) {
 	}
 
 	sqlStatement = fmt.Sprintf(`
-		CREATE INDEX IF NOT EXISTS merge_property_index_ %[1]s ON %[1]s (
+		CREATE INDEX IF NOT EXISTS merge_property_index_%[1]s ON %[1]s (
 		  merge_property_type, merge_property_value
 		);
 `,
