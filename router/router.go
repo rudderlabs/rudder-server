@@ -2091,42 +2091,44 @@ func (rt *HandleT) HandleOAuthDestResponse(params *HandleDestOAuthRespParamsT) (
 		// Check the category
 		// Trigger the refresh endpoint/disable endpoint
 		rudderAccountID := routerutils.GetRudderAccountId(&destinationJob.Destination)
-		switch destErrOutput.AuthErrorCategory {
-		case oauth.DISABLE_DEST:
-			return rt.ExecDisableDestination(&destinationJob.Destination, workspaceID, trRespBody, rudderAccountID)
-		case oauth.REFRESH_TOKEN:
-			var refSecret *oauth.AuthResponse
-			refTokenParams := &oauth.RefreshTokenParams{
-				Secret:          params.secret,
-				WorkspaceId:     workspaceID,
-				AccountId:       rudderAccountID,
-				DestDefName:     destinationJob.Destination.DestinationDefinition.Name,
-				EventNamePrefix: "refresh_token",
-				WorkerId:        params.workerID,
+		if strings.TrimSpace(rudderAccountID) != "" {
+			switch destErrOutput.AuthErrorCategory {
+			case oauth.DISABLE_DEST:
+				return rt.ExecDisableDestination(&destinationJob.Destination, workspaceID, trRespBody, rudderAccountID)
+			case oauth.REFRESH_TOKEN:
+				var refSecret *oauth.AuthResponse
+				refTokenParams := &oauth.RefreshTokenParams{
+					Secret:          params.secret,
+					WorkspaceId:     workspaceID,
+					AccountId:       rudderAccountID,
+					DestDefName:     destinationJob.Destination.DestinationDefinition.Name,
+					EventNamePrefix: "refresh_token",
+					WorkerId:        params.workerID,
+				}
+				errCatStatusCode, refSecret = rt.oauth.RefreshToken(refTokenParams)
+				refSec := *refSecret
+				if routerutils.IsNotEmptyString(refSec.Err) && refSec.Err == oauth.INVALID_REFRESH_TOKEN_GRANT {
+					// In-case the refresh token has been revoked, this error comes in
+					// Even trying to refresh the token also doesn't work here. Hence, this would be more ideal to Abort Events
+					// As well as to disable destination as well.
+					// Alert the user in this error as well, to check if the refresh token also has been revoked & fix it
+					disableStCd, _ := rt.ExecDisableDestination(&destinationJob.Destination, workspaceID, trRespBody, rudderAccountID)
+					stats.Default.NewTaggedStat(oauth.INVALID_REFRESH_TOKEN_GRANT, stats.CountType, stats.Tags{
+						"destinationId": destinationJob.Destination.ID,
+						"workspaceId":   refTokenParams.WorkspaceId,
+						"accountId":     refTokenParams.AccountId,
+						"destType":      refTokenParams.DestDefName,
+					}).Increment()
+					rt.logger.Errorf(`[OAuth request] Aborting the event as %v`, oauth.INVALID_REFRESH_TOKEN_GRANT)
+					return disableStCd, refSec.Err
+				}
+				// Error while refreshing the token or Has an error while refreshing or sending empty access token
+				if errCatStatusCode != http.StatusOK || routerutils.IsNotEmptyString(refSec.Err) {
+					return http.StatusTooManyRequests, refSec.Err
+				}
+				// Retry with Refreshed Token by failing with 5xx
+				return http.StatusInternalServerError, trRespBody
 			}
-			errCatStatusCode, refSecret = rt.oauth.RefreshToken(refTokenParams)
-			refSec := *refSecret
-			if routerutils.IsNotEmptyString(refSec.Err) && refSec.Err == oauth.INVALID_REFRESH_TOKEN_GRANT {
-				// In-case the refresh token has been revoked, this error comes in
-				// Even trying to refresh the token also doesn't work here. Hence, this would be more ideal to Abort Events
-				// As well as to disable destination as well.
-				// Alert the user in this error as well, to check if the refresh token also has been revoked & fix it
-				disableStCd, _ := rt.ExecDisableDestination(&destinationJob.Destination, workspaceID, trRespBody, rudderAccountID)
-				stats.Default.NewTaggedStat(oauth.INVALID_REFRESH_TOKEN_GRANT, stats.CountType, stats.Tags{
-					"destinationId": destinationJob.Destination.ID,
-					"workspaceId":   refTokenParams.WorkspaceId,
-					"accountId":     refTokenParams.AccountId,
-					"destType":      refTokenParams.DestDefName,
-				}).Increment()
-				rt.logger.Errorf(`[OAuth request] Aborting the event as %v`, oauth.INVALID_REFRESH_TOKEN_GRANT)
-				return disableStCd, refSec.Err
-			}
-			// Error while refreshing the token or Has an error while refreshing or sending empty access token
-			if errCatStatusCode != http.StatusOK || routerutils.IsNotEmptyString(refSec.Err) {
-				return http.StatusTooManyRequests, refSec.Err
-			}
-			// Retry with Refreshed Token by failing with 5xx
-			return http.StatusInternalServerError, trRespBody
 		}
 	}
 	// By default, send the status code & response from transformed response directly
