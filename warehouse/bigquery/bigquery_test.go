@@ -88,7 +88,7 @@ func TestBigQueryIntegration(t *testing.T) {
 		testhelper.SendEvents(t, warehouseTest, sendEventsMap)
 		testhelper.SendIntegratedEvents(t, warehouseTest, sendEventsMap)
 
-		testhelper.VerifyEventsInStagingFiles(t, warehouseTest, testhelper.StagingFilesEventsMap())
+		testhelper.VerifyEventsInStagingFiles(t, warehouseTest, stagingFilesEventsMap())
 		testhelper.VerifyEventsInLoadFiles(t, warehouseTest, loadFilesEventsMap())
 		testhelper.VerifyEventsInTableUploads(t, warehouseTest, tableUploadsEventsMap())
 		testhelper.VerifyEventsInWareHouse(t, warehouseTest, mergeEventsMap())
@@ -103,7 +103,7 @@ func TestBigQueryIntegration(t *testing.T) {
 		testhelper.SendModifiedEvents(t, warehouseTest, sendEventsMap)
 		testhelper.SendIntegratedEvents(t, warehouseTest, sendEventsMap)
 
-		testhelper.VerifyEventsInStagingFiles(t, warehouseTest, testhelper.StagingFilesEventsMap())
+		testhelper.VerifyEventsInStagingFiles(t, warehouseTest, stagingFilesEventsMap())
 		testhelper.VerifyEventsInLoadFiles(t, warehouseTest, loadFilesEventsMap())
 		testhelper.VerifyEventsInTableUploads(t, warehouseTest, tableUploadsEventsMap())
 		testhelper.VerifyEventsInWareHouse(t, warehouseTest, mergeEventsMap())
@@ -143,7 +143,7 @@ func TestBigQueryIntegration(t *testing.T) {
 		testhelper.SendModifiedEvents(t, warehouseTest, sendEventsMap)
 		testhelper.SendModifiedEvents(t, warehouseTest, sendEventsMap)
 
-		testhelper.VerifyEventsInStagingFiles(t, warehouseTest, testhelper.StagingFilesEventsMap())
+		testhelper.VerifyEventsInStagingFiles(t, warehouseTest, stagingFilesEventsMap())
 		testhelper.VerifyEventsInLoadFiles(t, warehouseTest, loadFilesEventsMap())
 		testhelper.VerifyEventsInTableUploads(t, warehouseTest, tableUploadsEventsMap())
 		testhelper.VerifyEventsInWareHouse(t, warehouseTest, appendEventsMap())
@@ -192,6 +192,12 @@ func tableUploadsEventsMap() testhelper.EventsCountMap {
 	eventsMap["groups"] = 1
 	eventsMap["_groups"] = 3
 	return eventsMap
+}
+
+func stagingFilesEventsMap() testhelper.EventsCountMap {
+	return testhelper.EventsCountMap{
+		"wh_staging_files": 34, // Since extra 2 merge events because of ID resolution
+	}
 }
 
 func mergeEventsMap() testhelper.EventsCountMap {
