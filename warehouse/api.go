@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/warehouse/model"
 	"github.com/rudderlabs/rudder-server/warehouse/validations"
 
 	"github.com/rudderlabs/rudder-server/config"
@@ -150,9 +151,9 @@ func (uploadsReq *UploadsReqT) validateReq() error {
 }
 
 var statusMap = map[string]string{
-	"success": ExportedData,
-	"waiting": Waiting,
-	"aborted": Aborted,
+	"success": model.ExportedData,
+	"waiting": model.Waiting,
+	"aborted": model.Aborted,
 	"failed":  "%failed%",
 }
 
@@ -290,7 +291,7 @@ func (uploadReq UploadReqT) GetWHUpload() (*proto.WHUploadResponse, error) {
 		return true
 	})
 	// do not return error on successful upload
-	if upload.Status != ExportedData {
+	if upload.Status != model.ExportedData {
 		lastFailedStatus := warehouseutils.GetLastFailedStatus(timingsObject)
 		errorPath := fmt.Sprintf("%s.errors", lastFailedStatus)
 		errs := gjson.Get(uploadError, errorPath).Array()
@@ -299,14 +300,14 @@ func (uploadReq UploadReqT) GetWHUpload() (*proto.WHUploadResponse, error) {
 		}
 	}
 	// set nextRetryTime for non-aborted failed uploads
-	if upload.Status != ExportedData && upload.Status != Aborted && nextRetryTimeStr.Valid {
+	if upload.Status != model.ExportedData && upload.Status != model.Aborted && nextRetryTimeStr.Valid {
 		if nextRetryTime, err := time.Parse(time.RFC3339, nextRetryTimeStr.String); err == nil {
 			upload.NextRetryTime = timestamppb.New(nextRetryTime)
 		}
 	}
 	// set duration as time between updatedAt and lastExec recorded timings
 	// for ongoing/retrying uploads set diff between lastExec and current time
-	if upload.Status == ExportedData || upload.Status == Aborted {
+	if upload.Status == model.ExportedData || upload.Status == model.Aborted {
 		upload.Duration = int32(updatedAt.Time.Sub(lastExecAt.Time) / time.Second)
 	} else {
 		upload.Duration = int32(timeutil.Now().Sub(lastExecAt.Time) / time.Second)
@@ -410,7 +411,7 @@ func (tableUploadReq TableUploadReqT) GetWhTableUploads() ([]*proto.WHTable, err
 			continue
 		}
 		// do not return error on successful upload
-		if tableUpload.Status == ExportedData {
+		if tableUpload.Status == model.ExportedData {
 			tableUpload.Error = ""
 		}
 		if lastExecTime.Valid {
@@ -575,7 +576,7 @@ func (uploadsReq *UploadsReqT) getUploadsFromDB(isMultiWorkspace bool, query str
 			return true
 		})
 		// set error only for failed uploads. skip for retried and then successful uploads
-		if upload.Status != ExportedData {
+		if upload.Status != model.ExportedData {
 			lastFailedStatus := warehouseutils.GetLastFailedStatus(timingsObject)
 			errorPath := fmt.Sprintf("%s.errors", lastFailedStatus)
 			errs := gjson.Get(uploadError, errorPath).Array()
@@ -584,14 +585,14 @@ func (uploadsReq *UploadsReqT) getUploadsFromDB(isMultiWorkspace bool, query str
 			}
 		}
 		// set nextRetryTime for non-aborted failed uploads
-		if upload.Status != ExportedData && upload.Status != Aborted && nextRetryTimeStr.Valid {
+		if upload.Status != model.ExportedData && upload.Status != model.Aborted && nextRetryTimeStr.Valid {
 			if nextRetryTime, err := time.Parse(time.RFC3339, nextRetryTimeStr.String); err == nil {
 				upload.NextRetryTime = timestamppb.New(nextRetryTime)
 			}
 		}
 		// set duration as time between updatedAt and lastExec recorded timings
 		// for ongoing/retrying uploads set diff between lastExec and current time
-		if upload.Status == ExportedData || upload.Status == Aborted {
+		if upload.Status == model.ExportedData || upload.Status == model.Aborted {
 			upload.Duration = int32(updatedAt.Time.Sub(lastExecAt.Time) / time.Second)
 		} else {
 			upload.Duration = int32(timeutil.Now().Sub(lastExecAt.Time) / time.Second)
