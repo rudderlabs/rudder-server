@@ -8,7 +8,6 @@ import (
 	"log"
 	"os"
 	"testing"
-	"time"
 
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 
@@ -141,11 +140,10 @@ func TestBigQueryIntegration(t *testing.T) {
 						&bigquery.TableMetadata{
 							Schema: []*bigquery.FieldSchema{{
 								Name: "timestamp",
-								Type: bigquery.DateFieldType,
+								Type: bigquery.TimestampFieldType,
 							}},
 							TimePartitioning: &bigquery.TimePartitioning{
-								Field:      "timestamp",
-								Expiration: 90 * 24 * time.Hour,
+								Field: "timestamp",
 							},
 						})
 					require.NoError(t, err)
