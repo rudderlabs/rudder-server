@@ -569,6 +569,9 @@ func (worker *workerT) workerProcess() {
 }
 
 func (worker *workerT) getThrottlingCost() (cost int64) {
+	// Config key "throttlingCost" is expected to have the eventType as the first key and the call type
+	// as the second key (e.g. track, identify, etc...) or default to apply the cost to all call types:
+	// dDT["config"]["throttlingCost"] = `{"eventType":{"default":1,"track":2,"identify":3}}`
 	for k := range worker.routerJobs {
 		tc, ok := worker.routerJobs[k].Destination.DestinationDefinition.Config["throttlingCost"].(map[string]interface{})
 		if !ok {
