@@ -106,6 +106,9 @@ func (gwHandle *GWReplayRequestHandler) fetchDumpsList(ctx context.Context) {
 	pkgLogger.Info("Fetching gw dump files list")
 	objects := make([]OrderedJobs, 0)
 
+	pkgLogger.Info("prefix: ", gwHandle.handle.prefix)
+	pkgLogger.Info("gwHandle.handle.startAfterKey: ", gwHandle.handle.startAfterKey)
+
 	iter := filemanager.IterateFilesWithPrefix(ctx,
 		gwHandle.handle.prefix,
 		gwHandle.handle.startAfterKey,
@@ -114,6 +117,7 @@ func (gwHandle *GWReplayRequestHandler) fetchDumpsList(ctx context.Context) {
 	)
 	for iter.Next() {
 		object := iter.Get()
+		pkgLogger.Info("object: ", object.Key)
 		if strings.Contains(object.Key, "gw_jobs_") {
 			// Getting rid of migrated dump files (ex: gw_jobs_1_1)
 			key := object.Key
@@ -152,6 +156,9 @@ func (gwHandle *GWReplayRequestHandler) fetchDumpsList(ctx context.Context) {
 			objects = nil
 		}
 	}
+
+	pkgLogger.Info("iterator complete")
+
 	if iter.Err() != nil {
 		panic(fmt.Errorf("Failed to iterate gw dump files with error: %w", iter.Err()))
 	}
