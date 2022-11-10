@@ -11,7 +11,7 @@ import (
 
 type goRate struct {
 	mu    sync.Mutex
-	store *cachettl.Cache
+	store *cachettl.Cache[string, *gorate.Limiter]
 }
 
 func (r *goRate) limit(key string, cost, rate, periodInSecs int64) *goRateReservation {
@@ -19,12 +19,12 @@ func (r *goRate) limit(key string, cost, rate, periodInSecs int64) *goRateReserv
 	defer r.mu.Unlock()
 
 	if r.store == nil {
-		r.store = cachettl.New()
+		r.store = cachettl.New[string, *gorate.Limiter]()
 	}
 
 	window := time.Duration(periodInSecs) * time.Second
-	l, ok := r.store.Get(key).(*gorate.Limiter)
-	if l == nil || !ok {
+	l := r.store.Get(key)
+	if l == nil {
 		l = gorate.NewLimiter(gorate.Every(window), int(rate))
 		r.store.Put(key, l, window)
 	}

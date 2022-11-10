@@ -9,39 +9,39 @@ import (
 // the root (head) node is the node with the lowest expiration time
 // the tail node (end) is the node with the highest expiration time
 // Cleanups are done on Get() calls so if Get() is never invoked then Nodes stay in-memory.
-type Cache struct {
-	root *node
+type Cache[K comparable, V any] struct {
+	root *node[K, V]
 	mu   sync.Mutex
-	m    map[string]*node
+	m    map[K]*node[K, V]
 	now  func() time.Time
 }
 
-type node struct {
-	key        string
-	value      interface{}
-	prev       *node
-	next       *node
+type node[K comparable, V any] struct {
+	key        K
+	value      V
+	prev       *node[K, V]
+	next       *node[K, V]
 	ttl        time.Duration
 	expiration time.Time
 }
 
-func (n *node) remove() {
+func (n *node[K, V]) remove() {
 	n.prev.next = n.next
 	n.next.prev = n.prev
 }
 
 // New returns a new Cache.
-func New() *Cache {
-	return &Cache{
+func New[K comparable, V any]() *Cache[K, V] {
+	return &Cache[K, V]{
 		now:  time.Now,
-		root: &node{},
-		m:    make(map[string]*node),
+		root: &node[K, V]{},
+		m:    make(map[K]*node[K, V]),
 	}
 }
 
 // Get returns the value associated with the key or nil otherwise.
 // Additionally, Get() will refresh the TTL and cleanup expired nodes.
-func (c *Cache) Get(key string) interface{} {
+func (c *Cache[K, V]) Get(key K) (zero V) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
@@ -64,12 +64,12 @@ func (c *Cache) Get(key string) interface{} {
 		c.add(n)
 		return n.value
 	}
-	return nil
+	return zero
 }
 
 // Put adds or updates an element inside the Cache.
 // The Cache will be sorted with the node with the highest expiration at the tail.
-func (c *Cache) Put(key string, value interface{}, ttl time.Duration) {
+func (c *Cache[K, V]) Put(key K, value V, ttl time.Duration) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
@@ -77,7 +77,9 @@ func (c *Cache) Put(key string, value interface{}, ttl time.Duration) {
 
 	n, ok := c.m[key]
 	if !ok {
-		n = &node{key: key, value: value, ttl: ttl, expiration: now.Add(ttl)}
+		n = &node[K, V]{
+			key: key, value: value, ttl: ttl, expiration: now.Add(ttl),
+		}
 		c.m[key] = n
 	} else {
 		n.value = value
@@ -99,7 +101,7 @@ func (c *Cache) Put(key string, value interface{}, ttl time.Duration) {
 	c.add(n)
 }
 
-func (c *Cache) add(n *node) {
+func (c *Cache[K, V]) add(n *node[K, V]) {
 	cn := c.root.prev // tail
 	for cn != nil {   // iterate from tail to root because we have expiring nodes towards the tail
 		if n.expiration.After(cn.expiration) || n.expiration.Equal(cn.expiration) {
@@ -116,7 +118,7 @@ func (c *Cache) add(n *node) {
 }
 
 // slice is used for debugging purposes only
-func (c *Cache) slice() (s []interface{}) {
+func (c *Cache[K, V]) slice() (s []V) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 

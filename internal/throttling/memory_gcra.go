@@ -15,7 +15,7 @@ const defaultMaxCASAttemptsLimit = 100
 
 type gcra struct {
 	mu    sync.Mutex
-	store *cachettl.Cache
+	store *cachettl.Cache[string, *throttled.GCRARateLimiter]
 }
 
 func (g *gcra) limit(key string, cost, burst, rate, period int64) (
@@ -39,11 +39,11 @@ func (g *gcra) getLimiter(key string, burst, rate, period int64) (*throttled.GCR
 	defer g.mu.Unlock()
 
 	if g.store == nil {
-		g.store = cachettl.New()
+		g.store = cachettl.New[string, *throttled.GCRARateLimiter]()
 	}
 
-	rl, ok := g.store.Get(key).(*throttled.GCRARateLimiter)
-	if rl == nil || !ok {
+	rl := g.store.Get(key)
+	if rl == nil {
 		store, err := memstore.New(0)
 		if err != nil {
 			return nil, fmt.Errorf("could not create store: %w", err)
