@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"regexp"
 	"strconv"
 	"time"
@@ -30,12 +31,9 @@ type JobAPI struct {
 // which is actually returned.
 func (j *JobAPI) Get(ctx context.Context) (model.Job, error) {
 	pkgLogger.Debugf("making http request to regulation manager to get new job")
-	ctx, cancel := context.WithTimeout(ctx, time.Minute)
-	defer cancel()
 
 	url := fmt.Sprintf("%s/dataplane/workspaces/%s/regulations/workerJobs", j.URLPrefix, j.WorkspaceID)
 	pkgLogger.Debugf("making GET request to URL: %v", url)
-
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		pkgLogger.Errorf("error while create new http request: %v", err)
@@ -45,10 +43,12 @@ func (j *JobAPI) Get(ctx context.Context) (model.Job, error) {
 	req.SetBasicAuth(j.WorkspaceToken, "")
 	req.Header.Set("Content-Type", "application/json")
 
-	pkgLogger.Debugf("making request: %v", req)
 	resp, err := j.Client.Do(req)
+	if os.IsTimeout(err) {
+		stats.Default.NewStat("regulation_manager.request_timeout", stats.CountType).Count(1)
+		return model.Job{}, model.ErrRequestTimeout
+	}
 	if err != nil {
-		pkgLogger.Errorf("http request failed with error: %v", err)
 		return model.Job{}, err
 	}
 	defer func() {
@@ -133,8 +133,11 @@ func (j *JobAPI) UpdateStatus(ctx context.Context, status model.JobStatus, jobID
 	req.Header.Set("Content-Type", "application/json")
 
 	resp, err := j.Client.Do(req)
+	if os.IsTimeout(err) {
+		stats.Default.NewStat("regulation_manager.request_timeout", stats.CountType).Count(1)
+		return model.ErrRequestTimeout
+	}
 	if err != nil {
-		pkgLogger.Errorf("error while making http request: %v", err)
 		return err
 	}
 	defer func() { _ = resp.Body.Close() }()
