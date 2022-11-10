@@ -31,8 +31,7 @@ var _ = Describe("TableUpload", func() {
 			pool, err := dockertest.NewPool("")
 			Expect(err).To(BeNil())
 
-			pgResource = setupWarehouseJobs(pool, GinkgoT(), cleanup)
-
+			pgResource = setupWarehouseJobs(pool, GinkgoT())
 			initWarehouse()
 
 			err = setupDB(context.TODO(), getConnectionString())
