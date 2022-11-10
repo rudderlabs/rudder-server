@@ -54,7 +54,7 @@ type Client struct {
 func New(destinationID string, opts ...Option) *Client {
 	var c Client
 	for _, opt := range opts {
-		opt.apply(&c)
+		opt(&c)
 	}
 	if c.logger == nil {
 		c.logger = logger.NewLogger().Child("router").Child("throttler")
