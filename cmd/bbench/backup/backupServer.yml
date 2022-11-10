@@ -27,7 +27,6 @@ spec:
         volumeMounts:
         - mountPath: /tmp
           name: backup-tmp
-        restartPolicy: OnFailure
       volumes:
       - name: backup-tmp
         emptyDir:

@@ -1,13 +1,13 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: badgerbackupclient5
+  name: badgerbackupclient
 spec:
   ttlSecondsAfterFinished: 86400
   template:
     spec:
       containers:
-      - name: badgerbackupclient5
+      - name: badgerbackupclient
         image: "rudderstack/develop-rudder-server-enterprise:exp.badgerBackupBench"
         imagePullPolicy: Always
         env:

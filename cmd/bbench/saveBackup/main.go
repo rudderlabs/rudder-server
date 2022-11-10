@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/rudderlabs/rudder-server/config"
-	suppression "github.com/rudderlabs/rudder-server/enterprise/suppress-user"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 )
 
@@ -15,11 +14,6 @@ import (
 // 2. Restore by reading from the backup file retrieved from the HTTP server
 func main() {
 	log := logger.NewLogger().Child("main")
-	repo, err := suppression.NewBadgerRepository("/tmp/badgerdb", logger.NOP)
-	if err != nil {
-		log.Fatal("failed to start badger repository", err)
-		os.Exit(1)
-	}
 	start := time.Now()
 	serverURL := config.GetString("BACKUP_URL", "http://localhost:8080/backup.badger")
 	log.Info(`fetching backup file from `, serverURL)
@@ -36,16 +30,16 @@ func main() {
 		os.Exit(1)
 	}
 	defer backupFile.Close()
-	n, err := io.Copy(backupFile, resp.Body)
+	_, err = io.Copy(backupFile, resp.Body)
 	if err != nil {
 		log.Fatal("failed to copy backup file", err)
 		os.Exit(1)
 	}
-	log.Infof(`copied %d bytes to backup file`, n)
-	err = repo.Restore(resp.Body)
+	fileInfo, err := backupFile.Stat()
 	if err != nil {
-		log.Fatal("failed to restore from backup file", err)
+		log.Fatal(`failed to get backup file info`, err)
 		os.Exit(1)
 	}
-	log.Infof("restore completed in %f seconds", time.Since(start).Seconds())
+	log.Infof(`copied %d MB to backup file`, fileInfo.Size()/1024/1024)
+	log.Infof("fetch and copy completed in %f seconds", time.Since(start).Seconds())
 }

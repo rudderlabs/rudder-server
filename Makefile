@@ -52,6 +52,7 @@ endif
 	$(GO) build -o build/regulation-worker ./regulation-worker/cmd/
 	$(GO) build -o build/bbench/backup ./cmd/bbench/backup/
 	$(GO) build -o build/bbench/restore ./cmd/bbench/restore/
+	$(GO) build -o build/bbench/saveBackup ./cmd/bbench/saveBackup/
 
 run: ## Run rudder-server using go run
 	$(GO) run main.go
