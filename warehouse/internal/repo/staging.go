@@ -227,8 +227,7 @@ func (repo *StagingFiles) parseRows(rows *sql.Rows) ([]warehouse.StagingFileT, e
 func (repo *StagingFiles) GetByID(ctx context.Context, ID int64) (warehouse.StagingFileT, error) {
 	repo.init()
 
-	query :=
-		`SELECT ` + tableColumns + ` FROM ` + tableName + ` ST
+	query := `SELECT ` + tableColumns + ` FROM ` + tableName + ` ST
 		WHERE
 			id = $1`
 
@@ -252,8 +251,7 @@ func (repo *StagingFiles) GetByID(ctx context.Context, ID int64) (warehouse.Stag
 func (repo *StagingFiles) GetInRange(ctx context.Context, sourceID, destinationID string, startID, endID int64) ([]warehouse.StagingFileT, error) {
 	repo.init()
 
-	query :=
-		`SELECT ` + tableColumns + ` FROM ` + tableName + ` ST
+	query := `SELECT ` + tableColumns + ` FROM ` + tableName + ` ST
 	WHERE
 		id >= $1 AND id <= $2
 		AND source_id = $3

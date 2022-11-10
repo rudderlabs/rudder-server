@@ -43,7 +43,7 @@ func loadFile(t *testing.T, path string) string {
 	return string(b)
 }
 
-func filterPayload(text string, match string) string {
+func filterPayload(text, match string) string {
 	output := ""
 	for _, line := range strings.Split(text, "\n") {
 		if !strings.Contains(line, match) {
@@ -52,6 +52,7 @@ func filterPayload(text string, match string) string {
 	}
 	return output
 }
+
 func TestAPI_Process(t *testing.T) {
 	body := loadFile(t, "./testdata/process_request.json")
 	expectedStagingFile := warehouse.StagingFileT{

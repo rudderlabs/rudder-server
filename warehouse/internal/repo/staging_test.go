@@ -143,7 +143,6 @@ func TestStagingFileRepo(t *testing.T) {
 }
 
 func TestStagingFileRepo_Many(t *testing.T) {
-
 	ctx := context.Background()
 
 	now := time.Now().Truncate(time.Second).UTC()

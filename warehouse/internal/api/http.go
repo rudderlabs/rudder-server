@@ -1,11 +1,11 @@
 package api
 
 import (
-	jsoniter "github.com/json-iterator/go"
-
 	"fmt"
 	"net/http"
 	"time"
+
+	jsoniter "github.com/json-iterator/go"
 
 	"github.com/gorilla/mux"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
