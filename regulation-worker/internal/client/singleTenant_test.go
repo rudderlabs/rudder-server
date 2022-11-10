@@ -20,6 +20,7 @@ func TestGet(t *testing.T) {
 	tests := []struct {
 		name                      string
 		workspaceID               string
+		namespaceID               string
 		respBody                  string
 		respCode                  int
 		expectedErr               error
@@ -30,6 +31,7 @@ func TestGet(t *testing.T) {
 		{
 			name:                      "Get request to get job: successful",
 			workspaceID:               "1001",
+			namespaceID:               "1001",
 			respBody:                  `{"jobId":"1","destinationId":"23","userAttributes":[{"userId":"1","phone":"555-555-5555"},{"userId":"2","email":"john@example.com"},{"userId":"3","randomKey":"randomValue"}]}`,
 			respCode:                  200,
 			expectedUsrAttributeCount: 3,
@@ -37,18 +39,21 @@ func TestGet(t *testing.T) {
 		{
 			name:        "Get request to get job: NoRunnableJob found",
 			workspaceID: "1001",
-			respCode:    404,
+			namespaceID: "1001",
+			respCode:    204,
 			expectedErr: model.ErrNoRunnableJob,
 		},
 		{
 			name:        "Get request to get job: random error",
 			workspaceID: "1001",
+			namespaceID: "1001",
 			respCode:    429,
 			expectedErr: fmt.Errorf("unexpected response code: 429"),
 		},
 		{
 			name:        "Get request to get model.ErrRequestTimeout",
 			workspaceID: "1001",
+			namespaceID: "1001",
 			expectedErr: model.ErrRequestTimeout,
 			serverDelay: 1,
 		},
@@ -69,15 +74,25 @@ func TestGet(t *testing.T) {
 					Timeout: time.Duration(tt.serverDelay) * time.Microsecond,
 				}
 			}
-			c := client.JobAPI{
+			singleTenantClient := client.SingleTenantJobAPI{
 				Client:      httpClient,
 				WorkspaceID: tt.workspaceID,
 				URLPrefix:   svr.URL,
 			}
-			job, err := c.Get(context.Background())
+			job1, err := singleTenantClient.Get(context.Background())
 			require.Equal(t, tt.expectedErr, err)
-			require.Equal(t, tt.expectedUsrAttributeCount, len(job.Users), "no of users different than expected")
-			t.Log("actual job:", job)
+			require.Equal(t, tt.expectedUsrAttributeCount, len(job1.Users), "no of users different than expected")
+			t.Log("actual job:", job1)
+
+			multiTenantClient := client.MultiTenantJobAPI{
+				Client:      httpClient,
+				NamespaceID: tt.workspaceID,
+				URLPrefix:   svr.URL,
+			}
+			job2, err := multiTenantClient.Get(context.Background())
+			require.Equal(t, tt.expectedErr, err)
+			require.Equal(t, tt.expectedUsrAttributeCount, len(job2.Users), "no of users different than expected")
+			t.Log("actual job:", job2)
 		})
 	}
 }
@@ -87,6 +102,7 @@ func TestUpdateStatus(t *testing.T) {
 	tests := []struct {
 		name            string
 		workspaceID     string
+		namespaceID     string
 		status          model.JobStatus
 		jobID           int
 		expectedReqBody string
@@ -96,6 +112,7 @@ func TestUpdateStatus(t *testing.T) {
 		{
 			name:            "update status request: successful",
 			workspaceID:     "1001",
+			namespaceID:     "1001",
 			status:          model.JobStatusComplete,
 			jobID:           1,
 			expectedReqBody: `{"status":"complete"}`,
@@ -104,6 +121,7 @@ func TestUpdateStatus(t *testing.T) {
 		{
 			name:            "update status request: returns error",
 			workspaceID:     "1001",
+			namespaceID:     "1001",
 			status:          model.JobStatusComplete,
 			jobID:           1,
 			expectedReqBody: `{"status":"complete"}`,
@@ -120,12 +138,21 @@ func TestUpdateStatus(t *testing.T) {
 			}))
 			defer svr.Close()
 
-			c := client.JobAPI{
+			singleTenantClient := client.SingleTenantJobAPI{
 				Client:      &http.Client{},
 				URLPrefix:   svr.URL,
 				WorkspaceID: tt.workspaceID,
 			}
-			err := c.UpdateStatus(context.Background(), tt.status, tt.jobID)
+			err := singleTenantClient.UpdateStatus(context.Background(), tt.status, tt.jobID)
+			require.Equal(t, tt.expectedErr, err)
+			require.Equal(t, tt.expectedReqBody, string(body), "actual request body different than expected")
+
+			multiTenantClient := client.MultiTenantJobAPI{
+				Client:      &http.Client{},
+				URLPrefix:   svr.URL,
+				NamespaceID: tt.namespaceID,
+			}
+			err = multiTenantClient.UpdateStatus(context.Background(), tt.status, tt.jobID)
 			require.Equal(t, tt.expectedErr, err)
 			require.Equal(t, tt.expectedReqBody, string(body), "actual request body different than expected")
 		})

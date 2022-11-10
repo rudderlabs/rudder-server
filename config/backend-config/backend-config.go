@@ -63,7 +63,7 @@ type workspaceConfig interface {
 	SetUp() error
 	// Deprecated: use Identity() instead.
 	AccessToken() string
-	Get(context.Context, string) (map[string]ConfigT, error)
+	Get(context.Context) (map[string]ConfigT, error)
 	Identity() identity.Identifier
 }
 
@@ -169,7 +169,7 @@ func (bc *backendConfigImpl) configUpdate(ctx context.Context, workspaces string
 		}
 	}()
 
-	sourceJSON, err = bc.workspaceConfig.Get(ctx, workspaces)
+	sourceJSON, err = bc.workspaceConfig.Get(ctx)
 	if err != nil {
 		statConfigBackendError.Increment()
 		pkgLogger.Warnf("Error fetching config from backend: %v", err)

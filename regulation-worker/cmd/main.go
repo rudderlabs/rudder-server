@@ -25,6 +25,7 @@ import (
 	"github.com/rudderlabs/rudder-server/services/oauth"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
+	"github.com/rudderlabs/rudder-server/utils/types/deployment"
 )
 
 var pkgLogger = logger.NewLogger().Child("regulation-worker")
@@ -47,31 +48,29 @@ func main() {
 		cancel()
 		close(c)
 	}()
-	Run(ctx)
+	err := misc.WithBugsnag(func() error {
+		return Run(ctx)
+	})()
+	if err != nil {
+		panic(err)
+	}
 }
 
-func Run(ctx context.Context) {
+func Run(ctx context.Context) error {
 	admin.Init()
+
 	if err := backendconfig.Setup(nil); err != nil {
-		panic(fmt.Errorf("error while setting up backend config: %v", err))
+		return fmt.Errorf("error while setting up backend config: %v", err)
 	}
+
+	// the above backendconfig.Setup() sets `DefaultBackendConfig` variable to `namespaceConfig` or `singleWorkspaceConfig` based on `DEPLOYMENT_TYPE` env.
 	dest := &destination.DestMiddleware{
 		Dest: backendconfig.DefaultBackendConfig,
-	}
-	workspaceId, err := dest.GetWorkspaceId(ctx)
-	if err != nil {
-		panic(fmt.Errorf("error while getting workspaceId: %w", err))
 	}
 	// setting up oauth
 	OAuth := oauth.NewOAuthErrorHandler(backendconfig.DefaultBackendConfig, oauth.WithRudderFlow(oauth.RudderFlow_Delete))
 
 	svc := service.JobSvc{
-		API: &client.JobAPI{
-			Client:         &http.Client{Timeout: config.GetDuration("HttpClient.regulationWorker.regulationManager.timeout", 60, time.Second)},
-			URLPrefix:      config.MustGetString("CONFIG_BACKEND_URL"),
-			WorkspaceToken: config.MustGetString("CONFIG_BACKEND_TOKEN"),
-			WorkspaceID:    workspaceId,
-		},
 		DestDetail: dest,
 		Deleter: delete.NewRouter(
 			&kvstore.KVDeleteManager{},
@@ -87,15 +86,36 @@ func Run(ctx context.Context) {
 			}),
 	}
 
+	managerClient := &http.Client{Timeout: config.GetDuration("HttpClient.regulationWorker.regulationManager.timeout", 60, time.Second)}
+	urlPrefix := config.MustGetString("CONFIG_BACKEND_URL")
+	deploymentType := config.GetString("DEPLOYMENT_TYPE", string(deployment.DedicatedType))
+	if deploymentType == string(deployment.MultiTenantType) {
+		svc.API = &client.MultiTenantJobAPI{
+			Client:         managerClient,
+			URLPrefix:      urlPrefix,
+			NamespaceID:    config.MustGetString("NAMESPACE"),
+			NamespaceToken: config.MustGetString("WORKSPACE_NAMESPACE"),
+		}
+	} else {
+		workspaceId, err := dest.GetWorkspaceId(ctx)
+		if err != nil {
+			return fmt.Errorf("error while getting workspaceId: %w", err)
+		}
+		svc.API = &client.SingleTenantJobAPI{
+			Client:         managerClient,
+			URLPrefix:      urlPrefix,
+			WorkspaceToken: config.MustGetString("CONFIG_BACKEND_TOKEN"),
+			WorkspaceID:    workspaceId,
+		}
+	}
+
 	pkgLogger.Infof("calling looper with service: %v", svc)
 	l := withLoop(svc)
-	err = misc.WithBugsnag(func() error {
-		return l.Loop(ctx)
-	})()
+	err := l.Loop(ctx)
 	if err != nil && !errors.Is(err, context.Canceled) {
-		pkgLogger.Errorf("error: %v", err)
-		panic(err)
+		return fmt.Errorf("error while running looper: %w", err)
 	}
+	return nil
 }
 
 func withLoop(svc service.JobSvc) *service.Looper {

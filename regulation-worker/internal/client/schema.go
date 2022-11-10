@@ -1,7 +1,14 @@
 package client
 
-type jobSchema struct {
+type singleTenantJobSchema struct {
 	JobID          string                 `json:"jobId"`
+	DestinationID  string                 `json:"destinationId"`
+	UserAttributes []userAttributesSchema `json:"userAttributes"`
+}
+
+type multiTenantJobSchema struct {
+	JobID          string                 `json:"jobId"`
+	WorkspaceID    string                 `json:"workspaceId"`
 	DestinationID  string                 `json:"destinationId"`
 	UserAttributes []userAttributesSchema `json:"userAttributes"`
 }

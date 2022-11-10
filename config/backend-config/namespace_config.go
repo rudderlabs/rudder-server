@@ -69,13 +69,13 @@ func (nc *namespaceConfig) SetUp() (err error) {
 	return nil
 }
 
-// Get returns sources from the workspace
-func (nc *namespaceConfig) Get(ctx context.Context, workspaces string) (map[string]ConfigT, error) {
-	return nc.getFromAPI(ctx, workspaces)
+// Get returns config for all the workspaces in the namespace
+func (nc *namespaceConfig) Get(ctx context.Context) (map[string]ConfigT, error) {
+	return nc.getFromAPI(ctx)
 }
 
 // getFromApi gets the workspace config from api
-func (nc *namespaceConfig) getFromAPI(ctx context.Context, _ string) (map[string]ConfigT, error) {
+func (nc *namespaceConfig) getFromAPI(ctx context.Context) (map[string]ConfigT, error) {
 	config := make(map[string]ConfigT)
 	if nc.namespace == "" {
 		return config, fmt.Errorf("namespace is not configured")
