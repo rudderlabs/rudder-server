@@ -2,8 +2,9 @@ package config
 
 import (
 	"fmt"
-	"reflect"
 	"time"
+
+	"golang.org/x/exp/slices"
 
 	"github.com/fsnotify/fsnotify"
 	"github.com/joho/godotenv"
@@ -175,7 +176,7 @@ func (c *Config) checkAndHotReloadConfig(configMap map[string][]*configValue) {
 				if !isSet {
 					_value = configVal.defaultValue.([]string)
 				}
-				if !reflect.DeepEqual(_value, *value) {
+				if slices.Compare(_value, *value) != 0 {
 					fmt.Printf("The value of key:%s & variable:%p changed from %v to %v\n", key, configVal, *value, _value)
 					*value = _value
 				}
