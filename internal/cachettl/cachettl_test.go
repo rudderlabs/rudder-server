@@ -14,32 +14,26 @@ func TestCacheTTL(t *testing.T) {
 	c.now = func() time.Time { return now }
 
 	// nothing done so far, we expect the cache to be empty
-	require.Nil(t, c.Get("one"))
 	require.Nil(t, c.slice())
 
 	// insert the very first value
 	c.Put("two", "222", 2)
-	require.Equal(t, "222", c.Get("two"))
 	require.Equal(t, []interface{}{"222"}, c.slice())
 
 	// insert the second value with an expiration higher than the first one
 	c.Put("three", "333", 3)
-	require.Equal(t, "333", c.Get("three"))
 	require.Equal(t, []interface{}{"222", "333"}, c.slice())
 
 	// insert the third value with an expiration lower than all other values
 	c.Put("one", "111", 1)
-	require.Equal(t, "111", c.Get("one"))
 	require.Equal(t, []interface{}{"111", "222", "333"}, c.slice())
 
 	// update "111" to have a higher expiration than all values
 	c.Put("one", "111", 4)
-	require.Equal(t, "111", c.Get("one"))
 	require.Equal(t, []interface{}{"222", "333", "111"}, c.slice())
 
 	// update "333" to have a higher expiration than all values
 	c.Put("three", "333", 5)
-	require.Equal(t, "333", c.Get("three"))
 	require.Equal(t, []interface{}{"222", "111", "333"}, c.slice())
 
 	// move time forward to expire "222"
@@ -70,4 +64,25 @@ func TestCacheTTL(t *testing.T) {
 	require.Nil(t, c.Get("last")) // trigger the cleanup
 	require.Nil(t, c.slice())
 	require.Len(t, c.m, 0)
+}
+
+func TestRefreshTTL(t *testing.T) {
+	c := New()
+
+	// nothing done so far, we expect the cache to be empty
+	require.Nil(t, c.slice())
+
+	c.Put("one", "111", time.Second)
+	c.Put("two", "222", time.Second)
+	c.Put("three", "333", time.Second)
+	require.Equal(t, []interface{}{"111", "222", "333"}, c.slice())
+
+	require.Equal(t, "111", c.Get("one"))
+	require.Equal(t, []interface{}{"222", "333", "111"}, c.slice())
+
+	require.Equal(t, "222", c.Get("two"))
+	require.Equal(t, []interface{}{"333", "111", "222"}, c.slice())
+
+	require.Equal(t, "333", c.Get("three"))
+	require.Equal(t, []interface{}{"111", "222", "333"}, c.slice())
 }

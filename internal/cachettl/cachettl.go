@@ -21,6 +21,7 @@ type node struct {
 	value      interface{}
 	prev       *node
 	next       *node
+	ttl        time.Duration
 	expiration time.Time
 }
 
@@ -39,7 +40,7 @@ func New() *Cache {
 }
 
 // Get returns the value associated with the key or nil otherwise.
-// Additionally, Get() will cleanup expired nodes.
+// Additionally, Get() will refresh the TTL and cleanup expired nodes.
 func (c *Cache) Get(key string) interface{} {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -58,6 +59,9 @@ func (c *Cache) Get(key string) interface{} {
 	}()
 
 	if n, ok := c.m[key]; ok && n.expiration.After(c.now()) {
+		n.remove()
+		n.expiration = c.now().Add(n.ttl) // refresh TTL
+		c.add(n)
 		return n.value
 	}
 	return nil
@@ -73,7 +77,7 @@ func (c *Cache) Put(key string, value interface{}, ttl time.Duration) {
 
 	n, ok := c.m[key]
 	if !ok {
-		n = &node{key: key, value: value, expiration: now.Add(ttl)}
+		n = &node{key: key, value: value, ttl: ttl, expiration: now.Add(ttl)}
 		c.m[key] = n
 	} else {
 		n.value = value
@@ -92,6 +96,10 @@ func (c *Cache) Put(key string, value interface{}, ttl time.Duration) {
 		n.remove()
 	}
 
+	c.add(n)
+}
+
+func (c *Cache) add(n *node) {
 	cn := c.root.prev // tail
 	for cn != nil {   // iterate from tail to root because we have expiring nodes towards the tail
 		if n.expiration.After(cn.expiration) || n.expiration.Equal(cn.expiration) {
