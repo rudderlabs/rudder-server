@@ -4,6 +4,7 @@ package service
 // TODO: appropriate status var update and handling via model.status
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/cenkalti/backoff"
@@ -40,7 +41,6 @@ func (js *JobSvc) JobSvc(ctx context.Context) error {
 	pkgLogger.Debugf("making API request to get job")
 	job, err := js.API.Get(ctx)
 	if err != nil {
-		pkgLogger.Warnf("error while getting job: %v", err)
 		return err
 	}
 
@@ -48,13 +48,14 @@ func (js *JobSvc) JobSvc(ctx context.Context) error {
 	status := model.JobStatusRunning
 	err = js.updateStatus(ctx, status, job.ID)
 	if err != nil {
-		return err
+		return fmt.Errorf("error while updating job status: %v", err)
 	}
 	// executing deletion
 	destDetail, err := js.DestDetail.GetDestDetails(ctx, job.DestinationID, job.WorkspaceID)
 	if err != nil {
 		pkgLogger.Errorf("error while getting destination details: %v", err)
 		if err == model.ErrInvalidDestination {
+			stats.Default.NewSampledTaggedStat("regulation_worker.invalid_destination", stats.CountType, stats.Tags{"workspace_id": job.WorkspaceID, "destination_id": job.DestinationID}).Count(1)
 			return js.updateStatus(ctx, model.JobStatusAborted, job.ID)
 		}
 		return js.updateStatus(ctx, model.JobStatusFailed, job.ID)

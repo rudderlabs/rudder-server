@@ -223,8 +223,8 @@ func getJob(w http.ResponseWriter, _ *http.Request) {
 			return
 		}
 	}
-	// for the time when testData is not initialized.
-	w.WriteHeader(404)
+	// for the time when testData is not initialized, to replicate the scenario of no job found.
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func updateJobStatus(w http.ResponseWriter, r *http.Request) {
