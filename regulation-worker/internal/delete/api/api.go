@@ -42,10 +42,21 @@ func (api *APIManager) Delete(ctx context.Context, job model.Job, destDetail mod
 	bodySchema := mapJobToPayload(job, strings.ToLower(destDetail.Name), destDetail.Config)
 	pkgLogger.Debugf("payload: %#v", bodySchema)
 
+	reqBody, err := json.Marshal(bodySchema)
+	if err != nil {
+		return model.JobStatusFailed
+	}
+
+	req, err := http.NewRequestWithContext(ctx, method, url, bytes.NewReader(reqBody))
+	if err != nil {
+		return model.JobStatusFailed
+	}
+	req.Header.Set("Content-Type", "application/json")
+
 	var tokenStatusCode int
 	var accountSecretInfo *oauth.AuthResponse
 	// identifier to know if the destination supports OAuth for regulation-api
-	rudderUserDeleteAccountId, delAccountIdExists := destDetail.Config["rudderUserDeleteAccountId"]
+	rudderUserDeleteAccountId, delAccountIdExists := destDetail.Config["rudderDeleteAccountId"]
 	if delAccountIdExists {
 		// Fetch Token call
 		// Get Access Token Information to send it as part of the event
@@ -59,29 +70,15 @@ func (api *APIManager) Delete(ctx context.Context, job model.Job, destDetail mod
 		if tokenStatusCode != http.StatusOK {
 			pkgLogger.Errorf(`[%s][FetchToken] Error in Token Fetch statusCode: %d\t error: %s\n`, destDetail.Name, tokenStatusCode, accountSecretInfo.Err)
 		}
-	} else {
-		pkgLogger.Errorf("[%v] Destination probably doesn't support OAuth or some issue happened while doing OAuth for deletion [Enabled: %v]", destDetail.Name, delAccountIdExists)
-	}
-
-	reqBody, err := json.Marshal(bodySchema)
-	if err != nil {
-		return model.JobStatusFailed
-	}
-
-	req, err := http.NewRequestWithContext(ctx, method, url, bytes.NewReader(reqBody))
-	if err != nil {
-		return model.JobStatusFailed
-	}
-	req.Header.Set("Content-Type", "application/json")
-
-	// setting oauth related information
-	if delAccountIdExists {
+		// setting oauth related information
 		payload, marshalErr := json.Marshal(accountSecretInfo.Account)
 		if marshalErr != nil {
 			pkgLogger.Errorf("error while marshalling account secret information: %v", marshalErr)
 			return model.JobStatusFailed
 		}
 		req.Header.Set("X-Rudder-Dest-Info", string(payload))
+	} else {
+		pkgLogger.Errorf("[%v] Destination probably doesn't support OAuth or some issue happened while doing OAuth for deletion [Enabled: %v]", destDetail.Name, delAccountIdExists)
 	}
 
 	fileCleaningTime := stats.Default.NewTaggedStat("file_cleaning_time", stats.TimerType, stats.Tags{
