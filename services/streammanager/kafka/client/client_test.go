@@ -7,7 +7,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -31,10 +30,6 @@ var overrideArm64Check bool
 func TestMain(m *testing.M) {
 	if os.Getenv("OVERRIDE_ARM64_CHECK") == "1" {
 		overrideArm64Check = true
-	}
-	if runtime.GOARCH == "arm64" && !overrideArm64Check {
-		fmt.Println("arm64 is not supported yet")
-		os.Exit(0)
 	}
 	os.Exit(m.Run())
 }
@@ -126,7 +121,7 @@ func TestProducerBatchConsumerGroup(t *testing.T) {
 		producerConf.Logger = &testLogger{t}
 		producerConf.ErrorLogger = producerConf.Logger
 	}
-	p, err := c.NewProducer(t.Name(), producerConf)
+	p, err := c.NewProducer(producerConf)
 	require.NoError(t, err)
 	publishMessages(ctx, t, p, noOfMessages)
 	messagesWaitGroup.Add(noOfMessages)
@@ -257,7 +252,7 @@ func TestConsumer_Partition(t *testing.T) {
 		producerConf.Logger = &testLogger{t}
 		producerConf.ErrorLogger = producerConf.Logger
 	}
-	p, err := c.NewProducer(t.Name(), producerConf)
+	p, err := c.NewProducer(producerConf)
 	require.NoError(t, err)
 	publishMessages(ctx, t, p, noOfMessages)
 	messagesWaitGroup.Add(noOfMessages)
@@ -403,7 +398,7 @@ func TestWithSASL(t *testing.T) {
 				producerConf.Logger = &testLogger{t}
 				producerConf.ErrorLogger = producerConf.Logger
 			}
-			p, err := c.NewProducer("some-topic", producerConf)
+			p, err := c.NewProducer(producerConf)
 			require.NoError(t, err)
 			t.Cleanup(func() {
 				ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -418,6 +413,7 @@ func TestWithSASL(t *testing.T) {
 				err := p.Publish(context.Background(), Message{
 					Key:   []byte("hello"),
 					Value: []byte("ciao"),
+					Topic: "some-topic",
 				})
 				if err != nil {
 					t.Logf("Publish error: %v", err)
@@ -520,7 +516,7 @@ func TestProducer_Timeout(t *testing.T) {
 		producerConf.Logger = &testLogger{t}
 		producerConf.ErrorLogger = producerConf.Logger
 	}
-	p, err := c.NewProducer(t.Name(), producerConf)
+	p, err := c.NewProducer(producerConf)
 	require.NoError(t, err)
 	t.Cleanup(func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -534,6 +530,7 @@ func TestProducer_Timeout(t *testing.T) {
 	err = p.Publish(pubCtx, Message{
 		Key:   []byte("hello"),
 		Value: []byte("world"),
+		Topic: t.Name(),
 	})
 	pubCancel()
 	require.NoError(t, err)
@@ -542,6 +539,7 @@ func TestProducer_Timeout(t *testing.T) {
 	err = p.Publish(pubCtx, Message{
 		Key:   []byte("hello"),
 		Value: []byte("world"),
+		Topic: t.Name(),
 	})
 	defer pubCancel()
 	require.Error(t, err)
@@ -588,7 +586,7 @@ func TestIsProducerErrTemporary(t *testing.T) {
 		producerConf.Logger = &testLogger{t}
 		producerConf.ErrorLogger = producerConf.Logger
 	}
-	p, err := c.NewProducer("non-existent-topic", producerConf)
+	p, err := c.NewProducer(producerConf)
 	require.NoError(t, err)
 	t.Cleanup(func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -604,9 +602,11 @@ func TestIsProducerErrTemporary(t *testing.T) {
 	err = p.Publish(pubCtx, Message{
 		Key:   []byte("key-01"),
 		Value: []byte("value-01"),
+		Topic: "non-existent-topic",
 	}, Message{
 		Key:   []byte("key-02"),
 		Value: []byte("value-02"),
+		Topic: "non-existent-topic",
 	})
 	require.Truef(t, IsProducerErrTemporary(err), "Expected temporary error, got %v instead", err)
 	pubCancel()
@@ -645,13 +645,13 @@ func TestConfluentAzureCloud(t *testing.T) {
 		producerConf.ErrorLogger = producerConf.Logger
 	}
 	p, err := c.NewProducer(
-		t.Name(), // the topic needs to be created beforehand via the ConfluentCloud admin panel
 		producerConf,
 	)
 	require.NoError(t, err)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	err = p.Publish(ctx, Message{Key: []byte("key-01"), Value: []byte("value-01")})
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	// the topic needs to be created beforehand via the ConfluentCloud admin panel
+	err = p.Publish(ctx, Message{Key: []byte("key-01"), Value: []byte("value-01"), Topic: t.Name()})
 	cancel()
 	require.NoError(t, err)
 
@@ -689,11 +689,12 @@ func TestAzureEventHubsCloud(t *testing.T) {
 		producerConf.Logger = &testLogger{t}
 		producerConf.ErrorLogger = producerConf.Logger
 	}
-	p, err := c.NewProducer(azureEventHubName, producerConf)
+	p, err := c.NewProducer(producerConf)
 	require.NoError(t, err)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	err = p.Publish(ctx, Message{Key: []byte("key-01"), Value: []byte("value-01")})
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	err = p.Publish(ctx, Message{Key: []byte("key-01"), Value: []byte("value-01"), Topic: azureEventHubName})
+
 	cancel()
 	require.NoError(t, err)
 
@@ -722,6 +723,7 @@ func publishMessages(ctx context.Context, t *testing.T, p *Producer, noOfMessage
 		messages[i] = Message{
 			Key:   []byte(fmt.Sprintf("key-%d", i)),
 			Value: []byte(fmt.Sprintf("value-%d", i)),
+			Topic: t.Name(),
 		}
 	}
 

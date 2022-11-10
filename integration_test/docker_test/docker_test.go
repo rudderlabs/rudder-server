@@ -15,7 +15,6 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
-	"runtime"
 	"strconv"
 	"strings"
 	"syscall"
@@ -215,10 +214,6 @@ func TestMainFlow(t *testing.T) {
 	})
 
 	t.Run("kafka", func(t *testing.T) {
-		if runtime.GOARCH == "arm64" && !overrideArm64Check {
-			t.Skip("arm64 is not supported yet")
-		}
-
 		kafkaHost := fmt.Sprintf("localhost:%s", kafkaContainer.Port)
 
 		// Create new consumer
@@ -389,20 +384,18 @@ func setupMainFlow(svcCtx context.Context, t *testing.T) <-chan struct{} {
 	require.NoError(t, err)
 
 	containersGroup, containersCtx := errgroup.WithContext(context.TODO())
-	if runtime.GOARCH != "arm64" || overrideArm64Check {
-		containersGroup.Go(func() (err error) {
-			kafkaContainer, err = destination.SetupKafka(pool, t,
-				destination.WithLogger(&testLogger{logger.NewLogger().Child("kafka")}),
-				destination.WithBrokers(1),
-			)
-			if err != nil {
-				return err
-			}
-			kafkaCtx, kafkaCancel := context.WithTimeout(containersCtx, 3*time.Minute)
-			defer kafkaCancel()
-			return waitForKafka(kafkaCtx, t, kafkaContainer.Port)
-		})
-	}
+	containersGroup.Go(func() (err error) {
+		kafkaContainer, err = destination.SetupKafka(pool, t,
+			destination.WithLogger(&testLogger{logger.NewLogger().Child("kafka")}),
+			destination.WithBrokers(1),
+		)
+		if err != nil {
+			return err
+		}
+		kafkaCtx, kafkaCancel := context.WithTimeout(containersCtx, 3*time.Minute)
+		defer kafkaCancel()
+		return waitForKafka(kafkaCtx, t, kafkaContainer.Port)
+	})
 	containersGroup.Go(func() (err error) {
 		redisContainer, err = destination.SetupRedis(containersCtx, pool, t)
 		return err
@@ -462,9 +455,7 @@ func setupMainFlow(svcCtx context.Context, t *testing.T) <-chan struct{} {
 		"minioEndpoint":                minioContainer.Endpoint,
 		"minioBucketName":              minioContainer.BucketName,
 	}
-	if runtime.GOARCH != "arm64" || overrideArm64Check {
-		mapWorkspaceConfig["kafkaPort"] = kafkaContainer.Port
-	}
+	mapWorkspaceConfig["kafkaPort"] = kafkaContainer.Port
 	workspaceConfigPath := workspaceConfig.CreateTempFile(t,
 		"testdata/workspaceConfigTemplate.json",
 		mapWorkspaceConfig,

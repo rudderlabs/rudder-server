@@ -18,6 +18,7 @@ import (
 var (
 	jsonfast              = jsoniter.ConfigCompatibleWithStandardLibrary
 	destTransformURL      string
+	userTransformURL      string
 	postParametersTFields []string
 )
 
@@ -32,6 +33,7 @@ func Init() {
 
 func loadConfig() {
 	destTransformURL = config.GetString("DEST_TRANSFORM_URL", "http://localhost:9090")
+	userTransformURL = config.GetString("USER_TRANSFORM_URL", destTransformURL)
 }
 
 const (
@@ -182,7 +184,7 @@ func GetDestinationURL(destType string) string {
 
 // GetUserTransformURL returns the port of running user transform
 func GetUserTransformURL() string {
-	return destTransformURL + "/customTransform"
+	return userTransformURL + "/customTransform"
 }
 
 // GetTrackingPlanValidationURL returns the port of running tracking plan validation

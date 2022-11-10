@@ -1,0 +1,241 @@
+package stash
+
+import (
+	"bufio"
+	"compress/gzip"
+	"context"
+	"os"
+	"strconv"
+	"testing"
+	"time"
+
+	uuid "github.com/gofrs/uuid"
+	"github.com/ory/dockertest/v3"
+	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
+	"github.com/rudderlabs/rudder-server/jobsdb"
+	"github.com/rudderlabs/rudder-server/services/filemanager"
+	"github.com/rudderlabs/rudder-server/services/fileuploader"
+	"github.com/rudderlabs/rudder-server/testhelper"
+	"github.com/rudderlabs/rudder-server/testhelper/destination"
+	"github.com/rudderlabs/rudder-server/utils/logger"
+	"github.com/stretchr/testify/require"
+	"github.com/tidwall/gjson"
+)
+
+func TestStoreErrorsToObjectStorage(t *testing.T) {
+	tmpDir := t.TempDir()
+	uniqueWorkspaces := 3
+
+	t.Setenv("RUDDER_TMPDIR", tmpDir)
+
+	// running minio container on docker
+	pool, err := dockertest.NewPool("")
+	require.NoError(t, err, "Failed to create docker pool")
+	cleanup := &testhelper.Cleanup{}
+	defer cleanup.Run()
+
+	minioResource := make([]*destination.MINIOResource, uniqueWorkspaces)
+	for i := 0; i < uniqueWorkspaces; i++ {
+		minioResource[i], err = destination.SetupMINIO(pool, cleanup)
+		require.NoError(t, err)
+	}
+
+	storageSettings := map[string]fileuploader.StorageSettings{
+		"defaultWorkspaceID-1": {
+			Bucket: backendconfig.StorageBucket{
+				Type: "MINIO",
+				Config: map[string]interface{}{
+					"bucketName":      minioResource[0].BucketName,
+					"prefix":          prefix,
+					"endPoint":        minioResource[0].Endpoint,
+					"accessKeyID":     minioResource[0].AccessKey,
+					"secretAccessKey": minioResource[0].SecretKey,
+				},
+			},
+			Preferences: backendconfig.StoragePreferences{
+				ProcErrors: true,
+			},
+		},
+		"defaultWorkspaceID-2": {
+			Bucket: backendconfig.StorageBucket{
+				Type: "MINIO",
+				Config: map[string]interface{}{
+					"bucketName":      minioResource[1].BucketName,
+					"prefix":          prefix,
+					"endPoint":        minioResource[1].Endpoint,
+					"accessKeyID":     minioResource[1].AccessKey,
+					"secretAccessKey": minioResource[1].SecretKey,
+				},
+			},
+			Preferences: backendconfig.StoragePreferences{
+				ProcErrors: true,
+			},
+		},
+		"defaultWorkspaceID-3": {
+			Bucket: backendconfig.StorageBucket{
+				Type: "MINIO",
+				Config: map[string]interface{}{
+					"bucketName":      minioResource[2].BucketName,
+					"prefix":          prefix,
+					"endPoint":        minioResource[2].Endpoint,
+					"accessKeyID":     minioResource[2].AccessKey,
+					"secretAccessKey": minioResource[2].SecretKey,
+				},
+			},
+			Preferences: backendconfig.StoragePreferences{
+				ProcErrors: true,
+			},
+		},
+		"defaultWorkspaceID-4": {
+			Bucket: backendconfig.StorageBucket{
+				Type: "MINIO",
+				Config: map[string]interface{}{
+					"bucketName":      minioResource[2].BucketName,
+					"prefix":          prefix,
+					"endPoint":        minioResource[2].Endpoint,
+					"accessKeyID":     minioResource[2].AccessKey,
+					"secretAccessKey": minioResource[2].SecretKey,
+				},
+			},
+			Preferences: backendconfig.StoragePreferences{
+				ProcErrors: false,
+			},
+		},
+	}
+
+	fileuploaderProvider := fileuploader.NewStaticProvider(storageSettings)
+
+	jobs := []*jobsdb.JobT{
+		{
+			WorkspaceId: "defaultWorkspaceID-1",
+		},
+		{
+			WorkspaceId: "defaultWorkspaceID-1",
+		},
+		{
+			WorkspaceId: "defaultWorkspaceID-2",
+		},
+		{
+			WorkspaceId: "defaultWorkspaceID-2",
+		},
+		{
+			WorkspaceId: "defaultWorkspaceID-2",
+		},
+		{
+			WorkspaceId: "defaultWorkspaceID-3",
+		},
+		{
+			WorkspaceId: "defaultWorkspaceID-4",
+		},
+		{
+			WorkspaceId: "defaultWorkspaceID-4",
+		},
+	}
+
+	st := New()
+	st.fileuploader = fileuploaderProvider
+	st.logger = logger.NOP
+
+	jobsCount := countJobsByWorkspace(jobs)
+
+	errJobs := st.storeErrorsToObjectStorage(jobs)
+	require.Equal(t, uniqueWorkspaces, len(errJobs))
+
+	for i := 0; i < uniqueWorkspaces; i++ {
+		workspace := "defaultWorkspaceID-" + strconv.Itoa(i+1)
+		fm, err := st.fileuploader.GetFileManager(workspace)
+		require.NoError(t, err)
+		var file []*filemanager.FileObject
+		require.Eventually(t, func() bool {
+			file, err = fm.ListFilesWithPrefix(context.Background(), "", "", 5)
+
+			if len(file) != 1 {
+				t.Log("file list: ", file, " err: ", err, "len: ", len(file))
+				fm, err = fileuploaderProvider.GetFileManager(workspace)
+				require.NoError(t, err)
+				return false
+			}
+			return true
+		}, 20*time.Second, 1*time.Second, "no backup files found in backup store: ", err)
+
+		f := downloadFile(t, fm, file[0].Key, cleanup)
+		jobsFromFile, err := readGzipJobFile(f.Name())
+		if storageSettings[workspace].Preferences.ProcErrors {
+			require.NotZero(t, jobsCount[workspace], "jobsCount for workspace: ", workspace, " is zero")
+			require.Equal(t, jobsCount[workspace], len(jobsFromFile))
+		} else {
+			require.Zero(t, jobsCount[workspace], "jobsCount for workspace: ", workspace, " is not zero")
+		}
+	}
+}
+
+func countJobsByWorkspace(jobs []*jobsdb.JobT) map[string]int {
+	count := make(map[string]int)
+	for _, job := range jobs {
+		count[job.WorkspaceId]++
+	}
+	return count
+}
+
+func readGzipJobFile(filename string) ([]*jobsdb.JobT, error) {
+	file, err := os.Open(filename)
+	if err != nil {
+		return []*jobsdb.JobT{}, err
+	}
+	defer func() { _ = file.Close() }()
+
+	gz, err := gzip.NewReader(file)
+	if err != nil {
+		return []*jobsdb.JobT{}, err
+	}
+	defer gz.Close()
+
+	sc := bufio.NewScanner(gz)
+	// default scanner buffer maxCapacity is 64K
+	// set it to higher value to avoid read stop on read size error
+	maxCapacity := 10240 * 1024 // 10MB
+	buf := make([]byte, maxCapacity)
+	sc.Buffer(buf, maxCapacity)
+
+	jobs := []*jobsdb.JobT{}
+	for sc.Scan() {
+		lineByte := sc.Bytes()
+		uuid, err := uuid.FromString("69359037-9599-48e7-b8f2-48393c019135")
+		if err != nil {
+			return []*jobsdb.JobT{}, err
+		}
+		job := &jobsdb.JobT{
+			UUID:         uuid,
+			JobID:        gjson.GetBytes(lineByte, "job_id").Int(),
+			UserID:       gjson.GetBytes(lineByte, "user_id").String(),
+			CustomVal:    gjson.GetBytes(lineByte, "custom_val").String(),
+			Parameters:   []byte(gjson.GetBytes(lineByte, "parameters").String()),
+			EventCount:   int(gjson.GetBytes(lineByte, "event_count").Int()),
+			WorkspaceId:  gjson.GetBytes(lineByte, "workspace_id").String(),
+			EventPayload: []byte(gjson.GetBytes(lineByte, "event_payload").String()),
+		}
+		jobs = append(jobs, job)
+	}
+	return jobs, nil
+}
+
+func downloadFile(t *testing.T, fm filemanager.FileManager, fileToDownload string, cleanup *testhelper.Cleanup) *os.File {
+	file, err := os.CreateTemp("", "backedupfile")
+	require.NoError(t, err, "expected no error while creating temporary file")
+
+	err = fm.Download(context.Background(), file, fileToDownload)
+	require.NoError(t, err)
+
+	// reopening the file so to reset the pointer
+	// since file.Seek(0, io.SeekStart) doesn't work
+	file.Close()
+	file, err = os.Open(file.Name())
+	require.NoError(t, err, "expected no error while reopening downloaded file")
+
+	require.NoError(t, err)
+	cleanup.Cleanup(func() {
+		_ = file.Close()
+		_ = os.Remove(file.Name())
+	})
+	return file
+}

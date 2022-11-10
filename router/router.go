@@ -1959,7 +1959,7 @@ func (rt *HandleT) Start() {
 	rt.startEnded = make(chan struct{})
 	ctx := rt.backgroundCtx
 
-	rt.backgroundGroup.Go(func() error {
+	rt.backgroundGroup.Go(misc.WithBugsnag(func() error {
 		defer close(rt.startEnded) // always close the channel
 		defer rt.stopWorkers()     // workers are started before the generatorLoop, so always stop them
 		select {
@@ -1979,7 +1979,7 @@ func (rt *HandleT) Start() {
 		}
 		rt.generatorLoop(ctx)
 		return nil
-	})
+	}))
 }
 
 func (rt *HandleT) Shutdown() {

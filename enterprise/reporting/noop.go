@@ -23,3 +23,7 @@ func (*NOOP) AddClient(_ context.Context, _ types.Config) {
 func (*NOOP) GetClient(_ string) *types.Client {
 	return nil
 }
+
+func (*NOOP) IsPIIReportingDisabled(_ string) bool {
+	return false
+}

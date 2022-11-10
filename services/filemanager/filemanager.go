@@ -161,7 +161,7 @@ func getBatchRouterTimeoutConfig(destType string) time.Duration {
 	}
 }
 
-func IterateFilesWithPrefix(ctx context.Context, startAfter, prefix string, maxItems int64, manager *FileManager) *ObjectIterator {
+func IterateFilesWithPrefix(ctx context.Context, prefix, startAfter string, maxItems int64, manager *FileManager) *ObjectIterator {
 	it := &ObjectIterator{
 		ctx:        ctx,
 		startAfter: startAfter,

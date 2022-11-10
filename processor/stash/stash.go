@@ -1,12 +1,10 @@
 package stash
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"os"
-	"path/filepath"
 	"time"
 
 	"golang.org/x/sync/errgroup"
@@ -14,12 +12,13 @@ import (
 	uuid "github.com/gofrs/uuid"
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
-	"github.com/rudderlabs/rudder-server/services/filemanager"
+	"github.com/rudderlabs/rudder-server/services/fileuploader"
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/services/transientsource"
 	"github.com/rudderlabs/rudder-server/utils/bytesize"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
+	"github.com/samber/lo"
 )
 
 var (
@@ -51,13 +50,18 @@ type StoreErrorOutputT struct {
 	Error    error
 }
 
+type ErrorJob struct {
+	jobs        []*jobsdb.JobT
+	errorOutput StoreErrorOutputT
+}
+
 type HandleT struct {
 	errorDB                   jobsdb.JobsDB
 	errProcessQ               chan []*jobsdb.JobT
-	errFileUploader           filemanager.FileManager
 	statErrDBR                stats.Measurement
 	logger                    logger.Logger
 	transientSource           transientsource.Service
+	fileuploader              fileuploader.Provider
 	jobsDBCommandTimeout      time.Duration
 	jobdDBQueryRequestTimeout time.Duration
 	jobdDBMaxRetries          int
@@ -67,11 +71,12 @@ func New() *HandleT {
 	return &HandleT{}
 }
 
-func (st *HandleT) Setup(errorDB jobsdb.JobsDB, transientSource transientsource.Service) {
+func (st *HandleT) Setup(errorDB jobsdb.JobsDB, transientSource transientsource.Service, fileuploader fileuploader.Provider) {
 	st.logger = pkgLogger
 	st.errorDB = errorDB
 	st.statErrDBR = stats.Default.NewStat("processor.err_db_read_time", stats.TimerType)
 	st.transientSource = transientSource
+	st.fileuploader = fileuploader
 	config.RegisterIntConfigVariable(3, &st.jobdDBMaxRetries, true, 1, []string{"JobsDB.Processor.MaxRetries", "JobsDB.MaxRetries"}...)
 	config.RegisterDurationConfigVariable(60, &st.jobdDBQueryRequestTimeout, true, time.Second, []string{"JobsDB.Processor.QueryRequestTimeout", "JobsDB.QueryRequestTimeout"}...)
 	config.RegisterDurationConfigVariable(90, &st.jobsDBCommandTimeout, true, time.Second, []string{"JobsDB.Processor.CommandRequestTimeout", "JobsDB.CommandRequestTimeout"}...)
@@ -83,9 +88,7 @@ func (st *HandleT) crashRecover() {
 }
 
 func (st *HandleT) Start(ctx context.Context) {
-	st.setupFileUploader(ctx)
 	st.errProcessQ = make(chan []*jobsdb.JobT)
-
 	g, ctx := errgroup.WithContext(ctx)
 	g.Go(func() error {
 		st.runErrWorkers(ctx)
@@ -110,32 +113,8 @@ func sendQueryRetryStats(attempt int) {
 	stats.Default.NewTaggedStat("jobsdb_query_timeout", stats.CountType, stats.Tags{"attempt": fmt.Sprint(attempt), "module": "stash"}).Count(1)
 }
 
-func (st *HandleT) getFileUploader(ctx context.Context) filemanager.FileManager {
-	if st.errFileUploader == nil && backupEnabled() {
-		st.setupFileUploader(ctx)
-	}
-	return st.errFileUploader
-}
-
 func backupEnabled() bool {
 	return errorStashEnabled && jobsdb.IsMasterBackupEnabled()
-}
-
-func (st *HandleT) setupFileUploader(ctx context.Context) {
-	if backupEnabled() {
-		provider := config.GetString("JOBS_BACKUP_STORAGE_PROVIDER", "")
-		bucket := config.GetString("JOBS_BACKUP_BUCKET", "")
-		if provider != "" && bucket != "" {
-			var err error
-			st.errFileUploader, err = filemanager.DefaultFileManagerFactory.New(&filemanager.SettingsT{
-				Provider: provider,
-				Config:   filemanager.GetProviderConfigForBackupsFromEnv(ctx),
-			})
-			if err != nil {
-				panic(err)
-			}
-		}
-	}
 }
 
 func (st *HandleT) runErrWorkers(ctx context.Context) {
@@ -146,8 +125,10 @@ func (st *HandleT) runErrWorkers(ctx context.Context) {
 			for jobs := range st.errProcessQ {
 				uploadStat := stats.Default.NewStat("Processor.err_upload_time", stats.TimerType)
 				uploadStat.Start()
-				output := st.storeErrorsToObjectStorage(jobs)
-				st.setErrJobStatus(jobs, output)
+				errorJobs := st.storeErrorsToObjectStorage(jobs)
+				for _, errorJob := range errorJobs {
+					st.setErrJobStatus(errorJob.jobs, errorJob.errorOutput)
+				}
 				uploadStat.End()
 			}
 
@@ -158,7 +139,7 @@ func (st *HandleT) runErrWorkers(ctx context.Context) {
 	_ = g.Wait()
 }
 
-func (st *HandleT) storeErrorsToObjectStorage(jobs []*jobsdb.JobT) StoreErrorOutputT {
+func (st *HandleT) storeErrorsToObjectStorage(jobs []*jobsdb.JobT) (errorJob []ErrorJob) {
 	localTmpDirName := "/rudder-processor-errors/"
 
 	uuid := uuid.Must(uuid.NewV4())
@@ -168,46 +149,77 @@ func (st *HandleT) storeErrorsToObjectStorage(jobs []*jobsdb.JobT) StoreErrorOut
 	if err != nil {
 		panic(err)
 	}
-	path := fmt.Sprintf("%v%v.json", tmpDirPath+localTmpDirName, fmt.Sprintf("%v.%v.%v.%v", time.Now().Unix(), config.GetString("INSTANCE_ID", "1"), fmt.Sprintf("%v-%v", jobs[0].JobID, jobs[len(jobs)-1].JobID), uuid))
 
-	gzipFilePath := fmt.Sprintf(`%v.gz`, path)
-	err = os.MkdirAll(filepath.Dir(gzipFilePath), os.ModePerm)
-	if err != nil {
-		panic(err)
-	}
-	gzWriter, err := misc.CreateGZ(gzipFilePath)
-	if err != nil {
-		panic(err)
-	}
-	defer os.Remove(gzipFilePath)
+	jobsPerWorkspace := lo.GroupBy(jobs, func(job *jobsdb.JobT) string {
+		return job.WorkspaceId
+	})
+	gzWriter := fileuploader.NewGzMultiFileWriter()
+	dumps := make(map[string]string)
 
-	var contentSlice [][]byte
-	for _, job := range jobs {
-		rawJob, err := json.Marshal(job)
+	for workspaceID, jobsForWorkspace := range jobsPerWorkspace {
+		preferences, err := st.fileuploader.GetStoragePreferences(workspaceID)
 		if err != nil {
 			panic(err)
 		}
-		contentSlice = append(contentSlice, rawJob)
-	}
-	content := bytes.Join(contentSlice, []byte("\n"))
-	if _, err := gzWriter.Write(content); err != nil {
-		panic(err)
-	}
-	if err := gzWriter.CloseGZ(); err != nil {
-		panic(err)
+		if !preferences.ProcErrors {
+			continue
+		}
+		path := fmt.Sprintf("%v%v.json.gz", tmpDirPath+localTmpDirName, fmt.Sprintf("%v.%v.%v.%v.%v", time.Now().Unix(), config.GetString("INSTANCE_ID", "1"), fmt.Sprintf("%v-%v", jobs[0].JobID, jobs[len(jobs)-1].JobID), uuid, workspaceID))
+		dumps[workspaceID] = path
+		newline := []byte("\n")
+		lo.ForEach(jobsForWorkspace, func(job *jobsdb.JobT, _ int) {
+			rawJob, err := json.Marshal(job)
+			if err != nil {
+				panic(err)
+			}
+			if _, err := gzWriter.Write(path, append(rawJob, newline...)); err != nil {
+				panic(err)
+			}
+		})
 	}
 
-	outputFile, err := os.Open(gzipFilePath)
+	err = gzWriter.Close()
 	if err != nil {
 		panic(err)
 	}
-	prefixes := []string{"rudder-proc-err-logs", time.Now().Format("01-02-2006")}
-	uploadOutput, err := st.errFileUploader.Upload(context.TODO(), outputFile, prefixes...)
+	defer func() {
+		for _, path := range dumps {
+			os.Remove(path)
+		}
+	}()
 
-	return StoreErrorOutputT{
-		Location: uploadOutput.Location,
-		Error:    err,
+	errorJobs := make([]ErrorJob, 0)
+
+	g, _ := errgroup.WithContext(context.Background())
+	g.SetLimit(config.GetInt("Processor.errorBackupWorkers", 100))
+	for workspaceID, filePath := range dumps {
+		wrkId := workspaceID
+		path := filePath
+		g.Go(misc.WithBugsnag(func() error {
+			outputFile, err := os.Open(path)
+			if err != nil {
+				panic(err)
+			}
+			prefixes := []string{"rudder-proc-err-logs", time.Now().Format("01-02-2006")}
+			errFileUploader, err := st.fileuploader.GetFileManager(wrkId)
+			if err != nil {
+				panic(err)
+			}
+			uploadOutput, err := errFileUploader.Upload(context.TODO(), outputFile, prefixes...)
+			errorJobs = append(errorJobs, ErrorJob{
+				jobs: jobsPerWorkspace[workspaceID],
+				errorOutput: StoreErrorOutputT{
+					Location: uploadOutput.Location,
+					Error:    err,
+				},
+			})
+			return nil
+		}))
 	}
+
+	_ = g.Wait()
+
+	return errorJobs
 }
 
 func (st *HandleT) setErrJobStatus(jobs []*jobsdb.JobT, output StoreErrorOutputT) {
@@ -298,7 +310,7 @@ func (st *HandleT) readErrJobsLoop(ctx context.Context) {
 				continue
 			}
 
-			canUpload := backupEnabled() && st.getFileUploader(ctx) != nil
+			canUpload := backupEnabled()
 
 			jobState := jobsdb.Executing.State
 

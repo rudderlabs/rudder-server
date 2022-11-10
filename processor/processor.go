@@ -35,6 +35,7 @@ import (
 	destinationdebugger "github.com/rudderlabs/rudder-server/services/debugger/destination"
 	transformationdebugger "github.com/rudderlabs/rudder-server/services/debugger/transformation"
 	"github.com/rudderlabs/rudder-server/services/dedup"
+	"github.com/rudderlabs/rudder-server/services/fileuploader"
 	"github.com/rudderlabs/rudder-server/services/multitenant"
 	"github.com/rudderlabs/rudder-server/services/rsources"
 	"github.com/rudderlabs/rudder-server/services/stats"
@@ -79,6 +80,7 @@ type HandleT struct {
 	jobdDBQueryRequestTimeout time.Duration
 	jobdDBMaxRetries          int
 	transientSources          transientsource.Service
+	fileuploader              fileuploader.Provider
 	rsourcesService           rsources.JobService
 }
 
@@ -302,7 +304,7 @@ func (proc *HandleT) Setup(
 	backendConfig backendconfig.BackendConfig, gatewayDB, routerDB jobsdb.JobsDB,
 	batchRouterDB, errorDB jobsdb.JobsDB, clearDB *bool, reporting types.ReportingI,
 	multiTenantStat multitenant.MultiTenantI, transientSources transientsource.Service,
-	rsourcesService rsources.JobService,
+	fileuploader fileuploader.Provider, rsourcesService rsources.JobService,
 ) {
 	proc.reporting = reporting
 	config.RegisterBoolConfigVariable(types.DEFAULT_REPORTING_ENABLED, &proc.reportingEnabled, false, "Reporting.enabled")
@@ -324,6 +326,7 @@ func (proc *HandleT) Setup(
 	proc.errorDB = errorDB
 
 	proc.transientSources = transientSources
+	proc.fileuploader = fileuploader
 	proc.rsourcesService = rsourcesService
 
 	// Stats
@@ -433,7 +436,7 @@ func (proc *HandleT) Start(ctx context.Context) error {
 
 	g.Go(misc.WithBugsnag(func() error {
 		st := stash.New()
-		st.Setup(proc.errorDB, proc.transientSources)
+		st.Setup(proc.errorDB, proc.transientSources, proc.fileuploader)
 		st.Start(ctx)
 		return nil
 	}))
@@ -1464,7 +1467,7 @@ func (proc *HandleT) transformations(in *transformationMessage) *storeMessage {
 
 	for srcAndDestKey, eventList := range in.groupedEvents {
 		srcAndDestKey, eventList := srcAndDestKey, eventList
-		go func() {
+		rruntime.Go(func() {
 			defer wg.Done()
 			chOut <- proc.transformSrcDest(
 				ctx,
@@ -1475,12 +1478,12 @@ func (proc *HandleT) transformations(in *transformationMessage) *storeMessage {
 				in.eventsByMessageID,
 				in.uniqueMessageIdsBySrcDestKey,
 			)
-		}()
+		})
 	}
-	go func() {
+	rruntime.Go(func() {
 		wg.Wait()
 		close(chOut)
-	}()
+	})
 
 	for o := range chOut {
 		destJobs = append(destJobs, o.destJobs...)
@@ -2406,7 +2409,7 @@ func (proc *HandleT) mainPipeline(ctx context.Context) {
 
 	chProc := make(chan subJob, bufferSize)
 	wg.Add(1)
-	go func() {
+	rruntime.Go(func() {
 		defer wg.Done()
 		defer close(chProc)
 		nextSleepTime := time.Duration(0)
@@ -2456,31 +2459,31 @@ func (proc *HandleT) mainPipeline(ctx context.Context) {
 				}
 			}
 		}
-	}()
+	})
 
 	chTrans := make(chan *transformationMessage, bufferSize)
 	wg.Add(1)
-	go func() {
+	rruntime.Go(func() {
 		defer wg.Done()
 		defer close(chTrans)
 		for jobs := range chProc {
 			chTrans <- proc.processJobsForDest(jobs, nil)
 		}
-	}()
+	})
 
 	// we need the below buffer size to ensure that `proc.Store(*mergedJob)` is not blocking rest of the Go routines.
 	chStore := make(chan *storeMessage, (bufferSize+1)*(maxEventsToProcess/subJobSize+1))
 	wg.Add(1)
-	go func() {
+	rruntime.Go(func() {
 		defer wg.Done()
 		defer close(chStore)
 		for msg := range chTrans {
 			chStore <- proc.transformations(msg)
 		}
-	}()
+	})
 
 	wg.Add(1)
-	go func() {
+	rruntime.Go(func() {
 		var mergedJob storeMessage
 		firstSubJob := true
 		defer wg.Done()
@@ -2508,7 +2511,7 @@ func (proc *HandleT) mainPipeline(ctx context.Context) {
 				firstSubJob = true
 			}
 		}
-	}()
+	})
 
 	wg.Wait()
 }

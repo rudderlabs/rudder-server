@@ -46,7 +46,7 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/logger"
 
 	"github.com/rudderlabs/rudder-server/config"
-	"github.com/rudderlabs/rudder-server/services/filemanager"
+	"github.com/rudderlabs/rudder-server/services/fileuploader"
 	"github.com/rudderlabs/rudder-server/services/metric"
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/misc"
@@ -424,7 +424,6 @@ type HandleT struct {
 	dsEmptyResultCache            map[dataSetT]map[string]map[string]map[string]map[string]cacheEntry // DS -> workspace -> customVal -> params -> state -> cacheEntry
 	dsCacheLock                   sync.Mutex
 	BackupSettings                *backupSettings
-	jobsFileUploader              filemanager.FileManager
 	statTableCount                stats.Measurement
 	statPreDropTableCount         stats.Measurement
 	statDSCount                   stats.Measurement
@@ -451,6 +450,7 @@ type HandleT struct {
 	backgroundGroup               *errgroup.Group
 	maxBackupRetryTime            time.Duration
 	preBackupHandlers             []prebackup.Handler
+	fileUploaderProvider          fileuploader.Provider
 	// skipSetupDBSetup is useful for testing as we mock the database client
 	// TODO: Remove this flag once we have test setup that uses real database
 	skipSetupDBSetup bool
@@ -720,6 +720,12 @@ func WithDSLimit(limit *int) OptsFunc {
 	}
 }
 
+func WithFileUploaderProvider(fileUploaderProvider fileuploader.Provider) OptsFunc {
+	return func(jd *HandleT) {
+		jd.fileUploaderProvider = fileUploaderProvider
+	}
+}
+
 func NewForRead(tablePrefix string, opts ...OptsFunc) *HandleT {
 	return newOwnerType(Read, tablePrefix, opts...)
 }
@@ -755,13 +761,14 @@ multiple users of JobsDB
 */
 func (jd *HandleT) Setup(
 	ownerType OwnerType, clearAll bool, tablePrefix string,
-	registerStatusHandler bool, preBackupHandlers []prebackup.Handler,
+	registerStatusHandler bool, preBackupHandlers []prebackup.Handler, fileUploaderProvider fileuploader.Provider,
 ) error {
 	jd.ownerType = ownerType
 	jd.clearAll = clearAll
 	jd.tablePrefix = tablePrefix
 	jd.registerStatusHandler = registerStatusHandler
 	jd.preBackupHandlers = preBackupHandlers
+	jd.fileUploaderProvider = fileUploaderProvider
 	jd.init()
 	return jd.Start()
 }
@@ -915,12 +922,6 @@ func (jd *HandleT) setUpForOwnerType(ctx context.Context, ownerType OwnerType, c
 }
 
 func (jd *HandleT) startBackupDSLoop(ctx context.Context) {
-	var err error
-	jd.jobsFileUploader, err = jd.getBackupFileUploader(ctx)
-	if err != nil {
-		jd.logger.Errorf("failed to get a file uploader for %s", jd.tablePrefix)
-		return
-	}
 	jd.backgroundGroup.Go(misc.WithBugsnag(func() error {
 		jd.backupDSLoop(ctx)
 		return nil

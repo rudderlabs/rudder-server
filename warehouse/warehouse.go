@@ -31,6 +31,7 @@ import (
 	"github.com/rudderlabs/rudder-server/services/controlplane/features"
 	"github.com/rudderlabs/rudder-server/services/db"
 	destinationdebugger "github.com/rudderlabs/rudder-server/services/debugger/destination"
+	"github.com/rudderlabs/rudder-server/services/filemanager"
 	"github.com/rudderlabs/rudder-server/services/pgnotifier"
 	migrator "github.com/rudderlabs/rudder-server/services/sql-migrator"
 	"github.com/rudderlabs/rudder-server/services/stats"
@@ -38,12 +39,14 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/httputil"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
-	"github.com/rudderlabs/rudder-server/utils/pubsub"
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
 	"github.com/rudderlabs/rudder-server/utils/types"
+	"github.com/rudderlabs/rudder-server/warehouse/archive"
 	"github.com/rudderlabs/rudder-server/warehouse/deltalake"
 	"github.com/rudderlabs/rudder-server/warehouse/jobs"
 	"github.com/rudderlabs/rudder-server/warehouse/manager"
+	"github.com/rudderlabs/rudder-server/warehouse/model"
+	"github.com/rudderlabs/rudder-server/warehouse/multitenant"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 	"github.com/rudderlabs/rudder-server/warehouse/validations"
 )
@@ -53,6 +56,7 @@ var (
 	webPort                             int
 	dbHandle                            *sql.DB
 	notifier                            pgnotifier.PgNotifierT
+	tenantManager                       *multitenant.Manager
 	noOfSlaveWorkerRoutines             int
 	uploadFreqInS                       int64
 	stagingFilesSchemaPaginationSize    int
@@ -138,6 +142,7 @@ type HandleT struct {
 	allowMultipleSourcesForJobsPickup bool
 	workspaceBySourceIDs              map[string]string
 	workspaceBySourceIDsLock          sync.RWMutex
+	tenantManager                     multitenant.Manager
 
 	backgroundCancel context.CancelFunc
 	backgroundGroup  errgroup.Group
@@ -271,12 +276,10 @@ func (*HandleT) handleUploadJob(uploadJob *UploadJobT) (err error) {
 }
 
 // Backend Config subscriber subscribes to backend-config and gets all the configurations that includes all sources, destinations and their latest values.
-func (wh *HandleT) backendConfigSubscriber() {
-	ch := backendconfig.DefaultBackendConfig.Subscribe(context.TODO(), backendconfig.TopicBackendConfig)
-	for data := range ch {
+func (wh *HandleT) backendConfigSubscriber(ctx context.Context) {
+	for config := range wh.tenantManager.WatchConfig(ctx) {
 		wh.configSubscriberLock.Lock()
 		wh.warehouses = []warehouseutils.Warehouse{}
-		config := data.Data.(map[string]backendconfig.ConfigT)
 		sourceIDsByWorkspaceLock.Lock()
 		sourceIDsByWorkspace = map[string][]string{}
 
@@ -628,7 +631,7 @@ func (wh *HandleT) initUpload(warehouse warehouseutils.Warehouse, jsonUploadsLis
 		endJSONID,
 		0,
 		0,
-		Waiting,
+		model.Waiting,
 		"{}",
 		"{}",
 		metadata,
@@ -766,7 +769,7 @@ func (wh *HandleT) deleteWaitingUploadJob(jobID int64) {
 `,
 		warehouseutils.WarehouseUploadsTable,
 		jobID,
-		Waiting,
+		model.Waiting,
 	)
 	_, err := wh.dbHandle.Exec(sqlStatement)
 	if err != nil {
@@ -801,7 +804,7 @@ func (wh *HandleT) createJobs(warehouse warehouseutils.Warehouse) (err error) {
 
 	priority := 0
 	uploadID, uploadStatus, uploadPriority := wh.getLatestUploadStatus(&warehouse)
-	if uploadStatus == Waiting {
+	if uploadStatus == model.Waiting {
 		// If it is present do nothing else delete it
 		if _, inProgress := wh.isUploadJobInProgress(warehouse, uploadID); !inProgress {
 			wh.deleteWaitingUploadJob(uploadID)
@@ -946,7 +949,7 @@ func (wh *HandleT) getUploadsToProcess(availableWorkers int, skipIdentifiers []s
 					COALESCE(metadata->>'priority', '100')::int ASC, id ASC
 				LIMIT %d;
 
-		`, partitionIdentifierSQL, warehouseutils.WarehouseUploadsTable, wh.destType, false, ExportedData, Aborted, skipIdentifiersSQL, availableWorkers)
+		`, partitionIdentifierSQL, warehouseutils.WarehouseUploadsTable, wh.destType, false, model.ExportedData, model.Aborted, skipIdentifiersSQL, availableWorkers)
 
 	var (
 		rows *sql.Rows
@@ -1054,7 +1057,7 @@ func (wh *HandleT) getUploadsToProcess(availableWorkers int, skipIdentifiers []s
 				dbHandle: wh.dbHandle,
 			}
 			err := fmt.Errorf("unable to find source : %s or destination : %s, both or the connection between them", upload.SourceID, upload.DestinationID)
-			_, _ = uploadJob.setUploadError(err, Aborted)
+			_, _ = uploadJob.setUploadError(err, model.Aborted)
 			pkgLogger.Errorf("%v", err)
 			continue
 		}
@@ -1244,8 +1247,8 @@ func (wh *HandleT) uploadStatusTrack(ctx context.Context) {
 			sqlStatementArgs := []interface{}{
 				source.ID,
 				destination.ID,
-				ExportedData,
-				Aborted,
+				model.ExportedData,
+				model.Aborted,
 				"%_failed",
 				createdAt.Time.Format(misc.RFC3339Milli),
 			}
@@ -1304,8 +1307,8 @@ func (wh *HandleT) setInterruptedDestinations() {
 `,
 		warehouseutils.WarehouseUploadsTable,
 		wh.destType,
-		getInProgressState(ExportedData),
-		getFailedState(ExportedData),
+		getInProgressState(model.ExportedData),
+		getFailedState(model.ExportedData),
 		true,
 	)
 	rows, err := wh.dbHandle.Query(sqlStatement)
@@ -1337,6 +1340,9 @@ func (wh *HandleT) Setup(whType string) {
 	wh.Enable()
 	wh.workerChannelMap = make(map[string]chan *UploadJobT)
 	wh.inProgressMap = make(map[WorkerIdentifierT][]JobIDT)
+	wh.tenantManager = multitenant.Manager{
+		BackendConfig: backendconfig.DefaultBackendConfig,
+	}
 
 	whName := warehouseutils.WHDestNameMap[whType]
 	config.RegisterIntConfigVariable(8, &wh.noOfWorkers, true, 1, fmt.Sprintf(`Warehouse.%v.noOfWorkers`, whName), "Warehouse.noOfWorkers")
@@ -1349,9 +1355,15 @@ func (wh *HandleT) Setup(whType string) {
 	wh.backgroundCancel = cancel
 	wh.backgroundWait = g.Wait
 
-	rruntime.GoForWarehouse(func() {
-		wh.backendConfigSubscriber()
-	})
+	g.Go(misc.WithBugsnagForWarehouse(func() error {
+		wh.tenantManager.Run(ctx)
+		return nil
+	}))
+
+	g.Go(misc.WithBugsnagForWarehouse(func() error {
+		wh.backendConfigSubscriber(ctx)
+		return nil
+	}))
 
 	g.Go(misc.WithBugsnagForWarehouse(func() error {
 		wh.runUploadJobAllocator(ctx)
@@ -1448,9 +1460,9 @@ func minimalConfigSubscriber() {
 
 // Gets the config from config backend and extracts enabled write keys
 func monitorDestRouters(ctx context.Context) {
-	ch := backendconfig.DefaultBackendConfig.Subscribe(ctx, backendconfig.TopicBackendConfig)
 	dstToWhRouter := make(map[string]*HandleT)
 
+	ch := tenantManager.WatchConfig(ctx)
 	for config := range ch {
 		onConfigDataEvent(config, dstToWhRouter)
 	}
@@ -1466,9 +1478,8 @@ func monitorDestRouters(ctx context.Context) {
 	g.Wait()
 }
 
-func onConfigDataEvent(data pubsub.DataEvent, dstToWhRouter map[string]*HandleT) {
-	pkgLogger.Debug("Got config from config-backend", data)
-	config := data.Data.(map[string]backendconfig.ConfigT)
+func onConfigDataEvent(config map[string]backendconfig.ConfigT, dstToWhRouter map[string]*HandleT) {
+	pkgLogger.Debug("Got config from config-backend", config)
 
 	enabledDestinations := make(map[string]bool)
 	var connectionFlags backendconfig.ConnectionFlags
@@ -1562,6 +1573,11 @@ func processHandler(w http.ResponseWriter, r *http.Request) {
 
 	var stagingFile warehouseutils.StagingFile
 	json.Unmarshal(body, &stagingFile)
+
+	if tenantManager.DegradedWorkspace(stagingFile.WorkspaceID) {
+		http.Error(w, "Workspace is degraded", http.StatusServiceUnavailable)
+		return
+	}
 
 	var firstEventAt, lastEventAt interface{}
 	firstEventAt = stagingFile.FirstEventAt
@@ -1673,6 +1689,8 @@ func pendingEventsHandler(w http.ResponseWriter, r *http.Request) {
 	// TODO : respond with errors in a common way
 	pkgLogger.LogRequest(r)
 
+	ctx := r.Context()
+
 	if r.Method != "POST" {
 		w.WriteHeader(http.StatusMethodNotAllowed)
 		return
@@ -1702,6 +1720,19 @@ func pendingEventsHandler(w http.ResponseWriter, r *http.Request) {
 	if sourceID == "" {
 		pkgLogger.Errorf("[WH]: pending-events:  Empty source id")
 		http.Error(w, "empty source id", http.StatusBadRequest)
+		return
+	}
+
+	workspaceID, err := tenantManager.SourceToWorkspace(ctx, sourceID)
+	if err != nil {
+		pkgLogger.Errorf("[WH]: Error checking if source is degraded: %v", err)
+		http.Error(w, "workspaceID from sourceID not found", http.StatusBadRequest)
+		return
+	}
+
+	if tenantManager.DegradedWorkspace(workspaceID) {
+		pkgLogger.Infof("[WH]: Workspace (id: %q) is degraded: %v", workspaceID, err)
+		http.Error(w, "workspace is in degraded mode", http.StatusServiceUnavailable)
 		return
 	}
 
@@ -1794,6 +1825,7 @@ func pendingEventsHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func getPendingStagingFileCount(sourceOrDestId string, isSourceId bool) (fileCount int64, err error) {
+	sourceOrDestId = pq.QuoteIdentifier(sourceOrDestId)
 	sourceOrDestColumn := ""
 	if isSourceId {
 		sourceOrDestColumn = "source_id"
@@ -1807,16 +1839,14 @@ func getPendingStagingFileCount(sourceOrDestId string, isSourceId bool) (fileCou
 		FROM
 		  %[1]s
 		WHERE
-		  %[1]s.%[3]s = '%[2]s';
+		  %[2]s = $1;
 `,
 		warehouseutils.WarehouseUploadsTable,
-		sourceOrDestId,
 		sourceOrDestColumn,
 	)
-
-	err = dbHandle.QueryRow(sqlStatement).Scan(&lastStagingFileIDRes)
+	err = dbHandle.QueryRow(sqlStatement, sourceOrDestId).Scan(&lastStagingFileIDRes)
 	if err != nil && err != sql.ErrNoRows {
-		err = fmt.Errorf("query: %s failed with Error : %w", sqlStatement, err)
+		err = fmt.Errorf("query: %s run failed with Error : %w", sqlStatement, err)
 		return
 	}
 	lastStagingFileID := int64(0)
@@ -1830,18 +1860,16 @@ func getPendingStagingFileCount(sourceOrDestId string, isSourceId bool) (fileCou
 		FROM
 		  %[1]s
 		WHERE
-		  %[1]s.id > %[2]v
-		  AND %[1]s.%[4]s = '%[3]s';
+		  id > %[2]v
+		  AND %[3]s = $1;
 `,
 		warehouseutils.WarehouseStagingFilesTable,
 		lastStagingFileID,
-		sourceOrDestId,
 		sourceOrDestColumn,
 	)
-
-	err = dbHandle.QueryRow(sqlStatement).Scan(&fileCount)
+	err = dbHandle.QueryRow(sqlStatement, sourceOrDestId).Scan(&fileCount)
 	if err != nil && err != sql.ErrNoRows {
-		err = fmt.Errorf("query: %s failed with Error : %w", sqlStatement, err)
+		err = fmt.Errorf("query: %s run failed with Error : %w", sqlStatement, err)
 		return
 	}
 
@@ -1860,8 +1888,8 @@ func getPendingUploadCount(filters ...warehouseutils.FilterBy) (uploadCount int6
 		  %[1]s.status NOT IN ('%[2]s', '%[3]s')
 	`,
 		warehouseutils.WarehouseUploadsTable,
-		ExportedData,
-		Aborted,
+		model.ExportedData,
+		model.Aborted,
 	)
 
 	args := make([]interface{}, 0)
@@ -1883,6 +1911,8 @@ func triggerUploadHandler(w http.ResponseWriter, r *http.Request) {
 	// TODO : respond with errors in a common way
 	pkgLogger.LogRequest(r)
 
+	ctx := r.Context()
+
 	// read body
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
@@ -1898,6 +1928,19 @@ func triggerUploadHandler(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		pkgLogger.Errorf("[WH]: Error unmarshalling body: %v", err)
 		http.Error(w, "can't unmarshall body", http.StatusBadRequest)
+		return
+	}
+
+	workspaceID, err := tenantManager.SourceToWorkspace(ctx, triggerUploadReq.SourceID)
+	if err != nil {
+		pkgLogger.Errorf("[WH]: Error checking if source is degraded: %v", err)
+		http.Error(w, "workspaceID from sourceID not found", http.StatusBadRequest)
+		return
+	}
+
+	if tenantManager.DegradedWorkspace(workspaceID) {
+		pkgLogger.Infof("[WH]: Workspace (id: %q) is degraded: %v", workspaceID, err)
+		http.Error(w, "workspace is in degraded mode", http.StatusServiceUnavailable)
 		return
 	}
 
@@ -2037,8 +2080,8 @@ func startWebHandler(ctx context.Context) error {
 			mux.HandleFunc("/v1/setConfig", setConfigHandler)
 
 			// Warehouse Async Job end-points
-			mux.HandleFunc("/v1/warehouse/jobs", asyncWh.AddWarehouseJobHandler)
-			mux.HandleFunc("/v1/warehouse/jobs/status", asyncWh.StatusWarehouseJobHandler)
+			mux.HandleFunc("/v1/warehouse/jobs", asyncWh.AddWarehouseJobHandler)           // FIXME: add degraded mode
+			mux.HandleFunc("/v1/warehouse/jobs/status", asyncWh.StatusWarehouseJobHandler) // FIXME: add degraded mode
 
 			pkgLogger.Infof("WH: Starting warehouse master service in %d", webPort)
 		} else {
@@ -2152,7 +2195,7 @@ func Start(ctx context.Context, app app.App) error {
 	workspaceIdentifier := fmt.Sprintf(`%s::%s`, config.GetKubeNamespace(), misc.GetMD5Hash(config.GetWorkspaceToken()))
 	notifier, err = pgnotifier.New(workspaceIdentifier, psqlInfo)
 	if err != nil {
-		panic(err)
+		return fmt.Errorf("cannot setup pgnotifier: %w", err)
 	}
 
 	g, ctx := errgroup.WithContext(ctx)
@@ -2200,6 +2243,16 @@ func Start(ctx context.Context, app app.App) error {
 	if isMaster() {
 		pkgLogger.Infof("[WH]: Starting warehouse master...")
 
+		backendconfig.DefaultBackendConfig.WaitForConfig(ctx)
+
+		tenantManager = &multitenant.Manager{
+			BackendConfig: backendconfig.DefaultBackendConfig,
+		}
+		g.Go(func() error {
+			tenantManager.Run(ctx)
+			return nil
+		})
+
 		g.Go(misc.WithBugsnagForWarehouse(func() error {
 			return notifier.ClearJobs(ctx)
 		}))
@@ -2207,8 +2260,16 @@ func Start(ctx context.Context, app app.App) error {
 			monitorDestRouters(ctx)
 			return nil
 		}))
+
+		archiver := &archive.Archiver{
+			DB:          dbHandle,
+			Stats:       stats.Default,
+			Logger:      pkgLogger.Child("archiver"),
+			FileManager: filemanager.DefaultFileManagerFactory,
+			Multitenant: tenantManager,
+		}
 		g.Go(misc.WithBugsnagForWarehouse(func() error {
-			runArchiver(ctx, dbHandle)
+			archive.CronArchiver(ctx, archiver)
 			return nil
 		}))
 

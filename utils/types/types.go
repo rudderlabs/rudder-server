@@ -49,6 +49,7 @@ type ReportingI interface {
 	WaitForSetup(ctx context.Context, clientName string) error
 	AddClient(ctx context.Context, c Config)
 	Report(metrics []*PUReportedMetric, txn *sql.Tx)
+	IsPIIReportingDisabled(string) bool
 }
 
 // ConfigT simple map config structure

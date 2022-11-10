@@ -66,9 +66,6 @@ func (manager *GCSManager) ListFilesWithPrefix(ctx context.Context, startAfter, 
 		return
 	}
 
-	ctx, cancel := context.WithTimeout(ctx, manager.getTimeout())
-	defer cancel()
-
 	// Create GCS Bucket handle
 	if manager.Config.Iterator == nil {
 		manager.Config.Iterator = client.Bucket(manager.Config.Bucket).Objects(ctx, &storage.Query{
