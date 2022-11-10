@@ -54,15 +54,18 @@ type LoadFileJobT struct {
 
 type StagingFileT struct {
 	ID                    int64
+	WorkspaceID           string
 	Location              string
 	SourceID              string
+	DestinationID         string
 	Schema                json.RawMessage
 	Status                string // enum
-	CreatedAt             time.Time
+	Error                 error
 	FirstEventAt          time.Time
 	LastEventAt           time.Time
 	UseRudderStorage      bool
 	DestinationRevisionID string
+	TotalEvents           int
 	// cloud sources specific info
 	SourceBatchID   string
 	SourceTaskID    string
@@ -70,6 +73,9 @@ type StagingFileT struct {
 	SourceJobID     string
 	SourceJobRunID  string
 	TimeWindow      time.Time
+
+	CreatedAt time.Time
+	UpdatedAt time.Time
 }
 
 type BatchRouterEventT struct {

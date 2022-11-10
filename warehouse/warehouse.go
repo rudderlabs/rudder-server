@@ -385,6 +385,7 @@ func (wh *HandleT) getNamespace(configI interface{}, source backendconfig.Source
 }
 
 func (wh *HandleT) getStagingFiles(warehouse warehouseutils.Warehouse, startID, endID int64) ([]*StagingFileT, error) {
+	// TODO replace with repo.GetInRange
 	sqlStatement := fmt.Sprintf(`
 		SELECT
 		  id,
