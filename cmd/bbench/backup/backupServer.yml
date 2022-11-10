@@ -16,11 +16,19 @@ spec:
     spec:
       restartPolicy: Always
       containers:
-        - name: badgerbackupserver
-          image: "rudderstack/develop-rudder-server-enterprise:exp.badgerBackupBench"
-          imagePullPolicy: Always
-          resources:
-            limits:
-              cpu: "4"
-              memory: "8G"
-          command: ["/backup"]
+      - name: badgerbackupserver
+        image: "rudderstack/develop-rudder-server-enterprise:exp.badgerBackupBench"
+        imagePullPolicy: Always
+        resources:
+          limits:
+            cpu: "4"
+            memory: "8G"
+        command: ["/backup"]
+        volumeMounts:
+        - mountPath: /tmp
+          name: backup-tmp
+        restartPolicy: OnFailure
+      volumes:
+      - name: backup-tmp
+        emptyDir:
+          sizeLimit: 10Gi

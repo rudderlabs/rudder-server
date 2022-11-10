@@ -13,4 +13,11 @@ spec:
             - name: BACKUP_URL
               value: http://localhost:8080/backup.badger
         command: ["/restore"]
+        volumeMounts:
+        - mountPath: /tmp
+          name: restore-tmp
       restartPolicy: OnFailure
+      volumes:
+      - name: restore-tmp
+        emptyDir:
+          sizeLimit: 10Gi

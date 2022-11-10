@@ -19,17 +19,17 @@ func main() {
 		log.Fatal("failed to start badger repository", err)
 		os.Exit(1)
 	}
+	start := time.Now()
 	resp, err := http.Get(config.GetString("BACKUP_URL", "http://localhost:8080/backup.badger"))
 	if err != nil {
 		log.Fatal("failed to fetch the backup file", err)
 		os.Exit(1)
 	}
 	defer resp.Body.Close()
-	now := time.Now()
 	err = repo.Restore(resp.Body)
 	if err != nil {
 		log.Fatal("failed to restore from backup file", err)
 		os.Exit(1)
 	}
-	log.Infof("restore completed in %f seconds", time.Since(now).Seconds())
+	log.Infof("restore completed in %f seconds", time.Since(start).Seconds())
 }

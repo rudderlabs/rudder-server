@@ -3,7 +3,6 @@ package main
 import (
 	"compress/gzip"
 	"fmt"
-	"math/rand"
 	"net/http"
 	"os"
 	"time"
@@ -31,7 +30,7 @@ func main() {
 	batchSize := 5000
 	populationTimer := time.Now()
 	for i := 0; i < totalSuppressions/batchSize; i++ {
-		suppressions := generateSuppressions(i*batchSize/2, batchSize/2)
+		suppressions := generateSuppressions(i*batchSize, batchSize)
 		token := []byte(fmt.Sprintf("token%d", i))
 		err := repo.Add(suppressions, token)
 		if err != nil {
@@ -75,23 +74,12 @@ func generateSuppressions(startFrom, batchSize int) []model.Suppression {
 	var res []model.Suppression
 
 	for i := startFrom; i < startFrom+batchSize; i++ {
-		var sourceIDs []string
-		wildcard := randomInt(2) == 0
-		if wildcard {
-			sourceIDs = []string{}
-		} else {
-			sourceIDs = []string{fmt.Sprintf("source%d", i), "otherSource", "anotherSource"}
-		}
 		res = append(res, model.Suppression{
-			Canceled:    randomInt(2) == 0,
-			WorkspaceID: fmt.Sprintf("workspace%d", i),
-			UserID:      fmt.Sprintf("user%d", i),
-			SourceIDs:   sourceIDs,
+			Canceled:    false,
+			WorkspaceID: "1yaBlqltp5Y4V2NK8qePowlyaaaa",
+			UserID:      fmt.Sprintf("client-%d", i),
+			SourceIDs:   []string{},
 		})
 	}
 	return res
-}
-
-func randomInt(lt int) int {
-	return rand.Int() % lt // skipcq: GSC-G404
 }
