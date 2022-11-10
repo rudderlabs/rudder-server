@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"reflect"
 
+	"github.com/rudderlabs/rudder-server/warehouse/model"
+
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
 	"github.com/rudderlabs/rudder-server/warehouse/manager"
@@ -22,48 +24,36 @@ type SchemaHandleT struct {
 	uploadSchema                  warehouseutils.SchemaT
 }
 
-type SchemaType string
-
-const (
-	StringDataType  = "string"
-	BooleanDataType = "boolean"
-	IntDataType     = "int"
-	BigIntDataType  = "bigint"
-	FloatDataType   = "float"
-	JSONDataType    = "json"
-	TextDataType    = "text"
-)
-
-func HandleSchemaChange(existingDataType, currentDataType SchemaType, value any) (any, error) {
+func HandleSchemaChange(existingDataType, currentDataType model.SchemaType, value any) (any, error) {
 	var (
 		newColumnVal any
 		err          error
 	)
 
-	if existingDataType == StringDataType || existingDataType == TextDataType {
+	if existingDataType == model.StringDataType || existingDataType == model.TextDataType {
 		// only stringify if the previous type is non-string/text/json
-		if currentDataType != StringDataType && currentDataType != TextDataType && currentDataType != JSONDataType {
+		if currentDataType != model.StringDataType && currentDataType != model.TextDataType && currentDataType != model.JSONDataType {
 			newColumnVal = fmt.Sprintf("%v", value)
 		} else {
 			newColumnVal = value
 		}
-	} else if (currentDataType == IntDataType || currentDataType == BigIntDataType) && existingDataType == FloatDataType {
+	} else if (currentDataType == model.IntDataType || currentDataType == model.BigIntDataType) && existingDataType == model.FloatDataType {
 		intVal, ok := value.(int)
 		if !ok {
 			err = ErrIncompatibleSchemaConv
 		} else {
 			newColumnVal = float64(intVal)
 		}
-	} else if currentDataType == FloatDataType && (existingDataType == IntDataType || existingDataType == BigIntDataType) {
+	} else if currentDataType == model.FloatDataType && (existingDataType == model.IntDataType || existingDataType == model.BigIntDataType) {
 		floatVal, ok := value.(float64)
 		if !ok {
 			err = ErrIncompatibleSchemaConv
 		} else {
 			newColumnVal = int(floatVal)
 		}
-	} else if existingDataType == JSONDataType {
+	} else if existingDataType == model.JSONDataType {
 		var interfaceSliceSample []any
-		if currentDataType == IntDataType || currentDataType == FloatDataType || currentDataType == BooleanDataType {
+		if currentDataType == model.IntDataType || currentDataType == model.FloatDataType || currentDataType == model.BooleanDataType {
 			newColumnVal = fmt.Sprintf("%v", value)
 		} else if reflect.TypeOf(value) == reflect.TypeOf(interfaceSliceSample) {
 			newColumnVal = value

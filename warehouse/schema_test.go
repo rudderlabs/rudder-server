@@ -5,6 +5,8 @@ package warehouse
 import (
 	"testing"
 
+	"github.com/rudderlabs/rudder-server/warehouse/model"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
@@ -259,7 +261,11 @@ func TestHandleSchemaChange(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
-			newColumnVal, convError := HandleSchemaChange(SchemaType(tc.existingDatatype), SchemaType(tc.currentDataType), tc.value)
+			newColumnVal, convError := HandleSchemaChange(
+				model.SchemaType(tc.existingDatatype),
+				model.SchemaType(tc.currentDataType),
+				tc.value,
+			)
 			require.Equal(t, newColumnVal, tc.newColumnVal)
 			require.Equal(t, convError, tc.convError)
 		})

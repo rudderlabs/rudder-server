@@ -14,6 +14,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/warehouse/model"
+
 	"github.com/gofrs/uuid"
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/services/filemanager"
@@ -480,7 +482,7 @@ func processStagingFile(job Payload, workerIndex int) (loadFileUploadOutputs []l
 			columnType := columnInfo.Type
 			columnVal := columnInfo.Value
 
-			if columnType == IntDataType || columnType == BigIntDataType {
+			if columnType == model.IntDataType || columnType == model.BigIntDataType {
 				floatVal, ok := columnVal.(float64)
 				if !ok {
 					eventLoader.AddEmptyColumn(columnName)
@@ -492,7 +494,11 @@ func processStagingFile(job Payload, workerIndex int) (loadFileUploadOutputs []l
 			dataTypeInSchema, ok := job.UploadSchema[tableName][columnName]
 			violatedConstraints := ViolatedConstraints(job.DestinationType, &batchRouterEvent, columnName)
 			if ok && ((columnType != dataTypeInSchema) || (violatedConstraints.IsViolated)) {
-				newColumnVal, convError := HandleSchemaChange(SchemaType(dataTypeInSchema), SchemaType(columnType), columnVal)
+				newColumnVal, convError := HandleSchemaChange(
+					model.SchemaType(dataTypeInSchema),
+					model.SchemaType(columnType),
+					columnVal,
+				)
 				if convError != nil || violatedConstraints.IsViolated {
 					if violatedConstraints.IsViolated {
 						eventLoader.AddColumn(columnName, job.UploadSchema[tableName][columnName], violatedConstraints.ViolatedIdentifier)
