@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"time"
@@ -12,14 +13,14 @@ import (
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
-	"github.com/rudderlabs/rudder-server/warehouse"
+	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	"github.com/rudderlabs/rudder-server/warehouse/multitenant"
 )
 
 var json = jsoniter.ConfigCompatibleWithStandardLibrary
 
 type stagingFilesRepo interface {
-	Insert(stagingFile warehouse.StagingFileT) (int64, error)
+	Insert(ctx context.Context, stagingFile model.StagingFile) (int64, error)
 }
 
 type WarehouseAPI struct {
@@ -53,33 +54,33 @@ type stagingFileSchema struct {
 	TimeWindow      time.Time
 }
 
-func mapStagingFile(payload stagingFileSchema) (warehouse.StagingFileT, error) {
+func mapStagingFile(payload stagingFileSchema) (model.StagingFile, error) {
 	if payload.WorkspaceID == "" {
-		return warehouse.StagingFileT{}, fmt.Errorf("workspaceId is required")
+		return model.StagingFile{}, fmt.Errorf("workspaceId is required")
 	}
 
 	if payload.Location == "" {
-		return warehouse.StagingFileT{}, fmt.Errorf("location is required")
+		return model.StagingFile{}, fmt.Errorf("location is required")
 	}
 
 	if payload.BatchDestination.Source.ID == "" {
-		return warehouse.StagingFileT{}, fmt.Errorf("batchDestination.source.id is required")
+		return model.StagingFile{}, fmt.Errorf("batchDestination.source.id is required")
 	}
 	if payload.BatchDestination.Destination.ID == "" {
-		return warehouse.StagingFileT{}, fmt.Errorf("batchDestination.destination.id is required")
+		return model.StagingFile{}, fmt.Errorf("batchDestination.destination.id is required")
 	}
 
 	if len(payload.Schema) == 0 {
-		return warehouse.StagingFileT{}, fmt.Errorf("schema is required")
+		return model.StagingFile{}, fmt.Errorf("schema is required")
 	}
 
 	var schema []byte
 	schema, err := json.Marshal(payload.Schema)
 	if err != nil {
-		return warehouse.StagingFileT{}, fmt.Errorf("invalid field: schema: %w", err)
+		return model.StagingFile{}, fmt.Errorf("invalid field: schema: %w", err)
 	}
 
-	return warehouse.StagingFileT{
+	return model.StagingFile{
 		WorkspaceID:           payload.WorkspaceID,
 		Location:              payload.Location,
 		SourceID:              payload.BatchDestination.Source.ID,
@@ -109,6 +110,7 @@ func (api *WarehouseAPI) Handler() http.Handler {
 func (api *WarehouseAPI) processHandler(w http.ResponseWriter, r *http.Request) {
 	api.Logger.LogRequest(r)
 
+	ctx := r.Context()
 	defer r.Body.Close()
 
 	var payload stagingFileSchema
@@ -131,7 +133,7 @@ func (api *WarehouseAPI) processHandler(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	if _, err := api.Repo.Insert(stagingFile); err != nil {
+	if _, err := api.Repo.Insert(ctx, stagingFile); err != nil {
 		api.Logger.Errorf("Error inserting staging file: %v", err)
 		http.Error(w, "can't insert staging file", http.StatusInternalServerError)
 		return

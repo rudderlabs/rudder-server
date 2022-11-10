@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
-	"github.com/rudderlabs/rudder-server/warehouse"
+	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
@@ -54,7 +54,7 @@ type metadataSchema struct {
 	DestinationRevisionID string `json:"destination_revision_id"`
 }
 
-func metadataFromStagingFile(stagingFile warehouse.StagingFileT) metadataSchema {
+func metadataFromStagingFile(stagingFile model.StagingFile) metadataSchema {
 	return metadataSchema{
 		UseRudderStorage:      stagingFile.UseRudderStorage,
 		SourceBatchID:         stagingFile.SourceBatchID,
@@ -70,7 +70,7 @@ func metadataFromStagingFile(stagingFile warehouse.StagingFileT) metadataSchema 
 	}
 }
 
-func (m *metadataSchema) SetStagingFile(stagingFile *warehouse.StagingFileT) {
+func (m *metadataSchema) SetStagingFile(stagingFile *model.StagingFile) {
 	stagingFile.UseRudderStorage = m.UseRudderStorage
 	stagingFile.SourceBatchID = m.SourceBatchID
 	stagingFile.SourceTaskID = m.SourceTaskID
@@ -96,7 +96,7 @@ func (repo *StagingFiles) init() {
 // - Error
 // - CreatedAt
 // - UpdatedAt
-func (repo *StagingFiles) Insert(ctx context.Context, stagingFile warehouse.StagingFileT) (int64, error) {
+func (repo *StagingFiles) Insert(ctx context.Context, stagingFile model.StagingFile) (int64, error) {
 	repo.init()
 
 	var (
@@ -165,11 +165,11 @@ func (repo *StagingFiles) Insert(ctx context.Context, stagingFile warehouse.Stag
 	return id, nil
 }
 
-func (repo *StagingFiles) parseRows(rows *sql.Rows) ([]warehouse.StagingFileT, error) {
-	var stagingFiles []warehouse.StagingFileT
+func (repo *StagingFiles) parseRows(rows *sql.Rows) ([]model.StagingFile, error) {
+	var stagingFiles []model.StagingFile
 	for rows.Next() {
 		var (
-			stagingFile warehouse.StagingFileT
+			stagingFile model.StagingFile
 			metadataRaw []byte
 
 			firstEventAt, lastEventAt sql.NullTime
@@ -223,32 +223,30 @@ func (repo *StagingFiles) parseRows(rows *sql.Rows) ([]warehouse.StagingFileT, e
 	return stagingFiles, nil
 }
 
-// GetInRange returns staging files in (start, end] range]
-func (repo *StagingFiles) GetByID(ctx context.Context, ID int64) (warehouse.StagingFileT, error) {
+// GetInRange returns staging file with the given ID.
+func (repo *StagingFiles) GetByID(ctx context.Context, ID int64) (model.StagingFile, error) {
 	repo.init()
 
-	query := `SELECT ` + tableColumns + ` FROM ` + tableName + ` ST
-		WHERE
-			id = $1`
+	query := `SELECT ` + tableColumns + ` FROM ` + tableName + ` WHERE id = $1`
 
 	rows, err := repo.DB.QueryContext(ctx, query, ID)
 	if err != nil {
-		return warehouse.StagingFileT{}, fmt.Errorf("querying staging files: %w", err)
+		return model.StagingFile{}, fmt.Errorf("querying staging files: %w", err)
 	}
 
 	entries, err := repo.parseRows(rows)
 	if err != nil {
-		return warehouse.StagingFileT{}, fmt.Errorf("parsing rows: %w", err)
+		return model.StagingFile{}, fmt.Errorf("parsing rows: %w", err)
 	}
 	if len(entries) == 0 {
-		return warehouse.StagingFileT{}, fmt.Errorf("no staging file found with id: %d", ID)
+		return model.StagingFile{}, fmt.Errorf("no staging file found with id: %d", ID)
 	}
 
 	return entries[0], err
 }
 
-// GetInRange returns staging files in [start, end] range.
-func (repo *StagingFiles) GetInRange(ctx context.Context, sourceID, destinationID string, startID, endID int64) ([]warehouse.StagingFileT, error) {
+// GetInRange returns staging files in [startID, endID] range.
+func (repo *StagingFiles) GetInRange(ctx context.Context, sourceID, destinationID string, startID, endID int64) ([]model.StagingFile, error) {
 	repo.init()
 
 	query := `SELECT ` + tableColumns + ` FROM ` + tableName + ` ST
@@ -260,6 +258,26 @@ func (repo *StagingFiles) GetInRange(ctx context.Context, sourceID, destinationI
 		id ASC;`
 
 	rows, err := repo.DB.QueryContext(ctx, query, startID, endID, sourceID, destinationID)
+	if err != nil {
+		return nil, fmt.Errorf("querying staging files: %w", err)
+	}
+
+	return repo.parseRows(rows)
+}
+
+// GetAfterID returns staging files in [start, end] range.
+func (repo *StagingFiles) GetAfterID(ctx context.Context, sourceID, destinationID string, startID int64) ([]model.StagingFile, error) {
+	repo.init()
+
+	query := `SELECT ` + tableColumns + ` FROM ` + tableName + `
+	WHERE
+		id >= $1
+		AND source_id = $2
+		AND destination_id = $3
+	ORDER BY
+		id ASC;`
+
+	rows, err := repo.DB.QueryContext(ctx, query, startID, sourceID, destinationID)
 	if err != nil {
 		return nil, fmt.Errorf("querying staging files: %w", err)
 	}

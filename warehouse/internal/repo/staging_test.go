@@ -10,7 +10,7 @@ import (
 	"github.com/ory/dockertest/v3"
 	migrator "github.com/rudderlabs/rudder-server/services/sql-migrator"
 	"github.com/rudderlabs/rudder-server/testhelper/destination"
-	"github.com/rudderlabs/rudder-server/warehouse"
+	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/repo"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 	"github.com/stretchr/testify/require"
@@ -46,11 +46,11 @@ func TestStagingFileRepo(t *testing.T) {
 
 	testcases := []struct {
 		name        string
-		stagingFile warehouse.StagingFileT
+		stagingFile model.StagingFile
 	}{
 		{
 			name: "create staging file",
-			stagingFile: warehouse.StagingFileT{
+			stagingFile: model.StagingFile{
 				WorkspaceID:           "workspace_id",
 				Location:              "s3://bucket/path/to/file",
 				SourceID:              "source_id",
@@ -73,7 +73,7 @@ func TestStagingFileRepo(t *testing.T) {
 		},
 		{
 			name: "missing FirstEventAt",
-			stagingFile: warehouse.StagingFileT{
+			stagingFile: model.StagingFile{
 				WorkspaceID:           "workspace_id",
 				Location:              "s3://bucket/path/to/file",
 				SourceID:              "source_id",
@@ -95,7 +95,7 @@ func TestStagingFileRepo(t *testing.T) {
 		},
 		{
 			name: "missing LastEventAt",
-			stagingFile: warehouse.StagingFileT{
+			stagingFile: model.StagingFile{
 				WorkspaceID:           "workspace_id",
 				Location:              "s3://bucket/path/to/file",
 				SourceID:              "source_id",
@@ -154,10 +154,10 @@ func TestStagingFileRepo_Many(t *testing.T) {
 		},
 	}
 
-	var stagingFiles []warehouse.StagingFileT
+	var stagingFiles []model.StagingFile
 	n := 10
 	for i := 0; i < n; i++ {
-		file := warehouse.StagingFileT{
+		file := model.StagingFile{
 			WorkspaceID:           "workspace_id",
 			Location:              fmt.Sprintf("s3://bucket/path/to/file-%d", i),
 			SourceID:              "source_id",
@@ -189,68 +189,129 @@ func TestStagingFileRepo_Many(t *testing.T) {
 		stagingFiles = append(stagingFiles, file)
 	}
 
-	testcases := []struct {
-		name          string
-		sourceID      string
-		destinationID string
-		startID       int64
-		endID         int64
+	t.Run("GetInRange", func(t *testing.T) {
+		t.Parallel()
 
-		expected []warehouse.StagingFileT
-	}{
-		{
-			name:          "get all",
-			sourceID:      "source_id",
-			destinationID: "destination_id",
-			startID:       0,
-			endID:         10,
+		testcases := []struct {
+			name          string
+			sourceID      string
+			destinationID string
+			startID       int64
+			endID         int64
 
-			expected: stagingFiles,
-		},
-		{
-			name:          "get all with start id",
-			sourceID:      "source_id",
-			destinationID: "destination_id",
-			startID:       5,
-			endID:         10,
+			expected []model.StagingFile
+		}{
+			{
+				name:          "get all",
+				sourceID:      "source_id",
+				destinationID: "destination_id",
+				startID:       0,
+				endID:         10,
 
-			expected: stagingFiles[4:],
-		},
-		{
-			name:          "get all with end id",
-			sourceID:      "source_id",
-			destinationID: "destination_id",
-			startID:       0,
-			endID:         5,
+				expected: stagingFiles,
+			},
+			{
+				name:          "get all with start id",
+				sourceID:      "source_id",
+				destinationID: "destination_id",
+				startID:       5,
+				endID:         10,
 
-			expected: stagingFiles[:5],
-		},
-		{
-			name:          "missing source id",
-			sourceID:      "bad_source_id",
-			destinationID: "destination_id",
-			startID:       0,
-			endID:         10,
+				expected: stagingFiles[4:],
+			},
+			{
+				name:          "get all with end id",
+				sourceID:      "source_id",
+				destinationID: "destination_id",
+				startID:       0,
+				endID:         5,
 
-			expected: []warehouse.StagingFileT(nil),
-		},
-		{
-			name:          "missing destination id",
-			sourceID:      "source_id",
-			destinationID: "bad_destination_id",
-			startID:       0,
-			endID:         10,
+				expected: stagingFiles[:5],
+			},
+			{
+				name:          "missing source id",
+				sourceID:      "bad_source_id",
+				destinationID: "destination_id",
+				startID:       0,
+				endID:         10,
 
-			expected: []warehouse.StagingFileT(nil),
-		},
-	}
+				expected: []model.StagingFile(nil),
+			},
+			{
+				name:          "missing destination id",
+				sourceID:      "source_id",
+				destinationID: "bad_destination_id",
+				startID:       0,
+				endID:         10,
 
-	for _, tc := range testcases {
-		t.Run(tc.name, func(t *testing.T) {
-			retrieved, err := r.GetInRange(ctx, tc.sourceID, tc.destinationID, tc.startID, tc.endID)
-			require.NoError(t, err)
+				expected: []model.StagingFile(nil),
+			},
+		}
 
-			require.Equal(t, tc.expected, retrieved)
-		})
-	}
+		for _, tc := range testcases {
+			t.Run(tc.name, func(t *testing.T) {
+				t.Parallel()
+				retrieved, err := r.GetInRange(ctx, tc.sourceID, tc.destinationID, tc.startID, tc.endID)
+				require.NoError(t, err)
+
+				require.Equal(t, tc.expected, retrieved)
+			})
+		}
+	})
+
+	t.Run("GetAfterID", func(t *testing.T) {
+		t.Parallel()
+
+		testcases := []struct {
+			name          string
+			sourceID      string
+			destinationID string
+			startID       int64
+
+			expected []model.StagingFile
+		}{
+			{
+				name:          "get all",
+				sourceID:      "source_id",
+				destinationID: "destination_id",
+				startID:       0,
+
+				expected: stagingFiles,
+			},
+			{
+				name:          "get all with start id",
+				sourceID:      "source_id",
+				destinationID: "destination_id",
+				startID:       5,
+
+				expected: stagingFiles[4:],
+			},
+			{
+				name:          "missing source id",
+				sourceID:      "bad_source_id",
+				destinationID: "destination_id",
+				startID:       0,
+
+				expected: []model.StagingFile(nil),
+			},
+			{
+				name:          "missing destination id",
+				sourceID:      "source_id",
+				destinationID: "bad_destination_id",
+				startID:       0,
+
+				expected: []model.StagingFile(nil),
+			},
+		}
+
+		for _, tc := range testcases {
+			t.Run(tc.name, func(t *testing.T) {
+				t.Parallel()
+				retrieved, err := r.GetAfterID(ctx, tc.sourceID, tc.destinationID, tc.startID)
+				require.NoError(t, err)
+
+				require.Equal(t, tc.expected, retrieved)
+			})
+		}
+	})
 }

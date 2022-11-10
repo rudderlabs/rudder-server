@@ -26,8 +26,8 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
 	"github.com/rudderlabs/rudder-server/utils/types"
 	"github.com/rudderlabs/rudder-server/warehouse/identity"
+	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	"github.com/rudderlabs/rudder-server/warehouse/manager"
-	"github.com/rudderlabs/rudder-server/warehouse/model"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 	"github.com/rudderlabs/rudder-server/warehouse/validations"
 )
@@ -111,7 +111,7 @@ type UploadJobT struct {
 	dbHandle             *sql.DB
 	warehouse            warehouseutils.Warehouse
 	whManager            manager.ManagerI
-	stagingFiles         []*StagingFileT
+	stagingFiles         []*model.StagingFile
 	stagingFileIDs       []int64
 	pgNotifier           *pgnotifier.PgNotifierT
 	schemaHandle         *SchemaHandleT
@@ -1671,7 +1671,7 @@ func (job *UploadJobT) getAttemptNumber() int {
 	return int(attempts)
 }
 
-func (*UploadJobT) setStagingFilesStatus(stagingFiles []*StagingFileT, status string) (err error) {
+func (*UploadJobT) setStagingFilesStatus(stagingFiles []*model.StagingFile, status string) (err error) {
 	var ids []int64
 	for _, stagingFile := range stagingFiles {
 		ids = append(ids, stagingFile.ID)
@@ -1816,7 +1816,7 @@ func (job *UploadJobT) getLoadFileIDRange() (startLoadFileID, endLoadFileID int6
 	return minID.Int64, maxID.Int64, nil
 }
 
-func (job *UploadJobT) deleteLoadFiles(stagingFiles []*StagingFileT) {
+func (job *UploadJobT) deleteLoadFiles(stagingFiles []*model.StagingFile) {
 	var stagingFileIDs []int64
 	for _, stagingFile := range stagingFiles {
 		stagingFileIDs = append(stagingFileIDs, stagingFile.ID)
@@ -1858,7 +1858,7 @@ func (job *UploadJobT) createLoadFiles(generateAll bool) (startLoadFileID, endLo
 
 	var wg sync.WaitGroup
 
-	var toProcessStagingFiles []*StagingFileT
+	var toProcessStagingFiles []*model.StagingFile
 	if generateAll {
 		toProcessStagingFiles = stagingFiles
 	} else {

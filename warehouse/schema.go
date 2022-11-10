@@ -8,13 +8,14 @@ import (
 
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
+	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	"github.com/rudderlabs/rudder-server/warehouse/manager"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
 type SchemaHandleT struct {
 	dbHandle                      *sql.DB
-	stagingFiles                  []*StagingFileT
+	stagingFiles                  []*model.StagingFile
 	warehouse                     warehouseutils.Warehouse
 	localSchema                   warehouseutils.SchemaT
 	schemaInWarehouse             warehouseutils.SchemaT
