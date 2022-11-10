@@ -8,7 +8,7 @@ import (
 	"github.com/throttled/throttled/v2"
 	"github.com/throttled/throttled/v2/store/memstore"
 
-	"github.com/rudderlabs/rudder-server/internal/cachettl"
+	"github.com/rudderlabs/rudder-server/internal/throttling/cachettl"
 )
 
 const defaultMaxCASAttemptsLimit = 100

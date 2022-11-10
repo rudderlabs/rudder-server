@@ -6,7 +6,7 @@ import (
 
 	gorate "golang.org/x/time/rate"
 
-	"github.com/rudderlabs/rudder-server/internal/cachettl"
+	"github.com/rudderlabs/rudder-server/internal/throttling/cachettl"
 )
 
 type goRate struct {
