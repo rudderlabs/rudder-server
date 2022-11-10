@@ -12,29 +12,23 @@ import (
 
 // WithRedisCmdArg is used to specify the save argument when running the container.
 func WithRedisCmdArg(key, value string) RedisOption {
-	return withRedisOption{setup: func(c *redisConfig) {
+	return func(c *redisConfig) {
 		c.cmdArgs = append(c.cmdArgs, key, value)
-	}}
+	}
 }
 
 // WithRedisEnv is used to pass environment variables to the container.
 func WithRedisEnv(envs ...string) RedisOption {
-	return withRedisOption{setup: func(c *redisConfig) {
+	return func(c *redisConfig) {
 		c.envs = envs
-	}}
+	}
 }
 
 type RedisResource struct {
 	Addr string
 }
 
-type RedisOption interface {
-	apply(*redisConfig)
-}
-
-type withRedisOption struct{ setup func(*redisConfig) }
-
-func (w withRedisOption) apply(c *redisConfig) { w.setup(c) }
+type RedisOption func(*redisConfig)
 
 type redisConfig struct {
 	envs    []string
@@ -44,7 +38,7 @@ type redisConfig struct {
 func SetupRedis(ctx context.Context, pool *dockertest.Pool, d cleaner, opts ...RedisOption) (*RedisResource, error) {
 	conf := redisConfig{}
 	for _, opt := range opts {
-		opt.apply(&conf)
+		opt(&conf)
 	}
 	runOptions := &dockertest.RunOptions{
 		Repository: "redis", Tag: "7.0.5-alpine3.16",
