@@ -25,7 +25,7 @@ func (*mockBackendConfig) SetUp() error                             { return nil
 func (*mockBackendConfig) AccessToken() string                      { return "" }
 func (*mockBackendConfig) Identity() identity.Identifier            { return nil }
 
-func (m *mockBackendConfig) Get(context.Context, string) (map[string]backendconfig.ConfigT, error) {
+func (m *mockBackendConfig) Get(context.Context) (map[string]backendconfig.ConfigT, error) {
 	return m.config, nil
 }
 

@@ -177,7 +177,8 @@ func TestFlow(t *testing.T) {
 	go func() {
 		defer close(done)
 		defer svcCancel()
-		main.Run(svcCtx)
+		err = main.Run(svcCtx)
+		require.NoError(t, err)
 	}()
 
 	t.Run("test-flow", func(t *testing.T) {
