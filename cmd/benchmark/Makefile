@@ -22,7 +22,7 @@ endif
 .PHONY: build-throttling
 build-throttling:
 	cd ../../; \
-	docker build -t $(DOCKER_USER)/rudder-server-benchmarks:latest -f Dockerfile-benchmarks .
+	docker build -t $(DOCKER_USER)/rudder-server-benchmarks:latest -f ./cmd/benchmark/Dockerfile .
 	docker push $(DOCKER_USER)/rudder-server-benchmarks:latest
 
 .PHONY: sed-throttling
@@ -53,4 +53,4 @@ uninstall-redis:
 
 .PHONY: local-redis
 local-redis:
-	docker run --rm -it -p 6379:6379 -e ALLOW_EMPTY_PASSWORD=yes bitnami/redis:7.0.5-debian-11-r12
+	docker run --rm -it -p 6379:6379 -e ALLOW_EMPTY_PASSWORD=yes bitnami/redis:6.2.7-debian-11-r56

@@ -2,4 +2,4 @@
 .env
 .vscode
 .dockerignore
-Dockerfile-benchmarks
+cmd/benchmark/Dockerfile
