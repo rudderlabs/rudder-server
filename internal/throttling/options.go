@@ -1,6 +1,6 @@
 package throttling
 
-import "github.com/go-redis/redis/v9"
+import "github.com/go-redis/redis/v8"
 
 // Option is a functional option for the limiter, see With* functions for reference
 type Option interface {

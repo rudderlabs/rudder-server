@@ -5,7 +5,7 @@ import (
 	"strconv"
 	"testing"
 
-	"github.com/go-redis/redis/v9"
+	"github.com/go-redis/redis/v8"
 	"github.com/ory/dockertest/v3"
 	"github.com/stretchr/testify/require"
 
@@ -62,13 +62,13 @@ func BenchmarkRedisSortedSetRemover(b *testing.B) {
 	pool, err := dockertest.NewPool("")
 	require.NoError(b, err)
 
-	prepare := func(b *testing.B) (*redis.Client, string, []redis.Z) {
+	prepare := func(b *testing.B) (*redis.Client, string, []*redis.Z) {
 		rc := bootstrapRedis(ctx, b, pool)
 
 		key := rand.UniqueString(10)
-		members := make([]redis.Z, b.N*3)
+		members := make([]*redis.Z, b.N*3)
 		for i := range members {
-			members[i] = redis.Z{
+			members[i] = &redis.Z{
 				Score:  float64(i),
 				Member: strconv.Itoa(i),
 			}

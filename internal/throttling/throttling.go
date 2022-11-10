@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/go-redis/redis/v9"
+	"github.com/go-redis/redis/v8"
 
 	"github.com/rudderlabs/rudder-server/services/stats"
 )

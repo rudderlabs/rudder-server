@@ -5,7 +5,7 @@ import (
 	_ "encoding/json"
 	"fmt"
 
-	"github.com/go-redis/redis/v9"
+	"github.com/go-redis/redis/v8"
 	_ "github.com/lib/pq"
 	"github.com/ory/dockertest/v3"
 )
@@ -41,7 +41,7 @@ func SetupRedis(ctx context.Context, pool *dockertest.Pool, d cleaner, opts ...R
 		opt(&conf)
 	}
 	runOptions := &dockertest.RunOptions{
-		Repository: "redis", Tag: "7.0.5-alpine3.16",
+		Repository: "redis", Tag: "6.2.7-alpine3.16",
 		Env: conf.envs,
 		Cmd: []string{"redis-server"},
 	}

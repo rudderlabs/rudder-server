@@ -34,7 +34,7 @@ require (
 	github.com/foxcpp/go-mockdns v1.0.1-0.20220408113050-3599dc5d2c7d
 	github.com/fsnotify/fsnotify v1.5.4
 	github.com/go-redis/redis v6.15.8+incompatible
-	github.com/go-redis/redis/v9 v9.0.0-beta.3
+	github.com/go-redis/redis/v8 v8.11.5
 	github.com/gofrs/uuid v4.2.0+incompatible
 	github.com/golang-migrate/migrate/v4 v4.15.2
 	github.com/golang/mock v1.6.0
@@ -57,6 +57,7 @@ require (
 	github.com/phayes/freeport v0.0.0-20180830031419-95f893ade6f2
 	github.com/rs/cors v1.7.0
 	github.com/rudderlabs/analytics-go v3.3.1+incompatible
+	github.com/samber/lo v1.33.0
 	github.com/segmentio/kafka-go v0.4.35
 	github.com/snowflakedb/gosnowflake v1.6.13
 	github.com/sony/gobreaker v0.5.0
@@ -215,5 +216,3 @@ require (
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
-
-require github.com/samber/lo v1.33.0
