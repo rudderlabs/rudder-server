@@ -8,12 +8,14 @@ import (
 	"time"
 
 	"cloud.google.com/go/bigquery"
+
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/utils/googleutils"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/warehouse/client"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
+	"golang.org/x/exp/slices"
 	"google.golang.org/api/googleapi"
 	"google.golang.org/api/iterator"
 	"google.golang.org/api/option"
@@ -305,7 +307,7 @@ func (bq *HandleT) loadTable(tableName string, _, getLoadFileLocFromTableUploads
 		// Tables created by RudderStack are ingestion-time partitioned table with pseudo column named _PARTITIONTIME. BigQuery automatically assigns rows to partitions based
 		// on the time when BigQuery ingests the data. To support custom field partitions, omitting loading into partitioned table like tableName$20191221
 		// TODO: Support custom field partition on users & identifies tables
-		if customPartitionsEnabled || misc.Contains(customPartitionsEnabledWorkspaceIDs, bq.warehouse.WorkspaceID) {
+		if customPartitionsEnabled || slices.Contains(customPartitionsEnabledWorkspaceIDs, bq.warehouse.WorkspaceID) {
 			outputTable = tableName
 		}
 
