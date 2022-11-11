@@ -301,7 +301,7 @@ func (worker *workerT) recordStatsForFailedTransforms(transformType string, tran
 	}
 }
 
-func (worker *workerT) routerTransform(routerJobs []types.RouterJobT) []types.DestinationJobT {
+func (worker *workerT) transform(routerJobs []types.RouterJobT) []types.DestinationJobT {
 	worker.rt.routerTransformInputCountStat.Count(len(routerJobs))
 	destinationJobs := worker.rt.transformer.Transform(
 		transformer.ROUTER_TRANSFORM,
@@ -312,7 +312,7 @@ func (worker *workerT) routerTransform(routerJobs []types.RouterJobT) []types.De
 	return destinationJobs
 }
 
-func (worker *workerT) batchRouterTransform(routerJobs []types.RouterJobT) []types.DestinationJobT {
+func (worker *workerT) batchTransform(routerJobs []types.RouterJobT) []types.DestinationJobT {
 	inputJobsLength := len(routerJobs)
 	worker.rt.batchInputCountStat.Count(inputJobsLength)
 	destinationJobs := worker.rt.transformer.Transform(
@@ -339,9 +339,9 @@ func (worker *workerT) workerProcess() {
 				}
 
 				if worker.rt.enableBatching {
-					worker.destinationJobs = worker.batchRouterTransform(worker.routerJobs)
+					worker.destinationJobs = worker.batchTransform(worker.routerJobs)
 				} else {
-					worker.destinationJobs = worker.routerTransform(worker.routerJobs)
+					worker.destinationJobs = worker.transform(worker.routerJobs)
 				}
 				worker.processDestinationJobs()
 				worker.rt.logger.Debugf("[%s Router] :: Worker channel closed, processed %d jobs", worker.rt.destName, len(worker.routerJobs))
@@ -419,41 +419,6 @@ func (worker *workerT) workerProcess() {
 				}
 			}
 
-			var (
-				err            error
-				limited        bool
-				throttlingCost int64
-				tokensReturner throttling.TokenReturner
-				throttler      = worker.rt.getThrottler(parameters.DestinationID)
-			)
-			if len(worker.routerJobs) > 0 {
-				throttlingCost = worker.getThrottlingCost()
-			}
-			if throttlingCost > 0 && throttler != nil {
-				limited, tokensReturner, err = throttler.CheckLimitReached(userID, throttlingCost)
-				if err != nil {
-					// we can't throttle, let's hit the destination, worst case we get a 429
-					throttlingCost = 0
-				} else if limited {
-					status := jobsdb.JobStatusT{
-						JobID:         job.JobID,
-						AttemptNum:    job.LastJobStatus.AttemptNum,
-						ExecTime:      time.Now(),
-						RetryTime:     time.Now(),
-						JobState:      jobsdb.Waiting.State,
-						ErrorCode:     strconv.Itoa(http.StatusTooManyRequests),
-						ErrorResponse: routerutils.EmptyPayload,
-						Parameters:    routerutils.EmptyPayload,
-						WorkspaceId:   job.WorkspaceId,
-					}
-					worker.rt.logger.Debugf(`Throttling for destination:%s and job:%d for user:%s`,
-						parameters.DestinationID, job.JobID, userID,
-					)
-					worker.rt.responseQ <- jobResponseT{status: &status, worker: worker, userID: userID, JobT: job}
-					continue
-				}
-			}
-
 			firstAttemptedAt := gjson.GetBytes(job.LastJobStatus.ErrorResponse, "firstAttemptedAt").Str
 			jobMetadata := types.JobMetadataT{
 				UserID:             userID,
@@ -474,9 +439,6 @@ func (worker *workerT) workerProcess() {
 			batchDestination, ok := worker.rt.destinationsMap[parameters.DestinationID]
 			worker.rt.configSubscriberLock.RUnlock()
 			if !ok {
-				// we won't be using the throttling tokens anymore
-				go worker.rt.returnTokens(context.TODO(), tokensReturner)
-
 				status := jobsdb.JobStatusT{
 					JobID:         job.JobID,
 					AttemptNum:    job.LastJobStatus.AttemptNum,
@@ -526,9 +488,8 @@ func (worker *workerT) workerProcess() {
 				})
 
 				noOfJobs := len(worker.routerJobs)
-				if noOfJobs >= worker.rt.noOfJobsToBatchInAWorker ||
-					(throttlingCost > 0 && int64(noOfJobs) >= throttlingCost*int64(noOfJobs)) {
-					worker.destinationJobs = worker.batchRouterTransform(worker.routerJobs)
+				if noOfJobs >= worker.rt.noOfJobsToBatchInAWorker {
+					worker.destinationJobs = worker.batchTransform(worker.routerJobs)
 					worker.processDestinationJobs()
 				}
 			} else if parameters.TransformAt == "router" {
@@ -539,9 +500,8 @@ func (worker *workerT) workerProcess() {
 				})
 
 				noOfJobs := len(worker.routerJobs)
-				if noOfJobs >= worker.rt.noOfJobsToBatchInAWorker ||
-					(throttlingCost > 0 && int64(noOfJobs) >= throttlingCost*int64(noOfJobs)) {
-					worker.destinationJobs = worker.routerTransform(worker.routerJobs)
+				if noOfJobs >= worker.rt.noOfJobsToBatchInAWorker {
+					worker.destinationJobs = worker.transform(worker.routerJobs)
 					worker.processDestinationJobs()
 				}
 			} else {
@@ -558,44 +518,14 @@ func (worker *workerT) workerProcess() {
 
 			if len(worker.routerJobs) > 0 {
 				if worker.rt.enableBatching {
-					worker.destinationJobs = worker.batchRouterTransform(worker.routerJobs)
+					worker.destinationJobs = worker.batchTransform(worker.routerJobs)
 				} else {
-					worker.destinationJobs = worker.routerTransform(worker.routerJobs)
+					worker.destinationJobs = worker.transform(worker.routerJobs)
 				}
 				worker.processDestinationJobs()
 			}
 		}
 	}
-}
-
-func (worker *workerT) getThrottlingCost() (cost int64) {
-	// Config key "throttlingCost" is expected to have the eventType as the first key and the call type
-	// as the second key (e.g. track, identify, etc...) or default to apply the cost to all call types:
-	// dDT["config"]["throttlingCost"] = `{"eventType":{"default":1,"track":2,"identify":3}}`
-	for k := range worker.routerJobs {
-		tc, ok := worker.routerJobs[k].Destination.DestinationDefinition.Config["throttlingCost"].(map[string]interface{})
-		if !ok {
-			// no throttlingCost configuration, assume 0
-			continue
-		}
-
-		et, ok := tc["eventType"].(map[string]interface{})
-		if !ok {
-			// no eventType in the configuration, assume 0
-			continue
-		}
-
-		// TODO get by event type before falling back on "default"
-		defaultCost, ok := et["default"].(float64)
-		if !ok {
-			// no default cost in the configuration, assume 0
-			continue
-		}
-
-		cost += int64(defaultCost)
-	}
-
-	return
 }
 
 func (worker *workerT) processDestinationJobs() {
@@ -1284,6 +1214,43 @@ func (rt *HandleT) findWorker(job *jobsdb.JobT) (toSendWorker *workerT) {
 		return
 	}
 
+	rt.configSubscriberLock.RLock()
+	batchDestination, ok := rt.destinationsMap[parameters.DestinationID]
+	rt.configSubscriberLock.RUnlock()
+	if !ok {
+		status := jobsdb.JobStatusT{
+			JobID:         job.JobID,
+			AttemptNum:    job.LastJobStatus.AttemptNum,
+			JobState:      jobsdb.Failed.State,
+			ExecTime:      time.Now(),
+			RetryTime:     time.Now(),
+			ErrorResponse: []byte(`{"reason":"failed because destination is not available in the config"}`),
+			Parameters:    routerutils.EmptyPayload,
+			WorkspaceId:   job.WorkspaceId,
+		}
+		if rt.guaranteeUserEventOrder {
+			// orderKey := fmt.Sprintf(`%s:%s`, job.UserID, parameters.DestinationID)
+		}
+		rt.responseQ <- jobResponseT{status: &status, worker: nil, userID: userID, JobT: job}
+		return
+	}
+
+	tokensReturner, shouldThrottle := rt.shouldThrottle(job, parameters, &batchDestination.Destination)
+	if shouldThrottle {
+		rt.logger.Debugf(`[%v Router] :: Skipping processing of job:%d of user:%s as throttled limits exceeded`, rt.destName, job.JobID, userID)
+		return nil
+	}
+
+	defer func() {
+		if toSendWorker == nil && tokensReturner != nil {
+			err := tokensReturner.Return(rt.backgroundCtx)
+			if err == nil {
+				return
+			}
+			rt.logger.Errorf(`[%v Router] :: Returning throttling tokens failed with the error %v`, rt.destName, err)
+		}
+	}()
+
 	if !rt.guaranteeUserEventOrder {
 		// if guaranteeUserEventOrder is false, assigning worker randomly and returning here.
 		toSendWorker = rt.workers[rand.Intn(rt.noOfWorkers)] // skipcq: GSC-G404
@@ -1325,6 +1292,54 @@ func (worker *workerT) canBackoff(job *jobsdb.JobT) (shouldBackoff bool) {
 
 func (rt *HandleT) getWorkerPartition(userID string) int {
 	return misc.GetHash(userID) % rt.noOfWorkers
+}
+
+func (rt *HandleT) getThrottlingCost(job *jobsdb.JobT, dest *backendconfig.DestinationT) (cost int64) {
+	// Config key "throttlingCost" is expected to have the eventType as the first key and the call type
+	// as the second key (e.g. track, identify, etc...) or default to apply the cost to all call types:
+	// dDT["config"]["throttlingCost"] = `{"eventType":{"default":1,"track":2,"identify":3}}`
+	cost = 1 // default cost
+	tc, ok := dest.DestinationDefinition.Config["throttlingCost"].(map[string]interface{})
+	if !ok {
+		return
+	}
+
+	et, ok := tc["eventType"].(map[string]interface{})
+	if !ok {
+		return
+	}
+
+	// TODO get by event type before falling back on "default"
+	if defaultCost, ok := et["default"].(float64); ok {
+		// no default cost in the configuration, assume 0
+		cost = int64(defaultCost) * int64(job.EventCount)
+	}
+
+	return
+}
+
+func (rt *HandleT) shouldThrottle(job *jobsdb.JobT, parameters JobParametersT, dest *backendconfig.DestinationT) (
+	throttling.TokenReturner,
+	bool,
+) {
+	throttler := rt.getThrottler(parameters.DestinationID)
+	if throttler == nil {
+		return nil, false
+	}
+
+	throttlingCost := rt.getThrottlingCost(job, dest)
+
+	limited, tokensReturner, err := throttler.CheckLimitReached(job.UserID, throttlingCost)
+	if err != nil {
+		// we can't throttle, let's hit the destination, worst case we get a 429
+		return nil, false
+	}
+
+	if !limited {
+		return tokensReturner, false
+	}
+
+	return nil, true
 }
 
 func (rt *HandleT) commitStatusList(responseList *[]jobResponseT) {
@@ -1492,7 +1507,11 @@ func (rt *HandleT) commitStatusList(responseList *[]jobResponseT) {
 			worker := resp.worker
 			if status != jobsdb.Failed.State {
 				orderKey := fmt.Sprintf(`%s:%s`, userID, gjson.GetBytes(resp.JobT.Parameters, "destination_id").String())
-				worker.rt.logger.Debugf("EventOrder: [%d] job %d for key %s %s", worker.workerID, resp.status.JobID, orderKey, status)
+				rt.logger.Debugf("EventOrder: [%d] job %d for key %s %s", worker.workerID, resp.status.JobID, orderKey, status)
+				if worker == nil {
+					// worker is nil when we're trying to find a worker and there is no destination configuration
+					continue
+				}
 				if err := worker.barrier.StateChanged(orderKey, resp.status.JobID, status); err != nil {
 					panic(err)
 				}
@@ -2162,16 +2181,6 @@ func (rt *HandleT) updateProcessedEventsMetrics(statusList []*jobsdb.JobStatusT)
 				"code":     code,
 			}).Count(count)
 		}
-	}
-}
-
-func (rt *HandleT) returnTokens(ctx context.Context, tr throttling.TokenReturner) {
-	if tr == nil {
-		return
-	}
-	err := tr.Return(ctx)
-	if err != nil {
-		rt.logger.Errorf("error while returning throttling tokens: %w", err)
 	}
 }
 
