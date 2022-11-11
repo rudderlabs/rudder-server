@@ -8,12 +8,14 @@ import (
 	"time"
 
 	"cloud.google.com/go/bigquery"
+
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/utils/googleutils"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/warehouse/client"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
+	"golang.org/x/exp/slices"
 	"google.golang.org/api/googleapi"
 	"google.golang.org/api/iterator"
 	"google.golang.org/api/option"
@@ -26,6 +28,7 @@ var (
 	isUsersTableDedupEnabled              bool
 	isDedupEnabled                        bool
 	enableDeleteByJobs                    bool
+	customPartitionsEnabledWorkspaceIDs   []string
 )
 
 type HandleT struct {
@@ -300,12 +303,12 @@ func (bq *HandleT) loadTable(tableName string, _, getLoadFileLocFromTableUploads
 
 	loadTableByAppend := func() (err error) {
 		stagingLoadTable.partitionDate = time.Now().Format("2006-01-02")
-		outputTable := tableName
+		outputTable := partitionedTable(tableName, stagingLoadTable.partitionDate)
 		// Tables created by RudderStack are ingestion-time partitioned table with pseudo column named _PARTITIONTIME. BigQuery automatically assigns rows to partitions based
 		// on the time when BigQuery ingests the data. To support custom field partitions, omitting loading into partitioned table like tableName$20191221
 		// TODO: Support custom field partition on users & identifies tables
-		if !customPartitionsEnabled {
-			outputTable = partitionedTable(tableName, stagingLoadTable.partitionDate)
+		if customPartitionsEnabled || slices.Contains(customPartitionsEnabledWorkspaceIDs, bq.warehouse.WorkspaceID) {
+			outputTable = tableName
 		}
 
 		loader := bq.db.Dataset(bq.namespace).Table(outputTable).LoaderFrom(gcsRef)
@@ -396,17 +399,31 @@ func (bq *HandleT) loadTable(tableName string, _, getLoadFileLocFromTableUploads
 		primaryJoinClause := strings.Join(primaryKeyList, " AND ")
 		bqTable := func(name string) string { return fmt.Sprintf("`%s`.`%s`", bq.namespace, name) }
 
+		var orderByClause string
+		if _, ok := tableColMap["received_at"]; ok {
+			orderByClause = "ORDER BY received_at DESC"
+		}
+
 		sqlStatement := fmt.Sprintf(`MERGE INTO %[1]s AS original
 										USING (
 											SELECT * FROM (
-												SELECT *, row_number() OVER (PARTITION BY %[7]s ORDER BY RECEIVED_AT DESC) AS _rudder_staging_row_number FROM %[2]s
+												SELECT *, row_number() OVER (PARTITION BY %[7]s %[8]s) AS _rudder_staging_row_number FROM %[2]s
 											) AS q WHERE _rudder_staging_row_number = 1
 										) AS staging
 										ON (%[3]s)
 										WHEN MATCHED THEN
 										UPDATE SET %[6]s
 										WHEN NOT MATCHED THEN
-										INSERT (%[4]s) VALUES (%[5]s)`, bqTable(tableName), bqTable(stagingTableName), primaryJoinClause, columnNames, stagingColumnNames, columnsWithValues, partitionKey)
+										INSERT (%[4]s) VALUES (%[5]s)`,
+			bqTable(tableName),
+			bqTable(stagingTableName),
+			primaryJoinClause,
+			columnNames,
+			stagingColumnNames,
+			columnsWithValues,
+			partitionKey,
+			orderByClause,
+		)
 		pkgLogger.Infof("BQ: Dedup records for table:%s using staging table: %s\n", tableName, sqlStatement)
 
 		q := bq.db.Query(sqlStatement)
@@ -656,6 +673,7 @@ func loadConfig() {
 	config.RegisterBoolConfigVariable(false, &isUsersTableDedupEnabled, true, "Warehouse.bigquery.isUsersTableDedupEnabled") // TODO: Deprecate with respect to isDedupEnabled
 	config.RegisterBoolConfigVariable(false, &isDedupEnabled, true, "Warehouse.bigquery.isDedupEnabled")
 	config.RegisterBoolConfigVariable(false, &enableDeleteByJobs, true, "Warehouse.bigquery.enableDeleteByJobs")
+	config.RegisterStringSliceConfigVariable(nil, &customPartitionsEnabledWorkspaceIDs, true, "Warehouse.bigquery.customPartitionsEnabledWorkspaceIDs")
 }
 
 func Init() {
