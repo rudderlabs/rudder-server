@@ -1394,9 +1394,7 @@ var _ = Describe("Utils", func() {
 
 	It("SSL keys", func() {
 		destinationID := "destID"
-		clientKey := misc.FastUUID().String()
-		clientCert := misc.FastUUID().String()
-		serverCA := misc.FastUUID().String()
+		clientKey, clientCert, serverCA := misc.FastUUID().String(), misc.FastUUID().String(), misc.FastUUID().String()
 
 		err := WriteSSLKeys(backendconfig.DestinationT{ID: destinationID, Config: map[string]interface{}{"clientKey": clientKey, "clientCert": clientCert, "serverCA": serverCA}})
 		Expect(err).To(Equal(WriteSSLKeyError{}))

@@ -13,8 +13,7 @@ import (
 func warehouse(req *DestinationValidationRequest) warehouseutils.Warehouse {
 	destination := req.Destination
 
-	randomSourceId := warehouseutils.RandHex()
-	randomSourceName := warehouseutils.RandHex()
+	randomSourceId, randomSourceName := warehouseutils.RandHex(), warehouseutils.RandHex()
 	return warehouseutils.Warehouse{
 		Source: backendconfig.SourceT{
 			ID:   randomSourceId,
