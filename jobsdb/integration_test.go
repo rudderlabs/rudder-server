@@ -713,6 +713,7 @@ func TestJobsDB(t *testing.T) {
 			// #numFailedJobs+#numSucceededJobs - #numTotalJobs jobs are unprocessed - should be migrated
 		)
 		require.NoError(t, jobDB.Store(context.Background(), jobs))
+
 		require.NoError(
 			t,
 			jobDB.UpdateJobStatus(
@@ -722,6 +723,11 @@ func TestJobsDB(t *testing.T) {
 				[]ParameterFilterT{},
 			),
 		)
+
+		unprocessedBeforeMigration, err := jobDB.GetUnprocessed(context.Background(), GetQueryParamsT{JobsLimit: 100})
+		require.NoError(t, err)
+		failedBeforeMigration, err := jobDB.GetToRetry(context.Background(), GetQueryParamsT{JobsLimit: 100})
+		require.NoError(t, err)
 
 		require.EqualValues(t, 1, jobDB.GetMaxDSIndex())
 		time.Sleep(time.Second * 2)   // wait for some time to pass
@@ -748,10 +754,21 @@ func TestJobsDB(t *testing.T) {
 		require.NoError(
 			t,
 			jobDB.dbHandle.QueryRow(
-				fmt.Sprintf(`SELECT COUNT(*) FROM %s`, tablePrefix+`_jobs_`+dsIndicesList[0]),
+				fmt.Sprintf(`SELECT COUNT(*) FROM %s`, tablePrefix+`_jobs_1_1`),
 			).Scan(&numJobs),
 		)
 		require.Equal(t, numFailedJobs+numUnprocessedJobs, int(numJobs))
+
+		// verify job statuses
+		var numJobstatuses, maxJobStatusID, nextSeqVal int64
+		require.NoError(
+			t,
+			jobDB.dbHandle.QueryRow(
+				fmt.Sprintf(`SELECT COUNT(*), MAX(id), nextval('%[1]s_id_seq') FROM %[1]s`, tablePrefix+`_job_status_1_1`),
+			).Scan(&numJobstatuses, &maxJobStatusID, &nextSeqVal),
+		)
+		require.Equal(t, numFailedJobs, int(numJobstatuses))
+		require.Greater(t, nextSeqVal, maxJobStatusID)
 
 		// verify that unprocessed jobs are migrated to new DS
 		unprocessedResult, err := jobDB.GetUnprocessed(context.Background(), GetQueryParamsT{
@@ -760,16 +777,8 @@ func TestJobsDB(t *testing.T) {
 			ParameterFilters: []ParameterFilterT{},
 		})
 		require.NoError(t, err, "GetUnprocessed failed")
-		require.Equal(t, numUnprocessedJobs, len(unprocessedResult.Jobs))
-		expectedUnprocessedJobIDs := make([]int64, 0)
-		for _, job := range jobs[numFailedJobs+numSucceededJobs:] {
-			expectedUnprocessedJobIDs = append(expectedUnprocessedJobIDs, job.JobID)
-		}
-		actualUnprocessedJobIDs := make([]int64, 0)
-		for _, job := range unprocessedResult.Jobs {
-			actualUnprocessedJobIDs = append(actualUnprocessedJobIDs, job.JobID)
-		}
-		require.Equal(t, expectedUnprocessedJobIDs, actualUnprocessedJobIDs)
+		require.Len(t, unprocessedResult.Jobs, numUnprocessedJobs)
+		require.EqualValues(t, unprocessedBeforeMigration.Jobs, unprocessedResult.Jobs)
 
 		// verifying that failed jobs are migrated to new DS
 		failedResult, err := jobDB.GetToRetry(context.Background(), GetQueryParamsT{
@@ -778,16 +787,8 @@ func TestJobsDB(t *testing.T) {
 			ParameterFilters: []ParameterFilterT{},
 		})
 		require.NoError(t, err, "GetToRetry failed")
-		expectedFailedJobIDs := make([]int64, 0)
-		for _, job := range jobs[:numFailedJobs] {
-			expectedFailedJobIDs = append(expectedFailedJobIDs, job.JobID)
-		}
-		actualFailedJobIDs := make([]int64, 0)
-		for _, job := range failedResult.Jobs {
-			actualFailedJobIDs = append(actualFailedJobIDs, job.JobID)
-		}
-		require.Equal(t, numFailedJobs, len(failedResult.Jobs))
-		require.Equal(t, expectedFailedJobIDs, actualFailedJobIDs)
+		require.Len(t, failedResult.Jobs, numFailedJobs)
+		require.EqualValues(t, failedBeforeMigration.Jobs, failedResult.Jobs)
 	})
 }
 

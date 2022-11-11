@@ -1,4 +1,4 @@
-package warehouse
+package archive
 
 import (
 	"context"
@@ -13,11 +13,13 @@ import (
 	"github.com/iancoleman/strcase"
 	"github.com/lib/pq"
 	"github.com/rudderlabs/rudder-server/config"
-	"github.com/rudderlabs/rudder-server/services/archiver"
 	"github.com/rudderlabs/rudder-server/services/archiver/tablearchiver"
 	"github.com/rudderlabs/rudder-server/services/filemanager"
+	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
+	"github.com/rudderlabs/rudder-server/warehouse/model"
+	"github.com/rudderlabs/rudder-server/warehouse/multitenant"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
@@ -30,7 +32,6 @@ var (
 )
 
 func Init() {
-	setMaxParallelLoads()
 	loadConfigArchiver()
 }
 
@@ -57,13 +58,22 @@ type uploadRecord struct {
 	startLoadFileID    int64
 	endLoadFileID      int64
 	uploadMetdata      json.RawMessage
+	workspaceID        string
 }
 
-func backupRecords(args backupRecordsArgs) (backupLocation string, err error) {
-	pkgLogger.Infof(`Starting backupRecords for uploadId: %s, sourceId: %s, destinationId: %s, tableName: %s,`, args.uploadID, args.sourceID, args.destID, args.tableName)
+type Archiver struct {
+	DB          *sql.DB
+	Stats       stats.Stats
+	Logger      logger.Logger
+	FileManager filemanager.FileManagerFactory
+	Multitenant *multitenant.Manager
+}
+
+func (a *Archiver) backupRecords(args backupRecordsArgs) (backupLocation string, err error) {
+	a.Logger.Infof(`Starting backupRecords for uploadId: %s, sourceId: %s, destinationId: %s, tableName: %s,`, args.uploadID, args.sourceID, args.destID, args.tableName)
 	tmpDirPath, err := misc.CreateTMPDIR()
 	if err != nil {
-		pkgLogger.Errorf("[Archiver]: Failed to create tmp DIR")
+		a.Logger.Errorf("[Archiver]: Failed to create tmp DIR")
 		return
 	}
 	backupPathDirName := fmt.Sprintf(`/%s/`, misc.RudderArchives)
@@ -79,7 +89,7 @@ func backupRecords(args backupRecordsArgs) (backupLocation string, err error) {
 	)
 	defer misc.RemoveFilePaths(path)
 
-	fManager, err := filemanager.DefaultFileManagerFactory.New(&filemanager.SettingsT{
+	fManager, err := a.FileManager.New(&filemanager.SettingsT{
 		Provider: config.GetString("JOBS_BACKUP_STORAGE_PROVIDER", "S3"),
 		Config:   filemanager.GetProviderConfigForBackupsFromEnv(context.TODO()),
 	})
@@ -111,7 +121,7 @@ func backupRecords(args backupRecordsArgs) (backupLocation string, err error) {
 		tablearchiver.OffsetAction,
 	)
 	tableJSONArchiver := tablearchiver.TableJSONArchiver{
-		DbHandle:      dbHandle,
+		DbHandle:      a.DB,
 		Pagination:    config.GetInt("Warehouse.Archiver.backupRowsBatchSize", 100),
 		QueryTemplate: tmpl,
 		OutputPath:    path,
@@ -119,12 +129,12 @@ func backupRecords(args backupRecordsArgs) (backupLocation string, err error) {
 	}
 
 	backupLocation, err = tableJSONArchiver.Do()
-	pkgLogger.Infof(`Completed backupRecords for uploadId: %s, sourceId: %s, destinationId: %s, tableName: %s,`, args.uploadID, args.sourceID, args.destID, args.tableName)
+	a.Logger.Infof(`Completed backupRecords for uploadId: %s, sourceId: %s, destinationId: %s, tableName: %s,`, args.uploadID, args.sourceID, args.destID, args.tableName)
 	return
 }
 
-func deleteFilesInStorage(locations []string) error {
-	fManager, err := filemanager.DefaultFileManagerFactory.New(&filemanager.SettingsT{
+func (a *Archiver) deleteFilesInStorage(locations []string) error {
+	fManager, err := a.FileManager.New(&filemanager.SettingsT{
 		Provider: warehouseutils.S3,
 		Config:   misc.GetRudderObjectStorageConfig(""),
 	})
@@ -135,17 +145,17 @@ func deleteFilesInStorage(locations []string) error {
 
 	err = fManager.DeleteObjects(context.TODO(), locations)
 	if err != nil {
-		pkgLogger.Errorf("Error in deleting objects in Rudder S3: %v", err)
+		a.Logger.Errorf("Error in deleting objects in Rudder S3: %v", err)
 	}
 	return err
 }
 
-func usedRudderStorage(metadata []byte) bool {
+func (*Archiver) usedRudderStorage(metadata []byte) bool {
 	return gjson.GetBytes(metadata, "use_rudder_storage").Bool()
 }
 
-func archiveUploads(dbHandle *sql.DB) {
-	pkgLogger.Infof(`Started archiving for warehouse`)
+func (a *Archiver) Do(ctx context.Context) error {
+	a.Logger.Infof(`Started archiving for warehouse`)
 	sqlStatement := fmt.Sprintf(`
 		SELECT
 		  id,
@@ -155,7 +165,8 @@ func archiveUploads(dbHandle *sql.DB) {
 		  end_staging_file_id,
 		  start_load_file_id,
 		  end_load_file_id,
-		  metadata
+		  metadata,
+		  workspace_id
 		FROM
 		  %s
 		WHERE
@@ -166,30 +177,36 @@ func archiveUploads(dbHandle *sql.DB) {
 			FROM
 			  TRUE
 		  )
-		  AND created_at < NOW() - INTERVAL '%d DAY'
-		  AND status = '%s'
+		  AND created_at < NOW() - $1::interval
+		  AND status = $2
+		  AND NOT workspace_id = ANY ( $3 )
 		LIMIT
 		  10000;
 `,
-		warehouseutils.WarehouseUploadsTable,
-		uploadsArchivalTimeInDays,
-		ExportedData,
+		pq.QuoteIdentifier(warehouseutils.WarehouseUploadsTable),
 	)
 
-	rows, err := dbHandle.Query(sqlStatement)
+	// empty workspace id should be excluded as a safety measure
+	skipWorkspaceIDs := []string{""}
+	skipWorkspaceIDs = append(skipWorkspaceIDs, a.Multitenant.DegradedWorkspaces()...)
+
+	rows, err := a.DB.QueryContext(ctx, sqlStatement,
+		fmt.Sprintf("%d DAY", uploadsArchivalTimeInDays),
+		model.ExportedData,
+		pq.Array(skipWorkspaceIDs),
+	)
 	defer func() {
 		if err != nil {
-			pkgLogger.Errorf(`Error occurred while archiving for warehouse uploads with error: %v`, err)
-			stats.Default.NewTaggedStat("warehouse.archiver.archiveFailed", stats.CountType, stats.Tags{}).Count(1)
+			a.Logger.Errorf(`Error occurred while archiving for warehouse uploads with error: %v`, err)
+			a.Stats.NewTaggedStat("warehouse.archiver.archiveFailed", stats.CountType, stats.Tags{}).Count(1)
 		}
 	}()
 	if err == sql.ErrNoRows {
-		pkgLogger.Debugf(`No uploads found for archival. Query: %s`, sqlStatement)
-		return
+		a.Logger.Debugf(`No uploads found for archival. Query: %s`, sqlStatement)
+		return nil
 	}
 	if err != nil {
-		pkgLogger.Errorf(`Error querying wh_uploads for archival. Query: %s, Error: %v`, sqlStatement, err)
-		return
+		return fmt.Errorf("querying wh_uploads for archival: %w", err)
 	}
 	var uploadsToArchive []*uploadRecord
 	for rows.Next() {
@@ -203,25 +220,32 @@ func archiveUploads(dbHandle *sql.DB) {
 			&u.startLoadFileID,
 			&u.endLoadFileID,
 			&u.uploadMetdata,
+			&u.workspaceID,
 		)
 		if err != nil {
-			pkgLogger.Errorf(`Error scanning wh_upload for archival. Error: %v`, err)
+			a.Logger.Errorf(`Error scanning wh_upload for archival. Error: %v`, err)
 			continue
 		}
 		uploadsToArchive = append(uploadsToArchive, &u)
 	}
-	rows.Close()
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("scanning rows: %w", err)
+	}
+
+	if err := rows.Close(); err != nil {
+		return fmt.Errorf("closing rows after scanning wh_uploads for archival: %w", err)
+	}
 
 	var archivedUploads int
 	for _, u := range uploadsToArchive {
 
-		txn, err := dbHandle.Begin()
+		txn, err := a.DB.Begin()
 		if err != nil {
-			pkgLogger.Errorf(`Error creating txn in archiveUploadFiles. Error: %v`, err)
+			a.Logger.Errorf(`Error creating txn in archiveUploadFiles. Error: %v`, err)
 			continue
 		}
 
-		hasUsedRudderStorage := usedRudderStorage(u.uploadMetdata)
+		hasUsedRudderStorage := a.usedRudderStorage(u.uploadMetdata)
 
 		// archive staging files
 		stmt := fmt.Sprintf(`
@@ -245,7 +269,7 @@ func archiveUploads(dbHandle *sql.DB) {
 
 		stagingFileRows, err := txn.Query(stmt)
 		if err != nil {
-			pkgLogger.Errorf(`Error running txn in archiveUploadFiles. Query: %s Error: %v`, stmt, err)
+			a.Logger.Errorf(`Error running txn in archiveUploadFiles. Query: %s Error: %v`, stmt, err)
 			txn.Rollback()
 			continue
 		}
@@ -261,9 +285,8 @@ func archiveUploads(dbHandle *sql.DB) {
 				&stagingFileLocation,
 			)
 			if err != nil {
-				pkgLogger.Errorf(`Error scanning staging file id in archiveUploadFiles. Error: %v`, err)
 				txn.Rollback()
-				return
+				return fmt.Errorf("scanning staging file id: %w", err)
 			}
 			stagingFileIDs = append(stagingFileIDs, stagingFileID)
 			stagingFileLocations = append(stagingFileLocations, stagingFileLocation)
@@ -272,9 +295,9 @@ func archiveUploads(dbHandle *sql.DB) {
 
 		var storedStagingFilesLocation string
 		if len(stagingFileIDs) > 0 {
-			if archiver.IsArchiverObjectStorageConfigured() && !hasUsedRudderStorage {
+			if !hasUsedRudderStorage {
 				filterSQL := fmt.Sprintf(`id IN (%v)`, misc.IntArrayToString(stagingFileIDs, ","))
-				storedStagingFilesLocation, err = backupRecords(backupRecordsArgs{
+				storedStagingFilesLocation, err = a.backupRecords(backupRecordsArgs{
 					tableName:      warehouseutils.WarehouseStagingFilesTable,
 					sourceID:       u.sourceID,
 					destID:         u.destID,
@@ -283,18 +306,18 @@ func archiveUploads(dbHandle *sql.DB) {
 				})
 
 				if err != nil {
-					pkgLogger.Errorf(`Error backing up staging files for upload:%d : %v`, u.uploadID, err)
+					a.Logger.Errorf(`Error backing up staging files for upload:%d : %v`, u.uploadID, err)
 					txn.Rollback()
 					continue
 				}
 			} else {
-				pkgLogger.Debugf(`Object storage not configured to archive upload related staging file records. Deleting the ones that need to be archived for upload:%d`, u.uploadID)
+				a.Logger.Debugf(`Object storage not configured to archive upload related staging file records. Deleting the ones that need to be archived for upload:%d`, u.uploadID)
 			}
 
 			if hasUsedRudderStorage {
-				err = deleteFilesInStorage(stagingFileLocations)
+				err = a.deleteFilesInStorage(stagingFileLocations)
 				if err != nil {
-					pkgLogger.Errorf(`Error deleting staging files from Rudder S3. Error: %v`, stmt, err)
+					a.Logger.Errorf(`Error deleting staging files from Rudder S3. Error: %v`, stmt, err)
 					txn.Rollback()
 					continue
 				}
@@ -312,7 +335,7 @@ func archiveUploads(dbHandle *sql.DB) {
 			)
 			_, err = txn.Query(stmt)
 			if err != nil {
-				pkgLogger.Errorf(`Error running txn in archiveUploadFiles. Query: %s Error: %v`, stmt, err)
+				a.Logger.Errorf(`Error running txn in archiveUploadFiles. Query: %s Error: %v`, stmt, err)
 				txn.Rollback()
 				continue
 			}
@@ -328,7 +351,7 @@ func archiveUploads(dbHandle *sql.DB) {
 			)
 			loadLocationRows, err := txn.Query(stmt, pq.Array(stagingFileIDs))
 			if err != nil {
-				pkgLogger.Errorf(`Error running txn in archiveUploadFiles. Query: %s Error: %v`, stmt, err)
+				a.Logger.Errorf(`Error running txn in archiveUploadFiles. Query: %s Error: %v`, stmt, err)
 				txn.Rollback()
 				continue
 			}
@@ -341,9 +364,8 @@ func archiveUploads(dbHandle *sql.DB) {
 					var loc string
 					err = loadLocationRows.Scan(&loc)
 					if err != nil {
-						pkgLogger.Errorf(`Error scanning location in archiveUploadFiles. Error: %v`, err)
 						txn.Rollback()
-						return
+						return fmt.Errorf("scanning load file location: %w", err)
 					}
 					loadLocations = append(loadLocations, loc)
 				}
@@ -352,15 +374,15 @@ func archiveUploads(dbHandle *sql.DB) {
 				for _, loc := range loadLocations {
 					u, err := url.Parse(loc)
 					if err != nil {
-						pkgLogger.Errorf(`Error deleting load files from Rudder S3. Error: %v`, stmt, err)
+						a.Logger.Errorf(`Error deleting load files from Rudder S3. Error: %v`, stmt, err)
 						txn.Rollback()
 						continue
 					}
 					paths = append(paths, u.Path[1:])
 				}
-				err = deleteFilesInStorage(paths)
+				err = a.deleteFilesInStorage(paths)
 				if err != nil {
-					pkgLogger.Errorf(`Error deleting load files from Rudder S3. Error: %v`, stmt, err)
+					a.Logger.Errorf(`Error deleting load files from Rudder S3. Error: %v`, stmt, err)
 					txn.Rollback()
 					continue
 				}
@@ -383,7 +405,7 @@ func archiveUploads(dbHandle *sql.DB) {
 		)
 		_, err = txn.Exec(stmt, u.uploadMetdata)
 		if err != nil {
-			pkgLogger.Errorf(`Error running txn in archiveUploadFiles. Query: %s Error: %v`, stmt, err)
+			a.Logger.Errorf(`Error running txn in archiveUploadFiles. Query: %s Error: %v`, stmt, err)
 			txn.Rollback()
 			continue
 		}
@@ -395,27 +417,14 @@ func archiveUploads(dbHandle *sql.DB) {
 		}
 		archivedUploads++
 		if storedStagingFilesLocation != "" {
-			pkgLogger.Debugf(`[Archiver]: Archived upload: %d related staging files at: %s`, u.uploadID, storedStagingFilesLocation)
+			a.Logger.Debugf(`[Archiver]: Archived upload: %d related staging files at: %s`, u.uploadID, storedStagingFilesLocation)
 		}
 
-		stats.Default.NewTaggedStat("warehouse.archiver.numArchivedUploads", stats.CountType, stats.Tags{
+		a.Stats.NewTaggedStat("warehouse.archiver.numArchivedUploads", stats.CountType, stats.Tags{
 			"destination": u.destID,
 			"source":      u.sourceID,
 		}).Count(1)
 	}
-	pkgLogger.Infof(`Successfully archived %d uploads`, archivedUploads)
-}
-
-func runArchiver(ctx context.Context, dbHandle *sql.DB) {
-	for {
-		select {
-		case <-ctx.Done():
-			pkgLogger.Infof("context is cancelled, stopped running archiving")
-			return
-		case <-time.After(archiverTickerTime):
-			if archiveUploadRelatedRecords {
-				archiveUploads(dbHandle)
-			}
-		}
-	}
+	a.Logger.Infof(`Successfully archived %d uploads`, archivedUploads)
+	return nil
 }

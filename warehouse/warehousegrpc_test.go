@@ -48,7 +48,7 @@ var _ = Describe("WarehouseGrpc", func() {
 				pool, err := dockertest.NewPool("")
 				Expect(err).To(BeNil())
 
-				pgResource = setupWarehouseJobs(pool, GinkgoT(), cleanup)
+				pgResource = setupWarehouseJobs(pool, GinkgoT())
 
 				minioResource, err = destination.SetupMINIO(pool, cleanup)
 				Expect(err).To(BeNil())
@@ -552,7 +552,7 @@ var _ = Describe("WarehouseGrpc", func() {
 				g.Setenv("DEPLOYMENT_TYPE", "MULTITENANT")
 				g.Setenv("HOSTED_SERVICE_SECRET", "test-secret")
 
-				pgResource = setupWarehouseJobs(pool, g, cleanup)
+				pgResource = setupWarehouseJobs(pool, g)
 
 				initWarehouse()
 

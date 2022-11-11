@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"runtime"
 	"testing"
 	"time"
 
@@ -119,10 +118,6 @@ func TestNewProducer(t *testing.T) {
 	})
 
 	t.Run("ok", func(t *testing.T) {
-		if runtime.GOARCH == "arm64" && !overrideArm64Check {
-			t.Skip("arm64 is not supported yet")
-		}
-
 		kafkaStats.creationTime = getMockedTimer(t, gomock.NewController(t))
 
 		pool, err := dockertest.NewPool("")
