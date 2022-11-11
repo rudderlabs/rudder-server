@@ -1,21 +1,27 @@
 package warehouse
 
 import (
+	"context"
 	"database/sql"
 	"errors"
 	"fmt"
 	"net/http"
+	"os"
 	"strings"
 	"time"
 
-	"github.com/rudderlabs/rudder-server/utils/types/deployment"
+	"github.com/rudderlabs/rudder-server/warehouse/model"
+	"github.com/rudderlabs/rudder-server/warehouse/validations"
 
 	"github.com/rudderlabs/rudder-server/config"
+	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/controlplane"
 	proto "github.com/rudderlabs/rudder-server/proto/warehouse"
+	"github.com/rudderlabs/rudder-server/services/filemanager"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
+	"github.com/rudderlabs/rudder-server/utils/types/deployment"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 	"github.com/tidwall/gjson"
 	"google.golang.org/grpc"
@@ -97,9 +103,10 @@ type UploadAPIT struct {
 var UploadAPI UploadAPIT
 
 const (
-	TriggeredSuccessfully = "Triggered successfully"
-	NoPendingEvents       = "No pending events to sync for this destination"
-	NoSuchSyncs           = "No such sync exist"
+	TriggeredSuccessfully   = "Triggered successfully"
+	NoPendingEvents         = "No pending events to sync for this destination"
+	DownloadFileNamePattern = "downloadfile.*.tmp"
+	NoSuchSyncs             = "No such sync exist"
 )
 
 func InitWarehouseAPI(dbHandle *sql.DB, log logger.Logger) error {
@@ -145,9 +152,9 @@ func (uploadsReq *UploadsReqT) validateReq() error {
 }
 
 var statusMap = map[string]string{
-	"success": ExportedData,
-	"waiting": Waiting,
-	"aborted": Aborted,
+	"success": model.ExportedData,
+	"waiting": model.Waiting,
+	"aborted": model.Aborted,
 	"failed":  "%failed%",
 }
 
@@ -308,7 +315,7 @@ func (uploadReq UploadReqT) GetWHUpload() (response *proto.WHUploadResponse, err
 		return true
 	})
 	// do not return error on successful upload
-	if upload.Status != ExportedData {
+	if upload.Status != model.ExportedData {
 		lastFailedStatus := warehouseutils.GetLastFailedStatus(timingsObject)
 		errorPath := fmt.Sprintf("%s.errors", lastFailedStatus)
 		errs := gjson.Get(uploadError, errorPath).Array()
@@ -317,14 +324,14 @@ func (uploadReq UploadReqT) GetWHUpload() (response *proto.WHUploadResponse, err
 		}
 	}
 	// set nextRetryTime for non-aborted failed uploads
-	if upload.Status != ExportedData && upload.Status != Aborted && nextRetryTimeStr.Valid {
+	if upload.Status != model.ExportedData && upload.Status != model.Aborted && nextRetryTimeStr.Valid {
 		if nextRetryTime, err := time.Parse(time.RFC3339, nextRetryTimeStr.String); err == nil {
 			upload.NextRetryTime = timestamppb.New(nextRetryTime)
 		}
 	}
 	// set duration as time between updatedAt and lastExec recorded timings
 	// for ongoing/retrying uploads set diff between lastExec and current time
-	if upload.Status == ExportedData || upload.Status == Aborted {
+	if upload.Status == model.ExportedData || upload.Status == model.Aborted {
 		upload.Duration = int32(updatedAt.Time.Sub(lastExecAt.Time) / time.Second)
 	} else {
 		upload.Duration = int32(timeutil.Now().Sub(lastExecAt.Time) / time.Second)
@@ -450,7 +457,7 @@ func (tableUploadReq TableUploadReqT) GetWhTableUploads() ([]*proto.WHTable, err
 			continue
 		}
 		// do not return error on successful upload
-		if tableUpload.Status == ExportedData {
+		if tableUpload.Status == model.ExportedData {
 			tableUpload.Error = ""
 		}
 		if lastExecTime.Valid {
@@ -464,11 +471,11 @@ func (tableUploadReq TableUploadReqT) GetWhTableUploads() ([]*proto.WHTable, err
 
 func (tableUploadReq TableUploadReqT) generateQuery(selectFields string) string {
 	query := fmt.Sprintf(`
-	SELECT 
-	  %s 
-	FROM 
-	  %s 
-	WHERE 
+	SELECT
+	  %s
+	FROM
+	  %s
+	WHERE
 	  wh_upload_id = %d
 `,
 		selectFields,
@@ -493,11 +500,11 @@ func (tableUploadReq TableUploadReqT) validateReq() error {
 
 func (uploadReq UploadReqT) generateQuery(selectedFields string) string {
 	return fmt.Sprintf(`
-		SELECT 
-		  %s 
-		FROM 
-		  %s 
-		WHERE 
+		SELECT
+		  %s
+		FROM
+		  %s
+		WHERE
 		  id = %d
 `,
 		selectedFields,
@@ -540,7 +547,7 @@ func (uploadsReq UploadsReqT) authorizedSources() (sourceIDs []string) {
 	return sourceIDs
 }
 
-func (uploadsReq *UploadsReqT) getUploadsFromDb(isMultiWorkspace bool, query string) ([]*proto.WHUploadResponse, int32, error) {
+func (uploadsReq *UploadsReqT) getUploadsFromDB(isMultiWorkspace bool, query string) ([]*proto.WHUploadResponse, int32, error) {
 	var totalUploadCount int32
 	var err error
 	uploads := make([]*proto.WHUploadResponse, 0)
@@ -615,7 +622,7 @@ func (uploadsReq *UploadsReqT) getUploadsFromDb(isMultiWorkspace bool, query str
 			return true
 		})
 		// set error only for failed uploads. skip for retried and then successful uploads
-		if upload.Status != ExportedData {
+		if upload.Status != model.ExportedData {
 			lastFailedStatus := warehouseutils.GetLastFailedStatus(timingsObject)
 			errorPath := fmt.Sprintf("%s.errors", lastFailedStatus)
 			errs := gjson.Get(uploadError, errorPath).Array()
@@ -624,14 +631,14 @@ func (uploadsReq *UploadsReqT) getUploadsFromDb(isMultiWorkspace bool, query str
 			}
 		}
 		// set nextRetryTime for non-aborted failed uploads
-		if upload.Status != ExportedData && upload.Status != Aborted && nextRetryTimeStr.Valid {
+		if upload.Status != model.ExportedData && upload.Status != model.Aborted && nextRetryTimeStr.Valid {
 			if nextRetryTime, err := time.Parse(time.RFC3339, nextRetryTimeStr.String); err == nil {
 				upload.NextRetryTime = timestamppb.New(nextRetryTime)
 			}
 		}
 		// set duration as time between updatedAt and lastExec recorded timings
 		// for ongoing/retrying uploads set diff between lastExec and current time
-		if upload.Status == ExportedData || upload.Status == Aborted {
+		if upload.Status == model.ExportedData || upload.Status == model.Aborted {
 			upload.Duration = int32(updatedAt.Time.Sub(lastExecAt.Time) / time.Second)
 		} else {
 			upload.Duration = int32(timeutil.Now().Sub(lastExecAt.Time) / time.Second)
@@ -645,9 +652,9 @@ func (uploadsReq *UploadsReqT) getUploadsFromDb(isMultiWorkspace bool, query str
 func (uploadsReq *UploadsReqT) getTotalUploadCount(whereClause string) (int32, error) {
 	var totalUploadCount int32
 	query := fmt.Sprintf(`
-	select 
-	  count(*) 
-	from 
+	select
+	  count(*)
+	from
 	  %s
 `,
 		warehouseutils.WarehouseUploadsTable,
@@ -672,11 +679,11 @@ func (uploadsReq *UploadsReqT) warehouseUploadsForHosted(authorizedSourceIDs []s
 
 	// create query
 	subQuery = fmt.Sprintf(`
-		SELECT 
-		  %s, 
-		  COUNT(*) OVER() AS total_uploads 
-		FROM 
-		  %s 
+		SELECT
+		  %s,
+		  COUNT(*) OVER() AS total_uploads
+		FROM
+		  %s
 		WHERE
 `,
 		selectFields,
@@ -699,13 +706,13 @@ func (uploadsReq *UploadsReqT) warehouseUploadsForHosted(authorizedSourceIDs []s
 
 	subQuery = subQuery + strings.Join(whereClauses, " AND ")
 	query = fmt.Sprintf(`
-		SELECT 
-		  * 
-		FROM 
-		  (%s) p 
-		ORDER BY 
-		  id DESC 
-		LIMIT 
+		SELECT
+		  *
+		FROM
+		  (%s) p
+		ORDER BY
+		  id DESC
+		LIMIT
 		  %d OFFSET %d
 `,
 		subQuery,
@@ -715,7 +722,7 @@ func (uploadsReq *UploadsReqT) warehouseUploadsForHosted(authorizedSourceIDs []s
 	uploadsReq.API.log.Info(query)
 
 	// get uploads from db
-	uploads, totalUploadCount, err = uploadsReq.getUploadsFromDb(true, query)
+	uploads, totalUploadCount, err = uploadsReq.getUploadsFromDB(true, query)
 	if err != nil {
 		uploadsReq.API.log.Errorf(err.Error())
 		return &proto.WHUploadsResponse{}, err
@@ -745,9 +752,9 @@ func (uploadsReq *UploadsReqT) warehouseUploads(selectFields string) (uploadsRes
 
 	// create query
 	query = fmt.Sprintf(`
-		select 
-		  %s 
-		from 
+		select
+		  %s
+		from
 		  %s
 `,
 		selectFields,
@@ -775,7 +782,7 @@ func (uploadsReq *UploadsReqT) warehouseUploads(selectFields string) (uploadsRes
 	// we get uploads for non hosted workspaces in two steps
 	// this is because getting this info via 2 queries is faster than getting it via one query(using the 'count(*) OVER()' clause)
 	// step1 - get all uploads
-	uploads, _, err = uploadsReq.getUploadsFromDb(false, query)
+	uploads, _, err = uploadsReq.getUploadsFromDB(false, query)
 	if err != nil {
 		uploadsReq.API.log.Errorf(err.Error())
 		return &proto.WHUploadsResponse{}, err
@@ -797,4 +804,105 @@ func (uploadsReq *UploadsReqT) warehouseUploads(selectFields string) (uploadsRes
 		},
 	}
 	return
+}
+
+// checkMapForValidKey checks the presence of key in map
+// and if yes verifies that the key is string and non-empty.
+func checkMapForValidKey(configMap map[string]interface{}, key string) bool {
+	value, ok := configMap[key]
+	if !ok {
+		return false
+	}
+
+	if valStr, ok := value.(string); ok {
+		return len(valStr) != 0
+	}
+	return false
+}
+
+func validateObjectStorage(ctx context.Context, request *ObjectStorageValidationRequest) error {
+	pkgLogger.Infof("Received call to validate object storage for type: %s\n", request.Type)
+
+	factory := &filemanager.FileManagerFactoryT{}
+	fileManager, err := factory.New(getFileManagerSettings(request.Type, request.Config))
+	if err != nil {
+		return fmt.Errorf("unable to create file manager: \n%s", err.Error())
+	}
+
+	req := validations.DestinationValidationRequest{
+		Destination: backendconfig.DestinationT{
+			DestinationDefinition: backendconfig.DestinationDefinitionT{Name: request.Type},
+		},
+	}
+
+	filePath, err := validations.CreateTempLoadFile(&req)
+	if err != nil {
+		return fmt.Errorf("unable to create temp load file: \n%w", err)
+	}
+	defer os.Remove(filePath)
+
+	f, err := os.Open(filePath)
+	if err != nil {
+		return fmt.Errorf("unable to open path to temporary file: \n%w", err)
+	}
+
+	uploadOutput, err := fileManager.Upload(ctx, f)
+	if err != nil {
+		return InvalidDestinationCredErr{Base: err, Operation: "upload"}
+	}
+	_ = f.Close()
+
+	key := fileManager.GetDownloadKeyFromFileLocation(uploadOutput.Location)
+
+	tmpDirectory, err := misc.CreateTMPDIR()
+	if err != nil {
+		return fmt.Errorf("error while Creating file to download data")
+	}
+	f, err = os.CreateTemp(tmpDirectory, DownloadFileNamePattern)
+	if err != nil {
+		return fmt.Errorf("error while Creating file to download data")
+	}
+
+	defer os.Remove(f.Name())
+
+	err = fileManager.Download(ctx, f, key)
+	if err != nil {
+		return InvalidDestinationCredErr{Base: err, Operation: "download"}
+	}
+	_ = f.Close()
+
+	return nil
+}
+
+func getFileManagerSettings(provider string, inputConfig map[string]interface{}) *filemanager.SettingsT {
+	settings := &filemanager.SettingsT{
+		Provider: provider,
+		Config:   inputConfig,
+	}
+
+	overrideWithEnv(settings)
+	return settings
+}
+
+// overrideWithEnv overrides the config keys in the fileManager settings
+// with fallback values pulled from env. Only supported for S3 for now.
+func overrideWithEnv(settings *filemanager.SettingsT) {
+	envConfig := filemanager.GetProviderConfigFromEnv(context.TODO(), settings.Provider)
+
+	if settings.Provider == "S3" {
+		ifNotExistThenSet("prefix", envConfig["prefix"], settings.Config)
+		ifNotExistThenSet("accessKeyID", envConfig["accessKeyID"], settings.Config)
+		ifNotExistThenSet("accessKey", envConfig["accessKey"], settings.Config)
+		ifNotExistThenSet("enableSSE", envConfig["enableSSE"], settings.Config)
+		ifNotExistThenSet("iamRoleARN", envConfig["iamRoleArn"], settings.Config)
+		ifNotExistThenSet("externalID", envConfig["externalId"], settings.Config)
+		ifNotExistThenSet("regionHint", envConfig["regionHint"], settings.Config)
+	}
+}
+
+func ifNotExistThenSet(keyToReplace string, replaceWith interface{}, configMap map[string]interface{}) {
+	if _, ok := configMap[keyToReplace]; !ok {
+		// In case we don't have the key, simply replace it with replaceWith
+		configMap[keyToReplace] = replaceWith
+	}
 }

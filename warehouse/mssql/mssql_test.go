@@ -1,4 +1,4 @@
-//go:build warehouse_integration
+//go:build warehouse_integration && !sources_integration
 
 package mssql_test
 
@@ -92,6 +92,8 @@ func TestMSSQLIntegration(t *testing.T) {
 	testhelper.VerifyEventsInLoadFiles(t, warehouseTest, testhelper.LoadFilesEventsMap())
 	testhelper.VerifyEventsInTableUploads(t, warehouseTest, testhelper.TableUploadsEventsMap())
 	testhelper.VerifyEventsInWareHouse(t, warehouseTest, testhelper.WarehouseEventsMap())
+
+	testhelper.VerifyWorkspaceIDInStats(t)
 }
 
 func TestMSSQLConfigurationValidation(t *testing.T) {

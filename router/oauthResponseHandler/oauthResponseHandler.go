@@ -484,13 +484,13 @@ func (authErrHandler *OAuthErrResHandler) cpApiCall(cpReq *ControlPlaneRequestT)
 		"requestType": cpReq.RequestType,
 	}).SendTiming(time.Since(cpApiDoTimeStart))
 	authErrHandler.logger.Debugf("[%s request] :: destination request sent\n", loggerNm)
-	if res.Body != nil {
-		defer res.Body.Close()
-	}
 	if doErr != nil {
 		// Abort on receiving an error
 		authErrHandler.logger.Errorf("[%s request] :: destination request failed: %+v\n", loggerNm, doErr)
 		return http.StatusBadRequest, doErr.Error()
+	}
+	if res.Body != nil {
+		defer res.Body.Close()
 	}
 	statusCode, resp := processResponse(res)
 	return statusCode, resp

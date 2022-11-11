@@ -88,6 +88,46 @@ type ConfigT struct {
 	Sources         []SourceT       `json:"sources"`
 	Libraries       LibrariesT      `json:"libraries"`
 	ConnectionFlags ConnectionFlags `json:"flags"`
+	Settings        Settings        `json:"settings"`
+}
+
+type Settings struct {
+	DataRetention DataRetention `json:"dataRetention"`
+}
+
+type DataRetention struct {
+	DisableReportingPII bool               `json:"disableReportingPii"`
+	UseSelfStorage      bool               `json:"useSelfStorage"`
+	StorageBucket       StorageBucket      `json:"storageBucket"`
+	StoragePreferences  StoragePreferences `json:"storagePreferences"`
+}
+
+type StorageBucket struct {
+	Type   string `json:"type"`
+	Config map[string]interface{}
+}
+
+type StoragePreferences struct {
+	ProcErrors       bool `json:"procErrors"`
+	GatewayDumps     bool `json:"gatewayDumps"`
+	ProcErrorDumps   bool `json:"procErrorDumps"`
+	RouterDumps      bool `json:"routerDumps"`
+	BatchRouterDumps bool `json:"batchRouterDumps"`
+}
+
+func (sp StoragePreferences) Backup(tableprefix string) bool {
+	switch tableprefix {
+	case "gw":
+		return sp.GatewayDumps
+	case "rt":
+		return sp.RouterDumps
+	case "batch_rt":
+		return sp.BatchRouterDumps
+	case "proc_error":
+		return sp.ProcErrorDumps
+	default:
+		return false
+	}
 }
 
 type ConnectionFlags struct {

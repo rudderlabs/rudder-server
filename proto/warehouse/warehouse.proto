@@ -3,6 +3,7 @@ package proto;
 import "google/protobuf/timestamp.proto";
 import "google/protobuf/empty.proto";
 import "google/protobuf/wrappers.proto";
+import "google/protobuf/struct.proto";
 
 option go_package = ".;proto";
 
@@ -14,6 +15,7 @@ service Warehouse {
   rpc TriggerWHUploads (WHUploadsRequest) returns (TriggerWhUploadsResponse);
   rpc Validate (WHValidationRequest) returns (WHValidationResponse);
   rpc RetryWHUploads (RetryWHUploadsRequest) returns (RetryWHUploadsResponse);
+  rpc ValidateObjectStorageDestination (ValidateObjectStorageRequest) returns (ValidateObjectStorageResponse);
   rpc CountWHUploadsToRetry (RetryWHUploadsRequest) returns (RetryWHUploadsResponse);
 }
 
@@ -105,4 +107,14 @@ message RetryWHUploadsResponse {
   string message = 1;
   int64 count = 2;
   int32 status_code = 3;
+}
+
+message ValidateObjectStorageRequest {
+  string type=1;
+  google.protobuf.Struct config=2;
+}
+
+message ValidateObjectStorageResponse{
+  bool isValid=2;
+  string error=3;
 }

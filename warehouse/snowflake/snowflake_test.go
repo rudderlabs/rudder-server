@@ -1,4 +1,4 @@
-//go:build warehouse_integration
+//go:build warehouse_integration && !sources_integration
 
 package snowflake_test
 
@@ -139,6 +139,8 @@ func TestSnowflakeIntegration(t *testing.T) {
 			testhelper.VerifyEventsInLoadFiles(t, warehouseTest, testhelper.LoadFilesEventsMap())
 			testhelper.VerifyEventsInTableUploads(t, warehouseTest, testhelper.TableUploadsEventsMap())
 			testhelper.VerifyEventsInWareHouse(t, warehouseTest, testhelper.WarehouseEventsMap())
+
+			testhelper.VerifyWorkspaceIDInStats(t)
 		})
 	}
 }

@@ -1,4 +1,4 @@
-//go:build warehouse_integration
+//go:build warehouse_integration && !sources_integration
 
 package postgres_test
 
@@ -25,6 +25,8 @@ type TestHandle struct {
 }
 
 var handle *TestHandle
+
+var statsToVerify = []string{"pg_rollback_timeout"}
 
 func (*TestHandle) VerifyConnection() error {
 	return testhelper.WithConstantBackoff(func() (err error) {
@@ -91,6 +93,8 @@ func TestPostgresIntegration(t *testing.T) {
 	testhelper.VerifyEventsInLoadFiles(t, warehouseTest, testhelper.LoadFilesEventsMap())
 	testhelper.VerifyEventsInTableUploads(t, warehouseTest, testhelper.TableUploadsEventsMap())
 	testhelper.VerifyEventsInWareHouse(t, warehouseTest, testhelper.WarehouseEventsMap())
+
+	testhelper.VerifyWorkspaceIDInStats(t, statsToVerify...)
 }
 
 func TestPostgresConfigurationValidation(t *testing.T) {

@@ -3,7 +3,6 @@ package processor
 import (
 	"bytes"
 	"context"
-	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -36,6 +35,7 @@ import (
 	destinationdebugger "github.com/rudderlabs/rudder-server/services/debugger/destination"
 	transformationdebugger "github.com/rudderlabs/rudder-server/services/debugger/transformation"
 	"github.com/rudderlabs/rudder-server/services/dedup"
+	"github.com/rudderlabs/rudder-server/services/fileuploader"
 	"github.com/rudderlabs/rudder-server/services/multitenant"
 	"github.com/rudderlabs/rudder-server/services/rsources"
 	"github.com/rudderlabs/rudder-server/services/stats"
@@ -80,6 +80,7 @@ type HandleT struct {
 	jobdDBQueryRequestTimeout time.Duration
 	jobdDBMaxRetries          int
 	transientSources          transientsource.Service
+	fileuploader              fileuploader.Provider
 	rsourcesService           rsources.JobService
 }
 
@@ -87,10 +88,7 @@ type processorStats struct {
 	transformEventsByTimeMutex     sync.RWMutex
 	destTransformEventsByTimeTaken transformRequestPQ
 	userTransformEventsByTimeTaken transformRequestPQ
-	pStatsJobs                     *misc.PerfStats
-	pStatsDBR                      *misc.PerfStats
 	statGatewayDBR                 stats.Measurement
-	pStatsDBW                      *misc.PerfStats
 	statGatewayDBW                 stats.Measurement
 	statRouterDBW                  stats.Measurement
 	statBatchRouterDBW             stats.Measurement
@@ -283,13 +281,6 @@ func Init() {
 	pkgLogger = logger.NewLogger().Child("processor")
 }
 
-// NewProcessor creates a new Processor instance
-func NewProcessor() *HandleT {
-	return &HandleT{
-		transformer: transformer.NewTransformer(),
-	}
-}
-
 func (proc *HandleT) Status() interface{} {
 	proc.stats.transformEventsByTimeMutex.RLock()
 	defer proc.stats.transformEventsByTimeMutex.RUnlock()
@@ -313,7 +304,7 @@ func (proc *HandleT) Setup(
 	backendConfig backendconfig.BackendConfig, gatewayDB, routerDB jobsdb.JobsDB,
 	batchRouterDB, errorDB jobsdb.JobsDB, clearDB *bool, reporting types.ReportingI,
 	multiTenantStat multitenant.MultiTenantI, transientSources transientsource.Service,
-	rsourcesService rsources.JobService,
+	fileuploader fileuploader.Provider, rsourcesService rsources.JobService,
 ) {
 	proc.reporting = reporting
 	config.RegisterBoolConfigVariable(types.DEFAULT_REPORTING_ENABLED, &proc.reportingEnabled, false, "Reporting.enabled")
@@ -335,18 +326,13 @@ func (proc *HandleT) Setup(
 	proc.errorDB = errorDB
 
 	proc.transientSources = transientSources
+	proc.fileuploader = fileuploader
 	proc.rsourcesService = rsourcesService
 
 	// Stats
 	proc.statsFactory = stats.Default
-	proc.stats.pStatsJobs = &misc.PerfStats{}
-	proc.stats.pStatsDBR = &misc.PerfStats{}
-	proc.stats.pStatsDBW = &misc.PerfStats{}
 	proc.stats.userTransformEventsByTimeTaken = make([]*TransformRequestT, 0, transformTimesPQLength)
 	proc.stats.destTransformEventsByTimeTaken = make([]*TransformRequestT, 0, transformTimesPQLength)
-	proc.stats.pStatsJobs.Setup("ProcessorJobs")
-	proc.stats.pStatsDBR.Setup("ProcessorDBRead")
-	proc.stats.pStatsDBW.Setup("ProcessorDBWrite")
 	proc.stats.statGatewayDBR = proc.statsFactory.NewStat("processor.gateway_db_read", stats.CountType)
 	proc.stats.statGatewayDBW = proc.statsFactory.NewStat("processor.gateway_db_write", stats.CountType)
 	proc.stats.statRouterDBW = proc.statsFactory.NewStat("processor.router_db_write", stats.CountType)
@@ -450,7 +436,7 @@ func (proc *HandleT) Start(ctx context.Context) error {
 
 	g.Go(misc.WithBugsnag(func() error {
 		st := stash.New()
-		st.Setup(proc.errorDB, proc.transientSources)
+		st.Setup(proc.errorDB, proc.transientSources, proc.fileuploader)
 		st.Start(ctx)
 		return nil
 	}))
@@ -481,7 +467,6 @@ var (
 	destinationIDtoTypeMap    map[string]string
 	batchDestinations         []string
 	configSubscriberLock      sync.RWMutex
-	customDestinations        []string
 	pkgLogger                 logger.Logger
 	enableEventSchemasFeature bool
 	enableEventSchemasAPIOnly bool
@@ -517,7 +502,7 @@ func loadConfig() {
 	config.RegisterBoolConfigVariable(false, &enableEventSchemasAPIOnly, true, "EventSchemas.enableEventSchemasAPIOnly")
 	config.RegisterIntConfigVariable(10000, &maxEventsToProcess, true, 1, "Processor.maxLoopProcessEvents")
 
-	batchDestinations, customDestinations = misc.LoadDestinations()
+	batchDestinations = misc.BatchDestinations()
 	config.RegisterIntConfigVariable(5, &transformTimesPQLength, false, 1, "Processor.transformTimesPQLength")
 	// Capture event name as a tag in event level stats
 	config.RegisterBoolConfigVariable(false, &captureEventNameStats, true, "Processor.Stats.captureEventName")
@@ -1398,17 +1383,7 @@ func (proc *HandleT) processJobsForDest(subJobs subJob, parsedEventList [][]type
 					// At the TP flow we are not having destination information, so adding it here.
 					shallowEventCopy.Metadata.DestinationID = destination.ID
 					shallowEventCopy.Metadata.DestinationType = destination.DestinationDefinition.Name
-
-					//TODO: Test for multiple workspaces ex: hosted data plane
-					/* Stream destinations does not need config in transformer. As the Kafka destination config
-					holds the ca-certificate and it depends on user input, it may happen that they provide entire
-					certificate chain. So, that will make the payload huge while sending a batch of events to transformer,
-					it may result into payload larger than accepted by transformer. So, discarding destination config from being
-					sent to transformer for such destination. */
-					if misc.Contains(customDestinations, *destType) {
-						shallowEventCopy.Destination.Config = nil
-					}
-
+					filterConfig(&shallowEventCopy, destination)
 					metadata := shallowEventCopy.Metadata
 					srcAndDestKey := getKeyFromSourceAndDest(metadata.SourceID, metadata.DestinationID)
 					// We have at-least one event so marking it good
@@ -1492,7 +1467,7 @@ func (proc *HandleT) transformations(in *transformationMessage) *storeMessage {
 
 	for srcAndDestKey, eventList := range in.groupedEvents {
 		srcAndDestKey, eventList := srcAndDestKey, eventList
-		go func() {
+		rruntime.Go(func() {
 			defer wg.Done()
 			chOut <- proc.transformSrcDest(
 				ctx,
@@ -1503,12 +1478,12 @@ func (proc *HandleT) transformations(in *transformationMessage) *storeMessage {
 				in.eventsByMessageID,
 				in.uniqueMessageIdsBySrcDestKey,
 			)
-		}()
+		})
 	}
-	go func() {
+	rruntime.Go(func() {
 		wg.Wait()
 		close(chOut)
-	}()
+	})
 
 	for o := range chOut {
 		destJobs = append(destJobs, o.destJobs...)
@@ -1688,13 +1663,13 @@ func (proc *HandleT) Store(in *storeMessage) {
 
 			// rsources stats
 			in.rsourcesStats.JobStatusesUpdated(statusList)
-			err = in.rsourcesStats.Publish(ctx, tx.Tx())
+			err = in.rsourcesStats.Publish(ctx, tx.SqlTx())
 			if err != nil {
 				return fmt.Errorf("publishing rsources stats: %w", err)
 			}
 
 			if proc.isReportingEnabled() {
-				proc.reporting.Report(in.reportMetrics, tx.Tx())
+				proc.reporting.Report(in.reportMetrics, tx.SqlTx())
 			}
 
 			if enableDedup {
@@ -1725,9 +1700,6 @@ func (proc *HandleT) Store(in *storeMessage) {
 	proc.stats.statDBWriteStatusTime.Since(txnStart)
 	proc.logger.Debugf("Processor GW DB Write Complete. Total Processed: %v", len(statusList))
 	// XX: End of transaction
-
-	proc.stats.pStatsDBW.Rate(len(statusList), time.Since(beforeStoreStatus))
-	proc.stats.pStatsJobs.Rate(in.totalEvents, time.Since(in.start))
 
 	proc.stats.statGatewayDBW.Count(len(statusList))
 	proc.stats.statRouterDBW.Count(len(destJobs))
@@ -2118,10 +2090,10 @@ func (proc *HandleT) saveFailedJobs(failedJobs []*jobsdb.JobT) {
 
 		rsourcesStats := rsources.NewFailedJobsCollector(proc.rsourcesService)
 		rsourcesStats.JobsFailed(failedJobs)
-		_ = proc.errorDB.WithTx(func(tx *sql.Tx) error {
+		_ = proc.errorDB.WithTx(func(tx *jobsdb.Tx) error {
 			// TODO: error propagation
-			router.GetFailedEventsManager().SaveFailedRecordIDs(jobRunIDAbortedEventsMap, tx)
-			return rsourcesStats.Publish(context.TODO(), tx)
+			router.GetFailedEventsManager().SaveFailedRecordIDs(jobRunIDAbortedEventsMap, tx.Tx)
+			return rsourcesStats.Publish(context.TODO(), tx.Tx)
 		})
 
 	}
@@ -2252,7 +2224,6 @@ func (proc *HandleT) getJobs() jobsdb.JobsResult {
 	// check if there is work to be done
 	if len(unprocessedList.Jobs) == 0 {
 		proc.logger.Debugf("Processor DB Read Complete. No GW Jobs to process.")
-		proc.stats.pStatsDBR.Rate(0, time.Since(s))
 		return unprocessedList
 	}
 
@@ -2267,7 +2238,6 @@ func (proc *HandleT) getJobs() jobsdb.JobsResult {
 	defer proc.stats.eventSchemasTime.SendTiming(eventSchemasTime)
 
 	proc.logger.Debugf("Processor DB Read Complete. unprocessedList: %v total_events: %d", len(unprocessedList.Jobs), unprocessedList.EventsCount)
-	proc.stats.pStatsDBR.Rate(len(unprocessedList.Jobs), time.Since(s))
 	proc.stats.statGatewayDBR.Count(len(unprocessedList.Jobs))
 
 	proc.stats.statDBReadRequests.Observe(float64(len(unprocessedList.Jobs)))
@@ -2287,8 +2257,8 @@ func (proc *HandleT) markExecuting(jobs []*jobsdb.JobT) error {
 			JobID:         job.JobID,
 			AttemptNum:    job.LastJobStatus.AttemptNum,
 			JobState:      jobsdb.Executing.State,
-			ExecTime:      start,
-			RetryTime:     start,
+			ExecTime:      time.Now(),
+			RetryTime:     time.Now(),
 			ErrorCode:     "",
 			ErrorResponse: []byte(`{}`),
 			Parameters:    []byte(`{}`),
@@ -2439,7 +2409,7 @@ func (proc *HandleT) mainPipeline(ctx context.Context) {
 
 	chProc := make(chan subJob, bufferSize)
 	wg.Add(1)
-	go func() {
+	rruntime.Go(func() {
 		defer wg.Done()
 		defer close(chProc)
 		nextSleepTime := time.Duration(0)
@@ -2489,31 +2459,31 @@ func (proc *HandleT) mainPipeline(ctx context.Context) {
 				}
 			}
 		}
-	}()
+	})
 
 	chTrans := make(chan *transformationMessage, bufferSize)
 	wg.Add(1)
-	go func() {
+	rruntime.Go(func() {
 		defer wg.Done()
 		defer close(chTrans)
 		for jobs := range chProc {
 			chTrans <- proc.processJobsForDest(jobs, nil)
 		}
-	}()
+	})
 
 	// we need the below buffer size to ensure that `proc.Store(*mergedJob)` is not blocking rest of the Go routines.
 	chStore := make(chan *storeMessage, (bufferSize+1)*(maxEventsToProcess/subJobSize+1))
 	wg.Add(1)
-	go func() {
+	rruntime.Go(func() {
 		defer wg.Done()
 		defer close(chStore)
 		for msg := range chTrans {
 			chStore <- proc.transformations(msg)
 		}
-	}()
+	})
 
 	wg.Add(1)
-	go func() {
+	rruntime.Go(func() {
 		var mergedJob storeMessage
 		firstSubJob := true
 		defer wg.Done()
@@ -2541,7 +2511,7 @@ func (proc *HandleT) mainPipeline(ctx context.Context) {
 				firstSubJob = true
 			}
 		}
-	}()
+	})
 
 	wg.Wait()
 }
@@ -2594,6 +2564,18 @@ func (proc *HandleT) isReportingEnabled() bool {
 func (proc *HandleT) updateRudderSourcesStats(ctx context.Context, tx jobsdb.StoreSafeTx, jobs []*jobsdb.JobT) error {
 	rsourcesStats := rsources.NewStatsCollector(proc.rsourcesService)
 	rsourcesStats.JobsStored(jobs)
-	err := rsourcesStats.Publish(ctx, tx.Tx())
+	err := rsourcesStats.Publish(ctx, tx.SqlTx())
 	return err
+}
+
+func filterConfig(eventCopy *transformer.TransformerEventT, destination *backendconfig.DestinationT) {
+	if configsToFilterI, ok := destination.DestinationDefinition.Config["configFilters"]; ok {
+		if configsToFilter, ok := configsToFilterI.([]interface{}); ok {
+			for _, configKey := range configsToFilter {
+				if configKeyStr, ok := configKey.(string); ok {
+					eventCopy.Destination.Config[configKeyStr] = ""
+				}
+			}
+		}
+	}
 }

@@ -17,6 +17,8 @@ var ServerComponent = Component{
 var WarehouseComponent = Component{
 	Name: "warehouse",
 	Features: []string{
-		"features",
+		"retryUI",
+		"configurationTests",
+		"azureSASTokens",
 	},
 }

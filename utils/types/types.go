@@ -24,7 +24,7 @@ type GatewayBatchRequestT struct {
 
 // UserSuppression is interface to access Suppress user feature
 type UserSuppression interface {
-	IsSuppressedUser(userID, sourceID string) bool
+	IsSuppressedUser(workspaceID, userID, sourceID string) bool
 }
 
 // EventSchemasI is interface to access EventSchemas feature
@@ -49,6 +49,7 @@ type ReportingI interface {
 	WaitForSetup(ctx context.Context, clientName string) error
 	AddClient(ctx context.Context, c Config)
 	Report(metrics []*PUReportedMetric, txn *sql.Tx)
+	IsPIIReportingDisabled(string) bool
 }
 
 // ConfigT simple map config structure

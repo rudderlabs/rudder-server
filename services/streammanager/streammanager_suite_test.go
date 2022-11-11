@@ -1,6 +1,11 @@
 package streammanager_test
 
 import (
+	"crypto/rand"
+	"crypto/rsa"
+	"crypto/x509"
+	"encoding/json"
+	"encoding/pem"
 	"sync"
 	"testing"
 
@@ -210,6 +215,19 @@ func TestNewProducerWithBQStreamDestination(t *testing.T) {
 
 func TestNewProducerWithGooglePubsubDestination(t *testing.T) {
 	initStreamManager()
+
+	reader := rand.Reader
+	bitSize := 2048
+
+	key, err := rsa.GenerateKey(reader, bitSize)
+	assert.Nil(t, err)
+
+	encoded, err := json.Marshal(string(pem.EncodeToMemory(&pem.Block{
+		Type:  "PRIVATE KEY",
+		Bytes: x509.MarshalPKCS1PrivateKey(key),
+	})))
+	assert.Nil(t, err)
+
 	producer, err := streammanager.NewProducer(
 		&backendconfig.DestinationT{
 			DestinationDefinition: backendconfig.DestinationDefinitionT{Name: "GOOGLEPUBSUB"},
@@ -220,7 +238,7 @@ func TestNewProducerWithGooglePubsubDestination(t *testing.T) {
 						"type": "service_account",
 						"project_id": "",
 						"private_key_id": "",
-						"private_key": "-----BEGIN PRIVATE KEY----------END PRIVATE KEY-----\n",
+						"private_key": ` + string(encoded) + `,
 						"client_email": "",
 						"client_id": "",
 						"auth_uri": "https://accounts.google.com/o/oauth2/auth",

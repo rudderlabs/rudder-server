@@ -1,6 +1,7 @@
 package commands
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 	"log"
@@ -8,7 +9,6 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/buger/jsonparser"
 	"github.com/urfave/cli/v2"
 )
 
@@ -67,12 +67,17 @@ type webhook struct {
 	Verbose bool
 }
 
+type payload struct {
+	SentAt string
+}
+
 func (*webhook) computeTime(b []byte) {
-	v, err := jsonparser.GetString(b, "sentAt")
+	p := payload{}
+	err := json.Unmarshal(b, &p)
 	if err != nil {
 		return
 	}
-	sentAt, err := time.Parse(time.RFC3339, v)
+	sentAt, err := time.Parse(time.RFC3339, p.SentAt)
 	if err != nil {
 		log.Println(err)
 		return

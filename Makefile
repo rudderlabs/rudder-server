@@ -1,7 +1,6 @@
 .PHONY: help default build run run-mt test test-run test-teardown mocks
 
 GO=go
-GINKGO=ginkgo
 LDFLAGS?=-s -w
 TESTFILE=_testok
 
@@ -10,11 +9,16 @@ default: build
 mocks: install-tools ## Generate all mocks
 	$(GO) generate ./...
 
-test: test-run test-teardown
+test: install-tools test-run test-teardown
 
 test-run: ## Run all unit tests
+ifeq ($(filter 1,$(debug) $(RUNNER_DEBUG)),)
+	$(eval TEST_CMD = SLOW=0 gotestsum --format pkgname-and-test-fails --)
+	$(eval TEST_OPTIONS = -p=1 -v -failfast -shuffle=on -coverprofile=profile.out -covermode=count -coverpkg=./... -vet=all --timeout=15m)
+else
 	$(eval TEST_CMD = SLOW=0 go test)
-	$(eval TEST_OPTIONS = -p=1 -v -failfast -shuffle=on -coverprofile=profile.out -covermode=atomic -vet=all --timeout=15m)
+	$(eval TEST_OPTIONS = -p=1 -v -failfast -shuffle=on -coverprofile=profile.out -covermode=count -coverpkg=./... -vet=all --timeout=15m)
+endif
 ifdef package
 	$(TEST_CMD) $(TEST_OPTIONS) $(package) && touch $(TESTFILE) || true
 else
@@ -60,10 +64,11 @@ help: ## Show the available commands
 
 
 install-tools:
-	go install github.com/golang/mock/mockgen@v1.6.0 || \
-	GO111MODULE=on go install github.com/golang/mock/mockgen@v1.6.0
-
+	go install github.com/golang/mock/mockgen@v1.6.0
 	go install mvdan.cc/gofumpt@latest
+	go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.28.1
+	go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.2.0
+	go install gotest.tools/gotestsum@v1.8.2
 
 .PHONY: lint 
 lint: fmt ## Run linters on all go files
@@ -73,6 +78,11 @@ lint: fmt ## Run linters on all go files
 .PHONY: fmt 
 fmt: install-tools ## Formats all go files
 	gofumpt -l -w -extra  .
+
+.PHONY: proto
+proto: install-tools ## Generate protobuf files
+	protoc --go_out=paths=source_relative:. proto/**/*.proto
+	protoc --go-grpc_out=paths=source_relative:. proto/**/*.proto
 
 cleanup-warehouse-integration:
 	docker-compose -f warehouse/docker-compose.test.yml down --remove-orphans --volumes
@@ -95,6 +105,18 @@ run-warehouse-integration: setup-warehouse-integration
     else \
       	echo "Failed running Warehouse Integration Test. Getting all logs from all containers"; \
       	make logs-warehouse-integration; \
+      	make cleanup-warehouse-integration; \
+      	exit 1; \
+ 	fi
+
+run-source-integration: setup-warehouse-integration
+	if docker-compose -f warehouse/docker-compose.test.yml exec -T wh-backend go test -v ./warehouse/... -tags=sources_integration -p 8 -timeout 30m -count 1; then \
+      	echo "Successfully ran Warehouse Integration Test. Getting backend container logs only."; \
+		make logs-warehouse-integration; \
+      	make cleanup-warehouse-integration; \
+    else \
+      	echo "Failed running Warehouse Integration Test. Getting all logs from all containers"; \
+		make logs-warehouse-integration; \
       	make cleanup-warehouse-integration; \
       	exit 1; \
  	fi

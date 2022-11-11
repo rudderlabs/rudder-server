@@ -183,8 +183,8 @@ var _ = Describe("Gateway Enterprise", func() {
 		c.initializeEnterpriseAppFeatures()
 
 		c.mockSuppressUserFeature.EXPECT().Setup(gomock.Any()).AnyTimes().Return(c.mockSuppressUser, nil)
-		c.mockSuppressUser.EXPECT().IsSuppressedUser(NormalUserID, SourceIDEnabled).Return(false).AnyTimes()
-		c.mockSuppressUser.EXPECT().IsSuppressedUser(SuppressedUserID, SourceIDEnabled).Return(true).AnyTimes()
+		c.mockSuppressUser.EXPECT().IsSuppressedUser(WorkspaceID, NormalUserID, SourceIDEnabled).Return(false).AnyTimes()
+		c.mockSuppressUser.EXPECT().IsSuppressedUser(WorkspaceID, SuppressedUserID, SourceIDEnabled).Return(true).AnyTimes()
 
 		// setup common environment, override in BeforeEach when required
 		SetEnableRateLimit(false)

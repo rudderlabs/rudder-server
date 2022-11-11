@@ -21,7 +21,6 @@ import (
 	"github.com/rudderlabs/rudder-server/processor/integrations"
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/logger"
-	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/types"
 )
 
@@ -78,7 +77,6 @@ type TransformerEventT struct {
 
 // HandleT is the handle for this class
 type HandleT struct {
-	perfStats    *misc.PerfStats
 	sentStat     stats.Measurement
 	receivedStat stats.Measurement
 	cpDownGauge  stats.Measurement
@@ -147,8 +145,6 @@ func (trans *HandleT) Setup() {
 	trans.cpDownGauge = stats.Default.NewStat("processor.control_plane_down", stats.GaugeType)
 
 	trans.guardConcurrency = make(chan struct{}, maxConcurrency)
-	trans.perfStats = &misc.PerfStats{}
-	trans.perfStats.Setup("JS Call")
 
 	if trans.Client == nil {
 		trans.Client = &http.Client{
@@ -182,7 +178,7 @@ func GetVersion() (transformerBuildVersion string) {
 		transformerBuildVersion = fmt.Sprintf("No response from transformer. %s", transformerBuildVersion)
 		return
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode == http.StatusOK {
 		bodyBytes, err := io.ReadAll(resp.Body)
 		if err != nil {
@@ -204,8 +200,6 @@ func (trans *HandleT) Transform(ctx context.Context, clientEvents []TransformerE
 	}
 
 	sTags := statsTags(clientEvents[0])
-
-	s := time.Now()
 
 	batchCount := len(clientEvents) / batchSize
 	if len(clientEvents)%batchSize != 0 {
@@ -261,7 +255,6 @@ func (trans *HandleT) Transform(ctx context.Context, clientEvents []TransformerE
 	}
 
 	trans.receivedStat.Count(len(outClientEvents))
-	trans.perfStats.Rate(len(clientEvents), time.Since(s))
 
 	return ResponseT{
 		Events:       outClientEvents,
@@ -337,8 +330,8 @@ func (trans *HandleT) request(ctx context.Context, url string, data []Transforme
 		http.StatusBadRequest,
 		http.StatusNotFound,
 		http.StatusRequestEntityTooLarge:
-		trans.logger.Errorf("Transformer returned status code: %v", statusCode)
 	default:
+		trans.logger.Errorf("Transformer returned status code: %v", statusCode)
 	}
 
 	var transformerResponses []TransformerResponseT
@@ -388,7 +381,7 @@ func (trans *HandleT) doPost(ctx context.Context, rawJSON []byte, url string, ta
 				return reqErr
 			}
 			respData, reqErr = io.ReadAll(resp.Body)
-			resp.Body.Close()
+			_ = resp.Body.Close()
 			return reqErr
 		},
 		backoff.WithMaxRetries(backoff.NewExponentialBackOff(), uint64(maxRetry)),
@@ -406,7 +399,7 @@ func (trans *HandleT) doPost(ctx context.Context, rawJSON []byte, url string, ta
 			transformerAPIVersion = 0
 		}
 		if types.SUPPORTED_TRANSFORMER_API_VERSION != transformerAPIVersion {
-			unexpectedVersionError := fmt.Errorf("Incompatible transformer version: Expected: %d Received: %d, URL: %v", types.SUPPORTED_TRANSFORMER_API_VERSION, transformerAPIVersion, url)
+			unexpectedVersionError := fmt.Errorf("incompatible transformer version: Expected: %d Received: %d, URL: %v", types.SUPPORTED_TRANSFORMER_API_VERSION, transformerAPIVersion, url)
 			trans.logger.Error(unexpectedVersionError)
 			panic(unexpectedVersionError)
 		}

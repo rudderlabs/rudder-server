@@ -9,16 +9,10 @@ import (
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
-var (
-	// config
-	AWSAccessKey        = "accessKey"
-	AWSAccessKeyID      = "accessKeyID"
-	AWSBucketNameConfig = "bucketName"
-	AWSS3Prefix         = "prefix"
-	AWSRegion           = "region"
-	UseGlueConfig       = "useGlue"
+var UseGlueConfig = "useGlue"
 
-	// glue
+// glue specific config
+var (
 	glueSerdeName             = "ParquetHiveSerDe"
 	glueSerdeSerializationLib = "org.apache.hadoop.hive.ql.io.parquet.serde.ParquetHiveSerDe"
 	glueParquetInputFormat    = "org.apache.hadoop.hive.ql.io.parquet.MapredParquetInputFormat"
@@ -35,8 +29,8 @@ type GlueSchemaRepository struct {
 
 func NewGlueSchemaRepository(wh warehouseutils.Warehouse) (*GlueSchemaRepository, error) {
 	gl := GlueSchemaRepository{
-		s3bucket:  warehouseutils.GetConfigValue(AWSBucketNameConfig, wh),
-		s3prefix:  warehouseutils.GetConfigValue(AWSS3Prefix, wh),
+		s3bucket:  warehouseutils.GetConfigValue(warehouseutils.AWSBucketNameConfig, wh),
+		s3prefix:  warehouseutils.GetConfigValue(warehouseutils.AWSS3Prefix, wh),
 		Warehouse: wh,
 		Namespace: wh.Namespace,
 	}
@@ -50,8 +44,9 @@ func NewGlueSchemaRepository(wh warehouseutils.Warehouse) (*GlueSchemaRepository
 	return &gl, nil
 }
 
-func (gl *GlueSchemaRepository) FetchSchema(warehouse warehouseutils.Warehouse) (warehouseutils.SchemaT, error) {
+func (gl *GlueSchemaRepository) FetchSchema(warehouse warehouseutils.Warehouse) (warehouseutils.SchemaT, warehouseutils.SchemaT, error) {
 	schema := warehouseutils.SchemaT{}
+	unrecognizedSchema := warehouseutils.SchemaT{}
 	var err error
 
 	var getTablesOutput *glue.GetTablesOutput
@@ -70,7 +65,7 @@ func (gl *GlueSchemaRepository) FetchSchema(warehouse warehouseutils.Warehouse) 
 				pkgLogger.Debugf("FetchSchema: database %s not found in glue. returning empty schema", warehouse.Namespace)
 				err = nil
 			}
-			return schema, err
+			return schema, unrecognizedSchema, err
 		}
 
 		for _, table := range getTablesOutput.TableList {
@@ -84,6 +79,11 @@ func (gl *GlueSchemaRepository) FetchSchema(warehouse warehouseutils.Warehouse) 
 					if _, ok := dataTypesMapToRudder[*col.Type]; ok {
 						schema[tableName][*col.Name] = dataTypesMapToRudder[*col.Type]
 					} else {
+						if _, ok := unrecognizedSchema[tableName]; !ok {
+							unrecognizedSchema[tableName] = make(map[string]string)
+						}
+						unrecognizedSchema[tableName][*col.Name] = warehouseutils.MISSING_DATATYPE
+
 						warehouseutils.WHCounterStat(warehouseutils.RUDDER_MISSING_DATATYPE, &warehouse, warehouseutils.Tag{Name: "datatype", Value: *col.Type}).Count(1)
 					}
 				}
@@ -96,7 +96,7 @@ func (gl *GlueSchemaRepository) FetchSchema(warehouse warehouseutils.Warehouse) 
 		}
 	}
 
-	return schema, err
+	return schema, unrecognizedSchema, err
 }
 
 func (gl *GlueSchemaRepository) CreateSchema() (err error) {
@@ -134,7 +134,7 @@ func (gl *GlueSchemaRepository) CreateTable(tableName string, columnMap map[stri
 	return
 }
 
-func (gl *GlueSchemaRepository) AddColumn(tableName, columnName, columnType string) (err error) {
+func (gl *GlueSchemaRepository) AddColumns(tableName string, columnsInfo []warehouseutils.ColumnInfo) (err error) {
 	updateTableInput := glue.UpdateTableInput{
 		DatabaseName: aws.String(gl.Namespace),
 		TableInput: &glue.TableInput{
@@ -143,7 +143,7 @@ func (gl *GlueSchemaRepository) AddColumn(tableName, columnName, columnType stri
 	}
 
 	// fetch schema from glue
-	schema, err := gl.FetchSchema(gl.Warehouse)
+	schema, _, err := gl.FetchSchema(gl.Warehouse)
 	if err != nil {
 		return err
 	}
@@ -154,8 +154,10 @@ func (gl *GlueSchemaRepository) AddColumn(tableName, columnName, columnType stri
 		return fmt.Errorf("table %s not found in schema", tableName)
 	}
 
-	// add new column to tableSchema
-	tableSchema[columnName] = columnType
+	// add new columns to table schema
+	for _, columnInfo := range columnsInfo {
+		tableSchema[columnInfo.Name] = columnInfo.Type
+	}
 
 	// add storage descriptor to update table request
 	updateTableInput.TableInput.StorageDescriptor = gl.getStorageDescriptor(tableName, tableSchema)
@@ -166,7 +168,7 @@ func (gl *GlueSchemaRepository) AddColumn(tableName, columnName, columnType stri
 }
 
 func (gl *GlueSchemaRepository) AlterColumn(tableName, columnName, columnType string) (err error) {
-	return gl.AddColumn(tableName, columnName, columnType)
+	return gl.AddColumns(tableName, []warehouseutils.ColumnInfo{{Name: columnName, Type: columnType}})
 }
 
 func getGlueClient(wh warehouseutils.Warehouse) (*glue.Glue, error) {

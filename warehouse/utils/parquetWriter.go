@@ -106,7 +106,7 @@ func (p *ParquetWriter) GetLoadFile() *os.File {
 }
 
 func getSortedTableColumns(schema TableSchemaT) []string {
-	sortedColumns := []string{}
+	var sortedColumns []string
 	for col := range schema {
 		sortedColumns = append(sortedColumns, col)
 	}
@@ -119,7 +119,7 @@ func getParquetSchema(schema TableSchemaT, destType string) ([]string, error) {
 	if !ok {
 		return nil, errors.New("unsupported warehouse for parquet load files")
 	}
-	pSchema := []string{}
+	var pSchema []string
 	for _, col := range getSortedTableColumns(schema) {
 		pType := fmt.Sprintf("name=%s, %s", ToProviderCase(destType, col), whTypeMap[schema[col]])
 		pSchema = append(pSchema, pType)

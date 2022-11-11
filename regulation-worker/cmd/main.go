@@ -23,6 +23,7 @@ import (
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/service"
 	"github.com/rudderlabs/rudder-server/services/filemanager"
 	"github.com/rudderlabs/rudder-server/utils/logger"
+	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
 var pkgLogger = logger.NewLogger().Child("regulation-worker")
@@ -57,10 +58,9 @@ func Run(ctx context.Context) {
 	if err != nil {
 		panic(fmt.Errorf("error while getting workspaceId: %w", err))
 	}
-
 	svc := service.JobSvc{
 		API: &client.JobAPI{
-			Client:         &http.Client{Timeout: config.GetDuration("HttpClient.regulationWorker.timeout", 30, time.Second)},
+			Client:         &http.Client{Timeout: config.GetDuration("HttpClient.regulationWorker.regulationManager.timeout", 60, time.Second)},
 			URLPrefix:      config.MustGetString("CONFIG_BACKEND_URL"),
 			WorkspaceToken: config.MustGetString("CONFIG_BACKEND_TOKEN"),
 			WorkspaceID:    workspaceId,
@@ -69,17 +69,20 @@ func Run(ctx context.Context) {
 		Deleter: delete.NewRouter(
 			&kvstore.KVDeleteManager{},
 			&batch.BatchManager{
-				FMFactory: &filemanager.FileManagerFactoryT{},
+				FMFactory:  &filemanager.FileManagerFactoryT{},
+				FilesLimit: config.GetInt("REGULATION_WORKER_FILES_LIMIT", 1000),
 			},
 			&api.APIManager{
-				Client:           &http.Client{Timeout: config.GetDuration("HttpClient.regulationWorker.timeout", 30, time.Second)},
+				Client:           &http.Client{Timeout: config.GetDuration("HttpClient.regulationWorker.transformer.timeout", 60, time.Second)},
 				DestTransformURL: config.MustGetString("DEST_TRANSFORM_URL"),
 			}),
 	}
 
 	pkgLogger.Infof("calling looper with service: %v", svc)
 	l := withLoop(svc)
-	err = l.Loop(ctx)
+	err = misc.WithBugsnag(func() error {
+		return l.Loop(ctx)
+	})()
 	if err != nil && !errors.Is(err, context.Canceled) {
 		pkgLogger.Errorf("error: %v", err)
 		panic(err)

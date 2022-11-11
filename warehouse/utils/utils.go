@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"reflect"
 	"regexp"
 	"sort"
 	"strings"
@@ -20,6 +21,7 @@ import (
 	"github.com/Azure/azure-storage-blob-go/azblob"
 	"github.com/aws/aws-sdk-go/service/s3"
 	"github.com/aws/aws-sdk-go/service/sts"
+	"github.com/gofrs/uuid"
 	"github.com/iancoleman/strcase"
 	"github.com/tidwall/gjson"
 
@@ -61,6 +63,7 @@ const (
 	WarehouseUploadsTable      = "wh_uploads"
 	WarehouseTableUploadsTable = "wh_table_uploads"
 	WarehouseSchemasTable      = "wh_schemas"
+	WarehouseAsyncJobTable     = "wh_async_jobs"
 )
 
 const (
@@ -94,6 +97,36 @@ const (
 const (
 	WAREHOUSE               = "warehouse"
 	RUDDER_MISSING_DATATYPE = "warehouse_rudder_missing_datatype"
+	MISSING_DATATYPE        = "<missing_datatype>"
+)
+
+const (
+	stagingTablePrefix = "rudder_staging_"
+)
+
+// Object storages
+const (
+	S3         = "S3"
+	AZURE_BLOB = "AZURE_BLOB"
+	GCS        = "GCS"
+	MINIO      = "MINIO"
+)
+
+// Cloud providers
+const (
+	AWS   = "AWS"
+	GCP   = "GCP"
+	AZURE = "AZURE"
+)
+
+const (
+	AWSAccessKey         = "accessKey"
+	AWSAccessSecret      = "accessKeyID"
+	AWSBucketNameConfig  = "bucketName"
+	AWSRegion            = "region"
+	AWSS3Prefix          = "prefix"
+	MinioAccessKeyID     = "accessKeyID"
+	MinioSecretAccessKey = "secretAccessKey"
 )
 
 var (
@@ -117,17 +150,17 @@ var WHDestNameMap = map[string]string{
 }
 
 var ObjectStorageMap = map[string]string{
-	RS:             "S3",
-	S3_DATALAKE:    "S3",
-	BQ:             "GCS",
-	GCS_DATALAKE:   "GCS",
-	AZURE_DATALAKE: "AZURE_BLOB",
+	RS:             S3,
+	S3_DATALAKE:    S3,
+	BQ:             GCS,
+	GCS_DATALAKE:   GCS,
+	AZURE_DATALAKE: AZURE_BLOB,
 }
 
 var SnowflakeStorageMap = map[string]string{
-	"AWS":   "S3",
-	"GCP":   "GCS",
-	"AZURE": "AZURE_BLOB",
+	AWS:   S3,
+	GCP:   GCS,
+	AZURE: AZURE_BLOB,
 }
 
 var DiscardsSchema = map[string]string{
@@ -182,6 +215,25 @@ type Warehouse struct {
 	Namespace   string
 	Type        string
 	Identifier  string
+}
+
+type DeleteByMetaData struct {
+	JobRunId  string `json:"job_run_id"`
+	TaskRunId string `json:"task_run_id"`
+	StartTime string `json:"start_time"`
+}
+
+type DeleteByParams struct {
+	SourceId  string
+	JobRunId  string
+	TaskRunId string
+	StartTime string
+}
+
+type ColumnInfo struct {
+	Name  string
+	Value interface{}
+	Type  string
 }
 
 func (w *Warehouse) GetBoolDestinationConfig(key string) bool {
@@ -335,14 +387,14 @@ func GetLoadFileGenTime(str sql.NullString) (t time.Time) {
 
 func GetNamespace(source backendconfig.SourceT, destination backendconfig.DestinationT, dbHandle *sql.DB) (namespace string, exists bool) {
 	sqlStatement := fmt.Sprintf(`
-		SELECT 
-		  namespace 
-		FROM 
-		  %s 
-		WHERE 
-		  source_id = '%s' 
-		  AND destination_id = '%s' 
-		ORDER BY 
+		SELECT
+		  namespace
+		FROM
+		  %s
+		WHERE
+		  source_id = '%s'
+		  AND destination_id = '%s'
+		ORDER BY
 		  id DESC;
 `,
 		WarehouseSchemasTable,
@@ -360,11 +412,11 @@ func GetNamespace(source backendconfig.SourceT, destination backendconfig.Destin
 // eg. For provider as S3: https://test-bucket.s3.amazonaws.com/test-object.csv --> s3://test-bucket/test-object.csv
 func GetObjectFolder(provider, location string) (folder string) {
 	switch provider {
-	case "S3":
+	case S3:
 		folder = GetS3LocationFolder(location)
-	case "GCS":
+	case GCS:
 		folder = GetGCSLocationFolder(location, GCSLocationOptionsT{TLDFormat: "gcs"})
-	case "AZURE_BLOB":
+	case AZURE_BLOB:
 		folder = GetAzureBlobLocationFolder(location)
 	}
 	return
@@ -376,11 +428,11 @@ func GetObjectFolder(provider, location string) (folder string) {
 // eg. For provider as AZURE_BLOB: https://<storage-account-name>.blob.core.windows.net/<container-name>/<directory-name> --> wasbs://<container-name>@<storage-account-name>.blob.core.windows.net/<directory-name>
 func GetObjectFolderForDeltalake(provider, location string) (folder string) {
 	switch provider {
-	case "S3":
+	case S3:
 		folder = GetS3LocationFolder(location)
-	case "GCS":
+	case GCS:
 		folder = GetGCSLocationFolder(location, GCSLocationOptionsT{TLDFormat: "gs"})
-	case "AZURE_BLOB":
+	case AZURE_BLOB:
 		blobUrl, _ := url.Parse(location)
 		blobUrlParts := azblob.NewBlobURLParts(*blobUrl)
 		accountName := strings.Replace(blobUrlParts.Host, ".blob.core.windows.net", "", 1)
@@ -391,15 +443,24 @@ func GetObjectFolderForDeltalake(provider, location string) (folder string) {
 	return
 }
 
+func GetColumnsFromTableSchema(schema TableSchemaT) []string {
+	keys := reflect.ValueOf(schema).MapKeys()
+	strKeys := make([]string, len(keys))
+	for i := 0; i < len(keys); i++ {
+		strKeys[i] = keys[i].String()
+	}
+	return strKeys
+}
+
 // GetObjectLocation returns the folder path for the storage object based on the storage provider
 // e.g. For provider as S3: https://test-bucket.s3.amazonaws.com/test-object.csv --> s3://test-bucket/test-object.csv
 func GetObjectLocation(provider, location string) (objectLocation string) {
 	switch provider {
-	case "S3":
+	case S3:
 		objectLocation, _ = GetS3Location(location)
-	case "GCS":
+	case GCS:
 		objectLocation = GetGCSLocation(location, GCSLocationOptionsT{TLDFormat: "gcs"})
-	case "AZURE_BLOB":
+	case AZURE_BLOB:
 		objectLocation = GetAzureBlobLocation(location)
 	}
 	return
@@ -515,8 +576,8 @@ func GetAzureBlobLocationFolder(location string) string {
 }
 
 func GetS3Locations(loadFiles []LoadFileT) []LoadFileT {
-	for idx, loadfile := range loadFiles {
-		loadFiles[idx].Location, _ = GetS3Location(loadfile.Location)
+	for idx, loadFile := range loadFiles {
+		loadFiles[idx].Location, _ = GetS3Location(loadFile.Location)
 	}
 	return loadFiles
 }
@@ -585,7 +646,7 @@ func ToSafeNamespace(provider, name string) string {
 
 /*
 ToProviderCase converts string provided to case generally accepted in the warehouse for table, column, schema names etc.
-e.g. columns are uppercased in SNOWFLAKE and lowercased etc. in REDSHIFT, BIGQUERY etc
+e.g. columns are uppercase in SNOWFLAKE and lowercase etc. in REDSHIFT, BIGQUERY etc
 */
 func ToProviderCase(provider, str string) string {
 	if strings.ToUpper(provider) == SNOWFLAKE {
@@ -598,7 +659,7 @@ func SnowflakeCloudProvider(config interface{}) string {
 	c := config.(map[string]interface{})
 	provider, ok := c["cloudProvider"].(string)
 	if provider == "" || !ok {
-		provider = "AWS"
+		provider = AWS
 	}
 	return provider
 }
@@ -606,7 +667,7 @@ func SnowflakeCloudProvider(config interface{}) string {
 func ObjectStorageType(destType string, config interface{}, useRudderStorage bool) string {
 	c := config.(map[string]interface{})
 	if useRudderStorage {
-		return "S3"
+		return S3
 	}
 	if _, ok := ObjectStorageMap[destType]; ok {
 		return ObjectStorageMap[destType]
@@ -614,7 +675,7 @@ func ObjectStorageType(destType string, config interface{}, useRudderStorage boo
 	if destType == SNOWFLAKE {
 		provider, ok := c["cloudProvider"].(string)
 		if provider == "" || !ok {
-			provider = "AWS"
+			provider = AWS
 		}
 		return SnowflakeStorageMap[provider]
 	}
@@ -685,10 +746,10 @@ func GetWarehouseIdentifier(destType, sourceID, destinationID string) string {
 	return fmt.Sprintf("%s:%s:%s", destType, sourceID, destinationID)
 }
 
-func DoubleQuoteAndJoinByComma(strs []string) string {
+func DoubleQuoteAndJoinByComma(elems []string) string {
 	var quotedSlice []string
-	for _, str := range strs {
-		quotedSlice = append(quotedSlice, fmt.Sprintf("%q", str))
+	for _, elem := range elems {
+		quotedSlice = append(quotedSlice, fmt.Sprintf("%q", elem))
 	}
 	return strings.Join(quotedSlice, ",")
 }
@@ -723,7 +784,8 @@ func JoinWithFormatting(keys []string, format func(idx int, str string) string, 
 }
 
 func CreateAWSSessionConfig(destination *backendconfig.DestinationT, serviceName string) (*awsutils.SessionConfig, error) {
-	if !misc.IsConfiguredToUseRudderObjectStorage(destination.Config) {
+	if !misc.IsConfiguredToUseRudderObjectStorage(destination.Config) &&
+		(misc.HasAWSRoleARNInConfig(destination.Config) || misc.HasAWSKeysInConfig(destination.Config)) {
 		return awsutils.NewSimpleSessionConfigForDestination(destination, serviceName)
 	}
 	accessKeyID, accessKey := misc.GetRudderObjectStorageAccessKeys()
@@ -761,8 +823,8 @@ type Tag struct {
 }
 
 func NewTimerStat(name string, extraTags ...Tag) stats.Measurement {
-	tags := map[string]string{
-		"module": "warehouse",
+	tags := stats.Tags{
+		"module": WAREHOUSE,
 	}
 	for _, extraTag := range extraTags {
 		tags[extraTag.Name] = extraTag.Value
@@ -771,8 +833,8 @@ func NewTimerStat(name string, extraTags ...Tag) stats.Measurement {
 }
 
 func NewCounterStat(name string, extraTags ...Tag) stats.Measurement {
-	tags := map[string]string{
-		"module": "warehouse",
+	tags := stats.Tags{
+		"module": WAREHOUSE,
 	}
 	for _, extraTag := range extraTags {
 		tags[extraTag.Name] = extraTag.Value
@@ -781,7 +843,7 @@ func NewCounterStat(name string, extraTags ...Tag) stats.Measurement {
 }
 
 func WHCounterStat(name string, warehouse *Warehouse, extraTags ...Tag) stats.Measurement {
-	tags := map[string]string{
+	tags := stats.Tags{
 		"module":      WAREHOUSE,
 		"destType":    warehouse.Type,
 		"workspaceId": warehouse.WorkspaceID,
@@ -860,7 +922,7 @@ func WriteSSLKeys(destination backendconfig.DestinationT) WriteSSLKeyError {
 		existingChecksum = string(fileContent)
 	}
 	if existingChecksum == sslHash {
-		// Pems files already written to FS
+		// Permission files already written to FS
 		return WriteSSLKeyError{}
 	}
 	if err = os.WriteFile(clientCertPemFile, []byte(clientCert), 0o600); err != nil {
@@ -1006,4 +1068,15 @@ func GetDateRangeList(start, end time.Time, dateFormat string) (dateRange []stri
 type FilterBy struct {
 	Key   string
 	Value interface{}
+}
+
+func StagingTablePrefix(provider string) string {
+	return ToProviderCase(provider, stagingTablePrefix)
+}
+
+func StagingTableName(provider, tableName string, tableNameLimit int) string {
+	randomNess := strings.ReplaceAll(uuid.Must(uuid.NewV4()).String(), "-", "")
+	prefix := StagingTablePrefix(provider)
+	stagingTableName := fmt.Sprintf(`%s%s_%s`, prefix, tableName, randomNess)
+	return misc.TruncateStr(stagingTableName, tableNameLimit)
 }

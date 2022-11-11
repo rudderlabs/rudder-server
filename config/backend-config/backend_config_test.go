@@ -361,6 +361,33 @@ func TestCache(t *testing.T) {
 	}))
 	defer server.Close()
 
+	t.Run("noCache if database is not configured", func(t *testing.T) {
+		var (
+			ctx            = context.Background()
+			ctrl           = gomock.NewController(t)
+			wc             = NewMockworkspaceConfig(ctrl)
+			workspaces     = "foo"
+			workspaceToken = `token`
+			mockID         = &mockIdentifier{key: workspaces, token: workspaceToken}
+		)
+		wc.EXPECT().Identity().Return(mockID).Times(1)
+		wc.EXPECT().Get(gomock.Any(), workspaces).
+			Return(
+				map[string]ConfigT{sampleWorkspaceID: sampleBackendConfig},
+				nil,
+			).AnyTimes()
+		bc := &backendConfigImpl{
+			workspaceConfig: wc,
+			eb:              pubsub.New(),
+			curSourceJSON:   map[string]ConfigT{},
+		}
+		bc.StartWithIDs(ctx, workspaces)
+
+		cacheVal, err := bc.cache.Get(ctx)
+		require.Equal(t, fmt.Errorf(`noCache: cache disabled`), err)
+		require.Nil(t, cacheVal)
+	})
+
 	// set up database
 	pool, err := dockertest.NewPool("")
 	if err != nil {
@@ -463,11 +490,9 @@ func TestCache(t *testing.T) {
 
 	t.Run("caches config to database", func(t *testing.T) {
 		var (
-			ctrl       = gomock.NewController(t)
-			ctx        = context.Background()
-			workspaces = "foo"
-			// cacheStore  = NewMockCache(ctrl)
-			// accessToken    = `accessToken`
+			ctrl           = gomock.NewController(t)
+			ctx            = context.Background()
+			workspaces     = "foo"
 			workspaceToken = `token`
 		)
 		defer ctrl.Finish()
@@ -518,6 +543,31 @@ func TestCache(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, map[string]ConfigT{sampleWorkspaceID: sampleBackendConfig}, config)
 	})
+
+	t.Run(`panics if database is configured but connection fails during cache setup`, func(t *testing.T) {
+		t.Setenv("JOBS_DB_DB_NAME", `nodb`)
+		t.Setenv("JOBS_DB_HOST", "nodb")
+		t.Setenv("JOBS_DB_NAME", `nodb`)
+		t.Setenv("JOBS_DB_USER", "nodb")
+		t.Setenv("JOBS_DB_PASSWORD", "nodb")
+		t.Setenv("JOBS_DB_PORT", `nodb`)
+
+		var (
+			ctx            = context.Background()
+			ctrl           = gomock.NewController(t)
+			wc             = NewMockworkspaceConfig(ctrl)
+			workspaces     = "foo"
+			workspaceToken = `token`
+			mockID         = &mockIdentifier{key: workspaces, token: workspaceToken}
+		)
+		wc.EXPECT().Identity().Return(mockID).Times(1)
+		bc := &backendConfigImpl{
+			workspaceConfig: wc,
+			eb:              pubsub.New(),
+			curSourceJSON:   map[string]ConfigT{},
+		}
+		require.Panics(t, func() { bc.StartWithIDs(ctx, workspaces) })
+	})
 }
 
 func initBackendConfig() {
@@ -540,4 +590,8 @@ func (m *mockIdentifier) ID() string {
 
 func (m *mockIdentifier) BasicAuth() (string, string) {
 	return m.token, ""
+}
+
+func (*mockIdentifier) Type() deployment.Type {
+	return deployment.Type(`mockType`)
 }

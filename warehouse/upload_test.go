@@ -15,7 +15,6 @@ import (
 	. "github.com/onsi/gomega"
 	"github.com/ory/dockertest/v3"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
-	"github.com/rudderlabs/rudder-server/testhelper"
 	"github.com/rudderlabs/rudder-server/testhelper/destination"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
@@ -89,7 +88,6 @@ var _ = Describe("Upload", Ordered, func() {
 
 	var (
 		pgResource *destination.PostgresResource
-		cleanup    = &testhelper.Cleanup{}
 		job        *UploadJobT
 	)
 
@@ -97,7 +95,7 @@ var _ = Describe("Upload", Ordered, func() {
 		pool, err := dockertest.NewPool("")
 		Expect(err).To(BeNil())
 
-		pgResource = setupWarehouseJobs(pool, GinkgoT(), cleanup)
+		pgResource = setupWarehouseJobs(pool, GinkgoT())
 
 		initWarehouse()
 
@@ -111,10 +109,6 @@ var _ = Describe("Upload", Ordered, func() {
 		Expect(err).To(BeNil())
 
 		pkgLogger = logger.NOP
-	})
-
-	AfterAll(func() {
-		cleanup.Run()
 	})
 
 	BeforeEach(func() {

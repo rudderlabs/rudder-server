@@ -37,17 +37,17 @@ func (m *MockUserSuppression) EXPECT() *MockUserSuppressionMockRecorder {
 }
 
 // IsSuppressedUser mocks base method.
-func (m *MockUserSuppression) IsSuppressedUser(arg0, arg1 string) bool {
+func (m *MockUserSuppression) IsSuppressedUser(arg0, arg1, arg2 string) bool {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "IsSuppressedUser", arg0, arg1)
+	ret := m.ctrl.Call(m, "IsSuppressedUser", arg0, arg1, arg2)
 	ret0, _ := ret[0].(bool)
 	return ret0
 }
 
 // IsSuppressedUser indicates an expected call of IsSuppressedUser.
-func (mr *MockUserSuppressionMockRecorder) IsSuppressedUser(arg0, arg1 interface{}) *gomock.Call {
+func (mr *MockUserSuppressionMockRecorder) IsSuppressedUser(arg0, arg1, arg2 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "IsSuppressedUser", reflect.TypeOf((*MockUserSuppression)(nil).IsSuppressedUser), arg0, arg1)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "IsSuppressedUser", reflect.TypeOf((*MockUserSuppression)(nil).IsSuppressedUser), arg0, arg1, arg2)
 }
 
 // MockReportingI is a mock of ReportingI interface.
@@ -83,6 +83,20 @@ func (m *MockReportingI) AddClient(arg0 context.Context, arg1 types.Config) {
 func (mr *MockReportingIMockRecorder) AddClient(arg0, arg1 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AddClient", reflect.TypeOf((*MockReportingI)(nil).AddClient), arg0, arg1)
+}
+
+// IsPIIReportingDisabled mocks base method.
+func (m *MockReportingI) IsPIIReportingDisabled(arg0 string) bool {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "IsPIIReportingDisabled", arg0)
+	ret0, _ := ret[0].(bool)
+	return ret0
+}
+
+// IsPIIReportingDisabled indicates an expected call of IsPIIReportingDisabled.
+func (mr *MockReportingIMockRecorder) IsPIIReportingDisabled(arg0 interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "IsPIIReportingDisabled", reflect.TypeOf((*MockReportingI)(nil).IsPIIReportingDisabled), arg0)
 }
 
 // Report mocks base method.

@@ -3,6 +3,7 @@ package router
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"io"
 	"net/http"
 
@@ -113,7 +114,8 @@ var _ = Describe("Network", func() {
 
 			resp := network.SendPost(ctx, structData)
 			Expect(resp.StatusCode).To(Equal(http.StatusGatewayTimeout))
-			Expect(string(resp.ResponseBody)).To(Equal("504 Unable to make \"\" request for URL : \"https://www.google-analytics.com/collect\""))
+			fmt.Println(string(resp.ResponseBody))
+			Expect(string(resp.ResponseBody)).To(Equal("504 Unable to make \"\" request for URL : \"https://www.google-analytics.com/collect\". Error: Get \"https://www.google-analytics.com/collect\": context canceled"))
 		})
 	})
 

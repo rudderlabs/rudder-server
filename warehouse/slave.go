@@ -14,12 +14,14 @@ import (
 	"strings"
 	"time"
 
-	uuid "github.com/gofrs/uuid"
+	"github.com/gofrs/uuid"
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/services/filemanager"
 	"github.com/rudderlabs/rudder-server/services/pgnotifier"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
+	"github.com/rudderlabs/rudder-server/warehouse/jobs"
+	"github.com/rudderlabs/rudder-server/warehouse/manager"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 	"golang.org/x/sync/errgroup"
 )
@@ -50,12 +52,12 @@ type JobRunT struct {
 func (jobRun *JobRunT) setStagingFileReader() (reader *gzip.Reader, endOfFile bool) {
 	job := jobRun.job
 	pkgLogger.Debugf("Starting read from downloaded staging file: %s", job.StagingFileLocation)
-	rawf, err := os.Open(jobRun.stagingFilePath)
+	stagingFile, err := os.Open(jobRun.stagingFilePath)
 	if err != nil {
 		pkgLogger.Errorf("[WH]: Error opening file using os.Open at path:%s downloaded from %s", jobRun.stagingFilePath, job.StagingFileLocation)
 		panic(err)
 	}
-	reader, err = gzip.NewReader(rawf)
+	reader, err = gzip.NewReader(stagingFile)
 	if err != nil {
 		if err.Error() == "EOF" {
 			return nil, true
@@ -356,16 +358,16 @@ func (jobRun *JobRunT) cleanup() {
 	}
 }
 
-func (event *BatchRouterEventT) GetColumnInfo(columnName string) (columnInfo ColumnInfoT, ok bool) {
+func (event *BatchRouterEventT) GetColumnInfo(columnName string) (columnInfo warehouseutils.ColumnInfo, ok bool) {
 	columnVal, ok := event.Data[columnName]
 	if !ok {
-		return ColumnInfoT{}, false
+		return warehouseutils.ColumnInfo{}, false
 	}
 	columnType, ok := event.Metadata.Columns[columnName]
 	if !ok {
-		return ColumnInfoT{}, false
+		return warehouseutils.ColumnInfo{}, false
 	}
-	return ColumnInfoT{ColumnVal: columnVal, ColumnType: columnType}, true
+	return warehouseutils.ColumnInfo{Value: columnVal, Type: columnType}, true
 }
 
 //
@@ -421,7 +423,7 @@ func processStagingFile(job Payload, workerIndex int) (loadFileUploadOutputs []l
 	jobRun.tableEventCountMap = make(map[string]int)
 	jobRun.uuidTS = timeutil.Now()
 
-	// Initilize Discards Table
+	// Initialize Discards Table
 	discardsTable := job.getDiscardsTable()
 	jobRun.tableEventCountMap[discardsTable] = 0
 
@@ -452,6 +454,11 @@ func processStagingFile(job Payload, workerIndex int) (loadFileUploadOutputs []l
 		tableName := batchRouterEvent.Metadata.Table
 		columnData := batchRouterEvent.Data
 
+		if job.DestinationType == warehouseutils.S3_DATALAKE && len(sortedTableColumnMap[tableName]) > columnCountThresholds[warehouseutils.S3_DATALAKE] {
+			pkgLogger.Errorf("[WH]: Huge staging file columns : columns in upload schema: %v for StagingFileID: %v", len(sortedTableColumnMap[tableName]), job.StagingFileID)
+			return nil, fmt.Errorf("staging file schema limit exceeded for stagingFileID: %d, actualCount: %d", job.StagingFileID, len(sortedTableColumnMap[tableName]))
+		}
+
 		// Create separate load file for each table
 		writer, err := jobRun.GetWriter(tableName)
 		if err != nil {
@@ -461,7 +468,7 @@ func processStagingFile(job Payload, workerIndex int) (loadFileUploadOutputs []l
 		eventLoader := warehouseutils.GetNewEventLoader(job.DestinationType, job.LoadFileType, writer)
 		for _, columnName := range sortedTableColumnMap[tableName] {
 			if eventLoader.IsLoadTimeColumn(columnName) {
-				timestampFormat := eventLoader.GetLoadTimeFomat(columnName)
+				timestampFormat := eventLoader.GetLoadTimeFormat(columnName)
 				eventLoader.AddColumn(job.getColumnName(columnName), job.UploadSchema[tableName][columnName], jobRun.uuidTS.Format(timestampFormat))
 				continue
 			}
@@ -470,8 +477,8 @@ func processStagingFile(job Payload, workerIndex int) (loadFileUploadOutputs []l
 				eventLoader.AddEmptyColumn(columnName)
 				continue
 			}
-			columnType := columnInfo.ColumnType
-			columnVal := columnInfo.ColumnVal
+			columnType := columnInfo.Type
+			columnVal := columnInfo.Value
 
 			if columnType == "int" || columnType == "bigint" {
 				floatVal, ok := columnVal.(float64)
@@ -552,7 +559,7 @@ func processStagingFile(job Payload, workerIndex int) (loadFileUploadOutputs []l
 	return loadFileUploadOutputs, err
 }
 
-func processClaimedJob(claimedJob pgnotifier.ClaimT, workerIndex int) {
+func processClaimedUploadJob(claimedJob pgnotifier.ClaimT, workerIndex int) {
 	claimProcessTimeStart := time.Now()
 	defer func() {
 		warehouseutils.NewTimerStat(STATS_WORKER_CLAIM_PROCESSING_TIME, warehouseutils.Tag{Name: TAG_WORKERID, Value: fmt.Sprintf("%d", workerIndex)}).Since(claimProcessTimeStart)
@@ -593,6 +600,82 @@ func processClaimedJob(claimedJob pgnotifier.ClaimT, workerIndex int) {
 	notifier.UpdateClaimedEvent(&claimedJob, &response)
 }
 
+type AsyncJobRunResult struct {
+	Result bool
+	Id     string
+}
+
+func runAsyncJob(asyncjob jobs.AsyncJobPayloadT) (AsyncJobRunResult, error) {
+	warehouse, err := getDestinationFromConnectionMap(asyncjob.DestinationID, asyncjob.SourceID)
+	if err != nil {
+		return AsyncJobRunResult{Id: asyncjob.Id, Result: false}, err
+	}
+	destType := warehouse.Destination.DestinationDefinition.Name
+	whManager, err := manager.NewWarehouseOperations(destType)
+	if err != nil {
+		return AsyncJobRunResult{Id: asyncjob.Id, Result: false}, err
+	}
+	whasyncjob := &jobs.WhAsyncJob{}
+
+	var metadata warehouseutils.DeleteByMetaData
+	err = json.Unmarshal(asyncjob.MetaData, &metadata)
+	if err != nil {
+		return AsyncJobRunResult{Id: asyncjob.Id, Result: false}, err
+	}
+	whManager.Setup(warehouse, whasyncjob)
+	defer whManager.Cleanup()
+	tableNames := []string{asyncjob.TableName}
+	if asyncjob.AsyncJobType == "deletebyjobrunid" {
+		pkgLogger.Info("[WH-Jobs]: Running DeleteByJobRunID on slave worker")
+
+		params := warehouseutils.DeleteByParams{
+			SourceId:  asyncjob.SourceID,
+			TaskRunId: metadata.TaskRunId,
+			JobRunId:  metadata.JobRunId,
+			StartTime: metadata.StartTime,
+		}
+		err = whManager.DeleteBy(tableNames, params)
+	}
+	asyncJobRunResult := AsyncJobRunResult{
+		Result: err == nil,
+		Id:     asyncjob.Id,
+	}
+	return asyncJobRunResult, err
+}
+
+func processClaimedAsyncJob(claimedJob pgnotifier.ClaimT) {
+	pkgLogger.Infof("[WH-Jobs]: Got request for processing Async Job with Batch ID %s", claimedJob.BatchID)
+	handleErr := func(err error, claim pgnotifier.ClaimT) {
+		pkgLogger.Errorf("[WH]: Error processing claim: %v", err)
+		response := pgnotifier.ClaimResponseT{
+			Err: err,
+		}
+		notifier.UpdateClaimedEvent(&claimedJob, &response)
+	}
+	var job jobs.AsyncJobPayloadT
+	err := json.Unmarshal(claimedJob.Payload, &job)
+	if err != nil {
+		handleErr(err, claimedJob)
+		return
+	}
+	result, err := runAsyncJob(job)
+	if err != nil {
+		handleErr(err, claimedJob)
+		return
+	}
+
+	marshalledResult, err := json.Marshal(result)
+	if err != nil {
+		handleErr(err, claimedJob)
+		return
+	}
+	response := pgnotifier.ClaimResponseT{
+		Err:     err,
+		Payload: marshalledResult,
+	}
+	notifier.UpdateClaimedEvent(&claimedJob, &response)
+}
+
 func setupSlave(ctx context.Context) error {
 	g, ctx := errgroup.WithContext(ctx)
 
@@ -606,10 +689,14 @@ func setupSlave(ctx context.Context) error {
 			workerIdleTimeStart := time.Now()
 			for claimedJob := range jobNotificationChannel {
 				workerIdleTimer.Since(workerIdleTimeStart)
-				pkgLogger.Infof("[WH]: Successfully claimed job:%v by slave worker-%v-%v", claimedJob.ID, idx, slaveID)
+				pkgLogger.Infof("[WH]: Successfully claimed job:%v by slave worker-%v-%v & job type %s", claimedJob.ID, idx, slaveID, claimedJob.JobType)
 
-				// process job
-				processClaimedJob(claimedJob, idx)
+				if claimedJob.JobType == jobs.AsyncJobType {
+					processClaimedAsyncJob(claimedJob)
+				} else {
+					processClaimedUploadJob(claimedJob, idx)
+				}
+
 				pkgLogger.Infof("[WH]: Successfully processed job:%v by slave worker-%v-%v", claimedJob.ID, idx, slaveID)
 				workerIdleTimeStart = time.Now()
 			}
@@ -644,11 +731,11 @@ func (jobRun *JobRunT) handleDiscardTypes(tableName, columnName string, columnVa
 		eventLoader.AddColumn("row_id", warehouseutils.DiscardsSchema["row_id"], rowID)
 		eventLoader.AddColumn("table_name", warehouseutils.DiscardsSchema["table_name"], tableName)
 		if eventLoader.IsLoadTimeColumn("uuid_ts") {
-			timestampFormat := eventLoader.GetLoadTimeFomat("uuid_ts")
+			timestampFormat := eventLoader.GetLoadTimeFormat("uuid_ts")
 			eventLoader.AddColumn("uuid_ts", warehouseutils.DiscardsSchema["uuid_ts"], jobRun.uuidTS.Format(timestampFormat))
 		}
 		if eventLoader.IsLoadTimeColumn("loaded_at") {
-			timestampFormat := eventLoader.GetLoadTimeFomat("loaded_at")
+			timestampFormat := eventLoader.GetLoadTimeFormat("loaded_at")
 			eventLoader.AddColumn("loaded_at", "datetime", jobRun.uuidTS.Format(timestampFormat))
 		}
 

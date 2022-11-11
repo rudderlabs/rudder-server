@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/client"
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/initialize"
@@ -24,6 +25,7 @@ func TestGet(t *testing.T) {
 		expectedErr               error
 		acutalErr                 error
 		expectedUsrAttributeCount int
+		serverDelay               int
 	}{
 		{
 			name:                      "Get request to get job: successful",
@@ -44,17 +46,31 @@ func TestGet(t *testing.T) {
 			respCode:    429,
 			expectedErr: fmt.Errorf("unexpected response code: 429"),
 		},
+		{
+			name:        "Get request to get model.ErrRequestTimeout",
+			workspaceID: "1001",
+			expectedErr: model.ErrRequestTimeout,
+			serverDelay: 1,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			svr := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				w.WriteHeader(tt.respCode)
+				if tt.respCode != 0 {
+					w.WriteHeader(tt.respCode)
+				}
+				time.Sleep(time.Duration(tt.serverDelay) * time.Millisecond)
 				fmt.Fprintf(w, tt.respBody)
 			}))
 			defer svr.Close()
-
+			httpClient := &http.Client{}
+			if tt.serverDelay > 0 {
+				httpClient = &http.Client{
+					Timeout: time.Duration(tt.serverDelay) * time.Microsecond,
+				}
+			}
 			c := client.JobAPI{
-				Client:      &http.Client{},
+				Client:      httpClient,
 				WorkspaceID: tt.workspaceID,
 				URLPrefix:   svr.URL,
 			}

@@ -1,4 +1,4 @@
-//go:build warehouse_integration
+//go:build warehouse_integration && !sources_integration
 
 package clickhouse_test
 
@@ -30,6 +30,15 @@ type TestHandle struct {
 }
 
 var handle *TestHandle
+
+var statsToVerify = []string{
+	"warehouse_clickhouse_commitTimeouts",
+	"warehouse_clickhouse_execTimeouts",
+	"warehouse_clickhouse_failedRetries",
+	"warehouse_clickhouse_syncLoadFileTime",
+	"warehouse_clickhouse_downloadLoadFilesTime",
+	"warehouse_clickhouse_numRowsLoadFile",
+}
 
 func (*TestHandle) VerifyConnection() error {
 	err := testhelper.WithConstantBackoff(func() (err error) {
@@ -178,6 +187,8 @@ func TestClickHouseIntegration(t *testing.T) {
 		testhelper.VerifyEventsInLoadFiles(t, warehouseTest, testhelper.LoadFilesEventsMap())
 		testhelper.VerifyEventsInTableUploads(t, warehouseTest, testhelper.TableUploadsEventsMap())
 		testhelper.VerifyEventsInWareHouse(t, warehouseTest, testhelper.WarehouseEventsMap())
+
+		testhelper.VerifyWorkspaceIDInStats(t, statsToVerify...)
 	})
 
 	t.Run("Cluster Mode Setup", func(t *testing.T) {
@@ -230,6 +241,8 @@ func TestClickHouseIntegration(t *testing.T) {
 		testhelper.VerifyEventsInLoadFiles(t, warehouseTest, testhelper.LoadFilesEventsMap())
 		testhelper.VerifyEventsInTableUploads(t, warehouseTest, testhelper.TableUploadsEventsMap())
 		testhelper.VerifyEventsInWareHouse(t, warehouseTest, clusterWarehouseEventsMap())
+
+		testhelper.VerifyWorkspaceIDInStats(t, statsToVerify...)
 	})
 }
 

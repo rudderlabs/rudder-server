@@ -1,6 +1,7 @@
 package manager
 
 import (
+	"context"
 	"fmt"
 	"time"
 
@@ -22,10 +23,10 @@ import (
 type ManagerI interface {
 	Setup(warehouse warehouseutils.Warehouse, uploader warehouseutils.UploaderI) error
 	CrashRecover(warehouse warehouseutils.Warehouse) (err error)
-	FetchSchema(warehouse warehouseutils.Warehouse) (warehouseutils.SchemaT, error)
+	FetchSchema(warehouse warehouseutils.Warehouse) (warehouseutils.SchemaT, warehouseutils.SchemaT, error)
 	CreateSchema() (err error)
 	CreateTable(tableName string, columnMap map[string]string) (err error)
-	AddColumn(tableName, columnName, columnType string) (err error)
+	AddColumns(tableName string, columnsInfo []warehouseutils.ColumnInfo) (err error)
 	AlterColumn(tableName, columnName, columnType string) (err error)
 	LoadTable(tableName string) error
 	LoadUserTables() map[string]error
@@ -35,7 +36,7 @@ type ManagerI interface {
 	IsEmpty(warehouse warehouseutils.Warehouse) (bool, error)
 	TestConnection(warehouse warehouseutils.Warehouse) error
 	DownloadIdentityRules(*misc.GZipWriter) error
-	GetTotalCountInTable(tableName string) (int64, error)
+	GetTotalCountInTable(ctx context.Context, tableName string) (int64, error)
 	Connect(warehouse warehouseutils.Warehouse) (client.Client, error)
 	LoadTestTable(location, stagingTableName string, payloadMap map[string]interface{}, loadFileFormat string) error
 	SetConnectionTimeout(timeout time.Duration)
@@ -43,6 +44,7 @@ type ManagerI interface {
 
 type WarehouseDelete interface {
 	DropTable(tableName string) (err error)
+	DeleteBy(tableName []string, params warehouseutils.DeleteByParams) error
 }
 
 type WarehouseOperations interface {
@@ -81,7 +83,7 @@ func New(destType string) (ManagerI, error) {
 		var dl deltalake.HandleT
 		return &dl, nil
 	}
-	return nil, fmt.Errorf("Provider of type %s is not configured for WarehouseManager", destType)
+	return nil, fmt.Errorf("provider of type %s is not configured for WarehouseManager", destType)
 }
 
 // NewWarehouseOperations is a Factory function that returns a WarehouseOperations of a given destination-type
@@ -115,5 +117,5 @@ func NewWarehouseOperations(destType string) (WarehouseOperations, error) {
 		var dl deltalake.HandleT
 		return &dl, nil
 	}
-	return nil, fmt.Errorf("Provider of type %s is not configured for WarehouseManager", destType)
+	return nil, fmt.Errorf("provider of type %s is not configured for WarehouseManager", destType)
 }

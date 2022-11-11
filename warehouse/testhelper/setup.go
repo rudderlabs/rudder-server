@@ -6,11 +6,15 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"net/http"
 	"os"
 	"strconv"
 	"strings"
 	"testing"
 	"time"
+
+	promCLient "github.com/prometheus/client_model/go"
+	"github.com/prometheus/common/expfmt"
 
 	"github.com/minio/minio-go/v6"
 
@@ -18,8 +22,8 @@ import (
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/services/pgnotifier"
 	"github.com/rudderlabs/rudder-server/warehouse"
-	"github.com/rudderlabs/rudder-server/warehouse/configuration_testing"
 	"github.com/rudderlabs/rudder-server/warehouse/deltalake/databricks"
+	"github.com/rudderlabs/rudder-server/warehouse/validations"
 
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
@@ -57,14 +61,16 @@ type EventsCountMap map[string]int
 type WareHouseTest struct {
 	Client                       *client.Client
 	WriteKey                     string
+	SourceWriteKey               string
 	Schema                       string
 	UserId                       string
-	SourceID                     string
-	DestinationID                string
-	TimestampBeforeSendingEvents time.Time
 	MessageId                    string
 	Tables                       []string
 	Provider                     string
+	LatestSourceRunConfig        map[string]string
+	SourceID                     string
+	DestinationID                string
+	TimestampBeforeSendingEvents time.Time
 }
 
 type WarehouseTestSetup interface {
@@ -134,7 +140,7 @@ func initialize() {
 	warehouse.Init6()
 
 	pgnotifier.Init()
-	configuration_testing.Init()
+	validations.Init()
 
 	azuresynapse.Init()
 	bigquery.Init()
@@ -185,6 +191,7 @@ func VerifyEventsInStagingFiles(t testing.TB, wareHouseTest *WareHouseTest, even
 
 	var (
 		tableName         = "wh_staging_files"
+		workspaceID       = "BpLnfgDsc2WD8F2qNfHK5a84jjJ"
 		stagingFileEvents int
 		sqlStatement      string
 		operation         func() bool
@@ -202,15 +209,17 @@ func VerifyEventsInStagingFiles(t testing.TB, wareHouseTest *WareHouseTest, even
 
 	sqlStatement = `
 		SELECT
-		   COALESCE(SUM(total_events)) AS sum
+			COALESCE(SUM(total_events)) AS sum
 		FROM
-		   wh_staging_files
+			wh_staging_files
 		WHERE
-		   source_id = $1
-		   AND destination_id = $2
-		   AND created_at > $3;
+		   	workspace_id = $1 AND
+		   	source_id = $2 AND
+		   	destination_id = $3 AND
+		   	created_at > $4;
 	`
-	t.Logf("Checking events in staging files for sourceID: %s, DestinationID: %s, TimestampBeforeSendingEvents: %s, sqlStatement: %s",
+	t.Logf("Checking events in staging files for workspaceID: %s, sourceID: %s, DestinationID: %s, TimestampBeforeSendingEvents: %s, sqlStatement: %s",
+		workspaceID,
 		wareHouseTest.SourceID,
 		wareHouseTest.DestinationID,
 		wareHouseTest.TimestampBeforeSendingEvents,
@@ -219,6 +228,7 @@ func VerifyEventsInStagingFiles(t testing.TB, wareHouseTest *WareHouseTest, even
 	operation = func() bool {
 		err = jobsDB.DB.QueryRow(
 			sqlStatement,
+			workspaceID,
 			wareHouseTest.SourceID,
 			wareHouseTest.DestinationID,
 			wareHouseTest.TimestampBeforeSendingEvents,
@@ -293,6 +303,7 @@ func VerifyEventsInTableUploads(t testing.TB, wareHouseTest *WareHouseTest, even
 	t.Logf("Started verifying events in table uploads")
 
 	var (
+		workspaceID       = "BpLnfgDsc2WD8F2qNfHK5a84jjJ"
 		tableUploadEvents int
 		sqlStatement      string
 		operation         func() bool
@@ -319,13 +330,15 @@ func VerifyEventsInTableUploads(t testing.TB, wareHouseTest *WareHouseTest, even
 				  wh_uploads
 				  ON wh_uploads.id = wh_table_uploads.wh_upload_id
 			WHERE
-			   wh_uploads.source_id = $1
-			   AND wh_uploads.destination_id = $2
-			   AND wh_uploads.created_at > $3
-			   AND wh_table_uploads.table_name = $4
-			   AND wh_table_uploads.status = 'exported_data';
+			   wh_uploads.workspace_id = $1 AND
+			   wh_uploads.source_id = $2 AND
+			   wh_uploads.destination_id = $3 AND
+			   wh_uploads.created_at > $4 AND
+			   wh_table_uploads.table_name = $5 AND
+			   wh_table_uploads.status = 'exported_data';
 		`
-		t.Logf("Checking events in table uploads for sourceID: %s, DestinationID: %s, TimestampBeforeSendingEvents: %s, table: %s, sqlStatement: %s",
+		t.Logf("Checking events in table uploads for workspaceID: %s, sourceID: %s, DestinationID: %s, TimestampBeforeSendingEvents: %s, table: %s, sqlStatement: %s",
+			workspaceID,
 			wareHouseTest.SourceID,
 			wareHouseTest.DestinationID,
 			wareHouseTest.TimestampBeforeSendingEvents,
@@ -335,6 +348,7 @@ func VerifyEventsInTableUploads(t testing.TB, wareHouseTest *WareHouseTest, even
 		operation = func() bool {
 			err = jobsDB.DB.QueryRow(
 				sqlStatement,
+				workspaceID,
 				wareHouseTest.SourceID,
 				wareHouseTest.DestinationID,
 				wareHouseTest.TimestampBeforeSendingEvents,
@@ -373,7 +387,6 @@ func VerifyEventsInWareHouse(t testing.TB, wareHouseTest *WareHouseTest, eventsM
 		require.Contains(t, eventsMap, table)
 
 		tableCount := eventsMap[table]
-
 		sqlStatement := fmt.Sprintf(`
 			select
 			  count(*)
@@ -393,7 +406,6 @@ func VerifyEventsInWareHouse(t testing.TB, wareHouseTest *WareHouseTest, eventsM
 			wareHouseTest.UserId,
 			sqlStatement,
 		)
-
 		require.NoError(t, WithConstantBackoff(func() error {
 			count, countErr = queryCount(wareHouseTest.Client, sqlStatement)
 			if countErr != nil {
@@ -418,8 +430,8 @@ func VerifyingConfigurationTest(t *testing.T, destination backendconfig.Destinat
 	t.Logf("Started configuration tests for destination type: %s", destination.DestinationDefinition.Name)
 
 	require.NoError(t, WithConstantBackoff(func() error {
-		destinationValidator := configuration_testing.NewDestinationValidator()
-		req := &configuration_testing.DestinationValidationRequest{Destination: destination}
+		destinationValidator := validations.NewDestinationValidator()
+		req := &validations.DestinationValidationRequest{Destination: destination}
 		response, err := destinationValidator.ValidateCredentials(req)
 		if err != nil || response.Error != "" {
 			return fmt.Errorf("failed to validate credentials for destination: %s with error: %s", destination.DestinationDefinition.Name, response.Error)
@@ -428,6 +440,94 @@ func VerifyingConfigurationTest(t *testing.T, destination backendconfig.Destinat
 	}))
 
 	t.Logf("Completed configuration tests for destination type: %s", destination.DestinationDefinition.Name)
+}
+
+func VerifyWorkspaceIDInStats(t *testing.T, extraStats ...string) {
+	t.Helper()
+	t.Logf("Started verifying workspaceID in stats")
+
+	var (
+		statsToVerify []string
+		workspaceID   = "BpLnfgDsc2WD8F2qNfHK5a84jjJ"
+	)
+
+	statsToVerify = append(statsToVerify, extraStats...)
+	statsToVerify = append(statsToVerify, []string{
+		// Miscellaneous
+		"wh_scheduler_create_upload_jobs",
+		"wh_scheduler_pending_staging_files",
+		"warehouse_rudder_missing_datatype",
+		"warehouse_long_running_upload",
+		"warehouse_successful_upload_exists",
+		"persist_ssl_file_failure",
+
+		// Timer stats
+		"load_file_generation_time",
+		"event_delivery_time",
+		"identity_tables_load_time",
+		"other_tables_load_time",
+		"user_tables_load_time",
+		"upload_time",
+		"download_staging_file_time",
+		"staging_files_total_processing_time",
+		"process_staging_file_time",
+		"load_file_upload_time",
+
+		// Counter stats
+		"total_rows_synced",
+		"num_staged_events",
+		"upload_aborted",
+		"num_staged_events",
+		"upload_success",
+		"event_delivery",
+		"rows_synced",
+		"staging_files_processed",
+		"bytes_processed_in_staging_file",
+
+		// Gauge stats
+		"pre_load_table_rows",
+		"post_load_table_rows_estimate",
+		"post_load_table_rows",
+	}...)
+	mf := prometheusStats(t)
+
+	for _, statToVerify := range statsToVerify {
+		if ps, ok := mf[statToVerify]; ok {
+			for _, metric := range ps.GetMetric() {
+				found := false
+				for _, label := range metric.GetLabel() {
+					if label.GetName() == "workspaceId" {
+						require.Equalf(t, label.GetValue(), workspaceID, "workspaceId is empty for stat: %s", statToVerify)
+						found = true
+						break
+					}
+				}
+				require.Truef(t, found, "workspaceId not found in stat: %s", statToVerify)
+			}
+		}
+	}
+
+	t.Logf("Completed verifying workspaceID in stats")
+}
+
+func prometheusStats(t *testing.T) map[string]*promCLient.MetricFamily {
+	t.Helper()
+
+	req, err := http.NewRequestWithContext(context.Background(), "GET", "http://statsd-exporter:9102/metrics", http.NoBody)
+	require.NoError(t, err)
+
+	httpClient := &http.Client{Timeout: 5 * time.Second}
+	resp, err := httpClient.Do(req)
+	require.NoError(t, err)
+	require.NotNil(t, resp)
+	require.NotNil(t, resp.Body)
+
+	defer func() { _ = resp.Body.Close() }()
+
+	var parser expfmt.TextParser
+	mf, err := parser.TextToMetricFamilies(resp.Body)
+	require.NoError(t, err)
+	return mf
 }
 
 func queryCount(cl *client.Client, statement string) (int64, error) {
@@ -441,6 +541,12 @@ func queryCount(cl *client.Client, statement string) (int64, error) {
 func WithConstantBackoff(operation func() error) error {
 	backoffWithMaxRetry := backoff.WithMaxRetries(backoff.NewConstantBackOff(BackoffDuration), uint64(BackoffRetryMax))
 	return backoff.Retry(operation, backoffWithMaxRetry)
+}
+
+func DefaultSourceEventMap() EventsCountMap {
+	return EventsCountMap{
+		"google_sheet": 1,
+	}
 }
 
 func SendEventsMap() EventsCountMap {
@@ -499,6 +605,21 @@ func WarehouseEventsMap() EventsCountMap {
 	}
 }
 
+func WarehouseSourceEventsMap() EventsCountMap {
+	return EventsCountMap{
+		"google_sheet": 1,
+		"tracks":       1,
+	}
+}
+
+func DefaultSourceRunConfig() map[string]string {
+	srcrunconfig := make(map[string]string)
+	srcrunconfig["job_run_id"] = ""
+	srcrunconfig["task_run_id"] = ""
+
+	return srcrunconfig
+}
+
 func GetUserId(userType string) string {
 	return fmt.Sprintf("userId_%s_%s", strings.ToLower(userType), strings.ReplaceAll(uuid.Must(uuid.NewV4()).String(), "-", ""))
 }
@@ -519,6 +640,7 @@ func CreateBucketForMinio(t testing.TB, bucketName string) {
 	_ = minioClient.MakeBucket(bucketName, "us-east-1")
 }
 
+// SetConfig sets hot reloadable config
 // TODO: Make it retryable
 func SetConfig(kvs []warehouseutils.KeyValue) error {
 	payload, err := json.Marshal(&kvs)

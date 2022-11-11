@@ -13,12 +13,13 @@ import (
 )
 
 type SchemaHandleT struct {
-	dbHandle          *sql.DB
-	stagingFiles      []*StagingFileT
-	warehouse         warehouseutils.Warehouse
-	localSchema       warehouseutils.SchemaT
-	schemaInWarehouse warehouseutils.SchemaT
-	uploadSchema      warehouseutils.SchemaT
+	dbHandle                      *sql.DB
+	stagingFiles                  []*StagingFileT
+	warehouse                     warehouseutils.Warehouse
+	localSchema                   warehouseutils.SchemaT
+	schemaInWarehouse             warehouseutils.SchemaT
+	unrecognizedSchemaInWarehouse warehouseutils.SchemaT
+	uploadSchema                  warehouseutils.SchemaT
 }
 
 func HandleSchemaChange(existingDataType, columnType string, columnVal interface{}) (newColumnVal interface{}, ok bool) {
@@ -66,17 +67,17 @@ func (sh *SchemaHandleT) getLocalSchema() (currentSchema warehouseutils.SchemaT)
 
 	var rawSchema json.RawMessage
 	sqlStatement := fmt.Sprintf(`
-		SELECT 
-		  schema 
-		FROM 
+		SELECT
+		  schema
+		FROM
 		  %[1]s ST
-		WHERE 
+		WHERE
 		  (
-			ST.destination_id = '%[2]s' 
-			AND ST.namespace = '%[3]s' 
+			ST.destination_id = '%[2]s'
+			AND ST.namespace = '%[3]s'
 			AND ST.source_id = '%[4]s'
-		  ) 
-		ORDER BY 
+		  )
+		ORDER BY
 		  ST.id DESC;
 `,
 		warehouseutils.WarehouseSchemasTable,
@@ -102,13 +103,13 @@ func (sh *SchemaHandleT) getLocalSchema() (currentSchema warehouseutils.SchemaT)
 		panic(fmt.Errorf("unmarshalling: %s failed with Error : %w", rawSchema, err))
 	}
 	currentSchema = warehouseutils.SchemaT{}
-	for tname, columnMapInterface := range schemaMapInterface {
+	for tableName, columnMapInterface := range schemaMapInterface {
 		columnMap := make(map[string]string)
 		columns := columnMapInterface.(map[string]interface{})
 		for cName, cTypeInterface := range columns {
 			columnMap[cName] = cTypeInterface.(string)
 		}
-		currentSchema[tname] = columnMap
+		currentSchema[tableName] = columnMap
 	}
 	return currentSchema
 }
@@ -130,17 +131,17 @@ func (sh *SchemaHandleT) updateLocalSchema(updatedSchema warehouseutils.SchemaT)
 
 	sqlStatement := fmt.Sprintf(`
 		INSERT INTO %s (
-		  source_id, namespace, destination_id, 
-		  destination_type, schema, created_at, 
+		  source_id, namespace, destination_id,
+		  destination_type, schema, created_at,
 		  updated_at
-		) 
-		VALUES 
+		)
+		VALUES
 		  ($1, $2, $3, $4, $5, $6, $7) ON CONFLICT (
 			source_id, destination_id, namespace
-		  ) DO 
-		UPDATE 
-		SET 
-		  schema = $5, 
+		  ) DO
+		UPDATE
+		SET
+		  schema = $5,
 		  updated_at = $7 RETURNING id;
 `,
 		warehouseutils.WarehouseSchemasTable,
@@ -159,13 +160,13 @@ func (sh *SchemaHandleT) updateLocalSchema(updatedSchema warehouseutils.SchemaT)
 	return err
 }
 
-func (sh *SchemaHandleT) fetchSchemaFromWarehouse(whManager manager.ManagerI) (schemaInWarehouse warehouseutils.SchemaT, err error) {
-	schemaInWarehouse, err = whManager.FetchSchema(sh.warehouse)
+func (sh *SchemaHandleT) fetchSchemaFromWarehouse(whManager manager.ManagerI) (schemaInWarehouse, unrecognizedSchemaInWarehouse warehouseutils.SchemaT, err error) {
+	schemaInWarehouse, unrecognizedSchemaInWarehouse, err = whManager.FetchSchema(sh.warehouse)
 	if err != nil {
 		pkgLogger.Errorf(`[WH]: Failed fetching schema from warehouse: %v`, err)
-		return warehouseutils.SchemaT{}, err
+		return warehouseutils.SchemaT{}, warehouseutils.SchemaT{}, err
 	}
-	return schemaInWarehouse, nil
+	return schemaInWarehouse, unrecognizedSchemaInWarehouse, nil
 }
 
 func mergeSchema(currentSchema warehouseutils.SchemaT, schemaList []warehouseutils.SchemaT, currentMergedSchema warehouseutils.SchemaT, warehouseType string) warehouseutils.SchemaT {
@@ -290,11 +291,11 @@ func (sh *SchemaHandleT) consolidateStagingFilesSchemaUsingWarehouseSchema() war
 		}
 
 		sqlStatement := fmt.Sprintf(`
-			SELECT 
-			  schema 
-			FROM 
-			  %s 
-			WHERE 
+			SELECT
+			  schema
+			FROM
+			  %s
+			WHERE
 			  id IN (%s);
 `,
 			warehouseutils.WarehouseStagingFilesTable,

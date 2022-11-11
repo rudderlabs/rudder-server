@@ -1,6 +1,7 @@
 package batch_test
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -39,7 +40,7 @@ func TestBatchDelete(t *testing.T) {
 		expectedStatus model.JobStatus
 	}{
 		{
-			name: "testing batch deletion flow by deletion from 'mock_batch' destination",
+			name: "testing batch deletion flow by deletion from mock_batch destination",
 			job: model.Job{
 				ID:            1,
 				WorkspaceID:   "1001",
@@ -124,7 +125,7 @@ func TestBatchDelete(t *testing.T) {
 					t.Fatal(err)
 				}
 
-				cleanedFilePtr, err := os.Open(goldenFilesList[i])
+				cleanedFilePtr, err := os.Open(cleanedFilesList[i])
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -134,7 +135,7 @@ func TestBatchDelete(t *testing.T) {
 					t.Fatal(err)
 				}
 
-				require.Equal(t, 0, strings.Compare(string(goldenFileContent), string(cleanedFileContent)), "actual file different than expected")
+				require.Equal(t, 0, bytes.Compare(goldenFileContent, cleanedFileContent), fmt.Sprintf("comparing: %v against %v", goldenFilesList[i], cleanedFilesList[i]))
 			}
 			err = os.RemoveAll(mockBucketLocation)
 			if err != nil {
