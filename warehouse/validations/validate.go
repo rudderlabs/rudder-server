@@ -282,7 +282,7 @@ func uploadLoadFile(req *DestinationValidationRequest, filePath string) (uploadO
 	defer func() { _ = uploadFile.Close() }()
 
 	// uploading file to object storage
-	keyPrefixes := []string{connectionTestingFolder, destinationType, randomString(), time.Now().Format("01-02-2006")}
+	keyPrefixes := []string{connectionTestingFolder, destinationType, warehouseutils.RandHex(), time.Now().Format("01-02-2006")}
 	uploadOutput, err = fm.Upload(context.TODO(), uploadFile, keyPrefixes...)
 	if err != nil {
 		pkgLogger.Errorf("[DCT]: Failed to upload filePath: %s with error: %s", filePath, err.Error())
@@ -310,7 +310,7 @@ func downloadLoadFile(req *DestinationValidationRequest, location string) (err e
 	}
 
 	// creating file path for temporary file
-	testFilePath := fmt.Sprintf("%v/%v/%v.%v.%v.%v", tmpDirPath, connectionTestingFolder, destinationType, randomString(), time.Now().Unix(), warehouseutils.GetLoadFileFormat(destinationType))
+	testFilePath := fmt.Sprintf("%v/%v/%v.%v.%v.%v", tmpDirPath, connectionTestingFolder, destinationType, warehouseutils.RandHex(), time.Now().Unix(), warehouseutils.GetLoadFileFormat(destinationType))
 	err = os.MkdirAll(filepath.Dir(testFilePath), os.ModePerm)
 	if err != nil {
 		pkgLogger.Errorf("DCT: Failed to create directory at tempFilePath %s: with error: %s", testFilePath, err.Error())

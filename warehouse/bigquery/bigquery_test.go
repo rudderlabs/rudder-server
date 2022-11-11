@@ -9,6 +9,8 @@ import (
 	"os"
 	"testing"
 
+	"github.com/rudderlabs/rudder-server/utils/misc"
+
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
@@ -17,7 +19,6 @@ import (
 
 	"cloud.google.com/go/bigquery"
 
-	"github.com/gofrs/uuid"
 	bigquery2 "github.com/rudderlabs/rudder-server/warehouse/bigquery"
 	"github.com/rudderlabs/rudder-server/warehouse/client"
 	"github.com/rudderlabs/rudder-server/warehouse/testhelper"
@@ -78,7 +79,7 @@ func TestBigQueryIntegration(t *testing.T) {
 			WriteKey:      writeKey,
 			Schema:        schema,
 			Tables:        tables,
-			MessageId:     uuid.Must(uuid.NewV4()).String(),
+			MessageId:     misc.FastUUID().String(),
 			Provider:      warehouseutils.BQ,
 			SourceID:      "24p1HhPk09FW25Kuzxv7GshCLKR",
 			DestinationID: "26Bgm9FrQDZjvadSwAlpd35atwn",
@@ -180,7 +181,7 @@ func TestBigQueryIntegration(t *testing.T) {
 					WriteKey:      writeKey,
 					Schema:        schema,
 					Tables:        tables,
-					MessageId:     uuid.Must(uuid.NewV4()).String(),
+					MessageId:     misc.FastUUID().String(),
 					Provider:      warehouseutils.BQ,
 					SourceID:      "24p1HhPk09FW25Kuzxv7GshCLKR",
 					DestinationID: "26Bgm9FrQDZjvadSwAlpd35atwn",

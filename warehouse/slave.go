@@ -16,7 +16,6 @@ import (
 
 	"github.com/rudderlabs/rudder-server/warehouse/model"
 
-	"github.com/gofrs/uuid"
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/services/filemanager"
 	"github.com/rudderlabs/rudder-server/services/pgnotifier"
@@ -189,7 +188,7 @@ func (job *Payload) getDiscardsTable() string {
 
 func (jobRun *JobRunT) getLoadFilePath(tableName string) string {
 	job := jobRun.job
-	randomness := uuid.Must(uuid.NewV4()).String()
+	randomness := misc.FastUUID().String()
 	return strings.TrimSuffix(jobRun.stagingFilePath, "json.gz") + tableName + fmt.Sprintf(`.%s`, randomness) + fmt.Sprintf(`.%s`, warehouseutils.GetLoadFileFormat(job.DestinationType))
 }
 
@@ -681,7 +680,7 @@ func processClaimedAsyncJob(claimedJob pgnotifier.ClaimT) {
 func setupSlave(ctx context.Context) error {
 	g, ctx := errgroup.WithContext(ctx)
 
-	slaveID := uuid.Must(uuid.NewV4()).String()
+	slaveID := misc.FastUUID().String()
 	jobNotificationChannel := notifier.Subscribe(ctx, slaveID, noOfSlaveWorkerRoutines)
 	for workerIdx := 0; workerIdx <= noOfSlaveWorkerRoutines-1; workerIdx++ {
 		idx := workerIdx
