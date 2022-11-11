@@ -4,10 +4,10 @@ type SchemaType string
 
 const (
 	StringDataType  SchemaType = "string"
-	BooleanDataType            = "boolean"
-	IntDataType                = "int"
-	BigIntDataType             = "bigint"
-	FloatDataType              = "float"
-	JSONDataType               = "json"
-	TextDataType               = "text"
+	BooleanDataType SchemaType = "boolean"
+	IntDataType     SchemaType = "int"
+	BigIntDataType  SchemaType = "bigint"
+	FloatDataType   SchemaType = "float"
+	JSONDataType    SchemaType = "json"
+	TextDataType    SchemaType = "text"
 )

@@ -482,7 +482,7 @@ func processStagingFile(job Payload, workerIndex int) (loadFileUploadOutputs []l
 			columnType := columnInfo.Type
 			columnVal := columnInfo.Value
 
-			if columnType == model.IntDataType || columnType == model.BigIntDataType {
+			if model.SchemaType(columnType) == model.IntDataType || model.SchemaType(columnType) == model.BigIntDataType {
 				floatVal, ok := columnVal.(float64)
 				if !ok {
 					eventLoader.AddEmptyColumn(columnName)
