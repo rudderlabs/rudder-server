@@ -1585,6 +1585,7 @@ func (brt *HandleT) recordUploadStats(destination DestinationT, output StorageUp
 		"destType":    brt.destType,
 		"destination": destinationTag,
 		"workspaceId": destination.Source.WorkspaceID,
+		"source":      destination.Source.ID,
 	})
 	eventDeliveryStat.Count(output.TotalEvents)
 

@@ -24,7 +24,7 @@ import (
 
 func TestStoreErrorsToObjectStorage(t *testing.T) {
 	tmpDir := t.TempDir()
-	uniqueWorkspaces := 3
+	uniqueWorkspaces := 4
 
 	t.Setenv("RUDDER_TMPDIR", tmpDir)
 
@@ -90,11 +90,11 @@ func TestStoreErrorsToObjectStorage(t *testing.T) {
 			Bucket: backendconfig.StorageBucket{
 				Type: "MINIO",
 				Config: map[string]interface{}{
-					"bucketName":      minioResource[2].BucketName,
+					"bucketName":      minioResource[3].BucketName,
 					"prefix":          prefix,
-					"endPoint":        minioResource[2].Endpoint,
-					"accessKeyID":     minioResource[2].AccessKey,
-					"secretAccessKey": minioResource[2].SecretKey,
+					"endPoint":        minioResource[3].Endpoint,
+					"accessKeyID":     minioResource[3].AccessKey,
+					"secretAccessKey": minioResource[3].SecretKey,
 				},
 			},
 			Preferences: backendconfig.StoragePreferences{
@@ -148,7 +148,9 @@ func TestStoreErrorsToObjectStorage(t *testing.T) {
 		var file []*filemanager.FileObject
 		require.Eventually(t, func() bool {
 			file, err = fm.ListFilesWithPrefix(context.Background(), "", "", 5)
-
+			if !storageSettings[workspace].Preferences.ProcErrors {
+				return true
+			}
 			if len(file) != 1 {
 				t.Log("file list: ", file, " err: ", err, "len: ", len(file))
 				fm, err = fileuploaderProvider.GetFileManager(workspace)
@@ -158,15 +160,24 @@ func TestStoreErrorsToObjectStorage(t *testing.T) {
 			return true
 		}, 20*time.Second, 1*time.Second, "no backup files found in backup store: ", err)
 
-		f := downloadFile(t, fm, file[0].Key, cleanup)
-		jobsFromFile, err := readGzipJobFile(f.Name())
 		if storageSettings[workspace].Preferences.ProcErrors {
+			f := downloadFile(t, fm, file[0].Key, cleanup)
+			jobsFromFile, err := readGzipJobFile(f.Name())
+			require.NoError(t, err)
 			require.NotZero(t, jobsCount[workspace], "jobsCount for workspace: ", workspace, " is zero")
 			require.Equal(t, jobsCount[workspace], len(jobsFromFile))
-		} else {
-			require.Zero(t, jobsCount[workspace], "jobsCount for workspace: ", workspace, " is not zero")
 		}
 	}
+
+	jobsToFail := []*jobsdb.JobT{
+		{
+			WorkspaceId: "defaultWorkspaceID-5",
+		},
+	}
+
+	errJobs = st.storeErrorsToObjectStorage(jobsToFail)
+	require.Equal(t, 1, len(errJobs))
+	require.Equal(t, errJobs[0].errorOutput.Error.Error(), "no storage settings found for workspace: defaultWorkspaceID-5")
 }
 
 func countJobsByWorkspace(jobs []*jobsdb.JobT) map[string]int {
