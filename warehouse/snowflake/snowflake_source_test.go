@@ -10,9 +10,10 @@ import (
 	"os"
 	"testing"
 
+	"github.com/rudderlabs/rudder-server/utils/misc"
+
 	// "github.com/stretchr/testify/require"
 
-	"github.com/gofrs/uuid"
 	"github.com/stretchr/testify/require"
 
 	"github.com/rudderlabs/rudder-server/warehouse/client"
@@ -93,7 +94,7 @@ func TestSnowflakeIntegration(t *testing.T) {
 		},
 		Schema:                handle.Schema,
 		Tables:                handle.Tables,
-		MessageId:             uuid.Must(uuid.NewV4()).String(),
+		MessageId:             misc.FastUUID().String(),
 		Provider:              warehouseutils.SNOWFLAKE,
 		SourceID:              handle.SourceId,
 		DestinationID:         handle.DestinationId,

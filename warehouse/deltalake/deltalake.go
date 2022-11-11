@@ -8,7 +8,6 @@ import (
 
 	"github.com/iancoleman/strcase"
 
-	"github.com/gofrs/uuid"
 	"github.com/rudderlabs/rudder-server/config"
 	proto "github.com/rudderlabs/rudder-server/proto/databricks"
 	"github.com/rudderlabs/rudder-server/services/stats"
@@ -205,7 +204,7 @@ func Connect(cred *databricks.CredentialsT, connectTimeout time.Duration) (dbHan
 	}
 
 	ctx := context.Background()
-	identifier := uuid.Must(uuid.NewV4()).String()
+	identifier := misc.FastUUID().String()
 	connConfig := &proto.ConnectionConfig{
 		Host:            cred.Host,
 		Port:            cred.Port,

@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/sha512"
 	"database/sql"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -21,7 +22,6 @@ import (
 	"github.com/Azure/azure-storage-blob-go/azblob"
 	"github.com/aws/aws-sdk-go/service/s3"
 	"github.com/aws/aws-sdk-go/service/sts"
-	"github.com/gofrs/uuid"
 	"github.com/iancoleman/strcase"
 	"github.com/tidwall/gjson"
 
@@ -1075,8 +1075,16 @@ func StagingTablePrefix(provider string) string {
 }
 
 func StagingTableName(provider, tableName string, tableNameLimit int) string {
-	randomNess := strings.ReplaceAll(uuid.Must(uuid.NewV4()).String(), "-", "")
+	randomNess := RandHex()
 	prefix := StagingTablePrefix(provider)
 	stagingTableName := fmt.Sprintf(`%s%s_%s`, prefix, tableName, randomNess)
 	return misc.TruncateStr(stagingTableName, tableNameLimit)
+}
+
+// RandHex returns a random hex string of length 32
+func RandHex() string {
+	u := misc.FastUUID()
+	var buf [32]byte
+	hex.Encode(buf[:], u[:])
+	return string(buf[:])
 }
