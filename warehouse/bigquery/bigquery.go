@@ -399,17 +399,31 @@ func (bq *HandleT) loadTable(tableName string, _, getLoadFileLocFromTableUploads
 		primaryJoinClause := strings.Join(primaryKeyList, " AND ")
 		bqTable := func(name string) string { return fmt.Sprintf("`%s`.`%s`", bq.namespace, name) }
 
+		var orderByClause string
+		if _, ok := tableColMap["received_at"]; ok {
+			orderByClause = "ORDER BY received_at DESC"
+		}
+
 		sqlStatement := fmt.Sprintf(`MERGE INTO %[1]s AS original
 										USING (
 											SELECT * FROM (
-												SELECT *, row_number() OVER (PARTITION BY %[7]s ORDER BY RECEIVED_AT DESC) AS _rudder_staging_row_number FROM %[2]s
+												SELECT *, row_number() OVER (PARTITION BY %[7]s %[8]s) AS _rudder_staging_row_number FROM %[2]s
 											) AS q WHERE _rudder_staging_row_number = 1
 										) AS staging
 										ON (%[3]s)
 										WHEN MATCHED THEN
 										UPDATE SET %[6]s
 										WHEN NOT MATCHED THEN
-										INSERT (%[4]s) VALUES (%[5]s)`, bqTable(tableName), bqTable(stagingTableName), primaryJoinClause, columnNames, stagingColumnNames, columnsWithValues, partitionKey)
+										INSERT (%[4]s) VALUES (%[5]s)`,
+			bqTable(tableName),
+			bqTable(stagingTableName),
+			primaryJoinClause,
+			columnNames,
+			stagingColumnNames,
+			columnsWithValues,
+			partitionKey,
+			orderByClause,
+		)
 		pkgLogger.Infof("BQ: Dedup records for table:%s using staging table: %s\n", tableName, sqlStatement)
 
 		q := bq.db.Query(sqlStatement)
