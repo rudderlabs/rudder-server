@@ -45,8 +45,7 @@ type Client struct {
 	algoType      string
 	redisClient   *redis.Client
 	destinationID string
-	destLimiter   limiterSettings
-	userLimiter   limiterSettings
+	settings      limiterSettings
 	logger        logger.Logger
 }
 
@@ -63,11 +62,8 @@ func New(destinationID string, opts ...Option) *Client {
 	c.destinationID = destinationID
 	c.readConfiguration()
 
-	if c.destLimiter.enabled {
-		c.destLimiter.rateLimiter = c.newLimiter() // TODO use c.destLimiter.eventLimit & c.destLimiter.timeWindow
-	}
-	if c.userLimiter.enabled {
-		c.userLimiter.rateLimiter = c.newLimiter() // TODO use c.userLimiter.eventLimit & c.userLimiter.timeWindow
+	if c.settings.enabled {
+		c.settings.rateLimiter = c.newLimiter()
 	}
 
 	return &c
@@ -107,13 +103,13 @@ func (c *Client) readConfiguration() {
 
 	// set eventLimit
 	config.RegisterInt64ConfigVariable(
-		defaultDestinationSettings[c.destinationID].limit, &c.destLimiter.eventLimit, false, 1,
+		defaultDestinationSettings[c.destinationID].limit, &c.settings.eventLimit, false, 1,
 		fmt.Sprintf(`Router.throttler.%s.limit`, c.destinationID),
 	)
 
 	// set timeWindow
 	config.RegisterDurationConfigVariable(
-		defaultDestinationSettings[c.destinationID].timeWindow, &c.destLimiter.timeWindow, false, time.Second,
+		defaultDestinationSettings[c.destinationID].timeWindow, &c.settings.timeWindow, false, time.Second,
 		[]string{
 			fmt.Sprintf(`Router.throttler.%s.timeWindow`, c.destinationID),
 			fmt.Sprintf(`Router.throttler.%s.timeWindowInS`, c.destinationID),
@@ -121,36 +117,12 @@ func (c *Client) readConfiguration() {
 	)
 
 	// enable dest throttler
-	if c.destLimiter.eventLimit != 0 && c.destLimiter.timeWindow != 0 {
+	if c.settings.eventLimit != 0 && c.settings.timeWindow != 0 {
 		c.logger.Infof(
 			`[[ %s-router-throttler: Enabled throttler with eventLimit:%d, timeWindowInS: %v]]`,
-			c.destinationID, c.destLimiter.eventLimit, c.destLimiter.timeWindow,
+			c.destinationID, c.settings.eventLimit, c.settings.timeWindow,
 		)
-		c.destLimiter.enabled = true
-	}
-
-	// set eventLimit
-	config.RegisterInt64ConfigVariable(
-		defaultDestinationSettings[c.destinationID].userLevelLimit, &c.userLimiter.eventLimit, false, 1,
-		fmt.Sprintf(`Router.throttler.%s.userLevelLimit`, c.destinationID),
-	)
-
-	// set timeWindow
-	config.RegisterDurationConfigVariable(
-		defaultDestinationSettings[c.destinationID].userLevelTimeWindow, &c.userLimiter.timeWindow, false, time.Second,
-		[]string{
-			fmt.Sprintf(`Router.throttler.%s.userLevelTimeWindow`, c.destinationID),
-			fmt.Sprintf(`Router.throttler.%s.userLevelTimeWindowInS`, c.destinationID),
-		}...,
-	)
-
-	// enable dest throttler
-	if c.userLimiter.eventLimit != 0 && c.userLimiter.timeWindow != 0 {
-		c.logger.Infof(
-			`[[ %s-router-throttler: Enabled user level throttler with eventLimit:%d, timeWindowInS: %v]]`,
-			c.destinationID, c.userLimiter.eventLimit, c.userLimiter.timeWindow,
-		)
-		c.userLimiter.enabled = true
+		c.settings.enabled = true
 	}
 }
 
@@ -178,80 +150,31 @@ func (c *Client) newLimiter() *throttling.Limiter {
 }
 
 // CheckLimitReached returns true if number of events in the rolling window is less than the max events allowed, else false
-func (c *Client) CheckLimitReached(userID string, cost int64) (
-	limited bool, tr throttling.TokenReturner, retErr error,
-) {
+func (c *Client) CheckLimitReached(cost int64) (limited bool, tr throttling.TokenReturner, retErr error) {
 	if !c.isEnabled() {
 		return false, nil, nil
 	}
 
-	var (
-		ctx = context.TODO()
-		mtr multiTokenReturner
+	ctx := context.TODO()
+	rateLimitingKey := c.destinationID
+	allowed, tr, err := c.settings.rateLimiter.Limit(
+		ctx, cost, c.settings.eventLimit, getWindowInSecs(c.settings), rateLimitingKey,
 	)
-
-	if c.destLimiter.enabled {
-		rateLimitingKey := c.destinationID
-		allowed, tr, err := c.destLimiter.rateLimiter.Limit(
-			ctx, cost, c.destLimiter.eventLimit, getWindowInSecs(c.destLimiter), rateLimitingKey,
-		)
-		if err != nil {
-			err = fmt.Errorf(`[[ %s-router-throttler: Error checking limitStatus: %w]]`, c.destinationID, err)
-			c.logger.Error(err)
-			return false, nil, err
-		}
-		if !allowed {
-			return true, nil, nil // no token to return, so we don't return trs here
-		}
-		mtr.add(tr)
+	if err != nil {
+		err = fmt.Errorf(`[[ %s-router-throttler: Error checking limitStatus: %w]]`, c.destinationID, err)
+		c.logger.Error(err)
+		return false, nil, err
 	}
-
-	if c.userLimiter.enabled {
-		userKey := c.getUserKey(userID)
-		allowed, tr, err := c.userLimiter.rateLimiter.Limit(
-			ctx, cost, c.userLimiter.eventLimit, getWindowInSecs(c.userLimiter), userKey,
-		)
-		if err != nil {
-			err = fmt.Errorf(`[[ %s-router-throttler: Error checking limitStatus: %w]]`, c.destinationID, err)
-			c.logger.Error(err)
-			return false, nil, err
-		}
-		if !allowed {
-			// limit reached, in case we had requested a token for dest level throttling, we need to return it
-			_ = mtr.Return(ctx)
-			return true, nil, nil
-		}
-		mtr.add(tr)
+	if !allowed {
+		return true, nil, nil // no token to return when limited
 	}
-
-	return false, &mtr, nil
+	return false, tr, nil
 }
 
 func (c *Client) isEnabled() bool {
-	return c.destLimiter.enabled || c.userLimiter.enabled
-}
-
-func (c *Client) getUserKey(userID string) string {
-	return fmt.Sprintf(`%s_%s`, c.destinationID, userID)
+	return c.settings.enabled
 }
 
 func getWindowInSecs(l limiterSettings) int64 {
 	return int64(l.timeWindow.Seconds())
-}
-
-type multiTokenReturner struct {
-	trs []throttling.TokenReturner
-}
-
-func (m *multiTokenReturner) add(tr throttling.TokenReturner) {
-	m.trs = append(m.trs, tr)
-}
-
-func (m *multiTokenReturner) Return(ctx context.Context) (retErr error) {
-	for _, tr := range m.trs {
-		if err := tr.Return(ctx); retErr == nil && err != nil {
-			retErr = err
-		}
-	}
-	return
 }

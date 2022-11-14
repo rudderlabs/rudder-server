@@ -59,7 +59,7 @@ type tenantStats interface {
 }
 
 type limiter interface {
-	CheckLimitReached(userID string, cost int64) (
+	CheckLimitReached(cost int64) (
 		limited bool, tr throttling.TokenReturner, retErr error,
 	)
 }
@@ -1290,9 +1290,7 @@ func (rt *HandleT) shouldThrottle(job *jobsdb.JobT, parameters JobParametersT) (
 		return nil, false
 	}
 
-	throttlingCost := rt.getThrottlingCost(job)
-
-	limited, tokensReturner, err := throttler.CheckLimitReached(job.UserID, throttlingCost)
+	limited, tokensReturner, err := throttler.CheckLimitReached(rt.getThrottlingCost(job))
 	if err != nil {
 		// we can't throttle, let's hit the destination, worst case we get a 429
 		return nil, false
