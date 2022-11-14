@@ -203,7 +203,7 @@ func loadConfig() {
 	config.RegisterDurationConfigVariable(30, &tableCountQueryTimeout, true, time.Second, []string{"Warehouse.tableCountQueryTimeout", "Warehouse.tableCountQueryTimeoutInS"}...)
 
 	appName = misc.DefaultString("rudder-server").OnError(os.Hostname())
-	configBackendURL = config.GetString("CONFIG_BACKEND_URL", "https://api.rudderlabs.com")
+	configBackendURL = config.GetString("CONFIG_BACKEND_URL", "https://api.rudderstack.com")
 }
 
 // get name of the worker (`destID_namespace`) to be stored in map wh.workerChannelMap
@@ -2005,7 +2005,7 @@ func Start(ctx context.Context, app app.App) error {
 			backendconfig.DefaultBackendConfig.WaitForConfig(ctx)
 
 			c := features.NewClient(
-				config.GetString("CONFIG_BACKEND_URL", "https://api.rudderlabs.com"),
+				config.GetString("CONFIG_BACKEND_URL", "https://api.rudderstack.com"),
 				backendconfig.DefaultBackendConfig.Identity(),
 			)
 

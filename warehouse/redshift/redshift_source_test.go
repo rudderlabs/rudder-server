@@ -10,9 +10,9 @@ import (
 	"os"
 	"testing"
 
-	"github.com/stretchr/testify/require"
+	"github.com/rudderlabs/rudder-server/utils/misc"
 
-	"github.com/gofrs/uuid"
+	"github.com/stretchr/testify/require"
 
 	"github.com/rudderlabs/rudder-server/warehouse/client"
 	"github.com/rudderlabs/rudder-server/warehouse/redshift"
@@ -95,7 +95,7 @@ func TestSourceRedshiftIntegration(t *testing.T) {
 		SourceID:              handle.SourceId,
 		DestinationID:         handle.DestinationId,
 		LatestSourceRunConfig: testhelper.DefaultSourceRunConfig(),
-		MessageId:             uuid.Must(uuid.NewV4()).String(),
+		MessageId:             misc.FastUUID().String(),
 		Provider:              warehouseutils.RS,
 	}
 

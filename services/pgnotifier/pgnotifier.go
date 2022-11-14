@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/allisson/go-pglock/v2"
-	"github.com/gofrs/uuid"
 	"github.com/lib/pq"
 	"github.com/spaolacci/murmur3"
 
@@ -535,7 +534,7 @@ func (notifier *PgNotifierT) Publish(payload MessagePayload, schema *whUtils.Sch
 	}
 	defer stmt.Close()
 
-	batchID := uuid.Must(uuid.NewV4()).String()
+	batchID := misc.FastUUID().String()
 	pkgLogger.Infof("PgNotifier: Inserting %d records into %s as batch: %s", len(jobs), queueName, batchID)
 	for _, job := range jobs {
 		_, err = stmt.Exec(batchID, WaitingState, string(job), notifier.workspaceIdentifier, priority, payload.JobType)
