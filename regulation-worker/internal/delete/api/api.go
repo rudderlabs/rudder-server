@@ -59,7 +59,7 @@ func (api *APIManager) Delete(ctx context.Context, job model.Job, destDetail mod
 		// Problem in fetching token
 		return model.JobStatusFailed
 	}
-	setFailErr := api.setOAuthTokenInfo(*tokenInfo, req)
+	setFailErr := setOAuthTokenInfo(*tokenInfo, req)
 	if setFailErr != nil {
 		// Marshal failure
 		return model.JobStatusFailed
@@ -93,18 +93,9 @@ func (api *APIManager) Delete(ctx context.Context, job model.Job, destDetail mod
 	}
 
 	// Refresh Flow Start
-	if tokenInfo.IsOAuthEnabled {
-		respParams := &handleRefreshFlowParams{
-			jobResponses: jobResp,
-			secret:       tokenInfo.AccountSecretInfo.Account.Secret,
-			workspaceId:  job.WorkspaceID,
-			accountId:    tokenInfo.DeleteAccountId,
-			destName:     destDetail.Name,
-		}
-		refreshFlowStatus := api.handleRefreshFlow(respParams)
-		if refreshFlowStatus != model.JobStatusUndefined {
-			return refreshFlowStatus
-		}
+	oauthDestRespStatus := api.getOAuthDestResponseStatus(tokenInfo, jobResp, job, destDetail)
+	if oauthDestRespStatus != model.JobStatusUndefined {
+		return oauthDestRespStatus
 	}
 	// Refresh Flow ends
 
@@ -160,11 +151,22 @@ func mapJobToPayload(job model.Job, destName string, destConfig map[string]inter
 }
 
 type handleRefreshFlowParams struct {
-	secret       json.RawMessage
-	destName     string
-	workspaceId  string
-	accountId    string
-	jobResponses []JobRespSchema
+	secret      json.RawMessage
+	destName    string
+	workspaceId string
+	accountId   string
+	isRefresh   bool
+}
+
+func shouldRefresh(jobResponses []JobRespSchema) bool {
+	var isRefresh bool
+	for _, jobResponse := range jobResponses {
+		isRefresh = jobResponse.AuthErrorCategory == oauth.REFRESH_TOKEN
+		if isRefresh {
+			break
+		}
+	}
+	return isRefresh
 }
 
 /*
@@ -176,14 +178,7 @@ When the status undefined(model.JobStatusUndefined) is returned, we can understa
 *
 */
 func (api *APIManager) handleRefreshFlow(params *handleRefreshFlowParams) model.JobStatus {
-	var isRefresh bool
-	for _, jobResponse := range params.jobResponses {
-		isRefresh = jobResponse.AuthErrorCategory == oauth.REFRESH_TOKEN
-		if isRefresh {
-			break
-		}
-	}
-	if isRefresh {
+	if params.isRefresh {
 		pkgLogger.Debugf("Refresh flow triggered for %v\n", params.destName)
 		// Refresh OAuth flow
 		var refSecret *oauth.AuthResponse
@@ -196,7 +191,6 @@ func (api *APIManager) handleRefreshFlow(params *handleRefreshFlowParams) model.
 			EventNamePrefix: "refresh_token",
 		}
 		errCatStatusCode, refSecret = api.OAuth.RefreshToken(refTokenParams)
-		// TODO: Does it make sense to have disable destination here ?
 		refSec := *refSecret
 		if strings.TrimSpace(refSec.Err) != "" {
 			// There is an error occurring
@@ -210,13 +204,28 @@ func (api *APIManager) handleRefreshFlow(params *handleRefreshFlowParams) model.
 	return model.JobStatusUndefined
 }
 
+func (api *APIManager) getOAuthDestResponseStatus(tokenInfo *OAuthTokenResult, jobResp []JobRespSchema, job model.Job, destDetail model.Destination) model.JobStatus {
+	status := model.JobStatusUndefined
+	if tokenInfo.IsOAuthEnabled {
+		shouldRefresh := shouldRefresh(jobResp)
+		status = api.handleRefreshFlow(&handleRefreshFlowParams{
+			isRefresh:   shouldRefresh,
+			secret:      tokenInfo.AccountSecretInfo.Account.Secret,
+			workspaceId: job.WorkspaceID,
+			accountId:   tokenInfo.DeleteAccountId,
+			destName:    destDetail.Name,
+		})
+	}
+	return status
+}
+
 type OAuthTokenResult struct {
 	AccountSecretInfo *oauth.AuthResponse
 	DeleteAccountId   string
 	IsOAuthEnabled    bool
 }
 
-func (api *APIManager) setOAuthTokenInfo(tokenInfo OAuthTokenResult, req *http.Request) error {
+func setOAuthTokenInfo(tokenInfo OAuthTokenResult, req *http.Request) error {
 	if tokenInfo.IsOAuthEnabled {
 		// setting oauth related information
 		payload, marshalErr := json.Marshal(tokenInfo.AccountSecretInfo.Account)
