@@ -487,8 +487,7 @@ func (worker *workerT) workerProcess() {
 					Destination: destination,
 				})
 
-				noOfJobs := len(worker.routerJobs)
-				if noOfJobs >= worker.rt.noOfJobsToBatchInAWorker {
+				if len(worker.routerJobs) >= worker.rt.noOfJobsToBatchInAWorker {
 					worker.destinationJobs = worker.batchTransform(worker.routerJobs)
 					worker.processDestinationJobs()
 				}
@@ -499,8 +498,7 @@ func (worker *workerT) workerProcess() {
 					Destination: destination,
 				})
 
-				noOfJobs := len(worker.routerJobs)
-				if noOfJobs >= worker.rt.noOfJobsToBatchInAWorker {
+				if len(worker.routerJobs) >= worker.rt.noOfJobsToBatchInAWorker {
 					worker.destinationJobs = worker.transform(worker.routerJobs)
 					worker.processDestinationJobs()
 				}
@@ -1199,7 +1197,7 @@ func (rt *HandleT) stopWorkers() {
 	}
 }
 
-func (rt *HandleT) findWorker(job *jobsdb.JobT) (toSendWorker *workerT) {
+func (rt *HandleT) findWorker(job *jobsdb.JobT, throttledUserMap map[string]struct{}) (toSendWorker *workerT) {
 	if rt.backgroundCtx.Err() != nil {
 		return
 	}
@@ -1207,6 +1205,13 @@ func (rt *HandleT) findWorker(job *jobsdb.JobT) (toSendWorker *workerT) {
 	// checking if this job can be throttled
 	var parameters JobParametersT
 	userID := job.UserID
+
+	// checking if the user is in throttledMap. If yes, returning nil.
+	// this check is done to maintain order.
+	if _, ok := throttledUserMap[userID]; ok && rt.guaranteeUserEventOrder {
+		rt.logger.Debugf(`[%v Router] :: Skipping processing of job:%d of user:%s as user has earlier jobs in throttled map`, rt.destName, job.JobID, userID)
+		return nil
+	}
 
 	err := json.Unmarshal(job.Parameters, &parameters)
 	if err != nil {
@@ -1234,6 +1239,7 @@ func (rt *HandleT) findWorker(job *jobsdb.JobT) (toSendWorker *workerT) {
 
 	tokensReturner, shouldThrottle := rt.shouldThrottle(job, parameters, &batchDestination.Destination)
 	if shouldThrottle {
+		throttledUserMap[userID] = struct{}{}
 		rt.logger.Debugf(`[%v Router] :: Skipping processing of job:%d of user:%s as throttled limits exceeded`, rt.destName, job.JobID, userID)
 		return nil
 	}
@@ -1761,11 +1767,12 @@ func (rt *HandleT) readAndProcess() int {
 
 	var statusList []*jobsdb.JobStatusT
 	var toProcess []workerJobT
+	throttledUserMap := make(map[string]struct{})
 
 	// Identify jobs which can be processed
 	for iterator.HasNext() {
 		job := iterator.Next()
-		w := rt.findWorker(job)
+		w := rt.findWorker(job, throttledUserMap)
 		if w != nil {
 			status := jobsdb.JobStatusT{
 				JobID:         job.JobID,
