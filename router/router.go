@@ -1287,33 +1287,6 @@ func (rt *HandleT) getWorkerPartition(userID string) int {
 	return misc.GetHash(userID) % rt.noOfWorkers
 }
 
-func (*HandleT) getThrottlingCost(job *jobsdb.JobT, dest *backendconfig.DestinationT) (cost int64) {
-	// Config key "throttlingCost" is expected to have the eventType as the first key and the call type
-	// as the second key (e.g. track, identify, etc...) or default to apply the cost to all call types:
-	// dDT["config"]["throttlingCost"] = `{"eventType":{"default":1,"track":2,"identify":3}}`
-	cost = 1         // default cost
-	if dest == nil { // unknown destination data
-		return
-	}
-	tc, ok := dest.DestinationDefinition.Config["throttlingCost"].(map[string]interface{})
-	if !ok {
-		return
-	}
-
-	et, ok := tc["eventType"].(map[string]interface{})
-	if !ok {
-		return
-	}
-
-	// TODO get by event type before falling back on "default"
-	if defaultCost, ok := et["default"].(float64); ok {
-		// no default cost in the configuration, assume 0
-		cost = int64(defaultCost) * int64(job.EventCount)
-	}
-
-	return
-}
-
 func (rt *HandleT) shouldThrottle(job *jobsdb.JobT, parameters JobParametersT, dest *backendconfig.DestinationT) (
 	throttling.TokenReturner,
 	bool,
@@ -1323,7 +1296,7 @@ func (rt *HandleT) shouldThrottle(job *jobsdb.JobT, parameters JobParametersT, d
 		return nil, false
 	}
 
-	throttlingCost := rt.getThrottlingCost(job, dest)
+	throttlingCost := getThrottlingCost(job, dest)
 
 	limited, tokensReturner, err := throttler.CheckLimitReached(job.UserID, throttlingCost)
 	if err != nil {
@@ -2191,4 +2164,31 @@ func (rt *HandleT) getThrottler(destID string) limiter {
 		rt.throttler[destID] = l
 	}
 	return l
+}
+
+func getThrottlingCost(job *jobsdb.JobT, dest *backendconfig.DestinationT) (cost int64) {
+	// Config key "throttlingCost" is expected to have the eventType as the first key and the call type
+	// as the second key (e.g. track, identify, etc...) or default to apply the cost to all call types:
+	// dDT["config"]["throttlingCost"] = `{"eventType":{"default":1,"track":2,"identify":3}}`
+	cost = 1         // default cost
+	if dest == nil { // unknown destination data
+		return
+	}
+	tc, ok := dest.DestinationDefinition.Config["throttlingCost"].(map[string]interface{})
+	if !ok {
+		return
+	}
+
+	et, ok := tc["eventType"].(map[string]interface{})
+	if !ok {
+		return
+	}
+
+	// TODO get by event type before falling back on "default"
+	if defaultCost, ok := et["default"].(float64); ok {
+		// no default cost in the configuration, assume 0
+		cost = int64(defaultCost) * int64(job.EventCount)
+	}
+
+	return
 }
