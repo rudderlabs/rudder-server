@@ -14,16 +14,16 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gorilla/mux"
 	"github.com/ory/dockertest/v3"
+	"github.com/stretchr/testify/require"
+	"golang.org/x/sync/errgroup"
+
 	"github.com/rudderlabs/rudder-server/runner"
 	"github.com/rudderlabs/rudder-server/testhelper"
 	"github.com/rudderlabs/rudder-server/testhelper/destination"
 	"github.com/rudderlabs/rudder-server/testhelper/health"
 	trand "github.com/rudderlabs/rudder-server/testhelper/rand"
 	"github.com/rudderlabs/rudder-server/testhelper/workspaceConfig"
-	"github.com/stretchr/testify/require"
-	"golang.org/x/sync/errgroup"
 )
 
 func Test_RouterDestIsolation(t *testing.T) {
@@ -35,7 +35,7 @@ func Test_RouterDestIsolation(t *testing.T) {
 	generatePayloads := func(t *testing.T, count int) [][]byte {
 		payloads := make([][]byte, count)
 		for i := 0; i < count; i++ {
-			testBody, err := os.ReadFile("../scripts/batch.json")
+			testBody, err := os.ReadFile("./../scripts/batch.json")
 			require.NoError(t, err)
 			payloads[i] = testBody
 		}
@@ -51,6 +51,7 @@ func Test_RouterDestIsolation(t *testing.T) {
 			atomic.AddUint64(&count, 1)
 			require.NoError(t, err)
 		}))
+		t.Cleanup(webhook.Close)
 		return webhookCount{
 			&count,
 			webhook,
@@ -68,27 +69,15 @@ func Test_RouterDestIsolation(t *testing.T) {
 		postgresContainer    *destination.PostgresResource
 		transformerContainer *destination.TransformerResource
 	)
-
 	group.Go(func() (err error) {
 		postgresContainer, err = destination.SetupPostgres(pool, t)
 		return err
 	})
-
 	group.Go(func() (err error) {
 		transformerContainer, err = destination.SetupTransformer(pool, t)
 		return err
 	})
 	require.NoError(t, group.Wait())
-
-	backendConfRouter := mux.NewRouter()
-	if testing.Verbose() {
-		backendConfRouter.Use(func(next http.Handler) http.Handler {
-			return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				t.Logf("BackendConfig server call: %+v", r)
-				next.ServeHTTP(w, r)
-			})
-		})
-	}
 
 	writeKey := trand.String(27)
 	workspaceID := trand.String(27)
@@ -171,7 +160,7 @@ func Test_RouterDestIsolation(t *testing.T) {
 		resp, err := client.Do(req)
 		require.NoError(t, err, "should be able to send the request to gateway")
 		require.Equal(t, http.StatusOK, resp.StatusCode)
-		resp.Body.Close()
+		_ = resp.Body.Close()
 	}
 	require.Eventually(t, func() bool {
 		return atomic.LoadUint64(webhook2.count) == 100 && atomic.LoadUint64(webhook1.count) < 100
