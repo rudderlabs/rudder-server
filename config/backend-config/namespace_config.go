@@ -47,7 +47,7 @@ func (nc *namespaceConfig) SetUp() (err error) {
 		nc.HostedServiceSecret = config.GetString("HOSTED_SERVICE_SECRET", "")
 	}
 	if nc.ConfigBackendURL == nil {
-		configBackendURL := config.GetString("CONFIG_BACKEND_URL", "https://api.rudderlabs.com")
+		configBackendURL := config.GetString("CONFIG_BACKEND_URL", "https://api.rudderstack.com")
 		nc.ConfigBackendURL, err = url.Parse(configBackendURL)
 		if err != nil {
 			return err
