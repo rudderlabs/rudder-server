@@ -34,10 +34,8 @@ type limiterSettings struct {
 }
 
 type destinationSettings struct {
-	limit               int64
-	timeWindow          int64
-	userLevelLimit      int64
-	userLevelTimeWindow int64
+	limit      int64
+	timeWindow int64
 }
 
 // Client is a Handle for event limiterSettings
