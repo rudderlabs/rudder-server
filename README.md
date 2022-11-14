@@ -2,7 +2,7 @@
   🔥 <b>New: Just launched <a href="https://github.com/rudderlabs/rudder-server/discussions/2401">RudderStack v1.0</a></b>
   <br/>
  </p>
- 
+
 <p align="center">
   <a href="https://www.rudderstack.com/">
     <img src="resources/logo.png">
@@ -63,8 +63,8 @@ With RudderStack, you can build customer data pipelines that connect your whole 
   </a>
 </p>
 
-| Try **RudderStack Cloud Free** - a free tier of [**RudderStack Cloud**](https://www.rudderstack.com/cloud/). Click [**here**](https://app.rudderlabs.com/signup?type=freetrial) to start building a smarter customer data pipeline today, with RudderStack Cloud. |
-|:------|
+| Try **RudderStack Cloud Free** - a free tier of [**RudderStack Cloud**](https://www.rudderstack.com/cloud/). Click [**here**](https://app.rudderstack.com/signup?type=freetrial) to start building a smarter customer data pipeline today, with RudderStack Cloud. |
+| :----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 
 ## Key features
 
@@ -74,7 +74,7 @@ With RudderStack, you can build customer data pipelines that connect your whole 
 
 - **High Availability**: RudderStack comes with at least 99.99% uptime. We have built a sophisticated error handling and retry system that ensures that your data will be delivered even in the event of network partitions or destinations downtime.
 
-- **Privacy and Security**: You can collect and store your customer data without sending everything to a third-party vendor. With RudderStack, you get fine-grained control over what data to forward to which analytical tool. 
+- **Privacy and Security**: You can collect and store your customer data without sending everything to a third-party vendor. With RudderStack, you get fine-grained control over what data to forward to which analytical tool.
 
 - **Unlimited Events**: Event volume-based pricing of most of the commercial systems is broken. With RudderStack, you are be able to collect as much data as possible without worrying about overrunning your event budgets.
 
@@ -88,7 +88,7 @@ With RudderStack, you can build customer data pipelines that connect your whole 
 
 ## Get started
 
-The easiest way to experience RudderStack is to [**sign up**](https://app.rudderlabs.com/signup?type=freetrial) for **RudderStack Cloud Free** - a completely free tier of [**RudderStack Cloud**](https://www.rudderstack.com/cloud/).
+The easiest way to experience RudderStack is to [**sign up**](https://app.rudderstack.com/signup?type=freetrial) for **RudderStack Cloud Free** - a completely free tier of [**RudderStack Cloud**](https://www.rudderstack.com/cloud/).
 
 You can also set up RudderStack on your platform of choice with these two easy steps:
 

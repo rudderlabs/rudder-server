@@ -11,6 +11,8 @@ import (
 	"strings"
 	"time"
 
+	warehousearchiver "github.com/rudderlabs/rudder-server/warehouse/archive"
+
 	"github.com/rudderlabs/rudder-server/info"
 	"github.com/rudderlabs/rudder-server/warehouse/datalake"
 
@@ -222,7 +224,7 @@ func (r *Runner) Run(ctx context.Context, args []string) int {
 			backendconfig.DefaultBackendConfig.WaitForConfig(ctx)
 
 			c := features.NewClient(
-				config.GetString("CONFIG_BACKEND_URL", "https://api.rudderlabs.com"),
+				config.GetString("CONFIG_BACKEND_URL", "https://api.rudderstack.com"),
 				backendconfig.DefaultBackendConfig.Identity(),
 			)
 
@@ -316,6 +318,7 @@ func runAllInit() {
 	warehouse.Init4()
 	warehouse.Init5()
 	warehouse.Init6()
+	warehousearchiver.Init()
 	validations.Init()
 	datalake.Init()
 	azuresynapse.Init()
