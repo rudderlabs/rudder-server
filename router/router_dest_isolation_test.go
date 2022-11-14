@@ -122,7 +122,7 @@ func Test_RouterDestIsolation(t *testing.T) {
 	t.Setenv("RSERVER_ROUTER_JOB_QUERY_BATCH_SIZE", "10")
 
 	if testing.Verbose() {
-		require.NoError(t, os.Setenv("LOG_LEVEL", "DEBUG"))
+		t.Setenv("LOG_LEVEL", "DEBUG")
 	}
 
 	svcDone := make(chan struct{})
