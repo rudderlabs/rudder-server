@@ -93,8 +93,8 @@ func Run(ctx context.Context) error {
 		svc.API = &client.MultiTenantJobAPI{
 			Client:         managerClient,
 			URLPrefix:      urlPrefix,
-			NamespaceID:    config.MustGetString("NAMESPACE"),
-			NamespaceToken: config.MustGetString("WORKSPACE_NAMESPACE"),
+			NamespaceID:    config.MustGetString("WORKSPACE_NAMESPACE"),
+			NamespaceToken: config.MustGetString("HOSTED_SERVICE_SECRET"),
 		}
 	} else {
 		workspaceId, err := dest.GetWorkspaceId(ctx)

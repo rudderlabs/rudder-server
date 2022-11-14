@@ -56,9 +56,11 @@ func (js *JobSvc) JobSvc(ctx context.Context) error {
 		pkgLogger.Errorf("error while getting destination details: %v", err)
 		if err == model.ErrInvalidDestination {
 			stats.Default.NewSampledTaggedStat("regulation_worker.invalid_destination", stats.CountType, stats.Tags{"workspace_id": job.WorkspaceID, "destination_id": job.DestinationID}).Count(1)
-			return js.updateStatus(ctx, model.JobStatusAborted, job.ID)
+			js.updateStatus(ctx, model.JobStatusAborted, job.ID)
+			return err
 		}
-		return js.updateStatus(ctx, model.JobStatusFailed, job.ID)
+		js.updateStatus(ctx, model.JobStatusFailed, job.ID)
+		return err
 	}
 
 	deletionStart := time.Now()

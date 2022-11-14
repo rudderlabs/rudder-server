@@ -30,6 +30,7 @@ import (
 	"github.com/rudderlabs/rudder-server/services/filemanager"
 	"github.com/rudderlabs/rudder-server/services/kvstoremanager"
 	"github.com/rudderlabs/rudder-server/utils/httputil"
+	"github.com/rudderlabs/rudder-server/utils/types/deployment"
 )
 
 var (
@@ -70,16 +71,7 @@ const (
 	goldenDir = "./goldenDir"
 )
 
-func TestFlow(t *testing.T) {
-	defer blockOnHold(t)
-
-	// Loading config
-	initialize.Init()
-
-	// starting redis server to mock redis-destination
-	pool, err := dockertest.NewPool("")
-	require.NoError(t, err)
-
+func startRedisServer(t *testing.T, pool *dockertest.Pool) {
 	resource, err := pool.Run("redis", "alpine3.14", []string{})
 	require.NoError(t, err)
 	t.Cleanup(func() {
@@ -99,9 +91,8 @@ func TestFlow(t *testing.T) {
 	})
 	require.NoError(t, err)
 	t.Log("Redis server is up and running")
-	insertRedisData(t, redisAddress)
-
-	// starting minio server for batch-destination
+}
+func startMinioServer(t *testing.T, pool *dockertest.Pool) {
 	minioResource, err := pool.RunWithOptions(&dockertest.RunOptions{
 		Repository: "minio/minio",
 		Tag:        "latest",
@@ -142,88 +133,152 @@ func TestFlow(t *testing.T) {
 	// creating bucket inside minio where testing will happen.
 	err = minioClient.MakeBucket(minioBucket, minioRegion)
 	require.NoError(t, err)
-	insertMinioData(t)
-	t.Log("Minio server is up and running")
+}
 
-	// starting http server to mock regulation-manager
+func getDestinationReady(t *testing.T, pool *dockertest.Pool) {
+	// starting redis server to mock redis-destination
+	{
+		startRedisServer(t, pool)
+		insertRedisData(t, redisAddress)
+	}
+
+	// starting minio server for batch-destination
+	{
+		startMinioServer(t, pool)
+		insertMinioData(t)
+		t.Log("Minio server is up and running")
+	}
+}
+
+func startRegulationManager(t *testing.T) {
 	srv := httptest.NewServer(handler(t))
 	t.Cleanup(srv.Close)
-	t.Setenv("CONFIG_BACKEND_TOKEN", "216Co97d9So9TkqphM0cxBzRxc3")
 	t.Setenv("CONFIG_BACKEND_URL", srv.URL)
-	t.Setenv("DEST_TRANSFORM_URL", "http://localhost:9090")
 	t.Setenv("URL_PREFIX", srv.URL)
-	backendconfig.Init()
 
-	// Preparing data for testing
+	// Regulation manager response data
 	testData = []test{
 		{
-			respBody:          `{"jobId":"1","destinationId":"destId-redis-test","userAttributes":[{"userId":"Jermaine1473336609491897794707338","phone":"6463633841","email":"dorowane8n285680461479465450293436@gmail.com"},{"userId":"Mercie8221821544021583104106123","email":"dshirilad8536019424659691213279980@gmail.com"},{"userId":"Claiborn443446989226249191822329","phone":"8782905113"}]}`,
+			singleTenantRespBody: `{"jobId":"1","destinationId":"destId-redis-test","userAttributes":[{"userId":"Jermaine1473336609491897794707338","phone":"6463633841","email":"dorowane8n285680461479465450293436@gmail.com"},{"userId":"Mercie8221821544021583104106123","email":"dshirilad8536019424659691213279980@gmail.com"},{"userId":"Claiborn443446989226249191822329","phone":"8782905113"}]}`,
+			multiTenantRespBody:  `{"jobId":"1","workspaceId":"1001","destinationId":"destId-redis-test","userAttributes":[{"userId":"Jermaine1473336609491897794707338","phone":"6463633841","email":"dorowane8n285680461479465450293436@gmail.com"},{"userId":"Mercie8221821544021583104106123","email":"dshirilad8536019424659691213279980@gmail.com"},{"userId":"Claiborn443446989226249191822329","phone":"8782905113"}]}`,
+
 			getJobRespCode:    200,
 			updateJobRespCode: 201,
 			status:            "pending",
 		},
 		{
-			respBody:          `{"jobId":"2","destinationId":"destId-s3-test","userAttributes":[{"userId":"Jermaine1473336609491897794707338","phone":"6463633841","email":"dorowane8n285680461479465450293436@gmail.com"},{"userId":"Mercie8221821544021583104106123","email":"dshirilad8536019424659691213279980@gmail.com"},{"userId":"Claiborn443446989226249191822329","phone":"8782905113"}]}`,
-			getJobRespCode:    200,
-			updateJobRespCode: 201,
-			status:            "pending",
+			singleTenantRespBody: `{"jobId":"2","destinationId":"destId-s3-test","userAttributes":[{"userId":"Jermaine1473336609491897794707338","phone":"6463633841","email":"dorowane8n285680461479465450293436@gmail.com"},{"userId":"Mercie8221821544021583104106123","email":"dshirilad8536019424659691213279980@gmail.com"},{"userId":"Claiborn443446989226249191822329","phone":"8782905113"}]}`,
+			multiTenantRespBody:  `{"jobId":"2","workspaceId":"1001","destinationId":"destId-s3-test","userAttributes":[{"userId":"Jermaine1473336609491897794707338","phone":"6463633841","email":"dorowane8n285680461479465450293436@gmail.com"},{"userId":"Mercie8221821544021583104106123","email":"dshirilad8536019424659691213279980@gmail.com"},{"userId":"Claiborn443446989226249191822329","phone":"8782905113"}]}`,
+			getJobRespCode:       200,
+			updateJobRespCode:    201,
+			status:               "pending",
 		},
 	}
 
-	// Starting service
+}
+
+func startRegulationWorker(t *testing.T, deploymentType deployment.Type) {
+	if deploymentType == deployment.MultiTenantType {
+		t.Setenv("DEPLOYMENT_TYPE", "MULTITENANT")
+		t.Setenv("HOSTED_SERVICE_SECRET", "regulation-worker-secret")
+		t.Setenv("WORKSPACE_NAMESPACE", "regulation-worker")
+		t.Setenv("DEST_TRANSFORM_URL", "http://localhost:9090")
+		t.Setenv("CP_ROUTER_URL", "")
+
+	}
+	if deploymentType == deployment.DedicatedType {
+		t.Setenv("DEST_TRANSFORM_URL", "http://localhost:9090")
+	}
 	done := make(chan struct{})
 	svcCtx, svcCancel := context.WithCancel(context.Background())
 	t.Cleanup(func() { svcCancel(); <-done })
 	go func() {
 		defer close(done)
 		defer svcCancel()
-		err = main.Run(svcCtx)
+		err := main.Run(svcCtx)
 		require.NoError(t, err)
 	}()
-
-	t.Run("test-flow", func(t *testing.T) {
-		require.Eventually(t, func() bool {
-			testDataMu.Lock()
-			defer testDataMu.Unlock()
-			for _, test := range testData {
-				if test.status == "pending" && test.getJobRespCode == 200 {
-					return false
-				}
-			}
-			return true
-		}, 3*time.Minute, 150*time.Millisecond)
-
-		fieldCountAfterDelete = make([]int, len(redisInputTestData))
-		for i, test := range redisInputTestData {
-			key := fmt.Sprintf("user:%s", test.key)
-			result, err := manager.HGetAll(key)
-			if err != nil {
-				t.Logf("Error while getting data from redis using HMGET: %v", err)
-			}
-			fieldCountAfterDelete[i] = len(result)
-		}
-		for i := 1; i < len(redisInputTestData); i++ {
-			require.Equal(t, fieldCountBeforeDelete[i], fieldCountAfterDelete[i], "expected no deletion for this key")
-		}
-
-		require.NotEqual(t, fieldCountBeforeDelete[0], fieldCountAfterDelete[0], "key found, expected no key")
-
-		verifyBatchDelete(t)
-	})
 }
 
-func getJob(w http.ResponseWriter, _ *http.Request) {
+func verifyRedisData(t *testing.T) {
+	fieldCountAfterDelete = make([]int, len(redisInputTestData))
+	for i, test := range redisInputTestData {
+		key := fmt.Sprintf("user:%s", test.key)
+		result, err := manager.HGetAll(key)
+		if err != nil {
+			t.Logf("Error while getting data from redis using HMGET: %v", err)
+		}
+		fieldCountAfterDelete[i] = len(result)
+	}
+	for i := 1; i < len(redisInputTestData); i++ {
+		require.Equal(t, fieldCountBeforeDelete[i], fieldCountAfterDelete[i], "expected no deletion for this key")
+	}
+
+	require.NotEqual(t, fieldCountBeforeDelete[0], fieldCountAfterDelete[0], "key found, expected no key")
+}
+
+func TestFlow(t *testing.T) {
+	defer blockOnHold(t)
+	initialize.Init()
+	deploymentType := []deployment.Type{deployment.DedicatedType, deployment.MultiTenantType}
+	for _, deploymentType := range deploymentType {
+		t.Run("test single-tenant flow", func(t *testing.T) {
+			// start mock regulation-manager
+			startRegulationManager(t)
+
+			// start mock destination & insert data
+			pool, err := dockertest.NewPool("")
+			require.NoError(t, err)
+			getDestinationReady(t, pool)
+
+			// start regulation-worker
+			backendconfig.Init()
+			startRegulationWorker(t, deploymentType)
+
+			require.Eventually(t, func() bool {
+				testDataMu.Lock()
+				defer testDataMu.Unlock()
+				for _, test := range testData {
+					if test.status == "pending" && test.getJobRespCode == 200 {
+						return false
+					}
+				}
+				return true
+			}, 30*time.Second, 150*time.Millisecond)
+
+			verifyRedisData(t)
+			verifyBatchDelete(t)
+		})
+	}
+}
+
+func getSingleTenantJob(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	testDataMu.Lock()
 	defer testDataMu.Unlock()
 	for i, test := range testData {
 		if test.status == "pending" {
 			w.WriteHeader(testData[i].getJobRespCode)
-			_, _ = w.Write([]byte(testData[i].respBody))
+			_, _ = w.Write([]byte(testData[i].singleTenantRespBody))
 			return
 		}
 	}
-	// for the time when testData is not initialized, to replicate the scenario of no job found.
+	// for the time when testData is not initialized.
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func getMultiTenantJob(w http.ResponseWriter, _ *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	testDataMu.Lock()
+	defer testDataMu.Unlock()
+	for i, test := range testData {
+		if test.status == "pending" {
+			w.WriteHeader(testData[i].getJobRespCode)
+			_, _ = w.Write([]byte(testData[i].multiTenantRespBody))
+			return
+		}
+	}
+	// for the time when testData is not initialized.
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -337,12 +392,16 @@ func verifyBatchDelete(t *testing.T) {
 func handler(t *testing.T) http.Handler {
 	t.Helper()
 	srvMux := mux.NewRouter()
-	srvMux.HandleFunc("/dataplane/workspaces/{workspace_id}/regulations/workerJobs", getJob).Methods("GET")
+	srvMux.HandleFunc("/dataplane/workspaces/{workspace_id}/regulations/workerJobs", getSingleTenantJob).Methods("GET")
 	srvMux.HandleFunc("/dataplane/workspaces/{workspace_id}/regulations/workerJobs/{job_id}", updateJobStatus).Methods("PATCH")
+	srvMux.HandleFunc("/dataplane/namespaces/{namespace_id}/regulations/workerJobs", getMultiTenantJob).Methods("GET")
+	srvMux.HandleFunc("/dataplane/namespaces/{namespace_id}/regulations/workerJobs/{job_id}", updateJobStatus).Methods("PATCH")
+
+	srvMux.HandleFunc("/data-plane/v1/namespaces/{namespace_id}/config", getWorkspaceConfig).Methods("GET")
+
 	srvMux.HandleFunc("/workspaceConfig", getWorkspaceConfig).Methods("GET")
 	srvMux.Use(func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-			t.Logf("Got call to %s", req.URL.Path)
 			next.ServeHTTP(w, req)
 		})
 	})
@@ -350,7 +409,7 @@ func handler(t *testing.T) http.Handler {
 	return srvMux
 }
 
-func insertRedisData(t *testing.T, address string) {
+func insertRedisData(t *testing.T, address string) error {
 	t.Helper()
 
 	redisInputTestData = []struct {
@@ -377,7 +436,7 @@ func insertRedisData(t *testing.T, address string) {
 	for _, test := range redisInputTestData {
 		err := manager.HMSet(test.key, test.fields)
 		if err != nil {
-			t.Logf("Error while inserting into redis using HMSET: %v", err)
+			return fmt.Errorf("Error while inserting into redis using HMSET: %v", err)
 		}
 	}
 
@@ -385,10 +444,11 @@ func insertRedisData(t *testing.T, address string) {
 	for i, test := range redisInputTestData {
 		result, err := manager.HGetAll(test.key)
 		if err != nil {
-			t.Logf("Error while getting data from redis using HMGET: %v", err)
+			return fmt.Errorf("Error while getting data from redis using HGETALL: %v", err)
 		}
 		fieldCountBeforeDelete[i] = len(result)
 	}
+	return nil
 }
 
 func insertMinioData(t *testing.T) {
@@ -441,10 +501,11 @@ func blockOnHold(t *testing.T) {
 }
 
 type test struct {
-	respBody          string
-	getJobRespCode    int
-	updateJobRespCode int
-	status            model.JobStatus
+	singleTenantRespBody string
+	multiTenantRespBody  string
+	getJobRespCode       int
+	updateJobRespCode    int
+	status               model.JobStatus
 }
 
 type statusJobSchema struct {
