@@ -8,11 +8,11 @@ import (
 	"os"
 	"testing"
 
+	"github.com/rudderlabs/rudder-server/utils/misc"
+
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
-
-	"github.com/gofrs/uuid"
 
 	proto "github.com/rudderlabs/rudder-server/proto/databricks"
 
@@ -125,7 +125,7 @@ func TestDeltalakeIntegration(t *testing.T) {
 				WriteKey:      "2eSJyYtqwcFiUILzXv2fcNIrWO7",
 				Schema:        schema,
 				Tables:        []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"},
-				MessageId:     uuid.Must(uuid.NewV4()).String(),
+				MessageId:     misc.FastUUID().String(),
 				Provider:      warehouseutils.DELTALAKE,
 				SourceID:      tc.sourceID,
 				DestinationID: tc.destinationID,

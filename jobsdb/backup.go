@@ -29,7 +29,7 @@ type backupSettings struct {
 }
 
 func (b *backupSettings) isBackupEnabled() bool {
-	return masterBackupEnabled && b.instanceBackupEnabled && config.GetString("JOBS_BACKUP_BUCKET", "") != ""
+	return masterBackupEnabled && b.instanceBackupEnabled
 }
 
 func IsMasterBackupEnabled() bool {

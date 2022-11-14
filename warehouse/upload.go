@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"github.com/cenkalti/backoff/v4"
-	"github.com/gofrs/uuid"
 	"github.com/lib/pq"
 	"github.com/tidwall/gjson"
 
@@ -1846,7 +1845,7 @@ func (job *UploadJobT) createLoadFiles(generateAll bool) (startLoadFileID, endLo
 
 	publishBatchSize := config.GetInt("Warehouse.pgNotifierPublishBatchSize", 100)
 	pkgLogger.Infof("[WH]: Starting batch processing %v stage files for %s:%s", publishBatchSize, destType, destID)
-	uniqueLoadGenID := uuid.Must(uuid.NewV4()).String()
+	uniqueLoadGenID := misc.FastUUID().String()
 	job.upload.LoadFileGenStartTime = timeutil.Now()
 
 	// Getting distinct destination revision ID from staging files metadata

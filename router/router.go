@@ -1157,6 +1157,7 @@ func (worker *workerT) sendEventDeliveryStat(destinationJobMetadata *types.JobMe
 			"destination":    destinationTag,
 			"attempt_number": strconv.Itoa(status.AttemptNum),
 			"workspaceId":    status.WorkspaceId,
+			"source":         destinationJobMetadata.SourceID,
 		})
 		eventsDeliveredStat.Count(1)
 		if destinationJobMetadata.ReceivedAt != "" {
@@ -1760,11 +1761,6 @@ func (rt *HandleT) readAndProcess() int {
 		rt.logger.Debugf("RT: DB Read Complete. No RT Jobs to process for destination: %s", rt.destName)
 		time.Sleep(readSleep)
 		return 0
-	} else {
-		iteratorStats := iterator.Stats()
-		stats.Default.NewTaggedStat("router_iterator_stats_query_count", stats.GaugeType, stats.Tags{"destType": rt.destName}).Gauge(iteratorStats.QueryCount)
-		stats.Default.NewTaggedStat("router_iterator_stats_total_jobs", stats.GaugeType, stats.Tags{"destType": rt.destName}).Gauge(iteratorStats.TotalJobs)
-		stats.Default.NewTaggedStat("router_iterator_stats_discarded_jobs", stats.GaugeType, stats.Tags{"destType": rt.destName}).Gauge(iteratorStats.DiscardedJobs)
 	}
 
 	// List of jobs which can be processed mapped per channel
@@ -1800,6 +1796,10 @@ func (rt *HandleT) readAndProcess() int {
 			iterator.Discard(job)
 		}
 	}
+	iteratorStats := iterator.Stats()
+	stats.Default.NewTaggedStat("router_iterator_stats_query_count", stats.GaugeType, stats.Tags{"destType": rt.destName}).Gauge(iteratorStats.QueryCount)
+	stats.Default.NewTaggedStat("router_iterator_stats_total_jobs", stats.GaugeType, stats.Tags{"destType": rt.destName}).Gauge(iteratorStats.TotalJobs)
+	stats.Default.NewTaggedStat("router_iterator_stats_discarded_jobs", stats.GaugeType, stats.Tags{"destType": rt.destName}).Gauge(iteratorStats.DiscardedJobs)
 
 	// Mark the jobs as executing
 	err := misc.RetryWithNotify(context.Background(), rt.jobsDBCommandTimeout, rt.jobdDBMaxRetries, func(ctx context.Context) error {
@@ -1994,7 +1994,7 @@ func (rt *HandleT) Start() {
 	rt.startEnded = make(chan struct{})
 	ctx := rt.backgroundCtx
 
-	rt.backgroundGroup.Go(func() error {
+	rt.backgroundGroup.Go(misc.WithBugsnag(func() error {
 		defer close(rt.startEnded) // always close the channel
 		defer rt.stopWorkers()     // workers are started before the generatorLoop, so always stop them
 		select {
@@ -2014,7 +2014,7 @@ func (rt *HandleT) Start() {
 		}
 		rt.generatorLoop(ctx)
 		return nil
-	})
+	}))
 }
 
 func (rt *HandleT) Shutdown() {
@@ -2087,10 +2087,12 @@ func (rt *HandleT) HandleOAuthDestResponse(params *HandleDestOAuthRespParamsT) (
 		}
 		workspaceID := destinationJob.JobMetadataArray[0].WorkspaceID
 		var errCatStatusCode int
-		// destErrDetailed := destErrOutput.Output
 		// Check the category
 		// Trigger the refresh endpoint/disable endpoint
 		rudderAccountID := routerutils.GetRudderAccountId(&destinationJob.Destination)
+		if strings.TrimSpace(rudderAccountID) == "" {
+			return trRespStatusCode, trRespBody
+		}
 		switch destErrOutput.AuthErrorCategory {
 		case oauth.DISABLE_DEST:
 			return rt.ExecDisableDestination(&destinationJob.Destination, workspaceID, trRespBody, rudderAccountID)

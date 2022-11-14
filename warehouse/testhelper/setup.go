@@ -32,7 +32,6 @@ import (
 
 	"github.com/joho/godotenv"
 
-	"github.com/gofrs/uuid"
 	azuresynapse "github.com/rudderlabs/rudder-server/warehouse/azure-synapse"
 	"github.com/rudderlabs/rudder-server/warehouse/datalake"
 
@@ -621,7 +620,7 @@ func DefaultSourceRunConfig() map[string]string {
 }
 
 func GetUserId(userType string) string {
-	return fmt.Sprintf("userId_%s_%s", strings.ToLower(userType), strings.ReplaceAll(uuid.Must(uuid.NewV4()).String(), "-", ""))
+	return fmt.Sprintf("userId_%s_%s", strings.ToLower(userType), warehouseutils.RandHex())
 }
 
 func CreateBucketForMinio(t testing.TB, bucketName string) {
@@ -849,7 +848,7 @@ func DatabricksCredentials() (credentials databricks.CredentialsT, err error) {
 
 func (w *WareHouseTest) MsgId() string {
 	if w.MessageId == "" {
-		return uuid.Must(uuid.NewV4()).String()
+		return misc.FastUUID().String()
 	}
 	return w.MessageId
 }

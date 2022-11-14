@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"time"
 
+	"golang.org/x/exp/slices"
+
 	"github.com/fsnotify/fsnotify"
 	"github.com/joho/godotenv"
 	"github.com/spf13/viper"
@@ -158,6 +160,23 @@ func (c *Config) checkAndHotReloadConfig(configMap map[string][]*configValue) {
 				}
 				_value = _value * configVal.multiplier.(float64)
 				if _value != *value {
+					fmt.Printf("The value of key:%s & variable:%p changed from %v to %v\n", key, configVal, *value, _value)
+					*value = _value
+				}
+			case *[]string:
+				var _value []string
+				var isSet bool
+				for _, key := range configVal.keys {
+					if c.IsSet(key) {
+						isSet = true
+						_value = c.GetStringSlice(key, configVal.defaultValue.([]string))
+						break
+					}
+				}
+				if !isSet {
+					_value = configVal.defaultValue.([]string)
+				}
+				if slices.Compare(_value, *value) != 0 {
 					fmt.Printf("The value of key:%s & variable:%p changed from %v to %v\n", key, configVal, *value, _value)
 					*value = _value
 				}

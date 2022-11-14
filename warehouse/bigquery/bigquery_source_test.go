@@ -10,11 +10,12 @@ import (
 	"os"
 	"testing"
 
+	"github.com/rudderlabs/rudder-server/utils/misc"
+
 	"github.com/stretchr/testify/require"
 
 	"cloud.google.com/go/bigquery"
 
-	"github.com/gofrs/uuid"
 	bigquery2 "github.com/rudderlabs/rudder-server/warehouse/bigquery"
 	"github.com/rudderlabs/rudder-server/warehouse/client"
 	"github.com/rudderlabs/rudder-server/warehouse/testhelper"
@@ -106,7 +107,7 @@ func TestBigQueryIntegration(t *testing.T) {
 			DestinationID:         handle.DestinationId,
 			Schema:                handle.Schema,
 			Tables:                handle.Tables,
-			MessageId:             uuid.Must(uuid.NewV4()).String(),
+			MessageId:             misc.FastUUID().String(),
 			Provider:              warehouseutils.BQ,
 			LatestSourceRunConfig: testhelper.DefaultSourceRunConfig(),
 		}

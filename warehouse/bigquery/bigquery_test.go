@@ -9,6 +9,8 @@ import (
 	"os"
 	"testing"
 
+	"github.com/rudderlabs/rudder-server/utils/misc"
+
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
@@ -17,7 +19,6 @@ import (
 
 	"cloud.google.com/go/bigquery"
 
-	"github.com/gofrs/uuid"
 	bigquery2 "github.com/rudderlabs/rudder-server/warehouse/bigquery"
 	"github.com/rudderlabs/rudder-server/warehouse/client"
 	"github.com/rudderlabs/rudder-server/warehouse/testhelper"
@@ -25,14 +26,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-type TestHandle struct {
-	DB       *bigquery.Client
-	WriteKey string
-	Schema   string
-	Tables   []string
-}
-
-var handle *TestHandle
+type TestHandle struct{}
 
 func (*TestHandle) VerifyConnection() error {
 	credentials, err := testhelper.BigqueryCredentials()
@@ -40,7 +34,7 @@ func (*TestHandle) VerifyConnection() error {
 		return err
 	}
 	return testhelper.WithConstantBackoff(func() (err error) {
-		handle.DB, err = bigquery2.Connect(context.TODO(), &credentials)
+		_, err = bigquery2.Connect(context.TODO(), &credentials)
 		if err != nil {
 			err = fmt.Errorf("could not connect to warehouse bigquery with error: %s", err.Error())
 			return
@@ -50,10 +44,23 @@ func (*TestHandle) VerifyConnection() error {
 }
 
 func TestBigQueryIntegration(t *testing.T) {
+	credentials, err := testhelper.BigqueryCredentials()
+	require.NoError(t, err)
+
+	var (
+		schema   = testhelper.Schema(warehouseutils.BQ, testhelper.BigqueryIntegrationTestSchema)
+		writeKey = "J77aX7tLFJ84qYU6UrN8ctecwZt"
+		tables   = []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "_groups", "groups"}
+		db       *bigquery.Client
+	)
+
+	db, err = bigquery2.Connect(context.TODO(), &credentials)
+	require.NoError(t, err)
+
 	t.Cleanup(func() {
 		require.NoError(t, testhelper.WithConstantBackoff(func() (err error) {
-			return handle.DB.Dataset(handle.Schema).DeleteWithContents(context.TODO())
-		}), fmt.Sprintf("Failed dropping dataset %s for BigQuery", handle.Schema))
+			return db.Dataset(schema).DeleteWithContents(context.TODO())
+		}), fmt.Sprintf("Failed dropping dataset %s for BigQuery", schema))
 	})
 
 	t.Run("Merge Mode", func(t *testing.T) {
@@ -66,13 +73,13 @@ func TestBigQueryIntegration(t *testing.T) {
 
 		warehouseTest := &testhelper.WareHouseTest{
 			Client: &client.Client{
-				BQ:   handle.DB,
+				BQ:   db,
 				Type: client.BQClient,
 			},
-			WriteKey:      handle.WriteKey,
-			Schema:        handle.Schema,
-			Tables:        handle.Tables,
-			MessageId:     uuid.Must(uuid.NewV4()).String(),
+			WriteKey:      writeKey,
+			Schema:        schema,
+			Tables:        tables,
+			MessageId:     misc.FastUUID().String(),
 			Provider:      warehouseutils.BQ,
 			SourceID:      "24p1HhPk09FW25Kuzxv7GshCLKR",
 			DestinationID: "26Bgm9FrQDZjvadSwAlpd35atwn",
@@ -88,7 +95,7 @@ func TestBigQueryIntegration(t *testing.T) {
 		testhelper.SendEvents(t, warehouseTest, sendEventsMap)
 		testhelper.SendIntegratedEvents(t, warehouseTest, sendEventsMap)
 
-		testhelper.VerifyEventsInStagingFiles(t, warehouseTest, testhelper.StagingFilesEventsMap())
+		testhelper.VerifyEventsInStagingFiles(t, warehouseTest, stagingFilesEventsMap())
 		testhelper.VerifyEventsInLoadFiles(t, warehouseTest, loadFilesEventsMap())
 		testhelper.VerifyEventsInTableUploads(t, warehouseTest, tableUploadsEventsMap())
 		testhelper.VerifyEventsInWareHouse(t, warehouseTest, mergeEventsMap())
@@ -103,7 +110,7 @@ func TestBigQueryIntegration(t *testing.T) {
 		testhelper.SendModifiedEvents(t, warehouseTest, sendEventsMap)
 		testhelper.SendIntegratedEvents(t, warehouseTest, sendEventsMap)
 
-		testhelper.VerifyEventsInStagingFiles(t, warehouseTest, testhelper.StagingFilesEventsMap())
+		testhelper.VerifyEventsInStagingFiles(t, warehouseTest, stagingFilesEventsMap())
 		testhelper.VerifyEventsInLoadFiles(t, warehouseTest, loadFilesEventsMap())
 		testhelper.VerifyEventsInTableUploads(t, warehouseTest, tableUploadsEventsMap())
 		testhelper.VerifyEventsInWareHouse(t, warehouseTest, mergeEventsMap())
@@ -112,43 +119,92 @@ func TestBigQueryIntegration(t *testing.T) {
 	})
 
 	t.Run("Append Mode", func(t *testing.T) {
-		require.NoError(t, testhelper.SetConfig([]warehouseutils.KeyValue{
+		testCases := []struct {
+			name                                string
+			customPartitionsEnabledWorkspaceIDs []string
+			prerequisite                        func(t *testing.T)
+		}{
 			{
-				Key:   "Warehouse.bigquery.isDedupEnabled",
-				Value: false,
+				name: "Append mode without custom partitions",
 			},
-		}))
+			{
+				name:                                "Append mode with custom partitions",
+				customPartitionsEnabledWorkspaceIDs: []string{"BpLnfgDsc2WD8F2qNfHK5a84jjJ"},
+				prerequisite: func(t *testing.T) {
+					err = db.Dataset(schema).Create(context.Background(), &bigquery.DatasetMetadata{
+						Location: "US",
+					})
+					require.NoError(t, err)
 
-		warehouseTest := &testhelper.WareHouseTest{
-			Client: &client.Client{
-				BQ:   handle.DB,
-				Type: client.BQClient,
+					err = db.Dataset(schema).Table("tracks").Create(
+						context.Background(),
+						&bigquery.TableMetadata{
+							Schema: []*bigquery.FieldSchema{{
+								Name: "timestamp",
+								Type: bigquery.TimestampFieldType,
+							}},
+							TimePartitioning: &bigquery.TimePartitioning{
+								Field: "timestamp",
+							},
+						})
+					require.NoError(t, err)
+				},
 			},
-			WriteKey:      handle.WriteKey,
-			Schema:        handle.Schema,
-			Tables:        handle.Tables,
-			MessageId:     uuid.Must(uuid.NewV4()).String(),
-			Provider:      warehouseutils.BQ,
-			SourceID:      "24p1HhPk09FW25Kuzxv7GshCLKR",
-			DestinationID: "26Bgm9FrQDZjvadSwAlpd35atwn",
 		}
 
-		// Scenario 1
-		warehouseTest.TimestampBeforeSendingEvents = timeutil.Now()
-		warehouseTest.UserId = testhelper.GetUserId(warehouseutils.BQ)
+		for _, tc := range testCases {
+			tc := tc
 
-		sendEventsMap := testhelper.SendEventsMap()
-		testhelper.SendEvents(t, warehouseTest, sendEventsMap)
-		testhelper.SendIntegratedEvents(t, warehouseTest, sendEventsMap)
-		testhelper.SendModifiedEvents(t, warehouseTest, sendEventsMap)
-		testhelper.SendModifiedEvents(t, warehouseTest, sendEventsMap)
+			t.Run(tc.name, func(t *testing.T) {
+				_ = db.Dataset(schema).DeleteWithContents(context.TODO())
 
-		testhelper.VerifyEventsInStagingFiles(t, warehouseTest, testhelper.StagingFilesEventsMap())
-		testhelper.VerifyEventsInLoadFiles(t, warehouseTest, loadFilesEventsMap())
-		testhelper.VerifyEventsInTableUploads(t, warehouseTest, tableUploadsEventsMap())
-		testhelper.VerifyEventsInWareHouse(t, warehouseTest, appendEventsMap())
+				if tc.prerequisite != nil {
+					tc.prerequisite(t)
+				}
 
-		testhelper.VerifyWorkspaceIDInStats(t)
+				require.NoError(t, testhelper.SetConfig([]warehouseutils.KeyValue{
+					{
+						Key:   "Warehouse.bigquery.isDedupEnabled",
+						Value: false,
+					},
+					{
+						Key:   "Warehouse.bigquery.customPartitionsEnabledWorkspaceIDs",
+						Value: tc.customPartitionsEnabledWorkspaceIDs,
+					},
+				}))
+
+				warehouseTest := &testhelper.WareHouseTest{
+					Client: &client.Client{
+						BQ:   db,
+						Type: client.BQClient,
+					},
+					WriteKey:      writeKey,
+					Schema:        schema,
+					Tables:        tables,
+					MessageId:     misc.FastUUID().String(),
+					Provider:      warehouseutils.BQ,
+					SourceID:      "24p1HhPk09FW25Kuzxv7GshCLKR",
+					DestinationID: "26Bgm9FrQDZjvadSwAlpd35atwn",
+				}
+
+				// Scenario 1
+				warehouseTest.TimestampBeforeSendingEvents = timeutil.Now()
+				warehouseTest.UserId = testhelper.GetUserId(warehouseutils.BQ)
+
+				sendEventsMap := testhelper.SendEventsMap()
+				testhelper.SendEvents(t, warehouseTest, sendEventsMap)
+				testhelper.SendIntegratedEvents(t, warehouseTest, sendEventsMap)
+				testhelper.SendModifiedEvents(t, warehouseTest, sendEventsMap)
+				testhelper.SendModifiedEvents(t, warehouseTest, sendEventsMap)
+
+				testhelper.VerifyEventsInStagingFiles(t, warehouseTest, stagingFilesEventsMap())
+				testhelper.VerifyEventsInLoadFiles(t, warehouseTest, loadFilesEventsMap())
+				testhelper.VerifyEventsInTableUploads(t, warehouseTest, tableUploadsEventsMap())
+				testhelper.VerifyEventsInWareHouse(t, warehouseTest, appendEventsMap())
+
+				testhelper.VerifyWorkspaceIDInStats(t)
+			})
+		}
 	})
 }
 
@@ -194,6 +250,12 @@ func tableUploadsEventsMap() testhelper.EventsCountMap {
 	return eventsMap
 }
 
+func stagingFilesEventsMap() testhelper.EventsCountMap {
+	return testhelper.EventsCountMap{
+		"wh_staging_files": 34, // Since extra 2 merge events because of ID resolution
+	}
+}
+
 func mergeEventsMap() testhelper.EventsCountMap {
 	return testhelper.EventsCountMap{
 		"identifies":    1,
@@ -233,10 +295,5 @@ func TestMain(m *testing.M) {
 		return
 	}
 
-	handle = &TestHandle{
-		WriteKey: "J77aX7tLFJ84qYU6UrN8ctecwZt",
-		Schema:   testhelper.Schema(warehouseutils.BQ, testhelper.BigqueryIntegrationTestSchema),
-		Tables:   []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "_groups", "groups"},
-	}
-	os.Exit(testhelper.Run(m, handle))
+	os.Exit(testhelper.Run(m, &TestHandle{}))
 }
