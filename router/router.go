@@ -1287,7 +1287,7 @@ func (rt *HandleT) getWorkerPartition(userID string) int {
 	return misc.GetHash(userID) % rt.noOfWorkers
 }
 
-func (rt *HandleT) getThrottlingCost(job *jobsdb.JobT, dest *backendconfig.DestinationT) (cost int64) {
+func (*HandleT) getThrottlingCost(job *jobsdb.JobT, dest *backendconfig.DestinationT) (cost int64) {
 	// Config key "throttlingCost" is expected to have the eventType as the first key and the call type
 	// as the second key (e.g. track, identify, etc...) or default to apply the cost to all call types:
 	// dDT["config"]["throttlingCost"] = `{"eventType":{"default":1,"track":2,"identify":3}}`
