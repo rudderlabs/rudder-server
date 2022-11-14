@@ -54,7 +54,7 @@ type stagingFileSchema struct {
 	TimeWindow      time.Time
 }
 
-func mapStagingFile(payload stagingFileSchema) (model.StagingFile, error) {
+func mapStagingFile(payload *stagingFileSchema) (model.StagingFile, error) {
 	if payload.WorkspaceID == "" {
 		return model.StagingFile{}, fmt.Errorf("workspaceId is required")
 	}
@@ -63,10 +63,10 @@ func mapStagingFile(payload stagingFileSchema) (model.StagingFile, error) {
 		return model.StagingFile{}, fmt.Errorf("location is required")
 	}
 
-	if payload.BatchDestination.Source.ID == "" {
+	if len(payload.BatchDestination.Source.ID) == 0 {
 		return model.StagingFile{}, fmt.Errorf("batchDestination.source.id is required")
 	}
-	if payload.BatchDestination.Destination.ID == "" {
+	if len(payload.BatchDestination.Destination.ID) == 0 {
 		return model.StagingFile{}, fmt.Errorf("batchDestination.destination.id is required")
 	}
 
@@ -121,7 +121,7 @@ func (api *WarehouseAPI) processHandler(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	stagingFile, err := mapStagingFile(payload)
+	stagingFile, err := mapStagingFile(&payload)
 	if err != nil {
 		api.Logger.Warnf("invalid payload: %v", err)
 		http.Error(w, fmt.Sprintf("invalid payload: %s", err.Error()), http.StatusBadRequest)

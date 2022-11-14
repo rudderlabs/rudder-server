@@ -940,6 +940,9 @@ func (wh *HandleT) getUploadsToProcess(ctx context.Context, availableWorkers int
 			upload.StartStagingFileID,
 			upload.EndStagingFileID,
 		)
+		if err != nil {
+			return nil, err
+		}
 
 		stagingFileIDs := make([]int64, len(stagingFilesList))
 		stagingFileListPtr := make([]*model.StagingFile, len(stagingFilesList))
