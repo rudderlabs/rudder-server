@@ -90,7 +90,7 @@ type backendConfigImpl struct {
 }
 
 func loadConfig() {
-	configBackendURL = config.GetString("CONFIG_BACKEND_URL", "https://api.rudderlabs.com")
+	configBackendURL = config.GetString("CONFIG_BACKEND_URL", "https://api.rudderstack.com")
 	cpRouterURL = config.GetString("CP_ROUTER_URL", "https://cp-router.rudderlabs.com")
 	config.RegisterDurationConfigVariable(5, &pollInterval, true, time.Second, []string{"BackendConfig.pollInterval", "BackendConfig.pollIntervalInS"}...)
 	config.RegisterDurationConfigVariable(300, &regulationsPollInterval, true, time.Second, []string{"BackendConfig.regulationsPollInterval", "BackendConfig.regulationsPollIntervalInS"}...)
