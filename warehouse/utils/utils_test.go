@@ -17,8 +17,6 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	"github.com/gofrs/uuid"
-
 	"github.com/stretchr/testify/require"
 
 	"github.com/rudderlabs/rudder-server/config"
@@ -1396,9 +1394,7 @@ var _ = Describe("Utils", func() {
 
 	It("SSL keys", func() {
 		destinationID := "destID"
-		clientKey := uuid.Must(uuid.NewV4()).String()
-		clientCert := uuid.Must(uuid.NewV4()).String()
-		serverCA := uuid.Must(uuid.NewV4()).String()
+		clientKey, clientCert, serverCA := misc.FastUUID().String(), misc.FastUUID().String(), misc.FastUUID().String()
 
 		err := WriteSSLKeys(backendconfig.DestinationT{ID: destinationID, Config: map[string]interface{}{"clientKey": clientKey, "clientCert": clientCert, "serverCA": serverCA}})
 		Expect(err).To(Equal(WriteSSLKeyError{}))

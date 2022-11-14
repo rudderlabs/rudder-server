@@ -3,9 +3,7 @@ package validations
 import (
 	"encoding/json"
 	"fmt"
-	"strings"
 
-	"github.com/gofrs/uuid"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/services/filemanager"
 	"github.com/rudderlabs/rudder-server/utils/misc"
@@ -15,8 +13,7 @@ import (
 func warehouse(req *DestinationValidationRequest) warehouseutils.Warehouse {
 	destination := req.Destination
 
-	randomSourceId := randomString()
-	randomSourceName := randomString()
+	randomSourceId, randomSourceName := warehouseutils.RandHex(), warehouseutils.RandHex()
 	return warehouseutils.Warehouse{
 		Source: backendconfig.SourceT{
 			ID:   randomSourceId,
@@ -58,10 +55,6 @@ func parseOptions(req json.RawMessage, v interface{}) error {
 	return nil
 }
 
-func randomString() string {
-	return strings.ReplaceAll(uuid.Must(uuid.NewV4()).String(), "-", "")
-}
-
 func stagingTableName() string {
-	return fmt.Sprintf(`%s_%s`, warehouseutils.CTStagingTablePrefix, randomString())
+	return fmt.Sprintf(`%s_%s`, warehouseutils.CTStagingTablePrefix, warehouseutils.RandHex())
 }

@@ -13,7 +13,6 @@ import (
 
 	"github.com/tidwall/gjson"
 
-	"github.com/gofrs/uuid"
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/services/filemanager"
 	"github.com/rudderlabs/rudder-server/utils/logger"
@@ -275,7 +274,7 @@ func (rs *HandleT) generateManifest(tableName string, _ map[string]string) (stri
 	if err != nil {
 		panic(err)
 	}
-	localManifestPath := fmt.Sprintf("%v%v", tmpDirPath+dirName, uuid.Must(uuid.NewV4()).String())
+	localManifestPath := fmt.Sprintf("%v%v", tmpDirPath+dirName, misc.FastUUID().String())
 	err = os.MkdirAll(filepath.Dir(localManifestPath), os.ModePerm)
 	if err != nil {
 		panic(err)
@@ -301,7 +300,7 @@ func (rs *HandleT) generateManifest(tableName string, _ map[string]string) (stri
 		return "", err
 	}
 
-	uploadOutput, err := uploader.Upload(context.TODO(), file, manifestFolder, rs.Warehouse.Source.ID, rs.Warehouse.Destination.ID, time.Now().Format("01-02-2006"), tableName, uuid.Must(uuid.NewV4()).String())
+	uploadOutput, err := uploader.Upload(context.TODO(), file, manifestFolder, rs.Warehouse.Source.ID, rs.Warehouse.Destination.ID, time.Now().Format("01-02-2006"), tableName, misc.FastUUID().String())
 	if err != nil {
 		return "", err
 	}
