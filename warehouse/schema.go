@@ -40,14 +40,14 @@ func HandleSchemaChange(existingDataType, currentDataType model.SchemaType, valu
 	} else if (currentDataType == model.IntDataType || currentDataType == model.BigIntDataType) && existingDataType == model.FloatDataType {
 		intVal, ok := value.(int)
 		if !ok {
-			err = ErrIncompatibleSchemaConv
+			err = ErrIncompatibleSchemaConversion
 		} else {
 			newColumnVal = float64(intVal)
 		}
 	} else if currentDataType == model.FloatDataType && (existingDataType == model.IntDataType || existingDataType == model.BigIntDataType) {
 		floatVal, ok := value.(float64)
 		if !ok {
-			err = ErrIncompatibleSchemaConv
+			err = ErrIncompatibleSchemaConversion
 		} else {
 			newColumnVal = int(floatVal)
 		}
@@ -61,7 +61,7 @@ func HandleSchemaChange(existingDataType, currentDataType model.SchemaType, valu
 			newColumnVal = fmt.Sprintf(`"%v"`, value)
 		}
 	} else {
-		err = ErrSchemaConvNotSupported
+		err = ErrSchemaConversionNotSupported
 	}
 
 	return newColumnVal, err

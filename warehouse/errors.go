@@ -6,8 +6,8 @@ import (
 )
 
 var (
-	ErrIncompatibleSchemaConv = errors.New("incompatible schema conversion")
-	ErrSchemaConvNotSupported = errors.New("schema conversion not supported")
+	ErrIncompatibleSchemaConversion = errors.New("incompatible schema conversion")
+	ErrSchemaConversionNotSupported = errors.New("schema conversion not supported")
 )
 
 type InvalidDestinationCredErr struct {
