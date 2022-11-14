@@ -1222,22 +1222,12 @@ func (rt *HandleT) findWorker(job *jobsdb.JobT, throttledUserMap map[string]stru
 	rt.configSubscriberLock.RLock()
 	batchDestination, ok := rt.destinationsMap[parameters.DestinationID]
 	rt.configSubscriberLock.RUnlock()
-	if !ok {
-		status := jobsdb.JobStatusT{
-			JobID:         job.JobID,
-			AttemptNum:    job.LastJobStatus.AttemptNum,
-			JobState:      jobsdb.Failed.State,
-			ExecTime:      time.Now(),
-			RetryTime:     time.Now(),
-			ErrorResponse: []byte(`{"reason":"failed because destination is not available in the config"}`),
-			Parameters:    routerutils.EmptyPayload,
-			WorkspaceId:   job.WorkspaceId,
-		}
-		rt.responseQ <- jobResponseT{status: &status, worker: nil, userID: userID, JobT: job}
-		return
-	}
 
-	tokensReturner, shouldThrottle := rt.shouldThrottle(job, parameters, &batchDestination.Destination)
+	var dest *backendconfig.DestinationT
+	if ok {
+		dest = &batchDestination.Destination
+	}
+	tokensReturner, shouldThrottle := rt.shouldThrottle(job, parameters, dest)
 	if shouldThrottle {
 		throttledUserMap[userID] = struct{}{}
 		rt.logger.Debugf(`[%v Router] :: Skipping processing of job:%d of user:%s as throttled limits exceeded`, rt.destName, job.JobID, userID)
@@ -1301,7 +1291,10 @@ func (rt *HandleT) getThrottlingCost(job *jobsdb.JobT, dest *backendconfig.Desti
 	// Config key "throttlingCost" is expected to have the eventType as the first key and the call type
 	// as the second key (e.g. track, identify, etc...) or default to apply the cost to all call types:
 	// dDT["config"]["throttlingCost"] = `{"eventType":{"default":1,"track":2,"identify":3}}`
-	cost = 1 // default cost
+	cost = 1         // default cost
+	if dest == nil { // unknown destination data
+		return
+	}
 	tc, ok := dest.DestinationDefinition.Config["throttlingCost"].(map[string]interface{})
 	if !ok {
 		return
