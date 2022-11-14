@@ -253,14 +253,12 @@ func TestOAuth(t *testing.T) {
 			},
 			dest: model.Destination{
 				Config: map[string]interface{}{
-					"rudderUserDeleteAccountId": "xyz",
+					"rudderDeleteAccountId": "xyz",
 				},
 				Name: "GA",
 				DestDefConfig: map[string]interface{}{
-					"Config": map[string]interface{}{
-						"auth": map[string]interface{}{
-							"type": "OAuth",
-						},
+					"auth": map[string]interface{}{
+						"type": "OAuth",
 					},
 				},
 			},
@@ -273,7 +271,7 @@ func TestOAuth(t *testing.T) {
 			},
 			respBodyStatus:       "complete",
 			expectedDeleteStatus: model.JobStatusComplete,
-			expectedPayload:      `[{"jobId":"1","destType":"ga","config":{"rudderUserDeleteAccountId":"xyz"},"userAttributes":[{"email":"dorowane8n285680461479465450293436@gmail.com","phone":"6463633841","randomKey":"randomValue","userId":"Jermaine1473336609491897794707338"},{"email":"dshirilad8536019424659691213279980@gmail.com","userId":"Mercie8221821544021583104106123"},{"phone":"8782905113","userId":"Claiborn443446989226249191822329"}]}]`,
+			expectedPayload:      `[{"jobId":"1","destType":"ga","config":{"rudderDeleteAccountId":"xyz"},"userAttributes":[{"email":"dorowane8n285680461479465450293436@gmail.com","phone":"6463633841","randomKey":"randomValue","userId":"Jermaine1473336609491897794707338"},{"email":"dshirilad8536019424659691213279980@gmail.com","userId":"Mercie8221821544021583104106123"},{"phone":"8782905113","userId":"Claiborn443446989226249191822329"}]}]`,
 		},
 		{
 			name: "test with an expired token and validate if token is getting changed",
@@ -301,14 +299,12 @@ func TestOAuth(t *testing.T) {
 			},
 			dest: model.Destination{
 				Config: map[string]interface{}{
-					"rudderUserDeleteAccountId": "xyz",
+					"rudderDeleteAccountId": "xyz",
 				},
 				Name: "GA",
 				DestDefConfig: map[string]interface{}{
-					"Config": map[string]interface{}{
-						"auth": map[string]interface{}{
-							"type": "OAuth",
-						},
+					"auth": map[string]interface{}{
+						"type": "OAuth",
 					},
 				},
 			},
@@ -328,7 +324,7 @@ func TestOAuth(t *testing.T) {
 			},
 
 			expectedDeleteStatus: model.JobStatusFailed,
-			expectedPayload:      `[{"jobId":"2","destType":"ga","config":{"rudderUserDeleteAccountId":"xyz"},"userAttributes":[{"email":"dorowane8n285680461479465450293436@gmail.com","phone":"6463633841","randomKey":"randomValue","userId":"Jermaine1473336609491897794707338"},{"email":"dshirilad8536019424659691213279980@gmail.com","userId":"Mercie8221821544021583104106123"}]}]`,
+			expectedPayload:      `[{"jobId":"2","destType":"ga","config":{"rudderDeleteAccountId":"xyz"},"userAttributes":[{"email":"dorowane8n285680461479465450293436@gmail.com","phone":"6463633841","randomKey":"randomValue","userId":"Jermaine1473336609491897794707338"},{"email":"dshirilad8536019424659691213279980@gmail.com","userId":"Mercie8221821544021583104106123"}]}]`,
 		},
 	}
 

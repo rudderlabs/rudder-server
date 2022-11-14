@@ -8,6 +8,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -53,32 +54,15 @@ func (api *APIManager) Delete(ctx context.Context, job model.Job, destDetail mod
 	}
 	req.Header.Set("Content-Type", "application/json")
 
-	var tokenStatusCode int
-	var accountSecretInfo *oauth.AuthResponse
-	// identifier to know if the destination supports OAuth for regulation-api
-	rudderUserDeleteAccountId, delAccountIdExists := destDetail.Config["rudderDeleteAccountId"]
-	if delAccountIdExists {
-		// Fetch Token call
-		// Get Access Token Information to send it as part of the event
-		tokenStatusCode, accountSecretInfo = api.OAuth.FetchToken(&oauth.RefreshTokenParams{
-			AccountId:       rudderUserDeleteAccountId.(string),
-			WorkspaceId:     job.WorkspaceID,
-			DestDefName:     destDetail.Name,
-			EventNamePrefix: "fetch_token",
-		})
-		pkgLogger.Debugf(`[%s][FetchToken] Token Fetch Method finished (statusCode, value): (%v, %+v)`, destDetail.Name, tokenStatusCode, accountSecretInfo)
-		if tokenStatusCode != http.StatusOK {
-			pkgLogger.Errorf(`[%s][FetchToken] Error in Token Fetch statusCode: %d\t error: %s\n`, destDetail.Name, tokenStatusCode, accountSecretInfo.Err)
-		}
-		// setting oauth related information
-		payload, marshalErr := json.Marshal(accountSecretInfo.Account)
-		if marshalErr != nil {
-			pkgLogger.Errorf("error while marshalling account secret information: %v", marshalErr)
-			return model.JobStatusFailed
-		}
-		req.Header.Set("X-Rudder-Dest-Info", string(payload))
-	} else {
-		pkgLogger.Errorf("[%v] Destination probably doesn't support OAuth or some issue happened while doing OAuth for deletion [Enabled: %v]", destDetail.Name, delAccountIdExists)
+	tokenInfo, getTokenInfoErr := api.getOAuthTokenInfo(job.WorkspaceID, &destDetail)
+	if getTokenInfoErr != nil {
+		// Problem in fetching token
+		return model.JobStatusFailed
+	}
+	setFailErr := api.setOAuthTokenInfo(*tokenInfo, req)
+	if setFailErr != nil {
+		// Marshal failure
+		return model.JobStatusFailed
 	}
 
 	fileCleaningTime := stats.Default.NewTaggedStat("file_cleaning_time", stats.TimerType, stats.Tags{
@@ -109,12 +93,12 @@ func (api *APIManager) Delete(ctx context.Context, job model.Job, destDetail mod
 	}
 
 	// Refresh Flow Start
-	if delAccountIdExists {
+	if tokenInfo.IsOAuthEnabled {
 		respParams := &handleRefreshFlowParams{
 			jobResponses: jobResp,
-			secret:       accountSecretInfo.Account.Secret,
+			secret:       tokenInfo.AccountSecretInfo.Account.Secret,
 			workspaceId:  job.WorkspaceID,
-			accountId:    rudderUserDeleteAccountId.(string),
+			accountId:    tokenInfo.DeleteAccountId,
 			destName:     destDetail.Name,
 		}
 		refreshFlowStatus := api.handleRefreshFlow(respParams)
@@ -224,4 +208,59 @@ func (api *APIManager) handleRefreshFlow(params *handleRefreshFlowParams) model.
 	}
 	// Indicates that OAuth refresh flow is not triggered
 	return model.JobStatusUndefined
+}
+
+type OAuthTokenResult struct {
+	AccountSecretInfo *oauth.AuthResponse
+	DeleteAccountId   string
+	IsOAuthEnabled    bool
+}
+
+func (api *APIManager) setOAuthTokenInfo(tokenInfo OAuthTokenResult, req *http.Request) error {
+	if tokenInfo.IsOAuthEnabled {
+		// setting oauth related information
+		payload, marshalErr := json.Marshal(tokenInfo.AccountSecretInfo.Account)
+		if marshalErr != nil {
+			marshalFailErr := fmt.Sprintf("error while marshalling account secret information: %v", marshalErr)
+			pkgLogger.Errorf(marshalFailErr)
+			return errors.New(marshalFailErr)
+		}
+		req.Header.Set("X-Rudder-Dest-Info", string(payload))
+	}
+	return nil
+}
+
+func (api *APIManager) getOAuthTokenInfo(workspaceId string, destDetail *model.Destination) (*OAuthTokenResult, error) {
+	var tokenStatusCode int
+	var accountSecretInfo *oauth.AuthResponse
+	// identifier to know if the destination supports OAuth for regulation-api
+	oAuthParamsResult := oauth.GetOAuthParams(oauth.OAuthParams{
+		DestConfig:    destDetail.Config,
+		DestDefConfig: destDetail.DestDefConfig,
+		IdKey:         "rudderDeleteAccountId",
+	})
+	if oAuthParamsResult.Enabled {
+		// Fetch Token call
+		// Get Access Token Information to send it as part of the event
+		tokenStatusCode, accountSecretInfo = api.OAuth.FetchToken(&oauth.RefreshTokenParams{
+			AccountId:       oAuthParamsResult.AccountId,
+			WorkspaceId:     workspaceId,
+			DestDefName:     destDetail.Name,
+			EventNamePrefix: "fetch_token",
+		})
+		pkgLogger.Debugf(`[%s][FetchToken] Token Fetch Method finished (statusCode, value): (%v, %+v)`, destDetail.Name, tokenStatusCode, accountSecretInfo)
+		if tokenStatusCode != http.StatusOK {
+			fetchFailStr := fmt.Sprintf(`[%s][FetchToken] Error in Token Fetch statusCode: %d\t error: %s\n`, destDetail.Name, tokenStatusCode, accountSecretInfo.Err)
+			pkgLogger.Errorf(fetchFailStr)
+			return nil, errors.New(fetchFailStr)
+		}
+
+	} else {
+		pkgLogger.Errorf("[%v] Destination probably doesn't support OAuth or some issue happened while doing OAuth for deletion [Enabled: %v]", destDetail.Name, oAuthParamsResult.Enabled)
+	}
+	return &OAuthTokenResult{
+		AccountSecretInfo: accountSecretInfo,
+		DeleteAccountId:   oAuthParamsResult.AccountId,
+		IsOAuthEnabled:    oAuthParamsResult.Enabled,
+	}, nil
 }

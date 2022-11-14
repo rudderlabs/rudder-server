@@ -17,6 +17,7 @@ import (
 	router_utils "github.com/rudderlabs/rudder-server/router/utils"
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/logger"
+	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/tidwall/gjson"
 )
 
@@ -129,6 +130,30 @@ func (authErrHandler *OAuthErrResHandler) Setup() {
 	authErrHandler.destAuthInfoMap = make(map[string]*AuthResponse)
 	authErrHandler.refreshActiveMap = make(map[string]bool)
 	authErrHandler.disableDestActiveMap = make(map[string]bool)
+}
+
+type OAuthParams struct {
+	DestConfig    map[string]interface{}
+	DestDefConfig map[string]interface{}
+	IdKey         string
+}
+
+type OAuthParamsResult struct {
+	Enabled   bool
+	AccountId string
+}
+
+func GetOAuthParams(params OAuthParams) OAuthParamsResult {
+	accountId := misc.GetAccountId(misc.GetAccountIdParams{
+		DestConfig: params.DestConfig,
+		IdKey:      params.IdKey,
+	})
+	authType := misc.GetAuthType(params.DestDefConfig)
+	isEnabled := authType == "OAuth" && strings.TrimSpace(accountId) != ""
+	return OAuthParamsResult{
+		Enabled:   isEnabled,
+		AccountId: accountId,
+	}
 }
 
 func (authErrHandler *OAuthErrResHandler) RefreshToken(refTokenParams *RefreshTokenParams) (int, *AuthResponse) {

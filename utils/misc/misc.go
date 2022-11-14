@@ -1354,3 +1354,34 @@ func CopyStringMap(originalMap map[string]string) map[string]string {
 	}
 	return newMap
 }
+
+func GetAuthType(config map[string]interface{}) string {
+	var lookupErr error
+	var authValue interface{}
+	if authValue, lookupErr = NestedMapLookup(config, "auth", "type"); lookupErr != nil {
+		return ""
+	}
+	authType, ok := authValue.(string)
+	if !ok {
+		return ""
+	}
+	return authType
+}
+
+type GetAccountIdParams struct {
+	DestConfig map[string]interface{}
+	IdKey      string
+}
+
+func GetAccountId(params GetAccountIdParams) string {
+	idKey := params.IdKey
+	if strings.TrimSpace(idKey) == "" {
+		idKey = "rudderAccountId"
+	}
+	if rudderAccountIdInterface, found := params.DestConfig[idKey]; found {
+		if rudderAccountId, ok := rudderAccountIdInterface.(string); ok {
+			return rudderAccountId
+		}
+	}
+	return ""
+}

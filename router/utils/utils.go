@@ -101,24 +101,11 @@ func IsNotEmptyString(s string) bool {
 }
 
 func GetAuthType(dest backendconfig.DestinationT) (authType string) {
-	destConfig := dest.DestinationDefinition.Config
-	var lookupErr error
-	var authValue interface{}
-	if authValue, lookupErr = misc.NestedMapLookup(destConfig, "auth", "type"); lookupErr != nil {
-		return ""
-	}
-	authType, ok := authValue.(string)
-	if !ok {
-		return ""
-	}
-	return authType
+	return misc.GetAuthType(dest.DestinationDefinition.Config)
 }
 
 func GetRudderAccountId(destination *backendconfig.DestinationT) string {
-	if rudderAccountIdInterface, found := destination.Config["rudderAccountId"]; found {
-		if rudderAccountId, ok := rudderAccountIdInterface.(string); ok {
-			return rudderAccountId
-		}
-	}
-	return ""
+	return misc.GetAccountId(misc.GetAccountIdParams{
+		DestConfig: destination.Config,
+	})
 }
