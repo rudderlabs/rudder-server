@@ -22,8 +22,6 @@ func (*KVDeleteManager) GetSupportedDestinations() []string {
 }
 
 func (*KVDeleteManager) Delete(_ context.Context, job model.Job, destDetail model.Destination) model.JobStatus {
-	// destConfig map[string]interface{},
-	// destName string,
 	destConfig := destDetail.Config
 	destName := destDetail.Name
 

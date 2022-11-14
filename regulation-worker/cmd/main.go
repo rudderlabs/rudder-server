@@ -85,8 +85,7 @@ func Run(ctx context.Context) {
 			&api.APIManager{
 				Client:           &http.Client{Timeout: config.GetDuration("HttpClient.regulationWorker.transformer.timeout", 60, time.Second)},
 				DestTransformURL: config.MustGetString("DEST_TRANSFORM_URL"),
-				// OAuthResponseHandler instance
-				OAuth: OAuth,
+				OAuth:            OAuth,
 			}),
 	}
 
