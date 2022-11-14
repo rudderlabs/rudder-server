@@ -1228,9 +1228,6 @@ func (rt *HandleT) findWorker(job *jobsdb.JobT) (toSendWorker *workerT) {
 			Parameters:    routerutils.EmptyPayload,
 			WorkspaceId:   job.WorkspaceId,
 		}
-		if rt.guaranteeUserEventOrder {
-			// orderKey := fmt.Sprintf(`%s:%s`, job.UserID, parameters.DestinationID)
-		}
 		rt.responseQ <- jobResponseT{status: &status, worker: nil, userID: userID, JobT: job}
 		return
 	}
@@ -1506,12 +1503,13 @@ func (rt *HandleT) commitStatusList(responseList *[]jobResponseT) {
 			userID := resp.userID
 			worker := resp.worker
 			if status != jobsdb.Failed.State {
-				orderKey := fmt.Sprintf(`%s:%s`, userID, gjson.GetBytes(resp.JobT.Parameters, "destination_id").String())
-				rt.logger.Debugf("EventOrder: [%d] job %d for key %s %s", worker.workerID, resp.status.JobID, orderKey, status)
 				if worker == nil {
 					// worker is nil when we're trying to find a worker and there is no destination configuration
+					rt.logger.Debugf("[%v Router] :: No worker was found for job %d", rt.destName, resp.status.JobID)
 					continue
 				}
+				orderKey := fmt.Sprintf(`%s:%s`, userID, gjson.GetBytes(resp.JobT.Parameters, "destination_id").String())
+				rt.logger.Debugf("EventOrder: [%d] job %d for key %s %s", worker.workerID, resp.status.JobID, orderKey, status)
 				if err := worker.barrier.StateChanged(orderKey, resp.status.JobID, status); err != nil {
 					panic(err)
 				}
