@@ -83,18 +83,20 @@ type DiagnosticT struct {
 
 // HandleT is the handle to this module.
 type HandleT struct {
-	responseQ                               chan jobResponseT
-	jobsDB                                  jobsdb.MultiTenantJobsDB
-	errorDB                                 jobsdb.JobsDB
-	netHandle                               NetHandleI
-	MultitenantI                            tenantStats
-	destName                                string
-	destinationId                           string
-	workers                                 []*workerT
-	telemetry                               *DiagnosticT
-	customDestinationManager                customDestinationManager.DestinationManager
-	throttler                               map[string]limiter // map key is the destinationID
-	throttlerMu                             sync.Mutex
+	responseQ                chan jobResponseT
+	jobsDB                   jobsdb.MultiTenantJobsDB
+	errorDB                  jobsdb.JobsDB
+	netHandle                NetHandleI
+	MultitenantI             tenantStats
+	destName                 string
+	destinationId            string
+	workers                  []*workerT
+	telemetry                *DiagnosticT
+	customDestinationManager customDestinationManager.DestinationManager
+	throttler                map[string]limiter // map key is the destinationID
+	throttlerMu              sync.Mutex
+	// throttlingCost is protected by configSubscriberLock
+	throttlingCost                          int64
 	guaranteeUserEventOrder                 bool
 	netClientTimeout                        time.Duration
 	backendProxyTimeout                     time.Duration
@@ -1219,15 +1221,7 @@ func (rt *HandleT) findWorker(job *jobsdb.JobT, throttledUserMap map[string]stru
 		return
 	}
 
-	rt.configSubscriberLock.RLock()
-	batchDestination, ok := rt.destinationsMap[parameters.DestinationID]
-	rt.configSubscriberLock.RUnlock()
-
-	var dest *backendconfig.DestinationT
-	if ok {
-		dest = &batchDestination.Destination
-	}
-	tokensReturner, shouldThrottle := rt.shouldThrottle(job, parameters, dest)
+	tokensReturner, shouldThrottle := rt.shouldThrottle(job, parameters)
 	if shouldThrottle {
 		throttledUserMap[userID] = struct{}{}
 		rt.logger.Debugf(`[%v Router] :: Skipping processing of job:%d of user:%s as throttled limits exceeded`, rt.destName, job.JobID, userID)
@@ -1287,7 +1281,7 @@ func (rt *HandleT) getWorkerPartition(userID string) int {
 	return misc.GetHash(userID) % rt.noOfWorkers
 }
 
-func (rt *HandleT) shouldThrottle(job *jobsdb.JobT, parameters JobParametersT, dest *backendconfig.DestinationT) (
+func (rt *HandleT) shouldThrottle(job *jobsdb.JobT, parameters JobParametersT) (
 	throttling.TokenReturner,
 	bool,
 ) {
@@ -1296,7 +1290,7 @@ func (rt *HandleT) shouldThrottle(job *jobsdb.JobT, parameters JobParametersT, d
 		return nil, false
 	}
 
-	throttlingCost := getThrottlingCost(job, dest)
+	throttlingCost := rt.getThrottlingCost(job)
 
 	limited, tokensReturner, err := throttler.CheckLimitReached(job.UserID, throttlingCost)
 	if err != nil {
@@ -2012,6 +2006,20 @@ func (rt *HandleT) backendConfigSubscriber() {
 							if value, ok := destination.DestinationDefinition.Config["saveDestinationResponse"].(bool); ok {
 								rt.saveDestinationResponse = value
 							}
+
+							// Config key "throttlingCost" is expected to have the eventType as the first key and the call type
+							// as the second key (e.g. track, identify, etc...) or default to apply the cost to all call types:
+							// dDT["config"]["throttlingCost"] = `{"eventType":{"default":1,"track":2,"identify":3}}`
+							if value, ok := destination.DestinationDefinition.Config["throttlingCost"].(map[string]interface{}); ok {
+								et, ok := value["eventType"].(map[string]interface{})
+								if ok {
+									// TODO get by event type before falling back on "default"
+									if defaultCost, ok := et["default"].(float64); ok {
+										// no default cost in the configuration, assume 0
+										rt.throttlingCost = int64(defaultCost)
+									}
+								}
+							}
 						}
 					}
 				}
@@ -2166,29 +2174,13 @@ func (rt *HandleT) getThrottler(destID string) limiter {
 	return l
 }
 
-func getThrottlingCost(job *jobsdb.JobT, dest *backendconfig.DestinationT) (cost int64) {
-	// Config key "throttlingCost" is expected to have the eventType as the first key and the call type
-	// as the second key (e.g. track, identify, etc...) or default to apply the cost to all call types:
-	// dDT["config"]["throttlingCost"] = `{"eventType":{"default":1,"track":2,"identify":3}}`
-	cost = 1         // default cost
-	if dest == nil { // unknown destination data
-		return
+func (rt *HandleT) getThrottlingCost(job *jobsdb.JobT) (cost int64) {
+	cost = 1 // default cost
+	rt.configSubscriberLock.RLock()
+	if rt.throttlingCost > 0 {
+		cost = rt.throttlingCost
 	}
-	tc, ok := dest.DestinationDefinition.Config["throttlingCost"].(map[string]interface{})
-	if !ok {
-		return
-	}
+	rt.configSubscriberLock.RUnlock()
 
-	et, ok := tc["eventType"].(map[string]interface{})
-	if !ok {
-		return
-	}
-
-	// TODO get by event type before falling back on "default"
-	if defaultCost, ok := et["default"].(float64); ok {
-		// no default cost in the configuration, assume 0
-		cost = int64(defaultCost) * int64(job.EventCount)
-	}
-
-	return
+	return cost * int64(job.EventCount)
 }
