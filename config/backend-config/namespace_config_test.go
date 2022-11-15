@@ -20,7 +20,7 @@ func Test_Namespace_SetUp(t *testing.T) {
 		client = &namespaceConfig{
 			Logger: logger.NOP,
 		}
-		configBackendURL = "https://api.test.rudderlabs.com"
+		configBackendURL = "https://api.test.rudderstack.com"
 	)
 	parsedConfigBackendURL, err := url.Parse(configBackendURL)
 	require.NoError(t, err)

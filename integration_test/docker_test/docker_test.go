@@ -475,7 +475,7 @@ func setupMainFlow(svcCtx context.Context, t *testing.T) <-chan struct{} {
 
 	svcDone := make(chan struct{})
 	go func() {
-		r := runner.New(runner.ReleaseInfo{})
+		r := runner.New(runner.ReleaseInfo{EnterpriseToken: os.Getenv("ENTERPRISE_TOKEN")})
 		_ = r.Run(svcCtx, []string{"docker-test-rudder-server"})
 		close(svcDone)
 	}()

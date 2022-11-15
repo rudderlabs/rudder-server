@@ -14,7 +14,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/gofrs/uuid"
+	"github.com/rudderlabs/rudder-server/warehouse/model"
+
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/services/filemanager"
 	"github.com/rudderlabs/rudder-server/services/pgnotifier"
@@ -187,7 +188,7 @@ func (job *Payload) getDiscardsTable() string {
 
 func (jobRun *JobRunT) getLoadFilePath(tableName string) string {
 	job := jobRun.job
-	randomness := uuid.Must(uuid.NewV4()).String()
+	randomness := misc.FastUUID().String()
 	return strings.TrimSuffix(jobRun.stagingFilePath, "json.gz") + tableName + fmt.Sprintf(`.%s`, randomness) + fmt.Sprintf(`.%s`, warehouseutils.GetLoadFileFormat(job.DestinationType))
 }
 
@@ -480,7 +481,7 @@ func processStagingFile(job Payload, workerIndex int) (loadFileUploadOutputs []l
 			columnType := columnInfo.Type
 			columnVal := columnInfo.Value
 
-			if columnType == "int" || columnType == "bigint" {
+			if model.SchemaType(columnType) == model.IntDataType || model.SchemaType(columnType) == model.BigIntDataType {
 				floatVal, ok := columnVal.(float64)
 				if !ok {
 					eventLoader.AddEmptyColumn(columnName)
@@ -492,8 +493,12 @@ func processStagingFile(job Payload, workerIndex int) (loadFileUploadOutputs []l
 			dataTypeInSchema, ok := job.UploadSchema[tableName][columnName]
 			violatedConstraints := ViolatedConstraints(job.DestinationType, &batchRouterEvent, columnName)
 			if ok && ((columnType != dataTypeInSchema) || (violatedConstraints.IsViolated)) {
-				newColumnVal, ok := HandleSchemaChange(dataTypeInSchema, columnType, columnVal)
-				if !ok || violatedConstraints.IsViolated {
+				newColumnVal, convError := HandleSchemaChange(
+					model.SchemaType(dataTypeInSchema),
+					model.SchemaType(columnType),
+					columnVal,
+				)
+				if convError != nil || violatedConstraints.IsViolated {
 					if violatedConstraints.IsViolated {
 						eventLoader.AddColumn(columnName, job.UploadSchema[tableName][columnName], violatedConstraints.ViolatedIdentifier)
 					} else {
@@ -513,10 +518,6 @@ func processStagingFile(job Payload, workerIndex int) (loadFileUploadOutputs []l
 						pkgLogger.Errorf("[WH]: Failed to write to discards: %v", err)
 					}
 					jobRun.tableEventCountMap[discardsTable]++
-					continue
-				}
-				if newColumnVal == nil {
-					eventLoader.AddEmptyColumn(columnName)
 					continue
 				}
 				columnVal = newColumnVal
@@ -679,7 +680,7 @@ func processClaimedAsyncJob(claimedJob pgnotifier.ClaimT) {
 func setupSlave(ctx context.Context) error {
 	g, ctx := errgroup.WithContext(ctx)
 
-	slaveID := uuid.Must(uuid.NewV4()).String()
+	slaveID := misc.FastUUID().String()
 	jobNotificationChannel := notifier.Subscribe(ctx, slaveID, noOfSlaveWorkerRoutines)
 	for workerIdx := 0; workerIdx <= noOfSlaveWorkerRoutines-1; workerIdx++ {
 		idx := workerIdx

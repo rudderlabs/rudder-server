@@ -32,7 +32,7 @@ func SetupTransformer(pool *dockertest.Pool, d cleaner) (*TransformerResource, e
 		Tag:          "latest",
 		ExposedPorts: []string{"9090"},
 		Env: []string{
-			"CONFIG_BACKEND_URL=https://api.rudderlabs.com",
+			"CONFIG_BACKEND_URL=https://api.rudderstack.com",
 		},
 	})
 	if err != nil {
