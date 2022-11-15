@@ -195,7 +195,6 @@ func (api *APIManager) handleRefreshFlow(params *handleRefreshFlowParams) model.
 		if strings.TrimSpace(refSec.Err) != "" {
 			// There is an error occurring
 			pkgLogger.Warnf("Error: %v, Status: %v", refSec.Err, errCatStatusCode)
-			return model.JobStatusAborted
 		}
 		// Refresh is complete, the job has to be re-tried
 		return model.JobStatusFailed
@@ -259,7 +258,7 @@ func (api *APIManager) getOAuthTokenInfo(workspaceId string, destDetail *model.D
 		})
 		pkgLogger.Debugf(`[%s][FetchToken] Token Fetch Method finished (statusCode, value): (%v, %+v)`, destDetail.Name, tokenStatusCode, accountSecretInfo)
 		if tokenStatusCode != http.StatusOK {
-			fetchFailStr := fmt.Sprintf(`[%s][FetchToken] Error in Token Fetch statusCode: %d\t error: %s\n`, destDetail.Name, tokenStatusCode, accountSecretInfo.Err)
+			fetchFailStr := fmt.Sprintf("[%s][FetchToken] Error in Token Fetch statusCode: %d\t error: %s\n", destDetail.Name, tokenStatusCode, accountSecretInfo.Err)
 			pkgLogger.Errorf(fetchFailStr)
 			return nil, errors.New(fetchFailStr)
 		}

@@ -326,6 +326,108 @@ func TestOAuth(t *testing.T) {
 			expectedDeleteStatus: model.JobStatusFailed,
 			expectedPayload:      `[{"jobId":"2","destType":"ga","config":{"rudderDeleteAccountId":"xyz"},"userAttributes":[{"email":"dorowane8n285680461479465450293438@gmail.com","phone":"6463633841","randomKey":"randomValue","userId":"Jermaine1473336609491897794707338"},{"email":"dshirilad8536019424659691213279982@gmail.com","userId":"Mercie8221821544021583104106123"}]}]`,
 		},
+		{
+			name: "test with an expired token, when refresh throws 500 validate if job failed",
+			job: model.Job{
+				ID:            4,
+				WorkspaceID:   "1001",
+				DestinationID: "1234",
+				Status:        model.JobStatusPending,
+				Users: []model.User{
+					{
+						ID: "Jermaine1473336609491897794707338",
+						Attributes: map[string]string{
+							"phone":     "6463633841",
+							"email":     "dorowane8n285680461479465450293439@gmail.com",
+							"randomKey": "randomValue",
+						},
+					},
+					{
+						ID: "Mercie8221821544021583104106123",
+						Attributes: map[string]string{
+							"email": "dshirilad8536019424659691213279985@gmail.com",
+						},
+					},
+				},
+			},
+			dest: model.Destination{
+				Config: map[string]interface{}{
+					"rudderDeleteAccountId": "xyz",
+				},
+				Name: "GA",
+				DestDefConfig: map[string]interface{}{
+					"auth": map[string]interface{}{
+						"type": "OAuth",
+					},
+				},
+			},
+			respCode:          500,
+			respBodyStatus:    "failed",
+			authErrorCategory: oauth.REFRESH_TOKEN,
+
+			cpResponses: []cpResponseParams{
+				{
+					code:     200,
+					response: `{"secret": {"access_token": "expired_access_token","refresh_token":"valid_refresh_token"}}`,
+				},
+				{
+					code:     500,
+					response: `Internal Server Error`,
+				},
+			},
+
+			expectedDeleteStatus: model.JobStatusFailed,
+			expectedPayload:      `[{"jobId":"4","destType":"ga","config":{"rudderDeleteAccountId":"xyz"},"userAttributes":[{"email":"dorowane8n285680461479465450293439@gmail.com","phone":"6463633841","randomKey":"randomValue","userId":"Jermaine1473336609491897794707338"},{"email":"dshirilad8536019424659691213279985@gmail.com","userId":"Mercie8221821544021583104106123"}]}]`,
+		},
+		{
+			name: "test when fetch token fails(with 500) to respond properly fail the job",
+			job: model.Job{
+				ID:            3,
+				WorkspaceID:   "1001",
+				DestinationID: "1234",
+				Status:        model.JobStatusPending,
+				Users: []model.User{
+					{
+						ID: "Jermaine1473336609491897794707338",
+						Attributes: map[string]string{
+							"phone":     "6463633841",
+							"email":     "dorowane8n285680461479465450293448@gmail.com",
+							"randomKey": "randomValue",
+						},
+					},
+					{
+						ID: "Mercie8221821544021583104106123",
+						Attributes: map[string]string{
+							"email": "dshirilad8536019424659691213279983@gmail.com",
+						},
+					},
+				},
+			},
+			dest: model.Destination{
+				Config: map[string]interface{}{
+					"rudderDeleteAccountId": "xyz",
+				},
+				Name: "GA",
+				DestDefConfig: map[string]interface{}{
+					"auth": map[string]interface{}{
+						"type": "OAuth",
+					},
+				},
+			},
+			respCode:          500,
+			respBodyStatus:    "failed",
+			authErrorCategory: oauth.REFRESH_TOKEN,
+
+			cpResponses: []cpResponseParams{
+				{
+					code:     500,
+					response: `Internal Server Error`,
+				},
+			},
+
+			expectedDeleteStatus: model.JobStatusFailed,
+			expectedPayload:      "", // since request has not gone to transformer at all!
+		},
 	}
 
 	for _, tt := range tests {
