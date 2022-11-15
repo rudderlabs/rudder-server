@@ -1,3 +1,5 @@
+//go:build sources_integration && !warehouse_integration
+
 package bigquery_test
 
 import (
@@ -159,5 +161,5 @@ func TestMain(m *testing.M) {
 		Schema:         testhelper.Schema(warehouseutils.BQ, testhelper.BigqueryIntegrationTestSchema),
 		Tables:         []string{"tracks", "google_sheet"},
 	}
-	os.Exit(testhelper.Setup(m, handle))
+	os.Exit(testhelper.Run(m, handle))
 }

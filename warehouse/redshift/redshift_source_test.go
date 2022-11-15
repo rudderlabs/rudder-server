@@ -136,5 +136,5 @@ func TestMain(m *testing.M) {
 		Schema:         testhelper.Schema(warehouseutils.RS, testhelper.RedshiftIntegrationTestSchema),
 		Tables:         []string{"tracks", "google_sheet"},
 	}
-	os.Exit(testhelper.Setup(m, handle))
+	os.Exit(testhelper.Run(m, handle))
 }

@@ -89,7 +89,7 @@ const (
 	WorkspaceTemplatePath = "warehouse/testdata/workspaceConfig/template.json"
 )
 
-func Setup(*testing.M, WarehouseTestSetup) int {
+func Run(*testing.M, WarehouseTestSetup) int {
 	return 0
 }
 
