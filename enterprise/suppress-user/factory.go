@@ -71,7 +71,7 @@ func (m *Factory) Setup(ctx context.Context, backendConfig backendconfig.Backend
 		return nil, err
 	}
 
-	h := newHandler(ctx, repository, m.Log)
+	h := newHandler(repository, m.Log)
 
 	rruntime.Go(func() {
 		syncer.SyncLoop(ctx)

@@ -61,8 +61,6 @@ func generateTests(getRepo func() Repository) {
 	var h *handler
 	var serverResponse syncResponse
 	var server *httptest.Server
-	var ctx context.Context
-	var cancel context.CancelFunc
 	newTestServer := func() *httptest.Server {
 		var count int
 		var prevRespBody []byte
@@ -88,17 +86,15 @@ func generateTests(getRepo func() Repository) {
 	}
 
 	BeforeEach(func() {
-		ctx, cancel = context.WithCancel(context.Background())
 		config.Reset()
 		backendconfig.Init()
 		server = newTestServer()
 
 		r := getRepo()
-		h = newHandler(ctx, r, logger.NOP)
+		h = newHandler(r, logger.NOP)
 	})
 	AfterEach(func() {
 		server.Close()
-		cancel()
 	})
 	Context("sync error scenarios", func() {
 		It("returns an error when a wrong server address is provided", func() {
