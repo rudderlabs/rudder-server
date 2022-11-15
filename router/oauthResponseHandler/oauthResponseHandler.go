@@ -88,7 +88,9 @@ type ControlPlaneRequestT struct {
 
 // This function creates a new OauthErrorResponseHandler
 func NewOAuthErrorHandler(provider tokenProvider) *OAuthErrResHandler {
-	return &OAuthErrResHandler{TokenProvider: provider}
+	oAuthErrResHandler := &OAuthErrResHandler{TokenProvider: provider}
+	oAuthErrResHandler.Setup()
+	return oAuthErrResHandler
 }
 
 var (

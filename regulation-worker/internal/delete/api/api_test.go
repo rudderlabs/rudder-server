@@ -352,7 +352,6 @@ func TestOAuth(t *testing.T) {
 			backendconfig.Init()
 			oauth.Init()
 			OAuth := oauth.NewOAuthErrorHandler(mockBackendConfig)
-			OAuth.Setup()
 			api := api.APIManager{
 				Client:           &http.Client{},
 				DestTransformURL: svr.URL,

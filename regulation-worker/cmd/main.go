@@ -66,7 +66,6 @@ func Run(ctx context.Context) {
 	}
 	// setting up oauth
 	OAuth := oauth.NewOAuthErrorHandler(backendconfig.DefaultBackendConfig)
-	OAuth.Setup()
 
 	svc := service.JobSvc{
 		API: &client.JobAPI{

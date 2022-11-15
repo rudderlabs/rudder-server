@@ -1955,7 +1955,6 @@ func (rt *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB jobsd
 	rt.transformer = transformer.NewTransformer(rt.netClientTimeout, rt.backendProxyTimeout)
 
 	rt.oauth = oauth.NewOAuthErrorHandler(backendConfig)
-	rt.oauth.Setup()
 
 	var t throttler.HandleT
 	t.SetUp(rt.destName)
