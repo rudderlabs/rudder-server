@@ -20,8 +20,8 @@ type Repository interface {
 	// Add adds the given suppressions to the repository
 	Add(suppressions []model.Suppression, token []byte) error
 
-	// Suppress returns true if the given user is suppressed, false otherwise
-	Suppress(workspaceID, userID, sourceID string) (bool, error)
+	// Suppressed returns true if the given user is suppressed, false otherwise
+	Suppressed(workspaceID, userID, sourceID string) (bool, error)
 
 	// Backup writes a backup of the repository to the given writer
 	Backup(w io.Writer) error

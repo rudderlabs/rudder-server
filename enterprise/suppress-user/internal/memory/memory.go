@@ -30,8 +30,8 @@ func (m *Repository) GetToken() ([]byte, error) {
 	return m.token, nil
 }
 
-// Suppress returns true if the given user is suppressed, false otherwise
-func (m *Repository) Suppress(workspaceID, userID, sourceID string) (bool, error) {
+// Suppressed returns true if the given user is suppressed, false otherwise
+func (m *Repository) Suppressed(workspaceID, userID, sourceID string) (bool, error) {
 	m.suppressionsMu.RLock()
 	defer m.suppressionsMu.RUnlock()
 	workspace, ok := m.suppressions[workspaceID]

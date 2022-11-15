@@ -75,7 +75,7 @@ func TestBadgerRepository(t *testing.T) {
 		require.Error(t, err, "it should return an error when trying to get the token from a repository that is restoring")
 		require.ErrorIs(t, model.ErrRestoring, err)
 
-		_, err = repo.Suppress("workspace2", "user2", "source2")
+		_, err = repo.Suppressed("workspace2", "user2", "source2")
 		require.Error(t, err, "it should return an error when trying to suppress a user from a repository that is restoring")
 		require.ErrorIs(t, model.ErrRestoring, err)
 
@@ -116,7 +116,7 @@ func TestBadgerRepository(t *testing.T) {
 	t.Run("badgerdb errors", func(t *testing.T) {
 		require.NoError(t, repo.Stop(), "it should be able to stop the badgerdb instance without an error")
 
-		_, err := repo.Suppress("workspace1", "user1", "")
+		_, err := repo.Suppressed("workspace1", "user1", "")
 		require.Error(t, err)
 
 		_, err = repo.GetToken()
@@ -138,7 +138,7 @@ func TestBadgerRepository(t *testing.T) {
 
 		require.Equal(t, repo.Add(nil, nil), badger.ErrDBClosed)
 
-		s, err := repo.Suppress("", "", "")
+		s, err := repo.Suppressed("", "", "")
 		require.False(t, s)
 		require.Equal(t, err, badger.ErrDBClosed)
 

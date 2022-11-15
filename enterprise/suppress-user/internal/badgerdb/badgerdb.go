@@ -105,8 +105,8 @@ func (b *Repository) GetToken() ([]byte, error) {
 	return token, nil
 }
 
-// Suppress returns true if the given user is suppressed, false otherwise
-func (b *Repository) Suppress(workspaceID, userID, sourceID string) (bool, error) {
+// Suppressed returns true if the given user is suppressed, false otherwise
+func (b *Repository) Suppressed(workspaceID, userID, sourceID string) (bool, error) {
 	b.restoringLock.RLock()
 	defer b.restoringLock.RUnlock()
 	if b.restoring {
@@ -116,7 +116,7 @@ func (b *Repository) Suppress(workspaceID, userID, sourceID string) (bool, error
 		return false, badger.ErrDBClosed
 	}
 
-	keyPrefix := fmt.Sprintf("%s:%s:", workspaceID, userID)
+	keyPrefix := keyPrefix(workspaceID, userID)
 	err := b.db.View(func(txn *badger.Txn) error {
 		wildcardKey := keyPrefix + model.Wildcard
 		_, err := txn.Get([]byte(wildcardKey))
@@ -156,7 +156,7 @@ func (b *Repository) Add(suppressions []model.Suppression, token []byte) error {
 
 	for i := range suppressions {
 		suppression := suppressions[i]
-		keyPrefix := fmt.Sprintf("%s:%s:", suppression.WorkspaceID, suppression.UserID)
+		keyPrefix := keyPrefix(suppression.WorkspaceID, suppression.UserID)
 		var keys []string
 		if len(suppression.SourceIDs) == 0 {
 			keys = []string{keyPrefix + model.Wildcard}
@@ -304,4 +304,8 @@ type blogger struct {
 
 func (l blogger) Warningf(fmt string, args ...interface{}) {
 	l.Warnf(fmt, args...)
+}
+
+func keyPrefix(workspaceID, userID string) string {
+	return fmt.Sprintf("%s:%s:", workspaceID, userID)
 }

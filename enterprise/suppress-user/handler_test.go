@@ -31,7 +31,7 @@ type fakeSuppresser struct {
 	Repository
 }
 
-func (*fakeSuppresser) Suppress(_, _, _ string) (bool, error) {
+func (*fakeSuppresser) Suppressed(_, _, _ string) (bool, error) {
 	return false, fmt.Errorf("some error")
 }
 

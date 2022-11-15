@@ -46,7 +46,7 @@ type handler struct {
 
 func (h *handler) IsSuppressedUser(workspaceID, userID, sourceID string) bool {
 	h.log.Debugf("IsSuppressedUser called for workspace: %s, user %s, source %s", workspaceID, userID, sourceID)
-	suppressed, err := h.r.Suppress(workspaceID, userID, sourceID)
+	suppressed, err := h.r.Suppressed(workspaceID, userID, sourceID)
 	if err != nil {
 		h.errLog.errMu.Lock()
 		h.errLog.err = fmt.Errorf("suppression check failed for workspace: %s, user: %s, source: %s: %w", workspaceID, userID, sourceID, err)

@@ -38,7 +38,7 @@ func BenchmarkAddAndSuppress(b *testing.B) {
 		for i := 0; i < totalReads; i++ {
 			start := time.Now()
 			idx := randomInt(totalSuppressions * 2) // multiply by 2 to include non-existing keys suppressions
-			_, err := repo.Suppress(fmt.Sprintf("workspace%d", idx), fmt.Sprintf("user%d", idx), fmt.Sprintf("source%d", idx))
+			_, err := repo.Suppressed(fmt.Sprintf("workspace%d", idx), fmt.Sprintf("user%d", idx), fmt.Sprintf("source%d", idx))
 			require.NoError(b, err)
 			totalTime += time.Since(start)
 		}
