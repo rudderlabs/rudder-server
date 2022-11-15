@@ -22,6 +22,7 @@ import (
 )
 
 func TestSnowflakeIntegration(t *testing.T) {
+	t.SkipNow()
 	t.Parallel()
 
 	if _, exists := os.LookupEnv(testhelper.SnowflakeIntegrationTestCredentials); !exists {
