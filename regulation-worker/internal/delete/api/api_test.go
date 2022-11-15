@@ -233,14 +233,14 @@ func TestOAuth(t *testing.T) {
 						ID: "Jermaine1473336609491897794707338",
 						Attributes: map[string]string{
 							"phone":     "6463633841",
-							"email":     "dorowane8n285680461479465450293436@gmail.com",
+							"email":     "dorowane8n285680461479465450293437@gmail.com",
 							"randomKey": "randomValue",
 						},
 					},
 					{
 						ID: "Mercie8221821544021583104106123",
 						Attributes: map[string]string{
-							"email": "dshirilad8536019424659691213279980@gmail.com",
+							"email": "dshirilad853601942465969121327991@gmail.com",
 						},
 					},
 					{
@@ -271,7 +271,7 @@ func TestOAuth(t *testing.T) {
 			},
 			respBodyStatus:       "complete",
 			expectedDeleteStatus: model.JobStatusComplete,
-			expectedPayload:      `[{"jobId":"1","destType":"ga","config":{"rudderDeleteAccountId":"xyz"},"userAttributes":[{"email":"dorowane8n285680461479465450293436@gmail.com","phone":"6463633841","randomKey":"randomValue","userId":"Jermaine1473336609491897794707338"},{"email":"dshirilad8536019424659691213279980@gmail.com","userId":"Mercie8221821544021583104106123"},{"phone":"8782905113","userId":"Claiborn443446989226249191822329"}]}]`,
+			expectedPayload:      `[{"jobId":"1","destType":"ga","config":{"rudderDeleteAccountId":"xyz"},"userAttributes":[{"email":"dorowane8n285680461479465450293437@gmail.com","phone":"6463633841","randomKey":"randomValue","userId":"Jermaine1473336609491897794707338"},{"email":"dshirilad853601942465969121327991@gmail.com","userId":"Mercie8221821544021583104106123"},{"phone":"8782905113","userId":"Claiborn443446989226249191822329"}]}]`,
 		},
 		{
 			name: "test with an expired token and validate if token is getting changed",
@@ -285,14 +285,14 @@ func TestOAuth(t *testing.T) {
 						ID: "Jermaine1473336609491897794707338",
 						Attributes: map[string]string{
 							"phone":     "6463633841",
-							"email":     "dorowane8n285680461479465450293436@gmail.com",
+							"email":     "dorowane8n285680461479465450293438@gmail.com",
 							"randomKey": "randomValue",
 						},
 					},
 					{
 						ID: "Mercie8221821544021583104106123",
 						Attributes: map[string]string{
-							"email": "dshirilad8536019424659691213279980@gmail.com",
+							"email": "dshirilad8536019424659691213279982@gmail.com",
 						},
 					},
 				},
@@ -324,7 +324,7 @@ func TestOAuth(t *testing.T) {
 			},
 
 			expectedDeleteStatus: model.JobStatusFailed,
-			expectedPayload:      `[{"jobId":"2","destType":"ga","config":{"rudderDeleteAccountId":"xyz"},"userAttributes":[{"email":"dorowane8n285680461479465450293436@gmail.com","phone":"6463633841","randomKey":"randomValue","userId":"Jermaine1473336609491897794707338"},{"email":"dshirilad8536019424659691213279980@gmail.com","userId":"Mercie8221821544021583104106123"}]}]`,
+			expectedPayload:      `[{"jobId":"2","destType":"ga","config":{"rudderDeleteAccountId":"xyz"},"userAttributes":[{"email":"dorowane8n285680461479465450293438@gmail.com","phone":"6463633841","randomKey":"randomValue","userId":"Jermaine1473336609491897794707338"},{"email":"dshirilad8536019424659691213279982@gmail.com","userId":"Mercie8221821544021583104106123"}]}]`,
 		},
 	}
 
