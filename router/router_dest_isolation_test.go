@@ -116,6 +116,7 @@ func Test_RouterDestIsolation(t *testing.T) {
 	t.Setenv("RSERVER_JOBS_DB_BACKUP_ENABLED", "false")
 	t.Setenv("RUDDER_TMPDIR", rudderTmpDir)
 	t.Setenv("DEST_TRANSFORM_URL", transformerContainer.TransformURL)
+	t.Setenv("RSERVER_MODE", "normal")
 	t.Setenv("RSERVER_BACKEND_CONFIG_CONFIG_FROM_FILE", "true")
 	t.Setenv("RSERVER_BACKEND_CONFIG_CONFIG_JSONPATH", configJsonPath)
 	t.Setenv("RSERVER_ROUTER_WEBHOOK_ISOLATE_DEST_ID", "true")
