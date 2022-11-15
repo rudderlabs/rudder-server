@@ -17,7 +17,6 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/gofrs/uuid"
 	bigquery2 "github.com/rudderlabs/rudder-server/warehouse/bigquery"
 	"github.com/rudderlabs/rudder-server/warehouse/client"
 	"github.com/rudderlabs/rudder-server/warehouse/testhelper"
@@ -31,6 +30,8 @@ func TestBigQueryIntegration(t *testing.T) {
 	if _, exists := os.LookupEnv(testhelper.BigqueryIntegrationTestCredentials); !exists {
 		t.Skip("Skipping BigQuery integration test. BIGQUERY_INTEGRATION_TEST_CREDENTIALS env variable is not set")
 	}
+
+	bigquery2.Init()
 
 	credentials, err := testhelper.BigqueryCredentials()
 	require.NoError(t, err)
@@ -65,7 +66,7 @@ func TestBigQueryIntegration(t *testing.T) {
 			WriteKey:      "J77aX7tLFJ84qYU6UrN8ctecwZt",
 			Schema:        schema,
 			Tables:        tables,
-			MessageId:     uuid.Must(uuid.NewV4()).String(),
+			MessageId:     misc.FastUUID().String(),
 			Provider:      warehouseutils.BQ,
 			SourceID:      "24p1HhPk09FW25Kuzxv7GshCLKR",
 			DestinationID: "26Bgm9FrQDZjvadSwAlpd35atwn",
@@ -81,7 +82,7 @@ func TestBigQueryIntegration(t *testing.T) {
 		testhelper.SendEvents(t, warehouseTest, sendEventsMap)
 		testhelper.SendIntegratedEvents(t, warehouseTest, sendEventsMap)
 
-		testhelper.VerifyEventsInStagingFiles(t, jobsDB, warehouseTest, testhelper.StagingFilesEventsMap())
+		testhelper.VerifyEventsInStagingFiles(t, jobsDB, warehouseTest, stagingFilesEventsMap())
 		testhelper.VerifyEventsInLoadFiles(t, jobsDB, warehouseTest, loadFilesEventsMap())
 		testhelper.VerifyEventsInTableUploads(t, jobsDB, warehouseTest, tableUploadsEventsMap())
 		testhelper.VerifyEventsInWareHouse(t, warehouseTest, mergeEventsMap())
@@ -96,7 +97,7 @@ func TestBigQueryIntegration(t *testing.T) {
 		testhelper.SendModifiedEvents(t, warehouseTest, sendEventsMap)
 		testhelper.SendIntegratedEvents(t, warehouseTest, sendEventsMap)
 
-		testhelper.VerifyEventsInStagingFiles(t, jobsDB, warehouseTest, testhelper.StagingFilesEventsMap())
+		testhelper.VerifyEventsInStagingFiles(t, jobsDB, warehouseTest, stagingFilesEventsMap())
 		testhelper.VerifyEventsInLoadFiles(t, jobsDB, warehouseTest, loadFilesEventsMap())
 		testhelper.VerifyEventsInTableUploads(t, jobsDB, warehouseTest, tableUploadsEventsMap())
 		testhelper.VerifyEventsInWareHouse(t, warehouseTest, mergeEventsMap())
@@ -183,7 +184,7 @@ func TestBigQueryIntegration(t *testing.T) {
 				testhelper.SendModifiedEvents(t, warehouseTest, sendEventsMap)
 				testhelper.SendModifiedEvents(t, warehouseTest, sendEventsMap)
 
-				testhelper.VerifyEventsInStagingFiles(t, jobsDB, warehouseTest, stagingFilesEvents())
+				testhelper.VerifyEventsInStagingFiles(t, jobsDB, warehouseTest, stagingFilesEventsMap())
 				testhelper.VerifyEventsInLoadFiles(t, jobsDB, warehouseTest, loadFilesEventsMap())
 				testhelper.VerifyEventsInTableUploads(t, jobsDB, warehouseTest, tableUploadsEventsMap())
 				testhelper.VerifyEventsInWareHouse(t, warehouseTest, appendEventsMap())
@@ -204,6 +205,7 @@ func TestBigQueryConfigurationValidation(t *testing.T) {
 	misc.Init()
 	validations.Init()
 	warehouseutils.Init()
+	bigquery2.Init()
 
 	configurations := testhelper.PopulateTemplateConfigurations()
 	bqCredentials, err := testhelper.BigqueryCredentials()
@@ -246,7 +248,7 @@ func tableUploadsEventsMap() testhelper.EventsCountMap {
 	return eventsMap
 }
 
-func stagingFilesEvents() testhelper.EventsCountMap {
+func stagingFilesEventsMap() testhelper.EventsCountMap {
 	return testhelper.EventsCountMap{
 		"wh_staging_files": 34, // Since extra 2 merge events because of ID resolution
 	}

@@ -4,6 +4,7 @@ package datalake_test
 
 import (
 	"github.com/rudderlabs/rudder-server/utils/misc"
+	"github.com/rudderlabs/rudder-server/warehouse/datalake"
 	"github.com/rudderlabs/rudder-server/warehouse/validations"
 	"os"
 	"testing"
@@ -18,6 +19,8 @@ import (
 
 func TestDatalakeIntegration(t *testing.T) {
 	t.Parallel()
+
+	datalake.Init()
 
 	testCases := []struct {
 		name          string
@@ -116,6 +119,7 @@ func TestDatalakeConfigurationValidation(t *testing.T) {
 	misc.Init()
 	validations.Init()
 	warehouseutils.Init()
+	datalake.Init()
 
 	configurations := testhelper.PopulateTemplateConfigurations()
 

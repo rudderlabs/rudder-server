@@ -21,6 +21,8 @@ import (
 func TestMSSQLIntegration(t *testing.T) {
 	t.Parallel()
 
+	mssql.Init()
+
 	db, err := mssql.Connect(mssql.CredentialsT{
 		DBName:   "master",
 		Password: "reallyStrongPwd123",
@@ -88,6 +90,7 @@ func TestMSSQLConfigurationValidation(t *testing.T) {
 	misc.Init()
 	validations.Init()
 	warehouseutils.Init()
+	mssql.Init()
 
 	configurations := testhelper.PopulateTemplateConfigurations()
 	destination := backendconfig.DestinationT{

@@ -22,6 +22,8 @@ var statsToVerify = []string{"pg_rollback_timeout"}
 func TestPostgresIntegration(t *testing.T) {
 	t.Parallel()
 
+	postgres.Init()
+
 	db, err := postgres.Connect(postgres.CredentialsT{
 		DBName:   "rudderdb",
 		Password: "rudder-password",
@@ -89,6 +91,7 @@ func TestPostgresConfigurationValidation(t *testing.T) {
 	misc.Init()
 	validations.Init()
 	warehouseutils.Init()
+	postgres.Init()
 
 	configurations := testhelper.PopulateTemplateConfigurations()
 	destination := backendconfig.DestinationT{

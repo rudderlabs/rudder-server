@@ -22,12 +22,13 @@ import (
 )
 
 func TestSnowflakeIntegration(t *testing.T) {
-	t.SkipNow()
 	t.Parallel()
 
 	if _, exists := os.LookupEnv(testhelper.SnowflakeIntegrationTestCredentials); !exists {
 		t.Skip("Skipping Snowflake integration test. Snowflake credentials not found")
 	}
+
+	snowflake.Init()
 
 	credentials, err := testhelper.SnowflakeCredentials()
 	require.NoError(t, err)
@@ -138,6 +139,7 @@ func TestSnowflakeConfigurationValidation(t *testing.T) {
 	misc.Init()
 	validations.Init()
 	warehouseutils.Init()
+	snowflake.Init()
 
 	configurations := testhelper.PopulateTemplateConfigurations()
 	destination := backendconfig.DestinationT{

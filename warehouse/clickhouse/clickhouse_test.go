@@ -33,6 +33,8 @@ var statsToVerify = []string{
 func TestClickHouseIntegration(t *testing.T) {
 	t.Parallel()
 
+	clickhouse.Init()
+
 	var (
 		db         *sql.DB
 		clusterDBs []*sql.DB
@@ -53,7 +55,7 @@ func TestClickHouseIntegration(t *testing.T) {
 	err = db.Ping()
 	require.NoError(t, err)
 
-	for i, _ := range []int{1, 2, 3, 4} {
+	for _, i := range []int{1, 2, 3, 4} {
 		db, err := clickhouse.Connect(clickhouse.CredentialsT{
 			Host:          fmt.Sprintf("wh-clickhouse0%d", i),
 			User:          "rudder",
@@ -121,8 +123,8 @@ func TestClickHouseIntegration(t *testing.T) {
 				Schema:        "rudderdb",
 				Tables:        tables,
 				Provider:      warehouseutils.CLICKHOUSE,
-				SourceID:      "1wRvLmEnMOOxNM79ghdZhyCqXRE",
-				DestinationID: "21Ev6TI6emCFDKhp2Zn6XfTP7PI",
+				SourceID:      tc.sourceID,
+				DestinationID: tc.destinationID,
 			}
 
 			// Scenario 1
@@ -170,6 +172,7 @@ func TestClickhouseConfigurationValidation(t *testing.T) {
 	misc.Init()
 	validations.Init()
 	warehouseutils.Init()
+	clickhouse.Init()
 
 	configurations := testhelper.PopulateTemplateConfigurations()
 	destination := backendconfig.DestinationT{

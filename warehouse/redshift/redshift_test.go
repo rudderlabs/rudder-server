@@ -28,6 +28,8 @@ func TestRedshiftIntegration(t *testing.T) {
 		t.Skipf("Skipping %s as %s is not set", t.Name(), testhelper.RedshiftIntegrationTestCredentials)
 	}
 
+	redshift.Init()
+
 	credentials, err := testhelper.RedshiftCredentials()
 	require.NoError(t, err)
 
@@ -112,6 +114,7 @@ func TestRedshiftConfigurationValidation(t *testing.T) {
 	misc.Init()
 	validations.Init()
 	warehouseutils.Init()
+	redshift.Init()
 
 	configurations := testhelper.PopulateTemplateConfigurations()
 	destination := backendconfig.DestinationT{

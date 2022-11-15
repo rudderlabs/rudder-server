@@ -36,6 +36,8 @@ func TestDeltalakeIntegration(t *testing.T) {
 		t.Skipf("Skipping %s as %s is not set", t.Name(), testhelper.DeltalakeIntegrationTestCredentials)
 	}
 
+	deltalake.Init()
+
 	credentials, err := testhelper.DatabricksCredentials()
 	require.NoError(t, err)
 
@@ -167,6 +169,7 @@ func TestDeltalakeConfigurationValidation(t *testing.T) {
 	misc.Init()
 	validations.Init()
 	warehouseutils.Init()
+	deltalake.Init()
 
 	configurations := testhelper.PopulateTemplateConfigurations()
 	destination := backendconfig.DestinationT{
