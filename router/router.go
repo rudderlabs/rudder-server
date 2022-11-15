@@ -95,8 +95,8 @@ type HandleT struct {
 	customDestinationManager customDestinationManager.DestinationManager
 	throttler                map[string]limiter // map key is the destinationID
 	throttlerMu              sync.Mutex
-	// throttlingCost is protected by configSubscriberLock
-	throttlingCost                          int64
+	// throttlingCosts is protected by the configSubscriberLock
+	throttlingCosts                         map[string]types.EventTypeThrottlingCost
 	guaranteeUserEventOrder                 bool
 	netClientTimeout                        time.Duration
 	backendProxyTimeout                     time.Duration
@@ -1290,7 +1290,9 @@ func (rt *HandleT) shouldThrottle(job *jobsdb.JobT, parameters JobParametersT) (
 		return nil, false
 	}
 
-	limited, tokensReturner, err := throttler.CheckLimitReached(rt.getThrottlingCost(job))
+	throttlingCost := rt.getThrottlingCost(parameters.DestinationID, job)
+
+	limited, tokensReturner, err := throttler.CheckLimitReached(throttlingCost)
 	if err != nil {
 		// we can't throttle, let's hit the destination, worst case we get a 429
 		return nil, false
@@ -1996,7 +1998,10 @@ func (rt *HandleT) backendConfigSubscriber() {
 						destination := &source.Destinations[i]
 						if destination.DestinationDefinition.Name == rt.destName {
 							if _, ok := rt.destinationsMap[destination.ID]; !ok {
-								rt.destinationsMap[destination.ID] = &routerutils.BatchDestinationT{Destination: *destination, Sources: []backendconfig.SourceT{}}
+								rt.destinationsMap[destination.ID] = &routerutils.BatchDestinationT{
+									Destination: *destination,
+									Sources:     []backendconfig.SourceT{},
+								}
 							}
 							rt.destinationsMap[destination.ID].Sources = append(rt.destinationsMap[destination.ID].Sources, *source)
 
@@ -2009,13 +2014,12 @@ func (rt *HandleT) backendConfigSubscriber() {
 							// as the second key (e.g. track, identify, etc...) or default to apply the cost to all call types:
 							// dDT["config"]["throttlingCost"] = `{"eventType":{"default":1,"track":2,"identify":3}}`
 							if value, ok := destination.DestinationDefinition.Config["throttlingCost"].(map[string]interface{}); ok {
-								et, ok := value["eventType"].(map[string]interface{})
-								if ok {
-									// TODO get by event type before falling back on "default"
-									if defaultCost, ok := et["default"].(float64); ok {
-										// no default cost in the configuration, assume 0
-										rt.throttlingCost = int64(defaultCost)
+								if _, ok := rt.throttlingCosts[destination.ID]; !ok {
+									if rt.throttlingCosts == nil {
+										rt.throttlingCosts = make(map[string]types.EventTypeThrottlingCost)
 									}
+
+									rt.throttlingCosts[destination.ID] = types.NewEventTypeThrottlingCost(value)
 								}
 							}
 						}
@@ -2172,13 +2176,20 @@ func (rt *HandleT) getThrottler(destID string) limiter {
 	return l
 }
 
-func (rt *HandleT) getThrottlingCost(job *jobsdb.JobT) (cost int64) {
+func (rt *HandleT) getThrottlingCost(destID string, job *jobsdb.JobT) (cost int64) {
 	cost = 1 // default cost
+
 	rt.configSubscriberLock.RLock()
-	if rt.throttlingCost > 0 {
-		cost = rt.throttlingCost
-	}
+	tc, ok := rt.throttlingCosts[destID]
 	rt.configSubscriberLock.RUnlock()
+
+	if !ok {
+		return
+	}
+
+	if tc.DefaultCost > 0 { // TODO figure out event type
+		cost = tc.DefaultCost
+	}
 
 	return cost * int64(job.EventCount)
 }

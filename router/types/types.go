@@ -72,3 +72,45 @@ func (tm *TransformMessageT) JobIDs() map[int64]struct{} {
 	}
 	return jobIDs
 }
+
+func NewEventTypeThrottlingCost(m map[string]interface{}) (v EventTypeThrottlingCost) {
+	v.Parse(m)
+	return
+}
+
+type EventTypeThrottlingCost struct {
+	DefaultCost,
+	Identify, Page, Screen,
+	Track, Group, Alias, Merge int64
+}
+
+func (e *EventTypeThrottlingCost) Parse(m map[string]interface{}) {
+	et, ok := m["eventType"].(map[string]interface{})
+	if !ok {
+		return
+	}
+	if defaultCost, ok := et["default"].(float64); ok {
+		e.DefaultCost = int64(defaultCost)
+	}
+	if v, ok := et["identify"].(float64); ok {
+		e.Identify = int64(v)
+	}
+	if v, ok := et["page"].(float64); ok {
+		e.Identify = int64(v)
+	}
+	if v, ok := et["screen"].(float64); ok {
+		e.Identify = int64(v)
+	}
+	if v, ok := et["track"].(float64); ok {
+		e.Identify = int64(v)
+	}
+	if v, ok := et["group"].(float64); ok {
+		e.Identify = int64(v)
+	}
+	if v, ok := et["alias"].(float64); ok {
+		e.Identify = int64(v)
+	}
+	if v, ok := et["merge"].(float64); ok {
+		e.Identify = int64(v)
+	}
+}
