@@ -94,7 +94,7 @@ func TestSourcesMSSQLIntegration(t *testing.T) {
 	testhelper.SendEvents(t, warehouseTest, sendEventsMap)
 	testhelper.SendAsyncRequest(t, warehouseTest)
 	testhelper.SendAsyncStatusRequest(t, warehouseTest)
-	testhelper.VerifyEventsInWareHouse(t, warehouseTest, testhelper.WarehouseSourceEventsMap())
+	testhelper.VerifyEventsInWareHouse(t, warehouseTest, testhelper.DefaultWarehouseSourceEventsMap())
 }
 
 func TestMain(m *testing.M) {

@@ -489,13 +489,13 @@ func SendEventsMap() EventsCountMap {
 	}
 }
 
-func StagingFilesEventsMap() EventsCountMap {
+func DefaultStagingFilesEventsMap() EventsCountMap {
 	return EventsCountMap{
 		"wh_staging_files": 32,
 	}
 }
 
-func LoadFilesEventsMap() EventsCountMap {
+func DefaultLoadFilesEventsMap() EventsCountMap {
 	return EventsCountMap{
 		"identifies":    4,
 		"users":         4,
@@ -508,7 +508,7 @@ func LoadFilesEventsMap() EventsCountMap {
 	}
 }
 
-func TableUploadsEventsMap() EventsCountMap {
+func DefaultTableUploadsEventsMap() EventsCountMap {
 	return EventsCountMap{
 		"identifies":    4,
 		"users":         4,
@@ -521,7 +521,7 @@ func TableUploadsEventsMap() EventsCountMap {
 	}
 }
 
-func WarehouseEventsMap() EventsCountMap {
+func DefaultWarehouseEventsMap() EventsCountMap {
 	return EventsCountMap{
 		"identifies":    4,
 		"users":         1,
@@ -534,7 +534,7 @@ func WarehouseEventsMap() EventsCountMap {
 	}
 }
 
-func WarehouseSourceEventsMap() EventsCountMap {
+func DefaultWarehouseSourceEventsMap() EventsCountMap {
 	return EventsCountMap{
 		"google_sheet": 1,
 		"tracks":       1,

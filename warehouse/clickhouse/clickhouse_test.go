@@ -94,7 +94,7 @@ func TestClickHouseIntegration(t *testing.T) {
 			writeKey:        "C5AWX39IVUWSP2NcHciWvqZTa2N",
 			userType:        warehouseutils.CLICKHOUSE,
 			db:              db,
-			warehouseEvents: testhelper.WarehouseEventsMap(),
+			warehouseEvents: testhelper.DefaultWarehouseEventsMap(),
 		},
 		{
 			name:            "Cluster Mode Setup",
@@ -105,6 +105,7 @@ func TestClickHouseIntegration(t *testing.T) {
 			db:              clusterDBs[0],
 			warehouseEvents: clusterWarehouseEventsMap(),
 			clusterSetup: func(t *testing.T) {
+				t.Helper()
 				initializeClickhouseClusterMode(t, clusterDBs, tables)
 			},
 		},
@@ -137,10 +138,10 @@ func TestClickHouseIntegration(t *testing.T) {
 			testhelper.SendEvents(t, warehouseTest, sendEventsMap)
 			testhelper.SendIntegratedEvents(t, warehouseTest, sendEventsMap)
 
-			testhelper.VerifyEventsInStagingFiles(t, jobsDB, warehouseTest, testhelper.StagingFilesEventsMap())
-			testhelper.VerifyEventsInLoadFiles(t, jobsDB, warehouseTest, testhelper.LoadFilesEventsMap())
-			testhelper.VerifyEventsInTableUploads(t, jobsDB, warehouseTest, testhelper.TableUploadsEventsMap())
-			testhelper.VerifyEventsInWareHouse(t, warehouseTest, testhelper.WarehouseEventsMap())
+			testhelper.VerifyEventsInStagingFiles(t, jobsDB, warehouseTest, testhelper.DefaultStagingFilesEventsMap())
+			testhelper.VerifyEventsInLoadFiles(t, jobsDB, warehouseTest, testhelper.DefaultLoadFilesEventsMap())
+			testhelper.VerifyEventsInTableUploads(t, jobsDB, warehouseTest, testhelper.DefaultTableUploadsEventsMap())
+			testhelper.VerifyEventsInWareHouse(t, warehouseTest, testhelper.DefaultWarehouseEventsMap())
 
 			// Scenario 2
 			warehouseTest.TimestampBeforeSendingEvents = timeutil.Now()
@@ -156,9 +157,9 @@ func TestClickHouseIntegration(t *testing.T) {
 			testhelper.SendModifiedEvents(t, warehouseTest, sendEventsMap)
 			testhelper.SendIntegratedEvents(t, warehouseTest, sendEventsMap)
 
-			testhelper.VerifyEventsInStagingFiles(t, jobsDB, warehouseTest, testhelper.StagingFilesEventsMap())
-			testhelper.VerifyEventsInLoadFiles(t, jobsDB, warehouseTest, testhelper.LoadFilesEventsMap())
-			testhelper.VerifyEventsInTableUploads(t, jobsDB, warehouseTest, testhelper.TableUploadsEventsMap())
+			testhelper.VerifyEventsInStagingFiles(t, jobsDB, warehouseTest, testhelper.DefaultStagingFilesEventsMap())
+			testhelper.VerifyEventsInLoadFiles(t, jobsDB, warehouseTest, testhelper.DefaultLoadFilesEventsMap())
+			testhelper.VerifyEventsInTableUploads(t, jobsDB, warehouseTest, testhelper.DefaultTableUploadsEventsMap())
 			testhelper.VerifyEventsInWareHouse(t, warehouseTest, tc.warehouseEvents)
 
 			testhelper.VerifyWorkspaceIDInStats(t, statsToVerify...)

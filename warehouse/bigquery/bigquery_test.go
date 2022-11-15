@@ -28,7 +28,7 @@ func TestBigQueryIntegration(t *testing.T) {
 	t.Parallel()
 
 	if _, exists := os.LookupEnv(testhelper.BigqueryIntegrationTestCredentials); !exists {
-		t.Skip("Skipping BigQuery integration test. BIGQUERY_INTEGRATION_TEST_CREDENTIALS env variable is not set")
+		t.Skipf("Skipping %s as %s is not set", t.Name(), testhelper.BigqueryIntegrationTestCredentials)
 	}
 
 	bigquery2.Init()
@@ -118,6 +118,7 @@ func TestBigQueryIntegration(t *testing.T) {
 				name:                                "Append mode with custom partitions",
 				customPartitionsEnabledWorkspaceIDs: []string{"BpLnfgDsc2WD8F2qNfHK5a84jjJ"},
 				prerequisite: func(t *testing.T) {
+					t.Helper()
 					err = db.Dataset(schema).Create(context.Background(), &bigquery.DatasetMetadata{
 						Location: "US",
 					})
@@ -199,7 +200,7 @@ func TestBigQueryConfigurationValidation(t *testing.T) {
 	t.Parallel()
 
 	if _, exists := os.LookupEnv(testhelper.BigqueryIntegrationTestCredentials); !exists {
-		t.Skip("Skipping BigQuery integration test. BIGQUERY_INTEGRATION_TEST_CREDENTIALS env variable is not set")
+		t.Skipf("Skipping %s as %s is not set", t.Name(), testhelper.BigqueryIntegrationTestCredentials)
 	}
 
 	misc.Init()
@@ -235,14 +236,14 @@ func TestBigQueryConfigurationValidation(t *testing.T) {
 }
 
 func loadFilesEventsMap() testhelper.EventsCountMap {
-	eventsMap := testhelper.LoadFilesEventsMap()
+	eventsMap := testhelper.DefaultLoadFilesEventsMap()
 	eventsMap["groups"] = 1
 	eventsMap["_groups"] = 3
 	return eventsMap
 }
 
 func tableUploadsEventsMap() testhelper.EventsCountMap {
-	eventsMap := testhelper.TableUploadsEventsMap()
+	eventsMap := testhelper.DefaultTableUploadsEventsMap()
 	eventsMap["groups"] = 1
 	eventsMap["_groups"] = 3
 	return eventsMap
@@ -269,7 +270,7 @@ func mergeEventsMap() testhelper.EventsCountMap {
 }
 
 func appendEventsMap() testhelper.EventsCountMap {
-	eventsMap := testhelper.WarehouseEventsMap()
+	eventsMap := testhelper.DefaultWarehouseEventsMap()
 	eventsMap["groups"] = 1
 	eventsMap["_groups"] = 3
 	return eventsMap

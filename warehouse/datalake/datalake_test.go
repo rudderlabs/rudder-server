@@ -37,6 +37,7 @@ func TestDatalakeIntegration(t *testing.T) {
 			destinationID: "27SthahyhhqEZ7H4T4NTtNPl06V",
 			provider:      warehouseutils.S3_DATALAKE,
 			prerequisite: func(t *testing.T) {
+				t.Helper()
 				testhelper.CreateBucketForMinio(t, "s3-datalake-test")
 			},
 		},
@@ -47,8 +48,9 @@ func TestDatalakeIntegration(t *testing.T) {
 			destinationID: "27SthahyhhqEZGHaT4NTtNPl06V",
 			provider:      warehouseutils.GCS_DATALAKE,
 			prerequisite: func(t *testing.T) {
+				t.Helper()
 				if _, exists := os.LookupEnv(testhelper.BigqueryIntegrationTestCredentials); !exists {
-					t.Skip("Skipping GCS Datalake integration test as GCS credentials are not set")
+					t.Skipf("Skipping %s as %s is not set", t.Name(), testhelper.BigqueryIntegrationTestCredentials)
 				}
 			},
 		},
@@ -90,9 +92,9 @@ func TestDatalakeIntegration(t *testing.T) {
 			testhelper.SendEvents(t, warehouseTest, sendEventsMap)
 			testhelper.SendIntegratedEvents(t, warehouseTest, sendEventsMap)
 
-			testhelper.VerifyEventsInStagingFiles(t, jobsDB, warehouseTest, testhelper.StagingFilesEventsMap())
-			testhelper.VerifyEventsInLoadFiles(t, jobsDB, warehouseTest, testhelper.LoadFilesEventsMap())
-			testhelper.VerifyEventsInTableUploads(t, jobsDB, warehouseTest, testhelper.TableUploadsEventsMap())
+			testhelper.VerifyEventsInStagingFiles(t, jobsDB, warehouseTest, testhelper.DefaultStagingFilesEventsMap())
+			testhelper.VerifyEventsInLoadFiles(t, jobsDB, warehouseTest, testhelper.DefaultLoadFilesEventsMap())
+			testhelper.VerifyEventsInTableUploads(t, jobsDB, warehouseTest, testhelper.DefaultTableUploadsEventsMap())
 
 			// Scenario 2
 			warehouseTest.TimestampBeforeSendingEvents = timeutil.Now()
@@ -104,9 +106,9 @@ func TestDatalakeIntegration(t *testing.T) {
 			testhelper.SendModifiedEvents(t, warehouseTest, sendEventsMap)
 			testhelper.SendIntegratedEvents(t, warehouseTest, sendEventsMap)
 
-			testhelper.VerifyEventsInStagingFiles(t, jobsDB, warehouseTest, testhelper.StagingFilesEventsMap())
-			testhelper.VerifyEventsInLoadFiles(t, jobsDB, warehouseTest, testhelper.LoadFilesEventsMap())
-			testhelper.VerifyEventsInTableUploads(t, jobsDB, warehouseTest, testhelper.TableUploadsEventsMap())
+			testhelper.VerifyEventsInStagingFiles(t, jobsDB, warehouseTest, testhelper.DefaultStagingFilesEventsMap())
+			testhelper.VerifyEventsInLoadFiles(t, jobsDB, warehouseTest, testhelper.DefaultLoadFilesEventsMap())
+			testhelper.VerifyEventsInTableUploads(t, jobsDB, warehouseTest, testhelper.DefaultTableUploadsEventsMap())
 
 			testhelper.VerifyWorkspaceIDInStats(t)
 		})
@@ -157,7 +159,7 @@ func TestDatalakeConfigurationValidation(t *testing.T) {
 		t.Parallel()
 
 		if _, exists := os.LookupEnv(testhelper.BigqueryIntegrationTestCredentials); !exists {
-			t.Skip("Skipping GCS Datalake Test as the Test credentials does not exists.")
+			t.Skipf("Skipping %s as %s is not set", t.Name(), testhelper.BigqueryIntegrationTestCredentials)
 		}
 
 		bqCredentials, err := testhelper.BigqueryCredentials()

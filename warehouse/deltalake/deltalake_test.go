@@ -72,10 +72,11 @@ func TestDeltalakeIntegration(t *testing.T) {
 	}{
 		{
 			name:            "Merge Mode",
-			sourceID:        "24p1HhPk09FW25Kuzvx7GshCLKR",
-			destinationID:   "24qeADObp6eIhjjDnEppO6P1SNc",
-			warehouseEvents: mergeEvents(),
+			sourceID:        "25H5EpYzojqQSepRSaGBrrPx3e4",
+			destinationID:   "25IDjdnoEus6DDNrth3SWO1FOpu",
+			warehouseEvents: mergeEventsMap(),
 			prerequisite: func(t *testing.T) {
+				t.Helper()
 				require.NoError(t, testhelper.SetConfig([]warehouseutils.KeyValue{
 					{
 						Key:   "Warehouse.deltalake.loadTableStrategy",
@@ -88,8 +89,9 @@ func TestDeltalakeIntegration(t *testing.T) {
 			name:            "Append Mode",
 			sourceID:        "25H5EpYzojqQSepRSaGBrrPx3e4",
 			destinationID:   "25IDjdnoEus6DDNrth3SWO1FOpu",
-			warehouseEvents: appendEvents(),
+			warehouseEvents: appendEventsMap(),
 			prerequisite: func(t *testing.T) {
+				t.Helper()
 				require.NoError(t, testhelper.SetConfig([]warehouseutils.KeyValue{
 					{
 						Key:   "Warehouse.deltalake.loadTableStrategy",
@@ -134,10 +136,10 @@ func TestDeltalakeIntegration(t *testing.T) {
 			testhelper.SendEvents(t, warehouseTest, sendEventsMap)
 			testhelper.SendIntegratedEvents(t, warehouseTest, sendEventsMap)
 
-			testhelper.VerifyEventsInStagingFiles(t, jobsDB, warehouseTest, testhelper.StagingFilesEventsMap())
-			testhelper.VerifyEventsInLoadFiles(t, jobsDB, warehouseTest, testhelper.LoadFilesEventsMap())
-			testhelper.VerifyEventsInTableUploads(t, jobsDB, warehouseTest, testhelper.TableUploadsEventsMap())
-			testhelper.VerifyEventsInWareHouse(t, warehouseTest, tc.warehouseEvents)
+			testhelper.VerifyEventsInStagingFiles(t, jobsDB, warehouseTest, testhelper.DefaultStagingFilesEventsMap())
+			testhelper.VerifyEventsInLoadFiles(t, jobsDB, warehouseTest, testhelper.DefaultLoadFilesEventsMap())
+			testhelper.VerifyEventsInTableUploads(t, jobsDB, warehouseTest, testhelper.DefaultTableUploadsEventsMap())
+			testhelper.VerifyEventsInWareHouse(t, warehouseTest, mergeEventsMap())
 
 			// Scenario 2
 			warehouseTest.TimestampBeforeSendingEvents = timeutil.Now()
@@ -149,9 +151,9 @@ func TestDeltalakeIntegration(t *testing.T) {
 			testhelper.SendModifiedEvents(t, warehouseTest, sendEventsMap)
 			testhelper.SendIntegratedEvents(t, warehouseTest, sendEventsMap)
 
-			testhelper.VerifyEventsInStagingFiles(t, jobsDB, warehouseTest, testhelper.StagingFilesEventsMap())
-			testhelper.VerifyEventsInLoadFiles(t, jobsDB, warehouseTest, testhelper.LoadFilesEventsMap())
-			testhelper.VerifyEventsInTableUploads(t, jobsDB, warehouseTest, testhelper.TableUploadsEventsMap())
+			testhelper.VerifyEventsInStagingFiles(t, jobsDB, warehouseTest, testhelper.DefaultStagingFilesEventsMap())
+			testhelper.VerifyEventsInLoadFiles(t, jobsDB, warehouseTest, testhelper.DefaultLoadFilesEventsMap())
+			testhelper.VerifyEventsInTableUploads(t, jobsDB, warehouseTest, testhelper.DefaultTableUploadsEventsMap())
 			testhelper.VerifyEventsInWareHouse(t, warehouseTest, tc.warehouseEvents)
 
 			testhelper.VerifyWorkspaceIDInStats(t, statsToVerify...)
@@ -203,7 +205,7 @@ func TestDeltalakeConfigurationValidation(t *testing.T) {
 	testhelper.VerifyConfigurationTest(t, destination)
 }
 
-func mergeEvents() testhelper.EventsCountMap {
+func mergeEventsMap() testhelper.EventsCountMap {
 	return testhelper.EventsCountMap{
 		"identifies":    1,
 		"users":         1,
@@ -216,7 +218,7 @@ func mergeEvents() testhelper.EventsCountMap {
 	}
 }
 
-func appendEvents() testhelper.EventsCountMap {
+func appendEventsMap() testhelper.EventsCountMap {
 	return testhelper.EventsCountMap{
 		"identifies":    2,
 		"users":         2,

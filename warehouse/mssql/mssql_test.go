@@ -61,10 +61,10 @@ func TestMSSQLIntegration(t *testing.T) {
 	testhelper.SendEvents(t, warehouseTest, sendEventsMap)
 	testhelper.SendIntegratedEvents(t, warehouseTest, sendEventsMap)
 
-	testhelper.VerifyEventsInStagingFiles(t, jobsDB, warehouseTest, testhelper.StagingFilesEventsMap())
-	testhelper.VerifyEventsInLoadFiles(t, jobsDB, warehouseTest, testhelper.LoadFilesEventsMap())
-	testhelper.VerifyEventsInTableUploads(t, jobsDB, warehouseTest, testhelper.TableUploadsEventsMap())
-	testhelper.VerifyEventsInWareHouse(t, warehouseTest, testhelper.WarehouseEventsMap())
+	testhelper.VerifyEventsInStagingFiles(t, jobsDB, warehouseTest, testhelper.DefaultStagingFilesEventsMap())
+	testhelper.VerifyEventsInLoadFiles(t, jobsDB, warehouseTest, testhelper.DefaultLoadFilesEventsMap())
+	testhelper.VerifyEventsInTableUploads(t, jobsDB, warehouseTest, testhelper.DefaultTableUploadsEventsMap())
+	testhelper.VerifyEventsInWareHouse(t, warehouseTest, testhelper.DefaultWarehouseEventsMap())
 
 	// Scenario 2
 	warehouseTest.TimestampBeforeSendingEvents = timeutil.Now()
@@ -76,10 +76,10 @@ func TestMSSQLIntegration(t *testing.T) {
 	testhelper.SendModifiedEvents(t, warehouseTest, sendEventsMap)
 	testhelper.SendIntegratedEvents(t, warehouseTest, sendEventsMap)
 
-	testhelper.VerifyEventsInStagingFiles(t, jobsDB, warehouseTest, testhelper.StagingFilesEventsMap())
-	testhelper.VerifyEventsInLoadFiles(t, jobsDB, warehouseTest, testhelper.LoadFilesEventsMap())
-	testhelper.VerifyEventsInTableUploads(t, jobsDB, warehouseTest, testhelper.TableUploadsEventsMap())
-	testhelper.VerifyEventsInWareHouse(t, warehouseTest, testhelper.WarehouseEventsMap())
+	testhelper.VerifyEventsInStagingFiles(t, jobsDB, warehouseTest, testhelper.DefaultStagingFilesEventsMap())
+	testhelper.VerifyEventsInLoadFiles(t, jobsDB, warehouseTest, testhelper.DefaultLoadFilesEventsMap())
+	testhelper.VerifyEventsInTableUploads(t, jobsDB, warehouseTest, testhelper.DefaultTableUploadsEventsMap())
+	testhelper.VerifyEventsInWareHouse(t, warehouseTest, testhelper.DefaultWarehouseEventsMap())
 
 	testhelper.VerifyWorkspaceIDInStats(t)
 }

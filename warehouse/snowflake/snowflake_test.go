@@ -26,7 +26,7 @@ func TestSnowflakeIntegration(t *testing.T) {
 	t.Parallel()
 
 	if _, exists := os.LookupEnv(testhelper.SnowflakeIntegrationTestCredentials); !exists {
-		t.Skip("Skipping Snowflake integration test. Snowflake credentials not found")
+		t.Skipf("Skipping %s as %s is not set", t.Name(), testhelper.SnowflakeIntegrationTestCredentials)
 	}
 
 	snowflake.Init()
@@ -104,10 +104,10 @@ func TestSnowflakeIntegration(t *testing.T) {
 			testhelper.SendEvents(t, warehouseTest, sendEventsMap)
 			testhelper.SendIntegratedEvents(t, warehouseTest, sendEventsMap)
 
-			testhelper.VerifyEventsInStagingFiles(t, jobsDB, warehouseTest, testhelper.StagingFilesEventsMap())
-			testhelper.VerifyEventsInLoadFiles(t, jobsDB, warehouseTest, testhelper.LoadFilesEventsMap())
-			testhelper.VerifyEventsInTableUploads(t, jobsDB, warehouseTest, testhelper.TableUploadsEventsMap())
-			testhelper.VerifyEventsInWareHouse(t, warehouseTest, testhelper.WarehouseEventsMap())
+			testhelper.VerifyEventsInStagingFiles(t, jobsDB, warehouseTest, testhelper.DefaultStagingFilesEventsMap())
+			testhelper.VerifyEventsInLoadFiles(t, jobsDB, warehouseTest, testhelper.DefaultLoadFilesEventsMap())
+			testhelper.VerifyEventsInTableUploads(t, jobsDB, warehouseTest, testhelper.DefaultTableUploadsEventsMap())
+			testhelper.VerifyEventsInWareHouse(t, warehouseTest, testhelper.DefaultWarehouseEventsMap())
 
 			// Scenario 2
 			warehouseTest.TimestampBeforeSendingEvents = timeutil.Now()
@@ -119,10 +119,10 @@ func TestSnowflakeIntegration(t *testing.T) {
 			testhelper.SendModifiedEvents(t, warehouseTest, sendEventsMap)
 			testhelper.SendIntegratedEvents(t, warehouseTest, sendEventsMap)
 
-			testhelper.VerifyEventsInStagingFiles(t, jobsDB, warehouseTest, testhelper.StagingFilesEventsMap())
-			testhelper.VerifyEventsInLoadFiles(t, jobsDB, warehouseTest, testhelper.LoadFilesEventsMap())
-			testhelper.VerifyEventsInTableUploads(t, jobsDB, warehouseTest, testhelper.TableUploadsEventsMap())
-			testhelper.VerifyEventsInWareHouse(t, warehouseTest, testhelper.WarehouseEventsMap())
+			testhelper.VerifyEventsInStagingFiles(t, jobsDB, warehouseTest, testhelper.DefaultStagingFilesEventsMap())
+			testhelper.VerifyEventsInLoadFiles(t, jobsDB, warehouseTest, testhelper.DefaultLoadFilesEventsMap())
+			testhelper.VerifyEventsInTableUploads(t, jobsDB, warehouseTest, testhelper.DefaultTableUploadsEventsMap())
+			testhelper.VerifyEventsInWareHouse(t, warehouseTest, testhelper.DefaultWarehouseEventsMap())
 
 			testhelper.VerifyWorkspaceIDInStats(t)
 		})
@@ -134,7 +134,7 @@ func TestSnowflakeConfigurationValidation(t *testing.T) {
 	t.Parallel()
 
 	if _, exists := os.LookupEnv(testhelper.SnowflakeIntegrationTestCredentials); !exists {
-		t.Skip("Skipping Snowflake integration test. Snowflake credentials not found")
+		t.Skipf("Skipping %s as %s is not set", t.Name(), testhelper.SnowflakeIntegrationTestCredentials)
 	}
 
 	misc.Init()
