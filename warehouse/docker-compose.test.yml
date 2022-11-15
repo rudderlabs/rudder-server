@@ -86,7 +86,7 @@ services:
       retries: 25
   wh-mssql:
     container_name: wh-mssql
-    image: mcr.microsoft.com/azure-sql-edge:1.0.5
+    image: rudderstack/azure-sql-edge:1.0.6
     environment:
       - ACCEPT_EULA=Y
       - SA_PASSWORD=reallyStrongPwd123
@@ -94,10 +94,6 @@ services:
       - SA_USER=SA
     ports:
       - "1433"
-    healthcheck:
-      test: /opt/mssql-tools/bin/sqlcmd -S localhost -U SA -P reallyStrongPwd123 -Q "SELECT 1" || exit 1
-      interval: 1s
-      retries: 25
   wh-zookeeper:
     image: zookeeper:3.5
     container_name: wh-clickhouse-zookeeper
