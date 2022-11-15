@@ -92,7 +92,7 @@ func (c *Client) readConfiguration() {
 		if redisPassword != "" {
 			opts.Password = redisPassword
 		}
-		c.redisClient = redis.NewClient(&opts) // TODO avoid creating a new client each time, cache by addr
+		c.redisClient = redis.NewClient(&opts)
 
 		if err := c.redisClient.Ping(context.TODO()).Err(); err != nil {
 			panic(fmt.Errorf("%s-router-throttler: failed to connect to Redis: %w", c.destinationID, err))
