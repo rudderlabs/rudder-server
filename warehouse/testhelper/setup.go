@@ -18,10 +18,7 @@ import (
 
 	"github.com/minio/minio-go/v6"
 
-	"github.com/rudderlabs/rudder-server/admin"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
-	"github.com/rudderlabs/rudder-server/services/pgnotifier"
-	"github.com/rudderlabs/rudder-server/warehouse"
 	"github.com/rudderlabs/rudder-server/warehouse/deltalake/databricks"
 	"github.com/rudderlabs/rudder-server/warehouse/validations"
 
@@ -30,17 +27,8 @@ import (
 
 	"github.com/cenkalti/backoff"
 
-	"github.com/joho/godotenv"
-
-	azuresynapse "github.com/rudderlabs/rudder-server/warehouse/azure-synapse"
-	"github.com/rudderlabs/rudder-server/warehouse/datalake"
-
 	"github.com/rudderlabs/rudder-server/config"
-	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/warehouse/bigquery"
-	"github.com/rudderlabs/rudder-server/warehouse/clickhouse"
-	"github.com/rudderlabs/rudder-server/warehouse/deltalake"
-	"github.com/rudderlabs/rudder-server/warehouse/mssql"
 	"github.com/rudderlabs/rudder-server/warehouse/postgres"
 	"github.com/rudderlabs/rudder-server/warehouse/redshift"
 	"github.com/rudderlabs/rudder-server/warehouse/snowflake"
@@ -101,47 +89,8 @@ const (
 	WorkspaceTemplatePath = "warehouse/testdata/workspaceConfig/template.json"
 )
 
-func Setup(setup WarehouseTestSetup) {
-	loadEnv()
-	initialize()
-	//db := SetUpJobsDB()
-	initConnection(setup)
-}
-
-func loadEnv() {
-	if err := godotenv.Load("../testhelper/.env"); err != nil {
-		fmt.Printf("Error occurred while loading env for warehouse integration test with error: %s", err.Error())
-	}
-}
-
-func initialize() {
-	config.Reset()
-	logger.Reset()
-	admin.Init()
-	misc.Init()
-
-	backendconfig.Init()
-	warehouseutils.Init()
-
-	warehouse.Init()
-	warehouse.Init2()
-	warehouse.Init3()
-	warehouse.Init4()
-	warehouse.Init5()
-	warehouse.Init6()
-
-	pgnotifier.Init()
-	validations.Init()
-
-	azuresynapse.Init()
-	bigquery.Init()
-	clickhouse.Init()
-	datalake.Init()
-	deltalake.Init()
-	mssql.Init()
-	postgres.Init()
-	redshift.Init()
-	snowflake.Init()
+func Setup(*testing.M, WarehouseTestSetup) int {
+	return 0
 }
 
 func SetUpJobsDB(t testing.TB) *sql.DB {
@@ -163,12 +112,6 @@ func SetUpJobsDB(t testing.TB) *sql.DB {
 	require.NoError(t, err)
 
 	return db
-}
-
-func initConnection(setup WarehouseTestSetup) {
-	if err := setup.VerifyConnection(); err != nil {
-		log.Fatalf("Could not complete test connection with err: %s", err.Error())
-	}
 }
 
 func VerifyEventsInStagingFiles(t testing.TB, db *sql.DB, wareHouseTest *WareHouseTest, eventsMap EventsCountMap) {

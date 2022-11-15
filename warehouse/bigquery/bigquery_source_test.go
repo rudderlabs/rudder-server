@@ -1,5 +1,3 @@
-//go:build sources_integration && !warehouse_integration
-
 package bigquery_test
 
 import (
