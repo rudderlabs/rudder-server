@@ -4,6 +4,9 @@ package snowflake_test
 
 import (
 	"fmt"
+	"github.com/rudderlabs/rudder-server/utils/misc"
+	"github.com/rudderlabs/rudder-server/warehouse/validations"
+	"os"
 	"strings"
 	"testing"
 
@@ -18,36 +21,13 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-type TestHandle struct{}
-
-func (t *TestHandle) VerifyConnection() error {
-	credentials, err := testhelper.SnowflakeCredentials()
-	if err != nil {
-		return err
-	}
-	return testhelper.WithConstantBackoff(func() (err error) {
-		_, err = snowflake.Connect(credentials)
-		if err != nil {
-			err = fmt.Errorf("could not connect to warehouse snowflake with error: %w", err)
-			return
-		}
-		return
-	})
-}
-
-func TestMain(m *testing.M) {
-	//_, exists := os.LookupEnv(testhelper.SnowflakeIntegrationTestCredentials)
-	//if !exists {
-	//	log.Println("Skipping Snowflake Test as the Test credentials does not exists.")
-	//	return
-	//}
-	//
-	//os.Exit(testhelper.Run(m, &TestHandle{}))
-}
-
 func TestSnowflakeIntegration(t *testing.T) {
 	t.SkipNow()
 	t.Parallel()
+
+	if _, exists := os.LookupEnv(testhelper.SnowflakeIntegrationTestCredentials); !exists {
+		t.Skip("Skipping Snowflake integration test. Snowflake credentials not found")
+	}
 
 	credentials, err := testhelper.SnowflakeCredentials()
 	require.NoError(t, err)
@@ -77,6 +57,8 @@ func TestSnowflakeIntegration(t *testing.T) {
 			destinationID: "24qeADObp6eJhijDnEppO6P1SNc",
 		},
 	}
+
+	jobsDB := testhelper.SetUpJobsDB(t)
 
 	for _, tc := range testcase {
 		tc := tc
@@ -120,9 +102,9 @@ func TestSnowflakeIntegration(t *testing.T) {
 			testhelper.SendEvents(t, warehouseTest, sendEventsMap)
 			testhelper.SendIntegratedEvents(t, warehouseTest, sendEventsMap)
 
-			testhelper.VerifyEventsInStagingFiles(t, warehouseTest, testhelper.StagingFilesEventsMap())
-			testhelper.VerifyEventsInLoadFiles(t, warehouseTest, testhelper.LoadFilesEventsMap())
-			testhelper.VerifyEventsInTableUploads(t, warehouseTest, testhelper.TableUploadsEventsMap())
+			testhelper.VerifyEventsInStagingFiles(t, jobsDB, warehouseTest, testhelper.StagingFilesEventsMap())
+			testhelper.VerifyEventsInLoadFiles(t, jobsDB, warehouseTest, testhelper.LoadFilesEventsMap())
+			testhelper.VerifyEventsInTableUploads(t, jobsDB, warehouseTest, testhelper.TableUploadsEventsMap())
 			testhelper.VerifyEventsInWareHouse(t, warehouseTest, testhelper.WarehouseEventsMap())
 
 			// Scenario 2
@@ -135,9 +117,9 @@ func TestSnowflakeIntegration(t *testing.T) {
 			testhelper.SendModifiedEvents(t, warehouseTest, sendEventsMap)
 			testhelper.SendIntegratedEvents(t, warehouseTest, sendEventsMap)
 
-			testhelper.VerifyEventsInStagingFiles(t, warehouseTest, testhelper.StagingFilesEventsMap())
-			testhelper.VerifyEventsInLoadFiles(t, warehouseTest, testhelper.LoadFilesEventsMap())
-			testhelper.VerifyEventsInTableUploads(t, warehouseTest, testhelper.TableUploadsEventsMap())
+			testhelper.VerifyEventsInStagingFiles(t, jobsDB, warehouseTest, testhelper.StagingFilesEventsMap())
+			testhelper.VerifyEventsInLoadFiles(t, jobsDB, warehouseTest, testhelper.LoadFilesEventsMap())
+			testhelper.VerifyEventsInTableUploads(t, jobsDB, warehouseTest, testhelper.TableUploadsEventsMap())
 			testhelper.VerifyEventsInWareHouse(t, warehouseTest, testhelper.WarehouseEventsMap())
 
 			testhelper.VerifyWorkspaceIDInStats(t)
@@ -148,6 +130,14 @@ func TestSnowflakeIntegration(t *testing.T) {
 func TestSnowflakeConfigurationValidation(t *testing.T) {
 	t.SkipNow()
 	t.Parallel()
+
+	if _, exists := os.LookupEnv(testhelper.SnowflakeIntegrationTestCredentials); !exists {
+		t.Skip("Skipping Snowflake integration test. Snowflake credentials not found")
+	}
+
+	misc.Init()
+	validations.Init()
+	warehouseutils.Init()
 
 	configurations := testhelper.PopulateTemplateConfigurations()
 	destination := backendconfig.DestinationT{
@@ -178,5 +168,5 @@ func TestSnowflakeConfigurationValidation(t *testing.T) {
 		Enabled:    true,
 		RevisionID: "29HgdgvNPwqFDMONSgmIZ3YSehV",
 	}
-	testhelper.VerifyingConfigurationTest(t, destination)
+	testhelper.VerifyConfigurationTest(t, destination)
 }

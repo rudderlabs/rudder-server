@@ -3,9 +3,9 @@
 package mssql_test
 
 import (
-	"database/sql"
-	"fmt"
-	"os"
+	"github.com/rudderlabs/rudder-server/utils/misc"
+	"github.com/rudderlabs/rudder-server/warehouse/validations"
+	"github.com/stretchr/testify/require"
 	"testing"
 
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
@@ -18,46 +18,32 @@ import (
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
-type TestHandle struct {
-	DB       *sql.DB
-	WriteKey string
-	Schema   string
-	Tables   []string
-}
-
-var handle *TestHandle
-
-func (*TestHandle) VerifyConnection() error {
-	return testhelper.WithConstantBackoff(func() (err error) {
-		credentials := mssql.CredentialsT{
-			DBName:   "master",
-			Password: "reallyStrongPwd123",
-			User:     "SA",
-			Host:     "wh-mssql",
-			SSLMode:  "disable",
-			Port:     "1433",
-		}
-		if handle.DB, err = mssql.Connect(credentials); err != nil {
-			err = fmt.Errorf("could not connect to warehouse mssql with error: %w", err)
-			return
-		}
-		if err = handle.DB.Ping(); err != nil {
-			err = fmt.Errorf("could not connect to warehouse mssql while pinging with error: %w", err)
-			return
-		}
-		return
-	})
-}
-
 func TestMSSQLIntegration(t *testing.T) {
+	t.Parallel()
+
+	db, err := mssql.Connect(mssql.CredentialsT{
+		DBName:   "master",
+		Password: "reallyStrongPwd123",
+		User:     "SA",
+		Host:     "wh-mssql",
+		SSLMode:  "disable",
+		Port:     "1433",
+	})
+	require.NoError(t, err)
+
+	err = db.Ping()
+	require.NoError(t, err)
+
+	jobsDB := testhelper.SetUpJobsDB(t)
+
 	warehouseTest := &testhelper.WareHouseTest{
 		Client: &client.Client{
-			SQL:  handle.DB,
+			SQL:  db,
 			Type: client.SQLClient,
 		},
-		WriteKey:      handle.WriteKey,
-		Schema:        handle.Schema,
-		Tables:        handle.Tables,
+		WriteKey:      "YSQ3n267l1VQKGNbSuJE9fQbzON",
+		Schema:        "mssql_wh_integration",
+		Tables:        []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"},
 		Provider:      warehouseutils.MSSQL,
 		SourceID:      "1wRvLmEnMOONMbdspwaZhyCqXRE",
 		DestinationID: "21Ezdq58khNMj07VJB0VJmxLvgu",
@@ -73,9 +59,9 @@ func TestMSSQLIntegration(t *testing.T) {
 	testhelper.SendEvents(t, warehouseTest, sendEventsMap)
 	testhelper.SendIntegratedEvents(t, warehouseTest, sendEventsMap)
 
-	testhelper.VerifyEventsInStagingFiles(t, warehouseTest, testhelper.StagingFilesEventsMap())
-	testhelper.VerifyEventsInLoadFiles(t, warehouseTest, testhelper.LoadFilesEventsMap())
-	testhelper.VerifyEventsInTableUploads(t, warehouseTest, testhelper.TableUploadsEventsMap())
+	testhelper.VerifyEventsInStagingFiles(t, jobsDB, warehouseTest, testhelper.StagingFilesEventsMap())
+	testhelper.VerifyEventsInLoadFiles(t, jobsDB, warehouseTest, testhelper.LoadFilesEventsMap())
+	testhelper.VerifyEventsInTableUploads(t, jobsDB, warehouseTest, testhelper.TableUploadsEventsMap())
 	testhelper.VerifyEventsInWareHouse(t, warehouseTest, testhelper.WarehouseEventsMap())
 
 	// Scenario 2
@@ -88,15 +74,21 @@ func TestMSSQLIntegration(t *testing.T) {
 	testhelper.SendModifiedEvents(t, warehouseTest, sendEventsMap)
 	testhelper.SendIntegratedEvents(t, warehouseTest, sendEventsMap)
 
-	testhelper.VerifyEventsInStagingFiles(t, warehouseTest, testhelper.StagingFilesEventsMap())
-	testhelper.VerifyEventsInLoadFiles(t, warehouseTest, testhelper.LoadFilesEventsMap())
-	testhelper.VerifyEventsInTableUploads(t, warehouseTest, testhelper.TableUploadsEventsMap())
+	testhelper.VerifyEventsInStagingFiles(t, jobsDB, warehouseTest, testhelper.StagingFilesEventsMap())
+	testhelper.VerifyEventsInLoadFiles(t, jobsDB, warehouseTest, testhelper.LoadFilesEventsMap())
+	testhelper.VerifyEventsInTableUploads(t, jobsDB, warehouseTest, testhelper.TableUploadsEventsMap())
 	testhelper.VerifyEventsInWareHouse(t, warehouseTest, testhelper.WarehouseEventsMap())
 
 	testhelper.VerifyWorkspaceIDInStats(t)
 }
 
 func TestMSSQLConfigurationValidation(t *testing.T) {
+	t.Parallel()
+
+	misc.Init()
+	validations.Init()
+	warehouseutils.Init()
+
 	configurations := testhelper.PopulateTemplateConfigurations()
 	destination := backendconfig.DestinationT{
 		ID: "21Ezdq58khNMj07VJB0VJmxLvgu",
@@ -126,14 +118,5 @@ func TestMSSQLConfigurationValidation(t *testing.T) {
 		Enabled:    true,
 		RevisionID: "29eeuUb21cuDBeFKPTUA9GaQ9Aq",
 	}
-	testhelper.VerifyingConfigurationTest(t, destination)
-}
-
-func TestMain(m *testing.M) {
-	handle = &TestHandle{
-		WriteKey: "YSQ3n267l1VQKGNbSuJE9fQbzON",
-		Schema:   "mssql_wh_integration",
-		Tables:   []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"},
-	}
-	os.Exit(testhelper.Run(m, handle))
+	testhelper.VerifyConfigurationTest(t, destination)
 }

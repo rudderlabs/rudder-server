@@ -50,11 +50,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-type JobsDBResource struct {
-	Credentials *postgres.CredentialsT
-	DB          *sql.DB
-}
-
 type EventsCountMap map[string]int
 
 type WareHouseTest struct {
@@ -106,14 +101,11 @@ const (
 	WorkspaceTemplatePath = "warehouse/testdata/workspaceConfig/template.json"
 )
 
-var jobsDB *JobsDBResource
-
-func Run(m *testing.M, setup WarehouseTestSetup) int {
+func Setup(setup WarehouseTestSetup) {
 	loadEnv()
 	initialize()
-	initJobsDB()
+	//db := SetUpJobsDB()
 	initConnection(setup)
-	return m.Run()
 }
 
 func loadEnv() {
@@ -152,11 +144,9 @@ func initialize() {
 	snowflake.Init()
 }
 
-func initJobsDB() {
-	jobsDB = setUpJobsDB()
-}
+func SetUpJobsDB(t testing.TB) *sql.DB {
+	t.Helper()
 
-func setUpJobsDB() *JobsDBResource {
 	pgCredentials := &postgres.CredentialsT{
 		DBName:   "jobsdb",
 		Password: "password",
@@ -165,17 +155,14 @@ func setUpJobsDB() *JobsDBResource {
 		SSLMode:  "disable",
 		Port:     "5432",
 	}
-	jobsDB := &JobsDBResource{}
-	jobsDB.Credentials = pgCredentials
 
-	var err error
-	if jobsDB.DB, err = postgres.Connect(*pgCredentials); err != nil {
-		log.Fatalf("could not connect to jobsDb with error: %s", err.Error())
-	}
-	if err = jobsDB.DB.Ping(); err != nil {
-		log.Fatalf("could not connect to jobsDb while pinging with error: %s", err.Error())
-	}
-	return jobsDB
+	db, err := postgres.Connect(*pgCredentials)
+	require.NoError(t, err)
+
+	err = db.Ping()
+	require.NoError(t, err)
+
+	return db
 }
 
 func initConnection(setup WarehouseTestSetup) {
@@ -184,7 +171,7 @@ func initConnection(setup WarehouseTestSetup) {
 	}
 }
 
-func VerifyEventsInStagingFiles(t testing.TB, wareHouseTest *WareHouseTest, eventsMap EventsCountMap) {
+func VerifyEventsInStagingFiles(t testing.TB, db *sql.DB, wareHouseTest *WareHouseTest, eventsMap EventsCountMap) {
 	t.Helper()
 	t.Logf("Started verifying events in staging files")
 
@@ -202,7 +189,7 @@ func VerifyEventsInStagingFiles(t testing.TB, wareHouseTest *WareHouseTest, even
 	require.NotEmpty(t, wareHouseTest.DestinationID)
 	require.NotEmpty(t, eventsMap)
 	require.NotEmpty(t, eventsMap[tableName])
-	require.NotNil(t, jobsDB.DB)
+	require.NotNil(t, db)
 
 	stagingFileEvents = eventsMap[tableName]
 
@@ -225,7 +212,7 @@ func VerifyEventsInStagingFiles(t testing.TB, wareHouseTest *WareHouseTest, even
 		sqlStatement,
 	)
 	operation = func() bool {
-		err = jobsDB.DB.QueryRow(
+		err = db.QueryRow(
 			sqlStatement,
 			workspaceID,
 			wareHouseTest.SourceID,
@@ -240,7 +227,7 @@ func VerifyEventsInStagingFiles(t testing.TB, wareHouseTest *WareHouseTest, even
 	t.Logf("Completed verifying events in staging files")
 }
 
-func VerifyEventsInLoadFiles(t testing.TB, wareHouseTest *WareHouseTest, eventsMap EventsCountMap) {
+func VerifyEventsInLoadFiles(t testing.TB, db *sql.DB, wareHouseTest *WareHouseTest, eventsMap EventsCountMap) {
 	t.Helper()
 	t.Logf("Started verifying events in load file")
 
@@ -255,7 +242,7 @@ func VerifyEventsInLoadFiles(t testing.TB, wareHouseTest *WareHouseTest, eventsM
 	require.NotEmpty(t, wareHouseTest.SourceID)
 	require.NotEmpty(t, wareHouseTest.DestinationID)
 	require.NotEmpty(t, eventsMap)
-	require.NotNil(t, jobsDB.DB)
+	require.NotNil(t, db)
 
 	for _, table := range wareHouseTest.Tables {
 		require.NotEmpty(t, eventsMap[table])
@@ -281,7 +268,7 @@ func VerifyEventsInLoadFiles(t testing.TB, wareHouseTest *WareHouseTest, eventsM
 			sqlStatement,
 		)
 		operation = func() bool {
-			err = jobsDB.DB.QueryRow(
+			err = db.QueryRow(
 				sqlStatement,
 				wareHouseTest.SourceID,
 				wareHouseTest.DestinationID,
@@ -297,7 +284,7 @@ func VerifyEventsInLoadFiles(t testing.TB, wareHouseTest *WareHouseTest, eventsM
 	t.Logf("Completed verifying events in load files")
 }
 
-func VerifyEventsInTableUploads(t testing.TB, wareHouseTest *WareHouseTest, eventsMap EventsCountMap) {
+func VerifyEventsInTableUploads(t testing.TB, db *sql.DB, wareHouseTest *WareHouseTest, eventsMap EventsCountMap) {
 	t.Helper()
 	t.Logf("Started verifying events in table uploads")
 
@@ -313,7 +300,7 @@ func VerifyEventsInTableUploads(t testing.TB, wareHouseTest *WareHouseTest, even
 	require.NotEmpty(t, wareHouseTest.SourceID)
 	require.NotEmpty(t, wareHouseTest.DestinationID)
 	require.NotEmpty(t, eventsMap)
-	require.NotNil(t, jobsDB.DB)
+	require.NotNil(t, db)
 
 	for _, table := range wareHouseTest.Tables {
 		require.NotEmpty(t, eventsMap[table])
@@ -345,7 +332,7 @@ func VerifyEventsInTableUploads(t testing.TB, wareHouseTest *WareHouseTest, even
 			sqlStatement,
 		)
 		operation = func() bool {
-			err = jobsDB.DB.QueryRow(
+			err = db.QueryRow(
 				sqlStatement,
 				workspaceID,
 				wareHouseTest.SourceID,
@@ -424,7 +411,7 @@ func VerifyEventsInWareHouse(t testing.TB, wareHouseTest *WareHouseTest, eventsM
 	t.Logf("Completed verifying events in warehouse")
 }
 
-func VerifyingConfigurationTest(t *testing.T, destination backendconfig.DestinationT) {
+func VerifyConfigurationTest(t *testing.T, destination backendconfig.DestinationT) {
 	t.Helper()
 	t.Logf("Started configuration tests for destination type: %s", destination.DestinationDefinition.Name)
 
@@ -612,11 +599,11 @@ func WarehouseSourceEventsMap() EventsCountMap {
 }
 
 func DefaultSourceRunConfig() map[string]string {
-	srcrunconfig := make(map[string]string)
-	srcrunconfig["job_run_id"] = ""
-	srcrunconfig["task_run_id"] = ""
+	config := make(map[string]string)
+	config["job_run_id"] = ""
+	config["task_run_id"] = ""
 
-	return srcrunconfig
+	return config
 }
 
 func GetUserId(userType string) string {

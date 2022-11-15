@@ -3,9 +3,9 @@
 package redshift_test
 
 import (
-	"database/sql"
 	"fmt"
-	"log"
+	"github.com/rudderlabs/rudder-server/utils/misc"
+	"github.com/rudderlabs/rudder-server/warehouse/validations"
 	"os"
 	"testing"
 
@@ -21,36 +21,26 @@ import (
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
-type TestHandle struct {
-	DB       *sql.DB
-	WriteKey string
-	Schema   string
-	Tables   []string
-}
-
-var handle *TestHandle
-
-func (*TestHandle) VerifyConnection() error {
-	credentials, err := testhelper.RedshiftCredentials()
-	if err != nil {
-		return err
-	}
-	return testhelper.WithConstantBackoff(func() (err error) {
-		handle.DB, err = redshift.Connect(credentials)
-		if err != nil {
-			err = fmt.Errorf("could not connect to warehouse redshift with error: %w", err)
-			return
-		}
-		return
-	})
-}
-
 func TestRedshiftIntegration(t *testing.T) {
+	t.Parallel()
+
+	if _, exists := os.LookupEnv(testhelper.RedshiftIntegrationTestCredentials); !exists {
+		t.Skipf("Skipping %s as %s is not set", t.Name(), testhelper.RedshiftIntegrationTestCredentials)
+	}
+
+	credentials, err := testhelper.RedshiftCredentials()
+	require.NoError(t, err)
+
+	db, err := redshift.Connect(credentials)
+	require.NoError(t, err)
+
+	schema := testhelper.Schema(warehouseutils.RS, testhelper.RedshiftIntegrationTestSchema)
+
 	t.Cleanup(func() {
 		require.NoError(t, testhelper.WithConstantBackoff(func() (err error) {
-			_, err = handle.DB.Exec(fmt.Sprintf(`DROP SCHEMA %q CASCADE;`, handle.Schema))
+			_, err = db.Exec(fmt.Sprintf(`DROP SCHEMA %q CASCADE;`, schema))
 			return
-		}), fmt.Sprintf("Failed dropping schema %s for Redshift", handle.Schema))
+		}), fmt.Sprintf("Failed dropping schema %s for Redshift", schema))
 	})
 
 	require.NoError(t, testhelper.SetConfig([]warehouseutils.KeyValue{
@@ -64,14 +54,16 @@ func TestRedshiftIntegration(t *testing.T) {
 		},
 	}))
 
+	jobsDB := testhelper.SetUpJobsDB(t)
+
 	warehouseTest := &testhelper.WareHouseTest{
 		Client: &client.Client{
-			SQL:  handle.DB,
+			SQL:  db,
 			Type: client.SQLClient,
 		},
-		WriteKey:      handle.WriteKey,
-		Schema:        handle.Schema,
-		Tables:        handle.Tables,
+		WriteKey:      "JAAwdCxmM8BIabKERsUhPNmMmdf",
+		Schema:        schema,
+		Tables:        []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"},
 		Provider:      warehouseutils.RS,
 		SourceID:      "279L3gEKqwruBoKGsXZtSVX7vIy",
 		DestinationID: "27SthahyhhqZE74HT4NTtNPl06V",
@@ -87,9 +79,9 @@ func TestRedshiftIntegration(t *testing.T) {
 	testhelper.SendEvents(t, warehouseTest, sendEventsMap)
 	testhelper.SendIntegratedEvents(t, warehouseTest, sendEventsMap)
 
-	testhelper.VerifyEventsInStagingFiles(t, warehouseTest, testhelper.StagingFilesEventsMap())
-	testhelper.VerifyEventsInLoadFiles(t, warehouseTest, testhelper.LoadFilesEventsMap())
-	testhelper.VerifyEventsInTableUploads(t, warehouseTest, testhelper.TableUploadsEventsMap())
+	testhelper.VerifyEventsInStagingFiles(t, jobsDB, warehouseTest, testhelper.StagingFilesEventsMap())
+	testhelper.VerifyEventsInLoadFiles(t, jobsDB, warehouseTest, testhelper.LoadFilesEventsMap())
+	testhelper.VerifyEventsInTableUploads(t, jobsDB, warehouseTest, testhelper.TableUploadsEventsMap())
 	testhelper.VerifyEventsInWareHouse(t, warehouseTest, testhelper.WarehouseEventsMap())
 
 	// Scenario 2
@@ -102,15 +94,25 @@ func TestRedshiftIntegration(t *testing.T) {
 	testhelper.SendModifiedEvents(t, warehouseTest, sendEventsMap)
 	testhelper.SendIntegratedEvents(t, warehouseTest, sendEventsMap)
 
-	testhelper.VerifyEventsInStagingFiles(t, warehouseTest, testhelper.StagingFilesEventsMap())
-	testhelper.VerifyEventsInLoadFiles(t, warehouseTest, testhelper.LoadFilesEventsMap())
-	testhelper.VerifyEventsInTableUploads(t, warehouseTest, testhelper.TableUploadsEventsMap())
+	testhelper.VerifyEventsInStagingFiles(t, jobsDB, warehouseTest, testhelper.StagingFilesEventsMap())
+	testhelper.VerifyEventsInLoadFiles(t, jobsDB, warehouseTest, testhelper.LoadFilesEventsMap())
+	testhelper.VerifyEventsInTableUploads(t, jobsDB, warehouseTest, testhelper.TableUploadsEventsMap())
 	testhelper.VerifyEventsInWareHouse(t, warehouseTest, testhelper.WarehouseEventsMap())
 
 	testhelper.VerifyWorkspaceIDInStats(t)
 }
 
 func TestRedshiftConfigurationValidation(t *testing.T) {
+	t.Parallel()
+
+	if _, exists := os.LookupEnv(testhelper.RedshiftIntegrationTestCredentials); !exists {
+		t.Skipf("Skipping %s as %s is not set", t.Name(), testhelper.RedshiftIntegrationTestCredentials)
+	}
+
+	misc.Init()
+	validations.Init()
+	warehouseutils.Init()
+
 	configurations := testhelper.PopulateTemplateConfigurations()
 	destination := backendconfig.DestinationT{
 		ID: "27SthahyhhqZE74HT4NTtNPl06V",
@@ -138,20 +140,5 @@ func TestRedshiftConfigurationValidation(t *testing.T) {
 		Enabled:    true,
 		RevisionID: "29HgOWobrn0RYZLpaSwPIbN2987",
 	}
-	testhelper.VerifyingConfigurationTest(t, destination)
-}
-
-func TestMain(m *testing.M) {
-	_, exists := os.LookupEnv(testhelper.RedshiftIntegrationTestCredentials)
-	if !exists {
-		log.Println("Skipping Redshift Test as the Test credentials does not exists.")
-		return
-	}
-
-	handle = &TestHandle{
-		WriteKey: "JAAwdCxmM8BIabKERsUhPNmMmdf",
-		Schema:   testhelper.Schema(warehouseutils.RS, testhelper.RedshiftIntegrationTestSchema),
-		Tables:   []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"},
-	}
-	os.Exit(testhelper.Run(m, handle))
+	testhelper.VerifyConfigurationTest(t, destination)
 }

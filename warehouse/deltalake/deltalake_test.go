@@ -4,7 +4,7 @@ package deltalake_test
 
 import (
 	"fmt"
-	"log"
+	"github.com/rudderlabs/rudder-server/warehouse/validations"
 	"os"
 	"testing"
 
@@ -24,29 +24,18 @@ import (
 	"github.com/rudderlabs/rudder-server/warehouse/testhelper"
 )
 
-type TestHandle struct{}
-
 var statsToVerify = []string{
 	"warehouse_deltalake_grpcExecTime",
 	"warehouse_deltalake_healthTimeouts",
 }
 
-func (*TestHandle) VerifyConnection() error {
-	credentials, err := testhelper.DatabricksCredentials()
-	if err != nil {
-		return err
-	}
-	return testhelper.WithConstantBackoff(func() (err error) {
-		_, err = deltalake.Connect(&credentials, 0)
-		if err != nil {
-			err = fmt.Errorf("could not connect to warehouse deltalake with error: %w", err)
-			return
-		}
-		return
-	})
-}
-
 func TestDeltalakeIntegration(t *testing.T) {
+	t.Parallel()
+
+	if _, exists := os.LookupEnv(testhelper.DeltalakeIntegrationTestCredentials); !exists {
+		t.Skipf("Skipping %s as %s is not set", t.Name(), testhelper.DeltalakeIntegrationTestCredentials)
+	}
+
 	credentials, err := testhelper.DatabricksCredentials()
 	require.NoError(t, err)
 
@@ -83,7 +72,7 @@ func TestDeltalakeIntegration(t *testing.T) {
 			name:            "Merge Mode",
 			sourceID:        "24p1HhPk09FW25Kuzvx7GshCLKR",
 			destinationID:   "24qeADObp6eIhjjDnEppO6P1SNc",
-			warehouseEvents: mergeEventsMap(),
+			warehouseEvents: mergeEvents(),
 			prerequisite: func(t *testing.T) {
 				require.NoError(t, testhelper.SetConfig([]warehouseutils.KeyValue{
 					{
@@ -97,7 +86,7 @@ func TestDeltalakeIntegration(t *testing.T) {
 			name:            "Append Mode",
 			sourceID:        "25H5EpYzojqQSepRSaGBrrPx3e4",
 			destinationID:   "25IDjdnoEus6DDNrth3SWO1FOpu",
-			warehouseEvents: appendEventsMap(),
+			warehouseEvents: appendEvents(),
 			prerequisite: func(t *testing.T) {
 				require.NoError(t, testhelper.SetConfig([]warehouseutils.KeyValue{
 					{
@@ -108,6 +97,8 @@ func TestDeltalakeIntegration(t *testing.T) {
 			},
 		},
 	}
+
+	jobsDB := testhelper.SetUpJobsDB(t)
 
 	for _, tc := range testCases {
 		tc := tc
@@ -141,9 +132,9 @@ func TestDeltalakeIntegration(t *testing.T) {
 			testhelper.SendEvents(t, warehouseTest, sendEventsMap)
 			testhelper.SendIntegratedEvents(t, warehouseTest, sendEventsMap)
 
-			testhelper.VerifyEventsInStagingFiles(t, warehouseTest, testhelper.StagingFilesEventsMap())
-			testhelper.VerifyEventsInLoadFiles(t, warehouseTest, testhelper.LoadFilesEventsMap())
-			testhelper.VerifyEventsInTableUploads(t, warehouseTest, testhelper.TableUploadsEventsMap())
+			testhelper.VerifyEventsInStagingFiles(t, jobsDB, warehouseTest, testhelper.StagingFilesEventsMap())
+			testhelper.VerifyEventsInLoadFiles(t, jobsDB, warehouseTest, testhelper.LoadFilesEventsMap())
+			testhelper.VerifyEventsInTableUploads(t, jobsDB, warehouseTest, testhelper.TableUploadsEventsMap())
 			testhelper.VerifyEventsInWareHouse(t, warehouseTest, tc.warehouseEvents)
 
 			// Scenario 2
@@ -156,9 +147,9 @@ func TestDeltalakeIntegration(t *testing.T) {
 			testhelper.SendModifiedEvents(t, warehouseTest, sendEventsMap)
 			testhelper.SendIntegratedEvents(t, warehouseTest, sendEventsMap)
 
-			testhelper.VerifyEventsInStagingFiles(t, warehouseTest, testhelper.StagingFilesEventsMap())
-			testhelper.VerifyEventsInLoadFiles(t, warehouseTest, testhelper.LoadFilesEventsMap())
-			testhelper.VerifyEventsInTableUploads(t, warehouseTest, testhelper.TableUploadsEventsMap())
+			testhelper.VerifyEventsInStagingFiles(t, jobsDB, warehouseTest, testhelper.StagingFilesEventsMap())
+			testhelper.VerifyEventsInLoadFiles(t, jobsDB, warehouseTest, testhelper.LoadFilesEventsMap())
+			testhelper.VerifyEventsInTableUploads(t, jobsDB, warehouseTest, testhelper.TableUploadsEventsMap())
 			testhelper.VerifyEventsInWareHouse(t, warehouseTest, tc.warehouseEvents)
 
 			testhelper.VerifyWorkspaceIDInStats(t, statsToVerify...)
@@ -167,6 +158,16 @@ func TestDeltalakeIntegration(t *testing.T) {
 }
 
 func TestDeltalakeConfigurationValidation(t *testing.T) {
+	t.Parallel()
+
+	if _, exists := os.LookupEnv(testhelper.DeltalakeIntegrationTestCredentials); !exists {
+		t.Skipf("Skipping %s as %s is not set", t.Name(), testhelper.DeltalakeIntegrationTestCredentials)
+	}
+
+	misc.Init()
+	validations.Init()
+	warehouseutils.Init()
+
 	configurations := testhelper.PopulateTemplateConfigurations()
 	destination := backendconfig.DestinationT{
 		ID: "25IDjdnoEus6DDNrth3SWO1FOpu",
@@ -196,10 +197,10 @@ func TestDeltalakeConfigurationValidation(t *testing.T) {
 		Enabled:    true,
 		RevisionID: "29eClxJQQlaWzMWyqnQctFDP5T2",
 	}
-	testhelper.VerifyingConfigurationTest(t, destination)
+	testhelper.VerifyConfigurationTest(t, destination)
 }
 
-func mergeEventsMap() testhelper.EventsCountMap {
+func mergeEvents() testhelper.EventsCountMap {
 	return testhelper.EventsCountMap{
 		"identifies":    1,
 		"users":         1,
@@ -212,7 +213,7 @@ func mergeEventsMap() testhelper.EventsCountMap {
 	}
 }
 
-func appendEventsMap() testhelper.EventsCountMap {
+func appendEvents() testhelper.EventsCountMap {
 	return testhelper.EventsCountMap{
 		"identifies":    2,
 		"users":         2,
@@ -223,13 +224,4 @@ func appendEventsMap() testhelper.EventsCountMap {
 		"aliases":       2,
 		"groups":        2,
 	}
-}
-
-func TestMain(m *testing.M) {
-	_, exists := os.LookupEnv(testhelper.DeltalakeIntegrationTestCredentials)
-	if !exists {
-		log.Println("Skipping Deltalake Test as the Test credentials does not exists.")
-		return
-	}
-	os.Exit(testhelper.Run(m, &TestHandle{}))
 }

@@ -3,6 +3,8 @@
 package datalake_test
 
 import (
+	"github.com/rudderlabs/rudder-server/utils/misc"
+	"github.com/rudderlabs/rudder-server/warehouse/validations"
 	"os"
 	"testing"
 
@@ -14,13 +16,9 @@ import (
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
-type TestHandle struct{}
-
-func (*TestHandle) VerifyConnection() error {
-	return nil
-}
-
 func TestDatalakeIntegration(t *testing.T) {
+	t.Parallel()
+
 	testCases := []struct {
 		name          string
 		writeKey      string
@@ -47,7 +45,7 @@ func TestDatalakeIntegration(t *testing.T) {
 			provider:      warehouseutils.GCS_DATALAKE,
 			prerequisite: func(t *testing.T) {
 				if _, exists := os.LookupEnv(testhelper.BigqueryIntegrationTestCredentials); !exists {
-					t.Skip("Skipping GCS Datalake Test as the Test credentials does not exists.")
+					t.Skip("Skipping GCS Datalake integration test as GCS credentials are not set")
 				}
 			},
 		},
@@ -59,6 +57,8 @@ func TestDatalakeIntegration(t *testing.T) {
 			provider:      warehouseutils.AZURE_DATALAKE,
 		},
 	}
+
+	jobsDB := testhelper.SetUpJobsDB(t)
 
 	for _, tc := range testCases {
 		tc := tc
@@ -87,9 +87,9 @@ func TestDatalakeIntegration(t *testing.T) {
 			testhelper.SendEvents(t, warehouseTest, sendEventsMap)
 			testhelper.SendIntegratedEvents(t, warehouseTest, sendEventsMap)
 
-			testhelper.VerifyEventsInStagingFiles(t, warehouseTest, testhelper.StagingFilesEventsMap())
-			testhelper.VerifyEventsInLoadFiles(t, warehouseTest, testhelper.LoadFilesEventsMap())
-			testhelper.VerifyEventsInTableUploads(t, warehouseTest, testhelper.TableUploadsEventsMap())
+			testhelper.VerifyEventsInStagingFiles(t, jobsDB, warehouseTest, testhelper.StagingFilesEventsMap())
+			testhelper.VerifyEventsInLoadFiles(t, jobsDB, warehouseTest, testhelper.LoadFilesEventsMap())
+			testhelper.VerifyEventsInTableUploads(t, jobsDB, warehouseTest, testhelper.TableUploadsEventsMap())
 
 			// Scenario 2
 			warehouseTest.TimestampBeforeSendingEvents = timeutil.Now()
@@ -101,9 +101,9 @@ func TestDatalakeIntegration(t *testing.T) {
 			testhelper.SendModifiedEvents(t, warehouseTest, sendEventsMap)
 			testhelper.SendIntegratedEvents(t, warehouseTest, sendEventsMap)
 
-			testhelper.VerifyEventsInStagingFiles(t, warehouseTest, testhelper.StagingFilesEventsMap())
-			testhelper.VerifyEventsInLoadFiles(t, warehouseTest, testhelper.LoadFilesEventsMap())
-			testhelper.VerifyEventsInTableUploads(t, warehouseTest, testhelper.TableUploadsEventsMap())
+			testhelper.VerifyEventsInStagingFiles(t, jobsDB, warehouseTest, testhelper.StagingFilesEventsMap())
+			testhelper.VerifyEventsInLoadFiles(t, jobsDB, warehouseTest, testhelper.LoadFilesEventsMap())
+			testhelper.VerifyEventsInTableUploads(t, jobsDB, warehouseTest, testhelper.TableUploadsEventsMap())
 
 			testhelper.VerifyWorkspaceIDInStats(t)
 		})
@@ -111,6 +111,12 @@ func TestDatalakeIntegration(t *testing.T) {
 }
 
 func TestDatalakeConfigurationValidation(t *testing.T) {
+	t.Parallel()
+
+	misc.Init()
+	validations.Init()
+	warehouseutils.Init()
+
 	configurations := testhelper.PopulateTemplateConfigurations()
 
 	t.Run("S3Datalake", func(t *testing.T) {
@@ -141,7 +147,7 @@ func TestDatalakeConfigurationValidation(t *testing.T) {
 			Enabled:    true,
 			RevisionID: "29HgOWobnr0RYZLpaSwPINb2987",
 		}
-		testhelper.VerifyingConfigurationTest(t, destination)
+		testhelper.VerifyConfigurationTest(t, destination)
 	})
 	t.Run("GCSDatalake", func(t *testing.T) {
 		t.Parallel()
@@ -170,7 +176,7 @@ func TestDatalakeConfigurationValidation(t *testing.T) {
 			Enabled:    true,
 			RevisionID: "29HgOWobnr0RYZpLASwPINb2987",
 		}
-		testhelper.VerifyingConfigurationTest(t, destination)
+		testhelper.VerifyConfigurationTest(t, destination)
 	})
 	t.Run("AzureDatalake", func(t *testing.T) {
 		t.Parallel()
@@ -196,10 +202,6 @@ func TestDatalakeConfigurationValidation(t *testing.T) {
 			Enabled:    true,
 			RevisionID: "29HgOWobnr0RYZLpaSwPIbN2987",
 		}
-		testhelper.VerifyingConfigurationTest(t, destination)
+		testhelper.VerifyConfigurationTest(t, destination)
 	})
-}
-
-func TestMain(m *testing.M) {
-	os.Exit(testhelper.Run(m, &TestHandle{}))
 }

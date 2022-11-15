@@ -139,5 +139,5 @@ func TestMain(m *testing.M) {
 		DestinationId:  "24qeADObp6eIhjjDnEppO6P1SNc",
 		Tables:         []string{"tracks", "google_sheet"},
 	}
-	os.Exit(testhelper.Run(m, handle))
+	os.Exit(testhelper.Setup(m, handle))
 }
