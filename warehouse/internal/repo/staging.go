@@ -265,13 +265,13 @@ func (repo *StagingFiles) GetInRange(ctx context.Context, sourceID, destinationI
 	return repo.parseRows(rows)
 }
 
-// GetAfterID returns staging files in [start, end] range.
+// GetAfterID returns staging files in (startID, +Inf) range.
 func (repo *StagingFiles) GetAfterID(ctx context.Context, sourceID, destinationID string, startID int64) ([]model.StagingFile, error) {
 	repo.init()
 
 	query := `SELECT ` + tableColumns + ` FROM ` + tableName + `
 	WHERE
-		id >= $1
+		id > $1
 		AND source_id = $2
 		AND destination_id = $3
 	ORDER BY

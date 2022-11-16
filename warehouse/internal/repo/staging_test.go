@@ -249,6 +249,7 @@ func TestStagingFileRepo_Many(t *testing.T) {
 		}
 
 		for _, tc := range testcases {
+			tc := tc
 			t.Run(tc.name, func(t *testing.T) {
 				t.Parallel()
 				retrieved, err := r.GetInRange(ctx, tc.sourceID, tc.destinationID, tc.startID, tc.endID)
@@ -284,7 +285,7 @@ func TestStagingFileRepo_Many(t *testing.T) {
 				destinationID: "destination_id",
 				startID:       5,
 
-				expected: stagingFiles[4:],
+				expected: stagingFiles[5:],
 			},
 			{
 				name:          "missing source id",
@@ -305,11 +306,12 @@ func TestStagingFileRepo_Many(t *testing.T) {
 		}
 
 		for _, tc := range testcases {
+			tc := tc
 			t.Run(tc.name, func(t *testing.T) {
 				t.Parallel()
 				retrieved, err := r.GetAfterID(ctx, tc.sourceID, tc.destinationID, tc.startID)
 				require.NoError(t, err)
-
+				t.Log(retrieved, tc.expected)
 				require.Equal(t, tc.expected, retrieved)
 			})
 		}
