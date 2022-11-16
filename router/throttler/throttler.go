@@ -67,6 +67,28 @@ func New(destinationID string, opts ...Option) *Client {
 	return &c
 }
 
+// CheckLimitReached returns true if we're not allowed to process the number of events we asked for with cost
+func (c *Client) CheckLimitReached(cost int64) (limited bool, tr throttling.TokenReturner, retErr error) {
+	if !c.isEnabled() {
+		return false, nil, nil
+	}
+
+	ctx := context.TODO()
+	rateLimitingKey := c.destinationID
+	allowed, tr, err := c.settings.rateLimiter.Limit(
+		ctx, cost, c.settings.eventLimit, getWindowInSecs(c.settings), rateLimitingKey,
+	)
+	if err != nil {
+		err = fmt.Errorf(`[[ %s-router-throttler: Error checking limitStatus: %w]]`, c.destinationID, err)
+		c.logger.Error(err)
+		return false, nil, err
+	}
+	if !allowed {
+		return true, nil, nil // no token to return when limited
+	}
+	return false, tr, nil
+}
+
 func (c *Client) readConfiguration() {
 	// set algo type
 	config.RegisterStringConfigVariable(
@@ -145,28 +167,6 @@ func (c *Client) newLimiter() *throttling.Limiter {
 		panic(fmt.Errorf("failed to create throttling limiter: %v", err))
 	}
 	return limiter
-}
-
-// CheckLimitReached returns true if number of events in the rolling window is less than the max events allowed, else false
-func (c *Client) CheckLimitReached(cost int64) (limited bool, tr throttling.TokenReturner, retErr error) {
-	if !c.isEnabled() {
-		return false, nil, nil
-	}
-
-	ctx := context.TODO()
-	rateLimitingKey := c.destinationID
-	allowed, tr, err := c.settings.rateLimiter.Limit(
-		ctx, cost, c.settings.eventLimit, getWindowInSecs(c.settings), rateLimitingKey,
-	)
-	if err != nil {
-		err = fmt.Errorf(`[[ %s-router-throttler: Error checking limitStatus: %w]]`, c.destinationID, err)
-		c.logger.Error(err)
-		return false, nil, err
-	}
-	if !allowed {
-		return true, nil, nil // no token to return when limited
-	}
-	return false, tr, nil
 }
 
 func (c *Client) isEnabled() bool {
