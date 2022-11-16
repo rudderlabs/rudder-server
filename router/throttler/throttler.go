@@ -48,7 +48,7 @@ type Client struct {
 }
 
 // New sets up a new eventLimiter
-func New(destinationID string, opts ...Option) *Client {
+func New(destinationID string, opts ...Option) (*Client, error) {
 	var c Client
 	for _, opt := range opts {
 		opt(&c)
@@ -56,15 +56,20 @@ func New(destinationID string, opts ...Option) *Client {
 	if c.logger == nil {
 		c.logger = logger.NewLogger().Child("router").Child("throttler")
 	}
-
 	c.destinationID = destinationID
-	c.readConfiguration()
 
-	if c.settings.enabled {
-		c.settings.rateLimiter = c.newLimiter()
+	err := c.readConfiguration()
+	if err != nil {
+		return nil, err
 	}
 
-	return &c
+	if c.settings.enabled {
+		if c.settings.rateLimiter, err = c.newLimiter(); err != nil {
+			return nil, err
+		}
+	}
+
+	return &c, nil
 }
 
 // CheckLimitReached returns true if we're not allowed to process the number of events we asked for with cost.
@@ -91,7 +96,7 @@ func (c *Client) CheckLimitReached(cost int64) (limited bool, tr throttling.Toke
 	return false, tr, nil
 }
 
-func (c *Client) readConfiguration() {
+func (c *Client) readConfiguration() error {
 	// set algo type
 	config.RegisterStringConfigVariable(
 		algoTypeGoRate, &c.algoType, false, fmt.Sprintf(`Router.throttler.%s.algoType`, c.destinationID),
@@ -106,7 +111,7 @@ func (c *Client) readConfiguration() {
 		switch c.algoType {
 		case algoTypeRedisGCRA, algoTypeRedisSortedSet:
 		default:
-			panic(fmt.Errorf("throttling algorithm type %q is not compatible with redis", c.algoType))
+			return fmt.Errorf("throttling algorithm type %q is not compatible with redis", c.algoType)
 		}
 
 		opts := redis.Options{Addr: redisAddr}
@@ -119,7 +124,7 @@ func (c *Client) readConfiguration() {
 		c.redisClient = redis.NewClient(&opts)
 
 		if err := c.redisClient.Ping(context.TODO()).Err(); err != nil {
-			panic(fmt.Errorf("%s-router-throttler: failed to connect to Redis: %w", c.destinationID, err))
+			return fmt.Errorf("%s-router-throttler: failed to connect to Redis: %w", c.destinationID, err)
 		}
 	}
 
@@ -146,29 +151,29 @@ func (c *Client) readConfiguration() {
 		)
 		c.settings.enabled = true
 	}
+
+	return nil
 }
 
-func (c *Client) newLimiter() *throttling.Limiter {
-	var (
-		err     error
-		limiter *throttling.Limiter
-	)
+func (c *Client) newLimiter() (l *throttling.Limiter, err error) {
 	switch c.algoType {
 	case algoTypeGoRate:
-		limiter, err = throttling.New(throttling.WithGoRate())
+		l, err = throttling.New(throttling.WithGoRate())
 	case algoTypeGCRA:
-		limiter, err = throttling.New(throttling.WithGCRA())
+		l, err = throttling.New(throttling.WithGCRA())
 	case algoTypeRedisGCRA:
-		limiter, err = throttling.New(throttling.WithGCRA(), throttling.WithRedisClient(c.redisClient))
+		l, err = throttling.New(throttling.WithGCRA(), throttling.WithRedisClient(c.redisClient))
 	case algoTypeRedisSortedSet:
-		limiter, err = throttling.New(throttling.WithRedisClient(c.redisClient))
+		l, err = throttling.New(throttling.WithRedisClient(c.redisClient))
 	default:
-		panic(fmt.Errorf("unknown throttling algorithm type: %s", c.algoType))
+		err = fmt.Errorf("unknown throttling algorithm type: %s", c.algoType)
+		return
 	}
 	if err != nil {
-		panic(fmt.Errorf("failed to create throttling limiter: %v", err))
+		err = fmt.Errorf("failed to create throttling limiter: %v", err)
+		return
 	}
-	return limiter
+	return
 }
 
 func (c *Client) isEnabled() bool {

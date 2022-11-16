@@ -1286,7 +1286,13 @@ func (rt *HandleT) shouldThrottle(job *jobsdb.JobT, parameters JobParametersT) (
 	throttling.TokenReturner,
 	bool,
 ) {
-	throttler := rt.getThrottler(parameters.DestinationID)
+	throttler, err := rt.getThrottler(parameters.DestinationID)
+	if err != nil {
+		rt.logger.Errorf(`[%v Router] :: Failed to get throttler for destination %s with error %v`,
+			rt.destName, parameters.DestinationID, err,
+		)
+		return nil, false
+	}
 	if throttler == nil {
 		return nil, false
 	}
@@ -2156,15 +2162,21 @@ func (rt *HandleT) updateProcessedEventsMetrics(statusList []*jobsdb.JobStatusT)
 	}
 }
 
-func (rt *HandleT) getThrottler(destID string) limiter {
+func (rt *HandleT) getThrottler(destID string) (limiter, error) {
 	rt.throttlerMu.Lock()
 	defer rt.throttlerMu.Unlock()
+
+	var err error
 	l, ok := rt.throttler[destID]
 	if !ok {
-		l = rtThrottler.New(destID, rtThrottler.WithLogger(rt.logger))
+		l, err = rtThrottler.New(destID, rtThrottler.WithLogger(rt.logger))
+		if err != nil {
+			return nil, err
+		}
 		rt.throttler[destID] = l
 	}
-	return l
+
+	return l, nil
 }
 
 func (rt *HandleT) getThrottlingCost(job *jobsdb.JobT) (cost int64) {
