@@ -5,6 +5,7 @@ package deltalake_test
 import (
 	"fmt"
 	"github.com/rudderlabs/rudder-server/warehouse/validations"
+	"os"
 	"testing"
 
 	"github.com/rudderlabs/rudder-server/utils/misc"
