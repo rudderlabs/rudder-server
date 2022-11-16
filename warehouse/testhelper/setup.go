@@ -341,10 +341,12 @@ func VerifyEventsInWareHouse(t testing.TB, wareHouseTest *WareHouseTest, eventsM
 				return countErr
 			}
 			if count != int64(tableCount) {
-				return fmt.Errorf("error in counting events in warehouse for schema: %s, table: %s,UserId: %s",
+				return fmt.Errorf("error in counting events in warehouse for schema: %s, table: %s, UserId: %s count: %d, expectedCount: %d",
 					wareHouseTest.Schema,
 					warehouseutils.ToProviderCase(wareHouseTest.Provider, table),
 					wareHouseTest.UserId,
+					count,
+					tableCount,
 				)
 			}
 			return nil
@@ -537,6 +539,13 @@ func DefaultWarehouseEventsMap() EventsCountMap {
 func DefaultWarehouseSourceEventsMap() EventsCountMap {
 	return EventsCountMap{
 		"google_sheet": 1,
+		"tracks":       1,
+	}
+}
+
+func DefaultWarehouseSourceEventsMapWithoutDedup() EventsCountMap {
+	return EventsCountMap{
+		"google_sheet": 3,
 		"tracks":       1,
 	}
 }

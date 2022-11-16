@@ -55,7 +55,7 @@ run: ## Run rudder-server using go run
 	$(GO) run main.go
 
 run-mt: ## Run rudder-server in multi-tenant deployment type
-	$(GO) run ./cmd/devtool etcd mode --no-wait normal 
+	$(GO) run ./cmd/devtool etcd mode --no-wait normal
 	$(GO) run ./cmd/devtool etcd workspaces --no-wait none
 	DEPLOYMENT_TYPE=MULTITENANT $(GO) run main.go
 
@@ -70,12 +70,12 @@ install-tools:
 	go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.2.0
 	go install gotest.tools/gotestsum@v1.8.2
 
-.PHONY: lint 
+.PHONY: lint
 lint: fmt ## Run linters on all go files
 	docker run --rm -v $(shell pwd):/app:ro -w /app golangci/golangci-lint:v1.49.0 bash -e -c \
 		'golangci-lint run -v --timeout 5m'
 
-.PHONY: fmt 
+.PHONY: fmt
 fmt: install-tools ## Formats all go files
 	gofumpt -l -w -extra  .
 
@@ -97,26 +97,13 @@ setup-warehouse-integration: cleanup-warehouse-integration
 logs-warehouse-integration:
 	docker logs wh-backend
 
-run-warehouse-integration: setup-warehouse-integration
-	if docker-compose -f warehouse/docker-compose.test.yml exec -T wh-backend go test -v ./warehouse/... -tags=warehouse_integration -p 8 -timeout 30m -count 1; then \
+run-warehouse-integration:
+ifdef tags
+	$(eval TAGS = -tags=$(tags))
+endif
+	if docker-compose -f warehouse/docker-compose.test.yml exec -T wh-backend go test -v ./warehouse/postgres/... $(TAGS) -p 8 -timeout 30m -count 1; then \
       	echo "Successfully ran Warehouse Integration Test. Getting backend container logs only."; \
-      	make logs-warehouse-integration; \
-      	make cleanup-warehouse-integration; \
     else \
       	echo "Failed running Warehouse Integration Test. Getting all logs from all containers"; \
-      	make logs-warehouse-integration; \
-      	make cleanup-warehouse-integration; \
-      	exit 1; \
- 	fi
-
-run-source-integration: setup-warehouse-integration
-	if docker-compose -f warehouse/docker-compose.test.yml exec -T wh-backend go test -v ./warehouse/... -tags=sources_integration -p 8 -timeout 30m -count 1; then \
-      	echo "Successfully ran Warehouse Integration Test. Getting backend container logs only."; \
-		make logs-warehouse-integration; \
-      	make cleanup-warehouse-integration; \
-    else \
-      	echo "Failed running Warehouse Integration Test. Getting all logs from all containers"; \
-		make logs-warehouse-integration; \
-      	make cleanup-warehouse-integration; \
       	exit 1; \
  	fi

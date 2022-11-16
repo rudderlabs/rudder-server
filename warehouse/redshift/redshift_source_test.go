@@ -3,10 +3,7 @@
 package redshift_test
 
 import (
-	"database/sql"
-	"encoding/json"
 	"fmt"
-	"log"
 	"os"
 	"testing"
 
@@ -20,80 +17,40 @@ import (
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
-type TestHandle struct {
-	DB             *sql.DB
-	WriteKey       string
-	Schema         string
-	Tables         []string
-	SourceId       string
-	DestinationId  string
-	SourceWriteKey string
-}
+func TestSourcesRedshiftIntegration(t *testing.T) {
+	t.Parallel()
 
-var handle *TestHandle
-
-const (
-	TestCredentialsKey = testhelper.RedshiftIntegrationTestCredentials
-	TestSchemaKey      = testhelper.RedshiftIntegrationTestSchema
-)
-
-// redshiftCredentials extracting redshift test credentials
-func redshiftCredentials() (rsCredentials redshift.RedshiftCredentialsT, err error) {
-	cred, exists := os.LookupEnv(TestCredentialsKey)
-	if !exists {
-		err = fmt.Errorf("following %s does not exists while running the Redshift test", TestCredentialsKey)
-		return
+	if _, exists := os.LookupEnv(testhelper.RedshiftIntegrationTestCredentials); !exists {
+		t.Skipf("Skipping %s as %s is not set", t.Name(), testhelper.RedshiftIntegrationTestCredentials)
 	}
 
-	err = json.Unmarshal([]byte(cred), &rsCredentials)
-	if err != nil {
-		err = fmt.Errorf("error occurred while unmarshalling redshift test credentials with err: %s", err.Error())
-	}
-	return
-}
+	redshift.Init()
 
-// VerifyConnection test connection for redshift
-func (*TestHandle) VerifyConnection() error {
-	credentials, err := redshiftCredentials()
-	if err != nil {
-		return err
-	}
+	credentials, err := testhelper.RedshiftCredentials()
+	require.NoError(t, err)
 
-	err = testhelper.WithConstantBackoff(func() (err error) {
-		handle.DB, err = redshift.Connect(credentials)
-		if err != nil {
-			err = fmt.Errorf("could not connect to warehouse redshift with error: %w", err)
-			return
-		}
-		return
-	})
-	if err != nil {
-		return fmt.Errorf("error while running test connection for redshift with err: %s", err.Error())
-	}
-	return nil
-}
+	db, err := redshift.Connect(credentials)
+	require.NoError(t, err)
 
-func TestSourceRedshiftIntegration(t *testing.T) {
-	// Cleanup resources
-	// Dropping temporary schema
+	schema := testhelper.Schema(warehouseutils.RS, testhelper.RedshiftIntegrationTestSchema)
+
 	t.Cleanup(func() {
 		require.NoError(t, testhelper.WithConstantBackoff(func() (err error) {
-			_, err = handle.DB.Exec(fmt.Sprintf(`DROP SCHEMA "%s" CASCADE;`, handle.Schema))
+			_, err = db.Exec(fmt.Sprintf(`DROP SCHEMA "%s" CASCADE;`, schema))
 			return
-		}), fmt.Sprintf("Failed dropping schema %s for Redshift", handle.Schema))
+		}), fmt.Sprintf("Failed dropping schema %s for Redshift", schema))
 	})
 
-	// Setting up the warehouseTest
 	warehouseTest := &testhelper.WareHouseTest{
 		Client: &client.Client{
-			SQL:  handle.DB,
+			SQL:  db,
 			Type: client.SQLClient,
 		},
-		Schema:                handle.Schema,
-		Tables:                handle.Tables,
-		SourceWriteKey:        handle.SourceWriteKey,
-		SourceID:              handle.SourceId,
-		DestinationID:         handle.DestinationId,
+		Schema:                schema,
+		Tables:                []string{"tracks", "google_sheet"},
+		SourceWriteKey:        "2DkCpXZcEvJK2fcpUD3LmjPI7J6",
+		SourceID:              "2DkCpUr0xfiGBPJxIwqyqfyHdq4",
+		DestinationID:         "27SthahyhhqZE74HT4NTtNPl06V",
 		LatestSourceRunConfig: testhelper.DefaultSourceRunConfig(),
 		MessageId:             misc.FastUUID().String(),
 		Provider:              warehouseutils.RS,
@@ -101,40 +58,19 @@ func TestSourceRedshiftIntegration(t *testing.T) {
 
 	warehouseTest.UserId = testhelper.GetUserId(warehouseutils.RS)
 	sendEventsMap := testhelper.DefaultSourceEventMap()
-	// Scenario 1
-	// Sending the first set of events.
-	// Since we handle dedupe on the staging table, we need to check if the first set of events reached the destination.
-	testhelper.SendEvents(t, warehouseTest, sendEventsMap)
-	testhelper.SendEvents(t, warehouseTest, sendEventsMap)
-	testhelper.SendEvents(t, warehouseTest, sendEventsMap)
-	warehouseEventsWithoutDeDup := testhelper.EventsCountMap{
-		"google_sheet": 3,
-		"tracks":       1,
-	}
-	testhelper.VerifyEventsInWareHouse(t, warehouseTest, warehouseEventsWithoutDeDup)
 
-	// Sending deduped events
 	testhelper.SendEvents(t, warehouseTest, sendEventsMap)
 	testhelper.SendEvents(t, warehouseTest, sendEventsMap)
 	testhelper.SendEvents(t, warehouseTest, sendEventsMap)
+
+	testhelper.VerifyEventsInWareHouse(t, warehouseTest, testhelper.DefaultWarehouseSourceEventsMapWithoutDedup())
+
+	testhelper.SendEvents(t, warehouseTest, sendEventsMap)
+	testhelper.SendEvents(t, warehouseTest, sendEventsMap)
+	testhelper.SendEvents(t, warehouseTest, sendEventsMap)
+
 	testhelper.SendAsyncRequest(t, warehouseTest)
 	testhelper.SendAsyncStatusRequest(t, warehouseTest)
+
 	testhelper.VerifyEventsInWareHouse(t, warehouseTest, testhelper.DefaultWarehouseSourceEventsMap())
-}
-
-func TestMain(m *testing.M) {
-	_, exists := os.LookupEnv(TestCredentialsKey)
-	if !exists {
-		log.Println("Skipping Redshift Test as the Test credentials does not exits.")
-		return
-	}
-
-	handle = &TestHandle{
-		SourceWriteKey: "2DkCpXZcEvJK2fcpUD3LmjPI7J6",
-		SourceId:       "2DkCpUr0xfiGBPJxIwqyqfyHdq4",
-		DestinationId:  "27SthahyhhqZE74HT4NTtNPl06V",
-		Schema:         testhelper.Schema(warehouseutils.RS, testhelper.RedshiftIntegrationTestSchema),
-		Tables:         []string{"tracks", "google_sheet"},
-	}
-	os.Exit(testhelper.Run(m, handle))
 }
