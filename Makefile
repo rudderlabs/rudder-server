@@ -103,7 +103,11 @@ ifdef tags
 endif
 	if docker-compose -f warehouse/docker-compose.test.yml exec -T wh-backend go test -v ./warehouse/... $(TAGS) -p 8 -timeout 30m -count 1; then \
       	echo "Successfully ran Warehouse Integration Test. Getting backend container logs only."; \
+      	make logs-warehouse-integration; \
+        make cleanup-warehouse-integration; \
     else \
       	echo "Failed running Warehouse Integration Test. Getting all logs from all containers"; \
+      	make logs-warehouse-integration; \
+        make cleanup-warehouse-integration; \
       	exit 1; \
  	fi
