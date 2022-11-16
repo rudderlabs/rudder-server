@@ -96,7 +96,7 @@ type HandleT struct {
 	throttler                map[string]limiter // map key is the destinationID
 	throttlerMu              sync.Mutex
 	// throttlingCosts is protected by the configSubscriberLock
-	throttlingCosts                         map[string]types.EventTypeThrottlingCost
+	throttlingCosts                         types.EventTypeThrottlingCost
 	guaranteeUserEventOrder                 bool
 	netClientTimeout                        time.Duration
 	backendProxyTimeout                     time.Duration
@@ -1291,7 +1291,7 @@ func (rt *HandleT) shouldThrottle(job *jobsdb.JobT, parameters JobParametersT) (
 		return nil, false
 	}
 
-	throttlingCost := rt.getThrottlingCost(parameters.DestinationID, job)
+	throttlingCost := rt.getThrottlingCost(job)
 
 	limited, tokensReturner, err := throttler.CheckLimitReached(throttlingCost)
 	if err != nil {
@@ -2014,13 +2014,7 @@ func (rt *HandleT) backendConfigSubscriber() {
 							// as the second key (e.g. track, identify, etc...) or default to apply the cost to all call types:
 							// dDT["config"]["throttlingCost"] = `{"eventType":{"default":1,"track":2,"identify":3}}`
 							if value, ok := destination.DestinationDefinition.Config["throttlingCost"].(map[string]interface{}); ok {
-								if _, ok := rt.throttlingCosts[destination.ID]; !ok {
-									if rt.throttlingCosts == nil {
-										rt.throttlingCosts = make(map[string]types.EventTypeThrottlingCost)
-									}
-
-									rt.throttlingCosts[destination.ID] = types.NewEventTypeThrottlingCost(value)
-								}
+								rt.throttlingCosts = types.NewEventTypeThrottlingCost(value)
 							}
 						}
 					}
@@ -2178,19 +2172,14 @@ func (rt *HandleT) getThrottler(destID string) limiter {
 	return l
 }
 
-func (rt *HandleT) getThrottlingCost(destID string, job *jobsdb.JobT) (cost int64) {
+func (rt *HandleT) getThrottlingCost(job *jobsdb.JobT) (cost int64) {
 	cost = 1 // default cost
 
 	rt.configSubscriberLock.RLock()
-	tc, ok := rt.throttlingCosts[destID]
-	rt.configSubscriberLock.RUnlock()
+	defer rt.configSubscriberLock.RUnlock()
 
-	if !ok {
-		return
-	}
-
-	if tc.DefaultCost > 0 { // TODO figure out event type
-		cost = tc.DefaultCost
+	if rt.throttlingCosts.DefaultCost > 0 { // TODO figure out event type
+		cost = rt.throttlingCosts.DefaultCost
 	}
 
 	return cost * int64(job.EventCount)
