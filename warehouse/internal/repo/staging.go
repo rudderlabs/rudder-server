@@ -33,6 +33,7 @@ const tableColumns = `
     workspace_id 
 `
 
+// StagingFiles is a repository for inserting and querying staging files.
 type StagingFiles struct {
 	DB  *sql.DB
 	Now func() time.Time
@@ -89,7 +90,7 @@ func (repo *StagingFiles) init() {
 	})
 }
 
-// Insert inserts a staging file into the staging files table.
+// Insert inserts a staging file into the staging files table. It returns the ID of the inserted staging file.
 //
 // NOTE: The following fields are ignored and set by the database:
 // - ID
@@ -165,6 +166,7 @@ func (repo *StagingFiles) Insert(ctx context.Context, stagingFile *model.Staging
 	return id, nil
 }
 
+// praseRow is a helper for mapping a row of tableColumns to a model.StagingFile.
 func (*StagingFiles) parseRows(rows *sql.Rows) ([]model.StagingFile, error) {
 	var stagingFiles []model.StagingFile
 	for rows.Next() {
@@ -223,7 +225,7 @@ func (*StagingFiles) parseRows(rows *sql.Rows) ([]model.StagingFile, error) {
 	return stagingFiles, nil
 }
 
-// GetInRange returns staging file with the given ID.
+// GetByID returns staging file with the given ID.
 func (repo *StagingFiles) GetByID(ctx context.Context, ID int64) (model.StagingFile, error) {
 	repo.init()
 
@@ -245,7 +247,7 @@ func (repo *StagingFiles) GetByID(ctx context.Context, ID int64) (model.StagingF
 	return entries[0], err
 }
 
-// GetInRange returns staging files in [startID, endID] range.
+// GetInRange returns staging files in [startID, endID] range inclusive.
 func (repo *StagingFiles) GetInRange(ctx context.Context, sourceID, destinationID string, startID, endID int64) ([]model.StagingFile, error) {
 	repo.init()
 

@@ -100,6 +100,10 @@ func mapStagingFile(payload *stagingFileSchema) (model.StagingFile, error) {
 	}, nil
 }
 
+// Handler returns a http handler for the warehouse API.
+//
+// Implemented routes:
+// - POST /v1/process
 func (api *WarehouseAPI) Handler() http.Handler {
 	srvMux := mux.NewRouter()
 	srvMux.HandleFunc("/v1/process", api.processHandler).Methods("POST")
