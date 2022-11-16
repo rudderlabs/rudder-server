@@ -121,7 +121,7 @@ func TestStagingFileRepo(t *testing.T) {
 
 	for _, tc := range testcases {
 		t.Run("insert and get: "+tc.name, func(t *testing.T) {
-			id, err := r.Insert(ctx, tc.stagingFile)
+			id, err := r.Insert(ctx, &tc.stagingFile)
 			require.NoError(t, err)
 			require.NotZero(t, id)
 
@@ -180,7 +180,7 @@ func TestStagingFileRepo_Many(t *testing.T) {
 			TimeWindow:            time.Date(1993, 8, 1, 3, 0, 0, 0, time.UTC),
 		}
 
-		id, err := r.Insert(ctx, file)
+		id, err := r.Insert(ctx, &file)
 		require.NoError(t, err)
 
 		file.ID = id

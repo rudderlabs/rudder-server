@@ -54,7 +54,7 @@ type metadataSchema struct {
 	DestinationRevisionID string `json:"destination_revision_id"`
 }
 
-func metadataFromStagingFile(stagingFile model.StagingFile) metadataSchema {
+func metadataFromStagingFile(stagingFile *model.StagingFile) metadataSchema {
 	return metadataSchema{
 		UseRudderStorage:      stagingFile.UseRudderStorage,
 		SourceBatchID:         stagingFile.SourceBatchID,
@@ -96,7 +96,7 @@ func (repo *StagingFiles) init() {
 // - Error
 // - CreatedAt
 // - UpdatedAt
-func (repo *StagingFiles) Insert(ctx context.Context, stagingFile model.StagingFile) (int64, error) {
+func (repo *StagingFiles) Insert(ctx context.Context, stagingFile *model.StagingFile) (int64, error) {
 	repo.init()
 
 	var (

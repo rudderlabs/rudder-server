@@ -20,7 +20,7 @@ import (
 var json = jsoniter.ConfigCompatibleWithStandardLibrary
 
 type stagingFilesRepo interface {
-	Insert(ctx context.Context, stagingFile model.StagingFile) (int64, error)
+	Insert(ctx context.Context, stagingFile *model.StagingFile) (int64, error)
 }
 
 type WarehouseAPI struct {
@@ -133,7 +133,7 @@ func (api *WarehouseAPI) processHandler(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	if _, err := api.Repo.Insert(ctx, stagingFile); err != nil {
+	if _, err := api.Repo.Insert(ctx, &stagingFile); err != nil {
 		api.Logger.Errorf("Error inserting staging file: %v", err)
 		http.Error(w, "can't insert staging file", http.StatusInternalServerError)
 		return

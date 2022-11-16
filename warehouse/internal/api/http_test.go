@@ -26,12 +26,12 @@ type memRepo struct {
 	err   error
 }
 
-func (m *memRepo) Insert(_ context.Context, stagingFile model.StagingFile) (int64, error) {
+func (m *memRepo) Insert(_ context.Context, stagingFile *model.StagingFile) (int64, error) {
 	if m.err != nil {
 		return 0, m.err
 	}
 
-	m.files = append(m.files, stagingFile)
+	m.files = append(m.files, *stagingFile)
 	return int64(len(m.files)), nil
 }
 
