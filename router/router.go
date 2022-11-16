@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/cenkalti/backoff/v4"
@@ -83,20 +84,19 @@ type DiagnosticT struct {
 
 // HandleT is the handle to this module.
 type HandleT struct {
-	responseQ                chan jobResponseT
-	jobsDB                   jobsdb.MultiTenantJobsDB
-	errorDB                  jobsdb.JobsDB
-	netHandle                NetHandleI
-	MultitenantI             tenantStats
-	destName                 string
-	destinationId            string
-	workers                  []*workerT
-	telemetry                *DiagnosticT
-	customDestinationManager customDestinationManager.DestinationManager
-	throttler                map[string]limiter // map key is the destinationID
-	throttlerMu              sync.Mutex
-	// throttlingCosts is protected by the configSubscriberLock
-	throttlingCosts                         types.EventTypeThrottlingCost
+	responseQ                               chan jobResponseT
+	jobsDB                                  jobsdb.MultiTenantJobsDB
+	errorDB                                 jobsdb.JobsDB
+	netHandle                               NetHandleI
+	MultitenantI                            tenantStats
+	destName                                string
+	destinationId                           string
+	workers                                 []*workerT
+	telemetry                               *DiagnosticT
+	customDestinationManager                customDestinationManager.DestinationManager
+	throttler                               map[string]limiter // map key is the destinationID
+	throttlerMu                             sync.Mutex
+	throttlingCosts                         atomic.Value
 	guaranteeUserEventOrder                 bool
 	netClientTimeout                        time.Duration
 	backendProxyTimeout                     time.Duration
@@ -2014,7 +2014,7 @@ func (rt *HandleT) backendConfigSubscriber() {
 							// as the second key (e.g. track, identify, etc...) or default to apply the cost to all call types:
 							// dDT["config"]["throttlingCost"] = `{"eventType":{"default":1,"track":2,"identify":3}}`
 							if value, ok := destination.DestinationDefinition.Config["throttlingCost"].(map[string]interface{}); ok {
-								rt.throttlingCosts = types.NewEventTypeThrottlingCost(value)
+								rt.throttlingCosts.Store(types.NewEventTypeThrottlingCost(value))
 							}
 						}
 					}
@@ -2172,10 +2172,14 @@ func (rt *HandleT) getThrottler(destID string) limiter {
 	return l
 }
 
-func (rt *HandleT) getThrottlingCost(job *jobsdb.JobT) int64 {
-	rt.configSubscriberLock.RLock()
-	defer rt.configSubscriberLock.RUnlock()
-
+func (rt *HandleT) getThrottlingCost(job *jobsdb.JobT) (cost int64) {
+	cost = 1
 	eventType := "" // TODO figure out event type
-	return rt.throttlingCosts.Cost(eventType) * int64(job.EventCount)
+
+	tc, ok := rt.throttlingCosts.Load().(types.EventTypeThrottlingCost)
+	if ok {
+		cost = tc.Cost(eventType)
+	}
+
+	return cost * int64(job.EventCount)
 }
