@@ -5,7 +5,6 @@ package deltalake_test
 import (
 	"fmt"
 	"github.com/rudderlabs/rudder-server/warehouse/validations"
-	"os"
 	"testing"
 
 	"github.com/rudderlabs/rudder-server/utils/misc"
@@ -65,15 +64,11 @@ func TestDeltalakeIntegration(t *testing.T) {
 
 	testCases := []struct {
 		name            string
-		sourceID        string
-		destinationID   string
 		warehouseEvents testhelper.EventsCountMap
 		prerequisite    func(t *testing.T)
 	}{
 		{
 			name:            "Merge Mode",
-			sourceID:        "25H5EpYzojqQSepRSaGBrrPx3e4",
-			destinationID:   "25IDjdnoEus6DDNrth3SWO1FOpu",
 			warehouseEvents: mergeEventsMap(),
 			prerequisite: func(t *testing.T) {
 				t.Helper()
@@ -87,8 +82,6 @@ func TestDeltalakeIntegration(t *testing.T) {
 		},
 		{
 			name:            "Append Mode",
-			sourceID:        "25H5EpYzojqQSepRSaGBrrPx3e4",
-			destinationID:   "25IDjdnoEus6DDNrth3SWO1FOpu",
 			warehouseEvents: appendEventsMap(),
 			prerequisite: func(t *testing.T) {
 				t.Helper()
@@ -117,13 +110,13 @@ func TestDeltalakeIntegration(t *testing.T) {
 					DBHandleT: db,
 					Type:      client.DBClient,
 				},
-				WriteKey:      "2eSJyYtqwcFiUILzXv2fcNIrWO7",
+				WriteKey:      "sToFgoilA0U1WxNeW1gdgUVDsEW",
 				Schema:        schema,
 				Tables:        []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"},
 				MessageId:     misc.FastUUID().String(),
 				Provider:      warehouseutils.DELTALAKE,
-				SourceID:      tc.sourceID,
-				DestinationID: tc.destinationID,
+				SourceID:      "25H5EpYzojqQSepRSaGBrrPx3e4",
+				DestinationID: "25IDjdnoEus6DDNrth3SWO1FOpu",
 			}
 
 			// Scenario 1
