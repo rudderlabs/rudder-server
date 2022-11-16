@@ -67,7 +67,9 @@ func New(destinationID string, opts ...Option) *Client {
 	return &c
 }
 
-// CheckLimitReached returns true if we're not allowed to process the number of events we asked for with cost
+// CheckLimitReached returns true if we're not allowed to process the number of events we asked for with cost.
+// Along with the boolean, it also returns a TokenReturner and an error. The TokenReturner should be called to return
+// the tokens to the limiter (bucket) in the eventuality that we did not move forward with the request.
 func (c *Client) CheckLimitReached(cost int64) (limited bool, tr throttling.TokenReturner, retErr error) {
 	if !c.isEnabled() {
 		return false, nil, nil
