@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.3.1](https://github.com/rudderlabs/rudder-server/compare/v1.3.0...v1.3.1) (2022-11-16)
+
+
+### Bug Fixes
+
+* use local variable for workspaceId in stash backup ([#2706](https://github.com/rudderlabs/rudder-server/issues/2706)) ([f0d3612](https://github.com/rudderlabs/rudder-server/commit/f0d36125a7cf8ef0e8ccf2c1d2134d40a62fd732))
+
 ## [1.3.0](https://github.com/rudderlabs/rudder-server/compare/v1.2.0...v1.3.0) (2022-11-10)
 
 
