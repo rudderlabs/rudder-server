@@ -4,14 +4,15 @@ package snowflake_test
 
 import (
 	"fmt"
+	"os"
+	"testing"
+
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/warehouse/client"
 	"github.com/rudderlabs/rudder-server/warehouse/snowflake"
 	"github.com/rudderlabs/rudder-server/warehouse/testhelper"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 	"github.com/stretchr/testify/require"
-	"os"
-	"testing"
 )
 
 func TestSourcesSnowflakeIntegration(t *testing.T) {

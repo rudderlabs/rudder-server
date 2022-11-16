@@ -3,8 +3,9 @@
 package mssql_test
 
 import (
-	"github.com/rudderlabs/rudder-server/warehouse/mssql"
 	"testing"
+
+	"github.com/rudderlabs/rudder-server/warehouse/mssql"
 
 	"github.com/rudderlabs/rudder-server/warehouse/client"
 	"github.com/rudderlabs/rudder-server/warehouse/testhelper"

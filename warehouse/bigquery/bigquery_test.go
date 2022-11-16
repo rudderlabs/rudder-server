@@ -3,13 +3,15 @@
 package bigquery_test
 
 import (
-	"cloud.google.com/go/bigquery"
 	"context"
 	"fmt"
-	"github.com/rudderlabs/rudder-server/utils/misc"
-	"github.com/rudderlabs/rudder-server/warehouse/validations"
 	"os"
 	"testing"
+
+	"cloud.google.com/go/bigquery"
+
+	"github.com/rudderlabs/rudder-server/utils/misc"
+	"github.com/rudderlabs/rudder-server/warehouse/validations"
 
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 

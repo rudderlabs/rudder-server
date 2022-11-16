@@ -4,11 +4,12 @@ package snowflake_test
 
 import (
 	"fmt"
-	"github.com/rudderlabs/rudder-server/utils/misc"
-	"github.com/rudderlabs/rudder-server/warehouse/validations"
 	"os"
 	"strings"
 	"testing"
+
+	"github.com/rudderlabs/rudder-server/utils/misc"
+	"github.com/rudderlabs/rudder-server/warehouse/validations"
 
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
 	"github.com/rudderlabs/rudder-server/warehouse/client"

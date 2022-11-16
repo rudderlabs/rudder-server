@@ -3,12 +3,13 @@
 package postgres_test
 
 import (
+	"testing"
+
 	"github.com/rudderlabs/rudder-server/warehouse/client"
 	"github.com/rudderlabs/rudder-server/warehouse/postgres"
 	"github.com/rudderlabs/rudder-server/warehouse/testhelper"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 	"github.com/stretchr/testify/require"
-	"testing"
 )
 
 func TestSourcesPostgresIntegration(t *testing.T) {

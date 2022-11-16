@@ -5,11 +5,12 @@ package clickhouse_test
 import (
 	"database/sql"
 	"fmt"
-	"github.com/rudderlabs/rudder-server/utils/misc"
-	"github.com/rudderlabs/rudder-server/warehouse/validations"
 	"log"
 	"strings"
 	"testing"
+
+	"github.com/rudderlabs/rudder-server/utils/misc"
+	"github.com/rudderlabs/rudder-server/warehouse/validations"
 
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/utils/timeutil"

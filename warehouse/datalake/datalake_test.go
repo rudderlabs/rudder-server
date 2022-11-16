@@ -3,11 +3,12 @@
 package datalake_test
 
 import (
+	"os"
+	"testing"
+
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/warehouse/datalake"
 	"github.com/rudderlabs/rudder-server/warehouse/validations"
-	"os"
-	"testing"
 
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/utils/timeutil"

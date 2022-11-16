@@ -4,10 +4,11 @@ package redshift_test
 
 import (
 	"fmt"
-	"github.com/rudderlabs/rudder-server/utils/misc"
-	"github.com/rudderlabs/rudder-server/warehouse/validations"
 	"os"
 	"testing"
+
+	"github.com/rudderlabs/rudder-server/utils/misc"
+	"github.com/rudderlabs/rudder-server/warehouse/validations"
 
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 

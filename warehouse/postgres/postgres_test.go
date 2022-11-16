@@ -3,10 +3,11 @@
 package postgres_test
 
 import (
+	"testing"
+
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/warehouse/validations"
 	"github.com/stretchr/testify/require"
-	"testing"
 
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
