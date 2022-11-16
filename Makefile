@@ -97,7 +97,7 @@ setup-warehouse-integration: cleanup-warehouse-integration
 logs-warehouse-integration:
 	docker logs wh-backend
 
-run-warehouse-integration:
+run-warehouse-integration: setup-warehouse-integration
 ifdef tags
 	$(eval TAGS = -tags=$(tags))
 endif
