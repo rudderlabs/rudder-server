@@ -1305,11 +1305,7 @@ func (rt *HandleT) shouldThrottle(job *jobsdb.JobT, parameters JobParametersT) (
 		return nil, false
 	}
 
-	if !limited {
-		return tokensReturner, false
-	}
-
-	return nil, true
+	return tokensReturner, limited
 }
 
 func (rt *HandleT) commitStatusList(responseList *[]jobResponseT) {
