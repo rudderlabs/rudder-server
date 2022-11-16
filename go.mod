@@ -214,4 +214,4 @@ require (
 	github.com/pelletier/go-toml/v2 v2.0.5 // indirect
 )
 
-require github.com/samber/lo v1.33.0
+require github.com/samber/lo v1.35.0
