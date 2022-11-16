@@ -26,7 +26,7 @@ type memRepo struct {
 	err   error
 }
 
-func (m *memRepo) Insert(ctx context.Context, stagingFile model.StagingFile) (int64, error) {
+func (m *memRepo) Insert(_ context.Context, stagingFile model.StagingFile) (int64, error) {
 	if m.err != nil {
 		return 0, m.err
 	}
@@ -163,7 +163,7 @@ func TestAPI_Process(t *testing.T) {
 				Multitenant: m,
 			}
 
-			req, err := http.NewRequest(http.MethodPost, "http://localhost:8080/v1/process", bytes.NewBuffer([]byte(tc.reqBody)))
+			req, err := http.NewRequest(http.MethodPost, "https://localhost:8080/v1/process", bytes.NewBuffer([]byte(tc.reqBody)))
 			require.NoError(t, err)
 			req.Header.Set("Content-Type", "application/json")
 			resp := httptest.NewRecorder()

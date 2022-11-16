@@ -165,7 +165,7 @@ func (repo *StagingFiles) Insert(ctx context.Context, stagingFile model.StagingF
 	return id, nil
 }
 
-func (repo *StagingFiles) parseRows(rows *sql.Rows) ([]model.StagingFile, error) {
+func (_ *StagingFiles) parseRows(rows *sql.Rows) ([]model.StagingFile, error) {
 	var stagingFiles []model.StagingFile
 	for rows.Next() {
 		var (
