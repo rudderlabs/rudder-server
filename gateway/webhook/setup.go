@@ -17,7 +17,7 @@ import (
 type GatewayI interface {
 	IncrementRecvCount(count uint64)
 	IncrementAckCount(count uint64)
-	UpdateSourceStats(writeKeyStats map[string]int, bucket string, sourceTagMap map[string]string)
+	UpdateSourceStats(writeKeyStats map[string]int, bucket string, sourceTagMap map[string]map[string]string)
 	TrackRequestMetrics(errorMessage string)
 	ProcessWebRequest(writer *http.ResponseWriter, req *http.Request, reqType string, requestPayload []byte, writeKey string) string
 	GetWebhookSourceDefName(writeKey string) (name string, ok bool)
