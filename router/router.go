@@ -2172,15 +2172,10 @@ func (rt *HandleT) getThrottler(destID string) limiter {
 	return l
 }
 
-func (rt *HandleT) getThrottlingCost(job *jobsdb.JobT) (cost int64) {
-	cost = 1 // default cost
-
+func (rt *HandleT) getThrottlingCost(job *jobsdb.JobT) int64 {
 	rt.configSubscriberLock.RLock()
 	defer rt.configSubscriberLock.RUnlock()
 
-	if rt.throttlingCosts.DefaultCost > 0 { // TODO figure out event type
-		cost = rt.throttlingCosts.DefaultCost
-	}
-
-	return cost * int64(job.EventCount)
+	eventType := "" // TODO figure out event type
+	return rt.throttlingCosts.Cost(eventType) * int64(job.EventCount)
 }

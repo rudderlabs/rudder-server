@@ -74,43 +74,20 @@ func (tm *TransformMessageT) JobIDs() map[int64]struct{} {
 }
 
 func NewEventTypeThrottlingCost(m map[string]interface{}) (v EventTypeThrottlingCost) {
-	v.Parse(m)
-	return
+	if et, ok := m["eventType"].(map[string]interface{}); ok {
+		v = et
+	}
+	return v
 }
 
-type EventTypeThrottlingCost struct {
-	DefaultCost,
-	Identify, Page, Screen,
-	Track, Group, Alias, Merge int64
-}
+type EventTypeThrottlingCost map[string]interface{}
 
-func (e *EventTypeThrottlingCost) Parse(m map[string]interface{}) {
-	et, ok := m["eventType"].(map[string]interface{})
-	if !ok {
-		return
+func (e *EventTypeThrottlingCost) Cost(eventType string) (cost int64) {
+	if v, ok := (*e)[eventType].(float64); ok && v > 0 {
+		return int64(v)
 	}
-	if defaultCost, ok := et["default"].(float64); ok {
-		e.DefaultCost = int64(defaultCost)
+	if defaultCost, ok := (*e)["default"].(float64); ok && defaultCost > 0 {
+		return int64(defaultCost)
 	}
-	if v, ok := et["identify"].(float64); ok {
-		e.Identify = int64(v)
-	}
-	if v, ok := et["page"].(float64); ok {
-		e.Identify = int64(v)
-	}
-	if v, ok := et["screen"].(float64); ok {
-		e.Identify = int64(v)
-	}
-	if v, ok := et["track"].(float64); ok {
-		e.Identify = int64(v)
-	}
-	if v, ok := et["group"].(float64); ok {
-		e.Identify = int64(v)
-	}
-	if v, ok := et["alias"].(float64); ok {
-		e.Identify = int64(v)
-	}
-	if v, ok := et["merge"].(float64); ok {
-		e.Identify = int64(v)
-	}
+	return 1
 }
