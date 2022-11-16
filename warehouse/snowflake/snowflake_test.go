@@ -104,7 +104,7 @@ func TestSnowflakeIntegration(t *testing.T) {
 			testhelper.SendEvents(t, warehouseTest, sendEventsMap)
 			testhelper.SendIntegratedEvents(t, warehouseTest, sendEventsMap)
 
-			testhelper.VerifyEventsInStagingFiles(t, jobsDB, warehouseTest, testhelper.DefaultStagingFilesEventsMap())
+			testhelper.VerifyEventsInStagingFiles(t, jobsDB, warehouseTest, stagingFilesEventsMap())
 			testhelper.VerifyEventsInLoadFiles(t, jobsDB, warehouseTest, testhelper.DefaultLoadFilesEventsMap())
 			testhelper.VerifyEventsInTableUploads(t, jobsDB, warehouseTest, testhelper.DefaultTableUploadsEventsMap())
 			testhelper.VerifyEventsInWareHouse(t, warehouseTest, testhelper.DefaultWarehouseEventsMap())
@@ -119,7 +119,7 @@ func TestSnowflakeIntegration(t *testing.T) {
 			testhelper.SendModifiedEvents(t, warehouseTest, sendEventsMap)
 			testhelper.SendIntegratedEvents(t, warehouseTest, sendEventsMap)
 
-			testhelper.VerifyEventsInStagingFiles(t, jobsDB, warehouseTest, testhelper.DefaultStagingFilesEventsMap())
+			testhelper.VerifyEventsInStagingFiles(t, jobsDB, warehouseTest, stagingFilesEventsMap())
 			testhelper.VerifyEventsInLoadFiles(t, jobsDB, warehouseTest, testhelper.DefaultLoadFilesEventsMap())
 			testhelper.VerifyEventsInTableUploads(t, jobsDB, warehouseTest, testhelper.DefaultTableUploadsEventsMap())
 			testhelper.VerifyEventsInWareHouse(t, warehouseTest, testhelper.DefaultWarehouseEventsMap())
@@ -172,4 +172,10 @@ func TestSnowflakeConfigurationValidation(t *testing.T) {
 		RevisionID: "29HgdgvNPwqFDMONSgmIZ3YSehV",
 	}
 	testhelper.VerifyConfigurationTest(t, destination)
+}
+
+func stagingFilesEventsMap() testhelper.EventsCountMap {
+	return testhelper.EventsCountMap{
+		"wh_staging_files": 34, // Since extra 2 merge events because of ID resolution
+	}
 }
