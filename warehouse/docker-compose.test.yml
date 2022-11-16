@@ -16,11 +16,13 @@ services:
       retries: 25
   wh-transformer:
     container_name: wh-transformer
-    image: rudderlabs/rudder-transformer:latest
+    image: rudderlabs/develop-rudder-transformer:master
     ports:
       - "9090"
+    environment:
+      - NUM_PROCS=1
     healthcheck:
-      test: wget --no-verbose --tries=1 --spider http://localhost:9090/health || exit 1
+      test: wget --no-verbose --tries=3 --spider http://localhost:9090/health || exit 1
       interval: 1s
       retries: 25
   wh-databricks-connector:
