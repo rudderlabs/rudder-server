@@ -414,9 +414,8 @@ func TestOAuth(t *testing.T) {
 					},
 				},
 			},
-			respCode:          500,
-			respBodyStatus:    "failed",
-			authErrorCategory: oauth.REFRESH_TOKEN,
+			respCode:       500,
+			respBodyStatus: "failed",
 
 			cpResponses: []cpResponseParams{
 				{
