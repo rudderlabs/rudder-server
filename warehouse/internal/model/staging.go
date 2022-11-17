@@ -6,8 +6,9 @@ import (
 )
 
 // StagingFile a domain model for a staging file.
-// 	The staging file contains events that should be loaded into a warehouse. 
-//	It is located in a cloud storage bucket. 
+//
+//	The staging file contains events that should be loaded into a warehouse.
+//	It is located in a cloud storage bucket.
 //	The model includes ownership, file location, schema for included events, and other metadata.
 type StagingFile struct {
 	ID                    int64
