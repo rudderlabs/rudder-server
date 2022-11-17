@@ -58,9 +58,7 @@ func (jd *HandleT) doMigrateDS(ctx context.Context) error {
 	dsList := jd.getDSList()
 	jd.dsListLock.RUnlock()
 
-	// this should enable us to remove
-	// `StatusCount/jobCount > jobStatusMigrateThres` check
-	err := jd.compactStatusTables(ctx, dsList)
+	err := jd.cleanupStatusTables(ctx, dsList)
 	if err != nil {
 		return err
 	}
@@ -157,15 +155,17 @@ func (jd *HandleT) doMigrateDS(ctx context.Context) error {
 	return err
 }
 
+// based on an estimate of the rows in DSs, gives a list of DSs for us to cleanup status tables
 func (jd *HandleT) getCleanUpCandidates(ctx context.Context, dsList []dataSetT) []dataSetT {
 	// get estimates for number of rows(jobs, statuses) in each DS
 
 	var rows *sql.Rows
-	rows, err := jd.dbHandle.Query(
+	rows, err := jd.dbHandle.QueryContext(
+		ctx,
 		fmt.Sprintf(
 			`SELECT reltuples AS estimate, relname FROM pg_class
 				WHERE
-					relname like '%s`, jd.tablePrefix) + `_job%'
+					relname like '%s`, jd.tablePrefix)+`_job%'
 						and
 					relname not like '%_id_seq'
 						and
@@ -177,7 +177,7 @@ func (jd *HandleT) getCleanUpCandidates(ctx context.Context, dsList []dataSetT) 
 	}
 	defer func() { _ = rows.Close() }()
 
-	var estimates = map[string]int64{}
+	estimates := map[string]int64{}
 	for rows.Next() {
 		var (
 			estimate  int64
@@ -207,9 +207,8 @@ func (jd *HandleT) getCleanUpCandidates(ctx context.Context, dsList []dataSetT) 
 		})
 }
 
-// clean status tables so that each job has only one status (the latest one)
-func (jd *HandleT) compactStatusTables(ctx context.Context, dsList []dataSetT) error {
-
+// based on an estimate cleans up the status tables
+func (jd *HandleT) cleanupStatusTables(ctx context.Context, dsList []dataSetT) error {
 	toCompact := jd.getCleanUpCandidates(ctx, dsList)
 
 	start := time.Now()
@@ -226,27 +225,10 @@ func (jd *HandleT) compactStatusTables(ctx context.Context, dsList []dataSetT) e
 			if liveDSCount >= maxMigrateDSProbe {
 				return nil
 			}
-			if _, err := tx.ExecContext(
+			if err := jd.cleanStatusTable(
 				ctx,
-				fmt.Sprintf(
-					`DELETE FROM %[1]q
-					where id
-					IN (
-						SELECT id 
-						FROM (
-							SELECT id, RANK()
-							OVER(
-								PARTITION BY job_id 
-								ORDER BY id DESC
-								)
-							as rank 
-							from %[1]q
-						)
-						as inner_table 
-						where rank > 1
-					)`,
-					statusTable,
-				),
+				tx,
+				statusTable.JobStatusTable,
 			); err != nil {
 				return err
 			}
@@ -254,6 +236,33 @@ func (jd *HandleT) compactStatusTables(ctx context.Context, dsList []dataSetT) e
 		}
 		return nil
 	})
+}
+
+// removes all except the ultimate status for each job
+func (*HandleT) cleanStatusTable(ctx context.Context, tx *Tx, table string) error {
+	_, err := tx.ExecContext(
+		ctx,
+		fmt.Sprintf(
+			`DELETE FROM %[1]q
+			where id
+			IN (
+				SELECT id 
+				FROM (
+					SELECT id, RANK()
+					OVER(
+						PARTITION BY job_id 
+						ORDER BY id DESC
+						)
+					as rank 
+					from %[1]q
+				)
+				as inner_table 
+				where rank > 1
+			)`,
+			table,
+		),
+	)
+	return err
 }
 
 // getMigrationList returns the list of datasets to migrate from,
@@ -425,7 +434,7 @@ func (jd *HandleT) checkIfMigrateDS(ds dataSetT) (
 	queryStat.Start()
 	defer queryStat.End()
 
-	var delCount, totalCount, statusCount int
+	var delCount, totalCount int
 	sqlStatement := fmt.Sprintf(`SELECT COUNT(*) from %q`, ds.JobTable)
 	row := jd.dbHandle.QueryRow(sqlStatement)
 	err := row.Scan(&totalCount)
@@ -440,17 +449,10 @@ func (jd *HandleT) checkIfMigrateDS(ds dataSetT) (
 	err = row.Scan(&delCount)
 	jd.assertError(err)
 
-	// Total number of job status. If this table grows too big (e.g. a lot of retries)
-	// we migrate to a new table and get rid of old job status
-	sqlStatement = fmt.Sprintf(`SELECT COUNT(*) from %q`, ds.JobStatusTable)
-	row = jd.dbHandle.QueryRow(sqlStatement)
-	err = row.Scan(&statusCount)
-	jd.assertError(err)
-
 	if totalCount == 0 {
 		jd.assert(
-			delCount == 0 && statusCount == 0,
-			fmt.Sprintf("delCount: %d, statusCount: %d. Either of them is not 0", delCount, statusCount))
+			delCount == 0,
+			fmt.Sprintf("delCount: %d. Either of them is not 0", delCount))
 		return false, false, 0
 	}
 
@@ -489,11 +491,10 @@ func (jd *HandleT) checkIfMigrateDS(ds dataSetT) (
 
 	smallThreshold := jobMinRowsMigrateThres * float64(*jd.MaxDSSize)
 	isSmall := func() bool {
-		return float64(totalCount) < smallThreshold && float64(statusCount) < smallThreshold
+		return float64(totalCount) < smallThreshold
 	}
 
-	if (float64(delCount)/float64(totalCount) > jobDoneMigrateThres) ||
-		(float64(statusCount)/float64(totalCount) > jobStatusMigrateThres) {
+	if float64(delCount)/float64(totalCount) > jobDoneMigrateThres {
 		return true, isSmall(), recordsLeft
 	}
 
