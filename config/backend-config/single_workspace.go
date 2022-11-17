@@ -18,12 +18,14 @@ import (
 )
 
 type singleWorkspaceConfig struct {
-	doOnce           sync.Once
-	Token            string
-	workspaceID      string
+	token            string
 	configBackendURL *url.URL
 	configJSONPath   string
 	configEnvHandler types.ConfigEnvI
+	region           string
+
+	workspaceIDOnce sync.Once
+	workspaceID     string
 }
 
 func (wc *singleWorkspaceConfig) SetUp() error {
@@ -33,17 +35,17 @@ func (wc *singleWorkspaceConfig) SetUp() error {
 		}
 		return nil
 	}
-	if wc.Token == "" {
-		wc.Token = config.GetWorkspaceToken()
+	if wc.token == "" {
+		wc.token = config.GetWorkspaceToken()
 	}
-	if wc.Token == "" {
+	if wc.token == "" {
 		return fmt.Errorf("single workspace: empty workspace config token")
 	}
 	return nil
 }
 
 func (wc *singleWorkspaceConfig) AccessToken() string {
-	return wc.Token
+	return wc.token
 }
 
 // Get returns sources from the workspace
@@ -97,7 +99,7 @@ func (wc *singleWorkspaceConfig) getFromAPI(ctx context.Context, _ string) (map[
 	}
 	workspaceID := sourcesJSON.WorkspaceID
 
-	wc.doOnce.Do(func() {
+	wc.workspaceIDOnce.Do(func() {
 		wc.workspaceID = workspaceID
 	})
 	config[workspaceID] = sourcesJSON
@@ -120,7 +122,7 @@ func (wc *singleWorkspaceConfig) getFromFile() (map[string]ConfigT, error) {
 		return config, err
 	}
 	workspaceID := configJSON.WorkspaceID
-	wc.doOnce.Do(func() {
+	wc.workspaceIDOnce.Do(func() {
 		pkgLogger.Info("Read workspace config from JSON file")
 		wc.workspaceID = workspaceID
 	})
@@ -134,8 +136,13 @@ func (wc *singleWorkspaceConfig) makeHTTPRequest(ctx context.Context, url string
 		return nil, err
 	}
 
-	req.SetBasicAuth(wc.Token, "")
+	req.SetBasicAuth(wc.token, "")
 	req.Header.Set("Content-Type", "application/json")
+	if wc.region != "" {
+		q := req.URL.Query()
+		q.Add("region", wc.region)
+		req.URL.RawQuery = q.Encode()
+	}
 
 	client := &http.Client{Timeout: config.GetDuration("HttpClient.backendConfig.timeout", 30, time.Second)}
 	resp, err := client.Do(req)
@@ -160,6 +167,6 @@ func (wc *singleWorkspaceConfig) makeHTTPRequest(ctx context.Context, url string
 func (wc *singleWorkspaceConfig) Identity() identity.Identifier {
 	return &identity.Workspace{
 		WorkspaceID:    wc.workspaceID,
-		WorkspaceToken: wc.Token,
+		WorkspaceToken: wc.token,
 	}
 }
