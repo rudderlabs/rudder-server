@@ -104,7 +104,7 @@ func (webhook *HandleT) failRequest(w http.ResponseWriter, r *http.Request, reas
 	statTags := map[string]map[string]string{
 		stat: {
 			"reqType": "webhook",
-			`reason`:  reason,
+			"reason":  reason,
 		},
 	}
 	misc.IncrementMapByKey(writeKeyFailStats, stat, 1)
@@ -146,7 +146,7 @@ func (webhook *HandleT) RequestHandler(w http.ResponseWriter, r *http.Request) {
 			r,
 			response.GetStatus(response.InvalidWriteKey),
 			response.GetErrorStatusCode(response.InvalidWriteKey),
-			`invalidWriteKey`,
+			"invalidWriteKey",
 		)
 		atomic.AddUint64(&webhook.ackCount, 1)
 		return

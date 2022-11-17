@@ -192,31 +192,31 @@ type HandleT struct {
 }
 
 func (gateway *HandleT) updateSourceStats(sourceStats map[string]int, bucket string, sourceTagMap map[string]map[string]string) {
-	for sourceTag, count := range sourceStats {
+	for sourceTag := range sourceStats {
 		tags := map[string]string{
 			"source":      sourceTag,
-			"writeKey":    sourceTagMap[sourceTag][`writeKey`],
+			"writeKey":    sourceTagMap[sourceTag]["writeKey"],
 			"reqType":     sourceTagMap[sourceTag]["reqType"],
 			"workspaceId": sourceTagMap[sourceTag]["workspaceId"],
 			"sourceID":    sourceTagMap[sourceTag]["sourceID"],
 		}
 		sourceStatsD := gateway.stats.NewTaggedStat(bucket, stats.CountType, tags)
-		sourceStatsD.Count(count)
+		sourceStatsD.Count(sourceStats[sourceTag])
 	}
 }
 
 func (gateway *HandleT) updateFailedSourceStats(sourceStats map[string]int, bucket string, sourceTagMap map[string]map[string]string) {
-	for sourceTag, count := range sourceStats {
+	for sourceTag := range sourceStats {
 		tags := map[string]string{
 			"source":      sourceTag,
-			"writeKey":    sourceTagMap[sourceTag][`writeKey`],
+			"writeKey":    sourceTagMap[sourceTag]["writeKey"],
 			"reqType":     sourceTagMap[sourceTag]["reqType"],
 			"workspaceId": sourceTagMap[sourceTag]["workspaceId"],
 			"reason":      sourceTagMap[sourceTag]["reason"],
 			"sourceID":    sourceTagMap[sourceTag]["sourceID"],
 		}
 		sourceStatsD := gateway.stats.NewTaggedStat(bucket, stats.CountType, tags)
-		sourceStatsD.Count(count)
+		sourceStatsD.Count(sourceStats[sourceTag])
 	}
 }
 
