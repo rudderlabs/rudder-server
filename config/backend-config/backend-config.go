@@ -271,7 +271,7 @@ func (bc *backendConfigImpl) Subscribe(ctx context.Context, topic Topic) pubsub.
 	return bc.eb.Subscribe(ctx, string(topic))
 }
 
-func newForDeployment(deploymentType deployment.Type, configEnvHandler types.ConfigEnvI) (BackendConfig, error) {
+func newForDeployment(deploymentType deployment.Type, region string, configEnvHandler types.ConfigEnvI) (BackendConfig, error) {
 	backendConfig := &backendConfigImpl{
 		eb: pubsub.New(),
 	}
@@ -286,12 +286,14 @@ func newForDeployment(deploymentType deployment.Type, configEnvHandler types.Con
 			configJSONPath:   configJSONPath,
 			configBackendURL: parsedConfigBackendURL,
 			configEnvHandler: configEnvHandler,
+			region:           region,
 		}
 	case deployment.MultiTenantType:
 		backendConfig.workspaceConfig = &namespaceConfig{
-			ConfigBackendURL: parsedConfigBackendURL,
+			configBackendURL: parsedConfigBackendURL,
 			configEnvHandler: configEnvHandler,
 			cpRouterURL:      cpRouterURL,
+			region:           region,
 		}
 	default:
 		return nil, fmt.Errorf("deployment type %q not supported", deploymentType)
@@ -303,11 +305,12 @@ func newForDeployment(deploymentType deployment.Type, configEnvHandler types.Con
 // Setup backend config
 func Setup(configEnvHandler types.ConfigEnvI) (err error) {
 	deploymentType, err := deployment.GetFromEnv()
+	region := config.GetString("region", "")
 	if err != nil {
 		return fmt.Errorf("deployment type from env: %w", err)
 	}
 
-	backendConfig, err := newForDeployment(deploymentType, configEnvHandler)
+	backendConfig, err := newForDeployment(deploymentType, region, configEnvHandler)
 	if err != nil {
 		return err
 	}
