@@ -3,225 +3,276 @@
 package warehouse
 
 import (
+	"testing"
+
+	"github.com/rudderlabs/rudder-server/warehouse/model"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
+	"github.com/stretchr/testify/require"
 )
 
+func TestHandleSchemaChange(t *testing.T) {
+	inputs := []struct {
+		name             string
+		existingDatatype string
+		currentDataType  string
+		value            any
+
+		newColumnVal any
+		convError    error
+	}{
+		{
+			name:             "should send int values if existing datatype is int, new datatype is float",
+			existingDatatype: "int",
+			currentDataType:  "float",
+			value:            1.501,
+			newColumnVal:     1,
+		},
+		{
+			name:             "should send float values if existing datatype is float, new datatype is int",
+			existingDatatype: "float",
+			currentDataType:  "int",
+			value:            1,
+			newColumnVal:     1.0,
+		},
+		{
+			name:             "should send string values if existing datatype is string, new datatype is boolean",
+			existingDatatype: "string",
+			currentDataType:  "boolean",
+			value:            false,
+			newColumnVal:     "false",
+		},
+		{
+			name:             "should send string values if existing datatype is string, new datatype is int",
+			existingDatatype: "string",
+			currentDataType:  "int",
+			value:            1,
+			newColumnVal:     "1",
+		},
+		{
+			name:             "should send string values if existing datatype is string, new datatype is float",
+			existingDatatype: "string",
+			currentDataType:  "float",
+			value:            1.501,
+			newColumnVal:     "1.501",
+		},
+		{
+			name:             "should send string values if existing datatype is string, new datatype is datetime",
+			existingDatatype: "string",
+			currentDataType:  "datetime",
+			value:            "2022-05-05T00:00:00.000Z",
+			newColumnVal:     "2022-05-05T00:00:00.000Z",
+		},
+		{
+			name:             "should send string values if existing datatype is string, new datatype is string",
+			existingDatatype: "string",
+			currentDataType:  "json",
+			value:            `{"json":true}`,
+			newColumnVal:     `{"json":true}`,
+		},
+		{
+			name:             "should send json string values if existing datatype is json, new datatype is boolean",
+			existingDatatype: "json",
+			currentDataType:  "boolean",
+			value:            false,
+			newColumnVal:     "false",
+		},
+		{
+			name:             "should send json string values if existing datatype is jso, new datatype is int",
+			existingDatatype: "json",
+			currentDataType:  "int",
+			value:            1,
+			newColumnVal:     "1",
+		},
+		{
+			name:             "should send json string values if existing datatype is json, new datatype is float",
+			existingDatatype: "json",
+			currentDataType:  "float",
+			value:            1.501,
+			newColumnVal:     "1.501",
+		},
+		{
+			name:             "should send json string values if existing datatype is json, new datatype is json",
+			existingDatatype: "json",
+			currentDataType:  "datetime",
+			value:            "2022-05-05T00:00:00.000Z",
+			newColumnVal:     `"2022-05-05T00:00:00.000Z"`,
+		},
+		{
+			name:             "should send json string values if existing datatype is json, new datatype is string",
+			existingDatatype: "json",
+			currentDataType:  "string",
+			value:            "string value",
+			newColumnVal:     `"string value"`,
+		},
+		{
+			name:             "should send json string values if existing datatype is json, new datatype is array",
+			existingDatatype: "json",
+			currentDataType:  "array",
+			value:            []any{false, 1, "string value"},
+			newColumnVal:     []any{false, 1, "string value"},
+		},
+		{
+			name:             "existing datatype is boolean, new datatype is int",
+			existingDatatype: "boolean",
+			currentDataType:  "int",
+			value:            1,
+			convError:        ErrSchemaConversionNotSupported,
+		},
+		{
+			name:             "existing datatype is boolean, new datatype is float",
+			existingDatatype: "boolean",
+			currentDataType:  "float",
+			value:            1.501,
+			convError:        ErrSchemaConversionNotSupported,
+		},
+		{
+			name:             "existing datatype is boolean, new datatype is string",
+			existingDatatype: "boolean",
+			currentDataType:  "string",
+			value:            "string value",
+			convError:        ErrSchemaConversionNotSupported,
+		},
+		{
+			name:             "existing datatype is boolean, new datatype is datetime",
+			existingDatatype: "boolean",
+			currentDataType:  "datetime",
+			value:            "2022-05-05T00:00:00.000Z",
+			convError:        ErrSchemaConversionNotSupported,
+		},
+		{
+			name:             "existing datatype is boolean, new datatype is json",
+			existingDatatype: "boolean",
+			currentDataType:  "json",
+			value:            `{"json":true}`,
+			convError:        ErrSchemaConversionNotSupported,
+		},
+		{
+			name:             "existing datatype is int, new datatype is boolean",
+			existingDatatype: "int",
+			currentDataType:  "boolean",
+			value:            false,
+			convError:        ErrSchemaConversionNotSupported,
+		},
+		{
+			name:             "existing datatype is int, new datatype is string",
+			existingDatatype: "int",
+			currentDataType:  "string",
+			value:            "string value",
+			convError:        ErrSchemaConversionNotSupported,
+		},
+		{
+			name:             "existing datatype is int, new datatype is datetime",
+			existingDatatype: "int",
+			currentDataType:  "datetime",
+			value:            "2022-05-05T00:00:00.000Z",
+			convError:        ErrSchemaConversionNotSupported,
+		},
+		{
+			name:             "existing datatype is int, new datatype is json",
+			existingDatatype: "int",
+			currentDataType:  "json",
+			value:            `{"json":true}`,
+			convError:        ErrSchemaConversionNotSupported,
+		},
+		{
+			name:             "existing datatype is int, new datatype is float",
+			existingDatatype: "int",
+			currentDataType:  "float",
+			value:            1,
+			convError:        ErrIncompatibleSchemaConversion,
+		},
+		{
+			name:             "existing datatype is float, new datatype is boolean",
+			existingDatatype: "float",
+			currentDataType:  "boolean",
+			value:            false,
+			convError:        ErrSchemaConversionNotSupported,
+		},
+		{
+			name:             "existing datatype is float, new datatype is int",
+			existingDatatype: "float",
+			currentDataType:  "int",
+			value:            1.0,
+			convError:        ErrIncompatibleSchemaConversion,
+		},
+		{
+			name:             "existing datatype is float, new datatype is string",
+			existingDatatype: "float",
+			currentDataType:  "string",
+			value:            "string value",
+			convError:        ErrSchemaConversionNotSupported,
+		},
+		{
+			name:             "existing datatype is float, new datatype is datetime",
+			existingDatatype: "float",
+			currentDataType:  "datetime",
+			value:            "2022-05-05T00:00:00.000Z",
+			convError:        ErrSchemaConversionNotSupported,
+		},
+		{
+			name:             "existing datatype is float, new datatype is json",
+			existingDatatype: "float",
+			currentDataType:  "json",
+			value:            `{"json":true}`,
+			convError:        ErrSchemaConversionNotSupported,
+		},
+		{
+			name:             "existing datatype is datetime, new datatype is boolean",
+			existingDatatype: "datetime",
+			currentDataType:  "boolean",
+			value:            false,
+			convError:        ErrSchemaConversionNotSupported,
+		},
+		{
+			name:             "existing datatype is datetime, new datatype is string",
+			existingDatatype: "datetime",
+			currentDataType:  "string",
+			value:            "string value",
+			convError:        ErrSchemaConversionNotSupported,
+		},
+		{
+			name:             "existing datatype is datetime, new datatype is int",
+			existingDatatype: "datetime",
+			currentDataType:  "int",
+			value:            1,
+			convError:        ErrSchemaConversionNotSupported,
+		},
+		{
+			name:             "existing datatype is datetime, new datatype is float",
+			existingDatatype: "datetime",
+			currentDataType:  "float",
+			value:            1.501,
+			convError:        ErrSchemaConversionNotSupported,
+		},
+		{
+			name:             "existing datatype is datetime, new datatype is json",
+			existingDatatype: "datetime",
+			currentDataType:  "json",
+			value:            `{"json":true}`,
+			convError:        ErrSchemaConversionNotSupported,
+		},
+	}
+	for _, ip := range inputs {
+		tc := ip
+
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			newColumnVal, convError := HandleSchemaChange(
+				model.SchemaType(tc.existingDatatype),
+				model.SchemaType(tc.currentDataType),
+				tc.value,
+			)
+			require.Equal(t, newColumnVal, tc.newColumnVal)
+			require.Equal(t, convError, tc.convError)
+		})
+	}
+}
+
 var _ = Describe("Schema", func() {
-	Describe("Handle schema change", func() {
-		Context("No discards", func() {
-			It("should send int values if existing datatype is int", func() {
-				var newColumnVal, columnVal, convertedVal interface{}
-				var ok bool
-
-				columnVal = 1.501
-				convertedVal = 1
-				newColumnVal, ok = HandleSchemaChange("int", "float", columnVal)
-				Expect(newColumnVal).To(Equal(convertedVal))
-				Expect(ok).To(BeTrue())
-			})
-
-			It("should send float values if existing datatype is float", func() {
-				var newColumnVal, columnVal, convertedVal interface{}
-				var ok bool
-
-				columnVal = 1
-				convertedVal = 1.0
-				newColumnVal, ok = HandleSchemaChange("float", "int", columnVal)
-				Expect(newColumnVal).To(Equal(convertedVal))
-				Expect(ok).To(BeTrue())
-			})
-
-			It("should send string values if existing datatype is string", func() {
-				var newColumnVal, columnVal, convertedVal interface{}
-				var ok bool
-
-				columnVal = false
-				convertedVal = "false"
-				newColumnVal, ok = HandleSchemaChange("string", "boolean", columnVal)
-				Expect(newColumnVal).To(Equal(convertedVal))
-				Expect(ok).To(BeTrue())
-
-				columnVal = 1
-				convertedVal = "1"
-				newColumnVal, ok = HandleSchemaChange("string", "int", columnVal)
-				Expect(newColumnVal).To(Equal(convertedVal))
-				Expect(ok).To(BeTrue())
-
-				columnVal = 1.501
-				convertedVal = "1.501"
-				newColumnVal, ok = HandleSchemaChange("string", "float", columnVal)
-				Expect(newColumnVal).To(Equal(convertedVal))
-				Expect(ok).To(BeTrue())
-
-				columnVal = "2022-05-05T00:00:00.000Z"
-				convertedVal = "2022-05-05T00:00:00.000Z"
-				newColumnVal, ok = HandleSchemaChange("string", "datetime", columnVal)
-				Expect(newColumnVal).To(Equal(convertedVal))
-				Expect(ok).To(BeTrue())
-
-				columnVal = `{"json":true}`
-				convertedVal = `{"json":true}`
-				newColumnVal, ok = HandleSchemaChange("string", "json", columnVal)
-				Expect(newColumnVal).To(Equal(convertedVal))
-				Expect(ok).To(BeTrue())
-			})
-
-			It("should send json string values if existing datatype is json", func() {
-				var newColumnVal, columnVal, convertedVal interface{}
-				var ok bool
-
-				columnVal = false
-				convertedVal = "false"
-				newColumnVal, ok = HandleSchemaChange("json", "boolean", columnVal)
-				Expect(newColumnVal).To(Equal(convertedVal))
-				Expect(ok).To(BeTrue())
-
-				columnVal = 1
-				convertedVal = "1"
-				newColumnVal, ok = HandleSchemaChange("json", "int", columnVal)
-				Expect(newColumnVal).To(Equal(convertedVal))
-				Expect(ok).To(BeTrue())
-
-				columnVal = 1.501
-				convertedVal = "1.501"
-				newColumnVal, ok = HandleSchemaChange("json", "float", columnVal)
-				Expect(newColumnVal).To(Equal(convertedVal))
-				Expect(ok).To(BeTrue())
-
-				columnVal = "2022-05-05T00:00:00.000Z"
-				convertedVal = `"2022-05-05T00:00:00.000Z"`
-				newColumnVal, ok = HandleSchemaChange("json", "datetime", columnVal)
-				Expect(newColumnVal).To(Equal(convertedVal))
-				Expect(ok).To(BeTrue())
-
-				columnVal = "string value"
-				convertedVal = `"string value"`
-				newColumnVal, ok = HandleSchemaChange("json", "string", columnVal)
-				Expect(newColumnVal).To(Equal(convertedVal))
-				Expect(ok).To(BeTrue())
-
-				var columnArrVal []interface{}
-				columnArrVal = append(columnArrVal, false, 1, "string value")
-				newColumnVal, ok = HandleSchemaChange("json", "string", columnArrVal)
-				Expect(newColumnVal).To(Equal(columnArrVal))
-				Expect(ok).To(BeTrue())
-			})
-		})
-
-		Context("Discards", func() {
-			It("existing datatype is boolean", func() {
-				var newColumnVal, columnVal interface{}
-				var ok bool
-
-				columnVal = 1
-				newColumnVal, ok = HandleSchemaChange("boolean", "int", columnVal)
-				Expect(newColumnVal).To(BeNil())
-				Expect(ok).To(BeFalse())
-
-				columnVal = 1.501
-				newColumnVal, ok = HandleSchemaChange("boolean", "float", columnVal)
-				Expect(newColumnVal).To(BeNil())
-				Expect(ok).To(BeFalse())
-
-				columnVal = "string value"
-				newColumnVal, ok = HandleSchemaChange("boolean", "string", columnVal)
-				Expect(newColumnVal).To(BeNil())
-				Expect(ok).To(BeFalse())
-
-				columnVal = "2022-05-05T00:00:00.000Z"
-				newColumnVal, ok = HandleSchemaChange("boolean", "datetime", columnVal)
-				Expect(newColumnVal).To(BeNil())
-				Expect(ok).To(BeFalse())
-
-				columnVal = `{"json":true}`
-				newColumnVal, ok = HandleSchemaChange("boolean", "json", columnVal)
-				Expect(newColumnVal).To(BeNil())
-				Expect(ok).To(BeFalse())
-			})
-
-			It("existing datatype is int", func() {
-				var newColumnVal, columnVal interface{}
-				var ok bool
-
-				columnVal = false
-				newColumnVal, ok = HandleSchemaChange("int", "boolean", columnVal)
-				Expect(newColumnVal).To(BeNil())
-				Expect(ok).To(BeFalse())
-
-				columnVal = "string value"
-				newColumnVal, ok = HandleSchemaChange("int", "string", columnVal)
-				Expect(newColumnVal).To(BeNil())
-				Expect(ok).To(BeFalse())
-
-				columnVal = "2022-05-05T00:00:00.000Z"
-				newColumnVal, ok = HandleSchemaChange("int", "datetime", columnVal)
-				Expect(newColumnVal).To(BeNil())
-				Expect(ok).To(BeFalse())
-
-				columnVal = `{"json":true}`
-				newColumnVal, ok = HandleSchemaChange("int", "json", columnVal)
-				Expect(newColumnVal).To(BeNil())
-				Expect(ok).To(BeFalse())
-			})
-
-			It("existing datatype is float", func() {
-				var newColumnVal, columnVal interface{}
-				var ok bool
-
-				columnVal = false
-				newColumnVal, ok = HandleSchemaChange("float", "boolean", columnVal)
-				Expect(newColumnVal).To(BeNil())
-				Expect(ok).To(BeFalse())
-
-				columnVal = "string value"
-				newColumnVal, ok = HandleSchemaChange("float", "string", columnVal)
-				Expect(newColumnVal).To(BeNil())
-				Expect(ok).To(BeFalse())
-
-				columnVal = "2022-05-05T00:00:00.000Z"
-				newColumnVal, ok = HandleSchemaChange("float", "datetime", columnVal)
-				Expect(newColumnVal).To(BeNil())
-				Expect(ok).To(BeFalse())
-
-				columnVal = `{"json":true}`
-				newColumnVal, ok = HandleSchemaChange("float", "json", columnVal)
-				Expect(newColumnVal).To(BeNil())
-				Expect(ok).To(BeFalse())
-			})
-
-			It("existing datatype is datetime", func() {
-				var newColumnVal, columnVal interface{}
-				var ok bool
-				columnVal = false
-				newColumnVal, ok = HandleSchemaChange("datetime", "boolean", columnVal)
-				Expect(newColumnVal).To(BeNil())
-				Expect(ok).To(BeFalse())
-
-				columnVal = "string value"
-				newColumnVal, ok = HandleSchemaChange("datetime", "string", columnVal)
-				Expect(newColumnVal).To(BeNil())
-				Expect(ok).To(BeFalse())
-
-				columnVal = 1
-				newColumnVal, ok = HandleSchemaChange("datetime", "int", columnVal)
-				Expect(newColumnVal).To(BeNil())
-				Expect(ok).To(BeFalse())
-
-				columnVal = 1.501
-				newColumnVal, ok = HandleSchemaChange("datetime", "float", columnVal)
-				Expect(newColumnVal).To(BeNil())
-				Expect(ok).To(BeFalse())
-
-				columnVal = `{"json":true}`
-				newColumnVal, ok = HandleSchemaChange("datetime", "json", columnVal)
-				Expect(newColumnVal).To(BeNil())
-				Expect(ok).To(BeFalse())
-			})
-		})
-	})
-
 	DescribeTable("Get table schema diff", func(tableName string, currentSchema, uploadSchema warehouseutils.SchemaT, expected warehouseutils.TableSchemaDiffT) {
 		Expect(getTableSchemaDiff(tableName, currentSchema, uploadSchema)).To(Equal(expected))
 	},
