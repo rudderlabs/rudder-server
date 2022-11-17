@@ -170,7 +170,8 @@ func NewJobService(config JobServiceConfig) (JobService, error) {
 		localDB:  localDB,
 		sharedDB: sharedDB,
 	}
-	return handler, handler.init()
+	err = handler.init()
+	return handler, err
 }
 
 func NewNoOpService() JobService {
