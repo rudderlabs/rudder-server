@@ -96,7 +96,7 @@ type HandleT struct {
 	customDestinationManager                customDestinationManager.DestinationManager
 	throttler                               map[string]limiter // map key is the destinationID
 	throttlerMu                             sync.Mutex
-	throttlingCosts                         atomic.Value
+	throttlingCosts                         atomic.Pointer[types.EventTypeThrottlingCost]
 	guaranteeUserEventOrder                 bool
 	netClientTimeout                        time.Duration
 	backendProxyTimeout                     time.Duration
@@ -2011,7 +2011,8 @@ func (rt *HandleT) backendConfigSubscriber() {
 							// as the second key (e.g. track, identify, etc...) or default to apply the cost to all call types:
 							// dDT["config"]["throttlingCost"] = `{"eventType":{"default":1,"track":2,"identify":3}}`
 							if value, ok := destination.DestinationDefinition.Config["throttlingCost"].(map[string]interface{}); ok {
-								rt.throttlingCosts.Store(types.NewEventTypeThrottlingCost(value))
+								m := types.NewEventTypeThrottlingCost(value)
+								rt.throttlingCosts.Store(&m)
 							}
 						}
 					}
@@ -2179,8 +2180,7 @@ func (rt *HandleT) getThrottlingCost(job *jobsdb.JobT) (cost int64) {
 	cost = 1
 	eventType := gjson.GetBytes(job.Parameters, "event_type").String()
 
-	tc, ok := rt.throttlingCosts.Load().(types.EventTypeThrottlingCost)
-	if ok {
+	if tc := rt.throttlingCosts.Load(); tc != nil {
 		cost = tc.Cost(eventType)
 	}
 
