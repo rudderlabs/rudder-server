@@ -20,6 +20,7 @@ message GetConnectionTokenSuccessResponse {
   string service = 2;
   string instanceID = 3;
   string tokenType = 4;
+  map<string, string> labels = 5;
 }
 
 message ErrorResponse {
