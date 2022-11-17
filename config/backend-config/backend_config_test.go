@@ -111,10 +111,10 @@ func TestBadResponse(t *testing.T) {
 
 	configs := map[string]workspaceConfig{
 		"namespace": &namespaceConfig{
-			ConfigBackendURL: parsedURL,
-			Namespace:        "some-namespace",
-			Client:           http.DefaultClient,
-			Logger:           logger.NOP,
+			configBackendURL: parsedURL,
+			namespace:        "some-namespace",
+			client:           http.DefaultClient,
+			logger:           logger.NOP,
 		},
 		"single-workspace": &singleWorkspaceConfig{
 			configBackendURL: parsedURL,
@@ -154,7 +154,7 @@ func TestNewForDeployment(t *testing.T) {
 	initBackendConfig()
 	t.Run("dedicated", func(t *testing.T) {
 		t.Setenv("WORKSPACE_TOKEN", "foobar")
-		conf, err := newForDeployment(deployment.DedicatedType, nil)
+		conf, err := newForDeployment(deployment.DedicatedType, "US", nil)
 		require.NoError(t, err)
 		cb, ok := conf.(*backendConfigImpl)
 		require.True(t, ok)
@@ -165,7 +165,7 @@ func TestNewForDeployment(t *testing.T) {
 	t.Run("multi-tenant", func(t *testing.T) {
 		t.Setenv("WORKSPACE_NAMESPACE", "spaghetti")
 		t.Setenv("HOSTED_SERVICE_SECRET", "foobar")
-		conf, err := newForDeployment(deployment.MultiTenantType, nil)
+		conf, err := newForDeployment(deployment.MultiTenantType, "", nil)
 		require.NoError(t, err)
 
 		cb, ok := conf.(*backendConfigImpl)
@@ -175,7 +175,7 @@ func TestNewForDeployment(t *testing.T) {
 	})
 
 	t.Run("unsupported", func(t *testing.T) {
-		_, err := newForDeployment("UNSUPPORTED_TYPE", nil)
+		_, err := newForDeployment("UNSUPPORTED_TYPE", "", nil)
 		require.ErrorContains(t, err, `deployment type "UNSUPPORTED_TYPE" not supported`)
 	})
 }
