@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.3.2](https://github.com/rudderlabs/rudder-server/compare/v1.3.1...v1.3.2) (2022-11-17)
+
+
+### Bug Fixes
+
+* batch router event delivery time ([#2711](https://github.com/rudderlabs/rudder-server/issues/2711)) ([3782597](https://github.com/rudderlabs/rudder-server/commit/3782597f469cfda6dbe8d30689b4483becf63fec))
+* incorrect stats captured at gateway ([#2710](https://github.com/rudderlabs/rudder-server/issues/2710)) ([52e8fa0](https://github.com/rudderlabs/rudder-server/commit/52e8fa0e6a90cac218c24a7491f8d3a9fbce33d6))
+
 ## [1.3.1](https://github.com/rudderlabs/rudder-server/compare/v1.3.0...v1.3.1) (2022-11-16)
 
 
