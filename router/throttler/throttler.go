@@ -3,6 +3,7 @@ package throttler
 import (
 	"context"
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/go-redis/redis/v8"
@@ -18,6 +19,8 @@ const (
 	algoTypeRedisGCRA      = "redis-gcra"
 	algoTypeRedisSortedSet = "redis-sorted-set"
 )
+
+var clientsPool redisClientsPool
 
 type limiter interface {
 	// Limit should return true if the request can be done or false if the limit is reached.
@@ -114,18 +117,11 @@ func (c *Client) readConfiguration() error {
 			return fmt.Errorf("throttling algorithm type %q is not compatible with redis", c.algoType)
 		}
 
-		opts := redis.Options{Addr: redisAddr}
-		if redisUser != "" {
-			opts.Username = redisUser
-		}
-		if redisPassword != "" {
-			opts.Password = redisPassword
-		}
-		c.redisClient = redis.NewClient(&opts)
-
-		if err := c.redisClient.Ping(context.TODO()).Err(); err != nil {
+		client, err := clientsPool.get(context.TODO(), redisAddr, redisUser, redisPassword)
+		if err != nil {
 			return fmt.Errorf("%s-router-throttler: failed to connect to Redis: %w", c.destinationID, err)
 		}
+		c.redisClient = client
 	}
 
 	// set eventLimit
@@ -182,4 +178,47 @@ func (c *Client) isEnabled() bool {
 
 func getWindowInSecs(l limiterSettings) int64 {
 	return int64(l.timeWindow.Seconds())
+}
+
+type redisClientsPool struct {
+	clients map[string]*redis.Client
+	mutex   sync.Mutex
+}
+
+func (p *redisClientsPool) get(ctx context.Context, addr, user, password string) (*redis.Client, error) {
+	var (
+		client *redis.Client
+		ok     bool
+	)
+
+	p.mutex.Lock()
+	if p.clients == nil {
+		p.clients = make(map[string]*redis.Client)
+	} else {
+		client, ok = p.clients[addr]
+	}
+	p.mutex.Unlock() // unlock, no need to keep the lock while connecting to redis
+	if ok {
+		return client, nil
+	}
+
+	c := redis.NewClient(&redis.Options{
+		Addr:     addr,
+		Username: user,
+		Password: password,
+	})
+	if err := c.Ping(ctx).Err(); err != nil {
+		return nil, err
+	}
+
+	p.mutex.Lock()
+	defer p.mutex.Unlock()
+	client, ok = p.clients[addr]
+	if ok { // somebody else was faster, return the other client and discard the one we just created
+		return client, nil
+	}
+
+	p.clients[addr] = c
+
+	return c, nil
 }
