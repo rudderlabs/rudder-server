@@ -100,7 +100,7 @@ func (mr *MockGatewayIMockRecorder) TrackRequestMetrics(arg0 interface{}) *gomoc
 }
 
 // UpdateSourceStats mocks base method.
-func (m *MockGatewayI) UpdateSourceStats(arg0 map[string]int, arg1 string, arg2 map[string]string) {
+func (m *MockGatewayI) UpdateSourceStats(arg0 map[string]int, arg1 string, arg2 map[string]map[string]string) {
 	m.ctrl.T.Helper()
 	m.ctrl.Call(m, "UpdateSourceStats", arg0, arg1, arg2)
 }
