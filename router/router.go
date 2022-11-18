@@ -2178,9 +2178,8 @@ func (rt *HandleT) getThrottler(destID string) (limiter, error) {
 
 func (rt *HandleT) getThrottlingCost(job *jobsdb.JobT) (cost int64) {
 	cost = 1
-	eventType := gjson.GetBytes(job.Parameters, "event_type").String()
-
 	if tc := rt.throttlingCosts.Load(); tc != nil {
+		eventType := gjson.GetBytes(job.Parameters, "event_type").String()
 		cost = tc.Cost(eventType)
 	}
 
