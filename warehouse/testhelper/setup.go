@@ -3,6 +3,7 @@ package testhelper
 import (
 	"context"
 	"database/sql"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -43,16 +44,45 @@ type EventsCountMap map[string]int
 type WareHouseTest struct {
 	Client                       *client.Client
 	WriteKey                     string
-	SourceWriteKey               string
 	Schema                       string
 	UserId                       string
-	MessageId                    string
+	MessageID                    string
+	JobRunID                     string
+	TaskRunID                    string
+	RecordID                     string
 	Tables                       []string
 	Provider                     string
-	LatestSourceRunConfig        map[string]string
 	SourceID                     string
 	DestinationID                string
 	TimestampBeforeSendingEvents time.Time
+}
+
+func (w *WareHouseTest) MsgId() string {
+	if w.MessageID == "" {
+		return misc.FastUUID().String()
+	}
+	return w.MessageID
+}
+
+func (w *WareHouseTest) SourceJobRunID() string {
+	if w.JobRunID == "" {
+		return misc.FastUUID().String()
+	}
+	return w.JobRunID
+}
+
+func (w *WareHouseTest) SourceTaskRunID() string {
+	if w.TaskRunID == "" {
+		return misc.FastUUID().String()
+	}
+	return w.TaskRunID
+}
+
+func (w *WareHouseTest) SourceRecordID() string {
+	if w.RecordID == "" {
+		return misc.FastUUID().String()
+	}
+	return w.RecordID
 }
 
 type WarehouseTestSetup interface {
@@ -474,12 +504,6 @@ func WithConstantBackoff(operation func() error) error {
 	return backoff.Retry(operation, backoffWithMaxRetry)
 }
 
-func DefaultSourceEventMap() EventsCountMap {
-	return EventsCountMap{
-		"google_sheet": 1,
-	}
-}
-
 func SendEventsMap() EventsCountMap {
 	return EventsCountMap{
 		"identifies": 1,
@@ -536,26 +560,37 @@ func DefaultWarehouseEventsMap() EventsCountMap {
 	}
 }
 
-func DefaultWarehouseSourceEventsMap() EventsCountMap {
+func SourcesSendEventMap() EventsCountMap {
 	return EventsCountMap{
 		"google_sheet": 1,
-		"tracks":       1,
 	}
 }
 
-func DefaultWarehouseSourceEventsMapWithoutDedup() EventsCountMap {
+func SourcesStagingFilesEventsMap() EventsCountMap {
 	return EventsCountMap{
-		"google_sheet": 3,
-		"tracks":       1,
+		"wh_staging_files": 8,
 	}
 }
 
-func DefaultSourceRunConfig() map[string]string {
-	config := make(map[string]string)
-	config["job_run_id"] = ""
-	config["task_run_id"] = ""
+func SourcesLoadFilesEventsMap() EventsCountMap {
+	return EventsCountMap{
+		"tracks":       4,
+		"google_sheet": 4,
+	}
+}
 
-	return config
+func SourcesTableUploadsEventsMap() EventsCountMap {
+	return EventsCountMap{
+		"tracks":       4,
+		"google_sheet": 4,
+	}
+}
+
+func SourcesWarehouseEventsMap() EventsCountMap {
+	return EventsCountMap{
+		"google_sheet": 4,
+		"tracks":       4,
+	}
 }
 
 func GetUserId(userType string) string {
@@ -605,6 +640,8 @@ func PopulateTemplateConfigurations() map[string]string {
 		"postgresPassword": "rudder-password",
 		"postgresPort":     "5432",
 
+		"postgresSourcesWriteKey": "kwzDkh9h2fhfUVuS9jZ8uVbhV3v",
+
 		"clickHouseWriteKey": "C5AWX39IVUWSP2NcHciWvqZTa2N",
 		"clickHouseHost":     "wh-clickhouse",
 		"clickHouseDatabase": "rudderdb",
@@ -627,6 +664,8 @@ func PopulateTemplateConfigurations() map[string]string {
 		"mssqlPassword": "reallyStrongPwd123",
 		"mssqlPort":     "1433",
 
+		"mssqlSourcesWriteKey": "2DkCpXZcEvPG2fcpUD3LmjPI7J6",
+
 		"azureDatalakeWriteKey":      "Hf4GTz4OiufmUqR1cq6KIeguOdC",
 		"azureDatalakeContainerName": "azure-datalake-test",
 		"azureDatalakeAccountName":   "MYACCESSKEY",
@@ -640,9 +679,12 @@ func PopulateTemplateConfigurations() map[string]string {
 		"gcsDatalakeWriteKey": "9zZFfcRqr2LpwerxICilhQmMybn",
 
 		"bigqueryWriteKey":               "J77aX7tLFJ84qYU6UrN8ctecwZt",
+		"bigquerySourcesWriteKey":        "J77aeABtLFJ84qYU6UrN8ctewZt",
 		"snowflakeWriteKey":              "2eSJyYtqwcFiUILzXv2fcNIrWO7",
 		"snowflakeCaseSensitiveWriteKey": "2eSJyYtqwcFYUILzXv2fcNIrWO7",
+		"snowflakeSourcesWriteKey":       "2eSJyYtqwcFYerwzXv2fcNIrWO7",
 		"redshiftWriteKey":               "JAAwdCxmM8BIabKERsUhPNmMmdf",
+		"redshiftSourcesWriteKey":        "BNAwdCxmM8BIabKERsUhPNmMmdf",
 		"deltalakeWriteKey":              "sToFgoilA0U1WxNeW1gdgUVDsEW",
 
 		"minioBucketName":      "devintegrationtest",
@@ -666,6 +708,7 @@ func enhanceWithSnowflakeConfigurations(values map[string]string) {
 	values["snowflakeCaseSensitiveDBName"] = strings.ToLower(values["snowflakeDBName"])
 	values["snowflakeNamespace"] = Schema(warehouseutils.SNOWFLAKE, SnowflakeIntegrationTestSchema)
 	values["snowflakeCaseSensitiveNamespace"] = fmt.Sprintf("%s_%s", values["snowflakeNamespace"], "CS")
+	values["snowflakeSourcesNamespace"] = fmt.Sprintf("%s_%s", values["snowflakeNamespace"], "sources")
 }
 
 func enhanceWithRedshiftConfigurations(values map[string]string) {
@@ -674,6 +717,7 @@ func enhanceWithRedshiftConfigurations(values map[string]string) {
 	}
 
 	values["redshiftNamespace"] = Schema(warehouseutils.RS, RedshiftIntegrationTestSchema)
+	values["redshiftSourcesNamespace"] = fmt.Sprintf("%s_%s", values["redshiftNamespace"], "sources")
 }
 
 func enhanceWithDeltalakeConfigurations(values map[string]string) {
@@ -690,6 +734,7 @@ func enhanceWithBQConfigurations(values map[string]string) {
 	}
 
 	values["bigqueryNamespace"] = Schema(warehouseutils.BQ, BigqueryIntegrationTestSchema)
+	values["bigquerySourcesNamespace"] = fmt.Sprintf("%s_%s", values["bigqueryNamespace"], "sources")
 
 	key := "bigqueryCredentials"
 	if credentials, exists := values[key]; exists {
@@ -785,9 +830,69 @@ func DatabricksCredentials() (credentials databricks.CredentialsT, err error) {
 	return
 }
 
-func (w *WareHouseTest) MsgId() string {
-	if w.MessageId == "" {
-		return misc.FastUUID().String()
+func VerifyAsyncJob(t testing.TB, wareHouseTest *WareHouseTest) {
+	asyncPayload := strings.NewReader(
+		fmt.Sprintf(
+			AsyncWhPayload,
+			wareHouseTest.SourceID,
+			wareHouseTest.SourceJobRunID(),
+			wareHouseTest.SourceTaskRunID(),
+			wareHouseTest.DestinationID,
+			time.Now().UTC().Format("01-02-2006 15:04:05"),
+		),
+	)
+	send(t, asyncPayload, "warehouse/jobs", wareHouseTest.WriteKey, "POST")
+
+	var (
+		path = fmt.Sprintf("warehouse/jobs/status?job_run_id=%s&task_run_id=%s&source_id=%s&destination_id=%s",
+			wareHouseTest.MsgId(),
+			wareHouseTest.MsgId(),
+			wareHouseTest.SourceID,
+			wareHouseTest.DestinationID,
+		)
+		url        = fmt.Sprintf("http://localhost:%s/v1/%s", "8080", path)
+		method     = "GET"
+		httpClient = &http.Client{}
+		req        *http.Request
+		res        *http.Response
+		err        error
+	)
+
+	type asyncResponse struct {
+		Status string `json:"status"`
+		Error  string `json:"error"`
 	}
-	return w.MessageId
+
+	operation := func() bool {
+		if req, err = http.NewRequest(method, url, strings.NewReader("")); err != nil {
+			return false
+		}
+
+		req.Header.Add("Content-Type", "application/json")
+		req.Header.Add("Authorization", fmt.Sprintf("Basic %s", base64.StdEncoding.EncodeToString(
+			[]byte(fmt.Sprintf("%s:", wareHouseTest.WriteKey)),
+		)))
+
+		if res, err = httpClient.Do(req); err != nil {
+			return false
+		}
+		if res.StatusCode != http.StatusOK {
+			return false
+		}
+
+		defer func() { _ = res.Body.Close() }()
+
+		var asyncRes asyncResponse
+		if err = json.NewDecoder(res.Body).Decode(&asyncRes); err != nil {
+			return false
+		}
+
+		t.Logf("async job : %v", asyncRes)
+		t.Logf("async job status: %s", asyncRes.Status)
+		if asyncRes.Status != "succeeded" {
+			return false
+		}
+		return true
+	}
+	require.Eventually(t, operation, WaitFor10Minute, DefaultQueryFrequency, fmt.Sprintf("Failed to get async job status for job_run_id: %s, task_run_id: %s, source_id: %s, destination_id: %s", wareHouseTest.MsgId(), wareHouseTest.MsgId(), wareHouseTest.SourceID, wareHouseTest.DestinationID))
 }

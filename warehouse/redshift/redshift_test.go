@@ -34,18 +34,6 @@ func TestRedshiftIntegration(t *testing.T) {
 	credentials, err := testhelper.RedshiftCredentials()
 	require.NoError(t, err)
 
-	db, err := redshift.Connect(credentials)
-	require.NoError(t, err)
-
-	schema := testhelper.Schema(warehouseutils.RS, testhelper.RedshiftIntegrationTestSchema)
-
-	t.Cleanup(func() {
-		require.NoError(t, testhelper.WithConstantBackoff(func() (err error) {
-			_, err = db.Exec(fmt.Sprintf(`DROP SCHEMA %q CASCADE;`, schema))
-			return
-		}), fmt.Sprintf("Failed dropping schema %s for Redshift", schema))
-	})
-
 	require.NoError(t, testhelper.SetConfig([]warehouseutils.KeyValue{
 		{
 			Key:   "Warehouse.redshift.dedupWindow",
@@ -57,52 +45,121 @@ func TestRedshiftIntegration(t *testing.T) {
 		},
 	}))
 
-	jobsDB := testhelper.SetUpJobsDB(t)
-
-	warehouseTest := &testhelper.WareHouseTest{
-		Client: &client.Client{
-			SQL:  db,
-			Type: client.SQLClient,
+	testcase := []struct {
+		name                  string
+		schema                string
+		writeKey              string
+		sourceID              string
+		destinationID         string
+		tables                []string
+		skipUserCreation      bool
+		eventsMap             testhelper.EventsCountMap
+		stagingFilesEventsMap testhelper.EventsCountMap
+		loadFilesEventsMap    testhelper.EventsCountMap
+		tableUploadsEventsMap testhelper.EventsCountMap
+		warehouseEventsMap    testhelper.EventsCountMap
+		asyncJob              func(t testing.TB, wareHouseTest *testhelper.WareHouseTest)
+	}{
+		{
+			name:                  "Upload JOB",
+			schema:                testhelper.Schema(warehouseutils.RS, testhelper.RedshiftIntegrationTestSchema),
+			tables:                []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"},
+			writeKey:              "JAAwdCxmM8BIabKERsUhPNmMmdf",
+			sourceID:              "279L3gEKqwruBoKGsXZtSVX7vIy",
+			destinationID:         "27SthahyhhqZE74HT4NTtNPl06V",
+			eventsMap:             testhelper.SendEventsMap(),
+			stagingFilesEventsMap: testhelper.DefaultStagingFilesEventsMap(),
+			loadFilesEventsMap:    testhelper.DefaultLoadFilesEventsMap(),
+			tableUploadsEventsMap: testhelper.DefaultTableUploadsEventsMap(),
+			warehouseEventsMap:    testhelper.DefaultWarehouseEventsMap(),
 		},
-		WriteKey:      "JAAwdCxmM8BIabKERsUhPNmMmdf",
-		Schema:        schema,
-		Tables:        []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"},
-		Provider:      warehouseutils.RS,
-		SourceID:      "279L3gEKqwruBoKGsXZtSVX7vIy",
-		DestinationID: "27SthahyhhqZE74HT4NTtNPl06V",
+		{
+			name:                  "Async JOB",
+			schema:                fmt.Sprintf("%s_%s", testhelper.Schema(warehouseutils.RS, testhelper.RedshiftIntegrationTestSchema), "sources"),
+			tables:                []string{"tracks", "google_sheet"},
+			writeKey:              "BNAwdCxmM8BIabKERsUhPNmMmdf",
+			sourceID:              "2DkCpUr0xgjfsdJxIwqyqfyHdq4",
+			destinationID:         "27Sthahyhhsdas4HT4NTtNPl06V",
+			eventsMap:             testhelper.SourcesSendEventMap(),
+			stagingFilesEventsMap: testhelper.SourcesStagingFilesEventsMap(),
+			loadFilesEventsMap:    testhelper.SourcesLoadFilesEventsMap(),
+			tableUploadsEventsMap: testhelper.SourcesTableUploadsEventsMap(),
+			warehouseEventsMap:    testhelper.SourcesWarehouseEventsMap(),
+			asyncJob:              testhelper.VerifyAsyncJob,
+		},
 	}
 
-	// Scenario 1
-	warehouseTest.TimestampBeforeSendingEvents = timeutil.Now()
-	warehouseTest.UserId = testhelper.GetUserId(warehouseutils.RS)
+	jobsDB := testhelper.SetUpJobsDB(t)
 
-	sendEventsMap := testhelper.SendEventsMap()
-	testhelper.SendEvents(t, warehouseTest, sendEventsMap)
-	testhelper.SendEvents(t, warehouseTest, sendEventsMap)
-	testhelper.SendEvents(t, warehouseTest, sendEventsMap)
-	testhelper.SendIntegratedEvents(t, warehouseTest, sendEventsMap)
+	for _, tc := range testcase {
+		tc := tc
 
-	testhelper.VerifyEventsInStagingFiles(t, jobsDB, warehouseTest, testhelper.DefaultStagingFilesEventsMap())
-	testhelper.VerifyEventsInLoadFiles(t, jobsDB, warehouseTest, testhelper.DefaultLoadFilesEventsMap())
-	testhelper.VerifyEventsInTableUploads(t, jobsDB, warehouseTest, testhelper.DefaultTableUploadsEventsMap())
-	testhelper.VerifyEventsInWareHouse(t, warehouseTest, testhelper.DefaultWarehouseEventsMap())
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 
-	// Scenario 2
-	warehouseTest.TimestampBeforeSendingEvents = timeutil.Now()
-	warehouseTest.UserId = testhelper.GetUserId(warehouseutils.RS)
+			db, err := redshift.Connect(credentials)
+			require.NoError(t, err)
 
-	sendEventsMap = testhelper.SendEventsMap()
-	testhelper.SendModifiedEvents(t, warehouseTest, sendEventsMap)
-	testhelper.SendModifiedEvents(t, warehouseTest, sendEventsMap)
-	testhelper.SendModifiedEvents(t, warehouseTest, sendEventsMap)
-	testhelper.SendIntegratedEvents(t, warehouseTest, sendEventsMap)
+			t.Cleanup(func() {
+				require.NoError(t, testhelper.WithConstantBackoff(func() (err error) {
+					_, err = db.Exec(fmt.Sprintf(`DROP SCHEMA %q CASCADE;`, tc.schema))
+					return
+				}), fmt.Sprintf("Failed dropping schema %s for Redshift", tc.schema))
+			})
 
-	testhelper.VerifyEventsInStagingFiles(t, jobsDB, warehouseTest, testhelper.DefaultStagingFilesEventsMap())
-	testhelper.VerifyEventsInLoadFiles(t, jobsDB, warehouseTest, testhelper.DefaultLoadFilesEventsMap())
-	testhelper.VerifyEventsInTableUploads(t, jobsDB, warehouseTest, testhelper.DefaultTableUploadsEventsMap())
-	testhelper.VerifyEventsInWareHouse(t, warehouseTest, testhelper.DefaultWarehouseEventsMap())
+			warehouseTest := &testhelper.WareHouseTest{
+				Client: &client.Client{
+					SQL:  db,
+					Type: client.SQLClient,
+				},
+				WriteKey:      tc.writeKey,
+				Schema:        tc.schema,
+				SourceID:      tc.sourceID,
+				DestinationID: tc.destinationID,
+				Tables:        tc.tables,
+				Provider:      warehouseutils.RS,
+			}
 
-	testhelper.VerifyWorkspaceIDInStats(t)
+			// Scenario 1
+			warehouseTest.TimestampBeforeSendingEvents = timeutil.Now()
+			warehouseTest.UserId = testhelper.GetUserId(warehouseutils.RS)
+			warehouseTest.JobRunID = misc.FastUUID().String()
+			warehouseTest.TaskRunID = misc.FastUUID().String()
+
+			testhelper.SendEvents(t, warehouseTest, tc.eventsMap)
+			testhelper.SendEvents(t, warehouseTest, tc.eventsMap)
+			testhelper.SendEvents(t, warehouseTest, tc.eventsMap)
+			testhelper.SendIntegratedEvents(t, warehouseTest, tc.eventsMap)
+
+			testhelper.VerifyEventsInStagingFiles(t, jobsDB, warehouseTest, tc.stagingFilesEventsMap)
+			testhelper.VerifyEventsInLoadFiles(t, jobsDB, warehouseTest, tc.loadFilesEventsMap)
+			testhelper.VerifyEventsInTableUploads(t, jobsDB, warehouseTest, tc.tableUploadsEventsMap)
+			testhelper.VerifyEventsInWareHouse(t, warehouseTest, tc.warehouseEventsMap)
+
+			// Scenario 2
+			warehouseTest.TimestampBeforeSendingEvents = timeutil.Now()
+			warehouseTest.JobRunID = misc.FastUUID().String()
+			warehouseTest.TaskRunID = misc.FastUUID().String()
+			if !tc.skipUserCreation {
+				warehouseTest.UserId = testhelper.GetUserId(warehouseutils.RS)
+			}
+
+			testhelper.SendModifiedEvents(t, warehouseTest, tc.eventsMap)
+			testhelper.SendModifiedEvents(t, warehouseTest, tc.eventsMap)
+			testhelper.SendModifiedEvents(t, warehouseTest, tc.eventsMap)
+			testhelper.SendIntegratedEvents(t, warehouseTest, tc.eventsMap)
+
+			testhelper.VerifyEventsInStagingFiles(t, jobsDB, warehouseTest, tc.stagingFilesEventsMap)
+			testhelper.VerifyEventsInLoadFiles(t, jobsDB, warehouseTest, tc.loadFilesEventsMap)
+			testhelper.VerifyEventsInTableUploads(t, jobsDB, warehouseTest, tc.tableUploadsEventsMap)
+			if tc.asyncJob != nil {
+				tc.asyncJob(t, warehouseTest)
+			}
+			testhelper.VerifyEventsInWareHouse(t, warehouseTest, tc.warehouseEventsMap)
+
+			testhelper.VerifyWorkspaceIDInStats(t)
+		})
+	}
 }
 
 func TestRedshiftConfigurationValidation(t *testing.T) {

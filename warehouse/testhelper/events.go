@@ -2,47 +2,40 @@ package testhelper
 
 import (
 	b64 "encoding/base64"
-	"encoding/json"
-	"errors"
 	"fmt"
+	"github.com/stretchr/testify/require"
 	"io"
 	"net/http"
 	"strings"
 	"testing"
-	"time"
-
-	"github.com/stretchr/testify/require"
 )
 
 const (
 	GoogleSheetsPayload = `{
-		"batch":[
-			{
-				"messageId":"cc66fvubc58rb4d1u7pg",
-				"userId":"%s",
-				"recordId":"%s",
-				"context":{
-					"sources":
-					{
-						"batch_id":"e84d84e1-be39-41cb-85e6-66874b6a4730",
-						"job_id":"2DkCpUr0xfiGBPJxIwqyqfyHdq4",
-						"job_run_id":"%s",
-						"task_id":"Sheet1",
-						"task_run_id":"%s",
-						"version":"v2.1.1"
-					}
-				},
-				"properties":
-					{
-						"HEADER":"HBD5",
-						"HEADER4":"esgseg78"
-					},
-				"event":"google_sheet",
-				"type":"track",
-				"channel":"sources"
+	  "batch": [
+		{
+		  "messageId": "%s",
+		  "userId": "%s",
+		  "recordId": "%s",
+		  "context": {
+			"sources": {
+			  "batch_id": "e84d84e1-be39-41cb-85e6-66874b6a4730",
+			  "job_id": "2DkCpUr0xfiGBPJxIwqyqfyHdq4",
+			  "job_run_id": "%s",
+			  "task_id": "Sheet1",
+			  "task_run_id": "%s",
+			  "version": "v2.1.1"
 			}
-		]
-
+		  },
+		  "properties": {
+			"HEADER": "HBD5",
+			"HEADER4": "esgseg78"
+		  },
+		  "event": "google_sheet",
+		  "type": "track",
+		  "channel": "sources"
+		}
+	  ]
 	}`
 	AsyncWhPayload = `{
 		"source_id":"%s",
@@ -52,10 +45,6 @@ const (
 		"async_job_type":"deletebyjobrunid",
 		"destination_id":"%s",
 		"start_time":"%s"
-	}`
-	PendingEventsPayload = `{
-		"source_id": "%s",
-		"job_run_id": "%s"
 	}`
 	IdentifyPayload = `{
 	  "userId": "%s",
@@ -213,25 +202,54 @@ const (
 		}
 	  }
 	}`
-
+	ModifiedGoogleSheetsPayload = `{
+	  "batch": [
+		{
+		  "messageId": "%s",
+		  "userId": "%s",
+		  "recordId": "%s",
+		  "context": {
+			"sources": {
+			  "batch_id": "e84d84e1-be39-41cb-85e6-66874b6a4730",
+			  "job_id": "2DkCpUr0xfiGBPJxIwqyqfyHdq4",
+			  "job_run_id": "%s",
+			  "task_id": "Sheet1",
+			  "task_run_id": "%s",
+			  "version": "v2.1.1"
+			},
+			"ip": "14.5.67.21",
+			"library": {
+			  "name": "http"
+			}
+		  },
+		  "properties": {
+			"HEADER": "HBD5",
+			"HEADER4": "esgseg78"
+		  },
+		  "event": "google_sheet",
+		  "type": "track",
+		  "channel": "sources"
+		}
+	  ]
+	}`
 	ReservedKeywordsIdentifyPayload = `{
 	  "userId": "%s",
 	  "messageId": "%s",
 	  "type": "identify",
-    "integrations": {
-      "%s": {
-        "options": {
-          "skipReservedKeywordsEscaping": true
-        }
-      }
-    },
+	  "integrations": {
+		"%s": {
+		  "options": {
+			"skipReservedKeywordsEscaping": true
+		  }
+		}
+	  },
 	  "eventOrderNo": "1",
 	  "context": {
-		  "traits": {
-		    "trait1": "new-val",
-        "as": "non escaped column",
-        "between": "non escaped column"
-		  }
+		"traits": {
+		  "trait1": "new-val",
+		  "as": "non escaped column",
+		  "between": "non escaped column"
+		}
 	  },
 	  "timestamp": "2020-02-02T00:23:09.544Z"
 	}`
@@ -239,80 +257,116 @@ const (
 	  "userId": "%s",
 	  "messageId": "%s",
 	  "type": "track",
-    "integrations": {
-      "%s": {
-        "options": {
-          "skipReservedKeywordsEscaping": true
-        }
-      }
-    },
+	  "integrations": {
+		"%s": {
+		  "options": {
+			"skipReservedKeywordsEscaping": true
+		  }
+		}
+	  },
 	  "event": "Product Track",
 	  "properties": {
-      "as": "non escaped column",
-      "between": "non escaped column",
-		  "review_id": "12345",
-		  "product_id": "123",
-		  "rating": 3,
-		  "review_body": "Average product, expected much more."
+		"as": "non escaped column",
+		"between": "non escaped column",
+		"review_id": "12345",
+		"product_id": "123",
+		"rating": 3,
+		"review_body": "Average product, expected much more."
 	  }
 	}`
 	ReservedKeywordsPagePayload = `{
 	  "userId": "%s",
 	  "messageId": "%s",
 	  "type": "page",
-    "integrations": {
-      "%s": {
-        "options": {
-          "skipReservedKeywordsEscaping": true
-        }
-      }
-    },
+	  "integrations": {
+		"%s": {
+		  "options": {
+			"skipReservedKeywordsEscaping": true
+		  }
+		}
+	  },
 	  "name": "Home",
 	  "properties": {
-      "as": "non escaped column",
-      "between": "non escaped column",
-		  "title": "Home | RudderStack",
-		  "url": "https://www.rudderstack.com"
+		"as": "non escaped column",
+		"between": "non escaped column",
+		"title": "Home | RudderStack",
+		"url": "https://www.rudderstack.com"
 	  }
 	}`
 	ReservedKeywordsScreenPayload = `{
 	  "userId": "%s",
 	  "messageId": "%s",
 	  "type": "screen",
-    "integrations": {
-      "%s": {
-        "options": {
-          "skipReservedKeywordsEscaping": true
-        }
-      }
-    },
+	  "integrations": {
+		"%s": {
+		  "options": {
+			"skipReservedKeywordsEscaping": true
+		  }
+		}
+	  },
 	  "name": "Main",
 	  "properties": {
-      "as": "non escaped column",
-      "between": "non escaped column",
-		  "prop_key": "prop_value"
+		"as": "non escaped column",
+		"between": "non escaped column",
+		"prop_key": "prop_value"
 	  }
 	}`
 	ReservedKeywordsGroupPayload = `{
 	  "userId": "%s",
 	  "messageId": "%s",
 	  "type": "group",
-    "integrations": {
-      "%s": {
-        "options": {
-          "skipReservedKeywordsEscaping": true
-        }
-      }
-    },
+	  "integrations": {
+		"%s": {
+		  "options": {
+			"skipReservedKeywordsEscaping": true
+		  }
+		}
+	  },
 	  "groupId": "groupId",
 	  "traits": {
-      "as": "non escaped column",
-      "between": "non escaped column",
-		  "name": "MyGroup",
-		  "industry": "IT",
-		  "employees": 450,
-		  "plan": "basic"
+		"as": "non escaped column",
+		"between": "non escaped column",
+		"name": "MyGroup",
+		"industry": "IT",
+		"employees": 450,
+		"plan": "basic"
 	  }
+	}`
+	ReservedGoogleSheetsPayload = `{
+	  "batch": [
+		{
+		  "messageId": "%s",
+		  "userId": "%s",
+		  "recordId": "%s",
+		  "integrations": {
+			"%s": {
+			  "options": {
+				"skipReservedKeywordsEscaping": true
+			  }
+			}
+		  },
+		  "context": {
+			"sources": {
+			  "batch_id": "e84d84e1-be39-41cb-85e6-66874b6a4730",
+			  "job_id": "2DkCpUr0xfiGBPJxIwqyqfyHdq4",
+			  "job_run_id": "%s",
+			  "task_id": "Sheet1",
+			  "task_run_id": "%s",
+			  "version": "v2.1.1"
+			},
+			"as": "non escaped column",
+			"between": "non escaped column"
+		  },
+		  "properties": {
+			"as": "non escaped column",
+			"between": "non escaped column",
+			"prop_key": "prop_value"
+		  },
+		  "event": "google_sheet",
+		  "type": "track",
+		  "channel": "sources"
+		}
+	  ]
 	}`
 )
 
@@ -326,7 +380,13 @@ func SendEvents(t testing.TB, wareHouseTest *WareHouseTest, eventsMap EventsCoun
 		t.Logf("Sending %d identifies events", count)
 
 		for i := 0; i < count; i++ {
-			payloadIdentify := strings.NewReader(fmt.Sprintf(IdentifyPayload, wareHouseTest.UserId, wareHouseTest.MsgId()))
+			payloadIdentify := strings.NewReader(
+				fmt.Sprintf(
+					IdentifyPayload,
+					wareHouseTest.UserId,
+					wareHouseTest.MsgId(),
+				),
+			)
 			send(t, payloadIdentify, "identify", wareHouseTest.WriteKey, "POST")
 		}
 	}
@@ -335,7 +395,13 @@ func SendEvents(t testing.TB, wareHouseTest *WareHouseTest, eventsMap EventsCoun
 		t.Logf("Sending %d tracks events", count)
 
 		for i := 0; i < count; i++ {
-			payloadTrack := strings.NewReader(fmt.Sprintf(TrackPayload, wareHouseTest.UserId, wareHouseTest.MsgId()))
+			payloadTrack := strings.NewReader(
+				fmt.Sprintf(
+					TrackPayload,
+					wareHouseTest.UserId,
+					wareHouseTest.MsgId(),
+				),
+			)
 			send(t, payloadTrack, "track", wareHouseTest.WriteKey, "POST")
 		}
 	}
@@ -344,7 +410,13 @@ func SendEvents(t testing.TB, wareHouseTest *WareHouseTest, eventsMap EventsCoun
 		t.Logf("Sending %d pages events", count)
 
 		for i := 0; i < count; i++ {
-			payloadPage := strings.NewReader(fmt.Sprintf(PagePayload, wareHouseTest.UserId, wareHouseTest.MsgId()))
+			payloadPage := strings.NewReader(
+				fmt.Sprintf(
+					PagePayload,
+					wareHouseTest.UserId,
+					wareHouseTest.MsgId(),
+				),
+			)
 			send(t, payloadPage, "page", wareHouseTest.WriteKey, "POST")
 		}
 	}
@@ -353,7 +425,13 @@ func SendEvents(t testing.TB, wareHouseTest *WareHouseTest, eventsMap EventsCoun
 		t.Logf("Sending %d screens events", count)
 
 		for i := 0; i < count; i++ {
-			payloadScreen := strings.NewReader(fmt.Sprintf(ScreenPayload, wareHouseTest.UserId, wareHouseTest.MsgId()))
+			payloadScreen := strings.NewReader(
+				fmt.Sprintf(
+					ScreenPayload,
+					wareHouseTest.UserId,
+					wareHouseTest.MsgId(),
+				),
+			)
 			send(t, payloadScreen, "screen", wareHouseTest.WriteKey, "POST")
 		}
 	}
@@ -362,7 +440,13 @@ func SendEvents(t testing.TB, wareHouseTest *WareHouseTest, eventsMap EventsCoun
 		t.Logf("Sending %d aliases events", count)
 
 		for i := 0; i < count; i++ {
-			payloadAlias := strings.NewReader(fmt.Sprintf(AliasPayload, wareHouseTest.UserId, wareHouseTest.MsgId()))
+			payloadAlias := strings.NewReader(
+				fmt.Sprintf(
+					AliasPayload,
+					wareHouseTest.UserId,
+					wareHouseTest.MsgId(),
+				),
+			)
 			send(t, payloadAlias, "alias", wareHouseTest.WriteKey, "POST")
 		}
 	}
@@ -371,28 +455,32 @@ func SendEvents(t testing.TB, wareHouseTest *WareHouseTest, eventsMap EventsCoun
 		t.Logf("Sending %d groups events", count)
 
 		for i := 0; i < count; i++ {
-			payloadGroup := strings.NewReader(fmt.Sprintf(GroupPayload, wareHouseTest.UserId, wareHouseTest.MsgId()))
+			payloadGroup := strings.NewReader(
+				fmt.Sprintf(
+					GroupPayload,
+					wareHouseTest.UserId,
+					wareHouseTest.MsgId(),
+				),
+			)
 			send(t, payloadGroup, "group", wareHouseTest.WriteKey, "POST")
 		}
 	}
 
 	if count, exists := eventsMap["google_sheet"]; exists {
 		t.Logf("Sending sources events")
+
 		for i := 0; i < count; i++ {
-			job_run_id := wareHouseTest.MsgId()
-			task_run_id := wareHouseTest.MsgId()
-			payloadGroup := strings.NewReader(fmt.Sprintf(GoogleSheetsPayload, wareHouseTest.UserId, wareHouseTest.MsgId(), job_run_id, task_run_id))
-			send(t, payloadGroup, "import", wareHouseTest.SourceWriteKey, "POST")
-			wareHouseTest.LatestSourceRunConfig["job_run_id"] = job_run_id
-			wareHouseTest.LatestSourceRunConfig["task_run_id"] = task_run_id
-			for {
-				pendingEventsPayload := strings.NewReader(fmt.Sprintf(PendingEventsPayload, wareHouseTest.SourceID, job_run_id))
-				count := blockByPendingEvents(t, pendingEventsPayload, wareHouseTest.SourceWriteKey)
-				if count == 0 {
-					break
-				}
-				time.Sleep(2 * time.Second)
-			}
+			payloadGroup := strings.NewReader(
+				fmt.Sprintf(
+					GoogleSheetsPayload,
+					wareHouseTest.MsgId(),
+					wareHouseTest.UserId,
+					wareHouseTest.SourceRecordID(),
+					wareHouseTest.SourceJobRunID(),
+					wareHouseTest.SourceTaskRunID(),
+				),
+			)
+			send(t, payloadGroup, "import", wareHouseTest.WriteKey, "POST")
 		}
 	}
 }
@@ -407,7 +495,13 @@ func SendModifiedEvents(t testing.TB, wareHouseTest *WareHouseTest, eventsMap Ev
 		t.Logf("Sending %d modified identifies events", count)
 
 		for i := 0; i < count; i++ {
-			payloadIdentify := strings.NewReader(fmt.Sprintf(ModifiedIdentifyPayload, wareHouseTest.UserId, wareHouseTest.MsgId()))
+			payloadIdentify := strings.NewReader(
+				fmt.Sprintf(
+					ModifiedIdentifyPayload,
+					wareHouseTest.UserId,
+					wareHouseTest.MsgId(),
+				),
+			)
 			send(t, payloadIdentify, "identify", wareHouseTest.WriteKey, "POST")
 		}
 	}
@@ -416,7 +510,13 @@ func SendModifiedEvents(t testing.TB, wareHouseTest *WareHouseTest, eventsMap Ev
 		t.Logf("Sending %d modified tracks events", count)
 
 		for i := 0; i < count; i++ {
-			payloadTrack := strings.NewReader(fmt.Sprintf(ModifiedTrackPayload, wareHouseTest.UserId, wareHouseTest.MsgId()))
+			payloadTrack := strings.NewReader(
+				fmt.Sprintf(
+					ModifiedTrackPayload,
+					wareHouseTest.UserId,
+					wareHouseTest.MsgId(),
+				),
+			)
 			send(t, payloadTrack, "track", wareHouseTest.WriteKey, "POST")
 		}
 	}
@@ -425,7 +525,13 @@ func SendModifiedEvents(t testing.TB, wareHouseTest *WareHouseTest, eventsMap Ev
 		t.Logf("Sending %d modified pages events", count)
 
 		for i := 0; i < count; i++ {
-			payloadPage := strings.NewReader(fmt.Sprintf(ModifiedPagePayload, wareHouseTest.UserId, wareHouseTest.MsgId()))
+			payloadPage := strings.NewReader(
+				fmt.Sprintf(
+					ModifiedPagePayload,
+					wareHouseTest.UserId,
+					wareHouseTest.MsgId(),
+				),
+			)
 			send(t, payloadPage, "page", wareHouseTest.WriteKey, "POST")
 		}
 	}
@@ -434,7 +540,13 @@ func SendModifiedEvents(t testing.TB, wareHouseTest *WareHouseTest, eventsMap Ev
 		t.Logf("Sending %d modified screens events", count)
 
 		for i := 0; i < count; i++ {
-			payloadScreen := strings.NewReader(fmt.Sprintf(ModifiedScreenPayload, wareHouseTest.UserId, wareHouseTest.MsgId()))
+			payloadScreen := strings.NewReader(
+				fmt.Sprintf(
+					ModifiedScreenPayload,
+					wareHouseTest.UserId,
+					wareHouseTest.MsgId(),
+				),
+			)
 			send(t, payloadScreen, "screen", wareHouseTest.WriteKey, "POST")
 		}
 	}
@@ -443,7 +555,13 @@ func SendModifiedEvents(t testing.TB, wareHouseTest *WareHouseTest, eventsMap Ev
 		t.Logf("Sending %d modified aliases events", count)
 
 		for i := 0; i < count; i++ {
-			payloadAlias := strings.NewReader(fmt.Sprintf(ModifiedAliasPayload, wareHouseTest.UserId, wareHouseTest.MsgId()))
+			payloadAlias := strings.NewReader(
+				fmt.Sprintf(
+					ModifiedAliasPayload,
+					wareHouseTest.UserId,
+					wareHouseTest.MsgId(),
+				),
+			)
 			send(t, payloadAlias, "alias", wareHouseTest.WriteKey, "POST")
 		}
 	}
@@ -452,8 +570,31 @@ func SendModifiedEvents(t testing.TB, wareHouseTest *WareHouseTest, eventsMap Ev
 		t.Logf("Sending %d modified groups events", count)
 
 		for i := 0; i < count; i++ {
-			payloadGroup := strings.NewReader(fmt.Sprintf(ModifiedGroupPayload, wareHouseTest.UserId, wareHouseTest.MsgId()))
+			payloadGroup := strings.NewReader(
+				fmt.Sprintf(ModifiedGroupPayload,
+					wareHouseTest.UserId,
+					wareHouseTest.MsgId(),
+				),
+			)
 			send(t, payloadGroup, "group", wareHouseTest.WriteKey, "POST")
+		}
+	}
+
+	if count, exists := eventsMap["google_sheet"]; exists {
+		t.Logf("Sending %d modified sources events", count)
+
+		for i := 0; i < count; i++ {
+			payloadGroup := strings.NewReader(
+				fmt.Sprintf(
+					ModifiedGoogleSheetsPayload,
+					wareHouseTest.MsgId(),
+					wareHouseTest.UserId,
+					wareHouseTest.SourceRecordID(),
+					wareHouseTest.SourceJobRunID(),
+					wareHouseTest.SourceTaskRunID(),
+				),
+			)
+			send(t, payloadGroup, "import", wareHouseTest.WriteKey, "POST")
 		}
 	}
 }
@@ -468,7 +609,14 @@ func SendIntegratedEvents(t testing.TB, wareHouseTest *WareHouseTest, eventsMap 
 		t.Logf("Sending %d integrated identifies events", count)
 
 		for i := 0; i < count; i++ {
-			payloadIdentify := strings.NewReader(fmt.Sprintf(ReservedKeywordsIdentifyPayload, wareHouseTest.UserId, wareHouseTest.MsgId(), wareHouseTest.Provider))
+			payloadIdentify := strings.NewReader(
+				fmt.Sprintf(
+					ReservedKeywordsIdentifyPayload,
+					wareHouseTest.UserId,
+					wareHouseTest.MsgId(),
+					wareHouseTest.Provider,
+				),
+			)
 			send(t, payloadIdentify, "identify", wareHouseTest.WriteKey, "POST")
 		}
 	}
@@ -477,7 +625,14 @@ func SendIntegratedEvents(t testing.TB, wareHouseTest *WareHouseTest, eventsMap 
 		t.Logf("Sending %d integrated tracks events", count)
 
 		for i := 0; i < count; i++ {
-			payloadTrack := strings.NewReader(fmt.Sprintf(ReservedKeywordsTrackPayload, wareHouseTest.UserId, wareHouseTest.MsgId(), wareHouseTest.Provider))
+			payloadTrack := strings.NewReader(
+				fmt.Sprintf(
+					ReservedKeywordsTrackPayload,
+					wareHouseTest.UserId,
+					wareHouseTest.MsgId(),
+					wareHouseTest.Provider,
+				),
+			)
 			send(t, payloadTrack, "track", wareHouseTest.WriteKey, "POST")
 		}
 	}
@@ -486,7 +641,14 @@ func SendIntegratedEvents(t testing.TB, wareHouseTest *WareHouseTest, eventsMap 
 		t.Logf("Sending %d integrated pages events", count)
 
 		for i := 0; i < count; i++ {
-			payloadPage := strings.NewReader(fmt.Sprintf(ReservedKeywordsPagePayload, wareHouseTest.UserId, wareHouseTest.MsgId(), wareHouseTest.Provider))
+			payloadPage := strings.NewReader(
+				fmt.Sprintf(
+					ReservedKeywordsPagePayload,
+					wareHouseTest.UserId,
+					wareHouseTest.MsgId(),
+					wareHouseTest.Provider,
+				),
+			)
 			send(t, payloadPage, "page", wareHouseTest.WriteKey, "POST")
 		}
 	}
@@ -495,7 +657,14 @@ func SendIntegratedEvents(t testing.TB, wareHouseTest *WareHouseTest, eventsMap 
 		t.Logf("Sending %d integrated screens events", count)
 
 		for i := 0; i < count; i++ {
-			payloadScreen := strings.NewReader(fmt.Sprintf(ReservedKeywordsScreenPayload, wareHouseTest.UserId, wareHouseTest.MsgId(), wareHouseTest.Provider))
+			payloadScreen := strings.NewReader(
+				fmt.Sprintf(
+					ReservedKeywordsScreenPayload,
+					wareHouseTest.UserId,
+					wareHouseTest.MsgId(),
+					wareHouseTest.Provider,
+				),
+			)
 			send(t, payloadScreen, "screen", wareHouseTest.WriteKey, "POST")
 		}
 	}
@@ -504,7 +673,13 @@ func SendIntegratedEvents(t testing.TB, wareHouseTest *WareHouseTest, eventsMap 
 		t.Logf("Sending %d integrated aliases events", count)
 
 		for i := 0; i < count; i++ {
-			payloadAlias := strings.NewReader(fmt.Sprintf(AliasPayload, wareHouseTest.UserId, wareHouseTest.MsgId()))
+			payloadAlias := strings.NewReader(
+				fmt.Sprintf(
+					AliasPayload,
+					wareHouseTest.UserId,
+					wareHouseTest.MsgId(),
+				),
+			)
 			send(t, payloadAlias, "alias", wareHouseTest.WriteKey, "POST")
 		}
 	}
@@ -513,8 +688,34 @@ func SendIntegratedEvents(t testing.TB, wareHouseTest *WareHouseTest, eventsMap 
 		t.Logf("Sending %d integrated groups events", count)
 
 		for i := 0; i < count; i++ {
-			payloadGroup := strings.NewReader(fmt.Sprintf(ReservedKeywordsGroupPayload, wareHouseTest.UserId, wareHouseTest.MsgId(), wareHouseTest.Provider))
+			payloadGroup := strings.NewReader(
+				fmt.Sprintf(
+					ReservedKeywordsGroupPayload,
+					wareHouseTest.UserId,
+					wareHouseTest.MsgId(),
+					wareHouseTest.Provider,
+				),
+			)
 			send(t, payloadGroup, "group", wareHouseTest.WriteKey, "POST")
+		}
+	}
+
+	if count, exists := eventsMap["google_sheet"]; exists {
+		t.Logf("Sending %d integrated sources events", count)
+
+		for i := 0; i < count; i++ {
+			payloadGroup := strings.NewReader(
+				fmt.Sprintf(
+					ReservedGoogleSheetsPayload,
+					wareHouseTest.MsgId(),
+					wareHouseTest.UserId,
+					wareHouseTest.SourceRecordID(),
+					wareHouseTest.Provider,
+					wareHouseTest.SourceJobRunID(),
+					wareHouseTest.SourceTaskRunID(),
+				),
+			)
+			send(t, payloadGroup, "import", wareHouseTest.WriteKey, "POST")
 		}
 	}
 }
@@ -557,123 +758,4 @@ func send(t testing.TB, payload *strings.Reader, eventType, writeKey, method str
 	}
 
 	t.Logf("Send successfully for event: %s and writeKey: %s", eventType, writeKey)
-}
-
-func SendAsyncRequest(t testing.TB, wareHouseTest *WareHouseTest) {
-	asyncwhpayload := strings.NewReader(fmt.Sprintf(AsyncWhPayload, wareHouseTest.SourceID, wareHouseTest.LatestSourceRunConfig["job_run_id"], wareHouseTest.LatestSourceRunConfig["task_run_id"], wareHouseTest.DestinationID, time.Now().UTC().Format("01-02-2006 15:04:05")))
-	send(t, asyncwhpayload, "warehouse/jobs", wareHouseTest.SourceWriteKey, "POST")
-}
-
-func SendAsyncStatusRequest(t testing.TB, wareHouseTest *WareHouseTest) {
-	url := "warehouse/jobs/status?job_run_id=" + wareHouseTest.LatestSourceRunConfig["job_run_id"] + "&task_run_id=" + wareHouseTest.LatestSourceRunConfig["task_run_id"] + "&source_id=" + wareHouseTest.SourceID + "&destination_id=" + wareHouseTest.DestinationID
-
-	for {
-		status, err := blockByWhJobStatus(t, url, wareHouseTest.SourceWriteKey)
-		if err != nil {
-			break
-		}
-
-		if status == "completed" || status == "succeeded" || status == "aborted" {
-			break
-		}
-	}
-}
-
-func blockByWhJobStatus(t testing.TB, path, writeKey string) (string, error) {
-	t.Helper()
-	t.Logf("Sending event: %s for writeKey: %s", "pending-events", writeKey)
-	url := fmt.Sprintf("http://localhost:%s/v1/%s", "8080", path)
-	method := "GET"
-	httpClient := &http.Client{}
-
-	req, err := http.NewRequest(method, url, strings.NewReader(""))
-	if err != nil {
-		t.Errorf("Error occurred while creating new http request for sending event with error: %s", err.Error())
-		return "error", err
-	}
-
-	req.Header.Add("Content-Type", "application/json")
-	req.Header.Add("Authorization",
-		fmt.Sprintf("Basic %s", b64.StdEncoding.EncodeToString(
-			[]byte(fmt.Sprintf("%s:", writeKey)),
-		)),
-	)
-
-	res, err := httpClient.Do(req)
-	if err != nil {
-		t.Errorf("Error occurred while making http request for sending event with error: %s", err.Error())
-		return "error", err
-	}
-	defer func() { _ = res.Body.Close() }()
-	response, err := io.ReadAll(res.Body)
-	if err != nil {
-		t.Errorf("Error occurred while reading http response for sending event with error: %s", err.Error())
-		return "error", err
-	}
-	if res.Status != "200 OK" {
-		return "error", err
-	}
-
-	t.Logf("Send successfully for event: %s and writeKey: %s", "pending-events", writeKey)
-	type AsyncJobStatusResponse struct {
-		Status string `json:"status"`
-		Error  string `json:"error"`
-	}
-	var jobStatusResp AsyncJobStatusResponse
-	err = json.Unmarshal(response, &jobStatusResp)
-	if err != nil {
-		return "error", err
-	}
-	if jobStatusResp.Error != "" {
-		return "error", errors.New(jobStatusResp.Error)
-	}
-	return jobStatusResp.Status, nil
-}
-
-func blockByPendingEvents(t testing.TB, payload *strings.Reader, writeKey string) uint {
-	t.Helper()
-	t.Logf("Sending event: %s for writeKey: %s", "pending-events", writeKey)
-	url := fmt.Sprintf("http://localhost:%s/v1/%s", "8080", "pending-events")
-	method := "POST"
-	httpClient := &http.Client{}
-
-	req, err := http.NewRequest(method, url, payload)
-	if err != nil {
-		t.Errorf("Error occurred while creating new http request for sending event with error: %s", err.Error())
-		return 1
-	}
-
-	req.Header.Add("Content-Type", "application/json")
-	req.Header.Add("Authorization",
-		fmt.Sprintf("Basic %s", b64.StdEncoding.EncodeToString(
-			[]byte(fmt.Sprintf("%s:", writeKey)),
-		)),
-	)
-
-	res, err := httpClient.Do(req)
-	if err != nil {
-		t.Errorf("Error occurred while making http request for sending event with error: %s", err.Error())
-		return 1
-	}
-	defer func() { _ = res.Body.Close() }()
-	response, err := io.ReadAll(res.Body)
-	if err != nil {
-		t.Errorf("Error occurred while reading http response for sending event with error: %s", err.Error())
-		return 1
-	}
-	if res.Status != "200 OK" {
-		return 1
-	}
-
-	t.Logf("Send successfully for event: %s and writeKey: %s", "pending-events", writeKey)
-	type PendingEventsPayload struct {
-		PendingEventsCount int `json:"pending_events"`
-	}
-	var gatewayResponse PendingEventsPayload
-	err = json.Unmarshal(response, &gatewayResponse)
-	t.Logf("Pending events response is %v\n", gatewayResponse)
-	if err != nil {
-		return 1
-	}
-	return uint(gatewayResponse.PendingEventsCount)
 }

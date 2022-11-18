@@ -40,53 +40,114 @@ func TestPostgresIntegration(t *testing.T) {
 
 	jobsDB := testhelper.SetUpJobsDB(t)
 
-	warehouseTest := &testhelper.WareHouseTest{
-		Client: &client.Client{
-			SQL:  db,
-			Type: client.SQLClient,
+	testcase := []struct {
+		name                  string
+		writeKey              string
+		schema                string
+		tables                []string
+		sourceID              string
+		destinationID         string
+		skipUserCreation      bool
+		eventsMap             testhelper.EventsCountMap
+		stagingFilesEventsMap testhelper.EventsCountMap
+		loadFilesEventsMap    testhelper.EventsCountMap
+		tableUploadsEventsMap testhelper.EventsCountMap
+		warehouseEventsMap    testhelper.EventsCountMap
+		asyncJob              func(t testing.TB, wareHouseTest *testhelper.WareHouseTest)
+	}{
+		{
+			name:                  "Upload JOB",
+			writeKey:              "kwzDkh9h2fhfUVuS9jZ8uVbhV3v",
+			schema:                "postgres_wh_integration",
+			tables:                []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"},
+			sourceID:              "1wRvLmEnMOOxSQD9pwaZhyCqXRE",
+			destinationID:         "216ZvbavR21Um6eGKQCagZHqLGZ",
+			eventsMap:             testhelper.SendEventsMap(),
+			stagingFilesEventsMap: testhelper.DefaultStagingFilesEventsMap(),
+			loadFilesEventsMap:    testhelper.DefaultLoadFilesEventsMap(),
+			tableUploadsEventsMap: testhelper.DefaultTableUploadsEventsMap(),
+			warehouseEventsMap:    testhelper.DefaultWarehouseEventsMap(),
 		},
-		WriteKey:      "kwzDkh9h2fhfUVuS9jZ8uVbhV3v",
-		Schema:        "postgres_wh_integration",
-		Tables:        []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"},
-		Provider:      warehouseutils.POSTGRES,
-		SourceID:      "1wRvLmEnMOOxSQD9pwaZhyCqXRE",
-		DestinationID: "216ZvbavR21Um6eGKQCagZHqLGZ",
+		{
+			name:                  "Async JOB",
+			writeKey:              "2DkCpXZcEvJK2fcpUD3LmjPI7J6",
+			schema:                "postgres_wh_sources_integration",
+			tables:                []string{"tracks", "google_sheet"},
+			sourceID:              "2DkCpUr0xfiGBPJxIwqyqfyHdq4",
+			destinationID:         "308ZvbavR21Um6eGKQCagZHqLGZ",
+			eventsMap:             testhelper.SourcesSendEventMap(),
+			stagingFilesEventsMap: testhelper.SourcesStagingFilesEventsMap(),
+			loadFilesEventsMap:    testhelper.SourcesLoadFilesEventsMap(),
+			tableUploadsEventsMap: testhelper.SourcesTableUploadsEventsMap(),
+			warehouseEventsMap:    testhelper.SourcesWarehouseEventsMap(),
+			asyncJob:              testhelper.VerifyAsyncJob,
+		},
 	}
 
-	// Scenario 1
-	warehouseTest.TimestampBeforeSendingEvents = timeutil.Now()
-	warehouseTest.UserId = testhelper.GetUserId(warehouseutils.POSTGRES)
+	for _, tc := range testcase {
+		tc := tc
 
-	sendEventsMap := testhelper.SendEventsMap()
-	testhelper.SendEvents(t, warehouseTest, sendEventsMap)
-	testhelper.SendEvents(t, warehouseTest, sendEventsMap)
-	testhelper.SendEvents(t, warehouseTest, sendEventsMap)
-	testhelper.SendIntegratedEvents(t, warehouseTest, sendEventsMap)
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 
-	testhelper.VerifyEventsInStagingFiles(t, jobsDB, warehouseTest, testhelper.DefaultStagingFilesEventsMap())
-	testhelper.VerifyEventsInLoadFiles(t, jobsDB, warehouseTest, testhelper.DefaultLoadFilesEventsMap())
-	testhelper.VerifyEventsInTableUploads(t, jobsDB, warehouseTest, testhelper.DefaultTableUploadsEventsMap())
-	testhelper.VerifyEventsInWareHouse(t, warehouseTest, testhelper.DefaultWarehouseEventsMap())
+			warehouseTest := &testhelper.WareHouseTest{
+				Client: &client.Client{
+					SQL:  db,
+					Type: client.SQLClient,
+				},
+				WriteKey:      tc.writeKey,
+				Schema:        tc.schema,
+				Tables:        tc.tables,
+				Provider:      warehouseutils.POSTGRES,
+				SourceID:      tc.sourceID,
+				DestinationID: tc.destinationID,
+			}
 
-	// Scenario 2
-	warehouseTest.TimestampBeforeSendingEvents = timeutil.Now()
-	warehouseTest.UserId = testhelper.GetUserId(warehouseutils.POSTGRES)
+			// Scenario 1
+			warehouseTest.TimestampBeforeSendingEvents = timeutil.Now()
+			warehouseTest.UserId = testhelper.GetUserId(warehouseutils.POSTGRES)
+			warehouseTest.JobRunID = misc.FastUUID().String()
+			warehouseTest.TaskRunID = misc.FastUUID().String()
 
-	sendEventsMap = testhelper.SendEventsMap()
-	testhelper.SendModifiedEvents(t, warehouseTest, sendEventsMap)
-	testhelper.SendModifiedEvents(t, warehouseTest, sendEventsMap)
-	testhelper.SendModifiedEvents(t, warehouseTest, sendEventsMap)
-	testhelper.SendIntegratedEvents(t, warehouseTest, sendEventsMap)
+			testhelper.SendEvents(t, warehouseTest, tc.eventsMap)
+			testhelper.SendEvents(t, warehouseTest, tc.eventsMap)
+			testhelper.SendEvents(t, warehouseTest, tc.eventsMap)
+			testhelper.SendIntegratedEvents(t, warehouseTest, tc.eventsMap)
 
-	testhelper.VerifyEventsInStagingFiles(t, jobsDB, warehouseTest, testhelper.DefaultStagingFilesEventsMap())
-	testhelper.VerifyEventsInLoadFiles(t, jobsDB, warehouseTest, testhelper.DefaultLoadFilesEventsMap())
-	testhelper.VerifyEventsInTableUploads(t, jobsDB, warehouseTest, testhelper.DefaultTableUploadsEventsMap())
-	testhelper.VerifyEventsInWareHouse(t, warehouseTest, testhelper.DefaultWarehouseEventsMap())
+			testhelper.VerifyEventsInStagingFiles(t, jobsDB, warehouseTest, tc.stagingFilesEventsMap)
+			testhelper.VerifyEventsInLoadFiles(t, jobsDB, warehouseTest, tc.loadFilesEventsMap)
+			testhelper.VerifyEventsInTableUploads(t, jobsDB, warehouseTest, tc.tableUploadsEventsMap)
+			testhelper.VerifyEventsInWareHouse(t, warehouseTest, tc.warehouseEventsMap)
 
-	testhelper.VerifyWorkspaceIDInStats(t, statsToVerify...)
+			// Scenario 2
+			warehouseTest.TimestampBeforeSendingEvents = timeutil.Now()
+			warehouseTest.JobRunID = misc.FastUUID().String()
+			warehouseTest.TaskRunID = misc.FastUUID().String()
+			if !tc.skipUserCreation {
+				warehouseTest.UserId = testhelper.GetUserId(warehouseutils.POSTGRES)
+			}
+
+			testhelper.SendModifiedEvents(t, warehouseTest, tc.eventsMap)
+			testhelper.SendModifiedEvents(t, warehouseTest, tc.eventsMap)
+			testhelper.SendModifiedEvents(t, warehouseTest, tc.eventsMap)
+			testhelper.SendIntegratedEvents(t, warehouseTest, tc.eventsMap)
+
+			testhelper.VerifyEventsInStagingFiles(t, jobsDB, warehouseTest, tc.stagingFilesEventsMap)
+			testhelper.VerifyEventsInLoadFiles(t, jobsDB, warehouseTest, tc.loadFilesEventsMap)
+			testhelper.VerifyEventsInTableUploads(t, jobsDB, warehouseTest, tc.tableUploadsEventsMap)
+			if tc.asyncJob != nil {
+				tc.asyncJob(t, warehouseTest)
+			}
+			testhelper.VerifyEventsInWareHouse(t, warehouseTest, tc.warehouseEventsMap)
+
+			testhelper.VerifyWorkspaceIDInStats(t, statsToVerify...)
+		})
+	}
+
 }
 
 func TestPostgresConfigurationValidation(t *testing.T) {
+	t.Skip()
 	t.Parallel()
 
 	misc.Init()

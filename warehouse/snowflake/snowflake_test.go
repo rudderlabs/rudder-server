@@ -36,28 +36,63 @@ func TestSnowflakeIntegration(t *testing.T) {
 	require.NoError(t, err)
 
 	testcase := []struct {
-		name          string
-		dbName        string
-		schema        string
-		writeKey      string
-		sourceID      string
-		destinationID string
+		name                  string
+		dbName                string
+		schema                string
+		writeKey              string
+		sourceID              string
+		destinationID         string
+		tables                []string
+		skipUserCreation      bool
+		eventsMap             testhelper.EventsCountMap
+		stagingFilesEventsMap testhelper.EventsCountMap
+		loadFilesEventsMap    testhelper.EventsCountMap
+		tableUploadsEventsMap testhelper.EventsCountMap
+		warehouseEventsMap    testhelper.EventsCountMap
+		asyncJob              func(t testing.TB, wareHouseTest *testhelper.WareHouseTest)
 	}{
 		{
-			name:          "Normal Database",
-			dbName:        credentials.DBName,
-			schema:        testhelper.Schema(warehouseutils.SNOWFLAKE, testhelper.SnowflakeIntegrationTestSchema),
-			writeKey:      "2eSJyYtqwcFiUILzXv2fcNIrWO7",
-			sourceID:      "24p1HhPk09FW25Kuzvx7GshCLKR",
-			destinationID: "24qeADObp6eIhjjDnEppO6P1SNc",
+			name:                  "Upload JOB with Normal Database",
+			dbName:                credentials.DBName,
+			schema:                testhelper.Schema(warehouseutils.SNOWFLAKE, testhelper.SnowflakeIntegrationTestSchema),
+			tables:                []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"},
+			writeKey:              "2eSJyYtqwcFiUILzXv2fcNIrWO7",
+			sourceID:              "24p1HhPk09FW25Kuzvx7GshCLKR",
+			destinationID:         "24qeADObp6eIhjjDnEppO6P1SNc",
+			eventsMap:             testhelper.SendEventsMap(),
+			stagingFilesEventsMap: stagingFilesEventsMap(),
+			loadFilesEventsMap:    testhelper.DefaultLoadFilesEventsMap(),
+			tableUploadsEventsMap: testhelper.DefaultTableUploadsEventsMap(),
+			warehouseEventsMap:    testhelper.DefaultWarehouseEventsMap(),
 		},
 		{
-			name:          "Case Sensitive Database",
-			dbName:        strings.ToLower(credentials.DBName),
-			schema:        fmt.Sprintf("%s_%s", testhelper.Schema(warehouseutils.SNOWFLAKE, testhelper.SnowflakeIntegrationTestSchema), "CS"),
-			writeKey:      "2eSJyYtqwcFYUILzXv2fcNIrWO7",
-			sourceID:      "24p1HhPk09FBMKuzvx7GshCLKR",
-			destinationID: "24qeADObp6eJhijDnEppO6P1SNc",
+			name:                  "Upload JOB with Case Sensitive Database",
+			dbName:                strings.ToLower(credentials.DBName),
+			schema:                fmt.Sprintf("%s_%s", testhelper.Schema(warehouseutils.SNOWFLAKE, testhelper.SnowflakeIntegrationTestSchema), "CS"),
+			tables:                []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"},
+			writeKey:              "2eSJyYtqwcFYUILzXv2fcNIrWO7",
+			sourceID:              "24p1HhPk09FBMKuzvx7GshCLKR",
+			destinationID:         "24qeADObp6eJhijDnEppO6P1SNc",
+			eventsMap:             testhelper.SendEventsMap(),
+			stagingFilesEventsMap: testhelper.DefaultStagingFilesEventsMap(),
+			loadFilesEventsMap:    testhelper.DefaultLoadFilesEventsMap(),
+			tableUploadsEventsMap: testhelper.DefaultTableUploadsEventsMap(),
+			warehouseEventsMap:    testhelper.DefaultWarehouseEventsMap(),
+		},
+		{
+			name:                  "Async JOB with Sources",
+			dbName:                credentials.DBName,
+			schema:                fmt.Sprintf("%s_%s", testhelper.Schema(warehouseutils.SNOWFLAKE, testhelper.SnowflakeIntegrationTestSchema), "SOURCES"),
+			tables:                []string{"tracks", "google_sheet"},
+			writeKey:              "2eSJyYtqwcFYerwzXv2fcNIrWO7",
+			sourceID:              "2DkCpUr0xgjaNRJxIwqyqfyHdq4",
+			destinationID:         "24qeADObp6eIsfjDnEppO6P1SNc",
+			eventsMap:             testhelper.SourcesSendEventMap(),
+			stagingFilesEventsMap: testhelper.SourcesStagingFilesEventsMap(),
+			loadFilesEventsMap:    testhelper.SourcesLoadFilesEventsMap(),
+			tableUploadsEventsMap: testhelper.SourcesTableUploadsEventsMap(),
+			warehouseEventsMap:    testhelper.SourcesWarehouseEventsMap(),
+			asyncJob:              testhelper.VerifyAsyncJob,
 		},
 	}
 
@@ -91,39 +126,46 @@ func TestSnowflakeIntegration(t *testing.T) {
 				Schema:        tc.schema,
 				SourceID:      tc.sourceID,
 				DestinationID: tc.destinationID,
-				Tables:        []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"},
+				Tables:        tc.tables,
 				Provider:      warehouseutils.SNOWFLAKE,
 			}
 
 			// Scenario 1
 			warehouseTest.TimestampBeforeSendingEvents = timeutil.Now()
 			warehouseTest.UserId = testhelper.GetUserId(warehouseutils.SNOWFLAKE)
+			warehouseTest.JobRunID = misc.FastUUID().String()
+			warehouseTest.TaskRunID = misc.FastUUID().String()
 
-			sendEventsMap := testhelper.SendEventsMap()
-			testhelper.SendEvents(t, warehouseTest, sendEventsMap)
-			testhelper.SendEvents(t, warehouseTest, sendEventsMap)
-			testhelper.SendEvents(t, warehouseTest, sendEventsMap)
-			testhelper.SendIntegratedEvents(t, warehouseTest, sendEventsMap)
+			testhelper.SendEvents(t, warehouseTest, tc.eventsMap)
+			testhelper.SendEvents(t, warehouseTest, tc.eventsMap)
+			testhelper.SendEvents(t, warehouseTest, tc.eventsMap)
+			testhelper.SendIntegratedEvents(t, warehouseTest, tc.eventsMap)
 
-			testhelper.VerifyEventsInStagingFiles(t, jobsDB, warehouseTest, stagingFilesEventsMap())
-			testhelper.VerifyEventsInLoadFiles(t, jobsDB, warehouseTest, testhelper.DefaultLoadFilesEventsMap())
-			testhelper.VerifyEventsInTableUploads(t, jobsDB, warehouseTest, testhelper.DefaultTableUploadsEventsMap())
-			testhelper.VerifyEventsInWareHouse(t, warehouseTest, testhelper.DefaultWarehouseEventsMap())
+			testhelper.VerifyEventsInStagingFiles(t, jobsDB, warehouseTest, tc.stagingFilesEventsMap)
+			testhelper.VerifyEventsInLoadFiles(t, jobsDB, warehouseTest, tc.loadFilesEventsMap)
+			testhelper.VerifyEventsInTableUploads(t, jobsDB, warehouseTest, tc.tableUploadsEventsMap)
+			testhelper.VerifyEventsInWareHouse(t, warehouseTest, tc.warehouseEventsMap)
 
 			// Scenario 2
 			warehouseTest.TimestampBeforeSendingEvents = timeutil.Now()
-			warehouseTest.UserId = testhelper.GetUserId(warehouseutils.SNOWFLAKE)
+			warehouseTest.JobRunID = misc.FastUUID().String()
+			warehouseTest.TaskRunID = misc.FastUUID().String()
+			if !tc.skipUserCreation {
+				warehouseTest.UserId = testhelper.GetUserId(warehouseutils.SNOWFLAKE)
+			}
 
-			sendEventsMap = testhelper.SendEventsMap()
-			testhelper.SendModifiedEvents(t, warehouseTest, sendEventsMap)
-			testhelper.SendModifiedEvents(t, warehouseTest, sendEventsMap)
-			testhelper.SendModifiedEvents(t, warehouseTest, sendEventsMap)
-			testhelper.SendIntegratedEvents(t, warehouseTest, sendEventsMap)
+			testhelper.SendModifiedEvents(t, warehouseTest, tc.eventsMap)
+			testhelper.SendModifiedEvents(t, warehouseTest, tc.eventsMap)
+			testhelper.SendModifiedEvents(t, warehouseTest, tc.eventsMap)
+			testhelper.SendIntegratedEvents(t, warehouseTest, tc.eventsMap)
 
-			testhelper.VerifyEventsInStagingFiles(t, jobsDB, warehouseTest, stagingFilesEventsMap())
-			testhelper.VerifyEventsInLoadFiles(t, jobsDB, warehouseTest, testhelper.DefaultLoadFilesEventsMap())
-			testhelper.VerifyEventsInTableUploads(t, jobsDB, warehouseTest, testhelper.DefaultTableUploadsEventsMap())
-			testhelper.VerifyEventsInWareHouse(t, warehouseTest, testhelper.DefaultWarehouseEventsMap())
+			testhelper.VerifyEventsInStagingFiles(t, jobsDB, warehouseTest, tc.stagingFilesEventsMap)
+			testhelper.VerifyEventsInLoadFiles(t, jobsDB, warehouseTest, tc.loadFilesEventsMap)
+			testhelper.VerifyEventsInTableUploads(t, jobsDB, warehouseTest, tc.tableUploadsEventsMap)
+			if tc.asyncJob != nil {
+				tc.asyncJob(t, warehouseTest)
+			}
+			testhelper.VerifyEventsInWareHouse(t, warehouseTest, tc.warehouseEventsMap)
 
 			testhelper.VerifyWorkspaceIDInStats(t)
 		})

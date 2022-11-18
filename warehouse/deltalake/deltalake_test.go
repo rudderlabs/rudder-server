@@ -117,7 +117,7 @@ func TestDeltalakeIntegration(t *testing.T) {
 				WriteKey:      "sToFgoilA0U1WxNeW1gdgUVDsEW",
 				Schema:        schema,
 				Tables:        []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"},
-				MessageId:     misc.FastUUID().String(),
+				MessageID:     misc.FastUUID().String(),
 				Provider:      warehouseutils.DELTALAKE,
 				SourceID:      "25H5EpYzojqQSepRSaGBrrPx3e4",
 				DestinationID: "25IDjdnoEus6DDNrth3SWO1FOpu",
