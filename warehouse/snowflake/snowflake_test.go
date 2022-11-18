@@ -93,10 +93,10 @@ func TestSnowflakeIntegration(t *testing.T) {
 			writeKey:      "2eSJyYtqwcFYerwzXv2fcNIrWO7",
 			sourceID:      "2DkCpUr0xgjaNRJxIwqyqfyHdq4",
 			destinationID: "24qeADObp6eIsfjDnEppO6P1SNc",
-			eventsMap: testhelper.EventsCountMap{
+			eventsMap:     testhelper.SourcesSendEventMap(),
+			stagingFilesEventsMap: testhelper.EventsCountMap{
 				"wh_staging_files": 9, // 8 + 1 (merge events because of ID resolution)
 			},
-			stagingFilesEventsMap: testhelper.SourcesStagingFilesEventsMap(),
 			loadFilesEventsMap:    testhelper.SourcesLoadFilesEventsMap(),
 			tableUploadsEventsMap: testhelper.SourcesTableUploadsEventsMap(),
 			warehouseEventsMap:    testhelper.SourcesWarehouseEventsMap(),
