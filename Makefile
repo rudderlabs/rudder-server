@@ -98,7 +98,7 @@ logs-warehouse-integration:
 	docker logs wh-backend
 
 run-warehouse-integration:
-	$(eval TEST_CMD = go test -v ./warehouse/snowflake/... -p 8 -timeout 30m -count 1)
+	$(eval TEST_CMD = go test -v ./warehouse/... -p 8 -timeout 30m -count 1)
 	if docker-compose -f warehouse/docker-compose.test.yml exec -T -e SLOW=1 wh-backend $(TEST_CMD); then \
       	echo "Successfully ran Warehouse Integration Test. Getting backend container logs only."; \
       	make logs-warehouse-integration; \
