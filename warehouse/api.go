@@ -113,6 +113,10 @@ func InitWarehouseAPI(dbHandle *sql.DB, log logger.Logger) error {
 	if err != nil {
 		return err
 	}
+	labels := map[string]string{}
+	if region := config.GetString("region", ""); region != "" {
+		labels["region"] = region
+	}
 	UploadAPI = UploadAPIT{
 		enabled:           true,
 		dbHandle:          dbHandle,
@@ -125,6 +129,7 @@ func InitWarehouseAPI(dbHandle *sql.DB, log logger.Logger) error {
 				ConnectionToken: connectionToken,
 				InstanceID:      config.GetString("INSTANCE_ID", "1"),
 				TokenType:       tokenType,
+				Labels:          labels,
 			},
 			RetryInterval: 0,
 			UseTLS:        config.GetBool("CP_ROUTER_USE_TLS", true),

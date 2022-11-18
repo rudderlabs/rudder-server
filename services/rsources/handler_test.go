@@ -19,6 +19,8 @@ import (
 	"github.com/ory/dockertest/v3"
 	"github.com/ory/dockertest/v3/docker"
 	"github.com/rudderlabs/rudder-server/config"
+	testlog "github.com/rudderlabs/rudder-server/testhelper/log"
+	"github.com/rudderlabs/rudder-server/testhelper/rand"
 )
 
 type postgresResource struct {
@@ -34,7 +36,7 @@ var defaultJobTargetKey = JobTargetKey{
 	DestinationID: "destination_id",
 }
 
-var _ = Describe("Using sources handler", Ordered, func() {
+var _ = Describe("Using sources handler", func() {
 	Context("single-tenant setup with a single local datasource", Ordered, func() {
 		var (
 			pool     *dockertest.Pool
@@ -55,6 +57,7 @@ var _ = Describe("Using sources handler", Ordered, func() {
 				LocalHostname: "postgres",
 				MaxPoolSize:   1,
 				LocalConn:     resource.externalDSN,
+				Log:           testlog.GinkgoLogger,
 			}
 			sh = createService(config)
 		})
@@ -510,25 +513,29 @@ var _ = Describe("Using sources handler", Ordered, func() {
 			for containerID := range network.Containers { // Remove any containers left from previous runs
 				_ = pool.Client.RemoveContainer(docker.RemoveContainerOptions{ID: containerID, Force: true, RemoveVolumes: true})
 			}
-
-			pgA = newDBResource(pool, network.ID, "postgres-1", "wal_level=logical")
-			pgB = newDBResource(pool, network.ID, "postgres-2", "wal_level=logical")
-			pgC = newDBResource(pool, network.ID, "postgres-3")
+			postgres1Hostname := randomString() + "-1"
+			postgres2Hostname := randomString() + "-2"
+			postgres3Hostname := randomString() + "-3"
+			pgA = newDBResource(pool, network.ID, postgres1Hostname, "wal_level=logical")
+			pgB = newDBResource(pool, network.ID, postgres2Hostname, "wal_level=logical")
+			pgC = newDBResource(pool, network.ID, postgres3Hostname)
 
 			configA = JobServiceConfig{
-				LocalHostname:          "postgres-1",
+				LocalHostname:          postgres1Hostname,
 				MaxPoolSize:            1,
 				LocalConn:              pgA.externalDSN,
 				SharedConn:             pgC.externalDSN,
 				SubscriptionTargetConn: pgA.internalDSN,
+				Log:                    testlog.GinkgoLogger,
 			}
 
 			configB = JobServiceConfig{
-				LocalHostname:          "postgres-2",
+				LocalHostname:          postgres2Hostname,
 				MaxPoolSize:            1,
 				LocalConn:              pgB.externalDSN,
 				SharedConn:             pgC.externalDSN,
 				SubscriptionTargetConn: pgB.internalDSN,
+				Log:                    testlog.GinkgoLogger,
 			}
 
 			// Start 2 JobServices
@@ -546,12 +553,6 @@ var _ = Describe("Using sources handler", Ordered, func() {
 		})
 
 		It("should be able to query both services for the same jobRunId and receive same stats", func() {
-			GinkgoT().Logf("configA: %+v", configA)
-			GinkgoT().Logf("serviceA: %+v", serviceA)
-
-			GinkgoT().Logf("configB: %+v", configB)
-			GinkgoT().Logf("serviceB: %+v", serviceB)
-
 			// Status from both services should be same
 			jobRunId := newJobRunId()
 			statsA := Stats{
@@ -559,7 +560,6 @@ var _ = Describe("Using sources handler", Ordered, func() {
 				Out:    4,
 				Failed: 0,
 			}
-			GinkgoT().Logf("incrementing serviceA")
 			increment(pgA.db, jobRunId, defaultJobTargetKey, statsA, serviceA, nil)
 
 			statsB := Stats{
@@ -567,7 +567,6 @@ var _ = Describe("Using sources handler", Ordered, func() {
 				Out:    2,
 				Failed: 1,
 			}
-			GinkgoT().Logf("incrementing serviceB")
 			increment(pgB.db, jobRunId, defaultJobTargetKey, statsB, serviceB, nil)
 			Eventually(func() bool {
 				totalStatsA, err := serviceA.GetStatus(context.Background(), jobRunId, JobFilter{
@@ -648,23 +647,43 @@ var _ = Describe("Using sources handler", Ordered, func() {
 					},
 				},
 			}
+
+			var err error
+			var failedKeysA, failedKeysB JobFailedRecords
 			Eventually(func() bool {
-				failedKeysA, err := serviceA.GetFailedRecords(context.Background(), jobRunId, JobFilter{
+				failedKeysA, err = serviceA.GetFailedRecords(context.Background(), jobRunId, JobFilter{
 					SourceID:  []string{"source_id"},
 					TaskRunID: []string{"task_run_id"},
 				})
 				if err != nil {
+					err = fmt.Errorf("failed to get failed records from serviceA: %w", err)
 					return false
 				}
-				failedKeysB, err := serviceB.GetFailedRecords(context.Background(), jobRunId, JobFilter{
+				failedKeysB, err = serviceB.GetFailedRecords(context.Background(), jobRunId, JobFilter{
 					SourceID:  []string{"source_id"},
 					TaskRunID: []string{"task_run_id"},
 				})
 				if err != nil {
+					err = fmt.Errorf("failed to get failed records from serviceB: %w", err)
 					return false
 				}
-				return reflect.DeepEqual(failedKeysA, failedKeysB) && reflect.DeepEqual(failedKeysA, expected)
-			}, "30s", "100ms").Should(BeTrue(), "Failed Records from both services should be the same")
+				if !reflect.DeepEqual(failedKeysA, failedKeysB) {
+					err = fmt.Errorf("failed keys from serviceA are different compared to failed keys from serviceB")
+					return false
+				}
+				if len(failedKeysA.Tasks) != 1 || len(failedKeysA.Tasks[0].Sources) != 1 || len(failedKeysA.Tasks[0].Sources[0].Destinations) != 1 {
+					err = fmt.Errorf("failed keys from serviceA don't contain 1 task with 1 source and 1 destination")
+					return false
+				}
+				sort.Slice(failedKeysA.Tasks[0].Sources[0].Destinations[0].Records, func(i, j int) bool {
+					return string(failedKeysA.Tasks[0].Sources[0].Destinations[0].Records[i]) < string(failedKeysA.Tasks[0].Sources[0].Destinations[0].Records[j])
+				})
+				if !reflect.DeepEqual(failedKeysA, expected) {
+					err = fmt.Errorf("failed keys from serviceA don't match expectation")
+					return false
+				}
+				return true
+			}, "30s", "100ms").Should(BeTrue(), "Failed Records from both services should be the same", mustMarshal(failedKeysA), mustMarshal(failedKeysB), mustMarshal(expected), err)
 		})
 
 		It("should be able to create the same services again and not affect publications and subscriptions", func() {
@@ -673,28 +692,32 @@ var _ = Describe("Using sources handler", Ordered, func() {
 		})
 
 		It("shouldn't be able to create a service when wal_level=logical is not set on the local db", func() {
-			pgD := newDBResource(pool, network.ID, "postgres-4")
+			postgres4Hostname := randomString() + "-4"
+			pgD := newDBResource(pool, network.ID, postgres4Hostname)
 			defer purgeResources(pool, pgD.resource)
 			badConfig := JobServiceConfig{
-				LocalHostname:          "postgres-4",
+				LocalHostname:          postgres4Hostname,
 				MaxPoolSize:            1,
 				LocalConn:              pgD.externalDSN,
 				SharedConn:             pgC.externalDSN,
 				SubscriptionTargetConn: pgD.internalDSN,
+				Log:                    testlog.GinkgoLogger,
 			}
 			_, err := NewJobService(badConfig)
 			Expect(err).To(HaveOccurred(), "it shouldn't able to create the service")
 		})
 
 		It("shouldn't be able to create a service when an invalid SubscriptionTargetConn is provided", func() {
-			pgD := newDBResource(pool, network.ID, "postgres-4")
+			postgres4Hostname := randomString() + "-4"
+			pgD := newDBResource(pool, network.ID, postgres4Hostname)
 			defer purgeResources(pool, pgD.resource)
 			badConfig := JobServiceConfig{
-				LocalHostname:          "postgres-4",
+				LocalHostname:          postgres4Hostname,
 				MaxPoolSize:            1,
 				LocalConn:              pgD.externalDSN,
 				SharedConn:             pgC.externalDSN,
 				SubscriptionTargetConn: pgD.externalDSN,
+				Log:                    testlog.GinkgoLogger,
 			}
 			_, err := NewJobService(badConfig)
 			Expect(err).To(HaveOccurred(), "it shouldn't able to create the service")
@@ -724,15 +747,18 @@ var _ = Describe("Using sources handler", Ordered, func() {
 				_ = pool.Client.RemoveContainer(docker.RemoveContainerOptions{ID: containerID, Force: true, RemoveVolumes: true})
 			}
 
-			pgA = newDBResource(pool, network.ID, "postgres-1", "wal_level=logical")
-			pgB = newDBResource(pool, network.ID, "postgres-2")
+			postgres1Hostname := randomString() + "-1"
+			postgres2Hostname := randomString() + "-2"
+			pgA = newDBResource(pool, network.ID, postgres1Hostname, "wal_level=logical")
+			pgB = newDBResource(pool, network.ID, postgres2Hostname)
 
 			configA = JobServiceConfig{
-				LocalHostname:          "postgres-1",
+				LocalHostname:          postgres1Hostname,
 				MaxPoolSize:            1,
 				LocalConn:              pgA.externalDSN,
 				SharedConn:             pgB.externalDSN,
 				SubscriptionTargetConn: pgA.internalDSN,
+				Log:                    testlog.GinkgoLogger,
 			}
 			serviceA = createService(configA)
 		})
@@ -755,7 +781,7 @@ var _ = Describe("Using sources handler", Ordered, func() {
 
 			Eventually(func() bool {
 				return replicationSlotGauge.value() == int64(1) && lagGauge.wasGauged()
-			}, "30s", "500ms").Should(BeTrue(), "should have one replication slot and some non-nil lag")
+			}, "30s", "100ms").Should(BeTrue(), "should have one replication slot and some non-nil lag")
 		})
 
 		It("unavailability of shared db is handled via -1 replication slot gauge", func() {
@@ -771,7 +797,7 @@ var _ = Describe("Using sources handler", Ordered, func() {
 			go serviceA.Monitor(ctx, lagGauge, replicationSlotGauge)
 			Eventually(func() bool {
 				return lagGauge.value() == float64(-1)
-			}, "30s", "1s").Should(BeTrue(), "should have -1 replication slot")
+			}, "30s", "100ms").Should(BeTrue(), "should have -1 replication slot")
 		})
 	})
 
@@ -788,10 +814,12 @@ var _ = Describe("Using sources handler", Ordered, func() {
 			for containerID := range network.Containers { // Remove any containers left from previous runs
 				_ = pool.Client.RemoveContainer(docker.RemoveContainerOptions{ID: containerID, Force: true, RemoveVolumes: true})
 			}
-
-			pgA := newDBResource(pool, network.ID, "postgres-mig-1", "wal_level=logical")
-			pgB := newDBResource(pool, network.ID, "postgres-mig-2", "wal_level=logical")
-			pgC := newDBResource(pool, network.ID, "postgres-mig-3")
+			postgres1Hostname := randomString() + "-1"
+			postgres2Hostname := randomString() + "-2"
+			postgres3Hostname := randomString() + "-3"
+			pgA := newDBResource(pool, network.ID, postgres1Hostname, "wal_level=logical")
+			pgB := newDBResource(pool, network.ID, postgres2Hostname, "wal_level=logical")
+			pgC := newDBResource(pool, network.ID, postgres3Hostname)
 
 			defer func() {
 				purgeResources(pool, pgA.resource, pgB.resource, pgC.resource)
@@ -799,21 +827,23 @@ var _ = Describe("Using sources handler", Ordered, func() {
 					_ = pool.Client.RemoveNetwork(network.ID)
 				}
 			}()
-
+			log := testlog.GinkgoLogger
 			configA := JobServiceConfig{
-				LocalHostname:          "postgres-mig-1",
+				LocalHostname:          postgres1Hostname,
 				MaxPoolSize:            1,
 				LocalConn:              pgA.externalDSN,
 				SharedConn:             pgC.externalDSN,
 				SubscriptionTargetConn: pgA.internalDSN,
+				Log:                    log,
 			}
 
 			configB := JobServiceConfig{
-				LocalHostname:          "postgres-mig-2",
+				LocalHostname:          postgres2Hostname,
 				MaxPoolSize:            1,
 				LocalConn:              pgB.externalDSN,
 				SharedConn:             pgC.externalDSN,
 				SubscriptionTargetConn: pgB.internalDSN,
+				Log:                    log,
 			}
 
 			// Setting up previous environment before adding failedkeys table to the publication
@@ -826,11 +856,11 @@ var _ = Describe("Using sources handler", Ordered, func() {
 			defer func() { _ = databaseC.Close() }()
 
 			// create tables
-			err = setupStatsTable(context.Background(), databaseA, configA.LocalHostname)
+			err = setupStatsTable(context.Background(), databaseA, configA.LocalHostname, log)
 			Expect(err).NotTo(HaveOccurred())
-			err = setupStatsTable(context.Background(), databaseB, configB.LocalHostname)
+			err = setupStatsTable(context.Background(), databaseB, configB.LocalHostname, log)
 			Expect(err).NotTo(HaveOccurred())
-			err = setupStatsTable(context.Background(), databaseC, "shared")
+			err = setupStatsTable(context.Background(), databaseC, "shared", log)
 			Expect(err).NotTo(HaveOccurred())
 
 			// setup logical replication(only stats tables as previously done)
@@ -885,26 +915,50 @@ var _ = Describe("Using sources handler", Ordered, func() {
 					},
 				},
 			}
+
+			var failedKeysA, failedKeysB JobFailedRecords
 			Eventually(func() bool {
-				failedKeysA, err := serviceA.GetFailedRecords(context.Background(), jobRunId, JobFilter{
+				failedKeysA, err = serviceA.GetFailedRecords(context.Background(), jobRunId, JobFilter{
 					SourceID:  []string{"source_id"},
 					TaskRunID: []string{"task_run_id"},
 				})
 				if err != nil {
+					err = fmt.Errorf("failed to get failed records from serviceA: %w", err)
 					return false
 				}
-				failedKeysB, err := serviceB.GetFailedRecords(context.Background(), jobRunId, JobFilter{
+				failedKeysB, err = serviceB.GetFailedRecords(context.Background(), jobRunId, JobFilter{
 					SourceID:  []string{"source_id"},
 					TaskRunID: []string{"task_run_id"},
 				})
 				if err != nil {
+					err = fmt.Errorf("failed to get failed records from serviceB: %w", err)
 					return false
 				}
-				return reflect.DeepEqual(failedKeysA, failedKeysB) && reflect.DeepEqual(failedKeysA, expected)
-			}, "30s", "100ms").Should(BeTrue(), "Failed Records from both services should be the same")
+				if !reflect.DeepEqual(failedKeysA, failedKeysB) {
+					err = fmt.Errorf("failed keys from serviceA are different compared to failed keys from serviceB")
+					return false
+				}
+				if len(failedKeysA.Tasks) != 1 || len(failedKeysA.Tasks[0].Sources) != 1 || len(failedKeysA.Tasks[0].Sources[0].Destinations) != 1 {
+					err = fmt.Errorf("failed keys from serviceA don't contain 1 task with 1 source and 1 destination")
+					return false
+				}
+				sort.Slice(failedKeysA.Tasks[0].Sources[0].Destinations[0].Records, func(i, j int) bool {
+					return string(failedKeysA.Tasks[0].Sources[0].Destinations[0].Records[i]) < string(failedKeysA.Tasks[0].Sources[0].Destinations[0].Records[j])
+				})
+				if !reflect.DeepEqual(failedKeysA, expected) {
+					err = fmt.Errorf("failed keys from serviceA don't match expectation")
+					return false
+				}
+				return true
+			}, "30s", "100ms").Should(BeTrue(), "Failed Records from both services should be the same", mustMarshal(failedKeysA), mustMarshal(failedKeysB), mustMarshal(expected), err)
 		})
 	})
 })
+
+func mustMarshal[T any](v T) []byte {
+	b, _ := json.Marshal(v)
+	return b
+}
 
 // mock Gauges
 type mockGauge struct {
@@ -941,7 +995,6 @@ func addFailedRecords(db *sql.DB, jobRunId string, jobTargetKey JobTargetKey, sh
 }
 
 func increment(db *sql.DB, jobRunId string, key JobTargetKey, stat Stats, sh JobService, wg *sync.WaitGroup) {
-	GinkgoT().Logf("Incrementing using service %+v, db: %+v", sh, db)
 	tx, err := db.Begin()
 	Expect(err).ShouldNot(HaveOccurred(), "it should be able to begin the transaction")
 	err = sh.IncrementStats(context.Background(), tx, jobRunId, key, stat)
@@ -1022,5 +1075,5 @@ func getDB(conn string, maxOpenConns int) *sql.DB {
 }
 
 func randomString() string {
-	return strings.ReplaceAll(uuid.Must(uuid.NewV4()).String(), "-", "")
+	return strings.ToLower(rand.String(10))
 }
