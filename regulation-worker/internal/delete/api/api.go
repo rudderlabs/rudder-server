@@ -16,7 +16,7 @@ import (
 	"strings"
 
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/model"
-	oauth "github.com/rudderlabs/rudder-server/router/oauthResponseHandler"
+	"github.com/rudderlabs/rudder-server/services/oauth"
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 )
@@ -190,7 +190,7 @@ func IsOAuthEnabled(destDefConfig map[string]interface{}) bool {
 }
 
 func (api *APIManager) getOAuthDetail(destDetail *model.Destination, workspaceId string) (OAuthDetail, error) {
-	id := oauth.GetAccountId(destDetail.Config)
+	id := oauth.GetAccountId(destDetail.Config, oauth.DeleteAccountIdKey)
 	tokenStatusCode, secretToken := api.OAuth.FetchToken(&oauth.RefreshTokenParams{
 		AccountId:       id,
 		WorkspaceId:     workspaceId,

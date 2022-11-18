@@ -1,6 +1,6 @@
-package oauthResponseHandler
+package oauth
 
-//go:generate mockgen -destination=../../mocks/router/oauthResponseHandler/mock_oauthResponseHandler.go -package=mocks_oauthResponseHandler github.com/rudderlabs/rudder-server/router/oauthResponseHandler Authorizer
+//go:generate mockgen -destination=../../mocks/services/oauth/mock_oauth.go -package=mocks_oauth github.com/rudderlabs/rudder-server/services/oauth Authorizer
 import (
 	"bytes"
 	"encoding/json"
@@ -24,9 +24,10 @@ import (
 type AuthType string
 
 const (
-	OAuth            AuthType = "OAuth"
-	InvalidAuthType  AuthType = "InvalidAuthType"
-	deleteAccountKey          = "rudderDeleteAccountId"
+	OAuth                AuthType = "OAuth"
+	InvalidAuthType      AuthType = "InvalidAuthType"
+	DeleteAccountIdKey            = "rudderDeleteAccountId"
+	DeliveryAccountIdKey          = "rudderAccountId"
 )
 
 type AccountSecret struct {
@@ -161,8 +162,8 @@ func NewOAuthErrorHandler(provider tokenProvider) *OAuthErrResHandler {
 	return oAuthErrResHandler
 }
 
-func GetAccountId(config map[string]interface{}) string {
-	if rudderAccountIdInterface, found := config[deleteAccountKey]; found {
+func GetAccountId(config map[string]interface{}, idKey string) string {
+	if rudderAccountIdInterface, found := config[idKey]; found {
 		if rudderAccountId, ok := rudderAccountIdInterface.(string); ok {
 			return rudderAccountId
 		}

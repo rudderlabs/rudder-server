@@ -25,7 +25,6 @@ import (
 	customDestinationManager "github.com/rudderlabs/rudder-server/router/customdestinationmanager"
 	"github.com/rudderlabs/rudder-server/router/internal/eventorder"
 	"github.com/rudderlabs/rudder-server/router/internal/jobiterator"
-	oauth "github.com/rudderlabs/rudder-server/router/oauthResponseHandler"
 	"github.com/rudderlabs/rudder-server/router/throttler"
 	"github.com/rudderlabs/rudder-server/router/transformer"
 	"github.com/rudderlabs/rudder-server/router/types"
@@ -34,6 +33,7 @@ import (
 	destinationdebugger "github.com/rudderlabs/rudder-server/services/debugger/destination"
 	"github.com/rudderlabs/rudder-server/services/diagnostics"
 	"github.com/rudderlabs/rudder-server/services/metric"
+	"github.com/rudderlabs/rudder-server/services/oauth"
 	"github.com/rudderlabs/rudder-server/services/rsources"
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/services/transientsource"
@@ -461,7 +461,7 @@ func (worker *workerT) workerProcess() {
 			}
 			destination := batchDestination.Destination
 			if authType := oauth.GetAuthType(destination.DestinationDefinition.Config); routerutils.IsNotEmptyString(string(authType)) && authType == oauth.OAuth {
-				rudderAccountID := oauth.GetAccountId(destination.Config)
+				rudderAccountID := oauth.GetAccountId(destination.Config, oauth.DeliveryAccountIdKey)
 
 				if routerutils.IsNotEmptyString(rudderAccountID) {
 					worker.rt.logger.Debugf(`[%s][FetchToken] Token Fetch Method to be called`, destination.DestinationDefinition.Name)
@@ -2089,7 +2089,7 @@ func (rt *HandleT) HandleOAuthDestResponse(params *HandleDestOAuthRespParamsT) (
 		var errCatStatusCode int
 		// Check the category
 		// Trigger the refresh endpoint/disable endpoint
-		rudderAccountID := oauth.GetAccountId(destinationJob.Destination.Config)
+		rudderAccountID := oauth.GetAccountId(destinationJob.Destination.Config, oauth.DeliveryAccountIdKey)
 		if strings.TrimSpace(rudderAccountID) == "" {
 			return trRespStatusCode, trRespBody
 		}

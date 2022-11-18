@@ -16,7 +16,7 @@ import (
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/delete/api"
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/initialize"
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/model"
-	oauth "github.com/rudderlabs/rudder-server/router/oauthResponseHandler"
+	"github.com/rudderlabs/rudder-server/services/oauth"
 
 	"github.com/stretchr/testify/require"
 	"golang.org/x/net/context"
