@@ -3,11 +3,12 @@ package testhelper
 import (
 	b64 "encoding/base64"
 	"fmt"
-	"github.com/stretchr/testify/require"
 	"io"
 	"net/http"
 	"strings"
 	"testing"
+
+	"github.com/stretchr/testify/require"
 )
 
 const (

@@ -25,7 +25,7 @@ func TestSnowflakeIntegration(t *testing.T) {
 		t.Skip("Skipping tests. Remove 'SLOW=0' env var to run them.")
 	}
 
-	//t.SkipNow()
+	t.SkipNow()
 	t.Parallel()
 
 	if _, exists := os.LookupEnv(testhelper.SnowflakeIntegrationTestCredentials); !exists {
@@ -186,7 +186,7 @@ func TestSnowflakeConfigurationValidation(t *testing.T) {
 		t.Skip("Skipping tests. Remove 'SLOW=0' env var to run them.")
 	}
 
-	//t.SkipNow()
+	t.SkipNow()
 	t.Parallel()
 
 	if _, exists := os.LookupEnv(testhelper.SnowflakeIntegrationTestCredentials); !exists {
