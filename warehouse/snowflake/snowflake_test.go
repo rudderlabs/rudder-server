@@ -1,5 +1,3 @@
-//go:build warehouse_integration
-
 package snowflake_test
 
 import (
@@ -23,7 +21,11 @@ import (
 )
 
 func TestSnowflakeIntegration(t *testing.T) {
-	t.SkipNow()
+	if os.Getenv("SLOW") == "0" {
+		t.Skip("Skipping tests. Remove 'SLOW=0' env var to run them.")
+	}
+
+	//t.SkipNow()
 	t.Parallel()
 
 	if _, exists := os.LookupEnv(testhelper.SnowflakeIntegrationTestCredentials); !exists {
@@ -52,47 +54,54 @@ func TestSnowflakeIntegration(t *testing.T) {
 		asyncJob              func(t testing.TB, wareHouseTest *testhelper.WareHouseTest)
 	}{
 		{
-			name:                  "Upload JOB with Normal Database",
-			dbName:                credentials.DBName,
-			schema:                testhelper.Schema(warehouseutils.SNOWFLAKE, testhelper.SnowflakeIntegrationTestSchema),
-			tables:                []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"},
-			writeKey:              "2eSJyYtqwcFiUILzXv2fcNIrWO7",
-			sourceID:              "24p1HhPk09FW25Kuzvx7GshCLKR",
-			destinationID:         "24qeADObp6eIhjjDnEppO6P1SNc",
-			eventsMap:             testhelper.SendEventsMap(),
-			stagingFilesEventsMap: stagingFilesEventsMap(),
+			name:          "Upload Job with Normal Database",
+			dbName:        credentials.DBName,
+			schema:        testhelper.Schema(warehouseutils.SNOWFLAKE, testhelper.SnowflakeIntegrationTestSchema),
+			tables:        []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"},
+			writeKey:      "2eSJyYtqwcFiUILzXv2fcNIrWO7",
+			sourceID:      "24p1HhPk09FW25Kuzvx7GshCLKR",
+			destinationID: "24qeADObp6eIhjjDnEppO6P1SNc",
+			eventsMap:     testhelper.SendEventsMap(),
+			stagingFilesEventsMap: testhelper.EventsCountMap{
+				"wh_staging_files": 34, // 32 + 2 (merge events because of ID resolution)
+			},
 			loadFilesEventsMap:    testhelper.DefaultLoadFilesEventsMap(),
 			tableUploadsEventsMap: testhelper.DefaultTableUploadsEventsMap(),
 			warehouseEventsMap:    testhelper.DefaultWarehouseEventsMap(),
 		},
 		{
-			name:                  "Upload JOB with Case Sensitive Database",
-			dbName:                strings.ToLower(credentials.DBName),
-			schema:                fmt.Sprintf("%s_%s", testhelper.Schema(warehouseutils.SNOWFLAKE, testhelper.SnowflakeIntegrationTestSchema), "CS"),
-			tables:                []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"},
-			writeKey:              "2eSJyYtqwcFYUILzXv2fcNIrWO7",
-			sourceID:              "24p1HhPk09FBMKuzvx7GshCLKR",
-			destinationID:         "24qeADObp6eJhijDnEppO6P1SNc",
-			eventsMap:             testhelper.SendEventsMap(),
-			stagingFilesEventsMap: testhelper.DefaultStagingFilesEventsMap(),
+			name:          "Upload Job with Case Sensitive Database",
+			dbName:        strings.ToLower(credentials.DBName),
+			schema:        fmt.Sprintf("%s_%s", testhelper.Schema(warehouseutils.SNOWFLAKE, testhelper.SnowflakeIntegrationTestSchema), "CS"),
+			tables:        []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"},
+			writeKey:      "2eSJyYtqwcFYUILzXv2fcNIrWO7",
+			sourceID:      "24p1HhPk09FBMKuzvx7GshCLKR",
+			destinationID: "24qeADObp6eJhijDnEppO6P1SNc",
+			eventsMap:     testhelper.SendEventsMap(),
+			stagingFilesEventsMap: testhelper.EventsCountMap{
+				"wh_staging_files": 34, // 32 + 2 (merge events because of ID resolution)
+			},
 			loadFilesEventsMap:    testhelper.DefaultLoadFilesEventsMap(),
 			tableUploadsEventsMap: testhelper.DefaultTableUploadsEventsMap(),
 			warehouseEventsMap:    testhelper.DefaultWarehouseEventsMap(),
 		},
 		{
-			name:                  "Async JOB with Sources",
-			dbName:                credentials.DBName,
-			schema:                fmt.Sprintf("%s_%s", testhelper.Schema(warehouseutils.SNOWFLAKE, testhelper.SnowflakeIntegrationTestSchema), "SOURCES"),
-			tables:                []string{"tracks", "google_sheet"},
-			writeKey:              "2eSJyYtqwcFYerwzXv2fcNIrWO7",
-			sourceID:              "2DkCpUr0xgjaNRJxIwqyqfyHdq4",
-			destinationID:         "24qeADObp6eIsfjDnEppO6P1SNc",
-			eventsMap:             testhelper.SourcesSendEventMap(),
+			name:          "Async Job with Sources",
+			dbName:        credentials.DBName,
+			schema:        fmt.Sprintf("%s_%s", testhelper.Schema(warehouseutils.SNOWFLAKE, testhelper.SnowflakeIntegrationTestSchema), "SOURCES"),
+			tables:        []string{"tracks", "google_sheet"},
+			writeKey:      "2eSJyYtqwcFYerwzXv2fcNIrWO7",
+			sourceID:      "2DkCpUr0xgjaNRJxIwqyqfyHdq4",
+			destinationID: "24qeADObp6eIsfjDnEppO6P1SNc",
+			eventsMap: testhelper.EventsCountMap{
+				"wh_staging_files": 9, // 8 + 1 (merge events because of ID resolution)
+			},
 			stagingFilesEventsMap: testhelper.SourcesStagingFilesEventsMap(),
 			loadFilesEventsMap:    testhelper.SourcesLoadFilesEventsMap(),
 			tableUploadsEventsMap: testhelper.SourcesTableUploadsEventsMap(),
 			warehouseEventsMap:    testhelper.SourcesWarehouseEventsMap(),
 			asyncJob:              testhelper.VerifyAsyncJob,
+			skipUserCreation:      true,
 		},
 	}
 
@@ -173,7 +182,11 @@ func TestSnowflakeIntegration(t *testing.T) {
 }
 
 func TestSnowflakeConfigurationValidation(t *testing.T) {
-	t.SkipNow()
+	if os.Getenv("SLOW") == "0" {
+		t.Skip("Skipping tests. Remove 'SLOW=0' env var to run them.")
+	}
+
+	//t.SkipNow()
 	t.Parallel()
 
 	if _, exists := os.LookupEnv(testhelper.SnowflakeIntegrationTestCredentials); !exists {
@@ -215,10 +228,4 @@ func TestSnowflakeConfigurationValidation(t *testing.T) {
 		RevisionID: "29HgdgvNPwqFDMONSgmIZ3YSehV",
 	}
 	testhelper.VerifyConfigurationTest(t, destination)
-}
-
-func stagingFilesEventsMap() testhelper.EventsCountMap {
-	return testhelper.EventsCountMap{
-		"wh_staging_files": 34, // Since extra 2 merge events because of ID resolution
-	}
 }

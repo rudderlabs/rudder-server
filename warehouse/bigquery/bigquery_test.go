@@ -1,5 +1,3 @@
-//go:build warehouse_integration
-
 package bigquery_test
 
 import (
@@ -27,6 +25,10 @@ import (
 )
 
 func TestBigQueryIntegration(t *testing.T) {
+	if os.Getenv("SLOW") == "0" {
+		t.Skip("Skipping tests. Remove 'SLOW=0' env var to run them.")
+	}
+
 	t.Parallel()
 
 	if _, exists := os.LookupEnv(testhelper.BigqueryIntegrationTestCredentials); !exists {
@@ -72,10 +74,10 @@ func TestBigQueryIntegration(t *testing.T) {
 		tableUploadsEventsMap testhelper.EventsCountMap
 		warehouseEventsMap    testhelper.EventsCountMap
 		asyncJob              func(t testing.TB, wareHouseTest *testhelper.WareHouseTest)
-		prerequisite          func(t *testing.T)
+		prerequisite          func(t testing.TB)
 	}{
 		{
-			name:                  "Upload JOB With Merge Mode",
+			name:                  "Upload Job With Merge Mode",
 			schema:                schema,
 			tables:                []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"},
 			writeKey:              "J77aX7tLFJ84qYU6UrN8ctecwZt",
@@ -86,17 +88,18 @@ func TestBigQueryIntegration(t *testing.T) {
 			loadFilesEventsMap:    loadFilesEventsMap(),
 			tableUploadsEventsMap: tableUploadsEventsMap(),
 			warehouseEventsMap:    mergeEventsMap(),
-			prerequisite: func(t *testing.T) {
-				require.NoError(t, testhelper.SetConfig([]warehouseutils.KeyValue{
+			prerequisite: func(t testing.TB) {
+				t.Helper()
+				testhelper.SetConfig(t, []warehouseutils.KeyValue{
 					{
 						Key:   "Warehouse.bigquery.isDedupEnabled",
 						Value: true,
 					},
-				}))
+				})
 			},
 		},
 		{
-			name:                  "Async JOB",
+			name:                  "Async Job with Append Mode",
 			schema:                sourceSchema,
 			tables:                []string{"tracks", "google_sheet"},
 			writeKey:              "J77aeABtLFJ84qYU6UrN8ctewZt",
@@ -108,13 +111,15 @@ func TestBigQueryIntegration(t *testing.T) {
 			tableUploadsEventsMap: testhelper.SourcesTableUploadsEventsMap(),
 			warehouseEventsMap:    testhelper.SourcesWarehouseEventsMap(),
 			asyncJob:              testhelper.VerifyAsyncJob,
-			prerequisite: func(t *testing.T) {
-				require.NoError(t, testhelper.SetConfig([]warehouseutils.KeyValue{
+			skipUserCreation:      true,
+			prerequisite: func(t testing.TB) {
+				t.Helper()
+				testhelper.SetConfig(t, []warehouseutils.KeyValue{
 					{
 						Key:   "Warehouse.bigquery.isDedupEnabled",
 						Value: false,
 					},
-				}))
+				})
 			},
 		},
 	}
@@ -183,15 +188,11 @@ func TestBigQueryIntegration(t *testing.T) {
 		})
 	}
 
-	t.Run("Merge Mode", func(t *testing.T) {
-
-	})
-
 	t.Run("Append Mode", func(t *testing.T) {
 		testCases := []struct {
 			name                                string
 			customPartitionsEnabledWorkspaceIDs []string
-			prerequisite                        func(t *testing.T)
+			prerequisite                        func(t testing.TB)
 		}{
 			{
 				name: "Without custom partitions",
@@ -199,7 +200,7 @@ func TestBigQueryIntegration(t *testing.T) {
 			{
 				name:                                "With custom partitions",
 				customPartitionsEnabledWorkspaceIDs: []string{"BpLnfgDsc2WD8F2qNfHK5a84jjJ"},
-				prerequisite: func(t *testing.T) {
+				prerequisite: func(t testing.TB) {
 					t.Helper()
 					err = db.Dataset(schema).Create(context.Background(), &bigquery.DatasetMetadata{
 						Location: "US",
@@ -232,7 +233,7 @@ func TestBigQueryIntegration(t *testing.T) {
 					tc.prerequisite(t)
 				}
 
-				require.NoError(t, testhelper.SetConfig([]warehouseutils.KeyValue{
+				testhelper.SetConfig(t, []warehouseutils.KeyValue{
 					{
 						Key:   "Warehouse.bigquery.isDedupEnabled",
 						Value: false,
@@ -241,7 +242,7 @@ func TestBigQueryIntegration(t *testing.T) {
 						Key:   "Warehouse.bigquery.customPartitionsEnabledWorkspaceIDs",
 						Value: tc.customPartitionsEnabledWorkspaceIDs,
 					},
-				}))
+				})
 
 				warehouseTest := &testhelper.WareHouseTest{
 					Client: &client.Client{
@@ -279,6 +280,10 @@ func TestBigQueryIntegration(t *testing.T) {
 }
 
 func TestBigQueryConfigurationValidation(t *testing.T) {
+	if os.Getenv("SLOW") == "0" {
+		t.Skip("Skipping tests. Remove 'SLOW=0' env var to run them.")
+	}
+
 	t.Parallel()
 
 	if _, exists := os.LookupEnv(testhelper.BigqueryIntegrationTestCredentials); !exists {
@@ -352,10 +357,17 @@ func mergeEventsMap() testhelper.EventsCountMap {
 }
 
 func appendEventsMap() testhelper.EventsCountMap {
-	eventsMap := testhelper.DefaultWarehouseEventsMap()
-	eventsMap["groups"] = 1
-	eventsMap["_groups"] = 3
-	return eventsMap
+	return testhelper.EventsCountMap{
+		"identifies":    4,
+		"users":         1,
+		"tracks":        4,
+		"product_track": 4,
+		"pages":         4,
+		"screens":       4,
+		"aliases":       4,
+		"groups":        1,
+		"_groups":       3,
+	}
 }
 
 func TestUnsupportedCredentials(t *testing.T) {

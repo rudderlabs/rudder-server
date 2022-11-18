@@ -1,5 +1,3 @@
-//go:build warehouse_integration
-
 package deltalake_test
 
 import (
@@ -31,6 +29,10 @@ var statsToVerify = []string{
 }
 
 func TestDeltalakeIntegration(t *testing.T) {
+	if os.Getenv("SLOW") == "0" {
+		t.Skip("Skipping tests. Remove 'SLOW=0' env var to run them.")
+	}
+
 	t.Parallel()
 
 	if _, exists := os.LookupEnv(testhelper.DeltalakeIntegrationTestCredentials); !exists {
@@ -68,33 +70,33 @@ func TestDeltalakeIntegration(t *testing.T) {
 		name             string
 		skipUserCreation bool
 		warehouseEvents  testhelper.EventsCountMap
-		prerequisite     func(t *testing.T)
+		prerequisite     func(t testing.TB)
 	}{
 		{
 			name:            "Merge Mode",
 			warehouseEvents: mergeEventsMap(),
-			prerequisite: func(t *testing.T) {
+			prerequisite: func(t testing.TB) {
 				t.Helper()
-				require.NoError(t, testhelper.SetConfig([]warehouseutils.KeyValue{
+				testhelper.SetConfig(t, []warehouseutils.KeyValue{
 					{
 						Key:   "Warehouse.deltalake.loadTableStrategy",
 						Value: "MERGE",
 					},
-				}))
+				})
 			},
 		},
 		{
 			name:             "Append Mode",
 			skipUserCreation: true,
 			warehouseEvents:  appendEventsMap(),
-			prerequisite: func(t *testing.T) {
+			prerequisite: func(t testing.TB) {
 				t.Helper()
-				require.NoError(t, testhelper.SetConfig([]warehouseutils.KeyValue{
+				testhelper.SetConfig(t, []warehouseutils.KeyValue{
 					{
 						Key:   "Warehouse.deltalake.loadTableStrategy",
 						Value: "APPEND",
 					},
-				}))
+				})
 			},
 		},
 	}
@@ -161,6 +163,10 @@ func TestDeltalakeIntegration(t *testing.T) {
 }
 
 func TestDeltalakeConfigurationValidation(t *testing.T) {
+	if os.Getenv("SLOW") == "0" {
+		t.Skip("Skipping tests. Remove 'SLOW=0' env var to run them.")
+	}
+
 	t.Parallel()
 
 	if _, exists := os.LookupEnv(testhelper.DeltalakeIntegrationTestCredentials); !exists {
