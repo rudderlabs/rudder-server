@@ -1,4 +1,4 @@
-//go:build warehouse_integration && !sources_integration
+//go:build warehouse_integration
 
 package redshift_test
 
