@@ -85,10 +85,6 @@ func (w *WareHouseTest) SourceRecordID() string {
 	return w.RecordID
 }
 
-type WarehouseTestSetup interface {
-	VerifyConnection() error
-}
-
 const (
 	WaitFor2Minute        = 2 * time.Minute
 	WaitFor10Minute       = 10 * time.Minute
@@ -191,7 +187,16 @@ func VerifyEventsInStagingFiles(t testing.TB, db *sql.DB, wareHouseTest *WareHou
 		require.NoError(t, err)
 		return count.Int64 == int64(stagingFileEvents)
 	}
-	require.Eventually(t, operation, WaitFor2Minute, DefaultQueryFrequency, fmt.Sprintf("Expected staging files events count is %d and Actual staging files events count is %d", stagingFileEvents, count.Int64))
+	require.Eventually(
+		t,
+		operation,
+		WaitFor2Minute,
+		DefaultQueryFrequency,
+		fmt.Sprintf("Expected staging files events count is %d and Actual staging files events count is %d",
+			stagingFileEvents,
+			count.Int64,
+		),
+	)
 
 	t.Logf("Completed verifying events in staging files")
 }
@@ -247,7 +252,17 @@ func VerifyEventsInLoadFiles(t testing.TB, db *sql.DB, wareHouseTest *WareHouseT
 			require.NoError(t, err)
 			return count.Int64 == int64(loadFileEvents)
 		}
-		require.Eventually(t, operation, WaitFor10Minute, DefaultQueryFrequency, fmt.Sprintf("Expected load files events count is %d and Actual load files events count is %d for table %s", loadFileEvents, count.Int64, table))
+		require.Eventually(
+			t,
+			operation,
+			WaitFor10Minute,
+			DefaultQueryFrequency,
+			fmt.Sprintf("Expected load files events count is %d and Actual load files events count is %d for table %s",
+				loadFileEvents,
+				count.Int64,
+				table,
+			),
+		)
 	}
 
 	t.Logf("Completed verifying events in load files")
@@ -312,7 +327,16 @@ func VerifyEventsInTableUploads(t testing.TB, db *sql.DB, wareHouseTest *WareHou
 			require.NoError(t, err)
 			return count.Int64 == int64(tableUploadEvents)
 		}
-		require.Eventually(t, operation, WaitFor10Minute, DefaultQueryFrequency, fmt.Sprintf("Expected table uploads events count is %d and Actual table uploads events count is %d for table %s", tableUploadEvents, count.Int64, table))
+		require.Eventually(t,
+			operation,
+			WaitFor10Minute,
+			DefaultQueryFrequency,
+			fmt.Sprintf("Expected table uploads events count is %d and Actual table uploads events count is %d for table %s",
+				tableUploadEvents,
+				count.Int64,
+				table,
+			),
+		)
 	}
 
 	t.Logf("Completed verifying events in table uploads")
