@@ -99,13 +99,3 @@ func EnhanceJSON(rawMsg []byte, key, val string) []byte {
 func IsNotEmptyString(s string) bool {
 	return len(strings.TrimSpace(s)) > 0
 }
-
-func GetAuthType(dest backendconfig.DestinationT) (authType string) {
-	return misc.GetAuthType(dest.DestinationDefinition.Config)
-}
-
-func GetRudderAccountId(destination *backendconfig.DestinationT) string {
-	return misc.GetAccountId(misc.GetAccountIdParams{
-		DestConfig: destination.Config,
-	})
-}

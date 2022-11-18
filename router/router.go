@@ -460,8 +460,9 @@ func (worker *workerT) workerProcess() {
 				continue
 			}
 			destination := batchDestination.Destination
-			if authType := routerutils.GetAuthType(destination); routerutils.IsNotEmptyString(authType) && authType == "OAuth" {
-				rudderAccountID := routerutils.GetRudderAccountId(&destination)
+			if authType := oauth.GetAuthType(destination.DestinationDefinition.Config); routerutils.IsNotEmptyString(string(authType)) && authType == oauth.OAuth {
+				rudderAccountID := oauth.GetAccountId(destination.Config)
+
 				if routerutils.IsNotEmptyString(rudderAccountID) {
 					worker.rt.logger.Debugf(`[%s][FetchToken] Token Fetch Method to be called`, destination.DestinationDefinition.Name)
 					// Get Access Token Information to send it as part of the event
@@ -672,8 +673,8 @@ func (worker *workerT) processDestinationJobs() {
 									respStatusCode, respBodyTemp, respContentType = worker.rt.transformer.ProxyRequest(ctx, proxyReqparams)
 									worker.routerProxyStat.SendTiming(time.Since(rtlTime))
 									pkgLogger.Debugf(`[TransformerProxy] (Dest-%[1]v) {Job - %[2]v} Request ended`, worker.rt.destName, jobID)
-									authType := routerutils.GetAuthType(destinationJob.Destination)
-									if routerutils.IsNotEmptyString(authType) && authType == "OAuth" {
+									authType := oauth.GetAuthType(destinationJob.Destination.DestinationDefinition.Config)
+									if routerutils.IsNotEmptyString(string(authType)) && authType == oauth.OAuth {
 										pkgLogger.Debugf(`Sending for OAuth destination`)
 										// Token from header of the request
 										respStatusCode, respBodyTemp = worker.rt.HandleOAuthDestResponse(&HandleDestOAuthRespParamsT{
@@ -2088,7 +2089,7 @@ func (rt *HandleT) HandleOAuthDestResponse(params *HandleDestOAuthRespParamsT) (
 		var errCatStatusCode int
 		// Check the category
 		// Trigger the refresh endpoint/disable endpoint
-		rudderAccountID := routerutils.GetRudderAccountId(&destinationJob.Destination)
+		rudderAccountID := oauth.GetAccountId(destinationJob.Destination.Config)
 		if strings.TrimSpace(rudderAccountID) == "" {
 			return trRespStatusCode, trRespBody
 		}

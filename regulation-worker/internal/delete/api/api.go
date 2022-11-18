@@ -32,6 +32,15 @@ type APIManager struct {
 	OAuth            oauth.Authorizer
 }
 
+type OAuthDetail struct {
+	SecretToken *oauth.AuthResponse
+	ID          string
+}
+
+func (*APIManager) GetSupportedDestinations() []string {
+	return supportedDestinations
+}
+
 // prepares payload based on (job,destDetail) & make an API call to transformer.
 // gets (status, failure_reason) which is converted to appropriate model.Error & returned to caller.
 func (api *APIManager) Delete(ctx context.Context, job model.Job, destDetail model.Destination) model.JobStatus {
@@ -54,15 +63,20 @@ func (api *APIManager) Delete(ctx context.Context, job model.Job, destDetail mod
 	}
 	req.Header.Set("Content-Type", "application/json")
 
-	tokenInfo, getTokenInfoErr := api.getOAuthTokenInfo(job.WorkspaceID, &destDetail)
-	if getTokenInfoErr != nil {
-		// Problem in fetching token
-		return model.JobStatusFailed
-	}
-	setFailErr := setOAuthTokenInfo(*tokenInfo, req)
-	if setFailErr != nil {
-		// Marshal failure
-		return model.JobStatusFailed
+	// check if OAuth destination
+	isOAuthEnabled := IsOAuthEnabled(destDetail.DestDefConfig)
+	var oAuthDetail OAuthDetail
+	if isOAuthEnabled {
+		oAuthDetail, err = api.getOAuthDetail(&destDetail, job.WorkspaceID)
+		if err != nil {
+			pkgLogger.Error(err)
+			return model.JobStatusFailed
+		}
+		err = setOAuthHeader(oAuthDetail.SecretToken, req)
+		if err != nil {
+			pkgLogger.Error(err)
+			return model.JobStatusFailed
+		}
 	}
 
 	fileCleaningTime := stats.Default.NewTaggedStat("file_cleaning_time", stats.TimerType, stats.Tags{
@@ -92,12 +106,16 @@ func (api *APIManager) Delete(ctx context.Context, job model.Job, destDetail mod
 		return model.JobStatusFailed
 	}
 
-	// Refresh Flow Start
-	oauthDestRespStatus := api.getOAuthDestResponseStatus(tokenInfo, jobResp, job, destDetail)
-	if oauthDestRespStatus != model.JobStatusUndefined {
-		return oauthDestRespStatus
+	if isOAuthEnabled {
+		isOAuthTokenExpired := isTokenExpired(jobResp)
+		if isOAuthTokenExpired {
+			err = api.refreshOAuthToken(destDetail.Name, job.WorkspaceID, oAuthDetail)
+			if err != nil {
+				pkgLogger.Error(err)
+				return model.JobStatusFailed
+			}
+		}
 	}
-	// Refresh Flow ends
 
 	switch resp.StatusCode {
 
@@ -126,10 +144,6 @@ func (api *APIManager) Delete(ctx context.Context, job model.Job, destDetail mod
 	}
 }
 
-func (*APIManager) GetSupportedDestinations() []string {
-	return supportedDestinations
-}
-
 func mapJobToPayload(job model.Job, destName string, destConfig map[string]interface{}) []apiDeletionPayloadSchema {
 	uas := make([]userAttributesSchema, len(job.Users))
 	for i, ua := range job.Users {
@@ -150,125 +164,59 @@ func mapJobToPayload(job model.Job, destName string, destConfig map[string]inter
 	}
 }
 
-type handleRefreshFlowParams struct {
-	secret      json.RawMessage
-	destName    string
-	workspaceId string
-	accountId   string
-	isRefresh   bool
-}
-
-func shouldRefresh(jobResponses []JobRespSchema) bool {
-	var isRefresh bool
+func isTokenExpired(jobResponses []JobRespSchema) bool {
 	for _, jobResponse := range jobResponses {
-		isRefresh = jobResponse.AuthErrorCategory == oauth.REFRESH_TOKEN
-		if isRefresh {
-			break
+		if jobResponse.AuthErrorCategory == oauth.REFRESH_TOKEN {
+			return true
 		}
 	}
-	return isRefresh
+	return false
 }
 
-/*
-*
-This method handles the refresh flow for OAuth destinations
-When the status undefined(model.JobStatusUndefined) is returned, we can understand it is due to one of two things
-1. The error that was received was not an error that could trigger Refresh flow
-2. The destination itself is not OAuth one in the first place so it doesn't have errorCategory at all
-*
-*/
-func (api *APIManager) handleRefreshFlow(params *handleRefreshFlowParams) model.JobStatus {
-	if params.isRefresh {
-		pkgLogger.Debugf("Refresh flow triggered for %v\n", params.destName)
-		// Refresh OAuth flow
-		var refSecret *oauth.AuthResponse
-		var errCatStatusCode int
-		refTokenParams := &oauth.RefreshTokenParams{
-			Secret:          params.secret,
-			WorkspaceId:     params.workspaceId,
-			AccountId:       params.accountId,
-			DestDefName:     params.destName,
-			EventNamePrefix: "refresh_token",
-		}
-		errCatStatusCode, refSecret = api.OAuth.RefreshToken(refTokenParams)
-		refSec := *refSecret
-		if strings.TrimSpace(refSec.Err) != "" {
-			// There is an error occurring
-			pkgLogger.Warnf("Error: %v, Status: %v", refSec.Err, errCatStatusCode)
-		}
-		// Refresh is complete, the job has to be re-tried
-		return model.JobStatusFailed
+func setOAuthHeader(secretToken *oauth.AuthResponse, req *http.Request) error {
+	payload, marshalErr := json.Marshal(secretToken.Account)
+	if marshalErr != nil {
+		marshalFailErr := fmt.Sprintf("error while marshalling account secret information: %v", marshalErr)
+		pkgLogger.Errorf(marshalFailErr)
+		return errors.New(marshalFailErr)
 	}
-	// Indicates that OAuth refresh flow is not triggered
-	return model.JobStatusUndefined
-}
-
-func (api *APIManager) getOAuthDestResponseStatus(tokenInfo *OAuthTokenResult, jobResp []JobRespSchema, job model.Job, destDetail model.Destination) model.JobStatus {
-	status := model.JobStatusUndefined
-	if tokenInfo.IsOAuthEnabled {
-		shouldRefresh := shouldRefresh(jobResp)
-		status = api.handleRefreshFlow(&handleRefreshFlowParams{
-			isRefresh:   shouldRefresh,
-			secret:      tokenInfo.AccountSecretInfo.Account.Secret,
-			workspaceId: job.WorkspaceID,
-			accountId:   tokenInfo.DeleteAccountId,
-			destName:    destDetail.Name,
-		})
-	}
-	return status
-}
-
-type OAuthTokenResult struct {
-	AccountSecretInfo *oauth.AuthResponse
-	DeleteAccountId   string
-	IsOAuthEnabled    bool
-}
-
-func setOAuthTokenInfo(tokenInfo OAuthTokenResult, req *http.Request) error {
-	if tokenInfo.IsOAuthEnabled {
-		// setting oauth related information
-		payload, marshalErr := json.Marshal(tokenInfo.AccountSecretInfo.Account)
-		if marshalErr != nil {
-			marshalFailErr := fmt.Sprintf("error while marshalling account secret information: %v", marshalErr)
-			pkgLogger.Errorf(marshalFailErr)
-			return errors.New(marshalFailErr)
-		}
-		req.Header.Set("X-Rudder-Dest-Info", string(payload))
-	}
+	req.Header.Set("X-Rudder-Dest-Info", string(payload))
 	return nil
 }
 
-func (api *APIManager) getOAuthTokenInfo(workspaceId string, destDetail *model.Destination) (*OAuthTokenResult, error) {
-	var tokenStatusCode int
-	var accountSecretInfo *oauth.AuthResponse
-	// identifier to know if the destination supports OAuth for regulation-api
-	oAuthParamsResult := oauth.GetOAuthParams(oauth.OAuthParams{
-		DestConfig:    destDetail.Config,
-		DestDefConfig: destDetail.DestDefConfig,
-		IdKey:         "rudderDeleteAccountId",
-	})
-	if oAuthParamsResult.Enabled {
-		// Fetch Token call
-		// Get Access Token Information to send it as part of the event
-		tokenStatusCode, accountSecretInfo = api.OAuth.FetchToken(&oauth.RefreshTokenParams{
-			AccountId:       oAuthParamsResult.AccountId,
-			WorkspaceId:     workspaceId,
-			DestDefName:     destDetail.Name,
-			EventNamePrefix: "fetch_token",
-		})
-		pkgLogger.Debugf(`[%s][FetchToken] Token Fetch Method finished (statusCode, value): (%v, %+v)`, destDetail.Name, tokenStatusCode, accountSecretInfo)
-		if tokenStatusCode != http.StatusOK {
-			fetchFailStr := fmt.Sprintf("[%s][FetchToken] Error in Token Fetch statusCode: %d\t error: %s\n", destDetail.Name, tokenStatusCode, accountSecretInfo.Err)
-			pkgLogger.Errorf(fetchFailStr)
-			return nil, errors.New(fetchFailStr)
-		}
+func IsOAuthEnabled(destDefConfig map[string]interface{}) bool {
+	authType := oauth.GetAuthType(destDefConfig)
+	return authType == oauth.OAuth
+}
 
-	} else {
-		pkgLogger.Errorf("[%v] Destination probably doesn't support OAuth or some issue happened while doing OAuth for deletion [Enabled: %v]", destDetail.Name, oAuthParamsResult.Enabled)
+func (api *APIManager) getOAuthDetail(destDetail *model.Destination, workspaceId string) (OAuthDetail, error) {
+	id := oauth.GetAccountId(destDetail.Config)
+	tokenStatusCode, secretToken := api.OAuth.FetchToken(&oauth.RefreshTokenParams{
+		AccountId:       id,
+		WorkspaceId:     workspaceId,
+		DestDefName:     destDetail.Name,
+		EventNamePrefix: "fetch_token",
+	})
+	if tokenStatusCode != http.StatusOK {
+		return OAuthDetail{}, fmt.Errorf("[%s][FetchToken] Error in Token Fetch statusCode: %d\t error: %s\n", destDetail.Name, tokenStatusCode, secretToken.Err)
 	}
-	return &OAuthTokenResult{
-		AccountSecretInfo: accountSecretInfo,
-		DeleteAccountId:   oAuthParamsResult.AccountId,
-		IsOAuthEnabled:    oAuthParamsResult.Enabled,
+	return OAuthDetail{
+		ID:          id,
+		SecretToken: secretToken,
 	}, nil
+}
+
+func (api *APIManager) refreshOAuthToken(destName, workspaceId string, oAuthDetail OAuthDetail) error {
+	refTokenParams := &oauth.RefreshTokenParams{
+		Secret:          oAuthDetail.SecretToken.Account.Secret,
+		WorkspaceId:     workspaceId,
+		AccountId:       oAuthDetail.ID,
+		DestDefName:     destName,
+		EventNamePrefix: "refresh_token",
+	}
+	statusCode, _ := api.OAuth.RefreshToken(refTokenParams)
+	if statusCode != http.StatusOK {
+		return fmt.Errorf("failed to refresh token for destination: %v", destName)
+	}
+	return nil
 }

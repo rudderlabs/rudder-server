@@ -21,6 +21,14 @@ import (
 	"github.com/tidwall/gjson"
 )
 
+type AuthType string
+
+const (
+	OAuth            AuthType = "OAuth"
+	InvalidAuthType  AuthType = "InvalidAuthType"
+	deleteAccountKey          = "rudderDeleteAccountId"
+)
+
 type AccountSecret struct {
 	ExpirationDate string          `json:"expirationDate"`
 	Secret         json.RawMessage `json:"secret"`
@@ -86,13 +94,6 @@ type ControlPlaneRequestT struct {
 	RequestType string // This is to add more refined stat tags
 }
 
-// This function creates a new OauthErrorResponseHandler
-func NewOAuthErrorHandler(provider tokenProvider) *OAuthErrResHandler {
-	oAuthErrResHandler := &OAuthErrResHandler{TokenProvider: provider}
-	oAuthErrResHandler.Setup()
-	return oAuthErrResHandler
-}
-
 var (
 	configBEURL string
 	pkgLogger   logger.Logger
@@ -115,6 +116,12 @@ type tokenProvider interface {
 	AccessToken() string
 }
 
+type OAuthParams struct {
+	DestConfig    map[string]interface{}
+	DestDefConfig map[string]interface{}
+	IdKey         string
+}
+
 func Init() {
 	configBEURL = backendconfig.GetConfigBackendURL()
 	pkgLogger = logger.NewLogger().Child("router").Child("OAuthResponseHandler")
@@ -134,28 +141,33 @@ func (authErrHandler *OAuthErrResHandler) Setup() {
 	authErrHandler.disableDestActiveMap = make(map[string]bool)
 }
 
-type OAuthParams struct {
-	DestConfig    map[string]interface{}
-	DestDefConfig map[string]interface{}
-	IdKey         string
-}
-
-type OAuthParamsResult struct {
-	Enabled   bool
-	AccountId string
-}
-
-func GetOAuthParams(params OAuthParams) OAuthParamsResult {
-	accountId := misc.GetAccountId(misc.GetAccountIdParams{
-		DestConfig: params.DestConfig,
-		IdKey:      params.IdKey,
-	})
-	authType := misc.GetAuthType(params.DestDefConfig)
-	isEnabled := authType == "OAuth" && strings.TrimSpace(accountId) != ""
-	return OAuthParamsResult{
-		Enabled:   isEnabled,
-		AccountId: accountId,
+func GetAuthType(config map[string]interface{}) AuthType {
+	var lookupErr error
+	var authValue interface{}
+	if authValue, lookupErr = misc.NestedMapLookup(config, "auth", "type"); lookupErr != nil {
+		return ""
 	}
+	authType, ok := authValue.(string)
+	if !ok {
+		return ""
+	}
+	return AuthType(authType)
+}
+
+// This function creates a new OauthErrorResponseHandler
+func NewOAuthErrorHandler(provider tokenProvider) *OAuthErrResHandler {
+	oAuthErrResHandler := &OAuthErrResHandler{TokenProvider: provider}
+	oAuthErrResHandler.Setup()
+	return oAuthErrResHandler
+}
+
+func GetAccountId(config map[string]interface{}) string {
+	if rudderAccountIdInterface, found := config[deleteAccountKey]; found {
+		if rudderAccountId, ok := rudderAccountIdInterface.(string); ok {
+			return rudderAccountId
+		}
+	}
+	return ""
 }
 
 func (authErrHandler *OAuthErrResHandler) RefreshToken(refTokenParams *RefreshTokenParams) (int, *AuthResponse) {
