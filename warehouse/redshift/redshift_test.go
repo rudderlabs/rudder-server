@@ -1,5 +1,3 @@
-//go:build warehouse_integration
-
 package redshift_test
 
 import (
@@ -23,6 +21,10 @@ import (
 )
 
 func TestRedshiftIntegration(t *testing.T) {
+	if os.Getenv("SLOW") == "0" {
+		t.Skip("Skipping tests. Remove 'SLOW=0' env var to run them.")
+	}
+
 	t.Parallel()
 
 	if _, exists := os.LookupEnv(testhelper.RedshiftIntegrationTestCredentials); !exists {
@@ -34,7 +36,7 @@ func TestRedshiftIntegration(t *testing.T) {
 	credentials, err := testhelper.RedshiftCredentials()
 	require.NoError(t, err)
 
-	require.NoError(t, testhelper.SetConfig([]warehouseutils.KeyValue{
+	testhelper.SetConfig(t, []warehouseutils.KeyValue{
 		{
 			Key:   "Warehouse.redshift.dedupWindow",
 			Value: true,
@@ -43,7 +45,7 @@ func TestRedshiftIntegration(t *testing.T) {
 			Key:   "Warehouse.redshift.dedupWindowInHours",
 			Value: 5,
 		},
-	}))
+	})
 
 	testcase := []struct {
 		name                  string
@@ -61,7 +63,7 @@ func TestRedshiftIntegration(t *testing.T) {
 		asyncJob              func(t testing.TB, wareHouseTest *testhelper.WareHouseTest)
 	}{
 		{
-			name:                  "Upload JOB",
+			name:                  "Upload Job",
 			schema:                testhelper.Schema(warehouseutils.RS, testhelper.RedshiftIntegrationTestSchema),
 			tables:                []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"},
 			writeKey:              "JAAwdCxmM8BIabKERsUhPNmMmdf",
@@ -74,7 +76,7 @@ func TestRedshiftIntegration(t *testing.T) {
 			warehouseEventsMap:    testhelper.DefaultWarehouseEventsMap(),
 		},
 		{
-			name:                  "Async JOB",
+			name:                  "Async Job",
 			schema:                fmt.Sprintf("%s_%s", testhelper.Schema(warehouseutils.RS, testhelper.RedshiftIntegrationTestSchema), "sources"),
 			tables:                []string{"tracks", "google_sheet"},
 			writeKey:              "BNAwdCxmM8BIabKERsUhPNmMmdf",
@@ -86,6 +88,7 @@ func TestRedshiftIntegration(t *testing.T) {
 			tableUploadsEventsMap: testhelper.SourcesTableUploadsEventsMap(),
 			warehouseEventsMap:    testhelper.SourcesWarehouseEventsMap(),
 			asyncJob:              testhelper.VerifyAsyncJob,
+			skipUserCreation:      true,
 		},
 	}
 
@@ -163,6 +166,10 @@ func TestRedshiftIntegration(t *testing.T) {
 }
 
 func TestRedshiftConfigurationValidation(t *testing.T) {
+	if os.Getenv("SLOW") == "0" {
+		t.Skip("Skipping tests. Remove 'SLOW=0' env var to run them.")
+	}
+
 	t.Parallel()
 
 	if _, exists := os.LookupEnv(testhelper.RedshiftIntegrationTestCredentials); !exists {

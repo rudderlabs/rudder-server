@@ -1,5 +1,3 @@
-//go:build warehouse_integration
-
 package datalake_test
 
 import (
@@ -19,6 +17,10 @@ import (
 )
 
 func TestDatalakeIntegration(t *testing.T) {
+	if os.Getenv("SLOW") == "0" {
+		t.Skip("Skipping tests. Remove 'SLOW=0' env var to run them.")
+	}
+
 	t.Parallel()
 
 	datalake.Init()
@@ -29,7 +31,7 @@ func TestDatalakeIntegration(t *testing.T) {
 		sourceID      string
 		destinationID string
 		provider      string
-		prerequisite  func(t *testing.T)
+		prerequisite  func(t testing.TB)
 	}{
 		{
 			name:          "S3Datalake",
@@ -37,7 +39,7 @@ func TestDatalakeIntegration(t *testing.T) {
 			sourceID:      "279L3gEKqwruNoKGsXZtSVX7vIy",
 			destinationID: "27SthahyhhqEZ7H4T4NTtNPl06V",
 			provider:      warehouseutils.S3_DATALAKE,
-			prerequisite: func(t *testing.T) {
+			prerequisite: func(t testing.TB) {
 				t.Helper()
 				testhelper.CreateBucketForMinio(t, "s3-datalake-test")
 			},
@@ -48,7 +50,7 @@ func TestDatalakeIntegration(t *testing.T) {
 			sourceID:      "279L3gEKqwruNoKGZXatSVX7vIy",
 			destinationID: "27SthahyhhqEZGHaT4NTtNPl06V",
 			provider:      warehouseutils.GCS_DATALAKE,
-			prerequisite: func(t *testing.T) {
+			prerequisite: func(t testing.TB) {
 				t.Helper()
 				if _, exists := os.LookupEnv(testhelper.BigqueryIntegrationTestCredentials); !exists {
 					t.Skipf("Skipping %s as %s is not set", t.Name(), testhelper.BigqueryIntegrationTestCredentials)
@@ -117,6 +119,10 @@ func TestDatalakeIntegration(t *testing.T) {
 }
 
 func TestDatalakeConfigurationValidation(t *testing.T) {
+	if os.Getenv("SLOW") == "0" {
+		t.Skip("Skipping tests. Remove 'SLOW=0' env var to run them.")
+	}
+
 	t.Parallel()
 
 	misc.Init()

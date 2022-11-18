@@ -1,11 +1,10 @@
-//go:build warehouse_integration
-
 package clickhouse_test
 
 import (
 	"database/sql"
 	"fmt"
 	"log"
+	"os"
 	"strings"
 	"testing"
 
@@ -32,33 +31,18 @@ var statsToVerify = []string{
 }
 
 func TestClickHouseIntegration(t *testing.T) {
+	if os.Getenv("SLOW") == "0" {
+		t.Skip("Skipping tests. Remove 'SLOW=0' env var to run them.")
+	}
+
 	t.Parallel()
 
 	clickhouse.Init()
 
-	var (
-		db         *sql.DB
-		clusterDBs []*sql.DB
-	)
-
-	db, err := clickhouse.Connect(clickhouse.CredentialsT{
-		Host:          "wh-clickhouse",
-		User:          "rudder",
-		Password:      "rudder-password",
-		DBName:        "rudderdb",
-		Secure:        "false",
-		SkipVerify:    "true",
-		TLSConfigName: "",
-		Port:          "9000",
-	}, true)
-	require.NoError(t, err)
-
-	err = db.Ping()
-	require.NoError(t, err)
-
-	for _, i := range []int{1, 2, 3, 4} {
+	var dbs []*sql.DB
+	for _, host := range []string{"wh-clickhouse", "wh-clickhouse01", "wh-clickhouse02", "wh-clickhouse03", "wh-clickhouse04"} {
 		db, err := clickhouse.Connect(clickhouse.CredentialsT{
-			Host:          fmt.Sprintf("wh-clickhouse0%d", i),
+			Host:          host,
 			User:          "rudder",
 			Password:      "rudder-password",
 			DBName:        "rudderdb",
@@ -72,7 +56,7 @@ func TestClickHouseIntegration(t *testing.T) {
 		err = db.Ping()
 		require.NoError(t, err)
 
-		clusterDBs = append(clusterDBs, db)
+		dbs = append(dbs, db)
 	}
 
 	jobsDB := testhelper.SetUpJobsDB(t)
@@ -86,7 +70,7 @@ func TestClickHouseIntegration(t *testing.T) {
 		userType        string
 		db              *sql.DB
 		warehouseEvents testhelper.EventsCountMap
-		clusterSetup    func(t *testing.T)
+		clusterSetup    func(t testing.TB)
 	}{
 		{
 			name:            "Single Setup",
@@ -94,20 +78,29 @@ func TestClickHouseIntegration(t *testing.T) {
 			destinationID:   "21Ev6TI6emCFDKph2Zn6XfTP7PI",
 			writeKey:        "C5AWX39IVUWSP2NcHciWvqZTa2N",
 			userType:        warehouseutils.CLICKHOUSE,
-			db:              db,
+			db:              dbs[0],
 			warehouseEvents: testhelper.DefaultWarehouseEventsMap(),
 		},
 		{
-			name:            "Cluster Mode Setup",
-			sourceID:        "1wRvLmEnMOOxNM79ghdZhyCqXRE",
-			destinationID:   "21Ev6TI6emCFDKhp2Zn6XfTP7PI",
-			writeKey:        "95RxRTZHWUsaD6HEdz0ThbXfQ6p",
-			userType:        fmt.Sprintf("%s_%s", warehouseutils.CLICKHOUSE, "CLUSTER"),
-			db:              clusterDBs[0],
-			warehouseEvents: clusterWarehouseEventsMap(),
-			clusterSetup: func(t *testing.T) {
+			name:          "Cluster Mode Setup",
+			sourceID:      "1wRvLmEnMOOxNM79ghdZhyCqXRE",
+			destinationID: "21Ev6TI6emCFDKhp2Zn6XfTP7PI",
+			writeKey:      "95RxRTZHWUsaD6HEdz0ThbXfQ6p",
+			userType:      fmt.Sprintf("%s_%s", warehouseutils.CLICKHOUSE, "CLUSTER"),
+			db:            dbs[1],
+			warehouseEvents: testhelper.EventsCountMap{
+				"identifies":    8,
+				"users":         2,
+				"tracks":        8,
+				"product_track": 8,
+				"pages":         8,
+				"screens":       8,
+				"aliases":       8,
+				"groups":        8,
+			},
+			clusterSetup: func(t testing.TB) {
 				t.Helper()
-				initializeClickhouseClusterMode(t, clusterDBs, tables)
+				initializeClickhouseClusterMode(t, dbs[1:], tables)
 			},
 		},
 	}
@@ -116,6 +109,8 @@ func TestClickHouseIntegration(t *testing.T) {
 		tc := tc
 
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
 			warehouseTest := &testhelper.WareHouseTest{
 				Client: &client.Client{
 					SQL:  tc.db,
@@ -169,6 +164,10 @@ func TestClickHouseIntegration(t *testing.T) {
 }
 
 func TestClickhouseConfigurationValidation(t *testing.T) {
+	if os.Getenv("SLOW") == "0" {
+		t.Skip("Skipping tests. Remove 'SLOW=0' env var to run them.")
+	}
+
 	t.Parallel()
 
 	misc.Init()
@@ -209,7 +208,7 @@ func TestClickhouseConfigurationValidation(t *testing.T) {
 	testhelper.VerifyConfigurationTest(t, destination)
 }
 
-func initializeClickhouseClusterMode(t *testing.T, clusterDBs []*sql.DB, tables []string) {
+func initializeClickhouseClusterMode(t testing.TB, clusterDBs []*sql.DB, tables []string) {
 	t.Helper()
 
 	type ColumnInfoT struct {
@@ -365,18 +364,5 @@ func initializeClickhouseClusterMode(t *testing.T, clusterDBs []*sql.DB, tables 
 				return err
 			}))
 		}
-	}
-}
-
-func clusterWarehouseEventsMap() testhelper.EventsCountMap {
-	return testhelper.EventsCountMap{
-		"identifies":    8,
-		"users":         2,
-		"tracks":        8,
-		"product_track": 8,
-		"pages":         8,
-		"screens":       8,
-		"aliases":       8,
-		"groups":        8,
 	}
 }

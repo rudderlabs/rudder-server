@@ -1,8 +1,9 @@
-//go:build warehouse_integration
-
 package mssql_test
 
 import (
+	"github.com/rudderlabs/rudder-server/utils/timeutil"
+	"github.com/rudderlabs/rudder-server/warehouse/client"
+	"os"
 	"testing"
 
 	"github.com/rudderlabs/rudder-server/utils/misc"
@@ -17,6 +18,10 @@ import (
 )
 
 func TestMSSQLIntegration(t *testing.T) {
+	if os.Getenv("SLOW") == "0" {
+		t.Skip("Skipping tests. Remove 'SLOW=0' env var to run them.")
+	}
+
 	t.Parallel()
 
 	mssql.Init()
@@ -52,7 +57,7 @@ func TestMSSQLIntegration(t *testing.T) {
 		asyncJob              func(t testing.TB, wareHouseTest *testhelper.WareHouseTest)
 	}{
 		{
-			name:                  "Upload JOB",
+			name:                  "Upload Job",
 			writeKey:              "YSQ3n267l1VQKGNbSuJE9fQbzON",
 			schema:                "mssql_wh_integration",
 			tables:                []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"},
@@ -65,9 +70,9 @@ func TestMSSQLIntegration(t *testing.T) {
 			warehouseEventsMap:    testhelper.DefaultWarehouseEventsMap(),
 		},
 		{
-			name:                  "Async JOB",
+			name:                  "Async Job",
 			writeKey:              "2DkCpXZcEvPG2fcpUD3LmjPI7J6",
-			schema:                "postgres_wh_sources_integration",
+			schema:                "mssql_wh_sources_integration",
 			tables:                []string{"tracks", "google_sheet"},
 			sourceID:              "2DkCpUr0xfiINRJxIwqyqfyHdq4",
 			destinationID:         "21Ezdq58kMNMj07VJB0VJmxLvgu",
@@ -77,6 +82,7 @@ func TestMSSQLIntegration(t *testing.T) {
 			tableUploadsEventsMap: testhelper.SourcesTableUploadsEventsMap(),
 			warehouseEventsMap:    testhelper.SourcesWarehouseEventsMap(),
 			asyncJob:              testhelper.VerifyAsyncJob,
+			skipUserCreation:      true,
 		},
 	}
 
@@ -136,12 +142,16 @@ func TestMSSQLIntegration(t *testing.T) {
 			}
 			testhelper.VerifyEventsInWareHouse(t, warehouseTest, tc.warehouseEventsMap)
 
-			testhelper.VerifyWorkspaceIDInStats(t, statsToVerify...)
+			testhelper.VerifyWorkspaceIDInStats(t)
 		})
 	}
 }
 
 func TestMSSQLConfigurationValidation(t *testing.T) {
+	if os.Getenv("SLOW") == "0" {
+		t.Skip("Skipping tests. Remove 'SLOW=0' env var to run them.")
+	}
+
 	t.Parallel()
 
 	misc.Init()

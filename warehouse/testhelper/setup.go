@@ -119,10 +119,6 @@ const (
 	WorkspaceTemplatePath = "warehouse/testdata/workspaceConfig/template.json"
 )
 
-func Run(*testing.M, WarehouseTestSetup) int {
-	return 0
-}
-
 func SetUpJobsDB(t testing.TB) *sql.DB {
 	t.Helper()
 
@@ -386,7 +382,7 @@ func VerifyEventsInWareHouse(t testing.TB, wareHouseTest *WareHouseTest, eventsM
 	t.Logf("Completed verifying events in warehouse")
 }
 
-func VerifyConfigurationTest(t *testing.T, destination backendconfig.DestinationT) {
+func VerifyConfigurationTest(t testing.TB, destination backendconfig.DestinationT) {
 	t.Helper()
 	t.Logf("Started configuration tests for destination type: %s", destination.DestinationDefinition.Name)
 
@@ -403,7 +399,7 @@ func VerifyConfigurationTest(t *testing.T, destination backendconfig.Destination
 	t.Logf("Completed configuration tests for destination type: %s", destination.DestinationDefinition.Name)
 }
 
-func VerifyWorkspaceIDInStats(t *testing.T, extraStats ...string) {
+func VerifyWorkspaceIDInStats(t testing.TB, extraStats ...string) {
 	t.Helper()
 	t.Logf("Started verifying workspaceID in stats")
 
@@ -471,7 +467,7 @@ func VerifyWorkspaceIDInStats(t *testing.T, extraStats ...string) {
 	t.Logf("Completed verifying workspaceID in stats")
 }
 
-func prometheusStats(t *testing.T) map[string]*promCLient.MetricFamily {
+func prometheusStats(t testing.TB) map[string]*promCLient.MetricFamily {
 	t.Helper()
 
 	req, err := http.NewRequestWithContext(context.Background(), "GET", "http://statsd-exporter:9102/metrics", http.NoBody)
@@ -614,19 +610,15 @@ func CreateBucketForMinio(t testing.TB, bucketName string) {
 }
 
 // SetConfig sets hot reloadable config
-// TODO: Make it retryable
-func SetConfig(kvs []warehouseutils.KeyValue) error {
+func SetConfig(t testing.TB, kvs []warehouseutils.KeyValue) {
+	t.Helper()
+
 	payload, err := json.Marshal(&kvs)
-	if err != nil {
-		return fmt.Errorf("error marshalling while setting config with err: %s", err.Error())
-	}
+	require.NoError(t, err)
 
 	url := fmt.Sprintf(`%s/v1/setConfig`, misc.GetWarehouseURL())
 	_, err = warehouseutils.PostRequestWithTimeout(context.TODO(), url, payload, time.Second*60)
-	if err != nil {
-		return fmt.Errorf("error while making post request to set config with err: %s", err.Error())
-	}
-	return nil
+	require.NoError(t, err)
 }
 
 func PopulateTemplateConfigurations() map[string]string {
@@ -639,8 +631,6 @@ func PopulateTemplateConfigurations() map[string]string {
 		"postgresUser":     "rudder",
 		"postgresPassword": "rudder-password",
 		"postgresPort":     "5432",
-
-		"postgresSourcesWriteKey": "kwzDkh9h2fhfUVuS9jZ8uVbhV3v",
 
 		"clickHouseWriteKey": "C5AWX39IVUWSP2NcHciWvqZTa2N",
 		"clickHouseHost":     "wh-clickhouse",
@@ -664,8 +654,6 @@ func PopulateTemplateConfigurations() map[string]string {
 		"mssqlPassword": "reallyStrongPwd123",
 		"mssqlPort":     "1433",
 
-		"mssqlSourcesWriteKey": "2DkCpXZcEvPG2fcpUD3LmjPI7J6",
-
 		"azureDatalakeWriteKey":      "Hf4GTz4OiufmUqR1cq6KIeguOdC",
 		"azureDatalakeContainerName": "azure-datalake-test",
 		"azureDatalakeAccountName":   "MYACCESSKEY",
@@ -679,13 +667,16 @@ func PopulateTemplateConfigurations() map[string]string {
 		"gcsDatalakeWriteKey": "9zZFfcRqr2LpwerxICilhQmMybn",
 
 		"bigqueryWriteKey":               "J77aX7tLFJ84qYU6UrN8ctecwZt",
-		"bigquerySourcesWriteKey":        "J77aeABtLFJ84qYU6UrN8ctewZt",
 		"snowflakeWriteKey":              "2eSJyYtqwcFiUILzXv2fcNIrWO7",
 		"snowflakeCaseSensitiveWriteKey": "2eSJyYtqwcFYUILzXv2fcNIrWO7",
-		"snowflakeSourcesWriteKey":       "2eSJyYtqwcFYerwzXv2fcNIrWO7",
 		"redshiftWriteKey":               "JAAwdCxmM8BIabKERsUhPNmMmdf",
-		"redshiftSourcesWriteKey":        "BNAwdCxmM8BIabKERsUhPNmMmdf",
 		"deltalakeWriteKey":              "sToFgoilA0U1WxNeW1gdgUVDsEW",
+
+		"postgresSourcesWriteKey":  "2DkCpXZcEvJK2fcpUD3LmjPI7J6",
+		"mssqlSourcesWriteKey":     "2DkCpXZcEvPG2fcpUD3LmjPI7J6",
+		"bigquerySourcesWriteKey":  "J77aeABtLFJ84qYU6UrN8ctewZt",
+		"redshiftSourcesWriteKey":  "BNAwdCxmM8BIabKERsUhPNmMmdf",
+		"snowflakeSourcesWriteKey": "2eSJyYtqwcFYerwzXv2fcNIrWO7",
 
 		"minioBucketName":      "devintegrationtest",
 		"minioAccesskeyID":     "MYACCESSKEY",
@@ -845,8 +836,8 @@ func VerifyAsyncJob(t testing.TB, wareHouseTest *WareHouseTest) {
 
 	var (
 		path = fmt.Sprintf("warehouse/jobs/status?job_run_id=%s&task_run_id=%s&source_id=%s&destination_id=%s",
-			wareHouseTest.MsgId(),
-			wareHouseTest.MsgId(),
+			wareHouseTest.SourceJobRunID(),
+			wareHouseTest.SourceTaskRunID(),
 			wareHouseTest.SourceID,
 			wareHouseTest.DestinationID,
 		)
@@ -886,13 +877,18 @@ func VerifyAsyncJob(t testing.TB, wareHouseTest *WareHouseTest) {
 		if err = json.NewDecoder(res.Body).Decode(&asyncRes); err != nil {
 			return false
 		}
-
-		t.Logf("async job : %v", asyncRes)
-		t.Logf("async job status: %s", asyncRes.Status)
-		if asyncRes.Status != "succeeded" {
-			return false
-		}
-		return true
+		return asyncRes.Status == "succeeded"
 	}
-	require.Eventually(t, operation, WaitFor10Minute, DefaultQueryFrequency, fmt.Sprintf("Failed to get async job status for job_run_id: %s, task_run_id: %s, source_id: %s, destination_id: %s", wareHouseTest.MsgId(), wareHouseTest.MsgId(), wareHouseTest.SourceID, wareHouseTest.DestinationID))
+	require.Eventually(
+		t,
+		operation,
+		WaitFor10Minute,
+		DefaultQueryFrequency,
+		fmt.Sprintf("Failed to get async job status for job_run_id: %s, task_run_id: %s, source_id: %s, destination_id: %s",
+			wareHouseTest.MsgId(),
+			wareHouseTest.MsgId(),
+			wareHouseTest.SourceID,
+			wareHouseTest.DestinationID,
+		),
+	)
 }

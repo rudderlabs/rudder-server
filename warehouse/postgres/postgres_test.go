@@ -1,8 +1,7 @@
-//go:build warehouse_integration
-
 package postgres_test
 
 import (
+	"os"
 	"testing"
 
 	"github.com/rudderlabs/rudder-server/utils/misc"
@@ -21,6 +20,10 @@ import (
 var statsToVerify = []string{"pg_rollback_timeout"}
 
 func TestPostgresIntegration(t *testing.T) {
+	if os.Getenv("SLOW") == "0" {
+		t.Skip("Skipping tests. Remove 'SLOW=0' env var to run them.")
+	}
+
 	t.Parallel()
 
 	postgres.Init()
@@ -56,7 +59,7 @@ func TestPostgresIntegration(t *testing.T) {
 		asyncJob              func(t testing.TB, wareHouseTest *testhelper.WareHouseTest)
 	}{
 		{
-			name:                  "Upload JOB",
+			name:                  "Upload Job",
 			writeKey:              "kwzDkh9h2fhfUVuS9jZ8uVbhV3v",
 			schema:                "postgres_wh_integration",
 			tables:                []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"},
@@ -69,7 +72,7 @@ func TestPostgresIntegration(t *testing.T) {
 			warehouseEventsMap:    testhelper.DefaultWarehouseEventsMap(),
 		},
 		{
-			name:                  "Async JOB",
+			name:                  "Async Job",
 			writeKey:              "2DkCpXZcEvJK2fcpUD3LmjPI7J6",
 			schema:                "postgres_wh_sources_integration",
 			tables:                []string{"tracks", "google_sheet"},
@@ -81,6 +84,7 @@ func TestPostgresIntegration(t *testing.T) {
 			tableUploadsEventsMap: testhelper.SourcesTableUploadsEventsMap(),
 			warehouseEventsMap:    testhelper.SourcesWarehouseEventsMap(),
 			asyncJob:              testhelper.VerifyAsyncJob,
+			skipUserCreation:      true,
 		},
 	}
 
@@ -143,11 +147,13 @@ func TestPostgresIntegration(t *testing.T) {
 			testhelper.VerifyWorkspaceIDInStats(t, statsToVerify...)
 		})
 	}
-
 }
 
 func TestPostgresConfigurationValidation(t *testing.T) {
-	t.Skip()
+	if os.Getenv("SLOW") == "0" {
+		t.Skip("Skipping tests. Remove 'SLOW=0' env var to run them.")
+	}
+
 	t.Parallel()
 
 	misc.Init()
