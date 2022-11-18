@@ -1590,7 +1590,7 @@ func (brt *HandleT) recordUploadStats(destination DestinationT, output StorageUp
 	eventDeliveryStat.Count(output.TotalEvents)
 
 	receivedTime, err := time.Parse(misc.RFC3339Milli, output.FirstEventAt)
-	if err != nil {
+	if err == nil {
 		eventDeliveryTimeStat := stats.Default.NewTaggedStat("event_delivery_time", stats.TimerType, map[string]string{
 			"module":      "batch_router",
 			"destType":    brt.destType,
