@@ -98,12 +98,14 @@ logs-warehouse-integration:
 	docker logs wh-backend
 
 run-warehouse-integration: setup-warehouse-integration
-	$(eval TEST_CMD = go test -v ./warehouse/deltalake/... -p 8 -timeout 30m -count 1)
+	$(eval TEST_CMD = go test -v ./warehouse/... -p 8 -timeout 30m -count 1)
 	if docker-compose -f warehouse/docker-compose.test.yml exec -T -e SLOW=1 wh-backend $(TEST_CMD); then \
       	echo "Successfully ran Warehouse Integration Test. Getting backend container logs only."; \
+      	make logs-warehouse-integration; \
+      	make cleanup-warehouse-integration; \
     else \
       	echo "Failed running Warehouse Integration Test. Getting all logs from all containers"; \
-      	make logs-warehouse-integration; \
-        make cleanup-warehouse-integration; \
+		make logs-warehouse-integration; \
+      	make cleanup-warehouse-integration; \
       	exit 1; \
  	fi
