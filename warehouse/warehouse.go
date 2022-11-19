@@ -165,7 +165,7 @@ func loadConfig() {
 	config.RegisterIntConfigVariable(960, &stagingFilesBatchSize, true, 1, "Warehouse.stagingFilesBatchSize")
 	config.RegisterInt64ConfigVariable(1800, &uploadFreqInS, true, 1, "Warehouse.uploadFreqInS")
 	config.RegisterDurationConfigVariable(5, &mainLoopSleep, true, time.Second, []string{"Warehouse.mainLoopSleep", "Warehouse.mainLoopSleepInS"}...)
-	crashRecoverWarehouses = []string{warehouseutils.RS, warehouseutils.POSTGRES, warehouseutils.MSSQL, warehouseutils.AZURE_SYNAPSE, warehouseutils.DELTALAKE}
+	crashRecoverWarehouses = []string{warehouseutils.POSTGRES, warehouseutils.MSSQL, warehouseutils.AZURE_SYNAPSE, warehouseutils.DELTALAKE}
 	inRecoveryMap = map[string]bool{}
 	lastProcessedMarkerMap = map[string]int64{}
 	config.RegisterStringConfigVariable("embedded", &warehouseMode, false, "Warehouse.mode")
