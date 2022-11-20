@@ -58,34 +58,36 @@ func TestBigQueryIntegration(t *testing.T) {
 	})
 
 	testcase := []struct {
-		name                  string
-		schema                string
-		writeKey              string
-		sourceID              string
-		destinationID         string
-		messageID             string
-		eventsMap             testhelper.EventsCountMap
-		stagingFilesEventsMap testhelper.EventsCountMap
-		loadFilesEventsMap    testhelper.EventsCountMap
-		tableUploadsEventsMap testhelper.EventsCountMap
-		warehouseEventsMap    testhelper.EventsCountMap
-		asyncJob              bool
-		skipScenarioTwo       bool
-		prerequisite          func(t testing.TB)
-		tables                []string
+		name                             string
+		schema                           string
+		writeKey                         string
+		sourceID                         string
+		destinationID                    string
+		messageID                        string
+		eventsMap                        testhelper.EventsCountMap
+		scenarioOneStagingFilesEventsMap testhelper.EventsCountMap
+		scenarioTwoStagingFilesEventsMap testhelper.EventsCountMap
+		loadFilesEventsMap               testhelper.EventsCountMap
+		tableUploadsEventsMap            testhelper.EventsCountMap
+		warehouseEventsMap               testhelper.EventsCountMap
+		asyncJob                         bool
+		skipScenarioTwo                  bool
+		prerequisite                     func(t testing.TB)
+		tables                           []string
 	}{
 		{
-			name:                  "Merge mode",
-			schema:                schema,
-			tables:                []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"},
-			writeKey:              "J77aX7tLFJ84qYU6UrN8ctecwZt",
-			sourceID:              "24p1HhPk09FW25Kuzxv7GshCLKR",
-			destinationID:         "26Bgm9FrQDZjvadSwAlpd35atwn",
-			messageID:             misc.FastUUID().String(),
-			stagingFilesEventsMap: stagingFilesEventsMap(),
-			loadFilesEventsMap:    loadFilesEventsMap(),
-			tableUploadsEventsMap: tableUploadsEventsMap(),
-			warehouseEventsMap:    mergeEventsMap(),
+			name:                             "Merge mode",
+			schema:                           schema,
+			tables:                           []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"},
+			writeKey:                         "J77aX7tLFJ84qYU6UrN8ctecwZt",
+			sourceID:                         "24p1HhPk09FW25Kuzxv7GshCLKR",
+			destinationID:                    "26Bgm9FrQDZjvadSwAlpd35atwn",
+			messageID:                        misc.FastUUID().String(),
+			scenarioOneStagingFilesEventsMap: stagingFilesEventsMap(),
+			scenarioTwoStagingFilesEventsMap: stagingFilesEventsMap(),
+			loadFilesEventsMap:               loadFilesEventsMap(),
+			tableUploadsEventsMap:            tableUploadsEventsMap(),
+			warehouseEventsMap:               mergeEventsMap(),
 			prerequisite: func(t testing.TB) {
 				t.Helper()
 
@@ -107,8 +109,11 @@ func TestBigQueryIntegration(t *testing.T) {
 			schema:        sourcesSchema,
 			tables:        []string{"tracks", "google_sheet"},
 			eventsMap:     testhelper.SourcesSendEventsMap(),
-			stagingFilesEventsMap: testhelper.EventsCountMap{
+			scenarioOneStagingFilesEventsMap: testhelper.EventsCountMap{
 				"wh_staging_files": 9, // 8 + 1 (merge events because of ID resolution)
+			},
+			scenarioTwoStagingFilesEventsMap: testhelper.EventsCountMap{
+				"wh_staging_files": 8, // 8 (de-duped by encounteredMergeRuleMap)
 			},
 			loadFilesEventsMap:    testhelper.SourcesLoadFilesEventsMap(),
 			tableUploadsEventsMap: testhelper.SourcesTableUploadsEventsMap(),
@@ -128,18 +133,19 @@ func TestBigQueryIntegration(t *testing.T) {
 			},
 		},
 		{
-			name:                  "Append mode",
-			schema:                schema,
-			tables:                []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"},
-			writeKey:              "J77aX7tLFJ84qYU6UrN8ctecwZt",
-			sourceID:              "24p1HhPk09FW25Kuzxv7GshCLKR",
-			destinationID:         "26Bgm9FrQDZjvadSwAlpd35atwn",
-			messageID:             misc.FastUUID().String(),
-			stagingFilesEventsMap: stagingFilesEventsMap(),
-			loadFilesEventsMap:    loadFilesEventsMap(),
-			tableUploadsEventsMap: tableUploadsEventsMap(),
-			warehouseEventsMap:    appendEventsMap(),
-			skipScenarioTwo:       true,
+			name:                             "Append mode",
+			schema:                           schema,
+			tables:                           []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"},
+			writeKey:                         "J77aX7tLFJ84qYU6UrN8ctecwZt",
+			sourceID:                         "24p1HhPk09FW25Kuzxv7GshCLKR",
+			destinationID:                    "26Bgm9FrQDZjvadSwAlpd35atwn",
+			messageID:                        misc.FastUUID().String(),
+			scenarioOneStagingFilesEventsMap: stagingFilesEventsMap(),
+			scenarioTwoStagingFilesEventsMap: stagingFilesEventsMap(),
+			loadFilesEventsMap:               loadFilesEventsMap(),
+			tableUploadsEventsMap:            tableUploadsEventsMap(),
+			warehouseEventsMap:               appendEventsMap(),
+			skipScenarioTwo:                  true,
 			prerequisite: func(t testing.TB) {
 				t.Helper()
 
@@ -154,18 +160,19 @@ func TestBigQueryIntegration(t *testing.T) {
 			},
 		},
 		{
-			name:                  "Append mode with custom partition",
-			schema:                schema,
-			tables:                []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"},
-			writeKey:              "J77aX7tLFJ84qYU6UrN8ctecwZt",
-			sourceID:              "24p1HhPk09FW25Kuzxv7GshCLKR",
-			destinationID:         "26Bgm9FrQDZjvadSwAlpd35atwn",
-			messageID:             misc.FastUUID().String(),
-			stagingFilesEventsMap: stagingFilesEventsMap(),
-			loadFilesEventsMap:    loadFilesEventsMap(),
-			tableUploadsEventsMap: tableUploadsEventsMap(),
-			warehouseEventsMap:    appendEventsMap(),
-			skipScenarioTwo:       true,
+			name:                             "Append mode with custom partition",
+			schema:                           schema,
+			tables:                           []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"},
+			writeKey:                         "J77aX7tLFJ84qYU6UrN8ctecwZt",
+			sourceID:                         "24p1HhPk09FW25Kuzxv7GshCLKR",
+			destinationID:                    "26Bgm9FrQDZjvadSwAlpd35atwn",
+			messageID:                        misc.FastUUID().String(),
+			scenarioOneStagingFilesEventsMap: stagingFilesEventsMap(),
+			scenarioTwoStagingFilesEventsMap: stagingFilesEventsMap(),
+			loadFilesEventsMap:               loadFilesEventsMap(),
+			tableUploadsEventsMap:            tableUploadsEventsMap(),
+			warehouseEventsMap:               appendEventsMap(),
+			skipScenarioTwo:                  true,
 			prerequisite: func(t testing.TB) {
 				t.Helper()
 
@@ -216,7 +223,7 @@ func TestBigQueryIntegration(t *testing.T) {
 				MessageID:             tc.messageID,
 				Tables:                tc.tables,
 				EventsMap:             tc.eventsMap,
-				StagingFilesEventsMap: tc.stagingFilesEventsMap,
+				StagingFilesEventsMap: tc.scenarioOneStagingFilesEventsMap,
 				LoadFilesEventsMap:    tc.loadFilesEventsMap,
 				TableUploadsEventsMap: tc.tableUploadsEventsMap,
 				Prerequisite:          tc.prerequisite,
@@ -241,6 +248,7 @@ func TestBigQueryIntegration(t *testing.T) {
 			if !tc.asyncJob {
 				ts.UserID = testhelper.GetUserId(provider)
 			}
+			ts.StagingFilesEventsMap = tc.scenarioTwoStagingFilesEventsMap
 			ts.JobRunID = misc.FastUUID().String()
 			ts.TaskRunID = misc.FastUUID().String()
 			ts.TestScenarioTwo(t)
