@@ -38,15 +38,14 @@ func TestPostgresIntegration(t *testing.T) {
 	require.NoError(t, err)
 
 	var (
-		jobsDB   = testhelper.SetUpJobsDB(t)
-		provider = warehouseutils.POSTGRES
+		provider      = warehouseutils.POSTGRES
+		jobsDB        = testhelper.SetUpJobsDB(t)
 	)
 
 	testcase := []struct {
 		name                  string
 		writeKey              string
 		schema                string
-		tables                []string
 		sourceID              string
 		destinationID         string
 		eventsMap             testhelper.EventsCountMap
@@ -55,14 +54,15 @@ func TestPostgresIntegration(t *testing.T) {
 		tableUploadsEventsMap testhelper.EventsCountMap
 		warehouseEventsMap    testhelper.EventsCountMap
 		asyncJob              bool
+		tables                []string
 	}{
 		{
-			name:          "Upload Job",
-			writeKey:      "kwzDkh9h2fhfUVuS9jZ8uVbhV3v",
-			schema:        "postgres_wh_integration",
-			tables:        []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"},
-			sourceID:      "1wRvLmEnMOOxSQD9pwaZhyCqXRE",
-			destinationID: "216ZvbavR21Um6eGKQCagZHqLGZ",
+			name:              "Upload Job",
+			writeKey:          "kwzDkh9h2fhfUVuS9jZ8uVbhV3v",
+			schema:            "postgres_wh_integration",
+			tables:            []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"},
+			sourceID:          "1wRvLmEnMOOxSQD9pwaZhyCqXRE",
+			destinationID:     "216ZvbavR21Um6eGKQCagZHqLGZ",
 		},
 		{
 			name:                  "Async Job",
@@ -90,8 +90,6 @@ func TestPostgresIntegration(t *testing.T) {
 				Schema:                tc.schema,
 				WriteKey:              tc.writeKey,
 				SourceID:              tc.sourceID,
-				JobRunID:              misc.FastUUID().String(),
-				TaskRunID:             misc.FastUUID().String(),
 				DestinationID:         tc.destinationID,
 				Tables:                tc.tables,
 				EventsMap:             tc.eventsMap,
@@ -100,14 +98,16 @@ func TestPostgresIntegration(t *testing.T) {
 				TableUploadsEventsMap: tc.tableUploadsEventsMap,
 				WarehouseEventsMap:    tc.warehouseEventsMap,
 				AsyncJob:              tc.asyncJob,
-				Provider:              provider,
 				UserID:                testhelper.GetUserId(provider),
+				Provider:              provider,
 				JobsDB:                jobsDB,
+				JobRunID:              misc.FastUUID().String(),
+				TaskRunID:             misc.FastUUID().String(),
+				StatsToVerify:         []string{"pg_rollback_timeout"},
 				Client: &client.Client{
 					SQL:  db,
 					Type: client.SQLClient,
 				},
-				StatsToVerify: []string{"pg_rollback_timeout"},
 			}
 			ts.TestScenarioOne(t)
 
