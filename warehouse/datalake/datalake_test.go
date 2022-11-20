@@ -76,12 +76,10 @@ func TestDatalakeIntegration(t *testing.T) {
 			ts := testhelper.WareHouseTest{
 				WriteKey:      tc.writeKey,
 				SourceID:      tc.sourceID,
-				JobRunID:      misc.FastUUID().String(),
-				TaskRunID:     misc.FastUUID().String(),
 				DestinationID: tc.destinationID,
 				Provider:      tc.provider,
-				UserID:        testhelper.GetUserId(tc.provider),
 				JobsDB:        jobsDB,
+				UserID:        testhelper.GetUserId(tc.provider),
 				SkipWarehouse: true,
 			}
 			ts.TestScenarioOne(t)
