@@ -15,6 +15,7 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"strings"
 )
 
 // AddWarehouseJobHandler The following handler gets called for adding async
@@ -51,35 +52,40 @@ func (asyncWhJob *AsyncJobWhT) AddWarehouseJobHandler(w http.ResponseWriter, r *
 		http.Error(w, "Error extracting tableNames", http.StatusBadRequest)
 		return
 	}
+
 	var jobIds []int64
 	// Add to wh_async_job queue each of the tables
 	for _, th := range tableNames {
-		if !skipTable(th) {
-			jobsMetaData := WhJobsMetaData{
-				JobRunID:  startJobPayload.JobRunID,
-				TaskRunID: startJobPayload.TaskRunID,
-				StartTime: startJobPayload.StartTime,
-				JobType:   AsyncJobType,
-			}
-			metadataJson, err := json.Marshal(jobsMetaData)
-			if err != nil {
-				http.Error(w, err.Error(), http.StatusBadRequest)
-				return
-			}
-			payload := AsyncJobPayloadT{
-				SourceID:      startJobPayload.SourceID,
-				DestinationID: startJobPayload.DestinationID,
-				TableName:     th,
-				AsyncJobType:  startJobPayload.AsyncJobType,
-				MetaData:      metadataJson,
-			}
-			id, err := asyncWhJob.addJobsToDB(asyncWhJob.context, &payload)
-			if err != nil {
-				http.Error(w, err.Error(), http.StatusBadRequest)
-				return
-			}
-			jobIds = append(jobIds, id)
+
+		switch strings.ToLower(th) {
+		case "rudder_discards", "rudder_identity_mappings", "rudder_identity_merge_rules":
+			continue
 		}
+
+		jobsMetaData := WhJobsMetaData{
+			JobRunID:  startJobPayload.JobRunID,
+			TaskRunID: startJobPayload.TaskRunID,
+			StartTime: startJobPayload.StartTime,
+			JobType:   AsyncJobType,
+		}
+		metadataJson, err := json.Marshal(jobsMetaData)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		payload := AsyncJobPayloadT{
+			SourceID:      startJobPayload.SourceID,
+			DestinationID: startJobPayload.DestinationID,
+			TableName:     th,
+			AsyncJobType:  startJobPayload.AsyncJobType,
+			MetaData:      metadataJson,
+		}
+		id, err := asyncWhJob.addJobsToDB(asyncWhJob.context, &payload)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		jobIds = append(jobIds, id)
 	}
 	whAddJobResponse := WhAddJobResponse{
 		JobIds: jobIds,

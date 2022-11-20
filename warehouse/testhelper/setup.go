@@ -86,9 +86,10 @@ func (w *WareHouseTest) SourceRecordID() string {
 }
 
 const (
-	WaitFor2Minute        = 2 * time.Minute
-	WaitFor10Minute       = 10 * time.Minute
-	DefaultQueryFrequency = 100 * time.Millisecond
+	WaitFor2Minute         = 2 * time.Minute
+	WaitFor10Minute        = 10 * time.Minute
+	DefaultQueryFrequency  = 100 * time.Millisecond
+	AsyncJOBQueryFrequency = 1000 * time.Millisecond
 )
 
 const (
@@ -853,7 +854,7 @@ func VerifyAsyncJob(t testing.TB, wareHouseTest *WareHouseTest) {
 			wareHouseTest.SourceJobRunID(),
 			wareHouseTest.SourceTaskRunID(),
 			wareHouseTest.DestinationID,
-			time.Now().UTC().Format("01-02-2006 15:04:05"),
+			time.Now().UTC().Format("2006-01-02 15:04:05"),
 		),
 	)
 	send(t, asyncPayload, "warehouse/jobs", wareHouseTest.WriteKey, "POST")
@@ -907,7 +908,7 @@ func VerifyAsyncJob(t testing.TB, wareHouseTest *WareHouseTest) {
 		t,
 		operation,
 		WaitFor10Minute,
-		DefaultQueryFrequency,
+		AsyncJOBQueryFrequency,
 		fmt.Sprintf("Failed to get async job status for job_run_id: %s, task_run_id: %s, source_id: %s, destination_id: %s",
 			wareHouseTest.MsgId(),
 			wareHouseTest.MsgId(),

@@ -65,8 +65,6 @@ type PgNotifierT struct {
 
 type JobPayload json.RawMessage
 
-const MaxTrackAsyncBatchRetries = 5
-
 type ResponseT struct {
 	JobID   int64
 	Status  string
