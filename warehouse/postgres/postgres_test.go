@@ -38,8 +38,8 @@ func TestPostgresIntegration(t *testing.T) {
 	require.NoError(t, err)
 
 	var (
-		provider      = warehouseutils.POSTGRES
-		jobsDB        = testhelper.SetUpJobsDB(t)
+		provider = warehouseutils.POSTGRES
+		jobsDB   = testhelper.SetUpJobsDB(t)
 	)
 
 	testcase := []struct {
@@ -57,12 +57,12 @@ func TestPostgresIntegration(t *testing.T) {
 		tables                []string
 	}{
 		{
-			name:              "Upload Job",
-			writeKey:          "kwzDkh9h2fhfUVuS9jZ8uVbhV3v",
-			schema:            "postgres_wh_integration",
-			tables:            []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"},
-			sourceID:          "1wRvLmEnMOOxSQD9pwaZhyCqXRE",
-			destinationID:     "216ZvbavR21Um6eGKQCagZHqLGZ",
+			name:          "Upload Job",
+			writeKey:      "kwzDkh9h2fhfUVuS9jZ8uVbhV3v",
+			schema:        "postgres_wh_integration",
+			tables:        []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"},
+			sourceID:      "1wRvLmEnMOOxSQD9pwaZhyCqXRE",
+			destinationID: "216ZvbavR21Um6eGKQCagZHqLGZ",
 		},
 		{
 			name:                  "Async Job",
