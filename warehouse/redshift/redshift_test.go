@@ -52,12 +52,12 @@ func TestRedshiftIntegration(t *testing.T) {
 		tables                []string
 	}{
 		{
-			name:              "Upload Job",
-			schema:            schema,
-			tables:            []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"},
-			writeKey:          "JAAwdCxmM8BIabKERsUhPNmMmdf",
-			sourceID:          "279L3gEKqwruBoKGsXZtSVX7vIy",
-			destinationID:     "27SthahyhhqZE74HT4NTtNPl06V",
+			name:          "Upload Job",
+			schema:        schema,
+			tables:        []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"},
+			writeKey:      "JAAwdCxmM8BIabKERsUhPNmMmdf",
+			sourceID:      "279L3gEKqwruBoKGsXZtSVX7vIy",
+			destinationID: "27SthahyhhqZE74HT4NTtNPl06V",
 		},
 		{
 			name:                  "Async Job",
