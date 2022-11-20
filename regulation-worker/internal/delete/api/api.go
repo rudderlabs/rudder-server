@@ -43,13 +43,13 @@ func (*APIManager) GetSupportedDestinations() []string {
 
 // prepares payload based on (job,destDetail) & make an API call to transformer.
 // gets (status, failure_reason) which is converted to appropriate model.Error & returned to caller.
-func (api *APIManager) Delete(ctx context.Context, job model.Job, destDetail model.Destination) model.JobStatus {
-	pkgLogger.Debugf("deleting: %v", job, " from API destination: %v", destDetail.Name)
+func (api *APIManager) Delete(ctx context.Context, job model.Job, destination model.Destination) model.JobStatus {
+	pkgLogger.Debugf("deleting: %v", job, " from API destination: %v", destination.Name)
 	method := http.MethodPost
 	endpoint := "/deleteUsers"
 	url := fmt.Sprint(api.DestTransformURL, endpoint)
 
-	bodySchema := mapJobToPayload(job, strings.ToLower(destDetail.Name), destDetail.Config)
+	bodySchema := mapJobToPayload(job, strings.ToLower(destination.Name), destination.Config)
 	pkgLogger.Debugf("payload: %#v", bodySchema)
 
 	reqBody, err := json.Marshal(bodySchema)
@@ -64,10 +64,10 @@ func (api *APIManager) Delete(ctx context.Context, job model.Job, destDetail mod
 	req.Header.Set("Content-Type", "application/json")
 
 	// check if OAuth destination
-	isOAuthEnabled := IsOAuthEnabled(destDetail.DestDefConfig)
+	isOAuthEnabled := IsOAuthEnabled(destination.DestDefConfig)
 	var oAuthDetail OAuthDetail
 	if isOAuthEnabled {
-		oAuthDetail, err = api.getOAuthDetail(&destDetail, job.WorkspaceID)
+		oAuthDetail, err = api.getOAuthDetail(&destination, job.WorkspaceID)
 		if err != nil {
 			pkgLogger.Error(err)
 			return model.JobStatusFailed
@@ -83,7 +83,7 @@ func (api *APIManager) Delete(ctx context.Context, job model.Job, destDetail mod
 		"jobId":       fmt.Sprintf("%d", job.ID),
 		"workspaceId": job.WorkspaceID,
 		"destType":    "api",
-		"destName":    strings.ToLower(destDetail.Name),
+		"destName":    strings.ToLower(destination.Name),
 	})
 	fileCleaningTime.Start()
 	defer fileCleaningTime.End()
@@ -109,7 +109,7 @@ func (api *APIManager) Delete(ctx context.Context, job model.Job, destDetail mod
 	if isOAuthEnabled {
 		isOAuthTokenExpired := isTokenExpired(jobResp)
 		if isOAuthTokenExpired {
-			err = api.refreshOAuthToken(destDetail.Name, job.WorkspaceID, oAuthDetail)
+			err = api.refreshOAuthToken(destination.Name, job.WorkspaceID, oAuthDetail)
 			if err != nil {
 				pkgLogger.Error(err)
 				return model.JobStatusFailed
