@@ -40,8 +40,8 @@ func TestMSSQLIntegration(t *testing.T) {
 	require.NoError(t, err)
 
 	var (
-		provider      = warehouseutils.MSSQL
-		jobsDB        = testhelper.SetUpJobsDB(t)
+		provider = warehouseutils.MSSQL
+		jobsDB   = testhelper.SetUpJobsDB(t)
 	)
 
 	testcase := []struct {
@@ -59,12 +59,12 @@ func TestMSSQLIntegration(t *testing.T) {
 		tables                []string
 	}{
 		{
-			name:              "Upload Job",
-			writeKey:          "YSQ3n267l1VQKGNbSuJE9fQbzON",
-			schema:            "mssql_wh_integration",
-			tables:            []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"},
-			sourceID:          "1wRvLmEnMOONMbdspwaZhyCqXRE",
-			destinationID:     "21Ezdq58khNMj07VJB0VJmxLvgu",
+			name:          "Upload Job",
+			writeKey:      "YSQ3n267l1VQKGNbSuJE9fQbzON",
+			schema:        "mssql_wh_integration",
+			tables:        []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"},
+			sourceID:      "1wRvLmEnMOONMbdspwaZhyCqXRE",
+			destinationID: "21Ezdq58khNMj07VJB0VJmxLvgu",
 		},
 		{
 			name:                  "Async Job",
