@@ -6,7 +6,6 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"github.com/rudderlabs/rudder-server/utils/timeutil"
 	"log"
 	"net/http"
 	"os"
@@ -14,6 +13,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/rudderlabs/rudder-server/utils/timeutil"
 
 	promCLient "github.com/prometheus/client_model/go"
 	"github.com/prometheus/common/expfmt"
