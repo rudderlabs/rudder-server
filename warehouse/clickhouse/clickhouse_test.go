@@ -106,8 +106,8 @@ func TestClickHouseIntegration(t *testing.T) {
 				DestinationID: tc.destinationID,
 				Tables:        tables,
 				Provider:      provider,
-				UserID:        testhelper.GetUserId(provider),
 				JobsDB:        jobsDB,
+				UserID:        testhelper.GetUserId(provider),
 				StatsToVerify: []string{
 					"warehouse_clickhouse_commitTimeouts",
 					"warehouse_clickhouse_execTimeouts",
@@ -128,6 +128,7 @@ func TestClickHouseIntegration(t *testing.T) {
 			}
 
 			ts.UserID = testhelper.GetUserId(provider)
+			ts.WarehouseEventsMap = tc.warehouseEvents
 			ts.TestScenarioTwo(t)
 		})
 	}

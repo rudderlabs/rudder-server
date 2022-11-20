@@ -198,10 +198,25 @@ func (w *WareHouseTest) TestScenarioTwo(t testing.TB) {
 
 	w.TimestampBeforeSendingEvents = timeutil.Now()
 
+	if len(w.EventsMap) == 0 {
+		w.EventsMap = defaultSendEventsMap()
+	}
+	if len(w.StagingFilesEventsMap) == 0 {
+		w.StagingFilesEventsMap = defaultStagingFilesEventsMap()
+	}
+	if len(w.LoadFilesEventsMap) == 0 {
+		w.LoadFilesEventsMap = defaultLoadFilesEventsMap()
+	}
+	if len(w.TableUploadsEventsMap) == 0 {
+		w.TableUploadsEventsMap = defaultTableUploadsEventsMap()
+	}
+	if len(w.WarehouseEventsMap) == 0 {
+		w.WarehouseEventsMap = defaultWarehouseEventsMap()
+	}
+
 	if w.Prerequisite != nil {
 		w.Prerequisite(t)
 	}
-
 	SendModifiedEvents(
 		t,
 		w,
