@@ -77,6 +77,7 @@ func TestDatalakeIntegration(t *testing.T) {
 				WriteKey:      tc.writeKey,
 				SourceID:      tc.sourceID,
 				DestinationID: tc.destinationID,
+				Prerequisite:  tc.prerequisite,
 				Provider:      tc.provider,
 				JobsDB:        jobsDB,
 				UserID:        testhelper.GetUserId(tc.provider),
