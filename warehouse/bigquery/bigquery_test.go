@@ -64,7 +64,6 @@ func TestBigQueryIntegration(t *testing.T) {
 		sourceID              string
 		destinationID         string
 		messageID             string
-		tables                []string
 		eventsMap             testhelper.EventsCountMap
 		stagingFilesEventsMap testhelper.EventsCountMap
 		loadFilesEventsMap    testhelper.EventsCountMap
@@ -73,6 +72,7 @@ func TestBigQueryIntegration(t *testing.T) {
 		asyncJob              bool
 		skipScenarioTwo       bool
 		prerequisite          func(t testing.TB)
+		tables                []string
 	}{
 		{
 			name:                  "Merge mode",
@@ -222,11 +222,11 @@ func TestBigQueryIntegration(t *testing.T) {
 				Prerequisite:          tc.prerequisite,
 				WarehouseEventsMap:    tc.warehouseEventsMap,
 				AsyncJob:              tc.asyncJob,
-				UserID:                testhelper.GetUserId(provider),
-				TaskRunID:             misc.FastUUID().String(),
-				JobRunID:              misc.FastUUID().String(),
 				Provider:              provider,
 				JobsDB:                jobsDB,
+				TaskRunID:             misc.FastUUID().String(),
+				JobRunID:              misc.FastUUID().String(),
+				UserID:                testhelper.GetUserId(provider),
 				Client: &client.Client{
 					BQ:   db,
 					Type: client.BQClient,
@@ -238,7 +238,9 @@ func TestBigQueryIntegration(t *testing.T) {
 				return
 			}
 
-			ts.UserID = testhelper.GetUserId(provider)
+			if !tc.asyncJob {
+				ts.UserID = testhelper.GetUserId(provider)
+			}
 			ts.JobRunID = misc.FastUUID().String()
 			ts.TaskRunID = misc.FastUUID().String()
 			ts.TestScenarioTwo(t)

@@ -122,7 +122,11 @@ func TestRedshiftIntegration(t *testing.T) {
 			}
 			ts.TestScenarioOne(t)
 
-			ts.UserID = testhelper.GetUserId(provider)
+			if !tc.asyncJob {
+				ts.UserID = testhelper.GetUserId(provider)
+			}
+			ts.JobRunID = misc.FastUUID().String()
+			ts.TaskRunID = misc.FastUUID().String()
 			ts.TestScenarioTwo(t)
 		})
 	}
