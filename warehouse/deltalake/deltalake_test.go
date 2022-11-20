@@ -67,10 +67,9 @@ func TestDeltalakeIntegration(t *testing.T) {
 	})
 
 	testCases := []struct {
-		name             string
-		skipUserCreation bool
-		warehouseEvents  testhelper.EventsCountMap
-		prerequisite     func(t testing.TB)
+		name            string
+		warehouseEvents testhelper.EventsCountMap
+		prerequisite    func(t testing.TB)
 	}{
 		{
 			name:            "Merge Mode",
@@ -86,9 +85,8 @@ func TestDeltalakeIntegration(t *testing.T) {
 			},
 		},
 		{
-			name:             "Append Mode",
-			skipUserCreation: true,
-			warehouseEvents:  appendEventsMap(),
+			name:            "Append Mode",
+			warehouseEvents: appendEventsMap(),
 			prerequisite: func(t testing.TB) {
 				t.Helper()
 				testhelper.SetConfig(t, []warehouseutils.KeyValue{
@@ -142,9 +140,7 @@ func TestDeltalakeIntegration(t *testing.T) {
 
 			// Scenario 2
 			warehouseTest.TimestampBeforeSendingEvents = timeutil.Now()
-			if !tc.skipUserCreation {
-				warehouseTest.UserId = testhelper.GetUserId(warehouseutils.DELTALAKE)
-			}
+			warehouseTest.UserId = testhelper.GetUserId(warehouseutils.DELTALAKE)
 
 			sendEventsMap = testhelper.SendEventsMap()
 			testhelper.SendModifiedEvents(t, warehouseTest, sendEventsMap)

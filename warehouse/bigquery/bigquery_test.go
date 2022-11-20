@@ -67,7 +67,6 @@ func TestBigQueryIntegration(t *testing.T) {
 		sourceID              string
 		destinationID         string
 		tables                []string
-		skipUserCreation      bool
 		eventsMap             testhelper.EventsCountMap
 		stagingFilesEventsMap testhelper.EventsCountMap
 		loadFilesEventsMap    testhelper.EventsCountMap
@@ -111,7 +110,6 @@ func TestBigQueryIntegration(t *testing.T) {
 			tableUploadsEventsMap: testhelper.SourcesTableUploadsEventsMap(),
 			warehouseEventsMap:    testhelper.SourcesWarehouseEventsMap(),
 			asyncJob:              testhelper.VerifyAsyncJob,
-			skipUserCreation:      true,
 			prerequisite: func(t testing.TB) {
 				t.Helper()
 				testhelper.SetConfig(t, []warehouseutils.KeyValue{
@@ -165,11 +163,9 @@ func TestBigQueryIntegration(t *testing.T) {
 
 			// Scenario 2
 			warehouseTest.TimestampBeforeSendingEvents = timeutil.Now()
+			warehouseTest.UserId = testhelper.GetUserId(warehouseutils.BQ)
 			warehouseTest.JobRunID = misc.FastUUID().String()
 			warehouseTest.TaskRunID = misc.FastUUID().String()
-			if !tc.skipUserCreation {
-				warehouseTest.UserId = testhelper.GetUserId(warehouseutils.BQ)
-			}
 
 			testhelper.SendModifiedEvents(t, warehouseTest, tc.eventsMap)
 			testhelper.SendModifiedEvents(t, warehouseTest, tc.eventsMap)

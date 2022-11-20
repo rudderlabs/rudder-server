@@ -3,6 +3,7 @@ package snowflake_test
 import (
 	"fmt"
 	"os"
+	"strings"
 	"testing"
 
 	"github.com/rudderlabs/rudder-server/utils/misc"
@@ -44,7 +45,6 @@ func TestSnowflakeIntegration(t *testing.T) {
 		sourceID              string
 		destinationID         string
 		tables                []string
-		skipUserCreation      bool
 		eventsMap             testhelper.EventsCountMap
 		stagingFilesEventsMap testhelper.EventsCountMap
 		loadFilesEventsMap    testhelper.EventsCountMap
@@ -100,7 +100,6 @@ func TestSnowflakeIntegration(t *testing.T) {
 			tableUploadsEventsMap: testhelper.SourcesTableUploadsEventsMap(),
 			warehouseEventsMap:    testhelper.SourcesWarehouseEventsMap(),
 			asyncJob:              testhelper.VerifyAsyncJob,
-			skipUserCreation:      true,
 		},
 	}
 
@@ -156,9 +155,9 @@ func TestSnowflakeIntegration(t *testing.T) {
 
 			// Scenario 2
 			warehouseTest.TimestampBeforeSendingEvents = timeutil.Now()
+			warehouseTest.UserId = testhelper.GetUserId(warehouseutils.SNOWFLAKE)
 			warehouseTest.JobRunID = misc.FastUUID().String()
 			warehouseTest.TaskRunID = misc.FastUUID().String()
-			warehouseTest.UserId = testhelper.GetUserId(warehouseutils.SNOWFLAKE)
 
 			testhelper.SendModifiedEvents(t, warehouseTest, tc.eventsMap)
 			testhelper.SendModifiedEvents(t, warehouseTest, tc.eventsMap)

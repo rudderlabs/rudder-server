@@ -49,7 +49,6 @@ func TestMSSQLIntegration(t *testing.T) {
 		tables                []string
 		sourceID              string
 		destinationID         string
-		skipUserCreation      bool
 		eventsMap             testhelper.EventsCountMap
 		stagingFilesEventsMap testhelper.EventsCountMap
 		loadFilesEventsMap    testhelper.EventsCountMap
@@ -83,7 +82,6 @@ func TestMSSQLIntegration(t *testing.T) {
 			tableUploadsEventsMap: testhelper.SourcesTableUploadsEventsMap(),
 			warehouseEventsMap:    testhelper.SourcesWarehouseEventsMap(),
 			asyncJob:              testhelper.VerifyAsyncJob,
-			skipUserCreation:      true,
 		},
 	}
 
@@ -124,11 +122,9 @@ func TestMSSQLIntegration(t *testing.T) {
 
 			// Scenario 2
 			warehouseTest.TimestampBeforeSendingEvents = timeutil.Now()
+			warehouseTest.UserId = testhelper.GetUserId(warehouseutils.MSSQL)
 			warehouseTest.JobRunID = misc.FastUUID().String()
 			warehouseTest.TaskRunID = misc.FastUUID().String()
-			if !tc.skipUserCreation {
-				warehouseTest.UserId = testhelper.GetUserId(warehouseutils.MSSQL)
-			}
 
 			testhelper.SendModifiedEvents(t, warehouseTest, tc.eventsMap)
 			testhelper.SendModifiedEvents(t, warehouseTest, tc.eventsMap)

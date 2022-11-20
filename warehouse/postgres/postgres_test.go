@@ -50,7 +50,6 @@ func TestPostgresIntegration(t *testing.T) {
 		tables                []string
 		sourceID              string
 		destinationID         string
-		skipUserCreation      bool
 		eventsMap             testhelper.EventsCountMap
 		stagingFilesEventsMap testhelper.EventsCountMap
 		loadFilesEventsMap    testhelper.EventsCountMap
@@ -84,7 +83,6 @@ func TestPostgresIntegration(t *testing.T) {
 			tableUploadsEventsMap: testhelper.SourcesTableUploadsEventsMap(),
 			warehouseEventsMap:    testhelper.SourcesWarehouseEventsMap(),
 			asyncJob:              testhelper.VerifyAsyncJob,
-			skipUserCreation:      true,
 		},
 	}
 
@@ -125,11 +123,9 @@ func TestPostgresIntegration(t *testing.T) {
 
 			// Scenario 2
 			warehouseTest.TimestampBeforeSendingEvents = timeutil.Now()
+			warehouseTest.UserId = testhelper.GetUserId(warehouseutils.POSTGRES)
 			warehouseTest.JobRunID = misc.FastUUID().String()
 			warehouseTest.TaskRunID = misc.FastUUID().String()
-			if !tc.skipUserCreation {
-				warehouseTest.UserId = testhelper.GetUserId(warehouseutils.POSTGRES)
-			}
 
 			testhelper.SendModifiedEvents(t, warehouseTest, tc.eventsMap)
 			testhelper.SendModifiedEvents(t, warehouseTest, tc.eventsMap)
