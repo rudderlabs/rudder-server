@@ -29,15 +29,13 @@ import (
 
 var pkgLogger = logger.NewLogger().Child("regulation-worker")
 
-func InitAll() {
+func init() {
 	initialize.Init()
 	backendconfig.Init()
 	oauth.Init()
 }
 
 func main() {
-	InitAll()
-
 	pkgLogger.Info("starting regulation-worker")
 	ctx, cancel := context.WithCancel(context.Background())
 
