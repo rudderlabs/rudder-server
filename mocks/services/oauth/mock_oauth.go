@@ -79,15 +79,3 @@ func (mr *MockAuthorizerMockRecorder) RefreshToken(arg0 interface{}) *gomock.Cal
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RefreshToken", reflect.TypeOf((*MockAuthorizer)(nil).RefreshToken), arg0)
 }
-
-// Setup mocks base method.
-func (m *MockAuthorizer) Setup() {
-	m.ctrl.T.Helper()
-	m.ctrl.Call(m, "Setup")
-}
-
-// Setup indicates an expected call of Setup.
-func (mr *MockAuthorizerMockRecorder) Setup() *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Setup", reflect.TypeOf((*MockAuthorizer)(nil).Setup))
-}

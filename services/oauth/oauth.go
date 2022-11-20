@@ -21,13 +21,20 @@ import (
 	"github.com/tidwall/gjson"
 )
 
-type AuthType string
+type (
+	AuthType   string
+	RudderFlow string
+)
 
 const (
-	OAuth                AuthType = "OAuth"
-	InvalidAuthType      AuthType = "InvalidAuthType"
-	DeleteAccountIdKey            = "rudderDeleteAccountId"
-	DeliveryAccountIdKey          = "rudderAccountId"
+	OAuth           AuthType = "OAuth"
+	InvalidAuthType AuthType = "InvalidAuthType"
+
+	RudderFlow_Delivery RudderFlow = "delivery"
+	RudderFlow_Delete   RudderFlow = "delete"
+
+	DeleteAccountIdKey   = "rudderDeleteAccountId"
+	DeliveryAccountIdKey = "rudderAccountId"
 )
 
 type AccountSecret struct {
@@ -49,6 +56,7 @@ type OAuthStats struct {
 	authErrCategory string
 	destDefName     string
 	isTokenFetch    bool // This stats field is used to identify if a request to get token is arising from processor
+	flowType        RudderFlow
 }
 
 type DisableDestinationResponse struct {
@@ -77,10 +85,10 @@ type OAuthErrResHandler struct {
 	refreshActiveMap     map[string]bool // Used to check if a refresh request for an account is already InProgress
 	disableDestActiveMap map[string]bool // Used to check if a disable destination request for a destination is already InProgress
 	TokenProvider        tokenProvider
+	RudderFlowType       RudderFlow
 }
 
 type Authorizer interface {
-	Setup()
 	DisableDestination(destination *backendconfig.DestinationT, workspaceId, rudderAccountId string) (statusCode int, resBody string)
 	RefreshToken(refTokenParams *RefreshTokenParams) (int, *AuthResponse)
 	FetchToken(fetchTokenParams *RefreshTokenParams) (int, *AuthResponse)
@@ -129,7 +137,7 @@ func Init() {
 	loggerNm = "OAuthResponseHandler"
 }
 
-func (authErrHandler *OAuthErrResHandler) Setup() {
+func (authErrHandler *OAuthErrResHandler) setup() {
 	authErrHandler.logger = pkgLogger
 	authErrHandler.tr = &http.Transport{}
 	// This timeout is kind of modifiable & it seemed like 10 mins for this is too much!
@@ -140,6 +148,7 @@ func (authErrHandler *OAuthErrResHandler) Setup() {
 	authErrHandler.destAuthInfoMap = make(map[string]*AuthResponse)
 	authErrHandler.refreshActiveMap = make(map[string]bool)
 	authErrHandler.disableDestActiveMap = make(map[string]bool)
+	authErrHandler.RudderFlowType = RudderFlow_Delivery
 }
 
 func GetAuthType(config map[string]interface{}) AuthType {
@@ -156,9 +165,12 @@ func GetAuthType(config map[string]interface{}) AuthType {
 }
 
 // This function creates a new OauthErrorResponseHandler
-func NewOAuthErrorHandler(provider tokenProvider) *OAuthErrResHandler {
+func NewOAuthErrorHandler(provider tokenProvider, options ...func(*OAuthErrResHandler)) *OAuthErrResHandler {
 	oAuthErrResHandler := &OAuthErrResHandler{TokenProvider: provider}
-	oAuthErrResHandler.Setup()
+	oAuthErrResHandler.setup()
+	for _, opt := range options {
+		opt(oAuthErrResHandler)
+	}
 	return oAuthErrResHandler
 }
 
@@ -171,6 +183,18 @@ func GetAccountId(config map[string]interface{}, idKey string) string {
 	return ""
 }
 
+func WithRudderFlow(rudderFlow RudderFlow) func(*OAuthErrResHandler) {
+	return func(authErrHandle *OAuthErrResHandler) {
+		authErrHandle.RudderFlowType = rudderFlow
+	}
+}
+
+func WithOAuthClientTimeout(timeout time.Duration) func(*OAuthErrResHandler) {
+	return func(authErrHandle *OAuthErrResHandler) {
+		authErrHandle.client.Timeout = timeout
+	}
+}
+
 func (authErrHandler *OAuthErrResHandler) RefreshToken(refTokenParams *RefreshTokenParams) (int, *AuthResponse) {
 	authStats := &OAuthStats{
 		id:              refTokenParams.AccountId,
@@ -181,6 +205,7 @@ func (authErrHandler *OAuthErrResHandler) RefreshToken(refTokenParams *RefreshTo
 		authErrCategory: REFRESH_TOKEN,
 		errorMessage:    "",
 		destDefName:     refTokenParams.DestDefName,
+		flowType:        authErrHandler.RudderFlowType,
 	}
 	return authErrHandler.GetTokenInfo(refTokenParams, "Refresh token", authStats)
 }
@@ -196,6 +221,7 @@ func (authErrHandler *OAuthErrResHandler) FetchToken(fetchTokenParams *RefreshTo
 		errorMessage:    "",
 		destDefName:     fetchTokenParams.DestDefName,
 		isTokenFetch:    true,
+		flowType:        authErrHandler.RudderFlowType,
 	}
 	return authErrHandler.GetTokenInfo(fetchTokenParams, "Fetch token", authStats)
 }
@@ -367,6 +393,7 @@ func (authStats *OAuthStats) SendTimerStats(startTime time.Time) {
 		"isCallToCpApi":   strconv.FormatBool(authStats.isCallToCpApi),
 		"authErrCategory": authStats.authErrCategory,
 		"destType":        authStats.destDefName,
+		"flowType":        string(authStats.flowType),
 	}).SendTiming(time.Since(startTime))
 }
 
@@ -381,6 +408,7 @@ func (refStats *OAuthStats) SendCountStat() {
 		"authErrCategory": refStats.authErrCategory,
 		"destType":        refStats.destDefName,
 		"isTokenFetch":    strconv.FormatBool(refStats.isTokenFetch),
+		"flowType":        string(refStats.flowType),
 	}).Increment()
 }
 
@@ -398,6 +426,7 @@ func (authErrHandler *OAuthErrResHandler) DisableDestination(destination *backen
 		authErrCategory: DISABLE_DEST,
 		errorMessage:    "",
 		destDefName:     destination.DestinationDefinition.Name,
+		flowType:        authErrHandler.RudderFlowType,
 	}
 	defer func() {
 		disableDestStats.statName = "disable_destination_total_req_latency"

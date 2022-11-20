@@ -2119,6 +2119,7 @@ func (rt *HandleT) HandleOAuthDestResponse(params *HandleDestOAuthRespParamsT) (
 					"workspaceId":   refTokenParams.WorkspaceId,
 					"accountId":     refTokenParams.AccountId,
 					"destType":      refTokenParams.DestDefName,
+					"flowType":      string(oauth.RudderFlow_Delivery),
 				}).Increment()
 				rt.logger.Errorf(`[OAuth request] Aborting the event as %v`, oauth.INVALID_REFRESH_TOKEN_GRANT)
 				return disableStCd, refSec.Err
@@ -2141,6 +2142,7 @@ func (rt *HandleT) ExecDisableDestination(destination *backendconfig.Destination
 		"destType":    destination.DestinationDefinition.Name,
 		"workspaceId": workspaceID,
 		"success":     "true",
+		"flowType":    string(oauth.RudderFlow_Delivery),
 	}
 	errCatStatusCode, errCatResponse := rt.oauth.DisableDestination(destination, workspaceID, rudderAccountId)
 	if errCatStatusCode != http.StatusOK {

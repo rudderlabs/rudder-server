@@ -191,6 +191,9 @@ func IsOAuthEnabled(destDefConfig map[string]interface{}) bool {
 
 func (api *APIManager) getOAuthDetail(destDetail *model.Destination, workspaceId string) (OAuthDetail, error) {
 	id := oauth.GetAccountId(destDetail.Config, oauth.DeleteAccountIdKey)
+	if strings.TrimSpace(id) == "" {
+		return OAuthDetail{}, fmt.Errorf("%v is not present for %v", oauth.DeleteAccountIdKey, destDetail.Name)
+	}
 	tokenStatusCode, secretToken := api.OAuth.FetchToken(&oauth.RefreshTokenParams{
 		AccountId:       id,
 		WorkspaceId:     workspaceId,
@@ -198,7 +201,7 @@ func (api *APIManager) getOAuthDetail(destDetail *model.Destination, workspaceId
 		EventNamePrefix: "fetch_token",
 	})
 	if tokenStatusCode != http.StatusOK {
-		return OAuthDetail{}, fmt.Errorf("[%s][FetchToken] Error in Token Fetch statusCode: %d\t error: %s\n", destDetail.Name, tokenStatusCode, secretToken.Err)
+		return OAuthDetail{}, fmt.Errorf("[%s][FetchToken] Error in Token Fetch statusCode: %d\t error: %s", destDetail.Name, tokenStatusCode, secretToken.Err)
 	}
 	return OAuthDetail{
 		ID:          id,

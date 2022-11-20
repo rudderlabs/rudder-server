@@ -65,7 +65,7 @@ func Run(ctx context.Context) {
 		panic(fmt.Errorf("error while getting workspaceId: %w", err))
 	}
 	// setting up oauth
-	OAuth := oauth.NewOAuthErrorHandler(backendconfig.DefaultBackendConfig)
+	OAuth := oauth.NewOAuthErrorHandler(backendconfig.DefaultBackendConfig, oauth.WithRudderFlow(oauth.RudderFlow_Delete))
 
 	svc := service.JobSvc{
 		API: &client.JobAPI{
