@@ -12,23 +12,12 @@ import (
 	"github.com/rudderlabs/rudder-server/warehouse/validations"
 
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
-	"github.com/rudderlabs/rudder-server/utils/timeutil"
-
 	"github.com/rudderlabs/rudder-server/warehouse/clickhouse"
 	"github.com/rudderlabs/rudder-server/warehouse/client"
 	"github.com/rudderlabs/rudder-server/warehouse/testhelper"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 	"github.com/stretchr/testify/require"
 )
-
-var statsToVerify = []string{
-	"warehouse_clickhouse_commitTimeouts",
-	"warehouse_clickhouse_execTimeouts",
-	"warehouse_clickhouse_failedRetries",
-	"warehouse_clickhouse_syncLoadFileTime",
-	"warehouse_clickhouse_downloadLoadFilesTime",
-	"warehouse_clickhouse_numRowsLoadFile",
-}
 
 func TestClickHouseIntegration(t *testing.T) {
 	if os.Getenv("SLOW") == "0" {
@@ -59,34 +48,33 @@ func TestClickHouseIntegration(t *testing.T) {
 		dbs = append(dbs, db)
 	}
 
-	jobsDB := testhelper.SetUpJobsDB(t)
-	tables := []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"}
+	var (
+		jobsDB   = testhelper.SetUpJobsDB(t)
+		provider = warehouseutils.CLICKHOUSE
+		tables   = []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"}
+	)
 
 	testCases := []struct {
 		name            string
 		sourceID        string
 		destinationID   string
 		writeKey        string
-		userType        string
 		db              *sql.DB
 		warehouseEvents testhelper.EventsCountMap
 		clusterSetup    func(t testing.TB)
 	}{
 		{
-			name:            "Single Setup",
-			sourceID:        "1wRvLmEnMOOxNM79pwaZhyCqXRE",
-			destinationID:   "21Ev6TI6emCFDKph2Zn6XfTP7PI",
-			writeKey:        "C5AWX39IVUWSP2NcHciWvqZTa2N",
-			userType:        warehouseutils.CLICKHOUSE,
-			db:              dbs[0],
-			warehouseEvents: testhelper.DefaultWarehouseEventsMap(),
+			name:          "Single Setup",
+			sourceID:      "1wRvLmEnMOOxNM79pwaZhyCqXRE",
+			destinationID: "21Ev6TI6emCFDKph2Zn6XfTP7PI",
+			writeKey:      "C5AWX39IVUWSP2NcHciWvqZTa2N",
+			db:            dbs[0],
 		},
 		{
 			name:          "Cluster Mode Setup",
 			sourceID:      "1wRvLmEnMOOxNM79ghdZhyCqXRE",
 			destinationID: "21Ev6TI6emCFDKhp2Zn6XfTP7PI",
 			writeKey:      "95RxRTZHWUsaD6HEdz0ThbXfQ6p",
-			userType:      fmt.Sprintf("%s_%s", warehouseutils.CLICKHOUSE, "CLUSTER"),
 			db:            dbs[1],
 			warehouseEvents: testhelper.EventsCountMap{
 				"identifies":    8,
@@ -111,54 +99,38 @@ func TestClickHouseIntegration(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
-			warehouseTest := &testhelper.WareHouseTest{
+			ts := testhelper.WareHouseTest{
+				Schema:        "rudderdb",
+				WriteKey:      tc.writeKey,
+				SourceID:      tc.sourceID,
+				JobRunID:      misc.FastUUID().String(),
+				TaskRunID:     misc.FastUUID().String(),
+				DestinationID: tc.destinationID,
+				Tables:        tables,
+				Provider:      provider,
+				UserID:        testhelper.GetUserId(provider),
+				JobsDB:        jobsDB,
 				Client: &client.Client{
 					SQL:  tc.db,
 					Type: client.SQLClient,
 				},
-				WriteKey:      tc.writeKey,
-				Schema:        "rudderdb",
-				Tables:        tables,
-				Provider:      warehouseutils.CLICKHOUSE,
-				SourceID:      tc.sourceID,
-				DestinationID: tc.destinationID,
+				StatsToVerify: []string{
+					"warehouse_clickhouse_commitTimeouts",
+					"warehouse_clickhouse_execTimeouts",
+					"warehouse_clickhouse_failedRetries",
+					"warehouse_clickhouse_syncLoadFileTime",
+					"warehouse_clickhouse_downloadLoadFilesTime",
+					"warehouse_clickhouse_numRowsLoadFile",
+				},
 			}
-
-			// Scenario 1
-			warehouseTest.TimestampBeforeSendingEvents = timeutil.Now()
-			warehouseTest.UserId = testhelper.GetUserId(tc.userType)
-
-			sendEventsMap := testhelper.SendEventsMap()
-			testhelper.SendEvents(t, warehouseTest, sendEventsMap)
-			testhelper.SendEvents(t, warehouseTest, sendEventsMap)
-			testhelper.SendEvents(t, warehouseTest, sendEventsMap)
-			testhelper.SendIntegratedEvents(t, warehouseTest, sendEventsMap)
-
-			testhelper.VerifyEventsInStagingFiles(t, jobsDB, warehouseTest, testhelper.DefaultStagingFilesEventsMap())
-			testhelper.VerifyEventsInLoadFiles(t, jobsDB, warehouseTest, testhelper.DefaultLoadFilesEventsMap())
-			testhelper.VerifyEventsInTableUploads(t, jobsDB, warehouseTest, testhelper.DefaultTableUploadsEventsMap())
-			testhelper.VerifyEventsInWareHouse(t, warehouseTest, testhelper.DefaultWarehouseEventsMap())
-
-			// Scenario 2
-			warehouseTest.TimestampBeforeSendingEvents = timeutil.Now()
-			warehouseTest.UserId = testhelper.GetUserId(tc.userType)
+			ts.TestScenarioOne(t)
 
 			if tc.clusterSetup != nil {
 				tc.clusterSetup(t)
 			}
 
-			sendEventsMap = testhelper.SendEventsMap()
-			testhelper.SendModifiedEvents(t, warehouseTest, sendEventsMap)
-			testhelper.SendModifiedEvents(t, warehouseTest, sendEventsMap)
-			testhelper.SendModifiedEvents(t, warehouseTest, sendEventsMap)
-			testhelper.SendIntegratedEvents(t, warehouseTest, sendEventsMap)
-
-			testhelper.VerifyEventsInStagingFiles(t, jobsDB, warehouseTest, testhelper.DefaultStagingFilesEventsMap())
-			testhelper.VerifyEventsInLoadFiles(t, jobsDB, warehouseTest, testhelper.DefaultLoadFilesEventsMap())
-			testhelper.VerifyEventsInTableUploads(t, jobsDB, warehouseTest, testhelper.DefaultTableUploadsEventsMap())
-			testhelper.VerifyEventsInWareHouse(t, warehouseTest, tc.warehouseEvents)
-
-			testhelper.VerifyWorkspaceIDInStats(t, statsToVerify...)
+			ts.UserID = testhelper.GetUserId(provider)
+			ts.TestScenarioTwo(t)
 		})
 	}
 }

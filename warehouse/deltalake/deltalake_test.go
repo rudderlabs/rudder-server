@@ -11,8 +11,6 @@ import (
 
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 
-	"github.com/rudderlabs/rudder-server/utils/timeutil"
-
 	proto "github.com/rudderlabs/rudder-server/proto/databricks"
 
 	"github.com/rudderlabs/rudder-server/warehouse/client"
@@ -23,21 +21,15 @@ import (
 	"github.com/rudderlabs/rudder-server/warehouse/testhelper"
 )
 
-var statsToVerify = []string{
-	"warehouse_deltalake_grpcExecTime",
-	"warehouse_deltalake_healthTimeouts",
-}
-
 func TestDeltalakeIntegration(t *testing.T) {
 	if os.Getenv("SLOW") == "0" {
 		t.Skip("Skipping tests. Remove 'SLOW=0' env var to run them.")
 	}
-
-	t.Parallel()
-
 	if _, exists := os.LookupEnv(testhelper.DeltalakeIntegrationTestCredentials); !exists {
 		t.Skipf("Skipping %s as %s is not set", t.Name(), testhelper.DeltalakeIntegrationTestCredentials)
 	}
+
+	t.Parallel()
 
 	deltalake.Init()
 
@@ -47,33 +39,52 @@ func TestDeltalakeIntegration(t *testing.T) {
 	db, err := deltalake.Connect(&credentials, 0)
 	require.NoError(t, err)
 
-	schema := testhelper.Schema(warehouseutils.DELTALAKE, testhelper.DeltalakeIntegrationTestSchema)
+	var (
+		jobsDB           = testhelper.SetUpJobsDB(t)
+		provider         = warehouseutils.DELTALAKE
+		appendModeUserID = testhelper.GetUserId(provider)
+		schema           = testhelper.Schema(provider, testhelper.DeltalakeIntegrationTestSchema)
+	)
 
 	t.Cleanup(func() {
-		require.NoError(t, testhelper.WithConstantBackoff(func() (err error) {
-			dropSchemaResponse, err := db.Client.Execute(db.Context, &proto.ExecuteRequest{
-				Config:       db.CredConfig,
-				Identifier:   db.CredIdentifier,
-				SqlStatement: fmt.Sprintf(`DROP SCHEMA %[1]s CASCADE;`, schema),
-			})
-			if err != nil {
-				return fmt.Errorf("failed dropping schema %s for Deltalake, error: %s", schema, err.Error())
-			}
-			if dropSchemaResponse.GetErrorCode() != "" {
-				return fmt.Errorf("failed dropping schema %s for Deltalake, errorCode: %s, errorMessage: %s", schema, dropSchemaResponse.GetErrorCode(), dropSchemaResponse.GetErrorMessage())
-			}
-			return
-		}))
+		require.NoError(t,
+			testhelper.WithConstantBackoff(func() (err error) {
+				dropSchemaResponse, err := db.Client.Execute(db.Context, &proto.ExecuteRequest{
+					Config:       db.CredConfig,
+					Identifier:   db.CredIdentifier,
+					SqlStatement: fmt.Sprintf(`DROP SCHEMA %[1]s CASCADE;`, schema),
+				})
+				if err != nil {
+					return fmt.Errorf("failed dropping schema %s for Deltalake, error: %s", schema, err.Error())
+				}
+				if dropSchemaResponse.GetErrorCode() != "" {
+					return fmt.Errorf("failed dropping schema %s for Deltalake, errorCode: %s, errorMessage: %s", schema, dropSchemaResponse.GetErrorCode(), dropSchemaResponse.GetErrorMessage())
+				}
+				return
+			}),
+		)
 	})
 
 	testCases := []struct {
-		name            string
-		warehouseEvents testhelper.EventsCountMap
-		prerequisite    func(t testing.TB)
+		name               string
+		schema             string
+		writeKey           string
+		sourceID           string
+		destinationID      string
+		scenarioOneUserID  string
+		scenarioTwoUserID  string
+		warehouseEventsMap testhelper.EventsCountMap
+		prerequisite       func(t testing.TB)
 	}{
 		{
-			name:            "Merge Mode",
-			warehouseEvents: mergeEventsMap(),
+			name:               "Merge Mode",
+			writeKey:           "sToFgoilA0U1WxNeW1gdgUVDsEW",
+			schema:             schema,
+			sourceID:           "25H5EpYzojqQSepRSaGBrrPx3e4",
+			destinationID:      "25IDjdnoEus6DDNrth3SWO1FOpu",
+			scenarioOneUserID:  testhelper.GetUserId(provider),
+			scenarioTwoUserID:  testhelper.GetUserId(provider),
+			warehouseEventsMap: mergeEventsMap(),
 			prerequisite: func(t testing.TB) {
 				t.Helper()
 				testhelper.SetConfig(t, []warehouseutils.KeyValue{
@@ -85,8 +96,14 @@ func TestDeltalakeIntegration(t *testing.T) {
 			},
 		},
 		{
-			name:            "Append Mode",
-			warehouseEvents: appendEventsMap(),
+			name:               "Append Mode",
+			writeKey:           "sToFgoilA0U1WxNeW1gdgUVDsEW",
+			schema:             schema,
+			sourceID:           "25H5EpYzojqQSepRSaGBrrPx3e4",
+			destinationID:      "25IDjdnoEus6DDNrth3SWO1FOpu",
+			warehouseEventsMap: appendEventsMap(),
+			scenarioOneUserID:  appendModeUserID,
+			scenarioTwoUserID:  appendModeUserID,
 			prerequisite: func(t testing.TB) {
 				t.Helper()
 				testhelper.SetConfig(t, []warehouseutils.KeyValue{
@@ -99,61 +116,46 @@ func TestDeltalakeIntegration(t *testing.T) {
 		},
 	}
 
-	jobsDB := testhelper.SetUpJobsDB(t)
-
 	for _, tc := range testCases {
 		tc := tc
 
 		t.Run(tc.name, func(t *testing.T) {
-			if tc.prerequisite != nil {
-				tc.prerequisite(t)
-			}
-
-			warehouseTest := &testhelper.WareHouseTest{
+			ts := testhelper.WareHouseTest{
+				Schema:        tc.schema,
+				WriteKey:      tc.writeKey,
+				SourceID:      tc.sourceID,
+				JobRunID:      misc.FastUUID().String(),
+				TaskRunID:     misc.FastUUID().String(),
+				MessageID:     misc.FastUUID().String(),
+				DestinationID: tc.destinationID,
+				Tables:        []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"},
+				Provider:      provider,
+				UserID:        tc.scenarioOneUserID,
+				JobsDB:        jobsDB,
+				WarehouseEventsMap: testhelper.EventsCountMap{
+					"identifies":    1,
+					"users":         1,
+					"tracks":        1,
+					"product_track": 1,
+					"pages":         1,
+					"screens":       1,
+					"aliases":       1,
+					"groups":        1,
+				},
 				Client: &client.Client{
 					DBHandleT: db,
 					Type:      client.DBClient,
 				},
-				WriteKey:      "sToFgoilA0U1WxNeW1gdgUVDsEW",
-				Schema:        schema,
-				Tables:        []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"},
-				MessageID:     misc.FastUUID().String(),
-				Provider:      warehouseutils.DELTALAKE,
-				SourceID:      "25H5EpYzojqQSepRSaGBrrPx3e4",
-				DestinationID: "25IDjdnoEus6DDNrth3SWO1FOpu",
+				StatsToVerify: []string{
+					"warehouse_deltalake_grpcExecTime",
+					"warehouse_deltalake_healthTimeouts",
+				},
 			}
+			ts.TestScenarioOne(t)
 
-			// Scenario 1
-			warehouseTest.TimestampBeforeSendingEvents = timeutil.Now()
-			warehouseTest.UserId = testhelper.GetUserId(warehouseutils.DELTALAKE)
-
-			sendEventsMap := testhelper.SendEventsMap()
-			testhelper.SendEvents(t, warehouseTest, sendEventsMap)
-			testhelper.SendEvents(t, warehouseTest, sendEventsMap)
-			testhelper.SendEvents(t, warehouseTest, sendEventsMap)
-			testhelper.SendIntegratedEvents(t, warehouseTest, sendEventsMap)
-
-			testhelper.VerifyEventsInStagingFiles(t, jobsDB, warehouseTest, testhelper.DefaultStagingFilesEventsMap())
-			testhelper.VerifyEventsInLoadFiles(t, jobsDB, warehouseTest, testhelper.DefaultLoadFilesEventsMap())
-			testhelper.VerifyEventsInTableUploads(t, jobsDB, warehouseTest, testhelper.DefaultTableUploadsEventsMap())
-			testhelper.VerifyEventsInWareHouse(t, warehouseTest, mergeEventsMap())
-
-			// Scenario 2
-			warehouseTest.TimestampBeforeSendingEvents = timeutil.Now()
-			warehouseTest.UserId = testhelper.GetUserId(warehouseutils.DELTALAKE)
-
-			sendEventsMap = testhelper.SendEventsMap()
-			testhelper.SendModifiedEvents(t, warehouseTest, sendEventsMap)
-			testhelper.SendModifiedEvents(t, warehouseTest, sendEventsMap)
-			testhelper.SendModifiedEvents(t, warehouseTest, sendEventsMap)
-			testhelper.SendIntegratedEvents(t, warehouseTest, sendEventsMap)
-
-			testhelper.VerifyEventsInStagingFiles(t, jobsDB, warehouseTest, testhelper.DefaultStagingFilesEventsMap())
-			testhelper.VerifyEventsInLoadFiles(t, jobsDB, warehouseTest, testhelper.DefaultLoadFilesEventsMap())
-			testhelper.VerifyEventsInTableUploads(t, jobsDB, warehouseTest, testhelper.DefaultTableUploadsEventsMap())
-			testhelper.VerifyEventsInWareHouse(t, warehouseTest, tc.warehouseEvents)
-
-			testhelper.VerifyWorkspaceIDInStats(t, statsToVerify...)
+			ts.UserID = tc.scenarioTwoUserID
+			ts.WarehouseEventsMap = tc.warehouseEventsMap
+			ts.TestScenarioTwo(t)
 		})
 	}
 }
@@ -162,12 +164,11 @@ func TestDeltalakeConfigurationValidation(t *testing.T) {
 	if os.Getenv("SLOW") == "0" {
 		t.Skip("Skipping tests. Remove 'SLOW=0' env var to run them.")
 	}
-
-	t.Parallel()
-
 	if _, exists := os.LookupEnv(testhelper.DeltalakeIntegrationTestCredentials); !exists {
 		t.Skipf("Skipping %s as %s is not set", t.Name(), testhelper.DeltalakeIntegrationTestCredentials)
 	}
+
+	t.Parallel()
 
 	misc.Init()
 	validations.Init()

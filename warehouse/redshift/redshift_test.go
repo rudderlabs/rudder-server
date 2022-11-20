@@ -10,8 +10,6 @@ import (
 
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 
-	"github.com/rudderlabs/rudder-server/utils/timeutil"
-
 	"github.com/stretchr/testify/require"
 
 	"github.com/rudderlabs/rudder-server/warehouse/client"
@@ -24,28 +22,20 @@ func TestRedshiftIntegration(t *testing.T) {
 	if os.Getenv("SLOW") == "0" {
 		t.Skip("Skipping tests. Remove 'SLOW=0' env var to run them.")
 	}
-
-	t.Parallel()
-
 	if _, exists := os.LookupEnv(testhelper.RedshiftIntegrationTestCredentials); !exists {
 		t.Skipf("Skipping %s as %s is not set", t.Name(), testhelper.RedshiftIntegrationTestCredentials)
 	}
 
+	t.Parallel()
+
 	redshift.Init()
 
-	credentials, err := testhelper.RedshiftCredentials()
-	require.NoError(t, err)
-
-	testhelper.SetConfig(t, []warehouseutils.KeyValue{
-		{
-			Key:   "Warehouse.redshift.dedupWindow",
-			Value: true,
-		},
-		{
-			Key:   "Warehouse.redshift.dedupWindowInHours",
-			Value: 5,
-		},
-	})
+	var (
+		jobsDB        = testhelper.SetUpJobsDB(t)
+		provider      = warehouseutils.RS
+		schema        = testhelper.Schema(provider, testhelper.RedshiftIntegrationTestSchema)
+		sourcesSchema = fmt.Sprintf("%s_%s", schema, "sources")
+	)
 
 	testcase := []struct {
 		name                  string
@@ -59,38 +49,31 @@ func TestRedshiftIntegration(t *testing.T) {
 		loadFilesEventsMap    testhelper.EventsCountMap
 		tableUploadsEventsMap testhelper.EventsCountMap
 		warehouseEventsMap    testhelper.EventsCountMap
-		asyncJob              func(t testing.TB, wareHouseTest *testhelper.WareHouseTest)
+		asyncJob              bool
 	}{
 		{
-			name:                  "Upload Job",
-			schema:                testhelper.Schema(warehouseutils.RS, testhelper.RedshiftIntegrationTestSchema),
-			tables:                []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"},
-			writeKey:              "JAAwdCxmM8BIabKERsUhPNmMmdf",
-			sourceID:              "279L3gEKqwruBoKGsXZtSVX7vIy",
-			destinationID:         "27SthahyhhqZE74HT4NTtNPl06V",
-			eventsMap:             testhelper.SendEventsMap(),
-			stagingFilesEventsMap: testhelper.DefaultStagingFilesEventsMap(),
-			loadFilesEventsMap:    testhelper.DefaultLoadFilesEventsMap(),
-			tableUploadsEventsMap: testhelper.DefaultTableUploadsEventsMap(),
-			warehouseEventsMap:    testhelper.DefaultWarehouseEventsMap(),
+			name:          "Upload Job",
+			schema:        schema,
+			tables:        []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"},
+			writeKey:      "JAAwdCxmM8BIabKERsUhPNmMmdf",
+			sourceID:      "279L3gEKqwruBoKGsXZtSVX7vIy",
+			destinationID: "27SthahyhhqZE74HT4NTtNPl06V",
 		},
 		{
 			name:                  "Async Job",
-			schema:                fmt.Sprintf("%s_%s", testhelper.Schema(warehouseutils.RS, testhelper.RedshiftIntegrationTestSchema), "sources"),
+			schema:                sourcesSchema,
 			tables:                []string{"tracks", "google_sheet"},
 			writeKey:              "BNAwdCxmM8BIabKERsUhPNmMmdf",
 			sourceID:              "2DkCpUr0xgjfsdJxIwqyqfyHdq4",
 			destinationID:         "27Sthahyhhsdas4HT4NTtNPl06V",
-			eventsMap:             testhelper.SourcesSendEventMap(),
+			eventsMap:             testhelper.SourcesSendEventsMap(),
 			stagingFilesEventsMap: testhelper.SourcesStagingFilesEventsMap(),
 			loadFilesEventsMap:    testhelper.SourcesLoadFilesEventsMap(),
 			tableUploadsEventsMap: testhelper.SourcesTableUploadsEventsMap(),
 			warehouseEventsMap:    testhelper.SourcesWarehouseEventsMap(),
-			asyncJob:              testhelper.VerifyAsyncJob,
+			asyncJob:              true,
 		},
 	}
-
-	jobsDB := testhelper.SetUpJobsDB(t)
 
 	for _, tc := range testcase {
 		tc := tc
@@ -98,65 +81,49 @@ func TestRedshiftIntegration(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
+			credentials, err := testhelper.RedshiftCredentials()
+			require.NoError(t, err)
+
 			db, err := redshift.Connect(credentials)
 			require.NoError(t, err)
 
 			t.Cleanup(func() {
-				require.NoError(t, testhelper.WithConstantBackoff(func() (err error) {
-					_, err = db.Exec(fmt.Sprintf(`DROP SCHEMA %q CASCADE;`, tc.schema))
-					return
-				}), fmt.Sprintf("Failed dropping schema %s for Redshift", tc.schema))
+				require.NoError(
+					t,
+					testhelper.WithConstantBackoff(func() (err error) {
+						_, err = db.Exec(fmt.Sprintf(`DROP SCHEMA %q CASCADE;`, schema))
+						return
+					}),
+					fmt.Sprintf("Failed dropping schema %s for Redshift", schema),
+				)
 			})
 
-			warehouseTest := &testhelper.WareHouseTest{
+			ts := testhelper.WareHouseTest{
+				Schema:                tc.schema,
+				WriteKey:              tc.writeKey,
+				SourceID:              tc.sourceID,
+				JobRunID:              misc.FastUUID().String(),
+				TaskRunID:             misc.FastUUID().String(),
+				DestinationID:         tc.destinationID,
+				Tables:                tc.tables,
+				EventsMap:             tc.eventsMap,
+				StagingFilesEventsMap: tc.stagingFilesEventsMap,
+				LoadFilesEventsMap:    tc.loadFilesEventsMap,
+				TableUploadsEventsMap: tc.tableUploadsEventsMap,
+				WarehouseEventsMap:    tc.warehouseEventsMap,
+				AsyncJob:              tc.asyncJob,
+				Provider:              provider,
+				UserID:                testhelper.GetUserId(provider),
+				JobsDB:                jobsDB,
 				Client: &client.Client{
 					SQL:  db,
 					Type: client.SQLClient,
 				},
-				WriteKey:      tc.writeKey,
-				Schema:        tc.schema,
-				SourceID:      tc.sourceID,
-				DestinationID: tc.destinationID,
-				Tables:        tc.tables,
-				Provider:      warehouseutils.RS,
 			}
+			ts.TestScenarioOne(t)
 
-			// Scenario 1
-			warehouseTest.TimestampBeforeSendingEvents = timeutil.Now()
-			warehouseTest.UserId = testhelper.GetUserId(warehouseutils.RS)
-			warehouseTest.JobRunID = misc.FastUUID().String()
-			warehouseTest.TaskRunID = misc.FastUUID().String()
-
-			testhelper.SendEvents(t, warehouseTest, tc.eventsMap)
-			testhelper.SendEvents(t, warehouseTest, tc.eventsMap)
-			testhelper.SendEvents(t, warehouseTest, tc.eventsMap)
-			testhelper.SendIntegratedEvents(t, warehouseTest, tc.eventsMap)
-
-			testhelper.VerifyEventsInStagingFiles(t, jobsDB, warehouseTest, tc.stagingFilesEventsMap)
-			testhelper.VerifyEventsInLoadFiles(t, jobsDB, warehouseTest, tc.loadFilesEventsMap)
-			testhelper.VerifyEventsInTableUploads(t, jobsDB, warehouseTest, tc.tableUploadsEventsMap)
-			testhelper.VerifyEventsInWareHouse(t, warehouseTest, tc.warehouseEventsMap)
-
-			// Scenario 2
-			warehouseTest.TimestampBeforeSendingEvents = timeutil.Now()
-			warehouseTest.UserId = testhelper.GetUserId(warehouseutils.RS)
-			warehouseTest.JobRunID = misc.FastUUID().String()
-			warehouseTest.TaskRunID = misc.FastUUID().String()
-
-			testhelper.SendModifiedEvents(t, warehouseTest, tc.eventsMap)
-			testhelper.SendModifiedEvents(t, warehouseTest, tc.eventsMap)
-			testhelper.SendModifiedEvents(t, warehouseTest, tc.eventsMap)
-			testhelper.SendIntegratedEvents(t, warehouseTest, tc.eventsMap)
-
-			testhelper.VerifyEventsInStagingFiles(t, jobsDB, warehouseTest, tc.stagingFilesEventsMap)
-			testhelper.VerifyEventsInLoadFiles(t, jobsDB, warehouseTest, tc.loadFilesEventsMap)
-			testhelper.VerifyEventsInTableUploads(t, jobsDB, warehouseTest, tc.tableUploadsEventsMap)
-			if tc.asyncJob != nil {
-				tc.asyncJob(t, warehouseTest)
-			}
-			testhelper.VerifyEventsInWareHouse(t, warehouseTest, tc.warehouseEventsMap)
-
-			testhelper.VerifyWorkspaceIDInStats(t)
+			ts.UserID = testhelper.GetUserId(provider)
+			ts.TestScenarioTwo(t)
 		})
 	}
 }
@@ -165,12 +132,11 @@ func TestRedshiftConfigurationValidation(t *testing.T) {
 	if os.Getenv("SLOW") == "0" {
 		t.Skip("Skipping tests. Remove 'SLOW=0' env var to run them.")
 	}
-
-	t.Parallel()
-
 	if _, exists := os.LookupEnv(testhelper.RedshiftIntegrationTestCredentials); !exists {
 		t.Skipf("Skipping %s as %s is not set", t.Name(), testhelper.RedshiftIntegrationTestCredentials)
 	}
+
+	t.Parallel()
 
 	misc.Init()
 	validations.Init()

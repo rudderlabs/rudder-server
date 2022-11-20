@@ -9,7 +9,6 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/warehouse/validations"
 
-	"github.com/rudderlabs/rudder-server/utils/timeutil"
 	"github.com/rudderlabs/rudder-server/warehouse/client"
 
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
@@ -24,18 +23,25 @@ func TestSnowflakeIntegration(t *testing.T) {
 	if os.Getenv("SLOW") == "0" {
 		t.Skip("Skipping tests. Remove 'SLOW=0' env var to run them.")
 	}
-
-	t.SkipNow()
-	t.Parallel()
-
 	if _, exists := os.LookupEnv(testhelper.SnowflakeIntegrationTestCredentials); !exists {
 		t.Skipf("Skipping %s as %s is not set", t.Name(), testhelper.SnowflakeIntegrationTestCredentials)
 	}
+
+	t.SkipNow()
+	t.Parallel()
 
 	snowflake.Init()
 
 	credentials, err := testhelper.SnowflakeCredentials()
 	require.NoError(t, err)
+
+	var (
+		jobsDB              = testhelper.SetUpJobsDB(t)
+		provider            = warehouseutils.SNOWFLAKE
+		schema              = testhelper.Schema(provider, testhelper.SnowflakeIntegrationTestSchema)
+		sourcesSchema       = fmt.Sprintf("%s_%s", schema, "SOURCES")
+		caseSensitiveSchema = fmt.Sprintf("%s_%s", schema, "CS")
+	)
 
 	testcase := []struct {
 		name                  string
@@ -50,60 +56,50 @@ func TestSnowflakeIntegration(t *testing.T) {
 		loadFilesEventsMap    testhelper.EventsCountMap
 		tableUploadsEventsMap testhelper.EventsCountMap
 		warehouseEventsMap    testhelper.EventsCountMap
-		asyncJob              func(t testing.TB, wareHouseTest *testhelper.WareHouseTest)
+		asyncJob              bool
 	}{
 		{
 			name:          "Upload Job with Normal Database",
 			dbName:        credentials.DBName,
-			schema:        testhelper.Schema(warehouseutils.SNOWFLAKE, testhelper.SnowflakeIntegrationTestSchema),
+			schema:        schema,
 			tables:        []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"},
 			writeKey:      "2eSJyYtqwcFiUILzXv2fcNIrWO7",
 			sourceID:      "24p1HhPk09FW25Kuzvx7GshCLKR",
 			destinationID: "24qeADObp6eIhjjDnEppO6P1SNc",
-			eventsMap:     testhelper.SendEventsMap(),
 			stagingFilesEventsMap: testhelper.EventsCountMap{
 				"wh_staging_files": 34, // 32 + 2 (merge events because of ID resolution)
 			},
-			loadFilesEventsMap:    testhelper.DefaultLoadFilesEventsMap(),
-			tableUploadsEventsMap: testhelper.DefaultTableUploadsEventsMap(),
-			warehouseEventsMap:    testhelper.DefaultWarehouseEventsMap(),
 		},
 		{
 			name:          "Upload Job with Case Sensitive Database",
 			dbName:        strings.ToLower(credentials.DBName),
-			schema:        fmt.Sprintf("%s_%s", testhelper.Schema(warehouseutils.SNOWFLAKE, testhelper.SnowflakeIntegrationTestSchema), "CS"),
+			schema:        caseSensitiveSchema,
 			tables:        []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"},
 			writeKey:      "2eSJyYtqwcFYUILzXv2fcNIrWO7",
 			sourceID:      "24p1HhPk09FBMKuzvx7GshCLKR",
 			destinationID: "24qeADObp6eJhijDnEppO6P1SNc",
-			eventsMap:     testhelper.SendEventsMap(),
 			stagingFilesEventsMap: testhelper.EventsCountMap{
 				"wh_staging_files": 34, // 32 + 2 (merge events because of ID resolution)
 			},
-			loadFilesEventsMap:    testhelper.DefaultLoadFilesEventsMap(),
-			tableUploadsEventsMap: testhelper.DefaultTableUploadsEventsMap(),
-			warehouseEventsMap:    testhelper.DefaultWarehouseEventsMap(),
 		},
 		{
 			name:          "Async Job with Sources",
 			dbName:        credentials.DBName,
-			schema:        fmt.Sprintf("%s_%s", testhelper.Schema(warehouseutils.SNOWFLAKE, testhelper.SnowflakeIntegrationTestSchema), "SOURCES"),
+			schema:        sourcesSchema,
 			tables:        []string{"tracks", "google_sheet"},
 			writeKey:      "2eSJyYtqwcFYerwzXv2fcNIrWO7",
 			sourceID:      "2DkCpUr0xgjaNRJxIwqyqfyHdq4",
 			destinationID: "24qeADObp6eIsfjDnEppO6P1SNc",
-			eventsMap:     testhelper.SourcesSendEventMap(),
+			eventsMap:     testhelper.SourcesSendEventsMap(),
 			stagingFilesEventsMap: testhelper.EventsCountMap{
 				"wh_staging_files": 9, // 8 + 1 (merge events because of ID resolution)
 			},
 			loadFilesEventsMap:    testhelper.SourcesLoadFilesEventsMap(),
 			tableUploadsEventsMap: testhelper.SourcesTableUploadsEventsMap(),
 			warehouseEventsMap:    testhelper.SourcesWarehouseEventsMap(),
-			asyncJob:              testhelper.VerifyAsyncJob,
+			asyncJob:              true,
 		},
 	}
-
-	jobsDB := testhelper.SetUpJobsDB(t)
 
 	for _, tc := range testcase {
 		tc := tc
@@ -118,61 +114,42 @@ func TestSnowflakeIntegration(t *testing.T) {
 			require.NoError(t, err)
 
 			t.Cleanup(func() {
-				require.NoError(t, testhelper.WithConstantBackoff(func() (err error) {
-					_, err = db.Exec(fmt.Sprintf(`DROP SCHEMA "%s" CASCADE;`, tc.schema))
-					return
-				}), fmt.Sprintf("Failed dropping schema %s for Snowflake", tc.schema))
+				require.NoError(
+					t,
+					testhelper.WithConstantBackoff(func() (err error) {
+						_, err = db.Exec(fmt.Sprintf(`DROP SCHEMA "%s" CASCADE;`, tc.schema))
+						return
+					}),
+					fmt.Sprintf("Failed dropping schema %s for Snowflake", tc.schema),
+				)
 			})
 
-			warehouseTest := &testhelper.WareHouseTest{
+			ts := testhelper.WareHouseTest{
+				Schema:                tc.schema,
+				WriteKey:              tc.writeKey,
+				SourceID:              tc.sourceID,
+				JobRunID:              misc.FastUUID().String(),
+				TaskRunID:             misc.FastUUID().String(),
+				DestinationID:         tc.destinationID,
+				Tables:                tc.tables,
+				EventsMap:             tc.eventsMap,
+				StagingFilesEventsMap: tc.stagingFilesEventsMap,
+				LoadFilesEventsMap:    tc.loadFilesEventsMap,
+				TableUploadsEventsMap: tc.tableUploadsEventsMap,
+				WarehouseEventsMap:    tc.warehouseEventsMap,
+				AsyncJob:              true,
+				Provider:              provider,
+				UserID:                testhelper.GetUserId(provider),
+				JobsDB:                jobsDB,
 				Client: &client.Client{
 					SQL:  db,
 					Type: client.SQLClient,
 				},
-				WriteKey:      tc.writeKey,
-				Schema:        tc.schema,
-				SourceID:      tc.sourceID,
-				DestinationID: tc.destinationID,
-				Tables:        tc.tables,
-				Provider:      warehouseutils.SNOWFLAKE,
 			}
+			ts.TestScenarioOne(t)
 
-			// Scenario 1
-			warehouseTest.TimestampBeforeSendingEvents = timeutil.Now()
-			warehouseTest.UserId = testhelper.GetUserId(warehouseutils.SNOWFLAKE)
-			warehouseTest.JobRunID = misc.FastUUID().String()
-			warehouseTest.TaskRunID = misc.FastUUID().String()
-
-			testhelper.SendEvents(t, warehouseTest, tc.eventsMap)
-			testhelper.SendEvents(t, warehouseTest, tc.eventsMap)
-			testhelper.SendEvents(t, warehouseTest, tc.eventsMap)
-			testhelper.SendIntegratedEvents(t, warehouseTest, tc.eventsMap)
-
-			testhelper.VerifyEventsInStagingFiles(t, jobsDB, warehouseTest, tc.stagingFilesEventsMap)
-			testhelper.VerifyEventsInLoadFiles(t, jobsDB, warehouseTest, tc.loadFilesEventsMap)
-			testhelper.VerifyEventsInTableUploads(t, jobsDB, warehouseTest, tc.tableUploadsEventsMap)
-			testhelper.VerifyEventsInWareHouse(t, warehouseTest, tc.warehouseEventsMap)
-
-			// Scenario 2
-			warehouseTest.TimestampBeforeSendingEvents = timeutil.Now()
-			warehouseTest.UserId = testhelper.GetUserId(warehouseutils.SNOWFLAKE)
-			warehouseTest.JobRunID = misc.FastUUID().String()
-			warehouseTest.TaskRunID = misc.FastUUID().String()
-
-			testhelper.SendModifiedEvents(t, warehouseTest, tc.eventsMap)
-			testhelper.SendModifiedEvents(t, warehouseTest, tc.eventsMap)
-			testhelper.SendModifiedEvents(t, warehouseTest, tc.eventsMap)
-			testhelper.SendIntegratedEvents(t, warehouseTest, tc.eventsMap)
-
-			testhelper.VerifyEventsInStagingFiles(t, jobsDB, warehouseTest, tc.stagingFilesEventsMap)
-			testhelper.VerifyEventsInLoadFiles(t, jobsDB, warehouseTest, tc.loadFilesEventsMap)
-			testhelper.VerifyEventsInTableUploads(t, jobsDB, warehouseTest, tc.tableUploadsEventsMap)
-			if tc.asyncJob != nil {
-				tc.asyncJob(t, warehouseTest)
-			}
-			testhelper.VerifyEventsInWareHouse(t, warehouseTest, tc.warehouseEventsMap)
-
-			testhelper.VerifyWorkspaceIDInStats(t)
+			ts.UserID = testhelper.GetUserId(provider)
+			ts.TestScenarioTwo(t)
 		})
 	}
 }
@@ -181,13 +158,12 @@ func TestSnowflakeConfigurationValidation(t *testing.T) {
 	if os.Getenv("SLOW") == "0" {
 		t.Skip("Skipping tests. Remove 'SLOW=0' env var to run them.")
 	}
-
-	t.SkipNow()
-	t.Parallel()
-
 	if _, exists := os.LookupEnv(testhelper.SnowflakeIntegrationTestCredentials); !exists {
 		t.Skipf("Skipping %s as %s is not set", t.Name(), testhelper.SnowflakeIntegrationTestCredentials)
 	}
+
+	t.SkipNow()
+	t.Parallel()
 
 	misc.Init()
 	validations.Init()

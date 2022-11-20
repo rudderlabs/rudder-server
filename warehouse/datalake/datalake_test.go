@@ -9,7 +9,6 @@ import (
 	"github.com/rudderlabs/rudder-server/warehouse/validations"
 
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
-	"github.com/rudderlabs/rudder-server/utils/timeutil"
 	"github.com/stretchr/testify/require"
 
 	"github.com/rudderlabs/rudder-server/warehouse/testhelper"
@@ -74,46 +73,21 @@ func TestDatalakeIntegration(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
-			if tc.prerequisite != nil {
-				tc.prerequisite(t)
-			}
-
-			warehouseTest := &testhelper.WareHouseTest{
+			ts := testhelper.WareHouseTest{
 				WriteKey:      tc.writeKey,
-				Provider:      tc.provider,
 				SourceID:      tc.sourceID,
+				JobRunID:      misc.FastUUID().String(),
+				TaskRunID:     misc.FastUUID().String(),
 				DestinationID: tc.destinationID,
+				Provider:      tc.provider,
+				UserID:        testhelper.GetUserId(tc.provider),
+				JobsDB:        jobsDB,
+				SkipWarehouse: true,
 			}
+			ts.TestScenarioOne(t)
 
-			// Scenario 1
-			warehouseTest.TimestampBeforeSendingEvents = timeutil.Now()
-			warehouseTest.UserId = testhelper.GetUserId(tc.provider)
-
-			sendEventsMap := testhelper.SendEventsMap()
-			testhelper.SendEvents(t, warehouseTest, sendEventsMap)
-			testhelper.SendEvents(t, warehouseTest, sendEventsMap)
-			testhelper.SendEvents(t, warehouseTest, sendEventsMap)
-			testhelper.SendIntegratedEvents(t, warehouseTest, sendEventsMap)
-
-			testhelper.VerifyEventsInStagingFiles(t, jobsDB, warehouseTest, testhelper.DefaultStagingFilesEventsMap())
-			testhelper.VerifyEventsInLoadFiles(t, jobsDB, warehouseTest, testhelper.DefaultLoadFilesEventsMap())
-			testhelper.VerifyEventsInTableUploads(t, jobsDB, warehouseTest, testhelper.DefaultTableUploadsEventsMap())
-
-			// Scenario 2
-			warehouseTest.TimestampBeforeSendingEvents = timeutil.Now()
-			warehouseTest.UserId = testhelper.GetUserId(tc.provider)
-
-			sendEventsMap = testhelper.SendEventsMap()
-			testhelper.SendModifiedEvents(t, warehouseTest, sendEventsMap)
-			testhelper.SendModifiedEvents(t, warehouseTest, sendEventsMap)
-			testhelper.SendModifiedEvents(t, warehouseTest, sendEventsMap)
-			testhelper.SendIntegratedEvents(t, warehouseTest, sendEventsMap)
-
-			testhelper.VerifyEventsInStagingFiles(t, jobsDB, warehouseTest, testhelper.DefaultStagingFilesEventsMap())
-			testhelper.VerifyEventsInLoadFiles(t, jobsDB, warehouseTest, testhelper.DefaultLoadFilesEventsMap())
-			testhelper.VerifyEventsInTableUploads(t, jobsDB, warehouseTest, testhelper.DefaultTableUploadsEventsMap())
-
-			testhelper.VerifyWorkspaceIDInStats(t)
+			ts.UserID = testhelper.GetUserId(tc.provider)
+			ts.TestScenarioTwo(t)
 		})
 	}
 }
