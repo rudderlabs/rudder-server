@@ -43,21 +43,21 @@ func TestRedshiftIntegration(t *testing.T) {
 		writeKey              string
 		sourceID              string
 		destinationID         string
-		tables                []string
 		eventsMap             testhelper.EventsCountMap
 		stagingFilesEventsMap testhelper.EventsCountMap
 		loadFilesEventsMap    testhelper.EventsCountMap
 		tableUploadsEventsMap testhelper.EventsCountMap
 		warehouseEventsMap    testhelper.EventsCountMap
 		asyncJob              bool
+		tables                []string
 	}{
 		{
-			name:          "Upload Job",
-			schema:        schema,
-			tables:        []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"},
-			writeKey:      "JAAwdCxmM8BIabKERsUhPNmMmdf",
-			sourceID:      "279L3gEKqwruBoKGsXZtSVX7vIy",
-			destinationID: "27SthahyhhqZE74HT4NTtNPl06V",
+			name:              "Upload Job",
+			schema:            schema,
+			tables:            []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"},
+			writeKey:          "JAAwdCxmM8BIabKERsUhPNmMmdf",
+			sourceID:          "279L3gEKqwruBoKGsXZtSVX7vIy",
+			destinationID:     "27SthahyhhqZE74HT4NTtNPl06V",
 		},
 		{
 			name:                  "Async Job",
@@ -102,8 +102,6 @@ func TestRedshiftIntegration(t *testing.T) {
 				Schema:                tc.schema,
 				WriteKey:              tc.writeKey,
 				SourceID:              tc.sourceID,
-				JobRunID:              misc.FastUUID().String(),
-				TaskRunID:             misc.FastUUID().String(),
 				DestinationID:         tc.destinationID,
 				Tables:                tc.tables,
 				EventsMap:             tc.eventsMap,
@@ -112,9 +110,11 @@ func TestRedshiftIntegration(t *testing.T) {
 				TableUploadsEventsMap: tc.tableUploadsEventsMap,
 				WarehouseEventsMap:    tc.warehouseEventsMap,
 				AsyncJob:              tc.asyncJob,
-				Provider:              provider,
 				UserID:                testhelper.GetUserId(provider),
+				Provider:              provider,
 				JobsDB:                jobsDB,
+				JobRunID:              misc.FastUUID().String(),
+				TaskRunID:             misc.FastUUID().String(),
 				Client: &client.Client{
 					SQL:  db,
 					Type: client.SQLClient,
