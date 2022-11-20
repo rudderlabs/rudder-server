@@ -36,8 +36,8 @@ func TestSnowflakeIntegration(t *testing.T) {
 	require.NoError(t, err)
 
 	var (
-		jobsDB              = testhelper.SetUpJobsDB(t)
 		provider            = warehouseutils.SNOWFLAKE
+		jobsDB              = testhelper.SetUpJobsDB(t)
 		schema              = testhelper.Schema(provider, testhelper.SnowflakeIntegrationTestSchema)
 		sourcesSchema       = fmt.Sprintf("%s_%s", schema, "SOURCES")
 		caseSensitiveSchema = fmt.Sprintf("%s_%s", schema, "CS")
@@ -50,13 +50,13 @@ func TestSnowflakeIntegration(t *testing.T) {
 		writeKey              string
 		sourceID              string
 		destinationID         string
-		tables                []string
 		eventsMap             testhelper.EventsCountMap
 		stagingFilesEventsMap testhelper.EventsCountMap
 		loadFilesEventsMap    testhelper.EventsCountMap
 		tableUploadsEventsMap testhelper.EventsCountMap
 		warehouseEventsMap    testhelper.EventsCountMap
 		asyncJob              bool
+		tables                []string
 	}{
 		{
 			name:          "Upload Job with Normal Database",
@@ -128,8 +128,6 @@ func TestSnowflakeIntegration(t *testing.T) {
 				Schema:                tc.schema,
 				WriteKey:              tc.writeKey,
 				SourceID:              tc.sourceID,
-				JobRunID:              misc.FastUUID().String(),
-				TaskRunID:             misc.FastUUID().String(),
 				DestinationID:         tc.destinationID,
 				Tables:                tc.tables,
 				EventsMap:             tc.eventsMap,
@@ -139,8 +137,10 @@ func TestSnowflakeIntegration(t *testing.T) {
 				WarehouseEventsMap:    tc.warehouseEventsMap,
 				AsyncJob:              true,
 				Provider:              provider,
-				UserID:                testhelper.GetUserId(provider),
 				JobsDB:                jobsDB,
+				JobRunID:              misc.FastUUID().String(),
+				TaskRunID:             misc.FastUUID().String(),
+				UserID:                testhelper.GetUserId(provider),
 				Client: &client.Client{
 					SQL:  db,
 					Type: client.SQLClient,
