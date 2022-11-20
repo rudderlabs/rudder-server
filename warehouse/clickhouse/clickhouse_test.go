@@ -49,8 +49,8 @@ func TestClickHouseIntegration(t *testing.T) {
 	}
 
 	var (
-		jobsDB   = testhelper.SetUpJobsDB(t)
 		provider = warehouseutils.CLICKHOUSE
+		jobsDB   = testhelper.SetUpJobsDB(t)
 		tables   = []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"}
 	)
 
@@ -59,9 +59,9 @@ func TestClickHouseIntegration(t *testing.T) {
 		sourceID        string
 		destinationID   string
 		writeKey        string
-		db              *sql.DB
 		warehouseEvents testhelper.EventsCountMap
 		clusterSetup    func(t testing.TB)
+		db              *sql.DB
 	}{
 		{
 			name:          "Single Setup",
@@ -103,17 +103,11 @@ func TestClickHouseIntegration(t *testing.T) {
 				Schema:        "rudderdb",
 				WriteKey:      tc.writeKey,
 				SourceID:      tc.sourceID,
-				JobRunID:      misc.FastUUID().String(),
-				TaskRunID:     misc.FastUUID().String(),
 				DestinationID: tc.destinationID,
 				Tables:        tables,
 				Provider:      provider,
 				UserID:        testhelper.GetUserId(provider),
 				JobsDB:        jobsDB,
-				Client: &client.Client{
-					SQL:  tc.db,
-					Type: client.SQLClient,
-				},
 				StatsToVerify: []string{
 					"warehouse_clickhouse_commitTimeouts",
 					"warehouse_clickhouse_execTimeouts",
@@ -121,6 +115,10 @@ func TestClickHouseIntegration(t *testing.T) {
 					"warehouse_clickhouse_syncLoadFileTime",
 					"warehouse_clickhouse_downloadLoadFilesTime",
 					"warehouse_clickhouse_numRowsLoadFile",
+				},
+				Client: &client.Client{
+					SQL:  tc.db,
+					Type: client.SQLClient,
 				},
 			}
 			ts.TestScenarioOne(t)
