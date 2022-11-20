@@ -44,19 +44,20 @@ func TestSnowflakeIntegration(t *testing.T) {
 	)
 
 	testcase := []struct {
-		name                  string
-		dbName                string
-		schema                string
-		writeKey              string
-		sourceID              string
-		destinationID         string
-		eventsMap             testhelper.EventsCountMap
-		stagingFilesEventsMap testhelper.EventsCountMap
-		loadFilesEventsMap    testhelper.EventsCountMap
-		tableUploadsEventsMap testhelper.EventsCountMap
-		warehouseEventsMap    testhelper.EventsCountMap
-		asyncJob              bool
-		tables                []string
+		name                             string
+		dbName                           string
+		schema                           string
+		writeKey                         string
+		sourceID                         string
+		destinationID                    string
+		eventsMap                        testhelper.EventsCountMap
+		scenarioOneStagingFilesEventsMap testhelper.EventsCountMap
+		scenarioTwoStagingFilesEventsMap testhelper.EventsCountMap
+		loadFilesEventsMap               testhelper.EventsCountMap
+		tableUploadsEventsMap            testhelper.EventsCountMap
+		warehouseEventsMap               testhelper.EventsCountMap
+		asyncJob                         bool
+		tables                           []string
 	}{
 		{
 			name:          "Upload Job with Normal Database",
@@ -66,7 +67,10 @@ func TestSnowflakeIntegration(t *testing.T) {
 			writeKey:      "2eSJyYtqwcFiUILzXv2fcNIrWO7",
 			sourceID:      "24p1HhPk09FW25Kuzvx7GshCLKR",
 			destinationID: "24qeADObp6eIhjjDnEppO6P1SNc",
-			stagingFilesEventsMap: testhelper.EventsCountMap{
+			scenarioOneStagingFilesEventsMap: testhelper.EventsCountMap{
+				"wh_staging_files": 34, // 32 + 2 (merge events because of ID resolution)
+			},
+			scenarioTwoStagingFilesEventsMap: testhelper.EventsCountMap{
 				"wh_staging_files": 34, // 32 + 2 (merge events because of ID resolution)
 			},
 		},
@@ -78,7 +82,10 @@ func TestSnowflakeIntegration(t *testing.T) {
 			writeKey:      "2eSJyYtqwcFYUILzXv2fcNIrWO7",
 			sourceID:      "24p1HhPk09FBMKuzvx7GshCLKR",
 			destinationID: "24qeADObp6eJhijDnEppO6P1SNc",
-			stagingFilesEventsMap: testhelper.EventsCountMap{
+			scenarioOneStagingFilesEventsMap: testhelper.EventsCountMap{
+				"wh_staging_files": 34, // 32 + 2 (merge events because of ID resolution)
+			},
+			scenarioTwoStagingFilesEventsMap: testhelper.EventsCountMap{
 				"wh_staging_files": 34, // 32 + 2 (merge events because of ID resolution)
 			},
 		},
@@ -91,8 +98,11 @@ func TestSnowflakeIntegration(t *testing.T) {
 			sourceID:      "2DkCpUr0xgjaNRJxIwqyqfyHdq4",
 			destinationID: "24qeADObp6eIsfjDnEppO6P1SNc",
 			eventsMap:     testhelper.SourcesSendEventsMap(),
-			stagingFilesEventsMap: testhelper.EventsCountMap{
+			scenarioOneStagingFilesEventsMap: testhelper.EventsCountMap{
 				"wh_staging_files": 9, // 8 + 1 (merge events because of ID resolution)
+			},
+			scenarioTwoStagingFilesEventsMap: testhelper.EventsCountMap{
+				"wh_staging_files": 8, // 8 (de-duped by encounteredMergeRuleMap)
 			},
 			loadFilesEventsMap:    testhelper.SourcesLoadFilesEventsMap(),
 			tableUploadsEventsMap: testhelper.SourcesTableUploadsEventsMap(),
@@ -131,7 +141,7 @@ func TestSnowflakeIntegration(t *testing.T) {
 				DestinationID:         tc.destinationID,
 				Tables:                tc.tables,
 				EventsMap:             tc.eventsMap,
-				StagingFilesEventsMap: tc.stagingFilesEventsMap,
+				StagingFilesEventsMap: tc.scenarioOneStagingFilesEventsMap,
 				LoadFilesEventsMap:    tc.loadFilesEventsMap,
 				TableUploadsEventsMap: tc.tableUploadsEventsMap,
 				WarehouseEventsMap:    tc.warehouseEventsMap,
@@ -151,6 +161,7 @@ func TestSnowflakeIntegration(t *testing.T) {
 			if !tc.asyncJob {
 				ts.UserID = testhelper.GetUserId(provider)
 			}
+			ts.StagingFilesEventsMap = tc.scenarioTwoStagingFilesEventsMap
 			ts.JobRunID = misc.FastUUID().String()
 			ts.TaskRunID = misc.FastUUID().String()
 			ts.TestScenarioTwo(t)
