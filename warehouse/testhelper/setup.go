@@ -106,21 +106,7 @@ func (w *WareHouseTest) msgID() string {
 	return w.MessageID
 }
 
-func (w *WareHouseTest) sourceJobRunID() string {
-	if w.JobRunID == "" {
-		return misc.FastUUID().String()
-	}
-	return misc.FastUUID().String()
-}
-
-func (w *WareHouseTest) sourceTaskRunID() string {
-	if w.TaskRunID == "" {
-		return misc.FastUUID().String()
-	}
-	return w.TaskRunID
-}
-
-func (w *WareHouseTest) sourceRecordID() string {
+func (w *WareHouseTest) recordID() string {
 	if w.RecordID == "" {
 		return misc.FastUUID().String()
 	}
@@ -564,22 +550,32 @@ func verifyEventsInWareHouse(t testing.TB, wareHouseTest *WareHouseTest, eventsM
 }
 
 func verifyAsyncJob(t testing.TB, wareHouseTest *WareHouseTest) {
+	t.Helper()
+	t.Logf("Started verifying async job")
+
 	asyncPayload := strings.NewReader(
 		fmt.Sprintf(
 			AsyncWhPayload,
 			wareHouseTest.SourceID,
-			wareHouseTest.sourceJobRunID(),
-			wareHouseTest.sourceTaskRunID(),
+			wareHouseTest.JobRunID,
+			wareHouseTest.TaskRunID,
 			wareHouseTest.DestinationID,
 			time.Now().UTC().Format("2006-01-02 15:04:05"),
 		),
 	)
+	t.Logf("Run async job for sourceID: %s, DestinationID: %s, jobRunID: %s, taskRunID: %s",
+		wareHouseTest.SourceID,
+		wareHouseTest.DestinationID,
+		wareHouseTest.JobRunID,
+		wareHouseTest.TaskRunID,
+	)
+
 	send(t, asyncPayload, "warehouse/jobs", wareHouseTest.WriteKey, "POST")
 
 	var (
 		path = fmt.Sprintf("warehouse/jobs/status?job_run_id=%s&task_run_id=%s&source_id=%s&destination_id=%s",
-			wareHouseTest.sourceJobRunID(),
-			wareHouseTest.sourceTaskRunID(),
+			wareHouseTest.JobRunID,
+			wareHouseTest.TaskRunID,
 			wareHouseTest.SourceID,
 			wareHouseTest.DestinationID,
 		)
@@ -627,12 +623,14 @@ func verifyAsyncJob(t testing.TB, wareHouseTest *WareHouseTest) {
 		WaitFor10Minute,
 		AsyncJOBQueryFrequency,
 		fmt.Sprintf("Failed to get async job status for job_run_id: %s, task_run_id: %s, source_id: %s, destination_id: %s",
-			wareHouseTest.msgID(),
-			wareHouseTest.msgID(),
+			wareHouseTest.JobRunID,
+			wareHouseTest.TaskRunID,
 			wareHouseTest.SourceID,
 			wareHouseTest.DestinationID,
 		),
 	)
+
+	t.Logf("Completed verifying async job")
 }
 
 func verifyWorkspaceIDInStats(t testing.TB, extraStats ...string) {

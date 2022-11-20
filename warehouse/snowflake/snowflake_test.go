@@ -135,7 +135,7 @@ func TestSnowflakeIntegration(t *testing.T) {
 				LoadFilesEventsMap:    tc.loadFilesEventsMap,
 				TableUploadsEventsMap: tc.tableUploadsEventsMap,
 				WarehouseEventsMap:    tc.warehouseEventsMap,
-				AsyncJob:              true,
+				AsyncJob:              tc.asyncJob,
 				Provider:              provider,
 				JobsDB:                jobsDB,
 				JobRunID:              misc.FastUUID().String(),

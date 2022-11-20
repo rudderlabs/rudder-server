@@ -476,9 +476,9 @@ func SendEvents(t testing.TB, wareHouseTest *WareHouseTest, eventsMap EventsCoun
 					GoogleSheetsPayload,
 					wareHouseTest.msgID(),
 					wareHouseTest.UserID,
-					wareHouseTest.sourceRecordID(),
-					wareHouseTest.sourceJobRunID(),
-					wareHouseTest.sourceTaskRunID(),
+					wareHouseTest.recordID(),
+					wareHouseTest.JobRunID,
+					wareHouseTest.TaskRunID,
 				),
 			)
 			send(t, payloadGroup, "import", wareHouseTest.WriteKey, "POST")
@@ -590,9 +590,9 @@ func SendModifiedEvents(t testing.TB, wareHouseTest *WareHouseTest, eventsMap Ev
 					ModifiedGoogleSheetsPayload,
 					wareHouseTest.msgID(),
 					wareHouseTest.UserID,
-					wareHouseTest.sourceRecordID(),
-					wareHouseTest.sourceJobRunID(),
-					wareHouseTest.sourceTaskRunID(),
+					wareHouseTest.recordID(),
+					wareHouseTest.JobRunID,
+					wareHouseTest.TaskRunID,
 				),
 			)
 			send(t, payloadGroup, "import", wareHouseTest.WriteKey, "POST")
@@ -710,10 +710,10 @@ func SendIntegratedEvents(t testing.TB, wareHouseTest *WareHouseTest, eventsMap 
 					ReservedGoogleSheetsPayload,
 					wareHouseTest.msgID(),
 					wareHouseTest.UserID,
-					wareHouseTest.sourceRecordID(),
+					wareHouseTest.recordID(),
 					wareHouseTest.Provider,
-					wareHouseTest.sourceJobRunID(),
-					wareHouseTest.sourceTaskRunID(),
+					wareHouseTest.JobRunID,
+					wareHouseTest.TaskRunID,
 				),
 			)
 			send(t, payloadGroup, "import", wareHouseTest.WriteKey, "POST")
