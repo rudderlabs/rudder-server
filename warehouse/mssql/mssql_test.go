@@ -40,15 +40,14 @@ func TestMSSQLIntegration(t *testing.T) {
 	require.NoError(t, err)
 
 	var (
-		jobsDB   = testhelper.SetUpJobsDB(t)
-		provider = warehouseutils.MSSQL
+		provider      = warehouseutils.MSSQL
+		jobsDB        = testhelper.SetUpJobsDB(t)
 	)
 
 	testcase := []struct {
 		name                  string
 		writeKey              string
 		schema                string
-		tables                []string
 		sourceID              string
 		destinationID         string
 		eventsMap             testhelper.EventsCountMap
@@ -57,14 +56,15 @@ func TestMSSQLIntegration(t *testing.T) {
 		tableUploadsEventsMap testhelper.EventsCountMap
 		warehouseEventsMap    testhelper.EventsCountMap
 		asyncJob              bool
+		tables                []string
 	}{
 		{
-			name:          "Upload Job",
-			writeKey:      "YSQ3n267l1VQKGNbSuJE9fQbzON",
-			schema:        "mssql_wh_integration",
-			tables:        []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"},
-			sourceID:      "1wRvLmEnMOONMbdspwaZhyCqXRE",
-			destinationID: "21Ezdq58khNMj07VJB0VJmxLvgu",
+			name:              "Upload Job",
+			writeKey:          "YSQ3n267l1VQKGNbSuJE9fQbzON",
+			schema:            "mssql_wh_integration",
+			tables:            []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"},
+			sourceID:          "1wRvLmEnMOONMbdspwaZhyCqXRE",
+			destinationID:     "21Ezdq58khNMj07VJB0VJmxLvgu",
 		},
 		{
 			name:                  "Async Job",
@@ -92,8 +92,6 @@ func TestMSSQLIntegration(t *testing.T) {
 				Schema:                tc.schema,
 				WriteKey:              tc.writeKey,
 				SourceID:              tc.sourceID,
-				JobRunID:              misc.FastUUID().String(),
-				TaskRunID:             misc.FastUUID().String(),
 				DestinationID:         tc.destinationID,
 				Tables:                tc.tables,
 				EventsMap:             tc.eventsMap,
@@ -102,9 +100,11 @@ func TestMSSQLIntegration(t *testing.T) {
 				TableUploadsEventsMap: tc.tableUploadsEventsMap,
 				WarehouseEventsMap:    tc.warehouseEventsMap,
 				AsyncJob:              tc.asyncJob,
-				Provider:              provider,
 				UserID:                testhelper.GetUserId(provider),
+				Provider:              provider,
 				JobsDB:                jobsDB,
+				JobRunID:              misc.FastUUID().String(),
+				TaskRunID:             misc.FastUUID().String(),
 				Client: &client.Client{
 					SQL:  db,
 					Type: client.SQLClient,
