@@ -1,5 +1,3 @@
-//go:build !warehouse_integration
-
 package archive_test
 
 import (
@@ -129,7 +127,7 @@ func TestArchiver(t *testing.T) {
 			require.NoError(t, err)
 
 			_, err = pgResource.DB.Exec(`
-				UPDATE wh_staging_files 
+				UPDATE wh_staging_files
 				SET
 					workspace_id = $1,
 					first_event_at = $2,
