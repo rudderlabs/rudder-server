@@ -97,7 +97,7 @@ setup-warehouse-integration: cleanup-warehouse-integration
 logs-warehouse-integration:
 	docker logs wh-backend
 
-run-warehouse-integration:
+run-warehouse-integration: setup-warehouse-integration
 	$(eval TEST_CMD = go test -v ./warehouse/... -run 'Integration' 'ConfigurationValidation' -p 8 -timeout 30m -count 1)
 	if docker-compose -f warehouse/docker-compose.test.yml exec -T -e SLOW=1 wh-backend $(TEST_CMD); then \
       	echo "Successfully ran Warehouse Integration Test. Getting backend container logs only."; \
