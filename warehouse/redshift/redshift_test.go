@@ -110,11 +110,11 @@ func TestRedshiftIntegration(t *testing.T) {
 				TableUploadsEventsMap: tc.tableUploadsEventsMap,
 				WarehouseEventsMap:    tc.warehouseEventsMap,
 				AsyncJob:              tc.asyncJob,
-				UserID:                testhelper.GetUserId(provider),
 				Provider:              provider,
 				JobsDB:                jobsDB,
 				JobRunID:              misc.FastUUID().String(),
 				TaskRunID:             misc.FastUUID().String(),
+				UserID:                testhelper.GetUserId(provider),
 				Client: &client.Client{
 					SQL:  db,
 					Type: client.SQLClient,
