@@ -71,6 +71,7 @@ func TestDeltalakeIntegration(t *testing.T) {
 		writeKey           string
 		sourceID           string
 		destinationID      string
+		messageID          string
 		scenarioOneUserID  string
 		scenarioTwoUserID  string
 		warehouseEventsMap testhelper.EventsCountMap
@@ -126,6 +127,7 @@ func TestDeltalakeIntegration(t *testing.T) {
 				SourceID:      tc.sourceID,
 				DestinationID: tc.destinationID,
 				UserID:        tc.scenarioOneUserID,
+				Prerequisite:  tc.prerequisite,
 				JobsDB:        jobsDB,
 				Provider:      provider,
 				MessageID:     misc.FastUUID().String(),
