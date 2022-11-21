@@ -14,30 +14,29 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/logger"
 )
 
-type HandleT struct{}
+type HandleT struct {
+	Log logger.Logger
+}
 
-var (
-	configEnvReplacer string
-	pkgLogger         logger.Logger
-)
+var configEnvReplacer string
 
 func loadConfig() {
 	configEnvReplacer = config.GetString("BackendConfig.configEnvReplacer", "env.")
 }
 
 // ReplaceConfigWithEnvVariables : Replaces all env variables in the config
-func (*HandleT) ReplaceConfigWithEnvVariables(workspaceConfig []byte) (updatedConfig []byte) {
+func (h *HandleT) ReplaceConfigWithEnvVariables(workspaceConfig []byte) (updatedConfig []byte) {
 	configMap := make(map[string]interface{}, 0)
 
 	err := json.Unmarshal(workspaceConfig, &configMap)
 	if err != nil {
-		pkgLogger.Error("[ConfigEnv] Error while parsing request", err, string(workspaceConfig))
+		h.Log.Error("[ConfigEnv] Error while parsing request", err, string(workspaceConfig))
 		return workspaceConfig
 	}
 
 	flattenedConfig, err := flatten.Flatten(configMap, "", flatten.DotStyle)
 	if err != nil {
-		pkgLogger.Errorf("[ConfigEnv] Failed to flatten workspace config: %v", err)
+		h.Log.Errorf("[ConfigEnv] Failed to flatten workspace config: %v", err)
 		return workspaceConfig
 	}
 
@@ -51,12 +50,12 @@ func (*HandleT) ReplaceConfigWithEnvVariables(workspaceConfig []byte) (updatedCo
 				envVarValue := os.Getenv(envVariable)
 				if envVarValue == "" {
 					errorMessage := fmt.Sprintf("[ConfigEnv] Missing envVariable: %s. Either set it as envVariable or remove %s from the destination config.", envVariable, configEnvReplacer)
-					pkgLogger.Errorf(errorMessage)
+					h.Log.Errorf(errorMessage)
 					continue
 				}
 				workspaceConfig, err = sjson.SetBytes(workspaceConfig, configKey, envVarValue)
 				if err != nil {
-					pkgLogger.Error("[ConfigEnv] Failed to set config for %s", configKey)
+					h.Log.Error("[ConfigEnv] Failed to set config for %s", configKey)
 				}
 			}
 		}

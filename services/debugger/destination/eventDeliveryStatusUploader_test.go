@@ -161,17 +161,25 @@ var faultyData = DeliveryStatusT{
 }
 
 type eventDeliveryStatusUploaderContext struct {
-	asyncHelper       testutils.AsyncTestHelper
-	mockCtrl          *gomock.Controller
-	configInitialised bool
-	mockBackendConfig *mocksBackendConfig.MockBackendConfig
+	asyncHelper testutils.AsyncTestHelper
+	mockCtrl    *gomock.Controller
 }
 
 func (c *eventDeliveryStatusUploaderContext) Setup() {
 	c.mockCtrl = gomock.NewController(GinkgoT())
-	c.mockBackendConfig = mocksBackendConfig.NewMockBackendConfig(c.mockCtrl)
-	c.configInitialised = false
-	Setup(c.mockBackendConfig)
+	mockBackendConfig := mocksBackendConfig.NewMockBackendConfig(c.mockCtrl)
+	tFunc := c.asyncHelper.ExpectAndNotifyCallback()
+	mockBackendConfig.EXPECT().Subscribe(gomock.Any(), backendconfig.TopicBackendConfig).
+		DoAndReturn(func(ctx context.Context, topic backendconfig.Topic) pubsub.DataChannel {
+			// on Subscribe, emulate a backend configuration event
+			ch := make(chan pubsub.DataEvent, 1)
+			ch <- pubsub.DataEvent{Data: map[string]backendconfig.ConfigT{WorkspaceID: sampleBackendConfig}, Topic: string(topic)}
+			close(ch)
+			tFunc()
+			return ch
+		}).Times(1)
+	Setup(mockBackendConfig)
+	c.asyncHelper.WaitWithTimeout(1 * time.Second)
 }
 
 func initEventDeliveryStatusUploader() {
@@ -186,7 +194,6 @@ var _ = Describe("eventDeliveryStatusUploader", func() {
 	var (
 		c              *eventDeliveryStatusUploaderContext
 		deliveryStatus DeliveryStatusT
-		mockCall       *gomock.Call
 	)
 
 	BeforeEach(func() {
@@ -205,16 +212,6 @@ var _ = Describe("eventDeliveryStatusUploader", func() {
 			EventType:     `some_event_type`,
 		}
 		disableEventDeliveryStatusUploads = false
-		mockCall = c.mockBackendConfig.EXPECT().Subscribe(gomock.Any(), backendconfig.TopicBackendConfig).
-			DoAndReturn(func(ctx context.Context, topic backendconfig.Topic) pubsub.DataChannel {
-				// on Subscribe, emulate a backend configuration event
-				ch := make(chan pubsub.DataEvent, 1)
-				ch <- pubsub.DataEvent{Data: map[string]backendconfig.ConfigT{WorkspaceID: sampleBackendConfig}, Topic: string(topic)}
-				c.configInitialised = true
-				close(ch)
-
-				return ch
-			})
 	})
 
 	AfterEach(func() {
@@ -223,49 +220,20 @@ var _ = Describe("eventDeliveryStatusUploader", func() {
 
 	Context("RecordEventDeliveryStatus", func() {
 		It("returns false if disableEventDeliveryStatusUploads is true", func() {
-			tFunc := c.asyncHelper.ExpectAndNotifyCallback()
-			mockCall.Do(func(ctx context.Context, topic backendconfig.Topic) pubsub.DataChannel {
-				tFunc()
-				return make(pubsub.DataChannel)
-			}).Times(1)
-
-			c.asyncHelper.WaitWithTimeout(5 * time.Second)
 			disableEventDeliveryStatusUploads = true
 			Expect(RecordEventDeliveryStatus(DestinationIDEnabledA, &deliveryStatus)).To(BeFalse())
 		})
 
 		It("returns false if destination_id is not in uploadEnabledDestinationIDs", func() {
-			tFunc := c.asyncHelper.ExpectAndNotifyCallback()
-			mockCall.Do(func(ctx context.Context, topic backendconfig.Topic) pubsub.DataChannel {
-				tFunc()
-
-				return make(pubsub.DataChannel)
-			}).Times(1)
-
-			c.asyncHelper.WaitWithTimeout(5 * time.Second)
 			Expect(RecordEventDeliveryStatus(DestinationIDEnabledB, &deliveryStatus)).To(BeFalse())
 		})
 
 		It("records events", func() {
-			tFunc := c.asyncHelper.ExpectAndNotifyCallback()
-			mockCall.Do(func(ctx context.Context, topic backendconfig.Topic) pubsub.DataChannel {
-				tFunc()
-				return make(pubsub.DataChannel)
-			}).Times(1)
-
-			c.asyncHelper.WaitWithTimeout(5 * time.Second)
 			eventuallyFunc := func() bool { return RecordEventDeliveryStatus(DestinationIDEnabledA, &deliveryStatus) }
 			Eventually(eventuallyFunc).Should(BeTrue())
 		})
 
 		It("transforms payload properly", func() {
-			tFunc := c.asyncHelper.ExpectAndNotifyCallback()
-			mockCall.Do(func(ctx context.Context, topic backendconfig.Topic) pubsub.DataChannel {
-				tFunc()
-				return nil
-			}).Times(1)
-
-			c.asyncHelper.WaitWithTimeout(5 * time.Second)
 			edsUploader := EventDeliveryStatusUploader{}
 			rawJSON, err := edsUploader.Transform([]interface{}{&deliveryStatus})
 			Expect(err).To(BeNil())
@@ -274,13 +242,6 @@ var _ = Describe("eventDeliveryStatusUploader", func() {
 		})
 
 		It("sends empty json if transformation fails", func() {
-			tFunc := c.asyncHelper.ExpectAndNotifyCallback()
-			mockCall.Do(func(ctx context.Context, topic backendconfig.Topic) pubsub.DataChannel {
-				tFunc()
-				return nil
-			}).Times(1)
-
-			c.asyncHelper.WaitWithTimeout(5 * time.Second)
 			edsUploader := EventDeliveryStatusUploader{}
 			rawJSON, err := edsUploader.Transform([]interface{}{&faultyData})
 			Expect(err.Error()).To(ContainSubstring("error calling MarshalJSON"))

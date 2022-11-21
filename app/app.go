@@ -74,18 +74,23 @@ func (a *app) initCPUProfiling() {
 }
 
 func (a *app) initFeatures() {
+	enterpriseLogger := logger.NewLogger().Child("enterprise")
 	a.features = &Features{
 		SuppressUser: &suppression.Factory{
 			EnterpriseToken: a.options.EnterpriseToken,
+			Log:             enterpriseLogger.Child("suppress-user"),
 		},
 		Reporting: &reporting.Factory{
 			EnterpriseToken: a.options.EnterpriseToken,
+			Log:             enterpriseLogger.Child("reporting"),
 		},
 		Replay: &replay.Factory{
 			EnterpriseToken: a.options.EnterpriseToken,
+			Log:             enterpriseLogger.Child("replay"),
 		},
 		ConfigEnv: &configenv.Factory{
 			EnterpriseToken: a.options.EnterpriseToken,
+			Log:             enterpriseLogger.Child("config-env"),
 		},
 	}
 }

@@ -341,7 +341,7 @@ func (jd *ReadonlyHandleT) getProcessedJobsDSCount(ctx context.Context, ds dataS
 	var stateQuery, customValQuery, sourceQuery string
 
 	if len(stateFilters) > 0 {
-		stateQuery = " AND " + constructQueryOR("job_state", stateFilters)
+		stateQuery = " AND " + constructQueryOR("job_latest_state.job_state", stateFilters)
 	} else {
 		stateQuery = ""
 	}
@@ -393,11 +393,9 @@ func (jd *ReadonlyHandleT) getProcessedJobsDSCount(ctx context.Context, ds dataS
 		selectColumn = fmt.Sprintf("COUNT(%[1]s.job_id)", ds.JobTable)
 	}
 	sqlStatement = fmt.Sprintf(`SELECT %[6]s FROM
-                                               %[1]s,
-                                               (SELECT job_id, retry_time FROM %[2]s WHERE id IN
-                                                   (SELECT MAX(id) from %[2]s GROUP BY job_id) %[3]s)
-                                               AS job_latest_state
-                                            WHERE %[1]s.job_id=job_latest_state.job_id
+                                             %[1]s
+                                             JOIN "v_last_%[2]s" job_latest_state ON %[1]s.job_id=job_latest_state.job_id
+											 %[3]s
                                              %[4]s %[5]s
                                              AND job_latest_state.retry_time < $1`,
 		ds.JobTable, ds.JobStatusTable, stateQuery, customValQuery, sourceQuery, selectColumn)
@@ -505,10 +503,8 @@ func (jd *ReadonlyHandleT) GetJobSummaryCount(arg, prefix string) (string, error
      					%[1]s.custom_val ,%[1]s.parameters->'destination_id' as destination,
      					job_latest_state.job_state
 						FROM %[1]s
-     					LEFT JOIN
-      					(SELECT job_id, job_state, attempt, exec_time, retry_time,error_code, error_response FROM %[2]s
-						WHERE id IN (SELECT MAX(id) from %[2]s GROUP BY job_id)) AS job_latest_state
-     					ON %[1]s.job_id=job_latest_state.job_id GROUP BY job_latest_state.job_state,%[1]s.parameters->'source_id',%[1]s.parameters->'destination_id', %[1]s.custom_val;`, dsPair.JobTableName, dsPair.JobStatusTableName)
+     					LEFT JOIN "v_last_%[2]s" job_latest_state ON %[1]s.job_id=job_latest_state.job_id
+						GROUP BY job_latest_state.job_state, %[1]s.parameters->'source_id', %[1]s.parameters->'destination_id', %[1]s.custom_val;`, dsPair.JobTableName, dsPair.JobStatusTableName)
 		row, err := jd.DbHandle.Query(sqlStatement)
 		if err != nil {
 			return "", err
@@ -561,11 +557,9 @@ func (jd *ReadonlyHandleT) GetLatestFailedJobs(arg, prefix string) (string, erro
 	sqlStatement := fmt.Sprintf(`SELECT %[1]s.job_id, %[1]s.user_id, %[1]s.custom_val,
 					job_latest_state.exec_time,
 					job_latest_state.error_code, job_latest_state.error_response
-					FROM %[1]s,
-					(SELECT job_id, job_state, attempt, exec_time, retry_time,error_code, error_response FROM %[2]s WHERE id IN
-					(SELECT MAX(id) from %[2]s GROUP BY job_id) AND (job_state = 'failed'))
-					AS job_latest_state
- 					WHERE %[1]s.job_id=job_latest_state.job_id
+					FROM %[1]s
+					JOIN "v_last_%[2]s" job_latest_state ON %[1]s.job_id=job_latest_state.job_id 
+					WHERE job_latest_state.job_state = 'failed'
   					`, dsList.JobTableName, dsList.JobStatusTableName)
 	if argList[1] != "" {
 		sqlStatement = sqlStatement + fmt.Sprintf(`AND %[1]s.custom_val = '%[2]s'`, dsList.JobTableName, argList[1])
@@ -626,12 +620,7 @@ func (jd *ReadonlyHandleT) GetJobByID(job_id, _ string) (string, error) {
 						job_latest_state.error_code, job_latest_state.error_response
 					FROM
 						%[1]s
-					LEFT JOIN
-						(SELECT job_id, job_state, attempt, exec_time, retry_time,
-						error_code, error_response FROM %[2]s WHERE id IN
-							(SELECT MAX(id) from %[2]s GROUP BY job_id))
-						AS job_latest_state
-					ON %[1]s.job_id=job_latest_state.job_id
+					LEFT JOIN "v_last_%[2]s" job_latest_state ON %[1]s.job_id=job_latest_state.job_id
 					WHERE %[1]s.job_id = %[3]s;`, dsPair.JobTable, dsPair.JobStatusTable, job_id)
 
 		event := JobT{}
