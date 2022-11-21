@@ -88,10 +88,10 @@ cleanup-warehouse-integration:
 	docker-compose -f warehouse/docker-compose.test.yml down --remove-orphans --volumes
 
 setup-warehouse-integration: cleanup-warehouse-integration
-	BIGQUERY_INTEGRATION_TEST_SCHEMA=bwh-$(shell uuidgen)	\
-	REDSHIFT_INTEGRATION_TEST_SCHEMA=rwh-$(shell uuidgen)	\
-	SNOWFLAKE_INTEGRATION_TEST_SCHEMA=swh-$(shell uuidgen) 	\
-	DATABRICKS_INTEGRATION_TEST_SCHEMA=dwh-$(shell uuidgen) 	\
+	BIGQUERY_INTEGRATION_TEST_SCHEMA=$(shell echo bwh-$$RANDOM-$(shell date +%s))	\
+	REDSHIFT_INTEGRATION_TEST_SCHEMA=$(shell echo rwh-$$RANDOM-$(shell date +%s))	\
+	SNOWFLAKE_INTEGRATION_TEST_SCHEMA=$(shell echo swh-$$RANDOM-$(shell date +%s)) 	\
+	DATABRICKS_INTEGRATION_TEST_SCHEMA=$(shell echo dwh-$$RANDOM-$(shell date +%s)) 	\
 	docker-compose -f warehouse/docker-compose.test.yml up --build start_warehouse_integration
 
 logs-warehouse-integration:
