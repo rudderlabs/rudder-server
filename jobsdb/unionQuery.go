@@ -363,18 +363,7 @@ func (*MultiTenantHandleT) getInitialSingleWorkspaceQueryString(ds dataSetT, con
 				job_latest_state.parameters as status_parameters
 			FROM
 				"%[1]s" AS jobs
-				LEFT JOIN (
-					SELECT
-						job_id, job_state, attempt, exec_time, retry_time,
-						error_code, error_response, parameters
-					FROM "%[2]s"
-					WHERE
-						id IN (
-						SELECT MAX(id)
-						from "%[2]s"
-						GROUP BY job_id
-						)
-				) AS job_latest_state ON jobs.job_id = job_latest_state.job_id
+				LEFT JOIN "v_last_%[2]s" job_latest_state ON jobs.job_id = job_latest_state.job_id
 			WHERE
 				jobs.workspace_id IN %[7]s %[3]s %[4]s %[5]s %[6]s`,
 		ds.JobTable, ds.JobStatusTable, stateQuery, customValQuery, sourceQuery, limitQuery, workspaceString)
