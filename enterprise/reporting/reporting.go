@@ -47,7 +47,7 @@ type HandleT struct {
 	onceInit                  sync.Once
 	clients                   map[string]*types.Client
 	clientsMapLock            sync.RWMutex
-	logger                    logger.Logger
+	log                       logger.Logger
 	reportingServiceURL       string
 	namespace                 string
 	workspaceID               string
@@ -63,23 +63,22 @@ type HandleT struct {
 	requestLatency            stats.Measurement
 }
 
-func NewFromEnvConfig() *HandleT {
+func NewFromEnvConfig(log logger.Logger) *HandleT {
 	var sleepInterval, mainLoopSleepInterval time.Duration
 	reportingServiceURL := config.GetString("REPORTING_URL", "https://reporting.rudderstack.com/")
 	reportingServiceURL = strings.TrimSuffix(reportingServiceURL, "/")
 	config.RegisterDurationConfigVariable(5, &mainLoopSleepInterval, true, time.Second, "Reporting.mainLoopSleepInterval")
 	config.RegisterDurationConfigVariable(30, &sleepInterval, true, time.Second, "Reporting.sleepInterval")
 	config.RegisterIntConfigVariable(32, &maxConcurrentRequests, true, 1, "Reporting.maxConcurrentRequests")
-	reportingLogger := logger.NewLogger().Child("enterprise").Child("reporting")
 	// only send reports for wh actions sources if whActionsOnly is configured
 	whActionsOnly := config.GetBool("REPORTING_WH_ACTIONS_ONLY", false)
 	if whActionsOnly {
-		reportingLogger.Info("REPORTING_WH_ACTIONS_ONLY enabled.only sending reports relevant to wh actions.")
+		log.Info("REPORTING_WH_ACTIONS_ONLY enabled.only sending reports relevant to wh actions.")
 	}
 
 	return &HandleT{
 		init:                      make(chan struct{}),
-		logger:                    reportingLogger,
+		log:                       log,
 		clients:                   make(map[string]*types.Client),
 		reportingServiceURL:       reportingServiceURL,
 		namespace:                 config.GetKubeNamespace(),
@@ -93,7 +92,7 @@ func NewFromEnvConfig() *HandleT {
 }
 
 func (handle *HandleT) setup(beConfigHandle backendconfig.BackendConfig) {
-	handle.logger.Info("[[ Reporting ]] Setting up reporting handler")
+	handle.log.Info("[[ Reporting ]] Setting up reporting handler")
 
 	ch := beConfigHandle.Subscribe(context.TODO(), backendconfig.TopicBackendConfig)
 
@@ -321,7 +320,7 @@ func (handle *HandleT) mainLoop(ctx context.Context, clientName string) {
 	handle.requestLatency = stats.Default.NewTaggedStat(STAT_REPORTING_HTTP_REQ_LATENCY, stats.TimerType, tags)
 	for {
 		if ctx.Err() != nil {
-			handle.logger.Infof("stopping mainLoop for client %s : %s", clientName, ctx.Err())
+			handle.log.Infof("stopping mainLoop for client %s : %s", clientName, ctx.Err())
 			return
 		}
 		requestChan := make(chan struct{}, maxConcurrentRequests)
@@ -335,7 +334,7 @@ func (handle *HandleT) mainLoop(ctx context.Context, clientName string) {
 		if len(reports) == 0 {
 			select {
 			case <-ctx.Done():
-				handle.logger.Infof("stopping mainLoop for client %s : %s", clientName, ctx.Err())
+				handle.log.Infof("stopping mainLoop for client %s : %s", clientName, ctx.Err())
 				return
 			case <-time.After(handle.sleepInterval):
 			}
@@ -376,7 +375,7 @@ func (handle *HandleT) mainLoop(ctx context.Context, clientName string) {
 			}
 			_, err = dbHandle.Exec(sqlStatement)
 			if err != nil {
-				handle.logger.Errorf(`[ Reporting ]: Error deleting local reports from %s: %v`, REPORTS_TABLE, err)
+				handle.log.Errorf(`[ Reporting ]: Error deleting local reports from %s: %v`, REPORTS_TABLE, err)
 			}
 		}
 
@@ -405,7 +404,7 @@ func (handle *HandleT) sendMetric(ctx context.Context, netClient *http.Client, c
 		httpRequestStart := time.Now()
 		resp, err := netClient.Do(req)
 		if err != nil {
-			handle.logger.Error(err.Error())
+			handle.log.Error(err.Error())
 			return err
 		}
 
@@ -417,7 +416,7 @@ func (handle *HandleT) sendMetric(ctx context.Context, netClient *http.Client, c
 		defer resp.Body.Close()
 		respBody, err := io.ReadAll(resp.Body)
 		if err != nil {
-			handle.logger.Error(err.Error())
+			handle.log.Error(err.Error())
 			return err
 		}
 
@@ -429,10 +428,10 @@ func (handle *HandleT) sendMetric(ctx context.Context, netClient *http.Client, c
 
 	b := backoff.WithContext(backoff.NewExponentialBackOff(), ctx)
 	err = backoff.RetryNotify(operation, b, func(err error, t time.Duration) {
-		handle.logger.Errorf(`[ Reporting ]: Error reporting to service: %v`, err)
+		handle.log.Errorf(`[ Reporting ]: Error reporting to service: %v`, err)
 	})
 	if err != nil {
-		handle.logger.Errorf(`[ Reporting ]: Error making request to reporting service: %v`, err)
+		handle.log.Errorf(`[ Reporting ]: Error making request to reporting service: %v`, err)
 	}
 	return err
 }

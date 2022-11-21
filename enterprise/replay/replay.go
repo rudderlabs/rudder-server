@@ -10,9 +10,11 @@ import (
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/processor/transformer"
 	"github.com/rudderlabs/rudder-server/services/filemanager"
+	"github.com/rudderlabs/rudder-server/utils/logger"
 )
 
 type Handler struct {
+	log                      logger.Logger
 	bucket                   string
 	db                       *jobsdb.HandleT
 	toDB                     *jobsdb.HandleT
@@ -26,11 +28,11 @@ type Handler struct {
 }
 
 func (handle *Handler) generatorLoop(ctx context.Context) {
-	pkgLogger.Infof("generator reading from replay_jobs_* started")
+	handle.log.Infof("generator reading from replay_jobs_* started")
 	var breakLoop bool
 	select {
 	case <-ctx.Done():
-		pkgLogger.Infof("generator reading from replay_jobs_* stopped:Context cancelled")
+		handle.log.Infof("generator reading from replay_jobs_* stopped:Context cancelled")
 		return
 	case <-handle.initSourceWorkersChannel:
 	}
@@ -41,7 +43,7 @@ func (handle *Handler) generatorLoop(ctx context.Context) {
 		}
 		toRetry, err := handle.db.GetToRetry(context.TODO(), queryParams)
 		if err != nil {
-			pkgLogger.Errorf("Error getting to retry jobs: %v", err)
+			handle.log.Errorf("Error getting to retry jobs: %v", err)
 			panic(err)
 		}
 		combinedList := toRetry.Jobs
@@ -50,21 +52,21 @@ func (handle *Handler) generatorLoop(ctx context.Context) {
 			queryParams.JobsLimit -= len(combinedList)
 			unprocessed, err := handle.db.GetUnprocessed(context.TODO(), queryParams)
 			if err != nil {
-				pkgLogger.Errorf("Error getting unprocessed jobs: %v", err)
+				handle.log.Errorf("Error getting unprocessed jobs: %v", err)
 				panic(err)
 			}
 			combinedList = append(combinedList, unprocessed.Jobs...)
 		}
-		pkgLogger.Infof("length of combinedList : %d", len(combinedList))
+		handle.log.Infof("length of combinedList : %d", len(combinedList))
 
 		if len(combinedList) == 0 {
 			if breakLoop {
 				executingList, err := handle.db.GetExecuting(context.TODO(), jobsdb.GetQueryParamsT{CustomValFilters: []string{"replay"}, JobsLimit: handle.dbReadSize})
 				if err != nil {
-					pkgLogger.Errorf("Error getting executing jobs: %v", err)
+					handle.log.Errorf("Error getting executing jobs: %v", err)
 					panic(err)
 				}
-				pkgLogger.Infof("breakLoop is set. Pending executing: %d", len(executingList.Jobs))
+				handle.log.Infof("breakLoop is set. Pending executing: %d", len(executingList.Jobs))
 				if len(executingList.Jobs) == 0 {
 					break
 				}
@@ -74,7 +76,7 @@ func (handle *Handler) generatorLoop(ctx context.Context) {
 				breakLoop = true
 			}
 
-			pkgLogger.Debugf("DB Read Complete. No Jobs to process")
+			handle.log.Debugf("DB Read Complete. No Jobs to process")
 			time.Sleep(5 * time.Second)
 			continue
 		}
@@ -121,7 +123,7 @@ func (handle *Handler) generatorLoop(ctx context.Context) {
 
 	// Since generator read is done, closing worker channels
 	for _, worker := range handle.workers {
-		pkgLogger.Infof("Closing worker channels")
+		handle.log.Infof("Closing worker channels")
 		close(worker.channel)
 	}
 }
@@ -130,6 +132,7 @@ func (handle *Handler) initSourceWorkers(ctx context.Context) {
 	handle.workers = make([]*SourceWorkerT, handle.noOfWorkers)
 	for i := 0; i < handle.noOfWorkers; i++ {
 		worker := &SourceWorkerT{
+			log:           handle.log,
 			channel:       make(chan *jobsdb.JobT, handle.dbReadSize),
 			workerID:      i,
 			replayHandler: handle,
@@ -144,7 +147,8 @@ func (handle *Handler) initSourceWorkers(ctx context.Context) {
 	handle.initSourceWorkersChannel <- true
 }
 
-func (handle *Handler) Setup(ctx context.Context, dumpsLoader *dumpsLoaderHandleT, db, toDB *jobsdb.HandleT, tablePrefix string, uploader filemanager.FileManager, bucket string) {
+func (handle *Handler) Setup(ctx context.Context, dumpsLoader *dumpsLoaderHandleT, db, toDB *jobsdb.HandleT, tablePrefix string, uploader filemanager.FileManager, bucket string, log logger.Logger) {
+	handle.log = log
 	handle.db = db
 	handle.toDB = toDB
 	handle.bucket = bucket
