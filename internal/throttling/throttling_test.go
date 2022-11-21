@@ -41,12 +41,12 @@ func TestThrottling(t *testing.T) {
 			},
 			{
 				name:        "gcra",
-				limiter:     newLimiter(t, WithGCRA()),
+				limiter:     newLimiter(t, WithGCRA(), WithGCRABurst(1)),
 				concurrency: 2, additionalErrorMargin: 0.06,
 			},
 			{
 				name:        "gcra redis",
-				limiter:     newLimiter(t, WithGCRA(), WithRedisClient(rc)),
+				limiter:     newLimiter(t, WithGCRA(), WithRedisClient(rc), WithGCRABurst(1)),
 				concurrency: 2, additionalErrorMargin: 0.06,
 			},
 			{
@@ -158,7 +158,7 @@ func TestGCRABurstAsRate(t *testing.T) {
 	var (
 		ctx = context.Background()
 		rc  = bootstrapRedis(ctx, t, pool)
-		l   = newLimiter(t, WithGCRA(), WithRedisClient(rc), WithGCRABurstAsRate())
+		l   = newLimiter(t, WithGCRA(), WithRedisClient(rc))
 		// Configuration variables
 		key          = "foo"
 		cost   int64 = 1

@@ -25,10 +25,10 @@ func WithGCRA() Option {
 	}}
 }
 
-// WithGCRABurstAsRate allows to use the GCRA algorithm with burst as rate
-func WithGCRABurstAsRate() Option {
+// WithGCRABurst allows to use the GCRA algorithm with the specified burst
+func WithGCRABurst(burst int64) Option {
 	return withOption{setup: func(l *Limiter) {
-		l.useGCRABurstAsRate = true
+		l.gcraBurst = burst
 	}}
 }
 

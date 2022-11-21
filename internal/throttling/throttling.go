@@ -59,9 +59,9 @@ type Limiter struct {
 	goRate *goRate
 
 	// other flags
-	useGCRA            bool
-	useGCRABurstAsRate bool
-	useGoRate          bool
+	useGCRA   bool
+	gcraBurst int64
+	useGoRate bool
 
 	// metrics
 	statsCollector statsCollector
@@ -168,9 +168,9 @@ func (l *Limiter) redisSortedSet(ctx context.Context, cost, rate, window int64, 
 }
 
 func (l *Limiter) redisGCRA(ctx context.Context, cost, rate, window int64, key string) (bool, TokenReturner, error) {
-	burst := int64(1)
-	if l.useGCRABurstAsRate {
-		burst = rate
+	burst := rate
+	if l.gcraBurst > 0 {
+		burst = l.gcraBurst
 	}
 	redisSpeaker := l.getRedisSpeaker(key)
 	res, err := gcraRedisScript.Run(ctx, redisSpeaker, []string{key}, burst, rate, window, cost).Result()
@@ -203,9 +203,9 @@ func (l *Limiter) redisGCRA(ctx context.Context, cost, rate, window int64, key s
 }
 
 func (l *Limiter) gcraLimit(_ context.Context, cost, rate, window int64, key string) (bool, TokenReturner, error) {
-	burst := int64(1)
-	if l.useGCRABurstAsRate {
-		burst = rate
+	burst := rate
+	if l.gcraBurst > 0 {
+		burst = l.gcraBurst
 	}
 	allowed, err := l.gcra.limit(key, cost, burst, rate, window)
 	if err != nil {
