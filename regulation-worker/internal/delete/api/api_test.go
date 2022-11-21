@@ -452,7 +452,7 @@ func TestOAuth(t *testing.T) {
 
 			backendconfig.Init()
 			oauth.Init()
-			OAuth := oauth.NewOAuthErrorHandler(mockBackendConfig)
+			OAuth := oauth.NewOAuthErrorHandler(mockBackendConfig, oauth.WithRudderFlow(oauth.RudderFlow_Delete))
 			api := api.APIManager{
 				Client:           &http.Client{},
 				DestTransformURL: svr.URL,
