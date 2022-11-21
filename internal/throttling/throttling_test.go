@@ -297,53 +297,6 @@ func TestBadData(t *testing.T) {
 	}
 }
 
-func TestMultipleRedisClients(t *testing.T) {
-	pool, err := dockertest.NewPool("")
-	require.NoError(t, err)
-
-	var (
-		ctx = context.Background()
-		rc1 = bootstrapRedis(ctx, t, pool)
-		rc2 = bootstrapRedis(ctx, t, pool)
-		// configuration
-		cost   int64 = 1
-		rate   int64 = 1
-		window int64 = 10
-	)
-
-	l := newLimiter(t, WithRedisClient(rc1), WithRedisClient(rc2, "foo"))
-	allowed, returner, err := l.Limit(ctx, cost, rate, window, "foo")
-	require.NoError(t, err)
-	require.True(t, allowed)
-	require.NotNil(t, returner)
-
-	allowed, returner, err = l.Limit(ctx, cost, rate, window, "foo")
-	require.NoError(t, err)
-	require.False(t, allowed, "only 1 request every 10 seconds should be allowed")
-	require.NotNil(t, returner)
-
-	allowed, returner, err = l.Limit(ctx, cost, rate, window, "bar")
-	require.NoError(t, err)
-	require.True(t, allowed)
-	require.NotNil(t, returner)
-
-	foo1, err := rc1.ZCard(ctx, "foo").Result()
-	require.NoError(t, err)
-	require.EqualValues(t, 0, foo1, "foo should have been written into rc2")
-
-	bar1, err := rc1.ZCard(ctx, "bar").Result()
-	require.NoError(t, err)
-	require.EqualValues(t, 1, bar1, "bar should have been written into rc1")
-
-	foo2, err := rc2.ZCard(ctx, "foo").Result()
-	require.NoError(t, err)
-	require.EqualValues(t, 1, foo2, "foo should have been written into rc2")
-
-	bar2, err := rc2.ZCard(ctx, "bar").Result()
-	require.NoError(t, err)
-	require.EqualValues(t, 0, bar2, "bar should have been written into rc1")
-}
-
 func testName(name string, rate, window int64) string {
 	return fmt.Sprintf("%s/%d tokens per %ds", name, rate, window)
 }

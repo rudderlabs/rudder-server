@@ -51,8 +51,6 @@ type Limiter struct {
 	// for Redis configurations
 	// a default redisSpeaker should always be provided for Redis configurations
 	redisSpeaker redisSpeaker
-	// redisToClientMap does not require a Mutex because it is only read from and written once in the constructor
-	redisKeyToClientMap map[string]redisSpeaker
 
 	// for in-memory configurations
 	gcra   *gcra
@@ -82,9 +80,6 @@ func New(options ...Option) (*Limiter, error) {
 			return nil, fmt.Errorf("redis and go-rate are mutually exclusive")
 		}
 		return rl, nil
-	}
-	if len(rl.redisKeyToClientMap) > 0 {
-		return nil, fmt.Errorf("redis key to client map is configured without a default client")
 	}
 
 	switch {
@@ -132,8 +127,7 @@ func (l *Limiter) Limit(ctx context.Context, cost, rate, window int64, key strin
 func (l *Limiter) redisSortedSet(ctx context.Context, cost, rate, window int64, key string) (
 	bool, TokenReturner, error,
 ) {
-	redisSpeaker := l.getRedisSpeaker(key)
-	res, err := sortedSetScript.Run(ctx, redisSpeaker, []string{key}, cost, rate, window).Result()
+	res, err := sortedSetScript.Run(ctx, l.redisSpeaker, []string{key}, cost, rate, window).Result()
 	if err != nil {
 		return false, nil, fmt.Errorf("could not run SortedSet Redis script: %v", err)
 	}
@@ -160,7 +154,7 @@ func (l *Limiter) redisSortedSet(ctx context.Context, cost, rate, window int64, 
 	return true, &sortedSetRedisReturn{
 		key:     key,
 		members: strings.Split(members, ","),
-		remover: redisSpeaker,
+		remover: l.redisSpeaker,
 		redisTimerReturn: redisTimerReturn{
 			time: time.Duration(t) * time.Microsecond,
 		},
@@ -172,8 +166,7 @@ func (l *Limiter) redisGCRA(ctx context.Context, cost, rate, window int64, key s
 	if l.gcraBurst > 0 {
 		burst = l.gcraBurst
 	}
-	redisSpeaker := l.getRedisSpeaker(key)
-	res, err := gcraRedisScript.Run(ctx, redisSpeaker, []string{key}, burst, rate, window, cost).Result()
+	res, err := gcraRedisScript.Run(ctx, l.redisSpeaker, []string{key}, burst, rate, window, cost).Result()
 	if err != nil {
 		return false, nil, fmt.Errorf("could not run GCRA Redis script: %v", err)
 	}
@@ -224,15 +217,6 @@ func (l *Limiter) goRateLimit(_ context.Context, cost, rate, window int64, key s
 		return false, nil, nil // limit exceeded
 	}
 	return true, &goRateReturn{reservation: res}, nil
-}
-
-func (l *Limiter) getRedisSpeaker(key string) redisSpeaker {
-	if l.redisKeyToClientMap != nil {
-		if client, ok := l.redisKeyToClientMap[key]; ok {
-			return client
-		}
-	}
-	return l.redisSpeaker
 }
 
 func (l *Limiter) getTimer(key, algo string, rate, window int64) func() {
