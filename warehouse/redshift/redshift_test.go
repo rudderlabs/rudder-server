@@ -91,10 +91,10 @@ func TestRedshiftIntegration(t *testing.T) {
 				require.NoError(
 					t,
 					testhelper.WithConstantBackoff(func() (err error) {
-						_, err = db.Exec(fmt.Sprintf(`DROP SCHEMA %q CASCADE;`, schema))
+						_, err = db.Exec(fmt.Sprintf(`DROP SCHEMA %q CASCADE;`, tc.schema))
 						return
 					}),
-					fmt.Sprintf("Failed dropping schema %s for Redshift", schema),
+					fmt.Sprintf("Failed dropping schema %s for Redshift", tc.schema),
 				)
 			})
 
