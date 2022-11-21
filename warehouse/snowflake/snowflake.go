@@ -231,7 +231,7 @@ func (sf *HandleT) DeleteBy(tableNames []string, params warehouseutils.DeleteByP
 			params.StartTime,
 		)
 
-		pkgLogger.Infof("SF: Deleting rows in table in snowflake for SF:%s params: %#v", sf.Warehouse.Destination.ID, params)
+		pkgLogger.Infof("SF: Deleting rows in table in snowflake for SF:%s", sf.Warehouse.Destination.ID)
 		pkgLogger.Debugf("SF: Executing the sql statement %v", sqlStatement)
 
 		if enableDeleteByJobs {

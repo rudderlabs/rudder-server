@@ -100,23 +100,7 @@ type WareHouseTest struct {
 	SkipWarehouse                bool
 }
 
-func (w *WareHouseTest) msgID() string {
-	if w.MessageID == "" {
-		return misc.FastUUID().String()
-	}
-	return w.MessageID
-}
-
-func (w *WareHouseTest) recordID() string {
-	if w.RecordID == "" {
-		return misc.FastUUID().String()
-	}
-	return w.RecordID
-}
-
-func (w *WareHouseTest) TestScenarioOne(t testing.TB) {
-	t.Helper()
-
+func (w *WareHouseTest) init() {
 	w.TimestampBeforeSendingEvents = timeutil.Now()
 
 	if len(w.EventsMap) == 0 {
@@ -134,6 +118,26 @@ func (w *WareHouseTest) TestScenarioOne(t testing.TB) {
 	if len(w.WarehouseEventsMap) == 0 {
 		w.WarehouseEventsMap = defaultWarehouseEventsMap()
 	}
+}
+
+func (w *WareHouseTest) msgID() string {
+	if w.MessageID == "" {
+		return misc.FastUUID().String()
+	}
+	return w.MessageID
+}
+
+func (w *WareHouseTest) recordID() string {
+	if w.RecordID == "" {
+		return misc.FastUUID().String()
+	}
+	return w.RecordID
+}
+
+func (w *WareHouseTest) TestScenarioOne(t testing.TB) {
+	t.Helper()
+
+	w.init()
 
 	if w.Prerequisite != nil {
 		w.Prerequisite(t)
@@ -196,23 +200,7 @@ func (w *WareHouseTest) TestScenarioOne(t testing.TB) {
 func (w *WareHouseTest) TestScenarioTwo(t testing.TB) {
 	t.Helper()
 
-	w.TimestampBeforeSendingEvents = timeutil.Now()
-
-	if len(w.EventsMap) == 0 {
-		w.EventsMap = defaultSendEventsMap()
-	}
-	if len(w.StagingFilesEventsMap) == 0 {
-		w.StagingFilesEventsMap = defaultStagingFilesEventsMap()
-	}
-	if len(w.LoadFilesEventsMap) == 0 {
-		w.LoadFilesEventsMap = defaultLoadFilesEventsMap()
-	}
-	if len(w.TableUploadsEventsMap) == 0 {
-		w.TableUploadsEventsMap = defaultTableUploadsEventsMap()
-	}
-	if len(w.WarehouseEventsMap) == 0 {
-		w.WarehouseEventsMap = defaultWarehouseEventsMap()
-	}
+	w.init()
 
 	if w.Prerequisite != nil {
 		w.Prerequisite(t)
