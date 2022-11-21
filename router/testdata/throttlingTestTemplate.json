@@ -24,6 +24,11 @@
                     "transformations": [],
                     "destinationDefinition": {
                         "config": {
+                            "throttlingCost": {
+                                "eventType": {
+                                    "default": 2
+                                }
+                            },
                             "destConfig": {
                                 "defaultConfig": [
                                     "webhookUrl",

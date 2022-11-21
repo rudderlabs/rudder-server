@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"os/signal"
+	"reflect"
 	"strconv"
 	"sync"
 	"sync/atomic"
@@ -213,12 +214,22 @@ func Test_RouterThrottling(t *testing.T) {
 		atomic.LoadInt64(webhook1.count), atomic.LoadInt64(webhook2.count),
 	)
 
+	// with 100 events, 20 rps and a cost of 2 we expect 10-11 buckets tops
+	requireLengthInRange(t, webhook1.buckets, 10, 11)
 	for _, rate := range webhook1.buckets {
-		// throttling cost is 1 and rate is 20 per second, so we expect 20 in each bucket
-		require.LessOrEqual(t, rate, 20)
+		// throttling cost is 2 and rate is 20 per second, so we expect ~10 in each bucket
+		require.LessOrEqual(t, rate, 10)
 	}
+	// with 100 events, 50 rps and a cost of 2 we expect 4-5 buckets tops
+	requireLengthInRange(t, webhook2.buckets, 4, 5)
 	for _, rate := range webhook2.buckets {
 		// throttling cost is 2 and rate is 50 per second, so we expect 25 in each bucket
 		require.LessOrEqual(t, rate, 25)
 	}
+}
+
+func requireLengthInRange(t *testing.T, x interface{}, min, max int) {
+	t.Helper()
+	v := reflect.ValueOf(x)
+	require.True(t, v.Len() >= min && v.Len() <= max, "length should be in range [%d, %d], got %d", min, max, v.Len())
 }
