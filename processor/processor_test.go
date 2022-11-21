@@ -2478,8 +2478,8 @@ var _ = Describe("TestConfigFilter", func() {
 					"configFilters": ["long_config1", "long_config2"]
 				}
 			}`
-			_ = json.Unmarshal([]byte(intgConfigStr), &intgConfig)
-			_ = json.Unmarshal([]byte(destDefStr), &destDef)
+			Expect(json.Unmarshal([]byte(intgConfigStr), &intgConfig)).To(BeNil())
+			Expect(json.Unmarshal([]byte(destDefStr), &destDef)).To(BeNil())
 			intgConfig.DestinationDefinition = destDef
 			expectedEvent := transformer.TransformerEventT{
 				Message: types.SingularEventT{

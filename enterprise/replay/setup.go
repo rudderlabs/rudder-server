@@ -12,20 +12,17 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/types"
 )
 
-var (
-	pkgLogger     logger.Logger
-	replayEnabled bool
-)
+var replayEnabled bool
 
 func loadConfig() {
 	replayEnabled = config.GetBool("Replay.enabled", types.DEFAULT_REPLAY_ENABLED)
 	config.RegisterIntConfigVariable(200, &userTransformBatchSize, true, 1, "Processor.userTransformBatchSize")
 }
 
-func initFileManager() (filemanager.FileManager, string, error) {
+func initFileManager(log logger.Logger) (filemanager.FileManager, string, error) {
 	bucket := strings.TrimSpace(config.GetString("JOBS_REPLAY_BACKUP_BUCKET", ""))
 	if bucket == "" {
-		pkgLogger.Error("[[ Replay ]] JOBS_REPLAY_BACKUP_BUCKET is not set")
+		log.Error("[[ Replay ]] JOBS_REPLAY_BACKUP_BUCKET is not set")
 		panic("Bucket is not configured.")
 	}
 
@@ -44,24 +41,24 @@ func initFileManager() (filemanager.FileManager, string, error) {
 		}),
 	})
 	if err != nil {
-		pkgLogger.Errorf("[[ Replay ]] Error creating file manager: %s", err.Error())
+		log.Errorf("[[ Replay ]] Error creating file manager: %s", err.Error())
 		return nil, "", err
 	}
 
 	return uploader, bucket, nil
 }
 
-func setup(ctx context.Context, replayDB, gwDB, routerDB, batchRouterDB *jobsdb.HandleT) error {
+func setup(ctx context.Context, replayDB, gwDB, routerDB, batchRouterDB *jobsdb.HandleT, log logger.Logger) error {
 	tablePrefix := config.GetString("TO_REPLAY", "gw")
 	replayToDB := config.GetString("REPLAY_TO_DB", "gw")
-	pkgLogger.Infof("TO_REPLAY=%s and REPLAY_TO_DB=%s", tablePrefix, replayToDB)
+	log.Infof("TO_REPLAY=%s and REPLAY_TO_DB=%s", tablePrefix, replayToDB)
 	var dumpsLoader dumpsLoaderHandleT
-	uploader, bucket, err := initFileManager()
+	uploader, bucket, err := initFileManager(log)
 	if err != nil {
 		return err
 	}
 
-	dumpsLoader.Setup(ctx, replayDB, tablePrefix, uploader, bucket)
+	dumpsLoader.Setup(ctx, replayDB, tablePrefix, uploader, bucket, log)
 
 	var replayer Handler
 	var toDB *jobsdb.HandleT
@@ -76,25 +73,28 @@ func setup(ctx context.Context, replayDB, gwDB, routerDB, batchRouterDB *jobsdb.
 		toDB = routerDB
 	}
 	_ = toDB.Start()
-	replayer.Setup(ctx, &dumpsLoader, replayDB, toDB, tablePrefix, uploader, bucket)
+	replayer.Setup(ctx, &dumpsLoader, replayDB, toDB, tablePrefix, uploader, bucket, log)
 	return nil
 }
 
 type Factory struct {
 	EnterpriseToken string
+	Log             logger.Logger
 }
 
 // Setup initializes Replay feature
 func (m *Factory) Setup(ctx context.Context, replayDB, gwDB, routerDB, batchRouterDB *jobsdb.HandleT) {
+	if m.Log == nil {
+		m.Log = logger.NewLogger().Child("enterprise").Child("replay")
+	}
 	if m.EnterpriseToken == "" {
 		return
 	}
 
 	loadConfig()
-	pkgLogger = logger.NewLogger().Child("enterprise").Child("replay")
 	if replayEnabled {
-		pkgLogger.Info("[[ Replay ]] Setting up Replay")
-		err := setup(ctx, replayDB, gwDB, routerDB, batchRouterDB)
+		m.Log.Info("[[ Replay ]] Setting up Replay")
+		err := setup(ctx, replayDB, gwDB, routerDB, batchRouterDB, m.Log)
 		if err != nil {
 			panic(err)
 		}
