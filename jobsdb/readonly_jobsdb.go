@@ -620,7 +620,7 @@ func (jd *ReadonlyHandleT) GetJobByID(job_id, _ string) (string, error) {
 						job_latest_state.error_code, job_latest_state.error_response
 					FROM
 						%[1]s
-					LEFT JOIN "%[2]s" job_latest_state ON %[1]s.job_id=job_latest_state.job_id
+					LEFT JOIN "v_last_%[2]s" job_latest_state ON %[1]s.job_id=job_latest_state.job_id
 					WHERE %[1]s.job_id = %[3]s;`, dsPair.JobTable, dsPair.JobStatusTable, job_id)
 
 		event := JobT{}
