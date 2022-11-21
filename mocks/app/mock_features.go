@@ -5,6 +5,7 @@
 package mock_app
 
 import (
+	context "context"
 	reflect "reflect"
 
 	gomock "github.com/golang/mock/gomock"
@@ -36,16 +37,16 @@ func (m *MockSuppressUserFeature) EXPECT() *MockSuppressUserFeatureMockRecorder 
 }
 
 // Setup mocks base method.
-func (m *MockSuppressUserFeature) Setup(arg0 backendconfig.BackendConfig) (types.UserSuppression, error) {
+func (m *MockSuppressUserFeature) Setup(arg0 context.Context, arg1 backendconfig.BackendConfig) (types.UserSuppression, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "Setup", arg0)
+	ret := m.ctrl.Call(m, "Setup", arg0, arg1)
 	ret0, _ := ret[0].(types.UserSuppression)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // Setup indicates an expected call of Setup.
-func (mr *MockSuppressUserFeatureMockRecorder) Setup(arg0 interface{}) *gomock.Call {
+func (mr *MockSuppressUserFeatureMockRecorder) Setup(arg0, arg1 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Setup", reflect.TypeOf((*MockSuppressUserFeature)(nil).Setup), arg0)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Setup", reflect.TypeOf((*MockSuppressUserFeature)(nil).Setup), arg0, arg1)
 }

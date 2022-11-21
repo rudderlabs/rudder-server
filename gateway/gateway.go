@@ -1635,6 +1635,7 @@ Setup initializes this module:
 This function will block until backend config is initially received.
 */
 func (gateway *HandleT) Setup(
+	ctx context.Context,
 	application app.App, backendConfig backendconfig.BackendConfig, jobsDB jobsdb.JobsDB,
 	rateLimiter ratelimiter.RateLimiter, versionHandler func(w http.ResponseWriter, r *http.Request),
 	rsourcesService rsources.JobService,
@@ -1690,7 +1691,7 @@ func (gateway *HandleT) Setup(
 
 	if enableSuppressUserFeature && gateway.application.Features().SuppressUser != nil {
 		var err error
-		gateway.suppressUserHandler, err = application.Features().SuppressUser.Setup(gateway.backendConfig)
+		gateway.suppressUserHandler, err = application.Features().SuppressUser.Setup(ctx, gateway.backendConfig)
 		if err != nil {
 			return fmt.Errorf("could not setup suppress user feature: %w", err)
 		}

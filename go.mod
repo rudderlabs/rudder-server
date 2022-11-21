@@ -32,6 +32,7 @@ require (
 	github.com/cenkalti/backoff/v4 v4.1.3
 	github.com/denisenkom/go-mssqldb v0.12.0
 	github.com/dgraph-io/badger/v2 v2.2007.4
+	github.com/dgraph-io/badger/v3 v3.2103.3
 	github.com/fsnotify/fsnotify v1.5.4
 	github.com/go-redis/redis v6.15.7+incompatible
 	github.com/gofrs/uuid v4.2.0+incompatible
@@ -115,7 +116,7 @@ require (
 	github.com/coreos/go-systemd/v22 v22.3.2 // indirect
 	github.com/cpuguy83/go-md2man/v2 v2.0.2 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
-	github.com/dgraph-io/ristretto v0.0.3-0.20200630154024-f66de99634de // indirect
+	github.com/dgraph-io/ristretto v0.1.1 // indirect
 	github.com/dgryski/go-farm v0.0.0-20200201041132-a6ae2369ad13 // indirect
 	github.com/docker/cli v20.10.14+incompatible // indirect
 	github.com/docker/docker v20.10.21+incompatible // indirect
@@ -207,8 +208,10 @@ require (
 
 require (
 	github.com/aws/aws-sdk-go-v2/service/internal/checksum v1.1.3 // indirect
+	github.com/cespare/xxhash/v2 v2.1.2 // indirect
 	github.com/foxcpp/go-mockdns v1.0.1-0.20220408113050-3599dc5d2c7d
 	github.com/golang-sql/sqlexp v0.0.0-20170517235910-f1bb20e5a188 // indirect
+	github.com/golang/glog v0.0.0-20160126235308-23def4e6c14b // indirect
 	github.com/golang/protobuf v1.5.2 // indirect
 	github.com/matttproud/golang_protobuf_extensions v1.0.2-0.20181231171920-c182affec369 // indirect
 	github.com/pelletier/go-toml/v2 v2.0.5 // indirect

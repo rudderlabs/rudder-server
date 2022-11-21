@@ -7,21 +7,22 @@ import (
 	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/rruntime"
+	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/types"
 )
 
 type Factory struct {
-	EnterpriseToken string
-
+	EnterpriseToken   string
+	Log               logger.Logger
 	once              sync.Once
 	reportingInstance types.ReportingI
-
-	// for debug purposes, to be removed
-	init uint32
 }
 
 // Setup initializes Suppress User feature
 func (m *Factory) Setup(backendConfig backendconfig.BackendConfig) types.ReportingI {
+	if m.Log == nil {
+		m.Log = logger.NewLogger().Child("enterprise").Child("reporting")
+	}
 	m.once.Do(func() {
 		reportingEnabled := config.GetBool("Reporting.enabled", types.DEFAULT_REPORTING_ENABLED)
 		if !reportingEnabled {
@@ -34,7 +35,7 @@ func (m *Factory) Setup(backendConfig backendconfig.BackendConfig) types.Reporti
 			return
 		}
 
-		h := NewFromEnvConfig()
+		h := NewFromEnvConfig(m.Log)
 		rruntime.Go(func() {
 			h.setup(backendConfig)
 		})
