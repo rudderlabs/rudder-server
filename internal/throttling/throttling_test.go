@@ -21,7 +21,7 @@ func TestThrottling(t *testing.T) {
 
 	type limiterSettings struct {
 		name    string
-		limiter limiter
+		limiter *Limiter
 		// concurrency has been introduced because the GCRA algorithms (both in-memory and Redis) tend to lose precision
 		// when the concurrency is too high. Until we fix it or come up with a guard to limit the amount of concurrent
 		// requests, we're limiting the concurrency to X in the tests (to avoid test flakiness).
@@ -79,7 +79,7 @@ func TestThrottling(t *testing.T) {
 }
 
 func testLimiter(
-	ctx context.Context, t *testing.T, l limiter, rate, window, expected int64, concurrency int,
+	ctx context.Context, t *testing.T, l *Limiter, rate, window, expected int64, concurrency int,
 	additionalErrorMargin float64,
 ) {
 	t.Helper()
@@ -112,15 +112,26 @@ loop:
 				defer wg.Done()
 				defer func() { <-maxRoutines }()
 
-				allowed, returner, err := l.Limit(ctx, cost, rate, window, key)
+				var (
+					err       error
+					allowed   bool
+					redisTime time.Duration
+				)
+				switch {
+				case l.redisSpeaker != nil && l.useGCRA:
+					redisTime, allowed, _, err = l.redisGCRA(ctx, cost, rate, window, key)
+				case l.redisSpeaker != nil && !l.useGCRA:
+					redisTime, allowed, _, err = l.redisSortedSet(ctx, cost, rate, window, key)
+				default:
+					allowed, _, err = l.Limit(ctx, cost, rate, window, key)
+				}
 				require.NoError(t, err)
 
-				timer, ok := returner.(interface{ getTime() time.Duration })
 				timeMutex.Lock()
 				defer timeMutex.Unlock()
-				if ok { // Redis limiters have a getTime() function that returns the current time from Redis perspective
-					if timer.getTime() > time.Duration(currentTime) {
-						currentTime = int64(timer.getTime())
+				if redisTime > 0 { // Redis limiters have a getTime() function that returns the current time from Redis perspective
+					if redisTime > time.Duration(currentTime) {
+						currentTime = int64(redisTime)
 					}
 				} else if now := time.Now().UnixNano(); now > currentTime { // in-memory algorithm, let's use time.Now()
 					currentTime = now
@@ -190,7 +201,7 @@ func TestReturn(t *testing.T) {
 
 	type testCase struct {
 		name         string
-		limiter      limiter
+		limiter      *Limiter
 		minDeletions int
 	}
 
@@ -219,7 +230,7 @@ func TestReturn(t *testing.T) {
 			var (
 				passed int
 				key    = rand.UniqueString(10)
-				tokens []TokenReturner
+				tokens []func(context.Context) error
 			)
 			for i := int64(0); i < rate*10; i++ {
 				allowed, returner, err := tc.limiter.Limit(ctx, 1, rate, window, key)
@@ -243,7 +254,7 @@ func TestReturn(t *testing.T) {
 			// 1. https://cs.opensource.google/go/x/time/+/refs/tags/v0.1.0:rate/rate.go;l=175
 			// 2. https://cs.opensource.google/go/x/time/+/refs/tags/v0.1.0:rate/rate.go;l=183
 			for i := 0; i < tc.minDeletions; i++ {
-				require.NoError(t, tokens[i].Return(ctx))
+				require.NoError(t, tokens[i](ctx))
 			}
 
 			require.Eventually(t, func() bool {
@@ -261,7 +272,7 @@ func TestBadData(t *testing.T) {
 	var (
 		ctx      = context.Background()
 		rc       = bootstrapRedis(ctx, t, pool)
-		limiters = map[string]limiter{
+		limiters = map[string]*Limiter{
 			"go rate":           newLimiter(t, WithGoRate()),
 			"gcra":              newLimiter(t, WithGCRA()),
 			"gcra redis":        newLimiter(t, WithGCRA(), WithRedisClient(rc)),

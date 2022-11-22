@@ -38,10 +38,6 @@ type redisSpeaker interface {
 	redisSortedSetRemover
 }
 
-type TokenReturner interface {
-	Return(context.Context) error
-}
-
 type statsCollector interface {
 	NewTaggedStat(name, statType string, tags stats.Tags) stats.Measurement
 }
@@ -92,7 +88,7 @@ func New(options ...Option) (*Limiter, error) {
 
 // Limit returns true if the limit is not exceeded, false otherwise.
 func (l *Limiter) Limit(ctx context.Context, cost, rate, window int64, key string) (
-	bool, TokenReturner, error,
+	bool, func(context.Context) error, error,
 ) {
 	if cost < 1 {
 		return false, nil, fmt.Errorf("cost must be greater than 0")
@@ -110,13 +106,15 @@ func (l *Limiter) Limit(ctx context.Context, cost, rate, window int64, key strin
 	case l.useGCRA:
 		if l.redisSpeaker != nil {
 			defer l.getTimer(key, "redis-gcra", rate, window)()
-			return l.redisGCRA(ctx, cost, rate, window, key)
+			_, allowed, tr, err := l.redisGCRA(ctx, cost, rate, window, key)
+			return allowed, tr, err
 		}
 		defer l.getTimer(key, "gcra", rate, window)()
 		return l.gcraLimit(ctx, cost, rate, window, key)
 	case l.redisSpeaker != nil:
 		defer l.getTimer(key, "redis-sorted-set", rate, window)()
-		return l.redisSortedSet(ctx, cost, rate, window, key)
+		_, allowed, tr, err := l.redisSortedSet(ctx, cost, rate, window, key)
+		return allowed, tr, err
 	default:
 		defer l.getTimer(key, "go-rate", rate, window)()
 		return l.goRateLimit(ctx, cost, rate, window, key)
@@ -124,77 +122,84 @@ func (l *Limiter) Limit(ctx context.Context, cost, rate, window int64, key strin
 }
 
 func (l *Limiter) redisSortedSet(ctx context.Context, cost, rate, window int64, key string) (
-	bool, TokenReturner, error,
+	time.Duration, bool, func(context.Context) error, error,
 ) {
 	res, err := sortedSetScript.Run(ctx, l.redisSpeaker, []string{key}, cost, rate, window).Result()
 	if err != nil {
-		return false, nil, fmt.Errorf("could not run SortedSet Redis script: %v", err)
+		return 0, false, nil, fmt.Errorf("could not run SortedSet Redis script: %v", err)
 	}
+
 	result, ok := res.([]interface{})
 	if !ok {
-		return false, nil, fmt.Errorf("unexpected result from SortedSet Redis script of type %T: %v", res, res)
+		return 0, false, nil, fmt.Errorf("unexpected result from SortedSet Redis script of type %T: %v", res, res)
 	}
 	if len(result) != 2 {
-		return false, nil, fmt.Errorf("unexpected result from SortedSet Redis script of length %d: %+v", len(result), result)
+		return 0, false, nil, fmt.Errorf("unexpected result from SortedSet Redis script of length %d: %+v", len(result), result)
 	}
+
 	t, ok := result[0].(int64)
 	if !ok {
-		return false, nil, fmt.Errorf("unexpected result[0] from SortedSet Redis script of type %T: %v", result[0], result[0])
+		return 0, false, nil, fmt.Errorf("unexpected result[0] from SortedSet Redis script of type %T: %v", result[0], result[0])
 	}
+	redisTime := time.Duration(t) * time.Microsecond
+
 	members, ok := result[1].(string)
 	if !ok {
-		return false, nil, fmt.Errorf("unexpected result[1] from SortedSet Redis script of type %T: %v", result[1], result[1])
+		return redisTime, false, nil, fmt.Errorf("unexpected result[1] from SortedSet Redis script of type %T: %v", result[1], result[1])
 	}
 	if members == "" { // limit exceeded
-		return false, &redisTimerReturn{
-			time: time.Duration(t) * time.Microsecond,
-		}, nil
+		return redisTime, false, nil, nil
 	}
-	return true, &sortedSetRedisReturn{
+
+	r := &sortedSetRedisReturn{
 		key:     key,
 		members: strings.Split(members, ","),
 		remover: l.redisSpeaker,
-		redisTimerReturn: redisTimerReturn{
-			time: time.Duration(t) * time.Microsecond,
-		},
-	}, nil
+	}
+	return redisTime, true, r.Return, nil
 }
 
-func (l *Limiter) redisGCRA(ctx context.Context, cost, rate, window int64, key string) (bool, TokenReturner, error) {
+func (l *Limiter) redisGCRA(ctx context.Context, cost, rate, window int64, key string) (
+	time.Duration, bool, func(context.Context) error, error,
+) {
 	burst := rate
 	if l.gcraBurst > 0 {
 		burst = l.gcraBurst
 	}
 	res, err := gcraRedisScript.Run(ctx, l.redisSpeaker, []string{key}, burst, rate, window, cost).Result()
 	if err != nil {
-		return false, nil, fmt.Errorf("could not run GCRA Redis script: %v", err)
+		return 0, false, nil, fmt.Errorf("could not run GCRA Redis script: %v", err)
 	}
+
 	result, ok := res.([]interface{})
 	if !ok {
-		return false, nil, fmt.Errorf("unexpected result from GCRA Redis script of type %T: %v", res, res)
+		return 0, false, nil, fmt.Errorf("unexpected result from GCRA Redis script of type %T: %v", res, res)
 	}
 	if len(result) != 5 {
-		return false, nil, fmt.Errorf("unexpected result from GCRA Redis scrip of length %d: %+v", len(result), result)
+		return 0, false, nil, fmt.Errorf("unexpected result from GCRA Redis scrip of length %d: %+v", len(result), result)
 	}
+
 	t, ok := result[0].(int64)
 	if !ok {
-		return false, nil, fmt.Errorf("unexpected result[0] from GCRA Redis script of type %T: %v", result[0], result[0])
+		return 0, false, nil, fmt.Errorf("unexpected result[0] from GCRA Redis script of type %T: %v", result[0], result[0])
 	}
+	redisTime := time.Duration(t) * time.Microsecond
+
 	allowed, ok := result[1].(int64)
 	if !ok {
-		return false, nil, fmt.Errorf("unexpected result[1] from GCRA Redis script of type %T: %v", result[1], result[1])
+		return redisTime, false, nil, fmt.Errorf("unexpected result[1] from GCRA Redis script of type %T: %v", result[1], result[1])
 	}
 	if allowed < 1 { // limit exceeded
-		return false, &redisTimerReturn{
-			time: time.Duration(t) * time.Microsecond,
-		}, nil
+		return redisTime, false, nil, nil
 	}
-	return true, &redisTimerReturn{
-		time: time.Duration(t) * time.Microsecond,
-	}, nil
+
+	r := &unsupportedReturn{}
+	return redisTime, true, r.Return, nil
 }
 
-func (l *Limiter) gcraLimit(_ context.Context, cost, rate, window int64, key string) (bool, TokenReturner, error) {
+func (l *Limiter) gcraLimit(_ context.Context, cost, rate, window int64, key string) (
+	bool, func(context.Context) error, error,
+) {
 	burst := rate
 	if l.gcraBurst > 0 {
 		burst = l.gcraBurst
@@ -206,16 +211,20 @@ func (l *Limiter) gcraLimit(_ context.Context, cost, rate, window int64, key str
 	if !allowed {
 		return false, nil, nil // limit exceeded
 	}
-	return true, &unsupportedReturn{}, nil
+	r := &unsupportedReturn{}
+	return true, r.Return, nil
 }
 
-func (l *Limiter) goRateLimit(_ context.Context, cost, rate, window int64, key string) (bool, TokenReturner, error) {
+func (l *Limiter) goRateLimit(_ context.Context, cost, rate, window int64, key string) (
+	bool, func(context.Context) error, error,
+) {
 	res := l.goRate.limit(key, cost, rate, window)
 	if !res.Allowed() {
 		res.CancelFuture()
 		return false, nil, nil // limit exceeded
 	}
-	return true, &goRateReturn{reservation: res}, nil
+	r := &goRateReturn{reservation: res}
+	return true, r.Return, nil
 }
 
 func (l *Limiter) getTimer(key, algo string, rate, window int64) func() {

@@ -6,11 +6,15 @@ import (
 	"time"
 
 	"github.com/rudderlabs/rudder-server/config"
-	"github.com/rudderlabs/rudder-server/internal/throttling"
 )
 
+type limiter interface {
+	// Limit returns true if the limit is not exceeded, false otherwise.
+	Limit(ctx context.Context, cost, rate, window int64, key string) (bool, func(context.Context) error, error)
+}
+
 type Factory struct {
-	Limiter *throttling.Limiter
+	Limiter limiter
 }
 
 func (f *Factory) New(destName, destID string) *Throttler {
@@ -23,14 +27,16 @@ func (f *Factory) New(destName, destID string) *Throttler {
 }
 
 type Throttler struct {
-	limiter *throttling.Limiter
+	limiter limiter
 	config  throttlingConfig
 }
 
 // CheckLimitReached returns true if we're not allowed to process the number of events we asked for with cost.
-// Along with the boolean, it also returns a TokenReturner and an error. The TokenReturner should be called to return
+// Along with the boolean, it also returns a tokensReturner and an error. The tokensReturner should be called to return
 // the tokens to the limiter (bucket) in the eventuality that we did not move forward with the request.
-func (t *Throttler) CheckLimitReached(key string, cost int64) (limited bool, tr throttling.TokenReturner, retErr error) {
+func (t *Throttler) CheckLimitReached(key string, cost int64) (
+	limited bool, tokensReturner func(context.Context) error, retErr error,
+) {
 	if !t.config.enabled {
 		return false, nil, nil
 	}

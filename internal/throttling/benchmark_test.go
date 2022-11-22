@@ -29,7 +29,7 @@ func BenchmarkLimiters(b *testing.B) {
 		window   int64 = 1
 		ctx            = context.Background()
 		rc             = bootstrapRedis(ctx, b, pool)
-		limiters       = map[string]limiter{
+		limiters       = map[string]*Limiter{
 			"go rate":           newLimiter(b, WithGoRate()),
 			"gcra":              newLimiter(b, WithGCRA()),
 			"gcra redis":        newLimiter(b, WithGCRA(), WithRedisClient(rc)),

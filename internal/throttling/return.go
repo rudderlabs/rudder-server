@@ -3,19 +3,9 @@ package throttling
 import (
 	"context"
 	"fmt"
-	"time"
 
 	"github.com/go-redis/redis/v8"
 )
-
-type redisTimerReturn struct {
-	// time is the current time in milliseconds from Redis perspective
-	time time.Duration
-
-	unsupportedReturn
-}
-
-func (r *redisTimerReturn) getTime() time.Duration { return r.time }
 
 type unsupportedReturn struct{}
 
@@ -32,8 +22,6 @@ type sortedSetRedisReturn struct {
 	members []string
 	// remover is the redisSpeaker that removes the members from the sorted set (aka *redis.Client)
 	remover redisSortedSetRemover
-
-	redisTimerReturn
 }
 
 func (r *sortedSetRedisReturn) Return(ctx context.Context) error {

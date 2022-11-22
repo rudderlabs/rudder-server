@@ -21,7 +21,6 @@ import (
 
 	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
-	"github.com/rudderlabs/rudder-server/internal/throttling"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/processor/integrations"
 	customDestinationManager "github.com/rudderlabs/rudder-server/router/customdestinationmanager"
@@ -1226,8 +1225,7 @@ func (rt *HandleT) findWorker(job *jobsdb.JobT, throttledUserMap map[string]stru
 
 	defer func() {
 		if toSendWorker == nil && tokensReturner != nil {
-			err := tokensReturner.Return(rt.backgroundCtx)
-			if err == nil {
+			if err := tokensReturner(rt.backgroundCtx); err == nil {
 				return
 			}
 			rt.logger.Errorf(`[%v Router] :: Returning throttling tokens failed with the error %v`, rt.destName, err)
@@ -1278,8 +1276,8 @@ func (rt *HandleT) getWorkerPartition(userID string) int {
 }
 
 func (rt *HandleT) shouldThrottle(job *jobsdb.JobT, parameters JobParametersT) (
-	throttling.TokenReturner,
-	bool,
+	tokensReturner func(context.Context) error,
+	limited bool,
 ) {
 	if rt.throttlerFactory == nil {
 		// throttlerFactory could be nil when throttling is disabled or misconfigured.

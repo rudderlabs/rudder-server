@@ -10,11 +10,6 @@ import (
 	"github.com/rudderlabs/rudder-server/testhelper/destination"
 )
 
-type limiter interface {
-	// Limit returns true if the limit is not exceeded, false otherwise.
-	Limit(ctx context.Context, cost, rate, window int64, key string) (bool, TokenReturner, error)
-}
-
 type tester interface {
 	Helper()
 	Log(...interface{})
@@ -29,7 +24,7 @@ type testCase struct {
 	window int64
 }
 
-func newLimiter(t tester, opts ...Option) limiter {
+func newLimiter(t tester, opts ...Option) *Limiter {
 	t.Helper()
 	l, err := New(opts...)
 	require.NoError(t, err)
