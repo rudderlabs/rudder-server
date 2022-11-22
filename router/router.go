@@ -1299,7 +1299,10 @@ func (rt *HandleT) shouldThrottle(job *jobsdb.JobT, parameters JobParametersT) (
 	rt.throttlerMu.Unlock()
 
 	throttlingCost := rt.getThrottlingCost(job)
-	limited, tokensReturner, err := throttler.CheckLimitReached(throttlingCost)
+	// TODO throttling key could be the combination of workspaceID + destinationID to avoid conflicts across clusters
+	// The concatenation of workspaceID and destinationID would make sense for destinations that do not have global limits
+	// but we don't have yet a way to understand which ones are those (needs configuration setting).
+	limited, tokensReturner, err := throttler.CheckLimitReached(parameters.DestinationID, throttlingCost)
 	if err != nil {
 		// we can't throttle, let's hit the destination, worst case we get a 429
 		return nil, false

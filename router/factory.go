@@ -23,7 +23,7 @@ const (
 )
 
 type limiter interface {
-	CheckLimitReached(cost int64) (
+	CheckLimitReached(key string, cost int64) (
 		limited bool, tr throttling.TokenReturner, retErr error,
 	)
 }

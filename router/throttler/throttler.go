@@ -30,19 +30,15 @@ type Throttler struct {
 // CheckLimitReached returns true if we're not allowed to process the number of events we asked for with cost.
 // Along with the boolean, it also returns a TokenReturner and an error. The TokenReturner should be called to return
 // the tokens to the limiter (bucket) in the eventuality that we did not move forward with the request.
-func (t *Throttler) CheckLimitReached(cost int64) (limited bool, tr throttling.TokenReturner, retErr error) {
+func (t *Throttler) CheckLimitReached(key string, cost int64) (limited bool, tr throttling.TokenReturner, retErr error) {
 	if !t.config.enabled {
 		return false, nil, nil
 	}
 
 	ctx := context.TODO()
-	rateLimitingKey := t.config.destID // TODO add workspace id here
-	allowed, tr, err := t.limiter.Limit(
-		ctx, cost, t.config.limit, getWindowInSecs(t.config.window), rateLimitingKey,
-	)
+	allowed, tr, err := t.limiter.Limit(ctx, cost, t.config.limit, getWindowInSecs(t.config.window), key)
 	if err != nil {
-		err = fmt.Errorf(`[[ %s-router-throttler: Error checking limitStatus: %w]]`, t.config.destID, err)
-		return false, nil, err
+		return false, nil, fmt.Errorf("could not limit: %w", err)
 	}
 	if !allowed {
 		return true, nil, nil // no token to return when limited
@@ -51,16 +47,12 @@ func (t *Throttler) CheckLimitReached(cost int64) (limited bool, tr throttling.T
 }
 
 type throttlingConfig struct {
-	enabled          bool
-	limit            int64
-	window           time.Duration
-	destName, destID string
+	enabled bool
+	limit   int64
+	window  time.Duration
 }
 
 func (c *throttlingConfig) readThrottlingConfig(destName, destID string) {
-	c.destName = destName
-	c.destID = destID
-
 	if config.IsSet(fmt.Sprintf(`Router.throttler.%s.%s.limit`, destName, destID)) {
 		config.RegisterInt64ConfigVariable(
 			0, &c.limit, false, 1, fmt.Sprintf(`Router.throttler.%s.%s.limit`, destName, destID),
