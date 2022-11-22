@@ -40,9 +40,9 @@ func TestDeltalakeIntegration(t *testing.T) {
 	require.NoError(t, err)
 
 	var (
-		jobsDB           = testhelper.SetUpJobsDB(t)
-		provider         = warehouseutils.DELTALAKE
-		schema           = testhelper.Schema(provider, testhelper.DeltalakeIntegrationTestSchema)
+		jobsDB   = testhelper.SetUpJobsDB(t)
+		provider = warehouseutils.DELTALAKE
+		schema   = testhelper.Schema(provider, testhelper.DeltalakeIntegrationTestSchema)
 	)
 
 	t.Cleanup(func() {
