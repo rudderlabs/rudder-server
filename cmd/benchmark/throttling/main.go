@@ -101,7 +101,7 @@ func main() {
 				defer wg.Done()
 				defer func() { <-maxNoOfRoutines }()
 				defer func() { atomic.AddInt32(&numberOfRequests, 1) }()
-				_, _, err := l.Limit(ctx, 1, rate, window, key)
+				_, _, err := l.Allow(ctx, 1, rate, window, key)
 				if err != nil {
 					if !errors.Is(err, context.Canceled) {
 						log.Printf("Could not limit: %v", err)
