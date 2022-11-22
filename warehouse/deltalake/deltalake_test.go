@@ -42,7 +42,6 @@ func TestDeltalakeIntegration(t *testing.T) {
 	var (
 		jobsDB           = testhelper.SetUpJobsDB(t)
 		provider         = warehouseutils.DELTALAKE
-		appendModeUserID = testhelper.GetUserId(provider)
 		schema           = testhelper.Schema(provider, testhelper.DeltalakeIntegrationTestSchema)
 	)
 
@@ -72,8 +71,6 @@ func TestDeltalakeIntegration(t *testing.T) {
 		sourceID           string
 		destinationID      string
 		messageID          string
-		scenarioOneUserID  string
-		scenarioTwoUserID  string
 		warehouseEventsMap testhelper.EventsCountMap
 		prerequisite       func(t testing.TB)
 	}{
@@ -83,8 +80,6 @@ func TestDeltalakeIntegration(t *testing.T) {
 			schema:             schema,
 			sourceID:           "25H5EpYzojqQSepRSaGBrrPx3e4",
 			destinationID:      "25IDjdnoEus6DDNrth3SWO1FOpu",
-			scenarioOneUserID:  testhelper.GetUserId(provider),
-			scenarioTwoUserID:  testhelper.GetUserId(provider),
 			warehouseEventsMap: mergeEventsMap(),
 			prerequisite: func(t testing.TB) {
 				t.Helper()
@@ -103,8 +98,6 @@ func TestDeltalakeIntegration(t *testing.T) {
 			sourceID:           "25H5EpYzojqQSepRSaGBrrPx3e4",
 			destinationID:      "25IDjdnoEus6DDNrth3SWO1FOpu",
 			warehouseEventsMap: appendEventsMap(),
-			scenarioOneUserID:  appendModeUserID,
-			scenarioTwoUserID:  appendModeUserID,
 			prerequisite: func(t testing.TB) {
 				t.Helper()
 				testhelper.SetConfig(t, []warehouseutils.KeyValue{
@@ -126,10 +119,10 @@ func TestDeltalakeIntegration(t *testing.T) {
 				WriteKey:      tc.writeKey,
 				SourceID:      tc.sourceID,
 				DestinationID: tc.destinationID,
-				UserID:        tc.scenarioOneUserID,
 				Prerequisite:  tc.prerequisite,
 				JobsDB:        jobsDB,
 				Provider:      provider,
+				UserID:        testhelper.GetUserId(provider),
 				MessageID:     misc.FastUUID().String(),
 				Tables:        []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"},
 				WarehouseEventsMap: testhelper.EventsCountMap{
@@ -153,7 +146,6 @@ func TestDeltalakeIntegration(t *testing.T) {
 			}
 			ts.TestScenarioOne(t)
 
-			ts.UserID = tc.scenarioTwoUserID
 			ts.WarehouseEventsMap = tc.warehouseEventsMap
 			ts.TestScenarioTwo(t)
 		})
