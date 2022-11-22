@@ -26,11 +26,14 @@ func (mj *MultiTenantLegacy) GetAllJobs(ctx context.Context, pickup map[string]i
 
 	var list []*JobT
 	toQuery := 0
-	for _, limit := range pickup {
+	var workspaceID string
+	for wsID, limit := range pickup {
 		toQuery += limit
+		workspaceID = wsID
 	}
 	params.JobsLimit = toQuery
 	params.AfterJobID = mtoken.retryAfterJobID
+	params.WorkspaceFilter = []string{workspaceID}
 	toRetry, err := mj.GetToRetry(ctx, params)
 	if err != nil {
 		return nil, err

@@ -197,7 +197,6 @@ func (mj *MultiTenantHandleT) getUnionDS(ctx context.Context, ds dataSetT, picku
 	var err error
 
 	stmt, err := mj.dbHandle.PrepareContext(ctx, queryString)
-	mj.logger.Debug(queryString)
 	if err != nil {
 		return jobList, err
 	}

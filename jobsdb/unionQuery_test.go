@@ -2,6 +2,9 @@ package jobsdb
 
 import (
 	"context"
+	"fmt"
+	"math/rand"
+	"sync"
 	"testing"
 	"time"
 
@@ -111,3 +114,213 @@ func TestMultiTenantHandleT_GetAllJobs(t *testing.T) {
 	require.NoError(t, err, "Error getting All jobs")
 	require.Equal(t, 3, len(jobs.Jobs))
 }
+
+/*
+rt
+
+BenchmarkUnionQuery/UnionQuery-1000-8         	                    	                        1358249041 ns/op
+BenchmarkUnionQuery/Concurrent_Union_Query__-1000_-16-8         	                1666216834 ns/op
+BenchmarkUnionQuery/Concurrent_Union_Query__-1000_-32-8         	                3847614042 ns/op
+BenchmarkUnionQuery/ParallelQuery-1000-8                        	                                 1538826083 ns/op
+
+BenchmarkUnionQuery/UnionQuery-3000-8                           	                                 4177400417 ns/op
+BenchmarkUnionQuery/Concurrent_Union_Query__-3000_-16-8         	                 5335373167 ns/op
+BenchmarkUnionQuery/Concurrent_Union_Query__-3000_-32-8         	                 11321719167 ns/op
+BenchmarkUnionQuery/ParallelQuery-3000-8                        	                                 3538207958 ns/op
+
+BenchmarkUnionQuery/UnionQuery-5000-8                           	                                6365580875 ns/op
+BenchmarkUnionQuery/Concurrent_Union_Query__-5000_-16-8         	                8497499458 ns/op
+BenchmarkUnionQuery/Concurrent_Union_Query__-5000_-32-8         	                17646324750 ns/op
+BenchmarkUnionQuery/ParallelQuery-5000-8                        	                                 5540005584 ns/op
+
+BenchmarkUnionQuery/UnionQuery-10000-8                          	                                12698598542 ns/op
+BenchmarkUnionQuery/Concurrent_Union_Query__-10000_-16-8        	                19103076166 ns/op
+BenchmarkUnionQuery/Concurrent_Union_Query__-10000_-32-8        	                38923613417 ns/op
+BenchmarkUnionQuery/ParallelQuery-10000-8                       	                                 11816298834 ns/op
+
+BenchmarkUnionQuery/UnionQuery-100000-8                         	                                 143067570417 ns/op
+BenchmarkUnionQuery/Concurrent_Union_Query__-100000_-16-8       	                 200310106917 ns/op
+BenchmarkUnionQuery/Concurrent_Union_Query__-100000_-32-8       	                 409845463834 ns/op
+BenchmarkUnionQuery/ParallelQuery-100000-8                      	                                  118793139708 ns/op
+*/
+
+// BenchmarkUnionQuery is a benchmark for UnionQuery with 20 different workspaces
+// and jobSize is the total number of jobs split across the workspaces
+func BenchmarkUnionQuery(b *testing.B) {
+	_ = startPostgres(b)
+	jobSize := []int{10000, 100000}
+	//concurrencies := []int{16, 32}
+	partitionTypes := []string{"HASH"}
+	tablePrefixes := []string{"rt"}
+	workspacesCounts := []int{30, 50, 100, 150, 200}
+	for _, size := range jobSize {
+		for _, partitionType := range partitionTypes {
+			for _, workspacesCount := range workspacesCounts {
+				jobs, testWorkspacePickup := generateJobs(size, workspacesCount)
+				b.Setenv("RSERVER_JOBS_DB_ENABLE_WRITER_QUEUE", "true")
+				b.Setenv("RSERVER_JOBS_DB_ENABLE_READER_QUEUE", "true")
+				for _, tablePrefix := range tablePrefixes {
+					//jobsDb1 := MultiTenantHandleT{HandleT: &HandleT{}}
+					//err := jobsDb1.Setup(ReadWrite, true, tablePrefix, true, []prebackup.Handler{}, fileuploader.NewDefaultProvider())
+					//require.NoError(b, err)
+					//err = jobsDb1.Store(context.Background(), jobs)
+					//require.NoError(b, err)
+					//
+					//b.Run(fmt.Sprintf("UnionQuery-%d-%s", size, tablePrefix), func(b *testing.B) {
+					//	benchmarkUnionQuery(b, jobsDb1, testWorkspacePickup, "testCustomVal")
+					//})
+					//
+					////for _, concurrency := range concurrencies {
+					////	b.Run(fmt.Sprintf("ConcurrentUnionQuery-%d-%d-%s", size, concurrency, tablePrefix), func(b *testing.B) {
+					////		benchmarkConcurrentUnionQuery(b, jobsDb1, testWorkspacePickup, "testCustomVal", concurrency)
+					////	})
+					////}
+					//
+					//jobsDb1.TearDown()
+
+					jobsDb2 := MultiTenantLegacy{HandleT: &HandleT{}}
+					err := jobsDb2.Setup(ReadWrite, true, tablePrefix, true, []prebackup.Handler{}, fileuploader.NewDefaultProvider(), partitionType)
+					require.NoError(b, err)
+					err = jobsDb2.Store(context.Background(), jobs)
+					require.NoError(b, err)
+
+					b.Run(fmt.Sprintf("ParallelQuery-%d-%d-%s-%s", size, workspacesCount, partitionType, tablePrefix), func(b *testing.B) {
+						benchmarkParallelQuery(b, jobsDb2, testWorkspacePickup, "testCustomVal")
+					})
+
+					//for _, concurrency := range concurrencies {
+					//	b.Run(fmt.Sprintf("ConcurrentParallelQuery-%d-%d-%s", size, concurrency, tablePrefix), func(b *testing.B) {
+					//		benchmarkConcurrentParallelQuery(b, jobsDb2, testWorkspacePickup, "testCustomVal", concurrency)
+					//	})
+					//}
+
+					jobsDb2.TearDown()
+
+				}
+			}
+		}
+	}
+}
+
+func benchmarkUnionQuery(b *testing.B, jobsdb MultiTenantHandleT, testWorkspacePickup map[string]int, customVal string) {
+	b.ResetTimer()
+	for i := 0; i < 10; i++ {
+		_, err := jobsdb.GetAllJobs(context.Background(), testWorkspacePickup, GetQueryParamsT{
+			CustomValFilters: []string{customVal},
+			JobsLimit:        10,
+		}, 10, nil)
+		require.NoError(b, err)
+	}
+}
+
+func benchmarkConcurrentUnionQuery(b *testing.B, jobsdb MultiTenantHandleT, testWorkspacePickup map[string]int, customVal string, concurrency int) {
+	b.ResetTimer()
+	var wg sync.WaitGroup
+	for i := 0; i < 10; i++ {
+		wg.Add(concurrency)
+		for i = 0; i < concurrency; i++ {
+			go func() {
+				defer wg.Done()
+				_, err := jobsdb.GetAllJobs(context.Background(), testWorkspacePickup, GetQueryParamsT{
+					CustomValFilters: []string{customVal},
+					JobsLimit:        10,
+				}, 10, nil)
+				require.NoError(b, err)
+			}()
+		}
+		wg.Wait()
+	}
+}
+
+func benchmarkParallelQuery(b *testing.B, jobsdb MultiTenantLegacy, testWorkspacePickup map[string]int, customVal string) {
+	for i := 0; i < 10; i++ {
+		b.ResetTimer()
+		concurrencies := len(testWorkspacePickup)
+		var wg sync.WaitGroup
+		wg.Add(concurrencies)
+		for workspaceID, count := range testWorkspacePickup {
+			go func(workspaceID string, count int) {
+				defer wg.Done()
+				_, err := jobsdb.GetAllJobs(context.Background(), map[string]int{workspaceID: count}, GetQueryParamsT{
+					CustomValFilters: []string{customVal},
+					WorkspaceFilter:  []string{workspaceID},
+					JobsLimit:        10,
+				}, 10, nil)
+				require.NoError(b, err)
+			}(workspaceID, count)
+		}
+		wg.Wait()
+	}
+}
+
+func benchmarkConcurrentParallelQuery(b *testing.B, jobsdb MultiTenantLegacy, testWorkspacePickup map[string]int, customVal string, concurrency int) {
+	b.ResetTimer()
+	for i := 0; i < 10; i++ {
+		var wg sync.WaitGroup
+		wg.Add(concurrency)
+		for i = 0; i < concurrency; i++ {
+			go func() {
+				defer wg.Done()
+				parallelism := len(testWorkspacePickup)
+				var wgInternal sync.WaitGroup
+				wgInternal.Add(parallelism)
+				for workspaceID, count := range testWorkspacePickup {
+					go func(workspaceID string, count int) {
+						defer wg.Done()
+						_, err := jobsdb.GetAllJobs(context.Background(), map[string]int{workspaceID: count}, GetQueryParamsT{
+							CustomValFilters: []string{customVal},
+							WorkspaceFilter:  []string{workspaceID},
+							JobsLimit:        10,
+						}, 10, nil)
+						require.NoError(b, err)
+					}(workspaceID, count)
+				}
+				wgInternal.Wait()
+			}()
+		}
+		wg.Wait()
+	}
+}
+
+func generateJobs(size, workspacesCount int) ([]*JobT, map[string]int) {
+	workspaces := generateWorkspaces(workspacesCount)
+	jobs := make([]*JobT, size)
+	testWorkspacePickup := map[string]int{}
+	for i := 0; i < size; i++ {
+		workspaceId := workspaces[rand.Int()%len(workspaces)]
+		testWorkspacePickup[workspaceId]++
+		jobs[i] = &JobT{
+			WorkspaceId:  workspaceId,
+			Parameters:   []byte(`{"batch_id":1,"source_id":"sourceID","source_job_run_id":""}`),
+			EventPayload: []byte(`{"receivedAt":"2021-06-06T20:26:39.598+05:30","writeKey":"writeKey","requestIP":"[::1]",  "batch": [{"anonymousId":"anon_id","channel":"android-sdk","context":{"app":{"build":"1","name":"RudderAndroidClient","namespace":"com.rudderlabs.android.sdk","version":"1.0"},"device":{"id":"49e4bdd1c280bc00","manufacturer":"Google","model":"Android SDK built for x86","name":"generic_x86"},"library":{"name":"com.rudderstack.android.sdk.core"},"locale":"en-US","network":{"carrier":"Android"},"screen":{"density":420,"height":1794,"width":1080},"traits":{"anonymousId":"49e4bdd1c280bc00"},"user_agent":"Dalvik/2.1.0 (Linux; U; Android 9; Android SDK built for x86 Build/PSR1.180720.075)"},"event":"Demo Track","integrations":{"All":true},"messageId":"b96f3d8a-7c26-4329-9671-4e3202f42f15","originalTimestamp":"2019-08-12T05:08:30.909Z","properties":{"category":"Demo Category","floatVal":4.501,"label":"Demo Label","testArray":[{"id":"elem1","value":"e1"},{"id":"elem2","value":"e2"}],"testMap":{"t1":"a","t2":4},"value":5},"rudderId":"a-292e-4e79-9880-f8009e0ae4a3","sentAt":"2019-08-12T05:08:30.909Z","type":"track"}]}`),
+			UserID:       "a-292e-4e79-9880-f8009e0ae4a3",
+			UUID:         uuid.Must(uuid.NewV4()),
+			CustomVal:    "testCustomVal",
+		}
+	}
+	return jobs, testWorkspacePickup
+}
+
+func generateWorkspaces(size int) []string {
+	workspaces := make([]string, size)
+	for i := 0; i < size; i++ {
+		workspaces[i] = fmt.Sprintf("testWorkspace%d", i)
+	}
+	return workspaces
+}
+
+//BenchmarkUnionQuery/ParallelQuery-10000-30-HASH-rt-8         	       1	1104393041 ns/op
+//BenchmarkUnionQuery/ParallelQuery-10000-50-HASH-rt-8         	       1	1158288708 ns/op
+//BenchmarkUnionQuery/ParallelQuery-10000-100-HASH-rt-8        	       1	1410090625 ns/op
+//BenchmarkUnionQuery/ParallelQuery-10000-150-HASH-rt-8        	       1	1335240708 ns/op
+//BenchmarkUnionQuery/ParallelQuery-10000-200-HASH-rt-8        	       1	1522682042 ns/op
+//BenchmarkUnionQuery/ParallelQuery-100000-30-HASH-rt-8        	       1	11641253083 ns/op
+//BenchmarkUnionQuery/ParallelQuery-100000-50-HASH-rt-8        	       1	11223804541 ns/op
+//BenchmarkUnionQuery/ParallelQuery-100000-100-HASH-rt-8       	       1	11641310875 ns/op
+//BenchmarkUnionQuery/ParallelQuery-100000-150-HASH-rt-8       	       1	11675503250 ns/op
+//BenchmarkUnionQuery/ParallelQuery-100000-200-HASH-rt-8       	       1	11124351625 ns/op
+
+// Different scenarios hardcoded in the benchmark
+// Different benchmark should run against same data set
+// Write and Reads having concurrently : We have non-empty status tables
+// Try and have multiple tables

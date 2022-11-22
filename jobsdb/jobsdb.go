@@ -82,6 +82,7 @@ type GetQueryParamsT struct {
 	CustomValFilters              []string
 	ParameterFilters              []ParameterFilterT
 	StateFilters                  []string
+	WorkspaceFilter               []string
 	AfterJobID                    *int64
 
 	// query limits
@@ -451,6 +452,8 @@ type HandleT struct {
 	maxBackupRetryTime            time.Duration
 	preBackupHandlers             []prebackup.Handler
 	fileUploaderProvider          fileuploader.Provider
+	partitionType                 []string
+	partitionCount                int
 	// skipSetupDBSetup is useful for testing as we mock the database client
 	// TODO: Remove this flag once we have test setup that uses real database
 	skipSetupDBSetup bool
@@ -649,6 +652,7 @@ var (
 	refreshDSListLoopSleepDuration               time.Duration
 	backupCheckSleepDuration                     time.Duration
 	cacheExpiration                              time.Duration
+	partitionCount                               int
 	backupRowsBatchSize                          int64
 	backupMaxTotalPayloadSize                    int64
 	pkgLogger                                    logger.Logger
@@ -685,6 +689,7 @@ func loadConfig() {
 	config.RegisterDurationConfigVariable(5, &refreshDSListLoopSleepDuration, true, time.Second, []string{"JobsDB.refreshDSListLoopSleepDuration", "JobsDB.refreshDSListLoopSleepDurationInS"}...)
 	config.RegisterDurationConfigVariable(5, &backupCheckSleepDuration, true, time.Second, []string{"JobsDB.backupCheckSleepDuration", "JobsDB.backupCheckSleepDurationIns"}...)
 	config.RegisterDurationConfigVariable(5, &cacheExpiration, true, time.Minute, []string{"JobsDB.cacheExpiration"}...)
+	config.RegisterIntConfigVariable(10, &partitionCount, true, 1, "JobsDB.partitionCount")
 }
 
 func Init2() {
@@ -761,7 +766,7 @@ multiple users of JobsDB
 */
 func (jd *HandleT) Setup(
 	ownerType OwnerType, clearAll bool, tablePrefix string,
-	registerStatusHandler bool, preBackupHandlers []prebackup.Handler, fileUploaderProvider fileuploader.Provider,
+	registerStatusHandler bool, preBackupHandlers []prebackup.Handler, fileUploaderProvider fileuploader.Provider, partitionType ...string,
 ) error {
 	jd.ownerType = ownerType
 	jd.clearAll = clearAll
@@ -769,6 +774,8 @@ func (jd *HandleT) Setup(
 	jd.registerStatusHandler = registerStatusHandler
 	jd.preBackupHandlers = preBackupHandlers
 	jd.fileUploaderProvider = fileUploaderProvider
+	jd.partitionType = partitionType
+	jd.partitionCount = partitionCount
 	jd.init()
 	return jd.Start()
 }
@@ -1082,7 +1089,6 @@ func (jd *HandleT) refreshDSRangeList(l lock.LockToken) {
 			break
 		}
 		_ = rows.Close()
-		jd.logger.Debug(sqlStatement, minID, maxID)
 		// We store ranges EXCEPT for
 		// 1. the last element (which is being actively written to)
 		// 2. Migration target ds
@@ -1432,7 +1438,7 @@ func (jd *HandleT) createDSInTx(tx *Tx, newDS dataSetT) error {
 
 	// Create the jobs and job_status tables
 	sqlStatement := fmt.Sprintf(`CREATE TABLE %q (
-                                      job_id BIGSERIAL PRIMARY KEY,
+                                      job_id BIGSERIAL,
 									  workspace_id TEXT NOT NULL DEFAULT '',
 									  uuid UUID NOT NULL,
 									  user_id TEXT NOT NULL,
@@ -1441,8 +1447,14 @@ func (jd *HandleT) createDSInTx(tx *Tx, newDS dataSetT) error {
                                       event_payload JSONB NOT NULL,
 									  event_count INTEGER NOT NULL DEFAULT 1,
                                       created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
-                                      expire_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW());`, newDS.JobTable)
+                                      expire_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+                                      PRIMARY KEY(job_id,workspace_id))`, newDS.JobTable)
 
+	if len(jd.partitionType) > 0 {
+		sqlStatement += fmt.Sprintf(` PARTITION BY %s (workspace_id);`, jd.partitionType[0])
+	} else {
+		sqlStatement += ";"
+	}
 	_, err = tx.ExecContext(context.TODO(), sqlStatement)
 	if err != nil {
 		return err
@@ -1459,7 +1471,7 @@ func (jd *HandleT) createDSInTx(tx *Tx, newDS dataSetT) error {
 
 	sqlStatement = fmt.Sprintf(`CREATE TABLE %q (
                                      id BIGSERIAL,
-                                     job_id BIGINT REFERENCES %q(job_id),
+                                     job_id BIGINT,
                                      job_state VARCHAR(64),
                                      attempt SMALLINT,
                                      exec_time TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
@@ -1467,7 +1479,7 @@ func (jd *HandleT) createDSInTx(tx *Tx, newDS dataSetT) error {
                                      error_code VARCHAR(32),
                                      error_response JSONB DEFAULT '{}'::JSONB,
 									 parameters JSONB DEFAULT '{}'::JSONB,
-									 PRIMARY KEY (job_id, job_state, id));`, newDS.JobStatusTable, newDS.JobTable)
+									 PRIMARY KEY (job_id, job_state, id));`, newDS.JobStatusTable)
 
 	_, err = tx.ExecContext(context.TODO(), sqlStatement)
 	if err != nil {
@@ -1479,6 +1491,13 @@ func (jd *HandleT) createDSInTx(tx *Tx, newDS dataSetT) error {
 	}
 	if _, err = tx.ExecContext(context.TODO(), fmt.Sprintf(`CREATE VIEW "v_last_%[1]s" AS SELECT DISTINCT ON (job_id) * FROM %[1]q ORDER BY job_id ASC, id DESC`, newDS.JobStatusTable)); err != nil {
 		return err
+	}
+
+	for i := 0; i < jd.partitionCount; i++ {
+		partitionSqlStatement := fmt.Sprintf(`CREATE TABLE partition_table_%[1]s_p%[2]d PARTITION OF %[1]s FOR VALUES WITH (modulus %[3]d, remainder %[2]d);`, newDS.JobTable, i, jd.partitionCount)
+		if _, err = tx.ExecContext(context.TODO(), partitionSqlStatement); err != nil {
+			return err
+		}
 	}
 
 	err = jd.journalMarkDoneInTx(tx, opID)
@@ -1784,13 +1803,13 @@ func (jd *HandleT) migrateJobsInTx(ctx context.Context, tx *Tx, srcDS, destDS da
 		`with last_status as (select * from "v_last_%[1]s"),
 		inserted_jobs as
 		(
-			insert into %[3]q (job_id,   workspace_id,   uuid,   user_id,   custom_val,   parameters,   event_payload,   event_count,   created_at,   expire_at) 
+			insert into %[3]q (job_id,   workspace_id,   uuid,   user_id,   custom_val,   parameters,   event_payload,   event_count,   created_at,   expire_at)
 			           (select j.job_id, j.workspace_id, j.uuid, j.user_id, j.custom_val, j.parameters, j.event_payload, j.event_count, j.created_at, j.expire_at from %[2]q j left join last_status js on js.job_id = j.job_id
 				where js.job_id is null or js.job_state = ANY('{%[5]s}') order by j.job_id) returning job_id
 		),
-		insertedStatuses as 
+		insertedStatuses as
 		(
-			insert into %[4]q (job_id, job_state, attempt, exec_time, retry_time, error_code, error_response, parameters) 
+			insert into %[4]q (job_id, job_state, attempt, exec_time, retry_time, error_code, error_response, parameters)
 			           (select job_id, job_state, attempt, exec_time, retry_time, error_code, error_response, parameters from last_status where job_state = ANY('{%[5]s}'))
 		)
 		select count(*) from inserted_jobs;`,
@@ -2281,7 +2300,6 @@ func (jd *HandleT) dropDSFromCache(ds dataSetT) {
 func (jd *HandleT) markClearEmptyResult(ds dataSetT, workspace string, stateFilters, customValFilters []string, parameterFilters []ParameterFilterT, value cacheValue, checkAndSet *cacheValue) {
 	// Safe check. Every status must have a valid workspace id for the cache to work efficiently.
 	if workspace == "" {
-		jd.logger.Debugf("[%s] Empty workspace key provided while looking into jobsdb cachemap", jd.tablePrefix)
 		jd.invalidCacheKeyStat.Increment()
 	}
 
@@ -2455,7 +2473,6 @@ func (jd *HandleT) getProcessedJobsDS(ctx context.Context, ds dataSetT, params G
 	checkValidJobState(jd, stateFilters)
 
 	if jd.isEmptyResult(ds, allWorkspaces, stateFilters, customValFilters, parameterFilters) {
-		jd.logger.Debugf("[getProcessedJobsDS] Empty cache hit for ds: %v, stateFilters: %v, customValFilters: %v, parameterFilters: %v", ds, stateFilters, customValFilters, parameterFilters)
 		return JobsResult{}, false, nil
 	}
 
@@ -2594,7 +2611,6 @@ func (jd *HandleT) getProcessedJobsDS(ctx context.Context, ds dataSetT, params G
 	if !skipCacheResult {
 		result := hasJobs
 		if len(jobList) == 0 {
-			jd.logger.Debugf("[getProcessedJobsDS] Setting empty cache for ds: %v, stateFilters: %v, customValFilters: %v, parameterFilters: %v", ds, stateFilters, customValFilters, parameterFilters)
 			result = noJobs
 		}
 		_willTryToSet := willTryToSet
@@ -2618,9 +2634,9 @@ A JobsLimit less than or equal to zero indicates no limit.
 func (jd *HandleT) getUnprocessedJobsDS(ctx context.Context, ds dataSetT, params GetQueryParamsT) (JobsResult, bool, error) { // skipcq: CRT-P0003
 	customValFilters := params.CustomValFilters
 	parameterFilters := params.ParameterFilters
+	workspaceFilters := params.WorkspaceFilter
 
 	if jd.isEmptyResult(ds, allWorkspaces, []string{NotProcessed.State}, customValFilters, parameterFilters) {
-		jd.logger.Debugf("[getUnprocessedJobsDS] Empty cache hit for ds: %v, stateFilters: NP, customValFilters: %v, parameterFilters: %v", ds, customValFilters, parameterFilters)
 		return JobsResult{}, false, nil
 	}
 
@@ -2658,6 +2674,10 @@ func (jd *HandleT) getUnprocessedJobsDS(ctx context.Context, ds dataSetT, params
 	if len(parameterFilters) > 0 {
 		sqlStatement += " AND " + constructParameterJSONQuery("jobs", parameterFilters)
 	}
+	if len(workspaceFilters) > 0 {
+		sqlStatement += " AND " + constructQueryOR("jobs.workspace_id", workspaceFilters)
+	}
+
 	sqlStatement += " ORDER BY jobs.job_id"
 	if params.JobsLimit > 0 {
 		sqlStatement += fmt.Sprintf(" LIMIT $%d", len(args)+1)
@@ -3796,7 +3816,7 @@ func (jd *HandleT) deleteJobStatusDSInTx(txHandler transactionHandler, ds dataSe
 		sqlFiltersString = "WHERE " + sqlFiltersString
 	}
 
-	sqlStatement := fmt.Sprintf(`DELETE FROM %[1]q 
+	sqlStatement := fmt.Sprintf(`DELETE FROM %[1]q
 									WHERE id = ANY(
 										SELECT id from "v_last_%[1]s" where job_id IN (SELECT job_id from %[2]q %[3]s)
 									) %[4]s AND retry_time < $1`,
