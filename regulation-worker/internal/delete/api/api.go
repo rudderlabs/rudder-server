@@ -32,9 +32,9 @@ type APIManager struct {
 	OAuth            oauth.Authorizer
 }
 
-type OAuthDetail struct {
-	SecretToken *oauth.AuthResponse
-	ID          string
+type oauthDetail struct {
+	secretToken *oauth.AuthResponse
+	id          string
 }
 
 func (*APIManager) GetSupportedDestinations() []string {
@@ -64,15 +64,15 @@ func (api *APIManager) Delete(ctx context.Context, job model.Job, destination mo
 	req.Header.Set("Content-Type", "application/json")
 
 	// check if OAuth destination
-	isOAuthEnabled := IsOAuthEnabled(destination.DestDefConfig)
-	var oAuthDetail OAuthDetail
+	isOAuthEnabled := oauth.GetAuthType(destination.DestDefConfig) == oauth.OAuth
+	var oAuthDetail oauthDetail
 	if isOAuthEnabled {
 		oAuthDetail, err = api.getOAuthDetail(&destination, job.WorkspaceID)
 		if err != nil {
 			pkgLogger.Error(err)
 			return model.JobStatusFailed
 		}
-		err = setOAuthHeader(oAuthDetail.SecretToken, req)
+		err = setOAuthHeader(oAuthDetail.secretToken, req)
 		if err != nil {
 			pkgLogger.Error(err)
 			return model.JobStatusFailed
@@ -184,15 +184,10 @@ func setOAuthHeader(secretToken *oauth.AuthResponse, req *http.Request) error {
 	return nil
 }
 
-func IsOAuthEnabled(destDefConfig map[string]interface{}) bool {
-	authType := oauth.GetAuthType(destDefConfig)
-	return authType == oauth.OAuth
-}
-
-func (api *APIManager) getOAuthDetail(destDetail *model.Destination, workspaceId string) (OAuthDetail, error) {
+func (api *APIManager) getOAuthDetail(destDetail *model.Destination, workspaceId string) (oauthDetail, error) {
 	id := oauth.GetAccountId(destDetail.Config, oauth.DeleteAccountIdKey)
 	if strings.TrimSpace(id) == "" {
-		return OAuthDetail{}, fmt.Errorf("%v is not present for %v", oauth.DeleteAccountIdKey, destDetail.Name)
+		return oauthDetail{}, fmt.Errorf("%v is not present for %v", oauth.DeleteAccountIdKey, destDetail.Name)
 	}
 	tokenStatusCode, secretToken := api.OAuth.FetchToken(&oauth.RefreshTokenParams{
 		AccountId:       id,
@@ -201,19 +196,19 @@ func (api *APIManager) getOAuthDetail(destDetail *model.Destination, workspaceId
 		EventNamePrefix: "fetch_token",
 	})
 	if tokenStatusCode != http.StatusOK {
-		return OAuthDetail{}, fmt.Errorf("[%s][FetchToken] Error in Token Fetch statusCode: %d\t error: %s", destDetail.Name, tokenStatusCode, secretToken.Err)
+		return oauthDetail{}, fmt.Errorf("[%s][FetchToken] Error in Token Fetch statusCode: %d\t error: %s", destDetail.Name, tokenStatusCode, secretToken.Err)
 	}
-	return OAuthDetail{
-		ID:          id,
-		SecretToken: secretToken,
+	return oauthDetail{
+		id:          id,
+		secretToken: secretToken,
 	}, nil
 }
 
-func (api *APIManager) refreshOAuthToken(destName, workspaceId string, oAuthDetail OAuthDetail) error {
+func (api *APIManager) refreshOAuthToken(destName, workspaceId string, oAuthDetail oauthDetail) error {
 	refTokenParams := &oauth.RefreshTokenParams{
-		Secret:          oAuthDetail.SecretToken.Account.Secret,
+		Secret:          oAuthDetail.secretToken.Account.Secret,
 		WorkspaceId:     workspaceId,
-		AccountId:       oAuthDetail.ID,
+		AccountId:       oAuthDetail.id,
 		DestDefName:     destName,
 		EventNamePrefix: "refresh_token",
 	}

@@ -84,8 +84,8 @@ type OAuthErrResHandler struct {
 	destAuthInfoMap      map[string]*AuthResponse
 	refreshActiveMap     map[string]bool // Used to check if a refresh request for an account is already InProgress
 	disableDestActiveMap map[string]bool // Used to check if a disable destination request for a destination is already InProgress
-	TokenProvider        tokenProvider
-	RudderFlowType       RudderFlow
+	tokenProvider        tokenProvider
+	rudderFlowType       RudderFlow
 }
 
 type Authorizer interface {
@@ -125,30 +125,10 @@ type tokenProvider interface {
 	AccessToken() string
 }
 
-type OAuthParams struct {
-	DestConfig    map[string]interface{}
-	DestDefConfig map[string]interface{}
-	IdKey         string
-}
-
 func Init() {
 	configBEURL = backendconfig.GetConfigBackendURL()
 	pkgLogger = logger.NewLogger().Child("router").Child("OAuthResponseHandler")
 	loggerNm = "OAuthResponseHandler"
-}
-
-func (authErrHandler *OAuthErrResHandler) setup() {
-	authErrHandler.logger = pkgLogger
-	authErrHandler.tr = &http.Transport{}
-	// This timeout is kind of modifiable & it seemed like 10 mins for this is too much!
-	authErrHandler.client = &http.Client{Timeout: config.GetDuration("HttpClient.oauth.timeout", 30, time.Second)}
-	authErrHandler.destLockMap = make(map[string]*sync.RWMutex)
-	authErrHandler.accountLockMap = make(map[string]*sync.RWMutex)
-	authErrHandler.lockMapWMutex = &sync.RWMutex{}
-	authErrHandler.destAuthInfoMap = make(map[string]*AuthResponse)
-	authErrHandler.refreshActiveMap = make(map[string]bool)
-	authErrHandler.disableDestActiveMap = make(map[string]bool)
-	authErrHandler.RudderFlowType = RudderFlow_Delivery
 }
 
 func GetAuthType(config map[string]interface{}) AuthType {
@@ -166,8 +146,20 @@ func GetAuthType(config map[string]interface{}) AuthType {
 
 // This function creates a new OauthErrorResponseHandler
 func NewOAuthErrorHandler(provider tokenProvider, options ...func(*OAuthErrResHandler)) *OAuthErrResHandler {
-	oAuthErrResHandler := &OAuthErrResHandler{TokenProvider: provider}
-	oAuthErrResHandler.setup()
+	oAuthErrResHandler := &OAuthErrResHandler{
+		tokenProvider: provider,
+		logger:        pkgLogger,
+		tr:            &http.Transport{},
+		client:        &http.Client{Timeout: config.GetDuration("HttpClient.oauth.timeout", 30, time.Second)},
+		// This timeout is kind of modifiable & it seemed like 10 mins for this is too much!
+		destLockMap:          make(map[string]*sync.RWMutex),
+		accountLockMap:       make(map[string]*sync.RWMutex),
+		lockMapWMutex:        &sync.RWMutex{},
+		destAuthInfoMap:      make(map[string]*AuthResponse),
+		refreshActiveMap:     make(map[string]bool),
+		disableDestActiveMap: make(map[string]bool),
+		rudderFlowType:       RudderFlow_Delivery,
+	}
 	for _, opt := range options {
 		opt(oAuthErrResHandler)
 	}
@@ -185,7 +177,7 @@ func GetAccountId(config map[string]interface{}, idKey string) string {
 
 func WithRudderFlow(rudderFlow RudderFlow) func(*OAuthErrResHandler) {
 	return func(authErrHandle *OAuthErrResHandler) {
-		authErrHandle.RudderFlowType = rudderFlow
+		authErrHandle.rudderFlowType = rudderFlow
 	}
 }
 
@@ -205,7 +197,7 @@ func (authErrHandler *OAuthErrResHandler) RefreshToken(refTokenParams *RefreshTo
 		authErrCategory: REFRESH_TOKEN,
 		errorMessage:    "",
 		destDefName:     refTokenParams.DestDefName,
-		flowType:        authErrHandler.RudderFlowType,
+		flowType:        authErrHandler.rudderFlowType,
 	}
 	return authErrHandler.GetTokenInfo(refTokenParams, "Refresh token", authStats)
 }
@@ -221,7 +213,7 @@ func (authErrHandler *OAuthErrResHandler) FetchToken(fetchTokenParams *RefreshTo
 		errorMessage:    "",
 		destDefName:     fetchTokenParams.DestDefName,
 		isTokenFetch:    true,
-		flowType:        authErrHandler.RudderFlowType,
+		flowType:        authErrHandler.rudderFlowType,
 	}
 	return authErrHandler.GetTokenInfo(fetchTokenParams, "Fetch token", authStats)
 }
@@ -426,7 +418,7 @@ func (authErrHandler *OAuthErrResHandler) DisableDestination(destination *backen
 		authErrCategory: DISABLE_DEST,
 		errorMessage:    "",
 		destDefName:     destination.DestinationDefinition.Name,
-		flowType:        authErrHandler.RudderFlowType,
+		flowType:        authErrHandler.rudderFlowType,
 	}
 	defer func() {
 		disableDestStats.statName = "disable_destination_total_req_latency"
@@ -538,7 +530,7 @@ func (authErrHandler *OAuthErrResHandler) cpApiCall(cpReq *ControlPlaneRequestT)
 		return http.StatusBadRequest, err.Error()
 	}
 	// Authorisation setting
-	req.SetBasicAuth(authErrHandler.TokenProvider.AccessToken(), "")
+	req.SetBasicAuth(authErrHandler.tokenProvider.AccessToken(), "")
 
 	// Set content-type in order to send the body in request correctly
 	if router_utils.IsNotEmptyString(cpReq.ContentType) {
