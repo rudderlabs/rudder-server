@@ -44,7 +44,7 @@ func BenchmarkLimiters(b *testing.B) {
 
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
-				_, _, _ = l.Limit(ctx, 1, rate, window, key)
+				_, _, _ = l.Allow(ctx, 1, rate, window, key)
 			}
 		})
 	}

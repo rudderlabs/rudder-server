@@ -123,7 +123,7 @@ loop:
 				case l.redisSpeaker != nil && !l.useGCRA:
 					redisTime, allowed, _, err = l.redisSortedSet(ctx, cost, rate, window, key)
 				default:
-					allowed, _, err = l.Limit(ctx, cost, rate, window, key)
+					allowed, _, err = l.Allow(ctx, cost, rate, window, key)
 				}
 				require.NoError(t, err)
 
@@ -181,7 +181,7 @@ func TestGCRABurstAsRate(t *testing.T) {
 	)
 
 	for i := int64(0); i < rate*2; i++ {
-		allowed, _, err := l.Limit(ctx, cost, rate, window, key)
+		allowed, _, err := l.Allow(ctx, cost, rate, window, key)
 		require.NoError(t, err)
 		if allowed {
 			passed++
@@ -233,7 +233,7 @@ func TestReturn(t *testing.T) {
 				tokens []func(context.Context) error
 			)
 			for i := int64(0); i < rate*10; i++ {
-				allowed, returner, err := tc.limiter.Limit(ctx, 1, rate, window, key)
+				allowed, returner, err := tc.limiter.Allow(ctx, 1, rate, window, key)
 				require.NoError(t, err)
 				if allowed {
 					passed++
@@ -243,7 +243,7 @@ func TestReturn(t *testing.T) {
 
 			require.EqualValues(t, rate, passed)
 
-			allowed, _, err := tc.limiter.Limit(ctx, 1, rate, window, key)
+			allowed, _, err := tc.limiter.Allow(ctx, 1, rate, window, key)
 			require.NoError(t, err)
 			require.False(t, allowed)
 
@@ -258,7 +258,7 @@ func TestReturn(t *testing.T) {
 			}
 
 			require.Eventually(t, func() bool {
-				allowed, returner, err := tc.limiter.Limit(ctx, 1, rate, window, key)
+				allowed, returner, err := tc.limiter.Allow(ctx, 1, rate, window, key)
 				return allowed && err == nil && returner != nil
 			}, windowDur/2, time.Millisecond)
 		})
@@ -282,25 +282,25 @@ func TestBadData(t *testing.T) {
 
 	for name, l := range limiters {
 		t.Run(name+" cost", func(t *testing.T) {
-			allowed, ret, err := l.Limit(ctx, 0, 10, 1, "foo")
+			allowed, ret, err := l.Allow(ctx, 0, 10, 1, "foo")
 			require.False(t, allowed)
 			require.Nil(t, ret)
 			require.Error(t, err, "cost must be greater than 0")
 		})
 		t.Run(name+" rate", func(t *testing.T) {
-			allowed, ret, err := l.Limit(ctx, 1, 0, 1, "foo")
+			allowed, ret, err := l.Allow(ctx, 1, 0, 1, "foo")
 			require.False(t, allowed)
 			require.Nil(t, ret)
 			require.Error(t, err, "rate must be greater than 0")
 		})
 		t.Run(name+" window", func(t *testing.T) {
-			allowed, ret, err := l.Limit(ctx, 1, 10, 0, "foo")
+			allowed, ret, err := l.Allow(ctx, 1, 10, 0, "foo")
 			require.False(t, allowed)
 			require.Nil(t, ret)
 			require.Error(t, err, "window must be greater than 0")
 		})
 		t.Run(name+" key", func(t *testing.T) {
-			allowed, ret, err := l.Limit(ctx, 1, 10, 1, "")
+			allowed, ret, err := l.Allow(ctx, 1, 10, 1, "")
 			require.False(t, allowed)
 			require.Nil(t, ret)
 			require.Error(t, err, "key must not be empty")

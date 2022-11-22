@@ -9,8 +9,8 @@ import (
 )
 
 type limiter interface {
-	// Limit returns true if the limit is not exceeded, false otherwise.
-	Limit(ctx context.Context, cost, rate, window int64, key string) (bool, func(context.Context) error, error)
+	// Allow returns true if the limit is not exceeded, false otherwise.
+	Allow(ctx context.Context, cost, rate, window int64, key string) (bool, func(context.Context) error, error)
 }
 
 type Factory struct {
@@ -42,7 +42,7 @@ func (t *Throttler) CheckLimitReached(key string, cost int64) (
 	}
 
 	ctx := context.TODO()
-	allowed, tr, err := t.limiter.Limit(ctx, cost, t.config.limit, getWindowInSecs(t.config.window), key)
+	allowed, tr, err := t.limiter.Allow(ctx, cost, t.config.limit, getWindowInSecs(t.config.window), key)
 	if err != nil {
 		return false, nil, fmt.Errorf("could not limit: %w", err)
 	}

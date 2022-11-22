@@ -86,8 +86,8 @@ func New(options ...Option) (*Limiter, error) {
 	return rl, nil
 }
 
-// Limit returns true if the limit is not exceeded, false otherwise.
-func (l *Limiter) Limit(ctx context.Context, cost, rate, window int64, key string) (
+// Allow returns true if the limit is not exceeded, false otherwise.
+func (l *Limiter) Allow(ctx context.Context, cost, rate, window int64, key string) (
 	bool, func(context.Context) error, error,
 ) {
 	if cost < 1 {
