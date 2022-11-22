@@ -30,7 +30,7 @@ import (
 	"github.com/rudderlabs/rudder-server/services/db"
 	destinationdebugger "github.com/rudderlabs/rudder-server/services/debugger/destination"
 	transformationdebugger "github.com/rudderlabs/rudder-server/services/debugger/transformation"
-	fileuploader "github.com/rudderlabs/rudder-server/services/fileuploader"
+	"github.com/rudderlabs/rudder-server/services/fileuploader"
 	"github.com/rudderlabs/rudder-server/services/multitenant"
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/services/transientsource"
@@ -199,6 +199,7 @@ func (processor *ProcessorApp) StartRudderCore(ctx context.Context, options *app
 		ProcErrorDB:      errDB,
 		TransientSources: transientSources,
 		RsourcesService:  rsourcesService,
+		Logger:           pkgLogger,
 	}
 	brtFactory := &batchrouter.Factory{
 		Reporting:        reportingI,

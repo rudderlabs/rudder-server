@@ -155,10 +155,10 @@ func Test_RouterThrottling(t *testing.T) {
 	t.Setenv("RSERVER_MODE", "normal")
 	t.Setenv("RSERVER_ROUTER_WEBHOOK_ISOLATE_DEST_ID", "true")
 	t.Setenv("RSERVER_ROUTER_JOB_QUERY_BATCH_SIZE", "1000")
-	t.Setenv("RSERVER_ROUTER_THROTTLER_TEST1_LIMIT", "20")
-	t.Setenv("RSERVER_ROUTER_THROTTLER_TEST1_TIME_WINDOW", "1")
-	t.Setenv("RSERVER_ROUTER_THROTTLER_TEST2_LIMIT", "50")
-	t.Setenv("RSERVER_ROUTER_THROTTLER_TEST2_TIME_WINDOW", "1")
+	t.Setenv("RSERVER_ROUTER_THROTTLER_WEBHOOK_LIMIT", "20")
+	t.Setenv("RSERVER_ROUTER_THROTTLER_WEBHOOK_TIME_WINDOW", "1")
+	t.Setenv("RSERVER_ROUTER_THROTTLER_WEBHOOK_TEST2_LIMIT", "50")
+	t.Setenv("RSERVER_ROUTER_THROTTLER_WEBHOOK_TEST2_TIME_WINDOW", "1")
 
 	if testing.Verbose() {
 		t.Setenv("LOG_LEVEL", "DEBUG")
@@ -231,5 +231,7 @@ func Test_RouterThrottling(t *testing.T) {
 func requireLengthInRange(t *testing.T, x interface{}, min, max int) {
 	t.Helper()
 	v := reflect.ValueOf(x)
-	require.True(t, v.Len() >= min && v.Len() <= max, "length should be in range [%d, %d], got %d", min, max, v.Len())
+	require.True(
+		t, v.Len() >= min && v.Len() <= max, "length should be in range [%d, %d], got %d: %+v", min, max, v.Len(), v,
+	)
 }

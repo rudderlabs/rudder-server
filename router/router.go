@@ -59,12 +59,6 @@ type tenantStats interface {
 	UpdateWorkspaceLatencyMap(destType, workspaceID string, val float64)
 }
 
-type limiter interface {
-	CheckLimitReached(cost int64) (
-		limited bool, tr throttling.TokenReturner, retErr error,
-	)
-}
-
 type HandleDestOAuthRespParamsT struct {
 	ctx            context.Context
 	destinationJob types.DestinationJobT
@@ -97,6 +91,7 @@ type HandleT struct {
 	throttler                               map[string]limiter // map key is the destinationID
 	throttlerMu                             sync.Mutex
 	throttlingCosts                         atomic.Pointer[types.EventTypeThrottlingCost]
+	throttlerFactory                        *rtThrottler.Factory
 	guaranteeUserEventOrder                 bool
 	netClientTimeout                        time.Duration
 	backendProxyTimeout                     time.Duration
@@ -1286,19 +1281,24 @@ func (rt *HandleT) shouldThrottle(job *jobsdb.JobT, parameters JobParametersT) (
 	throttling.TokenReturner,
 	bool,
 ) {
-	throttler, err := rt.getThrottler(parameters.DestinationID)
-	if err != nil {
-		rt.logger.Errorf(`[%v Router] :: Failed to get throttler for destination %s with error %v`,
-			rt.destName, parameters.DestinationID, err,
+	if rt.throttlerFactory == nil {
+		// throttlerFactory could be nil when throttling is disabled or misconfigured.
+		// in case of misconfiguration, logging errors are emitted.
+		rt.logger.Infof(`[%v Router] :: ThrottlerFactory is nil. Not throttling destination with ID %s`,
+			rt.destName, parameters.DestinationID,
 		)
 		return nil, false
 	}
-	if throttler == nil {
-		return nil, false
+
+	rt.throttlerMu.Lock()
+	throttler, ok := rt.throttler[parameters.DestinationID]
+	if !ok {
+		throttler = rt.throttlerFactory.New(rt.destName, parameters.DestinationID)
+		rt.throttler[parameters.DestinationID] = throttler
 	}
+	rt.throttlerMu.Unlock()
 
 	throttlingCost := rt.getThrottlingCost(job)
-
 	limited, tokensReturner, err := throttler.CheckLimitReached(throttlingCost)
 	if err != nil {
 		// we can't throttle, let's hit the destination, worst case we get a 429
@@ -2157,23 +2157,6 @@ func (rt *HandleT) updateProcessedEventsMetrics(statusList []*jobsdb.JobStatusT)
 			}).Count(count)
 		}
 	}
-}
-
-func (rt *HandleT) getThrottler(destID string) (limiter, error) {
-	rt.throttlerMu.Lock()
-	defer rt.throttlerMu.Unlock()
-
-	var err error
-	l, ok := rt.throttler[destID]
-	if !ok {
-		l, err = rtThrottler.New(destID, rtThrottler.WithLogger(rt.logger))
-		if err != nil {
-			return nil, err
-		}
-		rt.throttler[destID] = l
-	}
-
-	return l, nil
 }
 
 func (rt *HandleT) getThrottlingCost(job *jobsdb.JobT) (cost int64) {
