@@ -168,6 +168,7 @@ func (embedded *EmbeddedApp) StartRudderCore(ctx context.Context, options *app.O
 		TransientSources: transientSources,
 		RsourcesService:  rsourcesService,
 		Logger:           pkgLogger,
+		Stats:            stats.Default,
 	}
 	brtFactory := &batchrouter.Factory{
 		Reporting:        reportingI,

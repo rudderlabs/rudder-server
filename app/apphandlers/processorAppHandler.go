@@ -200,6 +200,7 @@ func (processor *ProcessorApp) StartRudderCore(ctx context.Context, options *app
 		TransientSources: transientSources,
 		RsourcesService:  rsourcesService,
 		Logger:           pkgLogger,
+		Stats:            stats.Default,
 	}
 	brtFactory := &batchrouter.Factory{
 		Reporting:        reportingI,

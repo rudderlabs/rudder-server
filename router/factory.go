@@ -12,6 +12,7 @@ import (
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/router/throttler"
 	"github.com/rudderlabs/rudder-server/services/rsources"
+	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/services/transientsource"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 )
@@ -38,6 +39,7 @@ type Factory struct {
 	TransientSources transientsource.Service
 	RsourcesService  rsources.JobService
 	Logger           logger.Logger
+	Stats            stats.Stats
 
 	// Throttling
 	throttlerFactoryOnce sync.Once
@@ -73,24 +75,26 @@ func (f *Factory) initThrottlerFactory() {
 	)
 
 	var (
-		err error
-		l   *throttling.Limiter
+		err  error
+		l    *throttling.Limiter
+		opts = []throttling.Option{
+			throttling.WithStatsCollector(f.Stats),
+		}
 	)
 	switch throttlingAlgorithm {
 	case throttlingAlgoTypeGoRate:
-		l, err = throttling.New(throttling.WithGoRate())
+		l, err = throttling.New(append(opts, throttling.WithGoRate())...)
 	case throttlingAlgoTypeGCRA:
-		l, err = throttling.New(throttling.WithGCRA())
+		l, err = throttling.New(append(opts, throttling.WithGCRA())...)
 	case throttlingAlgoTypeRedisGCRA, throttlingAlgoTypeRedisSortedSet:
 		if redisClient == nil {
 			f.Logger.Errorf("Redis client is nil with algorithm %s", throttlingAlgorithm)
 			return
 		}
-		opts := []throttling.Option{throttling.WithRedisClient(redisClient)}
 		if throttlingAlgorithm == throttlingAlgoTypeRedisGCRA {
 			opts = append(opts, throttling.WithGCRA())
 		}
-		l, err = throttling.New(opts...)
+		l, err = throttling.New(append(opts, throttling.WithRedisClient(redisClient))...)
 	default:
 		f.Logger.Errorf("Invalid throttling algorithm: %s", throttlingAlgorithm)
 		return
