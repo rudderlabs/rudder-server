@@ -68,7 +68,7 @@ type Limiter struct {
 func New(options ...Option) (*Limiter, error) {
 	rl := &Limiter{}
 	for i := range options {
-		options[i].apply(rl)
+		options[i](rl)
 	}
 
 	if rl.statsCollector == nil {
