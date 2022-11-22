@@ -15,9 +15,8 @@ import (
 
 /*
 TODOs:
-* benchmark AWS Elasticache Redis
-* replace old limiters
-* guard against concurrency?
+* guard against concurrency? according to benchmarks, Redis performs better if we have no more than 16 routines
+  * see https://github.com/rudderlabs/redis-throttling-playground/blob/main/Benchmarks.md#best-concurrency-setting-with-sortedset---save-1-1-and---appendonly-yes
 */
 
 var (
