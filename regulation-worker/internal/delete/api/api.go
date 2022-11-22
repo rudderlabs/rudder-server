@@ -105,6 +105,8 @@ func (api *APIManager) Delete(ctx context.Context, job model.Job, destination mo
 	if err := json.Unmarshal(bodyBytes, &jobResp); err != nil {
 		return model.JobStatusFailed
 	}
+	jobStatus := getJobStatus(resp.StatusCode, jobResp)
+	pkgLogger.Debugf("[%v] JobStatus for %v: %v", destination.Name, destination.DestinationID, jobStatus)
 
 	if isOAuthEnabled {
 		isOAuthTokenExpired := isTokenExpired(jobResp)
@@ -114,10 +116,17 @@ func (api *APIManager) Delete(ctx context.Context, job model.Job, destination mo
 				pkgLogger.Error(err)
 				return model.JobStatusFailed
 			}
+			// retry the request
+			pkgLogger.Debug("Retrying deleteRequest job for the whole batch")
+			return api.Delete(ctx, job, destination)
 		}
 	}
 
-	switch resp.StatusCode {
+	return jobStatus
+}
+
+func getJobStatus(statusCode int, jobResp []JobRespSchema) model.JobStatus {
+	switch statusCode {
 
 	case http.StatusOK:
 		return model.JobStatusComplete
