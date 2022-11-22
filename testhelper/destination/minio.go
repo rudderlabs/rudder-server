@@ -12,6 +12,7 @@ import (
 	"github.com/ory/dockertest/v3"
 	dc "github.com/ory/dockertest/v3/docker"
 	"github.com/rudderlabs/rudder-server/testhelper"
+	"github.com/rudderlabs/rudder-server/utils/httputil"
 )
 
 type MINIOResource struct {
@@ -68,7 +69,7 @@ func SetupMINIO(pool *dockertest.Pool, d cleaner) (*MINIOResource, error) {
 		if err != nil {
 			return err
 		}
-		defer resp.Body.Close()
+		defer func() { httputil.CloseResponse(resp) }()
 		if resp.StatusCode != http.StatusOK {
 			return fmt.Errorf("status code not OK")
 		}

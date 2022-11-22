@@ -28,6 +28,7 @@ import (
 	"github.com/rudderlabs/rudder-server/testhelper/destination"
 	trand "github.com/rudderlabs/rudder-server/testhelper/rand"
 	"github.com/rudderlabs/rudder-server/testhelper/workspaceConfig"
+	"github.com/rudderlabs/rudder-server/utils/httputil"
 	"github.com/rudderlabs/rudder-server/utils/types/deployment"
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
@@ -234,7 +235,7 @@ func TestEventOrderGuarantee(t *testing.T) {
 					resp, err := client.Do(req)
 					require.NoError(t, err, "should be able to send the request to gateway")
 					require.Equal(t, http.StatusOK, resp.StatusCode, "should be able to send the request to gateway successfully", payload)
-					resp.Body.Close()
+					func() { httputil.CloseResponse(resp) }()
 				}
 			}()
 
