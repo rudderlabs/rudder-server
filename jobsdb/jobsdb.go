@@ -774,6 +774,7 @@ func (jd *HandleT) Setup(
 }
 
 func (jd *HandleT) init() {
+	jd.logger = pkgLogger.Child(jd.tablePrefix)
 	jd.dsListLock = lock.NewLocker()
 	jd.dsMigrationLock = lock.NewLocker()
 	if jd.MaxDSSize == nil {
@@ -849,7 +850,6 @@ func (jd *HandleT) init() {
 func (jd *HandleT) workersAndAuxSetup() {
 	jd.assert(jd.tablePrefix != "", "tablePrefix received is empty")
 
-	jd.logger = pkgLogger.Child(jd.tablePrefix)
 	jd.dsEmptyResultCache = map[dataSetT]map[string]map[string]map[string]map[string]cacheEntry{}
 	if jd.registerStatusHandler {
 		admin.RegisterStatusHandler(jd.tablePrefix+"-jobsdb", jd)
@@ -1784,13 +1784,13 @@ func (jd *HandleT) migrateJobsInTx(ctx context.Context, tx *Tx, srcDS, destDS da
 		`with last_status as (select * from "v_last_%[1]s"),
 		inserted_jobs as
 		(
-			insert into %[3]q (job_id,   workspace_id,   uuid,   user_id,   custom_val,   parameters,   event_payload,   event_count,   created_at,   expire_at) 
+			insert into %[3]q (job_id,   workspace_id,   uuid,   user_id,   custom_val,   parameters,   event_payload,   event_count,   created_at,   expire_at)
 			           (select j.job_id, j.workspace_id, j.uuid, j.user_id, j.custom_val, j.parameters, j.event_payload, j.event_count, j.created_at, j.expire_at from %[2]q j left join last_status js on js.job_id = j.job_id
 				where js.job_id is null or js.job_state = ANY('{%[5]s}') order by j.job_id) returning job_id
 		),
-		insertedStatuses as 
+		insertedStatuses as
 		(
-			insert into %[4]q (job_id, job_state, attempt, exec_time, retry_time, error_code, error_response, parameters) 
+			insert into %[4]q (job_id, job_state, attempt, exec_time, retry_time, error_code, error_response, parameters)
 			           (select job_id, job_state, attempt, exec_time, retry_time, error_code, error_response, parameters from last_status where job_state = ANY('{%[5]s}'))
 		)
 		select count(*) from inserted_jobs;`,
@@ -3796,7 +3796,7 @@ func (jd *HandleT) deleteJobStatusDSInTx(txHandler transactionHandler, ds dataSe
 		sqlFiltersString = "WHERE " + sqlFiltersString
 	}
 
-	sqlStatement := fmt.Sprintf(`DELETE FROM %[1]q 
+	sqlStatement := fmt.Sprintf(`DELETE FROM %[1]q
 									WHERE id = ANY(
 										SELECT id from "v_last_%[1]s" where job_id IN (SELECT job_id from %[2]q %[3]s)
 									) %[4]s AND retry_time < $1`,
