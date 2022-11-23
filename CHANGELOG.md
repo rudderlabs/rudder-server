@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.3.3](https://github.com/rudderlabs/rudder-server/compare/v1.3.2...v1.3.3) (2022-11-23)
+
+
+### Bug Fixes
+
+* goroutine leak in lock.AsyncLockWithCtx ([#2722](https://github.com/rudderlabs/rudder-server/issues/2722)) ([7597ecf](https://github.com/rudderlabs/rudder-server/commit/7597ecfe41b10b4eaaa91077971c5354fad89ad2))
+
 ## [1.3.2](https://github.com/rudderlabs/rudder-server/compare/v1.3.1...v1.3.2) (2022-11-17)
 
 
