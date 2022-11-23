@@ -14,9 +14,9 @@ import (
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
-const tableName = warehouseutils.WarehouseStagingFilesTable
+const stagingTableName = warehouseutils.WarehouseStagingFilesTable
 
-const tableColumns = `
+const stagingTableColumns = `
 	id,
     location,
     source_id,
@@ -128,7 +128,7 @@ func (repo *StagingFiles) Insert(ctx context.Context, stagingFile *model.Staging
 	}
 
 	err = repo.DB.QueryRowContext(ctx,
-		`INSERT INTO `+tableName+` (
+		`INSERT INTO `+stagingTableName+` (
 			location,
 			schema,
 			workspace_id,
@@ -169,6 +169,9 @@ func (repo *StagingFiles) Insert(ctx context.Context, stagingFile *model.Staging
 // praseRow is a helper for mapping a row of tableColumns to a model.StagingFile.
 func (*StagingFiles) parseRows(rows *sql.Rows) ([]model.StagingFile, error) {
 	var stagingFiles []model.StagingFile
+
+	defer func() { _ = rows.Close() }()
+
 	for rows.Next() {
 		var (
 			stagingFile model.StagingFile
@@ -222,6 +225,10 @@ func (*StagingFiles) parseRows(rows *sql.Rows) ([]model.StagingFile, error) {
 		stagingFiles = append(stagingFiles, stagingFile)
 	}
 
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterating rows: %w", err)
+	}
+
 	return stagingFiles, nil
 }
 
@@ -229,7 +236,7 @@ func (*StagingFiles) parseRows(rows *sql.Rows) ([]model.StagingFile, error) {
 func (repo *StagingFiles) GetByID(ctx context.Context, ID int64) (model.StagingFile, error) {
 	repo.init()
 
-	query := `SELECT ` + tableColumns + ` FROM ` + tableName + ` WHERE id = $1`
+	query := `SELECT ` + stagingTableColumns + ` FROM ` + stagingTableName + ` WHERE id = $1`
 
 	rows, err := repo.DB.QueryContext(ctx, query, ID)
 	if err != nil {
@@ -251,7 +258,7 @@ func (repo *StagingFiles) GetByID(ctx context.Context, ID int64) (model.StagingF
 func (repo *StagingFiles) GetInRange(ctx context.Context, sourceID, destinationID string, startID, endID int64) ([]model.StagingFile, error) {
 	repo.init()
 
-	query := `SELECT ` + tableColumns + ` FROM ` + tableName + ` ST
+	query := `SELECT ` + stagingTableColumns + ` FROM ` + stagingTableName + ` ST
 	WHERE
 		id >= $1 AND id <= $2
 		AND source_id = $3
@@ -271,7 +278,7 @@ func (repo *StagingFiles) GetInRange(ctx context.Context, sourceID, destinationI
 func (repo *StagingFiles) GetAfterID(ctx context.Context, sourceID, destinationID string, startID int64) ([]model.StagingFile, error) {
 	repo.init()
 
-	query := `SELECT ` + tableColumns + ` FROM ` + tableName + `
+	query := `SELECT ` + stagingTableColumns + ` FROM ` + stagingTableName + `
 	WHERE
 		id > $1
 		AND source_id = $2
