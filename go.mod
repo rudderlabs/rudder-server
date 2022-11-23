@@ -218,3 +218,5 @@ require (
 )
 
 require github.com/samber/lo v1.35.0
+
+require go.uber.org/goleak v1.2.0
