@@ -834,6 +834,16 @@ func (jd *HandleT) init() {
 		jd.dbHandle = sqlDB
 	}
 	jd.workersAndAuxSetup()
+
+	// Database schema migration should happen early, even before jobsdb is started,
+	// so that we can be sure that all the necessary tables are created and considered to be in
+	// the latest schema version, before rudder-migrator starts introducing new tables.
+	jd.dsListLock.WithLock(func(l lock.LockToken) {
+		switch jd.ownerType {
+		case Write, ReadWrite:
+			jd.setupDatabaseTables(l, jd.clearAll)
+		}
+	})
 }
 
 func (jd *HandleT) workersAndAuxSetup() {
@@ -898,24 +908,19 @@ func (jd *HandleT) Start() error {
 	jd.backgroundGroup = g
 
 	if !jd.skipSetupDBSetup {
-		jd.setUpForOwnerType(ctx, jd.ownerType, jd.clearAll)
-
-		// Avoid clearing the database, if .Start() is called again.
-		jd.clearAll = false
+		jd.setUpForOwnerType(ctx, jd.ownerType)
 	}
 	return nil
 }
 
-func (jd *HandleT) setUpForOwnerType(ctx context.Context, ownerType OwnerType, clearAll bool) {
+func (jd *HandleT) setUpForOwnerType(ctx context.Context, ownerType OwnerType) {
 	jd.dsListLock.WithLock(func(l lock.LockToken) {
 		switch ownerType {
 		case Read:
 			jd.readerSetup(ctx, l)
 		case Write:
-			jd.setupDatabaseTables(l, clearAll)
 			jd.writerSetup(ctx, l)
 		case ReadWrite:
-			jd.setupDatabaseTables(l, clearAll)
 			jd.readerWriterSetup(ctx, l)
 		}
 	})
@@ -1445,7 +1450,7 @@ func (jd *HandleT) createDSInTx(tx *Tx, newDS dataSetT) error {
 
 	// TODO : Evaluate a way to handle indexes only for particular tables
 	if jd.tablePrefix == "rt" {
-		sqlStatement = fmt.Sprintf(`CREATE INDEX IF NOT EXISTS "customval_workspace_%s" ON %q (custom_val,workspace_id)`, newDS.Index, newDS.JobTable)
+		sqlStatement = fmt.Sprintf(`CREATE INDEX "idx_%[1]s_cv_ws" ON %[1]q (custom_val,workspace_id)`, newDS.JobTable)
 		_, err = tx.ExecContext(context.TODO(), sqlStatement)
 		if err != nil {
 			return err
@@ -1466,6 +1471,13 @@ func (jd *HandleT) createDSInTx(tx *Tx, newDS dataSetT) error {
 
 	_, err = tx.ExecContext(context.TODO(), sqlStatement)
 	if err != nil {
+		return err
+	}
+
+	if _, err = tx.ExecContext(context.TODO(), fmt.Sprintf(`CREATE INDEX "idx_%[1]s_jid_id" ON %[1]q(job_id asc,id desc)`, newDS.JobStatusTable)); err != nil {
+		return err
+	}
+	if _, err = tx.ExecContext(context.TODO(), fmt.Sprintf(`CREATE VIEW "v_last_%[1]s" AS SELECT DISTINCT ON (job_id) * FROM %[1]q ORDER BY job_id ASC, id DESC`, newDS.JobStatusTable)); err != nil {
 		return err
 	}
 
@@ -1569,10 +1581,10 @@ func (jd *HandleT) dropDSInTx(tx *Tx, ds dataSetT) error {
 	if _, err = tx.Exec(fmt.Sprintf(`LOCK TABLE %q IN ACCESS EXCLUSIVE MODE;`, ds.JobTable)); err != nil {
 		return err
 	}
-	if _, err = tx.Exec(fmt.Sprintf(`DROP TABLE %q`, ds.JobStatusTable)); err != nil {
+	if _, err = tx.Exec(fmt.Sprintf(`DROP TABLE %q CASCADE`, ds.JobStatusTable)); err != nil {
 		return err
 	}
-	if _, err = tx.Exec(fmt.Sprintf(`DROP TABLE %q`, ds.JobTable)); err != nil {
+	if _, err = tx.Exec(fmt.Sprintf(`DROP TABLE %q CASCADE`, ds.JobTable)); err != nil {
 		return err
 	}
 	jd.postDropDs(ds)
@@ -1591,9 +1603,9 @@ func (jd *HandleT) dropDSForRecovery(ds dataSetT) {
 	sqlStatement = fmt.Sprintf(`LOCK TABLE %q IN ACCESS EXCLUSIVE MODE;`, ds.JobTable)
 	jd.prepareAndExecStmtInTxAllowMissing(tx, sqlStatement)
 
-	sqlStatement = fmt.Sprintf(`DROP TABLE IF EXISTS %q`, ds.JobStatusTable)
+	sqlStatement = fmt.Sprintf(`DROP TABLE IF EXISTS %q CASCADE`, ds.JobStatusTable)
 	jd.prepareAndExecStmtInTx(tx, sqlStatement)
-	sqlStatement = fmt.Sprintf(`DROP TABLE IF EXISTS %q`, ds.JobTable)
+	sqlStatement = fmt.Sprintf(`DROP TABLE IF EXISTS %q CASCADE`, ds.JobTable)
 	jd.prepareAndExecStmtInTx(tx, sqlStatement)
 	err = tx.Commit()
 	jd.assertError(err)
@@ -1660,10 +1672,10 @@ func (jd *HandleT) mustRenameDSInTx(tx *Tx, ds dataSetT) error {
 		return fmt.Errorf("could not rename job table %s to %s: %w", ds.JobTable, renamedJobTable, err)
 	}
 	if count == 0 {
-		if _, err = tx.Exec(fmt.Sprintf(`DROP TABLE %q`, renamedJobStatusTable)); err != nil {
+		if _, err = tx.Exec(fmt.Sprintf(`DROP TABLE %q CASCADE`, renamedJobStatusTable)); err != nil {
 			return fmt.Errorf("could not drop empty pre_drop job status table %s: %w", renamedJobStatusTable, err)
 		}
-		if _, err = tx.Exec(fmt.Sprintf(`DROP TABLE %q`, renamedJobTable)); err != nil {
+		if _, err = tx.Exec(fmt.Sprintf(`DROP TABLE %q CASCADE`, renamedJobTable)); err != nil {
 			return fmt.Errorf("could not drop empty pre_drop job table %s: %w", renamedJobTable, err)
 		}
 	}
@@ -1769,10 +1781,7 @@ func (jd *HandleT) migrateJobsInTx(ctx context.Context, tx *Tx, srcDS, destDS da
 	defer queryStat.End()
 
 	compactDSQuery := fmt.Sprintf(
-		`with last_status as 
-		(
-			select * from %[1]q where id in (select max(id) from %[1]q group by job_id)
-		),
+		`with last_status as (select * from "v_last_%[1]s"),
 		inserted_jobs as
 		(
 			insert into %[3]q (job_id,   workspace_id,   uuid,   user_id,   custom_val,   parameters,   event_payload,   event_count,   created_at,   expire_at) 
@@ -2064,28 +2073,11 @@ func (jd *HandleT) GetPileUpCounts(ctx context.Context) (map[string]map[string]i
 			  j.workspace_id as workspace
 			from
 			  %[1]q j
-			  left join (
-				select * from (select
-					  *,
-					  ROW_NUMBER() OVER(
-						PARTITION BY rs.job_id
-						ORDER BY
-						  rs.id DESC
-					  ) AS row_no
-					FROM
-					  %[2]q as rs) nq1
-				  where
-				  nq1.row_no = 1
-
-			  ) s on j.job_id = s.job_id
-			where
-			  (
-				s.job_state not in (
-				  'aborted', 'succeeded',
-				  'migrated'
-				)
-				or s.job_id is null
-			  )
+			  left join "v_last_%[2]s" s on j.job_id = s.job_id
+			where (
+			  s.job_state not in ('aborted', 'succeeded', 'migrated')
+			  or s.job_id is null
+			)
 		  )
 		  select
 			count(*),
@@ -2479,7 +2471,7 @@ func (jd *HandleT) getProcessedJobsDS(ctx context.Context, ds dataSetT, params G
 
 	var stateQuery string
 	if len(stateFilters) > 0 {
-		stateQuery = " AND " + constructQueryOR("job_state", stateFilters)
+		stateQuery = " AND " + constructQueryOR("job_latest_state.job_state", stateFilters)
 	}
 
 	var filterConditions []string
@@ -2516,12 +2508,9 @@ func (jd *HandleT) getProcessedJobsDS(ctx context.Context, ds dataSetT, params G
 									job_latest_state.exec_time, job_latest_state.retry_time,
 									job_latest_state.error_code, job_latest_state.error_response, job_latest_state.parameters
 								FROM
-									%[1]q AS jobs,
-									(SELECT job_id, job_state, attempt, exec_time, retry_time,
-										error_code, error_response, parameters FROM %[2]q WHERE id IN
-										(SELECT MAX(id) from %[2]q GROUP BY job_id) %[3]s)
-									AS job_latest_state
-								WHERE jobs.job_id=job_latest_state.job_id
+									%[1]q AS jobs
+									JOIN "v_last_%[2]s" job_latest_state ON jobs.job_id=job_latest_state.job_id
+								    %[3]s
 									%[4]s
 									AND job_latest_state.retry_time < $1 ORDER BY jobs.job_id %[5]s`,
 		ds.JobTable, ds.JobStatusTable, stateQuery, filterQuery, limitQuery)
@@ -2656,7 +2645,7 @@ func (jd *HandleT) getUnprocessedJobsDS(ctx context.Context, ds dataSetT, params
 			`	sum(jobs.event_count) over (order by jobs.job_id asc) as running_event_counts, `+
 			`	sum(pg_column_size(jobs.event_payload)) over (order by jobs.job_id) as running_payload_size `+
 			`FROM %[1]q AS jobs `+
-			`LEFT JOIN %[2]q AS job_status ON jobs.job_id=job_status.job_id `+
+			`LEFT JOIN %[2]q job_status ON jobs.job_id=job_status.job_id `+
 			`WHERE job_status.job_id is NULL `,
 		ds.JobTable, ds.JobStatusTable)
 
@@ -3807,9 +3796,10 @@ func (jd *HandleT) deleteJobStatusDSInTx(txHandler transactionHandler, ds dataSe
 		sqlFiltersString = "WHERE " + sqlFiltersString
 	}
 
-	sqlStatement := fmt.Sprintf(`DELETE FROM %[1]q WHERE id IN
-												(SELECT MAX(id) from %[1]q where job_id IN (SELECT job_id from %[2]q %[3]s) GROUP BY job_id) %[4]s
-											AND retry_time < $1`,
+	sqlStatement := fmt.Sprintf(`DELETE FROM %[1]q 
+									WHERE id = ANY(
+										SELECT id from "v_last_%[1]s" where job_id IN (SELECT job_id from %[2]q %[3]s)
+									) %[4]s AND retry_time < $1`,
 		ds.JobStatusTable, ds.JobTable, sqlFiltersString, stateQuery)
 
 	stmt, err := txHandler.Prepare(sqlStatement)

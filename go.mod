@@ -32,6 +32,7 @@ require (
 	github.com/cenkalti/backoff/v4 v4.1.3
 	github.com/denisenkom/go-mssqldb v0.12.0
 	github.com/dgraph-io/badger/v2 v2.2007.4
+	github.com/dgraph-io/badger/v3 v3.2103.3
 	github.com/fsnotify/fsnotify v1.5.4
 	github.com/go-redis/redis v6.15.7+incompatible
 	github.com/gofrs/uuid v4.2.0+incompatible
@@ -78,7 +79,7 @@ require (
 	golang.org/x/oauth2 v0.0.0-20220909003341-f21342109be1
 	golang.org/x/sync v0.0.0-20220923202941-7f9b1623fab7
 	google.golang.org/api v0.95.0
-	google.golang.org/grpc v1.50.0
+	google.golang.org/grpc v1.51.0
 	google.golang.org/protobuf v1.28.1
 	gopkg.in/alexcesaro/statsd.v2 v2.0.0
 	gopkg.in/natefinch/lumberjack.v2 v2.0.0
@@ -115,7 +116,7 @@ require (
 	github.com/coreos/go-systemd/v22 v22.3.2 // indirect
 	github.com/cpuguy83/go-md2man/v2 v2.0.2 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
-	github.com/dgraph-io/ristretto v0.0.3-0.20200630154024-f66de99634de // indirect
+	github.com/dgraph-io/ristretto v0.1.1 // indirect
 	github.com/dgryski/go-farm v0.0.0-20200201041132-a6ae2369ad13 // indirect
 	github.com/docker/cli v20.10.14+incompatible // indirect
 	github.com/docker/docker v20.10.21+incompatible // indirect
@@ -195,7 +196,7 @@ require (
 	golang.org/x/crypto v0.0.0-20220926161630-eccd6366d1be // indirect
 	golang.org/x/exp v0.0.0-20221109205753-fc8884afc316
 	golang.org/x/sys v0.1.0 // indirect
-	golang.org/x/text v0.3.7 // indirect
+	golang.org/x/text v0.4.0 // indirect
 	golang.org/x/xerrors v0.0.0-20220907171357-04be3eba64a2 // indirect
 	google.golang.org/appengine v1.6.7 // indirect
 	google.golang.org/genproto v0.0.0-20220914142337-ca0e39ece12f
@@ -207,11 +208,13 @@ require (
 
 require (
 	github.com/aws/aws-sdk-go-v2/service/internal/checksum v1.1.3 // indirect
+	github.com/cespare/xxhash/v2 v2.1.2 // indirect
 	github.com/foxcpp/go-mockdns v1.0.1-0.20220408113050-3599dc5d2c7d
 	github.com/golang-sql/sqlexp v0.0.0-20170517235910-f1bb20e5a188 // indirect
+	github.com/golang/glog v0.0.0-20160126235308-23def4e6c14b // indirect
 	github.com/golang/protobuf v1.5.2 // indirect
 	github.com/matttproud/golang_protobuf_extensions v1.0.2-0.20181231171920-c182affec369 // indirect
 	github.com/pelletier/go-toml/v2 v2.0.5 // indirect
 )
 
-require github.com/samber/lo v1.33.0
+require github.com/samber/lo v1.35.0

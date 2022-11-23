@@ -7,19 +7,23 @@ import (
 
 type Factory struct {
 	EnterpriseToken string
+	Log             logger.Logger
 }
 
 // Setup initializes Suppress User feature
 func (m *Factory) Setup() types.ConfigEnvI {
+	if m.Log == nil {
+		m.Log = logger.NewLogger().Child("enterprise").Child("config-env")
+	}
 	if m.EnterpriseToken == "" {
 		return &NOOP{}
 	}
 
 	loadConfig()
-	pkgLogger = logger.NewLogger().Child("enterprise").Child("config-env")
+	m.Log = logger.NewLogger().Child("enterprise").Child("config-env")
 
-	pkgLogger.Info("[[ ConfigEnv ]] Setting up config env handler")
-	handle := &HandleT{}
+	m.Log.Info("[[ ConfigEnv ]] Setting up config env handler")
+	handle := &HandleT{Log: m.Log}
 
 	return handle
 }
