@@ -1,7 +1,6 @@
 package router
 
 import (
-	"context"
 	"sync"
 
 	"github.com/go-redis/redis/v8"
@@ -25,9 +24,7 @@ const (
 )
 
 type limiter interface {
-	CheckLimitReached(key string, cost int64) (
-		limited bool, tokensReturner func(context.Context) error, retErr error,
-	)
+	CheckLimitReached(key string, cost int64) (limited bool, retErr error)
 }
 
 type Factory struct {

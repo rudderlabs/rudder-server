@@ -32,24 +32,20 @@ type Throttler struct {
 }
 
 // CheckLimitReached returns true if we're not allowed to process the number of events we asked for with cost.
-// Along with the boolean, it also returns a tokensReturner and an error. The tokensReturner should be called to return
-// the tokens to the limiter (bucket) in the eventuality that we did not move forward with the request.
-func (t *Throttler) CheckLimitReached(key string, cost int64) (
-	limited bool, tokensReturner func(context.Context) error, retErr error,
-) {
+func (t *Throttler) CheckLimitReached(key string, cost int64) (limited bool, retErr error) {
 	if !t.config.enabled {
-		return false, nil, nil
+		return false, nil
 	}
 
 	ctx := context.TODO()
-	allowed, tr, err := t.limiter.Allow(ctx, cost, t.config.limit, getWindowInSecs(t.config.window), key)
+	allowed, _, err := t.limiter.Allow(ctx, cost, t.config.limit, getWindowInSecs(t.config.window), key)
 	if err != nil {
-		return false, nil, fmt.Errorf("could not limit: %w", err)
+		return false, fmt.Errorf("could not limit: %w", err)
 	}
 	if !allowed {
-		return true, nil, nil // no token to return when limited
+		return true, nil // no token to return when limited
 	}
-	return false, tr, nil
+	return false, nil
 }
 
 type throttlingConfig struct {

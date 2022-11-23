@@ -106,9 +106,6 @@ func (b *Barrier) Leave(key string, jobID int64) {
 	if !ok {
 		return
 	}
-	if barrier.concurrencyLimiter == nil {
-		return
-	}
 	barrier.mu.Lock()
 	delete(barrier.concurrencyLimiter, jobID)
 	barrier.mu.Unlock()

@@ -1216,24 +1216,11 @@ func (rt *HandleT) findWorker(job *jobsdb.JobT, throttledUserMap map[string]stru
 		return
 	}
 
-	tokensReturner, shouldThrottle := rt.shouldThrottle(job, parameters)
-	if shouldThrottle {
-		throttledUserMap[userID] = struct{}{}
-		rt.logger.Debugf(`[%v Router] :: Skipping processing of job:%d of user:%s as throttled limits exceeded`, rt.destName, job.JobID, userID)
-		return nil
-	}
-
-	defer func() {
-		if toSendWorker == nil && tokensReturner != nil {
-			if err := tokensReturner(rt.backgroundCtx); err == nil {
-				return
-			}
-			rt.logger.Errorf(`[%v Router] :: Returning throttling tokens failed with the error %v`, rt.destName, err)
-		}
-	}()
-
 	if !rt.guaranteeUserEventOrder {
 		// if guaranteeUserEventOrder is false, assigning worker randomly and returning here.
+		if rt.shouldThrottle(job, parameters, throttledUserMap) {
+			return
+		}
 		toSendWorker = rt.workers[rand.Intn(rt.noOfWorkers)] // skipcq: GSC-G404
 		return
 	}
@@ -1248,6 +1235,10 @@ func (rt *HandleT) findWorker(job *jobsdb.JobT, throttledUserMap map[string]stru
 	enter, previousFailedJobID := worker.barrier.Enter(orderKey, job.JobID)
 	if enter {
 		rt.logger.Debugf("EventOrder: job %d of user %s is allowed to be processed", job.JobID, userID)
+		if rt.shouldThrottle(job, parameters, throttledUserMap) {
+			worker.barrier.Leave(orderKey, job.JobID)
+			return
+		}
 		toSendWorker = worker
 		return
 	}
@@ -1275,8 +1266,7 @@ func (rt *HandleT) getWorkerPartition(userID string) int {
 	return misc.GetHash(userID) % rt.noOfWorkers
 }
 
-func (rt *HandleT) shouldThrottle(job *jobsdb.JobT, parameters JobParametersT) (
-	tokensReturner func(context.Context) error,
+func (rt *HandleT) shouldThrottle(job *jobsdb.JobT, parameters JobParametersT, throttledUserMap map[string]struct{}) (
 	limited bool,
 ) {
 	if rt.throttlerFactory == nil {
@@ -1285,7 +1275,7 @@ func (rt *HandleT) shouldThrottle(job *jobsdb.JobT, parameters JobParametersT) (
 		rt.logger.Infof(`[%v Router] :: ThrottlerFactory is nil. Not throttling destination with ID %s`,
 			rt.destName, parameters.DestinationID,
 		)
-		return nil, false
+		return false
 	}
 
 	rt.throttlerMu.Lock()
@@ -1300,13 +1290,20 @@ func (rt *HandleT) shouldThrottle(job *jobsdb.JobT, parameters JobParametersT) (
 	// TODO throttling key could be the combination of workspaceID + destinationID to avoid conflicts across clusters
 	// The concatenation of workspaceID and destinationID would make sense for destinations that do not have global limits
 	// but we don't have yet a way to understand which ones are those (needs configuration setting).
-	limited, tokensReturner, err := throttler.CheckLimitReached(parameters.DestinationID, throttlingCost)
+	limited, err := throttler.CheckLimitReached(parameters.DestinationID, throttlingCost)
 	if err != nil {
 		// we can't throttle, let's hit the destination, worst case we get a 429
-		return nil, false
+		return false
+	}
+	if limited {
+		throttledUserMap[job.UserID] = struct{}{}
+		rt.logger.Debugf(
+			"[%v Router] :: Skipping processing of job:%d of user:%s as throttled limits exceeded",
+			rt.destName, job.JobID, job.UserID,
+		)
 	}
 
-	return tokensReturner, limited
+	return limited
 }
 
 func (rt *HandleT) commitStatusList(responseList *[]jobResponseT) {
