@@ -1026,12 +1026,14 @@ func (worker *workerT) allowRouterAbortedAlert(errorAt string) bool {
 	return allowTf || allowDel
 }
 
-func (worker *workerT) updateAbortedMetrics(destinationID, statusCode, errorAt string) {
+func (worker *workerT) updateAbortedMetrics(destinationID, workspaceId, statusCode, errorAt string) {
 	alert := worker.allowRouterAbortedAlert(errorAt)
 	eventsAbortedStat := stats.Default.NewTaggedStat(`router_aborted_events`, stats.CountType, stats.Tags{
 		"destType":       worker.rt.destName,
 		"respStatusCode": statusCode,
 		"destId":         destinationID,
+		"workspaceId":    workspaceId,
+
 		// To indicate if the failure should be alerted for router-aborted-count
 		"alert": strconv.FormatBool(alert),
 		// To specify at which point failure happened
@@ -1105,7 +1107,7 @@ func (worker *workerT) postStatusOnResponseQ(respStatusCode int, respBody string
 		}
 
 		if status.JobState == jobsdb.Aborted.State {
-			worker.updateAbortedMetrics(destinationJobMetadata.DestinationID, status.ErrorCode, errorAt)
+			worker.updateAbortedMetrics(destinationJobMetadata.DestinationID, status.WorkspaceId, status.ErrorCode, errorAt)
 			destinationJobMetadata.JobT.Parameters = misc.UpdateJSONWithNewKeyVal(destinationJobMetadata.JobT.Parameters, "stage", "router")
 			destinationJobMetadata.JobT.Parameters = misc.UpdateJSONWithNewKeyVal(destinationJobMetadata.JobT.Parameters, "reason", status.ErrorResponse) // NOTE: Old key used was "error_response"
 		}
