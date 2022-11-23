@@ -86,21 +86,19 @@ func (jd *HandleT) backupDSLoop(ctx context.Context) {
 }
 
 // backupDS writes both jobs and job_staus table to JOBS_BACKUP_STORAGE_PROVIDER
-func (jd *HandleT) backupDS(ctx context.Context, backupDSRange *dataSetRangeT) (err error) {
-	if err = jd.WithTx(func(tx *Tx) error {
+func (jd *HandleT) backupDS(ctx context.Context, backupDSRange *dataSetRangeT) error {
+	if err := jd.WithTx(func(tx *Tx) error {
 		return jd.cleanStatusTable(ctx, tx, backupDSRange.ds.JobStatusTable)
 	}); err != nil {
 		return fmt.Errorf("error while cleaning status table: %w", err)
 	}
 	if jd.BackupSettings.FailedOnly {
-		if err = jd.failedOnlyBackup(ctx, backupDSRange); err != nil {
+		if err := jd.failedOnlyBackup(ctx, backupDSRange); err != nil {
 			return fmt.Errorf("error while backing up failed jobs: %w", err)
 		}
 		return nil
 	}
-
-	err = jd.completeBackup(ctx, backupDSRange)
-	if err != nil {
+	if err := jd.completeBackup(ctx, backupDSRange); err != nil {
 		return fmt.Errorf("error while backing up complete jobs: %w", err)
 	}
 	return nil

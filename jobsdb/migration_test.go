@@ -43,9 +43,9 @@ func TestMigration(t *testing.T) {
 
 	jobDB.MaxDSRetentionPeriod = time.Millisecond
 
-	customVal := "MOCKDS"
-	jobs := genJobs(defaultWorkspaceID, customVal, 10, 1)
-	require.NoError(t, jobDB.Store(context.Background(), jobs))
+	customVal := rand.String(5)
+	jobs := genJobs(defaultWorkspaceID, customVal, 30, 1)
+	require.NoError(t, jobDB.Store(context.Background(), jobs[:10]))
 
 	// let 8 jobs succeed, and 2 repeatedly fail
 	require.NoError(
@@ -71,7 +71,7 @@ func TestMigration(t *testing.T) {
 		t,
 		jobDB.UpdateJobStatus(
 			context.Background(),
-			genJobStatuses(jobs[9:], "executing"),
+			genJobStatuses(jobs[9:10], "executing"),
 			[]string{customVal},
 			[]ParameterFilterT{},
 		),
@@ -81,7 +81,7 @@ func TestMigration(t *testing.T) {
 		t,
 		jobDB.UpdateJobStatus(
 			context.Background(),
-			genJobStatuses(jobs[9:], "failed"),
+			genJobStatuses(jobs[9:10], "failed"),
 			[]string{customVal},
 			[]ParameterFilterT{},
 		),
@@ -91,28 +91,26 @@ func TestMigration(t *testing.T) {
 	require.EqualValues(t, 1, jobDB.GetMaxDSIndex())
 	triggerAddNewDS <- time.Now() // trigger addNewDSLoop to run
 	triggerAddNewDS <- time.Now() // Second time, waits for the first loop to finish
+	require.EqualValues(t, 2, jobDB.GetMaxDSIndex())
 
 	// add some more jobs to the new DS
-	customVal2 := "MOCKDS2"
-	jobs = genJobs(defaultWorkspaceID, customVal2, 20, 2)
-	require.NoError(t, jobDB.Store(context.Background(), jobs[10:]))
+	require.NoError(t, jobDB.Store(context.Background(), jobs[10:20]))
 
 	triggerAddNewDS <- time.Now() // trigger addNewDSLoop to run
 	triggerAddNewDS <- time.Now() // Second time, waits for the first loop to finish
+	require.EqualValues(t, 3, jobDB.GetMaxDSIndex())
 
 	// last DS
 	// should have enough statuses for a clean up to be triggered
 	// all non-terminal
-	customVal3 := "MOCKDS3"
-	jobs = genJobs(defaultWorkspaceID, customVal3, 30, 1)
-	require.NoError(t, jobDB.Store(context.Background(), jobs[20:]))
+	require.NoError(t, jobDB.Store(context.Background(), jobs[20:30]))
 	for i := 0; i < 10; i++ {
 		require.NoError(
 			t,
 			jobDB.UpdateJobStatus(
 				context.Background(),
-				genJobStatuses(jobs[20:], "executing"),
-				[]string{customVal3},
+				genJobStatuses(jobs[20:30], "executing"),
+				[]string{customVal},
 				[]ParameterFilterT{},
 			),
 			`status update failed in 3rd DS`,
@@ -121,8 +119,8 @@ func TestMigration(t *testing.T) {
 			t,
 			jobDB.UpdateJobStatus(
 				context.Background(),
-				genJobStatuses(jobs[20:], "failed"),
-				[]string{customVal3},
+				genJobStatuses(jobs[20:30], "failed"),
+				[]string{customVal},
 				[]ParameterFilterT{},
 			),
 			`status update failed in 3rd DS`,
@@ -165,7 +163,7 @@ func TestMigration(t *testing.T) {
 			`SELECT COUNT(*) FROM %[1]s_jobs_2 WHERE %[1]s_jobs_2.custom_val = $1`,
 			tablePrefix,
 		),
-		customVal2,
+		customVal,
 	).Scan(&count)
 	require.NoError(t, err)
 	require.EqualValues(t, 10, count)
@@ -186,7 +184,7 @@ func TestMigration(t *testing.T) {
 			`SELECT COUNT(*) FROM %[1]s_jobs_3 WHERE %[1]s_jobs_3.custom_val = $1`,
 			tablePrefix,
 		),
-		customVal3,
+		customVal,
 	).Scan(&count)
 	require.NoError(t, err)
 	require.EqualValues(t, 10, count)

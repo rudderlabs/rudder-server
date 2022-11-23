@@ -17,13 +17,10 @@ import (
 	"github.com/samber/lo"
 )
 
-/*
-Function to migrate jobs from src dataset  (srcDS) to destination dataset (dest_ds)
-First all the unprocessed jobs are copied over. Then all the jobs which haven't
-completed (state is failed or waiting or waiting_retry or executiong) are copied
-over. Then the status (only the latest) is set for those jobs
-*/
-
+// startMigrateDSLoop migrates jobs from src dataset (srcDS) to destination dataset (dest_ds)
+// First all the unprocessed jobs are copied over. Then all the jobs which haven't
+// completed (state is failed or waiting or waiting_retry or executiong) are copied
+// over. Then the status (only the latest) is set for those jobs
 func (jd *HandleT) startMigrateDSLoop(ctx context.Context) {
 	jd.backgroundGroup.Go(misc.WithBugsnag(func() error {
 		jd.migrateDSLoop(ctx)
@@ -58,8 +55,7 @@ func (jd *HandleT) doMigrateDS(ctx context.Context) error {
 	dsList := jd.getDSList()
 	jd.dsListLock.RUnlock()
 
-	err := jd.cleanupStatusTables(ctx, dsList)
-	if err != nil {
+	if err := jd.cleanupStatusTables(ctx, dsList); err != nil {
 		return err
 	}
 
@@ -70,7 +66,7 @@ func (jd *HandleT) doMigrateDS(ctx context.Context) error {
 	}
 	var l lock.LockToken
 	var lockChan chan<- lock.LockToken
-	err = jd.WithTx(func(tx *Tx) error {
+	err := jd.WithTx(func(tx *Tx) error {
 		// Take the lock and run actual migration
 		if !jd.dsMigrationLock.TryLockWithCtx(ctx) {
 			return fmt.Errorf("failed to acquire lock: %w", ctx.Err())
@@ -156,24 +152,23 @@ func (jd *HandleT) doMigrateDS(ctx context.Context) error {
 }
 
 // based on an estimate of the rows in DSs, gives a list of DSs for us to cleanup status tables
-func (jd *HandleT) getCleanUpCandidates(ctx context.Context, dsList []dataSetT) []dataSetT {
-	// get estimates for number of rows(jobs, statuses) in each DS
-
+func (jd *HandleT) getCleanUpCandidates(ctx context.Context, dsList []dataSetT) ([]dataSetT, error) {
+	// get analyzer estimates for the number of rows(jobs, statuses) in each DS
 	var rows *sql.Rows
 	rows, err := jd.dbHandle.QueryContext(
 		ctx,
-		fmt.Sprintf(
-			`SELECT reltuples AS estimate, relname FROM pg_class
-				WHERE
-					relname like '%s`, jd.tablePrefix)+`_job%'
-						and
-					relname not like '%_id_seq'
-						and
-					relname not like '%_pkey'
-			order by relname;`,
+		`SELECT reltuples AS estimate, relname 
+		FROM pg_class 
+		where relname = ANY(
+			SELECT tablename 
+				FROM pg_catalog.pg_tables 
+				WHERE schemaname NOT IN ('pg_catalog','information_schema')
+				AND tablename like $1
+		)`,
+		jd.tablePrefix+"_job%",
 	)
 	if err != nil {
-		return nil
+		return nil, err
 	}
 	defer func() { _ = rows.Close() }()
 
@@ -185,46 +180,39 @@ func (jd *HandleT) getCleanUpCandidates(ctx context.Context, dsList []dataSetT) 
 		)
 		err = rows.Scan(&estimate, &tableName)
 		if err != nil {
-			return nil
+			return nil, err
 		}
 		estimates[tableName] = estimate
 	}
 
-	return lo.Filter(dsList,
+	datasets := lo.Filter(dsList,
 		func(ds dataSetT, idx int) bool {
-			// if (estimate is zero) or (ds not present in estimates), we don't clean it up
-			if estimates[ds.JobStatusTable] > 0 {
-				if estimates[ds.JobTable] > 0 {
-					return float64(estimates[ds.JobStatusTable])/
-						float64(estimates[ds.JobTable]) >
-						jobStatusMigrateThres
-				} else {
-					return float64(estimates[ds.JobStatusTable])/
-						float64(*jd.MaxDSSize) > jobStatusMigrateThres
-				}
+			statuses := estimates[ds.JobStatusTable]
+			jobs := estimates[ds.JobTable]
+			if jobs == 0 { // using max ds size if we have no stats for the number of jobs
+				jobs = int64(*jd.MaxDSSize)
 			}
-			return false
+			return float64(statuses)/float64(jobs) > jobStatusMigrateThres
 		})
+
+	return lo.Slice(datasets, 0, maxMigrateDSProbe), nil
 }
 
 // based on an estimate cleans up the status tables
 func (jd *HandleT) cleanupStatusTables(ctx context.Context, dsList []dataSetT) error {
-	toCompact := jd.getCleanUpCandidates(ctx, dsList)
-
+	toCompact, err := jd.getCleanUpCandidates(ctx, dsList)
+	if err != nil {
+		return err
+	}
 	start := time.Now()
 	defer stats.Default.NewTaggedStat(
-		"compact_status_tables",
+		"jobsdb_compact_status_tables",
 		stats.TimerType,
 		stats.Tags{"customVal": jd.tablePrefix},
 	).Since(start)
 
-	var liveDSCount int
-
 	return jd.WithTx(func(tx *Tx) error {
 		for _, statusTable := range toCompact {
-			if liveDSCount >= maxMigrateDSProbe {
-				return nil
-			}
 			if err := jd.cleanStatusTable(
 				ctx,
 				tx,
@@ -232,35 +220,19 @@ func (jd *HandleT) cleanupStatusTables(ctx context.Context, dsList []dataSetT) e
 			); err != nil {
 				return err
 			}
-			liveDSCount++
 		}
 		return nil
 	})
 }
 
-// removes all except the ultimate status for each job
+// cleanStatusTable deletes all rows except for the latest status for each job
 func (*HandleT) cleanStatusTable(ctx context.Context, tx *Tx, table string) error {
 	_, err := tx.ExecContext(
 		ctx,
-		fmt.Sprintf(
-			`DELETE FROM %[1]q
-			where id
-			IN (
-				SELECT id 
-				FROM (
-					SELECT id, RANK()
-					OVER(
-						PARTITION BY job_id 
-						ORDER BY id DESC
-						)
-					as rank 
-					from %[1]q
-				)
-				as inner_table 
-				where rank > 1
-			)`,
-			table,
-		),
+		fmt.Sprintf(`DELETE FROM %[1]q
+			 			WHERE NOT id = ANY(
+							SELECT DISTINCT ON (job_id) id from "%[1]s" ORDER BY job_id ASC, id DESC
+						)`, table),
 	)
 	return err
 }
@@ -331,10 +303,7 @@ func (jd *HandleT) migrateJobsInTx(ctx context.Context, tx *Tx, srcDS, destDS da
 	defer queryStat.End()
 
 	compactDSQuery := fmt.Sprintf(
-		`with last_status as 
-		(
-			select * from %[1]q where id in (select max(id) from %[1]q group by job_id)
-		),
+		`with last_status as (select * from "v_last_%[1]s"),
 		inserted_jobs as
 		(
 			insert into %[3]q (job_id,   workspace_id,   uuid,   user_id,   custom_val,   parameters,   event_payload,   event_count,   created_at,   expire_at) 
@@ -421,12 +390,9 @@ func computeInsertIdx(beforeIndex, afterIndex string) (string, error) {
 	return result.String(), nil
 }
 
-/*
-Functions for checking when DB is full or DB needs to be migrated.
-We migrate the DB ONCE most of the jobs have been processed (succeeded/aborted)
-Or when the job_status table gets too big because of lots of retries/failures
-*/
-
+// checkIfMigrateDS checks when DB is full or DB needs to be migrated.
+// We migrate the DB ONCE most of the jobs have been processed (succeeded/aborted)
+// Or when the job_status table gets too big because of lots of retries/failures
 func (jd *HandleT) checkIfMigrateDS(ds dataSetT) (
 	migrate, small bool, recordsLeft int,
 ) {
