@@ -58,7 +58,7 @@ func New(destType string) (ManagerI, error) {
 	switch destType {
 	case warehouseutils.RS:
 		rs := redshift.NewHandle()
-		rs.WithConfig(config.Default)
+		redshift.WithConfig(&rs, config.Default)
 		return &rs, nil
 	case warehouseutils.BQ:
 		var bq bigquery.HandleT

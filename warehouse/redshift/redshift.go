@@ -112,7 +112,7 @@ var partitionKeyMap = map[string]string{
 	warehouseutils.DiscardsTable: "row_id, column_name, table_name",
 }
 
-func (h *Handle) WithConfig(config *config.Config) {
+func WithConfig(h *Handle, config *config.Config) {
 	h.SetVarCharMax = config.GetBool("Warehouse.redshift.setVarCharMax", false)
 	h.DedupWindow = config.GetBool("Warehouse.redshift.dedupWindow", false)
 	h.SkipComputingUserLatestTraits = config.GetBool("Warehouse.redshift.skipComputingUserLatestTraits", false)
