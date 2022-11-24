@@ -87,8 +87,9 @@ type ReleaseInfo struct {
 
 // Runner is responsible for running the application
 type Runner struct {
-	releaseInfo               ReleaseInfo
+	appType                   string
 	application               app.App
+	releaseInfo               ReleaseInfo
 	warehouseMode             string
 	enableSuppressUserFeature bool
 	logger                    logger.Logger
@@ -112,6 +113,7 @@ func New(releaseInfo ReleaseInfo) *Runner {
 		return 0
 	}
 	return &Runner{
+		appType:                   strings.ToUpper(config.GetString("APP_TYPE", app.EMBEDDED)),
 		releaseInfo:               releaseInfo,
 		logger:                    logger.NewLogger().Child("runner"),
 		warehouseMode:             config.GetString("Warehouse.mode", "embedded"),
@@ -142,18 +144,22 @@ func (r *Runner) Run(ctx context.Context, args []string) int {
 	// application & backend setup should be done before starting any new goroutines.
 	r.application.Setup()
 
-	appTypeStr := strings.ToUpper(config.GetString("APP_TYPE", app.EMBEDDED))
-	r.appHandler = apphandlers.GetAppHandler(r.application, appTypeStr, r.versionHandler)
+	var err error
+	r.appHandler, err = apphandlers.GetAppHandler(r.application, r.appType, r.versionHandler)
+	if err != nil {
+		r.logger.Errorf("Failed to get app handler: %v", err)
+		return 1
+	}
 
-	versionDetail := r.versionInfo()
+	// Start bugsnag
 	bugsnag.Configure(bugsnag.Configuration{
 		APIKey:       config.GetString("BUGSNAG_KEY", ""),
 		ReleaseStage: config.GetString("GO_ENV", "development"),
 		// The import paths for the Go packages containing your source files
 		ProjectPackages: []string{"main", "github.com/rudderlabs/rudder-server"},
 		// more configuration options
-		AppType:      r.appHandler.GetAppType(),
-		AppVersion:   versionDetail["Version"].(string),
+		AppType:      fmt.Sprintf("rudder-server-%s", r.appType),
+		AppVersion:   r.releaseInfo.Version,
 		PanicHandler: func() {},
 	})
 	ctx = bugsnag.StartSession(ctx)
@@ -161,9 +167,11 @@ func (r *Runner) Run(ctx context.Context, args []string) int {
 
 	deploymentType, err := deployment.GetFromEnv()
 	if err != nil {
-		r.logger.Errorf("failed to get deployment type: %w", err)
+		r.logger.Errorf("failed to get deployment type: %v", err)
 		return 1
 	}
+
+	// Start stats
 	// TODO: remove as soon as we update the configuration with statsExcludedTags where necessary
 	if !config.IsSet("statsExcludedTags") && deploymentType == deployment.MultiTenantType && (!config.IsSet("WORKSPACE_NAMESPACE") || strings.Contains(config.GetString("WORKSPACE_NAMESPACE", ""), "free")) {
 		config.Set("statsExcludedTags", []string{"workspaceId", "sourceID", "destId"})
@@ -186,16 +194,31 @@ func (r *Runner) Run(ctx context.Context, args []string) int {
 
 	configEnvHandler := r.application.Features().ConfigEnv.Setup()
 
-	if config.GetString("Warehouse.mode", "") != "slave" {
+	// Start backend config
+	if r.canStartBackendConfig() {
 		if err := backendconfig.Setup(configEnvHandler); err != nil {
 			r.logger.Errorf("Unable to setup backend config: %s", err)
 			return 1
 		}
-
 		backendconfig.DefaultBackendConfig.StartWithIDs(ctx, "")
 	}
 
+	// Prepare databases in sequential order, so that failure in one doesn't affect others (leaving dirty schema migration state)
+	if r.canStartServer() {
+		if err := r.appHandler.Setup(options); err != nil {
+			r.logger.Errorf("Unable to prepare rudder-core database: %s", err)
+			return 1
+		}
+	}
+	if r.canStartWarehouse() {
+		if err := warehouse.Setup(ctx); err != nil {
+			r.logger.Errorf("Unable to prepare warehouse database: %s", err)
+			return 1
+		}
+	}
 	g, ctx := errgroup.WithContext(ctx)
+
+	// Start admin server
 	g.Go(func() error {
 		if err := admin.StartServer(ctx); err != nil {
 			return fmt.Errorf("admin server routine: %w", err)
@@ -203,6 +226,7 @@ func (r *Runner) Run(ctx context.Context, args []string) int {
 		return nil
 	})
 
+	// Start profiler
 	g.Go(func() error {
 		p := &profiler.Profiler{}
 		if err := p.StartServer(ctx); err != nil {
@@ -212,8 +236,9 @@ func (r *Runner) Run(ctx context.Context, args []string) int {
 	})
 
 	misc.AppStartTime = time.Now().Unix()
+
+	// Start rudder core
 	if r.canStartServer() {
-		r.appHandler.HandleRecovery(options)
 		g.Go(misc.WithBugsnag(func() (err error) {
 			if err := r.appHandler.StartRudderCore(ctx, options); err != nil {
 				return fmt.Errorf("rudder core: %w", err)
@@ -238,10 +263,11 @@ func (r *Runner) Run(ctx context.Context, args []string) int {
 		}))
 	}
 
+	// Start warehouse
 	// initialize warehouse service after core to handle non-normal recovery modes
-	if appTypeStr != app.GATEWAY && r.canStartWarehouse() {
+	if r.canStartWarehouse() {
 		g.Go(misc.WithBugsnagForWarehouse(func() error {
-			if err := r.startWarehouseService(ctx, r.application); err != nil {
+			if err := warehouse.Start(ctx, r.application); err != nil {
 				return fmt.Errorf("warehouse service routine: %w", err)
 			}
 			return nil
@@ -347,8 +373,6 @@ func runAllInit() {
 	ratelimiter.Init()
 	sourcedebugger.Init()
 	gateway.Init()
-	apphandlers.Init()
-	apphandlers.Init2()
 	integrations.Init()
 	alert.Init()
 	multitenant.Init()
@@ -382,15 +406,15 @@ func (r *Runner) printVersion() {
 	fmt.Printf("Version Info %s\n", versionFormatted)
 }
 
-func (*Runner) startWarehouseService(ctx context.Context, application app.App) error {
-	return warehouse.Start(ctx, application)
-}
-
 func (r *Runner) canStartServer() bool {
 	r.logger.Info("warehousemode ", r.warehouseMode)
-	return r.warehouseMode == config.EmbeddedMode || r.warehouseMode == config.OffMode || r.warehouseMode == config.PooledWHSlaveMode
+	return r.warehouseMode == config.EmbeddedMode || r.warehouseMode == config.OffMode || r.warehouseMode == config.EmbeddedMasterMode
 }
 
 func (r *Runner) canStartWarehouse() bool {
-	return r.warehouseMode != config.OffMode
+	return r.appType != app.GATEWAY && r.warehouseMode != config.OffMode
+}
+
+func (r *Runner) canStartBackendConfig() bool {
+	return r.warehouseMode != config.SlaveMode
 }

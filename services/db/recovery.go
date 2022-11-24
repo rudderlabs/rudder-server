@@ -46,15 +46,17 @@ func Init() {
 	pkgLogger = logger.NewLogger().Child("db").Child("recovery")
 }
 
-func getRecoveryData() RecoveryDataT {
+func getRecoveryData() (RecoveryDataT, error) {
+	var recoveryData RecoveryDataT
+
 	data, err := os.ReadFile(storagePath)
 	if os.IsNotExist(err) {
 		defaultRecoveryJSON := "{\"mode\":\"" + normalMode + "\"}"
 		data = []byte(defaultRecoveryJSON)
 	} else if err != nil {
-		panic(err)
+		return recoveryData, err
 	}
-	var recoveryData RecoveryDataT
+
 	err = json.Unmarshal(data, &recoveryData)
 	if err != nil {
 		pkgLogger.Errorf("Failed to Unmarshall %s. Error:  %v", storagePath, err)
@@ -63,18 +65,15 @@ func getRecoveryData() RecoveryDataT {
 		}
 		recoveryData = RecoveryDataT{Mode: normalMode}
 	}
-	return recoveryData
+	return recoveryData, nil
 }
 
-func saveRecoveryData(recoveryData RecoveryDataT) {
+func saveRecoveryData(recoveryData RecoveryDataT) error {
 	recoveryDataJSON, err := json.MarshalIndent(&recoveryData, "", " ")
 	if err != nil {
-		panic(err)
+		return err
 	}
-	err = os.WriteFile(storagePath, recoveryDataJSON, 0o644)
-	if err != nil {
-		panic(err)
-	}
+	return os.WriteFile(storagePath, recoveryDataJSON, 0o644)
 }
 
 // IsNormalMode checks if the current mode is normal
