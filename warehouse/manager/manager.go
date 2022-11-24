@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/config"
 	azuresynapse "github.com/rudderlabs/rudder-server/warehouse/azure-synapse"
 	"github.com/rudderlabs/rudder-server/warehouse/bigquery"
 	"github.com/rudderlabs/rudder-server/warehouse/clickhouse"
@@ -57,6 +58,7 @@ func New(destType string) (ManagerI, error) {
 	switch destType {
 	case warehouseutils.RS:
 		rs := redshift.NewHandle()
+		rs.WithConfig(config.Default)
 		return &rs, nil
 	case warehouseutils.BQ:
 		var bq bigquery.HandleT
@@ -91,6 +93,7 @@ func NewWarehouseOperations(destType string) (WarehouseOperations, error) {
 	switch destType {
 	case warehouseutils.RS:
 		rs := redshift.NewHandle()
+		rs.WithConfig(config.Default)
 		return &rs, nil
 	case warehouseutils.BQ:
 		var bq bigquery.HandleT

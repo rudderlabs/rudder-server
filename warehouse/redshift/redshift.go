@@ -21,14 +21,6 @@ import (
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
-type Config struct {
-	setVarCharMax                 bool
-	dedupWindow                   bool
-	dedupWindowInHours            time.Duration
-	skipComputingUserLatestTraits bool
-	enableDeleteByJobs            bool
-}
-
 var pkgLogger logger.Logger
 
 func Init() {
@@ -36,28 +28,24 @@ func Init() {
 }
 
 // NewHandle return a new redshift handle
-// TODO: We should probably inject logger from warehouse manager
 func NewHandle() Handle {
 	return Handle{
-		Config: Config{
-			setVarCharMax:                 config.GetBool("Warehouse.redshift.setVarCharMax", false),
-			dedupWindow:                   config.GetBool("Warehouse.redshift.dedupWindow", false),
-			skipComputingUserLatestTraits: config.GetBool("Warehouse.redshift.skipComputingUserLatestTraits", false),
-			enableDeleteByJobs:            config.GetBool("Warehouse.redshift.enableDeleteByJobs", false),
-			dedupWindowInHours:            config.GetDuration("Warehouse.redshift.dedupWindow", 720, time.Hour),
-		},
 		Logger: pkgLogger,
 	}
 }
 
 type Handle struct {
-	Db             *sql.DB
-	Namespace      string
-	Warehouse      warehouseutils.Warehouse
-	Uploader       warehouseutils.UploaderI
-	ConnectTimeout time.Duration
-	Logger         logger.Logger
-	Config         Config
+	DB                            *sql.DB
+	Namespace                     string
+	Warehouse                     warehouseutils.Warehouse
+	Uploader                      warehouseutils.UploaderI
+	ConnectTimeout                time.Duration
+	Logger                        logger.Logger
+	SetVarCharMax                 bool
+	DedupWindow                   bool
+	DedupWindowInHours            time.Duration
+	SkipComputingUserLatestTraits bool
+	EnableDeleteByJobs            bool
 }
 
 // String constants for redshift destination config
@@ -124,6 +112,14 @@ var partitionKeyMap = map[string]string{
 	warehouseutils.DiscardsTable: "row_id, column_name, table_name",
 }
 
+func (h *Handle) WithConfig(config *config.Config) {
+	h.SetVarCharMax = config.GetBool("Warehouse.redshift.setVarCharMax", false)
+	h.DedupWindow = config.GetBool("Warehouse.redshift.dedupWindow", false)
+	h.SkipComputingUserLatestTraits = config.GetBool("Warehouse.redshift.skipComputingUserLatestTraits", false)
+	h.EnableDeleteByJobs = config.GetBool("Warehouse.redshift.enableDeleteByJobs", false)
+	h.DedupWindowInHours = config.GetDuration("Warehouse.redshift.dedupWindow", 720, time.Hour)
+}
+
 // getRSDataType gets datatype for rs which is mapped with RudderStack datatype
 func getRSDataType(columnType string) string {
 	return dataTypesMap[columnType]
@@ -174,7 +170,7 @@ func (rs *Handle) CreateTable(tableName string, columns map[string]string) (err 
 		sortKeyField,
 	)
 	rs.Logger.Infof("Creating table in redshift for RS:%s : %v", rs.Warehouse.Destination.ID, sqlStatement)
-	_, err = rs.Db.Exec(sqlStatement)
+	_, err = rs.DB.Exec(sqlStatement)
 	return
 }
 
@@ -186,7 +182,7 @@ func (rs *Handle) createTemporaryTable(tableName, stagingTableName string) (err 
 		fmt.Sprintf(`%q.%q`, rs.Namespace, tableName),
 	)
 	rs.Logger.Infof("Creating temporary table in redshift for RS:%s : %v", rs.Warehouse.Destination.ID, sqlStatement)
-	_, err = rs.Db.Exec(sqlStatement)
+	_, err = rs.DB.Exec(sqlStatement)
 	return
 }
 
@@ -198,7 +194,7 @@ func (rs *Handle) DropTable(tableName string) (err error) {
 		tableName,
 	)
 	rs.Logger.Infof("RS: Dropping table in redshift for RS:%s : %v", rs.Warehouse.Destination.ID, sqlStatement)
-	_, err = rs.Db.Exec(sqlStatement)
+	_, err = rs.DB.Exec(sqlStatement)
 	return
 }
 
@@ -216,7 +212,7 @@ func (rs *Handle) schemaExists(_ string) (exists bool, err error) {
 	`,
 		rs.Namespace,
 	)
-	err = rs.Db.QueryRow(sqlStatement).Scan(&exists)
+	err = rs.DB.QueryRow(sqlStatement).Scan(&exists)
 	return
 }
 
@@ -235,7 +231,7 @@ func (rs *Handle) AddColumns(tableName string, columnsInfo []warehouseutils.Colu
 		)
 		rs.Logger.Infof("RS: Adding column for destinationID: %s, tableName: %s with query: %v", rs.Warehouse.Destination.ID, tableName, query)
 
-		if _, err := rs.Db.Exec(query); err != nil {
+		if _, err := rs.DB.Exec(query); err != nil {
 			return err
 		}
 	}
@@ -244,7 +240,7 @@ func (rs *Handle) AddColumns(tableName string, columnsInfo []warehouseutils.Colu
 
 func (rs *Handle) DeleteBy(tableNames []string, params warehouseutils.DeleteByParams) (err error) {
 	rs.Logger.Infof("RS: Cleaning up the following tables in redshift for RS:%s : %+v", tableNames, params)
-	rs.Logger.Infof("RS: Flag for enableDeleteByJobs is %t", rs.Config.enableDeleteByJobs)
+	rs.Logger.Infof("RS: Flag for enableDeleteByJobs is %t", rs.EnableDeleteByJobs)
 	for _, tb := range tableNames {
 		sqlStatement := fmt.Sprintf(`
 			DELETE FROM
@@ -262,8 +258,8 @@ func (rs *Handle) DeleteBy(tableNames []string, params warehouseutils.DeleteByPa
 		rs.Logger.Infof("RS: Deleting rows in table in redshift for RS:%s", rs.Warehouse.Destination.ID)
 		rs.Logger.Debugf("RS: Executing the query %v", sqlStatement)
 
-		if rs.Config.enableDeleteByJobs {
-			_, err = rs.Db.Exec(sqlStatement,
+		if rs.EnableDeleteByJobs {
+			_, err = rs.DB.Exec(sqlStatement,
 				params.JobRunId,
 				params.TaskRunId,
 				params.SourceId,
@@ -293,7 +289,7 @@ func (rs *Handle) alterStringToText(tableName, columnName string) (err error) {
 		getRSDataType("text"),
 	)
 	rs.Logger.Infof("Altering column type in redshift from string to text(varchar(max)) RS:%s : %v", rs.Warehouse.Destination.ID, sqlStatement)
-	_, err = rs.Db.Exec(sqlStatement)
+	_, err = rs.DB.Exec(sqlStatement)
 	return
 }
 
@@ -304,7 +300,7 @@ func (rs *Handle) createSchema() (err error) {
 		rs.Namespace,
 	)
 	rs.Logger.Infof("Creating schema name in redshift for RS:%s : %v", rs.Warehouse.Destination.ID, sqlStatement)
-	_, err = rs.Db.Exec(sqlStatement)
+	_, err = rs.DB.Exec(sqlStatement)
 	return
 }
 
@@ -403,7 +399,7 @@ func (rs *Handle) loadTable(tableName string, tableSchemaInUpload, tableSchemaAf
 	}
 
 	// BEGIN TRANSACTION
-	tx, err := rs.Db.Begin()
+	tx, err := rs.DB.Begin()
 	if err != nil {
 		return
 	}
@@ -511,14 +507,14 @@ func (rs *Handle) loadTable(tableName string, tableSchemaInUpload, tableSchemaAf
 		primaryKey,
 	)
 
-	if rs.Config.dedupWindow {
+	if rs.DedupWindow {
 		if _, ok := tableSchemaAfterUpload["received_at"]; ok {
 			sqlStatement += fmt.Sprintf(`
 				AND %[1]s.%[2]q.received_at > GETDATE() - INTERVAL '%[3]d DAY'
 `,
 				rs.Namespace,
 				tableName,
-				rs.Config.dedupWindowInHours/time.Hour,
+				rs.DedupWindowInHours/time.Hour,
 			)
 		}
 	}
@@ -674,7 +670,7 @@ func (rs *Handle) loadUserTables() (errorMap map[string]error) {
 	)
 
 	// BEGIN TRANSACTION
-	tx, err := rs.Db.Begin()
+	tx, err := rs.DB.Begin()
 	if err != nil {
 		errorMap[warehouseutils.UsersTable] = err
 		return
@@ -801,7 +797,7 @@ func (rs *Handle) CreateSchema() (err error) {
 }
 
 func (rs *Handle) AlterColumn(tableName, columnName, columnType string) (err error) {
-	if rs.Config.setVarCharMax && columnType == "text" {
+	if rs.SetVarCharMax && columnType == "text" {
 		err = rs.alterStringToText(fmt.Sprintf(`%q.%q`, rs.Namespace, tableName), columnName)
 	}
 	return
@@ -893,22 +889,22 @@ func (rs *Handle) Setup(warehouse warehouseutils.Warehouse, uploader warehouseut
 	rs.Namespace = warehouse.Namespace
 	rs.Uploader = uploader
 
-	rs.Db, err = rs.connectToWarehouse()
+	rs.DB, err = rs.connectToWarehouse()
 	return err
 }
 
 func (rs *Handle) TestConnection(warehouse warehouseutils.Warehouse) (err error) {
 	rs.Warehouse = warehouse
-	rs.Db, err = Connect(rs.getConnectionCredentials())
+	rs.DB, err = Connect(rs.getConnectionCredentials())
 	if err != nil {
 		return
 	}
-	defer rs.Db.Close()
+	defer rs.DB.Close()
 
 	ctx, cancel := context.WithTimeout(context.TODO(), rs.ConnectTimeout)
 	defer cancel()
 
-	err = rs.Db.PingContext(ctx)
+	err = rs.DB.PingContext(ctx)
 	if err == context.DeadlineExceeded {
 		return fmt.Errorf("connection testing timed out after %d sec", rs.ConnectTimeout/time.Second)
 	}
@@ -920,19 +916,19 @@ func (rs *Handle) TestConnection(warehouse warehouseutils.Warehouse) (err error)
 }
 
 func (rs *Handle) Cleanup() {
-	if rs.Db != nil {
-		rs.Db.Close()
+	if rs.DB != nil {
+		rs.DB.Close()
 	}
 }
 
 func (rs *Handle) CrashRecover(warehouse warehouseutils.Warehouse) (err error) {
 	rs.Warehouse = warehouse
 	rs.Namespace = warehouse.Namespace
-	rs.Db, err = Connect(rs.getConnectionCredentials())
+	rs.DB, err = Connect(rs.getConnectionCredentials())
 	if err != nil {
 		return err
 	}
-	defer rs.Db.Close()
+	defer rs.DB.Close()
 	return
 }
 
@@ -970,7 +966,7 @@ func (rs *Handle) GetTotalCountInTable(ctx context.Context, tableName string) (t
 		rs.Namespace,
 		tableName,
 	)
-	err = rs.Db.QueryRowContext(ctx, sqlStatement).Scan(&total)
+	err = rs.DB.QueryRowContext(ctx, sqlStatement).Scan(&total)
 	if err != nil {
 		rs.Logger.Errorf(`RS: Error getting total count in table %s:%s`, rs.Namespace, tableName)
 	}
@@ -1063,7 +1059,7 @@ func (rs *Handle) LoadTestTable(location, tableName string, _ map[string]interfa
 		rs.Logger.Infof("RS: Running COPY command for load test table: %s with sqlStatement: %s", tableName, sanitisedSQLStmt)
 	}
 
-	_, err = rs.Db.Exec(sqlStatement)
+	_, err = rs.DB.Exec(sqlStatement)
 	return
 }
 
