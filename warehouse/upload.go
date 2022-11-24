@@ -1074,20 +1074,25 @@ func (job *UploadJobT) loadTable(tName string) (alteredSchema bool, err error) {
 }
 
 func (job *UploadJobT) columnCountStat(tableName string) {
-	if columnCountLimit, ok := columnCountLimitMap[job.warehouse.Type]; ok {
-		currentColumnsCount := len(job.schemaHandle.schemaInWarehouse[tableName])
-		if currentColumnsCount > int(float64(columnCountLimit)*columnCountLimitThreshold) {
-			tags := []tag{
-				{
-					name: "tableName", value: strings.ToLower(tableName),
-				},
-				{
-					name: "columnCountLimit", value: strconv.Itoa(columnCountLimit),
-				},
-			}
-
-			job.counterStat(`warehouse_load_table_column_count`, tags...).Count(currentColumnsCount)
+	var (
+		columnCountLimit int
+		ok               bool
+	)
+	if columnCountLimit, ok = columnCountLimitMap[job.warehouse.Type]; !ok {
+		return
+	}
+	currentColumnsCount := len(job.schemaHandle.schemaInWarehouse[tableName])
+	if currentColumnsCount > int(float64(columnCountLimit)*columnCountLimitThreshold) {
+		tags := []tag{
+			{
+				name: "tableName", value: strings.ToLower(tableName),
+			},
+			{
+				name: "columnCountLimit", value: strconv.Itoa(columnCountLimit),
+			},
 		}
+
+		job.counterStat(`warehouse_load_table_column_count`, tags...).Count(currentColumnsCount)
 	}
 	return
 }
