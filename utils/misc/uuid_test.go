@@ -40,7 +40,6 @@ func FuzzGetMD5UUID(f *testing.F) {
 	f.Add(gluuid.New().String())
 
 	f.Fuzz(func(t *testing.T, a string) {
-
 		t.Log(a)
 
 		gMD5, err := misc.GetMD5UUID(a)
@@ -50,7 +49,6 @@ func FuzzGetMD5UUID(f *testing.F) {
 		require.NoError(t, err)
 
 		require.Equal(t, oldMD5.String(), gMD5.String())
-
 	})
 }
 

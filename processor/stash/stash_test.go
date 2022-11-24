@@ -211,7 +211,7 @@ func readGzipJobFile(filename string) ([]*jobsdb.JobT, error) {
 	jobs := []*jobsdb.JobT{}
 	for sc.Scan() {
 		lineByte := sc.Bytes()
-		uuid:= uuid.MustParse("69359037-9599-48e7-b8f2-48393c019135")
+		uuid := uuid.MustParse("69359037-9599-48e7-b8f2-48393c019135")
 		job := &jobsdb.JobT{
 			UUID:         uuid,
 			JobID:        gjson.GetBytes(lineByte, "job_id").Int(),
