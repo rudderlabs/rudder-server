@@ -119,7 +119,7 @@ func (worker *SourceWorkerT) replayJobsInFile(ctx context.Context, filePath stri
 
 		if transformationVersionID == "" {
 			timeStamp := gjson.GetBytes(copyLineBytes, worker.getFieldIdentifier(createdAt)).String()
-			createdAt, err := time.Parse(misc.NOTIMEZONEFORMATPARSE, strings.TrimSuffix(timeStamp, "Z"))
+			createdAt, err := time.Parse(misc.NOTIMEZONEFORMATPARSE, getFormattedTimeStamp(timeStamp))
 			if err != nil {
 				pkgLogger.Errorf("failed to parse created at: %s", err)
 				continue
@@ -177,7 +177,7 @@ func (worker *SourceWorkerT) replayJobsInFile(ctx context.Context, filePath stri
 				pkgLogger.Errorf("Error getting created at from transformer output: %v", err)
 				continue
 			}
-			createdAt, err := time.Parse(misc.NOTIMEZONEFORMATPARSE, strings.TrimSuffix(createdAtString, "Z"))
+			createdAt, err := time.Parse(misc.NOTIMEZONEFORMATPARSE, getFormattedTimeStamp(createdAtString))
 			if err != nil {
 				pkgLogger.Errorf("failed to parse created at: %s", err)
 				continue
@@ -263,4 +263,8 @@ func (worker *SourceWorkerT) getFieldIdentifier(field string) string {
 	default:
 		return ""
 	}
+}
+
+func getFormattedTimeStamp(timeStamp string) string {
+	return strings.Split(strings.TrimSuffix(timeStamp, "Z"), ".")[0]
 }
