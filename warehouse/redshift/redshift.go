@@ -597,7 +597,7 @@ func (rs *Handle) loadUserTables() (errorMap map[string]error) {
 	}
 	errorMap[warehouseutils.UsersTable] = nil
 
-	if rs.Config.skipComputingUserLatestTraits {
+	if rs.SkipComputingUserLatestTraits {
 		_, err := rs.loadTable(warehouseutils.UsersTable, rs.Uploader.GetTableSchemaInUpload(warehouseutils.UsersTable), rs.Uploader.GetTableSchemaInWarehouse(warehouseutils.UsersTable))
 		if err != nil {
 			errorMap[warehouseutils.UsersTable] = err
