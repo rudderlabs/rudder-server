@@ -2,6 +2,7 @@ package jobs
 
 import (
 	"encoding/json"
+
 	"github.com/rudderlabs/rudder-server/services/pgnotifier"
 )
 
