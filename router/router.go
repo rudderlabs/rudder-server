@@ -25,7 +25,6 @@ import (
 	customDestinationManager "github.com/rudderlabs/rudder-server/router/customdestinationmanager"
 	"github.com/rudderlabs/rudder-server/router/internal/eventorder"
 	"github.com/rudderlabs/rudder-server/router/internal/jobiterator"
-	oauth "github.com/rudderlabs/rudder-server/router/oauthResponseHandler"
 	"github.com/rudderlabs/rudder-server/router/throttler"
 	"github.com/rudderlabs/rudder-server/router/transformer"
 	"github.com/rudderlabs/rudder-server/router/types"
@@ -34,6 +33,7 @@ import (
 	destinationdebugger "github.com/rudderlabs/rudder-server/services/debugger/destination"
 	"github.com/rudderlabs/rudder-server/services/diagnostics"
 	"github.com/rudderlabs/rudder-server/services/metric"
+	"github.com/rudderlabs/rudder-server/services/oauth"
 	"github.com/rudderlabs/rudder-server/services/rsources"
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/services/transientsource"
@@ -460,8 +460,9 @@ func (worker *workerT) workerProcess() {
 				continue
 			}
 			destination := batchDestination.Destination
-			if authType := routerutils.GetAuthType(destination); routerutils.IsNotEmptyString(authType) && authType == "OAuth" {
-				rudderAccountID := routerutils.GetRudderAccountId(&destination)
+			if authType := oauth.GetAuthType(destination.DestinationDefinition.Config); routerutils.IsNotEmptyString(string(authType)) && authType == oauth.OAuth {
+				rudderAccountID := oauth.GetAccountId(destination.Config, oauth.DeliveryAccountIdKey)
+
 				if routerutils.IsNotEmptyString(rudderAccountID) {
 					worker.rt.logger.Debugf(`[%s][FetchToken] Token Fetch Method to be called`, destination.DestinationDefinition.Name)
 					// Get Access Token Information to send it as part of the event
@@ -672,8 +673,8 @@ func (worker *workerT) processDestinationJobs() {
 									respStatusCode, respBodyTemp, respContentType = worker.rt.transformer.ProxyRequest(ctx, proxyReqparams)
 									worker.routerProxyStat.SendTiming(time.Since(rtlTime))
 									pkgLogger.Debugf(`[TransformerProxy] (Dest-%[1]v) {Job - %[2]v} Request ended`, worker.rt.destName, jobID)
-									authType := routerutils.GetAuthType(destinationJob.Destination)
-									if routerutils.IsNotEmptyString(authType) && authType == "OAuth" {
+									authType := oauth.GetAuthType(destinationJob.Destination.DestinationDefinition.Config)
+									if routerutils.IsNotEmptyString(string(authType)) && authType == oauth.OAuth {
 										pkgLogger.Debugf(`Sending for OAuth destination`)
 										// Token from header of the request
 										respStatusCode, respBodyTemp = worker.rt.HandleOAuthDestResponse(&HandleDestOAuthRespParamsT{
@@ -1955,7 +1956,6 @@ func (rt *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB jobsd
 	rt.transformer = transformer.NewTransformer(rt.netClientTimeout, rt.backendProxyTimeout)
 
 	rt.oauth = oauth.NewOAuthErrorHandler(backendConfig)
-	rt.oauth.Setup()
 
 	var t throttler.HandleT
 	t.SetUp(rt.destName)
@@ -2089,7 +2089,7 @@ func (rt *HandleT) HandleOAuthDestResponse(params *HandleDestOAuthRespParamsT) (
 		var errCatStatusCode int
 		// Check the category
 		// Trigger the refresh endpoint/disable endpoint
-		rudderAccountID := routerutils.GetRudderAccountId(&destinationJob.Destination)
+		rudderAccountID := oauth.GetAccountId(destinationJob.Destination.Config, oauth.DeliveryAccountIdKey)
 		if strings.TrimSpace(rudderAccountID) == "" {
 			return trRespStatusCode, trRespBody
 		}
@@ -2119,6 +2119,7 @@ func (rt *HandleT) HandleOAuthDestResponse(params *HandleDestOAuthRespParamsT) (
 					"workspaceId":   refTokenParams.WorkspaceId,
 					"accountId":     refTokenParams.AccountId,
 					"destType":      refTokenParams.DestDefName,
+					"flowType":      string(oauth.RudderFlow_Delivery),
 				}).Increment()
 				rt.logger.Errorf(`[OAuth request] Aborting the event as %v`, oauth.INVALID_REFRESH_TOKEN_GRANT)
 				return disableStCd, refSec.Err
@@ -2141,6 +2142,7 @@ func (rt *HandleT) ExecDisableDestination(destination *backendconfig.Destination
 		"destType":    destination.DestinationDefinition.Name,
 		"workspaceId": workspaceID,
 		"success":     "true",
+		"flowType":    string(oauth.RudderFlow_Delivery),
 	}
 	errCatStatusCode, errCatResponse := rt.oauth.DisableDestination(destination, workspaceID, rudderAccountId)
 	if errCatStatusCode != http.StatusOK {
