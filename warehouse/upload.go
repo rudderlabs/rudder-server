@@ -1094,7 +1094,6 @@ func (job *UploadJobT) columnCountStat(tableName string) {
 
 		job.counterStat(`warehouse_load_table_column_count`, tags...).Count(currentColumnsCount)
 	}
-	return
 }
 
 func (job *UploadJobT) loadUserTables(loadFilesTableMap map[tableNameT]bool) ([]error, error) {
