@@ -30,7 +30,9 @@ type Measurement struct {
 	Type string
 
 	LastValue    float64
+	Values       []float64
 	LastDuration time.Duration
+	Durations    []time.Duration
 }
 
 // Count implements stats.Measurement
@@ -43,6 +45,7 @@ func (m *Measurement) Count(n int) {
 	}
 
 	m.LastValue += float64(n)
+	m.Values = append(m.Values, m.LastValue)
 }
 
 // Increment implements stats.Measurement
@@ -64,6 +67,7 @@ func (m *Measurement) Gauge(value interface{}) {
 	defer m.mu.Unlock()
 
 	m.LastValue = value.(float64)
+	m.Values = append(m.Values, m.LastValue)
 }
 
 // Observe implements stats.Measurement
@@ -76,6 +80,7 @@ func (m *Measurement) Observe(value float64) {
 	defer m.mu.Unlock()
 
 	m.LastValue = value
+	m.Values = append(m.Values, m.LastValue)
 }
 
 // Start implements stats.Measurement
@@ -96,10 +101,16 @@ func (m *Measurement) End() {
 		panic("operation End not supported for measurement type:" + m.Type)
 	}
 
-	m.mu.Lock()
-	defer m.mu.Unlock()
+	m.SendTiming(m.now().Sub(m.startTime))
+}
 
-	m.LastDuration = m.now().Sub(m.startTime)
+// Since implements stats.Measurement
+func (m *Measurement) Since(start time.Time) {
+	if m.Type != stats.TimerType {
+		panic("operation Since not supported for measurement type:" + m.Type)
+	}
+
+	m.SendTiming(m.now().Sub(start))
 }
 
 // SendTiming implements stats.Measurement
@@ -112,18 +123,7 @@ func (m *Measurement) SendTiming(duration time.Duration) {
 	defer m.mu.Unlock()
 
 	m.LastDuration = duration
-}
-
-// Since implements stats.Measurement
-func (m *Measurement) Since(start time.Time) {
-	if m.Type != stats.TimerType {
-		panic("operation Since not supported for measurement type:" + m.Type)
-	}
-
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
-	m.LastDuration = m.now().Sub(start)
+	m.Durations = append(m.Durations, m.LastDuration)
 }
 
 func (ms *Store) init() {
@@ -137,17 +137,17 @@ func (ms *Store) init() {
 }
 
 // NewStat implements stats.Stats
-func (ms *Store) NewStat(name string, statType string) (m stats.Measurement) {
+func (ms *Store) NewStat(name, statType string) (m stats.Measurement) {
 	return ms.NewTaggedStat(name, statType, nil)
 }
 
 // NewTaggedStat implements stats.Stats
-func (ms *Store) NewTaggedStat(name string, statType string, tags stats.Tags) stats.Measurement {
+func (ms *Store) NewTaggedStat(name, statType string, tags stats.Tags) stats.Measurement {
 	return ms.NewSampledTaggedStat(name, statType, tags)
 }
 
 // NewSampledTaggedStat implements stats.Stats
-func (ms *Store) NewSampledTaggedStat(name string, statType string, tags stats.Tags) stats.Measurement {
+func (ms *Store) NewSampledTaggedStat(name, statType string, tags stats.Tags) stats.Measurement {
 	ms.init()
 	ms.mu.Lock()
 	defer ms.mu.Unlock()
