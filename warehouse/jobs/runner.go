@@ -3,6 +3,7 @@ package jobs
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"sync"
@@ -217,7 +218,7 @@ func (a *AsyncJobWhT) startAsyncJobRunner(ctx context.Context) error {
 				case responses := <-ch:
 					a.logger.Info("[WH-Jobs]: Response received from the pgnotifier track batch")
 					asyncJobsStatusMap := getAsyncStatusMapFromAsyncPayloads(pendingAsyncJobs)
-					err = updateStatusJobPayloadsFromPgNotifierResponse(responses, asyncJobsStatusMap)
+					a.updateStatusJobPayloadsFromPgNotifierResponse(responses, asyncJobsStatusMap)
 					_ = a.updateAsyncJobs(ctx, asyncJobsStatusMap)
 					wg.Done()
 				case <-time.After(a.AsyncJobTimeOut):
@@ -228,6 +229,25 @@ func (a *AsyncJobWhT) startAsyncJobRunner(ctx context.Context) error {
 				}
 			}()
 			wg.Wait()
+		}
+	}
+}
+
+func (a *AsyncJobWhT) updateStatusJobPayloadsFromPgNotifierResponse(r []pgnotifier.ResponseT, m map[string]AsyncJobStatus) {
+	for _, resp := range r {
+		var pgNotifierOutput PGNotifierOutput
+		err := json.Unmarshal(resp.Output, &pgNotifierOutput)
+		if err != nil {
+			a.logger.Errorf("error unmarshalling pgnotifier payload to AsyncJobStatusMa for Id: %s", pgNotifierOutput.Id)
+			continue
+		}
+
+		if output, ok := m[pgNotifierOutput.Id]; ok {
+			output.Status = resp.Status
+			if resp.Error != "" {
+				output.Error = fmt.Errorf(resp.Error)
+			}
+			m[pgNotifierOutput.Id] = output
 		}
 	}
 }

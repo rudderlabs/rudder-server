@@ -2,8 +2,6 @@ package jobs
 
 import (
 	"encoding/json"
-	"fmt"
-
 	"github.com/rudderlabs/rudder-server/services/pgnotifier"
 )
 
@@ -64,24 +62,4 @@ func getAsyncStatusMapFromAsyncPayloads(payloads []AsyncJobPayloadT) map[string]
 		}
 	}
 	return asyncJobStatusMap
-}
-
-func updateStatusJobPayloadsFromPgNotifierResponse(r []pgnotifier.ResponseT, m map[string]AsyncJobStatus) error {
-	var err error
-	for _, resp := range r {
-		var pgNotifierOutput PGNotifierOutput
-		err = json.Unmarshal(resp.Output, &pgNotifierOutput)
-		if err != nil {
-			return fmt.Errorf("unmarshalling pgnotifier payload to AsyncJobStatusMa for Id: %s", pgNotifierOutput.Id)
-		}
-
-		if output, ok := m[pgNotifierOutput.Id]; ok {
-			output.Status = resp.Status
-			if resp.Error != "" {
-				output.Error = fmt.Errorf(resp.Error)
-			}
-			m[pgNotifierOutput.Id] = output
-		}
-	}
-	return err
 }
