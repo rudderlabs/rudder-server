@@ -12,8 +12,8 @@ import (
 
 	"github.com/golang/mock/gomock"
 	"github.com/rudderlabs/rudder-server/config"
+	mock_webhook "github.com/rudderlabs/rudder-server/gateway/mocks"
 	"github.com/rudderlabs/rudder-server/gateway/response"
-	mock_webhook "github.com/rudderlabs/rudder-server/mocks/gateway/webhook"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/stretchr/testify/assert"

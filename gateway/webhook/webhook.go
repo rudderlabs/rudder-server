@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/hashicorp/go-retryablehttp"
+	gwstats "github.com/rudderlabs/rudder-server/gateway/internal/stats"
 	"github.com/rudderlabs/rudder-server/gateway/response"
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/logger"
@@ -102,10 +103,10 @@ func parseWriteKey(req *http.Request) (writeKey string, found bool) {
 
 func (webhook *HandleT) failRequest(w http.ResponseWriter, r *http.Request, reason string, code int, stat string) {
 	writeKeyFailStats := make(map[string]int)
-	statTags := map[string]map[string]string{
+	statTags := map[string]*gwstats.SourceStatTag{
 		stat: {
-			"reqType": "webhook",
-			"reason":  reason,
+			ReqType: "webhook",
+			Reason:  reason,
 		},
 	}
 	misc.IncrementMapByKey(writeKeyFailStats, stat, 1)
