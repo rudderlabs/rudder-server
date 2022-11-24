@@ -4,13 +4,10 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
-	"time"
-
 	"github.com/rudderlabs/rudder-server/services/pgnotifier"
 	"github.com/rudderlabs/rudder-server/utils/logger"
+	"time"
 )
-
-var pkgLogger logger.Logger
 
 // StartJobReqPayload For processing requests payload in handlers.go
 type StartJobReqPayload struct {
@@ -25,10 +22,17 @@ type StartJobReqPayload struct {
 }
 
 type AsyncJobWhT struct {
-	dbHandle   *sql.DB
-	enabled    bool
-	pgnotifier *pgnotifier.PgNotifierT
-	context    context.Context
+	dbHandle              *sql.DB
+	enabled               bool
+	pgnotifier            *pgnotifier.PgNotifierT
+	context               context.Context
+	logger                logger.Logger
+	MaxBatchSizeToProcess int
+	MaxCleanUpRetries     int
+	MaxQueryRetries       int
+	RetryTimeInterval     time.Duration
+	MaxAttemptsPerJob     int
+	AsyncJobTimeOut       time.Duration
 }
 
 type WhJobsMetaData struct {
@@ -84,12 +88,3 @@ type AsyncJobStatus struct {
 	Status string
 	Error  error
 }
-
-const (
-	MaxBatchSizeToProcess int = 10
-	MaxCleanUpRetries     int = 5
-	MaxQueryRetries       int = 3
-	RetryTimeInterval         = 10 * time.Second
-	MaxAttemptsPerJob     int = 3
-	WhAsyncJobTimeOut         = 300 * time.Second
-)

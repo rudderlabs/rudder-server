@@ -2279,6 +2279,7 @@ func Start(ctx context.Context, app app.App) error {
 			return err
 		}
 		asyncWh = jobs.InitWarehouseJobsAPI(ctx, dbHandle, &notifier)
+		asyncWh.WithConfig(config.Default)
 
 		g.Go(misc.WithBugsnagForWarehouse(func() error {
 			return asyncWh.InitAsyncJobRunner()
