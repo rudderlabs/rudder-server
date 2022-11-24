@@ -31,7 +31,7 @@ func InitWarehouseJobsAPI(
 	}
 }
 
-func (a *AsyncJobWhT) WithConfig(config *config.Config) {
+func WithConfig(a *AsyncJobWhT, config *config.Config) {
 	a.MaxBatchSizeToProcess = config.GetInt("Warehouse.jobs.maxBatchSizeToProcess", 10)
 	a.MaxCleanUpRetries = config.GetInt("Warehouse.jobs.maxCleanUpRetries", 5)
 	a.MaxQueryRetries = config.GetInt("Warehouse.jobs.maxQueryRetries", 3)
