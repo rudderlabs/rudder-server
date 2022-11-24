@@ -41,9 +41,8 @@ func (*APIManager) GetSupportedDestinations() []string {
 	return supportedDestinations
 }
 
-// prepares payload based on (job,destDetail) & make an API call to transformer.
-// gets (status, failure_reason) which is converted to appropriate model.Error & returned to caller.
-func (api *APIManager) Delete(ctx context.Context, job model.Job, destination model.Destination) model.JobStatus {
+func (api *APIManager) delete(ctx context.Context, job model.Job, destination model.Destination, attempts int) model.JobStatus {
+
 	pkgLogger.Debugf("deleting: %v", job, " from API destination: %v", destination.Name)
 	method := http.MethodPost
 	endpoint := "/deleteUsers"
@@ -106,20 +105,27 @@ func (api *APIManager) Delete(ctx context.Context, job model.Job, destination mo
 		return model.JobStatusFailed
 	}
 	jobStatus := getJobStatus(resp.StatusCode, jobResp)
-	pkgLogger.Debugf("[%v] JobStatus for %v: %v", destination.Name, destination.DestinationID, jobStatus)
+	pkgLogger.Debugf("[%v] JobStatus for %v: %v", destination.Name, job.DestinationID, jobStatus)
 
-	if isOAuthEnabled && isTokenExpired(jobResp) {
+	if isOAuthEnabled && isTokenExpired(jobResp) && attempts < 1 {
 		err = api.refreshOAuthToken(destination.Name, job.WorkspaceID, oAuthDetail)
 		if err != nil {
 			pkgLogger.Error(err)
 			return model.JobStatusFailed
 		}
 		// retry the request
-		pkgLogger.Debug("Retrying deleteRequest job for the whole batch")
-		return api.Delete(ctx, job, destination)
+		pkgLogger.Debugf("Retrying deleteRequest job for the whole batch: %v", job.DestinationID)
+		attempts++
+		return api.delete(ctx, job, destination, attempts)
 	}
 
 	return jobStatus
+}
+
+// prepares payload based on (job,destDetail) & make an API call to transformer.
+// gets (status, failure_reason) which is converted to appropriate model.Error & returned to caller.
+func (api *APIManager) Delete(ctx context.Context, job model.Job, destination model.Destination) model.JobStatus {
+	return api.delete(ctx, job, destination, 0)
 }
 
 func getJobStatus(statusCode int, jobResp []JobRespSchema) model.JobStatus {
