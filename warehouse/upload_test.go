@@ -160,7 +160,7 @@ var _ = Describe("Upload", Ordered, func() {
 	},
 		Entry(nil, []error{}, true),
 		Entry(nil, []error{&TableSkipError{}}, true),
-		Entry(nil, []error{errors.New("")}, false),
+		Entry(nil, []error{errors.New("some-error")}, false),
 	)
 
 	DescribeTable("Get table upload status map", func(tableUploadStatuses []*TableUploadStatusT, expected map[int64]map[string]*TableUploadStatusInfoT) {
