@@ -251,14 +251,6 @@ func (uploadsReq *UploadsReqT) TriggerWhUploads() (response *proto.TriggerWhUplo
 func (uploadReq UploadReqT) GetWHUpload() (*proto.WHUploadResponse, error) {
 	response := &proto.WHUploadResponse{}
 	err := uploadReq.validateReq()
-	//defer func() {
-	//	if err != nil {
-	//		response = &proto.WHUploadResponse{
-	//			StatusCode: http.StatusBadRequest,
-	//		}
-	//	}
-	//}()
-
 	if err != nil {
 		response.StatusCode = http.StatusBadRequest
 		return response, err
