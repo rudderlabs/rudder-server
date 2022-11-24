@@ -8,7 +8,7 @@ import (
 	"os"
 	"testing"
 
-	"github.com/rudderlabs/rudder-server/services/stats"
+	mock_stats "github.com/rudderlabs/rudder-server/mocks/services/stats"
 
 	"github.com/golang/mock/gomock"
 	. "github.com/onsi/ginkgo/v2"
@@ -73,6 +73,85 @@ func TestExtractUploadErrorsByState(t *testing.T) {
 		if stateErrors["attempt"].(int) != ip.ErrorCount {
 			t.Errorf("expected attempts to be: %d, got: %d", ip.ErrorCount, stateErrors["attempt"].(int))
 		}
+	}
+}
+
+func TestColumnCountStat(t *testing.T) {
+	Init()
+	Init4()
+
+	inputs := []struct {
+		name             string
+		columnCountLimit int
+		destinationType  string
+		statExpected     bool
+	}{
+		{
+			name:             "less than threshold",
+			destinationType:  "test-destination",
+			columnCountLimit: 1,
+			statExpected:     true,
+		},
+		{
+			name:             "greater than threshold",
+			destinationType:  "test-destination",
+			columnCountLimit: 10,
+		},
+		{
+			name:            "unknown destination",
+			destinationType: "unknwon-destination",
+		},
+	}
+
+	ctrl := gomock.NewController(t)
+	mockStats := mock_stats.NewMockStats(ctrl)
+	mockMeasurement := mock_stats.NewMockMeasurement(ctrl)
+
+	for _, tc := range inputs {
+		tc := tc
+
+		t.Run(tc.name, func(t *testing.T) {
+			columnCountLimitMap = map[string]int{
+				"test-destination": tc.columnCountLimit,
+			}
+
+			if tc.statExpected {
+				mockStats.EXPECT().NewTaggedStat(gomock.Any(), gomock.Any(), gomock.Any()).Times(1).Return(mockMeasurement)
+				mockMeasurement.EXPECT().Count(3).Times(1)
+			} else {
+				mockStats.EXPECT().NewTaggedStat(gomock.Any(), gomock.Any(), gomock.Any()).Times(0).Return(mockMeasurement)
+			}
+
+			j := UploadJobT{
+				upload: &Upload{
+					WorkspaceID:   "test-workspaceID",
+					DestinationID: "test-desinationID",
+					SourceID:      "test-sourceID",
+				},
+				warehouse: warehouseutils.Warehouse{
+					Type: tc.destinationType,
+					Destination: backendconfig.DestinationT{
+						ID:   "test-desinationID",
+						Name: "test-desinationName",
+					},
+					Source: backendconfig.SourceT{
+						ID:   "test-sourceID",
+						Name: "test-sourceName",
+					},
+				},
+				stats: mockStats,
+				schemaHandle: &SchemaHandleT{
+					schemaInWarehouse: warehouseutils.SchemaT{
+						"test-table": map[string]string{
+							"test-column-1": "string",
+							"test-column-2": "string",
+							"test-column-3": "string",
+						},
+					},
+				},
+			}
+			j.columnCountStat("test-table")
+		})
 	}
 }
 
@@ -208,14 +287,6 @@ var _ = Describe("Upload", Ordered, func() {
 	})
 
 	Describe("Staging files and load files events match", func() {
-		BeforeEach(func() {
-			defaultStats := stats.Default
-
-			DeferCleanup(func() {
-				stats.Default = defaultStats
-			})
-		})
-
 		When("Matched", func() {
 			It("Should not send stats", func() {
 				job.matchRowsInStagingAndLoadFiles()
@@ -228,8 +299,7 @@ var _ = Describe("Upload", Ordered, func() {
 				mockStats.EXPECT().NewTaggedStat(gomock.Any(), gomock.Any(), gomock.Any()).Times(1).Return(mockMeasurement)
 				mockMeasurement.EXPECT().Gauge(gomock.Any()).Times(1)
 
-				stats.Default = mockStats
-
+				job.stats = mockStats
 				job.stagingFileIDs = []int64{1, 2}
 				job.matchRowsInStagingAndLoadFiles()
 			})

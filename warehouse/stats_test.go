@@ -11,8 +11,6 @@ import (
 	. "github.com/onsi/gomega"
 
 	"github.com/ory/dockertest/v3"
-	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
-	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/testhelper"
 	"github.com/rudderlabs/rudder-server/testhelper/destination"
 	"github.com/rudderlabs/rudder-server/utils/logger"
@@ -22,17 +20,11 @@ import (
 
 var _ = Describe("Stats", Ordered, func() {
 	var (
-		sourceID        = "test-sourceID"
-		destinationID   = "test-destinationID"
-		destinationType = "test-desinationType"
-		destinationName = "test-destinationName"
-		sourceName      = "test-sourceName"
-		statName        = "test-statName"
-		g               = GinkgoT()
-		pgResource      *destination.PostgresResource
-		err             error
-		uploadID        = int64(1)
-		cleanup         = &testhelper.Cleanup{}
+		g          = GinkgoT()
+		pgResource *destination.PostgresResource
+		err        error
+		uploadID   = int64(1)
+		cleanup    = &testhelper.Cleanup{}
 	)
 
 	BeforeAll(func() {
@@ -59,39 +51,6 @@ var _ = Describe("Stats", Ordered, func() {
 		cleanup.Run()
 	})
 
-	BeforeEach(func() {
-		defaultStats := stats.Default
-
-		DeferCleanup(func() {
-			stats.Default = defaultStats
-		})
-	})
-
-	Describe("Jobs stats", func() {
-		BeforeEach(func() {
-			mockStats, mockMeasurement := getMockStats(g)
-			mockStats.EXPECT().NewTaggedStat(gomock.Any(), gomock.Any(), gomock.Any()).Times(1).Return(mockMeasurement)
-			mockMeasurement.EXPECT().Count(gomock.Any()).AnyTimes()
-
-			stats.Default = mockStats
-		})
-
-		It("Upload status stat", func() {
-			getUploadStatusStat(statName, warehouseutils.Warehouse{
-				WorkspaceID: "workspaceID",
-				Source:      backendconfig.SourceT{ID: sourceID, Name: sourceName},
-				Destination: backendconfig.DestinationT{ID: destinationID, Name: destinationName},
-				Namespace:   "",
-				Type:        destinationType,
-				Identifier:  "",
-			})
-		})
-
-		It("Persist ssl file error stat", func() {
-			persistSSLFileErrorStat("workspaceID", destinationType, destinationName, destinationID, sourceName, sourceID, "")
-		})
-	})
-
 	Describe("Generate upload success/aborted metrics", func() {
 		var job *UploadJobT
 
@@ -100,8 +59,6 @@ var _ = Describe("Stats", Ordered, func() {
 			mockStats.EXPECT().NewTaggedStat(gomock.Any(), gomock.Any(), gomock.Any()).Times(3).Return(mockMeasurement)
 			mockMeasurement.EXPECT().Count(4).Times(2)
 			mockMeasurement.EXPECT().Count(1).Times(1)
-
-			stats.Default = mockStats
 
 			job = &UploadJobT{
 				upload: &Upload{
@@ -112,6 +69,7 @@ var _ = Describe("Stats", Ordered, func() {
 				warehouse: warehouseutils.Warehouse{
 					Type: "POSTGRES",
 				},
+				stats: mockStats,
 			}
 		})
 
@@ -130,8 +88,6 @@ var _ = Describe("Stats", Ordered, func() {
 		mockMeasurement.EXPECT().Count(4).Times(2)
 		mockMeasurement.EXPECT().Since(gomock.Any()).Times(1)
 
-		stats.Default = mockStats
-
 		job := &UploadJobT{
 			upload: &Upload{
 				WorkspaceID:        "workspaceID",
@@ -142,6 +98,7 @@ var _ = Describe("Stats", Ordered, func() {
 			warehouse: warehouseutils.Warehouse{
 				Type: "POSTGRES",
 			},
+			stats: mockStats,
 		}
 		job.recordTableLoad("tracks", 4)
 	})
@@ -150,8 +107,6 @@ var _ = Describe("Stats", Ordered, func() {
 		mockStats, mockMeasurement := getMockStats(g)
 		mockStats.EXPECT().NewTaggedStat(gomock.Any(), gomock.Any(), gomock.Any()).Times(1).Return(mockMeasurement)
 		mockMeasurement.EXPECT().SendTiming(gomock.Any()).Times(1)
-
-		stats.Default = mockStats
 
 		job := &UploadJobT{
 			upload: &Upload{
@@ -163,6 +118,7 @@ var _ = Describe("Stats", Ordered, func() {
 				Type: "POSTGRES",
 			},
 			dbHandle: pgResource.DB,
+			stats:    mockStats,
 		}
 
 		err = job.recordLoadFileGenerationTimeStat(1, 4)
