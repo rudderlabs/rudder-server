@@ -1087,6 +1087,60 @@ func TestDeleteExecuting(t *testing.T) {
 	unprocessed, err := jobsDB.getUnprocessed(context.Background(), GetQueryParamsT{CustomValFilters: []string{customVal}, ParameterFilters: []ParameterFilterT{{Name: "destination_id", Value: destinationID}}, JobsLimit: 100})
 	require.NoError(t, err)
 	require.Equal(t, 2, len(unprocessed.Jobs))
+	var statuses []*JobStatusT
+	for _, job := range unprocessed.Jobs {
+		statuses = append(statuses, &JobStatusT{
+			JobID:         job.JobID,
+			JobState:      Executing.State,
+			AttemptNum:    1,
+			ExecTime:      time.Now(),
+			RetryTime:     time.Now(),
+			ErrorCode:     "",
+			ErrorResponse: []byte(`{}`),
+			Parameters:    []byte(`{}`),
+			WorkspaceId:   defaultWorkspaceID,
+		})
+	}
+	require.NoError(t, jobsDB.UpdateJobStatus(context.Background(), statuses, []string{customVal}, []ParameterFilterT{}))
+	unprocessed, err = jobsDB.getUnprocessed(context.Background(), GetQueryParamsT{CustomValFilters: []string{customVal}, ParameterFilters: []ParameterFilterT{{Name: "destination_id", Value: destinationID}}, JobsLimit: 100})
+	require.NoError(t, err)
+	require.Equal(t, 0, len(unprocessed.Jobs))
+
+	jobsDB.DeleteExecuting()
+
+	unprocessed, err = jobsDB.getUnprocessed(context.Background(), GetQueryParamsT{CustomValFilters: []string{customVal}, ParameterFilters: []ParameterFilterT{{Name: "destination_id", Value: destinationID}}, JobsLimit: 100})
+	require.NoError(t, err)
+	require.Equal(t, 2, len(unprocessed.Jobs))
+}
+
+func TestFailExecuting(t *testing.T) {
+	_ = startPostgres(t)
+	customVal := "CUSTOMVAL"
+	generateJobs := func(numOfJob int, destinationID string) []*JobT {
+		js := make([]*JobT, numOfJob)
+		for i := 0; i < numOfJob; i++ {
+			js[i] = &JobT{
+				Parameters:   []byte(fmt.Sprintf(`{"batch_id":1,"source_id":"sourceID","destination_id":"%s"}`, destinationID)),
+				EventPayload: []byte(`{"testKey":"testValue"}`),
+				UserID:       "a-292e-4e79-9880-f8009e0ae4a3",
+				UUID:         uuid.Must(uuid.NewV4()),
+				CustomVal:    customVal,
+				EventCount:   1,
+			}
+		}
+		return js
+	}
+
+	var jobsDB *HandleT
+	prefix := strings.ToLower(rsRand.String(5))
+	destinationID := strings.ToLower(rsRand.String(5))
+	jobsDB = NewForReadWrite(prefix)
+	require.NoError(t, jobsDB.Start())
+	defer jobsDB.TearDown()
+	require.NoError(t, jobsDB.Store(context.Background(), generateJobs(2, destinationID)))
+	unprocessed, err := jobsDB.getUnprocessed(context.Background(), GetQueryParamsT{CustomValFilters: []string{customVal}, ParameterFilters: []ParameterFilterT{{Name: "destination_id", Value: destinationID}}, JobsLimit: 100})
+	require.NoError(t, err)
+	require.Equal(t, 2, len(unprocessed.Jobs))
 
 	var statuses []*JobStatusT
 	for _, job := range unprocessed.Jobs {
@@ -1108,11 +1162,15 @@ func TestDeleteExecuting(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, 0, len(unprocessed.Jobs))
 
-	jobsDB.DeleteExecuting()
+	jobsDB.FailExecuting()
 
 	unprocessed, err = jobsDB.getUnprocessed(context.Background(), GetQueryParamsT{CustomValFilters: []string{customVal}, ParameterFilters: []ParameterFilterT{{Name: "destination_id", Value: destinationID}}, JobsLimit: 100})
 	require.NoError(t, err)
-	require.Equal(t, 2, len(unprocessed.Jobs))
+	require.Equal(t, 0, len(unprocessed.Jobs))
+
+	failed, err := jobsDB.GetToRetry(context.Background(), GetQueryParamsT{CustomValFilters: []string{customVal}, ParameterFilters: []ParameterFilterT{{Name: "destination_id", Value: destinationID}}, JobsLimit: 100})
+	require.NoError(t, err)
+	require.Equal(t, 2, len(failed.Jobs))
 }
 
 type testingT interface {

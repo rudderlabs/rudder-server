@@ -287,6 +287,7 @@ type JobsDB interface {
 	Status() interface{}
 	Ping() error
 	DeleteExecuting()
+	FailExecuting()
 
 	/* Journal */
 
@@ -3374,15 +3375,15 @@ func (jd *HandleT) getImportingList(ctx context.Context, params GetQueryParamsT)
 }
 
 /*
-deleteJobStatus deletes the latest status of a batch of jobs
+failExecuting sets the state of the executing jobs to failed
 This is only done during recovery, which happens during the server start.
 So, we don't have to worry about dsEmptyResultCache
 */
-func (jd *HandleT) deleteJobStatus(conditions QueryConditions) {
+func (jd *HandleT) failExecuting() {
 	tx, err := jd.dbHandle.Begin()
 	jd.assertError(err)
 
-	err = jd.deleteJobStatusInTx(tx, conditions)
+	err = jd.failExecutingInTx(tx)
 	jd.assertErrorAndRollbackTx(err, tx)
 
 	err = tx.Commit()
@@ -3391,11 +3392,13 @@ func (jd *HandleT) deleteJobStatus(conditions QueryConditions) {
 
 /*
 if count passed is less than 0, then delete happens on the entire dsList;
-deleteJobStatusInTx deletes the latest status of a batch of jobs
+failExecutingInTx deletes the latest status of a batch of jobs
 */
-func (jd *HandleT) deleteJobStatusInTx(txHandler transactionHandler, conditions QueryConditions) error {
-	tags := statTags{CustomValFilters: conditions.CustomValFilters, StateFilters: conditions.StateFilters, ParameterFilters: conditions.ParameterFilters}
-	queryStat := jd.getTimerStat("delete_job_status_time", &tags)
+func (jd *HandleT) failExecutingInTx(txHandler transactionHandler) error {
+	queryStat := jd.getTimerStat(
+		"jobsdb_fail_executing_time",
+		&statTags{CustomValFilters: []string{jd.tablePrefix}},
+	)
 	queryStat.Start()
 	defer queryStat.End()
 
@@ -3414,13 +3417,11 @@ func (jd *HandleT) deleteJobStatusInTx(txHandler transactionHandler, conditions 
 
 	dsList := jd.getDSList()
 
-	totalDeletedCount := 0
 	for _, ds := range dsList {
-		deletedCount, err := jd.deleteJobStatusDSInTx(txHandler, ds, conditions)
+		err := jd.failExecutingDSInTx(txHandler, ds)
 		if err != nil {
 			return err
 		}
-		totalDeletedCount += deletedCount
 		jd.dropDSFromCache(ds)
 	}
 
@@ -3431,59 +3432,26 @@ func (jd *HandleT) deleteJobStatusInTx(txHandler transactionHandler, conditions 
 stateFilters and customValFilters do a OR query on values passed in array
 parameterFilters do a AND query on values included in the map
 */
-func (jd *HandleT) deleteJobStatusDSInTx(txHandler transactionHandler, ds dataSetT, conditions QueryConditions) (int, error) {
-	stateFilters := conditions.StateFilters
-	customValFilters := conditions.CustomValFilters
-	parameterFilters := conditions.ParameterFilters
+func (jd *HandleT) failExecutingDSInTx(txHandler transactionHandler, ds dataSetT) error {
+	queryStat := jd.getTimerStat(
+		"jobsdb_fail_executing_ds_time",
+		&statTags{CustomValFilters: []string{jd.tablePrefix}},
+	)
 
-	checkValidJobState(jd, stateFilters)
-
-	tags := statTags{CustomValFilters: conditions.CustomValFilters, StateFilters: conditions.StateFilters, ParameterFilters: conditions.ParameterFilters}
-	queryStat := jd.getTimerStat("delete_job_status_ds_time", &tags)
 	queryStat.Start()
 	defer queryStat.End()
 
-	var stateQuery string
-	var sqlFilters []string
-	if len(stateFilters) > 0 {
-		stateQuery = " AND " + constructQueryOR("job_state", stateFilters)
-	}
-	if conditions.AfterJobID != nil {
-		sqlFilters = append(sqlFilters, fmt.Sprintf(`job_id > %d`, *conditions.AfterJobID))
-	}
-	if len(customValFilters) > 0 {
-		sqlFilters = append(sqlFilters, constructQueryOR(fmt.Sprintf(`%q.custom_val`, ds.JobTable), customValFilters))
-	}
-	if len(parameterFilters) > 0 {
-		sqlFilters = append(sqlFilters, constructParameterJSONQuery(ds.JobTable, parameterFilters))
-	}
-
-	sqlFiltersString := strings.Join(sqlFilters, " AND ")
-	if len(sqlFiltersString) > 0 {
-		sqlFiltersString = "WHERE " + sqlFiltersString
-	}
-
-	sqlStatement := fmt.Sprintf(`DELETE FROM %[1]q
-									WHERE id = ANY(
-										SELECT id from "v_last_%[1]s" where job_id IN (SELECT job_id from %[2]q %[3]s)
-									) %[4]s AND retry_time < $1`,
-		ds.JobStatusTable, ds.JobTable, sqlFiltersString, stateQuery)
-
-	stmt, err := txHandler.Prepare(sqlStatement)
-	if err != nil {
-		return 0, err
-	}
-	defer func() { _ = stmt.Close() }()
-	res, err := stmt.Exec(getTimeNowFunc())
-	if err != nil {
-		return 0, err
-	}
-	deleteCount, err := res.RowsAffected()
-	if err != nil {
-		return 0, err
-	}
-
-	return int(deleteCount), nil
+	_, err := txHandler.Exec(
+		fmt.Sprintf(
+			`UPDATE %[1]q SET job_state='failed'
+				WHERE id = ANY(
+					SELECT id from "v_last_%[1]s" where job_state='executing'
+				) AND retry_time < $1`,
+			ds.JobStatusTable,
+		),
+		getTimeNowFunc(),
+	)
+	return err
 }
 
 /*
@@ -3656,19 +3624,98 @@ func (jd *HandleT) getExecuting(ctx context.Context, params GetQueryParamsT) (Jo
 }
 
 /*
+FailExecuting fails events whose latest job state is executing.
+
+This is only done during recovery, which happens during the server start.
+*/
+func (jd *HandleT) FailExecuting() {
+	tags := statTags{
+		CustomValFilters: []string{jd.tablePrefix},
+	}
+	command := func() interface{} {
+		jd.failExecuting()
+		return nil
+	}
+	_ = jd.executeDbRequest(newWriteDbRequest("fail_executing", &tags, command))
+}
+
+/*
 DeleteExecuting deletes events whose latest job state is executing.
 This is only done during recovery, which happens during the server start.
 */
 func (jd *HandleT) DeleteExecuting() {
-	conditions := QueryConditions{
-		StateFilters: []string{Executing.State},
-	}
-	tags := statTags{CustomValFilters: conditions.CustomValFilters, StateFilters: conditions.StateFilters, ParameterFilters: conditions.ParameterFilters}
+	tags := statTags{CustomValFilters: []string{jd.tablePrefix}}
 	command := func() interface{} {
-		jd.deleteJobStatus(conditions)
+		jd.deleteJobStatus()
 		return nil
 	}
 	_ = jd.executeDbRequest(newWriteDbRequest("delete_job_status", &tags, command))
+}
+
+/*
+deleteJobStatus deletes the latest status of a batch of jobs
+This is only done during recovery, which happens during the server start.
+So, we don't have to worry about dsEmptyResultCache
+*/
+func (jd *HandleT) deleteJobStatus() {
+	tx, err := jd.dbHandle.Begin()
+	jd.assertError(err)
+
+	err = jd.deleteJobStatusInTx(tx)
+	jd.assertErrorAndRollbackTx(err, tx)
+
+	err = tx.Commit()
+	jd.assertError(err)
+}
+
+func (jd *HandleT) deleteJobStatusInTx(txHandler transactionHandler) error {
+	tags := statTags{CustomValFilters: []string{jd.tablePrefix}}
+	queryStat := jd.getTimerStat("jobsdb_delete_job_status_time", &tags)
+	queryStat.Start()
+	defer queryStat.End()
+
+	// The order of lock is very important. The migrateDSLoop
+	// takes lock in this order so reversing this will cause
+	// deadlocks
+	ctx := context.TODO()
+	if !jd.dsMigrationLock.RTryLockWithCtx(ctx) {
+		panic(fmt.Errorf("could not acquire a migration lock: %w", ctx.Err()))
+	}
+	defer jd.dsMigrationLock.RUnlock()
+	if !jd.dsListLock.RTryLockWithCtx(ctx) {
+		panic(fmt.Errorf("could not acquire a dslist lock: %w", ctx.Err()))
+	}
+	defer jd.dsListLock.RUnlock()
+
+	dsList := jd.getDSList()
+
+	for _, ds := range dsList {
+		if err := jd.deleteJobStatusDSInTx(txHandler, ds); err != nil {
+			return err
+		}
+		jd.dropDSFromCache(ds)
+	}
+
+	return nil
+}
+
+func (jd *HandleT) deleteJobStatusDSInTx(txHandler transactionHandler, ds dataSetT) error {
+	tags := statTags{CustomValFilters: []string{jd.tablePrefix}}
+	queryStat := jd.getTimerStat("jobsdb_delete_job_status_ds_time", &tags)
+	queryStat.Start()
+	defer queryStat.End()
+
+	_, err := txHandler.Exec(
+		fmt.Sprintf(
+			`DELETE FROM %[1]q
+				WHERE id = ANY(
+					SELECT id from "v_last_%[1]s" where job_state='executing'
+				) AND retry_time < $1`,
+			ds.JobStatusTable,
+		),
+		getTimeNowFunc(),
+	)
+	return err
 }
 
 /*
