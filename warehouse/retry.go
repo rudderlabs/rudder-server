@@ -8,7 +8,7 @@ import (
 
 	"github.com/lib/pq"
 	"github.com/rudderlabs/rudder-server/utils/misc"
-	"github.com/rudderlabs/rudder-server/warehouse/model"
+	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 )
 
 type RetryRequest struct {
