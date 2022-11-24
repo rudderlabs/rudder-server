@@ -91,5 +91,5 @@ const (
 	MaxQueryRetries       int = 3
 	RetryTimeInterval         = 10 * time.Second
 	MaxAttemptsPerJob     int = 3
-	WhAsyncJobTimeOut         = 300 * time.Second
+	WhAsyncJobTimeOut         = 10 * time.Second
 )
