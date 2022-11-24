@@ -16,7 +16,7 @@ import (
 
 	"github.com/rudderlabs/rudder-server/services/stats"
 
-	"github.com/rudderlabs/rudder-server/warehouse/model"
+	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/services/filemanager"
