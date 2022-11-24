@@ -4,9 +4,10 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"time"
+
 	"github.com/rudderlabs/rudder-server/services/pgnotifier"
 	"github.com/rudderlabs/rudder-server/utils/logger"
-	"time"
 )
 
 // StartJobReqPayload For processing requests payload in handlers.go
