@@ -113,13 +113,15 @@ func TestRedisDeletion(t *testing.T) {
 		},
 	}
 
-	destName := "REDIS"
-	destConfig := map[string]interface{}{
-		"clusterMode": false,
-		"address":     redisAddress,
+	dest := model.Destination{
+		Config: map[string]interface{}{
+			"clusterMode": false,
+			"address":     redisAddress,
+		},
+		Name: "REDIS",
 	}
 
-	manager := kvstoremanager.New(destName, destConfig)
+	manager := kvstoremanager.New(dest.Name, dest.Config)
 
 	// inserting test data in Redis
 	for _, test := range inputTestData {
@@ -155,7 +157,7 @@ func TestRedisDeletion(t *testing.T) {
 	}
 
 	// deleting the last key inserted
-	status := kvstore.Delete(ctx, deleteJob, destConfig, destName)
+	status := kvstore.Delete(ctx, deleteJob, dest)
 	require.Equal(t, model.JobStatusComplete, status, "actual deletion status different than expected")
 
 	fieldCountAfterDelete := make([]int, len(inputTestData))

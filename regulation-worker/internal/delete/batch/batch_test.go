@@ -85,7 +85,7 @@ func TestBatchDelete(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			status := bm.Delete(ctx, tt.job, tt.dest.Config, tt.dest.Name)
+			status := bm.Delete(ctx, tt.job, tt.dest)
 			require.Equal(t, model.JobStatusComplete, status)
 
 			searchDir := mockBucketLocation

@@ -21,7 +21,10 @@ func (*KVDeleteManager) GetSupportedDestinations() []string {
 	return supportedDestinations
 }
 
-func (*KVDeleteManager) Delete(_ context.Context, job model.Job, destConfig map[string]interface{}, destName string) model.JobStatus {
+func (*KVDeleteManager) Delete(_ context.Context, job model.Job, destDetail model.Destination) model.JobStatus {
+	destConfig := destDetail.Config
+	destName := destDetail.Name
+
 	pkgLogger.Debugf("deleting job: %v", job, " from kvstore")
 	kvm := kvstoremanager.New(destName, destConfig)
 	var err error

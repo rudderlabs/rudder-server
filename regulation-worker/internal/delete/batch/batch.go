@@ -315,9 +315,11 @@ func (*BatchManager) GetSupportedDestinations() []string {
 func (bm *BatchManager) Delete(
 	ctx context.Context,
 	job model.Job,
-	destConfig map[string]interface{},
-	destName string,
+	destDetail model.Destination,
 ) model.JobStatus {
+	destConfig := destDetail.Config
+	destName := destDetail.Name
+
 	pkgLogger.Debugf("deleting job: %v", job, "from batch destination: %v", destName)
 
 	fm, err := bm.FMFactory.New(&filemanager.SettingsT{Provider: destName, Config: destConfig})
