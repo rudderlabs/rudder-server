@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	uuid "github.com/gofrs/uuid"
+	uuid "github.com/google/uuid"
 	"github.com/ory/dockertest/v3"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
@@ -211,10 +211,7 @@ func readGzipJobFile(filename string) ([]*jobsdb.JobT, error) {
 	jobs := []*jobsdb.JobT{}
 	for sc.Scan() {
 		lineByte := sc.Bytes()
-		uuid, err := uuid.FromString("69359037-9599-48e7-b8f2-48393c019135")
-		if err != nil {
-			return []*jobsdb.JobT{}, err
-		}
+		uuid:= uuid.MustParse("69359037-9599-48e7-b8f2-48393c019135")
 		job := &jobsdb.JobT{
 			UUID:         uuid,
 			JobID:        gjson.GetBytes(lineByte, "job_id").Int(),

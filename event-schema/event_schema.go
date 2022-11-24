@@ -36,7 +36,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/gofrs/uuid"
+	"github.com/google/uuid"
 	"github.com/jeremywohl/flatten"
 	"github.com/lib/pq"
 
@@ -472,7 +472,7 @@ func (manager *EventSchemaManagerT) handleEvent(writeKey string, event EventT) {
 }
 
 func (manager *EventSchemaManagerT) createModel(writeKey, eventType, eventIdentifier string, totalEventModels int, archiveOldestLastSeenModel func()) *EventModelT {
-	eventModelID := uuid.Must(uuid.NewV4()).String()
+	eventModelID := uuid.New().String()
 	em := &EventModelT{
 		UUID:            eventModelID,
 		WriteKey:        writeKey,
@@ -495,7 +495,7 @@ func (manager *EventSchemaManagerT) createModel(writeKey, eventType, eventIdenti
 }
 
 func (manager *EventSchemaManagerT) createSchema(schema map[string]string, schemaHash string, eventModel *EventModelT, totalSchemaVersions int, archiveOldestLastSeenVersion func()) *SchemaVersionT {
-	versionID := uuid.Must(uuid.NewV4()).String()
+	versionID := uuid.New().String()
 	schemaVersion := manager.NewSchemaVersion(versionID, schema, schemaHash, eventModel.UUID)
 	eventModel.mergeSchema(schemaVersion)
 

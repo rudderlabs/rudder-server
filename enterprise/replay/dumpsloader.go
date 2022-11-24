@@ -11,7 +11,7 @@ import (
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/services/filemanager"
 
-	"github.com/gofrs/uuid"
+	"github.com/google/uuid"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
@@ -135,8 +135,8 @@ func (gwHandle *GWReplayRequestHandler) fetchDumpsList(ctx context.Context) {
 
 			if pass {
 				job := jobsdb.JobT{
-					UUID:         uuid.Must(uuid.NewV4()),
-					UserID:       fmt.Sprintf(`random-%s`, uuid.Must(uuid.NewV4())),
+					UUID:         uuid.New(),
+					UserID:       fmt.Sprintf(`random-%s`, uuid.New()),
 					Parameters:   []byte(`{}`),
 					CustomVal:    "replay",
 					EventPayload: []byte(fmt.Sprintf(`{"location": %q}`, object.Key)),
@@ -192,8 +192,8 @@ func (procHandle *ProcErrorRequestHandler) fetchDumpsList(ctx context.Context) {
 			}
 
 			job := jobsdb.JobT{
-				UUID:         uuid.Must(uuid.NewV4()),
-				UserID:       fmt.Sprintf(`random-%s`, uuid.Must(uuid.NewV4())),
+				UUID:         uuid.New(),
+				UserID:       fmt.Sprintf(`random-%s`, uuid.New()),
 				Parameters:   []byte(`{}`),
 				CustomVal:    "replay",
 				EventPayload: []byte(fmt.Sprintf(`{"location": %q}`, object.Key)),
