@@ -73,6 +73,7 @@ message WHUploadResponse {
   int32 duration = 14;
   repeated WHTable tables = 15;
   bool isArchivedUpload = 16;
+  int32 status_code = 17;
 }
 
 message TriggerWhUploadsResponse {
