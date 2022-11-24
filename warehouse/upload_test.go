@@ -87,19 +87,24 @@ func TestColumnCountStat(t *testing.T) {
 		statExpected     bool
 	}{
 		{
-			name:             "less than threshold",
+			name:             "Greater than threshold",
 			destinationType:  "test-destination",
 			columnCountLimit: 1,
 			statExpected:     true,
 		},
 		{
-			name:             "greater than threshold",
+			name:             "Greater than threshold (Datalakes destination)",
+			destinationType:  warehouseutils.S3_DATALAKE,
+			columnCountLimit: 1,
+		},
+		{
+			name:             "Lesser than threshold",
 			destinationType:  "test-destination",
 			columnCountLimit: 10,
 		},
 		{
-			name:            "unknown destination",
-			destinationType: "unknwon-destination",
+			name:            "Unknown destination",
+			destinationType: "unknown-destination",
 		},
 	}
 
