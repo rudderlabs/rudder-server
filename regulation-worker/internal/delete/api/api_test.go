@@ -3,14 +3,20 @@ package api_test
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
+	"github.com/golang/mock/gomock"
 	"github.com/gorilla/mux"
+	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
+	mocksBackendConfig "github.com/rudderlabs/rudder-server/mocks/config/backend-config"
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/delete/api"
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/initialize"
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/model"
+	"github.com/rudderlabs/rudder-server/services/oauth"
 
 	"github.com/stretchr/testify/require"
 	"golang.org/x/net/context"
@@ -142,7 +148,11 @@ func TestDelete(t *testing.T) {
 				Client:           &http.Client{},
 				DestTransformURL: svr.URL,
 			}
-			status := api.Delete(ctx, tt.job, tt.destConfig, tt.destName)
+			dest := model.Destination{
+				Config: tt.destConfig,
+				Name:   tt.destName,
+			}
+			status := api.Delete(ctx, tt.job, dest)
 			require.Equal(t, tt.expectedDeleteStatus, status)
 			require.Equal(t, tt.expectedPayload, d.payload)
 		})
@@ -150,10 +160,11 @@ func TestDelete(t *testing.T) {
 }
 
 type deleteAPI struct {
-	payload        string
-	respStatusCode int
-	respBodyStatus model.JobStatus
-	respBodyErr    error
+	payload         string
+	respStatusCode  int
+	respBodyStatus  model.JobStatus
+	respBodyErr     error
+	authErrCategory string
 }
 
 func (d *deleteAPI) deleteMockServer(w http.ResponseWriter, r *http.Request) {
@@ -173,6 +184,9 @@ func (d *deleteAPI) deleteMockServer(w http.ResponseWriter, r *http.Request) {
 	if d.respBodyErr != nil {
 		resp.Error = d.respBodyErr.Error()
 	}
+	if d.authErrCategory != "" {
+		resp.AuthErrorCategory = d.authErrCategory
+	}
 
 	body, err := json.Marshal([]api.JobRespSchema{resp})
 	if err != nil {
@@ -184,4 +198,321 @@ func (d *deleteAPI) deleteMockServer(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
+}
+
+func TestOAuth(t *testing.T) {
+	initialize.Init()
+
+	mockCtrl := gomock.NewController(t)
+	mockBackendConfig := mocksBackendConfig.NewMockBackendConfig(mockCtrl)
+	mockBackendConfig.EXPECT().AccessToken().AnyTimes()
+
+	tests := []struct {
+		name                 string
+		job                  model.Job
+		dest                 model.Destination
+		destConfig           map[string]interface{}
+		destName             string
+		respCode             int
+		respBodyStatus       model.JobStatus
+		authErrorCategory    string
+		respBodyErr          error
+		cpResponses          []cpResponseParams
+		expectedDeleteStatus model.JobStatus
+		expectedPayload      string
+	}{
+		{
+			name: "test with a valid token and successful response",
+			job: model.Job{
+				ID:            1,
+				WorkspaceID:   "1001",
+				DestinationID: "1234",
+				Status:        model.JobStatusPending,
+				Users: []model.User{
+					{
+						ID: "Jermaine1473336609491897794707338",
+						Attributes: map[string]string{
+							"phone":     "6463633841",
+							"email":     "dorowane8n285680461479465450293437@gmail.com",
+							"randomKey": "randomValue",
+						},
+					},
+					{
+						ID: "Mercie8221821544021583104106123",
+						Attributes: map[string]string{
+							"email": "dshirilad853601942465969121327991@gmail.com",
+						},
+					},
+					{
+						ID: "Claiborn443446989226249191822329",
+						Attributes: map[string]string{
+							"phone": "8782905113",
+						},
+					},
+				},
+			},
+			dest: model.Destination{
+				Config: map[string]interface{}{
+					"rudderDeleteAccountId": "xyz",
+				},
+				Name: "GA",
+				DestDefConfig: map[string]interface{}{
+					"auth": map[string]interface{}{
+						"type": "OAuth",
+					},
+				},
+			},
+			respCode: 200,
+			cpResponses: []cpResponseParams{
+				{
+					code:     200,
+					response: `{"secret": {"access_token": "valid_access_token","refresh_token":"valid_refresh_token"}}`,
+				},
+			},
+			respBodyStatus:       "complete",
+			expectedDeleteStatus: model.JobStatusComplete,
+			expectedPayload:      `[{"jobId":"1","destType":"ga","config":{"rudderDeleteAccountId":"xyz"},"userAttributes":[{"email":"dorowane8n285680461479465450293437@gmail.com","phone":"6463633841","randomKey":"randomValue","userId":"Jermaine1473336609491897794707338"},{"email":"dshirilad853601942465969121327991@gmail.com","userId":"Mercie8221821544021583104106123"},{"phone":"8782905113","userId":"Claiborn443446989226249191822329"}]}]`,
+		},
+		{
+			name: "test with an expired token and validate if token is getting changed",
+			job: model.Job{
+				ID:            2,
+				WorkspaceID:   "1001",
+				DestinationID: "1234",
+				Status:        model.JobStatusPending,
+				Users: []model.User{
+					{
+						ID: "Jermaine1473336609491897794707338",
+						Attributes: map[string]string{
+							"phone":     "6463633841",
+							"email":     "dorowane8n285680461479465450293438@gmail.com",
+							"randomKey": "randomValue",
+						},
+					},
+					{
+						ID: "Mercie8221821544021583104106123",
+						Attributes: map[string]string{
+							"email": "dshirilad8536019424659691213279982@gmail.com",
+						},
+					},
+				},
+			},
+			dest: model.Destination{
+				Config: map[string]interface{}{
+					"rudderDeleteAccountId": "xyz",
+				},
+				Name: "GA",
+				DestDefConfig: map[string]interface{}{
+					"auth": map[string]interface{}{
+						"type": "OAuth",
+					},
+				},
+			},
+			respCode:          500,
+			respBodyStatus:    "failed",
+			authErrorCategory: oauth.REFRESH_TOKEN,
+
+			cpResponses: []cpResponseParams{
+				{
+					code:     200,
+					response: `{"secret": {"access_token": "expired_access_token","refresh_token":"valid_refresh_token"}}`,
+				},
+				{
+					code:     200,
+					response: `{"secret": {"access_token": "refreshed_access_token","refresh_token":"valid_refresh_token"}}`,
+				},
+			},
+
+			expectedDeleteStatus: model.JobStatusFailed,
+			expectedPayload:      `[{"jobId":"2","destType":"ga","config":{"rudderDeleteAccountId":"xyz"},"userAttributes":[{"email":"dorowane8n285680461479465450293438@gmail.com","phone":"6463633841","randomKey":"randomValue","userId":"Jermaine1473336609491897794707338"},{"email":"dshirilad8536019424659691213279982@gmail.com","userId":"Mercie8221821544021583104106123"}]}]`,
+		},
+		{
+			name: "test with an expired token, when refresh throws 500 validate if job failed",
+			job: model.Job{
+				ID:            4,
+				WorkspaceID:   "1001",
+				DestinationID: "1234",
+				Status:        model.JobStatusPending,
+				Users: []model.User{
+					{
+						ID: "Jermaine1473336609491897794707338",
+						Attributes: map[string]string{
+							"phone":     "6463633841",
+							"email":     "dorowane8n285680461479465450293439@gmail.com",
+							"randomKey": "randomValue",
+						},
+					},
+					{
+						ID: "Mercie8221821544021583104106123",
+						Attributes: map[string]string{
+							"email": "dshirilad8536019424659691213279985@gmail.com",
+						},
+					},
+				},
+			},
+			dest: model.Destination{
+				Config: map[string]interface{}{
+					"rudderDeleteAccountId": "xyz",
+				},
+				Name: "GA",
+				DestDefConfig: map[string]interface{}{
+					"auth": map[string]interface{}{
+						"type": "OAuth",
+					},
+				},
+			},
+			respCode:          500,
+			respBodyStatus:    "failed",
+			authErrorCategory: oauth.REFRESH_TOKEN,
+
+			cpResponses: []cpResponseParams{
+				{
+					code:     200,
+					response: `{"secret": {"access_token": "expired_access_token","refresh_token":"valid_refresh_token"}}`,
+				},
+				{
+					code:     500,
+					response: `Internal Server Error`,
+				},
+			},
+
+			expectedDeleteStatus: model.JobStatusFailed,
+			expectedPayload:      `[{"jobId":"4","destType":"ga","config":{"rudderDeleteAccountId":"xyz"},"userAttributes":[{"email":"dorowane8n285680461479465450293439@gmail.com","phone":"6463633841","randomKey":"randomValue","userId":"Jermaine1473336609491897794707338"},{"email":"dshirilad8536019424659691213279985@gmail.com","userId":"Mercie8221821544021583104106123"}]}]`,
+		},
+		{
+			name: "test when fetch token fails(with 500) to respond properly fail the job",
+			job: model.Job{
+				ID:            3,
+				WorkspaceID:   "1001",
+				DestinationID: "1234",
+				Status:        model.JobStatusPending,
+				Users: []model.User{
+					{
+						ID: "Jermaine1473336609491897794707338",
+						Attributes: map[string]string{
+							"phone":     "6463633841",
+							"email":     "dorowane8n285680461479465450293448@gmail.com",
+							"randomKey": "randomValue",
+						},
+					},
+					{
+						ID: "Mercie8221821544021583104106123",
+						Attributes: map[string]string{
+							"email": "dshirilad8536019424659691213279983@gmail.com",
+						},
+					},
+				},
+			},
+			dest: model.Destination{
+				Config: map[string]interface{}{
+					"rudderDeleteAccountId": "xyz",
+				},
+				Name: "GA",
+				DestDefConfig: map[string]interface{}{
+					"auth": map[string]interface{}{
+						"type": "OAuth",
+					},
+				},
+			},
+			respCode:       500,
+			respBodyStatus: "failed",
+
+			cpResponses: []cpResponseParams{
+				{
+					code:     500,
+					response: `Internal Server Error`,
+				},
+			},
+
+			expectedDeleteStatus: model.JobStatusFailed,
+			expectedPayload:      "", // since request has not gone to transformer at all!
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			d := deleteAPI{
+				respStatusCode:  tt.respCode,
+				authErrCategory: tt.authErrorCategory,
+			}
+			ctx := context.Background()
+			svr := httptest.NewServer(d.handler())
+
+			cpRespProducer := &cpResponseProducer{
+				responses: tt.cpResponses,
+			}
+			cfgBeSrv := httptest.NewServer(cpRespProducer.mockCpRequests())
+
+			defer svr.Close()
+			defer cfgBeSrv.Close()
+
+			t.Setenv("DEST_TRANSFORM_URL", svr.URL)
+			t.Setenv("CONFIG_BACKEND_URL", cfgBeSrv.URL)
+			t.Setenv("CONFIG_BACKEND_TOKEN", "config_backend_token")
+
+			backendconfig.Init()
+			oauth.Init()
+			OAuth := oauth.NewOAuthErrorHandler(mockBackendConfig, oauth.WithRudderFlow(oauth.RudderFlow_Delete))
+			api := api.APIManager{
+				Client:           &http.Client{},
+				DestTransformURL: svr.URL,
+				OAuth:            OAuth,
+			}
+
+			status := api.Delete(ctx, tt.job, tt.dest)
+
+			require.Equal(t, tt.expectedDeleteStatus, status)
+			require.Equal(t, tt.expectedPayload, d.payload)
+		})
+	}
+}
+
+type cpResponseParams struct {
+	timeout  time.Duration
+	code     int
+	response string
+}
+type cpResponseProducer struct {
+	responses []cpResponseParams
+	callCount int
+}
+
+func (s *cpResponseProducer) GetNext() cpResponseParams {
+	if s.callCount >= len(s.responses) {
+		panic("ran out of responses")
+	}
+	cpResp := s.responses[s.callCount]
+	s.callCount++
+	return cpResp
+}
+
+func (cpRespProducer *cpResponseProducer) mockCpRequests() *mux.Router {
+	srvMux := mux.NewRouter()
+	srvMux.HandleFunc("/destination/workspaces/{workspaceId}/accounts/{accountId}/token", func(w http.ResponseWriter, req *http.Request) {
+		vars := mux.Vars(req)
+		// iterating over request parameters
+		for _, reqParam := range []string{"workspaceId", "accountId"} {
+			_, ok := vars[reqParam]
+			if !ok {
+				// This case wouldn't occur I guess
+				http.Error(w, fmt.Sprintf("Wrong url being sent: %v", reqParam), http.StatusInternalServerError)
+				return
+			}
+		}
+
+		cpResp := cpRespProducer.GetNext()
+		// sleep is being used to mimic the waiting in actual transformer response
+		if cpResp.timeout > 0 {
+			time.Sleep(cpResp.timeout)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(cpResp.code)
+		// Lint error fix
+		_, err := w.Write([]byte(cpResp.response))
+		if err != nil {
+			fmt.Printf("I'm here!!!! Some shitty response!!")
+			http.Error(w, fmt.Sprintf("Provided response is faulty, please check it. Err: %v", err.Error()), http.StatusInternalServerError)
+		}
+	})
+	return srvMux
 }
