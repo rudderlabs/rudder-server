@@ -42,6 +42,7 @@ type User struct {
 
 type Destination struct {
 	Config        map[string]interface{}
+	DestDefConfig map[string]interface{}
 	DestinationID string
 	Name          string
 }
