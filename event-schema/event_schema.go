@@ -917,7 +917,7 @@ func (manager *EventSchemaManagerT) populateEventModels(uuidFilters ...string) e
 		uuidFilter = fmt.Sprintf(`WHERE uuid in ('%s')`, strings.Join(uuidFilters, "', '"))
 	}
 
-	eventModelsSelectSQL := fmt.Sprintf(`SELECT id, uuid, write_key, event_type, event_model_identifier, created_at, schema, private_data, total_count, last_seen, (metadata->>'TotalCount')::int, metadata->'SampledEvents' FROM %s %s`, EVENT_MODELS_TABLE, uuidFilter)
+	eventModelsSelectSQL := fmt.Sprintf(`SELECT id, uuid, write_key, event_type, event_model_identifier, created_at, schema, private_data, total_count, last_seen, (metadata->>'TotalCount')::bigint, metadata->'SampledEvents' FROM %s %s`, EVENT_MODELS_TABLE, uuidFilter)
 
 	rows, err := manager.dbHandle.Query(eventModelsSelectSQL)
 	if err == sql.ErrNoRows {
