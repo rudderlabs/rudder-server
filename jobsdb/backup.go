@@ -87,45 +87,21 @@ func (jd *HandleT) backupDSLoop(ctx context.Context) {
 
 // backupDS writes both jobs and job_staus table to JOBS_BACKUP_STORAGE_PROVIDER
 func (jd *HandleT) backupDS(ctx context.Context, backupDSRange *dataSetRangeT) error {
-	err := jd.cleanStatusTable(backupDSRange)
-	if err != nil {
+	if err := jd.WithTx(func(tx *Tx) error {
+		return jd.cleanStatusTable(ctx, tx, backupDSRange.ds.JobStatusTable)
+	}); err != nil {
 		return fmt.Errorf("error while cleaning status table: %w", err)
 	}
-
 	if jd.BackupSettings.FailedOnly {
-		if err = jd.failedOnlyBackup(ctx, backupDSRange); err != nil {
+		if err := jd.failedOnlyBackup(ctx, backupDSRange); err != nil {
 			return fmt.Errorf("error while backing up failed jobs: %w", err)
 		}
 		return nil
 	}
-
-	err = jd.completeBackup(ctx, backupDSRange)
-	if err != nil {
+	if err := jd.completeBackup(ctx, backupDSRange); err != nil {
 		return fmt.Errorf("error while backing up complete jobs: %w", err)
 	}
 	return nil
-}
-
-func (jd *HandleT) cleanStatusTable(backupDSRange *dataSetRangeT) error {
-	_, err := jd.dbHandle.Exec(
-		fmt.Sprintf(`
-		DELETE FROM %[1]q
-		where id
-		IN (
-			SELECT id 
-			FROM (
-				SELECT id, RANK()
-				OVER(
-					PARTITION BY job_id 
-					ORDER BY id DESC
-					)
-				as rank 
-				from %[1]q
-			)
-			as inner_table 
-			where rank > 2
-		);`, backupDSRange.ds.JobStatusTable))
-	return err
 }
 
 func (jd *HandleT) uploadDumps(ctx context.Context, dumps map[string]string) error {
