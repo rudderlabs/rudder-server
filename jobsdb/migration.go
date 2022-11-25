@@ -234,6 +234,13 @@ func (*HandleT) cleanStatusTable(ctx context.Context, tx *Tx, table string) erro
 							SELECT DISTINCT ON (job_id) id from "%[1]s" ORDER BY job_id ASC, id DESC
 						)`, table),
 	)
+	if err != nil {
+		return err
+	}
+	_, err = tx.ExecContext(
+		ctx,
+		fmt.Sprintf(`ANALYZE %q`, table),
+	)
 	return err
 }
 
