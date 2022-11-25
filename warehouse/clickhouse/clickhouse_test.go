@@ -1,5 +1,3 @@
-//go:build warehouse_integration && !sources_integration
-
 package clickhouse_test
 
 import (
@@ -144,6 +142,73 @@ func TestClickHouseIntegration(t *testing.T) {
 
 			testhelper.VerifyWorkspaceIDInStats(t, statsToVerify...)
 		}
+	})
+
+	t.Run("Cluster Mode Setup", func(t *testing.T) {
+		require.NoError(t, testhelper.SetConfig([]warehouseutils.KeyValue{
+			{
+				Key:   "Warehouse.clickhouse.enabledS3EngineForLoading",
+				Value: "true",
+			},
+		}))
+
+		credentials := clickhouse.CredentialsT{
+			Host:          "wh-clickhouse01",
+			User:          "rudder",
+			Password:      "rudder-password",
+			DBName:        "rudderdb",
+			Secure:        "false",
+			SkipVerify:    "true",
+			TLSConfigName: "",
+			Port:          "9000",
+		}
+		db, err := clickhouse.Connect(credentials, true)
+		require.NoError(t, err)
+
+		warehouseTest := &testhelper.WareHouseTest{
+			Client: &client.Client{
+				SQL:  db,
+				Type: client.SQLClient,
+			},
+			WriteKey:      "95RxRTZHWUsaD6HEdz0ThbXfQ6p",
+			Schema:        "rudderdb",
+			Tables:        testTables,
+			Provider:      warehouseutils.CLICKHOUSE,
+			SourceID:      "1wRvLmEnMOOxNM79ghdZhyCqXRE",
+			DestinationID: "21Ev6TI6emCFDKhp2Zn6XfTP7PI",
+		}
+
+		// Scenario 1
+		warehouseTest.TimestampBeforeSendingEvents = timeutil.Now()
+		warehouseTest.UserId = testhelper.GetUserId(fmt.Sprintf("%s_%s", warehouseutils.CLICKHOUSE, "CLUSTER"))
+
+		sendEventsMap := testhelper.SendEventsMap()
+		testhelper.SendEvents(t, warehouseTest, sendEventsMap)
+		testhelper.SendEvents(t, warehouseTest, sendEventsMap)
+		testhelper.SendEvents(t, warehouseTest, sendEventsMap)
+		testhelper.SendIntegratedEvents(t, warehouseTest, sendEventsMap)
+
+		testhelper.VerifyEventsInStagingFiles(t, warehouseTest, testhelper.StagingFilesEventsMap())
+		testhelper.VerifyEventsInLoadFiles(t, warehouseTest, testhelper.LoadFilesEventsMap())
+		testhelper.VerifyEventsInTableUploads(t, warehouseTest, testhelper.TableUploadsEventsMap())
+		testhelper.VerifyEventsInWareHouse(t, warehouseTest, clusterWarehouseEventsMap())
+
+		// Scenario 2
+		warehouseTest.TimestampBeforeSendingEvents = timeutil.Now()
+		warehouseTest.UserId = testhelper.GetUserId(fmt.Sprintf("%s_%s", warehouseutils.CLICKHOUSE, "CLUSTER"))
+
+		sendEventsMap = testhelper.SendEventsMap()
+		testhelper.SendModifiedEvents(t, warehouseTest, sendEventsMap)
+		testhelper.SendModifiedEvents(t, warehouseTest, sendEventsMap)
+		testhelper.SendModifiedEvents(t, warehouseTest, sendEventsMap)
+		testhelper.SendIntegratedEvents(t, warehouseTest, sendEventsMap)
+
+		testhelper.VerifyEventsInStagingFiles(t, warehouseTest, testhelper.StagingFilesEventsMap())
+		testhelper.VerifyEventsInLoadFiles(t, warehouseTest, testhelper.LoadFilesEventsMap())
+		testhelper.VerifyEventsInTableUploads(t, warehouseTest, testhelper.TableUploadsEventsMap())
+		testhelper.VerifyEventsInWareHouse(t, warehouseTest, clusterWarehouseEventsMap())
+
+		testhelper.VerifyWorkspaceIDInStats(t, statsToVerify...)
 	})
 
 	t.Run("Cluster Mode Setup", func(t *testing.T) {
