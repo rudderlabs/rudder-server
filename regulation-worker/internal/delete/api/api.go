@@ -42,7 +42,7 @@ func (*APIManager) GetSupportedDestinations() []string {
 	return supportedDestinations
 }
 
-func (api *APIManager) deleteWithRetry(ctx context.Context, job model.Job, destination model.Destination, retryAttempts int) model.JobStatus {
+func (api *APIManager) deleteWithRetry(ctx context.Context, job model.Job, destination model.Destination, currentOauthRetryAttempt int) model.JobStatus {
 	pkgLogger.Debugf("deleting: %v", job, " from API destination: %v", destination.Name)
 	method := http.MethodPost
 	endpoint := "/deleteUsers"
@@ -107,15 +107,15 @@ func (api *APIManager) deleteWithRetry(ctx context.Context, job model.Job, desti
 	jobStatus := getJobStatus(resp.StatusCode, jobResp)
 	pkgLogger.Debugf("[%v] Job: %v, JobStatus: %v", destination.Name, job.ID, jobStatus)
 
-	if isOAuthEnabled && isTokenExpired(jobResp) && retryAttempts < api.MaxOAuthRefreshRetryAttempts {
+	if isOAuthEnabled && isTokenExpired(jobResp) && currentOauthRetryAttempt < api.MaxOAuthRefreshRetryAttempts {
 		err = api.refreshOAuthToken(destination.Name, job.WorkspaceID, oAuthDetail)
 		if err != nil {
 			pkgLogger.Error(err)
 			return model.JobStatusFailed
 		}
 		// retry the request
-		pkgLogger.Infof("[%v] Retrying deleteRequest job(id: %v) for the whole batch, RetryAttempt: %v", destination.Name, job.ID, retryAttempts+1)
-		return api.deleteWithRetry(ctx, job, destination, retryAttempts+1)
+		pkgLogger.Infof("[%v] Retrying deleteRequest job(id: %v) for the whole batch, RetryAttempt: %v", destination.Name, job.ID, currentOauthRetryAttempt+1)
+		return api.deleteWithRetry(ctx, job, destination, currentOauthRetryAttempt+1)
 	}
 
 	return jobStatus
