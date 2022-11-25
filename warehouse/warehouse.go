@@ -106,11 +106,11 @@ var (
 
 // warehouses worker modes
 const (
-	MasterMode        = "master"
-	SlaveMode         = "slave"
-	MasterSlaveMode   = "master_and_slave"
-	EmbeddedMode      = "embedded"
-	PooledWHSlaveMode = "embedded_master"
+	MasterMode         = "master"
+	SlaveMode          = "slave"
+	MasterSlaveMode    = "master_and_slave"
+	EmbeddedMode       = "embedded"
+	EmbeddedMasterMode = "embedded_master"
 )
 
 const (
@@ -1896,14 +1896,14 @@ func CheckForWarehouseEnvVars() bool {
 
 // This checks if gateway is running or not
 func isStandAlone() bool {
-	return warehouseMode != EmbeddedMode && warehouseMode != PooledWHSlaveMode
+	return warehouseMode != EmbeddedMode && warehouseMode != EmbeddedMasterMode
 }
 
 func isMaster() bool {
 	return warehouseMode == config.MasterMode ||
 		warehouseMode == config.MasterSlaveMode ||
 		warehouseMode == config.EmbeddedMode ||
-		warehouseMode == config.PooledWHSlaveMode
+		warehouseMode == config.EmbeddedMasterMode
 }
 
 func isSlave() bool {
@@ -1943,9 +1943,25 @@ func setupDB(ctx context.Context, connInfo string) error {
 	return setupTables(dbHandle)
 }
 
+// Setup prepares the database connection for warehouse service, verifies database compatibility and creates the required tables
+func Setup(ctx context.Context) error {
+	if !isStandAlone() && !db.IsNormalMode() {
+		return nil
+	}
+	psqlInfo := getConnectionString()
+	if err := setupDB(ctx, psqlInfo); err != nil {
+		return fmt.Errorf("cannot setup warehouse db: %w", err)
+	}
+	return nil
+}
+
+// Start starts the warehouse service
 func Start(ctx context.Context, app app.App) error {
 	application = app
 
+	if dbHandle == nil {
+		return errors.New("warehouse service cannot start, database connection is not setup")
+	}
 	// do not start warehouse service if rudder core is not in normal mode and warehouse is running in same process as rudder core
 	if !isStandAlone() && !db.IsNormalMode() {
 		pkgLogger.Infof("Skipping start of warehouse service...")
@@ -1955,9 +1971,6 @@ func Start(ctx context.Context, app app.App) error {
 	pkgLogger.Infof("WH: Starting Warehouse service...")
 	psqlInfo := getConnectionString()
 
-	if err := setupDB(ctx, psqlInfo); err != nil {
-		return fmt.Errorf("cannot setup warehouse db: %w", err)
-	}
 	defer func() {
 		if r := recover(); r != nil {
 			pkgLogger.Fatal(r)
