@@ -7,6 +7,7 @@ import (
 
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
+	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
@@ -40,7 +41,7 @@ func (job *UploadJobT) getTotalEventsUploaded(includeDiscards bool) (int64, erro
 		  AND status = '%s' %s;
 `,
 		job.upload.ID,
-		ExportedData,
+		model.ExportedData,
 		discardsStatement,
 	)
 	err := dbHandle.QueryRow(sqlStatement).Scan(&total)

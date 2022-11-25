@@ -24,6 +24,15 @@ type TestHandle struct{}
 
 var testTables = []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"}
 
+var statsToVerify = []string{
+	"warehouse_clickhouse_commitTimeouts",
+	"warehouse_clickhouse_execTimeouts",
+	"warehouse_clickhouse_failedRetries",
+	"warehouse_clickhouse_syncLoadFileTime",
+	"warehouse_clickhouse_downloadLoadFilesTime",
+	"warehouse_clickhouse_numRowsLoadFile",
+}
+
 func (*TestHandle) VerifyConnection() error {
 	for _, host := range []string{"wh-clickhouse", "wh-clickhouse01", "wh-clickhouse02", "wh-clickhouse03", "wh-clickhouse04"} {
 		if err := testhelper.WithConstantBackoff(func() (err error) {
@@ -132,6 +141,8 @@ func TestClickHouseIntegration(t *testing.T) {
 			testhelper.VerifyEventsInLoadFiles(t, warehouseTest, testhelper.LoadFilesEventsMap())
 			testhelper.VerifyEventsInTableUploads(t, warehouseTest, testhelper.TableUploadsEventsMap())
 			testhelper.VerifyEventsInWareHouse(t, warehouseTest, testhelper.WarehouseEventsMap())
+
+			testhelper.VerifyWorkspaceIDInStats(t, statsToVerify...)
 		}
 	})
 
@@ -200,6 +211,8 @@ func TestClickHouseIntegration(t *testing.T) {
 		testhelper.VerifyEventsInLoadFiles(t, warehouseTest, testhelper.LoadFilesEventsMap())
 		testhelper.VerifyEventsInTableUploads(t, warehouseTest, testhelper.TableUploadsEventsMap())
 		testhelper.VerifyEventsInWareHouse(t, warehouseTest, clusterWarehouseEventsMap())
+
+		testhelper.VerifyWorkspaceIDInStats(t, statsToVerify...)
 	})
 }
 

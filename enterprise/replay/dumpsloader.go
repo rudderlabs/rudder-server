@@ -18,12 +18,9 @@ import (
 	"github.com/tidwall/gjson"
 )
 
-func init() {
-	pkgLogger = logger.NewLogger().Child("enterprise").Child("replay").Child("dumpsLoader")
-}
-
 // DumpsLoaderHandleT - dumps-loader handle
 type dumpsLoaderHandleT struct {
+	log           logger.Logger
 	dbHandle      *jobsdb.HandleT
 	prefix        string
 	bucket        string
@@ -78,7 +75,7 @@ type OrderedJobs struct {
 	Job       *jobsdb.JobT
 }
 
-func storeJobs(ctx context.Context, objects []OrderedJobs, dbHandle *jobsdb.HandleT) {
+func storeJobs(ctx context.Context, objects []OrderedJobs, dbHandle *jobsdb.HandleT, log logger.Logger) {
 	// sorting dumps list on index
 	sort.Slice(objects, func(i, j int) bool {
 		return objects[i].SortIndex < objects[j].SortIndex
@@ -89,7 +86,7 @@ func storeJobs(ctx context.Context, objects []OrderedJobs, dbHandle *jobsdb.Hand
 		jobs = append(jobs, object.Job)
 	}
 
-	pkgLogger.Info("Total dumps count : ", len(objects))
+	log.Info("Total dumps count : ", len(objects))
 	err := dbHandle.Store(ctx, jobs)
 	if err != nil {
 		panic(fmt.Errorf("Failed to write dumps locations to DB with error: %w", err))
@@ -100,9 +97,10 @@ func (gwHandle *GWReplayRequestHandler) fetchDumpsList(ctx context.Context) {
 	startTimeMilli := gwHandle.handle.startTime.UnixNano() / int64(time.Millisecond)
 	endTimeMilli := gwHandle.handle.endTime.UnixNano() / int64(time.Millisecond)
 	var err error
-	maxItems := config.GetInt64("MAX_ITEMS", 1000)
+	maxItems := config.GetInt64("MAX_ITEMS", 1000)           // MAX_ITEMS is the max number of files to be fetched in one iteration from object storage
+	uploadMaxItems := config.GetInt64("UPLOAD_MAX_ITEMS", 1) // UPLOAD_MAX_ITEMS is the max number of objects to be uploaded to postgres
 
-	pkgLogger.Info("Fetching gw dump files list")
+	gwHandle.handle.log.Info("Fetching gw dump files list")
 	objects := make([]OrderedJobs, 0)
 
 	iter := filemanager.IterateFilesWithPrefix(ctx,
@@ -130,8 +128,8 @@ func (gwHandle *GWReplayRequestHandler) fetchDumpsList(ctx context.Context) {
 			if err == nil {
 				pass = maxJobCreatedAt >= startTimeMilli && minJobCreatedAt <= endTimeMilli
 			} else {
-				pkgLogger.Infof("gw dump name(%s) is not of the expected format. Parse failed with error %w", object.Key, err)
-				pkgLogger.Info("Falling back to comparing start and end time stamps with gw dump last modified.")
+				gwHandle.handle.log.Infof("gw dump name(%s) is not of the expected format. Parse failed with error %w", object.Key, err)
+				gwHandle.handle.log.Info("Falling back to comparing start and end time stamps with gw dump last modified.")
 				pass = object.LastModified.After(gwHandle.handle.startTime) && object.LastModified.Before(gwHandle.handle.endTime)
 			}
 
@@ -146,8 +144,8 @@ func (gwHandle *GWReplayRequestHandler) fetchDumpsList(ctx context.Context) {
 				objects = append(objects, OrderedJobs{Job: &job, SortIndex: idx})
 			}
 		}
-		if len(objects) >= int(maxItems) {
-			storeJobs(ctx, objects, gwHandle.handle.dbHandle)
+		if len(objects) >= int(uploadMaxItems) {
+			storeJobs(ctx, objects, gwHandle.handle.dbHandle, gwHandle.handle.log)
 			objects = nil
 		}
 	}
@@ -155,19 +153,20 @@ func (gwHandle *GWReplayRequestHandler) fetchDumpsList(ctx context.Context) {
 		panic(fmt.Errorf("Failed to iterate gw dump files with error: %w", iter.Err()))
 	}
 	if len(objects) != 0 {
-		storeJobs(ctx, objects, gwHandle.handle.dbHandle)
+		storeJobs(ctx, objects, gwHandle.handle.dbHandle, gwHandle.handle.log)
 		objects = nil
 	}
 
-	pkgLogger.Info("Dumps loader job is done")
+	gwHandle.handle.log.Info("Dumps loader job is done")
 	gwHandle.handle.done = true
 }
 
 func (procHandle *ProcErrorRequestHandler) fetchDumpsList(ctx context.Context) {
 	objects := make([]OrderedJobs, 0)
-	pkgLogger.Info("Fetching proc err files list")
+	procHandle.handle.log.Info("Fetching proc err files list")
 	var err error
-	maxItems := config.GetInt64("MAX_ITEMS", 1000)
+	maxItems := config.GetInt64("MAX_ITEMS", 1000)           // MAX_ITEMS is the max number of files to be fetched in one iteration from object storage
+	uploadMaxItems := config.GetInt64("UPLOAD_MAX_ITEMS", 1) // UPLOAD_MAX_ITEMS is the max number of objects to be uploaded to postgres
 
 	iter := filemanager.IterateFilesWithPrefix(ctx,
 		procHandle.handle.prefix,
@@ -179,7 +178,7 @@ func (procHandle *ProcErrorRequestHandler) fetchDumpsList(ctx context.Context) {
 		object := iter.Get()
 		if strings.Contains(object.Key, "rudder-proc-err-logs") {
 			if object.LastModified.Before(procHandle.handle.startTime) || (object.LastModified.Sub(procHandle.handle.endTime).Hours() > 1) {
-				pkgLogger.Debugf("Skipping object: %v ObjectLastModifiedTime: %v", object.Key, object.LastModified)
+				procHandle.handle.log.Debugf("Skipping object: %v ObjectLastModifiedTime: %v", object.Key, object.LastModified)
 				continue
 			}
 			key := object.Key
@@ -201,8 +200,9 @@ func (procHandle *ProcErrorRequestHandler) fetchDumpsList(ctx context.Context) {
 			}
 			objects = append(objects, OrderedJobs{Job: &job, SortIndex: idx})
 		}
-		if len(objects) >= int(maxItems) {
-			storeJobs(ctx, objects, procHandle.handle.dbHandle)
+		if len(objects) >= int(uploadMaxItems) {
+			storeJobs(ctx, objects, procHandle.handle.dbHandle, procHandle.handle.log)
+			objects = nil
 		}
 
 	}
@@ -210,10 +210,10 @@ func (procHandle *ProcErrorRequestHandler) fetchDumpsList(ctx context.Context) {
 		panic(fmt.Errorf("Failed to iterate proc err files with error: %w", iter.Err()))
 	}
 	if len(objects) != 0 {
-		storeJobs(ctx, objects, procHandle.handle.dbHandle)
+		storeJobs(ctx, objects, procHandle.handle.dbHandle, procHandle.handle.log)
 	}
 
-	pkgLogger.Info("Dumps loader job is done")
+	procHandle.handle.log.Info("Dumps loader job is done")
 	procHandle.handle.done = true
 }
 
@@ -223,8 +223,9 @@ func (handle *dumpsLoaderHandleT) handleRecovery() {
 }
 
 // Setup sets up dumps-loader.
-func (handle *dumpsLoaderHandleT) Setup(ctx context.Context, db *jobsdb.HandleT, tablePrefix string, uploader filemanager.FileManager, bucket string) {
+func (handle *dumpsLoaderHandleT) Setup(ctx context.Context, db *jobsdb.HandleT, tablePrefix string, uploader filemanager.FileManager, bucket string, log logger.Logger) {
 	var err error
+	handle.log = log
 	handle.dbHandle = db
 	handle.handleRecovery()
 
@@ -237,7 +238,7 @@ func (handle *dumpsLoaderHandleT) Setup(ctx context.Context, db *jobsdb.HandleT,
 	if err != nil {
 		panic("invalid start time format provided")
 	}
-	handle.prefix = strings.TrimSpace(config.GetString("JOBS_BACKUP_PREFIX", ""))
+	handle.prefix = strings.TrimSpace(config.GetString("JOBS_REPLAY_BACKUP_PREFIX", ""))
 	handle.tablePrefix = tablePrefix
 	handle.procError = &ProcErrorRequestHandler{tablePrefix: tablePrefix, handle: handle}
 	handle.gwReplay = &GWReplayRequestHandler{tablePrefix: tablePrefix, handle: handle}

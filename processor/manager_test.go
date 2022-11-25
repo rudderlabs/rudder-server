@@ -21,6 +21,7 @@ import (
 
 	"github.com/rudderlabs/rudder-server/enterprise/reporting"
 	"github.com/rudderlabs/rudder-server/jobsdb/prebackup"
+	"github.com/rudderlabs/rudder-server/services/fileuploader"
 	"github.com/rudderlabs/rudder-server/services/rsources"
 	"github.com/rudderlabs/rudder-server/services/transientsource"
 
@@ -165,7 +166,7 @@ func TestProcessorManager(t *testing.T) {
 		},
 	}
 
-	err := tempDB.Setup(jobsdb.Write, true, "gw", true, []prebackup.Handler{})
+	err := tempDB.Setup(jobsdb.Write, true, "gw", true, []prebackup.Handler{}, fileuploader.NewDefaultProvider())
 	require.NoError(t, err)
 	defer tempDB.TearDown()
 
@@ -200,7 +201,7 @@ func TestProcessorManager(t *testing.T) {
 			"batch_rt": &jobsdb.MultiTenantLegacy{HandleT: brtDB},
 		},
 	}
-	processor := New(ctx, &clearDb, gwDB, rtDB, brtDB, errDB, mtStat, &reporting.NOOP{}, transientsource.NewEmptyService(), mockRsourcesService)
+	processor := New(ctx, &clearDb, gwDB, rtDB, brtDB, errDB, mtStat, &reporting.NOOP{}, transientsource.NewEmptyService(), fileuploader.NewDefaultProvider(), mockRsourcesService)
 
 	t.Run("jobs are already there in GW DB before processor starts", func(t *testing.T) {
 		require.NoError(t, gwDB.Start())

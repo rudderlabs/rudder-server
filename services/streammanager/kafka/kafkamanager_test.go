@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"runtime"
 	"testing"
 	"time"
 
@@ -119,10 +118,6 @@ func TestNewProducer(t *testing.T) {
 	})
 
 	t.Run("ok", func(t *testing.T) {
-		if runtime.GOARCH == "arm64" && !overrideArm64Check {
-			t.Skip("arm64 is not supported yet")
-		}
-
 		kafkaStats.creationTime = getMockedTimer(t, gomock.NewController(t))
 
 		pool, err := dockertest.NewPool("")
@@ -146,7 +141,7 @@ func TestNewProducer(t *testing.T) {
 
 		require.Eventually(t, func() bool {
 			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-			err = p.p.Publish(ctx, client.Message{Key: []byte("key-01"), Value: []byte("message-01")})
+			err = p.p.Publish(ctx, client.Message{Key: []byte("key-01"), Value: []byte("message-01"), Topic: destConfig["topic"].(string)})
 			cancel()
 			return err == nil
 		}, 60*time.Second, 100*time.Millisecond)
@@ -214,7 +209,7 @@ func TestNewProducerForAzureEventHubs(t *testing.T) {
 
 		require.Eventually(t, func() bool {
 			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-			err = p.p.Publish(ctx, client.Message{Key: []byte("key-01"), Value: []byte("message-01")})
+			err = p.p.Publish(ctx, client.Message{Key: []byte("key-01"), Value: []byte("message-01"), Topic: destConfig["topic"].(string)})
 			cancel()
 			return err == nil
 		}, 60*time.Second, 100*time.Millisecond)
@@ -297,7 +292,7 @@ func TestProducerForConfluentCloud(t *testing.T) {
 
 		require.Eventually(t, func() bool {
 			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-			err = p.p.Publish(ctx, client.Message{Key: []byte("key-01"), Value: []byte("message-01")})
+			err = p.p.Publish(ctx, client.Message{Key: []byte("key-01"), Value: []byte("message-01"), Topic: destConfig["topic"].(string)})
 			cancel()
 			return err == nil
 		}, 60*time.Second, 100*time.Millisecond)
@@ -320,7 +315,7 @@ func TestPrepareBatchOfMessages(t *testing.T) {
 
 		var data []map[string]interface{}
 		pm := &ProducerManager{p: &pMockErr{error: nil}}
-		batch, err := prepareBatchOfMessages("some-topic", data, time.Now(), pm)
+		batch, err := prepareBatchOfMessages(data, time.Now(), pm, "some-topic")
 		require.Equal(t, []client.Message(nil), batch)
 		require.Equal(t, fmt.Errorf("unable to process any of the event in the batch"), err)
 	})
@@ -331,8 +326,9 @@ func TestPrepareBatchOfMessages(t *testing.T) {
 		pm := &ProducerManager{p: &pMockErr{error: nil}}
 		data := []map[string]interface{}{{
 			"not-interesting": "some value",
+			"topic":           "some-topic",
 		}}
-		batch, err := prepareBatchOfMessages("some-topic", data, time.Now(), pm)
+		batch, err := prepareBatchOfMessages(data, time.Now(), pm, "some-topic")
 		require.Equal(t, []client.Message(nil), batch)
 		require.Equal(t, fmt.Errorf("unable to process any of the event in the batch"), err)
 	})
@@ -344,13 +340,13 @@ func TestPrepareBatchOfMessages(t *testing.T) {
 
 		now := time.Now()
 		data := []map[string]interface{}{
-			{"not-interesting": "some value"},
-			{"message": "msg01"},
-			{"message": "msg02", "userId": "123"},
-			{"message": map[string]interface{}{"a": 1, "b": 2}, "userId": "456"},
+			{"not-interesting": "some value", "topic": "some-topic"},
+			{"message": "msg01", "topic": "some-topic"},
+			{"message": "msg02", "userId": "123", "topic": "some-topic"},
+			{"message": map[string]interface{}{"a": 1, "b": 2}, "userId": "456", "topic": "some-topic"},
 		}
 		pm := &ProducerManager{p: &pMockErr{error: nil}}
-		batch, err := prepareBatchOfMessages("some-topic", data, now, pm)
+		batch, err := prepareBatchOfMessages(data, now, pm, "some-topic")
 		require.NoError(t, err)
 		require.ElementsMatch(t, []client.Message{
 			{
@@ -375,11 +371,11 @@ func TestPrepareBatchOfMessages(t *testing.T) {
 		now := time.Now()
 		allowReqsWithoutUserIDAndAnonymousID = true
 		data := []map[string]interface{}{
-			{"not-interesting": "some value"},
-			{"message": "msg01"},
+			{"not-interesting": "some value", "topic": "some-topic"},
+			{"message": "msg01", "topic": "some-topic"},
 		}
 		pm := &ProducerManager{p: &pMockErr{error: nil}}
-		batch, err := prepareBatchOfMessages("some-topic", data, now, pm)
+		batch, err := prepareBatchOfMessages(data, now, pm, "some-topic")
 		require.NoError(t, err)
 		require.ElementsMatch(t, []client.Message{
 			{
@@ -408,7 +404,7 @@ func TestClose(t *testing.T) {
 
 		c, err := client.New("tcp", []string{"localhost:9092"}, client.Config{})
 		require.NoError(t, err)
-		p, err := c.NewProducer("some-topic", client.ProducerConfig{})
+		p, err := c.NewProducer(client.ProducerConfig{})
 		require.NoError(t, err)
 		pm := &ProducerManager{p: p}
 		require.NoError(t, pm.Close())
@@ -470,7 +466,7 @@ func TestProduce(t *testing.T) {
 
 		pm := &ProducerManager{p: &pMockErr{error: fmt.Errorf("super bad")}}
 		destConfig := map[string]interface{}{"topic": "foo-bar"}
-		sc, res, err := pm.Produce(json.RawMessage(`{"message":"ciao"}`), destConfig)
+		sc, res, err := pm.Produce(json.RawMessage(`{"message":"ciao","topic": "foo-bar"}`), destConfig)
 		require.Equal(t, 400, sc)
 		require.Contains(t, res, "super bad error occurred.")
 		require.Contains(t, err, "super bad")
@@ -483,10 +479,23 @@ func TestProduce(t *testing.T) {
 
 		pm := &ProducerManager{p: &pMockErr{error: kafka.LeaderNotAvailable}}
 		destConfig := map[string]interface{}{"topic": "foo-bar"}
-		sc, res, err := pm.Produce(json.RawMessage(`{"message":"ciao"}`), destConfig)
+		sc, res, err := pm.Produce(json.RawMessage(`{"message":"ciao","topic": "foo-bar"}`), destConfig)
 		require.Equal(t, 500, sc)
 		require.Contains(t, res, kafka.LeaderNotAvailable.Error()+" error occurred.")
 		require.Contains(t, err, kafka.LeaderNotAvailable.Error())
+	})
+
+	t.Run("default-topic-test", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		kafkaStats.publishTime = getMockedTimer(t, ctrl)
+		kafkaStats.produceTime = getMockedTimer(t, ctrl)
+
+		pm := &ProducerManager{p: &pMockErr{}}
+		destConfig := map[string]interface{}{"topic": "foo-bar"}
+		sc, res, err := pm.Produce(json.RawMessage(`{"message":"ciao"}`), destConfig)
+		require.Equal(t, 200, sc)
+		require.Equal(t, "Message delivered to topic: foo-bar", res)
+		require.Equal(t, "Message delivered to topic: foo-bar", err)
 	})
 
 	t.Run("ok", func(t *testing.T) {
@@ -496,7 +505,7 @@ func TestProduce(t *testing.T) {
 
 		pm := &ProducerManager{p: &pMockErr{}}
 		destConfig := map[string]interface{}{"topic": "foo-bar"}
-		sc, res, err := pm.Produce(json.RawMessage(`{"message":"ciao"}`), destConfig)
+		sc, res, err := pm.Produce(json.RawMessage(`{"message":"ciao","topic": "foo-bar"}`), destConfig)
 		require.Equal(t, 200, sc)
 		require.Equal(t, "Message delivered to topic: foo-bar", res)
 		require.Equal(t, "Message delivered to topic: foo-bar", err)
@@ -539,7 +548,7 @@ func TestSendBatchedMessage(t *testing.T) {
 		pm := &ProducerManager{p: p}
 		sc, res, err := sendBatchedMessage(
 			context.Background(),
-			json.RawMessage(`[{"message":"ciao","userId":"123"}]`),
+			json.RawMessage(`[{"message":"ciao","userId":"123","topic":"some-topic"}]`),
 			pm,
 			"some-topic",
 		)
@@ -563,7 +572,7 @@ func TestSendBatchedMessage(t *testing.T) {
 		pm := &ProducerManager{p: p}
 		sc, res, err := sendBatchedMessage(
 			context.Background(),
-			json.RawMessage(`[{"message":"ciao","userId":"123"}]`),
+			json.RawMessage(`[{"message":"ciao","userId":"123","topic":"some-topic"}]`),
 			pm,
 			"some-topic",
 		)
@@ -579,6 +588,30 @@ func TestSendBatchedMessage(t *testing.T) {
 	})
 
 	t.Run("ok", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		kafkaStats.publishTime = getMockedTimer(t, ctrl)
+		kafkaStats.prepareBatchTime = getMockedTimer(t, ctrl)
+
+		p := &pMockErr{error: nil}
+		pm := &ProducerManager{p: p}
+		sc, res, err := sendBatchedMessage(
+			context.Background(),
+			json.RawMessage(`[{"message":"ciao","userId":"123","topic":"some-topic"}]`),
+			pm,
+			"some-topic",
+		)
+		require.Equal(t, 200, sc)
+		require.Equal(t, "Kafka: Message delivered in batch", res)
+		require.Equal(t, "Kafka: Message delivered in batch", err)
+		require.Len(t, p.calls, 1)
+		require.Len(t, p.calls[0], 1)
+		require.Equal(t, []byte("123"), p.calls[0][0].Key)
+		require.Equal(t, []byte(`"ciao"`), p.calls[0][0].Value)
+		require.Equal(t, "some-topic", p.calls[0][0].Topic)
+		require.InDelta(t, time.Now().Unix(), p.calls[0][0].Timestamp.Unix(), 1)
+	})
+
+	t.Run("default topic test", func(t *testing.T) {
 		ctrl := gomock.NewController(t)
 		kafkaStats.publishTime = getMockedTimer(t, ctrl)
 		kafkaStats.prepareBatchTime = getMockedTimer(t, ctrl)
@@ -623,7 +656,7 @@ func TestSendBatchedMessage(t *testing.T) {
 		}
 		sc, res, err := sendBatchedMessage(
 			context.Background(),
-			json.RawMessage(`[{"message":{"messageId":"message001","data":"ciao"},"userId":"123"}]`),
+			json.RawMessage(`[{"message":{"messageId":"message001","data":"ciao"},"userId":"123","topic":"some-topic"}]`),
 			pm,
 			"some-topic",
 		)
@@ -653,7 +686,7 @@ func TestSendBatchedMessage(t *testing.T) {
 		}
 		sc, res, err := sendBatchedMessage(
 			context.Background(),
-			json.RawMessage(`[{"message":{"messageId":"message001","data":"ciao"},"userId":"123","schemaId":"schemaId001"}]`),
+			json.RawMessage(`[{"message":{"messageId":"message001","data":"ciao"},"userId":"123","schemaId":"schemaId001","topic":"some-topic"}]`),
 			pm,
 			"some-topic",
 		)
@@ -683,7 +716,7 @@ func TestSendBatchedMessage(t *testing.T) {
 		}
 		sc, res, err := sendBatchedMessage(
 			context.Background(),
-			json.RawMessage(`[{"message":{"messageId":"message001","data":"ciao"},"userId":"123","schemaId":"schemaId002"}]`),
+			json.RawMessage(`[{"message":{"messageId":"message001","data":"ciao"},"userId":"123","schemaId":"schemaId002","topic":"some-topic"}]`),
 			pm,
 			"some-topic",
 		)
@@ -713,7 +746,7 @@ func TestSendMessage(t *testing.T) {
 
 		p := &pMockErr{error: nil}
 		pm := &ProducerManager{p: p}
-		sc, res, err := sendMessage(context.Background(), json.RawMessage(`{"message":"ciao"}`), pm, "some-topic")
+		sc, res, err := sendMessage(context.Background(), json.RawMessage(`{"message":"ciao", "topic":"some-topic"}`), pm, "some-topic")
 		require.Equal(t, 200, sc)
 		require.Equal(t, "Message delivered to topic: some-topic", res)
 		require.Equal(t, "Message delivered to topic: some-topic", err)
@@ -732,7 +765,7 @@ func TestSendMessage(t *testing.T) {
 		pm := &ProducerManager{p: p}
 		sc, res, err := sendMessage(
 			context.Background(),
-			json.RawMessage(`{"message":"ciao","userId":"123"}`),
+			json.RawMessage(`{"message":"ciao","userId":"123","topic":"some-topic"}`),
 			pm,
 			"some-topic",
 		)
@@ -764,7 +797,7 @@ func TestSendMessage(t *testing.T) {
 		}
 		sc, res, err := sendMessage(
 			context.Background(),
-			json.RawMessage(`{"message":{"messageId":"message001","data":"ciao"},"userId":"123"}`),
+			json.RawMessage(`{"message":{"messageId":"message001","data":"ciao"},"userId":"123","topic":"some-topic"}`),
 			pm,
 			"some-topic",
 		)
@@ -790,13 +823,24 @@ func TestSendMessage(t *testing.T) {
 		}
 		sc, res, err := sendMessage(
 			context.Background(),
-			json.RawMessage(`{"message":{"messageId":"message001","data":"ciao"},"userId":"123","schemaId":"schemaId001"}`),
+			json.RawMessage(`{"message":{"messageId":"message001","data":"ciao"},"userId":"123","schemaId":"schemaId001","topic":"some-topic"}`),
 			pm,
 			"some-topic",
 		)
 		require.Equal(t, 400, sc)
 		require.Equal(t, "unable to serialize event with messageId: message001, with error unable convert the event to native from textual, with error: cannot decode textual record \"kafkaAvroTest.myrecord\": cannot decode textual map: cannot determine codec: \"data\" error occurred.", res)
 		require.Equal(t, "unable to serialize event with messageId: message001, with error unable convert the event to native from textual, with error: cannot decode textual record \"kafkaAvroTest.myrecord\": cannot decode textual map: cannot determine codec: \"data\"", err)
+	})
+}
+
+func TestPublish(t *testing.T) {
+	t.Run("no topic", func(t *testing.T) {
+		kafkaStats.publishTime = getMockedTimer(t, gomock.NewController(t))
+		p := &client.Producer{}
+		pm := &ProducerManager{p: p}
+		message := prepareMessage("", "userId", []byte(`{"test": "value"}`), time.Now())
+		err := publish(context.Background(), pm, message)
+		require.ErrorContains(t, err, "no topic provided for message 0")
 	})
 }
 

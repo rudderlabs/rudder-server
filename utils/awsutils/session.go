@@ -32,7 +32,7 @@ type SessionConfig struct {
 }
 
 func createRoleSessionName(serviceName string) string {
-	return fmt.Sprintf("rudderstack-aws-%s-access", strings.ToLower(serviceName))
+	return fmt.Sprintf("rudderstack-aws-%s-access", strings.ToLower(strings.ReplaceAll(serviceName, " ", "-")))
 }
 
 func getHttpClient(config *SessionConfig) *http.Client {

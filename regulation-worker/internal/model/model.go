@@ -11,6 +11,7 @@ var (
 	ErrNoRunnableJob      = errors.New("no runnable job found")
 	ErrDestNotImplemented = errors.New("job deletion not implemented for the destination")
 	ErrInvalidDestination = errors.New("invalid destination")
+	ErrRequestTimeout     = errors.New("request timeout")
 )
 
 type JobStatus string
@@ -41,6 +42,7 @@ type User struct {
 
 type Destination struct {
 	Config        map[string]interface{}
+	DestDefConfig map[string]interface{}
 	DestinationID string
 	Name          string
 }

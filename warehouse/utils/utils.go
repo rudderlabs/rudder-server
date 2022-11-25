@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/sha512"
 	"database/sql"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -21,7 +22,6 @@ import (
 	"github.com/Azure/azure-storage-blob-go/azblob"
 	"github.com/aws/aws-sdk-go/service/s3"
 	"github.com/aws/aws-sdk-go/service/sts"
-	"github.com/gofrs/uuid"
 	"github.com/iancoleman/strcase"
 	"github.com/tidwall/gjson"
 
@@ -97,6 +97,7 @@ const (
 const (
 	WAREHOUSE               = "warehouse"
 	RUDDER_MISSING_DATATYPE = "warehouse_rudder_missing_datatype"
+	MISSING_DATATYPE        = "<missing_datatype>"
 )
 
 const (
@@ -227,6 +228,12 @@ type DeleteByParams struct {
 	JobRunId  string
 	TaskRunId string
 	StartTime string
+}
+
+type ColumnInfo struct {
+	Name  string
+	Value interface{}
+	Type  string
 }
 
 func (w *Warehouse) GetBoolDestinationConfig(key string) bool {
@@ -380,14 +387,14 @@ func GetLoadFileGenTime(str sql.NullString) (t time.Time) {
 
 func GetNamespace(source backendconfig.SourceT, destination backendconfig.DestinationT, dbHandle *sql.DB) (namespace string, exists bool) {
 	sqlStatement := fmt.Sprintf(`
-		SELECT 
-		  namespace 
-		FROM 
-		  %s 
-		WHERE 
-		  source_id = '%s' 
-		  AND destination_id = '%s' 
-		ORDER BY 
+		SELECT
+		  namespace
+		FROM
+		  %s
+		WHERE
+		  source_id = '%s'
+		  AND destination_id = '%s'
+		ORDER BY
 		  id DESC;
 `,
 		WarehouseSchemasTable,
@@ -569,8 +576,8 @@ func GetAzureBlobLocationFolder(location string) string {
 }
 
 func GetS3Locations(loadFiles []LoadFileT) []LoadFileT {
-	for idx, loadfile := range loadFiles {
-		loadFiles[idx].Location, _ = GetS3Location(loadfile.Location)
+	for idx, loadFile := range loadFiles {
+		loadFiles[idx].Location, _ = GetS3Location(loadFile.Location)
 	}
 	return loadFiles
 }
@@ -639,7 +646,7 @@ func ToSafeNamespace(provider, name string) string {
 
 /*
 ToProviderCase converts string provided to case generally accepted in the warehouse for table, column, schema names etc.
-e.g. columns are uppercased in SNOWFLAKE and lowercased etc. in REDSHIFT, BIGQUERY etc
+e.g. columns are uppercase in SNOWFLAKE and lowercase etc. in REDSHIFT, BIGQUERY etc
 */
 func ToProviderCase(provider, str string) string {
 	if strings.ToUpper(provider) == SNOWFLAKE {
@@ -739,10 +746,10 @@ func GetWarehouseIdentifier(destType, sourceID, destinationID string) string {
 	return fmt.Sprintf("%s:%s:%s", destType, sourceID, destinationID)
 }
 
-func DoubleQuoteAndJoinByComma(strs []string) string {
+func DoubleQuoteAndJoinByComma(elems []string) string {
 	var quotedSlice []string
-	for _, str := range strs {
-		quotedSlice = append(quotedSlice, fmt.Sprintf("%q", str))
+	for _, elem := range elems {
+		quotedSlice = append(quotedSlice, fmt.Sprintf("%q", elem))
 	}
 	return strings.Join(quotedSlice, ",")
 }
@@ -777,7 +784,8 @@ func JoinWithFormatting(keys []string, format func(idx int, str string) string, 
 }
 
 func CreateAWSSessionConfig(destination *backendconfig.DestinationT, serviceName string) (*awsutils.SessionConfig, error) {
-	if !misc.IsConfiguredToUseRudderObjectStorage(destination.Config) {
+	if !misc.IsConfiguredToUseRudderObjectStorage(destination.Config) &&
+		(misc.HasAWSRoleARNInConfig(destination.Config) || misc.HasAWSKeysInConfig(destination.Config)) {
 		return awsutils.NewSimpleSessionConfigForDestination(destination, serviceName)
 	}
 	accessKeyID, accessKey := misc.GetRudderObjectStorageAccessKeys()
@@ -815,8 +823,8 @@ type Tag struct {
 }
 
 func NewTimerStat(name string, extraTags ...Tag) stats.Measurement {
-	tags := map[string]string{
-		"module": "warehouse",
+	tags := stats.Tags{
+		"module": WAREHOUSE,
 	}
 	for _, extraTag := range extraTags {
 		tags[extraTag.Name] = extraTag.Value
@@ -825,8 +833,8 @@ func NewTimerStat(name string, extraTags ...Tag) stats.Measurement {
 }
 
 func NewCounterStat(name string, extraTags ...Tag) stats.Measurement {
-	tags := map[string]string{
-		"module": "warehouse",
+	tags := stats.Tags{
+		"module": WAREHOUSE,
 	}
 	for _, extraTag := range extraTags {
 		tags[extraTag.Name] = extraTag.Value
@@ -835,7 +843,7 @@ func NewCounterStat(name string, extraTags ...Tag) stats.Measurement {
 }
 
 func WHCounterStat(name string, warehouse *Warehouse, extraTags ...Tag) stats.Measurement {
-	tags := map[string]string{
+	tags := stats.Tags{
 		"module":      WAREHOUSE,
 		"destType":    warehouse.Type,
 		"workspaceId": warehouse.WorkspaceID,
@@ -914,7 +922,7 @@ func WriteSSLKeys(destination backendconfig.DestinationT) WriteSSLKeyError {
 		existingChecksum = string(fileContent)
 	}
 	if existingChecksum == sslHash {
-		// Pems files already written to FS
+		// Permission files already written to FS
 		return WriteSSLKeyError{}
 	}
 	if err = os.WriteFile(clientCertPemFile, []byte(clientCert), 0o600); err != nil {
@@ -1067,8 +1075,16 @@ func StagingTablePrefix(provider string) string {
 }
 
 func StagingTableName(provider, tableName string, tableNameLimit int) string {
-	randomNess := strings.ReplaceAll(uuid.Must(uuid.NewV4()).String(), "-", "")
+	randomNess := RandHex()
 	prefix := StagingTablePrefix(provider)
 	stagingTableName := fmt.Sprintf(`%s%s_%s`, prefix, tableName, randomNess)
 	return misc.TruncateStr(stagingTableName, tableNameLimit)
+}
+
+// RandHex returns a random hex string of length 32
+func RandHex() string {
+	u := misc.FastUUID()
+	var buf [32]byte
+	hex.Encode(buf[:], u[:])
+	return string(buf[:])
 }

@@ -4,6 +4,9 @@ package warehouse
 
 import (
 	"github.com/golang/mock/gomock"
+	"github.com/rudderlabs/rudder-server/utils/misc"
+	"github.com/rudderlabs/rudder-server/warehouse/postgres"
+	"github.com/rudderlabs/rudder-server/warehouse/validations"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -11,17 +14,18 @@ import (
 	"github.com/rudderlabs/rudder-server/admin"
 	"github.com/rudderlabs/rudder-server/config"
 	mock_stats "github.com/rudderlabs/rudder-server/mocks/services/stats"
-	"github.com/rudderlabs/rudder-server/testhelper"
 	"github.com/rudderlabs/rudder-server/testhelper/destination"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 )
 
 type testingT interface {
 	Setenv(key, value string)
+	Cleanup(func())
+	Log(...any)
 }
 
-func setupWarehouseJobs(pool *dockertest.Pool, t testingT, cleanup *testhelper.Cleanup) *destination.PostgresResource {
-	pgResource, err := destination.SetupPostgres(pool, cleanup)
+func setupWarehouseJobs(pool *dockertest.Pool, t testingT) *destination.PostgresResource {
+	pgResource, err := destination.SetupPostgres(pool, t)
 	Expect(err).To(BeNil())
 
 	t.Setenv("WAREHOUSE_JOBS_DB_HOST", pgResource.Host)
@@ -42,6 +46,9 @@ func initWarehouse() {
 	Init3()
 	Init4()
 	Init5()
+	validations.Init()
+	misc.Init()
+	postgres.Init()
 }
 
 func getMockStats(g GinkgoTInterface) (*mock_stats.MockStats, *mock_stats.MockMeasurement) {

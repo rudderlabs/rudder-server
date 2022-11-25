@@ -36,17 +36,17 @@ func (m *MockdeleteManager) EXPECT() *MockdeleteManagerMockRecorder {
 }
 
 // Delete mocks base method.
-func (m *MockdeleteManager) Delete(ctx context.Context, job model.Job, destConfig map[string]interface{}, destName string) model.JobStatus {
+func (m *MockdeleteManager) Delete(ctx context.Context, job model.Job, destDetail model.Destination) model.JobStatus {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "Delete", ctx, job, destConfig, destName)
+	ret := m.ctrl.Call(m, "Delete", ctx, job, destDetail)
 	ret0, _ := ret[0].(model.JobStatus)
 	return ret0
 }
 
 // Delete indicates an expected call of Delete.
-func (mr *MockdeleteManagerMockRecorder) Delete(ctx, job, destConfig, destName interface{}) *gomock.Call {
+func (mr *MockdeleteManagerMockRecorder) Delete(ctx, job, destDetail interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Delete", reflect.TypeOf((*MockdeleteManager)(nil).Delete), ctx, job, destConfig, destName)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Delete", reflect.TypeOf((*MockdeleteManager)(nil).Delete), ctx, job, destDetail)
 }
 
 // GetSupportedDestinations mocks base method.

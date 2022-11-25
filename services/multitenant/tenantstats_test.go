@@ -27,7 +27,6 @@ const (
 	noOfWorkers              = 64
 	routerTimeOut            = 10 * time.Second
 	jobQueryBatchSize        = 10000
-	timeGained               = 0.0
 	float64EqualityThreshold = 0.0001
 )
 
@@ -124,13 +123,10 @@ var _ = Describe("tenantStats", func() {
 				tenantStats.UpdateWorkspaceLatencyMap(destType1, workspaceID1, 0)
 				tenantStats.UpdateWorkspaceLatencyMap(destType1, workspaceID2, 0)
 				tenantStats.UpdateWorkspaceLatencyMap(destType1, workspaceID3, 0)
-				routerPickUpJobs, usedLatencies := tenantStats.GetRouterPickupJobs(destType1, noOfWorkers, routerTimeOut, jobQueryBatchSize, timeGained)
+				routerPickUpJobs := tenantStats.GetRouterPickupJobs(destType1, noOfWorkers, routerTimeOut, jobQueryBatchSize)
 				Expect(routerPickUpJobs[workspaceID1]).To(Equal(addJobWID1))
 				Expect(routerPickUpJobs[workspaceID2]).To(Equal(addJobWID2))
 				Expect(routerPickUpJobs[workspaceID3]).To(Equal(addJobWID3))
-				Expect(usedLatencies[workspaceID1]).To(Equal(0.0))
-				Expect(usedLatencies[workspaceID2]).To(Equal(0.0))
-				Expect(usedLatencies[workspaceID3]).To(Equal(0.0))
 			})
 
 			It("Should Pick BETA for slower jobs", func() {
@@ -150,11 +146,10 @@ var _ = Describe("tenantStats", func() {
 					tenantStats.UpdateWorkspaceLatencyMap(destType1, workspaceID2, 2)
 					tenantStats.UpdateWorkspaceLatencyMap(destType1, workspaceID3, 3)
 				}
-				routerPickUpJobs, usedLatencies := tenantStats.GetRouterPickupJobs(destType1, noOfWorkers, routerTimeOut, 300, timeGained)
+				routerPickUpJobs := tenantStats.GetRouterPickupJobs(destType1, noOfWorkers, routerTimeOut, 300)
 				Expect(routerPickUpJobs[workspaceID1]).To(Equal(addJobWID1))
 				Expect(routerPickUpJobs[workspaceID2]).To(Equal(1))
 				Expect(routerPickUpJobs[workspaceID3]).To(Equal(1))
-				Expect(usedLatencies[workspaceID1]).To(Equal(1.0))
 			})
 
 			It("Should de-prioritise slower jobs for faster jobs", func() {
@@ -174,7 +169,7 @@ var _ = Describe("tenantStats", func() {
 					tenantStats.UpdateWorkspaceLatencyMap(destType1, workspaceID2, 0.3)
 					tenantStats.UpdateWorkspaceLatencyMap(destType1, workspaceID3, 0.1)
 				}
-				routerPickUpJobs, usedLatencies := tenantStats.GetRouterPickupJobs(destType1, noOfWorkers, routerTimeOut, 10000, timeGained)
+				routerPickUpJobs := tenantStats.GetRouterPickupJobs(destType1, noOfWorkers, routerTimeOut, 10000)
 				// 64(numberOfWorkers) * 1.3(boostedRouterTime) * 10(routerTimeout)
 				//    				= 432(Jobs For WS1) * 1(Latency of WS1)
 				//					+ 1000(Jobs For WS2) * 0.3(Latency of WS2)
@@ -182,9 +177,6 @@ var _ = Describe("tenantStats", func() {
 				Expect(routerPickUpJobs[workspaceID1]).To(Equal(432))
 				Expect(routerPickUpJobs[workspaceID2]).To(Equal(1000))
 				Expect(routerPickUpJobs[workspaceID3]).To(Equal(1000))
-				assert.InDelta(GinkgoT(), usedLatencies[workspaceID1], 1.0, float64EqualityThreshold)
-				assert.InDelta(GinkgoT(), usedLatencies[workspaceID2], 0.3, float64EqualityThreshold)
-				assert.InDelta(GinkgoT(), usedLatencies[workspaceID3], 0.1, float64EqualityThreshold)
 			})
 
 			It("Should Pick Up Jobs from PileUp based on latency if the in-rate is satisfied", func() {
@@ -206,7 +198,7 @@ var _ = Describe("tenantStats", func() {
 					tenantStats.UpdateWorkspaceLatencyMap(destType1, workspaceID2, 0.3)
 					tenantStats.UpdateWorkspaceLatencyMap(destType1, workspaceID3, 0.1)
 				}
-				routerPickUpJobs, usedLatencies := tenantStats.GetRouterPickupJobs(destType1, noOfWorkers, routerTimeOut, 10000, timeGained)
+				routerPickUpJobs := tenantStats.GetRouterPickupJobs(destType1, noOfWorkers, routerTimeOut, 10000)
 				// Jobs are picked both from Input Loop and Pile Up Loop
 				assert.InDelta(GinkgoT(), tenantStats.routerInputRates["rt"][workspaceID1][destType1].Value(), 16.66666, float64EqualityThreshold)
 				assert.InDelta(GinkgoT(), tenantStats.routerInputRates["rt"][workspaceID2][destType1].Value(), 16.66666, float64EqualityThreshold)
@@ -214,9 +206,6 @@ var _ = Describe("tenantStats", func() {
 				Expect(routerPickUpJobs[workspaceID1]).To(Equal(432))
 				Expect(routerPickUpJobs[workspaceID2]).To(Equal(1000))
 				Expect(routerPickUpJobs[workspaceID3]).To(Equal(1000))
-				assert.InDelta(GinkgoT(), usedLatencies[workspaceID1], 1.0, float64EqualityThreshold)
-				assert.InDelta(GinkgoT(), usedLatencies[workspaceID2], 0.3, float64EqualityThreshold)
-				assert.InDelta(GinkgoT(), usedLatencies[workspaceID3], 0.1, float64EqualityThreshold)
 			})
 
 			It("Customer with high traffic should not block smaller workspaces", func() {
@@ -236,16 +225,13 @@ var _ = Describe("tenantStats", func() {
 					tenantStats.UpdateWorkspaceLatencyMap(destType1, workspaceID2, 0.11)
 					tenantStats.UpdateWorkspaceLatencyMap(destType1, workspaceID3, 0.12)
 				}
-				routerPickUpJobs, usedLatencies := tenantStats.GetRouterPickupJobs(destType1, noOfWorkers, routerTimeOut, 10000, timeGained)
+				routerPickUpJobs := tenantStats.GetRouterPickupJobs(destType1, noOfWorkers, routerTimeOut, 10000)
 				// Jobs are picked both from Input Loop
 				// The whole time was consumed by workspaceID1
 				// So the other two workspaces had the minimum picked up jobs(1)
 				Expect(routerPickUpJobs[workspaceID1]).To(Equal(8319))
 				Expect(routerPickUpJobs[workspaceID2]).To(Equal(1))
 				Expect(routerPickUpJobs[workspaceID3]).To(Equal(1))
-				assert.InDelta(GinkgoT(), usedLatencies[workspaceID1], 0.1, float64EqualityThreshold)
-				assert.InDelta(GinkgoT(), usedLatencies[workspaceID2], 0.11, float64EqualityThreshold)
-				assert.InDelta(GinkgoT(), usedLatencies[workspaceID3], 0.12, float64EqualityThreshold)
 			})
 
 			It("Customer with high drain rate should be de-prioritised", func() {
@@ -267,7 +253,7 @@ var _ = Describe("tenantStats", func() {
 					tenantStats.UpdateWorkspaceLatencyMap(destType1, workspaceID2, 0.11)
 					tenantStats.UpdateWorkspaceLatencyMap(destType1, workspaceID3, 0.12)
 				}
-				routerPickUpJobs, usedLatencies := tenantStats.GetRouterPickupJobs(destType1, noOfWorkers, routerTimeOut, 10000, timeGained)
+				routerPickUpJobs := tenantStats.GetRouterPickupJobs(destType1, noOfWorkers, routerTimeOut, 10000)
 				// Jobs are picked from Input Loop
 				// workspaceID1 has the least latency but also the least priority
 				// as it has draining jobs within the last minute
@@ -276,9 +262,6 @@ var _ = Describe("tenantStats", func() {
 				Expect(routerPickUpJobs[workspaceID1]).To(Equal(6019))
 				Expect(routerPickUpJobs[workspaceID2]).To(Equal(1000))
 				Expect(routerPickUpJobs[workspaceID3]).To(Equal(1000))
-				assert.InDelta(GinkgoT(), usedLatencies[workspaceID1], 0.1, float64EqualityThreshold)
-				assert.InDelta(GinkgoT(), usedLatencies[workspaceID2], 0.11, float64EqualityThreshold)
-				assert.InDelta(GinkgoT(), usedLatencies[workspaceID3], 0.12, float64EqualityThreshold)
 			})
 
 			It("Customer with high failure rate should be de-prioritised", func() {
@@ -302,7 +285,7 @@ var _ = Describe("tenantStats", func() {
 					// Making the failure rate for workspaceID1 high
 					tenantStats.CalculateSuccessFailureCounts(workspaceID1, destType1, false, false)
 				}
-				routerPickUpJobs, usedLatencies := tenantStats.GetRouterPickupJobs(destType1, noOfWorkers, routerTimeOut, 10000, timeGained)
+				routerPickUpJobs := tenantStats.GetRouterPickupJobs(destType1, noOfWorkers, routerTimeOut, 10000)
 				// Jobs are picked from Input Loop
 				// Router In Rate was very low so the jobs had to be picked up from PileUp
 				// workspaceID1 has the highest failure rate so the least priority in PileUp
@@ -311,9 +294,6 @@ var _ = Describe("tenantStats", func() {
 				Expect(routerPickUpJobs[workspaceID1]).To(Equal(166))
 				Expect(routerPickUpJobs[workspaceID2]).To(Equal(1000))
 				Expect(routerPickUpJobs[workspaceID3]).To(Equal(846))
-				assert.InDelta(GinkgoT(), usedLatencies[workspaceID1], 0.4, float64EqualityThreshold)
-				assert.InDelta(GinkgoT(), usedLatencies[workspaceID2], 0.41, float64EqualityThreshold)
-				assert.InDelta(GinkgoT(), usedLatencies[workspaceID3], 0.42, float64EqualityThreshold)
 			})
 		},
 	)

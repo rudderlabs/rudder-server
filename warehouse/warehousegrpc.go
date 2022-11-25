@@ -7,7 +7,7 @@ import (
 	"fmt"
 
 	proto "github.com/rudderlabs/rudder-server/proto/warehouse"
-	"github.com/rudderlabs/rudder-server/warehouse/configuration_testing"
+	"github.com/rudderlabs/rudder-server/warehouse/validations"
 	"google.golang.org/genproto/googleapis/rpc/code"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -70,7 +70,7 @@ func (*warehouseGRPC) TriggerWHUpload(_ context.Context, request *proto.WHUpload
 }
 
 func (*warehouseGRPC) Validate(_ context.Context, req *proto.WHValidationRequest) (*proto.WHValidationResponse, error) {
-	handleT := configuration_testing.CTHandleT{}
+	handleT := validations.CTHandleT{}
 	return handleT.Validating(req)
 }
 
@@ -103,14 +103,14 @@ func validateObjectStorageRequestBody(request *proto.ValidateObjectStorageReques
 	if err != nil {
 		return nil, status.Errorf(
 			codes.Code(code.Code_INTERNAL),
-			"unable to marshal the request proto message with error: %s", err.Error())
+			"unable to marshal the request proto message with error: \n%s", err.Error())
 	}
 
 	r := &ObjectStorageValidationRequest{}
 	if err := json.Unmarshal(byt, r); err != nil {
 		return nil, status.Errorf(
 			codes.Code(code.Code_INTERNAL),
-			"unable to extract data into validation request with error: %s", err)
+			"unable to extract data into validation request with error: \n%s", err)
 	}
 	switch r.Type {
 	case "AZURE_BLOB":
@@ -127,7 +127,7 @@ func validateObjectStorageRequestBody(request *proto.ValidateObjectStorageReques
 	if err != nil {
 		return nil, status.Errorf(
 			codes.Code(code.Code_INVALID_ARGUMENT),
-			"invalid argument err: %s", err.Error())
+			"invalid argument err: \n%s", err.Error())
 	}
 	return r, nil
 }

@@ -53,8 +53,7 @@ func loadConfig() {
 }
 
 func getRetentionTimeForDestination(destID string) time.Duration {
-	destJobRetentionFound := config.IsSet("Router." + destID + ".jobRetention")
-	if destJobRetentionFound {
+	if config.IsSet("Router." + destID + ".jobRetention") {
 		return config.GetDuration("Router."+destID+".jobRetention", 720, time.Hour)
 	}
 
@@ -62,7 +61,7 @@ func getRetentionTimeForDestination(destID string) time.Duration {
 }
 
 func ToBeDrained(job *jobsdb.JobT, destID, toAbortDestinationIDs string, destinationsMap map[string]*BatchDestinationT) (bool, string) {
-	// drain if job is older than a day
+	// drain if job is older than the destination's retention time
 	jobReceivedAt := gjson.GetBytes(job.Parameters, "received_at")
 	if jobReceivedAt.Exists() {
 		jobReceivedAtTime, err := time.Parse(misc.RFC3339Milli, jobReceivedAt.String())
@@ -99,27 +98,4 @@ func EnhanceJSON(rawMsg []byte, key, val string) []byte {
 
 func IsNotEmptyString(s string) bool {
 	return len(strings.TrimSpace(s)) > 0
-}
-
-func GetAuthType(dest backendconfig.DestinationT) (authType string) {
-	destConfig := dest.DestinationDefinition.Config
-	var lookupErr error
-	var authValue interface{}
-	if authValue, lookupErr = misc.NestedMapLookup(destConfig, "auth", "type"); lookupErr != nil {
-		return ""
-	}
-	authType, ok := authValue.(string)
-	if !ok {
-		return ""
-	}
-	return authType
-}
-
-func GetRudderAccountId(destination *backendconfig.DestinationT) string {
-	if rudderAccountIdInterface, found := destination.Config["rudderAccountId"]; found {
-		if rudderAccountId, ok := rudderAccountIdInterface.(string); ok {
-			return rudderAccountId
-		}
-	}
-	return ""
 }

@@ -8,6 +8,7 @@ import (
 
 	"github.com/lib/pq"
 	"github.com/rudderlabs/rudder-server/utils/misc"
+	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 )
 
 type RetryRequest struct {
@@ -175,7 +176,7 @@ func (retryReq *RetryRequest) clausesQuery(sourceIDs []string) []FilterClause {
 	if !retryReq.ForceRetry {
 		clauses = append(clauses, FilterClause{
 			Clause:    fmt.Sprintf("status = %s", queryPlaceHolder),
-			ClauseArg: Aborted,
+			ClauseArg: model.Aborted,
 		})
 	}
 

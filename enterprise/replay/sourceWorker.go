@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 
 	"github.com/gofrs/uuid"
@@ -24,6 +25,7 @@ import (
 )
 
 type SourceWorkerT struct {
+	log           logger.Logger
 	channel       chan *jobsdb.JobT
 	workerID      int
 	replayHandler *Handler
@@ -35,9 +37,9 @@ type SourceWorkerT struct {
 var userTransformBatchSize int
 
 func (worker *SourceWorkerT) workerProcess(ctx context.Context) {
-	pkgLogger.Debugf("worker started %d", worker.workerID)
+	worker.log.Debugf("worker started %d", worker.workerID)
 	for job := range worker.channel {
-		pkgLogger.Debugf("job received: %s", job.EventPayload)
+		worker.log.Debugf("job received: %s", job.EventPayload)
 
 		worker.replayJobsInFile(ctx, gjson.GetBytes(job.EventPayload, "location").String())
 
@@ -85,8 +87,8 @@ func (worker *SourceWorkerT) replayJobsInFile(ctx context.Context, filePath stri
 	if err != nil {
 		panic(err) // failed to download
 	}
-	pkgLogger.Debugf("file downloaded at %s", path)
-	_ = file.Close()
+	worker.log.Debugf("file downloaded at %s", path)
+	defer func() { _ = file.Close() }()
 
 	rawf, err := os.Open(path)
 	if err != nil {
@@ -120,7 +122,7 @@ func (worker *SourceWorkerT) replayJobsInFile(ctx context.Context, filePath stri
 		if transformationVersionID == "" {
 			createdAt, err := time.Parse(misc.POSTGRESTIMEFORMATPARSE, gjson.GetBytes(copyLineBytes, worker.getFieldIdentifier(createdAt)).String())
 			if err != nil {
-				pkgLogger.Errorf("failed to parse created at: %s", err)
+				worker.log.Errorf("failed to parse created at: %s", err)
 				continue
 			}
 			if !(worker.replayHandler.dumpsLoader.startTime.Before(createdAt) && worker.replayHandler.dumpsLoader.endTime.After(createdAt)) {
@@ -140,7 +142,7 @@ func (worker *SourceWorkerT) replayJobsInFile(ctx context.Context, filePath stri
 
 		message, ok := gjson.ParseBytes(copyLineBytes).Value().(map[string]interface{})
 		if !ok {
-			pkgLogger.Errorf("EventPayload not a json: %v", copyLineBytes)
+			worker.log.Errorf("EventPayload not a json: %v", copyLineBytes)
 			continue
 		}
 
@@ -168,17 +170,17 @@ func (worker *SourceWorkerT) replayJobsInFile(ctx context.Context, filePath stri
 		for _, ev := range response.Events {
 			destEventJSON, err := json.Marshal(ev.Output[worker.getFieldIdentifier(eventPayload)])
 			if err != nil {
-				pkgLogger.Errorf("Error unmarshalling transformer output: %v", err)
+				worker.log.Errorf("Error unmarshalling transformer output: %v", err)
 				continue
 			}
 			createdAtString, ok := ev.Output[worker.getFieldIdentifier(createdAt)].(string)
 			if !ok {
-				pkgLogger.Errorf("Error getting created at from transformer output: %v", err)
+				worker.log.Errorf("Error getting created at from transformer output: %v", err)
 				continue
 			}
 			createdAt, err := time.Parse(misc.POSTGRESTIMEFORMATPARSE, createdAtString)
 			if err != nil {
-				pkgLogger.Errorf("failed to parse created at: %s", err)
+				worker.log.Errorf("failed to parse created at: %s", err)
 				continue
 			}
 			if !(worker.replayHandler.dumpsLoader.startTime.Before(createdAt) && worker.replayHandler.dumpsLoader.endTime.After(createdAt)) {
@@ -186,7 +188,7 @@ func (worker *SourceWorkerT) replayJobsInFile(ctx context.Context, filePath stri
 			}
 			params, err := json.Marshal(ev.Output[worker.getFieldIdentifier(parameters)])
 			if err != nil {
-				pkgLogger.Errorf("Error unmarshalling transformer output: %v", err)
+				worker.log.Errorf("Error unmarshalling transformer output: %v", err)
 				continue
 			}
 			job := jobsdb.JobT{
@@ -200,11 +202,11 @@ func (worker *SourceWorkerT) replayJobsInFile(ctx context.Context, filePath stri
 		}
 
 		for _, failedEv := range response.FailedEvents {
-			pkgLogger.Errorf(`Event failed in transformer with err: %v`, failedEv.Error)
+			worker.log.Errorf(`Event failed in transformer with err: %v`, failedEv.Error)
 		}
 
 	}
-	pkgLogger.Infof("brt-debug: TO_DB=%s", worker.replayHandler.toDB.Identifier())
+	worker.log.Infof("brt-debug: TO_DB=%s", worker.replayHandler.toDB.Identifier())
 
 	err = worker.replayHandler.toDB.Store(ctx, jobs)
 	if err != nil {
@@ -213,7 +215,7 @@ func (worker *SourceWorkerT) replayJobsInFile(ctx context.Context, filePath stri
 
 	err = os.Remove(path)
 	if err != nil {
-		pkgLogger.Errorf("[%s]: failed to remove file with error: %w", err)
+		worker.log.Errorf("[%s]: failed to remove file with error: %w", err)
 	}
 }
 

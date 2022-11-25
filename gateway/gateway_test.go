@@ -182,9 +182,9 @@ var _ = Describe("Gateway Enterprise", func() {
 		c.mockSuppressUserFeature = mocksApp.NewMockSuppressUserFeature(c.mockCtrl)
 		c.initializeEnterpriseAppFeatures()
 
-		c.mockSuppressUserFeature.EXPECT().Setup(gomock.Any()).AnyTimes().Return(c.mockSuppressUser, nil)
-		c.mockSuppressUser.EXPECT().IsSuppressedUser(NormalUserID, SourceIDEnabled).Return(false).AnyTimes()
-		c.mockSuppressUser.EXPECT().IsSuppressedUser(SuppressedUserID, SourceIDEnabled).Return(true).AnyTimes()
+		c.mockSuppressUserFeature.EXPECT().Setup(gomock.Any(), gomock.Any()).AnyTimes().Return(c.mockSuppressUser, nil)
+		c.mockSuppressUser.EXPECT().IsSuppressedUser(WorkspaceID, NormalUserID, SourceIDEnabled).Return(false).AnyTimes()
+		c.mockSuppressUser.EXPECT().IsSuppressedUser(WorkspaceID, SuppressedUserID, SourceIDEnabled).Return(true).AnyTimes()
 
 		// setup common environment, override in BeforeEach when required
 		SetEnableRateLimit(false)
@@ -202,7 +202,7 @@ var _ = Describe("Gateway Enterprise", func() {
 		gateway := &HandleT{}
 
 		BeforeEach(func() {
-			err := gateway.Setup(c.mockApp, c.mockBackendConfig, c.mockJobsDB, nil, c.mockVersionHandler, rsources.NewNoOpService())
+			err := gateway.Setup(context.Background(), c.mockApp, c.mockBackendConfig, c.mockJobsDB, nil, c.mockVersionHandler, rsources.NewNoOpService())
 			Expect(err).To(BeNil())
 		})
 
@@ -250,7 +250,7 @@ var _ = Describe("Gateway", func() {
 	Context("Initialization", func() {
 		It("should wait for backend config", func() {
 			gateway := &HandleT{}
-			err := gateway.Setup(c.mockApp, c.mockBackendConfig, c.mockJobsDB, nil, c.mockVersionHandler, rsources.NewNoOpService())
+			err := gateway.Setup(context.Background(), c.mockApp, c.mockBackendConfig, c.mockJobsDB, nil, c.mockVersionHandler, rsources.NewNoOpService())
 			Expect(err).To(BeNil())
 			err = gateway.Shutdown()
 			Expect(err).To(BeNil())
@@ -272,7 +272,7 @@ var _ = Describe("Gateway", func() {
 
 		BeforeEach(func() {
 			gateway = &HandleT{}
-			err := gateway.Setup(c.mockApp, c.mockBackendConfig, c.mockJobsDB, nil, c.mockVersionHandler, rsources.NewNoOpService())
+			err := gateway.Setup(context.Background(), c.mockApp, c.mockBackendConfig, c.mockJobsDB, nil, c.mockVersionHandler, rsources.NewNoOpService())
 			Expect(err).To(BeNil())
 		})
 
@@ -375,7 +375,7 @@ var _ = Describe("Gateway", func() {
 		BeforeEach(func() {
 			gateway = &HandleT{}
 			SetEnableRateLimit(true)
-			err := gateway.Setup(c.mockApp, c.mockBackendConfig, c.mockJobsDB, c.mockRateLimiter, c.mockVersionHandler, rsources.NewNoOpService())
+			err := gateway.Setup(context.Background(), c.mockApp, c.mockBackendConfig, c.mockJobsDB, c.mockRateLimiter, c.mockVersionHandler, rsources.NewNoOpService())
 			Expect(err).To(BeNil())
 		})
 
@@ -411,7 +411,7 @@ var _ = Describe("Gateway", func() {
 
 		BeforeEach(func() {
 			gateway = &HandleT{}
-			err := gateway.Setup(c.mockApp, c.mockBackendConfig, c.mockJobsDB, nil, c.mockVersionHandler, rsources.NewNoOpService())
+			err := gateway.Setup(context.Background(), c.mockApp, c.mockBackendConfig, c.mockJobsDB, nil, c.mockVersionHandler, rsources.NewNoOpService())
 			Expect(err).To(BeNil())
 		})
 
@@ -538,7 +538,7 @@ var _ = Describe("Gateway", func() {
 
 		BeforeEach(func() {
 			gateway = &HandleT{}
-			err := gateway.Setup(c.mockApp, c.mockBackendConfig, c.mockJobsDB, nil, c.mockVersionHandler, rsources.NewNoOpService())
+			err := gateway.Setup(context.Background(), c.mockApp, c.mockBackendConfig, c.mockJobsDB, nil, c.mockVersionHandler, rsources.NewNoOpService())
 			Expect(err).To(BeNil())
 		})
 
@@ -570,7 +570,7 @@ var _ = Describe("Gateway", func() {
 				Expect(err).To(BeNil())
 				err = os.Setenv("RSERVER_WAREHOUSE_MODE", config.OffMode)
 				Expect(err).To(BeNil())
-				err = gateway.Setup(c.mockApp, c.mockBackendConfig, c.mockJobsDB, nil, c.mockVersionHandler, rsources.NewNoOpService())
+				err = gateway.Setup(context.Background(), c.mockApp, c.mockBackendConfig, c.mockJobsDB, nil, c.mockVersionHandler, rsources.NewNoOpService())
 				Expect(err).To(BeNil())
 
 				defer func() {

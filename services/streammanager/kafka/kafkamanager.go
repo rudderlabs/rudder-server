@@ -312,7 +312,7 @@ func NewProducer(destination *backendconfig.DestinationT, o common.Opts) (*Produ
 		return nil, fmt.Errorf("could not ping: %w", err)
 	}
 
-	p, err := c.NewProducer(destConfig.Topic, client.ProducerConfig{
+	p, err := c.NewProducer(client.ProducerConfig{
 		ReadTimeout:  kafkaReadTimeout,
 		WriteTimeout: kafkaWriteTimeout,
 	})
@@ -363,7 +363,7 @@ func NewProducerForAzureEventHubs(destination *backendconfig.DestinationT, o com
 		return nil, fmt.Errorf("[Azure Event Hubs] Cannot connect: %w", err)
 	}
 
-	p, err := c.NewProducer(destConfig.Topic, client.ProducerConfig{
+	p, err := c.NewProducer(client.ProducerConfig{
 		ReadTimeout:  kafkaReadTimeout,
 		WriteTimeout: kafkaWriteTimeout,
 	})
@@ -415,7 +415,7 @@ func NewProducerForConfluentCloud(destination *backendconfig.DestinationT, o com
 		return nil, fmt.Errorf("[Confluent Cloud] Cannot connect: %w", err)
 	}
 
-	p, err := c.NewProducer(destConfig.Topic, client.ProducerConfig{
+	p, err := c.NewProducer(client.ProducerConfig{
 		ReadTimeout:  kafkaReadTimeout,
 		WriteTimeout: kafkaWriteTimeout,
 	})
@@ -450,14 +450,19 @@ func serializeAvroMessage(value []byte, codec goavro.Codec) ([]byte, error) {
 	return binary, nil
 }
 
-func prepareBatchOfMessages(topic string, batch []map[string]interface{}, timestamp time.Time, p producerManager) (
+func prepareBatchOfMessages(batch []map[string]interface{}, timestamp time.Time, p producerManager, defaultTopic string) (
 	[]client.Message, error,
 ) {
 	start := now()
 	defer func() { kafkaStats.prepareBatchTime.SendTiming(since(start)) }()
-
 	var messages []client.Message
+
 	for i, data := range batch {
+		topic, ok := data["topic"].(string)
+		if !ok || topic == "" {
+			topic = defaultTopic
+		}
+
 		message, ok := data["message"]
 		if !ok {
 			kafkaStats.missingMessage.Increment()
@@ -533,7 +538,6 @@ func (p *ProducerManager) Produce(jsonData json.RawMessage, destConfig interface
 		// return 400 if producer is invalid
 		return 400, "Could not create producer", "Could not create producer"
 	}
-
 	start := now()
 	defer func() { kafkaStats.produceTime.SendTiming(since(start)) }()
 
@@ -556,10 +560,11 @@ func (p *ProducerManager) Produce(jsonData json.RawMessage, destConfig interface
 	if kafkaBatchingEnabled {
 		return sendBatchedMessage(ctx, jsonData, p, conf.Topic)
 	}
+
 	return sendMessage(ctx, jsonData, p, conf.Topic)
 }
 
-func sendBatchedMessage(ctx context.Context, jsonData json.RawMessage, p producerManager, topic string) (int, string, string) {
+func sendBatchedMessage(ctx context.Context, jsonData json.RawMessage, p producerManager, defaultTopic string) (int, string, string) {
 	var batch []map[string]interface{}
 	err := json.Unmarshal(jsonData, &batch)
 	if err != nil {
@@ -567,7 +572,7 @@ func sendBatchedMessage(ctx context.Context, jsonData json.RawMessage, p produce
 	}
 
 	timestamp := time.Now()
-	batchOfMessages, err := prepareBatchOfMessages(topic, batch, timestamp, p)
+	batchOfMessages, err := prepareBatchOfMessages(batch, timestamp, p, defaultTopic)
 	if err != nil {
 		return 400, "Failure", "Error while preparing batched message: " + err.Error()
 	}
@@ -581,7 +586,7 @@ func sendBatchedMessage(ctx context.Context, jsonData json.RawMessage, p produce
 	return 200, returnMessage, returnMessage
 }
 
-func sendMessage(ctx context.Context, jsonData json.RawMessage, p producerManager, topic string) (int, string, string) {
+func sendMessage(ctx context.Context, jsonData json.RawMessage, p producerManager, defaultTopic string) (int, string, string) {
 	parsedJSON := gjson.ParseBytes(jsonData)
 	messageValue := parsedJSON.Get("message").Value()
 	if messageValue == nil {
@@ -594,11 +599,11 @@ func sendMessage(ctx context.Context, jsonData json.RawMessage, p producerManage
 	}
 
 	timestamp := time.Now()
-	userID, _ := parsedJSON.Get("userId").Value().(string)
+	userID := parsedJSON.Get("userId").String()
 	codecs := p.getCodecs()
 	if len(codecs) > 0 {
-		schemaId, _ := parsedJSON.Get("schemaId").Value().(string)
-		messageId, _ := parsedJSON.Get("message.messageId").Value().(string)
+		schemaId := parsedJSON.Get("schemaId").String()
+		messageId := parsedJSON.Get("message.messageId").String()
 		if schemaId == "" {
 			return makeErrorResponse(fmt.Errorf("schemaId is not available for event with messageId: %s", messageId))
 		}
@@ -611,7 +616,15 @@ func sendMessage(ctx context.Context, jsonData json.RawMessage, p producerManage
 			return makeErrorResponse(fmt.Errorf("unable to serialize event with messageId: %s, with error %s", messageId, err))
 		}
 	}
+
+	topic := parsedJSON.Get("topic").String()
+
+	if topic == "" {
+		topic = defaultTopic
+	}
+
 	message := prepareMessage(topic, userID, value, timestamp)
+
 	if err = publish(ctx, p, message); err != nil {
 		return makeErrorResponse(fmt.Errorf("could not publish to %q: %w", topic, err))
 	}

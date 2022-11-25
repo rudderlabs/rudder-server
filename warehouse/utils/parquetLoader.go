@@ -28,7 +28,7 @@ func (loader *ParquetLoader) IsLoadTimeColumn(columnName string) bool {
 	return columnName == ToProviderCase(loader.destType, UUID_TS_COLUMN)
 }
 
-func (*ParquetLoader) GetLoadTimeFomat(_ string) string {
+func (*ParquetLoader) GetLoadTimeFormat(_ string) string {
 	return time.RFC3339
 }
 

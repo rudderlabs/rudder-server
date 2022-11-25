@@ -2,7 +2,6 @@ package processor
 
 import (
 	"context"
-	"database/sql"
 	"encoding/json"
 	"fmt"
 	"reflect"
@@ -31,6 +30,7 @@ import (
 	"github.com/rudderlabs/rudder-server/processor/stash"
 	"github.com/rudderlabs/rudder-server/processor/transformer"
 	"github.com/rudderlabs/rudder-server/services/dedup"
+	"github.com/rudderlabs/rudder-server/services/fileuploader"
 	"github.com/rudderlabs/rudder-server/services/rsources"
 	"github.com/rudderlabs/rudder-server/services/transientsource"
 	"github.com/rudderlabs/rudder-server/utils/bytesize"
@@ -348,7 +348,7 @@ var _ = Describe("Processor", func() {
 			// crash recover returns empty list
 			c.mockGatewayJobsDB.EXPECT().DeleteExecuting().Times(1)
 
-			processor.Setup(c.mockBackendConfig, c.mockGatewayJobsDB, c.mockRouterJobsDB, c.mockBatchRouterJobsDB, c.mockProcErrorsDB, &clearDB, nil, c.MockMultitenantHandle, transientsource.NewEmptyService(), c.MockRsourcesService)
+			processor.Setup(c.mockBackendConfig, c.mockGatewayJobsDB, c.mockRouterJobsDB, c.mockBatchRouterJobsDB, c.mockProcErrorsDB, &clearDB, nil, c.MockMultitenantHandle, transientsource.NewEmptyService(), fileuploader.NewDefaultProvider(), c.MockRsourcesService)
 		})
 
 		It("should recover after crash", func() {
@@ -361,7 +361,7 @@ var _ = Describe("Processor", func() {
 
 			c.mockGatewayJobsDB.EXPECT().DeleteExecuting().Times(1)
 
-			processor.Setup(c.mockBackendConfig, c.mockGatewayJobsDB, c.mockRouterJobsDB, c.mockBatchRouterJobsDB, c.mockProcErrorsDB, &clearDB, nil, c.MockMultitenantHandle, transientsource.NewEmptyService(), c.MockRsourcesService)
+			processor.Setup(c.mockBackendConfig, c.mockGatewayJobsDB, c.mockRouterJobsDB, c.mockBatchRouterJobsDB, c.mockProcErrorsDB, &clearDB, nil, c.MockMultitenantHandle, transientsource.NewEmptyService(), fileuploader.NewDefaultProvider(), c.MockRsourcesService)
 		})
 	})
 
@@ -380,7 +380,7 @@ var _ = Describe("Processor", func() {
 				transformer: mockTransformer,
 			}
 
-			processor.Setup(c.mockBackendConfig, c.mockGatewayJobsDB, c.mockRouterJobsDB, c.mockBatchRouterJobsDB, c.mockProcErrorsDB, &clearDB, c.MockReportingI, c.MockMultitenantHandle, transientsource.NewEmptyService(), c.MockRsourcesService)
+			processor.Setup(c.mockBackendConfig, c.mockGatewayJobsDB, c.mockRouterJobsDB, c.mockBatchRouterJobsDB, c.mockProcErrorsDB, &clearDB, c.MockReportingI, c.MockMultitenantHandle, transientsource.NewEmptyService(), fileuploader.NewDefaultProvider(), c.MockRsourcesService)
 
 			payloadLimit := processor.payloadLimit
 			c.mockGatewayJobsDB.EXPECT().GetUnprocessed(gomock.Any(), jobsdb.GetQueryParamsT{CustomValFilters: gatewayCustomVal, JobsLimit: c.dbReadBatchSize, EventsLimit: c.processEventSize, PayloadSizeLimit: payloadLimit}).Return(jobsdb.JobsResult{Jobs: emptyJobsList}, nil).Times(1)
@@ -973,8 +973,8 @@ var _ = Describe("Processor", func() {
 				})
 
 			// will be used to save failed events to failed keys table
-			c.mockProcErrorsDB.EXPECT().WithTx(gomock.Any()).Do(func(f func(tx *sql.Tx) error) {
-				_ = f(nil)
+			c.mockProcErrorsDB.EXPECT().WithTx(gomock.Any()).Do(func(f func(tx *jobsdb.Tx) error) {
+				_ = f(&jobsdb.Tx{})
 			}).Times(1)
 
 			// One Store call is expected for all events
@@ -1105,8 +1105,8 @@ var _ = Describe("Processor", func() {
 					assertJobStatus(unprocessedJobsList[0], statuses[0], jobsdb.Succeeded.State)
 				})
 
-			c.mockProcErrorsDB.EXPECT().WithTx(gomock.Any()).Do(func(f func(tx *sql.Tx) error) {
-				_ = f(nil)
+			c.mockProcErrorsDB.EXPECT().WithTx(gomock.Any()).Do(func(f func(tx *jobsdb.Tx) error) {
+				_ = f(&jobsdb.Tx{})
 			}).Return(nil).Times(1)
 
 			// One Store call is expected for all events
@@ -1183,8 +1183,8 @@ var _ = Describe("Processor", func() {
 					assertJobStatus(unprocessedJobsList[0], statuses[0], jobsdb.Succeeded.State)
 				})
 
-			c.mockProcErrorsDB.EXPECT().WithTx(gomock.Any()).Do(func(f func(tx *sql.Tx) error) {
-				_ = f(nil)
+			c.mockProcErrorsDB.EXPECT().WithTx(gomock.Any()).Do(func(f func(tx *jobsdb.Tx) error) {
+				_ = f(&jobsdb.Tx{})
 			}).Return(nil).Times(0)
 
 			// One Store call is expected for all events
@@ -1212,7 +1212,7 @@ var _ = Describe("Processor", func() {
 			// crash recover returns empty list
 			c.mockGatewayJobsDB.EXPECT().DeleteExecuting().Times(1)
 			SetFeaturesRetryAttempts(0)
-			processor.Setup(c.mockBackendConfig, c.mockGatewayJobsDB, c.mockRouterJobsDB, c.mockBatchRouterJobsDB, c.mockProcErrorsDB, &clearDB, nil, c.MockMultitenantHandle, transientsource.NewEmptyService(), c.MockRsourcesService)
+			processor.Setup(c.mockBackendConfig, c.mockGatewayJobsDB, c.mockRouterJobsDB, c.mockBatchRouterJobsDB, c.mockProcErrorsDB, &clearDB, nil, c.MockMultitenantHandle, transientsource.NewEmptyService(), fileuploader.NewDefaultProvider(), c.MockRsourcesService)
 
 			setMainLoopTimeout(1 * time.Second)
 
@@ -1237,7 +1237,7 @@ var _ = Describe("Processor", func() {
 			// crash recover returns empty list
 			c.mockGatewayJobsDB.EXPECT().DeleteExecuting().Times(1)
 			SetFeaturesRetryAttempts(0)
-			processor.Setup(c.mockBackendConfig, c.mockGatewayJobsDB, c.mockRouterJobsDB, c.mockBatchRouterJobsDB, c.mockProcErrorsDB, &clearDB, c.MockReportingI, c.MockMultitenantHandle, transientsource.NewEmptyService(), c.MockRsourcesService)
+			processor.Setup(c.mockBackendConfig, c.mockGatewayJobsDB, c.mockRouterJobsDB, c.mockBatchRouterJobsDB, c.mockProcErrorsDB, &clearDB, c.MockReportingI, c.MockMultitenantHandle, transientsource.NewEmptyService(), fileuploader.NewDefaultProvider(), c.MockRsourcesService)
 			defer processor.Shutdown()
 			c.MockReportingI.EXPECT().WaitForSetup(gomock.Any(), gomock.Any()).Times(1)
 
@@ -1909,7 +1909,7 @@ func assertDestinationTransform(messages map[string]mockEventData, sourceId, des
 		fmt.Println("url", url)
 		fmt.Println("destinationDefinitionName", destinationDefinitionName)
 
-		Expect(url).To(Equal(fmt.Sprintf("http://localhost:9090/v0/%s", destinationDefinitionName)))
+		Expect(url).To(Equal(fmt.Sprintf("http://localhost:9090/v0/destinations/%s", destinationDefinitionName)))
 
 		fmt.Println("clientEvents:", len(clientEvents))
 		fmt.Println("expect:", expectations.events)
@@ -2025,7 +2025,7 @@ func processorSetupAndAssertJobHandling(processor *HandleT, c *testContext) {
 func Setup(processor *HandleT, c *testContext, enableDedup, enableReporting bool) {
 	clearDB := false
 	setDisableDedupFeature(enableDedup)
-	processor.Setup(c.mockBackendConfig, c.mockGatewayJobsDB, c.mockRouterJobsDB, c.mockBatchRouterJobsDB, c.mockProcErrorsDB, &clearDB, c.MockReportingI, c.MockMultitenantHandle, transientsource.NewEmptyService(), c.MockRsourcesService)
+	processor.Setup(c.mockBackendConfig, c.mockGatewayJobsDB, c.mockRouterJobsDB, c.mockBatchRouterJobsDB, c.mockProcErrorsDB, &clearDB, c.MockReportingI, c.MockMultitenantHandle, transientsource.NewEmptyService(), fileuploader.NewDefaultProvider(), c.MockRsourcesService)
 	processor.reportingEnabled = enableReporting
 	// make sure the mock backend config has sent the configuration
 	testutils.RunTestWithTimeout(func() {
@@ -2405,6 +2405,159 @@ var _ = Describe("TestSubJobMerger", func() {
 			Expect(mergedJob.sourceDupStats).To(Equal(expectedMergedJob.sourceDupStats))
 			Expect(mergedJob.uniqueMessageIds).To(Equal(expectedMergedJob.uniqueMessageIds))
 			Expect(mergedJob.totalEvents).To(Equal(expectedMergedJob.totalEvents))
+		})
+	})
+})
+
+var _ = Describe("TestConfigFilter", func() {
+	Context("testing config filter", func() {
+		It("success-full test", func() {
+			intgConfig := backendconfig.DestinationT{
+				ID:   "1",
+				Name: "test",
+				Config: map[string]interface{}{
+					"config_key":   "config_value",
+					"long_config1": "long_config1_value..................................",
+					"long_config2": map[string]interface{}{"hello": "world"},
+				},
+				DestinationDefinition: backendconfig.DestinationDefinitionT{
+					Config: map[string]interface{}{
+						"configFilters": []interface{}{"long_config1", "long_config2"},
+					},
+				},
+				Enabled:            true,
+				IsProcessorEnabled: true,
+			}
+			expectedEvent := transformer.TransformerEventT{
+				Message: types.SingularEventT{
+					"MessageID": "messageId-1",
+				},
+				Destination: backendconfig.DestinationT{
+					ID:   "1",
+					Name: "test",
+					Config: map[string]interface{}{
+						"config_key":   "config_value",
+						"long_config1": "",
+						"long_config2": "",
+					},
+					DestinationDefinition: backendconfig.DestinationDefinitionT{
+						Config: map[string]interface{}{
+							"configFilters": []interface{}{"long_config1", "long_config2"},
+						},
+					},
+					Enabled:            true,
+					IsProcessorEnabled: true,
+				},
+			}
+			event := transformer.TransformerEventT{
+				Message: types.SingularEventT{
+					"MessageID": "messageId-1",
+				},
+				Destination: intgConfig,
+			}
+			filterConfig(&event, &intgConfig)
+			Expect(event).To(Equal(expectedEvent))
+		})
+
+		It("success-full test with marshalling", func() {
+			var intgConfig backendconfig.DestinationT
+			var destDef backendconfig.DestinationDefinitionT
+			intgConfigStr := `{
+				"id": "1",
+				"name": "test",
+				"config": {
+					"config_key":"config_value",
+					"long_config1": "long_config1_value..................................",
+					"long_config2": {"hello": "world"}
+				},
+				"enabled": true,
+				"isProcessorEnabled": true
+			}`
+			destDefStr := `{
+				"config": {
+					"configFilters": ["long_config1", "long_config2"]
+				}
+			}`
+			Expect(json.Unmarshal([]byte(intgConfigStr), &intgConfig)).To(BeNil())
+			Expect(json.Unmarshal([]byte(destDefStr), &destDef)).To(BeNil())
+			intgConfig.DestinationDefinition = destDef
+			expectedEvent := transformer.TransformerEventT{
+				Message: types.SingularEventT{
+					"MessageID": "messageId-1",
+				},
+				Destination: backendconfig.DestinationT{
+					ID:   "1",
+					Name: "test",
+					Config: map[string]interface{}{
+						"config_key":   "config_value",
+						"long_config1": "",
+						"long_config2": "",
+					},
+					DestinationDefinition: backendconfig.DestinationDefinitionT{
+						Config: map[string]interface{}{
+							"configFilters": []interface{}{"long_config1", "long_config2"},
+						},
+					},
+					Enabled:            true,
+					IsProcessorEnabled: true,
+				},
+			}
+			event := transformer.TransformerEventT{
+				Message: types.SingularEventT{
+					"MessageID": "messageId-1",
+				},
+				Destination: intgConfig,
+			}
+			filterConfig(&event, &intgConfig)
+			Expect(event).To(Equal(expectedEvent))
+		})
+
+		It("failure test", func() {
+			intgConfig := backendconfig.DestinationT{
+				ID:   "1",
+				Name: "test",
+				Config: map[string]interface{}{
+					"config_key":   "config_value",
+					"long_config1": "long_config1_value..................................",
+					"long_config2": map[string]interface{}{"hello": "world"},
+				},
+				DestinationDefinition: backendconfig.DestinationDefinitionT{
+					Config: map[string]interface{}{
+						"configFilters": nil,
+					},
+				},
+				Enabled:            true,
+				IsProcessorEnabled: true,
+			}
+			expectedEvent := transformer.TransformerEventT{
+				Message: types.SingularEventT{
+					"MessageID": "messageId-1",
+				},
+				Destination: backendconfig.DestinationT{
+					ID:   "1",
+					Name: "test",
+					Config: map[string]interface{}{
+						"config_key":   "config_value",
+						"long_config1": "long_config1_value..................................",
+						"long_config2": map[string]interface{}{"hello": "world"},
+					},
+					DestinationDefinition: backendconfig.DestinationDefinitionT{
+						Config: map[string]interface{}{
+							"configFilters": nil,
+						},
+					},
+					Enabled:            true,
+					IsProcessorEnabled: true,
+				},
+			}
+			event := transformer.TransformerEventT{
+				Message: types.SingularEventT{
+					"MessageID": "messageId-1",
+				},
+				Destination: intgConfig,
+			}
+			filterConfig(&event, &intgConfig)
+			Expect(event).To(Equal(expectedEvent))
 		})
 	})
 })

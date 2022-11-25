@@ -11,6 +11,7 @@ type AuthInfo struct {
 	ConnectionToken string
 	InstanceID      string
 	TokenType       string
+	Labels          map[string]string
 }
 
 type authService struct {
@@ -35,6 +36,7 @@ func (a *authService) GetConnectionToken(_ context.Context, _ *proto.GetConnecti
 				Service:         a.authInfo.Service,
 				InstanceID:      a.authInfo.InstanceID,
 				TokenType:       a.authInfo.TokenType,
+				Labels:          a.authInfo.Labels,
 			},
 		},
 	}, nil

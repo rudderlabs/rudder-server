@@ -1,6 +1,7 @@
 package datalake
 
 import (
+	"context"
 	"fmt"
 	"time"
 
@@ -39,7 +40,7 @@ func (*HandleT) CrashRecover(_ warehouseutils.Warehouse) (err error) {
 	return nil
 }
 
-func (wh *HandleT) FetchSchema(warehouse warehouseutils.Warehouse) (warehouseutils.SchemaT, error) {
+func (wh *HandleT) FetchSchema(warehouse warehouseutils.Warehouse) (warehouseutils.SchemaT, warehouseutils.SchemaT, error) {
 	return wh.SchemaRepository.FetchSchema(warehouse)
 }
 
@@ -55,8 +56,8 @@ func (*HandleT) DropTable(_ string) (err error) {
 	return fmt.Errorf("datalake err :not implemented")
 }
 
-func (wh *HandleT) AddColumn(tableName, columnName, columnType string) (err error) {
-	return wh.SchemaRepository.AddColumn(tableName, columnName, columnType)
+func (wh *HandleT) AddColumns(tableName string, columnsInfo []warehouseutils.ColumnInfo) (err error) {
+	return wh.SchemaRepository.AddColumns(tableName, columnsInfo)
 }
 
 func (wh *HandleT) AlterColumn(tableName, columnName, columnType string) (err error) {
@@ -108,7 +109,7 @@ func (*HandleT) DownloadIdentityRules(*misc.GZipWriter) error {
 	return fmt.Errorf("datalake err :not implemented")
 }
 
-func (*HandleT) GetTotalCountInTable(_ string) (int64, error) {
+func (*HandleT) GetTotalCountInTable(context.Context, string) (int64, error) {
 	return 0, nil
 }
 

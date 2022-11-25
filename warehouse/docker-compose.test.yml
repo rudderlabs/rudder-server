@@ -16,13 +16,9 @@ services:
       retries: 25
   wh-transformer:
     container_name: wh-transformer
-    image: rudderlabs/rudder-transformer:latest
+    image: rudderlabs/develop-rudder-transformer:master
     ports:
       - "9090"
-    healthcheck:
-      test: wget --no-verbose --tries=1 --spider http://localhost:9090/health || exit 1
-      interval: 1s
-      retries: 25
   wh-databricks-connector:
     image: rudderstack/rudder-databricks-connector:v1.3.0
     container_name: wh-databricks-connector
@@ -86,7 +82,7 @@ services:
       retries: 25
   wh-mssql:
     container_name: wh-mssql
-    image: mcr.microsoft.com/azure-sql-edge:1.0.5
+    image: rudderstack/azure-sql-edge:1.0.6
     environment:
       - ACCEPT_EULA=Y
       - SA_PASSWORD=reallyStrongPwd123
@@ -94,10 +90,6 @@ services:
       - SA_USER=SA
     ports:
       - "1433"
-    healthcheck:
-      test: /opt/mssql-tools/bin/sqlcmd -S localhost -U SA -P reallyStrongPwd123 -Q "SELECT 1" || exit 1
-      interval: 1s
-      retries: 25
   wh-zookeeper:
     image: zookeeper:3.5
     container_name: wh-clickhouse-zookeeper
@@ -161,6 +153,17 @@ services:
       test: wget --no-verbose --tries=1 --spider http://localhost:8123/ping || exit 1
       interval: 1s
       retries: 25
+  statsd-exporter:
+    image: prom/statsd-exporter:latest
+    container_name: statsd-exporter
+    ports:
+      - "9102"
+      - "8125"
+      - "8125/udp"
+    command:
+      - --statsd.listen-udp=:8125
+      - --statsd.listen-tcp=:8125
+      - --web.listen-address=:9102
   wh-backend:
     container_name: wh-backend
     depends_on:
@@ -171,6 +174,8 @@ services:
       wh-databricks-connector:
         condition: service_healthy
       wh-minio:
+        condition: service_healthy
+      statsd-exporter:
         condition: service_healthy
       wh-postgres:
         condition: service_healthy

@@ -208,7 +208,6 @@ BackendConfig:
   Regulations:
     pageSize: 50
     pollInterval: 300s
-  useHostedBackendConfig: true
 recovery:
   enabled: true
   errorStorePath: /tmp/error_store.json

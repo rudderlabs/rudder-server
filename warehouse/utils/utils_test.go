@@ -7,9 +7,12 @@ import (
 	"os"
 	"reflect"
 	"regexp"
+	"sort"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/rudderlabs/rudder-server/utils/logger"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -1245,6 +1248,18 @@ func TestCreateAWSSessionConfig(t *testing.T) {
 				Service:       "redshift",
 			},
 		},
+		{
+			destination: &backendconfig.DestinationT{
+				Config:      map[string]interface{}{},
+				WorkspaceID: someWorkspaceID,
+			},
+			service: "redshift",
+			expectedConfig: &awsutils.SessionConfig{
+				AccessKeyID: rudderAccessKeyID,
+				AccessKey:   rudderAccessKey,
+				Service:     "redshift",
+			},
+		},
 	}
 	for _, input := range inputs {
 		config, err := CreateAWSSessionConfig(input.destination, input.service)
@@ -1254,25 +1269,147 @@ func TestCreateAWSSessionConfig(t *testing.T) {
 }
 
 var _ = Describe("Utils", func() {
+	DescribeTable("Get columns from table schema", func(schema TableSchemaT, expected []string) {
+		columns := GetColumnsFromTableSchema(schema)
+		sort.Strings(columns)
+		sort.Strings(expected)
+		Expect(columns).To(Equal(expected))
+	},
+		Entry(nil, TableSchemaT{"k1": "v1", "k2": "v2"}, []string{"k1", "k2"}),
+		Entry(nil, TableSchemaT{"k2": "v1", "k1": "v2"}, []string{"k2", "k1"}),
+	)
+
 	DescribeTable("JSON schema to Map", func(rawMsg json.RawMessage, expected map[string]map[string]string) {
-		got := JSONSchemaToMap(rawMsg)
-		Expect(got).To(Equal(expected))
+		Expect(JSONSchemaToMap(rawMsg)).To(Equal(expected))
 	},
 		Entry(nil, json.RawMessage(`{"k1": { "k2": "v2" }}`), map[string]map[string]string{"k1": {"k2": "v2"}}),
 	)
 
 	DescribeTable("Get date range list", func(start, end time.Time, format string, expected []string) {
-		got := GetDateRangeList(start, end, format)
-		Expect(got).To(Equal(expected))
+		Expect(GetDateRangeList(start, end, format)).To(Equal(expected))
 	},
 		Entry("Same day", time.Now(), time.Now(), "2006-01-02", []string{time.Now().Format("2006-01-02")}),
 		Entry("Multiple days", time.Now(), time.Now().AddDate(0, 0, 1), "2006-01-02", []string{time.Now().Format("2006-01-02"), time.Now().AddDate(0, 0, 1).Format("2006-01-02")}),
 		Entry("No days", nil, nil, "2006-01-02", nil),
 	)
+
+	DescribeTable("Staging table prefix", func(provider string) {
+		Expect(StagingTablePrefix(provider)).To(Equal(ToProviderCase(provider, "rudder_staging_")))
+	},
+		Entry(nil, BQ),
+		Entry(nil, RS),
+		Entry(nil, SNOWFLAKE),
+		Entry(nil, POSTGRES),
+		Entry(nil, CLICKHOUSE),
+		Entry(nil, MSSQL),
+		Entry(nil, AZURE_SYNAPSE),
+		Entry(nil, DELTALAKE),
+		Entry(nil, S3_DATALAKE),
+		Entry(nil, GCS_DATALAKE),
+		Entry(nil, AZURE_DATALAKE),
+	)
+
+	DescribeTable("Staging table name", func(provider string, limit int) {
+		By("Within limits")
+		tableName := ToProviderCase(provider, "demo")
+		expectedTableName := ToProviderCase(provider, "rudder_staging_demo_")
+		Expect(StagingTableName(provider, tableName, limit)).To(HavePrefix(expectedTableName))
+
+		By("Beyond limits")
+		tableName = ToProviderCase(provider, "abcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyz")
+		expectedTableName = ToProviderCase(provider, "rudder_staging_abcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyzabcdefghijlkmnopqrstuvwxyz"[:limit])
+		Expect(StagingTableName(provider, tableName, limit)).To(HavePrefix(expectedTableName))
+	},
+		Entry(nil, BQ, 127),
+		Entry(nil, RS, 127),
+		Entry(nil, SNOWFLAKE, 127),
+		Entry(nil, POSTGRES, 63),
+		Entry(nil, CLICKHOUSE, 127),
+		Entry(nil, MSSQL, 127),
+		Entry(nil, AZURE_SYNAPSE, 127),
+		Entry(nil, DELTALAKE, 127),
+		Entry(nil, S3_DATALAKE, 127),
+		Entry(nil, GCS_DATALAKE, 127),
+		Entry(nil, AZURE_DATALAKE, 127),
+	)
+
+	DescribeTable("Identity mapping unique mapping constraints name", func(warehouse Warehouse, expected string) {
+		Expect(IdentityMappingsUniqueMappingConstraintName(warehouse)).To(Equal(expected))
+	},
+		Entry(nil, Warehouse{Namespace: "namespace", Destination: backendconfig.DestinationT{ID: "id"}}, "unique_merge_property_namespace_id"),
+	)
+
+	DescribeTable("Identity mapping table name", func(warehouse Warehouse, expected string) {
+		Expect(IdentityMappingsTableName(warehouse)).To(Equal(expected))
+	},
+		Entry(nil, Warehouse{Namespace: "namespace", Destination: backendconfig.DestinationT{ID: "id"}}, "rudder_identity_mappings_namespace_id"),
+	)
+
+	DescribeTable("Identity merge rules table name", func(warehouse Warehouse, expected string) {
+		Expect(IdentityMergeRulesTableName(warehouse)).To(Equal(expected))
+	},
+		Entry(nil, Warehouse{Namespace: "namespace", Destination: backendconfig.DestinationT{ID: "id"}}, "rudder_identity_merge_rules_namespace_id"),
+	)
+
+	DescribeTable("Identity merge rules warehouse table name", func(provider string) {
+		Expect(IdentityMergeRulesWarehouseTableName(provider)).To(Equal(ToProviderCase(provider, IdentityMergeRulesTable)))
+	},
+		Entry(nil, BQ),
+		Entry(nil, RS),
+		Entry(nil, SNOWFLAKE),
+		Entry(nil, POSTGRES),
+		Entry(nil, CLICKHOUSE),
+		Entry(nil, MSSQL),
+		Entry(nil, AZURE_SYNAPSE),
+		Entry(nil, DELTALAKE),
+		Entry(nil, S3_DATALAKE),
+		Entry(nil, GCS_DATALAKE),
+		Entry(nil, AZURE_DATALAKE),
+	)
+
+	DescribeTable("Identity mappings warehouse table name", func(provider string) {
+		Expect(IdentityMappingsWarehouseTableName(provider)).To(Equal(ToProviderCase(provider, IdentityMappingsTable)))
+	},
+		Entry(nil, BQ),
+		Entry(nil, RS),
+		Entry(nil, SNOWFLAKE),
+		Entry(nil, POSTGRES),
+		Entry(nil, CLICKHOUSE),
+		Entry(nil, MSSQL),
+		Entry(nil, AZURE_SYNAPSE),
+		Entry(nil, DELTALAKE),
+		Entry(nil, S3_DATALAKE),
+		Entry(nil, GCS_DATALAKE),
+		Entry(nil, AZURE_DATALAKE),
+	)
+
+	DescribeTable("Get object name", func(location string, config interface{}, objectProvider, objectName string) {
+		Expect(GetObjectName(location, config, objectProvider)).To(Equal(objectName))
+	},
+		Entry(GCS, "https://storage.googleapis.com/bucket-name/key", map[string]interface{}{"bucketName": "bucket-name"}, GCS, "key"),
+		Entry(S3, "https://bucket-name.s3.amazonaws.com/key", map[string]interface{}{"bucketName": "bucket-name"}, S3, "key"),
+		Entry(AZURE_BLOB, "https://account-name.blob.core.windows.net/container-name/key", map[string]interface{}{"containerName": "container-name"}, AZURE_BLOB, "key"),
+		Entry(MINIO, "https://minio-endpoint/bucket-name/key", map[string]interface{}{"bucketName": "bucket-name", "useSSL": true, "endPoint": "minio-endpoint"}, MINIO, "key"),
+	)
+
+	It("SSL keys", func() {
+		destinationID := "destID"
+		clientKey, clientCert, serverCA := misc.FastUUID().String(), misc.FastUUID().String(), misc.FastUUID().String()
+
+		err := WriteSSLKeys(backendconfig.DestinationT{ID: destinationID, Config: map[string]interface{}{"clientKey": clientKey, "clientCert": clientCert, "serverCA": serverCA}})
+		Expect(err).To(Equal(WriteSSLKeyError{}))
+
+		path := GetSSLKeyDirPath(destinationID)
+		Expect(path).NotTo(BeEmpty())
+
+		Expect(os.RemoveAll(path)).NotTo(HaveOccurred())
+	})
 })
 
 func TestMain(m *testing.M) {
 	config.Reset()
+	logger.Reset()
+	misc.Init()
 	Init()
 	os.Exit(m.Run())
 }

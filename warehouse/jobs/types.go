@@ -10,9 +10,7 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/logger"
 )
 
-var pkgLogger logger.Logger
-
-// For processing requests payload in handlers.go
+// StartJobReqPayload For processing requests payload in handlers.go
 type StartJobReqPayload struct {
 	SourceID      string `json:"source_id"`
 	Type          string `json:"type"`
@@ -25,10 +23,17 @@ type StartJobReqPayload struct {
 }
 
 type AsyncJobWhT struct {
-	dbHandle   *sql.DB
-	enabled    bool
-	pgnotifier *pgnotifier.PgNotifierT
-	context    context.Context
+	dbHandle              *sql.DB
+	enabled               bool
+	pgnotifier            *pgnotifier.PgNotifierT
+	context               context.Context
+	logger                logger.Logger
+	MaxBatchSizeToProcess int
+	MaxCleanUpRetries     int
+	MaxQueryRetries       int
+	RetryTimeInterval     time.Duration
+	MaxAttemptsPerJob     int
+	AsyncJobTimeOut       time.Duration
 }
 
 type WhJobsMetaData struct {
@@ -38,7 +43,7 @@ type WhJobsMetaData struct {
 	StartTime string `json:"start_time"`
 }
 
-// For creating job payload to wh_async_jobs table
+// AsyncJobPayloadT For creating job payload to wh_async_jobs table
 type AsyncJobPayloadT struct {
 	Id            string          `json:"id"`
 	SourceID      string          `json:"source_id"`
@@ -79,17 +84,8 @@ type WhAsyncJobRunner interface {
 	updateMultipleAsyncJobs(*[]AsyncJobPayloadT, string, string)
 }
 
-type AsyncJobsStatusMap struct {
+type AsyncJobStatus struct {
 	Id     string
 	Status string
 	Error  error
 }
-
-const (
-	MaxBatchSizeToProcess int           = 10
-	MaxCleanUpRetries     int           = 5
-	MaxQueryRetries       int           = 3
-	RetryTimeInterval     time.Duration = 10 * time.Second
-	MaxAttemptsPerJob     int           = 3
-	WhAsyncJobTimeOut     time.Duration = 10 * time.Second
-)

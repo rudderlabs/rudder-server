@@ -191,16 +191,32 @@ type HandleT struct {
 	whProxy                                                    http.Handler
 }
 
-func (gateway *HandleT) updateSourceStats(sourceStats map[string]int, bucket string, sourceTagMap map[string]string) {
-	for sourceTag, count := range sourceStats {
+func (gateway *HandleT) updateSourceStats(sourceStats map[string]int, bucket string, sourceTagMap map[string]map[string]string) {
+	for sourceTag := range sourceStats {
 		tags := map[string]string{
 			"source":      sourceTag,
-			"writeKey":    sourceTagMap[sourceTag],
-			"reqType":     sourceTagMap["reqType"],
-			"workspaceId": sourceTagMap["workspaceId"],
+			"writeKey":    sourceTagMap[sourceTag]["writeKey"],
+			"reqType":     sourceTagMap[sourceTag]["reqType"],
+			"workspaceId": sourceTagMap[sourceTag]["workspaceId"],
+			"sourceID":    sourceTagMap[sourceTag]["sourceID"],
 		}
 		sourceStatsD := gateway.stats.NewTaggedStat(bucket, stats.CountType, tags)
-		sourceStatsD.Count(count)
+		sourceStatsD.Count(sourceStats[sourceTag])
+	}
+}
+
+func (gateway *HandleT) updateFailedSourceStats(sourceStats map[string]int, bucket string, sourceTagMap map[string]map[string]string) {
+	for sourceTag := range sourceStats {
+		tags := map[string]string{
+			"source":      sourceTag,
+			"writeKey":    sourceTagMap[sourceTag]["writeKey"],
+			"reqType":     sourceTagMap[sourceTag]["reqType"],
+			"workspaceId": sourceTagMap[sourceTag]["workspaceId"],
+			"reason":      sourceTagMap[sourceTag]["reason"],
+			"sourceID":    sourceTagMap[sourceTag]["sourceID"],
+		}
+		sourceStatsD := gateway.stats.NewTaggedStat(bucket, stats.CountType, tags)
+		sourceStatsD.Count(sourceStats[sourceTag])
 	}
 }
 
@@ -307,8 +323,10 @@ func (gateway *HandleT) userWorkerRequestBatcher() {
 // This in turn sends the error over the done channel of each respective webRequest.
 func (gateway *HandleT) dbWriterWorkerProcess() {
 	for breq := range gateway.batchUserWorkerBatchRequestQ {
-		jobList := make([]*jobsdb.JobT, 0)
-		var errorMessagesMap map[uuid.UUID]string
+		var (
+			jobList          = make([]*jobsdb.JobT, 0)
+			errorMessagesMap = map[uuid.UUID]string{}
+		)
 
 		for _, userWorkerBatchRequest := range breq.batchUserWorkerBatchRequest {
 			jobList = append(jobList, userWorkerBatchRequest.jobList...)
@@ -334,12 +352,18 @@ func (gateway *HandleT) dbWriterWorkerProcess() {
 			// rsources stats
 			rsourcesStats := rsources.NewStatsCollector(gateway.rsourcesService)
 			rsourcesStats.JobsStoredWithErrors(jobList, errorMessagesMap)
-			return rsourcesStats.Publish(ctx, tx.Tx())
+			return rsourcesStats.Publish(ctx, tx.SqlTx())
 		})
-		cancel()
 		if err != nil {
-			panic(err)
+			errorMessage := err.Error()
+			if ctx.Err() != nil {
+				errorMessage = ctx.Err().Error()
+			}
+			for _, job := range jobList {
+				errorMessagesMap[job.UUID] = errorMessage
+			}
 		}
+		cancel()
 		gateway.dbWritesStat.Count(1)
 
 		for _, userWorkerBatchRequest := range breq.batchUserWorkerBatchRequest {
@@ -434,7 +458,7 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 		sourceFailStats := make(map[string]int)
 		sourceFailEventStats := make(map[string]int)
 		workspaceDropRequestStats := make(map[string]int)
-		sourceTagMap := make(map[string]string)
+		sourceTagMap := make(map[string]map[string]string)
 		var preDbStoreCount int
 		// Saving the event data read from req.request.Body to the splice.
 		// Using this to send event schema to the config backend.
@@ -443,8 +467,13 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 		for _, req := range breq.batchRequest {
 			writeKey := req.writeKey
 			sourceTag := gateway.getSourceTagFromWriteKey(writeKey)
-			sourceTagMap[sourceTag] = writeKey
-			sourceTagMap["reqType"] = req.reqType
+			sourceID := gateway.getSourceIDForWriteKey(writeKey)
+			if _, ok := sourceTagMap[sourceTag]; !ok {
+				sourceTagMap[sourceTag] = make(map[string]string)
+			}
+			sourceTagMap[sourceTag][`writeKey`] = writeKey
+			sourceTagMap[sourceTag]["sourceID"] = sourceID
+			sourceTagMap[sourceTag]["reqType"] = req.reqType
 			userIDHeader := req.userIDHeader
 			misc.IncrementMapByKey(sourceStats, sourceTag, 1)
 			// Should be function of body
@@ -452,7 +481,7 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 			workspaceId := enabledWriteKeyWorkspaceMap[writeKey]
 			configSubscriberLock.RUnlock()
 
-			sourceTagMap["workspaceId"] = workspaceId
+			sourceTagMap[sourceTag]["workspaceId"] = workspaceId
 			ipAddr := req.ipAddr
 
 			body := req.requestPayload
@@ -460,6 +489,7 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 			if !gjson.ValidBytes(body) {
 				req.done <- response.GetStatus(response.InvalidJSON)
 				preDbStoreCount++
+				sourceTagMap[sourceTag]["reason"] = "invalidJSON"
 				misc.IncrementMapByKey(sourceFailStats, sourceTag, 1)
 				continue
 			}
@@ -469,6 +499,7 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 			if req.reqType != "batch" {
 				body, err = sjson.SetBytes(body, "type", req.reqType)
 				if err != nil {
+					sourceTagMap[sourceTag]["reason"] = "notRudderEvent"
 					req.done <- response.GetStatus(response.NotRudderEvent)
 					preDbStoreCount++
 					misc.IncrementMapByKey(sourceFailStats, sourceTag, 1)
@@ -476,6 +507,7 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 				}
 				body, err = sjson.SetRawBytes(BatchEvent, "batch.0", body)
 				if err != nil {
+					sourceTagMap[sourceTag]["reason"] = "notRudderEvent"
 					req.done <- response.GetStatus(response.NotRudderEvent)
 					preDbStoreCount++
 					misc.IncrementMapByKey(sourceFailStats, sourceTag, 1)
@@ -487,9 +519,9 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 
 			// store sourceID before call made to check if source is enabled
 			// this prevents not setting sourceID in gw job if disabled before setting it
-			sourceID := gateway.getSourceIDForWriteKey(writeKey)
 
 			if !gateway.isValidWriteKey(writeKey) {
+				sourceTagMap[sourceTag]["reason"] = "invalidWriteKey"
 				req.done <- response.GetStatus(response.InvalidWriteKey)
 				preDbStoreCount++
 				misc.IncrementMapByKey(sourceFailStats, sourceTag, 1)
@@ -498,6 +530,7 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 			}
 
 			if !gateway.isWriteKeyEnabled(writeKey) {
+				sourceTagMap[sourceTag]["reason"] = "sourceDisabled"
 				req.done <- response.GetStatus(response.SourceDisabled)
 				preDbStoreCount++
 				misc.IncrementMapByKey(sourceFailStats, sourceTag, 1)
@@ -564,6 +597,7 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 			})
 
 			if len(body) > maxReqSize && !containsAudienceList {
+				sourceTagMap[sourceTag]["reason"] = "requestBodyTooLarge"
 				req.done <- response.GetStatus(response.RequestBodyTooLarge)
 				preDbStoreCount++
 				misc.IncrementMapByKey(sourceFailStats, sourceTag, 1)
@@ -574,6 +608,7 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 			body, _ = sjson.SetBytes(body, "batch", out)
 
 			if notIdentifiable {
+				sourceTagMap[sourceTag]["reason"] = "nonIdentifiableRequest"
 				req.done <- response.GetStatus(response.NonIdentifiableRequest)
 				preDbStoreCount++
 				misc.IncrementMapByKey(sourceFailStats, "notIdentifiable", 1)
@@ -581,6 +616,7 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 			}
 
 			if nonRudderEvent {
+				sourceTagMap[sourceTag]["reason"] = "notRudderEvent"
 				req.done <- response.GetStatus(response.NotRudderEvent)
 				preDbStoreCount++
 				misc.IncrementMapByKey(sourceFailStats, sourceTag, 1)
@@ -589,7 +625,7 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 
 			if enableSuppressUserFeature && gateway.suppressUserHandler != nil {
 				userID := gjson.GetBytes(body, "batch.0.userId").String()
-				if gateway.suppressUserHandler.IsSuppressedUser(userID, gateway.getSourceIDForWriteKey(writeKey)) {
+				if gateway.suppressUserHandler.IsSuppressedUser(workspaceId, userID, sourceID) {
 					req.done <- ""
 					preDbStoreCount++
 					continue
@@ -668,14 +704,14 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 		// update stats request wise
 		gateway.updateSourceStats(sourceStats, "gateway.write_key_requests", sourceTagMap)
 		gateway.updateSourceStats(sourceSuccessStats, "gateway.write_key_successful_requests", sourceTagMap)
-		gateway.updateSourceStats(sourceFailStats, "gateway.write_key_failed_requests", sourceTagMap)
+		gateway.updateFailedSourceStats(sourceFailStats, "gateway.write_key_failed_requests", sourceTagMap)
 		if enableRateLimit {
 			gateway.updateSourceStats(workspaceDropRequestStats, "gateway.work_space_dropped_requests", sourceTagMap)
 		}
 		// update stats event wise
 		gateway.updateSourceStats(sourceEventStats, "gateway.write_key_events", sourceTagMap)
 		gateway.updateSourceStats(sourceSuccessEventStats, "gateway.write_key_successful_events", sourceTagMap)
-		gateway.updateSourceStats(sourceFailEventStats, "gateway.write_key_failed_events", sourceTagMap)
+		gateway.updateFailedSourceStats(sourceFailEventStats, "gateway.write_key_failed_events", sourceTagMap)
 	}
 }
 
@@ -912,7 +948,7 @@ func (gateway *HandleT) pendingEventsHandler(w http.ResponseWriter, r *http.Requ
 		}
 	}
 
-	ctx, cancel := context.WithTimeout(r.Context(), config.GetDuration("Gateway.pendingEventsQueryTimeout", 10, time.Second))
+	ctx, cancel := context.WithTimeout(r.Context(), WriteTimeout)
 	defer cancel()
 
 	var pending bool
@@ -1091,11 +1127,25 @@ func (gateway *HandleT) getPayloadAndWriteKey(_ http.ResponseWriter, r *http.Req
 	sourceFailStats := make(map[string]int)
 	var err error
 	writeKey, _, ok := r.BasicAuth()
+	sourceID := gateway.getSourceIDForWriteKey(writeKey)
 	if !ok || writeKey == "" {
 		err = errors.New(response.NoWriteKeyInBasicAuth)
 		misc.IncrementMapByKey(sourceFailStats, "noWriteKey", 1)
-		gateway.updateSourceStats(sourceFailStats, "gateway.write_key_failed_requests", map[string]string{"noWriteKey": "noWriteKey", "reqType": reqType})
-		gateway.updateSourceStats(sourceFailStats, "gateway.write_key_requests", map[string]string{"noWriteKey": "noWriteKey", "reqType": reqType})
+		gateway.updateFailedSourceStats(sourceFailStats, "gateway.write_key_failed_requests", map[string]map[string]string{
+			"noWriteKey": {
+				"writeKey": "noWriteKey",
+				"reqType":  reqType,
+				"reason":   "noWriteKeyInBasicAuth",
+				"sourceID": sourceID,
+			},
+		})
+		gateway.updateSourceStats(sourceFailStats, "gateway.write_key_requests", map[string]map[string]string{
+			"noWriteKey": {
+				"writeKey": "noWriteKey",
+				"reqType":  reqType,
+				"sourceID": sourceID,
+			},
+		})
 
 		return []byte{}, "", err
 	}
@@ -1103,8 +1153,21 @@ func (gateway *HandleT) getPayloadAndWriteKey(_ http.ResponseWriter, r *http.Req
 	if err != nil {
 		sourceTag := gateway.getSourceTagFromWriteKey(writeKey)
 		misc.IncrementMapByKey(sourceFailStats, sourceTag, 1)
-		gateway.updateSourceStats(sourceFailStats, "gateway.write_key_failed_requests", map[string]string{sourceTag: writeKey, "reqType": reqType})
-		gateway.updateSourceStats(sourceFailStats, "gateway.write_key_requests", map[string]string{sourceTag: writeKey, "reqType": reqType})
+		gateway.updateSourceStats(sourceFailStats, "gateway.write_key_failed_requests", map[string]map[string]string{
+			sourceTag: {
+				"reqType":  reqType,
+				"reason":   "requestBodyReadFailed",
+				"sourceID": sourceID,
+				"writeKey": writeKey,
+			},
+		})
+		gateway.updateSourceStats(sourceFailStats, "gateway.write_key_requests", map[string]map[string]string{
+			sourceTag: {
+				"reqType":  reqType,
+				"sourceID": sourceID,
+				"writeKey": writeKey,
+			},
+		})
 		return []byte{}, writeKey, err
 	}
 	return payload, writeKey, err
@@ -1129,7 +1192,7 @@ func (gateway *HandleT) webRequestHandler(rh RequestHandler, w http.ResponseWrit
 	defer func() {
 		if errorMessage != "" {
 			gateway.logger.Infof("IP: %s -- %s -- Response: %d, %s", misc.GetIPFromReq(r), r.URL.Path, response.GetErrorStatusCode(errorMessage), errorMessage)
-			http.Error(w, errorMessage, response.GetErrorStatusCode(errorMessage))
+			http.Error(w, response.GetStatus(errorMessage), response.GetErrorStatusCode(errorMessage))
 		}
 	}()
 	payload, writeKey, err := gateway.getPayloadAndWriteKey(w, r, reqType)
@@ -1379,10 +1442,10 @@ func (gateway *HandleT) StartWebHandler(ctx context.Context) error {
 	gateway.logger.Infof("WebHandler waiting for BackendConfig before starting on %d", webPort)
 	gateway.backendConfig.WaitForConfig(ctx)
 	gateway.logger.Infof("WebHandler Starting on %d", webPort)
-
+	component := "gateway"
 	srvMux := mux.NewRouter()
 	srvMux.Use(
-		middleware.StatMiddleware(ctx, srvMux),
+		middleware.StatMiddleware(ctx, srvMux, stats.Default, component),
 		middleware.LimitConcurrentRequests(maxConcurrentRequests),
 	)
 	srvMux.HandleFunc("/v1/batch", gateway.webBatchHandler).Methods("POST")
@@ -1455,10 +1518,10 @@ func (gateway *HandleT) StartAdminHandler(ctx context.Context) error {
 	gateway.logger.Infof("AdminHandler waiting for BackendConfig before starting on %d", adminWebPort)
 	gateway.backendConfig.WaitForConfig(ctx)
 	gateway.logger.Infof("AdminHandler starting on %d", adminWebPort)
-
+	component := "gateway"
 	srvMux := mux.NewRouter()
 	srvMux.Use(
-		middleware.StatMiddleware(ctx, srvMux),
+		middleware.StatMiddleware(ctx, srvMux, stats.Default, component),
 		middleware.LimitConcurrentRequests(maxConcurrentRequests),
 	)
 	srvMux.HandleFunc("/v1/pending-events", gateway.pendingEventsHandler).Methods("POST")
@@ -1539,7 +1602,7 @@ func (gateway *HandleT) IncrementAckCount(count uint64) {
 }
 
 // UpdateSourceStats creates a new stat for every writekey and updates it with the corresponding count
-func (gateway *HandleT) UpdateSourceStats(sourceStats map[string]int, bucket string, sourceTagMap map[string]string) {
+func (gateway *HandleT) UpdateSourceStats(sourceStats map[string]int, bucket string, sourceTagMap map[string]map[string]string) {
 	gateway.updateSourceStats(sourceStats, bucket, sourceTagMap)
 }
 
@@ -1572,6 +1635,7 @@ Setup initializes this module:
 This function will block until backend config is initially received.
 */
 func (gateway *HandleT) Setup(
+	ctx context.Context,
 	application app.App, backendConfig backendconfig.BackendConfig, jobsDB jobsdb.JobsDB,
 	rateLimiter ratelimiter.RateLimiter, versionHandler func(w http.ResponseWriter, r *http.Request),
 	rsourcesService rsources.JobService,
@@ -1627,7 +1691,7 @@ func (gateway *HandleT) Setup(
 
 	if enableSuppressUserFeature && gateway.application.Features().SuppressUser != nil {
 		var err error
-		gateway.suppressUserHandler, err = application.Features().SuppressUser.Setup(gateway.backendConfig)
+		gateway.suppressUserHandler, err = application.Features().SuppressUser.Setup(ctx, gateway.backendConfig)
 		if err != nil {
 			return fmt.Errorf("could not setup suppress user feature: %w", err)
 		}

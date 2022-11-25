@@ -52,6 +52,10 @@ const (
 	ErrorInParseMultiform = "Error during parsing multiform"
 	// NotRudderEvent = Event is not a Valid Rudder Event
 	NotRudderEvent = "Event is not a valid rudder event"
+	// ContextDeadlineExceeded - context deadline exceeded
+	ContextDeadlineExceeded = "context deadline exceeded"
+	// GatewayTimeout - Gateway timeout
+	GatewayTimeout = "Gateway timeout"
 
 	transPixelResponse = "\x47\x49\x46\x38\x39\x61\x01\x00\x01\x00\x80\x00\x00\x00\x00\x00\x00\x00\x00\x21\xF9\x04" +
 		"\x01\x00\x00\x00\x00\x2C\x00\x00\x00\x00\x01\x00\x01\x00\x00\x02\x02\x44\x01\x00\x3B"
@@ -82,6 +86,7 @@ var statusMap = map[string]status{
 	ErrorInParseForm:                               {message: ErrorInParseForm, code: http.StatusBadRequest},
 	ErrorInParseMultiform:                          {message: ErrorInParseMultiform, code: http.StatusBadRequest},
 	NotRudderEvent:                                 {message: NotRudderEvent, code: http.StatusBadRequest},
+	ContextDeadlineExceeded:                        {message: GatewayTimeout, code: http.StatusGatewayTimeout},
 }
 
 // status holds the gateway response status message and code

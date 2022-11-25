@@ -53,23 +53,19 @@ var (
 var clickhouseDefaultDateTime, _ = time.Parse(time.RFC3339, "1970-01-01 00:00:00")
 
 const (
-	host          = "host"
-	dbName        = "database"
-	user          = "user"
-	password      = "password"
-	port          = "port"
-	secure        = "secure"
-	skipVerify    = "skipVerify"
-	caCertificate = "caCertificate"
-	Cluster       = "cluster"
-)
-
-const (
+	host           = "host"
+	dbName         = "database"
+	user           = "user"
+	password       = "password"
+	port           = "port"
+	secure         = "secure"
+	skipVerify     = "skipVerify"
+	caCertificate  = "caCertificate"
+	Cluster        = "cluster"
 	partitionField = "received_at"
 )
 
 // clickhouse doesn't support bool, they recommend to use Uint8 and set 1,0
-
 var rudderDataTypesMapToClickHouse = map[string]string{
 	"int":             "Int64",
 	"array(int)":      "Array(Int64)",
@@ -234,8 +230,10 @@ func Connect(cred CredentialsT, includeDBInConn bool) (*sql.DB, error) {
 		url += fmt.Sprintf("&timeout=%d", cred.timeout/time.Second)
 	}
 
-	var err error
-	var db *sql.DB
+	var (
+		err error
+		db  *sql.DB
+	)
 
 	if db, err = sql.Open("clickhouse", url); err != nil {
 		return nil, fmt.Errorf("clickhouse connection error : (%v)", err)
@@ -360,9 +358,11 @@ func (ch *HandleT) DownloadLoadFiles(tableName string) ([]string, error) {
 		pkgLogger.Errorf("%s Error in setting up a downloader with Error: %v", ch.GetLogIdentifier(tableName, storageProvider), err)
 		return nil, err
 	}
-	var fileNames []string
-	var dErr error
-	var fileNamesLock sync.RWMutex
+	var (
+		fileNames     []string
+		dErr          error
+		fileNamesLock sync.RWMutex
+	)
 
 	jobs := make([]misc.RWCJob, 0)
 	for _, object := range objects {
@@ -808,8 +808,9 @@ func (ch *HandleT) loadTablesFromFilesNamesWithRetry(tableName string, tableSche
 
 func (ch *HandleT) schemaExists(schemaName string) (exists bool, err error) {
 	var count int64
-	sqlStatement := `SELECT count(*) FROM system.databases WHERE name = ?`
+	sqlStatement := "SELECT count(*) FROM system.databases WHERE name = ?"
 	err = ch.Db.QueryRow(sqlStatement, schemaName).Scan(&count)
+	// ignore err if no results for query
 	if err == sql.ErrNoRows {
 		err = nil
 	}
@@ -932,16 +933,36 @@ func (ch *HandleT) DropTable(tableName string) (err error) {
 	return
 }
 
-// AddColumn adds column:columnName with dataType columnType to the tableName
-func (ch *HandleT) AddColumn(tableName, columnName, columnType string) (err error) {
-	cluster := warehouseutils.GetConfigValue(Cluster, ch.Warehouse)
-	clusterClause := ""
+func (ch *HandleT) AddColumns(tableName string, columnsInfo []warehouseutils.ColumnInfo) (err error) {
+	var (
+		query         string
+		cluster       string
+		clusterClause string
+	)
+
+	cluster = warehouseutils.GetConfigValue(Cluster, ch.Warehouse)
 	if len(strings.TrimSpace(cluster)) > 0 {
 		clusterClause = fmt.Sprintf(`ON CLUSTER %q`, cluster)
 	}
-	sqlStatement := fmt.Sprintf(`ALTER TABLE %q.%q %s ADD COLUMN IF NOT EXISTS %q %s`, ch.Namespace, tableName, clusterClause, columnName, getClickHouseColumnTypeForSpecificTable(tableName, columnName, rudderDataTypesMapToClickHouse[columnType], false))
-	pkgLogger.Infof("CH: Adding column in clickhouse for ch:%s : %v", ch.Warehouse.Destination.ID, sqlStatement)
-	_, err = ch.Db.Exec(sqlStatement)
+
+	query = fmt.Sprintf(`
+		ALTER TABLE
+		  %q.%q %s`,
+		ch.Namespace,
+		tableName,
+		clusterClause,
+	)
+
+	for _, columnInfo := range columnsInfo {
+		columnType := getClickHouseColumnTypeForSpecificTable(tableName, columnInfo.Name, rudderDataTypesMapToClickHouse[columnInfo.Type], false)
+		query += fmt.Sprintf(` ADD COLUMN IF NOT EXISTS %q %s,`, columnInfo.Name, columnType)
+	}
+
+	query = strings.TrimSuffix(query, ",")
+	query += ";"
+
+	pkgLogger.Infof("CH: Adding columns for destinationID: %s, tableName: %s with query: %v", ch.Warehouse.Destination.ID, tableName, query)
+	_, err = ch.Db.Exec(query)
 	return
 }
 
@@ -996,7 +1017,7 @@ func (*HandleT) CrashRecover(_ warehouseutils.Warehouse) (err error) {
 }
 
 // FetchSchema queries clickhouse and returns the schema associated with provided namespace
-func (ch *HandleT) FetchSchema(warehouse warehouseutils.Warehouse) (schema warehouseutils.SchemaT, err error) {
+func (ch *HandleT) FetchSchema(warehouse warehouseutils.Warehouse) (schema, unrecognizedSchema warehouseutils.SchemaT, err error) {
 	ch.Warehouse = warehouse
 	ch.Namespace = warehouse.Namespace
 	dbHandle, err := Connect(ch.getConnectionCredentials(), true)
@@ -1006,6 +1027,8 @@ func (ch *HandleT) FetchSchema(warehouse warehouseutils.Warehouse) (schema wareh
 	defer dbHandle.Close()
 
 	schema = make(warehouseutils.SchemaT)
+	unrecognizedSchema = make(warehouseutils.SchemaT)
+
 	sqlStatement := fmt.Sprintf(`select table, name, type
 									from system.columns
 									where database = '%s'`, ch.Namespace)
@@ -1014,14 +1037,14 @@ func (ch *HandleT) FetchSchema(warehouse warehouseutils.Warehouse) (schema wareh
 	if err != nil && err != sql.ErrNoRows {
 		if exception, ok := err.(*clickhouse.Exception); ok && exception.Code == 81 {
 			pkgLogger.Infof("CH: No database found while fetching schema: %s from  destination:%v, query: %v", ch.Namespace, ch.Warehouse.Destination.Name, sqlStatement)
-			return schema, nil
+			return schema, unrecognizedSchema, nil
 		}
 		pkgLogger.Errorf("CH: Error in fetching schema from clickhouse destination:%v, query: %v", ch.Warehouse.Destination.ID, sqlStatement)
 		return
 	}
 	if err == sql.ErrNoRows {
 		pkgLogger.Infof("CH: No rows, while fetching schema: %s from destination:%v, query: %v", ch.Namespace, ch.Warehouse.Destination.Name, sqlStatement)
-		return schema, nil
+		return schema, unrecognizedSchema, nil
 	}
 	defer rows.Close()
 	for rows.Next() {
@@ -1037,6 +1060,11 @@ func (ch *HandleT) FetchSchema(warehouse warehouseutils.Warehouse) (schema wareh
 		if datatype, ok := clickhouseDataTypesMapToRudder[cType]; ok {
 			schema[tName][cName] = datatype
 		} else {
+			if _, ok := unrecognizedSchema[tName]; !ok {
+				unrecognizedSchema[tName] = make(map[string]string)
+			}
+			unrecognizedSchema[tName][cName] = warehouseutils.MISSING_DATATYPE
+
 			warehouseutils.WHCounterStat(warehouseutils.RUDDER_MISSING_DATATYPE, &ch.Warehouse, warehouseutils.Tag{Name: "datatype", Value: cType}).Count(1)
 		}
 	}
@@ -1090,9 +1118,9 @@ func (*HandleT) IsEmpty(_ warehouseutils.Warehouse) (empty bool, err error) {
 	return
 }
 
-func (ch *HandleT) GetTotalCountInTable(tableName string) (total int64, err error) {
+func (ch *HandleT) GetTotalCountInTable(ctx context.Context, tableName string) (total int64, err error) {
 	sqlStatement := fmt.Sprintf(`SELECT count(*) FROM "%[1]s"."%[2]s"`, ch.Namespace, tableName)
-	err = ch.Db.QueryRow(sqlStatement).Scan(&total)
+	err = ch.Db.QueryRowContext(ctx, sqlStatement).Scan(&total)
 	if err != nil {
 		pkgLogger.Errorf(`CH: Error getting total count in table %s:%s`, ch.Namespace, tableName)
 	}

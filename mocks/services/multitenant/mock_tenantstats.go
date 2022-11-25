@@ -47,18 +47,17 @@ func (mr *MockMultiTenantIMockRecorder) CalculateSuccessFailureCounts(arg0, arg1
 }
 
 // GetRouterPickupJobs mocks base method.
-func (m *MockMultiTenantI) GetRouterPickupJobs(arg0 string, arg1 int, arg2 time.Duration, arg3 int, arg4 float64) (map[string]int, map[string]float64) {
+func (m *MockMultiTenantI) GetRouterPickupJobs(arg0 string, arg1 int, arg2 time.Duration, arg3 int) map[string]int {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "GetRouterPickupJobs", arg0, arg1, arg2, arg3, arg4)
+	ret := m.ctrl.Call(m, "GetRouterPickupJobs", arg0, arg1, arg2, arg3)
 	ret0, _ := ret[0].(map[string]int)
-	ret1, _ := ret[1].(map[string]float64)
-	return ret0, ret1
+	return ret0
 }
 
 // GetRouterPickupJobs indicates an expected call of GetRouterPickupJobs.
-func (mr *MockMultiTenantIMockRecorder) GetRouterPickupJobs(arg0, arg1, arg2, arg3, arg4 interface{}) *gomock.Call {
+func (mr *MockMultiTenantIMockRecorder) GetRouterPickupJobs(arg0, arg1, arg2, arg3 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetRouterPickupJobs", reflect.TypeOf((*MockMultiTenantI)(nil).GetRouterPickupJobs), arg0, arg1, arg2, arg3, arg4)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetRouterPickupJobs", reflect.TypeOf((*MockMultiTenantI)(nil).GetRouterPickupJobs), arg0, arg1, arg2, arg3)
 }
 
 // ReportProcLoopAddStats mocks base method.

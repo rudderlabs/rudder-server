@@ -30,7 +30,7 @@ func (loader *CsvLoader) IsLoadTimeColumn(columnName string) bool {
 	return columnName == ToProviderCase(loader.destType, UUID_TS_COLUMN)
 }
 
-func (*CsvLoader) GetLoadTimeFomat(_ string) string {
+func (*CsvLoader) GetLoadTimeFormat(_ string) string {
 	return misc.RFC3339Milli
 }
 

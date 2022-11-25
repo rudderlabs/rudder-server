@@ -18,9 +18,9 @@ import (
 func Test_Namespace_SetUp(t *testing.T) {
 	var (
 		client = &namespaceConfig{
-			Logger: logger.NOP,
+			logger: logger.NOP,
 		}
-		configBackendURL = "https://api.test.rudderlabs.com"
+		configBackendURL = "https://api.test.rudderstack.com"
 	)
 	parsedConfigBackendURL, err := url.Parse(configBackendURL)
 	require.NoError(t, err)
@@ -30,10 +30,10 @@ func Test_Namespace_SetUp(t *testing.T) {
 	t.Setenv("CONFIG_BACKEND_URL", parsedConfigBackendURL.String())
 
 	require.NoError(t, client.SetUp())
-	require.Equal(t, parsedConfigBackendURL, client.ConfigBackendURL)
-	require.Equal(t, "a-testing-namespace", client.Namespace)
+	require.Equal(t, parsedConfigBackendURL, client.configBackendURL)
+	require.Equal(t, "a-testing-namespace", client.namespace)
 	require.Equal(t, "service-secret", client.AccessToken())
-	require.Equal(t, "service-secret", client.HostedServiceSecret)
+	require.Equal(t, "service-secret", client.hostedServiceSecret)
 }
 
 func Test_Namespace_Get(t *testing.T) {
@@ -57,14 +57,14 @@ func Test_Namespace_Get(t *testing.T) {
 	require.NoError(t, err)
 
 	client := &namespaceConfig{
-		Logger: logger.NOP,
+		logger: logger.NOP,
 
-		Client:           ts.Client(),
-		ConfigBackendURL: httpSrvURL,
+		client:           ts.Client(),
+		configBackendURL: httpSrvURL,
 
-		Namespace: namespace,
+		namespace: namespace,
 
-		HostedServiceSecret: "service-secret",
+		hostedServiceSecret: "service-secret",
 		cpRouterURL:         cpRouterURL,
 	}
 	require.NoError(t, client.SetUp())
@@ -80,11 +80,11 @@ func Test_Namespace_Get(t *testing.T) {
 
 	t.Run("Invalid credentials", func(t *testing.T) {
 		client := &namespaceConfig{
-			Client:           ts.Client(),
-			ConfigBackendURL: httpSrvURL,
+			client:           ts.Client(),
+			configBackendURL: httpSrvURL,
 
-			Namespace:           namespace,
-			HostedServiceSecret: "invalid-service-secret",
+			namespace:           namespace,
+			hostedServiceSecret: "invalid-service-secret",
 		}
 
 		require.NoError(t, client.SetUp())
@@ -96,11 +96,11 @@ func Test_Namespace_Get(t *testing.T) {
 
 	t.Run("empty namespace", func(t *testing.T) {
 		client := &namespaceConfig{
-			Client:           ts.Client(),
-			ConfigBackendURL: httpSrvURL,
+			client:           ts.Client(),
+			configBackendURL: httpSrvURL,
 
-			Namespace:           "namespace-does-not-exist",
-			HostedServiceSecret: "service-secret",
+			namespace:           "namespace-does-not-exist",
+			hostedServiceSecret: "service-secret",
 		}
 
 		require.NoError(t, client.SetUp())
@@ -130,14 +130,14 @@ func Test_Namespace_Identity(t *testing.T) {
 	require.NoError(t, err)
 
 	client := &namespaceConfig{
-		Logger: logger.NOP,
+		logger: logger.NOP,
 
-		Client:           ts.Client(),
-		ConfigBackendURL: httpSrvURL,
+		client:           ts.Client(),
+		configBackendURL: httpSrvURL,
 
-		Namespace: namespace,
+		namespace: namespace,
 
-		HostedServiceSecret: "service-secret",
+		hostedServiceSecret: "service-secret",
 		cpRouterURL:         cpRouterURL,
 	}
 	require.NoError(t, client.SetUp())

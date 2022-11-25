@@ -40,20 +40,8 @@ func (ra *Admin) registerRouter(name string, handle *HandleT) {
 func (ra *Admin) Status() interface{} {
 	statusList := make([]map[string]interface{}, 0)
 	for name, router := range ra.handles {
-		routerStatus := router.perfStats.Status()
+		routerStatus := make(map[string]interface{})
 		routerStatus["name"] = name
-		routerStatus["success-count"] = router.successCount
-		routerStatus["failure-count"] = router.failCount
-		routerFailedList := make([]string, 0)
-		router.failedEventsListMutex.RLock()
-		for e := router.failedEventsList.Front(); e != nil; e = e.Next() {
-			status, _ := json.Marshal(e.Value)
-			routerFailedList = append(routerFailedList, string(status))
-		}
-		router.failedEventsListMutex.RUnlock()
-		if len(routerFailedList) > 0 {
-			routerStatus["recent-failedstatuses"] = routerFailedList
-		}
 		barriersMap := make(map[string]string, 0)
 		for i, worker := range router.workers {
 			if worker.barrier.Size() > 0 {

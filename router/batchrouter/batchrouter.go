@@ -8,6 +8,7 @@ import (
 	stdjson "encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"os"
@@ -18,6 +19,7 @@ import (
 	"time"
 
 	jsoniter "github.com/json-iterator/go"
+	"github.com/samber/lo"
 	"github.com/thoas/go-funk"
 	"golang.org/x/sync/errgroup"
 
@@ -57,7 +59,6 @@ var (
 	mainLoopSleep, diagnosisTickerTime time.Duration
 	uploadFreqInS                      int64
 	objectStorageDestinations          []string
-	warehouseURL                       string
 	warehouseServiceFailedTime         time.Time
 	warehouseServiceFailedTimeLock     sync.RWMutex
 	warehouseServiceMaxRetryTime       time.Duration
@@ -119,6 +120,7 @@ type HandleT struct {
 	successfulJobCount          stats.Measurement
 	failedJobCount              stats.Measurement
 	abortedJobCount             stats.Measurement
+	warehouseURL                string
 
 	backgroundGroup  *errgroup.Group
 	backgroundCtx    context.Context
@@ -1123,16 +1125,23 @@ func (brt *HandleT) postToWarehouse(batchJobs *BatchJobsT, output StorageUploadO
 	if err != nil {
 		brt.logger.Errorf("BRT: Failed to marshal WH staging file payload error:%v", err)
 	}
-	uri := fmt.Sprintf(`%s/v1/process`, warehouseURL)
+	uri := fmt.Sprintf(`%s/v1/process`, brt.warehouseURL)
 	resp, err := brt.netHandle.Post(uri, "application/json; charset=utf-8",
 		bytes.NewBuffer(jsonPayload))
 	if err != nil {
 		brt.logger.Errorf("BRT: Failed to route staging file URL to warehouse service@%v, error:%v", uri, err)
-	} else {
-		brt.logger.Infof("BRT: Routed successfully staging file URL to warehouse service@%v", uri)
-		defer resp.Body.Close()
+		return
 	}
+	defer func() { _ = resp.Body.Close() }()
 
+	if resp.StatusCode == http.StatusOK {
+		_, err = io.Copy(io.Discard, resp.Body)
+		brt.logger.Infof("BRT: Routed successfully staging file URL to warehouse service@%v", uri)
+	} else {
+		body, _ := io.ReadAll(resp.Body)
+		err = fmt.Errorf("BRT: Failed to route staging file URL to warehouse service@%v, status: %v, body: %v", uri, resp.Status, string(body))
+		brt.logger.Error(err)
+	}
 	return
 }
 
@@ -1212,7 +1221,7 @@ func (brt *HandleT) setJobStatus(batchJobs *BatchJobsT, isWarehouse bool, errOcc
 		}
 
 		var parameters JobParametersT
-		err = tryUnmarshalJSON(job.JobID, job.Parameters, &parameters)
+		err = json.Unmarshal(job.Parameters, &parameters)
 		if err != nil {
 			brt.logger.Error("Unmarshal of job parameters failed. ", string(job.Parameters))
 		}
@@ -1384,10 +1393,10 @@ func (brt *HandleT) setJobStatus(batchJobs *BatchJobsT, isWarehouse bool, errOcc
 
 			// Save msgids of aborted jobs
 			if len(jobRunIDAbortedEventsMap) > 0 {
-				router.GetFailedEventsManager().SaveFailedRecordIDs(jobRunIDAbortedEventsMap, tx.Tx())
+				router.GetFailedEventsManager().SaveFailedRecordIDs(jobRunIDAbortedEventsMap, tx.SqlTx())
 			}
 			if brt.reporting != nil && brt.reportingEnabled {
-				brt.reporting.Report(reportMetrics, tx.Tx())
+				brt.reporting.Report(reportMetrics, tx.SqlTx())
 			}
 			return nil
 		})
@@ -1495,7 +1504,7 @@ func (brt *HandleT) setMultipleJobStatus(asyncOutput asyncdestinationmanager.Asy
 			}
 			// rsources stats
 			rsourcesStats.JobStatusesUpdated(statusList)
-			err = rsourcesStats.Publish(context.TODO(), tx.Tx())
+			err = rsourcesStats.Publish(context.TODO(), tx.SqlTx())
 			if err != nil {
 				brt.logger.Errorf("publishing rsources stats: %w", err)
 			}
@@ -1576,11 +1585,12 @@ func (brt *HandleT) recordUploadStats(destination DestinationT, output StorageUp
 		"destType":    brt.destType,
 		"destination": destinationTag,
 		"workspaceId": destination.Source.WorkspaceID,
+		"source":      destination.Source.ID,
 	})
 	eventDeliveryStat.Count(output.TotalEvents)
 
 	receivedTime, err := time.Parse(misc.RFC3339Milli, output.FirstEventAt)
-	if err != nil {
+	if err == nil {
 		eventDeliveryTimeStat := stats.Default.NewTaggedStat("event_delivery_time", stats.TimerType, map[string]string{
 			"module":      "batch_router",
 			"destType":    brt.destType,
@@ -1660,18 +1670,7 @@ func (worker *workerT) workerProcess() {
 				brt.logger.Debugf("BRT: %s: DB Read Complete for parameter Filters: %v retryList: %v, unprocessedList: %v, total: %v", brt.destType, parameterFilters, len(toRetry.Jobs), len(combinedList)-len(toRetry.Jobs), len(combinedList))
 			}
 		} else {
-			for _, job := range batchDestData.jobs {
-				var parameters JobParametersT
-				err := tryUnmarshalJSON(job.JobID, job.Parameters, &parameters)
-				if err != nil {
-					worker.brt.logger.Error("BRT: %s: Unmarshal of job parameters failed. ", worker.brt.destType, string(job.Parameters))
-				}
-
-				if parameters.DestinationID == batchDest.Destination.ID {
-					combinedList = append(combinedList, job)
-				}
-			}
-
+			combinedList = batchDestData.jobs
 			brt.logger.Debugf("BRT: %s: length of jobs for destination id: %s is %d", worker.brt.destType, batchDest.Destination.ID, len(combinedList))
 		}
 
@@ -1930,12 +1929,8 @@ func (*HandleT) getNamespace(config interface{}, source backendconfig.SourceT, d
 
 func (brt *HandleT) isDestInProgress(destID string) bool {
 	brt.inProgressMapLock.RLock()
-	if brt.inProgressMap[destID] {
-		brt.inProgressMapLock.RUnlock()
-		return true
-	}
-	brt.inProgressMapLock.RUnlock()
-	return false
+	defer brt.inProgressMapLock.RUnlock()
+	return brt.inProgressMap[destID]
 }
 
 func (brt *HandleT) setDestInProgress(destID string, starting bool) {
@@ -2023,14 +2018,23 @@ func (brt *HandleT) readAndProcess() {
 			brtQueryStat.End()
 			brt.logger.Debugf("BRT: %s: Length of jobs received: %d", brt.destType, len(jobs))
 
+			jobsByDesID := lo.GroupBy(jobs, func(job *jobsdb.JobT) string {
+				var parameters JobParametersT
+				if json.Unmarshal(job.Parameters, &parameters) != nil {
+					brt.logger.Error("BRT: %s: Unmarshal of job parameters failed. ", brt.destType, string(job.Parameters))
+				}
+				return parameters.DestinationID
+			})
 			var wg sync.WaitGroup
-			for destID, batchDest := range destinationsMap {
-				brt.setDestInProgress(destID, true)
-
-				wg.Add(1)
-				brt.processQ <- &BatchDestinationDataT{batchDestination: *batchDest, jobs: jobs, parentWG: &wg}
+			for destID, destJobs := range jobsByDesID {
+				if batchDest, ok := destinationsMap[destID]; ok {
+					brt.setDestInProgress(destID, true)
+					wg.Add(1)
+					brt.processQ <- &BatchDestinationDataT{batchDestination: *batchDest, jobs: destJobs, parentWG: &wg}
+				} else {
+					brt.logger.Errorf("BRT: %s: Destination %s not found in destinationsMap", brt.destType, destID)
+				}
 			}
-
 			wg.Wait()
 		}
 	}
@@ -2257,7 +2261,6 @@ func loadConfig() {
 	config.RegisterInt64ConfigVariable(30, &uploadFreqInS, true, 1, "BatchRouter.uploadFreqInS")
 	objectStorageDestinations = []string{"S3", "GCS", "AZURE_BLOB", "MINIO", "DIGITAL_OCEAN_SPACES"}
 	asyncDestinations = []string{"MARKETO_BULK_UPLOAD"}
-	warehouseURL = misc.GetWarehouseURL()
 	// Time period for diagnosis ticker
 	config.RegisterDurationConfigVariable(600, &diagnosisTickerTime, false, time.Second, []string{"Diagnostics.batchRouterTimePeriod", "Diagnostics.batchRouterTimePeriodInS"}...)
 	config.RegisterDurationConfigVariable(3, &warehouseServiceMaxRetryTime, true, time.Hour, []string{"BatchRouter.warehouseServiceMaxRetryTime", "BatchRouter.warehouseServiceMaxRetryTimeinHr"}...)
@@ -2299,6 +2302,9 @@ func (brt *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB, err
 	if brt.reporting != nil && brt.reportingEnabled {
 		// error is ignored as context.TODO() is passed, err is not expected.
 		_ = brt.reporting.WaitForSetup(context.TODO(), types.CORE_REPORTING_CLIENT)
+	}
+	if brt.warehouseURL == "" {
+		brt.warehouseURL = misc.GetWarehouseURL()
 	}
 
 	brt.inProgressMap = map[string]bool{}
@@ -2406,7 +2412,7 @@ func (brt *HandleT) updateRudderSourcesStats(ctx context.Context, tx jobsdb.Upda
 	rsourcesStats := rsources.NewStatsCollector(brt.rsourcesService)
 	rsourcesStats.BeginProcessing(jobs)
 	rsourcesStats.JobStatusesUpdated(jobStatuses)
-	err := rsourcesStats.Publish(ctx, tx.Tx())
+	err := rsourcesStats.Publish(ctx, tx.SqlTx())
 	if err != nil {
 		return fmt.Errorf("publishing rsources stats: %w", err)
 	}
@@ -2433,27 +2439,4 @@ func (brt *HandleT) updateProcessedEventsMetrics(statusList []*jobsdb.JobStatusT
 			}).Count(count)
 		}
 	}
-}
-
-func tryUnmarshalJSON(jobID int64, data []byte, v interface{}) (err error) {
-	c := cap(data)
-	l := len(data)
-
-	startingData := make([]byte, l)
-	copy(startingData, data)
-
-	defer func() {
-		if r := recover(); r != nil {
-			pkgLogger.Warnf(
-				"Panic while unmarshalling json (%d): starting slice [%d:%d]: ending slice: [%d:%d]: %v",
-				jobID, l, c, len(data), cap(data), r,
-			)
-			pkgLogger.Warnf("Starting data before unmarshalling json panic: %s", startingData)
-			pkgLogger.Warnf("Ending data after unmarshalling json panic: %s", data)
-			panic(r)
-		}
-	}()
-
-	err = json.Unmarshal(data, v)
-	return
 }

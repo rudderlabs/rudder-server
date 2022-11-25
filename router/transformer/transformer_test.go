@@ -71,7 +71,7 @@ func TestProxyRequest(t *testing.T) {
 		// For http client timeout scenarios, we need to have a proxyTimeout which is > rtTimeout + <timeout_at_router_transform>
 		rtTimeout time.Duration
 		// Transformed response that needs to be sent to destination
-		postParameters integrations.PostParametersT
+		postParameters ProxyRequestPayload
 		context        proxyContext
 	}
 
@@ -93,21 +93,23 @@ func TestProxyRequest(t *testing.T) {
 				timeout:  0,
 			},
 			rtTimeout: 10 * time.Millisecond,
-			postParameters: integrations.PostParametersT{
-				Type:          "REST",
-				URL:           "http://www.good_dest.domain.com",
-				RequestMethod: http.MethodPost,
-				QueryParams:   map[string]interface{}{},
-				Body: map[string]interface{}{
-					"JSON": map[string]interface{}{
-						"key_1": "val_1",
-						"key_2": "val_2",
+			postParameters: ProxyRequestPayload{
+				PostParametersT: integrations.PostParametersT{
+					Type:          "REST",
+					URL:           "http://www.good_dest.domain.com",
+					RequestMethod: http.MethodPost,
+					QueryParams:   map[string]interface{}{},
+					Body: map[string]interface{}{
+						"JSON": map[string]interface{}{
+							"key_1": "val_1",
+							"key_2": "val_2",
+						},
+						"FORM":       map[string]interface{}{},
+						"JSON_ARRAY": map[string]interface{}{},
+						"XML":        map[string]interface{}{},
 					},
-					"FORM":       map[string]interface{}{},
-					"JSON_ARRAY": map[string]interface{}{},
-					"XML":        map[string]interface{}{},
+					Files: map[string]interface{}{},
 				},
-				Files: map[string]interface{}{},
 			},
 		},
 		{
@@ -125,21 +127,23 @@ func TestProxyRequest(t *testing.T) {
 				timeout:  time.Duration(1.2 * 1e9),
 			},
 			rtTimeout: 8 * time.Millisecond,
-			postParameters: integrations.PostParametersT{
-				Type:          "REST",
-				URL:           "http://www.good_dest_1.domain.com",
-				RequestMethod: http.MethodPost,
-				QueryParams:   map[string]interface{}{},
-				Body: map[string]interface{}{
-					"JSON": map[string]interface{}{
-						"key_1": "val_1",
-						"key_2": "val_2",
+			postParameters: ProxyRequestPayload{
+				PostParametersT: integrations.PostParametersT{
+					Type:          "REST",
+					URL:           "http://www.good_dest_1.domain.com",
+					RequestMethod: http.MethodPost,
+					QueryParams:   map[string]interface{}{},
+					Body: map[string]interface{}{
+						"JSON": map[string]interface{}{
+							"key_1": "val_1",
+							"key_2": "val_2",
+						},
+						"FORM":       map[string]interface{}{},
+						"JSON_ARRAY": map[string]interface{}{},
+						"XML":        map[string]interface{}{},
 					},
-					"FORM":       map[string]interface{}{},
-					"JSON_ARRAY": map[string]interface{}{},
-					"XML":        map[string]interface{}{},
+					Files: map[string]interface{}{},
 				},
-				Files: map[string]interface{}{},
 			},
 		},
 		{
@@ -159,21 +163,23 @@ func TestProxyRequest(t *testing.T) {
 			context: proxyContext{
 				timeout: 2 * time.Millisecond,
 			},
-			postParameters: integrations.PostParametersT{
-				Type:          "REST",
-				URL:           "http://www.ctx_timeout_dest.domain.com",
-				RequestMethod: http.MethodPost,
-				QueryParams:   map[string]interface{}{},
-				Body: map[string]interface{}{
-					"JSON": map[string]interface{}{
-						"key_1": "val_1",
-						"key_2": "val_2",
+			postParameters: ProxyRequestPayload{
+				PostParametersT: integrations.PostParametersT{
+					Type:          "REST",
+					URL:           "http://www.ctx_timeout_dest.domain.com",
+					RequestMethod: http.MethodPost,
+					QueryParams:   map[string]interface{}{},
+					Body: map[string]interface{}{
+						"JSON": map[string]interface{}{
+							"key_1": "val_1",
+							"key_2": "val_2",
+						},
+						"FORM":       map[string]interface{}{},
+						"JSON_ARRAY": map[string]interface{}{},
+						"XML":        map[string]interface{}{},
 					},
-					"FORM":       map[string]interface{}{},
-					"JSON_ARRAY": map[string]interface{}{},
-					"XML":        map[string]interface{}{},
+					Files: map[string]interface{}{},
 				},
-				Files: map[string]interface{}{},
 			},
 		},
 		{
@@ -192,21 +198,23 @@ func TestProxyRequest(t *testing.T) {
 			context: proxyContext{
 				cancel: true,
 			},
-			postParameters: integrations.PostParametersT{
-				Type:          "REST",
-				URL:           "http://www.ctx_timeout_dest.domain.com",
-				RequestMethod: http.MethodPost,
-				QueryParams:   map[string]interface{}{},
-				Body: map[string]interface{}{
-					"JSON": map[string]interface{}{
-						"key_1": "val_1",
-						"key_2": "val_2",
+			postParameters: ProxyRequestPayload{
+				PostParametersT: integrations.PostParametersT{
+					Type:          "REST",
+					URL:           "http://www.ctx_timeout_dest.domain.com",
+					RequestMethod: http.MethodPost,
+					QueryParams:   map[string]interface{}{},
+					Body: map[string]interface{}{
+						"JSON": map[string]interface{}{
+							"key_1": "val_1",
+							"key_2": "val_2",
+						},
+						"FORM":       map[string]interface{}{},
+						"JSON_ARRAY": map[string]interface{}{},
+						"XML":        map[string]interface{}{},
 					},
-					"FORM":       map[string]interface{}{},
-					"JSON_ARRAY": map[string]interface{}{},
-					"XML":        map[string]interface{}{},
+					Files: map[string]interface{}{},
 				},
-				Files: map[string]interface{}{},
 			},
 		},
 		{
@@ -223,21 +231,23 @@ func TestProxyRequest(t *testing.T) {
 				response: `Not Found`,
 			},
 			rtTimeout: 10 * time.Millisecond,
-			postParameters: integrations.PostParametersT{
-				Type:          "REST",
-				URL:           "http://www.not_found_dest.domain.com",
-				RequestMethod: http.MethodPost,
-				QueryParams:   map[string]interface{}{},
-				Body: map[string]interface{}{
-					"JSON": map[string]interface{}{
-						"key_1": "val_1",
-						"key_2": "val_2",
+			postParameters: ProxyRequestPayload{
+				PostParametersT: integrations.PostParametersT{
+					Type:          "REST",
+					URL:           "http://www.not_found_dest.domain.com",
+					RequestMethod: http.MethodPost,
+					QueryParams:   map[string]interface{}{},
+					Body: map[string]interface{}{
+						"JSON": map[string]interface{}{
+							"key_1": "val_1",
+							"key_2": "val_2",
+						},
+						"FORM":       map[string]interface{}{},
+						"JSON_ARRAY": map[string]interface{}{},
+						"XML":        map[string]interface{}{},
 					},
-					"FORM":       map[string]interface{}{},
-					"JSON_ARRAY": map[string]interface{}{},
-					"XML":        map[string]interface{}{},
+					Files: map[string]interface{}{},
 				},
-				Files: map[string]interface{}{},
 			},
 		},
 	}

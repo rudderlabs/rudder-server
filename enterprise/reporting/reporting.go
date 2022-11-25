@@ -43,45 +43,48 @@ const (
 )
 
 type HandleT struct {
-	clients                       map[string]*types.Client
-	clientsMapLock                sync.RWMutex
-	logger                        logger.Logger
-	reportingServiceURL           string
-	namespace                     string
-	workspaceID                   string
-	instanceID                    string
-	workspaceIDForSourceIDMap     map[string]string
-	workspaceIDForSourceIDMapLock sync.RWMutex
-	whActionsOnly                 bool
-	sleepInterval                 time.Duration
-	mainLoopSleepInterval         time.Duration
+	init                      chan struct{}
+	onceInit                  sync.Once
+	clients                   map[string]*types.Client
+	clientsMapLock            sync.RWMutex
+	log                       logger.Logger
+	reportingServiceURL       string
+	namespace                 string
+	workspaceID               string
+	instanceID                string
+	workspaceIDForSourceIDMap map[string]string
+	piiReportingSettings      map[string]bool
+	whActionsOnly             bool
+	sleepInterval             time.Duration
+	mainLoopSleepInterval     time.Duration
 
 	getMinReportedAtQueryTime stats.Measurement
 	getReportsQueryTime       stats.Measurement
 	requestLatency            stats.Measurement
 }
 
-func NewFromEnvConfig() *HandleT {
+func NewFromEnvConfig(log logger.Logger) *HandleT {
 	var sleepInterval, mainLoopSleepInterval time.Duration
 	reportingServiceURL := config.GetString("REPORTING_URL", "https://reporting.rudderstack.com/")
 	reportingServiceURL = strings.TrimSuffix(reportingServiceURL, "/")
 	config.RegisterDurationConfigVariable(5, &mainLoopSleepInterval, true, time.Second, "Reporting.mainLoopSleepInterval")
 	config.RegisterDurationConfigVariable(30, &sleepInterval, true, time.Second, "Reporting.sleepInterval")
 	config.RegisterIntConfigVariable(32, &maxConcurrentRequests, true, 1, "Reporting.maxConcurrentRequests")
-	reportingLogger := logger.NewLogger().Child("enterprise").Child("reporting")
 	// only send reports for wh actions sources if whActionsOnly is configured
 	whActionsOnly := config.GetBool("REPORTING_WH_ACTIONS_ONLY", false)
 	if whActionsOnly {
-		reportingLogger.Info("REPORTING_WH_ACTIONS_ONLY enabled.only sending reports relevant to wh actions.")
+		log.Info("REPORTING_WH_ACTIONS_ONLY enabled.only sending reports relevant to wh actions.")
 	}
 
 	return &HandleT{
-		logger:                    reportingLogger,
+		init:                      make(chan struct{}),
+		log:                       log,
 		clients:                   make(map[string]*types.Client),
 		reportingServiceURL:       reportingServiceURL,
 		namespace:                 config.GetKubeNamespace(),
 		instanceID:                config.GetString("INSTANCE_ID", "1"),
 		workspaceIDForSourceIDMap: make(map[string]string),
+		piiReportingSettings:      make(map[string]bool),
 		whActionsOnly:             whActionsOnly,
 		sleepInterval:             sleepInterval,
 		mainLoopSleepInterval:     mainLoopSleepInterval,
@@ -89,14 +92,14 @@ func NewFromEnvConfig() *HandleT {
 }
 
 func (handle *HandleT) setup(beConfigHandle backendconfig.BackendConfig) {
-	handle.logger.Info("[[ Reporting ]] Setting up reporting handler")
+	handle.log.Info("[[ Reporting ]] Setting up reporting handler")
 
 	ch := beConfigHandle.Subscribe(context.TODO(), backendconfig.TopicBackendConfig)
 
 	for beconfig := range ch {
 		config := beconfig.Data.(map[string]backendconfig.ConfigT)
-		handle.workspaceIDForSourceIDMapLock.Lock()
 		newWorkspaceIDForSourceIDMap := make(map[string]string)
+		newPIIReportingSettings := make(map[string]bool)
 		var newWorkspaceID string
 
 		for workspaceID, wConfig := range config {
@@ -104,19 +107,26 @@ func (handle *HandleT) setup(beConfigHandle backendconfig.BackendConfig) {
 			for _, source := range wConfig.Sources {
 				newWorkspaceIDForSourceIDMap[source.ID] = workspaceID
 			}
+			newPIIReportingSettings[workspaceID] = wConfig.Settings.DataRetention.DisableReportingPII
 		}
 		if len(config) > 1 {
 			newWorkspaceID = ""
 		}
 		handle.workspaceID = newWorkspaceID
 		handle.workspaceIDForSourceIDMap = newWorkspaceIDForSourceIDMap
-		handle.workspaceIDForSourceIDMapLock.Unlock()
+		handle.piiReportingSettings = newPIIReportingSettings
+		handle.onceInit.Do(func() {
+			close(handle.init)
+		})
 	}
+
+	handle.onceInit.Do(func() {
+		close(handle.init)
+	})
 }
 
 func (handle *HandleT) getWorkspaceID(sourceID string) string {
-	handle.workspaceIDForSourceIDMapLock.RLock()
-	defer handle.workspaceIDForSourceIDMapLock.RUnlock()
+	<-handle.init
 	return handle.workspaceIDForSourceIDMap[sourceID]
 }
 
@@ -310,7 +320,7 @@ func (handle *HandleT) mainLoop(ctx context.Context, clientName string) {
 	handle.requestLatency = stats.Default.NewTaggedStat(STAT_REPORTING_HTTP_REQ_LATENCY, stats.TimerType, tags)
 	for {
 		if ctx.Err() != nil {
-			handle.logger.Infof("stopping mainLoop for client %s : %s", clientName, ctx.Err())
+			handle.log.Infof("stopping mainLoop for client %s : %s", clientName, ctx.Err())
 			return
 		}
 		requestChan := make(chan struct{}, maxConcurrentRequests)
@@ -324,7 +334,7 @@ func (handle *HandleT) mainLoop(ctx context.Context, clientName string) {
 		if len(reports) == 0 {
 			select {
 			case <-ctx.Done():
-				handle.logger.Infof("stopping mainLoop for client %s : %s", clientName, ctx.Err())
+				handle.log.Infof("stopping mainLoop for client %s : %s", clientName, ctx.Err())
 				return
 			case <-time.After(handle.sleepInterval):
 			}
@@ -365,7 +375,7 @@ func (handle *HandleT) mainLoop(ctx context.Context, clientName string) {
 			}
 			_, err = dbHandle.Exec(sqlStatement)
 			if err != nil {
-				handle.logger.Errorf(`[ Reporting ]: Error deleting local reports from %s: %v`, REPORTS_TABLE, err)
+				handle.log.Errorf(`[ Reporting ]: Error deleting local reports from %s: %v`, REPORTS_TABLE, err)
 			}
 		}
 
@@ -394,7 +404,7 @@ func (handle *HandleT) sendMetric(ctx context.Context, netClient *http.Client, c
 		httpRequestStart := time.Now()
 		resp, err := netClient.Do(req)
 		if err != nil {
-			handle.logger.Error(err.Error())
+			handle.log.Error(err.Error())
 			return err
 		}
 
@@ -406,7 +416,7 @@ func (handle *HandleT) sendMetric(ctx context.Context, netClient *http.Client, c
 		defer resp.Body.Close()
 		respBody, err := io.ReadAll(resp.Body)
 		if err != nil {
-			handle.logger.Error(err.Error())
+			handle.log.Error(err.Error())
 			return err
 		}
 
@@ -418,10 +428,10 @@ func (handle *HandleT) sendMetric(ctx context.Context, netClient *http.Client, c
 
 	b := backoff.WithContext(backoff.NewExponentialBackOff(), ctx)
 	err = backoff.RetryNotify(operation, b, func(err error, t time.Duration) {
-		handle.logger.Errorf(`[ Reporting ]: Error reporting to service: %v`, err)
+		handle.log.Errorf(`[ Reporting ]: Error reporting to service: %v`, err)
 	})
 	if err != nil {
-		handle.logger.Errorf(`[ Reporting ]: Error making request to reporting service: %v`, err)
+		handle.log.Errorf(`[ Reporting ]: Error making request to reporting service: %v`, err)
 	}
 	return err
 }
@@ -435,7 +445,7 @@ func isMetricPosted(status int) bool {
 }
 
 func getPIIColumnsToExclude() []string {
-	piiColumnsToExclude := strings.Split(config.GetString("REPORTING_PII_COLUMNS_TO_EXCLUDE", ""), ",")
+	piiColumnsToExclude := strings.Split(config.GetString("REPORTING_PII_COLUMNS_TO_EXCLUDE", "sample_event,sample_response"), ",")
 	for i := range piiColumnsToExclude {
 		piiColumnsToExclude[i] = strings.Trim(piiColumnsToExclude[i], " ")
 	}
@@ -444,14 +454,24 @@ func getPIIColumnsToExclude() []string {
 
 func transformMetricForPII(metric types.PUReportedMetric, piiColumns []string) types.PUReportedMetric {
 	for _, col := range piiColumns {
-		if col == "sample_event" {
+		switch col {
+		case "sample_event":
 			metric.StatusDetail.SampleEvent = []byte(`{}`)
-		} else if col == "sample_response" {
+		case "sample_response":
 			metric.StatusDetail.SampleResponse = ""
+		case "event_name":
+			metric.StatusDetail.EventName = ""
+		case "event_type":
+			metric.StatusDetail.EventType = ""
 		}
 	}
 
 	return metric
+}
+
+func (handle *HandleT) IsPIIReportingDisabled(workspaceID string) bool {
+	<-handle.init
+	return handle.piiReportingSettings[workspaceID]
 }
 
 func (handle *HandleT) Report(metrics []*types.PUReportedMetric, txn *sql.Tx) {
@@ -469,7 +489,10 @@ func (handle *HandleT) Report(metrics []*types.PUReportedMetric, txn *sql.Tx) {
 	reportedAt := time.Now().UTC().Unix() / 60
 	for _, metric := range metrics {
 		workspaceID := handle.getWorkspaceID(metric.ConnectionDetails.SourceID)
-		metric := transformMetricForPII(*metric, getPIIColumnsToExclude())
+		metric := *metric
+		if handle.IsPIIReportingDisabled(workspaceID) {
+			metric = transformMetricForPII(metric, getPIIColumnsToExclude())
+		}
 
 		_, err = stmt.Exec(workspaceID, handle.namespace, handle.instanceID, metric.ConnectionDetails.SourceDefinitionId, metric.ConnectionDetails.SourceCategory, metric.ConnectionDetails.SourceID, metric.ConnectionDetails.DestinationDefinitionId, metric.ConnectionDetails.DestinationID, metric.ConnectionDetails.SourceBatchID, metric.ConnectionDetails.SourceTaskID, metric.ConnectionDetails.SourceTaskRunID, metric.ConnectionDetails.SourceJobID, metric.ConnectionDetails.SourceJobRunID, metric.PUDetails.InPU, metric.PUDetails.PU, reportedAt, metric.StatusDetail.Status, metric.StatusDetail.Count, metric.PUDetails.TerminalPU, metric.PUDetails.InitialPU, metric.StatusDetail.StatusCode, metric.StatusDetail.SampleResponse, string(metric.StatusDetail.SampleEvent), metric.StatusDetail.EventName, metric.StatusDetail.EventType)
 		if err != nil {

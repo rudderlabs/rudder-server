@@ -56,7 +56,7 @@ func disableCache() {
 type noCache struct{}
 
 func (*noCache) Get(context.Context) ([]byte, error) {
-	return nil, nil
+	return nil, fmt.Errorf(`noCache: cache disabled`)
 }
 
 type workspaceConfig interface {
@@ -90,7 +90,7 @@ type backendConfigImpl struct {
 }
 
 func loadConfig() {
-	configBackendURL = config.GetString("CONFIG_BACKEND_URL", "https://api.rudderlabs.com")
+	configBackendURL = config.GetString("CONFIG_BACKEND_URL", "https://api.rudderstack.com")
 	cpRouterURL = config.GetString("CP_ROUTER_URL", "https://cp-router.rudderlabs.com")
 	config.RegisterDurationConfigVariable(5, &pollInterval, true, time.Second, []string{"BackendConfig.pollInterval", "BackendConfig.pollIntervalInS"}...)
 	config.RegisterDurationConfigVariable(300, &regulationsPollInterval, true, time.Second, []string{"BackendConfig.regulationsPollInterval", "BackendConfig.regulationsPollIntervalInS"}...)
@@ -271,7 +271,7 @@ func (bc *backendConfigImpl) Subscribe(ctx context.Context, topic Topic) pubsub.
 	return bc.eb.Subscribe(ctx, string(topic))
 }
 
-func newForDeployment(deploymentType deployment.Type, configEnvHandler types.ConfigEnvI) (BackendConfig, error) {
+func newForDeployment(deploymentType deployment.Type, region string, configEnvHandler types.ConfigEnvI) (BackendConfig, error) {
 	backendConfig := &backendConfigImpl{
 		eb: pubsub.New(),
 	}
@@ -286,12 +286,14 @@ func newForDeployment(deploymentType deployment.Type, configEnvHandler types.Con
 			configJSONPath:   configJSONPath,
 			configBackendURL: parsedConfigBackendURL,
 			configEnvHandler: configEnvHandler,
+			region:           region,
 		}
 	case deployment.MultiTenantType:
 		backendConfig.workspaceConfig = &namespaceConfig{
-			ConfigBackendURL: parsedConfigBackendURL,
+			configBackendURL: parsedConfigBackendURL,
 			configEnvHandler: configEnvHandler,
 			cpRouterURL:      cpRouterURL,
+			region:           region,
 		}
 	default:
 		return nil, fmt.Errorf("deployment type %q not supported", deploymentType)
@@ -303,11 +305,12 @@ func newForDeployment(deploymentType deployment.Type, configEnvHandler types.Con
 // Setup backend config
 func Setup(configEnvHandler types.ConfigEnvI) (err error) {
 	deploymentType, err := deployment.GetFromEnv()
+	region := config.GetString("region", "")
 	if err != nil {
 		return fmt.Errorf("deployment type from env: %w", err)
 	}
 
-	backendConfig, err := newForDeployment(deploymentType, configEnvHandler)
+	backendConfig, err := newForDeployment(deploymentType, region, configEnvHandler)
 	if err != nil {
 		return err
 	}
@@ -319,6 +322,7 @@ func Setup(configEnvHandler types.ConfigEnvI) (err error) {
 }
 
 func (bc *backendConfigImpl) StartWithIDs(ctx context.Context, workspaces string) {
+	var err error
 	ctx, cancel := context.WithCancel(ctx)
 	bc.ctx = ctx
 	bc.cancel = cancel
@@ -329,13 +333,24 @@ func (bc *backendConfigImpl) StartWithIDs(ctx context.Context, workspaces string
 		u, _ := identifier.BasicAuth()
 		secret := sha256.Sum256([]byte(u))
 		cacheKey := identifier.ID()
-		bc.cache = cache.Start(
+		bc.cache, err = cache.Start(
 			ctx,
 			secret,
 			cacheKey,
-			bc.Subscribe(ctx, TopicBackendConfig),
+			func() pubsub.DataChannel { return bc.Subscribe(ctx, TopicBackendConfig) },
 		)
+		if err != nil {
+			// the only reason why we should resume by using no cache,
+			// would be if no database configuration has been set
+			if config.IsSet("DB.host") {
+				panic(fmt.Errorf("error starting backend config cache: %w", err))
+			} else {
+				pkgLogger.Warnf("Failed to start backend config cache, no cache will be used: %w", err)
+				bc.cache = &noCache{}
+			}
+		}
 	}
+
 	rruntime.Go(func() {
 		bc.pollConfigUpdate(ctx, workspaces)
 		close(bc.blockChan)

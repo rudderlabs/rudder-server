@@ -8,55 +8,62 @@ import (
 
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
+	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	"github.com/rudderlabs/rudder-server/warehouse/manager"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
 type SchemaHandleT struct {
-	dbHandle          *sql.DB
-	stagingFiles      []*StagingFileT
-	warehouse         warehouseutils.Warehouse
-	localSchema       warehouseutils.SchemaT
-	schemaInWarehouse warehouseutils.SchemaT
-	uploadSchema      warehouseutils.SchemaT
+	dbHandle                      *sql.DB
+	stagingFiles                  []*model.StagingFile
+	warehouse                     warehouseutils.Warehouse
+	localSchema                   warehouseutils.SchemaT
+	schemaInWarehouse             warehouseutils.SchemaT
+	unrecognizedSchemaInWarehouse warehouseutils.SchemaT
+	uploadSchema                  warehouseutils.SchemaT
 }
 
-func HandleSchemaChange(existingDataType, columnType string, columnVal interface{}) (newColumnVal interface{}, ok bool) {
-	if existingDataType == "string" || existingDataType == "text" {
+func HandleSchemaChange(existingDataType, currentDataType model.SchemaType, value any) (any, error) {
+	var (
+		newColumnVal any
+		err          error
+	)
+
+	if existingDataType == model.StringDataType || existingDataType == model.TextDataType {
 		// only stringify if the previous type is non-string/text/json
-		if columnType != "string" && columnType != "text" && columnType != "json" {
-			newColumnVal = fmt.Sprintf("%v", columnVal)
+		if currentDataType != model.StringDataType && currentDataType != model.TextDataType && currentDataType != model.JSONDataType {
+			newColumnVal = fmt.Sprintf("%v", value)
 		} else {
-			newColumnVal = columnVal
+			newColumnVal = value
 		}
-	} else if (columnType == "int" || columnType == "bigint") && existingDataType == "float" {
-		intVal, ok := columnVal.(int)
+	} else if (currentDataType == model.IntDataType || currentDataType == model.BigIntDataType) && existingDataType == model.FloatDataType {
+		intVal, ok := value.(int)
 		if !ok {
-			newColumnVal = nil
+			err = ErrIncompatibleSchemaConversion
 		} else {
 			newColumnVal = float64(intVal)
 		}
-	} else if columnType == "float" && (existingDataType == "int" || existingDataType == "bigint") {
-		floatVal, ok := columnVal.(float64)
+	} else if currentDataType == model.FloatDataType && (existingDataType == model.IntDataType || existingDataType == model.BigIntDataType) {
+		floatVal, ok := value.(float64)
 		if !ok {
-			newColumnVal = nil
+			err = ErrIncompatibleSchemaConversion
 		} else {
 			newColumnVal = int(floatVal)
 		}
-	} else if existingDataType == "json" {
-		var interfaceSliceSample []interface{}
-		if columnType == "int" || columnType == "float" || columnType == "boolean" {
-			newColumnVal = fmt.Sprintf("%v", columnVal)
-		} else if reflect.TypeOf(columnVal) == reflect.TypeOf(interfaceSliceSample) {
-			newColumnVal = columnVal
+	} else if existingDataType == model.JSONDataType {
+		var interfaceSliceSample []any
+		if currentDataType == model.IntDataType || currentDataType == model.FloatDataType || currentDataType == model.BooleanDataType {
+			newColumnVal = fmt.Sprintf("%v", value)
+		} else if reflect.TypeOf(value) == reflect.TypeOf(interfaceSliceSample) {
+			newColumnVal = value
 		} else {
-			newColumnVal = fmt.Sprintf(`"%v"`, columnVal)
+			newColumnVal = fmt.Sprintf(`"%v"`, value)
 		}
 	} else {
-		return nil, false
+		err = ErrSchemaConversionNotSupported
 	}
 
-	return newColumnVal, true
+	return newColumnVal, err
 }
 
 func (sh *SchemaHandleT) getLocalSchema() (currentSchema warehouseutils.SchemaT) {
@@ -66,17 +73,17 @@ func (sh *SchemaHandleT) getLocalSchema() (currentSchema warehouseutils.SchemaT)
 
 	var rawSchema json.RawMessage
 	sqlStatement := fmt.Sprintf(`
-		SELECT 
-		  schema 
-		FROM 
+		SELECT
+		  schema
+		FROM
 		  %[1]s ST
-		WHERE 
+		WHERE
 		  (
-			ST.destination_id = '%[2]s' 
-			AND ST.namespace = '%[3]s' 
+			ST.destination_id = '%[2]s'
+			AND ST.namespace = '%[3]s'
 			AND ST.source_id = '%[4]s'
-		  ) 
-		ORDER BY 
+		  )
+		ORDER BY
 		  ST.id DESC;
 `,
 		warehouseutils.WarehouseSchemasTable,
@@ -102,13 +109,13 @@ func (sh *SchemaHandleT) getLocalSchema() (currentSchema warehouseutils.SchemaT)
 		panic(fmt.Errorf("unmarshalling: %s failed with Error : %w", rawSchema, err))
 	}
 	currentSchema = warehouseutils.SchemaT{}
-	for tname, columnMapInterface := range schemaMapInterface {
+	for tableName, columnMapInterface := range schemaMapInterface {
 		columnMap := make(map[string]string)
 		columns := columnMapInterface.(map[string]interface{})
 		for cName, cTypeInterface := range columns {
 			columnMap[cName] = cTypeInterface.(string)
 		}
-		currentSchema[tname] = columnMap
+		currentSchema[tableName] = columnMap
 	}
 	return currentSchema
 }
@@ -130,17 +137,17 @@ func (sh *SchemaHandleT) updateLocalSchema(updatedSchema warehouseutils.SchemaT)
 
 	sqlStatement := fmt.Sprintf(`
 		INSERT INTO %s (
-		  source_id, namespace, destination_id, 
-		  destination_type, schema, created_at, 
+		  source_id, namespace, destination_id,
+		  destination_type, schema, created_at,
 		  updated_at
-		) 
-		VALUES 
+		)
+		VALUES
 		  ($1, $2, $3, $4, $5, $6, $7) ON CONFLICT (
 			source_id, destination_id, namespace
-		  ) DO 
-		UPDATE 
-		SET 
-		  schema = $5, 
+		  ) DO
+		UPDATE
+		SET
+		  schema = $5,
 		  updated_at = $7 RETURNING id;
 `,
 		warehouseutils.WarehouseSchemasTable,
@@ -159,13 +166,13 @@ func (sh *SchemaHandleT) updateLocalSchema(updatedSchema warehouseutils.SchemaT)
 	return err
 }
 
-func (sh *SchemaHandleT) fetchSchemaFromWarehouse(whManager manager.ManagerI) (schemaInWarehouse warehouseutils.SchemaT, err error) {
-	schemaInWarehouse, err = whManager.FetchSchema(sh.warehouse)
+func (sh *SchemaHandleT) fetchSchemaFromWarehouse(whManager manager.ManagerI) (schemaInWarehouse, unrecognizedSchemaInWarehouse warehouseutils.SchemaT, err error) {
+	schemaInWarehouse, unrecognizedSchemaInWarehouse, err = whManager.FetchSchema(sh.warehouse)
 	if err != nil {
 		pkgLogger.Errorf(`[WH]: Failed fetching schema from warehouse: %v`, err)
-		return warehouseutils.SchemaT{}, err
+		return warehouseutils.SchemaT{}, warehouseutils.SchemaT{}, err
 	}
-	return schemaInWarehouse, nil
+	return schemaInWarehouse, unrecognizedSchemaInWarehouse, nil
 }
 
 func mergeSchema(currentSchema warehouseutils.SchemaT, schemaList []warehouseutils.SchemaT, currentMergedSchema warehouseutils.SchemaT, warehouseType string) warehouseutils.SchemaT {
@@ -290,11 +297,11 @@ func (sh *SchemaHandleT) consolidateStagingFilesSchemaUsingWarehouseSchema() war
 		}
 
 		sqlStatement := fmt.Sprintf(`
-			SELECT 
-			  schema 
-			FROM 
-			  %s 
-			WHERE 
+			SELECT
+			  schema
+			FROM
+			  %s
+			WHERE
 			  id IN (%s);
 `,
 			warehouseutils.WarehouseStagingFilesTable,

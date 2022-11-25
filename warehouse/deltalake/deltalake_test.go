@@ -8,11 +8,11 @@ import (
 	"os"
 	"testing"
 
+	"github.com/rudderlabs/rudder-server/utils/misc"
+
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
-
-	"github.com/gofrs/uuid"
 
 	proto "github.com/rudderlabs/rudder-server/proto/databricks"
 
@@ -33,6 +33,11 @@ type TestHandle struct {
 }
 
 var handle *TestHandle
+
+var statsToVerify = []string{
+	"warehouse_deltalake_grpcExecTime",
+	"warehouse_deltalake_healthTimeouts",
+}
 
 func (*TestHandle) VerifyConnection() error {
 	credentials, err := testhelper.DatabricksCredentials()
@@ -84,7 +89,7 @@ func TestDeltalakeIntegration(t *testing.T) {
 			WriteKey:      handle.WriteKey,
 			Schema:        handle.Schema,
 			Tables:        handle.Tables,
-			MessageId:     uuid.Must(uuid.NewV4()).String(),
+			MessageId:     misc.FastUUID().String(),
 			Provider:      warehouseutils.DELTALAKE,
 			SourceID:      "25H5EpYzojqQSepRSaGBrrPx3e4",
 			DestinationID: "25IDjdnoEus6DDNrth3SWO1FOpu",
@@ -119,6 +124,8 @@ func TestDeltalakeIntegration(t *testing.T) {
 		testhelper.VerifyEventsInLoadFiles(t, warehouseTest, testhelper.LoadFilesEventsMap())
 		testhelper.VerifyEventsInTableUploads(t, warehouseTest, testhelper.TableUploadsEventsMap())
 		testhelper.VerifyEventsInWareHouse(t, warehouseTest, mergeEventsMap())
+
+		testhelper.VerifyWorkspaceIDInStats(t, statsToVerify...)
 	})
 
 	t.Run("Append Mode", func(t *testing.T) {
@@ -137,7 +144,7 @@ func TestDeltalakeIntegration(t *testing.T) {
 			WriteKey:      handle.WriteKey,
 			Schema:        handle.Schema,
 			Tables:        handle.Tables,
-			MessageId:     uuid.Must(uuid.NewV4()).String(),
+			MessageId:     misc.FastUUID().String(),
 			Provider:      warehouseutils.DELTALAKE,
 			SourceID:      "25H5EpYzojqQSepRSaGBrrPx3e4",
 			DestinationID: "25IDjdnoEus6DDNrth3SWO1FOpu",
@@ -171,6 +178,8 @@ func TestDeltalakeIntegration(t *testing.T) {
 		testhelper.VerifyEventsInLoadFiles(t, warehouseTest, testhelper.LoadFilesEventsMap())
 		testhelper.VerifyEventsInTableUploads(t, warehouseTest, testhelper.TableUploadsEventsMap())
 		testhelper.VerifyEventsInWareHouse(t, warehouseTest, appendEventsMap())
+
+		testhelper.VerifyWorkspaceIDInStats(t, statsToVerify...)
 	})
 }
 

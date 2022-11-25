@@ -53,6 +53,17 @@ func TestRedshiftIntegration(t *testing.T) {
 		}), fmt.Sprintf("Failed dropping schema %s for Redshift", handle.Schema))
 	})
 
+	require.NoError(t, testhelper.SetConfig([]warehouseutils.KeyValue{
+		{
+			Key:   "Warehouse.redshift.dedupWindow",
+			Value: true,
+		},
+		{
+			Key:   "Warehouse.redshift.dedupWindowInHours",
+			Value: 5,
+		},
+	}))
+
 	warehouseTest := &testhelper.WareHouseTest{
 		Client: &client.Client{
 			SQL:  handle.DB,
@@ -95,6 +106,8 @@ func TestRedshiftIntegration(t *testing.T) {
 	testhelper.VerifyEventsInLoadFiles(t, warehouseTest, testhelper.LoadFilesEventsMap())
 	testhelper.VerifyEventsInTableUploads(t, warehouseTest, testhelper.TableUploadsEventsMap())
 	testhelper.VerifyEventsInWareHouse(t, warehouseTest, testhelper.WarehouseEventsMap())
+
+	testhelper.VerifyWorkspaceIDInStats(t)
 }
 
 func TestRedshiftConfigurationValidation(t *testing.T) {

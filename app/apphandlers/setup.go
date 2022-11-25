@@ -5,35 +5,24 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"sync"
 	"time"
 
 	"github.com/rudderlabs/rudder-server/app"
 	"github.com/rudderlabs/rudder-server/config"
-	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/processor"
 	"github.com/rudderlabs/rudder-server/router"
-	"github.com/rudderlabs/rudder-server/router/batchrouter"
 	"github.com/rudderlabs/rudder-server/services/diagnostics"
-	"github.com/rudderlabs/rudder-server/services/multitenant"
 	"github.com/rudderlabs/rudder-server/services/rsources"
-	"github.com/rudderlabs/rudder-server/services/transientsource"
 	"github.com/rudderlabs/rudder-server/services/validators"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
-	utilsync "github.com/rudderlabs/rudder-server/utils/sync"
 	"github.com/rudderlabs/rudder-server/utils/types"
 	"github.com/rudderlabs/rudder-server/utils/types/deployment"
-	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
 var (
 	enableProcessor, enableRouter, enableReplay                bool
-	objectStorageDestinations                                  []string
-	asyncDestinations                                          []string
-	routerLoaded                                               utilsync.First
-	processorLoaded                                            utilsync.First
 	pkgLogger                                                  logger.Logger
 	Diagnostics                                                diagnostics.DiagnosticsI
 	readonlyGatewayDB, readonlyRouterDB, readonlyBatchRouterDB jobsdb.ReadonlyHandleT
@@ -73,8 +62,6 @@ func loadConfig() {
 	config.RegisterBoolConfigVariable(true, &enableProcessor, false, "enableProcessor")
 	config.RegisterBoolConfigVariable(types.DEFAULT_REPLAY_ENABLED, &enableReplay, false, "Replay.enabled")
 	config.RegisterBoolConfigVariable(true, &enableRouter, false, "enableRouter")
-	objectStorageDestinations = []string{"S3", "GCS", "AZURE_BLOB", "MINIO", "DIGITAL_OCEAN_SPACES"}
-	asyncDestinations = []string{"MARKETO_BULK_UPLOAD"}
 }
 
 func rudderCoreDBValidator() {
@@ -107,122 +94,6 @@ func rudderCoreBaseSetup() {
 
 	processor.RegisterAdminHandlers(&readonlyProcErrorDB)
 	router.RegisterAdminHandlers(&readonlyRouterDB, &readonlyBatchRouterDB)
-}
-
-// StartProcessor atomically starts processor process if not already started
-func StartProcessor(
-	ctx context.Context, clearDB *bool, gatewayDB, routerDB, batchRouterDB,
-	procErrorDB *jobsdb.HandleT, reporting types.ReportingI, multitenantStat multitenant.MultiTenantI,
-	transientSources transientsource.Service, rsourcesService rsources.JobService,
-) error {
-	if !processorLoaded.First() {
-		pkgLogger.Debug("processor started by another go routine")
-		return nil
-	}
-
-	processorInstance := processor.NewProcessor()
-	processorInstance.Setup(
-		backendconfig.DefaultBackendConfig, gatewayDB, routerDB, batchRouterDB, procErrorDB,
-		clearDB, reporting, multitenantStat, transientSources, rsourcesService,
-	)
-	defer processorInstance.Shutdown()
-	return processorInstance.Start(ctx)
-}
-
-// StartRouter atomically starts router process if not already started
-func StartRouter(
-	ctx context.Context, routerDB jobsdb.MultiTenantJobsDB, batchRouterDB *jobsdb.HandleT,
-	procErrorDB *jobsdb.HandleT, reporting types.ReportingI, multitenantStat multitenant.MultiTenantI,
-	transientSources transientsource.Service, rsourcesService rsources.JobService,
-) {
-	if !routerLoaded.First() {
-		pkgLogger.Debug("processor started by an other go routine")
-		return
-	}
-
-	routerFactory := router.Factory{
-		BackendConfig:    backendconfig.DefaultBackendConfig,
-		Reporting:        reporting,
-		Multitenant:      multitenantStat,
-		RouterDB:         routerDB,
-		ProcErrorDB:      procErrorDB,
-		TransientSources: transientSources,
-		RsourcesService:  rsourcesService,
-	}
-
-	batchRouterFactory := batchrouter.Factory{
-		BackendConfig:    backendconfig.DefaultBackendConfig,
-		Reporting:        reporting,
-		Multitenant:      multitenantStat,
-		ProcErrorDB:      procErrorDB,
-		RouterDB:         batchRouterDB,
-		TransientSources: transientSources,
-		RsourcesService:  rsourcesService,
-	}
-
-	monitorDestRouters(ctx, &routerFactory, &batchRouterFactory)
-}
-
-// Gets the config from config backend and extracts enabled writekeys
-func monitorDestRouters(ctx context.Context, routerFactory *router.Factory, batchRouterFactory *batchrouter.Factory) {
-	ch := backendconfig.DefaultBackendConfig.Subscribe(ctx, backendconfig.TopicBackendConfig)
-	dstToRouter := make(map[string]*router.HandleT)
-	dstToBatchRouter := make(map[string]*batchrouter.HandleT)
-	cleanup := make([]func(), 0)
-
-	// Crash recover routerDB, batchRouterDB
-	// Note: The following cleanups can take time if there are too many
-	// rt / batch_rt tables and there would be a delay reading from channel `ch`
-	// However, this shouldn't be the problem since backend config pushes config
-	// to its subscribers in separate goroutines to prevent blocking.
-	routerFactory.RouterDB.DeleteExecuting()
-	batchRouterFactory.RouterDB.DeleteExecuting()
-
-	for data := range ch {
-		config := data.Data.(map[string]backendconfig.ConfigT)
-		for _, wConfig := range config {
-			for i := range wConfig.Sources {
-				source := &wConfig.Sources[i] // Copy of large value inside loop: CRT-P0006
-				for k := range source.Destinations {
-					destination := &source.Destinations[k] // Copy of large value inside loop: CRT-P0006
-					// For batch router destinations
-					if misc.Contains(objectStorageDestinations, destination.DestinationDefinition.Name) ||
-						misc.Contains(warehouseutils.WarehouseDestinations, destination.DestinationDefinition.Name) ||
-						misc.Contains(asyncDestinations, destination.DestinationDefinition.Name) {
-						_, ok := dstToBatchRouter[destination.DestinationDefinition.Name]
-						if !ok {
-							pkgLogger.Info("Starting a new Batch Destination Router ", destination.DestinationDefinition.Name)
-							brt := batchRouterFactory.New(destination.DestinationDefinition.Name)
-							brt.Start()
-							cleanup = append(cleanup, brt.Shutdown)
-							dstToBatchRouter[destination.DestinationDefinition.Name] = brt
-						}
-					} else {
-						routerIdentifier := destination.DestinationDefinition.Name
-						_, ok := dstToRouter[routerIdentifier]
-						if !ok {
-							pkgLogger.Infof("Starting a new Destination: %s", routerIdentifier)
-							rt := routerFactory.New(destination, routerIdentifier)
-							rt.Start()
-							cleanup = append(cleanup, rt.Shutdown)
-							dstToRouter[routerIdentifier] = rt
-						}
-					}
-				}
-			}
-		}
-	}
-
-	var wg sync.WaitGroup
-	for _, f := range cleanup {
-		f := f
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			f()
-		}()
-	}
-	wg.Wait()
 }
 
 // NewRsourcesService produces a rsources.JobService through environment configuration (env variables & config file)

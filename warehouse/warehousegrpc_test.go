@@ -4,6 +4,7 @@ package warehouse
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"os"
 
@@ -33,20 +34,24 @@ var _ = Describe("WarehouseGrpc", func() {
 	Describe("Warehouse GRPC round trip", Ordered, func() {
 		Describe("Dedicated workspace", Ordered, func() {
 			var (
-				pgResource *destination.PostgresResource
-				err        error
-				cleanup    = &testhelper.Cleanup{}
-				w          *warehouseGRPC
-				c          context.Context
-				limit      = int32(2)
-				uploadID   = int64(1)
+				pgResource    *destination.PostgresResource
+				minioResource *destination.MINIOResource
+				err           error
+				cleanup       = &testhelper.Cleanup{}
+				w             *warehouseGRPC
+				c             context.Context
+				limit         = int32(2)
+				uploadID      = int64(1)
 			)
 
 			BeforeAll(func() {
 				pool, err := dockertest.NewPool("")
 				Expect(err).To(BeNil())
 
-				pgResource = setupWarehouseJobs(pool, GinkgoT(), cleanup)
+				pgResource = setupWarehouseJobs(pool, GinkgoT())
+
+				minioResource, err = destination.SetupMINIO(pool, cleanup)
+				Expect(err).To(BeNil())
 
 				initWarehouse()
 
@@ -396,6 +401,137 @@ var _ = Describe("WarehouseGrpc", func() {
 					Expect(res.StatusCode).Should(BeEquivalentTo(http.StatusOK))
 				})
 			})
+
+			Describe("Configuration validations", func() {
+				var req *proto.WHValidationRequest
+
+				BeforeEach(func() {
+					req = &proto.WHValidationRequest{
+						Path: "validate",
+						Body: fmt.Sprintf(`{
+								"destination": {
+									"config": {
+										"host":             %q,
+										"database":         %q,
+										"user":             %q,
+										"password":         %q,
+										"port":             %q,
+										"sslMode":          "disable",
+										"namespace":        "",
+										"bucketProvider":   "MINIO",
+										"bucketName":       %q,
+										"accessKeyID":      %q,
+										"secretAccessKey":  %q,
+										"useSSL":           false,
+										"endPoint":         %q,
+										"syncFrequency":    "30",
+										"useRudderStorage": false
+									},
+									"destinationDefinition": {
+										"id":          "1bJ4YC7INdkvBTzotNh0zta5jDm",
+										"name":        "POSTGRES",
+										"displayName": "Postgres"
+									}
+								}
+						}`,
+							pgResource.Host,
+							pgResource.Database,
+							pgResource.User,
+							pgResource.Password,
+							pgResource.Port,
+							minioResource.BucketName,
+							minioResource.AccessKey,
+							minioResource.SecretKey,
+							minioResource.Endpoint,
+						),
+					}
+				})
+
+				When("Validating with steps", func() {
+					DescribeTable("Validate", func(stepID, stepName string) {
+						req.Step = stepID
+
+						res, err := w.Validate(c, req)
+
+						Expect(err).To(BeNil())
+						Expect(res.Error).To(BeEmpty())
+						Expect(res.Data).To(MatchJSON(fmt.Sprintf(`{
+							  "success": true,
+							  "error": "",
+							  "steps": [
+								{
+								  "id": %s,
+								  "name": %q,
+								  "success": true,
+								  "error": ""
+								}
+							  ]
+							}`,
+							stepID,
+							stepName,
+						)))
+					},
+						Entry("Verifying Object Storage", "1", "Verifying Object Storage"),
+						Entry("Verifying Connections", "2", "Verifying Connections"),
+						Entry("Verifying Create Schema", "3", "Verifying Create Schema"),
+						Entry("Verifying Create and Alter Table", "4", "Verifying Create and Alter Table"),
+						Entry("Verifying Fetch Schema", "5", "Verifying Fetch Schema"),
+						Entry("Load Table", "6", "Verifying Load Table"),
+					)
+				})
+
+				When("Validating without steps", func() {
+					It("Validate", func() {
+						res, err := w.Validate(c, req)
+						Expect(err).To(BeNil())
+						Expect(res.Error).To(BeEmpty())
+						Expect(res.Data).To(MatchJSON(`
+											{
+											  "success": true,
+											  "error": "",
+											  "steps": [
+												{
+												  "id": 1,
+												  "name": "Verifying Object Storage",
+												  "success": true,
+												  "error": ""
+												},
+												{
+												  "id": 2,
+												  "name": "Verifying Connections",
+												  "success": true,
+												  "error": ""
+												},
+												{
+												  "id": 3,
+												  "name": "Verifying Create Schema",
+												  "success": true,
+												  "error": ""
+												},
+												{
+												  "id": 4,
+												  "name": "Verifying Create and Alter Table",
+												  "success": true,
+												  "error": ""
+												},
+												{
+												  "id": 5,
+												  "name": "Verifying Fetch Schema",
+												  "success": true,
+												  "error": ""
+												},
+												{
+												  "id": 6,
+												  "name": "Verifying Load Table",
+												  "success": true,
+												  "error": ""
+												}
+											  ]
+											}
+										`))
+					})
+				})
+			})
 		})
 
 		Describe("Multi-tenant workspace", Ordered, func() {
@@ -416,7 +552,7 @@ var _ = Describe("WarehouseGrpc", func() {
 				g.Setenv("DEPLOYMENT_TYPE", "MULTITENANT")
 				g.Setenv("HOSTED_SERVICE_SECRET", "test-secret")
 
-				pgResource = setupWarehouseJobs(pool, g, cleanup)
+				pgResource = setupWarehouseJobs(pool, g)
 
 				initWarehouse()
 
@@ -531,7 +667,7 @@ var _ = Describe("WarehouseGrpc", func() {
 			It("should throw Code_INVALID_ARGUMENT when received unsupported/invalid object storage destination type", func() {
 				_, err := validateObjectStorageRequestBody(&proto.ValidateObjectStorageRequest{Type: "ABC"})
 				statusError, _ := status.FromError(err)
-				Expect(statusError.Err().Error()).To(BeIdenticalTo("rpc error: code = InvalidArgument desc = invalid argument err: type: ABC not supported"))
+				Expect(statusError.Err().Error()).To(BeIdenticalTo("rpc error: code = InvalidArgument desc = invalid argument err: \ntype: ABC not supported"))
 				Expect(statusError.Code()).To(BeIdenticalTo(codes.Code(code.Code_INVALID_ARGUMENT)))
 			})
 			It("should throw Code_INVALID_ARGUMENT when received no bucketName(Not applicable for AZURE_BLOB)", func() {
@@ -561,7 +697,7 @@ var _ = Describe("WarehouseGrpc", func() {
 				_, err := validateObjectStorageRequestBody(&proto.ValidateObjectStorageRequest{Type: "AZURE_BLOB", Config: configMap})
 				statusError, _ := status.FromError(err)
 				Expect(statusError.Code()).To(BeIdenticalTo(codes.Code(code.Code_INVALID_ARGUMENT)))
-				Expect(statusError.Err().Error()).To(BeIdenticalTo("rpc error: code = InvalidArgument desc = invalid argument err: containerName invalid or not present"))
+				Expect(statusError.Err().Error()).To(BeIdenticalTo("rpc error: code = InvalidArgument desc = invalid argument err: \ncontainerName invalid or not present"))
 			})
 		})
 	})

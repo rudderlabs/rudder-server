@@ -24,45 +24,46 @@ type namespaceConfig struct {
 	configEnvHandler types.ConfigEnvI
 	cpRouterURL      string
 
-	Logger logger.Logger
-	Client *http.Client
+	logger logger.Logger
+	client *http.Client
 
-	HostedServiceSecret string
+	hostedServiceSecret string
 
-	Namespace        string
-	ConfigBackendURL *url.URL
+	namespace        string
+	configBackendURL *url.URL
+	region           string
 }
 
 func (nc *namespaceConfig) SetUp() (err error) {
-	if nc.Namespace == "" {
+	if nc.namespace == "" {
 		if !config.IsSet("WORKSPACE_NAMESPACE") {
 			return errors.New("workspaceNamespace is not configured")
 		}
-		nc.Namespace = config.GetString("WORKSPACE_NAMESPACE", "")
+		nc.namespace = config.GetString("WORKSPACE_NAMESPACE", "")
 	}
-	if nc.HostedServiceSecret == "" {
+	if nc.hostedServiceSecret == "" {
 		if !config.IsSet("HOSTED_SERVICE_SECRET") {
 			return errors.New("hostedServiceSecret is not configured")
 		}
-		nc.HostedServiceSecret = config.GetString("HOSTED_SERVICE_SECRET", "")
+		nc.hostedServiceSecret = config.GetString("HOSTED_SERVICE_SECRET", "")
 	}
-	if nc.ConfigBackendURL == nil {
-		configBackendURL := config.GetString("CONFIG_BACKEND_URL", "https://api.rudderlabs.com")
-		nc.ConfigBackendURL, err = url.Parse(configBackendURL)
+	if nc.configBackendURL == nil {
+		configBackendURL := config.GetString("CONFIG_BACKEND_URL", "https://api.rudderstack.com")
+		nc.configBackendURL, err = url.Parse(configBackendURL)
 		if err != nil {
 			return err
 		}
 	}
-	if nc.Client == nil {
-		nc.Client = &http.Client{
+	if nc.client == nil {
+		nc.client = &http.Client{
 			Timeout: config.GetDuration("HttpClient.backendConfig.timeout", 30, time.Second),
 		}
 	}
-	if nc.Logger == nil {
-		nc.Logger = logger.NewLogger().Child("backend-config")
+	if nc.logger == nil {
+		nc.logger = logger.NewLogger().Child("backend-config")
 	}
 
-	nc.Logger.Infof("Fetching config for namespace %s", nc.Namespace)
+	nc.logger.Infof("Fetching config for namespace %s", nc.namespace)
 
 	return nil
 }
@@ -75,26 +76,26 @@ func (nc *namespaceConfig) Get(ctx context.Context, workspaces string) (map[stri
 // getFromApi gets the workspace config from api
 func (nc *namespaceConfig) getFromAPI(ctx context.Context, _ string) (map[string]ConfigT, error) {
 	config := make(map[string]ConfigT)
-	if nc.Namespace == "" {
+	if nc.namespace == "" {
 		return config, fmt.Errorf("namespace is not configured")
 	}
 
 	var respBody []byte
-	u := *nc.ConfigBackendURL
-	u.Path = fmt.Sprintf("/data-plane/v1/namespaces/%s/config", nc.Namespace)
+	u := *nc.configBackendURL
+	u.Path = fmt.Sprintf("/data-plane/v1/namespaces/%s/config", nc.namespace)
 	operation := func() (fetchError error) {
-		nc.Logger.Debugf("Fetching config from %s", u.String())
+		nc.logger.Debugf("Fetching config from %s", u.String())
 		respBody, fetchError = nc.makeHTTPRequest(ctx, u.String())
 		return fetchError
 	}
 
 	backoffWithMaxRetry := backoff.WithContext(backoff.WithMaxRetries(backoff.NewExponentialBackOff(), 3), ctx)
 	err := backoff.RetryNotify(operation, backoffWithMaxRetry, func(err error, t time.Duration) {
-		nc.Logger.Warnf("Failed to fetch config from API with error: %v, retrying after %v", err, t)
+		nc.logger.Warnf("Failed to fetch config from API with error: %v, retrying after %v", err, t)
 	})
 	if err != nil {
 		if ctx.Err() == nil {
-			nc.Logger.Errorf("Error sending request to the server: %v", err)
+			nc.logger.Errorf("Error sending request to the server: %v", err)
 		}
 		return config, err
 	}
@@ -106,7 +107,7 @@ func (nc *namespaceConfig) getFromAPI(ctx context.Context, _ string) (map[string
 	var workspacesConfig map[string]ConfigT
 	err = jsonfast.Unmarshal(respBody, &workspacesConfig)
 	if err != nil {
-		nc.Logger.Errorf("Error while parsing request: %v", err)
+		nc.logger.Errorf("Error while parsing request: %v", err)
 		return config, err
 	}
 
@@ -127,8 +128,12 @@ func (nc *namespaceConfig) makeHTTPRequest(ctx context.Context, url string) ([]b
 	}
 
 	req.SetBasicAuth(nc.Identity().BasicAuth())
-
-	resp, err := nc.Client.Do(req)
+	if nc.region != "" {
+		q := req.URL.Query()
+		q.Add("region", nc.region)
+		req.URL.RawQuery = q.Encode()
+	}
+	resp, err := nc.client.Do(req)
 	if err != nil {
 		return nil, err
 	}
@@ -148,12 +153,12 @@ func (nc *namespaceConfig) makeHTTPRequest(ctx context.Context, url string) ([]b
 }
 
 func (nc *namespaceConfig) AccessToken() string {
-	return nc.HostedServiceSecret
+	return nc.hostedServiceSecret
 }
 
 func (nc *namespaceConfig) Identity() identity.Identifier {
 	return &identity.Namespace{
-		Namespace:    nc.Namespace,
-		HostedSecret: nc.HostedServiceSecret,
+		Namespace:    nc.namespace,
+		HostedSecret: nc.hostedServiceSecret,
 	}
 }

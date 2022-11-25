@@ -63,6 +63,10 @@ func init() {
 // New returns FileManager backed by configured provider
 func (*FileManagerFactoryT) New(settings *SettingsT) (FileManager, error) {
 	switch settings.Provider {
+	case "S3_DATALAKE":
+		return &S3Manager{
+			Config: GetS3Config(settings.Config),
+		}, nil
 	case "S3":
 		return &S3Manager{
 			Config: GetS3Config(settings.Config),
@@ -92,7 +96,7 @@ func GetProviderConfigFromEnv(ctx context.Context, provider string) map[string]i
 	switch provider {
 
 	case "S3":
-		providerConfig["bucketName"] = config.GetString("JOBS_BACKUP_BUCKET", "")
+		providerConfig["bucketName"] = config.GetString("JOBS_BACKUP_BUCKET", "rudder-saas")
 		providerConfig["prefix"] = config.GetString("JOBS_BACKUP_PREFIX", "")
 		providerConfig["accessKeyID"] = config.GetString("AWS_ACCESS_KEY_ID", "")
 		providerConfig["accessKey"] = config.GetString("AWS_SECRET_ACCESS_KEY", "")
@@ -105,7 +109,7 @@ func GetProviderConfigFromEnv(ctx context.Context, provider string) map[string]i
 		}
 
 	case "GCS":
-		providerConfig["bucketName"] = config.GetString("JOBS_BACKUP_BUCKET", "")
+		providerConfig["bucketName"] = config.GetString("JOBS_BACKUP_BUCKET", "rudder-saas")
 		providerConfig["prefix"] = config.GetString("JOBS_BACKUP_PREFIX", "")
 		credentials, err := os.ReadFile(config.GetString("GOOGLE_APPLICATION_CREDENTIALS", ""))
 		if err == nil {
@@ -113,13 +117,13 @@ func GetProviderConfigFromEnv(ctx context.Context, provider string) map[string]i
 		}
 
 	case "AZURE_BLOB":
-		providerConfig["containerName"] = config.GetString("JOBS_BACKUP_BUCKET", "")
+		providerConfig["containerName"] = config.GetString("JOBS_BACKUP_BUCKET", "rudder-saas")
 		providerConfig["prefix"] = config.GetString("JOBS_BACKUP_PREFIX", "")
 		providerConfig["accountName"] = config.GetString("AZURE_STORAGE_ACCOUNT", "")
 		providerConfig["accountKey"] = config.GetString("AZURE_STORAGE_ACCESS_KEY", "")
 
 	case "MINIO":
-		providerConfig["bucketName"] = config.GetString("JOBS_BACKUP_BUCKET", "")
+		providerConfig["bucketName"] = config.GetString("JOBS_BACKUP_BUCKET", "rudder-saas")
 		providerConfig["prefix"] = config.GetString("JOBS_BACKUP_PREFIX", "")
 		providerConfig["endPoint"] = config.GetString("MINIO_ENDPOINT", "localhost:9000")
 		providerConfig["accessKeyID"] = config.GetString("MINIO_ACCESS_KEY_ID", "minioadmin")
@@ -127,7 +131,7 @@ func GetProviderConfigFromEnv(ctx context.Context, provider string) map[string]i
 		providerConfig["useSSL"] = config.GetBool("MINIO_SSL", false)
 
 	case "DIGITAL_OCEAN_SPACES":
-		providerConfig["bucketName"] = config.GetString("JOBS_BACKUP_BUCKET", "")
+		providerConfig["bucketName"] = config.GetString("JOBS_BACKUP_BUCKET", "rudder-saas")
 		providerConfig["prefix"] = config.GetString("JOBS_BACKUP_PREFIX", "")
 		providerConfig["endPoint"] = config.GetString("DO_SPACES_ENDPOINT", "")
 		providerConfig["accessKeyID"] = config.GetString("DO_SPACES_ACCESS_KEY_ID", "")
@@ -157,7 +161,7 @@ func getBatchRouterTimeoutConfig(destType string) time.Duration {
 	}
 }
 
-func IterateFilesWithPrefix(ctx context.Context, startAfter, prefix string, maxItems int64, manager *FileManager) *ObjectIterator {
+func IterateFilesWithPrefix(ctx context.Context, prefix, startAfter string, maxItems int64, manager *FileManager) *ObjectIterator {
 	it := &ObjectIterator{
 		ctx:        ctx,
 		startAfter: startAfter,

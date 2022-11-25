@@ -60,7 +60,7 @@ var (
 const (
 	// RFC3339Milli with milli sec precision
 	RFC3339Milli            = "2006-01-02T15:04:05.000Z07:00"
-	POSTGRESTIMEFORMATPARSE = "2006-01-02T15:04:05"
+	POSTGRESTIMEFORMATPARSE = "2006-01-02T15:04:05Z"
 )
 
 const (
@@ -120,10 +120,9 @@ func Init() {
 	reservedFolderPaths = GetReservedFolderPaths()
 }
 
-func LoadDestinations() ([]string, []string) {
+func BatchDestinations() []string {
 	batchDestinations := []string{"S3", "GCS", "MINIO", "RS", "BQ", "AZURE_BLOB", "SNOWFLAKE", "POSTGRES", "CLICKHOUSE", "DIGITAL_OCEAN_SPACES", "MSSQL", "AZURE_SYNAPSE", "S3_DATALAKE", "MARKETO_BULK_UPLOAD", "GCS_DATALAKE", "AZURE_DATALAKE", "DELTALAKE"}
-	customDestinations := []string{"KAFKA", "KINESIS", "AZURE_EVENT_HUB", "CONFLUENT_CLOUD"}
-	return batchDestinations, customDestinations
+	return batchDestinations
 }
 
 func getErrorStore() (ErrorStoreT, error) {
@@ -417,50 +416,6 @@ func CreateTMPDIR() (string, error) {
 		return os.UserHomeDir()
 	}
 	return tmpdirPath, nil
-}
-
-// PerfStats is the class for managing performance stats. Not multi-threaded safe now
-type PerfStats struct {
-	eventCount      int64
-	elapsedTime     time.Duration
-	compStr         string
-	tmpStart        time.Time
-	instantRateCall float64
-}
-
-// Setup initializes the stat collector
-func (stats *PerfStats) Setup(comp string) {
-	stats.compStr = comp
-}
-
-// Start marks the start of event collection
-func (stats *PerfStats) Start() {
-	stats.tmpStart = time.Now()
-}
-
-// End marks the end of one round of stat collection. events is number of events processed since start
-func (stats *PerfStats) End(events int) {
-	elapsed := time.Since(stats.tmpStart)
-	stats.elapsedTime += elapsed
-	stats.eventCount += int64(events)
-	stats.instantRateCall = float64(events) * float64(time.Second) / float64(elapsed)
-}
-
-func (stats *PerfStats) Rate(events int, elapsed time.Duration) {
-	stats.elapsedTime += elapsed
-	stats.eventCount += int64(events)
-	stats.instantRateCall = float64(events) * float64(time.Second) / float64(elapsed)
-}
-
-func (stats *PerfStats) Status() map[string]interface{} {
-	overallRate := float64(0)
-	if float64(stats.elapsedTime) > 0 {
-		overallRate = float64(stats.eventCount) * float64(time.Second) / float64(stats.elapsedTime)
-	}
-	return map[string]interface{}{
-		"total-events": stats.eventCount,
-		"overall-rate": overallRate,
-	}
 }
 
 // Copy copies the exported fields from src to dest
