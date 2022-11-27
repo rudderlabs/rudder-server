@@ -92,11 +92,19 @@ $(shell echo $(1)-$(shell shuf -i 1-1000000 -n 1)-$(shell date +%s))
 endef
 
 setup-warehouse-integration: cleanup-warehouse-integration
-	BIGQUERY_INTEGRATION_TEST_SCHEMA=$(call generate_namespace, bwh) \
-	REDSHIFT_INTEGRATION_TEST_SCHEMA=$(call generate_namespace, rwh) \
-	SNOWFLAKE_INTEGRATION_TEST_SCHEMA=$(call generate_namespace, swh) \
-	DATABRICKS_INTEGRATION_TEST_SCHEMA=$(call generate_namespace, dwh) \
-	docker-compose -f warehouse/docker-compose.test.yml up --build start_warehouse_integration
+	if \
+		BIGQUERY_INTEGRATION_TEST_SCHEMA=$(call generate_namespace, bwh); \
+		REDSHIFT_INTEGRATION_TEST_SCHEMA=$(call generate_namespace, rwh); \
+	  	SNOWFLAKE_INTEGRATION_TEST_SCHEMA=$(call generate_namespace, swh); \
+	  	DATABRICKS_INTEGRATION_TEST_SCHEMA=$(call generate_namespace, dwh); \
+		docker-compose -f warehouse/docker-compose.test.yml up --build start_warehouse_integration; then \
+			echo "Warehouse integration setup successful"; \
+	else \
+	  	echo "Warehouse integration setup failed" ;\
+      	make logs-warehouse-integration; \
+        make cleanup-warehouse-integration; \
+      	exit 1 ;\
+    fi
 
 logs-warehouse-integration:
 	docker logs wh-backend
