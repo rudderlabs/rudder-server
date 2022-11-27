@@ -87,10 +87,11 @@ proto: install-tools ## Generate protobuf files
 cleanup-warehouse-integration:
 	docker-compose -f warehouse/docker-compose.test.yml down --remove-orphans --volumes
 
-setup-warehouse-integration: cleanup-warehouse-integration
 define generate_namespace
 $(shell echo wh-$(shell shuf -i 1-1000000 -n 1)-$(shell date +%s))
 endef
+
+setup-warehouse-integration: cleanup-warehouse-integration
 	$(eval TEST_ENV = BIGQUERY_INTEGRATION_TEST_SCHEMA=$(call generate_namespace) REDSHIFT_INTEGRATION_TEST_SCHEMA=$(call generate_namespace) SNOWFLAKE_INTEGRATION_TEST_SCHEMA=$(call generate_namespace) DATABRICKS_INTEGRATION_TEST_SCHEMA=$(call generate_namespace))\
 	$(eval TEST_CMD = $(TEST_ENV) docker-compose -f warehouse/docker-compose.test.yml up --build start_warehouse_integration)\
  	if $(TEST_CMD); then\
