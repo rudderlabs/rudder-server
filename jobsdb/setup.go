@@ -26,8 +26,11 @@ func (jd *HandleT) setupDatabaseTables(l lock.LockToken, clearAll bool) {
 		jd.dropDatabaseTables(l)
 	}
 
-	// collect all existing dataset indices, and create template data
-	datasets := jd.refreshDSList(l)
+	// Important: if jobsdb type is acting as a writer then refreshDSList
+	// doesn't return the full list of datasets, only the rightmost two.
+	// But we need to run the schema migration against all datasets, no matter
+	// whether jobsdb is a writer or not.
+	datasets := getDSList(jd, jd.dbHandle, jd.tablePrefix)
 
 	datasetIndices := make([]string, 0)
 	for _, dataset := range datasets {
@@ -59,6 +62,8 @@ func (jd *HandleT) setupDatabaseTables(l lock.LockToken, clearAll bool) {
 	if err != nil {
 		panic(fmt.Errorf("error while migrating '%v' jobsdb tables: %w", jd.tablePrefix, err))
 	}
+	// finally refresh the dataset list to make sure [datasetList] field is populated
+	jd.refreshDSList(l)
 }
 
 func (jd *HandleT) dropDatabaseTables(l lock.LockToken) {

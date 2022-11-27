@@ -88,22 +88,25 @@ type FailedStatusStats struct {
 /*
 Setup is used to initialize the ReadonlyHandleT structure.
 */
-func (jd *ReadonlyHandleT) Setup(tablePrefix string) {
+func (jd *ReadonlyHandleT) Setup(tablePrefix string) error {
 	jd.logger = pkgLogger.Child("readonly-" + tablePrefix)
 	var err error
 	psqlInfo := misc.GetConnectionString()
 	jd.tablePrefix = tablePrefix
 
 	jd.DbHandle, err = sql.Open("postgres", psqlInfo)
-	jd.assertError(err)
+	if err != nil {
+		return fmt.Errorf("opening connection to db: %v", err)
+	}
 
 	ctx, cancel := context.WithTimeout(context.TODO(), config.GetDuration("JobsDB.dbPingTimeout", 10, time.Second))
 	defer cancel()
 
-	err = jd.DbHandle.PingContext(ctx)
-	jd.assertError(err)
-
+	if err := jd.DbHandle.PingContext(ctx); err != nil {
+		return fmt.Errorf("pinging db: %v", err)
+	}
 	jd.logger.Infof("Readonly user connected to %s DB", tablePrefix)
+	return nil
 }
 
 /*

@@ -1,23 +1,26 @@
 package db
 
 import (
+	"fmt"
+
 	"github.com/rudderlabs/rudder-server/rruntime"
 
 	"github.com/rudderlabs/rudder-server/config"
 )
 
 // HandleEmbeddedRecovery decides the recovery Mode in which app should run based on earlier crashes
-func HandleEmbeddedRecovery(forceNormal, forceDegraded bool, currTime int64, appType string) {
+func HandleEmbeddedRecovery(forceNormal, forceDegraded bool, currTime int64, appType string) error {
 	enabled := config.GetBool("recovery.enabled", true)
 	if !enabled {
-		return
+		return nil
 	}
-
 	isForced := false
-
 	forceMode := getForceRecoveryMode(forceNormal, forceDegraded)
 
-	recoveryData := getRecoveryData()
+	recoveryData, err := getRecoveryData()
+	if err != nil {
+		return fmt.Errorf("getting recovery data: %w", err)
+	}
 	if forceMode != "" {
 		isForced = true
 		recoveryData.Mode = forceMode
@@ -32,11 +35,14 @@ func HandleEmbeddedRecovery(forceNormal, forceDegraded bool, currTime int64, app
 	}
 
 	recoveryHandler.RecordAppStart(currTime)
-	saveRecoveryData(recoveryData)
+	if err := saveRecoveryData(recoveryData); err != nil {
+		return fmt.Errorf("saving recovery data: %w", err)
+	}
 	recoveryHandler.Handle()
 	pkgLogger.Infof("Starting in %s mode", recoveryData.Mode)
 	CurrentMode = recoveryData.Mode
 	rruntime.Go(func() {
 		sendRecoveryModeStat(appType)
 	})
+	return nil
 }
