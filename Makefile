@@ -87,38 +87,33 @@ proto: install-tools ## Generate protobuf files
 cleanup-warehouse-integration:
 	docker-compose -f warehouse/docker-compose.test.yml down --remove-orphans --volumes
 
+setup-warehouse-integration: cleanup-warehouse-integration
 define generate_namespace
 $(shell echo $(1)-$(shell shuf -i 1-1000000 -n 1)-$(shell date +%s))
 endef
-
-setup-warehouse-integration: cleanup-warehouse-integration
-	if \
-		BIGQUERY_INTEGRATION_TEST_SCHEMA=$(call generate_namespace, bwh); \
-		REDSHIFT_INTEGRATION_TEST_SCHEMA=$(call generate_namespace, rwh); \
-	  	SNOWFLAKE_INTEGRATION_TEST_SCHEMA=$(call generate_namespace, swh); \
-	  	DATABRICKS_INTEGRATION_TEST_SCHEMA=$(call generate_namespace, dwh); \
-		docker-compose -f warehouse/docker-compose.test.yml up --build start_warehouse_integration; then \
-			echo "Warehouse integration setup successful"; \
+	$(eval BQ=$(call generate_namespace))\
+    $(eval RS=$(call generate_namespace))\
+    $(eval SF=$(call generate_namespace))\
+    $(eval DB=$(call generate_namespace))\
+ 	if BIGQUERY_INTEGRATION_TEST_SCHEMA=$(BQ) REDSHIFT_INTEGRATION_TEST_SCHEMA=$(RS) SNOWFLAKE_INTEGRATION_TEST_SCHEMA=$(SF) DATABRICKS_INTEGRATION_TEST_SCHEMA=$(DB) docker-compose -f warehouse/docker-compose.test.yml up --build start_warehouse_integration; then\
+		echo "Warehouse integration setup successful"; \
 	else \
 	  	echo "Warehouse integration setup failed" ;\
-      	make logs-warehouse-integration; \
+      	docker logs wh-backend; \
         make cleanup-warehouse-integration; \
       	exit 1 ;\
     fi
-
-logs-warehouse-integration:
-	docker logs wh-backend
 
 run-warehouse-integration: setup-warehouse-integration
 	$(eval TEST_PATTERN = '^Test.*Integration$$$$$$$$' '^Test.*ConfigurationValidation$$$$$$$$')
 	$(eval TEST_CMD = go test -v ./warehouse/... -run $(TEST_PATTERN) -p 8 -timeout 30m -count 1)
 	if docker-compose -f warehouse/docker-compose.test.yml exec -T -e SLOW=1 wh-backend $(TEST_CMD); then \
       	echo "Successfully ran Warehouse Integration Test. Getting backend container logs only."; \
-      	make logs-warehouse-integration; \
+      	docker logs wh-backend; \
       	make cleanup-warehouse-integration; \
     else \
       	echo "Failed running Warehouse Integration Test. Getting all logs from all containers"; \
-		make logs-warehouse-integration; \
+		logs-warehouse-integration; \
       	make cleanup-warehouse-integration; \
       	exit 1; \
  	fi

@@ -946,6 +946,10 @@ func PopulateTemplateConfigurations() map[string]string {
 }
 
 func enhanceWithSnowflakeConfigurations(values map[string]string) {
+	if _, exists := os.LookupEnv(SnowflakeIntegrationTestCredentials); !exists {
+		return
+	}
+
 	for k, v := range credentialsFromKey(SnowflakeIntegrationTestCredentials) {
 		values[fmt.Sprintf("snowflake%s", k)] = v
 	}
@@ -957,6 +961,10 @@ func enhanceWithSnowflakeConfigurations(values map[string]string) {
 }
 
 func enhanceWithRedshiftConfigurations(values map[string]string) {
+	if _, exists := os.LookupEnv(RedshiftIntegrationTestCredentials); !exists {
+		return
+	}
+
 	for k, v := range credentialsFromKey(RedshiftIntegrationTestCredentials) {
 		values[fmt.Sprintf("redshift%s", k)] = v
 	}
@@ -966,6 +974,10 @@ func enhanceWithRedshiftConfigurations(values map[string]string) {
 }
 
 func enhanceWithDeltalakeConfigurations(values map[string]string) {
+	if _, exists := os.LookupEnv(DeltalakeIntegrationTestCredentials); !exists {
+		return
+	}
+
 	for k, v := range credentialsFromKey(DeltalakeIntegrationTestCredentials) {
 		values[fmt.Sprintf("deltalake%s", k)] = v
 	}
@@ -974,6 +986,10 @@ func enhanceWithDeltalakeConfigurations(values map[string]string) {
 }
 
 func enhanceWithBQConfigurations(values map[string]string) {
+	if _, exists := os.LookupEnv(BigqueryIntegrationTestCredentials); !exists {
+		return
+	}
+
 	for k, v := range credentialsFromKey(BigqueryIntegrationTestCredentials) {
 		values[fmt.Sprintf("bigquery%s", k)] = v
 	}
