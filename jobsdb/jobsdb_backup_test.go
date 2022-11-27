@@ -163,7 +163,7 @@ func TestBackupTable(t *testing.T) {
 	goldenStatusFile, err := tc.readGzipStatusFile(goldenFileStatusFileName)
 	require.NoError(t, err, "expected no error while reading golden status file")
 	verifyStatus(t, backedupStatus, goldenStatusFile)
-	require.Equal(t, len(goldenStatusFile)*2, len(backedupStatus), "expected status files to be same")
+	require.Equal(t, len(goldenStatusFile), len(backedupStatus), "expected status files to be same")
 
 	// Verify full backup of jobs
 	f = tc.downloadFile(t, fm, jobsBackupFilename, cleanup)
@@ -354,7 +354,7 @@ func TestMultipleWorkspacesBackupTable(t *testing.T) {
 		require.NotZero(t, len(backedupStatus))
 		require.NoError(t, err, "expected no error while reading backedup status file")
 		verifyStatus(t, backedupStatus, jobStatusByWorkspace[workspace])
-		require.Equal(t, len(jobStatusByWorkspace[workspace])*2, len(backedupStatus), "expected status files to be same")
+		require.Equal(t, len(jobStatusByWorkspace[workspace]), len(backedupStatus), "expected status files to be same")
 
 		// Verify full backup of jobs
 		f = tc.downloadFile(t, fm, jobsBackupFilename, cleanup)
@@ -368,8 +368,7 @@ func TestMultipleWorkspacesBackupTable(t *testing.T) {
 func verifyStatus(t *testing.T, backedupStatus, goldenStatusFile []*JobStatusT) {
 	// verify that the backed up status is same as the golden status
 	for i := 0; i < len(goldenStatusFile); i++ {
-		require.Equal(t, goldenStatusFile[i], backedupStatus[i*2], "expected job state to be same")
-		require.Equal(t, goldenStatusFile[i], backedupStatus[i*2+1], "expected job state to be same")
+		require.Equal(t, goldenStatusFile[i], backedupStatus[i], "expected job state to be same")
 	}
 }
 

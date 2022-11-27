@@ -3,7 +3,7 @@ package warehouse
 import (
 	"testing"
 
-	"github.com/rudderlabs/rudder-server/warehouse/model"
+	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"

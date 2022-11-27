@@ -1125,7 +1125,7 @@ func ConcatErrors(givenErrors []error) error {
 func isWarehouseMasterEnabled() bool {
 	warehouseMode := config.GetString("Warehouse.mode", "embedded")
 	return warehouseMode == config.EmbeddedMode ||
-		warehouseMode == config.PooledWHSlaveMode
+		warehouseMode == config.EmbeddedMasterMode
 }
 
 func GetWarehouseURL() (url string) {
