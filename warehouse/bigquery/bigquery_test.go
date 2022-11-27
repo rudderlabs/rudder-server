@@ -22,7 +22,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestBigQueryIntegration(t *testing.T) {
+func TestIntegrationBigQuery(t *testing.T) {
 	if os.Getenv("SLOW") == "0" {
 		t.Skip("Skipping tests. Remove 'SLOW=0' env var to run them.")
 	}
@@ -257,7 +257,7 @@ func TestBigQueryIntegration(t *testing.T) {
 	}
 }
 
-func TestBigQueryConfigurationValidation(t *testing.T) {
+func TestConfigurationValidationBigQuery(t *testing.T) {
 	if os.Getenv("SLOW") == "0" {
 		t.Skip("Skipping tests. Remove 'SLOW=0' env var to run them.")
 	}

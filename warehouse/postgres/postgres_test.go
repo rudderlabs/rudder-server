@@ -15,7 +15,7 @@ import (
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
-func TestPostgresIntegration(t *testing.T) {
+func TestIntegrationPostgres(t *testing.T) {
 	if os.Getenv("SLOW") == "0" {
 		t.Skip("Skipping tests. Remove 'SLOW=0' env var to run them.")
 	}
@@ -121,7 +121,7 @@ func TestPostgresIntegration(t *testing.T) {
 	}
 }
 
-func TestPostgresConfigurationValidation(t *testing.T) {
+func TestConfigurationValidationPostgres(t *testing.T) {
 	if os.Getenv("SLOW") == "0" {
 		t.Skip("Skipping tests. Remove 'SLOW=0' env var to run them.")
 	}

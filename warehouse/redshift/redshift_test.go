@@ -18,7 +18,7 @@ import (
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
-func TestRedshiftIntegration(t *testing.T) {
+func TestIntegrationRedshift(t *testing.T) {
 	if os.Getenv("SLOW") == "0" {
 		t.Skip("Skipping tests. Remove 'SLOW=0' env var to run them.")
 	}
@@ -132,7 +132,7 @@ func TestRedshiftIntegration(t *testing.T) {
 	}
 }
 
-func TestRedshiftConfigurationValidation(t *testing.T) {
+func TestConfigurationValidationRedshift(t *testing.T) {
 	if os.Getenv("SLOW") == "0" {
 		t.Skip("Skipping tests. Remove 'SLOW=0' env var to run them.")
 	}

@@ -19,7 +19,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestClickHouseIntegration(t *testing.T) {
+func TestIntegrationClickHouse(t *testing.T) {
 	if os.Getenv("SLOW") == "0" {
 		t.Skip("Skipping tests. Remove 'SLOW=0' env var to run them.")
 	}
@@ -134,7 +134,7 @@ func TestClickHouseIntegration(t *testing.T) {
 	}
 }
 
-func TestClickhouseConfigurationValidation(t *testing.T) {
+func TestConfigurationValidationClickhouse(t *testing.T) {
 	if os.Getenv("SLOW") == "0" {
 		t.Skip("Skipping tests. Remove 'SLOW=0' env var to run them.")
 	}

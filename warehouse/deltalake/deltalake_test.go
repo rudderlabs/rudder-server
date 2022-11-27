@@ -21,7 +21,7 @@ import (
 	"github.com/rudderlabs/rudder-server/warehouse/testhelper"
 )
 
-func TestDeltalakeIntegration(t *testing.T) {
+func TestIntegrationDeltalake(t *testing.T) {
 	if os.Getenv("SLOW") == "0" {
 		t.Skip("Skipping tests. Remove 'SLOW=0' env var to run them.")
 	}
@@ -152,7 +152,7 @@ func TestDeltalakeIntegration(t *testing.T) {
 	}
 }
 
-func TestDeltalakeConfigurationValidation(t *testing.T) {
+func TestConfigurationValidationDeltalake(t *testing.T) {
 	if os.Getenv("SLOW") == "0" {
 		t.Skip("Skipping tests. Remove 'SLOW=0' env var to run them.")
 	}

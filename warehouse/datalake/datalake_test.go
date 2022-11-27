@@ -15,7 +15,7 @@ import (
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
-func TestDatalakeIntegration(t *testing.T) {
+func TestIntegrationDatalake(t *testing.T) {
 	if os.Getenv("SLOW") == "0" {
 		t.Skip("Skipping tests. Remove 'SLOW=0' env var to run them.")
 	}
@@ -91,7 +91,7 @@ func TestDatalakeIntegration(t *testing.T) {
 	}
 }
 
-func TestDatalakeConfigurationValidation(t *testing.T) {
+func TestConfigurationValidationDatalake(t *testing.T) {
 	if os.Getenv("SLOW") == "0" {
 		t.Skip("Skipping tests. Remove 'SLOW=0' env var to run them.")
 	}

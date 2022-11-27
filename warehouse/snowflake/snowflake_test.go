@@ -19,7 +19,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestSnowflakeIntegration(t *testing.T) {
+func TestIntegrationSnowflake(t *testing.T) {
 	if os.Getenv("SLOW") == "0" {
 		t.Skip("Skipping tests. Remove 'SLOW=0' env var to run them.")
 	}
@@ -169,7 +169,7 @@ func TestSnowflakeIntegration(t *testing.T) {
 	}
 }
 
-func TestSnowflakeConfigurationValidation(t *testing.T) {
+func TestConfigurationValidationSnowflake(t *testing.T) {
 	if os.Getenv("SLOW") == "0" {
 		t.Skip("Skipping tests. Remove 'SLOW=0' env var to run them.")
 	}
