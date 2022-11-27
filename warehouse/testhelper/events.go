@@ -371,8 +371,10 @@ const (
 	}`
 )
 
-func SendEvents(t testing.TB, wareHouseTest *WareHouseTest, eventsMap EventsCountMap) {
+func SendEvents(t testing.TB, wareHouseTest *WareHouseTest) {
 	t.Helper()
+
+	eventsMap := wareHouseTest.EventsMap
 
 	require.NotNil(t, eventsMap)
 	require.NotEmpty(t, eventsMap)
@@ -486,8 +488,10 @@ func SendEvents(t testing.TB, wareHouseTest *WareHouseTest, eventsMap EventsCoun
 	}
 }
 
-func SendModifiedEvents(t testing.TB, wareHouseTest *WareHouseTest, eventsMap EventsCountMap) {
+func SendModifiedEvents(t testing.TB, wareHouseTest *WareHouseTest) {
 	t.Helper()
+
+	eventsMap := wareHouseTest.EventsMap
 
 	require.NotNil(t, eventsMap)
 	require.NotEmpty(t, eventsMap)
@@ -600,8 +604,10 @@ func SendModifiedEvents(t testing.TB, wareHouseTest *WareHouseTest, eventsMap Ev
 	}
 }
 
-func SendIntegratedEvents(t testing.TB, wareHouseTest *WareHouseTest, eventsMap EventsCountMap) {
+func SendIntegratedEvents(t testing.TB, wareHouseTest *WareHouseTest) {
 	t.Helper()
+
+	eventsMap := wareHouseTest.EventsMap
 
 	require.NotNil(t, eventsMap)
 	require.NotEmpty(t, eventsMap)

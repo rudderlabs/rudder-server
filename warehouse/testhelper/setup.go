@@ -143,58 +143,18 @@ func (w *WareHouseTest) TestScenarioOne(t testing.TB) {
 		w.Prerequisite(t)
 	}
 
-	SendEvents(
-		t,
-		w,
-		w.EventsMap,
-	)
-	SendEvents(
-		t,
-		w,
-		w.EventsMap,
-	)
-	SendEvents(
-		t,
-		w,
-		w.EventsMap,
-	)
-	SendIntegratedEvents(
-		t,
-		w,
-		w.EventsMap,
-	)
+	SendEvents(t, w)
+	SendEvents(t, w)
+	SendEvents(t, w)
+	SendIntegratedEvents(t, w)
 
-	verifyEventsInStagingFiles(
-		t,
-		w.JobsDB,
-		w,
-		w.StagingFilesEventsMap,
-	)
-	verifyEventsInLoadFiles(
-		t,
-		w.JobsDB,
-		w,
-		w.LoadFilesEventsMap,
-	)
-	verifyEventsInTableUploads(
-		t,
-		w.JobsDB,
-		w,
-		w.TableUploadsEventsMap,
-	)
-
+	verifyEventsInStagingFiles(t, w)
+	verifyEventsInLoadFiles(t, w)
+	verifyEventsInTableUploads(t, w)
 	if !w.SkipWarehouse {
-		verifyEventsInWareHouse(
-			t,
-			w,
-			w.WarehouseEventsMap,
-		)
+		verifyEventsInWareHouse(t, w)
 	}
-
-	verifyWorkspaceIDInStats(
-		t,
-		w.StatsToVerify...,
-	)
+	verifyWorkspaceIDInStats(t, w.StatsToVerify...)
 }
 
 func (w *WareHouseTest) TestScenarioTwo(t testing.TB) {
@@ -205,61 +165,22 @@ func (w *WareHouseTest) TestScenarioTwo(t testing.TB) {
 	if w.Prerequisite != nil {
 		w.Prerequisite(t)
 	}
-	SendModifiedEvents(
-		t,
-		w,
-		w.EventsMap,
-	)
-	SendModifiedEvents(
-		t,
-		w,
-		w.EventsMap,
-	)
-	SendModifiedEvents(
-		t,
-		w,
-		w.EventsMap,
-	)
-	SendIntegratedEvents(
-		t,
-		w,
-		w.EventsMap,
-	)
 
-	verifyEventsInStagingFiles(
-		t,
-		w.JobsDB,
-		w,
-		w.StagingFilesEventsMap,
-	)
-	verifyEventsInLoadFiles(
-		t,
-		w.JobsDB,
-		w,
-		w.LoadFilesEventsMap,
-	)
-	verifyEventsInTableUploads(
-		t,
-		w.JobsDB,
-		w,
-		w.TableUploadsEventsMap,
-	)
+	SendModifiedEvents(t, w)
+	SendModifiedEvents(t, w)
+	SendModifiedEvents(t, w)
+	SendIntegratedEvents(t, w)
+
+	verifyEventsInStagingFiles(t, w)
+	verifyEventsInLoadFiles(t, w)
+	verifyEventsInTableUploads(t, w)
 	if w.AsyncJob {
-		verifyAsyncJob(
-			t,
-			w,
-		)
+		verifyAsyncJob(t, w)
 	}
 	if !w.SkipWarehouse {
-		verifyEventsInWareHouse(
-			t,
-			w,
-			w.WarehouseEventsMap,
-		)
+		verifyEventsInWareHouse(t, w)
 	}
-	verifyWorkspaceIDInStats(
-		t,
-	)
+	verifyWorkspaceIDInStats(t)
 }
 
 func SetUpJobsDB(t testing.TB) *sql.DB {
@@ -283,7 +204,7 @@ func SetUpJobsDB(t testing.TB) *sql.DB {
 	return db
 }
 
-func verifyEventsInStagingFiles(t testing.TB, db *sql.DB, wareHouseTest *WareHouseTest, eventsMap EventsCountMap) {
+func verifyEventsInStagingFiles(t testing.TB, wareHouseTest *WareHouseTest) {
 	t.Helper()
 	t.Logf("Started verifying events in staging files")
 
@@ -295,6 +216,8 @@ func verifyEventsInStagingFiles(t testing.TB, db *sql.DB, wareHouseTest *WareHou
 		operation         func() bool
 		count             sql.NullInt64
 		err               error
+		db                = wareHouseTest.JobsDB
+		eventsMap         = wareHouseTest.StagingFilesEventsMap
 	)
 
 	require.NotEmpty(t, wareHouseTest.SourceID)
@@ -348,7 +271,7 @@ func verifyEventsInStagingFiles(t testing.TB, db *sql.DB, wareHouseTest *WareHou
 	t.Logf("Completed verifying events in staging files")
 }
 
-func verifyEventsInLoadFiles(t testing.TB, db *sql.DB, wareHouseTest *WareHouseTest, eventsMap EventsCountMap) {
+func verifyEventsInLoadFiles(t testing.TB, wareHouseTest *WareHouseTest) {
 	t.Helper()
 	t.Logf("Started verifying events in load file")
 
@@ -358,6 +281,8 @@ func verifyEventsInLoadFiles(t testing.TB, db *sql.DB, wareHouseTest *WareHouseT
 		operation      func() bool
 		count          sql.NullInt64
 		err            error
+		db             = wareHouseTest.JobsDB
+		eventsMap      = wareHouseTest.LoadFilesEventsMap
 	)
 
 	require.NotEmpty(t, wareHouseTest.SourceID)
@@ -415,7 +340,7 @@ func verifyEventsInLoadFiles(t testing.TB, db *sql.DB, wareHouseTest *WareHouseT
 	t.Logf("Completed verifying events in load files")
 }
 
-func verifyEventsInTableUploads(t testing.TB, db *sql.DB, wareHouseTest *WareHouseTest, eventsMap EventsCountMap) {
+func verifyEventsInTableUploads(t testing.TB, wareHouseTest *WareHouseTest) {
 	t.Helper()
 	t.Logf("Started verifying events in table uploads")
 
@@ -426,6 +351,8 @@ func verifyEventsInTableUploads(t testing.TB, db *sql.DB, wareHouseTest *WareHou
 		operation         func() bool
 		count             sql.NullInt64
 		err               error
+		db                = wareHouseTest.JobsDB
+		eventsMap         = wareHouseTest.TableUploadsEventsMap
 	)
 
 	require.NotEmpty(t, wareHouseTest.SourceID)
@@ -489,9 +416,11 @@ func verifyEventsInTableUploads(t testing.TB, db *sql.DB, wareHouseTest *WareHou
 	t.Logf("Completed verifying events in table uploads")
 }
 
-func verifyEventsInWareHouse(t testing.TB, wareHouseTest *WareHouseTest, eventsMap EventsCountMap) {
+func verifyEventsInWareHouse(t testing.TB, wareHouseTest *WareHouseTest) {
 	t.Helper()
 	t.Logf("Started verifying events in warehouse")
+
+	eventsMap := wareHouseTest.WarehouseEventsMap
 
 	require.NotEmpty(t, wareHouseTest.Schema)
 	require.NotEmpty(t, wareHouseTest.UserID)
