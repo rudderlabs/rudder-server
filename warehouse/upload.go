@@ -11,8 +11,6 @@ import (
 	"sync"
 	"time"
 
-	"golang.org/x/exp/slices"
-
 	"github.com/cenkalti/backoff/v4"
 	"github.com/lib/pq"
 	"github.com/tidwall/gjson"
@@ -171,16 +169,13 @@ func setMaxParallelLoads() {
 		warehouseutils.DELTALAKE:  config.GetInt("Warehouse.deltalake.maxParallelLoads", 3),
 	}
 	columnCountLimitMap = map[string]int{
-		warehouseutils.AZURE_SYNAPSE:  config.GetInt("Warehouse.azure_synapse.columnCountLimit", 1024),
-		warehouseutils.BQ:             config.GetInt("Warehouse.bigquery.columnCountLimit", 10000),
-		warehouseutils.CLICKHOUSE:     config.GetInt("Warehouse.clickhouse.columnCountLimit", 1000),
-		warehouseutils.MSSQL:          config.GetInt("Warehouse.mssql.columnCountLimit", 1024),
-		warehouseutils.POSTGRES:       config.GetInt("Warehouse.postgres.columnCountLimit", 1600),
-		warehouseutils.RS:             config.GetInt("Warehouse.redshift.columnCountLimit", 1600),
-		warehouseutils.SNOWFLAKE:      config.GetInt("Warehouse.snowflake.columnCountLimit", 5000),
-		warehouseutils.S3_DATALAKE:    config.GetInt("Warehouse.s3_datalake.columnCountLimit", 10000),
-		warehouseutils.GCS_DATALAKE:   config.GetInt("Warehouse.s3_datalake.columnCountLimit", 10000),
-		warehouseutils.AZURE_DATALAKE: config.GetInt("Warehouse.s3_datalake.columnCountLimit", 10000),
+		warehouseutils.AZURE_SYNAPSE: config.GetInt("Warehouse.azure_synapse.columnCountLimit", 1024),
+		warehouseutils.BQ:            config.GetInt("Warehouse.bigquery.columnCountLimit", 10000),
+		warehouseutils.CLICKHOUSE:    config.GetInt("Warehouse.clickhouse.columnCountLimit", 1000),
+		warehouseutils.MSSQL:         config.GetInt("Warehouse.mssql.columnCountLimit", 1024),
+		warehouseutils.POSTGRES:      config.GetInt("Warehouse.postgres.columnCountLimit", 1600),
+		warehouseutils.RS:            config.GetInt("Warehouse.redshift.columnCountLimit", 1600),
+		warehouseutils.S3_DATALAKE:   config.GetInt("Warehouse.s3_datalake.columnCountLimit", 10000),
 	}
 }
 
@@ -1077,15 +1072,19 @@ func (job *UploadJobT) loadTable(tName string) (alteredSchema bool, err error) {
 	return
 }
 
+// columnCountStat sent the column count for a table to statsd
+// skip sending for S3_DATALAKE, GCS_DATALAKE, AZURE_DATALAKE
 func (job *UploadJobT) columnCountStat(tableName string) {
 	var (
 		columnCountLimit int
 		ok               bool
 	)
-	destinationsToSkip := []string{warehouseutils.S3_DATALAKE, warehouseutils.GCS_DATALAKE, warehouseutils.AZURE_DATALAKE}
-	if slices.Contains(destinationsToSkip, job.warehouse.Type) {
+
+	switch job.warehouse.Type {
+	case warehouseutils.S3_DATALAKE, warehouseutils.GCS_DATALAKE, warehouseutils.AZURE_DATALAKE:
 		return
 	}
+
 	if columnCountLimit, ok = columnCountLimitMap[job.warehouse.Type]; !ok {
 		return
 	}
