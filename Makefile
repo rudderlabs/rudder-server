@@ -112,7 +112,7 @@ run-warehouse-integration: setup-warehouse-integration
       	make cleanup-warehouse-integration; \
     else \
       	echo "Failed running Warehouse Integration Test. Getting all logs from all containers"; \
-		logs-warehouse-integration; \
+		docker logs wh-backend; \
       	make cleanup-warehouse-integration; \
       	exit 1; \
  	fi
