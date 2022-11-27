@@ -5,13 +5,13 @@ import (
 	"os"
 	"testing"
 
+	proto "github.com/rudderlabs/rudder-server/proto/databricks"
+
 	"github.com/rudderlabs/rudder-server/warehouse/validations"
 
 	"github.com/rudderlabs/rudder-server/utils/misc"
 
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
-
-	proto "github.com/rudderlabs/rudder-server/proto/databricks"
 
 	"github.com/rudderlabs/rudder-server/warehouse/client"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"

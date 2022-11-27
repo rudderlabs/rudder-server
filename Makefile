@@ -89,7 +89,7 @@ cleanup-warehouse-integration:
 
 setup-warehouse-integration: cleanup-warehouse-integration
 define generate_namespace
-$(shell echo $(1)-$(shell shuf -i 1-1000000 -n 1)-$(shell date +%s))
+$(shell echo wh-$(shell shuf -i 1-1000000 -n 1)-$(shell date +%s))
 endef
 	$(eval BQ=$(call generate_namespace))\
     $(eval RS=$(call generate_namespace))\
