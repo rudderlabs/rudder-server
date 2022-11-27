@@ -105,7 +105,7 @@ setup-warehouse-integration: cleanup-warehouse-integration
 
 run-warehouse-integration: setup-warehouse-integration
 	$(eval TEST_PATTERN = '^TestIntegration' '^TestConfigurationValidation')
-	$(eval TEST_CMD = go test -v ./warehouse/deltalake/... -run $(TEST_PATTERN) -p 8 -timeout 30m -count 1)
+	$(eval TEST_CMD = go test -v ./warehouse/deltalake/... -p 8 -timeout 30m -count 1 -run $(TEST_PATTERN))
 	if docker-compose -f warehouse/docker-compose.test.yml exec -T -e SLOW=1 wh-backend $(TEST_CMD); then \
       	echo "Successfully ran Warehouse Integration Test. Getting backend container logs only."; \
       	docker logs wh-backend; \
