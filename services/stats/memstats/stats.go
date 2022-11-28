@@ -13,7 +13,6 @@ var _ stats.Stats = (*Store)(nil)
 var _ stats.Measurement = (*Measurement)(nil)
 
 type Store struct {
-	once  sync.Once
 	mu    sync.Mutex
 	byKey map[string]*Measurement
 	now   func() time.Time
@@ -172,7 +171,6 @@ func WithNow(nowFn func() time.Time) Opts {
 }
 
 func New(opts ...Opts) *Store {
-
 	s := &Store{
 		byKey: make(map[string]*Measurement),
 		now:   time.Now,
