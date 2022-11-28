@@ -52,7 +52,7 @@ func main() {
 		return
 	}
 
-	l, err := throttling.New(throttling.WithRedisClient(rc))
+	l, err := throttling.New(throttling.WithRedisSortedSet(rc))
 	if err != nil {
 		log.Printf("Could not create throttling client: %v", err)
 		return
