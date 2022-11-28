@@ -30,10 +30,10 @@ type JobAPI struct {
 // which is decoded using schema and then mapped from schema to internal model.Job struct,
 // which is actually returned.
 func (j *JobAPI) Get(ctx context.Context) (model.Job, error) {
-	pkgLogger.Infof("making http request to regulation manager to get new job")
+	pkgLogger.Debugf("making http request to regulation manager to get new job")
 
 	url := fmt.Sprintf("%s/dataplane/workspaces/%s/regulations/workerJobs", j.URLPrefix, j.WorkspaceID)
-	pkgLogger.Infof("making GET request to URL: %v", url)
+	pkgLogger.Debugf("making GET request to URL: %v", url)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		pkgLogger.Errorf("error while create new http request: %v", err)
@@ -57,12 +57,7 @@ func (j *JobAPI) Get(ctx context.Context) (model.Job, error) {
 			pkgLogger.Errorf("error while closing response body: %v", err)
 		}
 	}()
-	pkgLogger.Infof("WorkspaceToken: %v", j.WorkspaceToken)
-	pkgLogger.Infof("obtained response code: %v", resp.StatusCode)
-	bodyBytes, err := io.ReadAll(resp.Body)
-	if err != nil {
-		pkgLogger.Infof("CP response body: ", string(bodyBytes))
-	}
+	pkgLogger.Infof("obtained response code: %v", resp.StatusCode, "response body: ", resp.Body)
 
 	// if successful
 
