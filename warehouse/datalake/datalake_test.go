@@ -81,6 +81,7 @@ func TestIntegrationDatalake(t *testing.T) {
 				Provider:      tc.provider,
 				JobsDB:        jobsDB,
 				UserID:        testhelper.GetUserId(tc.provider),
+				WorkspaceID:   "BpLnfgDsc2WD8F2qNfHK5a84jjJ",
 				SkipWarehouse: true,
 			}
 			ts.TestScenarioOne(t)

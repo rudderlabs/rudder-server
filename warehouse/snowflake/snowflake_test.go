@@ -151,6 +151,7 @@ func TestIntegrationSnowflake(t *testing.T) {
 				JobRunID:              misc.FastUUID().String(),
 				TaskRunID:             misc.FastUUID().String(),
 				UserID:                testhelper.GetUserId(provider),
+				WorkspaceID:           "BpLnfgDsc2WD8F2qNfHK5a84jjJ",
 				Client: &client.Client{
 					SQL:  db,
 					Type: client.SQLClient,
