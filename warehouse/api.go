@@ -5,6 +5,9 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"google.golang.org/genproto/googleapis/rpc/code"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	"net/http"
 	"os"
 	"strings"
@@ -249,12 +252,11 @@ func (uploadsReq *UploadsReqT) TriggerWhUploads() (response *proto.TriggerWhUplo
 }
 
 func (uploadReq UploadReqT) GetWHUpload() (*proto.WHUploadResponse, error) {
-	response := &proto.WHUploadResponse{}
 	err := uploadReq.validateReq()
 	if err != nil {
-		response.StatusCode = http.StatusBadRequest
-		return response, err
+		return &proto.WHUploadResponse{}, status.Errorf(codes.Code(code.Code_INVALID_ARGUMENT), err.Error())
 	}
+
 	query := uploadReq.generateQuery(`id, source_id, destination_id, destination_type, namespace, status, error, created_at, first_event_at, last_event_at, last_exec_at, updated_at, timings, metadata->>'nextRetryTime', metadata->>'archivedStagingAndLoadFiles'`)
 	uploadReq.API.log.Debug(query)
 
@@ -286,19 +288,18 @@ func (uploadReq UploadReqT) GetWHUpload() (*proto.WHUploadResponse, error) {
 		&isUploadArchived,
 	)
 	if err == sql.ErrNoRows {
-		response.StatusCode = http.StatusNoContent
-		return response, nil
+		return &proto.WHUploadResponse{}, status.Errorf(codes.Code(code.Code_NOT_FOUND), "sync not found")
 	}
 	if err != nil {
 		uploadReq.API.log.Errorf(err.Error())
-		response.StatusCode = http.StatusBadRequest
-		return response, err
+		return &proto.WHUploadResponse{}, status.Errorf(codes.Code(code.Code_INTERNAL), err.Error())
 	}
+
 	if !uploadReq.authorizeSource(upload.SourceId) {
 		pkgLogger.Errorf(`Unauthorized request for upload:%d with sourceId:%s in workspaceId:%s`, uploadReq.UploadId, upload.SourceId, uploadReq.WorkspaceID)
-		response.StatusCode = http.StatusBadRequest
-		return response, errors.New("unauthorized request")
+		return &proto.WHUploadResponse{}, status.Error(codes.Code(code.Code_UNAUTHENTICATED), "unauthorized request")
 	}
+
 	upload.CreatedAt = timestamppb.New(createdAt.Time)
 	upload.FirstEventAt = timestamppb.New(firstEventAt.Time)
 	upload.LastEventAt = timestamppb.New(lastEventAt.Time)
@@ -330,6 +331,7 @@ func (uploadReq UploadReqT) GetWHUpload() (*proto.WHUploadResponse, error) {
 	} else {
 		upload.Duration = int32(timeutil.Now().Sub(lastExecAt.Time) / time.Second)
 	}
+
 	tableUploadReq := TableUploadReqT{
 		UploadID: upload.Id,
 		Name:     "",
@@ -337,13 +339,10 @@ func (uploadReq UploadReqT) GetWHUpload() (*proto.WHUploadResponse, error) {
 	}
 	upload.Tables, err = tableUploadReq.GetWhTableUploads()
 	if err != nil {
-		response.StatusCode = http.StatusBadRequest
-		return response, err
+		return &proto.WHUploadResponse{}, status.Errorf(codes.Code(code.Code_INTERNAL), err.Error())
 	}
 
-	response = &upload
-	response.StatusCode = http.StatusOK
-	return response, nil
+	return &upload, nil
 }
 
 func (uploadReq UploadReqT) TriggerWHUpload() (response *proto.TriggerWhUploadsResponse, err error) {
@@ -376,22 +375,22 @@ func (uploadReq UploadReqT) TriggerWHUpload() (response *proto.TriggerWhUploadsR
 		&upload.Metadata,
 	)
 	if err == sql.ErrNoRows {
-		err = nil
-		response = &proto.TriggerWhUploadsResponse{
+		return &proto.TriggerWhUploadsResponse{
 			Message:    NoSuchSyncs,
 			StatusCode: http.StatusOK,
-		}
-		return
+		}, nil
 	}
 	if err != nil {
 		uploadReq.API.log.Errorf(err.Error())
 		return
 	}
+
 	if !uploadReq.authorizeSource(upload.SourceID) {
 		pkgLogger.Errorf(`Unauthorized request for upload:%d with sourceId:%s in workspaceId:%s`, uploadReq.UploadId, upload.SourceID, uploadReq.WorkspaceID)
 		err = errors.New("unauthorized request")
 		return
 	}
+
 	uploadJobT.upload = &upload
 	uploadJobT.dbHandle = uploadReq.API.dbHandle
 	err = uploadJobT.triggerUploadNow()
