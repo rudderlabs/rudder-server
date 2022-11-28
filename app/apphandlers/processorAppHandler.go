@@ -7,7 +7,9 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/utils/httputil"
+	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/types/deployment"
 	"github.com/rudderlabs/rudder-server/utils/types/servermode"
 
@@ -19,7 +21,6 @@ import (
 	"github.com/rudderlabs/rudder-server/app"
 	"github.com/rudderlabs/rudder-server/app/cluster"
 	"github.com/rudderlabs/rudder-server/app/cluster/state"
-	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/jobsdb/prebackup"
@@ -38,75 +39,95 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/types"
 )
 
-// ProcessorApp is the type for Processor type implemention
-type ProcessorApp struct {
-	App            app.App
-	VersionHandler func(w http.ResponseWriter, r *http.Request)
+// processorApp is the type for Processor type implemention
+type processorApp struct {
+	setupDone      bool
+	app            app.App
+	versionHandler func(w http.ResponseWriter, r *http.Request)
+	log            logger.Logger
+	config         struct {
+		enableProcessor    bool
+		enableRouter       bool
+		processorDSLimit   int
+		routerDSLimit      int
+		batchRouterDSLimit int
+		gatewayDSLimit     int
+		http               struct {
+			ReadTimeout       time.Duration
+			ReadHeaderTimeout time.Duration
+			WriteTimeout      time.Duration
+			IdleTimeout       time.Duration
+			webPort           int
+			MaxHeaderBytes    int
+		}
+	}
 }
 
-var (
-	gatewayDB          *jobsdb.HandleT
-	ReadTimeout        time.Duration
-	ReadHeaderTimeout  time.Duration
-	WriteTimeout       time.Duration
-	IdleTimeout        time.Duration
-	webPort            int
-	MaxHeaderBytes     int
-	processorDSLimit   int
-	routerDSLimit      int
-	batchRouterDSLimit int
-	gatewayDSLimit     int
-)
+func (a *processorApp) loadConfiguration() {
+	config.RegisterBoolConfigVariable(true, &a.config.enableProcessor, false, "enableProcessor")
+	config.RegisterBoolConfigVariable(true, &a.config.enableRouter, false, "enableRouter")
 
-func (*ProcessorApp) GetAppType() string {
-	return fmt.Sprintf("rudder-server-%s", app.PROCESSOR)
+	config.RegisterDurationConfigVariable(0, &a.config.http.ReadTimeout, false, time.Second, []string{"ReadTimeout", "ReadTimeOutInSec"}...)
+	config.RegisterDurationConfigVariable(0, &a.config.http.ReadHeaderTimeout, false, time.Second, []string{"ReadHeaderTimeout", "ReadHeaderTimeoutInSec"}...)
+	config.RegisterDurationConfigVariable(10, &a.config.http.WriteTimeout, false, time.Second, []string{"WriteTimeout", "WriteTimeOutInSec"}...)
+	config.RegisterDurationConfigVariable(720, &a.config.http.IdleTimeout, false, time.Second, []string{"IdleTimeout", "IdleTimeoutInSec"}...)
+	config.RegisterIntConfigVariable(8086, &a.config.http.webPort, false, 1, "Processor.webPort")
+	config.RegisterIntConfigVariable(524288, &a.config.http.MaxHeaderBytes, false, 1, "MaxHeaderBytes")
+	config.RegisterIntConfigVariable(0, &a.config.processorDSLimit, true, 1, "Processor.jobsDB.dsLimit", "JobsDB.dsLimit")
+	config.RegisterIntConfigVariable(0, &a.config.gatewayDSLimit, true, 1, "Gateway.jobsDB.dsLimit", "JobsDB.dsLimit")
+	config.RegisterIntConfigVariable(0, &a.config.routerDSLimit, true, 1, "Router.jobsDB.dsLimit", "JobsDB.dsLimit")
+	config.RegisterIntConfigVariable(0, &a.config.batchRouterDSLimit, true, 1, "BatchRouter.jobsDB.dsLimit", "JobsDB.dsLimit")
 }
 
-func Init() {
-	loadConfigHandler()
+func (a *processorApp) Setup(options *app.Options) error {
+	a.loadConfiguration()
+	if err := db.HandleNullRecovery(options.NormalMode, options.DegradedMode, misc.AppStartTime, app.PROCESSOR); err != nil {
+		return err
+	}
+	if err := rudderCoreDBValidator(); err != nil {
+		return err
+	}
+	if err := rudderCoreWorkSpaceTableSetup(); err != nil {
+		return err
+	}
+	if err := rudderCoreNodeSetup(); err != nil {
+		return err
+	}
+	a.setupDone = true
+	return nil
 }
 
-func loadConfigHandler() {
-	config.RegisterDurationConfigVariable(0, &ReadTimeout, false, time.Second, []string{"ReadTimeout", "ReadTimeOutInSec"}...)
-	config.RegisterDurationConfigVariable(0, &ReadHeaderTimeout, false, time.Second, []string{"ReadHeaderTimeout", "ReadHeaderTimeoutInSec"}...)
-	config.RegisterDurationConfigVariable(10, &WriteTimeout, false, time.Second, []string{"WriteTimeout", "WriteTimeOutInSec"}...)
-	config.RegisterDurationConfigVariable(720, &IdleTimeout, false, time.Second, []string{"IdleTimeout", "IdleTimeoutInSec"}...)
-	config.RegisterIntConfigVariable(8086, &webPort, false, 1, "Processor.webPort")
-	config.RegisterIntConfigVariable(524288, &MaxHeaderBytes, false, 1, "MaxHeaderBytes")
-	config.RegisterIntConfigVariable(0, &processorDSLimit, true, 1, "Processor.jobsDB.dsLimit", "JobsDB.dsLimit")
-	config.RegisterIntConfigVariable(0, &gatewayDSLimit, true, 1, "Gateway.jobsDB.dsLimit", "JobsDB.dsLimit")
-	config.RegisterIntConfigVariable(0, &routerDSLimit, true, 1, "Router.jobsDB.dsLimit", "JobsDB.dsLimit")
-	config.RegisterIntConfigVariable(0, &batchRouterDSLimit, true, 1, "BatchRouter.jobsDB.dsLimit", "JobsDB.dsLimit")
-}
+func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options) error {
+	if !a.setupDone {
+		return fmt.Errorf("processor service cannot start, database is not setup")
+	}
+	a.log.Info("Processor starting")
 
-func (processor *ProcessorApp) StartRudderCore(ctx context.Context, options *app.Options) error {
-	pkgLogger.Info("Processor starting")
-
-	rudderCoreDBValidator()
-	rudderCoreWorkSpaceTableSetup()
-	rudderCoreNodeSetup()
-	rudderCoreBaseSetup()
+	_, _, _, err := setupReadonlyDBs()
+	if err != nil {
+		return err
+	}
 	g, ctx := errgroup.WithContext(ctx)
 
 	deploymentType, err := deployment.GetFromEnv()
 	if err != nil {
 		return fmt.Errorf("failed to get deployment type: %w", err)
 	}
-	pkgLogger.Infof("Configured deployment type: %q", deploymentType)
+	a.log.Infof("Configured deployment type: %q", deploymentType)
 
-	reporting := processor.App.Features().Reporting.Setup(backendconfig.DefaultBackendConfig)
+	reporting := a.app.Features().Reporting.Setup(backendconfig.DefaultBackendConfig)
 
 	g.Go(misc.WithBugsnag(func() error {
 		reporting.AddClient(ctx, types.Config{ConnInfo: misc.GetConnectionString()})
 		return nil
 	}))
 
-	pkgLogger.Info("Clearing DB ", options.ClearDB)
+	a.log.Info("Clearing DB ", options.ClearDB)
 
 	transformationdebugger.Setup()
 	destinationdebugger.Setup(backendconfig.DefaultBackendConfig)
 
-	reportingI := processor.App.Features().Reporting.GetReportingInstance()
+	reportingI := a.app.Features().Reporting.GetReportingInstance()
 	transientSources := transientsource.NewService(ctx, backendconfig.DefaultBackendConfig)
 	prebackupHandlers := []prebackup.Handler{
 		prebackup.DropSourceIds(transientSources.SourceIdsSupplier()),
@@ -124,17 +145,16 @@ func (processor *ProcessorApp) StartRudderCore(ctx context.Context, options *app
 		jobsdb.WithClearDB(options.ClearDB),
 		jobsdb.WithStatusHandler(),
 		jobsdb.WithPreBackupHandlers(prebackupHandlers),
-		jobsdb.WithDSLimit(&gatewayDSLimit),
+		jobsdb.WithDSLimit(&a.config.gatewayDSLimit),
 		jobsdb.WithFileUploaderProvider(fileUploaderProvider),
 	)
 	defer gwDBForProcessor.Close()
-	gatewayDB = gwDBForProcessor
 	routerDB := jobsdb.NewForReadWrite(
 		"rt",
 		jobsdb.WithClearDB(options.ClearDB),
 		jobsdb.WithStatusHandler(),
 		jobsdb.WithPreBackupHandlers(prebackupHandlers),
-		jobsdb.WithDSLimit(&routerDSLimit),
+		jobsdb.WithDSLimit(&a.config.routerDSLimit),
 		jobsdb.WithFileUploaderProvider(fileUploaderProvider),
 	)
 	defer routerDB.Close()
@@ -143,7 +163,7 @@ func (processor *ProcessorApp) StartRudderCore(ctx context.Context, options *app
 		jobsdb.WithClearDB(options.ClearDB),
 		jobsdb.WithStatusHandler(),
 		jobsdb.WithPreBackupHandlers(prebackupHandlers),
-		jobsdb.WithDSLimit(&batchRouterDSLimit),
+		jobsdb.WithDSLimit(&a.config.batchRouterDSLimit),
 		jobsdb.WithFileUploaderProvider(fileUploaderProvider),
 	)
 	defer batchRouterDB.Close()
@@ -152,7 +172,7 @@ func (processor *ProcessorApp) StartRudderCore(ctx context.Context, options *app
 		jobsdb.WithClearDB(options.ClearDB),
 		jobsdb.WithStatusHandler(),
 		jobsdb.WithPreBackupHandlers(prebackupHandlers),
-		jobsdb.WithDSLimit(&processorDSLimit),
+		jobsdb.WithDSLimit(&a.config.processorDSLimit),
 		jobsdb.WithFileUploaderProvider(fileUploaderProvider),
 	)
 	var tenantRouterDB jobsdb.MultiTenantJobsDB
@@ -175,12 +195,12 @@ func (processor *ProcessorApp) StartRudderCore(ctx context.Context, options *app
 
 	switch deploymentType {
 	case deployment.MultiTenantType:
-		pkgLogger.Info("using ETCD Based Dynamic Cluster Manager")
+		a.log.Info("using ETCD Based Dynamic Cluster Manager")
 		modeProvider = state.NewETCDDynamicProvider()
 	case deployment.DedicatedType:
 		// FIXME: hacky way to determine servermode
-		pkgLogger.Info("using Static Cluster Manager")
-		if enableProcessor && enableRouter {
+		a.log.Info("using Static Cluster Manager")
+		if a.config.enableProcessor && a.config.enableRouter {
 			modeProvider = state.NewStaticProvider(servermode.NormalMode)
 		} else {
 			modeProvider = state.NewStaticProvider(servermode.DegradedMode)
@@ -226,7 +246,7 @@ func (processor *ProcessorApp) StartRudderCore(ctx context.Context, options *app
 	}
 
 	g.Go(func() error {
-		return startHealthWebHandler(ctx)
+		return a.startHealthWebHandler(ctx, gwDBForProcessor)
 	})
 
 	g.Go(func() error {
@@ -250,24 +270,20 @@ func (processor *ProcessorApp) StartRudderCore(ctx context.Context, options *app
 	return g.Wait()
 }
 
-func (*ProcessorApp) HandleRecovery(options *app.Options) {
-	db.HandleNullRecovery(options.NormalMode, options.DegradedMode, misc.AppStartTime, app.PROCESSOR)
-}
-
-func startHealthWebHandler(ctx context.Context) error {
+func (a *processorApp) startHealthWebHandler(ctx context.Context, db *jobsdb.HandleT) error {
 	// Port where Processor health handler is running
-	pkgLogger.Infof("Starting in %d", webPort)
+	a.log.Infof("Starting in %d", a.config.http.webPort)
 	srvMux := mux.NewRouter()
-	srvMux.HandleFunc("/health", app.LivenessHandler(gatewayDB))
-	srvMux.HandleFunc("/", app.LivenessHandler(gatewayDB))
+	srvMux.HandleFunc("/health", app.LivenessHandler(db))
+	srvMux.HandleFunc("/", app.LivenessHandler(db))
 	srv := &http.Server{
-		Addr:              ":" + strconv.Itoa(webPort),
+		Addr:              ":" + strconv.Itoa(a.config.http.webPort),
 		Handler:           bugsnag.Handler(srvMux),
-		ReadTimeout:       ReadTimeout,
-		ReadHeaderTimeout: ReadHeaderTimeout,
-		WriteTimeout:      WriteTimeout,
-		IdleTimeout:       IdleTimeout,
-		MaxHeaderBytes:    MaxHeaderBytes,
+		ReadTimeout:       a.config.http.ReadTimeout,
+		ReadHeaderTimeout: a.config.http.ReadHeaderTimeout,
+		WriteTimeout:      a.config.http.WriteTimeout,
+		IdleTimeout:       a.config.http.IdleTimeout,
+		MaxHeaderBytes:    a.config.http.MaxHeaderBytes,
 	}
 
 	return httputil.ListenAndServe(ctx, srv)

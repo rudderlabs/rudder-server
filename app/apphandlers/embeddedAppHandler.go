@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"net/http"
 
+	"github.com/rudderlabs/rudder-server/config"
+	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/types/deployment"
 
 	"golang.org/x/sync/errgroup"
@@ -34,23 +36,63 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/types/servermode"
 )
 
-// EmbeddedApp is the type for embedded type implementation
-type EmbeddedApp struct {
-	App            app.App
-	VersionHandler func(w http.ResponseWriter, r *http.Request)
+// embeddedApp is the type for embedded type implementation
+type embeddedApp struct {
+	setupDone      bool
+	app            app.App
+	versionHandler func(w http.ResponseWriter, r *http.Request)
+	log            logger.Logger
+	config         struct {
+		enableProcessor    bool
+		enableRouter       bool
+		enableReplay       bool
+		processorDSLimit   int
+		routerDSLimit      int
+		batchRouterDSLimit int
+		gatewayDSLimit     int
+	}
 }
 
-func (*EmbeddedApp) GetAppType() string {
-	return fmt.Sprintf("rudder-server-%s", app.EMBEDDED)
+func (a *embeddedApp) loadConfiguration() {
+	config.RegisterBoolConfigVariable(true, &a.config.enableProcessor, false, "enableProcessor")
+	config.RegisterBoolConfigVariable(types.DEFAULT_REPLAY_ENABLED, &a.config.enableReplay, false, "Replay.enabled")
+	config.RegisterBoolConfigVariable(true, &a.config.enableRouter, false, "enableRouter")
+	config.RegisterIntConfigVariable(0, &a.config.processorDSLimit, true, 1, "Processor.jobsDB.dsLimit", "JobsDB.dsLimit")
+	config.RegisterIntConfigVariable(0, &a.config.gatewayDSLimit, true, 1, "Gateway.jobsDB.dsLimit", "JobsDB.dsLimit")
+	config.RegisterIntConfigVariable(0, &a.config.routerDSLimit, true, 1, "Router.jobsDB.dsLimit", "JobsDB.dsLimit")
+	config.RegisterIntConfigVariable(0, &a.config.batchRouterDSLimit, true, 1, "BatchRouter.jobsDB.dsLimit", "JobsDB.dsLimit")
 }
 
-func (embedded *EmbeddedApp) StartRudderCore(ctx context.Context, options *app.Options) error {
-	pkgLogger.Info("Embedded mode: Starting Rudder Core")
+func (a *embeddedApp) Setup(options *app.Options) error {
+	a.loadConfiguration()
 
-	rudderCoreDBValidator()
-	rudderCoreWorkSpaceTableSetup()
-	rudderCoreNodeSetup()
-	rudderCoreBaseSetup()
+	if err := db.HandleEmbeddedRecovery(options.NormalMode, options.DegradedMode, misc.AppStartTime, app.EMBEDDED); err != nil {
+		return err
+	}
+
+	if err := rudderCoreDBValidator(); err != nil {
+		return err
+	}
+	if err := rudderCoreWorkSpaceTableSetup(); err != nil {
+		return err
+	}
+	if err := rudderCoreNodeSetup(); err != nil {
+		return err
+	}
+	a.setupDone = true
+	return nil
+}
+
+func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options) error {
+	if !a.setupDone {
+		return fmt.Errorf("embedded rudder core cannot start, database is not setup")
+	}
+	a.log.Info("Embedded mode: Starting Rudder Core")
+
+	readonlyGatewayDB, readonlyRouterDB, readonlyBatchRouterDB, err := setupReadonlyDBs()
+	if err != nil {
+		return err
+	}
 
 	g, ctx := errgroup.WithContext(ctx)
 
@@ -58,22 +100,22 @@ func (embedded *EmbeddedApp) StartRudderCore(ctx context.Context, options *app.O
 	if err != nil {
 		return fmt.Errorf("failed to get deployment type: %w", err)
 	}
-	pkgLogger.Infof("Configured deployment type: %q", deploymentType)
+	a.log.Infof("Configured deployment type: %q", deploymentType)
 
-	reporting := embedded.App.Features().Reporting.Setup(backendconfig.DefaultBackendConfig)
+	reporting := a.app.Features().Reporting.Setup(backendconfig.DefaultBackendConfig)
 
 	g.Go(func() error {
 		reporting.AddClient(ctx, types.Config{ConnInfo: misc.GetConnectionString()})
 		return nil
 	})
 
-	pkgLogger.Info("Clearing DB ", options.ClearDB)
+	a.log.Info("Clearing DB ", options.ClearDB)
 
 	transformationdebugger.Setup()
 	destinationdebugger.Setup(backendconfig.DefaultBackendConfig)
 	sourcedebugger.Setup(backendconfig.DefaultBackendConfig)
 
-	reportingI := embedded.App.Features().Reporting.GetReportingInstance()
+	reportingI := a.app.Features().Reporting.GetReportingInstance()
 	transientSources := transientsource.NewService(ctx, backendconfig.DefaultBackendConfig)
 	prebackupHandlers := []prebackup.Handler{
 		prebackup.DropSourceIds(transientSources.SourceIdsSupplier()),
@@ -93,7 +135,7 @@ func (embedded *EmbeddedApp) StartRudderCore(ctx context.Context, options *app.O
 		jobsdb.WithClearDB(options.ClearDB),
 		jobsdb.WithStatusHandler(),
 		jobsdb.WithPreBackupHandlers(prebackupHandlers),
-		jobsdb.WithDSLimit(&gatewayDSLimit),
+		jobsdb.WithDSLimit(&a.config.gatewayDSLimit),
 		jobsdb.WithFileUploaderProvider(fileUploaderProvider),
 	)
 	defer gwDBForProcessor.Close()
@@ -102,7 +144,7 @@ func (embedded *EmbeddedApp) StartRudderCore(ctx context.Context, options *app.O
 		jobsdb.WithClearDB(options.ClearDB),
 		jobsdb.WithStatusHandler(),
 		jobsdb.WithPreBackupHandlers(prebackupHandlers),
-		jobsdb.WithDSLimit(&routerDSLimit),
+		jobsdb.WithDSLimit(&a.config.routerDSLimit),
 		jobsdb.WithFileUploaderProvider(fileUploaderProvider),
 	)
 	defer routerDB.Close()
@@ -111,7 +153,7 @@ func (embedded *EmbeddedApp) StartRudderCore(ctx context.Context, options *app.O
 		jobsdb.WithClearDB(options.ClearDB),
 		jobsdb.WithStatusHandler(),
 		jobsdb.WithPreBackupHandlers(prebackupHandlers),
-		jobsdb.WithDSLimit(&batchRouterDSLimit),
+		jobsdb.WithDSLimit(&a.config.batchRouterDSLimit),
 		jobsdb.WithFileUploaderProvider(fileUploaderProvider),
 	)
 	defer batchRouterDB.Close()
@@ -120,7 +162,7 @@ func (embedded *EmbeddedApp) StartRudderCore(ctx context.Context, options *app.O
 		jobsdb.WithClearDB(options.ClearDB),
 		jobsdb.WithStatusHandler(),
 		jobsdb.WithPreBackupHandlers(prebackupHandlers),
-		jobsdb.WithDSLimit(&processorDSLimit),
+		jobsdb.WithDSLimit(&a.config.processorDSLimit),
 		jobsdb.WithFileUploaderProvider(fileUploaderProvider),
 	)
 
@@ -144,12 +186,12 @@ func (embedded *EmbeddedApp) StartRudderCore(ctx context.Context, options *app.O
 
 	switch deploymentType {
 	case deployment.MultiTenantType:
-		pkgLogger.Info("using ETCD Based Dynamic Cluster Manager")
+		a.log.Info("using ETCD Based Dynamic Cluster Manager")
 		modeProvider = state.NewETCDDynamicProvider()
 	case deployment.DedicatedType:
 		// FIXME: hacky way to determine server mode
-		pkgLogger.Info("using Static Cluster Manager")
-		if enableProcessor && enableRouter {
+		a.log.Info("using Static Cluster Manager")
+		if a.config.enableProcessor && a.config.enableRouter {
 			modeProvider = state.NewStaticProvider(servermode.NormalMode)
 		} else {
 			modeProvider = state.NewStaticProvider(servermode.DegradedMode)
@@ -198,7 +240,7 @@ func (embedded *EmbeddedApp) StartRudderCore(ctx context.Context, options *app.O
 	// This separate gateway db is created just to be used with gateway because in case of degraded mode,
 	// the earlier created gwDb (which was created to be used mainly with processor) will not be running, and it
 	// will cause issues for gateway because gateway is supposed to receive jobs even in degraded mode.
-	gatewayDB = jobsdb.NewForWrite(
+	gatewayDB := jobsdb.NewForWrite(
 		"gw",
 		jobsdb.WithClearDB(options.ClearDB),
 		jobsdb.WithStatusHandler(),
@@ -209,18 +251,18 @@ func (embedded *EmbeddedApp) StartRudderCore(ctx context.Context, options *app.O
 	}
 	defer gatewayDB.Stop()
 
-	gw.SetReadonlyDBs(&readonlyGatewayDB, &readonlyRouterDB, &readonlyBatchRouterDB)
+	gw.SetReadonlyDBs(readonlyGatewayDB, readonlyRouterDB, readonlyBatchRouterDB)
 	err = gw.Setup(
 		ctx,
-		embedded.App, backendconfig.DefaultBackendConfig, gatewayDB,
-		&rateLimiter, embedded.VersionHandler, rsourcesService,
+		a.app, backendconfig.DefaultBackendConfig, gatewayDB,
+		&rateLimiter, a.versionHandler, rsourcesService,
 	)
 	if err != nil {
 		return fmt.Errorf("could not setup gateway: %w", err)
 	}
 	defer func() {
 		if err := gw.Shutdown(); err != nil {
-			pkgLogger.Warnf("Gateway shutdown error: %v", err)
+			a.log.Warnf("Gateway shutdown error: %v", err)
 		}
 	}()
 
@@ -230,7 +272,7 @@ func (embedded *EmbeddedApp) StartRudderCore(ctx context.Context, options *app.O
 	g.Go(func() error {
 		return gw.StartWebHandler(ctx)
 	})
-	if enableReplay {
+	if a.config.enableReplay {
 		var replayDB jobsdb.HandleT
 		err := replayDB.Setup(
 			jobsdb.ReadWrite, options.ClearDB, "replay",
@@ -240,7 +282,7 @@ func (embedded *EmbeddedApp) StartRudderCore(ctx context.Context, options *app.O
 			return fmt.Errorf("could not setup replayDB: %w", err)
 		}
 		defer replayDB.TearDown()
-		embedded.App.Features().Replay.Setup(ctx, &replayDB, gatewayDB, routerDB, batchRouterDB)
+		a.app.Features().Replay.Setup(ctx, &replayDB, gatewayDB, routerDB, batchRouterDB)
 	}
 
 	g.Go(func() error {
@@ -262,8 +304,4 @@ func (embedded *EmbeddedApp) StartRudderCore(ctx context.Context, options *app.O
 	})
 
 	return g.Wait()
-}
-
-func (*EmbeddedApp) HandleRecovery(options *app.Options) {
-	db.HandleEmbeddedRecovery(options.NormalMode, options.DegradedMode, misc.AppStartTime, app.EMBEDDED)
 }

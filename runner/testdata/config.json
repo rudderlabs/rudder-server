@@ -1,0 +1,16 @@
+{
+    "enableMetrics": false,
+    "workspaceId": "workspace",
+    "sources": [],
+    "libraries": [
+        {
+            "versionId": "def"
+        },
+        {
+            "versionId": "ghi"
+        },
+        {
+            "versionId": "23Uxw7QEiOg8e0KkQV8LmNfWaWh"
+        }
+    ]
+}

@@ -30,6 +30,12 @@ func (*warehouseGRPC) GetWHUploads(_ context.Context, request *proto.WHUploadsRe
 		Offset:          request.Offset,
 		API:             UploadAPI,
 	}
+	uploadsReq.API.log.Info(
+		"[GetWHUploads] Fetching warehouse uploads for WorkspaceId: %s, SourceId: %s, DestinationId: %s",
+		uploadsReq.WorkspaceID,
+		uploadsReq.SourceID,
+		uploadsReq.DestinationID,
+	)
 	res, err := uploadsReq.GetWhUploads()
 	return res, err
 }
@@ -41,6 +47,12 @@ func (*warehouseGRPC) TriggerWHUploads(_ context.Context, request *proto.WHUploa
 		DestinationID: request.DestinationId,
 		API:           UploadAPI,
 	}
+	uploadsReq.API.log.Info(
+		"[TriggerWHUploads] Triggering warehouse uploads for WorkspaceId: %s, SourceId: %s, DestinationId: %s",
+		uploadsReq.WorkspaceID,
+		uploadsReq.SourceID,
+		uploadsReq.DestinationID,
+	)
 	res, err := uploadsReq.TriggerWhUploads()
 	return res, err
 }
@@ -51,6 +63,11 @@ func (*warehouseGRPC) GetWHUpload(_ context.Context, request *proto.WHUploadRequ
 		WorkspaceID: request.WorkspaceId,
 		API:         UploadAPI,
 	}
+	uploadReq.API.log.Info(
+		"[GetWHUpload] Fetching warehouse upload for WorkspaceId: %s, UploadId: %d",
+		uploadReq.WorkspaceID,
+		uploadReq.UploadId,
+	)
 	res, err := uploadReq.GetWHUpload()
 	return res, err
 }
@@ -65,6 +82,11 @@ func (*warehouseGRPC) TriggerWHUpload(_ context.Context, request *proto.WHUpload
 		WorkspaceID: request.WorkspaceId,
 		API:         UploadAPI,
 	}
+	uploadReq.API.log.Info(
+		"[TriggerWHUpload] Triggering warehouse upload for WorkspaceId: %s, UploadId: %d",
+		uploadReq.WorkspaceID,
+		uploadReq.UploadId,
+	)
 	res, err := uploadReq.TriggerWHUpload()
 	return res, err
 }
@@ -169,6 +191,13 @@ func (*warehouseGRPC) CountWHUploadsToRetry(ctx context.Context, req *proto.Retr
 		UploadIds:       req.UploadIds,
 		API:             UploadAPI,
 	}
+	retryReq.API.log.Info(
+		"[RetryWHUploads] Retrying warehouse uploads for WorkspaceId: %s, SourceId: %s, DestinationId: %s, IntervalInHours: %d",
+		retryReq.WorkspaceID,
+		retryReq.SourceID,
+		retryReq.DestinationID,
+		retryReq.IntervalInHours,
+	)
 	r, err := retryReq.UploadsToRetry(ctx)
 	response = &proto.RetryWHUploadsResponse{
 		Count:      r.Count,
