@@ -61,6 +61,7 @@ const (
 	// RFC3339Milli with milli sec precision
 	RFC3339Milli            = "2006-01-02T15:04:05.000Z07:00"
 	POSTGRESTIMEFORMATPARSE = "2006-01-02T15:04:05Z"
+	NOTIMEZONEFORMATPARSE   = "2006-01-02T15:04:05"
 )
 
 const (
