@@ -27,9 +27,10 @@ var (
 )
 
 type APIManager struct {
-	Client           *http.Client
-	DestTransformURL string
-	OAuth            oauth.Authorizer
+	Client                       *http.Client
+	DestTransformURL             string
+	OAuth                        oauth.Authorizer
+	MaxOAuthRefreshRetryAttempts int
 }
 
 type oauthDetail struct {
@@ -41,9 +42,7 @@ func (*APIManager) GetSupportedDestinations() []string {
 	return supportedDestinations
 }
 
-// prepares payload based on (job,destDetail) & make an API call to transformer.
-// gets (status, failure_reason) which is converted to appropriate model.Error & returned to caller.
-func (api *APIManager) Delete(ctx context.Context, job model.Job, destination model.Destination) model.JobStatus {
+func (api *APIManager) deleteWithRetry(ctx context.Context, job model.Job, destination model.Destination, currentOauthRetryAttempt int) model.JobStatus {
 	pkgLogger.Debugf("deleting: %v", job, " from API destination: %v", destination.Name)
 	method := http.MethodPost
 	endpoint := "/deleteUsers"
@@ -106,20 +105,26 @@ func (api *APIManager) Delete(ctx context.Context, job model.Job, destination mo
 		return model.JobStatusFailed
 	}
 	jobStatus := getJobStatus(resp.StatusCode, jobResp)
-	pkgLogger.Debugf("[%v] JobStatus for %v: %v", destination.Name, destination.DestinationID, jobStatus)
+	pkgLogger.Debugf("[%v] Job: %v, JobStatus: %v", destination.Name, job.ID, jobStatus)
 
-	if isOAuthEnabled && isTokenExpired(jobResp) {
+	if isOAuthEnabled && isTokenExpired(jobResp) && currentOauthRetryAttempt < api.MaxOAuthRefreshRetryAttempts {
 		err = api.refreshOAuthToken(destination.Name, job.WorkspaceID, oAuthDetail)
 		if err != nil {
 			pkgLogger.Error(err)
 			return model.JobStatusFailed
 		}
 		// retry the request
-		pkgLogger.Debug("Retrying deleteRequest job for the whole batch")
-		return api.Delete(ctx, job, destination)
+		pkgLogger.Infof("[%v] Retrying deleteRequest job(id: %v) for the whole batch, RetryAttempt: %v", destination.Name, job.ID, currentOauthRetryAttempt+1)
+		return api.deleteWithRetry(ctx, job, destination, currentOauthRetryAttempt+1)
 	}
 
 	return jobStatus
+}
+
+// prepares payload based on (job,destDetail) & make an API call to transformer.
+// gets (status, failure_reason) which is converted to appropriate model.Error & returned to caller.
+func (api *APIManager) Delete(ctx context.Context, job model.Job, destination model.Destination) model.JobStatus {
+	return api.deleteWithRetry(ctx, job, destination, 0)
 }
 
 func getJobStatus(statusCode int, jobResp []JobRespSchema) model.JobStatus {
