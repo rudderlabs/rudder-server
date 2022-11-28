@@ -97,7 +97,7 @@ func (f *Factory) initThrottlerFactory() {
 		return
 	}
 	if err != nil {
-		f.Logger.Errorf("Failed to create throttling algorithm: %s", err)
+		f.Logger.Errorf("Failed to create throttler: %s", err)
 		return
 	}
 
