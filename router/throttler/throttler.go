@@ -74,7 +74,7 @@ func (c *throttlingConfig) readThrottlingConfig(destName, destID string) {
 	}
 
 	// enable dest throttler
-	if c.limit != 0 && c.window != 0 {
+	if c.limit > 0 && c.window > 0 {
 		c.enabled = true
 	}
 }
