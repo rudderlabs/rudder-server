@@ -194,7 +194,9 @@ func (*JobsdbUtilsHandler) RunSQLQuery(argString string, reply *string) (err err
 		args[0] = "batch_rt"
 	}
 
-	readOnlyJobsDB.Setup(args[0])
+	if err := readOnlyJobsDB.Setup(args[0]); err != nil {
+		return err
+	}
 
 	switch args[1] {
 	case "Jobs between JobID's of a User":
