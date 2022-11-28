@@ -57,8 +57,12 @@ func getMinMaxCreatedAt(key string) (int64, int64, error) {
 		return minJobCreatedAt, maxJobCreatedAt, fmt.Errorf("%s 's parse with _ gave tokens more than 3. Expected 3", key)
 	}
 	keyTokens = strings.Split(keyTokens[2], ".")
-	if len(keyTokens) != 7 {
-		return minJobCreatedAt, maxJobCreatedAt, fmt.Errorf("%s 's parse with . gave tokens more than 7. Expected 7", keyTokens[2])
+	if len(keyTokens) > 7 {
+		return minJobCreatedAt, maxJobCreatedAt, fmt.Errorf("%s 's parse with . gave tokens more than 7. Expected 6 or 7", keyTokens[2])
+	}
+
+	if len(keyTokens) < 6 { // for backward compatibility TODO: remove this check after some time
+		return minJobCreatedAt, maxJobCreatedAt, fmt.Errorf("%s 's parse with . gave tokens less than 6. Expected 6 or 7", keyTokens[2])
 	}
 	minJobCreatedAt, err = strconv.ParseInt(keyTokens[3], 10, 64)
 	if err != nil {
