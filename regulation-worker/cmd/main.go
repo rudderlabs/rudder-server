@@ -80,9 +80,10 @@ func Run(ctx context.Context) {
 				FilesLimit: config.GetInt("REGULATION_WORKER_FILES_LIMIT", 1000),
 			},
 			&api.APIManager{
-				Client:           &http.Client{Timeout: config.GetDuration("HttpClient.regulationWorker.transformer.timeout", 60, time.Second)},
-				DestTransformURL: config.MustGetString("DEST_TRANSFORM_URL"),
-				OAuth:            OAuth,
+				Client:                       &http.Client{Timeout: config.GetDuration("HttpClient.regulationWorker.transformer.timeout", 60, time.Second)},
+				DestTransformURL:             config.MustGetString("DEST_TRANSFORM_URL"),
+				OAuth:                        OAuth,
+				MaxOAuthRefreshRetryAttempts: config.GetInt("RegulationWorker.oauth.maxRefreshRetryAttempts", 1),
 			}),
 	}
 
