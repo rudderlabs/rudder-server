@@ -866,7 +866,7 @@ func TestCacheScenarios(t *testing.T) {
 		defer jobsDB.TearDown()
 
 		readOnlyDB := &ReadonlyHandleT{}
-		readOnlyDB.Setup("readonly_cache")
+		require.NoError(t, readOnlyDB.Setup("readonly_cache"))
 
 		destinationID := "destinationID"
 

@@ -2,7 +2,6 @@ package apphandlers
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"net/http"
 	"time"
@@ -17,83 +16,73 @@ import (
 	"github.com/rudderlabs/rudder-server/services/validators"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
-	"github.com/rudderlabs/rudder-server/utils/types"
 	"github.com/rudderlabs/rudder-server/utils/types/deployment"
 )
 
-var (
-	enableProcessor, enableRouter, enableReplay                bool
-	pkgLogger                                                  logger.Logger
-	Diagnostics                                                diagnostics.DiagnosticsI
-	readonlyGatewayDB, readonlyRouterDB, readonlyBatchRouterDB jobsdb.ReadonlyHandleT
-	readonlyProcErrorDB                                        jobsdb.ReadonlyHandleT
-)
-
-// AppHandler to be implemented by different app type objects.
+// AppHandler starts the app
 type AppHandler interface {
-	GetAppType() string
-	HandleRecovery(*app.Options)
+	// Setup to be called only once before starting the app.
+	Setup(*app.Options) error
+	// Start starts the app
 	StartRudderCore(context.Context, *app.Options) error
 }
 
-func GetAppHandler(application app.App, appType string, versionHandler func(w http.ResponseWriter, r *http.Request)) AppHandler {
-	var handler AppHandler
+func GetAppHandler(application app.App, appType string, versionHandler func(w http.ResponseWriter, r *http.Request)) (AppHandler, error) {
+	log := logger.NewLogger().Child("apphandlers").Child(appType)
 	switch appType {
 	case app.GATEWAY:
-		handler = &GatewayApp{App: application, VersionHandler: versionHandler}
+		return &gatewayApp{app: application, versionHandler: versionHandler, log: log}, nil
 	case app.PROCESSOR:
-		handler = &ProcessorApp{App: application, VersionHandler: versionHandler}
+		return &processorApp{app: application, versionHandler: versionHandler, log: log}, nil
 	case app.EMBEDDED:
-		handler = &EmbeddedApp{App: application, VersionHandler: versionHandler}
+		return &embeddedApp{app: application, versionHandler: versionHandler, log: log}, nil
 	default:
-		panic(errors.New("invalid app type"))
+		return nil, fmt.Errorf("unsupported app type %s", appType)
 	}
-
-	return handler
 }
 
-func Init2() {
-	loadConfig()
-	pkgLogger = logger.NewLogger().Child("apphandlers")
-	Diagnostics = diagnostics.Diagnostics
+func rudderCoreDBValidator() error {
+	return validators.ValidateEnv()
 }
 
-func loadConfig() {
-	config.RegisterBoolConfigVariable(true, &enableProcessor, false, "enableProcessor")
-	config.RegisterBoolConfigVariable(types.DEFAULT_REPLAY_ENABLED, &enableReplay, false, "Replay.enabled")
-	config.RegisterBoolConfigVariable(true, &enableRouter, false, "enableRouter")
+func rudderCoreNodeSetup() error {
+	return validators.InitializeNodeMigrations()
 }
 
-func rudderCoreDBValidator() {
-	validators.ValidateEnv()
+func rudderCoreWorkSpaceTableSetup() error {
+	return validators.CheckAndValidateWorkspaceToken()
 }
 
-func rudderCoreNodeSetup() {
-	validators.InitializeNodeMigrations()
-}
-
-func rudderCoreWorkSpaceTableSetup() {
-	validators.CheckAndValidateWorkspaceToken()
-}
-
-func rudderCoreBaseSetup() {
-	// Check if there is a probable inconsistent state of Data
+func setupReadonlyDBs() (gw, rt, batchrt *jobsdb.ReadonlyHandleT, err error) {
 	if diagnostics.EnableServerStartMetric {
-		Diagnostics.Track(diagnostics.ServerStart, map[string]interface{}{
+		diagnostics.Diagnostics.Track(diagnostics.ServerStart, map[string]interface{}{
 			diagnostics.ServerStart: fmt.Sprint(time.Unix(misc.AppStartTime, 0)),
 		})
 	}
+	var gwDB, rtDB, batchrtDB, procerrDB jobsdb.ReadonlyHandleT
 
-	// Reload Config
-	loadConfig()
+	if err := gwDB.Setup("gw"); err != nil {
+		return nil, nil, nil, fmt.Errorf("setting up gw readonly db: %w", err)
+	}
+	gw = &gwDB
 
-	readonlyGatewayDB.Setup("gw")
-	readonlyRouterDB.Setup("rt")
-	readonlyBatchRouterDB.Setup("batch_rt")
-	readonlyProcErrorDB.Setup("proc_error")
+	if err := rtDB.Setup("rt"); err != nil {
+		return nil, nil, nil, fmt.Errorf("setting up gw readonly db: %w", err)
+	}
+	rt = &rtDB
+	if err := batchrtDB.Setup("batch_rt"); err != nil {
+		return nil, nil, nil, fmt.Errorf("setting up batch_rt readonly db: %w", err)
+	}
+	batchrt = &batchrtDB
+	router.RegisterAdminHandlers(rt, batchrt)
 
-	processor.RegisterAdminHandlers(&readonlyProcErrorDB)
-	router.RegisterAdminHandlers(&readonlyRouterDB, &readonlyBatchRouterDB)
+	if err := procerrDB.Setup("proc_error"); err != nil {
+		return nil, nil, nil, fmt.Errorf("setting up proc_error readonly db: %w", err)
+	}
+	procerr := &procerrDB
+	processor.RegisterAdminHandlers(procerr)
+
+	return
 }
 
 // NewRsourcesService produces a rsources.JobService through environment configuration (env variables & config file)
