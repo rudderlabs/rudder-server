@@ -1,103 +1,138 @@
-//go:build warehouse_integration && !sources_integration
-
 package postgres_test
 
 import (
-	"database/sql"
-	"fmt"
 	"os"
 	"testing"
 
-	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
-	"github.com/rudderlabs/rudder-server/utils/timeutil"
+	"github.com/rudderlabs/rudder-server/utils/misc"
+	"github.com/rudderlabs/rudder-server/warehouse/validations"
+	"github.com/stretchr/testify/require"
 
+	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/warehouse/client"
 	"github.com/rudderlabs/rudder-server/warehouse/postgres"
 	"github.com/rudderlabs/rudder-server/warehouse/testhelper"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
-type TestHandle struct {
-	DB       *sql.DB
-	WriteKey string
-	Schema   string
-	Tables   []string
-}
-
-var handle *TestHandle
-
-var statsToVerify = []string{"pg_rollback_timeout"}
-
-func (*TestHandle) VerifyConnection() error {
-	return testhelper.WithConstantBackoff(func() (err error) {
-		credentials := postgres.CredentialsT{
-			DBName:   "rudderdb",
-			Password: "rudder-password",
-			User:     "rudder",
-			Host:     "wh-postgres",
-			SSLMode:  "disable",
-			Port:     "5432",
-		}
-		if handle.DB, err = postgres.Connect(credentials); err != nil {
-			err = fmt.Errorf("could not connect to warehouse postgres with error: %w", err)
-			return
-		}
-		if err = handle.DB.Ping(); err != nil {
-			err = fmt.Errorf("could not connect to warehouse postgres while pinging with error: %w", err)
-			return
-		}
-		return
-	})
-}
-
-func TestPostgresIntegration(t *testing.T) {
-	warehouseTest := &testhelper.WareHouseTest{
-		Client: &client.Client{
-			SQL:  handle.DB,
-			Type: client.SQLClient,
-		},
-		WriteKey:      handle.WriteKey,
-		Schema:        handle.Schema,
-		Tables:        handle.Tables,
-		Provider:      warehouseutils.POSTGRES,
-		SourceID:      "1wRvLmEnMOOxSQD9pwaZhyCqXRE",
-		DestinationID: "216ZvbavR21Um6eGKQCagZHqLGZ",
+func TestIntegrationPostgres(t *testing.T) {
+	if os.Getenv("SLOW") == "0" {
+		t.Skip("Skipping tests. Remove 'SLOW=0' env var to run them.")
 	}
 
-	// Scenario 1
-	warehouseTest.TimestampBeforeSendingEvents = timeutil.Now()
-	warehouseTest.UserId = testhelper.GetUserId(warehouseutils.POSTGRES)
+	t.Parallel()
 
-	sendEventsMap := testhelper.SendEventsMap()
-	testhelper.SendEvents(t, warehouseTest, sendEventsMap)
-	testhelper.SendEvents(t, warehouseTest, sendEventsMap)
-	testhelper.SendEvents(t, warehouseTest, sendEventsMap)
-	testhelper.SendIntegratedEvents(t, warehouseTest, sendEventsMap)
+	postgres.Init()
 
-	testhelper.VerifyEventsInStagingFiles(t, warehouseTest, testhelper.StagingFilesEventsMap())
-	testhelper.VerifyEventsInLoadFiles(t, warehouseTest, testhelper.LoadFilesEventsMap())
-	testhelper.VerifyEventsInTableUploads(t, warehouseTest, testhelper.TableUploadsEventsMap())
-	testhelper.VerifyEventsInWareHouse(t, warehouseTest, testhelper.WarehouseEventsMap())
+	db, err := postgres.Connect(postgres.CredentialsT{
+		DBName:   "rudderdb",
+		Password: "rudder-password",
+		User:     "rudder",
+		Host:     "wh-postgres",
+		SSLMode:  "disable",
+		Port:     "5432",
+	})
+	require.NoError(t, err)
 
-	// Scenario 2
-	warehouseTest.TimestampBeforeSendingEvents = timeutil.Now()
-	warehouseTest.UserId = testhelper.GetUserId(warehouseutils.POSTGRES)
+	err = db.Ping()
+	require.NoError(t, err)
 
-	sendEventsMap = testhelper.SendEventsMap()
-	testhelper.SendModifiedEvents(t, warehouseTest, sendEventsMap)
-	testhelper.SendModifiedEvents(t, warehouseTest, sendEventsMap)
-	testhelper.SendModifiedEvents(t, warehouseTest, sendEventsMap)
-	testhelper.SendIntegratedEvents(t, warehouseTest, sendEventsMap)
+	var (
+		provider = warehouseutils.POSTGRES
+		jobsDB   = testhelper.SetUpJobsDB(t)
+	)
 
-	testhelper.VerifyEventsInStagingFiles(t, warehouseTest, testhelper.StagingFilesEventsMap())
-	testhelper.VerifyEventsInLoadFiles(t, warehouseTest, testhelper.LoadFilesEventsMap())
-	testhelper.VerifyEventsInTableUploads(t, warehouseTest, testhelper.TableUploadsEventsMap())
-	testhelper.VerifyEventsInWareHouse(t, warehouseTest, testhelper.WarehouseEventsMap())
+	testcase := []struct {
+		name                  string
+		writeKey              string
+		schema                string
+		sourceID              string
+		destinationID         string
+		eventsMap             testhelper.EventsCountMap
+		stagingFilesEventsMap testhelper.EventsCountMap
+		loadFilesEventsMap    testhelper.EventsCountMap
+		tableUploadsEventsMap testhelper.EventsCountMap
+		warehouseEventsMap    testhelper.EventsCountMap
+		asyncJob              bool
+		tables                []string
+	}{
+		{
+			name:          "Upload Job",
+			writeKey:      "kwzDkh9h2fhfUVuS9jZ8uVbhV3v",
+			schema:        "postgres_wh_integration",
+			tables:        []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"},
+			sourceID:      "1wRvLmEnMOOxSQD9pwaZhyCqXRE",
+			destinationID: "216ZvbavR21Um6eGKQCagZHqLGZ",
+		},
+		{
+			name:                  "Async Job",
+			writeKey:              "2DkCpXZcEvJK2fcpUD3LmjPI7J6",
+			schema:                "postgres_wh_sources_integration",
+			tables:                []string{"tracks", "google_sheet"},
+			sourceID:              "2DkCpUr0xfiGBPJxIwqyqfyHdq4",
+			destinationID:         "308ZvbavR21Um6eGKQCagZHqLGZ",
+			eventsMap:             testhelper.SourcesSendEventsMap(),
+			stagingFilesEventsMap: testhelper.SourcesStagingFilesEventsMap(),
+			loadFilesEventsMap:    testhelper.SourcesLoadFilesEventsMap(),
+			tableUploadsEventsMap: testhelper.SourcesTableUploadsEventsMap(),
+			warehouseEventsMap:    testhelper.SourcesWarehouseEventsMap(),
+			asyncJob:              true,
+		},
+	}
 
-	testhelper.VerifyWorkspaceIDInStats(t, statsToVerify...)
+	for _, tc := range testcase {
+		tc := tc
+
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			ts := testhelper.WareHouseTest{
+				Schema:                tc.schema,
+				WriteKey:              tc.writeKey,
+				SourceID:              tc.sourceID,
+				DestinationID:         tc.destinationID,
+				Tables:                tc.tables,
+				EventsMap:             tc.eventsMap,
+				StagingFilesEventsMap: tc.stagingFilesEventsMap,
+				LoadFilesEventsMap:    tc.loadFilesEventsMap,
+				TableUploadsEventsMap: tc.tableUploadsEventsMap,
+				WarehouseEventsMap:    tc.warehouseEventsMap,
+				AsyncJob:              tc.asyncJob,
+				UserID:                testhelper.GetUserId(provider),
+				Provider:              provider,
+				JobsDB:                jobsDB,
+				JobRunID:              misc.FastUUID().String(),
+				TaskRunID:             misc.FastUUID().String(),
+				StatsToVerify:         []string{"pg_rollback_timeout"},
+				Client: &client.Client{
+					SQL:  db,
+					Type: client.SQLClient,
+				},
+			}
+			ts.TestScenarioOne(t)
+
+			if !tc.asyncJob {
+				ts.UserID = testhelper.GetUserId(provider)
+			}
+			ts.JobRunID = misc.FastUUID().String()
+			ts.TaskRunID = misc.FastUUID().String()
+			ts.TestScenarioTwo(t)
+		})
+	}
 }
 
-func TestPostgresConfigurationValidation(t *testing.T) {
+func TestConfigurationValidationPostgres(t *testing.T) {
+	if os.Getenv("SLOW") == "0" {
+		t.Skip("Skipping tests. Remove 'SLOW=0' env var to run them.")
+	}
+
+	t.Parallel()
+
+	misc.Init()
+	validations.Init()
+	warehouseutils.Init()
+	postgres.Init()
+
 	configurations := testhelper.PopulateTemplateConfigurations()
 	destination := backendconfig.DestinationT{
 		ID: "216ZvbavR21Um6eGKQCagZHqLGZ",
@@ -127,14 +162,5 @@ func TestPostgresConfigurationValidation(t *testing.T) {
 		Enabled:    true,
 		RevisionID: "29eeuu9kywWsRAybaXcxcnTVEl8",
 	}
-	testhelper.VerifyingConfigurationTest(t, destination)
-}
-
-func TestMain(m *testing.M) {
-	handle = &TestHandle{
-		WriteKey: "kwzDkh9h2fhfUVuS9jZ8uVbhV3v",
-		Schema:   "postgres_wh_integration",
-		Tables:   []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"},
-	}
-	os.Exit(testhelper.Run(m, handle))
+	testhelper.VerifyConfigurationTest(t, destination)
 }
