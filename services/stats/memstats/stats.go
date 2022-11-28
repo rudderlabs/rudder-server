@@ -29,10 +29,51 @@ type Measurement struct {
 	Name string
 	Type string
 
-	LastValue    float64
-	Values       []float64
-	LastDuration time.Duration
-	Durations    []time.Duration
+	sum       float64
+	values    []float64
+	durations []time.Duration
+}
+
+func (m *Measurement) LastValue() float64 {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if len(m.values) == 0 {
+		return 0
+	}
+
+	return m.values[len(m.values)-1]
+}
+
+func (m *Measurement) Values() []float64 {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	s := make([]float64, len(m.values))
+	copy(s, m.values)
+
+	return s
+}
+
+func (m *Measurement) LastDuration() time.Duration {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if len(m.durations) == 0 {
+		return 0
+	}
+
+	return m.durations[len(m.durations)-1]
+}
+
+func (m *Measurement) Durations() []time.Duration {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	s := make([]time.Duration, len(m.durations))
+	copy(s, m.durations)
+
+	return s
 }
 
 // Count implements stats.Measurement
@@ -44,8 +85,8 @@ func (m *Measurement) Count(n int) {
 		panic("operation Count not supported for measurement type:" + m.Type)
 	}
 
-	m.LastValue += float64(n)
-	m.Values = append(m.Values, m.LastValue)
+	m.sum += float64(n)
+	m.values = append(m.values, m.sum)
 }
 
 // Increment implements stats.Measurement
@@ -66,8 +107,7 @@ func (m *Measurement) Gauge(value interface{}) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	m.LastValue = value.(float64)
-	m.Values = append(m.Values, m.LastValue)
+	m.values = append(m.values, value.(float64))
 }
 
 // Observe implements stats.Measurement
@@ -79,8 +119,7 @@ func (m *Measurement) Observe(value float64) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	m.LastValue = value
-	m.Values = append(m.Values, m.LastValue)
+	m.values = append(m.values, value)
 }
 
 // Start implements stats.Measurement
@@ -122,8 +161,7 @@ func (m *Measurement) SendTiming(duration time.Duration) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	m.LastDuration = duration
-	m.Durations = append(m.Durations, m.LastDuration)
+	m.durations = append(m.durations, duration)
 }
 
 func (ms *Store) init() {
