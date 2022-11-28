@@ -54,17 +54,6 @@ func TestIntegrationClickHouse(t *testing.T) {
 		tables   = []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"}
 	)
 
-	cleanupClickhouseCluster := func(t testing.TB) {
-		t.Helper()
-
-		var err error
-
-		_, err = dbs[1].Exec("DROP DATABASE IF EXISTS rudderdb ON CLUSTER rudder_cluster;")
-		require.NoError(t, err)
-		_, err = dbs[1].Exec("CREATE DATABASE IF NOT EXISTS rudderdb ON CLUSTER rudder_cluster;")
-		require.NoError(t, err)
-	}
-
 	testCases := []struct {
 		name            string
 		sourceID        string
@@ -73,7 +62,6 @@ func TestIntegrationClickHouse(t *testing.T) {
 		warehouseEvents testhelper.EventsCountMap
 		clusterSetup    func(t testing.TB)
 		db              *sql.DB
-		prerequisite    func(t testing.TB)
 	}{
 		{
 			name:          "Single Setup",
@@ -81,29 +69,13 @@ func TestIntegrationClickHouse(t *testing.T) {
 			destinationID: "21Ev6TI6emCFDKph2Zn6XfTP7PI",
 			writeKey:      "C5AWX39IVUWSP2NcHciWvqZTa2N",
 			db:            dbs[0],
-			prerequisite: func(t testing.TB) {
-				testhelper.SetConfig(t, []warehouseutils.KeyValue{
-					{
-						Key:   "Warehouse.clickhouse.enableS3EngineForLoading",
-						Value: false,
-					},
-				})
-			},
 		},
 		{
 			name:          "Single Setup with S3 Engine",
-			sourceID:      "1wRvLmEnMOOxNM79pwaZhyCqXRE",
-			destinationID: "21Ev6TI6emCFDKph2Zn6XfTP7PI",
-			writeKey:      "C5AWX39IVUWSP2NcHciWvqZTa2N",
+			sourceID:      "2131mEnMOOxNM79pwaZhyCqXREb",
+			destinationID: "8765TI6emCFDKph2Zn6XfTP7PIv",
+			writeKey:      "T6AWX39IVUWSP2NcHciWvqZTa2N",
 			db:            dbs[0],
-			prerequisite: func(t testing.TB) {
-				testhelper.SetConfig(t, []warehouseutils.KeyValue{
-					{
-						Key:   "Warehouse.clickhouse.enableS3EngineForLoading",
-						Value: true,
-					},
-				})
-			},
 		},
 		{
 			name:          "Cluster Mode Setup",
@@ -125,43 +97,6 @@ func TestIntegrationClickHouse(t *testing.T) {
 				t.Helper()
 				initializeClickhouseClusterMode(t, dbs[1:], tables)
 			},
-			prerequisite: func(t testing.TB) {
-				testhelper.SetConfig(t, []warehouseutils.KeyValue{
-					{
-						Key:   "Warehouse.clickhouse.enableS3EngineForLoading",
-						Value: false,
-					},
-				})
-
-				cleanupClickhouseCluster(t)
-			},
-		},
-		{
-			name:          "Cluster Mode Setup with S3 Engine",
-			sourceID:      "1wRvLmEnMOOxNM79ghdZhyCqXRE",
-			destinationID: "21Ev6TI6emCFDKhp2Zn6XfTP7PI",
-			writeKey:      "95RxRTZHWUsaD6HEdz0ThbXfQ6p",
-			db:            dbs[1],
-			warehouseEvents: testhelper.EventsCountMap{
-				"identifies":    8,
-				"users":         2,
-				"tracks":        8,
-				"product_track": 8,
-				"pages":         8,
-				"screens":       8,
-				"aliases":       8,
-				"groups":        8,
-			},
-			prerequisite: func(t testing.TB) {
-				testhelper.SetConfig(t, []warehouseutils.KeyValue{
-					{
-						Key:   "Warehouse.clickhouse.enableS3EngineForLoading",
-						Value: true,
-					},
-				})
-
-				cleanupClickhouseCluster(t)
-			},
 		},
 	}
 
@@ -169,12 +104,13 @@ func TestIntegrationClickHouse(t *testing.T) {
 		tc := tc
 
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
 			ts := testhelper.WareHouseTest{
 				Schema:        "rudderdb",
 				WriteKey:      tc.writeKey,
 				SourceID:      tc.sourceID,
 				DestinationID: tc.destinationID,
-				Prerequisite:  tc.prerequisite,
 				Tables:        tables,
 				Provider:      provider,
 				JobsDB:        jobsDB,

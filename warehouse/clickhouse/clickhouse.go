@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"golang.org/x/exp/slices"
 	"io"
 	"os"
 	"path/filepath"
@@ -47,7 +48,7 @@ var (
 	commitTimeOutInSeconds      time.Duration
 	loadTableFailureRetries     int
 	numWorkersDownloadLoadFiles int
-	enableS3EngineForLoading    bool
+	s3EngineEnabledWorkspaceIDs []string
 )
 
 var clickhouseDefaultDateTime, _ = time.Parse(time.RFC3339, "1970-01-01 00:00:00")
@@ -253,7 +254,7 @@ func loadConfig() {
 	config.RegisterDurationConfigVariable(600, &commitTimeOutInSeconds, true, time.Second, "Warehouse.clickhouse.commitTimeOutInSeconds")
 	config.RegisterIntConfigVariable(3, &loadTableFailureRetries, true, 1, "Warehouse.clickhouse.loadTableFailureRetries")
 	config.RegisterIntConfigVariable(8, &numWorkersDownloadLoadFiles, true, 1, "Warehouse.clickhouse.numWorkersDownloadLoadFiles")
-	config.RegisterBoolConfigVariable(false, &enableS3EngineForLoading, true, "Warehouse.clickhouse.enableS3EngineForLoading")
+	config.RegisterStringSliceConfigVariable(nil, &s3EngineEnabledWorkspaceIDs, true, "Warehouse.clickhouse.s3EngineEnabledWorkspaceIDs")
 }
 
 /*
@@ -538,7 +539,7 @@ func (ch *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 }
 
 func (ch *HandleT) useS3CopyEngineForLoading() bool {
-	if !enableS3EngineForLoading {
+	if !slices.Contains(s3EngineEnabledWorkspaceIDs, ch.Warehouse.WorkspaceID) {
 		return false
 	}
 	if ch.ObjectStorage != warehouseutils.S3 && ch.ObjectStorage != warehouseutils.MINIO {

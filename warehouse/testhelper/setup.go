@@ -806,7 +806,8 @@ func SetConfig(t testing.TB, kvs []warehouseutils.KeyValue) {
 
 func PopulateTemplateConfigurations() map[string]string {
 	configurations := map[string]string{
-		"workspaceId": "BpLnfgDsc2WD8F2qNfHK5a84jjJ",
+		"workspaceId":   "BpLnfgDsc2WD8F2qNfHK5a84jjJ",
+		"workspaceId-1": "AMMNfgDsc2WD8F2qNfHK5a84jjJ",
 
 		"postgresWriteKey": "kwzDkh9h2fhfUVuS9jZ8uVbhV3v",
 		"postgresHost":     "wh-postgres",
@@ -829,6 +830,8 @@ func PopulateTemplateConfigurations() map[string]string {
 		"clickhouseClusterUser":     "rudder",
 		"clickhouseClusterPassword": "rudder-password",
 		"clickhouseClusterPort":     "9000",
+
+		"clickHouseS3EngineWriteKey": "T6AWX39IVUWSP2NcHciWvqZTa2N",
 
 		"mssqlWriteKey": "YSQ3n267l1VQKGNbSuJE9fQbzON",
 		"mssqlHost":     "wh-mssql",
