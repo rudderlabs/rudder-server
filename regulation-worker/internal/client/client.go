@@ -57,7 +57,7 @@ func (j *JobAPI) Get(ctx context.Context) (model.Job, error) {
 			pkgLogger.Errorf("error while closing response body: %v", err)
 		}
 	}()
-	pkgLogger.Infof("obtained response code: %v", resp.StatusCode, "response body: ", resp.Body)
+	pkgLogger.Debugf("obtained response code: %v", resp.StatusCode, "response body: ", resp.Body)
 
 	// if successful
 
