@@ -63,18 +63,13 @@ func (c *throttlingConfig) readThrottlingConfig(destName, destID string) {
 		config.RegisterInt64ConfigVariable(0, &c.limit, false, 1, fmt.Sprintf(`Router.throttler.%s.limit`, destName))
 	}
 
-	if config.IsSet(fmt.Sprintf(`Router.throttler.%s.%s.timeWindow`, destName, destID)) ||
-		config.IsSet(fmt.Sprintf(`Router.throttler.%s.%s.timeWindowInS`, destName, destID)) {
+	if config.IsSet(fmt.Sprintf(`Router.throttler.%s.%s.timeWindow`, destName, destID)) {
 		config.RegisterDurationConfigVariable(
-			0, &c.window, false, time.Second,
-			fmt.Sprintf(`Router.throttler.%s.%s.timeWindow`, destName, destID),
-			fmt.Sprintf(`Router.throttler.%s.%s.timeWindowInS`, destName, destID),
+			0, &c.window, false, time.Second, fmt.Sprintf(`Router.throttler.%s.%s.timeWindow`, destName, destID),
 		)
 	} else {
 		config.RegisterDurationConfigVariable(
-			0, &c.window, false, time.Second,
-			fmt.Sprintf(`Router.throttler.%s.timeWindow`, destName),
-			fmt.Sprintf(`Router.throttler.%s.timeWindowInS`, destName),
+			0, &c.window, false, time.Second, fmt.Sprintf(`Router.throttler.%s.timeWindow`, destName),
 		)
 	}
 
