@@ -1296,6 +1296,7 @@ func (rt *HandleT) shouldThrottle(job *jobsdb.JobT, parameters JobParametersT, t
 	limited, err := throttler.CheckLimitReached(parameters.DestinationID, throttlingCost)
 	if err != nil {
 		// we can't throttle, let's hit the destination, worst case we get a 429
+		rt.logger.Errorf(`[%v Router] :: Throttler error: %v`, rt.destName, err)
 		return false
 	}
 	if limited {
