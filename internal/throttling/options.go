@@ -5,29 +5,38 @@ import "github.com/go-redis/redis/v8"
 // Option is a functional option for the limiter, see With* functions for reference
 type Option func(*Limiter)
 
-// WithGoRate allows to setup a limiter with golang.org/x/time/rate (supports returning tokens)
-func WithGoRate() Option {
+// WithInMemoryGoRate allows to setup a limiter with golang.org/x/time/rate (supports returning tokens)
+func WithInMemoryGoRate() Option {
 	return func(l *Limiter) {
 		l.useGoRate = true
 	}
 }
 
-// WithGCRA allows to use the GCRA algorithm
-func WithGCRA() Option {
+// WithInMemoryGCRA allows to use the GCRA algorithm (in-memory) with the specified burst or with the
+// burst as rate if the provided burst is <= 0
+func WithInMemoryGCRA(burst int64) Option {
 	return func(l *Limiter) {
 		l.useGCRA = true
+		if burst > 0 {
+			l.gcraBurst = burst
+		}
 	}
 }
 
-// WithGCRABurst allows to use the GCRA algorithm with the specified burst
-func WithGCRABurst(burst int64) Option {
+// WithRedisGCRA allows to use the GCRA algorithm (Redis version) with the specified burst or with the
+// burst as rate if the provided burst is <= 0
+func WithRedisGCRA(rc *redis.Client, burst int64) Option {
 	return func(l *Limiter) {
-		l.gcraBurst = burst
+		l.useGCRA = true
+		l.redisSpeaker = rc
+		if burst > 0 {
+			l.gcraBurst = burst
+		}
 	}
 }
 
-// WithRedisClient allows to setup a limiter for Distributed Throttling with Redis
-func WithRedisClient(rc *redis.Client) Option {
+// WithRedisSortedSet allows to use the Redis SortedSet algorithm for rate limiting
+func WithRedisSortedSet(rc *redis.Client) Option {
 	return func(l *Limiter) {
 		l.redisSpeaker = rc
 	}

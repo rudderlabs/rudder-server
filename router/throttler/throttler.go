@@ -70,6 +70,11 @@ func (f *Factory) initThrottlerFactory() error {
 	}
 
 	throttlingAlgorithm := config.GetString("Router.throttler.algorithm", throttlingAlgoTypeGoRate)
+	if throttlingAlgorithm == throttlingAlgoTypeRedisGCRA || throttlingAlgorithm == throttlingAlgoTypeRedisSortedSet {
+		if redisClient == nil {
+			return fmt.Errorf("redis client is nil with algorithm %s", throttlingAlgorithm)
+		}
+	}
 
 	var (
 		err  error
@@ -80,17 +85,13 @@ func (f *Factory) initThrottlerFactory() error {
 	)
 	switch throttlingAlgorithm {
 	case throttlingAlgoTypeGoRate:
-		l, err = throttling.New(append(opts, throttling.WithGoRate())...)
+		l, err = throttling.New(append(opts, throttling.WithInMemoryGoRate())...)
 	case throttlingAlgoTypeGCRA:
-		l, err = throttling.New(append(opts, throttling.WithGCRA())...)
-	case throttlingAlgoTypeRedisGCRA, throttlingAlgoTypeRedisSortedSet:
-		if redisClient == nil {
-			return fmt.Errorf("redis client is nil with algorithm %s", throttlingAlgorithm)
-		}
-		if throttlingAlgorithm == throttlingAlgoTypeRedisGCRA {
-			opts = append(opts, throttling.WithGCRA())
-		}
-		l, err = throttling.New(append(opts, throttling.WithRedisClient(redisClient))...)
+		l, err = throttling.New(append(opts, throttling.WithInMemoryGCRA(0))...)
+	case throttlingAlgoTypeRedisGCRA:
+		l, err = throttling.New(append(opts, throttling.WithRedisGCRA(redisClient, 0))...)
+	case throttlingAlgoTypeRedisSortedSet:
+		l, err = throttling.New(append(opts, throttling.WithRedisSortedSet(redisClient))...)
 	default:
 		return fmt.Errorf("invalid throttling algorithm: %s", throttlingAlgorithm)
 	}

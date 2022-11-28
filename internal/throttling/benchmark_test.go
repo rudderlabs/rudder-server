@@ -30,10 +30,10 @@ func BenchmarkLimiters(b *testing.B) {
 		ctx            = context.Background()
 		rc             = bootstrapRedis(ctx, b, pool)
 		limiters       = map[string]*Limiter{
-			"go rate":           newLimiter(b, WithGoRate()),
-			"gcra":              newLimiter(b, WithGCRA()),
-			"gcra redis":        newLimiter(b, WithGCRA(), WithRedisClient(rc)),
-			"sorted sets redis": newLimiter(b, WithRedisClient(rc)),
+			"go rate":           newLimiter(b, WithInMemoryGoRate()),
+			"gcra":              newLimiter(b, WithInMemoryGCRA(0)),
+			"gcra redis":        newLimiter(b, WithRedisGCRA(rc, 0)),
+			"sorted sets redis": newLimiter(b, WithRedisSortedSet(rc)),
 		}
 	)
 

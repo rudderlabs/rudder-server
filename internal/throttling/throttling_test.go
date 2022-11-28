@@ -36,22 +36,22 @@ func TestThrottling(t *testing.T) {
 		limiters = []limiterSettings{
 			{
 				name:        "go rate",
-				limiter:     newLimiter(t, WithGoRate()),
+				limiter:     newLimiter(t, WithInMemoryGoRate()),
 				concurrency: 100,
 			},
 			{
 				name:        "gcra",
-				limiter:     newLimiter(t, WithGCRA(), WithGCRABurst(1)),
+				limiter:     newLimiter(t, WithInMemoryGCRA(1)),
 				concurrency: 2, additionalErrorMargin: 0.06,
 			},
 			{
 				name:        "gcra redis",
-				limiter:     newLimiter(t, WithGCRA(), WithRedisClient(rc), WithGCRABurst(1)),
+				limiter:     newLimiter(t, WithRedisGCRA(rc, 1)),
 				concurrency: 2, additionalErrorMargin: 0.06,
 			},
 			{
 				name:        "sorted sets redis",
-				limiter:     newLimiter(t, WithRedisClient(rc)),
+				limiter:     newLimiter(t, WithRedisSortedSet(rc)),
 				concurrency: 5000,
 			},
 		}
@@ -169,7 +169,7 @@ func TestGCRABurstAsRate(t *testing.T) {
 	var (
 		ctx = context.Background()
 		rc  = bootstrapRedis(ctx, t, pool)
-		l   = newLimiter(t, WithGCRA(), WithRedisClient(rc))
+		l   = newLimiter(t, WithRedisGCRA(rc, 0))
 		// Configuration variables
 		key          = "foo"
 		cost   int64 = 1
@@ -214,12 +214,12 @@ func TestReturn(t *testing.T) {
 		testCases       = []testCase{
 			{
 				name:         "go rate",
-				limiter:      newLimiter(t, WithGoRate()),
+				limiter:      newLimiter(t, WithInMemoryGoRate()),
 				minDeletions: 2,
 			},
 			{
 				name:         "sorted sets redis",
-				limiter:      newLimiter(t, WithRedisClient(rc)),
+				limiter:      newLimiter(t, WithRedisSortedSet(rc)),
 				minDeletions: 1,
 			},
 		}
@@ -273,10 +273,10 @@ func TestBadData(t *testing.T) {
 		ctx      = context.Background()
 		rc       = bootstrapRedis(ctx, t, pool)
 		limiters = map[string]*Limiter{
-			"go rate":           newLimiter(t, WithGoRate()),
-			"gcra":              newLimiter(t, WithGCRA()),
-			"gcra redis":        newLimiter(t, WithGCRA(), WithRedisClient(rc)),
-			"sorted sets redis": newLimiter(t, WithRedisClient(rc)),
+			"go rate":           newLimiter(t, WithInMemoryGoRate()),
+			"gcra":              newLimiter(t, WithInMemoryGCRA(0)),
+			"gcra redis":        newLimiter(t, WithRedisGCRA(rc, 0)),
+			"sorted sets redis": newLimiter(t, WithRedisSortedSet(rc)),
 		}
 	)
 
