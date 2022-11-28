@@ -13,11 +13,11 @@ import (
 func TestStats(t *testing.T) {
 	now := time.Now()
 
-	store := memstats.Store{
-		Now: func() time.Time {
+	store := memstats.New(
+		memstats.WithNow(func() time.Time {
 			return now
-		},
-	}
+		}),
+	)
 
 	commonTags := stats.Tags{"tag1": "value1"}
 
