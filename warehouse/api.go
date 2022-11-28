@@ -110,7 +110,7 @@ const (
 	TriggeredSuccessfully   = "Triggered successfully"
 	NoPendingEvents         = "No pending events to sync for this destination"
 	DownloadFileNamePattern = "downloadfile.*.tmp"
-	NoSuchSyncs             = "No such sync exist"
+	NoSuchSync              = "No such sync exist"
 )
 
 func InitWarehouseAPI(dbHandle *sql.DB, log logger.Logger) error {
@@ -377,7 +377,7 @@ func (uploadReq UploadReqT) TriggerWHUpload() (response *proto.TriggerWhUploadsR
 	)
 	if err == sql.ErrNoRows {
 		return &proto.TriggerWhUploadsResponse{
-			Message:    NoSuchSyncs,
+			Message:    NoSuchSync,
 			StatusCode: http.StatusOK,
 		}, nil
 	}
