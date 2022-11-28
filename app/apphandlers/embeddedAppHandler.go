@@ -209,7 +209,7 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 		ProcErrorDB:      errDB,
 		TransientSources: transientSources,
 		RsourcesService:  rsourcesService,
-		Logger:           pkgLogger,
+		Logger:           a.log,
 		Stats:            stats.Default,
 	}
 	brtFactory := &batchrouter.Factory{
