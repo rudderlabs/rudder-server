@@ -56,21 +56,15 @@ type throttlingConfig struct {
 
 func (c *throttlingConfig) readThrottlingConfig(destName, destID string) {
 	if config.IsSet(fmt.Sprintf(`Router.throttler.%s.%s.limit`, destName, destID)) {
-		config.RegisterInt64ConfigVariable(
-			0, &c.limit, false, 1, fmt.Sprintf(`Router.throttler.%s.%s.limit`, destName, destID),
-		)
+		c.limit = config.GetInt64(fmt.Sprintf(`Router.throttler.%s.%s.limit`, destName, destID), 0)
 	} else {
-		config.RegisterInt64ConfigVariable(0, &c.limit, false, 1, fmt.Sprintf(`Router.throttler.%s.limit`, destName))
+		c.limit = config.GetInt64(fmt.Sprintf(`Router.throttler.%s.limit`, destName), 0)
 	}
 
 	if config.IsSet(fmt.Sprintf(`Router.throttler.%s.%s.timeWindow`, destName, destID)) {
-		config.RegisterDurationConfigVariable(
-			0, &c.window, false, time.Second, fmt.Sprintf(`Router.throttler.%s.%s.timeWindow`, destName, destID),
-		)
+		c.window = config.GetDuration(fmt.Sprintf(`Router.throttler.%s.%s.timeWindow`, destName, destID), 0, time.Second)
 	} else {
-		config.RegisterDurationConfigVariable(
-			0, &c.window, false, time.Second, fmt.Sprintf(`Router.throttler.%s.timeWindow`, destName),
-		)
+		c.window = config.GetDuration(fmt.Sprintf(`Router.throttler.%s.timeWindow`, destName), 0, time.Second)
 	}
 
 	// enable dest throttler
