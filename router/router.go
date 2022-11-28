@@ -87,8 +87,6 @@ type HandleT struct {
 	workers                                 []*workerT
 	telemetry                               *DiagnosticT
 	customDestinationManager                customDestinationManager.DestinationManager
-	throttler                               map[string]limiter // map key is the destinationID
-	throttlerMu                             sync.Mutex
 	throttlingCosts                         atomic.Pointer[types.EventTypeThrottlingCost]
 	throttlerFactory                        *rtThrottler.Factory
 	guaranteeUserEventOrder                 bool
@@ -1281,18 +1279,9 @@ func (rt *HandleT) shouldThrottle(job *jobsdb.JobT, parameters JobParametersT, t
 		return false
 	}
 
-	rt.throttlerMu.Lock()
-	throttler, ok := rt.throttler[parameters.DestinationID]
-	if !ok {
-		throttler = rt.throttlerFactory.New(rt.destName, parameters.DestinationID)
-		rt.throttler[parameters.DestinationID] = throttler
-	}
-	rt.throttlerMu.Unlock()
-
+	throttler := rt.throttlerFactory.Get(rt.destName, parameters.DestinationID)
 	throttlingCost := rt.getThrottlingCost(job)
-	// TODO throttling key could be the combination of workspaceID + destinationID to avoid conflicts across clusters
-	// The concatenation of workspaceID and destinationID would make sense for destinations that do not have global limits
-	// but we don't have yet a way to understand which ones are those (needs configuration setting).
+
 	limited, err := throttler.CheckLimitReached(parameters.DestinationID, throttlingCost)
 	if err != nil {
 		// we can't throttle, let's hit the destination, worst case we get a 429
@@ -1905,8 +1894,6 @@ func (rt *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB jobsd
 	rt.transformer = transformer.NewTransformer(rt.netClientTimeout, rt.backendProxyTimeout)
 
 	rt.oauth = oauth.NewOAuthErrorHandler(backendConfig)
-
-	rt.throttler = make(map[string]limiter)
 
 	rt.isBackendConfigInitialized = false
 	rt.backendConfigInitialized = make(chan bool)

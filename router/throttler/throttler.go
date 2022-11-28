@@ -3,9 +3,21 @@ package throttler
 import (
 	"context"
 	"fmt"
+	"sync"
 	"time"
 
+	"github.com/go-redis/redis/v8"
+
 	"github.com/rudderlabs/rudder-server/config"
+	"github.com/rudderlabs/rudder-server/internal/throttling"
+	"github.com/rudderlabs/rudder-server/services/stats"
+)
+
+const (
+	throttlingAlgoTypeGoRate         = "gorate"
+	throttlingAlgoTypeGCRA           = "gcra"
+	throttlingAlgoTypeRedisGCRA      = "redis-gcra"
+	throttlingAlgoTypeRedisSortedSet = "redis-sorted-set"
 )
 
 type limiter interface {
@@ -14,16 +26,81 @@ type limiter interface {
 }
 
 type Factory struct {
-	Limiter limiter
+	Stats        stats.Stats
+	limiter      limiter
+	throttlers   map[string]*Throttler // map key is the destinationID
+	throttlersMu sync.Mutex
 }
 
-func (f *Factory) New(destName, destID string) *Throttler {
+// New constructs a new Throttler Factory
+func New() (*Factory, error) {
+	f := Factory{}
+	if err := f.initThrottlerFactory(); err != nil {
+		return nil, err
+	}
+	return &f, nil
+}
+
+func (f *Factory) Get(destName, destID string) *Throttler {
+	f.throttlersMu.Lock()
+	defer f.throttlersMu.Unlock()
+	if f.throttlers == nil {
+		f.throttlers = make(map[string]*Throttler)
+	} else if t, ok := f.throttlers[destID]; ok {
+		return t
+	}
+
 	var conf throttlingConfig
 	conf.readThrottlingConfig(destName, destID)
-	return &Throttler{
-		limiter: f.Limiter,
+	f.throttlers[destID] = &Throttler{
+		limiter: f.limiter,
 		config:  conf,
 	}
+	return f.throttlers[destID]
+}
+
+func (f *Factory) initThrottlerFactory() error {
+	var redisClient *redis.Client
+	if config.IsSet("Router.throttler.redis.addr") {
+		redisClient = redis.NewClient(&redis.Options{
+			Addr:     config.GetString("Router.throttler.redis.addr", "localhost:6379"),
+			Username: config.GetString("Router.throttler.redis.username", ""),
+			Password: config.GetString("Router.throttler.redis.password", ""),
+		})
+	}
+
+	throttlingAlgorithm := config.GetString("Router.throttler.algorithm", throttlingAlgoTypeGoRate)
+
+	var (
+		err  error
+		l    *throttling.Limiter
+		opts = []throttling.Option{
+			throttling.WithStatsCollector(f.Stats),
+		}
+	)
+	switch throttlingAlgorithm {
+	case throttlingAlgoTypeGoRate:
+		l, err = throttling.New(append(opts, throttling.WithGoRate())...)
+	case throttlingAlgoTypeGCRA:
+		l, err = throttling.New(append(opts, throttling.WithGCRA())...)
+	case throttlingAlgoTypeRedisGCRA, throttlingAlgoTypeRedisSortedSet:
+		if redisClient == nil {
+			return fmt.Errorf("redis client is nil with algorithm %s", throttlingAlgorithm)
+		}
+		if throttlingAlgorithm == throttlingAlgoTypeRedisGCRA {
+			opts = append(opts, throttling.WithGCRA())
+		}
+		l, err = throttling.New(append(opts, throttling.WithRedisClient(redisClient))...)
+	default:
+		return fmt.Errorf("invalid throttling algorithm: %s", throttlingAlgorithm)
+	}
+	if err != nil {
+		return fmt.Errorf("failed to create throttler: %w", err)
+	}
+
+	f.limiter = l
+
+	return nil
 }
 
 type Throttler struct {
