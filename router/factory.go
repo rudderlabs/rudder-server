@@ -66,10 +66,7 @@ func (f *Factory) initThrottlerFactory() {
 		})
 	}
 
-	var throttlingAlgorithm string
-	config.RegisterStringConfigVariable(
-		throttlingAlgoTypeGoRate, &throttlingAlgorithm, false, "Router.throttler.algorithm",
-	)
+	throttlingAlgorithm := config.GetString("Router.throttler.algorithm", throttlingAlgoTypeGoRate)
 
 	var (
 		err  error
