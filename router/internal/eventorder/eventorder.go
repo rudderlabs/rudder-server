@@ -98,7 +98,9 @@ func (b *Barrier) Enter(key string, jobID int64) (accepted bool, previousFailedJ
 	return true, nil
 }
 
-// Leave the barrier for this key. Calling Leave is idempotent.
+// Leave the barrier for this key and jobID. Leave acts as an undo operation for Enter, i.e. 
+// when a previously-entered job leaves the barrier it is as if this key and jobID didn't enter the barrier.
+// Calling Leave is idempotent.
 func (b *Barrier) Leave(key string, jobID int64) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
