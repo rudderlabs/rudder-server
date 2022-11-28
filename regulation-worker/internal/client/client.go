@@ -57,7 +57,12 @@ func (j *JobAPI) Get(ctx context.Context) (model.Job, error) {
 			pkgLogger.Errorf("error while closing response body: %v", err)
 		}
 	}()
-	pkgLogger.Infof("obtained response code: %v", resp.StatusCode, "response body: ", resp.Body)
+	pkgLogger.Infof("WorkspaceToken: %v", j.WorkspaceToken)
+	pkgLogger.Infof("obtained response code: %v", resp.StatusCode)
+	bodyBytes, err := io.ReadAll(resp.Body)
+	if err != nil {
+		pkgLogger.Infof("CP response body: ", string(bodyBytes))
+	}
 
 	// if successful
 
