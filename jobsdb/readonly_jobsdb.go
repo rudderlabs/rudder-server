@@ -35,10 +35,9 @@ type ReadonlyJobsDB interface {
 }
 
 type ReadonlyHandleT struct {
-	DbHandle           *sql.DB
-	tablePrefix        string
-	logger             logger.Logger
-	maxOpenConnections int
+	DbHandle    *sql.DB
+	tablePrefix string
+	logger      logger.Logger
 }
 
 type DSPair struct {
@@ -96,15 +95,12 @@ func (jd *ReadonlyHandleT) Setup(tablePrefix string) error {
 	psqlInfo := misc.GetConnectionString()
 	jd.tablePrefix = tablePrefix
 
-	maxOpenConnectionsKeys := []string{"ReadonlyJobsDB." + jd.tablePrefix + "." + "maxOpenConnections", "ReadonlyJobsDB." + "maxOpenConnections"}
-	config.RegisterIntConfigVariable(5, &jd.maxOpenConnections, false, 1, maxOpenConnectionsKeys...)
-
 	jd.DbHandle, err = sql.Open("postgres", psqlInfo)
 	if err != nil {
 		return fmt.Errorf("opening connection to db: %v", err)
 	}
 
-	jd.DbHandle.SetMaxOpenConns(jd.maxOpenConnections)
+	jd.DbHandle.SetMaxOpenConns(config.GetInt("ReadonlyJobsDB."+jd.tablePrefix+"."+"maxOpenConnections", config.GetInt("ReadonlyJobsDB.maxOpenConnections", 5)))
 
 	ctx, cancel := context.WithTimeout(context.TODO(), config.GetDuration("JobsDB.dbPingTimeout", 10, time.Second))
 	defer cancel()
