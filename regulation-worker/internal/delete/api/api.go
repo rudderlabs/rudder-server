@@ -107,6 +107,10 @@ func (api *APIManager) deleteWithRetry(ctx context.Context, job model.Job, desti
 	jobStatus := getJobStatus(resp.StatusCode, jobResp)
 	pkgLogger.Debugf("[%v] Job: %v, JobStatus: %v", destination.Name, job.ID, jobStatus)
 
+	pkgLogger.Infof("[%v] isOAuthEnabled: %v", destination.Name, isOAuthEnabled)
+	pkgLogger.Infof("[%v] isTokenExpired: %v", destination.Name, isTokenExpired(jobResp))
+	pkgLogger.Infof("[%v] attempt not crossing limits: %v", destination.Name, currentOauthRetryAttempt < api.MaxOAuthRefreshRetryAttempts)
+
 	if isOAuthEnabled && isTokenExpired(jobResp) && currentOauthRetryAttempt < api.MaxOAuthRefreshRetryAttempts {
 		err = api.refreshOAuthToken(destination.Name, job.WorkspaceID, oAuthDetail)
 		if err != nil {
