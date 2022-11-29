@@ -28,7 +28,7 @@ import (
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/info"
 	"github.com/rudderlabs/rudder-server/rruntime"
-	"github.com/rudderlabs/rudder-server/services/controlplane/features"
+	"github.com/rudderlabs/rudder-server/services/controlplane/client"
 	"github.com/rudderlabs/rudder-server/services/db"
 	destinationdebugger "github.com/rudderlabs/rudder-server/services/debugger/destination"
 	"github.com/rudderlabs/rudder-server/services/filemanager"
@@ -2020,12 +2020,12 @@ func Start(ctx context.Context, app app.App) error {
 		g.Go(func() error {
 			backendconfig.DefaultBackendConfig.WaitForConfig(ctx)
 
-			c := features.NewClient(
+			c := client.NewClient(
 				config.GetString("CONFIG_BACKEND_URL", "https://api.rudderstack.com"),
 				backendconfig.DefaultBackendConfig.Identity(),
 			)
 
-			err := c.Send(ctx, info.WarehouseComponent.Name, info.WarehouseComponent.Features)
+			err := c.SendFeatures(ctx, info.WarehouseComponent.Name, info.WarehouseComponent.Features)
 			if err != nil {
 				pkgLogger.Errorf("error sending warehouse features: %v", err)
 			}
