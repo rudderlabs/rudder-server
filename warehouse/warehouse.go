@@ -1959,7 +1959,7 @@ func Setup(ctx context.Context) error {
 func Start(ctx context.Context, app app.App) error {
 	application = app
 
-	if dbHandle == nil {
+	if dbHandle == nil && !isStandAloneSlave() {
 		return errors.New("warehouse service cannot start, database connection is not setup")
 	}
 	// do not start warehouse service if rudder core is not in normal mode and warehouse is running in same process as rudder core
