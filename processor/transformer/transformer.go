@@ -320,7 +320,9 @@ func (trans *HandleT) request(ctx context.Context, url string, data []Transforme
 		},
 		endlessBackoff,
 		func(err error, t time.Duration) {
-			trans.logger.Errorf("JS HTTP connection error: URL: %v Error: %+v", url, err)
+			trans.logger.Errorf("JS HTTP connection error: URL: %v Error: %+v. WorkspaceID: %s, sourceID: %s, destinationID: %s, transformationID: %s, transformationVersionID: %s",
+				url, err, data[0].Metadata.WorkspaceID, data[0].Metadata.SourceID, data[0].Metadata.DestinationID,
+				data[0].Destination.Transformations[0].ID, data[0].Destination.Transformations[0].VersionID)
 		})
 	// control plane back up
 
