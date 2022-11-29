@@ -16,7 +16,7 @@ var UncompressMiddleware = func(h http.Handler) http.Handler {
 	})
 }
 
-// gzipReader wraps a response body so it can lazily
+// gzipReader wraps a body so it can lazily
 // call gzip.NewReader on the first call to Read
 type gzipReader struct {
 	body io.ReadCloser // underlying request body
