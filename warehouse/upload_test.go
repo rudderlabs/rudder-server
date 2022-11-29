@@ -5,11 +5,12 @@ package warehouse
 import (
 	"context"
 	"errors"
+	"os"
+	"testing"
+
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/services/stats/memstats"
 	"github.com/stretchr/testify/require"
-	"os"
-	"testing"
 
 	"github.com/golang/mock/gomock"
 	. "github.com/onsi/ginkgo/v2"
