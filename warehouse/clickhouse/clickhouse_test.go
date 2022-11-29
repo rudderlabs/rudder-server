@@ -73,9 +73,9 @@ func TestIntegrationClickHouse(t *testing.T) {
 		},
 		{
 			name:          "Single Setup with S3 Engine",
-			sourceID:      "2131mEnMOOxNM79pwaZhyCqXREb",
-			destinationID: "8765TI6emCFDKph2Zn6XfTP7PIv",
-			writeKey:      "T6AWX39IVUWSP2NcHciWvqZTa2N",
+			sourceID:      "1wRvLmEnMOOxNM79pwaZhyCqXRE",
+			destinationID: "21Ev6TI6emCFDKph2Zn6XfTP7PI",
+			writeKey:      "C5AWX39IVUWSP2NcHciWvqZTa2N",
 			db:            dbs[0],
 			s3EngineEnabledWorkspaceIDs: []string{
 				"BpLnfgDsc2WD8F2qNfHK5a84jjJ",
@@ -83,6 +83,27 @@ func TestIntegrationClickHouse(t *testing.T) {
 		},
 		{
 			name:          "Cluster Mode Setup",
+			sourceID:      "1wRvLmEnMOOxNM79ghdZhyCqXRE",
+			destinationID: "21Ev6TI6emCFDKhp2Zn6XfTP7PI",
+			writeKey:      "95RxRTZHWUsaD6HEdz0ThbXfQ6p",
+			db:            dbs[1],
+			warehouseEvents: testhelper.EventsCountMap{
+				"identifies":    8,
+				"users":         2,
+				"tracks":        8,
+				"product_track": 8,
+				"pages":         8,
+				"screens":       8,
+				"aliases":       8,
+				"groups":        8,
+			},
+			clusterSetup: func(t testing.TB) {
+				t.Helper()
+				initializeClickhouseClusterMode(t, dbs[1:], tables)
+			},
+		},
+		{
+			name:          "Cluster Mode Setup with S3 Engine",
 			sourceID:      "1wRvLmEnMOOxNM79ghdZhyCqXRE",
 			destinationID: "21Ev6TI6emCFDKhp2Zn6XfTP7PI",
 			writeKey:      "95RxRTZHWUsaD6HEdz0ThbXfQ6p",
@@ -116,14 +137,15 @@ func TestIntegrationClickHouse(t *testing.T) {
 			})
 
 			ts := testhelper.WareHouseTest{
-				Schema:        "rudderdb",
-				WriteKey:      tc.writeKey,
-				SourceID:      tc.sourceID,
-				DestinationID: tc.destinationID,
-				Tables:        tables,
-				Provider:      provider,
-				JobsDB:        jobsDB,
-				UserID:        testhelper.GetUserId(provider),
+				Schema:             "rudderdb",
+				WriteKey:           tc.writeKey,
+				SourceID:           tc.sourceID,
+				DestinationID:      tc.destinationID,
+				WarehouseEventsMap: tc.warehouseEvents,
+				Tables:             tables,
+				Provider:           provider,
+				JobsDB:             jobsDB,
+				UserID:             testhelper.GetUserId(provider),
 				StatsToVerify: []string{
 					"warehouse_clickhouse_commitTimeouts",
 					"warehouse_clickhouse_execTimeouts",
