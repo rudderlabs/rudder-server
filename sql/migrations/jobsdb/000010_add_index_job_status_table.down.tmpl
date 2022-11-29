@@ -1,4 +1,0 @@
-{{range .Datasets}}
-    DROP INDEX IF EXISTS "idx_{{$.Prefix}}_job_status_{{.}}_jid_id";
-    DROP VIEW IF EXISTS "v_last_{{$.Prefix}}_job_status_{{.}}";
-{{end}}

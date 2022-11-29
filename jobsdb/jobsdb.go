@@ -839,10 +839,49 @@ func (jd *HandleT) init() {
 	// so that we can be sure that all the necessary tables are created and considered to be in
 	// the latest schema version, before rudder-migrator starts introducing new tables.
 	jd.dsListLock.WithLock(func(l lock.LockToken) {
-		switch jd.ownerType {
-		case Write, ReadWrite:
-			jd.setupDatabaseTables(l, jd.clearAll)
+		// TODO: we need to make sure that no other process will be able to add or remove tables
+		// during the migration, otherwise schema migration may panic and db will be left in a dirty
+		// state.
+		// An advisory lock, shared between schema migration, internal migration and
+		// add new ds loop might be necessary.
+
+		writer := jd.ownerType == Write || jd.ownerType == ReadWrite
+		if writer && jd.clearAll {
+			jd.dropDatabaseTables(l)
 		}
+		templateData := func() map[string]interface{} {
+			// Important: if jobsdb type is acting as a writer then refreshDSList
+			// doesn't return the full list of datasets, only the rightmost two.
+			// But we need to run the schema migration against all datasets, no matter
+			// whether jobsdb is a writer or not.
+			datasets := getDSList(jd, jd.dbHandle, jd.tablePrefix)
+
+			datasetIndices := make([]string, 0)
+			for _, dataset := range datasets {
+				datasetIndices = append(datasetIndices, dataset.Index)
+			}
+
+			return map[string]interface{}{
+				"Prefix":   jd.tablePrefix,
+				"Datasets": datasetIndices,
+			}
+		}()
+
+		if writer {
+			jd.setupDatabaseTables(templateData)
+		}
+
+		// Run changesets that should always run for both writer and reader jobsdbs.
+		//
+		// When running separate gw and processor instances we cannot control the order of execution
+		// and we cannot guarantee that while gw migration is running or after it is complete, processor
+		// will not create new tables using the old schema.
+		//
+		// Changesets that run always can help in such cases, by bringing non-migrated tables into a usable state.
+		jd.runAlwaysChangesets(templateData)
+
+		// finally refresh the dataset list to make sure [datasetList] field is populated
+		jd.refreshDSList(l)
 	})
 }
 
