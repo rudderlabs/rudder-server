@@ -1088,19 +1088,14 @@ func (job *UploadJobT) columnCountStat(tableName string) {
 	if columnCountLimit, ok = columnCountLimitMap[job.warehouse.Type]; !ok {
 		return
 	}
-	currentColumnsCount := len(job.schemaHandle.schemaInWarehouse[tableName])
-	if currentColumnsCount > int(float64(columnCountLimit)*columnCountLimitThreshold) {
-		tags := []tag{
-			{
-				name: "tableName", value: strings.ToLower(tableName),
-			},
-			{
-				name: "columnCountLimit", value: strconv.Itoa(columnCountLimit),
-			},
-		}
 
-		job.counterStat(`warehouse_load_table_column_count`, tags...).Count(currentColumnsCount)
+	tags := []tag{
+		{name: "tableName", value: strings.ToLower(tableName)},
 	}
+	currentColumnsCount := len(job.schemaHandle.schemaInWarehouse[tableName])
+
+	job.counterStat(`warehouse_load_table_column_count`, tags...).Count(currentColumnsCount)
+	job.counterStat(`warehouse_load_table_column_limit`, tags...).Count(columnCountLimit)
 }
 
 func (job *UploadJobT) loadUserTables(loadFilesTableMap map[tableNameT]bool) ([]error, error) {

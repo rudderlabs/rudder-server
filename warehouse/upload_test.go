@@ -5,10 +5,11 @@ package warehouse
 import (
 	"context"
 	"errors"
+	"github.com/rudderlabs/rudder-server/services/stats"
+	"github.com/rudderlabs/rudder-server/services/stats/memstats"
+	"github.com/stretchr/testify/require"
 	"os"
 	"testing"
-
-	mock_stats "github.com/rudderlabs/rudder-server/mocks/services/stats"
 
 	"github.com/golang/mock/gomock"
 	. "github.com/onsi/ginkgo/v2"
@@ -80,6 +81,15 @@ func TestColumnCountStat(t *testing.T) {
 	Init()
 	Init4()
 
+	var (
+		workspaceID     = "test-workspaceID"
+		destinationID   = "test-desinationID"
+		destinationName = "test-desinationName"
+		sourceID        = "test-sourceID"
+		sourceName      = "test-sourceName"
+		tableName       = "test-table"
+	)
+
 	inputs := []struct {
 		name             string
 		columnCountLimit int
@@ -87,30 +97,29 @@ func TestColumnCountStat(t *testing.T) {
 		statExpected     bool
 	}{
 		{
+			name:             "Datalakes destination",
+			destinationType:  warehouseutils.S3_DATALAKE,
+			columnCountLimit: 1,
+		},
+		{
+			name:            "Unknown destination",
+			destinationType: "unknown-destination",
+		},
+		{
 			name:             "Greater than threshold",
 			destinationType:  "test-destination",
 			columnCountLimit: 1,
 			statExpected:     true,
 		},
 		{
-			name:             "Greater than threshold (Datalakes destination)",
-			destinationType:  warehouseutils.S3_DATALAKE,
-			columnCountLimit: 1,
-		},
-		{
 			name:             "Lesser than threshold",
 			destinationType:  "test-destination",
 			columnCountLimit: 10,
-		},
-		{
-			name:            "Unknown destination",
-			destinationType: "unknown-destination",
+			statExpected:     true,
 		},
 	}
 
-	ctrl := gomock.NewController(t)
-	mockStats := mock_stats.NewMockStats(ctrl)
-	mockMeasurement := mock_stats.NewMockMeasurement(ctrl)
+	store := memstats.New()
 
 	for _, tc := range inputs {
 		tc := tc
@@ -120,34 +129,27 @@ func TestColumnCountStat(t *testing.T) {
 				"test-destination": tc.columnCountLimit,
 			}
 
-			if tc.statExpected {
-				mockStats.EXPECT().NewTaggedStat(gomock.Any(), gomock.Any(), gomock.Any()).Times(1).Return(mockMeasurement)
-				mockMeasurement.EXPECT().Count(3).Times(1)
-			} else {
-				mockStats.EXPECT().NewTaggedStat(gomock.Any(), gomock.Any(), gomock.Any()).Times(0).Return(mockMeasurement)
-			}
-
 			j := UploadJobT{
 				upload: &Upload{
-					WorkspaceID:   "test-workspaceID",
-					DestinationID: "test-desinationID",
-					SourceID:      "test-sourceID",
+					WorkspaceID:   workspaceID,
+					DestinationID: destinationID,
+					SourceID:      sourceID,
 				},
 				warehouse: warehouseutils.Warehouse{
 					Type: tc.destinationType,
 					Destination: backendconfig.DestinationT{
-						ID:   "test-desinationID",
-						Name: "test-desinationName",
+						ID:   destinationID,
+						Name: destinationName,
 					},
 					Source: backendconfig.SourceT{
-						ID:   "test-sourceID",
-						Name: "test-sourceName",
+						ID:   sourceID,
+						Name: sourceName,
 					},
 				},
-				stats: mockStats,
+				stats: store,
 				schemaHandle: &SchemaHandleT{
 					schemaInWarehouse: warehouseutils.SchemaT{
-						"test-table": map[string]string{
+						tableName: map[string]string{
 							"test-column-1": "string",
 							"test-column-2": "string",
 							"test-column-3": "string",
@@ -155,7 +157,29 @@ func TestColumnCountStat(t *testing.T) {
 					},
 				},
 			}
-			j.columnCountStat("test-table")
+
+			tags := stats.Tags{
+				"module":      moduleName,
+				"destType":    tc.destinationType,
+				"warehouseID": j.warehouseID(),
+				"workspaceId": workspaceID,
+				"destID":      destinationID,
+				"sourceID":    sourceID,
+				"tableName":   tableName,
+			}
+
+			j.columnCountStat(tableName)
+
+			m1 := store.Get("warehouse_load_table_column_count", tags)
+			m2 := store.Get("warehouse_load_table_column_limit", tags)
+
+			if tc.statExpected {
+				require.EqualValues(t, m1.LastValue(), len(j.schemaHandle.schemaInWarehouse[tableName]))
+				require.EqualValues(t, m2.LastValue(), tc.columnCountLimit)
+			} else {
+				require.Nil(t, m1)
+				require.Nil(t, m2)
+			}
 		})
 	}
 }
