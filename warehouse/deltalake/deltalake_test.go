@@ -124,7 +124,6 @@ func TestIntegrationDeltalake(t *testing.T) {
 				Provider:      provider,
 				UserID:        testhelper.GetUserId(provider),
 				MessageID:     misc.FastUUID().String(),
-				WorkspaceID:   "BpLnfgDsc2WD8F2qNfHK5a84jjJ",
 				Tables:        []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"},
 				WarehouseEventsMap: testhelper.EventsCountMap{
 					"identifies":    1,

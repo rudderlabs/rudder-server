@@ -103,7 +103,6 @@ func TestIntegrationPostgres(t *testing.T) {
 				JobsDB:                jobsDB,
 				JobRunID:              misc.FastUUID().String(),
 				TaskRunID:             misc.FastUUID().String(),
-				WorkspaceID:           "BpLnfgDsc2WD8F2qNfHK5a84jjJ",
 				StatsToVerify:         []string{"pg_rollback_timeout"},
 				Client: &client.Client{
 					SQL:  db,

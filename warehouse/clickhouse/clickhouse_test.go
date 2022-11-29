@@ -55,21 +55,20 @@ func TestIntegrationClickHouse(t *testing.T) {
 	)
 
 	testCases := []struct {
-		name            string
-		sourceID        string
-		destinationID   string
-		workspaceID     string
-		writeKey        string
-		warehouseEvents testhelper.EventsCountMap
-		clusterSetup    func(t testing.TB)
-		db              *sql.DB
+		name                        string
+		sourceID                    string
+		destinationID               string
+		writeKey                    string
+		warehouseEvents             testhelper.EventsCountMap
+		clusterSetup                func(t testing.TB)
+		db                          *sql.DB
+		s3EngineEnabledWorkspaceIDs []string
 	}{
 		{
 			name:          "Single Setup",
 			sourceID:      "1wRvLmEnMOOxNM79pwaZhyCqXRE",
 			destinationID: "21Ev6TI6emCFDKph2Zn6XfTP7PI",
-			workspaceID:   "21Ev6TI6emCFDKph2Zn6XfTP7PI",
-			writeKey:      "BpLnfgDsc2WD8F2qNfHK5a84jjJ",
+			writeKey:      "C5AWX39IVUWSP2NcHciWvqZTa2N",
 			db:            dbs[0],
 		},
 		{
@@ -77,15 +76,16 @@ func TestIntegrationClickHouse(t *testing.T) {
 			sourceID:      "2131mEnMOOxNM79pwaZhyCqXREb",
 			destinationID: "8765TI6emCFDKph2Zn6XfTP7PIv",
 			writeKey:      "T6AWX39IVUWSP2NcHciWvqZTa2N",
-			workspaceID:   "AMMNfgDsc2WD8F2qNfHK5a84jjJ",
 			db:            dbs[0],
+			s3EngineEnabledWorkspaceIDs: []string{
+				"BpLnfgDsc2WD8F2qNfHK5a84jjJ",
+			},
 		},
 		{
 			name:          "Cluster Mode Setup",
 			sourceID:      "1wRvLmEnMOOxNM79ghdZhyCqXRE",
 			destinationID: "21Ev6TI6emCFDKhp2Zn6XfTP7PI",
 			writeKey:      "95RxRTZHWUsaD6HEdz0ThbXfQ6p",
-			workspaceID:   "BpLnfgDsc2WD8F2qNfHK5a84jjJ",
 			db:            dbs[1],
 			warehouseEvents: testhelper.EventsCountMap{
 				"identifies":    8,
@@ -108,14 +108,18 @@ func TestIntegrationClickHouse(t *testing.T) {
 		tc := tc
 
 		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
+			testhelper.SetConfig(t, []warehouseutils.KeyValue{
+				{
+					Key:   "Warehouse.clickhouse.s3EngineEnabledWorkspaceIDs",
+					Value: tc.s3EngineEnabledWorkspaceIDs,
+				},
+			})
 
 			ts := testhelper.WareHouseTest{
 				Schema:        "rudderdb",
 				WriteKey:      tc.writeKey,
 				SourceID:      tc.sourceID,
 				DestinationID: tc.destinationID,
-				WorkspaceID:   tc.workspaceID,
 				Tables:        tables,
 				Provider:      provider,
 				JobsDB:        jobsDB,

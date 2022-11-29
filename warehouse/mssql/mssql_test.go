@@ -105,7 +105,6 @@ func TestIntegrationMSSQL(t *testing.T) {
 				JobsDB:                jobsDB,
 				JobRunID:              misc.FastUUID().String(),
 				TaskRunID:             misc.FastUUID().String(),
-				WorkspaceID:           "BpLnfgDsc2WD8F2qNfHK5a84jjJ",
 				Client: &client.Client{
 					SQL:  db,
 					Type: client.SQLClient,

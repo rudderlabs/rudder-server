@@ -87,7 +87,6 @@ type WareHouseTest struct {
 	Provider                     string
 	SourceID                     string
 	DestinationID                string
-	WorkspaceID                  string
 	TimestampBeforeSendingEvents time.Time
 	EventsMap                    EventsCountMap
 	StagingFilesEventsMap        EventsCountMap
@@ -155,7 +154,7 @@ func (w *WareHouseTest) TestScenarioOne(t testing.TB) {
 	if !w.SkipWarehouse {
 		verifyEventsInWareHouse(t, w)
 	}
-	verifyWorkspaceIDInStats(t, w)
+	verifyWorkspaceIDInStats(t, w.StatsToVerify...)
 }
 
 func (w *WareHouseTest) TestScenarioTwo(t testing.TB) {
@@ -181,7 +180,7 @@ func (w *WareHouseTest) TestScenarioTwo(t testing.TB) {
 	if !w.SkipWarehouse {
 		verifyEventsInWareHouse(t, w)
 	}
-	verifyWorkspaceIDInStats(t, w)
+	verifyWorkspaceIDInStats(t)
 }
 
 func SetUpJobsDB(t testing.TB) *sql.DB {
@@ -211,6 +210,7 @@ func verifyEventsInStagingFiles(t testing.TB, wareHouseTest *WareHouseTest) {
 
 	var (
 		tableName         = "wh_staging_files"
+		workspaceID       = "BpLnfgDsc2WD8F2qNfHK5a84jjJ"
 		stagingFileEvents int
 		sqlStatement      string
 		operation         func() bool
@@ -240,7 +240,7 @@ func verifyEventsInStagingFiles(t testing.TB, wareHouseTest *WareHouseTest) {
 		   	created_at > $4;
 	`
 	t.Logf("Checking events in staging files for workspaceID: %s, sourceID: %s, DestinationID: %s, TimestampBeforeSendingEvents: %s, sqlStatement: %s",
-		wareHouseTest.WorkspaceID,
+		workspaceID,
 		wareHouseTest.SourceID,
 		wareHouseTest.DestinationID,
 		wareHouseTest.TimestampBeforeSendingEvents,
@@ -249,7 +249,7 @@ func verifyEventsInStagingFiles(t testing.TB, wareHouseTest *WareHouseTest) {
 	operation = func() bool {
 		err = db.QueryRow(
 			sqlStatement,
-			wareHouseTest.WorkspaceID,
+			workspaceID,
 			wareHouseTest.SourceID,
 			wareHouseTest.DestinationID,
 			wareHouseTest.TimestampBeforeSendingEvents,
@@ -345,6 +345,7 @@ func verifyEventsInTableUploads(t testing.TB, wareHouseTest *WareHouseTest) {
 	t.Logf("Started verifying events in table uploads")
 
 	var (
+		workspaceID       = "BpLnfgDsc2WD8F2qNfHK5a84jjJ"
 		tableUploadEvents int
 		sqlStatement      string
 		operation         func() bool
@@ -381,7 +382,7 @@ func verifyEventsInTableUploads(t testing.TB, wareHouseTest *WareHouseTest) {
 			   wh_table_uploads.status = 'exported_data';
 		`
 		t.Logf("Checking events in table uploads for workspaceID: %s, sourceID: %s, DestinationID: %s, TimestampBeforeSendingEvents: %s, table: %s, sqlStatement: %s",
-			wareHouseTest.WorkspaceID,
+			workspaceID,
 			wareHouseTest.SourceID,
 			wareHouseTest.DestinationID,
 			wareHouseTest.TimestampBeforeSendingEvents,
@@ -391,7 +392,7 @@ func verifyEventsInTableUploads(t testing.TB, wareHouseTest *WareHouseTest) {
 		operation = func() bool {
 			err = db.QueryRow(
 				sqlStatement,
-				wareHouseTest.WorkspaceID,
+				workspaceID,
 				wareHouseTest.SourceID,
 				wareHouseTest.DestinationID,
 				wareHouseTest.TimestampBeforeSendingEvents,
@@ -565,15 +566,16 @@ func verifyAsyncJob(t testing.TB, wareHouseTest *WareHouseTest) {
 	t.Logf("Completed verifying async job")
 }
 
-func verifyWorkspaceIDInStats(t testing.TB, warehouseTest *WareHouseTest) {
+func verifyWorkspaceIDInStats(t testing.TB, extraStats ...string) {
 	t.Helper()
 	t.Logf("Started verifying workspaceID in stats")
 
 	var (
 		statsToVerify []string
+		workspaceID   = "BpLnfgDsc2WD8F2qNfHK5a84jjJ"
 	)
 
-	statsToVerify = append(statsToVerify, warehouseTest.StatsToVerify...)
+	statsToVerify = append(statsToVerify, extraStats...)
 	statsToVerify = append(statsToVerify, []string{
 		// Miscellaneous
 		"wh_scheduler_create_upload_jobs",
@@ -619,7 +621,7 @@ func verifyWorkspaceIDInStats(t testing.TB, warehouseTest *WareHouseTest) {
 				found := false
 				for _, label := range metric.GetLabel() {
 					if label.GetName() == "workspaceId" {
-						require.Equalf(t, label.GetValue(), warehouseTest.WorkspaceID, "workspaceId is empty for stat: %s", statToVerify)
+						require.Equalf(t, label.GetValue(), workspaceID, "workspaceId is empty for stat: %s", statToVerify)
 						found = true
 						break
 					}
@@ -804,8 +806,7 @@ func SetConfig(t testing.TB, kvs []warehouseutils.KeyValue) {
 
 func PopulateTemplateConfigurations() map[string]string {
 	configurations := map[string]string{
-		"workspaceId":   "BpLnfgDsc2WD8F2qNfHK5a84jjJ",
-		"workspaceId_1": "AMMNfgDsc2WD8F2qNfHK5a84jjJ",
+		"workspaceId": "BpLnfgDsc2WD8F2qNfHK5a84jjJ",
 
 		"postgresWriteKey": "kwzDkh9h2fhfUVuS9jZ8uVbhV3v",
 		"postgresHost":     "wh-postgres",
@@ -828,8 +829,6 @@ func PopulateTemplateConfigurations() map[string]string {
 		"clickhouseClusterUser":     "rudder",
 		"clickhouseClusterPassword": "rudder-password",
 		"clickhouseClusterPort":     "9000",
-
-		"clickHouseS3EngineWriteKey": "T6AWX39IVUWSP2NcHciWvqZTa2N",
 
 		"mssqlWriteKey": "YSQ3n267l1VQKGNbSuJE9fQbzON",
 		"mssqlHost":     "wh-mssql",

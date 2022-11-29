@@ -235,7 +235,6 @@ func TestIntegrationBigQuery(t *testing.T) {
 				TaskRunID:             misc.FastUUID().String(),
 				JobRunID:              misc.FastUUID().String(),
 				UserID:                testhelper.GetUserId(provider),
-				WorkspaceID:           "BpLnfgDsc2WD8F2qNfHK5a84jjJ",
 				Client: &client.Client{
 					BQ:   db,
 					Type: client.BQClient,
