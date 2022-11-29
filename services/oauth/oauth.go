@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 	"sync"
@@ -318,7 +319,6 @@ func (authErrHandler *OAuthErrResHandler) fetchAccountInfoFromCp(refTokenParams 
 	authStats.statName = fmt.Sprintf(`%v_request_latency`, refTokenParams.EventNamePrefix)
 	authStats.SendTimerStats(cpiCallStartTime)
 
-	authErrHandler.logger.Debugf("[%s] Got the response from Control-Plane: rt-worker-%d\n", loggerNm, refTokenParams.WorkerId)
 	authErrHandler.logger.Debugf("[%s] Got the response from Control-Plane: rt-worker-%d with statusCode: %d\n", loggerNm, refTokenParams.WorkerId, statusCode)
 
 	// Empty Refresh token response
@@ -369,7 +369,7 @@ func (authErrHandler *OAuthErrResHandler) fetchAccountInfoFromCp(refTokenParams 
 func getRefreshTokenErrResp(response string, accountSecret *AccountSecret) (message string) {
 	if err := json.Unmarshal([]byte(response), &accountSecret); err != nil {
 		// Some problem with AccountSecret unmarshalling
-		message = err.Error()
+		message = fmt.Sprintf("Unmarshal of response unsuccessful: %v", response)
 	} else if gjson.Get(response, "body.code").String() == INVALID_REFRESH_TOKEN_GRANT {
 		// User (or) AccessToken (or) RefreshToken has been revoked
 		message = INVALID_REFRESH_TOKEN_GRANT
@@ -515,6 +515,14 @@ func processResponse(resp *http.Response) (statusCode int, respBody string) {
 }
 
 func (authErrHandler *OAuthErrResHandler) cpApiCall(cpReq *ControlPlaneRequestT) (int, string) {
+	cpStatTags := stats.Tags{
+		"url":         cpReq.Url,
+		"requestType": cpReq.RequestType,
+		"destType":    cpReq.destName,
+		"method":      cpReq.Method,
+		"flowType":    string(authErrHandler.rudderFlowType),
+	}
+
 	var reqBody *bytes.Buffer
 	var req *http.Request
 	var err error
@@ -539,15 +547,14 @@ func (authErrHandler *OAuthErrResHandler) cpApiCall(cpReq *ControlPlaneRequestT)
 
 	cpApiDoTimeStart := time.Now()
 	res, doErr := authErrHandler.client.Do(req)
-	stats.Default.NewTaggedStat("cp_request_latency", stats.TimerType, stats.Tags{
-		"url":         cpReq.Url,
-		"destination": cpReq.destName,
-		"requestType": cpReq.RequestType,
-	}).SendTiming(time.Since(cpApiDoTimeStart))
+	stats.Default.NewTaggedStat("cp_request_latency", stats.TimerType, cpStatTags).SendTiming(time.Since(cpApiDoTimeStart))
 	authErrHandler.logger.Debugf("[%s request] :: destination request sent\n", loggerNm)
 	if doErr != nil {
 		// Abort on receiving an error
 		authErrHandler.logger.Errorf("[%s request] :: destination request failed: %+v\n", loggerNm, doErr)
+		if os.IsTimeout(doErr) {
+			stats.Default.NewTaggedStat("cp_request_timeout", stats.CountType, cpStatTags)
+		}
 		return http.StatusBadRequest, doErr.Error()
 	}
 	if res.Body != nil {
