@@ -871,7 +871,7 @@ func (jd *HandleT) init() {
 				// Run changesets that should always run for both writer and reader jobsdbs.
 				//
 				// When running separate gw and processor instances we cannot control the order of execution
-				// and we cannot guarantee that while gw migration is running or after it is complete, processor
+				// and we cannot guarantee that after a gw migration completes, processor
 				// will not create new tables using the old schema.
 				//
 				// Changesets that run always can help in such cases, by bringing non-migrated tables into a usable state.
