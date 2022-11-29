@@ -35,9 +35,10 @@ type ReadonlyJobsDB interface {
 }
 
 type ReadonlyHandleT struct {
-	DbHandle    *sql.DB
-	tablePrefix string
-	logger      logger.Logger
+	DbHandle           *sql.DB
+	tablePrefix        string
+	logger             logger.Logger
+	maxOpenConnections int
 }
 
 type DSPair struct {
@@ -90,14 +91,20 @@ Setup is used to initialize the ReadonlyHandleT structure.
 */
 func (jd *ReadonlyHandleT) Setup(tablePrefix string) error {
 	jd.logger = pkgLogger.Child("readonly-" + tablePrefix)
+
 	var err error
 	psqlInfo := misc.GetConnectionString()
 	jd.tablePrefix = tablePrefix
+
+	maxOpenConnectionsKeys := []string{"ReadonlyJobsDB." + jd.tablePrefix + "." + "maxOpenConnections", "ReadonlyJobsDB." + "maxOpenConnections"}
+	config.RegisterIntConfigVariable(5, &jd.maxOpenConnections, false, 1, maxOpenConnectionsKeys...)
 
 	jd.DbHandle, err = sql.Open("postgres", psqlInfo)
 	if err != nil {
 		return fmt.Errorf("opening connection to db: %v", err)
 	}
+
+	jd.DbHandle.SetMaxOpenConns(jd.maxOpenConnections)
 
 	ctx, cancel := context.WithTimeout(context.TODO(), config.GetDuration("JobsDB.dbPingTimeout", 10, time.Second))
 	defer cancel()
@@ -561,7 +568,7 @@ func (jd *ReadonlyHandleT) GetLatestFailedJobs(arg, prefix string) (string, erro
 					job_latest_state.exec_time,
 					job_latest_state.error_code, job_latest_state.error_response
 					FROM %[1]s
-					JOIN "v_last_%[2]s" job_latest_state ON %[1]s.job_id=job_latest_state.job_id 
+					JOIN "v_last_%[2]s" job_latest_state ON %[1]s.job_id=job_latest_state.job_id
 					WHERE job_latest_state.job_state = 'failed'
   					`, dsList.JobTableName, dsList.JobStatusTableName)
 	if argList[1] != "" {
