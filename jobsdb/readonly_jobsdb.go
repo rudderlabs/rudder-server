@@ -90,7 +90,6 @@ Setup is used to initialize the ReadonlyHandleT structure.
 */
 func (jd *ReadonlyHandleT) Setup(tablePrefix string) error {
 	jd.logger = pkgLogger.Child("readonly-" + tablePrefix)
-
 	var err error
 	psqlInfo := misc.GetConnectionString()
 	jd.tablePrefix = tablePrefix
