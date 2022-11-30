@@ -1029,7 +1029,7 @@ func (manager *EventSchemaManagerT) populateSchemaVersionsMinimal(modelIDFilters
 }
 
 func (manager *EventSchemaManagerT) populateSchemaVersion(o *OffloadedSchemaVersionT) error {
-	schemaVersionsSelectSQL := fmt.Sprintf(`SELECT id, uuid, event_model_id, schema_hash, schema, private_data,first_seen, last_seen, total_count, (metadata->>'TotalCount')::int, metadata->'SampledEvents' FROM %s WHERE uuid = '%s'`, SCHEMA_VERSIONS_TABLE, o.UUID)
+	schemaVersionsSelectSQL := fmt.Sprintf(`SELECT id, uuid, event_model_id, schema_hash, schema, private_data,first_seen, last_seen, total_count, (metadata->>'TotalCount')::bigint, metadata->'SampledEvents' FROM %s WHERE uuid = '%s'`, SCHEMA_VERSIONS_TABLE, o.UUID)
 
 	var schemaVersion SchemaVersionT
 	var privateDataRaw json.RawMessage
