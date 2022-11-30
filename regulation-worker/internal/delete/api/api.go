@@ -199,7 +199,7 @@ func setOAuthHeader(secretToken *oauth.AuthResponse, req *http.Request) error {
 func (api *APIManager) getOAuthDetail(destDetail *model.Destination, workspaceId string) (oauthDetail, error) {
 	id := oauth.GetAccountId(destDetail.Config, oauth.DeleteAccountIdKey)
 	if strings.TrimSpace(id) == "" {
-		return oauthDetail{}, fmt.Errorf("[%v] %v is not present for destination: %v", destDetail.Name, oauth.DeleteAccountIdKey, destDetail.DestinationID)
+		return oauthDetail{}, fmt.Errorf("[%v] Delete account ID key (%v) is not present for destination: %v", destDetail.Name, oauth.DeleteAccountIdKey, destDetail.DestinationID)
 	}
 	tokenStatusCode, secretToken := api.OAuth.FetchToken(&oauth.RefreshTokenParams{
 		AccountId:       id,
