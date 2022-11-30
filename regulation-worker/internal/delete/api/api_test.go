@@ -208,18 +208,19 @@ func TestOAuth(t *testing.T) {
 	mockBackendConfig.EXPECT().AccessToken().AnyTimes()
 
 	tests := []struct {
-		name                 string
-		job                  model.Job
-		dest                 model.Destination
-		destConfig           map[string]interface{}
-		destName             string
-		respCode             int
-		respBodyStatus       model.JobStatus
-		authErrorCategory    string
-		respBodyErr          error
-		cpResponses          []cpResponseParams
-		expectedDeleteStatus model.JobStatus
-		expectedPayload      string
+		name                   string
+		job                    model.Job
+		dest                   model.Destination
+		destConfig             map[string]interface{}
+		destName               string
+		respCode               int
+		respBodyStatus         model.JobStatus
+		authErrorCategory      string
+		respBodyErr            error
+		cpResponses            []cpResponseParams
+		oauthHttpClientTimeout time.Duration
+		expectedDeleteStatus   model.JobStatus
+		expectedPayload        string
 	}{
 		{
 			name: "test with a valid token and successful response",
@@ -252,6 +253,7 @@ func TestOAuth(t *testing.T) {
 				},
 			},
 			dest: model.Destination{
+				DestinationID: "1234",
 				Config: map[string]interface{}{
 					"rudderDeleteAccountId": "xyz",
 				},
@@ -298,6 +300,7 @@ func TestOAuth(t *testing.T) {
 				},
 			},
 			dest: model.Destination{
+				DestinationID: "1234",
 				Config: map[string]interface{}{
 					"rudderDeleteAccountId": "xyz",
 				},
@@ -351,6 +354,7 @@ func TestOAuth(t *testing.T) {
 				},
 			},
 			dest: model.Destination{
+				DestinationID: "1234",
 				Config: map[string]interface{}{
 					"rudderDeleteAccountId": "xyz",
 				},
@@ -404,6 +408,7 @@ func TestOAuth(t *testing.T) {
 				},
 			},
 			dest: model.Destination{
+				DestinationID: "1234",
 				Config: map[string]interface{}{
 					"rudderDeleteAccountId": "xyz",
 				},
@@ -426,6 +431,147 @@ func TestOAuth(t *testing.T) {
 
 			expectedDeleteStatus: model.JobStatusFailed,
 			expectedPayload:      "", // since request has not gone to transformer at all!
+		},
+		{
+			name: "test when fetch token request times out fail the job",
+			job: model.Job{
+				ID:            3,
+				WorkspaceID:   "1001",
+				DestinationID: "1234",
+				Status:        model.JobStatusPending,
+				Users: []model.User{
+					{
+						ID: "Jermaine1473336609491897794707338",
+						Attributes: map[string]string{
+							"phone":     "6463633841",
+							"email":     "dorowane8n285680461479465450293448@gmail.com",
+							"randomKey": "randomValue",
+						},
+					},
+					{
+						ID: "Mercie8221821544021583104106123",
+						Attributes: map[string]string{
+							"email": "dshirilad8536019424659691213279983@gmail.com",
+						},
+					},
+				},
+			},
+			dest: model.Destination{
+				DestinationID: "1234",
+				Config: map[string]interface{}{
+					"rudderDeleteAccountId": "xyz",
+				},
+				Name: "GA",
+				DestDefConfig: map[string]interface{}{
+					"auth": map[string]interface{}{
+						"type": "OAuth",
+					},
+				},
+			},
+			cpResponses: []cpResponseParams{
+				{
+					code:     500,
+					response: `Internal Server Error`,
+					timeout:  2 * time.Second,
+				},
+			},
+
+			oauthHttpClientTimeout: 1 * time.Second,
+
+			expectedDeleteStatus: model.JobStatusFailed,
+			expectedPayload:      "", // since request has not gone to transformer at all!
+		},
+		{
+			// In this case the request will not even reach transformer, as OAuth is required but we don't have "rudderDeleteAccountId"
+			name: "when rudderDeleteAccountId is present but is empty string in destination config fail the job",
+			job: model.Job{
+				ID:            1,
+				WorkspaceID:   "1001",
+				DestinationID: "1234",
+				Status:        model.JobStatusPending,
+				Users: []model.User{
+					{
+						ID: "Jermaine1473336609491897794707338",
+						Attributes: map[string]string{
+							"phone":     "6463633841",
+							"email":     "dorowane8n285680461479465450293437@gmail.com",
+							"randomKey": "randomValue",
+						},
+					},
+					{
+						ID: "Mercie8221821544021583104106123",
+						Attributes: map[string]string{
+							"email": "dshirilad853601942465969121327991@gmail.com",
+						},
+					},
+					{
+						ID: "Claiborn443446989226249191822329",
+						Attributes: map[string]string{
+							"phone": "8782905113",
+						},
+					},
+				},
+			},
+			dest: model.Destination{
+				DestinationID: "1234",
+				Config: map[string]interface{}{
+					"rudderDeleteAccountId": "",
+				},
+				Name: "GA",
+				DestDefConfig: map[string]interface{}{
+					"auth": map[string]interface{}{
+						"type": "OAuth",
+					},
+				},
+			},
+			cpResponses:          []cpResponseParams{},
+			expectedDeleteStatus: model.JobStatusFailed,
+			expectedPayload:      "",
+		},
+		{
+			// In this case the request will not even reach transformer, as OAuth is required but we don't have "rudderDeleteAccountId"
+			name: "when rudderDeleteAccountId field is not present in destination config fail the job",
+			job: model.Job{
+				ID:            1,
+				WorkspaceID:   "1001",
+				DestinationID: "1234",
+				Status:        model.JobStatusPending,
+				Users: []model.User{
+					{
+						ID: "Jermaine1473336609491897794707338",
+						Attributes: map[string]string{
+							"phone":     "6463633841",
+							"email":     "dorowane8n285680461479465450293437@gmail.com",
+							"randomKey": "randomValue",
+						},
+					},
+					{
+						ID: "Mercie8221821544021583104106123",
+						Attributes: map[string]string{
+							"email": "dshirilad853601942465969121327991@gmail.com",
+						},
+					},
+					{
+						ID: "Claiborn443446989226249191822329",
+						Attributes: map[string]string{
+							"phone": "8782905113",
+						},
+					},
+				},
+			},
+			dest: model.Destination{
+				DestinationID: "1234",
+				Config:        map[string]interface{}{},
+				Name:          "GA",
+				DestDefConfig: map[string]interface{}{
+					"auth": map[string]interface{}{
+						"type": "OAuth",
+					},
+				},
+			},
+			cpResponses:          []cpResponseParams{},
+			expectedDeleteStatus: model.JobStatusFailed,
+			expectedPayload:      "",
 		},
 	}
 
@@ -452,7 +598,7 @@ func TestOAuth(t *testing.T) {
 
 			backendconfig.Init()
 			oauth.Init()
-			OAuth := oauth.NewOAuthErrorHandler(mockBackendConfig, oauth.WithRudderFlow(oauth.RudderFlow_Delete))
+			OAuth := oauth.NewOAuthErrorHandler(mockBackendConfig, oauth.WithRudderFlow(oauth.RudderFlow_Delete), oauth.WithOAuthClientTimeout(tt.oauthHttpClientTimeout))
 			api := api.APIManager{
 				Client:           &http.Client{},
 				DestTransformURL: svr.URL,
