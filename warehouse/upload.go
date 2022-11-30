@@ -1355,9 +1355,6 @@ func (job *UploadJobT) setUploadStatus(statusOpts UploadStatusOpts) (err error) 
 		return err
 	}
 	return job.setUploadColumns(uploadColumnOpts)
-	// return job.setUploadColumns(
-	// 	additionalFields...,
-	// )
 }
 
 // SetUploadSchema
@@ -1367,9 +1364,6 @@ func (job *UploadJobT) setUploadSchema(consolidatedSchema warehouseutils.SchemaT
 		panic(err)
 	}
 	job.upload.UploadSchema = consolidatedSchema
-	// return job.setUploadColumns(
-	// 	UploadColumnT{Column: UploadSchemaField, Value: marshalledSchema},
-	// )
 	return job.setUploadColumns(UploadColumnsOpts{Fields: []UploadColumnT{{Column: UploadSchemaField, Value: marshalledSchema}}})
 }
 
@@ -1387,10 +1381,6 @@ func (job *UploadJobT) setLoadFileIDs(startLoadFileID, endLoadFileID int64) erro
 	job.upload.StartLoadFileID = startLoadFileID
 	job.upload.EndLoadFileID = endLoadFileID
 
-	// return job.setUploadColumns(
-	// 	UploadColumnT{Column: UploadStartLoadFileIDField, Value: startLoadFileID},
-	// 	UploadColumnT{Column: UploadEndLoadFileIDField, Value: endLoadFileID},
-	// )
 	return job.setUploadColumns(UploadColumnsOpts{Fields: []UploadColumnT{{Column: UploadStartLoadFileIDField, Value: startLoadFileID}, {Column: UploadEndLoadFileIDField, Value: endLoadFileID}}})
 }
 
