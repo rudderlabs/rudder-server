@@ -651,6 +651,7 @@ var (
 	backupRowsBatchSize                          int64
 	backupMaxTotalPayloadSize                    int64
 	pkgLogger                                    logger.Logger
+	safegaurdMigration                           bool
 )
 
 // Loads db config and migration related config from config file
@@ -684,6 +685,7 @@ func loadConfig() {
 	config.RegisterDurationConfigVariable(5, &refreshDSListLoopSleepDuration, true, time.Second, []string{"JobsDB.refreshDSListLoopSleepDuration", "JobsDB.refreshDSListLoopSleepDurationInS"}...)
 	config.RegisterDurationConfigVariable(5, &backupCheckSleepDuration, true, time.Second, []string{"JobsDB.backupCheckSleepDuration", "JobsDB.backupCheckSleepDurationIns"}...)
 	config.RegisterDurationConfigVariable(5, &cacheExpiration, true, time.Minute, []string{"JobsDB.cacheExpiration"}...)
+	config.RegisterBoolConfigVariable(false, &safegaurdMigration, true, "JobsDB.safegaurdMigration")
 }
 
 func Init2() {
