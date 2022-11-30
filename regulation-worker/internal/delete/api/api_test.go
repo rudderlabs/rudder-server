@@ -710,7 +710,6 @@ func (s *deleteResponseProducer) GetNext() *deleteResponseParams {
 func (delRespProducer *deleteResponseProducer) mockDeleteRequests() *mux.Router {
 	srvMux := mux.NewRouter()
 	srvMux.HandleFunc("/deleteUsers", func(w http.ResponseWriter, req *http.Request) {
-
 		buf := new(bytes.Buffer)
 		_, bufErr := buf.ReadFrom(req.Body)
 		if bufErr != nil {
