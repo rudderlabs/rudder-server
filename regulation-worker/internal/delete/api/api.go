@@ -225,6 +225,9 @@ func (api *APIManager) refreshOAuthToken(destName, workspaceId string, oAuthDeta
 		EventNamePrefix: "refresh_token",
 	}
 	statusCode, refreshResponse := api.OAuth.RefreshToken(refTokenParams)
+	if refreshResponse == nil {
+		return fmt.Errorf("[%v] Failed to refresh token for destination in workspace(%v) & account(%v) due to `nil` response", destName, workspaceId, oAuthDetail.id)
+	}
 	if statusCode != http.StatusOK {
 		return fmt.Errorf("[%v] Failed to refresh token for destination in workspace(%v) & account(%v) with %v", destName, workspaceId, oAuthDetail.id, refreshResponse.Err)
 	}
