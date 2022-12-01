@@ -194,7 +194,7 @@ func (c *Client) DestinationHistory(ctx context.Context, revisionID string) (bac
 		if err != nil {
 			return err
 		}
-		defer resp.Body.Close()
+		defer func() { httputil.CloseResponse(resp) }()
 
 		if resp.StatusCode != http.StatusOK {
 			b, err := io.ReadAll(resp.Body)

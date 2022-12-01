@@ -51,6 +51,7 @@ func TestSendFeatures(t *testing.T) {
 	}
 
 	for _, tc := range testcases {
+		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				u, _, _ := r.BasicAuth()
@@ -132,7 +133,6 @@ func TestDestinationHistory(t *testing.T) {
 
 			wantDestination: expectedDestination,
 			wantPath:        "/workspaces/destinationHistory/2ENkYQ1MR9f83YhqS5k7uTSe5XH",
-			wantErr:         nil,
 		},
 		{
 			name: "valid request in workspace with region",
@@ -146,7 +146,6 @@ func TestDestinationHistory(t *testing.T) {
 
 			wantDestination: expectedDestination,
 			wantPath:        "/workspaces/destinationHistory/2ENkYQ1MR9f83YhqS5k7uTSe5XH?region=eu",
-			wantErr:         nil,
 		},
 		{
 			name: "valid request in namespace",
@@ -160,7 +159,6 @@ func TestDestinationHistory(t *testing.T) {
 
 			wantDestination: expectedDestination,
 			wantPath:        "/workspaces/destinationHistory/2ENkYQ1MR9f83YhqS5k7uTSe5XH",
-			wantErr:         nil,
 		},
 		{
 			name: "valid request in namespace with region",
@@ -175,8 +173,25 @@ func TestDestinationHistory(t *testing.T) {
 
 			wantDestination: expectedDestination,
 			wantPath:        "/workspaces/destinationHistory/2ENkYQ1MR9f83YhqS5k7uTSe5XH?region=eu",
-			wantErr:         nil,
 		},
+		{
+			name: "valid request in namespace",
+			identity: &identity.Namespace{
+				Namespace:    "valid-namespace",
+				HostedSecret: validSecret,
+			},
+			revisionID: "2ENkYQ1MR9f83YhqS5k7uTSe5XH",
+			region:     "eu",
+
+			responseBody: `{"message":"History does not exist for revision id"}`,
+			responseStatus: http.StatusNotFound,
+
+			wantDestination: expectedDestination,
+			wantPath:        "/workspaces/destinationHistory/2ENkYQ1MR9f83YhqS5k7uTSe5XH?region=eu",
+			wantErr:         fmt.Errorf("non retriable: unexpected status code 404: {\"message\":\"History does not exist for revision id\"}"),
+
+		},
+
 		{
 			name: "invalid JSON",
 			identity: &identity.Workspace{
