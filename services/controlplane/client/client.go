@@ -169,7 +169,7 @@ func (c *Client) SendFeatures(ctx context.Context, component string, features []
 func (c *Client) DestinationHistory(ctx context.Context, revisionID string) (backendconfig.DestinationT, error) {
 	urlStr := fmt.Sprintf("%s/workspaces/destinationHistory/%s", c.url, revisionID)
 
-	var urlValues = url.Values{}
+	urlValues := url.Values{}
 	if c.region != "" {
 		urlValues.Set("region", c.region)
 	}

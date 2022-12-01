@@ -4,9 +4,9 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -75,19 +75,19 @@ func TestSendFeatures(t *testing.T) {
 			require.NoError(t, err)
 		})
 	}
-
 }
 
 func TestDestinationHistory(t *testing.T) {
 	validSecret := "valid-secret"
 
-	body, err := ioutil.ReadFile("./testdata/destination_history.json")
+	body, err := os.ReadFile("./testdata/destination_history.json")
 	require.NoError(t, err)
 
 	expectedDestination := backendconfig.DestinationT{
 		ID:   "2ENkYVMMUInzUGYp32R6dVghgvj",
 		Name: "webhook.site",
-		DestinationDefinition: backendconfig.DestinationDefinitionT{ID: "1aIXpUrvpGno4gEuF2GvI3O9dOe",
+		DestinationDefinition: backendconfig.DestinationDefinitionT{
+			ID:          "1aIXpUrvpGno4gEuF2GvI3O9dOe",
 			Name:        "WEBHOOK",
 			DisplayName: "Webhook",
 			Config: map[string]interface{}{
@@ -95,7 +95,8 @@ func TestDestinationHistory(t *testing.T) {
 				"transformAtV1":           "processor",
 				"saveDestinationResponse": false,
 			},
-			ResponseRules: map[string]interface{}(nil)},
+			ResponseRules: map[string]interface{}(nil),
+		},
 		Config: map[string]interface{}{
 			"webhookMethod": "POST",
 			"webhookUrl":    "https://webhook.site/4e257da5-000e-4390-9ad2-d28d37fa934e",
