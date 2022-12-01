@@ -2,7 +2,7 @@ version: "3.7"
 
 services:
   db:
-    image: postgres:11-alpine
+    image: postgres:15-alpine
     environment:
       - POSTGRES_USER=rudder
       - POSTGRES_PASSWORD=password
