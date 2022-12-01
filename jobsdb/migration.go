@@ -433,13 +433,6 @@ func (jd *HandleT) checkIfMigrateDS(ds dataSetT) (
 		jd.assertError(err)
 	}
 
-	if totalCount == 0 {
-		jd.assert(
-			delCount == 0,
-			fmt.Sprintf("delCount: %d. Is not 0", delCount))
-		return false, false, 0
-	}
-
 	recordsLeft = totalCount - delCount
 
 	if jd.MinDSRetentionPeriod > 0 {
