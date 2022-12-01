@@ -2,6 +2,7 @@ package router_test
 
 import (
 	"bytes"
+	"compress/gzip"
 	"context"
 	"database/sql"
 	"fmt"
@@ -199,12 +200,35 @@ func TestEventOrderGuarantee(t *testing.T) {
 			t.Logf("rudder-server started")
 
 			batches := m.splitInBatches(spec.jobsOrdered, batchSize)
+
+			gzipPayload := func(data []byte) (io.Reader, error) {
+				var b bytes.Buffer
+				gz := gzip.NewWriter(&b)
+				_, err = gz.Write(data)
+				if err != nil {
+					return nil, err
+				}
+
+				if err = gz.Flush(); err != nil {
+					return nil, err
+				}
+
+				if err = gz.Close(); err != nil {
+					return nil, err
+				}
+
+				return &b, nil
+			}
+
 			go func() {
 				t.Logf("Sending %d total events for %d total users in %d batches", len(spec.jobsOrdered), users, len(batches))
 				client := &http.Client{}
 				url := fmt.Sprintf("http://localhost:%s/v1/batch", gatewayPort)
 				for _, payload := range batches {
-					req, err := http.NewRequest("POST", url, bytes.NewReader(payload))
+					p, err := gzipPayload(payload)
+					require.NoError(t, err)
+					req, err := http.NewRequest("POST", url, p)
+					req.Header.Add("Content-Encoding", "gzip")
 					require.NoError(t, err, "should be able to create a new request")
 					req.SetBasicAuth(writeKey, "password")
 					resp, err := client.Do(req)
