@@ -18,6 +18,7 @@ import (
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/model"
 	"github.com/rudderlabs/rudder-server/services/oauth"
 	"github.com/rudderlabs/rudder-server/services/stats"
+	"github.com/rudderlabs/rudder-server/utils/httputil"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 )
 
@@ -95,7 +96,7 @@ func (api *APIManager) deleteWithRetry(ctx context.Context, job model.Job, desti
 		}
 		return model.JobStatusFailed
 	}
-	defer resp.Body.Close()
+	defer func() { httputil.CloseResponse(resp) }()
 	bodyBytes, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return model.JobStatusFailed

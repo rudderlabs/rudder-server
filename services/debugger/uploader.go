@@ -11,6 +11,7 @@ import (
 
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/rruntime"
+	"github.com/rudderlabs/rudder-server/utils/httputil"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/sysUtils"
 )
@@ -125,7 +126,7 @@ func (uploader *Uploader) uploadEvents(eventBuffer []interface{}) {
 			// Refresh the connection
 			continue
 		}
-		defer resp.Body.Close()
+		defer func() { httputil.CloseResponse(resp) }()
 		break
 	}
 

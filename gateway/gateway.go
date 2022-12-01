@@ -1004,7 +1004,7 @@ func (gateway *HandleT) getWarehousePending(payload []byte) bool {
 		return false
 	}
 
-	defer resp.Body.Close()
+	defer func() { rs_httputil.CloseResponse(resp) }()
 
 	var whPendingResponse warehouseutils.PendingEventsResponseT
 	respData, err := io.ReadAll(resp.Body)
