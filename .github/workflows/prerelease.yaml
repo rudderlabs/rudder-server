@@ -52,4 +52,5 @@ jobs:
             ]'
           prerelease: true
           release-as: ${{ steps.extract_branch.outputs.branch }}
+          last-release-sha: 93d527153ead5d67c9f943312c96458de60bcff2
 
