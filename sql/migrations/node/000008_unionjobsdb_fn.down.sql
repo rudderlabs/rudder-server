@@ -1,1 +1,0 @@
-DROP FUNCTION IF EXISTS unionjobsdb(prefix text, num int);

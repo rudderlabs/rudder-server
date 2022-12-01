@@ -67,80 +67,82 @@ func (jd *HandleT) doMigrateDS(ctx context.Context) error {
 	var l lock.LockToken
 	var lockChan chan<- lock.LockToken
 	err := jd.WithTx(func(tx *Tx) error {
-		// Take the lock and run actual migration
-		if !jd.dsMigrationLock.TryLockWithCtx(ctx) {
-			return fmt.Errorf("failed to acquire lock: %w", ctx.Err())
-		}
-		defer jd.dsMigrationLock.Unlock()
-		// repeat the check after the dsMigrationLock is acquired to get correct pending jobs count.
-		// the pending jobs count cannot change after the dsMigrationLock is acquired
-		if migrateFrom, pendingJobsCount, insertBeforeDS = jd.getMigrationList(dsList); len(migrateFrom) == 0 {
-			return nil
-		}
-
-		if pendingJobsCount > 0 { // migrate incomplete jobs
-			var destination dataSetT
-			err := jd.dsListLock.WithLockInCtx(ctx, func(l lock.LockToken) error {
-				destination = newDataSet(jd.tablePrefix, jd.computeNewIdxForIntraNodeMigration(l, insertBeforeDS))
+		return jd.withDistributedSharedLock(ctx, tx, "schema_migrate", func() error { // cannot run while schema migration is running
+			// Take the lock and run actual migration
+			if !jd.dsMigrationLock.TryLockWithCtx(ctx) {
+				return fmt.Errorf("failed to acquire lock: %w", ctx.Err())
+			}
+			defer jd.dsMigrationLock.Unlock()
+			// repeat the check after the dsMigrationLock is acquired to get correct pending jobs count.
+			// the pending jobs count cannot change after the dsMigrationLock is acquired
+			if migrateFrom, pendingJobsCount, insertBeforeDS = jd.getMigrationList(dsList); len(migrateFrom) == 0 {
 				return nil
-			})
-			if err != nil {
-				return err
 			}
 
-			jd.logger.Infof("[[ migrateDSLoop ]]: Migrate from: %v", migrateFrom)
-			jd.logger.Infof("[[ migrateDSLoop ]]: To: %v", destination)
-			jd.logger.Infof("[[ migrateDSLoop ]]: Next: %v", insertBeforeDS)
-
-			opPayload, err := json.Marshal(&journalOpPayloadT{From: migrateFrom, To: destination})
-			if err != nil {
-				return err
-			}
-			opID, err := jd.JournalMarkStartInTx(tx, migrateCopyOperation, opPayload)
-			if err != nil {
-				return err
-			}
-
-			err = jd.addDSInTx(tx, destination)
-			if err != nil {
-				return err
-			}
-
-			totalJobsMigrated := 0
-			var noJobsMigrated int
-			for _, source := range migrateFrom {
-				jd.logger.Infof("[[ migrateDSLoop ]]: Migrate: %v to: %v", source, destination)
-				noJobsMigrated, err = jd.migrateJobsInTx(ctx, tx, source, destination)
+			if pendingJobsCount > 0 { // migrate incomplete jobs
+				var destination dataSetT
+				err := jd.dsListLock.WithLockInCtx(ctx, func(l lock.LockToken) error {
+					destination = newDataSet(jd.tablePrefix, jd.computeNewIdxForIntraNodeMigration(l, insertBeforeDS))
+					return nil
+				})
 				if err != nil {
 					return err
 				}
-				totalJobsMigrated += noJobsMigrated
+
+				jd.logger.Infof("[[ migrateDSLoop ]]: Migrate from: %v", migrateFrom)
+				jd.logger.Infof("[[ migrateDSLoop ]]: To: %v", destination)
+				jd.logger.Infof("[[ migrateDSLoop ]]: Next: %v", insertBeforeDS)
+
+				opPayload, err := json.Marshal(&journalOpPayloadT{From: migrateFrom, To: destination})
+				if err != nil {
+					return err
+				}
+				opID, err := jd.JournalMarkStartInTx(tx, migrateCopyOperation, opPayload)
+				if err != nil {
+					return err
+				}
+
+				err = jd.addDSInTx(tx, destination)
+				if err != nil {
+					return err
+				}
+
+				totalJobsMigrated := 0
+				var noJobsMigrated int
+				for _, source := range migrateFrom {
+					jd.logger.Infof("[[ migrateDSLoop ]]: Migrate: %v to: %v", source, destination)
+					noJobsMigrated, err = jd.migrateJobsInTx(ctx, tx, source, destination)
+					if err != nil {
+						return err
+					}
+					totalJobsMigrated += noJobsMigrated
+				}
+				err = jd.journalMarkDoneInTx(tx, opID)
+				if err != nil {
+					return err
+				}
+				jd.logger.Infof("[[ migrateDSLoop ]]: Total migrated %d jobs", totalJobsMigrated)
 			}
-			err = jd.journalMarkDoneInTx(tx, opID)
+
+			opPayload, err := json.Marshal(&journalOpPayloadT{From: migrateFrom})
 			if err != nil {
 				return err
 			}
-			jd.logger.Infof("[[ migrateDSLoop ]]: Total migrated %d jobs", totalJobsMigrated)
-		}
-
-		opPayload, err := json.Marshal(&journalOpPayloadT{From: migrateFrom})
-		if err != nil {
-			return err
-		}
-		opID, err := jd.JournalMarkStartInTx(tx, postMigrateDSOperation, opPayload)
-		if err != nil {
-			return err
-		}
-		// acquire an async lock, as this needs to be released after the transaction commits
-		l, lockChan, err = jd.dsListLock.AsyncLockWithCtx(ctx)
-		if err != nil {
-			return err
-		}
-		err = jd.postMigrateHandleDS(tx, migrateFrom)
-		if err != nil {
-			return err
-		}
-		return jd.journalMarkDoneInTx(tx, opID)
+			opID, err := jd.JournalMarkStartInTx(tx, postMigrateDSOperation, opPayload)
+			if err != nil {
+				return err
+			}
+			// acquire an async lock, as this needs to be released after the transaction commits
+			l, lockChan, err = jd.dsListLock.AsyncLockWithCtx(ctx)
+			if err != nil {
+				return err
+			}
+			err = jd.postMigrateHandleDS(tx, migrateFrom)
+			if err != nil {
+				return err
+			}
+			return jd.journalMarkDoneInTx(tx, opID)
+		})
 	})
 	if l != nil {
 		if err == nil {

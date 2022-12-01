@@ -12,8 +12,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gofrs/uuid"
 	"github.com/golang/mock/gomock"
+	"github.com/google/uuid"
 	"github.com/ory/dockertest/v3"
 	"github.com/stretchr/testify/require"
 
@@ -132,7 +132,7 @@ const (
 )
 
 var (
-	workspaceID             = uuid.Must(uuid.NewV4()).String()
+	workspaceID             = uuid.New().String()
 	gaDestinationDefinition = backendConfig.DestinationDefinitionT{
 		ID: GADestinationDefinitionID, Name: "GA",
 		DisplayName: "Google Analytics", Config: nil, ResponseRules: nil,

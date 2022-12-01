@@ -14,6 +14,7 @@ import (
 
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/model"
 	"github.com/rudderlabs/rudder-server/services/stats"
+	"github.com/rudderlabs/rudder-server/utils/httputil"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 )
 
@@ -51,12 +52,7 @@ func (j *JobAPI) Get(ctx context.Context) (model.Job, error) {
 	if err != nil {
 		return model.Job{}, err
 	}
-	defer func() {
-		err := resp.Body.Close()
-		if err != nil {
-			pkgLogger.Errorf("error while closing response body: %v", err)
-		}
-	}()
+	defer func() { httputil.CloseResponse(resp) }()
 	pkgLogger.Debugf("obtained response code: %v", resp.StatusCode, "response body: ", resp.Body)
 
 	// if successful
@@ -140,7 +136,7 @@ func (j *JobAPI) UpdateStatus(ctx context.Context, status model.JobStatus, jobID
 	if err != nil {
 		return err
 	}
-	defer func() { _ = resp.Body.Close() }()
+	defer func() { httputil.CloseResponse(resp) }()
 
 	pkgLogger.Debugf("response code: %v", resp.StatusCode, "response body: %v", resp.Body)
 	if resp.StatusCode >= 200 && resp.StatusCode < 300 {

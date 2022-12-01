@@ -923,6 +923,7 @@ func (wh *HandleT) getUploadsToProcess(ctx context.Context, availableWorkers int
 			uploadJob := UploadJobT{
 				upload:   &upload,
 				dbHandle: wh.dbHandle,
+				stats:    stats.Default,
 			}
 			err := fmt.Errorf("unable to find source : %s or destination : %s, both or the connection between them", upload.SourceID, upload.DestinationID)
 			_, _ = uploadJob.setUploadError(err, model.Aborted)
@@ -965,6 +966,7 @@ func (wh *HandleT) getUploadsToProcess(ctx context.Context, availableWorkers int
 			dbHandle:             wh.dbHandle,
 			pgNotifier:           &wh.notifier,
 			destinationValidator: validations.NewDestinationValidator(),
+			stats:                stats.Default,
 		}
 
 		uploadJobs = append(uploadJobs, &uploadJob)
@@ -1959,7 +1961,7 @@ func Setup(ctx context.Context) error {
 func Start(ctx context.Context, app app.App) error {
 	application = app
 
-	if dbHandle == nil {
+	if dbHandle == nil && !isStandAloneSlave() {
 		return errors.New("warehouse service cannot start, database connection is not setup")
 	}
 	// do not start warehouse service if rudder core is not in normal mode and warehouse is running in same process as rudder core

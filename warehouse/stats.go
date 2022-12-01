@@ -44,7 +44,7 @@ func (job *UploadJobT) timerStat(name string, extraTags ...tag) stats.Measuremen
 	for _, extraTag := range extraTags {
 		tags[extraTag.name] = extraTag.value
 	}
-	return stats.Default.NewTaggedStat(name, stats.TimerType, tags)
+	return job.stats.NewTaggedStat(name, stats.TimerType, tags)
 }
 
 func (job *UploadJobT) counterStat(name string, extraTags ...tag) stats.Measurement {
@@ -59,7 +59,7 @@ func (job *UploadJobT) counterStat(name string, extraTags ...tag) stats.Measurem
 	for _, extraTag := range extraTags {
 		tags[extraTag.name] = extraTag.value
 	}
-	return stats.Default.NewTaggedStat(name, stats.CountType, tags)
+	return job.stats.NewTaggedStat(name, stats.CountType, tags)
 }
 
 func (job *UploadJobT) guageStat(name string, extraTags ...tag) stats.Measurement {
@@ -75,7 +75,7 @@ func (job *UploadJobT) guageStat(name string, extraTags ...tag) stats.Measuremen
 	for _, extraTag := range extraTags {
 		tags[extraTag.name] = extraTag.value
 	}
-	return stats.Default.NewTaggedStat(name, stats.GaugeType, tags)
+	return job.stats.NewTaggedStat(name, stats.GaugeType, tags)
 }
 
 func (jobRun *JobRunT) timerStat(name string, extraTags ...tag) stats.Measurement {
@@ -90,7 +90,7 @@ func (jobRun *JobRunT) timerStat(name string, extraTags ...tag) stats.Measuremen
 	for _, extraTag := range extraTags {
 		tags[extraTag.name] = extraTag.value
 	}
-	return stats.Default.NewTaggedStat(name, stats.TimerType, tags)
+	return jobRun.stats.NewTaggedStat(name, stats.TimerType, tags)
 }
 
 func (jobRun *JobRunT) counterStat(name string, extraTags ...tag) stats.Measurement {
@@ -105,7 +105,7 @@ func (jobRun *JobRunT) counterStat(name string, extraTags ...tag) stats.Measurem
 	for _, extraTag := range extraTags {
 		tags[extraTag.name] = extraTag.value
 	}
-	return stats.Default.NewTaggedStat(name, stats.CountType, tags)
+	return jobRun.stats.NewTaggedStat(name, stats.CountType, tags)
 }
 
 func (job *UploadJobT) generateUploadSuccessMetrics() {

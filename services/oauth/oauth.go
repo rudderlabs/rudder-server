@@ -17,6 +17,7 @@ import (
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	router_utils "github.com/rudderlabs/rudder-server/router/utils"
 	"github.com/rudderlabs/rudder-server/services/stats"
+	"github.com/rudderlabs/rudder-server/utils/httputil"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/tidwall/gjson"
@@ -497,7 +498,7 @@ func processResponse(resp *http.Response) (statusCode int, respBody string) {
 	var ioUtilReadErr error
 	if resp != nil && resp.Body != nil {
 		respData, ioUtilReadErr = io.ReadAll(resp.Body)
-		defer resp.Body.Close()
+		defer func() { httputil.CloseResponse(resp) }()
 		if ioUtilReadErr != nil {
 			return http.StatusInternalServerError, ioUtilReadErr.Error()
 		}
@@ -557,9 +558,7 @@ func (authErrHandler *OAuthErrResHandler) cpApiCall(cpReq *ControlPlaneRequestT)
 		}
 		return http.StatusBadRequest, doErr.Error()
 	}
-	if res.Body != nil {
-		defer res.Body.Close()
-	}
+	defer func() { httputil.CloseResponse(res) }()
 	statusCode, resp := processResponse(res)
 	return statusCode, resp
 }
