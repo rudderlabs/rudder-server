@@ -41,6 +41,7 @@ import (
 
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/services/metric"
+	"github.com/rudderlabs/rudder-server/utils/httputil"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 
 	"github.com/thoas/go-funk"
@@ -576,7 +577,7 @@ func MakeHTTPRequestWithTimeout(url string, payload io.Reader, timeout time.Dura
 	var respBody []byte
 	if resp != nil && resp.Body != nil {
 		respBody, _ = io.ReadAll(resp.Body)
-		defer resp.Body.Close()
+		defer func() { httputil.CloseResponse(resp) }()
 	}
 
 	return respBody, resp.StatusCode, nil
@@ -1002,7 +1003,7 @@ func MakeRetryablePostRequest(url, endpoint string, data interface{}) (response 
 	}
 
 	body, err := io.ReadAll(resp.Body)
-	defer resp.Body.Close()
+	defer func() { httputil.CloseResponse(resp) }()
 
 	pkgLogger.Debugf("Post request: Successful %s", string(body))
 	return body, resp.StatusCode, nil
@@ -1168,7 +1169,7 @@ func GetDatabricksVersion() (version string) {
 		version = "No response from warehouse."
 		return
 	}
-	defer resp.Body.Close()
+	defer func() { httputil.CloseResponse(resp) }()
 	if resp.StatusCode == http.StatusOK {
 		bodyBytes, err := io.ReadAll(resp.Body)
 		if err != nil {

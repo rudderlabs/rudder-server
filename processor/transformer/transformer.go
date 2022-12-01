@@ -20,6 +20,7 @@ import (
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/processor/integrations"
 	"github.com/rudderlabs/rudder-server/services/stats"
+	"github.com/rudderlabs/rudder-server/utils/httputil"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/types"
 )
@@ -178,7 +179,7 @@ func GetVersion() (transformerBuildVersion string) {
 		transformerBuildVersion = fmt.Sprintf("No response from transformer. %s", transformerBuildVersion)
 		return
 	}
-	defer func() { _ = resp.Body.Close() }()
+	defer func() { httputil.CloseResponse(resp) }()
 	if resp.StatusCode == http.StatusOK {
 		bodyBytes, err := io.ReadAll(resp.Body)
 		if err != nil {
@@ -320,7 +321,14 @@ func (trans *HandleT) request(ctx context.Context, url string, data []Transforme
 		},
 		endlessBackoff,
 		func(err error, t time.Duration) {
-			trans.logger.Errorf("JS HTTP connection error: URL: %v Error: %+v", url, err)
+			var transformationID, transformationVersionID string
+			if len(data[0].Destination.Transformations) > 0 {
+				transformationID = data[0].Destination.Transformations[0].ID
+				transformationVersionID = data[0].Destination.Transformations[0].VersionID
+			}
+			trans.logger.Errorf("JS HTTP connection error: URL: %v Error: %+v. WorkspaceID: %s, sourceID: %s, destinationID: %s, transformationID: %s, transformationVersionID: %s",
+				url, err, data[0].Metadata.WorkspaceID, data[0].Metadata.SourceID, data[0].Metadata.DestinationID,
+				transformationID, transformationVersionID)
 		})
 	// control plane back up
 
@@ -380,8 +388,8 @@ func (trans *HandleT) doPost(ctx context.Context, rawJSON []byte, url string, ta
 			if reqErr != nil {
 				return reqErr
 			}
+			defer func() { httputil.CloseResponse(resp) }()
 			respData, reqErr = io.ReadAll(resp.Body)
-			_ = resp.Body.Close()
 			return reqErr
 		},
 		backoff.WithMaxRetries(backoff.NewExponentialBackOff(), uint64(maxRetry)),

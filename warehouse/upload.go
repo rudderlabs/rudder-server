@@ -119,6 +119,7 @@ type UploadJobT struct {
 	hasAllTablesSkipped  bool
 	tableUploadStatuses  []*TableUploadStatusT
 	destinationValidator validations.DestinationValidator
+	stats                stats.Stats
 }
 
 type UploadColumnT struct {
@@ -145,8 +146,8 @@ var (
 )
 
 var (
-	maxParallelLoads      map[string]int
-	columnCountThresholds map[string]int
+	maxParallelLoads    map[string]int
+	columnCountLimitMap map[string]int
 )
 
 func Init() {
@@ -167,15 +168,14 @@ func setMaxParallelLoads() {
 		warehouseutils.CLICKHOUSE: config.GetInt("Warehouse.clickhouse.maxParallelLoads", 3),
 		warehouseutils.DELTALAKE:  config.GetInt("Warehouse.deltalake.maxParallelLoads", 3),
 	}
-	columnCountThresholds = map[string]int{
-		warehouseutils.AZURE_SYNAPSE: config.GetInt("Warehouse.azure_synapse.columnCountThreshold", 800),
-		warehouseutils.BQ:            config.GetInt("Warehouse.bigquery.columnCountThreshold", 8000),
-		warehouseutils.CLICKHOUSE:    config.GetInt("Warehouse.clickhouse.columnCountThreshold", 800),
-		warehouseutils.MSSQL:         config.GetInt("Warehouse.mssql.columnCountThreshold", 800),
-		warehouseutils.POSTGRES:      config.GetInt("Warehouse.postgres.columnCountThreshold", 1200),
-		warehouseutils.RS:            config.GetInt("Warehouse.redshift.columnCountThreshold", 1200),
-		warehouseutils.SNOWFLAKE:     config.GetInt("Warehouse.snowflake.columnCountThreshold", 1600),
-		warehouseutils.S3_DATALAKE:   config.GetInt("Warehouse.s3_datalake.columnCountThreshold", 10000),
+	columnCountLimitMap = map[string]int{
+		warehouseutils.AZURE_SYNAPSE: config.GetInt("Warehouse.azure_synapse.columnCountLimit", 1024),
+		warehouseutils.BQ:            config.GetInt("Warehouse.bigquery.columnCountLimit", 10000),
+		warehouseutils.CLICKHOUSE:    config.GetInt("Warehouse.clickhouse.columnCountLimit", 1000),
+		warehouseutils.MSSQL:         config.GetInt("Warehouse.mssql.columnCountLimit", 1024),
+		warehouseutils.POSTGRES:      config.GetInt("Warehouse.postgres.columnCountLimit", 1600),
+		warehouseutils.RS:            config.GetInt("Warehouse.redshift.columnCountLimit", 1600),
+		warehouseutils.S3_DATALAKE:   config.GetInt("Warehouse.s3_datalake.columnCountLimit", 10000),
 	}
 }
 
@@ -204,7 +204,7 @@ func (job *UploadJobT) trackLongRunningUpload() chan struct{} {
 		case <-time.After(longRunningUploadStatThresholdInMin):
 			pkgLogger.Infof("[WH]: Registering stat for long running upload: %d, dest: %s", job.upload.ID, job.warehouse.Identifier)
 
-			stats.Default.NewTaggedStat(
+			job.stats.NewTaggedStat(
 				"warehouse.long_running_upload",
 				stats.CountType,
 				stats.Tags{
@@ -1067,13 +1067,35 @@ func (job *UploadJobT) loadTable(tName string) (alteredSchema bool, err error) {
 		job.recordTableLoad(tName, numEvents)
 	}
 
-	if columnThreshold, ok := columnCountThresholds[job.warehouse.Type]; ok {
-		columnCount := len(job.schemaHandle.schemaInWarehouse[tName])
-		if columnCount > columnThreshold {
-			job.counterStat(`warehouse_load_table_column_count`, tag{name: "tableName", value: strings.ToLower(tName)}).Count(columnCount)
-		}
-	}
+	job.columnCountStat(tName)
+
 	return
+}
+
+// columnCountStat sent the column count for a table to statsd
+// skip sending for S3_DATALAKE, GCS_DATALAKE, AZURE_DATALAKE
+func (job *UploadJobT) columnCountStat(tableName string) {
+	var (
+		columnCountLimit int
+		ok               bool
+	)
+
+	switch job.warehouse.Type {
+	case warehouseutils.S3_DATALAKE, warehouseutils.GCS_DATALAKE, warehouseutils.AZURE_DATALAKE:
+		return
+	}
+
+	if columnCountLimit, ok = columnCountLimitMap[job.warehouse.Type]; !ok {
+		return
+	}
+
+	tags := []tag{
+		{name: "tableName", value: strings.ToLower(tableName)},
+	}
+	currentColumnsCount := len(job.schemaHandle.schemaInWarehouse[tableName])
+
+	job.counterStat(`warehouse_load_table_column_count`, tags...).Count(currentColumnsCount)
+	job.counterStat(`warehouse_load_table_column_limit`, tags...).Count(columnCountLimit)
 }
 
 func (job *UploadJobT) loadUserTables(loadFilesTableMap map[tableNameT]bool) ([]error, error) {
@@ -1333,9 +1355,6 @@ func (job *UploadJobT) setUploadStatus(statusOpts UploadStatusOpts) (err error) 
 		return err
 	}
 	return job.setUploadColumns(uploadColumnOpts)
-	// return job.setUploadColumns(
-	// 	additionalFields...,
-	// )
 }
 
 // SetUploadSchema
@@ -1345,9 +1364,6 @@ func (job *UploadJobT) setUploadSchema(consolidatedSchema warehouseutils.SchemaT
 		panic(err)
 	}
 	job.upload.UploadSchema = consolidatedSchema
-	// return job.setUploadColumns(
-	// 	UploadColumnT{Column: UploadSchemaField, Value: marshalledSchema},
-	// )
 	return job.setUploadColumns(UploadColumnsOpts{Fields: []UploadColumnT{{Column: UploadSchemaField, Value: marshalledSchema}}})
 }
 
@@ -1365,10 +1381,6 @@ func (job *UploadJobT) setLoadFileIDs(startLoadFileID, endLoadFileID int64) erro
 	job.upload.StartLoadFileID = startLoadFileID
 	job.upload.EndLoadFileID = endLoadFileID
 
-	// return job.setUploadColumns(
-	// 	UploadColumnT{Column: UploadStartLoadFileIDField, Value: startLoadFileID},
-	// 	UploadColumnT{Column: UploadEndLoadFileIDField, Value: endLoadFileID},
-	// )
 	return job.setUploadColumns(UploadColumnsOpts{Fields: []UploadColumnT{{Column: UploadStartLoadFileIDField, Value: startLoadFileID}, {Column: UploadEndLoadFileIDField, Value: endLoadFileID}}})
 }
 

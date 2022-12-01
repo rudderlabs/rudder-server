@@ -969,7 +969,7 @@ func TestSortDnumList(t *testing.T) {
 
 func Test_GetAdvisoryLockForOperation_Unique(t *testing.T) {
 	calculated := map[int64]string{}
-	for _, operation := range []string{"add_ds", "migrate_ds"} {
+	for _, operation := range []string{"add_ds", "migrate_ds", "schema_migrate"} {
 		for _, prefix := range []string{"gw", "rt", "batch_rt", "proc_error"} {
 			h := &HandleT{tablePrefix: prefix}
 			key := fmt.Sprintf("%s_%s", prefix, operation)

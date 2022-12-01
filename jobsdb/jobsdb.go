@@ -835,15 +835,57 @@ func (jd *HandleT) init() {
 	}
 	jd.workersAndAuxSetup()
 
-	// Database schema migration should happen early, even before jobsdb is started,
-	// so that we can be sure that all the necessary tables are created and considered to be in
-	// the latest schema version, before rudder-migrator starts introducing new tables.
-	jd.dsListLock.WithLock(func(l lock.LockToken) {
-		switch jd.ownerType {
-		case Write, ReadWrite:
-			jd.setupDatabaseTables(l, jd.clearAll)
-		}
+	err := jd.WithTx(func(tx *Tx) error {
+		// only one migration should run at a time and block all other processes from adding or removing tables
+		return jd.withDistributedLock(context.Background(), tx, "schema_migrate", func() error {
+			// Database schema migration should happen early, even before jobsdb is started,
+			// so that we can be sure that all the necessary tables are created and considered to be in
+			// the latest schema version, before rudder-migrator starts introducing new tables.
+			jd.dsListLock.WithLock(func(l lock.LockToken) {
+				writer := jd.ownerType == Write || jd.ownerType == ReadWrite
+				if writer && jd.clearAll {
+					jd.dropDatabaseTables(l)
+				}
+				templateData := func() map[string]interface{} {
+					// Important: if jobsdb type is acting as a writer then refreshDSList
+					// doesn't return the full list of datasets, only the rightmost two.
+					// But we need to run the schema migration against all datasets, no matter
+					// whether jobsdb is a writer or not.
+					datasets := getDSList(jd, jd.dbHandle, jd.tablePrefix)
+
+					datasetIndices := make([]string, 0)
+					for _, dataset := range datasets {
+						datasetIndices = append(datasetIndices, dataset.Index)
+					}
+
+					return map[string]interface{}{
+						"Prefix":   jd.tablePrefix,
+						"Datasets": datasetIndices,
+					}
+				}()
+
+				if writer {
+					jd.setupDatabaseTables(templateData)
+				}
+
+				// Run changesets that should always run for both writer and reader jobsdbs.
+				//
+				// When running separate gw and processor instances we cannot control the order of execution
+				// and we cannot guarantee that after a gw migration completes, processor
+				// will not create new tables using the old schema.
+				//
+				// Changesets that run always can help in such cases, by bringing non-migrated tables into a usable state.
+				jd.runAlwaysChangesets(templateData)
+
+				// finally refresh the dataset list to make sure [datasetList] field is populated
+				jd.refreshDSList(l)
+			})
+			return nil
+		})
 	})
+	if err != nil {
+		panic(fmt.Errorf("failed to run schema migration for %s: %w", jd.tablePrefix, err))
+	}
 }
 
 func (jd *HandleT) workersAndAuxSetup() {
@@ -2695,47 +2737,51 @@ func (jd *HandleT) addNewDSLoop(ctx context.Context) {
 		var releaseDsListLock chan<- lock.LockToken
 		// start a transaction
 		err := jd.WithTx(func(tx *Tx) error {
-			// acquire a advisory transaction level blocking lock, which is released once the transaction ends.
-			sqlStatement := fmt.Sprintf(`SELECT pg_advisory_xact_lock(%d);`, advisoryLock)
-			_, err := tx.ExecContext(context.TODO(), sqlStatement)
-			if err != nil {
-				return fmt.Errorf("error while acquiring advisory lock %d: %w", advisoryLock, err)
-			}
+			return jd.withDistributedSharedLock(context.TODO(), tx, "schema_migrate", func() error { // cannot run while schema migration is running
+				return jd.withDistributedLock(context.TODO(), tx, "add_ds", func() error { // only one add_ds can run at a time
+					// acquire a advisory transaction level blocking lock, which is released once the transaction ends.
+					sqlStatement := fmt.Sprintf(`SELECT pg_advisory_xact_lock(%d);`, advisoryLock)
+					_, err := tx.ExecContext(context.TODO(), sqlStatement)
+					if err != nil {
+						return fmt.Errorf("error while acquiring advisory lock %d: %w", advisoryLock, err)
+					}
 
-			// We acquire the list lock only after we have acquired the advisory lock.
-			// We will release the list lock after the transaction ends, that's why we need to use an async lock
-			dsListLock, releaseDsListLock, err = jd.dsListLock.AsyncLockWithCtx(ctx)
-			if err != nil {
-				return err
-			}
-			// refresh ds list
-			var dsList []dataSetT
-			var nextDSIdx string
-			// make sure we are operating on the latest version of the list
-			dsList = getDSList(jd, tx, jd.tablePrefix)
-			latestDS := dsList[len(dsList)-1]
-			full, err := jd.checkIfFullDSInTx(tx, latestDS)
-			if err != nil {
-				return fmt.Errorf("error while checking if DS is full: %w", err)
-			}
-			// checkIfFullDS is true for last DS in the list
-			if full {
-				if _, err = tx.Exec(fmt.Sprintf(`LOCK TABLE %q IN EXCLUSIVE MODE;`, latestDS.JobTable)); err != nil {
-					return fmt.Errorf("error locking table %s: %w", latestDS.JobTable, err)
-				}
+					// We acquire the list lock only after we have acquired the advisory lock.
+					// We will release the list lock after the transaction ends, that's why we need to use an async lock
+					dsListLock, releaseDsListLock, err = jd.dsListLock.AsyncLockWithCtx(ctx)
+					if err != nil {
+						return err
+					}
+					// refresh ds list
+					var dsList []dataSetT
+					var nextDSIdx string
+					// make sure we are operating on the latest version of the list
+					dsList = getDSList(jd, tx, jd.tablePrefix)
+					latestDS := dsList[len(dsList)-1]
+					full, err := jd.checkIfFullDSInTx(tx, latestDS)
+					if err != nil {
+						return fmt.Errorf("error while checking if DS is full: %w", err)
+					}
+					// checkIfFullDS is true for last DS in the list
+					if full {
+						if _, err = tx.Exec(fmt.Sprintf(`LOCK TABLE %q IN EXCLUSIVE MODE;`, latestDS.JobTable)); err != nil {
+							return fmt.Errorf("error locking table %s: %w", latestDS.JobTable, err)
+						}
 
-				nextDSIdx = jd.doComputeNewIdxForAppend(dsList)
-				jd.logger.Infof("[[ %s : addNewDSLoop ]]: NewDS", jd.tablePrefix)
-				if err = jd.addNewDSInTx(tx, dsListLock, dsList, newDataSet(jd.tablePrefix, nextDSIdx)); err != nil {
-					return fmt.Errorf("error adding new DS: %w", err)
-				}
+						nextDSIdx = jd.doComputeNewIdxForAppend(dsList)
+						jd.logger.Infof("[[ %s : addNewDSLoop ]]: NewDS", jd.tablePrefix)
+						if err = jd.addNewDSInTx(tx, dsListLock, dsList, newDataSet(jd.tablePrefix, nextDSIdx)); err != nil {
+							return fmt.Errorf("error adding new DS: %w", err)
+						}
 
-				// previous DS should become read only
-				if err = setReadonlyDsInTx(tx, latestDS); err != nil {
-					return fmt.Errorf("error making dataset read only: %w", err)
-				}
-			}
-			return nil
+						// previous DS should become read only
+						if err = setReadonlyDsInTx(tx, latestDS); err != nil {
+							return fmt.Errorf("error making dataset read only: %w", err)
+						}
+					}
+					return nil
+				})
+			})
 		})
 		jd.assertError(err)
 
@@ -3682,4 +3728,22 @@ func sanitizeJson(input json.RawMessage) json.RawMessage {
 type smallDS struct {
 	ds          dataSetT
 	recordsLeft int
+}
+
+func (jd *HandleT) withDistributedLock(ctx context.Context, tx *Tx, operation string, f func() error) error {
+	advisoryLock := jd.getAdvisoryLockForOperation(operation)
+	_, err := tx.ExecContext(ctx, fmt.Sprintf(`SELECT pg_advisory_xact_lock(%d);`, advisoryLock))
+	if err != nil {
+		return fmt.Errorf("error while acquiring advisory lock %d for operation %s: %w", advisoryLock, operation, err)
+	}
+	return f()
+}
+
+func (jd *HandleT) withDistributedSharedLock(ctx context.Context, tx *Tx, operation string, f func() error) error {
+	advisoryLock := jd.getAdvisoryLockForOperation(operation)
+	_, err := tx.ExecContext(ctx, fmt.Sprintf(`SELECT pg_advisory_xact_lock_shared(%d);`, advisoryLock))
+	if err != nil {
+		return fmt.Errorf("error while acquiring a shared advisory lock %d for operation %s: %w", advisoryLock, operation, err)
+	}
+	return f()
 }
