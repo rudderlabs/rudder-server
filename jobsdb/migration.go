@@ -424,9 +424,7 @@ func (jd *HandleT) checkIfMigrateDS(ds dataSetT) (
 	err = row.Scan(&delCount)
 	jd.assertError(err)
 
-	// protect from hot-reload of safeguardMigration
-	safegaurdMigration := safegaurdMigration
-	if safegaurdMigration {
+	if jobStatusCountMigrationCheck {
 		// Total number of job status. If this table grows too big (e.g. a lot of retries)
 		// we migrate to a new table and get rid of old job status
 		sqlStatement = fmt.Sprintf(`SELECT COUNT(*) from %q`, ds.JobStatusTable)
@@ -437,12 +435,8 @@ func (jd *HandleT) checkIfMigrateDS(ds dataSetT) (
 
 	if totalCount == 0 {
 		jd.assert(
-			safegaurdMigrationWrapper(
-				delCount == 0,
-				statusCount == 0,
-				safegaurdMigration,
-			),
-			fmt.Sprintf("delCount: %d. Either of them is not 0", delCount))
+			delCount == 0,
+			fmt.Sprintf("delCount: %d. Is not 0", delCount))
 		return false, false, 0
 	}
 
@@ -481,18 +475,10 @@ func (jd *HandleT) checkIfMigrateDS(ds dataSetT) (
 
 	smallThreshold := jobMinRowsMigrateThres * float64(*jd.MaxDSSize)
 	isSmall := func() bool {
-		return safegaurdMigrationWrapper(
-			float64(totalCount) < smallThreshold,
-			float64(statusCount) < smallThreshold,
-			safegaurdMigration,
-		)
+		return float64(totalCount) < smallThreshold && float64(statusCount) < smallThreshold
 	}
 
-	if safegaurdMigrationWrapper(
-		float64(delCount)/float64(totalCount) > jobDoneMigrateThres,
-		float64(statusCount)/float64(totalCount) > jobStatusMigrateThres,
-		safegaurdMigration,
-	) {
+	if float64(delCount)/float64(totalCount) > jobDoneMigrateThres || (float64(statusCount)/float64(totalCount) > jobStatusMigrateThres) {
 		return true, isSmall(), recordsLeft
 	}
 
@@ -501,11 +487,4 @@ func (jd *HandleT) checkIfMigrateDS(ds dataSetT) (
 	}
 
 	return false, false, recordsLeft
-}
-
-func safegaurdMigrationWrapper(cond, safeguardCond, toCheck bool) bool {
-	if !toCheck {
-		return cond
-	}
-	return cond && safeguardCond
 }
