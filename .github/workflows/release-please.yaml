@@ -20,3 +20,4 @@ jobs:
           default-branch: ${{ steps.extract_branch.outputs.branch }}
           changelog-types: '[{"type":"feat","section":"Features","hidden":false},{"type":"fix","section":"Bug Fixes","hidden":false},{"type":"chore","section":"Miscellaneous","hidden":false},{"type":"refactor","section":"Miscellaneous","hidden":false},{"type":"test","section":"Miscellaneous","hidden":false},{"type":"doc","section":"Documentation","hidden":false}]'
           bump-minor-pre-major: true
+          last-release-sha: 93d527153ead5d67c9f943312c96458de60bcff2
