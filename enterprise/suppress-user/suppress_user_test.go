@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/gofrs/uuid"
+	"github.com/google/uuid"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/rudderlabs/rudder-server/config"
@@ -30,7 +30,7 @@ var _ = Describe("Suppress user", func() {
 
 	Context("badgerdb", func() {
 		generateTests(func() Repository {
-			p := path.Join(GinkgoT().TempDir(), strings.ReplaceAll(uuid.Must(uuid.NewV4()).String(), "-", ""))
+			p := path.Join(GinkgoT().TempDir(), strings.ReplaceAll(uuid.New().String(), "-", ""))
 			r, err := NewBadgerRepository(p, logger.NOP)
 			Expect(err).To(BeNil())
 			return r

@@ -12,7 +12,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/gofrs/uuid"
+	"github.com/google/uuid"
 	_ "github.com/lib/pq"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -1007,7 +1007,7 @@ func increment(db *sql.DB, jobRunId string, key JobTargetKey, stat Stats, sh Job
 }
 
 func newJobRunId() string {
-	return strings.ReplaceAll(uuid.Must(uuid.NewV4()).String(), "-", "")
+	return strings.ReplaceAll(uuid.New().String(), "-", "")
 }
 
 func newDBResource(pool *dockertest.Pool, networkId, hostname string, params ...string) postgresResource {

@@ -8,7 +8,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/gofrs/uuid"
+	"github.com/google/uuid"
 	"github.com/tidwall/gjson"
 
 	"github.com/rudderlabs/rudder-server/jobsdb"
