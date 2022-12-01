@@ -2,6 +2,7 @@ package migrator_test
 
 import (
 	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/ory/dockertest/v3"
@@ -31,7 +32,7 @@ func TestMigrate(t *testing.T) {
 
 	for _, dir := range migrationDir {
 		t.Run(dir, func(t *testing.T) {
-			if dir == "jobsdb" {
+			if strings.HasPrefix(dir, "jobsdb") {
 				t.Skip("template migrations are tested on jobsdb")
 				return
 			}

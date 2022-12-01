@@ -1,0 +1,4 @@
+{{range .Datasets}}
+    CREATE INDEX IF NOT EXISTS "idx_{{$.Prefix}}_job_status_{{.}}_jid_id" ON "{{$.Prefix}}_job_status_{{.}}" (job_id asc,id desc);
+    CREATE OR REPLACE VIEW "v_last_{{$.Prefix}}_job_status_{{.}}" AS SELECT DISTINCT ON (job_id) * FROM "{{$.Prefix}}_job_status_{{.}}" ORDER BY job_id ASC,id DESC;
+{{end}}
