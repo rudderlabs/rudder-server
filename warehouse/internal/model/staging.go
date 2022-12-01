@@ -35,3 +35,7 @@ type StagingFile struct {
 	CreatedAt time.Time
 	UpdatedAt time.Time
 }
+
+func (s *StagingFile) PrimaryID() int64 {
+	return s.ID
+}

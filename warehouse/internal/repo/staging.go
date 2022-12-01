@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/lib/pq"
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
@@ -53,6 +54,14 @@ type metadataSchema struct {
 	TimeWindowDay         int    `json:"time_window_day"`
 	TimeWindowHour        int    `json:"time_window_hour"`
 	DestinationRevisionID string `json:"destination_revision_id"`
+}
+
+func StagingFileIDs(stagingFiles []*model.StagingFile) []int64 {
+	var stagingFileIDs []int64
+	for _, stagingFile := range stagingFiles {
+		stagingFileIDs = append(stagingFileIDs, stagingFile.ID)
+	}
+	return stagingFileIDs
 }
 
 func metadataFromStagingFile(stagingFile *model.StagingFile) metadataSchema {
@@ -292,4 +301,49 @@ func (repo *StagingFiles) GetAfterID(ctx context.Context, sourceID, destinationI
 	}
 
 	return repo.parseRows(rows)
+}
+
+func (repo *StagingFiles) SetStatuses(ctx context.Context, ids []int64, status string) (err error) {
+	repo.init()
+
+	sqlStatement := `
+		UPDATE
+		` + stagingTableColumns + `
+		SET
+		  status = $1,
+		  updated_at = $2
+		WHERE
+		  id = ANY($3);
+`
+	_, err = repo.DB.Exec(sqlStatement, status, repo.Now(), pq.Array(ids))
+	if err != nil {
+		return fmt.Errorf("update ids status: %w", err)
+	}
+	return
+}
+
+func (repo *StagingFiles) SetErrorStatus(ctx context.Context, stagingFileID int64, stageFileErr error) error {
+	repo.init()
+
+	sqlStatement := `
+		UPDATE
+		` + stagingTableColumns + `
+		SET
+			status = $1,
+			error = $2,
+			updated_at = $3
+		WHERE
+			id = $4;`
+
+	_, err := repo.DB.Exec(
+		sqlStatement,
+		warehouseutils.StagingFileFailedState,
+		stageFileErr.Error(),
+		repo.Now(),
+		stagingFileID,
+	)
+	if err != nil {
+		return fmt.Errorf("update staging file with error: %w", err)
+	}
+	return nil
 }
