@@ -923,6 +923,7 @@ func (wh *HandleT) getUploadsToProcess(ctx context.Context, availableWorkers int
 			uploadJob := UploadJobT{
 				upload:   &upload,
 				dbHandle: wh.dbHandle,
+				stats:    stats.Default,
 			}
 			err := fmt.Errorf("unable to find source : %s or destination : %s, both or the connection between them", upload.SourceID, upload.DestinationID)
 			_, _ = uploadJob.setUploadError(err, model.Aborted)
@@ -965,6 +966,7 @@ func (wh *HandleT) getUploadsToProcess(ctx context.Context, availableWorkers int
 			dbHandle:             wh.dbHandle,
 			pgNotifier:           &wh.notifier,
 			destinationValidator: validations.NewDestinationValidator(),
+			stats:                stats.Default,
 		}
 
 		uploadJobs = append(uploadJobs, &uploadJob)

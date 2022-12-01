@@ -73,6 +73,7 @@ func (api *APIManager) deleteWithRetry(ctx context.Context, job model.Job, desti
 		}
 		err = setOAuthHeader(oAuthDetail.secretToken, req)
 		if err != nil {
+			pkgLogger.Errorf("[%v] error occurred while setting oauth header for workspace: %v, destination: %v", destination.Name, job.WorkspaceID, destination.DestinationID)
 			pkgLogger.Error(err)
 			return model.JobStatusFailed
 		}
@@ -198,7 +199,7 @@ func setOAuthHeader(secretToken *oauth.AuthResponse, req *http.Request) error {
 func (api *APIManager) getOAuthDetail(destDetail *model.Destination, workspaceId string) (oauthDetail, error) {
 	id := oauth.GetAccountId(destDetail.Config, oauth.DeleteAccountIdKey)
 	if strings.TrimSpace(id) == "" {
-		return oauthDetail{}, fmt.Errorf("%v is not present for %v", oauth.DeleteAccountIdKey, destDetail.Name)
+		return oauthDetail{}, fmt.Errorf("[%v] Delete account ID key (%v) is not present for destination: %v", destDetail.Name, oauth.DeleteAccountIdKey, destDetail.DestinationID)
 	}
 	tokenStatusCode, secretToken := api.OAuth.FetchToken(&oauth.RefreshTokenParams{
 		AccountId:       id,
@@ -223,9 +224,13 @@ func (api *APIManager) refreshOAuthToken(destName, workspaceId string, oAuthDeta
 		DestDefName:     destName,
 		EventNamePrefix: "refresh_token",
 	}
-	statusCode, _ := api.OAuth.RefreshToken(refTokenParams)
+	statusCode, refreshResponse := api.OAuth.RefreshToken(refTokenParams)
 	if statusCode != http.StatusOK {
-		return fmt.Errorf("failed to refresh token for destination: %v", destName)
+		var refreshRespErr string
+		if refreshResponse != nil {
+			refreshRespErr = refreshResponse.Err
+		}
+		return fmt.Errorf("[%v] Failed to refresh token for destination in workspace(%v) & account(%v) with %v", destName, workspaceId, oAuthDetail.id, refreshRespErr)
 	}
 	return nil
 }
