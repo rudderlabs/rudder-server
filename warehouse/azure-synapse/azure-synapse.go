@@ -147,12 +147,12 @@ func Init() {
 
 func (as *HandleT) getConnectionCredentials() credentialsT {
 	return credentialsT{
-		host:     warehouseutils.GetConfigValue(host, as.Warehouse),
-		dbName:   warehouseutils.GetConfigValue(dbName, as.Warehouse),
-		user:     warehouseutils.GetConfigValue(user, as.Warehouse),
-		password: warehouseutils.GetConfigValue(password, as.Warehouse),
-		port:     warehouseutils.GetConfigValue(port, as.Warehouse),
-		sslMode:  warehouseutils.GetConfigValue(sslMode, as.Warehouse),
+		host:     warehouseutils.GetConfigValue[string](host, &as.Warehouse),
+		dbName:   warehouseutils.GetConfigValue[string](dbName, &as.Warehouse),
+		user:     warehouseutils.GetConfigValue[string](user, &as.Warehouse),
+		password: warehouseutils.GetConfigValue[string](password, &as.Warehouse),
+		port:     warehouseutils.GetConfigValue[string](port, &as.Warehouse),
+		sslMode:  warehouseutils.GetConfigValue[string](sslMode, &as.Warehouse),
 		timeout:  as.ConnectTimeout,
 	}
 }

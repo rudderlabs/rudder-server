@@ -683,34 +683,19 @@ func ObjectStorageType(destType string, config interface{}, useRudderStorage boo
 	return provider
 }
 
-func GetConfigValue(key string, warehouse Warehouse) (val string) {
-	config := warehouse.Destination.Config
-	if config[key] != nil {
-		val, _ = config[key].(string)
-	}
-	return val
-}
+func GetConfigValue[V any](key string, warehouse *Warehouse) V {
+	c := warehouse.Destination.Config
+	var (
+		val V
+		ok  bool
+	)
 
-func GetConfigValueBoolString(key string, warehouse Warehouse) string {
-	config := warehouse.Destination.Config
-	if config[key] != nil {
-		if val, ok := config[key].(bool); ok {
-			if val {
-				return "true"
-			}
-		}
-	}
-	return "false"
-}
-
-func GetConfigValueAsMap(key string, config map[string]interface{}) map[string]interface{} {
-	value := map[string]interface{}{}
-	if config[key] != nil {
-		if val, ok := config[key].(map[string]interface{}); ok {
+	if c[key] != nil {
+		if val, ok = c[key].(V); ok {
 			return val
 		}
 	}
-	return value
+	return val
 }
 
 func SortColumnKeysFromColumnMap(columnMap map[string]string) []string {
@@ -991,13 +976,13 @@ func GetLoadFilePrefix(timeWindow time.Time, warehouse Warehouse) (timeWindowFor
 	whType := warehouse.Type
 	switch whType {
 	case GCS_DATALAKE:
-		timeWindowLayout := GetConfigValue("timeWindowLayout", warehouse)
+		timeWindowLayout := GetConfigValue[string]("timeWindowLayout", &warehouse)
 		if timeWindowLayout == "" {
 			timeWindowLayout = DatalakeTimeWindowFormat
 		}
 
 		timeWindowFormat = timeWindow.Format(timeWindowLayout)
-		tableSuffixPath := GetConfigValue("tableSuffix", warehouse)
+		tableSuffixPath := GetConfigValue[string]("tableSuffix", &warehouse)
 		if tableSuffixPath != "" {
 			timeWindowFormat = fmt.Sprintf("%v/%v", tableSuffixPath, timeWindowFormat)
 		}

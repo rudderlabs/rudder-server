@@ -181,13 +181,13 @@ func (wh *HandleT) canCreateUpload(warehouse warehouseutils.Warehouse) bool {
 		return !uploadFrequencyExceeded(warehouse, "")
 	}
 	// gets exclude window start time and end time
-	excludeWindow := warehouseutils.GetConfigValueAsMap(warehouseutils.ExcludeWindow, warehouse.Destination.Config)
+	excludeWindow := warehouseutils.GetConfigValue[map[string]interface{}](warehouseutils.ExcludeWindow, &warehouse)
 	excludeWindowStartTime, excludeWindowEndTime := GetExcludeWindowStartEndTimes(excludeWindow)
 	if CheckCurrentTimeExistsInExcludeWindow(timeutil.Now(), excludeWindowStartTime, excludeWindowEndTime) {
 		return false
 	}
-	syncFrequency := warehouseutils.GetConfigValue(warehouseutils.SyncFrequency, warehouse)
-	syncStartAt := warehouseutils.GetConfigValue(warehouseutils.SyncStartAt, warehouse)
+	syncFrequency := warehouseutils.GetConfigValue[string](warehouseutils.SyncFrequency, &warehouse)
+	syncStartAt := warehouseutils.GetConfigValue[string](warehouseutils.SyncStartAt, &warehouse)
 	if syncFrequency == "" || syncStartAt == "" {
 		return !uploadFrequencyExceeded(warehouse, syncFrequency)
 	}

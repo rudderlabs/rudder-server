@@ -183,7 +183,7 @@ func (bq *HandleT) schemaExists(_, _ string) (exists bool, err error) {
 
 func (bq *HandleT) CreateSchema() (err error) {
 	pkgLogger.Infof("BQ: Creating bigquery dataset: %s in project: %s", bq.namespace, bq.projectID)
-	location := strings.TrimSpace(warehouseutils.GetConfigValue(GCPLocation, bq.warehouse))
+	location := strings.TrimSpace(warehouseutils.GetConfigValue[string](GCPLocation, &bq.warehouse))
 	if location == "" {
 		location = "US"
 	}
@@ -695,10 +695,10 @@ func (bq *HandleT) CrashRecover(warehouse warehouseutils.Warehouse) (err error) 
 	}
 	bq.warehouse = warehouse
 	bq.namespace = warehouse.Namespace
-	bq.projectID = strings.TrimSpace(warehouseutils.GetConfigValue(GCPProjectID, bq.warehouse))
+	bq.projectID = strings.TrimSpace(warehouseutils.GetConfigValue[string](GCPProjectID, &bq.warehouse))
 	bq.db, err = bq.connect(BQCredentialsT{
 		ProjectID:   bq.projectID,
-		Credentials: warehouseutils.GetConfigValue(GCPCredentials, bq.warehouse),
+		Credentials: warehouseutils.GetConfigValue[string](GCPCredentials, &bq.warehouse),
 	})
 	if err != nil {
 		return
@@ -759,11 +759,11 @@ func (bq *HandleT) IsEmpty(warehouse warehouseutils.Warehouse) (empty bool, err 
 	empty = true
 	bq.warehouse = warehouse
 	bq.namespace = warehouse.Namespace
-	bq.projectID = strings.TrimSpace(warehouseutils.GetConfigValue(GCPProjectID, bq.warehouse))
+	bq.projectID = strings.TrimSpace(warehouseutils.GetConfigValue[string](GCPProjectID, &bq.warehouse))
 	pkgLogger.Infof("BQ: Connecting to BigQuery in project: %s", bq.projectID)
 	bq.db, err = bq.connect(BQCredentialsT{
 		ProjectID:   bq.projectID,
-		Credentials: warehouseutils.GetConfigValue(GCPCredentials, bq.warehouse),
+		Credentials: warehouseutils.GetConfigValue[string](GCPCredentials, &bq.warehouse),
 	})
 	if err != nil {
 		return
@@ -796,12 +796,12 @@ func (bq *HandleT) Setup(warehouse warehouseutils.Warehouse, uploader warehouseu
 	bq.warehouse = warehouse
 	bq.namespace = warehouse.Namespace
 	bq.uploader = uploader
-	bq.projectID = strings.TrimSpace(warehouseutils.GetConfigValue(GCPProjectID, bq.warehouse))
+	bq.projectID = strings.TrimSpace(warehouseutils.GetConfigValue[string](GCPProjectID, &bq.warehouse))
 
 	bq.backgroundContext = context.Background()
 	bq.db, err = bq.connect(BQCredentialsT{
 		ProjectID:   bq.projectID,
-		Credentials: warehouseutils.GetConfigValue(GCPCredentials, bq.warehouse),
+		Credentials: warehouseutils.GetConfigValue[string](GCPCredentials, &bq.warehouse),
 	})
 	return err
 }
@@ -810,7 +810,7 @@ func (bq *HandleT) TestConnection(warehouse warehouseutils.Warehouse) (err error
 	bq.warehouse = warehouse
 	bq.db, err = bq.connect(BQCredentialsT{
 		ProjectID:   bq.projectID,
-		Credentials: warehouseutils.GetConfigValue(GCPCredentials, bq.warehouse),
+		Credentials: warehouseutils.GetConfigValue[string](GCPCredentials, &bq.warehouse),
 	})
 	if err != nil {
 		return
@@ -871,10 +871,10 @@ func (*HandleT) AlterColumn(_, _, _ string) (err error) {
 func (bq *HandleT) FetchSchema(warehouse warehouseutils.Warehouse) (schema, unrecognizedSchema warehouseutils.SchemaT, err error) {
 	bq.warehouse = warehouse
 	bq.namespace = warehouse.Namespace
-	bq.projectID = strings.TrimSpace(warehouseutils.GetConfigValue(GCPProjectID, bq.warehouse))
+	bq.projectID = strings.TrimSpace(warehouseutils.GetConfigValue[string](GCPProjectID, &bq.warehouse))
 	dbClient, err := bq.connect(BQCredentialsT{
 		ProjectID:   bq.projectID,
-		Credentials: warehouseutils.GetConfigValue(GCPCredentials, bq.warehouse),
+		Credentials: warehouseutils.GetConfigValue[string](GCPCredentials, &bq.warehouse),
 	})
 	if err != nil {
 		return
@@ -1133,10 +1133,10 @@ func (bq *HandleT) GetTotalCountInTable(ctx context.Context, tableName string) (
 func (bq *HandleT) Connect(warehouse warehouseutils.Warehouse) (client.Client, error) {
 	bq.warehouse = warehouse
 	bq.namespace = warehouse.Namespace
-	bq.projectID = strings.TrimSpace(warehouseutils.GetConfigValue(GCPProjectID, bq.warehouse))
+	bq.projectID = strings.TrimSpace(warehouseutils.GetConfigValue[string](GCPProjectID, &bq.warehouse))
 	dbClient, err := bq.connect(BQCredentialsT{
 		ProjectID:   bq.projectID,
-		Credentials: warehouseutils.GetConfigValue(GCPCredentials, bq.warehouse),
+		Credentials: warehouseutils.GetConfigValue[string](GCPCredentials, &bq.warehouse),
 	})
 	if err != nil {
 		return client.Client{}, err

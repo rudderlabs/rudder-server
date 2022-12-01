@@ -678,11 +678,11 @@ func (rs *HandleT) AlterColumn(tableName, columnName, columnType string) (err er
 
 func (rs *HandleT) getConnectionCredentials() RedshiftCredentialsT {
 	return RedshiftCredentialsT{
-		Host:     warehouseutils.GetConfigValue(RSHost, rs.Warehouse),
-		Port:     warehouseutils.GetConfigValue(RSPort, rs.Warehouse),
-		DbName:   warehouseutils.GetConfigValue(RSDbName, rs.Warehouse),
-		Username: warehouseutils.GetConfigValue(RSUserName, rs.Warehouse),
-		Password: warehouseutils.GetConfigValue(RSPassword, rs.Warehouse),
+		Host:     warehouseutils.GetConfigValue[string](RSHost, &rs.Warehouse),
+		Port:     warehouseutils.GetConfigValue[string](RSPort, &rs.Warehouse),
+		DbName:   warehouseutils.GetConfigValue[string](RSDbName, &rs.Warehouse),
+		Username: warehouseutils.GetConfigValue[string](RSUserName, &rs.Warehouse),
+		Password: warehouseutils.GetConfigValue[string](RSPassword, &rs.Warehouse),
 		timeout:  rs.ConnectTimeout,
 	}
 }

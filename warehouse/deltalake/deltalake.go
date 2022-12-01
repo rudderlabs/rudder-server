@@ -3,6 +3,7 @@ package deltalake
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -493,7 +494,7 @@ func (dl *HandleT) sortedColumnNames(tableSchemaInUpload warehouseutils.TableSch
 // STS authentication is only supported with S3A client.
 func (dl *HandleT) credentialsStr() (auth string, err error) {
 	if dl.ObjectStorage == warehouseutils.S3 {
-		useSTSTokens := warehouseutils.GetConfigValueBoolString(AWSTokens, dl.Warehouse)
+		useSTSTokens := strconv.FormatBool(warehouseutils.GetConfigValue[bool](AWSTokens, &dl.Warehouse))
 		if useSTSTokens == "true" {
 			tempAccessKeyId, tempSecretAccessKey, token, err := warehouseutils.GetTemporaryS3Cred(&dl.Warehouse.Destination)
 			if err != nil {
@@ -511,8 +512,8 @@ func (dl *HandleT) credentialsStr() (auth string, err error) {
 func (dl *HandleT) getLoadFolder(location string) (loadFolder string, err error) {
 	loadFolder = warehouseutils.GetObjectFolderForDeltalake(dl.ObjectStorage, location)
 	if dl.ObjectStorage == warehouseutils.S3 {
-		awsAccessKey := warehouseutils.GetConfigValue(warehouseutils.AWSAccessKey, dl.Warehouse)
-		awsSecretKey := warehouseutils.GetConfigValue(warehouseutils.AWSAccessSecret, dl.Warehouse)
+		awsAccessKey := warehouseutils.GetConfigValue[string](warehouseutils.AWSAccessKey, &dl.Warehouse)
+		awsSecretKey := warehouseutils.GetConfigValue[string](warehouseutils.AWSAccessSecret, &dl.Warehouse)
 		if awsAccessKey != "" && awsSecretKey != "" {
 			loadFolder = strings.Replace(loadFolder, "s3://", "s3a://", 1)
 		}
@@ -757,9 +758,9 @@ func (dl *HandleT) loadUserTables() (errorMap map[string]error) {
 
 // getExternalLocation returns external location where we need to create the tables
 func (dl *HandleT) getExternalLocation() (externalLocation string) {
-	enableExternalLocation := warehouseutils.GetConfigValueBoolString(EnableExternalLocation, dl.Warehouse)
+	enableExternalLocation := strconv.FormatBool(warehouseutils.GetConfigValue[bool](EnableExternalLocation, &dl.Warehouse))
 	if enableExternalLocation == "true" {
-		externalLocation := warehouseutils.GetConfigValue(ExternalLocation, dl.Warehouse)
+		externalLocation := warehouseutils.GetConfigValue[string](ExternalLocation, &dl.Warehouse)
 		return externalLocation
 	}
 	return
@@ -798,11 +799,13 @@ func (dl *HandleT) dropDanglingStagingTables() {
 
 // connectToWarehouse returns the database connection configured with CredentialsT
 func (dl *HandleT) connectToWarehouse() (dbHandleT *databricks.DBHandleT, err error) {
+	var c string
+	c = warehouseutils.GetConfigValue[string](DLHost, &dl.Warehouse)
 	credT := &databricks.CredentialsT{
-		Host:  warehouseutils.GetConfigValue(DLHost, dl.Warehouse),
-		Port:  warehouseutils.GetConfigValue(DLPort, dl.Warehouse),
-		Path:  warehouseutils.GetConfigValue(DLPath, dl.Warehouse),
-		Token: warehouseutils.GetConfigValue(DLToken, dl.Warehouse),
+		Host:  c,
+		Port:  warehouseutils.GetConfigValue[string](DLPort, &dl.Warehouse),
+		Path:  warehouseutils.GetConfigValue[string](DLPath, &dl.Warehouse),
+		Token: warehouseutils.GetConfigValue[string](DLToken, &dl.Warehouse),
 	}
 	connStat := stats.Default.NewTaggedStat("warehouse.deltalake.grpcExecTime", stats.TimerType, stats.Tags{
 		"workspaceId": dl.Warehouse.WorkspaceID,

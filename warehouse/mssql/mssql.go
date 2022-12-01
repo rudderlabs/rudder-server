@@ -156,12 +156,12 @@ func loadConfig() {
 
 func (ms *HandleT) getConnectionCredentials() CredentialsT {
 	return CredentialsT{
-		Host:     warehouseutils.GetConfigValue(host, ms.Warehouse),
-		DBName:   warehouseutils.GetConfigValue(dbName, ms.Warehouse),
-		User:     warehouseutils.GetConfigValue(user, ms.Warehouse),
-		Password: warehouseutils.GetConfigValue(password, ms.Warehouse),
-		Port:     warehouseutils.GetConfigValue(port, ms.Warehouse),
-		SSLMode:  warehouseutils.GetConfigValue(sslMode, ms.Warehouse),
+		Host:     warehouseutils.GetConfigValue[string](host, &ms.Warehouse),
+		DBName:   warehouseutils.GetConfigValue[string](dbName, &ms.Warehouse),
+		User:     warehouseutils.GetConfigValue[string](user, &ms.Warehouse),
+		Password: warehouseutils.GetConfigValue[string](password, &ms.Warehouse),
+		Port:     warehouseutils.GetConfigValue[string](port, &ms.Warehouse),
+		SSLMode:  warehouseutils.GetConfigValue[string](sslMode, &ms.Warehouse),
 		timeout:  ms.ConnectTimeout,
 	}
 }

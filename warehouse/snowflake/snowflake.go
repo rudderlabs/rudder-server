@@ -202,11 +202,11 @@ func checkAndIgnoreAlreadyExistError(err error) bool {
 
 func (sf *HandleT) authString() string {
 	var auth string
-	if misc.IsConfiguredToUseRudderObjectStorage(sf.Warehouse.Destination.Config) || (sf.CloudProvider == "AWS" && warehouseutils.GetConfigValue(StorageIntegration, sf.Warehouse) == "") {
+	if misc.IsConfiguredToUseRudderObjectStorage(sf.Warehouse.Destination.Config) || (sf.CloudProvider == "AWS" && warehouseutils.GetConfigValue[string](StorageIntegration, &sf.Warehouse) == "") {
 		tempAccessKeyId, tempSecretAccessKey, token, _ := warehouseutils.GetTemporaryS3Cred(&sf.Warehouse.Destination)
 		auth = fmt.Sprintf(`CREDENTIALS = (AWS_KEY_ID='%s' AWS_SECRET_KEY='%s' AWS_TOKEN='%s')`, tempAccessKeyId, tempSecretAccessKey, token)
 	} else {
-		auth = fmt.Sprintf(`STORAGE_INTEGRATION = %s`, warehouseutils.GetConfigValue(StorageIntegration, sf.Warehouse))
+		auth = fmt.Sprintf(`STORAGE_INTEGRATION = %s`, warehouseutils.GetConfigValue[string](StorageIntegration, &sf.Warehouse))
 	}
 	return auth
 }
@@ -825,11 +825,11 @@ type OptionalCredsT struct {
 
 func (sf *HandleT) getConnectionCredentials(opts OptionalCredsT) SnowflakeCredentialsT {
 	return SnowflakeCredentialsT{
-		Account:    warehouseutils.GetConfigValue(SFAccount, sf.Warehouse),
-		WHName:     warehouseutils.GetConfigValue(SFWarehouse, sf.Warehouse),
-		DBName:     warehouseutils.GetConfigValue(SFDbName, sf.Warehouse),
-		Username:   warehouseutils.GetConfigValue(SFUserName, sf.Warehouse),
-		Password:   warehouseutils.GetConfigValue(SFPassword, sf.Warehouse),
+		Account:    warehouseutils.GetConfigValue[string](SFAccount, &sf.Warehouse),
+		WHName:     warehouseutils.GetConfigValue[string](SFWarehouse, &sf.Warehouse),
+		DBName:     warehouseutils.GetConfigValue[string](SFDbName, &sf.Warehouse),
+		Username:   warehouseutils.GetConfigValue[string](SFUserName, &sf.Warehouse),
+		Password:   warehouseutils.GetConfigValue[string](SFPassword, &sf.Warehouse),
 		schemaName: opts.schemaName,
 		timeout:    sf.ConnectTimeout,
 	}

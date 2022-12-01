@@ -29,8 +29,8 @@ type GlueSchemaRepository struct {
 
 func NewGlueSchemaRepository(wh warehouseutils.Warehouse) (*GlueSchemaRepository, error) {
 	gl := GlueSchemaRepository{
-		s3bucket:  warehouseutils.GetConfigValue(warehouseutils.AWSBucketNameConfig, wh),
-		s3prefix:  warehouseutils.GetConfigValue(warehouseutils.AWSS3Prefix, wh),
+		s3bucket:  warehouseutils.GetConfigValue[string](warehouseutils.AWSBucketNameConfig, &wh),
+		s3prefix:  warehouseutils.GetConfigValue[string](warehouseutils.AWSS3Prefix, &wh),
 		Warehouse: wh,
 		Namespace: wh.Namespace,
 	}

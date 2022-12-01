@@ -8,6 +8,7 @@ import (
 	"reflect"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -623,9 +624,17 @@ func TestGetConfigValue(t *testing.T) {
 				},
 			},
 		},
+		{
+			key: "u1",
+			warehouse: Warehouse{
+				Destination: backendconfig.DestinationT{
+					Config: map[string]interface{}{},
+				},
+			},
+		},
 	}
 	for _, input := range inputs {
-		value := GetConfigValue(input.key, input.warehouse)
+		value := GetConfigValue[string](input.key, &input.warehouse)
 		require.Equal(t, value, input.value)
 	}
 }
@@ -669,36 +678,43 @@ func TestGetConfigValueBoolString(t *testing.T) {
 		},
 	}
 	for _, input := range inputs {
-		value := GetConfigValueBoolString(input.key, input.warehouse)
-		require.Equal(t, value, input.value)
+		value := GetConfigValue[bool](input.key, &input.warehouse)
+		require.Equal(t, strconv.FormatBool(value), input.value)
 	}
 }
 
 func TestGetConfigValueAsMap(t *testing.T) {
 	inputs := []struct {
-		key    string
-		value  map[string]interface{}
-		config map[string]interface{}
+		key       string
+		value     map[string]interface{}
+		warehouse Warehouse
 	}{
 		{
 			key: "map",
 			value: map[string]interface{}{
 				"k1": "v1",
 			},
-			config: map[string]interface{}{
-				"map": map[string]interface{}{
-					"k1": "v1",
+			warehouse: Warehouse{
+				Destination: backendconfig.DestinationT{
+					Config: map[string]interface{}{
+						"map": map[string]interface{}{
+							"k1": "v1",
+						},
+					},
 				},
 			},
 		},
 		{
-			key:    "map",
-			value:  map[string]interface{}{},
-			config: map[string]interface{}{},
+			key: "map",
+			warehouse: Warehouse{
+				Destination: backendconfig.DestinationT{
+					Config: map[string]interface{}{},
+				},
+			},
 		},
 	}
 	for idx, input := range inputs {
-		value := GetConfigValueAsMap(input.key, input.config)
+		value := GetConfigValue[map[string]interface{}](input.key, &input.warehouse)
 		if !reflect.DeepEqual(value, input.value) {
 			t.Errorf("got %q want %q input %d", value, input.value, idx)
 		}

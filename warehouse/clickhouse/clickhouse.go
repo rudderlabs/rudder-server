@@ -268,20 +268,20 @@ func registerTLSConfig(key, certificate string) {
 // getConnectionCredentials gives clickhouse credentials
 func (ch *HandleT) getConnectionCredentials() CredentialsT {
 	tlsName := ""
-	certificate := warehouseutils.GetConfigValue(caCertificate, ch.Warehouse)
+	certificate := warehouseutils.GetConfigValue[string](caCertificate, &ch.Warehouse)
 	if strings.TrimSpace(certificate) != "" {
 		// each destination will have separate tls config, hence using destination id as tlsName
 		tlsName = ch.Warehouse.Destination.ID
 		registerTLSConfig(tlsName, certificate)
 	}
 	credentials := CredentialsT{
-		Host:          warehouseutils.GetConfigValue(host, ch.Warehouse),
-		DBName:        warehouseutils.GetConfigValue(dbName, ch.Warehouse),
-		User:          warehouseutils.GetConfigValue(user, ch.Warehouse),
-		Password:      warehouseutils.GetConfigValue(password, ch.Warehouse),
-		Port:          warehouseutils.GetConfigValue(port, ch.Warehouse),
-		Secure:        warehouseutils.GetConfigValueBoolString(secure, ch.Warehouse),
-		SkipVerify:    warehouseutils.GetConfigValueBoolString(skipVerify, ch.Warehouse),
+		Host:          warehouseutils.GetConfigValue[string](host, &ch.Warehouse),
+		DBName:        warehouseutils.GetConfigValue[string](dbName, &ch.Warehouse),
+		User:          warehouseutils.GetConfigValue[string](user, &ch.Warehouse),
+		Password:      warehouseutils.GetConfigValue[string](password, &ch.Warehouse),
+		Port:          warehouseutils.GetConfigValue[string](port, &ch.Warehouse),
+		Secure:        strconv.FormatBool(warehouseutils.GetConfigValue[bool](secure, &ch.Warehouse)),
+		SkipVerify:    strconv.FormatBool(warehouseutils.GetConfigValue[bool](skipVerify, &ch.Warehouse)),
 		TLSConfigName: tlsName,
 		timeout:       ch.ConnectTimeout,
 	}
@@ -745,7 +745,7 @@ func (ch *HandleT) createSchema() (err error) {
 		return err
 	}
 	defer dbHandle.Close()
-	cluster := warehouseutils.GetConfigValue(Cluster, ch.Warehouse)
+	cluster := warehouseutils.GetConfigValue[string](Cluster, &ch.Warehouse)
 	clusterClause := ""
 	if len(strings.TrimSpace(cluster)) > 0 {
 		clusterClause = fmt.Sprintf(`ON CLUSTER %q`, cluster)
@@ -767,7 +767,7 @@ func (ch *HandleT) createUsersTable(name string, columns map[string]string) (err
 	clusterClause := ""
 	engine := "AggregatingMergeTree"
 	engineOptions := ""
-	cluster := warehouseutils.GetConfigValue(Cluster, ch.Warehouse)
+	cluster := warehouseutils.GetConfigValue[string](Cluster, &ch.Warehouse)
 	if len(strings.TrimSpace(cluster)) > 0 {
 		clusterClause = fmt.Sprintf(`ON CLUSTER %q`, cluster)
 		engine = fmt.Sprintf(`%s%s`, "Replicated", engine)
@@ -809,7 +809,7 @@ func (ch *HandleT) CreateTable(tableName string, columns map[string]string) (err
 	clusterClause := ""
 	engine := "ReplacingMergeTree"
 	engineOptions := ""
-	cluster := warehouseutils.GetConfigValue(Cluster, ch.Warehouse)
+	cluster := warehouseutils.GetConfigValue[string](Cluster, &ch.Warehouse)
 	if len(strings.TrimSpace(cluster)) > 0 {
 		clusterClause = fmt.Sprintf(`ON CLUSTER %q`, cluster)
 		engine = fmt.Sprintf(`%s%s`, "Replicated", engine)
@@ -833,7 +833,7 @@ func (ch *HandleT) CreateTable(tableName string, columns map[string]string) (err
 }
 
 func (ch *HandleT) DropTable(tableName string) (err error) {
-	cluster := warehouseutils.GetConfigValue(Cluster, ch.Warehouse)
+	cluster := warehouseutils.GetConfigValue[string](Cluster, &ch.Warehouse)
 	clusterClause := ""
 	if len(strings.TrimSpace(cluster)) > 0 {
 		clusterClause = fmt.Sprintf(`ON CLUSTER %q`, cluster)
@@ -850,7 +850,7 @@ func (ch *HandleT) AddColumns(tableName string, columnsInfo []warehouseutils.Col
 		clusterClause string
 	)
 
-	cluster = warehouseutils.GetConfigValue(Cluster, ch.Warehouse)
+	cluster = warehouseutils.GetConfigValue[string](Cluster, &ch.Warehouse)
 	if len(strings.TrimSpace(cluster)) > 0 {
 		clusterClause = fmt.Sprintf(`ON CLUSTER %q`, cluster)
 	}

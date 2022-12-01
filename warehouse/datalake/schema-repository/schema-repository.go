@@ -2,6 +2,7 @@ package schemarepository
 
 import (
 	"fmt"
+	"strconv"
 
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
@@ -45,7 +46,7 @@ type SchemaRepository interface {
 }
 
 func NewSchemaRepository(wh warehouseutils.Warehouse, uploader warehouseutils.UploaderI) (SchemaRepository, error) {
-	if warehouseutils.GetConfigValueBoolString(UseGlueConfig, wh) == "true" && misc.HasAWSRegionInConfig(wh.Destination.Config) {
+	if strconv.FormatBool(warehouseutils.GetConfigValue[bool](UseGlueConfig, &wh)) == "true" && misc.HasAWSRegionInConfig(wh.Destination.Config) {
 		return NewGlueSchemaRepository(wh)
 	}
 	return NewLocalSchemaRepository(wh, uploader)

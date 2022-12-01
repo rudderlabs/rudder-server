@@ -157,13 +157,13 @@ func loadConfig() {
 }
 
 func (pg *HandleT) getConnectionCredentials() CredentialsT {
-	sslMode := warehouseutils.GetConfigValue(sslMode, pg.Warehouse)
+	sslMode := warehouseutils.GetConfigValue[string](sslMode, &pg.Warehouse)
 	return CredentialsT{
-		Host:     warehouseutils.GetConfigValue(host, pg.Warehouse),
-		DBName:   warehouseutils.GetConfigValue(dbName, pg.Warehouse),
-		User:     warehouseutils.GetConfigValue(user, pg.Warehouse),
-		Password: warehouseutils.GetConfigValue(password, pg.Warehouse),
-		Port:     warehouseutils.GetConfigValue(port, pg.Warehouse),
+		Host:     warehouseutils.GetConfigValue[string](host, &pg.Warehouse),
+		DBName:   warehouseutils.GetConfigValue[string](dbName, &pg.Warehouse),
+		User:     warehouseutils.GetConfigValue[string](user, &pg.Warehouse),
+		Password: warehouseutils.GetConfigValue[string](password, &pg.Warehouse),
+		Port:     warehouseutils.GetConfigValue[string](port, &pg.Warehouse),
 		SSLMode:  sslMode,
 		SSLDir:   warehouseutils.GetSSLKeyDirPath(pg.Warehouse.Destination.ID),
 		timeout:  pg.ConnectTimeout,
