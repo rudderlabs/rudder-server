@@ -40,6 +40,7 @@ import (
 	"github.com/rudderlabs/rudder-server/testhelper/health"
 	"github.com/rudderlabs/rudder-server/testhelper/rand"
 	whUtil "github.com/rudderlabs/rudder-server/testhelper/webhook"
+	"github.com/rudderlabs/rudder-server/utils/httputil"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/types/deployment"
 )
@@ -655,7 +656,7 @@ func getEvent(url, method string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	defer func() { _ = res.Body.Close() }()
+	defer func() { httputil.CloseResponse(res) }()
 
 	body, err := io.ReadAll(res.Body)
 	if err != nil {
@@ -719,7 +720,7 @@ func sendEvent(t *testing.T, payload *strings.Reader, callType, writeKey string)
 		t.Logf("sendEvent error: %v", err)
 		return
 	}
-	defer func() { _ = res.Body.Close() }()
+	defer func() { httputil.CloseResponse(res) }()
 
 	body, err := io.ReadAll(res.Body)
 	if err != nil {
