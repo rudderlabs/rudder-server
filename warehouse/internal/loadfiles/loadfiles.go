@@ -138,6 +138,12 @@ func (lf *LoadFileGenerator) CreateLoadFiles(ctx context.Context, job model.Uplo
 		return 0, 0, fmt.Errorf("set staging file status to executing: %w", err)
 	}
 
+	defer func() {
+		if err != nil {
+			err = lf.StageRepo.SetStatuses(ctx, repo.StagingFileIDs(toProcessStagingFiles), warehouseutils.StagingFileFailedState)
+		}
+	}()
+
 	var g errgroup.Group
 
 	var sampleError error

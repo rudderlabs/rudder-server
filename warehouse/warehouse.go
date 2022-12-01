@@ -146,6 +146,7 @@ type HandleT struct {
 	workspaceBySourceIDs              map[string]string
 	workspaceBySourceIDsLock          sync.RWMutex
 	tenantManager                     multitenant.Manager
+	uploadJobFactory                  UploadJobFactory
 
 	backgroundCancel context.CancelFunc
 	backgroundGroup  errgroup.Group
@@ -920,10 +921,9 @@ func (wh *HandleT) getUploadsToProcess(ctx context.Context, availableWorkers int
 		upload.UseRudderStorage = warehouse.GetBoolDestinationConfig("useRudderStorage")
 
 		if !ok {
-			uploadJob := UploadJobT{
-				upload:   &upload,
-				dbHandle: wh.dbHandle,
-			}
+			uploadJob := wh.uploadJobFactory.NewUploadJob(&model.UploadJob{
+				Upload: model.Upload(upload),
+			})
 			err := fmt.Errorf("unable to find source : %s or destination : %s, both or the connection between them", upload.SourceID, upload.DestinationID)
 			_, _ = uploadJob.setUploadError(err, model.Aborted)
 			pkgLogger.Errorf("%v", err)
