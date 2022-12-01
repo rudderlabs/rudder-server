@@ -7,6 +7,7 @@ import (
 	"encoding/csv"
 	"fmt"
 	"io"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -21,6 +22,7 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/warehouse/client"
+	"github.com/rudderlabs/rudder-server/warehouse/tunnelling"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
@@ -99,14 +101,15 @@ type Handle struct {
 }
 
 type CredentialsT struct {
-	Host     string
-	DBName   string
-	User     string
-	Password string
-	Port     string
-	SSLMode  string
-	SSLDir   string
-	timeout  time.Duration
+	Host       string
+	DBName     string
+	User       string
+	Password   string
+	Port       string
+	SSLMode    string
+	SSLDir     string
+	TunnelInfo *tunnelling.TunnelInfo
+	timeout    time.Duration
 }
 
 var primaryKeyMap = map[string]string{
@@ -137,28 +140,67 @@ func WithConfig(h *Handle, config *config.Config) {
 }
 
 func Connect(cred CredentialsT) (*sql.DB, error) {
-	url := fmt.Sprintf("user=%v password=%v host=%v port=%v dbname=%v sslmode=%v",
-		cred.User,
-		cred.Password,
-		cred.Host,
-		cred.Port,
-		cred.DBName,
-		cred.SSLMode,
-	)
+
+	dsn := url.URL{
+		Scheme: "postgres",
+		Host:   fmt.Sprintf("%s:%s", cred.Host, cred.Port),
+		User:   url.UserPassword(cred.User, cred.Password),
+		Path:   cred.DBName,
+	}
+
+	values := url.Values{}
+	values.Add("sslmode", cred.SSLMode)
+
 	if cred.timeout > 0 {
-		url += fmt.Sprintf(" connect_timeout=%d", cred.timeout/time.Second)
+		values.Add("connect_timeout", fmt.Sprintf("%d", cred.timeout/time.Second))
 	}
+
 	if cred.SSLMode == verifyCA {
-		url = fmt.Sprintf("%s sslrootcert=%[2]s/server-ca.pem sslcert=%[2]s/client-cert.pem sslkey=%[2]s/client-key.pem", url, cred.SSLDir)
+		values.Add("sslrootcert", fmt.Sprintf("%s/server-ca.pem", cred.SSLDir))
+		values.Add("sslcert", fmt.Sprintf("%s/client-cert.pem", cred.SSLDir))
+		values.Add("sslkey", fmt.Sprintf("%s/client-key.pem", cred.SSLDir))
 	}
+
+	dsn.RawQuery = values.Encode()
+	// // TODO: Refactor the url to be encoded dsn
+	// url := fmt.Sprintf("user=%v password=%v host=%v port=%v dbname=%v sslmode=%v",
+	// 	cred.User,
+	// 	cred.Password,
+	// 	cred.Host,
+	// 	cred.Port,
+	// 	cred.DBName,
+	// 	cred.SSLMode,
+	// )
+	// if cred.timeout > 0 {
+	// 	url += fmt.Sprintf(" connect_timeout=%d", cred.timeout/time.Second)
+	// }
+	// if cred.SSLMode == verifyCA {
+	// 	url = fmt.Sprintf("%s sslrootcert=%[2]s/server-ca.pem sslcert=%[2]s/client-cert.pem sslkey=%[2]s/client-key.pem", url, cred.SSLDir)
+	// }
 	var (
 		err error
 		db  *sql.DB
 	)
 
-	if db, err = sql.Open("postgres", url); err != nil {
-		return nil, fmt.Errorf("postgres connection error : (%v)", err)
+	if cred.TunnelInfo != nil {
+
+		db, err = tunnelling.ConnectThroughTunnel(
+			dsn.String(),
+			cred.TunnelInfo.Type,
+			cred.TunnelInfo.Config)
+
+		if err != nil {
+			return nil, fmt.Errorf("opening connection to postgres through tunnelling: %w", err)
+		}
+
+	} else {
+
+		if db, err = sql.Open("postgres", dsn.String()); err != nil {
+			return nil, fmt.Errorf("opening connection to postgres: %w", err)
+		}
+
 	}
+
 	return db, nil
 }
 
@@ -168,7 +210,7 @@ func Init() {
 
 func (pg *Handle) getConnectionCredentials() CredentialsT {
 	sslMode := warehouseutils.GetConfigValue(sslMode, pg.Warehouse)
-	return CredentialsT{
+	creds := CredentialsT{
 		Host:     warehouseutils.GetConfigValue(host, pg.Warehouse),
 		DBName:   warehouseutils.GetConfigValue(dbName, pg.Warehouse),
 		User:     warehouseutils.GetConfigValue(user, pg.Warehouse),
@@ -178,6 +220,19 @@ func (pg *Handle) getConnectionCredentials() CredentialsT {
 		SSLDir:   warehouseutils.GetSSLKeyDirPath(pg.Warehouse.Destination.ID),
 		timeout:  pg.ConnectTimeout,
 	}
+
+	// Set the warehouse destination tunnel information.
+	// TODO: Need to setup the information on the destination with
+	// the credentials.
+	if pg.Warehouse.Destination.Tunnel != nil {
+		upstream := pg.Warehouse.Destination.Tunnel
+		creds.TunnelInfo = &tunnelling.TunnelInfo{
+			Type:   tunnelling.Type(upstream.Type),
+			Config: tunnelling.Config(upstream.Config),
+		}
+	}
+
+	return creds
 }
 
 func ColumnsWithDataTypes(columns map[string]string, prefix string) string {
@@ -747,7 +802,14 @@ func (pg *Handle) TestConnection(warehouse warehouseutils.Warehouse) (err error)
 	return nil
 }
 
+<<<<<<< HEAD
 func (pg *Handle) Setup(warehouse warehouseutils.Warehouse, uploader warehouseutils.UploaderI) (err error) {
+=======
+func (pg *HandleT) Setup(
+	warehouse warehouseutils.Warehouse,
+	uploader warehouseutils.UploaderI) (err error) {
+
+>>>>>>> a0b0c31f3 (Added base support for implementing ssh tunnelling in warehouse)
 	pg.Warehouse = warehouse
 	pg.Namespace = warehouse.Namespace
 	pg.Uploader = uploader
@@ -771,15 +833,23 @@ func (pg *Handle) CrashRecover(warehouse warehouseutils.Warehouse) (err error) {
 
 func (pg *Handle) dropDanglingStagingTables() bool {
 	sqlStatement := `
-			select
+			SELECT
 			  table_name
-			from
+			FROM
 			  information_schema.tables
+<<<<<<< HEAD
 			where
 			  table_schema = $1
 			  AND table_name like $2;
 		`
 	rows, err := pg.DB.Query(
+=======
+			WHERE
+			  table_schema = $1 AND
+			  table_name like $2;
+	`
+	rows, err := pg.Db.Query(
+>>>>>>> a0b0c31f3 (Added base support for implementing ssh tunnelling in warehouse)
 		sqlStatement,
 		pg.Namespace,
 		fmt.Sprintf(`%s%%`, warehouseutils.StagingTablePrefix(provider)),

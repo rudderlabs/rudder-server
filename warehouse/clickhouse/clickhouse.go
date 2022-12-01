@@ -200,6 +200,10 @@ func Init() {
 	pkgLogger = logger.NewLogger().Child("warehouse").Child("clickhouse")
 }
 
+func connectWithTunnel(cred CredentialsT, includeDBInConn bool) (*sql.DB, error) {
+	return nil, nil
+}
+
 // Connect connects to warehouse with provided credentials
 func Connect(cred CredentialsT, includeDBInConn bool) (*sql.DB, error) {
 	var dbNameParam string

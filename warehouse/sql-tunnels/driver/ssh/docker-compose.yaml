@@ -1,0 +1,27 @@
+version: "3.9"
+services:
+
+  jumpbox:
+    build:
+      context: .
+      dockerfile: Dockerfile.test
+    ports:
+      - "2222:22"
+    environment:
+      - PUBLIC_KEY=${PUBLIC_KEY}
+    depends_on:
+      - db_postgres
+      - db_clickhouse
+
+  db_postgres:
+    image: postgres:14.1-alpine
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+
+  db_clickhouse:
+    image: yandex/clickhouse-server:21-alpine
+    environment:
+      - CLICKHOUSE_DB=db
+      - CLICKHOUSE_PASSWORD=clickhouse
+      - CLICKHOUSE_USER=clickhouse

@@ -147,6 +147,7 @@ Warehouse:
   mode: embedded
   webPort: 8082
   uploadFreq: 1800s
+  uploadFreqInS: 10
   noOfWorkers: 8
   noOfSlaveWorkerRoutines: 4
   mainLoopSleep: 5s
@@ -155,7 +156,7 @@ Warehouse:
   minUploadBackoff: 60s
   maxUploadBackoff: 1800s
   warehouseSyncPreFetchCount: 10
-  warehouseSyncFreqIgnore: false
+  warehouseSyncFreqIgnore: true
   stagingFilesBatchSize: 960
   enableIDResolution: false
   populateHistoricIdentities: false

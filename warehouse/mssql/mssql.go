@@ -23,6 +23,7 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/warehouse/client"
+	"github.com/rudderlabs/rudder-server/warehouse/tunnelling"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
@@ -90,13 +91,14 @@ type HandleT struct {
 }
 
 type CredentialsT struct {
-	Host     string
-	DBName   string
-	User     string
-	Password string
-	Port     string
-	SSLMode  string
-	timeout  time.Duration
+	Host       string
+	DBName     string
+	User       string
+	Password   string
+	Port       string
+	SSLMode    string
+	timeout    time.Duration
+	TunnelInfo *tunnelling.TunnelInfo
 }
 
 var primaryKeyMap = map[string]string{
@@ -122,9 +124,11 @@ func Connect(cred CredentialsT) (*sql.DB, error) {
 	query := url.Values{}
 	query.Add("database", cred.DBName)
 	query.Add("encrypt", cred.SSLMode)
+
 	if cred.timeout > 0 {
 		query.Add("dial timeout", fmt.Sprintf("%d", cred.timeout/time.Second))
 	}
+
 	query.Add("TrustServerCertificate", "true")
 	port, err := strconv.Atoi(cred.Port)
 	if err != nil {
@@ -138,10 +142,25 @@ func Connect(cred CredentialsT) (*sql.DB, error) {
 		RawQuery: query.Encode(),
 	}
 	pkgLogger.Debugf("mssql connection string : %s", connUrl.String())
-	var db *sql.DB
-	if db, err = sql.Open("sqlserver", connUrl.String()); err != nil {
-		return nil, fmt.Errorf("mssql connection error : (%v)", err)
+
+	var (
+		db *sql.DB
+	)
+
+	if cred.TunnelInfo != nil {
+		if db, err = tunnelling.ConnectThroughTunnel(
+			connUrl.String(),
+			cred.TunnelInfo.Type,
+			cred.TunnelInfo.Config); err != nil {
+			return nil, fmt.Errorf("opening connection to mssql server through tunnelling: %w", err)
+		}
+	} else {
+
+		if db, err = sql.Open("sqlserver", connUrl.String()); err != nil {
+			return nil, fmt.Errorf("opening connection to mssql server: %w", err)
+		}
 	}
+
 	return db, nil
 }
 
@@ -155,7 +174,7 @@ func loadConfig() {
 }
 
 func (ms *HandleT) getConnectionCredentials() CredentialsT {
-	return CredentialsT{
+	creds := CredentialsT{
 		Host:     warehouseutils.GetConfigValue(host, ms.Warehouse),
 		DBName:   warehouseutils.GetConfigValue(dbName, ms.Warehouse),
 		User:     warehouseutils.GetConfigValue(user, ms.Warehouse),
@@ -164,6 +183,15 @@ func (ms *HandleT) getConnectionCredentials() CredentialsT {
 		SSLMode:  warehouseutils.GetConfigValue(sslMode, ms.Warehouse),
 		timeout:  ms.ConnectTimeout,
 	}
+
+	if ms.Warehouse.Destination.Tunnel != nil {
+		creds.TunnelInfo = &tunnelling.TunnelInfo{
+			Type:   tunnelling.Type(ms.Warehouse.Destination.Tunnel.Type),
+			Config: tunnelling.Config(ms.Warehouse.Destination.Tunnel.Config),
+		}
+	}
+
+	return creds
 }
 
 func ColumnsWithDataTypes(columns map[string]string, prefix string) string {

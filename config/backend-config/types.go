@@ -52,6 +52,12 @@ type DestinationT struct {
 	Transformations       []TransformationT
 	IsProcessorEnabled    bool
 	RevisionID            string
+	Tunnel                *TunnelInfo
+}
+
+type TunnelInfo struct {
+	Type   string
+	Config map[string]string
 }
 
 type SourceT struct {
