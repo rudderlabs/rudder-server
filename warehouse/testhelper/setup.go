@@ -25,6 +25,7 @@ import (
 	"github.com/rudderlabs/rudder-server/warehouse/deltalake/databricks"
 	"github.com/rudderlabs/rudder-server/warehouse/validations"
 
+	"github.com/rudderlabs/rudder-server/utils/httputil"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 
@@ -521,7 +522,7 @@ func prometheusStats(t *testing.T) map[string]*promCLient.MetricFamily {
 	require.NotNil(t, resp)
 	require.NotNil(t, resp.Body)
 
-	defer func() { _ = resp.Body.Close() }()
+	defer func() { httputil.CloseResponse(resp) }()
 
 	var parser expfmt.TextParser
 	mf, err := parser.TextToMetricFamilies(resp.Body)
