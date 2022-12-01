@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"github.com/rudderlabs/rudder-server/utils/maputil"
 	"time"
 
 	"golang.org/x/exp/slices"
@@ -177,6 +178,24 @@ func (c *Config) checkAndHotReloadConfig(configMap map[string][]*configValue) {
 					_value = configVal.defaultValue.([]string)
 				}
 				if slices.Compare(_value, *value) != 0 {
+					fmt.Printf("The value of key:%s & variable:%p changed from %v to %v\n", key, configVal, *value, _value)
+					*value = _value
+				}
+			case *map[string]interface{}:
+				var _value map[string]interface{}
+				var isSet bool
+				for _, key := range configVal.keys {
+					if c.IsSet(key) {
+						isSet = true
+						_value = c.GetStringMap(key, configVal.defaultValue.(map[string]interface{}))
+						break
+					}
+				}
+				if !isSet {
+					_value = configVal.defaultValue.(map[string]interface{})
+				}
+
+				if !maputil.Compare(_value, *value) {
 					fmt.Printf("The value of key:%s & variable:%p changed from %v to %v\n", key, configVal, *value, _value)
 					*value = _value
 				}

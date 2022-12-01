@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"golang.org/x/exp/slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -912,6 +913,14 @@ func (job *UploadJobT) loadAllTablesExcept(skipLoadForTables []string, loadFiles
 	if parallelLoads, ok = maxParallelLoads[job.warehouse.Type]; !ok {
 		parallelLoads = 1
 	}
+
+	configKey := fmt.Sprintf("Warehouse.%s.maxParallelLoadsWorkspaceIDs", warehouseutils.WHDestNameMap[job.upload.DestinationType])
+	if k, ok := config.GetStringMap(configKey, nil)[job.warehouse.WorkspaceID]; ok {
+		if load, ok := k.(int); ok {
+			parallelLoads = load
+		}
+	}
+
 	pkgLogger.Infof(`[WH]: Running %d parallel loads in namespace %s of destination %s:%s`, parallelLoads, job.warehouse.Namespace, job.warehouse.Type, job.warehouse.Destination.ID)
 
 	var loadErrors []error
@@ -1025,6 +1034,10 @@ func (job *UploadJobT) loadTable(tName string) (alteredSchema bool, err error) {
 	tableUpload.setStatus(TableUploadExecuting)
 
 	generateTableLoadCountVerificationsMetrics := config.GetBool("Warehouse.generateTableLoadCountMetrics", true)
+	if slices.Contains(config.GetStringSlice("Warehouse.disableGenerateTableLoadCountMetricsWorkspaceIDs", nil), job.upload.WorkspaceID) {
+		generateTableLoadCountVerificationsMetrics = false
+	}
+
 	var totalBeforeLoad, totalAfterLoad int64
 	if generateTableLoadCountVerificationsMetrics {
 		var errTotalCount error
@@ -1856,6 +1869,11 @@ func (job *UploadJobT) createLoadFiles(generateAll bool) (startLoadFileID, endLo
 	stagingFiles := job.stagingFiles
 
 	publishBatchSize := config.GetInt("Warehouse.pgNotifierPublishBatchSize", 100)
+	if k, ok := config.GetStringMap("Warehouse.pgNotifierPublishBatchSizeWorkspaceIDs", nil)[job.warehouse.WorkspaceID]; ok {
+		if batchSize, ok := k.(int); ok {
+			publishBatchSize = batchSize
+		}
+	}
 	pkgLogger.Infof("[WH]: Starting batch processing %v stage files for %s:%s", publishBatchSize, destType, destID)
 	uniqueLoadGenID := misc.FastUUID().String()
 	job.upload.LoadFileGenStartTime = timeutil.Now()
