@@ -12,11 +12,9 @@ import (
 	"time"
 
 	"github.com/cenkalti/backoff/v4"
-	"github.com/lib/pq"
 	"github.com/tidwall/gjson"
 
 	"github.com/rudderlabs/rudder-server/config"
-	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/services/pgnotifier"
@@ -1712,29 +1710,6 @@ func (job *UploadJobT) getAttemptNumber() int {
 		return true
 	})
 	return int(attempts)
-}
-
-func (*UploadJobT) setStagingFilesStatus(stagingFiles []*model.StagingFile, status string) (err error) {
-	var ids []int64
-	for _, stagingFile := range stagingFiles {
-		ids = append(ids, stagingFile.ID)
-	}
-	sqlStatement := fmt.Sprintf(`
-		UPDATE
-		  %s
-		SET
-		  status = $1,
-		  updated_at = $2
-		WHERE
-		  id = ANY($3);
-`,
-		warehouseutils.WarehouseStagingFilesTable,
-	)
-	_, err = dbHandle.Exec(sqlStatement, status, timeutil.Now(), pq.Array(ids))
-	if err != nil {
-		panic(err)
-	}
-	return
 }
 
 func (job *UploadJobT) getLoadFilesTableMap() (loadFilesMap map[tableNameT]bool, err error) {
