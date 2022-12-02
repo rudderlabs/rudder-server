@@ -35,6 +35,20 @@ func (m *MockGatewayI) EXPECT() *MockGatewayIMockRecorder {
 	return m.recorder
 }
 
+// GetSourceStat mocks base method.
+func (m *MockGatewayI) GetSourceStat(arg0, arg1 string) *stats.SourceStat {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetSourceStat", arg0, arg1)
+	ret0, _ := ret[0].(*stats.SourceStat)
+	return ret0
+}
+
+// GetSourceStat indicates an expected call of GetSourceStat.
+func (mr *MockGatewayIMockRecorder) GetSourceStat(arg0, arg1 interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetSourceStat", reflect.TypeOf((*MockGatewayI)(nil).GetSourceStat), arg0, arg1)
+}
+
 // GetWebhookSourceDefName mocks base method.
 func (m *MockGatewayI) GetWebhookSourceDefName(arg0 string) (string, bool) {
 	m.ctrl.T.Helper()
@@ -98,16 +112,4 @@ func (m *MockGatewayI) TrackRequestMetrics(arg0 string) {
 func (mr *MockGatewayIMockRecorder) TrackRequestMetrics(arg0 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "TrackRequestMetrics", reflect.TypeOf((*MockGatewayI)(nil).TrackRequestMetrics), arg0)
-}
-
-// UpdateSourceStats mocks base method.
-func (m *MockGatewayI) UpdateSourceStats(arg0 map[string]int, arg1 string, arg2 map[string]*stats.SourceStatTag) {
-	m.ctrl.T.Helper()
-	m.ctrl.Call(m, "UpdateSourceStats", arg0, arg1, arg2)
-}
-
-// UpdateSourceStats indicates an expected call of UpdateSourceStats.
-func (mr *MockGatewayIMockRecorder) UpdateSourceStats(arg0, arg1, arg2 interface{}) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdateSourceStats", reflect.TypeOf((*MockGatewayI)(nil).UpdateSourceStats), arg0, arg1, arg2)
 }
