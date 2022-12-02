@@ -14,7 +14,3 @@ type LoadFile struct {
 	DestinationID   string
 	DestinationType string
 }
-
-func (s *LoadFile) PrimaryID() int64 {
-	return s.ID
-}
