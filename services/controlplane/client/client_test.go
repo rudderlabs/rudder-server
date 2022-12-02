@@ -269,6 +269,7 @@ func TestRetriesTimeout(t *testing.T) {
 	}
 
 	for _, m := range methods {
+		m := m
 		t.Run(m.name, func(t *testing.T) {
 			t.Parallel()
 			t.Run("unexpected retriable status", func(t *testing.T) {
