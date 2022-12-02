@@ -1607,7 +1607,6 @@ func pendingEventsHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func getPendingStagingFileCount(sourceOrDestId string, isSourceId bool) (fileCount int64, err error) {
-	sourceOrDestId = pq.QuoteIdentifier(sourceOrDestId)
 	sourceOrDestColumn := ""
 	if isSourceId {
 		sourceOrDestColumn = "source_id"
