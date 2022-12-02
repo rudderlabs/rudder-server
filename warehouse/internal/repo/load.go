@@ -44,7 +44,7 @@ func (repo *LoadFiles) init() {
 	})
 }
 
-func (repo *LoadFiles) DeleteByStaging(ctx context.Context, stagingFileIDs []int64) error {
+func (repo *LoadFiles) DeleteByStagingFiles(ctx context.Context, stagingFileIDs []int64) error {
 	repo.init()
 
 	sqlStatement := `
@@ -97,7 +97,7 @@ func (repo *LoadFiles) Insert(ctx context.Context, loadFiles []model.LoadFile) (
 	return
 }
 
-func (repo *LoadFiles) GetByStagingIDs(ctx context.Context, stagingFileIDs []int64) ([]model.LoadFile, error) {
+func (repo *LoadFiles) GetByStagingFiles(ctx context.Context, stagingFileIDs []int64) ([]model.LoadFile, error) {
 	repo.init()
 
 	sqlStatement := `

@@ -57,7 +57,7 @@ func Test_LoadFiles(t *testing.T) {
 	})
 
 	t.Run("get", func(t *testing.T) {
-		loadFiles, err := r.GetByStagingIDs(ctx, stagingIDs)
+		loadFiles, err := r.GetByStagingFiles(ctx, stagingIDs)
 		require.Len(t, loadFiles, len(expectedLoadFiles))
 		require.NoError(t, err)
 
@@ -67,10 +67,10 @@ func Test_LoadFiles(t *testing.T) {
 	})
 
 	t.Run("delete", func(t *testing.T) {
-		err := r.DeleteByStaging(ctx, stagingIDs[1:])
+		err := r.DeleteByStagingFiles(ctx, stagingIDs[1:])
 		require.NoError(t, err)
 
-		loadFiles, err := r.GetByStagingIDs(ctx, stagingIDs)
+		loadFiles, err := r.GetByStagingFiles(ctx, stagingIDs)
 		require.Len(t, loadFiles, 1)
 		require.NoError(t, err)
 
@@ -103,7 +103,7 @@ func Test_LoadFiles(t *testing.T) {
 		err := r.Insert(ctx, loadFiles)
 		require.NoError(t, err)
 
-		gotLoadFiles, err := r.GetByStagingIDs(ctx, []int64{stagingID})
+		gotLoadFiles, err := r.GetByStagingFiles(ctx, []int64{stagingID})
 		require.NoError(t, err)
 
 		require.Len(t, gotLoadFiles, 1)

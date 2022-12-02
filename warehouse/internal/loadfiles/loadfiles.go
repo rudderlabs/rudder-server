@@ -35,9 +35,9 @@ type StageFileRepo interface {
 }
 
 type LoadFileRepo interface {
-	Insert(ctx context.Context, loadFiles []model.LoadFile) (err error)
-	DeleteByStaging(stagingFiles []*model.StagingFile) error
-	GetByStagingIDs(ctx context.Context, stagingFileIDs []int64) ([]model.LoadFile, error)
+	Insert(ctx context.Context, loadFiles []model.LoadFile) error
+	DeleteByStagingFiles(ctx context.Context, stagingFileIDs []int64) error
+	GetByStagingFiles(ctx context.Context, stagingFileIDs []int64) ([]model.LoadFile, error)
 }
 
 type ControlPlaneClient interface {
@@ -128,19 +128,21 @@ func (lf *LoadFileGenerator) CreateLoadFiles(ctx context.Context, job model.Uplo
 		}
 	}
 
-	err = lf.LoadRepo.DeleteByStaging(toProcessStagingFiles)
+	stagingFileIDs := repo.StagingFileIDs(toProcessStagingFiles)
+
+	err = lf.LoadRepo.DeleteByStagingFiles(ctx, stagingFileIDs)
 	if err != nil {
 		return 0, 0, fmt.Errorf("deleting previous load files: %w", err)
 	}
 
-	err = lf.StageRepo.SetStatuses(ctx, repo.StagingFileIDs(toProcessStagingFiles), warehouseutils.StagingFileExecutingState)
+	err = lf.StageRepo.SetStatuses(ctx, stagingFileIDs, warehouseutils.StagingFileExecutingState)
 	if err != nil {
 		return 0, 0, fmt.Errorf("set staging file status to executing: %w", err)
 	}
 
 	defer func() {
 		if err != nil {
-			err = lf.StageRepo.SetStatuses(ctx, repo.StagingFileIDs(toProcessStagingFiles), warehouseutils.StagingFileFailedState)
+			err = lf.StageRepo.SetStatuses(ctx, stagingFileIDs, warehouseutils.StagingFileFailedState)
 		}
 	}()
 
@@ -272,7 +274,7 @@ func (lf *LoadFileGenerator) CreateLoadFiles(ctx context.Context, job model.Uplo
 		return startLoadFileID, endLoadFileID, err
 	}
 
-	loadFiles, err := lf.LoadRepo.GetByStagingIDs(ctx, repo.StagingFileIDs(toProcessStagingFiles))
+	loadFiles, err := lf.LoadRepo.GetByStagingFiles(ctx, repo.StagingFileIDs(toProcessStagingFiles))
 	if err != nil {
 		return 0, 0, fmt.Errorf("getting load files: %w", err)
 	}
