@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/lib/pq"
-	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
@@ -45,25 +44,16 @@ func (repo *LoadFiles) init() {
 	})
 }
 
-func (repo *LoadFiles) DeleteByStaging(stagingFiles []*model.StagingFile) error {
+func (repo *LoadFiles) DeleteByStaging(ctx context.Context, stagingFileIDs []int64) error {
 	repo.init()
 
-	var stagingFileIDs []int64
-	for _, stagingFile := range stagingFiles {
-		stagingFileIDs = append(stagingFileIDs, stagingFile.ID)
-	}
-
-	sqlStatement := fmt.Sprintf(`
+	sqlStatement := `
 		DELETE FROM
-		  %[1]s
+		  ` + loadTableName + `
 		WHERE
-		  staging_file_id IN (%v);
-`,
-		warehouseutils.WarehouseLoadFilesTable,
-		misc.IntArrayToString(stagingFileIDs, ","),
-	)
+		  staging_file_id = ANY($1);`
 
-	_, err := repo.DB.Exec(sqlStatement)
+	_, err := repo.DB.ExecContext(ctx, sqlStatement, pq.Array(stagingFileIDs))
 	if err != nil {
 		return fmt.Errorf(`deleting load files: %w`, err)
 	}
@@ -90,14 +80,14 @@ func (repo *LoadFiles) Insert(ctx context.Context, loadFiles []model.LoadFile) (
 		metadata := fmt.Sprintf(`{"content_length": %d, "destination_revision_id": %q, "use_rudder_storage": %t}`, loadFile.ContentLength, loadFile.DestinationRevisionID, loadFile.UseRudderStorage)
 		_, err = stmt.Exec(loadFile.StagingFileID, loadFile.Location, loadFile.SourceID, loadFile.DestinationID, loadFile.DestinationType, loadFile.TableName, loadFile.TotalRows, timeutil.Now(), metadata)
 		if err != nil {
-			txn.Rollback()
+			_ = txn.Rollback()
 			return fmt.Errorf(`inserting load files: CopyIn exec: %w`, err)
 		}
 	}
 
 	_, err = stmt.Exec()
 	if err != nil {
-		txn.Rollback()
+		_ = txn.Rollback()
 		return fmt.Errorf(`inserting load files: CopyIn final exec: %w`, err)
 	}
 	err = txn.Commit()
@@ -123,7 +113,7 @@ func (repo *LoadFiles) GetByStagingIDs(ctx context.Context, stagingFileIDs []int
 		FROM
 			` + loadTableName + `
 		WHERE
-			staging_file_id IN ($1)
+			staging_file_id = ANY($1)
 		)
 		SELECT
 		` + loadTableColumns + `
@@ -135,7 +125,7 @@ func (repo *LoadFiles) GetByStagingIDs(ctx context.Context, stagingFileIDs []int
 
 	rows, err := repo.DB.Query(sqlStatement, pq.Array(stagingFileIDs))
 	if err != nil {
-		panic(fmt.Errorf("Query: %s\nfailed with Error : %w", sqlStatement, err))
+		return nil, fmt.Errorf("query staging ids: %w", err)
 	}
 	defer func() { _ = rows.Close() }()
 
@@ -179,7 +169,7 @@ func (repo *LoadFiles) GetByStagingIDs(ctx context.Context, stagingFileIDs []int
 		// loadFile.ContentLength, loadFile.DestinationRevisionID, loadFile.UseRudderStorage
 	}
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf(`querying load files: %w`, err)
+		return nil, fmt.Errorf("querying load files: %w", err)
 	}
 
 	return loadFiles, nil
