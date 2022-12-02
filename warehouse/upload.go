@@ -1773,9 +1773,6 @@ func (job *UploadJobT) destinationRevisionIDMap() (revisionIDMap map[string]back
 		return
 	}
 
-	var response []byte
-	var responseCode int
-
 	for _, revisionID := range revisionIDs {
 		// No need to make config backend api call for the current config
 		if revisionID == job.warehouse.Destination.RevisionID {
@@ -1783,20 +1780,11 @@ func (job *UploadJobT) destinationRevisionIDMap() (revisionIDMap map[string]back
 			continue
 		}
 
-		urlStr := fmt.Sprintf("%s/workspaces/destinationHistory/%s", configBackendURL, revisionID)
-		response, err = warehouseutils.GetRequestWithTimeout(context.TODO(), urlStr, time.Second*60)
-		if err == nil {
-			var destination backendconfig.DestinationT
-			err = json.Unmarshal(response, &destination)
-			if err != nil {
-				err = fmt.Errorf("error occurred while unmarshalling response for Dest revisionID %s with error: %w", revisionID, err)
-				return
-			}
-			revisionIDMap[revisionID] = destination
-		} else {
-			err = fmt.Errorf("error occurred while getting destination history for revisionID %s, responseCode: %d, error: %w", revisionID, responseCode, err)
-			return
+		destination, err := controlPlaneClient.DestinationHistory(context.TODO(), revisionID)
+		if err != nil {
+			return nil, fmt.Errorf("fetching destination history for %s: %w", revisionID, err)
 		}
+		revisionIDMap[revisionID] = destination
 	}
 	return
 }

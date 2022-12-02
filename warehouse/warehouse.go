@@ -59,6 +59,7 @@ var (
 	dbHandle                            *sql.DB
 	notifier                            pgnotifier.PgNotifierT
 	tenantManager                       *multitenant.Manager
+	controlPlaneClient                  *client.Client
 	noOfSlaveWorkerRoutines             int
 	uploadFreqInS                       int64
 	stagingFilesSchemaPaginationSize    int
@@ -95,7 +96,6 @@ var (
 	skipDeepEqualSchemas                bool
 	maxParallelJobCreation              int
 	enableJitterForSyncs                bool
-	configBackendURL                    string
 	asyncWh                             *jobs.AsyncJobWhT
 )
 
@@ -203,7 +203,6 @@ func loadConfig() {
 	config.RegisterDurationConfigVariable(30, &tableCountQueryTimeout, true, time.Second, []string{"Warehouse.tableCountQueryTimeout", "Warehouse.tableCountQueryTimeoutInS"}...)
 
 	appName = misc.DefaultString("rudder-server").OnError(os.Hostname())
-	configBackendURL = config.GetString("CONFIG_BACKEND_URL", "https://api.rudderstack.com")
 }
 
 // get name of the worker (`destID_namespace`) to be stored in map wh.workerChannelMap
@@ -2013,6 +2012,13 @@ func Start(ctx context.Context, app app.App) error {
 			reporting.AddClient(ctx, types.Config{ConnInfo: psqlInfo, ClientName: types.WAREHOUSE_REPORTING_CLIENT})
 			return nil
 		}))
+		region := config.GetString("region", "")
+
+		controlPlaneClient = client.NewClient(
+			backendconfig.GetConfigBackendURL(),
+			backendconfig.DefaultBackendConfig.Identity(),
+			client.WithRegion(region),
+		)
 	}
 
 	if isStandAlone() && isMaster() {
