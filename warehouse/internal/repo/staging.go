@@ -31,7 +31,7 @@ const stagingTableColumns = `
     created_at,
     updated_at,
     metadata,
-    workspace_id 
+    workspace_id
 `
 
 // StagingFiles is a repository for inserting and querying staging files.
@@ -306,19 +306,32 @@ func (repo *StagingFiles) GetAfterID(ctx context.Context, sourceID, destinationI
 func (repo *StagingFiles) SetStatuses(ctx context.Context, ids []int64, status string) (err error) {
 	repo.init()
 
+	if len(ids) == 0 {
+		return fmt.Errorf("no staging files to update")
+	}
+
 	sqlStatement := `
 		UPDATE
-		` + stagingTableColumns + `
+		` + stagingTableName + `
 		SET
 		  status = $1,
 		  updated_at = $2
 		WHERE
 		  id = ANY($3);
 `
-	_, err = repo.DB.Exec(sqlStatement, status, repo.Now(), pq.Array(ids))
+	result, err := repo.DB.Exec(sqlStatement, status, repo.Now(), pq.Array(ids))
 	if err != nil {
 		return fmt.Errorf("update ids status: %w", err)
 	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("rows affected: %w", err)
+	}
+	if rowsAffected != int64(len(ids)) {
+		return fmt.Errorf("not all rows were updated: %d != %d", rowsAffected, len(ids))
+	}
+
 	return
 }
 
@@ -327,7 +340,7 @@ func (repo *StagingFiles) SetErrorStatus(ctx context.Context, stagingFileID int6
 
 	sqlStatement := `
 		UPDATE
-		` + stagingTableColumns + `
+		` + stagingTableName + `
 		SET
 			status = $1,
 			error = $2,
@@ -335,7 +348,7 @@ func (repo *StagingFiles) SetErrorStatus(ctx context.Context, stagingFileID int6
 		WHERE
 			id = $4;`
 
-	_, err := repo.DB.Exec(
+	result, err := repo.DB.Exec(
 		sqlStatement,
 		warehouseutils.StagingFileFailedState,
 		stageFileErr.Error(),
@@ -345,5 +358,14 @@ func (repo *StagingFiles) SetErrorStatus(ctx context.Context, stagingFileID int6
 	if err != nil {
 		return fmt.Errorf("update staging file with error: %w", err)
 	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("rows affected: %w", err)
+	}
+	if rowsAffected == 0 {
+		return fmt.Errorf("no rows affected")
+	}
+
 	return nil
 }
