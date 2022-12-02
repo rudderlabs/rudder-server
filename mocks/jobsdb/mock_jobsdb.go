@@ -9,8 +9,8 @@ import (
 	json "encoding/json"
 	reflect "reflect"
 
-	uuid "github.com/gofrs/uuid"
 	gomock "github.com/golang/mock/gomock"
+	uuid "github.com/google/uuid"
 	jobsdb "github.com/rudderlabs/rudder-server/jobsdb"
 )
 

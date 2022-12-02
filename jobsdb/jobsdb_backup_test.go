@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gofrs/uuid"
+	"github.com/google/uuid"
 	"github.com/ory/dockertest/v3"
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
@@ -485,8 +485,7 @@ func (*backupTestCase) getJobsFromAbortedJobs(t *testing.T, file *os.File) ([]*J
 
 	for sc.Scan() {
 		lineByte := sc.Bytes()
-		uuid, err := uuid.FromString("69359037-9599-48e7-b8f2-48393c019135")
-		require.NoError(t, err, "expected no error")
+		uuid := uuid.MustParse("69359037-9599-48e7-b8f2-48393c019135")
 		job := &JobT{
 			UUID:         uuid,
 			JobID:        gjson.GetBytes(lineByte, "job_id").Int(),
@@ -556,10 +555,7 @@ func (*backupTestCase) readGzipJobFile(filename string) ([]*JobT, error) {
 	jobs := []*JobT{}
 	for sc.Scan() {
 		lineByte := sc.Bytes()
-		uuid, err := uuid.FromString("69359037-9599-48e7-b8f2-48393c019135")
-		if err != nil {
-			return []*JobT{}, err
-		}
+		uuid := uuid.MustParse("69359037-9599-48e7-b8f2-48393c019135")
 		job := &JobT{
 			UUID:         uuid,
 			JobID:        gjson.GetBytes(lineByte, "job_id").Int(),

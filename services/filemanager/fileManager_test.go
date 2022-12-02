@@ -29,6 +29,7 @@ import (
 	"github.com/Azure/azure-storage-blob-go/azblob"
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/services/filemanager"
+	"github.com/rudderlabs/rudder-server/utils/httputil"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 )
 
@@ -91,7 +92,7 @@ func run(m *testing.M) int {
 		if err != nil {
 			return err
 		}
-		defer resp.Body.Close()
+		defer func() { httputil.CloseResponse(resp) }()
 
 		if resp.StatusCode != http.StatusOK {
 			return fmt.Errorf("status code not OK")

@@ -33,7 +33,7 @@ import (
 	"github.com/rudderlabs/rudder-server/services/transientsource"
 	"github.com/rudderlabs/rudder-server/warehouse"
 
-	"github.com/gofrs/uuid"
+	"github.com/google/uuid"
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
 
@@ -47,6 +47,7 @@ import (
 	"github.com/rudderlabs/rudder-server/services/filemanager"
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/bytesize"
+	"github.com/rudderlabs/rudder-server/utils/httputil"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/types"
@@ -624,7 +625,7 @@ func (brt *HandleT) copyJobsToStorage(provider string, batchJobs *BatchJobsT, is
 		localTmpDirName = fmt.Sprintf(`/%s/`, misc.RudderRawDataDestinationLogs)
 	}
 
-	uuid := uuid.Must(uuid.NewV4())
+	uuid := uuid.New()
 	brt.logger.Debugf("BRT: Starting logging to %s", provider)
 
 	tmpDirPath, err := misc.CreateTMPDIR()
@@ -958,7 +959,7 @@ func (brt *HandleT) parseUploadIntervalFromConfig(destinationConfig map[string]i
 
 func (brt *HandleT) asyncStructSetup(sourceID, destinationID string) {
 	localTmpDirName := fmt.Sprintf(`/%s/`, misc.RudderAsyncDestinationLogs)
-	uuid := uuid.Must(uuid.NewV4())
+	uuid := uuid.New()
 
 	tmpDirPath, err := misc.CreateTMPDIR()
 	if err != nil {
@@ -1132,10 +1133,9 @@ func (brt *HandleT) postToWarehouse(batchJobs *BatchJobsT, output StorageUploadO
 		brt.logger.Errorf("BRT: Failed to route staging file URL to warehouse service@%v, error:%v", uri, err)
 		return
 	}
-	defer func() { _ = resp.Body.Close() }()
+	defer func() { httputil.CloseResponse(resp) }()
 
 	if resp.StatusCode == http.StatusOK {
-		_, err = io.Copy(io.Discard, resp.Body)
 		brt.logger.Infof("BRT: Routed successfully staging file URL to warehouse service@%v", uri)
 	} else {
 		body, _ := io.ReadAll(resp.Body)
@@ -2092,7 +2092,7 @@ func (brt *HandleT) dedupRawDataDestJobsOnCrash() {
 		if err != nil {
 			panic(err)
 		}
-		jsonPath := fmt.Sprintf("%v%v.json", tmpDirPath+localTmpDirName, fmt.Sprintf("%v.%v", time.Now().Unix(), uuid.Must(uuid.NewV4()).String()))
+		jsonPath := fmt.Sprintf("%v%v.json", tmpDirPath+localTmpDirName, fmt.Sprintf("%v.%v", time.Now().Unix(), uuid.New().String()))
 
 		err = os.MkdirAll(filepath.Dir(jsonPath), os.ModePerm)
 		if err != nil {
