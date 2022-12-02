@@ -16,8 +16,8 @@ import (
 
 	"github.com/tidwall/sjson"
 
-	"github.com/gofrs/uuid"
 	"github.com/golang/mock/gomock"
+	"github.com/google/uuid"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
@@ -56,7 +56,7 @@ const (
 var (
 	testTimeout             = 10 * time.Second
 	customVal               = map[string]string{"GA": "GA"}
-	workspaceID             = uuid.Must(uuid.NewV4()).String()
+	workspaceID             = uuid.New().String()
 	gaDestinationDefinition = backendconfig.DestinationDefinitionT{
 		ID:          gaDestinationDefinitionID,
 		Name:        "GA",
@@ -206,7 +206,7 @@ var _ = Describe("Router", func() {
 			parameters := fmt.Sprintf(`{"source_id": "1fMCVYZboDlYlauh4GFsEo2JU77", "destination_id": "%s", "message_id": "2f548e6d-60f6-44af-a1f4-62b3272445c3", "received_at": "2021-06-28T10:04:48.527+05:30", "transform_at": "processor"}`, gaDestinationID)
 			toRetryJobsList := []*jobsdb.JobT{
 				{
-					UUID:         uuid.Must(uuid.NewV4()),
+					UUID:         uuid.New(),
 					UserID:       "u1",
 					JobID:        2009,
 					CreatedAt:    time.Date(2020, 0o4, 28, 13, 26, 0o0, 0o0, time.UTC),
@@ -224,7 +224,7 @@ var _ = Describe("Router", func() {
 
 			unprocessedJobsList := []*jobsdb.JobT{
 				{
-					UUID:         uuid.Must(uuid.NewV4()),
+					UUID:         uuid.New(),
 					UserID:       "u1",
 					JobID:        2010,
 					CreatedAt:    time.Date(2020, 0o4, 28, 13, 26, 0o0, 0o0, time.UTC),
@@ -299,7 +299,7 @@ var _ = Describe("Router", func() {
 
 			unprocessedJobsList := []*jobsdb.JobT{
 				{
-					UUID:         uuid.Must(uuid.NewV4()),
+					UUID:         uuid.New(),
 					UserID:       "u1",
 					JobID:        2010,
 					CreatedAt:    time.Date(2020, 0o4, 28, 13, 26, 0o0, 0o0, time.UTC),
@@ -385,7 +385,7 @@ var _ = Describe("Router", func() {
 
 			unprocessedJobsList := []*jobsdb.JobT{
 				{
-					UUID:         uuid.Must(uuid.NewV4()),
+					UUID:         uuid.New(),
 					UserID:       "u1",
 					JobID:        2010,
 					CreatedAt:    time.Date(2020, 0o4, 28, 13, 26, 0o0, 0o0, time.UTC),
@@ -472,7 +472,7 @@ var _ = Describe("Router", func() {
 
 			toRetryJobsList := []*jobsdb.JobT{
 				{
-					UUID:         uuid.Must(uuid.NewV4()),
+					UUID:         uuid.New(),
 					UserID:       "u1",
 					JobID:        2009,
 					CreatedAt:    time.Date(2020, 0o4, 28, 13, 26, 0o0, 0o0, time.UTC),
@@ -489,7 +489,7 @@ var _ = Describe("Router", func() {
 
 			unprocessedJobsList := []*jobsdb.JobT{
 				{
-					UUID:         uuid.Must(uuid.NewV4()),
+					UUID:         uuid.New(),
 					UserID:       "u1",
 					JobID:        2010,
 					CreatedAt:    time.Date(2020, 0o4, 28, 13, 26, 0o0, 0o0, time.UTC),
@@ -502,7 +502,7 @@ var _ = Describe("Router", func() {
 					Parameters: []byte(parameters),
 				},
 				{
-					UUID:         uuid.Must(uuid.NewV4()),
+					UUID:         uuid.New(),
 					UserID:       "u2",
 					JobID:        2011,
 					CreatedAt:    time.Date(2020, 0o4, 28, 13, 26, 0o0, 0o0, time.UTC),
@@ -515,7 +515,7 @@ var _ = Describe("Router", func() {
 					Parameters: []byte(parameters),
 				},
 				{
-					UUID:         uuid.Must(uuid.NewV4()),
+					UUID:         uuid.New(),
 					UserID:       "u2",
 					JobID:        2012,
 					CreatedAt:    time.Date(2020, 0o4, 28, 13, 26, 0o0, 0o0, time.UTC),
@@ -528,7 +528,7 @@ var _ = Describe("Router", func() {
 					Parameters: []byte(parameters),
 				},
 				{
-					UUID:         uuid.Must(uuid.NewV4()),
+					UUID:         uuid.New(),
 					UserID:       "u3",
 					JobID:        2013,
 					CreatedAt:    time.Date(2020, 0o4, 28, 13, 26, 0o0, 0o0, time.UTC),
@@ -599,7 +599,7 @@ var _ = Describe("Router", func() {
 
 			unprocessedJobsList := []*jobsdb.JobT{
 				{
-					UUID:         uuid.Must(uuid.NewV4()),
+					UUID:         uuid.New(),
 					UserID:       "u1",
 					JobID:        2010,
 					CreatedAt:    time.Date(2020, 0o4, 28, 13, 26, 0o0, 0o0, time.UTC),
@@ -709,7 +709,7 @@ var _ = Describe("Router", func() {
 
 			toRetryJobsList := []*jobsdb.JobT{
 				{
-					UUID:         uuid.Must(uuid.NewV4()),
+					UUID:         uuid.New(),
 					UserID:       "u1",
 					JobID:        2009,
 					CreatedAt:    time.Date(2020, 0o4, 28, 13, 26, 0o0, 0o0, time.UTC),
@@ -726,7 +726,7 @@ var _ = Describe("Router", func() {
 
 			unprocessedJobsList := []*jobsdb.JobT{
 				{
-					UUID:         uuid.Must(uuid.NewV4()),
+					UUID:         uuid.New(),
 					UserID:       "u2",
 					JobID:        2010,
 					CreatedAt:    time.Date(2020, 0o4, 28, 13, 26, 0o0, 0o0, time.UTC),
@@ -739,7 +739,7 @@ var _ = Describe("Router", func() {
 					Parameters: []byte(parameters),
 				},
 				{
-					UUID:         uuid.Must(uuid.NewV4()),
+					UUID:         uuid.New(),
 					UserID:       "u3",
 					JobID:        2011,
 					CreatedAt:    time.Date(2020, 0o4, 28, 13, 27, 0o0, 0o0, time.UTC),
@@ -853,7 +853,7 @@ var _ = Describe("Router", func() {
 
 			toRetryJobsList := []*jobsdb.JobT{
 				{
-					UUID:         uuid.Must(uuid.NewV4()),
+					UUID:         uuid.New(),
 					UserID:       "u1",
 					JobID:        2009,
 					CreatedAt:    time.Date(2020, 0o4, 28, 13, 26, 0o0, 0o0, time.UTC),
@@ -869,7 +869,7 @@ var _ = Describe("Router", func() {
 			}
 			unprocessedJobsList := []*jobsdb.JobT{
 				{
-					UUID:         uuid.Must(uuid.NewV4()),
+					UUID:         uuid.New(),
 					UserID:       "u1",
 					JobID:        2010,
 					CreatedAt:    time.Date(2020, 0o4, 28, 13, 26, 0o0, 0o0, time.UTC),
@@ -882,7 +882,7 @@ var _ = Describe("Router", func() {
 					Parameters: []byte(parameters),
 				},
 				{
-					UUID:         uuid.Must(uuid.NewV4()),
+					UUID:         uuid.New(),
 					UserID:       "u1",
 					JobID:        2011,
 					CreatedAt:    time.Date(2020, 0o4, 28, 13, 27, 0o0, 0o0, time.UTC),
@@ -1022,7 +1022,7 @@ var _ = Describe("Router", func() {
 
 			toRetryJobsList := []*jobsdb.JobT{
 				{
-					UUID:         uuid.Must(uuid.NewV4()),
+					UUID:         uuid.New(),
 					UserID:       "u1",
 					JobID:        2009,
 					CreatedAt:    time.Date(2020, 0o4, 28, 13, 26, 0o0, 0o0, time.UTC),
@@ -1039,7 +1039,7 @@ var _ = Describe("Router", func() {
 
 			unprocessedJobsList := []*jobsdb.JobT{
 				{
-					UUID:         uuid.Must(uuid.NewV4()),
+					UUID:         uuid.New(),
 					UserID:       "u1",
 					JobID:        2010,
 					CreatedAt:    time.Date(2020, 0o4, 28, 13, 26, 0o0, 0o0, time.UTC),
@@ -1052,7 +1052,7 @@ var _ = Describe("Router", func() {
 					Parameters: []byte(parameters),
 				},
 				{
-					UUID:         uuid.Must(uuid.NewV4()),
+					UUID:         uuid.New(),
 					UserID:       "u2",
 					JobID:        2011,
 					CreatedAt:    time.Date(2020, 0o4, 28, 13, 26, 0o0, 0o0, time.UTC),
@@ -1065,7 +1065,7 @@ var _ = Describe("Router", func() {
 					Parameters: []byte(parameters),
 				},
 				{
-					UUID:         uuid.Must(uuid.NewV4()),
+					UUID:         uuid.New(),
 					UserID:       "u2",
 					JobID:        2012,
 					CreatedAt:    time.Date(2020, 0o4, 28, 13, 26, 0o0, 0o0, time.UTC),
@@ -1078,7 +1078,7 @@ var _ = Describe("Router", func() {
 					Parameters: []byte(parameters),
 				},
 				{
-					UUID:         uuid.Must(uuid.NewV4()),
+					UUID:         uuid.New(),
 					UserID:       "u3",
 					JobID:        2013,
 					CreatedAt:    time.Date(2020, 0o4, 28, 13, 26, 0o0, 0o0, time.UTC),
@@ -1238,7 +1238,7 @@ var _ = Describe("Router", func() {
 
 			toRetryJobsList := []*jobsdb.JobT{
 				{
-					UUID:         uuid.Must(uuid.NewV4()),
+					UUID:         uuid.New(),
 					UserID:       "u1",
 					JobID:        2009,
 					CreatedAt:    time.Date(2020, 0o4, 28, 13, 26, 0o0, 0o0, time.UTC),
@@ -1255,7 +1255,7 @@ var _ = Describe("Router", func() {
 
 			unprocessedJobsList := []*jobsdb.JobT{
 				{
-					UUID:         uuid.Must(uuid.NewV4()),
+					UUID:         uuid.New(),
 					UserID:       "u1",
 					JobID:        2010,
 					CreatedAt:    time.Date(2020, 0o4, 28, 13, 26, 0o0, 0o0, time.UTC),
@@ -1268,7 +1268,7 @@ var _ = Describe("Router", func() {
 					Parameters: []byte(parameters),
 				},
 				{
-					UUID:         uuid.Must(uuid.NewV4()),
+					UUID:         uuid.New(),
 					UserID:       "u2",
 					JobID:        2011,
 					CreatedAt:    time.Date(2020, 0o4, 28, 13, 26, 0o0, 0o0, time.UTC),

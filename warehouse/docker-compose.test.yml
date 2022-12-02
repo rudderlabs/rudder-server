@@ -3,7 +3,7 @@ version: "2.1"
 services:
   wh-jobsDb:
     container_name: wh-jobsDb
-    image: postgres:11-alpine
+    image: postgres:15-alpine
     environment:
       - POSTGRES_DB=jobsdb
       - POSTGRES_PASSWORD=password
@@ -56,7 +56,7 @@ services:
       retries: 25
   wh-postgres:
     container_name: wh-postgres
-    image: postgres:11-alpine
+    image: postgres:15-alpine
     environment:
       - POSTGRES_DB=rudderdb
       - POSTGRES_PASSWORD=rudder-password

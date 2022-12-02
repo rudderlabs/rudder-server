@@ -9,8 +9,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/gofrs/uuid"
 	"github.com/golang/mock/gomock"
+	"github.com/google/uuid"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/tidwall/gjson"
@@ -441,7 +441,7 @@ var _ = Describe("Processor", func() {
 
 			unprocessedJobsList := []*jobsdb.JobT{
 				{
-					UUID:          uuid.Must(uuid.NewV4()),
+					UUID:          uuid.New(),
 					JobID:         1002,
 					CreatedAt:     time.Date(2020, 0o4, 28, 23, 27, 0o0, 0o0, time.UTC),
 					ExpireAt:      time.Date(2020, 0o4, 28, 23, 27, 0o0, 0o0, time.UTC),
@@ -452,7 +452,7 @@ var _ = Describe("Processor", func() {
 					Parameters:    nil,
 				},
 				{
-					UUID:      uuid.Must(uuid.NewV4()),
+					UUID:      uuid.New(),
 					JobID:     1010,
 					CreatedAt: time.Date(2020, 0o4, 28, 23, 26, 0o0, 0o0, time.UTC),
 					ExpireAt:  time.Date(2020, 0o4, 28, 23, 26, 0o0, 0o0, time.UTC),
@@ -466,7 +466,7 @@ var _ = Describe("Processor", func() {
 					Parameters:    createBatchParameters(SourceIDEnabledNoUT),
 				},
 				{
-					UUID:          uuid.Must(uuid.NewV4()),
+					UUID:          uuid.New(),
 					JobID:         2002,
 					CreatedAt:     time.Date(2020, 0o4, 28, 13, 27, 0o0, 0o0, time.UTC),
 					ExpireAt:      time.Date(2020, 0o4, 28, 13, 27, 0o0, 0o0, time.UTC),
@@ -477,7 +477,7 @@ var _ = Describe("Processor", func() {
 					Parameters:    nil,
 				},
 				{
-					UUID:          uuid.Must(uuid.NewV4()),
+					UUID:          uuid.New(),
 					JobID:         2003,
 					CreatedAt:     time.Date(2020, 0o4, 28, 13, 28, 0o0, 0o0, time.UTC),
 					ExpireAt:      time.Date(2020, 0o4, 28, 13, 28, 0o0, 0o0, time.UTC),
@@ -488,7 +488,7 @@ var _ = Describe("Processor", func() {
 					Parameters:    nil,
 				},
 				{
-					UUID:      uuid.Must(uuid.NewV4()),
+					UUID:      uuid.New(),
 					JobID:     2010,
 					CreatedAt: time.Date(2020, 0o4, 28, 13, 26, 0o0, 0o0, time.UTC),
 					ExpireAt:  time.Date(2020, 0o4, 28, 13, 26, 0o0, 0o0, time.UTC),
@@ -619,7 +619,7 @@ var _ = Describe("Processor", func() {
 
 			unprocessedJobsList := []*jobsdb.JobT{
 				{
-					UUID:          uuid.Must(uuid.NewV4()),
+					UUID:          uuid.New(),
 					JobID:         1002,
 					CreatedAt:     time.Date(2020, 0o4, 28, 23, 27, 0o0, 0o0, time.UTC),
 					ExpireAt:      time.Date(2020, 0o4, 28, 23, 27, 0o0, 0o0, time.UTC),
@@ -630,7 +630,7 @@ var _ = Describe("Processor", func() {
 					Parameters:    nil,
 				},
 				{
-					UUID:      uuid.Must(uuid.NewV4()),
+					UUID:      uuid.New(),
 					JobID:     1010,
 					CreatedAt: time.Date(2020, 0o4, 28, 23, 26, 0o0, 0o0, time.UTC),
 					ExpireAt:  time.Date(2020, 0o4, 28, 23, 26, 0o0, 0o0, time.UTC),
@@ -644,7 +644,7 @@ var _ = Describe("Processor", func() {
 					Parameters:    createBatchParameters(SourceIDEnabledOnlyUT),
 				},
 				{
-					UUID:         uuid.Must(uuid.NewV4()),
+					UUID:         uuid.New(),
 					JobID:        2002,
 					CreatedAt:    time.Date(2020, 0o4, 28, 13, 27, 0o0, 0o0, time.UTC),
 					ExpireAt:     time.Date(2020, 0o4, 28, 13, 27, 0o0, 0o0, time.UTC),
@@ -654,7 +654,7 @@ var _ = Describe("Processor", func() {
 					Parameters:   nil,
 				},
 				{
-					UUID:         uuid.Must(uuid.NewV4()),
+					UUID:         uuid.New(),
 					JobID:        2003,
 					CreatedAt:    time.Date(2020, 0o4, 28, 13, 28, 0o0, 0o0, time.UTC),
 					ExpireAt:     time.Date(2020, 0o4, 28, 13, 28, 0o0, 0o0, time.UTC),
@@ -664,7 +664,7 @@ var _ = Describe("Processor", func() {
 					Parameters:   nil,
 				},
 				{
-					UUID:      uuid.Must(uuid.NewV4()),
+					UUID:      uuid.New(),
 					JobID:     2010,
 					CreatedAt: time.Date(2020, 0o4, 28, 13, 26, 0o0, 0o0, time.UTC),
 					ExpireAt:  time.Date(2020, 0o4, 28, 13, 26, 0o0, 0o0, time.UTC),
@@ -800,7 +800,7 @@ var _ = Describe("Processor", func() {
 
 			unprocessedJobsList := []*jobsdb.JobT{
 				{
-					UUID:      uuid.Must(uuid.NewV4()),
+					UUID:      uuid.New(),
 					JobID:     1010,
 					CreatedAt: time.Date(2020, 0o4, 28, 23, 26, 0o0, 0o0, time.UTC),
 					ExpireAt:  time.Date(2020, 0o4, 28, 23, 26, 0o0, 0o0, time.UTC),
@@ -814,7 +814,7 @@ var _ = Describe("Processor", func() {
 					Parameters:    createBatchParameters(SourceIDEnabled),
 				},
 				{
-					UUID:      uuid.Must(uuid.NewV4()),
+					UUID:      uuid.New(),
 					JobID:     2010,
 					CreatedAt: time.Date(2020, 0o4, 28, 13, 26, 0o0, 0o0, time.UTC),
 					ExpireAt:  time.Date(2020, 0o4, 28, 13, 26, 0o0, 0o0, time.UTC),
@@ -886,7 +886,7 @@ var _ = Describe("Processor", func() {
 
 			unprocessedJobsList := []*jobsdb.JobT{
 				{
-					UUID:          uuid.Must(uuid.NewV4()),
+					UUID:          uuid.New(),
 					JobID:         1010,
 					CreatedAt:     time.Date(2020, 0o4, 28, 23, 26, 0o0, 0o0, time.UTC),
 					ExpireAt:      time.Date(2020, 0o4, 28, 23, 26, 0o0, 0o0, time.UTC),
@@ -1019,7 +1019,7 @@ var _ = Describe("Processor", func() {
 
 			unprocessedJobsList := []*jobsdb.JobT{
 				{
-					UUID:          uuid.Must(uuid.NewV4()),
+					UUID:          uuid.New(),
 					JobID:         1010,
 					CreatedAt:     time.Date(2020, 0o4, 28, 23, 26, 0o0, 0o0, time.UTC),
 					ExpireAt:      time.Date(2020, 0o4, 28, 23, 26, 0o0, 0o0, time.UTC),
@@ -1143,7 +1143,7 @@ var _ = Describe("Processor", func() {
 
 			unprocessedJobsList := []*jobsdb.JobT{
 				{
-					UUID:          uuid.Must(uuid.NewV4()),
+					UUID:          uuid.New(),
 					JobID:         1010,
 					CreatedAt:     time.Date(2020, 0o4, 28, 23, 26, 0o0, 0o0, time.UTC),
 					ExpireAt:      time.Date(2020, 0o4, 28, 23, 26, 0o0, 0o0, time.UTC),
