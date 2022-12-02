@@ -435,7 +435,7 @@ func (gateway *HandleT) GetSourceStat(writeKey, reqType string) *gwstats.SourceS
 // Finally sends responses(error) if any back to the webRequests over their `done` channels
 func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWebRequestWorkerT) {
 	for breq := range userWebRequestWorker.batchRequestQ {
-		counter := atomic.AddUint64(&gateway.webRequestBatchCount, 1)
+		// counter := atomic.AddUint64(&gateway.webRequestBatchCount, 1)
 		var jobList []*jobsdb.JobT
 		jobIDReqMap := make(map[uuid.UUID]*webRequestT)
 		jobWriteKeyMap := make(map[uuid.UUID]string)
@@ -449,186 +449,28 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 		for _, req := range breq.batchRequest {
 			writeKey := req.writeKey
 			sourceTag := gateway.getSourceTagFromWriteKey(writeKey)
-			sourceID := gateway.getSourceIDForWriteKey(writeKey)
-			// Should be function of body
-			configSubscriberLock.RLock()
-			workspaceId := enabledWriteKeyWorkspaceMap[writeKey]
-			configSubscriberLock.RUnlock()
-			userIDHeader := req.userIDHeader
 			if _, ok := sourceStats[sourceTag]; !ok {
-				sourceStats[sourceTag] = gateway.GetSourceStat(writeKey, req.reqType)
+				sourceStats[sourceTag] = gateway.GetSourceStat(
+					writeKey,
+					req.reqType,
+				)
 			}
-
-			ipAddr := req.ipAddr
-			body := req.requestPayload
-			if !gjson.ValidBytes(body) {
-				req.done <- response.GetStatus(response.InvalidJSON)
+			errorString, eventCount, newJob := gateway.makeJobFromRequest(req)
+			if newJob == nil {
+				req.done <- errorString
 				preDbStoreCount++
-				sourceStats[sourceTag].RequestFailed("invalidJSON")
-				continue
-			}
-
-			gateway.requestSizeStat.Observe(float64(len(body)))
-			var err error
-			if req.reqType != "batch" {
-				body, err = sjson.SetBytes(body, "type", req.reqType)
-				if err != nil {
-					sourceStats[sourceTag].RequestFailed("notRudderEvent")
-					req.done <- response.GetStatus(response.NotRudderEvent)
-					preDbStoreCount++
-					continue
-				}
-				body, err = sjson.SetRawBytes(BatchEvent, "batch.0", body)
-				if err != nil {
-					sourceStats[sourceTag].RequestFailed("notRudderEvent")
-					req.done <- response.GetStatus(response.NotRudderEvent)
-					preDbStoreCount++
-					continue
-				}
-			}
-			totalEventsInReq := len(gjson.GetBytes(body, "batch").Array())
-
-			// store sourceID before call made to check if source is enabled
-			// this prevents not setting sourceID in gw job if disabled before setting it
-
-			if !gateway.isValidWriteKey(writeKey) {
-				req.done <- response.GetStatus(response.InvalidWriteKey)
-				preDbStoreCount++
-				sourceStats[sourceTag].RequestEventsFailed(totalEventsInReq, "invalidWriteKey")
-				continue
-			}
-
-			if !gateway.isWriteKeyEnabled(writeKey) {
-				req.done <- response.GetStatus(response.SourceDisabled)
-				preDbStoreCount++
-				sourceStats[sourceTag].RequestEventsFailed(totalEventsInReq, "sourceDisabled")
-				continue
-			}
-
-			if enableRateLimit {
-				// In case of "batch" requests, if rate-limiter returns true for LimitReached, just drop the event batch and continue.
-				if gateway.rateLimiter.LimitReached(workspaceId) {
-					req.done <- response.GetStatus(response.TooManyRequests)
-					preDbStoreCount++
+				if errorString == "" {
 					sourceStats[sourceTag].RequestDropped()
-					continue
+				} else {
+					sourceStats[sourceTag].RequestEventsFailed(eventCount, errorString)
 				}
-			}
-
-			// set anonymousId if not set in payload
-			result := gjson.GetBytes(body, "batch")
-			var out []map[string]interface{}
-			var builtUserID string
-			var notIdentifiable, nonRudderEvent, containsAudienceList bool
-			result.ForEach(func(_, vjson gjson.Result) bool {
-				anonIDFromReq := strings.TrimSpace(vjson.Get("anonymousId").String())
-				userIDFromReq := strings.TrimSpace(vjson.Get("userId").String())
-				if builtUserID == "" {
-					if anonIDFromReq != "" {
-						builtUserID = userIDHeader + DELIMITER + anonIDFromReq + DELIMITER + userIDFromReq
-					} else {
-						// Proxy gets the userID from body if there is no anonymousId in body/header
-						builtUserID = userIDHeader + DELIMITER + userIDFromReq + DELIMITER + userIDFromReq
-					}
-				}
-
-				eventTypeFromReq := strings.TrimSpace(vjson.Get("type").String())
-
-				if anonIDFromReq == "" {
-					if userIDFromReq == "" && !allowReqsWithoutUserIDAndAnonymousID {
-						notIdentifiable = true
-						return false
-					}
-				}
-				if eventTypeFromReq == "audiencelist" {
-					containsAudienceList = true
-				}
-				// hashing combination of userIDFromReq + anonIDFromReq, using colon as a delimiter
-				rudderId, err := misc.GetMD5UUID(userIDFromReq + ":" + anonIDFromReq)
-				if err != nil {
-					notIdentifiable = true
-					return false
-				}
-
-				toSet, ok := vjson.Value().(map[string]interface{})
-				if !ok {
-					nonRudderEvent = true
-					return false
-				}
-				toSet["rudderId"] = rudderId
-				if messageId := strings.TrimSpace(vjson.Get("messageId").String()); messageId == "" {
-					toSet["messageId"] = uuid.New().String()
-				}
-				out = append(out, toSet)
-				return true // keep iterating
-			})
-
-			if len(body) > maxReqSize && !containsAudienceList {
-				req.done <- response.GetStatus(response.RequestBodyTooLarge)
-				preDbStoreCount++
-				sourceStats[sourceTag].RequestEventsFailed(totalEventsInReq, "requestBodyTooLarge")
 				continue
 			}
-
-			body, _ = sjson.SetBytes(body, "batch", out)
-
-			if notIdentifiable {
-				req.done <- response.GetStatus(response.NonIdentifiableRequest)
-				preDbStoreCount++
-				sourceStats[sourceTag].RequestEventsFailed(totalEventsInReq, "notIdentifiable")
-				continue
-			}
-
-			if nonRudderEvent {
-				req.done <- response.GetStatus(response.NotRudderEvent)
-				preDbStoreCount++
-				sourceStats[sourceTag].RequestEventsFailed(totalEventsInReq, "notRudderEvent")
-				continue
-			}
-
-			if enableSuppressUserFeature && gateway.suppressUserHandler != nil {
-				userID := gjson.GetBytes(body, "batch.0.userId").String()
-				if gateway.suppressUserHandler.IsSuppressedUser(workspaceId, userID, sourceID) {
-					req.done <- ""
-					preDbStoreCount++
-					continue
-				}
-			}
-
-			body, _ = sjson.SetBytes(body, "requestIP", ipAddr)
-			body, _ = sjson.SetBytes(body, "writeKey", writeKey)
-			body, _ = sjson.SetBytes(body, "receivedAt", time.Now().Format(misc.RFC3339Milli))
-			eventBatchesToRecord = append(eventBatchesToRecord, sourceDebugger{data: body, writeKey: writeKey})
-			sourcesJobRunID := gjson.GetBytes(body, "batch.0.context.sources.job_run_id").Str   // pick the job_run_id from the first event of batch. We are assuming job_run_id will be same for all events in a batch and the batch is coming from rudder-sources
-			sourcesTaskRunID := gjson.GetBytes(body, "batch.0.context.sources.task_run_id").Str // pick the task_run_id from the first event of batch. We are assuming task_run_id will be same for all events in a batch and the batch is coming from rudder-sources
-			id := uuid.New()
-
-			params := map[string]interface{}{
-				"source_id":          sourceID,
-				"batch_id":           counter,
-				"source_job_run_id":  sourcesJobRunID,
-				"source_task_run_id": sourcesTaskRunID,
-			}
-			marshalledParams, err := json.Marshal(params)
-			if err != nil {
-				gateway.logger.Errorf("[Gateway] Failed to marshal parameters map. Parameters: %+v", params)
-				marshalledParams = []byte(`{"error": "rudder-server gateway failed to marshal params"}`)
-			}
-
-			newJob := jobsdb.JobT{
-				UUID:         id,
-				UserID:       builtUserID,
-				Parameters:   marshalledParams,
-				CustomVal:    CustomVal,
-				EventPayload: body,
-				EventCount:   totalEventsInReq,
-				WorkspaceId:  workspaceId,
-			}
-			jobList = append(jobList, &newJob)
+			jobList = append(jobList, newJob)
 
 			jobIDReqMap[newJob.UUID] = req
 			jobWriteKeyMap[newJob.UUID] = sourceTag
-			jobEventCountMap[newJob.UUID] = totalEventsInReq
+			jobEventCountMap[newJob.UUID] = eventCount
 		}
 
 		errorMessagesMap := make(map[uuid.UUID]string)
@@ -667,6 +509,175 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 			v.Report(gateway.stats)
 		}
 	}
+}
+
+// returns a errorString, eventCount, *jobsdb.JobT
+func (gateway *HandleT) makeJobFromRequest(req *webRequestT) (string, int, *jobsdb.JobT) {
+	writeKey := req.writeKey
+	sourceID := gateway.getSourceIDForWriteKey(writeKey)
+	// Should be function of body
+	configSubscriberLock.RLock()
+	workspaceId := enabledWriteKeyWorkspaceMap[writeKey]
+	configSubscriberLock.RUnlock()
+	userIDHeader := req.userIDHeader
+
+	ipAddr := req.ipAddr
+	body := req.requestPayload
+	if !gjson.ValidBytes(body) {
+		return response.GetStatus(response.InvalidJSON), 0, nil
+	}
+
+	gateway.requestSizeStat.Observe(float64(len(body)))
+	var err error
+	if req.reqType != "batch" {
+		body, err = sjson.SetBytes(body, "type", req.reqType)
+		if err != nil {
+			return response.GetStatus(response.NotRudderEvent), 0, nil
+		}
+		body, err = sjson.SetRawBytes(BatchEvent, "batch.0", body)
+		if err != nil {
+			return response.GetStatus(response.NotRudderEvent), 0, nil
+		}
+	}
+	totalEventsInReq := len(gjson.GetBytes(body, "batch").Array())
+
+	if !gateway.isValidWriteKey(writeKey) {
+		return response.GetStatus(response.InvalidWriteKey), totalEventsInReq, nil
+	}
+
+	if !gateway.isWriteKeyEnabled(writeKey) {
+		return response.GetStatus(response.SourceDisabled), totalEventsInReq, nil
+	}
+
+	if enableRateLimit {
+		// In case of "batch" requests, if rate-limiter returns true for LimitReached, just drop the event batch and continue.
+		if gateway.rateLimiter.LimitReached(workspaceId) {
+			return response.GetStatus(response.TooManyRequests), totalEventsInReq, nil
+		}
+	}
+
+	// set anonymousId if not set in payload
+	result := gjson.GetBytes(body, "batch")
+	var out []map[string]interface{}
+	var builtUserID string
+	var notIdentifiable, nonRudderEvent, containsAudienceList bool
+	result.ForEach(func(_, vjson gjson.Result) bool {
+		anonIDFromReq := strings.TrimSpace(vjson.Get("anonymousId").String())
+		userIDFromReq := strings.TrimSpace(vjson.Get("userId").String())
+		if builtUserID == "" {
+			if anonIDFromReq != "" {
+				builtUserID = userIDHeader + DELIMITER + anonIDFromReq + DELIMITER + userIDFromReq
+			} else {
+				// Proxy gets the userID from body if there is no anonymousId in body/header
+				builtUserID = userIDHeader + DELIMITER + userIDFromReq + DELIMITER + userIDFromReq
+			}
+		}
+
+		eventTypeFromReq := strings.TrimSpace(vjson.Get("type").String())
+
+		if anonIDFromReq == "" {
+			if userIDFromReq == "" && !allowReqsWithoutUserIDAndAnonymousID {
+				notIdentifiable = true
+				return false
+			}
+		}
+		if eventTypeFromReq == "audiencelist" {
+			containsAudienceList = true
+		}
+		// hashing combination of userIDFromReq + anonIDFromReq, using colon as a delimiter
+		rudderId, err := misc.GetMD5UUID(userIDFromReq + ":" + anonIDFromReq)
+		if err != nil {
+			notIdentifiable = true
+			return false
+		}
+
+		toSet, ok := vjson.Value().(map[string]interface{})
+		if !ok {
+			nonRudderEvent = true
+			return false
+		}
+		toSet["rudderId"] = rudderId
+		if messageId := strings.TrimSpace(vjson.Get("messageId").String()); messageId == "" {
+			toSet["messageId"] = uuid.New().String()
+		}
+		out = append(out, toSet)
+		return true // keep iterating
+	})
+
+	if len(body) > maxReqSize && !containsAudienceList {
+		return response.GetStatus(response.RequestBodyTooLarge), totalEventsInReq, nil
+	}
+
+	body, _ = sjson.SetBytes(body, "batch", out)
+
+	if notIdentifiable {
+		return response.GetStatus(response.NonIdentifiableRequest), totalEventsInReq, nil
+	}
+
+	if nonRudderEvent {
+		return response.GetStatus(response.NotRudderEvent), totalEventsInReq, nil
+	}
+
+	if enableSuppressUserFeature && gateway.suppressUserHandler != nil {
+		userID := gjson.GetBytes(body, "batch.0.userId").String()
+		if gateway.suppressUserHandler.IsSuppressedUser(
+			workspaceId,
+			userID,
+			sourceID,
+		) {
+			return "", totalEventsInReq, nil
+		}
+	}
+
+	body, _ = sjson.SetBytes(body, "requestIP", ipAddr)
+	body, _ = sjson.SetBytes(body, "writeKey", writeKey)
+	body, _ = sjson.SetBytes(body, "receivedAt", time.Now().Format(misc.RFC3339Milli))
+
+	// pick the job_run_id from the first event of batch.
+	// We are assuming job_run_id will be same for all events in a batch
+	// and the batch is coming from rudder-sources
+	sourcesJobRunID := gjson.GetBytes(
+		body,
+		"batch.0.context.sources.job_run_id",
+	).Str
+
+	// pick the task_run_id from the first event of batch.
+	// We are assuming task_run_id will be same for all events in a batch
+	// and the batch is coming from rudder-sources
+	sourcesTaskRunID := gjson.GetBytes(
+		body,
+		"batch.0.context.sources.task_run_id",
+	).Str
+
+	id := uuid.New()
+
+	params := map[string]interface{}{
+		"source_id": sourceID,
+		// "batch_id":           counter,	// can be removed..?
+		"source_job_run_id":  sourcesJobRunID,
+		"source_task_run_id": sourcesTaskRunID,
+	}
+	marshalledParams, err := json.Marshal(params)
+	if err != nil {
+		gateway.logger.Errorf(
+			"[Gateway] Failed to marshal parameters map. Parameters: %+v",
+			params,
+		)
+		marshalledParams = []byte(
+			`{"error": "rudder-server gateway failed to marshal params"}`,
+		)
+	}
+
+	newJob := jobsdb.JobT{
+		UUID:         id,
+		UserID:       builtUserID,
+		Parameters:   marshalledParams,
+		CustomVal:    CustomVal,
+		EventPayload: body,
+		EventCount:   totalEventsInReq,
+		WorkspaceId:  workspaceId,
+	}
+	return "", totalEventsInReq, &newJob
 }
 
 func (*HandleT) isValidWriteKey(writeKey string) bool {
