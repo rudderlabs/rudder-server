@@ -183,13 +183,12 @@ func TestDestinationHistory(t *testing.T) {
 			revisionID: "2ENkYQ1MR9f83YhqS5k7uTSe5XH",
 			region:     "eu",
 
-			responseBody: `{"message":"History does not exist for revision id"}`,
+			responseBody:   `{"message":"History does not exist for revision id"}`,
 			responseStatus: http.StatusNotFound,
 
 			wantDestination: expectedDestination,
 			wantPath:        "/workspaces/destinationHistory/2ENkYQ1MR9f83YhqS5k7uTSe5XH?region=eu",
 			wantErr:         fmt.Errorf("non retriable: unexpected status code 404: {\"message\":\"History does not exist for revision id\"}"),
-
 		},
 
 		{
@@ -290,7 +289,7 @@ func TestRetriesTimeout(t *testing.T) {
 				)
 
 				err := m.fn(c)
-				require.ErrorContains(t, err, "")
+				require.EqualError(t, err, "unexpected status code 500: ")
 
 				require.Equalf(t, int64(maxRetries+1), atomic.LoadInt64(&count), "retry %d times", maxRetries)
 			})
@@ -313,7 +312,7 @@ func TestRetriesTimeout(t *testing.T) {
 				)
 
 				err := m.fn(c)
-				require.ErrorContains(t, err, "")
+				require.EqualError(t, err, "non retriable: unexpected status code 400: ")
 
 				require.Equalf(t, int64(1), atomic.LoadInt64(&count), "retry %d times", maxRetries)
 			})
