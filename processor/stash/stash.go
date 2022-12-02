@@ -9,7 +9,7 @@ import (
 
 	"golang.org/x/sync/errgroup"
 
-	uuid "github.com/gofrs/uuid"
+	"github.com/google/uuid"
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/services/fileuploader"
@@ -142,7 +142,7 @@ func (st *HandleT) runErrWorkers(ctx context.Context) {
 func (st *HandleT) storeErrorsToObjectStorage(jobs []*jobsdb.JobT) (errorJob []ErrorJob) {
 	localTmpDirName := "/rudder-processor-errors/"
 
-	uuid := uuid.Must(uuid.NewV4())
+	uuid := uuid.New().String()
 	st.logger.Debug("[Processor: storeErrorsToObjectStorage]: Starting logging to object storage")
 
 	tmpDirPath, err := misc.CreateTMPDIR()

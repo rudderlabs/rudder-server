@@ -19,6 +19,7 @@ import (
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	migrator "github.com/rudderlabs/rudder-server/services/sql-migrator"
 	"github.com/rudderlabs/rudder-server/services/stats"
+	"github.com/rudderlabs/rudder-server/utils/httputil"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/types"
@@ -413,7 +414,7 @@ func (handle *HandleT) sendMetric(ctx context.Context, netClient *http.Client, c
 		httpStatTags["status"] = strconv.Itoa(resp.StatusCode)
 		stats.Default.NewTaggedStat(STAT_REPORTING_HTTP_REQ, stats.CountType, httpStatTags).Count(1)
 
-		defer resp.Body.Close()
+		defer func() { httputil.CloseResponse(resp) }()
 		respBody, err := io.ReadAll(resp.Body)
 		if err != nil {
 			handle.log.Error(err.Error())

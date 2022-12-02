@@ -14,7 +14,7 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 
-	"github.com/gofrs/uuid"
+	"github.com/google/uuid"
 	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
@@ -130,7 +130,7 @@ func (worker *SourceWorkerT) replayJobsInFile(ctx context.Context, filePath stri
 				continue
 			}
 			job := jobsdb.JobT{
-				UUID:         uuid.Must(uuid.NewV4()),
+				UUID:         uuid.New(),
 				UserID:       gjson.GetBytes(copyLineBytes, worker.getFieldIdentifier(userID)).String(),
 				Parameters:   []byte(gjson.GetBytes(copyLineBytes, worker.getFieldIdentifier(parameters)).String()),
 				CustomVal:    gjson.GetBytes(copyLineBytes, worker.getFieldIdentifier(customVal)).String(),
@@ -147,7 +147,7 @@ func (worker *SourceWorkerT) replayJobsInFile(ctx context.Context, filePath stri
 			continue
 		}
 
-		messageID := uuid.Must(uuid.NewV4()).String()
+		messageID := uuid.New().String()
 
 		metadata := transformer.MetadataT{
 			MessageID:     messageID,
@@ -193,7 +193,7 @@ func (worker *SourceWorkerT) replayJobsInFile(ctx context.Context, filePath stri
 				continue
 			}
 			job := jobsdb.JobT{
-				UUID:         uuid.Must(uuid.NewV4()),
+				UUID:         uuid.New(),
 				UserID:       ev.Output[worker.getFieldIdentifier(userID)].(string),
 				Parameters:   params,
 				CustomVal:    ev.Output[worker.getFieldIdentifier(customVal)].(string),
