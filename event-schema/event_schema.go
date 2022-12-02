@@ -36,7 +36,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/gofrs/uuid"
+	"github.com/google/uuid"
 	"github.com/jeremywohl/flatten"
 	"github.com/lib/pq"
 
@@ -472,7 +472,7 @@ func (manager *EventSchemaManagerT) handleEvent(writeKey string, event EventT) {
 }
 
 func (manager *EventSchemaManagerT) createModel(writeKey, eventType, eventIdentifier string, totalEventModels int, archiveOldestLastSeenModel func()) *EventModelT {
-	eventModelID := uuid.Must(uuid.NewV4()).String()
+	eventModelID := uuid.New().String()
 	em := &EventModelT{
 		UUID:            eventModelID,
 		WriteKey:        writeKey,
@@ -495,7 +495,7 @@ func (manager *EventSchemaManagerT) createModel(writeKey, eventType, eventIdenti
 }
 
 func (manager *EventSchemaManagerT) createSchema(schema map[string]string, schemaHash string, eventModel *EventModelT, totalSchemaVersions int, archiveOldestLastSeenVersion func()) *SchemaVersionT {
-	versionID := uuid.Must(uuid.NewV4()).String()
+	versionID := uuid.New().String()
 	schemaVersion := manager.NewSchemaVersion(versionID, schema, schemaHash, eventModel.UUID)
 	eventModel.mergeSchema(schemaVersion)
 
@@ -917,7 +917,7 @@ func (manager *EventSchemaManagerT) populateEventModels(uuidFilters ...string) e
 		uuidFilter = fmt.Sprintf(`WHERE uuid in ('%s')`, strings.Join(uuidFilters, "', '"))
 	}
 
-	eventModelsSelectSQL := fmt.Sprintf(`SELECT id, uuid, write_key, event_type, event_model_identifier, created_at, schema, private_data, total_count, last_seen, (metadata->>'TotalCount')::int, metadata->'SampledEvents' FROM %s %s`, EVENT_MODELS_TABLE, uuidFilter)
+	eventModelsSelectSQL := fmt.Sprintf(`SELECT id, uuid, write_key, event_type, event_model_identifier, created_at, schema, private_data, total_count, last_seen, (metadata->>'TotalCount')::bigint, metadata->'SampledEvents' FROM %s %s`, EVENT_MODELS_TABLE, uuidFilter)
 
 	rows, err := manager.dbHandle.Query(eventModelsSelectSQL)
 	if err == sql.ErrNoRows {
@@ -1029,7 +1029,7 @@ func (manager *EventSchemaManagerT) populateSchemaVersionsMinimal(modelIDFilters
 }
 
 func (manager *EventSchemaManagerT) populateSchemaVersion(o *OffloadedSchemaVersionT) error {
-	schemaVersionsSelectSQL := fmt.Sprintf(`SELECT id, uuid, event_model_id, schema_hash, schema, private_data,first_seen, last_seen, total_count, (metadata->>'TotalCount')::int, metadata->'SampledEvents' FROM %s WHERE uuid = '%s'`, SCHEMA_VERSIONS_TABLE, o.UUID)
+	schemaVersionsSelectSQL := fmt.Sprintf(`SELECT id, uuid, event_model_id, schema_hash, schema, private_data,first_seen, last_seen, total_count, (metadata->>'TotalCount')::bigint, metadata->'SampledEvents' FROM %s WHERE uuid = '%s'`, SCHEMA_VERSIONS_TABLE, o.UUID)
 
 	var schemaVersion SchemaVersionT
 	var privateDataRaw json.RawMessage

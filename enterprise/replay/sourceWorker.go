@@ -14,7 +14,7 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 
-	"github.com/gofrs/uuid"
+	"github.com/google/uuid"
 	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
@@ -120,7 +120,8 @@ func (worker *SourceWorkerT) replayJobsInFile(ctx context.Context, filePath stri
 		copy(copyLineBytes, lineBytes)
 
 		if transformationVersionID == "" {
-			createdAt, err := time.Parse(misc.POSTGRESTIMEFORMATPARSE, gjson.GetBytes(copyLineBytes, worker.getFieldIdentifier(createdAt)).String())
+			timeStamp := gjson.GetBytes(copyLineBytes, worker.getFieldIdentifier(createdAt)).String()
+			createdAt, err := time.Parse(misc.NOTIMEZONEFORMATPARSE, getFormattedTimeStamp(timeStamp))
 			if err != nil {
 				worker.log.Errorf("failed to parse created at: %s", err)
 				continue
@@ -129,7 +130,7 @@ func (worker *SourceWorkerT) replayJobsInFile(ctx context.Context, filePath stri
 				continue
 			}
 			job := jobsdb.JobT{
-				UUID:         uuid.Must(uuid.NewV4()),
+				UUID:         uuid.New(),
 				UserID:       gjson.GetBytes(copyLineBytes, worker.getFieldIdentifier(userID)).String(),
 				Parameters:   []byte(gjson.GetBytes(copyLineBytes, worker.getFieldIdentifier(parameters)).String()),
 				CustomVal:    gjson.GetBytes(copyLineBytes, worker.getFieldIdentifier(customVal)).String(),
@@ -146,7 +147,7 @@ func (worker *SourceWorkerT) replayJobsInFile(ctx context.Context, filePath stri
 			continue
 		}
 
-		messageID := uuid.Must(uuid.NewV4()).String()
+		messageID := uuid.New().String()
 
 		metadata := transformer.MetadataT{
 			MessageID:     messageID,
@@ -178,7 +179,7 @@ func (worker *SourceWorkerT) replayJobsInFile(ctx context.Context, filePath stri
 				worker.log.Errorf("Error getting created at from transformer output: %v", err)
 				continue
 			}
-			createdAt, err := time.Parse(misc.POSTGRESTIMEFORMATPARSE, createdAtString)
+			createdAt, err := time.Parse(misc.NOTIMEZONEFORMATPARSE, getFormattedTimeStamp(createdAtString))
 			if err != nil {
 				worker.log.Errorf("failed to parse created at: %s", err)
 				continue
@@ -192,11 +193,12 @@ func (worker *SourceWorkerT) replayJobsInFile(ctx context.Context, filePath stri
 				continue
 			}
 			job := jobsdb.JobT{
-				UUID:         uuid.Must(uuid.NewV4()),
+				UUID:         uuid.New(),
 				UserID:       ev.Output[worker.getFieldIdentifier(userID)].(string),
 				Parameters:   params,
 				CustomVal:    ev.Output[worker.getFieldIdentifier(customVal)].(string),
 				EventPayload: destEventJSON,
+				WorkspaceId:  ev.Output[worker.getFieldIdentifier(workspaceID)].(string),
 			}
 			jobs = append(jobs, &job)
 		}
@@ -256,9 +258,15 @@ func (worker *SourceWorkerT) getFieldIdentifier(field string) string {
 		return "CustomVal"
 	case eventPayload:
 		return "EventPayload"
+	case workspaceID:
+		return "WorkspaceID"
 	case createdAt:
 		return "CreatedAt"
 	default:
 		return ""
 	}
+}
+
+func getFormattedTimeStamp(timeStamp string) string {
+	return strings.Split(strings.TrimSuffix(timeStamp, "Z"), ".")[0]
 }

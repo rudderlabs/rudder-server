@@ -10,7 +10,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/gofrs/uuid"
+	"github.com/google/uuid"
 	"github.com/iancoleman/strcase"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -57,7 +57,7 @@ var _ = Describe("Misc", func() {
 
 		It("Rudder Async Destination Logs", func() {
 			localTmpDirName := fmt.Sprintf(`/%s/`, RudderAsyncDestinationLogs)
-			uuid := uuid.Must(uuid.NewV4())
+			uuid := uuid.New()
 
 			// /tmp/rudder-async-destination-logs/SourceID.28da0aa8-f47d-422c-9cc8-f19d14ff158c.txt
 			// /tmp/rudder-async-destination-logs/
@@ -118,7 +118,7 @@ var _ = Describe("Misc", func() {
 
 		It("Rudder Warehouse Staging Uploads", func() {
 			localTmpDirName := fmt.Sprintf(`/%s/`, RudderWarehouseStagingUploads)
-			uuid := uuid.Must(uuid.NewV4())
+			uuid := uuid.New()
 
 			// /tmp/rudder-warehouse-staging-uploads/1640923547.SourceId.abe7383c-1bb9-4b23-9f51-2e08280cbb71.json.gz
 			// /tmp/rudder-warehouse-staging-uploads/
@@ -136,7 +136,7 @@ var _ = Describe("Misc", func() {
 
 		It("Rudder Raw Data Destination Logs", func() {
 			localTmpDirName := fmt.Sprintf(`/%s/`, RudderRawDataDestinationLogs)
-			uuid := uuid.Must(uuid.NewV4())
+			uuid := uuid.New()
 
 			// /tmp/rudder-raw-data-destination-logs/1640923547.SourceId.d481fbd8-df3a-4eed-b691-2381b260ca28.json.gz
 			// /tmp/rudder-raw-data-destination-logs/
@@ -228,7 +228,7 @@ var _ = Describe("Misc", func() {
 
 		It("Rudder Identity Merge Rules Tmp", func() {
 			localTmpDirName := fmt.Sprintf(`/%s/`, RudderIdentityMergeRulesTmp)
-			uuid := uuid.Must(uuid.NewV4())
+			uuid := uuid.New()
 
 			// /tmp/rudder-identity-merge-rules-tmp/DestinationName_DestinationId/UploadId/71a855c2-0535-43d1-9f00-556ecc971cc7.csv.gz
 			// /tmp/rudder-identity-merge-rules-tmp/DestinationName_DestinationId/
@@ -265,7 +265,7 @@ var _ = Describe("Misc", func() {
 
 		It("Rudder Identity Mappings Tmp", func() {
 			localTmpDirName := fmt.Sprintf(`/%s/`, RudderIdentityMappingsTmp)
-			uuid := uuid.Must(uuid.NewV4())
+			uuid := uuid.New()
 
 			// /tmp/rudder-identity-mappings-tmp/DestinationName_DestinationId/UploadId/b012ad98-1cde-4d27-a415-cdb84021180c.csv.gz
 			// /tmp/rudder-identity-mappings-tmp/DestinationName_DestinationId/
@@ -302,7 +302,7 @@ var _ = Describe("Misc", func() {
 
 		It("Rudder Redshift Manifests", func() {
 			localTmpDirName := fmt.Sprintf(`/%s/`, RudderRedshiftManifests)
-			uuid := uuid.Must(uuid.NewV4())
+			uuid := uuid.New()
 
 			// /tmp/rudder-redshift-manifests/688d39e8-90a7-4419-986d-0c14af3760e9
 			// /tmp/rudder-redshift-manifests/
@@ -411,7 +411,7 @@ var _ = Describe("Misc", func() {
 			sourceFile := fmt.Sprintf(`%v%v.%v.%v.csv.gz`,
 				tmpDirPath+localTmpDirName,
 				"DestinationID",
-				uuid.Must(uuid.NewV4()),
+				uuid.New(),
 				time.Now().Unix(),
 			)
 
@@ -440,7 +440,7 @@ var _ = Describe("Misc", func() {
 				"Folder8",
 				"SourceID",
 				"DestinationID",
-				uuid.Must(uuid.NewV4()),
+				uuid.New(),
 			)
 
 			targetDir := fmt.Sprintf(`%v`,
@@ -456,7 +456,7 @@ var _ = Describe("Misc", func() {
 				tmpDirPath+localTmpDirName,
 				"SourceID",
 				"DestinationID",
-				uuid.Must(uuid.NewV4()),
+				uuid.New(),
 			)
 
 			targetDir = fmt.Sprintf(`%v`,

@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/utils/httputil"
 	"github.com/stretchr/testify/require"
 )
 
@@ -545,7 +546,7 @@ func send(t testing.TB, payload *strings.Reader, eventType, writeKey, method str
 		t.Errorf("Error occurred while making http request for sending event with error: %s", err.Error())
 		return
 	}
-	defer func() { _ = res.Body.Close() }()
+	defer func() { httputil.CloseResponse(res) }()
 
 	_, err = io.ReadAll(res.Body)
 	if err != nil {
@@ -604,7 +605,7 @@ func blockByWhJobStatus(t testing.TB, path, writeKey string) (string, error) {
 		t.Errorf("Error occurred while making http request for sending event with error: %s", err.Error())
 		return "error", err
 	}
-	defer func() { _ = res.Body.Close() }()
+	defer func() { httputil.CloseResponse(res) }()
 	response, err := io.ReadAll(res.Body)
 	if err != nil {
 		t.Errorf("Error occurred while reading http response for sending event with error: %s", err.Error())
@@ -655,7 +656,7 @@ func blockByPendingEvents(t testing.TB, payload *strings.Reader, writeKey string
 		t.Errorf("Error occurred while making http request for sending event with error: %s", err.Error())
 		return 1
 	}
-	defer func() { _ = res.Body.Close() }()
+	defer func() { httputil.CloseResponse(res) }()
 	response, err := io.ReadAll(res.Body)
 	if err != nil {
 		t.Errorf("Error occurred while reading http response for sending event with error: %s", err.Error())

@@ -34,14 +34,14 @@ import (
 	"github.com/araddon/dateparse"
 	"github.com/bugsnag/bugsnag-go/v2"
 	"github.com/cenkalti/backoff"
-	"github.com/gofrs/uuid"
-	gluuid "github.com/google/uuid"
+	"github.com/google/uuid"
 	"github.com/hashicorp/go-retryablehttp"
 	"github.com/mkmik/multierror"
 	"github.com/tidwall/sjson"
 
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/services/metric"
+	"github.com/rudderlabs/rudder-server/utils/httputil"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 
 	"github.com/thoas/go-funk"
@@ -61,6 +61,7 @@ const (
 	// RFC3339Milli with milli sec precision
 	RFC3339Milli            = "2006-01-02T15:04:05.000Z07:00"
 	POSTGRESTIMEFORMATPARSE = "2006-01-02T15:04:05Z"
+	NOTIMEZONEFORMATPARSE   = "2006-01-02T15:04:05"
 )
 
 const (
@@ -111,7 +112,7 @@ type RFP struct {
 var pkgLogger logger.Logger
 
 func init() {
-	gluuid.EnableRandPool()
+	uuid.EnableRandPool()
 }
 
 func Init() {
@@ -576,7 +577,7 @@ func MakeHTTPRequestWithTimeout(url string, payload io.Reader, timeout time.Dura
 	var respBody []byte
 	if resp != nil && resp.Body != nil {
 		respBody, _ = io.ReadAll(resp.Body)
-		defer resp.Body.Close()
+		defer func() { httputil.CloseResponse(resp) }()
 	}
 
 	return respBody, resp.StatusCode, nil
@@ -874,8 +875,7 @@ func IsValidUUID(uuid string) bool {
 }
 
 func FastUUID() uuid.UUID {
-	b, _ := gluuid.New().MarshalBinary()
-	return uuid.FromBytesOrNil(b)
+	return uuid.New()
 }
 
 func HasAWSRoleARNInConfig(configMap map[string]interface{}) bool {
@@ -1003,7 +1003,7 @@ func MakeRetryablePostRequest(url, endpoint string, data interface{}) (response 
 	}
 
 	body, err := io.ReadAll(resp.Body)
-	defer resp.Body.Close()
+	defer func() { httputil.CloseResponse(resp) }()
 
 	pkgLogger.Debugf("Post request: Successful %s", string(body))
 	return body, resp.StatusCode, nil
@@ -1011,11 +1011,25 @@ func MakeRetryablePostRequest(url, endpoint string, data interface{}) (response 
 
 // GetMD5UUID hashes the given string into md5 and returns it as auuid
 func GetMD5UUID(str string) (uuid.UUID, error) {
+	// To maintain backward compatibility, we are using md5 hash of the string
+	// We are mimicking github.com/gofrs/uuid behavior:
+	//
+	// md5Sum := md5.Sum([]byte(str))
+	// u, err := uuid.FromBytes(md5Sum[:])
+
+	// u.SetVersion(uuid.V4)
+	// u.SetVariant(uuid.VariantRFC4122)
+
+	// google/uuid doesn't allow us to modify the version and variant
+	// so we are doing it manually, using gofrs/uuid library implementation.
 	md5Sum := md5.Sum([]byte(str))
-	u, err := uuid.FromBytes(md5Sum[:])
-	u.SetVersion(uuid.V4)
-	u.SetVariant(uuid.VariantRFC4122)
-	return u, err
+	// SetVariant: VariantRFC4122
+	md5Sum[8] = (md5Sum[8]&(0xff>>2) | (0x02 << 6))
+	// SetVersion: Version 4
+	version := byte(4)
+	md5Sum[6] = (md5Sum[6] & 0x0f) | (version << 4)
+
+	return uuid.FromBytes(md5Sum[:])
 }
 
 // GetParsedTimestamp returns the parsed timestamp
@@ -1125,7 +1139,7 @@ func ConcatErrors(givenErrors []error) error {
 func isWarehouseMasterEnabled() bool {
 	warehouseMode := config.GetString("Warehouse.mode", "embedded")
 	return warehouseMode == config.EmbeddedMode ||
-		warehouseMode == config.PooledWHSlaveMode
+		warehouseMode == config.EmbeddedMasterMode
 }
 
 func GetWarehouseURL() (url string) {
@@ -1155,7 +1169,7 @@ func GetDatabricksVersion() (version string) {
 		version = "No response from warehouse."
 		return
 	}
-	defer resp.Body.Close()
+	defer func() { httputil.CloseResponse(resp) }()
 	if resp.StatusCode == http.StatusOK {
 		bodyBytes, err := io.ReadAll(resp.Body)
 		if err != nil {

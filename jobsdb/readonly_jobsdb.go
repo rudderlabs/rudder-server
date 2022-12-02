@@ -88,22 +88,27 @@ type FailedStatusStats struct {
 /*
 Setup is used to initialize the ReadonlyHandleT structure.
 */
-func (jd *ReadonlyHandleT) Setup(tablePrefix string) {
+func (jd *ReadonlyHandleT) Setup(tablePrefix string) error {
 	jd.logger = pkgLogger.Child("readonly-" + tablePrefix)
 	var err error
 	psqlInfo := misc.GetConnectionString()
 	jd.tablePrefix = tablePrefix
 
 	jd.DbHandle, err = sql.Open("postgres", psqlInfo)
-	jd.assertError(err)
+	if err != nil {
+		return fmt.Errorf("opening connection to db: %v", err)
+	}
+
+	jd.DbHandle.SetMaxOpenConns(config.GetInt("ReadonlyJobsDB."+jd.tablePrefix+"."+"maxOpenConnections", config.GetInt("ReadonlyJobsDB.maxOpenConnections", 5)))
 
 	ctx, cancel := context.WithTimeout(context.TODO(), config.GetDuration("JobsDB.dbPingTimeout", 10, time.Second))
 	defer cancel()
 
-	err = jd.DbHandle.PingContext(ctx)
-	jd.assertError(err)
-
+	if err := jd.DbHandle.PingContext(ctx); err != nil {
+		return fmt.Errorf("pinging db: %v", err)
+	}
 	jd.logger.Infof("Readonly user connected to %s DB", tablePrefix)
+	return nil
 }
 
 /*
@@ -558,7 +563,7 @@ func (jd *ReadonlyHandleT) GetLatestFailedJobs(arg, prefix string) (string, erro
 					job_latest_state.exec_time,
 					job_latest_state.error_code, job_latest_state.error_response
 					FROM %[1]s
-					JOIN "v_last_%[2]s" job_latest_state ON %[1]s.job_id=job_latest_state.job_id 
+					JOIN "v_last_%[2]s" job_latest_state ON %[1]s.job_id=job_latest_state.job_id
 					WHERE job_latest_state.job_state = 'failed'
   					`, dsList.JobTableName, dsList.JobStatusTableName)
 	if argList[1] != "" {
