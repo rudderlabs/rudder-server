@@ -2,10 +2,10 @@ package loadfiles
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"strings"
 
+	jsoniter "github.com/json-iterator/go"
 	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/services/pgnotifier"
@@ -18,6 +18,8 @@ import (
 	"golang.org/x/exp/slices"
 	"golang.org/x/sync/errgroup"
 )
+
+var json = jsoniter.ConfigCompatibleWithStandardLibrary
 
 const (
 	defaultPublishBatchSize = 100
@@ -56,7 +58,7 @@ type LoadFileGenerator struct {
 	publishBatchSize int
 }
 
-type jobResponse struct {
+type WorkerJobResponse struct {
 	TableName             string
 	Location              string
 	TotalRows             int
@@ -66,7 +68,7 @@ type jobResponse struct {
 	UseRudderStorage      bool
 }
 
-type Payload struct {
+type WorkerJobRequest struct {
 	BatchID                      string
 	UploadID                     int64
 	StagingFileID                int64
@@ -87,7 +89,7 @@ type Payload struct {
 	StagingUseRudderStorage      bool
 	UniqueLoadGenID              string
 	RudderStoragePrefix          string
-	Output                       []jobResponse
+	Output                       []WorkerJobResponse
 	LoadFilePrefix               string // prefix for the load file name
 	LoadFileType                 string
 }
@@ -142,7 +144,10 @@ func (lf *LoadFileGenerator) CreateLoadFiles(ctx context.Context, job model.Uplo
 
 	defer func() {
 		if err != nil {
-			err = lf.StageRepo.SetStatuses(ctx, stagingFileIDs, warehouseutils.StagingFileFailedState)
+			errStatus := lf.StageRepo.SetStatuses(ctx, stagingFileIDs, warehouseutils.StagingFileFailedState)
+			if errStatus != nil {
+				err = fmt.Errorf("%w, and also: %v", err, errStatus)
+			}
 		}
 	}()
 
@@ -158,7 +163,7 @@ func (lf *LoadFileGenerator) CreateLoadFiles(ctx context.Context, job model.Uplo
 		// td : add prefix to payload for s3 dest
 		var messages []pgnotifier.JobPayload
 		for _, stagingFile := range toProcessStagingFiles[i:j] {
-			payload := Payload{
+			payload := WorkerJobRequest{
 				UploadID:                     job.Upload.ID,
 				StagingFileID:                stagingFile.ID,
 				StagingFileLocation:          stagingFile.Location,
@@ -231,7 +236,7 @@ func (lf *LoadFileGenerator) CreateLoadFiles(ctx context.Context, job model.Uplo
 					}
 					continue
 				}
-				var output []jobResponse
+				var output []WorkerJobResponse
 				err = json.Unmarshal(resp.Output, &output)
 				if err != nil {
 					return fmt.Errorf("unmarshalling response from pgnotifier: %w", err)
