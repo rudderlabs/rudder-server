@@ -8,11 +8,18 @@ import (
 )
 
 type mockLoadFilesRepo struct {
+	id    int64
 	store []model.LoadFile
 }
 
 func (m *mockLoadFilesRepo) Insert(_ context.Context, loadFiles []model.LoadFile) error {
-	m.store = append(m.store, loadFiles...)
+	for _, lf := range loadFiles {
+		lf.ID = m.id + 1
+		m.id += 1
+
+		m.store = append(m.store, lf)
+	}
+
 	return nil
 }
 
@@ -30,9 +37,8 @@ func (m *mockLoadFilesRepo) DeleteByStagingFiles(ctx context.Context, stagingFil
 
 func (m *mockLoadFilesRepo) GetByStagingFiles(ctx context.Context, stagingFileIDs []int64) ([]model.LoadFile, error) {
 	var loadFiles []model.LoadFile
-	for i, loadFile := range m.store {
+	for _, loadFile := range m.store {
 		if slices.Contains(stagingFileIDs, loadFile.StagingFileID) {
-			loadFile.ID = int64(i + 1)
 			loadFiles = append(loadFiles, loadFile)
 		}
 	}

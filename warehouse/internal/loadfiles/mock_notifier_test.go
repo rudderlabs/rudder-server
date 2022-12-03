@@ -39,10 +39,6 @@ func (n *mockNotifier) Publish(payload pgnotifier.MessagePayload, schema *wareho
 				DestinationRevisionID: destinationRevisionID,
 				UseRudderStorage:      req.UseRudderStorage,
 			})
-
-			if req.StagingDestinationConfig != nil {
-
-			}
 		}
 		out, err := json.Marshal(resps)
 
@@ -50,10 +46,18 @@ func (n *mockNotifier) Publish(payload pgnotifier.MessagePayload, schema *wareho
 		if err != nil {
 			errString = err.Error()
 		}
+
+		status := "ok"
+		if req.StagingFileLocation == "" {
+			errString = "staging file location is empty"
+			status = "aborted"
+		}
+
 		responses = append(responses, pgnotifier.ResponseT{
 			JobID:  req.StagingFileID,
 			Output: json.RawMessage(out),
 			Error:  errString,
+			Status: status,
 		})
 	}
 

@@ -27,7 +27,26 @@ func (m *mockControlPlaneClient) DestinationHistory(ctx context.Context, revisio
 	return dest, nil
 }
 
+func getStagingFiles() []*model.StagingFile {
+	var stagingFiles []*model.StagingFile
+	for i := 0; i < 10; i++ {
+		stagingFiles = append(stagingFiles, &model.StagingFile{
+			ID:                    int64(i),
+			WorkspaceID:           "workspace_id",
+			Location:              fmt.Sprintf("s3://bucket/path/to/file/%d", i),
+			SourceID:              "source_id",
+			DestinationID:         "destination_id",
+			Status:                "",
+			UseRudderStorage:      true,
+			DestinationRevisionID: "revision_id",
+		})
+	}
+
+	return stagingFiles
+}
+
 func Test_CreateLoadFiles(t *testing.T) {
+	t.Parallel()
 	notifer := &mockNotifier{
 		t:      t,
 		tables: []string{"track", "indentify"},
@@ -46,23 +65,8 @@ func Test_CreateLoadFiles(t *testing.T) {
 	}
 
 	ctx := context.Background()
-	now := time.Now()
 
-	var stagingFiles []*model.StagingFile
-	for i := 0; i < 10; i++ {
-		stagingFiles = append(stagingFiles, &model.StagingFile{
-			ID:                    int64(i),
-			WorkspaceID:           "workspace_id",
-			Location:              fmt.Sprintf("s3://bucket/path/to/file/%d", i),
-			SourceID:              "source_id",
-			DestinationID:         "destination_id",
-			Status:                "",
-			FirstEventAt:          now.Add(-time.Hour),
-			LastEventAt:           now.Add(-2 * time.Hour),
-			UseRudderStorage:      true,
-			DestinationRevisionID: "revision_id",
-		})
-	}
+	var stagingFiles = getStagingFiles()
 
 	job := model.UploadJob{
 		Warehouse: warehouseutils.Warehouse{
@@ -73,7 +77,7 @@ func Test_CreateLoadFiles(t *testing.T) {
 				RevisionID: "revision_id",
 			},
 			Namespace:  "",
-			Type:       "",
+			Type:       warehouseutils.SNOWFLAKE,
 			Identifier: "",
 		},
 		Upload: model.Upload{
@@ -85,7 +89,7 @@ func Test_CreateLoadFiles(t *testing.T) {
 		StagingFiles: stagingFiles,
 	}
 
-	startID, endID, err := lf.CreateLoadFiles(ctx, job, false)
+	startID, endID, err := lf.CreateLoadFiles(ctx, job)
 	require.NoError(t, err)
 	require.Equal(t, int64(1), startID)
 	require.Equal(t, int64(20), endID)
@@ -112,9 +116,144 @@ func Test_CreateLoadFiles(t *testing.T) {
 		require.ElementsMatch(t, notifer.tables, tableNames)
 		require.Equal(t, warehouseutils.StagingFileSucceededState, stageRepo.store[stagingFile.ID].Status)
 	}
+
+	t.Run("skip already processed", func(t *testing.T) {
+		t.Log("all staging file are successfully processed, except one")
+		for _, stagingFile := range stagingFiles {
+			stagingFile.Status = warehouseutils.StagingFileSucceededState
+		}
+		stagingFiles[0].Status = warehouseutils.StagingFileFailedState
+
+		startID, endID, err := lf.CreateLoadFiles(ctx, job)
+		require.NoError(t, err)
+		require.Equal(t, int64(21), startID)
+		require.Equal(t, int64(22), endID)
+
+		require.Len(t, loadRepo.store, len(stagingFiles)*len(notifer.tables))
+	})
+
+	t.Run("force recreate", func(t *testing.T) {
+		for _, stagingFile := range stagingFiles {
+			stagingFile.Status = warehouseutils.StagingFileSucceededState
+		}
+
+		startID, endID, err := lf.ForceCreateLoadFiles(ctx, job)
+		require.NoError(t, err)
+		require.Equal(t, int64(23), startID)
+		require.Equal(t, int64(42), endID)
+
+		require.Len(t, loadRepo.store, len(stagingFiles)*len(notifer.tables))
+		require.Len(t, stageRepo.store, len(stagingFiles))
+	})
+}
+
+func Test_CreatLoadFiles_Failure(t *testing.T) {
+	t.Parallel()
+
+	tables := []string{"track", "indentify"}
+
+	warehouse := warehouseutils.Warehouse{
+		WorkspaceID: "",
+		Source:      backendconfig.SourceT{},
+		Destination: backendconfig.DestinationT{
+			ID:         "destination_id",
+			RevisionID: "revision_id",
+		},
+		Namespace:  "",
+		Type:       "",
+		Identifier: "",
+	}
+
+	upload := model.Upload{
+		DestinationID:    "destination_id",
+		DestinationType:  warehouseutils.SNOWFLAKE,
+		SourceID:         "source_id",
+		UseRudderStorage: true,
+	}
+
+	ctx := context.Background()
+
+	t.Run("worker partial failure", func(t *testing.T) {
+		notifer := &mockNotifier{
+			t:      t,
+			tables: tables,
+		}
+		stageRepo := &mockStageFilesRepo{}
+		loadRepo := &mockLoadFilesRepo{}
+		controlPlane := &mockControlPlaneClient{}
+
+		lf := loadfiles.LoadFileGenerator{
+			Logger:    logger.NOP,
+			Notifier:  notifer,
+			StageRepo: stageRepo,
+			LoadRepo:  loadRepo,
+
+			ControlPlaneClient: controlPlane,
+		}
+
+		stagingFiles := getStagingFiles()
+
+		t.Log("empty location should cause worker failure")
+		stagingFiles[0].Location = ""
+
+		startID, endID, err := lf.CreateLoadFiles(ctx, model.UploadJob{
+			Warehouse:    warehouse,
+			Upload:       upload,
+			StagingFiles: stagingFiles,
+		})
+		require.NoError(t, err)
+		require.Equal(t, int64(1), startID)
+
+		require.Len(t,
+			loadRepo.store,
+			len(tables)*(len(stagingFiles)-1),
+		)
+
+		require.Equal(t, loadRepo.store[0].ID, startID)
+		require.Equal(t, loadRepo.store[len(loadRepo.store)-1].ID, endID)
+
+		require.Equal(t, warehouseutils.StagingFileFailedState, stageRepo.store[stagingFiles[0].ID].Status)
+		require.EqualError(t, stageRepo.store[stagingFiles[0].ID].Error, "staging file location is empty")
+	})
+	t.Run("worker failure for all", func(t *testing.T) {
+		notifer := &mockNotifier{
+			t:      t,
+			tables: tables,
+		}
+		stageRepo := &mockStageFilesRepo{}
+		loadRepo := &mockLoadFilesRepo{}
+		controlPlane := &mockControlPlaneClient{}
+
+		lf := loadfiles.LoadFileGenerator{
+			Logger:    logger.NOP,
+			Notifier:  notifer,
+			StageRepo: stageRepo,
+			LoadRepo:  loadRepo,
+
+			ControlPlaneClient: controlPlane,
+		}
+
+		stagingFiles := getStagingFiles()
+
+		t.Log("empty location should cause worker failure")
+		for i := range stagingFiles {
+			stagingFiles[i].Location = ""
+		}
+
+		startID, endID, err := lf.CreateLoadFiles(ctx, model.UploadJob{
+			Warehouse:    warehouse,
+			Upload:       upload,
+			StagingFiles: stagingFiles,
+		})
+		require.EqualError(t, err, "no load files generated. Sample error: staging file location is empty")
+		require.Zero(t, startID)
+		require.Zero(t, endID)
+	})
 }
 
 func Test_CreateLoadFiles_DestinationHistory(t *testing.T) {
+	t.Parallel()
+
 	notifer := &mockNotifier{
 		t:      t,
 		tables: []string{"track", "indentify"},
@@ -173,7 +312,7 @@ func Test_CreateLoadFiles_DestinationHistory(t *testing.T) {
 		},
 		Upload: model.Upload{
 			DestinationID:    "destination_id",
-			DestinationType:  "RS",
+			DestinationType:  warehouseutils.SNOWFLAKE,
 			SourceID:         "source_id",
 			UseRudderStorage: true,
 		},
@@ -182,7 +321,7 @@ func Test_CreateLoadFiles_DestinationHistory(t *testing.T) {
 		},
 	}
 
-	startID, endID, err := lf.CreateLoadFiles(ctx, job, false)
+	startID, endID, err := lf.CreateLoadFiles(ctx, job)
 	require.NoError(t, err)
 	require.Equal(t, int64(1), startID)
 	require.Equal(t, int64(2), endID)
@@ -214,7 +353,7 @@ func Test_CreateLoadFiles_DestinationHistory(t *testing.T) {
 
 		stagingFile.DestinationRevisionID = "invalid_revision_id"
 
-		startID, endID, err := lf.CreateLoadFiles(ctx, job, false)
+		startID, endID, err := lf.CreateLoadFiles(ctx, job)
 		require.EqualError(t, err, "populating destination revision ID: revision \"invalid_revision_id\" not found")
 		require.Zero(t, startID)
 		require.Zero(t, endID)

@@ -98,36 +98,45 @@ func WithConfig(ld *LoadFileGenerator, config *config.Config) {
 	ld.publishBatchSize = config.GetInt("Warehouse.loadFileGenerator.publishBatchSize", 100)
 }
 
-func (lf *LoadFileGenerator) CreateLoadFiles(ctx context.Context, job model.UploadJob, generateAll bool) (startLoadFileID, endLoadFileID int64, err error) {
+// CreateLoadFiles for the staging files that have not been successfully processed.
+func (lf *LoadFileGenerator) CreateLoadFiles(ctx context.Context, job model.UploadJob) (startLoadFileID, endLoadFileID int64, err error) {
+	stagingFiles := job.StagingFiles
+
+	var toProcessStagingFiles []*model.StagingFile
+	// skip processing staging files marked succeeded
+	for _, stagingFile := range stagingFiles {
+		if stagingFile.Status != warehouseutils.StagingFileSucceededState {
+			toProcessStagingFiles = append(toProcessStagingFiles, stagingFile)
+		}
+	}
+
+	return lf.createFromStaging(ctx, job, toProcessStagingFiles)
+}
+
+// ForceCreateLoadFiles creates load files for the staging files, regardless if they are already successfully processed.
+func (lf *LoadFileGenerator) ForceCreateLoadFiles(ctx context.Context, job model.UploadJob) (startLoadFileID, endLoadFileID int64, err error) {
+	return lf.createFromStaging(ctx, job, job.StagingFiles)
+}
+
+func (lf *LoadFileGenerator) createFromStaging(ctx context.Context, job model.UploadJob, toProcessStagingFiles []*model.StagingFile) (startLoadFileID, endLoadFileID int64, err error) {
 	destID := job.Upload.DestinationID
 	destType := job.Upload.DestinationType
-	stagingFiles := job.StagingFiles
 
 	publishBatchSize := lf.publishBatchSize
 	if publishBatchSize == 0 {
 		publishBatchSize = defaultPublishBatchSize
 	}
 
-	lf.Logger.Infof("[WH]: Starting batch processing %v stage files for %s:%s", publishBatchSize, destType, destID)
 	uniqueLoadGenID := misc.FastUUID().String()
+
+	lf.Logger.Infof("[WH]: Starting batch processing %v stage files for %s:%s", publishBatchSize, destType, destID)
+
 	job.Upload.LoadFileGenStartTime = timeutil.Now()
 
 	// Getting distinct destination revision ID from staging files metadata
 	destinationRevisionIDMap, err := lf.destinationRevisionIDMap(ctx, job)
 	if err != nil {
 		return 0, 0, fmt.Errorf("populating destination revision ID: %w", err)
-	}
-
-	var toProcessStagingFiles []*model.StagingFile
-	if generateAll {
-		toProcessStagingFiles = stagingFiles
-	} else {
-		// skip processing staging files marked succeeded
-		for _, stagingFile := range stagingFiles {
-			if stagingFile.Status != warehouseutils.StagingFileSucceededState {
-				toProcessStagingFiles = append(toProcessStagingFiles, stagingFile)
-			}
-		}
 	}
 
 	stagingFileIDs := repo.StagingFileIDs(toProcessStagingFiles)
@@ -143,6 +152,7 @@ func (lf *LoadFileGenerator) CreateLoadFiles(ctx context.Context, job model.Uplo
 	}
 
 	defer func() {
+		// ensure that if there is an error, we set the staging file status to failed
 		if err != nil {
 			errStatus := lf.StageRepo.SetStatuses(ctx, stagingFileIDs, warehouseutils.StagingFileFailedState)
 			if errStatus != nil {
