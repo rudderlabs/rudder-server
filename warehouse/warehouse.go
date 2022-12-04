@@ -309,6 +309,7 @@ func (wh *HandleT) backendConfigSubscriber(ctx context.Context) {
 					continue
 				}
 				for idx, destination := range source.Destinations {
+
 					if destination.DestinationDefinition.Name != wh.destType {
 						continue
 					}
@@ -322,8 +323,13 @@ func (wh *HandleT) backendConfigSubscriber(ctx context.Context) {
 							pkgLogger.Warnf("fetching ssh keypair for destination: %s err: %w", destination.ID, err)
 						}
 
-						source.Destinations[idx].Tunnel.Config["private_key"] = keypair.PrivateKey
-						source.Destinations[idx].Tunnel.Config["public_key"] = keypair.PublicKey
+						if keypair == nil {
+							pkgLogger.Warnf("unable to locate keypair for destination: %s with valid tunnel info", destination.ID)
+						} else {
+							source.Destinations[idx].Tunnel.Config["private_key"] = keypair.PrivateKey
+							source.Destinations[idx].Tunnel.Config["public_key"] = keypair.PublicKey
+						}
+
 					}
 
 					namespace := wh.getNamespace(destination.Config, source, destination, wh.destType)
