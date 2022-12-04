@@ -42,6 +42,7 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
 	"github.com/rudderlabs/rudder-server/utils/types"
 	"github.com/rudderlabs/rudder-server/warehouse/archive"
+	cpclient "github.com/rudderlabs/rudder-server/warehouse/client/controlplane"
 	"github.com/rudderlabs/rudder-server/warehouse/deltalake"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/api"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
@@ -146,6 +147,8 @@ type HandleT struct {
 	workspaceBySourceIDs              map[string]string
 	workspaceBySourceIDsLock          sync.RWMutex
 	tenantManager                     multitenant.Manager
+	internalAuth                      cpclient.BasicAuth
+	configBackendURL                  string
 
 	backgroundCancel context.CancelFunc
 	backgroundGroup  errgroup.Group
@@ -289,6 +292,10 @@ func (wh *HandleT) backendConfigSubscriber(ctx context.Context) {
 		wh.workspaceBySourceIDsLock.Lock()
 		wh.workspaceBySourceIDs = map[string]string{}
 
+		controlPlaneAPI := cpclient.NewCachedControlPlaneAPI(
+			wh.configBackendURL,
+			wh.internalAuth)
+
 		pkgLogger.Infof(`Received updated workspace config`)
 		for workspaceID, wConfig := range config {
 			for _, source := range wConfig.Sources {
@@ -301,10 +308,24 @@ func (wh *HandleT) backendConfigSubscriber(ctx context.Context) {
 				if len(source.Destinations) == 0 {
 					continue
 				}
-				for _, destination := range source.Destinations {
+				for idx, destination := range source.Destinations {
 					if destination.DestinationDefinition.Name != wh.destType {
 						continue
 					}
+
+					// When tunnel object is set from upstream, we need to fetch
+					// the keypair associated with the destinationId.
+					if destination.Tunnel != nil {
+
+						keypair, err := controlPlaneAPI.GetDestinationSSHKeys(ctx, destination.ID)
+						if err != nil {
+							pkgLogger.Warnf("fetching ssh keypair for destination: %s err: %w", destination.ID, err)
+						}
+
+						source.Destinations[idx].Tunnel.Config["private_key"] = keypair.PrivateKey
+						source.Destinations[idx].Tunnel.Config["public_key"] = keypair.PublicKey
+					}
+
 					namespace := wh.getNamespace(destination.Config, source, destination, wh.destType)
 					warehouse := warehouseutils.Warehouse{
 						WorkspaceID: workspaceID,
@@ -350,6 +371,7 @@ func (wh *HandleT) backendConfigSubscriber(ctx context.Context) {
 				}
 			}
 		}
+
 		pkgLogger.Infof("Releasing config subscriber lock: %s", wh.destType)
 		wh.workspaceBySourceIDsLock.Unlock()
 		sourceIDsByWorkspaceLock.Unlock()
@@ -629,12 +651,7 @@ func (wh *HandleT) getLatestUploadStatus(warehouse *warehouseutils.Warehouse) (i
 
 func (wh *HandleT) deleteWaitingUploadJob(jobID int64) {
 	sqlStatement := fmt.Sprintf(`
-		DELETE FROM
-		  %s
-		WHERE
-		  id = %d
-		  AND status = '%s';
-`,
+		DELETE FROM %s WHERE id = %d AND status = '%s'`,
 		warehouseutils.WarehouseUploadsTable,
 		jobID,
 		model.Waiting,
@@ -1230,6 +1247,12 @@ func (wh *HandleT) Setup(whType string) {
 	config.RegisterIntConfigVariable(8, &wh.noOfWorkers, true, 1, fmt.Sprintf(`Warehouse.%v.noOfWorkers`, whName), "Warehouse.noOfWorkers")
 	config.RegisterIntConfigVariable(1, &wh.maxConcurrentUploadJobs, false, 1, fmt.Sprintf(`Warehouse.%v.maxConcurrentUploadJobs`, whName))
 	config.RegisterBoolConfigVariable(false, &wh.allowMultipleSourcesForJobsPickup, false, fmt.Sprintf(`Warehouse.%v.allowMultipleSourcesForJobsPickup`, whName))
+
+	wh.internalAuth = cpclient.BasicAuth{
+		Username: config.GetString("INTERNAL_AUTH_USERNAME", "username"),
+		Password: config.GetString("INTERNAL_AUTH_PASSWORD", "password"),
+	}
+	wh.configBackendURL = configBackendURL
 
 	ctx, cancel := context.WithCancel(context.Background())
 	g, ctx := errgroup.WithContext(ctx)
@@ -2059,6 +2082,7 @@ func Start(ctx context.Context, app app.App) error {
 		g.Go(misc.WithBugsnagForWarehouse(func() error {
 			return notifier.ClearJobs(ctx)
 		}))
+
 		g.Go(misc.WithBugsnagForWarehouse(func() error {
 			monitorDestRouters(ctx)
 			return nil
@@ -2084,6 +2108,11 @@ func Start(ctx context.Context, app app.App) error {
 		asyncWh = jobs.InitWarehouseJobsAPI(ctx, dbHandle, &notifier)
 		jobs.WithConfig(asyncWh, config.Default)
 
+		// Add code here to associate ssh keypair with destination data.
+		g.Go(misc.WithBugsnagForWarehouse(func() error {
+			return nil
+		}))
+
 		g.Go(misc.WithBugsnagForWarehouse(func() error {
 			return asyncWh.InitAsyncJobRunner()
 		}))
@@ -2094,4 +2123,18 @@ func Start(ctx context.Context, app app.App) error {
 	})
 
 	return g.Wait()
+}
+
+func fetchSecrets(ctx context.Context, manager *multitenant.Manager) {
+	confCh := manager.WatchConfig(ctx)
+
+	for data := range confCh {
+		for workspaceId, workspaceConfig := range data {
+		}
+	}
+
+}
+
+type SecretManager interface {
+	GetDestinationKeyPair(ctx context.Context, Id string) (*PublicPrivateKeyPair, error)
 }
