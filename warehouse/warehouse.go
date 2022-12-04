@@ -2356,17 +2356,3 @@ func Start(ctx context.Context, app app.App) error {
 
 	return g.Wait()
 }
-
-func fetchSecrets(ctx context.Context, manager *multitenant.Manager) {
-	confCh := manager.WatchConfig(ctx)
-
-	for data := range confCh {
-		for workspaceId, workspaceConfig := range data {
-		}
-	}
-
-}
-
-type SecretManager interface {
-	GetDestinationKeyPair(ctx context.Context, Id string) (*PublicPrivateKeyPair, error)
-}
