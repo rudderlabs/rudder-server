@@ -5,8 +5,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/gofrs/uuid"
 	"github.com/golang/mock/gomock"
+	"github.com/google/uuid"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/rudderlabs/rudder-server/config"
@@ -41,7 +41,7 @@ func Benchmark_GetStorageDateFormat(b *testing.B) {
 }
 
 func randomString() string {
-	return strings.ReplaceAll(uuid.Must(uuid.NewV4()).String(), "-", "")
+	return strings.ReplaceAll(uuid.New().String(), "-", "")
 }
 
 // Benchmark_JSONUnmarshal tries to reproduce a panic encountered with jsoniter
@@ -54,13 +54,13 @@ func Benchmark_JSONUnmarshal(b *testing.B) {
 			params := JobParametersT{
 				EventName:  "test",
 				EventType:  "track",
-				MessageID:  uuid.Must(uuid.NewV4()).String(),
+				MessageID:  uuid.New().String(),
 				ReceivedAt: "2021-01-01T00:00:00Z",
 			}
 
 			p, _ := json.Marshal(params)
 			jobs = append(jobs, &jobsdb.JobT{
-				UUID:       uuid.Must(uuid.NewV4()),
+				UUID:       uuid.New(),
 				JobID:      int64(i),
 				Parameters: p,
 			})
@@ -71,7 +71,7 @@ func Benchmark_JSONUnmarshal(b *testing.B) {
 			params := JobParametersT{
 				EventName: "test",
 				EventType: "track",
-				MessageID: uuid.Must(uuid.NewV4()).String(),
+				MessageID: uuid.New().String(),
 			}
 
 			p, _ := json.Marshal(params)
