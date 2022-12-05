@@ -2726,7 +2726,6 @@ Other functions are impacted by movement of data across DS in background
 so take both the list and data lock
 */
 func (jd *HandleT) addNewDSLoop(ctx context.Context) {
-	advisoryLock := jd.getAdvisoryLockForOperation("add_ds")
 	for {
 		select {
 		case <-ctx.Done():
@@ -2741,13 +2740,7 @@ func (jd *HandleT) addNewDSLoop(ctx context.Context) {
 		err := jd.WithTx(func(tx *Tx) error {
 			return jd.withDistributedSharedLock(context.TODO(), tx, "schema_migrate", func() error { // cannot run while schema migration is running
 				return jd.withDistributedLock(context.TODO(), tx, "add_ds", func() error { // only one add_ds can run at a time
-					// acquire a advisory transaction level blocking lock, which is released once the transaction ends.
-					sqlStatement := fmt.Sprintf(`SELECT pg_advisory_xact_lock(%d);`, advisoryLock)
-					_, err := tx.ExecContext(context.TODO(), sqlStatement)
-					if err != nil {
-						return fmt.Errorf("error while acquiring advisory lock %d: %w", advisoryLock, err)
-					}
-
+					var err error
 					// We acquire the list lock only after we have acquired the advisory lock.
 					// We will release the list lock after the transaction ends, that's why we need to use an async lock
 					dsListLock, releaseDsListLock, err = jd.dsListLock.AsyncLockWithCtx(ctx)
