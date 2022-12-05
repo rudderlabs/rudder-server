@@ -33,7 +33,7 @@ import (
 	"github.com/rudderlabs/rudder-server/services/transientsource"
 	"github.com/rudderlabs/rudder-server/warehouse"
 
-	"github.com/gofrs/uuid"
+	"github.com/google/uuid"
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
 
@@ -625,7 +625,7 @@ func (brt *HandleT) copyJobsToStorage(provider string, batchJobs *BatchJobsT, is
 		localTmpDirName = fmt.Sprintf(`/%s/`, misc.RudderRawDataDestinationLogs)
 	}
 
-	uuid := uuid.Must(uuid.NewV4())
+	uuid := uuid.New()
 	brt.logger.Debugf("BRT: Starting logging to %s", provider)
 
 	tmpDirPath, err := misc.CreateTMPDIR()
@@ -959,7 +959,7 @@ func (brt *HandleT) parseUploadIntervalFromConfig(destinationConfig map[string]i
 
 func (brt *HandleT) asyncStructSetup(sourceID, destinationID string) {
 	localTmpDirName := fmt.Sprintf(`/%s/`, misc.RudderAsyncDestinationLogs)
-	uuid := uuid.Must(uuid.NewV4())
+	uuid := uuid.New()
 
 	tmpDirPath, err := misc.CreateTMPDIR()
 	if err != nil {
@@ -2092,7 +2092,7 @@ func (brt *HandleT) dedupRawDataDestJobsOnCrash() {
 		if err != nil {
 			panic(err)
 		}
-		jsonPath := fmt.Sprintf("%v%v.json", tmpDirPath+localTmpDirName, fmt.Sprintf("%v.%v", time.Now().Unix(), uuid.Must(uuid.NewV4()).String()))
+		jsonPath := fmt.Sprintf("%v%v.json", tmpDirPath+localTmpDirName, fmt.Sprintf("%v.%v", time.Now().Unix(), uuid.New().String()))
 
 		err = os.MkdirAll(filepath.Dir(jsonPath), os.ModePerm)
 		if err != nil {
