@@ -18,6 +18,7 @@ import (
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/model"
 	"github.com/rudderlabs/rudder-server/services/oauth"
 	"github.com/rudderlabs/rudder-server/services/stats"
+	"github.com/rudderlabs/rudder-server/utils/httputil"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 )
 
@@ -27,9 +28,10 @@ var (
 )
 
 type APIManager struct {
-	Client           *http.Client
-	DestTransformURL string
-	OAuth            oauth.Authorizer
+	Client                       *http.Client
+	DestTransformURL             string
+	OAuth                        oauth.Authorizer
+	MaxOAuthRefreshRetryAttempts int
 }
 
 type oauthDetail struct {
@@ -41,9 +43,7 @@ func (*APIManager) GetSupportedDestinations() []string {
 	return supportedDestinations
 }
 
-// prepares payload based on (job,destDetail) & make an API call to transformer.
-// gets (status, failure_reason) which is converted to appropriate model.Error & returned to caller.
-func (api *APIManager) Delete(ctx context.Context, job model.Job, destination model.Destination) model.JobStatus {
+func (api *APIManager) deleteWithRetry(ctx context.Context, job model.Job, destination model.Destination, currentOauthRetryAttempt int) model.JobStatus {
 	pkgLogger.Debugf("deleting: %v", job, " from API destination: %v", destination.Name)
 	method := http.MethodPost
 	endpoint := "/deleteUsers"
@@ -74,6 +74,7 @@ func (api *APIManager) Delete(ctx context.Context, job model.Job, destination mo
 		}
 		err = setOAuthHeader(oAuthDetail.secretToken, req)
 		if err != nil {
+			pkgLogger.Errorf("[%v] error occurred while setting oauth header for workspace: %v, destination: %v", destination.Name, job.WorkspaceID, destination.DestinationID)
 			pkgLogger.Error(err)
 			return model.JobStatusFailed
 		}
@@ -95,7 +96,7 @@ func (api *APIManager) Delete(ctx context.Context, job model.Job, destination mo
 		}
 		return model.JobStatusFailed
 	}
-	defer resp.Body.Close()
+	defer func() { httputil.CloseResponse(resp) }()
 	bodyBytes, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return model.JobStatusFailed
@@ -106,20 +107,26 @@ func (api *APIManager) Delete(ctx context.Context, job model.Job, destination mo
 		return model.JobStatusFailed
 	}
 	jobStatus := getJobStatus(resp.StatusCode, jobResp)
-	pkgLogger.Debugf("[%v] JobStatus for %v: %v", destination.Name, destination.DestinationID, jobStatus)
+	pkgLogger.Debugf("[%v] Job: %v, JobStatus: %v", destination.Name, job.ID, jobStatus)
 
-	if isOAuthEnabled && isTokenExpired(jobResp) {
+	if isOAuthEnabled && isTokenExpired(jobResp) && currentOauthRetryAttempt < api.MaxOAuthRefreshRetryAttempts {
 		err = api.refreshOAuthToken(destination.Name, job.WorkspaceID, oAuthDetail)
 		if err != nil {
 			pkgLogger.Error(err)
 			return model.JobStatusFailed
 		}
 		// retry the request
-		pkgLogger.Debug("Retrying deleteRequest job for the whole batch")
-		return api.Delete(ctx, job, destination)
+		pkgLogger.Infof("[%v] Retrying deleteRequest job(id: %v) for the whole batch, RetryAttempt: %v", destination.Name, job.ID, currentOauthRetryAttempt+1)
+		return api.deleteWithRetry(ctx, job, destination, currentOauthRetryAttempt+1)
 	}
 
 	return jobStatus
+}
+
+// prepares payload based on (job,destDetail) & make an API call to transformer.
+// gets (status, failure_reason) which is converted to appropriate model.Error & returned to caller.
+func (api *APIManager) Delete(ctx context.Context, job model.Job, destination model.Destination) model.JobStatus {
+	return api.deleteWithRetry(ctx, job, destination, 0)
 }
 
 func getJobStatus(statusCode int, jobResp []JobRespSchema) model.JobStatus {
@@ -193,7 +200,7 @@ func setOAuthHeader(secretToken *oauth.AuthResponse, req *http.Request) error {
 func (api *APIManager) getOAuthDetail(destDetail *model.Destination, workspaceId string) (oauthDetail, error) {
 	id := oauth.GetAccountId(destDetail.Config, oauth.DeleteAccountIdKey)
 	if strings.TrimSpace(id) == "" {
-		return oauthDetail{}, fmt.Errorf("%v is not present for %v", oauth.DeleteAccountIdKey, destDetail.Name)
+		return oauthDetail{}, fmt.Errorf("[%v] Delete account ID key (%v) is not present for destination: %v", destDetail.Name, oauth.DeleteAccountIdKey, destDetail.DestinationID)
 	}
 	tokenStatusCode, secretToken := api.OAuth.FetchToken(&oauth.RefreshTokenParams{
 		AccountId:       id,
@@ -218,9 +225,13 @@ func (api *APIManager) refreshOAuthToken(destName, workspaceId string, oAuthDeta
 		DestDefName:     destName,
 		EventNamePrefix: "refresh_token",
 	}
-	statusCode, _ := api.OAuth.RefreshToken(refTokenParams)
+	statusCode, refreshResponse := api.OAuth.RefreshToken(refTokenParams)
 	if statusCode != http.StatusOK {
-		return fmt.Errorf("failed to refresh token for destination: %v", destName)
+		var refreshRespErr string
+		if refreshResponse != nil {
+			refreshRespErr = refreshResponse.Err
+		}
+		return fmt.Errorf("[%v] Failed to refresh token for destination in workspace(%v) & account(%v) with %v", destName, workspaceId, oAuthDetail.id, refreshRespErr)
 	}
 	return nil
 }

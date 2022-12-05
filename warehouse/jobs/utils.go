@@ -38,13 +38,6 @@ func validatePayload(payload StartJobReqPayload) bool {
 	return true
 }
 
-func skipTable(th string) bool {
-	if th == "RUDDER_DISCARDS" || th == "rudder_discards" {
-		return true
-	}
-	return false
-}
-
 func contains(sArray []string, s string) bool {
 	for _, s1 := range sArray {
 		if s1 == s {

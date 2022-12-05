@@ -427,6 +427,7 @@ func (wh *HandleT) populateHistoricIdentities(warehouse warehouseutils.Warehouse
 			dbHandle:             wh.dbHandle,
 			pgNotifier:           &wh.notifier,
 			destinationValidator: validations.NewDestinationValidator(),
+			stats:                stats.Default,
 		}
 
 		tableUploadsCreated := areTableUploadsCreated(job.upload.ID)

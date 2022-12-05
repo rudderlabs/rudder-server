@@ -21,9 +21,6 @@
   <a href="https://goreportcard.com/report/github.com/rudderlabs/rudder-server">
     <img src="https://goreportcard.com/badge/github.com/rudderlabs/rudder-server">
   </a>
-  <a href="https://deepsource.io/gh/rudderlabs/rudder-server/?ref=repository-badge}" target="_blank">
-    <img alt="DeepSource" title="DeepSource" src="https://deepsource.io/gh/rudderlabs/rudder-server.svg/?label=active+issues&show_trend=true&token=D0StFW4hMiC1YMmYQWyS7PQQ"/>
-  </a>
   <a href="https://github.com/rudderlabs/rudder-server/releases">
     <img src="https://img.shields.io/github/v/release/rudderlabs/rudder-server?color=blue&sort=semver">
   </a>

@@ -31,6 +31,7 @@ import (
 	"github.com/rudderlabs/rudder-server/testhelper/health"
 	"github.com/rudderlabs/rudder-server/testhelper/rand"
 	whUtil "github.com/rudderlabs/rudder-server/testhelper/webhook"
+	"github.com/rudderlabs/rudder-server/utils/httputil"
 	"github.com/rudderlabs/rudder-server/utils/types/deployment"
 )
 
@@ -215,7 +216,7 @@ func testMultiTenantByAppType(t *testing.T, appType string) {
 	require.ErrorContains(t, err, "connection refused")
 	require.Nil(t, resp)
 	if err == nil {
-		defer func() { _ = resp.Body.Close() }()
+		defer func() { httputil.CloseResponse(resp) }()
 	}
 
 	// Pushing valid configuration via ETCD
@@ -415,7 +416,7 @@ func sendEvent(t *testing.T, httpPort int, payload *strings.Reader, callType, wr
 
 	res, err := httpClient.Do(req)
 	require.NoError(t, err)
-	defer func() { _ = res.Body.Close() }()
+	defer func() { httputil.CloseResponse(res) }()
 
 	body, err := io.ReadAll(res.Body)
 	require.NoError(t, err)

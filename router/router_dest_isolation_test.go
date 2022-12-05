@@ -24,6 +24,7 @@ import (
 	"github.com/rudderlabs/rudder-server/testhelper/health"
 	trand "github.com/rudderlabs/rudder-server/testhelper/rand"
 	"github.com/rudderlabs/rudder-server/testhelper/workspaceConfig"
+	"github.com/rudderlabs/rudder-server/utils/httputil"
 )
 
 func Test_RouterDestIsolation(t *testing.T) {
@@ -161,7 +162,7 @@ func Test_RouterDestIsolation(t *testing.T) {
 		resp, err := client.Do(req)
 		require.NoError(t, err, "should be able to send the request to gateway")
 		require.Equal(t, http.StatusOK, resp.StatusCode)
-		_ = resp.Body.Close()
+		func() { httputil.CloseResponse(resp) }()
 	}
 	require.Eventually(t, func() bool {
 		return atomic.LoadUint64(webhook2.count) == 100 && atomic.LoadUint64(webhook1.count) < 100

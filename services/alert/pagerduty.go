@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/rudderlabs/rudder-server/config"
+	"github.com/rudderlabs/rudder-server/utils/httputil"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 )
 
@@ -43,7 +44,7 @@ func (ops *PagerDuty) Alert(message string) {
 	}
 
 	body, err := io.ReadAll(resp.Body)
-	defer resp.Body.Close()
+	defer func() { httputil.CloseResponse(resp) }()
 	if err != nil {
 		pkgLogger.Errorf("Alert: Failed to read response body: %s", err.Error())
 		return

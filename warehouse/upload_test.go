@@ -9,6 +9,8 @@ import (
 	"testing"
 
 	"github.com/rudderlabs/rudder-server/services/stats"
+	"github.com/rudderlabs/rudder-server/services/stats/memstats"
+	"github.com/stretchr/testify/require"
 
 	"github.com/golang/mock/gomock"
 	. "github.com/onsi/ginkgo/v2"
@@ -73,6 +75,113 @@ func TestExtractUploadErrorsByState(t *testing.T) {
 		if stateErrors["attempt"].(int) != ip.ErrorCount {
 			t.Errorf("expected attempts to be: %d, got: %d", ip.ErrorCount, stateErrors["attempt"].(int))
 		}
+	}
+}
+
+func TestColumnCountStat(t *testing.T) {
+	Init()
+	Init4()
+
+	var (
+		workspaceID     = "test-workspaceID"
+		destinationID   = "test-desinationID"
+		destinationName = "test-desinationName"
+		sourceID        = "test-sourceID"
+		sourceName      = "test-sourceName"
+		tableName       = "test-table"
+	)
+
+	inputs := []struct {
+		name             string
+		columnCountLimit int
+		destinationType  string
+		statExpected     bool
+	}{
+		{
+			name:             "Datalakes destination",
+			destinationType:  warehouseutils.S3_DATALAKE,
+			columnCountLimit: 1,
+		},
+		{
+			name:            "Unknown destination",
+			destinationType: "unknown-destination",
+		},
+		{
+			name:             "Greater than threshold",
+			destinationType:  "test-destination",
+			columnCountLimit: 1,
+			statExpected:     true,
+		},
+		{
+			name:             "Lesser than threshold",
+			destinationType:  "test-destination",
+			columnCountLimit: 10,
+			statExpected:     true,
+		},
+	}
+
+	store := memstats.New()
+
+	for _, tc := range inputs {
+		tc := tc
+
+		t.Run(tc.name, func(t *testing.T) {
+			columnCountLimitMap = map[string]int{
+				"test-destination": tc.columnCountLimit,
+			}
+
+			j := UploadJobT{
+				upload: &Upload{
+					WorkspaceID:   workspaceID,
+					DestinationID: destinationID,
+					SourceID:      sourceID,
+				},
+				warehouse: warehouseutils.Warehouse{
+					Type: tc.destinationType,
+					Destination: backendconfig.DestinationT{
+						ID:   destinationID,
+						Name: destinationName,
+					},
+					Source: backendconfig.SourceT{
+						ID:   sourceID,
+						Name: sourceName,
+					},
+				},
+				stats: store,
+				schemaHandle: &SchemaHandleT{
+					schemaInWarehouse: warehouseutils.SchemaT{
+						tableName: map[string]string{
+							"test-column-1": "string",
+							"test-column-2": "string",
+							"test-column-3": "string",
+						},
+					},
+				},
+			}
+
+			tags := stats.Tags{
+				"module":      moduleName,
+				"destType":    tc.destinationType,
+				"warehouseID": j.warehouseID(),
+				"workspaceId": workspaceID,
+				"destID":      destinationID,
+				"sourceID":    sourceID,
+				"tableName":   tableName,
+			}
+
+			j.columnCountStat(tableName)
+
+			m1 := store.Get("warehouse_load_table_column_count", tags)
+			m2 := store.Get("warehouse_load_table_column_limit", tags)
+
+			if tc.statExpected {
+				require.EqualValues(t, m1.LastValue(), len(j.schemaHandle.schemaInWarehouse[tableName]))
+				require.EqualValues(t, m2.LastValue(), tc.columnCountLimit)
+			} else {
+				require.Nil(t, m1)
+				require.Nil(t, m2)
+			}
+		})
 	}
 }
 
@@ -208,14 +317,6 @@ var _ = Describe("Upload", Ordered, func() {
 	})
 
 	Describe("Staging files and load files events match", func() {
-		BeforeEach(func() {
-			defaultStats := stats.Default
-
-			DeferCleanup(func() {
-				stats.Default = defaultStats
-			})
-		})
-
 		When("Matched", func() {
 			It("Should not send stats", func() {
 				job.matchRowsInStagingAndLoadFiles()
@@ -228,8 +329,7 @@ var _ = Describe("Upload", Ordered, func() {
 				mockStats.EXPECT().NewTaggedStat(gomock.Any(), gomock.Any(), gomock.Any()).Times(1).Return(mockMeasurement)
 				mockMeasurement.EXPECT().Gauge(gomock.Any()).Times(1)
 
-				stats.Default = mockStats
-
+				job.stats = mockStats
 				job.stagingFileIDs = []int64{1, 2}
 				job.matchRowsInStagingAndLoadFiles()
 			})
