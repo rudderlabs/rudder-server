@@ -30,7 +30,7 @@ func (*warehouseGRPC) GetWHUploads(_ context.Context, request *proto.WHUploadsRe
 		Offset:          request.Offset,
 		API:             UploadAPI,
 	}
-	uploadsReq.API.log.Info(
+	uploadsReq.API.log.Infof(
 		"[GetWHUploads] Fetching warehouse uploads for WorkspaceId: %s, SourceId: %s, DestinationId: %s",
 		uploadsReq.WorkspaceID,
 		uploadsReq.SourceID,
@@ -167,7 +167,10 @@ func (*warehouseGRPC) ValidateObjectStorageDestination(ctx context.Context, requ
 	if err != nil {
 		return nil, err
 	}
-
+	UploadAPI.log.Infof(
+		"[ValidateObjectStorageDestination] Validating object storage destination for type: %s",
+		r.Type,
+	)
 	err = validateObjectStorage(ctx, r)
 	if err != nil {
 
