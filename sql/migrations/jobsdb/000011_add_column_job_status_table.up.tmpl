@@ -1,0 +1,5 @@
+{{range .Datasets}}
+    {{ if eq $.Prefix "rt" }}
+        ALTER TABLE "{{$.Prefix}}_job_status_{{.}}" ADD COLUMN IF NOT EXISTS workspace_id VARCHAR(64) NOT NULL;
+    {{end}}
+{{end}}

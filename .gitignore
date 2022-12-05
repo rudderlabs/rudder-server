@@ -1,6 +1,7 @@
 .DS_Store
 rudder-server
 .env
+.fleet
 .vscode
 *.coverprofile
 runtime.log
@@ -22,3 +23,4 @@ coverage.html
 build/wait-for-go/wait-for-go
 **/gomock_reflect_*/*
 ginkgo.report
+vendor/*
