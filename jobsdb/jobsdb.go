@@ -2893,7 +2893,6 @@ Other functions are impacted by movement of data across DS in background
 so take both the list and data lock
 */
 func (jd *HandleT) addNewDSLoop(ctx context.Context) {
-	advisoryLock := jd.getAdvisoryLockForOperation("add_ds")
 	for {
 		select {
 		case <-ctx.Done():
@@ -2906,47 +2905,45 @@ func (jd *HandleT) addNewDSLoop(ctx context.Context) {
 		var releaseDsListLock chan<- lock.LockToken
 		// start a transaction
 		err := jd.WithTx(func(tx *Tx) error {
-			// acquire a advisory transaction level blocking lock, which is released once the transaction ends.
-			sqlStatement := fmt.Sprintf(`SELECT pg_advisory_xact_lock(%d);`, advisoryLock)
-			_, err := tx.ExecContext(context.TODO(), sqlStatement)
-			if err != nil {
-				return fmt.Errorf("error while acquiring advisory lock %d: %w", advisoryLock, err)
-			}
+			return jd.withDistributedSharedLock(context.TODO(), tx, "schema_migrate", func() error { // cannot run while schema migration is running
+				return jd.withDistributedLock(context.TODO(), tx, "add_ds", func() error { // only one add_ds can run at a time
+					var err error
+					// We acquire the list lock only after we have acquired the advisory lock.
+					// We will release the list lock after the transaction ends, that's why we need to use an async lock
+					dsListLock, releaseDsListLock, err = jd.dsListLock.AsyncLockWithCtx(ctx)
+					if err != nil {
+						return err
+					}
+					// refresh ds list
+					var dsList []dataSetT
+					var nextDSIdx string
+					// make sure we are operating on the latest version of the list
+					dsList = getDSList(jd, tx, jd.tablePrefix)
+					latestDS := dsList[len(dsList)-1]
+					full, err := jd.checkIfFullDSInTx(tx, latestDS)
+					if err != nil {
+						return fmt.Errorf("error while checking if DS is full: %w", err)
+					}
+					// checkIfFullDS is true for last DS in the list
+					if full {
+						if _, err = tx.Exec(fmt.Sprintf(`LOCK TABLE %q IN EXCLUSIVE MODE;`, latestDS.JobTable)); err != nil {
+							return fmt.Errorf("error locking table %s: %w", latestDS.JobTable, err)
+						}
 
-			// We acquire the list lock only after we have acquired the advisory lock.
-			// We will release the list lock after the transaction ends, that's why we need to use an async lock
-			dsListLock, releaseDsListLock, err = jd.dsListLock.AsyncLockWithCtx(ctx)
-			if err != nil {
-				return err
-			}
-			// refresh ds list
-			var dsList []dataSetT
-			var nextDSIdx string
-			// make sure we are operating on the latest version of the list
-			dsList = getDSList(jd, tx, jd.tablePrefix)
-			latestDS := dsList[len(dsList)-1]
-			full, err := jd.checkIfFullDSInTx(tx, latestDS)
-			if err != nil {
-				return fmt.Errorf("error while checking if DS is full: %w", err)
-			}
-			// checkIfFullDS is true for last DS in the list
-			if full {
-				if _, err = tx.Exec(fmt.Sprintf(`LOCK TABLE %q IN EXCLUSIVE MODE;`, latestDS.JobTable)); err != nil {
-					return fmt.Errorf("error locking table %s: %w", latestDS.JobTable, err)
-				}
+						nextDSIdx = jd.doComputeNewIdxForAppend(dsList)
+						jd.logger.Infof("[[ %s : addNewDSLoop ]]: NewDS", jd.tablePrefix)
+						if err = jd.addNewDSInTx(tx, dsListLock, dsList, newDataSet(jd.tablePrefix, nextDSIdx)); err != nil {
+							return fmt.Errorf("error adding new DS: %w", err)
+						}
 
-				nextDSIdx = jd.doComputeNewIdxForAppend(dsList)
-				jd.logger.Infof("[[ %s : addNewDSLoop ]]: NewDS", jd.tablePrefix)
-				if err = jd.addNewDSInTx(tx, dsListLock, dsList, newDataSet(jd.tablePrefix, nextDSIdx)); err != nil {
-					return fmt.Errorf("error adding new DS: %w", err)
-				}
-
-				// previous DS should become read only
-				if err = setReadonlyDsInTx(tx, latestDS); err != nil {
-					return fmt.Errorf("error making dataset read only: %w", err)
-				}
-			}
-			return nil
+						// previous DS should become read only
+						if err = setReadonlyDsInTx(tx, latestDS); err != nil {
+							return fmt.Errorf("error making dataset read only: %w", err)
+						}
+					}
+					return nil
+				})
+			})
 		})
 		jd.assertError(err)
 
@@ -3031,80 +3028,82 @@ func (jd *HandleT) doMigrateDS(ctx context.Context) error {
 	var l lock.LockToken
 	var lockChan chan<- lock.LockToken
 	err := jd.WithTx(func(tx *Tx) error {
-		// Take the lock and run actual migration
-		if !jd.dsMigrationLock.TryLockWithCtx(ctx) {
-			return fmt.Errorf("failed to acquire lock: %w", ctx.Err())
-		}
-		defer jd.dsMigrationLock.Unlock()
-		// repeat the check after the dsMigrationLock is acquired to get correct pending jobs count.
-		// the pending jobs count cannot change after the dsMigrationLock is acquired
-		if migrateFrom, pendingJobsCount, insertBeforeDS = jd.getMigrationList(dsList); len(migrateFrom) == 0 {
-			return nil
-		}
-
-		if pendingJobsCount > 0 { // migrate incomplete jobs
-			var destination dataSetT
-			err := jd.dsListLock.WithLockInCtx(ctx, func(l lock.LockToken) error {
-				destination = newDataSet(jd.tablePrefix, jd.computeNewIdxForIntraNodeMigration(l, insertBeforeDS))
+		return jd.withDistributedSharedLock(ctx, tx, "schema_migrate", func() error { // cannot run while schema migration is running
+			// Take the lock and run actual migration
+			if !jd.dsMigrationLock.TryLockWithCtx(ctx) {
+				return fmt.Errorf("failed to acquire lock: %w", ctx.Err())
+			}
+			defer jd.dsMigrationLock.Unlock()
+			// repeat the check after the dsMigrationLock is acquired to get correct pending jobs count.
+			// the pending jobs count cannot change after the dsMigrationLock is acquired
+			if migrateFrom, pendingJobsCount, insertBeforeDS = jd.getMigrationList(dsList); len(migrateFrom) == 0 {
 				return nil
-			})
-			if err != nil {
-				return err
 			}
 
-			jd.logger.Infof("[[ migrateDSLoop ]]: Migrate from: %v", migrateFrom)
-			jd.logger.Infof("[[ migrateDSLoop ]]: To: %v", destination)
-			jd.logger.Infof("[[ migrateDSLoop ]]: Next: %v", insertBeforeDS)
-
-			opPayload, err := json.Marshal(&journalOpPayloadT{From: migrateFrom, To: destination})
-			if err != nil {
-				return err
-			}
-			opID, err := jd.JournalMarkStartInTx(tx, migrateCopyOperation, opPayload)
-			if err != nil {
-				return err
-			}
-
-			err = jd.addDSInTx(tx, destination)
-			if err != nil {
-				return err
-			}
-
-			totalJobsMigrated := 0
-			var noJobsMigrated int
-			for _, source := range migrateFrom {
-				jd.logger.Infof("[[ migrateDSLoop ]]: Migrate: %v to: %v", source, destination)
-				noJobsMigrated, err = jd.migrateJobsInTx(ctx, tx, source, destination)
+			if pendingJobsCount > 0 { // migrate incomplete jobs
+				var destination dataSetT
+				err := jd.dsListLock.WithLockInCtx(ctx, func(l lock.LockToken) error {
+					destination = newDataSet(jd.tablePrefix, jd.computeNewIdxForIntraNodeMigration(l, insertBeforeDS))
+					return nil
+				})
 				if err != nil {
 					return err
 				}
-				totalJobsMigrated += noJobsMigrated
+
+				jd.logger.Infof("[[ migrateDSLoop ]]: Migrate from: %v", migrateFrom)
+				jd.logger.Infof("[[ migrateDSLoop ]]: To: %v", destination)
+				jd.logger.Infof("[[ migrateDSLoop ]]: Next: %v", insertBeforeDS)
+
+				opPayload, err := json.Marshal(&journalOpPayloadT{From: migrateFrom, To: destination})
+				if err != nil {
+					return err
+				}
+				opID, err := jd.JournalMarkStartInTx(tx, migrateCopyOperation, opPayload)
+				if err != nil {
+					return err
+				}
+
+				err = jd.addDSInTx(tx, destination)
+				if err != nil {
+					return err
+				}
+
+				totalJobsMigrated := 0
+				var noJobsMigrated int
+				for _, source := range migrateFrom {
+					jd.logger.Infof("[[ migrateDSLoop ]]: Migrate: %v to: %v", source, destination)
+					noJobsMigrated, err = jd.migrateJobsInTx(ctx, tx, source, destination)
+					if err != nil {
+						return err
+					}
+					totalJobsMigrated += noJobsMigrated
+				}
+				err = jd.journalMarkDoneInTx(tx, opID)
+				if err != nil {
+					return err
+				}
+				jd.logger.Infof("[[ migrateDSLoop ]]: Total migrated %d jobs", totalJobsMigrated)
 			}
-			err = jd.journalMarkDoneInTx(tx, opID)
+
+			opPayload, err := json.Marshal(&journalOpPayloadT{From: migrateFrom})
 			if err != nil {
 				return err
 			}
-			jd.logger.Infof("[[ migrateDSLoop ]]: Total migrated %d jobs", totalJobsMigrated)
-		}
-
-		opPayload, err := json.Marshal(&journalOpPayloadT{From: migrateFrom})
-		if err != nil {
-			return err
-		}
-		opID, err := jd.JournalMarkStartInTx(tx, postMigrateDSOperation, opPayload)
-		if err != nil {
-			return err
-		}
-		// acquire an async lock, as this needs to be released after the transaction commits
-		l, lockChan, err = jd.dsListLock.AsyncLockWithCtx(ctx)
-		if err != nil {
-			return err
-		}
-		err = jd.postMigrateHandleDS(tx, migrateFrom)
-		if err != nil {
-			return err
-		}
-		return jd.journalMarkDoneInTx(tx, opID)
+			opID, err := jd.JournalMarkStartInTx(tx, postMigrateDSOperation, opPayload)
+			if err != nil {
+				return err
+			}
+			// acquire an async lock, as this needs to be released after the transaction commits
+			l, lockChan, err = jd.dsListLock.AsyncLockWithCtx(ctx)
+			if err != nil {
+				return err
+			}
+			err = jd.postMigrateHandleDS(tx, migrateFrom)
+			if err != nil {
+				return err
+			}
+			return jd.journalMarkDoneInTx(tx, opID)
+		})
 	})
 	if l != nil {
 		if err == nil {
@@ -4071,4 +4070,22 @@ func sanitizeJson(input json.RawMessage) json.RawMessage {
 type smallDS struct {
 	ds          dataSetT
 	recordsLeft int
+}
+
+func (jd *HandleT) withDistributedLock(ctx context.Context, tx *Tx, operation string, f func() error) error {
+	advisoryLock := jd.getAdvisoryLockForOperation(operation)
+	_, err := tx.ExecContext(ctx, fmt.Sprintf(`SELECT pg_advisory_xact_lock(%d);`, advisoryLock))
+	if err != nil {
+		return fmt.Errorf("error while acquiring advisory lock %d for operation %s: %w", advisoryLock, operation, err)
+	}
+	return f()
+}
+
+func (jd *HandleT) withDistributedSharedLock(ctx context.Context, tx *Tx, operation string, f func() error) error {
+	advisoryLock := jd.getAdvisoryLockForOperation(operation)
+	_, err := tx.ExecContext(ctx, fmt.Sprintf(`SELECT pg_advisory_xact_lock_shared(%d);`, advisoryLock))
+	if err != nil {
+		return fmt.Errorf("error while acquiring a shared advisory lock %d for operation %s: %w", advisoryLock, operation, err)
+	}
+	return f()
 }
