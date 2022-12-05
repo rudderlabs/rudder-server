@@ -109,14 +109,14 @@ func TestIntegrationPostgres(t *testing.T) {
 					Type: client.SQLClient,
 				},
 			}
-			ts.TestScenarioOne(t)
+			ts.VerifyEvents(t)
 
 			if !tc.asyncJob {
 				ts.UserID = testhelper.GetUserId(provider)
 			}
 			ts.JobRunID = misc.FastUUID().String()
 			ts.TaskRunID = misc.FastUUID().String()
-			ts.TestScenarioTwo(t)
+			ts.VerifyModifiedEvents(t)
 		})
 	}
 }

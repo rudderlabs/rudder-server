@@ -121,7 +121,7 @@ func TestIntegrationClickHouse(t *testing.T) {
 					Type: client.SQLClient,
 				},
 			}
-			ts.TestScenarioOne(t)
+			ts.VerifyEvents(t)
 
 			if tc.clusterSetup != nil {
 				tc.clusterSetup(t)
@@ -129,7 +129,7 @@ func TestIntegrationClickHouse(t *testing.T) {
 
 			ts.UserID = testhelper.GetUserId(provider)
 			ts.WarehouseEventsMap = tc.warehouseEvents
-			ts.TestScenarioTwo(t)
+			ts.VerifyModifiedEvents(t)
 		})
 	}
 }

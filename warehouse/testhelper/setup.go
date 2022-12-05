@@ -135,7 +135,7 @@ func (w *WareHouseTest) recordID() string {
 	return w.RecordID
 }
 
-func (w *WareHouseTest) TestScenarioOne(t testing.TB) {
+func (w *WareHouseTest) VerifyEvents(t testing.TB) {
 	t.Helper()
 
 	w.init()
@@ -158,7 +158,7 @@ func (w *WareHouseTest) TestScenarioOne(t testing.TB) {
 	verifyWorkspaceIDInStats(t, w.StatsToVerify...)
 }
 
-func (w *WareHouseTest) TestScenarioTwo(t testing.TB) {
+func (w *WareHouseTest) VerifyModifiedEvents(t testing.TB) {
 	t.Helper()
 
 	w.init()

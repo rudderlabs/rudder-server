@@ -83,10 +83,10 @@ func TestIntegrationDatalake(t *testing.T) {
 				UserID:        testhelper.GetUserId(tc.provider),
 				SkipWarehouse: true,
 			}
-			ts.TestScenarioOne(t)
+			ts.VerifyEvents(t)
 
 			ts.UserID = testhelper.GetUserId(tc.provider)
-			ts.TestScenarioTwo(t)
+			ts.VerifyModifiedEvents(t)
 		})
 	}
 }

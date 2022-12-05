@@ -144,10 +144,10 @@ func TestIntegrationDeltalake(t *testing.T) {
 					"warehouse_deltalake_healthTimeouts",
 				},
 			}
-			ts.TestScenarioOne(t)
+			ts.VerifyEvents(t)
 
 			ts.WarehouseEventsMap = tc.warehouseEventsMap
-			ts.TestScenarioTwo(t)
+			ts.VerifyModifiedEvents(t)
 		})
 	}
 }
