@@ -35,7 +35,8 @@ type Factory struct {
 // New constructs a new Throttler Factory
 func New(stats stats.Stats) (*Factory, error) {
 	f := Factory{
-		Stats: stats,
+		Stats:      stats,
+		throttlers: make(map[string]*Throttler),
 	}
 	if err := f.initThrottlerFactory(); err != nil {
 		return nil, err
@@ -46,9 +47,7 @@ func New(stats stats.Stats) (*Factory, error) {
 func (f *Factory) Get(destName, destID string) *Throttler {
 	f.throttlersMu.Lock()
 	defer f.throttlersMu.Unlock()
-	if f.throttlers == nil {
-		f.throttlers = make(map[string]*Throttler)
-	} else if t, ok := f.throttlers[destID]; ok {
+	if t, ok := f.throttlers[destID]; ok {
 		return t
 	}
 
