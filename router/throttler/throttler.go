@@ -33,8 +33,10 @@ type Factory struct {
 }
 
 // New constructs a new Throttler Factory
-func New() (*Factory, error) {
-	f := Factory{}
+func New(stats stats.Stats) (*Factory, error) {
+	f := Factory{
+		Stats: stats,
+	}
 	if err := f.initThrottlerFactory(); err != nil {
 		return nil, err
 	}
@@ -79,10 +81,11 @@ func (f *Factory) initThrottlerFactory() error {
 	var (
 		err  error
 		l    *throttling.Limiter
-		opts = []throttling.Option{
-			throttling.WithStatsCollector(f.Stats),
-		}
+		opts []throttling.Option
 	)
+	if f.Stats != nil {
+		opts = append(opts, throttling.WithStatsCollector(f.Stats))
+	}
 	switch throttlingAlgorithm {
 	case throttlingAlgoTypeGoRate:
 		l, err = throttling.New(append(opts, throttling.WithInMemoryGoRate())...)

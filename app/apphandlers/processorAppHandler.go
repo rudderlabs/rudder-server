@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/rudderlabs/rudder-server/config"
+	"github.com/rudderlabs/rudder-server/router/throttler"
 	"github.com/rudderlabs/rudder-server/utils/httputil"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/types/deployment"
@@ -210,7 +211,10 @@ func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options
 	}
 
 	p := proc.New(ctx, &options.ClearDB, gwDBForProcessor, routerDB, batchRouterDB, errDB, multitenantStats, reportingI, transientSources, fileUploaderProvider, rsourcesService)
-
+	throttlerFactory, err := throttler.New(stats.Default)
+	if err != nil {
+		return fmt.Errorf("failed to create throttler factory: %w", err)
+	}
 	rtFactory := &router.Factory{
 		Reporting:        reportingI,
 		Multitenant:      multitenantStats,
@@ -219,8 +223,7 @@ func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options
 		ProcErrorDB:      errDB,
 		TransientSources: transientSources,
 		RsourcesService:  rsourcesService,
-		Logger:           a.log,
-		Stats:            stats.Default,
+		ThrottlerFactory: throttlerFactory,
 	}
 	brtFactory := &batchrouter.Factory{
 		Reporting:        reportingI,
