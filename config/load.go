@@ -2,8 +2,9 @@ package config
 
 import (
 	"fmt"
-	"github.com/rudderlabs/rudder-server/utils/maputil"
 	"time"
+
+	"github.com/rudderlabs/rudder-server/utils/maputil"
 
 	"golang.org/x/exp/slices"
 

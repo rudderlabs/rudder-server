@@ -6,12 +6,13 @@ import (
 	"database/sql"
 	"encoding/csv"
 	"fmt"
-	"golang.org/x/exp/slices"
 	"io"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
+
+	"golang.org/x/exp/slices"
 
 	"github.com/lib/pq"
 	"github.com/rudderlabs/rudder-server/config"
