@@ -600,125 +600,125 @@ func TestTimingFromJSONString(t *testing.T) {
 }
 
 func TestGetConfigValue(t *testing.T) {
-	inputs := []struct {
-		key       string
-		value     string
-		warehouse Warehouse
-	}{
-		{
-			key:   "k1",
-			value: "v1",
-			warehouse: Warehouse{
-				Destination: backendconfig.DestinationT{
-					Config: map[string]interface{}{
-						"k1": "v1",
-					},
-				},
-			},
-		},
-		{
-			key: "u1",
-			warehouse: Warehouse{
-				Destination: backendconfig.DestinationT{
-					Config: map[string]interface{}{},
-				},
-			},
-		},
-		{
-			key: "u1",
-			warehouse: Warehouse{
-				Destination: backendconfig.DestinationT{
-					Config: map[string]interface{}{},
-				},
-			},
-		},
-	}
-	for _, input := range inputs {
-		value := GetConfigValue[string](input.key, &input.warehouse)
-		require.Equal(t, value, input.value)
-	}
-}
-
-func TestGetConfigValueBoolString(t *testing.T) {
-	inputs := []struct {
-		key       string
-		value     string
-		warehouse Warehouse
-	}{
-		{
-			key:   "k1",
-			value: "true",
-			warehouse: Warehouse{
-				Destination: backendconfig.DestinationT{
-					Config: map[string]interface{}{
-						"k1": true,
-					},
-				},
-			},
-		},
-		{
-			key:   "k1",
-			value: "false",
-			warehouse: Warehouse{
-				Destination: backendconfig.DestinationT{
-					Config: map[string]interface{}{
-						"k1": false,
-					},
-				},
-			},
-		},
-		{
-			key:   "u1",
-			value: "false",
-			warehouse: Warehouse{
-				Destination: backendconfig.DestinationT{
-					Config: map[string]interface{}{},
-				},
-			},
-		},
-	}
-	for _, input := range inputs {
-		value := GetConfigValue[bool](input.key, &input.warehouse)
-		require.Equal(t, strconv.FormatBool(value), input.value)
-	}
-}
-
-func TestGetConfigValueAsMap(t *testing.T) {
-	inputs := []struct {
-		key       string
-		value     map[string]interface{}
-		warehouse Warehouse
-	}{
-		{
-			key: "map",
-			value: map[string]interface{}{
-				"k1": "v1",
-			},
-			warehouse: Warehouse{
-				Destination: backendconfig.DestinationT{
-					Config: map[string]interface{}{
-						"map": map[string]interface{}{
+	t.Run("string", func(t *testing.T) {
+		inputs := []struct {
+			key       string
+			value     string
+			warehouse Warehouse
+		}{
+			{
+				key:   "k1",
+				value: "v1",
+				warehouse: Warehouse{
+					Destination: backendconfig.DestinationT{
+						Config: map[string]interface{}{
 							"k1": "v1",
 						},
 					},
 				},
 			},
-		},
-		{
-			key: "map",
-			warehouse: Warehouse{
-				Destination: backendconfig.DestinationT{
-					Config: map[string]interface{}{},
+			{
+				key: "u1",
+				warehouse: Warehouse{
+					Destination: backendconfig.DestinationT{
+						Config: map[string]interface{}{},
+					},
 				},
 			},
-		},
-	}
-	for idx, input := range inputs {
-		value := GetConfigValue[map[string]interface{}](input.key, &input.warehouse)
-		if !reflect.DeepEqual(value, input.value) {
-			t.Errorf("got %q want %q input %d", value, input.value, idx)
+			{
+				key: "u1",
+				warehouse: Warehouse{
+					Destination: backendconfig.DestinationT{
+						Config: map[string]interface{}{},
+					},
+				},
+			},
 		}
-	}
+		for _, input := range inputs {
+			value := GetConfigValue[string](input.key, &input.warehouse)
+			require.Equal(t, value, input.value)
+		}
+	})
+	t.Run("bool", func(t *testing.T) {
+		inputs := []struct {
+			key       string
+			value     string
+			warehouse Warehouse
+		}{
+			{
+				key:   "k1",
+				value: "true",
+				warehouse: Warehouse{
+					Destination: backendconfig.DestinationT{
+						Config: map[string]interface{}{
+							"k1": true,
+						},
+					},
+				},
+			},
+			{
+				key:   "k1",
+				value: "false",
+				warehouse: Warehouse{
+					Destination: backendconfig.DestinationT{
+						Config: map[string]interface{}{
+							"k1": false,
+						},
+					},
+				},
+			},
+			{
+				key:   "u1",
+				value: "false",
+				warehouse: Warehouse{
+					Destination: backendconfig.DestinationT{
+						Config: map[string]interface{}{},
+					},
+				},
+			},
+		}
+		for _, input := range inputs {
+			value := GetConfigValue[bool](input.key, &input.warehouse)
+			require.Equal(t, strconv.FormatBool(value), input.value)
+		}
+	})
+	t.Run("map", func(t *testing.T) {
+		inputs := []struct {
+			key       string
+			value     map[string]interface{}
+			warehouse Warehouse
+		}{
+			{
+				key: "map",
+				value: map[string]interface{}{
+					"k1": "v1",
+				},
+				warehouse: Warehouse{
+					Destination: backendconfig.DestinationT{
+						Config: map[string]interface{}{
+							"map": map[string]interface{}{
+								"k1": "v1",
+							},
+						},
+					},
+				},
+			},
+			{
+				key: "map",
+				warehouse: Warehouse{
+					Destination: backendconfig.DestinationT{
+						Config: map[string]interface{}{},
+					},
+				},
+			},
+		}
+		for idx, input := range inputs {
+			value := GetConfigValue[map[string]interface{}](input.key, &input.warehouse)
+			if !reflect.DeepEqual(value, input.value) {
+				t.Errorf("got %q want %q input %d", value, input.value, idx)
+			}
+		}
+	})
 }
 
 func TestJoinWithFormatting(t *testing.T) {
