@@ -25,6 +25,7 @@ import (
 	"github.com/rudderlabs/rudder-server/testhelper/destination"
 	"github.com/rudderlabs/rudder-server/testhelper/health"
 	trand "github.com/rudderlabs/rudder-server/testhelper/rand"
+	"github.com/rudderlabs/rudder-server/utils/httputil"
 )
 
 func Test_RouterThrottling(t *testing.T) {
@@ -202,7 +203,7 @@ func Test_RouterThrottling(t *testing.T) {
 		resp, err := client.Do(req)
 		require.NoError(t, err, "should be able to send the request to gateway")
 		require.Equal(t, http.StatusOK, resp.StatusCode)
-		_ = resp.Body.Close()
+		func() { httputil.CloseResponse(resp) }()
 	}
 
 	require.Eventuallyf(t,
