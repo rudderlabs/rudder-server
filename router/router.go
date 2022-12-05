@@ -1273,7 +1273,7 @@ func (rt *HandleT) shouldThrottle(job *jobsdb.JobT, parameters JobParametersT, t
 	if rt.throttlerFactory == nil {
 		// throttlerFactory could be nil when throttling is disabled or misconfigured.
 		// in case of misconfiguration, logging errors are emitted.
-		rt.logger.Infof(`[%v Router] :: ThrottlerFactory is nil. Not throttling destination with ID %s`,
+		rt.logger.Debugf(`[%v Router] :: ThrottlerFactory is nil. Not throttling destination with ID %s`,
 			rt.destName, parameters.DestinationID,
 		)
 		return false
