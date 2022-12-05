@@ -916,8 +916,8 @@ func (job *UploadJobT) loadAllTablesExcept(skipLoadForTables []string, loadFiles
 
 	configKey := fmt.Sprintf("Warehouse.%s.maxParallelLoadsWorkspaceIDs", warehouseutils.WHDestNameMap[job.upload.DestinationType])
 	if k, ok := config.GetStringMap(configKey, nil)[job.warehouse.WorkspaceID]; ok {
-		if load, ok := k.(int); ok {
-			parallelLoads = load
+		if load, ok := k.(float64); ok {
+			parallelLoads = int(load)
 		}
 	}
 
@@ -1034,7 +1034,9 @@ func (job *UploadJobT) loadTable(tName string) (alteredSchema bool, err error) {
 	tableUpload.setStatus(TableUploadExecuting)
 
 	generateTableLoadCountVerificationsMetrics := config.GetBool("Warehouse.generateTableLoadCountMetrics", true)
-	if slices.Contains(config.GetStringSlice("Warehouse.disableGenerateTableLoadCountMetricsWorkspaceIDs", nil), job.upload.WorkspaceID) {
+
+	disableGenerateMetricsWorkspaceIDs := config.GetStringSlice("Warehouse.disableGenerateTableLoadCountMetricsWorkspaceIDs", nil)
+	if slices.Contains(disableGenerateMetricsWorkspaceIDs, job.upload.WorkspaceID) {
 		generateTableLoadCountVerificationsMetrics = false
 	}
 
@@ -1870,8 +1872,8 @@ func (job *UploadJobT) createLoadFiles(generateAll bool) (startLoadFileID, endLo
 
 	publishBatchSize := config.GetInt("Warehouse.pgNotifierPublishBatchSize", 100)
 	if k, ok := config.GetStringMap("Warehouse.pgNotifierPublishBatchSizeWorkspaceIDs", nil)[job.warehouse.WorkspaceID]; ok {
-		if batchSize, ok := k.(int); ok {
-			publishBatchSize = batchSize
+		if batchSize, ok := k.(float64); ok {
+			publishBatchSize = int(batchSize)
 		}
 	}
 	pkgLogger.Infof("[WH]: Starting batch processing %v stage files for %s:%s", publishBatchSize, destType, destID)

@@ -166,7 +166,7 @@ func Init() {
 }
 
 func (pg *Handle) getConnectionCredentials() CredentialsT {
-	sslMode := warehouseutils.GetConfigValue[string](sslMode, &pg.Warehouse)
+	sslMode := warehouseutils.GetConfigValue(sslMode, pg.Warehouse)
 	return CredentialsT{
 		Host:     warehouseutils.GetConfigValue(host, pg.Warehouse),
 		DBName:   warehouseutils.GetConfigValue(dbName, pg.Warehouse),
