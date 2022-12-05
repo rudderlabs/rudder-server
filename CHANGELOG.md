@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.3.4](https://github.com/rudderlabs/rudder-server/compare/v1.3.3...v1.3.4) (2022-12-05)
+
+
+### Miscellaneous
+
+* acquire schema_migrate distributed shared lock ([#2768](https://github.com/rudderlabs/rudder-server/issues/2768)) ([0e471af](https://github.com/rudderlabs/rudder-server/commit/0e471af3855dd65856d3f84f46bdbb0ee5d931b7))
+
 ## [1.3.3](https://github.com/rudderlabs/rudder-server/compare/v1.3.2...v1.3.3) (2022-11-23)
 
 
