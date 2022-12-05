@@ -814,7 +814,7 @@ func (wh *HandleT) getUploadsToProcess(ctx context.Context, availableWorkers int
 						t.status != '%s' AND
 						t.status != '%s' %s AND
 						COALESCE(metadata->>'nextRetryTime', now()::text)::timestamptz <= now() AND
-						NOT workspace_id = ANY ($1)
+						workspace_id <> ALL ($1)
 				) grouped_uploads
 				WHERE
 					grouped_uploads.row_number = 1
