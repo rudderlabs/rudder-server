@@ -25,6 +25,7 @@ import (
 	"github.com/rudderlabs/rudder-server/warehouse/deltalake/databricks"
 	"github.com/rudderlabs/rudder-server/warehouse/validations"
 
+	"github.com/rudderlabs/rudder-server/utils/httputil"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 
@@ -134,7 +135,7 @@ func (w *WareHouseTest) recordID() string {
 	return w.RecordID
 }
 
-func (w *WareHouseTest) TestScenarioOne(t testing.TB) {
+func (w *WareHouseTest) VerifyEvents(t testing.TB) {
 	t.Helper()
 
 	w.init()
@@ -157,7 +158,7 @@ func (w *WareHouseTest) TestScenarioOne(t testing.TB) {
 	verifyWorkspaceIDInStats(t, w.StatsToVerify...)
 }
 
-func (w *WareHouseTest) TestScenarioTwo(t testing.TB) {
+func (w *WareHouseTest) VerifyModifiedEvents(t testing.TB) {
 	t.Helper()
 
 	w.init()
@@ -542,7 +543,7 @@ func verifyAsyncJob(t testing.TB, wareHouseTest *WareHouseTest) {
 			return false
 		}
 
-		defer func() { _ = res.Body.Close() }()
+		defer func() { httputil.CloseResponse(res) }()
 
 		var asyncRes asyncResponse
 		if err = json.NewDecoder(res.Body).Decode(&asyncRes); err != nil {
@@ -663,7 +664,7 @@ func prometheusStats(t testing.TB) map[string]*promCLient.MetricFamily {
 	require.NotNil(t, resp)
 	require.NotNil(t, resp.Body)
 
-	defer func() { _ = resp.Body.Close() }()
+	defer func() { httputil.CloseResponse(resp) }()
 
 	var parser expfmt.TextParser
 	mf, err := parser.TextToMetricFamilies(resp.Body)

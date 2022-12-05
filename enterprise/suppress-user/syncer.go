@@ -15,6 +15,7 @@ import (
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/enterprise/suppress-user/model"
 	"github.com/rudderlabs/rudder-server/services/controlplane/identity"
+	"github.com/rudderlabs/rudder-server/utils/httputil"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/types/deployment"
@@ -175,12 +176,7 @@ func (s *Syncer) sync(token []byte) ([]model.Suppression, []byte, error) {
 		if err != nil {
 			return err
 		}
-		defer func() {
-			err := resp.Body.Close()
-			if err != nil {
-				s.log.Error(err)
-			}
-		}()
+		defer func() { httputil.CloseResponse(resp) }()
 
 		// If statusCode is not 2xx, then returning empty regulations
 		if resp.StatusCode < 200 || resp.StatusCode >= 300 {

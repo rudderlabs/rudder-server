@@ -59,8 +59,8 @@ func TestIntegrationClickHouse(t *testing.T) {
 		sourceID                    string
 		destinationID               string
 		writeKey                    string
-		scenarioOneWarehouseEvents  testhelper.EventsCountMap
-		scenarioTwoWarehouseEvents  testhelper.EventsCountMap
+		warehouseEventsMap          testhelper.EventsCountMap
+		warehouseModifiedEventsMap  testhelper.EventsCountMap
 		clusterSetup                func(t testing.TB)
 		db                          *sql.DB
 		s3EngineEnabledWorkspaceIDs []string
@@ -88,7 +88,7 @@ func TestIntegrationClickHouse(t *testing.T) {
 			destinationID: "21Ev6TI6emCFDKhp2Zn6XfTP7PI",
 			writeKey:      "95RxRTZHWUsaD6HEdz0ThbXfQ6p",
 			db:            dbs[1],
-			scenarioTwoWarehouseEvents: testhelper.EventsCountMap{
+			warehouseModifiedEventsMap: testhelper.EventsCountMap{
 				"identifies":    8,
 				"users":         2,
 				"tracks":        8,
@@ -109,7 +109,7 @@ func TestIntegrationClickHouse(t *testing.T) {
 			destinationID: "21Ev6TI6emCFDKhp2Zn6XfTP7PI",
 			writeKey:      "95RxRTZHWUsaD6HEdz0ThbXfQ6p",
 			db:            dbs[1],
-			scenarioOneWarehouseEvents: testhelper.EventsCountMap{
+			warehouseEventsMap: testhelper.EventsCountMap{
 				"identifies":    8,
 				"users":         2,
 				"tracks":        8,
@@ -119,7 +119,7 @@ func TestIntegrationClickHouse(t *testing.T) {
 				"aliases":       8,
 				"groups":        8,
 			},
-			scenarioTwoWarehouseEvents: testhelper.EventsCountMap{
+			warehouseModifiedEventsMap: testhelper.EventsCountMap{
 				"identifies":    8,
 				"users":         2,
 				"tracks":        8,
@@ -148,7 +148,7 @@ func TestIntegrationClickHouse(t *testing.T) {
 				WriteKey:           tc.writeKey,
 				SourceID:           tc.sourceID,
 				DestinationID:      tc.destinationID,
-				WarehouseEventsMap: tc.scenarioOneWarehouseEvents,
+				WarehouseEventsMap: tc.warehouseEventsMap,
 				Tables:             tables,
 				Provider:           provider,
 				JobsDB:             jobsDB,
@@ -166,15 +166,15 @@ func TestIntegrationClickHouse(t *testing.T) {
 					Type: client.SQLClient,
 				},
 			}
-			ts.TestScenarioOne(t)
+			ts.VerifyEvents(t)
 
 			if tc.clusterSetup != nil {
 				tc.clusterSetup(t)
 			}
 
 			ts.UserID = testhelper.GetUserId(provider)
-			ts.WarehouseEventsMap = tc.scenarioTwoWarehouseEvents
-			ts.TestScenarioTwo(t)
+			ts.WarehouseEventsMap = tc.warehouseModifiedEventsMap
+			ts.VerifyModifiedEvents(t)
 		})
 	}
 }

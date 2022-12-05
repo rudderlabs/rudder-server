@@ -27,7 +27,7 @@ type PostgresResource struct {
 
 func SetupPostgres(pool *dockertest.Pool, d cleaner) (*PostgresResource, error) {
 	// pulls an image, creates a container based on it and runs it
-	postgresContainer, err := pool.Run("postgres", "11-alpine", []string{
+	postgresContainer, err := pool.Run("postgres", "15-alpine", []string{
 		"POSTGRES_DB=" + postgresDefaultDB,
 		"POSTGRES_USER=" + postgresDefaultUser,
 		"POSTGRES_PASSWORD=" + postgresDefaultPassword,
