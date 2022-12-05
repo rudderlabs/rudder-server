@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/rudderlabs/rudder-server/utils/httputil"
 	"github.com/stretchr/testify/require"
 )
 
@@ -753,7 +754,7 @@ func send(t testing.TB, payload *strings.Reader, eventType, writeKey, method str
 		t.Errorf("Error occurred while making http request for sending event with error: %s", err.Error())
 		return
 	}
-	defer func() { _ = res.Body.Close() }()
+	defer func() { httputil.CloseResponse(res) }()
 
 	_, err = io.ReadAll(res.Body)
 	if err != nil {

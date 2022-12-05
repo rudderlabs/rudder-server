@@ -8,8 +8,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
-	"github.com/gofrs/uuid"
 	"github.com/golang/mock/gomock"
+	"github.com/google/uuid"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/stretchr/testify/require"
@@ -31,9 +31,9 @@ const (
 )
 
 var (
-	workspaceID1 = uuid.Must(uuid.NewV4()).String()
-	workspaceID2 = uuid.Must(uuid.NewV4()).String()
-	workspaceID3 = uuid.Must(uuid.NewV4()).String()
+	workspaceID1 = uuid.New().String()
+	workspaceID2 = uuid.New().String()
+	workspaceID3 = uuid.New().String()
 )
 
 var _ = Describe("tenantStats", func() {
