@@ -292,7 +292,7 @@ func (wh *HandleT) backendConfigSubscriber(ctx context.Context) {
 		wh.workspaceBySourceIDsLock.Lock()
 		wh.workspaceBySourceIDs = map[string]string{}
 
-		controlPlaneAPI := cpclient.NewCachedControlPlaneAPI(
+		controlPlaneAPI := cpclient.NewInternalClientWithCache(
 			wh.configBackendURL,
 			wh.internalAuth)
 

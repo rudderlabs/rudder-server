@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+
+	"github.com/rudderlabs/rudder-server/utils/httputil"
 )
 
 type PublicPrivateKeyPair struct {
@@ -17,38 +19,36 @@ type BasicAuth struct {
 	Password string
 }
 
-type CPInternalAPI interface {
+type InternalControlPlane interface {
 	GetDestinationSSHKeys(ctx context.Context, id string) (*PublicPrivateKeyPair, error)
 }
 
-type cachedControlPlaneAPIImpl struct {
-	cpAPI CPInternalAPI
-	cache map[string]*PublicPrivateKeyPair
+type internalClientWithCache struct {
+	client InternalControlPlane
+	cache  map[string]*PublicPrivateKeyPair
 }
 
-func NewControlPlaneAPI(baseURI string, auth BasicAuth) CPInternalAPI {
-	return &controlPlaneAPIImpl{
+func NewInternalClient(baseURI string, auth BasicAuth) InternalControlPlane {
+	return &internalClient{
 		baseURI: baseURI,
 		auth:    auth,
 	}
 }
 
-type controlPlaneAPIImpl struct {
+type internalClient struct {
 	baseURI string
 	auth    BasicAuth
 }
 
-func (api *controlPlaneAPIImpl) GetDestinationSSHKeys(ctx context.Context, id string) (*PublicPrivateKeyPair, error) {
+func (api *internalClient) GetDestinationSSHKeys(ctx context.Context, id string) (*PublicPrivateKeyPair, error) {
 	url := fmt.Sprintf("%s/dataplane/admin/destinations/%s/sshKeys", api.baseURI, id)
 
-	req, err := http.NewRequestWithContext(ctx, "GET", url, http.NoBody)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, http.NoBody)
 	if err != nil {
 		return nil, fmt.Errorf("creating new request with ctx: %w", err)
 	}
 
-	req.SetBasicAuth(
-		api.auth.Username,
-		api.auth.Password)
+	req.SetBasicAuth(api.auth.Username, api.auth.Password)
 
 	client := http.Client{}
 	resp, err := client.Do(req)
@@ -56,13 +56,13 @@ func (api *controlPlaneAPIImpl) GetDestinationSSHKeys(ctx context.Context, id st
 		return nil, fmt.Errorf("fetching response from http client: %w", err)
 	}
 
-	defer resp.Body.Close()
+	defer func() { httputil.CloseResponse(resp) }()
 
-	if resp.StatusCode == 404 {
+	if resp.StatusCode == http.StatusNotFound {
 		return nil, nil
 	}
 
-	if resp.StatusCode != 200 {
+	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("invalid status code: %d", resp.StatusCode)
 	}
 
@@ -76,24 +76,23 @@ func (api *controlPlaneAPIImpl) GetDestinationSSHKeys(ctx context.Context, id st
 	return &keypair, nil
 }
 
-func NewCachedControlPlaneAPI(baseURI string, auth BasicAuth) CPInternalAPI {
-	apiClient := NewControlPlaneAPI(baseURI, auth)
-	return &cachedControlPlaneAPIImpl{
-		cpAPI: apiClient,
-		cache: make(map[string]*PublicPrivateKeyPair),
+func NewInternalClientWithCache(baseURI string, auth BasicAuth) InternalControlPlane {
+	return &internalClientWithCache{
+		client: NewInternalClient(baseURI, auth),
+		cache:  make(map[string]*PublicPrivateKeyPair),
 	}
 }
 
-func (api *cachedControlPlaneAPIImpl) GetDestinationSSHKeys(ctx context.Context, id string) (*PublicPrivateKeyPair, error) {
-	if val, ok := api.cache[id]; ok {
+func (cc *internalClientWithCache) GetDestinationSSHKeys(ctx context.Context, id string) (*PublicPrivateKeyPair, error) {
+	if val, ok := cc.cache[id]; ok {
 		return val, nil
 	}
 
-	keyPair, err := api.cpAPI.GetDestinationSSHKeys(ctx, id)
+	keyPair, err := cc.client.GetDestinationSSHKeys(ctx, id)
 	if err != nil {
 		return nil, fmt.Errorf("fetching and caching destination ssh keys: %w", err)
 	}
 
-	api.cache[id] = keyPair
+	cc.cache[id] = keyPair
 	return keyPair, nil
 }
