@@ -2,7 +2,7 @@
     "components": [
         {
             "name": "server",
-            "features": ["features"]
+            "features": ["gzip-req-payload"]
         }
     ]
 }
