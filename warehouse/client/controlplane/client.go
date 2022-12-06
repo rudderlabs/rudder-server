@@ -49,6 +49,7 @@ func (api *internalClient) GetDestinationSSHKeys(ctx context.Context, id string)
 	}
 
 	req.SetBasicAuth(api.auth.Username, api.auth.Password)
+	req.Header.Set("Content-Type", "application/json")
 
 	client := http.Client{}
 	resp, err := client.Do(req)
