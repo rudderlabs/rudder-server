@@ -825,20 +825,24 @@ func (wh *HandleT) getUploadsToProcess(ctx context.Context, availableWorkers int
 		`, partitionIdentifierSQL, warehouseutils.WarehouseUploadsTable, wh.destType, false, model.ExportedData, model.Aborted, skipIdentifiersSQL, availableWorkers)
 
 	var (
-		rows *sql.Rows
-		err  error
+		rows               *sql.Rows
+		err                error
+		degradedWorkspaces = tenantManager.DegradedWorkspaces()
 	)
+	if degradedWorkspaces == nil {
+		degradedWorkspaces = []string{}
+	}
 
 	if len(skipIdentifiers) > 0 {
 		rows, err = wh.dbHandle.Query(
 			sqlStatement,
-			pq.Array(tenantManager.DegradedWorkspaces()),
+			pq.Array(degradedWorkspaces),
 			pq.Array(skipIdentifiers),
 		)
 	} else {
 		rows, err = wh.dbHandle.Query(
 			sqlStatement,
-			pq.Array(tenantManager.DegradedWorkspaces()),
+			pq.Array(degradedWorkspaces),
 		)
 	}
 
