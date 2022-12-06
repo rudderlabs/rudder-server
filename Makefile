@@ -92,7 +92,7 @@ setup-warehouse-integration: cleanup-warehouse-integration
 	REDSHIFT_INTEGRATION_TEST_SCHEMA=rwh-$(shell uuidgen)	\
 	SNOWFLAKE_INTEGRATION_TEST_SCHEMA=swh-$(shell uuidgen) 	\
 	DATABRICKS_INTEGRATION_TEST_SCHEMA=dwh-$(shell uuidgen) 	\
-	docker-compose -f warehouse/docker-compose.test.yml up --build start_warehouse_integration
+	docker-compose -f warehouse/docker-compose.test.yml up --build start_warehouse_integration || docker-compose ps
 
 logs-warehouse-integration:
 	docker logs wh-backend
