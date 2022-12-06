@@ -22,16 +22,20 @@ import (
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/initialize"
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/service"
 	"github.com/rudderlabs/rudder-server/services/filemanager"
+	"github.com/rudderlabs/rudder-server/services/oauth"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
 var pkgLogger = logger.NewLogger().Child("regulation-worker")
 
-func main() {
+func init() {
 	initialize.Init()
 	backendconfig.Init()
+	oauth.Init()
+}
 
+func main() {
 	pkgLogger.Info("starting regulation-worker")
 	ctx, cancel := context.WithCancel(context.Background())
 
@@ -58,6 +62,9 @@ func Run(ctx context.Context) {
 	if err != nil {
 		panic(fmt.Errorf("error while getting workspaceId: %w", err))
 	}
+	// setting up oauth
+	OAuth := oauth.NewOAuthErrorHandler(backendconfig.DefaultBackendConfig, oauth.WithRudderFlow(oauth.RudderFlow_Delete))
+
 	svc := service.JobSvc{
 		API: &client.JobAPI{
 			Client:         &http.Client{Timeout: config.GetDuration("HttpClient.regulationWorker.regulationManager.timeout", 60, time.Second)},
@@ -73,8 +80,10 @@ func Run(ctx context.Context) {
 				FilesLimit: config.GetInt("REGULATION_WORKER_FILES_LIMIT", 1000),
 			},
 			&api.APIManager{
-				Client:           &http.Client{Timeout: config.GetDuration("HttpClient.regulationWorker.transformer.timeout", 60, time.Second)},
-				DestTransformURL: config.MustGetString("DEST_TRANSFORM_URL"),
+				Client:                       &http.Client{Timeout: config.GetDuration("HttpClient.regulationWorker.transformer.timeout", 60, time.Second)},
+				DestTransformURL:             config.MustGetString("DEST_TRANSFORM_URL"),
+				OAuth:                        OAuth,
+				MaxOAuthRefreshRetryAttempts: config.GetInt("RegulationWorker.oauth.maxRefreshRetryAttempts", 1),
 			}),
 	}
 

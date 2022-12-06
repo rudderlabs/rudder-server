@@ -11,7 +11,7 @@ import (
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/services/filemanager"
 
-	"github.com/gofrs/uuid"
+	"github.com/google/uuid"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
@@ -54,8 +54,12 @@ func getMinMaxCreatedAt(key string) (int64, int64, error) {
 		return minJobCreatedAt, maxJobCreatedAt, fmt.Errorf("%s 's parse with _ gave tokens more than 3. Expected 3", key)
 	}
 	keyTokens = strings.Split(keyTokens[2], ".")
-	if len(keyTokens) != 6 {
-		return minJobCreatedAt, maxJobCreatedAt, fmt.Errorf("%s 's parse with . gave tokens more than 6. Expected 6", keyTokens[2])
+	if len(keyTokens) > 7 {
+		return minJobCreatedAt, maxJobCreatedAt, fmt.Errorf("%s 's parse with . gave tokens more than 7. Expected 6 or 7", keyTokens[2])
+	}
+
+	if len(keyTokens) < 6 { // for backward compatibility TODO: remove this check after some time
+		return minJobCreatedAt, maxJobCreatedAt, fmt.Errorf("%s 's parse with . gave tokens less than 6. Expected 6 or 7", keyTokens[2])
 	}
 	minJobCreatedAt, err = strconv.ParseInt(keyTokens[3], 10, 64)
 	if err != nil {
@@ -135,8 +139,8 @@ func (gwHandle *GWReplayRequestHandler) fetchDumpsList(ctx context.Context) {
 
 			if pass {
 				job := jobsdb.JobT{
-					UUID:         uuid.Must(uuid.NewV4()),
-					UserID:       fmt.Sprintf(`random-%s`, uuid.Must(uuid.NewV4())),
+					UUID:         uuid.New(),
+					UserID:       fmt.Sprintf(`random-%s`, uuid.New()),
 					Parameters:   []byte(`{}`),
 					CustomVal:    "replay",
 					EventPayload: []byte(fmt.Sprintf(`{"location": %q}`, object.Key)),
@@ -192,8 +196,8 @@ func (procHandle *ProcErrorRequestHandler) fetchDumpsList(ctx context.Context) {
 			}
 
 			job := jobsdb.JobT{
-				UUID:         uuid.Must(uuid.NewV4()),
-				UserID:       fmt.Sprintf(`random-%s`, uuid.Must(uuid.NewV4())),
+				UUID:         uuid.New(),
+				UserID:       fmt.Sprintf(`random-%s`, uuid.New()),
 				Parameters:   []byte(`{}`),
 				CustomVal:    "replay",
 				EventPayload: []byte(fmt.Sprintf(`{"location": %q}`, object.Key)),

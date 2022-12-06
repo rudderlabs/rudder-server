@@ -30,6 +30,12 @@ func (*warehouseGRPC) GetWHUploads(_ context.Context, request *proto.WHUploadsRe
 		Offset:          request.Offset,
 		API:             UploadAPI,
 	}
+	uploadsReq.API.log.Infof(
+		"[GetWHUploads] Fetching warehouse uploads for WorkspaceId: %s, SourceId: %s, DestinationId: %s",
+		uploadsReq.WorkspaceID,
+		uploadsReq.SourceID,
+		uploadsReq.DestinationID,
+	)
 	res, err := uploadsReq.GetWhUploads()
 	return res, err
 }
@@ -41,6 +47,12 @@ func (*warehouseGRPC) TriggerWHUploads(_ context.Context, request *proto.WHUploa
 		DestinationID: request.DestinationId,
 		API:           UploadAPI,
 	}
+	uploadsReq.API.log.Infof(
+		"[TriggerWHUploads] Triggering warehouse uploads for WorkspaceId: %s, SourceId: %s, DestinationId: %s",
+		uploadsReq.WorkspaceID,
+		uploadsReq.SourceID,
+		uploadsReq.DestinationID,
+	)
 	res, err := uploadsReq.TriggerWhUploads()
 	return res, err
 }
@@ -51,6 +63,11 @@ func (*warehouseGRPC) GetWHUpload(_ context.Context, request *proto.WHUploadRequ
 		WorkspaceID: request.WorkspaceId,
 		API:         UploadAPI,
 	}
+	uploadReq.API.log.Infof(
+		"[GetWHUpload] Fetching warehouse upload for WorkspaceId: %s, UploadId: %d",
+		uploadReq.WorkspaceID,
+		uploadReq.UploadId,
+	)
 	res, err := uploadReq.GetWHUpload()
 	return res, err
 }
@@ -65,6 +82,11 @@ func (*warehouseGRPC) TriggerWHUpload(_ context.Context, request *proto.WHUpload
 		WorkspaceID: request.WorkspaceId,
 		API:         UploadAPI,
 	}
+	uploadReq.API.log.Infof(
+		"[TriggerWHUpload] Triggering warehouse upload for WorkspaceId: %s, UploadId: %d",
+		uploadReq.WorkspaceID,
+		uploadReq.UploadId,
+	)
 	res, err := uploadReq.TriggerWHUpload()
 	return res, err
 }
@@ -85,6 +107,14 @@ func (*warehouseGRPC) RetryWHUploads(ctx context.Context, req *proto.RetryWHUplo
 		UploadIds:       req.UploadIds,
 		API:             UploadAPI,
 	}
+	retryReq.API.log.Infof(
+		"[RetryWHUploads] Retrying warehouse upload for WorkspaceId: %s, SourceId: %s, DestinationId: %s, DestinationType: %s, IntervalInHours: %d",
+		retryReq.WorkspaceID,
+		retryReq.SourceID,
+		retryReq.DestinationID,
+		retryReq.DestinationType,
+		retryReq.IntervalInHours,
+	)
 	r, err := retryReq.RetryWHUploads(ctx)
 	response = &proto.RetryWHUploadsResponse{
 		Message:    r.Message,
@@ -137,7 +167,10 @@ func (*warehouseGRPC) ValidateObjectStorageDestination(ctx context.Context, requ
 	if err != nil {
 		return nil, err
 	}
-
+	UploadAPI.log.Infof(
+		"[ValidateObjectStorageDestination] Validating object storage destination for type: %s",
+		r.Type,
+	)
 	err = validateObjectStorage(ctx, r)
 	if err != nil {
 
@@ -169,6 +202,13 @@ func (*warehouseGRPC) CountWHUploadsToRetry(ctx context.Context, req *proto.Retr
 		UploadIds:       req.UploadIds,
 		API:             UploadAPI,
 	}
+	retryReq.API.log.Infof(
+		"[RetryWHUploads] Retrying warehouse uploads for WorkspaceId: %s, SourceId: %s, DestinationId: %s, IntervalInHours: %d",
+		retryReq.WorkspaceID,
+		retryReq.SourceID,
+		retryReq.DestinationID,
+		retryReq.IntervalInHours,
+	)
 	r, err := retryReq.UploadsToRetry(ctx)
 	response = &proto.RetryWHUploadsResponse{
 		Count:      r.Count,

@@ -19,7 +19,7 @@ import (
 	"time"
 
 	"github.com/bugsnag/bugsnag-go/v2"
-	"github.com/gofrs/uuid"
+	"github.com/google/uuid"
 	"github.com/gorilla/mux"
 	"github.com/rs/cors"
 	"github.com/tidwall/gjson"
@@ -590,7 +590,7 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 				}
 				toSet["rudderId"] = rudderId
 				if messageId := strings.TrimSpace(vjson.Get("messageId").String()); messageId == "" {
-					toSet["messageId"] = uuid.Must(uuid.NewV4()).String()
+					toSet["messageId"] = uuid.New().String()
 				}
 				out = append(out, toSet)
 				return true // keep iterating
@@ -638,7 +638,7 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 			eventBatchesToRecord = append(eventBatchesToRecord, string(body))
 			sourcesJobRunID := gjson.GetBytes(body, "batch.0.context.sources.job_run_id").Str   // pick the job_run_id from the first event of batch. We are assuming job_run_id will be same for all events in a batch and the batch is coming from rudder-sources
 			sourcesTaskRunID := gjson.GetBytes(body, "batch.0.context.sources.task_run_id").Str // pick the task_run_id from the first event of batch. We are assuming task_run_id will be same for all events in a batch and the batch is coming from rudder-sources
-			id := uuid.Must(uuid.NewV4())
+			id := uuid.New()
 
 			params := map[string]interface{}{
 				"source_id":          sourceID,
@@ -1004,7 +1004,7 @@ func (gateway *HandleT) getWarehousePending(payload []byte) bool {
 		return false
 	}
 
-	defer resp.Body.Close()
+	defer func() { rs_httputil.CloseResponse(resp) }()
 
 	var whPendingResponse warehouseutils.PendingEventsResponseT
 	respData, err := io.ReadAll(resp.Body)
@@ -1447,6 +1447,7 @@ func (gateway *HandleT) StartWebHandler(ctx context.Context) error {
 	srvMux.Use(
 		middleware.StatMiddleware(ctx, srvMux, stats.Default, component),
 		middleware.LimitConcurrentRequests(maxConcurrentRequests),
+		middleware.UncompressMiddleware,
 	)
 	srvMux.HandleFunc("/v1/batch", gateway.webBatchHandler).Methods("POST")
 	srvMux.HandleFunc("/v1/identify", gateway.webIdentifyHandler).Methods("POST")
@@ -1582,7 +1583,7 @@ func (gateway *HandleT) addToWebRequestQ(_ *http.ResponseWriter, req *http.Reque
 	workerKey := userIDHeader
 	if userIDHeader == "" {
 		// If the request comes through proxy, proxy would already send this. So this shouldn't be happening in that case
-		workerKey = uuid.Must(uuid.NewV4()).String()
+		workerKey = uuid.New().String()
 		gateway.emptyAnonIdHeaderStat.Increment()
 	}
 	userWebRequestWorker := gateway.findUserWebRequestWorker(workerKey)

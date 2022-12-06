@@ -68,25 +68,28 @@ func (r *Locker) WithLockInCtx(ctx context.Context, f func(l LockToken) error) e
 
 // AsyncLock acquires a lock until the token is returned to the receiving channel
 func (r *Locker) AsyncLockWithCtx(ctx context.Context) (LockToken, chan<- LockToken, error) {
-	errCh := make(chan error)
-	acquireLock := make(chan LockToken)
-	releaseLock := make(chan LockToken)
+	type tokenOrErr struct {
+		token LockToken
+		err   error
+	}
+	async := make(chan tokenOrErr)
+	release := make(chan LockToken)
 
 	go func() {
-		err := r.WithLockInCtx(ctx, func(l LockToken) error {
-			acquireLock <- l
-			<-releaseLock
+		if err := r.WithLockInCtx(ctx, func(l LockToken) error {
+			async <- tokenOrErr{token: l}
+			<-release
 			return nil
-		})
-		errCh <- err
+		}); err != nil {
+			async <- tokenOrErr{err: err}
+		}
 	}()
 
-	select {
-	case <-errCh:
+	asyncLock := <-async
+	if asyncLock.err != nil {
 		return nil, nil, fmt.Errorf("failed to acquire a lock: %w", ctx.Err())
-	case dsListLock := <-acquireLock:
-		return dsListLock, releaseLock, nil
 	}
+	return asyncLock.token, release, nil
 }
 
 type lockToken struct{}

@@ -239,14 +239,19 @@ func (bq *HandleT) dropStagingTable(stagingTableName string) {
 
 func (bq *HandleT) DeleteBy(tableNames []string, params warehouseutils.DeleteByParams) error {
 	pkgLogger.Infof("BQ: Cleaning up the following tables in bigquery for BQ:%s : %v", tableNames)
+
 	for _, tb := range tableNames {
-		sqlStatement := fmt.Sprintf(`DELETE FROM "%[1]s"."%[2]s" WHERE
-		context_sources_job_run_id <> @jobrunid AND
-		context_sources_task_run_id <> @taskrunid AND
-		context_source_id = @sourceid AND
-		received_at < @starttime`,
-			bq.namespace,
-			tb,
+		tableName := fmt.Sprintf("`%s`.`%s`", bq.namespace, tb)
+		sqlStatement := fmt.Sprintf(`
+			DELETE FROM
+				%[1]s
+			WHERE
+				context_sources_job_run_id <> @jobrunid AND
+				context_sources_task_run_id <> @taskrunid AND
+				context_source_id = @sourceid AND
+				received_at < @starttime;
+			`,
+			tableName,
 		)
 
 		pkgLogger.Infof("PG: Deleting rows in table in bigquery for BQ:%s", bq.warehouse.Destination.ID)
@@ -273,7 +278,6 @@ func (bq *HandleT) DeleteBy(tableNames []string, params warehouseutils.DeleteByP
 				return status.Err()
 			}
 		}
-
 	}
 	return nil
 }
@@ -295,7 +299,7 @@ func (bq *HandleT) loadTable(tableName string, _, getLoadFileLocFromTableUploads
 		loadFiles = bq.uploader.GetLoadFilesMetadata(warehouseutils.GetLoadFilesOptionsT{Table: tableName})
 	}
 	gcsLocations := warehouseutils.GetGCSLocations(loadFiles, warehouseutils.GCSLocationOptionsT{})
-	pkgLogger.Infof("BQ: Loading data into table: %s in bigquery dataset: %s in project: %s from %v", tableName, bq.namespace, bq.projectID, loadFiles)
+	pkgLogger.Infof("BQ: Loading data into table: %s in bigquery dataset: %s in project: %s", tableName, bq.namespace, bq.projectID)
 	gcsRef := bigquery.NewGCSReference(gcsLocations...)
 	gcsRef.SourceFormat = bigquery.JSON
 	gcsRef.MaxBadRecords = 0

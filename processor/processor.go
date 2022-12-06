@@ -41,6 +41,7 @@ import (
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/services/transientsource"
 	"github.com/rudderlabs/rudder-server/utils/bytesize"
+	"github.com/rudderlabs/rudder-server/utils/httputil"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/types"
@@ -562,7 +563,7 @@ func (proc *HandleT) makeFeaturesFetchCall() bool {
 		return true
 	}
 
-	defer func() { _ = res.Body.Close() }()
+	defer func() { httputil.CloseResponse(res) }()
 	body, err := io.ReadAll(res.Body)
 	if err != nil {
 		return true

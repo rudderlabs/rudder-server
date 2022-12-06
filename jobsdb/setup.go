@@ -1,13 +1,11 @@
 package jobsdb
 
 import (
-	"database/sql"
 	"fmt"
 
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/jobsdb/internal/lock"
 	migrator "github.com/rudderlabs/rudder-server/services/sql-migrator"
-	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
 // SchemaMigrationTable returns the table name used for storing current schema version.
@@ -20,44 +18,29 @@ func (jd *HandleT) SchemaMigrationTable() string {
 // The following data are passed to JobsDB migration templates:
 // - Prefix: The table prefix used by this jobsdb instance.
 // - Datasets: Array of existing dataset indices.
-// If clearAll is set to true, all existing jobsdb tables will be removed first.
-func (jd *HandleT) setupDatabaseTables(l lock.LockToken, clearAll bool) {
-	if clearAll {
-		jd.dropDatabaseTables(l)
-	}
-
-	// collect all existing dataset indices, and create template data
-	datasets := jd.refreshDSList(l)
-
-	datasetIndices := make([]string, 0)
-	for _, dataset := range datasets {
-		datasetIndices = append(datasetIndices, dataset.Index)
-	}
-
-	templateData := map[string]interface{}{
-		"Prefix":   jd.tablePrefix,
-		"Datasets": datasetIndices,
-	}
-
-	psqlInfo := misc.GetConnectionString()
-	db, err := sql.Open("postgres", psqlInfo)
-	if err != nil {
-		panic(fmt.Errorf("error DB for migrate open: %w", err))
-	}
-
-	defer func() { _ = db.Close() }()
-
+func (jd *HandleT) setupDatabaseTables(templateData map[string]interface{}) {
 	// setup migrator with appropriate schema migrations table
 	m := &migrator.Migrator{
-		Handle:                     db,
+		Handle:                     jd.dbHandle,
 		MigrationsTable:            jd.SchemaMigrationTable(),
 		ShouldForceSetLowerVersion: config.GetBool("SQLMigrator.forceSetLowerVersion", true),
 	}
-
 	// execute any necessary migrations
-	err = m.MigrateFromTemplates("jobsdb", templateData)
-	if err != nil {
+	if err := m.MigrateFromTemplates("jobsdb", templateData); err != nil {
 		panic(fmt.Errorf("error while migrating '%v' jobsdb tables: %w", jd.tablePrefix, err))
+	}
+}
+
+func (jd *HandleT) runAlwaysChangesets(templateData map[string]interface{}) {
+	// setup migrator with appropriate schema migrations table
+	m := &migrator.Migrator{
+		Handle:          jd.dbHandle,
+		MigrationsTable: fmt.Sprintf("%s_runalways_migrations", jd.tablePrefix),
+		RunAlways:       true,
+	}
+	// execute any necessary migrations
+	if err := m.MigrateFromTemplates("jobsdb_always", templateData); err != nil {
+		panic(fmt.Errorf("error while running changesets that run always in '%s' jobsdb tables: %w", jd.tablePrefix, err))
 	}
 }
 

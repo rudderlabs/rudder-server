@@ -3,7 +3,7 @@ version: "2.1"
 services:
   wh-jobsDb:
     container_name: wh-jobsDb
-    image: postgres:11-alpine
+    image: postgres:15-alpine
     environment:
       - POSTGRES_DB=jobsdb
       - POSTGRES_PASSWORD=password
@@ -16,13 +16,9 @@ services:
       retries: 25
   wh-transformer:
     container_name: wh-transformer
-    image: rudderlabs/rudder-transformer:latest
+    image: rudderlabs/develop-rudder-transformer:master
     ports:
       - "9090"
-    healthcheck:
-      test: wget --no-verbose --tries=1 --spider http://localhost:9090/health || exit 1
-      interval: 1s
-      retries: 25
   wh-databricks-connector:
     image: rudderstack/rudder-databricks-connector:v1.3.0
     container_name: wh-databricks-connector
@@ -60,7 +56,7 @@ services:
       retries: 25
   wh-postgres:
     container_name: wh-postgres
-    image: postgres:11-alpine
+    image: postgres:15-alpine
     environment:
       - POSTGRES_DB=rudderdb
       - POSTGRES_PASSWORD=rudder-password
@@ -86,7 +82,7 @@ services:
       retries: 25
   wh-mssql:
     container_name: wh-mssql
-    image: mcr.microsoft.com/azure-sql-edge:1.0.5
+    image: rudderstack/azure-sql-edge:1.0.6
     environment:
       - ACCEPT_EULA=Y
       - SA_PASSWORD=reallyStrongPwd123
@@ -94,10 +90,6 @@ services:
       - SA_USER=SA
     ports:
       - "1433"
-    healthcheck:
-      test: /opt/mssql-tools/bin/sqlcmd -S localhost -U SA -P reallyStrongPwd123 -Q "SELECT 1" || exit 1
-      interval: 1s
-      retries: 25
   wh-zookeeper:
     image: zookeeper:3.5
     container_name: wh-clickhouse-zookeeper

@@ -129,7 +129,7 @@ func (c *Client) Send(ctx context.Context, component string, features []string) 
 		if err != nil {
 			return fmt.Errorf("doing http request: %w", err)
 		}
-		defer resp.Body.Close()
+		defer func() { httputil.CloseResponse(resp) }()
 
 		if resp.StatusCode != http.StatusNoContent {
 			// we don't expect a body, unless there is an error

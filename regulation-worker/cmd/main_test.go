@@ -29,6 +29,7 @@ import (
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/model"
 	"github.com/rudderlabs/rudder-server/services/filemanager"
 	"github.com/rudderlabs/rudder-server/services/kvstoremanager"
+	"github.com/rudderlabs/rudder-server/utils/httputil"
 )
 
 var (
@@ -127,7 +128,7 @@ func TestFlow(t *testing.T) {
 		if err != nil {
 			return err
 		}
-		defer resp.Body.Close()
+		defer func() { httputil.CloseResponse(resp) }()
 		if resp.StatusCode != http.StatusOK {
 			return fmt.Errorf("status code not OK")
 		}
