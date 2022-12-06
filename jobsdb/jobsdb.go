@@ -3363,6 +3363,53 @@ func (jd *HandleT) getImportingList(ctx context.Context, params GetQueryParamsT)
 }
 
 /*
+deleteJobStatus deletes the latest status of a batch of jobs
+This is only done during recovery, which happens during the server start.
+So, we don't have to worry about dsEmptyResultCache
+*/
+func (jd *HandleT) deleteJobStatus() {
+	err := jd.WithUpdateSafeTx(context.TODO(), func(tx UpdateSafeTx) error {
+		tags := statTags{CustomValFilters: []string{jd.tablePrefix}}
+		queryStat := jd.getTimerStat("jobsdb_delete_job_status_time", &tags)
+		queryStat.Start()
+		defer queryStat.End()
+
+		dsList := jd.getDSList()
+
+		for _, ds := range dsList {
+			ds := ds
+			if err := jd.deleteJobStatusDSInTx(tx.SqlTx(), ds); err != nil {
+				return err
+			}
+			tx.Tx().AddSuccessListener(func() {
+				jd.dropDSFromCache(ds)
+			})
+		}
+
+		return nil
+	})
+	jd.assertError(err)
+}
+
+func (jd *HandleT) deleteJobStatusDSInTx(txHandler transactionHandler, ds dataSetT) error {
+	tags := statTags{CustomValFilters: []string{jd.tablePrefix}}
+	queryStat := jd.getTimerStat("jobsdb_delete_job_status_ds_time", &tags)
+	queryStat.Start()
+	defer queryStat.End()
+
+	_, err := txHandler.Exec(
+		fmt.Sprintf(
+			`DELETE FROM %[1]q
+				WHERE id = ANY(
+					SELECT id from "v_last_%[1]s" where job_state='executing'
+				)`,
+			ds.JobStatusTable,
+		),
+	)
+	return err
+}
+
+/*
 failExecuting sets the state of the executing jobs to failed
 This is only done during recovery, which happens during the server start.
 So, we don't have to worry about dsEmptyResultCache
@@ -3393,10 +3440,6 @@ func (jd *HandleT) failExecuting() {
 	jd.assertError(err)
 }
 
-/*
-stateFilters and customValFilters do a OR query on values passed in array
-parameterFilters do a AND query on values included in the map
-*/
 func (jd *HandleT) failExecutingDSInTx(txHandler transactionHandler, ds dataSetT) error {
 	queryStat := jd.getTimerStat(
 		"jobsdb_fail_executing_ds_time",
@@ -3613,53 +3656,6 @@ func (jd *HandleT) DeleteExecuting() {
 		return nil
 	}
 	_ = jd.executeDbRequest(newWriteDbRequest("delete_job_status", &tags, command))
-}
-
-/*
-deleteJobStatus deletes the latest status of a batch of jobs
-This is only done during recovery, which happens during the server start.
-So, we don't have to worry about dsEmptyResultCache
-*/
-func (jd *HandleT) deleteJobStatus() {
-	err := jd.WithUpdateSafeTx(context.TODO(), func(tx UpdateSafeTx) error {
-		tags := statTags{CustomValFilters: []string{jd.tablePrefix}}
-		queryStat := jd.getTimerStat("jobsdb_delete_job_status_time", &tags)
-		queryStat.Start()
-		defer queryStat.End()
-
-		dsList := jd.getDSList()
-
-		for _, ds := range dsList {
-			ds := ds
-			if err := jd.deleteJobStatusDSInTx(tx.SqlTx(), ds); err != nil {
-				return err
-			}
-			tx.Tx().AddSuccessListener(func() {
-				jd.dropDSFromCache(ds)
-			})
-		}
-
-		return nil
-	})
-	jd.assertError(err)
-}
-
-func (jd *HandleT) deleteJobStatusDSInTx(txHandler transactionHandler, ds dataSetT) error {
-	tags := statTags{CustomValFilters: []string{jd.tablePrefix}}
-	queryStat := jd.getTimerStat("jobsdb_delete_job_status_ds_time", &tags)
-	queryStat.Start()
-	defer queryStat.End()
-
-	_, err := txHandler.Exec(
-		fmt.Sprintf(
-			`DELETE FROM %[1]q
-				WHERE id = ANY(
-					SELECT id from "v_last_%[1]s" where job_state='executing'
-				)`,
-			ds.JobStatusTable,
-		),
-	)
-	return err
 }
 
 /*
