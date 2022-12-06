@@ -55,7 +55,6 @@ func TestFetchSSHKeys(t *testing.T) {
 
 		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
-
 			svc := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				_, _, ok := r.BasicAuth()
 				require.True(t, ok)
@@ -78,5 +77,4 @@ func TestFetchSSHKeys(t *testing.T) {
 			require.Equal(t, tc.expectedKeyPair, keys)
 		})
 	}
-
 }
