@@ -280,6 +280,8 @@ type JobsDB interface {
 	// GetImporting finds jobs in importing state
 	GetImporting(ctx context.Context, params GetQueryParamsT) (JobsResult, error)
 
+	GetPending(ctx context.Context, params GetQueryParamsT) (JobsResult, error)
+
 	// GetPileUpCounts returns statistics (counters) of incomplete jobs
 	// grouped by workspaceId and destination type
 	GetPileUpCounts(ctx context.Context) (statMap map[string]map[string]int, err error)
@@ -2625,6 +2627,131 @@ func (jd *HandleT) getProcessedJobsDS(ctx context.Context, ds dataSetT, params G
 	}, true, nil
 }
 
+func (jd *HandleT) getPendingJobsDS(ctx context.Context, ds dataSetT, params GetQueryParamsT) (JobsResult, bool, error) { // skipcq: CRT-P0003
+	customValFilters := params.CustomValFilters
+	parameterFilters := params.ParameterFilters
+	workspaceFilters := params.WorkspaceFilter
+	stateFilters := []string{NotProcessed.State, Waiting.State, Failed.State}
+
+	tags := statTags{CustomValFilters: params.CustomValFilters, ParameterFilters: params.ParameterFilters}
+	start := time.Now()
+	defer jd.getTimerStat("pending_ds_time", &tags).Since(start)
+
+	var rows *sql.Rows
+	var err error
+	var args []interface{}
+
+	// event_count default 1, number of items in payload
+	sqlStatement := fmt.Sprintf(
+		`SELECT jobs.job_id, jobs.uuid, jobs.user_id, jobs.parameters, jobs.custom_val, jobs.event_payload, jobs.event_count, jobs.created_at, jobs.expire_at, jobs.workspace_id,`+
+			`	pg_column_size(jobs.event_payload) as payload_size, `+
+			`	sum(jobs.event_count) over (order by jobs.job_id asc) as running_event_counts, `+
+			`	sum(pg_column_size(jobs.event_payload)) over (order by jobs.job_id) as running_payload_size `+
+			` FROM %[1]q AS jobs `+
+			`LEFT JOIN %[2]q status ON jobs.job_id=status.job_id `,
+		ds.JobTable, ds.JobStatusTable)
+
+	if params.AfterJobID != nil {
+		sqlStatement += fmt.Sprintf(" AND jobs.job_id > %d", *params.AfterJobID)
+	}
+
+	if len(stateFilters) > 0 {
+		sqlStatement += "AND (" + constructStateQuery("status", "job_state", stateFilters, "OR") + ")"
+		args = append(args, time.Now())
+	}
+
+	if len(customValFilters) > 0 && !params.IgnoreCustomValFiltersInQuery {
+		sqlStatement += " AND " + constructQueryOR("jobs.custom_val", customValFilters)
+	}
+	if len(parameterFilters) > 0 {
+		sqlStatement += " AND " + constructParameterJSONQuery("jobs", parameterFilters)
+	}
+	if len(workspaceFilters) > 0 {
+		sqlStatement += " AND " + constructQueryOR("jobs.workspace_id", workspaceFilters)
+	}
+
+	sqlStatement += " ORDER BY jobs.job_id"
+	if params.JobsLimit > 0 {
+		sqlStatement += fmt.Sprintf(" LIMIT $%d", len(args)+1)
+		args = append(args, params.JobsLimit)
+	}
+
+	var wrapQuery []string
+	if params.EventsLimit > 0 {
+		// If there is a single job in the dataset containing more events than the EventsLimit, we should return it,
+		// otherwise processing will halt.
+		// Therefore, we always retrieve one more job from the database than our limit dictates.
+		// This job will only be returned to the result in case of the aforementioned scenario, otherwise it gets filtered out
+		// later, during row scanning
+		wrapQuery = append(wrapQuery, fmt.Sprintf(`running_event_counts - subquery.event_count <= $%d`, len(args)+1))
+		args = append(args, params.EventsLimit)
+	}
+
+	if params.PayloadSizeLimit > 0 {
+		wrapQuery = append(wrapQuery, fmt.Sprintf(`running_payload_size - subquery.payload_size <= $%d`, len(args)+1))
+		args = append(args, params.PayloadSizeLimit)
+	}
+
+	if len(wrapQuery) > 0 {
+		sqlStatement = `SELECT * FROM (` + sqlStatement + `) subquery WHERE ` + strings.Join(wrapQuery, " AND ")
+	}
+
+	jd.logger.Infof("Pending Jobs Query: %s, args : %v", sqlStatement, args)
+	rows, err = jd.dbHandle.QueryContext(ctx, sqlStatement, args...)
+	if err != nil {
+		return JobsResult{}, false, err
+	}
+	defer func() { _ = rows.Close() }()
+	if err != nil {
+		return JobsResult{}, false, err
+	}
+	var runningEventCount int
+	var runningPayloadSize int64
+
+	var jobList []*JobT
+	var limitsReached bool
+	var eventCount int
+	var payloadSize int64
+
+	for rows.Next() {
+		var job JobT
+		err := rows.Scan(&job.JobID, &job.UUID, &job.UserID, &job.Parameters, &job.CustomVal,
+			&job.EventPayload, &job.EventCount, &job.CreatedAt, &job.ExpireAt, &job.WorkspaceId, &job.PayloadSize, &runningEventCount, &runningPayloadSize)
+		if err != nil {
+			return JobsResult{}, false, err
+		}
+		if params.EventsLimit > 0 && runningEventCount > params.EventsLimit && len(jobList) > 0 {
+			// events limit overflow is triggered as long as we have read at least one job
+			limitsReached = true
+			break
+		}
+		if params.PayloadSizeLimit > 0 && runningPayloadSize > params.PayloadSizeLimit && len(jobList) > 0 {
+			// payload size limit overflow is triggered as long as we have read at least one job
+			limitsReached = true
+			break
+		}
+		// we are adding the job only after testing for limitsReached
+		// so that we don't always overflow
+		jobList = append(jobList, &job)
+		payloadSize = runningPayloadSize
+		eventCount = runningEventCount
+
+	}
+	if !limitsReached &&
+		(params.JobsLimit > 0 && len(jobList) == params.JobsLimit) || // we reached the jobs limit
+		(params.EventsLimit > 0 && eventCount >= params.EventsLimit) || // we reached the events limit
+		(params.PayloadSizeLimit > 0 && payloadSize >= params.PayloadSizeLimit) { // we reached the payload limit
+		limitsReached = true
+	}
+
+	return JobsResult{
+		Jobs:          jobList,
+		LimitsReached: limitsReached,
+		PayloadSize:   payloadSize,
+		EventsCount:   eventCount,
+	}, true, nil
+}
+
 /*
 count == 0 means return all
 stateFilters and customValFilters do a OR query on values passed in array
@@ -3601,6 +3728,99 @@ func (jd *HandleT) printLists(console bool) {
 		fmt.Println("List:", jd.getDSList())
 		fmt.Println("Ranges:", jd.getDSRangeList())
 	}
+}
+
+func (jd *HandleT) GetPending(ctx context.Context, params GetQueryParamsT) (JobsResult, error) { // skipcq: CRT-P0003
+	if params.JobsLimit <= 0 {
+		return JobsResult{}, nil
+	}
+
+	tags := statTags{CustomValFilters: params.CustomValFilters, ParameterFilters: params.ParameterFilters}
+	command := func() interface{} {
+		return queryResultWrapper(jd.getPending(ctx, params))
+	}
+	res, _ := jd.executeDbRequest(newReadDbRequest("pending", &tags, command)).(queryResult)
+	return res.JobsResult, res.err
+}
+
+func (jd *HandleT) getPending(ctx context.Context, params GetQueryParamsT) (JobsResult, error) { // skipcq: CRT-P0003
+	if params.JobsLimit <= 0 {
+		return JobsResult{}, nil
+	}
+
+	tags := statTags{CustomValFilters: params.CustomValFilters, ParameterFilters: params.ParameterFilters}
+	queryStat := jd.getTimerStat("pending_jobs_time", &tags)
+	queryStat.Start()
+	defer queryStat.End()
+
+	// The order of lock is very important. The migrateDSLoop
+	// takes lock in this order so reversing this will cause
+	// deadlocks
+	if !jd.dsMigrationLock.RTryLockWithCtx(ctx) {
+		return JobsResult{}, fmt.Errorf("could not acquire a migration read lock: %w", ctx.Err())
+	}
+	defer jd.dsMigrationLock.RUnlock()
+	if !jd.dsListLock.RTryLockWithCtx(ctx) {
+		return JobsResult{}, fmt.Errorf("could not acquire a dslist read lock: %w", ctx.Err())
+	}
+	defer jd.dsListLock.RUnlock()
+
+	dsList := jd.getDSList()
+
+	limitByEventCount := false
+	if params.EventsLimit > 0 {
+		limitByEventCount = true
+	}
+
+	limitByPayloadSize := false
+	if params.PayloadSizeLimit > 0 {
+		limitByPayloadSize = true
+	}
+
+	var completePendingJobs JobsResult
+	var dsQueryCount int
+	var dsLimit int
+	if jd.dsLimit != nil {
+		dsLimit = *jd.dsLimit
+	}
+	for _, ds := range dsList {
+		if dsLimit > 0 && dsQueryCount >= dsLimit {
+			break
+		}
+		pendingJobs, dsHit, err := jd.getPendingJobsDS(ctx, ds, params)
+		if err != nil {
+			return JobsResult{}, err
+		}
+		if dsHit {
+			dsQueryCount++
+		}
+		completePendingJobs.Jobs = append(completePendingJobs.Jobs, pendingJobs.Jobs...)
+		completePendingJobs.EventsCount += pendingJobs.EventsCount
+		completePendingJobs.PayloadSize += pendingJobs.PayloadSize
+
+		if pendingJobs.LimitsReached {
+			completePendingJobs.LimitsReached = true
+			break
+		}
+		// decrement our limits for the next query
+		if params.JobsLimit > 0 {
+			params.JobsLimit -= len(pendingJobs.Jobs)
+		}
+		if limitByEventCount {
+			params.EventsLimit -= pendingJobs.EventsCount
+		}
+		if limitByPayloadSize {
+			params.PayloadSizeLimit -= pendingJobs.PayloadSize
+		}
+	}
+	unprocessedQueryTablesQueriedStat := stats.Default.NewTaggedStat("tables_queried_gauge", stats.GaugeType, stats.Tags{
+		"state":     "nonterminal",
+		"query":     "pending",
+		"customVal": jd.tablePrefix,
+	})
+	unprocessedQueryTablesQueriedStat.Gauge(dsQueryCount)
+	// Release lock
+	return completePendingJobs, nil
 }
 
 /*

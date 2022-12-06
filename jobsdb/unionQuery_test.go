@@ -147,7 +147,7 @@ BenchmarkUnionQuery/ParallelQuery-100000-8                      	               
 // and jobSize is the total number of jobs split across the workspaces
 func BenchmarkUnionQuery(b *testing.B) {
 	_ = startPostgres(b)
-	jobSize := []int{10000, 100000}
+	jobSize := []int{10000}
 	//concurrencies := []int{16, 32}
 	partitionTypes := []string{"HASH"}
 	tablePrefixes := []string{"rt"}
@@ -160,10 +160,10 @@ func BenchmarkUnionQuery(b *testing.B) {
 			workspaceDistribution := []string{}
 			var j int
 			for i, workspace := range workspaces {
-				for j = 0; j < workspaceSize && i * j < size; j++ {
+				for j = 0; j < workspaceSize && i*j < size; j++ {
 					workspaceDistribution = append(workspaceDistribution, workspace)
 				}
-				if i * j >= size {
+				if i*j >= size {
 					break
 				}
 			}
@@ -257,12 +257,13 @@ func benchmarkParallelQuery(b *testing.B, jobsdb MultiTenantLegacy, testWorkspac
 		for workspaceID, count := range testWorkspacePickup {
 			go func(workspaceID string, count int) {
 				defer wg.Done()
-				_, err := jobsdb.GetAllJobs(context.Background(), map[string]int{workspaceID: count}, GetQueryParamsT{
+				res, err := jobsdb.GetAllJobs(context.Background(), map[string]int{workspaceID: count}, GetQueryParamsT{
 					CustomValFilters: []string{customVal},
 					WorkspaceFilter:  []string{workspaceID},
 					JobsLimit:        10,
 				}, 10, nil)
 				require.NoError(b, err)
+				require.Equal(b, count, len(res.Jobs))
 			}(workspaceID, count)
 		}
 		wg.Wait()
@@ -304,7 +305,7 @@ func generateJobs(size, count int, workspaces []string) ([]*JobT, map[string]int
 	for i := 0; i < size; i++ {
 		testWorkspacePickup[workspaces[i]]++
 		jobs[i] = &JobT{
-			JobID: 		  int64(count + i),
+			JobID:        int64(count + i),
 			WorkspaceId:  workspaces[i],
 			Parameters:   []byte(`{"batch_id":1,"source_id":"sourceID","source_job_run_id":""}`),
 			EventPayload: []byte(`{"receivedAt":"2021-06-06T20:26:39.598+05:30","writeKey":"writeKey","requestIP":"[::1]",  "batch": [{"anonymousId":"anon_id","channel":"android-sdk","context":{"app":{"build":"1","name":"RudderAndroidClient","namespace":"com.rudderlabs.android.sdk","version":"1.0"},"device":{"id":"49e4bdd1c280bc00","manufacturer":"Google","model":"Android SDK built for x86","name":"generic_x86"},"library":{"name":"com.rudderstack.android.sdk.core"},"locale":"en-US","network":{"carrier":"Android"},"screen":{"density":420,"height":1794,"width":1080},"traits":{"anonymousId":"49e4bdd1c280bc00"},"user_agent":"Dalvik/2.1.0 (Linux; U; Android 9; Android SDK built for x86 Build/PSR1.180720.075)"},"event":"Demo Track","integrations":{"All":true},"messageId":"b96f3d8a-7c26-4329-9671-4e3202f42f15","originalTimestamp":"2019-08-12T05:08:30.909Z","properties":{"category":"Demo Category","floatVal":4.501,"label":"Demo Label","testArray":[{"id":"elem1","value":"e1"},{"id":"elem2","value":"e2"}],"testMap":{"t1":"a","t2":4},"value":5},"rudderId":"a-292e-4e79-9880-f8009e0ae4a3","sentAt":"2019-08-12T05:08:30.909Z","type":"track"}]}`),
