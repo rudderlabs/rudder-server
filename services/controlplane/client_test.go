@@ -1,4 +1,4 @@
-package client_test
+package controlplane_test
 
 import (
 	"context"
@@ -12,7 +12,7 @@ import (
 	"time"
 
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
-	"github.com/rudderlabs/rudder-server/services/controlplane/client"
+	"github.com/rudderlabs/rudder-server/services/controlplane"
 	"github.com/rudderlabs/rudder-server/services/controlplane/identity"
 	"github.com/stretchr/testify/require"
 )
@@ -70,7 +70,7 @@ func TestSendFeatures(t *testing.T) {
 			}))
 			defer s.Close()
 
-			c := client.NewClient(s.URL, tc.identity, client.WithHTTPClient(s.Client()))
+			c := controlplane.NewClient(s.URL, tc.identity, controlplane.WithHTTPClient(s.Client()))
 
 			err := c.SendFeatures(context.Background(), "test", []string{"feature1", "feature2"})
 			require.NoError(t, err)
@@ -229,11 +229,11 @@ func TestDestinationHistory(t *testing.T) {
 			}))
 			defer s.Close()
 
-			c := client.NewClient(
+			c := controlplane.NewClient(
 				s.URL,
 				tc.identity,
-				client.WithHTTPClient(s.Client()),
-				client.WithRegion(tc.region),
+				controlplane.WithHTTPClient(s.Client()),
+				controlplane.WithRegion(tc.region),
 			)
 
 			destination, err := c.DestinationHistory(context.Background(), tc.revisionID)
@@ -250,18 +250,18 @@ func TestDestinationHistory(t *testing.T) {
 func TestRetriesTimeout(t *testing.T) {
 	t.Log("all methods should exhibit the same retry and timeout behavior")
 	methods := []struct {
-		fn   func(*client.Client) error
+		fn   func(*controlplane.Client) error
 		name string
 	}{
 		{
 			name: "SendFeatures",
-			fn: func(c *client.Client) error {
+			fn: func(c *controlplane.Client) error {
 				return c.SendFeatures(context.Background(), "test", []string{"feature1", "feature2"})
 			},
 		},
 		{
 			name: "DestinationHistory",
-			fn: func(c *client.Client) error {
+			fn: func(c *controlplane.Client) error {
 				_, err := c.DestinationHistory(context.Background(), "test")
 				return err
 			},
@@ -284,9 +284,9 @@ func TestRetriesTimeout(t *testing.T) {
 				}))
 				defer s.Close()
 
-				c := client.NewClient(s.URL, &identity.Namespace{},
-					client.WithHTTPClient(s.Client()),
-					client.WithMaxRetries(maxRetries),
+				c := controlplane.NewClient(s.URL, &identity.Namespace{},
+					controlplane.WithHTTPClient(s.Client()),
+					controlplane.WithMaxRetries(maxRetries),
 				)
 
 				err := m.fn(c)
@@ -307,9 +307,9 @@ func TestRetriesTimeout(t *testing.T) {
 				}))
 				defer s.Close()
 
-				c := client.NewClient(s.URL, &identity.Namespace{},
-					client.WithHTTPClient(s.Client()),
-					client.WithMaxRetries(maxRetries),
+				c := controlplane.NewClient(s.URL, &identity.Namespace{},
+					controlplane.WithHTTPClient(s.Client()),
+					controlplane.WithMaxRetries(maxRetries),
 				)
 
 				err := m.fn(c)
@@ -330,10 +330,10 @@ func TestRetriesTimeout(t *testing.T) {
 				defer s.Close()
 				defer close(blocker)
 
-				c := client.NewClient(s.URL, &identity.Namespace{},
-					client.WithHTTPClient(s.Client()),
-					client.WithMaxRetries(maxRetries),
-					client.WithTimeout(time.Millisecond),
+				c := controlplane.NewClient(s.URL, &identity.Namespace{},
+					controlplane.WithHTTPClient(s.Client()),
+					controlplane.WithMaxRetries(maxRetries),
+					controlplane.WithTimeout(time.Millisecond),
 				)
 
 				err := m.fn(c)

@@ -43,7 +43,7 @@ import (
 	batchrouterutils "github.com/rudderlabs/rudder-server/router/utils"
 	"github.com/rudderlabs/rudder-server/services/alert"
 	"github.com/rudderlabs/rudder-server/services/archiver"
-	"github.com/rudderlabs/rudder-server/services/controlplane/client"
+	"github.com/rudderlabs/rudder-server/services/controlplane"
 	"github.com/rudderlabs/rudder-server/services/db"
 	destinationdebugger "github.com/rudderlabs/rudder-server/services/debugger/destination"
 	sourcedebugger "github.com/rudderlabs/rudder-server/services/debugger/source"
@@ -248,7 +248,7 @@ func (r *Runner) Run(ctx context.Context, args []string) int {
 		g.Go(misc.WithBugsnag(func() error {
 			backendconfig.DefaultBackendConfig.WaitForConfig(ctx)
 
-			c := client.NewClient(
+			c := controlplane.NewClient(
 				config.GetString("CONFIG_BACKEND_URL", "https://api.rudderstack.com"),
 				backendconfig.DefaultBackendConfig.Identity(),
 			)

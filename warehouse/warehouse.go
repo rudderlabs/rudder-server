@@ -28,7 +28,7 @@ import (
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/info"
 	"github.com/rudderlabs/rudder-server/rruntime"
-	"github.com/rudderlabs/rudder-server/services/controlplane/client"
+	"github.com/rudderlabs/rudder-server/services/controlplane"
 	"github.com/rudderlabs/rudder-server/services/db"
 	destinationdebugger "github.com/rudderlabs/rudder-server/services/debugger/destination"
 	"github.com/rudderlabs/rudder-server/services/filemanager"
@@ -59,7 +59,7 @@ var (
 	dbHandle                            *sql.DB
 	notifier                            pgnotifier.PgNotifierT
 	tenantManager                       *multitenant.Manager
-	controlPlaneClient                  *client.Client
+	controlPlaneClient                  *controlplane.Client
 	noOfSlaveWorkerRoutines             int
 	uploadFreqInS                       int64
 	stagingFilesSchemaPaginationSize    int
@@ -2013,10 +2013,10 @@ func Start(ctx context.Context, app app.App) error {
 		}))
 		region := config.GetString("region", "")
 
-		controlPlaneClient = client.NewClient(
+		controlPlaneClient = controlplane.NewClient(
 			backendconfig.GetConfigBackendURL(),
 			backendconfig.DefaultBackendConfig.Identity(),
-			client.WithRegion(region),
+			controlplane.WithRegion(region),
 		)
 	}
 
@@ -2027,7 +2027,7 @@ func Start(ctx context.Context, app app.App) error {
 		g.Go(func() error {
 			backendconfig.DefaultBackendConfig.WaitForConfig(ctx)
 
-			c := client.NewClient(
+			c := controlplane.NewClient(
 				config.GetString("CONFIG_BACKEND_URL", "https://api.rudderstack.com"),
 				backendconfig.DefaultBackendConfig.Identity(),
 			)
