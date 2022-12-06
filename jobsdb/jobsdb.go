@@ -515,18 +515,6 @@ func (jd *HandleT) assertError(err error) {
 	}
 }
 
-func (jd *HandleT) assertErrorAndRollbackTx(err error, tx *sql.Tx) {
-	if err != nil {
-		rollbackErr := tx.Rollback()
-		if rollbackErr != nil {
-			jd.logger.Errorf("Failed to rollback transaction: %v", rollbackErr)
-		}
-		jd.printLists(true)
-		jd.logger.Fatal(jd.dsEmptyResultCache)
-		panic(err)
-	}
-}
-
 func (jd *HandleT) assert(cond bool, errorString string) {
 	if !cond {
 		jd.printLists(true)
@@ -3380,52 +3368,29 @@ This is only done during recovery, which happens during the server start.
 So, we don't have to worry about dsEmptyResultCache
 */
 func (jd *HandleT) failExecuting() {
-	tx, err := jd.dbHandle.Begin()
-	jd.assertError(err)
+	err := jd.WithUpdateSafeTx(context.TODO(), func(tx UpdateSafeTx) error {
+		queryStat := jd.getTimerStat(
+			"jobsdb_fail_executing_time",
+			&statTags{CustomValFilters: []string{jd.tablePrefix}},
+		)
+		queryStat.Start()
+		defer queryStat.End()
 
-	err = jd.failExecutingInTx(tx)
-	jd.assertErrorAndRollbackTx(err, tx)
+		dsList := jd.getDSList()
 
-	err = tx.Commit()
-	jd.assertError(err)
-}
-
-/*
-if count passed is less than 0, then delete happens on the entire dsList;
-failExecutingInTx deletes the latest status of a batch of jobs
-*/
-func (jd *HandleT) failExecutingInTx(txHandler transactionHandler) error {
-	queryStat := jd.getTimerStat(
-		"jobsdb_fail_executing_time",
-		&statTags{CustomValFilters: []string{jd.tablePrefix}},
-	)
-	queryStat.Start()
-	defer queryStat.End()
-
-	// The order of lock is very important. The migrateDSLoop
-	// takes lock in this order so reversing this will cause
-	// deadlocks
-	ctx := context.TODO()
-	if !jd.dsMigrationLock.RTryLockWithCtx(ctx) {
-		panic(fmt.Errorf("could not acquire a migration lock: %w", ctx.Err()))
-	}
-	defer jd.dsMigrationLock.RUnlock()
-	if !jd.dsListLock.RTryLockWithCtx(ctx) {
-		panic(fmt.Errorf("could not acquire a dslist lock: %w", ctx.Err()))
-	}
-	defer jd.dsListLock.RUnlock()
-
-	dsList := jd.getDSList()
-
-	for _, ds := range dsList {
-		err := jd.failExecutingDSInTx(txHandler, ds)
-		if err != nil {
-			return err
+		for _, ds := range dsList {
+			ds := ds
+			err := jd.failExecutingDSInTx(tx.SqlTx(), ds)
+			if err != nil {
+				return err
+			}
+			tx.Tx().AddSuccessListener(func() {
+				jd.dropDSFromCache(ds)
+			})
 		}
-		jd.dropDSFromCache(ds)
-	}
-
-	return nil
+		return nil
+	})
+	jd.assertError(err)
 }
 
 /*
@@ -3437,7 +3402,6 @@ func (jd *HandleT) failExecutingDSInTx(txHandler transactionHandler, ds dataSetT
 		"jobsdb_fail_executing_ds_time",
 		&statTags{CustomValFilters: []string{jd.tablePrefix}},
 	)
-
 	queryStat.Start()
 	defer queryStat.End()
 
@@ -3446,10 +3410,9 @@ func (jd *HandleT) failExecutingDSInTx(txHandler transactionHandler, ds dataSetT
 			`UPDATE %[1]q SET job_state='failed'
 				WHERE id = ANY(
 					SELECT id from "v_last_%[1]s" where job_state='executing'
-				) AND retry_time < $1`,
+				)`,
 			ds.JobStatusTable,
 		),
-		getTimeNowFunc(),
 	)
 	return err
 }
@@ -3658,45 +3621,27 @@ This is only done during recovery, which happens during the server start.
 So, we don't have to worry about dsEmptyResultCache
 */
 func (jd *HandleT) deleteJobStatus() {
-	tx, err := jd.dbHandle.Begin()
-	jd.assertError(err)
+	err := jd.WithUpdateSafeTx(context.TODO(), func(tx UpdateSafeTx) error {
+		tags := statTags{CustomValFilters: []string{jd.tablePrefix}}
+		queryStat := jd.getTimerStat("jobsdb_delete_job_status_time", &tags)
+		queryStat.Start()
+		defer queryStat.End()
 
-	err = jd.deleteJobStatusInTx(tx)
-	jd.assertErrorAndRollbackTx(err, tx)
+		dsList := jd.getDSList()
 
-	err = tx.Commit()
-	jd.assertError(err)
-}
-
-func (jd *HandleT) deleteJobStatusInTx(txHandler transactionHandler) error {
-	tags := statTags{CustomValFilters: []string{jd.tablePrefix}}
-	queryStat := jd.getTimerStat("jobsdb_delete_job_status_time", &tags)
-	queryStat.Start()
-	defer queryStat.End()
-
-	// The order of lock is very important. The migrateDSLoop
-	// takes lock in this order so reversing this will cause
-	// deadlocks
-	ctx := context.TODO()
-	if !jd.dsMigrationLock.RTryLockWithCtx(ctx) {
-		panic(fmt.Errorf("could not acquire a migration lock: %w", ctx.Err()))
-	}
-	defer jd.dsMigrationLock.RUnlock()
-	if !jd.dsListLock.RTryLockWithCtx(ctx) {
-		panic(fmt.Errorf("could not acquire a dslist lock: %w", ctx.Err()))
-	}
-	defer jd.dsListLock.RUnlock()
-
-	dsList := jd.getDSList()
-
-	for _, ds := range dsList {
-		if err := jd.deleteJobStatusDSInTx(txHandler, ds); err != nil {
-			return err
+		for _, ds := range dsList {
+			ds := ds
+			if err := jd.deleteJobStatusDSInTx(tx.SqlTx(), ds); err != nil {
+				return err
+			}
+			tx.Tx().AddSuccessListener(func() {
+				jd.dropDSFromCache(ds)
+			})
 		}
-		jd.dropDSFromCache(ds)
-	}
 
-	return nil
+		return nil
+	})
+	jd.assertError(err)
 }
 
 func (jd *HandleT) deleteJobStatusDSInTx(txHandler transactionHandler, ds dataSetT) error {
@@ -3710,10 +3655,9 @@ func (jd *HandleT) deleteJobStatusDSInTx(txHandler transactionHandler, ds dataSe
 			`DELETE FROM %[1]q
 				WHERE id = ANY(
 					SELECT id from "v_last_%[1]s" where job_state='executing'
-				) AND retry_time < $1`,
+				)`,
 			ds.JobStatusTable,
 		),
-		getTimeNowFunc(),
 	)
 	return err
 }
