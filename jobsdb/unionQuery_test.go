@@ -3,7 +3,6 @@ package jobsdb
 import (
 	"context"
 	"fmt"
-	"math/rand"
 	"sync"
 	"testing"
 	"time"
@@ -153,10 +152,24 @@ func BenchmarkUnionQuery(b *testing.B) {
 	partitionTypes := []string{"HASH"}
 	tablePrefixes := []string{"rt"}
 	workspacesCounts := []int{30, 50, 100, 150, 200}
+	count := 0
 	for _, size := range jobSize {
-		for _, partitionType := range partitionTypes {
-			for _, workspacesCount := range workspacesCounts {
-				jobs, testWorkspacePickup := generateJobs(size, workspacesCount)
+		for _, workspacesCount := range workspacesCounts {
+			workspaces := generateWorkspaces(workspacesCount)
+			workspaceSize := (size + workspacesCount - 1) / workspacesCount
+			workspaceDistribution := []string{}
+			var j int
+			for i, workspace := range workspaces {
+				for j = 0; j < workspaceSize && i * j < size; j++ {
+					workspaceDistribution = append(workspaceDistribution, workspace)
+				}
+				if i * j >= size {
+					break
+				}
+			}
+			jobs, testWorkspacePickup := generateJobs(size, count, workspaceDistribution)
+			count += size
+			for _, partitionType := range partitionTypes {
 				b.Setenv("RSERVER_JOBS_DB_ENABLE_WRITER_QUEUE", "true")
 				b.Setenv("RSERVER_JOBS_DB_ENABLE_READER_QUEUE", "true")
 				for _, tablePrefix := range tablePrefixes {
@@ -178,7 +191,10 @@ func BenchmarkUnionQuery(b *testing.B) {
 					//
 					//jobsDb1.TearDown()
 
-					jobsDb2 := MultiTenantLegacy{HandleT: &HandleT{}}
+					maxDSSize := 5
+					jobsDb2 := MultiTenantLegacy{HandleT: &HandleT{
+						MaxDSSize: &maxDSSize,
+					}}
 					err := jobsDb2.Setup(ReadWrite, true, tablePrefix, true, []prebackup.Handler{}, fileuploader.NewDefaultProvider(), partitionType)
 					require.NoError(b, err)
 					err = jobsDb2.Store(context.Background(), jobs)
@@ -282,15 +298,14 @@ func benchmarkConcurrentParallelQuery(b *testing.B, jobsdb MultiTenantLegacy, te
 	}
 }
 
-func generateJobs(size, workspacesCount int) ([]*JobT, map[string]int) {
-	workspaces := generateWorkspaces(workspacesCount)
+func generateJobs(size, count int, workspaces []string) ([]*JobT, map[string]int) {
 	jobs := make([]*JobT, size)
 	testWorkspacePickup := map[string]int{}
 	for i := 0; i < size; i++ {
-		workspaceId := workspaces[rand.Int()%len(workspaces)]
-		testWorkspacePickup[workspaceId]++
+		testWorkspacePickup[workspaces[i]]++
 		jobs[i] = &JobT{
-			WorkspaceId:  workspaceId,
+			JobID: 		  int64(count + i),
+			WorkspaceId:  workspaces[i],
 			Parameters:   []byte(`{"batch_id":1,"source_id":"sourceID","source_job_run_id":""}`),
 			EventPayload: []byte(`{"receivedAt":"2021-06-06T20:26:39.598+05:30","writeKey":"writeKey","requestIP":"[::1]",  "batch": [{"anonymousId":"anon_id","channel":"android-sdk","context":{"app":{"build":"1","name":"RudderAndroidClient","namespace":"com.rudderlabs.android.sdk","version":"1.0"},"device":{"id":"49e4bdd1c280bc00","manufacturer":"Google","model":"Android SDK built for x86","name":"generic_x86"},"library":{"name":"com.rudderstack.android.sdk.core"},"locale":"en-US","network":{"carrier":"Android"},"screen":{"density":420,"height":1794,"width":1080},"traits":{"anonymousId":"49e4bdd1c280bc00"},"user_agent":"Dalvik/2.1.0 (Linux; U; Android 9; Android SDK built for x86 Build/PSR1.180720.075)"},"event":"Demo Track","integrations":{"All":true},"messageId":"b96f3d8a-7c26-4329-9671-4e3202f42f15","originalTimestamp":"2019-08-12T05:08:30.909Z","properties":{"category":"Demo Category","floatVal":4.501,"label":"Demo Label","testArray":[{"id":"elem1","value":"e1"},{"id":"elem2","value":"e2"}],"testMap":{"t1":"a","t2":4},"value":5},"rudderId":"a-292e-4e79-9880-f8009e0ae4a3","sentAt":"2019-08-12T05:08:30.909Z","type":"track"}]}`),
 			UserID:       "a-292e-4e79-9880-f8009e0ae4a3",
