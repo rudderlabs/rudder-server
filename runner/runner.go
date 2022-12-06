@@ -391,6 +391,7 @@ func (r *Runner) versionInfo() map[string]interface{} {
 		"GitUrl":             r.releaseInfo.GitURL,
 		"TransformerVersion": transformer.GetVersion(),
 		"DatabricksVersion":  misc.GetDatabricksVersion(),
+		"Features":           info.ServerComponent.Features,
 	}
 }
 
