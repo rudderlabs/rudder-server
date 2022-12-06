@@ -471,6 +471,7 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 			jobIDReqMap[job.UUID] = req
 			jobWriteKeyMap[job.UUID] = sourceTag
 			jobEventCountMap[job.UUID] = numEvents
+			eventBatchesToRecord = append(eventBatchesToRecord, sourceDebugger{data: job.EventPayload, writeKey: writeKey})
 		}
 
 		errorMessagesMap := make(map[uuid.UUID]string)

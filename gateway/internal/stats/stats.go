@@ -1,6 +1,8 @@
 package stats
 
-import "github.com/rudderlabs/rudder-server/services/stats"
+import (
+	"github.com/rudderlabs/rudder-server/services/stats"
+)
 
 type SourceStat struct {
 	Source string
@@ -76,7 +78,7 @@ func (ss *SourceStat) Report(s stats.Stats) {
 		"source":      ss.Source,
 		"writeKey":    ss.WriteKey,
 		"reqType":     ss.ReqType,
-		"workspaceId": ss.WorkspaceID,
+		"workspaceID": ss.WorkspaceID,
 		"sourceID":    ss.SourceID,
 	}
 
@@ -84,7 +86,7 @@ func (ss *SourceStat) Report(s stats.Stats) {
 		"source":      ss.Source,
 		"writeKey":    ss.WriteKey,
 		"reqType":     ss.ReqType,
-		"workspaceId": ss.WorkspaceID,
+		"workspaceID": ss.WorkspaceID,
 		"sourceID":    ss.SourceID,
 	}
 	if ss.reason != "" {
@@ -98,7 +100,7 @@ func (ss *SourceStat) Report(s stats.Stats) {
 	s.NewTaggedStat("gateway.write_key_suppressed_requests", stats.CountType, tags).Count(ss.requests.suppressed)
 	if ss.events.total > 0 {
 		s.NewTaggedStat("gateway.write_key_events", stats.CountType, tags).Count(ss.events.total)
-		s.NewTaggedStat("gateway.write_key_successful_events", stats.CountType, tags).Count(ss.requests.succeeded)
-		s.NewTaggedStat("gateway.write_key_failed_events", stats.CountType, failedTags).Count(ss.requests.failed)
+		s.NewTaggedStat("gateway.write_key_successful_events", stats.CountType, tags).Count(ss.events.succeeded)
+		s.NewTaggedStat("gateway.write_key_failed_events", stats.CountType, failedTags).Count(ss.events.failed)
 	}
 }
