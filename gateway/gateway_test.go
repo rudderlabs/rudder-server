@@ -258,17 +258,7 @@ var _ = Describe("Gateway", func() {
 	})
 
 	Context("Valid requests", func() {
-		var (
-			gateway           *HandleT
-			gatewayBatchCalls = 1
-		)
-
-		// tracks expected batch_id
-		nextBatchID := func() (batchID int) {
-			batchID = gatewayBatchCalls
-			gatewayBatchCalls++
-			return
-		}
+		var gateway *HandleT
 
 		BeforeEach(func() {
 			gateway = &HandleT{}
@@ -281,12 +271,12 @@ var _ = Describe("Gateway", func() {
 			Expect(err).To(BeNil())
 		})
 
-		assertJobMetadata := func(job *jobsdb.JobT, batchLength, batchId int) {
+		assertJobMetadata := func(job *jobsdb.JobT, batchLength int) {
 			Expect(misc.IsValidUUID(job.UUID.String())).To(Equal(true))
 
 			var paramsMap, expectedParamsMap map[string]interface{}
 			_ = json.Unmarshal(job.Parameters, &paramsMap)
-			expectedStr := []byte(fmt.Sprintf(`{"source_id": "%v", "batch_id": %d, "source_job_run_id": "", "source_task_run_id": ""}`, SourceIDEnabled, batchId))
+			expectedStr := []byte(fmt.Sprintf(`{"source_id": "%v", "source_job_run_id": "", "source_task_run_id": ""}`, SourceIDEnabled))
 			_ = json.Unmarshal(expectedStr, &expectedParamsMap)
 			equals := reflect.DeepEqual(paramsMap, expectedParamsMap)
 			Expect(equals).To(Equal(true))
@@ -345,8 +335,7 @@ var _ = Describe("Gateway", func() {
 						DoAndReturn(func(ctx context.Context, tx jobsdb.StoreSafeTx, jobs []*jobsdb.JobT) (map[uuid.UUID]string, error) {
 							for _, job := range jobs {
 								// each call should be included in a separate batch, with a separate batch_id
-								expectedBatchID := nextBatchID()
-								assertJobMetadata(job, 1, expectedBatchID)
+								assertJobMetadata(job, 1)
 
 								responseData := []byte(job.EventPayload)
 								payload := gjson.GetBytes(responseData, "batch.0")

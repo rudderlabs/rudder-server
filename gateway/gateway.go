@@ -175,7 +175,6 @@ type HandleT struct {
 	trackSuccessCount int
 	trackFailureCount int
 
-	webRequestBatchCount  uint64
 	userWebRequestWorkers []*userWebRequestWorkerT
 	webhookHandler        *webhook.HandleT
 	suppressUserHandler   types.UserSuppression
@@ -435,13 +434,11 @@ func (gateway *HandleT) GetSourceStat(writeKey, reqType string) *gwstats.SourceS
 // Finally sends responses(error) if any back to the webRequests over their `done` channels
 func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWebRequestWorkerT) {
 	for breq := range userWebRequestWorker.batchRequestQ {
-		// counter := atomic.AddUint64(&gateway.webRequestBatchCount, 1)
 		var jobList []*jobsdb.JobT
 		jobIDReqMap := make(map[uuid.UUID]*webRequestT)
 		jobWriteKeyMap := make(map[uuid.UUID]string)
 		jobEventCountMap := make(map[uuid.UUID]int)
 		sourceStats := make(map[string]*gwstats.SourceStat)
-		var preDbStoreCount int
 		// Saving the event data read from req.request.Body to the splice.
 		// Using this to send event schema to the config backend.
 		var eventBatchesToRecord []sourceDebugger
@@ -455,22 +452,25 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 					req.reqType,
 				)
 			}
-			errorString, eventCount, newJob := gateway.makeJobFromRequest(req)
-			if newJob == nil {
-				req.done <- errorString
-				preDbStoreCount++
-				if errorString == "" {
+			job, numEvents, err := gateway.getJobFromRequest(req)
+			if err != nil {
+				switch {
+				case err == errRequestDropped:
+					req.done <- response.TooManyRequests
 					sourceStats[sourceTag].RequestDropped()
-				} else {
-					sourceStats[sourceTag].RequestEventsFailed(eventCount, errorString)
+				case err == errRequestSuppressed:
+					req.done <- "" // no error
+					sourceStats[sourceTag].RequestSuppressed()
+				default:
+					req.done <- err.Error()
+					sourceStats[sourceTag].RequestEventsFailed(numEvents, err.Error())
 				}
 				continue
 			}
-			jobList = append(jobList, newJob)
-
-			jobIDReqMap[newJob.UUID] = req
-			jobWriteKeyMap[newJob.UUID] = sourceTag
-			jobEventCountMap[newJob.UUID] = eventCount
+			jobList = append(jobList, job)
+			jobIDReqMap[job.UUID] = req
+			jobWriteKeyMap[job.UUID] = sourceTag
+			jobEventCountMap[job.UUID] = numEvents
 		}
 
 		errorMessagesMap := make(map[uuid.UUID]string)
@@ -482,10 +482,6 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 			errorMessagesMap = <-userWebRequestWorker.reponseQ
 		}
 
-		if preDbStoreCount+len(jobList) != len(breq.batchRequest) {
-			panic(fmt.Errorf("preDbStoreCount:%d+len(jobList):%d != len(breq.batchRequest):%d",
-				preDbStoreCount, len(jobList), len(breq.batchRequest)))
-		}
 		for _, job := range jobList {
 			err, found := errorMessagesMap[job.UUID]
 			sourceTag := jobWriteKeyMap[job.UUID]
@@ -511,8 +507,12 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 	}
 }
 
-// returns a errorString, eventCount, *jobsdb.JobT
-func (gateway *HandleT) makeJobFromRequest(req *webRequestT) (string, int, *jobsdb.JobT) {
+var (
+	errRequestDropped    = errors.New("request dropped")
+	errRequestSuppressed = errors.New("request suppressed")
+)
+
+func (gateway *HandleT) getJobFromRequest(req *webRequestT) (job *jobsdb.JobT, numEvents int, err error) {
 	writeKey := req.writeKey
 	sourceID := gateway.getSourceIDForWriteKey(writeKey)
 	// Should be function of body
@@ -524,35 +524,40 @@ func (gateway *HandleT) makeJobFromRequest(req *webRequestT) (string, int, *jobs
 	ipAddr := req.ipAddr
 	body := req.requestPayload
 	if !gjson.ValidBytes(body) {
-		return response.GetStatus(response.InvalidJSON), 0, nil
+		err = errors.New(response.InvalidJSON)
+		return
 	}
 
 	gateway.requestSizeStat.Observe(float64(len(body)))
-	var err error
 	if req.reqType != "batch" {
 		body, err = sjson.SetBytes(body, "type", req.reqType)
 		if err != nil {
-			return response.GetStatus(response.NotRudderEvent), 0, nil
+			err = errors.New(response.NotRudderEvent)
+			return
 		}
 		body, err = sjson.SetRawBytes(BatchEvent, "batch.0", body)
 		if err != nil {
-			return response.GetStatus(response.NotRudderEvent), 0, nil
+			err = errors.New(response.NotRudderEvent)
+			return
 		}
 	}
-	totalEventsInReq := len(gjson.GetBytes(body, "batch").Array())
+	numEvents = len(gjson.GetBytes(body, "batch").Array())
 
 	if !gateway.isValidWriteKey(writeKey) {
-		return response.GetStatus(response.InvalidWriteKey), totalEventsInReq, nil
+		err = errors.New(response.InvalidWriteKey)
+		return
 	}
 
 	if !gateway.isWriteKeyEnabled(writeKey) {
-		return response.GetStatus(response.SourceDisabled), totalEventsInReq, nil
+		err = errors.New(response.SourceDisabled)
+		return
 	}
 
 	if enableRateLimit {
 		// In case of "batch" requests, if rate-limiter returns true for LimitReached, just drop the event batch and continue.
 		if gateway.rateLimiter.LimitReached(workspaceId) {
-			return response.GetStatus(response.TooManyRequests), totalEventsInReq, nil
+			err = errRequestDropped
+			return
 		}
 	}
 
@@ -605,17 +610,20 @@ func (gateway *HandleT) makeJobFromRequest(req *webRequestT) (string, int, *jobs
 	})
 
 	if len(body) > maxReqSize && !containsAudienceList {
-		return response.GetStatus(response.RequestBodyTooLarge), totalEventsInReq, nil
+		err = errors.New(response.RequestBodyTooLarge)
+		return
 	}
 
 	body, _ = sjson.SetBytes(body, "batch", out)
 
 	if notIdentifiable {
-		return response.GetStatus(response.NonIdentifiableRequest), totalEventsInReq, nil
+		err = errors.New(response.NonIdentifiableRequest)
+		return
 	}
 
 	if nonRudderEvent {
-		return response.GetStatus(response.NotRudderEvent), totalEventsInReq, nil
+		err = errors.New(response.NotRudderEvent)
+		return
 	}
 
 	if enableSuppressUserFeature && gateway.suppressUserHandler != nil {
@@ -625,7 +633,8 @@ func (gateway *HandleT) makeJobFromRequest(req *webRequestT) (string, int, *jobs
 			userID,
 			sourceID,
 		) {
-			return "", totalEventsInReq, nil
+			err = errRequestSuppressed
+			return
 		}
 	}
 
@@ -667,17 +676,17 @@ func (gateway *HandleT) makeJobFromRequest(req *webRequestT) (string, int, *jobs
 			`{"error": "rudder-server gateway failed to marshal params"}`,
 		)
 	}
-
-	newJob := jobsdb.JobT{
+	err = nil
+	job = &jobsdb.JobT{
 		UUID:         id,
 		UserID:       builtUserID,
 		Parameters:   marshalledParams,
 		CustomVal:    CustomVal,
 		EventPayload: body,
-		EventCount:   totalEventsInReq,
+		EventCount:   numEvents,
 		WorkspaceId:  workspaceId,
 	}
-	return "", totalEventsInReq, &newJob
+	return
 }
 
 func (*HandleT) isValidWriteKey(writeKey string) bool {
