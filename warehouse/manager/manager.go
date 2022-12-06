@@ -16,6 +16,7 @@ import (
 	"github.com/rudderlabs/rudder-server/warehouse/redshift"
 	"github.com/rudderlabs/rudder-server/warehouse/snowflake"
 
+	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
@@ -65,8 +66,9 @@ func New(destType string) (ManagerI, error) {
 		var sf snowflake.HandleT
 		return &sf, nil
 	case warehouseutils.POSTGRES:
-		var pg postgres.HandleT
-		return &pg, nil
+		pg := postgres.NewHandle()
+		postgres.WithConfig(pg, config.Default)
+		return pg, nil
 	case warehouseutils.CLICKHOUSE:
 		var ch clickhouse.HandleT
 		return &ch, nil
@@ -99,8 +101,9 @@ func NewWarehouseOperations(destType string) (WarehouseOperations, error) {
 		var sf snowflake.HandleT
 		return &sf, nil
 	case warehouseutils.POSTGRES:
-		var pg postgres.HandleT
-		return &pg, nil
+		pg := postgres.NewHandle()
+		postgres.WithConfig(pg, config.Default)
+		return pg, nil
 	case warehouseutils.CLICKHOUSE:
 		var ch clickhouse.HandleT
 		return &ch, nil

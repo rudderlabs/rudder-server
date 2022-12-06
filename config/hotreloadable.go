@@ -219,6 +219,36 @@ func (c *Config) RegisterStringSliceConfigVariable(defaultValue []string, ptr *[
 	*ptr = defaultValue
 }
 
+// RegisterStringMapConfigVariable registers string map config variable
+func RegisterStringMapConfigVariable(defaultValue map[string]interface{}, ptr *map[string]interface{}, isHotReloadable bool, keys ...string) {
+	Default.RegisterStringMapConfigVariable(defaultValue, ptr, isHotReloadable, keys...)
+}
+
+// RegisterStringMapConfigVariable registers string map config variable
+func (c *Config) RegisterStringMapConfigVariable(defaultValue map[string]interface{}, ptr *map[string]interface{}, isHotReloadable bool, keys ...string) {
+	c.vLock.RLock()
+	defer c.vLock.RUnlock()
+	c.hotReloadableConfigLock.Lock()
+	defer c.hotReloadableConfigLock.Unlock()
+	configVar := configValue{
+		value:        ptr,
+		defaultValue: defaultValue,
+		keys:         keys,
+	}
+
+	if isHotReloadable {
+		c.appendVarToConfigMaps(keys[0], &configVar)
+	}
+
+	for _, key := range keys {
+		if c.IsSet(key) {
+			*ptr = c.GetStringMap(key, defaultValue)
+			return
+		}
+	}
+	*ptr = defaultValue
+}
+
 func (c *Config) appendVarToConfigMaps(key string, configVar *configValue) {
 	if _, ok := c.hotReloadableConfig[key]; !ok {
 		c.hotReloadableConfig[key] = make([]*configValue, 0)
