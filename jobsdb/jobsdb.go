@@ -2493,12 +2493,8 @@ func (jd *HandleT) getPendingJobsDS(ctx context.Context, ds dataSetT, params Get
 			`LEFT JOIN %[2]q status ON jobs.job_id=status.job_id `,
 		ds.JobTable, ds.JobStatusTable)
 
-	if params.AfterJobID != nil {
-		sqlStatement += fmt.Sprintf(" AND jobs.job_id > %d", *params.AfterJobID)
-	}
-
 	if len(stateFilters) > 0 {
-		sqlStatement += "AND (" + constructStateQuery("status", "job_state", stateFilters, "OR") + ")"
+		sqlStatement += "WHERE (" + constructStateQuery("status", "job_state", stateFilters, "OR") + ")"
 		args = append(args, time.Now())
 	}
 
