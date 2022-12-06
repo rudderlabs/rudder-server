@@ -148,7 +148,7 @@ func Connect(cred CredentialsT) (*sql.DB, error) {
 	)
 
 	if cred.TunnelInfo != nil {
-		if db, err = tunnelling.ConnectThroughTunnel(
+		if db, err = tunnelling.SQLConnectThroughTunnel(
 			connUrl.String(),
 			cred.TunnelInfo.Type,
 			cred.TunnelInfo.Config); err != nil {
@@ -184,10 +184,12 @@ func (ms *HandleT) getConnectionCredentials() CredentialsT {
 		timeout:  ms.ConnectTimeout,
 	}
 
-	if ms.Warehouse.Destination.Tunnel != nil {
+	tunnellingType := warehouseutils.GetConfigValue("tunnellingType", ms.Warehouse)
+	switch tunnellingType {
+	case string(tunnelling.SSHForward):
 		creds.TunnelInfo = &tunnelling.TunnelInfo{
-			Type:   tunnelling.Type(ms.Warehouse.Destination.Tunnel.Type),
-			Config: tunnelling.Config(ms.Warehouse.Destination.Tunnel.Config),
+			Type:   tunnelling.Type(tunnellingType),
+			Config: ms.Warehouse.Destination.Config,
 		}
 	}
 

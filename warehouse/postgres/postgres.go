@@ -184,7 +184,7 @@ func Connect(cred CredentialsT) (*sql.DB, error) {
 
 	if cred.TunnelInfo != nil {
 
-		db, err = tunnelling.ConnectThroughTunnel(
+		db, err = tunnelling.SQLConnectThroughTunnel(
 			dsn.String(),
 			cred.TunnelInfo.Type,
 			cred.TunnelInfo.Config)
@@ -224,11 +224,13 @@ func (pg *Handle) getConnectionCredentials() CredentialsT {
 	// Set the warehouse destination tunnel information.
 	// TODO: Need to setup the information on the destination with
 	// the credentials.
-	if pg.Warehouse.Destination.Tunnel != nil {
-		upstream := pg.Warehouse.Destination.Tunnel
+
+	tunnellingType := warehouseutils.GetConfigValue("tunnellingType", pg.Warehouse)
+	switch tunnellingType {
+	case "ssh_forward":
 		creds.TunnelInfo = &tunnelling.TunnelInfo{
-			Type:   tunnelling.Type(upstream.Type),
-			Config: tunnelling.Config(upstream.Config),
+			Type:   tunnelling.Type(tunnellingType),
+			Config: pg.Warehouse.Destination.Config,
 		}
 	}
 

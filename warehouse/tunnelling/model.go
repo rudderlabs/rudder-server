@@ -2,64 +2,72 @@ package tunnelling
 
 import (
 	"errors"
+	"fmt"
 	"strconv"
 
 	stunnel "github.com/rudderlabs/rudder-server/warehouse/sql-tunnels/driver/ssh"
 )
 
-var ErrMissingKey = errors.New("Missing mandatory key")
+var ErrMissingKey = errors.New("missing mandatory key")
+var ErrUnexpectedType = errors.New("unexpected type")
 
 const (
 	SSHForward Type = "ssh_forward"
 )
 
 type Type string
-type Config map[string]string
+type Config map[string]interface{}
 
 type TunnelInfo struct {
 	Type   Type
 	Config Config
 }
 
-func ReadConfigFromMap(config map[string]string) Config {
-	return nil
-}
+func ReadSSHTunnelConfig(config map[string]interface{}) (conf *stunnel.SSHConfig, err error) {
 
-func ReadSSHTunnelConfig(config map[string]string) (*stunnel.SSHConfig, error) {
+	var (
+		user, host, port, privateKey *string
+	)
 
-	user := readMustString("ssh_user", config)
-	if user == nil {
-		return nil, ErrMissingKey
+	if user, err = ReadString("sshUser", config); err != nil {
+		return nil, err
 	}
 
-	host := readMustString("ssh_host", config)
-	if host == nil {
-		return nil, ErrMissingKey
+	if host, err = ReadString("sshHost", config); err != nil {
+		return nil, err
 	}
 
-	portStr := readMustString("ssh_port", config)
-	if portStr == nil {
-		return nil, ErrMissingKey
+	if port, err = ReadString("sshPort", config); err != nil {
+		return nil, err
 	}
 
-	privateKey := readMustString("private_key", config)
-	if privateKey == nil {
-		return nil, ErrMissingKey
+	if privateKey, err = ReadString("privateKey", config); err != nil {
+		return nil, err
 	}
 
-	port, _ := strconv.Atoi(*portStr)
+	portInt, err := strconv.Atoi(*port)
+	if err != nil {
+		return nil, err
+	}
+
 	return &stunnel.SSHConfig{
 		SshUser:    *user,
 		SshHost:    *host,
 		PrivateKey: []byte(*privateKey),
-		SshPort:    port,
+		SshPort:    portInt,
 	}, nil
 }
 
-func readMustString(key string, ip map[string]string) *string {
+func ReadString(key string, ip map[string]interface{}) (*string, error) {
 	val, ok := ip[key]
 	if !ok {
-		return nil
+		return nil, fmt.Errorf("%w: %s", ErrMissingKey, key)
 	}
-	return &val
+
+	resp, ok := val.(string)
+	if !ok {
+		return nil, fmt.Errorf("%w: %s expected string", ErrUnexpectedType, key)
+	}
+
+	return &resp, nil
 }

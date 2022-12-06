@@ -5,7 +5,7 @@ import (
 	"fmt"
 )
 
-func ConnectThroughTunnel(dsn string, tunnelType Type, tunnelConfig Config) (*sql.DB, error) {
+func SQLConnectThroughTunnel(dsn string, tunnelType Type, tunnelConfig Config) (*sql.DB, error) {
 
 	if tunnelType != SSHForward {
 		return nil, fmt.Errorf("unsupported tunneltype: %s", tunnelType)

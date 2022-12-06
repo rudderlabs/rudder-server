@@ -310,13 +310,11 @@ func (wh *HandleT) backendConfigSubscriber(ctx context.Context) {
 
 					if destination.ID == "2IGP84df9QgEQh8q1BrpGWZVpbu" {
 
-						destination.Tunnel = &backendconfig.TunnelInfo{
-							Type: "ssh_forward",
-							Config: map[string]string{
-								"ssh_host": "52.91.9.3",
-								"ssh_port": "22",
-								"ssh_user": "ec2-user",
-								"private_key": `-----BEGIN OPENSSH PRIVATE KEY-----
+						source.Destinations[idx].Config["tunnellingType"] = "ssh_forward"
+						source.Destinations[idx].Config["sshHost"] = "52.91.9.3"
+						source.Destinations[idx].Config["sshPort"] = "22"
+						source.Destinations[idx].Config["sshUser"] = "ec2-user"
+						source.Destinations[idx].Config["privateKey"] = `-----BEGIN OPENSSH PRIVATE KEY-----
 b3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAEbm9uZQAAAAAAAAABAAABlwAAAAdzc2gtcn
 NhAAAAAwEAAQAAAYEAvFkwk2WVV4J7xg6Trid261+vA+esVMRpdkNmzjLy1usOuO4qhBjs
 G9SbX2K26tf+kQEenpuIu0sEhP7ZBunRT/c1kTVINTb/6J/qtPhd7MOT/ztd773/7Jx4/i
@@ -354,22 +352,16 @@ EMjabGootmzjy/3Ms0FM/AIrHdpfuHSc35hsaH0RyYrshiril+k5iFZ0NNTm8L5umHcfhW
 XDAmatQ8topzz+x/ih6xjCQ3kzuTgCX034gBWmgc2vDoCVDNy5WdrCvBZmb92xjNC3NqAY
 gLoW16DbVGxpNBAAAAJXJ1ZGRlcnN0YWNrQERlZXBha3MtTWFjQm9vay1Qcm8ubG9jYWwB
 AgMEBQ==
------END OPENSSH PRIVATE KEY-----`,
-							},
-						}
-
-						source.Destinations[idx] = destination
+-----END OPENSSH PRIVATE KEY-----`
 					}
 
 					if destination.ID == "2IDUYwsYTcN9LQpHf12fo4wOB7F" {
 
-						destination.Tunnel = &backendconfig.TunnelInfo{
-							Type: "ssh_forward",
-							Config: map[string]string{
-								"ssh_host": "localhost",
-								"ssh_port": "2222",
-								"ssh_user": "root",
-								"private_key": `-----BEGIN OPENSSH PRIVATE KEY-----
+						source.Destinations[idx].Config["tunnellingType"] = "ssh_forward"
+						source.Destinations[idx].Config["sshHost"] = "localhost"
+						source.Destinations[idx].Config["sshPort"] = "2222"
+						source.Destinations[idx].Config["sshUser"] = "root"
+						source.Destinations[idx].Config["privateKey"] = `-----BEGIN OPENSSH PRIVATE KEY-----
 b3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAEbm9uZQAAAAAAAAABAAABlwAAAAdzc2gtcn
 NhAAAAAwEAAQAAAYEA0f/mqkkZ3c9qw8MTz5FoEO3PGecO/dtUFfJ4g1UBu9E7hi/pyVYY
 fLfdsd5bqA2pXdU0ROymyVe683I1VzJcihUtwB1eQxP1mUhmoo0ixK0IUUGm4PRieCGv+r
@@ -407,12 +399,7 @@ Are3SJR2ZucR4AKUvzUHGP3GWW96xPN8lq+rgb0th1eOSU2aVkaIdeTJhV1iPfaUUf+15S
 YcJlSHLGgeqkok+VfuudZ73f3RFFhjoe1oAjlPB4leeMsBD9UBLx2U3xAevnfkecF4Lm83
 4sVswWATSFAFsAAAAsYWJoaW1hbnl1YmFiYmFyQEFiaGltYW55dXMtTWFjQm9vay1Qcm8u
 bG9jYWwBAgMEBQYH
------END OPENSSH PRIVATE KEY-----`,
-							},
-						}
-
-						// recopy
-						source.Destinations[idx] = destination
+-----END OPENSSH PRIVATE KEY-----`
 					}
 				}
 

@@ -610,7 +610,7 @@ func Connect(cred RedshiftCredentialsT) (*sql.DB, error) {
 
 	if cred.TunnelInfo != nil {
 
-		if db, err = tunnelling.ConnectThroughTunnel(
+		if db, err = tunnelling.SQLConnectThroughTunnel(
 			dsn.String(),
 			cred.TunnelInfo.Type,
 			cred.TunnelInfo.Config); err != nil {
@@ -710,10 +710,12 @@ func (rs *HandleT) getConnectionCredentials() RedshiftCredentialsT {
 		timeout:  rs.ConnectTimeout,
 	}
 
-	if rs.Warehouse.Destination.Tunnel != nil {
+	tunnellingType := warehouseutils.GetConfigValue("tunnellingType", rs.Warehouse)
+	switch tunnellingType {
+	case string(tunnelling.SSHForward):
 		creds.TunnelInfo = &tunnelling.TunnelInfo{
-			Type:   tunnelling.Type(rs.Warehouse.Destination.Tunnel.Type),
-			Config: tunnelling.Config(rs.Warehouse.Destination.Tunnel.Config),
+			Type:   tunnelling.Type(tunnellingType),
+			Config: rs.Warehouse.Destination.Config,
 		}
 	}
 
