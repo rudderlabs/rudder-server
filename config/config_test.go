@@ -38,6 +38,10 @@ func Test_Getters_Existing_and_Default(t *testing.T) {
 	tc.Set("duration", "2")
 	require.Equal(t, 2*time.Second, tc.GetDuration("duration", 1, time.Second), "it should return the key value")
 	require.Equal(t, time.Second, tc.GetDuration("other", 1, time.Second), "it should return the default value")
+
+	tc.Set("stringmap", map[string]interface{}{"string": "any"})
+	require.Equal(t, map[string]interface{}{"string": "any"}, tc.GetStringMap("stringmap", map[string]interface{}{"default": "value"}), "it should return the key value")
+	require.Equal(t, map[string]interface{}{"default": "value"}, tc.GetStringMap("other", map[string]interface{}{"default": "value"}), "it should return the default value")
 }
 
 func Test_MustGet(t *testing.T) {
@@ -106,6 +110,14 @@ func Test_Register_Existing_and_Default(t *testing.T) {
 	require.Equal(t, 2*time.Millisecond, durationValue, "it should return the key value")
 	tc.RegisterDurationConfigVariable(1, &otherDurationValue, false, time.Second, "other")
 	require.Equal(t, time.Second, otherDurationValue, "it should return the default value")
+
+	tc.Set("stringmap", map[string]interface{}{"string": "any"})
+	var stringMapValue map[string]interface{}
+	var otherStringMapValue map[string]interface{}
+	tc.RegisterStringMapConfigVariable(map[string]interface{}{"default": "value"}, &stringMapValue, false, "stringmap")
+	require.Equal(t, map[string]interface{}{"string": "any"}, stringMapValue, "it should return the key value")
+	tc.RegisterStringMapConfigVariable(map[string]interface{}{"default": "value"}, &otherStringMapValue, false, "other")
+	require.Equal(t, map[string]interface{}{"default": "value"}, otherStringMapValue, "it should return the default value")
 }
 
 func TestStatic_checkAndHotReloadConfig(t *testing.T) {
@@ -125,6 +137,80 @@ func TestStatic_checkAndHotReloadConfig(t *testing.T) {
 	varptr2 := configVar2.value.(*string)
 	require.Equal(t, *varptr1, "value_changed")
 	require.Equal(t, *varptr2, "value_changed")
+}
+
+func TestCheckAndHotReloadConfig(t *testing.T) {
+	var (
+		stringValue            string
+		stringConfigValue      = newConfigValue(&stringValue, nil, "default", []string{"string"})
+		boolValue              bool
+		boolConfigValue        = newConfigValue(&boolValue, nil, false, []string{"bool"})
+		intValue               int
+		intConfigValue         = newConfigValue(&intValue, 1, 0, []string{"int"})
+		int64Value             int64
+		int64ConfigValue       = newConfigValue(&int64Value, int64(1), int64(0), []string{"int64"})
+		float64Value           float64
+		float64ConfigValue     = newConfigValue(&float64Value, 1.0, 0.0, []string{"float64"})
+		stringSliceValue       []string
+		stringSliceConfigValue = newConfigValue(&stringSliceValue, nil, []string{"default"}, []string{"stringslice"})
+		durationValue          time.Duration
+		durationConfigValue    = newConfigValue(&durationValue, time.Second, int64(1), []string{"duration"})
+		stringMapValue         map[string]interface{}
+		stringMapConfigValue   = newConfigValue(&stringMapValue, nil, map[string]interface{}{"default": "value"}, []string{"stringmap"})
+	)
+
+	t.Run("with envs", func(t *testing.T) {
+		t.Setenv("RSERVER_INT", "1")
+		t.Setenv("RSERVER_INT64", "1")
+		t.Setenv("RSERVER_STRING", "string")
+		t.Setenv("RSERVER_DURATION", "2s")
+		t.Setenv("RSERVER_BOOL", "true")
+		t.Setenv("RSERVER_FLOAT64", "1.0")
+		t.Setenv("RSERVER_STRINGSLICE", "string string")
+		t.Setenv("RSERVER_STRINGMAP", "{\"string\":\"any\"}")
+
+		Default.checkAndHotReloadConfig(map[string][]*configValue{
+			"string":      {stringConfigValue},
+			"bool":        {boolConfigValue},
+			"int":         {intConfigValue},
+			"int64":       {int64ConfigValue},
+			"float64":     {float64ConfigValue},
+			"stringslice": {stringSliceConfigValue},
+			"duration":    {durationConfigValue},
+			"stringmap":   {stringMapConfigValue},
+		})
+
+		require.Equal(t, *stringConfigValue.value.(*string), "string")
+		require.Equal(t, *boolConfigValue.value.(*bool), true)
+		require.Equal(t, *intConfigValue.value.(*int), 1)
+		require.Equal(t, *int64ConfigValue.value.(*int64), int64(1))
+		require.Equal(t, *float64ConfigValue.value.(*float64), 1.0)
+		require.Equal(t, *durationConfigValue.value.(*time.Duration), 2*time.Second)
+		require.Equal(t, *stringSliceConfigValue.value.(*[]string), []string{"string", "string"})
+		require.Equal(t, *stringMapConfigValue.value.(*map[string]any), map[string]any{"string": "any"})
+	})
+
+	t.Run("without envs", func(t *testing.T) {
+		Default.checkAndHotReloadConfig(map[string][]*configValue{
+			"string":      {stringConfigValue},
+			"bool":        {boolConfigValue},
+			"int":         {intConfigValue},
+			"int64":       {int64ConfigValue},
+			"float64":     {float64ConfigValue},
+			"stringslice": {stringSliceConfigValue},
+			"duration":    {durationConfigValue},
+			"stringmap":   {stringMapConfigValue},
+		})
+
+		require.Equal(t, *stringConfigValue.value.(*string), "default")
+		require.Equal(t, *boolConfigValue.value.(*bool), false)
+		require.Equal(t, *intConfigValue.value.(*int), 0)
+		require.Equal(t, *int64ConfigValue.value.(*int64), int64(0))
+		require.Equal(t, *float64ConfigValue.value.(*float64), 0.0)
+		require.Equal(t, *durationConfigValue.value.(*time.Duration), 1*time.Second)
+		require.Equal(t, *stringSliceConfigValue.value.(*[]string), []string{"default"})
+		require.Equal(t, *stringMapConfigValue.value.(*map[string]any), map[string]any{"default": "value"})
+	})
 }
 
 func TestConfigKeyToEnv(t *testing.T) {
