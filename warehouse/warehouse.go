@@ -1115,7 +1115,7 @@ func (wh *HandleT) getUploadsToProcess(ctx context.Context, availableWorkers int
 			&lastEventAt,
 		)
 		if err != nil {
-			panic(fmt.Errorf("Failed to scan result from query: %s\nwith Error : %w", sqlStatement, err))
+			panic(fmt.Errorf("failed to scan result from query: %s\n with error : %w", sqlStatement, err))
 		}
 		upload.FirstEventAt = firstEventAt.Time
 		upload.LastEventAt = lastEventAt.Time
@@ -1441,7 +1441,7 @@ func (wh *HandleT) setInterruptedDestinations() {
 		var destID string
 		err := rows.Scan(&destID)
 		if err != nil {
-			panic(fmt.Errorf("Failed to scan result from query: %s\nwith Error : %w", sqlStatement, err))
+			panic(fmt.Errorf("failed to scan result from query: %s\nwith error : %w", sqlStatement, err))
 		}
 		inRecoveryMap[destID] = true
 	}
