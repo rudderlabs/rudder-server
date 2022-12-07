@@ -96,7 +96,7 @@ type WorkerJobRequest struct {
 }
 
 func WithConfig(ld *LoadFileGenerator, config *config.Config) {
-	ld.publishBatchSize = config.GetInt("Warehouse.loadFileGenerator.publishBatchSize", 100)
+	ld.publishBatchSize = config.GetInt("Warehouse.loadFileGenerator.publishBatchSize", defaultPublishBatchSize)
 	mapConfig := config.GetStringMap("Warehouse.pgNotifierPublishBatchSizeWorkspaceIDs", nil)
 
 	ld.publishBatchSizePerWorkspace = make(map[string]int, len(mapConfig))
@@ -106,7 +106,7 @@ func WithConfig(ld *LoadFileGenerator, config *config.Config) {
 }
 
 // CreateLoadFiles for the staging files that have not been successfully processed.
-func (lf *LoadFileGenerator) CreateLoadFiles(ctx context.Context, job model.UploadJob) (startLoadFileID, endLoadFileID int64, err error) {
+func (lf *LoadFileGenerator) CreateLoadFiles(ctx context.Context, job model.UploadJob) (int64, int64, error) {
 	stagingFiles := job.StagingFiles
 
 	var toProcessStagingFiles []*model.StagingFile
@@ -121,11 +121,11 @@ func (lf *LoadFileGenerator) CreateLoadFiles(ctx context.Context, job model.Uplo
 }
 
 // ForceCreateLoadFiles creates load files for the staging files, regardless if they are already successfully processed.
-func (lf *LoadFileGenerator) ForceCreateLoadFiles(ctx context.Context, job model.UploadJob) (startLoadFileID, endLoadFileID int64, err error) {
+func (lf *LoadFileGenerator) ForceCreateLoadFiles(ctx context.Context, job model.UploadJob) (int64, int64, error) {
 	return lf.createFromStaging(ctx, job, job.StagingFiles)
 }
 
-func (lf *LoadFileGenerator) createFromStaging(ctx context.Context, job model.UploadJob, toProcessStagingFiles []*model.StagingFile) (startLoadFileID, endLoadFileID int64, err error) {
+func (lf *LoadFileGenerator) createFromStaging(ctx context.Context, job model.UploadJob, toProcessStagingFiles []*model.StagingFile) (int64, int64, error) {
 	destID := job.Upload.DestinationID
 	destType := job.Upload.DestinationType
 
@@ -296,7 +296,7 @@ func (lf *LoadFileGenerator) createFromStaging(ctx context.Context, job model.Up
 	}
 
 	if err := g.Wait(); err != nil {
-		return startLoadFileID, endLoadFileID, err
+		return 0, 0, err
 	}
 
 	loadFiles, err := lf.LoadRepo.GetByStagingFiles(ctx, repo.StagingFileIDs(toProcessStagingFiles))
@@ -306,7 +306,7 @@ func (lf *LoadFileGenerator) createFromStaging(ctx context.Context, job model.Up
 
 	if len(loadFiles) == 0 {
 		err = fmt.Errorf(`no load files generated. Sample error: %v`, sampleError)
-		return startLoadFileID, endLoadFileID, err
+		return 0, 0, err
 	}
 
 	// verify if all load files are in same folder in object storage
@@ -314,7 +314,7 @@ func (lf *LoadFileGenerator) createFromStaging(ctx context.Context, job model.Up
 		for _, loadFile := range loadFiles {
 			if !strings.Contains(loadFile.Location, uniqueLoadGenID) {
 				err = fmt.Errorf(`all loadfiles do not contain the same uniqueLoadGenID: %s`, uniqueLoadGenID)
-				return
+				return 0, 0, err
 			}
 		}
 	}

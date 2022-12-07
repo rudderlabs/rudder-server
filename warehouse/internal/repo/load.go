@@ -70,7 +70,7 @@ func (repo *LoadFiles) Insert(ctx context.Context, loadFiles []model.LoadFile) (
 		return
 	}
 
-	stmt, err := txn.Prepare(pq.CopyIn("wh_load_files", "staging_file_id", "location", "source_id", "destination_id", "destination_type", "table_name", "total_events", "created_at", "metadata"))
+	stmt, err := txn.PrepareContext(ctx, pq.CopyIn("wh_load_files", "staging_file_id", "location", "source_id", "destination_id", "destination_type", "table_name", "total_events", "created_at", "metadata"))
 	if err != nil {
 		return fmt.Errorf(`inserting load files: CopyIn: %w`, err)
 	}
@@ -78,14 +78,14 @@ func (repo *LoadFiles) Insert(ctx context.Context, loadFiles []model.LoadFile) (
 
 	for _, loadFile := range loadFiles {
 		metadata := fmt.Sprintf(`{"content_length": %d, "destination_revision_id": %q, "use_rudder_storage": %t}`, loadFile.ContentLength, loadFile.DestinationRevisionID, loadFile.UseRudderStorage)
-		_, err = stmt.Exec(loadFile.StagingFileID, loadFile.Location, loadFile.SourceID, loadFile.DestinationID, loadFile.DestinationType, loadFile.TableName, loadFile.TotalRows, timeutil.Now(), metadata)
+		_, err = stmt.ExecContext(ctx, loadFile.StagingFileID, loadFile.Location, loadFile.SourceID, loadFile.DestinationID, loadFile.DestinationType, loadFile.TableName, loadFile.TotalRows, timeutil.Now(), metadata)
 		if err != nil {
 			_ = txn.Rollback()
 			return fmt.Errorf(`inserting load files: CopyIn exec: %w`, err)
 		}
 	}
 
-	_, err = stmt.Exec()
+	_, err = stmt.ExecContext(ctx)
 	if err != nil {
 		_ = txn.Rollback()
 		return fmt.Errorf(`inserting load files: CopyIn final exec: %w`, err)
@@ -165,8 +165,6 @@ func (repo *LoadFiles) GetByStagingFiles(ctx context.Context, stagingFileIDs []i
 		loadFile.UseRudderStorage = metadata.UseRudderStorage
 
 		loadFiles = append(loadFiles, loadFile)
-
-		// loadFile.ContentLength, loadFile.DestinationRevisionID, loadFile.UseRudderStorage
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("querying load files: %w", err)
