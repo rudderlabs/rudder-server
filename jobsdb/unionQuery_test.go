@@ -184,7 +184,7 @@ func BenchmarkUnionQuery(b *testing.B) {
 			require.NoError(b, err)
 			ctx, cancel := context.WithCancel(context.Background())
 			b.Log("Starting cron store jobs")
-			go cronStoreJobs(ctx, MultiTenantLegacy(jobsDb1), workspaces)
+			go cronStoreJobs(ctx, b, MultiTenantLegacy(jobsDb1), workspaces)
 
 			b.Log("Starting union query benchmark")
 			b.Run(fmt.Sprintf("UnionQuery-%d-%s", size, "rt"), func(b *testing.B) {
@@ -207,7 +207,7 @@ func BenchmarkUnionQuery(b *testing.B) {
 			require.NoError(b, err)
 			ctx, cancel = context.WithCancel(context.Background())
 			b.Log("Starting cron store jobs")
-			go cronStoreJobs(ctx, jobsDb2, workspaces)
+			go cronStoreJobs(ctx, b, jobsDb2, workspaces)
 
 			b.Log("Starting parallel query benchmark")
 			b.Run(fmt.Sprintf("NewQuery-%d-%d-%s", size, workspacesCount, "rt"), func(b *testing.B) {
@@ -232,7 +232,7 @@ func BenchmarkUnionQuery(b *testing.B) {
 			require.NoError(b, err)
 			ctx, cancel = context.WithCancel(context.Background())
 			b.Log("Starting cron store jobs")
-			go cronStoreJobs(ctx, jobsDb3, workspaces)
+			go cronStoreJobs(ctx, b, jobsDb3, workspaces)
 
 			b.Log("Starting parallel query with partitions benchmark")
 			b.Run(fmt.Sprintf("NewQueryPartition-%d-%d-%s-%s", size, workspacesCount, "HASH", "rt"), func(b *testing.B) {
@@ -249,6 +249,9 @@ func generateJobStatuses(jobs []*JobT) []*JobStatusT {
 	var jobStatuses []*JobStatusT
 	jobStates := []string{"waiting", "failed"}
 	for i := range jobs {
+		if i >= len(jobs)/2 {
+			break
+		}
 		jobStatuses = append(jobStatuses, &JobStatusT{
 			JobID:         jobs[i].JobID,
 			JobState:      jobStates[rand.Int()%2],
@@ -343,7 +346,7 @@ func benchmarkConcurrentParallelQuery(b *testing.B, jobsdb MultiTenantLegacy, te
 	}
 }
 
-func cronStoreJobs(ctx context.Context, jobsDb MultiTenantLegacy, workspaces []string) {
+func cronStoreJobs(ctx context.Context, b *testing.B, jobsDb MultiTenantLegacy, workspaces []string) {
 	ticker := time.NewTicker(1 * time.Second)
 	for {
 		select {
@@ -351,7 +354,7 @@ func cronStoreJobs(ctx context.Context, jobsDb MultiTenantLegacy, workspaces []s
 			jobs, _ := generateJobs(len(workspaces), workspaces)
 			err := jobsDb.Store(ctx, jobs)
 			if err != nil && err != context.Canceled {
-				panic(err)
+				b.Logf("cronStoreJobs error: %v", err)
 			}
 		case <-ctx.Done():
 			return
