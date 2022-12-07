@@ -872,12 +872,12 @@ func (wh *HandleT) getUploadsToProcess(ctx context.Context, availableWorkers int
 	partitionIdentifierSQL := `destination_id, namespace`
 
 	if len(skipIdentifiers) > 0 {
-		skipIdentifiersSQL = `AND ((destination_id || '_' || namespace)) != ALL($1)`
+		skipIdentifiersSQL = `AND ((destination_id || '_' || namespace)) != ALL($2)`
 	}
 
 	if wh.allowMultipleSourcesForJobsPickup {
 		if len(skipIdentifiers) > 0 {
-			skipIdentifiersSQL = `AND ((source_id || '_' || destination_id || '_' || namespace)) != ALL($1)`
+			skipIdentifiersSQL = `AND ((source_id || '_' || destination_id || '_' || namespace)) != ALL($2)`
 		}
 		partitionIdentifierSQL = fmt.Sprintf(`%s, %s`, "source_id", partitionIdentifierSQL)
 	}
@@ -915,9 +915,9 @@ func (wh *HandleT) getUploadsToProcess(ctx context.Context, availableWorkers int
 					t.destination_type = '%s' AND
 					t.in_progress=%t AND
 					t.status != '%s' AND
-					t.status != '%s'
-					%s AND
-					COALESCE(metadata->>'nextRetryTime', NOW()::text)::timestamptz <= NOW()
+					t.status != '%s' %s AND
+					COALESCE(metadata->>'nextRetryTime', NOW()::text)::timestamptz <= NOW() AND
+          workspace_id <> ALL ($1)
 			) grouped_uploads
 			WHERE
 				grouped_uploads.row_number = 1
@@ -937,19 +937,26 @@ func (wh *HandleT) getUploadsToProcess(ctx context.Context, availableWorkers int
 	)
 
 	var (
-		rows *sql.Rows
-		err  error
+		rows               *sql.Rows
+		err                error
+		degradedWorkspaces = tenantManager.DegradedWorkspaces()
 	)
+	if degradedWorkspaces == nil {
+		degradedWorkspaces = []string{}
+	}
+
 	if len(skipIdentifiers) > 0 {
 		rows, err = wh.dbHandle.QueryContext(
 			ctx,
 			sqlStatement,
+			pq.Array(degradedWorkspaces),
 			pq.Array(skipIdentifiers),
 		)
 	} else {
 		rows, err = wh.dbHandle.QueryContext(
 			ctx,
 			sqlStatement,
+			pq.Array(degradedWorkspaces),
 		)
 	}
 
