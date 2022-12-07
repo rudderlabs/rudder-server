@@ -9,7 +9,7 @@ type Component struct {
 var ServerComponent = Component{
 	Name: "server",
 	Features: []string{
-		"features",
+		"gzip-req-payload",
 	},
 }
 

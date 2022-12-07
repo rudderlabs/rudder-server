@@ -43,7 +43,7 @@ import (
 	batchrouterutils "github.com/rudderlabs/rudder-server/router/utils"
 	"github.com/rudderlabs/rudder-server/services/alert"
 	"github.com/rudderlabs/rudder-server/services/archiver"
-	"github.com/rudderlabs/rudder-server/services/controlplane/features"
+	"github.com/rudderlabs/rudder-server/services/controlplane"
 	"github.com/rudderlabs/rudder-server/services/db"
 	destinationdebugger "github.com/rudderlabs/rudder-server/services/debugger/destination"
 	sourcedebugger "github.com/rudderlabs/rudder-server/services/debugger/source"
@@ -248,12 +248,12 @@ func (r *Runner) Run(ctx context.Context, args []string) int {
 		g.Go(misc.WithBugsnag(func() error {
 			backendconfig.DefaultBackendConfig.WaitForConfig(ctx)
 
-			c := features.NewClient(
+			c := controlplane.NewClient(
 				config.GetString("CONFIG_BACKEND_URL", "https://api.rudderstack.com"),
 				backendconfig.DefaultBackendConfig.Identity(),
 			)
 
-			err := c.Send(ctx, info.ServerComponent.Name, info.ServerComponent.Features)
+			err := c.SendFeatures(ctx, info.ServerComponent.Name, info.ServerComponent.Features)
 			if err != nil {
 				r.logger.Errorf("error sending server features: %v", err)
 			}
@@ -391,6 +391,7 @@ func (r *Runner) versionInfo() map[string]interface{} {
 		"GitUrl":             r.releaseInfo.GitURL,
 		"TransformerVersion": transformer.GetVersion(),
 		"DatabricksVersion":  misc.GetDatabricksVersion(),
+		"Features":           info.ServerComponent.Features,
 	}
 }
 

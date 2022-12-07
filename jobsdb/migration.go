@@ -409,7 +409,7 @@ func (jd *HandleT) checkIfMigrateDS(ds dataSetT) (
 	queryStat.Start()
 	defer queryStat.End()
 
-	var delCount, totalCount int
+	var delCount, totalCount, statusCount int
 	sqlStatement := fmt.Sprintf(`SELECT COUNT(*) from %q`, ds.JobTable)
 	row := jd.dbHandle.QueryRow(sqlStatement)
 	err := row.Scan(&totalCount)
@@ -424,11 +424,13 @@ func (jd *HandleT) checkIfMigrateDS(ds dataSetT) (
 	err = row.Scan(&delCount)
 	jd.assertError(err)
 
-	if totalCount == 0 {
-		jd.assert(
-			delCount == 0,
-			fmt.Sprintf("delCount: %d. Either of them is not 0", delCount))
-		return false, false, 0
+	if jobStatusCountMigrationCheck {
+		// Total number of job status. If this table grows too big (e.g. a lot of retries)
+		// we migrate to a new table and get rid of old job status
+		sqlStatement = fmt.Sprintf(`SELECT COUNT(*) from %q`, ds.JobStatusTable)
+		row = jd.dbHandle.QueryRow(sqlStatement)
+		err = row.Scan(&statusCount)
+		jd.assertError(err)
 	}
 
 	recordsLeft = totalCount - delCount
@@ -466,10 +468,10 @@ func (jd *HandleT) checkIfMigrateDS(ds dataSetT) (
 
 	smallThreshold := jobMinRowsMigrateThres * float64(*jd.MaxDSSize)
 	isSmall := func() bool {
-		return float64(totalCount) < smallThreshold
+		return float64(totalCount) < smallThreshold && float64(statusCount) < smallThreshold
 	}
 
-	if float64(delCount)/float64(totalCount) > jobDoneMigrateThres {
+	if float64(delCount)/float64(totalCount) > jobDoneMigrateThres || (float64(statusCount)/float64(totalCount) > jobStatusMigrateThres) {
 		return true, isSmall(), recordsLeft
 	}
 
