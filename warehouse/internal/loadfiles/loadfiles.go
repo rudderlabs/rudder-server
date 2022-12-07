@@ -303,10 +303,14 @@ func (lf *LoadFileGenerator) createFromStaging(ctx context.Context, job model.Up
 	if err != nil {
 		return 0, 0, fmt.Errorf("getting load files: %w", err)
 	}
-
 	if len(loadFiles) == 0 {
-		err = fmt.Errorf(`no load files generated. Sample error: %v`, sampleError)
-		return 0, 0, err
+		return 0, 0, fmt.Errorf(`no load files generated. Sample error: %v`, sampleError)
+	}
+
+	if !slices.IsSortedFunc(loadFiles, func(a, b model.LoadFile) bool {
+		return a.ID < b.ID
+	}) {
+		return 0, 0, fmt.Errorf(`assertion: load files returned from repo not sorted by id`)
 	}
 
 	// verify if all load files are in same folder in object storage

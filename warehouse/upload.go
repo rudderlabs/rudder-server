@@ -1428,10 +1428,19 @@ func (job *UploadJobT) setMergedSchema(mergedSchema warehouseutils.SchemaT) erro
 
 // Set LoadFileIDs
 func (job *UploadJobT) setLoadFileIDs(startLoadFileID, endLoadFileID int64) error {
+	if startLoadFileID > endLoadFileID {
+		return fmt.Errorf("end id less than start id: %d > %d", startLoadFileID, endLoadFileID)
+	}
+
 	job.upload.StartLoadFileID = startLoadFileID
 	job.upload.EndLoadFileID = endLoadFileID
 
-	return job.setUploadColumns(UploadColumnsOpts{Fields: []UploadColumnT{{Column: UploadStartLoadFileIDField, Value: startLoadFileID}, {Column: UploadEndLoadFileIDField, Value: endLoadFileID}}})
+	return job.setUploadColumns(UploadColumnsOpts{
+		Fields: []UploadColumnT{
+			{Column: UploadStartLoadFileIDField, Value: startLoadFileID},
+			{Column: UploadEndLoadFileIDField, Value: endLoadFileID},
+		},
+	})
 }
 
 type UploadColumnsOpts struct {

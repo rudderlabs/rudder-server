@@ -44,6 +44,7 @@ func (repo *LoadFiles) init() {
 	})
 }
 
+// DeleteByStagingFiles deletes load files associated with stagingFileIDs.
 func (repo *LoadFiles) DeleteByStagingFiles(ctx context.Context, stagingFileIDs []int64) error {
 	repo.init()
 
@@ -61,6 +62,7 @@ func (repo *LoadFiles) DeleteByStagingFiles(ctx context.Context, stagingFileIDs 
 	return nil
 }
 
+// Insert loadFiles into the database.
 func (repo *LoadFiles) Insert(ctx context.Context, loadFiles []model.LoadFile) (err error) {
 	repo.init()
 
@@ -97,6 +99,9 @@ func (repo *LoadFiles) Insert(ctx context.Context, loadFiles []model.LoadFile) (
 	return
 }
 
+// GetByStagingFiles returns all load files matching the staging file ids.
+//
+//	Ordered by id ascending.
 func (repo *LoadFiles) GetByStagingFiles(ctx context.Context, stagingFileIDs []int64) ([]model.LoadFile, error) {
 	repo.init()
 
@@ -120,7 +125,8 @@ func (repo *LoadFiles) GetByStagingFiles(ctx context.Context, stagingFileIDs []i
 		FROM
 		row_numbered_load_files
 		WHERE
-		row_number = 1;
+		row_number = 1
+		ORDER BY id ASC
 	`
 
 	rows, err := repo.DB.QueryContext(ctx, sqlStatement, pq.Array(stagingFileIDs))
