@@ -224,10 +224,9 @@ func (pg *Handle) getConnectionCredentials() CredentialsT {
 	// Set the warehouse destination tunnel information.
 	// TODO: Need to setup the information on the destination with
 	// the credentials.
-
 	tunnellingType := warehouseutils.GetConfigValue("tunnellingType", pg.Warehouse)
 	switch tunnellingType {
-	case "ssh_forward":
+	case string(tunnelling.SSHForward):
 		creds.TunnelInfo = &tunnelling.TunnelInfo{
 			Type:   tunnelling.Type(tunnellingType),
 			Config: pg.Warehouse.Destination.Config,
@@ -804,14 +803,10 @@ func (pg *Handle) TestConnection(warehouse warehouseutils.Warehouse) (err error)
 	return nil
 }
 
-<<<<<<< HEAD
-func (pg *Handle) Setup(warehouse warehouseutils.Warehouse, uploader warehouseutils.UploaderI) (err error) {
-=======
-func (pg *HandleT) Setup(
+func (pg *Handle) Setup(
 	warehouse warehouseutils.Warehouse,
 	uploader warehouseutils.UploaderI) (err error) {
 
->>>>>>> a0b0c31f3 (Added base support for implementing ssh tunnelling in warehouse)
 	pg.Warehouse = warehouse
 	pg.Namespace = warehouse.Namespace
 	pg.Uploader = uploader
@@ -839,19 +834,11 @@ func (pg *Handle) dropDanglingStagingTables() bool {
 			  table_name
 			FROM
 			  information_schema.tables
-<<<<<<< HEAD
-			where
-			  table_schema = $1
-			  AND table_name like $2;
-		`
-	rows, err := pg.DB.Query(
-=======
 			WHERE
 			  table_schema = $1 AND
 			  table_name like $2;
 	`
-	rows, err := pg.Db.Query(
->>>>>>> a0b0c31f3 (Added base support for implementing ssh tunnelling in warehouse)
+	rows, err := pg.DB.Query(
 		sqlStatement,
 		pg.Namespace,
 		fmt.Sprintf(`%s%%`, warehouseutils.StagingTablePrefix(provider)),

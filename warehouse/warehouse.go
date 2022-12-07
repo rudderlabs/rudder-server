@@ -98,6 +98,7 @@ var (
 	maxParallelJobCreation              int
 	enableJitterForSyncs                bool
 	asyncWh                             *jobs.AsyncJobWhT
+	configBackendURL                    string
 )
 
 var (
@@ -186,6 +187,7 @@ func loadConfig() {
 	port = config.GetInt("WAREHOUSE_JOBS_DB_PORT", 5432)
 	password = config.GetString("WAREHOUSE_JOBS_DB_PASSWORD", "ubuntu") // Reading secrets from
 	sslMode = config.GetString("WAREHOUSE_JOBS_DB_SSL_MODE", "disable")
+	configBackendURL = config.GetString("CONFIG_BACKEND_URL", "api.rudderlabs.com")
 	config.RegisterIntConfigVariable(10, &warehouseSyncPreFetchCount, true, 1, "Warehouse.warehouseSyncPreFetchCount")
 	config.RegisterIntConfigVariable(100, &stagingFilesSchemaPaginationSize, true, 1, "Warehouse.stagingFilesSchemaPaginationSize")
 	config.RegisterBoolConfigVariable(false, &warehouseSyncFreqIgnore, true, "Warehouse.warehouseSyncFreqIgnore")
