@@ -5,7 +5,7 @@ package warehouse
 import (
 	"github.com/golang/mock/gomock"
 	"github.com/rudderlabs/rudder-server/utils/misc"
-	"github.com/rudderlabs/rudder-server/warehouse/postgres"
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/postgres"
 	"github.com/rudderlabs/rudder-server/warehouse/validations"
 
 	. "github.com/onsi/ginkgo/v2"
