@@ -149,8 +149,8 @@ BenchmarkUnionQuery/ParallelQuery-100000-8                      	               
 // and jobSize is the total number of jobs split across the workspaces
 func BenchmarkUnionQuery(b *testing.B) {
 	_ = startPostgres(b)
-	jobSize := []int{10000}
-	workspacesCounts := []int{30}
+	jobSize := []int{100_000}
+	workspacesCounts := []int{200}
 	for _, size := range jobSize {
 		for _, workspacesCount := range workspacesCounts {
 			workspaces := generateWorkspaces(workspacesCount)
@@ -173,15 +173,20 @@ func BenchmarkUnionQuery(b *testing.B) {
 			jobsDb1 := MultiTenantHandleT{HandleT: &HandleT{
 				MaxDSSize: &maxDSSize,
 			}}
+			b.Log("Setting up db")
 			err := jobsDb1.Setup(ReadWrite, true, "rt", true, []prebackup.Handler{}, fileuploader.NewDefaultProvider())
 			require.NoError(b, err)
+			b.Log("Inserting jobs")
 			err = jobsDb1.Store(context.Background(), jobs)
 			require.NoError(b, err)
+			b.Log("Inserting job statuses")
 			err = jobsDb1.UpdateJobStatus(context.Background(), jobStatuses, []string{"testCustomVal"}, nil)
 			require.NoError(b, err)
 			ctx, cancel := context.WithCancel(context.Background())
+			b.Log("Starting cron store jobs")
 			go cronStoreJobs(ctx, MultiTenantLegacy(jobsDb1), workspaces)
 
+			b.Log("Starting union query benchmark")
 			b.Run(fmt.Sprintf("UnionQuery-%d-%s", size, "rt"), func(b *testing.B) {
 				benchmarkUnionQuery(b, jobsDb1, testWorkspacePickup, "testCustomVal")
 			})
@@ -191,14 +196,20 @@ func BenchmarkUnionQuery(b *testing.B) {
 			jobsDb2 := MultiTenantLegacy{HandleT: &HandleT{
 				MaxDSSize: &maxDSSize,
 			}}
+			b.Log("Setting up db")
 			err = jobsDb2.Setup(ReadWrite, true, "rt", true, []prebackup.Handler{}, fileuploader.NewDefaultProvider())
 			require.NoError(b, err)
+			b.Log("Inserting jobs")
 			err = jobsDb2.Store(context.Background(), jobs)
 			require.NoError(b, err)
+			b.Log("Inserting job statuses")
 			err = jobsDb2.UpdateJobStatus(context.Background(), jobStatuses, []string{"testCustomVal"}, nil)
 			require.NoError(b, err)
 			ctx, cancel = context.WithCancel(context.Background())
+			b.Log("Starting cron store jobs")
 			go cronStoreJobs(ctx, jobsDb2, workspaces)
+
+			b.Log("Starting parallel query benchmark")
 			b.Run(fmt.Sprintf("NewQuery-%d-%d-%s", size, workspacesCount, "rt"), func(b *testing.B) {
 				benchmarkParallelQuery(b, jobsDb2, testWorkspacePickup, "testCustomVal")
 			})
@@ -210,14 +221,20 @@ func BenchmarkUnionQuery(b *testing.B) {
 			jobsDb3 := MultiTenantLegacy{HandleT: &HandleT{
 				MaxDSSize: &maxDSSize,
 			}}
+			b.Log("Setting up db")
 			err = jobsDb3.Setup(ReadWrite, true, "rt", true, []prebackup.Handler{}, fileuploader.NewDefaultProvider(), "HASH")
 			require.NoError(b, err)
+			b.Log("Inserting jobs")
 			err = jobsDb3.Store(context.Background(), jobs)
 			require.NoError(b, err)
+			b.Log("Inserting job statuses")
 			err = jobsDb3.UpdateJobStatus(context.Background(), jobStatuses, []string{"testCustomVal"}, nil)
 			require.NoError(b, err)
 			ctx, cancel = context.WithCancel(context.Background())
+			b.Log("Starting cron store jobs")
 			go cronStoreJobs(ctx, jobsDb3, workspaces)
+
+			b.Log("Starting parallel query with partitions benchmark")
 			b.Run(fmt.Sprintf("NewQueryPartition-%d-%d-%s-%s", size, workspacesCount, "HASH", "rt"), func(b *testing.B) {
 				benchmarkParallelQuery(b, jobsDb3, testWorkspacePickup, "testCustomVal")
 			})
@@ -231,9 +248,9 @@ func BenchmarkUnionQuery(b *testing.B) {
 func generateJobStatuses(jobs []*JobT) []*JobStatusT {
 	var jobStatuses []*JobStatusT
 	jobStates := []string{"waiting", "failed"}
-	for _, job := range jobs {
+	for i := range jobs {
 		jobStatuses = append(jobStatuses, &JobStatusT{
-			JobID:         job.JobID,
+			JobID:         jobs[i].JobID,
 			JobState:      jobStates[rand.Int()%2],
 			AttemptNum:    1,
 			ExecTime:      time.Now(),
