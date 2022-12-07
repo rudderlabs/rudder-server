@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.4.2](https://github.com/rudderlabs/rudder-server/compare/v1.4.1...v1.4.2) (2022-12-07)
+
+
+### Miscellaneous
+
+* remove shopify autoreload ([#2784](https://github.com/rudderlabs/rudder-server/issues/2784)) ([85ba13a](https://github.com/rudderlabs/rudder-server/commit/85ba13a44ebbd318cafbc3fa4428b6150e3c6081))
+
 ## [1.4.1](https://github.com/rudderlabs/rudder-server/compare/v1.4.0...v1.4.1) (2022-12-07)
 
 
