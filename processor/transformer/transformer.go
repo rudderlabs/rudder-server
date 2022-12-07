@@ -32,7 +32,10 @@ const (
 	TrackingPlanValidationStage = "trackingPlan_validation"
 )
 
-const StatusCPDown = 809
+const (
+	StatusCPDown              = 809
+	TransformerRequestFailure = 909
+)
 
 var jsonfast = jsoniter.ConfigCompatibleWithStandardLibrary
 
@@ -332,7 +335,6 @@ func (trans *HandleT) request(ctx context.Context, url string, data []Transforme
 		})
 	// control plane back up
 
-	// Remove Assertion?
 	switch statusCode {
 	case http.StatusOK,
 		http.StatusBadRequest,
@@ -377,6 +379,7 @@ func (trans *HandleT) doPost(ctx context.Context, rawJSON []byte, url string, ta
 		resp       *http.Response
 		respData   []byte
 	)
+
 	err := backoff.RetryNotify(
 		func() error {
 			var reqErr error
@@ -398,8 +401,13 @@ func (trans *HandleT) doPost(ctx context.Context, rawJSON []byte, url string, ta
 			trans.logger.Warnf("JS HTTP connection error: URL: %v Error: %+v after %v tries", url, err, retryCount)
 		})
 	if err != nil {
-		panic(err)
+		if config.GetBool("Processor.Transformer.failOnError", false) {
+			return []byte(fmt.Sprintf("transformer request failed: %s", err)), TransformerRequestFailure
+		} else {
+			panic(err)
+		}
 	}
+
 	// perform version compatibility check only on success
 	if resp.StatusCode == http.StatusOK {
 		transformerAPIVersion, convErr := strconv.Atoi(resp.Header.Get("apiVersion"))
@@ -412,5 +420,6 @@ func (trans *HandleT) doPost(ctx context.Context, rawJSON []byte, url string, ta
 			panic(unexpectedVersionError)
 		}
 	}
+
 	return respData, resp.StatusCode
 }
