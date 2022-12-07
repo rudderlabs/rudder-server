@@ -204,7 +204,7 @@ func TestMainFlow(t *testing.T) {
 	})
 
 	t.Run("redis", func(t *testing.T) {
-		conn, err := redigo.Dial("tcp", redisContainer.RedisAddress)
+		conn, err := redigo.Dial("tcp", redisContainer.Addr)
 		require.NoError(t, err)
 		defer func() { _ = conn.Close() }()
 		require.Eventually(t, func() bool {
@@ -398,7 +398,7 @@ func setupMainFlow(svcCtx context.Context, t *testing.T) <-chan struct{} {
 		return waitForKafka(kafkaCtx, t, kafkaContainer.Port)
 	})
 	containersGroup.Go(func() (err error) {
-		redisContainer, err = destination.SetupRedis(pool, t)
+		redisContainer, err = destination.SetupRedis(containersCtx, pool, t)
 		return err
 	})
 	containersGroup.Go(func() (err error) {
@@ -452,7 +452,7 @@ func setupMainFlow(svcCtx context.Context, t *testing.T) <-chan struct{} {
 		"writeKey":                     writeKey,
 		"workspaceId":                  workspaceID,
 		"postgresPort":                 postgresContainer.Port,
-		"address":                      redisContainer.RedisAddress,
+		"address":                      redisContainer.Addr,
 		"minioEndpoint":                minioContainer.Endpoint,
 		"minioBucketName":              minioContainer.BucketName,
 	}

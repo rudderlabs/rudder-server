@@ -19,8 +19,11 @@ import (
 var (
 	objectStorageDestinations = []string{"S3", "GCS", "AZURE_BLOB", "MINIO", "DIGITAL_OCEAN_SPACES"}
 	asyncDestinations         = []string{"MARKETO_BULK_UPLOAD"}
-	warehouseDestinations     = []string{"RS", "BQ", "SNOWFLAKE", "POSTGRES", "CLICKHOUSE", "MSSQL", "AZURE_SYNAPSE", "S3_DATALAKE", "GCS_DATALAKE", "AZURE_DATALAKE", "DELTALAKE"}
-	pkgLogger                 = logger.NewLogger().Child("router")
+	warehouseDestinations     = []string{
+		"RS", "BQ", "SNOWFLAKE", "POSTGRES", "CLICKHOUSE", "MSSQL",
+		"AZURE_SYNAPSE", "S3_DATALAKE", "GCS_DATALAKE", "AZURE_DATALAKE", "DELTALAKE",
+	}
+	pkgLogger = logger.NewLogger().Child("router")
 )
 
 type LifecycleManager struct {
@@ -42,7 +45,7 @@ func (r *LifecycleManager) Start() error {
 	g, _ := errgroup.WithContext(context.Background())
 	r.waitGroup = g
 	g.Go(func() error {
-		r.monitorDestRouters(currentCtx, *r.rt, *r.brt)
+		r.monitorDestRouters(currentCtx, r.rt, r.brt)
 		return nil
 	})
 	return nil
@@ -81,8 +84,8 @@ func (r *LifecycleManager) RouterIdentifier(destinationID, destinationType strin
 }
 
 // Gets the config from config backend and extracts enabled write-keys
-func (r *LifecycleManager) monitorDestRouters(ctx context.Context, routerFactory router.Factory,
-	batchrouterFactory batchrouter.Factory,
+func (r *LifecycleManager) monitorDestRouters(
+	ctx context.Context, routerFactory *router.Factory, batchrouterFactory *batchrouter.Factory,
 ) {
 	ch := r.BackendConfig.Subscribe(ctx, backendconfig.TopicBackendConfig)
 	dstToRouter := make(map[string]*router.HandleT)
