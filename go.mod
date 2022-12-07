@@ -33,7 +33,7 @@ require (
 	github.com/dgraph-io/badger/v2 v2.2007.4
 	github.com/dgraph-io/badger/v3 v3.2103.3
 	github.com/foxcpp/go-mockdns v1.0.1-0.20220408113050-3599dc5d2c7d
-	github.com/fsnotify/fsnotify v1.5.4
+	github.com/fsnotify/fsnotify v1.6.0
 	github.com/go-redis/redis v6.15.8+incompatible
 	github.com/go-redis/redis/v8 v8.11.5
 	github.com/gofrs/uuid v4.2.0+incompatible
@@ -63,7 +63,7 @@ require (
 	github.com/snowflakedb/gosnowflake v1.6.13
 	github.com/sony/gobreaker v0.5.0
 	github.com/spaolacci/murmur3 v1.1.0
-	github.com/spf13/viper v1.13.0
+	github.com/spf13/viper v1.14.0
 	github.com/stretchr/testify v1.8.1
 	github.com/thoas/go-funk v0.9.1
 	github.com/throttled/throttled/v2 v2.9.1
