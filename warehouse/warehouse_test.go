@@ -5,6 +5,10 @@ package warehouse
 import (
 	"context"
 	"fmt"
+	"os"
+	"testing"
+	"time"
+
 	"github.com/golang/mock/gomock"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -22,9 +26,6 @@ import (
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 	"github.com/rudderlabs/rudder-server/warehouse/validations"
 	"github.com/stretchr/testify/require"
-	"os"
-	"testing"
-	"time"
 )
 
 type testingT interface {
@@ -77,27 +78,32 @@ func TestUploadJob_ProcessingStats(t *testing.T) {
 		pendingJobs     int
 		pickupLag       time.Duration
 		wantErr         error
-		Now             string
 	}{
 		{
-			name:     "No pending jobs",
+			name:     "no pending jobs",
 			destType: "unknown-destination",
 		},
 		{
-			name:            "In progress namespaces",
+			name:            "in progress namespace",
 			destType:        warehouseutils.POSTGRES,
 			skipIdentifiers: []string{"test-destinationID_test-namespace"},
 		},
 		{
-			name:        "Some pending jobs",
+			name:        "some pending jobs",
 			destType:    warehouseutils.POSTGRES,
 			pendingJobs: 3,
 			pickupLag:   time.Duration(8229) * time.Second,
 		},
 		{
-			name:     "Invalid metadata",
+			name:     "invalid metadata",
 			destType: "test-destinationType-1",
 			wantErr:  fmt.Errorf("count pending jobs: pq: invalid input syntax for type timestamp with time zone: \"\""),
+		},
+		{
+			name:        "no next retry time",
+			destType:    "test-destinationType-2",
+			pendingJobs: 1,
+			pickupLag:   time.Duration(0) * time.Second,
 		},
 	}
 
@@ -133,9 +139,6 @@ func TestUploadJob_ProcessingStats(t *testing.T) {
 
 			if len(tc.skipIdentifiers) == 0 {
 				skipIdentifierSQL = ""
-			}
-			if len(tc.Now) != 0 {
-				now = tc.Now
 			}
 
 			wh := HandleT{

@@ -94,8 +94,8 @@ func (r *LifecycleManager) monitorDestRouters(ctx context.Context, routerFactory
 	// rt / batch_rt tables and there would be a delay reading from the 'ch' channel
 	// However, this shouldn't be the problem since backend config pushes config
 	// to its subscribers in separate goroutines to prevent blocking.
-	routerFactory.RouterDB.DeleteExecuting()
-	batchrouterFactory.RouterDB.DeleteExecuting()
+	routerFactory.RouterDB.FailExecuting()
+	batchrouterFactory.RouterDB.FailExecuting()
 
 loop:
 	for {

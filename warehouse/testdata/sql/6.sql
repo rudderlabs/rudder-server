@@ -43,5 +43,10 @@ VALUES (1, 'test-sourceID', 'test-namespace', 'test-destinationID', 'POSTGRES', 
         0, 0, 'waiting', '{}', '{}', NULL, NULL, NULL, NULL,
         '2022-12-06 15:23:37.100685', '2022-12-06 15:23:37.100685',
         '{"nextRetryTime": ""}',
+        '{}', FALSE, 'test-workspaceID'),
+       (9, 'test-sourceID', 'test-namespace', 'test-destinationID', 'test-destinationType-2', 0, 0,
+        0, 0, 'waiting', '{}', '{}', NULL, NULL, NULL, NULL,
+        '2022-12-06 15:23:37.100685', '2022-12-06 15:23:37.100685',
+        '{}',
         '{}', FALSE, 'test-workspaceID');
 COMMIT;
