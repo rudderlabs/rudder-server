@@ -77,6 +77,7 @@ func TestUploadJob_ProcessingStats(t *testing.T) {
 		skipIdentifiers []string
 		pendingJobs     int
 		pickupLag       time.Duration
+		pickupWaitTime  time.Duration
 		wantErr         error
 	}{
 		{
@@ -89,10 +90,11 @@ func TestUploadJob_ProcessingStats(t *testing.T) {
 			skipIdentifiers: []string{"test-destinationID_test-namespace"},
 		},
 		{
-			name:        "some pending jobs",
-			destType:    warehouseutils.POSTGRES,
-			pendingJobs: 3,
-			pickupLag:   time.Duration(8229) * time.Second,
+			name:           "some pending jobs",
+			destType:       warehouseutils.POSTGRES,
+			pendingJobs:    3,
+			pickupLag:      time.Duration(3983) * time.Second,
+			pickupWaitTime: time.Duration(8229) * time.Second,
 		},
 		{
 			name:     "invalid metadata",
@@ -100,10 +102,11 @@ func TestUploadJob_ProcessingStats(t *testing.T) {
 			wantErr:  fmt.Errorf("count pending jobs: pq: invalid input syntax for type timestamp with time zone: \"\""),
 		},
 		{
-			name:        "no next retry time",
-			destType:    "test-destinationType-2",
-			pendingJobs: 1,
-			pickupLag:   time.Duration(0) * time.Second,
+			name:           "no next retry time",
+			destType:       "test-destinationType-2",
+			pendingJobs:    1,
+			pickupLag:      time.Duration(0) * time.Second,
+			pickupWaitTime: time.Duration(0) * time.Second,
 		},
 	}
 
@@ -172,6 +175,12 @@ func TestUploadJob_ProcessingStats(t *testing.T) {
 				"destType": tc.destType,
 			})
 			require.EqualValues(t, m3.LastDuration(), tc.pickupLag)
+
+			m4 := store.Get("wh_processing_pickup_wait_time", stats.Tags{
+				"module":   moduleName,
+				"destType": tc.destType,
+			})
+			require.EqualValues(t, m4.LastDuration(), tc.pickupWaitTime)
 		})
 	}
 }

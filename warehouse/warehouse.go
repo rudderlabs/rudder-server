@@ -767,12 +767,13 @@ func (wh *HandleT) mainLoop(ctx context.Context) {
 
 func (wh *HandleT) processingStats(ctx context.Context, availableWorkers int, skipIdentifiers []string, skipIdentifiersSQL string) error {
 	var (
-		pendingJobs        int
-		pendingJobsQuery   string
-		pickupLagInSeconds float64
-		pickupLagQuery     string
-		err                error
-		Now                = "NOW()"
+		pendingJobs             int
+		pendingJobsQuery        string
+		pickupLagInSeconds      float64
+		pickupWaitTimeInSeconds float64
+		pickupQuery             string
+		err                     error
+		Now                     = "NOW()"
 	)
 	if wh.Now != "" {
 		Now = wh.Now
@@ -799,9 +800,10 @@ func (wh *HandleT) processingStats(ctx context.Context, availableWorkers int, sk
 		skipIdentifiersSQL,
 		Now,
 	)
-	pickupLagQuery = fmt.Sprintf(`
+	pickupQuery = fmt.Sprintf(`
 		SELECT
-			COALESCE(SUM(EXTRACT(EPOCH FROM AGE(%[7]s, COALESCE(metadata->>'nextRetryTime', %[7]s::text)::timestamptz))), 0) AS pickup_lag_in_seconds
+			COALESCE(EXTRACT(EPOCH FROM(AGE(%[7]s, MIN(COALESCE(metadata->>'nextRetryTime', %[7]s::text)::timestamptz)))), 0) AS pickup_lag_in_seconds,
+			COALESCE(SUM(EXTRACT(EPOCH FROM AGE(%[7]s, COALESCE(metadata->>'nextRetryTime', %[7]s::text)::timestamptz))), 0) AS pickup_wait_time_in_seconds
 		FROM
 			%[1]s t
 		WHERE
@@ -826,7 +828,7 @@ func (wh *HandleT) processingStats(ctx context.Context, availableWorkers int, sk
 			return fmt.Errorf("count pending jobs: %w", err)
 		}
 
-		if err = wh.dbHandle.QueryRowContext(ctx, pickupLagQuery, pq.Array(skipIdentifiers)).Scan(&pickupLagInSeconds); err != nil {
+		if err = wh.dbHandle.QueryRowContext(ctx, pickupQuery, pq.Array(skipIdentifiers)).Scan(&pickupLagInSeconds, &pickupWaitTimeInSeconds); err != nil {
 			return fmt.Errorf("pickup lag: %w", err)
 		}
 	} else {
@@ -834,7 +836,7 @@ func (wh *HandleT) processingStats(ctx context.Context, availableWorkers int, sk
 			return fmt.Errorf("count pending jobs: %w", err)
 		}
 
-		if err = wh.dbHandle.QueryRowContext(ctx, pickupLagQuery).Scan(&pickupLagInSeconds); err != nil {
+		if err = wh.dbHandle.QueryRowContext(ctx, pickupQuery).Scan(&pickupLagInSeconds, &pickupWaitTimeInSeconds); err != nil {
 			return fmt.Errorf("pickup lag: %w", err)
 		}
 	}
@@ -856,6 +858,12 @@ func (wh *HandleT) processingStats(ctx context.Context, availableWorkers int, sk
 		"destType": wh.destType,
 	})
 	pickupLagStat.SendTiming(time.Duration(pickupLagInSeconds) * time.Second)
+
+	pickupWaitTimeStat := wh.stats.NewTaggedStat("wh_processing_pickup_wait_time", stats.TimerType, stats.Tags{
+		"module":   moduleName,
+		"destType": wh.destType,
+	})
+	pickupWaitTimeStat.SendTiming(time.Duration(pickupWaitTimeInSeconds) * time.Second)
 	return nil
 }
 
