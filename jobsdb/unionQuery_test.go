@@ -3,6 +3,7 @@ package jobsdb
 import (
 	"context"
 	"fmt"
+	"math/rand"
 	"sync"
 	"testing"
 	"time"
@@ -147,8 +148,8 @@ BenchmarkUnionQuery/ParallelQuery-100000-8                      	               
 // and jobSize is the total number of jobs split across the workspaces
 func BenchmarkUnionQuery(b *testing.B) {
 	_ = startPostgres(b)
-	jobSize := []int{10000, 100000}
-	workspacesCounts := []int{30, 50, 100, 150, 200}
+	jobSize := []int{10000}
+	workspacesCounts := []int{30}
 	for _, size := range jobSize {
 		for _, workspacesCount := range workspacesCounts {
 			workspaces := generateWorkspaces(workspacesCount)
@@ -164,9 +165,9 @@ func BenchmarkUnionQuery(b *testing.B) {
 				}
 			}
 			jobs, testWorkspacePickup := generateJobs(size, workspaceDistribution)
+			jobStatuses := generateJobStatuses(jobs)
 			b.Setenv("RSERVER_JOBS_DB_ENABLE_WRITER_QUEUE", "true")
 			b.Setenv("RSERVER_JOBS_DB_ENABLE_READER_QUEUE", "true")
-			b.Setenv("RSERVER_JOBS_DB_PARTITION_COUNT", "0")
 			maxDSSize := 500
 			jobsDb1 := MultiTenantHandleT{HandleT: &HandleT{
 				MaxDSSize: &maxDSSize,
@@ -174,6 +175,8 @@ func BenchmarkUnionQuery(b *testing.B) {
 			err := jobsDb1.Setup(ReadWrite, true, "rt", true, []prebackup.Handler{}, fileuploader.NewDefaultProvider())
 			require.NoError(b, err)
 			err = jobsDb1.Store(context.Background(), jobs)
+			require.NoError(b, err)
+			err = jobsDb1.UpdateJobStatus(context.Background(), jobStatuses, []string{"testCustomVal"}, nil)
 			require.NoError(b, err)
 			ctx, cancel := context.WithCancel(context.Background())
 			go cronStoreJobs(ctx, MultiTenantLegacy(jobsDb1), workspaces)
@@ -184,7 +187,6 @@ func BenchmarkUnionQuery(b *testing.B) {
 			cancel()
 			jobsDb1.TearDown()
 
-			b.Setenv("RSERVER_JOBS_DB_PARTITION_COUNT", "0")
 			jobsDb2 := MultiTenantLegacy{HandleT: &HandleT{
 				MaxDSSize: &maxDSSize,
 			}}
@@ -192,9 +194,11 @@ func BenchmarkUnionQuery(b *testing.B) {
 			require.NoError(b, err)
 			err = jobsDb2.Store(context.Background(), jobs)
 			require.NoError(b, err)
+			err = jobsDb2.UpdateJobStatus(context.Background(), jobStatuses, []string{"testCustomVal"}, nil)
+			require.NoError(b, err)
 			ctx, cancel = context.WithCancel(context.Background())
 			go cronStoreJobs(ctx, jobsDb2, workspaces)
-			b.Run(fmt.Sprintf("ParallelQueryPartition-%d-%d-%s", size, workspacesCount, "rt"), func(b *testing.B) {
+			b.Run(fmt.Sprintf("NewQuery-%d-%d-%s", size, workspacesCount, "rt"), func(b *testing.B) {
 				benchmarkParallelQuery(b, jobsDb2, testWorkspacePickup, "testCustomVal")
 			})
 
@@ -209,9 +213,11 @@ func BenchmarkUnionQuery(b *testing.B) {
 			require.NoError(b, err)
 			err = jobsDb3.Store(context.Background(), jobs)
 			require.NoError(b, err)
+			err = jobsDb3.UpdateJobStatus(context.Background(), jobStatuses, []string{"testCustomVal"}, nil)
+			require.NoError(b, err)
 			ctx, cancel = context.WithCancel(context.Background())
 			go cronStoreJobs(ctx, jobsDb3, workspaces)
-			b.Run(fmt.Sprintf("ParallelQueryPartition-%d-%d-%s-%s", size, workspacesCount, "HASH", "rt"), func(b *testing.B) {
+			b.Run(fmt.Sprintf("NewQueryPartition-%d-%d-%s-%s", size, workspacesCount, "HASH", "rt"), func(b *testing.B) {
 				benchmarkParallelQuery(b, jobsDb3, testWorkspacePickup, "testCustomVal")
 			})
 
@@ -219,6 +225,23 @@ func BenchmarkUnionQuery(b *testing.B) {
 			jobsDb3.TearDown()
 		}
 	}
+}
+
+func generateJobStatuses(jobs []*JobT) []*JobStatusT {
+	var jobStatuses []*JobStatusT
+	jobStates := []string{"waiting", "failed"}
+	for _, job := range jobs {
+		jobStatuses = append(jobStatuses, &JobStatusT{
+			JobID:         job.JobID,
+			JobState:      jobStates[rand.Int()%2],
+			AttemptNum:    1,
+			ExecTime:      time.Now(),
+			RetryTime:     time.Now(),
+			ErrorCode:     "0",
+			ErrorResponse: []byte(`{}`),
+		})
+	}
+	return jobStatuses
 }
 
 func benchmarkUnionQuery(b *testing.B, jobsdb MultiTenantHandleT, testWorkspacePickup map[string]int, customVal string) {

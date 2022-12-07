@@ -45,7 +45,6 @@ func (jd *HandleT) backupDSLoop(ctx context.Context) {
 		select {
 		case <-time.After(sleepMultiplier * backupCheckSleepDuration):
 			if !jd.BackupSettings.isBackupEnabled() {
-				jd.logger.Debugf("backupDSLoop backup disabled %s", jd.tablePrefix)
 				continue
 			}
 		case <-ctx.Done():

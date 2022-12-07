@@ -1404,6 +1404,9 @@ func (jd *HandleT) createDSInTx(tx *Tx, newDS dataSetT) error {
 	}
 
 	for i := 0; i < jd.partitionCount; i++ {
+		if !(len(jd.partitionType) > 0 && jd.partitionType[0] != "") {
+			continue
+		}
 		partitionSqlStatement := fmt.Sprintf(`CREATE TABLE partition_table_%[1]s_p%[2]d PARTITION OF %[1]s FOR VALUES WITH (modulus %[3]d, remainder %[2]d);`, newDS.JobTable, i, jd.partitionCount)
 		if _, err = tx.ExecContext(context.TODO(), partitionSqlStatement); err != nil {
 			return err
