@@ -1,0 +1,26 @@
+# redis-throttling-master.fcasula.svc.cluster.local:6379
+# throttling-2-001.012ut9.0001.use1.cache.amazonaws.com:6379
+# throttling-persistent-cluster-10gbit-001.012ut9.0001.use1.cache.amazonaws.com:6379
+apiVersion: batch/v1
+kind: Job
+metadata:
+  labels:
+    run: rudder-server-benchmarks
+  name: rudder-server-benchmarks
+  namespace: <K8S_NAMESPACE>
+spec:
+  template:
+    metadata:
+      labels:
+        run: rudder-server-benchmarks
+    spec:
+      containers:
+        - image: "<DOCKER_USER>/rudder-server-benchmarks:latest"
+          name: rudder-server-benchmarks
+          imagePullPolicy: Always
+          command: ["./throttling"]
+          env:
+            - name: REDIS_ADDR
+              value: "throttling-2-001.012ut9.0001.use1.cache.amazonaws.com:6379"
+      restartPolicy: Never
+  backoffLimit: 1
