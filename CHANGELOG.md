@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.4.1](https://github.com/rudderlabs/rudder-server/compare/v1.4.0...v1.4.1) (2022-12-07)
+
+
+### Miscellaneous
+
+* fail transformer timeouts ([#2779](https://github.com/rudderlabs/rudder-server/issues/2779)) ([05d8264](https://github.com/rudderlabs/rudder-server/commit/05d8264b977f66c604b67875f105624826a756f1))
+* remove hacky commit hash ([cf0cfad](https://github.com/rudderlabs/rudder-server/commit/cf0cfade1aacecae5675d61c8768d2c2ed527d54))
+
 ## [1.4.0](https://github.com/rudderlabs/rudder-server/compare/v1.2.0...v1.4.0) (2022-12-05)
 
 
