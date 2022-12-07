@@ -1243,7 +1243,7 @@ var _ = Describe("Processor", func() {
 
 			processor.readLoopSleep = time.Millisecond
 
-			c.mockProcErrorsDB.EXPECT().DeleteExecuting()
+			c.mockProcErrorsDB.EXPECT().FailExecuting()
 			c.mockProcErrorsDB.EXPECT().GetToRetry(gomock.Any(), gomock.Any()).Return(jobsdb.JobsResult{}, nil).AnyTimes()
 			c.mockProcErrorsDB.EXPECT().GetUnprocessed(gomock.Any(), gomock.Any()).Return(jobsdb.JobsResult{}, nil).AnyTimes()
 			c.mockBackendConfig.EXPECT().WaitForConfig(gomock.Any()).Times(1)

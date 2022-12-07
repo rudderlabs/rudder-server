@@ -110,5 +110,4 @@ func Test_LoadFiles(t *testing.T) {
 		lastLoadFile.ID = gotLoadFiles[0].ID
 		require.Equal(t, lastLoadFile, gotLoadFiles[0])
 	})
-
 }

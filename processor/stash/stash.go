@@ -84,7 +84,7 @@ func (st *HandleT) Setup(errorDB jobsdb.JobsDB, transientSource transientsource.
 }
 
 func (st *HandleT) crashRecover() {
-	st.errorDB.DeleteExecuting()
+	st.errorDB.FailExecuting()
 }
 
 func (st *HandleT) Start(ctx context.Context) {

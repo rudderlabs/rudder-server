@@ -28,7 +28,7 @@ import (
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/info"
 	"github.com/rudderlabs/rudder-server/rruntime"
-	"github.com/rudderlabs/rudder-server/services/controlplane/features"
+	"github.com/rudderlabs/rudder-server/services/controlplane"
 	"github.com/rudderlabs/rudder-server/services/db"
 	destinationdebugger "github.com/rudderlabs/rudder-server/services/debugger/destination"
 	"github.com/rudderlabs/rudder-server/services/filemanager"
@@ -59,6 +59,7 @@ var (
 	dbHandle                            *sql.DB
 	notifier                            pgnotifier.PgNotifierT
 	tenantManager                       *multitenant.Manager
+	controlPlaneClient                  *controlplane.Client
 	noOfSlaveWorkerRoutines             int
 	uploadFreqInS                       int64
 	stagingFilesSchemaPaginationSize    int
@@ -1604,7 +1605,6 @@ func pendingEventsHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func getPendingStagingFileCount(sourceOrDestId string, isSourceId bool) (fileCount int64, err error) {
-	sourceOrDestId = pq.QuoteIdentifier(sourceOrDestId)
 	sourceOrDestColumn := ""
 	if isSourceId {
 		sourceOrDestColumn = "source_id"
@@ -2010,6 +2010,13 @@ func Start(ctx context.Context, app app.App) error {
 			reporting.AddClient(ctx, types.Config{ConnInfo: psqlInfo, ClientName: types.WAREHOUSE_REPORTING_CLIENT})
 			return nil
 		}))
+		region := config.GetString("region", "")
+
+		controlPlaneClient = controlplane.NewClient(
+			backendconfig.GetConfigBackendURL(),
+			backendconfig.DefaultBackendConfig.Identity(),
+			controlplane.WithRegion(region),
+		)
 	}
 
 	if isStandAlone() && isMaster() {
@@ -2019,12 +2026,12 @@ func Start(ctx context.Context, app app.App) error {
 		g.Go(func() error {
 			backendconfig.DefaultBackendConfig.WaitForConfig(ctx)
 
-			c := features.NewClient(
+			c := controlplane.NewClient(
 				config.GetString("CONFIG_BACKEND_URL", "https://api.rudderstack.com"),
 				backendconfig.DefaultBackendConfig.Identity(),
 			)
 
-			err := c.Send(ctx, info.WarehouseComponent.Name, info.WarehouseComponent.Features)
+			err := c.SendFeatures(ctx, info.WarehouseComponent.Name, info.WarehouseComponent.Features)
 			if err != nil {
 				pkgLogger.Errorf("error sending warehouse features: %v", err)
 			}

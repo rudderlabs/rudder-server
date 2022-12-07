@@ -66,7 +66,7 @@ func Test_CreateLoadFiles(t *testing.T) {
 
 	ctx := context.Background()
 
-	var stagingFiles = getStagingFiles()
+	stagingFiles := getStagingFiles()
 
 	job := model.UploadJob{
 		Warehouse: warehouseutils.Warehouse{
@@ -350,7 +350,6 @@ func Test_CreateLoadFiles_DestinationHistory(t *testing.T) {
 	)
 
 	t.Run("invalid revision ID", func(t *testing.T) {
-
 		stagingFile.DestinationRevisionID = "invalid_revision_id"
 
 		startID, endID, err := lf.CreateLoadFiles(ctx, job)

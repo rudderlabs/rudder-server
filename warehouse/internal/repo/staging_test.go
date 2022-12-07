@@ -419,7 +419,6 @@ func TestStagingFileRepo_Status(t *testing.T) {
 }
 
 func TestStagingFileIDs(t *testing.T) {
-
 	sfs := []*model.StagingFile{
 		{
 			ID: 1,

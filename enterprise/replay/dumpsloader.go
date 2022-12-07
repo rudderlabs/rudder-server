@@ -223,7 +223,7 @@ func (procHandle *ProcErrorRequestHandler) fetchDumpsList(ctx context.Context) {
 
 func (handle *dumpsLoaderHandleT) handleRecovery() {
 	// remove dangling executing
-	handle.dbHandle.DeleteExecuting()
+	handle.dbHandle.FailExecuting()
 }
 
 // Setup sets up dumps-loader.

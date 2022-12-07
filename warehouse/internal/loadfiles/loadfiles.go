@@ -55,7 +55,8 @@ type LoadFileGenerator struct {
 
 	ControlPlaneClient ControlPlaneClient
 
-	publishBatchSize int
+	publishBatchSize             int
+	publishBatchSizePerWorkspace map[string]int
 }
 
 type WorkerJobResponse struct {
@@ -96,6 +97,8 @@ type WorkerJobRequest struct {
 
 func WithConfig(ld *LoadFileGenerator, config *config.Config) {
 	ld.publishBatchSize = config.GetInt("Warehouse.loadFileGenerator.publishBatchSize", 100)
+
+	ld.publishBatchSizePerWorkspace = config.GetStringMap("Warehouse.pgNotifierPublishBatchSizeWorkspaceIDs", nil)
 }
 
 // CreateLoadFiles for the staging files that have not been successfully processed.
@@ -125,6 +128,9 @@ func (lf *LoadFileGenerator) createFromStaging(ctx context.Context, job model.Up
 	publishBatchSize := lf.publishBatchSize
 	if publishBatchSize == 0 {
 		publishBatchSize = defaultPublishBatchSize
+	}
+	if size, ok := lf.publishBatchSizePerWorkspace[job.warehouse.WorkspaceID]; ok {
+		publishBatchSize = size
 	}
 
 	uniqueLoadGenID := misc.FastUUID().String()
