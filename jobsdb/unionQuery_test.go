@@ -9,10 +9,11 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/stretchr/testify/require"
+
 	"github.com/rudderlabs/rudder-server/jobsdb/prebackup"
 	"github.com/rudderlabs/rudder-server/services/fileuploader"
 	"github.com/rudderlabs/rudder-server/utils/bytesize"
-	"github.com/stretchr/testify/require"
 )
 
 func TestMultiTenantHandleT_GetAllJobs(t *testing.T) {
@@ -275,8 +276,8 @@ func benchmarkConcurrentUnionQuery(b *testing.B, jobsdb MultiTenantHandleT, test
 }
 
 func benchmarkParallelQuery(b *testing.B, jobsdb MultiTenantLegacy, testWorkspacePickup map[string]int, customVal string) {
+	b.ResetTimer()
 	for i := 0; i < 10; i++ {
-		b.ResetTimer()
 		concurrencies := len(testWorkspacePickup)
 		var wg sync.WaitGroup
 		wg.Add(concurrencies)
@@ -366,16 +367,16 @@ func generateWorkspaces(size int) []string {
 	return workspaces
 }
 
-//BenchmarkUnionQuery/ParallelQuery-10000-30-HASH-rt-8         	       1	1104393041 ns/op
-//BenchmarkUnionQuery/ParallelQuery-10000-50-HASH-rt-8         	       1	1158288708 ns/op
-//BenchmarkUnionQuery/ParallelQuery-10000-100-HASH-rt-8        	       1	1410090625 ns/op
-//BenchmarkUnionQuery/ParallelQuery-10000-150-HASH-rt-8        	       1	1335240708 ns/op
-//BenchmarkUnionQuery/ParallelQuery-10000-200-HASH-rt-8        	       1	1522682042 ns/op
-//BenchmarkUnionQuery/ParallelQuery-100000-30-HASH-rt-8        	       1	11641253083 ns/op
-//BenchmarkUnionQuery/ParallelQuery-100000-50-HASH-rt-8        	       1	11223804541 ns/op
-//BenchmarkUnionQuery/ParallelQuery-100000-100-HASH-rt-8       	       1	11641310875 ns/op
-//BenchmarkUnionQuery/ParallelQuery-100000-150-HASH-rt-8       	       1	11675503250 ns/op
-//BenchmarkUnionQuery/ParallelQuery-100000-200-HASH-rt-8       	       1	11124351625 ns/op
+// BenchmarkUnionQuery/ParallelQuery-10000-30-HASH-rt-8         	       1	1104393041 ns/op
+// BenchmarkUnionQuery/ParallelQuery-10000-50-HASH-rt-8         	       1	1158288708 ns/op
+// BenchmarkUnionQuery/ParallelQuery-10000-100-HASH-rt-8        	       1	1410090625 ns/op
+// BenchmarkUnionQuery/ParallelQuery-10000-150-HASH-rt-8        	       1	1335240708 ns/op
+// BenchmarkUnionQuery/ParallelQuery-10000-200-HASH-rt-8        	       1	1522682042 ns/op
+// BenchmarkUnionQuery/ParallelQuery-100000-30-HASH-rt-8        	       1	11641253083 ns/op
+// BenchmarkUnionQuery/ParallelQuery-100000-50-HASH-rt-8        	       1	11223804541 ns/op
+// BenchmarkUnionQuery/ParallelQuery-100000-100-HASH-rt-8       	       1	11641310875 ns/op
+// BenchmarkUnionQuery/ParallelQuery-100000-150-HASH-rt-8       	       1	11675503250 ns/op
+// BenchmarkUnionQuery/ParallelQuery-100000-200-HASH-rt-8       	       1	11124351625 ns/op
 
 // Different scenarios hardcoded in the benchmark
 // Different benchmark should run against same data set
