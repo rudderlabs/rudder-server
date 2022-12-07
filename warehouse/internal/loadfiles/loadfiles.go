@@ -97,8 +97,12 @@ type WorkerJobRequest struct {
 
 func WithConfig(ld *LoadFileGenerator, config *config.Config) {
 	ld.publishBatchSize = config.GetInt("Warehouse.loadFileGenerator.publishBatchSize", 100)
+	mapConfig := config.GetStringMap("Warehouse.pgNotifierPublishBatchSizeWorkspaceIDs", nil)
 
-	ld.publishBatchSizePerWorkspace = config.GetStringMap("Warehouse.pgNotifierPublishBatchSizeWorkspaceIDs", nil)
+	ld.publishBatchSizePerWorkspace = make(map[string]int, len(mapConfig))
+	for k, v := range mapConfig {
+		ld.publishBatchSizePerWorkspace[k] = int(v.(float64))
+	}
 }
 
 // CreateLoadFiles for the staging files that have not been successfully processed.
@@ -129,7 +133,7 @@ func (lf *LoadFileGenerator) createFromStaging(ctx context.Context, job model.Up
 	if publishBatchSize == 0 {
 		publishBatchSize = defaultPublishBatchSize
 	}
-	if size, ok := lf.publishBatchSizePerWorkspace[job.warehouse.WorkspaceID]; ok {
+	if size, ok := lf.publishBatchSizePerWorkspace[job.Warehouse.WorkspaceID]; ok {
 		publishBatchSize = size
 	}
 

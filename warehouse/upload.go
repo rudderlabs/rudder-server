@@ -110,7 +110,7 @@ type tableNameT string
 type UploadJobFactory struct {
 	dbHandle             *sql.DB
 	destinationValidator validations.DestinationValidator
-	loadfile             loadfiles.LoadFileGenerator
+	loadFile             *loadfiles.LoadFileGenerator
 	whManager            manager.ManagerI
 	pgNotifier           *pgnotifier.PgNotifierT
 	schemaHandle         *SchemaHandleT
@@ -120,7 +120,7 @@ type UploadJobFactory struct {
 type UploadJobT struct {
 	dbHandle             *sql.DB
 	destinationValidator validations.DestinationValidator
-	loadfile             loadfiles.LoadFileGenerator
+	loadfile             *loadfiles.LoadFileGenerator
 	whManager            manager.ManagerI
 	pgNotifier           *pgnotifier.PgNotifierT
 	schemaHandle         *SchemaHandleT
@@ -195,7 +195,7 @@ func setMaxParallelLoads() {
 func (f *UploadJobFactory) NewUploadJob(dto *model.UploadJob) *UploadJobT {
 	return &UploadJobT{
 		dbHandle:             f.dbHandle,
-		loadfile:             f.loadfile,
+		loadfile:             f.loadFile,
 		pgNotifier:           f.pgNotifier,
 		whManager:            f.whManager,
 		destinationValidator: f.destinationValidator,
