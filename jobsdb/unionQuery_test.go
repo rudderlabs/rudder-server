@@ -147,10 +147,7 @@ BenchmarkUnionQuery/ParallelQuery-100000-8                      	               
 // and jobSize is the total number of jobs split across the workspaces
 func BenchmarkUnionQuery(b *testing.B) {
 	_ = startPostgres(b)
-	jobSize := []int{10000}
-	//concurrencies := []int{16, 32}
-	partitionTypes := []string{"HASH"}
-	tablePrefixes := []string{"rt"}
+	jobSize := []int{10000, 100000}
 	workspacesCounts := []int{30, 50, 100, 150, 200}
 	for _, size := range jobSize {
 		for _, workspacesCount := range workspacesCounts {
@@ -167,52 +164,59 @@ func BenchmarkUnionQuery(b *testing.B) {
 				}
 			}
 			jobs, testWorkspacePickup := generateJobs(size, workspaceDistribution)
-			for _, partitionType := range partitionTypes {
-				b.Setenv("RSERVER_JOBS_DB_ENABLE_WRITER_QUEUE", "true")
-				b.Setenv("RSERVER_JOBS_DB_ENABLE_READER_QUEUE", "true")
-				for _, tablePrefix := range tablePrefixes {
-					//jobsDb1 := MultiTenantHandleT{HandleT: &HandleT{}}
-					//err := jobsDb1.Setup(ReadWrite, true, tablePrefix, true, []prebackup.Handler{}, fileuploader.NewDefaultProvider())
-					//require.NoError(b, err)
-					//err = jobsDb1.Store(context.Background(), jobs)
-					//require.NoError(b, err)
-					//
-					//b.Run(fmt.Sprintf("UnionQuery-%d-%s", size, tablePrefix), func(b *testing.B) {
-					//	benchmarkUnionQuery(b, jobsDb1, testWorkspacePickup, "testCustomVal")
-					//})
-					//
-					////for _, concurrency := range concurrencies {
-					////	b.Run(fmt.Sprintf("ConcurrentUnionQuery-%d-%d-%s", size, concurrency, tablePrefix), func(b *testing.B) {
-					////		benchmarkConcurrentUnionQuery(b, jobsDb1, testWorkspacePickup, "testCustomVal", concurrency)
-					////	})
-					////}
-					//
-					//jobsDb1.TearDown()
+			b.Setenv("RSERVER_JOBS_DB_ENABLE_WRITER_QUEUE", "true")
+			b.Setenv("RSERVER_JOBS_DB_ENABLE_READER_QUEUE", "true")
+			b.Setenv("RSERVER_JOBS_DB_PARTITION_COUNT", "0")
+			maxDSSize := 500
+			jobsDb1 := MultiTenantHandleT{HandleT: &HandleT{
+				MaxDSSize: &maxDSSize,
+			}}
+			err := jobsDb1.Setup(ReadWrite, true, "rt", true, []prebackup.Handler{}, fileuploader.NewDefaultProvider())
+			require.NoError(b, err)
+			err = jobsDb1.Store(context.Background(), jobs)
+			require.NoError(b, err)
+			ctx, cancel := context.WithCancel(context.Background())
+			go cronStoreJobs(ctx, MultiTenantLegacy(jobsDb1), workspaces)
 
-					maxDSSize := 5
-					jobsDb2 := MultiTenantLegacy{HandleT: &HandleT{
-						MaxDSSize: &maxDSSize,
-					}}
-					err := jobsDb2.Setup(ReadWrite, true, tablePrefix, true, []prebackup.Handler{}, fileuploader.NewDefaultProvider(), partitionType)
-					require.NoError(b, err)
-					err = jobsDb2.Store(context.Background(), jobs)
-					require.NoError(b, err)
-					ctx, cancel := context.WithCancel(context.Background())
-					go cronStoreJobs(ctx, jobsDb2, workspaces)
-					b.Run(fmt.Sprintf("ParallelQuery-%d-%d-%s-%s", size, workspacesCount, partitionType, tablePrefix), func(b *testing.B) {
-						benchmarkParallelQuery(b, jobsDb2, testWorkspacePickup, "testCustomVal")
-					})
+			b.Run(fmt.Sprintf("UnionQuery-%d-%s", size, "rt"), func(b *testing.B) {
+				benchmarkUnionQuery(b, jobsDb1, testWorkspacePickup, "testCustomVal")
+			})
+			cancel()
+			jobsDb1.TearDown()
 
-					//for _, concurrency := range concurrencies {
-					//	b.Run(fmt.Sprintf("ConcurrentParallelQuery-%d-%d-%s", size, concurrency, tablePrefix), func(b *testing.B) {
-					//		benchmarkConcurrentParallelQuery(b, jobsDb2, testWorkspacePickup, "testCustomVal", concurrency)
-					//	})
-					//}
-					cancel()
-					jobsDb2.TearDown()
+			b.Setenv("RSERVER_JOBS_DB_PARTITION_COUNT", "0")
+			jobsDb2 := MultiTenantLegacy{HandleT: &HandleT{
+				MaxDSSize: &maxDSSize,
+			}}
+			err = jobsDb2.Setup(ReadWrite, true, "rt", true, []prebackup.Handler{}, fileuploader.NewDefaultProvider())
+			require.NoError(b, err)
+			err = jobsDb2.Store(context.Background(), jobs)
+			require.NoError(b, err)
+			ctx, cancel = context.WithCancel(context.Background())
+			go cronStoreJobs(ctx, jobsDb2, workspaces)
+			b.Run(fmt.Sprintf("ParallelQueryPartition-%d-%d-%s", size, workspacesCount, "rt"), func(b *testing.B) {
+				benchmarkParallelQuery(b, jobsDb2, testWorkspacePickup, "testCustomVal")
+			})
 
-				}
-			}
+			cancel()
+			jobsDb2.TearDown()
+
+			b.Setenv("RSERVER_JOBS_DB_PARTITION_COUNT", "10")
+			jobsDb3 := MultiTenantLegacy{HandleT: &HandleT{
+				MaxDSSize: &maxDSSize,
+			}}
+			err = jobsDb3.Setup(ReadWrite, true, "rt", true, []prebackup.Handler{}, fileuploader.NewDefaultProvider(), "HASH")
+			require.NoError(b, err)
+			err = jobsDb3.Store(context.Background(), jobs)
+			require.NoError(b, err)
+			ctx, cancel = context.WithCancel(context.Background())
+			go cronStoreJobs(ctx, jobsDb3, workspaces)
+			b.Run(fmt.Sprintf("ParallelQueryPartition-%d-%d-%s-%s", size, workspacesCount, "HASH", "rt"), func(b *testing.B) {
+				benchmarkParallelQuery(b, jobsDb3, testWorkspacePickup, "testCustomVal")
+			})
+
+			cancel()
+			jobsDb3.TearDown()
 		}
 	}
 }
@@ -305,7 +309,7 @@ func cronStoreJobs(ctx context.Context, jobsDb MultiTenantLegacy, workspaces []s
 		case <-ticker.C:
 			jobs, _ := generateJobs(len(workspaces), workspaces)
 			err := jobsDb.Store(ctx, jobs)
-			if err != nil {
+			if err != nil && err != context.Canceled {
 				panic(err)
 			}
 		case <-ctx.Done():

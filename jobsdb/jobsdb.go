@@ -1360,7 +1360,7 @@ func (jd *HandleT) createDSInTx(tx *Tx, newDS dataSetT) error {
                                       expire_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
                                       PRIMARY KEY(job_id,workspace_id))`, newDS.JobTable)
 
-	if len(jd.partitionType) > 0 {
+	if len(jd.partitionType) > 0 && jd.partitionType[0] != "" {
 		sqlStatement += fmt.Sprintf(` PARTITION BY %s (workspace_id);`, jd.partitionType[0])
 	} else {
 		sqlStatement += ";"
@@ -2536,7 +2536,6 @@ func (jd *HandleT) getPendingJobsDS(ctx context.Context, ds dataSetT, params Get
 		sqlStatement = `SELECT * FROM (` + sqlStatement + `) subquery WHERE ` + strings.Join(wrapQuery, " AND ")
 	}
 
-	jd.logger.Infof("Pending Jobs Query: %s, args : %v", sqlStatement, args)
 	rows, err = jd.dbHandle.QueryContext(ctx, sqlStatement, args...)
 	if err != nil {
 		return JobsResult{}, false, err
