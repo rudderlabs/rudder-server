@@ -421,7 +421,8 @@ bG9jYWwBAgMEBQYH
 
 					// When tunnel object is set from upstream, we need to fetch
 					// the keypair associated with the destinationId.
-					if destination.Tunnel != nil {
+					// Only assume valid tunnellingType to be there.
+					if _, ok := destination.Config["tunnellingType"]; ok {
 
 						keypair, err := controlPlaneAPI.GetDestinationSSHKeys(ctx, destination.ID)
 						if err != nil {
@@ -431,8 +432,8 @@ bG9jYWwBAgMEBQYH
 						if keypair == nil {
 							pkgLogger.Warnf("unable to locate keypair for destination: %s with valid tunnel info", destination.ID)
 						} else {
-							source.Destinations[idx].Tunnel.Config["private_key"] = keypair.PrivateKey
-							source.Destinations[idx].Tunnel.Config["public_key"] = keypair.PublicKey
+							source.Destinations[idx].Config["privateKey"] = keypair.PrivateKey
+							source.Destinations[idx].Config["publicKey"] = keypair.PublicKey
 						}
 
 					}
