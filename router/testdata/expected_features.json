@@ -3,7 +3,7 @@
         {
             "name": "server",
             "features": [
-                "features"
+                "gzip-req-payload"
             ]
         }
     ]
