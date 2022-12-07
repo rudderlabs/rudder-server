@@ -1,3 +1,5 @@
+//go:build !warehouse_integration
+
 package repo_test
 
 import (

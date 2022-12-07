@@ -1,3 +1,5 @@
+//go:build !warehouse_integration
+
 package loadfiles_test
 
 import (
