@@ -123,7 +123,7 @@ func (repo *LoadFiles) GetByStagingFiles(ctx context.Context, stagingFileIDs []i
 		row_number = 1;
 	`
 
-	rows, err := repo.DB.Query(sqlStatement, pq.Array(stagingFileIDs))
+	rows, err := repo.DB.QueryContext(ctx, sqlStatement, pq.Array(stagingFileIDs))
 	if err != nil {
 		return nil, fmt.Errorf("query staging ids: %w", err)
 	}

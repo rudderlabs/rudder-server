@@ -341,7 +341,7 @@ func TestStagingFileRepo_Status(t *testing.T) {
 			DestinationID: "destination_id",
 			Schema:        []byte(`{"type": "object"}`),
 			Status:        warehouseutils.StagingFileWaitingState,
-			Error:         fmt.Errorf(""),
+			Error:         nil,
 			FirstEventAt:  now.Add(time.Second),
 			LastEventAt:   now,
 		}

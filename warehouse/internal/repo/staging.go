@@ -319,7 +319,7 @@ func (repo *StagingFiles) SetStatuses(ctx context.Context, ids []int64, status s
 		WHERE
 		  id = ANY($3);
 `
-	result, err := repo.DB.Exec(sqlStatement, status, repo.Now(), pq.Array(ids))
+	result, err := repo.DB.ExecContext(ctx, sqlStatement, status, repo.Now(), pq.Array(ids))
 	if err != nil {
 		return fmt.Errorf("update ids status: %w", err)
 	}
@@ -348,7 +348,8 @@ func (repo *StagingFiles) SetErrorStatus(ctx context.Context, stagingFileID int6
 		WHERE
 			id = $4;`
 
-	result, err := repo.DB.Exec(
+	result, err := repo.DB.ExecContext(
+		ctx,
 		sqlStatement,
 		warehouseutils.StagingFileFailedState,
 		stageFileErr.Error(),

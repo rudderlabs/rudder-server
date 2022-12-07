@@ -18,7 +18,7 @@ type mockControlPlaneClient struct {
 	revisions map[string]backendconfig.DestinationT
 }
 
-func (m *mockControlPlaneClient) DestinationHistory(ctx context.Context, revisionID string) (backendconfig.DestinationT, error) {
+func (m *mockControlPlaneClient) DestinationHistory(_ context.Context, revisionID string) (backendconfig.DestinationT, error) {
 	dest, ok := m.revisions[revisionID]
 	if !ok {
 		return backendconfig.DestinationT{}, fmt.Errorf("revision %q not found", revisionID)
