@@ -1,0 +1,10 @@
+{
+    "components": [
+        {
+            "name": "server",
+            "features": [
+                "gzip-req-payload"
+            ]
+        }
+    ]
+}

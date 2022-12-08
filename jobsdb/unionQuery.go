@@ -44,6 +44,7 @@ type MultiTenantJobsDB interface {
 	UpdateJobStatus(ctx context.Context, statusList []*JobStatusT, customValFilters []string, parameterFilters []ParameterFilterT) error
 
 	DeleteExecuting()
+	FailExecuting()
 
 	GetJournalEntries(opType string) (entries []JournalEntryT)
 	JournalMarkStart(opType string, opPayload json.RawMessage) int64

@@ -154,7 +154,7 @@ func (t *statsdTimer) Since(start time.Time) {
 	t.SendTiming(time.Since(start))
 }
 
-// Timing sends a timing for this stat. Only applies to TimerType stats
+// SendTiming sends a timing for this stat. Only applies to TimerType stats
 func (t *statsdTimer) SendTiming(duration time.Duration) {
 	if t.skip() {
 		return

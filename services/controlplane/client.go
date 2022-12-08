@@ -1,4 +1,4 @@
-package features
+package controlplane
 
 import (
 	"bytes"
@@ -7,11 +7,13 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"runtime"
 	"time"
 
 	"github.com/cenkalti/backoff"
+	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/services/controlplane/identity"
 	"github.com/rudderlabs/rudder-server/utils/httputil"
 )
@@ -41,12 +43,19 @@ func WithMaxRetries(retries int) OptFn {
 	}
 }
 
+func WithRegion(region string) OptFn {
+	return func(c *Client) {
+		c.region = region
+	}
+}
+
 type Client struct {
 	client   *http.Client
 	retries  int
 	ua       string
 	url      string
 	identity identity.Identifier
+	region   string
 }
 
 type payloadSchema struct {
@@ -87,7 +96,17 @@ func NewClient(baseURL string, identity identity.Identifier, fns ...OptFn) *Clie
 
 type PerComponent = map[string][]string
 
-func (c *Client) Send(ctx context.Context, component string, features []string) error {
+func (c *Client) retry(ctx context.Context, fn func() error) error {
+	var opts backoff.BackOff
+
+	opts = backoff.NewExponentialBackOff()
+	opts = backoff.WithMaxRetries(opts, uint64(c.retries))
+	opts = backoff.WithContext(opts, ctx)
+
+	return backoff.Retry(fn, opts)
+}
+
+func (c *Client) SendFeatures(ctx context.Context, component string, features []string) error {
 	var url string
 
 	switch t := c.identity.(type) {
@@ -113,8 +132,7 @@ func (c *Client) Send(ctx context.Context, component string, features []string) 
 		return fmt.Errorf("could not marshal payload: %w", err)
 	}
 
-	backoffWithMaxRetry := backoff.WithContext(backoff.WithMaxRetries(backoff.NewExponentialBackOff(), uint64(c.retries)), ctx)
-	return backoff.Retry(func() error {
+	return c.retry(ctx, func() error {
 		req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
 		if err != nil {
 			return fmt.Errorf("new request: %w", err)
@@ -145,5 +163,59 @@ func (c *Client) Send(ctx context.Context, component string, features []string) 
 			return err
 		}
 		return err
-	}, backoffWithMaxRetry)
+	})
+}
+
+func (c *Client) DestinationHistory(ctx context.Context, revisionID string) (backendconfig.DestinationT, error) {
+	urlStr := fmt.Sprintf("%s/workspaces/destinationHistory/%s", c.url, revisionID)
+
+	urlValues := url.Values{}
+	if c.region != "" {
+		urlValues.Set("region", c.region)
+	}
+
+	if len(urlValues) > 0 {
+		urlStr = fmt.Sprintf("%s?%s", urlStr, urlValues.Encode())
+	}
+
+	var destination backendconfig.DestinationT
+	err := c.retry(ctx, func() error {
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, urlStr, http.NoBody)
+		if err != nil {
+			return err
+		}
+
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("User-Agent", c.ua)
+
+		req.SetBasicAuth(c.identity.BasicAuth())
+
+		resp, err := c.client.Do(req)
+		if err != nil {
+			return err
+		}
+		defer func() { httputil.CloseResponse(resp) }()
+
+		if resp.StatusCode != http.StatusOK {
+			b, err := io.ReadAll(resp.Body)
+			if err != nil {
+				return fmt.Errorf("read response body: %w", err)
+			}
+
+			err = fmt.Errorf("unexpected status code %d: %s", resp.StatusCode, string(b))
+			if !httputil.RetriableStatus(resp.StatusCode) {
+				return backoff.Permanent(fmt.Errorf("non retriable: %w", err))
+			}
+			return err
+		}
+
+		err = json.NewDecoder(resp.Body).Decode(&destination)
+		if err != nil {
+			return fmt.Errorf("unmarshal response body: %w", err)
+		}
+
+		return nil
+	})
+
+	return destination, err
 }

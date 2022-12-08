@@ -180,6 +180,18 @@ func (mr *MockJobsDBMockRecorder) DeleteExecuting() *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeleteExecuting", reflect.TypeOf((*MockJobsDB)(nil).DeleteExecuting))
 }
 
+// FailExecuting mocks base method.
+func (m *MockJobsDB) FailExecuting() {
+	m.ctrl.T.Helper()
+	m.ctrl.Call(m, "FailExecuting")
+}
+
+// FailExecuting indicates an expected call of FailExecuting.
+func (mr *MockJobsDBMockRecorder) FailExecuting() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "FailExecuting", reflect.TypeOf((*MockJobsDB)(nil).FailExecuting))
+}
+
 // GetExecuting mocks base method.
 func (m *MockJobsDB) GetExecuting(ctx context.Context, params jobsdb.GetQueryParamsT) (jobsdb.JobsResult, error) {
 	m.ctrl.T.Helper()
