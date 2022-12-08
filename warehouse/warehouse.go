@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/rudderlabs/rudder-server/warehouse/tracker"
 	"io"
 	"math/rand"
 	"net/http"
@@ -87,11 +88,9 @@ var (
 	slaveUploadTimeout                  time.Duration
 	tableCountQueryTimeout              time.Duration
 	runningMode                         string
-	uploadStatusTrackFrequency          time.Duration
 	uploadAllocatorSleep                time.Duration
 	waitForConfig                       time.Duration
 	waitForWorkerSleep                  time.Duration
-	uploadBufferTimeInMin               int
 	ShouldForceSetLowerVersion          bool
 	skipDeepEqualSchemas                bool
 	maxParallelJobCreation              int
@@ -191,8 +190,6 @@ func loadConfig() {
 	config.RegisterDurationConfigVariable(10, &slaveUploadTimeout, true, time.Minute, []string{"Warehouse.slaveUploadTimeout", "Warehouse.slaveUploadTimeoutInMin"}...)
 	config.RegisterIntConfigVariable(8, &numLoadFileUploadWorkers, true, 1, "Warehouse.numLoadFileUploadWorkers")
 	runningMode = config.GetString("Warehouse.runningMode", "")
-	config.RegisterDurationConfigVariable(30, &uploadStatusTrackFrequency, false, time.Minute, []string{"Warehouse.uploadStatusTrackFrequency", "Warehouse.uploadStatusTrackFrequencyInMin"}...)
-	config.RegisterIntConfigVariable(180, &uploadBufferTimeInMin, false, 1, "Warehouse.uploadBufferTimeInMin")
 	config.RegisterDurationConfigVariable(5, &uploadAllocatorSleep, false, time.Second, []string{"Warehouse.uploadAllocatorSleep", "Warehouse.uploadAllocatorSleepInS"}...)
 	config.RegisterDurationConfigVariable(5, &waitForConfig, false, time.Second, []string{"Warehouse.waitForConfig", "Warehouse.waitForConfigInS"}...)
 	config.RegisterDurationConfigVariable(5, &waitForWorkerSleep, false, time.Second, []string{"Warehouse.waitForWorkerSleep", "Warehouse.waitForWorkerSleepInS"}...)
@@ -1056,114 +1053,6 @@ loop:
 	wh.workerChannelMapLock.Unlock()
 }
 
-func (wh *HandleT) uploadStatusTrack(ctx context.Context) {
-	for {
-		for _, warehouse := range wh.warehouses {
-			source := warehouse.Source
-			destination := warehouse.Destination
-
-			if !source.Enabled || !destination.Enabled {
-				continue
-			}
-
-			config := destination.Config
-			// Default frequency
-			syncFrequency := "1440"
-			if config[warehouseutils.SyncFrequency] != nil {
-				syncFrequency, _ = config[warehouseutils.SyncFrequency].(string)
-			}
-
-			timeWindow := uploadBufferTimeInMin
-			if value, err := strconv.Atoi(syncFrequency); err == nil {
-				timeWindow += value
-			}
-
-			sqlStatement := fmt.Sprintf(`
-				select
-				  created_at
-				from
-				  %[1]s
-				where
-				  source_id = '%[2]s'
-				  and destination_id = '%[3]s'
-				  and created_at > now() - interval '%[4]d MIN'
-				  and created_at < now() - interval '%[5]d MIN'
-				order by
-				  created_at desc
-				limit
-				  1;
-`,
-
-				warehouseutils.WarehouseStagingFilesTable,
-				source.ID,
-				destination.ID,
-				2*timeWindow,
-				timeWindow,
-			)
-
-			var createdAt sql.NullTime
-			err := wh.dbHandle.QueryRow(sqlStatement).Scan(&createdAt)
-			if err == sql.ErrNoRows {
-				continue
-			}
-			if err != nil && err != sql.ErrNoRows {
-				panic(fmt.Errorf("Query: %s\nfailed with Error : %w", sqlStatement, err))
-			}
-
-			if !createdAt.Valid {
-				continue
-			}
-
-			sqlStatement = fmt.Sprintf(`
-				SELECT
-				  EXISTS (
-					SELECT
-					  1
-					FROM
-					  %s
-					WHERE
-					  source_id = $1
-					  AND destination_id = $2
-					  AND (
-						status = $3
-						OR status = $4
-						OR status LIKE $5
-					  )
-					  AND updated_at > $6
-				  );
-`,
-				warehouseutils.WarehouseUploadsTable,
-			)
-			sqlStatementArgs := []interface{}{
-				source.ID,
-				destination.ID,
-				model.ExportedData,
-				model.Aborted,
-				"%_failed",
-				createdAt.Time.Format(misc.RFC3339Milli),
-			}
-			var (
-				exists   bool
-				uploaded int
-			)
-			err = wh.dbHandle.QueryRow(sqlStatement, sqlStatementArgs...).Scan(&exists)
-			if err != nil && err != sql.ErrNoRows {
-				panic(fmt.Errorf("Query: %s\nfailed with Error : %w", sqlStatement, err))
-			}
-			if exists {
-				uploaded = 1
-			}
-
-			getUploadStatusStat("warehouse_successful_upload_exists", warehouse).Count(uploaded)
-		}
-		select {
-		case <-ctx.Done():
-			return
-		case <-time.After(uploadStatusTrackFrequency):
-		}
-	}
-}
-
 func getBucketFolder(batchID, tableName string) string {
 	return fmt.Sprintf(`%v-%v`, batchID, tableName)
 }
@@ -1269,7 +1158,13 @@ func (wh *HandleT) Setup(whType string) {
 
 	g.Go(misc.WithBugsnagForWarehouse(func() error {
 		pkgLogger.Infof("WH: Warehouse Idle upload tracker started")
-		wh.uploadStatusTrack(ctx)
+		t := tracker.Tracker{
+			DB:         dbHandle,
+			Stats:      stats.Default,
+			Logger:     pkgLogger.Child("tracker"),
+			Warehouses: wh.warehouses,
+		}
+		t.Start(ctx)
 		return nil
 	}))
 }
