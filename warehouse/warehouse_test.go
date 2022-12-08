@@ -9,6 +9,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/warehouse/multitenant"
+
 	"github.com/golang/mock/gomock"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -135,7 +137,7 @@ func TestUploadJob_ProcessingStats(t *testing.T) {
 			require.NoError(t, err)
 
 			availableWorkers := 8
-			skipIdentifierSQL := "AND ((destination_id || '_' || namespace)) != ALL($1)"
+			skipIdentifierSQL := "AND ((destination_id || '_' || namespace)) != ALL($2)"
 			ctx := context.Background()
 			store := memstats.New()
 			now := "'2022-12-06 22:00:00'"
@@ -150,6 +152,7 @@ func TestUploadJob_ProcessingStats(t *testing.T) {
 				stats:    store,
 				dbHandle: pgResource.DB,
 			}
+			tenantManager = &multitenant.Manager{}
 
 			err = wh.processingStats(ctx, availableWorkers, tc.skipIdentifiers, skipIdentifierSQL)
 			if tc.wantErr != nil {

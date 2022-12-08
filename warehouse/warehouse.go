@@ -768,40 +768,23 @@ func (wh *HandleT) mainLoop(ctx context.Context) {
 func (wh *HandleT) processingStats(ctx context.Context, availableWorkers int, skipIdentifiers []string, skipIdentifiersSQL string) error {
 	var (
 		pendingJobs             int
-		pendingJobsQuery        string
+		query                   string
 		pickupLagInSeconds      float64
 		pickupWaitTimeInSeconds float64
-		pickupQuery             string
 		err                     error
 		Now                     = "NOW()"
+		degradedWorkspaces      = tenantManager.DegradedWorkspaces()
 	)
 	if wh.Now != "" {
 		Now = wh.Now
 	}
+	if degradedWorkspaces == nil {
+		degradedWorkspaces = []string{}
+	}
 
-	pendingJobsQuery = fmt.Sprintf(`
+	query = fmt.Sprintf(`
 		SELECT
-			COALESCE(COUNT(*), 0) AS pending_jobs
-		FROM
-			%[1]s t
-		WHERE
-			t.destination_type = '%[2]s' AND
-			t.in_progress = %[3]t AND
-			t.status != '%[4]s' AND
-			t.status != '%[5]s'
-			%[6]s AND
-			COALESCE(metadata->>'nextRetryTime', %[7]s::text)::timestamptz <= %[7]s;
-`,
-		warehouseutils.WarehouseUploadsTable,
-		wh.destType,
-		false,
-		model.ExportedData,
-		model.Aborted,
-		skipIdentifiersSQL,
-		Now,
-	)
-	pickupQuery = fmt.Sprintf(`
-		SELECT
+			COALESCE(COUNT(*), 0) AS pending_jobs,
 			COALESCE(EXTRACT(EPOCH FROM(AGE(%[7]s, MIN(COALESCE(metadata->>'nextRetryTime', %[7]s::text)::timestamptz)))), 0) AS pickup_lag_in_seconds,
 			COALESCE(SUM(EXTRACT(EPOCH FROM AGE(%[7]s, COALESCE(metadata->>'nextRetryTime', %[7]s::text)::timestamptz))), 0) AS pickup_wait_time_in_seconds
 		FROM
@@ -810,9 +793,9 @@ func (wh *HandleT) processingStats(ctx context.Context, availableWorkers int, sk
 			t.destination_type = '%[2]s' AND
 			t.in_progress = %[3]t AND
 			t.status != '%[4]s' AND
-			t.status != '%[5]s'
-			%[6]s AND
-			COALESCE(metadata->>'nextRetryTime', %[7]s::text)::timestamptz <= %[7]s;
+			t.status != '%[5]s' %[6]s AND
+			COALESCE(metadata->>'nextRetryTime', %[7]s::text)::timestamptz <= %[7]s AND
+			workspace_id <> ALL ($1);
 `,
 		warehouseutils.WarehouseUploadsTable,
 		wh.destType,
@@ -824,20 +807,21 @@ func (wh *HandleT) processingStats(ctx context.Context, availableWorkers int, sk
 	)
 
 	if len(skipIdentifiers) > 0 {
-		if err = wh.dbHandle.QueryRowContext(ctx, pendingJobsQuery, pq.Array(skipIdentifiers)).Scan(&pendingJobs); err != nil {
-			return fmt.Errorf("count pending jobs with skip identifiers: %w", err)
-		}
-
-		if err = wh.dbHandle.QueryRowContext(ctx, pickupQuery, pq.Array(skipIdentifiers)).Scan(&pickupLagInSeconds, &pickupWaitTimeInSeconds); err != nil {
-			return fmt.Errorf("pickup lag with skip identifiers: %w", err)
+		if err = wh.dbHandle.QueryRowContext(
+			ctx,
+			query,
+			pq.Array(degradedWorkspaces),
+			pq.Array(skipIdentifiers),
+		).Scan(&pendingJobs, &pickupLagInSeconds, &pickupWaitTimeInSeconds); err != nil {
+			return fmt.Errorf("processing  with skip identifiers: %w", err)
 		}
 	} else {
-		if err = wh.dbHandle.QueryRowContext(ctx, pendingJobsQuery).Scan(&pendingJobs); err != nil {
+		if err = wh.dbHandle.QueryRowContext(
+			ctx,
+			query,
+			pq.Array(degradedWorkspaces),
+		).Scan(&pendingJobs, &pickupLagInSeconds, &pickupWaitTimeInSeconds); err != nil {
 			return fmt.Errorf("count pending jobs: %w", err)
-		}
-
-		if err = wh.dbHandle.QueryRowContext(ctx, pickupQuery).Scan(&pickupLagInSeconds, &pickupWaitTimeInSeconds); err != nil {
-			return fmt.Errorf("pickup lag: %w", err)
 		}
 	}
 
@@ -917,7 +901,7 @@ func (wh *HandleT) getUploadsToProcess(ctx context.Context, availableWorkers int
 					t.status != '%s' AND
 					t.status != '%s' %s AND
 					COALESCE(metadata->>'nextRetryTime', NOW()::text)::timestamptz <= NOW() AND
-          workspace_id <> ALL ($1)
+          			workspace_id <> ALL ($1)
 			) grouped_uploads
 			WHERE
 				grouped_uploads.row_number = 1
