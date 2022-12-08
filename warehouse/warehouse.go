@@ -825,11 +825,11 @@ func (wh *HandleT) processingStats(ctx context.Context, availableWorkers int, sk
 
 	if len(skipIdentifiers) > 0 {
 		if err = wh.dbHandle.QueryRowContext(ctx, pendingJobsQuery, pq.Array(skipIdentifiers)).Scan(&pendingJobs); err != nil {
-			return fmt.Errorf("count pending jobs: %w", err)
+			return fmt.Errorf("count pending jobs with skip identifiers: %w", err)
 		}
 
 		if err = wh.dbHandle.QueryRowContext(ctx, pickupQuery, pq.Array(skipIdentifiers)).Scan(&pickupLagInSeconds, &pickupWaitTimeInSeconds); err != nil {
-			return fmt.Errorf("pickup lag: %w", err)
+			return fmt.Errorf("pickup lag with skip identifiers: %w", err)
 		}
 	} else {
 		if err = wh.dbHandle.QueryRowContext(ctx, pendingJobsQuery).Scan(&pendingJobs); err != nil {
