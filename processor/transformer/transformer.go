@@ -362,6 +362,7 @@ func (trans *HandleT) request(ctx context.Context, url string, data []Transforme
 			statusCode = 400
 		}
 	}
+	trans.logger.Info(`!!!!!!!!!!!!!!!transfomer response: `, string(respData))
 
 	if statusCode != http.StatusOK {
 		for i := range data {

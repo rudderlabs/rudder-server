@@ -978,9 +978,12 @@ func (proc *HandleT) getFailedEventJobs(response transformer.ResponseT, commonMe
 			if err != nil {
 				proc.logger.Errorf(`[Processor: getFailedEventJobs] Failed to unmarshal first element in failed events: %v`, err)
 			}
+			proc.logger.Info("Failed event: ", string(sampleEvent))
 			if err != nil || proc.transientSources.Apply(commonMetaData.SourceID) {
 				sampleEvent = []byte(`{}`)
 			}
+			proc.logger.Info(failedEvent)
+			proc.logger.Info(failedEvent.Error)
 			proc.updateMetricMaps(nil, failedCountMap, connectionDetailsMap, statusDetailsMap, failedEvent, jobsdb.Aborted.State, sampleEvent)
 		}
 
