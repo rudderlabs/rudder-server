@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.4.3](https://github.com/rudderlabs/rudder-server/compare/v1.4.2...v1.4.3) (2022-12-08)
+
+
+### Bug Fixes
+
+* remove schema from stage file model ([#2790](https://github.com/rudderlabs/rudder-server/issues/2790)) ([2bc1f1d](https://github.com/rudderlabs/rudder-server/commit/2bc1f1d32bba10d74309a589e552b512093274f3))
+
 ## [1.4.2](https://github.com/rudderlabs/rudder-server/compare/v1.4.1...v1.4.2) (2022-12-07)
 
 
