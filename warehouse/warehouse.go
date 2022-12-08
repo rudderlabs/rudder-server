@@ -768,12 +768,12 @@ func (wh *HandleT) getUploadsToProcess(ctx context.Context, availableWorkers int
 	partitionIdentifierSQL := `destination_id, namespace`
 
 	if len(skipIdentifiers) > 0 {
-		skipIdentifiersSQL = `and ((destination_id || '_' || namespace)) != ALL($1)`
+		skipIdentifiersSQL = `and ((destination_id || '_' || namespace)) != ALL($2)`
 	}
 
 	if wh.allowMultipleSourcesForJobsPickup {
 		if len(skipIdentifiers) > 0 {
-			skipIdentifiersSQL = `and ((source_id || '_' || destination_id || '_' || namespace)) != ALL($1)`
+			skipIdentifiersSQL = `and ((source_id || '_' || destination_id || '_' || namespace)) != ALL($2)`
 		}
 		partitionIdentifierSQL = fmt.Sprintf(`%s, %s`, "source_id", partitionIdentifierSQL)
 	}
@@ -808,7 +808,12 @@ func (wh *HandleT) getUploadsToProcess(ctx context.Context, availableWorkers int
 					FROM
 						%s t
 					WHERE
-						t.destination_type = '%s' and t.in_progress=%t and t.status != '%s' and t.status != '%s' %s and COALESCE(metadata->>'nextRetryTime', now()::text)::timestamptz <= now()
+						t.destination_type = '%s' AND
+						t.in_progress=%t AND
+						t.status != '%s' AND
+						t.status != '%s' %s AND
+						COALESCE(metadata->>'nextRetryTime', now()::text)::timestamptz <= now() AND
+						workspace_id <> ALL ($1)
 				) grouped_uploads
 				WHERE
 					grouped_uploads.row_number = 1
@@ -819,17 +824,24 @@ func (wh *HandleT) getUploadsToProcess(ctx context.Context, availableWorkers int
 		`, partitionIdentifierSQL, warehouseutils.WarehouseUploadsTable, wh.destType, false, model.ExportedData, model.Aborted, skipIdentifiersSQL, availableWorkers)
 
 	var (
-		rows *sql.Rows
-		err  error
+		rows               *sql.Rows
+		err                error
+		degradedWorkspaces = tenantManager.DegradedWorkspaces()
 	)
+	if degradedWorkspaces == nil {
+		degradedWorkspaces = []string{}
+	}
+
 	if len(skipIdentifiers) > 0 {
 		rows, err = wh.dbHandle.Query(
 			sqlStatement,
+			pq.Array(degradedWorkspaces),
 			pq.Array(skipIdentifiers),
 		)
 	} else {
 		rows, err = wh.dbHandle.Query(
 			sqlStatement,
+			pq.Array(degradedWorkspaces),
 		)
 	}
 
