@@ -9,14 +9,13 @@ import (
 //
 //	The staging file contains events that should be loaded into a warehouse.
 //	It is located in a cloud storage bucket.
-//	The model includes ownership, file location, schema for included events, and other metadata.
+//	The model includes ownership, file location, and other metadata.
 type StagingFile struct {
 	ID                    int64
 	WorkspaceID           string
 	Location              string
 	SourceID              string
 	DestinationID         string
-	Schema                json.RawMessage
 	Status                string // enum
 	Error                 error
 	FirstEventAt          time.Time
@@ -34,4 +33,19 @@ type StagingFile struct {
 
 	CreatedAt time.Time
 	UpdatedAt time.Time
+}
+
+// StagingFileWithSchema is a StagingFile with schema field for included events.
+//
+//	schema size can be really big, and thus it should be included only when required.
+type StagingFileWithSchema struct {
+	StagingFile
+	Schema json.RawMessage
+}
+
+func (s StagingFile) WithSchema(schema json.RawMessage) StagingFileWithSchema {
+	return StagingFileWithSchema{
+		StagingFile: s,
+		Schema:      schema,
+	}
 }
