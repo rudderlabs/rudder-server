@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.4.4](https://github.com/rudderlabs/rudder-server/compare/v1.4.3...v1.4.4) (2022-12-09)
+
+
+### Bug Fixes
+
+* using a wrong datatype for pg_class.reltuples causes internal migration to fail ([#2792](https://github.com/rudderlabs/rudder-server/issues/2792)) ([006a203](https://github.com/rudderlabs/rudder-server/commit/006a203c7137471a2219ff8690e4e2dbaa11d32b))
+
 ## [1.4.3](https://github.com/rudderlabs/rudder-server/compare/v1.4.2...v1.4.3) (2022-12-08)
 
 
