@@ -21,7 +21,6 @@ const stagingTableColumns = `
     location,
     source_id,
     destination_id,
-    schema,
     error,
     status,
     first_event_at,
@@ -97,7 +96,7 @@ func (repo *StagingFiles) init() {
 // - Error
 // - CreatedAt
 // - UpdatedAt
-func (repo *StagingFiles) Insert(ctx context.Context, stagingFile *model.StagingFile) (int64, error) {
+func (repo *StagingFiles) Insert(ctx context.Context, stagingFile *model.StagingFileWithSchema) (int64, error) {
 	repo.init()
 
 	var (
@@ -115,7 +114,7 @@ func (repo *StagingFiles) Insert(ctx context.Context, stagingFile *model.Staging
 		lastEventAt = nil
 	}
 
-	m := metadataFromStagingFile(stagingFile)
+	m := metadataFromStagingFile(&stagingFile.StagingFile)
 	rawMetadata, err := json.Marshal(&m)
 	if err != nil {
 		return id, fmt.Errorf("marshaling metadata: %w", err)
@@ -186,7 +185,6 @@ func (*StagingFiles) parseRows(rows *sql.Rows) ([]model.StagingFile, error) {
 			&stagingFile.Location,
 			&stagingFile.SourceID,
 			&stagingFile.DestinationID,
-			&stagingFile.Schema,
 			&errorRaw,
 			&stagingFile.Status,
 			&firstEventAt,
@@ -252,6 +250,26 @@ func (repo *StagingFiles) GetByID(ctx context.Context, ID int64) (model.StagingF
 	}
 
 	return entries[0], err
+}
+
+// GetSchemaByID returns staging file schema field the given ID.
+func (repo *StagingFiles) GetSchemaByID(ctx context.Context, ID int64) (json.RawMessage, error) {
+	repo.init()
+
+	query := `SELECT schema FROM ` + stagingTableName + ` WHERE id = $1`
+
+	row := repo.DB.QueryRowContext(ctx, query, ID)
+	if row.Err() != nil {
+		return nil, fmt.Errorf("querying staging files: %w", row.Err())
+	}
+
+	var schema json.RawMessage
+	err := row.Scan(&schema)
+	if err != nil {
+		return nil, fmt.Errorf("parsing rows: %w", err)
+	}
+
+	return schema, err
 }
 
 // GetInRange returns staging files in [startID, endID] range inclusive.

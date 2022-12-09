@@ -22,11 +22,11 @@ import (
 )
 
 type memRepo struct {
-	files []model.StagingFile
+	files []model.StagingFileWithSchema
 	err   error
 }
 
-func (m *memRepo) Insert(_ context.Context, stagingFile *model.StagingFile) (int64, error) {
+func (m *memRepo) Insert(_ context.Context, stagingFile *model.StagingFileWithSchema) (int64, error) {
 	if m.err != nil {
 		return 0, m.err
 	}
@@ -56,16 +56,18 @@ func filterPayload(text, match string) string {
 
 func TestAPI_Process(t *testing.T) {
 	body := loadFile(t, "./testdata/process_request.json")
-	expectedStagingFile := model.StagingFile{
-		WorkspaceID:           "279L3V7FSpx43LaNJ0nIs9KRaNC",
-		Schema:                json.RawMessage("{\"product_track\":{\"context_destination_id\":\"string\",\"context_destination_type\":\"string\",\"context_ip\":\"string\",\"context_library_name\":\"string\",\"context_passed_ip\":\"string\",\"context_request_ip\":\"string\",\"context_source_id\":\"string\",\"context_source_type\":\"string\",\"event\":\"string\",\"event_text\":\"string\",\"id\":\"string\",\"original_timestamp\":\"datetime\",\"product_id\":\"string\",\"rating\":\"int\",\"received_at\":\"datetime\",\"revenue\":\"float\",\"review_body\":\"string\",\"review_id\":\"string\",\"sent_at\":\"datetime\",\"timestamp\":\"datetime\",\"user_id\":\"string\",\"uuid_ts\":\"datetime\"},\"tracks\":{\"context_destination_id\":\"string\",\"context_destination_type\":\"string\",\"context_ip\":\"string\",\"context_library_name\":\"string\",\"context_passed_ip\":\"string\",\"context_request_ip\":\"string\",\"context_source_id\":\"string\",\"context_source_type\":\"string\",\"event\":\"string\",\"event_text\":\"string\",\"id\":\"string\",\"original_timestamp\":\"datetime\",\"received_at\":\"datetime\",\"sent_at\":\"datetime\",\"timestamp\":\"datetime\",\"user_id\":\"string\",\"uuid_ts\":\"datetime\"}}"),
-		Location:              "rudder-warehouse-staging-logs/279L3gEKqwruBoKGsXZtSVX7vIy/2022-11-08/1667913810.279L3gEKqwruBoKGsXZtSVX7vIy.7a6e7785-7a75-4345-8d3c-d7a1ce49a43f.json.gz",
-		SourceID:              "279L3gEKqwruBoKGsXZtSVX7vIy",
-		DestinationID:         "27CHciD6leAhurSyFAeN4dp14qZ",
-		DestinationRevisionID: "2H1cLBvL3v0prRBNzpe8D34XTzU",
-		FirstEventAt:          time.Date(2022, time.November, 8, 13, 23, 7, 0, time.UTC),
-		LastEventAt:           time.Date(2022, time.November, 8, 13, 23, 7, 0, time.UTC),
-		TotalEvents:           2,
+	expectedStagingFile := model.StagingFileWithSchema{
+		StagingFile: model.StagingFile{
+			WorkspaceID:           "279L3V7FSpx43LaNJ0nIs9KRaNC",
+			Location:              "rudder-warehouse-staging-logs/279L3gEKqwruBoKGsXZtSVX7vIy/2022-11-08/1667913810.279L3gEKqwruBoKGsXZtSVX7vIy.7a6e7785-7a75-4345-8d3c-d7a1ce49a43f.json.gz",
+			SourceID:              "279L3gEKqwruBoKGsXZtSVX7vIy",
+			DestinationID:         "27CHciD6leAhurSyFAeN4dp14qZ",
+			DestinationRevisionID: "2H1cLBvL3v0prRBNzpe8D34XTzU",
+			FirstEventAt:          time.Date(2022, time.November, 8, 13, 23, 7, 0, time.UTC),
+			LastEventAt:           time.Date(2022, time.November, 8, 13, 23, 7, 0, time.UTC),
+			TotalEvents:           2,
+		},
+		Schema: json.RawMessage("{\"product_track\":{\"context_destination_id\":\"string\",\"context_destination_type\":\"string\",\"context_ip\":\"string\",\"context_library_name\":\"string\",\"context_passed_ip\":\"string\",\"context_request_ip\":\"string\",\"context_source_id\":\"string\",\"context_source_type\":\"string\",\"event\":\"string\",\"event_text\":\"string\",\"id\":\"string\",\"original_timestamp\":\"datetime\",\"product_id\":\"string\",\"rating\":\"int\",\"received_at\":\"datetime\",\"revenue\":\"float\",\"review_body\":\"string\",\"review_id\":\"string\",\"sent_at\":\"datetime\",\"timestamp\":\"datetime\",\"user_id\":\"string\",\"uuid_ts\":\"datetime\"},\"tracks\":{\"context_destination_id\":\"string\",\"context_destination_type\":\"string\",\"context_ip\":\"string\",\"context_library_name\":\"string\",\"context_passed_ip\":\"string\",\"context_request_ip\":\"string\",\"context_source_id\":\"string\",\"context_source_type\":\"string\",\"event\":\"string\",\"event_text\":\"string\",\"id\":\"string\",\"original_timestamp\":\"datetime\",\"received_at\":\"datetime\",\"sent_at\":\"datetime\",\"timestamp\":\"datetime\",\"user_id\":\"string\",\"uuid_ts\":\"datetime\"}}"),
 	}
 
 	testcases := []struct {
@@ -74,7 +76,7 @@ func TestAPI_Process(t *testing.T) {
 		degradedWorkspaceIDs []string
 		storeErr             error
 
-		storage []model.StagingFile
+		storage []model.StagingFileWithSchema
 
 		respBody string
 		respCode int
@@ -83,7 +85,7 @@ func TestAPI_Process(t *testing.T) {
 			name:    "normal process request",
 			reqBody: body,
 
-			storage: []model.StagingFile{expectedStagingFile},
+			storage: []model.StagingFileWithSchema{expectedStagingFile},
 
 			respCode: http.StatusOK,
 		},

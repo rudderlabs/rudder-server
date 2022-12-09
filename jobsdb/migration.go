@@ -174,10 +174,10 @@ func (jd *HandleT) getCleanUpCandidates(ctx context.Context, dsList []dataSetT) 
 	}
 	defer func() { _ = rows.Close() }()
 
-	estimates := map[string]int64{}
+	estimates := map[string]float64{}
 	for rows.Next() {
 		var (
-			estimate  int64
+			estimate  float64
 			tableName string
 		)
 		err = rows.Scan(&estimate, &tableName)
@@ -192,9 +192,9 @@ func (jd *HandleT) getCleanUpCandidates(ctx context.Context, dsList []dataSetT) 
 			statuses := estimates[ds.JobStatusTable]
 			jobs := estimates[ds.JobTable]
 			if jobs == 0 { // using max ds size if we have no stats for the number of jobs
-				jobs = int64(*jd.MaxDSSize)
+				jobs = float64(*jd.MaxDSSize)
 			}
-			return float64(statuses)/float64(jobs) > jobStatusMigrateThres
+			return statuses/jobs > jobStatusMigrateThres
 		})
 
 	return lo.Slice(datasets, 0, maxMigrateDSProbe), nil

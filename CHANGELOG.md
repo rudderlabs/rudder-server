@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.4.4](https://github.com/rudderlabs/rudder-server/compare/v1.4.3...v1.4.4) (2022-12-09)
+
+
+### Bug Fixes
+
+* using a wrong datatype for pg_class.reltuples causes internal migration to fail ([#2792](https://github.com/rudderlabs/rudder-server/issues/2792)) ([006a203](https://github.com/rudderlabs/rudder-server/commit/006a203c7137471a2219ff8690e4e2dbaa11d32b))
+
+## [1.4.3](https://github.com/rudderlabs/rudder-server/compare/v1.4.2...v1.4.3) (2022-12-08)
+
+
+### Bug Fixes
+
+* remove schema from stage file model ([#2790](https://github.com/rudderlabs/rudder-server/issues/2790)) ([2bc1f1d](https://github.com/rudderlabs/rudder-server/commit/2bc1f1d32bba10d74309a589e552b512093274f3))
+
 ## [1.4.2](https://github.com/rudderlabs/rudder-server/compare/v1.4.1...v1.4.2) (2022-12-07)
 
 
