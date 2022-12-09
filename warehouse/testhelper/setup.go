@@ -3,6 +3,7 @@ package testhelper
 import (
 	"context"
 	"database/sql"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -13,15 +14,14 @@ import (
 	"testing"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/utils/timeutil"
+
 	promCLient "github.com/prometheus/client_model/go"
 	"github.com/prometheus/common/expfmt"
 
 	"github.com/minio/minio-go/v6"
 
-	"github.com/rudderlabs/rudder-server/admin"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
-	"github.com/rudderlabs/rudder-server/services/pgnotifier"
-	"github.com/rudderlabs/rudder-server/warehouse"
 	"github.com/rudderlabs/rudder-server/warehouse/deltalake/databricks"
 	"github.com/rudderlabs/rudder-server/warehouse/validations"
 
@@ -31,17 +31,8 @@ import (
 
 	"github.com/cenkalti/backoff"
 
-	"github.com/joho/godotenv"
-
-	azuresynapse "github.com/rudderlabs/rudder-server/warehouse/azure-synapse"
-	"github.com/rudderlabs/rudder-server/warehouse/datalake"
-
 	"github.com/rudderlabs/rudder-server/config"
-	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/warehouse/bigquery"
-	"github.com/rudderlabs/rudder-server/warehouse/clickhouse"
-	"github.com/rudderlabs/rudder-server/warehouse/deltalake"
-	"github.com/rudderlabs/rudder-server/warehouse/mssql"
 	"github.com/rudderlabs/rudder-server/warehouse/postgres"
 	"github.com/rudderlabs/rudder-server/warehouse/redshift"
 	"github.com/rudderlabs/rudder-server/warehouse/snowflake"
@@ -51,36 +42,11 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-type JobsDBResource struct {
-	Credentials *postgres.CredentialsT
-	DB          *sql.DB
-}
-
-type EventsCountMap map[string]int
-
-type WareHouseTest struct {
-	Client                       *client.Client
-	WriteKey                     string
-	SourceWriteKey               string
-	Schema                       string
-	UserId                       string
-	MessageId                    string
-	Tables                       []string
-	Provider                     string
-	LatestSourceRunConfig        map[string]string
-	SourceID                     string
-	DestinationID                string
-	TimestampBeforeSendingEvents time.Time
-}
-
-type WarehouseTestSetup interface {
-	VerifyConnection() error
-}
-
 const (
-	WaitFor2Minute        = 2 * time.Minute
-	WaitFor10Minute       = 10 * time.Minute
-	DefaultQueryFrequency = 100 * time.Millisecond
+	WaitFor2Minute         = 2 * time.Minute
+	WaitFor10Minute        = 10 * time.Minute
+	DefaultQueryFrequency  = 100 * time.Millisecond
+	AsyncJOBQueryFrequency = 1000 * time.Millisecond
 )
 
 const (
@@ -107,57 +73,120 @@ const (
 	WorkspaceTemplatePath = "warehouse/testdata/workspaceConfig/template.json"
 )
 
-var jobsDB *JobsDBResource
+type EventsCountMap map[string]int
 
-func Run(m *testing.M, setup WarehouseTestSetup) int {
-	loadEnv()
-	initialize()
-	initJobsDB()
-	initConnection(setup)
-	return m.Run()
+type WareHouseTest struct {
+	Client                       *client.Client
+	WriteKey                     string
+	Schema                       string
+	UserID                       string
+	MessageID                    string
+	JobRunID                     string
+	TaskRunID                    string
+	RecordID                     string
+	Tables                       []string
+	Provider                     string
+	SourceID                     string
+	DestinationID                string
+	TimestampBeforeSendingEvents time.Time
+	EventsMap                    EventsCountMap
+	StagingFilesEventsMap        EventsCountMap
+	LoadFilesEventsMap           EventsCountMap
+	TableUploadsEventsMap        EventsCountMap
+	WarehouseEventsMap           EventsCountMap
+	JobsDB                       *sql.DB
+	AsyncJob                     bool
+	Prerequisite                 func(t testing.TB)
+	StatsToVerify                []string
+	SkipWarehouse                bool
 }
 
-func loadEnv() {
-	if err := godotenv.Load("../testhelper/.env"); err != nil {
-		fmt.Printf("Error occurred while loading env for warehouse integration test with error: %s", err.Error())
+func (w *WareHouseTest) init() {
+	w.TimestampBeforeSendingEvents = timeutil.Now()
+
+	if len(w.EventsMap) == 0 {
+		w.EventsMap = defaultSendEventsMap()
+	}
+	if len(w.StagingFilesEventsMap) == 0 {
+		w.StagingFilesEventsMap = defaultStagingFilesEventsMap()
+	}
+	if len(w.LoadFilesEventsMap) == 0 {
+		w.LoadFilesEventsMap = defaultLoadFilesEventsMap()
+	}
+	if len(w.TableUploadsEventsMap) == 0 {
+		w.TableUploadsEventsMap = defaultTableUploadsEventsMap()
+	}
+	if len(w.WarehouseEventsMap) == 0 {
+		w.WarehouseEventsMap = defaultWarehouseEventsMap()
 	}
 }
 
-func initialize() {
-	config.Reset()
-	logger.Reset()
-	admin.Init()
-	misc.Init()
-
-	backendconfig.Init()
-	warehouseutils.Init()
-
-	warehouse.Init()
-	warehouse.Init2()
-	warehouse.Init3()
-	warehouse.Init4()
-	warehouse.Init5()
-	warehouse.Init6()
-
-	pgnotifier.Init()
-	validations.Init()
-
-	azuresynapse.Init()
-	bigquery.Init()
-	clickhouse.Init()
-	datalake.Init()
-	deltalake.Init()
-	mssql.Init()
-	postgres.Init()
-	redshift.Init()
-	snowflake.Init()
+func (w *WareHouseTest) msgID() string {
+	if w.MessageID == "" {
+		return misc.FastUUID().String()
+	}
+	return w.MessageID
 }
 
-func initJobsDB() {
-	jobsDB = setUpJobsDB()
+func (w *WareHouseTest) recordID() string {
+	if w.RecordID == "" {
+		return misc.FastUUID().String()
+	}
+	return w.RecordID
 }
 
-func setUpJobsDB() *JobsDBResource {
+func (w *WareHouseTest) VerifyEvents(t testing.TB) {
+	t.Helper()
+
+	w.init()
+
+	if w.Prerequisite != nil {
+		w.Prerequisite(t)
+	}
+
+	SendEvents(t, w)
+	SendEvents(t, w)
+	SendEvents(t, w)
+	SendIntegratedEvents(t, w)
+
+	verifyEventsInStagingFiles(t, w)
+	verifyEventsInLoadFiles(t, w)
+	verifyEventsInTableUploads(t, w)
+	if !w.SkipWarehouse {
+		verifyEventsInWareHouse(t, w)
+	}
+	verifyWorkspaceIDInStats(t, w.StatsToVerify...)
+}
+
+func (w *WareHouseTest) VerifyModifiedEvents(t testing.TB) {
+	t.Helper()
+
+	w.init()
+
+	if w.Prerequisite != nil {
+		w.Prerequisite(t)
+	}
+
+	SendModifiedEvents(t, w)
+	SendModifiedEvents(t, w)
+	SendModifiedEvents(t, w)
+	SendIntegratedEvents(t, w)
+
+	verifyEventsInStagingFiles(t, w)
+	verifyEventsInLoadFiles(t, w)
+	verifyEventsInTableUploads(t, w)
+	if w.AsyncJob {
+		verifyAsyncJob(t, w)
+	}
+	if !w.SkipWarehouse {
+		verifyEventsInWareHouse(t, w)
+	}
+	verifyWorkspaceIDInStats(t)
+}
+
+func SetUpJobsDB(t testing.TB) *sql.DB {
+	t.Helper()
+
 	pgCredentials := &postgres.CredentialsT{
 		DBName:   "jobsdb",
 		Password: "password",
@@ -166,26 +195,17 @@ func setUpJobsDB() *JobsDBResource {
 		SSLMode:  "disable",
 		Port:     "5432",
 	}
-	jobsDB := &JobsDBResource{}
-	jobsDB.Credentials = pgCredentials
 
-	var err error
-	if jobsDB.DB, err = postgres.Connect(*pgCredentials); err != nil {
-		log.Fatalf("could not connect to jobsDb with error: %s", err.Error())
-	}
-	if err = jobsDB.DB.Ping(); err != nil {
-		log.Fatalf("could not connect to jobsDb while pinging with error: %s", err.Error())
-	}
-	return jobsDB
+	db, err := postgres.Connect(*pgCredentials)
+	require.NoError(t, err)
+
+	err = db.Ping()
+	require.NoError(t, err)
+
+	return db
 }
 
-func initConnection(setup WarehouseTestSetup) {
-	if err := setup.VerifyConnection(); err != nil {
-		log.Fatalf("Could not complete test connection with err: %s", err.Error())
-	}
-}
-
-func VerifyEventsInStagingFiles(t testing.TB, wareHouseTest *WareHouseTest, eventsMap EventsCountMap) {
+func verifyEventsInStagingFiles(t testing.TB, wareHouseTest *WareHouseTest) {
 	t.Helper()
 	t.Logf("Started verifying events in staging files")
 
@@ -197,13 +217,15 @@ func VerifyEventsInStagingFiles(t testing.TB, wareHouseTest *WareHouseTest, even
 		operation         func() bool
 		count             sql.NullInt64
 		err               error
+		db                = wareHouseTest.JobsDB
+		eventsMap         = wareHouseTest.StagingFilesEventsMap
 	)
 
 	require.NotEmpty(t, wareHouseTest.SourceID)
 	require.NotEmpty(t, wareHouseTest.DestinationID)
 	require.NotEmpty(t, eventsMap)
 	require.NotEmpty(t, eventsMap[tableName])
-	require.NotNil(t, jobsDB.DB)
+	require.NotNil(t, db)
 
 	stagingFileEvents = eventsMap[tableName]
 
@@ -226,7 +248,7 @@ func VerifyEventsInStagingFiles(t testing.TB, wareHouseTest *WareHouseTest, even
 		sqlStatement,
 	)
 	operation = func() bool {
-		err = jobsDB.DB.QueryRow(
+		err = db.QueryRow(
 			sqlStatement,
 			workspaceID,
 			wareHouseTest.SourceID,
@@ -236,12 +258,21 @@ func VerifyEventsInStagingFiles(t testing.TB, wareHouseTest *WareHouseTest, even
 		require.NoError(t, err)
 		return count.Int64 == int64(stagingFileEvents)
 	}
-	require.Eventually(t, operation, WaitFor2Minute, DefaultQueryFrequency, fmt.Sprintf("Expected staging files events count is %d and Actual staging files events count is %d", stagingFileEvents, count.Int64))
+	require.Eventually(
+		t,
+		operation,
+		WaitFor2Minute,
+		DefaultQueryFrequency,
+		fmt.Sprintf("Expected staging files events count is %d and Actual staging files events count is %d",
+			stagingFileEvents,
+			count.Int64,
+		),
+	)
 
 	t.Logf("Completed verifying events in staging files")
 }
 
-func VerifyEventsInLoadFiles(t testing.TB, wareHouseTest *WareHouseTest, eventsMap EventsCountMap) {
+func verifyEventsInLoadFiles(t testing.TB, wareHouseTest *WareHouseTest) {
 	t.Helper()
 	t.Logf("Started verifying events in load file")
 
@@ -251,12 +282,14 @@ func VerifyEventsInLoadFiles(t testing.TB, wareHouseTest *WareHouseTest, eventsM
 		operation      func() bool
 		count          sql.NullInt64
 		err            error
+		db             = wareHouseTest.JobsDB
+		eventsMap      = wareHouseTest.LoadFilesEventsMap
 	)
 
 	require.NotEmpty(t, wareHouseTest.SourceID)
 	require.NotEmpty(t, wareHouseTest.DestinationID)
 	require.NotEmpty(t, eventsMap)
-	require.NotNil(t, jobsDB.DB)
+	require.NotNil(t, db)
 
 	for _, table := range wareHouseTest.Tables {
 		require.NotEmpty(t, eventsMap[table])
@@ -282,7 +315,7 @@ func VerifyEventsInLoadFiles(t testing.TB, wareHouseTest *WareHouseTest, eventsM
 			sqlStatement,
 		)
 		operation = func() bool {
-			err = jobsDB.DB.QueryRow(
+			err = db.QueryRow(
 				sqlStatement,
 				wareHouseTest.SourceID,
 				wareHouseTest.DestinationID,
@@ -292,13 +325,23 @@ func VerifyEventsInLoadFiles(t testing.TB, wareHouseTest *WareHouseTest, eventsM
 			require.NoError(t, err)
 			return count.Int64 == int64(loadFileEvents)
 		}
-		require.Eventually(t, operation, WaitFor10Minute, DefaultQueryFrequency, fmt.Sprintf("Expected load files events count is %d and Actual load files events count is %d for table %s", loadFileEvents, count.Int64, table))
+		require.Eventually(
+			t,
+			operation,
+			WaitFor10Minute,
+			DefaultQueryFrequency,
+			fmt.Sprintf("Expected load files events count is %d and Actual load files events count is %d for table %s",
+				loadFileEvents,
+				count.Int64,
+				table,
+			),
+		)
 	}
 
 	t.Logf("Completed verifying events in load files")
 }
 
-func VerifyEventsInTableUploads(t testing.TB, wareHouseTest *WareHouseTest, eventsMap EventsCountMap) {
+func verifyEventsInTableUploads(t testing.TB, wareHouseTest *WareHouseTest) {
 	t.Helper()
 	t.Logf("Started verifying events in table uploads")
 
@@ -309,12 +352,14 @@ func VerifyEventsInTableUploads(t testing.TB, wareHouseTest *WareHouseTest, even
 		operation         func() bool
 		count             sql.NullInt64
 		err               error
+		db                = wareHouseTest.JobsDB
+		eventsMap         = wareHouseTest.TableUploadsEventsMap
 	)
 
 	require.NotEmpty(t, wareHouseTest.SourceID)
 	require.NotEmpty(t, wareHouseTest.DestinationID)
 	require.NotEmpty(t, eventsMap)
-	require.NotNil(t, jobsDB.DB)
+	require.NotNil(t, db)
 
 	for _, table := range wareHouseTest.Tables {
 		require.NotEmpty(t, eventsMap[table])
@@ -346,7 +391,7 @@ func VerifyEventsInTableUploads(t testing.TB, wareHouseTest *WareHouseTest, even
 			sqlStatement,
 		)
 		operation = func() bool {
-			err = jobsDB.DB.QueryRow(
+			err = db.QueryRow(
 				sqlStatement,
 				workspaceID,
 				wareHouseTest.SourceID,
@@ -357,18 +402,29 @@ func VerifyEventsInTableUploads(t testing.TB, wareHouseTest *WareHouseTest, even
 			require.NoError(t, err)
 			return count.Int64 == int64(tableUploadEvents)
 		}
-		require.Eventually(t, operation, WaitFor10Minute, DefaultQueryFrequency, fmt.Sprintf("Expected table uploads events count is %d and Actual table uploads events count is %d for table %s", tableUploadEvents, count.Int64, table))
+		require.Eventually(t,
+			operation,
+			WaitFor10Minute,
+			DefaultQueryFrequency,
+			fmt.Sprintf("Expected table uploads events count is %d and Actual table uploads events count is %d for table %s",
+				tableUploadEvents,
+				count.Int64,
+				table,
+			),
+		)
 	}
 
 	t.Logf("Completed verifying events in table uploads")
 }
 
-func VerifyEventsInWareHouse(t testing.TB, wareHouseTest *WareHouseTest, eventsMap EventsCountMap) {
+func verifyEventsInWareHouse(t testing.TB, wareHouseTest *WareHouseTest) {
 	t.Helper()
 	t.Logf("Started verifying events in warehouse")
 
+	eventsMap := wareHouseTest.WarehouseEventsMap
+
 	require.NotEmpty(t, wareHouseTest.Schema)
-	require.NotEmpty(t, wareHouseTest.UserId)
+	require.NotEmpty(t, wareHouseTest.UserID)
 	require.NotNil(t, wareHouseTest.Client)
 
 	primaryKey := func(tableName string) string {
@@ -397,13 +453,13 @@ func VerifyEventsInWareHouse(t testing.TB, wareHouseTest *WareHouseTest, eventsM
 			wareHouseTest.Schema,
 			warehouseutils.ToProviderCase(wareHouseTest.Provider, table),
 			primaryKey(table),
-			wareHouseTest.UserId,
+			wareHouseTest.UserID,
 		)
-		t.Logf("Checking events in warehouse for schema: %s, table: %s, primaryKey: %s, UserId: %s, sqlStatement: %s",
+		t.Logf("Checking events in warehouse for schema: %s, table: %s, primaryKey: %s, UserID: %s, sqlStatement: %s",
 			wareHouseTest.Schema,
 			warehouseutils.ToProviderCase(wareHouseTest.Provider, table),
 			primaryKey(table),
-			wareHouseTest.UserId,
+			wareHouseTest.UserID,
 			sqlStatement,
 		)
 		require.NoError(t, WithConstantBackoff(func() error {
@@ -412,10 +468,12 @@ func VerifyEventsInWareHouse(t testing.TB, wareHouseTest *WareHouseTest, eventsM
 				return countErr
 			}
 			if count != int64(tableCount) {
-				return fmt.Errorf("error in counting events in warehouse for schema: %s, table: %s,UserId: %s",
+				return fmt.Errorf("error in counting events in warehouse for schema: %s, table: %s, UserID: %s count: %d, expectedCount: %d",
 					wareHouseTest.Schema,
 					warehouseutils.ToProviderCase(wareHouseTest.Provider, table),
-					wareHouseTest.UserId,
+					wareHouseTest.UserID,
+					count,
+					tableCount,
 				)
 			}
 			return nil
@@ -425,24 +483,91 @@ func VerifyEventsInWareHouse(t testing.TB, wareHouseTest *WareHouseTest, eventsM
 	t.Logf("Completed verifying events in warehouse")
 }
 
-func VerifyingConfigurationTest(t *testing.T, destination backendconfig.DestinationT) {
+func verifyAsyncJob(t testing.TB, wareHouseTest *WareHouseTest) {
 	t.Helper()
-	t.Logf("Started configuration tests for destination type: %s", destination.DestinationDefinition.Name)
+	t.Logf("Started verifying async job")
 
-	require.NoError(t, WithConstantBackoff(func() error {
-		destinationValidator := validations.NewDestinationValidator()
-		req := &validations.DestinationValidationRequest{Destination: destination}
-		response, err := destinationValidator.ValidateCredentials(req)
-		if err != nil || response.Error != "" {
-			return fmt.Errorf("failed to validate credentials for destination: %s with error: %s", destination.DestinationDefinition.Name, response.Error)
+	asyncPayload := strings.NewReader(
+		fmt.Sprintf(
+			AsyncWhPayload,
+			wareHouseTest.SourceID,
+			wareHouseTest.JobRunID,
+			wareHouseTest.TaskRunID,
+			wareHouseTest.DestinationID,
+			time.Now().UTC().Format("2006-01-02 15:04:05"),
+		),
+	)
+	t.Logf("Run async job for sourceID: %s, DestinationID: %s, jobRunID: %s, taskRunID: %s",
+		wareHouseTest.SourceID,
+		wareHouseTest.DestinationID,
+		wareHouseTest.JobRunID,
+		wareHouseTest.TaskRunID,
+	)
+
+	send(t, asyncPayload, "warehouse/jobs", wareHouseTest.WriteKey, "POST")
+
+	var (
+		path = fmt.Sprintf("warehouse/jobs/status?job_run_id=%s&task_run_id=%s&source_id=%s&destination_id=%s",
+			wareHouseTest.JobRunID,
+			wareHouseTest.TaskRunID,
+			wareHouseTest.SourceID,
+			wareHouseTest.DestinationID,
+		)
+		url        = fmt.Sprintf("http://localhost:%s/v1/%s", "8080", path)
+		method     = "GET"
+		httpClient = &http.Client{}
+		req        *http.Request
+		res        *http.Response
+		err        error
+	)
+
+	type asyncResponse struct {
+		Status string `json:"status"`
+		Error  string `json:"error"`
+	}
+
+	operation := func() bool {
+		if req, err = http.NewRequest(method, url, strings.NewReader("")); err != nil {
+			return false
 		}
-		return nil
-	}))
 
-	t.Logf("Completed configuration tests for destination type: %s", destination.DestinationDefinition.Name)
+		req.Header.Add("Content-Type", "application/json")
+		req.Header.Add("Authorization", fmt.Sprintf("Basic %s", base64.StdEncoding.EncodeToString(
+			[]byte(fmt.Sprintf("%s:", wareHouseTest.WriteKey)),
+		)))
+
+		if res, err = httpClient.Do(req); err != nil {
+			return false
+		}
+		if res.StatusCode != http.StatusOK {
+			return false
+		}
+
+		defer func() { httputil.CloseResponse(res) }()
+
+		var asyncRes asyncResponse
+		if err = json.NewDecoder(res.Body).Decode(&asyncRes); err != nil {
+			return false
+		}
+		return asyncRes.Status == "succeeded"
+	}
+	require.Eventually(
+		t,
+		operation,
+		WaitFor10Minute,
+		AsyncJOBQueryFrequency,
+		fmt.Sprintf("Failed to get async job status for job_run_id: %s, task_run_id: %s, source_id: %s, destination_id: %s",
+			wareHouseTest.JobRunID,
+			wareHouseTest.TaskRunID,
+			wareHouseTest.SourceID,
+			wareHouseTest.DestinationID,
+		),
+	)
+
+	t.Logf("Completed verifying async job")
 }
 
-func VerifyWorkspaceIDInStats(t *testing.T, extraStats ...string) {
+func verifyWorkspaceIDInStats(t testing.TB, extraStats ...string) {
 	t.Helper()
 	t.Logf("Started verifying workspaceID in stats")
 
@@ -510,7 +635,24 @@ func VerifyWorkspaceIDInStats(t *testing.T, extraStats ...string) {
 	t.Logf("Completed verifying workspaceID in stats")
 }
 
-func prometheusStats(t *testing.T) map[string]*promCLient.MetricFamily {
+func VerifyConfigurationTest(t testing.TB, destination backendconfig.DestinationT) {
+	t.Helper()
+	t.Logf("Started configuration tests for destination type: %s", destination.DestinationDefinition.Name)
+
+	require.NoError(t, WithConstantBackoff(func() error {
+		destinationValidator := validations.NewDestinationValidator()
+		req := &validations.DestinationValidationRequest{Destination: destination}
+		response, err := destinationValidator.ValidateCredentials(req)
+		if err != nil || response.Error != "" {
+			return fmt.Errorf("failed to validate credentials for destination: %s with error: %s", destination.DestinationDefinition.Name, response.Error)
+		}
+		return nil
+	}))
+
+	t.Logf("Completed configuration tests for destination type: %s", destination.DestinationDefinition.Name)
+}
+
+func prometheusStats(t testing.TB) map[string]*promCLient.MetricFamily {
 	t.Helper()
 
 	req, err := http.NewRequestWithContext(context.Background(), "GET", "http://statsd-exporter:9102/metrics", http.NoBody)
@@ -543,13 +685,7 @@ func WithConstantBackoff(operation func() error) error {
 	return backoff.Retry(operation, backoffWithMaxRetry)
 }
 
-func DefaultSourceEventMap() EventsCountMap {
-	return EventsCountMap{
-		"google_sheet": 1,
-	}
-}
-
-func SendEventsMap() EventsCountMap {
+func defaultSendEventsMap() EventsCountMap {
 	return EventsCountMap{
 		"identifies": 1,
 		"tracks":     1,
@@ -560,13 +696,13 @@ func SendEventsMap() EventsCountMap {
 	}
 }
 
-func StagingFilesEventsMap() EventsCountMap {
+func defaultStagingFilesEventsMap() EventsCountMap {
 	return EventsCountMap{
 		"wh_staging_files": 32,
 	}
 }
 
-func LoadFilesEventsMap() EventsCountMap {
+func defaultLoadFilesEventsMap() EventsCountMap {
 	return EventsCountMap{
 		"identifies":    4,
 		"users":         4,
@@ -579,7 +715,7 @@ func LoadFilesEventsMap() EventsCountMap {
 	}
 }
 
-func TableUploadsEventsMap() EventsCountMap {
+func defaultTableUploadsEventsMap() EventsCountMap {
 	return EventsCountMap{
 		"identifies":    4,
 		"users":         4,
@@ -592,7 +728,7 @@ func TableUploadsEventsMap() EventsCountMap {
 	}
 }
 
-func WarehouseEventsMap() EventsCountMap {
+func defaultWarehouseEventsMap() EventsCountMap {
 	return EventsCountMap{
 		"identifies":    4,
 		"users":         1,
@@ -605,23 +741,41 @@ func WarehouseEventsMap() EventsCountMap {
 	}
 }
 
-func WarehouseSourceEventsMap() EventsCountMap {
+func SourcesSendEventsMap() EventsCountMap {
 	return EventsCountMap{
 		"google_sheet": 1,
-		"tracks":       1,
 	}
 }
 
-func DefaultSourceRunConfig() map[string]string {
-	srcrunconfig := make(map[string]string)
-	srcrunconfig["job_run_id"] = ""
-	srcrunconfig["task_run_id"] = ""
-
-	return srcrunconfig
+func SourcesStagingFilesEventsMap() EventsCountMap {
+	return EventsCountMap{
+		"wh_staging_files": 8,
+	}
 }
 
-func GetUserId(userType string) string {
-	return fmt.Sprintf("userId_%s_%s", strings.ToLower(userType), warehouseutils.RandHex())
+func SourcesLoadFilesEventsMap() EventsCountMap {
+	return EventsCountMap{
+		"tracks":       4,
+		"google_sheet": 4,
+	}
+}
+
+func SourcesTableUploadsEventsMap() EventsCountMap {
+	return EventsCountMap{
+		"tracks":       4,
+		"google_sheet": 4,
+	}
+}
+
+func SourcesWarehouseEventsMap() EventsCountMap {
+	return EventsCountMap{
+		"google_sheet": 4,
+		"tracks":       4,
+	}
+}
+
+func GetUserId(provider string) string {
+	return fmt.Sprintf("userId_%s_%s", strings.ToLower(provider), warehouseutils.RandHex())
 }
 
 func CreateBucketForMinio(t testing.TB, bucketName string) {
@@ -640,20 +794,15 @@ func CreateBucketForMinio(t testing.TB, bucketName string) {
 	_ = minioClient.MakeBucket(bucketName, "us-east-1")
 }
 
-// SetConfig sets hot reloadable config
-// TODO: Make it retryable
-func SetConfig(kvs []warehouseutils.KeyValue) error {
+func SetConfig(t testing.TB, kvs []warehouseutils.KeyValue) {
+	t.Helper()
+
 	payload, err := json.Marshal(&kvs)
-	if err != nil {
-		return fmt.Errorf("error marshalling while setting config with err: %s", err.Error())
-	}
+	require.NoError(t, err)
 
 	url := fmt.Sprintf(`%s/v1/setConfig`, misc.GetWarehouseURL())
 	_, err = warehouseutils.PostRequestWithTimeout(context.TODO(), url, payload, time.Second*60)
-	if err != nil {
-		return fmt.Errorf("error while making post request to set config with err: %s", err.Error())
-	}
-	return nil
+	require.NoError(t, err)
 }
 
 func PopulateTemplateConfigurations() map[string]string {
@@ -707,6 +856,12 @@ func PopulateTemplateConfigurations() map[string]string {
 		"redshiftWriteKey":               "JAAwdCxmM8BIabKERsUhPNmMmdf",
 		"deltalakeWriteKey":              "sToFgoilA0U1WxNeW1gdgUVDsEW",
 
+		"postgresSourcesWriteKey":  "2DkCpXZcEvJK2fcpUD3LmjPI7J6",
+		"mssqlSourcesWriteKey":     "2DkCpXZcEvPG2fcpUD3LmjPI7J6",
+		"bigquerySourcesWriteKey":  "J77aeABtLFJ84qYU6UrN8ctewZt",
+		"redshiftSourcesWriteKey":  "BNAwdCxmM8BIabKERsUhPNmMmdf",
+		"snowflakeSourcesWriteKey": "2eSJyYtqwcFYerwzXv2fcNIrWO7",
+
 		"minioBucketName":      "devintegrationtest",
 		"minioAccesskeyID":     "MYACCESSKEY",
 		"minioSecretAccessKey": "MYSECRETKEY",
@@ -721,6 +876,10 @@ func PopulateTemplateConfigurations() map[string]string {
 }
 
 func enhanceWithSnowflakeConfigurations(values map[string]string) {
+	if _, exists := os.LookupEnv(SnowflakeIntegrationTestCredentials); !exists {
+		return
+	}
+
 	for k, v := range credentialsFromKey(SnowflakeIntegrationTestCredentials) {
 		values[fmt.Sprintf("snowflake%s", k)] = v
 	}
@@ -728,17 +887,27 @@ func enhanceWithSnowflakeConfigurations(values map[string]string) {
 	values["snowflakeCaseSensitiveDBName"] = strings.ToLower(values["snowflakeDBName"])
 	values["snowflakeNamespace"] = Schema(warehouseutils.SNOWFLAKE, SnowflakeIntegrationTestSchema)
 	values["snowflakeCaseSensitiveNamespace"] = fmt.Sprintf("%s_%s", values["snowflakeNamespace"], "CS")
+	values["snowflakeSourcesNamespace"] = fmt.Sprintf("%s_%s", values["snowflakeNamespace"], "sources")
 }
 
 func enhanceWithRedshiftConfigurations(values map[string]string) {
+	if _, exists := os.LookupEnv(RedshiftIntegrationTestCredentials); !exists {
+		return
+	}
+
 	for k, v := range credentialsFromKey(RedshiftIntegrationTestCredentials) {
 		values[fmt.Sprintf("redshift%s", k)] = v
 	}
 
 	values["redshiftNamespace"] = Schema(warehouseutils.RS, RedshiftIntegrationTestSchema)
+	values["redshiftSourcesNamespace"] = fmt.Sprintf("%s_%s", values["redshiftNamespace"], "sources")
 }
 
 func enhanceWithDeltalakeConfigurations(values map[string]string) {
+	if _, exists := os.LookupEnv(DeltalakeIntegrationTestCredentials); !exists {
+		return
+	}
+
 	for k, v := range credentialsFromKey(DeltalakeIntegrationTestCredentials) {
 		values[fmt.Sprintf("deltalake%s", k)] = v
 	}
@@ -747,11 +916,16 @@ func enhanceWithDeltalakeConfigurations(values map[string]string) {
 }
 
 func enhanceWithBQConfigurations(values map[string]string) {
+	if _, exists := os.LookupEnv(BigqueryIntegrationTestCredentials); !exists {
+		return
+	}
+
 	for k, v := range credentialsFromKey(BigqueryIntegrationTestCredentials) {
 		values[fmt.Sprintf("bigquery%s", k)] = v
 	}
 
 	values["bigqueryNamespace"] = Schema(warehouseutils.BQ, BigqueryIntegrationTestSchema)
+	values["bigquerySourcesNamespace"] = fmt.Sprintf("%s_%s", values["bigqueryNamespace"], "sources")
 
 	key := "bigqueryCredentials"
 	if credentials, exists := values[key]; exists {
@@ -845,11 +1019,4 @@ func DatabricksCredentials() (credentials databricks.CredentialsT, err error) {
 		return
 	}
 	return
-}
-
-func (w *WareHouseTest) MsgId() string {
-	if w.MessageId == "" {
-		return misc.FastUUID().String()
-	}
-	return w.MessageId
 }

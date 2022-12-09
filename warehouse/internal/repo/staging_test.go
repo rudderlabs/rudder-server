@@ -48,7 +48,7 @@ func TestStagingFileRepo(t *testing.T) {
 
 	testcases := []struct {
 		name        string
-		stagingFile model.StagingFile
+		stagingFile model.StagingFileWithSchema
 	}{
 		{
 			name: "create staging file",
@@ -57,7 +57,6 @@ func TestStagingFileRepo(t *testing.T) {
 				Location:              "s3://bucket/path/to/file",
 				SourceID:              "source_id",
 				DestinationID:         "destination_id",
-				Schema:                []byte(`{"type": "object"}`),
 				Status:                warehouseutils.StagingFileWaitingState,
 				Error:                 fmt.Errorf("dummy error"),
 				FirstEventAt:          now.Add(time.Second),
@@ -71,7 +70,7 @@ func TestStagingFileRepo(t *testing.T) {
 				SourceJobID:           "source_job_id",
 				SourceJobRunID:        "source_job_run_id",
 				TimeWindow:            time.Date(1993, 8, 1, 3, 0, 0, 0, time.UTC),
-			},
+			}.WithSchema([]byte(`{"type": "object"}`)),
 		},
 		{
 			name: "missing FirstEventAt",
@@ -80,7 +79,6 @@ func TestStagingFileRepo(t *testing.T) {
 				Location:              "s3://bucket/path/to/file",
 				SourceID:              "source_id",
 				DestinationID:         "destination_id",
-				Schema:                []byte(`{"type": "object"}`),
 				Status:                warehouseutils.StagingFileWaitingState,
 				Error:                 fmt.Errorf("dummy error"),
 				LastEventAt:           now,
@@ -93,7 +91,7 @@ func TestStagingFileRepo(t *testing.T) {
 				SourceJobID:           "source_job_id",
 				SourceJobRunID:        "source_job_run_id",
 				TimeWindow:            time.Date(1993, 8, 1, 3, 0, 0, 0, time.UTC),
-			},
+			}.WithSchema([]byte(`{"type": "object"}`)),
 		},
 		{
 			name: "missing LastEventAt",
@@ -102,7 +100,6 @@ func TestStagingFileRepo(t *testing.T) {
 				Location:              "s3://bucket/path/to/file",
 				SourceID:              "source_id",
 				DestinationID:         "destination_id",
-				Schema:                []byte(`{"type": "object"}`),
 				Status:                warehouseutils.StagingFileWaitingState,
 				Error:                 fmt.Errorf("dummy error"),
 				FirstEventAt:          now.Add(time.Second),
@@ -115,7 +112,7 @@ func TestStagingFileRepo(t *testing.T) {
 				SourceJobID:           "source_job_id",
 				SourceJobRunID:        "source_job_run_id",
 				TimeWindow:            time.Date(1993, 8, 1, 3, 0, 0, 0, time.UTC),
-			},
+			}.WithSchema([]byte(`{"type": "object"}`)),
 		},
 	}
 
@@ -134,7 +131,12 @@ func TestStagingFileRepo(t *testing.T) {
 			expected.CreatedAt = now
 			expected.UpdatedAt = now
 
-			require.Equal(t, expected, retrieved)
+			require.Equal(t, expected.StagingFile, retrieved)
+
+			schema, err := r.GetSchemaByID(ctx, id)
+			require.NoError(t, err)
+
+			require.Equal(t, expected.Schema, schema)
 		})
 	}
 
@@ -164,7 +166,6 @@ func TestStagingFileRepo_Many(t *testing.T) {
 			Location:              fmt.Sprintf("s3://bucket/path/to/file-%d", i),
 			SourceID:              "source_id",
 			DestinationID:         "destination_id",
-			Schema:                []byte(`{"type": "object"}`),
 			Status:                warehouseutils.StagingFileWaitingState,
 			Error:                 fmt.Errorf("dummy error"),
 			FirstEventAt:          now.Add(time.Second),
@@ -178,7 +179,7 @@ func TestStagingFileRepo_Many(t *testing.T) {
 			SourceJobID:           "source_job_id",
 			SourceJobRunID:        "source_job_run_id",
 			TimeWindow:            time.Date(1993, 8, 1, 3, 0, 0, 0, time.UTC),
-		}
+		}.WithSchema([]byte(`{"type": "object"}`))
 
 		id, err := r.Insert(ctx, &file)
 		require.NoError(t, err)
@@ -188,7 +189,7 @@ func TestStagingFileRepo_Many(t *testing.T) {
 		file.CreatedAt = now
 		file.UpdatedAt = now
 
-		stagingFiles = append(stagingFiles, file)
+		stagingFiles = append(stagingFiles, file.StagingFile)
 	}
 
 	t.Run("GetInRange", func(t *testing.T) {

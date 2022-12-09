@@ -1425,8 +1425,8 @@
       },
       "liveEventsConfig": {},
       "id": "2DkCpUr0xfiGBPJxIwqyqfyHdq4",
-      "name": "postgres_wh_integration",
-      "writeKey": "2DkCpXZcEvJK2fcpUD3LmjPI7J6",
+      "name": "postgres-wh-sources-integration",
+      "writeKey": "{{.postgresSourcesWriteKey}}",
       "enabled": true,
       "sourceDefinitionId": "29seNpaVfhMp7YVpiBUszPOvmO1",
       "createdBy": "279BPpjT6BGqKKhT5qAZuUVZa1h",
@@ -1461,7 +1461,7 @@
             "password": "{{.postgresPassword}}",
             "port": "{{.postgresPort}}",
             "sslMode": "disable",
-            "namespace": "",
+            "namespace": "postgres_wh_sources_integration",
             "bucketProvider": "MINIO",
             "bucketName": "{{.minioBucketName}}",
             "accessKeyID": "{{.minioAccesskeyID}}",
@@ -1472,8 +1472,8 @@
             "useRudderStorage": false
           },
           "secretConfig": {},
-          "id": "216ZvbavR21Um6eGKQCagZHqLGZ",
-          "name": "postgres-demo",
+          "id": "308ZvbavR21Um6eGKQCagZHqLGZ",
+          "name": "postgres-sources-demo",
           "enabled": true,
           "workspaceId": "{{.workspaceId}}",
           "deleted": false,
@@ -1568,8 +1568,8 @@
       },
       "liveEventsConfig": {},
       "id": "2DkCpUr0xfiINRJxIwqyqfyHdq4",
-      "name": "mssql_wh_integration",
-      "writeKey": "2DkCpXZcEvPG2fcpUD3LmjPI7J6",
+      "name": "mssql-wh-sources-integration",
+      "writeKey": "{{.mssqlSourcesWriteKey}}",
       "enabled": true,
       "sourceDefinitionId": "29seNpaVfhMp7YVpiBUszPOvmO1",
       "createdBy": "279BPpjT6BGqKKhT5qAZuUVZa1h",
@@ -1604,7 +1604,7 @@
             "password": "{{.mssqlPassword}}",
             "port": "{{.mssqlPort}}",
             "sslMode": "disable",
-            "namespace": "",
+            "namespace": "mssql_wh_sources_integration",
             "bucketProvider": "MINIO",
             "bucketName": "{{.minioBucketName}}",
             "accessKeyID": "{{.minioAccesskeyID}}",
@@ -1615,8 +1615,8 @@
             "useRudderStorage": false
           },
           "secretConfig": {},
-          "id": "21Ezdq58khNMj07VJB0VJmxLvgu",
-          "name": "mssql-demo",
+          "id": "21Ezdq58kMNMj07VJB0VJmxLvgu",
+          "name": "mssql-sources-demo",
           "enabled": true,
           "workspaceId": "{{.workspaceId}}",
           "deleted": false,
@@ -1685,6 +1685,399 @@
             "category": "warehouse",
             "createdAt": "2021-04-09T10:10:26.589Z",
             "updatedAt": "2021-11-11T07:55:15.622Z"
+          },
+          "isConnectionEnabled": true,
+          "isProcessorEnabled": true
+        }
+      ],
+      "dgSourceTrackingPlanConfig": null
+    },
+    {
+      "config": {
+        "config": {
+          "row_batch_size": 200,
+          "credentials": {
+            "auth_type": "Client",
+            "accountId": "29hOyXzmdF9rz7yR2FTq4pohyXL"
+          },
+          "spreadsheet_id": "1bKQpN-KkhYZd4eqUUoq3Tec6HrJzgqSc8jwVvajnpk8"
+        },
+        "schedule": {
+          "type": "manual",
+          "every": 0,
+          "unit": "minutes"
+        },
+        "prefix": "SGS5"
+      },
+      "liveEventsConfig": {},
+      "id": "2DkCpUr0xgjaNRJxIwqyqfyHdq4",
+      "name": "snowflake-wh-sources-integration",
+      "writeKey": "{{.snowflakeSourcesWriteKey}}",
+      "enabled": true,
+      "sourceDefinitionId": "29seNpaVfhMp7YVpiBUszPOvmO1",
+      "createdBy": "279BPpjT6BGqKKhT5qAZuUVZa1h",
+      "workspaceId": "{{.workspaceId}}",
+      "deleted": false,
+      "transient": false,
+      "secretVersion": null,
+      "createdAt": "2022-08-23T00:21:18.366Z",
+      "updatedAt": "2022-08-23T00:21:18.366Z",
+      "sourceDefinition": {
+        "options": {
+          "auth": {
+            "provider": "Google",
+            "oauthRole": "google_sheets"
+          },
+          "image": "source-google-sheets:v2",
+          "isBeta": true
+        },
+        "id": "29seNpaVfhMp7YVpiBUszPOvmO1",
+        "name": "singer-google-sheets",
+        "displayName": "Singer Google Sheets",
+        "category": "singer-protocol",
+        "createdAt": "2022-05-30T04:53:02.188Z",
+        "updatedAt": "2022-05-30T04:53:02.188Z"
+      },
+      "destinations": [
+        {
+          "config": {
+            "account": "{{.snowflakeAccount}}",
+            "database": "{{.snowflakeDBName}}",
+            "warehouse": "{{.snowflakeWHName}}",
+            "user": "{{.snowflakeUsername}}",
+            "password": "{{.snowflakePassword}}",
+            "cloudProvider": "AWS",
+            "bucketName": "{{.snowflakeBucketName}}",
+            "storageIntegration": "",
+            "accessKeyID": "{{.snowflakeAccessKeyID}}",
+            "accessKey": "{{.snowflakeAccessKey}}",
+            "namespace": "{{.snowflakeSourcesNamespace}}",
+            "prefix": "snowflake-prefix",
+            "syncFrequency": "30",
+            "enableSSE": false,
+            "useRudderStorage": false
+          },
+          "liveEventsConfig": {},
+          "secretConfig": {},
+          "id": "24qeADObp6eIsfjDnEppO6P1SNc",
+          "name": "snowflake-sources-demo",
+          "enabled": true,
+          "workspaceId": "{{.workspaceId}}",
+          "deleted": false,
+          "createdAt": "2022-02-08T23:19:58.278Z",
+          "updatedAt": "2022-05-17T08:18:33.587Z",
+          "revisionId": "29HgdgvNPwqFDMONSgmIZ3YSehV",
+          "transformations": [],
+          "destinationDefinition": {
+            "config": {
+              "destConfig": {
+                "defaultConfig": [
+                  "account",
+                  "database",
+                  "warehouse",
+                  "user",
+                  "password",
+                  "cloudProvider",
+                  "bucketName",
+                  "containerName",
+                  "storageIntegration",
+                  "accessKeyID",
+                  "accessKey",
+                  "accountName",
+                  "accountKey",
+                  "credentials",
+                  "namespace",
+                  "prefix",
+                  "syncFrequency",
+                  "syncStartAt",
+                  "enableSSE",
+                  "excludeWindow",
+                  "useRudderStorage"
+                ]
+              },
+              "secretKeys": [
+                "password",
+                "accessKeyID",
+                "accessKey"
+              ],
+              "excludeKeys": [],
+              "includeKeys": [],
+              "transformAt": "processor",
+              "transformAtV1": "processor",
+              "supportedSourceTypes": [
+                "android",
+                "ios",
+                "web",
+                "unity",
+                "amp",
+                "cloud",
+                "reactnative",
+                "cloudSource",
+                "flutter",
+                "cordova"
+              ],
+              "saveDestinationResponse": true
+            },
+            "responseRules": null,
+            "options": null,
+            "id": "1XjvXnzw34UMAz1YOuKqL1kwzh6",
+            "name": "SNOWFLAKE",
+            "displayName": "Snowflake",
+            "category": "warehouse",
+            "createdAt": "2020-02-13T05:39:20.184Z",
+            "updatedAt": "2022-02-08T06:46:45.432Z"
+          },
+          "isConnectionEnabled": true,
+          "isProcessorEnabled": true
+        }
+      ],
+      "dgSourceTrackingPlanConfig": null
+    },
+    {
+      "config": {
+        "config": {
+          "row_batch_size": 200,
+          "credentials": {
+            "auth_type": "Client",
+            "accountId": "29hOyXzmdF9rz7yR2FTq4pohyXL"
+          },
+          "spreadsheet_id": "1bKQpN-KkhYZd4eqUUoq3Tec6HrJzgqSc8jwVvajnpk8"
+        },
+        "schedule": {
+          "type": "manual",
+          "every": 0,
+          "unit": "minutes"
+        },
+        "prefix": "SGS5"
+      },
+      "liveEventsConfig": {},
+      "id": "2DkCpUr0xgjfsdJxIwqyqfyHdq4",
+      "name": "redshift-wh-sources-integration",
+      "writeKey": "{{.redshiftSourcesWriteKey}}",
+      "enabled": true,
+      "sourceDefinitionId": "29seNpaVfhMp7YVpiBUszPOvmO1",
+      "createdBy": "279BPpjT6BGqKKhT5qAZuUVZa1h",
+      "workspaceId": "{{.workspaceId}}",
+      "deleted": false,
+      "transient": false,
+      "secretVersion": null,
+      "createdAt": "2022-08-23T00:21:18.366Z",
+      "updatedAt": "2022-08-23T00:21:18.366Z",
+      "sourceDefinition": {
+        "options": {
+          "auth": {
+            "provider": "Google",
+            "oauthRole": "google_sheets"
+          },
+          "image": "source-google-sheets:v2",
+          "isBeta": true
+        },
+        "id": "29seNpaVfhMp7YVpiBUszPOvmO1",
+        "name": "singer-google-sheets",
+        "displayName": "Singer Google Sheets",
+        "category": "singer-protocol",
+        "createdAt": "2022-05-30T04:53:02.188Z",
+        "updatedAt": "2022-05-30T04:53:02.188Z"
+      },
+      "destinations": [
+        {
+          "config": {
+            "host": "{{.redshiftHost}}",
+            "port": "{{.redshiftPort}}",
+            "database": "{{.redshiftDbName}}",
+            "user": "{{.redshiftUsername}}",
+            "password": "{{.redshiftPassword}}",
+            "bucketName": "{{.redshiftBucketName}}",
+            "accessKeyID": "{{.redshiftAccessKeyID}}",
+            "accessKey": "{{.redshiftAccessKey}}",
+            "prefix": "",
+            "namespace": "{{.redshiftSourcesNamespace}}",
+            "syncFrequency": "30",
+            "enableSSE": false,
+            "useRudderStorage": false
+          },
+          "liveEventsConfig": {},
+          "secretConfig": {},
+          "id": "27Sthahyhhsdas4HT4NTtNPl06V",
+          "name": "redshift-sources-demo",
+          "enabled": true,
+          "workspaceId": "{{.workspaceId}}",
+          "deleted": false,
+          "createdAt": "2022-04-07T09:57:14.783Z",
+          "updatedAt": "2022-05-17T08:16:32.613Z",
+          "revisionId": "29HgOWobrn0RYZLpaSwPIbN2987",
+          "transformations": [],
+          "destinationDefinition": {
+            "config": {
+              "destConfig": {
+                "defaultConfig": [
+                  "host",
+                  "port",
+                  "database",
+                  "user",
+                  "password",
+                  "bucketName",
+                  "accessKeyID",
+                  "accessKey",
+                  "prefix",
+                  "namespace",
+                  "syncFrequency",
+                  "syncStartAt",
+                  "enableSSE",
+                  "excludeWindow",
+                  "useRudderStorage"
+                ]
+              },
+              "secretKeys": [
+                "password",
+                "accessKeyID",
+                "accessKey"
+              ],
+              "excludeKeys": [],
+              "includeKeys": [],
+              "transformAt": "processor",
+              "transformAtV1": "processor",
+              "supportedSourceTypes": [
+                "android",
+                "ios",
+                "web",
+                "unity",
+                "amp",
+                "cloud",
+                "reactnative",
+                "cloudSource",
+                "flutter",
+                "cordova"
+              ],
+              "saveDestinationResponse": true
+            },
+            "responseRules": null,
+            "options": null,
+            "id": "1UVZiJF7OgLaiIY2Jts8XOQE3M6",
+            "name": "RS",
+            "displayName": "Redshift",
+            "category": "warehouse",
+            "createdAt": "2019-12-04T07:17:28.337Z",
+            "updatedAt": "2022-02-08T06:46:22.804Z"
+          },
+          "isConnectionEnabled": true,
+          "isProcessorEnabled": true
+        }
+      ],
+      "dgSourceTrackingPlanConfig": null
+    },
+    {
+      "config": {
+        "config": {
+          "row_batch_size": 200,
+          "credentials": {
+            "auth_type": "Client",
+            "accountId": "29hOyXzmdF9rz7yR2FTq4pohyXL"
+          },
+          "spreadsheet_id": "1bKQpN-KkhYZd4eqUUoq3Tec6HrJzgqSc8jwVvajnpk8"
+        },
+        "schedule": {
+          "type": "manual",
+          "every": 0,
+          "unit": "minutes"
+        },
+        "prefix": "SGS5"
+      },
+      "liveEventsConfig": {},
+      "id": "2DkCpUr0xgjfBNasIwqyqfyHdq4",
+      "name": "bigquery-wh-sources-integration",
+      "writeKey": "{{.bigquerySourcesWriteKey}}",
+      "enabled": true,
+      "sourceDefinitionId": "29seNpaVfhMp7YVpiBUszPOvmO1",
+      "createdBy": "279BPpjT6BGqKKhT5qAZuUVZa1h",
+      "workspaceId": "{{.workspaceId}}",
+      "deleted": false,
+      "transient": false,
+      "secretVersion": null,
+      "createdAt": "2022-08-23T00:21:18.366Z",
+      "updatedAt": "2022-08-23T00:21:18.366Z",
+      "sourceDefinition": {
+        "options": {
+          "auth": {
+            "provider": "Google",
+            "oauthRole": "google_sheets"
+          },
+          "image": "source-google-sheets:v2",
+          "isBeta": true
+        },
+        "id": "29seNpaVfhMp7YVpiBUszPOvmO1",
+        "name": "singer-google-sheets",
+        "displayName": "Singer Google Sheets",
+        "category": "singer-protocol",
+        "createdAt": "2022-05-30T04:53:02.188Z",
+        "updatedAt": "2022-05-30T04:53:02.188Z"
+      },
+      "destinations": [
+        {
+          "config": {
+            "project": "{{.bigqueryProjectID}}",
+            "location": "{{.bigqueryLocation}}",
+            "bucketName": "{{.bigqueryBucketName}}",
+            "credentials": "{{.bigqueryCredentials}}",
+            "prefix": "",
+            "namespace": "{{.bigquerySourcesNamespace}}",
+            "syncFrequency": "30"
+          },
+          "liveEventsConfig": {},
+          "secretConfig": {},
+          "id": "26Bgm9FrQDZjvadBnalpd35atwn",
+          "name": "bigquery-wh-sources-integration",
+          "enabled": true,
+          "workspaceId": "{{.workspaceId}}",
+          "deleted": false,
+          "createdAt": "2022-03-10T08:55:49.791Z",
+          "updatedAt": "2022-03-10T08:55:49.791Z",
+          "revisionId": "29eejWUH80lK1abiB766fzv5Iba",
+          "transformations": [],
+          "destinationDefinition": {
+            "config": {
+              "destConfig": {
+                "defaultConfig": [
+                  "project",
+                  "location",
+                  "bucketName",
+                  "credentials",
+                  "prefix",
+                  "namespace",
+                  "syncFrequency",
+                  "syncStartAt",
+                  "excludeWindow"
+                ]
+              },
+              "secretKeys": [
+                "credentials"
+              ],
+              "excludeKeys": [],
+              "includeKeys": [],
+              "transformAt": "processor",
+              "transformAtV1": "processor",
+              "supportedSourceTypes": [
+                "android",
+                "ios",
+                "web",
+                "unity",
+                "amp",
+                "cloud",
+                "reactnative",
+                "cloudSource",
+                "flutter",
+                "cordova"
+              ],
+              "saveDestinationResponse": true
+            },
+            "responseRules": null,
+            "options": null,
+            "id": "1UmeD7xhVGHsPDEHoCiSPEGytS3",
+            "name": "BQ",
+            "displayName": "BigQuery",
+            "category": "warehouse",
+            "createdAt": "2019-12-10T08:21:15.841Z",
+            "updatedAt": "2022-02-08T06:46:30.483Z"
           },
           "isConnectionEnabled": true,
           "isProcessorEnabled": true
