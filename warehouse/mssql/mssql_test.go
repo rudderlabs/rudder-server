@@ -1,102 +1,139 @@
-//go:build warehouse_integration && !sources_integration
-
 package mssql_test
 
 import (
-	"database/sql"
-	"fmt"
 	"os"
 	"testing"
 
+	"github.com/rudderlabs/rudder-server/warehouse/client"
+
+	"github.com/rudderlabs/rudder-server/utils/misc"
+	"github.com/rudderlabs/rudder-server/warehouse/validations"
+	"github.com/stretchr/testify/require"
+
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 
-	"github.com/rudderlabs/rudder-server/utils/timeutil"
-
-	"github.com/rudderlabs/rudder-server/warehouse/client"
 	"github.com/rudderlabs/rudder-server/warehouse/mssql"
 	"github.com/rudderlabs/rudder-server/warehouse/testhelper"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
-type TestHandle struct {
-	DB       *sql.DB
-	WriteKey string
-	Schema   string
-	Tables   []string
-}
-
-var handle *TestHandle
-
-func (*TestHandle) VerifyConnection() error {
-	return testhelper.WithConstantBackoff(func() (err error) {
-		credentials := mssql.CredentialsT{
-			DBName:   "master",
-			Password: "reallyStrongPwd123",
-			User:     "SA",
-			Host:     "wh-mssql",
-			SSLMode:  "disable",
-			Port:     "1433",
-		}
-		if handle.DB, err = mssql.Connect(credentials); err != nil {
-			err = fmt.Errorf("could not connect to warehouse mssql with error: %w", err)
-			return
-		}
-		if err = handle.DB.Ping(); err != nil {
-			err = fmt.Errorf("could not connect to warehouse mssql while pinging with error: %w", err)
-			return
-		}
-		return
-	})
-}
-
-func TestMSSQLIntegration(t *testing.T) {
-	warehouseTest := &testhelper.WareHouseTest{
-		Client: &client.Client{
-			SQL:  handle.DB,
-			Type: client.SQLClient,
-		},
-		WriteKey:      handle.WriteKey,
-		Schema:        handle.Schema,
-		Tables:        handle.Tables,
-		Provider:      warehouseutils.MSSQL,
-		SourceID:      "1wRvLmEnMOONMbdspwaZhyCqXRE",
-		DestinationID: "21Ezdq58khNMj07VJB0VJmxLvgu",
+func TestIntegrationMSSQL(t *testing.T) {
+	if os.Getenv("SLOW") == "0" {
+		t.Skip("Skipping tests. Remove 'SLOW=0' env var to run them.")
 	}
 
-	// Scenario 1
-	warehouseTest.TimestampBeforeSendingEvents = timeutil.Now()
-	warehouseTest.UserId = testhelper.GetUserId(warehouseutils.MSSQL)
+	t.Parallel()
 
-	sendEventsMap := testhelper.SendEventsMap()
-	testhelper.SendEvents(t, warehouseTest, sendEventsMap)
-	testhelper.SendEvents(t, warehouseTest, sendEventsMap)
-	testhelper.SendEvents(t, warehouseTest, sendEventsMap)
-	testhelper.SendIntegratedEvents(t, warehouseTest, sendEventsMap)
+	mssql.Init()
 
-	testhelper.VerifyEventsInStagingFiles(t, warehouseTest, testhelper.StagingFilesEventsMap())
-	testhelper.VerifyEventsInLoadFiles(t, warehouseTest, testhelper.LoadFilesEventsMap())
-	testhelper.VerifyEventsInTableUploads(t, warehouseTest, testhelper.TableUploadsEventsMap())
-	testhelper.VerifyEventsInWareHouse(t, warehouseTest, testhelper.WarehouseEventsMap())
+	db, err := mssql.Connect(mssql.CredentialsT{
+		DBName:   "master",
+		Password: "reallyStrongPwd123",
+		User:     "SA",
+		Host:     "wh-mssql",
+		SSLMode:  "disable",
+		Port:     "1433",
+	})
+	require.NoError(t, err)
 
-	// Scenario 2
-	warehouseTest.TimestampBeforeSendingEvents = timeutil.Now()
-	warehouseTest.UserId = testhelper.GetUserId(warehouseutils.MSSQL)
+	err = db.Ping()
+	require.NoError(t, err)
 
-	sendEventsMap = testhelper.SendEventsMap()
-	testhelper.SendModifiedEvents(t, warehouseTest, sendEventsMap)
-	testhelper.SendModifiedEvents(t, warehouseTest, sendEventsMap)
-	testhelper.SendModifiedEvents(t, warehouseTest, sendEventsMap)
-	testhelper.SendIntegratedEvents(t, warehouseTest, sendEventsMap)
+	var (
+		provider = warehouseutils.MSSQL
+		jobsDB   = testhelper.SetUpJobsDB(t)
+	)
 
-	testhelper.VerifyEventsInStagingFiles(t, warehouseTest, testhelper.StagingFilesEventsMap())
-	testhelper.VerifyEventsInLoadFiles(t, warehouseTest, testhelper.LoadFilesEventsMap())
-	testhelper.VerifyEventsInTableUploads(t, warehouseTest, testhelper.TableUploadsEventsMap())
-	testhelper.VerifyEventsInWareHouse(t, warehouseTest, testhelper.WarehouseEventsMap())
+	testcase := []struct {
+		name                  string
+		writeKey              string
+		schema                string
+		sourceID              string
+		destinationID         string
+		eventsMap             testhelper.EventsCountMap
+		stagingFilesEventsMap testhelper.EventsCountMap
+		loadFilesEventsMap    testhelper.EventsCountMap
+		tableUploadsEventsMap testhelper.EventsCountMap
+		warehouseEventsMap    testhelper.EventsCountMap
+		asyncJob              bool
+		tables                []string
+	}{
+		{
+			name:          "Upload Job",
+			writeKey:      "YSQ3n267l1VQKGNbSuJE9fQbzON",
+			schema:        "mssql_wh_integration",
+			tables:        []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"},
+			sourceID:      "1wRvLmEnMOONMbdspwaZhyCqXRE",
+			destinationID: "21Ezdq58khNMj07VJB0VJmxLvgu",
+		},
+		{
+			name:                  "Async Job",
+			writeKey:              "2DkCpXZcEvPG2fcpUD3LmjPI7J6",
+			schema:                "mssql_wh_sources_integration",
+			tables:                []string{"tracks", "google_sheet"},
+			sourceID:              "2DkCpUr0xfiINRJxIwqyqfyHdq4",
+			destinationID:         "21Ezdq58kMNMj07VJB0VJmxLvgu",
+			eventsMap:             testhelper.SourcesSendEventsMap(),
+			stagingFilesEventsMap: testhelper.SourcesStagingFilesEventsMap(),
+			loadFilesEventsMap:    testhelper.SourcesLoadFilesEventsMap(),
+			tableUploadsEventsMap: testhelper.SourcesTableUploadsEventsMap(),
+			warehouseEventsMap:    testhelper.SourcesWarehouseEventsMap(),
+			asyncJob:              true,
+		},
+	}
 
-	testhelper.VerifyWorkspaceIDInStats(t)
+	for _, tc := range testcase {
+		tc := tc
+
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			ts := testhelper.WareHouseTest{
+				Schema:                tc.schema,
+				WriteKey:              tc.writeKey,
+				SourceID:              tc.sourceID,
+				DestinationID:         tc.destinationID,
+				Tables:                tc.tables,
+				EventsMap:             tc.eventsMap,
+				StagingFilesEventsMap: tc.stagingFilesEventsMap,
+				LoadFilesEventsMap:    tc.loadFilesEventsMap,
+				TableUploadsEventsMap: tc.tableUploadsEventsMap,
+				WarehouseEventsMap:    tc.warehouseEventsMap,
+				AsyncJob:              tc.asyncJob,
+				UserID:                testhelper.GetUserId(provider),
+				Provider:              provider,
+				JobsDB:                jobsDB,
+				JobRunID:              misc.FastUUID().String(),
+				TaskRunID:             misc.FastUUID().String(),
+				Client: &client.Client{
+					SQL:  db,
+					Type: client.SQLClient,
+				},
+			}
+			ts.VerifyEvents(t)
+
+			if !tc.asyncJob {
+				ts.UserID = testhelper.GetUserId(provider)
+			}
+			ts.JobRunID = misc.FastUUID().String()
+			ts.TaskRunID = misc.FastUUID().String()
+			ts.VerifyModifiedEvents(t)
+		})
+	}
 }
 
-func TestMSSQLConfigurationValidation(t *testing.T) {
+func TestConfigurationValidationMSSQL(t *testing.T) {
+	if os.Getenv("SLOW") == "0" {
+		t.Skip("Skipping tests. Remove 'SLOW=0' env var to run them.")
+	}
+
+	t.Parallel()
+
+	misc.Init()
+	validations.Init()
+	warehouseutils.Init()
+	mssql.Init()
+
 	configurations := testhelper.PopulateTemplateConfigurations()
 	destination := backendconfig.DestinationT{
 		ID: "21Ezdq58khNMj07VJB0VJmxLvgu",
@@ -126,14 +163,5 @@ func TestMSSQLConfigurationValidation(t *testing.T) {
 		Enabled:    true,
 		RevisionID: "29eeuUb21cuDBeFKPTUA9GaQ9Aq",
 	}
-	testhelper.VerifyingConfigurationTest(t, destination)
-}
-
-func TestMain(m *testing.M) {
-	handle = &TestHandle{
-		WriteKey: "YSQ3n267l1VQKGNbSuJE9fQbzON",
-		Schema:   "mssql_wh_integration",
-		Tables:   []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"},
-	}
-	os.Exit(testhelper.Run(m, handle))
+	testhelper.VerifyConfigurationTest(t, destination)
 }
