@@ -10,9 +10,14 @@ import (
 	"syscall"
 	"time"
 
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/sdk/resource"
+	semconv "go.opentelemetry.io/otel/semconv/v1.12.0"
+
 	"github.com/rudderlabs/rudder-server/admin"
 	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
+	"github.com/rudderlabs/rudder-server/otel"
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/client"
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/delete"
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/delete/api"
@@ -51,8 +56,59 @@ func Run(ctx context.Context) error {
 	misc.Init()
 	diagnostics.Init()
 	backendconfig.Init()
-
 	stats.Default.Start(ctx)
+	defer stats.Default.Stop()
+
+	// START - OpenTelemetry setup
+	var (
+		statsEnabled        = config.GetBool("enableStats", true)
+		otelTracesEndpoint  = config.GetString("OpenTelemetry.Traces.Endpoint", "")
+		otelMetricsEndpoint = config.GetString("OpenTelemetry.Metrics.Endpoint", "")
+	)
+	if statsEnabled && otelTracesEndpoint == "" && otelMetricsEndpoint == "" {
+		pkgLogger.Warnf("No OpenTelemetry endpoints provided")
+	} else if statsEnabled {
+		otelResource, err := resource.Merge(resource.Default(), resource.NewWithAttributes(
+			semconv.SchemaURL,
+			semconv.ServiceNameKey.String("regulation-worker"),
+			semconv.ServiceInstanceIDKey.String(config.GetString("INSTANCE_ID", "")),
+			attribute.String("namespace", config.GetNamespaceIdentifier()),
+			// @TODO add version? if yes then we can use otel.NewResource() directly
+		))
+		if err != nil {
+			return fmt.Errorf("cannot create OpenTelemetry resource: %w", err)
+		}
+
+		var (
+			otelManager otel.Manager
+			otelOpts    = []otel.Option{otel.WithInsecureGRPC(), otel.WithLogger(pkgLogger.Child("otel"))}
+		)
+		if otelTracesEndpoint != "" {
+			otelOpts = append(otelOpts, otel.WithTracerProvider(otelTracesEndpoint, otel.WithGlobalTracerProvider()))
+		}
+		if otelMetricsEndpoint != "" {
+			otelOpts = append(otelOpts, otel.WithMeterProvider(otelMetricsEndpoint,
+				otel.WithGlobalMeterProvider(),
+				otel.WithMeterProviderExportsInterval(
+					config.GetDuration("OpenTelemetry.Metrics.ExportInterval", 5, time.Second),
+				),
+			))
+		}
+		if _, _, err = otelManager.Setup(ctx, otelResource, otelOpts...); err != nil {
+			return fmt.Errorf("OpenTelemetry setup failed: %w", err)
+		}
+		defer func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			if err := otelManager.Shutdown(ctx); err != nil {
+				pkgLogger.Warnf("OpenTelemetry shutdown failed: %v", err)
+			}
+		}()
+	} else {
+		pkgLogger.Warnf("Stats are disabled")
+	}
+	// END - OpenTelemetry setup
+
 	if err := backendconfig.Setup(nil); err != nil {
 		return fmt.Errorf("setting up backend config: %w", err)
 	}

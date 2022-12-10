@@ -5,9 +5,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/require"
+
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/services/stats/memstats"
-	"github.com/stretchr/testify/require"
 )
 
 func TestStats(t *testing.T) {

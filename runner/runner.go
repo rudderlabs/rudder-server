@@ -11,20 +11,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/rudderlabs/rudder-server/warehouse/integrations/azure-synapse"
-	"github.com/rudderlabs/rudder-server/warehouse/integrations/bigquery"
-	"github.com/rudderlabs/rudder-server/warehouse/integrations/clickhouse"
-	"github.com/rudderlabs/rudder-server/warehouse/integrations/datalake"
-	"github.com/rudderlabs/rudder-server/warehouse/integrations/deltalake"
-	"github.com/rudderlabs/rudder-server/warehouse/integrations/mssql"
-	"github.com/rudderlabs/rudder-server/warehouse/integrations/postgres"
-	"github.com/rudderlabs/rudder-server/warehouse/integrations/redshift"
-	"github.com/rudderlabs/rudder-server/warehouse/integrations/snowflake"
-
-	warehousearchiver "github.com/rudderlabs/rudder-server/warehouse/archive"
-
 	"github.com/bugsnag/bugsnag-go/v2"
-	"github.com/rudderlabs/rudder-server/info"
+	"go.opentelemetry.io/otel/attribute"
 	_ "go.uber.org/automaxprocs"
 	"golang.org/x/sync/errgroup"
 
@@ -37,7 +25,9 @@ import (
 	eventschema "github.com/rudderlabs/rudder-server/event-schema"
 	"github.com/rudderlabs/rudder-server/gateway"
 	"github.com/rudderlabs/rudder-server/gateway/webhook"
+	"github.com/rudderlabs/rudder-server/info"
 	"github.com/rudderlabs/rudder-server/jobsdb"
+	"github.com/rudderlabs/rudder-server/otel"
 	"github.com/rudderlabs/rudder-server/processor/integrations"
 	"github.com/rudderlabs/rudder-server/processor/stash"
 	"github.com/rudderlabs/rudder-server/processor/transformer"
@@ -64,6 +54,16 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/types/deployment"
 	"github.com/rudderlabs/rudder-server/warehouse"
+	warehousearchiver "github.com/rudderlabs/rudder-server/warehouse/archive"
+	azuresynapse "github.com/rudderlabs/rudder-server/warehouse/integrations/azure-synapse"
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/bigquery"
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/clickhouse"
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/datalake"
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/deltalake"
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/mssql"
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/postgres"
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/redshift"
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/snowflake"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 	"github.com/rudderlabs/rudder-server/warehouse/validations"
 )
@@ -139,6 +139,56 @@ func (r *Runner) Run(ctx context.Context, args []string) int {
 
 	// application & backend setup should be done before starting any new goroutines.
 	r.application.Setup()
+
+	// START - OpenTelemetry setup
+	var (
+		statsEnabled        = config.GetBool("enableStats", true)
+		otelTracesEndpoint  = config.GetString("OpenTelemetry.Traces.Endpoint", "")
+		otelMetricsEndpoint = config.GetString("OpenTelemetry.Metrics.Endpoint", "")
+	)
+	if statsEnabled && otelTracesEndpoint == "" && otelMetricsEndpoint == "" {
+		r.logger.Warnf("No OpenTelemetry endpoints provided")
+	} else if statsEnabled {
+		instanceID := config.GetString("INSTANCE_ID", "")
+		res, err := otel.NewResource(r.appType, instanceID, r.releaseInfo.Version,
+			attribute.String("instanceName", instanceID),
+			attribute.String("namespace", config.GetNamespaceIdentifier()),
+		)
+		if err != nil {
+			r.logger.Errorf("OpenTelemetry resource creation failed: %v", err)
+			return 1
+		}
+
+		var (
+			otelManager otel.Manager
+			otelOpts    = []otel.Option{otel.WithInsecureGRPC(), otel.WithLogger(r.logger.Child("otel"))}
+		)
+		if otelTracesEndpoint != "" {
+			otelOpts = append(otelOpts, otel.WithTracerProvider(otelTracesEndpoint, otel.WithGlobalTracerProvider()))
+		}
+		if otelMetricsEndpoint != "" {
+			otelOpts = append(otelOpts, otel.WithMeterProvider(otelMetricsEndpoint,
+				otel.WithGlobalMeterProvider(),
+				otel.WithMeterProviderExportsInterval(
+					config.GetDuration("OpenTelemetry.Metrics.ExportInterval", 5, time.Second),
+				),
+			))
+		}
+		if _, _, err = otelManager.Setup(ctx, res, otelOpts...); err != nil {
+			r.logger.Errorf("OpenTelemetry setup failed: %v", err)
+			return 1
+		}
+		defer func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			if err := otelManager.Shutdown(ctx); err != nil {
+				r.logger.Warnf("OpenTelemetry shutdown failed: %v", err)
+			}
+		}()
+	} else {
+		r.logger.Warnf("Stats are disabled")
+	}
+	// END - OpenTelemetry setup
 
 	var err error
 	r.appHandler, err = apphandlers.GetAppHandler(r.application, r.appType, r.versionHandler)

@@ -1,6 +1,7 @@
 package stats
 
 import (
+	"context"
 	"runtime"
 	"time"
 
@@ -55,7 +56,8 @@ func newRuntimeStatsCollector(gaugeFunc gaugeFunc) runtimeStatsCollector {
 // Run gathers statistics from package runtime and outputs them to the configured GaugeFunc every
 // PauseDur. This function will not return until Done has been closed (or never if Done is nil),
 // therefore it should be called in its own goroutine.
-func (c runtimeStatsCollector) run() {
+func (c runtimeStatsCollector) run(ctx context.Context) {
+	defer close(c.done)
 	defer c.zeroStats()
 	c.outputStats()
 
@@ -65,7 +67,7 @@ func (c runtimeStatsCollector) run() {
 	defer tick.Stop()
 	for {
 		select {
-		case <-c.done:
+		case <-ctx.Done():
 			return
 		case <-tick.C:
 			c.outputStats()
@@ -180,7 +182,8 @@ func newMetricStatsCollector(stats Stats, metricManager metric.Manager) metricSt
 }
 
 // run gathers statistics from package metric and outputs them as
-func (c metricStatsCollector) run() {
+func (c metricStatsCollector) run(ctx context.Context) {
+	defer close(c.done)
 	c.outputStats()
 
 	// Gauges are a 'snapshot' rather than a histogram. Pausing for some interval
@@ -189,7 +192,7 @@ func (c metricStatsCollector) run() {
 	defer tick.Stop()
 	for {
 		select {
-		case <-c.done:
+		case <-ctx.Done():
 			return
 		case <-tick.C:
 			c.outputStats()
@@ -201,17 +204,17 @@ func (c metricStatsCollector) outputStats() {
 	if c.metricManager == nil {
 		return
 	}
-	c.metricManager.GetRegistry(metric.PUBLISHED_METRICS).Range(func(key, value interface{}) bool {
+	c.metricManager.GetRegistry(metric.PublishedMetrics).Range(func(key, value interface{}) bool {
 		m := key.(metric.Measurement)
 		switch value := value.(type) {
 		case metric.Gauge:
-			c.stats.NewTaggedStat(m.GetName(), GaugeType, Tags(m.GetTags())).
+			c.stats.NewTaggedStat(m.GetName(), GaugeType, m.GetTags()).
 				Gauge(value.Value())
 		case metric.Counter:
-			c.stats.NewTaggedStat(m.GetName(), CountType, Tags(m.GetTags())).
+			c.stats.NewTaggedStat(m.GetName(), CountType, m.GetTags()).
 				Count(int(value.Value()))
 		case metric.MovingAverage:
-			c.stats.NewTaggedStat(m.GetName(), GaugeType, Tags(m.GetTags())).
+			c.stats.NewTaggedStat(m.GetName(), GaugeType, m.GetTags()).
 				Gauge(value.Value())
 		}
 		return true
