@@ -1,7 +1,6 @@
 package memstats
 
 import (
-	"context"
 	"sync"
 	"time"
 
@@ -210,12 +209,6 @@ func (ms *Store) Get(name string, tags stats.Tags) *Measurement {
 
 	return ms.byKey[ms.getKey(name, tags)]
 }
-
-// Start implements stats.Stats
-func (*Store) Start(_ context.Context) {}
-
-// Stop implements stats.Stats
-func (*Store) Stop() {}
 
 // getKey maps name and tags, to a store lookup key.
 func (*Store) getKey(name string, tags stats.Tags) string {

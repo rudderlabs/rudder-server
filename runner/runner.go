@@ -11,22 +11,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/rudderlabs/rudder-server/warehouse/integrations/azure-synapse"
-	"github.com/rudderlabs/rudder-server/warehouse/integrations/bigquery"
-	"github.com/rudderlabs/rudder-server/warehouse/integrations/clickhouse"
-	"github.com/rudderlabs/rudder-server/warehouse/integrations/datalake"
-	"github.com/rudderlabs/rudder-server/warehouse/integrations/deltalake"
-	"github.com/rudderlabs/rudder-server/warehouse/integrations/mssql"
-	"github.com/rudderlabs/rudder-server/warehouse/integrations/postgres"
-	"github.com/rudderlabs/rudder-server/warehouse/integrations/redshift"
-	"github.com/rudderlabs/rudder-server/warehouse/integrations/snowflake"
-
-	warehousearchiver "github.com/rudderlabs/rudder-server/warehouse/archive"
-
 	"github.com/bugsnag/bugsnag-go/v2"
-	"github.com/rudderlabs/rudder-server/info"
+	"go.opentelemetry.io/otel/attribute"
 	_ "go.uber.org/automaxprocs"
 	"golang.org/x/sync/errgroup"
+	"google.golang.org/grpc"
 
 	"github.com/rudderlabs/rudder-server/admin"
 	"github.com/rudderlabs/rudder-server/admin/profiler"
@@ -37,7 +26,9 @@ import (
 	eventschema "github.com/rudderlabs/rudder-server/event-schema"
 	"github.com/rudderlabs/rudder-server/gateway"
 	"github.com/rudderlabs/rudder-server/gateway/webhook"
+	"github.com/rudderlabs/rudder-server/info"
 	"github.com/rudderlabs/rudder-server/jobsdb"
+	"github.com/rudderlabs/rudder-server/otel"
 	"github.com/rudderlabs/rudder-server/processor/integrations"
 	"github.com/rudderlabs/rudder-server/processor/stash"
 	"github.com/rudderlabs/rudder-server/processor/transformer"
@@ -64,6 +55,16 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/types/deployment"
 	"github.com/rudderlabs/rudder-server/warehouse"
+	warehousearchiver "github.com/rudderlabs/rudder-server/warehouse/archive"
+	azuresynapse "github.com/rudderlabs/rudder-server/warehouse/integrations/azure-synapse"
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/bigquery"
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/clickhouse"
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/datalake"
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/deltalake"
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/mssql"
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/postgres"
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/redshift"
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/snowflake"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 	"github.com/rudderlabs/rudder-server/warehouse/validations"
 )
@@ -140,6 +141,56 @@ func (r *Runner) Run(ctx context.Context, args []string) int {
 	// application & backend setup should be done before starting any new goroutines.
 	r.application.Setup()
 
+	// START - OpenTelemetry setup
+	otelEndpoint := config.GetString("OpenTelemetry.Endpoint", "")
+	if otelEndpoint == "" {
+		r.logger.Warnf("OpenTelemetry endpoint not provided")
+	} else {
+		var (
+			otelManager          otel.Manager
+			meterProviderOptions = []otel.MeterProviderOption{
+				otel.WithGlobalMeterProvider(),
+				otel.WithMeterProviderExportsInterval(
+					config.GetDuration("OpenTelemetry.MetricsExportInterval", 5, time.Second),
+				),
+			}
+		)
+		if config.GetBool("RuntimeStats.enabled", true) {
+			meterProviderOptions = append(meterProviderOptions, otel.WithRuntimeStats(
+				time.Duration(config.GetInt64("RuntimeStats.statsCollectionInterval", 10))*time.Second),
+			)
+		}
+		instanceID := config.GetString("INSTANCE_ID", "")
+		r.logger.Infof("Creating OpenTelemetry resource with: %q, %q, %q", r.appType, instanceID, r.releaseInfo.Version)
+		res, err := otel.NewResource(r.appType, instanceID, r.releaseInfo.Version,
+			attribute.String("instanceName", instanceID),
+			attribute.String("namespace", config.GetNamespaceIdentifier()),
+		)
+		if err != nil {
+			r.logger.Errorf("OpenTelemetry resource creation failed: %v", err)
+			return 1
+		}
+		_, _, err = otelManager.Setup(ctx, res, otelEndpoint,
+			otel.WithInsecureGRPC(),
+			otel.WithGRPCDialOption(
+				grpc.WithConnectParams(otel.DefaultConnectParams),
+			),
+			otel.WithMeterProvider(meterProviderOptions...),
+		)
+		if err != nil {
+			r.logger.Errorf("OpenTelemetry setup failed: %v", err)
+			return 1
+		}
+		defer func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			if err := otelManager.Shutdown(ctx); err != nil {
+				r.logger.Warnf("OpenTelemetry shutdown failed: %v", err)
+			}
+		}()
+	}
+	// END - OpenTelemetry setup
+
 	var err error
 	r.appHandler, err = apphandlers.GetAppHandler(r.application, r.appType, r.versionHandler)
 	if err != nil {
@@ -172,7 +223,6 @@ func (r *Runner) Run(ctx context.Context, args []string) int {
 	if !config.IsSet("statsExcludedTags") && deploymentType == deployment.MultiTenantType && (!config.IsSet("WORKSPACE_NAMESPACE") || strings.Contains(config.GetString("WORKSPACE_NAMESPACE", ""), "free")) {
 		config.Set("statsExcludedTags", []string{"workspaceId", "sourceID", "destId"})
 	}
-	stats.Default.Start(ctx)
 	stats.Default.NewTaggedStat("rudder_server_config",
 		stats.GaugeType,
 		stats.Tags{
@@ -295,7 +345,6 @@ func (r *Runner) Run(ctx context.Context, args []string) int {
 		)
 		// clearing zap Log buffer to std output
 		logger.Sync()
-		stats.Default.Stop()
 	case <-time.After(r.gracefulShutdownTimeout):
 		// Assume graceful shutdown failed, log remain goroutines and force kill
 		r.logger.Errorf(
@@ -309,7 +358,6 @@ func (r *Runner) Run(ctx context.Context, args []string) int {
 
 		r.application.Stop()
 		logger.Sync()
-		stats.Default.Stop()
 		if config.GetBool("RUDDER_GRACEFUL_SHUTDOWN_TIMEOUT_EXIT", true) {
 			return 1
 		}

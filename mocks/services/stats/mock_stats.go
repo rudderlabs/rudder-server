@@ -5,7 +5,6 @@
 package mock_stats
 
 import (
-	context "context"
 	reflect "reflect"
 	time "time"
 
@@ -76,30 +75,6 @@ func (m *MockStats) NewTaggedStat(arg0, arg1 string, arg2 stats.Tags) stats.Meas
 func (mr *MockStatsMockRecorder) NewTaggedStat(arg0, arg1, arg2 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "NewTaggedStat", reflect.TypeOf((*MockStats)(nil).NewTaggedStat), arg0, arg1, arg2)
-}
-
-// Start mocks base method.
-func (m *MockStats) Start(arg0 context.Context) {
-	m.ctrl.T.Helper()
-	m.ctrl.Call(m, "Start", arg0)
-}
-
-// Start indicates an expected call of Start.
-func (mr *MockStatsMockRecorder) Start(arg0 interface{}) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Start", reflect.TypeOf((*MockStats)(nil).Start), arg0)
-}
-
-// Stop mocks base method.
-func (m *MockStats) Stop() {
-	m.ctrl.T.Helper()
-	m.ctrl.Call(m, "Stop")
-}
-
-// Stop indicates an expected call of Stop.
-func (mr *MockStatsMockRecorder) Stop() *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Stop", reflect.TypeOf((*MockStats)(nil).Stop))
 }
 
 // MockMeasurement is a mock of Measurement interface.

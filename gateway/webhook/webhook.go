@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/hashicorp/go-retryablehttp"
+
 	gwstats "github.com/rudderlabs/rudder-server/gateway/internal/stats"
 	"github.com/rudderlabs/rudder-server/gateway/response"
 	"github.com/rudderlabs/rudder-server/services/stats"
@@ -309,7 +310,7 @@ func (bt *batchWebhookTransformerT) batchTransformLoop() {
 		var webRequests []*webhookT
 		for _, req := range breq.batchRequest {
 			body, err := io.ReadAll(req.request.Body)
-			req.request.Body.Close()
+			_ = req.request.Body.Close()
 
 			if err != nil {
 				req.done <- transformerResponse{Err: response.GetStatus(response.RequestBodyReadFailed)}
@@ -405,7 +406,7 @@ func (webhook *HandleT) enqueueInGateway(req *webhookT, payload []byte) string {
 	// set write key in basic auth header
 	req.request.SetBasicAuth(req.writeKey, "")
 	payload, err := io.ReadAll(req.request.Body)
-	req.request.Body.Close()
+	_ = req.request.Body.Close()
 	if err != nil {
 		return err.Error()
 	}
@@ -436,7 +437,7 @@ func (webhook *HandleT) Shutdown() error {
 	}
 	webhook.batchRequestsWg.Wait()
 	close(webhook.batchRequestQ)
-	webhook.requestQ = make(map[string](chan *webhookT))
+	webhook.requestQ = make(map[string]chan *webhookT)
 
 	return webhook.backgroundWait()
 }

@@ -1,13 +1,13 @@
 package memstats_test
 
 import (
-	"context"
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/require"
+
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/services/stats/memstats"
-	"github.com/stretchr/testify/require"
 )
 
 func TestStats(t *testing.T) {
@@ -123,11 +123,6 @@ func TestStats(t *testing.T) {
 		require.PanicsWithValue(t, "operation Observe not supported for measurement type:timer", func() {
 			store.NewTaggedStat("invalid_observe", stats.TimerType, commonTags).Observe(1)
 		})
-	})
-
-	t.Run("no op", func(t *testing.T) {
-		store.Start(context.Background())
-		store.Stop()
 	})
 
 	t.Run("no tags", func(t *testing.T) {
