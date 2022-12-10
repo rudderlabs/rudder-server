@@ -182,6 +182,20 @@ func (w *WareHouseTest) VerifyModifiedEvents(t testing.TB) {
 		verifyEventsInWareHouse(t, w)
 	}
 	verifyWorkspaceIDInStats(t)
+	VerifyRudderCliForDeleteOperations(t, w)
+}
+
+func VerifyRudderCliForDeleteOperations(t testing.TB, wareHouseTest *WareHouseTest) {
+	t.Helper()
+
+	deleteQuery := fmt.Sprintf(`
+			DELETE FROM %s.%s where received_at > '2022-01-01 00:00:00';`,
+		wareHouseTest.Schema,
+		warehouseutils.ToProviderCase(wareHouseTest.Provider, wareHouseTest.Tables[0]),
+	)
+	result, err := wareHouseTest.Client.Query(deleteQuery)
+	require.NoError(t, err)
+	t.Logf("Delete query result: %#v", result)
 }
 
 func SetUpJobsDB(t testing.TB) *sql.DB {
