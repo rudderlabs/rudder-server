@@ -5,6 +5,9 @@ import (
 	"os"
 	"testing"
 
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/deltalake"
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/testhelper"
+
 	proto "github.com/rudderlabs/rudder-server/proto/databricks"
 
 	"github.com/rudderlabs/rudder-server/warehouse/validations"
@@ -16,9 +19,6 @@ import (
 	"github.com/rudderlabs/rudder-server/warehouse/client"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 	"github.com/stretchr/testify/require"
-
-	"github.com/rudderlabs/rudder-server/warehouse/deltalake"
-	"github.com/rudderlabs/rudder-server/warehouse/testhelper"
 )
 
 func TestIntegrationDeltalake(t *testing.T) {

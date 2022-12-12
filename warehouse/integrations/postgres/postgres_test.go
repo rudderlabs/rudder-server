@@ -1,38 +1,37 @@
-package mssql_test
+package postgres_test
 
 import (
 	"os"
 	"testing"
 
-	"github.com/rudderlabs/rudder-server/warehouse/client"
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/postgres"
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/testhelper"
 
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/warehouse/validations"
 	"github.com/stretchr/testify/require"
 
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
-
-	"github.com/rudderlabs/rudder-server/warehouse/mssql"
-	"github.com/rudderlabs/rudder-server/warehouse/testhelper"
+	"github.com/rudderlabs/rudder-server/warehouse/client"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
-func TestIntegrationMSSQL(t *testing.T) {
+func TestIntegrationPostgres(t *testing.T) {
 	if os.Getenv("SLOW") == "0" {
 		t.Skip("Skipping tests. Remove 'SLOW=0' env var to run them.")
 	}
 
 	t.Parallel()
 
-	mssql.Init()
+	postgres.Init()
 
-	db, err := mssql.Connect(mssql.CredentialsT{
-		DBName:   "master",
-		Password: "reallyStrongPwd123",
-		User:     "SA",
-		Host:     "wh-mssql",
+	db, err := postgres.Connect(postgres.CredentialsT{
+		DBName:   "rudderdb",
+		Password: "rudder-password",
+		User:     "rudder",
+		Host:     "wh-postgres",
 		SSLMode:  "disable",
-		Port:     "1433",
+		Port:     "5432",
 	})
 	require.NoError(t, err)
 
@@ -40,7 +39,7 @@ func TestIntegrationMSSQL(t *testing.T) {
 	require.NoError(t, err)
 
 	var (
-		provider = warehouseutils.MSSQL
+		provider = warehouseutils.POSTGRES
 		jobsDB   = testhelper.SetUpJobsDB(t)
 	)
 
@@ -60,19 +59,19 @@ func TestIntegrationMSSQL(t *testing.T) {
 	}{
 		{
 			name:          "Upload Job",
-			writeKey:      "YSQ3n267l1VQKGNbSuJE9fQbzON",
-			schema:        "mssql_wh_integration",
+			writeKey:      "kwzDkh9h2fhfUVuS9jZ8uVbhV3v",
+			schema:        "postgres_wh_integration",
 			tables:        []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"},
-			sourceID:      "1wRvLmEnMOONMbdspwaZhyCqXRE",
-			destinationID: "21Ezdq58khNMj07VJB0VJmxLvgu",
+			sourceID:      "1wRvLmEnMOOxSQD9pwaZhyCqXRE",
+			destinationID: "216ZvbavR21Um6eGKQCagZHqLGZ",
 		},
 		{
 			name:                  "Async Job",
-			writeKey:              "2DkCpXZcEvPG2fcpUD3LmjPI7J6",
-			schema:                "mssql_wh_sources_integration",
+			writeKey:              "2DkCpXZcEvJK2fcpUD3LmjPI7J6",
+			schema:                "postgres_wh_sources_integration",
 			tables:                []string{"tracks", "google_sheet"},
-			sourceID:              "2DkCpUr0xfiINRJxIwqyqfyHdq4",
-			destinationID:         "21Ezdq58kMNMj07VJB0VJmxLvgu",
+			sourceID:              "2DkCpUr0xfiGBPJxIwqyqfyHdq4",
+			destinationID:         "308ZvbavR21Um6eGKQCagZHqLGZ",
 			eventsMap:             testhelper.SourcesSendEventsMap(),
 			stagingFilesEventsMap: testhelper.SourcesStagingFilesEventsMap(),
 			loadFilesEventsMap:    testhelper.SourcesLoadFilesEventsMap(),
@@ -105,6 +104,7 @@ func TestIntegrationMSSQL(t *testing.T) {
 				JobsDB:                jobsDB,
 				JobRunID:              misc.FastUUID().String(),
 				TaskRunID:             misc.FastUUID().String(),
+				StatsToVerify:         []string{"pg_rollback_timeout"},
 				Client: &client.Client{
 					SQL:  db,
 					Type: client.SQLClient,
@@ -122,7 +122,7 @@ func TestIntegrationMSSQL(t *testing.T) {
 	}
 }
 
-func TestConfigurationValidationMSSQL(t *testing.T) {
+func TestConfigurationValidationPostgres(t *testing.T) {
 	if os.Getenv("SLOW") == "0" {
 		t.Skip("Skipping tests. Remove 'SLOW=0' env var to run them.")
 	}
@@ -132,17 +132,17 @@ func TestConfigurationValidationMSSQL(t *testing.T) {
 	misc.Init()
 	validations.Init()
 	warehouseutils.Init()
-	mssql.Init()
+	postgres.Init()
 
 	configurations := testhelper.PopulateTemplateConfigurations()
 	destination := backendconfig.DestinationT{
-		ID: "21Ezdq58khNMj07VJB0VJmxLvgu",
+		ID: "216ZvbavR21Um6eGKQCagZHqLGZ",
 		Config: map[string]interface{}{
-			"host":             configurations["mssqlHost"],
-			"database":         configurations["mssqlDatabase"],
-			"user":             configurations["mssqlUser"],
-			"password":         configurations["mssqlPassword"],
-			"port":             configurations["mssqlPort"],
+			"host":             configurations["postgresHost"],
+			"database":         configurations["postgresDatabase"],
+			"user":             configurations["postgresUser"],
+			"password":         configurations["postgresPassword"],
+			"port":             configurations["postgresPort"],
 			"sslMode":          "disable",
 			"namespace":        "",
 			"bucketProvider":   "MINIO",
@@ -155,13 +155,13 @@ func TestConfigurationValidationMSSQL(t *testing.T) {
 			"useRudderStorage": false,
 		},
 		DestinationDefinition: backendconfig.DestinationDefinitionT{
-			ID:          "1qvbUYC2xVQ7lvI9UUYkkM4IBt9",
-			Name:        "MSSQL",
-			DisplayName: "Microsoft SQL Server",
+			ID:          "1bJ4YC7INdkvBTzotNh0zta5jDm",
+			Name:        "POSTGRES",
+			DisplayName: "Postgres",
 		},
-		Name:       "mssql-demo",
+		Name:       "postgres-demo",
 		Enabled:    true,
-		RevisionID: "29eeuUb21cuDBeFKPTUA9GaQ9Aq",
+		RevisionID: "29eeuu9kywWsRAybaXcxcnTVEl8",
 	}
 	testhelper.VerifyConfigurationTest(t, destination)
 }

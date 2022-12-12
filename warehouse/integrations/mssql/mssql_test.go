@@ -1,46 +1,54 @@
-package redshift_test
+package mssql_test
 
 import (
-	"fmt"
 	"os"
 	"testing"
 
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/mssql"
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/testhelper"
+
+	"github.com/rudderlabs/rudder-server/warehouse/client"
+
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/warehouse/validations"
+	"github.com/stretchr/testify/require"
 
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 
-	"github.com/stretchr/testify/require"
-
-	"github.com/rudderlabs/rudder-server/warehouse/client"
-	"github.com/rudderlabs/rudder-server/warehouse/redshift"
-	"github.com/rudderlabs/rudder-server/warehouse/testhelper"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
-func TestIntegrationRedshift(t *testing.T) {
+func TestIntegrationMSSQL(t *testing.T) {
 	if os.Getenv("SLOW") == "0" {
 		t.Skip("Skipping tests. Remove 'SLOW=0' env var to run them.")
-	}
-	if _, exists := os.LookupEnv(testhelper.RedshiftIntegrationTestCredentials); !exists {
-		t.Skipf("Skipping %s as %s is not set", t.Name(), testhelper.RedshiftIntegrationTestCredentials)
 	}
 
 	t.Parallel()
 
-	redshift.Init()
+	mssql.Init()
+
+	db, err := mssql.Connect(mssql.CredentialsT{
+		DBName:   "master",
+		Password: "reallyStrongPwd123",
+		User:     "SA",
+		Host:     "wh-mssql",
+		SSLMode:  "disable",
+		Port:     "1433",
+	})
+	require.NoError(t, err)
+
+	err = db.Ping()
+	require.NoError(t, err)
 
 	var (
-		jobsDB        = testhelper.SetUpJobsDB(t)
-		provider      = warehouseutils.RS
-		schema        = testhelper.Schema(provider, testhelper.RedshiftIntegrationTestSchema)
-		sourcesSchema = fmt.Sprintf("%s_%s", schema, "sources")
+		provider = warehouseutils.MSSQL
+		jobsDB   = testhelper.SetUpJobsDB(t)
 	)
 
 	testcase := []struct {
 		name                  string
-		schema                string
 		writeKey              string
+		schema                string
 		sourceID              string
 		destinationID         string
 		eventsMap             testhelper.EventsCountMap
@@ -53,19 +61,19 @@ func TestIntegrationRedshift(t *testing.T) {
 	}{
 		{
 			name:          "Upload Job",
-			schema:        schema,
+			writeKey:      "YSQ3n267l1VQKGNbSuJE9fQbzON",
+			schema:        "mssql_wh_integration",
 			tables:        []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"},
-			writeKey:      "JAAwdCxmM8BIabKERsUhPNmMmdf",
-			sourceID:      "279L3gEKqwruBoKGsXZtSVX7vIy",
-			destinationID: "27SthahyhhqZE74HT4NTtNPl06V",
+			sourceID:      "1wRvLmEnMOONMbdspwaZhyCqXRE",
+			destinationID: "21Ezdq58khNMj07VJB0VJmxLvgu",
 		},
 		{
 			name:                  "Async Job",
-			schema:                sourcesSchema,
+			writeKey:              "2DkCpXZcEvPG2fcpUD3LmjPI7J6",
+			schema:                "mssql_wh_sources_integration",
 			tables:                []string{"tracks", "google_sheet"},
-			writeKey:              "BNAwdCxmM8BIabKERsUhPNmMmdf",
-			sourceID:              "2DkCpUr0xgjfsdJxIwqyqfyHdq4",
-			destinationID:         "27Sthahyhhsdas4HT4NTtNPl06V",
+			sourceID:              "2DkCpUr0xfiINRJxIwqyqfyHdq4",
+			destinationID:         "21Ezdq58kMNMj07VJB0VJmxLvgu",
 			eventsMap:             testhelper.SourcesSendEventsMap(),
 			stagingFilesEventsMap: testhelper.SourcesStagingFilesEventsMap(),
 			loadFilesEventsMap:    testhelper.SourcesLoadFilesEventsMap(),
@@ -81,23 +89,6 @@ func TestIntegrationRedshift(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
-			credentials, err := testhelper.RedshiftCredentials()
-			require.NoError(t, err)
-
-			db, err := redshift.Connect(credentials)
-			require.NoError(t, err)
-
-			t.Cleanup(func() {
-				require.NoError(
-					t,
-					testhelper.WithConstantBackoff(func() (err error) {
-						_, err = db.Exec(fmt.Sprintf(`DROP SCHEMA %q CASCADE;`, tc.schema))
-						return
-					}),
-					fmt.Sprintf("Failed dropping schema %s for Redshift", tc.schema),
-				)
-			})
-
 			ts := testhelper.WareHouseTest{
 				Schema:                tc.schema,
 				WriteKey:              tc.writeKey,
@@ -110,11 +101,11 @@ func TestIntegrationRedshift(t *testing.T) {
 				TableUploadsEventsMap: tc.tableUploadsEventsMap,
 				WarehouseEventsMap:    tc.warehouseEventsMap,
 				AsyncJob:              tc.asyncJob,
+				UserID:                testhelper.GetUserId(provider),
 				Provider:              provider,
 				JobsDB:                jobsDB,
 				JobRunID:              misc.FastUUID().String(),
 				TaskRunID:             misc.FastUUID().String(),
-				UserID:                testhelper.GetUserId(provider),
 				Client: &client.Client{
 					SQL:  db,
 					Type: client.SQLClient,
@@ -132,12 +123,9 @@ func TestIntegrationRedshift(t *testing.T) {
 	}
 }
 
-func TestConfigurationValidationRedshift(t *testing.T) {
+func TestConfigurationValidationMSSQL(t *testing.T) {
 	if os.Getenv("SLOW") == "0" {
 		t.Skip("Skipping tests. Remove 'SLOW=0' env var to run them.")
-	}
-	if _, exists := os.LookupEnv(testhelper.RedshiftIntegrationTestCredentials); !exists {
-		t.Skipf("Skipping %s as %s is not set", t.Name(), testhelper.RedshiftIntegrationTestCredentials)
 	}
 
 	t.Parallel()
@@ -145,34 +133,36 @@ func TestConfigurationValidationRedshift(t *testing.T) {
 	misc.Init()
 	validations.Init()
 	warehouseutils.Init()
-	redshift.Init()
+	mssql.Init()
 
 	configurations := testhelper.PopulateTemplateConfigurations()
 	destination := backendconfig.DestinationT{
-		ID: "27SthahyhhqZE74HT4NTtNPl06V",
+		ID: "21Ezdq58khNMj07VJB0VJmxLvgu",
 		Config: map[string]interface{}{
-			"host":             configurations["redshiftHost"],
-			"port":             configurations["redshiftPort"],
-			"database":         configurations["redshiftDbName"],
-			"user":             configurations["redshiftUsername"],
-			"password":         configurations["redshiftPassword"],
-			"bucketName":       configurations["redshiftBucketName"],
-			"accessKeyID":      configurations["redshiftAccessKeyID"],
-			"accessKey":        configurations["redshiftAccessKey"],
-			"prefix":           "",
-			"namespace":        configurations["redshiftNamespace"],
+			"host":             configurations["mssqlHost"],
+			"database":         configurations["mssqlDatabase"],
+			"user":             configurations["mssqlUser"],
+			"password":         configurations["mssqlPassword"],
+			"port":             configurations["mssqlPort"],
+			"sslMode":          "disable",
+			"namespace":        "",
+			"bucketProvider":   "MINIO",
+			"bucketName":       configurations["minioBucketName"],
+			"accessKeyID":      configurations["minioAccesskeyID"],
+			"secretAccessKey":  configurations["minioSecretAccessKey"],
+			"useSSL":           false,
+			"endPoint":         configurations["minioEndpoint"],
 			"syncFrequency":    "30",
-			"enableSSE":        false,
 			"useRudderStorage": false,
 		},
 		DestinationDefinition: backendconfig.DestinationDefinitionT{
-			ID:          "1UVZiJF7OgLaiIY2Jts8XOQE3M6",
-			Name:        "RS",
-			DisplayName: "Redshift",
+			ID:          "1qvbUYC2xVQ7lvI9UUYkkM4IBt9",
+			Name:        "MSSQL",
+			DisplayName: "Microsoft SQL Server",
 		},
-		Name:       "redshift-demo",
+		Name:       "mssql-demo",
 		Enabled:    true,
-		RevisionID: "29HgOWobrn0RYZLpaSwPIbN2987",
+		RevisionID: "29eeuUb21cuDBeFKPTUA9GaQ9Aq",
 	}
 	testhelper.VerifyConfigurationTest(t, destination)
 }

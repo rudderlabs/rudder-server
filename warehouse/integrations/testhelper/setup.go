@@ -14,6 +14,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/bigquery"
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/deltalake/databricks"
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/postgres"
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/redshift"
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/snowflake"
+
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
 
 	promCLient "github.com/prometheus/client_model/go"
@@ -22,7 +28,6 @@ import (
 	"github.com/minio/minio-go/v6"
 
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
-	"github.com/rudderlabs/rudder-server/warehouse/deltalake/databricks"
 	"github.com/rudderlabs/rudder-server/warehouse/validations"
 
 	"github.com/rudderlabs/rudder-server/utils/httputil"
@@ -31,13 +36,8 @@ import (
 
 	"github.com/cenkalti/backoff"
 
-	"github.com/rudderlabs/rudder-server/config"
-	"github.com/rudderlabs/rudder-server/warehouse/bigquery"
-	"github.com/rudderlabs/rudder-server/warehouse/postgres"
-	"github.com/rudderlabs/rudder-server/warehouse/redshift"
-	"github.com/rudderlabs/rudder-server/warehouse/snowflake"
-
 	_ "github.com/lib/pq"
+	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/warehouse/client"
 	"github.com/stretchr/testify/require"
 )

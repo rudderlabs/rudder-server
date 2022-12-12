@@ -205,7 +205,7 @@ services:
       dockerfile: build/Dockerfile-warehouse-integration
     ports:
       - "8080"
-    env_file: testhelper/.env
+    env_file: integrations/testhelper/.env
     environment:
       - BIGQUERY_INTEGRATION_TEST_CREDENTIALS
       - REDSHIFT_INTEGRATION_TEST_CREDENTIALS

@@ -6,6 +6,9 @@ import (
 	"os"
 	"testing"
 
+	bigquery2 "github.com/rudderlabs/rudder-server/warehouse/integrations/bigquery"
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/testhelper"
+
 	"cloud.google.com/go/bigquery"
 
 	"github.com/rudderlabs/rudder-server/utils/misc"
@@ -15,9 +18,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	bigquery2 "github.com/rudderlabs/rudder-server/warehouse/bigquery"
 	"github.com/rudderlabs/rudder-server/warehouse/client"
-	"github.com/rudderlabs/rudder-server/warehouse/testhelper"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 	"github.com/stretchr/testify/assert"
 )
