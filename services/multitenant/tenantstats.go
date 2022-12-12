@@ -58,11 +58,7 @@ func (*Stats) Stop() {
 }
 
 func (t *Stats) Start() error {
-	metric.Instance.Reset()
-	t.routerInputRates = make(map[string]map[string]map[string]metric.MovingAverage)
-	t.lastDrainedTimestamps = make(map[string]map[string]time.Time)
-	t.failureRate = make(map[string]map[string]metric.MovingAverage)
-
+	t.reset()
 	for dbPrefix := range t.RouterDBs {
 		t.routerInputRates[dbPrefix] = make(map[string]map[string]metric.MovingAverage)
 		pileUpStatMap, err := misc.QueryWithRetriesAndNotify(context.Background(),
@@ -81,9 +77,6 @@ func (t *Stats) Start() error {
 			}
 		}
 	}
-
-	t.routerTenantLatencyStat = make(map[string]map[string]metric.MovingAverage)
-	t.processorStageTime = time.Now()
 	return nil
 }
 
@@ -107,7 +100,17 @@ func NewStats(routerDBs map[string]jobsdb.MultiTenantJobsDB) *Stats {
 	config.RegisterDurationConfigVariable(60, &t.jobdDBQueryRequestTimeout, true, time.Second, []string{"JobsDB.Multitenant.QueryRequestTimeout", "JobsDB.QueryRequestTimeout"}...)
 	config.RegisterIntConfigVariable(3, &t.jobdDBMaxRetries, true, 1, []string{"JobsDB." + "Router." + "MaxRetries", "JobsDB." + "MaxRetries"}...)
 	t.RouterDBs = routerDBs
+	t.reset()
 	return &t
+}
+
+func (t *Stats) reset() {
+	metric.Instance.Reset()
+	t.routerInputRates = make(map[string]map[string]map[string]metric.MovingAverage)
+	t.lastDrainedTimestamps = make(map[string]map[string]time.Time)
+	t.failureRate = make(map[string]map[string]metric.MovingAverage)
+	t.routerTenantLatencyStat = make(map[string]map[string]metric.MovingAverage)
+	t.processorStageTime = time.Now()
 }
 
 func (t *Stats) UpdateWorkspaceLatencyMap(destType, workspaceID string, val float64) {
