@@ -219,7 +219,7 @@ func (jd *ReadonlyHandleT) getUnprocessedJobsDSCount(ctx context.Context, ds dat
 
 	var sqlStatement string
 
-	sqlStatement = fmt.Sprintf(`LOCK TABLE %s IN ACCESS SHARE MODE;`, ds.JobStatusTable)
+	sqlStatement = fmt.Sprintf(`LOCK TABLE %q IN ACCESS SHARE MODE;`, ds.JobStatusTable)
 	err = jd.prepareAndExecStmtInTxn(txn, sqlStatement)
 	if err != nil {
 		if rollbackErr := txn.Rollback(); rollbackErr != nil {
@@ -229,7 +229,7 @@ func (jd *ReadonlyHandleT) getUnprocessedJobsDSCount(ctx context.Context, ds dat
 		return 0, err
 	}
 
-	sqlStatement = fmt.Sprintf(`LOCK TABLE %s IN ACCESS SHARE MODE;`, ds.JobTable)
+	sqlStatement = fmt.Sprintf(`LOCK TABLE %q IN ACCESS SHARE MODE;`, ds.JobTable)
 	err = jd.prepareAndExecStmtInTxn(txn, sqlStatement)
 	if err != nil {
 		if rollbackErr := txn.Rollback(); rollbackErr != nil {
@@ -352,7 +352,7 @@ func (jd *ReadonlyHandleT) getProcessedJobsDSCount(ctx context.Context, ds dataS
 	}
 	if len(customValFilters) > 0 {
 		customValQuery = " AND " +
-			constructQueryOR(fmt.Sprintf("%s.custom_val", ds.JobTable), customValFilters)
+			constructQueryOR(fmt.Sprintf("%q.custom_val", ds.JobTable), customValFilters)
 	} else {
 		customValQuery = ""
 	}
@@ -371,7 +371,7 @@ func (jd *ReadonlyHandleT) getProcessedJobsDSCount(ctx context.Context, ds dataS
 
 	var sqlStatement string
 
-	sqlStatement = fmt.Sprintf(`LOCK TABLE %s IN ACCESS SHARE MODE;`, ds.JobStatusTable)
+	sqlStatement = fmt.Sprintf(`LOCK TABLE %q IN ACCESS SHARE MODE;`, ds.JobStatusTable)
 	err = jd.prepareAndExecStmtInTxn(txn, sqlStatement)
 	if err != nil {
 		if rollbackErr := txn.Rollback(); rollbackErr != nil {
@@ -381,7 +381,7 @@ func (jd *ReadonlyHandleT) getProcessedJobsDSCount(ctx context.Context, ds dataS
 		return 0, err
 	}
 
-	sqlStatement = fmt.Sprintf(`LOCK TABLE %s IN ACCESS SHARE MODE;`, ds.JobTable)
+	sqlStatement = fmt.Sprintf(`LOCK TABLE %q IN ACCESS SHARE MODE;`, ds.JobTable)
 	err = jd.prepareAndExecStmtInTxn(txn, sqlStatement)
 	if err != nil {
 		if rollbackErr := txn.Rollback(); rollbackErr != nil {
