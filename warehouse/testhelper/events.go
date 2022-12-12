@@ -391,7 +391,7 @@ func SendEvents(t testing.TB, wareHouseTest *WareHouseTest) {
 					wareHouseTest.msgID(),
 				),
 			)
-			send(t, payloadIdentify, "identify", wareHouseTest.WriteKey, "POST")
+			wareHouseTest.EventClient.send(t, payloadIdentify, "identify")
 		}
 	}
 
@@ -406,7 +406,7 @@ func SendEvents(t testing.TB, wareHouseTest *WareHouseTest) {
 					wareHouseTest.msgID(),
 				),
 			)
-			send(t, payloadTrack, "track", wareHouseTest.WriteKey, "POST")
+			wareHouseTest.EventClient.send(t, payloadTrack, "track")
 		}
 	}
 
@@ -421,7 +421,7 @@ func SendEvents(t testing.TB, wareHouseTest *WareHouseTest) {
 					wareHouseTest.msgID(),
 				),
 			)
-			send(t, payloadPage, "page", wareHouseTest.WriteKey, "POST")
+			wareHouseTest.EventClient.send(t, payloadPage, "page")
 		}
 	}
 
@@ -436,7 +436,7 @@ func SendEvents(t testing.TB, wareHouseTest *WareHouseTest) {
 					wareHouseTest.msgID(),
 				),
 			)
-			send(t, payloadScreen, "screen", wareHouseTest.WriteKey, "POST")
+			wareHouseTest.EventClient.send(t, payloadScreen, "screen")
 		}
 	}
 
@@ -451,7 +451,7 @@ func SendEvents(t testing.TB, wareHouseTest *WareHouseTest) {
 					wareHouseTest.msgID(),
 				),
 			)
-			send(t, payloadAlias, "alias", wareHouseTest.WriteKey, "POST")
+			wareHouseTest.EventClient.send(t, payloadAlias, "alias")
 		}
 	}
 
@@ -466,7 +466,7 @@ func SendEvents(t testing.TB, wareHouseTest *WareHouseTest) {
 					wareHouseTest.msgID(),
 				),
 			)
-			send(t, payloadGroup, "group", wareHouseTest.WriteKey, "POST")
+			wareHouseTest.EventClient.send(t, payloadGroup, "group")
 		}
 	}
 
@@ -484,7 +484,7 @@ func SendEvents(t testing.TB, wareHouseTest *WareHouseTest) {
 					wareHouseTest.TaskRunID,
 				),
 			)
-			send(t, payloadGroup, "import", wareHouseTest.WriteKey, "POST")
+			wareHouseTest.EventClient.send(t, payloadGroup, "import")
 		}
 	}
 }
@@ -508,7 +508,7 @@ func SendModifiedEvents(t testing.TB, wareHouseTest *WareHouseTest) {
 					wareHouseTest.msgID(),
 				),
 			)
-			send(t, payloadIdentify, "identify", wareHouseTest.WriteKey, "POST")
+			wareHouseTest.EventClient.send(t, payloadIdentify, "identify")
 		}
 	}
 
@@ -523,7 +523,7 @@ func SendModifiedEvents(t testing.TB, wareHouseTest *WareHouseTest) {
 					wareHouseTest.msgID(),
 				),
 			)
-			send(t, payloadTrack, "track", wareHouseTest.WriteKey, "POST")
+			wareHouseTest.EventClient.send(t, payloadTrack, "track")
 		}
 	}
 
@@ -538,7 +538,7 @@ func SendModifiedEvents(t testing.TB, wareHouseTest *WareHouseTest) {
 					wareHouseTest.msgID(),
 				),
 			)
-			send(t, payloadPage, "page", wareHouseTest.WriteKey, "POST")
+			wareHouseTest.EventClient.send(t, payloadPage, "page")
 		}
 	}
 
@@ -553,7 +553,7 @@ func SendModifiedEvents(t testing.TB, wareHouseTest *WareHouseTest) {
 					wareHouseTest.msgID(),
 				),
 			)
-			send(t, payloadScreen, "screen", wareHouseTest.WriteKey, "POST")
+			wareHouseTest.EventClient.send(t, payloadScreen, "screen")
 		}
 	}
 
@@ -568,7 +568,7 @@ func SendModifiedEvents(t testing.TB, wareHouseTest *WareHouseTest) {
 					wareHouseTest.msgID(),
 				),
 			)
-			send(t, payloadAlias, "alias", wareHouseTest.WriteKey, "POST")
+			wareHouseTest.EventClient.send(t, payloadAlias, "alias")
 		}
 	}
 
@@ -582,7 +582,7 @@ func SendModifiedEvents(t testing.TB, wareHouseTest *WareHouseTest) {
 					wareHouseTest.msgID(),
 				),
 			)
-			send(t, payloadGroup, "group", wareHouseTest.WriteKey, "POST")
+			wareHouseTest.EventClient.send(t, payloadGroup, "group")
 		}
 	}
 
@@ -600,7 +600,7 @@ func SendModifiedEvents(t testing.TB, wareHouseTest *WareHouseTest) {
 					wareHouseTest.TaskRunID,
 				),
 			)
-			send(t, payloadGroup, "import", wareHouseTest.WriteKey, "POST")
+			wareHouseTest.EventClient.send(t, payloadGroup, "import")
 		}
 	}
 }
@@ -625,7 +625,7 @@ func SendIntegratedEvents(t testing.TB, wareHouseTest *WareHouseTest) {
 					wareHouseTest.Provider,
 				),
 			)
-			send(t, payloadIdentify, "identify", wareHouseTest.WriteKey, "POST")
+			wareHouseTest.EventClient.send(t, payloadIdentify, "identify")
 		}
 	}
 
@@ -641,7 +641,7 @@ func SendIntegratedEvents(t testing.TB, wareHouseTest *WareHouseTest) {
 					wareHouseTest.Provider,
 				),
 			)
-			send(t, payloadTrack, "track", wareHouseTest.WriteKey, "POST")
+			wareHouseTest.EventClient.send(t, payloadTrack, "track")
 		}
 	}
 
@@ -657,7 +657,7 @@ func SendIntegratedEvents(t testing.TB, wareHouseTest *WareHouseTest) {
 					wareHouseTest.Provider,
 				),
 			)
-			send(t, payloadPage, "page", wareHouseTest.WriteKey, "POST")
+			wareHouseTest.EventClient.send(t, payloadPage, "page")
 		}
 	}
 
@@ -673,7 +673,7 @@ func SendIntegratedEvents(t testing.TB, wareHouseTest *WareHouseTest) {
 					wareHouseTest.Provider,
 				),
 			)
-			send(t, payloadScreen, "screen", wareHouseTest.WriteKey, "POST")
+			wareHouseTest.EventClient.send(t, payloadScreen, "screen")
 		}
 	}
 
@@ -688,7 +688,7 @@ func SendIntegratedEvents(t testing.TB, wareHouseTest *WareHouseTest) {
 					wareHouseTest.msgID(),
 				),
 			)
-			send(t, payloadAlias, "alias", wareHouseTest.WriteKey, "POST")
+			wareHouseTest.EventClient.send(t, payloadAlias, "alias")
 		}
 	}
 
@@ -704,7 +704,7 @@ func SendIntegratedEvents(t testing.TB, wareHouseTest *WareHouseTest) {
 					wareHouseTest.Provider,
 				),
 			)
-			send(t, payloadGroup, "group", wareHouseTest.WriteKey, "POST")
+			wareHouseTest.EventClient.send(t, payloadGroup, "group")
 		}
 	}
 
@@ -723,20 +723,26 @@ func SendIntegratedEvents(t testing.TB, wareHouseTest *WareHouseTest) {
 					wareHouseTest.TaskRunID,
 				),
 			)
-			send(t, payloadGroup, "import", wareHouseTest.WriteKey, "POST")
+			wareHouseTest.EventClient.send(t, payloadGroup, "import")
 		}
 	}
 }
 
-func send(t testing.TB, payload *strings.Reader, eventType, writeKey, method string) {
+type EventClient struct {
+	http.Client
+
+	URL      string
+	WriteKey string
+}
+
+func (ec *EventClient) send(t testing.TB, payload *strings.Reader, eventType string) {
 	t.Helper()
 
-	t.Logf("Sending event: %s for writeKey: %s", eventType, writeKey)
+	t.Logf("Sending event: %s for writeKey: %s", eventType, ec.WriteKey)
 
-	url := fmt.Sprintf("http://localhost:%s/v1/%s", "8080", eventType)
-	httpClient := &http.Client{}
+	url := fmt.Sprintf("%s/v1/%s", ec.URL, eventType)
 
-	req, err := http.NewRequest(method, url, payload)
+	req, err := http.NewRequest(http.MethodPost, url, payload)
 	if err != nil {
 		t.Errorf("Error occurred while creating new http request for sending event with error: %s", err.Error())
 		return
@@ -745,11 +751,11 @@ func send(t testing.TB, payload *strings.Reader, eventType, writeKey, method str
 	req.Header.Add("Content-Type", "application/json")
 	req.Header.Add("Authorization",
 		fmt.Sprintf("Basic %s", b64.StdEncoding.EncodeToString(
-			[]byte(fmt.Sprintf("%s:", writeKey)),
+			[]byte(fmt.Sprintf("%s:", ec.WriteKey)),
 		)),
 	)
 
-	res, err := httpClient.Do(req)
+	res, err := ec.Client.Do(req)
 	if err != nil {
 		t.Errorf("Error occurred while making http request for sending event with error: %s", err.Error())
 		return
@@ -761,9 +767,10 @@ func send(t testing.TB, payload *strings.Reader, eventType, writeKey, method str
 		t.Errorf("Error occurred while reading http response for sending event with error: %s", err.Error())
 		return
 	}
-	if res.Status != "200 OK" {
+	if res.StatusCode != http.StatusOK {
+		t.Log("Error occurred while sending event, got status code: %d", res.StatusCode)
 		return
 	}
 
-	t.Logf("Send successfully for event: %s and writeKey: %s", eventType, writeKey)
+	t.Logf("Send successfully for event: %s and writeKey: %s", eventType, ec.WriteKey)
 }

@@ -1,13 +1,18 @@
 package clickhouse_test
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"log"
 	"os"
+	"strconv"
 	"strings"
 	"testing"
 
+	"github.com/rudderlabs/compose-test/compose"
+	"github.com/rudderlabs/compose-test/testcompose"
+	"github.com/rudderlabs/rudder-server/testhelper/workspaceConfig"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/warehouse/validations"
 
@@ -24,21 +29,52 @@ func TestIntegrationClickHouse(t *testing.T) {
 		t.Skip("Skipping tests. Remove 'SLOW=0' env var to run them.")
 	}
 
-	t.Parallel()
+	compose := testcompose.New(t, compose.FilePath("./testdata/docker-compose.yaml"))
+	compose.Start(context.Background())
+	t.Cleanup(func() {
+		compose.Stop(context.Background())
+	})
+
+	rudderServer := testhelper.SetupServer(t, workspaceConfig.CreateTempFile(t,
+		"testdata/config_template.json",
+		map[string]string{
+			"workspaceId": "BpLnfgDsc2WD8F2qNfHK5a84jjJ",
+
+			"clickHouseWriteKey": "C5AWX39IVUWSP2NcHciWvqZTa2N",
+			"clickHouseHost":     "localhost",
+			"clickHouseDatabase": "rudderdb",
+			"clickHouseUser":     "rudder",
+			"clickHousePassword": "rudder-password",
+			"clickHousePort":     strconv.Itoa(compose.Port("wh-clickhouse", 9000)),
+
+			"clickhouseClusterWriteKey": "95RxRTZHWUsaD6HEdz0ThbXfQ6p",
+			"clickhouseClusterHost":     "localhost",
+			"clickhouseClusterDatabase": "rudderdb",
+			"clickhouseClusterCluster":  "rudder_cluster",
+			"clickhouseClusterUser":     "rudder",
+			"clickhouseClusterPassword": "rudder-password",
+			"clickhouseClusterPort":     strconv.Itoa(compose.Port("wh-clickhouse01", 9000)),
+
+			"minioBucketName":      "devintegrationtest",
+			"minioAccesskeyID":     "MYACCESSKEY",
+			"minioSecretAccessKey": "MYSECRETKEY",
+			"minioEndpoint":        fmt.Sprintf("localhost:%d", compose.Port("minio", 9000)),
+		},
+	))
 
 	clickhouse.Init()
 
 	var dbs []*sql.DB
 	for _, host := range []string{"wh-clickhouse", "wh-clickhouse01", "wh-clickhouse02", "wh-clickhouse03", "wh-clickhouse04"} {
 		db, err := clickhouse.Connect(clickhouse.CredentialsT{
-			Host:          host,
+			Host:          "localhost",
 			User:          "rudder",
 			Password:      "rudder-password",
 			DBName:        "rudderdb",
 			Secure:        "false",
 			SkipVerify:    "true",
 			TLSConfigName: "",
-			Port:          "9000",
+			Port:          strconv.Itoa(compose.Port(host, 9000)),
 		}, true)
 		require.NoError(t, err)
 
@@ -100,8 +136,11 @@ func TestIntegrationClickHouse(t *testing.T) {
 			t.Parallel()
 
 			ts := testhelper.WareHouseTest{
-				Schema:        "rudderdb",
-				WriteKey:      tc.writeKey,
+				Schema: "rudderdb",
+				EventClient: &testhelper.EventClient{
+					URL:      rudderServer.URL,
+					WriteKey: tc.writeKey,
+				},
 				SourceID:      tc.sourceID,
 				DestinationID: tc.destinationID,
 				Tables:        tables,

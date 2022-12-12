@@ -900,6 +900,7 @@ github.com/rogpeppe/go-internal v1.1.0/go.mod h1:M8bDsm7K2OlrFYOpmOWEs/qY81heoFR
 github.com/rogpeppe/go-internal v1.2.2/go.mod h1:M8bDsm7K2OlrFYOpmOWEs/qY81heoFRclV5y23lUDJ4=
 github.com/rogpeppe/go-internal v1.3.0/go.mod h1:M8bDsm7K2OlrFYOpmOWEs/qY81heoFRclV5y23lUDJ4=
 github.com/rogpeppe/go-internal v1.6.1 h1:/FiVV8dS/e+YqF2JvO3yXRFbBLTIuSDkuC7aBOAvL+k=
+github.com/rogpeppe/go-internal v1.9.0 h1:73kH8U+JUqXU8lRuOHeVHaa/SZPifC7BkcraZVejAe8=
 github.com/rs/cors v1.7.0 h1:+88SsELBHx5r+hZ8TCkggzSstaWNbDvThkVK8H6f9ik=
 github.com/rs/cors v1.7.0/go.mod h1:gFx+x8UowdsKA9AchylcLynDq+nNFfI8FkUZdN/jGCU=
 github.com/rs/xid v1.2.1/go.mod h1:+uKXf+4Djp6Md1KODXJxgGQPKngRmWyn10oCKFzNHOQ=
@@ -909,6 +910,12 @@ github.com/rs/zerolog v1.13.0/go.mod h1:YbFCdg8HfsridGWAh22vktObvhZbQsZXe4/zB0OK
 github.com/rs/zerolog v1.15.0/go.mod h1:xYTKnLHcpfU2225ny5qZjxnj9NvkumZYjJHlAThCjNc=
 github.com/rudderlabs/analytics-go v3.3.1+incompatible h1:WoPC5c5M+yz0jG43elyguHux94Smy5wmHeyMVE2xKgA=
 github.com/rudderlabs/analytics-go v3.3.1+incompatible/go.mod h1:LF8/ty9kUX4PTY3l5c97K3nZZaX5Hwsvt+NBaRL/f30=
+github.com/rudderlabs/compose-test v0.0.0-20221205185752-1290775b38f6 h1:sBa1HsUybK7bFJ6J86wsCyEoQhUfrowP4MMrwmjzuWE=
+github.com/rudderlabs/compose-test v0.0.0-20221205185752-1290775b38f6/go.mod h1:HS5K5dafUNWxCeY/b6Fh0HOb92fwsgQrIcWSJ9eGCtc=
+github.com/rudderlabs/compose-test v0.0.0-20221211165810-fecd061ddfdd h1:8MFRpu04zjg9TR/6C/Hw+jNsOIFClO6X8pf+Ug0eEwA=
+github.com/rudderlabs/compose-test v0.0.0-20221211165810-fecd061ddfdd/go.mod h1:HS5K5dafUNWxCeY/b6Fh0HOb92fwsgQrIcWSJ9eGCtc=
+github.com/rudderlabs/compose-test v0.0.0-20221211174928-17dbca2e4ee3 h1:mBJYeGnD85g86lAf9S+al5OKVkpGosSYSajIfmSDDGU=
+github.com/rudderlabs/compose-test v0.0.0-20221211174928-17dbca2e4ee3/go.mod h1:HS5K5dafUNWxCeY/b6Fh0HOb92fwsgQrIcWSJ9eGCtc=
 github.com/russross/blackfriday v1.5.2/go.mod h1:JO/DiYxRf+HjHt06OyowR9PTA263kcR/rfWxYHBV53g=
 github.com/russross/blackfriday/v2 v2.0.1/go.mod h1:+Rmxgy9KzJVeS9/2gXHxylqXiyQDYRxCVz55jmeOWTM=
 github.com/russross/blackfriday/v2 v2.1.0 h1:JIOH55/0cWyOuilr9/qlrm0BSXldqnqwMsf35Ld67mk=

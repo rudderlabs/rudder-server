@@ -77,7 +77,7 @@ type EventsCountMap map[string]int
 
 type WareHouseTest struct {
 	Client                       *client.Client
-	WriteKey                     string
+	EventClient                  *EventClient
 	Schema                       string
 	UserID                       string
 	MessageID                    string
@@ -504,7 +504,7 @@ func verifyAsyncJob(t testing.TB, wareHouseTest *WareHouseTest) {
 		wareHouseTest.TaskRunID,
 	)
 
-	send(t, asyncPayload, "warehouse/jobs", wareHouseTest.WriteKey, "POST")
+	wareHouseTest.EventClient.send(t, asyncPayload, "warehouse/jobs")
 
 	var (
 		path = fmt.Sprintf("warehouse/jobs/status?job_run_id=%s&task_run_id=%s&source_id=%s&destination_id=%s",
@@ -533,7 +533,7 @@ func verifyAsyncJob(t testing.TB, wareHouseTest *WareHouseTest) {
 
 		req.Header.Add("Content-Type", "application/json")
 		req.Header.Add("Authorization", fmt.Sprintf("Basic %s", base64.StdEncoding.EncodeToString(
-			[]byte(fmt.Sprintf("%s:", wareHouseTest.WriteKey)),
+			[]byte(fmt.Sprintf("%s:", wareHouseTest.EventClient.WriteKey)),
 		)))
 
 		if res, err = httpClient.Do(req); err != nil {
