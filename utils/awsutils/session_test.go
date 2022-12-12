@@ -26,6 +26,13 @@ var (
 	httpTimeout time.Duration = 10 * time.Second
 )
 
+func TestNewSessionConfigWithNilDestConfig(t *testing.T) {
+	serviceName := "kinesis"
+	sessionConfig, err := NewSessionConfigForDestination(&backendconfig.DestinationT{}, httpTimeout, serviceName)
+	assert.EqualError(t, err, "config should not be nil")
+	assert.Nil(t, sessionConfig)
+}
+
 func TestNewSessionConfigWithAccessKey(t *testing.T) {
 	serviceName := "kinesis"
 	sessionConfig, err := NewSessionConfigForDestination(&destinationWithAccessKey, httpTimeout, serviceName)
