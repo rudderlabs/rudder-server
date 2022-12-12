@@ -7,15 +7,14 @@ import (
 	"strings"
 )
 
-type SSHConfig struct {
-	SshUser    string
-	SshHost    string
-	SshPort    int
+type Config struct {
+	User       string
+	Host       string
+	Port       int
 	PrivateKey []byte
 }
 
-func (conf *SSHConfig) EncodeWithDSN(base string) (string, error) {
-
+func (conf *Config) EncodeWithDSN(base string) (string, error) {
 	parsed, err := url.Parse(base)
 	if err != nil {
 		return "", fmt.Errorf("url parsing the base url: %s, %s", base, err.Error())
@@ -29,19 +28,18 @@ func (conf *SSHConfig) EncodeWithDSN(base string) (string, error) {
 	split := strings.Split(updatedBase, "://")
 
 	return fmt.Sprintf(
-		"%s://%s@%s:%d/%s", split[0], conf.SshUser, conf.SshHost, conf.SshPort, split[1]), nil
+		"%s://%s@%s:%d/%s", split[0], conf.User, conf.Host, conf.Port, split[1]), nil
 }
 
-func (conf *SSHConfig) DecodeFromDSN(encodedDSN string) (dsn string, err error) {
-
+func (conf *Config) DecodeFromDSN(encodedDSN string) (dsn string, err error) {
 	parsed, err := url.Parse(encodedDSN)
 	if err != nil {
 		return "", fmt.Errorf("parsing the encoded dsn: %s, %s", encodedDSN, err.Error())
 	}
 
-	conf.SshUser = parsed.User.Username()
-	conf.SshHost = parsed.Hostname()
-	conf.SshPort, _ = strconv.Atoi(parsed.Port())
+	conf.User = parsed.User.Username()
+	conf.Host = parsed.Hostname()
+	conf.Port, _ = strconv.Atoi(parsed.Port())
 	conf.PrivateKey = []byte(parsed.Query().Get("ssh_private_key"))
 
 	values := parsed.Query()

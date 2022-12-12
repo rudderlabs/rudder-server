@@ -5,13 +5,13 @@ import (
 	"database/sql"
 	"database/sql/driver"
 	"fmt"
+	"net"
 	"net/url"
 	"strconv"
-	"strings"
 	"sync"
 
-	"github.com/rudderlabs/rudder-server/warehouse/sql-tunnels/tunnel"
-	stunnel "github.com/rudderlabs/rudder-server/warehouse/sql-tunnels/tunnel/ssh"
+	"github.com/rudderlabs/rudder-server/sql-tunnels/tunnel"
+	stunnel "github.com/rudderlabs/rudder-server/sql-tunnels/tunnel/ssh"
 )
 
 // sql -> Open(name)-> conn
@@ -23,28 +23,26 @@ import (
 // to allow for the streamlining of the fetch of driver.Conn
 
 var (
-	_ driver.DriverContext = &SqlSshDriver{}
-	_ driver.Connector     = &SqlSshConnector{}
+	_ driver.DriverContext = &Driver{}
+	_ driver.Connector     = &Connector{}
 )
 
 func init() {
 	fmt.Println("registering the `ssh+sql` driver")
-	sql.Register("sql+ssh", &SqlSshDriver{})
+	sql.Register("sql+ssh", &Driver{})
 }
 
-type SqlSshDriver struct {
-}
+type Driver struct{}
 
-func (driver *SqlSshDriver) Open(string) (driver.Conn, error) {
+func (driver *Driver) Open(string) (driver.Conn, error) {
 	return nil, fmt.Errorf("not implemented")
 }
 
 // OpenConnector creates a connector for the encoded dsn provided which contains
 // the sshconfig
-func (driver *SqlSshDriver) OpenConnector(name string) (driver.Connector, error) {
-
+func (driver *Driver) OpenConnector(name string) (driver.Connector, error) {
 	// Decode the SSH Config from the encoded name.
-	sshConfig := &SSHConfig{}
+	sshConfig := &Config{}
 	remoteHostDSN, err := sshConfig.DecodeFromDSN(name)
 	if err != nil {
 		return nil, fmt.Errorf("decoding config from dsn: %w", err)
@@ -59,9 +57,9 @@ func (driver *SqlSshDriver) OpenConnector(name string) (driver.Connector, error)
 	remotePort, _ := strconv.Atoi(remoteParsed.Port())
 	// Setup the tunnel config from the ssh config.
 	config := &stunnel.SSHTunnelConfig{
-		SshUser:    sshConfig.SshUser,
-		SshHost:    sshConfig.SshHost,
-		SshPort:    sshConfig.SshPort,
+		SshUser:    sshConfig.User,
+		SshHost:    sshConfig.Host,
+		SshPort:    sshConfig.Port,
 		PrivateKey: sshConfig.PrivateKey,
 		RemoteHost: remoteParsed.Hostname(),
 		RemotePort: remotePort,
@@ -75,13 +73,13 @@ func (driver *SqlSshDriver) OpenConnector(name string) (driver.Connector, error)
 		return nil, fmt.Errorf("creating instance of tunnel: %w", err)
 	}
 
-	return &SqlSshConnector{
+	return &Connector{
 		Tunnel: t,
 		dsn:    remoteHostDSN,
 	}, nil
 }
 
-type SqlSshConnector struct {
+type Connector struct {
 	sync.Once
 	dsn string
 	db  *sql.DB
@@ -89,11 +87,8 @@ type SqlSshConnector struct {
 	localDSN string
 }
 
-func (c *SqlSshConnector) Connect(ctx context.Context) (driver.Conn, error) {
-
-	var (
-		err error
-	)
+func (c *Connector) Connect(ctx context.Context) (driver.Conn, error) {
+	var err error
 
 	// Once we, need to open the tunnel and return the connection
 	// to the underlying warehouse.
@@ -105,11 +100,12 @@ func (c *SqlSshConnector) Connect(ctx context.Context) (driver.Conn, error) {
 			return
 		}
 
-		hostPort := strings.Split(c.Tunnel.LocalConnectionString(), ":")
-		c.localDSN = replaceHostPort(
-			c.dsn,
-			hostPort[0],
-			hostPort[1])
+		var host, port string
+		host, port, err = net.SplitHostPort(c.Tunnel.LocalConnectionString())
+		if err != nil {
+			return
+		}
+		c.localDSN = replaceHostPort(c.dsn, host, port)
 
 		parsed, _ := url.Parse(c.localDSN)
 
@@ -137,19 +133,17 @@ func (c *SqlSshConnector) Connect(ctx context.Context) (driver.Conn, error) {
 	return conn, nil
 }
 
-func (c *SqlSshConnector) Driver() driver.Driver {
+func (c *Connector) Driver() driver.Driver {
 	return c.db.Driver()
 }
 
 // Close needs to run best effort protocol to try and close
 // the underlying resources. In case it's unable to close the connection,
 // we need to be able to send the combined errors to layers above.
-func (c *SqlSshConnector) Close() (resultErr error) {
+func (c *Connector) Close() (resultErr error) {
 	fmt.Println("connector: closing the tunnel")
 
-	var (
-		combiner ErrorCombiner
-	)
+	var combiner ErrorCombiner
 
 	if err := c.db.Close(); err != nil {
 		combiner.Combine(fmt.Errorf("closing underlying db connection: %w", err))
@@ -168,7 +162,7 @@ func replaceHostPort(baseurl, newHost, newPort string) string {
 	return parsed.String()
 }
 
-func CombineError(base error, err error) (updated error) {
+func CombineError(base, err error) (updated error) {
 	return fmt.Errorf("%v:%v", base, err)
 }
 

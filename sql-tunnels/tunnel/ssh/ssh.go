@@ -10,13 +10,22 @@ import (
 	"golang.org/x/crypto/ssh"
 )
 
+type SSHTunnelConfig struct {
+	SshUser    string
+	SshHost    string
+	SshPort    int
+	RemoteHost string
+	RemotePort int
+	PrivateKey []byte
+	LocalPort  int
+}
+
 type SSHTunnel struct {
 	// TODO: Should we store some datapoints internally with us as well ?
 	tunnel *ImportedSSHTunnel
 }
 
 func NewSSHTunnel(config *SSHTunnelConfig) (*SSHTunnel, error) {
-
 	key, err := ssh.ParsePrivateKey(config.PrivateKey)
 	if err != nil {
 		return nil, fmt.Errorf("parsing private key: %s", err.Error())

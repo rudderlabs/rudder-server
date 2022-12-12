@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strconv"
 
-	stunnel "github.com/rudderlabs/rudder-server/warehouse/sql-tunnels/driver/ssh"
+	stunnel "github.com/rudderlabs/rudder-server/sql-tunnels/driver/ssh"
 )
 
 var ErrMissingKey = errors.New("missing mandatory key")
@@ -23,7 +23,7 @@ type TunnelInfo struct {
 	Config Config
 }
 
-func ReadSSHTunnelConfig(config map[string]interface{}) (conf *stunnel.SSHConfig, err error) {
+func ReadSSHTunnelConfig(config map[string]interface{}) (conf *stunnel.Config, err error) {
 
 	var (
 		user, host, port, privateKey *string
@@ -50,11 +50,11 @@ func ReadSSHTunnelConfig(config map[string]interface{}) (conf *stunnel.SSHConfig
 		return nil, err
 	}
 
-	return &stunnel.SSHConfig{
-		SshUser:    *user,
-		SshHost:    *host,
+	return &stunnel.Config{
+		User:       *user,
+		Host:       *host,
 		PrivateKey: []byte(*privateKey),
-		SshPort:    portInt,
+		Port:       portInt,
 	}, nil
 }
 

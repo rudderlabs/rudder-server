@@ -23,7 +23,6 @@ type ImportedSSHTunnel struct {
 	Log      logger
 	Conns    []net.Conn
 	SvrConns []*ssh.Client
-	isOpen   bool
 	close    chan interface{}
 	cancel   context.CancelFunc
 	ctx      context.Context
@@ -36,7 +35,6 @@ func (t *ImportedSSHTunnel) logf(fmt string, args ...interface{}) {
 }
 
 func newConnectionWaiter(listener net.Listener, c chan net.Conn) {
-
 	conn, err := listener.Accept()
 	if err != nil {
 		fmt.Printf("accepting connection errored out: %s", err.Error())
@@ -92,10 +90,9 @@ func (tunnel *ImportedSSHTunnel) forward(localConn net.Conn) {
 
 	serverConn, err := ssh.Dial("tcp", tunnel.Server.String(), tunnel.Config)
 	if err != nil {
-		tunnel.logf("server dial error: %s", err)
+		tunnel.logf("server %q dial error: %s", tunnel.Server.String(), err)
 		return
 	}
-
 	defer serverConn.Close()
 
 	tunnel.logf("connected to %s (1 of 2)\n", tunnel.Server.String())
@@ -113,7 +110,7 @@ func (tunnel *ImportedSSHTunnel) forward(localConn net.Conn) {
 	go func() {
 		_, err = io.Copy(remoteConn, localConn)
 		if err != nil {
-			//log.Printf("Error on io.Copy remote->local on connection %s: %s", connStr, err.Error())
+			// log.Printf("Error on io.Copy remote->local on connection %s: %s", connStr, err.Error())
 			myCancel()
 			return
 		}
@@ -122,7 +119,7 @@ func (tunnel *ImportedSSHTunnel) forward(localConn net.Conn) {
 	go func() {
 		_, err = io.Copy(localConn, remoteConn)
 		if err != nil {
-			//log.Printf("Error on io.Copy local->remote on connection %s: %s", connStr, err.Error())
+			// log.Printf("Error on io.Copy local->remote on connection %s: %s", connStr, err.Error())
 			myCancel()
 			return
 		}
@@ -155,13 +152,9 @@ func (tunnel *ImportedSSHTunnel) pipe(
 	ctx context.Context,
 	local net.Conn,
 	remote net.Conn,
-	done chan bool) {
-
-	fmt.Println("Starting with the pipe of local to remote")
-
-	var (
-		wg sync.WaitGroup
-	)
+	done chan bool,
+) {
+	var wg sync.WaitGroup
 
 	ctxLR, cancelLR := context.WithCancel(ctx)
 	errCopyLR := make(chan error)
@@ -186,7 +179,6 @@ func (tunnel *ImportedSSHTunnel) pipe(
 	}()
 
 	go func() {
-
 		defer func() {
 			fmt.Println("done and cancelLR")
 			cancelLR()
@@ -228,7 +220,8 @@ func NewImportedSSHTunnel(
 	tunnel string,
 	auth ssh.AuthMethod,
 	destination string,
-	localport string) *ImportedSSHTunnel {
+	localport string,
+) *ImportedSSHTunnel {
 	fmt.Printf("Started with creating a new imported ssh tunnel, dest: %s, local: %s\n", destination, tunnel)
 
 	localEndpoint := NewEndpoint("localhost:" + localport)
@@ -240,12 +233,10 @@ func NewImportedSSHTunnel(
 
 	sshTunnel := &ImportedSSHTunnel{
 		Config: &ssh.ClientConfig{
-			User: server.User,
-			Auth: []ssh.AuthMethod{auth},
-			HostKeyCallback: func(hostname string, remote net.Addr, key ssh.PublicKey) error {
-				// Always accept key.
-				return nil
-			},
+			User:            server.User,
+			Auth:            []ssh.AuthMethod{auth},
+			HostKeyCallback: ssh.InsecureIgnoreHostKey(),
+			BannerCallback:  ssh.BannerDisplayStderr(),
 		},
 		Local:  localEndpoint,
 		Server: server,

@@ -1,0 +1,50 @@
+version: "3.9"
+services:
+  openssh-server:
+    image: lscr.io/linuxserver/openssh-server:latest
+    environment:
+      - PUBLIC_KEY_FILE=/test_key.pub
+      - SUDO_ACCESS=false #optional
+      - PASSWORD_ACCESS=false #optional
+      - USER_PASSWORD=password #optional
+      - USER_NAME=linuxserver.io #optional
+      - DOCKER_MODS=linuxserver/mods:openssh-server-ssh-tunnel # https://github.com/linuxserver/docker-mods/tree/openssh-server-ssh-tunnel
+    ports:
+      - 2222
+    volumes:
+      - type: bind
+        source: ./test_key.pub
+        target: /test_key.pub
+        read_only: true
+    healthcheck:
+      test: ["CMD", "grep", "Server listening on :: port 2222", "/config/logs/openssh/current"]
+      interval: 1s
+      timeout: 1s
+      retries: 60
+    depends_on:
+      - db_postgres
+      - db_clickhouse
+
+  db_postgres:
+    image: postgres:14.1-alpine
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+    healthcheck:
+      test: ["CMD", "pg_isready"]
+      interval: 1s
+      timeout: 5s
+      retries: 30
+
+  db_clickhouse:
+    image: yandex/clickhouse-server:21-alpine
+    environment:
+      - CLICKHOUSE_DB=db
+      - CLICKHOUSE_PASSWORD=clickhouse
+      - CLICKHOUSE_USER=clickhouse
+    healthcheck:
+      test: wget -nv -O- 'http://localhost:8123/ping' || exit 1
+      # test:  ["CMD", "nc", "-zv", "127.0.0.1", "9000"]
+      interval: 1s
+      timeout: 5s
+      retries: 30

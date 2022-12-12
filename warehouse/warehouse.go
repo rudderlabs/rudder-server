@@ -320,98 +320,8 @@ func (wh *HandleT) backendConfigSubscriber(ctx context.Context) {
 				// TODO:SSH : Configuration that would come from the upstream.
 				for idx, destination := range source.Destinations {
 
-					if destination.ID == "2IGP84df9QgEQh8q1BrpGWZVpbu" {
-
+					if _, ok := destination.Config["useSSH"]; ok {
 						source.Destinations[idx].Config["tunnellingType"] = "ssh_forward"
-						source.Destinations[idx].Config["sshHost"] = "52.91.9.3"
-						source.Destinations[idx].Config["sshPort"] = "22"
-						source.Destinations[idx].Config["sshUser"] = "ec2-user"
-						source.Destinations[idx].Config["privateKey"] = `-----BEGIN OPENSSH PRIVATE KEY-----
-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
-AgMEBQ==
------END OPENSSH PRIVATE KEY-----`
-					}
-
-					if destination.ID == "2IDUYwsYTcN9LQpHf12fo4wOB7F" {
-
-						source.Destinations[idx].Config["tunnellingType"] = "ssh_forward"
-						source.Destinations[idx].Config["sshHost"] = "localhost"
-						source.Destinations[idx].Config["sshPort"] = "2222"
-						source.Destinations[idx].Config["sshUser"] = "root"
-						source.Destinations[idx].Config["privateKey"] = `-----BEGIN OPENSSH PRIVATE KEY-----
-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
-bG9jYWwBAgMEBQYH
------END OPENSSH PRIVATE KEY-----`
 					}
 				}
 
@@ -1477,8 +1387,8 @@ func (wh *HandleT) Setup(whType string) {
 	config.RegisterBoolConfigVariable(false, &wh.allowMultipleSourcesForJobsPickup, false, fmt.Sprintf(`Warehouse.%v.allowMultipleSourcesForJobsPickup`, whName))
 
 	wh.internalAuth = cpclient.BasicAuth{
-		Username: config.GetString("INTERNAL_AUTH_USERNAME", "username"),
-		Password: config.GetString("INTERNAL_AUTH_PASSWORD", "password"),
+		Username: config.GetString("INTERNAL_AUTH_USERNAME", "cbadmin"),
+		Password: config.GetString("INTERNAL_AUTH_PASSWORD", "xasamelo94"),
 	}
 	wh.configBackendURL = configBackendURL
 
