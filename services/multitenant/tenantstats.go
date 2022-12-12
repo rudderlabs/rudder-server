@@ -58,6 +58,7 @@ func (*Stats) Stop() {
 }
 
 func (t *Stats) Start() error {
+	metric.Instance.Reset()
 	t.routerInputRates = make(map[string]map[string]map[string]metric.MovingAverage)
 	t.lastDrainedTimestamps = make(map[string]map[string]time.Time)
 	t.failureRate = make(map[string]map[string]metric.MovingAverage)
