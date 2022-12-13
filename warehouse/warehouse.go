@@ -400,8 +400,6 @@ func (wh *HandleT) backendConfigSubscriber(ctx context.Context) {
 	}
 }
 
-func associateDestinationSecrets()
-
 // getNamespace sets namespace name in the following order
 //  1. user set name from destinationConfig
 //  2. from existing record in wh_schemas with same source + dest combo
