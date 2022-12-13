@@ -7,6 +7,7 @@ import (
 
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/utils/misc"
+	"github.com/rudderlabs/rudder-server/warehouse/client/controlplane"
 	"github.com/rudderlabs/rudder-server/warehouse/manager"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
@@ -83,9 +84,11 @@ type DestinationValidationResponse struct {
 }
 
 type CTHandleT struct {
-	infoRequest *DestinationValidationRequest
-	warehouse   warehouseutils.Warehouse
-	manager     manager.WarehouseOperations
+	infoRequest  *DestinationValidationRequest
+	warehouse    warehouseutils.Warehouse
+	manager      manager.WarehouseOperations
+	CPClient     controlplane.InternalControlPlane
+	EnableTunnel bool
 }
 
 type CTUploadJob struct {
