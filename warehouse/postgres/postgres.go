@@ -683,7 +683,10 @@ func (pg *Handle) DropTable(tableName string) (err error) {
 }
 
 func (pg *Handle) AddColumns(tableName string, columnsInfo []warehouseutils.ColumnInfo) (err error) {
-	var query string
+	var (
+		query        string
+		queryBuilder strings.Builder
+	)
 
 	// set the schema in search path. so that we can query table with unqualified name which is just the table name rather than using schema.table in queries
 	query = fmt.Sprintf(`SET search_path to %q`, pg.Namespace)
@@ -692,18 +695,18 @@ func (pg *Handle) AddColumns(tableName string, columnsInfo []warehouseutils.Colu
 	}
 	pg.logger.Infof("PG: Updated search_path to %s in postgres for PG:%s : %v", pg.Namespace, pg.Warehouse.Destination.ID, query)
 
-	query = fmt.Sprintf(`
+	queryBuilder.WriteString(fmt.Sprintf(`
 		ALTER TABLE
 		  %s.%s`,
 		pg.Namespace,
 		tableName,
-	)
+	))
 
 	for _, columnInfo := range columnsInfo {
-		query += fmt.Sprintf(` ADD COLUMN IF NOT EXISTS %q %s,`, columnInfo.Name, rudderDataTypesMapToPostgres[columnInfo.Type])
+		queryBuilder.WriteString(fmt.Sprintf(` ADD COLUMN IF NOT EXISTS %q %s,`, columnInfo.Name, rudderDataTypesMapToPostgres[columnInfo.Type]))
 	}
 
-	query = strings.TrimSuffix(query, ",")
+	query = strings.TrimSuffix(queryBuilder.String(), ",")
 	query += ";"
 
 	pg.logger.Infof("PG: Adding columns for destinationID: %s, tableName: %s with query: %v", pg.Warehouse.Destination.ID, tableName, query)
