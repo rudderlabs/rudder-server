@@ -11,6 +11,7 @@ import (
 
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/rruntime"
+	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/httputil"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/sysUtils"
@@ -40,6 +41,7 @@ type Uploader struct {
 	Client                                 sysUtils.HTTPClientI
 	maxBatchSize, maxRetry, maxESQueueSize int
 	batchTimeout, retrySleep               time.Duration
+	timingStat                             stats.Measurement
 
 	bgWaitGroup sync.WaitGroup
 }
@@ -51,10 +53,11 @@ func init() {
 func (uploader *Uploader) Setup() {
 	// Number of events that are batched before sending events to control plane
 	config.RegisterIntConfigVariable(32, &uploader.maxBatchSize, true, 1, "Debugger.maxBatchSize")
-	config.RegisterIntConfigVariable(1024, &uploader.maxESQueueSize, true, 1, "Debugger.maxESQueueSize")
+	config.RegisterIntConfigVariable(256, &uploader.maxESQueueSize, true, 1, "Debugger.maxESQueueSize")
 	config.RegisterIntConfigVariable(3, &uploader.maxRetry, true, 1, "Debugger.maxRetry")
 	config.RegisterDurationConfigVariable(2, &uploader.batchTimeout, true, time.Second, "Debugger.batchTimeoutInS")
 	config.RegisterDurationConfigVariable(100, &uploader.retrySleep, true, time.Millisecond, "Debugger.retrySleepInMS")
+	uploader.timingStat = stats.Default.NewStat("debugger_timing_stat", stats.TimerType)
 }
 
 func New(url string, transformer Transformer) UploaderI {
@@ -82,9 +85,9 @@ func (uploader *Uploader) Start() {
 	})
 }
 
-func (upload *Uploader) Stop() {
-	close(upload.eventBatchChannel)
-	upload.bgWaitGroup.Wait()
+func (uploader *Uploader) Stop() {
+	close(uploader.eventBatchChannel)
+	uploader.bgWaitGroup.Wait()
 }
 
 // RecordEvent is used to put the event batch in the eventBatchChannel,
@@ -103,9 +106,10 @@ func (uploader *Uploader) uploadEvents(eventBuffer []interface{}) {
 	url := uploader.url
 
 	retryCount := 1
-	var resp *http.Response
-	// Sending event schema to Config Backend
+	// Sending live events to Config Backend
 	for {
+		var resp *http.Response
+		startTime := time.Now()
 		req, err := Http.NewRequest("POST", url, bytes.NewBuffer(rawJSON))
 		if err != nil {
 			pkgLogger.Errorf("[Uploader] Failed to create new http request. Err: %v", err)
@@ -115,6 +119,7 @@ func (uploader *Uploader) uploadEvents(eventBuffer []interface{}) {
 		req.SetBasicAuth(config.GetWorkspaceToken(), "")
 
 		resp, err = uploader.Client.Do(req)
+		uploader.timingStat.SendTiming(time.Since(startTime))
 		if err != nil {
 			pkgLogger.Error("Config Backend connection error", err)
 			if retryCount >= uploader.maxRetry {
@@ -126,12 +131,11 @@ func (uploader *Uploader) uploadEvents(eventBuffer []interface{}) {
 			// Refresh the connection
 			continue
 		}
-		defer func() { httputil.CloseResponse(resp) }()
+		httputil.CloseResponse(resp)
+		if resp.StatusCode != http.StatusOK {
+			pkgLogger.Errorf("[Uploader] Response Error from Config Backend: Status: %v, Body: %v ", resp.StatusCode, resp.Body)
+		}
 		break
-	}
-
-	if resp.StatusCode != http.StatusOK {
-		pkgLogger.Errorf("[Uploader] Response Error from Config Backend: Status: %v, Body: %v ", resp.StatusCode, resp.Body)
 	}
 }
 

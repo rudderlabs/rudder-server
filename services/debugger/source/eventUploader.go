@@ -76,10 +76,7 @@ func recordHistoricEvents(writeKeys []string) {
 	for _, writeKey := range writeKeys {
 		historicEvents := eventsCacheMap.ReadAndPopData(writeKey)
 		for _, eventBatchData := range historicEvents {
-			var eventBatch string
-			if err := json.Unmarshal(eventBatchData, &eventBatch); err != nil {
-				panic(err)
-			}
+			eventBatch := string(eventBatchData)
 			uploader.RecordEvent(&GatewayEventBatchT{writeKey, eventBatch})
 		}
 	}
@@ -97,7 +94,7 @@ func RecordEvent(writeKey, eventBatch string) bool {
 	configSubscriberLock.RLock()
 	defer configSubscriberLock.RUnlock()
 	if !misc.Contains(uploadEnabledWriteKeys, writeKey) {
-		eventBatchData, _ := json.Marshal(eventBatch)
+		eventBatchData := []byte(eventBatch)
 		eventsCacheMap.Update(writeKey, eventBatchData)
 		return false
 	}
