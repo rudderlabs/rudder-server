@@ -20,7 +20,6 @@ type Type string
 type Config map[string]interface{}
 
 type TunnelInfo struct {
-	Type   Type
 	Config Config
 }
 

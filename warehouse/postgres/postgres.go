@@ -170,21 +170,15 @@ func Connect(cred CredentialsT) (*sql.DB, error) {
 
 	if cred.TunnelInfo != nil {
 
-		db, err = tunnelling.SQLConnectThroughTunnel(
-			dsn.String(),
-			cred.TunnelInfo.Type,
-			cred.TunnelInfo.Config)
-
+		db, err = tunnelling.SQLConnectThroughTunnel(dsn.String(), cred.TunnelInfo.Config)
 		if err != nil {
 			return nil, fmt.Errorf("opening connection to postgres through tunnelling: %w", err)
 		}
+		return db, nil
+	}
 
-	} else {
-
-		if db, err = sql.Open("postgres", dsn.String()); err != nil {
-			return nil, fmt.Errorf("opening connection to postgres: %w", err)
-		}
-
+	if db, err = sql.Open("postgres", dsn.String()); err != nil {
+		return nil, fmt.Errorf("opening connection to postgres: %w", err)
 	}
 
 	return db, nil
@@ -205,18 +199,9 @@ func (pg *Handle) getConnectionCredentials() CredentialsT {
 		SSLMode:  sslMode,
 		SSLDir:   warehouseutils.GetSSLKeyDirPath(pg.Warehouse.Destination.ID),
 		timeout:  pg.ConnectTimeout,
-	}
-
-	// Set the warehouse destination tunnel information.
-	// TODO: Need to setup the information on the destination with
-	// the credentials.
-	tunnellingType := warehouseutils.GetConfigValue("tunnellingType", pg.Warehouse)
-	switch tunnellingType {
-	case string(tunnelling.SSHForward):
-		creds.TunnelInfo = &tunnelling.TunnelInfo{
-			Type:   tunnelling.Type(tunnellingType),
-			Config: pg.Warehouse.Destination.Config,
-		}
+		TunnelInfo: warehouseutils.ExtractTunnelInfoFromDestinationConfig(
+			pg.Warehouse.Destination.Config,
+		),
 	}
 
 	return creds

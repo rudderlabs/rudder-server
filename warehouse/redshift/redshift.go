@@ -610,10 +610,7 @@ func Connect(cred RedshiftCredentialsT) (*sql.DB, error) {
 
 	if cred.TunnelInfo != nil {
 
-		if db, err = tunnelling.SQLConnectThroughTunnel(
-			dsn.String(),
-			cred.TunnelInfo.Type,
-			cred.TunnelInfo.Config); err != nil {
+		if db, err = tunnelling.SQLConnectThroughTunnel(dsn.String(), cred.TunnelInfo.Config); err != nil {
 			return nil, fmt.Errorf("connecting to redshift through tunnel: %w", err)
 		}
 
@@ -702,21 +699,13 @@ func (rs *HandleT) AlterColumn(tableName, columnName, columnType string) (err er
 
 func (rs *HandleT) getConnectionCredentials() RedshiftCredentialsT {
 	creds := RedshiftCredentialsT{
-		Host:     warehouseutils.GetConfigValue(RSHost, rs.Warehouse),
-		Port:     warehouseutils.GetConfigValue(RSPort, rs.Warehouse),
-		DbName:   warehouseutils.GetConfigValue(RSDbName, rs.Warehouse),
-		Username: warehouseutils.GetConfigValue(RSUserName, rs.Warehouse),
-		Password: warehouseutils.GetConfigValue(RSPassword, rs.Warehouse),
-		timeout:  rs.ConnectTimeout,
-	}
-
-	tunnellingType := warehouseutils.GetConfigValue("tunnellingType", rs.Warehouse)
-	switch tunnellingType {
-	case string(tunnelling.SSHForward):
-		creds.TunnelInfo = &tunnelling.TunnelInfo{
-			Type:   tunnelling.Type(tunnellingType),
-			Config: rs.Warehouse.Destination.Config,
-		}
+		Host:       warehouseutils.GetConfigValue(RSHost, rs.Warehouse),
+		Port:       warehouseutils.GetConfigValue(RSPort, rs.Warehouse),
+		DbName:     warehouseutils.GetConfigValue(RSDbName, rs.Warehouse),
+		Username:   warehouseutils.GetConfigValue(RSUserName, rs.Warehouse),
+		Password:   warehouseutils.GetConfigValue(RSPassword, rs.Warehouse),
+		timeout:    rs.ConnectTimeout,
+		TunnelInfo: warehouseutils.ExtractTunnelInfoFromDestinationConfig(rs.Warehouse.Destination.Config),
 	}
 
 	return creds

@@ -50,7 +50,6 @@ import (
 	"github.com/rudderlabs/rudder-server/warehouse/jobs"
 	"github.com/rudderlabs/rudder-server/warehouse/manager"
 	"github.com/rudderlabs/rudder-server/warehouse/multitenant"
-	"github.com/rudderlabs/rudder-server/warehouse/tunnelling"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 	"github.com/rudderlabs/rudder-server/warehouse/validations"
 )
@@ -152,6 +151,7 @@ type HandleT struct {
 	tenantManager                     multitenant.Manager
 <<<<<<< HEAD
 <<<<<<< HEAD
+<<<<<<< HEAD
 	stats                             stats.Stats
 	Now                               string
 =======
@@ -160,6 +160,8 @@ type HandleT struct {
 >>>>>>> d6bb1ce4d (Added support to fetch the ssh keys on destination level from control plane)
 =======
 	sshTunnellingEnabled              bool
+=======
+>>>>>>> 7c3f7edb6 (only handle ssh tunnelling option)
 	cpInternalClient                  cpclient.InternalControlPlane
 >>>>>>> 12a7822bf (Support for tunnelling construct)
 
@@ -322,8 +324,8 @@ func (wh *HandleT) backendConfigSubscriber(ctx context.Context) {
 				}
 
 				if enableTunnelling {
-					pkgLogger.Info("attaching tunnelling info to destinations")
-					wh.attachTunnellingInfo(ctx, source.Destinations)
+					pkgLogger.Info("attaching ssh tunnelling info to destinations")
+					wh.attachSSHTunnellingInfo(ctx, source.Destinations)
 				}
 
 				for _, destination := range source.Destinations {
@@ -386,7 +388,7 @@ func (wh *HandleT) backendConfigSubscriber(ctx context.Context) {
 	}
 }
 
-func (wh *HandleT) attachTunnellingInfo(
+func (wh *HandleT) attachSSHTunnellingInfo(
 	ctx context.Context,
 	destinations []backendconfig.DestinationT) {
 
@@ -397,19 +399,8 @@ func (wh *HandleT) attachTunnellingInfo(
 			continue
 		}
 
-		// TODO: `hardcode` the tunnellingType to be `ssh_forward` as other
-		// tunnelling types haven't been introduced yet.
-		// `switch` on other types once they are added to attach ability to fetch
-
-		destinations[idx].Config["tunnellingType"] = string(tunnelling.SSHForward)
-
 		pkgLogger.Debugf("fetching ssh keys for destination: %s", dest.ID)
 		keys, err := wh.cpInternalClient.GetDestinationSSHKeys(ctx, dest.ID)
-
-		if errors.Is(err, cpclient.ErrKeyNotFound) {
-			pkgLogger.Errorf("key not found in upstream: %s", err.Error())
-			continue
-		}
 
 		if err != nil {
 			pkgLogger.Errorf("fetching ssh keys for destination: %s", err.Error())

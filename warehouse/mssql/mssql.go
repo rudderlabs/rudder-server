@@ -147,18 +147,8 @@ func Connect(cred CredentialsT) (*sql.DB, error) {
 		db *sql.DB
 	)
 
-	if cred.TunnelInfo != nil {
-		if db, err = tunnelling.SQLConnectThroughTunnel(
-			connUrl.String(),
-			cred.TunnelInfo.Type,
-			cred.TunnelInfo.Config); err != nil {
-			return nil, fmt.Errorf("opening connection to mssql server through tunnelling: %w", err)
-		}
-	} else {
-
-		if db, err = sql.Open("sqlserver", connUrl.String()); err != nil {
-			return nil, fmt.Errorf("opening connection to mssql server: %w", err)
-		}
+	if db, err = sql.Open("sqlserver", connUrl.String()); err != nil {
+		return nil, fmt.Errorf("opening connection to mssql server: %w", err)
 	}
 
 	return db, nil
@@ -182,15 +172,6 @@ func (ms *HandleT) getConnectionCredentials() CredentialsT {
 		Port:     warehouseutils.GetConfigValue(port, ms.Warehouse),
 		SSLMode:  warehouseutils.GetConfigValue(sslMode, ms.Warehouse),
 		timeout:  ms.ConnectTimeout,
-	}
-
-	tunnellingType := warehouseutils.GetConfigValue("tunnellingType", ms.Warehouse)
-	switch tunnellingType {
-	case string(tunnelling.SSHForward):
-		creds.TunnelInfo = &tunnelling.TunnelInfo{
-			Type:   tunnelling.Type(tunnellingType),
-			Config: ms.Warehouse.Destination.Config,
-		}
 	}
 
 	return creds

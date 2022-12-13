@@ -1091,22 +1091,22 @@ func RandHex() string {
 	return string(buf[:])
 }
 
-func ExtractTunnelInfoFromDestinationConfig(config map[string]interface{}) (*tunnelling.TunnelInfo, error) {
+func ExtractTunnelInfoFromDestinationConfig(config map[string]interface{}) *tunnelling.TunnelInfo {
 
 	if tunnelEnabled := ReadAsBool("useSSH", config); !tunnelEnabled {
-		return nil, nil
+		return nil
 	}
 
 	return &tunnelling.TunnelInfo{
-		Type:   tunnelling.Type(ReadAsString("tunnellingType", config)),
 		Config: config,
-	}, nil
+	}
 }
 
 func ReadAsBool(key string, config map[string]interface{}) bool {
+	if _, ok := config[key]; ok {
+		if val, ok := config[key].(bool); ok {
+			return val
+		}
+	}
 	return false
-}
-
-func ReadAsString(key string, config map[string]interface{}) string {
-	return ""
 }
