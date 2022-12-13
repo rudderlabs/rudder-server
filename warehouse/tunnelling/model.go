@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strconv"
 
-	stunnel "github.com/rudderlabs/rudder-server/sql-tunnels/driver/ssh"
+	stunnel "github.com/rudderlabs/sql-tunnels/driver/ssh"
 )
 
 var ErrMissingKey = errors.New("missing mandatory key")

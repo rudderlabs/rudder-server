@@ -302,7 +302,7 @@ func (wh *HandleT) backendConfigSubscriber(ctx context.Context) {
 			wh.configBackendURL,
 			wh.internalAuth)
 
-		pkgLogger.Infof(`Received updated workspace config`)
+		pkgLogger.Info(`Received updated workspace config`)
 		for workspaceID, wConfig := range config {
 
 			for _, source := range wConfig.Sources {
@@ -317,18 +317,14 @@ func (wh *HandleT) backendConfigSubscriber(ctx context.Context) {
 					continue
 				}
 
-				// TODO:SSH : Configuration that would come from the upstream.
-				for idx, destination := range source.Destinations {
-
-					if _, ok := destination.Config["useSSH"]; ok {
-						source.Destinations[idx].Config["tunnellingType"] = "ssh_forward"
-					}
-				}
-
 				for idx, destination := range source.Destinations {
 
 					if destination.DestinationDefinition.Name != wh.destType {
 						continue
+					}
+
+					if _, ok := destination.Config["useSSH"]; ok {
+						source.Destinations[idx].Config["tunnellingType"] = "ssh_forward"
 					}
 
 					// When tunnel object is set from upstream, we need to fetch
@@ -403,6 +399,8 @@ func (wh *HandleT) backendConfigSubscriber(ctx context.Context) {
 		wh.initialConfigFetched = true
 	}
 }
+
+func associateDestinationSecrets()
 
 // getNamespace sets namespace name in the following order
 //  1. user set name from destinationConfig
@@ -1387,8 +1385,8 @@ func (wh *HandleT) Setup(whType string) {
 	config.RegisterBoolConfigVariable(false, &wh.allowMultipleSourcesForJobsPickup, false, fmt.Sprintf(`Warehouse.%v.allowMultipleSourcesForJobsPickup`, whName))
 
 	wh.internalAuth = cpclient.BasicAuth{
-		Username: config.GetString("INTERNAL_AUTH_USERNAME", "cbadmin"),
-		Password: config.GetString("INTERNAL_AUTH_PASSWORD", "xasamelo94"),
+		Username: config.GetString("CP_INTERNAL_API_USERNAME", ""),
+		Password: config.GetString("CP_INTERNAL_API_PASSWORD", ""),
 	}
 	wh.configBackendURL = configBackendURL
 
