@@ -7,9 +7,11 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/rudderlabs/rudder-server/gateway/response"
+	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
@@ -33,18 +35,26 @@ type transformerBatchResponseT struct {
 	statusCode int
 }
 
-func (bt *batchWebhookTransformerT) markRepsonseFail(reason string) transformerResponse {
+func (bt *batchWebhookTransformerT) markResponseFail(sourceType, reason string) transformerResponse {
 	resp := transformerResponse{
 		Err:        response.GetStatus(reason),
 		StatusCode: response.GetErrorStatusCode(reason),
 	}
 	bt.stats.failedStat.Count(1)
+	stats.Default.NewTaggedStat("source_transform_failed_jobs", stats.CountType, stats.Tags{
+		"sourceType": sourceType,
+		"statusCode": strconv.Itoa(response.GetErrorStatusCode(reason)),
+	}).Count(1)
 	return resp
 }
 
 func (bt *batchWebhookTransformerT) transform(events [][]byte, sourceType string) transformerBatchResponseT {
 	bt.stats.sentStat.Count(len(events))
 	bt.stats.transformTimerStat.Start()
+
+	stats.Default.NewTaggedStat("source_transform_received_jobs", stats.CountType, stats.Tags{
+		"sourceType": sourceType,
+	}).Count(len(events))
 
 	payload := misc.MakeJSONArray(events)
 	url := fmt.Sprintf(`%s/%s`, bt.sourceTransformerURL, strings.ToLower(sourceType))
@@ -144,7 +154,7 @@ func (bt *batchWebhookTransformerT) transform(events [][]byte, sourceType string
 			continue
 		}
 		if resp.Output == nil && resp.OutputToSource == nil {
-			batchResponse.responses[idx] = bt.markRepsonseFail(response.SourceTransformerFailedToReadOutput)
+			batchResponse.responses[idx] = bt.markResponseFail(sourceType, response.SourceTransformerFailedToReadOutput)
 			continue
 		}
 		bt.stats.receivedStat.Count(1)
