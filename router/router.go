@@ -244,7 +244,7 @@ func loadConfig() {
 	// sources failed keys config
 	config.RegisterDurationConfigVariable(48, &failedKeysExpire, true, time.Hour, "Router.failedKeysExpire")
 	config.RegisterDurationConfigVariable(24, &failedKeysCleanUpSleep, true, time.Hour, "Router.failedKeysCleanUpSleep")
-	failedKeysEnabled = config.GetBool("Router.failedKeysEnabled", false)
+	failedKeysEnabled = config.GetBool("Router.failedKeysEnabled", true)
 }
 
 func sendRetryStoreStats(attempt int) {
