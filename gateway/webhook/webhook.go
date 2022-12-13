@@ -365,7 +365,7 @@ func (bt *batchWebhookTransformerT) batchTransformLoop() {
 			if resp.Err == "" && resp.Output != nil {
 				outputPayload, err := json.Marshal(resp.Output)
 				if err != nil {
-					webRequest.done <- bt.markRepsonseFail(response.SourceTransformerInvalidOutputFormatInResponse)
+					webRequest.done <- bt.markResponseFail(webRequest.sourceType, response.SourceTransformerInvalidOutputFormatInResponse)
 					continue
 				}
 				errorMessage := bt.webhook.enqueueInGateway(webRequest, outputPayload)
