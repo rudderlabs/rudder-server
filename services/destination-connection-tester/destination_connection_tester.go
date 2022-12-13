@@ -10,11 +10,12 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/gofrs/uuid"
+	"github.com/google/uuid"
 
 	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/services/filemanager"
+	"github.com/rudderlabs/rudder-server/utils/httputil"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
@@ -87,7 +88,7 @@ func makePostRequest(url string, payload interface{}) error {
 
 		resp, err = client.Do(req)
 		if err == nil {
-			resp.Body.Close()
+			func() { httputil.CloseResponse(resp) }()
 			break
 		}
 
@@ -113,7 +114,7 @@ func createTestFileForBatchDestination(destinationID string) string {
 		panic(err)
 	}
 
-	gzipFilePath := fmt.Sprintf("%v/%v/%v.%v.%v.csv.gz", tmpDirPath, rudderConnectionTestingFolder, destinationID, uuid.Must(uuid.NewV4()), time.Now().Unix())
+	gzipFilePath := fmt.Sprintf("%v/%v/%v.%v.%v.csv.gz", tmpDirPath, rudderConnectionTestingFolder, destinationID, uuid.New(), time.Now().Unix())
 	err = os.MkdirAll(filepath.Dir(gzipFilePath), os.ModePerm)
 	if err != nil {
 		pkgLogger.Errorf("DCT: Failed to make dir %s for testing this destination id %s: err %v", gzipFilePath, destinationID, err)

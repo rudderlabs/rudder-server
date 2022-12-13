@@ -1,5 +1,3 @@
-//go:build warehouse_integration && !sources_integration
-
 package clickhouse_test
 
 import (
@@ -10,9 +8,10 @@ import (
 	"strings"
 	"testing"
 
-	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
-	"github.com/rudderlabs/rudder-server/utils/timeutil"
+	"github.com/rudderlabs/rudder-server/utils/misc"
+	"github.com/rudderlabs/rudder-server/warehouse/validations"
 
+	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/warehouse/clickhouse"
 	"github.com/rudderlabs/rudder-server/warehouse/client"
 	"github.com/rudderlabs/rudder-server/warehouse/testhelper"
@@ -20,30 +19,19 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-type TestHandle struct {
-	DB              *sql.DB
-	ClusterDBs      []*sql.DB
-	WriteKey        string
-	ClusterWriteKey string
-	Schema          string
-	Tables          []string
-}
+func TestIntegrationClickHouse(t *testing.T) {
+	if os.Getenv("SLOW") == "0" {
+		t.Skip("Skipping tests. Remove 'SLOW=0' env var to run them.")
+	}
 
-var handle *TestHandle
+	t.Parallel()
 
-var statsToVerify = []string{
-	"warehouse_clickhouse_commitTimeouts",
-	"warehouse_clickhouse_execTimeouts",
-	"warehouse_clickhouse_failedRetries",
-	"warehouse_clickhouse_syncLoadFileTime",
-	"warehouse_clickhouse_downloadLoadFilesTime",
-	"warehouse_clickhouse_numRowsLoadFile",
-}
+	clickhouse.Init()
 
-func (*TestHandle) VerifyConnection() error {
-	err := testhelper.WithConstantBackoff(func() (err error) {
-		credentials := clickhouse.CredentialsT{
-			Host:          "wh-clickhouse",
+	var dbs []*sql.DB
+	for _, host := range []string{"wh-clickhouse", "wh-clickhouse01", "wh-clickhouse02", "wh-clickhouse03", "wh-clickhouse04"} {
+		db, err := clickhouse.Connect(clickhouse.CredentialsT{
+			Host:          host,
 			User:          "rudder",
 			Password:      "rudder-password",
 			DBName:        "rudderdb",
@@ -51,202 +39,113 @@ func (*TestHandle) VerifyConnection() error {
 			SkipVerify:    "true",
 			TLSConfigName: "",
 			Port:          "9000",
-		}
-		if handle.DB, err = clickhouse.Connect(credentials, true); err != nil {
-			err = fmt.Errorf("could not connect to warehouse clickhouse with error: %w", err)
-			return
-		}
-		if err = handle.DB.Ping(); err != nil {
-			err = fmt.Errorf("could not connect to warehouse clickhouse while pinging with error: %w", err)
-			return
-		}
-		return
-	})
-	if err != nil {
-		return fmt.Errorf("error while running test connection for clickhouse normal mode with err: %s", err.Error())
+		}, true)
+		require.NoError(t, err)
+
+		err = db.Ping()
+		require.NoError(t, err)
+
+		dbs = append(dbs, db)
 	}
 
-	clusterCredentials := []struct {
-		Credentials *clickhouse.CredentialsT
+	var (
+		provider = warehouseutils.CLICKHOUSE
+		jobsDB   = testhelper.SetUpJobsDB(t)
+		tables   = []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"}
+	)
+
+	testCases := []struct {
+		name            string
+		sourceID        string
+		destinationID   string
+		writeKey        string
+		warehouseEvents testhelper.EventsCountMap
+		clusterSetup    func(t testing.TB)
+		db              *sql.DB
 	}{
 		{
-			Credentials: &clickhouse.CredentialsT{
-				Host:          "wh-clickhouse01",
-				User:          "rudder",
-				Password:      "rudder-password",
-				DBName:        "rudderdb",
-				Secure:        "false",
-				SkipVerify:    "true",
-				TLSConfigName: "",
-				Port:          "9000",
-			},
+			name:          "Single Setup",
+			sourceID:      "1wRvLmEnMOOxNM79pwaZhyCqXRE",
+			destinationID: "21Ev6TI6emCFDKph2Zn6XfTP7PI",
+			writeKey:      "C5AWX39IVUWSP2NcHciWvqZTa2N",
+			db:            dbs[0],
 		},
 		{
-			Credentials: &clickhouse.CredentialsT{
-				Host:          "wh-clickhouse02",
-				User:          "rudder",
-				Password:      "rudder-password",
-				DBName:        "rudderdb",
-				Secure:        "false",
-				SkipVerify:    "true",
-				TLSConfigName: "",
-				Port:          "9000",
+			name:          "Cluster Mode Setup",
+			sourceID:      "1wRvLmEnMOOxNM79ghdZhyCqXRE",
+			destinationID: "21Ev6TI6emCFDKhp2Zn6XfTP7PI",
+			writeKey:      "95RxRTZHWUsaD6HEdz0ThbXfQ6p",
+			db:            dbs[1],
+			warehouseEvents: testhelper.EventsCountMap{
+				"identifies":    8,
+				"users":         2,
+				"tracks":        8,
+				"product_track": 8,
+				"pages":         8,
+				"screens":       8,
+				"aliases":       8,
+				"groups":        8,
 			},
-		},
-		{
-			Credentials: &clickhouse.CredentialsT{
-				Host:          "wh-clickhouse03",
-				User:          "rudder",
-				Password:      "rudder-password",
-				DBName:        "rudderdb",
-				Secure:        "false",
-				SkipVerify:    "true",
-				TLSConfigName: "",
-				Port:          "9000",
-			},
-		},
-		{
-			Credentials: &clickhouse.CredentialsT{
-				Host:          "wh-clickhouse04",
-				User:          "rudder",
-				Password:      "rudder-password",
-				DBName:        "rudderdb",
-				Secure:        "false",
-				SkipVerify:    "true",
-				TLSConfigName: "",
-				Port:          "9000",
+			clusterSetup: func(t testing.TB) {
+				t.Helper()
+				initializeClickhouseClusterMode(t, dbs[1:], tables)
 			},
 		},
 	}
 
-	for i, chResource := range clusterCredentials {
-		var clickhouseDB *sql.DB
+	for _, tc := range testCases {
+		tc := tc
 
-		err = testhelper.WithConstantBackoff(func() (err error) {
-			if clickhouseDB, err = clickhouse.Connect(*chResource.Credentials, true); err != nil {
-				err = fmt.Errorf("could not connect to warehouse clickhouse cluster: %d with error: %w", i, err)
-				return
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			ts := testhelper.WareHouseTest{
+				Schema:        "rudderdb",
+				WriteKey:      tc.writeKey,
+				SourceID:      tc.sourceID,
+				DestinationID: tc.destinationID,
+				Tables:        tables,
+				Provider:      provider,
+				JobsDB:        jobsDB,
+				UserID:        testhelper.GetUserId(provider),
+				StatsToVerify: []string{
+					"warehouse_clickhouse_commitTimeouts",
+					"warehouse_clickhouse_execTimeouts",
+					"warehouse_clickhouse_failedRetries",
+					"warehouse_clickhouse_syncLoadFileTime",
+					"warehouse_clickhouse_downloadLoadFilesTime",
+					"warehouse_clickhouse_numRowsLoadFile",
+				},
+				Client: &client.Client{
+					SQL:  tc.db,
+					Type: client.SQLClient,
+				},
 			}
-			if err = clickhouseDB.Ping(); err != nil {
-				err = fmt.Errorf("could not connect to warehouse clickhouse cluster: %d while pinging with error: %w", i, err)
-				return
+			ts.VerifyEvents(t)
+
+			if tc.clusterSetup != nil {
+				tc.clusterSetup(t)
 			}
-			return
+
+			ts.UserID = testhelper.GetUserId(provider)
+			ts.WarehouseEventsMap = tc.warehouseEvents
+			ts.VerifyModifiedEvents(t)
 		})
-		if err != nil {
-			return fmt.Errorf("error while running test connection for clickhouse cluster mode with err: %s", err.Error())
-		}
-		handle.ClusterDBs = append(handle.ClusterDBs, clickhouseDB)
 	}
-	return nil
 }
 
-func TestClickHouseIntegration(t *testing.T) {
-	t.Run("Single Setup", func(t *testing.T) {
-		t.Parallel()
+func TestConfigurationValidationClickhouse(t *testing.T) {
+	if os.Getenv("SLOW") == "0" {
+		t.Skip("Skipping tests. Remove 'SLOW=0' env var to run them.")
+	}
 
-		warehouseTest := &testhelper.WareHouseTest{
-			Client: &client.Client{
-				SQL:  handle.DB,
-				Type: client.SQLClient,
-			},
-			WriteKey:      handle.WriteKey,
-			Schema:        handle.Schema,
-			Tables:        handle.Tables,
-			Provider:      warehouseutils.CLICKHOUSE,
-			SourceID:      "1wRvLmEnMOOxNM79pwaZhyCqXRE",
-			DestinationID: "21Ev6TI6emCFDKph2Zn6XfTP7PI",
-		}
+	t.Parallel()
 
-		// Scenario 1
-		warehouseTest.TimestampBeforeSendingEvents = timeutil.Now()
-		warehouseTest.UserId = testhelper.GetUserId(warehouseutils.CLICKHOUSE)
+	misc.Init()
+	validations.Init()
+	warehouseutils.Init()
+	clickhouse.Init()
 
-		sendEventsMap := testhelper.SendEventsMap()
-		testhelper.SendEvents(t, warehouseTest, sendEventsMap)
-		testhelper.SendEvents(t, warehouseTest, sendEventsMap)
-		testhelper.SendEvents(t, warehouseTest, sendEventsMap)
-		testhelper.SendIntegratedEvents(t, warehouseTest, sendEventsMap)
-
-		testhelper.VerifyEventsInStagingFiles(t, warehouseTest, testhelper.StagingFilesEventsMap())
-		testhelper.VerifyEventsInLoadFiles(t, warehouseTest, testhelper.LoadFilesEventsMap())
-		testhelper.VerifyEventsInTableUploads(t, warehouseTest, testhelper.TableUploadsEventsMap())
-		testhelper.VerifyEventsInWareHouse(t, warehouseTest, testhelper.WarehouseEventsMap())
-
-		// Scenario 2
-		warehouseTest.TimestampBeforeSendingEvents = timeutil.Now()
-		warehouseTest.UserId = testhelper.GetUserId(warehouseutils.CLICKHOUSE)
-
-		sendEventsMap = testhelper.SendEventsMap()
-		testhelper.SendModifiedEvents(t, warehouseTest, sendEventsMap)
-		testhelper.SendModifiedEvents(t, warehouseTest, sendEventsMap)
-		testhelper.SendModifiedEvents(t, warehouseTest, sendEventsMap)
-		testhelper.SendIntegratedEvents(t, warehouseTest, sendEventsMap)
-
-		testhelper.VerifyEventsInStagingFiles(t, warehouseTest, testhelper.StagingFilesEventsMap())
-		testhelper.VerifyEventsInLoadFiles(t, warehouseTest, testhelper.LoadFilesEventsMap())
-		testhelper.VerifyEventsInTableUploads(t, warehouseTest, testhelper.TableUploadsEventsMap())
-		testhelper.VerifyEventsInWareHouse(t, warehouseTest, testhelper.WarehouseEventsMap())
-
-		testhelper.VerifyWorkspaceIDInStats(t, statsToVerify...)
-	})
-
-	t.Run("Cluster Mode Setup", func(t *testing.T) {
-		t.Parallel()
-
-		require.NotNil(t, handle.ClusterDBs)
-		require.NotNil(t, handle.ClusterDBs[0])
-
-		warehouseTest := &testhelper.WareHouseTest{
-			Client: &client.Client{
-				SQL:  handle.ClusterDBs[0],
-				Type: client.SQLClient,
-			},
-			WriteKey:      handle.ClusterWriteKey,
-			Schema:        handle.Schema,
-			Tables:        handle.Tables,
-			Provider:      warehouseutils.CLICKHOUSE,
-			SourceID:      "1wRvLmEnMOOxNM79ghdZhyCqXRE",
-			DestinationID: "21Ev6TI6emCFDKhp2Zn6XfTP7PI",
-		}
-
-		// Scenario 1
-		warehouseTest.TimestampBeforeSendingEvents = timeutil.Now()
-		warehouseTest.UserId = testhelper.GetUserId(fmt.Sprintf("%s_%s", warehouseutils.CLICKHOUSE, "CLUSTER"))
-
-		sendEventsMap := testhelper.SendEventsMap()
-		testhelper.SendEvents(t, warehouseTest, sendEventsMap)
-		testhelper.SendEvents(t, warehouseTest, sendEventsMap)
-		testhelper.SendEvents(t, warehouseTest, sendEventsMap)
-		testhelper.SendIntegratedEvents(t, warehouseTest, sendEventsMap)
-
-		testhelper.VerifyEventsInStagingFiles(t, warehouseTest, testhelper.StagingFilesEventsMap())
-		testhelper.VerifyEventsInLoadFiles(t, warehouseTest, testhelper.LoadFilesEventsMap())
-		testhelper.VerifyEventsInTableUploads(t, warehouseTest, testhelper.TableUploadsEventsMap())
-		testhelper.VerifyEventsInWareHouse(t, warehouseTest, testhelper.WarehouseEventsMap())
-
-		// Scenario 2
-		warehouseTest.TimestampBeforeSendingEvents = timeutil.Now()
-		warehouseTest.UserId = testhelper.GetUserId(fmt.Sprintf("%s_%s", warehouseutils.CLICKHOUSE, "CLUSTER"))
-
-		initializeClickhouseClusterMode(t)
-
-		sendEventsMap = testhelper.SendEventsMap()
-		testhelper.SendModifiedEvents(t, warehouseTest, sendEventsMap)
-		testhelper.SendModifiedEvents(t, warehouseTest, sendEventsMap)
-		testhelper.SendModifiedEvents(t, warehouseTest, sendEventsMap)
-		testhelper.SendIntegratedEvents(t, warehouseTest, sendEventsMap)
-
-		testhelper.VerifyEventsInStagingFiles(t, warehouseTest, testhelper.StagingFilesEventsMap())
-		testhelper.VerifyEventsInLoadFiles(t, warehouseTest, testhelper.LoadFilesEventsMap())
-		testhelper.VerifyEventsInTableUploads(t, warehouseTest, testhelper.TableUploadsEventsMap())
-		testhelper.VerifyEventsInWareHouse(t, warehouseTest, clusterWarehouseEventsMap())
-
-		testhelper.VerifyWorkspaceIDInStats(t, statsToVerify...)
-	})
-}
-
-func TestClickhouseConfigurationValidation(t *testing.T) {
 	configurations := testhelper.PopulateTemplateConfigurations()
 	destination := backendconfig.DestinationT{
 		ID: "21Ev6TI6emCFDKph2Zn6XfTP7PI",
@@ -277,10 +176,10 @@ func TestClickhouseConfigurationValidation(t *testing.T) {
 		Enabled:    true,
 		RevisionID: "29eeuTnqbBKn0XVTj5z9XQIbaru",
 	}
-	testhelper.VerifyingConfigurationTest(t, destination)
+	testhelper.VerifyConfigurationTest(t, destination)
 }
 
-func initializeClickhouseClusterMode(t *testing.T) {
+func initializeClickhouseClusterMode(t testing.TB, clusterDBs []*sql.DB, tables []string) {
 	t.Helper()
 
 	type ColumnInfoT struct {
@@ -374,13 +273,11 @@ func initializeClickhouseClusterMode(t *testing.T) {
 			},
 		},
 	}
-	require.NotNil(t, handle.ClusterDBs)
-	require.NotNil(t, handle.ClusterDBs[0])
 
-	clusterDB := handle.ClusterDBs[0]
+	clusterDB := clusterDBs[0]
 
 	// Rename tables to tables_shard
-	for _, table := range handle.Tables {
+	for _, table := range tables {
 		sqlStatement := fmt.Sprintf("RENAME TABLE %[1]s to %[1]s_shard ON CLUSTER rudder_cluster;", table)
 		log.Printf("Renaming tables to sharded tables for distribution view for clickhouse cluster with sqlStatement: %s", sqlStatement)
 
@@ -391,7 +288,7 @@ func initializeClickhouseClusterMode(t *testing.T) {
 	}
 
 	// Create distribution views for tables
-	for _, table := range handle.Tables {
+	for _, table := range tables {
 		sqlStatement := fmt.Sprintf(`
 			CREATE TABLE rudderdb.%[1]s ON CLUSTER 'rudder_cluster' AS rudderdb.%[1]s_shard ENGINE = Distributed(
 			  'rudder_cluster',
@@ -417,7 +314,7 @@ func initializeClickhouseClusterMode(t *testing.T) {
 	}
 
 	// Alter columns to all the cluster tables
-	for _, clusterDB := range handle.ClusterDBs {
+	for _, clusterDB := range clusterDBs {
 		for tableName, columnInfos := range tableColumnInfoMap {
 			sqlStatement := fmt.Sprintf(`
 				ALTER TABLE rudderdb.%[1]s_shard`,
@@ -439,27 +336,4 @@ func initializeClickhouseClusterMode(t *testing.T) {
 			}))
 		}
 	}
-}
-
-func clusterWarehouseEventsMap() testhelper.EventsCountMap {
-	return testhelper.EventsCountMap{
-		"identifies":    8,
-		"users":         2,
-		"tracks":        8,
-		"product_track": 8,
-		"pages":         8,
-		"screens":       8,
-		"aliases":       8,
-		"groups":        8,
-	}
-}
-
-func TestMain(m *testing.M) {
-	handle = &TestHandle{
-		WriteKey:        "C5AWX39IVUWSP2NcHciWvqZTa2N",
-		ClusterWriteKey: "95RxRTZHWUsaD6HEdz0ThbXfQ6p",
-		Schema:          "rudderdb",
-		Tables:          []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"},
-	}
-	os.Exit(testhelper.Run(m, handle))
 }

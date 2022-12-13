@@ -27,6 +27,7 @@ import (
 	"github.com/rudderlabs/rudder-server/testhelper/health"
 	"github.com/rudderlabs/rudder-server/testhelper/rand"
 	whUtil "github.com/rudderlabs/rudder-server/testhelper/webhook"
+	"github.com/rudderlabs/rudder-server/utils/httputil"
 )
 
 func TestGatewayIntegration(t *testing.T) {
@@ -183,7 +184,7 @@ func testGatewayByAppType(t *testing.T, appType string) {
 	resp, err := http.Get(healthEndpoint)
 	require.ErrorContains(t, err, "connection refused")
 	require.Nil(t, resp)
-	defer resp.Body.Close()
+	defer func() { httputil.CloseResponse(resp) }()
 
 	// Checking now that the configuration has been processed and the server can start
 	t.Log("Checking health endpoint at", healthEndpoint)
@@ -316,7 +317,7 @@ func sendEvent(t *testing.T, httpPort int, payload *strings.Reader, callType, wr
 
 	res, err := httpClient.Do(req)
 	require.NoError(t, err)
-	defer func() { _ = res.Body.Close() }()
+	defer func() { httputil.CloseResponse(res) }()
 
 	body, err := io.ReadAll(res.Body)
 	require.NoError(t, err)

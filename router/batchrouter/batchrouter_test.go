@@ -12,8 +12,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/gofrs/uuid"
 	"github.com/golang/mock/gomock"
+	"github.com/google/uuid"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
@@ -208,7 +208,7 @@ var _ = Describe("BatchRouter", func() {
 
 			toRetryJobsList := []*jobsdb.JobT{
 				{
-					UUID:         uuid.Must(uuid.NewV4()),
+					UUID:         uuid.New(),
 					UserID:       "u1",
 					JobID:        2009,
 					CreatedAt:    time.Date(2020, 0o4, 28, 13, 26, 0o0, 0o0, time.UTC),
@@ -225,7 +225,7 @@ var _ = Describe("BatchRouter", func() {
 
 			unprocessedJobsList := []*jobsdb.JobT{
 				{
-					UUID:         uuid.Must(uuid.NewV4()),
+					UUID:         uuid.New(),
 					UserID:       "u1",
 					JobID:        2010,
 					CreatedAt:    time.Date(2020, 0o4, 28, 13, 26, 0o0, 0o0, time.UTC),

@@ -17,6 +17,7 @@ import (
 
 	"github.com/rudderlabs/rudder-server/processor/integrations"
 	"github.com/rudderlabs/rudder-server/router/utils"
+	"github.com/rudderlabs/rudder-server/utils/httputil"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/sysUtils"
@@ -168,7 +169,7 @@ func (network *NetHandleT) SendPost(ctx context.Context, structData integrations
 			}
 		}
 
-		defer func() { _ = resp.Body.Close() }()
+		defer func() { httputil.CloseResponse(resp) }()
 
 		respBody, err := io.ReadAll(resp.Body)
 		if err != nil {

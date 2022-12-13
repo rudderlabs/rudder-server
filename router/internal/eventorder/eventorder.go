@@ -98,6 +98,21 @@ func (b *Barrier) Enter(key string, jobID int64) (accepted bool, previousFailedJ
 	return true, nil
 }
 
+// Leave the barrier for this key and jobID. Leave acts as an undo operation for Enter, i.e.
+// when a previously-entered job leaves the barrier it is as if this key and jobID didn't enter the barrier.
+// Calling Leave is idempotent.
+func (b *Barrier) Leave(key string, jobID int64) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	barrier, ok := b.barriers[key]
+	if !ok {
+		return
+	}
+	barrier.mu.Lock()
+	delete(barrier.concurrencyLimiter, jobID)
+	barrier.mu.Unlock()
+}
+
 // Peek returns the previously failed jobID for the given key, if any
 func (b *Barrier) Peek(key string) (previousFailedJobID *int64) {
 	b.mu.RLock()

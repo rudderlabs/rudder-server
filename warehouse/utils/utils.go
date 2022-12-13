@@ -30,6 +30,7 @@ import (
 	"github.com/rudderlabs/rudder-server/services/filemanager"
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/awsutils"
+	"github.com/rudderlabs/rudder-server/utils/httputil"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
@@ -1035,7 +1036,7 @@ func GetRequestWithTimeout(ctx context.Context, url string, timeout time.Duratio
 	var respBody []byte
 	if resp != nil && resp.Body != nil {
 		respBody, _ = io.ReadAll(resp.Body)
-		defer resp.Body.Close()
+		func() { httputil.CloseResponse(resp) }()
 	}
 
 	return respBody, nil
@@ -1059,7 +1060,7 @@ func PostRequestWithTimeout(ctx context.Context, url string, payload []byte, tim
 	var respBody []byte
 	if resp != nil && resp.Body != nil {
 		respBody, _ = io.ReadAll(resp.Body)
-		defer resp.Body.Close()
+		func() { httputil.CloseResponse(resp) }()
 	}
 
 	return respBody, nil

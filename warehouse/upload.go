@@ -11,6 +11,8 @@ import (
 	"sync"
 	"time"
 
+	"golang.org/x/exp/slices"
+
 	"github.com/cenkalti/backoff/v4"
 	"github.com/lib/pq"
 	"github.com/tidwall/gjson"
@@ -912,6 +914,14 @@ func (job *UploadJobT) loadAllTablesExcept(skipLoadForTables []string, loadFiles
 	if parallelLoads, ok = maxParallelLoads[job.warehouse.Type]; !ok {
 		parallelLoads = 1
 	}
+
+	configKey := fmt.Sprintf("Warehouse.%s.maxParallelLoadsWorkspaceIDs", warehouseutils.WHDestNameMap[job.upload.DestinationType])
+	if k, ok := config.GetStringMap(configKey, nil)[job.warehouse.WorkspaceID]; ok {
+		if load, ok := k.(float64); ok {
+			parallelLoads = int(load)
+		}
+	}
+
 	pkgLogger.Infof(`[WH]: Running %d parallel loads in namespace %s of destination %s:%s`, parallelLoads, job.warehouse.Namespace, job.warehouse.Type, job.warehouse.Destination.ID)
 
 	var loadErrors []error
@@ -1025,6 +1035,12 @@ func (job *UploadJobT) loadTable(tName string) (alteredSchema bool, err error) {
 	tableUpload.setStatus(TableUploadExecuting)
 
 	generateTableLoadCountVerificationsMetrics := config.GetBool("Warehouse.generateTableLoadCountMetrics", true)
+
+	disableGenerateMetricsWorkspaceIDs := config.GetStringSlice("Warehouse.disableGenerateTableLoadCountMetricsWorkspaceIDs", nil)
+	if slices.Contains(disableGenerateMetricsWorkspaceIDs, job.upload.WorkspaceID) {
+		generateTableLoadCountVerificationsMetrics = false
+	}
+
 	var totalBeforeLoad, totalAfterLoad int64
 	if generateTableLoadCountVerificationsMetrics {
 		var errTotalCount error
@@ -1773,9 +1789,6 @@ func (job *UploadJobT) destinationRevisionIDMap() (revisionIDMap map[string]back
 		return
 	}
 
-	var response []byte
-	var responseCode int
-
 	for _, revisionID := range revisionIDs {
 		// No need to make config backend api call for the current config
 		if revisionID == job.warehouse.Destination.RevisionID {
@@ -1783,20 +1796,11 @@ func (job *UploadJobT) destinationRevisionIDMap() (revisionIDMap map[string]back
 			continue
 		}
 
-		urlStr := fmt.Sprintf("%s/workspaces/destinationHistory/%s", configBackendURL, revisionID)
-		response, err = warehouseutils.GetRequestWithTimeout(context.TODO(), urlStr, time.Second*60)
-		if err == nil {
-			var destination backendconfig.DestinationT
-			err = json.Unmarshal(response, &destination)
-			if err != nil {
-				err = fmt.Errorf("error occurred while unmarshalling response for Dest revisionID %s with error: %w", revisionID, err)
-				return
-			}
-			revisionIDMap[revisionID] = destination
-		} else {
-			err = fmt.Errorf("error occurred while getting destination history for revisionID %s, responseCode: %d, error: %w", revisionID, responseCode, err)
-			return
+		destination, err := controlPlaneClient.DestinationHistory(context.TODO(), revisionID)
+		if err != nil {
+			return nil, fmt.Errorf("fetching destination history for %s: %w", revisionID, err)
 		}
+		revisionIDMap[revisionID] = destination
 	}
 	return
 }
@@ -1856,6 +1860,11 @@ func (job *UploadJobT) createLoadFiles(generateAll bool) (startLoadFileID, endLo
 	stagingFiles := job.stagingFiles
 
 	publishBatchSize := config.GetInt("Warehouse.pgNotifierPublishBatchSize", 100)
+	if k, ok := config.GetStringMap("Warehouse.pgNotifierPublishBatchSizeWorkspaceIDs", nil)[job.warehouse.WorkspaceID]; ok {
+		if batchSize, ok := k.(float64); ok {
+			publishBatchSize = int(batchSize)
+		}
+	}
 	pkgLogger.Infof("[WH]: Starting batch processing %v stage files for %s:%s", publishBatchSize, destType, destID)
 	uniqueLoadGenID := misc.FastUUID().String()
 	job.upload.LoadFileGenStartTime = timeutil.Now()

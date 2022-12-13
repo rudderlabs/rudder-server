@@ -93,6 +93,21 @@ func (c *Config) GetInt(key string, defaultValue int) (value int) {
 	return c.v.GetInt(key)
 }
 
+// GetStringMap gets string map value from config
+func GetStringMap(key string, defaultValue map[string]interface{}) (value map[string]interface{}) {
+	return Default.GetStringMap(key, defaultValue)
+}
+
+// GetStringMap gets string map value from config
+func (c *Config) GetStringMap(key string, defaultValue map[string]interface{}) (value map[string]interface{}) {
+	c.vLock.RLock()
+	defer c.vLock.RUnlock()
+	if !c.IsSet(key) {
+		return defaultValue
+	}
+	return c.v.GetStringMap(key)
+}
+
 // MustGetInt gets int value from config or panics if the config doesn't exist
 func MustGetInt(key string) (value int) {
 	return Default.MustGetInt(key)
@@ -166,6 +181,11 @@ func (c *Config) MustGetString(key string) (value string) {
 		panic(fmt.Errorf("config key %s not found", key))
 	}
 	return c.v.GetString(key)
+}
+
+// GetStringSlice gets string slice value from config
+func GetStringSlice(key string, defaultValue []string) (value []string) {
+	return Default.GetStringSlice(key, defaultValue)
 }
 
 // GetStringSlice gets string slice value from config

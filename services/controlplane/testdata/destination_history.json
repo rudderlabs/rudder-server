@@ -1,0 +1,126 @@
+{
+    "secretConfig": {},
+    "config": {
+        "webhookUrl": "https://webhook.site/4e257da5-000e-4390-9ad2-d28d37fa934e",
+        "webhookMethod": "POST"
+    },
+    "liveEventsConfig": {},
+    "id": "2ENkYVMMUInzUGYp32R6dVghgvj",
+    "name": "webhook.site",
+    "enabled": true,
+    "destinationDefinitionId": "1aIXpUrvpGno4gEuF2GvI3O9dOe",
+    "workspaceId": "1wBceIM3I4Fg5PJYiq8tbbvm3Ww",
+    "deleted": false,
+    "createdAt": "2022-05-23T12:36:03.747Z",
+    "updatedAt": "2022-09-06T05:51:16.196Z",
+    "revisionId": "2ENkYQ1MR9f83YhqS5k7uTSe5XH",
+    "secretVersion": 1,
+    "originalID": "29Z8hE8dc7KpqhnOg8DS1ngSk7T",
+    "action": "UPDATED",
+    "destinationDefinition": {
+        "config": {
+            "transformAt": "processor",
+            "transformAtV1": "processor",
+            "saveDestinationResponse": false
+        },
+        "configSchema": {
+            "type": "object",
+            "$schema": "http://json-schema.org/draft-07/schema#",
+            "required": [
+                "webhookUrl"
+            ],
+            "properties": {
+                "headers": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "to": {
+                                "type": "string",
+                                "pattern": "(^\\{\\{.*\\|\\|(.*)\\}\\}$)|(^env[.].+)|^(.{0,100000})$"
+                            },
+                            "from": {
+                                "type": "string",
+                                "pattern": "(^\\{\\{.*\\|\\|(.*)\\}\\}$)|(^env[.].+)|^(.{0,100})$"
+                            }
+                        }
+                    }
+                },
+                "webhookUrl": {
+                    "type": "string",
+                    "pattern": "(^\\{\\{.*\\|\\|(.*)\\}\\}$)|(^env[.].+)|^(https?|ftp)://[^\\s/$.?#].[^\\s]*$"
+                },
+                "webhookMethod": {
+                    "type": "string",
+                    "pattern": "(^\\{\\{.*\\|\\|(.*)\\}\\}$)|(^env[.].+)|(^(POST|PUT|PATCH|GET|DELETE)$)"
+                }
+            }
+        },
+        "responseRules": null,
+        "options": null,
+        "uiConfig": [
+            {
+                "title": "Connection Settings",
+                "fields": [
+                    {
+                        "type": "textInput",
+                        "label": "Webhook URL",
+                        "regex": "(^\\{\\{.*\\|\\|(.*)\\}\\}$)|(^env[.].+)|^(https?|ftp)://[^\\s/$.?#].[^\\s]*$",
+                        "value": "webhookUrl",
+                        "required": true,
+                        "placeholder": "http://www.abcd.com"
+                    },
+                    {
+                        "type": "singleSelect",
+                        "label": "URL Method",
+                        "value": "webhookMethod",
+                        "options": [
+                            {
+                                "name": "POST",
+                                "value": "POST"
+                            },
+                            {
+                                "name": "PUT",
+                                "value": "PUT"
+                            },
+                            {
+                                "name": "PATCH",
+                                "value": "PATCH"
+                            },
+                            {
+                                "name": "GET",
+                                "value": "GET"
+                            },
+                            {
+                                "name": "DELETE",
+                                "value": "DELETE"
+                            }
+                        ],
+                        "placeholder": "POST",
+                        "defaultOption": {
+                            "name": "POST",
+                            "value": "POST"
+                        }
+                    },
+                    {
+                        "type": "dynamicForm",
+                        "label": "Headers",
+                        "value": "headers",
+                        "keyLeft": "from",
+                        "keyRight": "to",
+                        "labelLeft": "Key",
+                        "labelRight": "Value",
+                        "placeholderLeft": "content-type",
+                        "placeholderRight": "application/json"
+                    }
+                ]
+            }
+        ],
+        "id": "1aIXpUrvpGno4gEuF2GvI3O9dOe",
+        "name": "WEBHOOK",
+        "displayName": "Webhook",
+        "category": null,
+        "createdAt": "2020-04-09T09:24:24.089Z",
+        "updatedAt": "2022-11-04T09:12:11.055Z"
+    }
+}
