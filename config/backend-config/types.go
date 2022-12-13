@@ -54,11 +54,6 @@ type DestinationT struct {
 	RevisionID            string
 }
 
-type TunnelInfo struct {
-	Type   string
-	Config map[string]string
-}
-
 type SourceT struct {
 	ID                         string
 	Name                       string

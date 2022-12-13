@@ -8,15 +8,17 @@ services:
     ports:
       - "6432:5432"
   backend:
+    build:
+      context: ./
+      dockerfile: Dockerfile
     depends_on:
       - db
       - transformer
-    image: rudderstack/rudder-server-enterprise:1.3.0-rc.1
     entrypoint: sh -c '/wait-for db:5432 -- ./rudder-server'
     ports:
       - "8080:8080"
     env_file:
-      - ./.env
+      - build/docker.env
     environment:
       - JOBS_DB_HOST=db
   #   Uncomment the following lines to mount workspaceConfig file

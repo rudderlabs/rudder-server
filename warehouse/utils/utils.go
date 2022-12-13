@@ -33,6 +33,7 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/httputil"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
+	"github.com/rudderlabs/rudder-server/warehouse/tunnelling"
 )
 
 const (
@@ -1088,4 +1089,24 @@ func RandHex() string {
 	var buf [32]byte
 	hex.Encode(buf[:], u[:])
 	return string(buf[:])
+}
+
+func ExtractTunnelInfoFromDestinationConfig(config map[string]interface{}) (*tunnelling.TunnelInfo, error) {
+
+	if tunnelEnabled := ReadAsBool("useSSH", config); !tunnelEnabled {
+		return nil, nil
+	}
+
+	return &tunnelling.TunnelInfo{
+		Type:   tunnelling.Type(ReadAsString("tunnellingType", config)),
+		Config: config,
+	}, nil
+}
+
+func ReadAsBool(key string, config map[string]interface{}) bool {
+	return false
+}
+
+func ReadAsString(key string, config map[string]interface{}) string {
+	return ""
 }

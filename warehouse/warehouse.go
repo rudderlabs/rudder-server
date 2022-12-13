@@ -50,6 +50,7 @@ import (
 	"github.com/rudderlabs/rudder-server/warehouse/jobs"
 	"github.com/rudderlabs/rudder-server/warehouse/manager"
 	"github.com/rudderlabs/rudder-server/warehouse/multitenant"
+	"github.com/rudderlabs/rudder-server/warehouse/tunnelling"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 	"github.com/rudderlabs/rudder-server/warehouse/validations"
 )
@@ -99,6 +100,7 @@ var (
 	enableJitterForSyncs                bool
 	asyncWh                             *jobs.AsyncJobWhT
 	configBackendURL                    string
+	enableTunnelling                    bool
 )
 
 var (
@@ -149,12 +151,17 @@ type HandleT struct {
 	workspaceBySourceIDsLock          sync.RWMutex
 	tenantManager                     multitenant.Manager
 <<<<<<< HEAD
+<<<<<<< HEAD
 	stats                             stats.Stats
 	Now                               string
 =======
 	internalAuth                      cpclient.BasicAuth
 	configBackendURL                  string
 >>>>>>> d6bb1ce4d (Added support to fetch the ssh keys on destination level from control plane)
+=======
+	sshTunnellingEnabled              bool
+	cpInternalClient                  cpclient.InternalControlPlane
+>>>>>>> 12a7822bf (Support for tunnelling construct)
 
 	backgroundCancel context.CancelFunc
 	backgroundGroup  errgroup.Group
@@ -188,6 +195,7 @@ func loadConfig() {
 	password = config.GetString("WAREHOUSE_JOBS_DB_PASSWORD", "ubuntu") // Reading secrets from
 	sslMode = config.GetString("WAREHOUSE_JOBS_DB_SSL_MODE", "disable")
 	configBackendURL = config.GetString("CONFIG_BACKEND_URL", "api.rudderlabs.com")
+	enableTunnelling = config.GetBool("ENABLE_TUNNELLING", true)
 	config.RegisterIntConfigVariable(10, &warehouseSyncPreFetchCount, true, 1, "Warehouse.warehouseSyncPreFetchCount")
 	config.RegisterIntConfigVariable(100, &stagingFilesSchemaPaginationSize, true, 1, "Warehouse.stagingFilesSchemaPaginationSize")
 	config.RegisterBoolConfigVariable(false, &warehouseSyncFreqIgnore, true, "Warehouse.warehouseSyncFreqIgnore")
@@ -298,10 +306,6 @@ func (wh *HandleT) backendConfigSubscriber(ctx context.Context) {
 		wh.workspaceBySourceIDsLock.Lock()
 		wh.workspaceBySourceIDs = map[string]string{}
 
-		controlPlaneAPI := cpclient.NewInternalClientWithCache(
-			wh.configBackendURL,
-			wh.internalAuth)
-
 		pkgLogger.Info(`Received updated workspace config`)
 		for workspaceID, wConfig := range config {
 
@@ -317,33 +321,15 @@ func (wh *HandleT) backendConfigSubscriber(ctx context.Context) {
 					continue
 				}
 
-				for idx, destination := range source.Destinations {
+				if enableTunnelling {
+					pkgLogger.Info("attaching tunnelling info to destinations")
+					wh.attachTunnellingInfo(ctx, source.Destinations)
+				}
+
+				for _, destination := range source.Destinations {
 
 					if destination.DestinationDefinition.Name != wh.destType {
 						continue
-					}
-
-					if _, ok := destination.Config["useSSH"]; ok {
-						source.Destinations[idx].Config["tunnellingType"] = "ssh_forward"
-					}
-
-					// When tunnel object is set from upstream, we need to fetch
-					// the keypair associated with the destinationId.
-					// Only assume valid tunnellingType to be there.
-					if _, ok := destination.Config["tunnellingType"]; ok {
-
-						keypair, err := controlPlaneAPI.GetDestinationSSHKeys(ctx, destination.ID)
-						if err != nil {
-							pkgLogger.Warnf("fetching ssh keypair for destination: %s err: %w", destination.ID, err)
-						}
-
-						if keypair == nil {
-							pkgLogger.Warnf("unable to locate keypair for destination: %s with valid tunnel info", destination.ID)
-						} else {
-							source.Destinations[idx].Config["privateKey"] = keypair.PrivateKey
-							source.Destinations[idx].Config["publicKey"] = keypair.PublicKey
-						}
-
 					}
 
 					namespace := wh.getNamespace(destination.Config, source, destination, wh.destType)
@@ -398,6 +384,49 @@ func (wh *HandleT) backendConfigSubscriber(ctx context.Context) {
 		wh.configSubscriberLock.Unlock()
 		wh.initialConfigFetched = true
 	}
+}
+
+func (wh *HandleT) attachTunnellingInfo(
+	ctx context.Context,
+	destinations []backendconfig.DestinationT) {
+
+	for idx, dest := range destinations {
+
+		// at destination level, do we have tunnelling enabled.
+		if tunnelEnabled := warehouseutils.ReadAsBool("useSSH", dest.Config); !tunnelEnabled {
+			continue
+		}
+
+		// TODO: `hardcode` the tunnellingType to be `ssh_forward` as other
+		// tunnelling types haven't been introduced yet.
+		// `switch` on other types once they are added to attach ability to fetch
+
+		destinations[idx].Config["tunnellingType"] = string(tunnelling.SSHForward)
+
+		pkgLogger.Debugf("fetching ssh keys for destination: %s", dest.ID)
+		keys, err := wh.cpInternalClient.GetDestinationSSHKeys(ctx, dest.ID)
+
+		if errors.Is(err, cpclient.ErrKeyNotFound) {
+			pkgLogger.Errorf("key not found in upstream: %s", err.Error())
+			continue
+		}
+
+		if err != nil {
+			pkgLogger.Errorf("fetching ssh keys for destination: %s", err.Error())
+			continue
+		}
+
+		destinations[idx].Config["sshPrivateKey"] = keys.PrivateKey
+	}
+}
+
+func GetKeyAsBool(key string, conf map[string]interface{}) bool {
+	if val, ok := conf[key]; ok {
+		if ok := val.(bool); ok {
+			return val.(bool)
+		}
+	}
+	return false
 }
 
 // getNamespace sets namespace name in the following order
@@ -1382,11 +1411,13 @@ func (wh *HandleT) Setup(whType string) {
 	config.RegisterIntConfigVariable(1, &wh.maxConcurrentUploadJobs, false, 1, fmt.Sprintf(`Warehouse.%v.maxConcurrentUploadJobs`, whName))
 	config.RegisterBoolConfigVariable(false, &wh.allowMultipleSourcesForJobsPickup, false, fmt.Sprintf(`Warehouse.%v.allowMultipleSourcesForJobsPickup`, whName))
 
-	wh.internalAuth = cpclient.BasicAuth{
-		Username: config.GetString("CP_INTERNAL_API_USERNAME", ""),
-		Password: config.GetString("CP_INTERNAL_API_PASSWORD", ""),
-	}
-	wh.configBackendURL = configBackendURL
+	wh.cpInternalClient = cpclient.NewInternalClientWithCache(
+		configBackendURL,
+		cpclient.BasicAuth{
+			Username: config.GetString("CP_INTERNAL_API_USERNAME", ""),
+			Password: config.GetString("CP_INTERNAL_API_PASSWORD", ""),
+		},
+	)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	g, ctx := errgroup.WithContext(ctx)

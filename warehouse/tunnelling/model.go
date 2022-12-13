@@ -10,6 +10,7 @@ import (
 
 var ErrMissingKey = errors.New("missing mandatory key")
 var ErrUnexpectedType = errors.New("unexpected type")
+var ErrUnsupportedTunnelType = errors.New("unsupported tunnel type")
 
 const (
 	SSHForward Type = "ssh_forward"
@@ -41,7 +42,7 @@ func ReadSSHTunnelConfig(config map[string]interface{}) (conf *stunnel.Config, e
 		return nil, err
 	}
 
-	if privateKey, err = ReadString("privateKey", config); err != nil {
+	if privateKey, err = ReadString("sshPrivateKey", config); err != nil {
 		return nil, err
 	}
 

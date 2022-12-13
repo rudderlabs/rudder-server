@@ -3,11 +3,14 @@ package controlplane
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 
 	"github.com/rudderlabs/rudder-server/utils/httputil"
 )
+
+var ErrKeyNotFound = errors.New("request key not found")
 
 type PublicPrivateKeyPair struct {
 	PublicKey  string
@@ -30,14 +33,16 @@ type internalClientWithCache struct {
 
 func NewInternalClient(baseURI string, auth BasicAuth) InternalControlPlane {
 	return &internalClient{
-		baseURI: baseURI,
-		auth:    auth,
+		baseURI:    baseURI,
+		auth:       auth,
+		httpClient: &http.Client{},
 	}
 }
 
 type internalClient struct {
-	baseURI string
-	auth    BasicAuth
+	baseURI    string
+	auth       BasicAuth
+	httpClient *http.Client
 }
 
 func (api *internalClient) GetDestinationSSHKeys(ctx context.Context, id string) (*PublicPrivateKeyPair, error) {
@@ -51,8 +56,7 @@ func (api *internalClient) GetDestinationSSHKeys(ctx context.Context, id string)
 	req.SetBasicAuth(api.auth.Username, api.auth.Password)
 	req.Header.Set("Content-Type", "application/json")
 
-	client := http.Client{}
-	resp, err := client.Do(req)
+	resp, err := api.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("fetching response from http client: %w", err)
 	}
@@ -60,7 +64,7 @@ func (api *internalClient) GetDestinationSSHKeys(ctx context.Context, id string)
 	defer func() { httputil.CloseResponse(resp) }()
 
 	if resp.StatusCode == http.StatusNotFound {
-		return nil, nil
+		return nil, fmt.Errorf("%w: %s", ErrKeyNotFound, fmt.Sprintf("key requested: %s", id))
 	}
 
 	if resp.StatusCode != http.StatusOK {

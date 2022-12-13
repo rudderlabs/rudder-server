@@ -162,21 +162,7 @@ func Connect(cred CredentialsT) (*sql.DB, error) {
 	}
 
 	dsn.RawQuery = values.Encode()
-	// // TODO: Refactor the url to be encoded dsn
-	// url := fmt.Sprintf("user=%v password=%v host=%v port=%v dbname=%v sslmode=%v",
-	// 	cred.User,
-	// 	cred.Password,
-	// 	cred.Host,
-	// 	cred.Port,
-	// 	cred.DBName,
-	// 	cred.SSLMode,
-	// )
-	// if cred.timeout > 0 {
-	// 	url += fmt.Sprintf(" connect_timeout=%d", cred.timeout/time.Second)
-	// }
-	// if cred.SSLMode == verifyCA {
-	// 	url = fmt.Sprintf("%s sslrootcert=%[2]s/server-ca.pem sslcert=%[2]s/client-cert.pem sslkey=%[2]s/client-key.pem", url, cred.SSLDir)
-	// }
+
 	var (
 		err error
 		db  *sql.DB
