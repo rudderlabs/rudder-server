@@ -138,7 +138,7 @@ func TestUploadJob_ProcessingStats(t *testing.T) {
 			skipIdentifierSQL := "AND ((destination_id || '_' || namespace)) != ALL($2)"
 			ctx := context.Background()
 			store := memstats.New()
-			now := "'2022-12-06 22:00:00'"
+			nowSQL := "'2022-12-06 22:00:00'"
 
 			if len(tc.skipIdentifiers) == 0 {
 				skipIdentifierSQL = ""
@@ -146,7 +146,7 @@ func TestUploadJob_ProcessingStats(t *testing.T) {
 
 			wh := HandleT{
 				destType: tc.destType,
-				Now:      now,
+				NowSQL:   nowSQL,
 				stats:    store,
 				dbHandle: pgResource.DB,
 			}

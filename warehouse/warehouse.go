@@ -91,7 +91,6 @@ var (
 	uploadAllocatorSleep                time.Duration
 	waitForConfig                       time.Duration
 	waitForWorkerSleep                  time.Duration
-	uploadBufferTimeInMin               int
 	ShouldForceSetLowerVersion          bool
 	skipDeepEqualSchemas                bool
 	maxParallelJobCreation              int
@@ -147,7 +146,8 @@ type HandleT struct {
 	workspaceBySourceIDsLock          sync.RWMutex
 	tenantManager                     multitenant.Manager
 	stats                             stats.Stats
-	Now                               string
+	Now                               func() time.Time
+	NowSQL                            string
 	Logger                            logger.Logger
 
 	backgroundCancel context.CancelFunc
@@ -195,7 +195,6 @@ func loadConfig() {
 	config.RegisterIntConfigVariable(8, &numLoadFileUploadWorkers, true, 1, "Warehouse.numLoadFileUploadWorkers")
 	runningMode = config.GetString("Warehouse.runningMode", "")
 	config.RegisterDurationConfigVariable(30, &uploadStatusTrackFrequency, false, time.Minute, []string{"Warehouse.uploadStatusTrackFrequency", "Warehouse.uploadStatusTrackFrequencyInMin"}...)
-	config.RegisterIntConfigVariable(180, &uploadBufferTimeInMin, false, 1, "Warehouse.uploadBufferTimeInMin")
 	config.RegisterDurationConfigVariable(5, &uploadAllocatorSleep, false, time.Second, []string{"Warehouse.uploadAllocatorSleep", "Warehouse.uploadAllocatorSleepInS"}...)
 	config.RegisterDurationConfigVariable(5, &waitForConfig, false, time.Second, []string{"Warehouse.waitForConfig", "Warehouse.waitForConfigInS"}...)
 	config.RegisterDurationConfigVariable(5, &waitForWorkerSleep, false, time.Second, []string{"Warehouse.waitForWorkerSleep", "Warehouse.waitForWorkerSleepInS"}...)
@@ -773,11 +772,11 @@ func (wh *HandleT) processingStats(ctx context.Context, availableWorkers int, sk
 		pickupLagInSeconds      float64
 		pickupWaitTimeInSeconds float64
 		err                     error
-		Now                     = "NOW()"
+		NowSQL                  = "NOW()"
 		degradedWorkspaces      = tenantManager.DegradedWorkspaces()
 	)
-	if wh.Now != "" {
-		Now = wh.Now
+	if wh.NowSQL != "" {
+		NowSQL = wh.NowSQL
 	}
 	if degradedWorkspaces == nil {
 		degradedWorkspaces = []string{}
@@ -804,7 +803,7 @@ func (wh *HandleT) processingStats(ctx context.Context, availableWorkers int, sk
 		model.ExportedData,
 		model.Aborted,
 		skipIdentifiersSQL,
-		Now,
+		NowSQL,
 	)
 
 	if len(skipIdentifiers) > 0 {
@@ -1160,158 +1159,6 @@ loop:
 	wh.workerChannelMapLock.Unlock()
 }
 
-func (wh *HandleT) CronTracker(ctx context.Context) error {
-	for {
-		wh.configSubscriberLock.RLock()
-
-		ch := make(chan warehouseutils.Warehouse, 1)
-
-		wg := sync.WaitGroup{}
-		wg.Add(len(wh.warehouses))
-
-		for _, warehouse := range wh.warehouses {
-			warehouse := warehouse
-
-			rruntime.GoForWarehouse(func() {
-				defer wg.Done()
-				ch <- warehouse
-			})
-		}
-
-		wh.configSubscriberLock.RUnlock()
-
-		rruntime.GoForWarehouse(func() {
-			wg.Wait()
-			close(ch)
-		})
-
-		for w := range ch {
-			if err := wh.Track(ctx, w); err != nil {
-				close(ch)
-
-				return fmt.Errorf("cron tracker failed for source: %s, destination: %s with error: %w", source.ID, destination.ID, err)
-			}
-		}
-
-		select {
-		case <-ctx.Done():
-			wh.Logger.Infof("context is cancelled, stopped running tracking")
-			return nil
-		case <-time.After(uploadStatusTrackFrequency):
-		}
-	}
-}
-
-func (wh *HandleT) Track(ctx context.Context, warehouse warehouseutils.Warehouse) error {
-	var (
-		query         string
-		queryArgs     []interface{}
-		createdAt     sql.NullTime
-		exists        bool
-		uploaded      int
-		syncFrequency = "1440"
-		timeWindow    = uploadBufferTimeInMin
-		source        = warehouse.Source
-		destination   = warehouse.Destination
-	)
-
-	if !source.Enabled || !destination.Enabled {
-		return nil
-	}
-
-	if sf := warehouseutils.GetConfigValue(warehouseutils.SyncFrequency, w); sf != "" {
-		syncFrequency = sf
-	}
-	if value, err := strconv.Atoi(syncFrequency); err == nil {
-		timeWindow += value
-	}
-
-	query = fmt.Sprintf(`
-				SELECT
-				  created_at
-				FROM
-				  %[1]s
-				WHERE
-				  source_id = '%[2]s' AND
-				  destination_id = '%[3]s' AND
-				  created_at > NOW() - interval '%[4]d MIN' AND
-				  created_at < NOW() - interval '%[5]d MIN'
-				ORDER BY
-				  created_at DESC
-				LIMIT
-				  1;
-				`,
-		warehouseutils.WarehouseStagingFilesTable,
-		source.ID,
-		destination.ID,
-		2*timeWindow,
-		timeWindow,
-	)
-
-	err := wh.dbHandle.QueryRowContext(ctx, query).Scan(&createdAt)
-	if err == sql.ErrNoRows {
-		return nil
-	}
-	if err != nil && err != sql.ErrNoRows {
-		return fmt.Errorf("fetching last upload time for source: %s and destination: %s: %w", source.ID, destination.ID, err)
-	}
-
-	if !createdAt.Valid {
-		return nil
-	}
-
-	query = fmt.Sprintf(`
-				SELECT
-				  EXISTS (
-					SELECT
-					  1
-					FROM
-					  %s
-					WHERE
-					  source_id = $1 AND
-					  destination_id = $2 AND
-					  (
-						status = $3
-						OR status = $4
-						OR status LIKE $5
-					  ) AND
-					  updated_at > $6
-				  );
-`,
-		warehouseutils.WarehouseUploadsTable,
-	)
-	queryArgs = []interface{}{
-		source.ID,
-		destination.ID,
-		model.ExportedData,
-		model.Aborted,
-		"%_failed",
-		createdAt.Time.Format(misc.RFC3339Milli),
-	}
-
-	err = wh.dbHandle.QueryRow(query, queryArgs...).Scan(&exists)
-	if err != nil && err != sql.ErrNoRows {
-		return fmt.Errorf("fetching last upload status for source: %s and destination: %s: %w", source.ID, destination.ID, err)
-	}
-
-	if exists {
-		uploaded = 1
-	}
-
-	tags := stats.Tags{
-		"workspaceId": warehouse.WorkspaceID,
-		"module":      "warehouse",
-		"destType":    wh.destType,
-		"warehouseID": misc.GetTagName(
-			destination.ID,
-			source.Name,
-			destination.Name,
-			misc.TailTruncateStr(source.ID, 6)),
-	}
-	wh.stats.NewTaggedStat("warehouse_successful_upload_exists", stats.CountType, tags).Count(uploaded)
-	return nil
-}
-
 func getBucketFolder(batchID, tableName string) string {
 	return fmt.Sprintf(`%v-%v`, batchID, tableName)
 }
@@ -1386,6 +1233,8 @@ func (wh *HandleT) Setup(whType string) {
 		BackendConfig: backendconfig.DefaultBackendConfig,
 	}
 	wh.stats = stats.Default
+	wh.Now = timeutil.Now
+	wh.NowSQL = "NOW()"
 
 	whName := warehouseutils.WHDestNameMap[whType]
 	config.RegisterIntConfigVariable(8, &wh.noOfWorkers, true, 1, fmt.Sprintf(`Warehouse.%v.noOfWorkers`, whName), "Warehouse.noOfWorkers")
