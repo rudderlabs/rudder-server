@@ -147,6 +147,7 @@ type HandleT struct {
 	workspaceBySourceIDsLock          sync.RWMutex
 	tenantManager                     multitenant.Manager
 	stats                             stats.Stats
+	Now                               string
 	Logger                            logger.Logger
 
 	backgroundCancel context.CancelFunc
@@ -765,65 +766,160 @@ func (wh *HandleT) mainLoop(ctx context.Context) {
 	}
 }
 
+func (wh *HandleT) processingStats(ctx context.Context, availableWorkers int, skipIdentifiers []string, skipIdentifiersSQL string) error {
+	var (
+		pendingJobs             int
+		query                   string
+		pickupLagInSeconds      float64
+		pickupWaitTimeInSeconds float64
+		err                     error
+		Now                     = "NOW()"
+		degradedWorkspaces      = tenantManager.DegradedWorkspaces()
+	)
+	if wh.Now != "" {
+		Now = wh.Now
+	}
+	if degradedWorkspaces == nil {
+		degradedWorkspaces = []string{}
+	}
+
+	query = fmt.Sprintf(`
+		SELECT
+			COALESCE(COUNT(*), 0) AS pending_jobs,
+			COALESCE(EXTRACT(EPOCH FROM(AGE(%[7]s, MIN(COALESCE(metadata->>'nextRetryTime', %[7]s::text)::timestamptz)))), 0) AS pickup_lag_in_seconds,
+			COALESCE(SUM(EXTRACT(EPOCH FROM AGE(%[7]s, COALESCE(metadata->>'nextRetryTime', %[7]s::text)::timestamptz))), 0) AS pickup_wait_time_in_seconds
+		FROM
+			%[1]s t
+		WHERE
+			t.destination_type = '%[2]s' AND
+			t.in_progress = %[3]t AND
+			t.status != '%[4]s' AND
+			t.status != '%[5]s' %[6]s AND
+			COALESCE(metadata->>'nextRetryTime', %[7]s::text)::timestamptz <= %[7]s AND
+			workspace_id <> ALL ($1);
+`,
+		warehouseutils.WarehouseUploadsTable,
+		wh.destType,
+		false,
+		model.ExportedData,
+		model.Aborted,
+		skipIdentifiersSQL,
+		Now,
+	)
+
+	if len(skipIdentifiers) > 0 {
+		if err = wh.dbHandle.QueryRowContext(
+			ctx,
+			query,
+			pq.Array(degradedWorkspaces),
+			pq.Array(skipIdentifiers),
+		).Scan(&pendingJobs, &pickupLagInSeconds, &pickupWaitTimeInSeconds); err != nil {
+			return fmt.Errorf("processing  with skip identifiers: %w", err)
+		}
+	} else {
+		if err = wh.dbHandle.QueryRowContext(
+			ctx,
+			query,
+			pq.Array(degradedWorkspaces),
+		).Scan(&pendingJobs, &pickupLagInSeconds, &pickupWaitTimeInSeconds); err != nil {
+			return fmt.Errorf("count pending jobs: %w", err)
+		}
+	}
+
+	pendingJobsStat := wh.stats.NewTaggedStat("wh_processing_pending_jobs", stats.CountType, stats.Tags{
+		"module":   moduleName,
+		"destType": wh.destType,
+	})
+	pendingJobsStat.Count(pendingJobs)
+
+	availableWorkersStat := wh.stats.NewTaggedStat("wh_processing_available_workers", stats.CountType, stats.Tags{
+		"module":   moduleName,
+		"destType": wh.destType,
+	})
+	availableWorkersStat.Count(availableWorkers)
+
+	pickupLagStat := wh.stats.NewTaggedStat("wh_processing_pickup_lag", stats.TimerType, stats.Tags{
+		"module":   moduleName,
+		"destType": wh.destType,
+	})
+	pickupLagStat.SendTiming(time.Duration(pickupLagInSeconds) * time.Second)
+
+	pickupWaitTimeStat := wh.stats.NewTaggedStat("wh_processing_pickup_wait_time", stats.TimerType, stats.Tags{
+		"module":   moduleName,
+		"destType": wh.destType,
+	})
+	pickupWaitTimeStat.SendTiming(time.Duration(pickupWaitTimeInSeconds) * time.Second)
+	return nil
+}
+
 func (wh *HandleT) getUploadsToProcess(ctx context.Context, availableWorkers int, skipIdentifiers []string) ([]*UploadJobT, error) {
 	var skipIdentifiersSQL string
 	partitionIdentifierSQL := `destination_id, namespace`
 
 	if len(skipIdentifiers) > 0 {
-		skipIdentifiersSQL = `and ((destination_id || '_' || namespace)) != ALL($2)`
+		skipIdentifiersSQL = `AND ((destination_id || '_' || namespace)) != ALL($2)`
 	}
 
 	if wh.allowMultipleSourcesForJobsPickup {
 		if len(skipIdentifiers) > 0 {
-			skipIdentifiersSQL = `and ((source_id || '_' || destination_id || '_' || namespace)) != ALL($2)`
+			skipIdentifiersSQL = `AND ((source_id || '_' || destination_id || '_' || namespace)) != ALL($2)`
 		}
 		partitionIdentifierSQL = fmt.Sprintf(`%s, %s`, "source_id", partitionIdentifierSQL)
 	}
 
 	sqlStatement := fmt.Sprintf(`
 			SELECT
-					id,
-					status,
-					schema,
-					mergedSchema,
-					namespace,
-					workspace_id,
-					source_id,
-					destination_id,
-					destination_type,
-					start_staging_file_id,
-					end_staging_file_id,
-					start_load_file_id,
-					end_load_file_id,
-					error,
-					metadata,
-					timings->0 as firstTiming,
-					timings->-1 as lastTiming,
-					timings,
-					COALESCE(metadata->>'priority', '100')::int,
-					first_event_at,
-					last_event_at
-				FROM (
-					SELECT
-						ROW_NUMBER() OVER (PARTITION BY %s ORDER BY COALESCE(metadata->>'priority', '100')::int ASC, id ASC) AS row_number,
-						t.*
-					FROM
-						%s t
-					WHERE
-						t.destination_type = '%s' AND
-						t.in_progress=%t AND
-						t.status != '%s' AND
-						t.status != '%s' %s AND
-						COALESCE(metadata->>'nextRetryTime', now()::text)::timestamptz <= now() AND
-						workspace_id <> ALL ($1)
-				) grouped_uploads
+				id,
+				status,
+				schema,
+				mergedSchema,
+				namespace,
+				workspace_id,
+				source_id,
+				destination_id,
+				destination_type,
+				start_staging_file_id,
+				end_staging_file_id,
+				start_load_file_id,
+				end_load_file_id,
+				error,
+				metadata,
+				timings->0 as firstTiming,
+				timings->-1 as lastTiming,
+				timings,
+				COALESCE(metadata->>'priority', '100')::int,
+				first_event_at,
+				last_event_at
+			FROM (
+				SELECT
+					ROW_NUMBER() OVER (PARTITION BY %s ORDER BY COALESCE(metadata->>'priority', '100')::int ASC, id ASC) AS row_number,
+					t.*
+				FROM
+					%s t
 				WHERE
-					grouped_uploads.row_number = 1
-				ORDER BY
-					COALESCE(metadata->>'priority', '100')::int ASC, id ASC
-				LIMIT %d;
-
-		`, partitionIdentifierSQL, warehouseutils.WarehouseUploadsTable, wh.destType, false, model.ExportedData, model.Aborted, skipIdentifiersSQL, availableWorkers)
+					t.destination_type = '%s' AND
+					t.in_progress=%t AND
+					t.status != '%s' AND
+					t.status != '%s' %s AND
+					COALESCE(metadata->>'nextRetryTime', NOW()::text)::timestamptz <= NOW() AND
+          			workspace_id <> ALL ($1)
+			) grouped_uploads
+			WHERE
+				grouped_uploads.row_number = 1
+			ORDER BY
+				COALESCE(metadata->>'priority', '100')::int ASC,
+				id ASC
+			LIMIT %d;
+`,
+		partitionIdentifierSQL,
+		warehouseutils.WarehouseUploadsTable,
+		wh.destType,
+		false,
+		model.ExportedData,
+		model.Aborted,
+		skipIdentifiersSQL,
+		availableWorkers,
+	)
 
 	var (
 		rows               *sql.Rows
@@ -835,13 +931,15 @@ func (wh *HandleT) getUploadsToProcess(ctx context.Context, availableWorkers int
 	}
 
 	if len(skipIdentifiers) > 0 {
-		rows, err = wh.dbHandle.Query(
+		rows, err = wh.dbHandle.QueryContext(
+			ctx,
 			sqlStatement,
 			pq.Array(degradedWorkspaces),
 			pq.Array(skipIdentifiers),
 		)
 	} else {
-		rows, err = wh.dbHandle.Query(
+		rows, err = wh.dbHandle.QueryContext(
+			ctx,
 			sqlStatement,
 			pq.Array(degradedWorkspaces),
 		)
@@ -983,6 +1081,10 @@ func (wh *HandleT) getUploadsToProcess(ctx context.Context, availableWorkers int
 		}
 
 		uploadJobs = append(uploadJobs, &uploadJob)
+	}
+
+	if err = wh.processingStats(ctx, availableWorkers, skipIdentifiers, skipIdentifiersSQL); err != nil {
+		return nil, fmt.Errorf("processing stats: %w", err)
 	}
 
 	return uploadJobs, nil
@@ -1132,8 +1234,8 @@ func (wh *HandleT) Track(ctx context.Context, warehouse warehouseutils.Warehouse
 				WHERE
 				  source_id = '%[2]s' AND
 				  destination_id = '%[3]s' AND
-				  created_at > now() - interval '%[4]d MIN' AND
-				  created_at < now() - interval '%[5]d MIN'
+				  created_at > NOW() - interval '%[4]d MIN' AND
+				  created_at < NOW() - interval '%[5]d MIN'
 				ORDER BY
 				  created_at DESC
 				LIMIT
