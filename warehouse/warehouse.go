@@ -376,8 +376,8 @@ func (wh *HandleT) backendConfigSubscriber(ctx context.Context) {
 
 func (wh *HandleT) attachSSHTunnellingInfo(
 	ctx context.Context,
-	upstream backendconfig.DestinationT) backendconfig.DestinationT {
-
+	upstream backendconfig.DestinationT,
+) backendconfig.DestinationT {
 	pkgLogger.Infof("Attaching ssh tunnelling info to destination: %s", upstream.ID)
 	// at destination level, do we have tunnelling enabled.
 	if tunnelEnabled := warehouseutils.ReadAsBool("useSSH", upstream.Config); !tunnelEnabled {
@@ -402,7 +402,6 @@ func (wh *HandleT) attachSSHTunnellingInfo(
 }
 
 func DeepCopy(src, dest interface{}) error {
-
 	byt, err := json.Marshal(src)
 	if err != nil {
 		return err
