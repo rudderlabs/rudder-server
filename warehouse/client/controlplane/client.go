@@ -65,7 +65,7 @@ func (api *internalClient) GetDestinationSSHKeys(ctx context.Context, id string)
 	defer func() { httputil.CloseResponse(resp) }()
 
 	if resp.StatusCode == http.StatusNotFound {
-		return nil, fmt.Errorf("%w: %s", ErrKeyNotFound, fmt.Sprintf("key requested: %s", id))
+		return nil, fmt.Errorf("%w: key requested: %s", ErrKeyNotFound, id)
 	}
 
 	if resp.StatusCode != http.StatusOK {
@@ -74,7 +74,7 @@ func (api *internalClient) GetDestinationSSHKeys(ctx context.Context, id string)
 
 	decoder := json.NewDecoder(resp.Body)
 
-	keypair := PublicPrivateKeyPair{}
+	var keypair PublicPrivateKeyPair
 	if err := decoder.Decode(&keypair); err != nil {
 		return nil, fmt.Errorf("decoding upstream response body: %w", err)
 	}
