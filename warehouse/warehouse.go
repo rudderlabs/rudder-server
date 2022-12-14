@@ -2271,11 +2271,6 @@ func Start(ctx context.Context, app app.App) error {
 		asyncWh = jobs.InitWarehouseJobsAPI(ctx, dbHandle, &notifier)
 		jobs.WithConfig(asyncWh, config.Default)
 
-		// Add code here to associate ssh keypair with destination data.
-		g.Go(misc.WithBugsnagForWarehouse(func() error {
-			return nil
-		}))
-
 		g.Go(misc.WithBugsnagForWarehouse(func() error {
 			return asyncWh.InitAsyncJobRunner()
 		}))

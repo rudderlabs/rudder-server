@@ -10,7 +10,6 @@ import (
 
 var ErrMissingKey = errors.New("missing mandatory key")
 var ErrUnexpectedType = errors.New("unexpected type")
-var ErrUnsupportedTunnelType = errors.New("unsupported tunnel type")
 
 const (
 	SSHForward Type = "ssh_forward"
