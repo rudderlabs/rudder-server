@@ -10,7 +10,6 @@ import (
 	"math/rand"
 	"net/http"
 	"os"
-	"reflect"
 	"runtime"
 	"strconv"
 	"strings"
@@ -311,15 +310,14 @@ func (wh *HandleT) backendConfigSubscriber(ctx context.Context) {
 					continue
 				}
 
-				if enableTunnelling {
-					pkgLogger.Info("attaching ssh tunnelling info to destinations")
-					source.Destinations = wh.attachSSHTunnellingInfo(ctx, source.Destinations)
-				}
-
 				for _, destination := range source.Destinations {
 
 					if destination.DestinationDefinition.Name != wh.destType {
 						continue
+					}
+
+					if enableTunnelling {
+						destination = wh.attachSSHTunnellingInfo(ctx, destination)
 					}
 
 					namespace := wh.getNamespace(destination.Config, source, destination, wh.destType)
@@ -378,30 +376,39 @@ func (wh *HandleT) backendConfigSubscriber(ctx context.Context) {
 
 func (wh *HandleT) attachSSHTunnellingInfo(
 	ctx context.Context,
-	upstreamDestinations []backendconfig.DestinationT,
-) []backendconfig.DestinationT {
+	upstream backendconfig.DestinationT) backendconfig.DestinationT {
 
-	destinations := []backendconfig.DestinationT{}
-	reflect.Copy(reflect.ValueOf(destinations), reflect.ValueOf(upstreamDestinations))
-
-	for idx, dest := range destinations {
-
-		// at destination level, do we have tunnelling enabled.
-		if tunnelEnabled := warehouseutils.ReadAsBool("useSSH", dest.Config); !tunnelEnabled {
-			continue
-		}
-
-		pkgLogger.Debugf("fetching ssh keys for destination: %s", dest.ID)
-		keys, err := wh.cpInternalClient.GetDestinationSSHKeys(ctx, dest.ID)
-		if err != nil {
-			pkgLogger.Errorf("fetching ssh keys for destination: %s", err.Error())
-			continue
-		}
-
-		destinations[idx].Config["sshPrivateKey"] = keys.PrivateKey
+	pkgLogger.Infof("Attaching ssh tunnelling info to destination: %s", upstream.ID)
+	// at destination level, do we have tunnelling enabled.
+	if tunnelEnabled := warehouseutils.ReadAsBool("useSSH", upstream.Config); !tunnelEnabled {
+		return upstream
 	}
 
-	return destinations
+	pkgLogger.Debugf("fetching ssh keys for destination: %s", upstream.ID)
+	keys, err := wh.cpInternalClient.GetDestinationSSHKeys(ctx, upstream.ID)
+	if err != nil {
+		pkgLogger.Errorf("fetching ssh keys for destination: %s", err.Error())
+		return upstream
+	}
+
+	replica := backendconfig.DestinationT{}
+	if err := DeepCopy(upstream, &replica); err != nil {
+		pkgLogger.Errorf("deep copying the destination: %s failed: %s", upstream.ID, err)
+		return upstream
+	}
+
+	replica.Config["sshPrivateKey"] = keys.PrivateKey
+	return replica
+}
+
+func DeepCopy(src, dest interface{}) error {
+
+	byt, err := json.Marshal(src)
+	if err != nil {
+		return err
+	}
+
+	return json.Unmarshal(byt, dest)
 }
 
 func GetKeyAsBool(key string, conf map[string]interface{}) bool {

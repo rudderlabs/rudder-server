@@ -222,5 +222,5 @@ require (
 
 require (
 	github.com/golang-migrate/migrate/v4 v4.15.2
-	github.com/rudderlabs/sql-tunnels v0.1.0
+	github.com/rudderlabs/sql-tunnels v0.1.1
 )
