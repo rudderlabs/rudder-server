@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/rudderlabs/rudder-server/gateway/response"
+	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
@@ -47,6 +48,10 @@ func (bt *batchWebhookTransformerT) markResponseFail(sourceType, reason string) 
 func (bt *batchWebhookTransformerT) transform(events [][]byte, sourceType string) transformerBatchResponseT {
 	bt.stats.sentStat.Count(len(events))
 	bt.stats.transformTimerStat.Start()
+
+	stats.Default.NewTaggedStat("source_transform_received_jobs", stats.CountType, stats.Tags{
+		"sourceType": sourceType,
+	}).Count(len(events))
 
 	payload := misc.MakeJSONArray(events)
 	url := fmt.Sprintf(`%s/%s`, bt.sourceTransformerURL, strings.ToLower(sourceType))
