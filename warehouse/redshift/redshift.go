@@ -609,17 +609,13 @@ func Connect(cred RedshiftCredentialsT) (*sql.DB, error) {
 	)
 
 	if cred.TunnelInfo != nil {
-
 		if db, err = tunnelling.SQLConnectThroughTunnel(dsn.String(), cred.TunnelInfo.Config); err != nil {
 			return nil, fmt.Errorf("connecting to redshift through tunnel: %w", err)
 		}
-
 	} else {
-
 		if db, err = sql.Open("postgres", dsn.String()); err != nil {
 			return nil, fmt.Errorf("connecting to redshift: %w", err)
 		}
-
 	}
 
 	stmt := `SET query_group to 'RudderStack'`

@@ -152,7 +152,8 @@ func InitWarehouseAPI(dbHandle *sql.DB, log logger.Logger) error {
 			RegisterService: func(srv *grpc.Server) {
 				proto.RegisterWarehouseServer(srv, &warehouseGRPC{
 					EnableTunnelling: config.GetBool("ENABLE_TUNNELLING", true),
-					CPClient:         client})
+					CPClient:         client,
+				})
 			},
 		},
 	}

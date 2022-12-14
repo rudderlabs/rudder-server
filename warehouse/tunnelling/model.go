@@ -8,8 +8,10 @@ import (
 	stunnel "github.com/rudderlabs/sql-tunnels/driver/ssh"
 )
 
-var ErrMissingKey = errors.New("missing mandatory key")
-var ErrUnexpectedType = errors.New("unexpected type")
+var (
+	ErrMissingKey     = errors.New("missing mandatory key")
+	ErrUnexpectedType = errors.New("unexpected type")
+)
 
 const (
 	sshUser       = "sshUser"
@@ -18,18 +20,17 @@ const (
 	sshPrivateKey = "sshPrivateKey"
 )
 
-type Type string
-type Config map[string]interface{}
+type (
+	Type   string
+	Config map[string]interface{}
+)
 
 type TunnelInfo struct {
 	Config Config
 }
 
 func ReadSSHTunnelConfig(config Config) (conf *stunnel.Config, err error) {
-
-	var (
-		user, host, port, privateKey *string
-	)
+	var user, host, port, privateKey *string
 
 	if user, err = ReadString(sshUser, config); err != nil {
 		return nil, err

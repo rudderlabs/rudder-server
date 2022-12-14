@@ -298,7 +298,6 @@ func (wh *HandleT) backendConfigSubscriber(ctx context.Context) {
 
 		pkgLogger.Info(`Received updated workspace config`)
 		for workspaceID, wConfig := range config {
-
 			for _, source := range wConfig.Sources {
 				if _, ok := sourceIDsByWorkspace[workspaceID]; !ok {
 					sourceIDsByWorkspace[workspaceID] = []string{}
@@ -378,8 +377,8 @@ func (wh *HandleT) backendConfigSubscriber(ctx context.Context) {
 
 func (wh *HandleT) attachSSHTunnellingInfo(
 	ctx context.Context,
-	destinations []backendconfig.DestinationT) {
-
+	destinations []backendconfig.DestinationT,
+) {
 	for idx, dest := range destinations {
 
 		// at destination level, do we have tunnelling enabled.
@@ -389,7 +388,6 @@ func (wh *HandleT) attachSSHTunnellingInfo(
 
 		pkgLogger.Debugf("fetching ssh keys for destination: %s", dest.ID)
 		keys, err := wh.cpInternalClient.GetDestinationSSHKeys(ctx, dest.ID)
-
 		if err != nil {
 			pkgLogger.Errorf("fetching ssh keys for destination: %s", err.Error())
 			continue

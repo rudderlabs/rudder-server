@@ -1092,7 +1092,6 @@ func RandHex() string {
 }
 
 func ExtractTunnelInfoFromDestinationConfig(config map[string]interface{}) *tunnelling.TunnelInfo {
-
 	if tunnelEnabled := ReadAsBool("useSSH", config); !tunnelEnabled {
 		return nil
 	}

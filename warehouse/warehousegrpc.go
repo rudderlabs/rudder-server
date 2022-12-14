@@ -97,7 +97,8 @@ func (*warehouseGRPC) TriggerWHUpload(_ context.Context, request *proto.WHUpload
 func (grpc *warehouseGRPC) Validate(_ context.Context, req *proto.WHValidationRequest) (*proto.WHValidationResponse, error) {
 	handleT := validations.CTHandleT{
 		EnableTunnelling: grpc.EnableTunnelling,
-		CPClient:         grpc.CPClient}
+		CPClient:         grpc.CPClient,
+	}
 	return handleT.Validating(req)
 }
 

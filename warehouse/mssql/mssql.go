@@ -143,9 +143,7 @@ func Connect(cred CredentialsT) (*sql.DB, error) {
 	}
 	pkgLogger.Debugf("mssql connection string : %s", connUrl.String())
 
-	var (
-		db *sql.DB
-	)
+	var db *sql.DB
 
 	if db, err = sql.Open("sqlserver", connUrl.String()); err != nil {
 		return nil, fmt.Errorf("opening connection to mssql server: %w", err)

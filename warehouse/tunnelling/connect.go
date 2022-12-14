@@ -6,7 +6,6 @@ import (
 )
 
 func SQLConnectThroughTunnel(dsn string, tunnelConfig Config) (*sql.DB, error) {
-
 	conf, err := ReadSSHTunnelConfig(tunnelConfig)
 	if err != nil {
 		return nil, fmt.Errorf("reading ssh tunnel config: %w", err)

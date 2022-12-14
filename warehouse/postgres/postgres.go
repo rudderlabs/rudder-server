@@ -140,7 +140,6 @@ func WithConfig(h *Handle, config *config.Config) {
 }
 
 func Connect(cred CredentialsT) (*sql.DB, error) {
-
 	dsn := url.URL{
 		Scheme: "postgres",
 		Host:   fmt.Sprintf("%s:%s", cred.Host, cred.Port),
@@ -776,8 +775,8 @@ func (pg *Handle) TestConnection(warehouse warehouseutils.Warehouse) (err error)
 
 func (pg *Handle) Setup(
 	warehouse warehouseutils.Warehouse,
-	uploader warehouseutils.UploaderI) (err error) {
-
+	uploader warehouseutils.UploaderI,
+) (err error) {
 	pg.Warehouse = warehouse
 	pg.Namespace = warehouse.Namespace
 	pg.Uploader = uploader
