@@ -340,12 +340,11 @@ func TestStagingFileRepo_Status(t *testing.T) {
 			Location:      fmt.Sprintf("s3://bucket/path/to/file-%d", i),
 			SourceID:      "source_id",
 			DestinationID: "destination_id",
-			Schema:        []byte(`{"type": "object"}`),
 			Status:        warehouseutils.StagingFileWaitingState,
 			Error:         nil,
 			FirstEventAt:  now.Add(time.Second),
 			LastEventAt:   now,
-		}
+		}.WithSchema([]byte(`{"type": "object"}`))
 
 		id, err := r.Insert(ctx, &file)
 		require.NoError(t, err)
