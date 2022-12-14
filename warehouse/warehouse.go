@@ -149,21 +149,9 @@ type HandleT struct {
 	workspaceBySourceIDs              map[string]string
 	workspaceBySourceIDsLock          sync.RWMutex
 	tenantManager                     multitenant.Manager
-<<<<<<< HEAD
-<<<<<<< HEAD
-<<<<<<< HEAD
 	stats                             stats.Stats
 	Now                               string
-=======
-	internalAuth                      cpclient.BasicAuth
-	configBackendURL                  string
->>>>>>> d6bb1ce4d (Added support to fetch the ssh keys on destination level from control plane)
-=======
-	sshTunnellingEnabled              bool
-=======
->>>>>>> 7c3f7edb6 (only handle ssh tunnelling option)
 	cpInternalClient                  cpclient.InternalControlPlane
->>>>>>> 12a7822bf (Support for tunnelling construct)
 
 	backgroundCancel context.CancelFunc
 	backgroundGroup  errgroup.Group
