@@ -3,6 +3,7 @@ package controlplane_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -38,7 +39,7 @@ func TestFetchSSHKeys(t *testing.T) {
 			responseBody:    ``,
 			responseCode:    http.StatusNotFound,
 			destinationID:   "id",
-			expectedError:   nil,
+			expectedError:   fmt.Errorf("%w: key requested: id", cp.ErrKeyNotFound),
 			expectedKeyPair: nil,
 		},
 		{
