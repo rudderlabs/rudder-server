@@ -120,7 +120,7 @@ func (ct *CTHandleT) initManager() (err error) {
 
 	// adding ssh tunnelling info, given we have
 	// useSSH enabled from upstream
-	if ct.EnableTunnel {
+	if ct.EnableTunnelling {
 		if warehouseutils.ReadAsBool("useSSH", ct.warehouse.Destination.Config) {
 			keys, err := ct.CPClient.GetDestinationSSHKeys(context.TODO(), ct.warehouse.Destination.ID)
 			if err != nil {

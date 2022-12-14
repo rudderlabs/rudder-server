@@ -54,7 +54,7 @@ require (
 	github.com/mkmik/multierror v0.3.0
 	github.com/onsi/ginkgo/v2 v2.1.6
 	github.com/onsi/gomega v1.20.2
-	github.com/phayes/freeport v0.0.0-20180830031419-95f893ade6f2
+	github.com/phayes/freeport v0.0.0-20220201140144-74d24b5ae9f5
 	github.com/rs/cors v1.7.0
 	github.com/rudderlabs/analytics-go v3.3.1+incompatible
 	github.com/samber/lo v1.35.0
@@ -222,5 +222,5 @@ require (
 
 require (
 	github.com/golang-migrate/migrate/v4 v4.15.2
-	github.com/rudderlabs/sql-tunnels v0.0.0-20221209174646-73171cd0d44b
+	github.com/rudderlabs/sql-tunnels v0.0.0-20221213183444-465af21674b7
 )

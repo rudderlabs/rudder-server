@@ -84,11 +84,11 @@ type DestinationValidationResponse struct {
 }
 
 type CTHandleT struct {
-	infoRequest  *DestinationValidationRequest
-	warehouse    warehouseutils.Warehouse
-	manager      manager.WarehouseOperations
-	CPClient     controlplane.InternalControlPlane
-	EnableTunnel bool
+	infoRequest      *DestinationValidationRequest
+	warehouse        warehouseutils.Warehouse
+	manager          manager.WarehouseOperations
+	CPClient         controlplane.InternalControlPlane
+	EnableTunnelling bool
 }
 
 type CTUploadJob struct {

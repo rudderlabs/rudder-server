@@ -18,8 +18,8 @@ import (
 
 type warehouseGRPC struct {
 	proto.UnimplementedWarehouseServer
-	CPClient     controlplane.InternalControlPlane
-	EnableTunnel bool
+	CPClient         controlplane.InternalControlPlane
+	EnableTunnelling bool
 }
 
 func (*warehouseGRPC) GetWHUploads(_ context.Context, request *proto.WHUploadsRequest) (*proto.WHUploadsResponse, error) {
@@ -96,8 +96,8 @@ func (*warehouseGRPC) TriggerWHUpload(_ context.Context, request *proto.WHUpload
 
 func (grpc *warehouseGRPC) Validate(_ context.Context, req *proto.WHValidationRequest) (*proto.WHValidationResponse, error) {
 	handleT := validations.CTHandleT{
-		EnableTunnel: grpc.EnableTunnel,
-		CPClient:     grpc.CPClient}
+		EnableTunnelling: grpc.EnableTunnelling,
+		CPClient:         grpc.CPClient}
 	return handleT.Validating(req)
 }
 
