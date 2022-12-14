@@ -645,24 +645,25 @@ func (sf *HandleT) DropTable(tableName string) (err error) {
 func (sf *HandleT) AddColumns(tableName string, columnsInfo []warehouseutils.ColumnInfo) (err error) {
 	var (
 		query            string
+		queryBuilder     strings.Builder
 		schemaIdentifier string
 	)
 
 	schemaIdentifier = sf.schemaIdentifier()
 
-	query = fmt.Sprintf(`
+	queryBuilder.WriteString(fmt.Sprintf(`
 		ALTER TABLE
 		  %s.%q
 		ADD COLUMN`,
 		schemaIdentifier,
 		tableName,
-	)
+	))
 
 	for _, columnInfo := range columnsInfo {
-		query += fmt.Sprintf(` %q %s,`, columnInfo.Name, dataTypesMap[columnInfo.Type])
+		queryBuilder.WriteString(fmt.Sprintf(` %q %s,`, columnInfo.Name, dataTypesMap[columnInfo.Type]))
 	}
 
-	query = strings.TrimSuffix(query, ",")
+	query = strings.TrimSuffix(queryBuilder.String(), ",")
 	query += ";"
 
 	pkgLogger.Infof("SF: Adding columns for destinationID: %s, tableName: %s with query: %v", sf.Warehouse.Destination.ID, tableName, query)
