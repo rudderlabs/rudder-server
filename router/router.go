@@ -1021,9 +1021,9 @@ func (worker *workerT) updateReqMetrics(respStatusCode int, diagnosisStartTime *
 func (worker *workerT) allowRouterAbortedAlert(errorAt string) bool {
 	// when error occur during transformation(rt or batch) or when skipRtAbortAlertForTransformation is false(default)
 	allowTf := errorAt == routerutils.ERROR_AT_TF && !worker.rt.skipRtAbortAlertForTransformation
-	// (when error occur during delivery and (when proxy is not enabled or when skipRtAbortAlertForDelivery is false(default)))
+	// (when error occur during delivery and (when proxy is not enabled and when skipRtAbortAlertForDelivery is false(default)))
 	// or when destination is managed custom destination manager
-	allowDel := (errorAt == routerutils.ERROR_AT_DEL && (!worker.rt.transformerProxy || !worker.rt.skipRtAbortAlertForDelivery)) || errorAt == routerutils.ERROR_AT_CUST
+	allowDel := (errorAt == routerutils.ERROR_AT_DEL && (!worker.rt.transformerProxy && !worker.rt.skipRtAbortAlertForDelivery)) || errorAt == routerutils.ERROR_AT_CUST
 	return allowTf || allowDel
 }
 
