@@ -9,6 +9,7 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -344,7 +345,7 @@ func (bt *batchWebhookTransformerT) batchTransformLoop() {
 		bt.stats.sourceStats[breq.sourceType].sourceTransform.End()
 
 		if batchResponse.batchError == nil && len(batchResponse.responses) != len(payloadArr) {
-			batchResponse.batchError = errors.New("webhook batchtransform response events size does not equal sent events size")
+			batchResponse.batchError = errors.New("webhook batch transform response events size does not equal sent events size")
 			pkgLogger.Errorf("%w", batchResponse.batchError)
 		}
 		if batchResponse.batchError != nil {
@@ -352,6 +353,7 @@ func (bt *batchWebhookTransformerT) batchTransformLoop() {
 			if batchResponse.statusCode != 0 {
 				statusCode = batchResponse.statusCode
 			}
+			countWebhookErrors(breq.sourceType, statusCode, len(breq.batchRequest))
 			for _, req := range breq.batchRequest {
 				req.done <- transformerResponse{StatusCode: statusCode, Err: batchResponse.batchError.Error()}
 			}
@@ -370,7 +372,7 @@ func (bt *batchWebhookTransformerT) batchTransformLoop() {
 				}
 				errorMessage := bt.webhook.enqueueInGateway(webRequest, outputPayload)
 				if errorMessage != "" {
-					webRequest.done <- transformerResponse{Err: errorMessage}
+					webRequest.done <- bt.markResponseFail(webRequest.sourceType, errorMessage)
 					continue
 				}
 			}
@@ -421,6 +423,13 @@ func (webhook *HandleT) Shutdown() error {
 	return webhook.backgroundWait()
 }
 
+func countWebhookErrors(sourceType string, statusCode, count int) {
+	stats.Default.NewTaggedStat("webhook_num_errors", stats.CountType, stats.Tags{
+		"sourceType": sourceType,
+		"statusCode": strconv.Itoa(statusCode),
+	}).Count(count)
+}
+
 // TODO: Check if correct
 func newWebhookStat(sourceType string) *webhookSourceStatT {
 	tags := map[string]string{
@@ -438,11 +447,11 @@ func newWebhookStat(sourceType string) *webhookSourceStatT {
 }
 
 func (webhook *HandleT) printStats(ctx context.Context) {
-	var lastRecvCount, lastackCount uint64
+	var lastRecvCount, lastAckCount uint64
 	for {
-		if lastRecvCount != webhook.recvCount || lastackCount != webhook.ackCount {
+		if lastRecvCount != webhook.recvCount || lastAckCount != webhook.ackCount {
 			lastRecvCount = webhook.recvCount
-			lastackCount = webhook.ackCount
+			lastAckCount = webhook.ackCount
 			pkgLogger.Debug("Webhook Recv/Ack ", webhook.recvCount, webhook.ackCount)
 		}
 
