@@ -10,6 +10,7 @@ import (
 	"math/rand"
 	"net/http"
 	"os"
+	"reflect"
 	"runtime"
 	"strconv"
 	"strings"
@@ -312,7 +313,7 @@ func (wh *HandleT) backendConfigSubscriber(ctx context.Context) {
 
 				if enableTunnelling {
 					pkgLogger.Info("attaching ssh tunnelling info to destinations")
-					wh.attachSSHTunnellingInfo(ctx, source.Destinations)
+					source.Destinations = wh.attachSSHTunnellingInfo(ctx, source.Destinations)
 				}
 
 				for _, destination := range source.Destinations {
@@ -377,8 +378,12 @@ func (wh *HandleT) backendConfigSubscriber(ctx context.Context) {
 
 func (wh *HandleT) attachSSHTunnellingInfo(
 	ctx context.Context,
-	destinations []backendconfig.DestinationT,
-) {
+	upstreamDestinations []backendconfig.DestinationT,
+) []backendconfig.DestinationT {
+
+	destinations := []backendconfig.DestinationT{}
+	reflect.Copy(reflect.ValueOf(destinations), reflect.ValueOf(upstreamDestinations))
+
 	for idx, dest := range destinations {
 
 		// at destination level, do we have tunnelling enabled.
@@ -395,6 +400,8 @@ func (wh *HandleT) attachSSHTunnellingInfo(
 
 		destinations[idx].Config["sshPrivateKey"] = keys.PrivateKey
 	}
+
+	return destinations
 }
 
 func GetKeyAsBool(key string, conf map[string]interface{}) bool {
