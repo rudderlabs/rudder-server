@@ -1019,7 +1019,6 @@ func (worker *workerT) updateReqMetrics(respStatusCode int, diagnosisStartTime *
 }
 
 func (worker *workerT) allowRouterAbortedAlert(errorAt string) bool {
-
 	switch errorAt {
 	case routerutils.ERROR_AT_CUST:
 		return true
@@ -1030,7 +1029,6 @@ func (worker *workerT) allowRouterAbortedAlert(errorAt string) bool {
 	default:
 		return true
 	}
-
 }
 
 func (worker *workerT) updateAbortedMetrics(destinationID, workspaceId, statusCode, errorAt string) {
