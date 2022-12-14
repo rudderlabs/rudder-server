@@ -365,17 +365,22 @@ func (bt *batchWebhookTransformerT) batchTransformLoop() {
 		for idx, resp := range batchResponse.responses {
 			webRequest := webRequests[idx]
 			if resp.Err == "" && resp.Output != nil {
+				var errMessage string
 				outputPayload, err := json.Marshal(resp.Output)
 				if err != nil {
-					webRequest.done <- bt.markResponseFail(webRequest.sourceType, response.SourceTransformerInvalidOutputFormatInResponse)
+					errMessage = response.SourceTransformerInvalidOutputFormatInResponse
+				} else {
+					errMessage = bt.webhook.enqueueInGateway(webRequest, outputPayload)
+				}
+				if errMessage != "" {
+					countWebhookErrors(breq.sourceType, response.GetErrorStatusCode(errMessage), 1)
+					webRequest.done <- bt.markResponseFail(errMessage)
 					continue
 				}
-				errorMessage := bt.webhook.enqueueInGateway(webRequest, outputPayload)
-				if errorMessage != "" {
-					webRequest.done <- bt.markResponseFail(webRequest.sourceType, errorMessage)
-					continue
-				}
+			} else if resp.StatusCode != http.StatusOK {
+				countWebhookErrors(breq.sourceType, resp.StatusCode, 1)
 			}
+
 			webRequest.done <- resp
 		}
 	}
