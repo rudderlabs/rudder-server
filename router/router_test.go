@@ -1501,6 +1501,17 @@ func TestAllowRouterAbortAlert(t *testing.T) {
 			expectedAlertFlagValue: true,
 			errorAt:                routerUtils.ERROR_AT_CUST,
 		},
+		// empty errorAt
+		{
+			caseName:               "[emptyErrorAt] when transformerProxy is disabled & deliveryAlert is not to be skipped, the alert should be true",
+			skip:                   skipT{},
+			expectedAlertFlagValue: true,
+		},
+		{
+			caseName:               "[emptyErrorAt] when transformerProxy is disabled & deliveryAlert is to be skipped, the alert should be true",
+			skip:                   skipT{deliveryAlert: true},
+			expectedAlertFlagValue: true,
+		},
 	}
 	for _, tc := range cases {
 		wrk := &workerT{
