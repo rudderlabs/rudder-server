@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"sync"
 
 	"github.com/rudderlabs/rudder-server/utils/httputil"
 )
@@ -28,7 +29,7 @@ type InternalControlPlane interface {
 
 type internalClientWithCache struct {
 	client InternalControlPlane
-	cache  map[string]*PublicPrivateKeyPair
+	cache  sync.Map
 }
 
 func NewInternalClient(baseURI string, auth BasicAuth) InternalControlPlane {
@@ -84,20 +85,20 @@ func (api *internalClient) GetDestinationSSHKeys(ctx context.Context, id string)
 func NewInternalClientWithCache(baseURI string, auth BasicAuth) InternalControlPlane {
 	return &internalClientWithCache{
 		client: NewInternalClient(baseURI, auth),
-		cache:  make(map[string]*PublicPrivateKeyPair),
+		cache:  sync.Map{},
 	}
 }
 
 func (cc *internalClientWithCache) GetDestinationSSHKeys(ctx context.Context, id string) (*PublicPrivateKeyPair, error) {
-	if val, ok := cc.cache[id]; ok {
-		return val, nil
+	if val, ok := cc.cache.Load(id); ok {
+		return val.(*PublicPrivateKeyPair), nil
 	}
 
-	keyPair, err := cc.client.GetDestinationSSHKeys(ctx, id)
+	keypair, err := cc.client.GetDestinationSSHKeys(ctx, id)
 	if err != nil {
 		return nil, fmt.Errorf("fetching and caching destination ssh keys: %w", err)
 	}
 
-	cc.cache[id] = keyPair
-	return keyPair, nil
+	cc.cache.Store(id, keypair)
+	return keypair, nil
 }

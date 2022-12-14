@@ -124,7 +124,7 @@ func InitWarehouseAPI(dbHandle *sql.DB, log logger.Logger) error {
 		labels["region"] = region
 	}
 
-	client := cpclient.NewInternalClient(
+	client := cpclient.NewInternalClientWithCache(
 		config.GetString("CONFIG_BACKEND_URL", "api.rudderlabs.com"),
 		cpclient.BasicAuth{
 			Username: config.GetString("CP_INTERNAL_API_USERNAME", ""),
