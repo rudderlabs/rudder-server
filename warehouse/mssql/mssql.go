@@ -23,6 +23,7 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/warehouse/client"
+	"github.com/rudderlabs/rudder-server/warehouse/tunnelling"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
@@ -90,13 +91,14 @@ type HandleT struct {
 }
 
 type CredentialsT struct {
-	Host     string
-	DBName   string
-	User     string
-	Password string
-	Port     string
-	SSLMode  string
-	timeout  time.Duration
+	Host       string
+	DBName     string
+	User       string
+	Password   string
+	Port       string
+	SSLMode    string
+	timeout    time.Duration
+	TunnelInfo *tunnelling.TunnelInfo
 }
 
 var primaryKeyMap = map[string]string{
@@ -122,9 +124,11 @@ func Connect(cred CredentialsT) (*sql.DB, error) {
 	query := url.Values{}
 	query.Add("database", cred.DBName)
 	query.Add("encrypt", cred.SSLMode)
+
 	if cred.timeout > 0 {
 		query.Add("dial timeout", fmt.Sprintf("%d", cred.timeout/time.Second))
 	}
+
 	query.Add("TrustServerCertificate", "true")
 	port, err := strconv.Atoi(cred.Port)
 	if err != nil {
@@ -138,10 +142,13 @@ func Connect(cred CredentialsT) (*sql.DB, error) {
 		RawQuery: query.Encode(),
 	}
 	pkgLogger.Debugf("mssql connection string : %s", connUrl.String())
+
 	var db *sql.DB
+
 	if db, err = sql.Open("sqlserver", connUrl.String()); err != nil {
-		return nil, fmt.Errorf("mssql connection error : (%v)", err)
+		return nil, fmt.Errorf("opening connection to mssql server: %w", err)
 	}
+
 	return db, nil
 }
 
@@ -155,7 +162,7 @@ func loadConfig() {
 }
 
 func (ms *HandleT) getConnectionCredentials() CredentialsT {
-	return CredentialsT{
+	creds := CredentialsT{
 		Host:     warehouseutils.GetConfigValue(host, ms.Warehouse),
 		DBName:   warehouseutils.GetConfigValue(dbName, ms.Warehouse),
 		User:     warehouseutils.GetConfigValue(user, ms.Warehouse),
@@ -164,6 +171,8 @@ func (ms *HandleT) getConnectionCredentials() CredentialsT {
 		SSLMode:  warehouseutils.GetConfigValue(sslMode, ms.Warehouse),
 		timeout:  ms.ConnectTimeout,
 	}
+
+	return creds
 }
 
 func ColumnsWithDataTypes(columns map[string]string, prefix string) string {
@@ -681,9 +690,13 @@ func (ms *HandleT) DropTable(tableName string) (err error) {
 }
 
 func (ms *HandleT) AddColumns(tableName string, columnsInfo []warehouseutils.ColumnInfo) (err error) {
-	var query string
+	var (
+		query        string
+		queryBuilder strings.Builder
+	)
+
 	if len(columnsInfo) == 1 {
-		query += fmt.Sprintf(`
+		queryBuilder.WriteString(fmt.Sprintf(`
 			IF NOT EXISTS (
 			  SELECT
 				1
@@ -697,22 +710,22 @@ func (ms *HandleT) AddColumns(tableName string, columnsInfo []warehouseutils.Col
 			ms.Namespace,
 			tableName,
 			columnsInfo[0].Name,
-		)
+		))
 	}
 
-	query += fmt.Sprintf(`
+	queryBuilder.WriteString(fmt.Sprintf(`
 		ALTER TABLE
 		  %s.%s
 		ADD`,
 		ms.Namespace,
 		tableName,
-	)
+	))
 
 	for _, columnInfo := range columnsInfo {
-		query += fmt.Sprintf(` %s %s,`, columnInfo.Name, rudderDataTypesMapToMssql[columnInfo.Type])
+		queryBuilder.WriteString(fmt.Sprintf(` %q %s,`, columnInfo.Name, rudderDataTypesMapToMssql[columnInfo.Type]))
 	}
 
-	query = strings.TrimSuffix(query, ",")
+	query = strings.TrimSuffix(queryBuilder.String(), ",")
 	query += ";"
 
 	pkgLogger.Infof("MS: Adding columns for destinationID: %s, tableName: %s with query: %v", ms.Warehouse.Destination.ID, tableName, query)

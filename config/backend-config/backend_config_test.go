@@ -394,7 +394,7 @@ func TestCache(t *testing.T) {
 		t.Fatalf("Could not connect to docker: %s\n", err)
 	}
 	database := "jobsdb"
-	resourcePostgres, err := pool.Run("postgres", "11-alpine", []string{
+	resourcePostgres, err := pool.Run("postgres", "15-alpine", []string{
 		"POSTGRES_PASSWORD=password",
 		"POSTGRES_DB=" + database,
 		"POSTGRES_USER=rudder",

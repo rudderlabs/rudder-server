@@ -646,9 +646,13 @@ func (as *HandleT) DropTable(tableName string) (err error) {
 }
 
 func (as *HandleT) AddColumns(tableName string, columnsInfo []warehouseutils.ColumnInfo) (err error) {
-	var query string
+	var (
+		query        string
+		queryBuilder strings.Builder
+	)
+
 	if len(columnsInfo) == 1 {
-		query += fmt.Sprintf(`
+		queryBuilder.WriteString(fmt.Sprintf(`
 			IF NOT EXISTS (
 			  SELECT
 				1
@@ -662,22 +666,22 @@ func (as *HandleT) AddColumns(tableName string, columnsInfo []warehouseutils.Col
 			as.Namespace,
 			tableName,
 			columnsInfo[0].Name,
-		)
+		))
 	}
 
-	query += fmt.Sprintf(`
+	queryBuilder.WriteString(fmt.Sprintf(`
 		ALTER TABLE
 		  %s.%s
 		ADD`,
 		as.Namespace,
 		tableName,
-	)
+	))
 
 	for _, columnInfo := range columnsInfo {
-		query += fmt.Sprintf(` %s %s,`, columnInfo.Name, rudderDataTypesMapToMssql[columnInfo.Type])
+		queryBuilder.WriteString(fmt.Sprintf(` %s %s,`, columnInfo.Name, rudderDataTypesMapToMssql[columnInfo.Type]))
 	}
 
-	query = strings.TrimSuffix(query, ",")
+	query = strings.TrimSuffix(queryBuilder.String(), ",")
 	query += ";"
 
 	pkgLogger.Infof("AZ: Adding columns for destinationID: %s, tableName: %s with query: %v", as.Warehouse.Destination.ID, tableName, query)

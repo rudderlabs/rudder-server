@@ -14,6 +14,7 @@ import (
 
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/services/controlplane/identity"
+	"github.com/rudderlabs/rudder-server/utils/httputil"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/types"
 )
@@ -138,12 +139,11 @@ func (nc *namespaceConfig) makeHTTPRequest(ctx context.Context, url string) ([]b
 		return nil, err
 	}
 
+	defer func() { httputil.CloseResponse(resp) }()
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, err
 	}
-
-	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode >= 300 {
 		return nil, getNotOKError(respBody, resp.StatusCode)

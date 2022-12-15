@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"time"
 
+	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/services/filemanager"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/warehouse/manager"
@@ -17,17 +18,23 @@ import (
 
 func (ct *CTHandleT) validateDestinationFunc(req json.RawMessage, step string) (json.RawMessage, error) {
 	ct.infoRequest = &DestinationValidationRequest{}
-	if err := parseOptions(req, ct.infoRequest); err != nil {
+
+	if err := json.Unmarshal(req, ct.infoRequest); err != nil {
 		return nil, err
 	}
 
-	destination := ct.infoRequest.Destination
-	destinationID := destination.ID
-	destinationType := destination.DestinationDefinition.Name
+	var (
+		dest     backendconfig.DestinationT
+		destID   string
+		destType string
+	)
+
+	dest = ct.infoRequest.Destination
+	destID, destType = dest.ID, dest.DestinationDefinition.Name
 
 	pkgLogger.Infof("Validating destination configuration for destinationId: %s, destinationType: %s, step: %s",
-		destinationID,
-		destinationType,
+		destID,
+		destType,
 		step,
 	)
 
@@ -65,8 +72,8 @@ func (ct *CTHandleT) validateDestinationFunc(req json.RawMessage, step string) (
 		if stepError != nil {
 			resp.Steps[idx].Error = stepError.Error()
 			pkgLogger.Errorf("error occurred while destination configuration validation for destinationId: %s, destinationType: %s, step: %s with error: %s",
-				destinationID,
-				destinationType,
+				destID,
+				destType,
 				s.Name,
 				stepError.Error(),
 			)
@@ -110,6 +117,18 @@ func (ct *CTHandleT) verifyingObjectStorage() (err error) {
 
 func (ct *CTHandleT) initManager() (err error) {
 	ct.warehouse = warehouse(ct.infoRequest)
+
+	// adding ssh tunnelling info, given we have
+	// useSSH enabled from upstream
+	if ct.EnableTunnelling {
+		if warehouseutils.ReadAsBool("useSSH", ct.warehouse.Destination.Config) {
+			keys, err := ct.CPClient.GetDestinationSSHKeys(context.TODO(), ct.warehouse.Destination.ID)
+			if err != nil {
+				return fmt.Errorf("fetching destination ssh keys: %w", err)
+			}
+			ct.warehouse.Destination.Config["sshPrivateKey"] = keys.PrivateKey
+		}
+	}
 
 	// Initializing manager
 	ct.manager, err = manager.NewWarehouseOperations(ct.warehouse.Destination.DestinationDefinition.Name)

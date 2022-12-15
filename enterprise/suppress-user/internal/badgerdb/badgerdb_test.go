@@ -12,7 +12,7 @@ import (
 
 	"github.com/dgraph-io/badger/v3"
 
-	"github.com/gofrs/uuid"
+	"github.com/google/uuid"
 	"github.com/rudderlabs/rudder-server/enterprise/suppress-user/internal/badgerdb"
 	"github.com/rudderlabs/rudder-server/enterprise/suppress-user/model"
 	"github.com/rudderlabs/rudder-server/utils/logger"
@@ -27,7 +27,7 @@ func (f readerFunc) Read(p []byte) (n int, err error) {
 
 // TestBadgerRepository contains badgerdb-specific tests.
 func TestBadgerRepository(t *testing.T) {
-	basePath := path.Join(t.TempDir(), strings.ReplaceAll(uuid.Must(uuid.NewV4()).String(), "-", ""))
+	basePath := path.Join(t.TempDir(), strings.ReplaceAll(uuid.New().String(), "-", ""))
 	token := []byte("token")
 	repo, err := badgerdb.NewRepository(basePath, logger.NOP)
 	require.NoError(t, err)

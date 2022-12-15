@@ -46,11 +46,10 @@ import (
 
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/services/fileuploader"
-	"github.com/rudderlabs/rudder-server/services/metric"
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 
-	"github.com/gofrs/uuid"
+	"github.com/google/uuid"
 	"github.com/lib/pq"
 )
 
@@ -287,6 +286,7 @@ type JobsDB interface {
 	Status() interface{}
 	Ping() error
 	DeleteExecuting()
+	FailExecuting()
 
 	/* Journal */
 
@@ -514,59 +514,12 @@ func (jd *HandleT) assertError(err error) {
 	}
 }
 
-func (jd *HandleT) assertErrorAndRollbackTx(err error, tx *sql.Tx) {
-	if err != nil {
-		rollbackErr := tx.Rollback()
-		if rollbackErr != nil {
-			jd.logger.Errorf("Failed to rollback transaction: %v", rollbackErr)
-		}
-		jd.printLists(true)
-		jd.logger.Fatal(jd.dsEmptyResultCache)
-		panic(err)
-	}
-}
-
 func (jd *HandleT) assert(cond bool, errorString string) {
 	if !cond {
 		jd.printLists(true)
 		jd.logger.Fatal(jd.dsEmptyResultCache)
 		panic(fmt.Errorf("[[ %s ]]: %s", jd.tablePrefix, errorString))
 	}
-}
-
-func (jd *HandleT) Status() interface{} {
-	statusObj := map[string]interface{}{
-		"dataset-list":    jd.getDSList(),
-		"dataset-ranges":  jd.getDSRangeList(),
-		"backups-enabled": jd.BackupSettings.isBackupEnabled(),
-	}
-	emptyResults := make(map[string]interface{})
-	for ds, entry := range jd.dsEmptyResultCache {
-		emptyResults[ds.JobTable] = entry
-	}
-	statusObj["empty-results-cache"] = emptyResults
-
-	pendingEventMetrics := metric.Instance.
-		GetRegistry(metric.PUBLISHED_METRICS).
-		GetMetricsByName(fmt.Sprintf(metric.JOBSDB_PENDING_EVENTS_COUNT, jd.tablePrefix))
-
-	if len(pendingEventMetrics) == 0 {
-		return statusObj
-	}
-
-	var pendingEvents []map[string]interface{}
-	for _, pendingEvent := range pendingEventMetrics {
-		count := pendingEvent.Value.(metric.Gauge).IntValue()
-		if count != 0 {
-			pendingEvents = append(pendingEvents, map[string]interface{}{
-				"tags":  pendingEvent.Tags,
-				"count": count,
-			})
-		}
-	}
-	statusObj["pending-events"] = pendingEvents
-
-	return statusObj
 }
 
 type jobStateT struct {
@@ -3369,120 +3322,6 @@ func (jd *HandleT) getImportingList(ctx context.Context, params GetQueryParamsT)
 }
 
 /*
-deleteJobStatus deletes the latest status of a batch of jobs
-This is only done during recovery, which happens during the server start.
-So, we don't have to worry about dsEmptyResultCache
-*/
-func (jd *HandleT) deleteJobStatus(conditions QueryConditions) {
-	tx, err := jd.dbHandle.Begin()
-	jd.assertError(err)
-
-	err = jd.deleteJobStatusInTx(tx, conditions)
-	jd.assertErrorAndRollbackTx(err, tx)
-
-	err = tx.Commit()
-	jd.assertError(err)
-}
-
-/*
-if count passed is less than 0, then delete happens on the entire dsList;
-deleteJobStatusInTx deletes the latest status of a batch of jobs
-*/
-func (jd *HandleT) deleteJobStatusInTx(txHandler transactionHandler, conditions QueryConditions) error {
-	tags := statTags{CustomValFilters: conditions.CustomValFilters, StateFilters: conditions.StateFilters, ParameterFilters: conditions.ParameterFilters}
-	queryStat := jd.getTimerStat("delete_job_status_time", &tags)
-	queryStat.Start()
-	defer queryStat.End()
-
-	// The order of lock is very important. The migrateDSLoop
-	// takes lock in this order so reversing this will cause
-	// deadlocks
-	ctx := context.TODO()
-	if !jd.dsMigrationLock.RTryLockWithCtx(ctx) {
-		panic(fmt.Errorf("could not acquire a migration lock: %w", ctx.Err()))
-	}
-	defer jd.dsMigrationLock.RUnlock()
-	if !jd.dsListLock.RTryLockWithCtx(ctx) {
-		panic(fmt.Errorf("could not acquire a dslist lock: %w", ctx.Err()))
-	}
-	defer jd.dsListLock.RUnlock()
-
-	dsList := jd.getDSList()
-
-	totalDeletedCount := 0
-	for _, ds := range dsList {
-		deletedCount, err := jd.deleteJobStatusDSInTx(txHandler, ds, conditions)
-		if err != nil {
-			return err
-		}
-		totalDeletedCount += deletedCount
-		jd.dropDSFromCache(ds)
-	}
-
-	return nil
-}
-
-/*
-stateFilters and customValFilters do a OR query on values passed in array
-parameterFilters do a AND query on values included in the map
-*/
-func (jd *HandleT) deleteJobStatusDSInTx(txHandler transactionHandler, ds dataSetT, conditions QueryConditions) (int, error) {
-	stateFilters := conditions.StateFilters
-	customValFilters := conditions.CustomValFilters
-	parameterFilters := conditions.ParameterFilters
-
-	checkValidJobState(jd, stateFilters)
-
-	tags := statTags{CustomValFilters: conditions.CustomValFilters, StateFilters: conditions.StateFilters, ParameterFilters: conditions.ParameterFilters}
-	queryStat := jd.getTimerStat("delete_job_status_ds_time", &tags)
-	queryStat.Start()
-	defer queryStat.End()
-
-	var stateQuery string
-	var sqlFilters []string
-	if len(stateFilters) > 0 {
-		stateQuery = " AND " + constructQueryOR("job_state", stateFilters)
-	}
-	if conditions.AfterJobID != nil {
-		sqlFilters = append(sqlFilters, fmt.Sprintf(`job_id > %d`, *conditions.AfterJobID))
-	}
-	if len(customValFilters) > 0 {
-		sqlFilters = append(sqlFilters, constructQueryOR(fmt.Sprintf(`%q.custom_val`, ds.JobTable), customValFilters))
-	}
-
-	if len(parameterFilters) > 0 {
-		sqlFilters = append(sqlFilters, constructParameterJSONQuery(ds.JobTable, parameterFilters))
-	}
-
-	sqlFiltersString := strings.Join(sqlFilters, " AND ")
-	if len(sqlFiltersString) > 0 {
-		sqlFiltersString = "WHERE " + sqlFiltersString
-	}
-
-	sqlStatement := fmt.Sprintf(`DELETE FROM %[1]q
-									WHERE id = ANY(
-										SELECT id from "v_last_%[1]s" where job_id IN (SELECT job_id from %[2]q %[3]s)
-									) %[4]s AND retry_time < $1`,
-		ds.JobStatusTable, ds.JobTable, sqlFiltersString, stateQuery)
-
-	stmt, err := txHandler.Prepare(sqlStatement)
-	if err != nil {
-		return 0, err
-	}
-	defer func() { _ = stmt.Close() }()
-	res, err := stmt.Exec(getTimeNowFunc())
-	if err != nil {
-		return 0, err
-	}
-	deleteCount, err := res.RowsAffected()
-	if err != nil {
-		return 0, err
-	}
-
-	return int(deleteCount), nil
-}
-
-/*
 GetProcessed returns events of a given state. This does not update any state itself and
 realises on the caller to update it. That means that successive calls to GetProcessed("failed")
 can return the same set of events. It is the responsibility of the caller to call it from
@@ -3649,36 +3488,6 @@ getExecuting returns events which  in executing state
 */
 func (jd *HandleT) getExecuting(ctx context.Context, params GetQueryParamsT) (JobsResult, error) { // skipcq: CRT-P0003
 	return jd.GetProcessed(ctx, params)
-}
-
-/*
-DeleteExecuting deletes events whose latest job state is executing.
-This is only done during recovery, which happens during the server start.
-*/
-func (jd *HandleT) DeleteExecuting() {
-	conditions := QueryConditions{
-		StateFilters: []string{Executing.State},
-	}
-	tags := statTags{CustomValFilters: conditions.CustomValFilters, StateFilters: conditions.StateFilters, ParameterFilters: conditions.ParameterFilters}
-	command := func() interface{} {
-		jd.deleteJobStatus(conditions)
-		return nil
-	}
-	_ = jd.executeDbRequest(newWriteDbRequest("delete_job_status", &tags, command))
-}
-
-/*
-Ping returns health check for pg database
-*/
-func (jd *HandleT) Ping() error {
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-	rows, err := jd.dbHandle.QueryContext(ctx, `SELECT 'Rudder DB Health Check'::text as message`)
-	if err != nil {
-		return err
-	}
-	_ = rows.Close()
-	return nil
 }
 
 func (jd *HandleT) getMaxIDForDs(ds dataSetT) int64 {

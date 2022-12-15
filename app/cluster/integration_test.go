@@ -12,8 +12,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gofrs/uuid"
 	"github.com/golang/mock/gomock"
+	"github.com/google/uuid"
 	"github.com/ory/dockertest/v3"
 	"github.com/stretchr/testify/require"
 
@@ -66,7 +66,7 @@ func run(m *testing.M) int {
 
 	database := "jobsdb"
 	// pulls an image, creates a container based on it and runs it
-	resourcePostgres, err := pool.Run("postgres", "11-alpine", []string{
+	resourcePostgres, err := pool.Run("postgres", "15-alpine", []string{
 		"POSTGRES_PASSWORD=password",
 		"POSTGRES_DB=" + database,
 		"POSTGRES_USER=rudder",
@@ -132,7 +132,7 @@ const (
 )
 
 var (
-	workspaceID             = uuid.Must(uuid.NewV4()).String()
+	workspaceID             = uuid.New().String()
 	gaDestinationDefinition = backendConfig.DestinationDefinitionT{
 		ID: GADestinationDefinitionID, Name: "GA",
 		DisplayName: "Google Analytics", Config: nil, ResponseRules: nil,

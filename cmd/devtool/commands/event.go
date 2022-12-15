@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/rudderlabs/rudder-server/utils/httputil"
 	"github.com/urfave/cli/v2"
 )
 
@@ -64,40 +65,42 @@ func EventSend(c *cli.Context) error {
 	}
 
 	for i := 0; i < c.Int("count"); i++ {
-		anonymousId := uuid.New().String()
+		if err := func() error {
+			anonymousId := uuid.New().String()
+			buf := bytes.NewBuffer(nil)
+			err = t.Execute(buf, map[string]string{
+				"AnonymousId": anonymousId,
+				"Timestamp":   time.Now().Format(time.RFC3339),
+			})
+			if err != nil {
+				return err
+			}
 
-		buf := bytes.NewBuffer(nil)
-		err = t.Execute(buf, map[string]string{
-			"AnonymousId": anonymousId,
-			"Timestamp":   time.Now().Format(time.RFC3339),
-		})
-		if err != nil {
+			req, err := http.NewRequestWithContext(c.Context, "POST", url, buf)
+			if err != nil {
+				return err
+			}
+
+			req.SetBasicAuth(c.String("write-key"), "")
+			req.Header.Set("Content-Type", "application/json")
+			req.Header.Set("AnonymousId", anonymousId)
+
+			resp, err := client.Do(req)
+			if err != nil {
+				return err
+			}
+			defer func() { httputil.CloseResponse(resp) }()
+			b, err := io.ReadAll(resp.Body)
+			if err != nil {
+				return err
+			}
+			if resp.StatusCode != http.StatusOK {
+				fmt.Printf("%s\n%s\n", resp.Status, b)
+				return fmt.Errorf("status code: %d", resp.StatusCode)
+			}
+			return nil
+		}(); err != nil {
 			return err
-		}
-
-		req, err := http.NewRequestWithContext(c.Context, "POST", url, buf)
-		if err != nil {
-			return err
-		}
-
-		req.SetBasicAuth(c.String("write-key"), "")
-		req.Header.Set("Content-Type", "application/json")
-		req.Header.Set("AnonymousId", anonymousId)
-
-		resp, err := client.Do(req)
-		if err != nil {
-			return err
-		}
-		b, err := io.ReadAll(resp.Body)
-		if err != nil {
-			return err
-		}
-		defer resp.Body.Close()
-
-		if resp.StatusCode != http.StatusOK {
-			fmt.Printf("%s\n%s\n", resp.Status, b)
-
-			return fmt.Errorf("status code: %d", resp.StatusCode)
 		}
 	}
 
