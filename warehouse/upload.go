@@ -193,7 +193,6 @@ func setMaxParallelLoads() {
 }
 
 func (f *UploadJobFactory) NewUploadJob(dto *model.UploadJob) *UploadJobT {
-
 	whManager, err := manager.New(dto.Warehouse.Type)
 	if err != nil {
 		panic(err)
@@ -204,8 +203,7 @@ func (f *UploadJobFactory) NewUploadJob(dto *model.UploadJob) *UploadJobT {
 		pgNotifier:           f.pgNotifier,
 		whManager:            whManager,
 		destinationValidator: validations.NewDestinationValidator(),
-		// schemaHandle:         f.schemaHandle,
-		stats: f.stats,
+		stats:                f.stats,
 
 		upload:         (*Upload)(&dto.Upload),
 		warehouse:      dto.Warehouse,
