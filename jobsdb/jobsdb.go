@@ -3449,6 +3449,7 @@ func (jd *HandleT) deleteJobStatusDSInTx(txHandler transactionHandler, ds dataSe
 	if len(customValFilters) > 0 {
 		sqlFilters = append(sqlFilters, constructQueryOR(fmt.Sprintf(`%q.custom_val`, ds.JobTable), customValFilters))
 	}
+
 	if len(parameterFilters) > 0 {
 		sqlFilters = append(sqlFilters, constructParameterJSONQuery(ds.JobTable, parameterFilters))
 	}
