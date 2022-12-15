@@ -378,13 +378,12 @@ func (wh *HandleT) attachSSHTunnellingInfo(
 	ctx context.Context,
 	upstream backendconfig.DestinationT,
 ) backendconfig.DestinationT {
-	pkgLogger.Infof("Attaching ssh tunnelling info to destination: %s", upstream.ID)
 	// at destination level, do we have tunnelling enabled.
 	if tunnelEnabled := warehouseutils.ReadAsBool("useSSH", upstream.Config); !tunnelEnabled {
 		return upstream
 	}
 
-	pkgLogger.Debugf("fetching ssh keys for destination: %s", upstream.ID)
+	pkgLogger.Debugf("Fetching ssh keys for destination: %s", upstream.ID)
 	keys, err := wh.cpInternalClient.GetDestinationSSHKeys(ctx, upstream.ID)
 	if err != nil {
 		pkgLogger.Errorf("fetching ssh keys for destination: %s", err.Error())
