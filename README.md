@@ -73,7 +73,7 @@ With RudderStack, you can build customer data pipelines that connect your whole 
 
 - **Privacy and Security**: You can collect and store your customer data without sending everything to a third-party vendor. With RudderStack, you get fine-grained control over what data to forward to which analytical tool.
 
-- **Unlimited Events**: Event volume-based pricing of most of the commercial systems is broken. With RudderStack Open-Source, you are be able to collect as much data as possible without worrying about overrunning your event budgets.
+- **Unlimited Events**: Event volume-based pricing of most of the commercial systems is broken. With RudderStack Open-Source, will be able to collect as much data as possible without worrying about overrunning your event budgets.
 
 - **Segment API-compatible**: RudderStack is fully compatible with the Segment API. So you don't need to change your app if you are using Segment; just integrate the RudderStack SDKs into your app and your events will keep flowing to the destinations (including data warehouses) as before.
 
