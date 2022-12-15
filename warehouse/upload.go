@@ -113,8 +113,8 @@ type UploadJobFactory struct {
 	loadFile             *loadfiles.LoadFileGenerator
 	whManager            manager.ManagerI
 	pgNotifier           *pgnotifier.PgNotifierT
-	schemaHandle         *SchemaHandleT
-	stats                stats.Stats
+	// schemaHandle         *SchemaHandleT
+	stats stats.Stats
 }
 
 type UploadJobT struct {
@@ -199,8 +199,8 @@ func (f *UploadJobFactory) NewUploadJob(dto *model.UploadJob) *UploadJobT {
 		pgNotifier:           f.pgNotifier,
 		whManager:            f.whManager,
 		destinationValidator: f.destinationValidator,
-		schemaHandle:         f.schemaHandle,
-		stats:                f.stats,
+		// schemaHandle:         f.schemaHandle,
+		stats: f.stats,
 
 		upload:         (*Upload)(&dto.Upload),
 		warehouse:      dto.Warehouse,
