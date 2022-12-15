@@ -92,7 +92,7 @@ func NewRsourcesService(deploymentType deployment.Type) (rsources.JobService, er
 	rsourcesConfig.LocalConn = misc.GetConnectionString()
 	rsourcesConfig.LocalHostname = config.GetString("DB.host", "localhost")
 	rsourcesConfig.SharedConn = config.GetString("SharedDB.dsn", "")
-	rsourcesConfig.SkipFailedRecordsCollection = !config.GetBool("Router.failedKeysEnabled", false)
+	rsourcesConfig.SkipFailedRecordsCollection = !config.GetBool("Router.failedKeysEnabled", true)
 
 	if deploymentType == deployment.MultiTenantType {
 		// For multitenant deployment type we shall require the existence of a SHARED_DB

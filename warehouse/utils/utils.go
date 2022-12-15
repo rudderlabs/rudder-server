@@ -33,6 +33,7 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/httputil"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
+	"github.com/rudderlabs/rudder-server/warehouse/tunnelling"
 )
 
 const (
@@ -808,6 +809,16 @@ func GetTemporaryS3Cred(destination *backendconfig.DestinationT) (string, string
 		return "", "", "", err
 	}
 
+	// Role already provides temporary credentials
+	// so we shouldn't call sts.GetSessionToken again
+	if sessionConfig.RoleBasedAuth {
+		creds, err := awsSession.Config.Credentials.Get()
+		if err != nil {
+			return "", "", "", err
+		}
+		return creds.AccessKeyID, creds.SecretAccessKey, creds.SessionToken, nil
+	}
+
 	// Create an STS client from just a session.
 	svc := sts.New(awsSession)
 
@@ -1088,4 +1099,23 @@ func RandHex() string {
 	var buf [32]byte
 	hex.Encode(buf[:], u[:])
 	return string(buf[:])
+}
+
+func ExtractTunnelInfoFromDestinationConfig(config map[string]interface{}) *tunnelling.TunnelInfo {
+	if tunnelEnabled := ReadAsBool("useSSH", config); !tunnelEnabled {
+		return nil
+	}
+
+	return &tunnelling.TunnelInfo{
+		Config: config,
+	}
+}
+
+func ReadAsBool(key string, config map[string]interface{}) bool {
+	if _, ok := config[key]; ok {
+		if val, ok := config[key].(bool); ok {
+			return val
+		}
+	}
+	return false
 }

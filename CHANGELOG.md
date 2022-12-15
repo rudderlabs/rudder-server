@@ -1,5 +1,22 @@
 # Changelog
 
+## [1.4.5](https://github.com/rudderlabs/rudder-server/compare/v1.4.4...v1.4.5) (2022-12-15)
+
+
+### Bug Fixes
+
+* aws session creation is failing for s3 manager when roles are used ([#2799](https://github.com/rudderlabs/rudder-server/issues/2799)) ([1534d64](https://github.com/rudderlabs/rudder-server/commit/1534d64b3d52f7d715dfc7fed113cb91ecc50708))
+* **destination:** alert flag setting for router-aborted-count alert definition ([#2808](https://github.com/rudderlabs/rudder-server/issues/2808)) ([f2e9001](https://github.com/rudderlabs/rudder-server/commit/f2e900190412a1cbd6d2f19d5fca8f0411793110))
+* pending events stats incremented twice during startup due to tenantstats being initialized twice ([#2798](https://github.com/rudderlabs/rudder-server/issues/2798)) ([49aa37f](https://github.com/rudderlabs/rudder-server/commit/49aa37f33b895483a88b4caee19fc71fb1a76865))
+
+
+### Miscellaneous
+
+* enable failed keys by default ([#2805](https://github.com/rudderlabs/rudder-server/issues/2805)) ([ba9832c](https://github.com/rudderlabs/rudder-server/commit/ba9832c4eb4e90f93da860209cd0ce919bc88608))
+* **gateway:** add webhook failure stats ([#2811](https://github.com/rudderlabs/rudder-server/issues/2811)) ([60fc5f7](https://github.com/rudderlabs/rudder-server/commit/60fc5f7a6fe2bf00e09f76144080e48a4e6f3061))
+* **gateway:** enabling source transformation alerts ([#2809](https://github.com/rudderlabs/rudder-server/issues/2809)) ([cc14e6c](https://github.com/rudderlabs/rudder-server/commit/cc14e6c634f63d30353e701aaf29a40f2929c41e))
+* quote table identifier ([#2810](https://github.com/rudderlabs/rudder-server/issues/2810)) ([58f2e4c](https://github.com/rudderlabs/rudder-server/commit/58f2e4cdbf8a28c1d192bc461ab4a92515eccdeb))
+
 ## [1.4.4](https://github.com/rudderlabs/rudder-server/compare/v1.4.3...v1.4.4) (2022-12-09)
 
 

@@ -1173,6 +1173,11 @@ func TestFailExecuting(t *testing.T) {
 	require.Equal(t, 2, len(failed.Jobs))
 }
 
+func TestConstructParameterJSONQuery(t *testing.T) {
+	q := constructParameterJSONQuery("alias", []ParameterFilterT{{Name: "name", Value: "value"}})
+	require.Equal(t, `(alias.parameters @> '{"name":"value"}' )`, q)
+}
+
 type testingT interface {
 	Errorf(format string, args ...interface{})
 	FailNow()

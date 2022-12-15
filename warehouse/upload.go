@@ -1090,7 +1090,7 @@ func (job *UploadJobT) loadTable(tName string) (alteredSchema bool, err error) {
 		return
 	}
 
-	generateTableLoadMetrics := func() {
+	func() {
 		if !generateTableLoadCountVerificationsMetrics {
 			return
 		}
@@ -1104,12 +1104,12 @@ func (job *UploadJobT) loadTable(tName string) (alteredSchema bool, err error) {
 		if errEventCount != nil {
 			return
 		}
+
+		// TODO : Perform the comparison here in the codebase
 		job.guageStat(`pre_load_table_rows`, tag{name: "tableName", value: strings.ToLower(tName)}).Gauge(int(totalBeforeLoad))
 		job.guageStat(`post_load_table_rows_estimate`, tag{name: "tableName", value: strings.ToLower(tName)}).Gauge(int(totalBeforeLoad + eventsInTableUpload))
 		job.guageStat(`post_load_table_rows`, tag{name: "tableName", value: strings.ToLower(tName)}).Gauge(int(totalAfterLoad))
-	}
-
-	generateTableLoadMetrics()
+	}()
 
 	tableUpload.setStatus(TableUploadExported)
 	numEvents, queryErr := tableUpload.getNumEvents()
