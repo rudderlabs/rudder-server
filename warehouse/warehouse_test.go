@@ -128,7 +128,7 @@ func TestUploadJob_ProcessingStats(t *testing.T) {
 			}).Migrate("warehouse")
 			require.NoError(t, err)
 
-			sqlStatement, err := os.ReadFile("testdata/sql/6.sql")
+			sqlStatement, err := os.ReadFile("testdata/sql/processing_stats_test.sql")
 			require.NoError(t, err)
 
 			_, err = pgResource.DB.Exec(string(sqlStatement))

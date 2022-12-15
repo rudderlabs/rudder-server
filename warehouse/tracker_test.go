@@ -97,7 +97,7 @@ func TestHandleT_Track(t *testing.T) {
 			}).Migrate("warehouse")
 			require.NoError(t, err)
 
-			sqlStatement, err := os.ReadFile("testdata/sql/7.sql")
+			sqlStatement, err := os.ReadFile("testdata/sql/seed_tracker_test.sql")
 			require.NoError(t, err)
 
 			_, err = pgResource.DB.Exec(string(sqlStatement))
@@ -217,7 +217,7 @@ func TestHandleT_CronTracker(t *testing.T) {
 		}).Migrate("warehouse")
 		require.NoError(t, err)
 
-		sqlStatement, err := os.ReadFile("testdata/sql/7.sql")
+		sqlStatement, err := os.ReadFile("testdata/sql/seed_tracker_test.sql")
 		require.NoError(t, err)
 
 		_, err = pgResource.DB.Exec(string(sqlStatement))
