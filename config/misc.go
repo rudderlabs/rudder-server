@@ -2,6 +2,7 @@ package config
 
 import (
 	"os"
+	"regexp"
 	"strings"
 )
 
@@ -35,8 +36,8 @@ func GetInstanceID() string {
 	if instance == "" {
 		return ""
 	}
-	instanceArr := strings.Split(instance, "-")
-	return instanceArr[len(instanceArr)-1]
+	re := regexp.MustCompile("-[0-9]+([A-Za-z0-9-]*)$")
+	return strings.TrimPrefix(string(re.Find([]byte(instance))), "-")
 }
 
 func GetReleaseName() string {

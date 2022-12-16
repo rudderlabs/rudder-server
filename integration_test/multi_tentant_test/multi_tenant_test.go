@@ -161,7 +161,7 @@ func testMultiTenantByAppType(t *testing.T, appType string) {
 		cmd := exec.CommandContext(ctx, "go", "run", "../../main.go")
 		cmd.Env = append(os.Environ(),
 			"APP_TYPE="+appType,
-			"INSTANCE_ID="+serverInstanceID,
+			"INSTANCE_ID=rudder-"+serverInstanceID,
 			"RELEASE_NAME="+releaseName,
 			"ETCD_HOSTS="+etcdContainer.Hosts[0],
 			"JOBS_DB_PORT="+postgresContainer.Port,
