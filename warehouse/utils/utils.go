@@ -809,6 +809,16 @@ func GetTemporaryS3Cred(destination *backendconfig.DestinationT) (string, string
 		return "", "", "", err
 	}
 
+	// Role already provides temporary credentials
+	// so we shouldn't call sts.GetSessionToken again
+	if sessionConfig.RoleBasedAuth {
+		creds, err := awsSession.Config.Credentials.Get()
+		if err != nil {
+			return "", "", "", err
+		}
+		return creds.AccessKeyID, creds.SecretAccessKey, creds.SessionToken, nil
+	}
+
 	// Create an STS client from just a session.
 	svc := sts.New(awsSession)
 
