@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.5.0-preview.1](https://github.com/rudderlabs/rudder-server/compare/v1.4.4...v1.5.0-preview.1) (2022-12-15)
+
+
+### Features
+
+* **warehouse:** implement ssh tunnelling ([#2804](https://github.com/rudderlabs/rudder-server/issues/2804)) ([1cbb1e7](https://github.com/rudderlabs/rudder-server/commit/1cbb1e75297737bcf4ce3409892e75b8c8958f12))
+
+
+### Miscellaneous
+
+* applying 1.4.3 and 1.4.4 hotfixes to main branch ([#2794](https://github.com/rudderlabs/rudder-server/issues/2794)) ([65ff50a](https://github.com/rudderlabs/rudder-server/commit/65ff50a8e568aa16a6d8d442181e950a29640c8d))
+* **warehouse:** integration test improvements ([#2685](https://github.com/rudderlabs/rudder-server/issues/2685)) ([449fc84](https://github.com/rudderlabs/rudder-server/commit/449fc849533f0d82139dae227abcf02056478c71))
+* **warehouse:** use strings.builder for warehouse add columns ([#2801](https://github.com/rudderlabs/rudder-server/issues/2801)) ([37f9bb3](https://github.com/rudderlabs/rudder-server/commit/37f9bb37a943a37d4d7fee6e69fbcf164ba5c181))
+
 ## [1.4.4](https://github.com/rudderlabs/rudder-server/compare/v1.4.3...v1.4.4) (2022-12-09)
 
 
