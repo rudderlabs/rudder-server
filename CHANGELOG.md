@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.5.0](https://github.com/rudderlabs/rudder-server/compare/v1.4.5...v1.5.0) (2022-12-16)
+
+
+### Features
+
+* **warehouse:** implement ssh tunnelling ([#2804](https://github.com/rudderlabs/rudder-server/issues/2804)) ([1cbb1e7](https://github.com/rudderlabs/rudder-server/commit/1cbb1e75297737bcf4ce3409892e75b8c8958f12))
+
+
+### Miscellaneous
+
+* applying 1.4.5 hotfixes to main branch ([#2814](https://github.com/rudderlabs/rudder-server/issues/2814)) ([736a70b](https://github.com/rudderlabs/rudder-server/commit/736a70bfc27eb79fe5f9375c7c25edbec24ad5ae))
+
 ## [1.4.5](https://github.com/rudderlabs/rudder-server/compare/v1.4.4...v1.4.5) (2022-12-15)
 
 
