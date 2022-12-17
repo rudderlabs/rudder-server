@@ -69,7 +69,7 @@ services:
       retries: 25
   wh-clickhouse:
     container_name: wh-clickhouse
-    image: yandex/clickhouse-server:21-alpine
+    image: clickhouse/clickhouse-server:22-alpine
     environment:
       - CLICKHOUSE_DB=rudderdb
       - CLICKHOUSE_PASSWORD=rudder-password
@@ -99,7 +99,7 @@ services:
       interval: 1s
       retries: 25
   wh-clickhouse01:
-    image: yandex/clickhouse-server:21-alpine
+    image: clickhouse/clickhouse-server:22-alpine
     container_name: wh-clickhouse01
     ports:
       - "9000"
@@ -112,7 +112,7 @@ services:
       interval: 1s
       retries: 25
   wh-clickhouse02:
-    image: yandex/clickhouse-server:21-alpine
+    image: clickhouse/clickhouse-server:22-alpine
     container_name: wh-clickhouse02
     hostname: wh-clickhouse02
     ports:
@@ -126,7 +126,7 @@ services:
       interval: 1s
       retries: 25
   wh-clickhouse03:
-    image: yandex/clickhouse-server:21-alpine
+    image: clickhouse/clickhouse-server:22-alpine
     container_name: wh-clickhouse03
     hostname: wh-clickhouse03
     ports:
@@ -140,7 +140,7 @@ services:
       interval: 1s
       retries: 25
   wh-clickhouse04:
-    image: yandex/clickhouse-server:21-alpine
+    image: clickhouse/clickhouse-server:22-alpine
     container_name: wh-clickhouse04
     hostname: wh-clickhouse04
     ports:
