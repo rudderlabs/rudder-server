@@ -422,7 +422,7 @@ func (wh *HandleT) populateHistoricIdentities(warehouse warehouseutils.Warehouse
 		job := wh.uploadJobFactory.NewUploadJob(&model.UploadJob{
 			Upload:    model.Upload(upload),
 			Warehouse: warehouse,
-		})
+		}, whManager)
 
 		tableUploadsCreated := areTableUploadsCreated(job.upload.ID)
 		if !tableUploadsCreated {

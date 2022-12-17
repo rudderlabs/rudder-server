@@ -1088,7 +1088,7 @@ func (wh *HandleT) getUploadsToProcess(ctx context.Context, availableWorkers int
 		if !ok {
 			uploadJob := wh.uploadJobFactory.NewUploadJob(&model.UploadJob{
 				Upload: model.Upload(upload),
-			})
+			}, nil)
 			err := fmt.Errorf("unable to find source : %s or destination : %s, both or the connection between them", upload.SourceID, upload.DestinationID)
 			_, _ = uploadJob.setUploadError(err, model.Aborted)
 			pkgLogger.Errorf("%v", err)
@@ -1114,11 +1114,15 @@ func (wh *HandleT) getUploadsToProcess(ctx context.Context, availableWorkers int
 			stagingFileListPtr[i] = &stagingFilesList[i]
 		}
 
+		whManager, err := manager.New(wh.destType)
+		if err != nil {
+			return nil, err
+		}
 		uploadJob := wh.uploadJobFactory.NewUploadJob(&model.UploadJob{
 			Warehouse:    warehouse,
 			Upload:       model.Upload(upload),
 			StagingFiles: stagingFileListPtr,
-		})
+		}, whManager)
 
 		uploadJobs = append(uploadJobs, uploadJob)
 	}
@@ -1380,16 +1384,11 @@ func (wh *HandleT) Setup(whType string) error {
 	wh.tenantManager = multitenant.Manager{
 		BackendConfig: backendconfig.DefaultBackendConfig,
 	}
-	whManager, err := manager.New(wh.destType)
-	if err != nil {
-		return err
-	}
 	wh.stats = stats.Default
 
 	wh.uploadJobFactory = UploadJobFactory{
 		stats:                stats.Default,
 		dbHandle:             wh.dbHandle,
-		whManager:            whManager,
 		pgNotifier:           &wh.notifier,
 		destinationValidator: validations.NewDestinationValidator(),
 		loadFile: &loadfiles.LoadFileGenerator{

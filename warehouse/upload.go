@@ -111,10 +111,8 @@ type UploadJobFactory struct {
 	dbHandle             *sql.DB
 	destinationValidator validations.DestinationValidator
 	loadFile             *loadfiles.LoadFileGenerator
-	whManager            manager.ManagerI
 	pgNotifier           *pgnotifier.PgNotifierT
-	// schemaHandle         *SchemaHandleT
-	stats stats.Stats
+	stats                stats.Stats
 }
 
 type UploadJobT struct {
@@ -192,11 +190,7 @@ func setMaxParallelLoads() {
 	}
 }
 
-func (f *UploadJobFactory) NewUploadJob(dto *model.UploadJob) *UploadJobT {
-	whManager, err := manager.New(dto.Warehouse.Type)
-	if err != nil {
-		panic(err)
-	}
+func (f *UploadJobFactory) NewUploadJob(dto *model.UploadJob, whManager manager.ManagerI) *UploadJobT {
 	return &UploadJobT{
 		dbHandle:             f.dbHandle,
 		loadfile:             f.loadFile,
