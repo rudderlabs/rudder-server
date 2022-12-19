@@ -59,8 +59,8 @@ func TestIntegrationClickHouse(t *testing.T) {
 		sourceID                    string
 		destinationID               string
 		writeKey                    string
-		warehouseEventsMap          testhelper.EventsCountMap
-		warehouseModifiedEventsMap  testhelper.EventsCountMap
+		warehouseEvents             testhelper.EventsCountMap
+		warehouseModifiedEvents     testhelper.EventsCountMap
 		clusterSetup                func(t testing.TB)
 		db                          *sql.DB
 		s3EngineEnabledWorkspaceIDs []string
@@ -88,7 +88,7 @@ func TestIntegrationClickHouse(t *testing.T) {
 			destinationID: "21Ev6TI6emCFDKhp2Zn6XfTP7PI",
 			writeKey:      "95RxRTZHWUsaD6HEdz0ThbXfQ6p",
 			db:            dbs[1],
-			warehouseModifiedEventsMap: testhelper.EventsCountMap{
+			warehouseEvents: testhelper.EventsCountMap{
 				"identifies":    8,
 				"users":         2,
 				"tracks":        8,
@@ -109,7 +109,7 @@ func TestIntegrationClickHouse(t *testing.T) {
 			destinationID: "21Ev6TI6emCFDKhp2Zn6XfTP7PI",
 			writeKey:      "95RxRTZHWUsaD6HEdz0ThbXfQ6p",
 			db:            dbs[1],
-			warehouseEventsMap: testhelper.EventsCountMap{
+			warehouseEvents: testhelper.EventsCountMap{
 				"identifies":    8,
 				"users":         2,
 				"tracks":        8,
@@ -119,7 +119,7 @@ func TestIntegrationClickHouse(t *testing.T) {
 				"aliases":       8,
 				"groups":        8,
 			},
-			warehouseModifiedEventsMap: testhelper.EventsCountMap{
+			warehouseModifiedEvents: testhelper.EventsCountMap{
 				"identifies":    8,
 				"users":         2,
 				"tracks":        8,
@@ -128,6 +128,9 @@ func TestIntegrationClickHouse(t *testing.T) {
 				"screens":       8,
 				"aliases":       8,
 				"groups":        8,
+			},
+			s3EngineEnabledWorkspaceIDs: []string{
+				"BpLnfgDsc2WD8F2qNfHK5a84jjJ",
 			},
 		},
 	}
@@ -148,7 +151,7 @@ func TestIntegrationClickHouse(t *testing.T) {
 				WriteKey:           tc.writeKey,
 				SourceID:           tc.sourceID,
 				DestinationID:      tc.destinationID,
-				WarehouseEventsMap: tc.warehouseEventsMap,
+				WarehouseEventsMap: tc.warehouseEvents,
 				Tables:             tables,
 				Provider:           provider,
 				JobsDB:             jobsDB,
@@ -173,7 +176,7 @@ func TestIntegrationClickHouse(t *testing.T) {
 			}
 
 			ts.UserID = testhelper.GetUserId(provider)
-			ts.WarehouseEventsMap = tc.warehouseModifiedEventsMap
+			ts.WarehouseEventsMap = tc.warehouseEvents
 			ts.VerifyModifiedEvents(t)
 		})
 	}

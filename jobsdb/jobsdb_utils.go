@@ -151,22 +151,22 @@ func constructStateQuery(alias, paramKey string, paramList []string, queryType s
 }
 
 // constructParameterJSONQuery construct and return query
-func constructParameterJSONQuery(table string, parameterFilters []ParameterFilterT) string {
+func constructParameterJSONQuery(alias string, parameterFilters []ParameterFilterT) string {
 	// eg. query with optional destination_id (batch_rt_jobs_1.parameters @> '{"source_id":"<source_id>","destination_id":"<destination_id>"}'  OR (batch_rt_jobs_1.parameters @> '{"source_id":"<source_id>"}' AND batch_rt_jobs_1.parameters -> 'destination_id' IS NULL))
 	var allKeyValues, mandatoryKeyValues, opNullConditions []string
 	for _, parameter := range parameterFilters {
 		allKeyValues = append(allKeyValues, fmt.Sprintf(`%q:%q`, parameter.Name, parameter.Value))
 		if parameter.Optional {
-			opNullConditions = append(opNullConditions, fmt.Sprintf(`%q.parameters -> '%s' IS NULL`, table, parameter.Name))
+			opNullConditions = append(opNullConditions, fmt.Sprintf(`%q.parameters -> '%s' IS NULL`, alias, parameter.Name))
 		} else {
 			mandatoryKeyValues = append(mandatoryKeyValues, fmt.Sprintf(`%q:%q`, parameter.Name, parameter.Value))
 		}
 	}
 	opQuery := ""
 	if len(opNullConditions) > 0 {
-		opQuery += fmt.Sprintf(` OR (%q.parameters @> '{%s}' AND %s)`, table, strings.Join(mandatoryKeyValues, ","), strings.Join(opNullConditions, " AND "))
+		opQuery += fmt.Sprintf(` OR (%q.parameters @> '{%s}' AND %s)`, alias, strings.Join(mandatoryKeyValues, ","), strings.Join(opNullConditions, " AND "))
 	}
-	return fmt.Sprintf(`(%s.parameters @> '{%s}' %s)`, table, strings.Join(allKeyValues, ","), opQuery)
+	return fmt.Sprintf(`(%s.parameters @> '{%s}' %s)`, alias, strings.Join(allKeyValues, ","), opQuery)
 }
 
 // Admin Handlers

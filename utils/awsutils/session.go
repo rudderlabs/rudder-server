@@ -24,6 +24,7 @@ type SessionConfig struct {
 	RoleBasedAuth    bool           `mapstructure:"roleBasedAuth"`
 	IAMRoleARN       string         `mapstructure:"iamRoleARN"`
 	ExternalID       string         `mapstructure:"externalID"`
+	WorkspaceID      string         `mapstructure:"workspaceID"`
 	Endpoint         *string        `mapstructure:"endpoint"`
 	S3ForcePathStyle *bool          `mapstructure:"s3ForcePathStyle"`
 	DisableSSL       *bool          `mapstructure:"disableSSL"`
@@ -52,7 +53,7 @@ func createDefaultSession(config *SessionConfig) (*session.Session, error) {
 	})
 }
 
-func createCredentailsForRole(config *SessionConfig) (*credentials.Credentials, error) {
+func createCredentialsForRole(config *SessionConfig) (*credentials.Credentials, error) {
 	if config.ExternalID == "" {
 		return nil, errors.New("externalID is required for IAM role")
 	}
@@ -73,7 +74,7 @@ func CreateSession(config *SessionConfig) (*session.Session, error) {
 		err            error
 	)
 	if config.RoleBasedAuth {
-		awsCredentials, err = createCredentailsForRole(config)
+		awsCredentials, err = createCredentialsForRole(config)
 	} else if config.AccessKey != "" && config.AccessKeyID != "" {
 		awsCredentials, err = credentials.NewStaticCredentials(config.AccessKeyID, config.AccessKey, ""), nil
 	}
@@ -96,12 +97,12 @@ func isRoleBasedAuthFieldExist(config map[string]interface{}) bool {
 	return ok
 }
 
-func NewSimpleSessionConfigForDestination(destination *backendconfig.DestinationT, serviceName string) (*SessionConfig, error) {
-	if destination == nil {
-		return nil, errors.New("destination should not be nil")
+func NewSimpleSessionConfig(config map[string]interface{}, serviceName string) (*SessionConfig, error) {
+	if config == nil {
+		return nil, errors.New("config should not be nil")
 	}
 	sessionConfig := SessionConfig{}
-	if err := mapstructure.Decode(destination.Config, &sessionConfig); err != nil {
+	if err := mapstructure.Decode(config, &sessionConfig); err != nil {
 		return nil, fmt.Errorf("unable to populate session config using destinationConfig: %w", err)
 	}
 
@@ -109,7 +110,7 @@ func NewSimpleSessionConfigForDestination(destination *backendconfig.Destination
 		return nil, errors.New("incompatible role configuration")
 	}
 
-	if !isRoleBasedAuthFieldExist(destination.Config) {
+	if !isRoleBasedAuthFieldExist(config) {
 		sessionConfig.RoleBasedAuth = sessionConfig.IAMRoleARN != ""
 	}
 
@@ -118,7 +119,18 @@ func NewSimpleSessionConfigForDestination(destination *backendconfig.Destination
 		sessionConfig.AccessKey = sessionConfig.SecretAccessKey
 	}
 	sessionConfig.Service = serviceName
-	if sessionConfig.IAMRoleARN != "" {
+	return &sessionConfig, nil
+}
+
+func NewSimpleSessionConfigForDestination(destination *backendconfig.DestinationT, serviceName string) (*SessionConfig, error) {
+	if destination == nil {
+		return nil, errors.New("destination should not be nil")
+	}
+	sessionConfig, err := NewSimpleSessionConfig(destination.Config, serviceName)
+	if err != nil {
+		return nil, err
+	}
+	if sessionConfig.IAMRoleARN != "" && sessionConfig.ExternalID == "" {
 		/**
 		In order prevent confused deputy problem, we are using
 		workspace token as external ID.
@@ -126,7 +138,7 @@ func NewSimpleSessionConfigForDestination(destination *backendconfig.Destination
 		*/
 		sessionConfig.ExternalID = destination.WorkspaceID
 	}
-	return &sessionConfig, nil
+	return sessionConfig, nil
 }
 
 func NewSessionConfigForDestination(destination *backendconfig.DestinationT, timeout time.Duration, serviceName string) (*SessionConfig, error) {

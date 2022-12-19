@@ -938,6 +938,7 @@ func (ch *HandleT) DropTable(tableName string) (err error) {
 func (ch *HandleT) AddColumns(tableName string, columnsInfo []warehouseutils.ColumnInfo) (err error) {
 	var (
 		query         string
+		queryBuilder  strings.Builder
 		cluster       string
 		clusterClause string
 	)
@@ -947,20 +948,25 @@ func (ch *HandleT) AddColumns(tableName string, columnsInfo []warehouseutils.Col
 		clusterClause = fmt.Sprintf(`ON CLUSTER %q`, cluster)
 	}
 
-	query = fmt.Sprintf(`
+	queryBuilder.WriteString(fmt.Sprintf(`
 		ALTER TABLE
 		  %q.%q %s`,
 		ch.Namespace,
 		tableName,
 		clusterClause,
-	)
+	))
 
 	for _, columnInfo := range columnsInfo {
-		columnType := getClickHouseColumnTypeForSpecificTable(tableName, columnInfo.Name, rudderDataTypesMapToClickHouse[columnInfo.Type], false)
-		query += fmt.Sprintf(` ADD COLUMN IF NOT EXISTS %q %s,`, columnInfo.Name, columnType)
+		columnType := getClickHouseColumnTypeForSpecificTable(
+			tableName,
+			columnInfo.Name,
+			rudderDataTypesMapToClickHouse[columnInfo.Type],
+			false,
+		)
+		queryBuilder.WriteString(fmt.Sprintf(` ADD COLUMN IF NOT EXISTS %q %s,`, columnInfo.Name, columnType))
 	}
 
-	query = strings.TrimSuffix(query, ",")
+	query = strings.TrimSuffix(queryBuilder.String(), ",")
 	query += ";"
 
 	pkgLogger.Infof("CH: Adding columns for destinationID: %s, tableName: %s with query: %v", ch.Warehouse.Destination.ID, tableName, query)

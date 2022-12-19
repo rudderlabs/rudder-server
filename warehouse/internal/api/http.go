@@ -20,7 +20,7 @@ import (
 var json = jsoniter.ConfigCompatibleWithStandardLibrary
 
 type stagingFilesRepo interface {
-	Insert(ctx context.Context, stagingFile *model.StagingFile) (int64, error)
+	Insert(ctx context.Context, stagingFile *model.StagingFileWithSchema) (int64, error)
 }
 
 type WarehouseAPI struct {
@@ -54,38 +54,37 @@ type stagingFileSchema struct {
 	TimeWindow      time.Time
 }
 
-func mapStagingFile(payload *stagingFileSchema) (model.StagingFile, error) {
+func mapStagingFile(payload *stagingFileSchema) (model.StagingFileWithSchema, error) {
 	if payload.WorkspaceID == "" {
-		return model.StagingFile{}, fmt.Errorf("workspaceId is required")
+		return model.StagingFileWithSchema{}, fmt.Errorf("workspaceId is required")
 	}
 
 	if payload.Location == "" {
-		return model.StagingFile{}, fmt.Errorf("location is required")
+		return model.StagingFileWithSchema{}, fmt.Errorf("location is required")
 	}
 
 	if len(payload.BatchDestination.Source.ID) == 0 {
-		return model.StagingFile{}, fmt.Errorf("batchDestination.source.id is required")
+		return model.StagingFileWithSchema{}, fmt.Errorf("batchDestination.source.id is required")
 	}
 	if len(payload.BatchDestination.Destination.ID) == 0 {
-		return model.StagingFile{}, fmt.Errorf("batchDestination.destination.id is required")
+		return model.StagingFileWithSchema{}, fmt.Errorf("batchDestination.destination.id is required")
 	}
 
 	if len(payload.Schema) == 0 {
-		return model.StagingFile{}, fmt.Errorf("schema is required")
+		return model.StagingFileWithSchema{}, fmt.Errorf("schema is required")
 	}
 
 	var schema []byte
 	schema, err := json.Marshal(payload.Schema)
 	if err != nil {
-		return model.StagingFile{}, fmt.Errorf("invalid field: schema: %w", err)
+		return model.StagingFileWithSchema{}, fmt.Errorf("invalid field: schema: %w", err)
 	}
 
-	return model.StagingFile{
+	return (&model.StagingFile{
 		WorkspaceID:           payload.WorkspaceID,
 		Location:              payload.Location,
 		SourceID:              payload.BatchDestination.Source.ID,
 		DestinationID:         payload.BatchDestination.Destination.ID,
-		Schema:                schema,
 		FirstEventAt:          payload.FirstEventAt,
 		LastEventAt:           payload.LastEventAt,
 		UseRudderStorage:      payload.UseRudderStorage,
@@ -97,7 +96,7 @@ func mapStagingFile(payload *stagingFileSchema) (model.StagingFile, error) {
 		SourceJobID:           payload.SourceJobID,
 		SourceJobRunID:        payload.SourceJobRunID,
 		TimeWindow:            payload.TimeWindow,
-	}, nil
+	}).WithSchema(schema), nil
 }
 
 // Handler returns a http handler for the warehouse API.

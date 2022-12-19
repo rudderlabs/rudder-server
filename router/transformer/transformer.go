@@ -158,7 +158,6 @@ func (trans *handle) Transform(transformType string, transformMessage *types.Tra
 		break
 	}
 
-	// Remove Assertion?
 	if resp.StatusCode != http.StatusOK {
 		trans.logger.Errorf("[Router Transfomrer] :: Transformer returned status code: %v reason: %v", resp.StatusCode, resp.Status)
 	}

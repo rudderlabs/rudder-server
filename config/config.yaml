@@ -110,7 +110,7 @@ Router:
   allowAbortedUserJobsCountForProcessing: 1
   maxFailedCountForJob: 3
   retryTimeWindow: 180m
-  failedKeysEnabled: false
+  failedKeysEnabled: true
   saveDestinationResponseOverride: false
   transformerProxy: false
   transformerProxyRetryCount: 15
@@ -119,9 +119,18 @@ Router:
   MARKETO:
     noOfWorkers: 4
   throttler:
+    algorithm: gorate
+#    redis:
+#      addr: localhost:6379
+#      username: ""
+#      password: ""
     MARKETO:
       limit: 45
       timeWindow: 20s
+# throttling by destinationID example below
+#      xxxyyyzzSOU9pLRavMf0GuVnWV3:
+#        limit: 90
+#        timeWindow: 10s
   BRAZE:
     forceHTTP1: true
     httpTimeout: 120s
