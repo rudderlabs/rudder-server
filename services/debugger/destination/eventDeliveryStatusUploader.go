@@ -56,23 +56,26 @@ type EventDeliveryStatusUploader struct{}
 
 // RecordEventDeliveryStatus is used to put the delivery status in the deliveryStatusesBatchChannel,
 // which will be processed by handleJobs.
-func RecordEventDeliveryStatus(destinationID string, deliveryStatus *DeliveryStatusT) bool {
+func RecordEventDeliveryStatus(destinationID string, deliveryStatus *DeliveryStatusT) {
 	// if disableEventDeliveryStatusUploads is true, return;
 	if disableEventDeliveryStatusUploads {
-		return false
+		return
 	}
 
 	// Check if destinationID part of enabled destinations, if not then push the job in cache to keep track
 	configSubscriberLock.RLock()
 	defer configSubscriberLock.RUnlock()
 	if !HasUploadEnabled(destinationID) {
-		deliveryStatusData, _ := json.Marshal(deliveryStatus)
+		deliveryStatusData, err := json.Marshal(deliveryStatus)
+		if err != nil {
+			pkgLogger.Errorf("[Destination live events] Failed to marshal payload. Err: %v", err)
+			return
+		}
 		eventsDeliveryCache.Update(destinationID, deliveryStatusData)
-		return false
+		return
 	}
 
 	uploader.RecordEvent(deliveryStatus)
-	return true
 }
 
 func HasUploadEnabled(destID string) bool {
@@ -95,16 +98,16 @@ func Setup(backendConfig backendconfig.BackendConfig) {
 }
 
 func (*EventDeliveryStatusUploader) Transform(data interface{}) ([]byte, error) {
-	deliveryStatusesBuffer := data.([]interface{})
+	deliveryStatusesBuffer, ok := data.([]*DeliveryStatusT)
+	if !ok {
+		return nil, fmt.Errorf("data is not of type []interface{}")
+	}
 	res := make(map[string]interface{})
 	res["version"] = "v2"
-	for _, j := range deliveryStatusesBuffer {
-		job := j.(*DeliveryStatusT)
+	for _, job := range deliveryStatusesBuffer {
 		var arr []*DeliveryStatusT
 		if value, ok := res[job.DestinationID]; ok {
 			arr, _ = value.([]*DeliveryStatusT)
-		} else {
-			arr = make([]*DeliveryStatusT, 0)
 		}
 		arr = append(arr, job)
 		res[job.DestinationID] = arr
@@ -141,8 +144,8 @@ func updateConfig(config map[string]backendconfig.ConfigT) {
 
 func backendConfigSubscriber(backendConfig backendconfig.BackendConfig) {
 	configChannel := backendConfig.Subscribe(context.TODO(), "backendConfig")
-	for config := range configChannel {
-		updateConfig(config.Data.(map[string]backendconfig.ConfigT))
+	for c := range configChannel {
+		updateConfig(c.Data.(map[string]backendconfig.ConfigT))
 	}
 }
 
@@ -152,7 +155,7 @@ func recordHistoricEventsDelivery(destinationIDs []string) {
 		for _, event := range historicEventsDelivery {
 			var historicEventsDeliveryData DeliveryStatusT
 			if err := json.Unmarshal(event, &historicEventsDeliveryData); err != nil {
-				panic(err)
+				pkgLogger.Errorf("[Destination live events] Failed to unmarshal payload. Err: %v", err)
 			}
 			uploader.RecordEvent(&historicEventsDeliveryData)
 		}

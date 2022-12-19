@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/assert"
 	"github.com/tidwall/gjson"
 
 	"github.com/rudderlabs/rudder-server/enterprise/reporting"
@@ -1421,5 +1422,108 @@ func Benchmark_FASTJSON_MARSHAL(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		val, _ := jsonfast.Marshal(collectMetricsErrorMap)
 		_ = string(val)
+	}
+}
+
+func TestAllowRouterAbortAlert(t *testing.T) {
+	type skipT struct {
+		deliveryAlert       bool
+		transformationAlert bool
+	}
+	cases := []struct {
+		skip                   skipT
+		transformerProxy       bool
+		expectedAlertFlagValue bool
+		errorAt                string
+		caseName               string
+	}{
+		// normal destinations' delivery cases
+		{
+			caseName:               "[delivery] when deliveryAlert is to be skipped, proxy is enabled the alert should be false",
+			skip:                   skipT{deliveryAlert: true},
+			transformerProxy:       true,
+			expectedAlertFlagValue: false,
+			errorAt:                routerUtils.ERROR_AT_DEL,
+		},
+		{
+			caseName:               "[delivery] when deliveryAlert is to be skipped, proxy is disabled the alert should be false",
+			skip:                   skipT{deliveryAlert: true},
+			transformerProxy:       false,
+			expectedAlertFlagValue: false,
+			errorAt:                routerUtils.ERROR_AT_DEL,
+		},
+		{
+			caseName:               "[delivery] when deliveryAlert is not to be skipped, proxy is disabled the alert should be true",
+			skip:                   skipT{},
+			transformerProxy:       false,
+			expectedAlertFlagValue: true,
+			errorAt:                routerUtils.ERROR_AT_DEL,
+		},
+		{
+			caseName:               "[delivery] when deliveryAlert is to be skipped, proxy is enabled the alert should be false",
+			skip:                   skipT{},
+			transformerProxy:       true,
+			expectedAlertFlagValue: false,
+			errorAt:                routerUtils.ERROR_AT_DEL,
+		},
+		// transformation cases
+		{
+			caseName:               "[transformation] when transformationAlert is to be skipped, the alert should be false",
+			skip:                   skipT{transformationAlert: true},
+			expectedAlertFlagValue: false,
+			errorAt:                routerUtils.ERROR_AT_TF,
+		},
+		{
+			caseName:               "[transformation]when transformationAlert is not to be skipped, the alert should be true",
+			skip:                   skipT{},
+			expectedAlertFlagValue: true,
+			errorAt:                routerUtils.ERROR_AT_TF,
+		},
+		// Custom destination's delivery cases
+		{
+			caseName:               "[custom] when transformerProxy is enabled, the alert should be true",
+			skip:                   skipT{},
+			transformerProxy:       true,
+			expectedAlertFlagValue: true,
+			errorAt:                routerUtils.ERROR_AT_CUST,
+		},
+		{
+			caseName:               "[custom] when transformerProxy is disabled, the alert should be true",
+			skip:                   skipT{},
+			transformerProxy:       false,
+			expectedAlertFlagValue: true,
+			errorAt:                routerUtils.ERROR_AT_CUST,
+		},
+		{
+			caseName:               "[custom] when transformerProxy is enabled & deliveryAlert is to be skipped, the alert should be false",
+			skip:                   skipT{deliveryAlert: true},
+			transformerProxy:       true,
+			expectedAlertFlagValue: true,
+			errorAt:                routerUtils.ERROR_AT_CUST,
+		},
+		// empty errorAt
+		{
+			caseName:               "[emptyErrorAt] when transformerProxy is disabled & deliveryAlert is not to be skipped, the alert should be true",
+			skip:                   skipT{},
+			expectedAlertFlagValue: true,
+		},
+		{
+			caseName:               "[emptyErrorAt] when transformerProxy is disabled & deliveryAlert is to be skipped, the alert should be true",
+			skip:                   skipT{deliveryAlert: true},
+			expectedAlertFlagValue: true,
+		},
+	}
+	for _, tc := range cases {
+		wrk := &workerT{
+			rt: &HandleT{
+				transformerProxy:                  tc.transformerProxy,
+				skipRtAbortAlertForDelivery:       tc.skip.deliveryAlert,
+				skipRtAbortAlertForTransformation: tc.skip.transformationAlert,
+			},
+		}
+		t.Run(tc.caseName, func(testT *testing.T) {
+			output := wrk.allowRouterAbortedAlert(tc.errorAt)
+			assert.Equal(testT, tc.expectedAlertFlagValue, output)
+		})
 	}
 }

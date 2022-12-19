@@ -111,14 +111,13 @@ func Setup() {
 
 // RecordTransformationStatus is used to put the transform event in the eventBatchChannel,
 // which will be processed by handleEvents.
-func RecordTransformationStatus(transformStatus *TransformStatusT) bool {
+func RecordTransformationStatus(transformStatus *TransformStatusT) {
 	// if disableTransformationUploads is true, return;
 	if disableTransformationUploads {
-		return false
+		return
 	}
 
 	uploader.RecordEvent(transformStatus)
-	return true
 }
 
 func (*TransformationStatusUploader) Transform(data interface{}) ([]byte, error) {
@@ -157,8 +156,8 @@ func updateConfig(config map[string]backendconfig.ConfigT) {
 
 func backendConfigSubscriber() {
 	ch := backendconfig.DefaultBackendConfig.Subscribe(context.TODO(), backendconfig.TopicProcessConfig)
-	for config := range ch {
-		updateConfig(config.Data.(map[string]backendconfig.ConfigT))
+	for c := range ch {
+		updateConfig(c.Data.(map[string]backendconfig.ConfigT))
 	}
 }
 
@@ -230,7 +229,7 @@ func recordHistoricTransformations(tIDs []string) {
 		for _, tStatus := range tStatuses {
 			var tStatusData TransformationStatusT
 			if err := jsonfast.Unmarshal(tStatus, &tStatusData); err != nil {
-				panic(err)
+				pkgLogger.Errorf("[Transformation status uploader] Failed to unmarshal transformation status. Err: %v", err)
 			}
 			processRecordTransformationStatus(&tStatusData, tID)
 		}

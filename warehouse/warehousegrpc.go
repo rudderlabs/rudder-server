@@ -7,6 +7,7 @@ import (
 	"fmt"
 
 	proto "github.com/rudderlabs/rudder-server/proto/warehouse"
+	"github.com/rudderlabs/rudder-server/warehouse/client/controlplane"
 	"github.com/rudderlabs/rudder-server/warehouse/validations"
 	"google.golang.org/genproto/googleapis/rpc/code"
 	"google.golang.org/grpc/codes"
@@ -17,6 +18,8 @@ import (
 
 type warehouseGRPC struct {
 	proto.UnimplementedWarehouseServer
+	CPClient         controlplane.InternalControlPlane
+	EnableTunnelling bool
 }
 
 func (*warehouseGRPC) GetWHUploads(_ context.Context, request *proto.WHUploadsRequest) (*proto.WHUploadsResponse, error) {
@@ -91,8 +94,11 @@ func (*warehouseGRPC) TriggerWHUpload(_ context.Context, request *proto.WHUpload
 	return res, err
 }
 
-func (*warehouseGRPC) Validate(_ context.Context, req *proto.WHValidationRequest) (*proto.WHValidationResponse, error) {
-	handleT := validations.CTHandleT{}
+func (grpc *warehouseGRPC) Validate(_ context.Context, req *proto.WHValidationRequest) (*proto.WHValidationResponse, error) {
+	handleT := validations.CTHandleT{
+		EnableTunnelling: grpc.EnableTunnelling,
+		CPClient:         grpc.CPClient,
+	}
 	return handleT.Validating(req)
 }
 

@@ -462,7 +462,7 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 		var preDbStoreCount int
 		// Saving the event data read from req.request.Body to the splice.
 		// Using this to send event schema to the config backend.
-		var eventBatchesToRecord []string
+		var eventBatchesToRecord [][]byte
 		userWebRequestWorker.batchTimeStat.Start()
 		for _, req := range breq.batchRequest {
 			writeKey := req.writeKey
@@ -635,7 +635,7 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 			body, _ = sjson.SetBytes(body, "requestIP", ipAddr)
 			body, _ = sjson.SetBytes(body, "writeKey", writeKey)
 			body, _ = sjson.SetBytes(body, "receivedAt", time.Now().Format(misc.RFC3339Milli))
-			eventBatchesToRecord = append(eventBatchesToRecord, string(body))
+			eventBatchesToRecord = append(eventBatchesToRecord, body)
 			sourcesJobRunID := gjson.GetBytes(body, "batch.0.context.sources.job_run_id").Str   // pick the job_run_id from the first event of batch. We are assuming job_run_id will be same for all events in a batch and the batch is coming from rudder-sources
 			sourcesTaskRunID := gjson.GetBytes(body, "batch.0.context.sources.task_run_id").Str // pick the task_run_id from the first event of batch. We are assuming task_run_id will be same for all events in a batch and the batch is coming from rudder-sources
 			id := uuid.New()
@@ -695,7 +695,7 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 		}
 		// Sending events to config backend
 		for _, eventBatch := range eventBatchesToRecord {
-			writeKey := gjson.Get(eventBatch, "writeKey").Str
+			writeKey := gjson.GetBytes(eventBatch, "writeKey").Str
 			sourcedebugger.RecordEvent(writeKey, eventBatch)
 		}
 

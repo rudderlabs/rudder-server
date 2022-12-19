@@ -875,20 +875,24 @@ func (dl *HandleT) DropTable(tableName string) (err error) {
 }
 
 func (dl *HandleT) AddColumns(tableName string, columnsInfo []warehouseutils.ColumnInfo) (err error) {
-	var query string
-	query += fmt.Sprintf(`
+	var (
+		query        string
+		queryBuilder strings.Builder
+	)
+
+	queryBuilder.WriteString(fmt.Sprintf(`
 		ALTER TABLE
 		  %s.%s
 		ADD COLUMNS(`,
 		dl.Namespace,
 		tableName,
-	)
+	))
 
 	for _, columnInfo := range columnsInfo {
-		query += fmt.Sprintf(` %s %s,`, columnInfo.Name, getDeltaLakeDataType(columnInfo.Type))
+		queryBuilder.WriteString(fmt.Sprintf(` %s %s,`, columnInfo.Name, getDeltaLakeDataType(columnInfo.Type)))
 	}
 
-	query = strings.TrimSuffix(query, ",")
+	query = strings.TrimSuffix(queryBuilder.String(), ",")
 	query += ");"
 
 	pkgLogger.Infof("DL: Adding columns for destinationID: %s, tableName: %s with query: %v", dl.Warehouse.Destination.ID, tableName, query)

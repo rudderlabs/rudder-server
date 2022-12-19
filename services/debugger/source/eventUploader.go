@@ -18,7 +18,7 @@ import (
 // GatewayEventBatchT is a structure to hold batch of events
 type GatewayEventBatchT struct {
 	writeKey   string
-	eventBatch string
+	eventBatch []byte
 }
 
 // EventUploadT is a structure to hold actual event data
@@ -76,41 +76,40 @@ func recordHistoricEvents(writeKeys []string) {
 	for _, writeKey := range writeKeys {
 		historicEvents := eventsCacheMap.ReadAndPopData(writeKey)
 		for _, eventBatchData := range historicEvents {
-			eventBatch := string(eventBatchData)
-			uploader.RecordEvent(&GatewayEventBatchT{writeKey, eventBatch})
+			uploader.RecordEvent(&GatewayEventBatchT{writeKey, eventBatchData})
 		}
 	}
 }
 
 // RecordEvent is used to put the event batch in the eventBatchChannel,
 // which will be processed by handleEvents.
-func RecordEvent(writeKey, eventBatch string) bool {
+func RecordEvent(writeKey string, eventBatch []byte) {
 	// if disableEventUploads is true, return;
 	if disableEventUploads {
-		return false
+		return
 	}
 
 	// Check if writeKey part of enabled sources
 	configSubscriberLock.RLock()
 	defer configSubscriberLock.RUnlock()
 	if !misc.Contains(uploadEnabledWriteKeys, writeKey) {
-		eventBatchData := []byte(eventBatch)
-		eventsCacheMap.Update(writeKey, eventBatchData)
-		return false
+		eventsCacheMap.Update(writeKey, eventBatch)
+		return
 	}
 
 	uploader.RecordEvent(&GatewayEventBatchT{writeKey, eventBatch})
-	return true
 }
 
 func (*EventUploader) Transform(data interface{}) ([]byte, error) {
-	eventBuffer := data.([]interface{})
+	eventBuffer, ok := data.([]GatewayEventBatchT)
+	if !ok {
+		return nil, fmt.Errorf("failed to typecast to GatewayEventBatchT")
+	}
 	res := make(map[string]interface{})
 	res["version"] = "v2"
-	for _, e := range eventBuffer {
-		event := e.(*GatewayEventBatchT)
+	for _, event := range eventBuffer {
 		batchedEvent := EventUploadBatchT{}
-		err := json.Unmarshal([]byte(event.eventBatch), &batchedEvent)
+		err := json.Unmarshal(event.eventBatch, &batchedEvent)
 		if err != nil {
 			pkgLogger.Errorf("[Source live events] Failed to unmarshal. Err: %v", err)
 			continue
@@ -125,8 +124,6 @@ func (*EventUploader) Transform(data interface{}) ([]byte, error) {
 		var arr []EventUploadT
 		if value, ok := res[batchedEvent.WriteKey]; ok {
 			arr, _ = value.([]EventUploadT)
-		} else {
-			arr = make([]EventUploadT, 0)
 		}
 
 		for _, ev := range batchedEvent.Batch {
@@ -173,7 +170,7 @@ func updateConfig(config map[string]backendconfig.ConfigT) {
 
 func backendConfigSubscriber(backendConfig backendconfig.BackendConfig) {
 	ch := backendConfig.Subscribe(context.TODO(), backendconfig.TopicProcessConfig)
-	for config := range ch {
-		updateConfig(config.Data.(map[string]backendconfig.ConfigT))
+	for c := range ch {
+		updateConfig(c.Data.(map[string]backendconfig.ConfigT))
 	}
 }

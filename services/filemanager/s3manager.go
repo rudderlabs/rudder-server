@@ -140,10 +140,7 @@ func (manager *S3Manager) DeleteObjects(ctx context.Context, keys []string) (err
 		_, err := svc.DeleteObjectsWithContext(_ctx, input)
 		if err != nil {
 			if aerr, ok := err.(awserr.Error); ok {
-				switch aerr.Code() {
-				default:
-					pkgLogger.Errorf(`Error while deleting S3 objects: %v, error code: %v`, aerr.Error(), aerr.Code())
-				}
+				pkgLogger.Errorf(`Error while deleting S3 objects: %v, error code: %v`, aerr.Error(), aerr.Code())
 			} else {
 				// Print the error, cast err to awserr.Error to get the Code and
 				// Message from an error.
@@ -153,22 +150,6 @@ func (manager *S3Manager) DeleteObjects(ctx context.Context, keys []string) (err
 		}
 	}
 	return nil
-}
-
-func (manager *S3Manager) getSessionConfig() *awsutils.SessionConfig {
-	sessionConfig := &awsutils.SessionConfig{
-		Region:           *manager.Config.Region,
-		Endpoint:         manager.Config.Endpoint,
-		S3ForcePathStyle: manager.Config.S3ForcePathStyle,
-		DisableSSL:       manager.Config.DisableSSL,
-		AccessKeyID:      manager.Config.AccessKeyID,
-		AccessKey:        manager.Config.AccessKey,
-		IAMRoleARN:       manager.Config.IAMRoleARN,
-		ExternalID:       manager.Config.ExternalID,
-		Service:          s3.ServiceName,
-	}
-
-	return sessionConfig
 }
 
 func (manager *S3Manager) getSession(ctx context.Context) (*session.Session, error) {
@@ -194,10 +175,11 @@ func (manager *S3Manager) getSession(ctx context.Context) (*session.Session, err
 			/// Failed to Get Region probably due to VPC restrictions, Will proceed to try with AccessKeyID and AccessKey
 		}
 		manager.Config.Region = aws.String(region)
+		manager.SessionConfig.Region = region
 	}
 
 	var err error
-	manager.session, err = awsutils.CreateSession(manager.getSessionConfig())
+	manager.session, err = awsutils.CreateSession(manager.SessionConfig)
 	if err != nil {
 		return nil, err
 	}
@@ -258,9 +240,10 @@ func (manager *S3Manager) GetConfiguredPrefix() string {
 }
 
 type S3Manager struct {
-	Config  *S3Config
-	session *session.Session
-	timeout time.Duration
+	Config        *S3Config
+	SessionConfig *awsutils.SessionConfig
+	session       *session.Session
+	timeout       time.Duration
 }
 
 func (manager *S3Manager) SetTimeout(timeout time.Duration) {
@@ -275,27 +258,28 @@ func (manager *S3Manager) getTimeout() time.Duration {
 	return getBatchRouterTimeoutConfig("S3")
 }
 
-func GetS3Config(config map[string]interface{}) *S3Config {
+func NewS3Manager(config map[string]interface{}) (*S3Manager, error) {
 	var s3Config S3Config
 	if err := mapstructure.Decode(config, &s3Config); err != nil {
-		pkgLogger.Errorf("unable to code config into S3Config: %w", err)
-		s3Config = S3Config{}
+		return nil, err
 	}
 	regionHint := appConfig.GetString("AWS_S3_REGION_HINT", "us-east-1")
 	s3Config.RegionHint = regionHint
 	s3Config.IsTruncated = true
-
-	return &s3Config
+	sessionConfig, err := awsutils.NewSimpleSessionConfig(config, s3.ServiceName)
+	if err != nil {
+		return nil, err
+	}
+	return &S3Manager{
+		Config:        &s3Config,
+		SessionConfig: sessionConfig,
+	}, nil
 }
 
 type S3Config struct {
 	Bucket            string  `mapstructure:"bucketName"`
 	Prefix            string  `mapstructure:"Prefix"`
 	Region            *string `mapstructure:"region"`
-	AccessKeyID       string  `mapstructure:"accessKeyID"`
-	AccessKey         string  `mapstructure:"accessKey"`
-	IAMRoleARN        string  `mapstructure:"iamRoleARN"`
-	ExternalID        string  `mapstructure:"externalID"`
 	Endpoint          *string `mapstructure:"endpoint"`
 	S3ForcePathStyle  *bool   `mapstructure:"s3ForcePathStyle"`
 	DisableSSL        *bool   `mapstructure:"disableSSL"`

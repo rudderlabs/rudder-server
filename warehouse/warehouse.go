@@ -42,6 +42,7 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
 	"github.com/rudderlabs/rudder-server/utils/types"
 	"github.com/rudderlabs/rudder-server/warehouse/archive"
+	cpclient "github.com/rudderlabs/rudder-server/warehouse/client/controlplane"
 	"github.com/rudderlabs/rudder-server/warehouse/deltalake"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/api"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
@@ -97,6 +98,8 @@ var (
 	maxParallelJobCreation              int
 	enableJitterForSyncs                bool
 	asyncWh                             *jobs.AsyncJobWhT
+	configBackendURL                    string
+	enableTunnelling                    bool
 )
 
 var (
@@ -148,6 +151,7 @@ type HandleT struct {
 	tenantManager                     multitenant.Manager
 	stats                             stats.Stats
 	Now                               string
+	cpInternalClient                  cpclient.InternalControlPlane
 
 	backgroundCancel context.CancelFunc
 	backgroundGroup  errgroup.Group
@@ -180,6 +184,8 @@ func loadConfig() {
 	port = config.GetInt("WAREHOUSE_JOBS_DB_PORT", 5432)
 	password = config.GetString("WAREHOUSE_JOBS_DB_PASSWORD", "ubuntu") // Reading secrets from
 	sslMode = config.GetString("WAREHOUSE_JOBS_DB_SSL_MODE", "disable")
+	configBackendURL = config.GetString("CONFIG_BACKEND_URL", "api.rudderlabs.com")
+	enableTunnelling = config.GetBool("ENABLE_TUNNELLING", true)
 	config.RegisterIntConfigVariable(10, &warehouseSyncPreFetchCount, true, 1, "Warehouse.warehouseSyncPreFetchCount")
 	config.RegisterIntConfigVariable(100, &stagingFilesSchemaPaginationSize, true, 1, "Warehouse.stagingFilesSchemaPaginationSize")
 	config.RegisterBoolConfigVariable(false, &warehouseSyncFreqIgnore, true, "Warehouse.warehouseSyncFreqIgnore")
@@ -290,22 +296,30 @@ func (wh *HandleT) backendConfigSubscriber(ctx context.Context) {
 		wh.workspaceBySourceIDsLock.Lock()
 		wh.workspaceBySourceIDs = map[string]string{}
 
-		pkgLogger.Infof(`Received updated workspace config`)
+		pkgLogger.Info(`Received updated workspace config`)
 		for workspaceID, wConfig := range config {
 			for _, source := range wConfig.Sources {
 				if _, ok := sourceIDsByWorkspace[workspaceID]; !ok {
 					sourceIDsByWorkspace[workspaceID] = []string{}
 				}
+
 				sourceIDsByWorkspace[workspaceID] = append(sourceIDsByWorkspace[workspaceID], source.ID)
 				wh.workspaceBySourceIDs[source.ID] = workspaceID
 
 				if len(source.Destinations) == 0 {
 					continue
 				}
+
 				for _, destination := range source.Destinations {
+
 					if destination.DestinationDefinition.Name != wh.destType {
 						continue
 					}
+
+					if enableTunnelling {
+						destination = wh.attachSSHTunnellingInfo(ctx, destination)
+					}
+
 					namespace := wh.getNamespace(destination.Config, source, destination, wh.destType)
 					warehouse := warehouseutils.Warehouse{
 						WorkspaceID: workspaceID,
@@ -351,12 +365,57 @@ func (wh *HandleT) backendConfigSubscriber(ctx context.Context) {
 				}
 			}
 		}
+
 		pkgLogger.Infof("Releasing config subscriber lock: %s", wh.destType)
 		wh.workspaceBySourceIDsLock.Unlock()
 		sourceIDsByWorkspaceLock.Unlock()
 		wh.configSubscriberLock.Unlock()
 		wh.initialConfigFetched = true
 	}
+}
+
+func (wh *HandleT) attachSSHTunnellingInfo(
+	ctx context.Context,
+	upstream backendconfig.DestinationT,
+) backendconfig.DestinationT {
+	// at destination level, do we have tunnelling enabled.
+	if tunnelEnabled := warehouseutils.ReadAsBool("useSSH", upstream.Config); !tunnelEnabled {
+		return upstream
+	}
+
+	pkgLogger.Debugf("Fetching ssh keys for destination: %s", upstream.ID)
+	keys, err := wh.cpInternalClient.GetDestinationSSHKeys(ctx, upstream.ID)
+	if err != nil {
+		pkgLogger.Errorf("fetching ssh keys for destination: %s", err.Error())
+		return upstream
+	}
+
+	replica := backendconfig.DestinationT{}
+	if err := DeepCopy(upstream, &replica); err != nil {
+		pkgLogger.Errorf("deep copying the destination: %s failed: %s", upstream.ID, err)
+		return upstream
+	}
+
+	replica.Config["sshPrivateKey"] = keys.PrivateKey
+	return replica
+}
+
+func DeepCopy(src, dest interface{}) error {
+	byt, err := json.Marshal(src)
+	if err != nil {
+		return err
+	}
+
+	return json.Unmarshal(byt, dest)
+}
+
+func GetKeyAsBool(key string, conf map[string]interface{}) bool {
+	if val, ok := conf[key]; ok {
+		if ok := val.(bool); ok {
+			return val.(bool)
+		}
+	}
+	return false
 }
 
 // getNamespace sets namespace name in the following order
@@ -630,12 +689,7 @@ func (wh *HandleT) getLatestUploadStatus(warehouse *warehouseutils.Warehouse) (i
 
 func (wh *HandleT) deleteWaitingUploadJob(jobID int64) {
 	sqlStatement := fmt.Sprintf(`
-		DELETE FROM
-		  %s
-		WHERE
-		  id = %d
-		  AND status = '%s';
-`,
+		DELETE FROM %s WHERE id = %d AND status = '%s'`,
 		warehouseutils.WarehouseUploadsTable,
 		jobID,
 		model.Waiting,
@@ -988,7 +1042,7 @@ func (wh *HandleT) getUploadsToProcess(ctx context.Context, availableWorkers int
 			&lastEventAt,
 		)
 		if err != nil {
-			panic(fmt.Errorf("Failed to scan result from query: %s\nwith Error : %w", sqlStatement, err))
+			panic(fmt.Errorf("failed to scan result from query: %s\n with error : %w", sqlStatement, err))
 		}
 		upload.FirstEventAt = firstEventAt.Time
 		upload.LastEventAt = lastEventAt.Time
@@ -1314,7 +1368,7 @@ func (wh *HandleT) setInterruptedDestinations() {
 		var destID string
 		err := rows.Scan(&destID)
 		if err != nil {
-			panic(fmt.Errorf("Failed to scan result from query: %s\nwith Error : %w", sqlStatement, err))
+			panic(fmt.Errorf("failed to scan result from query: %s\nwith error : %w", sqlStatement, err))
 		}
 		inRecoveryMap[destID] = true
 	}
@@ -1345,6 +1399,14 @@ func (wh *HandleT) Setup(whType string) {
 	config.RegisterIntConfigVariable(8, &wh.noOfWorkers, true, 1, fmt.Sprintf(`Warehouse.%v.noOfWorkers`, whName), "Warehouse.noOfWorkers")
 	config.RegisterIntConfigVariable(1, &wh.maxConcurrentUploadJobs, false, 1, fmt.Sprintf(`Warehouse.%v.maxConcurrentUploadJobs`, whName))
 	config.RegisterBoolConfigVariable(false, &wh.allowMultipleSourcesForJobsPickup, false, fmt.Sprintf(`Warehouse.%v.allowMultipleSourcesForJobsPickup`, whName))
+
+	wh.cpInternalClient = cpclient.NewInternalClientWithCache(
+		configBackendURL,
+		cpclient.BasicAuth{
+			Username: config.GetString("CP_INTERNAL_API_USERNAME", ""),
+			Password: config.GetString("CP_INTERNAL_API_PASSWORD", ""),
+		},
+	)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	g, ctx := errgroup.WithContext(ctx)
@@ -2181,6 +2243,7 @@ func Start(ctx context.Context, app app.App) error {
 		g.Go(misc.WithBugsnagForWarehouse(func() error {
 			return notifier.ClearJobs(ctx)
 		}))
+
 		g.Go(misc.WithBugsnagForWarehouse(func() error {
 			monitorDestRouters(ctx)
 			return nil

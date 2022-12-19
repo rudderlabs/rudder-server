@@ -57,7 +57,7 @@ func (uploader *Uploader) Setup() {
 	config.RegisterIntConfigVariable(3, &uploader.maxRetry, true, 1, "Debugger.maxRetry")
 	config.RegisterDurationConfigVariable(2, &uploader.batchTimeout, true, time.Second, "Debugger.batchTimeoutInS")
 	config.RegisterDurationConfigVariable(100, &uploader.retrySleep, true, time.Millisecond, "Debugger.retrySleepInMS")
-	uploader.timingStat = stats.Default.NewStat("debugger_timing_stat", stats.TimerType)
+	uploader.timingStat = stats.Default.NewStat("debugger_upload", stats.TimerType)
 }
 
 func New(url string, transformer Transformer) UploaderI {
@@ -131,7 +131,7 @@ func (uploader *Uploader) uploadEvents(eventBuffer []interface{}) {
 			// Refresh the connection
 			continue
 		}
-		httputil.CloseResponse(resp)
+		func() { httputil.CloseResponse(resp) }()
 		if resp.StatusCode != http.StatusOK {
 			pkgLogger.Errorf("[Uploader] Response Error from Config Backend: Status: %v, Body: %v ", resp.StatusCode, resp.Body)
 		}
