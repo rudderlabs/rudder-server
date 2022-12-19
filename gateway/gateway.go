@@ -174,23 +174,23 @@ type HandleT struct {
 	trackSuccessCount int
 	trackFailureCount int
 
-	webRequestBatchCount                                       uint64
-	userWebRequestWorkers                                      []*userWebRequestWorkerT
-	webhookHandler                                             *webhook.HandleT
-	suppressUserHandler                                        types.UserSuppression
-	eventSchemaHandler                                         types.EventSchemasI
-	versionHandler                                             func(w http.ResponseWriter, r *http.Request)
-	logger                                                     logger.Logger
-	rrh                                                        *RegularRequestHandler
-	irh                                                        *ImportRequestHandler
-	readonlyGatewayDB, readonlyRouterDB, readonlyBatchRouterDB jobsdb.ReadonlyJobsDB
-	netHandle                                                  *http.Client
-	httpTimeout                                                time.Duration
-	httpWebServer                                              *http.Server
-	backgroundCancel                                           context.CancelFunc
-	backgroundWait                                             func() error
-	rsourcesService                                            rsources.JobService
-	whProxy                                                    http.Handler
+	webRequestBatchCount  uint64
+	userWebRequestWorkers []*userWebRequestWorkerT
+	webhookHandler        *webhook.HandleT
+	suppressUserHandler   types.UserSuppression
+	eventSchemaHandler    types.EventSchemasI
+	versionHandler        func(w http.ResponseWriter, r *http.Request)
+	logger                logger.Logger
+	rrh                   *RegularRequestHandler
+	irh                   *ImportRequestHandler
+	readonlyGatewayDB     jobsdb.ReadonlyJobsDB
+	netHandle             *http.Client
+	httpTimeout           time.Duration
+	httpWebServer         *http.Server
+	backgroundCancel      context.CancelFunc
+	backgroundWait        func() error
+	rsourcesService       rsources.JobService
+	whProxy               http.Handler
 }
 
 func (gateway *HandleT) updateSourceStats(sourceStats map[string]int, bucket string, sourceTagMap map[string]map[string]string) {
@@ -1384,10 +1384,8 @@ func (*HandleT) GetWebhookSourceDefName(writeKey string) (name string, ok bool) 
 	return
 }
 
-func (gateway *HandleT) SetReadonlyDBs(readonlyGatewayDB, readonlyRouterDB, readonlyBatchRouterDB jobsdb.ReadonlyJobsDB) {
+func (gateway *HandleT) SetReadonlyDB(readonlyGatewayDB jobsdb.ReadonlyJobsDB) {
 	gateway.readonlyGatewayDB = readonlyGatewayDB
-	gateway.readonlyRouterDB = readonlyRouterDB
-	gateway.readonlyBatchRouterDB = readonlyBatchRouterDB
 }
 
 /*
