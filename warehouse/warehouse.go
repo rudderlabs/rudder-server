@@ -885,11 +885,11 @@ func (wh *HandleT) processingStats(ctx context.Context, availableWorkers int, sk
 	})
 	pendingJobsStat.Count(pendingJobs)
 
-	availableWorkersStat := wh.stats.NewTaggedStat("wh_processing_available_workers", stats.CountType, stats.Tags{
+	availableWorkersStat := wh.stats.NewTaggedStat("wh_processing_available_workers", stats.GaugeType, stats.Tags{
 		"module":   moduleName,
 		"destType": wh.destType,
 	})
-	availableWorkersStat.Count(availableWorkers)
+	availableWorkersStat.Gauge(availableWorkers)
 
 	pickupLagStat := wh.stats.NewTaggedStat("wh_processing_pickup_lag", stats.TimerType, stats.Tags{
 		"module":   moduleName,
