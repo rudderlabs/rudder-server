@@ -29,7 +29,6 @@ import (
 	"github.com/rudderlabs/rudder-server/processor/integrations"
 	"github.com/rudderlabs/rudder-server/processor/stash"
 	"github.com/rudderlabs/rudder-server/processor/transformer"
-	"github.com/rudderlabs/rudder-server/router"
 	"github.com/rudderlabs/rudder-server/router/batchrouter"
 	"github.com/rudderlabs/rudder-server/rruntime"
 	destinationdebugger "github.com/rudderlabs/rudder-server/services/debugger/destination"
@@ -408,11 +407,6 @@ func (proc *HandleT) Setup(
 
 	g.Go(misc.WithBugsnag(func() error {
 		proc.syncTransformerFeatureJson(ctx)
-		return nil
-	}))
-
-	g.Go(misc.WithBugsnag(func() error {
-		router.CleanFailedRecordsTableProcess(ctx)
 		return nil
 	}))
 
@@ -2084,19 +2078,11 @@ func (proc *HandleT) transformSrcDest(
 
 func (proc *HandleT) saveFailedJobs(failedJobs []*jobsdb.JobT) {
 	if len(failedJobs) > 0 {
-		jobRunIDAbortedEventsMap := make(map[string][]*router.FailedEventRowT)
-		for _, failedJob := range failedJobs {
-			router.PrepareJobRunIDAbortedEventsMap(failedJob.Parameters, jobRunIDAbortedEventsMap)
-		}
-
 		rsourcesStats := rsources.NewFailedJobsCollector(proc.rsourcesService)
 		rsourcesStats.JobsFailed(failedJobs)
 		_ = proc.errorDB.WithTx(func(tx *jobsdb.Tx) error {
-			// TODO: error propagation
-			router.GetFailedEventsManager().SaveFailedRecordIDs(jobRunIDAbortedEventsMap, tx.Tx)
 			return rsourcesStats.Publish(context.TODO(), tx.Tx)
 		})
-
 	}
 }
 
