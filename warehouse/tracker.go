@@ -21,9 +21,7 @@ func (wh *HandleT) CronTracker(ctx context.Context) error {
 		var warehouses []warehouseutils.Warehouse
 
 		wh.configSubscriberLock.RLock()
-		for _, warehouse := range wh.warehouses {
-			warehouses = append(warehouses, warehouse)
-		}
+		warehouses = append(warehouses, wh.warehouses...)
 		wh.configSubscriberLock.RUnlock()
 
 		for _, warehouse := range warehouses {
