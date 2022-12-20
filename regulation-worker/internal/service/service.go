@@ -31,26 +31,26 @@ type JobSvc struct {
 	DestDetail destDetail
 }
 
-// called by looper
-// calls api-client.getJob(workspaceID)
-// calls api-client to get new job with workspaceID, which returns jobID.
-func (js *JobSvc) JobSvc(ctx context.Context) error {
-	loopStart := time.Now()
-	// API request to get new job
+func (js *JobSvc) Pickup(ctx context.Context) (*model.Job, error) {
 	pkgLogger.Debugf("making API request to get job")
 	job, err := js.API.Get(ctx)
 	if err != nil {
 		pkgLogger.Warnf("error while getting job: %v", err)
-		return err
+		return nil, err
 	}
 
 	// once job is successfully received, calling updatestatus API to update the status of job to running.
 	status := model.JobStatusRunning
 	err = js.updateStatus(ctx, status, job.ID)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	// executing deletion
+	return &job, nil
+}
+
+func (js *JobSvc) Process(ctx context.Context, job *model.Job) error {
+	start := time.Now()
+	var status model.JobStatus
 	destDetail, err := js.DestDetail.GetDestDetails(ctx, job.DestinationID)
 	if err != nil {
 		pkgLogger.Errorf("error while getting destination details: %v", err)
@@ -59,17 +59,22 @@ func (js *JobSvc) JobSvc(ctx context.Context) error {
 		}
 		return js.updateStatus(ctx, model.JobStatusFailed, job.ID)
 	}
-
+	defer func() {
+		stats.Default.NewTaggedStat("process_time", stats.TimerType, stats.Tags{
+			"workspaceId":     job.WorkspaceID,
+			"destinationId":   destDetail.DestinationID,
+			"destinationType": destDetail.Name,
+			"status":          string(status),
+		}).Since(start)
+	}()
 	deletionStart := time.Now()
-
-	status = js.Deleter.Delete(ctx, job, destDetail)
-
-	stats.Default.NewTaggedStat("deletion_time", stats.TimerType, stats.Tags{"workspaceId": job.WorkspaceID, "destinationid": destDetail.DestinationID, "destinationType": destDetail.Name, "status": string(status)}).Since(deletionStart)
-	if status == model.JobStatusComplete {
-		stats.Default.NewTaggedStat("deleted_user_count", stats.CountType, stats.Tags{"workspaceId": job.WorkspaceID, "destinationid": destDetail.DestinationID, "destinationType": destDetail.Name}).Count(len(job.Users))
-	}
-	stats.Default.NewTaggedStat("loop_time", stats.TimerType, stats.Tags{"workspaceId": job.WorkspaceID, "destinationid": destDetail.DestinationID, "destinationType": destDetail.Name, "status": string(status)}).Since(loopStart)
-
+	status = js.Deleter.Delete(ctx, *job, destDetail)
+	stats.Default.NewTaggedStat("delete_time", stats.TimerType, stats.Tags{
+		"workspaceId":     job.WorkspaceID,
+		"destinationid":   destDetail.DestinationID,
+		"destinationType": destDetail.Name,
+		"status":          string(status),
+	}).Since(deletionStart)
 	return js.updateStatus(ctx, status, job.ID)
 }
 

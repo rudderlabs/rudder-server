@@ -91,8 +91,11 @@ func TestJobSvc(t *testing.T) {
 				Deleter:    mockDeleter,
 				DestDetail: mockDestDetail,
 			}
-			err := svc.JobSvc(ctx)
+			job, err := svc.Pickup(ctx)
 			require.Equal(t, tt.expectedFinalErr, err, "actual error different than expected")
+			if err == nil {
+				require.NoError(t, svc.Process(ctx, job))
+			}
 		})
 	}
 }

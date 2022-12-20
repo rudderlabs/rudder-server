@@ -2,14 +2,14 @@ package service
 
 import (
 	"context"
-	"fmt"
-	"os"
-	"strconv"
+	"errors"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/model"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
+	"golang.org/x/sync/errgroup"
 )
 
 var pkgLogger = logger.NewLogger().Child("service")
@@ -21,47 +21,54 @@ type Looper struct {
 func (l *Looper) Loop(ctx context.Context) error {
 	pkgLogger.Infof("running regulation worker in infinite loop")
 
-	interval, err := getenvInt("INTERVAL_IN_MINUTES", 10)
-	if err != nil {
-		return fmt.Errorf("reading value: %s from env: %s", "INTERVAL_IN_MINUTES", err.Error())
-	}
-	retryDelay, err := getenvInt("RETRY_DELAY_IN_SECONDS", 60)
-	if err != nil {
-		return fmt.Errorf("reading value: %s from env: %s", "INTERVAL_IN_MINUTES", err.Error())
-	}
+	maxLoopSleep := config.GetDuration("MAX_LOOP_SLEEP", 10, time.Minute)
+	retryDelay := config.GetDuration("RETRY_DELAY", 60, time.Second)
+	workers := config.GetInt("NUM_WORKERS", 5)
 
-	for {
+	g, ctx := errgroup.WithContext(ctx)
+	b := make(chan *model.Job, 1)
 
-		err := l.Svc.JobSvc(ctx)
-
-		if err == model.ErrNoRunnableJob {
-			pkgLogger.Debugf("no runnable job found... sleeping")
-			if err := misc.SleepCtx(ctx, time.Duration(interval)*time.Minute); err != nil {
-				pkgLogger.Debugf("context cancelled... exiting infinite loop %v", err)
+	// job pickup loop
+	g.Go(misc.WithBugsnag(func() error {
+		var sleep time.Duration
+		for {
+			select {
+			case <-ctx.Done():
+				close(b)
 				return nil
+			case <-time.After(sleep):
+				job, err := l.Svc.Pickup(ctx)
+				if err != nil {
+					if errors.Is(err, model.ErrNoRunnableJob) {
+						sleep = maxLoopSleep
+						continue
+					}
+					if errors.Is(err, model.ErrRequestTimeout) {
+						pkgLogger.Errorf("context deadline exceeded... retrying after %d minute(s): %v", retryDelay, err)
+						sleep = retryDelay
+						continue
+					}
+					close(b)
+					return err
+				}
+				sleep = 0
+				b <- job
 			}
-			continue
 		}
-		// this is to make sure that we don't panic when any of the API call fails with deadline exceeded error.
-		if err == model.ErrRequestTimeout {
-			pkgLogger.Errorf("context deadline exceeded... retrying after %d minute(s): %v", retryDelay, err)
-			if err := misc.SleepCtx(ctx, time.Duration(retryDelay)*time.Second); err != nil {
-				pkgLogger.Debugf("context cancelled... exiting infinite loop %v", err)
-				return nil
+	}))
+
+	// job processing loops
+	for i := 0; i < workers; i++ {
+		g.Go(misc.WithBugsnag(func() error {
+			for job := range b {
+				err := l.Svc.Process(ctx, job)
+				if err != nil {
+					pkgLogger.Errorf("Failed to process job id: %d workspaceID: %s destinationID: %s: %v", job.ID, job.WorkspaceID, job.DestinationID, err)
+				}
 			}
-			continue
-		}
-
-		if err != nil {
-			return err
-		}
+			return nil
+		}))
 	}
-}
 
-func getenvInt(key string, fallback int) (int, error) {
-	k := os.Getenv(key)
-	if len(k) == 0 {
-		return fallback, nil
-	}
-	return strconv.Atoi(k)
+	return g.Wait()
 }
