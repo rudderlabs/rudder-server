@@ -152,7 +152,6 @@ type HandleT struct {
 	Now                               func() time.Time
 	NowSQL                            string
 	Logger                            logger.Logger
-	Now                               string
 	cpInternalClient                  cpclient.InternalControlPlane
 
 	backgroundCancel context.CancelFunc
@@ -296,7 +295,6 @@ func (wh *HandleT) backendConfigSubscriber(ctx context.Context) {
 
 		wh.workspaceBySourceIDsLock.Lock()
 		wh.workspaceBySourceIDs = map[string]string{}
-
 
 		wh.Logger.Info(`Received updated workspace config`)
 		for workspaceID, wConfig := range config {
