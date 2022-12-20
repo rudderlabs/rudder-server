@@ -5,13 +5,11 @@ import (
 	"database/sql"
 	"fmt"
 	"strconv"
-	"sync"
 	"time"
 
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
 
 	"github.com/rudderlabs/rudder-server/config"
-	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
@@ -20,30 +18,22 @@ import (
 
 func (wh *HandleT) CronTracker(ctx context.Context) error {
 	for {
+		var warehouses []warehouseutils.Warehouse
+
 		wh.configSubscriberLock.RLock()
-
-		ch := make(chan warehouseutils.Warehouse, 1)
-		wg := sync.WaitGroup{}
-		wg.Add(len(wh.warehouses))
-
 		for _, warehouse := range wh.warehouses {
-			warehouse := warehouse
-
-			rruntime.GoForWarehouse(func() {
-				defer wg.Done()
-				ch <- warehouse
-			})
+			warehouses = append(warehouses, warehouse)
 		}
 		wh.configSubscriberLock.RUnlock()
 
-		rruntime.Go(func() {
-			wg.Wait()
-			close(ch)
-		})
-
-		for w := range ch {
-			if err := wh.Track(ctx, &w, config.Default); err != nil {
-				return fmt.Errorf("cron tracker failed for source: %s, destination: %s with error: %w", w.Source.ID, w.Destination.ID, err)
+		for _, warehouse := range warehouses {
+			if err := wh.Track(ctx, &warehouse, config.Default); err != nil {
+				return fmt.Errorf(
+					"cron tracker failed for source: %s, destination: %s with error: %w",
+					warehouse.Source.ID,
+					warehouse.Destination.ID,
+					err,
+				)
 			}
 		}
 
