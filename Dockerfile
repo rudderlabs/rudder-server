@@ -45,6 +45,7 @@ COPY build/wait-for /
 COPY ./rudder-cli/rudder-cli.linux.x86_64 /usr/bin/rudder-cli
 COPY scripts/generate-event /scripts/generate-event
 COPY scripts/batch.json /scripts/batch.json
+COPY config/config.yaml /app/config/config.yaml
 
 ENTRYPOINT ["/docker-entrypoint.sh"]
 CMD ["/rudder-server"]

@@ -21,7 +21,7 @@ func (c *Config) load() {
 		fmt.Println("INFO: No .env file found.")
 	}
 
-	configPath := getEnv("CONFIG_PATH", "./config/config.yaml")
+	configPath := getEnv("CONFIG_PATH", "./app/config/config.yaml")
 
 	v := viper.NewWithOptions(viper.EnvKeyReplacer(&envReplacer{c: c}))
 	v.AutomaticEnv()
@@ -37,7 +37,6 @@ func (c *Config) load() {
 		c.onConfigChange()
 	})
 	v.WatchConfig()
-
 	c.v = v
 }
 
