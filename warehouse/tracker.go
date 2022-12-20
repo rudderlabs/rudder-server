@@ -127,7 +127,7 @@ func (wh *HandleT) Track(ctx context.Context, warehouse *warehouseutils.Warehous
 	}
 
 	if !createdAt.Valid {
-		return nil
+		return fmt.Errorf("invalid last upload time for source: %s and destination: %s", source.ID, destination.ID)
 	}
 
 	query = fmt.Sprintf(`
