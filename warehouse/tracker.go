@@ -58,17 +58,18 @@ func (wh *HandleT) CronTracker(ctx context.Context) error {
 
 func (wh *HandleT) Track(ctx context.Context, warehouse *warehouseutils.Warehouse, config *config.Config) error {
 	var (
-		query         string
-		queryArgs     []interface{}
-		createdAt     sql.NullTime
-		exists        bool
-		uploaded      int
-		syncFrequency = "1440"
-		Now           = timeutil.Now
-		NowSQL        = "NOW()"
-		timeWindow    = config.GetInt("Warehouse.uploadBufferTimeInMin", 180)
-		source        = warehouse.Source
-		destination   = warehouse.Destination
+		query             string
+		queryArgs         []interface{}
+		createdAt         sql.NullTime
+		exists            bool
+		uploaded          int
+		syncFrequency     = "1440"
+		Now               = timeutil.Now
+		NowSQL            = "NOW()"
+		failedStatusRegex = "%_failed"
+		timeWindow        = config.GetInt("Warehouse.uploadBufferTimeInMin", 180)
+		source            = warehouse.Source
+		destination       = warehouse.Destination
 	)
 
 	if wh.NowSQL != "" {
@@ -130,13 +131,13 @@ func (wh *HandleT) Track(ctx context.Context, warehouse *warehouseutils.Warehous
 		return fmt.Errorf("invalid last upload time for source: %s and destination: %s", source.ID, destination.ID)
 	}
 
-	query = fmt.Sprintf(`
+	query = `
 				SELECT
 				  EXISTS (
 					SELECT
 					  1
 					FROM
-					  %s
+					  ` + warehouseutils.WarehouseUploadsTable + `
 					WHERE
 					  source_id = $1 AND
 					  destination_id = $2 AND
@@ -147,15 +148,13 @@ func (wh *HandleT) Track(ctx context.Context, warehouse *warehouseutils.Warehous
 					  ) AND
 					  updated_at > $6
 				  );
-	`,
-		warehouseutils.WarehouseUploadsTable,
-	)
+	`
 	queryArgs = []interface{}{
 		source.ID,
 		destination.ID,
 		model.ExportedData,
 		model.Aborted,
-		"%_failed",
+		failedStatusRegex,
 		createdAt.Time.Format(misc.RFC3339Milli),
 	}
 
