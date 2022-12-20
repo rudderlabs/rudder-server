@@ -36,7 +36,7 @@ func TestDelete(t *testing.T) {
 			destDetail: model.Destination{
 				Name: "d5",
 			},
-			expectedStatus: model.JobStatusFailed,
+			expectedStatus: model.JobStatusAborted,
 		},
 	}
 
