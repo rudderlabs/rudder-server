@@ -44,6 +44,9 @@ func (wh *HandleT) CronTracker(ctx context.Context) error {
 	}
 }
 
+// Track tracks the status of the warehouse uploads for the corresponding cases:
+// 1. Staging files is not picked.
+// 2. Upload job is struck
 func (wh *HandleT) Track(ctx context.Context, warehouse *warehouseutils.Warehouse, config *config.Config) error {
 	var (
 		query             string
@@ -55,7 +58,7 @@ func (wh *HandleT) Track(ctx context.Context, warehouse *warehouseutils.Warehous
 		Now               = timeutil.Now
 		NowSQL            = "NOW()"
 		failedStatusRegex = "%_failed"
-		timeWindow        = config.GetInt("Warehouse.uploadBufferTimeInMin", 180)
+		timeWindow        = config.GetDuration("Warehouse.uploadBufferTimeInMin", 180, time.Minute)
 		source            = warehouse.Source
 		destination       = warehouse.Destination
 	)
@@ -81,7 +84,7 @@ func (wh *HandleT) Track(ctx context.Context, warehouse *warehouseutils.Warehous
 		syncFrequency = sf
 	}
 	if value, err := strconv.Atoi(syncFrequency); err == nil {
-		timeWindow += value
+		timeWindow += time.Duration(value) * time.Minute
 	}
 
 	query = fmt.Sprintf(`
@@ -105,15 +108,15 @@ func (wh *HandleT) Track(ctx context.Context, warehouse *warehouseutils.Warehous
 	queryArgs = []interface{}{
 		source.ID,
 		destination.ID,
-		2 * timeWindow,
-		timeWindow,
+		2 * timeWindow / time.Minute,
+		timeWindow / time.Minute,
 	}
 
 	err := wh.dbHandle.QueryRowContext(ctx, query, queryArgs...).Scan(&createdAt)
 	if err == sql.ErrNoRows {
 		return nil
 	}
-	if err != nil && err != sql.ErrNoRows {
+	if err != nil {
 		return fmt.Errorf("fetching last upload time for source: %s and destination: %s: %w", source.ID, destination.ID, err)
 	}
 

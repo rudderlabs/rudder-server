@@ -33,14 +33,15 @@ func TestHandleT_Track(t *testing.T) {
 	)
 
 	testcases := []struct {
-		name            string
-		destID          string
-		destDisabled    bool
-		uploaded        int
-		wantErr         error
-		wantStats       bool
-		NowSQL          string
-		exclusionWindow map[string]interface{}
+		name             string
+		destID           string
+		destDisabled     bool
+		uploaded         int
+		wantErr          error
+		wantStats        bool
+		NowSQL           string
+		exclusionWindow  map[string]any
+		uploadBufferTime string
 	}{
 		{
 			name:   "unknown destination",
@@ -58,10 +59,17 @@ func TestHandleT_Track(t *testing.T) {
 			uploaded:  1,
 		},
 		{
+			name:             "successful upload exists with upload buffer time",
+			destID:           destID,
+			wantStats:        true,
+			uploaded:         1,
+			uploadBufferTime: "0m",
+		},
+		{
 			name:      "exclusion window",
 			destID:    destID,
 			wantStats: false,
-			exclusionWindow: map[string]interface{}{
+			exclusionWindow: map[string]any{
 				"excludeWindowStartTime": "05:09",
 				"excludeWindowEndTime":   "09:07",
 			},
@@ -111,7 +119,11 @@ func TestHandleT_Track(t *testing.T) {
 			require.NoError(t, err)
 
 			conf := config.New()
-			conf.Set("Warehouse.uploadBufferTimeInMin", 0)
+			if tc.uploadBufferTime != "" {
+				conf.Set("Warehouse.uploadBufferTimeInMin", tc.uploadBufferTime)
+			} else {
+				conf.Set("Warehouse.uploadBufferTimeInMin", 0)
+			}
 
 			warehouse := warehouseutils.Warehouse{
 				WorkspaceID: workspaceID,
@@ -124,7 +136,7 @@ func TestHandleT_Track(t *testing.T) {
 					ID:      tc.destID,
 					Name:    destName,
 					Enabled: !tc.destDisabled,
-					Config: map[string]interface{}{
+					Config: map[string]any{
 						"syncFrequency": "10",
 						"excludeWindow": tc.exclusionWindow,
 					},
@@ -234,7 +246,7 @@ func TestHandleT_CronTracker(t *testing.T) {
 				ID:      destID,
 				Name:    destName,
 				Enabled: true,
-				Config: map[string]interface{}{
+				Config: map[string]any{
 					"syncFrequency": "10",
 				},
 			},
