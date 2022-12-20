@@ -92,24 +92,26 @@ func (wh *HandleT) Track(ctx context.Context, warehouse *warehouseutils.Warehous
 				FROM
 				  %[1]s
 				WHERE
-				  source_id = '%[2]s' AND
-				  destination_id = '%[3]s' AND
-				  created_at > %[6]s - interval '%[4]d MIN' AND
-				  created_at < %[6]s - interval '%[5]d MIN'
+				  source_id = $1 AND
+				  destination_id = $2 AND
+				  created_at > %[2]s - $3 * INTERVAL '1 MIN' AND
+				  created_at < %[2]s - $4 * INTERVAL '1 MIN'
 				ORDER BY
 				  created_at DESC
 				LIMIT
 				  1;
 				`,
 		warehouseutils.WarehouseStagingFilesTable,
-		source.ID,
-		destination.ID,
-		2*timeWindow,
-		timeWindow,
 		NowSQL,
 	)
+	queryArgs = []interface{}{
+		source.ID,
+		destination.ID,
+		2 * timeWindow,
+		timeWindow,
+	}
 
-	err := wh.dbHandle.QueryRowContext(ctx, query).Scan(&createdAt)
+	err := wh.dbHandle.QueryRowContext(ctx, query, queryArgs...).Scan(&createdAt)
 	if err == sql.ErrNoRows {
 		return nil
 	}
