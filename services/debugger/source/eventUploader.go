@@ -83,10 +83,10 @@ func recordHistoricEvents(writeKeys []string) {
 
 // RecordEvent is used to put the event batch in the eventBatchChannel,
 // which will be processed by handleEvents.
-func RecordEvent(writeKey string, eventBatch []byte) {
+func RecordEvent(writeKey string, eventBatch []byte) bool {
 	// if disableEventUploads is true, return;
 	if disableEventUploads {
-		return
+		return false
 	}
 
 	// Check if writeKey part of enabled sources
@@ -94,10 +94,11 @@ func RecordEvent(writeKey string, eventBatch []byte) {
 	defer configSubscriberLock.RUnlock()
 	if !misc.Contains(uploadEnabledWriteKeys, writeKey) {
 		eventsCacheMap.Update(writeKey, eventBatch)
-		return
+		return false
 	}
 
 	uploader.RecordEvent(&GatewayEventBatchT{writeKey, eventBatch})
+	return true
 }
 
 func (*EventUploader) Transform(data interface{}) ([]byte, error) {
@@ -108,7 +109,7 @@ func (*EventUploader) Transform(data interface{}) ([]byte, error) {
 	res := make(map[string]interface{})
 	res["version"] = "v2"
 	for _, event := range eventBuffer {
-		batchedEvent := EventUploadBatchT{}
+		var batchedEvent EventUploadBatchT
 		err := json.Unmarshal(event.eventBatch, &batchedEvent)
 		if err != nil {
 			pkgLogger.Errorf("[Source live events] Failed to unmarshal. Err: %v", err)

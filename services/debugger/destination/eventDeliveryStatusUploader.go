@@ -56,10 +56,10 @@ type EventDeliveryStatusUploader struct{}
 
 // RecordEventDeliveryStatus is used to put the delivery status in the deliveryStatusesBatchChannel,
 // which will be processed by handleJobs.
-func RecordEventDeliveryStatus(destinationID string, deliveryStatus *DeliveryStatusT) {
+func RecordEventDeliveryStatus(destinationID string, deliveryStatus *DeliveryStatusT) bool {
 	// if disableEventDeliveryStatusUploads is true, return;
 	if disableEventDeliveryStatusUploads {
-		return
+		return false
 	}
 
 	// Check if destinationID part of enabled destinations, if not then push the job in cache to keep track
@@ -69,13 +69,14 @@ func RecordEventDeliveryStatus(destinationID string, deliveryStatus *DeliverySta
 		deliveryStatusData, err := json.Marshal(deliveryStatus)
 		if err != nil {
 			pkgLogger.Errorf("[Destination live events] Failed to marshal payload. Err: %v", err)
-			return
+			return false
 		}
 		eventsDeliveryCache.Update(destinationID, deliveryStatusData)
-		return
+		return false
 	}
 
 	uploader.RecordEvent(deliveryStatus)
+	return true
 }
 
 func HasUploadEnabled(destID string) bool {

@@ -68,6 +68,7 @@ var (
 
 	configBackendURL             string
 	disableTransformationUploads bool
+	limitEventsInMemory          int
 	uploader                     debugger.UploaderI
 	pkgLogger                    logger.Logger
 	transformationCacheMap       debugger.Cache
@@ -86,6 +87,7 @@ func Init() {
 func loadConfig() {
 	configBackendURL = config.GetString("CONFIG_BACKEND_URL", "https://api.rudderstack.com")
 	config.RegisterBoolConfigVariable(false, &disableTransformationUploads, true, "TransformationDebugger.disableTransformationStatusUploads")
+	config.RegisterIntConfigVariable(1, &limitEventsInMemory, true, 1, "TransformationDebugger.limitEventsInMemory")
 }
 
 type TransformationStatusUploader struct{}
@@ -180,6 +182,8 @@ func UploadTransformationStatus(tStatus *TransformationStatusT) {
 		} else {
 			tStatusUpdated := *tStatus
 			tStatusUpdated.Destination.Transformations = []backendconfig.TransformationT{transformation}
+			tStatusUpdated.UserTransformedEvents = misc.LimitEvents(tStatusUpdated.UserTransformedEvents, limitEventsInMemory)
+			tStatusUpdated.FailedEvents = misc.LimitEvents(tStatusUpdated.FailedEvents, limitEventsInMemory)
 			tStatusUpdatedData, _ := jsonfast.Marshal(tStatusUpdated)
 			transformationCacheMap.Update(transformation.ID, tStatusUpdatedData)
 		}
