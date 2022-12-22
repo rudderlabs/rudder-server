@@ -9,8 +9,7 @@ type LoadFile struct {
 	StagingFileID         int64
 	DestinationRevisionID string
 	UseRudderStorage      bool
-
-	SourceID        string
-	DestinationID   string
-	DestinationType string
+	SourceID              string
+	DestinationID         string
+	DestinationType       string
 }

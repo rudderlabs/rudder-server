@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
-	"sync"
 	"time"
 
 	"github.com/lib/pq"
@@ -32,22 +31,17 @@ const (
 type LoadFiles struct {
 	DB  *sql.DB
 	Now func() time.Time
-
-	once sync.Once
 }
 
-func (repo *LoadFiles) init() {
-	repo.once.Do(func() {
-		if repo.Now == nil {
-			repo.Now = timeutil.Now
-		}
-	})
+func NewLoadFiles(db *sql.DB) *LoadFiles {
+	return &LoadFiles{
+		DB:  db,
+		Now: time.Now,
+	}
 }
 
 // DeleteByStagingFiles deletes load files associated with stagingFileIDs.
 func (repo *LoadFiles) DeleteByStagingFiles(ctx context.Context, stagingFileIDs []int64) error {
-	repo.init()
-
 	sqlStatement := `
 		DELETE FROM
 		  ` + loadTableName + `
@@ -64,8 +58,6 @@ func (repo *LoadFiles) DeleteByStagingFiles(ctx context.Context, stagingFileIDs 
 
 // Insert loadFiles into the database.
 func (repo *LoadFiles) Insert(ctx context.Context, loadFiles []model.LoadFile) (err error) {
-	repo.init()
-
 	// Using transactions for bulk copying
 	txn, err := repo.DB.Begin()
 	if err != nil {
@@ -103,8 +95,6 @@ func (repo *LoadFiles) Insert(ctx context.Context, loadFiles []model.LoadFile) (
 //
 //	Ordered by id ascending.
 func (repo *LoadFiles) GetByStagingFiles(ctx context.Context, stagingFileIDs []int64) ([]model.LoadFile, error) {
-	repo.init()
-
 	sqlStatement := `
 		WITH row_numbered_load_files as (
 		SELECT

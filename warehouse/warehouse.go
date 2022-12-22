@@ -1371,9 +1371,7 @@ func (wh *HandleT) Setup(whType string) error {
 	// We now have access to the warehouseDBHandle through
 	// which we will be running the db calls.
 	wh.warehouseDBHandle = NewWarehouseDB(dbHandle)
-	wh.stagingRepo = &repo.StagingFiles{
-		DB: dbHandle,
-	}
+	wh.stagingRepo = repo.NewStagingFiles(dbHandle)
 	wh.notifier = notifier
 	wh.destType = whType
 	wh.setInterruptedDestinations()
@@ -1394,8 +1392,8 @@ func (wh *HandleT) Setup(whType string) error {
 		loadFile: &loadfiles.LoadFileGenerator{
 			Logger:             pkgLogger.Child("loadfile"),
 			Notifier:           &notifier,
-			StageRepo:          &repo.StagingFiles{DB: dbHandle},
-			LoadRepo:           &repo.LoadFiles{DB: dbHandle},
+			StageRepo:          repo.NewStagingFiles(dbHandle),
+			LoadRepo:           repo.NewLoadFiles(dbHandle),
 			ControlPlaneClient: controlPlaneClient,
 		},
 	}
@@ -2043,11 +2041,9 @@ func startWebHandler(ctx context.Context) error {
 			backendconfig.DefaultBackendConfig.WaitForConfig(ctx)
 
 			mux.Handle("/v1/process", (&api.WarehouseAPI{
-				Logger: pkgLogger,
-				Stats:  stats.Default,
-				Repo: &repo.StagingFiles{
-					DB: dbHandle,
-				},
+				Logger:      pkgLogger,
+				Stats:       stats.Default,
+				Repo:        repo.NewStagingFiles(dbHandle),
 				Multitenant: tenantManager,
 			}).Handler())
 
