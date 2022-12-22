@@ -35,6 +35,14 @@ func (wc *singleWorkspaceConfig) SetUp() error {
 			return fmt.Errorf("valid configJSONPath is required when configFromFile is set to true")
 		}
 		return nil
+	} else {
+		config, err := wc.getFromAPI(context.TODO())
+		if err != nil {
+			return err
+		}
+		for workspaceID, _ := range config {
+			wc.workspaceID = workspaceID
+		}
 	}
 	if wc.token == "" {
 		wc.token = config.GetWorkspaceToken()
@@ -54,12 +62,12 @@ func (wc *singleWorkspaceConfig) Get(ctx context.Context, workspace string) (map
 	if configFromFile {
 		return wc.getFromFile()
 	} else {
-		return wc.getFromAPI(ctx, workspace)
+		return wc.getFromAPI(ctx)
 	}
 }
 
 // getFromApi gets the workspace config from api
-func (wc *singleWorkspaceConfig) getFromAPI(ctx context.Context, _ string) (map[string]ConfigT, error) {
+func (wc *singleWorkspaceConfig) getFromAPI(ctx context.Context) (map[string]ConfigT, error) {
 	config := make(map[string]ConfigT)
 	if wc.configBackendURL == nil {
 		return config, fmt.Errorf("single workspace: config backend url is nil")

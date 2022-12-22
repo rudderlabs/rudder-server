@@ -3,7 +3,9 @@ package destination_test
 import (
 	"context"
 	"os"
+	"reflect"
 	"testing"
+	"time"
 
 	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/require"
@@ -12,14 +14,15 @@ import (
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/destination"
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/initialize"
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/model"
+	"github.com/rudderlabs/rudder-server/utils/pubsub"
+	"github.com/rudderlabs/rudder-server/utils/types/deployment"
 )
 
-func TestGetDestDetails(t *testing.T) {
+func TestDestination(t *testing.T) {
 	if testing.Verbose() {
 		require.NoError(t, os.Setenv("LOG_LEVEL", "DEBUG"))
 	}
 	initialize.Init()
-	ctx := context.Background()
 	config := map[string]interface{}{
 		"bucketName":  "malani-deletefeature-testdata",
 		"prefix":      "regulation",
@@ -37,6 +40,9 @@ func TestGetDestDetails(t *testing.T) {
 						ID:     "1111",
 						Config: config,
 						DestinationDefinition: backendconfig.DestinationDefinitionT{
+							Config: map[string]interface{}{
+								"randomKey": "randomValue",
+							},
 							Name: "S3",
 						},
 					},
@@ -67,25 +73,58 @@ func TestGetDestDetails(t *testing.T) {
 			},
 		},
 	}
-	testDestID := "1111"
-	expDest := model.Destination{
-		Config:        config,
-		DestinationID: "1111",
-		Name:          "S3",
+	mockIdentity := mockIdentity{
+		mockWorkspaceID: testConfig.WorkspaceID,
 	}
 
 	mockCtrl := gomock.NewController(t)
 	defer mockCtrl.Finish()
 
-	mockDestMiddleware := destination.NewMockdestinationMiddleware(mockCtrl)
-	mockDestMiddleware.EXPECT().Get(context.TODO(), "").Return(map[string]backendconfig.ConfigT{testConfig.WorkspaceID: testConfig}, nil).Times(1)
-
-	dest := destination.DestMiddleware{
+	mockDestMiddleware := destination.NewMockdestMiddleware(mockCtrl)
+	mockDestMiddleware.EXPECT().Identity().Return(mockIdentity).Times(1)
+	mockDestMiddleware.EXPECT().StartWithIDs(gomock.Any(), gomock.Any()).Times(1)
+	ch := make(chan pubsub.DataEvent)
+	mockDestMiddleware.EXPECT().Subscribe(gomock.Any(), gomock.Any()).Return(ch).Times(1)
+	go func() {
+		ch <- pubsub.DataEvent{
+			Data: map[string]backendconfig.ConfigT{
+				testConfig.WorkspaceID: testConfig,
+			},
+		}
+	}()
+	dest := destination.DestinationConfig{
 		Dest: mockDestMiddleware,
 	}
 
-	destDetail, err := dest.GetDestDetails(ctx, testDestID)
+	go dest.BackendConfigSubscriber(context.Background())
+	require.Eventually(t, func() bool {
+		return reflect.DeepEqual(testConfig, dest.Config)
+	}, time.Second, 10*time.Millisecond, "config not updated")
 
+	expectedDestinationDetail := model.Destination{
+		Config: config,
+		DestDefConfig: map[string]interface{}{
+			"randomKey": "randomValue",
+		},
+		DestinationID: "1111",
+		Name:          "S3",
+	}
+
+	destDetail, err := dest.GetDestDetails(context.Background(), "1111")
 	require.NoError(t, err, "expected no err")
-	require.Equal(t, expDest, destDetail, "actual dest detail different than expected")
+	require.Equal(t, expectedDestinationDetail, destDetail, "actual dest detail different than expected")
+}
+
+type mockIdentity struct {
+	mockWorkspaceID string
+}
+
+func (i mockIdentity) ID() string {
+	return i.mockWorkspaceID
+}
+func (i mockIdentity) BasicAuth() (string, string) {
+	return "", ""
+}
+func (i mockIdentity) Type() deployment.Type {
+	return deployment.Type("regulation")
 }

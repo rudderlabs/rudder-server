@@ -152,6 +152,7 @@ func TestFlow(t *testing.T) {
 	t.Setenv("CONFIG_BACKEND_URL", srv.URL)
 	t.Setenv("DEST_TRANSFORM_URL", "http://localhost:9090")
 	t.Setenv("URL_PREFIX", srv.URL)
+	t.Setenv("RSERVER_BACKEND_CONFIG_POLL_INTERVAL", "0.1")
 	backendconfig.Init()
 
 	// Preparing data for testing
@@ -341,7 +342,6 @@ func handler(t *testing.T) http.Handler {
 	srvMux.HandleFunc("/workspaceConfig", getWorkspaceConfig).Methods("GET")
 	srvMux.Use(func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-			t.Logf("Got call to %s", req.URL.Path)
 			next.ServeHTTP(w, req)
 		})
 	})

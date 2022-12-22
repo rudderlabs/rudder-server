@@ -21,6 +21,7 @@ import (
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/destination"
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/initialize"
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/service"
+	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/services/filemanager"
 	"github.com/rudderlabs/rudder-server/services/oauth"
 	"github.com/rudderlabs/rudder-server/utils/logger"
@@ -55,13 +56,17 @@ func Run(ctx context.Context) {
 	if err := backendconfig.Setup(nil); err != nil {
 		panic(fmt.Errorf("error while setting up backend config: %v", err))
 	}
-	dest := &destination.DestMiddleware{
+	dest := &destination.DestinationConfig{
 		Dest: backendconfig.DefaultBackendConfig,
 	}
-	workspaceId, err := dest.GetWorkspaceId(ctx)
-	if err != nil {
-		panic(fmt.Errorf("error while getting workspaceId: %w", err))
+	workspaceId := dest.Dest.Identity().ID()
+	if workspaceId == "" {
+		panic(fmt.Errorf("workspaceId is empty"))
 	}
+	rruntime.Go(func() {
+		dest.BackendConfigSubscriber(ctx)
+	})
+
 	// setting up oauth
 	OAuth := oauth.NewOAuthErrorHandler(backendconfig.DefaultBackendConfig, oauth.WithRudderFlow(oauth.RudderFlow_Delete))
 
@@ -89,7 +94,7 @@ func Run(ctx context.Context) {
 
 	pkgLogger.Infof("calling looper with service: %v", svc)
 	l := withLoop(svc)
-	err = misc.WithBugsnag(func() error {
+	err := misc.WithBugsnag(func() error {
 		return l.Loop(ctx)
 	})()
 	if err != nil && !errors.Is(err, context.Canceled) {

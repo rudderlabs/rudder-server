@@ -213,11 +213,11 @@ func (bc *backendConfigImpl) configUpdate(ctx context.Context, workspaces string
 			pkgLogger.Infof("Workspace Config changed")
 		}
 
-		if len(sourceJSON) == 1 { // only use diagnostics if there is one workspace
-			for _, wConfig := range sourceJSON {
-				trackConfig(bc.curSourceJSON[wConfig.WorkspaceID], wConfig)
-			}
-		}
+		// if len(sourceJSON) == 1 { // only use diagnostics if there is one workspace
+		// 	for _, wConfig := range sourceJSON {
+		// 		trackConfig(bc.curSourceJSON[wConfig.WorkspaceID], wConfig)
+		// 	}
+		// }
 		filteredSourcesJSON := filterProcessorEnabledWorkspaceConfig(sourceJSON)
 		bc.curSourceJSON = sourceJSON
 		bc.curSourceJSONLock.Unlock()

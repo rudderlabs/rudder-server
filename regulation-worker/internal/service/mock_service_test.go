@@ -87,6 +87,18 @@ func (m *MockdestDetail) EXPECT() *MockdestDetailMockRecorder {
 	return m.recorder
 }
 
+// BackendConfigSubscriber mocks base method.
+func (m *MockdestDetail) BackendConfigSubscriber(ctx context.Context) {
+	m.ctrl.T.Helper()
+	m.ctrl.Call(m, "BackendConfigSubscriber", ctx)
+}
+
+// BackendConfigSubscriber indicates an expected call of BackendConfigSubscriber.
+func (mr *MockdestDetailMockRecorder) BackendConfigSubscriber(ctx interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "BackendConfigSubscriber", reflect.TypeOf((*MockdestDetail)(nil).BackendConfigSubscriber), ctx)
+}
+
 // GetDestDetails mocks base method.
 func (m *MockdestDetail) GetDestDetails(ctx context.Context, destID string) (model.Destination, error) {
 	m.ctrl.T.Helper()
@@ -100,21 +112,6 @@ func (m *MockdestDetail) GetDestDetails(ctx context.Context, destID string) (mod
 func (mr *MockdestDetailMockRecorder) GetDestDetails(ctx, destID interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetDestDetails", reflect.TypeOf((*MockdestDetail)(nil).GetDestDetails), ctx, destID)
-}
-
-// GetWorkspaceId mocks base method.
-func (m *MockdestDetail) GetWorkspaceId(ctx context.Context) (string, error) {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "GetWorkspaceId", ctx)
-	ret0, _ := ret[0].(string)
-	ret1, _ := ret[1].(error)
-	return ret0, ret1
-}
-
-// GetWorkspaceId indicates an expected call of GetWorkspaceId.
-func (mr *MockdestDetailMockRecorder) GetWorkspaceId(ctx interface{}) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetWorkspaceId", reflect.TypeOf((*MockdestDetail)(nil).GetWorkspaceId), ctx)
 }
 
 // Mockdeleter is a mock of deleter interface.

@@ -18,7 +18,7 @@ type APIClient interface {
 }
 
 type destDetail interface {
-	GetWorkspaceId(ctx context.Context) (string, error)
+	BackendConfigSubscriber(ctx context.Context)
 	GetDestDetails(ctx context.Context, destID string) (model.Destination, error)
 }
 type deleter interface {
