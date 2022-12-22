@@ -7,6 +7,7 @@ import (
 
 	"github.com/aws/aws-sdk-go/service/lambda"
 	jsoniter "github.com/json-iterator/go"
+	"github.com/mitchellh/mapstructure"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/services/streammanager/common"
 	"github.com/rudderlabs/rudder-server/utils/awsutils"
@@ -15,14 +16,13 @@ import (
 
 // Config is the config that is required to send data to Lambda
 type destinationConfig struct {
-	InvocationType string
-	ClientContext  string
-	Lambda         string
+	InvocationType string `json:"invocationType"`
+	ClientContext  string `json:"clientContext"`
+	Lambda         string `json:"lambda"`
 }
 
-type inputConfig struct {
-	Payload           string             `json:"payload"`
-	DestinationConfig *destinationConfig `json:"destConfig"`
+type inputData struct {
+	Payload string `json:"payload"`
 }
 
 type LambdaProducer struct {
@@ -56,13 +56,13 @@ func NewProducer(destination *backendconfig.DestinationT, o common.Opts) (*Lambd
 }
 
 // Produce creates a producer and send data to Lambda.
-func (producer *LambdaProducer) Produce(jsonData json.RawMessage, _ interface{}) (int, string, string) {
+func (producer *LambdaProducer) Produce(jsonData json.RawMessage, destConfig interface{}) (int, string, string) {
 	client := producer.client
 	if client == nil {
 		return 400, "Failure", "[Lambda] error :: Could not create client"
 	}
 
-	var input inputConfig
+	var input inputData
 	err := jsonfast.Unmarshal(jsonData, &input)
 	if err != nil {
 		returnMessage := "[Lambda] error while unmarshalling jsonData :: " + err.Error()
@@ -71,9 +71,14 @@ func (producer *LambdaProducer) Produce(jsonData json.RawMessage, _ interface{})
 	if input.Payload == "" {
 		return 400, "Failure", "[Lambda] error :: Invalid payload"
 	}
-	config := input.DestinationConfig
-	if config == nil {
-		return 400, "Failure", "[Lambda] error :: Invalid destination config"
+	var config destinationConfig
+	err = mapstructure.Decode(destConfig, &config)
+	if err != nil {
+		returnMessage := "[Lambda] error while unmarshalling destConfig :: " + err.Error()
+		return 400, "Failure", returnMessage
+	}
+	if config.InvocationType == "" {
+		config.InvocationType = "Event"
 	}
 
 	var invokeInput lambda.InvokeInput
