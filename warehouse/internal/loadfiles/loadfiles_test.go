@@ -47,7 +47,7 @@ func getStagingFiles() []*model.StagingFile {
 	return stagingFiles
 }
 
-func Test_CreateLoadFiles(t *testing.T) {
+func TestCreateLoadFiles(t *testing.T) {
 	t.Parallel()
 	notifer := &mockNotifier{
 		t:      t,
@@ -149,7 +149,7 @@ func Test_CreateLoadFiles(t *testing.T) {
 	})
 }
 
-func Test_CreatLoadFiles_Failure(t *testing.T) {
+func TestCreateLoadFiles_Failure(t *testing.T) {
 	t.Parallel()
 
 	tables := []string{"track", "indentify"}
@@ -253,7 +253,7 @@ func Test_CreatLoadFiles_Failure(t *testing.T) {
 	})
 }
 
-func Test_CreateLoadFiles_DestinationHistory(t *testing.T) {
+func TestCreateLoadFiles_DestinationHistory(t *testing.T) {
 	t.Parallel()
 
 	notifer := &mockNotifier{
