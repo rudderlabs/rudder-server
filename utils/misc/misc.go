@@ -1368,10 +1368,3 @@ func CopyStringMap(originalMap map[string]string) map[string]string {
 	}
 	return newMap
 }
-
-func LimitEvents[T any](events []T, limit int) []T {
-	if len(events) > limit {
-		return events[:limit]
-	}
-	return events
-}

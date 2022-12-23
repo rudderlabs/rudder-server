@@ -7,6 +7,7 @@ import (
 	"time"
 
 	jsoniter "github.com/json-iterator/go"
+	"github.com/samber/lo"
 
 	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
@@ -180,9 +181,10 @@ func UploadTransformationStatus(tStatus *TransformationStatusT) {
 			processRecordTransformationStatus(tStatus, transformation.ID)
 		} else {
 			tStatusUpdated := *tStatus
+			lo.Slice(tStatusUpdated.UserTransformedEvents, 0, limitEventsInMemory+1)
 			tStatusUpdated.Destination.Transformations = []backendconfig.TransformationT{transformation}
-			tStatusUpdated.UserTransformedEvents = misc.LimitEvents(tStatusUpdated.UserTransformedEvents, limitEventsInMemory)
-			tStatusUpdated.FailedEvents = misc.LimitEvents(tStatusUpdated.FailedEvents, limitEventsInMemory)
+			tStatusUpdated.UserTransformedEvents = lo.Slice(tStatusUpdated.UserTransformedEvents, 0, limitEventsInMemory+1)
+			tStatusUpdated.FailedEvents = lo.Slice(tStatusUpdated.FailedEvents, 0, limitEventsInMemory+1)
 			tStatusUpdatedData, _ := jsonfast.Marshal(tStatusUpdated)
 			transformationCacheMap.Update(transformation.ID, tStatusUpdatedData)
 		}
