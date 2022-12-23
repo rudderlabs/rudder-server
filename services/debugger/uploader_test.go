@@ -56,9 +56,9 @@ var _ = Describe("Uploader", func() {
 			recordingEvent  []byte
 			recordingEvent1 []byte
 			mockHTTPClient  *mocksSysUtils.MockHTTPClientI
-			mockTransformer *mocksDebugger.MockTransformer
+			mockTransformer *mocksDebugger.MockTransformerAny
 			mockHTTP        *mocksSysUtils.MockHttpI
-			uploader        UploaderI
+			uploader        Uploader[any]
 		)
 
 		BeforeEach(func() {
@@ -66,8 +66,8 @@ var _ = Describe("Uploader", func() {
 			recordingEvent1 = []byte(`{"t1":"a1"}`)
 			mockHTTPClient = mocksSysUtils.NewMockHTTPClientI(c.mockCtrl)
 			mockHTTP = mocksSysUtils.NewMockHttpI(c.mockCtrl)
-			mockTransformer = mocksDebugger.NewMockTransformer(c.mockCtrl)
-			uploader = New("http://test", mockTransformer)
+			mockTransformer = mocksDebugger.NewMockTransformerAny(c.mockCtrl)
+			uploader = New[any]("http://test", mockTransformer)
 			uploader.Start()
 		})
 
@@ -76,7 +76,7 @@ var _ = Describe("Uploader", func() {
 		})
 
 		It("should successfully send the live events request", func() {
-			uploader.(*Uploader).Client = mockHTTPClient
+			uploader.(*uploaderImpl[any]).Client = mockHTTPClient
 			uploader.RecordEvent(recordingEvent)
 			mockTransformer.EXPECT().Transform(gomock.Any()).
 				DoAndReturn(func(data interface{}) ([]byte, error) {
@@ -106,7 +106,7 @@ var _ = Describe("Uploader", func() {
 		})
 
 		It("should log error message from config backend if post request returns non 200", func() {
-			uploader.(*Uploader).Client = mockHTTPClient
+			uploader.(*uploaderImpl[any]).Client = mockHTTPClient
 			uploader.RecordEvent(recordingEvent)
 			mockTransformer.EXPECT().Transform(gomock.Any()).
 				DoAndReturn(func(data interface{}) ([]byte, error) {
@@ -136,7 +136,7 @@ var _ = Describe("Uploader", func() {
 		})
 
 		It("should not send the live events request if transform data fails", func() {
-			uploader.(*Uploader).Client = mockHTTPClient
+			uploader.(*uploaderImpl[any]).Client = mockHTTPClient
 			uploader.RecordEvent(recordingEvent)
 
 			mockTransformer.EXPECT().Transform(gomock.Any()).
@@ -171,7 +171,7 @@ var _ = Describe("Uploader", func() {
 		})
 
 		It("should not send the live events request if client do fails. Retry 3 times.", func() {
-			uploader.(*Uploader).Client = mockHTTPClient
+			uploader.(*uploaderImpl[any]).Client = mockHTTPClient
 			mockTransformer.EXPECT().Transform(gomock.Any()).
 				DoAndReturn(func(data interface{}) ([]byte, error) {
 					eventBuffer := data.([]interface{})
@@ -189,8 +189,8 @@ var _ = Describe("Uploader", func() {
 			// New reader with that JSON
 			r := io.NopCloser(bytes.NewReader([]byte(jsonResponse)))
 
-			uploader.(*Uploader).batchTimeout = time.Millisecond
-			uploader.(*Uploader).retrySleep = time.Millisecond
+			uploader.(*uploaderImpl[any]).batchTimeout = time.Millisecond
+			uploader.(*uploaderImpl[any]).retrySleep = time.Millisecond
 
 			var wg sync.WaitGroup
 			wg.Add(3)
@@ -211,8 +211,8 @@ var _ = Describe("Uploader", func() {
 		})
 
 		It("should drop some events if number of events to record is more than queue size", func() {
-			uploader.(*Uploader).Client = mockHTTPClient
-			uploader.(*Uploader).maxESQueueSize = 1
+			uploader.(*uploaderImpl[any]).Client = mockHTTPClient
+			uploader.(*uploaderImpl[any]).maxESQueueSize = 1
 
 			mockTransformer.EXPECT().Transform(gomock.Any()).
 				DoAndReturn(func(data interface{}) ([]byte, error) {
@@ -246,9 +246,9 @@ var _ = Describe("Uploader", func() {
 		})
 
 		It("should send events in batches", func() {
-			uploader.(*Uploader).Client = mockHTTPClient
-			uploader.(*Uploader).maxBatchSize = 1
-			uploader.(*Uploader).batchTimeout = time.Millisecond
+			uploader.(*uploaderImpl[any]).Client = mockHTTPClient
+			uploader.(*uploaderImpl[any]).maxBatchSize = 1
+			uploader.(*uploaderImpl[any]).batchTimeout = time.Millisecond
 
 			var wg sync.WaitGroup
 			wg.Add(2)

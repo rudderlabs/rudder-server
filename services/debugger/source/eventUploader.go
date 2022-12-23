@@ -36,7 +36,7 @@ var (
 	configSubscriberLock   sync.RWMutex
 )
 
-var uploader debugger.UploaderI
+var uploader debugger.Uploader[*GatewayEventBatchT]
 
 var (
 	configBackendURL    string
@@ -61,7 +61,7 @@ type EventUploader struct{}
 func Setup(backendConfig backendconfig.BackendConfig) {
 	url := fmt.Sprintf("%s/dataplane/v2/eventUploads", configBackendURL)
 	eventUploader := &EventUploader{}
-	uploader = debugger.New(url, eventUploader)
+	uploader = debugger.New[*GatewayEventBatchT](url, eventUploader)
 	uploader.Start()
 
 	rruntime.Go(func() {
@@ -101,11 +101,7 @@ func RecordEvent(writeKey string, eventBatch []byte) bool {
 	return true
 }
 
-func (*EventUploader) Transform(data interface{}) ([]byte, error) {
-	eventBuffer, ok := data.([]GatewayEventBatchT)
-	if !ok {
-		return nil, fmt.Errorf("failed to typecast to GatewayEventBatchT")
-	}
+func (*EventUploader) Transform(eventBuffer []*GatewayEventBatchT) ([]byte, error) {
 	res := make(map[string]interface{})
 	res["version"] = "v2"
 	for _, event := range eventBuffer {

@@ -32,7 +32,7 @@ var (
 	configSubscriberLock        sync.RWMutex
 )
 
-var uploader debugger.UploaderI
+var uploader debugger.Uploader[*DeliveryStatusT]
 
 var (
 	configBackendURL                  string
@@ -90,7 +90,7 @@ func HasUploadEnabled(destID string) bool {
 func Setup(backendConfig backendconfig.BackendConfig) {
 	url := fmt.Sprintf("%s/dataplane/v2/eventDeliveryStatus", configBackendURL)
 	eventDeliveryStatusUploader := &EventDeliveryStatusUploader{}
-	uploader = debugger.New(url, eventDeliveryStatusUploader)
+	uploader = debugger.New[*DeliveryStatusT](url, eventDeliveryStatusUploader)
 	uploader.Start()
 
 	rruntime.Go(func() {
@@ -98,11 +98,7 @@ func Setup(backendConfig backendconfig.BackendConfig) {
 	})
 }
 
-func (*EventDeliveryStatusUploader) Transform(data interface{}) ([]byte, error) {
-	deliveryStatusesBuffer, ok := data.([]*DeliveryStatusT)
-	if !ok {
-		return nil, fmt.Errorf("data is not of type []interface{}")
-	}
+func (*EventDeliveryStatusUploader) Transform(deliveryStatusesBuffer []*DeliveryStatusT) ([]byte, error) {
 	res := make(map[string]interface{})
 	res["version"] = "v2"
 	for _, job := range deliveryStatusesBuffer {

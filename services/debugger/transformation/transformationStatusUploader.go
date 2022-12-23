@@ -60,7 +60,7 @@ type EventsAfterTransform struct {
 }
 
 type UploadT struct {
-	Payload []interface{} `json:"payload"`
+	Payload []*TransformStatusT `json:"payload"`
 }
 
 var (
@@ -69,7 +69,7 @@ var (
 	configBackendURL             string
 	disableTransformationUploads bool
 	limitEventsInMemory          int
-	uploader                     debugger.UploaderI
+	uploader                     debugger.Uploader[*TransformStatusT]
 	pkgLogger                    logger.Logger
 	transformationCacheMap       debugger.Cache
 )
@@ -103,7 +103,7 @@ func IsUploadEnabled(id string) bool {
 func Setup() {
 	url := fmt.Sprintf("%s/dataplane/eventTransformStatus", configBackendURL)
 	transformationStatusUploader := &TransformationStatusUploader{}
-	uploader = debugger.New(url, transformationStatusUploader)
+	uploader = debugger.New[*TransformStatusT](url, transformationStatusUploader)
 	uploader.Start()
 
 	rruntime.Go(func() {
@@ -122,8 +122,7 @@ func RecordTransformationStatus(transformStatus *TransformStatusT) {
 	uploader.RecordEvent(transformStatus)
 }
 
-func (*TransformationStatusUploader) Transform(data interface{}) ([]byte, error) {
-	eventBuffer := data.([]interface{})
+func (*TransformationStatusUploader) Transform(eventBuffer []*TransformStatusT) ([]byte, error) {
 	uploadT := UploadT{Payload: eventBuffer}
 
 	rawJSON, err := jsonfast.Marshal(uploadT)

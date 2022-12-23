@@ -1,4 +1,4 @@
-//go:generate mockgen -destination=../../mocks/services/debugger/uploader.go -package mock_debugger github.com/rudderlabs/rudder-server/services/debugger Transformer,UploaderI
+//go:generate mockgen -destination=../../mocks/services/debugger/uploader.go -package mock_debugger github.com/rudderlabs/rudder-server/services/debugger TransformerAny
 
 package debugger
 
@@ -22,22 +22,25 @@ var (
 	Http      sysUtils.HttpI = sysUtils.NewHttp()
 )
 
-type UploaderI interface {
+type Uploader[E any] interface {
 	Start()
 	Stop()
-	RecordEvent(data interface{})
+	RecordEvent(data E)
 }
 
-type Transformer interface {
-	Transform(data interface{}) ([]byte, error)
+type TransformerAny interface {
+	Transformer[any]
+}
+type Transformer[E any] interface {
+	Transform(data []E) ([]byte, error)
 }
 
-type Uploader struct {
+type uploaderImpl[E any] struct {
 	url                                    string
-	transformer                            Transformer
-	eventBatchChannel                      chan interface{}
+	transformer                            Transformer[E]
+	eventBatchChannel                      chan E
 	eventBufferLock                        sync.RWMutex
-	eventBuffer                            []interface{}
+	eventBuffer                            []E
 	Client                                 sysUtils.HTTPClientI
 	maxBatchSize, maxRetry, maxESQueueSize int
 	batchTimeout, retrySleep               time.Duration
@@ -50,7 +53,7 @@ func init() {
 	pkgLogger = logger.NewLogger().Child("debugger")
 }
 
-func (uploader *Uploader) Setup() {
+func (uploader *uploaderImpl[E]) Setup() {
 	// Number of events that are batched before sending events to control plane
 	config.RegisterIntConfigVariable(32, &uploader.maxBatchSize, true, 1, "Debugger.maxBatchSize")
 	config.RegisterIntConfigVariable(256, &uploader.maxESQueueSize, true, 1, "Debugger.maxESQueueSize")
@@ -60,17 +63,17 @@ func (uploader *Uploader) Setup() {
 	uploader.timingStat = stats.Default.NewStat("debugger_upload", stats.TimerType)
 }
 
-func New(url string, transformer Transformer) UploaderI {
-	eventBatchChannel := make(chan interface{})
-	eventBuffer := make([]interface{}, 0)
+func New[E any](url string, transformer Transformer[E]) Uploader[E] {
+	eventBatchChannel := make(chan E)
+	eventBuffer := make([]E, 0)
 	client := &http.Client{Timeout: config.GetDuration("HttpClient.debugger.timeout", 30, time.Second)}
 
-	uploader := &Uploader{url: url, transformer: transformer, eventBatchChannel: eventBatchChannel, eventBuffer: eventBuffer, Client: client, bgWaitGroup: sync.WaitGroup{}}
+	uploader := &uploaderImpl[E]{url: url, transformer: transformer, eventBatchChannel: eventBatchChannel, eventBuffer: eventBuffer, Client: client, bgWaitGroup: sync.WaitGroup{}}
 	uploader.Setup()
 	return uploader
 }
 
-func (uploader *Uploader) Start() {
+func (uploader *uploaderImpl[E]) Start() {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	rruntime.Go(func() {
@@ -85,18 +88,18 @@ func (uploader *Uploader) Start() {
 	})
 }
 
-func (uploader *Uploader) Stop() {
+func (uploader *uploaderImpl[E]) Stop() {
 	close(uploader.eventBatchChannel)
 	uploader.bgWaitGroup.Wait()
 }
 
 // RecordEvent is used to put the event batch in the eventBatchChannel,
 // which will be processed by handleEvents.
-func (uploader *Uploader) RecordEvent(data interface{}) {
+func (uploader *uploaderImpl[E]) RecordEvent(data E) {
 	uploader.eventBatchChannel <- data
 }
 
-func (uploader *Uploader) uploadEvents(eventBuffer []interface{}) {
+func (uploader *uploaderImpl[E]) uploadEvents(eventBuffer []E) {
 	// Upload to a Config Backend
 	rawJSON, err := uploader.transformer.Transform(eventBuffer)
 	if err != nil {
@@ -139,13 +142,14 @@ func (uploader *Uploader) uploadEvents(eventBuffer []interface{}) {
 	}
 }
 
-func (uploader *Uploader) handleEvents() {
+func (uploader *uploaderImpl[E]) handleEvents() {
 	for eventSchema := range uploader.eventBatchChannel {
 		uploader.eventBufferLock.Lock()
 
 		// If eventBuffer size is more than maxESQueueSize, Delete oldest.
 		if len(uploader.eventBuffer) >= uploader.maxESQueueSize {
-			uploader.eventBuffer[0] = nil
+			var z E
+			uploader.eventBuffer[0] = z
 			uploader.eventBuffer = uploader.eventBuffer[1:]
 		}
 
@@ -156,7 +160,7 @@ func (uploader *Uploader) handleEvents() {
 	}
 }
 
-func (uploader *Uploader) flushEvents(ctx context.Context) {
+func (uploader *uploaderImpl[E]) flushEvents(ctx context.Context) {
 	for {
 		select {
 		case <-ctx.Done():
@@ -165,7 +169,7 @@ func (uploader *Uploader) flushEvents(ctx context.Context) {
 		uploader.eventBufferLock.Lock()
 
 		flushSize := len(uploader.eventBuffer)
-		var flushEvents []interface{}
+		var flushEvents []E
 
 		if flushSize > uploader.maxBatchSize {
 			flushSize = uploader.maxBatchSize
