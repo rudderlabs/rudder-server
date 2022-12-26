@@ -11,6 +11,7 @@ import (
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/services/debugger"
+	"github.com/rudderlabs/rudder-server/services/debugger/cache"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
@@ -42,7 +43,7 @@ var (
 	configBackendURL    string
 	disableEventUploads bool
 	pkgLogger           logger.Logger
-	eventsCacheMap      debugger.Cache[[]byte]
+	eventsCache         cache.Cache[[]byte]
 )
 
 func Init() {
@@ -74,7 +75,7 @@ func Setup(backendConfig backendconfig.BackendConfig) {
 // IMP: The function must be called before releasing configSubscriberLock lock to ensure the order of RecordEvent call
 func recordHistoricEvents(writeKeys []string) {
 	for _, writeKey := range writeKeys {
-		historicEvents := eventsCacheMap.ReadAndPopData(writeKey)
+		historicEvents := eventsCache.ReadAndPopData(writeKey)
 		for _, eventBatchData := range historicEvents {
 			uploader.RecordEvent(&GatewayEventBatchT{writeKey, eventBatchData})
 		}
@@ -93,7 +94,7 @@ func RecordEvent(writeKey string, eventBatch []byte) bool {
 	configSubscriberLock.RLock()
 	defer configSubscriberLock.RUnlock()
 	if !misc.Contains(uploadEnabledWriteKeys, writeKey) {
-		eventsCacheMap.Update(writeKey, eventBatch)
+		eventsCache.Update(writeKey, eventBatch)
 		return false
 	}
 

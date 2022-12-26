@@ -10,6 +10,7 @@ import (
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/services/debugger"
+	"github.com/rudderlabs/rudder-server/services/debugger/cache"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 )
 
@@ -37,7 +38,7 @@ var uploader debugger.Uploader[*DeliveryStatusT]
 var (
 	configBackendURL                  string
 	disableEventDeliveryStatusUploads bool
-	eventsDeliveryCache               debugger.Cache[*DeliveryStatusT]
+	eventsDeliveryCache               cache.Cache[*DeliveryStatusT]
 )
 
 var pkgLogger logger.Logger

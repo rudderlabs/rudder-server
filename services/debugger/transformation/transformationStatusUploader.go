@@ -14,6 +14,7 @@ import (
 	"github.com/rudderlabs/rudder-server/processor/transformer"
 	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/services/debugger"
+	"github.com/rudderlabs/rudder-server/services/debugger/cache"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/types"
@@ -72,7 +73,7 @@ var (
 	limitEventsInMemory          int
 	uploader                     debugger.Uploader[*TransformStatusT]
 	pkgLogger                    logger.Logger
-	transformationCacheMap       debugger.Cache[TransformationStatusT]
+	transformationCacheMap       cache.Cache[TransformationStatusT]
 )
 
 var (
