@@ -44,7 +44,7 @@ func (js *JobSvc) JobSvc(ctx context.Context) error {
 		return err
 	}
 
-	// once job is successfully received, calling updatestatus API to update the status of job to running.
+	// once job is successfully received, calling update-status API to update the status of job to running.
 	status := model.JobStatusRunning
 	err = js.updateStatus(ctx, status, job.ID)
 	if err != nil {

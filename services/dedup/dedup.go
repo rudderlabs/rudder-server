@@ -7,8 +7,8 @@ import (
 	"sort"
 	"time"
 
-	"github.com/dgraph-io/badger/v2"
-	"github.com/dgraph-io/badger/v2/options"
+	"github.com/dgraph-io/badger/v3"
+	"github.com/dgraph-io/badger/v3/options"
 
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/rruntime"
@@ -50,7 +50,7 @@ func (l loggerForBadger) Warningf(fmt string, args ...interface{}) {
 }
 
 func DefaultRudderPath() string {
-	badgerPathName := "/badgerdbv2"
+	badgerPathName := "/badgerdbv3"
 	tmpDirPath, err := misc.CreateTMPDIR()
 	if err != nil {
 		panic(err)
@@ -111,25 +111,17 @@ func (d *DedupHandleT) openBadger() {
 
 	opts := badger.
 		DefaultOptions(d.path).
-		WithTruncate(true).
 		WithLogger(d.logger).
-		// Disable compression - Set options.Compression = options.None.
-		// This means we won’t allocate memory for decompression
-		// (this can be a lot in case of ZSTD decompression).
-		// In our case, compression is not useful since we are storing messageIDs with high entropy.
 		WithCompression(options.None)
+	// Disable compression - Set options.Compression = options.None.
+	// This means we won’t allocate memory for decompression
+	// (this can be a lot in case of ZSTD decompression).
+	// In our case, compression is not useful since we are storing messageIDs with high entropy.
 
 	if memOptimized {
-		// Memory usage optimizations:
-		// Inspired by https://github.com/dgraph-io/badger/issues/1304#issuecomment-630078745
-		// With modifications to ensure no performance degradation for dedup.
-		opts.TableLoadingMode = options.FileIO
-		opts.ValueLogLoadingMode = options.FileIO
 		opts.NumMemtables = 3
-		opts.MaxTableSize = 16 << 20
 		opts.NumLevelZeroTables = 1
 		opts.NumLevelZeroTablesStall = 2
-		opts.KeepL0InMemory = false
 	}
 	d.badgerDB, err = badger.Open(opts)
 	if err != nil {
