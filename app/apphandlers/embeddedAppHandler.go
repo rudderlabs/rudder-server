@@ -90,7 +90,7 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 	}
 	a.log.Info("Embedded mode: Starting Rudder Core")
 
-	readonlyGatewayDB, readonlyRouterDB, readonlyBatchRouterDB, err := setupReadonlyDBs()
+	readonlyGatewayDB, err := setupReadonlyDBs()
 	if err != nil {
 		return err
 	}
@@ -255,7 +255,7 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 	}
 	defer gatewayDB.Stop()
 
-	gw.SetReadonlyDBs(readonlyGatewayDB, readonlyRouterDB, readonlyBatchRouterDB)
+	gw.SetReadonlyDB(readonlyGatewayDB)
 	err = gw.Setup(
 		ctx,
 		a.app, backendconfig.DefaultBackendConfig, gatewayDB,

@@ -53,7 +53,7 @@ func rudderCoreWorkSpaceTableSetup() error {
 	return validators.CheckAndValidateWorkspaceToken()
 }
 
-func setupReadonlyDBs() (gw, rt, batchrt *jobsdb.ReadonlyHandleT, err error) {
+func setupReadonlyDBs() (gw *jobsdb.ReadonlyHandleT, err error) {
 	if diagnostics.EnableServerStartMetric {
 		diagnostics.Diagnostics.Track(diagnostics.ServerStart, map[string]interface{}{
 			diagnostics.ServerStart: fmt.Sprint(time.Unix(misc.AppStartTime, 0)),
@@ -62,25 +62,22 @@ func setupReadonlyDBs() (gw, rt, batchrt *jobsdb.ReadonlyHandleT, err error) {
 	var gwDB, rtDB, batchrtDB, procerrDB jobsdb.ReadonlyHandleT
 
 	if err := gwDB.Setup("gw"); err != nil {
-		return nil, nil, nil, fmt.Errorf("setting up gw readonly db: %w", err)
+		return nil, fmt.Errorf("setting up gw readonly db: %w", err)
 	}
 	gw = &gwDB
 
 	if err := rtDB.Setup("rt"); err != nil {
-		return nil, nil, nil, fmt.Errorf("setting up gw readonly db: %w", err)
+		return nil, fmt.Errorf("setting up gw readonly db: %w", err)
 	}
-	rt = &rtDB
 	if err := batchrtDB.Setup("batch_rt"); err != nil {
-		return nil, nil, nil, fmt.Errorf("setting up batch_rt readonly db: %w", err)
+		return nil, fmt.Errorf("setting up batch_rt readonly db: %w", err)
 	}
-	batchrt = &batchrtDB
-	router.RegisterAdminHandlers(rt, batchrt)
+	router.RegisterAdminHandlers(&rtDB, &batchrtDB)
 
 	if err := procerrDB.Setup("proc_error"); err != nil {
-		return nil, nil, nil, fmt.Errorf("setting up proc_error readonly db: %w", err)
+		return nil, fmt.Errorf("setting up proc_error readonly db: %w", err)
 	}
-	procerr := &procerrDB
-	processor.RegisterAdminHandlers(procerr)
+	processor.RegisterAdminHandlers(&procerrDB)
 
 	return
 }
