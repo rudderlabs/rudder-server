@@ -23,7 +23,6 @@ import (
 	"github.com/thoas/go-funk"
 	"golang.org/x/sync/errgroup"
 
-	"github.com/rudderlabs/rudder-server/router"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager"
 	"github.com/rudderlabs/rudder-server/router/rterror"
 	destinationConnectionTester "github.com/rudderlabs/rudder-server/services/destination-connection-tester"
@@ -1151,7 +1150,6 @@ func (brt *HandleT) setJobStatus(batchJobs *BatchJobsT, isWarehouse bool, errOcc
 		errorResp     []byte
 	)
 	batchRouterWorkspaceJobStatusCount := make(map[string]map[string]int)
-	jobRunIDAbortedEventsMap := make(map[string][]*router.FailedEventRowT)
 	var abortedEvents []*jobsdb.JobT
 	var batchReqMetric batchRequestMetric
 	if errOccurred != nil {
@@ -1234,7 +1232,6 @@ func (brt *HandleT) setJobStatus(batchJobs *BatchJobsT, isWarehouse bool, errOcc
 				job.Parameters = misc.UpdateJSONWithNewKeyVal(job.Parameters, "stage", "batch_router")
 				job.Parameters = misc.UpdateJSONWithNewKeyVal(job.Parameters, "reason", errOccurred.Error())
 				abortedEvents = append(abortedEvents, job)
-				router.PrepareJobRunIDAbortedEventsMap(job.Parameters, jobRunIDAbortedEventsMap)
 				jobState = jobsdb.Aborted.State
 			}
 			if postToWarehouseErr && isWarehouse {
@@ -1244,7 +1241,6 @@ func (brt *HandleT) setJobStatus(batchJobs *BatchJobsT, isWarehouse bool, errOcc
 					job.Parameters = misc.UpdateJSONWithNewKeyVal(job.Parameters, "stage", "batch_router")
 					job.Parameters = misc.UpdateJSONWithNewKeyVal(job.Parameters, "reason", errOccurred.Error())
 					abortedEvents = append(abortedEvents, job)
-					router.PrepareJobRunIDAbortedEventsMap(job.Parameters, jobRunIDAbortedEventsMap)
 					jobState = jobsdb.Aborted.State
 				}
 				warehouseServiceFailedTimeLock.RUnlock()
@@ -1253,7 +1249,6 @@ func (brt *HandleT) setJobStatus(batchJobs *BatchJobsT, isWarehouse bool, errOcc
 			job.Parameters = misc.UpdateJSONWithNewKeyVal(job.Parameters, "stage", "batch_router")
 			job.Parameters = misc.UpdateJSONWithNewKeyVal(job.Parameters, "reason", errOccurred.Error())
 			abortedEvents = append(abortedEvents, job)
-			router.PrepareJobRunIDAbortedEventsMap(job.Parameters, jobRunIDAbortedEventsMap)
 		}
 		attemptNum := job.LastJobStatus.AttemptNum + 1
 		status := jobsdb.JobStatusT{
@@ -1391,10 +1386,6 @@ func (brt *HandleT) setJobStatus(batchJobs *BatchJobsT, isWarehouse bool, errOcc
 				return err
 			}
 
-			// Save msgids of aborted jobs
-			if len(jobRunIDAbortedEventsMap) > 0 {
-				router.GetFailedEventsManager().SaveFailedRecordIDs(jobRunIDAbortedEventsMap, tx.SqlTx())
-			}
 			if brt.reporting != nil && brt.reportingEnabled {
 				brt.reporting.Report(reportMetrics, tx.SqlTx())
 			}
