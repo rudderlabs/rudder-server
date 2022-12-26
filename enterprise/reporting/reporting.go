@@ -27,20 +27,20 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
-const REPORTS_TABLE = "reports"
+const ReportsTable = "reports"
 
 var maxConcurrentRequests int
 
 const (
-	STAT_REPORTING_MAIN_LOOP_TIME                 = "reporting_client_main_loop_time"
-	STAT_REPORTING_GET_REPORTS_TIME               = "reporting_client_get_reports_time"
-	STAT_REPORTING_GET_REPORTS_COUNT              = "reporting_client_get_reports_count"
-	STAT_REPORTING_GET_AGGREGATED_REPORTS_TIME    = "reporting_client_get_aggregated_reports_time"
-	STAT_REPORTING_GET_AGGREGATED_REPORTS_COUNT   = "reporting_client_get_aggregated_reports_count"
-	STAT_REPORTING_HTTP_REQ_LATENCY               = "reporting_client_http_request_latency"
-	STAT_REPORTING_HTTP_REQ                       = "reporting_client_http_request"
-	STAT_REPORTING_GET_MIN_REPORTED_AT_QUERY_TIME = "reporting_client_get_min_reported_at_query_time"
-	STAT_REPORTING_GET_REPORTS_QUERY_TIME         = "reporting_client_get_reports_query_time"
+	StatReportingMainLoopTime              = "reporting_client_main_loop_time"
+	StatReportingGetReportsTime            = "reporting_client_get_reports_time"
+	StatReportingGetReportsCount           = "reporting_client_get_reports_count"
+	StatReportingGetAggregatedReportsTime  = "reporting_client_get_aggregated_reports_time"
+	StatReportingGetAggregatedReportsCount = "reporting_client_get_aggregated_reports_count"
+	StatReportingHttpReqLatency            = "reporting_client_http_request_latency"
+	StatReportingHttpReq                   = "reporting_client_http_request"
+	StatReportingGetMinReportedAtQueryTime = "reporting_client_get_min_reported_at_query_time"
+	StatReportingGetReportsQueryTime       = "reporting_client_get_reports_query_time"
 )
 
 type HandleT struct {
@@ -200,7 +200,7 @@ func (r *HandleT) getDBHandle(clientName string) (*sql.DB, error) {
 }
 
 func (r *HandleT) getReports(currentMs int64, clientName string) (reports []*types.ReportByStatus, reportedAt int64) {
-	sqlStatement := fmt.Sprintf(`SELECT reported_at FROM %s WHERE reported_at < %d ORDER BY reported_at ASC LIMIT 1`, REPORTS_TABLE, currentMs)
+	sqlStatement := fmt.Sprintf(`SELECT reported_at FROM %s WHERE reported_at < %d ORDER BY reported_at ASC LIMIT 1`, ReportsTable, currentMs)
 	var queryMin sql.NullInt64
 	dbHandle, err := r.getDBHandle(clientName)
 	if err != nil {
@@ -217,7 +217,7 @@ func (r *HandleT) getReports(currentMs int64, clientName string) (reports []*typ
 		return nil, 0
 	}
 
-	sqlStatement = fmt.Sprintf(`SELECT workspace_id, namespace, instance_id, source_definition_id, source_category, source_id, destination_definition_id, destination_id, source_batch_id, source_task_id, source_task_run_id, source_job_id, source_job_run_id, in_pu, pu, reported_at, status, count, terminal_state, initial_state, status_code, sample_response, sample_event, event_name, event_type FROM %s WHERE reported_at = %d`, REPORTS_TABLE, queryMin.Int64)
+	sqlStatement = fmt.Sprintf(`SELECT workspace_id, namespace, instance_id, source_definition_id, source_category, source_id, destination_definition_id, destination_id, source_batch_id, source_task_id, source_task_run_id, source_job_id, source_job_run_id, in_pu, pu, reported_at, status, count, terminal_state, initial_state, status_code, sample_response, sample_event, event_name, event_type FROM %s WHERE reported_at = %d`, ReportsTable, queryMin.Int64)
 	var rows *sql.Rows
 	queryStart = time.Now()
 	rows, err = dbHandle.Query(sqlStatement)
@@ -312,15 +312,15 @@ func (r *HandleT) mainLoop(ctx context.Context, clientName string) {
 	tr := &http.Transport{}
 	netClient := &http.Client{Transport: tr, Timeout: config.GetDuration("HttpClient.reporting.timeout", 60, time.Second)}
 	tags := r.getTags(clientName)
-	mainLoopTimer := stats.Default.NewTaggedStat(STAT_REPORTING_MAIN_LOOP_TIME, stats.TimerType, tags)
-	getReportsTimer := stats.Default.NewTaggedStat(STAT_REPORTING_GET_REPORTS_TIME, stats.TimerType, tags)
-	getReportsCount := stats.Default.NewTaggedStat(STAT_REPORTING_GET_REPORTS_COUNT, stats.HistogramType, tags)
-	getAggregatedReportsTimer := stats.Default.NewTaggedStat(STAT_REPORTING_GET_AGGREGATED_REPORTS_TIME, stats.TimerType, tags)
-	getAggregatedReportsCount := stats.Default.NewTaggedStat(STAT_REPORTING_GET_AGGREGATED_REPORTS_COUNT, stats.HistogramType, tags)
+	mainLoopTimer := stats.Default.NewTaggedStat(StatReportingMainLoopTime, stats.TimerType, tags)
+	getReportsTimer := stats.Default.NewTaggedStat(StatReportingGetReportsTime, stats.TimerType, tags)
+	getReportsCount := stats.Default.NewTaggedStat(StatReportingGetReportsCount, stats.HistogramType, tags)
+	getAggregatedReportsTimer := stats.Default.NewTaggedStat(StatReportingGetAggregatedReportsTime, stats.TimerType, tags)
+	getAggregatedReportsCount := stats.Default.NewTaggedStat(StatReportingGetAggregatedReportsCount, stats.HistogramType, tags)
 
-	r.getMinReportedAtQueryTime = stats.Default.NewTaggedStat(STAT_REPORTING_GET_MIN_REPORTED_AT_QUERY_TIME, stats.TimerType, tags)
-	r.getReportsQueryTime = stats.Default.NewTaggedStat(STAT_REPORTING_GET_REPORTS_QUERY_TIME, stats.TimerType, tags)
-	r.requestLatency = stats.Default.NewTaggedStat(STAT_REPORTING_HTTP_REQ_LATENCY, stats.TimerType, tags)
+	r.getMinReportedAtQueryTime = stats.Default.NewTaggedStat(StatReportingGetMinReportedAtQueryTime, stats.TimerType, tags)
+	r.getReportsQueryTime = stats.Default.NewTaggedStat(StatReportingGetReportsQueryTime, stats.TimerType, tags)
+	r.requestLatency = stats.Default.NewTaggedStat(StatReportingHttpReqLatency, stats.TimerType, tags)
 	for {
 		if ctx.Err() != nil {
 			r.log.Infof("stopping mainLoop for client %s : %s", clientName, ctx.Err())
@@ -359,7 +359,7 @@ func (r *HandleT) mainLoop(ctx context.Context, clientName string) {
 			metricToSend := metric
 			requestChan <- struct{}{}
 			if errCtx.Err() != nil {
-				// if any of errGroup's goroutines fail - dont send anymore requests for this batch
+				// if any of errGroup's goroutines fail - don't send anymore requests for this batch
 				break
 			}
 			errGroup.Go(func() error {
@@ -371,14 +371,14 @@ func (r *HandleT) mainLoop(ctx context.Context, clientName string) {
 
 		err := errGroup.Wait()
 		if err == nil {
-			sqlStatement := fmt.Sprintf(`DELETE FROM %s WHERE reported_at = %d`, REPORTS_TABLE, reportedAt)
+			sqlStatement := fmt.Sprintf(`DELETE FROM %s WHERE reported_at = %d`, ReportsTable, reportedAt)
 			dbHandle, err := r.getDBHandle(clientName)
 			if err != nil {
 				panic(err)
 			}
 			_, err = dbHandle.Exec(sqlStatement)
 			if err != nil {
-				r.log.Errorf(`[ Reporting ]: Error deleting local reports from %s: %v`, REPORTS_TABLE, err)
+				r.log.Errorf(`[ Reporting ]: Error deleting local reports from %s: %v`, ReportsTable, err)
 			}
 		}
 
@@ -418,7 +418,7 @@ func (r *HandleT) sendMetric(ctx context.Context, netClient *http.Client, client
 		r.requestLatency.Since(httpRequestStart)
 		httpStatTags := r.getTags(clientName)
 		httpStatTags["status"] = strconv.Itoa(resp.StatusCode)
-		stats.Default.NewTaggedStat(STAT_REPORTING_HTTP_REQ, stats.CountType, httpStatTags).Count(1)
+		stats.Default.NewTaggedStat(StatReportingHttpReq, stats.CountType, httpStatTags).Count(1)
 
 		defer func() { httputil.CloseResponse(resp) }()
 		respBody, err := io.ReadAll(resp.Body)
@@ -428,7 +428,7 @@ func (r *HandleT) sendMetric(ctx context.Context, netClient *http.Client, client
 		}
 
 		if !isMetricPosted(resp.StatusCode) {
-			err = fmt.Errorf(`Received response: statusCode:%d error:%v`, resp.StatusCode, string(respBody))
+			err = fmt.Errorf(`received response: statusCode:%d error:%v`, resp.StatusCode, string(respBody))
 		}
 		return err
 	}
@@ -486,7 +486,7 @@ func (r *HandleT) Report(metrics []*types.PUReportedMetric, txn *sql.Tx) {
 		return
 	}
 
-	stmt, err := txn.Prepare(pq.CopyIn(REPORTS_TABLE, "workspace_id", "namespace", "instance_id", "source_definition_id", "source_category", "source_id", "destination_definition_id", "destination_id", "source_batch_id", "source_task_id", "source_task_run_id", "source_job_id", "source_job_run_id", "in_pu", "pu", "reported_at", "status", "count", "terminal_state", "initial_state", "status_code", "sample_response", "sample_event", "event_name", "event_type"))
+	stmt, err := txn.Prepare(pq.CopyIn(ReportsTable, "workspace_id", "namespace", "instance_id", "source_definition_id", "source_category", "source_id", "destination_definition_id", "destination_id", "source_batch_id", "source_task_id", "source_task_run_id", "source_job_id", "source_job_run_id", "in_pu", "pu", "reported_at", "status", "count", "terminal_state", "initial_state", "status_code", "sample_response", "sample_event", "event_name", "event_type"))
 	if err != nil {
 		_ = txn.Rollback()
 		panic(err)

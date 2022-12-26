@@ -17,7 +17,7 @@ func (cache *Cache) loadCacheConfig() {
 		config.RegisterIntConfigVariable(3, &cache.Size, true, 1, "LiveEvent.cache.size")
 	}
 	if cache.KeyTTL == 0 {
-		config.RegisterDurationConfigVariable(720, &cache.KeyTTL, true, time.Hour, "LiveEvent.cache.ttl") // default keyTTL is 30 days
+		config.RegisterDurationConfigVariable(3, &cache.KeyTTL, true, time.Hour, "LiveEvent.cache.ttl") // default keyTTL is 30 days
 	}
 	if cache.CleanupFreq == 0 {
 		config.RegisterDurationConfigVariable(15, &cache.CleanupFreq, true, time.Second, "LiveEvent.cache.clearFreq") // default clearFreq is 15 seconds
