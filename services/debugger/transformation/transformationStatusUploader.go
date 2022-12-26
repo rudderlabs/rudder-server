@@ -72,7 +72,7 @@ var (
 	limitEventsInMemory          int
 	uploader                     debugger.Uploader[*TransformStatusT]
 	pkgLogger                    logger.Logger
-	transformationCacheMap       debugger.Cache
+	transformationCacheMap       debugger.Cache[TransformationStatusT]
 )
 
 var (
@@ -185,8 +185,7 @@ func UploadTransformationStatus(tStatus *TransformationStatusT) {
 			tStatusUpdated.Destination.Transformations = []backendconfig.TransformationT{transformation}
 			tStatusUpdated.UserTransformedEvents = lo.Slice(tStatusUpdated.UserTransformedEvents, 0, limitEventsInMemory+1)
 			tStatusUpdated.FailedEvents = lo.Slice(tStatusUpdated.FailedEvents, 0, limitEventsInMemory+1)
-			tStatusUpdatedData, _ := jsonfast.Marshal(tStatusUpdated)
-			transformationCacheMap.Update(transformation.ID, tStatusUpdatedData)
+			transformationCacheMap.Update(transformation.ID, tStatusUpdated)
 		}
 	}
 }
@@ -232,11 +231,7 @@ func recordHistoricTransformations(tIDs []string) {
 	for _, tID := range tIDs {
 		tStatuses := transformationCacheMap.ReadAndPopData(tID)
 		for _, tStatus := range tStatuses {
-			var tStatusData TransformationStatusT
-			if err := jsonfast.Unmarshal(tStatus, &tStatusData); err != nil {
-				pkgLogger.Errorf("[Transformation status uploader] Failed to unmarshal transformation status. Err: %v", err)
-			}
-			processRecordTransformationStatus(&tStatusData, tID)
+			processRecordTransformationStatus(&tStatus, tID)
 		}
 	}
 }
