@@ -47,7 +47,7 @@ func (m *Factory) Setup(backendConfig backendconfig.BackendConfig) types.Reporti
 
 func (m *Factory) GetReportingInstance() types.ReportingI {
 	if m.reportingInstance == nil {
-		panic(fmt.Errorf("Reporting instance not initialised. You should call Setup before GetReportingInstance"))
+		panic(fmt.Errorf("reporting instance not initialised. You should call Setup before GetReportingInstance"))
 	}
 
 	return m.reportingInstance
