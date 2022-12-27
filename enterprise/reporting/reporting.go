@@ -135,7 +135,7 @@ func (r *HandleT) getWorkspaceID(sourceID string) string {
 
 func (r *HandleT) AddClient(ctx context.Context, c types.Config) {
 	if c.ClientName == "" {
-		c.ClientName = types.CORE_REPORTING_CLIENT
+		c.ClientName = types.CoreReportingClient
 	}
 
 	r.clientsMapLock.RLock()

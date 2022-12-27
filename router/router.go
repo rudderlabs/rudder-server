@@ -1796,7 +1796,7 @@ func (rt *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB jobsd
 	rt.rsourcesService = rsourcesService
 
 	// waiting for reporting client setup
-	err := rt.Reporting.WaitForSetup(context.TODO(), utilTypes.CORE_REPORTING_CLIENT)
+	err := rt.Reporting.WaitForSetup(context.TODO(), utilTypes.CoreReportingClient)
 	if err != nil {
 		return
 	}

@@ -2282,7 +2282,7 @@ func (brt *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB, err
 	brt.fileManagerFactory = filemanager.DefaultFileManagerFactory
 	brt.backendConfig = backendConfig
 	brt.reporting = reporting
-	config.RegisterBoolConfigVariable(types.DEFAULT_REPORTING_ENABLED, &brt.reportingEnabled, false, "Reporting.enabled")
+	config.RegisterBoolConfigVariable(types.DefaultReportingEnabled, &brt.reportingEnabled, false, "Reporting.enabled")
 	brt.logger = pkgLogger.Child(destType)
 	brt.logger.Infof("BRT: Batch Router started: %s", destType)
 
@@ -2292,7 +2292,7 @@ func (brt *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB, err
 	// waiting for reporting client setup
 	if brt.reporting != nil && brt.reportingEnabled {
 		// error is ignored as context.TODO() is passed, err is not expected.
-		_ = brt.reporting.WaitForSetup(context.TODO(), types.CORE_REPORTING_CLIENT)
+		_ = brt.reporting.WaitForSetup(context.TODO(), types.CoreReportingClient)
 	}
 	if brt.warehouseURL == "" {
 		brt.warehouseURL = misc.GetWarehouseURL()
