@@ -44,16 +44,19 @@ var (
 	disableEventUploads bool
 	pkgLogger           logger.Logger
 	eventsCache         cache.Cache[[]byte]
+	cacheType           string
 )
 
 func Init() {
 	loadConfig()
+	eventsCache = cache.FactoryImpl[[]byte]{}.New(cacheType)
 	pkgLogger = logger.NewLogger().Child("debugger").Child("source")
 }
 
 func loadConfig() {
 	configBackendURL = config.GetString("CONFIG_BACKEND_URL", "https://api.rudderstack.com")
 	config.RegisterBoolConfigVariable(false, &disableEventUploads, true, "SourceDebugger.disableEventUploads")
+	config.RegisterStringConfigVariable("memory", &cacheType, true, "DestinationDebugger.cacheType")
 }
 
 type EventUploader struct{}

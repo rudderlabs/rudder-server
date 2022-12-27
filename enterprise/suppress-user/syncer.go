@@ -147,7 +147,7 @@ func (s *Syncer) SyncLoop(ctx context.Context) {
 // sync fetches suppressions from the backend
 func (s *Syncer) sync(token []byte) ([]model.Suppression, []byte, error) {
 	urlStr := s.url
-	urlValQuery := url.Values{}
+	var urlValQuery url.Values
 	if s.pageSize > 0 {
 		urlValQuery.Set("pageSize", strconv.Itoa(s.pageSize))
 	}

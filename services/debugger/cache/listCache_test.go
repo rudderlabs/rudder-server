@@ -15,8 +15,8 @@ var _ = Describe("cache", func() {
 		It("Cache init", func() {
 			var c ListCache[[]byte]
 			c.init()
-			Expect(c.Size).NotTo(Equal(0))
-			Expect(c.KeyTTL).NotTo(Equal(0))
+			Expect(c.size).NotTo(Equal(0))
+			Expect(c.keyTTL).NotTo(Equal(0))
 			Expect(c.cacheMap).NotTo(BeNil())
 		})
 
@@ -30,8 +30,8 @@ var _ = Describe("cache", func() {
 
 		It("Cache timeout", func() {
 			c := ListCache[[]byte]{
-				KeyTTL:      10 * time.Millisecond,
-				CleanupFreq: 10 * time.Millisecond,
+				keyTTL:      10 * time.Millisecond,
+				cleanupFreq: 10 * time.Millisecond,
 			}
 			c.Update(testKey, testValue)
 			Expect(len(c.cacheMap)).To(Equal(1))
@@ -50,7 +50,7 @@ var _ = Describe("cache", func() {
 
 		It("Cache data store limit", func() {
 			c := ListCache[[]byte]{
-				Size: 2,
+				size: 2,
 			}
 			testValue2 := []byte("test_value2")
 			testValue3 := []byte("test_value3")

@@ -74,6 +74,7 @@ var (
 	uploader                     debugger.Uploader[*TransformStatusT]
 	pkgLogger                    logger.Logger
 	transformationCacheMap       cache.Cache[TransformationStatusT]
+	cacheType                    string
 )
 
 var (
@@ -83,6 +84,7 @@ var (
 
 func Init() {
 	loadConfig()
+	transformationCacheMap = cache.FactoryImpl[TransformationStatusT]{}.New(cacheType)
 	pkgLogger = logger.NewLogger().Child("debugger").Child("transformation")
 }
 
@@ -90,6 +92,7 @@ func loadConfig() {
 	configBackendURL = config.GetString("CONFIG_BACKEND_URL", "https://api.rudderstack.com")
 	config.RegisterBoolConfigVariable(false, &disableTransformationUploads, true, "TransformationDebugger.disableTransformationStatusUploads")
 	config.RegisterIntConfigVariable(1, &limitEventsInMemory, true, 1, "TransformationDebugger.limitEventsInMemory")
+	config.RegisterStringConfigVariable("memory", &cacheType, true, "DestinationDebugger.cacheType")
 }
 
 type TransformationStatusUploader struct{}
