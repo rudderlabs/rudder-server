@@ -11,13 +11,13 @@ type Config struct {
 }
 
 const (
-	CORE_REPORTING_CLIENT      = "core"
-	WAREHOUSE_REPORTING_CLIENT = "warehouse"
+	CoreReportingClient      = "core"
+	WarehouseReportingClient = "warehouse"
 
-	SUPPORTED_TRANSFORMER_API_VERSION = 2
+	SupportedTransformerApiVersion = 2
 
-	DEFAULT_REPORTING_ENABLED = true
-	DEFAULT_REPLAY_ENABLED    = false
+	DefaultReportingEnabled = true
+	DefaultReplayEnabled    = false
 )
 
 var (

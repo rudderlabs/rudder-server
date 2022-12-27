@@ -37,7 +37,7 @@ var uploader debugger.Uploader[*DeliveryStatusT]
 var (
 	configBackendURL                  string
 	disableEventDeliveryStatusUploads bool
-	eventsDeliveryCache               debugger.Cache
+	eventsDeliveryCache               debugger.Cache[*DeliveryStatusT]
 )
 
 var pkgLogger logger.Logger
@@ -66,12 +66,7 @@ func RecordEventDeliveryStatus(destinationID string, deliveryStatus *DeliverySta
 	configSubscriberLock.RLock()
 	defer configSubscriberLock.RUnlock()
 	if !HasUploadEnabled(destinationID) {
-		deliveryStatusData, err := json.Marshal(deliveryStatus)
-		if err != nil {
-			pkgLogger.Errorf("[Destination live events] Failed to marshal payload. Err: %v", err)
-			return false
-		}
-		eventsDeliveryCache.Update(destinationID, deliveryStatusData)
+		eventsDeliveryCache.Update(destinationID, deliveryStatus)
 		return false
 	}
 
@@ -150,11 +145,7 @@ func recordHistoricEventsDelivery(destinationIDs []string) {
 	for _, destinationID := range destinationIDs {
 		historicEventsDelivery := eventsDeliveryCache.ReadAndPopData(destinationID)
 		for _, event := range historicEventsDelivery {
-			var historicEventsDeliveryData DeliveryStatusT
-			if err := json.Unmarshal(event, &historicEventsDeliveryData); err != nil {
-				pkgLogger.Errorf("[Destination live events] Failed to unmarshal payload. Err: %v", err)
-			}
-			uploader.RecordEvent(&historicEventsDeliveryData)
+			uploader.RecordEvent(event)
 		}
 	}
 }

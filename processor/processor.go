@@ -307,7 +307,7 @@ func (proc *HandleT) Setup(
 	fileuploader fileuploader.Provider, rsourcesService rsources.JobService,
 ) {
 	proc.reporting = reporting
-	config.RegisterBoolConfigVariable(types.DEFAULT_REPORTING_ENABLED, &proc.reportingEnabled, false, "Reporting.enabled")
+	config.RegisterBoolConfigVariable(types.DefaultReportingEnabled, &proc.reportingEnabled, false, "Reporting.enabled")
 	config.RegisterInt64ConfigVariable(100*bytesize.MB, &proc.payloadLimit, true, 1, "Processor.payloadLimit")
 	config.RegisterDurationConfigVariable(60, &proc.jobdDBQueryRequestTimeout, true, time.Second, []string{"JobsDB.Processor.QueryRequestTimeout", "JobsDB.QueryRequestTimeout"}...)
 	config.RegisterDurationConfigVariable(90, &proc.jobsDBCommandTimeout, true, time.Second, []string{"JobsDB.Processor.CommandRequestTimeout", "JobsDB.CommandRequestTimeout"}...)
@@ -2295,7 +2295,7 @@ func (proc *HandleT) handlePendingGatewayJobs() bool {
 func (proc *HandleT) mainLoop(ctx context.Context) {
 	// waiting for reporting client setup
 	if proc.reporting != nil && proc.reportingEnabled {
-		if err := proc.reporting.WaitForSetup(ctx, types.CORE_REPORTING_CLIENT); err != nil {
+		if err := proc.reporting.WaitForSetup(ctx, types.CoreReportingClient); err != nil {
 			return
 		}
 	}
@@ -2387,7 +2387,7 @@ func (proc *HandleT) mainPipeline(ctx context.Context) {
 	proc.logger.Infof("Processor mainPipeline started, subJobSize=%d pipelineBufferedItems=%d", subJobSize, pipelineBufferedItems)
 
 	if proc.reporting != nil && proc.reportingEnabled {
-		if err := proc.reporting.WaitForSetup(ctx, types.CORE_REPORTING_CLIENT); err != nil {
+		if err := proc.reporting.WaitForSetup(ctx, types.CoreReportingClient); err != nil {
 			return
 		}
 	}

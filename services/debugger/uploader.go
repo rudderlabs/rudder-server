@@ -45,6 +45,7 @@ type uploaderImpl[E any] struct {
 	maxBatchSize, maxRetry, maxESQueueSize int
 	batchTimeout, retrySleep               time.Duration
 	timingStat                             stats.Measurement
+	region                                 string
 
 	bgWaitGroup sync.WaitGroup
 }
@@ -60,6 +61,7 @@ func (uploader *uploaderImpl[E]) Setup() {
 	config.RegisterIntConfigVariable(3, &uploader.maxRetry, true, 1, "Debugger.maxRetry")
 	config.RegisterDurationConfigVariable(2, &uploader.batchTimeout, true, time.Second, "Debugger.batchTimeoutInS")
 	config.RegisterDurationConfigVariable(100, &uploader.retrySleep, true, time.Millisecond, "Debugger.retrySleepInMS")
+	uploader.region = config.GetString("region", "")
 	uploader.timingStat = stats.Default.NewStat("debugger_upload", stats.TimerType)
 }
 
@@ -117,6 +119,11 @@ func (uploader *uploaderImpl[E]) uploadEvents(eventBuffer []E) {
 		if err != nil {
 			pkgLogger.Errorf("[Uploader] Failed to create new http request. Err: %v", err)
 			return
+		}
+		if uploader.region != "" {
+			q := req.URL.Query()
+			q.Add("region", uploader.region)
+			req.URL.RawQuery = q.Encode()
 		}
 		req.Header.Set("Content-Type", "application/json;charset=UTF-8")
 		req.SetBasicAuth(config.GetWorkspaceToken(), "")

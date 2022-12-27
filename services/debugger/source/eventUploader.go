@@ -42,7 +42,7 @@ var (
 	configBackendURL    string
 	disableEventUploads bool
 	pkgLogger           logger.Logger
-	eventsCacheMap      debugger.Cache
+	eventsCacheMap      debugger.Cache[[]byte]
 )
 
 func Init() {
