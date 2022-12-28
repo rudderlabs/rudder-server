@@ -30,7 +30,7 @@ func TestIntegrationClickHouse(t *testing.T) {
 
 	var dbs []*sql.DB
 	for _, host := range []string{"wh-clickhouse", "wh-clickhouse01", "wh-clickhouse02", "wh-clickhouse03", "wh-clickhouse04"} {
-		db, err := clickhouse.Connect(clickhouse.CredentialsT{
+		db, err := clickhouse.Connect(clickhouse.Credentials{
 			Host:          host,
 			User:          "rudder",
 			Password:      "rudder-password",

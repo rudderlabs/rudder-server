@@ -485,6 +485,18 @@ func processStagingFile(job Payload, workerIndex int) (loadFileUploadOutputs []l
 			columnType := columnInfo.Type
 			columnVal := columnInfo.Value
 
+			if job.DestinationType == warehouseutils.CLICKHOUSE && model.SchemaType(columnType) == model.BooleanDataType {
+				newColumnVal := "0"
+				if k, ok := columnVal.(bool); ok {
+					if k {
+						newColumnVal = "1"
+					} else {
+						newColumnVal = "0"
+					}
+				}
+				columnVal = newColumnVal
+			}
+
 			if model.SchemaType(columnType) == model.IntDataType || model.SchemaType(columnType) == model.BigIntDataType {
 				floatVal, ok := columnVal.(float64)
 				if !ok {
