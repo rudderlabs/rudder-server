@@ -125,6 +125,7 @@ func (uploader *uploaderImpl[E]) uploadEvents(eventBuffer []E) {
 			q.Add("region", uploader.region)
 			req.URL.RawQuery = q.Encode()
 		}
+		pkgLogger.Infof("Debugger: Uploading events to %s with payload %v and url %v", req.URL.RawQuery, string(rawJSON), req.URL)
 		req.Header.Set("Content-Type", "application/json;charset=UTF-8")
 		req.SetBasicAuth(config.GetWorkspaceToken(), "")
 
