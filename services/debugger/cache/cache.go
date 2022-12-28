@@ -3,6 +3,8 @@ package cache
 //go:generate mockgen -destination=../../../mocks/services/debugger/cache/mock_cache.go -package=mocks_cache github.com/rudderlabs/rudder-server/services/debugger/cache CacheAny
 
 import (
+	"github.com/rudderlabs/rudder-server/services/debugger/cache/embeddedcache"
+	"github.com/rudderlabs/rudder-server/services/debugger/cache/listcache"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 )
 
@@ -33,12 +35,12 @@ func (FactoryImpl[E]) New(cacheType string) Cache[E] {
 	switch cacheType {
 	case "memory":
 		pkgLogger.Info("Using in-memory cache")
-		return &ListCache[E]{}
+		return &listcache.ListCache[E]{}
 	case "goqpue":
 		pkgLogger.Info("Using goque cache")
-		return &EmbeddedCache[E]{}
+		return &embeddedcache.EmbeddedCache[E]{}
 	default:
 		pkgLogger.Info("Using default in-memory cache")
-		return &ListCache[E]{}
+		return &listcache.ListCache[E]{}
 	}
 }

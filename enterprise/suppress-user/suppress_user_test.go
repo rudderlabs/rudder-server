@@ -18,6 +18,7 @@ import (
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/enterprise/suppress-user/model"
 	"github.com/rudderlabs/rudder-server/services/controlplane/identity"
+	sourcedebugger "github.com/rudderlabs/rudder-server/services/debugger/source"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 )
 
@@ -88,6 +89,7 @@ func generateTests(getRepo func() Repository) {
 	BeforeEach(func() {
 		config.Reset()
 		backendconfig.Init()
+		sourcedebugger.Init()
 		server = newTestServer()
 
 		r := getRepo()

@@ -564,7 +564,7 @@ var _ = Describe("Gateway", func() {
 					Expect(r.URL.String()).To(Equal(url))
 					Expect(r.Body)
 					Expect(r.Body).To(Not(BeNil()))
-					defer r.Body.Close()
+					defer func() { _ = r.Body.Close() }()
 					reqBody, err := io.ReadAll(r.Body)
 					Expect(err).To(BeNil())
 					Expect(string(reqBody)).To(Equal(payload))

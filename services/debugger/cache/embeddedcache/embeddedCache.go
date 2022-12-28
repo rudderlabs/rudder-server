@@ -1,8 +1,9 @@
-package cache
+package embeddedcache
 
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/rudderlabs/rudder-server/services/debugger/cache"
 	"os"
 	"sync"
 	"time"
@@ -109,7 +110,7 @@ func (e *EmbeddedCache[E]) init() {
 		badgerPathName := "/badgerdbv3"
 		tmpDirPath, err := misc.CreateTMPDIR()
 		if err != nil {
-			pkgLogger.Errorf("Unable to create tmp directory: %v", err)
+			cache.pkgLogger.Errorf("Unable to create tmp directory: %v", err)
 			return
 		}
 		path := fmt.Sprintf("%s%s", tmpDirPath, badgerPathName)
@@ -122,7 +123,7 @@ func (e *EmbeddedCache[E]) init() {
 
 		e.db, err = badger.Open(opts)
 		if err != nil {
-			pkgLogger.Errorf("Error while opening badgerDB: %v", err)
+			cache.pkgLogger.Errorf("Error while opening badgerDB: %v", err)
 			return
 		}
 		rruntime.Go(func() {
