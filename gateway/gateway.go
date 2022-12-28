@@ -1513,8 +1513,8 @@ func (gateway *HandleT) Shutdown() error {
 }
 
 func WithContentType(contentType string, delegate http.HandlerFunc) http.HandlerFunc {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	return func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Add("Content-Type", contentType)
 		delegate(w, r)
-	})
+	}
 }

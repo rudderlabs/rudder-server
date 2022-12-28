@@ -1,12 +1,12 @@
 package cache
 
-//go:generate mockgen -destination=../mocks/cache/mock_cache.go -package=mocks_cache github.com/rudderlabs/rudder-server/cache CacheAny
+//go:generate mockgen -destination=../../../mocks/services/debugger/cache/mock_cache.go -package=mocks_cache github.com/rudderlabs/rudder-server/services/debugger/cache CacheAny
 
-import "github.com/rudderlabs/rudder-server/utils/logger"
-
-var (
-	pkgLogger logger.Logger
+import (
+	"github.com/rudderlabs/rudder-server/utils/logger"
 )
+
+var pkgLogger logger.Logger
 
 type CacheAny interface {
 	Cache[any]

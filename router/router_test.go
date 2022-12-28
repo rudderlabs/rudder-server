@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	destinationdebugger "github.com/rudderlabs/rudder-server/services/debugger/destination"
 	"math"
 	"testing"
 	"time"
@@ -153,6 +154,7 @@ func initRouter() {
 	config.Reset()
 	admin.Init()
 	logger.Reset()
+	destinationdebugger.Init()
 	Init()
 	InitRouterAdmin()
 }

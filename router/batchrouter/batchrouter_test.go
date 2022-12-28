@@ -5,6 +5,7 @@ import (
 	jsonb "encoding/json"
 	"errors"
 	"fmt"
+	destinationdebugger "github.com/rudderlabs/rudder-server/services/debugger/destination"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -37,13 +38,7 @@ import (
 
 const (
 	WriteKeyEnabled           = "enabled-write-key"
-	WriteKeyDisabled          = "disabled-write-key"
-	WriteKeyInvalid           = "invalid-write-key"
-	WriteKeyEmpty             = ""
 	SourceIDEnabled           = "enabled-source"
-	SourceIDDisabled          = "disabled-source"
-	TestRemoteAddressWithPort = "test.com:80"
-	TestRemoteAddress         = "test.com"
 	S3DestinationDefinitionID = "s3id1"
 	S3DestinationID           = "did1"
 )
@@ -143,6 +138,7 @@ func initBatchRouter() {
 	admin.Init()
 	logger.Reset()
 	misc.Init()
+	destinationdebugger.Init()
 	Init()
 	Init2()
 }

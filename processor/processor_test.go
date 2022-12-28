@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	destinationdebugger "github.com/rudderlabs/rudder-server/services/debugger/destination"
+	transformationdebugger "github.com/rudderlabs/rudder-server/services/debugger/transformation"
 	"reflect"
 	"sort"
 	"strings"
@@ -103,7 +105,6 @@ const (
 	WriteKeyEnabledNoUT   = "enabled-write-key-no-ut"
 	WriteKeyEnabledNoUT2  = "enabled-write-key-no-ut2"
 	WriteKeyEnabledOnlyUT = "enabled-write-key-only-ut"
-	WorkspaceID           = "some-workspace-id"
 	SourceIDEnabled       = "enabled-source"
 	SourceIDEnabledNoUT   = "enabled-source-no-ut"
 	SourceIDEnabledOnlyUT = "enabled-source-only-ut"
@@ -314,6 +315,8 @@ func initProcessor() {
 	dedup.Init()
 	misc.Init()
 	integrations.Init()
+	destinationdebugger.Init()
+	transformationdebugger.Init()
 	Init()
 }
 
@@ -555,7 +558,7 @@ var _ = Describe("Processor", func() {
 			}).Return(nil).Times(1)
 			c.mockGatewayJobsDB.EXPECT().UpdateJobStatusInTx(gomock.Any(), gomock.Any(), gomock.Len(len(unprocessedJobsList)), gatewayCustomVal, nil).Times(1).After(callStoreRouter).
 				Do(func(ctx context.Context, txn jobsdb.UpdateSafeTx, statuses []*jobsdb.JobStatusT, _, _ interface{}) {
-					// jobs should be sorted by jobid, so order of statuses is different than order of jobs
+					// jobs should be sorted by jobid, so order of statuses is different from order of jobs
 					for i := range unprocessedJobsList {
 						assertJobStatus(unprocessedJobsList[i], statuses[i], jobsdb.Succeeded.State)
 					}
