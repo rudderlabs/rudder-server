@@ -258,7 +258,7 @@ func ZipFiles(filename string, files []string) error {
 	if err != nil {
 		return err
 	}
-	defer newZipFile.Close()
+	defer func() { _ = newZipFile.Close() }()
 
 	zipWriter := zip.NewWriter(newZipFile)
 	defer zipWriter.Close()
@@ -278,7 +278,7 @@ func AddFileToZip(zipWriter *zip.Writer, filename string) error {
 	if err != nil {
 		return err
 	}
-	defer fileToZip.Close()
+	defer func() { _ = fileToZip.Close() }()
 
 	// Get the file information
 	info, err := fileToZip.Stat()
@@ -387,7 +387,7 @@ func ReadLines(path string) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 
 	var lines []string
 	scanner := bufio.NewScanner(file)
@@ -805,7 +805,7 @@ func GetOutboundIP() (net.IP, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 
 	localAddr := conn.LocalAddr().(*net.UDPAddr)
 
@@ -1321,7 +1321,7 @@ func SleepCtx(ctx context.Context, delay time.Duration) error {
 
 func Unique(stringSlice []string) []string {
 	keys := make(map[string]struct{})
-	list := []string{}
+	var list []string
 	for _, entry := range stringSlice {
 		if _, ok := keys[entry]; !ok {
 			keys[entry] = struct{}{}

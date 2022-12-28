@@ -56,7 +56,7 @@ type embeddedApp struct {
 
 func (a *embeddedApp) loadConfiguration() {
 	config.RegisterBoolConfigVariable(true, &a.config.enableProcessor, false, "enableProcessor")
-	config.RegisterBoolConfigVariable(types.DEFAULT_REPLAY_ENABLED, &a.config.enableReplay, false, "Replay.enabled")
+	config.RegisterBoolConfigVariable(types.DefaultReplayEnabled, &a.config.enableReplay, false, "Replay.enabled")
 	config.RegisterBoolConfigVariable(true, &a.config.enableRouter, false, "enableRouter")
 	config.RegisterIntConfigVariable(0, &a.config.processorDSLimit, true, 1, "Processor.jobsDB.dsLimit", "JobsDB.dsLimit")
 	config.RegisterIntConfigVariable(0, &a.config.gatewayDSLimit, true, 1, "Gateway.jobsDB.dsLimit", "JobsDB.dsLimit")
@@ -90,7 +90,7 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 	}
 	a.log.Info("Embedded mode: Starting Rudder Core")
 
-	readonlyGatewayDB, readonlyRouterDB, readonlyBatchRouterDB, err := setupReadonlyDBs()
+	readonlyGatewayDB, err := setupReadonlyDBs()
 	if err != nil {
 		return err
 	}
@@ -255,7 +255,7 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 	}
 	defer gatewayDB.Stop()
 
-	gw.SetReadonlyDBs(readonlyGatewayDB, readonlyRouterDB, readonlyBatchRouterDB)
+	gw.SetReadonlyDB(readonlyGatewayDB)
 	err = gw.Setup(
 		ctx,
 		a.app, backendconfig.DefaultBackendConfig, gatewayDB,
