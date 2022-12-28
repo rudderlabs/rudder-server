@@ -414,8 +414,8 @@ func (trans *HandleT) doPost(ctx context.Context, rawJSON []byte, url string, ta
 		if convErr != nil {
 			transformerAPIVersion = 0
 		}
-		if types.SUPPORTED_TRANSFORMER_API_VERSION != transformerAPIVersion {
-			unexpectedVersionError := fmt.Errorf("incompatible transformer version: Expected: %d Received: %d, URL: %v", types.SUPPORTED_TRANSFORMER_API_VERSION, transformerAPIVersion, url)
+		if types.SupportedTransformerApiVersion != transformerAPIVersion {
+			unexpectedVersionError := fmt.Errorf("incompatible transformer version: Expected: %d Received: %d, URL: %v", types.SupportedTransformerApiVersion, transformerAPIVersion, url)
 			trans.logger.Error(unexpectedVersionError)
 			panic(unexpectedVersionError)
 		}

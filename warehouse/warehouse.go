@@ -2079,16 +2079,9 @@ func Start(ctx context.Context, app app.App) error {
 		reporting := application.Features().Reporting.Setup(backendconfig.DefaultBackendConfig)
 
 		g.Go(misc.WithBugsnagForWarehouse(func() error {
-			reporting.AddClient(ctx, types.Config{ConnInfo: psqlInfo, ClientName: types.WAREHOUSE_REPORTING_CLIENT})
+			reporting.AddClient(ctx, types.Config{ConnInfo: psqlInfo, ClientName: types.WarehouseReportingClient})
 			return nil
 		}))
-		region := config.GetString("region", "")
-
-		controlPlaneClient = controlplane.NewClient(
-			backendconfig.GetConfigBackendURL(),
-			backendconfig.DefaultBackendConfig.Identity(),
-			controlplane.WithRegion(region),
-		)
 	}
 
 	if isStandAlone() && isMaster() {
@@ -2099,7 +2092,7 @@ func Start(ctx context.Context, app app.App) error {
 			backendconfig.DefaultBackendConfig.WaitForConfig(ctx)
 
 			c := controlplane.NewClient(
-				config.GetString("CONFIG_BACKEND_URL", "https://api.rudderstack.com"),
+				backendconfig.GetConfigBackendURL(),
 				backendconfig.DefaultBackendConfig.Identity(),
 			)
 
@@ -2124,6 +2117,14 @@ func Start(ctx context.Context, app app.App) error {
 		pkgLogger.Infof("[WH]: Starting warehouse master...")
 
 		backendconfig.DefaultBackendConfig.WaitForConfig(ctx)
+
+		region := config.GetString("region", "")
+
+		controlPlaneClient = controlplane.NewClient(
+			backendconfig.GetConfigBackendURL(),
+			backendconfig.DefaultBackendConfig.Identity(),
+			controlplane.WithRegion(region),
+		)
 
 		tenantManager = &multitenant.Manager{
 			BackendConfig: backendconfig.DefaultBackendConfig,
