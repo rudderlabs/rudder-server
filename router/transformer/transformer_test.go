@@ -354,7 +354,7 @@ func TestTransformNoValidationErrors(t *testing.T) {
 		{JobMetadataArray: []types.JobMetadataT{{JobID: 3}}, StatusCode: http.StatusOK},
 	}
 	svr := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Add(apiVersionHeader, strconv.Itoa(utilTypes.SUPPORTED_TRANSFORMER_API_VERSION))
+		w.Header().Add(apiVersionHeader, strconv.Itoa(utilTypes.SupportedTransformerApiVersion))
 		b, err := json.Marshal(expectedTransformerResponse)
 		require.NoError(t, err)
 		_, err = w.Write(b)
@@ -387,7 +387,7 @@ func TestTransformValidationUnmarshallingError(t *testing.T) {
 		{JobMetadataArray: []types.JobMetadataT{{JobID: 3}}, StatusCode: http.StatusInternalServerError, Error: expectedErrorTxt},
 	}
 	svr := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Add(apiVersionHeader, strconv.Itoa(utilTypes.SUPPORTED_TRANSFORMER_API_VERSION))
+		w.Header().Add(apiVersionHeader, strconv.Itoa(utilTypes.SupportedTransformerApiVersion))
 		_, err := w.Write([]byte("invalid json"))
 		require.NoError(t, err)
 	}))
@@ -425,7 +425,7 @@ func TestTransformValidationInOutMismatchError(t *testing.T) {
 		{JobMetadataArray: []types.JobMetadataT{{JobID: 3}}},
 	}
 	svr := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Add(apiVersionHeader, strconv.Itoa(utilTypes.SUPPORTED_TRANSFORMER_API_VERSION))
+		w.Header().Add(apiVersionHeader, strconv.Itoa(utilTypes.SupportedTransformerApiVersion))
 		b, err := json.Marshal(serverResponse)
 		require.NoError(t, err)
 		_, err = w.Write(b)
@@ -464,7 +464,7 @@ func TestTransformValidationJobIDMismatchError(t *testing.T) {
 		{JobMetadataArray: []types.JobMetadataT{{JobID: 2}}},
 	}
 	svr := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Add(apiVersionHeader, strconv.Itoa(utilTypes.SUPPORTED_TRANSFORMER_API_VERSION))
+		w.Header().Add(apiVersionHeader, strconv.Itoa(utilTypes.SupportedTransformerApiVersion))
 		b, err := json.Marshal(serverResponse)
 		require.NoError(t, err)
 		_, err = w.Write(b)

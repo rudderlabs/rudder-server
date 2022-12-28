@@ -1364,7 +1364,7 @@ func (job *UploadJobT) setUploadStatus(statusOpts UploadStatusOpts) (err error) 
 			return err
 		}
 
-		if config.GetBool("Reporting.enabled", types.DEFAULT_REPORTING_ENABLED) {
+		if config.GetBool("Reporting.enabled", types.DefaultReportingEnabled) {
 			application.Features().Reporting.GetReportingInstance().Report([]*types.PUReportedMetric{&statusOpts.ReportingMetric}, txn)
 		}
 		err = txn.Commit()
@@ -1640,7 +1640,7 @@ func (job *UploadJobT) setUploadError(statusError error, state string) (string, 
 			},
 		})
 	}
-	if config.GetBool("Reporting.enabled", types.DEFAULT_REPORTING_ENABLED) {
+	if config.GetBool("Reporting.enabled", types.DefaultReportingEnabled) {
 		application.Features().Reporting.GetReportingInstance().Report(reportingMetrics, txn)
 	}
 	err = txn.Commit()

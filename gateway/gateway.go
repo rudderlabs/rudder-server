@@ -36,9 +36,7 @@ import (
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/middleware"
 	ratelimiter "github.com/rudderlabs/rudder-server/rate-limiter"
-	"github.com/rudderlabs/rudder-server/router"
 	"github.com/rudderlabs/rudder-server/rruntime"
-	recovery "github.com/rudderlabs/rudder-server/services/db"
 	sourcedebugger "github.com/rudderlabs/rudder-server/services/debugger/source"
 	"github.com/rudderlabs/rudder-server/services/diagnostics"
 	"github.com/rudderlabs/rudder-server/services/rsources"
@@ -48,7 +46,6 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/types"
-	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
 /*
@@ -131,6 +128,11 @@ type batchUserWorkerBatchRequestT struct {
 	batchUserWorkerBatchRequest []*userWorkerBatchRequestT
 }
 
+type sourceDebugger struct {
+	data     []byte
+	writeKey string
+}
+
 // Basic worker unit that works on incoming webRequests.
 //
 // Has three channels used to communicate between the two goroutines each worker runs.
@@ -172,23 +174,23 @@ type HandleT struct {
 	trackSuccessCount int
 	trackFailureCount int
 
-	webRequestBatchCount                                       uint64
-	userWebRequestWorkers                                      []*userWebRequestWorkerT
-	webhookHandler                                             *webhook.HandleT
-	suppressUserHandler                                        types.UserSuppression
-	eventSchemaHandler                                         types.EventSchemasI
-	versionHandler                                             func(w http.ResponseWriter, r *http.Request)
-	logger                                                     logger.Logger
-	rrh                                                        *RegularRequestHandler
-	irh                                                        *ImportRequestHandler
-	readonlyGatewayDB, readonlyRouterDB, readonlyBatchRouterDB jobsdb.ReadonlyJobsDB
-	netHandle                                                  *http.Client
-	httpTimeout                                                time.Duration
-	httpWebServer                                              *http.Server
-	backgroundCancel                                           context.CancelFunc
-	backgroundWait                                             func() error
-	rsourcesService                                            rsources.JobService
-	whProxy                                                    http.Handler
+	webRequestBatchCount  uint64
+	userWebRequestWorkers []*userWebRequestWorkerT
+	webhookHandler        *webhook.HandleT
+	suppressUserHandler   types.UserSuppression
+	eventSchemaHandler    types.EventSchemasI
+	versionHandler        func(w http.ResponseWriter, r *http.Request)
+	logger                logger.Logger
+	rrh                   *RegularRequestHandler
+	irh                   *ImportRequestHandler
+	readonlyGatewayDB     jobsdb.ReadonlyJobsDB
+	netHandle             *http.Client
+	httpTimeout           time.Duration
+	httpWebServer         *http.Server
+	backgroundCancel      context.CancelFunc
+	backgroundWait        func() error
+	rsourcesService       rsources.JobService
+	whProxy               http.Handler
 }
 
 func (gateway *HandleT) updateSourceStats(sourceStats map[string]int, bucket string, sourceTagMap map[string]map[string]string) {
@@ -462,7 +464,7 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 		var preDbStoreCount int
 		// Saving the event data read from req.request.Body to the splice.
 		// Using this to send event schema to the config backend.
-		var eventBatchesToRecord []string
+		var eventBatchesToRecord []sourceDebugger
 		userWebRequestWorker.batchTimeStat.Start()
 		for _, req := range breq.batchRequest {
 			writeKey := req.writeKey
@@ -635,7 +637,7 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 			body, _ = sjson.SetBytes(body, "requestIP", ipAddr)
 			body, _ = sjson.SetBytes(body, "writeKey", writeKey)
 			body, _ = sjson.SetBytes(body, "receivedAt", time.Now().Format(misc.RFC3339Milli))
-			eventBatchesToRecord = append(eventBatchesToRecord, string(body))
+			eventBatchesToRecord = append(eventBatchesToRecord, sourceDebugger{data: body, writeKey: writeKey})
 			sourcesJobRunID := gjson.GetBytes(body, "batch.0.context.sources.job_run_id").Str   // pick the job_run_id from the first event of batch. We are assuming job_run_id will be same for all events in a batch and the batch is coming from rudder-sources
 			sourcesTaskRunID := gjson.GetBytes(body, "batch.0.context.sources.task_run_id").Str // pick the task_run_id from the first event of batch. We are assuming task_run_id will be same for all events in a batch and the batch is coming from rudder-sources
 			id := uuid.New()
@@ -695,8 +697,7 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 		}
 		// Sending events to config backend
 		for _, eventBatch := range eventBatchesToRecord {
-			writeKey := gjson.Get(eventBatch, "writeKey").Str
-			sourcedebugger.RecordEvent(writeKey, eventBatch)
+			sourcedebugger.RecordEvent(eventBatch.writeKey, eventBatch.data)
 		}
 
 		userWebRequestWorker.batchTimeStat.End()
@@ -850,131 +851,6 @@ func (gateway *HandleT) beaconBatchHandler(w http.ResponseWriter, r *http.Reques
 	gateway.beaconHandler(w, r, "batch")
 }
 
-type pendingEventsRequestPayload struct {
-	SourceID      string `json:"source_id"`
-	DestinationID string `json:"destination_id"`
-	JobRunID      string `json:"job_run_id"`
-}
-
-func (gateway *HandleT) pendingEventsHandler(w http.ResponseWriter, r *http.Request) {
-	// Force return that there are pending
-	if config.GetBool("Gateway.DisablePendingEvents", false) {
-		_, _ = w.Write([]byte(`{ "pending_events": 1 }`))
-		return
-	}
-
-	gateway.logger.LogRequest(r)
-	atomic.AddUint64(&gateway.recvCount, 1)
-	var errorMessage string
-
-	if !recovery.IsNormalMode() {
-		errorMessage = "server not in normal mode"
-		defer http.Error(w, errorMessage, 500)
-		gateway.logger.Info(fmt.Sprintf("IP: %s -- %s -- Response: 500, %s", misc.GetIPFromReq(r), r.URL.Path, errorMessage))
-		return
-	}
-
-	defer func() {
-		if errorMessage != "" {
-			gateway.logger.Info(fmt.Sprintf("IP: %s -- %s -- Response: 400, %s", misc.GetIPFromReq(r), r.URL.Path, errorMessage))
-			http.Error(w, errorMessage, 400)
-		}
-	}()
-
-	payload, _, err := gateway.getPayloadAndWriteKey(w, r, "pending-events")
-	if err != nil {
-		errorMessage = err.Error()
-		return
-	}
-
-	if !gjson.ValidBytes(payload) {
-		errorMessage = response.GetStatus(response.InvalidJSON)
-		return
-	}
-
-	var reqPayload pendingEventsRequestPayload
-	err = json.Unmarshal(payload, &reqPayload)
-	if err != nil {
-		errorMessage = err.Error()
-		return
-	}
-
-	if reqPayload.SourceID == "" {
-		errorMessage = "Empty source id"
-		return
-	}
-
-	gwParameterFilters := []jobsdb.ParameterFilterT{
-		{
-			Name:     "source_id",
-			Value:    reqPayload.SourceID,
-			Optional: false,
-		},
-	}
-
-	var rtParameterFilters []jobsdb.ParameterFilterT
-	if reqPayload.DestinationID == "" {
-		rtParameterFilters = gwParameterFilters
-	} else {
-		rtParameterFilters = []jobsdb.ParameterFilterT{
-			{
-				Name:     "source_id",
-				Value:    reqPayload.SourceID,
-				Optional: false,
-			},
-			{
-				Name:     "destination_id",
-				Value:    reqPayload.DestinationID,
-				Optional: false,
-			},
-		}
-	}
-	if reqPayload.JobRunID != "" {
-		jobRunIDParam := jobsdb.ParameterFilterT{
-			Name:     "source_job_run_id",
-			Value:    reqPayload.JobRunID,
-			Optional: false,
-		}
-		gwParameterFilters = append(gwParameterFilters, jobRunIDParam)
-		rtParameterFilters = append(rtParameterFilters, jobRunIDParam)
-	}
-
-	var excludeGateway bool
-	excludeGatewayStr := r.URL.Query().Get("exclude_gateway")
-	if excludeGatewayStr != "" {
-		val, err := strconv.ParseBool(excludeGatewayStr)
-		if err == nil {
-			excludeGateway = val
-		}
-	}
-
-	ctx, cancel := context.WithTimeout(r.Context(), WriteTimeout)
-	defer cancel()
-
-	var pending bool
-	if !excludeGateway {
-		pending, err = gateway.readonlyGatewayDB.HavePendingJobs(ctx, []string{CustomVal}, -1, gwParameterFilters)
-		if err != nil || pending {
-			_, _ = w.Write([]byte(`{ "pending_events": 1 }`))
-			return
-		}
-	}
-
-	pending, err = gateway.readonlyRouterDB.HavePendingJobs(ctx, nil, -1, rtParameterFilters)
-	if err != nil || pending {
-		_, _ = w.Write([]byte(`{ "pending_events": 1 }`))
-		return
-	}
-
-	pending, err = gateway.readonlyBatchRouterDB.HavePendingJobs(ctx, nil, -1, rtParameterFilters)
-	if err != nil || pending {
-		_, _ = w.Write([]byte(`{ "pending_events": 1 }`))
-		return
-	}
-
-	_, _ = w.Write([]byte(fmt.Sprintf("{ \"pending_events\": %d }", getIntResponseFromBool(gateway.getWarehousePending(payload)))))
-}
-
 func warehouseHandler(w http.ResponseWriter, r *http.Request) {
 	origin, err := url.Parse(misc.GetWarehouseURL())
 	if err != nil {
@@ -987,113 +863,6 @@ func warehouseHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	proxy := &httputil.ReverseProxy{Director: director}
 	proxy.ServeHTTP(w, r)
-}
-
-func getIntResponseFromBool(resp bool) int {
-	if resp {
-		return 1
-	}
-	return 0
-}
-
-func (gateway *HandleT) getWarehousePending(payload []byte) bool {
-	uri := fmt.Sprintf(`%s/v1/warehouse/pending-events?triggerUpload=true`, misc.GetWarehouseURL())
-	resp, err := gateway.netHandle.Post(uri, "application/json; charset=utf-8",
-		bytes.NewBuffer(payload))
-	if err != nil {
-		return false
-	}
-
-	defer func() { rs_httputil.CloseResponse(resp) }()
-
-	var whPendingResponse warehouseutils.PendingEventsResponseT
-	respData, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return false
-	}
-
-	err = json.Unmarshal(respData, &whPendingResponse)
-	if err != nil {
-		return false
-	}
-
-	return whPendingResponse.PendingEvents
-}
-
-type failedEventsRequestPayload struct {
-	TaskRunID string `json:"task_run_id"`
-}
-
-func (gateway *HandleT) fetchFailedEventsHandler(w http.ResponseWriter, r *http.Request) {
-	gateway.failedEventsHandler(w, r, "fetch")
-}
-
-func (gateway *HandleT) clearFailedEventsHandler(w http.ResponseWriter, r *http.Request) {
-	gateway.failedEventsHandler(w, r, "clear")
-}
-
-func (gateway *HandleT) failedEventsHandler(w http.ResponseWriter, r *http.Request, reqType string) {
-	gateway.logger.LogRequest(r)
-	atomic.AddUint64(&gateway.recvCount, 1)
-
-	if !recovery.IsNormalMode() {
-		errorMessage := "server not in normal mode"
-		defer http.Error(w, errorMessage, 500)
-		gateway.logger.Info(fmt.Sprintf("IP: %s -- %s -- Response: 500, %s", misc.GetIPFromReq(r), r.URL.Path, errorMessage))
-		return
-	}
-
-	var err error
-	var payload []byte
-	defer func() {
-		if err != nil {
-			gateway.logger.Debug(err.Error())
-			http.Error(w, err.Error(), 400)
-		}
-	}()
-
-	payload, _, err = gateway.getPayloadAndWriteKey(w, r, reqType)
-	if err != nil {
-		return
-	}
-
-	if !gjson.ValidBytes(payload) {
-		err = errors.New(response.GetStatus(response.InvalidJSON))
-		return
-	}
-
-	var reqPayload failedEventsRequestPayload
-	err = json.Unmarshal(payload, &reqPayload)
-	if err != nil {
-		return
-	}
-	if reqPayload.TaskRunID == "" {
-		err = errors.New("empty task run id")
-		return
-	}
-	var resp []byte
-	switch reqType {
-	case "fetch":
-		failedEvents := router.GetFailedEventsManager().FetchFailedRecordIDs(reqPayload.TaskRunID)
-		failedMsgIDsByDestinationID := make(map[string][]interface{})
-		for _, failedEvent := range failedEvents {
-			if _, ok := failedMsgIDsByDestinationID[failedEvent.DestinationID]; !ok {
-				failedMsgIDsByDestinationID[failedEvent.DestinationID] = []interface{}{}
-			}
-			failedMsgIDsByDestinationID[failedEvent.DestinationID] = append(failedMsgIDsByDestinationID[failedEvent.DestinationID], failedEvent.RecordID)
-		}
-
-		resp, err = json.Marshal(failedMsgIDsByDestinationID)
-		if err != nil {
-			return
-		}
-
-	case "clear":
-		router.GetFailedEventsManager().DropFailedRecordIDs(reqPayload.TaskRunID)
-		resp = []byte("OK")
-	}
-
-	_, _ = w.Write(resp)
 }
 
 // ProcessRequest throws a webRequest into the queue and waits for the response before returning
@@ -1479,10 +1248,7 @@ func (gateway *HandleT) StartWebHandler(ctx context.Context) error {
 		srvMux.HandleFunc("/schemas/event-models/json-schemas", WithContentType("application/json; charset=utf-8", gateway.eventSchemaWebHandler(gateway.eventSchemaHandler.GetJsonSchemas))).Methods("GET")
 	}
 
-	srvMux.HandleFunc("/v1/pending-events", WithContentType("application/json; charset=utf-8", gateway.pendingEventsHandler)).Methods("POST")
-	srvMux.HandleFunc("/v1/failed-events", WithContentType("application/json; charset=utf-8", gateway.fetchFailedEventsHandler)).Methods("POST")
 	srvMux.HandleFunc("/v1/warehouse/pending-events", gateway.whProxy.ServeHTTP).Methods("POST")
-	srvMux.HandleFunc("/v1/clear-failed-events", gateway.clearFailedEventsHandler).Methods("POST")
 
 	// rudder-sources new APIs
 	rsourcesHandler := rsources_http.NewHandler(
@@ -1525,8 +1291,6 @@ func (gateway *HandleT) StartAdminHandler(ctx context.Context) error {
 		middleware.StatMiddleware(ctx, srvMux, stats.Default, component),
 		middleware.LimitConcurrentRequests(maxConcurrentRequests),
 	)
-	srvMux.HandleFunc("/v1/pending-events", gateway.pendingEventsHandler).Methods("POST")
-
 	srv := &http.Server{
 		Addr:    ":" + strconv.Itoa(adminWebPort),
 		Handler: bugsnag.Handler(srvMux),
@@ -1620,10 +1384,8 @@ func (*HandleT) GetWebhookSourceDefName(writeKey string) (name string, ok bool) 
 	return
 }
 
-func (gateway *HandleT) SetReadonlyDBs(readonlyGatewayDB, readonlyRouterDB, readonlyBatchRouterDB jobsdb.ReadonlyJobsDB) {
+func (gateway *HandleT) SetReadonlyDB(readonlyGatewayDB jobsdb.ReadonlyJobsDB) {
 	gateway.readonlyGatewayDB = readonlyGatewayDB
-	gateway.readonlyRouterDB = readonlyRouterDB
-	gateway.readonlyBatchRouterDB = readonlyBatchRouterDB
 }
 
 /*

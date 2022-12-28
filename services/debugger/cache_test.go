@@ -13,7 +13,7 @@ var _ = Describe("cache", func() {
 		testValue := []byte("test_value")
 
 		It("Cache init", func() {
-			var c Cache
+			var c Cache[[]byte]
 			c.init()
 			Expect(c.Size).NotTo(Equal(0))
 			Expect(c.KeyTTL).NotTo(Equal(0))
@@ -21,7 +21,7 @@ var _ = Describe("cache", func() {
 		})
 
 		It("Cache update", func() {
-			var c Cache
+			var c Cache[[]byte]
 			c.Update(testKey, testValue)
 			Expect(len(c.cacheMap)).To(Equal(1))
 			Expect(len(c.cacheMap[testKey].data)).To(Equal(1))
@@ -29,7 +29,7 @@ var _ = Describe("cache", func() {
 		})
 
 		It("Cache timeout", func() {
-			c := Cache{
+			c := Cache[[]byte]{
 				KeyTTL:      10 * time.Millisecond,
 				CleanupFreq: 10 * time.Millisecond,
 			}
@@ -41,7 +41,7 @@ var _ = Describe("cache", func() {
 		})
 
 		It("Cache readAndPopData", func() {
-			var c Cache
+			var c Cache[[]byte]
 			c.Update(testKey, testValue)
 			v := c.ReadAndPopData(testKey)
 			Expect(v).To(Equal([][]byte{testValue}))
@@ -49,7 +49,7 @@ var _ = Describe("cache", func() {
 		})
 
 		It("Cache data store limit", func() {
-			c := Cache{
+			c := Cache[[]byte]{
 				Size: 2,
 			}
 			testValue2 := []byte("test_value2")
