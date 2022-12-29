@@ -291,16 +291,17 @@ func (trans *HandleT) request(ctx context.Context, url string, data []Transforme
 		rawJSON []byte
 		err     error
 	)
+	dataCopy := make([]TransformerEventT, len(data))
+	copy(dataCopy, data)
+	trans.logger.Infof("Calling transformer with url: %s and data: %v", url, data)
+	rawJSON, err = json.Marshal(dataCopy)
 
-	rawJSON, err = json.Marshal(data)
-	// trace.WithRegion(ctx, "marshal", func() {
-	// })
 	trace.Logf(ctx, "marshal", "request raw body size: %d", len(rawJSON))
 	if err != nil {
 		panic(err)
 	}
 
-	if len(data) == 0 {
+	if len(dataCopy) == 0 {
 		return nil
 	}
 
