@@ -3,7 +3,6 @@ package embeddedcache
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/rudderlabs/rudder-server/services/debugger/cache"
 	"os"
 	"sync"
 	"time"
@@ -26,6 +25,7 @@ func (e *EmbeddedCache[E]) loadCacheConfig() {
 	if e.cleanupFreq == 0 {
 		config.RegisterDurationConfigVariable(30, &e.cleanupFreq, true, time.Second, "LiveEvent.cache.clearFreq") // default clearFreq is 15 seconds
 	}
+	e.logger = logger.NewLogger().Child("embeddedcache")
 }
 
 /*
@@ -37,6 +37,7 @@ type EmbeddedCache[E any] struct {
 	once        sync.Once
 	db          *badger.DB
 	dbL         sync.RWMutex
+	logger      logger.Logger
 }
 
 type badgerLogger struct {
@@ -110,7 +111,7 @@ func (e *EmbeddedCache[E]) init() {
 		badgerPathName := "/badgerdbv3"
 		tmpDirPath, err := misc.CreateTMPDIR()
 		if err != nil {
-			cache.pkgLogger.Errorf("Unable to create tmp directory: %v", err)
+			e.logger.Errorf("Unable to create tmp directory: %v", err)
 			return
 		}
 		path := fmt.Sprintf("%s%s", tmpDirPath, badgerPathName)
@@ -123,7 +124,7 @@ func (e *EmbeddedCache[E]) init() {
 
 		e.db, err = badger.Open(opts)
 		if err != nil {
-			cache.pkgLogger.Errorf("Error while opening badgerDB: %v", err)
+			e.logger.Errorf("Error while opening badgerDB: %v", err)
 			return
 		}
 		rruntime.Go(func() {
