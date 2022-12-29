@@ -160,5 +160,4 @@ func keyPrefixValue[E any](key string, value E, limiter int) ([]byte, []byte) {
 
 func (e *EmbeddedCache[E]) stop() error {
 	return e.db.Close()
-
 }

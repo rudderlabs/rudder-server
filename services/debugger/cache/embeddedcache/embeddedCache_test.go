@@ -46,6 +46,5 @@ var _ = Describe("cache", Ordered, func() {
 			assert.ElementsMatch(GinkgoT(), v, [][]byte{testValue1, testValue2})
 			Eventually(func() int { return len(e.ReadAndPopData(testKey)) }, 6*time.Second).Should(Equal(0))
 		})
-
 	})
 })
