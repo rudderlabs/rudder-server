@@ -172,8 +172,8 @@ func (customManager *CustomManagerT) SendData(jsonData json.RawMessage, destID s
 		if err != nil {
 			return 400, fmt.Sprintf("[CDM %s] Unable to create client for %s %s", customManager.destType, destID, err.Error())
 		}
-		clientLock.RLock()
 		customDestination = customManager.client[destID]
+		clientLock.RLock()
 	}
 	clientLock.RUnlock()
 
