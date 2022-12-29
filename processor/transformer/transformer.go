@@ -293,7 +293,6 @@ func (trans *HandleT) request(ctx context.Context, url string, data []Transforme
 	)
 	dataCopy := make([]TransformerEventT, len(data))
 	copy(dataCopy, data)
-	trans.logger.Infof("Calling transformer with url: %s and data: %v", url, data)
 	rawJSON, err = json.Marshal(dataCopy)
 
 	trace.Logf(ctx, "marshal", "request raw body size: %d", len(rawJSON))
