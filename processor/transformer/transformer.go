@@ -292,9 +292,9 @@ func (trans *HandleT) request(ctx context.Context, url string, data []Transforme
 		err     error
 	)
 
-	trace.WithRegion(ctx, "marshal", func() {
-		rawJSON, err = json.Marshal(data)
-	})
+	rawJSON, err = json.Marshal(data)
+	// trace.WithRegion(ctx, "marshal", func() {
+	// })
 	trace.Logf(ctx, "marshal", "request raw body size: %d", len(rawJSON))
 	if err != nil {
 		panic(err)
