@@ -5,6 +5,7 @@ package transformer
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -292,7 +293,7 @@ func (trans *HandleT) request(ctx context.Context, url string, data []Transforme
 	)
 
 	trace.WithRegion(ctx, "marshal", func() {
-		rawJSON, err = jsonfast.Marshal(data)
+		rawJSON, err = json.Marshal(data)
 	})
 	trace.Logf(ctx, "marshal", "request raw body size: %d", len(rawJSON))
 	if err != nil {
