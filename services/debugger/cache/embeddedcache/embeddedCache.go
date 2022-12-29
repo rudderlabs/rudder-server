@@ -3,6 +3,7 @@ package embeddedcache
 import (
 	"encoding/json"
 	"fmt"
+	"math/rand"
 	"os"
 	"sync"
 	"time"
@@ -25,6 +26,9 @@ func (e *EmbeddedCache[E]) loadCacheConfig() {
 	if e.cleanupFreq == 0 {
 		config.RegisterDurationConfigVariable(30, &e.cleanupFreq, true, time.Second, "LiveEvent.cache.clearFreq") // default clearFreq is 15 seconds
 	}
+	if e.limiter == 0 {
+		config.RegisterIntConfigVariable(100, &e.limiter, true, 1, "LiveEvent.cache.limiter")
+	}
 	e.logger = logger.NewLogger().Child("embeddedcache")
 }
 
@@ -34,6 +38,7 @@ key-value pair form the cache which is older than TTL time.
 */
 type EmbeddedCache[E any] struct {
 	cleanupFreq time.Duration // TTL time on badgerDB
+	limiter     int
 	once        sync.Once
 	db          *badger.DB
 	dbL         sync.RWMutex
@@ -57,7 +62,7 @@ func (e *EmbeddedCache[E]) Update(key string, value E) {
 	e.dbL.Lock()
 	defer e.dbL.Unlock()
 	txn := e.db.NewTransaction(true)
-	byteKey, byteVal := keyPrefixValue(key, value)
+	byteKey, byteVal := keyPrefixValue(key, value, e.limiter)
 	entry := badger.NewEntry(byteKey, byteVal).WithTTL(e.cleanupFreq)
 	if err := txn.SetEntry(entry); err == badger.ErrTxnTooBig {
 		err = txn.Commit()
@@ -147,8 +152,13 @@ func (e *EmbeddedCache[E]) gcBadgerDB() {
 	}
 }
 
-func keyPrefixValue[E any](key string, value E) ([]byte, []byte) {
-	prefixedKey := []byte(fmt.Sprintf("%s%s%v", key, delimiter, time.Now().Unix()))
+func keyPrefixValue[E any](key string, value E, limiter int) ([]byte, []byte) {
+	prefixedKey := []byte(fmt.Sprintf("%s%s%v", key, delimiter, rand.Intn(limiter)))
 	valueBytes, _ := json.Marshal(value)
 	return prefixedKey, valueBytes
+}
+
+func (e *EmbeddedCache[E]) stop() error {
+	return e.db.Close()
+
 }
