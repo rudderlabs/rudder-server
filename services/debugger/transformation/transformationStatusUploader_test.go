@@ -14,6 +14,7 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/pubsub"
 	testUtils "github.com/rudderlabs/rudder-server/utils/tests"
+	"github.com/rudderlabs/rudder-server/utils/types"
 	"github.com/tidwall/gjson"
 )
 
@@ -151,11 +152,6 @@ var sampleBackendConfig = backendconfig.ConfigT{
 	},
 }
 
-var faultyData = TransformStatusT{
-	DestinationID: DestinationIDEnabledA,
-	SourceID:      SourceIDEnabled,
-}
-
 type eventDeliveryStatusUploaderContext struct {
 	asyncHelper testUtils.AsyncTestHelper
 	mockCtrl    *gomock.Controller
@@ -196,8 +192,29 @@ var _ = Describe("eventDeliveryStatusUploader", func() {
 		c = &eventDeliveryStatusUploaderContext{}
 		c.Setup()
 		deliveryStatus = TransformStatusT{
-			DestinationID: DestinationIDEnabledA,
-			SourceID:      SourceIDEnabled,
+			DestinationID:    DestinationIDEnabledB,
+			SourceID:         SourceIDEnabled,
+			IsError:          false,
+			TransformationID: "enabled-id",
+			EventBefore: &EventBeforeTransform{
+				ReceivedAt: time.Now().String(),
+				EventName:  "event-name",
+				EventType:  "event-type",
+				Payload:    types.SingularEventT{},
+			},
+			EventsAfter: &EventsAfterTransform{
+				ReceivedAt: time.Now().String(),
+				IsDropped:  false,
+				Error:      "",
+				StatusCode: 200,
+				EventPayloads: []*EventPayloadAfterTransform{
+					{
+						EventName: "event-name",
+						EventType: "event-type",
+						Payload:   types.SingularEventT{},
+					},
+				},
+			},
 		}
 		disableTransformationUploads = false
 	})
@@ -218,7 +235,9 @@ var _ = Describe("eventDeliveryStatusUploader", func() {
 					&TransformationStatusT{
 						Destination: &sampleBackendConfig.Sources[1].Destinations[1],
 						DestID:      sampleBackendConfig.Sources[1].Destinations[1].ID,
-						SourceID:    sampleBackendConfig.Sources[1].ID})
+						SourceID:    sampleBackendConfig.Sources[1].ID,
+					},
+				)
 			}
 			Eventually(eventuallyFunc).Should(BeTrue())
 		})
@@ -229,16 +248,10 @@ var _ = Describe("eventDeliveryStatusUploader", func() {
 			payload = append(payload, &deliveryStatus)
 			rawJSON, err := edsUploader.Transform(payload)
 			Expect(err).To(BeNil())
-			Expect(gjson.GetBytes(rawJSON, `enabled-destination-a.0.eventName`).String()).To(Equal(""))
-			Expect(gjson.GetBytes(rawJSON, `enabled-destination-a.0.eventType`).String()).To(Equal(""))
-		})
-
-		It("sends empty json if transformation fails", func() {
-			var edsUploader TransformationStatusUploader
-			var payload []*TransformStatusT
-			payload = append(payload, &faultyData)
-			_, err := edsUploader.Transform(payload)
-			Expect(err).To(BeNil())
+			Expect(gjson.GetBytes(rawJSON, `payload.0.eventBefore.eventName`).String()).To(Equal("event-name"))
+			Expect(gjson.GetBytes(rawJSON, `payload.0.eventBefore.eventType`).String()).To(Equal("event-type"))
+			Expect(gjson.GetBytes(rawJSON, `payload.0.eventsAfter.payload.0.eventName`).String()).To(Equal("event-name"))
+			Expect(gjson.GetBytes(rawJSON, `payload.0.eventsAfter.payload.0.eventType`).String()).To(Equal("event-type"))
 		})
 	})
 })
