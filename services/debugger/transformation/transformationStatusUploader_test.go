@@ -70,6 +70,8 @@ var sampleBackendConfig = backendconfig.ConfigT{
 					Transformations: []backendconfig.TransformationT{
 						{
 							VersionID: "transformation-version-id",
+							Config:    map[string]interface{}{"eventDelivery": true},
+							ID:        "enabled-id",
 						},
 					},
 				},
@@ -139,6 +141,8 @@ var sampleBackendConfig = backendconfig.ConfigT{
 					Transformations: []backendconfig.TransformationT{
 						{
 							VersionID: "transformation-version-id",
+							Config:    map[string]interface{}{"eventDelivery": true},
+							ID:        "enabled-id",
 						},
 					},
 				},
@@ -208,13 +212,15 @@ var _ = Describe("eventDeliveryStatusUploader", func() {
 			Expect(UploadTransformationStatus(&TransformationStatusT{})).To(BeFalse())
 		})
 
-		It("returns false if destination_id is not in uploadEnabledDestinationIDs", func() {
-			Expect(UploadTransformationStatus(&TransformationStatusT{})).To(BeFalse())
-		})
-
 		It("records events", func() {
-			eventuallyFunc := func() bool { return UploadTransformationStatus(&TransformationStatusT{}) }
-			Eventually(eventuallyFunc).Should(BeFalse())
+			eventuallyFunc := func() bool {
+				return UploadTransformationStatus(
+					&TransformationStatusT{
+						Destination: &sampleBackendConfig.Sources[1].Destinations[1],
+						DestID:      sampleBackendConfig.Sources[1].Destinations[1].ID,
+						SourceID:    sampleBackendConfig.Sources[1].ID})
+			}
+			Eventually(eventuallyFunc).Should(BeTrue())
 		})
 
 		It("transforms payload properly", func() {

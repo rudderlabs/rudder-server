@@ -124,7 +124,7 @@ func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options
 
 	a.log.Info("Clearing DB ", options.ClearDB)
 
-	transformationdebugger.Setup()
+	transformationdebugger.Setup(backendconfig.DefaultBackendConfig)
 	destinationdebugger.Setup(backendconfig.DefaultBackendConfig)
 
 	reportingI := a.app.Features().Reporting.GetReportingInstance()
