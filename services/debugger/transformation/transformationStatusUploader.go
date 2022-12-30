@@ -101,14 +101,14 @@ func IsUploadEnabled(id string) bool {
 }
 
 // Setup initializes this module
-func Setup() {
+func Setup(backendConfig backendconfig.BackendConfig) {
 	url := fmt.Sprintf("%s/dataplane/eventTransformStatus", configBackendURL)
 	transformationStatusUploader := &TransformationStatusUploader{}
 	uploader = debugger.New[*TransformStatusT](url, transformationStatusUploader)
 	uploader.Start()
 
 	rruntime.Go(func() {
-		backendConfigSubscriber()
+		backendConfigSubscriber(backendConfig)
 	})
 }
 
@@ -156,14 +156,14 @@ func updateConfig(config map[string]backendconfig.ConfigT) {
 	configSubscriberLock.Unlock()
 }
 
-func backendConfigSubscriber() {
-	ch := backendconfig.DefaultBackendConfig.Subscribe(context.TODO(), backendconfig.TopicProcessConfig)
+func backendConfigSubscriber(backendConfig backendconfig.BackendConfig) {
+	ch := backendConfig.Subscribe(context.TODO(), backendconfig.TopicProcessConfig)
 	for c := range ch {
 		updateConfig(c.Data.(map[string]backendconfig.ConfigT))
 	}
 }
 
-func UploadTransformationStatus(tStatus *TransformationStatusT) {
+func UploadTransformationStatus(tStatus *TransformationStatusT) bool {
 	defer func() {
 		if r := recover(); r != nil {
 			pkgLogger.Error("Error occurred while uploading transformation statuses to config backend")
@@ -173,7 +173,7 @@ func UploadTransformationStatus(tStatus *TransformationStatusT) {
 
 	// if disableTransformationUploads is true, return;
 	if disableTransformationUploads {
-		return
+		return false
 	}
 
 	for _, transformation := range tStatus.Destination.Transformations {
@@ -188,6 +188,7 @@ func UploadTransformationStatus(tStatus *TransformationStatusT) {
 			transformationCacheMap.Update(transformation.ID, tStatusUpdated)
 		}
 	}
+	return true
 }
 
 func getEventBeforeTransform(singularEvent types.SingularEventT, receivedAt time.Time) *EventBeforeTransform {
