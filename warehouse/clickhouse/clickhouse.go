@@ -492,7 +492,16 @@ func (ch *Handle) castStringToArray(data, dataType string) interface{} {
 		}
 		return dataTime
 	case "array(boolean)":
+		dataInt := make([]int32, 0)
 		dataBool := make([]bool, 0)
+
+		if err := json.Unmarshal([]byte(data), &dataInt); err == nil {
+			for _, value := range dataInt {
+				dataBool = append(dataBool, value != 0)
+			}
+			return dataBool
+		}
+
 		err := json.Unmarshal([]byte(data), &dataBool)
 		if err != nil {
 			ch.logger.Error("Error while unmarshalling data into array of bool: %s", err.Error())
@@ -643,7 +652,8 @@ func (ch *Handle) loadByCopyCommand(tableName string, tableSchemaInUpload wareho
 			'gz'
 		  )
 			settings
-				date_time_input_format = 'best_effort';
+				date_time_input_format = 'best_effort',
+				input_format_csv_arrays_as_nested_csv = 1;
 		`,
 		ch.Namespace,                   // 1
 		tableName,                      // 2
