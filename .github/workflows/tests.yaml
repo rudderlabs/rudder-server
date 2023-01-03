@@ -83,3 +83,6 @@ jobs:
         TEST_KAFKA_AZURE_EVENT_HUBS_CLOUD_CONNECTION_STRING: ${{ secrets.TEST_KAFKA_AZURE_EVENT_HUBS_CLOUD_CONNECTION_STRING }}
       run: make test
     - uses: codecov/codecov-action@v2
+    - name: Coveralls
+      uses: coverallsapp/github-action@master
+
