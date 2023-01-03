@@ -44,7 +44,7 @@ test-with-coverage: test coverage
 
 build: ## Build rudder-server binary
 	$(eval BUILD_OPTIONS = )
-	$(eval BUILD_OPTIONS = $(BUILD_OPTIONS) -race -o rudder-server-with-race)
+	$(eval BUILD_OPTIONS = $(BUILD_OPTIONS) -race -o rudder-server)
 	$(GO) build $(BUILD_OPTIONS) -a -installsuffix cgo -ldflags="$(LDFLAGS)"
 	$(GO) build -o build/wait-for-go/wait-for-go build/wait-for-go/wait-for.go
 	$(GO) build -o build/regulation-worker ./regulation-worker/cmd/
