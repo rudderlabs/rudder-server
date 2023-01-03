@@ -6,6 +6,7 @@ import (
 	"net/http"
 
 	"github.com/rudderlabs/rudder-server/config"
+	"github.com/rudderlabs/rudder-server/router/throttler"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/types/deployment"
 
@@ -27,7 +28,7 @@ import (
 	destinationdebugger "github.com/rudderlabs/rudder-server/services/debugger/destination"
 	sourcedebugger "github.com/rudderlabs/rudder-server/services/debugger/source"
 	transformationdebugger "github.com/rudderlabs/rudder-server/services/debugger/transformation"
-	fileuploader "github.com/rudderlabs/rudder-server/services/fileuploader"
+	"github.com/rudderlabs/rudder-server/services/fileuploader"
 	"github.com/rudderlabs/rudder-server/services/multitenant"
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/services/transientsource"
@@ -55,7 +56,7 @@ type embeddedApp struct {
 
 func (a *embeddedApp) loadConfiguration() {
 	config.RegisterBoolConfigVariable(true, &a.config.enableProcessor, false, "enableProcessor")
-	config.RegisterBoolConfigVariable(types.DEFAULT_REPLAY_ENABLED, &a.config.enableReplay, false, "Replay.enabled")
+	config.RegisterBoolConfigVariable(types.DefaultReplayEnabled, &a.config.enableReplay, false, "Replay.enabled")
 	config.RegisterBoolConfigVariable(true, &a.config.enableRouter, false, "enableRouter")
 	config.RegisterIntConfigVariable(0, &a.config.processorDSLimit, true, 1, "Processor.jobsDB.dsLimit", "JobsDB.dsLimit")
 	config.RegisterIntConfigVariable(0, &a.config.gatewayDSLimit, true, 1, "Gateway.jobsDB.dsLimit", "JobsDB.dsLimit")
@@ -89,7 +90,7 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 	}
 	a.log.Info("Embedded mode: Starting Rudder Core")
 
-	readonlyGatewayDB, readonlyRouterDB, readonlyBatchRouterDB, err := setupReadonlyDBs()
+	readonlyGatewayDB, err := setupReadonlyDBs()
 	if err != nil {
 		return err
 	}
@@ -201,6 +202,10 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 	}
 
 	proc := processor.New(ctx, &options.ClearDB, gwDBForProcessor, routerDB, batchRouterDB, errDB, multitenantStats, reportingI, transientSources, fileUploaderProvider, rsourcesService)
+	throttlerFactory, err := throttler.New(stats.Default)
+	if err != nil {
+		return fmt.Errorf("failed to create throttler factory: %w", err)
+	}
 	rtFactory := &router.Factory{
 		Reporting:        reportingI,
 		Multitenant:      multitenantStats,
@@ -209,6 +214,7 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 		ProcErrorDB:      errDB,
 		TransientSources: transientSources,
 		RsourcesService:  rsourcesService,
+		ThrottlerFactory: throttlerFactory,
 	}
 	brtFactory := &batchrouter.Factory{
 		Reporting:        reportingI,
@@ -249,7 +255,7 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 	}
 	defer gatewayDB.Stop()
 
-	gw.SetReadonlyDBs(readonlyGatewayDB, readonlyRouterDB, readonlyBatchRouterDB)
+	gw.SetReadonlyDB(readonlyGatewayDB)
 	err = gw.Setup(
 		ctx,
 		a.app, backendconfig.DefaultBackendConfig, gatewayDB,

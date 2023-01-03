@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gofrs/uuid"
+	"github.com/google/uuid"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 )
@@ -55,7 +55,7 @@ var dummySingularEvent map[string]interface{} = map[string]interface{}{
 }
 
 var dummyBatchEvent jobsdb.JobT = jobsdb.JobT{
-	UUID:          uuid.Must(uuid.NewV4()),
+	UUID:          uuid.New(),
 	JobID:         1,
 	UserID:        "anon_id",
 	CreatedAt:     time.Now(),

@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"testing"
 
-	uuid "github.com/gofrs/uuid"
 	"github.com/golang/mock/gomock"
+	uuid "github.com/google/uuid"
 	jsoniter "github.com/json-iterator/go"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -459,7 +459,7 @@ func newJob(id int64, params jobParams) *jobsdb.JobT { // skipcq: CRT-P0003
 	Expect(err).To(BeNil())
 	return &jobsdb.JobT{
 		JobID:      id,
-		UUID:       uuid.Must(uuid.NewV4()),
+		UUID:       uuid.New(),
 		Parameters: p,
 	}
 }

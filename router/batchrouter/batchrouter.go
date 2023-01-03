@@ -23,7 +23,6 @@ import (
 	"github.com/thoas/go-funk"
 	"golang.org/x/sync/errgroup"
 
-	"github.com/rudderlabs/rudder-server/router"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager"
 	"github.com/rudderlabs/rudder-server/router/rterror"
 	destinationConnectionTester "github.com/rudderlabs/rudder-server/services/destination-connection-tester"
@@ -33,7 +32,7 @@ import (
 	"github.com/rudderlabs/rudder-server/services/transientsource"
 	"github.com/rudderlabs/rudder-server/warehouse"
 
-	"github.com/gofrs/uuid"
+	"github.com/google/uuid"
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
 
@@ -47,6 +46,7 @@ import (
 	"github.com/rudderlabs/rudder-server/services/filemanager"
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/bytesize"
+	"github.com/rudderlabs/rudder-server/utils/httputil"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/types"
@@ -624,7 +624,7 @@ func (brt *HandleT) copyJobsToStorage(provider string, batchJobs *BatchJobsT, is
 		localTmpDirName = fmt.Sprintf(`/%s/`, misc.RudderRawDataDestinationLogs)
 	}
 
-	uuid := uuid.Must(uuid.NewV4())
+	uuid := uuid.New()
 	brt.logger.Debugf("BRT: Starting logging to %s", provider)
 
 	tmpDirPath, err := misc.CreateTMPDIR()
@@ -958,7 +958,7 @@ func (brt *HandleT) parseUploadIntervalFromConfig(destinationConfig map[string]i
 
 func (brt *HandleT) asyncStructSetup(sourceID, destinationID string) {
 	localTmpDirName := fmt.Sprintf(`/%s/`, misc.RudderAsyncDestinationLogs)
-	uuid := uuid.Must(uuid.NewV4())
+	uuid := uuid.New()
 
 	tmpDirPath, err := misc.CreateTMPDIR()
 	if err != nil {
@@ -1132,10 +1132,9 @@ func (brt *HandleT) postToWarehouse(batchJobs *BatchJobsT, output StorageUploadO
 		brt.logger.Errorf("BRT: Failed to route staging file URL to warehouse service@%v, error:%v", uri, err)
 		return
 	}
-	defer func() { _ = resp.Body.Close() }()
+	defer func() { httputil.CloseResponse(resp) }()
 
 	if resp.StatusCode == http.StatusOK {
-		_, err = io.Copy(io.Discard, resp.Body)
 		brt.logger.Infof("BRT: Routed successfully staging file URL to warehouse service@%v", uri)
 	} else {
 		body, _ := io.ReadAll(resp.Body)
@@ -1151,7 +1150,6 @@ func (brt *HandleT) setJobStatus(batchJobs *BatchJobsT, isWarehouse bool, errOcc
 		errorResp     []byte
 	)
 	batchRouterWorkspaceJobStatusCount := make(map[string]map[string]int)
-	jobRunIDAbortedEventsMap := make(map[string][]*router.FailedEventRowT)
 	var abortedEvents []*jobsdb.JobT
 	var batchReqMetric batchRequestMetric
 	if errOccurred != nil {
@@ -1234,7 +1232,6 @@ func (brt *HandleT) setJobStatus(batchJobs *BatchJobsT, isWarehouse bool, errOcc
 				job.Parameters = misc.UpdateJSONWithNewKeyVal(job.Parameters, "stage", "batch_router")
 				job.Parameters = misc.UpdateJSONWithNewKeyVal(job.Parameters, "reason", errOccurred.Error())
 				abortedEvents = append(abortedEvents, job)
-				router.PrepareJobRunIDAbortedEventsMap(job.Parameters, jobRunIDAbortedEventsMap)
 				jobState = jobsdb.Aborted.State
 			}
 			if postToWarehouseErr && isWarehouse {
@@ -1244,7 +1241,6 @@ func (brt *HandleT) setJobStatus(batchJobs *BatchJobsT, isWarehouse bool, errOcc
 					job.Parameters = misc.UpdateJSONWithNewKeyVal(job.Parameters, "stage", "batch_router")
 					job.Parameters = misc.UpdateJSONWithNewKeyVal(job.Parameters, "reason", errOccurred.Error())
 					abortedEvents = append(abortedEvents, job)
-					router.PrepareJobRunIDAbortedEventsMap(job.Parameters, jobRunIDAbortedEventsMap)
 					jobState = jobsdb.Aborted.State
 				}
 				warehouseServiceFailedTimeLock.RUnlock()
@@ -1253,7 +1249,6 @@ func (brt *HandleT) setJobStatus(batchJobs *BatchJobsT, isWarehouse bool, errOcc
 			job.Parameters = misc.UpdateJSONWithNewKeyVal(job.Parameters, "stage", "batch_router")
 			job.Parameters = misc.UpdateJSONWithNewKeyVal(job.Parameters, "reason", errOccurred.Error())
 			abortedEvents = append(abortedEvents, job)
-			router.PrepareJobRunIDAbortedEventsMap(job.Parameters, jobRunIDAbortedEventsMap)
 		}
 		attemptNum := job.LastJobStatus.AttemptNum + 1
 		status := jobsdb.JobStatusT{
@@ -1391,10 +1386,6 @@ func (brt *HandleT) setJobStatus(batchJobs *BatchJobsT, isWarehouse bool, errOcc
 				return err
 			}
 
-			// Save msgids of aborted jobs
-			if len(jobRunIDAbortedEventsMap) > 0 {
-				router.GetFailedEventsManager().SaveFailedRecordIDs(jobRunIDAbortedEventsMap, tx.SqlTx())
-			}
 			if brt.reporting != nil && brt.reportingEnabled {
 				brt.reporting.Report(reportMetrics, tx.SqlTx())
 			}
@@ -2092,7 +2083,7 @@ func (brt *HandleT) dedupRawDataDestJobsOnCrash() {
 		if err != nil {
 			panic(err)
 		}
-		jsonPath := fmt.Sprintf("%v%v.json", tmpDirPath+localTmpDirName, fmt.Sprintf("%v.%v", time.Now().Unix(), uuid.Must(uuid.NewV4()).String()))
+		jsonPath := fmt.Sprintf("%v%v.json", tmpDirPath+localTmpDirName, fmt.Sprintf("%v.%v", time.Now().Unix(), uuid.New().String()))
 
 		err = os.MkdirAll(filepath.Dir(jsonPath), os.ModePerm)
 		if err != nil {
@@ -2291,7 +2282,7 @@ func (brt *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB, err
 	brt.fileManagerFactory = filemanager.DefaultFileManagerFactory
 	brt.backendConfig = backendConfig
 	brt.reporting = reporting
-	config.RegisterBoolConfigVariable(types.DEFAULT_REPORTING_ENABLED, &brt.reportingEnabled, false, "Reporting.enabled")
+	config.RegisterBoolConfigVariable(types.DefaultReportingEnabled, &brt.reportingEnabled, false, "Reporting.enabled")
 	brt.logger = pkgLogger.Child(destType)
 	brt.logger.Infof("BRT: Batch Router started: %s", destType)
 
@@ -2301,7 +2292,7 @@ func (brt *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB, err
 	// waiting for reporting client setup
 	if brt.reporting != nil && brt.reportingEnabled {
 		// error is ignored as context.TODO() is passed, err is not expected.
-		_ = brt.reporting.WaitForSetup(context.TODO(), types.CORE_REPORTING_CLIENT)
+		_ = brt.reporting.WaitForSetup(context.TODO(), types.CoreReportingClient)
 	}
 	if brt.warehouseURL == "" {
 		brt.warehouseURL = misc.GetWarehouseURL()

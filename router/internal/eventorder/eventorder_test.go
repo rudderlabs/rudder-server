@@ -3,8 +3,9 @@ package eventorder
 import (
 	"testing"
 
-	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/stretchr/testify/require"
+
+	"github.com/rudderlabs/rudder-server/jobsdb"
 )
 
 func Test_Job_Failed_Scenario(t *testing.T) {
@@ -233,6 +234,31 @@ func Test_Panic_Scenarios(t *testing.T) {
 		}()
 		_ = barrier.StateChanged("user1", 1, jobsdb.Failed.State)
 	}()
+}
+
+func TestBarrier_Leave(t *testing.T) {
+	orderKey := "user1"
+	barrier := NewBarrier(WithConcurrencyLimit(1))
+
+	enter, _ := barrier.Enter(orderKey, 1)
+	require.Truef(t, enter, "job 1 for %s should be accepted since no barrier exists", orderKey)
+
+	require.NoError(t, barrier.StateChanged(orderKey, 1, jobsdb.Failed.State))
+	require.EqualValues(t, 0, barrier.Sync())
+	enter, _ = barrier.Enter(orderKey, 2)
+	require.Falsef(t, enter, "job 2 for %s should not be accepted since job 1 has failed", orderKey)
+
+	require.NoError(t, barrier.StateChanged(orderKey, 1, jobsdb.Aborted.State))
+	require.EqualValues(t, 1, barrier.Sync())
+	enter, _ = barrier.Enter(orderKey, 2)
+	require.Truef(t, enter, "job 2 for %s should be accepted since job 1 was aborted", orderKey)
+
+	enter, _ = barrier.Enter(orderKey, 3)
+	require.Falsef(t, enter, "job 3 for %s should not be accepted since job 2 is running", orderKey)
+
+	barrier.Leave(orderKey, 2)
+	enter, _ = barrier.Enter(orderKey, 3)
+	require.Truef(t, enter, "job 3 for %s should now be accepted since job 2 left", orderKey)
 }
 
 func firstBool(v bool, _ ...interface{}) bool {

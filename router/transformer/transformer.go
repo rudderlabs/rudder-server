@@ -20,6 +20,7 @@ import (
 	"github.com/rudderlabs/rudder-server/router/types"
 	router_utils "github.com/rudderlabs/rudder-server/router/utils"
 	"github.com/rudderlabs/rudder-server/services/stats"
+	"github.com/rudderlabs/rudder-server/utils/httputil"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/sysUtils"
 	utilTypes "github.com/rudderlabs/rudder-server/utils/types"
@@ -167,9 +168,9 @@ func (trans *handle) Transform(transformType string, transformMessage *types.Tra
 		if convErr != nil {
 			transformerAPIVersion = 0
 		}
-		if utilTypes.SUPPORTED_TRANSFORMER_API_VERSION != transformerAPIVersion {
-			trans.logger.Errorf("Incompatible transformer version: Expected: %d Received: %d, URL: %v", utilTypes.SUPPORTED_TRANSFORMER_API_VERSION, transformerAPIVersion, url)
-			panic(fmt.Errorf("Incompatible transformer version: Expected: %d Received: %d, URL: %v", utilTypes.SUPPORTED_TRANSFORMER_API_VERSION, transformerAPIVersion, url))
+		if utilTypes.SupportedTransformerApiVersion != transformerAPIVersion {
+			trans.logger.Errorf("Incompatible transformer version: Expected: %d Received: %d, URL: %v", utilTypes.SupportedTransformerApiVersion, transformerAPIVersion, url)
+			panic(fmt.Errorf("Incompatible transformer version: Expected: %d Received: %d, URL: %v", utilTypes.SupportedTransformerApiVersion, transformerAPIVersion, url))
 		}
 
 		trans.logger.Debugf("[Router Transfomrer] :: output payload : %s", string(respData))
@@ -238,7 +239,7 @@ func (trans *handle) Transform(transformType string, transformMessage *types.Tra
 			destinationJobs = append(destinationJobs, resp)
 		}
 	}
-	resp.Body.Close()
+	func() { httputil.CloseResponse(resp) }()
 
 	return destinationJobs
 }
@@ -385,7 +386,7 @@ func (trans *handle) doProxyRequest(ctx context.Context, proxyReqParams *ProxyRe
 	}
 
 	respData, err = io.ReadAll(resp.Body)
-	defer resp.Body.Close()
+	defer func() { httputil.CloseResponse(resp) }()
 	// error handling while reading from resp.Body
 	if err != nil {
 		respData = []byte(fmt.Sprintf(`failed to read response body, Error:: %+v`, err))

@@ -30,8 +30,10 @@ import (
 	"github.com/rudderlabs/rudder-server/services/filemanager"
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/awsutils"
+	"github.com/rudderlabs/rudder-server/utils/httputil"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
+	"github.com/rudderlabs/rudder-server/warehouse/tunnelling"
 )
 
 const (
@@ -1035,7 +1037,7 @@ func GetRequestWithTimeout(ctx context.Context, url string, timeout time.Duratio
 	var respBody []byte
 	if resp != nil && resp.Body != nil {
 		respBody, _ = io.ReadAll(resp.Body)
-		defer resp.Body.Close()
+		func() { httputil.CloseResponse(resp) }()
 	}
 
 	return respBody, nil
@@ -1059,7 +1061,7 @@ func PostRequestWithTimeout(ctx context.Context, url string, payload []byte, tim
 	var respBody []byte
 	if resp != nil && resp.Body != nil {
 		respBody, _ = io.ReadAll(resp.Body)
-		defer resp.Body.Close()
+		func() { httputil.CloseResponse(resp) }()
 	}
 
 	return respBody, nil
@@ -1097,4 +1099,23 @@ func RandHex() string {
 	var buf [32]byte
 	hex.Encode(buf[:], u[:])
 	return string(buf[:])
+}
+
+func ExtractTunnelInfoFromDestinationConfig(config map[string]interface{}) *tunnelling.TunnelInfo {
+	if tunnelEnabled := ReadAsBool("useSSH", config); !tunnelEnabled {
+		return nil
+	}
+
+	return &tunnelling.TunnelInfo{
+		Config: config,
+	}
+}
+
+func ReadAsBool(key string, config map[string]interface{}) bool {
+	if _, ok := config[key]; ok {
+		if val, ok := config[key].(bool); ok {
+			return val
+		}
+	}
+	return false
 }

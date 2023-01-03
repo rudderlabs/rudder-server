@@ -5,6 +5,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/spf13/cast"
+
 	"github.com/rudderlabs/rudder-server/services/stats"
 )
 
@@ -105,7 +107,7 @@ func (m *Measurement) Gauge(value interface{}) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	m.values = append(m.values, value.(float64))
+	m.values = append(m.values, cast.ToFloat64(value))
 }
 
 // Observe implements stats.Measurement

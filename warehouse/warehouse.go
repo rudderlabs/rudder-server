@@ -28,7 +28,7 @@ import (
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/info"
 	"github.com/rudderlabs/rudder-server/rruntime"
-	"github.com/rudderlabs/rudder-server/services/controlplane/features"
+	"github.com/rudderlabs/rudder-server/services/controlplane"
 	"github.com/rudderlabs/rudder-server/services/db"
 	destinationdebugger "github.com/rudderlabs/rudder-server/services/debugger/destination"
 	"github.com/rudderlabs/rudder-server/services/filemanager"
@@ -42,6 +42,7 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
 	"github.com/rudderlabs/rudder-server/utils/types"
 	"github.com/rudderlabs/rudder-server/warehouse/archive"
+	cpclient "github.com/rudderlabs/rudder-server/warehouse/client/controlplane"
 	"github.com/rudderlabs/rudder-server/warehouse/deltalake"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/api"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
@@ -59,6 +60,7 @@ var (
 	dbHandle                            *sql.DB
 	notifier                            pgnotifier.PgNotifierT
 	tenantManager                       *multitenant.Manager
+	controlPlaneClient                  *controlplane.Client
 	noOfSlaveWorkerRoutines             int
 	uploadFreqInS                       int64
 	stagingFilesSchemaPaginationSize    int
@@ -95,8 +97,9 @@ var (
 	skipDeepEqualSchemas                bool
 	maxParallelJobCreation              int
 	enableJitterForSyncs                bool
-	configBackendURL                    string
 	asyncWh                             *jobs.AsyncJobWhT
+	configBackendURL                    string
+	enableTunnelling                    bool
 )
 
 var (
@@ -146,6 +149,9 @@ type HandleT struct {
 	workspaceBySourceIDs              map[string]string
 	workspaceBySourceIDsLock          sync.RWMutex
 	tenantManager                     multitenant.Manager
+	stats                             stats.Stats
+	Now                               string
+	cpInternalClient                  cpclient.InternalControlPlane
 
 	backgroundCancel context.CancelFunc
 	backgroundGroup  errgroup.Group
@@ -178,6 +184,8 @@ func loadConfig() {
 	port = config.GetInt("WAREHOUSE_JOBS_DB_PORT", 5432)
 	password = config.GetString("WAREHOUSE_JOBS_DB_PASSWORD", "ubuntu") // Reading secrets from
 	sslMode = config.GetString("WAREHOUSE_JOBS_DB_SSL_MODE", "disable")
+	configBackendURL = config.GetString("CONFIG_BACKEND_URL", "api.rudderlabs.com")
+	enableTunnelling = config.GetBool("ENABLE_TUNNELLING", true)
 	config.RegisterIntConfigVariable(10, &warehouseSyncPreFetchCount, true, 1, "Warehouse.warehouseSyncPreFetchCount")
 	config.RegisterIntConfigVariable(100, &stagingFilesSchemaPaginationSize, true, 1, "Warehouse.stagingFilesSchemaPaginationSize")
 	config.RegisterBoolConfigVariable(false, &warehouseSyncFreqIgnore, true, "Warehouse.warehouseSyncFreqIgnore")
@@ -203,7 +211,6 @@ func loadConfig() {
 	config.RegisterDurationConfigVariable(30, &tableCountQueryTimeout, true, time.Second, []string{"Warehouse.tableCountQueryTimeout", "Warehouse.tableCountQueryTimeoutInS"}...)
 
 	appName = misc.DefaultString("rudder-server").OnError(os.Hostname())
-	configBackendURL = config.GetString("CONFIG_BACKEND_URL", "https://api.rudderstack.com")
 }
 
 // get name of the worker (`destID_namespace`) to be stored in map wh.workerChannelMap
@@ -289,22 +296,30 @@ func (wh *HandleT) backendConfigSubscriber(ctx context.Context) {
 		wh.workspaceBySourceIDsLock.Lock()
 		wh.workspaceBySourceIDs = map[string]string{}
 
-		pkgLogger.Infof(`Received updated workspace config`)
+		pkgLogger.Info(`Received updated workspace config`)
 		for workspaceID, wConfig := range config {
 			for _, source := range wConfig.Sources {
 				if _, ok := sourceIDsByWorkspace[workspaceID]; !ok {
 					sourceIDsByWorkspace[workspaceID] = []string{}
 				}
+
 				sourceIDsByWorkspace[workspaceID] = append(sourceIDsByWorkspace[workspaceID], source.ID)
 				wh.workspaceBySourceIDs[source.ID] = workspaceID
 
 				if len(source.Destinations) == 0 {
 					continue
 				}
+
 				for _, destination := range source.Destinations {
+
 					if destination.DestinationDefinition.Name != wh.destType {
 						continue
 					}
+
+					if enableTunnelling {
+						destination = wh.attachSSHTunnellingInfo(ctx, destination)
+					}
+
 					namespace := wh.getNamespace(destination.Config, source, destination, wh.destType)
 					warehouse := warehouseutils.Warehouse{
 						WorkspaceID: workspaceID,
@@ -350,12 +365,57 @@ func (wh *HandleT) backendConfigSubscriber(ctx context.Context) {
 				}
 			}
 		}
+
 		pkgLogger.Infof("Releasing config subscriber lock: %s", wh.destType)
 		wh.workspaceBySourceIDsLock.Unlock()
 		sourceIDsByWorkspaceLock.Unlock()
 		wh.configSubscriberLock.Unlock()
 		wh.initialConfigFetched = true
 	}
+}
+
+func (wh *HandleT) attachSSHTunnellingInfo(
+	ctx context.Context,
+	upstream backendconfig.DestinationT,
+) backendconfig.DestinationT {
+	// at destination level, do we have tunnelling enabled.
+	if tunnelEnabled := warehouseutils.ReadAsBool("useSSH", upstream.Config); !tunnelEnabled {
+		return upstream
+	}
+
+	pkgLogger.Debugf("Fetching ssh keys for destination: %s", upstream.ID)
+	keys, err := wh.cpInternalClient.GetDestinationSSHKeys(ctx, upstream.ID)
+	if err != nil {
+		pkgLogger.Errorf("fetching ssh keys for destination: %s", err.Error())
+		return upstream
+	}
+
+	replica := backendconfig.DestinationT{}
+	if err := DeepCopy(upstream, &replica); err != nil {
+		pkgLogger.Errorf("deep copying the destination: %s failed: %s", upstream.ID, err)
+		return upstream
+	}
+
+	replica.Config["sshPrivateKey"] = keys.PrivateKey
+	return replica
+}
+
+func DeepCopy(src, dest interface{}) error {
+	byt, err := json.Marshal(src)
+	if err != nil {
+		return err
+	}
+
+	return json.Unmarshal(byt, dest)
+}
+
+func GetKeyAsBool(key string, conf map[string]interface{}) bool {
+	if val, ok := conf[key]; ok {
+		if ok := val.(bool); ok {
+			return val.(bool)
+		}
+	}
+	return false
 }
 
 // getNamespace sets namespace name in the following order
@@ -629,12 +689,7 @@ func (wh *HandleT) getLatestUploadStatus(warehouse *warehouseutils.Warehouse) (i
 
 func (wh *HandleT) deleteWaitingUploadJob(jobID int64) {
 	sqlStatement := fmt.Sprintf(`
-		DELETE FROM
-		  %s
-		WHERE
-		  id = %d
-		  AND status = '%s';
-`,
+		DELETE FROM %s WHERE id = %d AND status = '%s'`,
 		warehouseutils.WarehouseUploadsTable,
 		jobID,
 		model.Waiting,
@@ -682,7 +737,7 @@ func (wh *HandleT) createJobs(ctx context.Context, warehouse warehouseutils.Ware
 
 	wh.areBeingEnqueuedLock.Unlock()
 
-	stagingFilesFetchStat := stats.Default.NewTaggedStat("wh_scheduler.pending_staging_files", stats.TimerType, stats.Tags{
+	stagingFilesFetchStat := wh.stats.NewTaggedStat("wh_scheduler.pending_staging_files", stats.TimerType, stats.Tags{
 		"workspaceId":   warehouse.WorkspaceID,
 		"destinationID": warehouse.Destination.ID,
 		"destType":      warehouse.Destination.DestinationDefinition.Name,
@@ -700,7 +755,7 @@ func (wh *HandleT) createJobs(ctx context.Context, warehouse warehouseutils.Ware
 		return nil
 	}
 
-	uploadJobCreationStat := stats.Default.NewTaggedStat("wh_scheduler.create_upload_jobs", stats.TimerType, stats.Tags{
+	uploadJobCreationStat := wh.stats.NewTaggedStat("wh_scheduler.create_upload_jobs", stats.TimerType, stats.Tags{
 		"workspaceId":   warehouse.WorkspaceID,
 		"destinationID": warehouse.Destination.ID,
 		"destType":      warehouse.Destination.DestinationDefinition.Name,
@@ -732,7 +787,7 @@ func (wh *HandleT) mainLoop(ctx context.Context) {
 		wg := sync.WaitGroup{}
 		wg.Add(len(wh.warehouses))
 
-		whTotalSchedulingStats := stats.Default.NewStat("wh_scheduler.total_scheduling_time", stats.TimerType)
+		whTotalSchedulingStats := wh.stats.NewStat("wh_scheduler.total_scheduling_time", stats.TimerType)
 		whTotalSchedulingStats.Start()
 
 		for _, warehouse := range wh.warehouses {
@@ -755,7 +810,7 @@ func (wh *HandleT) mainLoop(ctx context.Context) {
 		wg.Wait()
 
 		whTotalSchedulingStats.End()
-		stats.Default.NewStat("wh_scheduler.warehouse_length", stats.CountType).Count(len(wh.warehouses)) // Correlation between number of warehouses and scheduling time.
+		wh.stats.NewStat("wh_scheduler.warehouse_length", stats.CountType).Count(len(wh.warehouses)) // Correlation between number of warehouses and scheduling time.
 		select {
 		case <-ctx.Done():
 			return
@@ -764,73 +819,182 @@ func (wh *HandleT) mainLoop(ctx context.Context) {
 	}
 }
 
+func (wh *HandleT) processingStats(ctx context.Context, availableWorkers int, skipIdentifiers []string, skipIdentifiersSQL string) error {
+	var (
+		pendingJobs             int
+		query                   string
+		pickupLagInSeconds      float64
+		pickupWaitTimeInSeconds float64
+		err                     error
+		Now                     = "NOW()"
+		degradedWorkspaces      = tenantManager.DegradedWorkspaces()
+	)
+	if wh.Now != "" {
+		Now = wh.Now
+	}
+	if degradedWorkspaces == nil {
+		degradedWorkspaces = []string{}
+	}
+
+	query = fmt.Sprintf(`
+		SELECT
+			COALESCE(COUNT(*), 0) AS pending_jobs,
+			COALESCE(EXTRACT(EPOCH FROM(AGE(%[7]s, MIN(COALESCE(metadata->>'nextRetryTime', %[7]s::text)::timestamptz)))), 0) AS pickup_lag_in_seconds,
+			COALESCE(SUM(EXTRACT(EPOCH FROM AGE(%[7]s, COALESCE(metadata->>'nextRetryTime', %[7]s::text)::timestamptz))), 0) AS pickup_wait_time_in_seconds
+		FROM
+			%[1]s t
+		WHERE
+			t.destination_type = '%[2]s' AND
+			t.in_progress = %[3]t AND
+			t.status != '%[4]s' AND
+			t.status != '%[5]s' %[6]s AND
+			COALESCE(metadata->>'nextRetryTime', %[7]s::text)::timestamptz <= %[7]s AND
+			workspace_id <> ALL ($1);
+`,
+		warehouseutils.WarehouseUploadsTable,
+		wh.destType,
+		false,
+		model.ExportedData,
+		model.Aborted,
+		skipIdentifiersSQL,
+		Now,
+	)
+
+	if len(skipIdentifiers) > 0 {
+		if err = wh.dbHandle.QueryRowContext(
+			ctx,
+			query,
+			pq.Array(degradedWorkspaces),
+			pq.Array(skipIdentifiers),
+		).Scan(&pendingJobs, &pickupLagInSeconds, &pickupWaitTimeInSeconds); err != nil {
+			return fmt.Errorf("processing  with skip identifiers: %w", err)
+		}
+	} else {
+		if err = wh.dbHandle.QueryRowContext(
+			ctx,
+			query,
+			pq.Array(degradedWorkspaces),
+		).Scan(&pendingJobs, &pickupLagInSeconds, &pickupWaitTimeInSeconds); err != nil {
+			return fmt.Errorf("count pending jobs: %w", err)
+		}
+	}
+
+	pendingJobsStat := wh.stats.NewTaggedStat("wh_processing_pending_jobs", stats.CountType, stats.Tags{
+		"module":   moduleName,
+		"destType": wh.destType,
+	})
+	pendingJobsStat.Count(pendingJobs)
+
+	availableWorkersStat := wh.stats.NewTaggedStat("wh_processing_available_workers", stats.GaugeType, stats.Tags{
+		"module":   moduleName,
+		"destType": wh.destType,
+	})
+	availableWorkersStat.Gauge(availableWorkers)
+
+	pickupLagStat := wh.stats.NewTaggedStat("wh_processing_pickup_lag", stats.TimerType, stats.Tags{
+		"module":   moduleName,
+		"destType": wh.destType,
+	})
+	pickupLagStat.SendTiming(time.Duration(pickupLagInSeconds) * time.Second)
+
+	pickupWaitTimeStat := wh.stats.NewTaggedStat("wh_processing_pickup_wait_time", stats.TimerType, stats.Tags{
+		"module":   moduleName,
+		"destType": wh.destType,
+	})
+	pickupWaitTimeStat.SendTiming(time.Duration(pickupWaitTimeInSeconds) * time.Second)
+	return nil
+}
+
 func (wh *HandleT) getUploadsToProcess(ctx context.Context, availableWorkers int, skipIdentifiers []string) ([]*UploadJobT, error) {
 	var skipIdentifiersSQL string
 	partitionIdentifierSQL := `destination_id, namespace`
 
 	if len(skipIdentifiers) > 0 {
-		skipIdentifiersSQL = `and ((destination_id || '_' || namespace)) != ALL($1)`
+		skipIdentifiersSQL = `AND ((destination_id || '_' || namespace)) != ALL($2)`
 	}
 
 	if wh.allowMultipleSourcesForJobsPickup {
 		if len(skipIdentifiers) > 0 {
-			skipIdentifiersSQL = `and ((source_id || '_' || destination_id || '_' || namespace)) != ALL($1)`
+			skipIdentifiersSQL = `AND ((source_id || '_' || destination_id || '_' || namespace)) != ALL($2)`
 		}
 		partitionIdentifierSQL = fmt.Sprintf(`%s, %s`, "source_id", partitionIdentifierSQL)
 	}
 
 	sqlStatement := fmt.Sprintf(`
 			SELECT
-					id,
-					status,
-					schema,
-					mergedSchema,
-					namespace,
-					workspace_id,
-					source_id,
-					destination_id,
-					destination_type,
-					start_staging_file_id,
-					end_staging_file_id,
-					start_load_file_id,
-					end_load_file_id,
-					error,
-					metadata,
-					timings->0 as firstTiming,
-					timings->-1 as lastTiming,
-					timings,
-					COALESCE(metadata->>'priority', '100')::int,
-					first_event_at,
-					last_event_at
-				FROM (
-					SELECT
-						ROW_NUMBER() OVER (PARTITION BY %s ORDER BY COALESCE(metadata->>'priority', '100')::int ASC, id ASC) AS row_number,
-						t.*
-					FROM
-						%s t
-					WHERE
-						t.destination_type = '%s' and t.in_progress=%t and t.status != '%s' and t.status != '%s' %s and COALESCE(metadata->>'nextRetryTime', now()::text)::timestamptz <= now()
-				) grouped_uploads
+				id,
+				status,
+				schema,
+				mergedSchema,
+				namespace,
+				workspace_id,
+				source_id,
+				destination_id,
+				destination_type,
+				start_staging_file_id,
+				end_staging_file_id,
+				start_load_file_id,
+				end_load_file_id,
+				error,
+				metadata,
+				timings->0 as firstTiming,
+				timings->-1 as lastTiming,
+				timings,
+				COALESCE(metadata->>'priority', '100')::int,
+				first_event_at,
+				last_event_at
+			FROM (
+				SELECT
+					ROW_NUMBER() OVER (PARTITION BY %s ORDER BY COALESCE(metadata->>'priority', '100')::int ASC, id ASC) AS row_number,
+					t.*
+				FROM
+					%s t
 				WHERE
-					grouped_uploads.row_number = 1
-				ORDER BY
-					COALESCE(metadata->>'priority', '100')::int ASC, id ASC
-				LIMIT %d;
-
-		`, partitionIdentifierSQL, warehouseutils.WarehouseUploadsTable, wh.destType, false, model.ExportedData, model.Aborted, skipIdentifiersSQL, availableWorkers)
+					t.destination_type = '%s' AND
+					t.in_progress=%t AND
+					t.status != '%s' AND
+					t.status != '%s' %s AND
+					COALESCE(metadata->>'nextRetryTime', NOW()::text)::timestamptz <= NOW() AND
+          			workspace_id <> ALL ($1)
+			) grouped_uploads
+			WHERE
+				grouped_uploads.row_number = 1
+			ORDER BY
+				COALESCE(metadata->>'priority', '100')::int ASC,
+				id ASC
+			LIMIT %d;
+`,
+		partitionIdentifierSQL,
+		warehouseutils.WarehouseUploadsTable,
+		wh.destType,
+		false,
+		model.ExportedData,
+		model.Aborted,
+		skipIdentifiersSQL,
+		availableWorkers,
+	)
 
 	var (
-		rows *sql.Rows
-		err  error
+		rows               *sql.Rows
+		err                error
+		degradedWorkspaces = tenantManager.DegradedWorkspaces()
 	)
+	if degradedWorkspaces == nil {
+		degradedWorkspaces = []string{}
+	}
+
 	if len(skipIdentifiers) > 0 {
-		rows, err = wh.dbHandle.Query(
+		rows, err = wh.dbHandle.QueryContext(
+			ctx,
 			sqlStatement,
+			pq.Array(degradedWorkspaces),
 			pq.Array(skipIdentifiers),
 		)
 	} else {
-		rows, err = wh.dbHandle.Query(
+		rows, err = wh.dbHandle.QueryContext(
+			ctx,
 			sqlStatement,
+			pq.Array(degradedWorkspaces),
 		)
 	}
 
@@ -878,7 +1042,7 @@ func (wh *HandleT) getUploadsToProcess(ctx context.Context, availableWorkers int
 			&lastEventAt,
 		)
 		if err != nil {
-			panic(fmt.Errorf("Failed to scan result from query: %s\nwith Error : %w", sqlStatement, err))
+			panic(fmt.Errorf("failed to scan result from query: %s\n with error : %w", sqlStatement, err))
 		}
 		upload.FirstEventAt = firstEventAt.Time
 		upload.LastEventAt = lastEventAt.Time
@@ -923,7 +1087,7 @@ func (wh *HandleT) getUploadsToProcess(ctx context.Context, availableWorkers int
 			uploadJob := UploadJobT{
 				upload:   &upload,
 				dbHandle: wh.dbHandle,
-				stats:    stats.Default,
+				stats:    wh.stats,
 			}
 			err := fmt.Errorf("unable to find source : %s or destination : %s, both or the connection between them", upload.SourceID, upload.DestinationID)
 			_, _ = uploadJob.setUploadError(err, model.Aborted)
@@ -966,10 +1130,14 @@ func (wh *HandleT) getUploadsToProcess(ctx context.Context, availableWorkers int
 			dbHandle:             wh.dbHandle,
 			pgNotifier:           &wh.notifier,
 			destinationValidator: validations.NewDestinationValidator(),
-			stats:                stats.Default,
+			stats:                wh.stats,
 		}
 
 		uploadJobs = append(uploadJobs, &uploadJob)
+	}
+
+	if err = wh.processingStats(ctx, availableWorkers, skipIdentifiers, skipIdentifiersSQL); err != nil {
+		return nil, fmt.Errorf("processing stats: %w", err)
 	}
 
 	return uploadJobs, nil
@@ -1075,8 +1243,8 @@ func (wh *HandleT) uploadStatusTrack(ctx context.Context) {
 				where
 				  source_id = '%[2]s'
 				  and destination_id = '%[3]s'
-				  and created_at > now() - interval '%[4]d MIN'
-				  and created_at < now() - interval '%[5]d MIN'
+				  and created_at > NOW() - interval '%[4]d MIN'
+				  and created_at < NOW() - interval '%[5]d MIN'
 				order by
 				  created_at desc
 				limit
@@ -1200,7 +1368,7 @@ func (wh *HandleT) setInterruptedDestinations() {
 		var destID string
 		err := rows.Scan(&destID)
 		if err != nil {
-			panic(fmt.Errorf("Failed to scan result from query: %s\nwith Error : %w", sqlStatement, err))
+			panic(fmt.Errorf("failed to scan result from query: %s\nwith error : %w", sqlStatement, err))
 		}
 		inRecoveryMap[destID] = true
 	}
@@ -1225,11 +1393,20 @@ func (wh *HandleT) Setup(whType string) {
 	wh.tenantManager = multitenant.Manager{
 		BackendConfig: backendconfig.DefaultBackendConfig,
 	}
+	wh.stats = stats.Default
 
 	whName := warehouseutils.WHDestNameMap[whType]
 	config.RegisterIntConfigVariable(8, &wh.noOfWorkers, true, 1, fmt.Sprintf(`Warehouse.%v.noOfWorkers`, whName), "Warehouse.noOfWorkers")
 	config.RegisterIntConfigVariable(1, &wh.maxConcurrentUploadJobs, false, 1, fmt.Sprintf(`Warehouse.%v.maxConcurrentUploadJobs`, whName))
 	config.RegisterBoolConfigVariable(false, &wh.allowMultipleSourcesForJobsPickup, false, fmt.Sprintf(`Warehouse.%v.allowMultipleSourcesForJobsPickup`, whName))
+
+	wh.cpInternalClient = cpclient.NewInternalClientWithCache(
+		configBackendURL,
+		cpclient.BasicAuth{
+			Username: config.GetString("CP_INTERNAL_API_USERNAME", ""),
+			Password: config.GetString("CP_INTERNAL_API_PASSWORD", ""),
+		},
+	)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	g, ctx := errgroup.WithContext(ctx)
@@ -2009,7 +2186,7 @@ func Start(ctx context.Context, app app.App) error {
 		reporting := application.Features().Reporting.Setup(backendconfig.DefaultBackendConfig)
 
 		g.Go(misc.WithBugsnagForWarehouse(func() error {
-			reporting.AddClient(ctx, types.Config{ConnInfo: psqlInfo, ClientName: types.WAREHOUSE_REPORTING_CLIENT})
+			reporting.AddClient(ctx, types.Config{ConnInfo: psqlInfo, ClientName: types.WarehouseReportingClient})
 			return nil
 		}))
 	}
@@ -2021,12 +2198,12 @@ func Start(ctx context.Context, app app.App) error {
 		g.Go(func() error {
 			backendconfig.DefaultBackendConfig.WaitForConfig(ctx)
 
-			c := features.NewClient(
-				config.GetString("CONFIG_BACKEND_URL", "https://api.rudderstack.com"),
+			c := controlplane.NewClient(
+				backendconfig.GetConfigBackendURL(),
 				backendconfig.DefaultBackendConfig.Identity(),
 			)
 
-			err := c.Send(ctx, info.WarehouseComponent.Name, info.WarehouseComponent.Features)
+			err := c.SendFeatures(ctx, info.WarehouseComponent.Name, info.WarehouseComponent.Features)
 			if err != nil {
 				pkgLogger.Errorf("error sending warehouse features: %v", err)
 			}
@@ -2048,6 +2225,14 @@ func Start(ctx context.Context, app app.App) error {
 
 		backendconfig.DefaultBackendConfig.WaitForConfig(ctx)
 
+		region := config.GetString("region", "")
+
+		controlPlaneClient = controlplane.NewClient(
+			backendconfig.GetConfigBackendURL(),
+			backendconfig.DefaultBackendConfig.Identity(),
+			controlplane.WithRegion(region),
+		)
+
 		tenantManager = &multitenant.Manager{
 			BackendConfig: backendconfig.DefaultBackendConfig,
 		}
@@ -2059,6 +2244,7 @@ func Start(ctx context.Context, app app.App) error {
 		g.Go(misc.WithBugsnagForWarehouse(func() error {
 			return notifier.ClearJobs(ctx)
 		}))
+
 		g.Go(misc.WithBugsnagForWarehouse(func() error {
 			monitorDestRouters(ctx)
 			return nil

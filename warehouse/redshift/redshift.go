@@ -5,20 +5,21 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
 	"time"
 
-	"github.com/tidwall/gjson"
-
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/services/filemanager"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/warehouse/client"
+	"github.com/rudderlabs/rudder-server/warehouse/tunnelling"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
+	"github.com/tidwall/gjson"
 )
 
 var (
@@ -576,31 +577,47 @@ func (rs *HandleT) loadUserTables() (errorMap map[string]error) {
 }
 
 type RedshiftCredentialsT struct {
-	Host     string
-	Port     string
-	DbName   string
-	Username string
-	Password string
-	timeout  time.Duration
+	Host       string
+	Port       string
+	DbName     string
+	Username   string
+	Password   string
+	timeout    time.Duration
+	TunnelInfo *tunnelling.TunnelInfo
 }
 
 func Connect(cred RedshiftCredentialsT) (*sql.DB, error) {
-	url := fmt.Sprintf("sslmode=require user=%v password=%v host=%v port=%v dbname=%v",
-		cred.Username,
-		cred.Password,
-		cred.Host,
-		cred.Port,
-		cred.DbName,
-	)
-	if cred.timeout > 0 {
-		url += fmt.Sprintf(" connect_timeout=%d", cred.timeout/time.Second)
+	dsn := url.URL{
+		Scheme: "postgres",
+		User:   url.UserPassword(cred.Username, cred.Password),
+		Host:   fmt.Sprintf("%s:%s", cred.Host, cred.Port),
+		Path:   cred.DbName,
 	}
 
-	var err error
-	var db *sql.DB
-	if db, err = sql.Open("postgres", url); err != nil {
-		return nil, fmt.Errorf("redshift connect error : (%v)", err)
+	params := url.Values{}
+	params.Add("sslmode", "require")
+
+	if cred.timeout > 0 {
+		params.Add("connect_timeout", fmt.Sprintf("%d", cred.timeout/time.Second))
 	}
+
+	dsn.RawQuery = params.Encode()
+
+	var (
+		err error
+		db  *sql.DB
+	)
+
+	if cred.TunnelInfo != nil {
+		if db, err = tunnelling.SQLConnectThroughTunnel(dsn.String(), cred.TunnelInfo.Config); err != nil {
+			return nil, fmt.Errorf("connecting to redshift through tunnel: %w", err)
+		}
+	} else {
+		if db, err = sql.Open("postgres", dsn.String()); err != nil {
+			return nil, fmt.Errorf("connecting to redshift: %w", err)
+		}
+	}
+
 	stmt := `SET query_group to 'RudderStack'`
 	_, err = db.Exec(stmt)
 	if err != nil {
@@ -611,13 +628,13 @@ func Connect(cred RedshiftCredentialsT) (*sql.DB, error) {
 
 func (rs *HandleT) dropDanglingStagingTables() bool {
 	sqlStatement := `
-		select
+		SELECT
 		  table_name
-		from
+		FROM
 		  information_schema.tables
-		where
-		  table_schema = $1
-		  AND table_name like $2;
+		WHERE
+		  table_schema = $1 AND
+		  table_name like $2;
 	`
 	rows, err := rs.Db.Query(
 		sqlStatement,
@@ -677,14 +694,17 @@ func (rs *HandleT) AlterColumn(tableName, columnName, columnType string) (err er
 }
 
 func (rs *HandleT) getConnectionCredentials() RedshiftCredentialsT {
-	return RedshiftCredentialsT{
-		Host:     warehouseutils.GetConfigValue(RSHost, rs.Warehouse),
-		Port:     warehouseutils.GetConfigValue(RSPort, rs.Warehouse),
-		DbName:   warehouseutils.GetConfigValue(RSDbName, rs.Warehouse),
-		Username: warehouseutils.GetConfigValue(RSUserName, rs.Warehouse),
-		Password: warehouseutils.GetConfigValue(RSPassword, rs.Warehouse),
-		timeout:  rs.ConnectTimeout,
+	creds := RedshiftCredentialsT{
+		Host:       warehouseutils.GetConfigValue(RSHost, rs.Warehouse),
+		Port:       warehouseutils.GetConfigValue(RSPort, rs.Warehouse),
+		DbName:     warehouseutils.GetConfigValue(RSDbName, rs.Warehouse),
+		Username:   warehouseutils.GetConfigValue(RSUserName, rs.Warehouse),
+		Password:   warehouseutils.GetConfigValue(RSPassword, rs.Warehouse),
+		timeout:    rs.ConnectTimeout,
+		TunnelInfo: warehouseutils.ExtractTunnelInfoFromDestinationConfig(rs.Warehouse.Destination.Config),
 	}
+
+	return creds
 }
 
 // FetchSchema queries redshift and returns the schema associated with provided namespace

@@ -29,7 +29,6 @@ import (
 	"github.com/rudderlabs/rudder-server/processor/integrations"
 	"github.com/rudderlabs/rudder-server/processor/stash"
 	"github.com/rudderlabs/rudder-server/processor/transformer"
-	"github.com/rudderlabs/rudder-server/router"
 	"github.com/rudderlabs/rudder-server/router/batchrouter"
 	"github.com/rudderlabs/rudder-server/rruntime"
 	destinationdebugger "github.com/rudderlabs/rudder-server/services/debugger/destination"
@@ -41,6 +40,7 @@ import (
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/services/transientsource"
 	"github.com/rudderlabs/rudder-server/utils/bytesize"
+	"github.com/rudderlabs/rudder-server/utils/httputil"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/types"
@@ -307,7 +307,7 @@ func (proc *HandleT) Setup(
 	fileuploader fileuploader.Provider, rsourcesService rsources.JobService,
 ) {
 	proc.reporting = reporting
-	config.RegisterBoolConfigVariable(types.DEFAULT_REPORTING_ENABLED, &proc.reportingEnabled, false, "Reporting.enabled")
+	config.RegisterBoolConfigVariable(types.DefaultReportingEnabled, &proc.reportingEnabled, false, "Reporting.enabled")
 	config.RegisterInt64ConfigVariable(100*bytesize.MB, &proc.payloadLimit, true, 1, "Processor.payloadLimit")
 	config.RegisterDurationConfigVariable(60, &proc.jobdDBQueryRequestTimeout, true, time.Second, []string{"JobsDB.Processor.QueryRequestTimeout", "JobsDB.QueryRequestTimeout"}...)
 	config.RegisterDurationConfigVariable(90, &proc.jobsDBCommandTimeout, true, time.Second, []string{"JobsDB.Processor.CommandRequestTimeout", "JobsDB.CommandRequestTimeout"}...)
@@ -407,11 +407,6 @@ func (proc *HandleT) Setup(
 
 	g.Go(misc.WithBugsnag(func() error {
 		proc.syncTransformerFeatureJson(ctx)
-		return nil
-	}))
-
-	g.Go(misc.WithBugsnag(func() error {
-		router.CleanFailedRecordsTableProcess(ctx)
 		return nil
 	}))
 
@@ -562,7 +557,7 @@ func (proc *HandleT) makeFeaturesFetchCall() bool {
 		return true
 	}
 
-	defer func() { _ = res.Body.Close() }()
+	defer func() { httputil.CloseResponse(res) }()
 	body, err := io.ReadAll(res.Body)
 	if err != nil {
 		return true
@@ -2083,19 +2078,11 @@ func (proc *HandleT) transformSrcDest(
 
 func (proc *HandleT) saveFailedJobs(failedJobs []*jobsdb.JobT) {
 	if len(failedJobs) > 0 {
-		jobRunIDAbortedEventsMap := make(map[string][]*router.FailedEventRowT)
-		for _, failedJob := range failedJobs {
-			router.PrepareJobRunIDAbortedEventsMap(failedJob.Parameters, jobRunIDAbortedEventsMap)
-		}
-
 		rsourcesStats := rsources.NewFailedJobsCollector(proc.rsourcesService)
 		rsourcesStats.JobsFailed(failedJobs)
 		_ = proc.errorDB.WithTx(func(tx *jobsdb.Tx) error {
-			// TODO: error propagation
-			router.GetFailedEventsManager().SaveFailedRecordIDs(jobRunIDAbortedEventsMap, tx.Tx)
 			return rsourcesStats.Publish(context.TODO(), tx.Tx)
 		})
-
 	}
 }
 
@@ -2308,7 +2295,7 @@ func (proc *HandleT) handlePendingGatewayJobs() bool {
 func (proc *HandleT) mainLoop(ctx context.Context) {
 	// waiting for reporting client setup
 	if proc.reporting != nil && proc.reportingEnabled {
-		if err := proc.reporting.WaitForSetup(ctx, types.CORE_REPORTING_CLIENT); err != nil {
+		if err := proc.reporting.WaitForSetup(ctx, types.CoreReportingClient); err != nil {
 			return
 		}
 	}
@@ -2400,7 +2387,7 @@ func (proc *HandleT) mainPipeline(ctx context.Context) {
 	proc.logger.Infof("Processor mainPipeline started, subJobSize=%d pipelineBufferedItems=%d", subJobSize, pipelineBufferedItems)
 
 	if proc.reporting != nil && proc.reportingEnabled {
-		if err := proc.reporting.WaitForSetup(ctx, types.CORE_REPORTING_CLIENT); err != nil {
+		if err := proc.reporting.WaitForSetup(ctx, types.CoreReportingClient); err != nil {
 			return
 		}
 	}

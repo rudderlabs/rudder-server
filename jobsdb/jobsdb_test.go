@@ -15,7 +15,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gofrs/uuid"
+	"github.com/google/uuid"
 	"github.com/lib/pq"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -422,7 +422,7 @@ func TestJobsDBTimeout(t *testing.T) {
 		Parameters:   []byte(`{}`),
 		EventPayload: []byte(`{"receivedAt":"2021-06-06T20:26:39.598+05:30","writeKey":"writeKey","requestIP":"[::1]",  "batch": [{"anonymousId":"anon_id","channel":"android-sdk","context":{"app":{"build":"1","name":"RudderAndroidClient", "device_name":"FooBar\ufffd\u0000\ufffd\u000f\ufffd","namespace":"com.rudderlabs.android.sdk","version":"1.0"},"device":{"id":"49e4bdd1c280bc00","manufacturer":"Google","model":"Android SDK built for x86","name":"generic_x86"},"library":{"name":"com.rudderstack.android.sdk.core"},"locale":"en-US","network":{"carrier":"Android"},"screen":{"density":420,"height":1794,"width":1080},"traits":{"anonymousId":"49e4bdd1c280bc00"},"user_agent":"Dalvik/2.1.0 (Linux; U; Android 9; Android SDK built for x86 Build/PSR1.180720.075)"},"event":"Demo Track","integrations":{"All":true},"messageId":"b96f3d8a-7c26-4329-9671-4e3202f42f15","originalTimestamp":"2019-08-12T05:08:30.909Z","properties":{"category":"Demo Category","floatVal":4.501,"label":"Demo Label","testArray":[{"id":"elem1","value":"e1"},{"id":"elem2","value":"e2"}],"testMap":{"t1":"a","t2":4},"value":5},"rudderId":"a-292e-4e79-9880-f8009e0ae4a3","sentAt":"2019-08-12T05:08:30.909Z","type":"track"}]}`),
 		UserID:       "a-292e-4e79-9880-f8009e0ae4a3",
-		UUID:         uuid.Must(uuid.NewV4()),
+		UUID:         uuid.New(),
 		CustomVal:    customVal,
 		WorkspaceId:  defaultWorkspaceID,
 		EventCount:   1,
@@ -524,7 +524,7 @@ func TestThreadSafeAddNewDSLoop(t *testing.T) {
 				Parameters:   []byte(`{"batch_id":1,"source_id":"sourceID","source_job_run_id":""}`),
 				EventPayload: []byte(`{"testKey":"testValue"}`),
 				UserID:       "a-292e-4e79-9880-f8009e0ae4a3",
-				UUID:         uuid.Must(uuid.NewV4()),
+				UUID:         uuid.New(),
 				CustomVal:    customVal,
 				EventCount:   1,
 			}
@@ -608,7 +608,7 @@ func TestThreadSafeJobStorage(t *testing.T) {
 					Parameters:   []byte(`{"batch_id":1,"source_id":"sourceID","source_job_run_id":""}`),
 					EventPayload: []byte(`{"testKey":"testValue"}`),
 					UserID:       "a-292e-4e79-9880-f8009e0ae4a3",
-					UUID:         uuid.Must(uuid.NewV4()),
+					UUID:         uuid.New(),
 					CustomVal:    customVal,
 					EventCount:   1,
 				}
@@ -706,7 +706,7 @@ func TestThreadSafeJobStorage(t *testing.T) {
 					Parameters:   []byte(`{"batch_id":1,"source_id":"sourceID","source_job_run_id":""}`),
 					EventPayload: []byte(`{"testKey":"testValue"}`),
 					UserID:       "a-292e-4e79-9880-f8009e0ae4a3",
-					UUID:         uuid.Must(uuid.NewV4()),
+					UUID:         uuid.New(),
 					CustomVal:    customVal,
 					EventCount:   1,
 				}
@@ -764,7 +764,7 @@ func TestCacheScenarios(t *testing.T) {
 				Parameters:   []byte(fmt.Sprintf(`{"batch_id":1,"source_id":"sourceID","destination_id":"%s"}`, destinationID)),
 				EventPayload: []byte(`{"testKey":"testValue"}`),
 				UserID:       "a-292e-4e79-9880-f8009e0ae4a3",
-				UUID:         uuid.Must(uuid.NewV4()),
+				UUID:         uuid.New(),
 				CustomVal:    customVal,
 				EventCount:   1,
 			}
@@ -858,36 +858,6 @@ func TestCacheScenarios(t *testing.T) {
 		res, err = gwDB.getUnprocessed(context.Background(), GetQueryParamsT{CustomValFilters: []string{customVal}, JobsLimit: 100})
 		require.NoError(t, err)
 		require.Equal(t, 2, len(res.Jobs), "gwDB should report 2 unprocessed jobs since we added 2 jobs through gwDB")
-	})
-
-	t.Run("Test readonly jobsdb", func(t *testing.T) {
-		jobsDB := NewForReadWrite("readonly_cache")
-		require.NoError(t, jobsDB.Start())
-		defer jobsDB.TearDown()
-
-		readOnlyDB := &ReadonlyHandleT{}
-		require.NoError(t, readOnlyDB.Setup("readonly_cache"))
-
-		destinationID := "destinationID"
-
-		pending, err := readOnlyDB.HavePendingJobs(context.Background(), []string{customVal}, 100, []ParameterFilterT{{Name: "source_id", Value: "sourceID"}})
-		require.NoError(t, err)
-		require.False(t, pending, "readOnlyDB should report no pending jobs when using source_id as filter")
-
-		pending, err = readOnlyDB.HavePendingJobs(context.Background(), []string{customVal}, 100, []ParameterFilterT{{Name: "destination_id", Value: destinationID}, {Name: "source_id", Value: "sourceID"}})
-		require.NoError(t, err)
-		require.False(t, pending, "readOnlyDB should report no pending jobs when using both destination_id and source_id as filters")
-
-		// store jobs
-		require.NoError(t, jobsDB.Store(context.Background(), generateJobs(2, destinationID)))
-
-		pending, err = readOnlyDB.HavePendingJobs(context.Background(), []string{customVal}, 100, []ParameterFilterT{{Name: "source_id", Value: "sourceID"}})
-		require.NoError(t, err)
-		require.True(t, pending, "readOnlyDB should report it has pending jobs when using source_id as filter")
-
-		pending, err = readOnlyDB.HavePendingJobs(context.Background(), []string{customVal}, 100, []ParameterFilterT{{Name: "destination_id", Value: destinationID}, {Name: "source_id", Value: "sourceID"}})
-		require.NoError(t, err)
-		require.True(t, pending, "readOnlyDB should report it has pending jobs when using both destination_id and source_id as filters")
 	})
 
 	t.Run("Test cache with and without using parameter filters", func(t *testing.T) {
@@ -992,7 +962,7 @@ func TestAfterJobIDQueryParam(t *testing.T) {
 				Parameters:   []byte(fmt.Sprintf(`{"batch_id":1,"source_id":"sourceID","destination_id":"%s"}`, destinationID)),
 				EventPayload: []byte(`{"testKey":"testValue"}`),
 				UserID:       "a-292e-4e79-9880-f8009e0ae4a3",
-				UUID:         uuid.Must(uuid.NewV4()),
+				UUID:         uuid.New(),
 				CustomVal:    customVal,
 				EventCount:   1,
 			}
@@ -1069,7 +1039,61 @@ func TestDeleteExecuting(t *testing.T) {
 				Parameters:   []byte(fmt.Sprintf(`{"batch_id":1,"source_id":"sourceID","destination_id":"%s"}`, destinationID)),
 				EventPayload: []byte(`{"testKey":"testValue"}`),
 				UserID:       "a-292e-4e79-9880-f8009e0ae4a3",
-				UUID:         uuid.Must(uuid.NewV4()),
+				UUID:         uuid.New(),
+				CustomVal:    customVal,
+				EventCount:   1,
+			}
+		}
+		return js
+	}
+
+	var jobsDB *HandleT
+	prefix := strings.ToLower(rsRand.String(5))
+	destinationID := strings.ToLower(rsRand.String(5))
+	jobsDB = NewForReadWrite(prefix)
+	require.NoError(t, jobsDB.Start())
+	defer jobsDB.TearDown()
+	require.NoError(t, jobsDB.Store(context.Background(), generateJobs(2, destinationID)))
+	unprocessed, err := jobsDB.getUnprocessed(context.Background(), GetQueryParamsT{CustomValFilters: []string{customVal}, ParameterFilters: []ParameterFilterT{{Name: "destination_id", Value: destinationID}}, JobsLimit: 100})
+	require.NoError(t, err)
+	require.Equal(t, 2, len(unprocessed.Jobs))
+	var statuses []*JobStatusT
+	for _, job := range unprocessed.Jobs {
+		statuses = append(statuses, &JobStatusT{
+			JobID:         job.JobID,
+			JobState:      Executing.State,
+			AttemptNum:    1,
+			ExecTime:      time.Now(),
+			RetryTime:     time.Now(),
+			ErrorCode:     "",
+			ErrorResponse: []byte(`{}`),
+			Parameters:    []byte(`{}`),
+			WorkspaceId:   defaultWorkspaceID,
+		})
+	}
+	require.NoError(t, jobsDB.UpdateJobStatus(context.Background(), statuses, []string{customVal}, []ParameterFilterT{}))
+	unprocessed, err = jobsDB.getUnprocessed(context.Background(), GetQueryParamsT{CustomValFilters: []string{customVal}, ParameterFilters: []ParameterFilterT{{Name: "destination_id", Value: destinationID}}, JobsLimit: 100})
+	require.NoError(t, err)
+	require.Equal(t, 0, len(unprocessed.Jobs))
+
+	jobsDB.DeleteExecuting()
+
+	unprocessed, err = jobsDB.getUnprocessed(context.Background(), GetQueryParamsT{CustomValFilters: []string{customVal}, ParameterFilters: []ParameterFilterT{{Name: "destination_id", Value: destinationID}}, JobsLimit: 100})
+	require.NoError(t, err)
+	require.Equal(t, 2, len(unprocessed.Jobs))
+}
+
+func TestFailExecuting(t *testing.T) {
+	_ = startPostgres(t)
+	customVal := "CUSTOMVAL"
+	generateJobs := func(numOfJob int, destinationID string) []*JobT {
+		js := make([]*JobT, numOfJob)
+		for i := 0; i < numOfJob; i++ {
+			js[i] = &JobT{
+				Parameters:   []byte(fmt.Sprintf(`{"batch_id":1,"source_id":"sourceID","destination_id":"%s"}`, destinationID)),
+				EventPayload: []byte(`{"testKey":"testValue"}`),
+				UserID:       "a-292e-4e79-9880-f8009e0ae4a3",
+				UUID:         uuid.New(),
 				CustomVal:    customVal,
 				EventCount:   1,
 			}
@@ -1108,11 +1132,20 @@ func TestDeleteExecuting(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, 0, len(unprocessed.Jobs))
 
-	jobsDB.DeleteExecuting()
+	jobsDB.FailExecuting()
 
 	unprocessed, err = jobsDB.getUnprocessed(context.Background(), GetQueryParamsT{CustomValFilters: []string{customVal}, ParameterFilters: []ParameterFilterT{{Name: "destination_id", Value: destinationID}}, JobsLimit: 100})
 	require.NoError(t, err)
-	require.Equal(t, 2, len(unprocessed.Jobs))
+	require.Equal(t, 0, len(unprocessed.Jobs))
+
+	failed, err := jobsDB.GetToRetry(context.Background(), GetQueryParamsT{CustomValFilters: []string{customVal}, ParameterFilters: []ParameterFilterT{{Name: "destination_id", Value: destinationID}}, JobsLimit: 100})
+	require.NoError(t, err)
+	require.Equal(t, 2, len(failed.Jobs))
+}
+
+func TestConstructParameterJSONQuery(t *testing.T) {
+	q := constructParameterJSONQuery("alias", []ParameterFilterT{{Name: "name", Value: "value"}})
+	require.Equal(t, `(alias.parameters @> '{"name":"value"}' )`, q)
 }
 
 type testingT interface {

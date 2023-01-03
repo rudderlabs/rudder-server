@@ -1,5 +1,3 @@
-//go:build !warehouse_integration
-
 package warehouse_test
 
 import (

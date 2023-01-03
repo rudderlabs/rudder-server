@@ -9,8 +9,8 @@ import (
 	json "encoding/json"
 	reflect "reflect"
 
-	uuid "github.com/gofrs/uuid"
 	gomock "github.com/golang/mock/gomock"
+	uuid "github.com/google/uuid"
 	jobsdb "github.com/rudderlabs/rudder-server/jobsdb"
 )
 
@@ -47,6 +47,18 @@ func (m *MockJobsDB) DeleteExecuting() {
 func (mr *MockJobsDBMockRecorder) DeleteExecuting() *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeleteExecuting", reflect.TypeOf((*MockJobsDB)(nil).DeleteExecuting))
+}
+
+// FailExecuting mocks base method.
+func (m *MockJobsDB) FailExecuting() {
+	m.ctrl.T.Helper()
+	m.ctrl.Call(m, "FailExecuting")
+}
+
+// FailExecuting indicates an expected call of FailExecuting.
+func (mr *MockJobsDBMockRecorder) FailExecuting() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "FailExecuting", reflect.TypeOf((*MockJobsDB)(nil).FailExecuting))
 }
 
 // GetExecuting mocks base method.

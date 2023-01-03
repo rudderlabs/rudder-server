@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/rudderlabs/rudder-server/gateway/response"
+	"github.com/rudderlabs/rudder-server/utils/httputil"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
@@ -58,7 +59,7 @@ func (bt *batchWebhookTransformerT) transform(events [][]byte, sourceType string
 	}
 
 	respBody, err := io.ReadAll(resp.Body)
-	_ = resp.Body.Close()
+	func() { httputil.CloseResponse(resp) }()
 
 	if err != nil {
 		bt.stats.failedStat.Count(len(events))

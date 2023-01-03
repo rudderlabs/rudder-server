@@ -2,18 +2,18 @@ version: "3.7"
 
 services:
   db:
-    image: postgres:11-alpine
+    image: postgres:15-alpine
     env_file:
       - build/docker.env
     ports:
       - "6432:5432"
   backend:
-    depends_on:
-      - db
-      - transformer
     build:
       context: ./
       dockerfile: Dockerfile
+    depends_on:
+      - db
+      - transformer
     entrypoint: sh -c '/wait-for db:5432 -- ./rudder-server'
     ports:
       - "8080:8080"
@@ -21,9 +21,9 @@ services:
       - build/docker.env
     environment:
       - JOBS_DB_HOST=db
-#   Uncomment the following lines to mount workspaceConfig file
-#   volumes:
-#     - <absolute_path_to_workspace_config>:/etc/rudderstack/workspaceConfig.json
+  #   Uncomment the following lines to mount workspaceConfig file
+  #   volumes:
+  #     - <absolute_path_to_workspace_config>:/etc/rudderstack/workspaceConfig.json
   transformer:
     image: "rudderlabs/develop-rudder-transformer:master"
     ports:

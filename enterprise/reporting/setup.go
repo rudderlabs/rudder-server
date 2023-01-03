@@ -24,7 +24,7 @@ func (m *Factory) Setup(backendConfig backendconfig.BackendConfig) types.Reporti
 		m.Log = logger.NewLogger().Child("enterprise").Child("reporting")
 	}
 	m.once.Do(func() {
-		reportingEnabled := config.GetBool("Reporting.enabled", types.DEFAULT_REPORTING_ENABLED)
+		reportingEnabled := config.GetBool("Reporting.enabled", types.DefaultReportingEnabled)
 		if !reportingEnabled {
 			m.reportingInstance = &NOOP{}
 			return
@@ -47,7 +47,7 @@ func (m *Factory) Setup(backendConfig backendconfig.BackendConfig) types.Reporti
 
 func (m *Factory) GetReportingInstance() types.ReportingI {
 	if m.reportingInstance == nil {
-		panic(fmt.Errorf("Reporting instance not initialised. You should call Setup before GetReportingInstance"))
+		panic(fmt.Errorf("reporting instance not initialised. You should call Setup before GetReportingInstance"))
 	}
 
 	return m.reportingInstance

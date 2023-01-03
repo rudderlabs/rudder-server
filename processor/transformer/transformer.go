@@ -20,6 +20,7 @@ import (
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/processor/integrations"
 	"github.com/rudderlabs/rudder-server/services/stats"
+	"github.com/rudderlabs/rudder-server/utils/httputil"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/types"
 )
@@ -181,7 +182,7 @@ func GetVersion() (transformerBuildVersion string) {
 		transformerBuildVersion = fmt.Sprintf("No response from transformer. %s", transformerBuildVersion)
 		return
 	}
-	defer func() { _ = resp.Body.Close() }()
+	defer func() { httputil.CloseResponse(resp) }()
 	if resp.StatusCode == http.StatusOK {
 		bodyBytes, err := io.ReadAll(resp.Body)
 		if err != nil {
@@ -390,8 +391,8 @@ func (trans *HandleT) doPost(ctx context.Context, rawJSON []byte, url string, ta
 			if reqErr != nil {
 				return reqErr
 			}
+			defer func() { httputil.CloseResponse(resp) }()
 			respData, reqErr = io.ReadAll(resp.Body)
-			_ = resp.Body.Close()
 			return reqErr
 		},
 		backoff.WithMaxRetries(backoff.NewExponentialBackOff(), uint64(maxRetry)),
@@ -413,8 +414,8 @@ func (trans *HandleT) doPost(ctx context.Context, rawJSON []byte, url string, ta
 		if convErr != nil {
 			transformerAPIVersion = 0
 		}
-		if types.SUPPORTED_TRANSFORMER_API_VERSION != transformerAPIVersion {
-			unexpectedVersionError := fmt.Errorf("incompatible transformer version: Expected: %d Received: %d, URL: %v", types.SUPPORTED_TRANSFORMER_API_VERSION, transformerAPIVersion, url)
+		if types.SupportedTransformerApiVersion != transformerAPIVersion {
+			unexpectedVersionError := fmt.Errorf("incompatible transformer version: Expected: %d Received: %d, URL: %v", types.SupportedTransformerApiVersion, transformerAPIVersion, url)
 			trans.logger.Error(unexpectedVersionError)
 			panic(unexpectedVersionError)
 		}

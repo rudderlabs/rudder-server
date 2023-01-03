@@ -7,6 +7,7 @@ import (
 	"fmt"
 
 	proto "github.com/rudderlabs/rudder-server/proto/warehouse"
+	"github.com/rudderlabs/rudder-server/warehouse/client/controlplane"
 	"github.com/rudderlabs/rudder-server/warehouse/validations"
 	"google.golang.org/genproto/googleapis/rpc/code"
 	"google.golang.org/grpc/codes"
@@ -17,6 +18,8 @@ import (
 
 type warehouseGRPC struct {
 	proto.UnimplementedWarehouseServer
+	CPClient         controlplane.InternalControlPlane
+	EnableTunnelling bool
 }
 
 func (*warehouseGRPC) GetWHUploads(_ context.Context, request *proto.WHUploadsRequest) (*proto.WHUploadsResponse, error) {
@@ -30,7 +33,7 @@ func (*warehouseGRPC) GetWHUploads(_ context.Context, request *proto.WHUploadsRe
 		Offset:          request.Offset,
 		API:             UploadAPI,
 	}
-	uploadsReq.API.log.Info(
+	uploadsReq.API.log.Infof(
 		"[GetWHUploads] Fetching warehouse uploads for WorkspaceId: %s, SourceId: %s, DestinationId: %s",
 		uploadsReq.WorkspaceID,
 		uploadsReq.SourceID,
@@ -47,7 +50,7 @@ func (*warehouseGRPC) TriggerWHUploads(_ context.Context, request *proto.WHUploa
 		DestinationID: request.DestinationId,
 		API:           UploadAPI,
 	}
-	uploadsReq.API.log.Info(
+	uploadsReq.API.log.Infof(
 		"[TriggerWHUploads] Triggering warehouse uploads for WorkspaceId: %s, SourceId: %s, DestinationId: %s",
 		uploadsReq.WorkspaceID,
 		uploadsReq.SourceID,
@@ -63,7 +66,7 @@ func (*warehouseGRPC) GetWHUpload(_ context.Context, request *proto.WHUploadRequ
 		WorkspaceID: request.WorkspaceId,
 		API:         UploadAPI,
 	}
-	uploadReq.API.log.Info(
+	uploadReq.API.log.Infof(
 		"[GetWHUpload] Fetching warehouse upload for WorkspaceId: %s, UploadId: %d",
 		uploadReq.WorkspaceID,
 		uploadReq.UploadId,
@@ -82,7 +85,7 @@ func (*warehouseGRPC) TriggerWHUpload(_ context.Context, request *proto.WHUpload
 		WorkspaceID: request.WorkspaceId,
 		API:         UploadAPI,
 	}
-	uploadReq.API.log.Info(
+	uploadReq.API.log.Infof(
 		"[TriggerWHUpload] Triggering warehouse upload for WorkspaceId: %s, UploadId: %d",
 		uploadReq.WorkspaceID,
 		uploadReq.UploadId,
@@ -91,8 +94,11 @@ func (*warehouseGRPC) TriggerWHUpload(_ context.Context, request *proto.WHUpload
 	return res, err
 }
 
-func (*warehouseGRPC) Validate(_ context.Context, req *proto.WHValidationRequest) (*proto.WHValidationResponse, error) {
-	handleT := validations.CTHandleT{}
+func (grpc *warehouseGRPC) Validate(_ context.Context, req *proto.WHValidationRequest) (*proto.WHValidationResponse, error) {
+	handleT := validations.CTHandleT{
+		EnableTunnelling: grpc.EnableTunnelling,
+		CPClient:         grpc.CPClient,
+	}
 	return handleT.Validating(req)
 }
 
@@ -107,6 +113,14 @@ func (*warehouseGRPC) RetryWHUploads(ctx context.Context, req *proto.RetryWHUplo
 		UploadIds:       req.UploadIds,
 		API:             UploadAPI,
 	}
+	retryReq.API.log.Infof(
+		"[RetryWHUploads] Retrying warehouse upload for WorkspaceId: %s, SourceId: %s, DestinationId: %s, DestinationType: %s, IntervalInHours: %d",
+		retryReq.WorkspaceID,
+		retryReq.SourceID,
+		retryReq.DestinationID,
+		retryReq.DestinationType,
+		retryReq.IntervalInHours,
+	)
 	r, err := retryReq.RetryWHUploads(ctx)
 	response = &proto.RetryWHUploadsResponse{
 		Message:    r.Message,
@@ -159,7 +173,10 @@ func (*warehouseGRPC) ValidateObjectStorageDestination(ctx context.Context, requ
 	if err != nil {
 		return nil, err
 	}
-
+	UploadAPI.log.Infof(
+		"[ValidateObjectStorageDestination] Validating object storage destination for type: %s",
+		r.Type,
+	)
 	err = validateObjectStorage(ctx, r)
 	if err != nil {
 
@@ -191,7 +208,7 @@ func (*warehouseGRPC) CountWHUploadsToRetry(ctx context.Context, req *proto.Retr
 		UploadIds:       req.UploadIds,
 		API:             UploadAPI,
 	}
-	retryReq.API.log.Info(
+	retryReq.API.log.Infof(
 		"[RetryWHUploads] Retrying warehouse uploads for WorkspaceId: %s, SourceId: %s, DestinationId: %s, IntervalInHours: %d",
 		retryReq.WorkspaceID,
 		retryReq.SourceID,
