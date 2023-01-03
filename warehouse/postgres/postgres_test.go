@@ -1,11 +1,11 @@
 package postgres_test
 
 import (
-	"fmt"
-	"github.com/rudderlabs/rudder-server/warehouse/tunnelling"
 	"os"
 	"strings"
 	"testing"
+
+	"github.com/rudderlabs/rudder-server/warehouse/tunnelling"
 
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/warehouse/validations"
@@ -42,7 +42,7 @@ func TestIntegrationPostgresThroughTunnelling(t *testing.T) {
 				"sshUser":       configurations["sshUser"],
 				"sshPort":       configurations["sshPort"],
 				"sshHost":       configurations["sshHost"],
-				"sshPrivateKey": fmt.Sprintf("%s", strings.ReplaceAll(configurations["sshPrivateKey"], "\\n", "\n")),
+				"sshPrivateKey": strings.ReplaceAll(configurations["sshPrivateKey"], "\\n", "\n"),
 			},
 		},
 	})
@@ -51,9 +51,7 @@ func TestIntegrationPostgresThroughTunnelling(t *testing.T) {
 	err = db.Ping()
 	require.NoError(t, err)
 
-	var (
-		jobsDB = testhelper.SetUpJobsDB(t)
-	)
+	jobsDB := testhelper.SetUpJobsDB(t)
 
 	testcases := []struct {
 		name                  string
