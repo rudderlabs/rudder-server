@@ -1,8 +1,10 @@
 package postgres_test
 
 import (
+	"fmt"
 	"github.com/rudderlabs/rudder-server/warehouse/tunnelling"
 	"os"
+	"strings"
 	"testing"
 
 	"github.com/rudderlabs/rudder-server/utils/misc"
@@ -40,7 +42,7 @@ func TestIntegrationPostgresThroughTunnelling(t *testing.T) {
 				"sshUser":       configurations["sshUser"],
 				"sshPort":       configurations["sshPort"],
 				"sshHost":       configurations["sshHost"],
-				"sshPrivateKey": configurations["sshPrivateKey"],
+				"sshPrivateKey": fmt.Sprintf("%s", strings.ReplaceAll(configurations["sshPrivateKey"], "\\n", "\n")),
 			},
 		},
 	})
@@ -48,6 +50,10 @@ func TestIntegrationPostgresThroughTunnelling(t *testing.T) {
 
 	err = db.Ping()
 	require.NoError(t, err)
+
+	var (
+		jobsDB = testhelper.SetUpJobsDB(t)
+	)
 
 	testcases := []struct {
 		name                  string
@@ -66,7 +72,7 @@ func TestIntegrationPostgresThroughTunnelling(t *testing.T) {
 		{
 			name:          "upload job through ssh tunnelling",
 			writeKey:      "kwzDkh9h2fhfUVuS9jZ8uVbhV3v",
-			schema:        "postgres-wh-ssh-tunnelled-integration",
+			schema:        "postgres_wh_ssh_tunnelled_integration",
 			tables:        []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"},
 			sourceID:      "1wRvLmEnMOOxSQD9pwaZhyCqXRF",
 			destinationID: "216ZvbavR21Um6eGKQCagZHqLGZ",
@@ -93,7 +99,7 @@ func TestIntegrationPostgresThroughTunnelling(t *testing.T) {
 				WarehouseEventsMap:    tc.warehouseEventsMap,
 				UserID:                testhelper.GetUserId(warehouseutils.POSTGRES),
 				Provider:              warehouseutils.POSTGRES,
-				JobsDB:                db,
+				JobsDB:                jobsDB,
 				JobRunID:              misc.FastUUID().String(),
 				TaskRunID:             misc.FastUUID().String(),
 				StatsToVerify:         []string{"pg_rollback_timeout"},
