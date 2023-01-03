@@ -12,6 +12,7 @@ import (
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	mocksBackendConfig "github.com/rudderlabs/rudder-server/mocks/config/backend-config"
 	"github.com/rudderlabs/rudder-server/utils/logger"
+	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/pubsub"
 	testUtils "github.com/rudderlabs/rudder-server/utils/tests"
 	"github.com/tidwall/gjson"
@@ -185,10 +186,11 @@ func (c *eventDeliveryStatusUploaderContext) Setup() {
 func initEventDeliveryStatusUploader() {
 	config.Reset()
 	logger.Reset()
+	misc.Init()
 	Init()
 }
 
-var _ = Describe("eventDeliveryStatusUploader", func() {
+var _ = Describe("eventDeliveryStatusUploader", Ordered, func() {
 	initEventDeliveryStatusUploader()
 
 	var (
@@ -196,7 +198,7 @@ var _ = Describe("eventDeliveryStatusUploader", func() {
 		deliveryStatus DeliveryStatusT
 	)
 
-	BeforeEach(func() {
+	BeforeAll(func() {
 		c = &eventDeliveryStatusUploaderContext{}
 		c.Setup()
 		deliveryStatus = DeliveryStatusT{
@@ -211,17 +213,17 @@ var _ = Describe("eventDeliveryStatusUploader", func() {
 			EventName:     `some_event_name`,
 			EventType:     `some_event_type`,
 		}
-		disableEventDeliveryStatusUploads = false
+		disableEventDeliveryStatusUploads = true
 	})
 
-	AfterEach(func() {
+	AfterAll(func() {
 		c.mockCtrl.Finish()
 	})
 
 	Context("RecordEventDeliveryStatus", func() {
 		It("returns false if disableEventDeliveryStatusUploads is true", func() {
-			disableEventDeliveryStatusUploads = true
 			Expect(RecordEventDeliveryStatus(DestinationIDEnabledA, &deliveryStatus)).To(BeFalse())
+			disableEventDeliveryStatusUploads = false
 		})
 
 		It("returns false if destination_id is not in uploadEnabledDestinationIDs", func() {

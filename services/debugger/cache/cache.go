@@ -1,35 +1,38 @@
 package cache
 
-//go:generate mockgen -destination=../../../mocks/services/debugger/cache/mock_cache.go -package=mocks_cache github.com/rudderlabs/rudder-server/services/debugger/cache CacheAny
-
 import (
-	"fmt"
 	"github.com/rudderlabs/rudder-server/services/debugger/cache/embeddedcache"
 	"github.com/rudderlabs/rudder-server/services/debugger/cache/listcache"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 )
 
-type cacheType int8
+type CacheType int8
 
 const (
-	MemoryCacheType cacheType = iota
+	MemoryCacheType CacheType = iota
 	BadgerCacheType
+)
+
+const (
+	SourceCache         = "source"
+	DestinationCache    = "destination"
+	TransformationCache = "transformation"
 )
 
 type Cache[T any] interface {
 	Update(key string, value T)
-	ReadAndPopData(key string) []T
+	Read(key string) []T
 }
 
-func New[T any](ct cacheType, l logger.Logger) (Cache[T], error) {
+func New[T any](ct CacheType, origin string, l logger.Logger) Cache[T] {
 	switch ct {
 	case MemoryCacheType:
 		l.Info("Using in-memory cache")
-		return &listcache.ListCache[T]{}, nil
+		return &listcache.ListCache[T]{Origin: origin}
 	case BadgerCacheType:
 		l.Info("Using badger cache")
-		return &embeddedcache.EmbeddedCache[T]{}, nil
+		return &embeddedcache.EmbeddedCache[T]{Origin: origin, Logger: l}
 	default:
-		return nil, fmt.Errorf("cache type %v out of the known domain", ct)
+		return &listcache.ListCache[T]{Origin: origin}
 	}
 }

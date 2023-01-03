@@ -43,7 +43,7 @@ var _ = Describe("cache", func() {
 		It("Cache readAndPopData", func() {
 			var c ListCache[[]byte]
 			c.Update(testKey, testValue)
-			v := c.ReadAndPopData(testKey)
+			v := c.Read(testKey)
 			Expect(v).To(Equal([][]byte{testValue}))
 			Expect(len(c.cacheMap)).To(Equal(0))
 		})

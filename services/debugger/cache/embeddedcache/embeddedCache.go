@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math/rand"
 	"os"
+	"path"
 	"sync"
 	"time"
 
@@ -29,7 +30,6 @@ func (e *EmbeddedCache[E]) loadCacheConfig() {
 	if e.limiter == 0 {
 		config.RegisterIntConfigVariable(100, &e.limiter, true, 1, "LiveEvent.cache.limiter")
 	}
-	e.logger = logger.NewLogger().Child("embeddedcache")
 }
 
 /*
@@ -42,7 +42,9 @@ type EmbeddedCache[E any] struct {
 	once        sync.Once
 	db          *badger.DB
 	dbL         sync.RWMutex
-	logger      logger.Logger
+	Logger      logger.Logger
+	path        string
+	Origin      string
 }
 
 type badgerLogger struct {
@@ -78,7 +80,7 @@ func (e *EmbeddedCache[E]) Update(key string, value E) {
 	_ = txn.Commit()
 }
 
-func (e *EmbeddedCache[E]) ReadAndPopData(key string) []E {
+func (e *EmbeddedCache[E]) Read(key string) []E {
 	e.init()
 	e.dbL.RLock()
 	defer e.dbL.RUnlock()
@@ -113,23 +115,24 @@ func (e *EmbeddedCache[E]) ReadAndPopData(key string) []E {
 func (e *EmbeddedCache[E]) init() {
 	e.once.Do(func() {
 		e.loadCacheConfig()
-		badgerPathName := "/badgerdbv3"
+		badgerPathName := e.Origin + "/cache/badgerdbv3"
 		tmpDirPath, err := misc.CreateTMPDIR()
 		if err != nil {
-			e.logger.Errorf("Unable to create tmp directory: %v", err)
+			e.Logger.Errorf("Unable to create tmp directory: %v", err)
 			return
 		}
-		path := fmt.Sprintf("%s%s", tmpDirPath, badgerPathName)
+		storagePath := path.Join(tmpDirPath, badgerPathName)
+		e.path = storagePath
 		opts := badger.
-			DefaultOptions(path).
-			WithLogger(badgerLogger{logger.NewLogger().Child("dedup")}).
+			DefaultOptions(storagePath).
+			WithLogger(badgerLogger{e.Logger}).
 			WithCompression(options.None).
 			WithIndexCacheSize(16 << 20). // 16mb
 			WithNumGoroutines(1)
 
 		e.db, err = badger.Open(opts)
 		if err != nil {
-			e.logger.Errorf("Error while opening badgerDB: %v", err)
+			e.Logger.Errorf("Error while opening badgerDB: %v", err)
 			return
 		}
 		rruntime.Go(func() {
@@ -159,5 +162,9 @@ func keyPrefixValue[E any](key string, value E, limiter int) ([]byte, []byte) {
 }
 
 func (e *EmbeddedCache[E]) stop() error {
-	return e.db.Close()
+	err := e.db.Close()
+	if err != nil {
+		return err
+	}
+	return nil
 }

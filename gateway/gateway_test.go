@@ -32,7 +32,6 @@ import (
 	mocksBackendConfig "github.com/rudderlabs/rudder-server/mocks/config/backend-config"
 	mocksJobsDB "github.com/rudderlabs/rudder-server/mocks/jobsdb"
 	mocksRateLimiter "github.com/rudderlabs/rudder-server/mocks/rate-limiter"
-	mocksCache "github.com/rudderlabs/rudder-server/mocks/services/debugger/cache"
 	mocksTypes "github.com/rudderlabs/rudder-server/mocks/utils/types"
 	sourcedebugger "github.com/rudderlabs/rudder-server/services/debugger/source"
 	"github.com/rudderlabs/rudder-server/services/rsources"
@@ -90,7 +89,6 @@ type testContext struct {
 	// Enterprise mocks
 	mockSuppressUser        *mocksTypes.MockUserSuppression
 	mockSuppressUserFeature *mocksApp.MockSuppressUserFeature
-	mockCache               *mocksCache.MockCacheAny
 }
 
 func (c *testContext) initializeAppFeatures() {
@@ -116,7 +114,6 @@ func (c *testContext) Setup() {
 	c.mockBackendConfig = mocksBackendConfig.NewMockBackendConfig(c.mockCtrl)
 	c.mockApp = mocksApp.NewMockApp(c.mockCtrl)
 	c.mockRateLimiter = mocksRateLimiter.NewMockRateLimiter(c.mockCtrl)
-	c.mockCache = mocksCache.NewMockCacheAny(c.mockCtrl)
 
 	tFunc := c.asyncHelper.ExpectAndNotifyCallbackWithName("process_config")
 
@@ -218,7 +215,6 @@ var _ = Describe("Gateway Enterprise", func() {
 
 		It("should accept events from normal users", func() {
 			allowedUserEventData := fmt.Sprintf(`{"batch":[{"userId":%q}]}`, NormalUserID)
-			c.mockCache.EXPECT().Update(gomock.Any(), gomock.Any()).AnyTimes()
 			c.mockJobsDB.EXPECT().WithStoreSafeTx(gomock.Any(), gomock.Any()).Times(1).Do(func(ctx context.Context, f func(tx jobsdb.StoreSafeTx) error) {
 				_ = f(jobsdb.EmptyStoreSafeTx())
 			}).Return(nil)

@@ -44,19 +44,19 @@ var (
 	disableEventUploads bool
 	pkgLogger           logger.Logger
 	eventsCache         cache.Cache[[]byte]
-	cacheType           string
+	cachetype           int
 )
 
 func Init() {
 	loadConfig()
-	eventsCache = cache.FactoryImpl[[]byte]{}.New(cacheType)
 	pkgLogger = logger.NewLogger().Child("debugger").Child("source")
+	eventsCache = cache.New[[]byte](cache.CacheType(cachetype), cache.SourceCache, pkgLogger)
 }
 
 func loadConfig() {
 	configBackendURL = config.GetString("CONFIG_BACKEND_URL", "https://api.rudderstack.com")
 	config.RegisterBoolConfigVariable(false, &disableEventUploads, true, "SourceDebugger.disableEventUploads")
-	config.RegisterStringConfigVariable("memory", &cacheType, true, "DestinationDebugger.cacheType")
+	config.RegisterIntConfigVariable(0, &cachetype, true, 1, "SourceDebugger.cacheType")
 }
 
 type EventUploader struct{}
@@ -78,7 +78,7 @@ func Setup(backendConfig backendconfig.BackendConfig) {
 // IMP: The function must be called before releasing configSubscriberLock lock to ensure the order of RecordEvent call
 func recordHistoricEvents(writeKeys []string) {
 	for _, writeKey := range writeKeys {
-		historicEvents := eventsCache.ReadAndPopData(writeKey)
+		historicEvents := eventsCache.Read(writeKey)
 		for _, eventBatchData := range historicEvents {
 			uploader.RecordEvent(&GatewayEventBatchT{writeKey, eventBatchData})
 		}

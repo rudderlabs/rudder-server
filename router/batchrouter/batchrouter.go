@@ -2134,7 +2134,7 @@ func (brt *HandleT) dedupRawDataDestJobsOnCrash() {
 			}
 			brt.uploadedRawDataJobsCache[object.DestinationID][eventID] = true
 		}
-		reader.Close()
+		_ = reader.Close()
 		brt.jobsDB.JournalDeleteEntry(entry.OpID)
 	}
 }

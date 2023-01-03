@@ -37,6 +37,7 @@ import (
 	"github.com/rudderlabs/rudder-server/services/rsources"
 	"github.com/rudderlabs/rudder-server/services/transientsource"
 	"github.com/rudderlabs/rudder-server/utils/logger"
+	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/pubsub"
 	testutils "github.com/rudderlabs/rudder-server/utils/tests"
 )
@@ -155,6 +156,7 @@ func initRouter() {
 	admin.Init()
 	logger.Reset()
 	destinationdebugger.Init()
+	misc.Init()
 	Init()
 	InitRouterAdmin()
 }

@@ -12,6 +12,7 @@ import (
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	mocksBackendConfig "github.com/rudderlabs/rudder-server/mocks/config/backend-config"
 	"github.com/rudderlabs/rudder-server/utils/logger"
+	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/pubsub"
 	testutils "github.com/rudderlabs/rudder-server/utils/tests"
 	"github.com/tidwall/gjson"
@@ -50,6 +51,7 @@ func (c *eventUploaderContext) Finish() {
 func initEventUploader() {
 	config.Reset()
 	logger.Reset()
+	misc.Init()
 	Init()
 }
 

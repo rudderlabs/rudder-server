@@ -40,6 +40,7 @@ type ListCache[E any] struct {
 	size        int           // This is the size upto which this cache can store a value corresponding to any key
 	cacheMap    map[string]*cacheItem[E]
 	once        sync.Once
+	Origin      string
 }
 
 /*
@@ -94,7 +95,7 @@ func (c *ListCache[E]) Update(key string, value E) {
 if there is any data available corresponding to the given key then it removes the data from the cache and returns it
 in the form of []byte
 */
-func (c *ListCache[E]) ReadAndPopData(key string) []E {
+func (c *ListCache[E]) Read(key string) []E {
 	c.init()
 	var historicEventsDelivery []E
 	c.lock.Lock()
