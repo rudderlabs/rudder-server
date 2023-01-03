@@ -44,9 +44,7 @@ test-with-coverage: test coverage
 
 build: ## Build rudder-server binary
 	$(eval BUILD_OPTIONS = )
-ifeq ($(RACE_ENABLED), TRUE)
 	$(eval BUILD_OPTIONS = $(BUILD_OPTIONS) -race -o rudder-server-with-race)
-endif
 	$(GO) build $(BUILD_OPTIONS) -a -installsuffix cgo -ldflags="$(LDFLAGS)"
 	$(GO) build -o build/wait-for-go/wait-for-go build/wait-for-go/wait-for.go
 	$(GO) build -o build/regulation-worker ./regulation-worker/cmd/
@@ -55,7 +53,7 @@ run: ## Run rudder-server using go run
 	$(GO) run main.go
 
 run-mt: ## Run rudder-server in multi-tenant deployment type
-	$(GO) run ./cmd/devtool etcd mode --no-wait normal 
+	$(GO) run ./cmd/devtool etcd mode --no-wait normal
 	$(GO) run ./cmd/devtool etcd workspaces --no-wait none
 	DEPLOYMENT_TYPE=MULTITENANT $(GO) run main.go
 
@@ -70,12 +68,12 @@ install-tools:
 	go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.2.0
 	go install gotest.tools/gotestsum@v1.8.2
 
-.PHONY: lint 
+.PHONY: lint
 lint: fmt ## Run linters on all go files
 	docker run --rm -v $(shell pwd):/app:ro -w /app golangci/golangci-lint:v1.49.0 bash -e -c \
 		'golangci-lint run -v --timeout 5m'
 
-.PHONY: fmt 
+.PHONY: fmt
 fmt: install-tools ## Formats all go files
 	gofumpt -l -w -extra  .
 
