@@ -42,6 +42,7 @@ func (c *Config) load() {
 }
 
 func (c *Config) onConfigChange() {
+	fmt.Println("[Config] :: Config file changed. Reloading config...")
 	defer func() {
 		if r := recover(); r != nil {
 			err := fmt.Errorf("cannot update Config Variables: %v", r)
