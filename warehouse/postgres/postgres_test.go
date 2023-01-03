@@ -71,7 +71,7 @@ func TestIntegrationPostgresThroughTunnelling(t *testing.T) {
 	}{
 		{
 			name:          "upload job through ssh tunnelling",
-			writeKey:      "kwzDkh9h2fhfUVuS9jZ8uVbhV3v",
+			writeKey:      "kwzDkh9h2fhfUVuS9jZ8uVbhV3w",
 			schema:        "postgres_wh_ssh_tunnelled_integration",
 			tables:        []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"},
 			sourceID:      "1wRvLmEnMOOxSQD9pwaZhyCqXRF",

@@ -9,7 +9,7 @@
       },
       "id": "1wRvLmEnMOOxSQD9pwaZhyCqXRF",
       "name": "postgres_wh_ssh_tunnelled_integration",
-      "writeKey": "{{.postgresWriteKey}}",
+      "writeKey": "{{.postgresTunnelledWriteKey}}",
       "enabled": true,
       "sourceDefinitionId": "1TW3fuvuaZqJs877OEailT17KzZ",
       "createdBy": "1wLg8l6vAj2TuUUMIIBKL4nsVOT",
