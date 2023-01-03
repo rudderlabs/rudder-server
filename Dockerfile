@@ -8,7 +8,7 @@ ARG REVISION
 ARG COMMIT_HASH
 ARG ENTERPRISE_TOKEN
 ARG RACE_ENABLED=false
-ARG CGO_ENABLED=0
+ARG CGO_ENABLED=1
 ARG PKG_NAME=github.com/rudderlabs/release-demo
 
 RUN apk add --update make tzdata ca-certificates
