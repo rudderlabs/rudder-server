@@ -84,7 +84,7 @@ jobs:
       run: make test
     - uses: codecov/codecov-action@v2
     - name: Coveralls
-      uses: coverallsapp/github-action@master
+      uses: shogo82148/actions-goveralls@v1
       with:
-        github-token: ${{ secrets.github_token }}
+        path-to-profile: profile.out
 
