@@ -85,4 +85,6 @@ jobs:
     - uses: codecov/codecov-action@v2
     - name: Coveralls
       uses: coverallsapp/github-action@master
+      with:
+        github-token: ${{ secrets.github_token }}
 
