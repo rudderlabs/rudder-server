@@ -79,6 +79,10 @@ type TransformerEventT struct {
 	Libraries   []backendconfig.LibraryT   `json:"libraries"`
 }
 
+type httpPoster interface {
+	Post(url, contentType string, body io.Reader) (resp *http.Response, err error)
+}
+
 // HandleT is the handle for this class
 type HandleT struct {
 	sentStat     stats.Measurement
@@ -87,7 +91,7 @@ type HandleT struct {
 
 	logger logger.Logger
 
-	Client *http.Client
+	Client httpPoster
 
 	guardConcurrency chan struct{}
 }
@@ -229,13 +233,17 @@ func (trans *HandleT) Transform(ctx context.Context, clientEvents []TransformerE
 			to = len(clientEvents)
 		}
 		trans.guardConcurrency <- struct{}{}
-		go func() {
+		cp := make([]TransformerEventT, len(clientEvents[from:to]))
+		for j := range clientEvents[from:to] {
+			cp[j] = clientEvents[from+j]
+		}
+		go func(cp []TransformerEventT) {
 			trace.WithRegion(ctx, "request", func() {
-				transformResponse[i] = trans.request(ctx, url, clientEvents[from:to])
+				transformResponse[i] = trans.request(ctx, url, cp)
 			})
 			<-trans.guardConcurrency
 			wg.Done()
-		}()
+		}(cp)
 	}
 	wg.Wait()
 
