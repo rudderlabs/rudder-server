@@ -71,6 +71,7 @@ type HandleT struct {
 	backgroundWait            func() error
 	backgroundCancel          context.CancelFunc
 	transformerFeatures       json.RawMessage
+	transformFeaturesMutex    sync.RWMutex
 	readLoopSleep             time.Duration
 	maxLoopSleep              time.Duration
 	storeTimeout              time.Duration
@@ -564,6 +565,8 @@ func (proc *HandleT) makeFeaturesFetchCall() bool {
 		return true
 	}
 
+	proc.transformFeaturesMutex.Lock()
+	defer proc.transformFeaturesMutex.Unlock()
 	if res.StatusCode == 200 {
 		proc.transformerFeatures = body
 	} else if res.StatusCode == 404 {
@@ -1857,8 +1860,9 @@ func (proc *HandleT) transformSrcDest(
 	if transformAtOverrideFound {
 		transformAt = config.GetString("Processor."+destination.DestinationDefinition.Name+".transformAt", "processor")
 	}
+	proc.transformFeaturesMutex.RLock()
 	transformAtFromFeaturesFile := gjson.Get(string(proc.transformerFeatures), fmt.Sprintf("routerTransform.%s", destination.DestinationDefinition.Name)).String()
-
+	proc.transformFeaturesMutex.RUnlock()
 	// Filtering events based on the supported message types - START
 	s := time.Now()
 	proc.logger.Debug("Supported messages filtering input size", len(eventsToTransform))
