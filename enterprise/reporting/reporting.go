@@ -52,6 +52,7 @@ type HandleT struct {
 	reportingServiceURL       string
 	namespace                 string
 	workspaceID               string
+	workspaceIDMutex          sync.RWMutex
 	instanceID                string
 	workspaceIDForSourceIDMap map[string]string
 	piiReportingSettings      map[string]bool
@@ -115,7 +116,9 @@ func (r *HandleT) setup(beConfigHandle backendconfig.BackendConfig) {
 		if len(conf) > 1 {
 			newWorkspaceID = ""
 		}
+		r.workspaceIDMutex.Lock()
 		r.workspaceID = newWorkspaceID
+		r.workspaceIDMutex.Unlock()
 		r.workspaceIDForSourceIDMap = newWorkspaceIDForSourceIDMap
 		r.piiReportingSettings = newPIIReportingSettings
 		r.onceInit.Do(func() {
@@ -514,6 +517,8 @@ func (r *HandleT) Report(metrics []*types.PUReportedMetric, txn *sql.Tx) {
 }
 
 func (r *HandleT) getTags(clientName string) stats.Tags {
+	r.workspaceIDMutex.RLock()
+	defer r.workspaceIDMutex.RUnlock()
 	return stats.Tags{
 		"namespace":   r.namespace,
 		"workspaceId": r.workspaceID,
