@@ -15,6 +15,8 @@ import (
 
 	"github.com/cenkalti/backoff/v4"
 	"github.com/lib/pq"
+	"github.com/mohae/deepcopy"
+
 	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	migrator "github.com/rudderlabs/rudder-server/services/sql-migrator"
@@ -52,7 +54,7 @@ type HandleT struct {
 	reportingServiceURL       string
 	namespace                 string
 	workspaceID               string
-	workspaceIDMutex          sync.RWMutex
+	reportingMutex            sync.RWMutex
 	instanceID                string
 	workspaceIDForSourceIDMap map[string]string
 	piiReportingSettings      map[string]bool
@@ -116,11 +118,11 @@ func (r *HandleT) setup(beConfigHandle backendconfig.BackendConfig) {
 		if len(conf) > 1 {
 			newWorkspaceID = ""
 		}
-		r.workspaceIDMutex.Lock()
+		r.reportingMutex.Lock()
 		r.workspaceID = newWorkspaceID
-		r.workspaceIDMutex.Unlock()
-		r.workspaceIDForSourceIDMap = newWorkspaceIDForSourceIDMap
-		r.piiReportingSettings = newPIIReportingSettings
+		r.workspaceIDForSourceIDMap = deepcopy.Copy(newWorkspaceIDForSourceIDMap).(map[string]string)
+		r.piiReportingSettings = deepcopy.Copy(newPIIReportingSettings).(map[string]bool)
+		r.reportingMutex.Unlock()
 		r.onceInit.Do(func() {
 			close(r.init)
 		})
@@ -133,6 +135,8 @@ func (r *HandleT) setup(beConfigHandle backendconfig.BackendConfig) {
 
 func (r *HandleT) getWorkspaceID(sourceID string) string {
 	<-r.init
+	r.reportingMutex.RLock()
+	defer r.reportingMutex.RUnlock()
 	return r.workspaceIDForSourceIDMap[sourceID]
 }
 
@@ -481,6 +485,8 @@ func transformMetricForPII(metric types.PUReportedMetric, piiColumns []string) t
 
 func (r *HandleT) IsPIIReportingDisabled(workspaceID string) bool {
 	<-r.init
+	r.reportingMutex.RLock()
+	defer r.reportingMutex.RUnlock()
 	return r.piiReportingSettings[workspaceID]
 }
 
@@ -517,8 +523,8 @@ func (r *HandleT) Report(metrics []*types.PUReportedMetric, txn *sql.Tx) {
 }
 
 func (r *HandleT) getTags(clientName string) stats.Tags {
-	r.workspaceIDMutex.RLock()
-	defer r.workspaceIDMutex.RUnlock()
+	r.reportingMutex.RLock()
+	defer r.reportingMutex.RUnlock()
 	return stats.Tags{
 		"namespace":   r.namespace,
 		"workspaceId": r.workspaceID,

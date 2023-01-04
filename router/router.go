@@ -116,6 +116,7 @@ type HandleT struct {
 	routerTimeout                           time.Duration
 	destinationResponseHandler              ResponseHandlerI
 	saveDestinationResponse                 bool
+	destinationResponseMutex                sync.RWMutex
 	Reporting                               reporter
 	savePayloadOnError                      bool
 	oauth                                   oauth.Authorizer
@@ -743,10 +744,11 @@ func (worker *workerT) processDestinationJobs() {
 				// By default we get some config from dest def
 				// We can override via env saveDestinationResponseOverride
 
+				worker.rt.destinationResponseMutex.RLock()
 				if isSuccessStatus(respStatusCode) && !getRouterConfigBool("saveDestinationResponseOverride", worker.rt.destName, false) && !worker.rt.saveDestinationResponse {
 					respBody = ""
 				}
-
+				worker.rt.destinationResponseMutex.RUnlock()
 				worker.updateReqMetrics(respStatusCode, &diagnosisStartTime)
 			} else {
 				respStatusCode = http.StatusInternalServerError
@@ -1828,7 +1830,9 @@ func (rt *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB jobsd
 
 	rt.destinationResponseHandler = New(destinationConfig.responseRules)
 	if value, ok := destinationConfig.config["saveDestinationResponse"].(bool); ok {
+		rt.destinationResponseMutex.Lock()
 		rt.saveDestinationResponse = value
+		rt.destinationResponseMutex.Unlock()
 	}
 	rt.guaranteeUserEventOrder = getRouterConfigBool("guaranteeUserEventOrder", rt.destName, true)
 	rt.noOfWorkers = getRouterConfigInt("noOfWorkers", destName, 64)
@@ -1985,7 +1989,9 @@ func (rt *HandleT) backendConfigSubscriber() {
 
 							rt.destinationResponseHandler = New(destination.DestinationDefinition.ResponseRules)
 							if value, ok := destination.DestinationDefinition.Config["saveDestinationResponse"].(bool); ok {
+								rt.destinationResponseMutex.Lock()
 								rt.saveDestinationResponse = value
+								rt.destinationResponseMutex.Unlock()
 							}
 
 							// Config key "throttlingCost" is expected to have the eventType as the first key and the call type
