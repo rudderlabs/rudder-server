@@ -1375,7 +1375,7 @@ func (proc *HandleT) processJobsForDest(subJobs subJob, parsedEventList [][]type
 					destination := &enabledDestinationsList[idx]
 					shallowEventCopy := transformer.TransformerEventT{}
 					shallowEventCopy.Message = singularEvent
-					shallowEventCopy.Destination = deepcopy.Copy(destination).(backendconfig.DestinationT)
+					shallowEventCopy.Destination = deepcopy.Copy(*destination).(backendconfig.DestinationT)
 					shallowEventCopy.Libraries = workspaceLibraries
 					shallowEventCopy.Metadata = event.Metadata
 
@@ -1715,10 +1715,10 @@ type transformSrcDestOutput struct {
 
 func (proc *HandleT) transformSrcDest(
 	ctx context.Context,
-// main inputs
+	// main inputs
 	srcAndDestKey string, eventList []transformer.TransformerEventT,
 
-// helpers
+	// helpers
 	trackingPlanEnabledMap map[SourceIDT]bool,
 	eventsByMessageID map[string]types.SingularEventWithReceivedAt,
 	uniqueMessageIdsBySrcDestKey map[string]map[string]struct{},
