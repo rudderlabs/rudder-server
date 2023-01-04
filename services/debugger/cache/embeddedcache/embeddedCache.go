@@ -128,7 +128,9 @@ func (e *EmbeddedCache[E]) init() {
 			WithLogger(badgerLogger{e.Logger}).
 			WithCompression(options.None).
 			WithIndexCacheSize(16 << 20). // 16mb
-			WithNumGoroutines(1)
+			WithNumGoroutines(1).
+			WithNumMemtables(0).
+			WithBlockCacheSize(0)
 
 		e.db, err = badger.Open(opts)
 		if err != nil {
@@ -143,12 +145,12 @@ func (e *EmbeddedCache[E]) init() {
 
 func (e *EmbeddedCache[E]) gcBadgerDB() {
 	for {
-		time.After(5 * time.Minute)
+		time.Sleep(30 * time.Second)
 		// One call would only result in removal of at max one log file.
 		// As an optimization, you could also immediately re-run it whenever it returns nil error
 		// (this is why `goto again` is used).
 	again:
-		err := e.db.RunValueLogGC(0.5)
+		err := e.db.RunValueLogGC(0.7)
 		if err == nil {
 			goto again
 		}
