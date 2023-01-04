@@ -101,6 +101,7 @@ type HandleT struct {
 	Client httpPoster
 
 	guardConcurrency chan struct{}
+	guardRaceMutex   sync.RWMutex
 }
 
 // Transformer provides methods to transform events
@@ -240,8 +241,10 @@ func (trans *HandleT) Transform(ctx context.Context, clientEvents []TransformerE
 			to = len(clientEvents)
 		}
 		trans.guardConcurrency <- struct{}{}
+		trans.guardRaceMutex.Lock()
 		var slice TransformerEvents = clientEvents[from:to]
 		cp := slice.Copy()
+		trans.guardRaceMutex.Unlock()
 		go func(cp TransformerEvents) {
 			trace.WithRegion(ctx, "request", func() {
 				transformResponse[i] = trans.request(ctx, url, cp)
