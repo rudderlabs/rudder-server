@@ -283,8 +283,7 @@ func TestTransformerEventsDeepCopy(t *testing.T) {
 		},
 	}
 
-	teCopy, err := te.Copy()
-	require.NoError(t, err)
+	teCopy := te.Copy()
 
 	teJSON, err := json.Marshal(te)
 	require.NoError(t, err)

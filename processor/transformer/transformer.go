@@ -15,6 +15,7 @@ import (
 
 	"github.com/cenkalti/backoff"
 	jsoniter "github.com/json-iterator/go"
+	"github.com/mohae/deepcopy"
 
 	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
@@ -74,19 +75,8 @@ type MetadataT struct {
 
 type TransformerEvents []TransformerEventT
 
-func (t TransformerEvents) Copy() (TransformerEvents, error) {
-	buf, err := jsonfast.Marshal(t)
-	if err != nil {
-		return nil, fmt.Errorf("could not copy transformer events: %w", err)
-	}
-
-	var cp TransformerEvents
-	err = jsonfast.Unmarshal(buf, &cp)
-	if err != nil {
-		return nil, fmt.Errorf("could not populate transformer events: %w", err)
-	}
-
-	return cp, nil
+func (t TransformerEvents) Copy() TransformerEvents {
+	return deepcopy.Copy(t).(TransformerEvents)
 }
 
 type TransformerEventT struct {
@@ -251,10 +241,7 @@ func (trans *HandleT) Transform(ctx context.Context, clientEvents []TransformerE
 		}
 		trans.guardConcurrency <- struct{}{}
 		var slice TransformerEvents = clientEvents[from:to]
-		cp, err := slice.Copy()
-		if err != nil {
-			panic(fmt.Errorf("failed to copy transformer events: %w", err))
-		}
+		cp := slice.Copy()
 		go func(cp TransformerEvents) {
 			trace.WithRegion(ctx, "request", func() {
 				transformResponse[i] = trans.request(ctx, url, cp)
