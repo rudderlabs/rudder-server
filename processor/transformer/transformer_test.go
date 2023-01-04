@@ -86,7 +86,7 @@ func Test_Transformer(t *testing.T) {
 		failEvery := tt.failEvery
 
 		events := make([]transformer.TransformerEventT, eventsCount)
-		expectedResponse := transformer.ResponseT{}
+		var expectedResponse transformer.ResponseT
 
 		for i := range events {
 			msgID := fmt.Sprintf("messageID-%d", i)
