@@ -259,7 +259,11 @@ func (customManager *CustomManagerT) onConfigChange(destID string, newDestConfig
 			customManager.genComparisonConfig(breaker.config),
 			customManager.genComparisonConfig(newDestConfig),
 		)
-
+		if hasDestConfigChanged {
+			breakerConfig, _ := json.Marshal(breaker.config)
+			newDestConfigStr, _ := json.Marshal(newDestConfig)
+			pkgLogger.Infof("[CDM %s] [Circuit Breaker] Circuit breaker config changed for destination id: %s. Old config: %s, New config: %s", customManager.destType, destID, breakerConfig, newDestConfigStr)
+		}
 		if !hasDestConfigChanged {
 			return nil
 		}
