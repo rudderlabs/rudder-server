@@ -1220,7 +1220,7 @@ var _ = Describe("Processor", func() {
 			defer cancel()
 
 			go processor.mainLoop(ctx)
-			Eventually(func() bool { return isUnLocked }, 30*time.Second, 10*time.Millisecond).Should(BeFalse())
+			Eventually(func() bool { return isUnLocked.Load() }, 30*time.Second, 10*time.Millisecond).Should(BeFalse())
 		})
 	})
 

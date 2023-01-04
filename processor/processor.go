@@ -14,6 +14,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	jsoniter "github.com/json-iterator/go"
@@ -471,7 +472,7 @@ var (
 	captureEventNameStats     bool
 	transformerURL            string
 	pollInterval              time.Duration
-	isUnLocked                bool
+	isUnLocked                atomic.Bool
 	GWCustomVal               string
 )
 
@@ -530,8 +531,8 @@ func (proc *HandleT) syncTransformerFeatureJson(ctx context.Context) {
 			}
 		}
 
-		if proc.transformerFeatures != nil && !isUnLocked {
-			isUnLocked = true
+		if proc.transformerFeatures != nil && !isUnLocked.Load() {
+			isUnLocked.Store(true)
 		}
 
 		select {
@@ -2307,7 +2308,7 @@ func (proc *HandleT) mainLoop(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-time.After(mainLoopTimeout):
-			if isUnLocked {
+			if isUnLocked.Load() {
 				found := proc.handlePendingGatewayJobs()
 				if found {
 					currLoopSleep = 0
@@ -2406,7 +2407,7 @@ func (proc *HandleT) mainPipeline(ctx context.Context) {
 			case <-ctx.Done():
 				return
 			case <-time.After(nextSleepTime):
-				if !isUnLocked {
+				if !isUnLocked.Load() {
 					nextSleepTime = proc.maxLoopSleep
 					continue
 				}

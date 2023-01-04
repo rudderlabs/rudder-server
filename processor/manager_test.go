@@ -145,8 +145,8 @@ func genJobs(customVal string, jobCount, eventsPerJob int) []*jobsdb.JobT {
 }
 
 func TestProcessorManager(t *testing.T) {
-	temp := isUnLocked
-	defer func() { isUnLocked = temp }()
+	temp := isUnLocked.Load()
+	defer func() { isUnLocked.Store(temp) }()
 	initJobsDB()
 	mockCtrl := gomock.NewController(t)
 	mockBackendConfig := mocksBackendConfig.NewMockBackendConfig(mockCtrl)
