@@ -82,7 +82,6 @@ jobs:
         TEST_KAFKA_AZURE_EVENT_HUBS_CLOUD_EVENTHUB_NAME: ${{ secrets.TEST_KAFKA_AZURE_EVENT_HUBS_CLOUD_EVENTHUB_NAME }}
         TEST_KAFKA_AZURE_EVENT_HUBS_CLOUD_CONNECTION_STRING: ${{ secrets.TEST_KAFKA_AZURE_EVENT_HUBS_CLOUD_CONNECTION_STRING }}
       run: make test
-    - uses: codecov/codecov-action@v2
     - name: Coveralls
       uses: shogo82148/actions-goveralls@v1
       with:
