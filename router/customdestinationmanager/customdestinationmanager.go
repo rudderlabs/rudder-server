@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/mohae/deepcopy"
 	"github.com/sony/gobreaker"
 
 	"github.com/rudderlabs/rudder-server/config"
@@ -175,9 +176,11 @@ func (customManager *CustomManagerT) SendData(jsonData json.RawMessage, destID s
 		clientLock.RLock()
 		customDestination = customManager.client[destID]
 	}
+
+	destConfig := deepcopy.Copy(customDestination.config).(map[string]interface{})
 	clientLock.RUnlock()
 
-	respStatusCode, respBody := customManager.send(jsonData, customDestination.client, customDestination.config)
+	respStatusCode, respBody := customManager.send(jsonData, customDestination.client, destConfig)
 
 	if respStatusCode == CLIENT_EXPIRED_CODE {
 		clientLock.Lock()
@@ -188,8 +191,9 @@ func (customManager *CustomManagerT) SendData(jsonData json.RawMessage, destID s
 		}
 		clientLock.RLock()
 		customDestination = customManager.client[destID]
+		destConfig := deepcopy.Copy(customDestination.config).(map[string]interface{})
 		clientLock.RUnlock()
-		respStatusCode, respBody = customManager.send(jsonData, customDestination.client, customDestination.config)
+		respStatusCode, respBody = customManager.send(jsonData, customDestination.client, destConfig)
 	}
 
 	return respStatusCode, respBody
