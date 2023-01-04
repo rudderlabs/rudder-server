@@ -3,6 +3,10 @@ Package metric implements an abstraction for safely managing metrics in concurre
 */
 package metric
 
+import (
+	"sync"
+)
+
 const (
 	PUBLISHED_METRICS string = "published_metrics"
 )
@@ -26,14 +30,19 @@ type Manager interface {
 }
 
 type manager struct {
+	mu         sync.RWMutex
 	registries map[string]Registry
 }
 
 func (r *manager) GetRegistry(key string) Registry {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
 	return r.registries[key]
 }
 
 func (r *manager) Reset() {
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	for key := range r.registries {
 		r.registries[key] = NewRegistry()
 	}
