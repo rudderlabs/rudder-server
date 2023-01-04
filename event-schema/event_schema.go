@@ -34,6 +34,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/google/uuid"
@@ -160,7 +161,7 @@ var (
 	schemaVersionPerEventModelLimit int
 	offloadLoopInterval             time.Duration
 	offloadThreshold                time.Duration
-	areEventSchemasPopulated        bool
+	areEventSchemasPopulated        atomic.Bool
 )
 
 const (
@@ -603,7 +604,7 @@ func (*EventSchemaManagerT) NewSchemaVersion(versionID string, schema map[string
 
 func (manager *EventSchemaManagerT) recordEvents() {
 	for gatewayEventBatch := range eventSchemaChannel {
-		if !areEventSchemasPopulated {
+		if !areEventSchemasPopulated.Load() {
 			continue
 		}
 		var eventPayload EventPayloadT
@@ -654,7 +655,7 @@ func (manager *EventSchemaManagerT) flushEventSchemas(ctx context.Context) {
 		case <-ticker.C:
 			pkgLogger.Info("Starting with flushing event schemas")
 
-			if !areEventSchemasPopulated {
+			if !areEventSchemasPopulated.Load() {
 				pkgLogger.Warn("Event schemas aren't populated, continuing")
 				continue
 			}
@@ -825,7 +826,7 @@ func eventTypeIdentifier(eventType, eventIdentifier string) string {
 
 func (manager *EventSchemaManagerT) offloadEventSchemas() {
 	for {
-		if !areEventSchemasPopulated {
+		if !areEventSchemasPopulated.Load() {
 			time.Sleep(time.Second * 10)
 			continue
 		}
@@ -1080,7 +1081,7 @@ func (manager *EventSchemaManagerT) populateEventSchemas() {
 }
 
 func setEventSchemasPopulated(status bool) {
-	areEventSchemasPopulated = status
+	areEventSchemasPopulated.Store(status)
 }
 
 func getSchema(flattenedEvent map[string]interface{}) map[string]string {
