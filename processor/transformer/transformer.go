@@ -72,6 +72,23 @@ type MetadataT struct {
 	DestinationDefinitionID string   `json:"destinationDefinitionId"`
 }
 
+type TransformerEvents []TransformerEventT
+
+func (t TransformerEvents) Copy() (TransformerEvents, error) {
+	buf, err := jsonfast.Marshal(t)
+	if err != nil {
+		return nil, fmt.Errorf("could not copy transformer events: %w", err)
+	}
+
+	var cp TransformerEvents
+	err = jsonfast.Unmarshal(buf, &cp)
+	if err != nil {
+		return nil, fmt.Errorf("could not populate transformer events: %w", err)
+	}
+
+	return cp, nil
+}
+
 type TransformerEventT struct {
 	Message     types.SingularEventT       `json:"message"`
 	Metadata    MetadataT                  `json:"metadata"`
@@ -233,11 +250,12 @@ func (trans *HandleT) Transform(ctx context.Context, clientEvents []TransformerE
 			to = len(clientEvents)
 		}
 		trans.guardConcurrency <- struct{}{}
-		cp := make([]TransformerEventT, len(clientEvents[from:to]))
-		for j := range clientEvents[from:to] {
-			cp[j] = clientEvents[from+j]
+		var slice TransformerEvents = clientEvents[from:to]
+		cp, err := slice.Copy()
+		if err != nil {
+			panic(fmt.Errorf("failed to copy transformer events: %w", err))
 		}
-		go func(cp []TransformerEventT) {
+		go func(cp TransformerEvents) {
 			trace.WithRegion(ctx, "request", func() {
 				transformResponse[i] = trans.request(ctx, url, cp)
 			})

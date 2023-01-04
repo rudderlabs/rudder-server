@@ -8,11 +8,14 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/stretchr/testify/require"
+
 	"github.com/rudderlabs/rudder-server/config"
+	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/gateway/response"
 	"github.com/rudderlabs/rudder-server/processor/transformer"
 	"github.com/rudderlabs/rudder-server/utils/logger"
-	"github.com/stretchr/testify/require"
+	"github.com/rudderlabs/rudder-server/utils/types"
 )
 
 type fakeTransformer struct {
@@ -126,6 +129,170 @@ func Test_Transformer(t *testing.T) {
 		rsp := tr.Transform(context.TODO(), events, srv.URL, batchSize)
 		require.Equal(t, expectedResponse, rsp)
 	}
+}
+
+func TestTransformerEventsDeepCopy(t *testing.T) {
+	te := transformer.TransformerEvents{
+		{
+			Message: types.SingularEventT{"foo": "bar"},
+			Metadata: transformer.MetadataT{
+				SourceID:            "SourceID",
+				WorkspaceID:         "WorkspaceID",
+				Namespace:           "Namespace",
+				InstanceID:          "InstanceID",
+				SourceType:          "SourceType",
+				SourceCategory:      "SourceCategory",
+				TrackingPlanId:      "TrackingPlanId",
+				TrackingPlanVersion: 1,
+				SourceTpConfig: map[string]map[string]interface{}{
+					"sourceTpConfig": {
+						"sourceTpConfig": "sourceTpConfig",
+					},
+				},
+				MergedTpConfig: map[string]interface{}{
+					"mergedTpConfig": "mergedTpConfig",
+				},
+				DestinationID:           "DestinationID",
+				JobRunID:                "JobRunID",
+				JobID:                   1,
+				SourceBatchID:           "SourceBatchID",
+				SourceJobID:             "SourceJobID",
+				SourceJobRunID:          "SourceJobRunID",
+				SourceTaskID:            "SourceTaskID",
+				SourceTaskRunID:         "SourceTaskRunID",
+				RecordID:                nil,
+				DestinationType:         "DestinationType",
+				MessageID:               "MessageID",
+				OAuthAccessToken:        "OAuthAccessToken",
+				MessageIDs:              nil,
+				RudderID:                "RudderID",
+				ReceivedAt:              "ReceivedAt",
+				EventName:               "EventName",
+				EventType:               "EventType",
+				SourceDefinitionID:      "SourceDefinitionID",
+				DestinationDefinitionID: "DestinationDefinitionID",
+			},
+			Destination: backendconfig.DestinationT{
+				ID:   "ID",
+				Name: "Name",
+				DestinationDefinition: backendconfig.DestinationDefinitionT{
+					ID:          "ID",
+					Name:        "Name",
+					DisplayName: "DisplayName",
+					Config: map[string]interface{}{
+						"config": "config",
+					},
+					ResponseRules: map[string]interface{}{
+						"responseRules": "responseRules",
+					},
+				},
+				Config: map[string]interface{}{
+					"config": "config",
+				},
+				Enabled:     true,
+				WorkspaceID: "WorkspaceID",
+				Transformations: []backendconfig.TransformationT{
+					{
+						VersionID: "VersionID",
+						ID:        "ID",
+						Config: map[string]interface{}{
+							"config": "config",
+						},
+					},
+				},
+				IsProcessorEnabled: false,
+				RevisionID:         "RevisionID",
+			},
+			Libraries: []backendconfig.LibraryT{
+				{VersionID: "VersionID"},
+			},
+		},
+		{
+			Message: types.SingularEventT{"foo": "bar2"},
+			Metadata: transformer.MetadataT{
+				SourceID:            "SourceID2",
+				WorkspaceID:         "WorkspaceID2",
+				Namespace:           "Namespace2",
+				InstanceID:          "InstanceID2",
+				SourceType:          "SourceType2",
+				SourceCategory:      "SourceCategory2",
+				TrackingPlanId:      "TrackingPlanId2",
+				TrackingPlanVersion: 2,
+				SourceTpConfig: map[string]map[string]interface{}{
+					"sourceTpConfig2": {
+						"sourceTpConfig2": "sourceTpConfig2",
+					},
+				},
+				MergedTpConfig: map[string]interface{}{
+					"mergedTpConfig2": "mergedTpConfig2",
+				},
+				DestinationID:           "DestinationID2",
+				JobRunID:                "JobRunID2",
+				JobID:                   2,
+				SourceBatchID:           "SourceBatchID2",
+				SourceJobID:             "SourceJobID2",
+				SourceJobRunID:          "SourceJobRunID2",
+				SourceTaskID:            "SourceTaskID2",
+				SourceTaskRunID:         "SourceTaskRunID2",
+				RecordID:                nil,
+				DestinationType:         "DestinationType2",
+				MessageID:               "MessageID2",
+				OAuthAccessToken:        "OAuthAccessToken2",
+				MessageIDs:              nil,
+				RudderID:                "RudderID2",
+				ReceivedAt:              "ReceivedAt2",
+				EventName:               "EventName2",
+				EventType:               "EventType2",
+				SourceDefinitionID:      "SourceDefinitionID2",
+				DestinationDefinitionID: "DestinationDefinitionID2",
+			},
+			Destination: backendconfig.DestinationT{
+				ID:   "ID2",
+				Name: "Name2",
+				DestinationDefinition: backendconfig.DestinationDefinitionT{
+					ID:          "ID2",
+					Name:        "Name2",
+					DisplayName: "DisplayName2",
+					Config: map[string]interface{}{
+						"config2": "config2",
+					},
+					ResponseRules: map[string]interface{}{
+						"responseRules2": "responseRules2",
+					},
+				},
+				Config: map[string]interface{}{
+					"config2": "config2",
+				},
+				Enabled:     true,
+				WorkspaceID: "WorkspaceID2",
+				Transformations: []backendconfig.TransformationT{
+					{
+						VersionID: "VersionID2",
+						ID:        "ID2",
+						Config: map[string]interface{}{
+							"config": "config2",
+						},
+					},
+				},
+				IsProcessorEnabled: true,
+				RevisionID:         "RevisionID2",
+			},
+			Libraries: []backendconfig.LibraryT{
+				{VersionID: "VersionID2"},
+			},
+		},
+	}
+
+	teCopy, err := te.Copy()
+	require.NoError(t, err)
+
+	teJSON, err := json.Marshal(te)
+	require.NoError(t, err)
+
+	teCopyJSON, err := json.Marshal(teCopy)
+	require.NoError(t, err)
+
+	require.JSONEq(t, string(teJSON), string(teCopyJSON))
 }
 
 func Test_EndlessLoopIf809(t *testing.T) {
