@@ -520,7 +520,7 @@ func (manager *EventSchemaManagerT) oldestSeenModel(writeKey string) *EventModel
 	}
 	for _, offloadedModel := range offloadedEventModels[writeKey] {
 		if !offloadedModel.LastSeen.IsZero() && (offloadedModel.LastSeen.Sub(minLastSeen).Seconds() <= 0 || minLastSeen.IsZero()) {
-			model := EventModelT{}
+			var model EventModelT
 			model.UUID = offloadedModel.UUID
 			model.WriteKey = offloadedModel.WriteKey
 			model.EventType = offloadedModel.EventType

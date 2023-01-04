@@ -1220,7 +1220,7 @@ var _ = Describe("Processor", func() {
 			defer cancel()
 
 			go processor.mainLoop(ctx)
-			Eventually(func() bool { return isUnLocked.Load() }, 30*time.Second, 10*time.Millisecond).Should(BeFalse())
+			Eventually(isUnLocked.Load, 30*time.Second, 10*time.Millisecond).Should(BeFalse())
 		})
 	})
 
@@ -2231,7 +2231,7 @@ var _ = Describe("TestSubJobMerger", func() {
 	}
 	Context("testing jobs merger, which merge sub-jobs into final job", func() {
 		It("subJobSize: 1", func() {
-			mergedJob := storeMessage{}
+			var mergedJob storeMessage
 			mergedJob.uniqueMessageIds = make(map[string]struct{})
 			mergedJob.procErrorJobsByDestID = make(map[string][]*jobsdb.JobT)
 			mergedJob.sourceDupStats = make(map[string]int)
@@ -2333,7 +2333,7 @@ var _ = Describe("TestSubJobMerger", func() {
 	})
 	Context("testing jobs merger, which merge sub-jobs into final job", func() {
 		It("subJobSize: 2", func() {
-			mergedJob := storeMessage{}
+			var mergedJob storeMessage
 			mergedJob.uniqueMessageIds = make(map[string]struct{})
 			mergedJob.procErrorJobsByDestID = make(map[string][]*jobsdb.JobT)
 			mergedJob.sourceDupStats = make(map[string]int)
