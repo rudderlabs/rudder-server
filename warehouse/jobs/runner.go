@@ -202,7 +202,7 @@ func (a *AsyncJobWhT) startAsyncJobRunner(ctx context.Context) error {
 				Jobs:    notifierClaims,
 				JobType: AsyncJobType,
 			}
-			schema := warehouseutils.SchemaT{}
+			var schema warehouseutils.SchemaT
 			ch, err := a.pgnotifier.Publish(messagePayload, &schema, 100)
 			if err != nil {
 				a.logger.Errorf("[WH-Jobs]: unable to get publish async jobs to pgnotifier. Task failed with error %s", err.Error())
