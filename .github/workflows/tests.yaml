@@ -85,5 +85,5 @@ jobs:
     - name: Coveralls
       uses: shogo82148/actions-goveralls@v1
       with:
-        path-to-profile: profile.out
+        path-to-profile: coverage.txt
 
