@@ -46,7 +46,8 @@ const (
 		"channel":"sources",
 		"async_job_type":"deletebyjobrunid",
 		"destination_id":"%s",
-		"start_time":"%s"
+		"start_time":"%s",
+		"workspace_id":"%s"
 	}`
 	IdentifyPayload = `{
 	  "userId": "%s",

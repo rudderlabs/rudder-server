@@ -28,7 +28,11 @@ func (a *AsyncJobWhT) AddWarehouseJobHandler(w http.ResponseWriter, r *http.Requ
 		http.Error(w, "can't read body", http.StatusBadRequest)
 		return
 	}
-	defer r.Body.Close()
+	err = r.Body.Close()
+	if err != nil {
+		a.logger.Errorf("[WH-Jobs]: Error reading body: %v", err)
+		http.Error(w, "can't read body", http.StatusBadRequest)
+	}
 	var startJobPayload StartJobReqPayload
 	err = json.Unmarshal(body, &startJobPayload)
 	if err != nil {
@@ -109,11 +113,13 @@ func (a *AsyncJobWhT) StatusWarehouseJobHandler(w http.ResponseWriter, r *http.R
 
 		sourceId := r.URL.Query().Get("source_id")
 		destinationId := r.URL.Query().Get("destination_id")
+		workspaceId := r.URL.Query().Get("workspace_id")
 		payload := StartJobReqPayload{
 			TaskRunID:     taskRunId,
 			JobRunID:      jobRunId,
 			SourceID:      sourceId,
 			DestinationID: destinationId,
+			WorkspaceID:   workspaceId,
 		}
 		if !validatePayload(payload) {
 

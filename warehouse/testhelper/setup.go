@@ -487,6 +487,7 @@ func verifyAsyncJob(t testing.TB, wareHouseTest *WareHouseTest) {
 	t.Helper()
 	t.Logf("Started verifying async job")
 
+	workspaceID := "BpLnfgDsc2WD8F2qNfHK5a84jjJ"
 	asyncPayload := strings.NewReader(
 		fmt.Sprintf(
 			AsyncWhPayload,
@@ -495,6 +496,7 @@ func verifyAsyncJob(t testing.TB, wareHouseTest *WareHouseTest) {
 			wareHouseTest.TaskRunID,
 			wareHouseTest.DestinationID,
 			time.Now().UTC().Format("2006-01-02 15:04:05"),
+			workspaceID,
 		),
 	)
 	t.Logf("Run async job for sourceID: %s, DestinationID: %s, jobRunID: %s, taskRunID: %s",
