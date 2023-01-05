@@ -79,6 +79,7 @@ func (a *AsyncJobWhT) AddWarehouseJobHandler(w http.ResponseWriter, r *http.Requ
 			TableName:     th,
 			AsyncJobType:  startJobPayload.AsyncJobType,
 			MetaData:      metadataJson,
+			WorkspaceID:   startJobPayload.WorkspaceID,
 		}
 		id, err := a.addJobsToDB(a.context, &payload)
 		if err != nil {

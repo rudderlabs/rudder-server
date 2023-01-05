@@ -45,7 +45,7 @@ func (a *AsyncJobWhT) getTableNamesBy(sourceID, destinationID, jobRunID, taskRun
 	a.logger.Infof("[WH-Jobs]: Extracting table names for the job run id %s", jobRunID)
 	var tableNames []string
 	var err error
-	query := fmt.Sprintf(`SELECT id from %s where metadata->>'%s'=$1 and metadata->>'%s'=$2 and metadata in (SELECT metadata FROM wh_uploads where source_id=$3 and destination_id=$4)`, warehouseutils.WarehouseUploadsTable, "source_job_run_id", "source_task_run_id")
+	query := fmt.Sprintf(`SELECT id from %s where metadata->>'%s'=$1 and metadata->>'%s'=$2 and metadata in (SELECT metadata FROM %s where source_id=$3 and destination_id=$4)`, warehouseutils.WarehouseUploadsTable, "source_job_run_id", "source_task_run_id", warehouseutils.WarehouseUploadsTable)
 	a.logger.Debugf("[WH-Jobs]: Query is %s\n", query)
 	rows, err := a.dbHandle.Query(query, jobRunID, taskRunID, sourceID, destinationID)
 	if err != nil {
@@ -90,8 +90,8 @@ func (a *AsyncJobWhT) addJobsToDB(ctx context.Context, payload *AsyncJobPayloadT
 	}
 	a.logger.Infof("[WH-Jobs]: Adding job to the wh_async_jobs %s for tableName: %s", payload.MetaData, payload.TableName)
 
-	sqlStatement := fmt.Sprintf(`INSERT INTO %s (source_id, destination_id, tablename, status, created_at, updated_at, async_job_type, metadata)
-	VALUES ($1, $2, $3, $4, $5, $6 ,$7, $8 ) RETURNING id`, warehouseutils.WarehouseAsyncJobTable)
+	sqlStatement := fmt.Sprintf(`INSERT INTO %s (source_id, destination_id, tablename, status, created_at, updated_at, async_job_type, workspace_id, metadata)
+	VALUES ($1, $2, $3, $4, $5, $6 ,$7, $8, $9 ) RETURNING id`, warehouseutils.WarehouseAsyncJobTable)
 
 	stmt, err := a.dbHandle.Prepare(sqlStatement)
 	if err != nil {
@@ -102,7 +102,7 @@ func (a *AsyncJobWhT) addJobsToDB(ctx context.Context, payload *AsyncJobPayloadT
 
 	defer stmt.Close()
 	now := timeutil.Now()
-	row := stmt.QueryRow(payload.SourceID, payload.DestinationID, payload.TableName, WhJobWaiting, now, now, payload.AsyncJobType, payload.MetaData)
+	row := stmt.QueryRow(payload.SourceID, payload.DestinationID, payload.TableName, WhJobWaiting, now, now, payload.AsyncJobType, payload.WorkspaceID, payload.MetaData)
 	err = row.Scan(&jobId)
 	if err != nil {
 		a.logger.Errorf("[WH-Jobs]: Error processing the %s, %s ", sqlStatement, err.Error())
