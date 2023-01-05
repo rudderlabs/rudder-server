@@ -22,12 +22,10 @@ import (
 var pkgLogger = logger.NewLogger().Child("client")
 
 type JobAPI struct {
-	Client *http.Client
-	// ID        string
+	Client    *http.Client
 	URLPrefix string
-	// Token     string
-	Identity identity.Identifier
-	Mode     deployment.Type
+	Identity  identity.Identifier
+	Mode      deployment.Type
 }
 
 func (j *JobAPI) URL() string {

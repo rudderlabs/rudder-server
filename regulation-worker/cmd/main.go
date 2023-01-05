@@ -43,15 +43,20 @@ func main() {
 		cancel()
 		close(c)
 	}()
-	Run(ctx)
+	err := Run(ctx)
+	if err != nil {
+		pkgLogger.Errorf("error while running regulation worker: %v", err)
+		os.Exit(1)
+
+	}
 }
 
-func Run(ctx context.Context) {
+func Run(ctx context.Context) error {
 	admin.Init()
 	stats.Default.Start(ctx)
 	backendconfig.Init()
 	if err := backendconfig.Setup(nil); err != nil {
-		panic(fmt.Errorf("error while setting up backend config: %v", err))
+		return fmt.Errorf("error while setting up backend config: %v", err)
 	}
 	dest := &destination.DestinationConfig{
 		Dest: backendconfig.DefaultBackendConfig,
@@ -59,7 +64,7 @@ func Run(ctx context.Context) {
 
 	deploymentType, err := deployment.GetFromEnv()
 	if err != nil {
-		panic(fmt.Errorf("error while getting deployment type: %v", err))
+		return fmt.Errorf("error while getting deployment type: %v", err)
 	}
 	pkgLogger.Infof("starting regulation worker in %v mode", deploymentType)
 	backendconfig.DefaultBackendConfig.StartWithIDs(ctx, "")
@@ -100,9 +105,9 @@ func Run(ctx context.Context) {
 		return l.Loop(ctx)
 	})()
 	if err != nil && !errors.Is(err, context.Canceled) {
-		pkgLogger.Errorf("error: %v", err)
-		panic(err)
+		return fmt.Errorf("error: %v", err)
 	}
+	return nil
 }
 
 func withLoop(svc service.JobSvc) *service.Looper {

@@ -201,7 +201,8 @@ func TestFlow(t *testing.T) {
 		go func() {
 			defer close(done)
 			defer svcCancel()
-			main.Run(svcCtx)
+			err := main.Run(svcCtx)
+			require.NoError(t, err, "error while running regulation-worker")
 		}()
 		require.Eventually(t, func() bool {
 			testDataMu.Lock()
@@ -217,9 +218,7 @@ func TestFlow(t *testing.T) {
 
 	t.Run("Multi-tenant: test complete worker flow", func(t *testing.T) {
 		t.Setenv("DEPLOYMENT_TYPE", "MULTITENANT")
-		// WORKSPACE_NAMESPACE is used to set namespaceID
 		t.Setenv("WORKSPACE_NAMESPACE", namespaceID)
-		// HOSTED_SERVICE_SECRET is used to set namespace secret
 		t.Setenv("HOSTED_SERVICE_SECRET", "foobar")
 
 		done := make(chan struct{})
@@ -228,7 +227,8 @@ func TestFlow(t *testing.T) {
 		go func() {
 			defer close(done)
 			defer svcCancel()
-			main.Run(svcCtx)
+			err := main.Run(svcCtx)
+			require.NoError(t, err, "error while running regulation-worker")
 		}()
 		require.Eventually(t, func() bool {
 			testDataMu.Lock()
