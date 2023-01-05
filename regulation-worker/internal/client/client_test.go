@@ -34,7 +34,7 @@ func TestGet(t *testing.T) {
 		{
 			name:                      "DEDICATED MODE: Get request to get job: successful",
 			ID:                        "1001",
-			respBody:                  `{"jobId":"1","destinationId":"23","userAttributes":[{"userId":"1","phone":"555-555-5555"},{"userId":"2","email":"john@example.com"},{"userId":"3","randomKey":"randomValue"}]}`,
+			respBody:                  `{"jobId":"1","workspaceId":"abc","destinationId":"23","userAttributes":[{"userId":"1","phone":"555-555-5555"},{"userId":"2","email":"john@example.com"},{"userId":"3","randomKey":"randomValue"}]}`,
 			respCode:                  200,
 			expectedUsrAttributeCount: 3,
 			mode:                      deployment.DedicatedType,
@@ -67,7 +67,7 @@ func TestGet(t *testing.T) {
 		{
 			name:                      "MULTITENANT MODE: Get request to get job: successful",
 			ID:                        "1001",
-			respBody:                  `{"jobId":"1","destinationId":"23","userAttributes":[{"userId":"1","phone":"555-555-5555"},{"userId":"2","email":"john@example.com"},{"userId":"3","randomKey":"randomValue"}]}`,
+			respBody:                  `{"jobId":"1","workspaceId":"abc","destinationId":"23","userAttributes":[{"userId":"1","phone":"555-555-5555"},{"userId":"2","email":"john@example.com"},{"userId":"3","randomKey":"randomValue"}]}`,
 			respCode:                  200,
 			expectedUsrAttributeCount: 3,
 			mode:                      deployment.MultiTenantType,
