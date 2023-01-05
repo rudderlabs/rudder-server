@@ -11,7 +11,7 @@ import (
 	"github.com/rudderlabs/rudder-server/services/stats"
 )
 
-//go:generate mockgen -source=service.go -destination=mock_service_test.go -package=service github.com/rudderlabs/rudder-server/regulation-worker/internal/service
+//go:generate mockgen -source=service.go -destination=mock_service.go -package=service github.com/rudderlabs/rudder-server/regulation-worker/internal/service
 type APIClient interface {
 	Get(ctx context.Context) (model.Job, error)
 	UpdateStatus(ctx context.Context, status model.JobStatus, jobID int) error
@@ -19,7 +19,7 @@ type APIClient interface {
 
 type destDetail interface {
 	BackendConfigSubscriber(ctx context.Context)
-	GetDestDetails(ctx context.Context, destID string) (model.Destination, error)
+	GetDestDetails(destID string) (model.Destination, error)
 }
 type deleter interface {
 	Delete(ctx context.Context, job model.Job, destDetail model.Destination) model.JobStatus
@@ -51,7 +51,7 @@ func (js *JobSvc) JobSvc(ctx context.Context) error {
 		return err
 	}
 	// executing deletion
-	destDetail, err := js.DestDetail.GetDestDetails(ctx, job.DestinationID)
+	destDetail, err := js.DestDetail.GetDestDetails(job.DestinationID)
 	if err != nil {
 		pkgLogger.Errorf("error while getting destination details: %v", err)
 		if err == model.ErrInvalidDestination {

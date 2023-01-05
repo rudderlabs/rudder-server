@@ -51,18 +51,6 @@ func (mr *MockdestMiddlewareMockRecorder) Identity() *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Identity", reflect.TypeOf((*MockdestMiddleware)(nil).Identity))
 }
 
-// StartWithIDs mocks base method.
-func (m *MockdestMiddleware) StartWithIDs(ctx context.Context, workspaces string) {
-	m.ctrl.T.Helper()
-	m.ctrl.Call(m, "StartWithIDs", ctx, workspaces)
-}
-
-// StartWithIDs indicates an expected call of StartWithIDs.
-func (mr *MockdestMiddlewareMockRecorder) StartWithIDs(ctx, workspaces interface{}) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "StartWithIDs", reflect.TypeOf((*MockdestMiddleware)(nil).StartWithIDs), ctx, workspaces)
-}
-
 // Subscribe mocks base method.
 func (m *MockdestMiddleware) Subscribe(ctx context.Context, topic backendconfig.Topic) pubsub.DataChannel {
 	m.ctrl.T.Helper()

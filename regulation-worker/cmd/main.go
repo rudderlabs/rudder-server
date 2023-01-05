@@ -19,22 +19,17 @@ import (
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/delete/batch"
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/delete/kvstore"
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/destination"
-	"github.com/rudderlabs/rudder-server/regulation-worker/internal/initialize"
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/service"
 	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/services/filemanager"
 	"github.com/rudderlabs/rudder-server/services/oauth"
+	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
+	"github.com/rudderlabs/rudder-server/utils/types/deployment"
 )
 
 var pkgLogger = logger.NewLogger().Child("regulation-worker")
-
-func init() {
-	initialize.Init()
-	backendconfig.Init()
-	oauth.Init()
-}
 
 func main() {
 	pkgLogger.Info("starting regulation-worker")
@@ -53,16 +48,23 @@ func main() {
 
 func Run(ctx context.Context) {
 	admin.Init()
+	stats.Default.Start(ctx)
+	backendconfig.Init()
 	if err := backendconfig.Setup(nil); err != nil {
 		panic(fmt.Errorf("error while setting up backend config: %v", err))
 	}
 	dest := &destination.DestinationConfig{
 		Dest: backendconfig.DefaultBackendConfig,
 	}
-	workspaceId := dest.Dest.Identity().ID()
-	if workspaceId == "" {
-		panic(fmt.Errorf("workspaceId is empty"))
+
+	deploymentType, err := deployment.GetFromEnv()
+	if err != nil {
+		panic(fmt.Errorf("error while getting deployment type: %v", err))
 	}
+	pkgLogger.Infof("starting regulation worker in %v mode", deploymentType)
+	backendconfig.DefaultBackendConfig.StartWithIDs(ctx, "")
+	backendconfig.DefaultBackendConfig.WaitForConfig(ctx)
+	identity := dest.Dest.Identity()
 	rruntime.Go(func() {
 		dest.BackendConfigSubscriber(ctx)
 	})
@@ -72,10 +74,10 @@ func Run(ctx context.Context) {
 
 	svc := service.JobSvc{
 		API: &client.JobAPI{
-			Client:         &http.Client{Timeout: config.GetDuration("HttpClient.regulationWorker.regulationManager.timeout", 60, time.Second)},
-			URLPrefix:      config.MustGetString("CONFIG_BACKEND_URL"),
-			WorkspaceToken: config.MustGetString("CONFIG_BACKEND_TOKEN"),
-			WorkspaceID:    workspaceId,
+			Client:    &http.Client{Timeout: config.GetDuration("HttpClient.regulationWorker.regulationManager.timeout", 60, time.Second)},
+			URLPrefix: config.MustGetString("CONFIG_BACKEND_URL"),
+			Identity:  identity,
+			Mode:      deploymentType,
 		},
 		DestDetail: dest,
 		Deleter: delete.NewRouter(
@@ -94,7 +96,7 @@ func Run(ctx context.Context) {
 
 	pkgLogger.Infof("calling looper with service: %v", svc)
 	l := withLoop(svc)
-	err := misc.WithBugsnag(func() error {
+	err = misc.WithBugsnag(func() error {
 		return l.Loop(ctx)
 	})()
 	if err != nil && !errors.Is(err, context.Canceled) {

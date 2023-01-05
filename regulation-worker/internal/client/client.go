@@ -8,40 +8,51 @@ import (
 	"io"
 	"net/http"
 	"os"
-	"regexp"
 	"strconv"
 	"time"
 
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/model"
+	"github.com/rudderlabs/rudder-server/services/controlplane/identity"
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/httputil"
 	"github.com/rudderlabs/rudder-server/utils/logger"
+	"github.com/rudderlabs/rudder-server/utils/types/deployment"
 )
 
 var pkgLogger = logger.NewLogger().Child("client")
 
 type JobAPI struct {
-	Client         *http.Client
-	WorkspaceID    string
-	URLPrefix      string
-	WorkspaceToken string
+	Client *http.Client
+	// ID        string
+	URLPrefix string
+	// Token     string
+	Identity identity.Identifier
+	Mode     deployment.Type
 }
 
-// Get sends http request with workspaceID in the url and receives a json payload
+func (j *JobAPI) URL() string {
+	switch j.Mode {
+	case deployment.MultiTenantType:
+		return fmt.Sprintf("%s/dataplane/namespaces/%s/regulations/workerJobs", j.URLPrefix, j.Identity.ID())
+	default:
+		return fmt.Sprintf("%s/dataplane/workspaces/%s/regulations/workerJobs", j.URLPrefix, j.Identity.ID())
+	}
+}
+
+// Get sends http request with ID in the url and receives a json payload
 // which is decoded using schema and then mapped from schema to internal model.Job struct,
 // which is actually returned.
 func (j *JobAPI) Get(ctx context.Context) (model.Job, error) {
 	pkgLogger.Debugf("making http request to regulation manager to get new job")
-
-	url := fmt.Sprintf("%s/dataplane/workspaces/%s/regulations/workerJobs", j.URLPrefix, j.WorkspaceID)
+	url := j.URL()
 	pkgLogger.Debugf("making GET request to URL: %v", url)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		pkgLogger.Errorf("error while create new http request: %v", err)
 		return model.Job{}, err
 	}
-
-	req.SetBasicAuth(j.WorkspaceToken, "")
+	token, _ := j.Identity.BasicAuth()
+	req.SetBasicAuth(token, "")
 	req.Header.Set("Content-Type", "application/json")
 
 	resp, err := j.Client.Do(req)
@@ -56,7 +67,6 @@ func (j *JobAPI) Get(ctx context.Context) (model.Job, error) {
 	pkgLogger.Debugf("obtained response code: %v", resp.StatusCode, "response body: ", resp.Body)
 
 	// if successful
-
 	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
 		if resp.StatusCode == http.StatusNoContent {
 			pkgLogger.Debugf("no runnable job found")
@@ -69,10 +79,10 @@ func (j *JobAPI) Get(ctx context.Context) (model.Job, error) {
 			return model.Job{}, fmt.Errorf("error while decoding job: %w", err)
 		}
 
-		userCountPerJob := stats.Default.NewTaggedStat("user_count_per_job", stats.CountType, stats.Tags{"jobId": jobSchema.JobID, "workspaceId": j.WorkspaceID})
+		userCountPerJob := stats.Default.NewTaggedStat("user_count_per_job", stats.CountType, stats.Tags{"jobId": jobSchema.JobID, "ID": j.Identity.ID()})
 		userCountPerJob.Count(len(jobSchema.UserAttributes))
 
-		job, err := mapPayloadToJob(jobSchema, j.WorkspaceID)
+		job, err := mapPayloadToJob(jobSchema)
 		if err != nil {
 			pkgLogger.Errorf("error while mapping response payload to job: %v", err)
 			return model.Job{}, fmt.Errorf("error while getting job: %w", err)
@@ -81,12 +91,6 @@ func (j *JobAPI) Get(ctx context.Context) (model.Job, error) {
 		pkgLogger.Debugf("obtained job: %v", job)
 		return job, nil
 
-	} else if resp.StatusCode == http.StatusNotFound {
-		// NOTE: `http.StatusNotFound` has to be deprecated once,
-		// regulation manager is updated with the latest changes to respond with `http.StatusNoContent`204`
-		// when no job is found.
-		pkgLogger.Debugf("no runnable job found")
-		return model.Job{}, model.ErrNoRunnableJob
 	} else {
 		body, err := io.ReadAll(resp.Body)
 		if err != nil {
@@ -99,6 +103,15 @@ func (j *JobAPI) Get(ctx context.Context) (model.Job, error) {
 	}
 }
 
+func (j *JobAPI) statusURL(jobID int) string {
+	switch j.Mode {
+	case deployment.MultiTenantType:
+		return fmt.Sprintf("%s/dataplane/namespaces/%s/regulations/workerJobs/%d", j.URLPrefix, j.Identity.ID(), jobID)
+	default:
+		return fmt.Sprintf("%s/dataplane/workspaces/%s/regulations/workerJobs/%d", j.URLPrefix, j.Identity.ID(), jobID)
+	}
+}
+
 // UpdateStatus marshals status into appropriate status schema, and sent as payload
 // checked for returned status code.
 func (j *JobAPI) UpdateStatus(ctx context.Context, status model.JobStatus, jobID int) error {
@@ -106,10 +119,7 @@ func (j *JobAPI) UpdateStatus(ctx context.Context, status model.JobStatus, jobID
 	ctx, cancel := context.WithTimeout(ctx, time.Minute)
 	defer cancel()
 
-	method := "PATCH"
-
-	genEndPoint := "/dataplane/workspaces/{workspace_id}/regulations/workerJobs/{job_id}"
-	url := fmt.Sprint(j.URLPrefix, prepURL(genEndPoint, j.WorkspaceID, fmt.Sprint(jobID)))
+	url := j.statusURL(jobID)
 	pkgLogger.Debugf("sending request to URL: %v", url)
 
 	statusSchema := statusJobSchema{
@@ -120,12 +130,12 @@ func (j *JobAPI) UpdateStatus(ctx context.Context, status model.JobStatus, jobID
 		pkgLogger.Errorf("error while marshalling status schema: %v", err)
 		return fmt.Errorf("error while marshalling status: %w", err)
 	}
-	req, err := http.NewRequestWithContext(ctx, method, url, bytes.NewReader(body))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPatch, url, bytes.NewReader(body))
 	if err != nil {
 		return err
 	}
-	pkgLogger.Debugf("sending request: %v", req)
-	req.SetBasicAuth(j.WorkspaceToken, "")
+	token, _ := j.Identity.BasicAuth()
+	req.SetBasicAuth(token, "")
 	req.Header.Set("Content-Type", "application/json")
 
 	resp, err := j.Client.Do(req)
@@ -147,20 +157,7 @@ func (j *JobAPI) UpdateStatus(ctx context.Context, status model.JobStatus, jobID
 	}
 }
 
-func prepURL(url string, params ...string) string {
-	re := regexp.MustCompile(`{.*?}`)
-	i := 0
-	return string(re.ReplaceAllFunc([]byte(url), func(matched []byte) []byte {
-		if i >= len(params) {
-			pkgLogger.Errorf("value for %v not provided", matched)
-		}
-		v := params[i]
-		i++
-		return []byte(v)
-	}))
-}
-
-func mapPayloadToJob(wjs jobSchema, workspaceID string) (model.Job, error) {
+func mapPayloadToJob(wjs jobSchema) (model.Job, error) {
 	usrAttribute := make([]model.User, len(wjs.UserAttributes))
 	for i, usrAttr := range wjs.UserAttributes {
 		usrAttribute[i].Attributes = make(map[string]string)
@@ -180,7 +177,7 @@ func mapPayloadToJob(wjs jobSchema, workspaceID string) (model.Job, error) {
 
 	return model.Job{
 		ID:            jobID,
-		WorkspaceID:   workspaceID,
+		WorkspaceID:   wjs.WorkspaceId,
 		DestinationID: wjs.DestinationID,
 		Status:        model.JobStatusRunning,
 		Users:         usrAttribute,

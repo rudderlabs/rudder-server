@@ -82,7 +82,6 @@ func TestDestination(t *testing.T) {
 
 	mockDestMiddleware := destination.NewMockdestMiddleware(mockCtrl)
 	mockDestMiddleware.EXPECT().Identity().Return(mockIdentity).Times(1)
-	mockDestMiddleware.EXPECT().StartWithIDs(gomock.Any(), gomock.Any()).Times(1)
 	ch := make(chan pubsub.DataEvent)
 	mockDestMiddleware.EXPECT().Subscribe(gomock.Any(), gomock.Any()).Return(ch).Times(1)
 	go func() {
@@ -110,7 +109,7 @@ func TestDestination(t *testing.T) {
 		Name:          "S3",
 	}
 
-	destDetail, err := dest.GetDestDetails(context.Background(), "1111")
+	destDetail, err := dest.GetDestDetails("1111")
 	require.NoError(t, err, "expected no err")
 	require.Equal(t, expectedDestinationDetail, destDetail, "actual dest detail different than expected")
 }
@@ -122,9 +121,11 @@ type mockIdentity struct {
 func (i mockIdentity) ID() string {
 	return i.mockWorkspaceID
 }
-func (i mockIdentity) BasicAuth() (string, string) {
+
+func (mockIdentity) BasicAuth() (string, string) {
 	return "", ""
 }
-func (i mockIdentity) Type() deployment.Type {
+
+func (mockIdentity) Type() deployment.Type {
 	return deployment.Type("regulation")
 }

@@ -16,7 +16,6 @@ var pkgLogger = logger.NewLogger().Child("client")
 //go:generate mockgen -source=destination.go -destination=mock_destination.go -package=destination github.com/rudderlabs/rudder-server/regulation-worker/internal/Destination/destination
 type destMiddleware interface {
 	Identity() identity.Identifier
-	StartWithIDs(ctx context.Context, workspaces string)
 	Subscribe(ctx context.Context, topic backendconfig.Topic) pubsub.DataChannel
 }
 
@@ -26,7 +25,7 @@ type DestinationConfig struct {
 	Dest   destMiddleware
 }
 
-func (d *DestinationConfig) GetDestDetails(ctx context.Context, destID string) (model.Destination, error) {
+func (d *DestinationConfig) GetDestDetails(destID string) (model.Destination, error) {
 	pkgLogger.Debugf("getting destination details for destinationId: %v", destID)
 	d.mu.RLock()
 	config := d.Config
@@ -49,7 +48,6 @@ func (d *DestinationConfig) GetDestDetails(ctx context.Context, destID string) (
 
 func (d *DestinationConfig) BackendConfigSubscriber(ctx context.Context) {
 	workspaceId := d.Dest.Identity().ID()
-	d.Dest.StartWithIDs(ctx, workspaceId)
 	ch := d.Dest.Subscribe(ctx, backendconfig.TopicBackendConfig)
 	for data := range ch {
 		d.mu.Lock()
