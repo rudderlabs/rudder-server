@@ -18,7 +18,6 @@ type APIClient interface {
 }
 
 type destDetail interface {
-	BackendConfigSubscriber(ctx context.Context)
 	GetDestDetails(destID string) (model.Destination, error)
 }
 type deleter interface {

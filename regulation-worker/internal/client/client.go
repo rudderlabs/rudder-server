@@ -25,11 +25,10 @@ type JobAPI struct {
 	Client    *http.Client
 	URLPrefix string
 	Identity  identity.Identifier
-	Mode      deployment.Type
 }
 
 func (j *JobAPI) URL() string {
-	switch j.Mode {
+	switch j.Identity.Type() {
 	case deployment.MultiTenantType:
 		return fmt.Sprintf("%s/dataplane/namespaces/%s/regulations/workerJobs", j.URLPrefix, j.Identity.ID())
 	default:
@@ -49,8 +48,7 @@ func (j *JobAPI) Get(ctx context.Context) (model.Job, error) {
 		pkgLogger.Errorf("error while create new http request: %v", err)
 		return model.Job{}, err
 	}
-	token, _ := j.Identity.BasicAuth()
-	req.SetBasicAuth(token, "")
+	req.SetBasicAuth(j.Identity.BasicAuth())
 	req.Header.Set("Content-Type", "application/json")
 
 	resp, err := j.Client.Do(req)
@@ -101,15 +99,6 @@ func (j *JobAPI) Get(ctx context.Context) (model.Job, error) {
 	}
 }
 
-func (j *JobAPI) statusURL(jobID int) string {
-	switch j.Mode {
-	case deployment.MultiTenantType:
-		return fmt.Sprintf("%s/dataplane/namespaces/%s/regulations/workerJobs/%d", j.URLPrefix, j.Identity.ID(), jobID)
-	default:
-		return fmt.Sprintf("%s/dataplane/workspaces/%s/regulations/workerJobs/%d", j.URLPrefix, j.Identity.ID(), jobID)
-	}
-}
-
 // UpdateStatus marshals status into appropriate status schema, and sent as payload
 // checked for returned status code.
 func (j *JobAPI) UpdateStatus(ctx context.Context, status model.JobStatus, jobID int) error {
@@ -117,7 +106,7 @@ func (j *JobAPI) UpdateStatus(ctx context.Context, status model.JobStatus, jobID
 	ctx, cancel := context.WithTimeout(ctx, time.Minute)
 	defer cancel()
 
-	url := j.statusURL(jobID)
+	url := fmt.Sprintf("%s/%d", j.URL(), jobID)
 	pkgLogger.Debugf("sending request to URL: %v", url)
 
 	statusSchema := statusJobSchema{
@@ -132,8 +121,7 @@ func (j *JobAPI) UpdateStatus(ctx context.Context, status model.JobStatus, jobID
 	if err != nil {
 		return err
 	}
-	token, _ := j.Identity.BasicAuth()
-	req.SetBasicAuth(token, "")
+	req.SetBasicAuth(j.Identity.BasicAuth())
 	req.Header.Set("Content-Type", "application/json")
 
 	resp, err := j.Client.Do(req)

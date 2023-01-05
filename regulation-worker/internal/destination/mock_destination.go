@@ -10,7 +10,6 @@ import (
 
 	gomock "github.com/golang/mock/gomock"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
-	identity "github.com/rudderlabs/rudder-server/services/controlplane/identity"
 	pubsub "github.com/rudderlabs/rudder-server/utils/pubsub"
 )
 
@@ -35,20 +34,6 @@ func NewMockdestMiddleware(ctrl *gomock.Controller) *MockdestMiddleware {
 // EXPECT returns an object that allows the caller to indicate expected use.
 func (m *MockdestMiddleware) EXPECT() *MockdestMiddlewareMockRecorder {
 	return m.recorder
-}
-
-// Identity mocks base method.
-func (m *MockdestMiddleware) Identity() identity.Identifier {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "Identity")
-	ret0, _ := ret[0].(identity.Identifier)
-	return ret0
-}
-
-// Identity indicates an expected call of Identity.
-func (mr *MockdestMiddlewareMockRecorder) Identity() *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Identity", reflect.TypeOf((*MockdestMiddleware)(nil).Identity))
 }
 
 // Subscribe mocks base method.

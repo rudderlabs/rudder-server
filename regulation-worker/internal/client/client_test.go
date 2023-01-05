@@ -116,11 +116,14 @@ func TestGet(t *testing.T) {
 					Timeout: time.Duration(tt.serverDelay) * time.Microsecond,
 				}
 			}
+			var identifier identity.Identifier = &identity.Workspace{WorkspaceID: "1001"}
+			if tt.mode == deployment.MultiTenantType {
+				identifier = &identity.Namespace{Namespace: "1001"}
+			}
 			c := client.JobAPI{
 				Client:    httpClient,
-				Identity:  &identity.Workspace{WorkspaceID: "1001"},
+				Identity:  identifier,
 				URLPrefix: svr.URL,
-				Mode:      tt.mode,
 			}
 			job, err := c.Get(context.Background())
 			require.Equal(t, tt.expectedErr, err)
@@ -196,12 +199,14 @@ func TestUpdateStatus(t *testing.T) {
 				require.Equal(t, tt.expectedPath, path)
 			}))
 			defer svr.Close()
-
+			var identifier identity.Identifier = &identity.Workspace{WorkspaceID: "1001"}
+			if tt.mode == deployment.MultiTenantType {
+				identifier = &identity.Namespace{Namespace: "1001"}
+			}
 			c := client.JobAPI{
 				Client:    &http.Client{},
 				URLPrefix: svr.URL,
-				Identity:  &identity.Workspace{WorkspaceID: "1001"},
-				Mode:      tt.mode,
+				Identity:  identifier,
 			}
 			err := c.UpdateStatus(context.Background(), tt.status, tt.jobID)
 			require.Equal(t, tt.expectedErr, err)

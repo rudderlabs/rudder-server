@@ -87,18 +87,6 @@ func (m *MockdestDetail) EXPECT() *MockdestDetailMockRecorder {
 	return m.recorder
 }
 
-// BackendConfigSubscriber mocks base method.
-func (m *MockdestDetail) BackendConfigSubscriber(ctx context.Context) {
-	m.ctrl.T.Helper()
-	m.ctrl.Call(m, "BackendConfigSubscriber", ctx)
-}
-
-// BackendConfigSubscriber indicates an expected call of BackendConfigSubscriber.
-func (mr *MockdestDetailMockRecorder) BackendConfigSubscriber(ctx interface{}) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "BackendConfigSubscriber", reflect.TypeOf((*MockdestDetail)(nil).BackendConfigSubscriber), ctx)
-}
-
 // GetDestDetails mocks base method.
 func (m *MockdestDetail) GetDestDetails(destID string) (model.Destination, error) {
 	m.ctrl.T.Helper()

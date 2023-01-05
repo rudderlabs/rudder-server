@@ -3,7 +3,6 @@ package destination_test
 import (
 	"context"
 	"os"
-	"reflect"
 	"testing"
 	"time"
 
@@ -15,7 +14,6 @@ import (
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/initialize"
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/model"
 	"github.com/rudderlabs/rudder-server/utils/pubsub"
-	"github.com/rudderlabs/rudder-server/utils/types/deployment"
 )
 
 func TestDestination(t *testing.T) {
@@ -31,13 +29,15 @@ func TestDestination(t *testing.T) {
 		"enableSSE":   false,
 	}
 
+	destinationID := "1111"
+
 	testConfig := backendconfig.ConfigT{
 		WorkspaceID: "1234",
 		Sources: []backendconfig.SourceT{
 			{
 				Destinations: []backendconfig.DestinationT{
 					{
-						ID:     "1111",
+						ID:     destinationID,
 						Config: config,
 						DestinationDefinition: backendconfig.DestinationDefinitionT{
 							Config: map[string]interface{}{
@@ -73,31 +73,27 @@ func TestDestination(t *testing.T) {
 			},
 		},
 	}
-	mockIdentity := mockIdentity{
-		mockWorkspaceID: testConfig.WorkspaceID,
+	testBackendConfig := map[string]backendconfig.ConfigT{
+		testConfig.WorkspaceID: testConfig,
 	}
 
 	mockCtrl := gomock.NewController(t)
 	defer mockCtrl.Finish()
 
 	mockDestMiddleware := destination.NewMockdestMiddleware(mockCtrl)
-	mockDestMiddleware.EXPECT().Identity().Return(mockIdentity).Times(1)
 	ch := make(chan pubsub.DataEvent)
 	mockDestMiddleware.EXPECT().Subscribe(gomock.Any(), gomock.Any()).Return(ch).Times(1)
 	go func() {
-		ch <- pubsub.DataEvent{
-			Data: map[string]backendconfig.ConfigT{
-				testConfig.WorkspaceID: testConfig,
-			},
-		}
+		ch <- pubsub.DataEvent{Data: testBackendConfig}
 	}()
 	dest := destination.DestinationConfig{
 		Dest: mockDestMiddleware,
 	}
 
-	go dest.BackendConfigSubscriber(context.Background())
+	dest.Start(context.Background())
 	require.Eventually(t, func() bool {
-		return reflect.DeepEqual(testConfig, dest.Config)
+		_, err := dest.GetDestDetails(destinationID)
+		return err == nil
 	}, time.Second, 10*time.Millisecond, "config not updated")
 
 	expectedDestinationDetail := model.Destination{
@@ -105,27 +101,11 @@ func TestDestination(t *testing.T) {
 		DestDefConfig: map[string]interface{}{
 			"randomKey": "randomValue",
 		},
-		DestinationID: "1111",
+		DestinationID: destinationID,
 		Name:          "S3",
 	}
 
-	destDetail, err := dest.GetDestDetails("1111")
+	destDetail, err := dest.GetDestDetails(destinationID)
 	require.NoError(t, err, "expected no err")
 	require.Equal(t, expectedDestinationDetail, destDetail, "actual dest detail different than expected")
-}
-
-type mockIdentity struct {
-	mockWorkspaceID string
-}
-
-func (i mockIdentity) ID() string {
-	return i.mockWorkspaceID
-}
-
-func (mockIdentity) BasicAuth() (string, string) {
-	return "", ""
-}
-
-func (mockIdentity) Type() deployment.Type {
-	return deployment.Type("regulation")
 }

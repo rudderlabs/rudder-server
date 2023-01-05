@@ -20,7 +20,6 @@ import (
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/delete/kvstore"
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/destination"
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/service"
-	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/services/filemanager"
 	"github.com/rudderlabs/rudder-server/services/oauth"
 	"github.com/rudderlabs/rudder-server/services/stats"
@@ -32,22 +31,15 @@ import (
 var pkgLogger = logger.NewLogger().Child("regulation-worker")
 
 func main() {
-	pkgLogger.Info("starting regulation-worker")
-	ctx, cancel := context.WithCancel(context.Background())
-
-	go func() {
-		c := make(chan os.Signal, 1)
-		signal.Notify(c, os.Interrupt, syscall.SIGTERM)
-
-		<-c
-		cancel()
-		close(c)
-	}()
+	pkgLogger.Info("Starting regulation-worker")
+	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	err := Run(ctx)
+	if ctx.Err() == nil {
+		cancel()
+	}
 	if err != nil {
-		pkgLogger.Errorf("error while running regulation worker: %v", err)
+		pkgLogger.Errorf("Running regulation worker: %v", err)
 		os.Exit(1)
-
 	}
 }
 
@@ -56,7 +48,7 @@ func Run(ctx context.Context) error {
 	stats.Default.Start(ctx)
 	backendconfig.Init()
 	if err := backendconfig.Setup(nil); err != nil {
-		return fmt.Errorf("error while setting up backend config: %v", err)
+		return fmt.Errorf("setting up backend config: %w", err)
 	}
 	dest := &destination.DestinationConfig{
 		Dest: backendconfig.DefaultBackendConfig,
@@ -64,15 +56,13 @@ func Run(ctx context.Context) error {
 
 	deploymentType, err := deployment.GetFromEnv()
 	if err != nil {
-		return fmt.Errorf("error while getting deployment type: %v", err)
+		return fmt.Errorf("getting deployment type: %w", err)
 	}
-	pkgLogger.Infof("starting regulation worker in %v mode", deploymentType)
+	pkgLogger.Infof("Running regulation worker in %s mode", deploymentType)
 	backendconfig.DefaultBackendConfig.StartWithIDs(ctx, "")
 	backendconfig.DefaultBackendConfig.WaitForConfig(ctx)
-	identity := dest.Dest.Identity()
-	rruntime.Go(func() {
-		dest.BackendConfigSubscriber(ctx)
-	})
+	identity := backendconfig.DefaultBackendConfig.Identity()
+	dest.Start(ctx)
 
 	// setting up oauth
 	OAuth := oauth.NewOAuthErrorHandler(backendconfig.DefaultBackendConfig, oauth.WithRudderFlow(oauth.RudderFlow_Delete))
@@ -82,7 +72,6 @@ func Run(ctx context.Context) error {
 			Client:    &http.Client{Timeout: config.GetDuration("HttpClient.regulationWorker.regulationManager.timeout", 60, time.Second)},
 			URLPrefix: config.MustGetString("CONFIG_BACKEND_URL"),
 			Identity:  identity,
-			Mode:      deploymentType,
 		},
 		DestDetail: dest,
 		Deleter: delete.NewRouter(
