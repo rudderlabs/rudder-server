@@ -166,7 +166,7 @@ var _ = Describe("Using sources handler", func() {
 			status, err := sh.GetStatus(context.Background(), jobRunId, jobFilters)
 			Expect(err).To(HaveOccurred())
 			Expect(status).To(Equal(JobStatus{}))
-			Expect(errors.Is(err, StatusNotFoundError)).To(BeTrue(), "it should return a StatusNotFoundError")
+			Expect(errors.Is(err, ErrStatusNotFound)).To(BeTrue(), "it should return a StatusNotFoundError")
 			failedRecords, err := sh.GetFailedRecords(context.Background(), jobRunId, jobFilters)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(failedRecords).To(Equal(JobFailedRecords{ID: jobRunId}))
@@ -201,7 +201,7 @@ var _ = Describe("Using sources handler", func() {
 			status, err := sh.GetStatus(context.Background(), jobRunId, jobFilters)
 			Expect(err).To(HaveOccurred())
 			Expect(status).To(Equal(JobStatus{}))
-			Expect(errors.Is(err, StatusNotFoundError)).To(BeTrue(), "it should return a StatusNotFoundError")
+			Expect(errors.Is(err, ErrStatusNotFound)).To(BeTrue(), "it should return a StatusNotFoundError")
 			failedRecords, err := sh.GetFailedRecords(context.Background(), jobRunId, jobFilters)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(failedRecords).To(Equal(JobFailedRecords{ID: jobRunId}))
@@ -212,6 +212,40 @@ var _ = Describe("Using sources handler", func() {
 			failedRecords, err = sh.GetFailedRecords(context.Background(), jobRunId, jobFilters)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(failedRecords).ToNot(Equal(JobFailedRecords{ID: jobRunId}))
+		})
+
+		It("shouldn't be able to delete stats for an incomplete source", func() {
+			jobRunId := newJobRunId()
+			stats := Stats{
+				In:     10,
+				Out:    4,
+				Failed: 5,
+			}
+			increment(resource.db, jobRunId, defaultJobTargetKey, stats, sh, nil)
+
+			tx, err := resource.db.Begin()
+			Expect(err).NotTo(HaveOccurred(), "it should be able to begin the transaction")
+			err = sh.Delete(context.Background(), jobRunId, JobFilter{SourceID: []string{defaultJobTargetKey.SourceID}})
+			Expect(err).To(Equal(ErrSourceNotCompleted), "it shouldn't be able to delete stats for an incomplete source")
+			err = tx.Rollback()
+			Expect(err).NotTo(HaveOccurred(), "it should be able to rollback the transaction")
+		})
+
+		It("shouldn't be able to delete stats for an invalid job", func() {
+			jobRunId := newJobRunId()
+			stats := Stats{
+				In:     10,
+				Out:    4,
+				Failed: 5,
+			}
+			increment(resource.db, jobRunId, defaultJobTargetKey, stats, sh, nil)
+
+			tx, err := resource.db.Begin()
+			Expect(err).NotTo(HaveOccurred(), "it should be able to begin the transaction")
+			err = sh.Delete(context.Background(), "invalidJobRunId", JobFilter{SourceID: []string{defaultJobTargetKey.SourceID}})
+			Expect(err).To(Equal(ErrStatusNotFound), "it shouldn't be able to delete stats for an invalid jobrunid")
+			err = tx.Rollback()
+			Expect(err).NotTo(HaveOccurred(), "it should be able to rollback the transaction")
 		})
 
 		It("should be able to get failed records by filtering", func() {

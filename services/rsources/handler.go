@@ -69,7 +69,7 @@ func (sh *sourcesHandler) GetStatus(ctx context.Context, jobRunId string, filter
 		return JobStatus{}, err
 	}
 	if len(statMap) == 0 {
-		return JobStatus{}, StatusNotFoundError
+		return JobStatus{}, ErrStatusNotFound
 	}
 
 	return statusFromQueryResult(jobRunId, statMap), nil
@@ -177,6 +177,17 @@ func (sh *sourcesHandler) GetFailedRecords(ctx context.Context, jobRunId string,
 }
 
 func (sh *sourcesHandler) Delete(ctx context.Context, jobRunId string, filter JobFilter) error {
+	jobStatus, err := sh.GetStatus(ctx, jobRunId, filter)
+	if err != nil {
+		return err
+	}
+	for _, target := range jobStatus.TasksStatus {
+		for _, source := range target.SourcesStatus {
+			if !source.Completed {
+				return ErrSourceNotCompleted
+			}
+		}
+	}
 	tx, err := sh.localDB.Begin()
 	if err != nil {
 		return err
@@ -387,7 +398,7 @@ func (sh *sourcesHandler) setupLogicalReplication(ctx context.Context) error {
 }
 
 func sqlFilters(jobRunId string, filter JobFilter) (fragment string, params []interface{}) {
-	filterParams := []interface{}{}
+	var filterParams []interface{}
 	filters := `WHERE job_run_id = $1`
 	filterParams = append(filterParams, jobRunId)
 
