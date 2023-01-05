@@ -267,16 +267,11 @@ func (manager *ETCDManager) unmarshalWorkspace(raw []byte) workspace.ChangeEvent
 			if err != nil {
 				return fmt.Errorf("marshal ack value: %w", err)
 			}
-			// for backward compatibility, for GATEWAY we acknowledge the request at both
+			// for backward compatibility, for we acknowledge the request at both
 			// the incoming value contained in ack_key and the new value obtained by appending
 			// the instance ID to the ack_key. This enables the scheduler to ensure all the
 			// replicas of the gateway have acknowledged the request, when running in HA mode
-			ackKeys := []string{req.AckKey}
-			appTypeStr := strings.ToUpper(config.GetString("APP_TYPE", app.PROCESSOR))
-			if appTypeStr == app.GATEWAY {
-				ackKeys = append(ackKeys, fmt.Sprintf("%s/%s", req.AckKey, config.GetString("INSTANCE_ID", "")))
-			}
-
+			ackKeys := []string{req.AckKey, fmt.Sprintf("%s/%s", req.AckKey, config.GetString("INSTANCE_ID", ""))}
 			for _, ackKey := range ackKeys {
 				manager.logger.Infof("Workspace ID Change Acknowledgement (error: %v) Key: %s", ackErr != nil, ackKey)
 				_, err = manager.Client.Put(ctx, ackKey, ackValue)
