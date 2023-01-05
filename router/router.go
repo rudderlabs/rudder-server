@@ -236,10 +236,6 @@ func loadConfig() {
 	config.RegisterDurationConfigVariable(300, &maxRetryBackoff, true, time.Second, []string{"Router.maxRetryBackoff", "Router.maxRetryBackoffInS"}...)
 	config.RegisterDurationConfigVariable(0, &fixedLoopSleep, true, time.Millisecond, []string{"Router.fixedLoopSleep", "Router.fixedLoopSleepInMS"}...)
 	config.RegisterStringConfigVariable("", &toAbortDestinationIDs, true, "Router.toAbortDestinationIDs")
-	// sources failed keys config
-	config.RegisterDurationConfigVariable(48, &failedKeysExpire, true, time.Hour, "Router.failedKeysExpire")
-	config.RegisterDurationConfigVariable(24, &failedKeysCleanUpSleep, true, time.Hour, "Router.failedKeysCleanUpSleep")
-	failedKeysEnabled = config.GetBool("Router.failedKeysEnabled", false)
 }
 
 func sendRetryStoreStats(attempt int) {
@@ -942,12 +938,16 @@ func (worker *workerT) updateReqMetrics(respStatusCode int, diagnosisStartTime *
 }
 
 func (worker *workerT) allowRouterAbortedAlert(errorAt string) bool {
-	// when error occur during transformation(rt or batch) or when skipRtAbortAlertForTransformation is false(default)
-	allowTf := errorAt == routerutils.ERROR_AT_TF && !worker.rt.skipRtAbortAlertForTransformation
-	// (when error occur during delivery and (when proxy is not enabled or when skipRtAbortAlertForDelivery is false(default)))
-	// or when destination is managed custom destination manager
-	allowDel := (errorAt == routerutils.ERROR_AT_DEL && (!worker.rt.transformerProxy || !worker.rt.skipRtAbortAlertForDelivery)) || errorAt == routerutils.ERROR_AT_CUST
-	return allowTf || allowDel
+	switch errorAt {
+	case routerutils.ERROR_AT_CUST:
+		return true
+	case routerutils.ERROR_AT_TF:
+		return !worker.rt.skipRtAbortAlertForTransformation
+	case routerutils.ERROR_AT_DEL:
+		return !worker.rt.transformerProxy && !worker.rt.skipRtAbortAlertForDelivery
+	default:
+		return true
+	}
 }
 
 func (worker *workerT) updateAbortedMetrics(destinationID, workspaceId, statusCode, errorAt string) {
@@ -1305,7 +1305,6 @@ func (rt *HandleT) commitStatusList(responseList *[]jobResponseT) {
 	transformedAtMap := make(map[string]string)
 	statusDetailsMap := make(map[string]*utilTypes.StatusDetail)
 	routerWorkspaceJobStatusCount := make(map[string]int)
-	jobRunIDAbortedEventsMap := make(map[string][]*FailedEventRowT)
 	var completedJobsList []*jobsdb.JobT
 	var statusList []*jobsdb.JobStatusT
 	var routerAbortedJobs []*jobsdb.JobT
@@ -1359,7 +1358,6 @@ func (rt *HandleT) commitStatusList(responseList *[]jobResponseT) {
 			sd.Count++
 			rt.MultitenantI.CalculateSuccessFailureCounts(workspaceID, rt.destName, false, true)
 			routerAbortedJobs = append(routerAbortedJobs, resp.JobT)
-			PrepareJobRunIDAbortedEventsMap(resp.JobT.Parameters, jobRunIDAbortedEventsMap)
 			completedJobsList = append(completedJobsList, resp.JobT)
 		}
 
@@ -1440,11 +1438,6 @@ func (rt *HandleT) commitStatusList(responseList *[]jobResponseT) {
 				err = rt.updateRudderSourcesStats(ctx, tx, completedJobsList, statusList)
 				if err != nil {
 					return err
-				}
-
-				// Save msgids of aborted jobs
-				if len(jobRunIDAbortedEventsMap) > 0 {
-					GetFailedEventsManager().SaveFailedRecordIDs(jobRunIDAbortedEventsMap, tx.SqlTx())
 				}
 				rt.Reporting.Report(reportMetrics, tx.SqlTx())
 				return nil
@@ -1803,7 +1796,7 @@ func (rt *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB jobsd
 	rt.rsourcesService = rsourcesService
 
 	// waiting for reporting client setup
-	err := rt.Reporting.WaitForSetup(context.TODO(), utilTypes.CORE_REPORTING_CLIENT)
+	err := rt.Reporting.WaitForSetup(context.TODO(), utilTypes.CoreReportingClient)
 	if err != nil {
 		return
 	}
@@ -2101,19 +2094,6 @@ func (rt *HandleT) ExecDisableDestination(destination *backendconfig.Destination
 	stats.Default.NewTaggedStat("disable_destination_category_count", stats.CountType, disableDestStatTags).Increment()
 	// Abort the jobs as the destination is disabled
 	return http.StatusBadRequest, destResBody
-}
-
-func PrepareJobRunIDAbortedEventsMap(parameters json.RawMessage, jobRunIDAbortedEventsMap map[string][]*FailedEventRowT) {
-	taskRunID := gjson.GetBytes(parameters, "source_task_run_id").String()
-	destinationID := gjson.GetBytes(parameters, "destination_id").String()
-	recordID := json.RawMessage(gjson.GetBytes(parameters, "record_id").Raw)
-	if taskRunID == "" {
-		return
-	}
-	if _, ok := jobRunIDAbortedEventsMap[taskRunID]; !ok {
-		jobRunIDAbortedEventsMap[taskRunID] = []*FailedEventRowT{}
-	}
-	jobRunIDAbortedEventsMap[taskRunID] = append(jobRunIDAbortedEventsMap[taskRunID], &FailedEventRowT{DestinationID: destinationID, RecordID: recordID})
 }
 
 func (rt *HandleT) updateRudderSourcesStats(ctx context.Context, tx jobsdb.UpdateSafeTx, jobs []*jobsdb.JobT, jobStatuses []*jobsdb.JobStatusT) error {

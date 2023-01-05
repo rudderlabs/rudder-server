@@ -48,5 +48,5 @@ func (r *Router) Delete(ctx context.Context, job model.Job, dest model.Destinati
 	}
 
 	pkgLogger.Errorf("no deletion manager support deletion from destination: %v", dest.Name)
-	return model.JobStatusFailed
+	return model.JobStatusAborted
 }

@@ -54,6 +54,7 @@ var _ = Describe("tenantStats", func() {
 				// crash recovery check
 				mockRouterJobsDB.EXPECT().GetPileUpCounts(gomock.Any()).Times(1)
 				tenantStats = NewStats(map[string]jobsdb.MultiTenantJobsDB{"rt": mockRouterJobsDB})
+				Expect(tenantStats.Start()).To(BeNil())
 			})
 
 			It("TenantStats init", func() {

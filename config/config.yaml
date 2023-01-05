@@ -110,7 +110,7 @@ Router:
   allowAbortedUserJobsCountForProcessing: 1
   maxFailedCountForJob: 3
   retryTimeWindow: 180m
-  failedKeysEnabled: false
+  failedKeysEnabled: true
   saveDestinationResponseOverride: false
   transformerProxy: false
   transformerProxyRetryCount: 15

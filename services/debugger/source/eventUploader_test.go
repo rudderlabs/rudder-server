@@ -21,7 +21,6 @@ const (
 	WriteKeyEnabled       = "enabled-write-key"
 	WriteKeyEnabledNoUT   = "enabled-write-key-no-ut"
 	WriteKeyEnabledOnlyUT = "enabled-write-key-only-ut"
-	WorkspaceID           = "some-workspace-id"
 	SourceIDEnabled       = "enabled-source"
 	SourceIDDisabled      = "disabled-source"
 	DestinationIDEnabledA = "enabled-destination-a" // test destination router
@@ -95,20 +94,23 @@ var _ = Describe("eventUploader", func() {
 		It("returns false if disableEventUploads is true", func() {
 			c.asyncHelper.WaitWithTimeout(5 * time.Second)
 			disableEventUploads = true
-			Expect(RecordEvent(sample_writeKey, recordingEvent)).To(BeFalse())
+			Expect(RecordEvent(sampleWriteKey, []byte(recordingEvent))).To(BeFalse())
 		})
 
 		It("returns false if writeKey is not part of uploadEnabledWriteKeys", func() {
 			c.asyncHelper.WaitWithTimeout(5 * time.Second)
-			Expect(RecordEvent(sample_writeKey, recordingEvent)).To(BeFalse())
+			Expect(RecordEvent(sampleWriteKey, []byte(recordingEvent))).To(BeFalse())
 		})
 
 		It("transforms payload properly", func() {
 			c.asyncHelper.WaitWithTimeout(5 * time.Second)
 			recordingEvent0 := `{"receivedAt":"2021-08-03T17:26:","writeKey":"1vWezJfHKkbUHexNepDsGcSVWae","requestIP":"[::1]",  "batch": [{"anonymousId":"anon_id","channel":"android-sdk","context":{"app":{"build":"1","name":"RudderAndroidClient","namespace":"com.rudderlabs.android.sdk","version":"1.0"},"device":{"id":"49e4bdd1c280bc00","manufacturer":"Google","model":"Android SDK built for x86","name":"generic_x86"},"library":{"name":"com.rudderstack.android.sdk.core"},"locale":"en-US","network":{"carrier":"Android"},"screen":{"density":420,"height":1794,"width":1080},"traits":{"anonymousId":"49e4bdd1c280bc00"},"user_agent":"Dalvik/2.1.0 (Linux; U; Android 9; Android SDK built for x86 Build/PSR1.180720.075)"},"event":{"name": "Demo Track"},"integrations":{"All":true},"messageId":"7a355fdd-0325-4778-9905-b43f586acdd4","originalTimestamp":"2019-08-12T05:08:30.909Z","properties":{"category":"Demo Category","floatVal":4.501,"label":"Demo Label","testArray":[{"id":"elem1","value":"e1"},{"id":"elem2","value":"e2"}],"testMap":{"t1":"a","t2":4},"value":5},"rudderId":"90ca6da0-292e-4e79-9880-f8009e0ae4a3","sentAt":"2019-08-12T05:08:30.909Z","type":"track"}]}`
 			recordingEvent = `{"receivedAt":"2021-08-03T17:26:00.279+05:30","writeKey":"1vWezJfHKkbUHexNepDsGcSVWae","requestIP":"[::1]",  "batch": [{"anonymousId":"anon_id","channel":"android-sdk","context":{"app":{"build":"1","name":"RudderAndroidClient","namespace":"com.rudderlabs.android.sdk","version":"1.0"},"device":{"id":"49e4bdd1c280bc00","manufacturer":"Google","model":"Android SDK built for x86","name":"generic_x86"},"library":{"name":"com.rudderstack.android.sdk.core"},"locale":"en-US","network":{"carrier":"Android"},"screen":{"density":420,"height":1794,"width":1080},"traits":{"anonymousId":"49e4bdd1c280bc00"},"user_agent":"Dalvik/2.1.0 (Linux; U; Android 9; Android SDK built for x86 Build/PSR1.180720.075)"},"event":"Demo Track","integrations":{"All":true},"messageId":"7a355fdd-0325-4778-9905-b43f586acdd4","originalTimestamp":"2019-08-12T05:08:30.909Z","properties":{"category":"Demo Category","floatVal":4.501,"label":"Demo Label","testArray":[{"id":"elem1","value":"e1"},{"id":"elem2","value":"e2"}],"testMap":{"t1":"a","t2":4},"value":5},"rudderId":"90ca6da0-292e-4e79-9880-f8009e0ae4a3","sentAt":"2019-08-12T05:08:30.909Z","type":"track"}]}`
-			eventUploader := EventUploader{}
-			rawJson, err := eventUploader.Transform([]interface{}{&GatewayEventBatchT{writeKey: WriteKeyEnabled, eventBatch: recordingEvent0}, &GatewayEventBatchT{writeKey: WriteKeyEnabled, eventBatch: recordingEvent}})
+			var eventUploader EventUploader
+			var payload []*GatewayEventBatchT
+			payload = append(payload, &GatewayEventBatchT{writeKey: WriteKeyEnabled, eventBatch: []byte(recordingEvent0)})
+			payload = append(payload, &GatewayEventBatchT{writeKey: WriteKeyEnabled, eventBatch: []byte(recordingEvent)})
+			rawJson, err := eventUploader.Transform(payload)
 			Expect(err).To(BeNil())
 			Expect(gjson.GetBytes(rawJson, `1vWezJfHKkbUHexNepDsGcSVWae.0.eventName`).String()).To(Equal("{\"name\":\"Demo Track\"}"))
 			Expect(gjson.GetBytes(rawJson, `1vWezJfHKkbUHexNepDsGcSVWae.1.eventName`).String()).To(Equal("Demo Track"))
@@ -118,8 +120,10 @@ var _ = Describe("eventUploader", func() {
 		It("ignores improperly built payload", func() {
 			c.asyncHelper.WaitWithTimeout(5 * time.Second)
 			recordingEvent0 := `{"receivedAt":"2021-08-03T17:26:","writeKey":"1vWezJfHKkbUHexNepDsGcSVWae","requestIP":"[::1]",  "batch": [{"anonymousId":"anon_id","channel":"android-sdk","context":{"app":{"build":"1","name":"RudderAndroidClient","namespace":"com.rudderlabs.android.sdk","version":"1.0"},"device":{"id":"49e4bdd1c280bc00","manufacturer":"Google","model":"Android SDK built for x86","name":"generic_x86"},"library":{"name":"com.rudderstack.android.sdk.core"},"locale":"en-US","network":{"carrier":"Android"},"screen":{"density":420,"height":1794,"width":1080},"traits":{"anonymousId":"49e4bdd1c280bc00"},"user_agent":"Dalvik/2.1.0 (Linux; U; Android 9; Android SDK built for x86 Build/PSR1.180720.075)"},"event":{"name": "Demo Track"},"integrations":{"All":true},"messageId":"7a355fdd-0325-4778-9905-b43f586acdd4","originalTimestamp":"2019-08-12T05:08:30.909Z","properties":{"category":"Demo Category","floatVal":4.501,"label":"Demo Label","testArray":[{"id":"elem1","value":"e1"},{"id":"elem2","value":"e2"}],"testMap":{"t1":"a","t2":4},"value":5},"rudderId":"90ca6da0-292e-4e79-9880-f8009e0ae4a3","sentAt":"2019-08-12T05:08:30.909Z","type":"track"}`
-			eventUploader := EventUploader{}
-			rawJson, err := eventUploader.Transform([]interface{}{&GatewayEventBatchT{writeKey: WriteKeyEnabled, eventBatch: recordingEvent0}})
+			var eventUploader EventUploader
+			var payload []*GatewayEventBatchT
+			payload = append(payload, &GatewayEventBatchT{writeKey: WriteKeyEnabled, eventBatch: []byte(recordingEvent0)})
+			rawJson, err := eventUploader.Transform(payload)
 			Expect(err).To(BeNil())
 			Expect(string(rawJson)).To(Equal(`{"version":"v2"}`))
 		})
@@ -127,7 +131,7 @@ var _ = Describe("eventUploader", func() {
 		It("records events", func() {
 			c.asyncHelper.WaitWithTimeout(5 * time.Second)
 			recordingEvent = `{"receivedAt":"2021-08-03T17:26:00.279+05:30","writeKey":"1vWezJfHKkbUHexNepDsGcSVWae","requestIP":"[::1]",  "batch": [{"anonymousId":"anon_id","channel":"android-sdk","context":{"app":{"build":"1","name":"RudderAndroidClient","namespace":"com.rudderlabs.android.sdk","version":"1.0"},"device":{"id":"49e4bdd1c280bc00","manufacturer":"Google","model":"Android SDK built for x86","name":"generic_x86"},"library":{"name":"com.rudderstack.android.sdk.core"},"locale":"en-US","network":{"carrier":"Android"},"screen":{"density":420,"height":1794,"width":1080},"traits":{"anonymousId":"49e4bdd1c280bc00"},"user_agent":"Dalvik/2.1.0 (Linux; U; Android 9; Android SDK built for x86 Build/PSR1.180720.075)"},"event":"Demo Track","integrations":{"All":true},"messageId":"7a355fdd-0325-4778-9905-b43f586acdd4","originalTimestamp":"2019-08-12T05:08:30.909Z","properties":{"category":"Demo Category","floatVal":4.501,"label":"Demo Label","testArray":[{"id":"elem1","value":"e1"},{"id":"elem2","value":"e2"}],"testMap":{"t1":"a","t2":4},"value":5},"rudderId":"90ca6da0-292e-4e79-9880-f8009e0ae4a3","sentAt":"2019-08-12T05:08:30.909Z","type":"track"}]}`
-			eventuallyFunc := func() bool { return RecordEvent(WriteKeyEnabled, recordingEvent) }
+			eventuallyFunc := func() bool { return RecordEvent(WriteKeyEnabled, []byte(recordingEvent)) }
 			Eventually(eventuallyFunc).Should(BeTrue())
 		})
 	})
@@ -254,4 +258,4 @@ var sampleBackendConfig = backendconfig.ConfigT{
 	},
 }
 
-var sample_writeKey = "random_write_key"
+var sampleWriteKey = "random_write_key"

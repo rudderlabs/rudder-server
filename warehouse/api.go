@@ -26,6 +26,7 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
 	"github.com/rudderlabs/rudder-server/utils/types/deployment"
+	cpclient "github.com/rudderlabs/rudder-server/warehouse/client/controlplane"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 	"github.com/tidwall/gjson"
 	"google.golang.org/grpc"
@@ -122,6 +123,15 @@ func InitWarehouseAPI(dbHandle *sql.DB, log logger.Logger) error {
 	if region := config.GetString("region", ""); region != "" {
 		labels["region"] = region
 	}
+
+	client := cpclient.NewInternalClientWithCache(
+		config.GetString("CONFIG_BACKEND_URL", "api.rudderlabs.com"),
+		cpclient.BasicAuth{
+			Username: config.GetString("CP_INTERNAL_API_USERNAME", ""),
+			Password: config.GetString("CP_INTERNAL_API_PASSWORD", ""),
+		},
+	)
+
 	UploadAPI = UploadAPIT{
 		enabled:           true,
 		dbHandle:          dbHandle,
@@ -140,7 +150,10 @@ func InitWarehouseAPI(dbHandle *sql.DB, log logger.Logger) error {
 			UseTLS:        config.GetBool("CP_ROUTER_USE_TLS", true),
 			Logger:        log,
 			RegisterService: func(srv *grpc.Server) {
-				proto.RegisterWarehouseServer(srv, &warehouseGRPC{})
+				proto.RegisterWarehouseServer(srv, &warehouseGRPC{
+					EnableTunnelling: config.GetBool("ENABLE_TUNNELLING", true),
+					CPClient:         client,
+				})
 			},
 		},
 	}

@@ -64,13 +64,9 @@ func init() {
 func (*FileManagerFactoryT) New(settings *SettingsT) (FileManager, error) {
 	switch settings.Provider {
 	case "S3_DATALAKE":
-		return &S3Manager{
-			Config: GetS3Config(settings.Config),
-		}, nil
+		return NewS3Manager(settings.Config)
 	case "S3":
-		return &S3Manager{
-			Config: GetS3Config(settings.Config),
-		}, nil
+		return NewS3Manager(settings.Config)
 	case "GCS":
 		return &GCSManager{
 			Config: GetGCSConfig(settings.Config),

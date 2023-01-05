@@ -18,7 +18,7 @@ import (
 // GatewayEventBatchT is a structure to hold batch of events
 type GatewayEventBatchT struct {
 	writeKey   string
-	eventBatch string
+	eventBatch []byte
 }
 
 // EventUploadT is a structure to hold actual event data
@@ -36,13 +36,13 @@ var (
 	configSubscriberLock   sync.RWMutex
 )
 
-var uploader debugger.UploaderI
+var uploader debugger.Uploader[*GatewayEventBatchT]
 
 var (
 	configBackendURL    string
 	disableEventUploads bool
 	pkgLogger           logger.Logger
-	eventsCacheMap      debugger.Cache
+	eventsCacheMap      debugger.Cache[[]byte]
 )
 
 func Init() {
@@ -61,7 +61,7 @@ type EventUploader struct{}
 func Setup(backendConfig backendconfig.BackendConfig) {
 	url := fmt.Sprintf("%s/dataplane/v2/eventUploads", configBackendURL)
 	eventUploader := &EventUploader{}
-	uploader = debugger.New(url, eventUploader)
+	uploader = debugger.New[*GatewayEventBatchT](url, eventUploader)
 	uploader.Start()
 
 	rruntime.Go(func() {
@@ -76,18 +76,14 @@ func recordHistoricEvents(writeKeys []string) {
 	for _, writeKey := range writeKeys {
 		historicEvents := eventsCacheMap.ReadAndPopData(writeKey)
 		for _, eventBatchData := range historicEvents {
-			var eventBatch string
-			if err := json.Unmarshal(eventBatchData, &eventBatch); err != nil {
-				panic(err)
-			}
-			uploader.RecordEvent(&GatewayEventBatchT{writeKey, eventBatch})
+			uploader.RecordEvent(&GatewayEventBatchT{writeKey, eventBatchData})
 		}
 	}
 }
 
 // RecordEvent is used to put the event batch in the eventBatchChannel,
 // which will be processed by handleEvents.
-func RecordEvent(writeKey, eventBatch string) bool {
+func RecordEvent(writeKey string, eventBatch []byte) bool {
 	// if disableEventUploads is true, return;
 	if disableEventUploads {
 		return false
@@ -97,8 +93,7 @@ func RecordEvent(writeKey, eventBatch string) bool {
 	configSubscriberLock.RLock()
 	defer configSubscriberLock.RUnlock()
 	if !misc.Contains(uploadEnabledWriteKeys, writeKey) {
-		eventBatchData, _ := json.Marshal(eventBatch)
-		eventsCacheMap.Update(writeKey, eventBatchData)
+		eventsCacheMap.Update(writeKey, eventBatch)
 		return false
 	}
 
@@ -106,14 +101,12 @@ func RecordEvent(writeKey, eventBatch string) bool {
 	return true
 }
 
-func (*EventUploader) Transform(data interface{}) ([]byte, error) {
-	eventBuffer := data.([]interface{})
+func (*EventUploader) Transform(eventBuffer []*GatewayEventBatchT) ([]byte, error) {
 	res := make(map[string]interface{})
 	res["version"] = "v2"
-	for _, e := range eventBuffer {
-		event := e.(*GatewayEventBatchT)
-		batchedEvent := EventUploadBatchT{}
-		err := json.Unmarshal([]byte(event.eventBatch), &batchedEvent)
+	for _, event := range eventBuffer {
+		var batchedEvent EventUploadBatchT
+		err := json.Unmarshal(event.eventBatch, &batchedEvent)
 		if err != nil {
 			pkgLogger.Errorf("[Source live events] Failed to unmarshal. Err: %v", err)
 			continue
@@ -128,8 +121,6 @@ func (*EventUploader) Transform(data interface{}) ([]byte, error) {
 		var arr []EventUploadT
 		if value, ok := res[batchedEvent.WriteKey]; ok {
 			arr, _ = value.([]EventUploadT)
-		} else {
-			arr = make([]EventUploadT, 0)
 		}
 
 		for _, ev := range batchedEvent.Batch {
@@ -176,7 +167,7 @@ func updateConfig(config map[string]backendconfig.ConfigT) {
 
 func backendConfigSubscriber(backendConfig backendconfig.BackendConfig) {
 	ch := backendConfig.Subscribe(context.TODO(), backendconfig.TopicProcessConfig)
-	for config := range ch {
-		updateConfig(config.Data.(map[string]backendconfig.ConfigT))
+	for c := range ch {
+		updateConfig(c.Data.(map[string]backendconfig.ConfigT))
 	}
 }

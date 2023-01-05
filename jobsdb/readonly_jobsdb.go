@@ -12,8 +12,6 @@ import (
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
-
-	"github.com/rudderlabs/rudder-server/services/stats"
 )
 
 // NOTE: Module name for logging: jobsdb.readonly-<prefix>
@@ -24,7 +22,6 @@ import (
 ReadonlyJobsDB interface contains public methods to access JobsDB data
 */
 type ReadonlyJobsDB interface {
-	HavePendingJobs(ctx context.Context, customValFilters []string, count int, parameterFilters []ParameterFilterT) (bool, error)
 	GetJobSummaryCount(arg, prefix string) (string, error)
 	GetLatestFailedJobs(arg, prefix string) (string, error)
 	GetJobIDsForUser(args []string) (string, error)
@@ -139,300 +136,6 @@ func (jd *ReadonlyHandleT) getDSList() []dataSetT {
 	return getDSList(jd, jd.DbHandle, jd.tablePrefix)
 }
 
-/*
-Count queries
-*/
-/*
-HavePendingJobs returns the true if there are pending events, else false. Pending events are
-those whose jobs don't have a state or whose jobs status is neither succeeded nor aborted
-*/
-func (jd *ReadonlyHandleT) HavePendingJobs(ctx context.Context, customValFilters []string, _ int, parameterFilters []ParameterFilterT) (bool, error) {
-	haveUnprocessed, err := jd.haveUnprocessedJobs(ctx, customValFilters, parameterFilters)
-	if haveUnprocessed || err != nil {
-		return true, err
-	}
-
-	return jd.haveNonSucceededJobs(ctx, customValFilters, parameterFilters)
-}
-
-/*
-haveUnprocessedJobs returns true if there are unprocessed events, else false. Unprocessed events are
-those whose state hasn't been marked in the DB
-*/
-func (jd *ReadonlyHandleT) haveUnprocessedJobs(ctx context.Context, customValFilters []string, parameterFilters []ParameterFilterT) (bool, error) {
-	var queryStat stats.Measurement
-	statName := ""
-	if len(customValFilters) > 0 {
-		statName = statName + customValFilters[0] + "_"
-	}
-	queryStat = stats.Default.NewTaggedStat(statName+"unprocessed_count", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix})
-	queryStat.Start()
-	defer queryStat.End()
-
-	dsList := jd.getDSList()
-	var totalCount int64
-	for _, ds := range dsList {
-		count, err := jd.getUnprocessedJobsDSCount(ctx, ds, customValFilters, parameterFilters)
-		if count > 0 || err != nil {
-			return true, err
-		}
-		totalCount += count
-	}
-
-	return totalCount > 0, nil // If totalCount is 0, then there are no unprocessed events
-}
-
-func (*ReadonlyHandleT) prepareAndExecStmtInTxn(txn *sql.Tx, sqlStatement string) error {
-	stmt, err := txn.Prepare(sqlStatement)
-	if err != nil {
-		return err
-	}
-	defer stmt.Close()
-
-	_, err = stmt.Exec()
-	if err != nil {
-		return err
-	}
-
-	return nil
-}
-
-/*
-stateFilters and customValFilters do a OR query on values passed in array
-parameterFilters do a AND query on values included in the map
-*/
-func (jd *ReadonlyHandleT) getUnprocessedJobsDSCount(ctx context.Context, ds dataSetT, customValFilters []string, parameterFilters []ParameterFilterT) (int64, error) {
-	var queryStat stats.Measurement
-	statName := ""
-	if len(customValFilters) > 0 {
-		statName = statName + customValFilters[0] + "_"
-	}
-	queryStat = stats.Default.NewTaggedStat(statName+"unprocessed_jobs_count", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix})
-	queryStat.Start()
-	defer queryStat.End()
-
-	txn, err := jd.DbHandle.BeginTx(ctx, nil)
-	if err != nil {
-		jd.logger.Errorf("transaction begin err. Dataset: %v. Err: %s", ds, err.Error())
-		return 0, err
-	}
-
-	var sqlStatement string
-
-	sqlStatement = fmt.Sprintf(`LOCK TABLE %s IN ACCESS SHARE MODE;`, ds.JobStatusTable)
-	err = jd.prepareAndExecStmtInTxn(txn, sqlStatement)
-	if err != nil {
-		if rollbackErr := txn.Rollback(); rollbackErr != nil {
-			jd.logger.Warnf("Unable to rollback after error: %v", rollbackErr)
-		}
-		jd.logger.Errorf("error preparing and executing statement. Sql: %s, Err: %s", sqlStatement, err.Error())
-		return 0, err
-	}
-
-	sqlStatement = fmt.Sprintf(`LOCK TABLE %s IN ACCESS SHARE MODE;`, ds.JobTable)
-	err = jd.prepareAndExecStmtInTxn(txn, sqlStatement)
-	if err != nil {
-		if rollbackErr := txn.Rollback(); rollbackErr != nil {
-			jd.logger.Warnf("Unable to rollback after error: %v", rollbackErr)
-		}
-		jd.logger.Errorf("error preparing and executing statement. Sql: %s, Err: %s", sqlStatement, err.Error())
-		return 0, err
-	}
-
-	var selectColumn string
-	if jd.tablePrefix == "gw" {
-		selectColumn = "event_payload->'batch' as batch"
-	} else {
-		selectColumn = "COUNT(*)"
-	}
-	sqlStatement = fmt.Sprintf(`SELECT %[3]s FROM %[1]s LEFT JOIN %[2]s ON %[1]s.job_id=%[2]s.job_id
-											 WHERE %[2]s.job_id is NULL`, ds.JobTable, ds.JobStatusTable, selectColumn)
-
-	if len(customValFilters) > 0 {
-		sqlStatement += " AND " + constructQueryOR(fmt.Sprintf("%s.custom_val", ds.JobTable), customValFilters)
-	}
-
-	if len(parameterFilters) > 0 {
-		sqlStatement += " AND " + constructParameterJSONQuery(ds.JobTable, parameterFilters)
-	}
-
-	if jd.tablePrefix == "gw" {
-		sqlStatement = fmt.Sprintf("select sum(jsonb_array_length(batch)) from (%s) t", sqlStatement)
-	}
-
-	jd.logger.Debug(sqlStatement)
-
-	row := txn.QueryRow(sqlStatement)
-
-	defer func() {
-		if err := txn.Rollback(); err != nil {
-			jd.logger.Errorf("Transaction rollback (lock release) err. Dataset: %v. Err: %v", ds, err)
-		}
-	}()
-
-	var count sql.NullInt64
-	err = row.Scan(&count)
-	if err != nil && err != sql.ErrNoRows {
-		jd.logger.Errorf("Returning 0 because failed to fetch unprocessed count from dataset: %v. Err: %s", ds, err.Error())
-		return 0, err
-	}
-
-	if count.Valid {
-		return count.Int64, nil
-	}
-
-	jd.logger.Debugf("Returning 0 because unprocessed count is invalid. This could be because there are no unprocessed jobs. Jobs table: %s. Query: %s", ds.JobTable, sqlStatement)
-	return 0, nil
-}
-
-/*
-haveNonSucceededJobs returns true if there are events which are not in terminal state, else false.
-This is a wrapper over GetProcessed call above
-*/
-func (jd *ReadonlyHandleT) haveNonSucceededJobs(ctx context.Context, customValFilters []string, parameterFilters []ParameterFilterT) (bool, error) {
-	return jd.haveProcessedJobs(ctx, []string{Failed.State, Waiting.State, Executing.State, Importing.State}, customValFilters, parameterFilters)
-}
-
-/*
-haveProcessedJobs returns true if there are events of a given state, else false.
-*/
-func (jd *ReadonlyHandleT) haveProcessedJobs(ctx context.Context, stateFilter, customValFilters []string, parameterFilters []ParameterFilterT) (bool, error) {
-	var queryStat stats.Measurement
-	statName := ""
-	if len(customValFilters) > 0 {
-		statName = statName + customValFilters[0] + "_"
-	}
-	if len(stateFilter) > 0 {
-		statName = statName + stateFilter[0] + "_"
-	}
-	queryStat = stats.Default.NewTaggedStat(statName+"processed_count", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix})
-	queryStat.Start()
-	defer queryStat.End()
-
-	dsList := jd.getDSList()
-	var totalCount int64
-	for _, ds := range dsList {
-		count, err := jd.getProcessedJobsDSCount(ctx, ds, stateFilter, customValFilters, parameterFilters)
-		if count > 0 || err != nil {
-			return true, err
-		}
-		totalCount += count
-	}
-
-	return totalCount > 0, nil // If totalCount is 0, then there are no processed events
-}
-
-/*
-stateFilters and customValFilters do a OR query on values passed in array
-parameterFilters do a AND query on values included in the map
-*/
-func (jd *ReadonlyHandleT) getProcessedJobsDSCount(ctx context.Context, ds dataSetT, stateFilters []string,
-	customValFilters []string, parameterFilters []ParameterFilterT,
-) (int64, error) {
-	checkValidJobState(jd, stateFilters)
-
-	var queryStat stats.Measurement
-	statName := ""
-	if len(customValFilters) > 0 {
-		statName = statName + customValFilters[0] + "_"
-	}
-	if len(stateFilters) > 0 {
-		statName = statName + stateFilters[0] + "_"
-	}
-	queryStat = stats.Default.NewTaggedStat(statName+"processed_jobs_count", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix})
-	queryStat.Start()
-	defer queryStat.End()
-
-	var stateQuery, customValQuery, sourceQuery string
-
-	if len(stateFilters) > 0 {
-		stateQuery = " AND " + constructQueryOR("job_latest_state.job_state", stateFilters)
-	} else {
-		stateQuery = ""
-	}
-	if len(customValFilters) > 0 {
-		customValQuery = " AND " +
-			constructQueryOR(fmt.Sprintf("%s.custom_val", ds.JobTable), customValFilters)
-	} else {
-		customValQuery = ""
-	}
-
-	if len(parameterFilters) > 0 {
-		sourceQuery += " AND " + constructParameterJSONQuery(ds.JobTable, parameterFilters)
-	} else {
-		sourceQuery = ""
-	}
-
-	txn, err := jd.DbHandle.BeginTx(ctx, nil)
-	if err != nil {
-		jd.logger.Errorf("transaction on ds(%v) begin err. Err: %s", ds, err.Error())
-		return 0, err
-	}
-
-	var sqlStatement string
-
-	sqlStatement = fmt.Sprintf(`LOCK TABLE %s IN ACCESS SHARE MODE;`, ds.JobStatusTable)
-	err = jd.prepareAndExecStmtInTxn(txn, sqlStatement)
-	if err != nil {
-		if rollbackErr := txn.Rollback(); rollbackErr != nil {
-			jd.logger.Warnf("Unable to rollback after error: %v", rollbackErr)
-		}
-		jd.logger.Errorf("error preparing and executing statement. Sql: %s, Err: %s", sqlStatement, err.Error())
-		return 0, err
-	}
-
-	sqlStatement = fmt.Sprintf(`LOCK TABLE %s IN ACCESS SHARE MODE;`, ds.JobTable)
-	err = jd.prepareAndExecStmtInTxn(txn, sqlStatement)
-	if err != nil {
-		if rollbackErr := txn.Rollback(); rollbackErr != nil {
-			jd.logger.Warnf("Unable to rollback after error: %v", rollbackErr)
-		}
-		jd.logger.Errorf("error preparing and executing statement. Sql: %s, Err: %s", sqlStatement, err.Error())
-		return 0, err
-	}
-
-	var selectColumn string
-	if jd.tablePrefix == "gw" {
-		selectColumn = fmt.Sprintf("%[1]s.event_payload->'batch' as batch", ds.JobTable)
-	} else {
-		selectColumn = fmt.Sprintf("COUNT(%[1]s.job_id)", ds.JobTable)
-	}
-	sqlStatement = fmt.Sprintf(`SELECT %[6]s FROM
-                                             %[1]s
-                                             JOIN "v_last_%[2]s" job_latest_state ON %[1]s.job_id=job_latest_state.job_id
-											 %[3]s
-                                             %[4]s %[5]s
-                                             AND job_latest_state.retry_time < $1`,
-		ds.JobTable, ds.JobStatusTable, stateQuery, customValQuery, sourceQuery, selectColumn)
-
-	if jd.tablePrefix == "gw" {
-		sqlStatement = fmt.Sprintf("select sum(jsonb_array_length(batch)) from (%s) t", sqlStatement)
-	}
-
-	jd.logger.Debug(sqlStatement)
-
-	row := txn.QueryRow(sqlStatement, time.Now())
-	defer func() {
-		if err := txn.Rollback(); err != nil {
-			jd.logger.Errorf("Transaction rollback (lock release) on ds(%v) commit err. Err: %v", ds, err)
-		}
-	}()
-
-	var count sql.NullInt64
-	err = row.Scan(&count)
-	if err != nil && err != sql.ErrNoRows {
-		jd.logger.Errorf("Returning 0 because failed to fetch processed count from dataset: %v. Err: %s", ds, err.Error())
-		return 0, err
-	}
-
-	if count.Valid {
-		return count.Int64, nil
-	}
-
-	jd.logger.Debugf("Returning 0 because processed count is invalid. This could be because there are no jobs in non terminal state. Jobs table: %s. Query: %s", ds.JobTable, sqlStatement)
-	return 0, nil
-}
-
 func getStatusPrefix(jobPrefix string) string {
 	var response string
 	switch jobPrefix {
@@ -504,12 +207,12 @@ func (jd *ReadonlyHandleT) GetJobSummaryCount(arg, prefix string) (string, error
 	var dsString string
 	for _, dsPair := range dsListArr {
 		sqlStatement := fmt.Sprintf(`SELECT COUNT(*),
-     					%[1]s.parameters->'source_id' as source,
-     					%[1]s.custom_val ,%[1]s.parameters->'destination_id' as destination,
+     					jobs.parameters->'source_id' as source,
+     					jobs.custom_val, jobs.parameters->'destination_id' as destination,
      					job_latest_state.job_state
-						FROM %[1]s
-     					LEFT JOIN "v_last_%[2]s" job_latest_state ON %[1]s.job_id=job_latest_state.job_id
-						GROUP BY job_latest_state.job_state, %[1]s.parameters->'source_id', %[1]s.parameters->'destination_id', %[1]s.custom_val;`, dsPair.JobTableName, dsPair.JobStatusTableName)
+						FROM %[1]q AS jobs
+     					LEFT JOIN "v_last_%[2]s" job_latest_state ON jobs.job_id=job_latest_state.job_id
+						GROUP BY job_latest_state.job_state, jobs.parameters->'source_id', jobs.parameters->'destination_id', jobs.custom_val;`, dsPair.JobTableName, dsPair.JobStatusTableName)
 		row, err := jd.DbHandle.Query(sqlStatement)
 		if err != nil {
 			return "", err
@@ -559,17 +262,17 @@ func (jd *ReadonlyHandleT) GetLatestFailedJobs(arg, prefix string) (string, erro
 		dsListTotal := jd.getDSList()
 		dsList = DSPair{JobTableName: dsListTotal[0].JobTable, JobStatusTableName: dsListTotal[0].JobStatusTable}
 	}
-	sqlStatement := fmt.Sprintf(`SELECT %[1]s.job_id, %[1]s.user_id, %[1]s.custom_val,
+	sqlStatement := fmt.Sprintf(`SELECT jobs.job_id, jobs.user_id, jobs.custom_val,
 					job_latest_state.exec_time,
 					job_latest_state.error_code, job_latest_state.error_response
-					FROM %[1]s
-					JOIN "v_last_%[2]s" job_latest_state ON %[1]s.job_id=job_latest_state.job_id
+					FROM %[1]q AS jobs
+					JOIN "v_last_%[2]s" job_latest_state ON jobs.job_id=job_latest_state.job_id
 					WHERE job_latest_state.job_state = 'failed'
   					`, dsList.JobTableName, dsList.JobStatusTableName)
 	if argList[1] != "" {
-		sqlStatement = sqlStatement + fmt.Sprintf(`AND %[1]s.custom_val = '%[2]s'`, dsList.JobTableName, argList[1])
+		sqlStatement = sqlStatement + fmt.Sprintf(`AND jobs.custom_val = '%[1]s'`, argList[1])
 	}
-	sqlStatement = sqlStatement + fmt.Sprintf(`ORDER BY %[1]s.job_id desc LIMIT 5;`, dsList.JobTableName)
+	sqlStatement = sqlStatement + `ORDER BY jobs.job_id desc LIMIT 5;`
 	row, err := jd.DbHandle.Query(sqlStatement)
 	if err != nil {
 		return "", err
@@ -601,7 +304,7 @@ func (jd *ReadonlyHandleT) GetJobByID(job_id, _ string) (string, error) {
 	var response []byte
 	for _, dsPair := range dsListTotal {
 		var min, max sql.NullInt32
-		sqlStatement := fmt.Sprintf(`SELECT MIN(job_id), MAX(job_id) FROM %s`, dsPair.JobTable)
+		sqlStatement := fmt.Sprintf(`SELECT MIN(job_id), MAX(job_id) FROM %q`, dsPair.JobTable)
 		row := jd.DbHandle.QueryRow(sqlStatement)
 		err := row.Scan(&min, &max)
 		if err != nil {
@@ -618,15 +321,15 @@ func (jd *ReadonlyHandleT) GetJobByID(job_id, _ string) (string, error) {
 			continue
 		}
 		sqlStatement = fmt.Sprintf(`SELECT
-						%[1]s.job_id, %[1]s.uuid, %[1]s.user_id, %[1]s.parameters, %[1]s.custom_val, %[1]s.event_payload,
-						%[1]s.created_at, %[1]s.expire_at,
+						jobs.job_id, jobs.uuid, jobs.user_id, jobs.parameters, jobs.custom_val, jobs.event_payload,
+						jobs.created_at, jobs.expire_at,
 						job_latest_state.job_state, job_latest_state.attempt,
 						job_latest_state.exec_time, job_latest_state.retry_time,
 						job_latest_state.error_code, job_latest_state.error_response
 					FROM
-						%[1]s
-					LEFT JOIN "v_last_%[2]s" job_latest_state ON %[1]s.job_id=job_latest_state.job_id
-					WHERE %[1]s.job_id = %[3]s;`, dsPair.JobTable, dsPair.JobStatusTable, job_id)
+						%[1]q AS jobs
+					LEFT JOIN "v_last_%[2]s" job_latest_state ON jobs.job_id=job_latest_state.job_id
+					WHERE jobs.job_id = %[3]s;`, dsPair.JobTable, dsPair.JobStatusTable, job_id)
 
 		event := JobT{}
 		row = jd.DbHandle.QueryRow(sqlStatement)
@@ -636,11 +339,11 @@ func (jd *ReadonlyHandleT) GetJobByID(job_id, _ string) (string, error) {
 			&event.LastJobStatus.ErrorResponse)
 		if err != nil {
 			sqlStatement = fmt.Sprintf(`SELECT
-						%[1]s.job_id, %[1]s.uuid, %[1]s.user_id, %[1]s.parameters, %[1]s.custom_val, %[1]s.event_payload,
-						%[1]s.created_at, %[1]s.expire_at
+						jobs.job_id, jobs.uuid, jobs.user_id, jobs.parameters, jobs.custom_val, jobs.event_payload,
+						jobs.created_at, jobs.expire_at
 					FROM
-						%[1]s
-					WHERE %[1]s.job_id = %[2]s;`, dsPair.JobTable, job_id)
+						%[1]q AS jobs
+					WHERE jobs.job_id = %[2]s;`, dsPair.JobTable, job_id)
 			row = jd.DbHandle.QueryRow(sqlStatement)
 			err1 := row.Scan(&event.JobID, &event.UUID, &event.UserID, &event.Parameters, &event.CustomVal, &event.EventPayload,
 				&event.CreatedAt, &event.ExpireAt)
@@ -660,7 +363,7 @@ func (jd *ReadonlyHandleT) GetJobIDStatus(jobID, _ string) (string, error) {
 	dsListTotal := jd.getDSList()
 	for _, dsPair := range dsListTotal {
 		var min, max sql.NullInt32
-		sqlStatement := fmt.Sprintf(`SELECT MIN(job_id), MAX(job_id) FROM %s`, dsPair.JobTable)
+		sqlStatement := fmt.Sprintf(`SELECT MIN(job_id), MAX(job_id) FROM %q`, dsPair.JobTable)
 		row := jd.DbHandle.QueryRow(sqlStatement)
 		err := row.Scan(&min, &max)
 		if err != nil {
@@ -676,7 +379,7 @@ func (jd *ReadonlyHandleT) GetJobIDStatus(jobID, _ string) (string, error) {
 		if jobId < int(min.Int32) || jobId > int(max.Int32) {
 			continue
 		}
-		sqlStatement = fmt.Sprintf(`SELECT job_id, job_state, attempt, exec_time, retry_time,error_code, error_response FROM %[1]s WHERE job_id = %[2]s;`, dsPair.JobStatusTable, jobID)
+		sqlStatement = fmt.Sprintf(`SELECT job_id, job_state, attempt, exec_time, retry_time,error_code, error_response FROM %[1]q WHERE job_id = %[2]s;`, dsPair.JobStatusTable, jobID)
 		var statusCode sql.NullString
 		var eventList []JobStatusT
 		rows, err := jd.DbHandle.Query(sqlStatement)
@@ -696,13 +399,11 @@ func (jd *ReadonlyHandleT) GetJobIDStatus(jobID, _ string) (string, error) {
 			eventList = append(eventList, event)
 		}
 
-		{
-			response, err := json.MarshalIndent(FailedStatusStats{FailedStatusStats: eventList}, "", " ")
-			if err != nil {
-				return "", err
-			}
-			return string(response), nil
+		response, err := json.MarshalIndent(FailedStatusStats{FailedStatusStats: eventList}, "", " ")
+		if err != nil {
+			return "", err
 		}
+		return string(response), nil
 	}
 
 	// jobID not found
@@ -726,7 +427,7 @@ func (jd *ReadonlyHandleT) GetJobIDsForUser(args []string) (string, error) {
 			return "", nil
 		}
 		var min, max sql.NullInt32
-		sqlStatement := fmt.Sprintf(`SELECT MIN(job_id), MAX(job_id) FROM %s`, dsPair.JobTable)
+		sqlStatement := fmt.Sprintf(`SELECT MIN(job_id), MAX(job_id) FROM %q`, dsPair.JobTable)
 		row := jd.DbHandle.QueryRow(sqlStatement)
 		err = row.Scan(&min, &max)
 		if err != nil {
@@ -738,7 +439,7 @@ func (jd *ReadonlyHandleT) GetJobIDsForUser(args []string) (string, error) {
 		if jobId2 < int(min.Int32) || jobId1 > int(max.Int32) {
 			continue
 		}
-		sqlStatement = fmt.Sprintf(`SELECT job_id FROM %[1]s WHERE job_id >= %[2]s AND job_id <= %[3]s AND user_id = '%[4]s';`, dsPair.JobTable, args[2], args[3], userID)
+		sqlStatement = fmt.Sprintf(`SELECT job_id FROM %[1]q WHERE job_id >= %[2]s AND job_id <= %[3]s AND user_id = '%[4]s';`, dsPair.JobTable, args[2], args[3], userID)
 		rows, err := jd.DbHandle.Query(sqlStatement)
 		if err != nil {
 			return "", err
@@ -763,7 +464,7 @@ func (jd *ReadonlyHandleT) GetFailedStatusErrorCodeCountsByDestination(args []st
 	dsList := DSPair{JobTableName: jobPrefix + args[2], JobStatusTableName: statusPrefix + args[2]}
 	sqlStatement := fmt.Sprintf(`select count(*), a.error_code, a.custom_val, a.d from
 	(select count(*), rt.job_id, st.error_code as error_code, rt.custom_val as custom_val,
-		rt.parameters -> 'destination_id' as d from %[1]s rt inner join %[2]s st
+		rt.parameters -> 'destination_id' as d from %[1]q rt inner join %[2]q st
 		on st.job_id=rt.job_id where st.job_state in ('failed', 'aborted')
 		group by rt.job_id, st.error_code, rt.custom_val, rt.parameters -> 'destination_id')
 	as  a group by a.custom_val, a.error_code, a.d order by a.custom_val;`, dsList.JobTableName, dsList.JobStatusTableName)

@@ -1056,7 +1056,7 @@ func (job *UploadJobT) loadTable(tName string) (alteredSchema bool, err error) {
 		return
 	}
 
-	generateTableLoadMetrics := func() {
+	func() {
 		if !generateTableLoadCountVerificationsMetrics {
 			return
 		}
@@ -1070,12 +1070,12 @@ func (job *UploadJobT) loadTable(tName string) (alteredSchema bool, err error) {
 		if errEventCount != nil {
 			return
 		}
+
+		// TODO : Perform the comparison here in the codebase
 		job.guageStat(`pre_load_table_rows`, tag{name: "tableName", value: strings.ToLower(tName)}).Gauge(int(totalBeforeLoad))
 		job.guageStat(`post_load_table_rows_estimate`, tag{name: "tableName", value: strings.ToLower(tName)}).Gauge(int(totalBeforeLoad + eventsInTableUpload))
 		job.guageStat(`post_load_table_rows`, tag{name: "tableName", value: strings.ToLower(tName)}).Gauge(int(totalAfterLoad))
-	}
-
-	generateTableLoadMetrics()
+	}()
 
 	tableUpload.setStatus(TableUploadExported)
 	numEvents, queryErr := tableUpload.getNumEvents()
@@ -1364,7 +1364,7 @@ func (job *UploadJobT) setUploadStatus(statusOpts UploadStatusOpts) (err error) 
 			return err
 		}
 
-		if config.GetBool("Reporting.enabled", types.DEFAULT_REPORTING_ENABLED) {
+		if config.GetBool("Reporting.enabled", types.DefaultReportingEnabled) {
 			application.Features().Reporting.GetReportingInstance().Report([]*types.PUReportedMetric{&statusOpts.ReportingMetric}, txn)
 		}
 		err = txn.Commit()
@@ -1640,7 +1640,7 @@ func (job *UploadJobT) setUploadError(statusError error, state string) (string, 
 			},
 		})
 	}
-	if config.GetBool("Reporting.enabled", types.DEFAULT_REPORTING_ENABLED) {
+	if config.GetBool("Reporting.enabled", types.DefaultReportingEnabled) {
 		application.Features().Reporting.GetReportingInstance().Report(reportingMetrics, txn)
 	}
 	err = txn.Commit()

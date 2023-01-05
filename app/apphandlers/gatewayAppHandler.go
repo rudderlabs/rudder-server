@@ -64,7 +64,7 @@ func (a *gatewayApp) StartRudderCore(ctx context.Context, options *app.Options) 
 	}
 	a.log.Info("Gateway starting")
 
-	readonlyGatewayDB, readonlyRouterDB, readonlyBatchRouterDB, err := setupReadonlyDBs()
+	readonlyGatewayDB, err := setupReadonlyDBs()
 	if err != nil {
 		return err
 	}
@@ -125,7 +125,7 @@ func (a *gatewayApp) StartRudderCore(ctx context.Context, options *app.Options) 
 	var rateLimiter ratelimiter.HandleT
 
 	rateLimiter.SetUp()
-	gw.SetReadonlyDBs(readonlyGatewayDB, readonlyRouterDB, readonlyBatchRouterDB)
+	gw.SetReadonlyDB(readonlyGatewayDB)
 	rsourcesService, err := NewRsourcesService(deploymentType)
 	if err != nil {
 		return err
