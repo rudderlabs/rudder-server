@@ -72,8 +72,13 @@ func (t *Stats) Start() error {
 		}
 
 		for workspace := range pileUpStatMap {
-			for destType := range pileUpStatMap[workspace] {
-				metric.IncreasePendingEvents(dbPrefix, workspace, destType, float64(pileUpStatMap[workspace][destType]))
+			for destType, jobCount := range pileUpStatMap[workspace] {
+				metric.IncreasePendingEvents(
+					dbPrefix,
+					workspace,
+					destType,
+					float64(jobCount),
+				)
 			}
 		}
 	}

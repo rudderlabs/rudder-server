@@ -1405,12 +1405,6 @@ func (rt *HandleT) commitStatusList(responseList *[]jobResponseT) {
 	}
 	// REPORTING - ROUTER - END
 
-	defer func() {
-		for workspace := range routerWorkspaceJobStatusCount {
-			metric.DecreasePendingEvents("rt", workspace, rt.destName, float64(routerWorkspaceJobStatusCount[workspace]))
-		}
-	}()
-
 	if len(statusList) > 0 {
 		rt.logger.Debugf("[%v Router] :: flushing batch of %v status", rt.destName, updateStatusBatchSize)
 
@@ -1447,6 +1441,14 @@ func (rt *HandleT) commitStatusList(responseList *[]jobResponseT) {
 			panic(err)
 		}
 		rt.updateProcessedEventsMetrics(statusList)
+		for workspace, jobCount := range routerWorkspaceJobStatusCount {
+			metric.DecreasePendingEvents(
+				"rt",
+				workspace,
+				rt.destName,
+				float64(jobCount),
+			)
+		}
 	}
 
 	if rt.guaranteeUserEventOrder {
@@ -1967,10 +1969,6 @@ func (rt *HandleT) backendConfigSubscriber() {
 			for i := range wConfig.Sources {
 				source := &wConfig.Sources[i]
 				rt.sourceIDWorkspaceMap[source.ID] = workspaceID
-				if _, ok := rt.workspaceSet[workspaceID]; !ok {
-					rt.workspaceSet[workspaceID] = struct{}{}
-					rt.MultitenantI.UpdateWorkspaceLatencyMap(rt.destName, workspaceID, 0)
-				}
 				if len(source.Destinations) > 0 {
 					for i := range source.Destinations {
 						destination := &source.Destinations[i]
@@ -1980,6 +1978,10 @@ func (rt *HandleT) backendConfigSubscriber() {
 									Destination: *destination,
 									Sources:     []backendconfig.SourceT{},
 								}
+							}
+							if _, ok := rt.workspaceSet[workspaceID]; !ok {
+								rt.workspaceSet[workspaceID] = struct{}{}
+								rt.MultitenantI.UpdateWorkspaceLatencyMap(rt.destName, workspaceID, 0)
 							}
 							rt.destinationsMap[destination.ID].Sources = append(rt.destinationsMap[destination.ID].Sources, *source)
 
