@@ -56,7 +56,7 @@ func Init() {
 func loadConfig() {
 	configBackendURL = config.GetString("CONFIG_BACKEND_URL", "https://api.rudderstack.com")
 	config.RegisterBoolConfigVariable(false, &disableEventUploads, true, "SourceDebugger.disableEventUploads")
-	config.RegisterIntConfigVariable(0, &cachetype, true, 1, "SourceDebugger.cacheType")
+	config.RegisterIntConfigVariable(1, &cachetype, true, 1, "SourceDebugger.cacheType")
 }
 
 type EventUploader struct{}

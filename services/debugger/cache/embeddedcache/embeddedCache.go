@@ -144,12 +144,14 @@ func (e *EmbeddedCache[E]) init() {
 }
 
 func (e *EmbeddedCache[E]) gcBadgerDB() {
+	ticker := time.NewTicker(5 * time.Minute)
+	defer ticker.Stop()
+	// One call would only result in removal of at max one log file.
+	// As an optimization, you could also immediately re-run it whenever it returns nil error
+	// (this is why `goto again` is used).
 	for {
-		time.Sleep(30 * time.Second)
-		// One call would only result in removal of at max one log file.
-		// As an optimization, you could also immediately re-run it whenever it returns nil error
-		// (this is why `goto again` is used).
-	again:
+		<-ticker.C
+	again: // see https://dgraph.io/docs/badger/get-started/#garbage-collection
 		err := e.db.RunValueLogGC(0.7)
 		if err == nil {
 			goto again
