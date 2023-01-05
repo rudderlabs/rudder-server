@@ -3,8 +3,6 @@ package pubsub
 import (
 	"context"
 	"sync"
-
-	"github.com/mohae/deepcopy"
 )
 
 type DataEvent struct {
@@ -67,8 +65,7 @@ func (eb *PublishSubscriber) Subscribe(ctx context.Context, topic string) DataCh
 		eb.subscriptions[topic] = subPublishers{newSubPublisher}
 	}
 	if eb.lastEvent[topic] != nil {
-		dataEvent := deepcopy.Copy(*eb.lastEvent[topic]).(DataEvent)
-		newSubPublisher.publish(&dataEvent)
+		newSubPublisher.publish(eb.lastEvent[topic])
 	}
 
 	go func() {

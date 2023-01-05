@@ -15,7 +15,6 @@ import (
 
 	"github.com/cenkalti/backoff"
 	jsoniter "github.com/json-iterator/go"
-	"github.com/mohae/deepcopy"
 
 	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
@@ -73,12 +72,6 @@ type MetadataT struct {
 	DestinationDefinitionID string   `json:"destinationDefinitionId"`
 }
 
-type TransformerEvents []TransformerEventT
-
-func (t TransformerEvents) Copy() TransformerEvents {
-	return deepcopy.Copy(t).(TransformerEvents)
-}
-
 type TransformerEventT struct {
 	Message     types.SingularEventT       `json:"message"`
 	Metadata    MetadataT                  `json:"metadata"`
@@ -101,7 +94,6 @@ type HandleT struct {
 	Client httpPoster
 
 	guardConcurrency chan struct{}
-	guardRaceMutex   sync.RWMutex
 }
 
 // Transformer provides methods to transform events
@@ -241,17 +233,13 @@ func (trans *HandleT) Transform(ctx context.Context, clientEvents []TransformerE
 			to = len(clientEvents)
 		}
 		trans.guardConcurrency <- struct{}{}
-		trans.guardRaceMutex.Lock()
-		var slice TransformerEvents = clientEvents[from:to]
-		cp := slice.Copy()
-		trans.guardRaceMutex.Unlock()
-		go func(cp TransformerEvents) {
+		go func() {
 			trace.WithRegion(ctx, "request", func() {
-				transformResponse[i] = trans.request(ctx, url, cp)
+				transformResponse[i] = trans.request(ctx, url, clientEvents[from:to])
 			})
 			<-trans.guardConcurrency
 			wg.Done()
-		}(cp)
+		}()
 	}
 	wg.Wait()
 

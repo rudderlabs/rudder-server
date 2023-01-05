@@ -1772,7 +1772,18 @@ func (proc *HandleT) transformSrcDest(
 				inCountMap[key] = 0
 			}
 			if _, ok := inCountMetadataMap[key]; !ok {
-				inCountMetadataMap[key] = MetricMetadata{sourceID: event.Metadata.SourceID, destinationID: event.Metadata.DestinationID, sourceBatchID: event.Metadata.SourceBatchID, sourceTaskID: event.Metadata.SourceTaskID, sourceTaskRunID: event.Metadata.SourceTaskRunID, sourceJobID: event.Metadata.SourceJobID, sourceJobRunID: event.Metadata.SourceJobRunID, sourceDefinitionID: event.Metadata.SourceDefinitionID, destinationDefinitionID: event.Metadata.DestinationDefinitionID, sourceCategory: event.Metadata.SourceCategory}
+				inCountMetadataMap[key] = MetricMetadata{
+					sourceID:                event.Metadata.SourceID,
+					destinationID:           event.Metadata.DestinationID,
+					sourceBatchID:           event.Metadata.SourceBatchID,
+					sourceTaskID:            event.Metadata.SourceTaskID,
+					sourceTaskRunID:         event.Metadata.SourceTaskRunID,
+					sourceJobID:             event.Metadata.SourceJobID,
+					sourceJobRunID:          event.Metadata.SourceJobRunID,
+					sourceDefinitionID:      event.Metadata.SourceDefinitionID,
+					destinationDefinitionID: event.Metadata.DestinationDefinitionID,
+					sourceCategory:          event.Metadata.SourceCategory,
+				}
 			}
 			inCountMap[key] = inCountMap[key] + 1
 		}
@@ -1794,7 +1805,7 @@ func (proc *HandleT) transformSrcDest(
 			d := time.Since(startedAt)
 			userTransformationStat.transformTime.SendTiming(d)
 			proc.addToTransformEventByTimePQ(&TransformRequestT{
-				Event:          eventList,
+				Event:          eventList, // TODO possible data race
 				Stage:          transformer.UserTransformerStage,
 				ProcessingTime: d.Seconds(),
 				Index:          -1,
@@ -2171,7 +2182,6 @@ func (proc *HandleT) addToTransformEventByTimePQ(event *TransformRequestT, pq *t
 	if pq.Top().ProcessingTime < event.ProcessingTime {
 		pq.RemoveTop()
 		pq.Add(event)
-
 	}
 }
 
