@@ -2,98 +2,69 @@ package destination
 
 import (
 	"context"
-	"fmt"
-	"time"
+	"sync"
 
-	"github.com/cenkalti/backoff"
-
-	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/model"
+	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/utils/logger"
+	"github.com/rudderlabs/rudder-server/utils/pubsub"
 )
 
 var pkgLogger = logger.NewLogger().Child("client")
 
-//go:generate mockgen -source=destination.go -destination=mock_destination_test.go -package=destination github.com/rudderlabs/rudder-server/regulation-worker/internal/Destination/destination
-type destinationMiddleware interface {
-	Get(ctx context.Context, workspace string) (map[string]backendconfig.ConfigT, error)
+//go:generate mockgen -source=destination.go -destination=mock_destination.go -package=destination github.com/rudderlabs/rudder-server/regulation-worker/internal/Destination/destination
+type destMiddleware interface {
+	Subscribe(ctx context.Context, topic backendconfig.Topic) pubsub.DataChannel
 }
 
-type DestMiddleware struct {
-	Dest destinationMiddleware
+type DestinationConfig struct {
+	mu           sync.RWMutex
+	destinations map[string]model.Destination
+	Dest         destMiddleware
 }
 
-func (d *DestMiddleware) GetWorkspaceId(ctx context.Context) (string, error) {
-	pkgLogger.Debugf("getting destination Id")
-	destConfig, err := d.getDestDetails(ctx)
-	if err != nil {
-		pkgLogger.Errorf("error while getting destination details from backend config: %v", err)
-		return "", err
-	}
-	if len(destConfig) == 1 { // only single workspace configs are supported by regulation worker
-		for workspaceID := range destConfig {
-			pkgLogger.Debugf("workspaceId=", workspaceID)
-			return workspaceID, nil
-		}
-	}
-
-	pkgLogger.Error("workspaceId not found in config")
-	return "", fmt.Errorf("workspaceId not found in config")
-}
-
-// GetDestDetails makes api call to get json and then parse it to get destination related details
-// like: dest_type, auth details,
-// return destination Type enum{file, api}
-func (d *DestMiddleware) GetDestDetails(ctx context.Context, destID string) (model.Destination, error) {
+func (d *DestinationConfig) GetDestDetails(destID string) (model.Destination, error) {
 	pkgLogger.Debugf("getting destination details for destinationId: %v", destID)
-	destConf, err := d.getDestDetails(ctx)
-	if err != nil {
-		return model.Destination{}, err
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+	destination, ok := d.destinations[destID]
+	if !ok {
+		return model.Destination{}, model.ErrInvalidDestination
 	}
+	return destination, nil
+}
 
-	for _, wConf := range destConf {
-		for _, source := range wConf.Sources {
-			for _, dest := range source.Destinations {
-				if dest.ID == destID {
-					var destDetail model.Destination
-					destDetail.Config = dest.Config
-					destDetail.DestinationID = dest.ID
-					destDetail.Name = dest.DestinationDefinition.Name
-					// Destination Definition Config would most likely be needed
-					destDetail.DestDefConfig = dest.DestinationDefinition.Config
-					pkgLogger.Debugf("obtained destination detail: %v", destDetail)
-					return destDetail, nil
+// Start starts listening for configuration updates and updates the destinations.
+// The method blocks until the first update is received.
+func (d *DestinationConfig) Start(ctx context.Context) {
+	initialized := make(chan struct{})
+	ch := d.Dest.Subscribe(ctx, backendconfig.TopicBackendConfig)
+	rruntime.Go(func() {
+		for data := range ch {
+			destinations := make(map[string]model.Destination)
+			configs := data.Data.(map[string]backendconfig.ConfigT)
+			for _, config := range configs {
+				for _, source := range config.Sources {
+					for _, dest := range source.Destinations {
+						destinations[dest.ID] = model.Destination{
+							DestinationID: dest.ID,
+							Config:        dest.Config,
+							Name:          dest.DestinationDefinition.Name,
+							DestDefConfig: dest.DestinationDefinition.Config,
+						}
+					}
 				}
 			}
+			d.mu.Lock()
+			d.destinations = destinations
+			d.mu.Unlock()
+			select {
+			case <-initialized:
+			default:
+				close(initialized)
+			}
 		}
-	}
-	return model.Destination{}, model.ErrInvalidDestination
-}
-
-func (d *DestMiddleware) getDestDetails(ctx context.Context) (map[string]backendconfig.ConfigT, error) {
-	pkgLogger.Debugf("getting destination details with exponential backoff")
-
-	maxWait := time.Minute * 10
-	var err error
-	bo := backoff.NewExponentialBackOff()
-	boCtx := backoff.WithContext(bo, ctx)
-	bo.MaxInterval = time.Minute
-	bo.MaxElapsedTime = maxWait
-	var destConf map[string]backendconfig.ConfigT
-	if err = backoff.Retry(func() error {
-		pkgLogger.Debugf("Fetching backend-config...")
-		// TODO : Revisit the Implementation for Regulation Worker in case of MultiTenant Deployment
-		destConf, err = d.Dest.Get(ctx, config.GetWorkspaceToken())
-		if err != nil {
-			return fmt.Errorf("error while getting destination details: %w", err)
-		}
-		return nil
-	}, boCtx); err != nil {
-		if bo.NextBackOff() == backoff.Stop {
-			pkgLogger.Debugf("reached retry limit...")
-			return map[string]backendconfig.ConfigT{}, err
-		}
-	}
-	return destConf, nil
+	})
+	<-initialized
 }
