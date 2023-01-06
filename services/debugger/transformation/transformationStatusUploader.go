@@ -75,6 +75,7 @@ var (
 	pkgLogger                    logger.Logger
 	transformationCacheMap       cache.Cache[TransformationStatusT]
 	cachetype                    int
+	origin                       string
 )
 
 var (
@@ -85,7 +86,7 @@ var (
 func Init() {
 	loadConfig()
 	pkgLogger = logger.NewLogger().Child("debugger").Child("transformation")
-	transformationCacheMap = cache.New[TransformationStatusT](cache.CacheType(cachetype), cache.TransformationCache, pkgLogger)
+	transformationCacheMap = cache.New[TransformationStatusT](cache.CacheType(cachetype), origin, pkgLogger)
 }
 
 func loadConfig() {
@@ -93,6 +94,7 @@ func loadConfig() {
 	config.RegisterBoolConfigVariable(false, &disableTransformationUploads, true, "TransformationDebugger.disableTransformationStatusUploads")
 	config.RegisterIntConfigVariable(1, &limitEventsInMemory, true, 1, "TransformationDebugger.limitEventsInMemory")
 	config.RegisterIntConfigVariable(1, &cachetype, true, 1, "TransformationDebugger.cacheType")
+	config.RegisterStringConfigVariable("transformation", &origin, true, "TransformationDebugger.origin")
 }
 
 type TransformationStatusUploader struct{}

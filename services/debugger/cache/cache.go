@@ -13,12 +13,6 @@ const (
 	BadgerCacheType
 )
 
-const (
-	SourceCache         = "source"
-	DestinationCache    = "destination"
-	TransformationCache = "transformation"
-)
-
 type Cache[T any] interface {
 	Update(key string, value T)
 	Read(key string) []T

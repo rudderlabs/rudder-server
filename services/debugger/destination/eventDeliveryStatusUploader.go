@@ -40,6 +40,7 @@ var (
 	disableEventDeliveryStatusUploads bool
 	eventsDeliveryCache               cache.Cache[*DeliveryStatusT]
 	cachetype                         int
+	origin                            string
 )
 
 var pkgLogger logger.Logger
@@ -47,13 +48,14 @@ var pkgLogger logger.Logger
 func Init() {
 	loadConfig()
 	pkgLogger = logger.NewLogger().Child("debugger").Child("destination")
-	eventsDeliveryCache = cache.New[*DeliveryStatusT](cache.CacheType(cachetype), cache.DestinationCache, pkgLogger)
+	eventsDeliveryCache = cache.New[*DeliveryStatusT](cache.CacheType(cachetype), origin, pkgLogger)
 }
 
 func loadConfig() {
 	configBackendURL = config.GetString("CONFIG_BACKEND_URL", "https://api.rudderstack.com")
 	config.RegisterBoolConfigVariable(false, &disableEventDeliveryStatusUploads, true, "DestinationDebugger.disableEventDeliveryStatusUploads")
 	config.RegisterIntConfigVariable(1, &cachetype, true, 1, "DestinationDebugger.cacheType")
+	config.RegisterStringConfigVariable("destination", &origin, true, "DestinationDebugger.origin")
 }
 
 type EventDeliveryStatusUploader struct{}

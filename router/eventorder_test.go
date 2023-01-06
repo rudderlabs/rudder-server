@@ -144,6 +144,9 @@ func TestEventOrderGuarantee(t *testing.T) {
 			// statusInsertLoop
 			config.Set("Router.updateStatusBatchSize", 100)
 			config.Set("Router.maxStatusUpdateWait", "10ms")
+			config.Set("SourceDebugger.origin", "event_order_source_"+trand.String(100))
+			config.Set("DestinationDebugger.origin", "event_order_destination_"+trand.String(100))
+			config.Set("TransformerDebugger.origin", "event_order_transformer_"+trand.String(100))
 
 			defer config.Reset()
 
