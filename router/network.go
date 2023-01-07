@@ -169,7 +169,7 @@ func (network *NetHandleT) SendPost(ctx context.Context, structData integrations
 			}
 		}
 
-		defer func() { httputil.CloseResponse(resp) }()
+		defer httputil.CloseResponse(resp)
 
 		respBody, err := io.ReadAll(resp.Body)
 		if err != nil {

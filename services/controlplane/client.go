@@ -147,7 +147,7 @@ func (c *Client) SendFeatures(ctx context.Context, component string, features []
 		if err != nil {
 			return fmt.Errorf("doing http request: %w", err)
 		}
-		defer func() { httputil.CloseResponse(resp) }()
+		defer httputil.CloseResponse(resp)
 
 		if resp.StatusCode != http.StatusNoContent {
 			// we don't expect a body, unless there is an error
@@ -194,7 +194,7 @@ func (c *Client) DestinationHistory(ctx context.Context, revisionID string) (bac
 		if err != nil {
 			return err
 		}
-		defer func() { httputil.CloseResponse(resp) }()
+		defer httputil.CloseResponse(resp)
 
 		if resp.StatusCode != http.StatusOK {
 			b, err := io.ReadAll(resp.Body)

@@ -216,7 +216,7 @@ func testMultiTenantByAppType(t *testing.T, appType string) {
 	require.ErrorContains(t, err, "connection refused")
 	require.Nil(t, resp)
 	if err == nil {
-		defer func() { httputil.CloseResponse(resp) }()
+		defer httputil.CloseResponse(resp)
 	}
 
 	// Pushing valid configuration via ETCD
@@ -416,7 +416,7 @@ func sendEvent(t *testing.T, httpPort int, payload *strings.Reader, callType, wr
 
 	res, err := httpClient.Do(req)
 	require.NoError(t, err)
-	defer func() { httputil.CloseResponse(res) }()
+	defer httputil.CloseResponse(res)
 
 	body, err := io.ReadAll(res.Body)
 	require.NoError(t, err)

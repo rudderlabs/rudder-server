@@ -88,7 +88,7 @@ func makePostRequest(url string, payload interface{}) error {
 
 		resp, err = client.Do(req)
 		if err == nil {
-			func() { httputil.CloseResponse(resp) }()
+			httputil.CloseResponse(resp)
 			break
 		}
 

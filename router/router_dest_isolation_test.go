@@ -161,8 +161,9 @@ func Test_RouterDestIsolation(t *testing.T) {
 		req.SetBasicAuth(writeKey, "password")
 		resp, err := client.Do(req)
 		require.NoError(t, err, "should be able to send the request to gateway")
+		httputil.CloseResponse(resp)
 		require.Equal(t, http.StatusOK, resp.StatusCode)
-		func() { httputil.CloseResponse(resp) }()
+
 	}
 	require.Eventually(t, func() bool {
 		return atomic.LoadUint64(webhook2.count) == 100 && atomic.LoadUint64(webhook1.count) < 100

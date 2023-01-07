@@ -96,7 +96,7 @@ func (api *APIManager) deleteWithRetry(ctx context.Context, job model.Job, desti
 		}
 		return model.JobStatusFailed
 	}
-	defer func() { httputil.CloseResponse(resp) }()
+	defer httputil.CloseResponse(resp)
 	bodyBytes, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return model.JobStatusFailed

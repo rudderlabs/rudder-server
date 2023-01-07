@@ -28,7 +28,7 @@ func WaitUntilReady(
 			if err != nil {
 				continue
 			}
-			func() { httputil.CloseResponse(resp) }()
+			httputil.CloseResponse(resp)
 			if resp.StatusCode == http.StatusOK {
 				t.Log("Application ready")
 				return

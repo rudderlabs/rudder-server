@@ -62,7 +62,7 @@ func (api *internalClient) GetDestinationSSHKeys(ctx context.Context, id string)
 		return nil, fmt.Errorf("fetching response from http client: %w", err)
 	}
 
-	defer func() { httputil.CloseResponse(resp) }()
+	defer httputil.CloseResponse(resp)
 
 	if resp.StatusCode == http.StatusNotFound {
 		return nil, fmt.Errorf("%w: key requested: %s", ErrKeyNotFound, id)

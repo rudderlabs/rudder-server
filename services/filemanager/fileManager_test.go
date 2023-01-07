@@ -92,7 +92,7 @@ func run(m *testing.M) int {
 		if err != nil {
 			return err
 		}
-		defer func() { httputil.CloseResponse(resp) }()
+		defer httputil.CloseResponse(resp)
 
 		if resp.StatusCode != http.StatusOK {
 			return fmt.Errorf("status code not OK")

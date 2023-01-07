@@ -1132,7 +1132,7 @@ func (brt *HandleT) postToWarehouse(batchJobs *BatchJobsT, output StorageUploadO
 		brt.logger.Errorf("BRT: Failed to route staging file URL to warehouse service@%v, error:%v", uri, err)
 		return
 	}
-	defer func() { httputil.CloseResponse(resp) }()
+	defer httputil.CloseResponse(resp)
 
 	if resp.StatusCode == http.StatusOK {
 		brt.logger.Infof("BRT: Routed successfully staging file URL to warehouse service@%v", uri)

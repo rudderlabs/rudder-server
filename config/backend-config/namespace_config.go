@@ -139,7 +139,7 @@ func (nc *namespaceConfig) makeHTTPRequest(ctx context.Context, url string) ([]b
 		return nil, err
 	}
 
-	defer func() { httputil.CloseResponse(resp) }()
+	defer httputil.CloseResponse(resp)
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, err

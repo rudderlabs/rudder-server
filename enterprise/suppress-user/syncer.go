@@ -176,7 +176,7 @@ func (s *Syncer) sync(token []byte) ([]model.Suppression, []byte, error) {
 		if err != nil {
 			return err
 		}
-		defer func() { httputil.CloseResponse(resp) }()
+		defer httputil.CloseResponse(resp)
 
 		// If statusCode is not 2xx, then returning empty regulations
 		if resp.StatusCode < 200 || resp.StatusCode >= 300 {

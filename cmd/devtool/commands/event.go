@@ -89,7 +89,7 @@ func EventSend(c *cli.Context) error {
 			if err != nil {
 				return err
 			}
-			defer func() { httputil.CloseResponse(resp) }()
+			defer httputil.CloseResponse(resp)
 			b, err := io.ReadAll(resp.Body)
 			if err != nil {
 				return err

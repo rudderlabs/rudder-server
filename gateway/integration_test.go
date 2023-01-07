@@ -184,7 +184,7 @@ func testGatewayByAppType(t *testing.T, appType string) {
 	resp, err := http.Get(healthEndpoint)
 	require.ErrorContains(t, err, "connection refused")
 	require.Nil(t, resp)
-	defer func() { httputil.CloseResponse(resp) }()
+	defer httputil.CloseResponse(resp)
 
 	// Checking now that the configuration has been processed and the server can start
 	t.Log("Checking health endpoint at", healthEndpoint)
@@ -317,7 +317,7 @@ func sendEvent(t *testing.T, httpPort int, payload *strings.Reader, callType, wr
 
 	res, err := httpClient.Do(req)
 	require.NoError(t, err)
-	defer func() { httputil.CloseResponse(res) }()
+	defer httputil.CloseResponse(res)
 
 	body, err := io.ReadAll(res.Body)
 	require.NoError(t, err)

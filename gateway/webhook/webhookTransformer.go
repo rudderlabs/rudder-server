@@ -51,16 +51,13 @@ func (bt *batchWebhookTransformerT) transform(events [][]byte, sourceType string
 	payload := misc.MakeJSONArray(events)
 	url := fmt.Sprintf(`%s/%s`, bt.sourceTransformerURL, strings.ToLower(sourceType))
 	resp, err := bt.webhook.netClient.Post(url, "application/json; charset=utf-8", bytes.NewBuffer(payload))
-
 	bt.stats.transformTimerStat.End()
 	if err != nil {
 		err := fmt.Errorf("JS HTTP connection error to source transformer: URL: %v Error: %+v", url, err)
 		return transformerBatchResponseT{batchError: err, statusCode: http.StatusServiceUnavailable}
 	}
-
+	defer httputil.CloseResponse(resp)
 	respBody, err := io.ReadAll(resp.Body)
-	func() { httputil.CloseResponse(resp) }()
-
 	if err != nil {
 		bt.stats.failedStat.Count(len(events))
 		statusCode := response.GetErrorStatusCode(response.RequestBodyReadFailed)

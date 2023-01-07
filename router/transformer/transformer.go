@@ -112,8 +112,9 @@ func (trans *handle) Transform(transformType string, transformMessage *types.Tra
 	trans.logger.Debugf("[Router Transformer] :: input payload : %s", string(rawJSON))
 
 	retryCount := 0
-	var resp *http.Response
 	var respData []byte
+	var respStatus int
+	var respHeaders http.Header
 	// We should rarely have error communicating with our JS
 	reqFailed := false
 
@@ -128,18 +129,24 @@ func (trans *handle) Transform(transformType string, transformMessage *types.Tra
 	}
 
 	for {
-		s := time.Now()
-		resp, err = trans.client.Post(url, "application/json; charset=utf-8",
-			bytes.NewBuffer(rawJSON))
+		respData, respStatus, respHeaders, err = func() ([]byte, int, http.Header, error) {
+			var data []byte
+			var status int
+			var header http.Header
+			var err error
 
-		if err == nil {
-			// If no err returned by client.Post, reading body.
-			// If reading body fails, retrying.
-			respData, err = io.ReadAll(resp.Body)
-		}
-
-		if err != nil {
+			s := time.Now()
+			resp, err := trans.client.Post(url, "application/json; charset=utf-8", bytes.NewBuffer(rawJSON))
+			defer httputil.CloseResponse(resp)
 			trans.transformRequestTimerStat.SendTiming(time.Since(s))
+			if err == nil {
+				status = resp.StatusCode
+				header = resp.Header
+				data, err = io.ReadAll(resp.Body)
+			}
+			return data, status, header, err
+		}()
+		if err != nil {
 			reqFailed = true
 			trans.logger.Errorf("JS HTTP connection error: URL: %v Error: %+v", url, err)
 			if retryCount > maxRetry {
@@ -153,18 +160,16 @@ func (trans *handle) Transform(transformType string, transformMessage *types.Tra
 		if reqFailed {
 			trans.logger.Errorf("Failed request succeeded after %v retries, URL: %v", retryCount, url)
 		}
-
-		trans.transformRequestTimerStat.SendTiming(time.Since(s))
 		break
 	}
 
-	if resp.StatusCode != http.StatusOK {
-		trans.logger.Errorf("[Router Transfomrer] :: Transformer returned status code: %v reason: %v", resp.StatusCode, resp.Status)
+	if respStatus != http.StatusOK {
+		trans.logger.Errorf("[Router Transfomrer] :: Transformer returned status code: %d", respStatus)
 	}
 
 	var destinationJobs []types.DestinationJobT
-	if resp.StatusCode == http.StatusOK {
-		transformerAPIVersion, convErr := strconv.Atoi(resp.Header.Get(apiVersionHeader))
+	if respStatus == http.StatusOK {
+		transformerAPIVersion, convErr := strconv.Atoi(respHeaders.Get(apiVersionHeader))
 		if convErr != nil {
 			transformerAPIVersion = 0
 		}
@@ -230,7 +235,7 @@ func (trans *handle) Transform(transformType string, transformMessage *types.Tra
 		}
 	} else {
 		statusCode := 500
-		if resp.StatusCode == http.StatusNotFound {
+		if respStatus == http.StatusNotFound {
 			statusCode = 404
 		}
 		for i := range transformMessage.Data {
@@ -239,7 +244,6 @@ func (trans *handle) Transform(transformType string, transformMessage *types.Tra
 			destinationJobs = append(destinationJobs, resp)
 		}
 	}
-	func() { httputil.CloseResponse(resp) }()
 
 	return destinationJobs
 }
@@ -338,6 +342,7 @@ func (trans *handle) doProxyRequest(ctx context.Context, proxyReqParams *ProxyRe
 
 	httpReqStTime := time.Now()
 	resp, err := trans.proxyClient.Do(req)
+	defer httputil.CloseResponse(resp)
 	reqRoundTripTime := time.Since(httpReqStTime)
 	// This stat will be useful in understanding the round trip time taken for the http req
 	// between server and transformer
@@ -386,7 +391,6 @@ func (trans *handle) doProxyRequest(ctx context.Context, proxyReqParams *ProxyRe
 	}
 
 	respData, err = io.ReadAll(resp.Body)
-	defer func() { httputil.CloseResponse(resp) }()
 	// error handling while reading from resp.Body
 	if err != nil {
 		respData = []byte(fmt.Sprintf(`failed to read response body, Error:: %+v`, err))

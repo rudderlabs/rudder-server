@@ -121,7 +121,7 @@ func startMinioServer(t *testing.T, pool *dockertest.Pool) {
 		if err != nil {
 			return err
 		}
-		defer func() { httputil.CloseResponse(resp) }()
+		defer httputil.CloseResponse(resp)
 		if resp.StatusCode != http.StatusOK {
 			return fmt.Errorf("status code not OK")
 		}

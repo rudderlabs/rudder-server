@@ -56,7 +56,7 @@ func SetupTransformer(pool *dockertest.Pool, d cleaner) (*TransformerResource, e
 		if err != nil {
 			return err
 		}
-		defer func() { httputil.CloseResponse(resp) }()
+		defer httputil.CloseResponse(resp)
 		if resp.StatusCode != 200 {
 			return errors.New(resp.Status)
 		}

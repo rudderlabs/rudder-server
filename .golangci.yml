@@ -7,17 +7,14 @@ run:
 
 linters:
   enable:
-    - deadcode
     - errcheck
     - gosimple
     - govet
     - ineffassign
     - staticcheck
-    - structcheck
     - typecheck
     - unused
-    - varcheck
-    - bodyclose
+    - reuseconn
     - decorder
     - makezero
     - nilnil
@@ -40,17 +37,16 @@ issues:
     # False positive httptest.NewRecorder
     - path: 'gateway/webhook/webhook_test.go'
       linters:
-        - bodyclose
+        - reuseconn
   
-    # False positive .Close behind if
     - path: 'processor/transformer/transformer.go'
       linters:
-        - bodyclose
+        - reuseconn
     
     # False positive httptest.NewRecorder
     - path: 'gateway/gateway_test.go'
       linters:
-        - bodyclose
+        - reuseconn
 
     # Temporary disable until we fix the number of issues
     - path: 'warehouse'

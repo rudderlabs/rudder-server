@@ -182,7 +182,7 @@ func GetVersion() (transformerBuildVersion string) {
 		transformerBuildVersion = fmt.Sprintf("No response from transformer. %s", transformerBuildVersion)
 		return
 	}
-	defer func() { httputil.CloseResponse(resp) }()
+	defer httputil.CloseResponse(resp)
 	if resp.StatusCode == http.StatusOK {
 		bodyBytes, err := io.ReadAll(resp.Body)
 		if err != nil {
@@ -391,7 +391,7 @@ func (trans *HandleT) doPost(ctx context.Context, rawJSON []byte, url string, ta
 			if reqErr != nil {
 				return reqErr
 			}
-			defer func() { httputil.CloseResponse(resp) }()
+			defer httputil.CloseResponse(resp)
 			respData, reqErr = io.ReadAll(resp.Body)
 			return reqErr
 		},

@@ -202,8 +202,8 @@ func Test_RouterThrottling(t *testing.T) {
 		req.SetBasicAuth(writeKey, "password")
 		resp, err := client.Do(req)
 		require.NoError(t, err, "should be able to send the request to gateway")
+		httputil.CloseResponse(resp)
 		require.Equal(t, http.StatusOK, resp.StatusCode)
-		func() { httputil.CloseResponse(resp) }()
 	}
 
 	require.Eventuallyf(t,

@@ -86,6 +86,7 @@ func Test_ListenAndServe(t *testing.T) {
 
 			client := http.Client{}
 			resp, err := client.Get(fmt.Sprintf("http://%s/block", addr))
+			defer CloseResponse(resp)
 			if err != nil {
 				return err
 			}
@@ -161,6 +162,7 @@ func Test_ListenAndServe(t *testing.T) {
 			req, _ := http.NewRequestWithContext(clientCtx, http.MethodGet, fmt.Sprintf("http://%s/block", addr), http.NoBody)
 
 			resp, err := client.Do(req)
+			defer CloseResponse(resp)
 			if err != nil {
 				clientErrCh <- err
 				return
@@ -209,7 +211,7 @@ func pingServer(srv *http.Server) bool {
 	if err != nil {
 		return false
 	}
-	resp.Body.Close()
+	CloseResponse(resp)
 
 	return (resp.StatusCode == http.StatusOK)
 }

@@ -573,11 +573,11 @@ func MakeHTTPRequestWithTimeout(url string, payload io.Reader, timeout time.Dura
 	if err != nil {
 		return []byte{}, 400, err
 	}
+	defer httputil.CloseResponse(resp)
 
 	var respBody []byte
 	if resp != nil && resp.Body != nil {
 		respBody, _ = io.ReadAll(resp.Body)
-		defer func() { httputil.CloseResponse(resp) }()
 	}
 
 	return respBody, resp.StatusCode, nil
@@ -1001,10 +1001,9 @@ func MakeRetryablePostRequest(url, endpoint string, data interface{}) (response 
 	if err != nil {
 		return nil, -1, err
 	}
+	defer httputil.CloseResponse(resp)
 
 	body, err := io.ReadAll(resp.Body)
-	defer func() { httputil.CloseResponse(resp) }()
-
 	pkgLogger.Debugf("Post request: Successful %s", string(body))
 	return body, resp.StatusCode, nil
 }
@@ -1165,11 +1164,11 @@ func GetDatabricksVersion() (version string) {
 		pkgLogger.Errorf("Unable to make a warehouse databricks build version call with error : %s", err.Error())
 		return
 	}
+	defer httputil.CloseResponse(resp)
 	if resp == nil {
 		version = "No response from warehouse."
 		return
 	}
-	defer func() { httputil.CloseResponse(resp) }()
 	if resp.StatusCode == http.StatusOK {
 		bodyBytes, err := io.ReadAll(resp.Body)
 		if err != nil {

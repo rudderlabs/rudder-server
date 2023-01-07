@@ -656,7 +656,7 @@ func getEvent(url, method string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	defer func() { httputil.CloseResponse(res) }()
+	defer httputil.CloseResponse(res)
 
 	body, err := io.ReadAll(res.Body)
 	if err != nil {
@@ -720,7 +720,7 @@ func sendEvent(t *testing.T, payload *strings.Reader, callType, writeKey string)
 		t.Logf("sendEvent error: %v", err)
 		return
 	}
-	defer func() { httputil.CloseResponse(res) }()
+	defer httputil.CloseResponse(res)
 
 	body, err := io.ReadAll(res.Body)
 	if err != nil {

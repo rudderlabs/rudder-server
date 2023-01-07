@@ -69,7 +69,7 @@ func SetupMINIO(pool *dockertest.Pool, d cleaner) (*MINIOResource, error) {
 		if err != nil {
 			return err
 		}
-		defer func() { httputil.CloseResponse(resp) }()
+		defer httputil.CloseResponse(resp)
 		if resp.StatusCode != http.StatusOK {
 			return fmt.Errorf("status code not OK")
 		}

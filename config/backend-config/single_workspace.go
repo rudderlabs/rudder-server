@@ -151,7 +151,7 @@ func (wc *singleWorkspaceConfig) makeHTTPRequest(ctx context.Context, url string
 		return nil, err
 	}
 
-	defer func() { httputil.CloseResponse(resp) }()
+	defer httputil.CloseResponse(resp)
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, err

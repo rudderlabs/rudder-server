@@ -516,9 +516,6 @@ func verifyAsyncJob(t testing.TB, wareHouseTest *WareHouseTest) {
 		url        = fmt.Sprintf("http://localhost:%s/v1/%s", "8080", path)
 		method     = "GET"
 		httpClient = &http.Client{}
-		req        *http.Request
-		res        *http.Response
-		err        error
 	)
 
 	type asyncResponse struct {
@@ -527,6 +524,9 @@ func verifyAsyncJob(t testing.TB, wareHouseTest *WareHouseTest) {
 	}
 
 	operation := func() bool {
+		var req *http.Request
+		var res *http.Response
+		var err error
 		if req, err = http.NewRequest(method, url, strings.NewReader("")); err != nil {
 			return false
 		}
@@ -539,11 +539,10 @@ func verifyAsyncJob(t testing.TB, wareHouseTest *WareHouseTest) {
 		if res, err = httpClient.Do(req); err != nil {
 			return false
 		}
+		defer httputil.CloseResponse(res)
 		if res.StatusCode != http.StatusOK {
 			return false
 		}
-
-		defer func() { httputil.CloseResponse(res) }()
 
 		var asyncRes asyncResponse
 		if err = json.NewDecoder(res.Body).Decode(&asyncRes); err != nil {
@@ -660,11 +659,10 @@ func prometheusStats(t testing.TB) map[string]*promCLient.MetricFamily {
 
 	httpClient := &http.Client{Timeout: 5 * time.Second}
 	resp, err := httpClient.Do(req)
+	defer httputil.CloseResponse(resp)
 	require.NoError(t, err)
 	require.NotNil(t, resp)
 	require.NotNil(t, resp.Body)
-
-	defer func() { httputil.CloseResponse(resp) }()
 
 	var parser expfmt.TextParser
 	mf, err := parser.TextToMetricFamilies(resp.Body)

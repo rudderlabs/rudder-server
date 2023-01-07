@@ -1030,6 +1030,7 @@ func GetRequestWithTimeout(ctx context.Context, url string, timeout time.Duratio
 
 	client := &http.Client{Timeout: timeout}
 	resp, err := client.Do(req)
+	defer httputil.CloseResponse(resp)
 	if err != nil {
 		return []byte{}, err
 	}
@@ -1037,7 +1038,6 @@ func GetRequestWithTimeout(ctx context.Context, url string, timeout time.Duratio
 	var respBody []byte
 	if resp != nil && resp.Body != nil {
 		respBody, _ = io.ReadAll(resp.Body)
-		func() { httputil.CloseResponse(resp) }()
 	}
 
 	return respBody, nil
@@ -1057,11 +1057,10 @@ func PostRequestWithTimeout(ctx context.Context, url string, payload []byte, tim
 	if err != nil {
 		return []byte{}, err
 	}
-
+	defer httputil.CloseResponse(resp)
 	var respBody []byte
 	if resp != nil && resp.Body != nil {
 		respBody, _ = io.ReadAll(resp.Body)
-		func() { httputil.CloseResponse(resp) }()
 	}
 
 	return respBody, nil

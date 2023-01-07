@@ -420,7 +420,7 @@ func (r *HandleT) sendMetric(ctx context.Context, netClient *http.Client, client
 		httpStatTags["status"] = strconv.Itoa(resp.StatusCode)
 		stats.Default.NewTaggedStat(StatReportingHttpReq, stats.CountType, httpStatTags).Count(1)
 
-		defer func() { httputil.CloseResponse(resp) }()
+		defer httputil.CloseResponse(resp)
 		respBody, err := io.ReadAll(resp.Body)
 		if err != nil {
 			r.log.Error(err.Error())

@@ -27,13 +27,13 @@ func (ops *VictorOps) Alert(message string) {
 		pkgLogger.Errorf("Alert: Failed to alert service: %s", err.Error())
 		return
 	}
+	defer httputil.CloseResponse(resp)
 
 	if resp.StatusCode != 200 && resp.StatusCode != 202 {
 		pkgLogger.Errorf("Alert: Got error response %d", resp.StatusCode)
 	}
 
 	body, err := io.ReadAll(resp.Body)
-	defer func() { httputil.CloseResponse(resp) }()
 	if err != nil {
 		pkgLogger.Errorf("Alert: Failed to read response body: %s", err.Error())
 		return

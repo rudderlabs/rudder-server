@@ -498,7 +498,7 @@ func processResponse(resp *http.Response) (statusCode int, respBody string) {
 	var ioUtilReadErr error
 	if resp != nil && resp.Body != nil {
 		respData, ioUtilReadErr = io.ReadAll(resp.Body)
-		defer func() { httputil.CloseResponse(resp) }()
+		defer httputil.CloseResponse(resp)
 		if ioUtilReadErr != nil {
 			return http.StatusInternalServerError, ioUtilReadErr.Error()
 		}
@@ -558,7 +558,7 @@ func (authErrHandler *OAuthErrResHandler) cpApiCall(cpReq *ControlPlaneRequestT)
 		}
 		return http.StatusBadRequest, doErr.Error()
 	}
-	defer func() { httputil.CloseResponse(res) }()
+	defer httputil.CloseResponse(res)
 	statusCode, resp := processResponse(res)
 	return statusCode, resp
 }

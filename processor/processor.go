@@ -557,7 +557,7 @@ func (proc *HandleT) makeFeaturesFetchCall() bool {
 		return true
 	}
 
-	defer func() { httputil.CloseResponse(res) }()
+	defer httputil.CloseResponse(res)
 	body, err := io.ReadAll(res.Body)
 	if err != nil {
 		return true

@@ -234,8 +234,8 @@ func TestEventOrderGuarantee(t *testing.T) {
 					req.SetBasicAuth(writeKey, "password")
 					resp, err := client.Do(req)
 					require.NoError(t, err, "should be able to send the request to gateway")
+					httputil.CloseResponse(resp)
 					require.Equal(t, http.StatusOK, resp.StatusCode, "should be able to send the request to gateway successfully", payload)
-					func() { httputil.CloseResponse(resp) }()
 				}
 			}()
 

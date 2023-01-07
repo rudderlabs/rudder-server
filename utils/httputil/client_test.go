@@ -82,16 +82,16 @@ func TestReadAndCloseResponse(t *testing.T) {
 		resp, err := http.Get(httpServer.URL)
 		require.NoError(t, err)
 		require.NotNil(t, resp)
-		func() { httputil.CloseResponse(resp) }()
+		httputil.CloseResponse(resp)
 	})
 
 	t.Run("it can read & close a non nil response that has already been read", func(t *testing.T) {
 		resp, err := http.Get(httpServer.URL)
+		defer httputil.CloseResponse(resp)
 		require.NoError(t, err)
 		require.NotNil(t, resp)
 		_, err = io.ReadAll(resp.Body)
 		require.NoError(t, err)
-		func() { httputil.CloseResponse(resp) }()
 	})
 
 	t.Run("it won't panic if we try to read & close a nil response", func(t *testing.T) {

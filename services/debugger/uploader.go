@@ -141,7 +141,7 @@ func (uploader *uploaderImpl[E]) uploadEvents(eventBuffer []E) {
 			// Refresh the connection
 			continue
 		}
-		func() { httputil.CloseResponse(resp) }()
+		httputil.CloseResponse(resp)
 		if resp.StatusCode != http.StatusOK {
 			pkgLogger.Errorf("[Uploader] Response Error from Config Backend: Status: %v, Body: %v ", resp.StatusCode, resp.Body)
 		}
