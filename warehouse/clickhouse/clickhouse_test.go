@@ -328,7 +328,7 @@ func (m *mockUploader) GetLoadFilesMetadata(op warehouseutils.GetLoadFilesOption
 	return m.metadata
 }
 
-func TestHandle_LoadTable(t *testing.T) {
+func TestHandle_LoadTableRoundTrip(t *testing.T) {
 	misc.Init()
 	warehouseutils.Init()
 	clickhouse.Init()
@@ -375,6 +375,7 @@ func TestHandle_LoadTable(t *testing.T) {
 	})
 	require.NoError(t, g.Wait())
 
+	t.Logf("Setting up ClickHouse Minio network")
 	network, err := pool.Client.CreateNetwork(dc.CreateNetworkOptions{
 		Name: "clickhouse-minio-network",
 	})
@@ -392,21 +393,6 @@ func TestHandle_LoadTable(t *testing.T) {
 		})
 		require.NoError(t, err)
 	}
-
-	fmFactory := filemanager.FileManagerFactoryT{}
-	fm, err := fmFactory.New(&filemanager.SettingsT{
-		Provider: provider,
-		Config: map[string]interface{}{
-			"bucketName":      minioResource.BucketName,
-			"accessKeyID":     minioResource.AccessKey,
-			"secretAccessKey": minioResource.SecretKey,
-			"endPoint":        minioResource.Endpoint,
-			"forcePathStyle":  true,
-			"disableSSL":      true,
-			"region":          minioResource.SiteRegion,
-			"enableSSE":       false,
-		},
-	})
 
 	testCases := []struct {
 		name                        string
@@ -498,6 +484,21 @@ func TestHandle_LoadTable(t *testing.T) {
 			require.NoError(t, err)
 
 			defer func() { _ = f.Close() }()
+
+			fmFactory := filemanager.FileManagerFactoryT{}
+			fm, err := fmFactory.New(&filemanager.SettingsT{
+				Provider: provider,
+				Config: map[string]interface{}{
+					"bucketName":      minioResource.BucketName,
+					"accessKeyID":     minioResource.AccessKey,
+					"secretAccessKey": minioResource.SecretKey,
+					"endPoint":        minioResource.Endpoint,
+					"forcePathStyle":  true,
+					"disableSSL":      true,
+					"region":          minioResource.SiteRegion,
+					"enableSSE":       false,
+				},
+			})
 
 			uploadOutput, err := fm.Upload(context.TODO(), f, fmt.Sprintf("test_prefix_%d", i))
 			require.NoError(t, err)
