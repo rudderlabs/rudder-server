@@ -547,13 +547,13 @@ func (ch *Handle) typecastDataFromType(data, dataType string) interface{} {
 
 // loadTable loads table to clickhouse from the load files
 func (ch *Handle) loadTable(tableName string, tableSchemaInUpload warehouseutils.TableSchemaT) (err error) {
-	if ch.useS3CopyEngineForLoading() {
+	if ch.UseS3CopyEngineForLoading() {
 		return ch.loadByCopyCommand(tableName, tableSchemaInUpload)
 	}
 	return ch.loadByDownloadingLoadFiles(tableName, tableSchemaInUpload)
 }
 
-func (ch *Handle) useS3CopyEngineForLoading() bool {
+func (ch *Handle) UseS3CopyEngineForLoading() bool {
 	if !slices.Contains(ch.S3EngineEnabledWorkspaceIDs, ch.Warehouse.WorkspaceID) {
 		return false
 	}
