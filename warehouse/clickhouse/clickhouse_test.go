@@ -325,11 +325,11 @@ func (m *mockUploader) GetSampleLoadFileLocation(_ string) (string, error) {
 	return sampleLocation, nil
 }
 
-func (m *mockUploader) GetTableSchemaInUpload(tableName string) warehouseutils.TableSchemaT {
+func (m *mockUploader) GetTableSchemaInUpload(string) warehouseutils.TableSchemaT {
 	return m.tableSchema
 }
 
-func (m *mockUploader) GetLoadFilesMetadata(op warehouseutils.GetLoadFilesOptionsT) []warehouseutils.LoadFileT {
+func (m *mockUploader) GetLoadFilesMetadata(warehouseutils.GetLoadFilesOptionsT) []warehouseutils.LoadFileT {
 	return m.metadata
 }
 
@@ -504,6 +504,7 @@ func TestHandle_LoadTableRoundTrip(t *testing.T) {
 					"enableSSE":       false,
 				},
 			})
+			require.NoError(t, err)
 
 			uploadOutput, err := fm.Upload(context.TODO(), f, fmt.Sprintf("test_prefix_%d", i))
 			require.NoError(t, err)

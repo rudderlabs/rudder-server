@@ -319,7 +319,7 @@ func (ch *Handle) getClickHouseCodecForColumnType(columnType, tableName string) 
 	return ""
 }
 
-func (ch *Handle) getClickhouseColumnTypeForSpecificColumn(columnName, columnType string, isNullable bool) string {
+func getClickhouseColumnTypeForSpecificColumn(columnName, columnType string, isNullable bool) string {
 	specificColumnType := columnType
 	if strings.Contains(specificColumnType, "Array") {
 		return specificColumnType
@@ -337,13 +337,13 @@ func (ch *Handle) getClickhouseColumnTypeForSpecificColumn(columnName, columnTyp
 // getClickHouseColumnTypeForSpecificTable gets suitable columnType based on the tableName
 func (ch *Handle) getClickHouseColumnTypeForSpecificTable(tableName, columnName, columnType string, notNullableKey bool) string {
 	if notNullableKey || (tableName != warehouseutils.IdentifiesTable && ch.DisableNullable) {
-		return ch.getClickhouseColumnTypeForSpecificColumn(columnName, columnType, false)
+		return getClickhouseColumnTypeForSpecificColumn(columnName, columnType, false)
 	}
 	// Nullable is not disabled for users and identity table
 	if tableName == warehouseutils.UsersTable {
-		return fmt.Sprintf(`SimpleAggregateFunction(anyLast, %s)`, ch.getClickhouseColumnTypeForSpecificColumn(columnName, columnType, true))
+		return fmt.Sprintf(`SimpleAggregateFunction(anyLast, %s)`, getClickhouseColumnTypeForSpecificColumn(columnName, columnType, true))
 	}
-	return ch.getClickhouseColumnTypeForSpecificColumn(columnName, columnType, true)
+	return getClickhouseColumnTypeForSpecificColumn(columnName, columnType, true)
 }
 
 // DownloadLoadFiles downloads load files for the tableName and gives file names
