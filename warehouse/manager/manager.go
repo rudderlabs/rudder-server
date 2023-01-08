@@ -71,6 +71,7 @@ func New(destType string) (ManagerI, error) {
 		return pg, nil
 	case warehouseutils.CLICKHOUSE:
 		ch := clickhouse.NewHandle()
+		clickhouse.WithConfig(ch, config.Default)
 		return ch, nil
 	case warehouseutils.MSSQL:
 		var ms mssql.HandleT
@@ -106,6 +107,7 @@ func NewWarehouseOperations(destType string) (WarehouseOperations, error) {
 		return pg, nil
 	case warehouseutils.CLICKHOUSE:
 		ch := clickhouse.NewHandle()
+		clickhouse.WithConfig(ch, config.Default)
 		return ch, nil
 	case warehouseutils.MSSQL:
 		var ms mssql.HandleT

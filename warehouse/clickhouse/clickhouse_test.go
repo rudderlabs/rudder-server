@@ -24,13 +24,12 @@ func TestIntegrationClickHouse(t *testing.T) {
 		t.Skip("Skipping tests. Remove 'SLOW=0' env var to run them.")
 	}
 
-	t.Parallel()
-
 	clickhouse.Init()
 
 	var dbs []*sql.DB
 	for _, host := range []string{"wh-clickhouse", "wh-clickhouse01", "wh-clickhouse02", "wh-clickhouse03", "wh-clickhouse04"} {
-		db, err := clickhouse.Connect(clickhouse.Credentials{
+		ch := clickhouse.NewHandle()
+		db, err := ch.ConnectToClickhouse(clickhouse.Credentials{
 			Host:          host,
 			User:          "rudder",
 			Password:      "rudder-password",
@@ -88,7 +87,7 @@ func TestIntegrationClickHouse(t *testing.T) {
 			destinationID: "21Ev6TI6emCFDKhp2Zn6XfTP7PI",
 			writeKey:      "95RxRTZHWUsaD6HEdz0ThbXfQ6p",
 			db:            dbs[1],
-			warehouseEvents: testhelper.EventsCountMap{
+			warehouseModifiedEvents: testhelper.EventsCountMap{
 				"identifies":    8,
 				"users":         2,
 				"tracks":        8,
@@ -176,7 +175,7 @@ func TestIntegrationClickHouse(t *testing.T) {
 			}
 
 			ts.UserID = testhelper.GetUserId(provider)
-			ts.WarehouseEventsMap = tc.warehouseEvents
+			ts.WarehouseEventsMap = tc.warehouseModifiedEvents
 			ts.VerifyModifiedEvents(t)
 		})
 	}
@@ -186,8 +185,6 @@ func TestConfigurationValidationClickhouse(t *testing.T) {
 	if os.Getenv("SLOW") == "0" {
 		t.Skip("Skipping tests. Remove 'SLOW=0' env var to run them.")
 	}
-
-	t.Parallel()
 
 	misc.Init()
 	validations.Init()
