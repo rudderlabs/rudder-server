@@ -4,17 +4,18 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"log"
+	"os"
+	"strings"
+	"testing"
+	"time"
+
 	"github.com/ory/dockertest/v3"
 	dc "github.com/ory/dockertest/v3/docker"
 	"github.com/rudderlabs/rudder-server/services/filemanager"
 	"github.com/rudderlabs/rudder-server/testhelper/destination"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"golang.org/x/sync/errgroup"
-	"log"
-	"os"
-	"strings"
-	"testing"
-	"time"
 
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/utils/misc"
@@ -311,9 +312,11 @@ func (*mockUploader) GetFirstLastEvent() (time.Time, time.Time)        { return 
 func (*mockUploader) GetTableSchemaInWarehouse(_ string) warehouseutils.TableSchemaT {
 	return warehouseutils.TableSchemaT{}
 }
+
 func (*mockUploader) GetSingleLoadFile(_ string) (warehouseutils.LoadFileT, error) {
 	return warehouseutils.LoadFileT{}, nil
 }
+
 func (m *mockUploader) GetSampleLoadFileLocation(_ string) (string, error) {
 	minioHostPort := fmt.Sprintf("localhost:%s", m.minioPort)
 
@@ -321,9 +324,11 @@ func (m *mockUploader) GetSampleLoadFileLocation(_ string) (string, error) {
 	sampleLocation = strings.Replace(sampleLocation, minioHostPort, "minio:9000", 1)
 	return sampleLocation, nil
 }
+
 func (m *mockUploader) GetTableSchemaInUpload(tableName string) warehouseutils.TableSchemaT {
 	return m.tableSchema
 }
+
 func (m *mockUploader) GetLoadFilesMetadata(op warehouseutils.GetLoadFilesOptionsT) []warehouseutils.LoadFileT {
 	return m.metadata
 }
