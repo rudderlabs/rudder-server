@@ -3,6 +3,7 @@ package clickhouse_test
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -354,22 +355,7 @@ func TestHandle_LoadTableRoundTrip(t *testing.T) {
 
 	g := errgroup.Group{}
 	g.Go(func() error {
-		chResource, err = pool.RunWithOptions(&dockertest.RunOptions{
-			Repository: "yandex/clickhouse-server",
-			Tag:        "21-alpine",
-			Env: []string{
-				fmt.Sprintf("CLICKHOUSE_DB=%s", databaseName),
-				fmt.Sprintf("CLICKHOUSE_PASSWORD=%s", password),
-				fmt.Sprintf("CLICKHOUSE_USER=%s", user),
-			},
-		})
-		require.NoError(t, err)
-		t.Cleanup(func() {
-			if err := pool.Purge(chResource); err != nil {
-				t.Log("Could not purge resource:", err)
-			}
-		})
-
+		chResource = setUpClickhouse(t, pool)
 		return nil
 	})
 	g.Go(func() error {
@@ -517,17 +503,6 @@ func TestHandle_LoadTableRoundTrip(t *testing.T) {
 			err = ch.Setup(warehouse, mockUploader)
 			require.NoError(t, err)
 
-			t.Logf("Waiting for ClickHouse to be ready")
-			ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
-			defer cancel()
-
-			require.Eventually(t, func() bool {
-				return ch.Db.PingContext(ctx) == nil
-			}, time.Minute, time.Second)
-
-			err = ch.Db.PingContext(ctx)
-			require.NoError(t, err)
-
 			t.Logf("Verifying connection")
 			_, err = ch.Connect(warehouse)
 			require.NoError(t, err)
@@ -616,6 +591,119 @@ func TestHandle_LoadTableRoundTrip(t *testing.T) {
 			require.Empty(t, unrecognizedSchema)
 		})
 	}
+}
+
+func TestHandle_TestConnection(t *testing.T) {
+	misc.Init()
+	warehouseutils.Init()
+	clickhouse.Init()
+
+	pool, err := dockertest.NewPool("")
+	require.NoError(t, err)
+
+	var (
+		chResource   *dockertest.Resource
+		databaseName = "rudderdb"
+		password     = "rudder-password"
+		user         = "rudder"
+		workspaceID  = "test_workspace_id"
+		namespace    = "test_namespace"
+		provider     = "MINIO"
+	)
+
+	chResource = setUpClickhouse(t, pool)
+
+	testCases := []struct {
+		name      string
+		timeout   time.Duration
+		wantError error
+	}{
+		{
+			name:      "DeadlineExceeded",
+			wantError: errors.New("connection testing timed out after 0 sec"),
+		},
+		{
+			name:    "Success",
+			timeout: warehouseutils.TestConnectionTimeout,
+		},
+	}
+
+	for _, tc := range testCases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			ch := clickhouse.NewHandle()
+			ch.Logger = logger.NOP
+
+			warehouse := warehouseutils.Warehouse{
+				Namespace:   namespace,
+				WorkspaceID: workspaceID,
+				Destination: backendconfig.DestinationT{
+					Config: map[string]interface{}{
+						"bucketProvider": provider,
+						"host":           "localhost",
+						"port":           chResource.GetPort("9000/tcp"),
+						"database":       databaseName,
+						"user":           user,
+						"password":       password,
+					},
+				},
+			}
+
+			ch.SetConnectionTimeout(tc.timeout)
+
+			err := ch.TestConnection(warehouse)
+			if tc.wantError != nil {
+				require.Error(t, err, tc.wantError)
+				return
+			}
+			require.NoError(t, err)
+		})
+	}
+}
+
+func setUpClickhouse(t testing.TB, pool *dockertest.Pool) *dockertest.Resource {
+	var (
+		databaseName = "rudderdb"
+		password     = "rudder-password"
+		user         = "rudder"
+	)
+
+	resource, err := pool.RunWithOptions(&dockertest.RunOptions{
+		Repository: "yandex/clickhouse-server",
+		Tag:        "21-alpine",
+		Env: []string{
+			fmt.Sprintf("CLICKHOUSE_DB=%s", databaseName),
+			fmt.Sprintf("CLICKHOUSE_PASSWORD=%s", password),
+			fmt.Sprintf("CLICKHOUSE_USER=%s", user),
+		},
+	})
+	require.NoError(t, err)
+
+	db, err := clickhouse.NewHandle().ConnectToClickhouse(clickhouse.Credentials{
+		Host:     "localhost",
+		Port:     resource.GetPort("9000/tcp"),
+		DBName:   databaseName,
+		User:     user,
+		Password: password,
+	}, false)
+	require.NoError(t, err)
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
+
+	require.Eventually(t, func() bool {
+		return db.PingContext(ctx) == nil
+	}, time.Minute, time.Second)
+
+	err = db.PingContext(ctx)
+	require.NoError(t, err)
+
+	t.Cleanup(func() {
+		if err := pool.Purge(resource); err != nil {
+			t.Log("Could not purge resource:", err)
+		}
+	})
+	return resource
 }
 
 func initializeClickhouseClusterMode(t testing.TB, clusterDBs []*sql.DB, tables []string) {
