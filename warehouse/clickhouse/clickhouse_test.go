@@ -522,6 +522,10 @@ func TestHandle_LoadTableRoundTrip(t *testing.T) {
 			err = ch.Db.PingContext(ctx)
 			require.NoError(t, err)
 
+			t.Logf("Verifying connection")
+			_, err = ch.Connect(warehouse)
+			require.NoError(t, err)
+
 			t.Logf("Verifying empty schema")
 			schema, unrecognizedSchema, err := ch.FetchSchema(warehouse)
 			require.NoError(t, err)
