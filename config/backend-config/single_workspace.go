@@ -50,16 +50,16 @@ func (wc *singleWorkspaceConfig) AccessToken() string {
 }
 
 // Get returns sources from the workspace
-func (wc *singleWorkspaceConfig) Get(ctx context.Context, workspace string) (map[string]ConfigT, error) {
+func (wc *singleWorkspaceConfig) Get(ctx context.Context) (map[string]ConfigT, error) {
 	if configFromFile {
 		return wc.getFromFile()
 	} else {
-		return wc.getFromAPI(ctx, workspace)
+		return wc.getFromAPI(ctx)
 	}
 }
 
 // getFromApi gets the workspace config from api
-func (wc *singleWorkspaceConfig) getFromAPI(ctx context.Context, _ string) (map[string]ConfigT, error) {
+func (wc *singleWorkspaceConfig) getFromAPI(ctx context.Context) (map[string]ConfigT, error) {
 	config := make(map[string]ConfigT)
 	if wc.configBackendURL == nil {
 		return config, fmt.Errorf("single workspace: config backend url is nil")

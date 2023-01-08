@@ -2,7 +2,10 @@ package postgres_test
 
 import (
 	"os"
+	"strings"
 	"testing"
+
+	"github.com/rudderlabs/rudder-server/warehouse/tunnelling"
 
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/warehouse/validations"
@@ -14,6 +17,104 @@ import (
 	"github.com/rudderlabs/rudder-server/warehouse/testhelper"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
+
+func TestIntegrationPostgresThroughTunnelling(t *testing.T) {
+	if os.Getenv("SLOW") == "0" {
+		t.Skip("Skipping tests. Remove 'SLOW=0' env var to run them.")
+	}
+
+	// Initialize all the dependencies
+	misc.Init()
+	validations.Init()
+	warehouseutils.Init()
+	postgres.Init()
+
+	configurations := testhelper.PopulateTemplateConfigurations()
+	db, err := postgres.Connect(postgres.CredentialsT{
+		DBName:   configurations["privatePostgresDatabase"],
+		Password: configurations["privatePostgresPassword"],
+		User:     configurations["privatePostgresUser"],
+		Host:     configurations["privatePostgresHost"],
+		Port:     configurations["privatePostgresPort"],
+		SSLMode:  "disable",
+		TunnelInfo: &tunnelling.TunnelInfo{
+			Config: map[string]interface{}{
+				"sshUser":       configurations["sshUser"],
+				"sshPort":       configurations["sshPort"],
+				"sshHost":       configurations["sshHost"],
+				"sshPrivateKey": strings.ReplaceAll(configurations["sshPrivateKey"], "\\n", "\n"),
+			},
+		},
+	})
+	require.NoError(t, err)
+
+	err = db.Ping()
+	require.NoError(t, err)
+
+	jobsDB := testhelper.SetUpJobsDB(t)
+
+	testcases := []struct {
+		name                  string
+		writeKey              string
+		schema                string
+		sourceID              string
+		destinationID         string
+		eventsMap             testhelper.EventsCountMap
+		stagingFilesEventsMap testhelper.EventsCountMap
+		loadFilesEventsMap    testhelper.EventsCountMap
+		tableUploadsEventsMap testhelper.EventsCountMap
+		warehouseEventsMap    testhelper.EventsCountMap
+		asyncJob              bool
+		tables                []string
+	}{
+		{
+			name:          "upload job through ssh tunnelling",
+			writeKey:      "kwzDkh9h2fhfUVuS9jZ8uVbhV3w",
+			schema:        "postgres_wh_ssh_tunnelled_integration",
+			tables:        []string{"identifies", "users", "tracks", "product_track", "pages", "screens", "aliases", "groups"},
+			sourceID:      "1wRvLmEnMOOxSQD9pwaZhyCqXRF",
+			destinationID: "216ZvbavR21Um6eGKQCagZHqLGZ",
+		},
+	}
+
+	for _, tc := range testcases {
+
+		tc := tc
+
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			ts := testhelper.WareHouseTest{
+				Schema:                tc.schema,
+				WriteKey:              tc.writeKey,
+				SourceID:              tc.sourceID,
+				DestinationID:         tc.destinationID,
+				Tables:                tc.tables,
+				EventsMap:             tc.eventsMap,
+				StagingFilesEventsMap: tc.stagingFilesEventsMap,
+				LoadFilesEventsMap:    tc.loadFilesEventsMap,
+				TableUploadsEventsMap: tc.tableUploadsEventsMap,
+				WarehouseEventsMap:    tc.warehouseEventsMap,
+				UserID:                testhelper.GetUserId(warehouseutils.POSTGRES),
+				Provider:              warehouseutils.POSTGRES,
+				JobsDB:                jobsDB,
+				JobRunID:              misc.FastUUID().String(),
+				TaskRunID:             misc.FastUUID().String(),
+				StatsToVerify:         []string{"pg_rollback_timeout"},
+				Client: &client.Client{
+					SQL:  db,
+					Type: client.SQLClient,
+				},
+			}
+			ts.VerifyEvents(t)
+
+			ts.UserID = testhelper.GetUserId(warehouseutils.POSTGRES)
+			ts.JobRunID = misc.FastUUID().String()
+			ts.TaskRunID = misc.FastUUID().String()
+			ts.VerifyModifiedEvents(t)
+		})
+	}
+}
 
 func TestIntegrationPostgres(t *testing.T) {
 	if os.Getenv("SLOW") == "0" {

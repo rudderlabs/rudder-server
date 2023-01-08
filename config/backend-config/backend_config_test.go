@@ -195,7 +195,7 @@ func TestConfigUpdate(t *testing.T) {
 		defer ctrl.Finish()
 
 		wc := NewMockworkspaceConfig(ctrl)
-		wc.EXPECT().Get(gomock.Eq(ctx), workspaces).Return(map[string]ConfigT{}, fakeError).Times(1)
+		wc.EXPECT().Get(gomock.Eq(ctx)).Return(map[string]ConfigT{}, fakeError).Times(1)
 
 		bc := &backendConfigImpl{
 			workspaceConfig: wc,
@@ -216,7 +216,7 @@ func TestConfigUpdate(t *testing.T) {
 		defer ctrl.Finish()
 
 		wc := NewMockworkspaceConfig(ctrl)
-		wc.EXPECT().Get(gomock.Eq(ctx), workspaces).Return(map[string]ConfigT{workspaces: sampleBackendConfig}, nil).Times(1)
+		wc.EXPECT().Get(gomock.Eq(ctx)).Return(map[string]ConfigT{workspaces: sampleBackendConfig}, nil).Times(1)
 
 		bc := &backendConfigImpl{
 			workspaceConfig: wc,
@@ -238,9 +238,9 @@ func TestConfigUpdate(t *testing.T) {
 		defer cancel()
 
 		wc := NewMockworkspaceConfig(ctrl)
-		wc.EXPECT().Get(gomock.Eq(ctx), workspaces).Return(map[string]ConfigT{workspaces: sampleBackendConfig}, nil).Times(1)
+		wc.EXPECT().Get(gomock.Eq(ctx)).Return(map[string]ConfigT{workspaces: sampleBackendConfig}, nil).Times(1)
 
-		pubSub := pubsub.PublishSubscriber{}
+		var pubSub pubsub.PublishSubscriber
 		bc := &backendConfigImpl{
 			eb:              &pubSub,
 			workspaceConfig: wc,
@@ -371,7 +371,7 @@ func TestCache(t *testing.T) {
 			mockID         = &mockIdentifier{key: workspaces, token: workspaceToken}
 		)
 		wc.EXPECT().Identity().Return(mockID).Times(1)
-		wc.EXPECT().Get(gomock.Any(), workspaces).
+		wc.EXPECT().Get(gomock.Any()).
 			Return(
 				map[string]ConfigT{sampleWorkspaceID: sampleBackendConfig},
 				nil,
@@ -440,13 +440,13 @@ func TestCache(t *testing.T) {
 		defer cancel()
 
 		wc := NewMockworkspaceConfig(ctrl)
-		wc.EXPECT().Get(gomock.Eq(ctx), workspaces).Return(map[string]ConfigT{}, errors.New("control plane down")).Times(1)
+		wc.EXPECT().Get(gomock.Eq(ctx)).Return(map[string]ConfigT{}, errors.New("control plane down")).Times(1)
 		sampleBackendConfigBytes, _ := json.Marshal(map[string]ConfigT{sampleWorkspaceID: sampleBackendConfig})
 		unmarshalledConfig := make(map[string]ConfigT)
 		err = json.Unmarshal(sampleBackendConfigBytes, &unmarshalledConfig)
 		require.NoError(t, err)
 		cacheStore.EXPECT().Get(gomock.Eq(ctx)).Return(sampleBackendConfigBytes, nil).Times(1)
-		pubSub := pubsub.PublishSubscriber{}
+		var pubSub pubsub.PublishSubscriber
 		bc := &backendConfigImpl{
 			eb:              &pubSub,
 			workspaceConfig: wc,
@@ -474,9 +474,9 @@ func TestCache(t *testing.T) {
 		defer cancel()
 
 		wc := NewMockworkspaceConfig(ctrl)
-		wc.EXPECT().Get(gomock.Eq(ctx), workspaces).Return(map[string]ConfigT{}, errors.New("control plane down")).Times(1)
+		wc.EXPECT().Get(gomock.Eq(ctx)).Return(map[string]ConfigT{}, errors.New("control plane down")).Times(1)
 		cacheStore.EXPECT().Get(gomock.Eq(ctx)).Return([]byte{}, sql.ErrNoRows).Times(1)
-		pubSub := pubsub.PublishSubscriber{}
+		var pubSub pubsub.PublishSubscriber
 		bc := &backendConfigImpl{
 			eb:              &pubSub,
 			workspaceConfig: wc,
@@ -501,7 +501,7 @@ func TestCache(t *testing.T) {
 
 		wc := NewMockworkspaceConfig(ctrl)
 		wc.EXPECT().Identity().Return(mockID).Times(1)
-		wc.EXPECT().Get(gomock.Any(), workspaces).Return(map[string]ConfigT{sampleWorkspaceID: sampleBackendConfig}, nil).AnyTimes()
+		wc.EXPECT().Get(gomock.Any()).Return(map[string]ConfigT{sampleWorkspaceID: sampleBackendConfig}, nil).AnyTimes()
 		bc := &backendConfigImpl{
 			workspaceConfig: wc,
 			eb:              pubsub.New(),
