@@ -615,6 +615,7 @@ func TestHandle_TestConnection(t *testing.T) {
 
 	testCases := []struct {
 		name      string
+		host      string
 		timeout   time.Duration
 		wantError error
 	}{
@@ -626,13 +627,27 @@ func TestHandle_TestConnection(t *testing.T) {
 			name:    "Success",
 			timeout: warehouseutils.TestConnectionTimeout,
 		},
+		{
+			name:      "No such host",
+			timeout:   warehouseutils.TestConnectionTimeout,
+			wantError: errors.New(`dial tcp: lookup test_host: no such host`),
+			host:      "clickhouse",
+		},
 	}
 
 	for _, tc := range testCases {
 		tc := tc
+
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
 			ch := clickhouse.NewHandle()
 			ch.Logger = logger.NOP
+
+			host := "localhost"
+			if tc.host != "" {
+				host = tc.host
+			}
 
 			warehouse := warehouseutils.Warehouse{
 				Namespace:   namespace,
@@ -640,7 +655,7 @@ func TestHandle_TestConnection(t *testing.T) {
 				Destination: backendconfig.DestinationT{
 					Config: map[string]interface{}{
 						"bucketProvider": provider,
-						"host":           "localhost",
+						"host":           host,
 						"port":           chResource.GetPort("9000/tcp"),
 						"database":       databaseName,
 						"user":           user,
