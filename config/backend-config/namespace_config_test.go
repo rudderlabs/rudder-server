@@ -41,9 +41,8 @@ func Test_Namespace_Get(t *testing.T) {
 	logger.Reset()
 
 	var (
-		namespace    = "free-us-1"
-		workspaceID1 = "2CCgbmvBSa8Mv81YaIgtR36M7aW"
-		cpRouterURL  = "mockCpRouterURL"
+		namespace   = "free-us-1"
+		cpRouterURL = "mockCpRouterURL"
 	)
 
 	be := &backendConfigServer{
@@ -69,7 +68,7 @@ func Test_Namespace_Get(t *testing.T) {
 	}
 	require.NoError(t, client.SetUp())
 
-	c, err := client.Get(context.Background(), workspaceID1)
+	c, err := client.Get(context.Background())
 	require.NoError(t, err)
 	require.Len(t, c, 2)
 
@@ -89,7 +88,7 @@ func Test_Namespace_Get(t *testing.T) {
 
 		require.NoError(t, client.SetUp())
 
-		c, err := client.Get(context.Background(), "")
+		c, err := client.Get(context.Background())
 		require.EqualError(t, err, `backend config request failed with 401: {"message":"Unauthorized"}`) // Unauthorized
 		require.Empty(t, c)
 	})
@@ -105,7 +104,7 @@ func Test_Namespace_Get(t *testing.T) {
 
 		require.NoError(t, client.SetUp())
 
-		c, err := client.Get(context.Background(), workspaceID1)
+		c, err := client.Get(context.Background())
 		require.EqualError(t, err, "backend config request failed with 404")
 		require.Empty(t, c)
 	})

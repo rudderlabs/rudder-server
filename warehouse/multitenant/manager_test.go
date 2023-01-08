@@ -25,7 +25,7 @@ func (*mockBackendConfig) SetUp() error                             { return nil
 func (*mockBackendConfig) AccessToken() string                      { return "" }
 func (*mockBackendConfig) Identity() identity.Identifier            { return nil }
 
-func (m *mockBackendConfig) Get(context.Context, string) (map[string]backendconfig.ConfigT, error) {
+func (m *mockBackendConfig) Get(context.Context) (map[string]backendconfig.ConfigT, error) {
 	return m.config, nil
 }
 
@@ -77,8 +77,8 @@ func TestDegradeWorkspace(t *testing.T) {
 
 	for _, tc := range testcase {
 		t.Run(tc.name, func(t *testing.T) {
-			backendConfig := map[string]backendconfig.ConfigT{}
-			expectedConfig := map[string]backendconfig.ConfigT{}
+			backendConfig := make(map[string]backendconfig.ConfigT)
+			expectedConfig := make(map[string]backendconfig.ConfigT)
 
 			for _, workspace := range tc.namespaceWorkspaces {
 				backendConfig[workspace] = backendconfig.ConfigT{
@@ -124,7 +124,7 @@ func TestSourceToWorkspace(t *testing.T) {
 		"source4": "workspaceC",
 	}
 
-	backendConfig := map[string]backendconfig.ConfigT{}
+	backendConfig := make(map[string]backendconfig.ConfigT)
 	for source, workspace := range mapping {
 		entry, ok := backendConfig[workspace]
 		if !ok {
@@ -155,7 +155,7 @@ func TestSourceToWorkspace(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	g := errgroup.Group{}
+	var g errgroup.Group
 	g.Go(func() error {
 		m.Run(ctx)
 		return nil
