@@ -37,7 +37,15 @@ func (h *handler) delete(w http.ResponseWriter, r *http.Request) {
 
 	err := h.service.Delete(ctx, jobRunId, rsources.JobFilter{TaskRunID: taskRunId, SourceID: sourceId})
 	if err != nil {
-		http.Error(w, "internal server error", http.StatusInternalServerError)
+		httpStatus := http.StatusInternalServerError
+		switch {
+		case errors.Is(err, rsources.ErrStatusNotFound):
+			httpStatus = http.StatusNotFound
+		case errors.Is(err, rsources.ErrSourceNotCompleted):
+			httpStatus = http.StatusBadRequest
+		}
+		http.Error(w, err.Error(), httpStatus)
+		return
 	}
 
 	w.WriteHeader(http.StatusNoContent)
@@ -62,7 +70,7 @@ func (h *handler) getStatus(w http.ResponseWriter, r *http.Request) {
 			SourceID:  sourceId,
 		})
 	if err != nil {
-		if errors.Is(err, rsources.StatusNotFoundError) {
+		if errors.Is(err, rsources.ErrStatusNotFound) {
 			http.Error(w, err.Error(), http.StatusNotFound)
 		} else {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
