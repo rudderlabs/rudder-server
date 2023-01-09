@@ -436,8 +436,7 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 	for breq := range userWebRequestWorker.batchRequestQ {
 		var jobList []*jobsdb.JobT
 		jobIDReqMap := make(map[uuid.UUID]*webRequestT)
-		jobWriteKeyMap := make(map[uuid.UUID]string)
-		jobEventCountMap := make(map[uuid.UUID]int)
+		jobSourceTagMap := make(map[uuid.UUID]string)
 		sourceStats := make(map[string]*gwstats.SourceStat)
 		// Saving the event data read from req.request.Body to the splice.
 		// Using this to send event schema to the config backend.
@@ -469,8 +468,7 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 			}
 			jobList = append(jobList, job)
 			jobIDReqMap[job.UUID] = req
-			jobWriteKeyMap[job.UUID] = sourceTag
-			jobEventCountMap[job.UUID] = numEvents
+			jobSourceTagMap[job.UUID] = sourceTag
 			eventBatchesToRecord = append(eventBatchesToRecord, sourceDebugger{data: job.EventPayload, writeKey: writeKey})
 		}
 
@@ -485,12 +483,11 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 
 		for _, job := range jobList {
 			err, found := errorMessagesMap[job.UUID]
-			sourceTag := jobWriteKeyMap[job.UUID]
-			eventCount := jobEventCountMap[job.UUID]
+			sourceTag := jobSourceTagMap[job.UUID]
 			if found {
-				sourceStats[sourceTag].RequestEventsFailed(eventCount, "storeFailed")
+				sourceStats[sourceTag].RequestEventsFailed(job.EventCount, "storeFailed")
 			} else {
-				sourceStats[sourceTag].RequestEventsSucceeded(eventCount)
+				sourceStats[sourceTag].RequestEventsSucceeded(job.EventCount)
 			}
 			jobIDReqMap[job.UUID].done <- err
 		}
