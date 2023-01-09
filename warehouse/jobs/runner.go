@@ -47,15 +47,15 @@ func (a *AsyncJobWhT) getTableNamesBy(sourceID, destinationID, jobRunID, taskRun
 	var err error
 	query := `SELECT id 
 		FROM 
-		` + warehouseutils.WarehouseUploadsTable +
-		` WHERE metadata->>'source_job_run_id'=$1 
+		` + warehouseutils.WarehouseUploadsTable + `
+		WHERE metadata->>'source_job_run_id'=$1 
 			AND metadata->>'source_task_run_id'=$2 
 			AND metadata in (
 				SELECT 
 					metadata 
-				FROM `
-	+warehouseutils.WarehouseUploadsTable +
-		` WHERE source_id=$3 
+				FROM 
+				` + warehouseutils.WarehouseUploadsTable + ` 
+				WHERE source_id=$3 
 				AND destination_id=$4
 			)`
 	a.logger.Debugf("[WH-Jobs]: Query is %s\n", query)
