@@ -594,6 +594,7 @@ func (worker *workerT) processDestinationJobs() {
 		proxyBatchSize := 100
 		destinationJobsChunk := chunkBy(worker.destinationJobs, proxyBatchSize)
 		for _, destJobChunk := range destinationJobsChunk {
+			worker.deliveryTimeStat.Start()
 			var messages []json.RawMessage
 			var prxMetadataArr [][]transformer.ProxyRequestMetadata
 			for _, destJob := range destJobChunk {
@@ -660,6 +661,7 @@ func (worker *workerT) processDestinationJobs() {
 					})
 				}
 			}
+			worker.deliveryTimeStat.End()
 		}
 
 	} else {
