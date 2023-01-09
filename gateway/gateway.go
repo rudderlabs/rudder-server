@@ -659,8 +659,7 @@ func (gateway *HandleT) getJobFromRequest(req *webRequestT) (job *jobsdb.JobT, n
 	id := uuid.New()
 
 	params := map[string]interface{}{
-		"source_id": sourceID,
-		// "batch_id":           counter,	// can be removed..?
+		"source_id":          sourceID,
 		"source_job_run_id":  sourcesJobRunID,
 		"source_task_run_id": sourcesTaskRunID,
 	}
