@@ -500,7 +500,7 @@ func (worker *workerT) workerProcess() {
 					Destination:      destination,
 					JobMetadataArray: []types.JobMetadataT{jobMetadata},
 				})
-				if len(worker.destinationJobs) >= 200 {
+				if len(worker.destinationJobs) >= worker.rt.noOfJobsToBatchInAWorker {
 					worker.processDestinationJobs()
 				}
 			}
@@ -591,7 +591,7 @@ func (worker *workerT) processDestinationJobs() {
 	if worker.rt.transformerProxyBatch {
 		// Only router transform & processor transform destinations
 		// For batching enabled, we're currently not using this as this is already batched
-		proxyBatchSize := 100
+		proxyBatchSize := worker.rt.noOfJobsToBatchInAWorker
 		destinationJobsChunk := chunkBy(worker.destinationJobs, proxyBatchSize)
 		for _, destJobChunk := range destinationJobsChunk {
 			worker.deliveryTimeStat.Start()
