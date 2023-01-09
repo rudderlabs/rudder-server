@@ -620,6 +620,7 @@ func (worker *workerT) processDestinationJobs() {
 			}
 			stats.Default.NewTaggedStat(`transformer_proxy_batch_request_size_count`, stats.CountType, stats.Tags{
 				"destType": worker.rt.destName,
+				"workerId": strconv.Itoa(worker.workerID),
 				"module":   "router",
 			}).Count(len(proxyBatchPayload.Messages))
 
