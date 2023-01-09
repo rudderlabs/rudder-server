@@ -45,9 +45,19 @@ func (a *AsyncJobWhT) getTableNamesBy(sourceID, destinationID, jobRunID, taskRun
 	a.logger.Infof("[WH-Jobs]: Extracting table names for the job run id %s", jobRunID)
 	var tableNames []string
 	var err error
-	query := fmt.Sprintf(`SELECT id from ` + warehouseutils.WarehouseUploadsTable +
-		` where metadata->>'source_job_run_id'=$1 and metadata->>'source_task_run_id'=$2 and metadata in (SELECT metadata FROM ` + warehouseutils.WarehouseUploadsTable +
-		` where source_id=$3 and destination_id=$4)`)
+	query := `SELECT id 
+		FROM 
+		` + warehouseutils.WarehouseUploadsTable +
+		` WHERE metadata->>'source_job_run_id'=$1 
+			AND metadata->>'source_task_run_id'=$2 
+			AND metadata in (
+				SELECT 
+					metadata 
+				FROM `
+	+warehouseutils.WarehouseUploadsTable +
+		` WHERE source_id=$3 
+				AND destination_id=$4
+			)`
 	a.logger.Debugf("[WH-Jobs]: Query is %s\n", query)
 	rows, err := a.dbHandle.Query(query, jobRunID, taskRunID, sourceID, destinationID)
 	if err != nil {
@@ -92,8 +102,13 @@ func (a *AsyncJobWhT) addJobsToDB(ctx context.Context, payload *AsyncJobPayloadT
 	}
 	a.logger.Infof("[WH-Jobs]: Adding job to the wh_async_jobs %s for tableName: %s", payload.MetaData, payload.TableName)
 
-	sqlStatement := fmt.Sprintf(`INSERT INTO %s (source_id, destination_id, tablename, status, created_at, updated_at, async_job_type, workspace_id, metadata)
-	VALUES ($1, $2, $3, $4, $5, $6 ,$7, $8, $9 ) RETURNING id`, warehouseutils.WarehouseAsyncJobTable)
+	sqlStatement := `INSERT INTO ` + warehouseutils.WarehouseAsyncJobTable + ` (
+		source_id, destination_id, tablename, 
+		status, created_at, updated_at, async_job_type, 
+		workspace_id, metadata
+	)
+	VALUES 
+		($1, $2, $3, $4, $5, $6 ,$7, $8, $9 ) RETURNING id`
 
 	stmt, err := a.dbHandle.Prepare(sqlStatement)
 	if err != nil {
