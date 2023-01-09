@@ -618,6 +618,11 @@ func (worker *workerT) processDestinationJobs() {
 				Messages:  messages,
 				Metadatas: prxMetadataArr,
 			}
+			stats.Default.NewTaggedStat(`transformer_proxy_batch_request_size_count`, stats.CountType, stats.Tags{
+				"destType": worker.rt.destName,
+				"module":   "router",
+			}).Count(len(proxyBatchPayload.Messages))
+
 			// Proxy Batch request to transformer
 			tfProxyBatchResponse := worker.rt.transformer.ProxyRequestBatch(context.TODO(), &transformer.TransformerProxyBatchParams{
 				ResponseData: proxyBatchPayload,
