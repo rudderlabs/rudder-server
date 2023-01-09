@@ -24,7 +24,7 @@ var _ = Describe("cache", Ordered, func() {
 		})
 
 		AfterAll(func() {
-			_ = e.stop()
+			_ = e.Stop()
 		})
 
 		It("Cache init", func() {

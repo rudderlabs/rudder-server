@@ -165,10 +165,9 @@ func keyPrefixValue[E any](key string, value E, limiter int) ([]byte, []byte) {
 	return prefixedKey, valueBytes
 }
 
-func (e *EmbeddedCache[E]) stop() error {
-	err := e.db.Close()
-	if err != nil {
-		return err
+func (e *EmbeddedCache[E]) Stop() error {
+	if e.db == nil {
+		return nil
 	}
-	return nil
+	return e.db.Close()
 }

@@ -77,7 +77,8 @@ func (a *gatewayApp) StartRudderCore(ctx context.Context, options *app.Options) 
 	a.log.Infof("Configured deployment type: %q", deploymentType)
 	a.log.Info("Clearing DB ", options.ClearDB)
 
-	sourcedebugger.Setup(backendconfig.DefaultBackendConfig)
+	sourcedebugger.Start(backendconfig.DefaultBackendConfig)
+	defer sourcedebugger.Stop()
 
 	fileUploaderProvider := fileuploader.NewProvider(ctx, backendconfig.DefaultBackendConfig)
 

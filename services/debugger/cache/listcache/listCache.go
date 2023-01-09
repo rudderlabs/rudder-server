@@ -106,3 +106,8 @@ func (c *ListCache[E]) Read(key string) []E {
 	c.lock.Unlock()
 	return historicEventsDelivery
 }
+
+func (c *ListCache[E]) Stop() error {
+	// NO-OP
+	return nil
+}

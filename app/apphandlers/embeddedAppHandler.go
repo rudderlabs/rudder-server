@@ -114,7 +114,8 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 
 	transformationdebugger.Setup()
 	destinationdebugger.Setup(backendconfig.DefaultBackendConfig)
-	sourcedebugger.Setup(backendconfig.DefaultBackendConfig)
+	sourcedebugger.Start(backendconfig.DefaultBackendConfig)
+	defer sourcedebugger.Stop()
 
 	reportingI := a.app.Features().Reporting.GetReportingInstance()
 	transientSources := transientsource.NewService(ctx, backendconfig.DefaultBackendConfig)

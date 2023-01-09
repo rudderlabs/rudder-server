@@ -16,6 +16,7 @@ const (
 type Cache[T any] interface {
 	Update(key string, value T)
 	Read(key string) []T
+	Stop() error
 }
 
 func New[T any](ct CacheType, origin string, l logger.Logger) Cache[T] {
