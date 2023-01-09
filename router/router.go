@@ -500,7 +500,9 @@ func (worker *workerT) workerProcess() {
 					Destination:      destination,
 					JobMetadataArray: []types.JobMetadataT{jobMetadata},
 				})
-				worker.processDestinationJobs()
+				if len(worker.destinationJobs) >= 200 {
+					worker.processDestinationJobs()
+				}
 			}
 
 		case <-timeout:
