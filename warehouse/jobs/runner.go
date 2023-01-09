@@ -45,7 +45,9 @@ func (a *AsyncJobWhT) getTableNamesBy(sourceID, destinationID, jobRunID, taskRun
 	a.logger.Infof("[WH-Jobs]: Extracting table names for the job run id %s", jobRunID)
 	var tableNames []string
 	var err error
-	query := fmt.Sprintf(`SELECT id from %s where metadata->>'%s'=$1 and metadata->>'%s'=$2 and metadata in (SELECT metadata FROM %s where source_id=$3 and destination_id=$4)`, warehouseutils.WarehouseUploadsTable, "source_job_run_id", "source_task_run_id", warehouseutils.WarehouseUploadsTable)
+	query := fmt.Sprintf(`SELECT id from ` + warehouseutils.WarehouseUploadsTable +
+		` where metadata->>'source_job_run_id'=$1 and metadata->>'source_task_run_id'=$2 and metadata in (SELECT metadata FROM ` + warehouseutils.WarehouseUploadsTable +
+		` where source_id=$3 and destination_id=$4)`)
 	a.logger.Debugf("[WH-Jobs]: Query is %s\n", query)
 	rows, err := a.dbHandle.Query(query, jobRunID, taskRunID, sourceID, destinationID)
 	if err != nil {

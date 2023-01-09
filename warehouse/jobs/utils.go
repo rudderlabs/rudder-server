@@ -32,7 +32,7 @@ func getMessagePayloadsFromAsyncJobPayloads(asyncJobPayloads []AsyncJobPayloadT)
 }
 
 func validatePayload(payload StartJobReqPayload) bool {
-	if payload.SourceID == "" || payload.JobRunID == "" || payload.TaskRunID == "" || payload.DestinationID == "" || payload.WorkspaceID == "" {
+	if payload.SourceID == "" || payload.JobRunID == "" || payload.TaskRunID == "" || payload.DestinationID == "" {
 		return false
 	}
 	return true
