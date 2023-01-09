@@ -23,7 +23,7 @@ func (*NOOP) SetUp() error {
 	return nil
 }
 
-func (*NOOP) Get(_ context.Context, _ string) (map[string]ConfigT, error) {
+func (*NOOP) Get(_ context.Context) (map[string]ConfigT, error) {
 	return map[string]ConfigT{}, nil
 }
 

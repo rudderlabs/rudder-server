@@ -52,18 +52,18 @@ func (mr *MockBackendConfigMockRecorder) AccessToken() *gomock.Call {
 }
 
 // Get mocks base method.
-func (m *MockBackendConfig) Get(arg0 context.Context, arg1 string) (map[string]backendconfig.ConfigT, error) {
+func (m *MockBackendConfig) Get(arg0 context.Context) (map[string]backendconfig.ConfigT, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "Get", arg0, arg1)
+	ret := m.ctrl.Call(m, "Get", arg0)
 	ret0, _ := ret[0].(map[string]backendconfig.ConfigT)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // Get indicates an expected call of Get.
-func (mr *MockBackendConfigMockRecorder) Get(arg0, arg1 interface{}) *gomock.Call {
+func (mr *MockBackendConfigMockRecorder) Get(arg0 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Get", reflect.TypeOf((*MockBackendConfig)(nil).Get), arg0, arg1)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Get", reflect.TypeOf((*MockBackendConfig)(nil).Get), arg0)
 }
 
 // Identity mocks base method.
