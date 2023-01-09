@@ -624,7 +624,7 @@ func (worker *workerT) processDestinationJobs() {
 				"module":         "router",
 				"destJobsLength": strconv.Itoa(len(worker.destinationJobs)),
 				"messagesLength": strconv.Itoa(len(messages)),
-			}).Count(len(proxyBatchPayload.Messages))
+			}).Count(1)
 
 			// Proxy Batch request to transformer
 			tfProxyBatchResponse := worker.rt.transformer.ProxyRequestBatch(context.TODO(), &transformer.TransformerProxyBatchParams{
