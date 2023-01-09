@@ -90,14 +90,14 @@ func TestReport(t *testing.T) {
 		tags := map[string]string{
 			"source":      statMap[sourceTag].Source,
 			"sourceID":    statMap[sourceTag].SourceID,
-			"workspaceID": statMap[sourceTag].WorkspaceID,
+			"workspaceId": statMap[sourceTag].WorkspaceID,
 			"writeKey":    statMap[sourceTag].WriteKey,
 			"reqType":     statMap[sourceTag].ReqType,
 		}
 		failedTags := map[string]string{
 			"source":      statMap[sourceTag].Source,
 			"sourceID":    statMap[sourceTag].SourceID,
-			"workspaceID": statMap[sourceTag].WorkspaceID,
+			"workspaceId": statMap[sourceTag].WorkspaceID,
 			"writeKey":    statMap[sourceTag].WriteKey,
 			"reqType":     statMap[sourceTag].ReqType,
 			"reason":      "reason",

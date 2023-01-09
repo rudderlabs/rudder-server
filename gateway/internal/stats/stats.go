@@ -78,7 +78,7 @@ func (ss *SourceStat) Report(s stats.Stats) {
 		"source":      ss.Source,
 		"writeKey":    ss.WriteKey,
 		"reqType":     ss.ReqType,
-		"workspaceID": ss.WorkspaceID,
+		"workspaceId": ss.WorkspaceID,
 		"sourceID":    ss.SourceID,
 	}
 
@@ -86,7 +86,7 @@ func (ss *SourceStat) Report(s stats.Stats) {
 		"source":      ss.Source,
 		"writeKey":    ss.WriteKey,
 		"reqType":     ss.ReqType,
-		"workspaceID": ss.WorkspaceID,
+		"workspaceId": ss.WorkspaceID,
 		"sourceID":    ss.SourceID,
 	}
 	if ss.reason != "" {

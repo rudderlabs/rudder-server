@@ -35,20 +35,6 @@ func (m *MockGatewayI) EXPECT() *MockGatewayIMockRecorder {
 	return m.recorder
 }
 
-// GetSourceStat mocks base method.
-func (m *MockGatewayI) GetSourceStat(arg0, arg1 string) *stats.SourceStat {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "GetSourceStat", arg0, arg1)
-	ret0, _ := ret[0].(*stats.SourceStat)
-	return ret0
-}
-
-// GetSourceStat indicates an expected call of GetSourceStat.
-func (mr *MockGatewayIMockRecorder) GetSourceStat(arg0, arg1 interface{}) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetSourceStat", reflect.TypeOf((*MockGatewayI)(nil).GetSourceStat), arg0, arg1)
-}
-
 // GetWebhookSourceDefName mocks base method.
 func (m *MockGatewayI) GetWebhookSourceDefName(arg0 string) (string, bool) {
 	m.ctrl.T.Helper()
@@ -86,6 +72,20 @@ func (m *MockGatewayI) IncrementRecvCount(arg0 uint64) {
 func (mr *MockGatewayIMockRecorder) IncrementRecvCount(arg0 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "IncrementRecvCount", reflect.TypeOf((*MockGatewayI)(nil).IncrementRecvCount), arg0)
+}
+
+// NewSourceStat mocks base method.
+func (m *MockGatewayI) NewSourceStat(arg0, arg1 string) *stats.SourceStat {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "NewSourceStat", arg0, arg1)
+	ret0, _ := ret[0].(*stats.SourceStat)
+	return ret0
+}
+
+// NewSourceStat indicates an expected call of NewSourceStat.
+func (mr *MockGatewayIMockRecorder) NewSourceStat(arg0, arg1 interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "NewSourceStat", reflect.TypeOf((*MockGatewayI)(nil).NewSourceStat), arg0, arg1)
 }
 
 // ProcessWebRequest mocks base method.

@@ -21,7 +21,7 @@ type GatewayI interface {
 	TrackRequestMetrics(errorMessage string)
 	ProcessWebRequest(writer *http.ResponseWriter, req *http.Request, reqType string, requestPayload []byte, writeKey string) string
 	GetWebhookSourceDefName(writeKey string) (name string, ok bool)
-	GetSourceStat(writeKey, reqType string) *gwstats.SourceStat
+	NewSourceStat(writeKey, reqType string) *gwstats.SourceStat
 }
 
 type WebHookI interface {

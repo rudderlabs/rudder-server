@@ -411,7 +411,7 @@ func (gateway *HandleT) getSourceTagFromWriteKey(writeKey string) string {
 	return sourceTag
 }
 
-func (gateway *HandleT) GetSourceStat(writeKey, reqType string) *gwstats.SourceStat {
+func (gateway *HandleT) NewSourceStat(writeKey, reqType string) *gwstats.SourceStat {
 	sourceTag := gateway.getSourceTagFromWriteKey(writeKey)
 	sourceID := gateway.getSourceIDForWriteKey(writeKey)
 	configSubscriberLock.RLock()
@@ -447,7 +447,7 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 			writeKey := req.writeKey
 			sourceTag := gateway.getSourceTagFromWriteKey(writeKey)
 			if _, ok := sourceStats[sourceTag]; !ok {
-				sourceStats[sourceTag] = gateway.GetSourceStat(
+				sourceStats[sourceTag] = gateway.NewSourceStat(
 					writeKey,
 					req.reqType,
 				)

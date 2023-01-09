@@ -137,7 +137,7 @@ func (webhook *HandleT) RequestHandler(w http.ResponseWriter, r *http.Request) {
 
 	sourceDefName, ok := webhook.gwHandle.GetWebhookSourceDefName(writeKey)
 	if !ok {
-		stat := webhook.gwHandle.GetSourceStat(writeKey, "webhook")
+		stat := webhook.gwHandle.NewSourceStat(writeKey, "webhook")
 		stat.RequestFailed("invalidWriteKey")
 		stat.Report(webhook.stats)
 		webhook.failRequest(
@@ -159,7 +159,7 @@ func (webhook *HandleT) RequestHandler(w http.ResponseWriter, r *http.Request) {
 	contentType := r.Header.Get("Content-Type")
 	if strings.Contains(strings.ToLower(contentType), "application/x-www-form-urlencoded") {
 		if err := r.ParseForm(); err != nil {
-			stat := webhook.gwHandle.GetSourceStat(writeKey, "webhook")
+			stat := webhook.gwHandle.NewSourceStat(writeKey, "webhook")
 			stat.RequestFailed("couldNotParseForm")
 			stat.Report(webhook.stats)
 
@@ -175,7 +175,7 @@ func (webhook *HandleT) RequestHandler(w http.ResponseWriter, r *http.Request) {
 		postFrom = r.PostForm
 	} else if strings.Contains(strings.ToLower(contentType), "multipart/form-data") {
 		if err := r.ParseMultipartForm(32 << 20); err != nil {
-			stat := webhook.gwHandle.GetSourceStat(writeKey, "webhook")
+			stat := webhook.gwHandle.NewSourceStat(writeKey, "webhook")
 			stat.RequestFailed("couldNotParseMultiform")
 			stat.Report(webhook.stats)
 
@@ -197,7 +197,7 @@ func (webhook *HandleT) RequestHandler(w http.ResponseWriter, r *http.Request) {
 	if r.MultipartForm != nil {
 		jsonByte, err = json.Marshal(multipartForm)
 		if err != nil {
-			stat := webhook.gwHandle.GetSourceStat(writeKey, "webhook")
+			stat := webhook.gwHandle.NewSourceStat(writeKey, "webhook")
 			stat.RequestFailed("couldNotMarshal")
 			stat.Report(webhook.stats)
 			webhook.failRequest(
@@ -212,7 +212,7 @@ func (webhook *HandleT) RequestHandler(w http.ResponseWriter, r *http.Request) {
 	} else if len(postFrom) != 0 {
 		jsonByte, err = json.Marshal(postFrom)
 		if err != nil {
-			stat := webhook.gwHandle.GetSourceStat(writeKey, "webhook")
+			stat := webhook.gwHandle.NewSourceStat(writeKey, "webhook")
 			stat.RequestFailed("couldNotMarshal")
 			stat.Report(webhook.stats)
 			webhook.failRequest(
@@ -244,7 +244,7 @@ func (webhook *HandleT) RequestHandler(w http.ResponseWriter, r *http.Request) {
 	atomic.AddUint64(&webhook.ackCount, 1)
 	webhook.gwHandle.TrackRequestMetrics(resp.Err)
 
-	ss := webhook.gwHandle.GetSourceStat(writeKey, "webhook")
+	ss := webhook.gwHandle.NewSourceStat(writeKey, "webhook")
 
 	if resp.Err != "" {
 		code := http.StatusBadRequest
