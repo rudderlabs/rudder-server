@@ -99,7 +99,7 @@ type FailedRecords []json.RawMessage
 // ErrStatusNotFound sentinel error indicating that status cannot be found
 var ErrStatusNotFound = errors.New("Status not found")
 
-// ErrJobNotCompleted sentinel error indicating that a source is not completed
+// ErrSourceNotCompleted sentinel error indicating that a source is not completed
 var ErrSourceNotCompleted = errors.New("Source not completed")
 
 // StatsIncrementer increments stats
