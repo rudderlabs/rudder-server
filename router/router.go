@@ -619,9 +619,11 @@ func (worker *workerT) processDestinationJobs() {
 				Metadatas: prxMetadataArr,
 			}
 			stats.Default.NewTaggedStat(`transformer_proxy_batch_request_size_count`, stats.CountType, stats.Tags{
-				"destType": worker.rt.destName,
-				"workerId": strconv.Itoa(worker.workerID),
-				"module":   "router",
+				"destType":       worker.rt.destName,
+				"workerId":       strconv.Itoa(worker.workerID),
+				"module":         "router",
+				"destJobsLength": strconv.Itoa(len(worker.destinationJobs)),
+				"messagesLength": strconv.Itoa(len(messages)),
 			}).Count(len(proxyBatchPayload.Messages))
 
 			// Proxy Batch request to transformer
