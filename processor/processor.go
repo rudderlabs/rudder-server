@@ -17,6 +17,7 @@ import (
 	"time"
 
 	jsoniter "github.com/json-iterator/go"
+	"github.com/samber/lo"
 	"github.com/tidwall/gjson"
 	"golang.org/x/sync/errgroup"
 
@@ -1550,85 +1551,84 @@ func sendQueryRetryStats(attempt int) {
 
 func (proc *HandleT) Store(in *storeMessage) {
 	statusList, destJobs, batchDestJobs := in.statusList, in.destJobs, in.batchDestJobs
-	processorLoopStats := make(map[string]map[string]map[string]int)
 	beforeStoreStatus := time.Now()
 	// XX: Need to do this in a transaction
 	if len(batchDestJobs) > 0 {
 		proc.logger.Debug("[Processor] Total jobs written to batch router : ", len(batchDestJobs))
 
-		err := misc.RetryWithNotify(context.Background(), proc.jobsDBCommandTimeout, proc.jobdDBMaxRetries, func(ctx context.Context) error {
-			return proc.batchRouterDB.WithStoreSafeTx(ctx, func(tx jobsdb.StoreSafeTx) error {
-				err := proc.batchRouterDB.StoreInTx(ctx, tx, batchDestJobs)
-				if err != nil {
-					return fmt.Errorf("storing batch router jobs: %w", err)
-				}
+		err := misc.RetryWithNotify(
+			context.Background(),
+			proc.jobsDBCommandTimeout,
+			proc.jobdDBMaxRetries,
+			func(ctx context.Context) error {
+				return proc.batchRouterDB.WithStoreSafeTx(
+					ctx,
+					func(tx jobsdb.StoreSafeTx) error {
+						err := proc.batchRouterDB.StoreInTx(ctx, tx, batchDestJobs)
+						if err != nil {
+							return fmt.Errorf("storing batch router jobs: %w", err)
+						}
 
-				// rsources stats
-				err = proc.updateRudderSourcesStats(ctx, tx, batchDestJobs)
-				if err != nil {
-					return fmt.Errorf("publishing rsources stats for batch router: %w", err)
-				}
-				return nil
-			})
-		}, sendRetryStoreStats)
+						// rsources stats
+						err = proc.updateRudderSourcesStats(ctx, tx, batchDestJobs)
+						if err != nil {
+							return fmt.Errorf("publishing rsources stats for batch router: %w", err)
+						}
+						return nil
+					})
+			}, sendRetryStoreStats)
 		if err != nil {
 			panic(err)
 		}
 
-		totalPayloadBatchBytes := 0
-		processorLoopStats["batch_router"] = make(map[string]map[string]int)
-		for i := range batchDestJobs {
-			_, ok := processorLoopStats["batch_router"][batchDestJobs[i].WorkspaceId]
-			if !ok {
-				processorLoopStats["batch_router"][batchDestJobs[i].WorkspaceId] = make(map[string]int)
-			}
-			processorLoopStats["batch_router"][batchDestJobs[i].WorkspaceId][batchDestJobs[i].CustomVal] += 1
-			totalPayloadBatchBytes += len(batchDestJobs[i].EventPayload)
-		}
-		proc.multitenantI.ReportProcLoopAddStats(processorLoopStats["batch_router"], "batch_rt")
-
+		proc.multitenantI.ReportProcLoopAddStats(
+			getJobCountsByWorkspaceDestType(batchDestJobs),
+			"batch_rt",
+		)
 		proc.stats.statBatchDestNumOutputEvents.Count(len(batchDestJobs))
 		proc.stats.statDBWriteBatchEvents.Observe(float64(len(batchDestJobs)))
-		proc.stats.statDBWriteBatchPayloadBytes.Observe(float64(totalPayloadBatchBytes))
+		proc.stats.statDBWriteBatchPayloadBytes.Observe(
+			float64(lo.SumBy(destJobs, func(j *jobsdb.JobT) int { return len(j.EventPayload) })),
+		)
 	}
 
 	if len(destJobs) > 0 {
 		proc.logger.Debug("[Processor] Total jobs written to router : ", len(destJobs))
 
-		err := misc.RetryWithNotify(context.Background(), proc.jobsDBCommandTimeout, proc.jobdDBMaxRetries, func(ctx context.Context) error {
-			return proc.routerDB.WithStoreSafeTx(ctx, func(tx jobsdb.StoreSafeTx) error {
-				err := proc.routerDB.StoreInTx(ctx, tx, destJobs)
-				if err != nil {
-					return fmt.Errorf("storing router jobs: %w", err)
-				}
+		err := misc.RetryWithNotify(
+			context.Background(),
+			proc.jobsDBCommandTimeout,
+			proc.jobdDBMaxRetries,
+			func(ctx context.Context) error {
+				return proc.routerDB.WithStoreSafeTx(
+					ctx,
+					func(tx jobsdb.StoreSafeTx) error {
+						err := proc.routerDB.StoreInTx(ctx, tx, destJobs)
+						if err != nil {
+							return fmt.Errorf("storing router jobs: %w", err)
+						}
 
-				// rsources stats
-				err = proc.updateRudderSourcesStats(ctx, tx, destJobs)
-				if err != nil {
-					return fmt.Errorf("publishing rsources stats for router: %w", err)
-				}
-				return nil
-			})
-		}, sendRetryStoreStats)
+						// rsources stats
+						err = proc.updateRudderSourcesStats(ctx, tx, destJobs)
+						if err != nil {
+							return fmt.Errorf("publishing rsources stats for router: %w", err)
+						}
+						return nil
+					})
+			}, sendRetryStoreStats)
 		if err != nil {
 			panic(err)
 		}
 
-		totalPayloadRouterBytes := 0
-		processorLoopStats["router"] = make(map[string]map[string]int)
-		for i := range destJobs {
-			_, ok := processorLoopStats["router"][destJobs[i].WorkspaceId]
-			if !ok {
-				processorLoopStats["router"][destJobs[i].WorkspaceId] = make(map[string]int)
-			}
-			processorLoopStats["router"][destJobs[i].WorkspaceId][destJobs[i].CustomVal] += 1
-			totalPayloadRouterBytes += len(destJobs[i].EventPayload)
-		}
-		proc.multitenantI.ReportProcLoopAddStats(processorLoopStats["router"], "rt")
-
+		proc.multitenantI.ReportProcLoopAddStats(
+			getJobCountsByWorkspaceDestType(destJobs),
+			"rt",
+		)
 		proc.stats.statDestNumOutputEvents.Count(len(destJobs))
 		proc.stats.statDBWriteRouterEvents.Observe(float64(len(destJobs)))
-		proc.stats.statDBWriteRouterPayloadBytes.Observe(float64(totalPayloadRouterBytes))
+		proc.stats.statDBWriteRouterPayloadBytes.Observe(
+			float64(lo.SumBy(destJobs, func(j *jobsdb.JobT) int { return len(j.EventPayload) })),
+		)
 	}
 
 	for _, jobs := range in.procErrorJobsByDestID {
@@ -1700,6 +1700,22 @@ func (proc *HandleT) Store(in *storeMessage) {
 	proc.stats.statRouterDBW.Count(len(destJobs))
 	proc.stats.statBatchRouterDBW.Count(len(batchDestJobs))
 	proc.stats.statProcErrDBW.Count(len(in.procErrorJobs))
+}
+
+// getJobCountsByWorkspaceDestType returns the number of jobs per workspace and destination type
+//
+// map[workspaceID]map[destType]count
+func getJobCountsByWorkspaceDestType(jobs []*jobsdb.JobT) map[string]map[string]int {
+	jobCounts := make(map[string]map[string]int)
+	for _, job := range jobs {
+		workspace := job.WorkspaceId
+		destType := job.CustomVal
+		if _, ok := jobCounts[workspace]; !ok {
+			jobCounts[workspace] = make(map[string]int)
+		}
+		jobCounts[workspace][destType] += 1
+	}
+	return jobCounts
 }
 
 type transformSrcDestOutput struct {
