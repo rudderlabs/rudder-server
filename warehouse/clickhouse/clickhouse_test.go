@@ -366,7 +366,7 @@ func TestHandle_LoadTableRoundTrip(t *testing.T) {
 	})
 	require.NoError(t, g.Wait())
 
-	t.Logf("Setting up ClickHouse Minio network")
+	t.Log("Setting up ClickHouse Minio network")
 	network, err := pool.Client.CreateNetwork(dc.CreateNetworkOptions{
 		Name: "clickhouse-minio-network",
 	})
@@ -470,7 +470,7 @@ func TestHandle_LoadTableRoundTrip(t *testing.T) {
 				minioPort: minioResource.Port,
 			}
 
-			t.Logf("Preparing load files metadata")
+			t.Log("Preparing load files metadata")
 			f, err := os.Open(tc.fileName)
 			require.NoError(t, err)
 
@@ -499,29 +499,29 @@ func TestHandle_LoadTableRoundTrip(t *testing.T) {
 				Location: uploadOutput.Location,
 			})
 
-			t.Logf("Setting up clickhouse")
+			t.Log("Setting up clickhouse")
 			err = ch.Setup(warehouse, mockUploader)
 			require.NoError(t, err)
 
-			t.Logf("Verifying connection")
+			t.Log("Verifying connection")
 			_, err = ch.Connect(warehouse)
 			require.NoError(t, err)
 
-			t.Logf("Verifying empty schema")
+			t.Log("Verifying empty schema")
 			schema, unrecognizedSchema, err := ch.FetchSchema(warehouse)
 			require.NoError(t, err)
 			require.Empty(t, schema)
 			require.Empty(t, unrecognizedSchema)
 
-			t.Logf("Creating schema")
+			t.Log("Creating schema")
 			err = ch.CreateSchema()
 			require.NoError(t, err)
 
-			t.Logf("Creating schema twice should not fail")
+			t.Log("Creating schema twice should not fail")
 			err = ch.CreateSchema()
 			require.NoError(t, err)
 
-			t.Logf("Creating table")
+			t.Log("Creating table")
 			err = ch.CreateTable(table, map[string]string{
 				"id":                  "string",
 				"test_int":            "int",
@@ -538,7 +538,7 @@ func TestHandle_LoadTableRoundTrip(t *testing.T) {
 			})
 			require.NoError(t, err)
 
-			t.Logf("Creating users table")
+			t.Log("Creating users table")
 			err = ch.CreateTable(warehouseutils.UsersTable, map[string]string{
 				"id":            "string",
 				"user_id":       "string",
@@ -551,7 +551,7 @@ func TestHandle_LoadTableRoundTrip(t *testing.T) {
 			})
 			require.NoError(t, err)
 
-			t.Logf("Adding columns")
+			t.Log("Adding columns")
 			err = ch.AddColumns(table, []warehouseutils.ColumnInfo{
 				{Name: "alter_test_int", Type: "int"},
 				{Name: "alter_test_float", Type: "float"},
@@ -561,30 +561,53 @@ func TestHandle_LoadTableRoundTrip(t *testing.T) {
 			})
 			require.NoError(t, err)
 
-			t.Logf("Verifying schema")
+			t.Log("Verifying schema")
 			schema, unrecognizedSchema, err = ch.FetchSchema(warehouse)
 			require.NoError(t, err)
 			require.NotEmpty(t, schema)
 			require.Empty(t, unrecognizedSchema)
 
-			t.Logf("Loading data into table")
+			t.Log("verifying if columns are not like Nullable(T) if disableNullable set to true")
+			if tc.disableNullable {
+				rows, err := ch.Db.Query(fmt.Sprintf(`select table, name, type from system.columns where database = '%s'`, ch.Namespace))
+				require.NoError(t, err)
+
+				defer func() { _ = rows.Close() }()
+
+				var (
+					tableName  string
+					columnName string
+					columnType string
+				)
+
+				for rows.Next() {
+					err = rows.Scan(&tableName, &columnName, &columnType)
+					require.NoError(t, err)
+
+					if strings.Contains(columnType, "Nullable") {
+						require.Fail(t, fmt.Sprintf("table %s column %s is of Nullable type even when disableNullable is set to true", tableName, columnName))
+					}
+				}
+			}
+
+			t.Log("Loading data into table")
 			err = ch.LoadTable(table)
 			require.NoError(t, err)
 
-			t.Logf("Checking table count")
+			t.Log("Checking table count")
 			count, err := ch.GetTotalCountInTable(context.TODO(), table)
 			require.NoError(t, err)
 			require.EqualValues(t, 2, count)
 
-			t.Logf("Drop table")
+			t.Log("Drop table")
 			err = ch.DropTable(table)
 			require.NoError(t, err)
 
-			t.Logf("Drop users table")
+			t.Log("Drop users table")
 			err = ch.DropTable(warehouseutils.UsersTable)
 			require.NoError(t, err)
 
-			t.Logf("Verifying empty schema")
+			t.Log("Verifying empty schema")
 			schema, unrecognizedSchema, err = ch.FetchSchema(warehouse)
 			require.NoError(t, err)
 			require.Empty(t, schema)
