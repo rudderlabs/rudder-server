@@ -36,7 +36,7 @@ require (
 	github.com/fsnotify/fsnotify v1.5.4
 	github.com/go-redis/redis v6.15.8+incompatible
 	github.com/go-redis/redis/v8 v8.11.5
-	github.com/gofrs/uuid v4.2.0+incompatible
+	github.com/gofrs/uuid v4.3.1+incompatible
 	github.com/golang/mock v1.6.0
 	github.com/gomodule/redigo v1.8.5
 	github.com/google/uuid v1.3.0
