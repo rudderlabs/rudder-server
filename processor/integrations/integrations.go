@@ -67,6 +67,7 @@ type TransResponseT struct {
 	Message             string      `json:"message"`
 	DestinationResponse interface{} `json:"destinationResponse"`
 	AuthErrorCategory   string      `json:"authErrorCategory"`
+	Status              int         `json:"status"`
 }
 
 func CollectDestErrorStats(input []byte) {

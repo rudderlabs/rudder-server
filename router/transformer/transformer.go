@@ -72,10 +72,29 @@ type ProxyRequestParams struct {
 	BaseUrl      string
 }
 
+type TransformerProxyBatchRequestPayload struct {
+	Messages  []json.RawMessage        `json:"messages"`
+	Metadatas [][]ProxyRequestMetadata `json:"metadatas,omitempty"`
+}
+
+type TransformerProxyBatchParams struct {
+	ResponseData TransformerProxyBatchRequestPayload
+	DestName     string
+	BaseUrl      string
+}
+
+type TransformerProxyBatchResponse struct {
+	Status        int
+	Response      string
+	ContentType   string
+	JobsResponses []integrations.TransResponseT
+}
+
 // Transformer provides methods to transform events
 type Transformer interface {
 	Transform(transformType string, transformMessage *types.TransformMessageT) []types.DestinationJobT
 	ProxyRequest(ctx context.Context, proxyReqParams *ProxyRequestParams) (statusCode int, respBody, contentType string)
+	ProxyRequestBatch(ctx context.Context, proxyReqParams *TransformerProxyBatchParams) TransformerProxyBatchResponse
 }
 
 // NewTransformer creates a new transformer
@@ -244,6 +263,54 @@ func (trans *handle) Transform(transformType string, transformMessage *types.Tra
 	return destinationJobs
 }
 
+func (trans *handle) ProxyRequestBatch(ctx context.Context, proxyReqParams *TransformerProxyBatchParams) TransformerProxyBatchResponse {
+	rdlTime := time.Now()
+	httpPrxResp := trans.doProxyBatchRequest(ctx, proxyReqParams)
+	respData, respCode, requestError := httpPrxResp.respData, httpPrxResp.statusCode, httpPrxResp.err
+	reqSuccessStr := strconv.FormatBool(requestError == nil)
+	stats.Default.NewTaggedStat("transformer_proxy_batch_request_latency", stats.TimerType, stats.Tags{"requestSuccess": reqSuccessStr, "destType": proxyReqParams.DestName}).SendTiming(time.Since(rdlTime))
+
+	/**
+		Structure of TransformerProxy Response:
+		{
+			output: [
+				{
+					status: [destination status compatible with server]
+					message: [ generic message for jobs_db payload]
+					destinationResponse: [actual response payload from destination]
+					authErrorCategory: [authErrorCategory for an OAuth destination]
+				}
+			]
+		}
+	**/
+	// transformerResponse := integrations.TransResponseT{
+	// 	Message: "[TransformerProxy]:: Default Message TransResponseT",
+	// }
+	var transformerResponse []integrations.TransResponseT
+	respData = []byte(gjson.GetBytes(respData, "output").Raw)
+	// integrations.CollectDestErrorStats(respData)
+	err := jsonfast.Unmarshal(respData, &transformerResponse)
+	// unmarshal failure
+	if err != nil {
+		errStr := string(respData) + " [TransformerProxyBatch Unmarshaling]::" + err.Error()
+		trans.logger.Errorf(errStr)
+		respCode = http.StatusInternalServerError
+
+		return TransformerProxyBatchResponse{
+			Status:      respCode,
+			Response:    errStr,
+			ContentType: "text/plain; charset=utf-8",
+		}
+	}
+
+	return TransformerProxyBatchResponse{
+		Status:        respCode,
+		Response:      string(respData),
+		ContentType:   "text/plain; charset=utf-8",
+		JobsResponses: transformerResponse,
+	}
+}
+
 func (trans *handle) ProxyRequest(ctx context.Context, proxyReqParams *ProxyRequestParams) (int, string, string) {
 	stats.Default.NewTaggedStat("transformer_proxy.delivery_request", stats.CountType, stats.Tags{"destType": proxyReqParams.DestName}).Increment()
 	trans.logger.Debugf(`[TransformerProxy] (Dest-%[1]v) {Job - %[2]v} Proxy Request starts - %[1]v`, proxyReqParams.DestName, proxyReqParams.JobID)
@@ -307,6 +374,101 @@ type httpProxyResponse struct {
 	respData   []byte
 	statusCode int
 	err        error
+}
+
+func (trans *handle) doProxyBatchRequest(ctx context.Context, proxyReqParams *TransformerProxyBatchParams) httpProxyResponse {
+	var respData []byte
+
+	baseUrl := proxyReqParams.BaseUrl
+	destName := proxyReqParams.DestName
+	// jobID := proxyReqParams.JobID
+
+	payload, err := jsonfast.Marshal(proxyReqParams.ResponseData)
+	if err != nil {
+		panic(err)
+	}
+	proxyUrl := getProxyBatchURL(destName, baseUrl)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, proxyUrl, bytes.NewReader(payload))
+	if err != nil {
+		trans.logger.Errorf(`[TransformerProxy] (Dest-%[1]v) NewRequestWithContext Failed for %[1]v, with %[3]v`, destName, err.Error())
+		return httpProxyResponse{
+			respData:   []byte{},
+			statusCode: http.StatusInternalServerError,
+			err:        err,
+		}
+	}
+	req.Header.Set("Content-Type", "application/json")
+	trans.logger.Debugf("[TransformerProxy] Timeout for %[1]s = %[2]v ms \n", destName, strconv.FormatInt((trans.destinationTimeout+trans.transformTimeout).Milliseconds(), 10))
+	// Make use of this header to set timeout in the transfomer's http client
+	// The header name may be worked out ?
+	req.Header.Set("RdProxy-Timeout", strconv.FormatInt(trans.destinationTimeout.Milliseconds(), 10))
+
+	httpReqStTime := time.Now()
+	resp, err := trans.proxyClient.Do(req)
+	reqRoundTripTime := time.Since(httpReqStTime)
+	// This stat will be useful in understanding the round trip time taken for the http req
+	// between server and transformer
+	stats.Default.NewTaggedStat("transformer_proxy.req_round_trip_time", stats.TimerType, stats.Tags{
+		"destType": destName,
+	}).SendTiming(reqRoundTripTime)
+
+	if os.IsTimeout(err) {
+		// A timeout error occurred
+		trans.logger.Errorf(`[TransformerProxy] (Dest-%[1]v)Client.Do Failure for %[1]v, with %[2]v`, destName, err.Error())
+		return httpProxyResponse{
+			respData:   []byte{},
+			statusCode: http.StatusGatewayTimeout,
+			err:        err,
+		}
+	} else if err != nil {
+		// This was an error, but not a timeout
+		trans.logger.Errorf(`[TransformerProxy] (Dest-%[1]v) Client.Do Failure for %[1]v, with %[2]v`, destName, err.Error())
+		return httpProxyResponse{
+			respData:   []byte{},
+			statusCode: http.StatusInternalServerError,
+			err:        err,
+		}
+	} else if resp.StatusCode == http.StatusNotFound {
+		// Actually Router wouldn't send any destination to proxy unless it already exists
+		// But if accidentally such a request is sent, we'd probably need to handle for better
+		// understanding of the response
+		notFoundErr := fmt.Errorf(`post "%s" not found`, req.URL)
+		trans.logger.Errorf(`[TransformerProxy] (Dest-%[1]v) Client.Do Failure for %[1]v, with %[3]v`, destName, notFoundErr)
+		return httpProxyResponse{
+			respData:   []byte{},
+			statusCode: resp.StatusCode,
+			err:        notFoundErr,
+		}
+	}
+
+	// error handling if body is missing
+	if resp.Body == nil {
+		errStr := "empty response body"
+		trans.logger.Errorf(`[TransformerProxy] (Dest-%[1]v) Failed with statusCode: %[2]v, message: %[3]v`, destName, http.StatusBadRequest, string(respData))
+		return httpProxyResponse{
+			respData:   []byte{},
+			statusCode: http.StatusInternalServerError,
+			err:        fmt.Errorf(errStr),
+		}
+	}
+
+	respData, err = io.ReadAll(resp.Body)
+	defer func() { httputil.CloseResponse(resp) }()
+	// error handling while reading from resp.Body
+	if err != nil {
+		respData = []byte(fmt.Sprintf(`failed to read response body, Error:: %+v`, err))
+		trans.logger.Errorf(`[TransformerProxy] (Dest-%[1]v) Failed with statusCode: %[2]v, message: %[3]v`, destName, http.StatusBadRequest, string(respData))
+		return httpProxyResponse{
+			respData:   []byte{}, // sending this as it is not getting sent at all
+			statusCode: http.StatusInternalServerError,
+			err:        err,
+		}
+	}
+
+	return httpProxyResponse{
+		respData:   respData,
+		statusCode: resp.StatusCode,
+	}
 }
 
 func (trans *handle) doProxyRequest(ctx context.Context, proxyReqParams *ProxyRequestParams) httpProxyResponse {
@@ -417,4 +579,11 @@ func getProxyURL(destName, baseUrl string) string {
 		baseUrl = strings.TrimSuffix(config.GetString("DEST_TRANSFORM_URL", "http://localhost:9090"), "/")
 	}
 	return baseUrl + "/v0/destinations/" + strings.ToLower(destName) + "/proxy"
+}
+
+func getProxyBatchURL(destName, baseUrl string) string {
+	if !router_utils.IsNotEmptyString(baseUrl) { // empty string check
+		baseUrl = strings.TrimSuffix(config.GetString("DEST_TRANSFORM_URL", "http://localhost:9090"), "/")
+	}
+	return baseUrl + "/v0/destinations/" + strings.ToLower(destName) + "/proxyBatch"
 }

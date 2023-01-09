@@ -61,7 +61,7 @@ TransformationDebugger:
 Archiver:
   backupRowsBatchSize: 100
 JobsDB:
-  fairPickup: true
+  fairPickup: false
   jobDoneMigrateThres: 0.8
   jobStatusMigrateThres: 5
   maxDSSize: 100000
@@ -112,8 +112,10 @@ Router:
   retryTimeWindow: 180m
   failedKeysEnabled: true
   saveDestinationResponseOverride: false
-  transformerProxy: false
+  transformerProxy: true
   transformerProxyRetryCount: 15
+  AM:
+    enableBatching: true
   GOOGLESHEETS:
     noOfWorkers: 1
   MARKETO:
