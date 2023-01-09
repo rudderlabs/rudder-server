@@ -632,7 +632,7 @@ func (worker *workerT) processDestinationJobs() {
 				ResponseData: proxyBatchPayload,
 				DestName:     worker.rt.destName,
 			})
-			worker.rt.logger.Infof("%v Response: %v", worker.rt.destName, tfProxyBatchResponse.Response)
+			worker.rt.logger.Debugf("%v Response: %v", worker.rt.destName, tfProxyBatchResponse.Response)
 			for mArrIndex, metadataArr := range proxyBatchPayload.Metadatas {
 				var marshalledResp []byte
 				var err error
