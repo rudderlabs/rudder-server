@@ -36,7 +36,7 @@ var _ = Describe("Stats", Ordered, func() {
 		err = setupDB(context.TODO(), getConnectionString())
 		Expect(err).To(BeNil())
 
-		sqlStatement, err := os.ReadFile("testdata/sql/2.sql")
+		sqlStatement, err := os.ReadFile("testdata/sql/stats_test.sql")
 		Expect(err).To(BeNil())
 
 		_, err = pgResource.DB.Exec(string(sqlStatement))
