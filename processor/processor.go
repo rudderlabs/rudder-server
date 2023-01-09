@@ -17,6 +17,7 @@ import (
 	"time"
 
 	jsoniter "github.com/json-iterator/go"
+	"github.com/samber/lo"
 	"github.com/tidwall/gjson"
 	"golang.org/x/sync/errgroup"
 
@@ -1587,7 +1588,7 @@ func (proc *HandleT) Store(in *storeMessage) {
 		proc.stats.statBatchDestNumOutputEvents.Count(len(batchDestJobs))
 		proc.stats.statDBWriteBatchEvents.Observe(float64(len(batchDestJobs)))
 		proc.stats.statDBWriteBatchPayloadBytes.Observe(
-			float64(getCumulativePayloadByteSize(batchDestJobs)),
+			float64(lo.SumBy(destJobs, func(j *jobsdb.JobT) int { return len(j.EventPayload) })),
 		)
 	}
 
@@ -1626,7 +1627,7 @@ func (proc *HandleT) Store(in *storeMessage) {
 		proc.stats.statDestNumOutputEvents.Count(len(destJobs))
 		proc.stats.statDBWriteRouterEvents.Observe(float64(len(destJobs)))
 		proc.stats.statDBWriteRouterPayloadBytes.Observe(
-			float64(getCumulativePayloadByteSize(destJobs)),
+			float64(lo.SumBy(destJobs, func(j *jobsdb.JobT) int { return len(j.EventPayload) })),
 		)
 	}
 
@@ -1709,22 +1710,12 @@ func getJobCountsByWorkspaceDestType(jobs []*jobsdb.JobT) map[string]map[string]
 	for _, job := range jobs {
 		workspace := job.WorkspaceId
 		destType := job.CustomVal
-		_, ok := jobCounts[workspace]
-		if !ok {
+		if _, ok := jobCounts[workspace]; !ok {
 			jobCounts[workspace] = make(map[string]int)
 		}
 		jobCounts[workspace][destType] += 1
 	}
 	return jobCounts
-}
-
-// getCumulativePayloadByteSize returns the cumulative eventPayload byte size of the jobs
-func getCumulativePayloadByteSize(jobs []*jobsdb.JobT) int {
-	totalPayloadSize := 0
-	for _, job := range jobs {
-		totalPayloadSize += len(job.EventPayload)
-	}
-	return totalPayloadSize
 }
 
 type transformSrcDestOutput struct {
