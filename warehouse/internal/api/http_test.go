@@ -66,6 +66,7 @@ func TestAPI_Process(t *testing.T) {
 			FirstEventAt:          time.Date(2022, time.November, 8, 13, 23, 7, 0, time.UTC),
 			LastEventAt:           time.Date(2022, time.November, 8, 13, 23, 7, 0, time.UTC),
 			TotalEvents:           2,
+			TotalBytes:            2000,
 		},
 		Schema: json.RawMessage("{\"product_track\":{\"context_destination_id\":\"string\",\"context_destination_type\":\"string\",\"context_ip\":\"string\",\"context_library_name\":\"string\",\"context_passed_ip\":\"string\",\"context_request_ip\":\"string\",\"context_source_id\":\"string\",\"context_source_type\":\"string\",\"event\":\"string\",\"event_text\":\"string\",\"id\":\"string\",\"original_timestamp\":\"datetime\",\"product_id\":\"string\",\"rating\":\"int\",\"received_at\":\"datetime\",\"revenue\":\"float\",\"review_body\":\"string\",\"review_id\":\"string\",\"sent_at\":\"datetime\",\"timestamp\":\"datetime\",\"user_id\":\"string\",\"uuid_ts\":\"datetime\"},\"tracks\":{\"context_destination_id\":\"string\",\"context_destination_type\":\"string\",\"context_ip\":\"string\",\"context_library_name\":\"string\",\"context_passed_ip\":\"string\",\"context_request_ip\":\"string\",\"context_source_id\":\"string\",\"context_source_type\":\"string\",\"event\":\"string\",\"event_text\":\"string\",\"id\":\"string\",\"original_timestamp\":\"datetime\",\"received_at\":\"datetime\",\"sent_at\":\"datetime\",\"timestamp\":\"datetime\",\"user_id\":\"string\",\"uuid_ts\":\"datetime\"}}"),
 	}

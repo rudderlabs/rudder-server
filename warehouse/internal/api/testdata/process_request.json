@@ -187,6 +187,7 @@
     "FirstEventAt": "2022-11-08T13:23:07Z",
     "LastEventAt": "2022-11-08T13:23:07Z",
     "TotalEvents": 2,
+    "TotalBytes": 2000,
     "UseRudderStorage": false,
     "DestinationRevisionID": "2H1cLBvL3v0prRBNzpe8D34XTzU",
     "SourceBatchID": "",

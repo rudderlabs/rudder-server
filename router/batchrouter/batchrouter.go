@@ -2,13 +2,11 @@ package batchrouter
 
 import (
 	"bufio"
-	"bytes"
 	"compress/gzip"
 	"context"
 	stdjson "encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"net/url"
 	"os"
@@ -46,10 +44,10 @@ import (
 	"github.com/rudderlabs/rudder-server/services/filemanager"
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/bytesize"
-	"github.com/rudderlabs/rudder-server/utils/httputil"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/types"
+	"github.com/rudderlabs/rudder-server/warehouse/client"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
@@ -120,7 +118,7 @@ type HandleT struct {
 	successfulJobCount          stats.Measurement
 	failedJobCount              stats.Measurement
 	abortedJobCount             stats.Measurement
-	warehouseURL                string
+	warehouseClient             *client.Warehouse
 
 	backgroundGroup  *errgroup.Group
 	backgroundCtx    context.Context
@@ -241,6 +239,7 @@ type StorageUploadOutput struct {
 	FirstEventAt     string
 	LastEventAt      string
 	TotalEvents      int
+	TotalBytes       int
 	UseRudderStorage bool
 }
 
@@ -647,6 +646,7 @@ func (brt *HandleT) copyJobsToStorage(provider string, batchJobs *BatchJobsT, is
 	eventsFound := false
 	connIdentifier := connectionIdentifier(*batchJobs.BatchDestination)
 	warehouseConnIdentifier := brt.connectionWHNamespaceMap[connIdentifier]
+	var totalBytes int
 	for _, job := range batchJobs.Jobs {
 		// do not add to staging file if the event is a rudder_identity_merge_rules record
 		// and has been previously added to it
@@ -673,10 +673,12 @@ func (brt *HandleT) copyJobsToStorage(provider string, batchJobs *BatchJobsT, is
 		if isDestInterrupted {
 			if _, ok = interruptedEventsMap[eventID]; !ok {
 				eventsFound = true
+				totalBytes += len(string(job.EventPayload) + "\n")
 				_ = gzWriter.WriteGZ(string(job.EventPayload) + "\n")
 			}
 		} else {
 			eventsFound = true
+			totalBytes += len(string(job.EventPayload) + "\n")
 			_ = gzWriter.WriteGZ(string(job.EventPayload) + "\n")
 		}
 	}
@@ -804,6 +806,7 @@ func (brt *HandleT) copyJobsToStorage(provider string, batchJobs *BatchJobsT, is
 		FirstEventAt:     firstEventAt,
 		LastEventAt:      lastEventAt,
 		TotalEvents:      len(batchJobs.Jobs) - dedupedIDMergeRuleJobs,
+		TotalBytes:       totalBytes,
 		UseRudderStorage: useRudderStorage,
 	}
 }
@@ -1097,7 +1100,8 @@ func (brt *HandleT) postToWarehouse(batchJobs *BatchJobsT, output StorageUploadO
 	if err != nil {
 		brt.logger.Error("Unmarshal of job parameters failed in postToWarehouse function. ", string(batchJobs.Jobs[0].Parameters))
 	}
-	payload := warehouseutils.StagingFile{
+
+	payload := client.StagingFile{
 		WorkspaceID: batchJobs.Jobs[0].WorkspaceId,
 		Schema:      schemaMap,
 		BatchDestination: warehouseutils.DestinationT{
@@ -1108,6 +1112,7 @@ func (brt *HandleT) postToWarehouse(batchJobs *BatchJobsT, output StorageUploadO
 		FirstEventAt:          output.FirstEventAt,
 		LastEventAt:           output.LastEventAt,
 		TotalEvents:           output.TotalEvents,
+		TotalBytes:            output.TotalBytes,
 		UseRudderStorage:      output.UseRudderStorage,
 		SourceBatchID:         sampleParameters.SourceBatchID,
 		SourceTaskID:          sampleParameters.SourceTaskID,
@@ -1121,26 +1126,12 @@ func (brt *HandleT) postToWarehouse(batchJobs *BatchJobsT, output StorageUploadO
 		payload.TimeWindow = batchJobs.TimeWindow
 	}
 
-	jsonPayload, err := json.Marshal(&payload)
+	err = brt.warehouseClient.Process(context.TODO(), payload)
 	if err != nil {
-		brt.logger.Errorf("BRT: Failed to marshal WH staging file payload error:%v", err)
-	}
-	uri := fmt.Sprintf(`%s/v1/process`, brt.warehouseURL)
-	resp, err := brt.netHandle.Post(uri, "application/json; charset=utf-8",
-		bytes.NewBuffer(jsonPayload))
-	if err != nil {
-		brt.logger.Errorf("BRT: Failed to route staging file URL to warehouse service@%v, error:%v", uri, err)
+		brt.logger.Errorf("BRT: Failed to route staging file: %v", err)
 		return
 	}
-	defer func() { httputil.CloseResponse(resp) }()
-
-	if resp.StatusCode == http.StatusOK {
-		brt.logger.Infof("BRT: Routed successfully staging file URL to warehouse service@%v", uri)
-	} else {
-		body, _ := io.ReadAll(resp.Body)
-		err = fmt.Errorf("BRT: Failed to route staging file URL to warehouse service@%v, status: %v, body: %v", uri, resp.Status, string(body))
-		brt.logger.Error(err)
-	}
+	brt.logger.Infof("BRT: Routed successfully staging file URL to warehouse service")
 	return
 }
 
@@ -2294,8 +2285,10 @@ func (brt *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB, err
 		// error is ignored as context.TODO() is passed, err is not expected.
 		_ = brt.reporting.WaitForSetup(context.TODO(), types.CoreReportingClient)
 	}
-	if brt.warehouseURL == "" {
-		brt.warehouseURL = misc.GetWarehouseURL()
+	if brt.warehouseClient == nil {
+		brt.warehouseClient = client.NewWarehouse(misc.GetWarehouseURL(), client.WithTimeout(
+			config.GetDuration("WarehouseClient.timeout", 30, time.Second),
+		))
 	}
 
 	brt.inProgressMap = map[string]bool{}
