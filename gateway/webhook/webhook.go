@@ -305,8 +305,8 @@ func (webhook *HandleT) batchRequests(sourceDef string, requestQ chan *webhookT)
 // TODO : return back immediately for blank request body. its waiting till timeout
 func (bt *batchWebhookTransformerT) batchTransformLoop() {
 	for breq := range bt.webhook.batchRequestQ {
-		payloadArr := [][]byte{}
-		webRequests := []*webhookT{}
+		var payloadArr [][]byte
+		var webRequests []*webhookT
 		for _, req := range breq.batchRequest {
 			body, err := io.ReadAll(req.request.Body)
 			req.request.Body.Close()

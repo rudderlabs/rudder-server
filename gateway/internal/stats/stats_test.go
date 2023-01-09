@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"math/rand"
 	"testing"
+	"time"
 
 	"github.com/rudderlabs/rudder-server/services/stats/memstats"
 	trand "github.com/rudderlabs/rudder-server/testhelper/rand"
@@ -33,34 +34,34 @@ func TestReport(t *testing.T) {
 	for i := 0; i < 10; i++ {
 		counterMap[fmt.Sprint(i)] = &counter{}
 	}
-	rand.Seed(1)
+	rand.Seed(time.Now().UnixNano())
 	for i := 0; i < 10; i++ {
 		sourceTag := fmt.Sprint(i)
-		randInt := rand.Int() % 10
+		randInt := rand.Int() % 10 // skipcq: GSC-G404
 		for j := 0; j < randInt; j++ {
 			statMap[sourceTag].RequestSucceeded()
 		}
 		counterMap[sourceTag].succeeded += randInt
 		counterMap[sourceTag].total += randInt
-		randInt = rand.Int() % 10
+		randInt = rand.Int() % 10 // skipcq: GSC-G404
 		for j := 0; j < randInt; j++ {
 			statMap[sourceTag].RequestDropped()
 		}
 		counterMap[sourceTag].dropped += randInt
 		counterMap[sourceTag].total += randInt
-		randInt = rand.Int() % 10
+		randInt = rand.Int() % 10 // skipcq: GSC-G404
 		for j := 0; j < randInt; j++ {
 			statMap[sourceTag].RequestSuppressed()
 		}
 		counterMap[sourceTag].suppressed += randInt
 		counterMap[sourceTag].total += randInt
-		randInt = rand.Int() % 10
+		randInt = rand.Int() % 10 // skipcq: GSC-G404
 		for j := 0; j < randInt; j++ {
 			statMap[sourceTag].RequestFailed("reason")
 		}
 		counterMap[sourceTag].failed += randInt
 		counterMap[sourceTag].total += randInt
-		randInt = rand.Int() % 10
+		randInt = rand.Int() % 10 // skipcq: GSC-G404
 		for j := 0; j < randInt; j++ {
 			statMap[sourceTag].RequestEventsSucceeded(10)
 		}
@@ -68,7 +69,7 @@ func TestReport(t *testing.T) {
 		counterMap[sourceTag].eventsTotal += randInt * 10
 		counterMap[sourceTag].total += randInt
 		counterMap[sourceTag].succeeded += randInt
-		randInt = rand.Int() % 10
+		randInt = rand.Int() % 10 // skipcq: GSC-G404
 		for j := 0; j < randInt; j++ {
 			statMap[sourceTag].RequestEventsFailed(10, "reason")
 		}

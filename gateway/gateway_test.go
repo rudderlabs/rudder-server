@@ -225,7 +225,7 @@ var _ = Describe("Gateway Enterprise", func() {
 						map[string]string{
 							"source":      gateway.getSourceTagFromWriteKey(WriteKeyEnabled),
 							"sourceID":    gateway.getSourceIDForWriteKey(WriteKeyEnabled),
-							"workspaceID": getWorkspaceID(WriteKeyEnabled),
+							"workspaceId": getWorkspaceID(WriteKeyEnabled),
 							"writeKey":    WriteKeyEnabled,
 							"reqType":     "batch",
 						},
@@ -270,7 +270,7 @@ var _ = Describe("Gateway Enterprise", func() {
 						map[string]string{
 							"source":      gateway.getSourceTagFromWriteKey(WriteKeyEnabled),
 							"sourceID":    gateway.getSourceIDForWriteKey(WriteKeyEnabled),
-							"workspaceID": getWorkspaceID(WriteKeyEnabled),
+							"workspaceId": getWorkspaceID(WriteKeyEnabled),
 							"writeKey":    WriteKeyEnabled,
 							"reqType":     "batch",
 						},
@@ -442,7 +442,7 @@ var _ = Describe("Gateway", func() {
 								map[string]string{
 									"source":      gateway.getSourceTagFromWriteKey(WriteKeyEnabled),
 									"sourceID":    gateway.getSourceIDForWriteKey(WriteKeyEnabled),
-									"workspaceID": workspaceID,
+									"workspaceId": workspaceID,
 									"writeKey":    WriteKeyEnabled,
 									"reqType":     handlerType,
 								},
@@ -496,7 +496,7 @@ var _ = Describe("Gateway", func() {
 						map[string]string{
 							"source":      gateway.getSourceTagFromWriteKey(WriteKeyEnabled),
 							"sourceID":    gateway.getSourceIDForWriteKey(WriteKeyEnabled),
-							"workspaceID": getWorkspaceID(WriteKeyEnabled),
+							"workspaceId": getWorkspaceID(WriteKeyEnabled),
 							"writeKey":    WriteKeyEnabled,
 							"reqType":     "alias",
 						},
@@ -522,7 +522,7 @@ var _ = Describe("Gateway", func() {
 						map[string]string{
 							"source":      gateway.getSourceTagFromWriteKey(WriteKeyEnabled),
 							"sourceID":    gateway.getSourceIDForWriteKey(WriteKeyEnabled),
-							"workspaceID": getWorkspaceID(WriteKeyEnabled),
+							"workspaceId": getWorkspaceID(WriteKeyEnabled),
 							"writeKey":    WriteKeyEnabled,
 							"reqType":     "alias",
 						},
@@ -576,7 +576,7 @@ var _ = Describe("Gateway", func() {
 							map[string]string{
 								"source":      "noWriteKey",
 								"sourceID":    gateway.getSourceIDForWriteKey(""),
-								"workspaceID": "",
+								"workspaceId": "",
 								"writeKey":    "noWriteKey",
 								"reqType":     reqType,
 								"reason":      "noWriteKeyInBasicAuth",
@@ -604,7 +604,7 @@ var _ = Describe("Gateway", func() {
 							map[string]string{
 								"source":      "noWriteKey",
 								"sourceID":    gateway.getSourceIDForWriteKey(""),
-								"workspaceID": getWorkspaceID(""),
+								"workspaceId": getWorkspaceID(""),
 								"writeKey":    "noWriteKey",
 								"reqType":     reqType,
 								"reason":      "noWriteKeyInBasicAuth",
@@ -642,7 +642,7 @@ var _ = Describe("Gateway", func() {
 							map[string]string{
 								"source":      gateway.getSourceTagFromWriteKey(WriteKeyEnabled),
 								"sourceID":    gateway.getSourceIDForWriteKey(WriteKeyEnabled),
-								"workspaceID": getWorkspaceID(WriteKeyEnabled),
+								"workspaceId": getWorkspaceID(WriteKeyEnabled),
 								"writeKey":    WriteKeyEnabled,
 								"reqType":     reqType,
 								"reason":      response.NotRudderEvent,
@@ -679,7 +679,7 @@ var _ = Describe("Gateway", func() {
 							map[string]string{
 								"source":      gateway.getSourceTagFromWriteKey(WriteKeyEnabled),
 								"sourceID":    gateway.getSourceIDForWriteKey(WriteKeyEnabled),
-								"workspaceID": getWorkspaceID(WriteKeyEnabled),
+								"workspaceId": getWorkspaceID(WriteKeyEnabled),
 								"writeKey":    WriteKeyEnabled,
 								"reqType":     reqType,
 								"reason":      response.NonIdentifiableRequest,
@@ -764,7 +764,7 @@ var _ = Describe("Gateway", func() {
 								map[string]string{
 									"source":      gateway.getSourceTagFromWriteKey(WriteKeyEnabled),
 									"sourceID":    gateway.getSourceIDForWriteKey(WriteKeyEnabled),
-									"workspaceID": getWorkspaceID(WriteKeyEnabled),
+									"workspaceId": getWorkspaceID(WriteKeyEnabled),
 									"writeKey":    WriteKeyEnabled,
 									"reqType":     handlerType,
 									"reason":      "storeFailed",
@@ -805,7 +805,7 @@ var _ = Describe("Gateway", func() {
 					Expect(r.URL.String()).To(Equal(url))
 					Expect(r.Body)
 					Expect(r.Body).To(Not(BeNil()))
-					defer r.Body.Close()
+					defer func() { _ = r.Body.Close() }()
 					reqBody, err := io.ReadAll(r.Body)
 					Expect(err).To(BeNil())
 					Expect(string(reqBody)).To(Equal(payload))

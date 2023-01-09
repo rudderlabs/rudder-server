@@ -83,11 +83,11 @@ func TestWebhookRequestHandlerWithTransformerBatchPayloadLengthMismatchError(t *
 	mockGW := mock_webhook.NewMockGatewayI(ctrl)
 	transformerServer := httptest.NewServer(
 		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			defer r.Body.Close()
+			defer func() { _ = r.Body.Close() }()
 			body, _ := io.ReadAll(r.Body)
 			var requests []interface{}
 			_ = json.Unmarshal(body, &requests)
-			responses := []transformerResponse{}
+			var responses []transformerResponse
 			// return payload of length = len(requests) + 1
 			for i := 0; i < len(requests)+1; i++ {
 				responses = append(responses, transformerResponse{
@@ -124,11 +124,11 @@ func TestWebhookRequestHandlerWithTransformerRequestError(t *testing.T) {
 	mockGW := mock_webhook.NewMockGatewayI(ctrl)
 	transformerServer := httptest.NewServer(
 		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			defer r.Body.Close()
+			defer func() { _ = r.Body.Close() }()
 			body, _ := io.ReadAll(r.Body)
 			var requests []interface{}
 			_ = json.Unmarshal(body, &requests)
-			responses := []transformerResponse{}
+			var responses []transformerResponse
 			for i := 0; i < len(requests); i++ {
 				responses = append(responses, transformerResponse{
 					Err:        sampleError,
@@ -164,11 +164,11 @@ func TestWebhookRequestHandlerWithOutputToSource(t *testing.T) {
 	mockGW := mock_webhook.NewMockGatewayI(ctrl)
 	transformerServer := httptest.NewServer(
 		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			defer r.Body.Close()
+			defer func() { _ = r.Body.Close() }()
 			body, _ := io.ReadAll(r.Body)
 			var requests []interface{}
 			_ = json.Unmarshal(body, &requests)
-			responses := []transformerResponse{}
+			var responses []transformerResponse
 			for i := 0; i < len(requests); i++ {
 				responses = append(responses, transformerResponse{
 					OutputToSource: outputToWebhook,
@@ -204,11 +204,11 @@ func TestWebhookRequestHandlerWithOutputToGateway(t *testing.T) {
 	outputToGateway := map[string]interface{}{"text": "hello world"}
 	transformerServer := httptest.NewServer(
 		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			defer r.Body.Close()
+			defer func() { _ = r.Body.Close() }()
 			body, _ := io.ReadAll(r.Body)
 			var requests []interface{}
 			_ = json.Unmarshal(body, &requests)
-			responses := []transformerResponse{}
+			var responses []transformerResponse
 			for i := 0; i < len(requests); i++ {
 				responses = append(responses, transformerResponse{
 					Output:     outputToGateway,
@@ -246,11 +246,11 @@ func TestWebhookRequestHandlerWithOutputToGatewayAndSource(t *testing.T) {
 	mockGW := mock_webhook.NewMockGatewayI(ctrl)
 	transformerServer := httptest.NewServer(
 		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			defer r.Body.Close()
+			defer func() { _ = r.Body.Close() }()
 			body, _ := io.ReadAll(r.Body)
 			var requests []interface{}
 			_ = json.Unmarshal(body, &requests)
-			responses := []transformerResponse{}
+			var responses []transformerResponse
 			for i := 0; i < len(requests); i++ {
 				responses = append(responses, transformerResponse{
 					Output:         outputToGateway,
