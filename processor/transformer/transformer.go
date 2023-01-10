@@ -10,11 +10,12 @@ import (
 	"net/http"
 	"runtime/trace"
 	"strconv"
-	"sync"
 	"time"
 
 	"github.com/cenkalti/backoff"
 	jsoniter "github.com/json-iterator/go"
+	"github.com/samber/lo"
+	"github.com/sourcegraph/conc/pool"
 
 	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
@@ -205,39 +206,29 @@ func (trans *HandleT) Transform(ctx context.Context, clientEvents []TransformerE
 
 	sTags := statsTags(clientEvents[0])
 
-	batchCount := len(clientEvents) / batchSize
-	if len(clientEvents)%batchSize != 0 {
-		batchCount += 1
-	}
+	batches := lo.Chunk(clientEvents, batchSize)
 
 	stats.Default.NewTaggedStat(
 		"processor.transformer_request_batch_count",
 		stats.HistogramType,
 		sTags,
-	).Observe(float64(batchCount))
-	trace.Logf(ctx, "request", "batch_count: %d", batchCount)
+	).Observe(float64(len(batches)))
+	trace.Logf(ctx, "request", "batch_count: %d", len(batches))
 
-	transformResponse := make([][]TransformerResponseT, batchCount)
+	transformResponse := make([][]TransformerResponseT, len(batches))
 
-	wg := sync.WaitGroup{}
-	wg.Add(len(transformResponse))
+	p := pool.New().WithMaxGoroutines(maxConcurrency)
 	for i := range transformResponse {
-		i := i
-		from := i * batchSize
-		to := (i + 1) * batchSize
-		if to > len(clientEvents) {
-			to = len(clientEvents)
-		}
-		trans.guardConcurrency <- struct{}{}
-		go func() {
-			trace.WithRegion(ctx, "request", func() {
-				transformResponse[i] = trans.request(ctx, url, clientEvents[from:to])
-			})
-			<-trans.guardConcurrency
-			wg.Done()
-		}()
+		I := i
+		p.Go(
+			func() {
+				trace.WithRegion(ctx, "request", func() {
+					transformResponse[I] = trans.request(ctx, url, batches[I])
+				})
+			},
+		)
 	}
-	wg.Wait()
+	p.Wait()
 
 	var outClientEvents []TransformerResponseT
 	var failedEvents []TransformerResponseT
