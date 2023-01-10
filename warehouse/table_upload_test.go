@@ -35,7 +35,7 @@ var _ = Describe("TableUpload", func() {
 			err = setupDB(context.TODO(), getConnectionString())
 			Expect(err).To(BeNil())
 
-			sqlStatement, err := os.ReadFile("testdata/sql/5.sql")
+			sqlStatement, err := os.ReadFile("testdata/sql/table_uploads_test.sql")
 			Expect(err).To(BeNil())
 
 			_, err = pgResource.DB.Exec(string(sqlStatement))

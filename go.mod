@@ -223,5 +223,7 @@ require (
 require (
 	github.com/golang-migrate/migrate/v4 v4.15.2
 	github.com/mohae/deepcopy v0.0.0-20170929034955-c48cc78d4826
-	github.com/rudderlabs/sql-tunnels v0.1.1
+	github.com/rudderlabs/sql-tunnels v0.1.2
 )
+
+require github.com/rogpeppe/go-internal v1.9.0 // indirect

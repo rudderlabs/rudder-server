@@ -913,7 +913,8 @@ github.com/rogpeppe/fastuuid v1.2.0/go.mod h1:jVj6XXZzXRy/MSR5jhDC/2q6DgLz+nrA6L
 github.com/rogpeppe/go-internal v1.1.0/go.mod h1:M8bDsm7K2OlrFYOpmOWEs/qY81heoFRclV5y23lUDJ4=
 github.com/rogpeppe/go-internal v1.2.2/go.mod h1:M8bDsm7K2OlrFYOpmOWEs/qY81heoFRclV5y23lUDJ4=
 github.com/rogpeppe/go-internal v1.3.0/go.mod h1:M8bDsm7K2OlrFYOpmOWEs/qY81heoFRclV5y23lUDJ4=
-github.com/rogpeppe/go-internal v1.6.1 h1:/FiVV8dS/e+YqF2JvO3yXRFbBLTIuSDkuC7aBOAvL+k=
+github.com/rogpeppe/go-internal v1.9.0 h1:73kH8U+JUqXU8lRuOHeVHaa/SZPifC7BkcraZVejAe8=
+github.com/rogpeppe/go-internal v1.9.0/go.mod h1:WtVeX8xhTBvf0smdhujwtBcq4Qrzq/fJaraNFVN+nFs=
 github.com/rs/cors v1.7.0 h1:+88SsELBHx5r+hZ8TCkggzSstaWNbDvThkVK8H6f9ik=
 github.com/rs/cors v1.7.0/go.mod h1:gFx+x8UowdsKA9AchylcLynDq+nNFfI8FkUZdN/jGCU=
 github.com/rs/xid v1.2.1/go.mod h1:+uKXf+4Djp6Md1KODXJxgGQPKngRmWyn10oCKFzNHOQ=
@@ -924,8 +925,8 @@ github.com/rs/zerolog v1.15.0/go.mod h1:xYTKnLHcpfU2225ny5qZjxnj9NvkumZYjJHlAThC
 github.com/rudderlabs/analytics-go v3.3.1+incompatible h1:WoPC5c5M+yz0jG43elyguHux94Smy5wmHeyMVE2xKgA=
 github.com/rudderlabs/analytics-go v3.3.1+incompatible/go.mod h1:LF8/ty9kUX4PTY3l5c97K3nZZaX5Hwsvt+NBaRL/f30=
 github.com/rudderlabs/compose-test v0.0.0-20221205185752-1290775b38f6 h1:sBa1HsUybK7bFJ6J86wsCyEoQhUfrowP4MMrwmjzuWE=
-github.com/rudderlabs/sql-tunnels v0.1.1 h1:xrkM/ICNi4PiBNYkGnsEh8iYrNOl4gGfEvHCqPh2rO4=
-github.com/rudderlabs/sql-tunnels v0.1.1/go.mod h1:XQBKg651HTH9x5SJf1GCSRez54soD+JOi0E17a7j3Pk=
+github.com/rudderlabs/sql-tunnels v0.1.2 h1:Lj1c6B/sr8iTQNKNSP+GfVSBp1qAfLnZWKcHBQPP7E4=
+github.com/rudderlabs/sql-tunnels v0.1.2/go.mod h1:XQBKg651HTH9x5SJf1GCSRez54soD+JOi0E17a7j3Pk=
 github.com/russross/blackfriday v1.5.2/go.mod h1:JO/DiYxRf+HjHt06OyowR9PTA263kcR/rfWxYHBV53g=
 github.com/russross/blackfriday/v2 v2.0.1/go.mod h1:+Rmxgy9KzJVeS9/2gXHxylqXiyQDYRxCVz55jmeOWTM=
 github.com/russross/blackfriday/v2 v2.1.0 h1:JIOH55/0cWyOuilr9/qlrm0BSXldqnqwMsf35Ld67mk=
