@@ -110,6 +110,10 @@ func Stop() {
 	_instance.Stop()
 }
 
+func UploadTransformationStatus(tStatus *TransformationStatusT) {
+	_instance.UploadTransformationStatus(tStatus)
+}
+
 type TransformationStatusUploader struct {
 	log logger.Logger
 }

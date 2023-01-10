@@ -45,7 +45,6 @@ import (
 	"github.com/rudderlabs/rudder-server/services/archiver"
 	"github.com/rudderlabs/rudder-server/services/controlplane"
 	"github.com/rudderlabs/rudder-server/services/db"
-	transformationdebugger "github.com/rudderlabs/rudder-server/services/debugger/transformation"
 	"github.com/rudderlabs/rudder-server/services/dedup"
 	destinationconnectiontester "github.com/rudderlabs/rudder-server/services/destination-connection-tester"
 	"github.com/rudderlabs/rudder-server/services/diagnostics"
@@ -360,7 +359,6 @@ func runAllInit() {
 	eventschema.Init()
 	eventschema.Init2()
 	stash.Init()
-	transformationdebugger.Init()
 	processor.Init()
 	kafka.Init()
 	customdestinationmanager.Init()
