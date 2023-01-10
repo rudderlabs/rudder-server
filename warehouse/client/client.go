@@ -20,10 +20,10 @@ const (
 )
 
 type Client struct {
-	SQL       *sql.DB
-	BQ        *bigquery.Client
-	DBHandleT *databricks.DBHandleT
-	Type      string
+	SQL              *sql.DB
+	BQ               *bigquery.Client
+	DatabricksClient *databricks.DatabricksClient
+	Type             string
 }
 
 func (cl *Client) sqlQuery(statement string) (result warehouseutils.QueryResult, err error) {
@@ -100,10 +100,10 @@ func (cl *Client) bqQuery(statement string) (result warehouseutils.QueryResult, 
 }
 
 func (cl *Client) dbQuery(statement string) (result warehouseutils.QueryResult, err error) {
-	executeResponse, err := cl.DBHandleT.Client.ExecuteQuery(cl.DBHandleT.Context, &proto.ExecuteQueryRequest{
-		Config:       cl.DBHandleT.CredConfig,
+	executeResponse, err := cl.DatabricksClient.Client.ExecuteQuery(cl.DatabricksClient.Context, &proto.ExecuteQueryRequest{
+		Config:       cl.DatabricksClient.CredConfig,
 		SqlStatement: statement,
-		Identifier:   cl.DBHandleT.CredIdentifier,
+		Identifier:   cl.DatabricksClient.CredIdentifier,
 	})
 	if err != nil {
 		return
@@ -131,7 +131,7 @@ func (cl *Client) Close() {
 	case BQClient:
 		cl.BQ.Close()
 	case DBClient:
-		cl.DBHandleT.Close()
+		cl.DatabricksClient.Close()
 	default:
 		cl.SQL.Close()
 	}

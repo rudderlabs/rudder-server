@@ -36,7 +36,8 @@ func TestIntegrationDeltalake(t *testing.T) {
 	credentials, err := testhelper.DatabricksCredentials()
 	require.NoError(t, err)
 
-	db, err := deltalake.Connect(&credentials, 0)
+	dl := deltalake.NewHandle()
+	db, err := dl.DatabricksHandle(&credentials, 0)
 	require.NoError(t, err)
 
 	var (
@@ -136,8 +137,8 @@ func TestIntegrationDeltalake(t *testing.T) {
 					"groups":        1,
 				},
 				Client: &client.Client{
-					DBHandleT: db,
-					Type:      client.DBClient,
+					DatabricksClient: db,
+					Type:             client.DBClient,
 				},
 				StatsToVerify: []string{
 					"warehouse_deltalake_grpcExecTime",

@@ -11,21 +11,14 @@ import (
 
 var pkgLogger logger.Logger
 
-type CredentialsT struct {
-	Host            string
-	Port            string
-	Path            string
-	Token           string
-	Schema          string
-	SparkServerType string
-	AuthMech        string
-	UID             string
-	ThriftTransport string
-	SSL             string
-	UserAgentEntry  string
+type Credentials struct {
+	Host  string
+	Port  string
+	Path  string
+	Token string
 }
 
-type DBHandleT struct {
+type DatabricksClient struct {
 	CredConfig     *proto.ConnectionConfig
 	CredIdentifier string
 	Context        context.Context
@@ -39,13 +32,13 @@ func Init() {
 }
 
 // Close closes sql connection as well as closes grpc connection
-func (dbT *DBHandleT) Close() {
-	dbT.CloseStats.Start()
-	defer dbT.CloseStats.End()
+func (d *DatabricksClient) Close() {
+	d.CloseStats.Start()
+	defer d.CloseStats.End()
 
-	closeConnectionResponse, err := dbT.Client.Close(dbT.Context, &proto.CloseRequest{
-		Config:     dbT.CredConfig,
-		Identifier: dbT.CredIdentifier,
+	closeConnectionResponse, err := d.Client.Close(d.Context, &proto.CloseRequest{
+		Config:     d.CredConfig,
+		Identifier: d.CredIdentifier,
 	})
 	if err != nil {
 		pkgLogger.Errorf("Error closing connection in delta lake: %v", err)
@@ -53,5 +46,5 @@ func (dbT *DBHandleT) Close() {
 	if closeConnectionResponse.GetErrorCode() != "" {
 		pkgLogger.Errorf("Error closing connection in delta lake with response: %v", err, closeConnectionResponse.GetErrorMessage())
 	}
-	dbT.Conn.Close()
+	d.Conn.Close()
 }

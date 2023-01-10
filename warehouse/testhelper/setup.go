@@ -1017,7 +1017,7 @@ func BigqueryCredentials() (credentials bigquery.BQCredentialsT, err error) {
 	return
 }
 
-func DatabricksCredentials() (credentials databricks.CredentialsT, err error) {
+func DatabricksCredentials() (credentials databricks.Credentials, err error) {
 	cred, exists := os.LookupEnv(DeltalakeIntegrationTestCredentials)
 	if !exists {
 		err = fmt.Errorf("following %s does not exists while running the Deltalake test", DeltalakeIntegrationTestCredentials)
