@@ -341,7 +341,6 @@ func TestPostToWarehouse(t *testing.T) {
 	for _, input := range inputs {
 		t.Run(input.name, func(t *testing.T) {
 			ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-
 				b, err := io.ReadAll(r.Body)
 				require.NoError(t, err)
 				if input.expectedPayload != "" {

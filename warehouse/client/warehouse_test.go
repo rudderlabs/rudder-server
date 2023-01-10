@@ -31,7 +31,6 @@ func TestWarehouse(t *testing.T) {
 		t.Log("using the same request file as API testing")
 		body := loadFile(t, "../internal/api/testdata/process_request.json")
 		ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-
 			require.Equal(t, "/v1/process", r.URL.Path)
 			require.Equal(t, http.MethodPost, r.Method)
 
@@ -111,7 +110,6 @@ func TestWarehouse(t *testing.T) {
 			},
 		})
 		require.NoError(t, err)
-
 	})
 
 	t.Run("failure: unexpected status code", func(t *testing.T) {
@@ -127,7 +125,6 @@ func TestWarehouse(t *testing.T) {
 		err := c.Process(context.Background(), client.StagingFile{})
 
 		require.EqualError(t, err, "unexpected status code \"400 Bad Request\" on "+ts.URL+": bad request")
-
 	})
 
 	t.Run("failure: nil context", func(t *testing.T) {
@@ -156,7 +153,6 @@ func TestWarehouse(t *testing.T) {
 		block := make(chan struct{})
 		ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			<-block
-
 		}))
 		t.Cleanup(ts.Close)
 		t.Cleanup(func() {
