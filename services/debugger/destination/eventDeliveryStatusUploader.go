@@ -122,7 +122,7 @@ func (h *Handle) RecordEventDeliveryStatus(destinationID string, deliveryStatus 
 	// Check if destinationID part of enabled destinations, if not then push the job in cache to keep track
 	h.configSubscriberLock.RLock()
 	defer h.configSubscriberLock.RUnlock()
-	if !h.hasUploadEnabled(destinationID) {
+	if !h.HasUploadEnabled(destinationID) {
 		h.eventsDeliveryCache.Update(destinationID, deliveryStatus)
 		return false
 	}
@@ -131,7 +131,7 @@ func (h *Handle) RecordEventDeliveryStatus(destinationID string, deliveryStatus 
 	return true
 }
 
-func (h *Handle) hasUploadEnabled(destID string) bool {
+func (h *Handle) HasUploadEnabled(destID string) bool {
 	h.configSubscriberLock.RLock()
 	defer h.configSubscriberLock.RUnlock()
 	_, ok := h.uploadEnabledDestinationIDs[destID]
