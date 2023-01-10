@@ -1987,12 +1987,12 @@ func (rt *HandleT) backendConfigSubscriber() {
 							rt.MultitenantI.UpdateWorkspaceLatencyMap(rt.destName, workspaceID, 0)
 						}
 						rt.destinationsMap[destination.ID].Sources = append(rt.destinationsMap[destination.ID].Sources, *source)
-							rt.destinationResponseHandler = New(destination.DestinationDefinition.ResponseRules)
-							if value, ok := destination.DestinationDefinition.Config["saveDestinationResponse"].(bool); ok {
-								rt.destinationResponseMutex.Lock()
-								rt.saveDestinationResponse = value
-								rt.destinationResponseMutex.Unlock()
-							}
+						rt.destinationResponseHandler = New(destination.DestinationDefinition.ResponseRules)
+						if value, ok := destination.DestinationDefinition.Config["saveDestinationResponse"].(bool); ok {
+							rt.destinationResponseMutex.Lock()
+							rt.saveDestinationResponse = value
+							rt.destinationResponseMutex.Unlock()
+						}
 
 						// Config key "throttlingCost" is expected to have the eventType as the first key and the call type
 						// as the second key (e.g. track, identify, etc...) or default to apply the cost to all call types:
