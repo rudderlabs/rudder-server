@@ -2436,9 +2436,7 @@ var _ = Describe("TestConfigFilter", func() {
 					ID:   "1",
 					Name: "test",
 					Config: map[string]interface{}{
-						"config_key":   "config_value",
-						"long_config1": "",
-						"long_config2": "",
+						"config_key": "config_value",
 					},
 					DestinationDefinition: backendconfig.DestinationDefinitionT{
 						Config: map[string]interface{}{
@@ -2455,7 +2453,7 @@ var _ = Describe("TestConfigFilter", func() {
 				},
 				Destination: intgConfig,
 			}
-			filterConfig(&event, &intgConfig)
+			filterConfig(&event)
 			Expect(event).To(Equal(expectedEvent))
 		})
 
@@ -2489,9 +2487,7 @@ var _ = Describe("TestConfigFilter", func() {
 					ID:   "1",
 					Name: "test",
 					Config: map[string]interface{}{
-						"config_key":   "config_value",
-						"long_config1": "",
-						"long_config2": "",
+						"config_key": "config_value",
 					},
 					DestinationDefinition: backendconfig.DestinationDefinitionT{
 						Config: map[string]interface{}{
@@ -2508,7 +2504,7 @@ var _ = Describe("TestConfigFilter", func() {
 				},
 				Destination: intgConfig,
 			}
-			filterConfig(&event, &intgConfig)
+			filterConfig(&event)
 			Expect(event).To(Equal(expectedEvent))
 		})
 
@@ -2556,7 +2552,7 @@ var _ = Describe("TestConfigFilter", func() {
 				},
 				Destination: intgConfig,
 			}
-			filterConfig(&event, &intgConfig)
+			filterConfig(&event)
 			Expect(event).To(Equal(expectedEvent))
 		})
 	})
