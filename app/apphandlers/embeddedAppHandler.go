@@ -112,7 +112,8 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 
 	a.log.Info("Clearing DB ", options.ClearDB)
 
-	transformationdebugger.Setup()
+	transformationdebugger.Start(backendconfig.DefaultBackendConfig)
+	defer transformationdebugger.Stop()
 	destinationdebugger.Start(backendconfig.DefaultBackendConfig)
 	defer destinationdebugger.Stop()
 	sourcedebugger.Start(backendconfig.DefaultBackendConfig)

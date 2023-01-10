@@ -37,7 +37,7 @@ type Handle struct {
 	eventsDeliveryCache               cache.Cache[*DeliveryStatusT]
 	uploader                          debugger.Uploader[*DeliveryStatusT]
 	uploadEnabledDestinationIDs       map[string]bool
-	configSubscriberLock              sync.RWMutex
+	uploadEnabledDestinationIDsMu     sync.RWMutex
 	ctx                               context.Context
 	cancel                            func()
 	initialized                       chan struct{}
@@ -89,7 +89,6 @@ func (h *Handle) Start(backendConfig backendconfig.BackendConfig) {
 	h.uploader = debugger.New[*DeliveryStatusT](url, eventUploader)
 	h.uploader.Start()
 
-	h.log.Infof("Destination debugger started")
 	ctx, cancel := context.WithCancel(context.Background())
 	h.ctx = ctx
 	h.cancel = cancel
@@ -126,8 +125,8 @@ func (h *Handle) RecordEventDeliveryStatus(destinationID string, deliveryStatus 
 	}
 	<-h.initialized
 	// Check if destinationID part of enabled destinations, if not then push the job in cache to keep track
-	h.configSubscriberLock.RLock()
-	defer h.configSubscriberLock.RUnlock()
+	h.uploadEnabledDestinationIDsMu.RLock()
+	defer h.uploadEnabledDestinationIDsMu.RUnlock()
 	if !h.HasUploadEnabled(destinationID) {
 		h.eventsDeliveryCache.Update(destinationID, deliveryStatus)
 		return false
@@ -138,8 +137,8 @@ func (h *Handle) RecordEventDeliveryStatus(destinationID string, deliveryStatus 
 }
 
 func (h *Handle) HasUploadEnabled(destID string) bool {
-	h.configSubscriberLock.RLock()
-	defer h.configSubscriberLock.RUnlock()
+	h.uploadEnabledDestinationIDsMu.RLock()
+	defer h.uploadEnabledDestinationIDsMu.RUnlock()
 	_, ok := h.uploadEnabledDestinationIDs[destID]
 	return ok
 }
@@ -180,9 +179,9 @@ func (h *Handle) updateConfig(config map[string]backendconfig.ConfigT) {
 			}
 		}
 	}
-	h.configSubscriberLock.Lock()
+	h.uploadEnabledDestinationIDsMu.Lock()
 	h.uploadEnabledDestinationIDs = uploadEnabledDestinationIDs
-	h.configSubscriberLock.Unlock()
+	h.uploadEnabledDestinationIDsMu.Unlock()
 
 	h.recordHistoricEventsDelivery(uploadEnabledDestinationIdsList)
 }
@@ -197,13 +196,12 @@ func (h *Handle) backendConfigSubscriber(backendConfig backendconfig.BackendConf
 			close(h.initialized)
 		}
 	}
-	h.log.Infof("[Destination live events] Stopping destination live events")
 	close(h.done)
 }
 
 func (h *Handle) recordHistoricEventsDelivery(destinationIDs []string) {
-	h.configSubscriberLock.RLock()
-	defer h.configSubscriberLock.RUnlock()
+	h.uploadEnabledDestinationIDsMu.RLock()
+	defer h.uploadEnabledDestinationIDsMu.RUnlock()
 	for _, destinationID := range destinationIDs {
 		historicEventsDelivery := h.eventsDeliveryCache.Read(destinationID)
 		for _, event := range historicEventsDelivery {

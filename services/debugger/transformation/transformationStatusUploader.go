@@ -65,85 +65,113 @@ type UploadT struct {
 	Payload []*TransformStatusT `json:"payload"`
 }
 
-var (
-	jsonfast = jsoniter.ConfigCompatibleWithStandardLibrary
+type Opt func(*Handle)
 
-	configBackendURL             string
-	disableTransformationUploads bool
-	limitEventsInMemory          int
-	uploader                     debugger.Uploader[*TransformStatusT]
-	pkgLogger                    logger.Logger
-	transformationCacheMap       cache.Cache[TransformationStatusT]
-	cachetype                    int
-	origin                       string
-)
+var jsonfast = jsoniter.ConfigCompatibleWithStandardLibrary
 
-var (
-	uploadEnabledTransformations map[string]bool
-	configSubscriberLock         sync.RWMutex
-)
-
-func Init() {
-	loadConfig()
-	pkgLogger = logger.NewLogger().Child("debugger").Child("transformation")
-	transformationCacheMap = cache.New[TransformationStatusT](cache.CacheType(cachetype), origin, pkgLogger)
+type Handle struct {
+	configBackendURL               string
+	disableTransformationUploads   bool
+	limitEventsInMemory            int
+	uploader                       debugger.Uploader[*TransformStatusT]
+	log                            logger.Logger
+	transformationCacheMap         cache.Cache[TransformationStatusT]
+	uploadEnabledTransformations   map[string]bool
+	uploadEnabledTransformationsMu sync.RWMutex
+	ctx                            context.Context
+	cancel                         func()
+	initialized                    chan struct{}
+	done                           chan struct{}
 }
 
-func loadConfig() {
-	configBackendURL = config.GetString("CONFIG_BACKEND_URL", "https://api.rudderstack.com")
-	config.RegisterBoolConfigVariable(false, &disableTransformationUploads, true, "TransformationDebugger.disableTransformationStatusUploads")
-	config.RegisterIntConfigVariable(1, &limitEventsInMemory, true, 1, "TransformationDebugger.limitEventsInMemory")
-	config.RegisterIntConfigVariable(1, &cachetype, true, 1, "TransformationDebugger.cacheType")
-	config.RegisterStringConfigVariable("transformation", &origin, true, "TransformationDebugger.origin")
+func NewHandle(opts ...Opt) *Handle {
+	h := &Handle{
+		configBackendURL: config.GetString("CONFIG_BACKEND_URL", "https://api.rudderstack.com"),
+		log:              logger.NewLogger().Child("debugger").Child("transformation"),
+	}
+
+	cacheType := cache.CacheType(config.GetInt("TransformationDebugger.cacheType", int(cache.BadgerCacheType)))
+	h.transformationCacheMap = cache.New[TransformationStatusT](cacheType, "transformation", h.log)
+	config.RegisterBoolConfigVariable(false, &h.disableTransformationUploads, true, "TransformationDebugger.disableTransformationStatusUploads")
+	config.RegisterIntConfigVariable(1, &h.limitEventsInMemory, true, 1, "TransformationDebugger.limitEventsInMemory")
+	for _, opt := range opts {
+		opt(h)
+	}
+	return h
 }
 
-type TransformationStatusUploader struct{}
+var _instance = NewHandle()
 
-func IsUploadEnabled(id string) bool {
-	configSubscriberLock.RLock()
-	defer configSubscriberLock.RUnlock()
-	_, ok := uploadEnabledTransformations[id]
+func Start(backendConfig backendconfig.BackendConfig) {
+	_instance.Start(backendConfig)
+}
+
+func Stop() {
+	_instance.Stop()
+}
+
+type TransformationStatusUploader struct {
+	log logger.Logger
+}
+
+func (h *Handle) IsUploadEnabled(id string) bool {
+	h.uploadEnabledTransformationsMu.RLock()
+	defer h.uploadEnabledTransformationsMu.RUnlock()
+	_, ok := h.uploadEnabledTransformations[id]
 	return ok
 }
 
-// Setup initializes this module
-func Setup() {
-	url := fmt.Sprintf("%s/dataplane/eventTransformStatus", configBackendURL)
+// Start initializes this module
+func (h *Handle) Start(backendConfig backendconfig.BackendConfig) {
+	url := fmt.Sprintf("%s/dataplane/eventTransformStatus", h.configBackendURL)
 	transformationStatusUploader := &TransformationStatusUploader{}
-	uploader = debugger.New[*TransformStatusT](url, transformationStatusUploader)
-	uploader.Start()
+	h.uploader = debugger.New[*TransformStatusT](url, transformationStatusUploader)
+	h.uploader.Start()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	h.ctx = ctx
+	h.cancel = cancel
+	h.initialized = make(chan struct{})
+	h.done = make(chan struct{})
 
 	rruntime.Go(func() {
-		backendConfigSubscriber()
+		h.backendConfigSubscriber(backendConfig)
 	})
+}
+
+func (h *Handle) Stop() {
+	h.cancel()
+	<-h.done
+	if h.transformationCacheMap != nil {
+		_ = h.transformationCacheMap.Stop()
+	}
 }
 
 // RecordTransformationStatus is used to put the transform event in the eventBatchChannel,
 // which will be processed by handleEvents.
-func RecordTransformationStatus(transformStatus *TransformStatusT) {
+func (h *Handle) RecordTransformationStatus(transformStatus *TransformStatusT) {
 	// if disableTransformationUploads is true, return;
-	if disableTransformationUploads {
+	if h.disableTransformationUploads {
 		return
 	}
 
-	uploader.RecordEvent(transformStatus)
+	h.uploader.RecordEvent(transformStatus)
 }
 
-func (*TransformationStatusUploader) Transform(eventBuffer []*TransformStatusT) ([]byte, error) {
+func (t *TransformationStatusUploader) Transform(eventBuffer []*TransformStatusT) ([]byte, error) {
 	uploadT := UploadT{Payload: eventBuffer}
 
 	rawJSON, err := jsonfast.Marshal(uploadT)
 	if err != nil {
-		pkgLogger.Errorf("[Transformation status uploader] Failed to marshal payload. Err: %v", err)
+		t.log.Errorf("[Transformation status uploader] Failed to marshal payload. Err: %v", err)
 		return nil, err
 	}
 
 	return rawJSON, nil
 }
 
-func updateConfig(config map[string]backendconfig.ConfigT) {
-	configSubscriberLock.Lock()
-	uploadEnabledTransformations = make(map[string]bool)
+func (h *Handle) updateConfig(config map[string]backendconfig.ConfigT) {
+	uploadEnabledTransformations := make(map[string]bool)
 	var uploadEnabledTransformationsIDs []string
 	for _, wConfig := range config {
 		for _, source := range wConfig.Sources {
@@ -158,40 +186,49 @@ func updateConfig(config map[string]backendconfig.ConfigT) {
 			}
 		}
 	}
-	recordHistoricTransformations(uploadEnabledTransformationsIDs)
-	configSubscriberLock.Unlock()
+	h.uploadEnabledTransformationsMu.Lock()
+	h.uploadEnabledTransformations = uploadEnabledTransformations
+	h.uploadEnabledTransformationsMu.Unlock()
+
+	h.recordHistoricTransformations(uploadEnabledTransformationsIDs)
 }
 
-func backendConfigSubscriber() {
-	ch := backendconfig.DefaultBackendConfig.Subscribe(context.TODO(), backendconfig.TopicProcessConfig)
+func (h *Handle) backendConfigSubscriber(backendConfig backendconfig.BackendConfig) {
+	ch := backendConfig.Subscribe(h.ctx, backendconfig.TopicProcessConfig)
 	for c := range ch {
-		updateConfig(c.Data.(map[string]backendconfig.ConfigT))
+		h.updateConfig(c.Data.(map[string]backendconfig.ConfigT))
+		select {
+		case <-h.initialized:
+		default:
+			close(h.initialized)
+		}
 	}
+	close(h.done)
 }
 
-func UploadTransformationStatus(tStatus *TransformationStatusT) {
+func (h *Handle) UploadTransformationStatus(tStatus *TransformationStatusT) {
 	defer func() {
 		if r := recover(); r != nil {
-			pkgLogger.Error("Error occurred while uploading transformation statuses to config backend")
-			pkgLogger.Error(r)
+			h.log.Error("Error occurred while uploading transformation statuses to config backend")
+			h.log.Error(r)
 		}
 	}()
 
 	// if disableTransformationUploads is true, return;
-	if disableTransformationUploads {
+	if h.disableTransformationUploads {
 		return
 	}
 
 	for _, transformation := range tStatus.Destination.Transformations {
-		if IsUploadEnabled(transformation.ID) {
-			processRecordTransformationStatus(tStatus, transformation.ID)
+		if h.IsUploadEnabled(transformation.ID) {
+			h.processRecordTransformationStatus(tStatus, transformation.ID)
 		} else {
 			tStatusUpdated := *tStatus
-			lo.Slice(tStatusUpdated.UserTransformedEvents, 0, limitEventsInMemory+1)
+			lo.Slice(tStatusUpdated.UserTransformedEvents, 0, h.limitEventsInMemory+1)
 			tStatusUpdated.Destination.Transformations = []backendconfig.TransformationT{transformation}
-			tStatusUpdated.UserTransformedEvents = lo.Slice(tStatusUpdated.UserTransformedEvents, 0, limitEventsInMemory+1)
-			tStatusUpdated.FailedEvents = lo.Slice(tStatusUpdated.FailedEvents, 0, limitEventsInMemory+1)
-			transformationCacheMap.Update(transformation.ID, tStatusUpdated)
+			tStatusUpdated.UserTransformedEvents = lo.Slice(tStatusUpdated.UserTransformedEvents, 0, h.limitEventsInMemory+1)
+			tStatusUpdated.FailedEvents = lo.Slice(tStatusUpdated.FailedEvents, 0, h.limitEventsInMemory+1)
+			h.transformationCacheMap.Update(transformation.ID, tStatusUpdated)
 		}
 	}
 }
@@ -233,16 +270,18 @@ func getEventsAfterTransform(singularEvent types.SingularEventT, receivedAt time
 	}
 }
 
-func recordHistoricTransformations(tIDs []string) {
+func (h *Handle) recordHistoricTransformations(tIDs []string) {
+	h.uploadEnabledTransformationsMu.RLock()
+	defer h.uploadEnabledTransformationsMu.RUnlock()
 	for _, tID := range tIDs {
-		tStatuses := transformationCacheMap.Read(tID)
+		tStatuses := h.transformationCacheMap.Read(tID)
 		for _, tStatus := range tStatuses {
-			processRecordTransformationStatus(&tStatus, tID)
+			h.processRecordTransformationStatus(&tStatus, tID)
 		}
 	}
 }
 
-func processRecordTransformationStatus(tStatus *TransformationStatusT, tID string) {
+func (h *Handle) processRecordTransformationStatus(tStatus *TransformationStatusT, tID string) {
 	reportedMessageIDs := make(map[string]struct{})
 	eventBeforeMap := make(map[string]*EventBeforeTransform)
 	eventAfterMap := make(map[string]*EventsAfterTransform)
@@ -266,7 +305,7 @@ func processRecordTransformationStatus(tStatus *TransformationStatusT, tID strin
 	}
 
 	for k := range eventBeforeMap {
-		RecordTransformationStatus(&TransformStatusT{
+		h.RecordTransformationStatus(&TransformStatusT{
 			TransformationID: tID,
 			SourceID:         tStatus.SourceID,
 			DestinationID:    tStatus.DestID,
@@ -288,7 +327,7 @@ func processRecordTransformationStatus(tStatus *TransformationStatusT, tID strin
 					StatusCode: failedEvent.StatusCode,
 				}
 
-				RecordTransformationStatus(&TransformStatusT{
+				h.RecordTransformationStatus(&TransformStatusT{
 					TransformationID: tID,
 					SourceID:         tStatus.SourceID,
 					DestinationID:    tStatus.DestID,
@@ -307,7 +346,7 @@ func processRecordTransformationStatus(tStatus *TransformationStatusT, tID strin
 				StatusCode: failedEvent.StatusCode,
 			}
 
-			RecordTransformationStatus(&TransformStatusT{
+			h.RecordTransformationStatus(&TransformStatusT{
 				TransformationID: tID,
 				SourceID:         tStatus.SourceID,
 				DestinationID:    tStatus.DestID,
@@ -327,7 +366,7 @@ func processRecordTransformationStatus(tStatus *TransformationStatusT, tID strin
 				IsDropped:  true,
 			}
 
-			RecordTransformationStatus(&TransformStatusT{
+			h.RecordTransformationStatus(&TransformStatusT{
 				TransformationID: tID,
 				SourceID:         tStatus.SourceID,
 				DestinationID:    tStatus.DestID,
