@@ -76,7 +76,7 @@ func (warehouse *Warehouse) Process(ctx context.Context, stagingFile StagingFile
 
 	resp, err := warehouse.client.Do(req)
 	if err != nil {
-		return fmt.Errorf("routing staging file URL to warehouse service@%v: %w", warehouse.baseURL, err)
+		return fmt.Errorf("http request to %q: %w", warehouse.baseURL, err)
 	}
 	defer func() { httputil.CloseResponse(resp) }()
 
