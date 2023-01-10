@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.4.6](https://github.com/rudderlabs/rudder-server/compare/v1.4.5...v1.4.6) (2023-01-10)
+
+
+### Bug Fixes
+
+* **destination:** add proper stats for rt/batch transformation & proxy ([#2855](https://github.com/rudderlabs/rudder-server/issues/2855)) ([6127684](https://github.com/rudderlabs/rudder-server/commit/6127684ff211b64cc256e33efc1d9084204e5d22))
+* shallow copy config in processor ([#2856](https://github.com/rudderlabs/rudder-server/issues/2856)) ([ea3bfdc](https://github.com/rudderlabs/rudder-server/commit/ea3bfdc2e9b82ada80bae48ab32ce0c65403592a))
+
 ## [1.4.5](https://github.com/rudderlabs/rudder-server/compare/v1.4.4...v1.4.5) (2022-12-15)
 
 
