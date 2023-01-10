@@ -245,8 +245,9 @@ func (trans *handle) Transform(transformType string, transformMessage *types.Tra
 
 func (trans *handle) ProxyRequest(ctx context.Context, proxyReqParams *ProxyRequestParams) (int, string, string) {
 	stats.Default.NewTaggedStat("transformer_proxy.delivery_request", stats.CountType, stats.Tags{
-		"destType":    proxyReqParams.DestName,
-		"workspaceId": proxyReqParams.ResponseData.Metadata.WorkspaceID,
+		"destType":      proxyReqParams.DestName,
+		"workspaceId":   proxyReqParams.ResponseData.Metadata.WorkspaceID,
+		"destinationId": proxyReqParams.ResponseData.Metadata.DestinationID,
 	}).Increment()
 	trans.logger.Debugf(`[TransformerProxy] (Dest-%[1]v) {Job - %[2]v} Proxy Request starts - %[1]v`, proxyReqParams.DestName, proxyReqParams.JobID)
 
