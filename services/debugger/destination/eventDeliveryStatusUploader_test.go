@@ -230,7 +230,6 @@ var _ = Describe("eventDeliveryStatusUploader", func() {
 
 	Context("RecordEventDeliveryStatus", func() {
 		It("returns false if disableEventDeliveryStatusUploads is true", func() {
-
 			h.Stop()
 			h = destinationdebugger.NewHandle(destinationdebugger.WithDisableEventUploads(true))
 			h.Start(c.mockBackendConfig)

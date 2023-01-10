@@ -24,7 +24,6 @@ import (
 	mocksFileManager "github.com/rudderlabs/rudder-server/mocks/services/filemanager"
 	mocksMultitenant "github.com/rudderlabs/rudder-server/mocks/services/multitenant"
 	router_utils "github.com/rudderlabs/rudder-server/router/utils"
-	destinationdebugger "github.com/rudderlabs/rudder-server/services/debugger/destination"
 	"github.com/rudderlabs/rudder-server/services/filemanager"
 	"github.com/rudderlabs/rudder-server/services/rsources"
 	"github.com/rudderlabs/rudder-server/services/transientsource"
@@ -137,7 +136,6 @@ func initBatchRouter() {
 	admin.Init()
 	logger.Reset()
 	misc.Init()
-	destinationdebugger.Init()
 	Init()
 	Init2()
 }

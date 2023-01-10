@@ -33,7 +33,6 @@ import (
 	mocksMultitenant "github.com/rudderlabs/rudder-server/mocks/services/multitenant"
 	"github.com/rudderlabs/rudder-server/router/types"
 	routerUtils "github.com/rudderlabs/rudder-server/router/utils"
-	destinationdebugger "github.com/rudderlabs/rudder-server/services/debugger/destination"
 	"github.com/rudderlabs/rudder-server/services/rsources"
 	"github.com/rudderlabs/rudder-server/services/transientsource"
 	"github.com/rudderlabs/rudder-server/utils/logger"
@@ -155,7 +154,6 @@ func initRouter() {
 	config.Reset()
 	admin.Init()
 	logger.Reset()
-	destinationdebugger.Init()
 	misc.Init()
 	Init()
 	InitRouterAdmin()

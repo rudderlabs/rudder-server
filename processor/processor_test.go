@@ -29,7 +29,6 @@ import (
 	"github.com/rudderlabs/rudder-server/processor/integrations"
 	"github.com/rudderlabs/rudder-server/processor/stash"
 	"github.com/rudderlabs/rudder-server/processor/transformer"
-	destinationdebugger "github.com/rudderlabs/rudder-server/services/debugger/destination"
 	transformationdebugger "github.com/rudderlabs/rudder-server/services/debugger/transformation"
 	"github.com/rudderlabs/rudder-server/services/dedup"
 	"github.com/rudderlabs/rudder-server/services/fileuploader"
@@ -315,7 +314,6 @@ func initProcessor() {
 	dedup.Init()
 	misc.Init()
 	integrations.Init()
-	destinationdebugger.Init()
 	transformationdebugger.Init()
 	Init()
 }
