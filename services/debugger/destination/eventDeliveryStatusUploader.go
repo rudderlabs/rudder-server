@@ -84,6 +84,10 @@ func RecordEventDeliveryStatus(destinationID string, deliveryStatus *DeliverySta
 	return _instance.RecordEventDeliveryStatus(destinationID, deliveryStatus)
 }
 
+func HasUploadEnabled(destID string) bool {
+	return _instance.HasUploadEnabled(destID)
+}
+
 func (h *Handle) Start(backendConfig backendconfig.BackendConfig) {
 	url := fmt.Sprintf("%s/dataplane/v2/eventUploads", h.configBackendURL)
 	eventUploader := NewEventDeliveryStatusUploader(h.log)

@@ -791,7 +791,6 @@ func recordEventDeliveryStatus(jobsByDestID map[string][]*jobsdb.JobT) {
 				}
 				destinationdebugger.RecordEventDeliveryStatus(destID, &deliveryStatus)
 			}
-
 		}
 	}
 }
