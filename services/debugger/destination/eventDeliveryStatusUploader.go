@@ -55,15 +55,10 @@ func NewHandle(opts ...Opt) *Handle {
 		configBackendURL: config.GetString("CONFIG_BACKEND_URL", "https://api.rudderstack.com"),
 		log:              logger.NewLogger().Child("debugger").Child("destination"),
 	}
-	ctx, cancel := context.WithCancel(context.Background())
-	h.ctx = ctx
-	h.cancel = cancel
-	h.done = make(chan struct{})
 
 	cacheType := cache.CacheType(config.GetInt("DestinationDebugger.cacheType", int(cache.BadgerCacheType)))
 	h.eventsDeliveryCache = cache.New[*DeliveryStatusT](cacheType, "destination", h.log)
 	config.RegisterBoolConfigVariable(false, &h.disableEventDeliveryStatusUploads, true, "DestinationDebugger.disableEventDeliveryStatusUploads")
-	h.initialized = make(chan struct{})
 	for _, opt := range opts {
 		opt(h)
 	}
@@ -93,6 +88,13 @@ func (h *Handle) Start(backendConfig backendconfig.BackendConfig) {
 	eventUploader := NewEventDeliveryStatusUploader(h.log)
 	h.uploader = debugger.New[*DeliveryStatusT](url, eventUploader)
 	h.uploader.Start()
+
+	h.log.Infof("Destination debugger started")
+	ctx, cancel := context.WithCancel(context.Background())
+	h.ctx = ctx
+	h.cancel = cancel
+	h.initialized = make(chan struct{})
+	h.done = make(chan struct{})
 
 	rruntime.Go(func() {
 		h.backendConfigSubscriber(backendConfig)
@@ -195,6 +197,7 @@ func (h *Handle) backendConfigSubscriber(backendConfig backendconfig.BackendConf
 			close(h.initialized)
 		}
 	}
+	h.log.Infof("[Destination live events] Stopping destination live events")
 	close(h.done)
 }
 

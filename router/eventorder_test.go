@@ -148,8 +148,6 @@ func TestEventOrderGuarantee(t *testing.T) {
 			config.Set("DestinationDebugger.origin", "event_order_destination_"+trand.String(100))
 			config.Set("TransformerDebugger.origin", "event_order_transformer_"+trand.String(100))
 
-			defer config.Reset()
-
 			// find free port for gateway http server to listen on
 			httpPortInt, err := testhelper.GetFreePort()
 			require.NoError(t, err)

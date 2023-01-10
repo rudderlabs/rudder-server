@@ -61,15 +61,10 @@ func NewHandle(opts ...Opt) *Handle {
 		configBackendURL: config.GetString("CONFIG_BACKEND_URL", "https://api.rudderstack.com"),
 		log:              logger.NewLogger().Child("debugger").Child("source"),
 	}
-	ctx, cancel := context.WithCancel(context.Background())
-	h.ctx = ctx
-	h.cancel = cancel
-	h.done = make(chan struct{})
 
 	cacheType := cache.CacheType(config.GetInt("SourceDebugger.cacheType", int(cache.BadgerCacheType)))
 	h.eventsCache = cache.New[[]byte](cacheType, "source", h.log)
 	config.RegisterBoolConfigVariable(false, &h.disableEventUploads, true, "SourceDebugger.disableEventUploads")
-	h.initialized = make(chan struct{})
 	for _, opt := range opts {
 		opt(h)
 	}
@@ -96,6 +91,12 @@ func (h *Handle) Start(backendConfig backendconfig.BackendConfig) {
 	eventUploader := NewEventUploader(h.log)
 	h.uploader = debugger.New[*GatewayEventBatchT](url, eventUploader)
 	h.uploader.Start()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	h.ctx = ctx
+	h.cancel = cancel
+	h.done = make(chan struct{})
+	h.initialized = make(chan struct{})
 
 	rruntime.Go(func() {
 		h.backendConfigSubscriber(backendConfig)
