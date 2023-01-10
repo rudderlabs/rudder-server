@@ -327,7 +327,7 @@ func TestPostToWarehouse(t *testing.T) {
 			responseBody: "OK",
 			responseCode: http.StatusOK,
 
-			expectedPayload: `{"WorkspaceID":"test-workspace","Schema":{"tracks":{"id":"string"}},"BatchDestination":{"Source":{"ID":"","Name":"","SourceDefinition":{"ID":"","Name":"","Category":""},"Config":null,"Enabled":false,"WorkspaceID":"","Destinations":null,"WriteKey":"","DgSourceTrackingPlanConfig":{"sourceId":"","version":0,"config":null,"mergedConfig":null,"deleted":false,"trackingPlan":{"id":"","version":0}},"Transient":false},"Destination":{"ID":"","Name":"","DestinationDefinition":{"ID":"","Name":"","DisplayName":"","Config":null,"ResponseRules":null},"Config":null,"Enabled":false,"WorkspaceID":"","Transformations":null,"IsProcessorEnabled":false,"RevisionID":""}},"Location":"","FirstEventAt":"","LastEventAt":"","TotalEvents":1,"TotalBytes":200,"UseRudderStorage":false,"DestinationRevisionID":"","SourceBatchID":"","SourceTaskID":"","SourceTaskRunID":"","SourceJobID":"","SourceJobRunID":"","TimeWindow":"0001-01-01T00:00:00Z"}`,
+			expectedPayload: `{"WorkspaceID":"test-workspace","Schema":{"tracks":{"id":"string"}},"BatchDestination":{"Source":{"ID":""},"Destination":{"ID":""}},"Location":"","FirstEventAt":"","LastEventAt":"","TotalEvents":1,"TotalBytes":200,"UseRudderStorage":false,"DestinationRevisionID":"","SourceBatchID":"","SourceTaskID":"","SourceTaskRunID":"","SourceJobID":"","SourceJobRunID":"","TimeWindow":"0001-01-01T00:00:00Z"}`,
 		},
 		{
 			name: "should fail to post to warehouse",

@@ -10,15 +10,40 @@ import (
 	"time"
 
 	"github.com/rudderlabs/rudder-server/utils/httputil"
-	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
 const defaultTimeout = 10 * time.Second
 
+// StagingFile contains the require metadata to process a staging file.
 type StagingFile struct {
-	WorkspaceID           string
-	Schema                map[string]map[string]interface{}
-	BatchDestination      warehouseutils.DestinationT
+	WorkspaceID   string
+	SourceID      string
+	DestinationID string
+	Location      string
+
+	Schema map[string]map[string]interface{}
+
+	FirstEventAt          string
+	LastEventAt           string
+	TotalEvents           int
+	TotalBytes            int
+	UseRudderStorage      bool
+	DestinationRevisionID string
+	// cloud sources specific info
+	SourceBatchID   string
+	SourceTaskID    string
+	SourceTaskRunID string
+	SourceJobID     string
+	SourceJobRunID  string
+	TimeWindow      time.Time
+}
+
+// legacyPayload is used to maintain backwards compatibility with the /v1 endpoint.
+type legacyPayload struct {
+	WorkspaceID      string
+	Schema           map[string]map[string]interface{}
+	BatchDestination stagingFileBatchDestination
+
 	Location              string
 	FirstEventAt          string
 	LastEventAt           string
@@ -33,6 +58,11 @@ type StagingFile struct {
 	SourceJobID     string
 	SourceJobRunID  string
 	TimeWindow      time.Time
+}
+
+type stagingFileBatchDestination struct {
+	Source      struct{ ID string }
+	Destination struct{ ID string }
 }
 
 type Warehouse struct {
@@ -62,7 +92,29 @@ func NewWarehouse(baseURL string, opts ...WarehouseOpts) *Warehouse {
 }
 
 func (warehouse *Warehouse) Process(ctx context.Context, stagingFile StagingFile) error {
-	jsonPayload, err := json.Marshal(stagingFile)
+	legacy := legacyPayload{
+		WorkspaceID: stagingFile.WorkspaceID,
+		Schema:      stagingFile.Schema,
+		BatchDestination: stagingFileBatchDestination{
+			Source:      struct{ ID string }{ID: stagingFile.SourceID},
+			Destination: struct{ ID string }{ID: stagingFile.DestinationID},
+		},
+		Location:              stagingFile.Location,
+		FirstEventAt:          stagingFile.FirstEventAt,
+		LastEventAt:           stagingFile.LastEventAt,
+		TotalEvents:           stagingFile.TotalEvents,
+		TotalBytes:            stagingFile.TotalBytes,
+		UseRudderStorage:      stagingFile.UseRudderStorage,
+		DestinationRevisionID: stagingFile.DestinationRevisionID,
+		SourceBatchID:         stagingFile.SourceBatchID,
+		SourceTaskID:          stagingFile.SourceTaskID,
+		SourceTaskRunID:       stagingFile.SourceTaskRunID,
+		SourceJobID:           stagingFile.SourceJobID,
+		SourceJobRunID:        stagingFile.SourceJobRunID,
+		TimeWindow:            stagingFile.TimeWindow,
+	}
+
+	jsonPayload, err := json.Marshal(legacy)
 	if err != nil {
 		return fmt.Errorf("marshaling staging file: %w", err)
 	}

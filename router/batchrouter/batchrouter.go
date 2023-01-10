@@ -1102,12 +1102,10 @@ func (brt *HandleT) postToWarehouse(batchJobs *BatchJobsT, output StorageUploadO
 	}
 
 	payload := client.StagingFile{
-		WorkspaceID: batchJobs.Jobs[0].WorkspaceId,
-		Schema:      schemaMap,
-		BatchDestination: warehouseutils.DestinationT{
-			Source:      batchJobs.BatchDestination.Source,
-			Destination: batchJobs.BatchDestination.Destination,
-		},
+		WorkspaceID:           batchJobs.Jobs[0].WorkspaceId,
+		Schema:                schemaMap,
+		SourceID:              batchJobs.BatchDestination.Source.ID,
+		DestinationID:         batchJobs.BatchDestination.Destination.ID,
 		Location:              output.Key,
 		FirstEventAt:          output.FirstEventAt,
 		LastEventAt:           output.LastEventAt,

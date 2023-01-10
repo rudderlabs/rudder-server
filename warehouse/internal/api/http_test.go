@@ -58,15 +58,27 @@ func TestAPI_Process(t *testing.T) {
 	body := loadFile(t, "./testdata/process_request.json")
 	expectedStagingFile := model.StagingFileWithSchema{
 		StagingFile: model.StagingFile{
+			ID:                    0,
 			WorkspaceID:           "279L3V7FSpx43LaNJ0nIs9KRaNC",
 			Location:              "rudder-warehouse-staging-logs/279L3gEKqwruBoKGsXZtSVX7vIy/2022-11-08/1667913810.279L3gEKqwruBoKGsXZtSVX7vIy.7a6e7785-7a75-4345-8d3c-d7a1ce49a43f.json.gz",
 			SourceID:              "279L3gEKqwruBoKGsXZtSVX7vIy",
 			DestinationID:         "27CHciD6leAhurSyFAeN4dp14qZ",
-			DestinationRevisionID: "2H1cLBvL3v0prRBNzpe8D34XTzU",
+			Status:                "",
+			Error:                 nil,
 			FirstEventAt:          time.Date(2022, time.November, 8, 13, 23, 7, 0, time.UTC),
 			LastEventAt:           time.Date(2022, time.November, 8, 13, 23, 7, 0, time.UTC),
+			UseRudderStorage:      false,
+			DestinationRevisionID: "2H1cLBvL3v0prRBNzpe8D34XTzU",
 			TotalEvents:           2,
 			TotalBytes:            2000,
+			SourceBatchID:         "<source-batch-id>",
+			SourceTaskID:          "<source-task-id>",
+			SourceTaskRunID:       "<source-task-run-id>",
+			SourceJobID:           "<source-job-id>",
+			SourceJobRunID:        "<source-job-run-id>",
+			TimeWindow:            time.Date(1, 1, 1, 0, 40, 0, 0, time.UTC),
+			CreatedAt:             time.Time{},
+			UpdatedAt:             time.Time{},
 		},
 		Schema: json.RawMessage("{\"product_track\":{\"context_destination_id\":\"string\",\"context_destination_type\":\"string\",\"context_ip\":\"string\",\"context_library_name\":\"string\",\"context_passed_ip\":\"string\",\"context_request_ip\":\"string\",\"context_source_id\":\"string\",\"context_source_type\":\"string\",\"event\":\"string\",\"event_text\":\"string\",\"id\":\"string\",\"original_timestamp\":\"datetime\",\"product_id\":\"string\",\"rating\":\"int\",\"received_at\":\"datetime\",\"revenue\":\"float\",\"review_body\":\"string\",\"review_id\":\"string\",\"sent_at\":\"datetime\",\"timestamp\":\"datetime\",\"user_id\":\"string\",\"uuid_ts\":\"datetime\"},\"tracks\":{\"context_destination_id\":\"string\",\"context_destination_type\":\"string\",\"context_ip\":\"string\",\"context_library_name\":\"string\",\"context_passed_ip\":\"string\",\"context_request_ip\":\"string\",\"context_source_id\":\"string\",\"context_source_type\":\"string\",\"event\":\"string\",\"event_text\":\"string\",\"id\":\"string\",\"original_timestamp\":\"datetime\",\"received_at\":\"datetime\",\"sent_at\":\"datetime\",\"timestamp\":\"datetime\",\"user_id\":\"string\",\"uuid_ts\":\"datetime\"}}"),
 	}
