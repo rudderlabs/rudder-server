@@ -100,13 +100,14 @@ var primaryKeyMap = map[string]string{
 }
 
 type Handle struct {
-	databricksClient       *databricks.DatabricksClient
+	DatabricksClient       *databricks.DatabricksClient
 	Namespace              string
 	ObjectStorage          string
 	Warehouse              warehouseutils.Warehouse
 	Uploader               warehouseutils.UploaderI
 	ConnectTimeout         time.Duration
 	Logger                 logger.Logger
+	Stats                  stats.Stats
 	Schema                 string
 	SparkServerType        string
 	AuthMech               string
@@ -129,6 +130,7 @@ func Init() {
 func NewHandle() *Handle {
 	return &Handle{
 		Logger: pkgLogger,
+		Stats:  stats.Default,
 	}
 }
 
@@ -231,7 +233,7 @@ func (dl *Handle) DatabricksHandle(cred *databricks.Credentials, connectTimeout 
 	// Creating grpc connection using timeout context
 	conn, err := grpc.DialContext(tCtx, GetDatabricksConnectorURL(), grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithBlock())
 	if err == context.DeadlineExceeded {
-		execTimeouts := stats.Default.NewStat("warehouse.deltalake.grpcTimeouts", stats.CountType)
+		execTimeouts := dl.Stats.NewStat("warehouse.deltalake.grpcTimeouts", stats.CountType)
 		execTimeouts.Count(1)
 
 		err = fmt.Errorf("connection timed out to Delta lake: %w", err)
@@ -281,7 +283,7 @@ func (*Handle) DeleteBy([]string, warehouseutils.DeleteByParams) error {
 
 // fetchTables fetch tables with tableNames
 func (dl *Handle) fetchTables(dbT *databricks.DatabricksClient, schema string) (tableNames []string, err error) {
-	fetchTablesExecTime := stats.Default.NewTaggedStat("warehouse.deltalake.grpcExecTime", stats.TimerType, stats.Tags{
+	fetchTablesExecTime := dl.Stats.NewTaggedStat("warehouse.deltalake.grpcExecTime", stats.TimerType, stats.Tags{
 		"workspaceId": dl.Warehouse.WorkspaceID,
 		"destination": dl.Warehouse.Destination.ID,
 		"destType":    dl.Warehouse.Type,
@@ -341,7 +343,7 @@ func (dl *Handle) partitionQuery(tableName string) (string, error) {
 		return "", nil
 	}
 
-	partitionColumns, err := dl.fetchPartitionColumns(dl.databricksClient, tableName)
+	partitionColumns, err := dl.fetchPartitionColumns(dl.DatabricksClient, tableName)
 	if err != nil {
 		return "", fmt.Errorf("failed to prepare partition query, error: %w", err)
 	}
@@ -366,7 +368,7 @@ func (dl *Handle) partitionQuery(tableName string) (string, error) {
 
 // ExecuteSQL executes sql using grpc Client
 func (dl *Handle) ExecuteSQL(sqlStatement, queryType string) (err error) {
-	execSqlStatTime := stats.Default.NewTaggedStat("warehouse.deltalake.grpcExecTime", stats.TimerType, stats.Tags{
+	execSqlStatTime := dl.Stats.NewTaggedStat("warehouse.deltalake.grpcExecTime", stats.TimerType, stats.Tags{
 		"workspaceId": dl.Warehouse.WorkspaceID,
 		"destination": dl.Warehouse.Destination.ID,
 		"destType":    dl.Warehouse.Type,
@@ -378,7 +380,7 @@ func (dl *Handle) ExecuteSQL(sqlStatement, queryType string) (err error) {
 	execSqlStatTime.Start()
 	defer execSqlStatTime.End()
 
-	err = dl.ExecuteSQLClient(dl.databricksClient, sqlStatement)
+	err = dl.ExecuteSQLClient(dl.DatabricksClient, sqlStatement)
 	return
 }
 
@@ -401,7 +403,7 @@ func (*Handle) ExecuteSQLClient(client *databricks.DatabricksClient, sqlStatemen
 
 // schemaExists checks it schema exists or not.
 func (dl *Handle) schemaExists(schemaName string) (exists bool, err error) {
-	fetchSchemasExecTime := stats.Default.NewTaggedStat("warehouse.deltalake.grpcExecTime", stats.TimerType, stats.Tags{
+	fetchSchemasExecTime := dl.Stats.NewTaggedStat("warehouse.deltalake.grpcExecTime", stats.TimerType, stats.Tags{
 		"workspaceId": dl.Warehouse.WorkspaceID,
 		"destination": dl.Warehouse.Destination.ID,
 		"destType":    dl.Warehouse.Type,
@@ -414,9 +416,9 @@ func (dl *Handle) schemaExists(schemaName string) (exists bool, err error) {
 	defer fetchSchemasExecTime.End()
 
 	sqlStatement := fmt.Sprintf(`SHOW SCHEMAS LIKE '%s';`, schemaName)
-	fetchSchemasResponse, err := dl.databricksClient.Client.FetchSchemas(dl.databricksClient.Context, &proto.FetchSchemasRequest{
-		Config:       dl.databricksClient.CredConfig,
-		Identifier:   dl.databricksClient.CredIdentifier,
+	fetchSchemasResponse, err := dl.DatabricksClient.Client.FetchSchemas(dl.DatabricksClient.Context, &proto.FetchSchemasRequest{
+		Config:       dl.DatabricksClient.CredConfig,
+		Identifier:   dl.DatabricksClient.CredIdentifier,
 		SqlStatement: sqlStatement,
 	})
 	if err != nil {
@@ -440,7 +442,7 @@ func (dl *Handle) createSchema() (err error) {
 
 // dropStagingTables drops staging tables
 func (dl *Handle) dropStagingTables(tableNames []string) {
-	dropTablesExecTime := stats.Default.NewTaggedStat("warehouse.deltalake.grpcExecTime", stats.TimerType, stats.Tags{
+	dropTablesExecTime := dl.Stats.NewTaggedStat("warehouse.deltalake.grpcExecTime", stats.TimerType, stats.Tags{
 		"workspaceId": dl.Warehouse.WorkspaceID,
 		"destination": dl.Warehouse.Destination.ID,
 		"destType":    dl.Warehouse.Type,
@@ -455,9 +457,9 @@ func (dl *Handle) dropStagingTables(tableNames []string) {
 	for _, stagingTableName := range tableNames {
 		dl.Logger.Infof("%s Dropping table %+v\n", dl.GetLogIdentifier(), stagingTableName)
 		sqlStatement := fmt.Sprintf(`DROP TABLE %[1]s.%[2]s;`, dl.Namespace, stagingTableName)
-		dropTableResponse, err := dl.databricksClient.Client.Execute(dl.databricksClient.Context, &proto.ExecuteRequest{
-			Config:       dl.databricksClient.CredConfig,
-			Identifier:   dl.databricksClient.CredIdentifier,
+		dropTableResponse, err := dl.DatabricksClient.Client.Execute(dl.DatabricksClient.Context, &proto.ExecuteRequest{
+			Config:       dl.DatabricksClient.CredConfig,
+			Identifier:   dl.DatabricksClient.CredIdentifier,
 			SqlStatement: sqlStatement,
 		})
 		if err != nil {
@@ -787,7 +789,7 @@ func (dl *Handle) getTableLocationSql(tableName string) (tableLocation string) {
 // dropDanglingStagingTables drop dandling staging tables.
 func (dl *Handle) dropDanglingStagingTables() {
 	// Fetching the staging tables
-	tableNames, err := dl.fetchTables(dl.databricksClient, dl.Namespace)
+	tableNames, err := dl.fetchTables(dl.DatabricksClient, dl.Namespace)
 	if err != nil {
 		return
 	}
@@ -814,7 +816,7 @@ func (dl *Handle) connectToWarehouse() (databricksHandle *databricks.DatabricksC
 		Path:  warehouseutils.GetConfigValue(Path, dl.Warehouse),
 		Token: warehouseutils.GetConfigValue(Token, dl.Warehouse),
 	}
-	connStat := stats.Default.NewTaggedStat("warehouse.deltalake.grpcExecTime", stats.TimerType, stats.Tags{
+	connStat := dl.Stats.NewTaggedStat("warehouse.deltalake.grpcExecTime", stats.TimerType, stats.Tags{
 		"workspaceId": dl.Warehouse.WorkspaceID,
 		"destination": dl.Warehouse.Destination.ID,
 		"destType":    dl.Warehouse.Type,
@@ -826,7 +828,7 @@ func (dl *Handle) connectToWarehouse() (databricksHandle *databricks.DatabricksC
 	connStat.Start()
 	defer connStat.End()
 
-	closeConnStat := stats.Default.NewTaggedStat("warehouse.deltalake.grpcExecTime", stats.TimerType, stats.Tags{
+	closeConnStat := dl.Stats.NewTaggedStat("warehouse.deltalake.grpcExecTime", stats.TimerType, stats.Tags{
 		"workspaceId": dl.Warehouse.WorkspaceID,
 		"destination": dl.Warehouse.Destination.ID,
 		"destType":    dl.Warehouse.Type,
@@ -869,9 +871,9 @@ func (dl *Handle) CreateTable(tableName string, columns map[string]string) (err 
 func (dl *Handle) DropTable(tableName string) (err error) {
 	dl.Logger.Infof("%s Dropping table %s", dl.GetLogIdentifier(), tableName)
 	sqlStatement := fmt.Sprintf(`DROP TABLE %[1]s.%[2]s;`, dl.Namespace, tableName)
-	dropTableResponse, err := dl.databricksClient.Client.Execute(dl.databricksClient.Context, &proto.ExecuteRequest{
-		Config:       dl.databricksClient.CredConfig,
-		Identifier:   dl.databricksClient.CredIdentifier,
+	dropTableResponse, err := dl.DatabricksClient.Client.Execute(dl.DatabricksClient.Context, &proto.ExecuteRequest{
+		Config:       dl.DatabricksClient.CredConfig,
+		Identifier:   dl.DatabricksClient.CredIdentifier,
 		SqlStatement: sqlStatement,
 	})
 	if err != nil {
@@ -963,7 +965,7 @@ func (dl *Handle) FetchSchema(warehouse warehouseutils.Warehouse) (schema, unrec
 		filteredTablesNames = append(filteredTablesNames, tableName)
 	}
 
-	fetchTablesAttributesExecTime := stats.Default.NewTaggedStat("warehouse.deltalake.grpcExecTime", stats.TimerType, stats.Tags{
+	fetchTablesAttributesExecTime := dl.Stats.NewTaggedStat("warehouse.deltalake.grpcExecTime", stats.TimerType, stats.Tags{
 		"workspaceId": dl.Warehouse.WorkspaceID,
 		"destination": dl.Warehouse.Destination.ID,
 		"destType":    dl.Warehouse.Type,
@@ -1021,22 +1023,22 @@ func (dl *Handle) Setup(warehouse warehouseutils.Warehouse, uploader warehouseut
 	dl.Uploader = uploader
 	dl.ObjectStorage = warehouseutils.ObjectStorageType(warehouseutils.DELTALAKE, warehouse.Destination.Config, dl.Uploader.UseRudderStorage())
 
-	dl.databricksClient, err = dl.connectToWarehouse()
+	dl.DatabricksClient, err = dl.connectToWarehouse()
 	return err
 }
 
 // TestConnection test the connection for the warehouse
 func (dl *Handle) TestConnection(warehouse warehouseutils.Warehouse) (err error) {
 	dl.Warehouse = warehouse
-	dl.databricksClient, err = dl.connectToWarehouse()
+	dl.DatabricksClient, err = dl.connectToWarehouse()
 	return
 }
 
 // Cleanup handle cleanup when upload is done.
 func (dl *Handle) Cleanup() {
-	if dl.databricksClient != nil {
+	if dl.DatabricksClient != nil {
 		dl.dropDanglingStagingTables()
-		dl.databricksClient.Close()
+		dl.DatabricksClient.Close()
 	}
 }
 
@@ -1044,11 +1046,11 @@ func (dl *Handle) Cleanup() {
 func (dl *Handle) CrashRecover(warehouse warehouseutils.Warehouse) (err error) {
 	dl.Warehouse = warehouse
 	dl.Namespace = warehouse.Namespace
-	dl.databricksClient, err = dl.connectToWarehouse()
+	dl.DatabricksClient, err = dl.connectToWarehouse()
 	if err != nil {
 		return err
 	}
-	defer dl.databricksClient.Close()
+	defer dl.DatabricksClient.Close()
 	dl.dropDanglingStagingTables()
 	return
 }
@@ -1086,7 +1088,7 @@ func (*Handle) DownloadIdentityRules(*misc.GZipWriter) (err error) {
 
 // GetTotalCountInTable returns total count in tables.
 func (dl *Handle) GetTotalCountInTable(ctx context.Context, tableName string) (total int64, err error) {
-	fetchTotalCountExecTime := stats.Default.NewTaggedStat("warehouse.deltalake.grpcExecTime", stats.TimerType, stats.Tags{
+	fetchTotalCountExecTime := dl.Stats.NewTaggedStat("warehouse.deltalake.grpcExecTime", stats.TimerType, stats.Tags{
 		"workspaceId": dl.Warehouse.WorkspaceID,
 		"destination": dl.Warehouse.Destination.ID,
 		"destType":    dl.Warehouse.Type,
@@ -1099,9 +1101,9 @@ func (dl *Handle) GetTotalCountInTable(ctx context.Context, tableName string) (t
 	defer fetchTotalCountExecTime.End()
 
 	sqlStatement := fmt.Sprintf(`SELECT COUNT(*) FROM %[1]s.%[2]s;`, dl.Namespace, tableName)
-	response, err := dl.databricksClient.Client.FetchTotalCountInTable(ctx, &proto.FetchTotalCountInTableRequest{
-		Config:       dl.databricksClient.CredConfig,
-		Identifier:   dl.databricksClient.CredIdentifier,
+	response, err := dl.DatabricksClient.Client.FetchTotalCountInTable(ctx, &proto.FetchTotalCountInTableRequest{
+		Config:       dl.DatabricksClient.CredConfig,
+		Identifier:   dl.DatabricksClient.CredIdentifier,
 		SqlStatement: sqlStatement,
 	})
 	if err != nil {
@@ -1203,7 +1205,7 @@ func (dl *Handle) LoadTestTable(location, tableName string, _ map[string]interfa
 		)
 	}
 
-	err = dl.ExecuteSQLClient(dl.databricksClient, sqlStatement)
+	err = dl.ExecuteSQLClient(dl.DatabricksClient, sqlStatement)
 	return
 }
 
