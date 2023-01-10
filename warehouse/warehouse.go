@@ -2085,7 +2085,8 @@ func Start(ctx context.Context, app app.App) error {
 	}
 
 	if isStandAlone() && isMaster() {
-		destinationdebugger.Setup(backendconfig.DefaultBackendConfig)
+		destinationdebugger.Start(backendconfig.DefaultBackendConfig)
+		defer destinationdebugger.Stop()
 
 		// Report warehouse features
 		g.Go(func() error {
