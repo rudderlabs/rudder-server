@@ -28,78 +28,117 @@ type DeliveryStatusT struct {
 	EventType     string          `json:"eventType"`
 }
 
-var (
-	uploadEnabledDestinationIDs map[string]bool
-	configSubscriberLock        sync.RWMutex
-)
+type Opt func(*Handle)
 
-var uploader debugger.Uploader[*DeliveryStatusT]
-
-var (
+type Handle struct {
 	configBackendURL                  string
+	log                               logger.Logger
 	disableEventDeliveryStatusUploads bool
 	eventsDeliveryCache               cache.Cache[*DeliveryStatusT]
-	cachetype                         int
-	origin                            string
-)
-
-var pkgLogger logger.Logger
-
-func Init() {
-	loadConfig()
-	pkgLogger = logger.NewLogger().Child("debugger").Child("destination")
-	eventsDeliveryCache = cache.New[*DeliveryStatusT](cache.CacheType(cachetype), origin, pkgLogger)
+	uploader                          debugger.Uploader[*DeliveryStatusT]
+	uploadEnabledDestinationIDs       map[string]bool
+	configSubscriberLock              sync.RWMutex
+	ctx                               context.Context
+	cancel                            func()
+	initialized                       chan struct{}
+	done                              chan struct{}
 }
 
-func loadConfig() {
-	configBackendURL = config.GetString("CONFIG_BACKEND_URL", "https://api.rudderstack.com")
-	config.RegisterBoolConfigVariable(false, &disableEventDeliveryStatusUploads, true, "DestinationDebugger.disableEventDeliveryStatusUploads")
-	config.RegisterIntConfigVariable(1, &cachetype, true, 1, "DestinationDebugger.cacheType")
-	config.RegisterStringConfigVariable("destination", &origin, true, "DestinationDebugger.origin")
+var WithDisableEventUploads = func(disableEventDeliveryStatusUploads bool) func(h *Handle) {
+	return func(h *Handle) {
+		h.disableEventDeliveryStatusUploads = disableEventDeliveryStatusUploads
+	}
 }
 
-type EventDeliveryStatusUploader struct{}
+func NewHandle(opts ...Opt) *Handle {
+	h := &Handle{
+		configBackendURL: config.GetString("CONFIG_BACKEND_URL", "https://api.rudderstack.com"),
+		log:              logger.NewLogger().Child("debugger").Child("destination"),
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	h.ctx = ctx
+	h.cancel = cancel
+	h.done = make(chan struct{})
 
-// RecordEventDeliveryStatus is used to put the delivery status in the deliveryStatusesBatchChannel,
-// which will be processed by handleJobs.
+	cacheType := cache.CacheType(config.GetInt("DestinationDebugger.cacheType", int(cache.BadgerCacheType)))
+	h.eventsDeliveryCache = cache.New[*DeliveryStatusT](cacheType, "destination", h.log)
+	config.RegisterBoolConfigVariable(false, &h.disableEventDeliveryStatusUploads, true, "DestinationDebugger.disableEventDeliveryStatusUploads")
+	h.initialized = make(chan struct{})
+	for _, opt := range opts {
+		opt(h)
+	}
+	return h
+}
+
+var _instance = NewHandle()
+
+func Start(backendConfig backendconfig.BackendConfig) {
+	_instance.Start(backendConfig)
+}
+
+func Stop() {
+	_instance.Stop()
+}
+
 func RecordEventDeliveryStatus(destinationID string, deliveryStatus *DeliveryStatusT) bool {
-	// if disableEventDeliveryStatusUploads is true, return;
-	if disableEventDeliveryStatusUploads {
-		return false
-	}
-
-	// Check if destinationID part of enabled destinations, if not then push the job in cache to keep track
-	configSubscriberLock.RLock()
-	defer configSubscriberLock.RUnlock()
-	if !HasUploadEnabled(destinationID) {
-		eventsDeliveryCache.Update(destinationID, deliveryStatus)
-		return false
-	}
-
-	uploader.RecordEvent(deliveryStatus)
-	return true
+	return _instance.RecordEventDeliveryStatus(destinationID, deliveryStatus)
 }
 
-func HasUploadEnabled(destID string) bool {
-	configSubscriberLock.RLock()
-	defer configSubscriberLock.RUnlock()
-	_, ok := uploadEnabledDestinationIDs[destID]
-	return ok
-}
-
-// Setup initializes this module
-func Setup(backendConfig backendconfig.BackendConfig) {
-	url := fmt.Sprintf("%s/dataplane/v2/eventDeliveryStatus", configBackendURL)
-	eventDeliveryStatusUploader := &EventDeliveryStatusUploader{}
-	uploader = debugger.New[*DeliveryStatusT](url, eventDeliveryStatusUploader)
-	uploader.Start()
+func (h *Handle) Start(backendConfig backendconfig.BackendConfig) {
+	url := fmt.Sprintf("%s/dataplane/v2/eventUploads", h.configBackendURL)
+	eventUploader := NewEventDeliveryStatusUploader(h.log)
+	h.uploader = debugger.New[*DeliveryStatusT](url, eventUploader)
+	h.uploader.Start()
 
 	rruntime.Go(func() {
-		backendConfigSubscriber(backendConfig)
+		h.backendConfigSubscriber(backendConfig)
 	})
 }
 
-func (*EventDeliveryStatusUploader) Transform(deliveryStatusesBuffer []*DeliveryStatusT) ([]byte, error) {
+func (h *Handle) Stop() {
+	h.cancel()
+	<-h.done
+	if h.eventsDeliveryCache != nil {
+		_ = h.eventsDeliveryCache.Stop()
+	}
+}
+
+func NewEventDeliveryStatusUploader(log logger.Logger) *EventDeliveryStatusUploader {
+	return &EventDeliveryStatusUploader{log: log}
+}
+
+type EventDeliveryStatusUploader struct {
+	log logger.Logger
+}
+
+// RecordEventDeliveryStatus is used to put the delivery status in the deliveryStatusesBatchChannel,
+// which will be processed by handleJobs.
+func (h *Handle) RecordEventDeliveryStatus(destinationID string, deliveryStatus *DeliveryStatusT) bool {
+	// if disableEventDeliveryStatusUploads is true, return;
+	if h.disableEventDeliveryStatusUploads {
+		return false
+	}
+	<-h.initialized
+	// Check if destinationID part of enabled destinations, if not then push the job in cache to keep track
+	h.configSubscriberLock.RLock()
+	defer h.configSubscriberLock.RUnlock()
+	if !h.hasUploadEnabled(destinationID) {
+		h.eventsDeliveryCache.Update(destinationID, deliveryStatus)
+		return false
+	}
+
+	h.uploader.RecordEvent(deliveryStatus)
+	return true
+}
+
+func (h *Handle) hasUploadEnabled(destID string) bool {
+	h.configSubscriberLock.RLock()
+	defer h.configSubscriberLock.RUnlock()
+	_, ok := h.uploadEnabledDestinationIDs[destID]
+	return ok
+}
+
+func (e *EventDeliveryStatusUploader) Transform(deliveryStatusesBuffer []*DeliveryStatusT) ([]byte, error) {
 	res := make(map[string]interface{})
 	res["version"] = "v2"
 	for _, job := range deliveryStatusesBuffer {
@@ -113,16 +152,15 @@ func (*EventDeliveryStatusUploader) Transform(deliveryStatusesBuffer []*Delivery
 
 	rawJSON, err := json.Marshal(res)
 	if err != nil {
-		pkgLogger.Errorf("[Destination live events] Failed to marshal payload. Err: %v", err)
+		e.log.Errorf("[Destination live events] Failed to marshal payload. Err: %v", err)
 		return nil, err
 	}
 
 	return rawJSON, nil
 }
 
-func updateConfig(config map[string]backendconfig.ConfigT) {
-	configSubscriberLock.Lock()
-	uploadEnabledDestinationIDs = make(map[string]bool)
+func (h *Handle) updateConfig(config map[string]backendconfig.ConfigT) {
+	uploadEnabledDestinationIDs := make(map[string]bool)
 	var uploadEnabledDestinationIdsList []string
 	for _, wConfig := range config {
 		for _, source := range wConfig.Sources {
@@ -136,22 +174,33 @@ func updateConfig(config map[string]backendconfig.ConfigT) {
 			}
 		}
 	}
-	recordHistoricEventsDelivery(uploadEnabledDestinationIdsList)
-	configSubscriberLock.Unlock()
+	h.configSubscriberLock.Lock()
+	h.uploadEnabledDestinationIDs = uploadEnabledDestinationIDs
+	h.configSubscriberLock.Unlock()
+
+	h.recordHistoricEventsDelivery(uploadEnabledDestinationIdsList)
 }
 
-func backendConfigSubscriber(backendConfig backendconfig.BackendConfig) {
-	configChannel := backendConfig.Subscribe(context.TODO(), "backendConfig")
+func (h *Handle) backendConfigSubscriber(backendConfig backendconfig.BackendConfig) {
+	configChannel := backendConfig.Subscribe(h.ctx, "backendConfig")
 	for c := range configChannel {
-		updateConfig(c.Data.(map[string]backendconfig.ConfigT))
+		h.updateConfig(c.Data.(map[string]backendconfig.ConfigT))
+		select {
+		case <-h.initialized:
+		default:
+			close(h.initialized)
+		}
 	}
+	close(h.done)
 }
 
-func recordHistoricEventsDelivery(destinationIDs []string) {
+func (h *Handle) recordHistoricEventsDelivery(destinationIDs []string) {
+	h.configSubscriberLock.RLock()
+	defer h.configSubscriberLock.RUnlock()
 	for _, destinationID := range destinationIDs {
-		historicEventsDelivery := eventsDeliveryCache.Read(destinationID)
+		historicEventsDelivery := h.eventsDeliveryCache.Read(destinationID)
 		for _, event := range historicEventsDelivery {
-			uploader.RecordEvent(event)
+			h.uploader.RecordEvent(event)
 		}
 	}
 }

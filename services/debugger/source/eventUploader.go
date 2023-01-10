@@ -130,7 +130,7 @@ func (h *Handle) RecordEvent(writeKey string, eventBatch []byte) bool {
 }
 
 func (h *Handle) updateConfig(config map[string]backendconfig.ConfigT) {
-	uploadEnabledWriteKeys := []string{}
+	var uploadEnabledWriteKeys []string
 	for _, wConfig := range config {
 		for _, source := range wConfig.Sources {
 			if source.Config != nil {
