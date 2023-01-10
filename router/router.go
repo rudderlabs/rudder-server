@@ -627,6 +627,14 @@ func (worker *workerT) processDestinationJobs() {
 				"messagesLength": strconv.Itoa(len(messages)),
 			}).Count(1)
 
+			// Tells us how big the batch size for single "/transformerBatch" request
+			stats.Default.NewTaggedStat("transformer_proxy_batch_messages_size", stats.CountType, stats.Tags{
+				"destType":       worker.rt.destName,
+				"workerId":       strconv.Itoa(worker.workerID),
+				"module":         "router",
+				"destJobsLength": strconv.Itoa(len(destJobChunk)),
+			}).Count(len(messages))
+
 			// Proxy Batch request to transformer
 			tfProxyBatchResponse := worker.rt.transformer.ProxyRequestBatch(context.TODO(), &transformer.TransformerProxyBatchParams{
 				ResponseData: proxyBatchPayload,
