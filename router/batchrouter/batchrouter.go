@@ -1149,7 +1149,7 @@ func (brt *HandleT) setJobStatus(batchJobs *BatchJobsT, isWarehouse bool, errOcc
 		batchJobState string
 		errorResp     []byte
 	)
-	batchRouterWorkspaceJobStatusCount := make(map[string]map[string]int)
+	batchRouterWorkspaceJobStatusCount := make(map[string]int)
 	var abortedEvents []*jobsdb.JobT
 	var batchReqMetric batchRequestMetric
 	if errOccurred != nil {
@@ -1274,13 +1274,8 @@ func (brt *HandleT) setJobStatus(batchJobs *BatchJobsT, isWarehouse bool, errOcc
 			errorCode := getBRTErrorCode(jobState)
 			var cd *types.ConnectionDetails
 			workspaceID := job.WorkspaceId
-			_, ok := batchRouterWorkspaceJobStatusCount[workspaceID]
-			if !ok {
-				batchRouterWorkspaceJobStatusCount[workspaceID] = make(map[string]int)
-			}
 			key := fmt.Sprintf("%s:%s:%s:%s:%s:%s:%s", parameters.SourceID, parameters.DestinationID, parameters.SourceBatchID, jobState, strconv.Itoa(errorCode), parameters.EventName, parameters.EventType)
-			_, ok = connectionDetailsMap[key]
-			if !ok {
+			if _, ok := connectionDetailsMap[key]; !ok {
 				cd = types.CreateConnectionDetail(parameters.SourceID, parameters.DestinationID, parameters.SourceBatchID, parameters.SourceTaskID, parameters.SourceTaskRunID, parameters.SourceJobID, parameters.SourceJobRunID, parameters.SourceDefinitionID, parameters.DestinationDefinitionID, parameters.SourceCategory)
 				connectionDetailsMap[key] = cd
 				transformedAtMap[key] = parameters.TransformAt
@@ -1299,7 +1294,7 @@ func (brt *HandleT) setJobStatus(batchJobs *BatchJobsT, isWarehouse bool, errOcc
 			}
 			if status.JobState != jobsdb.Failed.State {
 				if status.JobState == jobsdb.Succeeded.State || status.JobState == jobsdb.Aborted.State {
-					batchRouterWorkspaceJobStatusCount[workspaceID][parameters.DestinationID] += 1
+					batchRouterWorkspaceJobStatusCount[workspaceID] += 1
 				}
 				sd.Count++
 			}
@@ -1307,10 +1302,13 @@ func (brt *HandleT) setJobStatus(batchJobs *BatchJobsT, isWarehouse bool, errOcc
 		// REPORTING - END
 	}
 
-	for workspace := range batchRouterWorkspaceJobStatusCount {
-		for destID := range batchRouterWorkspaceJobStatusCount[workspace] {
-			metric.DecreasePendingEvents("batch_rt", workspace, brt.destType, float64(batchRouterWorkspaceJobStatusCount[workspace][destID]))
-		}
+	for workspace, jobCount := range batchRouterWorkspaceJobStatusCount {
+		metric.DecreasePendingEvents(
+			"batch_rt",
+			workspace,
+			brt.destType,
+			float64(jobCount),
+		)
 	}
 	// tracking batch router errors
 	if diagnostics.EnableDestinationFailuresMetric {
@@ -1766,7 +1764,12 @@ func (worker *workerT) workerProcess() {
 					"workspaceId": destDrainStat.Workspace,
 				})
 				brt.drainedJobsStat.Count(destDrainStat.Count)
-				metric.DecreasePendingEvents("batch_rt", destDrainStat.Workspace, brt.destType, float64(drainStatsbyDest[destID].Count))
+				metric.DecreasePendingEvents(
+					"batch_rt",
+					destDrainStat.Workspace,
+					brt.destType,
+					float64(destDrainStat.Count),
+				)
 			}
 		}
 		// Mark the jobs as executing
