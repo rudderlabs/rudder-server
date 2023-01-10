@@ -42,7 +42,6 @@ coverage:
 
 test-with-coverage: test coverage
 
-
 build: ## Build rudder-server binary
 	$(eval BUILD_OPTIONS = )
 ifeq ($(RACE_ENABLED), TRUE)
