@@ -45,7 +45,6 @@ import (
 	"github.com/rudderlabs/rudder-server/services/archiver"
 	"github.com/rudderlabs/rudder-server/services/controlplane"
 	"github.com/rudderlabs/rudder-server/services/db"
-	destinationdebugger "github.com/rudderlabs/rudder-server/services/debugger/destination"
 	transformationdebugger "github.com/rudderlabs/rudder-server/services/debugger/transformation"
 	"github.com/rudderlabs/rudder-server/services/dedup"
 	destinationconnectiontester "github.com/rudderlabs/rudder-server/services/destination-connection-tester"
@@ -331,7 +330,6 @@ func runAllInit() {
 	bigquery.Init()
 	clickhouse.Init()
 	archiver.Init()
-	destinationdebugger.Init()
 	pgnotifier.Init()
 	jobsdb.Init()
 	jobsdb.Init2()
