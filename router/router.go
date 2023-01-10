@@ -294,7 +294,7 @@ func (worker *workerT) recordStatsForFailedTransforms(transformType string, tran
 			"transformType": transformType,
 			"statusCode":    strconv.Itoa(destJob.StatusCode),
 			"workspaceId":   destJob.Destination.WorkspaceID,
-			"destination":   destJob.Destination.ID,
+			"destinationId": destJob.Destination.ID,
 		}).Count(1)
 		if destJob.StatusCode != http.StatusOK {
 			transformFailedCountStat := stats.Default.NewTaggedStat("router_transform_num_failed_jobs", stats.CountType, stats.Tags{
