@@ -67,7 +67,7 @@ type stagingFileBatchDestination struct {
 
 type Warehouse struct {
 	baseURL string
-	client  http.Client
+	client  *http.Client
 }
 
 type WarehouseOpts func(*Warehouse)
@@ -81,7 +81,7 @@ func WithTimeout(timeout time.Duration) WarehouseOpts {
 func NewWarehouse(baseURL string, opts ...WarehouseOpts) *Warehouse {
 	warehouse := &Warehouse{
 		baseURL: baseURL,
-		client:  http.Client{Timeout: defaultTimeout},
+		client:  &http.Client{Timeout: defaultTimeout},
 	}
 
 	for _, opt := range opts {

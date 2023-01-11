@@ -673,13 +673,15 @@ func (brt *HandleT) copyJobsToStorage(provider string, batchJobs *BatchJobsT, is
 		if isDestInterrupted {
 			if _, ok = interruptedEventsMap[eventID]; !ok {
 				eventsFound = true
-				totalBytes += len(string(job.EventPayload) + "\n")
-				_ = gzWriter.WriteGZ(string(job.EventPayload) + "\n")
+				line := string(job.EventPayload) + "\n"
+				totalBytes += len(line)
+				_ = gzWriter.WriteGZ(line)
 			}
 		} else {
 			eventsFound = true
-			totalBytes += len(string(job.EventPayload) + "\n")
-			_ = gzWriter.WriteGZ(string(job.EventPayload) + "\n")
+			line := string(job.EventPayload) + "\n"
+			totalBytes += len(line)
+			_ = gzWriter.WriteGZ(line)
 		}
 	}
 	_ = gzWriter.CloseGZ()
