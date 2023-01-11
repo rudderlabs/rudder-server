@@ -32,13 +32,13 @@ func Init() {
 }
 
 // Close closes sql connection as well as closes grpc connection
-func (d *DatabricksClient) Close() {
-	d.CloseStats.Start()
-	defer d.CloseStats.End()
+func (client *DatabricksClient) Close() {
+	client.CloseStats.Start()
+	defer client.CloseStats.End()
 
-	closeConnectionResponse, err := d.Client.Close(d.Context, &proto.CloseRequest{
-		Config:     d.CredConfig,
-		Identifier: d.CredIdentifier,
+	closeConnectionResponse, err := client.Client.Close(client.Context, &proto.CloseRequest{
+		Config:     client.CredConfig,
+		Identifier: client.CredIdentifier,
 	})
 	if err != nil {
 		pkgLogger.Errorf("Error closing connection in delta lake: %v", err)
@@ -46,5 +46,5 @@ func (d *DatabricksClient) Close() {
 	if closeConnectionResponse.GetErrorCode() != "" {
 		pkgLogger.Errorf("Error closing connection in delta lake with response: %v", err, closeConnectionResponse.GetErrorMessage())
 	}
-	d.Conn.Close()
+	client.Conn.Close()
 }
