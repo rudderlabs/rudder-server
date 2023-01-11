@@ -56,8 +56,6 @@ func NewHandle(opts ...Opt) *Handle {
 		log:              logger.NewLogger().Child("debugger").Child("destination"),
 	}
 
-	cacheType := cache.CacheType(config.GetInt("DestinationDebugger.cacheType", int(cache.BadgerCacheType)))
-	h.eventsDeliveryCache = cache.New[*DeliveryStatusT](cacheType, "destination", h.log)
 	config.RegisterBoolConfigVariable(false, &h.disableEventDeliveryStatusUploads, true, "DestinationDebugger.disableEventDeliveryStatusUploads")
 	for _, opt := range opts {
 		opt(h)
@@ -88,6 +86,9 @@ func (h *Handle) Start(backendConfig backendconfig.BackendConfig) {
 	eventUploader := NewEventDeliveryStatusUploader(h.log)
 	h.uploader = debugger.New[*DeliveryStatusT](url, eventUploader)
 	h.uploader.Start()
+
+	cacheType := cache.CacheType(config.GetInt("DestinationDebugger.cacheType", int(cache.BadgerCacheType)))
+	h.eventsDeliveryCache = cache.New[*DeliveryStatusT](cacheType, "destination", h.log)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	h.ctx = ctx

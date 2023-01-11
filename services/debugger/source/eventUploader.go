@@ -62,8 +62,6 @@ func NewHandle(opts ...Opt) *Handle {
 		log:              logger.NewLogger().Child("debugger").Child("source"),
 	}
 
-	cacheType := cache.CacheType(config.GetInt("SourceDebugger.cacheType", int(cache.BadgerCacheType)))
-	h.eventsCache = cache.New[[]byte](cacheType, "source", h.log)
 	config.RegisterBoolConfigVariable(false, &h.disableEventUploads, true, "SourceDebugger.disableEventUploads")
 	for _, opt := range opts {
 		opt(h)
@@ -91,6 +89,9 @@ func (h *Handle) Start(backendConfig backendconfig.BackendConfig) {
 	eventUploader := NewEventUploader(h.log)
 	h.uploader = debugger.New[*GatewayEventBatchT](url, eventUploader)
 	h.uploader.Start()
+
+	cacheType := cache.CacheType(config.GetInt("SourceDebugger.cacheType", int(cache.BadgerCacheType)))
+	h.eventsCache = cache.New[[]byte](cacheType, "source", h.log)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	h.ctx = ctx

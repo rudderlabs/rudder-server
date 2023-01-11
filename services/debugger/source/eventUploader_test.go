@@ -63,6 +63,7 @@ var _ = Describe("eventUploader", func() {
 	BeforeEach(func() {
 		config.Reset()
 		config.Set("RUDDER_TMPDIR", path.Join(GinkgoT().TempDir(), rand.String(10)))
+		config.Set("LiveEvent.cache.GCTime", "1s")
 		h = sourcedebugger.NewHandle(sourcedebugger.WithDisableEventUploads(false))
 		c = &eventUploaderContext{}
 		c.Setup()

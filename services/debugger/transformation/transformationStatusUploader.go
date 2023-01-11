@@ -90,8 +90,6 @@ func NewHandle(opts ...Opt) *Handle {
 		log:              logger.NewLogger().Child("debugger").Child("transformation"),
 	}
 
-	cacheType := cache.CacheType(config.GetInt("TransformationDebugger.cacheType", int(cache.BadgerCacheType)))
-	h.transformationCacheMap = cache.New[TransformationStatusT](cacheType, "transformation", h.log)
 	config.RegisterBoolConfigVariable(false, &h.disableTransformationUploads, true, "TransformationDebugger.disableTransformationStatusUploads")
 	config.RegisterIntConfigVariable(1, &h.limitEventsInMemory, true, 1, "TransformationDebugger.limitEventsInMemory")
 	for _, opt := range opts {
@@ -131,6 +129,9 @@ func (h *Handle) Start(backendConfig backendconfig.BackendConfig) {
 	transformationStatusUploader := &TransformationStatusUploader{}
 	h.uploader = debugger.New[*TransformStatusT](url, transformationStatusUploader)
 	h.uploader.Start()
+
+	cacheType := cache.CacheType(config.GetInt("TransformationDebugger.cacheType", int(cache.BadgerCacheType)))
+	h.transformationCacheMap = cache.New[TransformationStatusT](cacheType, "transformation", h.log)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	h.ctx = ctx

@@ -1,11 +1,11 @@
 package embeddedcache_test
 
 import (
-	"github.com/rudderlabs/rudder-server/services/debugger/cache/embeddedcache"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"github.com/rudderlabs/rudder-server/services/debugger/cache/embeddedcache"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/stretchr/testify/assert"
@@ -21,7 +21,7 @@ var _ = Describe("cache", Ordered, func() {
 		BeforeAll(func() {
 			misc.Init()
 			GinkgoT().Setenv("RSERVER_LIVE_EVENT_CACHE_CLEAR_FREQ", "1")
-			GinkgoT().Setenv("RSERVER_LIVE_EVENT_CACHE_TICKER", "1s")
+			GinkgoT().Setenv("RSERVER_LIVE_EVENT_CACHE_GC_TIME", "1s")
 			e.Init()
 		})
 

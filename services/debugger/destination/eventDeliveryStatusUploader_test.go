@@ -190,6 +190,7 @@ var _ = Describe("eventDeliveryStatusUploader", func() {
 	BeforeEach(func() {
 		config.Reset()
 		config.Set("RUDDER_TMPDIR", path.Join(GinkgoT().TempDir(), rand.String(10)))
+		config.Set("LiveEvent.cache.GCTime", "1s")
 
 		c = &eventDeliveryStatusUploaderContext{}
 		c.Setup()
