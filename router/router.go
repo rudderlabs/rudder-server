@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"math"
 	"math/rand"
 	"net/http"
 	"sort"
@@ -14,7 +15,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/cenkalti/backoff/v4"
 	jsoniter "github.com/json-iterator/go"
 	"github.com/tidwall/gjson"
 	"golang.org/x/sync/errgroup"
@@ -1132,18 +1132,8 @@ func (*workerT) sendDestinationResponseToConfigBackend(payload json.RawMessage, 
 	}
 }
 
-func durationBeforeNextAttempt(attempt int) (d time.Duration) {
-	b := backoff.NewExponentialBackOff()
-	b.InitialInterval = minRetryBackoff
-	b.MaxInterval = maxRetryBackoff
-	b.RandomizationFactor = 0
-	b.MaxElapsedTime = 0
-	b.Multiplier = 2
-	b.Reset()
-	for index := 0; index < attempt; index++ {
-		d = b.NextBackOff()
-	}
-	return
+func durationBeforeNextAttempt(attempt int) time.Duration {
+	return time.Duration(math.Min(float64(maxRetryBackoff), float64(minRetryBackoff)*math.Exp2(float64(attempt-1))))
 }
 
 func (rt *HandleT) trackRequestMetrics(reqMetric requestMetric) {
