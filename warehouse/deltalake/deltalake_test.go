@@ -4,12 +4,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/rudderlabs/rudder-server/utils/logger"
-	"github.com/rudderlabs/rudder-server/warehouse/deltalake/databricks"
-	"google.golang.org/grpc"
 	"os"
 	"testing"
 	"time"
+
+	"github.com/rudderlabs/rudder-server/utils/logger"
+	"github.com/rudderlabs/rudder-server/warehouse/deltalake/databricks"
+	"google.golang.org/grpc"
 
 	proto "github.com/rudderlabs/rudder-server/proto/databricks"
 
@@ -249,27 +250,35 @@ type MockClient struct {
 func (m *MockClient) Connect(ctx context.Context, in *proto.ConnectRequest, opts ...grpc.CallOption) (*proto.ConnectResponse, error) {
 	return m.connectRes, m.mockError
 }
+
 func (m *MockClient) Execute(ctx context.Context, in *proto.ExecuteRequest, opts ...grpc.CallOption) (*proto.ExecuteResponse, error) {
 	return m.executeRes, m.mockError
 }
+
 func (m *MockClient) ExecuteQuery(ctx context.Context, in *proto.ExecuteQueryRequest, opts ...grpc.CallOption) (*proto.ExecuteQueryResponse, error) {
 	return m.executeQueryRes, m.mockError
 }
+
 func (m *MockClient) FetchSchemas(ctx context.Context, in *proto.FetchSchemasRequest, opts ...grpc.CallOption) (*proto.FetchSchemasResponse, error) {
 	return m.schemasRes, m.mockError
 }
+
 func (m *MockClient) FetchTables(ctx context.Context, in *proto.FetchTablesRequest, opts ...grpc.CallOption) (*proto.FetchTablesResponse, error) {
 	return m.tableRes, m.mockError
 }
+
 func (m *MockClient) FetchTableAttributes(ctx context.Context, in *proto.FetchTableAttributesRequest, opts ...grpc.CallOption) (*proto.FetchTableAttributesResponse, error) {
 	return m.tableAttributesRes, m.mockError
 }
+
 func (m *MockClient) FetchTotalCountInTable(ctx context.Context, in *proto.FetchTotalCountInTableRequest, opts ...grpc.CallOption) (*proto.FetchTotalCountInTableResponse, error) {
 	return m.totalCountInTableRes, m.mockError
 }
+
 func (m *MockClient) FetchPartitionColumns(ctx context.Context, in *proto.FetchPartitionColumnsRequest, opts ...grpc.CallOption) (*proto.FetchPartitionColumnsResponse, error) {
 	return m.partitionRes, m.mockError
 }
+
 func (m *MockClient) Close(ctx context.Context, in *proto.CloseRequest, opts ...grpc.CallOption) (*proto.CloseResponse, error) {
 	return m.closeRes, m.mockError
 }
@@ -536,21 +545,27 @@ func (*mockUploader) GetLoadFileGenStartTIme() time.Time               { return 
 func (*mockUploader) GetLoadFilesMetadata(warehouseutils.GetLoadFilesOptionsT) []warehouseutils.LoadFileT {
 	return nil
 }
+
 func (*mockUploader) GetSingleLoadFile(_ string) (warehouseutils.LoadFileT, error) {
 	return warehouseutils.LoadFileT{}, nil
 }
+
 func (m *mockUploader) GetFirstLastEvent() (time.Time, time.Time) {
 	return m.firstEventAt, m.lastEventAt
 }
+
 func (m *mockUploader) GetTableSchemaInUpload(string) warehouseutils.TableSchemaT {
 	return m.uploadSchema
 }
+
 func (m *mockUploader) GetTableSchemaInWarehouse(_ string) warehouseutils.TableSchemaT {
 	return m.warehousSchema
 }
+
 func (m *mockUploader) GetLoadFileType() string {
 	return m.fileType
 }
+
 func (m *mockUploader) GetSampleLoadFileLocation(_ string) (string, error) {
 	return m.fileLocation, nil
 }
