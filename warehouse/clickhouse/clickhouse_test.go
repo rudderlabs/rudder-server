@@ -569,7 +569,7 @@ func TestHandle_LoadTableRoundTrip(t *testing.T) {
 
 			t.Log("verifying if columns are not like Nullable(T) if disableNullable set to true")
 			if tc.disableNullable {
-				rows, err := ch.Db.Query(fmt.Sprintf(`select table, name, type from system.columns where database = '%s'`, ch.Namespace))
+				rows, err := ch.DB.Query(fmt.Sprintf(`select table, name, type from system.columns where database = '%s'`, ch.Namespace))
 				require.NoError(t, err)
 
 				defer func() { _ = rows.Close() }()
