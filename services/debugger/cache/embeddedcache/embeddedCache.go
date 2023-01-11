@@ -1,6 +1,7 @@
 package embeddedcache
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -72,18 +73,22 @@ func (e *EmbeddedCache[E]) Update(key string, value E) {
 	if err != nil {
 		return
 	}
-	entry := badger.NewEntry([]byte(key), data).WithTTL(e.CleanupFreq)
-	if err := txn.SetEntry(entry); err == badger.ErrTxnTooBig {
-		err = txn.Commit()
-		if err != nil {
-			return
+	setBadgerEntry := func(ctx context.Context) error {
+		entry := badger.NewEntry([]byte(key), data).WithTTL(e.CleanupFreq)
+		if err := txn.SetEntry(entry); err == badger.ErrTxnTooBig {
+			err = txn.Commit()
+			if err != nil {
+				return err
+			}
+			txn = e.Db.NewTransaction(true)
+			err = txn.SetEntry(entry)
+			if err != nil {
+				return err
+			}
 		}
-		txn = e.Db.NewTransaction(true)
-		err = txn.SetEntry(entry)
-		if err != nil {
-			return
-		}
+		return nil
 	}
+	_ = misc.RetryWith(context.TODO(), 5*time.Second, 3, setBadgerEntry)
 	_ = txn.Commit()
 }
 
