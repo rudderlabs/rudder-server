@@ -626,12 +626,15 @@ func TestHandle_LoadTable(t *testing.T) {
 			},
 		},
 		{
-			name:              "use STS tokens",
+			name:              "Use STS tokens",
 			loadFileType:      "csv",
 			loadTableStrategy: "MERGE",
 			useSTSTokens:      true,
 			config: map[string]interface{}{
-				"useSTSTokens": true,
+				"useSTSTokens":    true,
+				"region":          "region",
+				"accessKeyID":     "accessKeyID",
+				"secretAccessKey": "secretAccessKey",
 			},
 		},
 	}
