@@ -267,14 +267,22 @@ func (manager *ETCDManager) unmarshalWorkspace(raw []byte) workspace.ChangeEvent
 			if err != nil {
 				return fmt.Errorf("marshal ack value: %w", err)
 			}
-			manager.logger.Infof("Workspace ID Change Acknowledgement (error: %v) Key: %s", ackErr != nil, req.AckKey)
-			_, err = manager.Client.Put(ctx, req.AckKey, ackValue)
-			if err != nil {
-				manager.logger.Errorf(
-					"Failed to acknowledge workspace ID change (error: %v) for key: %s", ackErr != nil, req.AckKey,
-				)
+			// for backward compatibility, for we acknowledge the request at both
+			// the incoming value contained in ack_key and the new value obtained by appending
+			// the instance ID to the ack_key. This enables the scheduler to ensure all the
+			// replicas of the gateway have acknowledged the request, when running in HA mode
+			ackKeys := []string{req.AckKey, fmt.Sprintf("%s/%s", req.AckKey, config.GetString("INSTANCE_ID", ""))}
+			for _, ackKey := range ackKeys {
+				manager.logger.Infof("Workspace ID Change Acknowledgement (error: %v) Key: %s", ackErr != nil, ackKey)
+				_, err = manager.Client.Put(ctx, ackKey, ackValue)
+				if err != nil {
+					manager.logger.Errorf(
+						"Failed to acknowledge workspace ID change (error: %v) for key: %s", ackErr != nil, ackKey,
+					)
+					return err
+				}
 			}
-			return err
+			return nil
 		},
 	)
 }
@@ -285,11 +293,11 @@ func (manager *ETCDManager) WorkspaceIDs(ctx context.Context) <-chan workspace.C
 	}
 
 	appTypeStr := strings.ToUpper(config.GetString("APP_TYPE", app.PROCESSOR))
-	modeRequestKey := fmt.Sprintf(workspacesRequestsKeyPattern, manager.Config.ReleaseName, manager.Config.ServerIndex, appTypeStr)
-	manager.logger.Infof("Workspace ID Lookup Key: %s", modeRequestKey)
+	workspaceRequestKey := fmt.Sprintf(workspacesRequestsKeyPattern, manager.Config.ReleaseName, manager.Config.ServerIndex, appTypeStr)
+	manager.logger.Infof("Workspace ID Lookup Key: %s", workspaceRequestKey)
 
 	resultChan := make(chan workspace.ChangeEvent, 1)
-	resp, err := manager.Client.Get(ctx, modeRequestKey)
+	resp, err := manager.Client.Get(ctx, workspaceRequestKey)
 	if err != nil {
 		return errChWorkspacesRequest(err)
 	}
@@ -300,7 +308,7 @@ func (manager *ETCDManager) WorkspaceIDs(ctx context.Context) <-chan workspace.C
 		revision = resp.Header.Revision + 1
 	}
 
-	etcdWatchChan := manager.Client.Watch(ctx, modeRequestKey, clientv3.WithRev(revision))
+	etcdWatchChan := manager.Client.Watch(ctx, workspaceRequestKey, clientv3.WithRev(revision))
 
 	go func() {
 		for watchResp := range etcdWatchChan {
