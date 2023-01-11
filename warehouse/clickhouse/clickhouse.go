@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/url"
 	"os"
 	"path/filepath"
 	"sort"
@@ -206,37 +207,40 @@ func Init() {
 
 // ConnectToClickhouse connects to clickhouse with provided credentials
 func (ch *Handle) ConnectToClickhouse(cred Credentials, includeDBInConn bool) (*sql.DB, error) {
-	var dbNameParam string
-	if includeDBInConn {
-		dbNameParam = fmt.Sprintf(`database=%s`, cred.DBName)
+	dsn := url.URL{
+		Scheme: "tcp",
+		Host:   fmt.Sprintf("%s:%s", cred.Host, cred.Port),
 	}
 
-	url := fmt.Sprintf("tcp://%s:%s?&username=%s&password=%s&block_size=%s&pool_size=%s&debug=%s&secure=%s&skip_verify=%s&tls_config=%s&%s&read_timeout=%s&write_timeout=%s&Compress=%t",
-		cred.Host,
-		cred.Port,
-		cred.User,
-		cred.Password,
-		ch.BlockSize,
-		ch.PoolSize,
-		ch.QueryDebugLogs,
-		cred.Secure,
-		cred.SkipVerify,
-		cred.TLSConfigName,
-		dbNameParam,
-		ch.ReadTimeout,
-		ch.WriteTimeout,
-		ch.Compress,
-	)
-	if cred.timeout != 0 {
-		url += fmt.Sprintf("&timeout=%d", cred.timeout/time.Second)
+	values := url.Values{
+		"username":      []string{cred.User},
+		"password":      []string{cred.Password},
+		"block_size":    []string{ch.BlockSize},
+		"pool_size":     []string{ch.PoolSize},
+		"debug":         []string{ch.QueryDebugLogs},
+		"secure":        []string{cred.Secure},
+		"skip_verify":   []string{cred.SkipVerify},
+		"tls_config":    []string{cred.TLSConfigName},
+		"read_timeout":  []string{ch.ReadTimeout},
+		"write_timeout": []string{ch.WriteTimeout},
+		"compress":      []string{strconv.FormatBool(ch.Compress)},
 	}
+
+	if includeDBInConn {
+		values.Add("database", cred.DBName)
+	}
+	if cred.timeout > 0 {
+		values.Add("timeout", fmt.Sprintf("%d", cred.timeout/time.Second))
+	}
+
+	dsn.RawQuery = values.Encode()
 
 	var (
 		err error
 		db  *sql.DB
 	)
 
-	if db, err = sql.Open("clickhouse", url); err != nil {
+	if db, err = sql.Open("clickhouse", dsn.String()); err != nil {
 		return nil, fmt.Errorf("clickhouse connection error : (%v)", err)
 	}
 	return db, nil
