@@ -166,7 +166,6 @@ func (e *EmbeddedCache[E]) gcBadgerDB() {
 				goto again
 			}
 		}
-
 	}
 }
 
@@ -178,11 +177,8 @@ func keyPrefixValue[E any](key string, value E, limiter int) ([]byte, []byte) {
 
 func (e *EmbeddedCache[E]) Stop() error {
 	e.Init()
-	e.Logger.Infof("closing done channel")
 	close(e.done)
-	e.Logger.Infof("waiting for closed channel")
 	<-e.closed
-	e.Logger.Infof("closing badgerDB")
 	if e.Db == nil {
 		return nil
 	}

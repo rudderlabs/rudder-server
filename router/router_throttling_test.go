@@ -160,6 +160,7 @@ func Test_RouterThrottling(t *testing.T) {
 	t.Setenv("RSERVER_ROUTER_THROTTLER_WEBHOOK_TIME_WINDOW", "1")
 	t.Setenv("RSERVER_ROUTER_THROTTLER_WEBHOOK_TEST2_LIMIT", "50")
 	t.Setenv("RSERVER_ROUTER_THROTTLER_WEBHOOK_TEST2_TIME_WINDOW", "1")
+	t.Setenv("RSERVER_LIVE_EVENT_CACHE_GCTIME", "1s")
 
 	if testing.Verbose() {
 		t.Setenv("LOG_LEVEL", "DEBUG")

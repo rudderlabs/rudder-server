@@ -85,6 +85,12 @@ type Handle struct {
 	done                           chan struct{}
 }
 
+var WithDisableTransformationStatusUploads = func(disableTransformationStatusUploads bool) func(h *Handle) {
+	return func(h *Handle) {
+		h.disableTransformationUploads = disableTransformationStatusUploads
+	}
+}
+
 func NewHandle(opts ...Opt) *Handle {
 	h := &Handle{
 		configBackendURL: config.GetString("CONFIG_BACKEND_URL", "https://api.rudderstack.com"),
