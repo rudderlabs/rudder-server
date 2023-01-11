@@ -44,9 +44,7 @@ const (
 	partitionNotFound   = "42000"
 )
 
-var (
-	pkgLogger logger.Logger
-)
+var pkgLogger logger.Logger
 
 // Rudder data type mapping with Delta lake mappings.
 var dataTypesMap = map[string]string{
