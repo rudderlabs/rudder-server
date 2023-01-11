@@ -33,7 +33,6 @@ import (
 	mocksJobsDB "github.com/rudderlabs/rudder-server/mocks/jobsdb"
 	mocksRateLimiter "github.com/rudderlabs/rudder-server/mocks/rate-limiter"
 	mocksTypes "github.com/rudderlabs/rudder-server/mocks/utils/types"
-	sourcedebugger "github.com/rudderlabs/rudder-server/services/debugger/source"
 	"github.com/rudderlabs/rudder-server/services/rsources"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
@@ -125,7 +124,7 @@ func (c *testContext) Setup() {
 				close(ch)
 			}()
 			return ch
-		}).AnyTimes()
+		})
 	c.mockVersionHandler = func(w http.ResponseWriter, r *http.Request) {}
 }
 
@@ -230,8 +229,6 @@ var _ = Describe("Gateway", func() {
 		c = &testContext{}
 		c.Setup()
 		c.initializeAppFeatures()
-		GinkgoT().Setenv("RSERVER_LIVE_EVENT_CACHE_GCTIME", "1s")
-		sourcedebugger.Start(c.mockBackendConfig)
 		// setup common environment, override in BeforeEach when required
 		SetEnableRateLimit(false)
 		SetEnableEventSchemasFeature(false)

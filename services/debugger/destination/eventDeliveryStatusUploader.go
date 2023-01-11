@@ -33,6 +33,7 @@ type Opt func(*Handle)
 type Handle struct {
 	configBackendURL                  string
 	log                               logger.Logger
+	started                           bool
 	disableEventDeliveryStatusUploads bool
 	eventsDeliveryCache               cache.Cache[*DeliveryStatusT]
 	uploader                          debugger.Uploader[*DeliveryStatusT]
@@ -99,14 +100,19 @@ func (h *Handle) Start(backendConfig backendconfig.BackendConfig) {
 	rruntime.Go(func() {
 		h.backendConfigSubscriber(backendConfig)
 	})
+	h.started = true
 }
 
 func (h *Handle) Stop() {
+	if !h.started {
+		return
+	}
 	h.cancel()
 	<-h.done
 	if h.eventsDeliveryCache != nil {
 		_ = h.eventsDeliveryCache.Stop()
 	}
+	h.started = false
 }
 
 func NewEventDeliveryStatusUploader(log logger.Logger) *EventDeliveryStatusUploader {
@@ -121,7 +127,7 @@ type EventDeliveryStatusUploader struct {
 // which will be processed by handleJobs.
 func (h *Handle) RecordEventDeliveryStatus(destinationID string, deliveryStatus *DeliveryStatusT) bool {
 	// if disableEventDeliveryStatusUploads is true, return;
-	if h.disableEventDeliveryStatusUploads {
+	if !h.started || h.disableEventDeliveryStatusUploads {
 		return false
 	}
 	<-h.initialized

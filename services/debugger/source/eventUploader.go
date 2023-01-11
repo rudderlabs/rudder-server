@@ -41,6 +41,7 @@ var WithDisableEventUploads = func(disableEventUploads bool) func(h *Handle) {
 }
 
 type Handle struct {
+	started             bool
 	uploader            debugger.Uploader[*GatewayEventBatchT]
 	configBackendURL    string
 	disableEventUploads bool
@@ -98,25 +99,28 @@ func (h *Handle) Start(backendConfig backendconfig.BackendConfig) {
 	h.cancel = cancel
 	h.done = make(chan struct{})
 	h.initialized = make(chan struct{})
-
+	h.started = true
 	rruntime.Go(func() {
 		h.backendConfigSubscriber(backendConfig)
 	})
 }
 
 func (h *Handle) Stop() {
+	if !h.started {
+		return
+	}
 	h.cancel()
 	<-h.done
 	if h.eventsCache != nil {
 		_ = h.eventsCache.Stop()
 	}
+	h.started = false
 }
 
 // RecordEvent is used to put the event batch in the eventBatchChannel,
 // which will be processed by handleEvents.
 func (h *Handle) RecordEvent(writeKey string, eventBatch []byte) bool {
-	// if disableEventUploads is true, return;
-	if h.disableEventUploads {
+	if !h.started || h.disableEventUploads {
 		return false
 	}
 	<-h.initialized

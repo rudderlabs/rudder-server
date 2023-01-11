@@ -71,6 +71,7 @@ var jsonfast = jsoniter.ConfigCompatibleWithStandardLibrary
 
 type Handle struct {
 	configBackendURL               string
+	started                        bool
 	disableTransformationUploads   bool
 	limitEventsInMemory            int
 	uploader                       debugger.Uploader[*TransformStatusT]
@@ -142,21 +143,26 @@ func (h *Handle) Start(backendConfig backendconfig.BackendConfig) {
 	rruntime.Go(func() {
 		h.backendConfigSubscriber(backendConfig)
 	})
+	h.started = true
 }
 
 func (h *Handle) Stop() {
+	if !h.started {
+		return
+	}
 	h.cancel()
 	<-h.done
 	if h.transformationCacheMap != nil {
 		_ = h.transformationCacheMap.Stop()
 	}
+	h.started = false
 }
 
 // RecordTransformationStatus is used to put the transform event in the eventBatchChannel,
 // which will be processed by handleEvents.
 func (h *Handle) RecordTransformationStatus(transformStatus *TransformStatusT) {
 	// if disableTransformationUploads is true, return;
-	if h.disableTransformationUploads {
+	if !h.started || h.disableTransformationUploads {
 		return
 	}
 

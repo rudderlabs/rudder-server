@@ -42,7 +42,6 @@ type EmbeddedCache[E any] struct {
 	Limiter     int
 	once        sync.Once
 	Db          *badger.DB
-	dbL         sync.RWMutex
 	Logger      logger.Logger
 	path        string
 	done        chan struct{}
@@ -63,10 +62,9 @@ func (badgerLogger) Warningf(format string, a ...interface{}) {
 	_, _ = fmt.Fprintf(os.Stderr, format, a...)
 }
 
+// Update ....
 func (e *EmbeddedCache[E]) Update(key string, value E) {
 	e.Init()
-	e.dbL.Lock()
-	defer e.dbL.Unlock()
 	txn := e.Db.NewTransaction(true)
 	byteKey, byteVal := keyPrefixValue(key, value, e.Limiter)
 	entry := badger.NewEntry(byteKey, byteVal).WithTTL(e.CleanupFreq)
@@ -84,10 +82,9 @@ func (e *EmbeddedCache[E]) Update(key string, value E) {
 	_ = txn.Commit()
 }
 
+// Read ...
 func (e *EmbeddedCache[E]) Read(key string) []E {
 	e.Init()
-	e.dbL.RLock()
-	defer e.dbL.RUnlock()
 	var values []E
 	err := e.Db.View(func(txn *badger.Txn) error {
 		it := txn.NewIterator(badger.DefaultIteratorOptions)
