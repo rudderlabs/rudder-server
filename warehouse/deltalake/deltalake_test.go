@@ -247,39 +247,39 @@ type MockClient struct {
 	mockError            error
 }
 
-func (m *MockClient) Connect(ctx context.Context, in *proto.ConnectRequest, opts ...grpc.CallOption) (*proto.ConnectResponse, error) {
+func (m *MockClient) Connect(context.Context, *proto.ConnectRequest, ...grpc.CallOption) (*proto.ConnectResponse, error) {
 	return m.connectRes, m.mockError
 }
 
-func (m *MockClient) Execute(ctx context.Context, in *proto.ExecuteRequest, opts ...grpc.CallOption) (*proto.ExecuteResponse, error) {
+func (m *MockClient) Execute(context.Context, *proto.ExecuteRequest, ...grpc.CallOption) (*proto.ExecuteResponse, error) {
 	return m.executeRes, m.mockError
 }
 
-func (m *MockClient) ExecuteQuery(ctx context.Context, in *proto.ExecuteQueryRequest, opts ...grpc.CallOption) (*proto.ExecuteQueryResponse, error) {
+func (m *MockClient) ExecuteQuery(context.Context, *proto.ExecuteQueryRequest, ...grpc.CallOption) (*proto.ExecuteQueryResponse, error) {
 	return m.executeQueryRes, m.mockError
 }
 
-func (m *MockClient) FetchSchemas(ctx context.Context, in *proto.FetchSchemasRequest, opts ...grpc.CallOption) (*proto.FetchSchemasResponse, error) {
+func (m *MockClient) FetchSchemas(context.Context, *proto.FetchSchemasRequest, ...grpc.CallOption) (*proto.FetchSchemasResponse, error) {
 	return m.schemasRes, m.mockError
 }
 
-func (m *MockClient) FetchTables(ctx context.Context, in *proto.FetchTablesRequest, opts ...grpc.CallOption) (*proto.FetchTablesResponse, error) {
+func (m *MockClient) FetchTables(context.Context, *proto.FetchTablesRequest, ...grpc.CallOption) (*proto.FetchTablesResponse, error) {
 	return m.tableRes, m.mockError
 }
 
-func (m *MockClient) FetchTableAttributes(ctx context.Context, in *proto.FetchTableAttributesRequest, opts ...grpc.CallOption) (*proto.FetchTableAttributesResponse, error) {
+func (m *MockClient) FetchTableAttributes(context.Context, *proto.FetchTableAttributesRequest, ...grpc.CallOption) (*proto.FetchTableAttributesResponse, error) {
 	return m.tableAttributesRes, m.mockError
 }
 
-func (m *MockClient) FetchTotalCountInTable(ctx context.Context, in *proto.FetchTotalCountInTableRequest, opts ...grpc.CallOption) (*proto.FetchTotalCountInTableResponse, error) {
+func (m *MockClient) FetchTotalCountInTable(context.Context, *proto.FetchTotalCountInTableRequest, ...grpc.CallOption) (*proto.FetchTotalCountInTableResponse, error) {
 	return m.totalCountInTableRes, m.mockError
 }
 
-func (m *MockClient) FetchPartitionColumns(ctx context.Context, in *proto.FetchPartitionColumnsRequest, opts ...grpc.CallOption) (*proto.FetchPartitionColumnsResponse, error) {
+func (m *MockClient) FetchPartitionColumns(context.Context, *proto.FetchPartitionColumnsRequest, ...grpc.CallOption) (*proto.FetchPartitionColumnsResponse, error) {
 	return m.partitionRes, m.mockError
 }
 
-func (m *MockClient) Close(ctx context.Context, in *proto.CloseRequest, opts ...grpc.CallOption) (*proto.CloseResponse, error) {
+func (m *MockClient) Close(context.Context, *proto.CloseRequest, ...grpc.CallOption) (*proto.CloseResponse, error) {
 	return m.closeRes, m.mockError
 }
 
