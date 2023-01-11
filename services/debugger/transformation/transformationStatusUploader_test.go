@@ -2,7 +2,6 @@ package transformationdebugger_test
 
 import (
 	"context"
-	transformationdebugger "github.com/rudderlabs/rudder-server/services/debugger/transformation"
 	"time"
 
 	"github.com/golang/mock/gomock"
@@ -12,6 +11,7 @@ import (
 	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	mocksBackendConfig "github.com/rudderlabs/rudder-server/mocks/config/backend-config"
+	transformationdebugger "github.com/rudderlabs/rudder-server/services/debugger/transformation"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/pubsub"
 	"github.com/rudderlabs/rudder-server/utils/types"
@@ -187,7 +187,7 @@ var _ = Describe("eventDeliveryStatusUploader", func() {
 	BeforeEach(func() {
 		c = &eventDeliveryStatusUploaderContext{}
 		c.Setup()
-		h = transformationdebugger.NewHandle(transformationdebugger.WithDisableTransformationStatusUploads(true))
+		h = transformationdebugger.NewHandle(transformationdebugger.WithDisableTransformationStatusUploads(false))
 		h.Start(c.mockBackendConfig)
 		deliveryStatus = transformationdebugger.TransformStatusT{
 			DestinationID:    DestinationIDEnabledB,
@@ -223,13 +223,15 @@ var _ = Describe("eventDeliveryStatusUploader", func() {
 
 	Context("RecordEventDeliveryStatus", func() {
 		It("returns false if disableEventDeliveryStatusUploads is true", func() {
-			disableTransformationUploads = true
-			Expect(UploadTransformationStatus(&TransformationStatusT{})).To(BeFalse())
+			h.Stop()
+			h := transformationdebugger.NewHandle(transformationdebugger.WithDisableTransformationStatusUploads(true))
+			h.Start(c.mockBackendConfig)
+			Expect(h.UploadTransformationStatus(&transformationdebugger.TransformationStatusT{})).To(BeFalse())
 		})
 
 		It("records events", func() {
 			eventuallyFunc := func() bool {
-				return UploadTransformationStatus(
+				return h.UploadTransformationStatus(
 					&transformationdebugger.TransformationStatusT{
 						Destination: &sampleBackendConfig.Sources[1].Destinations[1],
 						DestID:      sampleBackendConfig.Sources[1].Destinations[1].ID,

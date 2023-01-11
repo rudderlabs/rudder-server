@@ -223,7 +223,7 @@ func (h *Handle) backendConfigSubscriber(backendConfig backendconfig.BackendConf
 	close(h.done)
 }
 
-func (h *Handle) UploadTransformationStatus(tStatus *TransformationStatusT) {
+func (h *Handle) UploadTransformationStatus(tStatus *TransformationStatusT) bool {
 	defer func() {
 		if r := recover(); r != nil {
 			h.log.Error("Error occurred while uploading transformation statuses to config backend")
@@ -233,7 +233,7 @@ func (h *Handle) UploadTransformationStatus(tStatus *TransformationStatusT) {
 
 	// if disableTransformationUploads is true, return;
 	if h.disableTransformationUploads {
-		return
+		return false
 	}
 
 	for _, transformation := range tStatus.Destination.Transformations {
@@ -248,6 +248,7 @@ func (h *Handle) UploadTransformationStatus(tStatus *TransformationStatusT) {
 			h.transformationCacheMap.Update(transformation.ID, tStatusUpdated)
 		}
 	}
+	return true
 }
 
 func getEventBeforeTransform(singularEvent types.SingularEventT, receivedAt time.Time) *EventBeforeTransform {
