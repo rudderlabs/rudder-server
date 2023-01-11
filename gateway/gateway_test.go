@@ -33,6 +33,7 @@ import (
 	mocksJobsDB "github.com/rudderlabs/rudder-server/mocks/jobsdb"
 	mocksRateLimiter "github.com/rudderlabs/rudder-server/mocks/rate-limiter"
 	mocksTypes "github.com/rudderlabs/rudder-server/mocks/utils/types"
+	sourcedebugger "github.com/rudderlabs/rudder-server/services/debugger/source"
 	"github.com/rudderlabs/rudder-server/services/rsources"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
@@ -114,12 +115,8 @@ func (c *testContext) Setup() {
 	c.mockApp = mocksApp.NewMockApp(c.mockCtrl)
 	c.mockRateLimiter = mocksRateLimiter.NewMockRateLimiter(c.mockCtrl)
 
-	tFunc := c.asyncHelper.ExpectAndNotifyCallbackWithName("process_config")
-
 	c.mockBackendConfig.EXPECT().Subscribe(gomock.Any(), backendconfig.TopicProcessConfig).
 		DoAndReturn(func(ctx context.Context, topic backendconfig.Topic) pubsub.DataChannel {
-			tFunc()
-
 			ch := make(chan pubsub.DataEvent, 1)
 			ch <- pubsub.DataEvent{Data: map[string]backendconfig.ConfigT{WorkspaceID: sampleBackendConfig}, Topic: string(topic)}
 			// on Subscribe, emulate a backend configuration event
@@ -128,7 +125,7 @@ func (c *testContext) Setup() {
 				close(ch)
 			}()
 			return ch
-		})
+		}).AnyTimes()
 	c.mockVersionHandler = func(w http.ResponseWriter, r *http.Request) {}
 }
 
@@ -189,8 +186,6 @@ var _ = Describe("Gateway Enterprise", func() {
 		SetEnableRateLimit(false)
 		SetEnableSuppressUserFeature(true)
 		SetEnableEventSchemasFeature(false)
-		// SetUserWebRequestBatchTimeout(time.Second)
-		// SetMaxDBBatchSize(1)
 	})
 
 	AfterEach(func() {
@@ -235,7 +230,8 @@ var _ = Describe("Gateway", func() {
 		c = &testContext{}
 		c.Setup()
 		c.initializeAppFeatures()
-
+		GinkgoT().Setenv("RSERVER_LIVE_EVENT_CACHE_GCTIME", "1s")
+		sourcedebugger.Start(c.mockBackendConfig)
 		// setup common environment, override in BeforeEach when required
 		SetEnableRateLimit(false)
 		SetEnableEventSchemasFeature(false)

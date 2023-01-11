@@ -21,7 +21,7 @@ var _ = Describe("cache", Ordered, func() {
 		BeforeAll(func() {
 			misc.Init()
 			GinkgoT().Setenv("RSERVER_LIVE_EVENT_CACHE_CLEAR_FREQ", "1")
-			GinkgoT().Setenv("RSERVER_LIVE_EVENT_CACHE_GC_TIME", "1s")
+			GinkgoT().Setenv("RSERVER_LIVE_EVENT_CACHE_GCTIME", "1s")
 			e.Init()
 		})
 
