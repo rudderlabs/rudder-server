@@ -115,7 +115,7 @@ func TestEventOrderGuarantee(t *testing.T) {
 			config.Set("BackendConfig.configJSONPath", configJsonPath)
 
 			t.Logf("Starting rudder-server")
-			config.Set("DEPLOYMENT_TYPE", string(deployment.DedicatedType))
+			config.Set("DEPLOYMENT_TYPE", deployment.DedicatedType)
 			config.Set("recovery.storagePath", path.Join(t.TempDir(), "/recovery_data.json"))
 
 			config.Set("DB.port", postgresContainer.Port)
@@ -147,6 +147,7 @@ func TestEventOrderGuarantee(t *testing.T) {
 			config.Set("SourceDebugger.origin", "event_order_source_"+trand.String(100))
 			config.Set("DestinationDebugger.origin", "event_order_destination_"+trand.String(100))
 			config.Set("TransformerDebugger.origin", "event_order_transformer_"+trand.String(100))
+			config.Set("LiveEvent.cache.GCTime", "1s")
 
 			// find free port for gateway http server to listen on
 			httpPortInt, err := testhelper.GetFreePort()

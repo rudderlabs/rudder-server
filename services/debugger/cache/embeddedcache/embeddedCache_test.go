@@ -1,6 +1,7 @@
-package embeddedcache
+package embeddedcache_test
 
 import (
+	"github.com/rudderlabs/rudder-server/services/debugger/cache/embeddedcache"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -15,21 +16,22 @@ var _ = Describe("cache", Ordered, func() {
 		testKey := "test_key"
 		testValue1 := []byte("test_value1")
 		testValue2 := []byte("test_value2")
-		e := EmbeddedCache[[]byte]{Origin: "test", Logger: logger.NewLogger()}
+		e := embeddedcache.EmbeddedCache[[]byte]{Origin: "test", Logger: logger.NewLogger()}
 
 		BeforeAll(func() {
 			misc.Init()
 			GinkgoT().Setenv("RSERVER_LIVE_EVENT_CACHE_CLEAR_FREQ", "1")
-			e.init()
+			GinkgoT().Setenv("RSERVER_LIVE_EVENT_CACHE_TICKER", "1s")
+			e.Init()
 		})
 
 		AfterAll(func() {
 			_ = e.Stop()
 		})
 
-		It("Cache init", func() {
-			Expect(e.db).NotTo(BeNil())
-			Expect(e.cleanupFreq).NotTo(Equal(0))
+		It("Cache Init", func() {
+			Expect(e.Db).NotTo(BeNil())
+			Expect(e.CleanupFreq).NotTo(Equal(0))
 		})
 
 		It("Cache update", func() {

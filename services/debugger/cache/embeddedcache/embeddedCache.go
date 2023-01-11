@@ -24,12 +24,13 @@ loadCacheConfig sets the properties of the cache after reading it from the confi
 This gives a feature of hot readability as well.
 */
 func (e *EmbeddedCache[E]) loadCacheConfig() {
-	if e.cleanupFreq == 0 {
-		config.RegisterDurationConfigVariable(30, &e.cleanupFreq, true, time.Second, "LiveEvent.cache.clearFreq") // default clearFreq is 15 seconds
+	if e.CleanupFreq == 0 {
+		config.RegisterDurationConfigVariable(30, &e.CleanupFreq, true, time.Second, "LiveEvent.cache.clearFreq") // default clearFreq is 15 seconds
 	}
-	if e.limiter == 0 {
-		config.RegisterIntConfigVariable(100, &e.limiter, true, 1, "LiveEvent.cache.limiter")
+	if e.Limiter == 0 {
+		config.RegisterIntConfigVariable(100, &e.Limiter, true, 1, "LiveEvent.cache.limiter")
 	}
+	config.RegisterDurationConfigVariable(5, &e.Ticker, false, time.Minute, "LiveEvent.cache.GCTime")
 }
 
 /*
@@ -37,14 +38,17 @@ EmbeddedCache is an in-memory cache. Each key-value pair stored in this cache ha
 key-value pair form the cache which is older than TTL time.
 */
 type EmbeddedCache[E any] struct {
-	cleanupFreq time.Duration // TTL time on badgerDB
-	limiter     int
+	CleanupFreq time.Duration // TTL time on badgerDB
+	Limiter     int
 	once        sync.Once
-	db          *badger.DB
+	Db          *badger.DB
 	dbL         sync.RWMutex
 	Logger      logger.Logger
 	path        string
+	done        chan struct{}
+	closed      chan struct{}
 	Origin      string
+	Ticker      time.Duration
 }
 
 type badgerLogger struct {
@@ -60,18 +64,18 @@ func (badgerLogger) Warningf(format string, a ...interface{}) {
 }
 
 func (e *EmbeddedCache[E]) Update(key string, value E) {
-	e.init()
+	e.Init()
 	e.dbL.Lock()
 	defer e.dbL.Unlock()
-	txn := e.db.NewTransaction(true)
-	byteKey, byteVal := keyPrefixValue(key, value, e.limiter)
-	entry := badger.NewEntry(byteKey, byteVal).WithTTL(e.cleanupFreq)
+	txn := e.Db.NewTransaction(true)
+	byteKey, byteVal := keyPrefixValue(key, value, e.Limiter)
+	entry := badger.NewEntry(byteKey, byteVal).WithTTL(e.CleanupFreq)
 	if err := txn.SetEntry(entry); err == badger.ErrTxnTooBig {
 		err = txn.Commit()
 		if err != nil {
 			return
 		}
-		txn = e.db.NewTransaction(true)
+		txn = e.Db.NewTransaction(true)
 		err = txn.SetEntry(entry)
 		if err != nil {
 			return
@@ -81,11 +85,11 @@ func (e *EmbeddedCache[E]) Update(key string, value E) {
 }
 
 func (e *EmbeddedCache[E]) Read(key string) []E {
-	e.init()
+	e.Init()
 	e.dbL.RLock()
 	defer e.dbL.RUnlock()
 	var values []E
-	err := e.db.View(func(txn *badger.Txn) error {
+	err := e.Db.View(func(txn *badger.Txn) error {
 		it := txn.NewIterator(badger.DefaultIteratorOptions)
 		defer it.Close()
 		prefix := []byte(key)
@@ -112,7 +116,7 @@ func (e *EmbeddedCache[E]) Read(key string) []E {
 	return values
 }
 
-func (e *EmbeddedCache[E]) init() {
+func (e *EmbeddedCache[E]) Init() {
 	e.once.Do(func() {
 		e.loadCacheConfig()
 		badgerPathName := e.Origin + "/cache/badgerdbv3"
@@ -123,6 +127,8 @@ func (e *EmbeddedCache[E]) init() {
 		}
 		storagePath := path.Join(tmpDirPath, badgerPathName)
 		e.path = storagePath
+		e.done = make(chan struct{})
+		e.closed = make(chan struct{})
 		opts := badger.
 			DefaultOptions(storagePath).
 			WithLogger(badgerLogger{e.Logger}).
@@ -132,7 +138,7 @@ func (e *EmbeddedCache[E]) init() {
 			WithNumMemtables(0).
 			WithBlockCacheSize(0)
 
-		e.db, err = badger.Open(opts)
+		e.Db, err = badger.Open(opts)
 		if err != nil {
 			e.Logger.Errorf("Error while opening badgerDB: %v", err)
 			return
@@ -144,15 +150,23 @@ func (e *EmbeddedCache[E]) init() {
 }
 
 func (e *EmbeddedCache[E]) gcBadgerDB() {
-	ticker := time.NewTicker(5 * time.Minute)
+	ticker := time.NewTicker(e.Ticker)
 	defer ticker.Stop()
 	// One call would only result in removal of at max one log file.
 	// As an optimization, you could also immediately re-run it whenever it returns nil error
 	// (this is why `goto again` is used).
 	for {
-		<-ticker.C
+		select {
+		case <-e.done:
+			e.Logger.Infof("Closing closed channel")
+			close(e.closed)
+			return
+		default:
+			e.Logger.Infof("Inside ticker")
+			<-ticker.C
+		}
 	again: // see https://dgraph.io/docs/badger/get-started/#garbage-collection
-		err := e.db.RunValueLogGC(0.7)
+		err := e.Db.RunValueLogGC(0.7)
 		if err == nil {
 			goto again
 		}
@@ -166,8 +180,13 @@ func keyPrefixValue[E any](key string, value E, limiter int) ([]byte, []byte) {
 }
 
 func (e *EmbeddedCache[E]) Stop() error {
-	if e.db == nil {
+	e.Logger.Infof("closing done channel")
+	close(e.done)
+	e.Logger.Infof("waiting for closed channel")
+	<-e.closed
+	e.Logger.Infof("closing badgerDB")
+	if e.Db == nil {
 		return nil
 	}
-	return e.db.Close()
+	return e.Db.Close()
 }
