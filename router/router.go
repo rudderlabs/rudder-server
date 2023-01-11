@@ -279,6 +279,14 @@ func (worker *workerT) trackStuckDelivery() chan struct{} {
 
 func (worker *workerT) recordStatsForFailedTransforms(transformType string, transformedJobs []types.DestinationJobT) {
 	for _, destJob := range transformedJobs {
+		// Input Stats for batch/router transformation
+		stats.Default.NewTaggedStat("router_transform_num_jobs", stats.CountType, stats.Tags{
+			"destType":      worker.rt.destName,
+			"transformType": transformType,
+			"statusCode":    strconv.Itoa(destJob.StatusCode),
+			"workspaceId":   destJob.Destination.WorkspaceID,
+			"destinationId": destJob.Destination.ID,
+		}).Count(1)
 		if destJob.StatusCode != http.StatusOK {
 			transformFailedCountStat := stats.Default.NewTaggedStat("router_transform_num_failed_jobs", stats.CountType, stats.Tags{
 				"destType":      worker.rt.destName,
@@ -1405,12 +1413,6 @@ func (rt *HandleT) commitStatusList(responseList *[]jobResponseT) {
 	}
 	// REPORTING - ROUTER - END
 
-	defer func() {
-		for workspace := range routerWorkspaceJobStatusCount {
-			metric.DecreasePendingEvents("rt", workspace, rt.destName, float64(routerWorkspaceJobStatusCount[workspace]))
-		}
-	}()
-
 	if len(statusList) > 0 {
 		rt.logger.Debugf("[%v Router] :: flushing batch of %v status", rt.destName, updateStatusBatchSize)
 
@@ -1447,6 +1449,14 @@ func (rt *HandleT) commitStatusList(responseList *[]jobResponseT) {
 			panic(err)
 		}
 		rt.updateProcessedEventsMetrics(statusList)
+		for workspace, jobCount := range routerWorkspaceJobStatusCount {
+			metric.DecreasePendingEvents(
+				"rt",
+				workspace,
+				rt.destName,
+				float64(jobCount),
+			)
+		}
 	}
 
 	if rt.guaranteeUserEventOrder {
@@ -1967,34 +1977,32 @@ func (rt *HandleT) backendConfigSubscriber() {
 			for i := range wConfig.Sources {
 				source := &wConfig.Sources[i]
 				rt.sourceIDWorkspaceMap[source.ID] = workspaceID
-				if _, ok := rt.workspaceSet[workspaceID]; !ok {
-					rt.workspaceSet[workspaceID] = struct{}{}
-					rt.MultitenantI.UpdateWorkspaceLatencyMap(rt.destName, workspaceID, 0)
-				}
-				if len(source.Destinations) > 0 {
-					for i := range source.Destinations {
-						destination := &source.Destinations[i]
-						if destination.DestinationDefinition.Name == rt.destName {
-							if _, ok := rt.destinationsMap[destination.ID]; !ok {
-								rt.destinationsMap[destination.ID] = &routerutils.BatchDestinationT{
-									Destination: *destination,
-									Sources:     []backendconfig.SourceT{},
-								}
+				for i := range source.Destinations {
+					destination := &source.Destinations[i]
+					if destination.DestinationDefinition.Name == rt.destName {
+						if _, ok := rt.destinationsMap[destination.ID]; !ok {
+							rt.destinationsMap[destination.ID] = &routerutils.BatchDestinationT{
+								Destination: *destination,
+								Sources:     []backendconfig.SourceT{},
 							}
-							rt.destinationsMap[destination.ID].Sources = append(rt.destinationsMap[destination.ID].Sources, *source)
+						}
+						if _, ok := rt.workspaceSet[workspaceID]; !ok {
+							rt.workspaceSet[workspaceID] = struct{}{}
+							rt.MultitenantI.UpdateWorkspaceLatencyMap(rt.destName, workspaceID, 0)
+						}
+						rt.destinationsMap[destination.ID].Sources = append(rt.destinationsMap[destination.ID].Sources, *source)
 
-							rt.destinationResponseHandler = New(destination.DestinationDefinition.ResponseRules)
-							if value, ok := destination.DestinationDefinition.Config["saveDestinationResponse"].(bool); ok {
-								rt.saveDestinationResponse = value
-							}
+						rt.destinationResponseHandler = New(destination.DestinationDefinition.ResponseRules)
+						if value, ok := destination.DestinationDefinition.Config["saveDestinationResponse"].(bool); ok {
+							rt.saveDestinationResponse = value
+						}
 
-							// Config key "throttlingCost" is expected to have the eventType as the first key and the call type
-							// as the second key (e.g. track, identify, etc...) or default to apply the cost to all call types:
-							// dDT["config"]["throttlingCost"] = `{"eventType":{"default":1,"track":2,"identify":3}}`
-							if value, ok := destination.DestinationDefinition.Config["throttlingCost"].(map[string]interface{}); ok {
-								m := types.NewEventTypeThrottlingCost(value)
-								rt.throttlingCosts.Store(&m)
-							}
+						// Config key "throttlingCost" is expected to have the eventType as the first key and the call type
+						// as the second key (e.g. track, identify, etc...) or default to apply the cost to all call types:
+						// dDT["config"]["throttlingCost"] = `{"eventType":{"default":1,"track":2,"identify":3}}`
+						if value, ok := destination.DestinationDefinition.Config["throttlingCost"].(map[string]interface{}); ok {
+							m := types.NewEventTypeThrottlingCost(value)
+							rt.throttlingCosts.Store(&m)
 						}
 					}
 				}
