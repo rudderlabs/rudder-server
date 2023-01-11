@@ -9,7 +9,6 @@ import (
 	"io"
 	"math"
 	"net/http"
-	"reflect"
 	"runtime/trace"
 	"strconv"
 	"strings"
@@ -1371,14 +1370,14 @@ func (proc *HandleT) processJobsForDest(subJobs subJob, parsedEventList [][]type
 					destination := &enabledDestinationsList[idx]
 					shallowEventCopy := transformer.TransformerEventT{}
 					shallowEventCopy.Message = singularEvent
-					shallowEventCopy.Destination = reflect.ValueOf(*destination).Interface().(backendconfig.DestinationT)
+					shallowEventCopy.Destination = *destination
 					shallowEventCopy.Libraries = workspaceLibraries
 					shallowEventCopy.Metadata = event.Metadata
 
 					// At the TP flow we are not having destination information, so adding it here.
 					shallowEventCopy.Metadata.DestinationID = destination.ID
 					shallowEventCopy.Metadata.DestinationType = destination.DestinationDefinition.Name
-					filterConfig(&shallowEventCopy, destination)
+					filterConfig(&shallowEventCopy)
 					metadata := shallowEventCopy.Metadata
 					srcAndDestKey := getKeyFromSourceAndDest(metadata.SourceID, metadata.DestinationID)
 					// We have at-least one event so marking it good
@@ -2570,14 +2569,14 @@ func (proc *HandleT) updateRudderSourcesStats(ctx context.Context, tx jobsdb.Sto
 	return err
 }
 
-func filterConfig(eventCopy *transformer.TransformerEventT, destination *backendconfig.DestinationT) {
-	if configsToFilterI, ok := destination.DestinationDefinition.Config["configFilters"]; ok {
+func filterConfig(eventCopy *transformer.TransformerEventT) {
+	if configsToFilterI, ok := eventCopy.Destination.DestinationDefinition.Config["configFilters"]; ok {
 		if configsToFilter, ok := configsToFilterI.([]interface{}); ok {
-			for _, configKey := range configsToFilter {
-				if configKeyStr, ok := configKey.(string); ok {
-					eventCopy.Destination.Config[configKeyStr] = ""
-				}
-			}
+			omitKeys := lo.FilterMap(configsToFilter, func(configKey interface{}, _ int) (string, bool) {
+				configKeyStr, ok := configKey.(string)
+				return configKeyStr, ok
+			})
+			eventCopy.Destination.Config = lo.OmitByKeys(eventCopy.Destination.Config, omitKeys)
 		}
 	}
 }

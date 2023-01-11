@@ -279,6 +279,14 @@ func (worker *workerT) trackStuckDelivery() chan struct{} {
 
 func (worker *workerT) recordStatsForFailedTransforms(transformType string, transformedJobs []types.DestinationJobT) {
 	for _, destJob := range transformedJobs {
+		// Input Stats for batch/router transformation
+		stats.Default.NewTaggedStat("router_transform_num_jobs", stats.CountType, stats.Tags{
+			"destType":      worker.rt.destName,
+			"transformType": transformType,
+			"statusCode":    strconv.Itoa(destJob.StatusCode),
+			"workspaceId":   destJob.Destination.WorkspaceID,
+			"destinationId": destJob.Destination.ID,
+		}).Count(1)
 		if destJob.StatusCode != http.StatusOK {
 			transformFailedCountStat := stats.Default.NewTaggedStat("router_transform_num_failed_jobs", stats.CountType, stats.Tags{
 				"destType":      worker.rt.destName,
