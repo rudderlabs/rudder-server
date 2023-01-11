@@ -767,9 +767,11 @@ var _ = Describe("Gateway", func() {
 									"workspaceId": getWorkspaceID(WriteKeyEnabled),
 									"writeKey":    WriteKeyEnabled,
 									"reqType":     handlerType,
-									"reason":      "storeFailed",
+									"reason":      "tx error",
 								},
 							)
+							fmt.Println(stat)
+							fmt.Println(stat.LastValue())
 							return stat != nil && stat.LastValue() == float64(1)
 						},
 					).Should(BeTrue())

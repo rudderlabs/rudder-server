@@ -22,6 +22,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/gorilla/mux"
 	"github.com/rs/cors"
+	"github.com/samber/lo"
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
 	"golang.org/x/sync/errgroup"
@@ -426,6 +427,12 @@ func (gateway *HandleT) NewSourceStat(writeKey, reqType string) *gwstats.SourceS
 	}
 }
 
+type reqJob struct {
+	job  *jobsdb.JobT
+	stat *gwstats.SourceStat
+	req  *webRequestT
+}
+
 //	Listens on the `batchRequestQ` channel of the webRequestWorker for new batches of webRequests
 //	Goes over the webRequests in the batch and filters them out(`rateLimit`, `maxReqSize`).
 //	And creates a `jobList` which is then sent to `userWorkerBatchRequestQ` of the gateway and waits for a response
@@ -434,44 +441,47 @@ func (gateway *HandleT) NewSourceStat(writeKey, reqType string) *gwstats.SourceS
 // Finally sends responses(error) if any back to the webRequests over their `done` channels
 func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWebRequestWorkerT) {
 	for breq := range userWebRequestWorker.batchRequestQ {
-		var jobList []*jobsdb.JobT
-		jobIDReqMap := make(map[uuid.UUID]*webRequestT)
-		jobSourceTagMap := make(map[uuid.UUID]string)
-		sourceStats := make(map[string]*gwstats.SourceStat)
+		var reqJobsList []*reqJob
 		// Saving the event data read from req.request.Body to the splice.
 		// Using this to send event schema to the config backend.
 		var eventBatchesToRecord []sourceDebugger
 		userWebRequestWorker.batchTimeStat.Start()
 		for _, req := range breq.batchRequest {
 			writeKey := req.writeKey
-			sourceTag := gateway.getSourceTagFromWriteKey(writeKey)
-			if _, ok := sourceStats[sourceTag]; !ok {
-				sourceStats[sourceTag] = gateway.NewSourceStat(
-					writeKey,
-					req.reqType,
-				)
-			}
+			stat := gateway.NewSourceStat(writeKey, req.reqType)
 			job, numEvents, err := gateway.getJobFromRequest(req)
 			if err != nil {
 				switch {
 				case err == errRequestDropped:
 					req.done <- response.TooManyRequests
-					sourceStats[sourceTag].RequestDropped()
+					stat.RequestDropped()
 				case err == errRequestSuppressed:
 					req.done <- "" // no error
-					sourceStats[sourceTag].RequestSuppressed()
+					stat.RequestSuppressed()
 				default:
 					req.done <- err.Error()
-					sourceStats[sourceTag].RequestEventsFailed(numEvents, err.Error())
+					stat.RequestEventsFailed(numEvents, err.Error())
 				}
+				stat.Report(gateway.stats)
 				continue
 			}
-			jobList = append(jobList, job)
-			jobIDReqMap[job.UUID] = req
-			jobSourceTagMap[job.UUID] = sourceTag
-			eventBatchesToRecord = append(eventBatchesToRecord, sourceDebugger{data: job.EventPayload, writeKey: writeKey})
+			reqJobsList = append(reqJobsList, &reqJob{
+				job:  job,
+				stat: stat,
+				req:  req,
+			})
+			eventBatchesToRecord = append(eventBatchesToRecord, sourceDebugger{
+				writeKey: writeKey,
+				data:     job.EventPayload,
+			})
 		}
 
+		jobList := lo.FilterMap(
+			reqJobsList,
+			func(jobDetails *reqJob, _ int) (*jobsdb.JobT, bool) {
+				return jobDetails.job, jobDetails.job != nil
+			},
+		)
 		errorMessagesMap := make(map[uuid.UUID]string)
 		if len(jobList) > 0 {
 			gateway.userWorkerBatchRequestQ <- &userWorkerBatchRequestT{
@@ -481,16 +491,16 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 			errorMessagesMap = <-userWebRequestWorker.reponseQ
 		}
 
-		for _, job := range jobList {
-			err, found := errorMessagesMap[job.UUID]
-			sourceTag := jobSourceTagMap[job.UUID]
+		for _, reqJob := range reqJobsList {
+			err, found := errorMessagesMap[reqJob.job.UUID]
 			if found {
-				sourceStats[sourceTag].RequestEventsFailed(job.EventCount, "storeFailed")
+				reqJob.stat.RequestEventsFailed(reqJob.job.EventCount, err)
 			} else {
-				sourceStats[sourceTag].RequestEventsSucceeded(job.EventCount)
+				reqJob.stat.RequestEventsSucceeded(reqJob.job.EventCount)
 			}
-			jobIDReqMap[job.UUID].done <- err
+			reqJob.req.done <- err
 		}
+
 		// Sending events to config backend
 		for _, eventBatch := range eventBatchesToRecord {
 			sourcedebugger.RecordEvent(eventBatch.writeKey, eventBatch.data)
@@ -499,8 +509,8 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 		userWebRequestWorker.batchTimeStat.End()
 		gateway.batchSizeStat.Observe(float64(len(breq.batchRequest)))
 
-		for _, v := range sourceStats {
-			v.Report(gateway.stats)
+		for _, rq := range reqJobsList {
+			rq.stat.Report(gateway.stats)
 		}
 	}
 }
