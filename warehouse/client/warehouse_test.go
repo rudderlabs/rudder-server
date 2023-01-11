@@ -144,7 +144,7 @@ func TestWarehouse(t *testing.T) {
 			},
 		}) //nolint:staticcheck // SA1012: using nil context to trigger failure
 
-		require.EqualError(t, err, "marshaling staging file: json: unsupported value: +Inf")
+		require.ErrorContains(t, err, "unsupported value: +Inf")
 	})
 
 	t.Run("timeout", func(t *testing.T) {

@@ -3,16 +3,18 @@ package client
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"time"
 
+	jsoniter "github.com/json-iterator/go"
 	"github.com/rudderlabs/rudder-server/utils/httputil"
 )
 
 const defaultTimeout = 10 * time.Second
+
+var json = jsoniter.ConfigCompatibleWithStandardLibrary
 
 // StagingFile contains the require metadata to process a staging file.
 type StagingFile struct {
