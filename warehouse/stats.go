@@ -220,21 +220,6 @@ func (job *UploadJobT) recordLoadFileGenerationTimeStat(startID, endID int64) (e
 	return nil
 }
 
-func getUploadStatusStat(name string, warehouse warehouseutils.Warehouse) stats.Measurement {
-	tags := stats.Tags{
-		"workspaceId": warehouse.WorkspaceID,
-		"module":      moduleName,
-		"destType":    warehouse.Type,
-		"warehouseID": getWarehouseTagName(
-			warehouse.Destination.ID,
-			warehouse.Source.Name,
-			warehouse.Destination.Name,
-			warehouse.Source.ID,
-		),
-	}
-	return stats.Default.NewTaggedStat(name, stats.CountType, tags)
-}
-
 func persistSSLFileErrorStat(workspaceID, destType, destName, destID, sourceName, sourceID, errTag string) {
 	tags := stats.Tags{
 		"workspaceId":   workspaceID,

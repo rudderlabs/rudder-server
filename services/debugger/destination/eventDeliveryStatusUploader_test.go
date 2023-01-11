@@ -13,7 +13,7 @@ import (
 	mocksBackendConfig "github.com/rudderlabs/rudder-server/mocks/config/backend-config"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/pubsub"
-	testutils "github.com/rudderlabs/rudder-server/utils/tests"
+	testUtils "github.com/rudderlabs/rudder-server/utils/tests"
 	"github.com/tidwall/gjson"
 )
 
@@ -161,7 +161,7 @@ var faultyData = DeliveryStatusT{
 }
 
 type eventDeliveryStatusUploaderContext struct {
-	asyncHelper testutils.AsyncTestHelper
+	asyncHelper testUtils.AsyncTestHelper
 	mockCtrl    *gomock.Controller
 }
 
@@ -234,16 +234,20 @@ var _ = Describe("eventDeliveryStatusUploader", func() {
 		})
 
 		It("transforms payload properly", func() {
-			edsUploader := EventDeliveryStatusUploader{}
-			rawJSON, err := edsUploader.Transform([]interface{}{&deliveryStatus})
+			var edsUploader EventDeliveryStatusUploader
+			var payload []*DeliveryStatusT
+			payload = append(payload, &deliveryStatus)
+			rawJSON, err := edsUploader.Transform(payload)
 			Expect(err).To(BeNil())
 			Expect(gjson.GetBytes(rawJSON, `enabled-destination-a.0.eventName`).String()).To(Equal("some_event_name"))
 			Expect(gjson.GetBytes(rawJSON, `enabled-destination-a.0.eventType`).String()).To(Equal("some_event_type"))
 		})
 
 		It("sends empty json if transformation fails", func() {
-			edsUploader := EventDeliveryStatusUploader{}
-			rawJSON, err := edsUploader.Transform([]interface{}{&faultyData})
+			var edsUploader EventDeliveryStatusUploader
+			var payload []*DeliveryStatusT
+			payload = append(payload, &faultyData)
+			rawJSON, err := edsUploader.Transform(payload)
 			Expect(err.Error()).To(ContainSubstring("error calling MarshalJSON"))
 			Expect(rawJSON).To(BeNil())
 		})

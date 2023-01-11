@@ -168,9 +168,9 @@ func (trans *handle) Transform(transformType string, transformMessage *types.Tra
 		if convErr != nil {
 			transformerAPIVersion = 0
 		}
-		if utilTypes.SUPPORTED_TRANSFORMER_API_VERSION != transformerAPIVersion {
-			trans.logger.Errorf("Incompatible transformer version: Expected: %d Received: %d, URL: %v", utilTypes.SUPPORTED_TRANSFORMER_API_VERSION, transformerAPIVersion, url)
-			panic(fmt.Errorf("Incompatible transformer version: Expected: %d Received: %d, URL: %v", utilTypes.SUPPORTED_TRANSFORMER_API_VERSION, transformerAPIVersion, url))
+		if utilTypes.SupportedTransformerApiVersion != transformerAPIVersion {
+			trans.logger.Errorf("Incompatible transformer version: Expected: %d Received: %d, URL: %v", utilTypes.SupportedTransformerApiVersion, transformerAPIVersion, url)
+			panic(fmt.Errorf("Incompatible transformer version: Expected: %d Received: %d, URL: %v", utilTypes.SupportedTransformerApiVersion, transformerAPIVersion, url))
 		}
 
 		trans.logger.Debugf("[Router Transfomrer] :: output payload : %s", string(respData))
@@ -245,7 +245,11 @@ func (trans *handle) Transform(transformType string, transformMessage *types.Tra
 }
 
 func (trans *handle) ProxyRequest(ctx context.Context, proxyReqParams *ProxyRequestParams) (int, string, string) {
-	stats.Default.NewTaggedStat("transformer_proxy.delivery_request", stats.CountType, stats.Tags{"destType": proxyReqParams.DestName}).Increment()
+	stats.Default.NewTaggedStat("transformer_proxy.delivery_request", stats.CountType, stats.Tags{
+		"destType":      proxyReqParams.DestName,
+		"workspaceId":   proxyReqParams.ResponseData.Metadata.WorkspaceID,
+		"destinationId": proxyReqParams.ResponseData.Metadata.DestinationID,
+	}).Increment()
 	trans.logger.Debugf(`[TransformerProxy] (Dest-%[1]v) {Job - %[2]v} Proxy Request starts - %[1]v`, proxyReqParams.DestName, proxyReqParams.JobID)
 
 	rdlTime := time.Now()

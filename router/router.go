@@ -236,10 +236,6 @@ func loadConfig() {
 	config.RegisterDurationConfigVariable(300, &maxRetryBackoff, true, time.Second, []string{"Router.maxRetryBackoff", "Router.maxRetryBackoffInS"}...)
 	config.RegisterDurationConfigVariable(0, &fixedLoopSleep, true, time.Millisecond, []string{"Router.fixedLoopSleep", "Router.fixedLoopSleepInMS"}...)
 	config.RegisterStringConfigVariable("", &toAbortDestinationIDs, true, "Router.toAbortDestinationIDs")
-	// sources failed keys config
-	config.RegisterDurationConfigVariable(48, &failedKeysExpire, true, time.Hour, "Router.failedKeysExpire")
-	config.RegisterDurationConfigVariable(24, &failedKeysCleanUpSleep, true, time.Hour, "Router.failedKeysCleanUpSleep")
-	failedKeysEnabled = config.GetBool("Router.failedKeysEnabled", true)
 }
 
 func sendRetryStoreStats(attempt int) {
@@ -283,6 +279,14 @@ func (worker *workerT) trackStuckDelivery() chan struct{} {
 
 func (worker *workerT) recordStatsForFailedTransforms(transformType string, transformedJobs []types.DestinationJobT) {
 	for _, destJob := range transformedJobs {
+		// Input Stats for batch/router transformation
+		stats.Default.NewTaggedStat("router_transform_num_jobs", stats.CountType, stats.Tags{
+			"destType":      worker.rt.destName,
+			"transformType": transformType,
+			"statusCode":    strconv.Itoa(destJob.StatusCode),
+			"workspaceId":   destJob.Destination.WorkspaceID,
+			"destinationId": destJob.Destination.ID,
+		}).Count(1)
 		if destJob.StatusCode != http.StatusOK {
 			transformFailedCountStat := stats.Default.NewTaggedStat("router_transform_num_failed_jobs", stats.CountType, stats.Tags{
 				"destType":      worker.rt.destName,
@@ -1309,7 +1313,6 @@ func (rt *HandleT) commitStatusList(responseList *[]jobResponseT) {
 	transformedAtMap := make(map[string]string)
 	statusDetailsMap := make(map[string]*utilTypes.StatusDetail)
 	routerWorkspaceJobStatusCount := make(map[string]int)
-	jobRunIDAbortedEventsMap := make(map[string][]*FailedEventRowT)
 	var completedJobsList []*jobsdb.JobT
 	var statusList []*jobsdb.JobStatusT
 	var routerAbortedJobs []*jobsdb.JobT
@@ -1363,7 +1366,6 @@ func (rt *HandleT) commitStatusList(responseList *[]jobResponseT) {
 			sd.Count++
 			rt.MultitenantI.CalculateSuccessFailureCounts(workspaceID, rt.destName, false, true)
 			routerAbortedJobs = append(routerAbortedJobs, resp.JobT)
-			PrepareJobRunIDAbortedEventsMap(resp.JobT.Parameters, jobRunIDAbortedEventsMap)
 			completedJobsList = append(completedJobsList, resp.JobT)
 		}
 
@@ -1411,12 +1413,6 @@ func (rt *HandleT) commitStatusList(responseList *[]jobResponseT) {
 	}
 	// REPORTING - ROUTER - END
 
-	defer func() {
-		for workspace := range routerWorkspaceJobStatusCount {
-			metric.DecreasePendingEvents("rt", workspace, rt.destName, float64(routerWorkspaceJobStatusCount[workspace]))
-		}
-	}()
-
 	if len(statusList) > 0 {
 		rt.logger.Debugf("[%v Router] :: flushing batch of %v status", rt.destName, updateStatusBatchSize)
 
@@ -1445,11 +1441,6 @@ func (rt *HandleT) commitStatusList(responseList *[]jobResponseT) {
 				if err != nil {
 					return err
 				}
-
-				// Save msgids of aborted jobs
-				if len(jobRunIDAbortedEventsMap) > 0 {
-					GetFailedEventsManager().SaveFailedRecordIDs(jobRunIDAbortedEventsMap, tx.SqlTx())
-				}
 				rt.Reporting.Report(reportMetrics, tx.SqlTx())
 				return nil
 			})
@@ -1458,6 +1449,14 @@ func (rt *HandleT) commitStatusList(responseList *[]jobResponseT) {
 			panic(err)
 		}
 		rt.updateProcessedEventsMetrics(statusList)
+		for workspace, jobCount := range routerWorkspaceJobStatusCount {
+			metric.DecreasePendingEvents(
+				"rt",
+				workspace,
+				rt.destName,
+				float64(jobCount),
+			)
+		}
 	}
 
 	if rt.guaranteeUserEventOrder {
@@ -1807,7 +1806,7 @@ func (rt *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB jobsd
 	rt.rsourcesService = rsourcesService
 
 	// waiting for reporting client setup
-	err := rt.Reporting.WaitForSetup(context.TODO(), utilTypes.CORE_REPORTING_CLIENT)
+	err := rt.Reporting.WaitForSetup(context.TODO(), utilTypes.CoreReportingClient)
 	if err != nil {
 		return
 	}
@@ -1978,34 +1977,32 @@ func (rt *HandleT) backendConfigSubscriber() {
 			for i := range wConfig.Sources {
 				source := &wConfig.Sources[i]
 				rt.sourceIDWorkspaceMap[source.ID] = workspaceID
-				if _, ok := rt.workspaceSet[workspaceID]; !ok {
-					rt.workspaceSet[workspaceID] = struct{}{}
-					rt.MultitenantI.UpdateWorkspaceLatencyMap(rt.destName, workspaceID, 0)
-				}
-				if len(source.Destinations) > 0 {
-					for i := range source.Destinations {
-						destination := &source.Destinations[i]
-						if destination.DestinationDefinition.Name == rt.destName {
-							if _, ok := rt.destinationsMap[destination.ID]; !ok {
-								rt.destinationsMap[destination.ID] = &routerutils.BatchDestinationT{
-									Destination: *destination,
-									Sources:     []backendconfig.SourceT{},
-								}
+				for i := range source.Destinations {
+					destination := &source.Destinations[i]
+					if destination.DestinationDefinition.Name == rt.destName {
+						if _, ok := rt.destinationsMap[destination.ID]; !ok {
+							rt.destinationsMap[destination.ID] = &routerutils.BatchDestinationT{
+								Destination: *destination,
+								Sources:     []backendconfig.SourceT{},
 							}
-							rt.destinationsMap[destination.ID].Sources = append(rt.destinationsMap[destination.ID].Sources, *source)
+						}
+						if _, ok := rt.workspaceSet[workspaceID]; !ok {
+							rt.workspaceSet[workspaceID] = struct{}{}
+							rt.MultitenantI.UpdateWorkspaceLatencyMap(rt.destName, workspaceID, 0)
+						}
+						rt.destinationsMap[destination.ID].Sources = append(rt.destinationsMap[destination.ID].Sources, *source)
 
-							rt.destinationResponseHandler = New(destination.DestinationDefinition.ResponseRules)
-							if value, ok := destination.DestinationDefinition.Config["saveDestinationResponse"].(bool); ok {
-								rt.saveDestinationResponse = value
-							}
+						rt.destinationResponseHandler = New(destination.DestinationDefinition.ResponseRules)
+						if value, ok := destination.DestinationDefinition.Config["saveDestinationResponse"].(bool); ok {
+							rt.saveDestinationResponse = value
+						}
 
-							// Config key "throttlingCost" is expected to have the eventType as the first key and the call type
-							// as the second key (e.g. track, identify, etc...) or default to apply the cost to all call types:
-							// dDT["config"]["throttlingCost"] = `{"eventType":{"default":1,"track":2,"identify":3}}`
-							if value, ok := destination.DestinationDefinition.Config["throttlingCost"].(map[string]interface{}); ok {
-								m := types.NewEventTypeThrottlingCost(value)
-								rt.throttlingCosts.Store(&m)
-							}
+						// Config key "throttlingCost" is expected to have the eventType as the first key and the call type
+						// as the second key (e.g. track, identify, etc...) or default to apply the cost to all call types:
+						// dDT["config"]["throttlingCost"] = `{"eventType":{"default":1,"track":2,"identify":3}}`
+						if value, ok := destination.DestinationDefinition.Config["throttlingCost"].(map[string]interface{}); ok {
+							m := types.NewEventTypeThrottlingCost(value)
+							rt.throttlingCosts.Store(&m)
 						}
 					}
 				}
@@ -2105,19 +2102,6 @@ func (rt *HandleT) ExecDisableDestination(destination *backendconfig.Destination
 	stats.Default.NewTaggedStat("disable_destination_category_count", stats.CountType, disableDestStatTags).Increment()
 	// Abort the jobs as the destination is disabled
 	return http.StatusBadRequest, destResBody
-}
-
-func PrepareJobRunIDAbortedEventsMap(parameters json.RawMessage, jobRunIDAbortedEventsMap map[string][]*FailedEventRowT) {
-	taskRunID := gjson.GetBytes(parameters, "source_task_run_id").String()
-	destinationID := gjson.GetBytes(parameters, "destination_id").String()
-	recordID := json.RawMessage(gjson.GetBytes(parameters, "record_id").Raw)
-	if taskRunID == "" {
-		return
-	}
-	if _, ok := jobRunIDAbortedEventsMap[taskRunID]; !ok {
-		jobRunIDAbortedEventsMap[taskRunID] = []*FailedEventRowT{}
-	}
-	jobRunIDAbortedEventsMap[taskRunID] = append(jobRunIDAbortedEventsMap[taskRunID], &FailedEventRowT{DestinationID: destinationID, RecordID: recordID})
 }
 
 func (rt *HandleT) updateRudderSourcesStats(ctx context.Context, tx jobsdb.UpdateSafeTx, jobs []*jobsdb.JobT, jobStatuses []*jobsdb.JobStatusT) error {

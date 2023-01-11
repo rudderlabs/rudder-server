@@ -12,6 +12,8 @@ import (
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/client"
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/initialize"
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/model"
+	"github.com/rudderlabs/rudder-server/services/controlplane/identity"
+	"github.com/rudderlabs/rudder-server/utils/types/deployment"
 	"github.com/stretchr/testify/require"
 )
 
@@ -19,38 +21,81 @@ func TestGet(t *testing.T) {
 	initialize.Init()
 	tests := []struct {
 		name                      string
-		workspaceID               string
+		ID                        string
 		respBody                  string
 		respCode                  int
 		expectedErr               error
 		acutalErr                 error
 		expectedUsrAttributeCount int
 		serverDelay               int
+		expectedPath              string
+		mode                      deployment.Type
 	}{
 		{
-			name:                      "Get request to get job: successful",
-			workspaceID:               "1001",
-			respBody:                  `{"jobId":"1","destinationId":"23","userAttributes":[{"userId":"1","phone":"555-555-5555"},{"userId":"2","email":"john@example.com"},{"userId":"3","randomKey":"randomValue"}]}`,
+			name:                      "DEDICATED MODE: Get request to get job: successful",
+			ID:                        "1001",
+			respBody:                  `{"jobId":"1","workspaceId":"abc","destinationId":"23","userAttributes":[{"userId":"1","phone":"555-555-5555"},{"userId":"2","email":"john@example.com"},{"userId":"3","randomKey":"randomValue"}]}`,
 			respCode:                  200,
 			expectedUsrAttributeCount: 3,
+			mode:                      deployment.DedicatedType,
+			expectedPath:              "/dataplane/workspaces/1001/regulations/workerJobs",
 		},
 		{
-			name:        "Get request to get job: NoRunnableJob found",
-			workspaceID: "1001",
-			respCode:    404,
-			expectedErr: model.ErrNoRunnableJob,
+			name:         "DEDICATED MODE: Get request to get job: NoRunnableJob found",
+			ID:           "1001",
+			respCode:     204,
+			expectedErr:  model.ErrNoRunnableJob,
+			mode:         deployment.DedicatedType,
+			expectedPath: "/dataplane/workspaces/1001/regulations/workerJobs",
 		},
 		{
-			name:        "Get request to get job: random error",
-			workspaceID: "1001",
-			respCode:    429,
-			expectedErr: fmt.Errorf("unexpected response code: 429"),
+			name:         "DEDICATED MODE: Get request to get job: random error",
+			ID:           "1001",
+			respCode:     429,
+			expectedErr:  fmt.Errorf("unexpected response code: 429"),
+			mode:         deployment.DedicatedType,
+			expectedPath: "/dataplane/workspaces/1001/regulations/workerJobs",
 		},
 		{
-			name:        "Get request to get model.ErrRequestTimeout",
-			workspaceID: "1001",
-			expectedErr: model.ErrRequestTimeout,
-			serverDelay: 1,
+			name:         "DEDICATED MODE: Get request to get model.ErrRequestTimeout",
+			ID:           "1001",
+			expectedErr:  model.ErrRequestTimeout,
+			serverDelay:  1,
+			mode:         deployment.DedicatedType,
+			expectedPath: "/dataplane/workspaces/1001/regulations/workerJobs",
+		},
+		{
+			name:                      "MULTITENANT MODE: Get request to get job: successful",
+			ID:                        "1001",
+			respBody:                  `{"jobId":"1","workspaceId":"abc","destinationId":"23","userAttributes":[{"userId":"1","phone":"555-555-5555"},{"userId":"2","email":"john@example.com"},{"userId":"3","randomKey":"randomValue"}]}`,
+			respCode:                  200,
+			expectedUsrAttributeCount: 3,
+			mode:                      deployment.MultiTenantType,
+			expectedPath:              "/dataplane/namespaces/1001/regulations/workerJobs",
+		},
+		{
+			name:         "MULTITENANT MODE: Get request to get job: NoRunnableJob found",
+			ID:           "1001",
+			respCode:     204,
+			expectedErr:  model.ErrNoRunnableJob,
+			mode:         deployment.MultiTenantType,
+			expectedPath: "/dataplane/namespaces/1001/regulations/workerJobs",
+		},
+		{
+			name:         "MULTITENANT MODE: Get request to get job: random error",
+			ID:           "1001",
+			respCode:     429,
+			expectedErr:  fmt.Errorf("unexpected response code: 429"),
+			mode:         deployment.MultiTenantType,
+			expectedPath: "/dataplane/namespaces/1001/regulations/workerJobs",
+		},
+		{
+			name:         "MULTITENANT MODE: Get request to get model.ErrRequestTimeout",
+			ID:           "1001",
+			expectedErr:  model.ErrRequestTimeout,
+			serverDelay:  1,
+			mode:         deployment.MultiTenantType,
+			expectedPath: "/dataplane/namespaces/1001/regulations/workerJobs",
 		},
 	}
 	for _, tt := range tests {
@@ -59,6 +104,8 @@ func TestGet(t *testing.T) {
 				if tt.respCode != 0 {
 					w.WriteHeader(tt.respCode)
 				}
+				path := r.URL.Path
+				require.Equal(t, tt.expectedPath, path)
 				time.Sleep(time.Duration(tt.serverDelay) * time.Millisecond)
 				fmt.Fprintf(w, tt.respBody)
 			}))
@@ -69,10 +116,14 @@ func TestGet(t *testing.T) {
 					Timeout: time.Duration(tt.serverDelay) * time.Microsecond,
 				}
 			}
+			var identifier identity.Identifier = &identity.Workspace{WorkspaceID: "1001"}
+			if tt.mode == deployment.MultiTenantType {
+				identifier = &identity.Namespace{Namespace: "1001"}
+			}
 			c := client.JobAPI{
-				Client:      httpClient,
-				WorkspaceID: tt.workspaceID,
-				URLPrefix:   svr.URL,
+				Client:    httpClient,
+				Identity:  identifier,
+				URLPrefix: svr.URL,
 			}
 			job, err := c.Get(context.Background())
 			require.Equal(t, tt.expectedErr, err)
@@ -92,23 +143,50 @@ func TestUpdateStatus(t *testing.T) {
 		expectedReqBody string
 		respCode        int
 		expectedErr     error
+		mode            deployment.Type
+		expectedPath    string
 	}{
 		{
-			name:            "update status request: successful",
+			name:            "DEDICATED MODE: update status request: successful",
 			workspaceID:     "1001",
 			status:          model.JobStatusComplete,
 			jobID:           1,
 			expectedReqBody: `{"status":"complete"}`,
 			respCode:        201,
+			mode:            deployment.DedicatedType,
+			expectedPath:    "/dataplane/workspaces/1001/regulations/workerJobs/1",
 		},
 		{
-			name:            "update status request: returns error",
+			name:            "DEDICATED MODE: update status request: returns error",
 			workspaceID:     "1001",
 			status:          model.JobStatusComplete,
 			jobID:           1,
 			expectedReqBody: `{"status":"complete"}`,
 			respCode:        429,
 			expectedErr:     fmt.Errorf("update status failed with status code: 429"),
+			mode:            deployment.DedicatedType,
+			expectedPath:    "/dataplane/workspaces/1001/regulations/workerJobs/1",
+		},
+		{
+			name:            "MULTITENANT MODE: update status request: successful",
+			workspaceID:     "1001",
+			status:          model.JobStatusComplete,
+			jobID:           1,
+			expectedReqBody: `{"status":"complete"}`,
+			respCode:        201,
+			mode:            deployment.MultiTenantType,
+			expectedPath:    "/dataplane/namespaces/1001/regulations/workerJobs/1",
+		},
+		{
+			name:            "MULTITENANT MODE: update status request: returns error",
+			workspaceID:     "1001",
+			status:          model.JobStatusComplete,
+			jobID:           1,
+			expectedReqBody: `{"status":"complete"}`,
+			respCode:        429,
+			expectedErr:     fmt.Errorf("update status failed with status code: 429"),
+			mode:            deployment.MultiTenantType,
+			expectedPath:    "/dataplane/namespaces/1001/regulations/workerJobs/1",
 		},
 	}
 	for _, tt := range tests {
@@ -117,13 +195,18 @@ func TestUpdateStatus(t *testing.T) {
 			svr := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				w.WriteHeader(tt.respCode)
 				body, _ = io.ReadAll(r.Body)
+				path := r.URL.Path
+				require.Equal(t, tt.expectedPath, path)
 			}))
 			defer svr.Close()
-
+			var identifier identity.Identifier = &identity.Workspace{WorkspaceID: "1001"}
+			if tt.mode == deployment.MultiTenantType {
+				identifier = &identity.Namespace{Namespace: "1001"}
+			}
 			c := client.JobAPI{
-				Client:      &http.Client{},
-				URLPrefix:   svr.URL,
-				WorkspaceID: tt.workspaceID,
+				Client:    &http.Client{},
+				URLPrefix: svr.URL,
+				Identity:  identifier,
 			}
 			err := c.UpdateStatus(context.Background(), tt.status, tt.jobID)
 			require.Equal(t, tt.expectedErr, err)

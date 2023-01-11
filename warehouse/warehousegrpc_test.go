@@ -56,7 +56,7 @@ var _ = Describe("WarehouseGrpc", func() {
 				err = setupDB(context.TODO(), getConnectionString())
 				Expect(err).To(BeNil())
 
-				sqlStatement, err := os.ReadFile("testdata/sql/4.sql")
+				sqlStatement, err := os.ReadFile("testdata/sql/grpc_test.sql")
 				Expect(err).To(BeNil())
 
 				_, err = pgResource.DB.Exec(string(sqlStatement))
@@ -557,7 +557,7 @@ var _ = Describe("WarehouseGrpc", func() {
 				err = setupDB(context.TODO(), getConnectionString())
 				Expect(err).To(BeNil())
 
-				sqlStatement, err := os.ReadFile("testdata/sql/4.sql")
+				sqlStatement, err := os.ReadFile("testdata/sql/grpc_test.sql")
 				Expect(err).To(BeNil())
 
 				_, err = pgResource.DB.Exec(string(sqlStatement))

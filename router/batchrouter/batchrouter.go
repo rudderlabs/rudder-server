@@ -23,7 +23,6 @@ import (
 	"github.com/thoas/go-funk"
 	"golang.org/x/sync/errgroup"
 
-	"github.com/rudderlabs/rudder-server/router"
 	"github.com/rudderlabs/rudder-server/router/batchrouter/asyncdestinationmanager"
 	"github.com/rudderlabs/rudder-server/router/rterror"
 	destinationConnectionTester "github.com/rudderlabs/rudder-server/services/destination-connection-tester"
@@ -1150,8 +1149,7 @@ func (brt *HandleT) setJobStatus(batchJobs *BatchJobsT, isWarehouse bool, errOcc
 		batchJobState string
 		errorResp     []byte
 	)
-	batchRouterWorkspaceJobStatusCount := make(map[string]map[string]int)
-	jobRunIDAbortedEventsMap := make(map[string][]*router.FailedEventRowT)
+	batchRouterWorkspaceJobStatusCount := make(map[string]int)
 	var abortedEvents []*jobsdb.JobT
 	var batchReqMetric batchRequestMetric
 	if errOccurred != nil {
@@ -1234,7 +1232,6 @@ func (brt *HandleT) setJobStatus(batchJobs *BatchJobsT, isWarehouse bool, errOcc
 				job.Parameters = misc.UpdateJSONWithNewKeyVal(job.Parameters, "stage", "batch_router")
 				job.Parameters = misc.UpdateJSONWithNewKeyVal(job.Parameters, "reason", errOccurred.Error())
 				abortedEvents = append(abortedEvents, job)
-				router.PrepareJobRunIDAbortedEventsMap(job.Parameters, jobRunIDAbortedEventsMap)
 				jobState = jobsdb.Aborted.State
 			}
 			if postToWarehouseErr && isWarehouse {
@@ -1244,7 +1241,6 @@ func (brt *HandleT) setJobStatus(batchJobs *BatchJobsT, isWarehouse bool, errOcc
 					job.Parameters = misc.UpdateJSONWithNewKeyVal(job.Parameters, "stage", "batch_router")
 					job.Parameters = misc.UpdateJSONWithNewKeyVal(job.Parameters, "reason", errOccurred.Error())
 					abortedEvents = append(abortedEvents, job)
-					router.PrepareJobRunIDAbortedEventsMap(job.Parameters, jobRunIDAbortedEventsMap)
 					jobState = jobsdb.Aborted.State
 				}
 				warehouseServiceFailedTimeLock.RUnlock()
@@ -1253,7 +1249,6 @@ func (brt *HandleT) setJobStatus(batchJobs *BatchJobsT, isWarehouse bool, errOcc
 			job.Parameters = misc.UpdateJSONWithNewKeyVal(job.Parameters, "stage", "batch_router")
 			job.Parameters = misc.UpdateJSONWithNewKeyVal(job.Parameters, "reason", errOccurred.Error())
 			abortedEvents = append(abortedEvents, job)
-			router.PrepareJobRunIDAbortedEventsMap(job.Parameters, jobRunIDAbortedEventsMap)
 		}
 		attemptNum := job.LastJobStatus.AttemptNum + 1
 		status := jobsdb.JobStatusT{
@@ -1279,13 +1274,8 @@ func (brt *HandleT) setJobStatus(batchJobs *BatchJobsT, isWarehouse bool, errOcc
 			errorCode := getBRTErrorCode(jobState)
 			var cd *types.ConnectionDetails
 			workspaceID := job.WorkspaceId
-			_, ok := batchRouterWorkspaceJobStatusCount[workspaceID]
-			if !ok {
-				batchRouterWorkspaceJobStatusCount[workspaceID] = make(map[string]int)
-			}
 			key := fmt.Sprintf("%s:%s:%s:%s:%s:%s:%s", parameters.SourceID, parameters.DestinationID, parameters.SourceBatchID, jobState, strconv.Itoa(errorCode), parameters.EventName, parameters.EventType)
-			_, ok = connectionDetailsMap[key]
-			if !ok {
+			if _, ok := connectionDetailsMap[key]; !ok {
 				cd = types.CreateConnectionDetail(parameters.SourceID, parameters.DestinationID, parameters.SourceBatchID, parameters.SourceTaskID, parameters.SourceTaskRunID, parameters.SourceJobID, parameters.SourceJobRunID, parameters.SourceDefinitionID, parameters.DestinationDefinitionID, parameters.SourceCategory)
 				connectionDetailsMap[key] = cd
 				transformedAtMap[key] = parameters.TransformAt
@@ -1304,7 +1294,7 @@ func (brt *HandleT) setJobStatus(batchJobs *BatchJobsT, isWarehouse bool, errOcc
 			}
 			if status.JobState != jobsdb.Failed.State {
 				if status.JobState == jobsdb.Succeeded.State || status.JobState == jobsdb.Aborted.State {
-					batchRouterWorkspaceJobStatusCount[workspaceID][parameters.DestinationID] += 1
+					batchRouterWorkspaceJobStatusCount[workspaceID] += 1
 				}
 				sd.Count++
 			}
@@ -1312,10 +1302,13 @@ func (brt *HandleT) setJobStatus(batchJobs *BatchJobsT, isWarehouse bool, errOcc
 		// REPORTING - END
 	}
 
-	for workspace := range batchRouterWorkspaceJobStatusCount {
-		for destID := range batchRouterWorkspaceJobStatusCount[workspace] {
-			metric.DecreasePendingEvents("batch_rt", workspace, brt.destType, float64(batchRouterWorkspaceJobStatusCount[workspace][destID]))
-		}
+	for workspace, jobCount := range batchRouterWorkspaceJobStatusCount {
+		metric.DecreasePendingEvents(
+			"batch_rt",
+			workspace,
+			brt.destType,
+			float64(jobCount),
+		)
 	}
 	// tracking batch router errors
 	if diagnostics.EnableDestinationFailuresMetric {
@@ -1391,10 +1384,6 @@ func (brt *HandleT) setJobStatus(batchJobs *BatchJobsT, isWarehouse bool, errOcc
 				return err
 			}
 
-			// Save msgids of aborted jobs
-			if len(jobRunIDAbortedEventsMap) > 0 {
-				router.GetFailedEventsManager().SaveFailedRecordIDs(jobRunIDAbortedEventsMap, tx.SqlTx())
-			}
 			if brt.reporting != nil && brt.reportingEnabled {
 				brt.reporting.Report(reportMetrics, tx.SqlTx())
 			}
@@ -1775,7 +1764,12 @@ func (worker *workerT) workerProcess() {
 					"workspaceId": destDrainStat.Workspace,
 				})
 				brt.drainedJobsStat.Count(destDrainStat.Count)
-				metric.DecreasePendingEvents("batch_rt", destDrainStat.Workspace, brt.destType, float64(drainStatsbyDest[destID].Count))
+				metric.DecreasePendingEvents(
+					"batch_rt",
+					destDrainStat.Workspace,
+					brt.destType,
+					float64(destDrainStat.Count),
+				)
 			}
 		}
 		// Mark the jobs as executing
@@ -2291,7 +2285,7 @@ func (brt *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB, err
 	brt.fileManagerFactory = filemanager.DefaultFileManagerFactory
 	brt.backendConfig = backendConfig
 	brt.reporting = reporting
-	config.RegisterBoolConfigVariable(types.DEFAULT_REPORTING_ENABLED, &brt.reportingEnabled, false, "Reporting.enabled")
+	config.RegisterBoolConfigVariable(types.DefaultReportingEnabled, &brt.reportingEnabled, false, "Reporting.enabled")
 	brt.logger = pkgLogger.Child(destType)
 	brt.logger.Infof("BRT: Batch Router started: %s", destType)
 
@@ -2301,7 +2295,7 @@ func (brt *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB, err
 	// waiting for reporting client setup
 	if brt.reporting != nil && brt.reportingEnabled {
 		// error is ignored as context.TODO() is passed, err is not expected.
-		_ = brt.reporting.WaitForSetup(context.TODO(), types.CORE_REPORTING_CLIENT)
+		_ = brt.reporting.WaitForSetup(context.TODO(), types.CoreReportingClient)
 	}
 	if brt.warehouseURL == "" {
 		brt.warehouseURL = misc.GetWarehouseURL()

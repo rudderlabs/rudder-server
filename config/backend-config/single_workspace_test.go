@@ -40,7 +40,7 @@ func TestSingleWorkspaceGetFromAPI(t *testing.T) {
 			token:            token,
 			configBackendURL: parsedSrvURL,
 		}
-		conf, err := wc.getFromAPI(context.Background(), "")
+		conf, err := wc.getFromAPI(context.Background())
 		require.NoError(t, err)
 		require.Equal(t, map[string]ConfigT{sampleWorkspaceID: sampleBackendConfig}, conf)
 
@@ -59,7 +59,7 @@ func TestSingleWorkspaceGetFromAPI(t *testing.T) {
 			token:            "testToken",
 			configBackendURL: configBackendURL,
 		}
-		conf, err := wc.getFromAPI(context.Background(), "")
+		conf, err := wc.getFromAPI(context.Background())
 		require.ErrorContains(t, err, "unsupported protocol scheme")
 		require.Equal(t, map[string]ConfigT{}, conf)
 	})
@@ -69,7 +69,7 @@ func TestSingleWorkspaceGetFromAPI(t *testing.T) {
 			token:            "testToken",
 			configBackendURL: nil,
 		}
-		conf, err := wc.getFromAPI(context.Background(), "")
+		conf, err := wc.getFromAPI(context.Background())
 		require.ErrorContains(t, err, "config backend url is nil")
 		require.Equal(t, map[string]ConfigT{}, conf)
 	})
