@@ -498,6 +498,9 @@ func (ch *Handle) castStringToArray(data, dataType string) interface{} {
 		dataInt := make([]int32, 0)
 		dataBool := make([]bool, 0)
 
+		// Since we are converting true/false to 1/0 in warehouse slave
+		// We need to unmarshal into []int32 first to load the data into the table
+		// If it is unsuccessful, we unmarshal for []bool
 		if err := json.Unmarshal([]byte(data), &dataInt); err == nil {
 			for _, value := range dataInt {
 				dataBool = append(dataBool, value != 0)
