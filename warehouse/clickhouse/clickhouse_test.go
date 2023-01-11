@@ -39,7 +39,7 @@ func TestIntegrationClickHouse(t *testing.T) {
 
 	var dbs []*sql.DB
 	for _, host := range []string{"wh-clickhouse", "wh-clickhouse01", "wh-clickhouse02", "wh-clickhouse03", "wh-clickhouse04"} {
-		ch := clickhouse.NewHandle()
+		ch := clickhouse.NewClickhouse()
 		db, err := ch.ConnectToClickhouse(clickhouse.Credentials{
 			Host:          host,
 			User:          "rudder",
@@ -283,7 +283,7 @@ func TestHandle_UseS3CopyEngineForLoading(t *testing.T) {
 			c := config.New()
 			c.Set("Warehouse.clickhouse.s3EngineEnabledWorkspaceIDs", S3EngineEnabledWorkspaceIDs)
 
-			ch := clickhouse.NewHandle()
+			ch := clickhouse.NewClickhouse()
 			clickhouse.WithConfig(ch, c)
 
 			ch.Warehouse = warehouseutils.Warehouse{
@@ -420,7 +420,7 @@ func TestHandle_LoadTableRoundTrip(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
-			ch := clickhouse.NewHandle()
+			ch := clickhouse.NewClickhouse()
 			ch.Logger = logger.NOP
 
 			conf := config.New()
@@ -664,7 +664,7 @@ func TestHandle_TestConnection(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
-			ch := clickhouse.NewHandle()
+			ch := clickhouse.NewClickhouse()
 			ch.Logger = logger.NOP
 
 			host := "localhost"
@@ -717,7 +717,7 @@ func setUpClickhouse(t testing.TB, pool *dockertest.Pool) *dockertest.Resource {
 	})
 	require.NoError(t, err)
 
-	db, err := clickhouse.NewHandle().ConnectToClickhouse(clickhouse.Credentials{
+	db, err := clickhouse.NewClickhouse().ConnectToClickhouse(clickhouse.Credentials{
 		Host:     "localhost",
 		Port:     resource.GetPort("9000/tcp"),
 		DBName:   databaseName,

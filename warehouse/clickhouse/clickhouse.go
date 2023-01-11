@@ -124,7 +124,7 @@ var clickhouseDataTypesMapToRudder = map[string]string{
 	"SimpleAggregateFunction(anyLast, Nullable(UInt8))":    "boolean",
 }
 
-type Handle struct {
+type Clickhouse struct {
 	DB                          *sql.DB
 	Namespace                   string
 	ObjectStorage               string
@@ -170,7 +170,7 @@ type clickHouseStat struct {
 }
 
 // newClickHouseStat Creates a new clickHouseStat instance
-func (ch *Handle) newClickHouseStat(tableName string) *clickHouseStat {
+func (ch *Clickhouse) newClickHouseStat(tableName string) *clickHouseStat {
 	warehouse := ch.Warehouse
 
 	tags := map[string]string{
@@ -207,7 +207,7 @@ func Init() {
 }
 
 // ConnectToClickhouse connects to clickhouse with provided credentials
-func (ch *Handle) ConnectToClickhouse(cred Credentials, includeDBInConn bool) (*sql.DB, error) {
+func (ch *Clickhouse) ConnectToClickhouse(cred Credentials, includeDBInConn bool) (*sql.DB, error) {
 	dsn := url.URL{
 		Scheme: "tcp",
 		Host:   fmt.Sprintf("%s:%s", cred.Host, cred.Port),
@@ -247,13 +247,13 @@ func (ch *Handle) ConnectToClickhouse(cred Credentials, includeDBInConn bool) (*
 	return db, nil
 }
 
-func NewHandle() *Handle {
-	return &Handle{
+func NewClickhouse() *Clickhouse {
+	return &Clickhouse{
 		Logger: pkgLogger,
 	}
 }
 
-func WithConfig(h *Handle, config *config.Config) {
+func WithConfig(h *Clickhouse, config *config.Config) {
 	h.QueryDebugLogs = config.GetString("Warehouse.clickhouse.queryDebugLogs", "false")
 	h.BlockSize = config.GetString("Warehouse.clickhouse.blockSize", "1000000")
 	h.PoolSize = config.GetString("Warehouse.clickhouse.poolSize", "100")
@@ -282,7 +282,7 @@ func registerTLSConfig(key, certificate string) {
 }
 
 // getConnectionCredentials gives clickhouse credentials
-func (ch *Handle) getConnectionCredentials() Credentials {
+func (ch *Clickhouse) getConnectionCredentials() Credentials {
 	tlsName := ""
 	certificate := warehouseutils.GetConfigValue(caCertificate, ch.Warehouse)
 	if strings.TrimSpace(certificate) != "" {
@@ -305,7 +305,7 @@ func (ch *Handle) getConnectionCredentials() Credentials {
 }
 
 // ColumnsWithDataTypes creates columns and its datatype into sql format for creating table
-func (ch *Handle) ColumnsWithDataTypes(tableName string, columns map[string]string, notNullableColumns []string) string {
+func (ch *Clickhouse) ColumnsWithDataTypes(tableName string, columns map[string]string, notNullableColumns []string) string {
 	var arr []string
 	for columnName, dataType := range columns {
 		codec := ch.getClickHouseCodecForColumnType(dataType, tableName)
@@ -315,7 +315,7 @@ func (ch *Handle) ColumnsWithDataTypes(tableName string, columns map[string]stri
 	return strings.Join(arr, ",")
 }
 
-func (ch *Handle) getClickHouseCodecForColumnType(columnType, tableName string) string {
+func (ch *Clickhouse) getClickHouseCodecForColumnType(columnType, tableName string) string {
 	if columnType == "datetime" {
 		if ch.DisableNullable && !(tableName == warehouseutils.IdentifiesTable || tableName == warehouseutils.UsersTable) {
 			return "Codec(DoubleDelta, LZ4)"
@@ -340,7 +340,7 @@ func getClickhouseColumnTypeForSpecificColumn(columnName, columnType string, isN
 }
 
 // getClickHouseColumnTypeForSpecificTable gets suitable columnType based on the tableName
-func (ch *Handle) getClickHouseColumnTypeForSpecificTable(tableName, columnName, columnType string, notNullableKey bool) string {
+func (ch *Clickhouse) getClickHouseColumnTypeForSpecificTable(tableName, columnName, columnType string, notNullableKey bool) string {
 	if notNullableKey || (tableName != warehouseutils.IdentifiesTable && ch.DisableNullable) {
 		return getClickhouseColumnTypeForSpecificColumn(columnName, columnType, false)
 	}
@@ -352,7 +352,7 @@ func (ch *Handle) getClickHouseColumnTypeForSpecificTable(tableName, columnName,
 }
 
 // DownloadLoadFiles downloads load files for the tableName and gives file names
-func (ch *Handle) DownloadLoadFiles(tableName string) ([]string, error) {
+func (ch *Clickhouse) DownloadLoadFiles(tableName string) ([]string, error) {
 	ch.Logger.Infof("%s DownloadLoadFiles Started", ch.GetLogIdentifier(tableName))
 	defer ch.Logger.Infof("%s DownloadLoadFiles Completed", ch.GetLogIdentifier(tableName))
 	objects := ch.Uploader.GetLoadFilesMetadata(warehouseutils.GetLoadFilesOptionsT{Table: tableName})
@@ -400,11 +400,11 @@ func (ch *Handle) DownloadLoadFiles(tableName string) ([]string, error) {
 	return fileNames, dErr
 }
 
-func (*Handle) DeleteBy([]string, warehouseutils.DeleteByParams) error {
+func (*Clickhouse) DeleteBy([]string, warehouseutils.DeleteByParams) error {
 	return fmt.Errorf(warehouseutils.NotImplementedErrorCode)
 }
 
-func (ch *Handle) downloadLoadFile(object *warehouseutils.LoadFileT, tableName string, downloader filemanager.FileManager, storageProvider string) (fileName string, err error) {
+func (ch *Clickhouse) downloadLoadFile(object *warehouseutils.LoadFileT, tableName string, downloader filemanager.FileManager, storageProvider string) (fileName string, err error) {
 	ch.Logger.Debugf("%s DownloadLoadFile Started", ch.GetLogIdentifier(tableName, storageProvider))
 	defer ch.Logger.Debugf("%s DownloadLoadFile Completed", ch.GetLogIdentifier(tableName, storageProvider))
 
@@ -455,7 +455,7 @@ func generateArgumentString(length int) string {
 	return strings.Join(args, ",")
 }
 
-func (ch *Handle) castStringToArray(data, dataType string) interface{} {
+func (ch *Clickhouse) castStringToArray(data, dataType string) interface{} {
 	switch dataType {
 	case "array(int)":
 		dataInt := make([]int64, 0)
@@ -519,7 +519,7 @@ func (ch *Handle) castStringToArray(data, dataType string) interface{} {
 }
 
 // typecastDataFromType typeCasts string data to the mentioned data type
-func (ch *Handle) typecastDataFromType(data, dataType string) interface{} {
+func (ch *Clickhouse) typecastDataFromType(data, dataType string) interface{} {
 	var dataI interface{}
 	var err error
 	switch dataType {
@@ -554,14 +554,14 @@ func (ch *Handle) typecastDataFromType(data, dataType string) interface{} {
 }
 
 // loadTable loads table to clickhouse from the load files
-func (ch *Handle) loadTable(tableName string, tableSchemaInUpload warehouseutils.TableSchemaT) (err error) {
+func (ch *Clickhouse) loadTable(tableName string, tableSchemaInUpload warehouseutils.TableSchemaT) (err error) {
 	if ch.UseS3CopyEngineForLoading() {
 		return ch.loadByCopyCommand(tableName, tableSchemaInUpload)
 	}
 	return ch.loadByDownloadingLoadFiles(tableName, tableSchemaInUpload)
 }
 
-func (ch *Handle) UseS3CopyEngineForLoading() bool {
+func (ch *Clickhouse) UseS3CopyEngineForLoading() bool {
 	if !slices.Contains(ch.S3EngineEnabledWorkspaceIDs, ch.Warehouse.WorkspaceID) {
 		return false
 	}
@@ -571,7 +571,7 @@ func (ch *Handle) UseS3CopyEngineForLoading() bool {
 	return true
 }
 
-func (ch *Handle) loadByDownloadingLoadFiles(tableName string, tableSchemaInUpload warehouseutils.TableSchemaT) (err error) {
+func (ch *Clickhouse) loadByDownloadingLoadFiles(tableName string, tableSchemaInUpload warehouseutils.TableSchemaT) (err error) {
 	ch.Logger.Infof("%s LoadTable Started", ch.GetLogIdentifier(tableName))
 	defer ch.Logger.Infof("%s LoadTable Completed", ch.GetLogIdentifier(tableName))
 
@@ -607,7 +607,7 @@ func (ch *Handle) loadByDownloadingLoadFiles(tableName string, tableSchemaInUplo
 	return
 }
 
-func (ch *Handle) credentials() (accessKeyID, secretAccessKey string, err error) {
+func (ch *Clickhouse) credentials() (accessKeyID, secretAccessKey string, err error) {
 	if ch.ObjectStorage == warehouseutils.S3 {
 		return warehouseutils.GetConfigValue(warehouseutils.AWSAccessSecret, ch.Warehouse), warehouseutils.GetConfigValue(warehouseutils.AWSAccessKey, ch.Warehouse), nil
 	}
@@ -617,7 +617,7 @@ func (ch *Handle) credentials() (accessKeyID, secretAccessKey string, err error)
 	return "", "", errors.New("objectStorage not supported for loading using S3 engine")
 }
 
-func (ch *Handle) loadByCopyCommand(tableName string, tableSchemaInUpload warehouseutils.TableSchemaT) error {
+func (ch *Clickhouse) loadByCopyCommand(tableName string, tableSchemaInUpload warehouseutils.TableSchemaT) error {
 	ch.Logger.Infof("LoadTable By COPY command Started for table: %s", tableName)
 
 	strKeys := warehouseutils.GetColumnsFromTableSchema(tableSchemaInUpload)
@@ -680,7 +680,7 @@ type tableError struct {
 	err         error
 }
 
-func (ch *Handle) loadTablesFromFilesNamesWithRetry(tableName string, tableSchemaInUpload warehouseutils.TableSchemaT, fileNames []string, chStats *clickHouseStat) (terr tableError) {
+func (ch *Clickhouse) loadTablesFromFilesNamesWithRetry(tableName string, tableSchemaInUpload warehouseutils.TableSchemaT, fileNames []string, chStats *clickHouseStat) (terr tableError) {
 	ch.Logger.Debugf("%s LoadTablesFromFilesNamesWithRetry Started", ch.GetLogIdentifier(tableName))
 	defer ch.Logger.Debugf("%s LoadTablesFromFilesNamesWithRetry Completed", ch.GetLogIdentifier(tableName))
 
@@ -829,7 +829,7 @@ func (ch *Handle) loadTablesFromFilesNamesWithRetry(tableName string, tableSchem
 	return
 }
 
-func (ch *Handle) schemaExists(schemaName string) (exists bool, err error) {
+func (ch *Clickhouse) schemaExists(schemaName string) (exists bool, err error) {
 	var count int64
 	sqlStatement := "SELECT count(*) FROM system.databases WHERE name = ?"
 	err = ch.DB.QueryRow(sqlStatement, schemaName).Scan(&count)
@@ -842,7 +842,7 @@ func (ch *Handle) schemaExists(schemaName string) (exists bool, err error) {
 }
 
 // createSchema creates a database in clickhouse
-func (ch *Handle) createSchema() (err error) {
+func (ch *Clickhouse) createSchema() (err error) {
 	var schemaExists bool
 	schemaExists, err = ch.schemaExists(ch.Namespace)
 	if err != nil {
@@ -874,7 +874,7 @@ createUsersTable creates a user's table with engine AggregatingMergeTree,
 this lets us choose aggregation logic before merging records with same user id.
 current behaviour is to replace user  properties with the latest non-null values
 */
-func (ch *Handle) createUsersTable(name string, columns map[string]string) (err error) {
+func (ch *Clickhouse) createUsersTable(name string, columns map[string]string) (err error) {
 	sortKeyFields := []string{"id"}
 	notNullableColumns := []string{"received_at", "id"}
 	clusterClause := ""
@@ -907,7 +907,7 @@ func getSortKeyTuple(sortKeyFields []string) string {
 
 // CreateTable creates table with engine ReplacingMergeTree(), this is used for dedupe event data and replace it will the latest data if duplicate data found. This logic is handled by clickhouse
 // The engine differs from MergeTree in that it removes duplicate entries with the same sorting key value.
-func (ch *Handle) CreateTable(tableName string, columns map[string]string) (err error) {
+func (ch *Clickhouse) CreateTable(tableName string, columns map[string]string) (err error) {
 	sortKeyFields := []string{"received_at", "id"}
 	if tableName == warehouseutils.DiscardsTable {
 		sortKeyFields = []string{"received_at"}
@@ -945,7 +945,7 @@ func (ch *Handle) CreateTable(tableName string, columns map[string]string) (err 
 	return
 }
 
-func (ch *Handle) DropTable(tableName string) (err error) {
+func (ch *Clickhouse) DropTable(tableName string) (err error) {
 	cluster := warehouseutils.GetConfigValue(Cluster, ch.Warehouse)
 	clusterClause := ""
 	if len(strings.TrimSpace(cluster)) > 0 {
@@ -956,7 +956,7 @@ func (ch *Handle) DropTable(tableName string) (err error) {
 	return
 }
 
-func (ch *Handle) AddColumns(tableName string, columnsInfo []warehouseutils.ColumnInfo) (err error) {
+func (ch *Clickhouse) AddColumns(tableName string, columnsInfo []warehouseutils.ColumnInfo) (err error) {
 	var (
 		query         string
 		queryBuilder  strings.Builder
@@ -995,7 +995,7 @@ func (ch *Handle) AddColumns(tableName string, columnsInfo []warehouseutils.Colu
 	return
 }
 
-func (ch *Handle) CreateSchema() (err error) {
+func (ch *Clickhouse) CreateSchema() (err error) {
 	if len(ch.Uploader.GetSchemaInWarehouse()) > 0 {
 		return nil
 	}
@@ -1003,12 +1003,12 @@ func (ch *Handle) CreateSchema() (err error) {
 	return err
 }
 
-func (*Handle) AlterColumn(_, _, _ string) (err error) {
+func (*Clickhouse) AlterColumn(_, _, _ string) (err error) {
 	return
 }
 
 // TestConnection is used destination connection tester to test the clickhouse connection
-func (ch *Handle) TestConnection(warehouse warehouseutils.Warehouse) (err error) {
+func (ch *Clickhouse) TestConnection(warehouse warehouseutils.Warehouse) (err error) {
 	ch.Warehouse = warehouse
 	ch.DB, err = ch.ConnectToClickhouse(ch.getConnectionCredentials(), true)
 	if err != nil {
@@ -1030,7 +1030,7 @@ func (ch *Handle) TestConnection(warehouse warehouseutils.Warehouse) (err error)
 	return nil
 }
 
-func (ch *Handle) Setup(warehouse warehouseutils.Warehouse, uploader warehouseutils.UploaderI) (err error) {
+func (ch *Clickhouse) Setup(warehouse warehouseutils.Warehouse, uploader warehouseutils.UploaderI) (err error) {
 	ch.Warehouse = warehouse
 	ch.Namespace = warehouse.Namespace
 	ch.Uploader = uploader
@@ -1041,12 +1041,12 @@ func (ch *Handle) Setup(warehouse warehouseutils.Warehouse, uploader warehouseut
 	return err
 }
 
-func (*Handle) CrashRecover(_ warehouseutils.Warehouse) (err error) {
+func (*Clickhouse) CrashRecover(_ warehouseutils.Warehouse) (err error) {
 	return
 }
 
 // FetchSchema queries clickhouse and returns the schema associated with provided namespace
-func (ch *Handle) FetchSchema(warehouse warehouseutils.Warehouse) (schema, unrecognizedSchema warehouseutils.SchemaT, err error) {
+func (ch *Clickhouse) FetchSchema(warehouse warehouseutils.Warehouse) (schema, unrecognizedSchema warehouseutils.SchemaT, err error) {
 	ch.Warehouse = warehouse
 	ch.Namespace = warehouse.Namespace
 	dbHandle, err := ch.ConnectToClickhouse(ch.getConnectionCredentials(), true)
@@ -1100,7 +1100,7 @@ func (ch *Handle) FetchSchema(warehouse warehouseutils.Warehouse) (schema, unrec
 	return
 }
 
-func (ch *Handle) LoadUserTables() (errorMap map[string]error) {
+func (ch *Clickhouse) LoadUserTables() (errorMap map[string]error) {
 	errorMap = map[string]error{warehouseutils.IdentifiesTable: nil}
 	err := ch.loadTable(warehouseutils.IdentifiesTable, ch.Uploader.GetTableSchemaInUpload(warehouseutils.IdentifiesTable))
 	if err != nil {
@@ -1120,34 +1120,34 @@ func (ch *Handle) LoadUserTables() (errorMap map[string]error) {
 	return
 }
 
-func (ch *Handle) LoadTable(tableName string) error {
+func (ch *Clickhouse) LoadTable(tableName string) error {
 	err := ch.loadTable(tableName, ch.Uploader.GetTableSchemaInUpload(tableName))
 	return err
 }
 
-func (ch *Handle) Cleanup() {
+func (ch *Clickhouse) Cleanup() {
 	if ch.DB != nil {
 		_ = ch.DB.Close()
 	}
 }
 
-func (*Handle) LoadIdentityMergeRulesTable() (err error) {
+func (*Clickhouse) LoadIdentityMergeRulesTable() (err error) {
 	return
 }
 
-func (*Handle) LoadIdentityMappingsTable() (err error) {
+func (*Clickhouse) LoadIdentityMappingsTable() (err error) {
 	return
 }
 
-func (*Handle) DownloadIdentityRules(*misc.GZipWriter) (err error) {
+func (*Clickhouse) DownloadIdentityRules(*misc.GZipWriter) (err error) {
 	return
 }
 
-func (*Handle) IsEmpty(_ warehouseutils.Warehouse) (empty bool, err error) {
+func (*Clickhouse) IsEmpty(_ warehouseutils.Warehouse) (empty bool, err error) {
 	return
 }
 
-func (ch *Handle) GetTotalCountInTable(ctx context.Context, tableName string) (total int64, err error) {
+func (ch *Clickhouse) GetTotalCountInTable(ctx context.Context, tableName string) (total int64, err error) {
 	sqlStatement := fmt.Sprintf(`SELECT count(*) FROM "%[1]s"."%[2]s"`, ch.Namespace, tableName)
 	err = ch.DB.QueryRowContext(ctx, sqlStatement).Scan(&total)
 	if err != nil {
@@ -1156,7 +1156,7 @@ func (ch *Handle) GetTotalCountInTable(ctx context.Context, tableName string) (t
 	return
 }
 
-func (ch *Handle) Connect(warehouse warehouseutils.Warehouse) (client.Client, error) {
+func (ch *Clickhouse) Connect(warehouse warehouseutils.Warehouse) (client.Client, error) {
 	ch.Warehouse = warehouse
 	ch.Namespace = warehouse.Namespace
 	ch.ObjectStorage = warehouseutils.ObjectStorageType(
@@ -1172,14 +1172,14 @@ func (ch *Handle) Connect(warehouse warehouseutils.Warehouse) (client.Client, er
 	return client.Client{Type: client.SQLClient, SQL: dbHandle}, err
 }
 
-func (ch *Handle) GetLogIdentifier(args ...string) string {
+func (ch *Clickhouse) GetLogIdentifier(args ...string) string {
 	if len(args) == 0 {
 		return fmt.Sprintf("[%s][%s][%s][%s]", ch.Warehouse.Type, ch.Warehouse.Source.ID, ch.Warehouse.Destination.ID, ch.Warehouse.Namespace)
 	}
 	return fmt.Sprintf("[%s][%s][%s][%s][%s]", ch.Warehouse.Type, ch.Warehouse.Source.ID, ch.Warehouse.Destination.ID, ch.Warehouse.Namespace, strings.Join(args, "]["))
 }
 
-func (ch *Handle) LoadTestTable(_, tableName string, payloadMap map[string]interface{}, _ string) (err error) {
+func (ch *Clickhouse) LoadTestTable(_, tableName string, payloadMap map[string]interface{}, _ string) (err error) {
 	var columns []string
 	var recordInterface []interface{}
 
@@ -1217,6 +1217,6 @@ func (ch *Handle) LoadTestTable(_, tableName string, payloadMap map[string]inter
 	return
 }
 
-func (ch *Handle) SetConnectionTimeout(timeout time.Duration) {
+func (ch *Clickhouse) SetConnectionTimeout(timeout time.Duration) {
 	ch.ConnectTimeout = timeout
 }

@@ -70,7 +70,7 @@ func New(destType string) (ManagerI, error) {
 		postgres.WithConfig(pg, config.Default)
 		return pg, nil
 	case warehouseutils.CLICKHOUSE:
-		ch := clickhouse.NewHandle()
+		ch := clickhouse.NewClickhouse()
 		clickhouse.WithConfig(ch, config.Default)
 		return ch, nil
 	case warehouseutils.MSSQL:
@@ -106,7 +106,7 @@ func NewWarehouseOperations(destType string) (WarehouseOperations, error) {
 		postgres.WithConfig(pg, config.Default)
 		return pg, nil
 	case warehouseutils.CLICKHOUSE:
-		ch := clickhouse.NewHandle()
+		ch := clickhouse.NewClickhouse()
 		clickhouse.WithConfig(ch, config.Default)
 		return ch, nil
 	case warehouseutils.MSSQL:
