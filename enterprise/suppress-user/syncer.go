@@ -88,7 +88,7 @@ func NewSyncer(baseURL string, identifier identity.Identifier, r Repository, opt
 	return s, nil
 }
 
-// Syncer is responsible for syncing suppression's from the backend to the repository
+// Syncer is responsible for syncing suppressions from the backend to the repository
 type Syncer struct {
 	url string
 	r   Repository

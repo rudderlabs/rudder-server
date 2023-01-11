@@ -21,13 +21,11 @@ type Cache[T any] interface {
 
 func New[T any](ct CacheType, origin string, l logger.Logger) Cache[T] {
 	switch ct {
-	case MemoryCacheType:
-		l.Info("Using in-memory cache")
-		return &listcache.ListCache[T]{Origin: origin}
 	case BadgerCacheType:
 		l.Info("Using badger cache")
 		return &embeddedcache.EmbeddedCache[T]{Origin: origin, Logger: l}
 	default:
+		l.Info("Using in-memory cache")
 		return &listcache.ListCache[T]{Origin: origin}
 	}
 }
