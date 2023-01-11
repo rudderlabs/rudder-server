@@ -158,15 +158,15 @@ func (e *EmbeddedCache[E]) gcBadgerDB() {
 			e.Logger.Infof("Closing closed channel")
 			close(e.closed)
 			return
-		default:
+		case <-ticker.C:
 			e.Logger.Infof("Inside ticker")
-			<-ticker.C
+		again: // see https://dgraph.io/docs/badger/get-started/#garbage-collection
+			err := e.Db.RunValueLogGC(0.7)
+			if err == nil {
+				goto again
+			}
 		}
-	again: // see https://dgraph.io/docs/badger/get-started/#garbage-collection
-		err := e.Db.RunValueLogGC(0.7)
-		if err == nil {
-			goto again
-		}
+
 	}
 }
 
@@ -177,6 +177,7 @@ func keyPrefixValue[E any](key string, value E, limiter int) ([]byte, []byte) {
 }
 
 func (e *EmbeddedCache[E]) Stop() error {
+	e.Init()
 	e.Logger.Infof("closing done channel")
 	close(e.done)
 	e.Logger.Infof("waiting for closed channel")
