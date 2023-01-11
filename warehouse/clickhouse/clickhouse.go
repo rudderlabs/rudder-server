@@ -13,6 +13,7 @@ import (
 	"io"
 	"net/url"
 	"os"
+	"path"
 	"path/filepath"
 	"sort"
 	"strconv"
@@ -627,9 +628,7 @@ func (ch *Handle) loadByCopyCommand(tableName string, tableSchemaInUpload wareho
 	if err != nil {
 		return fmt.Errorf("sample load file location with error: %w", err)
 	}
-	loadFolder := csvObjectLocation
-	loadFolder = loadFolder[:strings.LastIndex(loadFolder, "/")]
-	loadFolder = loadFolder + "/*.csv.gz"
+	loadFolder := path.Dir(csvObjectLocation) + "/*.csv.gz"
 
 	accessKeyID, secretAccessKey, err := ch.credentials()
 	if err != nil {
