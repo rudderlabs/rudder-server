@@ -3,7 +3,6 @@ package embeddedcache
 import (
 	"encoding/json"
 	"fmt"
-	"math/rand"
 	"os"
 	"path"
 	"sync"
@@ -16,8 +15,6 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
-
-var delimiter = []byte("$$")
 
 /*
 loadCacheConfig sets the properties of the cache after reading it from the config file.
@@ -62,12 +59,20 @@ func (badgerLogger) Warningf(format string, a ...interface{}) {
 	_, _ = fmt.Fprintf(os.Stderr, format, a...)
 }
 
-// Update ....
+// Update writes the entries into badger db with a TTL
 func (e *EmbeddedCache[E]) Update(key string, value E) {
 	e.Init()
 	txn := e.Db.NewTransaction(true)
-	byteKey, byteVal := keyPrefixValue(key, value, e.Limiter)
-	entry := badger.NewEntry(byteKey, byteVal).WithTTL(e.CleanupFreq)
+	res := e.Read(key)
+	if len(res) >= e.Limiter {
+		res = res[len(res)-e.Limiter+1:]
+	}
+	res = append(res, value)
+	data, err := json.Marshal(res)
+	if err != nil {
+		return
+	}
+	entry := badger.NewEntry([]byte(key), data).WithTTL(e.CleanupFreq)
 	if err := txn.SetEntry(entry); err == badger.ErrTxnTooBig {
 		err = txn.Commit()
 		if err != nil {
@@ -82,7 +87,7 @@ func (e *EmbeddedCache[E]) Update(key string, value E) {
 	_ = txn.Commit()
 }
 
-// Read ...
+// Read fetches all the entries for a given key from badgerDB
 func (e *EmbeddedCache[E]) Read(key string) []E {
 	e.Init()
 	var values []E
@@ -93,12 +98,10 @@ func (e *EmbeddedCache[E]) Read(key string) []E {
 		for it.Seek(prefix); it.ValidForPrefix(prefix); it.Next() {
 			item := it.Item()
 			err := item.Value(func(v []byte) error {
-				var value E
-				err := json.Unmarshal(v, &value)
+				err := json.Unmarshal(v, &values)
 				if err != nil {
 					return err
 				}
-				values = append(values, value)
 				return nil
 			})
 			if err != nil {
@@ -155,11 +158,9 @@ func (e *EmbeddedCache[E]) gcBadgerDB() {
 	for {
 		select {
 		case <-e.done:
-			e.Logger.Infof("Closing closed channel")
 			close(e.closed)
 			return
 		case <-ticker.C:
-			e.Logger.Infof("Inside ticker")
 		again: // see https://dgraph.io/docs/badger/get-started/#garbage-collection
 			err := e.Db.RunValueLogGC(0.7)
 			if err == nil {
@@ -167,12 +168,6 @@ func (e *EmbeddedCache[E]) gcBadgerDB() {
 			}
 		}
 	}
-}
-
-func keyPrefixValue[E any](key string, value E, limiter int) ([]byte, []byte) {
-	prefixedKey := []byte(fmt.Sprintf("%s%s%v", key, delimiter, rand.Intn(limiter)))
-	valueBytes, _ := json.Marshal(value)
-	return prefixedKey, valueBytes
 }
 
 func (e *EmbeddedCache[E]) Stop() error {
