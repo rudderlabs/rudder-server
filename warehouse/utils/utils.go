@@ -263,25 +263,6 @@ type KeyValue struct {
 	Value interface{}
 }
 
-type StagingFile struct {
-	WorkspaceID           string
-	Schema                map[string]map[string]interface{}
-	BatchDestination      DestinationT
-	Location              string
-	FirstEventAt          string
-	LastEventAt           string
-	TotalEvents           int
-	UseRudderStorage      bool
-	DestinationRevisionID string
-	// cloud sources specific info
-	SourceBatchID   string
-	SourceTaskID    string
-	SourceTaskRunID string
-	SourceJobID     string
-	SourceJobRunID  string
-	TimeWindow      time.Time
-}
-
 type UploaderI interface {
 	GetSchemaInWarehouse() SchemaT
 	GetLocalSchema() SchemaT
