@@ -307,9 +307,10 @@ func (jd *HandleT) getMigrationList(dsList []dataSetT) (migrateFrom []dataSetT, 
 }
 
 func (jd *HandleT) migrateJobsInTx(ctx context.Context, tx *Tx, srcDS, destDS dataSetT) (int, error) {
-	queryStat := stats.Default.NewTaggedStat("migration_jobs", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix})
-	queryStat.Start()
-	defer queryStat.End()
+	defer jd.sendTiming(
+		"migration_jobs",
+		&statTags{CustomValFilters: []string{jd.tablePrefix}},
+	)()
 
 	compactDSQuery := fmt.Sprintf(
 		`with last_status as (select * from "v_last_%[1]s"),
@@ -405,9 +406,10 @@ func computeInsertIdx(beforeIndex, afterIndex string) (string, error) {
 func (jd *HandleT) checkIfMigrateDS(ds dataSetT) (
 	migrate, small bool, recordsLeft int,
 ) {
-	queryStat := stats.Default.NewTaggedStat("migration_ds_check", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix})
-	queryStat.Start()
-	defer queryStat.End()
+	defer jd.sendTiming(
+		"migration_ds_check",
+		&statTags{CustomValFilters: []string{jd.tablePrefix}},
+	)()
 
 	var delCount, totalCount, statusCount int
 	sqlStatement := fmt.Sprintf(`SELECT COUNT(*) from %q`, ds.JobTable)

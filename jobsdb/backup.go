@@ -495,9 +495,11 @@ func getStatusBackupQueryFn(backupDSRange *dataSetRangeT) func(int64) string {
 }
 
 func (jd *HandleT) createTableDumps(queryFunc func(int64) string, pathFunc func(string) (string, error), totalCount int64) (map[string]string, error) {
+	defer jd.sendTiming(
+		"table_FileDump_TimeStat",
+		&statTags{CustomValFilters: []string{jd.tablePrefix}},
+	)()
 	filesWriter := fileuploader.NewGzMultiFileWriter()
-	tableFileDumpTimeStat := stats.Default.NewTaggedStat("table_FileDump_TimeStat", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix})
-	tableFileDumpTimeStat.Start()
 
 	var offset int64
 	dumps := make(map[string]string)
@@ -558,13 +560,14 @@ func (jd *HandleT) createTableDumps(queryFunc func(int64) string, pathFunc func(
 	if err != nil {
 		return dumps, err
 	}
-	tableFileDumpTimeStat.End()
 	return dumps, nil
 }
 
 func (jd *HandleT) uploadTableDump(ctx context.Context, workspaceID, path string) error {
-	fileUploadTimeStat := stats.Default.NewTaggedStat("fileUpload_TimeStat", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix})
-	fileUploadTimeStat.Start()
+	defer jd.sendTiming(
+		"fileUpload_TimeStat",
+		&statTags{CustomValFilters: []string{jd.tablePrefix}},
+	)()
 
 	file, err := os.Open(path)
 	if err != nil {
@@ -587,7 +590,6 @@ func (jd *HandleT) uploadTableDump(ctx context.Context, workspaceID, path string
 		return err
 	}
 	jd.logger.Infof("[JobsDB] :: Backed up table at %s for workspaceId %s", output.Location, workspaceID)
-	fileUploadTimeStat.End()
 	return nil
 }
 

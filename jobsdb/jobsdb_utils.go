@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/rudderlabs/rudder-server/admin"
 	"github.com/rudderlabs/rudder-server/jobsdb/internal/dsindex"
@@ -230,4 +231,13 @@ func (jd *HandleT) getTimerStat(stat string, tags *statTags) stats.Measurement {
 	}
 
 	return stats.Default.NewTaggedStat(stat, stats.TimerType, timingTags)
+}
+
+func (jd *HandleT) sendTiming(statName string, tags *statTags) func() {
+	// https://stackoverflow.com/a/45766707/19093808
+	start := time.Now()
+	return func() {
+		stat := jd.getTimerStat(statName, tags)
+		stat.Since(start)
+	}
 }

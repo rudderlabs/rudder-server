@@ -123,13 +123,13 @@ func (st *HandleT) runErrWorkers(ctx context.Context) {
 	for i := 0; i < noOfErrStashWorkers; i++ {
 		g.Go(misc.WithBugsnag(func() error {
 			for jobs := range st.errProcessQ {
+				uploadStart := time.Now()
 				uploadStat := stats.Default.NewStat("Processor.err_upload_time", stats.TimerType)
-				uploadStat.Start()
 				errorJobs := st.storeErrorsToObjectStorage(jobs)
 				for _, errorJob := range errorJobs {
 					st.setErrJobStatus(errorJob.jobs, errorJob.errorOutput)
 				}
-				uploadStat.End()
+				uploadStat.Since(uploadStart)
 			}
 
 			return nil
