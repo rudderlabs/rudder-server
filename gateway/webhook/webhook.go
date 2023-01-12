@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/hashicorp/go-retryablehttp"
+	gwstats "github.com/rudderlabs/rudder-server/gateway/internal/stats"
 	"github.com/rudderlabs/rudder-server/gateway/response"
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/logger"
@@ -58,6 +59,7 @@ type HandleT struct {
 	batchRequestQ chan *batchWebhookT
 	netClient     *retryablehttp.Client
 	gwHandle      GatewayI
+	stats         stats.Stats
 	ackCount      uint64
 	recvCount     uint64
 
@@ -100,19 +102,7 @@ func parseWriteKey(req *http.Request) (writeKey string, found bool) {
 	return
 }
 
-func (webhook *HandleT) failRequest(w http.ResponseWriter, r *http.Request, reason string, code int, stat string) {
-	writeKeyFailStats := make(map[string]int)
-	statTags := map[string]map[string]string{
-		stat: {
-			"reqType": "webhook",
-			"reason":  reason,
-		},
-	}
-	misc.IncrementMapByKey(writeKeyFailStats, stat, 1)
-	webhook.gwHandle.UpdateSourceStats(writeKeyFailStats,
-		"gateway.write_key_failed_requests",
-		statTags,
-	)
+func (webhook *HandleT) failRequest(w http.ResponseWriter, r *http.Request, reason string, code int) {
 	statusCode := http.StatusBadRequest
 	if code != 0 {
 		statusCode = code
@@ -129,12 +119,17 @@ func (webhook *HandleT) RequestHandler(w http.ResponseWriter, r *http.Request) {
 
 	writeKey, ok := parseWriteKey(r)
 	if !ok {
+		stat := &gwstats.SourceStat{
+			Source:  "noWriteKey",
+			ReqType: "webhook",
+		}
+		stat.RequestFailed("noWriteKey")
+		stat.Report(webhook.stats)
 		webhook.failRequest(
 			w,
 			r,
 			response.GetStatus(response.NoWriteKeyInQueryParams),
 			response.GetErrorStatusCode(response.NoWriteKeyInQueryParams),
-			"noWriteKey",
 		)
 		atomic.AddUint64(&webhook.ackCount, 1)
 		return
@@ -142,12 +137,14 @@ func (webhook *HandleT) RequestHandler(w http.ResponseWriter, r *http.Request) {
 
 	sourceDefName, ok := webhook.gwHandle.GetWebhookSourceDefName(writeKey)
 	if !ok {
+		stat := webhook.gwHandle.NewSourceStat(writeKey, "webhook")
+		stat.RequestFailed("invalidWriteKey")
+		stat.Report(webhook.stats)
 		webhook.failRequest(
 			w,
 			r,
 			response.GetStatus(response.InvalidWriteKey),
 			response.GetErrorStatusCode(response.InvalidWriteKey),
-			"invalidWriteKey",
 		)
 		atomic.AddUint64(&webhook.ackCount, 1)
 		return
@@ -162,12 +159,15 @@ func (webhook *HandleT) RequestHandler(w http.ResponseWriter, r *http.Request) {
 	contentType := r.Header.Get("Content-Type")
 	if strings.Contains(strings.ToLower(contentType), "application/x-www-form-urlencoded") {
 		if err := r.ParseForm(); err != nil {
+			stat := webhook.gwHandle.NewSourceStat(writeKey, "webhook")
+			stat.RequestFailed("couldNotParseForm")
+			stat.Report(webhook.stats)
+
 			webhook.failRequest(
 				w,
 				r,
 				response.GetStatus(response.ErrorInParseForm),
 				response.GetErrorStatusCode(response.ErrorInParseForm),
-				"couldNotParseForm",
 			)
 			atomic.AddUint64(&webhook.ackCount, 1)
 			return
@@ -175,12 +175,15 @@ func (webhook *HandleT) RequestHandler(w http.ResponseWriter, r *http.Request) {
 		postFrom = r.PostForm
 	} else if strings.Contains(strings.ToLower(contentType), "multipart/form-data") {
 		if err := r.ParseMultipartForm(32 << 20); err != nil {
+			stat := webhook.gwHandle.NewSourceStat(writeKey, "webhook")
+			stat.RequestFailed("couldNotParseMultiform")
+			stat.Report(webhook.stats)
+
 			webhook.failRequest(
 				w,
 				r,
 				response.GetStatus(response.ErrorInParseMultiform),
 				response.GetErrorStatusCode(response.ErrorInParseMultiform),
-				"couldNotParseMultiform",
 			)
 			atomic.AddUint64(&webhook.ackCount, 1)
 			return
@@ -194,12 +197,14 @@ func (webhook *HandleT) RequestHandler(w http.ResponseWriter, r *http.Request) {
 	if r.MultipartForm != nil {
 		jsonByte, err = json.Marshal(multipartForm)
 		if err != nil {
+			stat := webhook.gwHandle.NewSourceStat(writeKey, "webhook")
+			stat.RequestFailed("couldNotMarshal")
+			stat.Report(webhook.stats)
 			webhook.failRequest(
 				w,
 				r,
 				response.GetStatus(response.ErrorInMarshal),
 				response.GetErrorStatusCode(response.ErrorInMarshal),
-				"couldNotMarshal",
 			)
 			atomic.AddUint64(&webhook.ackCount, 1)
 			return
@@ -207,12 +212,14 @@ func (webhook *HandleT) RequestHandler(w http.ResponseWriter, r *http.Request) {
 	} else if len(postFrom) != 0 {
 		jsonByte, err = json.Marshal(postFrom)
 		if err != nil {
+			stat := webhook.gwHandle.NewSourceStat(writeKey, "webhook")
+			stat.RequestFailed("couldNotMarshal")
+			stat.Report(webhook.stats)
 			webhook.failRequest(
 				w,
 				r,
 				response.GetStatus(response.ErrorInMarshal),
 				response.GetErrorStatusCode(response.ErrorInMarshal),
-				"couldNotMarshal",
 			)
 			atomic.AddUint64(&webhook.ackCount, 1)
 			return
@@ -237,6 +244,8 @@ func (webhook *HandleT) RequestHandler(w http.ResponseWriter, r *http.Request) {
 	atomic.AddUint64(&webhook.ackCount, 1)
 	webhook.gwHandle.TrackRequestMetrics(resp.Err)
 
+	ss := webhook.gwHandle.NewSourceStat(writeKey, "webhook")
+
 	if resp.Err != "" {
 		code := http.StatusBadRequest
 		if resp.StatusCode != 0 {
@@ -244,6 +253,8 @@ func (webhook *HandleT) RequestHandler(w http.ResponseWriter, r *http.Request) {
 		}
 		pkgLogger.Infof("IP: %s -- %s -- Response: %d, %s", misc.GetIPFromReq(r), r.URL.Path, code, resp.Err)
 		http.Error(w, resp.Err, code)
+		ss.RequestFailed("error")
+		ss.Report(webhook.stats)
 		return
 	}
 
@@ -254,6 +265,8 @@ func (webhook *HandleT) RequestHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	pkgLogger.Debugf("IP: %s -- %s -- Response: 200, %s", misc.GetIPFromReq(r), r.URL.Path, response.GetStatus(response.Ok))
 	_, _ = w.Write(payload)
+	ss.RequestSucceeded()
+	ss.Report(webhook.stats)
 }
 
 func (webhook *HandleT) batchRequests(sourceDef string, requestQ chan *webhookT) {
@@ -292,8 +305,8 @@ func (webhook *HandleT) batchRequests(sourceDef string, requestQ chan *webhookT)
 // TODO : return back immediately for blank request body. its waiting till timeout
 func (bt *batchWebhookTransformerT) batchTransformLoop() {
 	for breq := range bt.webhook.batchRequestQ {
-		payloadArr := [][]byte{}
-		webRequests := []*webhookT{}
+		var payloadArr [][]byte
+		var webRequests []*webhookT
 		for _, req := range breq.batchRequest {
 			body, err := io.ReadAll(req.request.Body)
 			req.request.Body.Close()

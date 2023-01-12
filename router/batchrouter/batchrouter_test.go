@@ -5,6 +5,7 @@ import (
 	jsonb "encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -33,6 +34,7 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/pubsub"
 	testutils "github.com/rudderlabs/rudder-server/utils/tests"
+	"github.com/rudderlabs/rudder-server/warehouse/client"
 )
 
 const (
@@ -311,35 +313,49 @@ func assertJobStatus(job *jobsdb.JobT, status *jobsdb.JobStatusT, expectedState,
 func TestPostToWarehouse(t *testing.T) {
 	// TOT: Decouple this test from the actual warehouse
 	inputs := []struct {
-		name          string
-		responseCode  int
-		responseBody  string
-		expectedError error
+		name string
+
+		responseCode int
+		responseBody string
+
+		expectedPayload string
+		expectedError   error
 	}{
 		{
-			name:         "should successfully post to warehouse",
+			name: "should successfully post to warehouse",
+
 			responseBody: "OK",
 			responseCode: http.StatusOK,
+
+			expectedPayload: `{"WorkspaceID":"test-workspace","Schema":{"tracks":{"id":"string"}},"BatchDestination":{"Source":{"ID":""},"Destination":{"ID":""}},"Location":"","FirstEventAt":"","LastEventAt":"","TotalEvents":1,"TotalBytes":200,"UseRudderStorage":false,"DestinationRevisionID":"","SourceBatchID":"","SourceTaskID":"","SourceTaskRunID":"","SourceJobID":"","SourceJobRunID":"","TimeWindow":"0001-01-01T00:00:00Z"}`,
 		},
 		{
-			name:          "should fail to post to warehouse",
-			responseCode:  http.StatusNotFound,
-			responseBody:  "Not Found",
-			expectedError: errors.New("BRT: Failed to route staging file URL to warehouse service@%s/v1/process, status: 404 Not Found, body: Not Found"),
+			name: "should fail to post to warehouse",
+
+			responseCode: http.StatusNotFound,
+			responseBody: "Not Found",
+
+			expectedError: errors.New("unexpected status code \"404 Not Found\" on %s: Not Found"),
 		},
 	}
 	for _, input := range inputs {
 		t.Run(input.name, func(t *testing.T) {
 			ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				b, err := io.ReadAll(r.Body)
+				require.NoError(t, err)
+				if input.expectedPayload != "" {
+					require.JSONEq(t, input.expectedPayload, string(b))
+				}
+
 				w.WriteHeader(input.responseCode)
 				_, _ = w.Write([]byte(input.responseBody))
 			}))
 			t.Cleanup(ts.Close)
 
 			job := HandleT{
-				netHandle:    ts.Client(),
-				logger:       logger.NOP,
-				warehouseURL: ts.URL,
+				netHandle:       ts.Client(),
+				logger:          logger.NOP,
+				warehouseClient: client.NewWarehouse(ts.URL),
 			}
 			batchJobs := BatchJobsT{
 				Jobs: []*jobsdb.JobT{
@@ -361,7 +377,10 @@ func TestPostToWarehouse(t *testing.T) {
 				},
 				BatchDestination: &DestinationT{},
 			}
-			err := job.postToWarehouse(&batchJobs, StorageUploadOutput{})
+			err := job.postToWarehouse(&batchJobs, StorageUploadOutput{
+				TotalEvents: 1,
+				TotalBytes:  200,
+			})
 			if input.expectedError != nil {
 				require.Equal(t, fmt.Sprintf(input.expectedError.Error(), ts.URL), err.Error())
 			} else {
