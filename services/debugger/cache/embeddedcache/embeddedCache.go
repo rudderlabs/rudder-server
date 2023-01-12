@@ -22,13 +22,11 @@ loadCacheConfig sets the properties of the cache after reading it from the confi
 This gives a feature of hot readability as well.
 */
 func (e *EmbeddedCache[E]) loadCacheConfig() {
-	if e.CleanupFreq == 0 {
-		config.RegisterDurationConfigVariable(30, &e.CleanupFreq, true, time.Second, "LiveEvent.cache.clearFreq") // default clearFreq is 15 seconds
-	}
-	if e.Limiter == 0 {
-		config.RegisterIntConfigVariable(100, &e.Limiter, true, 1, "LiveEvent.cache.limiter")
-	}
+	config.RegisterDurationConfigVariable(30, &e.CleanupFreq, true, time.Second, "LiveEvent.cache.clearFreq") // default clearFreq is 15 seconds
+	config.RegisterIntConfigVariable(100, &e.Limiter, true, 1, "LiveEvent.cache.limiter")
 	config.RegisterDurationConfigVariable(5, &e.Ticker, false, time.Minute, "LiveEvent.cache.GCTime")
+	config.RegisterDurationConfigVariable(15, &e.queryTimeout, false, time.Second, "LiveEvent.cache.queryTimeout")
+	config.RegisterIntConfigVariable(3, &e.retries, false, 1, "LiveEvent.cache.retries")
 }
 
 /*
@@ -36,16 +34,18 @@ EmbeddedCache is an in-memory cache. Each key-value pair stored in this cache ha
 key-value pair form the cache which is older than TTL time.
 */
 type EmbeddedCache[E any] struct {
-	CleanupFreq time.Duration // TTL time on badgerDB
-	Limiter     int
-	once        sync.Once
-	Db          *badger.DB
-	Logger      logger.Logger
-	path        string
-	done        chan struct{}
-	closed      chan struct{}
-	Origin      string
-	Ticker      time.Duration
+	Limiter      int
+	retries      int
+	path         string
+	Origin       string
+	done         chan struct{}
+	closed       chan struct{}
+	Ticker       time.Duration
+	queryTimeout time.Duration
+	CleanupFreq  time.Duration // TTL time on badgerDB
+	once         sync.Once
+	Db           *badger.DB
+	Logger       logger.Logger
 }
 
 type badgerLogger struct {
@@ -88,37 +88,43 @@ func (e *EmbeddedCache[E]) Update(key string, value E) {
 		}
 		return nil
 	}
-	_ = misc.RetryWith(context.TODO(), 5*time.Second, 3, setBadgerEntry)
+	_ = misc.RetryWith(context.TODO(), e.queryTimeout, e.retries, setBadgerEntry)
 	_ = txn.Commit()
 }
 
 // Read fetches all the entries for a given key from badgerDB
 func (e *EmbeddedCache[E]) Read(key string) []E {
 	e.Init()
-	var values []E
-	err := e.Db.View(func(txn *badger.Txn) error {
-		it := txn.NewIterator(badger.DefaultIteratorOptions)
-		defer it.Close()
-		prefix := []byte(key)
-		for it.Seek(prefix); it.ValidForPrefix(prefix); it.Next() {
-			item := it.Item()
-			err := item.Value(func(v []byte) error {
-				err := json.Unmarshal(v, &values)
+	read := func(ctx context.Context) ([]E, error) {
+		var values []E
+		err := e.Db.View(func(txn *badger.Txn) error {
+			it := txn.NewIterator(badger.DefaultIteratorOptions)
+			defer it.Close()
+			prefix := []byte(key)
+			for it.Seek(prefix); it.ValidForPrefix(prefix); it.Next() {
+				item := it.Item()
+				err := item.Value(func(v []byte) error {
+					err := json.Unmarshal(v, &values)
+					if err != nil {
+						return err
+					}
+					return nil
+				})
 				if err != nil {
 					return err
 				}
-				return nil
-			})
-			if err != nil {
-				return err
 			}
+			return nil
+		})
+		if err != nil {
+			return nil, err
 		}
-		return nil
-	})
-	if err != nil {
-		return nil
+		return values, nil
 	}
-	return values
+
+	res, _ := misc.QueryWithRetries(context.TODO(), e.queryTimeout, e.retries, read)
+
+	return res
 }
 
 func (e *EmbeddedCache[E]) Init() {
