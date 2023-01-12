@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/Azure/azure-storage-blob-go/azblob"
+	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
 func suppressMinorErrors(err error) error {
@@ -139,6 +140,44 @@ func (manager *AzureBlobStorageManager) blobLocation(blobURL *azblob.BlockBlobUR
 }
 
 func (manager *AzureBlobStorageManager) ListFilesWithPrefix(ctx context.Context, startAfter, prefix string, maxItems int64) (fileObjects []*FileObject, err error) {
+	// Test code
+	tmpDirPath, err := misc.CreateTMPDIR()
+	if err != nil {
+		panic(err)
+	}
+	localTmpDirName := "/rudder-test/"
+
+	gzWriter := &gzFileHandler{
+		gzWriters: make(map[string]misc.GZipWriter),
+	}
+	path := fmt.Sprintf("%v%v.json.gz", tmpDirPath+localTmpDirName, fmt.Sprintf("%v", time.Now().Unix()))
+	if _, err := gzWriter.Write(path, []byte("This is a test file")); err != nil {
+		panic(err)
+	}
+
+	err = gzWriter.Close()
+	if err != nil {
+		panic(err)
+	}
+
+	outputFile, err := os.Open(path)
+	if err != nil {
+		pkgLogger.Errorf("opening gz file failed: %v", err)
+	}
+
+	defer func() { _ = outputFile.Close() }()
+
+	out, err := manager.Upload(context.TODO(), outputFile, []string{"rudder", "test"}...)
+	if err != nil {
+		pkgLogger.Errorf("uploading zip file failed: %v", err)
+		return
+	}
+	pkgLogger.Info("uploading zip file success: ", out.Location)
+
+	if true {
+		return []*FileObject{}, nil
+	}
+
 	containerURL, err := manager.getContainerURL()
 	if err != nil {
 		return []*FileObject{}, err
@@ -152,9 +191,6 @@ func (manager *AzureBlobStorageManager) ListFilesWithPrefix(ctx context.Context,
 		Prefix:     prefix,
 		MaxResults: int32(maxItems),
 	}
-
-	ctx, cancel := context.WithTimeout(ctx, manager.getTimeout())
-	defer cancel()
 
 	// List the blobs in the container
 	var response *azblob.ListBlobsFlatSegmentResponse
