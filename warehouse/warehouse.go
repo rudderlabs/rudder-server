@@ -449,44 +449,6 @@ func (wh *HandleT) getNamespace(configI interface{}, source backendconfig.Source
 	return namespace
 }
 
-func (wh *HandleT) getPendingStagingFiles(ctx context.Context, warehouse warehouseutils.Warehouse) ([]model.StagingFile, error) {
-	var lastStagingFileID int64
-	sqlStatement := fmt.Sprintf(`
-	SELECT
-	  end_staging_file_id
-	FROM
-	  %[1]s UT
-	WHERE
-	  UT.destination_type = '%[2]s'
-	  AND UT.source_id = '%[3]s'
-	  AND UT.destination_id = '%[4]s'
-	ORDER BY
-	  UT.id DESC;
-`,
-		warehouseutils.WarehouseUploadsTable,
-		warehouse.Type,
-		warehouse.Source.ID,
-		warehouse.Destination.ID,
-	)
-
-	err := wh.dbHandle.QueryRow(sqlStatement).Scan(&lastStagingFileID)
-	if err != nil && err != sql.ErrNoRows {
-		panic(fmt.Errorf("query: %s failed with Error : %w", sqlStatement, err))
-	}
-
-	stagingFilesList, err := wh.stagingRepo.GetAfterID(
-		ctx,
-		warehouse.Source.ID,
-		warehouse.Destination.ID,
-		lastStagingFileID,
-	)
-	if err != nil {
-		return nil, err
-	}
-
-	return stagingFilesList, nil
-}
-
 func (wh *HandleT) setDestInProgress(warehouse warehouseutils.Warehouse, jobID int64) {
 	identifier := wh.workerIdentifier(warehouse)
 	wh.inProgressMapLock.Lock()
@@ -671,10 +633,9 @@ func (wh *HandleT) createJobs(ctx context.Context, warehouse warehouseutils.Ware
 		"destType":      warehouse.Destination.DestinationDefinition.Name,
 	})
 	stagingFilesFetchStat.Start()
-	stagingFilesList, err := wh.getPendingStagingFiles(ctx, warehouse)
+	stagingFilesList, err := wh.stagingRepo.Pending(ctx, warehouse.Source.ID, warehouse.Destination.ID)
 	if err != nil {
-		wh.Logger.Errorf("[WH]: Failed to get pending staging files: %s with error %v", warehouse.Identifier, err)
-		return err
+		return fmt.Errorf("pending staging files for %q: %w", warehouse.Identifier, err)
 	}
 	stagingFilesFetchStat.End()
 
@@ -1206,9 +1167,7 @@ func (wh *HandleT) Setup(whType string) {
 	// We now have access to the warehouseDBHandle through
 	// which we will be running the db calls.
 	wh.warehouseDBHandle = NewWarehouseDB(dbHandle)
-	wh.stagingRepo = &repo.StagingFiles{
-		DB: dbHandle,
-	}
+	wh.stagingRepo = repo.NewStagingFiles(dbHandle)
 	wh.uploadRepo = repo.NewUploads(dbHandle)
 
 	wh.notifier = notifier
@@ -1531,7 +1490,7 @@ func pendingEventsHandler(w http.ResponseWriter, r *http.Request) {
 
 	// check whether there are any pending staging files or uploads for the given source id
 	// get pending staging files
-	pendingStagingFileCount, err = getPendingStagingFileCount(sourceID, true)
+	pendingStagingFileCount, err = repo.NewStagingFiles(dbHandle).CountPendingForSource(ctx, sourceID)
 	if err != nil {
 		err := fmt.Errorf("error getting pending staging file count : %v", err)
 		pkgLogger.Errorf("[WH]: %v", err)
@@ -1609,57 +1568,6 @@ func pendingEventsHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Write(resBody)
-}
-
-func getPendingStagingFileCount(sourceOrDestId string, isSourceId bool) (fileCount int64, err error) {
-	sourceOrDestColumn := ""
-	if isSourceId {
-		sourceOrDestColumn = "source_id"
-	} else {
-		sourceOrDestColumn = "destination_id"
-	}
-	var lastStagingFileIDRes sql.NullInt64
-	sqlStatement := fmt.Sprintf(`
-		SELECT
-		  MAX(end_staging_file_id)
-		FROM
-		  %[1]s
-		WHERE
-		  %[2]s = $1;
-`,
-		warehouseutils.WarehouseUploadsTable,
-		sourceOrDestColumn,
-	)
-	err = dbHandle.QueryRow(sqlStatement, sourceOrDestId).Scan(&lastStagingFileIDRes)
-	if err != nil && err != sql.ErrNoRows {
-		err = fmt.Errorf("query: %s run failed with Error : %w", sqlStatement, err)
-		return
-	}
-	lastStagingFileID := int64(0)
-	if lastStagingFileIDRes.Valid {
-		lastStagingFileID = lastStagingFileIDRes.Int64
-	}
-
-	sqlStatement = fmt.Sprintf(`
-		SELECT
-		  COUNT(*)
-		FROM
-		  %[1]s
-		WHERE
-		  id > %[2]v
-		  AND %[3]s = $1;
-`,
-		warehouseutils.WarehouseStagingFilesTable,
-		lastStagingFileID,
-		sourceOrDestColumn,
-	)
-	err = dbHandle.QueryRow(sqlStatement, sourceOrDestId).Scan(&fileCount)
-	if err != nil && err != sql.ErrNoRows {
-		err = fmt.Errorf("query: %s run failed with Error : %w", sqlStatement, err)
-		return
-	}
-
-	return fileCount, nil
 }
 
 func getPendingUploadCount(filters ...warehouseutils.FilterBy) (uploadCount int64, err error) {
@@ -1859,11 +1767,9 @@ func startWebHandler(ctx context.Context) error {
 			backendconfig.DefaultBackendConfig.WaitForConfig(ctx)
 
 			mux.Handle("/v1/process", (&api.WarehouseAPI{
-				Logger: pkgLogger,
-				Stats:  stats.Default,
-				Repo: &repo.StagingFiles{
-					DB: dbHandle,
-				},
+				Logger:      pkgLogger,
+				Stats:       stats.Default,
+				Repo:        repo.NewStagingFiles(dbHandle),
 				Multitenant: tenantManager,
 			}).Handler())
 

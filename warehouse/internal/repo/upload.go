@@ -11,10 +11,9 @@ import (
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
-type Uploads struct {
-	db  *sql.DB
-	now func() time.Time
-}
+const uploadsTableName = warehouseutils.WarehouseUploadsTable
+
+type Uploads repo
 
 func NewUploads(db *sql.DB) *Uploads {
 	return &Uploads{
@@ -54,7 +53,7 @@ func (uploads *Uploads) CreateWithStagingFiles(ctx context.Context, upload model
 	row := uploads.db.QueryRowContext(
 		ctx,
 
-		`INSERT INTO `+warehouseutils.WarehouseUploadsTable+` (
+		`INSERT INTO `+uploadsTableName+` (
 			source_id, namespace, workspace_id, destination_id,
 			destination_type, start_staging_file_id,
 			end_staging_file_id, start_load_file_id,

@@ -15,6 +15,7 @@ import (
 	"google.golang.org/grpc/status"
 
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
+	"github.com/rudderlabs/rudder-server/warehouse/internal/repo"
 	"github.com/rudderlabs/rudder-server/warehouse/validations"
 
 	"github.com/rudderlabs/rudder-server/config"
@@ -241,7 +242,7 @@ func (uploadsReq *UploadsReqT) TriggerWhUploads() (response *proto.TriggerWhUplo
 		return
 	}
 	if pendingUploadCount == int64(0) {
-		pendingStagingFileCount, err = getPendingStagingFileCount(uploadsReq.DestinationID, false)
+		pendingStagingFileCount, err = repo.NewStagingFiles(dbHandle).CountPendingForDestination(context.TODO(), uploadsReq.DestinationID)
 		if err != nil {
 			return
 		}

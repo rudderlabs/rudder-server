@@ -31,6 +31,8 @@ func setupDB(t *testing.T) *sql.DB {
 	}).Migrate("warehouse")
 	require.NoError(t, err)
 
+	t.Log("db:", pgResource.DBDsn)
+
 	return pgResource.DB
 }
 
@@ -39,12 +41,11 @@ func TestStagingFileRepo(t *testing.T) {
 
 	now := time.Now().Truncate(time.Second).UTC()
 
-	r := repo.StagingFiles{
-		DB: setupDB(t),
-		Now: func() time.Time {
+	r := repo.NewStagingFiles(setupDB(t),
+		repo.WithNow(func() time.Time {
 			return now
-		},
-	}
+		}),
+	)
 
 	testcases := []struct {
 		name        string
@@ -146,22 +147,10 @@ func TestStagingFileRepo(t *testing.T) {
 	})
 }
 
-func TestStagingFileRepo_Many(t *testing.T) {
-	ctx := context.Background()
-
-	now := time.Now().Truncate(time.Second).UTC()
-
-	r := repo.StagingFiles{
-		DB: setupDB(t),
-		Now: func() time.Time {
-			return now
-		},
-	}
-
-	var stagingFiles []model.StagingFile
-	n := 10
-	for i := 0; i < n; i++ {
-		file := model.StagingFile{
+func manyStagingFiles(size int, now time.Time) []model.StagingFile {
+	files := make([]model.StagingFile, size)
+	for i := range files {
+		files[i] = model.StagingFile{
 			WorkspaceID:           "workspace_id",
 			Location:              fmt.Sprintf("s3://bucket/path/to/file-%d", i),
 			SourceID:              "source_id",
@@ -179,17 +168,32 @@ func TestStagingFileRepo_Many(t *testing.T) {
 			SourceJobID:           "source_job_id",
 			SourceJobRunID:        "source_job_run_id",
 			TimeWindow:            time.Date(1993, 8, 1, 3, 0, 0, 0, time.UTC),
-		}.WithSchema([]byte(`{"type": "object"}`))
+		}
+	}
+	return files
+}
 
+func TestStagingFileRepo_Many(t *testing.T) {
+	ctx := context.Background()
+
+	now := time.Now().Truncate(time.Second).UTC()
+
+	r := repo.NewStagingFiles(setupDB(t),
+		repo.WithNow(func() time.Time {
+			return now
+		}),
+	)
+
+	stagingFiles := manyStagingFiles(10, now)
+	for i, _ := range stagingFiles {
+		file := stagingFiles[i].WithSchema([]byte(`{"type": "object"}`))
 		id, err := r.Insert(ctx, &file)
 		require.NoError(t, err)
 
-		file.ID = id
-		file.Error = nil
-		file.CreatedAt = now
-		file.UpdatedAt = now
-
-		stagingFiles = append(stagingFiles, file.StagingFile)
+		stagingFiles[i].ID = id
+		stagingFiles[i].Error = nil
+		stagingFiles[i].CreatedAt = now
+		stagingFiles[i].UpdatedAt = now
 	}
 
 	t.Run("GetInRange", func(t *testing.T) {
@@ -319,4 +323,88 @@ func TestStagingFileRepo_Many(t *testing.T) {
 			})
 		}
 	})
+}
+
+func TestStagingFileRepo_Pending(t *testing.T) {
+	ctx := context.Background()
+
+	now := time.Now().Truncate(time.Second).UTC()
+
+	db := setupDB(t)
+	r := repo.NewStagingFiles(db,
+		repo.WithNow(func() time.Time {
+			return now
+		}),
+	)
+	uploadRepo := repo.NewUploads(db)
+
+	inputData := []struct {
+		SourceID      string
+		DestinationID string
+		Files         int
+	}{
+		{
+			SourceID:      "source_id_1",
+			DestinationID: "destination_id_1",
+			Files:         10,
+		},
+		{
+			SourceID:      "source_id_2",
+			DestinationID: "destination_id_2",
+			Files:         20,
+		},
+		{
+			SourceID:      "source_id_2",
+			DestinationID: "destination_id_3",
+			Files:         16,
+		},
+	}
+
+	for _, input := range inputData {
+		stagingFiles := manyStagingFiles(input.Files, now)
+		for i := range stagingFiles {
+			stagingFiles[i].DestinationID = input.DestinationID
+			stagingFiles[i].SourceID = input.SourceID
+
+			file := stagingFiles[i].WithSchema([]byte(`{"type": "object"}`))
+
+			id, err := r.Insert(ctx, &file)
+			require.NoError(t, err)
+
+			stagingFiles[i].ID = id
+			stagingFiles[i].Error = nil
+			stagingFiles[i].CreatedAt = now
+			stagingFiles[i].UpdatedAt = now
+		}
+		pending, err := r.Pending(ctx, input.SourceID, input.DestinationID)
+		require.NoError(t, err)
+		require.Equal(t, stagingFiles, pending)
+
+		countByDestID, err := r.CountPendingForDestination(ctx, input.DestinationID)
+		require.NoError(t, err)
+		require.Equal(t, int64(input.Files), countByDestID)
+
+		countBySrcID, err := r.CountPendingForSource(ctx, input.SourceID)
+		require.NoError(t, err)
+		require.Equal(t, int64(input.Files), countBySrcID)
+
+		err = uploadRepo.CreateWithStagingFiles(ctx, model.Upload{
+			SourceID:      input.SourceID,
+			DestinationID: input.DestinationID,
+		}, pending)
+		require.NoError(t, err)
+
+		pending, err = r.Pending(ctx, input.SourceID, input.DestinationID)
+		require.NoError(t, err)
+		require.Empty(t, pending)
+
+		countByDestID, err = r.CountPendingForDestination(ctx, input.DestinationID)
+		require.NoError(t, err)
+		require.Zero(t, countByDestID)
+
+		countBySrcID, err = r.CountPendingForSource(ctx, input.SourceID)
+		require.NoError(t, err)
+		require.Zero(t, countBySrcID)
+
+	}
 }

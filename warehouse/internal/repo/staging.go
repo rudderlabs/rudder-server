@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"sync"
 	"time"
 
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
@@ -34,12 +33,7 @@ const stagingTableColumns = `
 `
 
 // StagingFiles is a repository for inserting and querying staging files.
-type StagingFiles struct {
-	DB  *sql.DB
-	Now func() time.Time
-
-	once sync.Once
-}
+type StagingFiles repo
 
 type metadataSchema struct {
 	UseRudderStorage      bool   `json:"use_rudder_storage"`
@@ -82,12 +76,15 @@ func (m *metadataSchema) SetStagingFile(stagingFile *model.StagingFile) {
 	stagingFile.DestinationRevisionID = m.DestinationRevisionID
 }
 
-func (repo *StagingFiles) init() {
-	repo.once.Do(func() {
-		if repo.Now == nil {
-			repo.Now = timeutil.Now
-		}
-	})
+func NewStagingFiles(db *sql.DB, opts ...Opt) *StagingFiles {
+	r := &StagingFiles{
+		db:  db,
+		now: timeutil.Now,
+	}
+	for _, opt := range opts {
+		opt((*repo)(r))
+	}
+	return r
 }
 
 // Insert inserts a staging file into the staging files table. It returns the ID of the inserted staging file.
@@ -98,8 +95,6 @@ func (repo *StagingFiles) init() {
 // - CreatedAt
 // - UpdatedAt
 func (repo *StagingFiles) Insert(ctx context.Context, stagingFile *model.StagingFileWithSchema) (int64, error) {
-	repo.init()
-
 	var (
 		id                        int64
 		firstEventAt, lastEventAt interface{}
@@ -120,14 +115,14 @@ func (repo *StagingFiles) Insert(ctx context.Context, stagingFile *model.Staging
 	if err != nil {
 		return id, fmt.Errorf("marshaling metadata: %w", err)
 	}
-	now := repo.Now()
+	now := repo.now()
 
 	schemaPayload, err := json.Marshal(stagingFile.Schema)
 	if err != nil {
 		return id, fmt.Errorf("marshaling schema: %w", err)
 	}
 
-	err = repo.DB.QueryRowContext(ctx,
+	err = repo.db.QueryRowContext(ctx,
 		`INSERT INTO `+stagingTableName+` (
 			location,
 			schema,
@@ -236,11 +231,10 @@ func (*StagingFiles) parseRows(rows *sql.Rows) ([]model.StagingFile, error) {
 
 // GetByID returns staging file with the given ID.
 func (repo *StagingFiles) GetByID(ctx context.Context, ID int64) (model.StagingFile, error) {
-	repo.init()
 
 	query := `SELECT ` + stagingTableColumns + ` FROM ` + stagingTableName + ` WHERE id = $1`
 
-	rows, err := repo.DB.QueryContext(ctx, query, ID)
+	rows, err := repo.db.QueryContext(ctx, query, ID)
 	if err != nil {
 		return model.StagingFile{}, fmt.Errorf("querying staging files: %w", err)
 	}
@@ -258,11 +252,9 @@ func (repo *StagingFiles) GetByID(ctx context.Context, ID int64) (model.StagingF
 
 // GetSchemaByID returns staging file schema field the given ID.
 func (repo *StagingFiles) GetSchemaByID(ctx context.Context, ID int64) (json.RawMessage, error) {
-	repo.init()
-
 	query := `SELECT schema FROM ` + stagingTableName + ` WHERE id = $1`
 
-	row := repo.DB.QueryRowContext(ctx, query, ID)
+	row := repo.db.QueryRowContext(ctx, query, ID)
 	if row.Err() != nil {
 		return nil, fmt.Errorf("querying staging files: %w", row.Err())
 	}
@@ -278,8 +270,6 @@ func (repo *StagingFiles) GetSchemaByID(ctx context.Context, ID int64) (json.Raw
 
 // GetInRange returns staging files in [startID, endID] range inclusive.
 func (repo *StagingFiles) GetInRange(ctx context.Context, sourceID, destinationID string, startID, endID int64) ([]model.StagingFile, error) {
-	repo.init()
-
 	query := `SELECT ` + stagingTableColumns + ` FROM ` + stagingTableName + ` ST
 	WHERE
 		id >= $1 AND id <= $2
@@ -288,7 +278,7 @@ func (repo *StagingFiles) GetInRange(ctx context.Context, sourceID, destinationI
 	ORDER BY
 		id ASC;`
 
-	rows, err := repo.DB.QueryContext(ctx, query, startID, endID, sourceID, destinationID)
+	rows, err := repo.db.QueryContext(ctx, query, startID, endID, sourceID, destinationID)
 	if err != nil {
 		return nil, fmt.Errorf("querying staging files: %w", err)
 	}
@@ -298,8 +288,6 @@ func (repo *StagingFiles) GetInRange(ctx context.Context, sourceID, destinationI
 
 // GetAfterID returns staging files in (startID, +Inf) range.
 func (repo *StagingFiles) GetAfterID(ctx context.Context, sourceID, destinationID string, startID int64) ([]model.StagingFile, error) {
-	repo.init()
-
 	query := `SELECT ` + stagingTableColumns + ` FROM ` + stagingTableName + `
 	WHERE
 		id > $1
@@ -308,10 +296,79 @@ func (repo *StagingFiles) GetAfterID(ctx context.Context, sourceID, destinationI
 	ORDER BY
 		id ASC;`
 
-	rows, err := repo.DB.QueryContext(ctx, query, startID, sourceID, destinationID)
+	rows, err := repo.db.QueryContext(ctx, query, startID, sourceID, destinationID)
 	if err != nil {
 		return nil, fmt.Errorf("querying staging files: %w", err)
 	}
 
 	return repo.parseRows(rows)
+}
+
+func (repo *StagingFiles) Pending(ctx context.Context, sourceID, destinationID string) ([]model.StagingFile, error) {
+
+	var lastStagingFileID int64
+	err := repo.db.QueryRowContext(ctx, `
+		SELECT
+			end_staging_file_id
+		FROM
+		`+uploadsTableName+`
+		WHERE
+			source_id = $1 AND destination_id = $2
+		ORDER BY
+		id DESC
+		LIMIT 1;
+	`, sourceID, destinationID,
+	).Scan(&lastStagingFileID)
+	if err == sql.ErrNoRows {
+		lastStagingFileID = 0
+	} else if err != nil {
+		return nil, fmt.Errorf("querying uploads: %w", err)
+	}
+
+	stagingFilesList, err := repo.GetAfterID(
+		ctx,
+		sourceID,
+		destinationID,
+		lastStagingFileID,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	return stagingFilesList, nil
+}
+
+func (repo *StagingFiles) CountPendingForSource(ctx context.Context, sourceID string) (int64, error) {
+	return repo.countPending(ctx, `source_id = $1`, sourceID)
+}
+
+func (repo *StagingFiles) CountPendingForDestination(ctx context.Context, destinationID string) (int64, error) {
+	return repo.countPending(ctx, `destination_id = $1`, destinationID)
+}
+
+func (repo *StagingFiles) countPending(ctx context.Context, query string, value interface{}) (int64, error) {
+
+	var id sql.NullInt64
+	err := repo.db.QueryRowContext(ctx,
+		`SELECT MAX(end_staging_file_id) FROM `+uploadsTableName+` WHERE `+query,
+		value,
+	).Scan(&id)
+	if err != nil {
+		return 0, fmt.Errorf("querying uploads: %w", err)
+	}
+	lastStagingFileID := int64(0)
+	if id.Valid {
+		lastStagingFileID = id.Int64
+	}
+
+	var count int64
+	err = repo.db.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM `+stagingTableName+` WHERE `+query+` AND id > $2 `,
+		value, lastStagingFileID,
+	).Scan(&count)
+	if err != nil {
+		return 0, fmt.Errorf("counting staging files: %w", err)
+	}
+
+	return count, nil
 }
