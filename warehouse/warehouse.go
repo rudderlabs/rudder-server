@@ -47,6 +47,7 @@ import (
 	"github.com/rudderlabs/rudder-server/warehouse/internal/api"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/repo"
+	"github.com/rudderlabs/rudder-server/warehouse/internal/service"
 	"github.com/rudderlabs/rudder-server/warehouse/jobs"
 	"github.com/rudderlabs/rudder-server/warehouse/manager"
 	"github.com/rudderlabs/rudder-server/warehouse/multitenant"
@@ -131,6 +132,7 @@ type HandleT struct {
 	dbHandle                          *sql.DB
 	warehouseDBHandle                 *DB
 	stagingRepo                       *repo.StagingFiles
+	uploadRepo                        *repo.Uploads
 	notifier                          pgnotifier.PgNotifierT
 	isEnabled                         bool
 	configSubscriberLock              sync.RWMutex
@@ -447,7 +449,7 @@ func (wh *HandleT) getNamespace(configI interface{}, source backendconfig.Source
 	return namespace
 }
 
-func (wh *HandleT) getPendingStagingFiles(ctx context.Context, warehouse warehouseutils.Warehouse) ([]*model.StagingFile, error) {
+func (wh *HandleT) getPendingStagingFiles(ctx context.Context, warehouse warehouseutils.Warehouse) ([]model.StagingFile, error) {
 	var lastStagingFileID int64
 	sqlStatement := fmt.Sprintf(`
 	SELECT
@@ -482,98 +484,7 @@ func (wh *HandleT) getPendingStagingFiles(ctx context.Context, warehouse warehou
 		return nil, err
 	}
 
-	stagingFilesListPtr := make([]*model.StagingFile, len(stagingFilesList))
-	for i := range stagingFilesList {
-		stagingFilesListPtr[i] = &stagingFilesList[i]
-	}
-
-	return stagingFilesListPtr, nil
-}
-
-func (wh *HandleT) initUpload(warehouse warehouseutils.Warehouse, jsonUploadsList []*model.StagingFile, isUploadTriggered bool, priority int, uploadStartAfter time.Time) {
-	sqlStatement := fmt.Sprintf(`
-		INSERT INTO %s (
-		  source_id, namespace, workspace_id, destination_id,
-		  destination_type, start_staging_file_id,
-		  end_staging_file_id, start_load_file_id,
-		  end_load_file_id, status, schema,
-		  error, metadata, first_event_at,
-		  last_event_at, created_at, updated_at
-		)
-		VALUES
-		  (
-			$1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
-			$11, $12, $13, $14, $15, $16, $17
-		  ) RETURNING id;
-`,
-		warehouseutils.WarehouseUploadsTable,
-	)
-	wh.Logger.Infof("WH: %s: Creating record in %s table: %v", wh.destType, warehouseutils.WarehouseUploadsTable, sqlStatement)
-	stmt, err := wh.dbHandle.Prepare(sqlStatement)
-	if err != nil {
-		panic(err)
-	}
-	defer stmt.Close()
-
-	startJSONID := jsonUploadsList[0].ID
-	endJSONID := jsonUploadsList[len(jsonUploadsList)-1].ID
-	namespace := warehouse.Namespace
-
-	var firstEventAt, lastEventAt time.Time
-	if ok := jsonUploadsList[0].FirstEventAt.IsZero(); !ok {
-		firstEventAt = jsonUploadsList[0].FirstEventAt
-	}
-	if ok := jsonUploadsList[len(jsonUploadsList)-1].LastEventAt.IsZero(); !ok {
-		lastEventAt = jsonUploadsList[len(jsonUploadsList)-1].LastEventAt
-	}
-
-	now := timeutil.Now()
-	metadataMap := map[string]interface{}{
-		"use_rudder_storage": jsonUploadsList[0].UseRudderStorage, // TODO: Since the use_rudder_storage is now being populated for both the staging and load files. Let's try to leverage it instead of hard coding it from the first staging file.
-		"source_batch_id":    jsonUploadsList[0].SourceBatchID,
-		"source_task_id":     jsonUploadsList[0].SourceTaskID,
-		"source_task_run_id": jsonUploadsList[0].SourceTaskRunID,
-		"source_job_id":      jsonUploadsList[0].SourceJobID,
-		"source_job_run_id":  jsonUploadsList[0].SourceJobRunID,
-		"load_file_type":     warehouseutils.GetLoadFileType(wh.destType),
-		"nextRetryTime":      uploadStartAfter.Format(time.RFC3339),
-	}
-	if isUploadTriggered {
-		// set priority to 50 if the upload was manually triggered
-		metadataMap["priority"] = 50
-	}
-	if priority != 0 {
-		metadataMap["priority"] = priority
-	}
-	metadata, err := json.Marshal(metadataMap)
-	if err != nil {
-		panic(err)
-	}
-	row := stmt.QueryRow(
-		warehouse.Source.ID,
-		namespace,
-		warehouse.WorkspaceID,
-		warehouse.Destination.ID,
-		wh.destType,
-		startJSONID,
-		endJSONID,
-		0,
-		0,
-		model.Waiting,
-		"{}",
-		"{}",
-		metadata,
-		firstEventAt,
-		lastEventAt,
-		now,
-		now,
-	)
-
-	var uploadID int64
-	err = row.Scan(&uploadID)
-	if err != nil {
-		panic(err)
-	}
+	return stagingFilesList, nil
 }
 
 func (wh *HandleT) setDestInProgress(warehouse warehouseutils.Warehouse, jobID int64) {
@@ -633,31 +544,46 @@ func setLastProcessedMarker(warehouse warehouseutils.Warehouse, lastProcessedTim
 	lastProcessedMarkerMap[warehouse.Identifier] = lastProcessedTime.Unix()
 }
 
-func (wh *HandleT) createUploadJobsFromStagingFiles(warehouse warehouseutils.Warehouse, _ manager.ManagerI, stagingFilesList []*model.StagingFile, priority int, uploadStartAfter time.Time) {
+func (wh *HandleT) createUploadJobsFromStagingFiles(ctx context.Context, warehouse warehouseutils.Warehouse, stagingFiles []model.StagingFile, priority int, uploadStartAfter time.Time) error {
 	// count := 0
 	// Process staging files in batches of stagingFilesBatchSize
 	// E.g. If there are 1000 pending staging files and stagingFilesBatchSize is 100,
 	// Then we create 10 new entries in wh_uploads table each with 100 staging files
-	var (
-		stagingFilesInUpload []*model.StagingFile
-		counter              int
-	)
 	uploadTriggered := isUploadTriggered(warehouse)
-
-	initUpload := func() {
-		wh.initUpload(warehouse, stagingFilesInUpload, uploadTriggered, priority, uploadStartAfter)
-		stagingFilesInUpload = []*model.StagingFile{}
-		counter = 0
+	if uploadTriggered {
+		priority = 50
 	}
-	for idx, sFile := range stagingFilesList {
-		if idx > 0 && counter > 0 && sFile.UseRudderStorage != stagingFilesList[idx-1].UseRudderStorage {
-			initUpload()
+
+	batches := service.StageFileBatching(stagingFiles, stagingFilesBatchSize)
+	for _, batch := range batches {
+		upload := model.Upload{
+			SourceID:        warehouse.Source.ID,
+			Namespace:       warehouse.Namespace,
+			WorkspaceID:     warehouse.WorkspaceID,
+			DestinationID:   warehouse.Destination.ID,
+			DestinationType: wh.destType,
+			Status:          model.Waiting,
+			Schema:          json.RawMessage("{}"),
+			Error:           "",
+
+			LoadFileType:  warehouseutils.GetLoadFileType(wh.destType),
+			NextRetryTime: uploadStartAfter,
+			Priority:      priority,
+
+			// The following will be populated by staging files:
+			// FirstEventAt:     0,
+			// LastEventAt:      0,
+			// UseRudderStorage: false,
+			// SourceBatchID:    "",
+			// SourceTaskID:     "",
+			// SourceTaskRunID:  "",
+			// SourceJobID:      "",
+			// SourceJobRunID:   "",
 		}
 
-		stagingFilesInUpload = append(stagingFilesInUpload, sFile)
-		counter++
-		if counter == stagingFilesBatchSize || idx == len(stagingFilesList)-1 {
-			initUpload()
+		err := wh.uploadRepo.CreateWithStagingFiles(ctx, upload, batch)
+		if err != nil {
+			return fmt.Errorf("creating upload: %w", err)
 		}
 	}
 
@@ -665,6 +591,8 @@ func (wh *HandleT) createUploadJobsFromStagingFiles(warehouse warehouseutils.War
 	if uploadTriggered {
 		clearTriggeredUpload(warehouse)
 	}
+
+	return nil
 }
 
 func getUploadStartAfterTime() time.Time {
@@ -762,11 +690,16 @@ func (wh *HandleT) createJobs(ctx context.Context, warehouse warehouseutils.Ware
 	})
 	uploadJobCreationStat.Start()
 
+	creationStart := time.Now()
+
 	uploadStartAfter := getUploadStartAfterTime()
-	wh.createUploadJobsFromStagingFiles(warehouse, whManager, stagingFilesList, priority, uploadStartAfter)
+	err = wh.createUploadJobsFromStagingFiles(ctx, warehouse, stagingFilesList, priority, uploadStartAfter)
+	if err != nil {
+		return err
+	}
 	setLastProcessedMarker(warehouse, uploadStartAfter)
 
-	uploadJobCreationStat.End()
+	uploadJobCreationStat.SendTiming(time.Since(creationStart))
 
 	return nil
 }
@@ -1276,6 +1209,8 @@ func (wh *HandleT) Setup(whType string) {
 	wh.stagingRepo = &repo.StagingFiles{
 		DB: dbHandle,
 	}
+	wh.uploadRepo = repo.NewUploads(dbHandle)
+
 	wh.notifier = notifier
 	wh.destType = whType
 	wh.setInterruptedDestinations()
