@@ -1133,6 +1133,9 @@ func (*workerT) sendDestinationResponseToConfigBackend(payload json.RawMessage, 
 }
 
 func durationBeforeNextAttempt(attempt int) time.Duration {
+	if attempt < 1 {
+		attempt = 1
+	}
 	return time.Duration(math.Min(float64(maxRetryBackoff), float64(minRetryBackoff)*math.Exp2(float64(attempt-1))))
 }
 
