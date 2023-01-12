@@ -230,6 +230,7 @@ func (st *HandleT) storeErrorsToObjectStorage(jobs []*jobsdb.JobT) (errorJob []E
 			}
 			prefixes := []string{"rudder-proc-err-logs", time.Now().Format("01-02-2006")}
 			uploadOutput, err := errFileUploader.Upload(context.TODO(), outputFile, prefixes...)
+			st.logger.Infof("Uploaded error logs to %s for workspaceId %s", uploadOutput.Location, wrkId)
 			errorJobs = append(errorJobs, ErrorJob{
 				jobs: jobsPerWorkspace[wrkId],
 				errorOutput: StoreErrorOutputT{
