@@ -538,18 +538,20 @@ func TestHandle_LoadTableRoundTrip(t *testing.T) {
 			})
 			require.NoError(t, err)
 
-			t.Log("Creating users table")
-			err = ch.CreateTable(warehouseutils.UsersTable, map[string]string{
-				"id":            "string",
-				"user_id":       "string",
-				"test_int":      "int",
-				"test_float":    "float",
-				"test_bool":     "boolean",
-				"test_string":   "string",
-				"test_datetime": "datetime",
-				"received_at":   "datetime",
-			})
-			require.NoError(t, err)
+			t.Log("Creating users identifies and table")
+			for _, tableName := range []string{"identifies", "users"} {
+				err = ch.CreateTable(tableName, map[string]string{
+					"id":            "string",
+					"user_id":       "string",
+					"test_int":      "int",
+					"test_float":    "float",
+					"test_bool":     "boolean",
+					"test_string":   "string",
+					"test_datetime": "datetime",
+					"received_at":   "datetime",
+				})
+				require.NoError(t, err)
+			}
 
 			t.Log("Adding columns")
 			err = ch.AddColumns(table, []warehouseutils.ColumnInfo{
@@ -692,6 +694,107 @@ func TestHandle_TestConnection(t *testing.T) {
 			err := ch.TestConnection(warehouse)
 			if tc.wantError != nil {
 				require.Error(t, err, tc.wantError)
+				return
+			}
+			require.NoError(t, err)
+		})
+	}
+}
+
+func TestHandle_LoadTestTable(t *testing.T) {
+	misc.Init()
+	warehouseutils.Init()
+	clickhouse.Init()
+
+	pool, err := dockertest.NewPool("")
+	require.NoError(t, err)
+
+	var (
+		chResource   *dockertest.Resource
+		databaseName = "rudderdb"
+		password     = "rudder-password"
+		user         = "rudder"
+		workspaceID  = "test_workspace_id"
+		namespace    = "test_namespace"
+		provider     = "MINIO"
+		host         = "localhost"
+		tableName    = warehouseutils.CTStagingTablePrefix + "_test_table"
+		testColumns  = map[string]string{
+			"id":  "int",
+			"val": "string",
+		}
+		testPayload = map[string]interface{}{
+			"id":  1,
+			"val": "RudderStack",
+		}
+	)
+
+	chResource = setUpClickhouse(t, pool)
+
+	testCases := []struct {
+		name      string
+		wantError error
+		payload   map[string]interface{}
+	}{
+		{
+			name: "Success",
+		},
+		{
+			name: "Invalid columns",
+			payload: map[string]interface{}{
+				"invalid_val": "Invalid Data",
+			},
+			wantError: errors.New("code: 16, message: No such column invalid_val in table test_namespace.setup_test_staging"),
+		},
+	}
+
+	for i, tc := range testCases {
+		tc := tc
+		i := i
+
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			ch := clickhouse.NewClickhouse()
+			ch.Logger = logger.NOP
+
+			warehouse := warehouseutils.Warehouse{
+				Namespace:   namespace,
+				WorkspaceID: workspaceID,
+				Destination: backendconfig.DestinationT{
+					Config: map[string]interface{}{
+						"bucketProvider": provider,
+						"host":           host,
+						"port":           chResource.GetPort("9000/tcp"),
+						"database":       databaseName,
+						"user":           user,
+						"password":       password,
+					},
+				},
+			}
+
+			payload := make(map[string]interface{})
+			for k, v := range tc.payload {
+				payload[k] = v
+			}
+			for k, v := range testPayload {
+				payload[k] = v
+			}
+
+			err := ch.Setup(warehouse, &mockUploader{})
+			require.NoError(t, err)
+
+			err = ch.CreateSchema()
+			require.NoError(t, err)
+
+			tableName := fmt.Sprintf("%s_%d", tableName, i)
+
+			err = ch.CreateTable(tableName, testColumns)
+			require.NoError(t, err)
+
+			err = ch.LoadTestTable("", tableName, payload, "")
+			if tc.wantError != nil {
+				require.ErrorContains(t, err, tc.wantError.Error())
 				return
 			}
 			require.NoError(t, err)
