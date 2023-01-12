@@ -1,0 +1,70 @@
+version: '3.7'
+
+x-uffizzi:
+  ingress:
+    service: backend
+    port: 8080
+
+services:
+
+  db:
+    image: postgres:15-alpine
+    environment:
+      - POSTGRES_USER=rudder
+      - POSTGRES_PASSWORD=password
+      - POSTGRES_DB=jobsdb
+    ports:
+      - "6432:5432"
+    deploy:
+      resources:
+        limits:
+          memory: 500m
+
+  backend:
+    depends_on:
+      - db
+      - metrics-exporter
+      - d-transformer
+    image: ${APP_IMAGE}
+    ports:
+      - "8080:8080"
+    environment:
+      JOBS_DB_HOST: 127.0.0.1
+      JOBS_DB_USER: rudder
+      JOBS_DB_PORT: 5432
+      JOBS_DB_DB_NAME: jobsdb
+      JOBS_DB_PASSWORD: password
+      DEST_TRANSFORM_URL: http://127.0.0.1:9090
+      CONFIG_BACKEND_URL: https://api.rudderstack.com
+      WORKSPACE_TOKEN: "${WORKSPACE_TOKEN}"
+      STATSD_SERVER_URL: metrics-exporter:9125
+      # - RSERVER_BACKEND_CONFIG_CONFIG_FROM_FILE=true
+      # - RSERVER_BACKEND_CONFIG_CONFIG_JSONPATH=/etc/rudderstack/workspaceConfig.json
+    entrypoint: ["/bin/sh"]
+    command: ["-c", "/wait-for 127.0.0.1:5432 -- /rudder-server"]
+    deploy:
+      resources:
+        limits:
+          memory: 2000m
+
+  d-transformer:
+    depends_on:
+      - metrics-exporter
+    image: rudderlabs/rudder-transformer:latest
+    ports:
+      - "9090:9090"
+    environment:
+      - STATSD_SERVER_HOST=127.0.0.1
+      - STATSD_SERVER_PORT="9125"
+    deploy:
+      resources:
+        limits:
+          memory: 500m
+  metrics-exporter:
+    image: prom/statsd-exporter:v0.22.4
+    ports:
+      - "9102:9102"
+    deploy:
+      resources:
+        limits:
+          memory: 500m      
