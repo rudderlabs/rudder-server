@@ -303,6 +303,8 @@ func (trans *HandleT) request(ctx context.Context, url string, data []Transforme
 		return nil
 	}
 
+	trans.logger.Infof("input: %s", string(rawJSON))
+
 	var (
 		respData   []byte
 		statusCode int
@@ -343,6 +345,8 @@ func (trans *HandleT) request(ctx context.Context, url string, data []Transforme
 	default:
 		trans.logger.Errorf("Transformer returned status code: %v", statusCode)
 	}
+
+	trans.logger.Infof("output: %s", string(respData))
 
 	var transformerResponses []TransformerResponseT
 	if statusCode == http.StatusOK {
