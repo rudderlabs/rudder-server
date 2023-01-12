@@ -3021,11 +3021,10 @@ Later we can move this to query
 */
 func (jd *HandleT) internalUpdateJobStatusInTx(ctx context.Context, tx *Tx, statusList []*JobStatusT, customValFilters []string, parameterFilters []ParameterFilterT) error {
 	// capture stats
-	tags :=
-		&statTags{
-			CustomValFilters: customValFilters,
-			ParameterFilters: parameterFilters,
-		}
+	tags := &statTags{
+		CustomValFilters: customValFilters,
+		ParameterFilters: parameterFilters,
+	}
 	defer jd.sendTiming(
 		"update_job_status_time",
 		tags,
