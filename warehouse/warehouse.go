@@ -786,7 +786,7 @@ func (wh *HandleT) mainLoop(ctx context.Context) {
 		wg.Add(len(wh.warehouses))
 
 		whTotalSchedulingStats := wh.stats.NewStat("wh_scheduler.total_scheduling_time", stats.TimerType)
-		whTotalSchedulingStats.Start()
+		whTotalSchedulingStart := time.Now()
 
 		for _, warehouse := range wh.warehouses {
 			w := warehouse
@@ -807,7 +807,7 @@ func (wh *HandleT) mainLoop(ctx context.Context) {
 		wh.configSubscriberLock.RUnlock()
 		wg.Wait()
 
-		whTotalSchedulingStats.End()
+		whTotalSchedulingStats.Since(whTotalSchedulingStart)
 		wh.stats.NewStat("wh_scheduler.warehouse_length", stats.CountType).Count(len(wh.warehouses)) // Correlation between number of warehouses and scheduling time.
 		select {
 		case <-ctx.Done():

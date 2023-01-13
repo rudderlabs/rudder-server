@@ -740,7 +740,7 @@ func (worker *workerT) processDestinationJobs() {
 				}
 
 				worker.deliveryTimeStat.SendTiming(timeTaken)
-				deliveryLatencyStat.End()
+				deliveryLatencyStat.Since(startedAt)
 
 				// END: request to destination endpoint
 

@@ -33,12 +33,6 @@ func Test_Measurement_Invalid_Operations(t *testing.T) {
 			s.NewStat("test", stats.CountType).Observe(1.2)
 		})
 		require.Panics(t, func() {
-			s.NewStat("test", stats.CountType).Start()
-		})
-		require.Panics(t, func() {
-			s.NewStat("test", stats.CountType).End()
-		})
-		require.Panics(t, func() {
 			s.NewStat("test", stats.CountType).SendTiming(1)
 		})
 		require.Panics(t, func() {
@@ -57,12 +51,6 @@ func Test_Measurement_Invalid_Operations(t *testing.T) {
 			s.NewStat("test", stats.GaugeType).Observe(1.2)
 		})
 		require.Panics(t, func() {
-			s.NewStat("test", stats.GaugeType).Start()
-		})
-		require.Panics(t, func() {
-			s.NewStat("test", stats.GaugeType).End()
-		})
-		require.Panics(t, func() {
 			s.NewStat("test", stats.GaugeType).SendTiming(1)
 		})
 		require.Panics(t, func() {
@@ -79,12 +67,6 @@ func Test_Measurement_Invalid_Operations(t *testing.T) {
 		})
 		require.Panics(t, func() {
 			s.NewStat("test", stats.HistogramType).Gauge(1)
-		})
-		require.Panics(t, func() {
-			s.NewStat("test", stats.HistogramType).Start()
-		})
-		require.Panics(t, func() {
-			s.NewStat("test", stats.HistogramType).End()
 		})
 		require.Panics(t, func() {
 			s.NewStat("test", stats.HistogramType).SendTiming(1)
@@ -169,15 +151,6 @@ func Test_Measurement_Operations(t *testing.T) {
 
 		require.Eventually(t, func() bool {
 			return lastReceived == "test-timer-2,instanceName=test:0|ms"
-		}, 2*time.Second, time.Millisecond)
-	})
-
-	t.Run("timer start end", func(t *testing.T) {
-		timer := s.NewStat("test-timer-3", stats.TimerType)
-		timer.Start()
-		timer.End()
-		require.Eventually(t, func() bool {
-			return lastReceived == "test-timer-3,instanceName=test:0|ms"
 		}, 2*time.Second, time.Millisecond)
 	})
 

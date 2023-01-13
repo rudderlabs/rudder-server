@@ -40,8 +40,7 @@ func Init() {
 
 // Close closes sql connection as well as closes grpc connection
 func (dbT *DBHandleT) Close() {
-	dbT.CloseStats.Start()
-	defer dbT.CloseStats.End()
+	defer dbT.CloseStats.RecordDuration()()
 
 	closeConnectionResponse, err := dbT.Client.Close(dbT.Context, &proto.CloseRequest{
 		Config:     dbT.CredConfig,

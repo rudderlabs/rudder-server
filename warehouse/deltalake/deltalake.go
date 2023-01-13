@@ -280,8 +280,7 @@ func (dl *HandleT) fetchTables(dbT *databricks.DBHandleT, schema string) (tableN
 		"identifier":  dl.Warehouse.Identifier,
 		"queryType":   "FetchTables",
 	})
-	fetchTablesExecTime.Start()
-	defer fetchTablesExecTime.End()
+	defer fetchTablesExecTime.RecordDuration()()
 
 	fetchTableResponse, err := dbT.Client.FetchTables(dbT.Context, &proto.FetchTablesRequest{
 		Config:     dbT.CredConfig,
@@ -365,8 +364,7 @@ func (dl *HandleT) ExecuteSQL(sqlStatement, queryType string) (err error) {
 		"identifier":  dl.Warehouse.Identifier,
 		"queryType":   queryType,
 	})
-	execSqlStatTime.Start()
-	defer execSqlStatTime.End()
+	defer execSqlStatTime.RecordDuration()()
 
 	err = dl.ExecuteSQLClient(dl.dbHandleT, sqlStatement)
 	return
@@ -400,8 +398,7 @@ func (dl *HandleT) schemaExists(schemaName string) (exists bool, err error) {
 		"identifier":  dl.Warehouse.Identifier,
 		"queryType":   "FetchSchemas",
 	})
-	fetchSchemasExecTime.Start()
-	defer fetchSchemasExecTime.End()
+	defer fetchSchemasExecTime.RecordDuration()()
 
 	sqlStatement := fmt.Sprintf(`SHOW SCHEMAS LIKE '%s';`, schemaName)
 	fetchSchemasResponse, err := dl.dbHandleT.Client.FetchSchemas(dl.dbHandleT.Context, &proto.FetchSchemasRequest{
@@ -439,8 +436,7 @@ func (dl *HandleT) dropStagingTables(tableNames []string) {
 		"identifier":  dl.Warehouse.Identifier,
 		"queryType":   "DropStagingTables",
 	})
-	dropTablesExecTime.Start()
-	defer dropTablesExecTime.End()
+	defer dropTablesExecTime.RecordDuration()()
 
 	for _, stagingTableName := range tableNames {
 		pkgLogger.Infof("%s Dropping table %+v\n", dl.GetLogIdentifier(), stagingTableName)
@@ -961,8 +957,7 @@ func (dl *HandleT) FetchSchema(warehouse warehouseutils.Warehouse) (schema, unre
 		"identifier":  dl.Warehouse.Identifier,
 		"queryType":   "FetchTableAttributes",
 	})
-	fetchTablesAttributesExecTime.Start()
-	defer fetchTablesAttributesExecTime.End()
+	defer fetchTablesAttributesExecTime.RecordDuration()()
 
 	// For each table we are generating schema
 	for _, tableName := range filteredTablesNames {
@@ -1084,8 +1079,7 @@ func (dl *HandleT) GetTotalCountInTable(ctx context.Context, tableName string) (
 		"identifier":  dl.Warehouse.Identifier,
 		"queryType":   "FetchTotalCountInTable",
 	})
-	fetchTotalCountExecTime.Start()
-	defer fetchTotalCountExecTime.End()
+	defer fetchTotalCountExecTime.RecordDuration()()
 
 	sqlStatement := fmt.Sprintf(`SELECT COUNT(*) FROM %[1]s.%[2]s;`, dl.Namespace, tableName)
 	response, err := dl.dbHandleT.Client.FetchTotalCountInTable(ctx, &proto.FetchTotalCountInTableRequest{

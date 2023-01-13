@@ -25,8 +25,6 @@ type Histogram interface {
 
 // Timer represents a timer metric
 type Timer interface {
-	Start()
-	End()
 	SendTiming(duration time.Duration)
 	Since(start time.Time)
 	RecordDuration() func()

@@ -295,7 +295,7 @@ func (st *HandleT) readErrJobsLoop(ctx context.Context) {
 			close(st.errProcessQ)
 			return
 		case <-time.After(errReadLoopSleep):
-			st.statErrDBR.Start()
+			start := time.Now()
 
 			// NOTE: sending custom val filters array of size 1 to take advantage of cache in jobsdb.
 			queryParams := jobsdb.GetQueryParamsT{
@@ -328,7 +328,7 @@ func (st *HandleT) readErrJobsLoop(ctx context.Context) {
 				combinedList = append(combinedList, unprocessed.Jobs...)
 			}
 
-			st.statErrDBR.End()
+			st.statErrDBR.Since(start)
 
 			if len(combinedList) == 0 {
 				st.logger.Debug("[Processor: readErrJobsLoop]: DB Read Complete. No proc_err Jobs to process")

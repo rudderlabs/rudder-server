@@ -427,9 +427,11 @@ type HandleT struct {
 	statPreDropTableCount         stats.Measurement
 	statDSCount                   stats.Measurement
 	statNewDSPeriod               stats.Measurement
+	newDSCreationTime             time.Time
 	invalidCacheKeyStat           stats.Measurement
 	isStatNewDSPeriodInitialized  bool
 	statDropDSPeriod              stats.Measurement
+	dsDropTime                    time.Time
 	unionQueryTime                stats.Measurement
 	isStatDropDSPeriodInitialized bool
 	logger                        logger.Logger
@@ -1229,9 +1231,9 @@ func (jd *HandleT) addNewDSInTx(tx *Tx, l lock.LockToken, dsList []dataSetT, ds 
 	}
 	// Tracking time interval between new ds creations. Hence calling end before start
 	if jd.isStatNewDSPeriodInitialized {
-		jd.statNewDSPeriod.End()
+		jd.statNewDSPeriod.Since(jd.newDSCreationTime)
 	}
-	jd.statNewDSPeriod.Start()
+	jd.newDSCreationTime = time.Now()
 	jd.isStatNewDSPeriodInitialized = true
 
 	return nil
@@ -1480,9 +1482,9 @@ func (jd *HandleT) postDropDs(ds dataSetT) {
 
 	// Tracking time interval between drop ds operations. Hence calling end before start
 	if jd.isStatDropDSPeriodInitialized {
-		jd.statDropDSPeriod.End()
+		jd.statDropDSPeriod.Since(jd.dsDropTime)
 	}
-	jd.statDropDSPeriod.Start()
+	jd.dsDropTime = time.Now()
 	jd.isStatDropDSPeriodInitialized = true
 }
 
