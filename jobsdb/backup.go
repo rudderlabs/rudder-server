@@ -495,10 +495,10 @@ func getStatusBackupQueryFn(backupDSRange *dataSetRangeT) func(int64) string {
 }
 
 func (jd *HandleT) createTableDumps(queryFunc func(int64) string, pathFunc func(string) (string, error), totalCount int64) (map[string]string, error) {
-	defer jd.sendTiming(
+	defer jd.getTimerStat(
 		"table_FileDump_TimeStat",
 		&statTags{CustomValFilters: []string{jd.tablePrefix}},
-	)()
+	).RecordDuration()()
 	filesWriter := fileuploader.NewGzMultiFileWriter()
 
 	var offset int64
@@ -564,10 +564,10 @@ func (jd *HandleT) createTableDumps(queryFunc func(int64) string, pathFunc func(
 }
 
 func (jd *HandleT) uploadTableDump(ctx context.Context, workspaceID, path string) error {
-	defer jd.sendTiming(
+	defer jd.getTimerStat(
 		"fileUpload_TimeStat",
 		&statTags{CustomValFilters: []string{jd.tablePrefix}},
-	)()
+	).RecordDuration()()
 
 	file, err := os.Open(path)
 	if err != nil {

@@ -1614,7 +1614,7 @@ func (worker *workerT) workerProcess() {
 			toQuery := worker.brt.jobQueryBatchSize
 			if !brt.holdFetchingJobs(parameterFilters) {
 				brtQueryStat := stats.Default.NewTaggedStat("batch_router.jobsdb_query_time", stats.TimerType, stats.Tags{"function": "workerProcess", "destType": brt.destType})
-				brtQueryStat.Start()
+				queryStart := time.Now()
 				brt.logger.Debugf("BRT: %s: DB about to read for parameter Filters: %v ", brt.destType, parameterFilters)
 				queryParams := jobsdb.GetQueryParamsT{
 					CustomValFilters:              []string{brt.destType},
@@ -1646,7 +1646,7 @@ func (worker *workerT) workerProcess() {
 					}
 					combinedList = append(combinedList, unprocessed.Jobs...)
 				}
-				brtQueryStat.End()
+				brtQueryStat.Since(queryStart)
 				brt.logger.Debugf("BRT: %s: DB Read Complete for parameter Filters: %v retryList: %v, unprocessedList: %v, total: %v", brt.destType, parameterFilters, len(toRetry.Jobs), len(combinedList)-len(toRetry.Jobs), len(combinedList))
 			}
 		} else {
@@ -1797,7 +1797,7 @@ func (worker *workerT) workerProcess() {
 				switch {
 				case misc.Contains(objectStorageDestinations, brt.destType):
 					destUploadStat := stats.Default.NewStat(fmt.Sprintf(`batch_router.%s_dest_upload_time`, brt.destType), stats.TimerType)
-					destUploadStat.Start()
+					defer destUploadStat.RecordDuration()()
 					output := brt.copyJobsToStorage(brt.destType, &batchJobs, false)
 					brt.recordDeliveryStatus(*batchJobs.BatchDestination, output, false)
 					brt.setJobStatus(&batchJobs, false, output.Error, false)
@@ -1809,12 +1809,11 @@ func (worker *workerT) workerProcess() {
 						brt.recordUploadStats(*batchJobs.BatchDestination, output)
 					}
 
-					destUploadStat.End()
 				case misc.Contains(warehouseutils.WarehouseDestinations, brt.destType):
 					useRudderStorage := misc.IsConfiguredToUseRudderObjectStorage(batchJobs.BatchDestination.Destination.Config)
 					objectStorageType := warehouseutils.ObjectStorageType(brt.destType, batchJobs.BatchDestination.Destination.Config, useRudderStorage)
 					destUploadStat := stats.Default.NewStat(fmt.Sprintf(`batch_router.%s_%s_dest_upload_time`, brt.destType, objectStorageType), stats.TimerType)
-					destUploadStat.Start()
+					defer destUploadStat.RecordDuration()()
 					splitBatchJobs := brt.splitBatchJobsOnTimeWindow(batchJobs)
 					for _, batchJob := range splitBatchJobs {
 						output := brt.copyJobsToStorage(objectStorageType, batchJob, true)
@@ -1831,12 +1830,10 @@ func (worker *workerT) workerProcess() {
 						brt.setJobStatus(batchJob, true, output.Error, postToWarehouseErr)
 						misc.RemoveFilePaths(output.LocalFilePaths...)
 					}
-					destUploadStat.End()
 				case misc.Contains(asyncDestinations, brt.destType):
 					destUploadStat := stats.Default.NewStat(fmt.Sprintf(`batch_router.%s_dest_upload_time`, brt.destType), stats.TimerType)
-					destUploadStat.Start()
+					defer destUploadStat.RecordDuration()()
 					brt.sendJobsToStorage(batchJobs)
-					destUploadStat.End()
 				}
 				wg.Done()
 			})
@@ -1966,7 +1963,7 @@ func (brt *HandleT) readAndProcess() {
 
 		brt.logger.Debugf("BRT: %s: Reading in mainLoop", brt.destType)
 		brtQueryStat := stats.Default.NewTaggedStat("batch_router.jobsdb_query_time", stats.TimerType, stats.Tags{"function": "mainLoop", "destType": brt.destType})
-		brtQueryStat.Start()
+		queryStart := time.Now()
 
 		if !brt.holdFetchingJobs([]jobsdb.ParameterFilterT{}) {
 			queryParams := jobsdb.GetQueryParamsT{
@@ -2000,7 +1997,7 @@ func (brt *HandleT) readAndProcess() {
 				jobs = append(jobs, unprocessed.Jobs...)
 			}
 
-			brtQueryStat.End()
+			brtQueryStat.Since(queryStart)
 			brt.logger.Debugf("BRT: %s: Length of jobs received: %d", brt.destType, len(jobs))
 
 			jobsByDesID := lo.GroupBy(jobs, func(job *jobsdb.JobT) string {

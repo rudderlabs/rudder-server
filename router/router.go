@@ -527,7 +527,7 @@ func (worker *workerT) workerProcess() {
 
 func (worker *workerT) processDestinationJobs() {
 	ctx := context.TODO()
-	worker.batchTimeStat.Start()
+	defer worker.batchTimeStat.RecordDuration()()
 
 	var respContentType string
 	var respStatusCode, prevRespStatusCode int
@@ -592,7 +592,6 @@ func (worker *workerT) processDestinationJobs() {
 				transformAt := destinationJob.JobMetadataArray[0].TransformAt
 
 				// START: request to destination endpoint
-				worker.deliveryTimeStat.Start()
 				workspaceID := destinationJob.JobMetadataArray[0].JobT.WorkspaceId
 				deliveryLatencyStat := stats.Default.NewTaggedStat("delivery_latency", stats.TimerType, stats.Tags{
 					"module":      "router",
@@ -600,7 +599,6 @@ func (worker *workerT) processDestinationJobs() {
 					"destination": misc.GetTagName(destinationJob.Destination.ID, destinationJob.Destination.Name),
 					"workspaceId": workspaceID,
 				})
-				deliveryLatencyStat.Start()
 				startedAt := time.Now()
 
 				if worker.latestAssignedTime != destinationJob.JobMetadataArray[0].WorkerAssignedTime {
@@ -741,7 +739,7 @@ func (worker *workerT) processDestinationJobs() {
 					respStatusCode = destinationResponseHandler.IsSuccessStatus(respStatusCode, respBody)
 				}
 
-				worker.deliveryTimeStat.End()
+				worker.deliveryTimeStat.SendTiming(timeTaken)
 				deliveryLatencyStat.End()
 
 				// END: request to destination endpoint
@@ -868,8 +866,6 @@ func (worker *workerT) processDestinationJobs() {
 			destLiveEventSentMap[routerJobResponse.destinationJob] = struct{}{}
 		}
 	}
-
-	worker.batchTimeStat.End()
 
 	// routerJobs/destinationJobs are processed. Clearing the queues.
 	worker.routerJobs = make([]types.RouterJobT, 0)
@@ -1491,11 +1487,11 @@ func (rt *HandleT) statusInsertLoop() {
 					return
 				}
 
-				statusStat.Start()
+				start := time.Now()
 				rt.commitStatusList(&responseList)
 				countStat.Count(len(responseList))
 				responseList = nil
-				statusStat.End()
+				statusStat.Since(start)
 
 				rt.logger.Debugf("[%v Router] :: statusInsertLoop exiting", rt.destName)
 				return
@@ -1514,12 +1510,12 @@ func (rt *HandleT) statusInsertLoop() {
 			// but approx is good enough at the cost of reduced computation.
 		}
 		if len(responseList) >= updateStatusBatchSize || time.Since(lastUpdate) > maxStatusUpdateWait {
-			statusStat.Start()
+			start := time.Now()
 			rt.commitStatusList(&responseList)
 			countStat.Count(len(responseList))
 			responseList = nil
 			lastUpdate = time.Now()
-			statusStat.End()
+			statusStat.Since(start)
 		}
 	}
 }

@@ -813,8 +813,7 @@ func (dl *HandleT) connectToWarehouse() (dbHandleT *databricks.DBHandleT, err er
 		"identifier":  dl.Warehouse.Identifier,
 		"queryType":   "Connect",
 	})
-	connStat.Start()
-	defer connStat.End()
+	defer connStat.RecordDuration()()
 
 	closeConnStat := stats.Default.NewTaggedStat("warehouse.deltalake.grpcExecTime", stats.TimerType, stats.Tags{
 		"workspaceId": dl.Warehouse.WorkspaceID,

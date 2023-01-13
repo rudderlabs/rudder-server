@@ -164,6 +164,19 @@ func (m *Measurement) SendTiming(duration time.Duration) {
 	m.durations = append(m.durations, duration)
 }
 
+// RecordDuration implements stats.Measurement
+func (m *Measurement) RecordDuration() func() {
+	if m.mType != stats.TimerType {
+		panic("operation RecordDuration not supported for measurement type:" + m.mType)
+	}
+
+	start := m.now()
+
+	return func() {
+		m.Since(start)
+	}
+}
+
 type Opts func(*Store)
 
 func WithNow(nowFn func() time.Time) Opts {

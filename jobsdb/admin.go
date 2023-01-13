@@ -77,11 +77,11 @@ So, we don't have to worry about dsEmptyResultCache
 */
 func (jd *HandleT) deleteJobStatus() {
 	err := jd.WithUpdateSafeTx(context.TODO(), func(tx UpdateSafeTx) error {
-		defer jd.sendTiming(
+		defer jd.getTimerStat(
 			"jobsdb_delete_job_status_time",
 			&statTags{
 				CustomValFilters: []string{jd.tablePrefix},
-			})()
+			}).RecordDuration()()
 
 		dsList := jd.getDSList()
 
@@ -101,11 +101,11 @@ func (jd *HandleT) deleteJobStatus() {
 }
 
 func (jd *HandleT) deleteJobStatusDSInTx(txHandler transactionHandler, ds dataSetT) error {
-	defer jd.sendTiming(
+	defer jd.getTimerStat(
 		"jobsdb_delete_job_status_ds_time",
 		&statTags{
 			CustomValFilters: []string{jd.tablePrefix},
-		})()
+		}).RecordDuration()()
 
 	_, err := txHandler.Exec(
 		fmt.Sprintf(
@@ -142,10 +142,10 @@ So, we don't have to worry about dsEmptyResultCache
 */
 func (jd *HandleT) failExecuting() {
 	err := jd.WithUpdateSafeTx(context.TODO(), func(tx UpdateSafeTx) error {
-		defer jd.sendTiming(
+		defer jd.getTimerStat(
 			"jobsdb_fail_executing_time",
 			&statTags{CustomValFilters: []string{jd.tablePrefix}},
-		)()
+		).RecordDuration()()
 
 		dsList := jd.getDSList()
 
@@ -165,10 +165,10 @@ func (jd *HandleT) failExecuting() {
 }
 
 func (jd *HandleT) failExecutingDSInTx(txHandler transactionHandler, ds dataSetT) error {
-	defer jd.sendTiming(
+	defer jd.getTimerStat(
 		"jobsdb_fail_executing_ds_time",
 		&statTags{CustomValFilters: []string{jd.tablePrefix}},
-	)()
+	).RecordDuration()()
 
 	_, err := txHandler.Exec(
 		fmt.Sprintf(

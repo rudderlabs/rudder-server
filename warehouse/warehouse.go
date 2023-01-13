@@ -742,13 +742,13 @@ func (wh *HandleT) createJobs(ctx context.Context, warehouse warehouseutils.Ware
 		"destinationID": warehouse.Destination.ID,
 		"destType":      warehouse.Destination.DestinationDefinition.Name,
 	})
-	stagingFilesFetchStat.Start()
+	stagingFilesFetchStart := time.Now()
 	stagingFilesList, err := wh.getPendingStagingFiles(ctx, warehouse)
 	if err != nil {
 		wh.Logger.Errorf("[WH]: Failed to get pending staging files: %s with error %v", warehouse.Identifier, err)
 		return err
 	}
-	stagingFilesFetchStat.End()
+	stagingFilesFetchStat.Since(stagingFilesFetchStart)
 
 	if len(stagingFilesList) == 0 {
 		wh.Logger.Debugf("[WH]: Found no pending staging files for %s", warehouse.Identifier)
@@ -760,13 +760,11 @@ func (wh *HandleT) createJobs(ctx context.Context, warehouse warehouseutils.Ware
 		"destinationID": warehouse.Destination.ID,
 		"destType":      warehouse.Destination.DestinationDefinition.Name,
 	})
-	uploadJobCreationStat.Start()
+	defer uploadJobCreationStat.RecordDuration()()
 
 	uploadStartAfter := getUploadStartAfterTime()
 	wh.createUploadJobsFromStagingFiles(warehouse, whManager, stagingFilesList, priority, uploadStartAfter)
 	setLastProcessedMarker(warehouse, uploadStartAfter)
-
-	uploadJobCreationStat.End()
 
 	return nil
 }

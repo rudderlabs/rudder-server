@@ -29,6 +29,7 @@ type Timer interface {
 	End()
 	SendTiming(duration time.Duration)
 	Since(start time.Time)
+	RecordDuration() func()
 }
 
 // Measurement provides all stat measurement functions
@@ -90,6 +91,11 @@ func (m *statsdMeasurement) SendTiming(_ time.Duration) {
 // Since default behavior is to panic as not supported operation
 func (m *statsdMeasurement) Since(_ time.Time) {
 	panic(fmt.Errorf("operation Since not supported for measurement type:%s", m.statType))
+}
+
+// RecordDuration default behavior is to panic as not supported operation
+func (m *statsdMeasurement) RecordDuration() func() {
+	panic(fmt.Errorf("operation RecordDuration not supported for measurement type:%s", m.statType))
 }
 
 // statsdCounter represents a counter stat
@@ -161,6 +167,13 @@ func (t *statsdTimer) SendTiming(duration time.Duration) {
 		return
 	}
 	t.client.statsd.Timing(t.name, int(duration/time.Millisecond))
+}
+
+func (t *statsdTimer) RecordDuration() func() {
+	start := time.Now()
+	return func() {
+		t.Since(start)
+	}
 }
 
 // statsdHistogram represents a histogram stat

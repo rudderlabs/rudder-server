@@ -181,6 +181,18 @@ func Test_Measurement_Operations(t *testing.T) {
 		}, 2*time.Second, time.Millisecond)
 	})
 
+	t.Run("timer RecordDuration", func(t *testing.T) {
+		func() {
+			defer s.NewStat("test-timer-4", stats.TimerType).RecordDuration()()
+			time.Sleep(1 * time.Second)
+		}()
+
+		require.Eventually(t, func() bool {
+			fmt.Println(lastReceived, "=")
+			return lastReceived == "test-timer-4,instanceName=test:1000|ms"
+		}, 2*time.Second, time.Millisecond)
+	})
+
 	t.Run("histogram", func(t *testing.T) {
 		s.NewStat("test-hist-1", stats.HistogramType).Observe(1.2)
 		require.Eventually(t, func() bool {

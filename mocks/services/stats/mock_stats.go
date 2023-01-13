@@ -185,6 +185,20 @@ func (mr *MockMeasurementMockRecorder) Observe(arg0 interface{}) *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Observe", reflect.TypeOf((*MockMeasurement)(nil).Observe), arg0)
 }
 
+// RecordDuration mocks base method.
+func (m *MockMeasurement) RecordDuration() func() {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "RecordDuration")
+	ret0, _ := ret[0].(func())
+	return ret0
+}
+
+// RecordDuration indicates an expected call of RecordDuration.
+func (mr *MockMeasurementMockRecorder) RecordDuration() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RecordDuration", reflect.TypeOf((*MockMeasurement)(nil).RecordDuration))
+}
+
 // SendTiming mocks base method.
 func (m *MockMeasurement) SendTiming(arg0 time.Duration) {
 	m.ctrl.T.Helper()
