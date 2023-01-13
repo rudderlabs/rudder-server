@@ -185,7 +185,7 @@ func TestStagingFileRepo_Many(t *testing.T) {
 	)
 
 	stagingFiles := manyStagingFiles(10, now)
-	for i, _ := range stagingFiles {
+	for i := range stagingFiles {
 		file := stagingFiles[i].WithSchema([]byte(`{"type": "object"}`))
 		id, err := r.Insert(ctx, &file)
 		require.NoError(t, err)

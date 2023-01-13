@@ -231,7 +231,6 @@ func (*StagingFiles) parseRows(rows *sql.Rows) ([]model.StagingFile, error) {
 
 // GetByID returns staging file with the given ID.
 func (repo *StagingFiles) GetByID(ctx context.Context, ID int64) (model.StagingFile, error) {
-
 	query := `SELECT ` + stagingTableColumns + ` FROM ` + stagingTableName + ` WHERE id = $1`
 
 	rows, err := repo.db.QueryContext(ctx, query, ID)
@@ -305,7 +304,6 @@ func (repo *StagingFiles) GetAfterID(ctx context.Context, sourceID, destinationI
 }
 
 func (repo *StagingFiles) Pending(ctx context.Context, sourceID, destinationID string) ([]model.StagingFile, error) {
-
 	var lastStagingFileID int64
 	err := repo.db.QueryRowContext(ctx, `
 		SELECT
@@ -347,7 +345,6 @@ func (repo *StagingFiles) CountPendingForDestination(ctx context.Context, destin
 }
 
 func (repo *StagingFiles) countPending(ctx context.Context, query string, value interface{}) (int64, error) {
-
 	var id sql.NullInt64
 	err := repo.db.QueryRowContext(ctx,
 		`SELECT MAX(end_staging_file_id) FROM `+uploadsTableName+` WHERE `+query,
