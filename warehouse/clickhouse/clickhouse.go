@@ -578,9 +578,9 @@ func (ch *Clickhouse) loadByDownloadingLoadFiles(tableName string, tableSchemaIn
 	// Clickhouse stats
 	chStats := ch.newClickHouseStat(tableName)
 
-	chStats.downloadLoadFilesTime.Start()
+	downloadStart := time.Now()
 	fileNames, err := ch.DownloadLoadFiles(tableName)
-	chStats.downloadLoadFilesTime.End()
+	chStats.downloadLoadFilesTime.Since(downloadStart)
 	if err != nil {
 		return
 	}
@@ -723,7 +723,7 @@ func (ch *Clickhouse) loadTablesFromFilesNamesWithRetry(tableName string, tableS
 	ch.Logger.Debugf("%s Prepared statement exec in db for loading in table", ch.GetLogIdentifier(tableName))
 
 	for _, objectFileName := range fileNames {
-		chStats.syncLoadFileTime.Start()
+		syncStart := time.Now()
 
 		var gzipFile *os.File
 		gzipFile, err = os.Open(objectFileName)
@@ -801,12 +801,11 @@ func (ch *Clickhouse) loadTablesFromFilesNamesWithRetry(tableName string, tableS
 		_ = gzipReader.Close()
 		_ = gzipFile.Close()
 
-		chStats.syncLoadFileTime.End()
+		chStats.syncLoadFileTime.Since(syncStart)
 	}
 
 	misc.RunWithTimeout(func() {
-		chStats.commitTime.Start()
-		defer chStats.commitTime.End()
+		defer chStats.commitTime.RecordDuration()()
 
 		ch.Logger.Debugf("%s Committing transaction", ch.GetLogIdentifier(tableName))
 		if err = txn.Commit(); err != nil {

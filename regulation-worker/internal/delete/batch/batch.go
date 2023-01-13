@@ -405,8 +405,7 @@ func (bm *BatchManager) Delete(
 						"destType":    "batch",
 						"destName":    destName,
 					})
-				cleanTime.Start()
-				defer cleanTime.End()
+				defer cleanTime.RecordDuration()()
 
 				absPath, err := downloadWithExpBackoff(gCtx, batch.download, files[_i].Key)
 				if err != nil {

@@ -2,6 +2,7 @@ package processor
 
 import (
 	"strconv"
+	"time"
 
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
@@ -75,9 +76,9 @@ func (proc *HandleT) validateEvents(groupedEventsByWriteKey map[WriteKeyT][]tran
 			continue
 		}
 
-		validationStat.tpValidationTime.Start()
+		validationStart := time.Now()
 		response := proc.transformer.Validate(eventList, integrations.GetTrackingPlanValidationURL(), userTransformBatchSize)
-		validationStat.tpValidationTime.End()
+		validationStat.tpValidationTime.Since(validationStart)
 
 		// If transformerInput does not match with transformerOutput then we do not consider transformerOutput
 		// This is a safety check we are adding so that if something unexpected comes from transformer

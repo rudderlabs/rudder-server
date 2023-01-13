@@ -351,12 +351,12 @@ func (job *UploadJobT) matchRowsInStagingAndLoadFiles() {
 
 func (job *UploadJobT) run() (err error) {
 	timerStat := job.timerStat("upload_time")
-	timerStat.Start()
+	start := time.Now()
 	ch := job.trackLongRunningUpload()
 	defer func() {
 		job.setUploadColumns(UploadColumnsOpts{Fields: []UploadColumnT{{Column: UploadInProgress, Value: false}}})
 
-		timerStat.End()
+		timerStat.Since(start)
 		ch <- struct{}{}
 	}()
 
@@ -621,8 +621,7 @@ func (job *UploadJobT) exportUserTables(loadFilesTableMap map[tableNameT]bool) (
 	if _, ok := uploadSchema[job.identifiesTableName()]; ok {
 
 		loadTimeStat := job.timerStat("user_tables_load_time")
-		loadTimeStat.Start()
-		defer loadTimeStat.End()
+		defer loadTimeStat.RecordDuration()()
 		var loadErrors []error
 		loadErrors, err = job.loadUserTables(loadFilesTableMap)
 		if err != nil {
@@ -644,8 +643,7 @@ func (job *UploadJobT) exportIdentities() (err error) {
 	if warehouseutils.IDResolutionEnabled() && misc.Contains(warehouseutils.IdentityEnabledWarehouses, job.warehouse.Type) {
 		if _, ok := uploadSchema[job.identityMergeRulesTableName()]; ok {
 			loadTimeStat := job.timerStat("identity_tables_load_time")
-			loadTimeStat.Start()
-			defer loadTimeStat.End()
+			defer loadTimeStat.RecordDuration()()
 
 			var loadErrors []error
 			loadErrors, err = job.loadIdentityTables(false)
@@ -667,8 +665,7 @@ func (job *UploadJobT) exportRegularTables(specialTables []string, loadFilesTabl
 	//[]string{job.identifiesTableName(), job.usersTableName(), job.identityMergeRulesTableName(), job.identityMappingsTableName()}
 	// Export all other tables
 	loadTimeStat := job.timerStat("other_tables_load_time")
-	loadTimeStat.Start()
-	defer loadTimeStat.End()
+	defer loadTimeStat.RecordDuration()()
 
 	loadErrors := job.loadAllTablesExcept(specialTables, loadFilesTableMap)
 	job.hasAllTablesSkipped = areAllTableSkipErrors(loadErrors)
@@ -1144,8 +1141,7 @@ func (job *UploadJobT) loadUserTables(loadFilesTableMap map[tableNameT]bool) ([]
 		return []error{}, nil
 	}
 
-	loadTimeStat := job.timerStat("user_tables_load_time")
-	loadTimeStat.Start()
+	defer job.timerStat("user_tables_load_time").RecordDuration()()
 
 	// Load all user tables
 	identityTableUpload := NewTableUpload(job.upload.ID, job.identifiesTableName())

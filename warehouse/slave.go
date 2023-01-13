@@ -144,8 +144,7 @@ func (jobRun *JobRunT) downloadStagingFile() error {
 			return err
 		}
 
-		timer := jobRun.timerStat("download_staging_file_time")
-		timer.Start()
+		downloadStart := time.Now()
 
 		err = downloader.Download(context.TODO(), file, job.StagingFileLocation)
 		if err != nil {
@@ -153,7 +152,7 @@ func (jobRun *JobRunT) downloadStagingFile() error {
 			return err
 		}
 		file.Close()
-		timer.End()
+		jobRun.timerStat("download_staging_file_time").Since(downloadStart)
 
 		fi, err := os.Stat(filePath)
 		if err != nil {
@@ -432,8 +431,7 @@ func processStagingFile(job Payload, workerIndex int) (loadFileUploadOutputs []l
 	discardsTable := job.getDiscardsTable()
 	jobRun.tableEventCountMap[discardsTable] = 0
 
-	timer := jobRun.timerStat("process_staging_file_time")
-	timer.Start()
+	processingStart := time.Now()
 
 	lineBytesCounter := 0
 	var interfaceSliceSample []interface{}
@@ -575,7 +573,7 @@ func processStagingFile(job Payload, workerIndex int) (loadFileUploadOutputs []l
 		}
 		jobRun.tableEventCountMap[tableName]++
 	}
-	timer.End()
+	jobRun.timerStat("process_staging_file_time").Since(processingStart)
 
 	pkgLogger.Debugf("[WH]: Process %v bytes from downloaded staging file: %s", lineBytesCounter, job.StagingFileLocation)
 	jobRun.counterStat("bytes_processed_in_staging_file").Count(lineBytesCounter)

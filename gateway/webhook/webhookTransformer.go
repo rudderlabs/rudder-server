@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/rudderlabs/rudder-server/gateway/response"
 	"github.com/rudderlabs/rudder-server/utils/httputil"
@@ -46,13 +47,13 @@ func (bt *batchWebhookTransformerT) markResponseFail(reason string) transformerR
 
 func (bt *batchWebhookTransformerT) transform(events [][]byte, sourceType string) transformerBatchResponseT {
 	bt.stats.sentStat.Count(len(events))
-	bt.stats.transformTimerStat.Start()
+	transformStart := time.Now()
 
 	payload := misc.MakeJSONArray(events)
 	url := fmt.Sprintf(`%s/%s`, bt.sourceTransformerURL, strings.ToLower(sourceType))
 	resp, err := bt.webhook.netClient.Post(url, "application/json; charset=utf-8", bytes.NewBuffer(payload))
 
-	bt.stats.transformTimerStat.End()
+	bt.stats.transformTimerStat.Since(transformStart)
 	if err != nil {
 		err := fmt.Errorf("JS HTTP connection error to source transformer: URL: %v Error: %+v", url, err)
 		return transformerBatchResponseT{batchError: err, statusCode: http.StatusServiceUnavailable}
