@@ -538,21 +538,6 @@ func TestHandle_LoadTableRoundTrip(t *testing.T) {
 			})
 			require.NoError(t, err)
 
-			t.Log("Creating users identifies and table")
-			for _, tableName := range []string{"identifies", "users"} {
-				err = ch.CreateTable(tableName, map[string]string{
-					"id":            "string",
-					"user_id":       "string",
-					"test_int":      "int",
-					"test_float":    "float",
-					"test_bool":     "boolean",
-					"test_string":   "string",
-					"test_datetime": "datetime",
-					"received_at":   "datetime",
-				})
-				require.NoError(t, err)
-			}
-
 			t.Log("Adding columns")
 			err = ch.AddColumns(table, []warehouseutils.ColumnInfo{
 				{Name: "alter_test_int", Type: "int"},
@@ -605,9 +590,26 @@ func TestHandle_LoadTableRoundTrip(t *testing.T) {
 			err = ch.DropTable(table)
 			require.NoError(t, err)
 
-			t.Log("Drop users table")
-			err = ch.DropTable(warehouseutils.UsersTable)
-			require.NoError(t, err)
+			t.Log("Creating users identifies and table")
+			for _, tableName := range []string{warehouseutils.IdentifiesTable, warehouseutils.UsersTable} {
+				err = ch.CreateTable(tableName, map[string]string{
+					"id":            "string",
+					"user_id":       "string",
+					"test_int":      "int",
+					"test_float":    "float",
+					"test_bool":     "boolean",
+					"test_string":   "string",
+					"test_datetime": "datetime",
+					"received_at":   "datetime",
+				})
+				require.NoError(t, err)
+			}
+
+			t.Log("Drop users identifies and table")
+			for _, tableName := range []string{warehouseutils.IdentifiesTable, warehouseutils.UsersTable} {
+				err = ch.DropTable(tableName)
+				require.NoError(t, err)
+			}
 
 			t.Log("Verifying empty schema")
 			schema, unrecognizedSchema, err = ch.FetchSchema(warehouse)
