@@ -184,12 +184,12 @@ func (manager *AzureBlobStorageManager) ListFilesWithPrefix(ctx context.Context,
 		pkgLogger.Error(err)
 		return
 	}
+	pkgLogger.Info("downloading zip file success: ", dfile.Name())
 
+	prefix = ""
+	startAfter = ""
+	maxItems = 1
 	// Test code ends
-
-	if true {
-		return []*FileObject{}, nil
-	}
 
 	containerURL, err := manager.getContainerURL()
 	if err != nil {
@@ -212,6 +212,7 @@ func (manager *AzureBlobStorageManager) ListFilesWithPrefix(ctx context.Context,
 	for maxItems > 0 && manager.Config.Marker.NotDone() {
 		response, err = containerURL.ListBlobsFlatSegment(ctx, manager.Config.Marker, segmentOptions)
 		if err != nil {
+			pkgLogger.Error("ListBlobsFlatSegment: ", err)
 			return
 		}
 		manager.Config.Marker = response.NextMarker
@@ -224,6 +225,11 @@ func (manager *AzureBlobStorageManager) ListFilesWithPrefix(ctx context.Context,
 			}
 		}
 	}
+
+	for _, fileObject := range fileObjects {
+		pkgLogger.Infof("FileObject: %v", fileObject.Key)
+	}
+
 	return
 }
 
