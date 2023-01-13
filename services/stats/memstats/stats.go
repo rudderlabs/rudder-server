@@ -21,9 +21,8 @@ type Store struct {
 }
 
 type Measurement struct {
-	mu        sync.Mutex
-	startTime time.Time
-	now       func() time.Time
+	mu  sync.Mutex
+	now func() time.Time
 
 	tags  stats.Tags
 	name  string
@@ -122,27 +121,6 @@ func (m *Measurement) Observe(value float64) {
 	m.values = append(m.values, value)
 }
 
-// Start implements stats.Measurement
-func (m *Measurement) Start() {
-	if m.mType != stats.TimerType {
-		panic("operation Start not supported for measurement type:" + m.mType)
-	}
-
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
-	m.startTime = m.now()
-}
-
-// End implements stats.Measurement
-func (m *Measurement) End() {
-	if m.mType != stats.TimerType {
-		panic("operation End not supported for measurement type:" + m.mType)
-	}
-
-	m.SendTiming(m.now().Sub(m.startTime))
-}
-
 // Since implements stats.Measurement
 func (m *Measurement) Since(start time.Time) {
 	if m.mType != stats.TimerType {
@@ -171,7 +149,6 @@ func (m *Measurement) RecordDuration() func() {
 	}
 
 	start := m.now()
-
 	return func() {
 		m.Since(start)
 	}

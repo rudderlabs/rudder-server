@@ -83,10 +83,20 @@ func TestStats(t *testing.T) {
 			store.Get(name, commonTags).Durations(),
 		)
 
+		func() {
+			defer m.RecordDuration()()
+			now = now.Add(time.Second)
+		}()
+		require.Equal(t, time.Second, store.Get(name, commonTags).LastDuration())
+		require.Equal(t,
+			[]time.Duration{time.Second, time.Minute, time.Second},
+			store.Get(name, commonTags).Durations(),
+		)
+
 		m.Since(now.Add(-time.Minute))
 		require.Equal(t, time.Minute, store.Get(name, commonTags).LastDuration())
 		require.Equal(t,
-			[]time.Duration{time.Second, time.Minute, time.Minute},
+			[]time.Duration{time.Second, time.Minute, time.Second, time.Minute},
 			store.Get(name, commonTags).Durations(),
 		)
 	})
@@ -103,6 +113,9 @@ func TestStats(t *testing.T) {
 		})
 		require.PanicsWithValue(t, "operation SendTiming not supported for measurement type:histogram", func() {
 			store.NewTaggedStat("invalid_send_timing", stats.HistogramType, commonTags).SendTiming(time.Second)
+		})
+		require.PanicsWithValue(t, "operation RecordDuration not supported for measurement type:histogram", func() {
+			store.NewTaggedStat("invalid_record_duration", stats.HistogramType, commonTags).RecordDuration()
 		})
 		require.PanicsWithValue(t, "operation Since not supported for measurement type:histogram", func() {
 			store.NewTaggedStat("invalid_since", stats.HistogramType, commonTags).Since(time.Now())

@@ -1797,7 +1797,7 @@ func (worker *workerT) workerProcess() {
 				switch {
 				case misc.Contains(objectStorageDestinations, brt.destType):
 					destUploadStat := stats.Default.NewStat(fmt.Sprintf(`batch_router.%s_dest_upload_time`, brt.destType), stats.TimerType)
-					defer destUploadStat.RecordDuration()()
+					destUploadStart := time.Now()
 					output := brt.copyJobsToStorage(brt.destType, &batchJobs, false)
 					brt.recordDeliveryStatus(*batchJobs.BatchDestination, output, false)
 					brt.setJobStatus(&batchJobs, false, output.Error, false)
@@ -1809,11 +1809,12 @@ func (worker *workerT) workerProcess() {
 						brt.recordUploadStats(*batchJobs.BatchDestination, output)
 					}
 
+					destUploadStat.Since(destUploadStart)
 				case misc.Contains(warehouseutils.WarehouseDestinations, brt.destType):
 					useRudderStorage := misc.IsConfiguredToUseRudderObjectStorage(batchJobs.BatchDestination.Destination.Config)
 					objectStorageType := warehouseutils.ObjectStorageType(brt.destType, batchJobs.BatchDestination.Destination.Config, useRudderStorage)
 					destUploadStat := stats.Default.NewStat(fmt.Sprintf(`batch_router.%s_%s_dest_upload_time`, brt.destType, objectStorageType), stats.TimerType)
-					defer destUploadStat.RecordDuration()()
+					destUploadStart := time.Now()
 					splitBatchJobs := brt.splitBatchJobsOnTimeWindow(batchJobs)
 					for _, batchJob := range splitBatchJobs {
 						output := brt.copyJobsToStorage(objectStorageType, batchJob, true)
@@ -1830,10 +1831,12 @@ func (worker *workerT) workerProcess() {
 						brt.setJobStatus(batchJob, true, output.Error, postToWarehouseErr)
 						misc.RemoveFilePaths(output.LocalFilePaths...)
 					}
+					destUploadStat.Since(destUploadStart)
 				case misc.Contains(asyncDestinations, brt.destType):
 					destUploadStat := stats.Default.NewStat(fmt.Sprintf(`batch_router.%s_dest_upload_time`, brt.destType), stats.TimerType)
-					defer destUploadStat.RecordDuration()()
+					destUploadStart := time.Now()
 					brt.sendJobsToStorage(batchJobs)
+					destUploadStat.Since(destUploadStart)
 				}
 				wg.Done()
 			})

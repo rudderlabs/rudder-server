@@ -33,6 +33,9 @@ func Test_Measurement_Invalid_Operations(t *testing.T) {
 			s.NewStat("test", stats.CountType).Observe(1.2)
 		})
 		require.Panics(t, func() {
+			s.NewStat("test", stats.CountType).RecordDuration()
+		})
+		require.Panics(t, func() {
 			s.NewStat("test", stats.CountType).SendTiming(1)
 		})
 		require.Panics(t, func() {
@@ -51,6 +54,9 @@ func Test_Measurement_Invalid_Operations(t *testing.T) {
 			s.NewStat("test", stats.GaugeType).Observe(1.2)
 		})
 		require.Panics(t, func() {
+			s.NewStat("test", stats.GaugeType).RecordDuration()
+		})
+		require.Panics(t, func() {
 			s.NewStat("test", stats.GaugeType).SendTiming(1)
 		})
 		require.Panics(t, func() {
@@ -67,6 +73,9 @@ func Test_Measurement_Invalid_Operations(t *testing.T) {
 		})
 		require.Panics(t, func() {
 			s.NewStat("test", stats.HistogramType).Gauge(1)
+		})
+		require.Panics(t, func() {
+			s.NewStat("test", stats.HistogramType).RecordDuration()
 		})
 		require.Panics(t, func() {
 			s.NewStat("test", stats.HistogramType).SendTiming(1)

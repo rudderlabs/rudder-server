@@ -167,6 +167,9 @@ func (t *statsdTimer) SendTiming(duration time.Duration) {
 	t.client.statsd.Timing(t.name, int(duration/time.Millisecond))
 }
 
+// RecordDuration records the duration of time between
+// the call to this function and the execution of the function it returns.
+// Only applies to TimerType stats
 func (t *statsdTimer) RecordDuration() func() {
 	start := time.Now()
 	return func() {
