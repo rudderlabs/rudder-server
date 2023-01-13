@@ -159,6 +159,17 @@ func initRouter() {
 	InitRouterAdmin()
 }
 
+func TestBackoff(t *testing.T) {
+	loadConfig()
+	assert.Equal(t, 10*time.Second, durationBeforeNextAttempt(0))
+	assert.Equal(t, 10*time.Second, durationBeforeNextAttempt(1))
+	assert.Equal(t, 20*time.Second, durationBeforeNextAttempt(2))
+	assert.Equal(t, 40*time.Second, durationBeforeNextAttempt(3))
+	assert.Equal(t, 80*time.Second, durationBeforeNextAttempt(4))
+	assert.Equal(t, 160*time.Second, durationBeforeNextAttempt(5))
+	assert.Equal(t, 300*time.Second, durationBeforeNextAttempt(6))
+}
+
 var _ = Describe("Router", func() {
 	initRouter()
 
