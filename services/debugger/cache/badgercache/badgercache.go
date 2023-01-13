@@ -22,9 +22,9 @@ loadCacheConfig sets the properties of the cache after reading it from the confi
 This gives a feature of hot readability as well.
 */
 func (e *EmbeddedCache[E]) loadCacheConfig() {
-	config.RegisterDurationConfigVariable(30, &e.CleanupFreq, true, time.Second, "LiveEvent.cache.clearFreq") // default clearFreq is 15 seconds
-	config.RegisterIntConfigVariable(100, &e.Limiter, true, 1, "LiveEvent.cache.limiter")
-	config.RegisterDurationConfigVariable(5, &e.Ticker, false, time.Minute, "LiveEvent.cache.GCTime")
+	config.RegisterDurationConfigVariable(30, &e.cleanupFreq, true, time.Second, "LiveEvent.cache.clearFreq") // default clearFreq is 15 seconds
+	config.RegisterIntConfigVariable(100, &e.limiter, true, 1, "LiveEvent.cache.limiter")
+	config.RegisterDurationConfigVariable(5, &e.ticker, false, time.Minute, "LiveEvent.cache.GCTime")
 	config.RegisterDurationConfigVariable(15, &e.queryTimeout, false, time.Second, "LiveEvent.cache.queryTimeout")
 	config.RegisterIntConfigVariable(3, &e.retries, false, 1, "LiveEvent.cache.retries")
 }
@@ -34,17 +34,17 @@ EmbeddedCache is an in-memory cache. Each key-value pair stored in this cache ha
 key-value pair form the cache which is older than TTL time.
 */
 type EmbeddedCache[E any] struct {
-	Limiter      int
+	limiter      int
 	retries      int
 	path         string
 	Origin       string
 	done         chan struct{}
 	closed       chan struct{}
-	Ticker       time.Duration
+	ticker       time.Duration
 	queryTimeout time.Duration
-	CleanupFreq  time.Duration // TTL time on badgerDB
+	cleanupFreq  time.Duration // TTL time on badgerDB
 	once         sync.Once
-	Db           *badger.DB
+	db           *badger.DB
 	Logger       logger.Logger
 }
 
@@ -61,35 +61,34 @@ func (badgerLogger) Warningf(format string, a ...interface{}) {
 }
 
 // Update writes the entries into badger db with a TTL
-func (e *EmbeddedCache[E]) Update(key string, value E) {
+func (e *EmbeddedCache[E]) Update(key string, value E) error {
 	e.Init()
-	txn := e.Db.NewTransaction(true)
-	res := e.Read(key)
-	if len(res) >= e.Limiter {
-		res = res[len(res)-e.Limiter+1:]
-	}
-	res = append(res, value)
-	data, err := json.Marshal(res)
-	if err != nil {
-		return
-	}
+	txn := e.db.NewTransaction(true)
 	setBadgerEntry := func(ctx context.Context) error {
-		entry := badger.NewEntry([]byte(key), data).WithTTL(e.CleanupFreq)
-		if err := txn.SetEntry(entry); err == badger.ErrTxnTooBig {
-			err = txn.Commit()
-			if err != nil {
-				return err
-			}
-			txn = e.Db.NewTransaction(true)
-			err = txn.SetEntry(entry)
-			if err != nil {
-				return err
-			}
+		res := e.Read(key)
+		if len(res) >= e.limiter {
+			res = res[len(res)-e.limiter+1:]
+		}
+		res = append(res, value)
+		data, err := json.Marshal(res)
+		if err != nil {
+			return err
+		}
+		entry := badger.NewEntry([]byte(key), data).WithTTL(e.cleanupFreq)
+		if err := txn.SetEntry(entry); err != nil {
+			return err
 		}
 		return nil
 	}
-	_ = misc.RetryWith(context.TODO(), e.queryTimeout, e.retries, setBadgerEntry)
-	_ = txn.Commit()
+	err := misc.RetryWith(context.TODO(), e.queryTimeout, e.retries, setBadgerEntry)
+	if err != nil {
+		return err
+	}
+	err = txn.Commit()
+	if err != nil {
+		return err
+	}
+	return nil
 }
 
 // Read fetches all the entries for a given key from badgerDB
@@ -97,22 +96,19 @@ func (e *EmbeddedCache[E]) Read(key string) []E {
 	e.Init()
 	read := func(ctx context.Context) ([]E, error) {
 		var values []E
-		err := e.Db.View(func(txn *badger.Txn) error {
-			it := txn.NewIterator(badger.DefaultIteratorOptions)
-			defer it.Close()
-			prefix := []byte(key)
-			for it.Seek(prefix); it.ValidForPrefix(prefix); it.Next() {
-				item := it.Item()
-				err := item.Value(func(v []byte) error {
-					err := json.Unmarshal(v, &values)
-					if err != nil {
-						return err
-					}
-					return nil
-				})
-				if err != nil {
-					return err
-				}
+		err := e.db.View(func(txn *badger.Txn) error {
+			item, err := txn.Get([]byte(key))
+			if err != nil {
+				return err
+			}
+			var data []byte
+			data, err = item.ValueCopy(data)
+			if err != nil {
+				return err
+			}
+			err = json.Unmarshal(data, &values)
+			if err != nil {
+				return err
 			}
 			return nil
 		})
@@ -149,7 +145,7 @@ func (e *EmbeddedCache[E]) Init() {
 			WithNumMemtables(0).
 			WithBlockCacheSize(0)
 
-		e.Db, err = badger.Open(opts)
+		e.db, err = badger.Open(opts)
 		if err != nil {
 			e.Logger.Errorf("Error while opening badgerDB: %v", err)
 			return
@@ -161,7 +157,7 @@ func (e *EmbeddedCache[E]) Init() {
 }
 
 func (e *EmbeddedCache[E]) gcBadgerDB() {
-	ticker := time.NewTicker(e.Ticker)
+	ticker := time.NewTicker(e.ticker)
 	defer ticker.Stop()
 	// One call would only result in removal of at max one log file.
 	// As an optimization, you could also immediately re-run it whenever it returns nil error
@@ -173,7 +169,7 @@ func (e *EmbeddedCache[E]) gcBadgerDB() {
 			return
 		case <-ticker.C:
 		again: // see https://dgraph.io/docs/badger/get-started/#garbage-collection
-			err := e.Db.RunValueLogGC(0.7)
+			err := e.db.RunValueLogGC(0.7)
 			if err == nil {
 				goto again
 			}
@@ -185,8 +181,8 @@ func (e *EmbeddedCache[E]) Stop() error {
 	e.Init()
 	close(e.done)
 	<-e.closed
-	if e.Db == nil {
+	if e.db == nil {
 		return nil
 	}
-	return e.Db.Close()
+	return e.db.Close()
 }

@@ -245,7 +245,11 @@ func (h *Handle) UploadTransformationStatus(tStatus *TransformationStatusT) bool
 			tStatusUpdated.Destination.Transformations = []backendconfig.TransformationT{transformation}
 			tStatusUpdated.UserTransformedEvents = lo.Slice(tStatusUpdated.UserTransformedEvents, 0, h.limitEventsInMemory+1)
 			tStatusUpdated.FailedEvents = lo.Slice(tStatusUpdated.FailedEvents, 0, h.limitEventsInMemory+1)
-			h.transformationCacheMap.Update(transformation.ID, tStatusUpdated)
+			err := h.transformationCacheMap.Update(transformation.ID, tStatusUpdated)
+			if err != nil {
+				h.log.Errorf("Error while updating transformation cache: %v", err)
+				return false
+			}
 		}
 	}
 	return true

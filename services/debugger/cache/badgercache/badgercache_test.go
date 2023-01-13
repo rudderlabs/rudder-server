@@ -1,11 +1,10 @@
-package embeddedcache_test
+package embeddedcache
 
 import (
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	"github.com/rudderlabs/rudder-server/services/debugger/cache/embeddedcache"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/stretchr/testify/assert"
@@ -16,7 +15,7 @@ var _ = Describe("cache", Ordered, func() {
 		testKey := "test_key"
 		testValue1 := []byte("test_value1")
 		testValue2 := []byte("test_value2")
-		e := embeddedcache.EmbeddedCache[[]byte]{Origin: "test", Logger: logger.NewLogger()}
+		e := EmbeddedCache[[]byte]{Origin: "test", Logger: logger.NewLogger()}
 
 		BeforeAll(func() {
 			misc.Init()
@@ -30,20 +29,20 @@ var _ = Describe("cache", Ordered, func() {
 		})
 
 		It("Cache Init", func() {
-			Expect(e.Db).NotTo(BeNil())
-			Expect(e.CleanupFreq).NotTo(Equal(0))
+			Expect(e.db).NotTo(BeNil())
+			Expect(e.cleanupFreq).NotTo(Equal(0))
 		})
 
 		It("Cache update", func() {
-			e.Update(testKey, testValue1)
+			Expect(e.Update(testKey, testValue1)).To(BeNil())
 			Expect(len(e.Read(testKey))).To(Equal(1))
 			Expect(e.Read(testKey)[0]).To(Equal(testValue1))
 			Eventually(func() int { return len(e.Read(testKey)) }, 6*time.Second).Should(Equal(0))
 		})
 
 		It("Cache readAndPopData", func() {
-			e.Update(testKey, testValue1)
-			e.Update(testKey, testValue2)
+			Expect(e.Update(testKey, testValue1)).To(BeNil())
+			Expect(e.Update(testKey, testValue2)).To(BeNil())
 			v := e.Read(testKey)
 			Expect(len(v)).To(Equal(2))
 			assert.ElementsMatch(GinkgoT(), v, [][]byte{testValue1, testValue2})

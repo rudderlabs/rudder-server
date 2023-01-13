@@ -1,8 +1,8 @@
 package cache
 
 import (
-	"github.com/rudderlabs/rudder-server/services/debugger/cache/embeddedcache"
-	"github.com/rudderlabs/rudder-server/services/debugger/cache/listcache"
+	"github.com/rudderlabs/rudder-server/services/debugger/cache/badgercache"
+	"github.com/rudderlabs/rudder-server/services/debugger/cache/memcache"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 )
 
@@ -14,7 +14,7 @@ const (
 )
 
 type Cache[T any] interface {
-	Update(key string, value T)
+	Update(key string, value T) error
 	Read(key string) []T
 	Stop() error
 }

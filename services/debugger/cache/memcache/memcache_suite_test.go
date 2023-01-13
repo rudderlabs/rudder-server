@@ -1,4 +1,4 @@
-package embeddedcache_test
+package listcache_test
 
 import (
 	"testing"
@@ -7,7 +7,7 @@ import (
 	. "github.com/onsi/gomega"
 )
 
-func TestEmbeddedcache(t *testing.T) {
+func TestMemcache(t *testing.T) {
 	RegisterFailHandler(Fail)
-	RunSpecs(t, "Embeddedcache Suite")
+	RunSpecs(t, "memcache Suite")
 }

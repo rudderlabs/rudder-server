@@ -7,7 +7,7 @@ import (
 	. "github.com/onsi/gomega"
 )
 
-func TestSourceDebugger(t *testing.T) {
+func TestSource(t *testing.T) {
 	RegisterFailHandler(Fail)
-	RunSpecs(t, "SourceDebugger Suite")
+	RunSpecs(t, "Source Suite")
 }

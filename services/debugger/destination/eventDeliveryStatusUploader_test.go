@@ -2,18 +2,17 @@ package destinationdebugger_test
 
 import (
 	"context"
-	"path"
-
 	"github.com/golang/mock/gomock"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"github.com/rudderlabs/rudder-server/testhelper/rand"
 	"github.com/tidwall/gjson"
+	"path"
 
 	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	mocksBackendConfig "github.com/rudderlabs/rudder-server/mocks/config/backend-config"
 	destinationdebugger "github.com/rudderlabs/rudder-server/services/debugger/destination"
-	"github.com/rudderlabs/rudder-server/testhelper/rand"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/pubsub"
@@ -188,15 +187,8 @@ var _ = Describe("eventDeliveryStatusUploader", func() {
 	)
 
 	BeforeEach(func() {
-		config.Reset()
-		config.Set("RUDDER_TMPDIR", path.Join(GinkgoT().TempDir(), rand.String(10)))
-		config.Set("LiveEvent.cache.GCTime", "1s")
-
 		c = &eventDeliveryStatusUploaderContext{}
 		c.Setup()
-
-		h = destinationdebugger.NewHandle(destinationdebugger.WithDisableEventUploads(false))
-		h.Start(c.mockBackendConfig)
 
 		c.mockBackendConfig.EXPECT().Subscribe(gomock.Any(), backendconfig.TopicBackendConfig).
 			DoAndReturn(func(ctx context.Context, topic backendconfig.Topic) pubsub.DataChannel {
@@ -225,11 +217,73 @@ var _ = Describe("eventDeliveryStatusUploader", func() {
 	})
 
 	AfterEach(func() {
-		h.Stop()
 		c.mockCtrl.Finish()
 	})
 
-	Context("RecordEventDeliveryStatus", func() {
+	Context("RecordEventDeliveryStatus Badger", func() {
+
+		BeforeEach(func() {
+			config.Reset()
+			config.Set("RUDDER_TMPDIR", path.Join(GinkgoT().TempDir(), rand.String(10)))
+			config.Set("LiveEvent.cache.GCTime", "1s")
+			h = destinationdebugger.NewHandle(destinationdebugger.WithDisableEventUploads(false))
+			h.Start(c.mockBackendConfig)
+		})
+
+		AfterEach(func() {
+			h.Stop()
+		})
+
+		It("returns false if disableEventDeliveryStatusUploads is true", func() {
+			h.Stop()
+			h = destinationdebugger.NewHandle(destinationdebugger.WithDisableEventUploads(true))
+			h.Start(c.mockBackendConfig)
+			Expect(h.RecordEventDeliveryStatus(DestinationIDEnabledA, &deliveryStatus)).To(BeFalse())
+		})
+
+		It("returns false if destination_id is not in uploadEnabledDestinationIDs", func() {
+			Expect(h.RecordEventDeliveryStatus(DestinationIDEnabledB, &deliveryStatus)).To(BeFalse())
+		})
+
+		It("records events", func() {
+			eventuallyFunc := func() bool { return h.RecordEventDeliveryStatus(DestinationIDEnabledA, &deliveryStatus) }
+			Eventually(eventuallyFunc).Should(BeTrue())
+		})
+
+		It("transforms payload properly", func() {
+			var edsUploader destinationdebugger.EventDeliveryStatusUploader
+			var payload []*destinationdebugger.DeliveryStatusT
+			payload = append(payload, &deliveryStatus)
+			rawJSON, err := edsUploader.Transform(payload)
+			Expect(err).To(BeNil())
+			Expect(gjson.GetBytes(rawJSON, `enabled-destination-a.0.eventName`).String()).To(Equal("some_event_name"))
+			Expect(gjson.GetBytes(rawJSON, `enabled-destination-a.0.eventType`).String()).To(Equal("some_event_type"))
+		})
+
+		It("sends empty json if transformation fails", func() {
+			edsUploader := destinationdebugger.NewEventDeliveryStatusUploader(logger.NOP)
+			var payload []*destinationdebugger.DeliveryStatusT
+			payload = append(payload, &faultyData)
+			rawJSON, err := edsUploader.Transform(payload)
+			Expect(err.Error()).To(ContainSubstring("error calling MarshalJSON"))
+			Expect(rawJSON).To(BeNil())
+		})
+	})
+
+	Context("RecordEventDeliveryStatus Memory", func() {
+		BeforeEach(func() {
+			config.Reset()
+			config.Set("DestinationDebugger.cacheType", 0)
+			config.Set("RUDDER_TMPDIR", path.Join(GinkgoT().TempDir(), rand.String(10)))
+			config.Set("LiveEvent.cache.GCTime", "1s")
+			h = destinationdebugger.NewHandle(destinationdebugger.WithDisableEventUploads(false))
+			h.Start(c.mockBackendConfig)
+		})
+
+		AfterEach(func() {
+			h.Stop()
+		})
+
 		It("returns false if disableEventDeliveryStatusUploads is true", func() {
 			h.Stop()
 			h = destinationdebugger.NewHandle(destinationdebugger.WithDisableEventUploads(true))

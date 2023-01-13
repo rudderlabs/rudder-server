@@ -72,7 +72,7 @@ func (c *ListCache[E]) init() {
 /*
 Update Inserts the data in the cache, This method expects a string as a key and []byte as the data
 */
-func (c *ListCache[E]) Update(key string, value E) {
+func (c *ListCache[E]) Update(key string, value E) error {
 	c.init()
 	c.lock.Lock()
 	defer c.lock.Unlock()
@@ -87,6 +87,7 @@ func (c *ListCache[E]) Update(key string, value E) {
 	}
 	c.cacheMap[key].data = tempCacheElement
 	c.cacheMap[key].lastAccess = time.Now()
+	return nil
 }
 
 /*
@@ -107,7 +108,7 @@ func (c *ListCache[E]) Read(key string) []E {
 	return historicEventsDelivery
 }
 
-func (c *ListCache[E]) Stop() error {
+func (*ListCache[E]) Stop() error {
 	// NO-OP
 	return nil
 }

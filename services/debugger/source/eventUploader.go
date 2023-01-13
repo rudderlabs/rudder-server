@@ -128,7 +128,10 @@ func (h *Handle) RecordEvent(writeKey string, eventBatch []byte) bool {
 	h.uploadEnabledWriteKeysMu.RLock()
 	defer h.uploadEnabledWriteKeysMu.RUnlock()
 	if !misc.Contains(h.uploadEnabledWriteKeys, writeKey) {
-		h.eventsCache.Update(writeKey, eventBatch)
+		err := h.eventsCache.Update(writeKey, eventBatch)
+		if err != nil {
+			h.log.Errorf("Error while updating cache: %v", err)
+		}
 		return false
 	}
 	h.uploader.RecordEvent(&GatewayEventBatchT{writeKey, eventBatch})

@@ -135,7 +135,10 @@ func (h *Handle) RecordEventDeliveryStatus(destinationID string, deliveryStatus 
 	h.uploadEnabledDestinationIDsMu.RLock()
 	defer h.uploadEnabledDestinationIDsMu.RUnlock()
 	if !h.HasUploadEnabled(destinationID) {
-		h.eventsDeliveryCache.Update(destinationID, deliveryStatus)
+		err := h.eventsDeliveryCache.Update(destinationID, deliveryStatus)
+		if err != nil {
+			h.log.Errorf("DestinationDebugger: Error while updating cache: %v", err)
+		}
 		return false
 	}
 
