@@ -643,6 +643,7 @@ func TestHandle_TestConnection(t *testing.T) {
 	testCases := []struct {
 		name      string
 		host      string
+		tlConfig  string
 		timeout   time.Duration
 		wantError error
 	}{
@@ -655,6 +656,11 @@ func TestHandle_TestConnection(t *testing.T) {
 			timeout: warehouseutils.TestConnectionTimeout,
 		},
 		{
+			name:     "TLS config",
+			timeout:  warehouseutils.TestConnectionTimeout,
+			tlConfig: "test-tls-config",
+		},
+		{
 			name:      "No such host",
 			timeout:   warehouseutils.TestConnectionTimeout,
 			wantError: errors.New(`dial tcp: lookup test_host: no such host`),
@@ -662,7 +668,8 @@ func TestHandle_TestConnection(t *testing.T) {
 		},
 	}
 
-	for _, tc := range testCases {
+	for i, tc := range testCases {
+		i := i
 		tc := tc
 
 		t.Run(tc.name, func(t *testing.T) {
@@ -680,6 +687,7 @@ func TestHandle_TestConnection(t *testing.T) {
 				Namespace:   namespace,
 				WorkspaceID: workspaceID,
 				Destination: backendconfig.DestinationT{
+					ID: fmt.Sprintf("test-destination-%d", i),
 					Config: map[string]interface{}{
 						"bucketProvider": provider,
 						"host":           host,
@@ -687,6 +695,7 @@ func TestHandle_TestConnection(t *testing.T) {
 						"database":       databaseName,
 						"user":           user,
 						"password":       password,
+						"caCertificate":  tc.tlConfig,
 					},
 				},
 			}
