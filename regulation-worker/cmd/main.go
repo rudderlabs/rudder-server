@@ -20,6 +20,7 @@ import (
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/delete/kvstore"
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/destination"
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/service"
+	"github.com/rudderlabs/rudder-server/services/diagnostics"
 	"github.com/rudderlabs/rudder-server/services/filemanager"
 	"github.com/rudderlabs/rudder-server/services/oauth"
 	"github.com/rudderlabs/rudder-server/services/stats"
@@ -44,9 +45,14 @@ func main() {
 }
 
 func Run(ctx context.Context) error {
+	config.Set("Diagnostics.enableDiagnostics", false)
+
 	admin.Init()
-	stats.Default.Start(ctx)
+	misc.Init()
+	diagnostics.Init()
 	backendconfig.Init()
+
+	stats.Default.Start(ctx)
 	if err := backendconfig.Setup(nil); err != nil {
 		return fmt.Errorf("setting up backend config: %w", err)
 	}
