@@ -742,13 +742,13 @@ func (wh *HandleT) createJobs(ctx context.Context, warehouse warehouseutils.Ware
 		"destinationID": warehouse.Destination.ID,
 		"destType":      warehouse.Destination.DestinationDefinition.Name,
 	})
-	stagingFilesFetchStat.Start()
+	stagingFilesFetchStart := time.Now()
 	stagingFilesList, err := wh.getPendingStagingFiles(ctx, warehouse)
 	if err != nil {
 		wh.Logger.Errorf("[WH]: Failed to get pending staging files: %s with error %v", warehouse.Identifier, err)
 		return err
 	}
-	stagingFilesFetchStat.End()
+	stagingFilesFetchStat.Since(stagingFilesFetchStart)
 
 	if len(stagingFilesList) == 0 {
 		wh.Logger.Debugf("[WH]: Found no pending staging files for %s", warehouse.Identifier)
@@ -760,13 +760,11 @@ func (wh *HandleT) createJobs(ctx context.Context, warehouse warehouseutils.Ware
 		"destinationID": warehouse.Destination.ID,
 		"destType":      warehouse.Destination.DestinationDefinition.Name,
 	})
-	uploadJobCreationStat.Start()
+	defer uploadJobCreationStat.RecordDuration()()
 
 	uploadStartAfter := getUploadStartAfterTime()
 	wh.createUploadJobsFromStagingFiles(warehouse, whManager, stagingFilesList, priority, uploadStartAfter)
 	setLastProcessedMarker(warehouse, uploadStartAfter)
-
-	uploadJobCreationStat.End()
 
 	return nil
 }
@@ -788,7 +786,7 @@ func (wh *HandleT) mainLoop(ctx context.Context) {
 		wg.Add(len(wh.warehouses))
 
 		whTotalSchedulingStats := wh.stats.NewStat("wh_scheduler.total_scheduling_time", stats.TimerType)
-		whTotalSchedulingStats.Start()
+		whTotalSchedulingStart := time.Now()
 
 		for _, warehouse := range wh.warehouses {
 			w := warehouse
@@ -809,7 +807,7 @@ func (wh *HandleT) mainLoop(ctx context.Context) {
 		wh.configSubscriberLock.RUnlock()
 		wg.Wait()
 
-		whTotalSchedulingStats.End()
+		whTotalSchedulingStats.Since(whTotalSchedulingStart)
 		wh.stats.NewStat("wh_scheduler.warehouse_length", stats.CountType).Count(len(wh.warehouses)) // Correlation between number of warehouses and scheduling time.
 		select {
 		case <-ctx.Done():

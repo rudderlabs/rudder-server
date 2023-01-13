@@ -234,8 +234,8 @@ func (l *Limiter) getTimer(key, algo string, rate, window int64) func() {
 		"rate":   strconv.FormatInt(rate, 10),
 		"window": strconv.FormatInt(window, 10),
 	})
-	m.Start()
+	start := time.Now()
 	return func() {
-		m.End()
+		m.Since(start)
 	}
 }
