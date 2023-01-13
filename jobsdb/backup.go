@@ -522,6 +522,7 @@ func (jd *HandleT) createTableDumps(queryFunc func(int64) string, pathFunc func(
 			}
 			if !preferences.Backup(jd.tablePrefix) {
 				offset++
+				jd.logger.Infof("Skipping backup for workspace: %s. Preferences: %v and tablePrefix: %s", workspaceID, preferences, jd.tablePrefix)
 				continue
 			}
 			rawJSONRows = append(rawJSONRows, '\n') // appending '\n'
@@ -585,7 +586,7 @@ func (jd *HandleT) uploadTableDump(ctx context.Context, workspaceID, path string
 		jd.logger.Errorf("[JobsDB] :: Failed to upload table dump for workspaceId %s. Error: %s", workspaceID, err.Error())
 		return err
 	}
-	jd.logger.Infof("[JobsDB] :: Backed up table at %v", output.Location)
+	jd.logger.Infof("[JobsDB] :: Backed up table at %s for workspaceId %s", output.Location, workspaceID)
 	fileUploadTimeStat.End()
 	return nil
 }

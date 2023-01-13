@@ -128,7 +128,7 @@ func (g *statsdGauge) Gauge(value interface{}) {
 // statsdTimer represents a timer stat
 type statsdTimer struct {
 	*statsdMeasurement
-	timing statsd.Timing
+	timing *statsd.Timing
 }
 
 // Start starts a new timing for this stat. Only applies to TimerType stats
@@ -137,13 +137,14 @@ func (t *statsdTimer) Start() {
 	if t.skip() {
 		return
 	}
-	t.timing = t.client.statsd.NewTiming()
+	timing := t.client.statsd.NewTiming()
+	t.timing = &timing
 }
 
 // End send the time elapsed since the Start()  call of this stat. Only applies to TimerType stats
 // Deprecated: Use concurrent safe SendTiming() instead
 func (t *statsdTimer) End() {
-	if t.skip() {
+	if t.skip() || t.timing == nil {
 		return
 	}
 	t.timing.Send(t.name)

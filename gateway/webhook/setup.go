@@ -1,4 +1,4 @@
-//go:generate mockgen --build_flags=--mod=mod -destination=./../../mocks/gateway/webhook/mock_webhook.go -package mock_webhook github.com/rudderlabs/rudder-server/gateway/webhook GatewayI
+//go:generate mockgen --build_flags=--mod=mod -destination=./../mocks/mockwebhook.go -package mockwebhook github.com/rudderlabs/rudder-server/gateway/webhook GatewayI
 
 package webhook
 
@@ -9,6 +9,7 @@ import (
 
 	"github.com/hashicorp/go-retryablehttp"
 	"github.com/rudderlabs/rudder-server/config"
+	gwstats "github.com/rudderlabs/rudder-server/gateway/internal/stats"
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"golang.org/x/sync/errgroup"
@@ -17,10 +18,10 @@ import (
 type GatewayI interface {
 	IncrementRecvCount(count uint64)
 	IncrementAckCount(count uint64)
-	UpdateSourceStats(writeKeyStats map[string]int, bucket string, sourceTagMap map[string]map[string]string)
 	TrackRequestMetrics(errorMessage string)
 	ProcessWebRequest(writer *http.ResponseWriter, req *http.Request, reqType string, requestPayload []byte, writeKey string) string
 	GetWebhookSourceDefName(writeKey string) (name string, ok bool)
+	NewSourceStat(writeKey, reqType string) *gwstats.SourceStat
 }
 
 type WebHookI interface {
@@ -38,8 +39,8 @@ func newWebhookStats() *webhookStatsT {
 	return &wStats
 }
 
-func Setup(gwHandle GatewayI, opts ...batchTransformerOption) *HandleT {
-	webhook := &HandleT{gwHandle: gwHandle}
+func Setup(gwHandle GatewayI, stat stats.Stats, opts ...batchTransformerOption) *HandleT {
+	webhook := &HandleT{gwHandle: gwHandle, stats: stat}
 	webhook.requestQ = make(map[string](chan *webhookT))
 	webhook.batchRequestQ = make(chan *batchWebhookT)
 	webhook.netClient = retryablehttp.NewClient()

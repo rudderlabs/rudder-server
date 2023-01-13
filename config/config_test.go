@@ -319,4 +319,13 @@ func Test_Misc(t *testing.T) {
 
 	t.Setenv("RELEASE_NAME", "value")
 	require.Equal(t, "value", GetReleaseName())
+
+	t.Setenv("INSTANCE_ID", "allbirds-v0-rudderstack-gw-ha-0-85d66f748f-8w4td")
+	require.Equal(t, "0", GetInstanceID())
+
+	t.Setenv("INSTANCE_ID", "prousmtusmt-v0-rs-gw-0")
+	require.Equal(t, "0", GetInstanceID())
+
+	t.Setenv("INSTANCE_ID", "prousmtusmt-v0-rs")
+	require.Equal(t, "", GetInstanceID())
 }
