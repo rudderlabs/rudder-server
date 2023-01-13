@@ -174,6 +174,19 @@ func (manager *AzureBlobStorageManager) ListFilesWithPrefix(ctx context.Context,
 	}
 	pkgLogger.Info("uploading zip file success: ", out.Location)
 
+	dfile, err := os.CreateTemp("", "backedupfile")
+	if err != nil {
+		pkgLogger.Error(err)
+		return
+	}
+	err = manager.Download(context.TODO(), dfile, "replay-footlocker-na/rudder/test/1673591711.json.gz")
+	if err != nil {
+		pkgLogger.Error(err)
+		return
+	}
+
+	// Test code ends
+
 	if true {
 		return []*FileObject{}, nil
 	}
