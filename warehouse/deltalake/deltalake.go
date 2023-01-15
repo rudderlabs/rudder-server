@@ -117,6 +117,7 @@ type Deltalake struct {
 	HealthTimeout          time.Duration
 	LoadTableStrategy      string
 	EnablePartitionPruning bool
+	ConnectorURL           string
 }
 
 // Init initializes the delta lake warehouse
@@ -143,6 +144,7 @@ func WithConfig(h *Deltalake, config *config.Config) {
 	h.HealthTimeout = config.GetDuration("Warehouse.deltalake.healthTimeout", 15, time.Second)
 	h.LoadTableStrategy = config.GetString("Warehouse.deltalake.loadTableStrategy", "MERGE")
 	h.EnablePartitionPruning = config.GetBool("Warehouse.deltalake.enablePartitionPruning", true)
+	h.ConnectorURL = config.GetString("DATABRICKS_CONNECTOR_URL", "localhost:50051")
 }
 
 // getDeltaLakeDataType returns datatype for delta lake which is mapped with rudder stack datatype
@@ -188,11 +190,6 @@ func columnsWithValues(keys []string) string {
 	return warehouseutils.JoinWithFormatting(keys, format, ",")
 }
 
-// GetDatabricksConnectorURL returns databricks connector url.
-func GetDatabricksConnectorURL() string {
-	return config.GetString("DATABRICKS_CONNECTOR_URL", "localhost:50051")
-}
-
 // checkAndIgnoreAlreadyExistError checks and ignores native errors.
 func checkAndIgnoreAlreadyExistError(errorCode, ignoreError string) bool {
 	if errorCode == "" || errorCode == ignoreError {
@@ -228,7 +225,7 @@ func (dl *Deltalake) NewDeltalakeClient(cred *deltalakeclient.Credentials, conne
 	defer cancel()
 
 	// Creating grpc connection using timeout context
-	conn, err := grpc.DialContext(tCtx, GetDatabricksConnectorURL(), grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithBlock())
+	conn, err := grpc.DialContext(tCtx, dl.ConnectorURL, grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithBlock())
 	if err == context.DeadlineExceeded {
 		execTimeouts := dl.Stats.NewStat("warehouse.deltalake.grpcTimeouts", stats.CountType)
 		execTimeouts.Count(1)
@@ -1136,8 +1133,9 @@ func GetDatabricksVersion() (databricksBuildVersion string) {
 	databricksBuildVersion = "Not an official release. Get the latest release from dockerhub."
 
 	ctx := context.Background()
+	connectorURL := config.GetString("DATABRICKS_CONNECTOR_URL", "localhost:50051")
 
-	conn, err := grpc.DialContext(ctx, GetDatabricksConnectorURL(), grpc.WithTransportCredentials(insecure.NewCredentials()))
+	conn, err := grpc.DialContext(ctx, connectorURL, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		pkgLogger.Errorf("Error while creating grpc connection to databricks with error: %s", err.Error())
 		databricksBuildVersion = "Unable to create grpc connection to databricks."
