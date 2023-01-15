@@ -565,10 +565,7 @@ func (ch *Clickhouse) UseS3CopyEngineForLoading() bool {
 	if !slices.Contains(ch.S3EngineEnabledWorkspaceIDs, ch.Warehouse.WorkspaceID) {
 		return false
 	}
-	if ch.ObjectStorage != warehouseutils.S3 && ch.ObjectStorage != warehouseutils.MINIO {
-		return false
-	}
-	return true
+	return ch.ObjectStorage == warehouseutils.S3 || ch.ObjectStorage == warehouseutils.MINIO
 }
 
 func (ch *Clickhouse) loadByDownloadingLoadFiles(tableName string, tableSchemaInUpload warehouseutils.TableSchemaT) (err error) {
