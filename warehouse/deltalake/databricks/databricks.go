@@ -33,8 +33,7 @@ func Init() {
 
 // Close closes sql connection as well as closes grpc connection
 func (client *DatabricksClient) Close() {
-	client.CloseStats.Start()
-	defer client.CloseStats.End()
+	defer client.CloseStats.RecordDuration()()
 
 	closeConnectionResponse, err := client.Client.Close(client.Context, &proto.CloseRequest{
 		Config:     client.CredConfig,

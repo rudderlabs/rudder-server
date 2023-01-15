@@ -123,13 +123,13 @@ func (st *HandleT) runErrWorkers(ctx context.Context) {
 	for i := 0; i < noOfErrStashWorkers; i++ {
 		g.Go(misc.WithBugsnag(func() error {
 			for jobs := range st.errProcessQ {
+				uploadStart := time.Now()
 				uploadStat := stats.Default.NewStat("Processor.err_upload_time", stats.TimerType)
-				uploadStat.Start()
 				errorJobs := st.storeErrorsToObjectStorage(jobs)
 				for _, errorJob := range errorJobs {
 					st.setErrJobStatus(errorJob.jobs, errorJob.errorOutput)
 				}
-				uploadStat.End()
+				uploadStat.Since(uploadStart)
 			}
 
 			return nil
@@ -295,7 +295,7 @@ func (st *HandleT) readErrJobsLoop(ctx context.Context) {
 			close(st.errProcessQ)
 			return
 		case <-time.After(errReadLoopSleep):
-			st.statErrDBR.Start()
+			start := time.Now()
 
 			// NOTE: sending custom val filters array of size 1 to take advantage of cache in jobsdb.
 			queryParams := jobsdb.GetQueryParamsT{
@@ -328,7 +328,7 @@ func (st *HandleT) readErrJobsLoop(ctx context.Context) {
 				combinedList = append(combinedList, unprocessed.Jobs...)
 			}
 
-			st.statErrDBR.End()
+			st.statErrDBR.Since(start)
 
 			if len(combinedList) == 0 {
 				st.logger.Debug("[Processor: readErrJobsLoop]: DB Read Complete. No proc_err Jobs to process")

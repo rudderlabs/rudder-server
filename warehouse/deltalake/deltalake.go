@@ -290,8 +290,7 @@ func (dl *Handle) fetchTables(dbT *databricks.DatabricksClient, schema string) (
 		"identifier":  dl.Warehouse.Identifier,
 		"queryType":   "FetchTables",
 	})
-	fetchTablesExecTime.Start()
-	defer fetchTablesExecTime.End()
+	defer fetchTablesExecTime.RecordDuration()()
 
 	fetchTableResponse, err := dbT.Client.FetchTables(dbT.Context, &proto.FetchTablesRequest{
 		Config:     dbT.CredConfig,
@@ -375,8 +374,7 @@ func (dl *Handle) ExecuteSQL(sqlStatement, queryType string) (err error) {
 		"identifier":  dl.Warehouse.Identifier,
 		"queryType":   queryType,
 	})
-	execSqlStatTime.Start()
-	defer execSqlStatTime.End()
+	defer execSqlStatTime.RecordDuration()()
 
 	err = dl.ExecuteSQLClient(dl.DatabricksClient, sqlStatement)
 	return
@@ -410,8 +408,7 @@ func (dl *Handle) schemaExists(schemaName string) (exists bool, err error) {
 		"identifier":  dl.Warehouse.Identifier,
 		"queryType":   "FetchSchemas",
 	})
-	fetchSchemasExecTime.Start()
-	defer fetchSchemasExecTime.End()
+	defer fetchSchemasExecTime.RecordDuration()()
 
 	sqlStatement := fmt.Sprintf(`SHOW SCHEMAS LIKE '%s';`, schemaName)
 	fetchSchemasResponse, err := dl.DatabricksClient.Client.FetchSchemas(dl.DatabricksClient.Context, &proto.FetchSchemasRequest{
@@ -449,8 +446,7 @@ func (dl *Handle) dropStagingTables(tableNames []string) {
 		"identifier":  dl.Warehouse.Identifier,
 		"queryType":   "DropStagingTables",
 	})
-	dropTablesExecTime.Start()
-	defer dropTablesExecTime.End()
+	defer dropTablesExecTime.RecordDuration()()
 
 	for _, stagingTableName := range tableNames {
 		dl.Logger.Infof("%s Dropping table %+v\n", dl.GetLogIdentifier(), stagingTableName)
@@ -823,8 +819,7 @@ func (dl *Handle) connectToWarehouse() (databricksHandle *databricks.DatabricksC
 		"identifier":  dl.Warehouse.Identifier,
 		"queryType":   "Connect",
 	})
-	connStat.Start()
-	defer connStat.End()
+	defer connStat.RecordDuration()()
 
 	closeConnStat := dl.Stats.NewTaggedStat("warehouse.deltalake.grpcExecTime", stats.TimerType, stats.Tags{
 		"workspaceId": dl.Warehouse.WorkspaceID,
@@ -972,8 +967,7 @@ func (dl *Handle) FetchSchema(warehouse warehouseutils.Warehouse) (schema, unrec
 		"identifier":  dl.Warehouse.Identifier,
 		"queryType":   "FetchTableAttributes",
 	})
-	fetchTablesAttributesExecTime.Start()
-	defer fetchTablesAttributesExecTime.End()
+	defer fetchTablesAttributesExecTime.RecordDuration()()
 
 	// For each table we are generating schema
 	for _, tableName := range filteredTablesNames {
@@ -1095,8 +1089,7 @@ func (dl *Handle) GetTotalCountInTable(ctx context.Context, tableName string) (t
 		"identifier":  dl.Warehouse.Identifier,
 		"queryType":   "FetchTotalCountInTable",
 	})
-	fetchTotalCountExecTime.Start()
-	defer fetchTotalCountExecTime.End()
+	defer fetchTotalCountExecTime.RecordDuration()()
 
 	sqlStatement := fmt.Sprintf(`SELECT COUNT(*) FROM %[1]s.%[2]s;`, dl.Namespace, tableName)
 	response, err := dl.DatabricksClient.Client.FetchTotalCountInTable(ctx, &proto.FetchTotalCountInTableRequest{
