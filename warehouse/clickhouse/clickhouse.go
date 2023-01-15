@@ -542,7 +542,6 @@ func (ch *Clickhouse) typecastDataFromType(data, dataType string) interface{} {
 		} else {
 			return data
 		}
-
 	}
 	if err != nil {
 		if ch.DisableNullable {
@@ -1054,9 +1053,18 @@ func (ch *Clickhouse) FetchSchema(warehouse warehouseutils.Warehouse) (schema, u
 	schema = make(warehouseutils.SchemaT)
 	unrecognizedSchema = make(warehouseutils.SchemaT)
 
-	sqlStatement := fmt.Sprintf(`select table, name, type
-									from system.columns
-									where database = '%s'`, ch.Namespace)
+	sqlStatement := fmt.Sprintf(`
+		SELECT
+		  table,
+		  name,
+		  type
+		FROM
+		  system.columns
+		WHERE
+		  database = '%s'
+	`,
+		ch.Namespace,
+	)
 
 	rows, err := dbHandle.Query(sqlStatement)
 	if err != nil && err != sql.ErrNoRows {

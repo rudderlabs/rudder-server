@@ -205,7 +205,7 @@ func TestConfigurationValidationClickhouse(t *testing.T) {
 	configurations := testhelper.PopulateTemplateConfigurations()
 	destination := backendconfig.DestinationT{
 		ID: "21Ev6TI6emCFDKph2Zn6XfTP7PI",
-		Config: map[string]interface{}{
+		Config: map[string]any{
 			"host":             configurations["clickHouseHost"],
 			"database":         configurations["clickHouseDatabase"],
 			"cluster":          "",
@@ -433,7 +433,7 @@ func TestHandle_LoadTableRoundTrip(t *testing.T) {
 				Namespace:   fmt.Sprintf("test_namespace_%d", i),
 				WorkspaceID: workspaceID,
 				Destination: backendconfig.DestinationT{
-					Config: map[string]interface{}{
+					Config: map[string]any{
 						"bucketProvider":  provider,
 						"host":            "localhost",
 						"port":            chResource.GetPort("9000/tcp"),
@@ -479,7 +479,7 @@ func TestHandle_LoadTableRoundTrip(t *testing.T) {
 			fmFactory := filemanager.FileManagerFactoryT{}
 			fm, err := fmFactory.New(&filemanager.SettingsT{
 				Provider: provider,
-				Config: map[string]interface{}{
+				Config: map[string]any{
 					"bucketName":      minioResource.BucketName,
 					"accessKeyID":     minioResource.AccessKey,
 					"secretAccessKey": minioResource.SecretKey,
@@ -663,7 +663,7 @@ func TestHandle_TestConnection(t *testing.T) {
 		{
 			name:      "No such host",
 			timeout:   warehouseutils.TestConnectionTimeout,
-			wantError: errors.New(`dial tcp: lookup test_host: no such host`),
+			wantError: errors.New(`dial tcp: lookup clickhouse: no such host`),
 			host:      "clickhouse",
 		},
 	}
@@ -688,7 +688,7 @@ func TestHandle_TestConnection(t *testing.T) {
 				WorkspaceID: workspaceID,
 				Destination: backendconfig.DestinationT{
 					ID: fmt.Sprintf("test-destination-%d", i),
-					Config: map[string]interface{}{
+					Config: map[string]any{
 						"bucketProvider": provider,
 						"host":           host,
 						"port":           chResource.GetPort("9000/tcp"),
@@ -704,7 +704,7 @@ func TestHandle_TestConnection(t *testing.T) {
 
 			err := ch.TestConnection(warehouse)
 			if tc.wantError != nil {
-				require.Error(t, err, tc.wantError)
+				require.ErrorContains(t, err, tc.wantError.Error())
 				return
 			}
 			require.NoError(t, err)
@@ -734,7 +734,7 @@ func TestHandle_LoadTestTable(t *testing.T) {
 			"id":  "int",
 			"val": "string",
 		}
-		testPayload = map[string]interface{}{
+		testPayload = map[string]any{
 			"id":  1,
 			"val": "RudderStack",
 		}
@@ -745,14 +745,14 @@ func TestHandle_LoadTestTable(t *testing.T) {
 	testCases := []struct {
 		name      string
 		wantError error
-		payload   map[string]interface{}
+		payload   map[string]any
 	}{
 		{
 			name: "Success",
 		},
 		{
 			name: "Invalid columns",
-			payload: map[string]interface{}{
+			payload: map[string]any{
 				"invalid_val": "Invalid Data",
 			},
 			wantError: errors.New("code: 16, message: No such column invalid_val in table test_namespace.setup_test_staging"),
@@ -773,7 +773,7 @@ func TestHandle_LoadTestTable(t *testing.T) {
 				Namespace:   namespace,
 				WorkspaceID: workspaceID,
 				Destination: backendconfig.DestinationT{
-					Config: map[string]interface{}{
+					Config: map[string]any{
 						"bucketProvider": provider,
 						"host":           host,
 						"port":           chResource.GetPort("9000/tcp"),
@@ -784,7 +784,7 @@ func TestHandle_LoadTestTable(t *testing.T) {
 				},
 			}
 
-			payload := make(map[string]interface{})
+			payload := make(map[string]any)
 			for k, v := range tc.payload {
 				payload[k] = v
 			}
@@ -811,6 +811,209 @@ func TestHandle_LoadTestTable(t *testing.T) {
 			require.NoError(t, err)
 		})
 	}
+}
+
+func TestHandle_FetchSchema(t *testing.T) {
+	misc.Init()
+	warehouseutils.Init()
+	clickhouse.Init()
+
+	pool, err := dockertest.NewPool("")
+	require.NoError(t, err)
+
+	var (
+		chResource   *dockertest.Resource
+		databaseName = "rudderdb"
+		password     = "rudder-password"
+		user         = "rudder"
+		workspaceID  = "test_workspace_id"
+		namespace    = "test_namespace"
+		table        = "test_table"
+	)
+
+	chResource = setUpClickhouse(t, pool)
+
+	t.Run("Success", func(t *testing.T) {
+		t.Parallel()
+
+		ch := clickhouse.NewClickhouse()
+		ch.Logger = logger.NOP
+
+		warehouse := warehouseutils.Warehouse{
+			Namespace:   fmt.Sprintf("%s_success", namespace),
+			WorkspaceID: workspaceID,
+			Destination: backendconfig.DestinationT{
+				Config: map[string]any{
+					"host":     "localhost",
+					"port":     chResource.GetPort("9000/tcp"),
+					"database": databaseName,
+					"user":     user,
+					"password": password,
+				},
+			},
+		}
+
+		err := ch.Setup(warehouse, &mockUploader{})
+		require.NoError(t, err)
+
+		err = ch.CreateSchema()
+		require.NoError(t, err)
+
+		err = ch.CreateTable(table, map[string]string{
+			"id":                  "string",
+			"test_int":            "int",
+			"test_float":          "float",
+			"test_bool":           "boolean",
+			"test_string":         "string",
+			"test_datetime":       "datetime",
+			"received_at":         "datetime",
+			"test_array_bool":     "array(boolean)",
+			"test_array_datetime": "array(datetime)",
+			"test_array_float":    "array(float)",
+			"test_array_int":      "array(int)",
+			"test_array_string":   "array(string)",
+		})
+		require.NoError(t, err)
+
+		schema, unrecognizedSchema, err := ch.FetchSchema(warehouse)
+		require.NoError(t, err)
+		require.NotEmpty(t, schema)
+		require.Empty(t, unrecognizedSchema)
+	})
+
+	t.Run("Invalid host", func(t *testing.T) {
+		t.Parallel()
+
+		ch := clickhouse.NewClickhouse()
+		ch.Logger = logger.NOP
+
+		warehouse := warehouseutils.Warehouse{
+			Namespace:   fmt.Sprintf("%s_invalid_host", namespace),
+			WorkspaceID: workspaceID,
+			Destination: backendconfig.DestinationT{
+				Config: map[string]any{
+					"host":     "clickhouse",
+					"port":     chResource.GetPort("9000/tcp"),
+					"database": databaseName,
+					"user":     user,
+					"password": password,
+				},
+			},
+		}
+
+		err := ch.Setup(warehouse, &mockUploader{})
+		require.NoError(t, err)
+
+		schema, unrecognizedSchema, err := ch.FetchSchema(warehouse)
+		require.ErrorContains(t, err, errors.New("dial tcp: lookup clickhouse: no such host").Error())
+		require.Empty(t, schema)
+		require.Empty(t, unrecognizedSchema)
+	})
+
+	t.Run("Invalid database", func(t *testing.T) {
+		t.Parallel()
+
+		ch := clickhouse.NewClickhouse()
+		ch.Logger = logger.NOP
+
+		warehouse := warehouseutils.Warehouse{
+			Namespace:   fmt.Sprintf("%s_invalid_database", namespace),
+			WorkspaceID: workspaceID,
+			Destination: backendconfig.DestinationT{
+				Config: map[string]any{
+					"host":     "localhost",
+					"port":     chResource.GetPort("9000/tcp"),
+					"database": "invalid_database",
+					"user":     user,
+					"password": password,
+				},
+			},
+		}
+
+		err := ch.Setup(warehouse, &mockUploader{})
+		require.NoError(t, err)
+
+		schema, unrecognizedSchema, err := ch.FetchSchema(warehouse)
+		require.NoError(t, err)
+		require.Empty(t, schema)
+		require.Empty(t, unrecognizedSchema)
+	})
+
+	t.Run("Empty schema", func(t *testing.T) {
+		t.Parallel()
+
+		ch := clickhouse.NewClickhouse()
+		ch.Logger = logger.NOP
+
+		warehouse := warehouseutils.Warehouse{
+			Namespace:   fmt.Sprintf("%s_empty_schema", namespace),
+			WorkspaceID: workspaceID,
+			Destination: backendconfig.DestinationT{
+				Config: map[string]any{
+					"host":     "localhost",
+					"port":     chResource.GetPort("9000/tcp"),
+					"database": databaseName,
+					"user":     user,
+					"password": password,
+				},
+			},
+		}
+
+		err := ch.Setup(warehouse, &mockUploader{})
+		require.NoError(t, err)
+
+		err = ch.CreateSchema()
+		require.NoError(t, err)
+
+		schema, unrecognizedSchema, err := ch.FetchSchema(warehouse)
+		require.NoError(t, err)
+		require.Empty(t, schema)
+		require.Empty(t, unrecognizedSchema)
+	})
+
+	t.Run("Unrecognized schema", func(t *testing.T) {
+		t.Parallel()
+
+		ch := clickhouse.NewClickhouse()
+		ch.Logger = logger.NOP
+
+		warehouse := warehouseutils.Warehouse{
+			Namespace:   fmt.Sprintf("%s_unrecognized_schema", namespace),
+			WorkspaceID: workspaceID,
+			Destination: backendconfig.DestinationT{
+				Config: map[string]any{
+					"host":     "localhost",
+					"port":     chResource.GetPort("9000/tcp"),
+					"database": databaseName,
+					"user":     user,
+					"password": password,
+				},
+			},
+		}
+
+		err := ch.Setup(warehouse, &mockUploader{})
+		require.NoError(t, err)
+
+		err = ch.CreateSchema()
+		require.NoError(t, err)
+
+		_, err = ch.DB.Exec(fmt.Sprintf("CREATE TABLE IF NOT EXISTS %s.%s (x Enum('hello' = 1, 'world' = 2)) ENGINE = TinyLog;",
+			warehouse.Namespace,
+			table,
+		))
+		require.NoError(t, err)
+
+		schema, unrecognizedSchema, err := ch.FetchSchema(warehouse)
+		require.NoError(t, err)
+		require.NotEmpty(t, schema)
+		require.NotEmpty(t, unrecognizedSchema)
+
+		require.Equal(t, unrecognizedSchema, warehouseutils.SchemaT{
+			table: {
+				"x": "<missing_datatype>",
+			},
+		})
+	})
 }
 
 func setUpClickhouse(t testing.TB, pool *dockertest.Pool) *dockertest.Resource {
