@@ -1,4 +1,4 @@
-package databricks
+package deltalakeclient
 
 import (
 	"context"
@@ -9,8 +9,6 @@ import (
 	"google.golang.org/grpc"
 )
 
-var pkgLogger logger.Logger
-
 type Credentials struct {
 	Host  string
 	Port  string
@@ -18,7 +16,8 @@ type Credentials struct {
 	Token string
 }
 
-type DatabricksClient struct {
+type DeltalakeClient struct {
+	Logger         logger.Logger
 	CredConfig     *proto.ConnectionConfig
 	CredIdentifier string
 	Context        context.Context
@@ -27,12 +26,8 @@ type DatabricksClient struct {
 	CloseStats     stats.Measurement
 }
 
-func Init() {
-	pkgLogger = logger.NewLogger().Child("warehouse").Child("databricks")
-}
-
 // Close closes sql connection as well as closes grpc connection
-func (client *DatabricksClient) Close() {
+func (client *DeltalakeClient) Close() {
 	defer client.CloseStats.RecordDuration()()
 
 	closeConnectionResponse, err := client.Client.Close(client.Context, &proto.CloseRequest{
@@ -40,10 +35,10 @@ func (client *DatabricksClient) Close() {
 		Identifier: client.CredIdentifier,
 	})
 	if err != nil {
-		pkgLogger.Errorf("Error closing connection in delta lake: %v", err)
+		client.Logger.Errorf("Error closing connection in delta lake: %v", err)
 	}
 	if closeConnectionResponse.GetErrorCode() != "" {
-		pkgLogger.Errorf("Error closing connection in delta lake with response: %v", err, closeConnectionResponse.GetErrorMessage())
+		client.Logger.Errorf("Error closing connection in delta lake with response: %v", err, closeConnectionResponse.GetErrorMessage())
 	}
 	client.Conn.Close()
 }

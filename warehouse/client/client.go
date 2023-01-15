@@ -8,7 +8,7 @@ import (
 	proto "github.com/rudderlabs/rudder-server/proto/databricks"
 
 	"cloud.google.com/go/bigquery"
-	"github.com/rudderlabs/rudder-server/warehouse/deltalake/databricks"
+	"github.com/rudderlabs/rudder-server/warehouse/deltalake/deltalakeclient"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 	"google.golang.org/api/iterator"
 )
@@ -20,10 +20,10 @@ const (
 )
 
 type Client struct {
-	SQL              *sql.DB
-	BQ               *bigquery.Client
-	DatabricksClient *databricks.DatabricksClient
-	Type             string
+	SQL             *sql.DB
+	BQ              *bigquery.Client
+	DeltalakeClient *deltalakeclient.DeltalakeClient
+	Type            string
 }
 
 func (cl *Client) sqlQuery(statement string) (result warehouseutils.QueryResult, err error) {
@@ -100,10 +100,10 @@ func (cl *Client) bqQuery(statement string) (result warehouseutils.QueryResult, 
 }
 
 func (cl *Client) dbQuery(statement string) (result warehouseutils.QueryResult, err error) {
-	executeResponse, err := cl.DatabricksClient.Client.ExecuteQuery(cl.DatabricksClient.Context, &proto.ExecuteQueryRequest{
-		Config:       cl.DatabricksClient.CredConfig,
+	executeResponse, err := cl.DeltalakeClient.Client.ExecuteQuery(cl.DeltalakeClient.Context, &proto.ExecuteQueryRequest{
+		Config:       cl.DeltalakeClient.CredConfig,
 		SqlStatement: statement,
-		Identifier:   cl.DatabricksClient.CredIdentifier,
+		Identifier:   cl.DeltalakeClient.CredIdentifier,
 	})
 	if err != nil {
 		return
@@ -131,7 +131,7 @@ func (cl *Client) Close() {
 	case BQClient:
 		cl.BQ.Close()
 	case DBClient:
-		cl.DatabricksClient.Close()
+		cl.DeltalakeClient.Close()
 	default:
 		cl.SQL.Close()
 	}

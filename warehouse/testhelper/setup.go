@@ -22,7 +22,7 @@ import (
 	"github.com/minio/minio-go/v6"
 
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
-	"github.com/rudderlabs/rudder-server/warehouse/deltalake/databricks"
+	"github.com/rudderlabs/rudder-server/warehouse/deltalake/deltalakeclient"
 	"github.com/rudderlabs/rudder-server/warehouse/validations"
 
 	"github.com/rudderlabs/rudder-server/utils/httputil"
@@ -1017,7 +1017,7 @@ func BigqueryCredentials() (credentials bigquery.BQCredentialsT, err error) {
 	return
 }
 
-func DatabricksCredentials() (credentials databricks.Credentials, err error) {
+func DatabricksCredentials() (credentials deltalakeclient.Credentials, err error) {
 	cred, exists := os.LookupEnv(DeltalakeIntegrationTestCredentials)
 	if !exists {
 		err = fmt.Errorf("following %s does not exists while running the Deltalake test", DeltalakeIntegrationTestCredentials)

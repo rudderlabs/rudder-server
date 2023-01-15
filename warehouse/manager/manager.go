@@ -82,7 +82,7 @@ func New(destType string) (ManagerI, error) {
 		var dl datalake.HandleT
 		return &dl, nil
 	case warehouseutils.DELTALAKE:
-		dl := deltalake.NewHandle()
+		dl := deltalake.NewDeltalake()
 		deltalake.WithConfig(dl, config.Default)
 		return dl, nil
 	}
@@ -118,7 +118,7 @@ func NewWarehouseOperations(destType string) (WarehouseOperations, error) {
 		var dl datalake.HandleT
 		return &dl, nil
 	case warehouseutils.DELTALAKE:
-		dl := deltalake.NewHandle()
+		dl := deltalake.NewDeltalake()
 		deltalake.WithConfig(dl, config.Default)
 		return dl, nil
 	}

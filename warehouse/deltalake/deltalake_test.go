@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/rudderlabs/rudder-server/utils/logger"
-	"github.com/rudderlabs/rudder-server/warehouse/deltalake/databricks"
+	"github.com/rudderlabs/rudder-server/warehouse/deltalake/deltalakeclient"
 	"google.golang.org/grpc"
 
 	proto "github.com/rudderlabs/rudder-server/proto/databricks"
@@ -44,8 +44,8 @@ func TestIntegrationDeltalake(t *testing.T) {
 	credentials, err := testhelper.DatabricksCredentials()
 	require.NoError(t, err)
 
-	dl := deltalake.NewHandle()
-	db, err := dl.DatabricksHandle(&credentials, 0)
+	dl := deltalake.NewDeltalake()
+	db, err := dl.NewDeltalakeClient(&credentials, 0)
 	require.NoError(t, err)
 
 	var (
@@ -145,8 +145,8 @@ func TestIntegrationDeltalake(t *testing.T) {
 					"groups":        1,
 				},
 				Client: &client.Client{
-					DatabricksClient: db,
-					Type:             client.DBClient,
+					DeltalakeClient: db,
+					Type:            client.DBClient,
 				},
 				StatsToVerify: []string{
 					"warehouse_deltalake_grpcExecTime",
@@ -345,7 +345,7 @@ func TestHandle_CreateTable(t *testing.T) {
 				executeRes: tc.mockExecuteRes,
 			}
 
-			dl := deltalake.NewHandle()
+			dl := deltalake.NewDeltalake()
 			dl.Namespace = "test-namespace"
 			dl.Logger = logger.NOP
 			dl.Warehouse = warehouseutils.Warehouse{
@@ -355,7 +355,7 @@ func TestHandle_CreateTable(t *testing.T) {
 					Config: tc.config,
 				},
 			}
-			dl.DatabricksClient = &databricks.DatabricksClient{
+			dl.DeltalakeClient = &deltalakeclient.DeltalakeClient{
 				Client: mockClient,
 			}
 
@@ -429,7 +429,7 @@ func TestHandle_CreateSchema(t *testing.T) {
 				schemasRes: tc.schemasRes,
 			}
 
-			dl := deltalake.NewHandle()
+			dl := deltalake.NewDeltalake()
 			dl.Namespace = "test-namespace"
 			dl.Logger = logger.NOP
 			dl.Warehouse = warehouseutils.Warehouse{
@@ -443,7 +443,7 @@ func TestHandle_CreateSchema(t *testing.T) {
 					ID: "test-destination-id",
 				},
 			}
-			dl.DatabricksClient = &databricks.DatabricksClient{
+			dl.DeltalakeClient = &deltalakeclient.DeltalakeClient{
 				Client: mockClient,
 			}
 
@@ -505,14 +505,14 @@ func TestHandle_GetTotalCountInTable(t *testing.T) {
 				totalCountInTableRes: tc.totalCountInTableRes,
 			}
 
-			dl := deltalake.NewHandle()
+			dl := deltalake.NewDeltalake()
 			dl.Namespace = "test-namespace"
 			dl.Logger = logger.NOP
 			dl.Warehouse = warehouseutils.Warehouse{
 				Namespace:   namespace,
 				WorkspaceID: workspaceID,
 			}
-			dl.DatabricksClient = &databricks.DatabricksClient{
+			dl.DeltalakeClient = &deltalakeclient.DeltalakeClient{
 				Client: mockClient,
 			}
 
@@ -660,7 +660,7 @@ func TestHandle_LoadTable(t *testing.T) {
 			conf.Set("Warehouse.deltalake.loadTableStrategy", tc.loadTableStrategy)
 			conf.Set("Warehouse.deltalake.enablePartitionPruning", tc.partitionPruning)
 
-			dl := deltalake.NewHandle()
+			dl := deltalake.NewDeltalake()
 			deltalake.WithConfig(dl, conf)
 
 			dl.Namespace = "test-namespace"
@@ -673,7 +673,7 @@ func TestHandle_LoadTable(t *testing.T) {
 					Config: tc.config,
 				},
 			}
-			dl.DatabricksClient = &databricks.DatabricksClient{
+			dl.DeltalakeClient = &deltalakeclient.DeltalakeClient{
 				Client: mockClient,
 			}
 			dl.Uploader = &mockUploader{
@@ -745,7 +745,7 @@ func TestHandle_LoadUserTables(t *testing.T) {
 			conf := config.New()
 			conf.Set("Warehouse.deltalake.loadTableStrategy", tc.loadTableStrategy)
 
-			dl := deltalake.NewHandle()
+			dl := deltalake.NewDeltalake()
 			deltalake.WithConfig(dl, conf)
 
 			dl.Namespace = "test-namespace"
@@ -754,7 +754,7 @@ func TestHandle_LoadUserTables(t *testing.T) {
 				Namespace:   namespace,
 				WorkspaceID: workspaceID,
 			}
-			dl.DatabricksClient = &databricks.DatabricksClient{
+			dl.DeltalakeClient = &deltalakeclient.DeltalakeClient{
 				Client: mockClient,
 			}
 			dl.Uploader = &mockUploader{
