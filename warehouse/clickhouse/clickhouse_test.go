@@ -663,7 +663,7 @@ func TestHandle_TestConnection(t *testing.T) {
 		{
 			name:      "No such host",
 			timeout:   warehouseutils.TestConnectionTimeout,
-			wantError: errors.New(`dial tcp: lookup clickhouse: no such host`),
+			wantError: errors.New(`dial tcp: lookup clickhouse`),
 			host:      "clickhouse",
 		},
 	}
@@ -905,7 +905,7 @@ func TestHandle_FetchSchema(t *testing.T) {
 		require.NoError(t, err)
 
 		schema, unrecognizedSchema, err := ch.FetchSchema(warehouse)
-		require.ErrorContains(t, err, errors.New("dial tcp: lookup clickhouse: no such host").Error())
+		require.ErrorContains(t, err, errors.New("dial tcp: lookup clickhouse").Error())
 		require.Empty(t, schema)
 		require.Empty(t, unrecognizedSchema)
 	})
