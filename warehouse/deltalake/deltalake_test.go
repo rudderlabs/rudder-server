@@ -4,13 +4,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/rudderlabs/rudder-server/config"
-	"github.com/rudderlabs/rudder-server/utils/logger"
-	"github.com/rudderlabs/rudder-server/warehouse/deltalake/deltalakeclient"
 	"os"
 	"regexp"
 	"testing"
 	"time"
+
+	"github.com/rudderlabs/rudder-server/config"
+	"github.com/rudderlabs/rudder-server/utils/logger"
+	"github.com/rudderlabs/rudder-server/warehouse/deltalake/deltalakeclient"
 
 	"google.golang.org/grpc"
 
@@ -353,7 +354,7 @@ func TestDeltalake_CreateTable(t *testing.T) {
 			}
 
 			dl := deltalake.NewDeltalake()
-			dl.Namespace = "test-namespace"
+			dl.Namespace = namespace
 			dl.Logger = logger.NOP
 			dl.Warehouse = warehouseutils.Warehouse{
 				Namespace:   namespace,
@@ -385,6 +386,11 @@ func TestDeltalake_CreateTable(t *testing.T) {
 }
 
 func TestDeltalake_CreateSchema(t *testing.T) {
+	var (
+		namespace   = "test-namespace"
+		workspaceID = "test-workspace-id"
+	)
+
 	testCases := []struct {
 		name           string
 		mockError      error
@@ -401,7 +407,7 @@ func TestDeltalake_CreateSchema(t *testing.T) {
 		{
 			name: "Schema already exists",
 			mockSchemasRes: &proto.FetchSchemasResponse{
-				Databases: []string{"test-namespace"},
+				Databases: []string{namespace},
 			},
 		},
 		{
@@ -419,11 +425,6 @@ func TestDeltalake_CreateSchema(t *testing.T) {
 		},
 	}
 
-	var (
-		namespace   = "test-namespace"
-		workspaceID = "test-workspace-id"
-	)
-
 	for _, tc := range testCases {
 		tc := tc
 
@@ -436,7 +437,7 @@ func TestDeltalake_CreateSchema(t *testing.T) {
 			}
 
 			dl := deltalake.NewDeltalake()
-			dl.Namespace = "test-namespace"
+			dl.Namespace = namespace
 			dl.Logger = logger.NOP
 			dl.Warehouse = warehouseutils.Warehouse{
 				Type:        "test-type",
@@ -516,7 +517,7 @@ func TestDeltalake_DropTable(t *testing.T) {
 			}
 
 			dl := deltalake.NewDeltalake()
-			dl.Namespace = "test-namespace"
+			dl.Namespace = namespace
 			dl.Warehouse = warehouseutils.Warehouse{
 				Type:        "test-type",
 				Namespace:   namespace,
@@ -598,7 +599,7 @@ func TestDeltalake_AddColumns(t *testing.T) {
 			}
 
 			dl := deltalake.NewDeltalake()
-			dl.Namespace = "test-namespace"
+			dl.Namespace = namespace
 			dl.Logger = logger.NOP
 			dl.Warehouse = warehouseutils.Warehouse{
 				Type:        "test-type",
@@ -674,7 +675,7 @@ func TestDeltalake_GetTotalCountInTable(t *testing.T) {
 			}
 
 			dl := deltalake.NewDeltalake()
-			dl.Namespace = "test-namespace"
+			dl.Namespace = namespace
 			dl.Logger = logger.NOP
 			dl.Warehouse = warehouseutils.Warehouse{
 				Namespace:   namespace,
@@ -1019,7 +1020,7 @@ func TestDeltalake_LoadUserTables(t *testing.T) {
 			dl := deltalake.NewDeltalake()
 			deltalake.WithConfig(dl, conf)
 
-			dl.Namespace = "test-namespace"
+			dl.Namespace = namespace
 			dl.Logger = logger.NOP
 			dl.Warehouse = warehouseutils.Warehouse{
 				Namespace:   namespace,
@@ -1058,6 +1059,70 @@ func TestDeltalake_LoadUserTables(t *testing.T) {
 				warehouseutils.UsersTable:      nil,
 				warehouseutils.IdentifiesTable: nil,
 			})
+		})
+	}
+}
+
+func TestDeltalake_LoadTestTable(t *testing.T) {
+	testCases := []struct {
+		name            string
+		loadFileType    string
+		wantError       error
+		mockClientError error
+	}{
+		{
+			name:         "Success with csv",
+			loadFileType: "csv",
+		},
+		{
+			name:         "Success with parquet",
+			loadFileType: "parquet",
+		},
+		{
+			name:            "Error load data",
+			mockClientError: errors.New("load-error"),
+			wantError:       errors.New("load-error"),
+		},
+	}
+
+	var (
+		namespace    = "test-namespace"
+		workspaceID  = "test-workspace-id"
+		testTable    = "test-table"
+		testLocation = "http://test-location"
+	)
+
+	for _, tc := range testCases {
+		tc := tc
+
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			mockClient := &MockClient{
+				mockError: tc.mockClientError,
+			}
+
+			dl := deltalake.NewDeltalake()
+			dl.Namespace = namespace
+			dl.Logger = logger.NOP
+			dl.Warehouse = warehouseutils.Warehouse{
+				Namespace:   namespace,
+				WorkspaceID: workspaceID,
+			}
+			dl.DeltalakeClient = &deltalakeclient.DeltalakeClient{
+				Client: mockClient,
+			}
+			dl.Uploader = &mockUploader{
+				fileType:     tc.loadFileType,
+				fileLocation: testLocation,
+			}
+
+			err := dl.LoadTestTable(testLocation, testTable, map[string]interface{}{}, tc.loadFileType)
+			if tc.wantError != nil {
+				require.ErrorContains(t, err, tc.wantError.Error())
+				return
+			}
+			require.NoError(t, err)
 		})
 	}
 }
