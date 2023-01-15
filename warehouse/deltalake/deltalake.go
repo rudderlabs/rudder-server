@@ -514,7 +514,7 @@ func (dl *Deltalake) credentialsStr() (auth string, err error) {
 }
 
 // getLoadFolder return the load folder where the load files are present
-func (dl *Deltalake) getLoadFolder(location string) (loadFolder string, err error) {
+func (dl *Deltalake) getLoadFolder(location string) (loadFolder string) {
 	loadFolder = warehouseutils.GetObjectFolderForDeltalake(dl.ObjectStorage, location)
 	if dl.ObjectStorage == warehouseutils.S3 {
 		awsAccessKey := warehouseutils.GetConfigValue(warehouseutils.AWSAccessKey, dl.Warehouse)
@@ -568,10 +568,7 @@ func (dl *Deltalake) loadTable(tableName string, tableSchemaInUpload, tableSchem
 		return
 	}
 
-	loadFolder, err := dl.getLoadFolder(objectsLocation)
-	if err != nil {
-		return
-	}
+	loadFolder := dl.getLoadFolder(objectsLocation)
 
 	// Creating copy sql statement to copy from load folder to the staging table
 	tableSchemaDiff := getTableSchemaDiff(tableSchemaInUpload, tableSchemaAfterUpload)
@@ -873,7 +870,7 @@ func (dl *Deltalake) DropTable(tableName string) (err error) {
 		return
 	}
 	if !checkAndIgnoreAlreadyExistError(dropTableResponse.GetErrorCode(), tableOrViewNotFound) {
-		err = fmt.Errorf("%s Error while droping table with response: %v", dl.GetLogIdentifier(), dropTableResponse.GetErrorMessage())
+		err = fmt.Errorf("%s Error while dropping table with response: %v", dl.GetLogIdentifier(), dropTableResponse.GetErrorMessage())
 		return
 	}
 	return
@@ -1165,10 +1162,7 @@ func (dl *Deltalake) LoadTestTable(location, tableName string, _ map[string]inte
 		return
 	}
 
-	loadFolder, err := dl.getLoadFolder(location)
-	if err != nil {
-		return
-	}
+	loadFolder := dl.getLoadFolder(location)
 
 	var sqlStatement string
 	if format == warehouseutils.LOAD_FILE_TYPE_PARQUET {

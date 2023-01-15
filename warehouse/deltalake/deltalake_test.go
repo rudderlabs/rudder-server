@@ -4,17 +4,18 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/rudderlabs/rudder-server/config"
+	"github.com/rudderlabs/rudder-server/utils/logger"
+	"github.com/rudderlabs/rudder-server/warehouse/deltalake/deltalakeclient"
 	"os"
+	"regexp"
 	"testing"
 	"time"
 
-	"github.com/rudderlabs/rudder-server/utils/logger"
-	"github.com/rudderlabs/rudder-server/warehouse/deltalake/deltalakeclient"
 	"google.golang.org/grpc"
 
 	proto "github.com/rudderlabs/rudder-server/proto/databricks"
 
-	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/warehouse/validations"
 
 	"github.com/rudderlabs/rudder-server/utils/misc"
@@ -235,6 +236,7 @@ func appendEventsMap() testhelper.EventsCountMap {
 }
 
 type MockClient struct {
+	executeSQLRegex      func(query string) (bool, error)
 	connectRes           *proto.ConnectResponse
 	executeRes           *proto.ExecuteResponse
 	executeQueryRes      *proto.ExecuteQueryResponse
@@ -251,7 +253,12 @@ func (m *MockClient) Connect(context.Context, *proto.ConnectRequest, ...grpc.Cal
 	return m.connectRes, m.mockError
 }
 
-func (m *MockClient) Execute(context.Context, *proto.ExecuteRequest, ...grpc.CallOption) (*proto.ExecuteResponse, error) {
+func (m *MockClient) Execute(_ context.Context, r *proto.ExecuteRequest, _ ...grpc.CallOption) (*proto.ExecuteResponse, error) {
+	if m.executeSQLRegex != nil {
+		if matched, err := m.executeSQLRegex(r.GetSqlStatement()); matched {
+			return nil, err
+		}
+	}
 	return m.executeRes, m.mockError
 }
 
@@ -283,7 +290,7 @@ func (m *MockClient) Close(context.Context, *proto.CloseRequest, ...grpc.CallOpt
 	return m.closeRes, m.mockError
 }
 
-func TestHandle_CreateTable(t *testing.T) {
+func TestDeltalake_CreateTable(t *testing.T) {
 	testCases := []struct {
 		name           string
 		columns        map[string]string
@@ -307,7 +314,7 @@ func TestHandle_CreateTable(t *testing.T) {
 			},
 		},
 		{
-			name: "Managed table",
+			name: "External location",
 			config: map[string]interface{}{
 				"enableExternalLocation": true,
 				"externalLocation":       "a/b/c/d",
@@ -369,7 +376,7 @@ func TestHandle_CreateTable(t *testing.T) {
 
 			err := dl.CreateTable(testTable, columns)
 			if tc.wantError != nil {
-				require.Error(t, err, tc.wantError)
+				require.ErrorContains(t, err, tc.wantError.Error())
 				return
 			}
 			require.NoError(t, err)
@@ -377,39 +384,38 @@ func TestHandle_CreateTable(t *testing.T) {
 	}
 }
 
-func TestHandle_CreateSchema(t *testing.T) {
+func TestDeltalake_CreateSchema(t *testing.T) {
 	testCases := []struct {
-		name       string
-		mockError  error
-		schemasRes *proto.FetchSchemasResponse
-		wantError  error
+		name           string
+		mockError      error
+		mockSchemasRes *proto.FetchSchemasResponse
+		wantError      error
 	}{
 		{
 			name: "No such schema",
-			schemasRes: &proto.FetchSchemasResponse{
+			mockSchemasRes: &proto.FetchSchemasResponse{
 				ErrorCode:    "42000",
 				ErrorMessage: "test error",
-				Databases:    []string{"test-namespace"},
+			},
+		},
+		{
+			name: "Schema already exists",
+			mockSchemasRes: &proto.FetchSchemasResponse{
+				Databases: []string{"test-namespace"},
 			},
 		},
 		{
 			name:      "GRPC error while fetching schema",
 			mockError: errors.New("test error"),
-			wantError: errors.New("Error while fetching schemas: test error"),
+			wantError: errors.New("fetching schemas: test error"),
 		},
 		{
 			name: "Permission error while fetching schema",
-			schemasRes: &proto.FetchSchemasResponse{
+			mockSchemasRes: &proto.FetchSchemasResponse{
 				ErrorCode:    "42xxx",
 				ErrorMessage: "permission error",
 			},
-			wantError: errors.New("Error while fetching schemas with response: permission error"),
-		},
-		{
-			name: "Schema already exists",
-			schemasRes: &proto.FetchSchemasResponse{
-				Databases: []string{"test-namespace"},
-			},
+			wantError: errors.New("fetching schemas with response: permission error"),
 		},
 	}
 
@@ -426,7 +432,7 @@ func TestHandle_CreateSchema(t *testing.T) {
 
 			mockClient := &MockClient{
 				mockError:  tc.mockError,
-				schemasRes: tc.schemasRes,
+				schemasRes: tc.mockSchemasRes,
 			}
 
 			dl := deltalake.NewDeltalake()
@@ -457,7 +463,169 @@ func TestHandle_CreateSchema(t *testing.T) {
 	}
 }
 
-func TestHandle_GetTotalCountInTable(t *testing.T) {
+func TestDeltalake_DropTable(t *testing.T) {
+	testCases := []struct {
+		name           string
+		columns        map[string]string
+		config         map[string]interface{}
+		mockError      error
+		mockExecuteRes *proto.ExecuteResponse
+		wantError      error
+	}{
+		{
+			name: "No such table",
+			mockExecuteRes: &proto.ExecuteResponse{
+				ErrorCode:    "42000",
+				ErrorMessage: "test error",
+			},
+			wantError: errors.New("dropping table with response: test error"),
+		},
+		{
+			name: "Success",
+		},
+		{
+			name:      "GRPC error while dropping table",
+			mockError: errors.New("test error"),
+			wantError: errors.New("test error"),
+		},
+		{
+			name: "Permission error while dropping table",
+			mockExecuteRes: &proto.ExecuteResponse{
+				ErrorCode:    "42xxx",
+				ErrorMessage: "permission error",
+			},
+			wantError: errors.New("dropping table with response: permission error"),
+		},
+	}
+
+	var (
+		testTable   = "test-table"
+		namespace   = "test-namespace"
+		workspaceID = "test-workspace-id"
+	)
+
+	for _, tc := range testCases {
+		tc := tc
+
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			mockClient := &MockClient{
+				mockError:  tc.mockError,
+				executeRes: tc.mockExecuteRes,
+			}
+
+			dl := deltalake.NewDeltalake()
+			dl.Namespace = "test-namespace"
+			dl.Warehouse = warehouseutils.Warehouse{
+				Type:        "test-type",
+				Namespace:   namespace,
+				WorkspaceID: workspaceID,
+				Source: backendconfig.SourceT{
+					ID: "test-source-id",
+				},
+				Destination: backendconfig.DestinationT{
+					ID: "test-destination-id",
+				},
+			}
+			dl.Logger = logger.NOP
+			dl.DeltalakeClient = &deltalakeclient.DeltalakeClient{
+				Client: mockClient,
+			}
+
+			err := dl.DropTable(testTable)
+			if tc.wantError != nil {
+				require.ErrorContains(t, err, tc.wantError.Error())
+				return
+			}
+			require.NoError(t, err)
+		})
+	}
+}
+
+func TestDeltalake_AddColumns(t *testing.T) {
+	testCases := []struct {
+		name           string
+		columns        map[string]string
+		config         map[string]interface{}
+		mockError      error
+		mockExecuteRes *proto.ExecuteResponse
+		wantError      error
+	}{
+		{
+			name: "Success",
+		},
+		{
+			name:      "GRPC error while dropping table",
+			mockError: errors.New("test error"),
+			wantError: errors.New("test error"),
+		},
+		{
+			name: "Permission error while dropping table",
+			mockExecuteRes: &proto.ExecuteResponse{
+				ErrorCode:    "42xxx",
+				ErrorMessage: "permission error",
+			},
+			wantError: errors.New("executing with response: permission error"),
+		},
+	}
+
+	var (
+		namespace   = "test-namespace"
+		workspaceID = "test-workspace-id"
+		testTable   = "test-table"
+		testColumns = []warehouseutils.ColumnInfo{
+			{
+				Name: "id",
+				Type: "string",
+			},
+			{
+				Name: "test_bool",
+				Type: "boolean",
+			},
+		}
+	)
+
+	for _, tc := range testCases {
+		tc := tc
+
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			mockClient := &MockClient{
+				mockError:  tc.mockError,
+				executeRes: tc.mockExecuteRes,
+			}
+
+			dl := deltalake.NewDeltalake()
+			dl.Namespace = "test-namespace"
+			dl.Logger = logger.NOP
+			dl.Warehouse = warehouseutils.Warehouse{
+				Type:        "test-type",
+				Namespace:   namespace,
+				WorkspaceID: workspaceID,
+				Source: backendconfig.SourceT{
+					ID: "test-source-id",
+				},
+				Destination: backendconfig.DestinationT{
+					ID: "test-destination-id",
+				},
+			}
+			dl.DeltalakeClient = &deltalakeclient.DeltalakeClient{
+				Client: mockClient,
+			}
+
+			err := dl.AddColumns(testTable, testColumns)
+			if tc.wantError != nil {
+				require.ErrorContains(t, err, tc.wantError.Error())
+				return
+			}
+			require.NoError(t, err)
+		})
+	}
+}
+
+func TestDeltalake_GetTotalCountInTable(t *testing.T) {
 	testCases := []struct {
 		name                 string
 		mockError            error
@@ -468,7 +636,7 @@ func TestHandle_GetTotalCountInTable(t *testing.T) {
 		{
 			name:      "GRPC error while fetching table count",
 			mockError: errors.New("test error"),
-			wantError: errors.New("Error while fetching table count: test error"),
+			wantError: errors.New("fetching table count: test error"),
 		},
 		{
 			name: "Permission error while fetching table count",
@@ -476,10 +644,10 @@ func TestHandle_GetTotalCountInTable(t *testing.T) {
 				ErrorCode:    "42xxx",
 				ErrorMessage: "permission error",
 			},
-			wantError: errors.New("Error while fetching table count with response: permission error"),
+			wantError: errors.New("fetching table count with response: permission error"),
 		},
 		{
-			name:  "Schema already exists",
+			name:  "Success",
 			count: 5,
 			totalCountInTableRes: &proto.FetchTotalCountInTableResponse{
 				Count: 5,
@@ -528,12 +696,13 @@ func TestHandle_GetTotalCountInTable(t *testing.T) {
 }
 
 type mockUploader struct {
-	fileType       string
-	fileLocation   string
-	uploadSchema   warehouseutils.TableSchemaT
-	warehousSchema warehouseutils.TableSchemaT
-	firstEventAt   time.Time
-	lastEventAt    time.Time
+	mockError       error
+	fileType        string
+	fileLocation    string
+	uploadSchema    warehouseutils.TableSchemaT
+	warehouseSchema warehouseutils.TableSchemaT
+	firstEventAt    time.Time
+	lastEventAt     time.Time
 }
 
 func (*mockUploader) GetSchemaInWarehouse() warehouseutils.SchemaT     { return warehouseutils.SchemaT{} }
@@ -559,7 +728,7 @@ func (m *mockUploader) GetTableSchemaInUpload(string) warehouseutils.TableSchema
 }
 
 func (m *mockUploader) GetTableSchemaInWarehouse(_ string) warehouseutils.TableSchemaT {
-	return m.warehousSchema
+	return m.warehouseSchema
 }
 
 func (m *mockUploader) GetLoadFileType() string {
@@ -567,27 +736,33 @@ func (m *mockUploader) GetLoadFileType() string {
 }
 
 func (m *mockUploader) GetSampleLoadFileLocation(_ string) (string, error) {
-	return m.fileLocation, nil
+	return m.fileLocation, m.mockError
 }
 
-func TestHandle_LoadTable(t *testing.T) {
+func TestDeltalake_LoadTable(t *testing.T) {
+	deltalake.Init()
 	warehouseutils.Init()
+	misc.Init()
 
 	testCases := []struct {
 		name              string
-		mockError         error
+		mockClientError   error
 		wantError         error
 		loadFileType      string
 		loadTableStrategy string
 		partitionPruning  bool
 		useSTSTokens      bool
 		partitionResponse *proto.FetchPartitionColumnsResponse
+		executeSQLRegex   func(query string) (bool, error)
+		executeResponse   *proto.ExecuteResponse
 		config            map[string]interface{}
+		mockUploaderError error
+		namespace         string
 	}{
 		{
-			name:      "Permission error for create table",
-			mockError: errors.New("permission error"),
-			wantError: errors.New("error while executing: permission error"),
+			name:            "Permission error for create table",
+			mockClientError: errors.New("permission error"),
+			wantError:       errors.New("error while executing: permission error"),
 		},
 		{
 			name:         "Load file type parquet",
@@ -606,6 +781,27 @@ func TestHandle_LoadTable(t *testing.T) {
 			name:              "Merge mode",
 			loadFileType:      "csv",
 			loadTableStrategy: "MERGE",
+		},
+		{
+			name:              "Error dropping staging table",
+			loadFileType:      "csv",
+			loadTableStrategy: "MERGE",
+			executeSQLRegex: func(query string) (bool, error) {
+				matched, err := regexp.MatchString(".*DROP TABLE.*", query)
+				require.NoError(t, err)
+
+				if matched {
+					return true, errors.New("drop error")
+				}
+				return false, nil
+			},
+		},
+		{
+			name:              "No load file found",
+			loadFileType:      "csv",
+			loadTableStrategy: "MERGE",
+			mockUploaderError: errors.New("no load file found for table"),
+			wantError:         errors.New("no load file found for table"),
 		},
 		{
 			name:              "Partitioning pruning supported",
@@ -637,6 +833,73 @@ func TestHandle_LoadTable(t *testing.T) {
 				"secretAccessKey": "secretAccessKey",
 			},
 		},
+		{
+			name:              "Copy error",
+			loadFileType:      "csv",
+			loadTableStrategy: "MERGE",
+			useSTSTokens:      true,
+			config: map[string]interface{}{
+				"useSTSTokens":    true,
+				"region":          "region",
+				"accessKeyID":     "accessKeyID",
+				"secretAccessKey": "secretAccessKey",
+			},
+			namespace: "test-namespace-copy-error",
+			wantError: errors.New(`executing: copy error`),
+			executeSQLRegex: func(query string) (bool, error) {
+				matched, err := regexp.MatchString(".*COPY.*test-namespace-copy-error.*", query)
+				require.NoError(t, err)
+
+				if matched {
+					return true, errors.New("copy error")
+				}
+				return false, nil
+			},
+		},
+		{
+			name:              "Load error with merge",
+			loadFileType:      "csv",
+			loadTableStrategy: "MERGE",
+			useSTSTokens:      true,
+			config: map[string]interface{}{
+				"useSTSTokens":    true,
+				"region":          "region",
+				"accessKeyID":     "accessKeyID",
+				"secretAccessKey": "secretAccessKey",
+			},
+			namespace: "test-namespace-load-merge-error",
+			executeSQLRegex: func(query string) (bool, error) {
+				matched, err := regexp.MatchString(".*MERGE.*test-namespace-load-merge-error.*", query)
+				require.NoError(t, err)
+
+				if matched {
+					return true, errors.New("load merge error")
+				}
+				return false, nil
+			},
+			wantError: errors.New(`executing: load merge error`),
+		},
+		{
+			name:              "Load error with append",
+			loadFileType:      "csv",
+			loadTableStrategy: "APPEND",
+			useSTSTokens:      true,
+			config: map[string]interface{}{
+				"useSTSTokens":    true,
+				"region":          "region",
+				"accessKeyID":     "accessKeyID",
+				"secretAccessKey": "secretAccessKey",
+			},
+			namespace: "test-namespace-load-append-error",
+			executeSQLRegex: func(query string) (bool, error) {
+				matched, _ := regexp.MatchString(".*INSERT.*test-namespace-load-append-error.*", query)
+				if matched {
+					return true, errors.New("load append error")
+				}
+				return false, nil
+			},
+			wantError: errors.New(`executing: load append error`),
+		},
 	}
 
 	var (
@@ -652,8 +915,10 @@ func TestHandle_LoadTable(t *testing.T) {
 			t.Parallel()
 
 			mockClient := &MockClient{
-				mockError:    tc.mockError,
-				partitionRes: tc.partitionResponse,
+				mockError:       tc.mockClientError,
+				partitionRes:    tc.partitionResponse,
+				executeRes:      tc.executeResponse,
+				executeSQLRegex: tc.executeSQLRegex,
 			}
 
 			conf := config.New()
@@ -663,7 +928,12 @@ func TestHandle_LoadTable(t *testing.T) {
 			dl := deltalake.NewDeltalake()
 			deltalake.WithConfig(dl, conf)
 
-			dl.Namespace = "test-namespace"
+			namespace := namespace
+			if tc.namespace != "" {
+				namespace = tc.namespace
+			}
+
+			dl.Namespace = namespace
 			dl.Logger = logger.NOP
 			dl.ObjectStorage = warehouseutils.S3
 			dl.Warehouse = warehouseutils.Warehouse{
@@ -678,6 +948,7 @@ func TestHandle_LoadTable(t *testing.T) {
 			}
 			dl.Uploader = &mockUploader{
 				fileType:     tc.loadFileType,
+				mockError:    tc.mockUploaderError,
 				fileLocation: "https://test-bucket.s3.amazonaws.com/myfolder/test-object.csv",
 				uploadSchema: warehouseutils.TableSchemaT{
 					"id":            "string",
@@ -688,7 +959,7 @@ func TestHandle_LoadTable(t *testing.T) {
 					"test_int":      "int",
 					"test_string":   "string",
 				},
-				warehousSchema: warehouseutils.TableSchemaT{
+				warehouseSchema: warehouseutils.TableSchemaT{
 					"id":                  "string",
 					"received_at":         "datetime",
 					"test_array_bool":     "array(boolean)",
@@ -703,7 +974,7 @@ func TestHandle_LoadTable(t *testing.T) {
 
 			err := dl.LoadTable(testTable)
 			if tc.wantError != nil {
-				require.Error(t, err, tc.wantError)
+				require.ErrorContains(t, err, tc.wantError.Error())
 				return
 			}
 			require.NoError(t, err)
@@ -711,7 +982,7 @@ func TestHandle_LoadTable(t *testing.T) {
 	}
 }
 
-func TestHandle_LoadUserTables(t *testing.T) {
+func TestDeltalake_LoadUserTables(t *testing.T) {
 	testCases := []struct {
 		name              string
 		loadFileType      string
@@ -769,7 +1040,7 @@ func TestHandle_LoadUserTables(t *testing.T) {
 					"test_int":      "int",
 					"test_string":   "string",
 				},
-				warehousSchema: warehouseutils.TableSchemaT{
+				warehouseSchema: warehouseutils.TableSchemaT{
 					"id":                  "string",
 					"received_at":         "datetime",
 					"test_array_bool":     "array(boolean)",
