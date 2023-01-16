@@ -350,12 +350,12 @@ func (bt *batchWebhookTransformerT) batchTransformLoop() {
 
 		// stats
 		bt.stats.sourceStats[breq.sourceType].numEvents.Count(len(payloadArr))
-		bt.stats.sourceStats[breq.sourceType].sourceTransform.Start()
 
+		transformStart := time.Now()
 		batchResponse := bt.transform(payloadArr, breq.sourceType)
 
 		// stats
-		bt.stats.sourceStats[breq.sourceType].sourceTransform.End()
+		bt.stats.sourceStats[breq.sourceType].sourceTransform.Since(transformStart)
 
 		if batchResponse.batchError == nil && len(batchResponse.responses) != len(payloadArr) {
 			batchResponse.batchError = errors.New("webhook batch transform response events size does not equal sent events size")
