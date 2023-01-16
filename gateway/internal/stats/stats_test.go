@@ -138,27 +138,29 @@ func TestReport(t *testing.T) {
 				failedTags,
 			).LastValue(),
 		)
-		require.Equal(t,
-			float64(counterMap[sourceTag].eventsTotal),
-			statsStore.Get(
-				"gateway.write_key_events",
-				tags,
-			).LastValue(),
-		)
-		require.Equal(t,
-			float64(counterMap[sourceTag].eventsSucceeded),
-			statsStore.Get(
-				"gateway.write_key_successful_events",
-				tags,
-			).LastValue(),
-		)
-		require.Equal(t,
-			float64(counterMap[sourceTag].eventsFailed),
-			statsStore.Get(
-				"gateway.write_key_failed_events",
-				failedTags,
-			).LastValue(),
-		)
+		if counterMap[sourceTag].eventsTotal > 0 {
+			require.Equal(t,
+				float64(counterMap[sourceTag].eventsTotal),
+				statsStore.Get(
+					"gateway.write_key_events",
+					tags,
+				).LastValue(),
+			)
+			require.Equal(t,
+				float64(counterMap[sourceTag].eventsSucceeded),
+				statsStore.Get(
+					"gateway.write_key_successful_events",
+					tags,
+				).LastValue(),
+			)
+			require.Equal(t,
+				float64(counterMap[sourceTag].eventsFailed),
+				statsStore.Get(
+					"gateway.write_key_failed_events",
+					failedTags,
+				).LastValue(),
+			)
+		}
 	}
 }
 

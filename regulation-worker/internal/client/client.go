@@ -50,8 +50,9 @@ func (j *JobAPI) Get(ctx context.Context) (model.Job, error) {
 	}
 	req.SetBasicAuth(j.Identity.BasicAuth())
 	req.Header.Set("Content-Type", "application/json")
-
+	reqTime := time.Now()
 	resp, err := j.Client.Do(req)
+	stats.Default.NewTaggedStat("regulation_manager.request_time", stats.TimerType, stats.Tags{"op": "get"}).Since(reqTime)
 	if os.IsTimeout(err) {
 		stats.Default.NewStat("regulation_manager.request_timeout", stats.CountType).Count(1)
 		return model.Job{}, model.ErrRequestTimeout
@@ -75,7 +76,12 @@ func (j *JobAPI) Get(ctx context.Context) (model.Job, error) {
 			return model.Job{}, fmt.Errorf("error while decoding job: %w", err)
 		}
 
-		userCountPerJob := stats.Default.NewTaggedStat("user_count_per_job", stats.CountType, stats.Tags{"jobId": jobSchema.JobID, "ID": j.Identity.ID()})
+		userCountPerJob := stats.Default.NewTaggedStat(
+			"regulation_worker_user_count_per_job",
+			stats.CountType,
+			stats.Tags{
+				"destinationId": jobSchema.DestinationID,
+			})
 		userCountPerJob.Count(len(jobSchema.UserAttributes))
 
 		job, err := mapPayloadToJob(jobSchema)
@@ -123,8 +129,9 @@ func (j *JobAPI) UpdateStatus(ctx context.Context, status model.JobStatus, jobID
 	}
 	req.SetBasicAuth(j.Identity.BasicAuth())
 	req.Header.Set("Content-Type", "application/json")
-
+	reqTime := time.Now()
 	resp, err := j.Client.Do(req)
+	stats.Default.NewTaggedStat("regulation_manager.request_time", stats.TimerType, stats.Tags{"op": "updateStatus"}).Since(reqTime)
 	if os.IsTimeout(err) {
 		stats.Default.NewStat("regulation_manager.request_timeout", stats.CountType).Count(1)
 		return model.ErrRequestTimeout

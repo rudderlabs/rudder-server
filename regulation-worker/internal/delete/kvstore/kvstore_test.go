@@ -15,7 +15,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/delete/kvstore"
-	"github.com/rudderlabs/rudder-server/regulation-worker/internal/initialize"
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/model"
 	"github.com/rudderlabs/rudder-server/services/kvstoremanager"
 )
@@ -26,7 +25,6 @@ var (
 )
 
 func TestMain(m *testing.M) {
-	initialize.Init()
 	os.Exit(run(m))
 }
 

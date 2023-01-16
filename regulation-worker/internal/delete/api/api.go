@@ -81,13 +81,12 @@ func (api *APIManager) deleteWithRetry(ctx context.Context, job model.Job, desti
 	}
 
 	defer stats.Default.NewTaggedStat(
-		"file_cleaning_time",
+		"regulation_worker_cleaning_time",
 		stats.TimerType,
 		stats.Tags{
-			"jobId":       fmt.Sprintf("%d", job.ID),
-			"workspaceId": job.WorkspaceID,
-			"destType":    "api",
-			"destName":    strings.ToLower(destination.Name),
+			"destinationId": job.DestinationID,
+			"workspaceId":   job.WorkspaceID,
+			"jobType":       "api",
 		}).RecordDuration()()
 
 	resp, err := api.Client.Do(req)
