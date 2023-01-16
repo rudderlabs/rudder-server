@@ -32,10 +32,9 @@ func (*KVDeleteManager) Delete(_ context.Context, job model.Job, destDetail mode
 		"regulation_worker_cleaning_time",
 		stats.TimerType,
 		stats.Tags{
-			"jobId":       fmt.Sprintf("%d", job.ID),
-			"workspaceId": job.WorkspaceID,
-			"destType":    "kvstore",
-			"destName":    destName,
+			"destinationId": job.DestinationID,
+			"workspaceId":   job.WorkspaceID,
+			"jobType":       "kvstore",
 		})
 	defer fileCleaningTime.RecordDuration()()
 	for _, user := range job.Users {

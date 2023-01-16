@@ -52,7 +52,7 @@ func (j *JobAPI) Get(ctx context.Context) (model.Job, error) {
 	req.Header.Set("Content-Type", "application/json")
 	reqTime := time.Now()
 	resp, err := j.Client.Do(req)
-	stats.Default.NewTaggedStat("regulation_manager.request_time", stats.TimerType, stats.Tags{"reqType": http.MethodGet}).Since(reqTime)
+	stats.Default.NewTaggedStat("regulation_manager.request_time", stats.TimerType, stats.Tags{"op": "get"}).Since(reqTime)
 	if os.IsTimeout(err) {
 		stats.Default.NewStat("regulation_manager.request_timeout", stats.CountType).Count(1)
 		return model.Job{}, model.ErrRequestTimeout
@@ -80,8 +80,7 @@ func (j *JobAPI) Get(ctx context.Context) (model.Job, error) {
 			"regulation_worker_user_count_per_job",
 			stats.CountType,
 			stats.Tags{
-				"jobId": jobSchema.JobID,
-				"ID":    j.Identity.ID(),
+				"destinationId": jobSchema.DestinationID,
 			})
 		userCountPerJob.Count(len(jobSchema.UserAttributes))
 
@@ -132,7 +131,7 @@ func (j *JobAPI) UpdateStatus(ctx context.Context, status model.JobStatus, jobID
 	req.Header.Set("Content-Type", "application/json")
 	reqTime := time.Now()
 	resp, err := j.Client.Do(req)
-	stats.Default.NewTaggedStat("regulation_manager.request_time", stats.TimerType, stats.Tags{"reqType": http.MethodPatch}).Since(reqTime)
+	stats.Default.NewTaggedStat("regulation_manager.request_time", stats.TimerType, stats.Tags{"op": "updateStatus"}).Since(reqTime)
 	if os.IsTimeout(err) {
 		stats.Default.NewStat("regulation_manager.request_timeout", stats.CountType).Count(1)
 		return model.ErrRequestTimeout

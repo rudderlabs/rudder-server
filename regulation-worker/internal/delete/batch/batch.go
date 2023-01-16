@@ -400,10 +400,9 @@ func (bm *BatchManager) Delete(
 					"regulation_worker_file_cleaning_time",
 					stats.TimerType,
 					stats.Tags{
-						"jobId":       fmt.Sprintf("%d", job.ID),
-						"workspaceId": job.WorkspaceID,
-						"destType":    "batch",
-						"destName":    destName,
+						"destinationId": job.DestinationID,
+						"workspaceId":   job.WorkspaceID,
+						"jobType":       "batch",
 					})
 				defer cleanTime.RecordDuration()()
 
