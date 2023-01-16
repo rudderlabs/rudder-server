@@ -81,7 +81,8 @@ func (j *JobAPI) Get(ctx context.Context) (model.Job, error) {
 			stats.CountType,
 			stats.Tags{
 				"jobId": jobSchema.JobID,
-				"ID":    j.Identity.ID()})
+				"ID":    j.Identity.ID(),
+			})
 		userCountPerJob.Count(len(jobSchema.UserAttributes))
 
 		job, err := mapPayloadToJob(jobSchema)
