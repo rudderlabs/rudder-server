@@ -75,7 +75,7 @@ func (j *JobAPI) Get(ctx context.Context) (model.Job, error) {
 			return model.Job{}, fmt.Errorf("error while decoding job: %w", err)
 		}
 
-		userCountPerJob := stats.Default.NewTaggedStat("user_count_per_job", stats.CountType, stats.Tags{"jobId": jobSchema.JobID, "ID": j.Identity.ID()})
+		userCountPerJob := stats.Default.NewTaggedStat("regulation_worker_user_count_per_job", stats.CountType, stats.Tags{"jobId": jobSchema.JobID, "ID": j.Identity.ID()})
 		userCountPerJob.Count(len(jobSchema.UserAttributes))
 
 		job, err := mapPayloadToJob(jobSchema)
