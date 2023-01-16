@@ -1,5 +1,59 @@
 # Changelog
 
+## [1.5.0-rc.2](https://github.com/rudderlabs/rudder-server/compare/v1.4.5...v1.5.0-rc.2) (2023-01-16)
+
+
+### Features
+
+* add `total_bytes` field in staging file model ([#2853](https://github.com/rudderlabs/rudder-server/issues/2853)) ([cc74fcb](https://github.com/rudderlabs/rudder-server/commit/cc74fcbc1182101453aebddb0d58210053574160))
+* added MT support for regulation worker ([#2831](https://github.com/rudderlabs/rudder-server/issues/2831)) ([f1d3d03](https://github.com/rudderlabs/rudder-server/commit/f1d3d033a00f65533528167601ddc3e6cf59b7c6))
+* changes to make rudder-scheduler work with HA gateway ([#2823](https://github.com/rudderlabs/rudder-server/issues/2823)) ([04a8559](https://github.com/rudderlabs/rudder-server/commit/04a8559124e1d9cdaa145eddb3a70c1dbabd9122))
+* controlplane client support for destination history ([#2747](https://github.com/rudderlabs/rudder-server/issues/2747)) ([736a70b](https://github.com/rudderlabs/rudder-server/commit/736a70bfc27eb79fe5f9375c7c25edbec24ad5ae))
+* distributed throttling ([#2606](https://github.com/rudderlabs/rudder-server/issues/2606)) ([736a70b](https://github.com/rudderlabs/rudder-server/commit/736a70bfc27eb79fe5f9375c7c25edbec24ad5ae))
+* **warehouse:** added support for workspaceID's configuration ([#2760](https://github.com/rudderlabs/rudder-server/issues/2760)) ([736a70b](https://github.com/rudderlabs/rudder-server/commit/736a70bfc27eb79fe5f9375c7c25edbec24ad5ae))
+* **warehouse:** implement ssh tunnelling ([#2804](https://github.com/rudderlabs/rudder-server/issues/2804)) ([1cbb1e7](https://github.com/rudderlabs/rudder-server/commit/1cbb1e75297737bcf4ce3409892e75b8c8958f12))
+* **warehouse:** upload job processing metrics ([#2780](https://github.com/rudderlabs/rudder-server/issues/2780)) ([736a70b](https://github.com/rudderlabs/rudder-server/commit/736a70bfc27eb79fe5f9375c7c25edbec24ad5ae))
+
+
+### Bug Fixes
+
+* degraded workspace ids should be excluded by upload job allocator ([#2773](https://github.com/rudderlabs/rudder-server/issues/2773)) ([736a70b](https://github.com/rudderlabs/rudder-server/commit/736a70bfc27eb79fe5f9375c7c25edbec24ad5ae))
+* **destination:** add proper stats for rt/batch transformation & proxy ([#2855](https://github.com/rudderlabs/rudder-server/issues/2855)) ([b7aa800](https://github.com/rudderlabs/rudder-server/commit/b7aa80003e237ddda370dff125898d4ac52ea820))
+* failing executing jobs(except gateway) instead of deleting them ([#2736](https://github.com/rudderlabs/rudder-server/issues/2736)) ([736a70b](https://github.com/rudderlabs/rudder-server/commit/736a70bfc27eb79fe5f9375c7c25edbec24ad5ae))
+* regulation-worker panics during startup ([#2877](https://github.com/rudderlabs/rudder-server/issues/2877)) ([9ad84be](https://github.com/rudderlabs/rudder-server/commit/9ad84bedfad0d5af5b1ba4f78afd435798fb5501))
+* shallow copy config in processor ([#2856](https://github.com/rudderlabs/rudder-server/issues/2856)) ([b7aa800](https://github.com/rudderlabs/rudder-server/commit/b7aa80003e237ddda370dff125898d4ac52ea820))
+* stats.Timer#End panics with nil pointer ([#2866](https://github.com/rudderlabs/rudder-server/issues/2866)) ([17c078b](https://github.com/rudderlabs/rudder-server/commit/17c078b2da4dace01cdd52650ab1636ff5d67ff2))
+* unnecessary router pending event counts ([#2849](https://github.com/rudderlabs/rudder-server/issues/2849)) ([6c5d928](https://github.com/rudderlabs/rudder-server/commit/6c5d9285bf464c52db79efd616de1694030f7ec2))
+* **warehouse:** added support for testing ssh tunnelling using postgres ([#2836](https://github.com/rudderlabs/rudder-server/issues/2836)) ([333310d](https://github.com/rudderlabs/rudder-server/commit/333310df51bb7e8784d3e19d11ba20ad27a24c80))
+* **warehouse:** control plane client needs to be initialized for master mode ([#2826](https://github.com/rudderlabs/rudder-server/issues/2826)) ([5ad7ee7](https://github.com/rudderlabs/rudder-server/commit/5ad7ee7e4e3f8964092be68d6818e12712b6c9ea))
+* **warehouse:** grcp cp-router logs ([#2766](https://github.com/rudderlabs/rudder-server/issues/2766)) ([736a70b](https://github.com/rudderlabs/rudder-server/commit/736a70bfc27eb79fe5f9375c7c25edbec24ad5ae))
+* **warehouse:** include exclusion window in status tracker ([#2812](https://github.com/rudderlabs/rudder-server/issues/2812)) ([0459aff](https://github.com/rudderlabs/rudder-server/commit/0459aff6727ff39a33831074ed310ebd87002f4f))
+* **warehouse:** processing available workers to be gauge stats ([#2822](https://github.com/rudderlabs/rudder-server/issues/2822)) ([dfc4b23](https://github.com/rudderlabs/rudder-server/commit/dfc4b2348347df2bb4b45a625509b319583ef166))
+
+
+### Miscellaneous
+
+* abort jobs in regulation worker for unsupported destinations ([#2821](https://github.com/rudderlabs/rudder-server/issues/2821)) ([791c235](https://github.com/rudderlabs/rudder-server/commit/791c2353c998a4807bb0dc9bcbb7464c2021d2c8))
+* add logs when backup is skipped due to preferences ([#2867](https://github.com/rudderlabs/rudder-server/issues/2867)) ([1d9320d](https://github.com/rudderlabs/rudder-server/commit/1d9320d0bc2d40bea78eea8d485de90f4ea39609))
+* added prefix to regulation worker stats ([#2879](https://github.com/rudderlabs/rudder-server/issues/2879)) ([bab5a85](https://github.com/rudderlabs/rudder-server/commit/bab5a859bda6850a90fa5c525df625406534e7e0))
+* applying 1.4.3 and 1.4.4 hotfixes to main branch ([#2794](https://github.com/rudderlabs/rudder-server/issues/2794)) ([736a70b](https://github.com/rudderlabs/rudder-server/commit/736a70bfc27eb79fe5f9375c7c25edbec24ad5ae))
+* close http responses in a way to allow the Transport to re-use the TCP connection ([#2718](https://github.com/rudderlabs/rudder-server/issues/2718)) ([736a70b](https://github.com/rudderlabs/rudder-server/commit/736a70bfc27eb79fe5f9375c7c25edbec24ad5ae))
+* completely replace gofrs with google uuid  ([#2733](https://github.com/rudderlabs/rudder-server/issues/2733)) ([736a70b](https://github.com/rudderlabs/rudder-server/commit/736a70bfc27eb79fe5f9375c7c25edbec24ad5ae))
+* **deps:** bump cloud.google.com/go/pubsub from 1.19.0 to 1.27.0 ([#2755](https://github.com/rudderlabs/rudder-server/issues/2755)) ([736a70b](https://github.com/rudderlabs/rudder-server/commit/736a70bfc27eb79fe5f9375c7c25edbec24ad5ae))
+* docs update - unlimited event copy ([#2813](https://github.com/rudderlabs/rudder-server/issues/2813)) ([7f6c834](https://github.com/rudderlabs/rudder-server/commit/7f6c8344919bd041d9e9d50cac0d441064ce9dc2))
+* drop support for v1 pending events ([#2820](https://github.com/rudderlabs/rudder-server/issues/2820)) ([eadf1da](https://github.com/rudderlabs/rudder-server/commit/eadf1dae410e89d05abc806ed77f83ce6d25e1c1))
+* gateway stats ([#2758](https://github.com/rudderlabs/rudder-server/issues/2758)) ([65774e2](https://github.com/rudderlabs/rudder-server/commit/65774e21c3d823935cc73f79ac16950e3ef5396c))
+* introduce region in reporting url ([#2832](https://github.com/rudderlabs/rudder-server/issues/2832)) ([87a967e](https://github.com/rudderlabs/rudder-server/commit/87a967e1a734789402db70d01b9e626699d40917))
+* limit live events stored in memory ([#2803](https://github.com/rudderlabs/rudder-server/issues/2803)) ([3257aac](https://github.com/rudderlabs/rudder-server/commit/3257aac27db9e1c5e35afd4d5b19def660a8258f))
+* prohibit deletion of incomplete job-status stats ([#2850](https://github.com/rudderlabs/rudder-server/issues/2850)) ([ea4829a](https://github.com/rudderlabs/rudder-server/commit/ea4829ae358bb930a8898b0f3c5c1ebc4b033ac7))
+* remove deepsource badge ([#2765](https://github.com/rudderlabs/rudder-server/issues/2765)) ([736a70b](https://github.com/rudderlabs/rudder-server/commit/736a70bfc27eb79fe5f9375c7c25edbec24ad5ae))
+* timerStat.RecordDuration, Since instead of timerStat.Start, End ([#2870](https://github.com/rudderlabs/rudder-server/issues/2870)) ([134bb0a](https://github.com/rudderlabs/rudder-server/commit/134bb0a3e139eb9301c633333ffcd0340baf8d97))
+* upgrade postgres image ([#2764](https://github.com/rudderlabs/rudder-server/issues/2764)) ([736a70b](https://github.com/rudderlabs/rudder-server/commit/736a70bfc27eb79fe5f9375c7c25edbec24ad5ae))
+* use destination config from config-be than from message ([#2830](https://github.com/rudderlabs/rudder-server/issues/2830)) ([28f8750](https://github.com/rudderlabs/rudder-server/commit/28f8750e1d8a345be75fb7ef7c1eb0cd12379a2c))
+* using an exponential backoff ([#2865](https://github.com/rudderlabs/rudder-server/issues/2865)) ([56f84df](https://github.com/rudderlabs/rudder-server/commit/56f84dfcb6d102c4effc59da0aae2786edfcae86))
+* **warehouse:** integration test improvements ([#2685](https://github.com/rudderlabs/rudder-server/issues/2685)) ([736a70b](https://github.com/rudderlabs/rudder-server/commit/736a70bfc27eb79fe5f9375c7c25edbec24ad5ae))
+* **warehouse:** use strings.builder for warehouse add columns ([#2801](https://github.com/rudderlabs/rudder-server/issues/2801)) ([736a70b](https://github.com/rudderlabs/rudder-server/commit/736a70bfc27eb79fe5f9375c7c25edbec24ad5ae))
+
 ## [1.4.6](https://github.com/rudderlabs/rudder-server/compare/v1.4.5...v1.4.6) (2023-01-10)
 
 
