@@ -52,7 +52,7 @@ func (j *JobAPI) Get(ctx context.Context) (model.Job, error) {
 	req.Header.Set("Content-Type", "application/json")
 	reqTime := time.Now()
 	resp, err := j.Client.Do(req)
-	stats.Default.NewStat("regulation_manager.request_time", stats.TimerType).Since(reqTime)
+	stats.Default.NewTaggedStat("regulation_manager.request_time", stats.TimerType, stats.Tags{"reqType": http.MethodGet}).Since(reqTime)
 	if os.IsTimeout(err) {
 		stats.Default.NewStat("regulation_manager.request_timeout", stats.CountType).Count(1)
 		return model.Job{}, model.ErrRequestTimeout
@@ -131,7 +131,7 @@ func (j *JobAPI) UpdateStatus(ctx context.Context, status model.JobStatus, jobID
 	req.Header.Set("Content-Type", "application/json")
 	reqTime := time.Now()
 	resp, err := j.Client.Do(req)
-	stats.Default.NewStat("regulation_manager.request_time", stats.TimerType).Since(reqTime)
+	stats.Default.NewTaggedStat("regulation_manager.request_time", stats.TimerType, stats.Tags{"reqType": http.MethodPatch}).Since(reqTime)
 	if os.IsTimeout(err) {
 		stats.Default.NewStat("regulation_manager.request_timeout", stats.CountType).Count(1)
 		return model.ErrRequestTimeout
