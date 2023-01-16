@@ -15,7 +15,6 @@ import (
 	"time"
 
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/delete/batch"
-	"github.com/rudderlabs/rudder-server/regulation-worker/internal/initialize"
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/model"
 	"github.com/rudderlabs/rudder-server/services/filemanager"
 	"github.com/stretchr/testify/require"
@@ -29,8 +28,6 @@ var (
 const mockBucket = "mockBucket"
 
 func TestBatchDelete(t *testing.T) {
-	initialize.Init()
-
 	ctx := context.Background()
 	tests := []struct {
 		name           string
