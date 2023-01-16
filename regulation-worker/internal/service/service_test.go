@@ -5,14 +5,12 @@ import (
 	"testing"
 
 	gomock "github.com/golang/mock/gomock"
-	"github.com/rudderlabs/rudder-server/regulation-worker/internal/initialize"
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/model"
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/service"
 	"github.com/stretchr/testify/require"
 )
 
 func TestJobSvc(t *testing.T) {
-	initialize.Init()
 	config := map[string]interface{}{
 		"bucketName":  "malani-deletefeature-testdata",
 		"prefix":      "regulation",
