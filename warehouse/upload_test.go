@@ -6,6 +6,7 @@ import (
 	"os"
 	"testing"
 
+	"github.com/aws/smithy-go/time"
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/services/stats/memstats"
 	"github.com/stretchr/testify/require"
@@ -17,6 +18,8 @@ import (
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/testhelper/destination"
 	"github.com/rudderlabs/rudder-server/utils/logger"
+	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
+	"github.com/rudderlabs/rudder-server/warehouse/internal/repo"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
@@ -129,7 +132,7 @@ func TestColumnCountStat(t *testing.T) {
 			}
 
 			j := UploadJobT{
-				upload: &Upload{
+				upload: &model.Upload{
 					WorkspaceID:   workspaceID,
 					DestinationID: destinationID,
 					SourceID:      sourceID,
@@ -231,12 +234,12 @@ var _ = Describe("Upload", Ordered, func() {
 					Name: destinationName,
 				},
 			},
-			upload: &Upload{
+			upload: &model.Upload{
 				ID:                 1,
 				DestinationID:      destinationID,
 				SourceID:           sourceID,
-				StartStagingFileID: 1,
-				EndStagingFileID:   5,
+				StagingFileStartID: 1,
+				StagingFileEndID:   5,
 				Namespace:          namespace,
 			},
 			stagingFileIDs: []int64{1, 2, 3, 4, 5},
@@ -250,7 +253,8 @@ var _ = Describe("Upload", Ordered, func() {
 	})
 
 	It("Total rows in staging files", func() {
-		count := job.getTotalRowsInStagingFiles()
+		count, err := repo.NewStagingFiles(pgResource.DB).TotalEventsForUpload(context.TODO(), *job.upload)
+		Expect(err).To(BeNil())
 		Expect(count).To(BeEquivalentTo(5))
 	})
 
@@ -306,10 +310,12 @@ var _ = Describe("Upload", Ordered, func() {
 	})
 
 	It("Get uploads timings", func() {
-		Expect(job.getUploadTimings()).To(BeEquivalentTo([]map[string]string{
+		exportedData, _ := time.ParseDateTime("2020-04-21T15:26:34.344356")
+		exportingData, _ := time.ParseDateTime("2020-04-21T15:16:19.687716")
+		Expect(job.getUploadTimings()).To(BeEquivalentTo(model.Timings{
 			{
-				"exported_data":  "2020-04-21 15:26:34.344356",
-				"exporting_data": "2020-04-21 15:16:19.687716",
+				"exported_data":  exportedData,
+				"exporting_data": exportingData,
 			},
 		}))
 	})
@@ -317,7 +323,7 @@ var _ = Describe("Upload", Ordered, func() {
 	Describe("Staging files and load files events match", func() {
 		When("Matched", func() {
 			It("Should not send stats", func() {
-				job.matchRowsInStagingAndLoadFiles()
+				job.matchRowsInStagingAndLoadFiles(context.TODO())
 			})
 		})
 
@@ -329,7 +335,7 @@ var _ = Describe("Upload", Ordered, func() {
 
 				job.stats = mockStats
 				job.stagingFileIDs = []int64{1, 2}
-				job.matchRowsInStagingAndLoadFiles()
+				job.matchRowsInStagingAndLoadFiles(context.TODO())
 			})
 		})
 	})

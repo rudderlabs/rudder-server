@@ -2,6 +2,7 @@ package model
 
 import (
 	"encoding/json"
+	"errors"
 	"time"
 )
 
@@ -20,16 +21,18 @@ const (
 	Aborted                   = "aborted"
 )
 
+var ErrUploadNotFound = errors.New("upload not found")
+
 type Upload struct {
-	UploadID        int64
-	SourceID        string
+	ID          int64
+	WorkspaceID string
+
 	Namespace       string
-	WorkspaceID     string
+	SourceID        string
 	DestinationID   string
 	DestinationType string
 	Status          string
-	Schema          json.RawMessage
-	Error           string
+	Error           json.RawMessage
 	FirstEventAt    time.Time
 	LastEventAt     time.Time
 
@@ -42,4 +45,29 @@ type Upload struct {
 	LoadFileType     string
 	NextRetryTime    time.Time
 	Priority         int
+	Retried          bool
+
+	StagingFileStartID int64
+	StagingFileEndID   int64
+
+	LoadFileStartID int64
+	LoadFileEndID   int64
+
+	Timings        Timings
+	FirstAttemptAt time.Time
+	LastAttemptAt  time.Time
+	Attempts       int64
+
+	UploadSchema Schema
+	MergedSchema Schema
+}
+
+type Timings []map[string]time.Time
+
+type Schema map[string]map[string]string
+
+type UploadJobsStats struct {
+	PendingJobs    int64
+	PickupLag      time.Duration
+	PickupWaitTime time.Duration
 }

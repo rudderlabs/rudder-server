@@ -3,7 +3,7 @@ package repo
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
+	jsonstd "encoding/json"
 	"errors"
 	"fmt"
 	"time"
@@ -250,7 +250,7 @@ func (repo *StagingFiles) GetByID(ctx context.Context, ID int64) (model.StagingF
 }
 
 // GetSchemaByID returns staging file schema field the given ID.
-func (repo *StagingFiles) GetSchemaByID(ctx context.Context, ID int64) (json.RawMessage, error) {
+func (repo *StagingFiles) GetSchemaByID(ctx context.Context, ID int64) (jsonstd.RawMessage, error) {
 	query := `SELECT schema FROM ` + stagingTableName + ` WHERE id = $1`
 
 	row := repo.db.QueryRowContext(ctx, query, ID)
@@ -258,7 +258,7 @@ func (repo *StagingFiles) GetSchemaByID(ctx context.Context, ID int64) (json.Raw
 		return nil, fmt.Errorf("querying staging files: %w", row.Err())
 	}
 
-	var schema json.RawMessage
+	var schema jsonstd.RawMessage
 	err := row.Scan(&schema)
 	if err != nil {
 		return nil, fmt.Errorf("parsing rows: %w", err)
@@ -283,6 +283,10 @@ func (repo *StagingFiles) GetInRange(ctx context.Context, sourceID, destinationI
 	}
 
 	return repo.parseRows(rows)
+}
+
+func (repo *StagingFiles) GetForUpload(ctx context.Context, upload model.Upload) ([]model.StagingFile, error) {
+	return repo.GetInRange(ctx, upload.SourceID, upload.DestinationID, upload.StagingFileStartID, upload.StagingFileEndID)
 }
 
 // GetAfterID returns staging files in (startID, +Inf) range.
@@ -313,7 +317,7 @@ func (repo *StagingFiles) Pending(ctx context.Context, sourceID, destinationID s
 		WHERE
 			source_id = $1 AND destination_id = $2
 		ORDER BY
-		id DESC
+			id DESC
 		LIMIT 1;
 	`, sourceID, destinationID,
 	).Scan(&lastStagingFileID)
@@ -368,4 +372,88 @@ func (repo *StagingFiles) countPending(ctx context.Context, query string, value 
 	}
 
 	return count, nil
+}
+
+func (repo *StagingFiles) TotalEventsForUpload(ctx context.Context, upload model.Upload) (int64, error) {
+	var total sql.NullInt64
+
+	err := repo.db.QueryRowContext(ctx, `
+		SELECT 
+			sum(total_events) 
+		FROM 
+			`+stagingTableName+`
+		WHERE 
+			id >= $1 
+			AND id <= $2
+			AND source_id = $3
+			AND destination_id = $4;
+		`,
+		upload.StagingFileStartID,
+		upload.StagingFileEndID,
+		upload.SourceID,
+		upload.DestinationID,
+	).Scan(&total)
+	if err != nil {
+		return 0, fmt.Errorf("querying total rows for upload: %w", err)
+	}
+
+	return total.Int64, nil
+}
+
+func (repo *StagingFiles) FirstEventForUpload(ctx context.Context, upload model.Upload) (time.Time, error) {
+	var firstEvent sql.NullTime
+	err := repo.db.QueryRowContext(ctx, `
+		SELECT 
+			first_event_at 
+		FROM 
+			`+stagingTableName+`
+		WHERE 
+			id = $1;`,
+		upload.StagingFileStartID,
+	).Scan(&firstEvent)
+	if err != nil {
+		return time.Time{}, fmt.Errorf("querying first event for upload: %w", err)
+	}
+
+	return firstEvent.Time, nil
+}
+
+func (repo *StagingFiles) DestinationRevisionIDs(ctx context.Context, upload model.Upload) ([]string, error) {
+	sqlStatement := `
+		SELECT 
+		  DISTINCT metadata ->> 'destination_revision_id' AS destination_revision_id 
+		FROM 
+		  ` + stagingTableName + ` 
+		WHERE 
+		  id >= $1 
+		  AND id <= $2 
+		  AND source_id = $3 
+		  AND destination_id = $4 
+		  AND metadata ->> 'destination_revision_id' <> '';
+	`
+	rows, err := repo.db.QueryContext(ctx, sqlStatement,
+		upload.StagingFileStartID,
+		upload.StagingFileEndID,
+		upload.SourceID,
+		upload.DestinationID,
+	)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("query destination revisionID: %w", err)
+	}
+	defer rows.Close()
+
+	var revisionIDs []string
+	for rows.Next() {
+		var revisionID string
+		err = rows.Scan(&revisionID)
+		if err != nil {
+			return nil, fmt.Errorf("scan destination revisionID: %w", err)
+		}
+		revisionIDs = append(revisionIDs, revisionID)
+	}
+
+	return revisionIDs, nil
 }

@@ -11,6 +11,7 @@ import (
 	"github.com/rudderlabs/rudder-server/testhelper"
 	"github.com/rudderlabs/rudder-server/testhelper/destination"
 	"github.com/rudderlabs/rudder-server/utils/logger"
+	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
@@ -73,7 +74,7 @@ var _ = Describe("TableUpload", func() {
 			It("Create table upload", func() {
 				err = tu.updateTableEventsCount(&UploadJobT{
 					stagingFileIDs: stagingFileIDs,
-					upload: &Upload{
+					upload: &model.Upload{
 						ID: uploadID,
 					},
 					dbHandle: pgResource.DB,
@@ -108,7 +109,7 @@ var _ = Describe("TableUpload", func() {
 
 				BeforeEach(func() {
 					job = &UploadJobT{
-						upload: &Upload{
+						upload: &model.Upload{
 							ID: uploadID,
 						},
 						warehouse: warehouseutils.Warehouse{

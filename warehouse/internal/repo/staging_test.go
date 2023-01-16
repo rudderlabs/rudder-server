@@ -388,7 +388,7 @@ func TestStagingFileRepo_Pending(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, int64(input.Files), countBySrcID)
 
-		err = uploadRepo.CreateWithStagingFiles(ctx, model.Upload{
+		uploadID, err := uploadRepo.CreateWithStagingFiles(ctx, model.Upload{
 			SourceID:      input.SourceID,
 			DestinationID: input.DestinationID,
 		}, pending)
@@ -406,5 +406,21 @@ func TestStagingFileRepo_Pending(t *testing.T) {
 		require.NoError(t, err)
 		require.Zero(t, countBySrcID)
 
+		t.Run("Uploads", func(t *testing.T) {
+			upload, err := uploadRepo.Get(ctx, uploadID)
+			require.NoError(t, err)
+
+			events, err := r.TotalEventsForUpload(ctx, upload)
+			require.NoError(t, err)
+			require.Equal(t, int64(input.Files)*100, events)
+
+			firstEvent, err := r.FirstEventForUpload(ctx, upload)
+			require.NoError(t, err)
+			require.Equal(t, stagingFiles[0].FirstEventAt, firstEvent.UTC())
+
+			revisionIDs, err := r.DestinationRevisionIDs(ctx, upload)
+			require.NoError(t, err)
+			require.Equal(t, []string{"destination_revision_id"}, revisionIDs)
+		})
 	}
 }

@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/warehouse/internal/repo"
 	"github.com/rudderlabs/rudder-server/warehouse/multitenant"
 
 	"github.com/golang/mock/gomock"
@@ -135,29 +136,30 @@ func TestUploadJob_ProcessingStats(t *testing.T) {
 			require.NoError(t, err)
 
 			availableWorkers := 8
-			skipIdentifierSQL := "AND ((destination_id || '_' || namespace)) != ALL($2)"
 			ctx := context.Background()
 			store := memstats.New()
-			nowSQL := "'2022-12-06 22:00:00'"
-
-			if len(tc.skipIdentifiers) == 0 {
-				skipIdentifierSQL = ""
-			}
 
 			wh := HandleT{
 				destType: tc.destType,
-				NowSQL:   nowSQL,
 				stats:    store,
 				dbHandle: pgResource.DB,
 			}
 			tenantManager = &multitenant.Manager{}
 
-			err = wh.processingStats(ctx, availableWorkers, tc.skipIdentifiers, skipIdentifierSQL)
+			jobStats, err := repo.NewUploads(pgResource.DB, repo.WithNow(func() time.Time {
+				// nowSQL := "'2022-12-06 22:00:00'"
+				return time.Date(2022, 12, 6, 22, 0, 0, 0, time.UTC)
+			})).UploadJobsStats(ctx, tc.destType, repo.ProcessOptions{
+				SkipIdentifiers: tc.skipIdentifiers,
+				SkipWorkspaces:  nil,
+			})
 			if tc.wantErr != nil {
 				require.EqualError(t, err, tc.wantErr.Error())
 				return
 			}
 			require.NoError(t, err)
+
+			wh.processingStats(ctx, availableWorkers, jobStats)
 
 			m1 := store.Get("wh_processing_pending_jobs", stats.Tags{
 				"module":   moduleName,

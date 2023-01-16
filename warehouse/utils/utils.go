@@ -33,6 +33,7 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/httputil"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
+	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	"github.com/rudderlabs/rudder-server/warehouse/tunnelling"
 )
 
@@ -254,7 +255,7 @@ type DestinationT struct {
 }
 
 type (
-	SchemaT      map[string]map[string]string
+	SchemaT      = model.Schema
 	TableSchemaT map[string]string
 )
 
@@ -340,11 +341,10 @@ func TimingFromJSONString(str sql.NullString) (status string, recordedTime time.
 	return // zero values
 }
 
-func GetLastFailedStatus(str sql.NullString) (status string) {
-	timingsMap := gjson.Parse(str.String).Array()
+func GetLastFailedStatus(timingsMap model.Timings) (status string) {
 	if len(timingsMap) > 0 {
 		for index := len(timingsMap) - 1; index >= 0; index-- {
-			for s := range timingsMap[index].Map() {
+			for s := range timingsMap[index] {
 				if strings.Contains(s, "failed") {
 					return s
 				}
@@ -354,13 +354,12 @@ func GetLastFailedStatus(str sql.NullString) (status string) {
 	return // zero values
 }
 
-func GetLoadFileGenTime(str sql.NullString) (t time.Time) {
-	timingsMap := gjson.Parse(str.String).Array()
+func GetLoadFileGenTime(timingsMap model.Timings) (t time.Time) {
 	if len(timingsMap) > 0 {
 		for index := len(timingsMap) - 1; index >= 0; index-- {
-			for s, t := range timingsMap[index].Map() {
+			for s, t := range timingsMap[index] {
 				if strings.Contains(s, "generating_load_files") {
-					return t.Time()
+					return t
 				}
 			}
 		}

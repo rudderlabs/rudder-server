@@ -18,9 +18,7 @@ import (
 
 	"github.com/bugsnag/bugsnag-go/v2"
 	"github.com/cenkalti/backoff/v4"
-	"github.com/lib/pq"
 	"github.com/thoas/go-funk"
-	"github.com/tidwall/gjson"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/rudderlabs/rudder-server/app"
@@ -525,8 +523,6 @@ func (wh *HandleT) createUploadJobsFromStagingFiles(ctx context.Context, warehou
 			DestinationID:   warehouse.Destination.ID,
 			DestinationType: wh.destType,
 			Status:          model.Waiting,
-			Schema:          json.RawMessage("{}"),
-			Error:           "",
 
 			LoadFileType:  warehouseutils.GetLoadFileType(wh.destType),
 			NextRetryTime: uploadStartAfter,
@@ -543,7 +539,7 @@ func (wh *HandleT) createUploadJobsFromStagingFiles(ctx context.Context, warehou
 			// SourceJobRunID:   "",
 		}
 
-		err := wh.uploadRepo.CreateWithStagingFiles(ctx, upload, batch)
+		_, err := wh.uploadRepo.CreateWithStagingFiles(ctx, upload, batch)
 		if err != nil {
 			return fmt.Errorf("creating upload: %w", err)
 		}
@@ -713,71 +709,13 @@ func (wh *HandleT) mainLoop(ctx context.Context) {
 	}
 }
 
-func (wh *HandleT) processingStats(ctx context.Context, availableWorkers int, skipIdentifiers []string, skipIdentifiersSQL string) error {
-	var (
-		pendingJobs             int
-		query                   string
-		pickupLagInSeconds      float64
-		pickupWaitTimeInSeconds float64
-		err                     error
-		NowSQL                  = "NOW()"
-		degradedWorkspaces      = tenantManager.DegradedWorkspaces()
-	)
-	if wh.NowSQL != "" {
-		NowSQL = wh.NowSQL
-	}
-	if degradedWorkspaces == nil {
-		degradedWorkspaces = []string{}
-	}
-
-	query = fmt.Sprintf(`
-		SELECT
-			COALESCE(COUNT(*), 0) AS pending_jobs,
-			COALESCE(EXTRACT(EPOCH FROM(AGE(%[7]s, MIN(COALESCE(metadata->>'nextRetryTime', %[7]s::text)::timestamptz)))), 0) AS pickup_lag_in_seconds,
-			COALESCE(SUM(EXTRACT(EPOCH FROM AGE(%[7]s, COALESCE(metadata->>'nextRetryTime', %[7]s::text)::timestamptz))), 0) AS pickup_wait_time_in_seconds
-		FROM
-			%[1]s t
-		WHERE
-			t.destination_type = '%[2]s' AND
-			t.in_progress = %[3]t AND
-			t.status != '%[4]s' AND
-			t.status != '%[5]s' %[6]s AND
-			COALESCE(metadata->>'nextRetryTime', %[7]s::text)::timestamptz <= %[7]s AND
-			workspace_id <> ALL ($1);
-`,
-		warehouseutils.WarehouseUploadsTable,
-		wh.destType,
-		false,
-		model.ExportedData,
-		model.Aborted,
-		skipIdentifiersSQL,
-		NowSQL,
-	)
-
-	if len(skipIdentifiers) > 0 {
-		if err = wh.dbHandle.QueryRowContext(
-			ctx,
-			query,
-			pq.Array(degradedWorkspaces),
-			pq.Array(skipIdentifiers),
-		).Scan(&pendingJobs, &pickupLagInSeconds, &pickupWaitTimeInSeconds); err != nil {
-			return fmt.Errorf("processing  with skip identifiers: %w", err)
-		}
-	} else {
-		if err = wh.dbHandle.QueryRowContext(
-			ctx,
-			query,
-			pq.Array(degradedWorkspaces),
-		).Scan(&pendingJobs, &pickupLagInSeconds, &pickupWaitTimeInSeconds); err != nil {
-			return fmt.Errorf("count pending jobs: %w", err)
-		}
-	}
-
+func (wh *HandleT) processingStats(ctx context.Context, availableWorkers int, jobStats model.UploadJobsStats) {
+	// Get pending jobs
 	pendingJobsStat := wh.stats.NewTaggedStat("wh_processing_pending_jobs", stats.CountType, stats.Tags{
 		"module":   moduleName,
 		"destType": wh.destType,
 	})
-	pendingJobsStat.Count(pendingJobs)
+	pendingJobsStat.Count(int(jobStats.PendingJobs))
 
 	availableWorkersStat := wh.stats.NewTaggedStat("wh_processing_available_workers", stats.GaugeType, stats.Tags{
 		"module":   moduleName,
@@ -789,175 +727,27 @@ func (wh *HandleT) processingStats(ctx context.Context, availableWorkers int, sk
 		"module":   moduleName,
 		"destType": wh.destType,
 	})
-	pickupLagStat.SendTiming(time.Duration(pickupLagInSeconds) * time.Second)
+	pickupLagStat.SendTiming(jobStats.PickupLag * time.Second)
 
 	pickupWaitTimeStat := wh.stats.NewTaggedStat("wh_processing_pickup_wait_time", stats.TimerType, stats.Tags{
 		"module":   moduleName,
 		"destType": wh.destType,
 	})
-	pickupWaitTimeStat.SendTiming(time.Duration(pickupWaitTimeInSeconds) * time.Second)
-	return nil
+	pickupWaitTimeStat.SendTiming(jobStats.PickupWaitTime * time.Second)
 }
 
 func (wh *HandleT) getUploadsToProcess(ctx context.Context, availableWorkers int, skipIdentifiers []string) ([]*UploadJobT, error) {
-	var skipIdentifiersSQL string
-	partitionIdentifierSQL := `destination_id, namespace`
-
-	if len(skipIdentifiers) > 0 {
-		skipIdentifiersSQL = `AND ((destination_id || '_' || namespace)) != ALL($2)`
+	uploads, err := wh.uploadRepo.GetToProcess(ctx, wh.destType, availableWorkers, repo.ProcessOptions{
+		SkipIdentifiers:                   skipIdentifiers,
+		SkipWorkspaces:                    tenantManager.DegradedWorkspaces(),
+		AllowMultipleSourcesForJobsPickup: wh.allowMultipleSourcesForJobsPickup,
+	})
+	if err != nil {
+		return nil, err
 	}
-
-	if wh.allowMultipleSourcesForJobsPickup {
-		if len(skipIdentifiers) > 0 {
-			skipIdentifiersSQL = `AND ((source_id || '_' || destination_id || '_' || namespace)) != ALL($2)`
-		}
-		partitionIdentifierSQL = fmt.Sprintf(`%s, %s`, "source_id", partitionIdentifierSQL)
-	}
-
-	sqlStatement := fmt.Sprintf(`
-			SELECT
-				id,
-				status,
-				schema,
-				mergedSchema,
-				namespace,
-				workspace_id,
-				source_id,
-				destination_id,
-				destination_type,
-				start_staging_file_id,
-				end_staging_file_id,
-				start_load_file_id,
-				end_load_file_id,
-				error,
-				metadata,
-				timings->0 as firstTiming,
-				timings->-1 as lastTiming,
-				timings,
-				COALESCE(metadata->>'priority', '100')::int,
-				first_event_at,
-				last_event_at
-			FROM (
-				SELECT
-					ROW_NUMBER() OVER (PARTITION BY %s ORDER BY COALESCE(metadata->>'priority', '100')::int ASC, id ASC) AS row_number,
-					t.*
-				FROM
-					%s t
-				WHERE
-					t.destination_type = '%s' AND
-					t.in_progress=%t AND
-					t.status != '%s' AND
-					t.status != '%s' %s AND
-					COALESCE(metadata->>'nextRetryTime', NOW()::text)::timestamptz <= NOW() AND
-          			workspace_id <> ALL ($1)
-			) grouped_uploads
-			WHERE
-				grouped_uploads.row_number = 1
-			ORDER BY
-				COALESCE(metadata->>'priority', '100')::int ASC,
-				id ASC
-			LIMIT %d;
-`,
-		partitionIdentifierSQL,
-		warehouseutils.WarehouseUploadsTable,
-		wh.destType,
-		false,
-		model.ExportedData,
-		model.Aborted,
-		skipIdentifiersSQL,
-		availableWorkers,
-	)
-
-	var (
-		rows               *sql.Rows
-		err                error
-		degradedWorkspaces = tenantManager.DegradedWorkspaces()
-	)
-	if degradedWorkspaces == nil {
-		degradedWorkspaces = []string{}
-	}
-
-	if len(skipIdentifiers) > 0 {
-		rows, err = wh.dbHandle.QueryContext(
-			ctx,
-			sqlStatement,
-			pq.Array(degradedWorkspaces),
-			pq.Array(skipIdentifiers),
-		)
-	} else {
-		rows, err = wh.dbHandle.QueryContext(
-			ctx,
-			sqlStatement,
-			pq.Array(degradedWorkspaces),
-		)
-	}
-
-	if err != nil && !errors.Is(err, sql.ErrNoRows) {
-		return []*UploadJobT{}, err
-	}
-
-	if errors.Is(err, sql.ErrNoRows) {
-		return []*UploadJobT{}, nil
-	}
-	defer rows.Close()
 
 	var uploadJobs []*UploadJobT
-	for rows.Next() {
-		var (
-			upload                    Upload
-			schema                    json.RawMessage
-			mergedSchema              json.RawMessage
-			firstTiming               sql.NullString
-			lastTiming                sql.NullString
-			firstEventAt, lastEventAt sql.NullTime
-		)
-
-		err := rows.Scan(
-			&upload.ID,
-			&upload.Status,
-			&schema,
-			&mergedSchema,
-			&upload.Namespace,
-			&upload.WorkspaceID,
-			&upload.SourceID,
-			&upload.DestinationID,
-			&upload.DestinationType,
-			&upload.StartStagingFileID,
-			&upload.EndStagingFileID,
-			&upload.StartLoadFileID,
-			&upload.EndLoadFileID,
-			&upload.Error,
-			&upload.Metadata,
-			&firstTiming,
-			&lastTiming,
-			&upload.TimingsObj,
-			&upload.Priority,
-			&firstEventAt,
-			&lastEventAt,
-		)
-		if err != nil {
-			panic(fmt.Errorf("failed to scan result from query: %s\n with error : %w", sqlStatement, err))
-		}
-		upload.FirstEventAt = firstEventAt.Time
-		upload.LastEventAt = lastEventAt.Time
-		upload.UploadSchema = warehouseutils.JSONSchemaToMap(schema)
-		upload.MergedSchema = warehouseutils.JSONSchemaToMap(mergedSchema)
-
-		// TODO: replace gjson with jsoniter
-		// cloud sources info
-		upload.SourceBatchID = gjson.GetBytes(upload.Metadata, "source_batch_id").String()
-		upload.SourceTaskID = gjson.GetBytes(upload.Metadata, "source_task_id").String()
-		upload.SourceTaskRunID = gjson.GetBytes(upload.Metadata, "source_task_run_id").String()
-		upload.SourceJobID = gjson.GetBytes(upload.Metadata, "source_job_id").String()
-		upload.SourceJobRunID = gjson.GetBytes(upload.Metadata, "source_job_run_id").String()
-		// load file type
-		upload.LoadFileType = gjson.GetBytes(upload.Metadata, "load_file_type").String()
-
-		_, upload.FirstAttemptAt = warehouseutils.TimingFromJSONString(firstTiming)
-		var lastStatus string
-		lastStatus, upload.LastAttemptAt = warehouseutils.TimingFromJSONString(lastTiming)
-		upload.Attempts = gjson.Get(string(upload.Error), fmt.Sprintf(`%s.attempt`, lastStatus)).Int()
-
+	for _, upload := range uploads {
 		if upload.WorkspaceID == "" {
 			var ok bool
 			wh.workspaceBySourceIDsLock.Lock()
@@ -989,16 +779,7 @@ func (wh *HandleT) getUploadsToProcess(ctx context.Context, availableWorkers int
 			continue
 		}
 
-		upload.SourceType = warehouse.Source.SourceDefinition.Name
-		upload.SourceCategory = warehouse.Source.SourceDefinition.Category
-
-		stagingFilesList, err := wh.stagingRepo.GetInRange(
-			ctx,
-			warehouse.Source.ID,
-			warehouse.Destination.ID,
-			upload.StartStagingFileID,
-			upload.EndStagingFileID,
-		)
+		stagingFilesList, err := wh.stagingRepo.GetForUpload(ctx, upload)
 		if err != nil {
 			return nil, err
 		}
@@ -1030,9 +811,15 @@ func (wh *HandleT) getUploadsToProcess(ctx context.Context, availableWorkers int
 		uploadJobs = append(uploadJobs, &uploadJob)
 	}
 
-	if err = wh.processingStats(ctx, availableWorkers, skipIdentifiers, skipIdentifiersSQL); err != nil {
+	jobsStats, err := wh.uploadRepo.UploadJobsStats(ctx, wh.destType, repo.ProcessOptions{
+		SkipIdentifiers: skipIdentifiers,
+		SkipWorkspaces:  tenantManager.DegradedWorkspaces(),
+	})
+	if err != nil {
 		return nil, fmt.Errorf("processing stats: %w", err)
 	}
+
+	wh.processingStats(ctx, availableWorkers, jobsStats)
 
 	return uploadJobs, nil
 }
@@ -1181,8 +968,6 @@ func (wh *HandleT) Setup(whType string) {
 		BackendConfig: backendconfig.DefaultBackendConfig,
 	}
 	wh.stats = stats.Default
-	wh.Now = timeutil.Now
-	wh.NowSQL = "NOW()"
 
 	whName := warehouseutils.WHDestNameMap[whType]
 	config.RegisterIntConfigVariable(8, &wh.noOfWorkers, true, 1, fmt.Sprintf(`Warehouse.%v.noOfWorkers`, whName), "Warehouse.noOfWorkers")
