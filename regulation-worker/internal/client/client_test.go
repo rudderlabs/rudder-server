@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/client"
-	"github.com/rudderlabs/rudder-server/regulation-worker/internal/initialize"
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/model"
 	"github.com/rudderlabs/rudder-server/services/controlplane/identity"
 	"github.com/rudderlabs/rudder-server/utils/types/deployment"
@@ -18,7 +17,6 @@ import (
 )
 
 func TestGet(t *testing.T) {
-	initialize.Init()
 	tests := []struct {
 		name                      string
 		ID                        string
@@ -134,7 +132,6 @@ func TestGet(t *testing.T) {
 }
 
 func TestUpdateStatus(t *testing.T) {
-	initialize.Init()
 	tests := []struct {
 		name            string
 		workspaceID     string

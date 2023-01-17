@@ -25,9 +25,7 @@ import (
 
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	main "github.com/rudderlabs/rudder-server/regulation-worker/cmd"
-	"github.com/rudderlabs/rudder-server/regulation-worker/internal/initialize"
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/model"
-	"github.com/rudderlabs/rudder-server/services/diagnostics"
 	"github.com/rudderlabs/rudder-server/services/filemanager"
 	"github.com/rudderlabs/rudder-server/services/kvstoremanager"
 	"github.com/rudderlabs/rudder-server/utils/httputil"
@@ -139,7 +137,6 @@ func startMinioServer(t *testing.T, pool *dockertest.Pool) {
 
 func TestFlow(t *testing.T) {
 	defer blockOnHold(t)
-	initialize.Init()
 	pool, err := dockertest.NewPool("")
 	require.NoError(t, err)
 
@@ -172,7 +169,6 @@ func TestFlow(t *testing.T) {
 			status:            "pending",
 		},
 	}
-	diagnostics.Init()
 	// starting http server to mock regulation-manager
 	srv := httptest.NewServer(handler(t))
 	t.Cleanup(srv.Close)

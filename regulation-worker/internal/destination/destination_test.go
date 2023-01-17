@@ -11,7 +11,6 @@ import (
 
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/destination"
-	"github.com/rudderlabs/rudder-server/regulation-worker/internal/initialize"
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/model"
 	"github.com/rudderlabs/rudder-server/utils/pubsub"
 )
@@ -20,7 +19,6 @@ func TestDestination(t *testing.T) {
 	if testing.Verbose() {
 		require.NoError(t, os.Setenv("LOG_LEVEL", "DEBUG"))
 	}
-	initialize.Init()
 	config := map[string]interface{}{
 		"bucketName":  "malani-deletefeature-testdata",
 		"prefix":      "regulation",

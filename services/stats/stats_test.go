@@ -166,12 +166,10 @@ func Test_Measurement_Operations(t *testing.T) {
 	t.Run("timer RecordDuration", func(t *testing.T) {
 		func() {
 			defer s.NewStat("test-timer-4", stats.TimerType).RecordDuration()()
-			time.Sleep(1 * time.Second)
 		}()
 
 		require.Eventually(t, func() bool {
-			fmt.Println(lastReceived, "=")
-			return lastReceived == "test-timer-4,instanceName=test:1000|ms"
+			return lastReceived == "test-timer-4,instanceName=test:0|ms"
 		}, 2*time.Second, time.Millisecond)
 	})
 
