@@ -60,7 +60,7 @@ var _ = Describe("Stats", Ordered, func() {
 			mockMeasurement.EXPECT().Count(1).Times(1)
 
 			job = &UploadJobT{
-				upload: &model.Upload{
+				upload: model.Upload{
 					ID:                 uploadID,
 					StagingFileStartID: 1,
 					StagingFileEndID:   4,
@@ -88,7 +88,7 @@ var _ = Describe("Stats", Ordered, func() {
 		mockMeasurement.EXPECT().Since(gomock.Any()).Times(1)
 
 		job := &UploadJobT{
-			upload: &model.Upload{
+			upload: model.Upload{
 				WorkspaceID:        "workspaceID",
 				ID:                 uploadID,
 				StagingFileStartID: 1,
@@ -108,7 +108,7 @@ var _ = Describe("Stats", Ordered, func() {
 		mockMeasurement.EXPECT().SendTiming(gomock.Any()).Times(1)
 
 		job := &UploadJobT{
-			upload: &model.Upload{
+			upload: model.Upload{
 				ID:                 uploadID,
 				StagingFileStartID: 1,
 				StagingFileEndID:   4,

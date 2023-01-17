@@ -72,7 +72,7 @@ type uploadStateT struct {
 type tableNameT string
 
 type UploadJobT struct {
-	upload               *model.Upload
+	upload               model.Upload
 	dbHandle             *sql.DB
 	warehouse            warehouseutils.Warehouse
 	whManager            manager.ManagerI
@@ -280,7 +280,7 @@ func (job *UploadJobT) getTotalRowsInLoadFiles() int64 {
 }
 
 func (job *UploadJobT) matchRowsInStagingAndLoadFiles(ctx context.Context) error {
-	rowsInStagingFiles, err := repo.NewStagingFiles(dbHandle).TotalEventsForUpload(ctx, *job.upload)
+	rowsInStagingFiles, err := repo.NewStagingFiles(dbHandle).TotalEventsForUpload(ctx, job.upload)
 	if err != nil {
 		return fmt.Errorf("total rows: %w", err)
 	}
@@ -521,7 +521,7 @@ func (job *UploadJobT) run() (err error) {
 		uploadStatusOpts := UploadStatusOpts{Status: newStatus}
 		if newStatus == model.ExportedData {
 
-			rowCount, _ := repo.NewStagingFiles(dbHandle).TotalEventsForUpload(context.TODO(), *job.upload)
+			rowCount, _ := repo.NewStagingFiles(dbHandle).TotalEventsForUpload(context.TODO(), job.upload)
 
 			reportingMetric := types.PUReportedMetric{
 				ConnectionDetails: types.ConnectionDetails{
@@ -1389,7 +1389,7 @@ func (job *UploadJobT) triggerUploadNow() (err error) {
 	defer job.uploadLock.Unlock()
 	newJobState := model.Waiting
 
-	metadata := repo.ExtractUploadMetadata(*job.upload)
+	metadata := repo.ExtractUploadMetadata(job.upload)
 
 	metadata.NextRetryTime = time.Now().Add(-time.Hour * 1)
 	metadata.Retried = true
@@ -1498,7 +1498,7 @@ func (job *UploadJobT) setUploadError(statusError error, state string) (string, 
 		state = model.Aborted
 	}
 
-	metadata := repo.ExtractUploadMetadata(*job.upload)
+	metadata := repo.ExtractUploadMetadata(job.upload)
 
 	metadata.NextRetryTime = timeutil.Now().Add(DurationBeforeNextAttempt(upload.Attempts + 1))
 	metadataJSON, err := json.Marshal(metadata)
@@ -1525,7 +1525,7 @@ func (job *UploadJobT) setUploadError(statusError error, state string) (string, 
 		return "", fmt.Errorf("unable to change upload columns: %w", err)
 	}
 
-	inputCount, _ := repo.NewStagingFiles(dbHandle).TotalEventsForUpload(context.TODO(), *upload)
+	inputCount, _ := repo.NewStagingFiles(dbHandle).TotalEventsForUpload(context.TODO(), upload)
 	outputCount, _ := job.getTotalEventsUploaded(false)
 	failCount := inputCount - outputCount
 	reportingStatus := jobsdb.Failed.State
@@ -1714,7 +1714,7 @@ func (job *UploadJobT) getLoadFilesTableMap() (loadFilesMap map[tableNameT]bool,
 
 func (job *UploadJobT) destinationRevisionIDMap() (revisionIDMap map[string]backendconfig.DestinationT, err error) {
 	revisionIDMap = make(map[string]backendconfig.DestinationT)
-	revisionIDs, err := repo.NewStagingFiles(dbHandle).DestinationRevisionIDs(context.TODO(), *job.upload)
+	revisionIDs, err := repo.NewStagingFiles(dbHandle).DestinationRevisionIDs(context.TODO(), job.upload)
 	if err != nil {
 		return
 	}

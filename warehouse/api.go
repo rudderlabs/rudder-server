@@ -398,7 +398,7 @@ func (uploadReq UploadReqT) TriggerWHUpload() (response *proto.TriggerWhUploadsR
 		return
 	}
 
-	uploadJobT.upload = &upload
+	uploadJobT.upload = upload
 	uploadJobT.dbHandle = uploadReq.API.dbHandle
 	err = uploadJobT.triggerUploadNow()
 	if err != nil {

@@ -74,7 +74,7 @@ var _ = Describe("TableUpload", func() {
 			It("Create table upload", func() {
 				err = tu.updateTableEventsCount(&UploadJobT{
 					stagingFileIDs: stagingFileIDs,
-					upload: &model.Upload{
+					upload: model.Upload{
 						ID: uploadID,
 					},
 					dbHandle: pgResource.DB,
@@ -109,7 +109,7 @@ var _ = Describe("TableUpload", func() {
 
 				BeforeEach(func() {
 					job = &UploadJobT{
-						upload: &model.Upload{
+						upload: model.Upload{
 							ID: uploadID,
 						},
 						warehouse: warehouseutils.Warehouse{

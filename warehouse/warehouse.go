@@ -769,7 +769,7 @@ func (wh *HandleT) getUploadsToProcess(ctx context.Context, availableWorkers int
 
 		if !ok {
 			uploadJob := UploadJobT{
-				upload:   &upload,
+				upload:   upload,
 				dbHandle: wh.dbHandle,
 				stats:    wh.stats,
 			}
@@ -797,7 +797,7 @@ func (wh *HandleT) getUploadsToProcess(ctx context.Context, availableWorkers int
 		}
 
 		uploadJob := UploadJobT{
-			upload:               &upload,
+			upload:               upload,
 			stagingFiles:         stagingFileListPtr,
 			stagingFileIDs:       stagingFileIDs,
 			warehouse:            warehouse,

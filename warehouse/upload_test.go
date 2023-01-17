@@ -132,7 +132,7 @@ func TestColumnCountStat(t *testing.T) {
 			}
 
 			j := UploadJobT{
-				upload: &model.Upload{
+				upload: model.Upload{
 					WorkspaceID:   workspaceID,
 					DestinationID: destinationID,
 					SourceID:      sourceID,
@@ -234,7 +234,7 @@ var _ = Describe("Upload", Ordered, func() {
 					Name: destinationName,
 				},
 			},
-			upload: &model.Upload{
+			upload: model.Upload{
 				ID:                 1,
 				DestinationID:      destinationID,
 				SourceID:           sourceID,
@@ -253,7 +253,7 @@ var _ = Describe("Upload", Ordered, func() {
 	})
 
 	It("Total rows in staging files", func() {
-		count, err := repo.NewStagingFiles(pgResource.DB).TotalEventsForUpload(context.TODO(), *job.upload)
+		count, err := repo.NewStagingFiles(pgResource.DB).TotalEventsForUpload(context.TODO(), job.upload)
 		Expect(err).To(BeNil())
 		Expect(count).To(BeEquivalentTo(5))
 	})

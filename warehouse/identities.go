@@ -420,7 +420,7 @@ func (wh *HandleT) populateHistoricIdentities(warehouse warehouseutils.Warehouse
 		}
 
 		job := UploadJobT{
-			upload:               &upload,
+			upload:               upload,
 			warehouse:            warehouse,
 			whManager:            whManager,
 			dbHandle:             wh.dbHandle,

@@ -119,7 +119,7 @@ func (job *UploadJobT) generateUploadSuccessMetrics() {
 	job.counterStat("total_rows_synced").Count(int(numUploadedEvents))
 
 	// Total staged events in the upload
-	numStagedEvents, err := repo.NewStagingFiles(dbHandle).TotalEventsForUpload(context.TODO(), *job.upload)
+	numStagedEvents, err := repo.NewStagingFiles(dbHandle).TotalEventsForUpload(context.TODO(), job.upload)
 	if err != nil {
 		pkgLogger.Errorf("[WH]: Failed to generate stage metrics: %s, Err: %v", job.warehouse.Identifier, err)
 		return
@@ -142,7 +142,7 @@ func (job *UploadJobT) generateUploadAbortedMetrics() {
 	job.counterStat("total_rows_synced").Count(int(numUploadedEvents))
 
 	// Total staged events in the upload
-	numStagedEvents, err := repo.NewStagingFiles(dbHandle).TotalEventsForUpload(context.TODO(), *job.upload)
+	numStagedEvents, err := repo.NewStagingFiles(dbHandle).TotalEventsForUpload(context.TODO(), job.upload)
 	if err != nil {
 		pkgLogger.Errorf("[WH]: Failed to generate stage metrics: %s, Err: %v", job.warehouse.Identifier, err)
 		return
@@ -186,7 +186,7 @@ func (job *UploadJobT) recordTableLoad(tableName string, numEvents int64) {
 		value: strings.ToLower(tableName),
 	}).Count(int(numEvents))
 	// Delay for the oldest event in the batch
-	firstEventAt, err := repo.NewStagingFiles(dbHandle).FirstEventForUpload(context.TODO(), *job.upload)
+	firstEventAt, err := repo.NewStagingFiles(dbHandle).FirstEventForUpload(context.TODO(), job.upload)
 	if err != nil {
 		pkgLogger.Errorf("[WH]: Failed to generate delay metrics: %s, Err: %v", job.warehouse.Identifier, err)
 		return
