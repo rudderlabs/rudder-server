@@ -204,7 +204,7 @@ func (t *Stats) GetRouterPickupJobs(destType string, noOfWorkers int, routerTime
 	t.routerLatencyMutex.RLock()
 	defer t.routerLatencyMutex.RUnlock()
 
-	workspacesWithJobs := getWorkspacesWithPendingJobs(destType, t.routerTenantLatencyStat[destType])
+	workspacesWithJobs := getWorkspacesWithPendingJobs(destType)
 	boostedRouterTimeOut := getBoostedRouterTimeOut(routerTimeOut)
 	// TODO: Also while allocating jobs to router workers, we need to assign so that sum of assigned jobs latency equals the timeout
 
@@ -317,14 +317,25 @@ func (t *Stats) getLastDrainedTimestamp(workspaceKey, destType string) time.Time
 	return lastDrainedTS
 }
 
-func getWorkspacesWithPendingJobs(destType string, latencyMap map[string]metric.MovingAverage) []string {
+func getWorkspacesWithPendingJobs(destType string) []string {
 	workspacesWithJobs := make([]string, 0)
-	for workspaceKey := range latencyMap {
-		val := rmetrics.PendingEvents("rt", workspaceKey, destType).IntValue()
-		if val > 0 {
-			workspacesWithJobs = append(workspacesWithJobs, workspaceKey)
-		} else if val < 0 {
-			pkgLogger.Errorf("ws: %s, val: %d", workspaceKey, val)
+	routerPendingEvents := metric.Instance.
+		GetRegistry(metric.PublishedMetrics).
+		GetMetricsByName(fmt.Sprintf(rmetrics.JobsdbPendingEventsCount, "rt"))
+	for _, metricValueWithTag := range routerPendingEvents {
+		if metricValueWithTag.Tags["destType"] == destType {
+			workspace := metricValueWithTag.Tags["workspace"]
+			count := metricValueWithTag.Value.(metric.Gauge).IntValue()
+			if count > 0 {
+				if workspace != rmetrics.All {
+					workspacesWithJobs = append(
+						workspacesWithJobs,
+						workspace,
+					)
+				}
+			} else if count < 0 {
+				pkgLogger.Errorf("ws: %s, val: %d", workspace, count)
+			}
 		}
 	}
 	return workspacesWithJobs
