@@ -32,6 +32,12 @@ type EventUploadBatchT struct {
 	Batch      []EventUploadT
 }
 
+type SourceDebugger interface {
+	Start(backendConfig backendconfig.BackendConfig)
+	RecordEvent(writeKey string, eventBatch []byte) bool
+	Stop()
+}
+
 type Opt func(*Handle)
 
 var WithDisableEventUploads = func(disableEventUploads bool) func(h *Handle) {
@@ -57,35 +63,13 @@ type Handle struct {
 	done        chan struct{}
 }
 
-func NewHandle(opts ...Opt) *Handle {
+func NewHandle(opts ...Opt) (SourceDebugger, error) {
 	h := &Handle{
 		configBackendURL: config.GetString("CONFIG_BACKEND_URL", "https://api.rudderstack.com"),
 		log:              logger.NewLogger().Child("debugger").Child("source"),
 	}
 
 	config.RegisterBoolConfigVariable(false, &h.disableEventUploads, true, "SourceDebugger.disableEventUploads")
-	for _, opt := range opts {
-		opt(h)
-	}
-	return h
-}
-
-var _instance = NewHandle()
-
-func Start(backendConfig backendconfig.BackendConfig) {
-	_instance.Start(backendConfig)
-}
-
-func Stop() {
-	_instance.Stop()
-}
-
-func RecordEvent(writeKey string, eventBatch []byte) bool {
-	return _instance.RecordEvent(writeKey, eventBatch)
-}
-
-// Start initializes this module
-func (h *Handle) Start(backendConfig backendconfig.BackendConfig) {
 	url := fmt.Sprintf("%s/dataplane/v2/eventUploads", h.configBackendURL)
 	eventUploader := NewEventUploader(h.log)
 	h.uploader = debugger.New[*GatewayEventBatchT](url, eventUploader)
@@ -93,7 +77,14 @@ func (h *Handle) Start(backendConfig backendconfig.BackendConfig) {
 
 	cacheType := cache.CacheType(config.GetInt("SourceDebugger.cacheType", int(cache.BadgerCacheType)))
 	h.eventsCache = cache.New[[]byte](cacheType, "source", h.log)
+	for _, opt := range opts {
+		opt(h)
+	}
+	return h, nil
+}
 
+// Start initializes this module
+func (h *Handle) Start(backendConfig backendconfig.BackendConfig) {
 	ctx, cancel := context.WithCancel(context.Background())
 	h.ctx = ctx
 	h.cancel = cancel
@@ -238,4 +229,20 @@ func (e *EventUploader) Transform(eventBuffer []*GatewayEventBatchT) ([]byte, er
 	}
 
 	return rawJSON, nil
+}
+
+func NewNoOpService() SourceDebugger {
+	return &noopService{}
+}
+
+type noopService struct{}
+
+func (*noopService) Start(_ backendconfig.BackendConfig) {
+	return
+}
+func (*noopService) RecordEvent(_ string, _ []byte) bool {
+	return false
+}
+func (*noopService) Stop() {
+	return
 }

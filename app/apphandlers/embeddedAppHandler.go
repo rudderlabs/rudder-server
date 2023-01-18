@@ -116,8 +116,12 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 	defer transformationdebugger.Stop()
 	destinationdebugger.Start(backendconfig.DefaultBackendConfig)
 	defer destinationdebugger.Stop()
-	sourcedebugger.Start(backendconfig.DefaultBackendConfig)
-	defer sourcedebugger.Stop()
+	sourceHandle, err := sourcedebugger.NewHandle()
+	sourceHandle.Start(backendconfig.DefaultBackendConfig)
+	if err != nil {
+		return err
+	}
+	defer sourceHandle.Stop()
 
 	reportingI := a.app.Features().Reporting.GetReportingInstance()
 	transientSources := transientsource.NewService(ctx, backendconfig.DefaultBackendConfig)
@@ -262,7 +266,7 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 	err = gw.Setup(
 		ctx,
 		a.app, backendconfig.DefaultBackendConfig, gatewayDB,
-		&rateLimiter, a.versionHandler, rsourcesService,
+		&rateLimiter, a.versionHandler, rsourcesService, sourceHandle,
 	)
 	if err != nil {
 		return fmt.Errorf("could not setup gateway: %w", err)

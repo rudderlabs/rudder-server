@@ -190,6 +190,7 @@ type HandleT struct {
 	backgroundCancel      context.CancelFunc
 	backgroundWait        func() error
 	rsourcesService       rsources.JobService
+	sourcehandle          sourcedebugger.SourceDebugger
 	whProxy               http.Handler
 }
 
@@ -493,7 +494,7 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 		}
 		// Sending events to config backend
 		for _, eventBatch := range eventBatchesToRecord {
-			sourcedebugger.RecordEvent(eventBatch.writeKey, eventBatch.data)
+			gateway.sourcehandle.RecordEvent(eventBatch.writeKey, eventBatch.data)
 		}
 
 		userWebRequestWorker.batchTimeStat.Since(batchStart)
@@ -1355,13 +1356,14 @@ func (gateway *HandleT) Setup(
 	ctx context.Context,
 	application app.App, backendConfig backendconfig.BackendConfig, jobsDB jobsdb.JobsDB,
 	rateLimiter ratelimiter.RateLimiter, versionHandler func(w http.ResponseWriter, r *http.Request),
-	rsourcesService rsources.JobService,
+	rsourcesService rsources.JobService, sourcehandle sourcedebugger.SourceDebugger,
 ) error {
 	gateway.logger = pkgLogger
 	gateway.application = application
 	gateway.stats = stats.Default
 
 	gateway.rsourcesService = rsourcesService
+	gateway.sourcehandle = sourcehandle
 
 	gateway.diagnosisTicker = time.NewTicker(diagnosisTickerTime)
 	config.RegisterDurationConfigVariable(30, &gateway.httpTimeout, false, time.Second, "Gateway.httpTimeout")

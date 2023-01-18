@@ -30,6 +30,12 @@ type DeliveryStatusT struct {
 
 type Opt func(*Handle)
 
+type DestinationDebugger interface {
+	RecordEventDeliveryStatus(destinationID string, deliveryStatus *DeliveryStatusT) bool
+	HasUploadEnabled(destID string) bool
+	Stop()
+}
+
 type Handle struct {
 	configBackendURL                  string
 	log                               logger.Logger

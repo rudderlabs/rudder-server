@@ -77,8 +77,12 @@ func (a *gatewayApp) StartRudderCore(ctx context.Context, options *app.Options) 
 	a.log.Infof("Configured deployment type: %q", deploymentType)
 	a.log.Info("Clearing DB ", options.ClearDB)
 
-	sourcedebugger.Start(backendconfig.DefaultBackendConfig)
-	defer sourcedebugger.Stop()
+	sourceHandle, err := sourcedebugger.NewHandle()
+	sourceHandle.Start(backendconfig.DefaultBackendConfig)
+	if err != nil {
+		return err
+	}
+	defer sourceHandle.Stop()
 
 	fileUploaderProvider := fileuploader.NewProvider(ctx, backendconfig.DefaultBackendConfig)
 
@@ -134,7 +138,7 @@ func (a *gatewayApp) StartRudderCore(ctx context.Context, options *app.Options) 
 	err = gw.Setup(
 		ctx,
 		a.app, backendconfig.DefaultBackendConfig, gatewayDB,
-		&rateLimiter, a.versionHandler, rsourcesService,
+		&rateLimiter, a.versionHandler, rsourcesService, sourceHandle,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to setup gateway: %w", err)
