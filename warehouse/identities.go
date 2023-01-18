@@ -7,7 +7,6 @@ import (
 	"sync"
 
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
-	"github.com/rudderlabs/rudder-server/warehouse/validations"
 
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/rruntime"
@@ -420,15 +419,10 @@ func (wh *HandleT) populateHistoricIdentities(warehouse warehouseutils.Warehouse
 			panic(err)
 		}
 
-		job := UploadJobT{
-			upload:               &upload,
-			warehouse:            warehouse,
-			whManager:            whManager,
-			dbHandle:             wh.dbHandle,
-			pgNotifier:           &wh.notifier,
-			destinationValidator: validations.NewDestinationValidator(),
-			stats:                stats.Default,
-		}
+		job := wh.uploadJobFactory.NewUploadJob(&model.UploadJob{
+			Upload:    model.Upload(upload),
+			Warehouse: warehouse,
+		}, whManager)
 
 		tableUploadsCreated := areTableUploadsCreated(job.upload.ID)
 		if !tableUploadsCreated {
@@ -439,7 +433,7 @@ func (wh *HandleT) populateHistoricIdentities(warehouse warehouseutils.Warehouse
 			}
 		}
 
-		err = whManager.Setup(job.warehouse, &job)
+		err = whManager.Setup(job.warehouse, job)
 		if err != nil {
 			job.setUploadError(err, model.Aborted)
 			return
