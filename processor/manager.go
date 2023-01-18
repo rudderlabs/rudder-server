@@ -123,18 +123,13 @@ func WithAdaptiveLimit(adaptiveLimitFunction func(int64) int64) Opts {
 }
 func (proc *Handle) cleanUpRetiredJobs(ctx context.Context) {
 	ch := proc.backendConfig.Subscribe(ctx, backendconfig.TopicProcessConfig)
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case data := <-ch:
-			config := data.Data.(map[string]backendconfig.ConfigT)
-			workspaceMap := make(map[string]struct{})
-			for workspace := range config {
-				workspaceMap[workspace] = struct{}{}
-			}
-			proc.doCleanupRetiredJobs(ctx, workspaceMap)
+	for data := range ch {
+		config := data.Data.(map[string]backendconfig.ConfigT)
+		workspaceMap := make(map[string]struct{})
+		for workspace := range config {
+			workspaceMap[workspace] = struct{}{}
 		}
+		proc.doCleanupRetiredJobs(ctx, workspaceMap)
 	}
 }
 

@@ -223,7 +223,7 @@ func TestProcessorManager(t *testing.T) {
 				close(ch)
 				return ch
 			},
-		)
+		).AnyTimes()
 		mockBackendConfig.EXPECT().WaitForConfig(gomock.Any()).Times(1)
 		mockTransformer.EXPECT().Setup().Times(1).Do(func() {
 			processor.Handle.transformerFeatures = json.RawMessage(defaultTransformerFeatures)
@@ -260,7 +260,7 @@ func TestProcessorManager(t *testing.T) {
 				close(ch)
 				return ch
 			},
-		)
+		).AnyTimes()
 
 		mockBackendConfig.EXPECT().WaitForConfig(gomock.Any()).Times(1)
 		mockTransformer.EXPECT().Setup().Times(1).Do(func() {

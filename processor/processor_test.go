@@ -80,7 +80,7 @@ func (c *testContext) Setup() {
 			ch <- pubsub.DataEvent{Data: map[string]backendconfig.ConfigT{sampleWorkspaceID: sampleBackendConfig}, Topic: string(topic)}
 			close(ch)
 			return ch
-		})
+		}).AnyTimes()
 	c.dbReadBatchSize = 10000
 	c.processEventSize = 10000
 	c.MockReportingI = mockReportingTypes.NewMockReportingI(c.mockCtrl)
