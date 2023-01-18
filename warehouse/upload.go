@@ -1223,8 +1223,11 @@ func (job *UploadJobT) processLoadTableResponse(errorMap map[string]error) (erro
 
 // getUploadTimings returns timings json column
 // e.g. timings: [{exporting_data: 2020-04-21 15:16:19.687716, exported_data: 2020-04-21 15:26:34.344356}]
-func (job *UploadJobT) getUploadTimings() (timings model.Timings) {
-	var rawJSON json.RawMessage
+func (job *UploadJobT) getUploadTimings() (model.Timings, error) {
+	var (
+		rawJSON json.RawMessage
+		timings model.Timings
+	)
 	sqlStatement := fmt.Sprintf(`
 		SELECT
 		  timings
@@ -1238,16 +1241,24 @@ func (job *UploadJobT) getUploadTimings() (timings model.Timings) {
 	)
 	err := job.dbHandle.QueryRow(sqlStatement).Scan(&rawJSON)
 	if err != nil {
-		return
+		return timings, err
 	}
-	json.Unmarshal(rawJSON, &timings)
-	return
+
+	err = json.Unmarshal(rawJSON, &timings)
+	if err != nil {
+		return timings, err
+	}
+
+	return timings, nil
 }
 
 // getNewTimings appends current status with current time to timings column
 // e.g. status: exported_data, timings: [{exporting_data: 2020-04-21 15:16:19.687716] -> [{exporting_data: 2020-04-21 15:16:19.687716, exported_data: 2020-04-21 15:26:34.344356}]
 func (job *UploadJobT) getNewTimings(status string) ([]byte, model.Timings) {
-	timings := job.getUploadTimings()
+	timings, err := job.getUploadTimings()
+	if err != nil {
+		pkgLogger.Error("error getting timing, scrapping them", err)
+	}
 	timing := map[string]time.Time{status: timeutil.Now()}
 	timings = append(timings, timing)
 	marshalledTimings, err := json.Marshal(timings)
