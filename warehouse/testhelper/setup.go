@@ -487,6 +487,7 @@ func verifyAsyncJob(t testing.TB, wareHouseTest *WareHouseTest) {
 	t.Helper()
 	t.Logf("Started verifying async job")
 
+	workspaceID := "BpLnfgDsc2WD8F2qNfHK5a84jjJ"
 	asyncPayload := strings.NewReader(
 		fmt.Sprintf(
 			AsyncWhPayload,
@@ -495,6 +496,7 @@ func verifyAsyncJob(t testing.TB, wareHouseTest *WareHouseTest) {
 			wareHouseTest.TaskRunID,
 			wareHouseTest.DestinationID,
 			time.Now().UTC().Format("2006-01-02 15:04:05"),
+			workspaceID,
 		),
 	)
 	t.Logf("Run async job for sourceID: %s, DestinationID: %s, jobRunID: %s, taskRunID: %s",
@@ -507,11 +509,12 @@ func verifyAsyncJob(t testing.TB, wareHouseTest *WareHouseTest) {
 	send(t, asyncPayload, "warehouse/jobs", wareHouseTest.WriteKey, "POST")
 
 	var (
-		path = fmt.Sprintf("warehouse/jobs/status?job_run_id=%s&task_run_id=%s&source_id=%s&destination_id=%s",
+		path = fmt.Sprintf("warehouse/jobs/status?job_run_id=%s&task_run_id=%s&source_id=%s&destination_id=%s&workspace_id=%s",
 			wareHouseTest.JobRunID,
 			wareHouseTest.TaskRunID,
 			wareHouseTest.SourceID,
 			wareHouseTest.DestinationID,
+			workspaceID,
 		)
 		url        = fmt.Sprintf("http://localhost:%s/v1/%s", "8080", path)
 		method     = "GET"
