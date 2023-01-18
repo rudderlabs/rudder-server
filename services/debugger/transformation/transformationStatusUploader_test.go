@@ -225,7 +225,8 @@ var _ = Describe("eventDeliveryStatusUploader", func() {
 		BeforeEach(func() {
 			config.Reset()
 			config.Set("RUDDER_TMPDIR", path.Join(GinkgoT().TempDir(), rand.String(10)))
-			h = transformationdebugger.NewHandle(transformationdebugger.WithDisableTransformationStatusUploads(false))
+			h, err := transformationdebugger.NewHandle(transformationdebugger.WithDisableTransformationStatusUploads(false))
+			Expect(err).To(BeNil())
 			h.Start(c.mockBackendConfig)
 		})
 
@@ -235,7 +236,8 @@ var _ = Describe("eventDeliveryStatusUploader", func() {
 
 		It("returns false if disableEventDeliveryStatusUploads is true", func() {
 			h.Stop()
-			h := transformationdebugger.NewHandle(transformationdebugger.WithDisableTransformationStatusUploads(true))
+			h, err := transformationdebugger.NewHandle(transformationdebugger.WithDisableTransformationStatusUploads(true))
+			Expect(err).To(BeNil())
 			h.Start(c.mockBackendConfig)
 			Expect(h.UploadTransformationStatus(&transformationdebugger.TransformationStatusT{})).To(BeFalse())
 		})
@@ -271,7 +273,8 @@ var _ = Describe("eventDeliveryStatusUploader", func() {
 			config.Reset()
 			config.Set("RUDDER_TMPDIR", path.Join(GinkgoT().TempDir(), rand.String(10)))
 			config.Set("TransformationDebugger.cacheType", 0)
-			h = transformationdebugger.NewHandle(transformationdebugger.WithDisableTransformationStatusUploads(false))
+			h, err := transformationdebugger.NewHandle(transformationdebugger.WithDisableTransformationStatusUploads(false))
+			Expect(err).To(BeNil())
 			h.Start(c.mockBackendConfig)
 		})
 
@@ -281,7 +284,8 @@ var _ = Describe("eventDeliveryStatusUploader", func() {
 
 		It("returns false if disableEventDeliveryStatusUploads is true", func() {
 			h.Stop()
-			h := transformationdebugger.NewHandle(transformationdebugger.WithDisableTransformationStatusUploads(true))
+			h, err := transformationdebugger.NewHandle(transformationdebugger.WithDisableTransformationStatusUploads(true))
+			Expect(err).To(BeNil())
 			h.Start(c.mockBackendConfig)
 			Expect(h.UploadTransformationStatus(&transformationdebugger.TransformationStatusT{})).To(BeFalse())
 		})

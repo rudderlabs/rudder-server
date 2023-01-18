@@ -124,8 +124,12 @@ func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options
 
 	a.log.Info("Clearing DB ", options.ClearDB)
 
-	transformationdebugger.Start(backendconfig.DefaultBackendConfig)
-	defer transformationdebugger.Stop()
+	transformationhandle, err := transformationdebugger.NewHandle()
+	if err != nil {
+		return err
+	}
+	transformationhandle.Start(backendconfig.DefaultBackendConfig)
+	defer transformationhandle.Stop()
 	destinationHandle, err := destinationdebugger.NewHandle()
 	if err != nil {
 		return err
@@ -215,7 +219,7 @@ func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options
 		return fmt.Errorf("unsupported deployment type: %q", deploymentType)
 	}
 
-	p := proc.New(ctx, &options.ClearDB, gwDBForProcessor, routerDB, batchRouterDB, errDB, multitenantStats, reportingI, transientSources, fileUploaderProvider, rsourcesService, destinationHandle)
+	p := proc.New(ctx, &options.ClearDB, gwDBForProcessor, routerDB, batchRouterDB, errDB, multitenantStats, reportingI, transientSources, fileUploaderProvider, rsourcesService, destinationHandle, transformationhandle)
 	throttlerFactory, err := throttler.New(stats.Default)
 	if err != nil {
 		return fmt.Errorf("failed to create throttler factory: %w", err)

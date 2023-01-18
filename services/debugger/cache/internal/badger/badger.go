@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"path"
-	"sync"
 	"time"
 
 	"github.com/dgraph-io/badger/v3"
@@ -36,15 +35,14 @@ type Cache[E any] struct {
 	limiter      int
 	retries      int
 	path         string
-	Origin       string
+	origin       string
 	done         chan struct{}
 	closed       chan struct{}
 	ticker       time.Duration
 	queryTimeout time.Duration
 	cleanupFreq  time.Duration // TTL time on badgerDB
-	once         sync.Once
 	db           *badger.DB
-	Logger       logger.Logger
+	logger       logger.Logger
 }
 
 type badgerLogger struct {
@@ -61,26 +59,27 @@ func (badgerLogger) Warningf(format string, a ...interface{}) {
 
 // Update writes the entries into badger db with a TTL
 func (e *Cache[E]) Update(key string, value E) error {
-	e.Init()
 	txn := e.db.NewTransaction(true)
 	res, err := txn.Get([]byte(key))
-	if err != nil {
+	if err != nil && err != badger.ErrKeyNotFound {
 		return err
+	}
+	var valCopy []byte
+	var values []E
+	if res != nil {
+		err = res.Value(func(val []byte) error {
+			valCopy = append([]byte{}, val...)
+			return nil
+		})
+		if err != nil {
+			return err
+		}
+		err = json.Unmarshal(valCopy, &values)
+		if err != nil {
+			return err
+		}
 	}
 
-	var valCopy []byte
-	err = res.Value(func(val []byte) error {
-		valCopy = append([]byte{}, val...)
-		return nil
-	})
-	if err != nil {
-		return err
-	}
-	var values []E
-	err = json.Unmarshal(valCopy, &values)
-	if err != nil {
-		return err
-	}
 	if len(values) >= e.limiter {
 		values = values[len(values)-e.limiter+1:]
 	}
@@ -106,7 +105,6 @@ func (e *Cache[E]) Update(key string, value E) error {
 
 // Read fetches all the entries for a given key from badgerDB
 func (e *Cache[E]) Read(key string) ([]E, error) {
-	e.Init()
 	var values []E
 	err := e.db.View(func(txn *badger.Txn) error {
 		item, err := txn.Get([]byte(key))
@@ -127,43 +125,45 @@ func (e *Cache[E]) Read(key string) ([]E, error) {
 		}
 		return nil
 	})
-	if err != nil {
+	if err != nil && err != badger.ErrKeyNotFound {
 		return nil, err
 	}
 	return values, nil
 }
 
-func (e *Cache[E]) Init() {
-	e.once.Do(func() {
-		e.loadCacheConfig()
-		badgerPathName := e.Origin + "/cache/badgerdbv3"
-		tmpDirPath, err := misc.CreateTMPDIR()
-		if err != nil {
-			e.Logger.Errorf("Unable to create tmp directory: %v", err)
-			return
-		}
-		storagePath := path.Join(tmpDirPath, badgerPathName)
-		e.path = storagePath
-		e.done = make(chan struct{})
-		e.closed = make(chan struct{})
-		opts := badger.
-			DefaultOptions(storagePath).
-			WithLogger(badgerLogger{e.Logger}).
-			WithCompression(options.None).
-			WithIndexCacheSize(16 << 20). // 16mb
-			WithNumGoroutines(1).
-			WithNumMemtables(0).
-			WithBlockCacheSize(0)
+func New[E any](origin string, logger logger.Logger) (*Cache[E], error) {
+	e := Cache[E]{}
+	e.origin = origin
+	e.logger = logger
+	e.loadCacheConfig()
+	badgerPathName := e.origin + "/cache/badgerdbv3"
+	tmpDirPath, err := misc.CreateTMPDIR()
+	if err != nil {
+		e.logger.Errorf("Unable to create tmp directory: %v", err)
+		return &Cache[E]{}, err
+	}
+	storagePath := path.Join(tmpDirPath, badgerPathName)
+	e.path = storagePath
+	e.done = make(chan struct{})
+	e.closed = make(chan struct{})
+	opts := badger.
+		DefaultOptions(storagePath).
+		WithLogger(badgerLogger{e.logger}).
+		WithCompression(options.None).
+		WithIndexCacheSize(16 << 20). // 16mb
+		WithNumGoroutines(1).
+		WithNumMemtables(0).
+		WithBlockCacheSize(0)
 
-		e.db, err = badger.Open(opts)
-		if err != nil {
-			e.Logger.Errorf("Error while opening badgerDB: %v", err)
-			return
-		}
-		rruntime.Go(func() {
-			e.gcBadgerDB()
-		})
+	e.db, err = badger.Open(opts)
+	if err != nil {
+		e.logger.Errorf("Error while opening badgerDB: %v", err)
+		return &Cache[E]{}, err
+	}
+	rruntime.Go(func() {
+		e.gcBadgerDB()
 	})
+	return &e, nil
 }
 
 func (e *Cache[E]) gcBadgerDB() {
@@ -188,7 +188,6 @@ func (e *Cache[E]) gcBadgerDB() {
 }
 
 func (e *Cache[E]) Stop() error {
-	e.Init()
 	close(e.done)
 	<-e.closed
 	if e.db == nil {

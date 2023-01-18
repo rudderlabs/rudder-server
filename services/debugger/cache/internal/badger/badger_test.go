@@ -10,21 +10,23 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-var _ = Describe("cache", Ordered, func() {
+var _ = Describe("cache", func() {
 	Context("cache testing", func() {
 		testKey := "test_key"
 		testValue1 := []byte("test_value1")
 		testValue2 := []byte("test_value2")
-		e := Cache[[]byte]{Origin: "test", Logger: logger.NewLogger()}
+		var e *Cache[[]byte]
+		var err error
 
-		BeforeAll(func() {
+		BeforeEach(func() {
 			misc.Init()
 			GinkgoT().Setenv("RSERVER_LIVE_EVENT_CACHE_CLEAR_FREQ", "1")
 			GinkgoT().Setenv("RSERVER_LIVE_EVENT_CACHE_GCTIME", "1s")
-			e.Init()
+			e, err = New[[]byte]("test", logger.NewLogger())
+			Expect(err).To(BeNil())
 		})
 
-		AfterAll(func() {
+		AfterEach(func() {
 			_ = e.Stop()
 		})
 
@@ -37,11 +39,11 @@ var _ = Describe("cache", Ordered, func() {
 			Expect(e.Update(testKey, testValue1)).To(BeNil())
 			val, err := e.Read(testKey)
 			Expect(len(val)).To(Equal(1))
-			Expect(err).NotTo(BeNil())
+			Expect(err).To(BeNil())
 			Expect(val[0]).To(Equal(testValue1))
 			Eventually(func() int {
 				val, err := e.Read(testKey)
-				Expect(err).ToNot(BeNil())
+				Expect(err).To(BeNil())
 				return len(val)
 			}, 6*time.Second).Should(Equal(0))
 		})
@@ -51,11 +53,11 @@ var _ = Describe("cache", Ordered, func() {
 			Expect(e.Update(testKey, testValue2)).To(BeNil())
 			v, err := e.Read(testKey)
 			Expect(len(v)).To(Equal(2))
-			Expect(err).NotTo(BeNil())
+			Expect(err).To(BeNil())
 			assert.ElementsMatch(GinkgoT(), v, [][]byte{testValue1, testValue2})
 			Eventually(func() int {
 				val, err := e.Read(testKey)
-				Expect(err).ToNot(BeNil())
+				Expect(err).To(BeNil())
 				return len(val)
 			}, 6*time.Second).Should(Equal(0))
 		})

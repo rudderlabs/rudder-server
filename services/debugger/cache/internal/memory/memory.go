@@ -39,41 +39,40 @@ type Cache[E any] struct {
 	cleanupFreq time.Duration // This is the time at which a cleaner goroutines  checks whether the data is expired in cache
 	size        int           // This is the size upto which this cache can store a value corresponding to any key
 	cacheMap    map[string]*cacheItem[E]
-	once        sync.Once
 	Origin      string
 }
 
 /*
-This method initiates the cache object. To initiate, this sets certain properties of the cache like keyTTL,
+New method initiates the cache object. To initiate, this sets certain properties of the cache like keyTTL,
 cleanupFreq, size, empty cacheMap
 */
-func (c *Cache[E]) init() {
-	c.once.Do(func() {
-		c.loadCacheConfig()
-		c.cacheMap = make(map[string]*cacheItem[E], c.size)
+func New[E any]() (*Cache[E], error) {
+	c := Cache[E]{}
+	c.loadCacheConfig()
+	c.cacheMap = make(map[string]*cacheItem[E], c.size)
 
-		go func() {
-			for {
-				time.Sleep(c.cleanupFreq)
-				now := time.Now()
-				expThreshold := now.Add(-c.keyTTL)
-				c.lock.Lock()
-				for k, v := range c.cacheMap {
-					if v.lastAccess.Before(expThreshold) {
-						delete(c.cacheMap, k)
-					}
+	go func() {
+		for {
+			time.Sleep(c.cleanupFreq)
+			now := time.Now()
+			expThreshold := now.Add(-c.keyTTL)
+			c.lock.Lock()
+			for k, v := range c.cacheMap {
+				if v.lastAccess.Before(expThreshold) {
+					delete(c.cacheMap, k)
 				}
-				c.lock.Unlock()
 			}
-		}()
-	})
+			c.lock.Unlock()
+		}
+	}()
+
+	return &c, nil
 }
 
 /*
 Update Inserts the data in the cache, This method expects a string as a key and []byte as the data
 */
 func (c *Cache[E]) Update(key string, value E) error {
-	c.init()
 	c.lock.Lock()
 	defer c.lock.Unlock()
 
@@ -97,7 +96,6 @@ if there is any data available corresponding to the given key then it removes th
 in the form of []byte
 */
 func (c *Cache[E]) Read(key string) ([]E, error) {
-	c.init()
 	var historicEventsDelivery []E
 	c.lock.Lock()
 	if deliveryStatus, ok := c.cacheMap[key]; ok {

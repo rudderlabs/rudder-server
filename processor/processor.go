@@ -82,7 +82,8 @@ type HandleT struct {
 	transientSources          transientsource.Service
 	fileuploader              fileuploader.Provider
 	rsourcesService           rsources.JobService
-	debugger                  destinationdebugger.DestinationDebugger
+	destDebugger              destinationdebugger.DestinationDebugger
+	transDebugger             transformationdebugger.TransformationDebugger
 }
 
 type processorStats struct {
@@ -305,10 +306,11 @@ func (proc *HandleT) Setup(
 	backendConfig backendconfig.BackendConfig, gatewayDB, routerDB jobsdb.JobsDB,
 	batchRouterDB, errorDB jobsdb.JobsDB, clearDB *bool, reporting types.ReportingI,
 	multiTenantStat multitenant.MultiTenantI, transientSources transientsource.Service,
-	fileuploader fileuploader.Provider, rsourcesService rsources.JobService, debugger destinationdebugger.DestinationDebugger,
+	fileuploader fileuploader.Provider, rsourcesService rsources.JobService, destDebugger destinationdebugger.DestinationDebugger, transDebugger transformationdebugger.TransformationDebugger,
 ) {
 	proc.reporting = reporting
-	proc.debugger = debugger
+	proc.destDebugger = destDebugger
+	proc.transDebugger = transDebugger
 	config.RegisterBoolConfigVariable(types.DefaultReportingEnabled, &proc.reportingEnabled, false, "Reporting.enabled")
 	config.RegisterInt64ConfigVariable(100*bytesize.MB, &proc.payloadLimit, true, 1, "Processor.payloadLimit")
 	config.RegisterDurationConfigVariable(60, &proc.jobdDBQueryRequestTimeout, true, time.Second, []string{"JobsDB.Processor.QueryRequestTimeout", "JobsDB.QueryRequestTimeout"}...)
@@ -745,7 +747,7 @@ func getSourceAndDestIDsFromKey(key string) (sourceID, destID string) {
 
 func (proc *HandleT) recordEventDeliveryStatus(jobsByDestID map[string][]*jobsdb.JobT) {
 	for destID, jobs := range jobsByDestID {
-		if !proc.debugger.HasUploadEnabled(destID) {
+		if !proc.destDebugger.HasUploadEnabled(destID) {
 			continue
 		}
 		for _, job := range jobs {
@@ -790,7 +792,7 @@ func (proc *HandleT) recordEventDeliveryStatus(jobsByDestID map[string][]*jobsdb
 					ErrorCode:     statusCode,
 					ErrorResponse: []byte(fmt.Sprintf(`{"error": %s}`, procErr)),
 				}
-				proc.debugger.RecordEventDeliveryStatus(destID, &deliveryStatus)
+				proc.destDebugger.RecordEventDeliveryStatus(destID, &deliveryStatus)
 			}
 		}
 	}
@@ -1827,7 +1829,7 @@ func (proc *HandleT) transformSrcDest(
 			proc.logger.Debug("Custom Transform output size", len(eventsToTransform))
 			trace.Logf(ctx, "UserTransform", "User Transform output size: %d", len(eventsToTransform))
 
-			transformationdebugger.UploadTransformationStatus(&transformationdebugger.TransformationStatusT{SourceID: sourceID, DestID: destID, Destination: destination, UserTransformedEvents: eventsToTransform, EventsByMessageID: eventsByMessageID, FailedEvents: response.FailedEvents, UniqueMessageIds: uniqueMessageIdsBySrcDestKey[srcAndDestKey]})
+			proc.transDebugger.UploadTransformationStatus(&transformationdebugger.TransformationStatusT{SourceID: sourceID, DestID: destID, Destination: destination, UserTransformedEvents: eventsToTransform, EventsByMessageID: eventsByMessageID, FailedEvents: response.FailedEvents, UniqueMessageIds: uniqueMessageIdsBySrcDestKey[srcAndDestKey]})
 
 			// REPORTING - START
 			if proc.isReportingEnabled() {

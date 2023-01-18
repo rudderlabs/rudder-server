@@ -91,32 +91,37 @@ var WithDisableTransformationStatusUploads = func(disableTransformationStatusUpl
 	}
 }
 
-func NewHandle(opts ...Opt) *Handle {
+type TransformationDebugger interface {
+	Start(backendConfig backendconfig.BackendConfig)
+	IsUploadEnabled(id string) bool
+	RecordTransformationStatus(transformStatus *TransformStatusT)
+	UploadTransformationStatus(tStatus *TransformationStatusT) bool
+	Stop()
+}
+
+func NewHandle(opts ...Opt) (TransformationDebugger, error) {
 	h := &Handle{
 		configBackendURL: config.GetString("CONFIG_BACKEND_URL", "https://api.rudderstack.com"),
 		log:              logger.NewLogger().Child("debugger").Child("transformation"),
 	}
-
+	var err error
 	config.RegisterBoolConfigVariable(false, &h.disableTransformationUploads, true, "TransformationDebugger.disableTransformationStatusUploads")
 	config.RegisterIntConfigVariable(1, &h.limitEventsInMemory, true, 1, "TransformationDebugger.limitEventsInMemory")
+	url := fmt.Sprintf("%s/dataplane/eventTransformStatus", h.configBackendURL)
+	transformationStatusUploader := &TransformationStatusUploader{}
+	h.uploader = debugger.New[*TransformStatusT](url, transformationStatusUploader)
+	h.uploader.Start()
+
+	cacheType := cache.CacheType(config.GetInt("TransformationDebugger.cacheType", int(cache.BadgerCacheType)))
+	h.transformationCacheMap, err = cache.New[TransformationStatusT](cacheType, "transformation", h.log)
+	if err != nil {
+		return nil, err
+	}
+
 	for _, opt := range opts {
 		opt(h)
 	}
-	return h
-}
-
-var _instance = NewHandle()
-
-func Start(backendConfig backendconfig.BackendConfig) {
-	_instance.Start(backendConfig)
-}
-
-func Stop() {
-	_instance.Stop()
-}
-
-func UploadTransformationStatus(tStatus *TransformationStatusT) {
-	_instance.UploadTransformationStatus(tStatus)
+	return h, nil
 }
 
 type TransformationStatusUploader struct {
@@ -132,14 +137,6 @@ func (h *Handle) IsUploadEnabled(id string) bool {
 
 // Start initializes this module
 func (h *Handle) Start(backendConfig backendconfig.BackendConfig) {
-	url := fmt.Sprintf("%s/dataplane/eventTransformStatus", h.configBackendURL)
-	transformationStatusUploader := &TransformationStatusUploader{}
-	h.uploader = debugger.New[*TransformStatusT](url, transformationStatusUploader)
-	h.uploader.Start()
-
-	cacheType := cache.CacheType(config.GetInt("TransformationDebugger.cacheType", int(cache.BadgerCacheType)))
-	h.transformationCacheMap = cache.New[TransformationStatusT](cacheType, "transformation", h.log)
-
 	ctx, cancel := context.WithCancel(context.Background())
 	h.ctx = ctx
 	h.cancel = cancel
@@ -401,4 +398,27 @@ func (h *Handle) processRecordTransformationStatus(tStatus *TransformationStatus
 			})
 		}
 	}
+}
+
+func NewNoOpService() TransformationDebugger {
+	return &noopService{}
+}
+
+type noopService struct{}
+
+func (n noopService) Start(_ backendconfig.BackendConfig) {
+}
+
+func (n noopService) IsUploadEnabled(_ string) bool {
+	return false
+}
+
+func (n noopService) RecordTransformationStatus(_ *TransformStatusT) {
+}
+
+func (n noopService) UploadTransformationStatus(_ *TransformationStatusT) bool {
+	return false
+}
+
+func (n noopService) Stop() {
 }

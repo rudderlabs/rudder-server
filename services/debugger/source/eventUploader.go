@@ -68,7 +68,7 @@ func NewHandle(opts ...Opt) (SourceDebugger, error) {
 		configBackendURL: config.GetString("CONFIG_BACKEND_URL", "https://api.rudderstack.com"),
 		log:              logger.NewLogger().Child("debugger").Child("source"),
 	}
-
+	var err error
 	config.RegisterBoolConfigVariable(false, &h.disableEventUploads, true, "SourceDebugger.disableEventUploads")
 	url := fmt.Sprintf("%s/dataplane/v2/eventUploads", h.configBackendURL)
 	eventUploader := NewEventUploader(h.log)
@@ -76,7 +76,10 @@ func NewHandle(opts ...Opt) (SourceDebugger, error) {
 	h.uploader.Start()
 
 	cacheType := cache.CacheType(config.GetInt("SourceDebugger.cacheType", int(cache.BadgerCacheType)))
-	h.eventsCache = cache.New[[]byte](cacheType, "source", h.log)
+	h.eventsCache, err = cache.New[[]byte](cacheType, "source", h.log)
+	if err != nil {
+		return nil, err
+	}
 	for _, opt := range opts {
 		opt(h)
 	}
