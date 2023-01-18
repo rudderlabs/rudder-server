@@ -1,12 +1,14 @@
 package badger
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
 	"path"
 	"time"
 
+	"github.com/cenkalti/backoff"
 	"github.com/dgraph-io/badger/v3"
 	"github.com/dgraph-io/badger/v3/options"
 	"github.com/rudderlabs/rudder-server/config"
@@ -59,48 +61,70 @@ func (badgerLogger) Warningf(format string, a ...interface{}) {
 
 // Update writes the entries into badger db with a TTL
 func (e *Cache[E]) Update(key string, value E) error {
-	txn := e.db.NewTransaction(true)
-	res, err := txn.Get([]byte(key))
-	if err != nil && err != badger.ErrKeyNotFound {
-		return err
+	var errorReturn error
+	updateFunc := func(txn *badger.Txn) error {
+		res, err := txn.Get([]byte(key))
+		if err != nil && err != badger.ErrKeyNotFound {
+			return err
+		}
+		var valCopy []byte
+		var values []E
+		if res != nil {
+			err = res.Value(func(val []byte) error {
+				valCopy = append([]byte{}, val...)
+				return nil
+			})
+			if err != nil {
+				return err
+			}
+			err = json.Unmarshal(valCopy, &values)
+			if err != nil {
+				return err
+			}
+		}
+
+		if len(values) >= e.limiter {
+			values = values[len(values)-e.limiter+1:]
+		}
+		values = append(values, value)
+		data, err := json.Marshal(values)
+		if err != nil {
+			return err
+		}
+		entry := badger.NewEntry([]byte(key), data).WithTTL(e.cleanupFreq)
+		if err := txn.SetEntry(entry); err != nil {
+			return err
+		}
+
+		return nil
 	}
-	var valCopy []byte
-	var values []E
-	if res != nil {
-		err = res.Value(func(val []byte) error {
-			valCopy = append([]byte{}, val...)
+
+	commit := func(txn *badger.Txn) error {
+		err := txn.Commit()
+		if err != nil && err == badger.ErrConflict {
+			return err
+		}
+		return nil
+	}
+
+	operation := func() error {
+		txn := e.db.NewTransaction(true)
+		err := updateFunc(txn)
+		if err != nil {
+			errorReturn = err
 			return nil
-		})
-		if err != nil {
-			return err
 		}
-		err = json.Unmarshal(valCopy, &values)
-		if err != nil {
-			return err
-		}
+		err = commit(txn)
+		return err
 	}
-
-	if len(values) >= e.limiter {
-		values = values[len(values)-e.limiter+1:]
-	}
-	values = append(values, value)
-	data, err := json.Marshal(values)
+	backoffWithMaxRetry := backoff.WithContext(backoff.WithMaxRetries(backoff.NewExponentialBackOff(), uint64(e.retries)), context.TODO())
+	err := backoff.RetryNotify(operation, backoffWithMaxRetry, func(err error, t time.Duration) {
+		e.logger.Warnf("Retrying update func because of ErrConflict")
+	})
 	if err != nil {
-		return err
+		errorReturn = err
 	}
-	entry := badger.NewEntry([]byte(key), data).WithTTL(e.cleanupFreq)
-	if err := txn.SetEntry(entry); err != nil {
-		return err
-	}
-
-	if err != nil {
-		return err
-	}
-	err = txn.Commit()
-	if err != nil {
-		return err
-	}
-	return nil
+	return errorReturn
 }
 
 // Read fetches all the entries for a given key from badgerDB
