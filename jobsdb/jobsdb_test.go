@@ -860,36 +860,6 @@ func TestCacheScenarios(t *testing.T) {
 		require.Equal(t, 2, len(res.Jobs), "gwDB should report 2 unprocessed jobs since we added 2 jobs through gwDB")
 	})
 
-	t.Run("Test readonly jobsdb", func(t *testing.T) {
-		jobsDB := NewForReadWrite("readonly_cache")
-		require.NoError(t, jobsDB.Start())
-		defer jobsDB.TearDown()
-
-		readOnlyDB := &ReadonlyHandleT{}
-		require.NoError(t, readOnlyDB.Setup("readonly_cache"))
-
-		destinationID := "destinationID"
-
-		pending, err := readOnlyDB.HavePendingJobs(context.Background(), []string{customVal}, 100, []ParameterFilterT{{Name: "source_id", Value: "sourceID"}})
-		require.NoError(t, err)
-		require.False(t, pending, "readOnlyDB should report no pending jobs when using source_id as filter")
-
-		pending, err = readOnlyDB.HavePendingJobs(context.Background(), []string{customVal}, 100, []ParameterFilterT{{Name: "destination_id", Value: destinationID}, {Name: "source_id", Value: "sourceID"}})
-		require.NoError(t, err)
-		require.False(t, pending, "readOnlyDB should report no pending jobs when using both destination_id and source_id as filters")
-
-		// store jobs
-		require.NoError(t, jobsDB.Store(context.Background(), generateJobs(2, destinationID)))
-
-		pending, err = readOnlyDB.HavePendingJobs(context.Background(), []string{customVal}, 100, []ParameterFilterT{{Name: "source_id", Value: "sourceID"}})
-		require.NoError(t, err)
-		require.True(t, pending, "readOnlyDB should report it has pending jobs when using source_id as filter")
-
-		pending, err = readOnlyDB.HavePendingJobs(context.Background(), []string{customVal}, 100, []ParameterFilterT{{Name: "destination_id", Value: destinationID}, {Name: "source_id", Value: "sourceID"}})
-		require.NoError(t, err)
-		require.True(t, pending, "readOnlyDB should report it has pending jobs when using both destination_id and source_id as filters")
-	})
-
 	t.Run("Test cache with and without using parameter filters", func(t *testing.T) {
 		jobsDB := NewForReadWrite("params_cache")
 		require.NoError(t, jobsDB.Start())

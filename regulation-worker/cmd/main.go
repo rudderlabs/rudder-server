@@ -19,58 +19,65 @@ import (
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/delete/batch"
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/delete/kvstore"
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/destination"
-	"github.com/rudderlabs/rudder-server/regulation-worker/internal/initialize"
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/service"
+	"github.com/rudderlabs/rudder-server/services/diagnostics"
 	"github.com/rudderlabs/rudder-server/services/filemanager"
 	"github.com/rudderlabs/rudder-server/services/oauth"
+	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
+	"github.com/rudderlabs/rudder-server/utils/types/deployment"
 )
 
 var pkgLogger = logger.NewLogger().Child("regulation-worker")
 
-func init() {
-	initialize.Init()
-	backendconfig.Init()
-	oauth.Init()
-}
-
 func main() {
-	pkgLogger.Info("starting regulation-worker")
-	ctx, cancel := context.WithCancel(context.Background())
-
-	go func() {
-		c := make(chan os.Signal, 1)
-		signal.Notify(c, os.Interrupt, syscall.SIGTERM)
-
-		<-c
+	pkgLogger.Info("Starting regulation-worker")
+	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	err := Run(ctx)
+	if ctx.Err() == nil {
 		cancel()
-		close(c)
-	}()
-	Run(ctx)
+	}
+	if err != nil {
+		pkgLogger.Errorf("Running regulation worker: %v", err)
+		os.Exit(1)
+	}
 }
 
-func Run(ctx context.Context) {
+func Run(ctx context.Context) error {
+	config.Set("Diagnostics.enableDiagnostics", false)
+
 	admin.Init()
+	misc.Init()
+	diagnostics.Init()
+	backendconfig.Init()
+
+	stats.Default.Start(ctx)
 	if err := backendconfig.Setup(nil); err != nil {
-		panic(fmt.Errorf("error while setting up backend config: %v", err))
+		return fmt.Errorf("setting up backend config: %w", err)
 	}
-	dest := &destination.DestMiddleware{
+	dest := &destination.DestinationConfig{
 		Dest: backendconfig.DefaultBackendConfig,
 	}
-	workspaceId, err := dest.GetWorkspaceId(ctx)
+
+	deploymentType, err := deployment.GetFromEnv()
 	if err != nil {
-		panic(fmt.Errorf("error while getting workspaceId: %w", err))
+		return fmt.Errorf("getting deployment type: %w", err)
 	}
+	pkgLogger.Infof("Running regulation worker in %s mode", deploymentType)
+	backendconfig.DefaultBackendConfig.StartWithIDs(ctx, "")
+	backendconfig.DefaultBackendConfig.WaitForConfig(ctx)
+	identity := backendconfig.DefaultBackendConfig.Identity()
+	dest.Start(ctx)
+
 	// setting up oauth
 	OAuth := oauth.NewOAuthErrorHandler(backendconfig.DefaultBackendConfig, oauth.WithRudderFlow(oauth.RudderFlow_Delete))
 
 	svc := service.JobSvc{
 		API: &client.JobAPI{
-			Client:         &http.Client{Timeout: config.GetDuration("HttpClient.regulationWorker.regulationManager.timeout", 60, time.Second)},
-			URLPrefix:      config.MustGetString("CONFIG_BACKEND_URL"),
-			WorkspaceToken: config.MustGetString("CONFIG_BACKEND_TOKEN"),
-			WorkspaceID:    workspaceId,
+			Client:    &http.Client{Timeout: config.GetDuration("HttpClient.regulationWorker.regulationManager.timeout", 60, time.Second)},
+			URLPrefix: config.MustGetString("CONFIG_BACKEND_URL"),
+			Identity:  identity,
 		},
 		DestDetail: dest,
 		Deleter: delete.NewRouter(
@@ -93,9 +100,9 @@ func Run(ctx context.Context) {
 		return l.Loop(ctx)
 	})()
 	if err != nil && !errors.Is(err, context.Canceled) {
-		pkgLogger.Errorf("error: %v", err)
-		panic(err)
+		return fmt.Errorf("error: %v", err)
 	}
+	return nil
 }
 
 func withLoop(svc service.JobSvc) *service.Looper {

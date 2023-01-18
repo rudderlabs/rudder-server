@@ -77,10 +77,11 @@ So, we don't have to worry about dsEmptyResultCache
 */
 func (jd *HandleT) deleteJobStatus() {
 	err := jd.WithUpdateSafeTx(context.TODO(), func(tx UpdateSafeTx) error {
-		tags := statTags{CustomValFilters: []string{jd.tablePrefix}}
-		queryStat := jd.getTimerStat("jobsdb_delete_job_status_time", &tags)
-		queryStat.Start()
-		defer queryStat.End()
+		defer jd.getTimerStat(
+			"jobsdb_delete_job_status_time",
+			&statTags{
+				CustomValFilters: []string{jd.tablePrefix},
+			}).RecordDuration()()
 
 		dsList := jd.getDSList()
 
@@ -100,10 +101,11 @@ func (jd *HandleT) deleteJobStatus() {
 }
 
 func (jd *HandleT) deleteJobStatusDSInTx(txHandler transactionHandler, ds dataSetT) error {
-	tags := statTags{CustomValFilters: []string{jd.tablePrefix}}
-	queryStat := jd.getTimerStat("jobsdb_delete_job_status_ds_time", &tags)
-	queryStat.Start()
-	defer queryStat.End()
+	defer jd.getTimerStat(
+		"jobsdb_delete_job_status_ds_time",
+		&statTags{
+			CustomValFilters: []string{jd.tablePrefix},
+		}).RecordDuration()()
 
 	_, err := txHandler.Exec(
 		fmt.Sprintf(
@@ -140,12 +142,10 @@ So, we don't have to worry about dsEmptyResultCache
 */
 func (jd *HandleT) failExecuting() {
 	err := jd.WithUpdateSafeTx(context.TODO(), func(tx UpdateSafeTx) error {
-		queryStat := jd.getTimerStat(
+		defer jd.getTimerStat(
 			"jobsdb_fail_executing_time",
 			&statTags{CustomValFilters: []string{jd.tablePrefix}},
-		)
-		queryStat.Start()
-		defer queryStat.End()
+		).RecordDuration()()
 
 		dsList := jd.getDSList()
 
@@ -165,12 +165,10 @@ func (jd *HandleT) failExecuting() {
 }
 
 func (jd *HandleT) failExecutingDSInTx(txHandler transactionHandler, ds dataSetT) error {
-	queryStat := jd.getTimerStat(
+	defer jd.getTimerStat(
 		"jobsdb_fail_executing_ds_time",
 		&statTags{CustomValFilters: []string{jd.tablePrefix}},
-	)
-	queryStat.Start()
-	defer queryStat.End()
+	).RecordDuration()()
 
 	_, err := txHandler.Exec(
 		fmt.Sprintf(

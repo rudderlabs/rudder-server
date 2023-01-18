@@ -27,20 +27,20 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
-const REPORTS_TABLE = "reports"
+const ReportsTable = "reports"
 
 var maxConcurrentRequests int
 
 const (
-	STAT_REPORTING_MAIN_LOOP_TIME                 = "reporting_client_main_loop_time"
-	STAT_REPORTING_GET_REPORTS_TIME               = "reporting_client_get_reports_time"
-	STAT_REPORTING_GET_REPORTS_COUNT              = "reporting_client_get_reports_count"
-	STAT_REPORTING_GET_AGGREGATED_REPORTS_TIME    = "reporting_client_get_aggregated_reports_time"
-	STAT_REPORTING_GET_AGGREGATED_REPORTS_COUNT   = "reporting_client_get_aggregated_reports_count"
-	STAT_REPORTING_HTTP_REQ_LATENCY               = "reporting_client_http_request_latency"
-	STAT_REPORTING_HTTP_REQ                       = "reporting_client_http_request"
-	STAT_REPORTING_GET_MIN_REPORTED_AT_QUERY_TIME = "reporting_client_get_min_reported_at_query_time"
-	STAT_REPORTING_GET_REPORTS_QUERY_TIME         = "reporting_client_get_reports_query_time"
+	StatReportingMainLoopTime              = "reporting_client_main_loop_time"
+	StatReportingGetReportsTime            = "reporting_client_get_reports_time"
+	StatReportingGetReportsCount           = "reporting_client_get_reports_count"
+	StatReportingGetAggregatedReportsTime  = "reporting_client_get_aggregated_reports_time"
+	StatReportingGetAggregatedReportsCount = "reporting_client_get_aggregated_reports_count"
+	StatReportingHttpReqLatency            = "reporting_client_http_request_latency"
+	StatReportingHttpReq                   = "reporting_client_http_request"
+	StatReportingGetMinReportedAtQueryTime = "reporting_client_get_min_reported_at_query_time"
+	StatReportingGetReportsQueryTime       = "reporting_client_get_reports_query_time"
 )
 
 type HandleT struct {
@@ -56,6 +56,7 @@ type HandleT struct {
 	workspaceIDForSourceIDMap map[string]string
 	piiReportingSettings      map[string]bool
 	whActionsOnly             bool
+	region                    string
 	sleepInterval             time.Duration
 	mainLoopSleepInterval     time.Duration
 
@@ -89,58 +90,59 @@ func NewFromEnvConfig(log logger.Logger) *HandleT {
 		whActionsOnly:             whActionsOnly,
 		sleepInterval:             sleepInterval,
 		mainLoopSleepInterval:     mainLoopSleepInterval,
+		region:                    config.GetString("region", ""),
 	}
 }
 
-func (handle *HandleT) setup(beConfigHandle backendconfig.BackendConfig) {
-	handle.log.Info("[[ Reporting ]] Setting up reporting handler")
+func (r *HandleT) setup(beConfigHandle backendconfig.BackendConfig) {
+	r.log.Info("[[ Reporting ]] Setting up reporting handler")
 
 	ch := beConfigHandle.Subscribe(context.TODO(), backendconfig.TopicBackendConfig)
 
-	for beconfig := range ch {
-		config := beconfig.Data.(map[string]backendconfig.ConfigT)
+	for c := range ch {
+		conf := c.Data.(map[string]backendconfig.ConfigT)
 		newWorkspaceIDForSourceIDMap := make(map[string]string)
 		newPIIReportingSettings := make(map[string]bool)
 		var newWorkspaceID string
 
-		for workspaceID, wConfig := range config {
+		for workspaceID, wConfig := range conf {
 			newWorkspaceID = workspaceID
 			for _, source := range wConfig.Sources {
 				newWorkspaceIDForSourceIDMap[source.ID] = workspaceID
 			}
 			newPIIReportingSettings[workspaceID] = wConfig.Settings.DataRetention.DisableReportingPII
 		}
-		if len(config) > 1 {
+		if len(conf) > 1 {
 			newWorkspaceID = ""
 		}
-		handle.workspaceID = newWorkspaceID
-		handle.workspaceIDForSourceIDMap = newWorkspaceIDForSourceIDMap
-		handle.piiReportingSettings = newPIIReportingSettings
-		handle.onceInit.Do(func() {
-			close(handle.init)
+		r.workspaceID = newWorkspaceID
+		r.workspaceIDForSourceIDMap = newWorkspaceIDForSourceIDMap
+		r.piiReportingSettings = newPIIReportingSettings
+		r.onceInit.Do(func() {
+			close(r.init)
 		})
 	}
 
-	handle.onceInit.Do(func() {
-		close(handle.init)
+	r.onceInit.Do(func() {
+		close(r.init)
 	})
 }
 
-func (handle *HandleT) getWorkspaceID(sourceID string) string {
-	<-handle.init
-	return handle.workspaceIDForSourceIDMap[sourceID]
+func (r *HandleT) getWorkspaceID(sourceID string) string {
+	<-r.init
+	return r.workspaceIDForSourceIDMap[sourceID]
 }
 
-func (handle *HandleT) AddClient(ctx context.Context, c types.Config) {
+func (r *HandleT) AddClient(ctx context.Context, c types.Config) {
 	if c.ClientName == "" {
-		c.ClientName = types.CORE_REPORTING_CLIENT
+		c.ClientName = types.CoreReportingClient
 	}
 
-	handle.clientsMapLock.RLock()
-	if _, ok := handle.clients[c.ClientName]; ok {
+	r.clientsMapLock.RLock()
+	if _, ok := r.clients[c.ClientName]; ok {
 		return
 	}
-	handle.clientsMapLock.RUnlock()
+	r.clientsMapLock.RUnlock()
 
 	dbHandle, err := sql.Open("postgres", c.ConnInfo)
 	if err != nil {
@@ -157,16 +159,16 @@ func (handle *HandleT) AddClient(ctx context.Context, c types.Config) {
 		panic(fmt.Errorf("could not run reports migrations: %w", err))
 	}
 
-	handle.clientsMapLock.Lock()
-	handle.clients[c.ClientName] = &types.Client{Config: c, DbHandle: dbHandle}
-	handle.clientsMapLock.Unlock()
+	r.clientsMapLock.Lock()
+	r.clients[c.ClientName] = &types.Client{Config: c, DbHandle: dbHandle}
+	r.clientsMapLock.Unlock()
 
-	handle.mainLoop(ctx, c.ClientName)
+	r.mainLoop(ctx, c.ClientName)
 }
 
-func (handle *HandleT) WaitForSetup(ctx context.Context, clientName string) error {
+func (r *HandleT) WaitForSetup(ctx context.Context, clientName string) error {
 	for {
-		if handle.GetClient(clientName) != nil {
+		if r.GetClient(clientName) != nil {
 			break
 		}
 		if err := misc.SleepCtx(ctx, time.Second); err != nil {
@@ -177,19 +179,19 @@ func (handle *HandleT) WaitForSetup(ctx context.Context, clientName string) erro
 	return nil
 }
 
-func (handle *HandleT) GetClient(clientName string) *types.Client {
-	handle.clientsMapLock.RLock()
-	defer handle.clientsMapLock.RUnlock()
+func (r *HandleT) GetClient(clientName string) *types.Client {
+	r.clientsMapLock.RLock()
+	defer r.clientsMapLock.RUnlock()
 
-	if c, ok := handle.clients[clientName]; ok {
+	if c, ok := r.clients[clientName]; ok {
 		return c
 	}
 
 	return nil
 }
 
-func (handle *HandleT) getDBHandle(clientName string) (*sql.DB, error) {
-	client := handle.GetClient(clientName)
+func (r *HandleT) getDBHandle(clientName string) (*sql.DB, error) {
+	client := r.GetClient(clientName)
 	if client != nil {
 		return client.DbHandle, nil
 	}
@@ -197,10 +199,10 @@ func (handle *HandleT) getDBHandle(clientName string) (*sql.DB, error) {
 	return nil, fmt.Errorf("DBHandle not found for client name: %s", clientName)
 }
 
-func (handle *HandleT) getReports(current_ms int64, clientName string) (reports []*types.ReportByStatus, reportedAt int64) {
-	sqlStatement := fmt.Sprintf(`SELECT reported_at FROM %s WHERE reported_at < %d ORDER BY reported_at ASC LIMIT 1`, REPORTS_TABLE, current_ms)
+func (r *HandleT) getReports(currentMs int64, clientName string) (reports []*types.ReportByStatus, reportedAt int64) {
+	sqlStatement := fmt.Sprintf(`SELECT reported_at FROM %s WHERE reported_at < %d ORDER BY reported_at ASC LIMIT 1`, ReportsTable, currentMs)
 	var queryMin sql.NullInt64
-	dbHandle, err := handle.getDBHandle(clientName)
+	dbHandle, err := r.getDBHandle(clientName)
 	if err != nil {
 		panic(err)
 	}
@@ -210,20 +212,20 @@ func (handle *HandleT) getReports(current_ms int64, clientName string) (reports 
 	if err != nil && err != sql.ErrNoRows {
 		panic(err)
 	}
-	handle.getMinReportedAtQueryTime.Since(queryStart)
+	r.getMinReportedAtQueryTime.Since(queryStart)
 	if !queryMin.Valid {
 		return nil, 0
 	}
 
-	sqlStatement = fmt.Sprintf(`SELECT workspace_id, namespace, instance_id, source_definition_id, source_category, source_id, destination_definition_id, destination_id, source_batch_id, source_task_id, source_task_run_id, source_job_id, source_job_run_id, in_pu, pu, reported_at, status, count, terminal_state, initial_state, status_code, sample_response, sample_event, event_name, event_type FROM %s WHERE reported_at = %d`, REPORTS_TABLE, queryMin.Int64)
+	sqlStatement = fmt.Sprintf(`SELECT workspace_id, namespace, instance_id, source_definition_id, source_category, source_id, destination_definition_id, destination_id, source_batch_id, source_task_id, source_task_run_id, source_job_id, source_job_run_id, in_pu, pu, reported_at, status, count, terminal_state, initial_state, status_code, sample_response, sample_event, event_name, event_type FROM %s WHERE reported_at = %d`, ReportsTable, queryMin.Int64)
 	var rows *sql.Rows
 	queryStart = time.Now()
 	rows, err = dbHandle.Query(sqlStatement)
 	if err != nil {
 		panic(err)
 	}
-	handle.getReportsQueryTime.Since(queryStart)
-	defer rows.Close()
+	r.getReportsQueryTime.Since(queryStart)
+	defer func() { _ = rows.Close() }()
 
 	var metricReports []*types.ReportByStatus
 	for rows.Next() {
@@ -306,22 +308,22 @@ func (*HandleT) getAggregatedReports(reports []*types.ReportByStatus) []*types.M
 	return values
 }
 
-func (handle *HandleT) mainLoop(ctx context.Context, clientName string) {
+func (r *HandleT) mainLoop(ctx context.Context, clientName string) {
 	tr := &http.Transport{}
 	netClient := &http.Client{Transport: tr, Timeout: config.GetDuration("HttpClient.reporting.timeout", 60, time.Second)}
-	tags := handle.getTags(clientName)
-	mainLoopTimer := stats.Default.NewTaggedStat(STAT_REPORTING_MAIN_LOOP_TIME, stats.TimerType, tags)
-	getReportsTimer := stats.Default.NewTaggedStat(STAT_REPORTING_GET_REPORTS_TIME, stats.TimerType, tags)
-	getReportsCount := stats.Default.NewTaggedStat(STAT_REPORTING_GET_REPORTS_COUNT, stats.HistogramType, tags)
-	getAggregatedReportsTimer := stats.Default.NewTaggedStat(STAT_REPORTING_GET_AGGREGATED_REPORTS_TIME, stats.TimerType, tags)
-	getAggregatedReportsCount := stats.Default.NewTaggedStat(STAT_REPORTING_GET_AGGREGATED_REPORTS_COUNT, stats.HistogramType, tags)
+	tags := r.getTags(clientName)
+	mainLoopTimer := stats.Default.NewTaggedStat(StatReportingMainLoopTime, stats.TimerType, tags)
+	getReportsTimer := stats.Default.NewTaggedStat(StatReportingGetReportsTime, stats.TimerType, tags)
+	getReportsCount := stats.Default.NewTaggedStat(StatReportingGetReportsCount, stats.HistogramType, tags)
+	getAggregatedReportsTimer := stats.Default.NewTaggedStat(StatReportingGetAggregatedReportsTime, stats.TimerType, tags)
+	getAggregatedReportsCount := stats.Default.NewTaggedStat(StatReportingGetAggregatedReportsCount, stats.HistogramType, tags)
 
-	handle.getMinReportedAtQueryTime = stats.Default.NewTaggedStat(STAT_REPORTING_GET_MIN_REPORTED_AT_QUERY_TIME, stats.TimerType, tags)
-	handle.getReportsQueryTime = stats.Default.NewTaggedStat(STAT_REPORTING_GET_REPORTS_QUERY_TIME, stats.TimerType, tags)
-	handle.requestLatency = stats.Default.NewTaggedStat(STAT_REPORTING_HTTP_REQ_LATENCY, stats.TimerType, tags)
+	r.getMinReportedAtQueryTime = stats.Default.NewTaggedStat(StatReportingGetMinReportedAtQueryTime, stats.TimerType, tags)
+	r.getReportsQueryTime = stats.Default.NewTaggedStat(StatReportingGetReportsQueryTime, stats.TimerType, tags)
+	r.requestLatency = stats.Default.NewTaggedStat(StatReportingHttpReqLatency, stats.TimerType, tags)
 	for {
 		if ctx.Err() != nil {
-			handle.log.Infof("stopping mainLoop for client %s : %s", clientName, ctx.Err())
+			r.log.Infof("stopping mainLoop for client %s : %s", clientName, ctx.Err())
 			return
 		}
 		requestChan := make(chan struct{}, maxConcurrentRequests)
@@ -329,27 +331,27 @@ func (handle *HandleT) mainLoop(ctx context.Context, clientName string) {
 		currentMs := time.Now().UTC().Unix() / 60
 
 		getReportsStart := time.Now()
-		reports, reportedAt := handle.getReports(currentMs, clientName)
+		reports, reportedAt := r.getReports(currentMs, clientName)
 		getReportsTimer.Since(getReportsStart)
 		getReportsCount.Observe(float64(len(reports)))
 		if len(reports) == 0 {
 			select {
 			case <-ctx.Done():
-				handle.log.Infof("stopping mainLoop for client %s : %s", clientName, ctx.Err())
+				r.log.Infof("stopping mainLoop for client %s : %s", clientName, ctx.Err())
 				return
-			case <-time.After(handle.sleepInterval):
+			case <-time.After(r.sleepInterval):
 			}
 			continue
 		}
 
 		getAggregatedReportsStart := time.Now()
-		metrics := handle.getAggregatedReports(reports)
+		metrics := r.getAggregatedReports(reports)
 		getAggregatedReportsTimer.Since(getAggregatedReportsStart)
 		getAggregatedReportsCount.Observe(float64(len(metrics)))
 
 		errGroup, errCtx := errgroup.WithContext(ctx)
 		for _, metric := range metrics {
-			if handle.whActionsOnly && metric.SourceCategory != "warehouse" {
+			if r.whActionsOnly && metric.SourceCategory != "warehouse" {
 				// if whActionsOnly is true, we only send reports for wh actions sources
 				// we silently drop all other reports
 				continue
@@ -357,11 +359,11 @@ func (handle *HandleT) mainLoop(ctx context.Context, clientName string) {
 			metricToSend := metric
 			requestChan <- struct{}{}
 			if errCtx.Err() != nil {
-				// if any of errGroup's goroutines fail - dont send anymore requests for this batch
+				// if any of errGroup's goroutines fail - don't send anymore requests for this batch
 				break
 			}
 			errGroup.Go(func() error {
-				err := handle.sendMetric(errCtx, netClient, clientName, metricToSend)
+				err := r.sendMetric(errCtx, netClient, clientName, metricToSend)
 				<-requestChan
 				return err
 			})
@@ -369,14 +371,14 @@ func (handle *HandleT) mainLoop(ctx context.Context, clientName string) {
 
 		err := errGroup.Wait()
 		if err == nil {
-			sqlStatement := fmt.Sprintf(`DELETE FROM %s WHERE reported_at = %d`, REPORTS_TABLE, reportedAt)
-			dbHandle, err := handle.getDBHandle(clientName)
+			sqlStatement := fmt.Sprintf(`DELETE FROM %s WHERE reported_at = %d`, ReportsTable, reportedAt)
+			dbHandle, err := r.getDBHandle(clientName)
 			if err != nil {
 				panic(err)
 			}
 			_, err = dbHandle.Exec(sqlStatement)
 			if err != nil {
-				handle.log.Errorf(`[ Reporting ]: Error deleting local reports from %s: %v`, REPORTS_TABLE, err)
+				r.log.Errorf(`[ Reporting ]: Error deleting local reports from %s: %v`, ReportsTable, err)
 			}
 		}
 
@@ -384,55 +386,59 @@ func (handle *HandleT) mainLoop(ctx context.Context, clientName string) {
 		select {
 		case <-ctx.Done():
 			return
-		case <-time.After(handle.mainLoopSleepInterval):
+		case <-time.After(r.mainLoopSleepInterval):
 		}
 	}
 }
 
-func (handle *HandleT) sendMetric(ctx context.Context, netClient *http.Client, clientName string, metric *types.Metric) error {
+func (r *HandleT) sendMetric(ctx context.Context, netClient *http.Client, clientName string, metric *types.Metric) error {
 	payload, err := json.Marshal(metric)
 	if err != nil {
 		panic(err)
 	}
 	operation := func() error {
-		uri := fmt.Sprintf("%s/metrics?version=v1", handle.reportingServiceURL)
+		uri := fmt.Sprintf("%s/metrics?version=v1", r.reportingServiceURL)
 		req, err := http.NewRequestWithContext(ctx, "POST", uri, bytes.NewBuffer(payload))
 		if err != nil {
 			return err
 		}
+		if r.region != "" {
+			q := req.URL.Query()
+			q.Add("region", r.region)
+			req.URL.RawQuery = q.Encode()
+		}
 		req.Header.Set("Content-Type", "application/json; charset=utf-8")
-
 		httpRequestStart := time.Now()
 		resp, err := netClient.Do(req)
 		if err != nil {
-			handle.log.Error(err.Error())
+			r.log.Error(err.Error())
 			return err
 		}
 
-		handle.requestLatency.Since(httpRequestStart)
-		httpStatTags := handle.getTags(clientName)
+		r.requestLatency.Since(httpRequestStart)
+		httpStatTags := r.getTags(clientName)
 		httpStatTags["status"] = strconv.Itoa(resp.StatusCode)
-		stats.Default.NewTaggedStat(STAT_REPORTING_HTTP_REQ, stats.CountType, httpStatTags).Count(1)
+		stats.Default.NewTaggedStat(StatReportingHttpReq, stats.CountType, httpStatTags).Count(1)
 
 		defer func() { httputil.CloseResponse(resp) }()
 		respBody, err := io.ReadAll(resp.Body)
 		if err != nil {
-			handle.log.Error(err.Error())
+			r.log.Error(err.Error())
 			return err
 		}
 
 		if !isMetricPosted(resp.StatusCode) {
-			err = fmt.Errorf(`Received response: statusCode:%d error:%v`, resp.StatusCode, string(respBody))
+			err = fmt.Errorf(`received response: statusCode:%d error:%v`, resp.StatusCode, string(respBody))
 		}
 		return err
 	}
 
 	b := backoff.WithContext(backoff.NewExponentialBackOff(), ctx)
 	err = backoff.RetryNotify(operation, b, func(err error, t time.Duration) {
-		handle.log.Errorf(`[ Reporting ]: Error reporting to service: %v`, err)
+		r.log.Errorf(`[ Reporting ]: Error reporting to service: %v`, err)
 	})
 	if err != nil {
-		handle.log.Errorf(`[ Reporting ]: Error making request to reporting service: %v`, err)
+		r.log.Errorf(`[ Reporting ]: Error making request to reporting service: %v`, err)
 	}
 	return err
 }
@@ -470,32 +476,32 @@ func transformMetricForPII(metric types.PUReportedMetric, piiColumns []string) t
 	return metric
 }
 
-func (handle *HandleT) IsPIIReportingDisabled(workspaceID string) bool {
-	<-handle.init
-	return handle.piiReportingSettings[workspaceID]
+func (r *HandleT) IsPIIReportingDisabled(workspaceID string) bool {
+	<-r.init
+	return r.piiReportingSettings[workspaceID]
 }
 
-func (handle *HandleT) Report(metrics []*types.PUReportedMetric, txn *sql.Tx) {
+func (r *HandleT) Report(metrics []*types.PUReportedMetric, txn *sql.Tx) {
 	if len(metrics) == 0 {
 		return
 	}
 
-	stmt, err := txn.Prepare(pq.CopyIn(REPORTS_TABLE, "workspace_id", "namespace", "instance_id", "source_definition_id", "source_category", "source_id", "destination_definition_id", "destination_id", "source_batch_id", "source_task_id", "source_task_run_id", "source_job_id", "source_job_run_id", "in_pu", "pu", "reported_at", "status", "count", "terminal_state", "initial_state", "status_code", "sample_response", "sample_event", "event_name", "event_type"))
+	stmt, err := txn.Prepare(pq.CopyIn(ReportsTable, "workspace_id", "namespace", "instance_id", "source_definition_id", "source_category", "source_id", "destination_definition_id", "destination_id", "source_batch_id", "source_task_id", "source_task_run_id", "source_job_id", "source_job_run_id", "in_pu", "pu", "reported_at", "status", "count", "terminal_state", "initial_state", "status_code", "sample_response", "sample_event", "event_name", "event_type"))
 	if err != nil {
-		txn.Rollback()
+		_ = txn.Rollback()
 		panic(err)
 	}
-	defer stmt.Close()
+	defer func() { _ = stmt.Close() }()
 
 	reportedAt := time.Now().UTC().Unix() / 60
 	for _, metric := range metrics {
-		workspaceID := handle.getWorkspaceID(metric.ConnectionDetails.SourceID)
+		workspaceID := r.getWorkspaceID(metric.ConnectionDetails.SourceID)
 		metric := *metric
-		if handle.IsPIIReportingDisabled(workspaceID) {
+		if r.IsPIIReportingDisabled(workspaceID) {
 			metric = transformMetricForPII(metric, getPIIColumnsToExclude())
 		}
 
-		_, err = stmt.Exec(workspaceID, handle.namespace, handle.instanceID, metric.ConnectionDetails.SourceDefinitionId, metric.ConnectionDetails.SourceCategory, metric.ConnectionDetails.SourceID, metric.ConnectionDetails.DestinationDefinitionId, metric.ConnectionDetails.DestinationID, metric.ConnectionDetails.SourceBatchID, metric.ConnectionDetails.SourceTaskID, metric.ConnectionDetails.SourceTaskRunID, metric.ConnectionDetails.SourceJobID, metric.ConnectionDetails.SourceJobRunID, metric.PUDetails.InPU, metric.PUDetails.PU, reportedAt, metric.StatusDetail.Status, metric.StatusDetail.Count, metric.PUDetails.TerminalPU, metric.PUDetails.InitialPU, metric.StatusDetail.StatusCode, metric.StatusDetail.SampleResponse, string(metric.StatusDetail.SampleEvent), metric.StatusDetail.EventName, metric.StatusDetail.EventType)
+		_, err = stmt.Exec(workspaceID, r.namespace, r.instanceID, metric.ConnectionDetails.SourceDefinitionId, metric.ConnectionDetails.SourceCategory, metric.ConnectionDetails.SourceID, metric.ConnectionDetails.DestinationDefinitionId, metric.ConnectionDetails.DestinationID, metric.ConnectionDetails.SourceBatchID, metric.ConnectionDetails.SourceTaskID, metric.ConnectionDetails.SourceTaskRunID, metric.ConnectionDetails.SourceJobID, metric.ConnectionDetails.SourceJobRunID, metric.PUDetails.InPU, metric.PUDetails.PU, reportedAt, metric.StatusDetail.Status, metric.StatusDetail.Count, metric.PUDetails.TerminalPU, metric.PUDetails.InitialPU, metric.StatusDetail.StatusCode, metric.StatusDetail.SampleResponse, string(metric.StatusDetail.SampleEvent), metric.StatusDetail.EventName, metric.StatusDetail.EventType)
 		if err != nil {
 			panic(err)
 		}
@@ -507,11 +513,11 @@ func (handle *HandleT) Report(metrics []*types.PUReportedMetric, txn *sql.Tx) {
 	}
 }
 
-func (handle *HandleT) getTags(clientName string) stats.Tags {
+func (r *HandleT) getTags(clientName string) stats.Tags {
 	return stats.Tags{
-		"namespace":   handle.namespace,
-		"workspaceId": handle.workspaceID,
-		"instanceId":  handle.instanceID,
+		"namespace":   r.namespace,
+		"workspaceId": r.workspaceID,
+		"instanceId":  r.instanceID,
 		"clientName":  clientName,
 	}
 }

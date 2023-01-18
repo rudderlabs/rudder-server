@@ -80,14 +80,14 @@ func (api *APIManager) deleteWithRetry(ctx context.Context, job model.Job, desti
 		}
 	}
 
-	fileCleaningTime := stats.Default.NewTaggedStat("file_cleaning_time", stats.TimerType, stats.Tags{
-		"jobId":       fmt.Sprintf("%d", job.ID),
-		"workspaceId": job.WorkspaceID,
-		"destType":    "api",
-		"destName":    strings.ToLower(destination.Name),
-	})
-	fileCleaningTime.Start()
-	defer fileCleaningTime.End()
+	defer stats.Default.NewTaggedStat(
+		"regulation_worker_cleaning_time",
+		stats.TimerType,
+		stats.Tags{
+			"destinationId": job.DestinationID,
+			"workspaceId":   job.WorkspaceID,
+			"jobType":       "api",
+		}).RecordDuration()()
 
 	resp, err := api.Client.Do(req)
 	if err != nil {
@@ -130,31 +130,21 @@ func (api *APIManager) Delete(ctx context.Context, job model.Job, destination mo
 }
 
 func getJobStatus(statusCode int, jobResp []JobRespSchema) model.JobStatus {
+	errorStatus := model.JobStatusFailed
 	switch statusCode {
-
 	case http.StatusOK:
 		return model.JobStatusComplete
-
-	case http.StatusBadRequest:
-		pkgLogger.Warnf("Error: %v", jobResp)
-		return model.JobStatusAborted
-
-	case http.StatusUnauthorized:
-		pkgLogger.Warnf("Error: %v", jobResp)
-		return model.JobStatusAborted
-
 	case http.StatusNotFound, http.StatusMethodNotAllowed:
-		pkgLogger.Warnf("Error: %v", jobResp)
-		return model.JobStatusNotSupported
-
+		errorStatus = model.JobStatusNotSupported
 	case http.StatusTooManyRequests, http.StatusRequestTimeout:
-		pkgLogger.Warnf("Error: %v", jobResp)
-		return model.JobStatusFailed
-
+		errorStatus = model.JobStatusFailed
 	default:
-		pkgLogger.Warnf("Bad request: %v", jobResp)
-		return model.JobStatusFailed
+		if statusCode >= 400 && statusCode < 500 {
+			errorStatus = model.JobStatusAborted
+		}
 	}
+	pkgLogger.Warnf("Error Status: %d - %v", statusCode, jobResp)
+	return errorStatus
 }
 
 func mapJobToPayload(job model.Job, destName string, destConfig map[string]interface{}) []apiDeletionPayloadSchema {

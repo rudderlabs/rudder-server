@@ -7,6 +7,7 @@ import (
 	"time"
 
 	jsoniter "github.com/json-iterator/go"
+	"github.com/samber/lo"
 
 	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
@@ -60,7 +61,7 @@ type EventsAfterTransform struct {
 }
 
 type UploadT struct {
-	Payload []interface{} `json:"payload"`
+	Payload []*TransformStatusT `json:"payload"`
 }
 
 var (
@@ -68,9 +69,10 @@ var (
 
 	configBackendURL             string
 	disableTransformationUploads bool
-	uploader                     debugger.UploaderI
+	limitEventsInMemory          int
+	uploader                     debugger.Uploader[*TransformStatusT]
 	pkgLogger                    logger.Logger
-	transformationCacheMap       debugger.Cache
+	transformationCacheMap       debugger.Cache[TransformationStatusT]
 )
 
 var (
@@ -86,6 +88,7 @@ func Init() {
 func loadConfig() {
 	configBackendURL = config.GetString("CONFIG_BACKEND_URL", "https://api.rudderstack.com")
 	config.RegisterBoolConfigVariable(false, &disableTransformationUploads, true, "TransformationDebugger.disableTransformationStatusUploads")
+	config.RegisterIntConfigVariable(1, &limitEventsInMemory, true, 1, "TransformationDebugger.limitEventsInMemory")
 }
 
 type TransformationStatusUploader struct{}
@@ -101,7 +104,7 @@ func IsUploadEnabled(id string) bool {
 func Setup() {
 	url := fmt.Sprintf("%s/dataplane/eventTransformStatus", configBackendURL)
 	transformationStatusUploader := &TransformationStatusUploader{}
-	uploader = debugger.New(url, transformationStatusUploader)
+	uploader = debugger.New[*TransformStatusT](url, transformationStatusUploader)
 	uploader.Start()
 
 	rruntime.Go(func() {
@@ -111,18 +114,16 @@ func Setup() {
 
 // RecordTransformationStatus is used to put the transform event in the eventBatchChannel,
 // which will be processed by handleEvents.
-func RecordTransformationStatus(transformStatus *TransformStatusT) bool {
+func RecordTransformationStatus(transformStatus *TransformStatusT) {
 	// if disableTransformationUploads is true, return;
 	if disableTransformationUploads {
-		return false
+		return
 	}
 
 	uploader.RecordEvent(transformStatus)
-	return true
 }
 
-func (*TransformationStatusUploader) Transform(data interface{}) ([]byte, error) {
-	eventBuffer := data.([]interface{})
+func (*TransformationStatusUploader) Transform(eventBuffer []*TransformStatusT) ([]byte, error) {
 	uploadT := UploadT{Payload: eventBuffer}
 
 	rawJSON, err := jsonfast.Marshal(uploadT)
@@ -157,8 +158,8 @@ func updateConfig(config map[string]backendconfig.ConfigT) {
 
 func backendConfigSubscriber() {
 	ch := backendconfig.DefaultBackendConfig.Subscribe(context.TODO(), backendconfig.TopicProcessConfig)
-	for config := range ch {
-		updateConfig(config.Data.(map[string]backendconfig.ConfigT))
+	for c := range ch {
+		updateConfig(c.Data.(map[string]backendconfig.ConfigT))
 	}
 }
 
@@ -180,9 +181,11 @@ func UploadTransformationStatus(tStatus *TransformationStatusT) {
 			processRecordTransformationStatus(tStatus, transformation.ID)
 		} else {
 			tStatusUpdated := *tStatus
+			lo.Slice(tStatusUpdated.UserTransformedEvents, 0, limitEventsInMemory+1)
 			tStatusUpdated.Destination.Transformations = []backendconfig.TransformationT{transformation}
-			tStatusUpdatedData, _ := jsonfast.Marshal(tStatusUpdated)
-			transformationCacheMap.Update(transformation.ID, tStatusUpdatedData)
+			tStatusUpdated.UserTransformedEvents = lo.Slice(tStatusUpdated.UserTransformedEvents, 0, limitEventsInMemory+1)
+			tStatusUpdated.FailedEvents = lo.Slice(tStatusUpdated.FailedEvents, 0, limitEventsInMemory+1)
+			transformationCacheMap.Update(transformation.ID, tStatusUpdated)
 		}
 	}
 }
@@ -228,11 +231,7 @@ func recordHistoricTransformations(tIDs []string) {
 	for _, tID := range tIDs {
 		tStatuses := transformationCacheMap.ReadAndPopData(tID)
 		for _, tStatus := range tStatuses {
-			var tStatusData TransformationStatusT
-			if err := jsonfast.Unmarshal(tStatus, &tStatusData); err != nil {
-				panic(err)
-			}
-			processRecordTransformationStatus(&tStatusData, tID)
+			processRecordTransformationStatus(&tStatus, tID)
 		}
 	}
 }

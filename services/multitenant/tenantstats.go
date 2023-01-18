@@ -72,8 +72,13 @@ func (t *Stats) Start() error {
 		}
 
 		for workspace := range pileUpStatMap {
-			for destType := range pileUpStatMap[workspace] {
-				metric.IncreasePendingEvents(dbPrefix, workspace, destType, float64(pileUpStatMap[workspace][destType]))
+			for destType, jobCount := range pileUpStatMap[workspace] {
+				metric.IncreasePendingEvents(
+					dbPrefix,
+					workspace,
+					destType,
+					float64(jobCount),
+				)
 			}
 		}
 	}
@@ -96,7 +101,7 @@ func sendQueryRetryStats(attempt int) {
 }
 
 func NewStats(routerDBs map[string]jobsdb.MultiTenantJobsDB) *Stats {
-	t := Stats{}
+	var t Stats
 	config.RegisterDurationConfigVariable(60, &t.jobdDBQueryRequestTimeout, true, time.Second, []string{"JobsDB.Multitenant.QueryRequestTimeout", "JobsDB.QueryRequestTimeout"}...)
 	config.RegisterIntConfigVariable(3, &t.jobdDBMaxRetries, true, 1, []string{"JobsDB." + "Router." + "MaxRetries", "JobsDB." + "MaxRetries"}...)
 	t.RouterDBs = routerDBs

@@ -128,7 +128,7 @@ func TestUploadJob_ProcessingStats(t *testing.T) {
 			}).Migrate("warehouse")
 			require.NoError(t, err)
 
-			sqlStatement, err := os.ReadFile("testdata/sql/6.sql")
+			sqlStatement, err := os.ReadFile("testdata/sql/processing_stats_test.sql")
 			require.NoError(t, err)
 
 			_, err = pgResource.DB.Exec(string(sqlStatement))
@@ -138,7 +138,7 @@ func TestUploadJob_ProcessingStats(t *testing.T) {
 			skipIdentifierSQL := "AND ((destination_id || '_' || namespace)) != ALL($2)"
 			ctx := context.Background()
 			store := memstats.New()
-			now := "'2022-12-06 22:00:00'"
+			nowSQL := "'2022-12-06 22:00:00'"
 
 			if len(tc.skipIdentifiers) == 0 {
 				skipIdentifierSQL = ""
@@ -146,7 +146,7 @@ func TestUploadJob_ProcessingStats(t *testing.T) {
 
 			wh := HandleT{
 				destType: tc.destType,
-				Now:      now,
+				NowSQL:   nowSQL,
 				stats:    store,
 				dbHandle: pgResource.DB,
 			}

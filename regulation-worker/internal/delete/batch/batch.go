@@ -397,23 +397,21 @@ func (bm *BatchManager) Delete(
 				}
 
 				cleanTime := stats.Default.NewTaggedStat(
-					"file_cleaning_time",
+					"regulation_worker_file_cleaning_time",
 					stats.TimerType,
 					stats.Tags{
-						"jobId":       fmt.Sprintf("%d", job.ID),
-						"workspaceId": job.WorkspaceID,
-						"destType":    "batch",
-						"destName":    destName,
+						"destinationId": job.DestinationID,
+						"workspaceId":   job.WorkspaceID,
+						"jobType":       "batch",
 					})
-				cleanTime.Start()
-				defer cleanTime.End()
+				defer cleanTime.RecordDuration()()
 
 				absPath, err := downloadWithExpBackoff(gCtx, batch.download, files[_i].Key)
 				if err != nil {
 					return fmt.Errorf("error: %w, while downloading file:%s", err, files[_i].Key)
 				}
 
-				fileSizeStat := stats.Default.NewTaggedStat("file_size_mb", stats.CountType, stats.Tags{"jobId": fmt.Sprintf("%d", job.ID)})
+				fileSizeStat := stats.Default.NewTaggedStat("regulation_worker_file_size_mb", stats.CountType, stats.Tags{"jobId": fmt.Sprintf("%d", job.ID)})
 				fileSizeStat.Count(getFileSize(absPath))
 
 				if err := handleIdentityRemoval(ctx, filehandler, job.Users, absPath, absPath); err != nil {

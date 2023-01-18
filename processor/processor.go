@@ -9,7 +9,6 @@ import (
 	"io"
 	"math"
 	"net/http"
-	"reflect"
 	"runtime/trace"
 	"strconv"
 	"strings"
@@ -17,6 +16,7 @@ import (
 	"time"
 
 	jsoniter "github.com/json-iterator/go"
+	"github.com/samber/lo"
 	"github.com/tidwall/gjson"
 	"golang.org/x/sync/errgroup"
 
@@ -29,7 +29,6 @@ import (
 	"github.com/rudderlabs/rudder-server/processor/integrations"
 	"github.com/rudderlabs/rudder-server/processor/stash"
 	"github.com/rudderlabs/rudder-server/processor/transformer"
-	"github.com/rudderlabs/rudder-server/router"
 	"github.com/rudderlabs/rudder-server/router/batchrouter"
 	"github.com/rudderlabs/rudder-server/rruntime"
 	destinationdebugger "github.com/rudderlabs/rudder-server/services/debugger/destination"
@@ -308,7 +307,7 @@ func (proc *HandleT) Setup(
 	fileuploader fileuploader.Provider, rsourcesService rsources.JobService,
 ) {
 	proc.reporting = reporting
-	config.RegisterBoolConfigVariable(types.DEFAULT_REPORTING_ENABLED, &proc.reportingEnabled, false, "Reporting.enabled")
+	config.RegisterBoolConfigVariable(types.DefaultReportingEnabled, &proc.reportingEnabled, false, "Reporting.enabled")
 	config.RegisterInt64ConfigVariable(100*bytesize.MB, &proc.payloadLimit, true, 1, "Processor.payloadLimit")
 	config.RegisterDurationConfigVariable(60, &proc.jobdDBQueryRequestTimeout, true, time.Second, []string{"JobsDB.Processor.QueryRequestTimeout", "JobsDB.QueryRequestTimeout"}...)
 	config.RegisterDurationConfigVariable(90, &proc.jobsDBCommandTimeout, true, time.Second, []string{"JobsDB.Processor.CommandRequestTimeout", "JobsDB.CommandRequestTimeout"}...)
@@ -408,11 +407,6 @@ func (proc *HandleT) Setup(
 
 	g.Go(misc.WithBugsnag(func() error {
 		proc.syncTransformerFeatureJson(ctx)
-		return nil
-	}))
-
-	g.Go(misc.WithBugsnag(func() error {
-		router.CleanFailedRecordsTableProcess(ctx)
 		return nil
 	}))
 
@@ -1377,14 +1371,14 @@ func (proc *HandleT) processJobsForDest(subJobs subJob, parsedEventList [][]type
 					destination := &enabledDestinationsList[idx]
 					shallowEventCopy := transformer.TransformerEventT{}
 					shallowEventCopy.Message = singularEvent
-					shallowEventCopy.Destination = reflect.ValueOf(*destination).Interface().(backendconfig.DestinationT)
+					shallowEventCopy.Destination = *destination
 					shallowEventCopy.Libraries = workspaceLibraries
 					shallowEventCopy.Metadata = event.Metadata
 
 					// At the TP flow we are not having destination information, so adding it here.
 					shallowEventCopy.Metadata.DestinationID = destination.ID
 					shallowEventCopy.Metadata.DestinationType = destination.DestinationDefinition.Name
-					filterConfig(&shallowEventCopy, destination)
+					filterConfig(&shallowEventCopy)
 					metadata := shallowEventCopy.Metadata
 					srcAndDestKey := getKeyFromSourceAndDest(metadata.SourceID, metadata.DestinationID)
 					// We have at-least one event so marking it good
@@ -1556,85 +1550,84 @@ func sendQueryRetryStats(attempt int) {
 
 func (proc *HandleT) Store(in *storeMessage) {
 	statusList, destJobs, batchDestJobs := in.statusList, in.destJobs, in.batchDestJobs
-	processorLoopStats := make(map[string]map[string]map[string]int)
 	beforeStoreStatus := time.Now()
 	// XX: Need to do this in a transaction
 	if len(batchDestJobs) > 0 {
 		proc.logger.Debug("[Processor] Total jobs written to batch router : ", len(batchDestJobs))
 
-		err := misc.RetryWithNotify(context.Background(), proc.jobsDBCommandTimeout, proc.jobdDBMaxRetries, func(ctx context.Context) error {
-			return proc.batchRouterDB.WithStoreSafeTx(ctx, func(tx jobsdb.StoreSafeTx) error {
-				err := proc.batchRouterDB.StoreInTx(ctx, tx, batchDestJobs)
-				if err != nil {
-					return fmt.Errorf("storing batch router jobs: %w", err)
-				}
+		err := misc.RetryWithNotify(
+			context.Background(),
+			proc.jobsDBCommandTimeout,
+			proc.jobdDBMaxRetries,
+			func(ctx context.Context) error {
+				return proc.batchRouterDB.WithStoreSafeTx(
+					ctx,
+					func(tx jobsdb.StoreSafeTx) error {
+						err := proc.batchRouterDB.StoreInTx(ctx, tx, batchDestJobs)
+						if err != nil {
+							return fmt.Errorf("storing batch router jobs: %w", err)
+						}
 
-				// rsources stats
-				err = proc.updateRudderSourcesStats(ctx, tx, batchDestJobs)
-				if err != nil {
-					return fmt.Errorf("publishing rsources stats for batch router: %w", err)
-				}
-				return nil
-			})
-		}, sendRetryStoreStats)
+						// rsources stats
+						err = proc.updateRudderSourcesStats(ctx, tx, batchDestJobs)
+						if err != nil {
+							return fmt.Errorf("publishing rsources stats for batch router: %w", err)
+						}
+						return nil
+					})
+			}, sendRetryStoreStats)
 		if err != nil {
 			panic(err)
 		}
 
-		totalPayloadBatchBytes := 0
-		processorLoopStats["batch_router"] = make(map[string]map[string]int)
-		for i := range batchDestJobs {
-			_, ok := processorLoopStats["batch_router"][batchDestJobs[i].WorkspaceId]
-			if !ok {
-				processorLoopStats["batch_router"][batchDestJobs[i].WorkspaceId] = make(map[string]int)
-			}
-			processorLoopStats["batch_router"][batchDestJobs[i].WorkspaceId][batchDestJobs[i].CustomVal] += 1
-			totalPayloadBatchBytes += len(batchDestJobs[i].EventPayload)
-		}
-		proc.multitenantI.ReportProcLoopAddStats(processorLoopStats["batch_router"], "batch_rt")
-
+		proc.multitenantI.ReportProcLoopAddStats(
+			getJobCountsByWorkspaceDestType(batchDestJobs),
+			"batch_rt",
+		)
 		proc.stats.statBatchDestNumOutputEvents.Count(len(batchDestJobs))
 		proc.stats.statDBWriteBatchEvents.Observe(float64(len(batchDestJobs)))
-		proc.stats.statDBWriteBatchPayloadBytes.Observe(float64(totalPayloadBatchBytes))
+		proc.stats.statDBWriteBatchPayloadBytes.Observe(
+			float64(lo.SumBy(destJobs, func(j *jobsdb.JobT) int { return len(j.EventPayload) })),
+		)
 	}
 
 	if len(destJobs) > 0 {
 		proc.logger.Debug("[Processor] Total jobs written to router : ", len(destJobs))
 
-		err := misc.RetryWithNotify(context.Background(), proc.jobsDBCommandTimeout, proc.jobdDBMaxRetries, func(ctx context.Context) error {
-			return proc.routerDB.WithStoreSafeTx(ctx, func(tx jobsdb.StoreSafeTx) error {
-				err := proc.routerDB.StoreInTx(ctx, tx, destJobs)
-				if err != nil {
-					return fmt.Errorf("storing router jobs: %w", err)
-				}
+		err := misc.RetryWithNotify(
+			context.Background(),
+			proc.jobsDBCommandTimeout,
+			proc.jobdDBMaxRetries,
+			func(ctx context.Context) error {
+				return proc.routerDB.WithStoreSafeTx(
+					ctx,
+					func(tx jobsdb.StoreSafeTx) error {
+						err := proc.routerDB.StoreInTx(ctx, tx, destJobs)
+						if err != nil {
+							return fmt.Errorf("storing router jobs: %w", err)
+						}
 
-				// rsources stats
-				err = proc.updateRudderSourcesStats(ctx, tx, destJobs)
-				if err != nil {
-					return fmt.Errorf("publishing rsources stats for router: %w", err)
-				}
-				return nil
-			})
-		}, sendRetryStoreStats)
+						// rsources stats
+						err = proc.updateRudderSourcesStats(ctx, tx, destJobs)
+						if err != nil {
+							return fmt.Errorf("publishing rsources stats for router: %w", err)
+						}
+						return nil
+					})
+			}, sendRetryStoreStats)
 		if err != nil {
 			panic(err)
 		}
 
-		totalPayloadRouterBytes := 0
-		processorLoopStats["router"] = make(map[string]map[string]int)
-		for i := range destJobs {
-			_, ok := processorLoopStats["router"][destJobs[i].WorkspaceId]
-			if !ok {
-				processorLoopStats["router"][destJobs[i].WorkspaceId] = make(map[string]int)
-			}
-			processorLoopStats["router"][destJobs[i].WorkspaceId][destJobs[i].CustomVal] += 1
-			totalPayloadRouterBytes += len(destJobs[i].EventPayload)
-		}
-		proc.multitenantI.ReportProcLoopAddStats(processorLoopStats["router"], "rt")
-
+		proc.multitenantI.ReportProcLoopAddStats(
+			getJobCountsByWorkspaceDestType(destJobs),
+			"rt",
+		)
 		proc.stats.statDestNumOutputEvents.Count(len(destJobs))
 		proc.stats.statDBWriteRouterEvents.Observe(float64(len(destJobs)))
-		proc.stats.statDBWriteRouterPayloadBytes.Observe(float64(totalPayloadRouterBytes))
+		proc.stats.statDBWriteRouterPayloadBytes.Observe(
+			float64(lo.SumBy(destJobs, func(j *jobsdb.JobT) int { return len(j.EventPayload) })),
+		)
 	}
 
 	for _, jobs := range in.procErrorJobsByDestID {
@@ -1706,6 +1699,22 @@ func (proc *HandleT) Store(in *storeMessage) {
 	proc.stats.statRouterDBW.Count(len(destJobs))
 	proc.stats.statBatchRouterDBW.Count(len(batchDestJobs))
 	proc.stats.statProcErrDBW.Count(len(in.procErrorJobs))
+}
+
+// getJobCountsByWorkspaceDestType returns the number of jobs per workspace and destination type
+//
+// map[workspaceID]map[destType]count
+func getJobCountsByWorkspaceDestType(jobs []*jobsdb.JobT) map[string]map[string]int {
+	jobCounts := make(map[string]map[string]int)
+	for _, job := range jobs {
+		workspace := job.WorkspaceId
+		destType := job.CustomVal
+		if _, ok := jobCounts[workspace]; !ok {
+			jobCounts[workspace] = make(map[string]int)
+		}
+		jobCounts[workspace][destType] += 1
+	}
+	return jobCounts
 }
 
 type transformSrcDestOutput struct {
@@ -2084,19 +2093,11 @@ func (proc *HandleT) transformSrcDest(
 
 func (proc *HandleT) saveFailedJobs(failedJobs []*jobsdb.JobT) {
 	if len(failedJobs) > 0 {
-		jobRunIDAbortedEventsMap := make(map[string][]*router.FailedEventRowT)
-		for _, failedJob := range failedJobs {
-			router.PrepareJobRunIDAbortedEventsMap(failedJob.Parameters, jobRunIDAbortedEventsMap)
-		}
-
 		rsourcesStats := rsources.NewFailedJobsCollector(proc.rsourcesService)
 		rsourcesStats.JobsFailed(failedJobs)
 		_ = proc.errorDB.WithTx(func(tx *jobsdb.Tx) error {
-			// TODO: error propagation
-			router.GetFailedEventsManager().SaveFailedRecordIDs(jobRunIDAbortedEventsMap, tx.Tx)
 			return rsourcesStats.Publish(context.TODO(), tx.Tx)
 		})
-
 	}
 }
 
@@ -2309,7 +2310,7 @@ func (proc *HandleT) handlePendingGatewayJobs() bool {
 func (proc *HandleT) mainLoop(ctx context.Context) {
 	// waiting for reporting client setup
 	if proc.reporting != nil && proc.reportingEnabled {
-		if err := proc.reporting.WaitForSetup(ctx, types.CORE_REPORTING_CLIENT); err != nil {
+		if err := proc.reporting.WaitForSetup(ctx, types.CoreReportingClient); err != nil {
 			return
 		}
 	}
@@ -2401,7 +2402,7 @@ func (proc *HandleT) mainPipeline(ctx context.Context) {
 	proc.logger.Infof("Processor mainPipeline started, subJobSize=%d pipelineBufferedItems=%d", subJobSize, pipelineBufferedItems)
 
 	if proc.reporting != nil && proc.reportingEnabled {
-		if err := proc.reporting.WaitForSetup(ctx, types.CORE_REPORTING_CLIENT); err != nil {
+		if err := proc.reporting.WaitForSetup(ctx, types.CoreReportingClient); err != nil {
 			return
 		}
 	}
@@ -2569,14 +2570,14 @@ func (proc *HandleT) updateRudderSourcesStats(ctx context.Context, tx jobsdb.Sto
 	return err
 }
 
-func filterConfig(eventCopy *transformer.TransformerEventT, destination *backendconfig.DestinationT) {
-	if configsToFilterI, ok := destination.DestinationDefinition.Config["configFilters"]; ok {
+func filterConfig(eventCopy *transformer.TransformerEventT) {
+	if configsToFilterI, ok := eventCopy.Destination.DestinationDefinition.Config["configFilters"]; ok {
 		if configsToFilter, ok := configsToFilterI.([]interface{}); ok {
-			for _, configKey := range configsToFilter {
-				if configKeyStr, ok := configKey.(string); ok {
-					eventCopy.Destination.Config[configKeyStr] = ""
-				}
-			}
+			omitKeys := lo.FilterMap(configsToFilter, func(configKey interface{}, _ int) (string, bool) {
+				configKeyStr, ok := configKey.(string)
+				return configKeyStr, ok
+			})
+			eventCopy.Destination.Config = lo.OmitByKeys(eventCopy.Destination.Config, omitKeys)
 		}
 	}
 }

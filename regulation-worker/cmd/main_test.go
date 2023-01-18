@@ -25,7 +25,6 @@ import (
 
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	main "github.com/rudderlabs/rudder-server/regulation-worker/cmd"
-	"github.com/rudderlabs/rudder-server/regulation-worker/internal/initialize"
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/model"
 	"github.com/rudderlabs/rudder-server/services/filemanager"
 	"github.com/rudderlabs/rudder-server/services/kvstoremanager"
@@ -33,7 +32,8 @@ import (
 )
 
 var (
-	testData               []test
+	singleTenantTestData   []test
+	multiTenantTestData    []test
 	testDataMu             sync.Mutex
 	manager                kvstoremanager.KVStoreManager
 	fieldCountBeforeDelete []int
@@ -66,20 +66,12 @@ var (
 )
 
 const (
-	searchDir = "./testData"
-	goldenDir = "./goldenDir"
+	namespaceID = "spaghetti"
+	searchDir   = "./testData"
+	goldenDir   = "./goldenDir"
 )
 
-func TestFlow(t *testing.T) {
-	defer blockOnHold(t)
-
-	// Loading config
-	initialize.Init()
-
-	// starting redis server to mock redis-destination
-	pool, err := dockertest.NewPool("")
-	require.NoError(t, err)
-
+func startRedisServer(t *testing.T, pool *dockertest.Pool) {
 	resource, err := pool.Run("redis", "alpine3.14", []string{})
 	require.NoError(t, err)
 	t.Cleanup(func() {
@@ -87,7 +79,6 @@ func TestFlow(t *testing.T) {
 			t.Logf("Could not purge resource: %s", err)
 		}
 	})
-
 	redisAddress = fmt.Sprintf("localhost:%s", resource.GetPort("6379/tcp"))
 	err = pool.Retry(func() error {
 		client := redis.NewClient(&redis.Options{
@@ -99,9 +90,9 @@ func TestFlow(t *testing.T) {
 	})
 	require.NoError(t, err)
 	t.Log("Redis server is up and running")
-	insertRedisData(t, redisAddress)
+}
 
-	// starting minio server for batch-destination
+func startMinioServer(t *testing.T, pool *dockertest.Pool) {
 	minioResource, err := pool.RunWithOptions(&dockertest.RunOptions{
 		Repository: "minio/minio",
 		Tag:        "latest",
@@ -142,20 +133,15 @@ func TestFlow(t *testing.T) {
 	// creating bucket inside minio where testing will happen.
 	err = minioClient.MakeBucket(minioBucket, minioRegion)
 	require.NoError(t, err)
-	insertMinioData(t)
-	t.Log("Minio server is up and running")
+}
 
-	// starting http server to mock regulation-manager
-	srv := httptest.NewServer(handler(t))
-	t.Cleanup(srv.Close)
-	t.Setenv("CONFIG_BACKEND_TOKEN", "216Co97d9So9TkqphM0cxBzRxc3")
-	t.Setenv("CONFIG_BACKEND_URL", srv.URL)
-	t.Setenv("DEST_TRANSFORM_URL", "http://localhost:9090")
-	t.Setenv("URL_PREFIX", srv.URL)
-	backendconfig.Init()
+func TestFlow(t *testing.T) {
+	defer blockOnHold(t)
+	pool, err := dockertest.NewPool("")
+	require.NoError(t, err)
 
 	// Preparing data for testing
-	testData = []test{
+	singleTenantTestData = []test{
 		{
 			respBody:          `{"jobId":"1","destinationId":"destId-redis-test","userAttributes":[{"userId":"Jermaine1473336609491897794707338","phone":"6463633841","email":"dorowane8n285680461479465450293436@gmail.com"},{"userId":"Mercie8221821544021583104106123","email":"dshirilad8536019424659691213279980@gmail.com"},{"userId":"Claiborn443446989226249191822329","phone":"8782905113"}]}`,
 			getJobRespCode:    200,
@@ -169,64 +155,139 @@ func TestFlow(t *testing.T) {
 			status:            "pending",
 		},
 	}
+	multiTenantTestData = []test{
+		{
+			respBody:          `{"jobId":"1","destinationId":"destId-redis-test","userAttributes":[{"userId":"Jermaine1473336609491897794707338","phone":"6463633841","email":"dorowane8n285680461479465450293436@gmail.com"},{"userId":"Mercie8221821544021583104106123","email":"dshirilad8536019424659691213279980@gmail.com"},{"userId":"Claiborn443446989226249191822329","phone":"8782905113"}]}`,
+			getJobRespCode:    200,
+			updateJobRespCode: 201,
+			status:            "pending",
+		},
+		{
+			respBody:          `{"jobId":"2","destinationId":"destId-s3-test","userAttributes":[{"userId":"Jermaine1473336609491897794707338","phone":"6463633841","email":"dorowane8n285680461479465450293436@gmail.com"},{"userId":"Mercie8221821544021583104106123","email":"dshirilad8536019424659691213279980@gmail.com"},{"userId":"Claiborn443446989226249191822329","phone":"8782905113"}]}`,
+			getJobRespCode:    200,
+			updateJobRespCode: 201,
+			status:            "pending",
+		},
+	}
+	// starting http server to mock regulation-manager
+	srv := httptest.NewServer(handler(t))
+	t.Cleanup(srv.Close)
+	t.Setenv("WORKSPACE_TOKEN", "216Co97d9So9TkqphM0cxBzRxc3")
+	t.Setenv("WORKSPACE_NAMESPACE", "216Co97d9So9TkqphM0cxBzRxc3")
 
-	// Starting service
-	done := make(chan struct{})
-	svcCtx, svcCancel := context.WithCancel(context.Background())
-	t.Cleanup(func() { svcCancel(); <-done })
-	go func() {
-		defer close(done)
-		defer svcCancel()
-		main.Run(svcCtx)
-	}()
+	t.Setenv("CONFIG_BACKEND_URL", srv.URL)
+	t.Setenv("DEST_TRANSFORM_URL", "http://localhost:9090")
+	t.Setenv("URL_PREFIX", srv.URL)
+	t.Setenv("RSERVER_BACKEND_CONFIG_POLL_INTERVAL", "0.1")
 
-	t.Run("test-flow", func(t *testing.T) {
+	// starting redis server to mock redis-destination
+	startRedisServer(t, pool)
+	insertRedisData(t, redisAddress)
+	t.Log("Redis server is up and running")
+
+	// starting minio server for batch-destination
+	startMinioServer(t, pool)
+	insertMinioData(t)
+	t.Log("Minio server is up and running")
+
+	t.Run("Single-tenant: test complete worker flow", func(t *testing.T) {
+		done := make(chan struct{})
+		svcCtx, svcCancel := context.WithCancel(context.Background())
+		t.Cleanup(func() { svcCancel(); <-done })
+		go func() {
+			defer close(done)
+			defer svcCancel()
+			err := main.Run(svcCtx)
+			require.NoError(t, err, "error while running regulation-worker")
+		}()
 		require.Eventually(t, func() bool {
 			testDataMu.Lock()
 			defer testDataMu.Unlock()
-			for _, test := range testData {
+			for _, test := range singleTenantTestData {
 				if test.status == "pending" && test.getJobRespCode == 200 {
 					return false
 				}
 			}
 			return true
 		}, 3*time.Minute, 150*time.Millisecond)
-
-		fieldCountAfterDelete = make([]int, len(redisInputTestData))
-		for i, test := range redisInputTestData {
-			key := fmt.Sprintf("user:%s", test.key)
-			result, err := manager.HGetAll(key)
-			if err != nil {
-				t.Logf("Error while getting data from redis using HMGET: %v", err)
-			}
-			fieldCountAfterDelete[i] = len(result)
-		}
-		for i := 1; i < len(redisInputTestData); i++ {
-			require.Equal(t, fieldCountBeforeDelete[i], fieldCountAfterDelete[i], "expected no deletion for this key")
-		}
-
-		require.NotEqual(t, fieldCountBeforeDelete[0], fieldCountAfterDelete[0], "key found, expected no key")
-
-		verifyBatchDelete(t)
 	})
+
+	t.Run("Multi-tenant: test complete worker flow", func(t *testing.T) {
+		t.Setenv("DEPLOYMENT_TYPE", "MULTITENANT")
+		t.Setenv("WORKSPACE_NAMESPACE", namespaceID)
+		t.Setenv("HOSTED_SERVICE_SECRET", "foobar")
+
+		done := make(chan struct{})
+		svcCtx, svcCancel := context.WithCancel(context.Background())
+		t.Cleanup(func() { svcCancel(); <-done })
+		go func() {
+			defer close(done)
+			defer svcCancel()
+			err := main.Run(svcCtx)
+			require.NoError(t, err, "error while running regulation-worker")
+		}()
+		require.Eventually(t, func() bool {
+			testDataMu.Lock()
+			defer testDataMu.Unlock()
+			for _, test := range multiTenantTestData {
+				if test.status == "pending" && test.getJobRespCode == 200 {
+					return false
+				}
+			}
+			return true
+		}, 3*time.Minute, 150*time.Millisecond)
+	})
+	verifyRedisDeletion(t)
+	verifyBatchDeletion(t)
 }
 
-func getJob(w http.ResponseWriter, _ *http.Request) {
+func verifyRedisDeletion(t *testing.T) {
+	fieldCountAfterDelete = make([]int, len(redisInputTestData))
+	for i, test := range redisInputTestData {
+		key := fmt.Sprintf("user:%s", test.key)
+		result, err := manager.HGetAll(key)
+		if err != nil {
+			t.Logf("Error while getting data from redis using HMGET: %v", err)
+		}
+		fieldCountAfterDelete[i] = len(result)
+	}
+	for i := 1; i < len(redisInputTestData); i++ {
+		require.Equal(t, fieldCountBeforeDelete[i], fieldCountAfterDelete[i], "expected no deletion for this key")
+	}
+	require.NotEqual(t, fieldCountBeforeDelete[0], fieldCountAfterDelete[0], "key found, expected no key")
+}
+
+func getSingleTenantJob(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	testDataMu.Lock()
 	defer testDataMu.Unlock()
-	for i, test := range testData {
+	for i, test := range singleTenantTestData {
 		if test.status == "pending" {
-			w.WriteHeader(testData[i].getJobRespCode)
-			_, _ = w.Write([]byte(testData[i].respBody))
+			w.WriteHeader(singleTenantTestData[i].getJobRespCode)
+			_, _ = w.Write([]byte(singleTenantTestData[i].respBody))
 			return
 		}
 	}
 	// for the time when testData is not initialized.
-	w.WriteHeader(404)
+	w.WriteHeader(204)
 }
 
-func updateJobStatus(w http.ResponseWriter, r *http.Request) {
+func getMultiTenantJob(w http.ResponseWriter, _ *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	testDataMu.Lock()
+	defer testDataMu.Unlock()
+	for i, test := range multiTenantTestData {
+		if test.status == "pending" {
+			w.WriteHeader(multiTenantTestData[i].getJobRespCode)
+			_, _ = w.Write([]byte(multiTenantTestData[i].respBody))
+			return
+		}
+	}
+	// for the time when testData is not initialized.
+	w.WriteHeader(204)
+}
+
+func updateSingleTenantJobStatus(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	jobID, _ := strconv.Atoi(mux.Vars(r)["job_id"])
 	var status statusJobSchema
@@ -236,9 +297,9 @@ func updateJobStatus(w http.ResponseWriter, r *http.Request) {
 
 	testDataMu.Lock()
 	if status.Status == "complete" {
-		testData[jobID-1].status = "complete"
+		singleTenantTestData[jobID-1].status = "complete"
 	}
-	updateJobRespCode := testData[jobID-1].updateJobRespCode
+	updateJobRespCode := singleTenantTestData[jobID-1].updateJobRespCode
 	testDataMu.Unlock()
 	w.WriteHeader(updateJobRespCode)
 
@@ -251,7 +312,32 @@ func updateJobStatus(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write(body)
 }
 
-func getWorkspaceConfig(w http.ResponseWriter, _ *http.Request) {
+func updateMultiTenantJobStatus(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	jobID, _ := strconv.Atoi(mux.Vars(r)["job_id"])
+	var status statusJobSchema
+	if err := json.NewDecoder(r.Body).Decode(&status); err != nil {
+		return
+	}
+
+	testDataMu.Lock()
+	if status.Status == "complete" {
+		multiTenantTestData[jobID-1].status = "complete"
+	}
+	updateJobRespCode := multiTenantTestData[jobID-1].updateJobRespCode
+	testDataMu.Unlock()
+	w.WriteHeader(updateJobRespCode)
+
+	body, err := json.Marshal(struct{}{})
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	_, _ = w.Write(body)
+}
+
+func getSingleTenantWorkspaceConfig(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	config := backendconfig.ConfigT{
 		WorkspaceID: "reg-test-workspaceId",
@@ -289,7 +375,46 @@ func getWorkspaceConfig(w http.ResponseWriter, _ *http.Request) {
 	_, _ = w.Write(body)
 }
 
-func verifyBatchDelete(t *testing.T) {
+func getMultiTenantNamespaceConfig(w http.ResponseWriter, _ *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	config := map[string]backendconfig.ConfigT{namespaceID: {
+		WorkspaceID: "reg-test-workspaceId",
+		Sources: []backendconfig.SourceT{
+			{
+				Destinations: []backendconfig.DestinationT{
+					{
+						ID:     "destId-s3-test",
+						Config: minioConfig,
+						DestinationDefinition: backendconfig.DestinationDefinitionT{
+							Name: "S3",
+						},
+					},
+					{
+						ID: "destId-redis-test",
+						Config: map[string]interface{}{
+							"address":     redisAddress,
+							"clusterMode": false,
+							"secure":      false,
+						},
+						DestinationDefinition: backendconfig.DestinationDefinitionT{
+							Name: "REDIS",
+						},
+					},
+				},
+			},
+		},
+	}}
+
+	body, err := json.Marshal(config)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	_, _ = w.Write(body)
+}
+
+func verifyBatchDeletion(t *testing.T) {
 	t.Helper()
 	var goldenFileList []string
 	err := filepath.Walk(goldenDir, func(path string, f os.FileInfo, err error) error {
@@ -309,7 +434,7 @@ func verifyBatchDelete(t *testing.T) {
 	require.NoError(t, err, "batch verification failed")
 	require.NoError(t, filePtr.Close())
 
-	fmFactory := filemanager.FileManagerFactoryT{}
+	var fmFactory filemanager.FileManagerFactoryT
 	fm, err := fmFactory.New(&filemanager.SettingsT{
 		Provider: "S3",
 		Config:   minioConfig,
@@ -336,12 +461,15 @@ func verifyBatchDelete(t *testing.T) {
 func handler(t *testing.T) http.Handler {
 	t.Helper()
 	srvMux := mux.NewRouter()
-	srvMux.HandleFunc("/dataplane/workspaces/{workspace_id}/regulations/workerJobs", getJob).Methods("GET")
-	srvMux.HandleFunc("/dataplane/workspaces/{workspace_id}/regulations/workerJobs/{job_id}", updateJobStatus).Methods("PATCH")
-	srvMux.HandleFunc("/workspaceConfig", getWorkspaceConfig).Methods("GET")
+	srvMux.HandleFunc("/dataplane/workspaces/{workspace_id}/regulations/workerJobs", getSingleTenantJob).Methods(http.MethodGet)
+	srvMux.HandleFunc("/dataplane/workspaces/{workspace_id}/regulations/workerJobs/{job_id}", updateSingleTenantJobStatus).Methods(http.MethodPatch)
+	srvMux.HandleFunc("/dataplane/namespaces/{workspace_id}/regulations/workerJobs", getMultiTenantJob).Methods(http.MethodGet)
+	srvMux.HandleFunc("/dataplane/namespaces/{workspace_id}/regulations/workerJobs/{job_id}", updateMultiTenantJobStatus).Methods(http.MethodPatch)
+	srvMux.HandleFunc("/workspaceConfig", getSingleTenantWorkspaceConfig).Methods(http.MethodGet)
+	srvMux.HandleFunc("/data-plane/v1/namespaces/{namespace_id}/config", getMultiTenantNamespaceConfig).Methods(http.MethodGet)
+
 	srvMux.Use(func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-			t.Logf("Got call to %s", req.URL.Path)
 			next.ServeHTTP(w, req)
 		})
 	})
@@ -405,7 +533,7 @@ func insertMinioData(t *testing.T) {
 		t.Fatal("File list empty, no data to test")
 	}
 
-	fmFactory := filemanager.FileManagerFactoryT{}
+	var fmFactory filemanager.FileManagerFactoryT
 	fm, err := fmFactory.New(&filemanager.SettingsT{
 		Provider: "S3",
 		Config:   minioConfig,

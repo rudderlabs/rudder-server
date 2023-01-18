@@ -25,6 +25,7 @@ const stagingTableColumns = `
     first_event_at,
     last_event_at,
     total_events,
+	total_bytes,
     created_at,
     updated_at,
     metadata,
@@ -137,6 +138,7 @@ func (repo *StagingFiles) Insert(ctx context.Context, stagingFile *model.Staging
 			destination_id,
 			status,
 			total_events,
+			total_bytes,
 			first_event_at,
 			last_event_at,
 			created_at,
@@ -144,7 +146,7 @@ func (repo *StagingFiles) Insert(ctx context.Context, stagingFile *model.Staging
 			metadata
 		)
 		VALUES
-		 ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) 
+		 ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13) 
 		RETURNING id`,
 
 		stagingFile.Location,
@@ -154,6 +156,7 @@ func (repo *StagingFiles) Insert(ctx context.Context, stagingFile *model.Staging
 		stagingFile.DestinationID,
 		stagingFile.Status,
 		stagingFile.TotalEvents,
+		stagingFile.TotalBytes,
 		firstEventAt,
 		lastEventAt,
 		now.UTC(),
@@ -192,6 +195,7 @@ func (*StagingFiles) parseRows(rows *sql.Rows) ([]model.StagingFile, error) {
 			&firstEventAt,
 			&lastEventAt,
 			&stagingFile.TotalEvents,
+			&stagingFile.TotalBytes,
 			&stagingFile.CreatedAt,
 			&stagingFile.UpdatedAt,
 			&metadataRaw,

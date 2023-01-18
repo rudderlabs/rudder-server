@@ -96,7 +96,11 @@ type DestinationFailedRecords struct {
 }
 type FailedRecords []json.RawMessage
 
-var StatusNotFoundError = errors.New("Status not found")
+// ErrStatusNotFound sentinel error indicating that status cannot be found
+var ErrStatusNotFound = errors.New("Status not found")
+
+// ErrSourceNotCompleted sentinel error indicating that a source is not completed
+var ErrSourceNotCompleted = errors.New("Source not completed")
 
 // StatsIncrementer increments stats
 type StatsIncrementer interface {

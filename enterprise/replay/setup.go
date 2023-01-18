@@ -15,7 +15,7 @@ import (
 var replayEnabled bool
 
 func loadConfig() {
-	replayEnabled = config.GetBool("Replay.enabled", types.DEFAULT_REPLAY_ENABLED)
+	replayEnabled = config.GetBool("Replay.enabled", types.DefaultReplayEnabled)
 	config.RegisterIntConfigVariable(200, &userTransformBatchSize, true, 1, "Processor.userTransformBatchSize")
 }
 
