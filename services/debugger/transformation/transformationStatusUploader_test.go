@@ -2,9 +2,10 @@ package transformationdebugger_test
 
 import (
 	"context"
-	"github.com/rudderlabs/rudder-server/testhelper/rand"
 	"path"
 	"time"
+
+	"github.com/rudderlabs/rudder-server/testhelper/rand"
 
 	"github.com/golang/mock/gomock"
 	. "github.com/onsi/ginkgo/v2"

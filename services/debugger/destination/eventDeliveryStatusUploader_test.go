@@ -2,12 +2,13 @@ package destinationdebugger_test
 
 import (
 	"context"
+	"path"
+
 	"github.com/golang/mock/gomock"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/rudderlabs/rudder-server/testhelper/rand"
 	"github.com/tidwall/gjson"
-	"path"
 
 	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
@@ -221,7 +222,6 @@ var _ = Describe("eventDeliveryStatusUploader", func() {
 	})
 
 	Context("RecordEventDeliveryStatus Badger", func() {
-
 		BeforeEach(func() {
 			config.Reset()
 			config.Set("RUDDER_TMPDIR", path.Join(GinkgoT().TempDir(), rand.String(10)))
