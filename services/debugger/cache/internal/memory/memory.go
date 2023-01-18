@@ -1,4 +1,4 @@
-package listcache
+package memory
 
 import (
 	"sync"
@@ -16,7 +16,7 @@ type cacheItem[E any] struct {
 loadCacheConfig sets the properties of the cache after reading it from the config file.
 This gives a feature of hot readability as well.
 */
-func (c *ListCache[E]) loadCacheConfig() {
+func (c *Cache[E]) loadCacheConfig() {
 	if c.size == 0 {
 		config.RegisterIntConfigVariable(3, &c.size, true, 1, "LiveEvent.cache.size")
 	}
@@ -33,7 +33,7 @@ func (c *ListCache[E]) loadCacheConfig() {
 
 key-value pair form the cache which is older than TTL time.
 */
-type ListCache[E any] struct {
+type Cache[E any] struct {
 	lock        sync.RWMutex
 	keyTTL      time.Duration // Time after which the data will be expired and removed from the cache
 	cleanupFreq time.Duration // This is the time at which a cleaner goroutines  checks whether the data is expired in cache
@@ -47,7 +47,7 @@ type ListCache[E any] struct {
 This method initiates the cache object. To initiate, this sets certain properties of the cache like keyTTL,
 cleanupFreq, size, empty cacheMap
 */
-func (c *ListCache[E]) init() {
+func (c *Cache[E]) init() {
 	c.once.Do(func() {
 		c.loadCacheConfig()
 		c.cacheMap = make(map[string]*cacheItem[E], c.size)
@@ -72,7 +72,7 @@ func (c *ListCache[E]) init() {
 /*
 Update Inserts the data in the cache, This method expects a string as a key and []byte as the data
 */
-func (c *ListCache[E]) Update(key string, value E) error {
+func (c *Cache[E]) Update(key string, value E) error {
 	c.init()
 	c.lock.Lock()
 	defer c.lock.Unlock()
@@ -96,7 +96,7 @@ func (c *ListCache[E]) Update(key string, value E) error {
 if there is any data available corresponding to the given key then it removes the data from the cache and returns it
 in the form of []byte
 */
-func (c *ListCache[E]) Read(key string) []E {
+func (c *Cache[E]) Read(key string) ([]E, error) {
 	c.init()
 	var historicEventsDelivery []E
 	c.lock.Lock()
@@ -105,10 +105,10 @@ func (c *ListCache[E]) Read(key string) []E {
 		delete(c.cacheMap, key)
 	}
 	c.lock.Unlock()
-	return historicEventsDelivery
+	return historicEventsDelivery, nil
 }
 
-func (*ListCache[E]) Stop() error {
+func (*Cache[E]) Stop() error {
 	// NO-OP
 	return nil
 }

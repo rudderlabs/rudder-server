@@ -1,7 +1,6 @@
-package embeddedcache
+package badger
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -21,7 +20,7 @@ import (
 loadCacheConfig sets the properties of the cache after reading it from the config file.
 This gives a feature of hot readability as well.
 */
-func (e *EmbeddedCache[E]) loadCacheConfig() {
+func (e *Cache[E]) loadCacheConfig() {
 	config.RegisterDurationConfigVariable(30, &e.cleanupFreq, true, time.Second, "LiveEvent.cache.clearFreq") // default clearFreq is 15 seconds
 	config.RegisterIntConfigVariable(100, &e.limiter, true, 1, "LiveEvent.cache.limiter")
 	config.RegisterDurationConfigVariable(5, &e.ticker, false, time.Minute, "LiveEvent.cache.GCTime")
@@ -30,10 +29,10 @@ func (e *EmbeddedCache[E]) loadCacheConfig() {
 }
 
 /*
-EmbeddedCache is an in-memory cache. Each key-value pair stored in this cache have a TTL and one goroutine removes the
+Cache is an in-memory cache. Each key-value pair stored in this cache have a TTL and one goroutine removes the
 key-value pair form the cache which is older than TTL time.
 */
-type EmbeddedCache[E any] struct {
+type Cache[E any] struct {
 	limiter      int
 	retries      int
 	path         string
@@ -61,26 +60,40 @@ func (badgerLogger) Warningf(format string, a ...interface{}) {
 }
 
 // Update writes the entries into badger db with a TTL
-func (e *EmbeddedCache[E]) Update(key string, value E) error {
+func (e *Cache[E]) Update(key string, value E) error {
 	e.Init()
 	txn := e.db.NewTransaction(true)
-	setBadgerEntry := func(ctx context.Context) error {
-		res := e.Read(key)
-		if len(res) >= e.limiter {
-			res = res[len(res)-e.limiter+1:]
-		}
-		res = append(res, value)
-		data, err := json.Marshal(res)
-		if err != nil {
-			return err
-		}
-		entry := badger.NewEntry([]byte(key), data).WithTTL(e.cleanupFreq)
-		if err := txn.SetEntry(entry); err != nil {
-			return err
-		}
-		return nil
+	res, err := txn.Get([]byte(key))
+	if err != nil {
+		return err
 	}
-	err := misc.RetryWith(context.TODO(), e.queryTimeout, e.retries, setBadgerEntry)
+
+	var valCopy []byte
+	err = res.Value(func(val []byte) error {
+		valCopy = append([]byte{}, val...)
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+	var values []E
+	err = json.Unmarshal(valCopy, &values)
+	if err != nil {
+		return err
+	}
+	if len(values) >= e.limiter {
+		values = values[len(values)-e.limiter+1:]
+	}
+	values = append(values, value)
+	data, err := json.Marshal(values)
+	if err != nil {
+		return err
+	}
+	entry := badger.NewEntry([]byte(key), data).WithTTL(e.cleanupFreq)
+	if err := txn.SetEntry(entry); err != nil {
+		return err
+	}
+
 	if err != nil {
 		return err
 	}
@@ -92,38 +105,35 @@ func (e *EmbeddedCache[E]) Update(key string, value E) error {
 }
 
 // Read fetches all the entries for a given key from badgerDB
-func (e *EmbeddedCache[E]) Read(key string) []E {
+func (e *Cache[E]) Read(key string) ([]E, error) {
 	e.Init()
-	read := func(ctx context.Context) ([]E, error) {
-		var values []E
-		err := e.db.View(func(txn *badger.Txn) error {
-			item, err := txn.Get([]byte(key))
-			if err != nil {
-				return err
-			}
-			var data []byte
-			data, err = item.ValueCopy(data)
-			if err != nil {
-				return err
-			}
-			err = json.Unmarshal(data, &values)
-			if err != nil {
-				return err
-			}
+	var values []E
+	err := e.db.View(func(txn *badger.Txn) error {
+		item, err := txn.Get([]byte(key))
+		if err != nil {
+			return err
+		}
+		var valCopy []byte
+		err = item.Value(func(val []byte) error {
+			valCopy = append([]byte{}, val...)
 			return nil
 		})
 		if err != nil {
-			return nil, err
+			return err
 		}
-		return values, nil
+		err = json.Unmarshal(valCopy, &values)
+		if err != nil {
+			return err
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
 	}
-
-	res, _ := misc.QueryWithRetries(context.TODO(), e.queryTimeout, e.retries, read)
-
-	return res
+	return values, nil
 }
 
-func (e *EmbeddedCache[E]) Init() {
+func (e *Cache[E]) Init() {
 	e.once.Do(func() {
 		e.loadCacheConfig()
 		badgerPathName := e.Origin + "/cache/badgerdbv3"
@@ -156,7 +166,7 @@ func (e *EmbeddedCache[E]) Init() {
 	})
 }
 
-func (e *EmbeddedCache[E]) gcBadgerDB() {
+func (e *Cache[E]) gcBadgerDB() {
 	ticker := time.NewTicker(e.ticker)
 	defer ticker.Stop()
 	// One call would only result in removal of at max one log file.
@@ -177,7 +187,7 @@ func (e *EmbeddedCache[E]) gcBadgerDB() {
 	}
 }
 
-func (e *EmbeddedCache[E]) Stop() error {
+func (e *Cache[E]) Stop() error {
 	e.Init()
 	close(e.done)
 	<-e.closed

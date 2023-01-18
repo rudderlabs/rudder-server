@@ -1,4 +1,4 @@
-package listcache
+package memory
 
 import (
 	"time"
@@ -13,7 +13,7 @@ var _ = Describe("cache", func() {
 		testValue := []byte("test_value")
 
 		It("Cache init", func() {
-			var c ListCache[[]byte]
+			var c Cache[[]byte]
 			c.init()
 			Expect(c.size).NotTo(Equal(0))
 			Expect(c.keyTTL).NotTo(Equal(0))
@@ -21,7 +21,7 @@ var _ = Describe("cache", func() {
 		})
 
 		It("Cache update", func() {
-			var c ListCache[[]byte]
+			var c Cache[[]byte]
 			Expect(c.Update(testKey, testValue)).To(BeNil())
 			Expect(len(c.cacheMap)).To(Equal(1))
 			Expect(len(c.cacheMap[testKey].data)).To(Equal(1))
@@ -29,7 +29,7 @@ var _ = Describe("cache", func() {
 		})
 
 		It("Cache timeout", func() {
-			c := ListCache[[]byte]{
+			c := Cache[[]byte]{
 				keyTTL:      10 * time.Millisecond,
 				cleanupFreq: 10 * time.Millisecond,
 			}
@@ -41,15 +41,16 @@ var _ = Describe("cache", func() {
 		})
 
 		It("Cache readAndPopData", func() {
-			var c ListCache[[]byte]
+			var c Cache[[]byte]
 			Expect(c.Update(testKey, testValue)).To(BeNil())
-			v := c.Read(testKey)
+			v, err := c.Read(testKey)
 			Expect(v).To(Equal([][]byte{testValue}))
+			Expect(err).ToNot(BeNil())
 			Expect(len(c.cacheMap)).To(Equal(0))
 		})
 
 		It("Cache data store limit", func() {
-			c := ListCache[[]byte]{
+			c := Cache[[]byte]{
 				size: 2,
 			}
 			testValue2 := []byte("test_value2")

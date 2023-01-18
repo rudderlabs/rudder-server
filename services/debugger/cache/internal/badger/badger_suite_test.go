@@ -1,4 +1,4 @@
-package listcache_test
+package badger_test
 
 import (
 	"testing"
@@ -7,7 +7,7 @@ import (
 	. "github.com/onsi/gomega"
 )
 
-func TestMemcache(t *testing.T) {
+func TestBadgercache(t *testing.T) {
 	RegisterFailHandler(Fail)
-	RunSpecs(t, "memcache Suite")
+	RunSpecs(t, "Badgercache Suite")
 }

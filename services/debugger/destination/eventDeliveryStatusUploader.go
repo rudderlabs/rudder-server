@@ -213,7 +213,10 @@ func (h *Handle) recordHistoricEventsDelivery(destinationIDs []string) {
 	h.uploadEnabledDestinationIDsMu.RLock()
 	defer h.uploadEnabledDestinationIDsMu.RUnlock()
 	for _, destinationID := range destinationIDs {
-		historicEventsDelivery := h.eventsDeliveryCache.Read(destinationID)
+		historicEventsDelivery, err := h.eventsDeliveryCache.Read(destinationID)
+		if err != nil {
+			continue
+		}
 		for _, event := range historicEventsDelivery {
 			h.uploader.RecordEvent(event)
 		}

@@ -175,7 +175,10 @@ func (h *Handle) recordHistoricEvents() {
 	h.uploadEnabledWriteKeysMu.RLock()
 	defer h.uploadEnabledWriteKeysMu.RUnlock()
 	for _, writeKey := range h.uploadEnabledWriteKeys {
-		historicEvents := h.eventsCache.Read(writeKey)
+		historicEvents, err := h.eventsCache.Read(writeKey)
+		if err != nil {
+			continue
+		}
 		for _, eventBatchData := range historicEvents {
 			h.uploader.RecordEvent(&GatewayEventBatchT{writeKey, eventBatchData})
 		}

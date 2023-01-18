@@ -296,7 +296,10 @@ func (h *Handle) recordHistoricTransformations(tIDs []string) {
 	h.uploadEnabledTransformationsMu.RLock()
 	defer h.uploadEnabledTransformationsMu.RUnlock()
 	for _, tID := range tIDs {
-		tStatuses := h.transformationCacheMap.Read(tID)
+		tStatuses, err := h.transformationCacheMap.Read(tID)
+		if err != nil {
+			continue
+		}
 		for _, tStatus := range tStatuses {
 			h.processRecordTransformationStatus(&tStatus, tID)
 		}
