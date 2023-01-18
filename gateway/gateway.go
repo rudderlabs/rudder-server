@@ -441,7 +441,7 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 		// Saving the event data read from req.request.Body to the splice.
 		// Using this to send event schema to the config backend.
 		var eventBatchesToRecord []sourceDebugger
-		userWebRequestWorker.batchTimeStat.Start()
+		batchStart := time.Now()
 		for _, req := range breq.batchRequest {
 			writeKey := req.writeKey
 			sourceTag := gateway.getSourceTagFromWriteKey(writeKey)
@@ -496,7 +496,7 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 			sourcedebugger.RecordEvent(eventBatch.writeKey, eventBatch.data)
 		}
 
-		userWebRequestWorker.batchTimeStat.End()
+		userWebRequestWorker.batchTimeStat.Since(batchStart)
 		gateway.batchSizeStat.Observe(float64(len(breq.batchRequest)))
 
 		for _, v := range sourceStats {

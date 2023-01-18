@@ -16,7 +16,6 @@ import (
 	"github.com/rudderlabs/rudder-server/testhelper"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/stretchr/testify/require"
-	"gopkg.in/alexcesaro/statsd.v2"
 )
 
 // Verifying that even though a Stats instance might initially
@@ -148,32 +147,4 @@ func newStatsdServer(t *testing.T, addr string, f func(string)) *statsdServer {
 func (s *statsdServer) Close() {
 	require.NoError(s.t, s.closer.Close())
 	<-s.closed
-}
-
-func TestTimerIncompleteStartStopScenarios(t *testing.T) {
-	t.Run("Calling Stop without having previously called Start", func(t *testing.T) {
-		require.NotPanics(t, func() {
-			conf := &statsdConfig{
-				enabled: true,
-			}
-			client := &statsdClient{
-				statsd: &statsd.Client{},
-			}
-			m := newStatsdMeasurement(conf, "test", TimerType, client)
-			m.End()
-		})
-	})
-
-	t.Run("Calling Start before client is ready and Stop after client is ready", func(t *testing.T) {
-		require.NotPanics(t, func() {
-			conf := &statsdConfig{
-				enabled: true,
-			}
-			client := &statsdClient{}
-			m := newStatsdMeasurement(conf, "test", TimerType, client)
-			m.Start()
-			client.statsd = &statsd.Client{}
-			m.End()
-		})
-	})
 }

@@ -2,12 +2,14 @@ package jobsdb
 
 import (
 	"fmt"
+	"time"
 )
 
 func (jd *HandleT) executeDbRequest(c *dbRequest) interface{} {
-	totalTimeStat := jd.getTimerStat(fmt.Sprintf("%s_total_time", c.name), c.tags)
-	totalTimeStat.Start()
-	defer totalTimeStat.End()
+	defer jd.getTimerStat(
+		fmt.Sprintf("%s_total_time", c.name),
+		c.tags,
+	).RecordDuration()()
 
 	var queueEnabled bool
 	var queueCap chan struct{}
@@ -25,11 +27,11 @@ func (jd *HandleT) executeDbRequest(c *dbRequest) interface{} {
 	}
 
 	if queueEnabled {
+		queuedAt := time.Now()
 		waitTimeStat := jd.getTimerStat(fmt.Sprintf("%s_wait_time", c.name), c.tags)
-		waitTimeStat.Start()
 		queueCap <- struct{}{}
 		defer func() { <-queueCap }()
-		waitTimeStat.End()
+		waitTimeStat.Since(queuedAt)
 	}
 
 	return c.command()
