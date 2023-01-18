@@ -727,13 +727,13 @@ func (wh *HandleT) processingStats(ctx context.Context, availableWorkers int, jo
 		"module":   moduleName,
 		"destType": wh.destType,
 	})
-	pickupLagStat.SendTiming(jobStats.PickupLag * time.Second)
+	pickupLagStat.SendTiming(jobStats.PickupLag)
 
 	pickupWaitTimeStat := wh.stats.NewTaggedStat("wh_processing_pickup_wait_time", stats.TimerType, stats.Tags{
 		"module":   moduleName,
 		"destType": wh.destType,
 	})
-	pickupWaitTimeStat.SendTiming(jobStats.PickupWaitTime * time.Second)
+	pickupWaitTimeStat.SendTiming(jobStats.PickupWaitTime)
 }
 
 func (wh *HandleT) getUploadsToProcess(ctx context.Context, availableWorkers int, skipIdentifiers []string) ([]*UploadJobT, error) {
