@@ -33,7 +33,6 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/httputil"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
-	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	"github.com/rudderlabs/rudder-server/warehouse/tunnelling"
 )
 
@@ -255,7 +254,7 @@ type DestinationT struct {
 }
 
 type (
-	SchemaT      = model.Schema
+	SchemaT      map[string]TableSchemaT
 	TableSchemaT map[string]string
 )
 
@@ -337,32 +336,6 @@ func TimingFromJSONString(str sql.NullString) (status string, recordedTime time.
 	timingsMap := gjson.Parse(str.String).Map()
 	for s, t := range timingsMap {
 		return s, t.Time()
-	}
-	return // zero values
-}
-
-func GetLastFailedStatus(timingsMap model.Timings) (status string) {
-	if len(timingsMap) > 0 {
-		for index := len(timingsMap) - 1; index >= 0; index-- {
-			for s := range timingsMap[index] {
-				if strings.Contains(s, "failed") {
-					return s
-				}
-			}
-		}
-	}
-	return // zero values
-}
-
-func GetLoadFileGenTime(timingsMap model.Timings) (t time.Time) {
-	if len(timingsMap) > 0 {
-		for index := len(timingsMap) - 1; index >= 0; index-- {
-			for s, t := range timingsMap[index] {
-				if strings.Contains(s, "generating_load_files") {
-					return t
-				}
-			}
-		}
 	}
 	return // zero values
 }
@@ -564,8 +537,8 @@ func GetS3Locations(loadFiles []LoadFileT) []LoadFileT {
 	return loadFiles
 }
 
-func JSONSchemaToMap(rawMsg json.RawMessage) map[string]map[string]string {
-	schema := make(map[string]map[string]string)
+func JSONSchemaToMap(rawMsg json.RawMessage) SchemaT {
+	schema := make(SchemaT)
 	err := json.Unmarshal(rawMsg, &schema)
 	if err != nil {
 		panic(fmt.Errorf("unmarshalling: %s failed with Error : %w", string(rawMsg), err))

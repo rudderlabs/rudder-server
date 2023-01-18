@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/lib/pq"
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
@@ -29,7 +30,7 @@ const stagingTableColumns = `
     created_at,
     updated_at,
     metadata,
-    workspace_id 
+    workspace_id
 `
 
 // StagingFiles is a repository for inserting and querying staging files.
@@ -49,6 +50,14 @@ type metadataSchema struct {
 	DestinationRevisionID string `json:"destination_revision_id"`
 }
 
+func StagingFileIDs(stagingFiles []*model.StagingFile) []int64 {
+	var stagingFileIDs []int64
+	for _, stagingFile := range stagingFiles {
+		stagingFileIDs = append(stagingFileIDs, stagingFile.ID)
+	}
+	return stagingFileIDs
+}
+
 func metadataFromStagingFile(stagingFile *model.StagingFile) metadataSchema {
 	return metadataSchema{
 		UseRudderStorage:      stagingFile.UseRudderStorage,
@@ -65,17 +74,6 @@ func metadataFromStagingFile(stagingFile *model.StagingFile) metadataSchema {
 	}
 }
 
-func (m *metadataSchema) SetStagingFile(stagingFile *model.StagingFile) {
-	stagingFile.UseRudderStorage = m.UseRudderStorage
-	stagingFile.SourceBatchID = m.SourceBatchID
-	stagingFile.SourceTaskID = m.SourceTaskID
-	stagingFile.SourceTaskRunID = m.SourceTaskRunID
-	stagingFile.SourceJobID = m.SourceJobID
-	stagingFile.SourceJobRunID = m.SourceJobRunID
-	stagingFile.TimeWindow = time.Date(m.TimeWindowYear, time.Month(m.TimeWindowMonth), m.TimeWindowDay, m.TimeWindowHour, 0, 0, 0, time.UTC)
-	stagingFile.DestinationRevisionID = m.DestinationRevisionID
-}
-
 func NewStagingFiles(db *sql.DB, opts ...Opt) *StagingFiles {
 	r := &StagingFiles{
 		db:  db,
@@ -85,6 +83,17 @@ func NewStagingFiles(db *sql.DB, opts ...Opt) *StagingFiles {
 		opt((*repo)(r))
 	}
 	return r
+}
+
+func (m *metadataSchema) SetStagingFile(stagingFile *model.StagingFile) {
+	stagingFile.UseRudderStorage = m.UseRudderStorage
+	stagingFile.SourceBatchID = m.SourceBatchID
+	stagingFile.SourceTaskID = m.SourceTaskID
+	stagingFile.SourceTaskRunID = m.SourceTaskRunID
+	stagingFile.SourceJobID = m.SourceJobID
+	stagingFile.SourceJobRunID = m.SourceJobRunID
+	stagingFile.TimeWindow = time.Date(m.TimeWindowYear, time.Month(m.TimeWindowMonth), m.TimeWindowDay, m.TimeWindowHour, 0, 0, 0, time.UTC)
+	stagingFile.DestinationRevisionID = m.DestinationRevisionID
 }
 
 // Insert inserts a staging file into the staging files table. It returns the ID of the inserted staging file.
@@ -456,4 +465,68 @@ func (repo *StagingFiles) DestinationRevisionIDs(ctx context.Context, upload mod
 	}
 
 	return revisionIDs, nil
+}
+
+func (repo *StagingFiles) SetStatuses(ctx context.Context, ids []int64, status string) (err error) {
+	if len(ids) == 0 {
+		return fmt.Errorf("no staging files to update")
+	}
+
+	sqlStatement := `
+		UPDATE
+		` + stagingTableName + `
+		SET
+		  status = $1,
+		  updated_at = $2
+		WHERE
+		  id = ANY($3);
+`
+	result, err := repo.db.ExecContext(ctx, sqlStatement, status, repo.now(), pq.Array(ids))
+	if err != nil {
+		return fmt.Errorf("update ids status: %w", err)
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("rows affected: %w", err)
+	}
+	if rowsAffected != int64(len(ids)) {
+		return fmt.Errorf("not all rows were updated: %d != %d", rowsAffected, len(ids))
+	}
+
+	return
+}
+
+func (repo *StagingFiles) SetErrorStatus(ctx context.Context, stagingFileID int64, stageFileErr error) error {
+	sqlStatement := `
+		UPDATE
+		` + stagingTableName + `
+		SET
+			status = $1,
+			error = $2,
+			updated_at = $3
+		WHERE
+			id = $4;`
+
+	result, err := repo.db.ExecContext(
+		ctx,
+		sqlStatement,
+		warehouseutils.StagingFileFailedState,
+		stageFileErr.Error(),
+		repo.now(),
+		stagingFileID,
+	)
+	if err != nil {
+		return fmt.Errorf("update staging file with error: %w", err)
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("rows affected: %w", err)
+	}
+	if rowsAffected == 0 {
+		return fmt.Errorf("no rows affected")
+	}
+
+	return nil
 }

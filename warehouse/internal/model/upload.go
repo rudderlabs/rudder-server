@@ -3,7 +3,10 @@ package model
 import (
 	"encoding/json"
 	"errors"
+	"strings"
 	"time"
+
+	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
 type UploadStatus = string
@@ -64,10 +67,43 @@ type Upload struct {
 
 type Timings []map[string]time.Time
 
-type Schema map[string]map[string]string
+type Schema = warehouseutils.SchemaT
 
 type UploadJobsStats struct {
 	PendingJobs    int64
 	PickupLag      time.Duration
 	PickupWaitTime time.Duration
+}
+
+type UploadJob struct {
+	Warehouse            warehouseutils.Warehouse
+	Upload               Upload
+	StagingFiles         []*StagingFile
+	LoadFileGenStartTime time.Time
+}
+
+func GetLastFailedStatus(timingsMap Timings) (status string) {
+	if len(timingsMap) > 0 {
+		for index := len(timingsMap) - 1; index >= 0; index-- {
+			for s := range timingsMap[index] {
+				if strings.Contains(s, "failed") {
+					return s
+				}
+			}
+		}
+	}
+	return // zero values
+}
+
+func GetLoadFileGenTime(timingsMap Timings) (t time.Time) {
+	if len(timingsMap) > 0 {
+		for index := len(timingsMap) - 1; index >= 0; index-- {
+			for s, t := range timingsMap[index] {
+				if strings.Contains(s, "generating_load_files") {
+					return t
+				}
+			}
+		}
+	}
+	return // zero values
 }

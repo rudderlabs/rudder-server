@@ -330,7 +330,7 @@ func (uploadReq UploadReqT) GetWHUpload() (*proto.WHUploadResponse, error) {
 		var timings model.Timings
 		_ = json.Unmarshal([]byte(timingsObject.String), &timings)
 
-		lastFailedStatus := warehouseutils.GetLastFailedStatus(timings)
+		lastFailedStatus := model.GetLastFailedStatus(timings)
 		errorPath := fmt.Sprintf("%s.errors", lastFailedStatus)
 		errs := gjson.Get(uploadError, errorPath).Array()
 		if len(errs) > 0 {
@@ -621,7 +621,7 @@ func (uploadsReq *UploadsReqT) getUploadsFromDB(isMultiWorkspace bool, query str
 			var timings model.Timings
 			_ = json.Unmarshal([]byte(timingsObject.String), &timings)
 
-			lastFailedStatus := warehouseutils.GetLastFailedStatus(timings)
+			lastFailedStatus := model.GetLastFailedStatus(timings)
 			errorPath := fmt.Sprintf("%s.errors", lastFailedStatus)
 			errs := gjson.Get(uploadError, errorPath).Array()
 			if len(errs) > 0 {
