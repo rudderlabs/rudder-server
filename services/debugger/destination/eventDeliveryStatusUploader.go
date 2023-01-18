@@ -31,6 +31,7 @@ type DeliveryStatusT struct {
 type Opt func(*Handle)
 
 type DestinationDebugger interface {
+	Start(backendConfig backendconfig.BackendConfig)
 	RecordEventDeliveryStatus(destinationID string, deliveryStatus *DeliveryStatusT) bool
 	HasUploadEnabled(destID string) bool
 	Stop()
@@ -57,38 +58,12 @@ var WithDisableEventUploads = func(disableEventDeliveryStatusUploads bool) func(
 	}
 }
 
-func NewHandle(opts ...Opt) *Handle {
+func NewHandle(opts ...Opt) (DestinationDebugger, error) {
 	h := &Handle{
 		configBackendURL: config.GetString("CONFIG_BACKEND_URL", "https://api.rudderstack.com"),
 		log:              logger.NewLogger().Child("debugger").Child("destination"),
 	}
 
-	config.RegisterBoolConfigVariable(false, &h.disableEventDeliveryStatusUploads, true, "DestinationDebugger.disableEventDeliveryStatusUploads")
-	for _, opt := range opts {
-		opt(h)
-	}
-	return h
-}
-
-var _instance = NewHandle()
-
-func Start(backendConfig backendconfig.BackendConfig) {
-	_instance.Start(backendConfig)
-}
-
-func Stop() {
-	_instance.Stop()
-}
-
-func RecordEventDeliveryStatus(destinationID string, deliveryStatus *DeliveryStatusT) bool {
-	return _instance.RecordEventDeliveryStatus(destinationID, deliveryStatus)
-}
-
-func HasUploadEnabled(destID string) bool {
-	return _instance.HasUploadEnabled(destID)
-}
-
-func (h *Handle) Start(backendConfig backendconfig.BackendConfig) {
 	url := fmt.Sprintf("%s/dataplane/v2/eventUploads", h.configBackendURL)
 	eventUploader := NewEventDeliveryStatusUploader(h.log)
 	h.uploader = debugger.New[*DeliveryStatusT](url, eventUploader)
@@ -96,7 +71,14 @@ func (h *Handle) Start(backendConfig backendconfig.BackendConfig) {
 
 	cacheType := cache.CacheType(config.GetInt("DestinationDebugger.cacheType", int(cache.BadgerCacheType)))
 	h.eventsDeliveryCache = cache.New[*DeliveryStatusT](cacheType, "destination", h.log)
+	config.RegisterBoolConfigVariable(false, &h.disableEventDeliveryStatusUploads, true, "DestinationDebugger.disableEventDeliveryStatusUploads")
+	for _, opt := range opts {
+		opt(h)
+	}
+	return h, nil
+}
 
+func (h *Handle) Start(backendConfig backendconfig.BackendConfig) {
 	ctx, cancel := context.WithCancel(context.Background())
 	h.ctx = ctx
 	h.cancel = cancel
@@ -227,4 +209,24 @@ func (h *Handle) recordHistoricEventsDelivery(destinationIDs []string) {
 			h.uploader.RecordEvent(event)
 		}
 	}
+}
+
+func NewNoOpService() DestinationDebugger {
+	return &noopService{}
+}
+
+type noopService struct{}
+
+func (*noopService) RecordEventDeliveryStatus(_ string, _ *DeliveryStatusT) bool {
+	return false
+}
+
+func (*noopService) HasUploadEnabled(_ string) bool {
+	return false
+}
+
+func (*noopService) Start(_ backendconfig.BackendConfig) {
+}
+
+func (*noopService) Stop() {
 }

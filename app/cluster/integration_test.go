@@ -12,6 +12,8 @@ import (
 	"testing"
 	"time"
 
+	destinationdebugger "github.com/rudderlabs/rudder-server/services/debugger/destination"
+
 	"github.com/golang/mock/gomock"
 	"github.com/google/uuid"
 	"github.com/ory/dockertest/v3"
@@ -198,7 +200,7 @@ func TestDynamicClusterManager(t *testing.T) {
 		"batch_rt": &jobsdb.MultiTenantLegacy{HandleT: brtDB},
 	})
 
-	processor := processor.New(ctx, &clearDb, gwDB, rtDB, brtDB, errDB, mockMTI, &reporting.NOOP{}, transientsource.NewEmptyService(), fileuploader.NewDefaultProvider(), rsources.NewNoOpService())
+	processor := processor.New(ctx, &clearDb, gwDB, rtDB, brtDB, errDB, mockMTI, &reporting.NOOP{}, transientsource.NewEmptyService(), fileuploader.NewDefaultProvider(), rsources.NewNoOpService(), destinationdebugger.NewNoOpService())
 	processor.BackendConfig = mockBackendConfig
 	processor.Transformer = mockTransformer
 	mockBackendConfig.EXPECT().WaitForConfig(gomock.Any()).Times(1)

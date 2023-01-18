@@ -114,8 +114,12 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 
 	transformationdebugger.Start(backendconfig.DefaultBackendConfig)
 	defer transformationdebugger.Stop()
-	destinationdebugger.Start(backendconfig.DefaultBackendConfig)
-	defer destinationdebugger.Stop()
+	destinationHandle, err := destinationdebugger.NewHandle()
+	if err != nil {
+		return err
+	}
+	destinationHandle.Start(backendconfig.DefaultBackendConfig)
+	defer destinationHandle.Stop()
 	sourceHandle, err := sourcedebugger.NewHandle()
 	sourceHandle.Start(backendconfig.DefaultBackendConfig)
 	if err != nil {
@@ -208,7 +212,7 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 		return fmt.Errorf("unsupported deployment type: %q", deploymentType)
 	}
 
-	proc := processor.New(ctx, &options.ClearDB, gwDBForProcessor, routerDB, batchRouterDB, errDB, multitenantStats, reportingI, transientSources, fileUploaderProvider, rsourcesService)
+	proc := processor.New(ctx, &options.ClearDB, gwDBForProcessor, routerDB, batchRouterDB, errDB, multitenantStats, reportingI, transientSources, fileUploaderProvider, rsourcesService, destinationHandle)
 	throttlerFactory, err := throttler.New(stats.Default)
 	if err != nil {
 		return fmt.Errorf("failed to create throttler factory: %w", err)
@@ -222,6 +226,7 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 		TransientSources: transientSources,
 		RsourcesService:  rsourcesService,
 		ThrottlerFactory: throttlerFactory,
+		Debugger:         destinationHandle,
 	}
 	brtFactory := &batchrouter.Factory{
 		Reporting:        reportingI,
@@ -231,6 +236,7 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 		ProcErrorDB:      errDB,
 		TransientSources: transientSources,
 		RsourcesService:  rsourcesService,
+		Debugger:         destinationHandle,
 	}
 	rt := routerManager.New(rtFactory, brtFactory, backendconfig.DefaultBackendConfig)
 

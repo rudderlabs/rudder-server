@@ -11,6 +11,8 @@ import (
 	"testing"
 	"time"
 
+	destinationdebugger "github.com/rudderlabs/rudder-server/services/debugger/destination"
+
 	"github.com/golang/mock/gomock"
 	"github.com/google/uuid"
 	. "github.com/onsi/ginkgo/v2"
@@ -163,7 +165,7 @@ var _ = Describe("BatchRouter", func() {
 
 			c.mockBatchRouterJobsDB.EXPECT().GetJournalEntries(gomock.Any()).Times(1).Return(emptyJournalEntries)
 
-			batchrouter.Setup(c.mockBackendConfig, c.mockBatchRouterJobsDB, c.mockProcErrorsDB, s3DestinationDefinition.Name, nil, c.mockMultitenantI, transientsource.NewEmptyService(), rsources.NewNoOpService())
+			batchrouter.Setup(c.mockBackendConfig, c.mockBatchRouterJobsDB, c.mockProcErrorsDB, s3DestinationDefinition.Name, nil, c.mockMultitenantI, transientsource.NewEmptyService(), rsources.NewNoOpService(), destinationdebugger.NewNoOpService())
 		})
 	})
 
@@ -176,7 +178,7 @@ var _ = Describe("BatchRouter", func() {
 		It("should send failed, unprocessed jobs to s3 destination", func() {
 			batchrouter := &HandleT{}
 
-			batchrouter.Setup(c.mockBackendConfig, c.mockBatchRouterJobsDB, c.mockProcErrorsDB, s3DestinationDefinition.Name, nil, c.mockMultitenantI, transientsource.NewEmptyService(), rsources.NewNoOpService())
+			batchrouter.Setup(c.mockBackendConfig, c.mockBatchRouterJobsDB, c.mockProcErrorsDB, s3DestinationDefinition.Name, nil, c.mockMultitenantI, transientsource.NewEmptyService(), rsources.NewNoOpService(), destinationdebugger.NewNoOpService())
 			readPerDestination = false
 			batchrouter.fileManagerFactory = c.mockFileManagerFactory
 

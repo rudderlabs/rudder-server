@@ -30,7 +30,6 @@ import (
 	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/services/controlplane"
 	"github.com/rudderlabs/rudder-server/services/db"
-	destinationdebugger "github.com/rudderlabs/rudder-server/services/debugger/destination"
 	"github.com/rudderlabs/rudder-server/services/filemanager"
 	"github.com/rudderlabs/rudder-server/services/pgnotifier"
 	migrator "github.com/rudderlabs/rudder-server/services/sql-migrator"
@@ -2092,9 +2091,6 @@ func Start(ctx context.Context, app app.App) error {
 	}
 
 	if isStandAlone() && isMaster() {
-		destinationdebugger.Start(backendconfig.DefaultBackendConfig)
-		defer destinationdebugger.Stop()
-
 		// Report warehouse features
 		g.Go(func() error {
 			backendconfig.DefaultBackendConfig.WaitForConfig(ctx)

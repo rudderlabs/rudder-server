@@ -82,6 +82,7 @@ type HandleT struct {
 	transientSources          transientsource.Service
 	fileuploader              fileuploader.Provider
 	rsourcesService           rsources.JobService
+	debugger                  destinationdebugger.DestinationDebugger
 }
 
 type processorStats struct {
@@ -304,9 +305,10 @@ func (proc *HandleT) Setup(
 	backendConfig backendconfig.BackendConfig, gatewayDB, routerDB jobsdb.JobsDB,
 	batchRouterDB, errorDB jobsdb.JobsDB, clearDB *bool, reporting types.ReportingI,
 	multiTenantStat multitenant.MultiTenantI, transientSources transientsource.Service,
-	fileuploader fileuploader.Provider, rsourcesService rsources.JobService,
+	fileuploader fileuploader.Provider, rsourcesService rsources.JobService, debugger destinationdebugger.DestinationDebugger,
 ) {
 	proc.reporting = reporting
+	proc.debugger = debugger
 	config.RegisterBoolConfigVariable(types.DefaultReportingEnabled, &proc.reportingEnabled, false, "Reporting.enabled")
 	config.RegisterInt64ConfigVariable(100*bytesize.MB, &proc.payloadLimit, true, 1, "Processor.payloadLimit")
 	config.RegisterDurationConfigVariable(60, &proc.jobdDBQueryRequestTimeout, true, time.Second, []string{"JobsDB.Processor.QueryRequestTimeout", "JobsDB.QueryRequestTimeout"}...)
@@ -741,9 +743,9 @@ func getSourceAndDestIDsFromKey(key string) (sourceID, destID string) {
 	return fields[0], fields[1]
 }
 
-func recordEventDeliveryStatus(jobsByDestID map[string][]*jobsdb.JobT) {
+func (proc *HandleT) recordEventDeliveryStatus(jobsByDestID map[string][]*jobsdb.JobT) {
 	for destID, jobs := range jobsByDestID {
-		if !destinationdebugger.HasUploadEnabled(destID) {
+		if !proc.debugger.HasUploadEnabled(destID) {
 			continue
 		}
 		for _, job := range jobs {
@@ -788,7 +790,7 @@ func recordEventDeliveryStatus(jobsByDestID map[string][]*jobsdb.JobT) {
 					ErrorCode:     statusCode,
 					ErrorResponse: []byte(fmt.Sprintf(`{"error": %s}`, procErr)),
 				}
-				destinationdebugger.RecordEventDeliveryStatus(destID, &deliveryStatus)
+				proc.debugger.RecordEventDeliveryStatus(destID, &deliveryStatus)
 			}
 		}
 	}
@@ -1642,7 +1644,7 @@ func (proc *HandleT) Store(in *storeMessage) {
 			proc.logger.Errorf("procErrorJobs: %v", in.procErrorJobs)
 			panic(err)
 		}
-		recordEventDeliveryStatus(in.procErrorJobsByDestID)
+		proc.recordEventDeliveryStatus(in.procErrorJobsByDestID)
 	}
 	writeJobsTime := time.Since(beforeStoreStatus)
 
