@@ -445,17 +445,21 @@ func TestJobsDBTimeout(t *testing.T) {
 		expectedRetries := 2
 		var errorsCount int
 
-		jobs, err := misc.QueryWithRetries(context.Background(), 10*time.Millisecond, expectedRetries, func(ctx context.Context) (JobsResult, error) {
-			jobs, err := jobDB.GetUnprocessed(ctx, GetQueryParamsT{
-				CustomValFilters: []string{customVal},
-				JobsLimit:        1,
-				ParameterFilters: []ParameterFilterT{},
+		jobs, err := misc.QueryWithRetries(
+			context.Background(),
+			10*time.Millisecond,
+			expectedRetries,
+			func(ctx context.Context) (JobsResult, error) {
+				jobs, err := jobDB.GetUnprocessed(ctx, GetQueryParamsT{
+					CustomValFilters: []string{customVal},
+					JobsLimit:        1,
+					ParameterFilters: []ParameterFilterT{},
+				})
+				if err != nil {
+					errorsCount++
+				}
+				return jobs, err
 			})
-			if err != nil {
-				errorsCount++
-			}
-			return jobs, err
-		})
 		require.True(t, len(jobs.Jobs) == 0, "Error in getting unprocessed jobs")
 		require.Error(t, err)
 		require.True(t, errors.Is(ctx.Err(), context.DeadlineExceeded))
@@ -1302,6 +1306,64 @@ func TestGetActiveWorkspaces(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, activeWorkspaces, 2)
 	require.ElementsMatch(t, []string{"ws-1", "ws-2"}, activeWorkspaces)
+}
+func TestCleanUpRetiredJobs(t *testing.T) {
+	_ = startPostgres(t)
+	defaultWorkspaceID := "workspaceId"
+
+	maxDSSize := 10
+	jobDB := HandleT{
+		MaxDSSize: &maxDSSize,
+	}
+
+	customVal := "MOCKDS"
+	prefix := strings.ToLower(rsRand.String(5))
+	err := jobDB.Setup(
+		ReadWrite,
+		false,
+		prefix,
+		true,
+		[]prebackup.Handler{},
+		fileuploader.NewDefaultProvider(),
+	)
+	require.NoError(t, err)
+	defer jobDB.TearDown()
+
+	sampleTestJob := JobT{
+		Parameters:   []byte(`{}`),
+		EventPayload: []byte(`{"receivedAt":"2021-06-06T20:26:39.598+05:30","writeKey":"writeKey","requestIP":"[::1]",  "batch": [{"anonymousId":"anon_id","channel":"android-sdk","context":{"app":{"build":"1","name":"RudderAndroidClient", "device_name":"FooBar\ufffd\u0000\ufffd\u000f\ufffd","namespace":"com.rudderlabs.android.sdk","version":"1.0"},"device":{"id":"49e4bdd1c280bc00","manufacturer":"Google","model":"Android SDK built for x86","name":"generic_x86"},"library":{"name":"com.rudderstack.android.sdk.core"},"locale":"en-US","network":{"carrier":"Android"},"screen":{"density":420,"height":1794,"width":1080},"traits":{"anonymousId":"49e4bdd1c280bc00"},"user_agent":"Dalvik/2.1.0 (Linux; U; Android 9; Android SDK built for x86 Build/PSR1.180720.075)"},"event":"Demo Track","integrations":{"All":true},"messageId":"b96f3d8a-7c26-4329-9671-4e3202f42f15","originalTimestamp":"2019-08-12T05:08:30.909Z","properties":{"category":"Demo Category","floatVal":4.501,"label":"Demo Label","testArray":[{"id":"elem1","value":"e1"},{"id":"elem2","value":"e2"}],"testMap":{"t1":"a","t2":4},"value":5},"rudderId":"a-292e-4e79-9880-f8009e0ae4a3","sentAt":"2019-08-12T05:08:30.909Z","type":"track"}]}`),
+		UserID:       "a-292e-4e79-9880-f8009e0ae4a3",
+		UUID:         uuid.New(),
+		CustomVal:    customVal,
+		WorkspaceId:  defaultWorkspaceID,
+		EventCount:   1,
+	}
+
+	require.NoError(
+		t,
+		jobDB.Store(
+			context.Background(),
+			[]*JobT{&sampleTestJob},
+		),
+	)
+
+	require.NoError(
+		t,
+		jobDB.CleanUpRetiredJobs(
+			context.Background(),
+			[]string{defaultWorkspaceID},
+		),
+	)
+
+	unprocessed, err := jobDB.getUnprocessed(
+		context.Background(),
+		GetQueryParamsT{
+			CustomValFilters: []string{customVal},
+			JobsLimit:        100,
+		},
+	)
+	require.NoError(t, err)
+	require.Equal(t, 0, len(unprocessed.Jobs))
 }
 
 type testingT interface {

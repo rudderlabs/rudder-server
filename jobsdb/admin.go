@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"time"
+
+	"github.com/lib/pq"
 )
 
 /*
@@ -143,4 +145,37 @@ func (jd *HandleT) failExecutingDSInTx(txHandler transactionHandler, ds dataSetT
 		),
 	)
 	return err
+}
+
+func (jd *HandleT) CleanUpRetiredJobs(ctx context.Context, retiredWorkspaces []string) error {
+	var totalAbortedCount int64
+	defer func() {
+		jd.logger.Infof(
+			"Aborted %d jobs due to workspace retirement",
+			totalAbortedCount,
+		)
+	}()
+	return jd.WithUpdateSafeTx(ctx, func(tx UpdateSafeTx) error {
+		for _, ds := range jd.getDSList() {
+			var dsCount int64
+			if err := tx.Tx().QueryRowContext(
+				ctx,
+				fmt.Sprintf(
+					`with retired_jobs as (
+						select job_id from %[1]q where workspace_id = ANY($1)
+				),
+				abortedJobs as (
+					insert into %[2]q (job_id, job_state, error_response)
+					(select job_id, 'aborted', '{"reason" : "Job aborted due to workspace retirement"}' from retired_jobs)
+					returning job_id
+				)
+				select count(*) from abortedJobs;`, ds.JobTable, ds.JobStatusTable),
+				pq.Array(retiredWorkspaces),
+			).Scan(&dsCount); err != nil {
+				return err
+			}
+			totalAbortedCount += dsCount
+		}
+		return nil
+	})
 }

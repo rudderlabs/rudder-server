@@ -281,6 +281,7 @@ type JobsDB interface {
 	Ping() error
 	DeleteExecuting()
 	FailExecuting()
+	CleanUpRetiredJobs(ctx context.Context, retiredWorkspaces []string) error
 
 	/* Journal */
 

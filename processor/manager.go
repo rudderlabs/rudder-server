@@ -2,9 +2,12 @@ package processor
 
 import (
 	"context"
+	"fmt"
 	"sync"
 
+	"github.com/rudderlabs/rudder-go-kit/stats/metric"
 	transformationdebugger "github.com/rudderlabs/rudder-server/services/debugger/transformation"
+	"github.com/rudderlabs/rudder-server/services/rmetrics"
 
 	destinationdebugger "github.com/rudderlabs/rudder-server/services/debugger/destination"
 
@@ -16,6 +19,7 @@ import (
 	"github.com/rudderlabs/rudder-server/services/rsources"
 	"github.com/rudderlabs/rudder-server/services/transientsource"
 	"github.com/rudderlabs/rudder-server/utils/types"
+	"github.com/samber/lo"
 )
 
 type LifecycleManager struct {
@@ -115,5 +119,75 @@ type Opts func(l *LifecycleManager)
 func WithAdaptiveLimit(adaptiveLimitFunction func(int64) int64) Opts {
 	return func(l *LifecycleManager) {
 		l.Handle.adaptiveLimit = adaptiveLimitFunction
+	}
+}
+func (proc *Handle) cleanUpRetiredJobs(ctx context.Context) {
+	ch := proc.backendConfig.Subscribe(ctx, backendconfig.TopicProcessConfig)
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case data := <-ch:
+			config := data.Data.(map[string]backendconfig.ConfigT)
+			workspaceMap := make(map[string]struct{})
+			for workspace := range config {
+				workspaceMap[workspace] = struct{}{}
+			}
+			proc.doCleanupRetiredJobs(ctx, workspaceMap)
+		}
+	}
+}
+
+func (proc *Handle) doCleanupRetiredJobs(ctx context.Context, workspaceMap map[string]struct{}) {
+	// router
+	routerPendingEventMetrics := metric.Instance.
+		GetRegistry(metric.PublishedMetrics).
+		GetMetricsByName(fmt.Sprintf(rmetrics.JobsdbPendingEventsCount, "rt"))
+	retiredRouterWorkspaces := lo.Reject(
+		lo.Map(
+			routerPendingEventMetrics,
+			func(gaugeMetric metric.TagsWithValue, _ int) string {
+				return gaugeMetric.Tags["workspace"]
+			},
+		),
+		func(workspace string, _ int) bool {
+			_, ok := workspaceMap[workspace]
+			return !ok
+		},
+	)
+	if len(retiredRouterWorkspaces) > 0 {
+		if err := proc.routerDB.CleanUpRetiredJobs(
+			ctx,
+			retiredRouterWorkspaces,
+		); err != nil {
+			proc.logger.Errorf("Error cleaning up retired jobs for router: %v", err)
+		}
+	}
+
+	// batch router
+	batchRouterPendingEventMetrics := metric.Instance.
+		GetRegistry(metric.PublishedMetrics).
+		GetMetricsByName(fmt.Sprintf(rmetrics.JobsdbPendingEventsCount, "brt"))
+
+	retiredBatchRouterWorkspaces := lo.Reject(
+		lo.Map(
+			batchRouterPendingEventMetrics,
+			func(gaugeMetric metric.TagsWithValue, _ int) string {
+				return gaugeMetric.Tags["workspace"]
+			},
+		),
+		func(workspace string, _ int) bool {
+			_, ok := workspaceMap[workspace]
+			return !ok
+		},
+	)
+
+	if len(retiredBatchRouterWorkspaces) > 0 {
+		if err := proc.batchRouterDB.CleanUpRetiredJobs(
+			ctx,
+			retiredBatchRouterWorkspaces,
+		); err != nil {
+			proc.logger.Errorf("Error cleaning up retired jobs for batch router: %v", err)
+		}
 	}
 }

@@ -412,6 +412,10 @@ func (proc *Handle) Setup(
 		proc.backendConfigSubscriber(ctx)
 	})
 
+	rruntime.Go(func() {
+		proc.cleanUpRetiredJobs(ctx)
+	})
+
 	g.Go(misc.WithBugsnag(func() error {
 		proc.syncTransformerFeatureJson(ctx)
 		return nil
