@@ -9,7 +9,6 @@ import (
 
 	jsoniter "github.com/json-iterator/go"
 	"github.com/lib/pq"
-	"github.com/rudderlabs/rudder-server/utils/timeutil"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 	"github.com/tidwall/gjson"
@@ -108,7 +107,6 @@ func (uploads *Uploads) CreateWithStagingFiles(ctx context.Context, upload model
 		lastEventAt = files[len(files)-1].LastEventAt
 	}
 
-	now := timeutil.Now()
 	metadataMap := map[string]interface{}{
 		"use_rudder_storage": files[0].UseRudderStorage, // TODO: Since the use_rudder_storage is now being populated for both the staging and load files. Let's try to leverage it instead of hard coding it from the first staging file.
 		"source_batch_id":    files[0].SourceBatchID,
@@ -157,8 +155,8 @@ func (uploads *Uploads) CreateWithStagingFiles(ctx context.Context, upload model
 		metadata,
 		firstEventAt,
 		lastEventAt,
-		now,
-		now,
+		uploads.now(),
+		uploads.now(),
 	)
 
 	var uploadID int64
@@ -290,7 +288,7 @@ func (uploads *Uploads) UploadJobsStats(ctx context.Context, destType string, op
 	query := `
 		SELECT
 			COALESCE(COUNT(*), 0) AS pending_jobs,
-			
+
 			COALESCE(EXTRACT(EPOCH FROM(AGE($1::TIMESTAMPTZ, MIN(COALESCE((metadata->>'nextRetryTime')::TIMESTAMPTZ, $1::TIMESTAMPTZ)::timestamptz)))), 0) AS pickup_lag_in_seconds,
 			COALESCE(SUM(EXTRACT(EPOCH FROM AGE($1::TIMESTAMPTZ, COALESCE((metadata->>'nextRetryTime')::TIMESTAMPTZ, $1::TIMESTAMPTZ)::timestamptz))), 0) AS pickup_wait_time_in_seconds
 
@@ -409,6 +407,10 @@ func scanUpload(scan scanFn, upload *model.Upload) error {
 	upload.SourceJobID = metadata.SourceJobID
 	upload.SourceJobRunID = metadata.SourceJobRunID
 	upload.LoadFileType = metadata.LoadFileType
+	upload.NextRetryTime = metadata.NextRetryTime
+	upload.Priority = metadata.Priority
+	upload.Retried = metadata.Retried
+	upload.UseRudderStorage = metadata.UseRudderStorage
 
 	_, upload.FirstAttemptAt = warehouseutils.TimingFromJSONString(firstTiming)
 	var lastStatus string
