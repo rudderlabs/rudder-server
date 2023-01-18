@@ -26,6 +26,7 @@ func TestUploads_CRUD(t *testing.T) {
 		SourceID:        "source_id",
 		DestinationID:   "destination_id",
 		DestinationType: destType,
+		NextRetryTime:   now,
 
 		UploadSchema: model.Schema{},
 		MergedSchema: model.Schema{},
