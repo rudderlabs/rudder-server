@@ -64,6 +64,8 @@ var _ = Describe("Stats", Ordered, func() {
 					ID:                 uploadID,
 					StagingFileStartID: 1,
 					StagingFileEndID:   4,
+					SourceID:           "test-sourceID",
+					DestinationID:      "test-destinationID",
 				},
 				warehouse: warehouseutils.Warehouse{
 					Type: "POSTGRES",
