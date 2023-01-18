@@ -45,6 +45,7 @@ import (
 	cpclient "github.com/rudderlabs/rudder-server/warehouse/client/controlplane"
 	"github.com/rudderlabs/rudder-server/warehouse/deltalake"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/api"
+	"github.com/rudderlabs/rudder-server/warehouse/internal/loadfiles"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/repo"
 	"github.com/rudderlabs/rudder-server/warehouse/jobs"
@@ -149,6 +150,7 @@ type HandleT struct {
 	workspaceBySourceIDsLock          sync.RWMutex
 	tenantManager                     multitenant.Manager
 	stats                             stats.Stats
+	uploadJobFactory                  UploadJobFactory
 	Now                               func() time.Time
 	NowSQL                            string
 	Logger                            logger.Logger
@@ -1082,11 +1084,9 @@ func (wh *HandleT) getUploadsToProcess(ctx context.Context, availableWorkers int
 		upload.UseRudderStorage = warehouse.GetBoolDestinationConfig("useRudderStorage")
 
 		if !ok {
-			uploadJob := UploadJobT{
-				upload:   &upload,
-				dbHandle: wh.dbHandle,
-				stats:    wh.stats,
-			}
+			uploadJob := wh.uploadJobFactory.NewUploadJob(&model.UploadJob{
+				Upload: model.Upload(upload),
+			}, nil)
 			err := fmt.Errorf("unable to find source : %s or destination : %s, both or the connection between them", upload.SourceID, upload.DestinationID)
 			_, _ = uploadJob.setUploadError(err, model.Aborted)
 			wh.Logger.Errorf("%v", err)
@@ -1107,10 +1107,8 @@ func (wh *HandleT) getUploadsToProcess(ctx context.Context, availableWorkers int
 			return nil, err
 		}
 
-		stagingFileIDs := make([]int64, len(stagingFilesList))
 		stagingFileListPtr := make([]*model.StagingFile, len(stagingFilesList))
 		for i := range stagingFilesList {
-			stagingFileIDs[i] = stagingFilesList[i].ID
 			stagingFileListPtr[i] = &stagingFilesList[i]
 		}
 
@@ -1118,20 +1116,13 @@ func (wh *HandleT) getUploadsToProcess(ctx context.Context, availableWorkers int
 		if err != nil {
 			return nil, err
 		}
+		uploadJob := wh.uploadJobFactory.NewUploadJob(&model.UploadJob{
+			Warehouse:    warehouse,
+			Upload:       model.Upload(upload),
+			StagingFiles: stagingFileListPtr,
+		}, whManager)
 
-		uploadJob := UploadJobT{
-			upload:               &upload,
-			stagingFiles:         stagingFileListPtr,
-			stagingFileIDs:       stagingFileIDs,
-			warehouse:            warehouse,
-			whManager:            whManager,
-			dbHandle:             wh.dbHandle,
-			pgNotifier:           &wh.notifier,
-			destinationValidator: validations.NewDestinationValidator(),
-			stats:                wh.stats,
-		}
-
-		uploadJobs = append(uploadJobs, &uploadJob)
+		uploadJobs = append(uploadJobs, uploadJob)
 	}
 
 	if err = wh.processingStats(ctx, availableWorkers, skipIdentifiers, skipIdentifiersSQL); err != nil {
@@ -1264,16 +1255,14 @@ func (wh *HandleT) setInterruptedDestinations() {
 	}
 }
 
-func (wh *HandleT) Setup(whType string) {
+func (wh *HandleT) Setup(whType string) error {
+	pkgLogger.Infof("WH: Warehouse Router started: %s", whType)
 	wh.Logger = pkgLogger
-	wh.Logger.Infof("WH: Warehouse Router started: %s", whType)
 	wh.dbHandle = dbHandle
 	// We now have access to the warehouseDBHandle through
 	// which we will be running the db calls.
 	wh.warehouseDBHandle = NewWarehouseDB(dbHandle)
-	wh.stagingRepo = &repo.StagingFiles{
-		DB: dbHandle,
-	}
+	wh.stagingRepo = repo.NewStagingFiles(dbHandle)
 	wh.notifier = notifier
 	wh.destType = whType
 	wh.setInterruptedDestinations()
@@ -1287,6 +1276,21 @@ func (wh *HandleT) Setup(whType string) {
 	wh.stats = stats.Default
 	wh.Now = timeutil.Now
 	wh.NowSQL = "NOW()"
+
+	wh.uploadJobFactory = UploadJobFactory{
+		stats:                stats.Default,
+		dbHandle:             wh.dbHandle,
+		pgNotifier:           &wh.notifier,
+		destinationValidator: validations.NewDestinationValidator(),
+		loadFile: &loadfiles.LoadFileGenerator{
+			Logger:             pkgLogger.Child("loadfile"),
+			Notifier:           &notifier,
+			StageRepo:          repo.NewStagingFiles(dbHandle),
+			LoadRepo:           repo.NewLoadFiles(dbHandle),
+			ControlPlaneClient: controlPlaneClient,
+		},
+	}
+	loadfiles.WithConfig(wh.uploadJobFactory.loadFile, config.Default)
 
 	whName := warehouseutils.WHDestNameMap[whType]
 	config.RegisterIntConfigVariable(8, &wh.noOfWorkers, true, 1, fmt.Sprintf(`Warehouse.%v.noOfWorkers`, whName), "Warehouse.noOfWorkers")
@@ -1329,11 +1333,13 @@ func (wh *HandleT) Setup(whType string) {
 	g.Go(misc.WithBugsnagForWarehouse(func() error {
 		return wh.CronTracker(ctx)
 	}))
+
+	return nil
 }
 
-func (wh *HandleT) Shutdown() {
+func (wh *HandleT) Shutdown() error {
 	wh.backgroundCancel()
-	wh.backgroundWait()
+	return wh.backgroundWait()
 }
 
 func (wh *HandleT) resetInProgressJobs() {
@@ -1409,26 +1415,26 @@ func minimalConfigSubscriber() {
 }
 
 // Gets the config from config backend and extracts enabled write keys
-func monitorDestRouters(ctx context.Context) {
+func monitorDestRouters(ctx context.Context) error {
 	dstToWhRouter := make(map[string]*HandleT)
 
 	ch := tenantManager.WatchConfig(ctx)
 	for config := range ch {
-		onConfigDataEvent(config, dstToWhRouter)
+		err := onConfigDataEvent(config, dstToWhRouter)
+		if err != nil {
+			return err
+		}
 	}
 
 	g, _ := errgroup.WithContext(context.Background())
 	for _, wh := range dstToWhRouter {
 		wh := wh
-		g.Go(func() error {
-			wh.Shutdown()
-			return nil
-		})
+		g.Go(wh.Shutdown)
 	}
-	g.Wait()
+	return g.Wait()
 }
 
-func onConfigDataEvent(config map[string]backendconfig.ConfigT, dstToWhRouter map[string]*HandleT) {
+func onConfigDataEvent(config map[string]backendconfig.ConfigT, dstToWhRouter map[string]*HandleT) error {
 	pkgLogger.Debug("Got config from config-backend", config)
 
 	enabledDestinations := make(map[string]bool)
@@ -1444,7 +1450,9 @@ func onConfigDataEvent(config map[string]backendconfig.ConfigT, dstToWhRouter ma
 						pkgLogger.Info("Starting a new Warehouse Destination Router: ", destination.DestinationDefinition.Name)
 						wh = &HandleT{}
 						wh.configSubscriberLock.Lock()
-						wh.Setup(destination.DestinationDefinition.Name)
+						if err := wh.Setup(destination.DestinationDefinition.Name); err != nil {
+							return fmt.Errorf("setup warehouse %q: %w", destination.DestinationDefinition.Name, err)
+						}
 						wh.configSubscriberLock.Unlock()
 						dstToWhRouter[destination.DestinationDefinition.Name] = wh
 					} else {
@@ -1474,6 +1482,8 @@ func onConfigDataEvent(config map[string]backendconfig.ConfigT, dstToWhRouter ma
 			}
 		}
 	}
+
+	return nil
 }
 
 func setupTables(dbHandle *sql.DB) error {
@@ -1922,11 +1932,9 @@ func startWebHandler(ctx context.Context) error {
 			backendconfig.DefaultBackendConfig.WaitForConfig(ctx)
 
 			mux.Handle("/v1/process", (&api.WarehouseAPI{
-				Logger: pkgLogger,
-				Stats:  stats.Default,
-				Repo: &repo.StagingFiles{
-					DB: dbHandle,
-				},
+				Logger:      pkgLogger,
+				Stats:       stats.Default,
+				Repo:        repo.NewStagingFiles(dbHandle),
 				Multitenant: tenantManager,
 			}).Handler())
 

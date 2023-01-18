@@ -320,3 +320,117 @@ func TestStagingFileRepo_Many(t *testing.T) {
 		}
 	})
 }
+
+func TestStagingFileRepo_Status(t *testing.T) {
+	ctx := context.Background()
+
+	now := time.Now().Truncate(time.Second).UTC()
+
+	r := repo.StagingFiles{
+		DB: setupDB(t),
+		Now: func() time.Time {
+			return now
+		},
+	}
+
+	n := 10
+	for i := 0; i < n; i++ {
+		file := model.StagingFile{
+			WorkspaceID:   "workspace_id",
+			Location:      fmt.Sprintf("s3://bucket/path/to/file-%d", i),
+			SourceID:      "source_id",
+			DestinationID: "destination_id",
+			Status:        warehouseutils.StagingFileWaitingState,
+			Error:         nil,
+			FirstEventAt:  now.Add(time.Second),
+			LastEventAt:   now,
+		}.WithSchema([]byte(`{"type": "object"}`))
+
+		id, err := r.Insert(ctx, &file)
+		require.NoError(t, err)
+
+		file.ID = id
+		file.Error = nil
+		file.CreatedAt = now
+		file.UpdatedAt = now
+	}
+
+	t.Run("SetStatuses", func(t *testing.T) {
+		statuses := []string{
+			warehouseutils.StagingFileSucceededState,
+			warehouseutils.StagingFileFailedState,
+			warehouseutils.StagingFileExecutingState,
+			warehouseutils.StagingFileWaitingState,
+			warehouseutils.StagingFileAbortedState,
+		}
+
+		for _, status := range statuses {
+			status := status
+			t.Run(status, func(t *testing.T) {
+				now = now.Add(time.Second)
+
+				err := r.SetStatuses(ctx,
+					[]int64{1, 2, 3},
+					status,
+				)
+				require.NoError(t, err)
+
+				files, err := r.GetInRange(ctx, "source_id", "destination_id", 0, 3)
+				require.NoError(t, err)
+
+				for _, file := range files {
+					require.Equal(t, status, file.Status)
+					require.Equal(t, now, file.UpdatedAt)
+				}
+			})
+		}
+
+		err := r.SetStatuses(ctx,
+			[]int64{-1, 2, 3}, warehouseutils.StagingFileExecutingState)
+		require.EqualError(t, err, "not all rows were updated: 2 != 3")
+
+		err = r.SetStatuses(ctx,
+			[]int64{}, warehouseutils.StagingFileExecutingState)
+		require.EqualError(t, err, "no staging files to update")
+	})
+
+	t.Run("SetErrorStatus", func(t *testing.T) {
+		now = now.Add(time.Second)
+
+		err := r.SetErrorStatus(ctx,
+			4,
+			fmt.Errorf("the error"),
+		)
+		require.NoError(t, err)
+
+		file, err := r.GetByID(ctx, 4)
+		require.NoError(t, err)
+
+		require.Equal(t, warehouseutils.StagingFileFailedState, file.Status)
+		require.Equal(t, "the error", file.Error.Error())
+		require.Equal(t, now, file.UpdatedAt)
+
+		err = r.SetErrorStatus(ctx,
+			-1,
+			fmt.Errorf("the error"),
+		)
+		require.EqualError(t, err, "no rows affected")
+	})
+}
+
+func TestStagingFileIDs(t *testing.T) {
+	sfs := []*model.StagingFile{
+		{
+			ID: 1,
+		},
+		{
+			ID: 2,
+		},
+		{
+			ID: 3,
+		},
+	}
+
+	ids := repo.StagingFileIDs(sfs)
+	require.Equal(t, []int64{1, 2, 3}, ids)
+}
