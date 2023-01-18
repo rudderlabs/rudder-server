@@ -406,19 +406,19 @@ func NewNoOpService() TransformationDebugger {
 
 type noopService struct{}
 
-func (n noopService) Start(_ backendconfig.BackendConfig) {
+func (*noopService) Start(_ backendconfig.BackendConfig) {
 }
 
-func (n noopService) IsUploadEnabled(_ string) bool {
+func (*noopService) IsUploadEnabled(_ string) bool {
 	return false
 }
 
-func (n noopService) RecordTransformationStatus(_ *TransformStatusT) {
+func (*noopService) RecordTransformationStatus(_ *TransformStatusT) {
 }
 
-func (n noopService) UploadTransformationStatus(_ *TransformationStatusT) bool {
+func (*noopService) UploadTransformationStatus(_ *TransformationStatusT) bool {
 	return false
 }
 
-func (n noopService) Stop() {
+func (*noopService) Stop() {
 }
