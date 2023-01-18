@@ -6,7 +6,6 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	sourcedebugger "github.com/rudderlabs/rudder-server/services/debugger/source"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -14,6 +13,8 @@ import (
 	"reflect"
 	"testing"
 	"time"
+
+	sourcedebugger "github.com/rudderlabs/rudder-server/services/debugger/source"
 
 	"github.com/golang/mock/gomock"
 	"github.com/google/uuid"

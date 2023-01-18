@@ -238,11 +238,11 @@ func NewNoOpService() SourceDebugger {
 type noopService struct{}
 
 func (*noopService) Start(_ backendconfig.BackendConfig) {
-	return
 }
+
 func (*noopService) RecordEvent(_ string, _ []byte) bool {
 	return false
 }
+
 func (*noopService) Stop() {
-	return
 }
