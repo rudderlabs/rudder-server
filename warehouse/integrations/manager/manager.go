@@ -57,8 +57,9 @@ type WarehouseOperations interface {
 func New(destType string) (ManagerI, error) {
 	switch destType {
 	case warehouseutils.RS:
-		var rs redshift.HandleT
-		return &rs, nil
+		rs := redshift.NewRedshift()
+		redshift.WithConfig(rs, config.Default)
+		return rs, nil
 	case warehouseutils.BQ:
 		var bq bigquery.HandleT
 		return &bq, nil
@@ -94,8 +95,9 @@ func New(destType string) (ManagerI, error) {
 func NewWarehouseOperations(destType string) (WarehouseOperations, error) {
 	switch destType {
 	case warehouseutils.RS:
-		var rs redshift.HandleT
-		return &rs, nil
+		rs := redshift.NewRedshift()
+		redshift.WithConfig(rs, config.Default)
+		return rs, nil
 	case warehouseutils.BQ:
 		var bq bigquery.HandleT
 		return &bq, nil
