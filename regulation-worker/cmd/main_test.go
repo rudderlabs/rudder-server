@@ -179,6 +179,7 @@ func TestFlow(t *testing.T) {
 	t.Setenv("DEST_TRANSFORM_URL", "http://localhost:9090")
 	t.Setenv("URL_PREFIX", srv.URL)
 	t.Setenv("RSERVER_BACKEND_CONFIG_POLL_INTERVAL", "0.1")
+	t.Setenv("REGULATION_WORKER_BATCH_DESTINATIONS_ENABLED", "true")
 
 	// starting redis server to mock redis-destination
 	startRedisServer(t, pool)
