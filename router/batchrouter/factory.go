@@ -3,6 +3,7 @@ package batchrouter
 import (
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
+	destinationdebugger "github.com/rudderlabs/rudder-server/services/debugger/destination"
 	"github.com/rudderlabs/rudder-server/services/multitenant"
 	"github.com/rudderlabs/rudder-server/services/rsources"
 	"github.com/rudderlabs/rudder-server/services/transientsource"
@@ -17,11 +18,12 @@ type Factory struct {
 	ProcErrorDB      jobsdb.JobsDB
 	TransientSources transientsource.Service
 	RsourcesService  rsources.JobService
+	Debugger         destinationdebugger.DestinationDebugger
 }
 
 func (f *Factory) New(destType string) *HandleT {
 	r := &HandleT{}
 
-	r.Setup(f.BackendConfig, f.RouterDB, f.ProcErrorDB, destType, f.Reporting, f.Multitenant, f.TransientSources, f.RsourcesService)
+	r.Setup(f.BackendConfig, f.RouterDB, f.ProcErrorDB, destType, f.Reporting, f.Multitenant, f.TransientSources, f.RsourcesService, f.Debugger)
 	return r
 }

@@ -128,6 +128,7 @@ type HandleT struct {
 	payloadLimit              int64
 	transientSources          transientsource.Service
 	rsourcesService           rsources.JobService
+	debugger                  destinationdebugger.DestinationDebugger
 	jobsDBCommandTimeout      time.Duration
 	jobdDBQueryRequestTimeout time.Duration
 	jobdDBMaxRetries          int
@@ -1513,7 +1514,7 @@ func (brt *HandleT) trackRequestMetrics(batchReqDiagnostics batchRequestMetric) 
 	}
 }
 
-func (*HandleT) recordDeliveryStatus(batchDestination DestinationT, output StorageUploadOutput, isWarehouse bool) {
+func (brt *HandleT) recordDeliveryStatus(batchDestination DestinationT, output StorageUploadOutput, isWarehouse bool) {
 	var (
 		errorCode string
 		jobState  string
@@ -1555,7 +1556,7 @@ func (*HandleT) recordDeliveryStatus(batchDestination DestinationT, output Stora
 		ErrorCode:     errorCode,
 		ErrorResponse: errorResp,
 	}
-	destinationdebugger.RecordEventDeliveryStatus(batchDestination.Destination.ID, &deliveryStatus)
+	brt.debugger.RecordEventDeliveryStatus(batchDestination.Destination.ID, &deliveryStatus)
 }
 
 func (brt *HandleT) recordUploadStats(destination DestinationT, output StorageUploadOutput) {
@@ -2125,7 +2126,7 @@ func (brt *HandleT) dedupRawDataDestJobsOnCrash() {
 			}
 			brt.uploadedRawDataJobsCache[object.DestinationID][eventID] = true
 		}
-		reader.Close()
+		_ = reader.Close()
 		brt.jobsDB.JournalDeleteEntry(entry.OpID)
 	}
 }
@@ -2270,12 +2271,13 @@ func Init() {
 }
 
 // Setup initializes this module
-func (brt *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB, errorDB jobsdb.JobsDB, destType string, reporting types.ReportingI, multitenantStat multitenant.MultiTenantI, transientSources transientsource.Service, rsourcesService rsources.JobService) {
+func (brt *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB, errorDB jobsdb.JobsDB, destType string, reporting types.ReportingI, multitenantStat multitenant.MultiTenantI, transientSources transientsource.Service, rsourcesService rsources.JobService, debugger destinationdebugger.DestinationDebugger) {
 	brt.isBackendConfigInitialized = false
 	brt.backendConfigInitialized = make(chan bool)
 	brt.fileManagerFactory = filemanager.DefaultFileManagerFactory
 	brt.backendConfig = backendConfig
 	brt.reporting = reporting
+	brt.debugger = debugger
 	config.RegisterBoolConfigVariable(types.DefaultReportingEnabled, &brt.reportingEnabled, false, "Reporting.enabled")
 	brt.logger = pkgLogger.Child(destType)
 	brt.logger.Infof("BRT: Batch Router started: %s", destType)

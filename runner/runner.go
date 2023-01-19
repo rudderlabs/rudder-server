@@ -53,9 +53,6 @@ import (
 	"github.com/rudderlabs/rudder-server/services/archiver"
 	"github.com/rudderlabs/rudder-server/services/controlplane"
 	"github.com/rudderlabs/rudder-server/services/db"
-	destinationdebugger "github.com/rudderlabs/rudder-server/services/debugger/destination"
-	sourcedebugger "github.com/rudderlabs/rudder-server/services/debugger/source"
-	transformationdebugger "github.com/rudderlabs/rudder-server/services/debugger/transformation"
 	"github.com/rudderlabs/rudder-server/services/dedup"
 	destinationconnectiontester "github.com/rudderlabs/rudder-server/services/destination-connection-tester"
 	"github.com/rudderlabs/rudder-server/services/diagnostics"
@@ -332,7 +329,6 @@ func runAllInit() {
 	bigquery.Init()
 	clickhouse.Init()
 	archiver.Init()
-	destinationdebugger.Init()
 	pgnotifier.Init()
 	jobsdb.Init()
 	jobsdb.Init2()
@@ -363,7 +359,6 @@ func runAllInit() {
 	eventschema.Init()
 	eventschema.Init2()
 	stash.Init()
-	transformationdebugger.Init()
 	processor.Init()
 	kafka.Init()
 	customdestinationmanager.Init()
@@ -371,7 +366,6 @@ func runAllInit() {
 	router.Init()
 	router.InitRouterAdmin()
 	ratelimiter.Init()
-	sourcedebugger.Init()
 	gateway.Init()
 	integrations.Init()
 	alert.Init()

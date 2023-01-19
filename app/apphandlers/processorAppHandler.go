@@ -124,8 +124,16 @@ func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options
 
 	a.log.Info("Clearing DB ", options.ClearDB)
 
-	transformationdebugger.Setup()
-	destinationdebugger.Setup(backendconfig.DefaultBackendConfig)
+	transformationhandle, err := transformationdebugger.NewHandle(backendconfig.DefaultBackendConfig)
+	if err != nil {
+		return err
+	}
+	defer transformationhandle.Stop()
+	destinationHandle, err := destinationdebugger.NewHandle(backendconfig.DefaultBackendConfig)
+	if err != nil {
+		return err
+	}
+	defer destinationHandle.Stop()
 
 	reportingI := a.app.Features().Reporting.GetReportingInstance()
 	transientSources := transientsource.NewService(ctx, backendconfig.DefaultBackendConfig)
@@ -209,7 +217,7 @@ func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options
 		return fmt.Errorf("unsupported deployment type: %q", deploymentType)
 	}
 
-	p := proc.New(ctx, &options.ClearDB, gwDBForProcessor, routerDB, batchRouterDB, errDB, multitenantStats, reportingI, transientSources, fileUploaderProvider, rsourcesService)
+	p := proc.New(ctx, &options.ClearDB, gwDBForProcessor, routerDB, batchRouterDB, errDB, multitenantStats, reportingI, transientSources, fileUploaderProvider, rsourcesService, destinationHandle, transformationhandle)
 	throttlerFactory, err := throttler.New(stats.Default)
 	if err != nil {
 		return fmt.Errorf("failed to create throttler factory: %w", err)
@@ -223,6 +231,7 @@ func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options
 		TransientSources: transientSources,
 		RsourcesService:  rsourcesService,
 		ThrottlerFactory: throttlerFactory,
+		Debugger:         destinationHandle,
 	}
 	brtFactory := &batchrouter.Factory{
 		Reporting:        reportingI,
@@ -232,6 +241,7 @@ func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options
 		ProcErrorDB:      errDB,
 		TransientSources: transientSources,
 		RsourcesService:  rsourcesService,
+		Debugger:         destinationHandle,
 	}
 	rt := routerManager.New(rtFactory, brtFactory, backendconfig.DefaultBackendConfig)
 

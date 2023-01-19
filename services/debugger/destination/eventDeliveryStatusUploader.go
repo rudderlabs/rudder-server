@@ -10,6 +10,7 @@ import (
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/services/debugger"
+	"github.com/rudderlabs/rudder-server/services/debugger/cache"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 )
 
@@ -27,73 +28,125 @@ type DeliveryStatusT struct {
 	EventType     string          `json:"eventType"`
 }
 
-var (
-	uploadEnabledDestinationIDs map[string]bool
-	configSubscriberLock        sync.RWMutex
-)
+type Opt func(*Handle)
 
-var uploader debugger.Uploader[*DeliveryStatusT]
+type DestinationDebugger interface {
+	RecordEventDeliveryStatus(destinationID string, deliveryStatus *DeliveryStatusT) bool
+	HasUploadEnabled(destID string) bool
+	Stop()
+}
 
-var (
+type Handle struct {
 	configBackendURL                  string
+	log                               logger.Logger
+	started                           bool
 	disableEventDeliveryStatusUploads bool
-	eventsDeliveryCache               debugger.Cache[*DeliveryStatusT]
-)
-
-var pkgLogger logger.Logger
-
-func Init() {
-	loadConfig()
-	pkgLogger = logger.NewLogger().Child("debugger").Child("destination")
+	eventsDeliveryCache               cache.Cache[*DeliveryStatusT]
+	uploader                          debugger.Uploader[*DeliveryStatusT]
+	uploadEnabledDestinationIDs       map[string]bool
+	uploadEnabledDestinationIDsMu     sync.RWMutex
+	ctx                               context.Context
+	cancel                            func()
+	initialized                       chan struct{}
+	done                              chan struct{}
 }
 
-func loadConfig() {
-	configBackendURL = config.GetString("CONFIG_BACKEND_URL", "https://api.rudderstack.com")
-	config.RegisterBoolConfigVariable(false, &disableEventDeliveryStatusUploads, true, "DestinationDebugger.disableEventDeliveryStatusUploads")
+var WithDisableEventUploads = func(disableEventDeliveryStatusUploads bool) func(h *Handle) {
+	return func(h *Handle) {
+		h.disableEventDeliveryStatusUploads = disableEventDeliveryStatusUploads
+	}
 }
 
-type EventDeliveryStatusUploader struct{}
+func NewHandle(backendConfig backendconfig.BackendConfig, opts ...Opt) (DestinationDebugger, error) {
+	h := &Handle{
+		configBackendURL: config.GetString("CONFIG_BACKEND_URL", "https://api.rudderstack.com"),
+		log:              logger.NewLogger().Child("debugger").Child("destination"),
+	}
+	var err error
+	url := fmt.Sprintf("%s/dataplane/v2/eventUploads", h.configBackendURL)
+	eventUploader := NewEventDeliveryStatusUploader(h.log)
+	h.uploader = debugger.New[*DeliveryStatusT](url, eventUploader)
+	h.uploader.Start()
+
+	cacheType := cache.CacheType(config.GetInt("DestinationDebugger.cacheType", int(cache.BadgerCacheType)))
+	h.eventsDeliveryCache, err = cache.New[*DeliveryStatusT](cacheType, "destination", h.log)
+	if err != nil {
+		return nil, err
+	}
+	config.RegisterBoolConfigVariable(false, &h.disableEventDeliveryStatusUploads, true, "DestinationDebugger.disableEventDeliveryStatusUploads")
+	for _, opt := range opts {
+		opt(h)
+	}
+	h.start(backendConfig)
+	return h, nil
+}
+
+func (h *Handle) start(backendConfig backendconfig.BackendConfig) {
+	ctx, cancel := context.WithCancel(context.Background())
+	h.ctx = ctx
+	h.cancel = cancel
+	h.initialized = make(chan struct{})
+	h.done = make(chan struct{})
+
+	rruntime.Go(func() {
+		h.backendConfigSubscriber(backendConfig)
+	})
+	h.started = true
+}
+
+func (h *Handle) Stop() {
+	if !h.started {
+		return
+	}
+	h.cancel()
+	<-h.done
+	if h.eventsDeliveryCache != nil {
+		_ = h.eventsDeliveryCache.Stop()
+	}
+	h.uploader.Stop()
+	h.started = false
+}
+
+func NewEventDeliveryStatusUploader(log logger.Logger) *EventDeliveryStatusUploader {
+	return &EventDeliveryStatusUploader{log: log}
+}
+
+type EventDeliveryStatusUploader struct {
+	log logger.Logger
+}
 
 // RecordEventDeliveryStatus is used to put the delivery status in the deliveryStatusesBatchChannel,
 // which will be processed by handleJobs.
-func RecordEventDeliveryStatus(destinationID string, deliveryStatus *DeliveryStatusT) bool {
+func (h *Handle) RecordEventDeliveryStatus(destinationID string, deliveryStatus *DeliveryStatusT) bool {
 	// if disableEventDeliveryStatusUploads is true, return;
-	if disableEventDeliveryStatusUploads {
+	if !h.started || h.disableEventDeliveryStatusUploads {
 		return false
 	}
-
+	<-h.initialized
 	// Check if destinationID part of enabled destinations, if not then push the job in cache to keep track
-	configSubscriberLock.RLock()
-	defer configSubscriberLock.RUnlock()
-	if !HasUploadEnabled(destinationID) {
-		eventsDeliveryCache.Update(destinationID, deliveryStatus)
+	h.uploadEnabledDestinationIDsMu.RLock()
+	defer h.uploadEnabledDestinationIDsMu.RUnlock()
+	if !h.HasUploadEnabled(destinationID) {
+		err := h.eventsDeliveryCache.Update(destinationID, deliveryStatus)
+		if err != nil {
+			h.log.Errorf("DestinationDebugger: Error while updating cache: %v", err)
+		}
 		return false
 	}
 
-	uploader.RecordEvent(deliveryStatus)
+	h.uploader.RecordEvent(deliveryStatus)
 	return true
 }
 
-func HasUploadEnabled(destID string) bool {
-	configSubscriberLock.RLock()
-	defer configSubscriberLock.RUnlock()
-	_, ok := uploadEnabledDestinationIDs[destID]
+func (h *Handle) HasUploadEnabled(destID string) bool {
+	<-h.initialized
+	h.uploadEnabledDestinationIDsMu.RLock()
+	defer h.uploadEnabledDestinationIDsMu.RUnlock()
+	_, ok := h.uploadEnabledDestinationIDs[destID]
 	return ok
 }
 
-// Setup initializes this module
-func Setup(backendConfig backendconfig.BackendConfig) {
-	url := fmt.Sprintf("%s/dataplane/v2/eventDeliveryStatus", configBackendURL)
-	eventDeliveryStatusUploader := &EventDeliveryStatusUploader{}
-	uploader = debugger.New[*DeliveryStatusT](url, eventDeliveryStatusUploader)
-	uploader.Start()
-
-	rruntime.Go(func() {
-		backendConfigSubscriber(backendConfig)
-	})
-}
-
-func (*EventDeliveryStatusUploader) Transform(deliveryStatusesBuffer []*DeliveryStatusT) ([]byte, error) {
+func (e *EventDeliveryStatusUploader) Transform(deliveryStatusesBuffer []*DeliveryStatusT) ([]byte, error) {
 	res := make(map[string]interface{})
 	res["version"] = "v2"
 	for _, job := range deliveryStatusesBuffer {
@@ -107,16 +160,15 @@ func (*EventDeliveryStatusUploader) Transform(deliveryStatusesBuffer []*Delivery
 
 	rawJSON, err := json.Marshal(res)
 	if err != nil {
-		pkgLogger.Errorf("[Destination live events] Failed to marshal payload. Err: %v", err)
+		e.log.Errorf("[Destination live events] Failed to marshal payload. Err: %v", err)
 		return nil, err
 	}
 
 	return rawJSON, nil
 }
 
-func updateConfig(config map[string]backendconfig.ConfigT) {
-	configSubscriberLock.Lock()
-	uploadEnabledDestinationIDs = make(map[string]bool)
+func (h *Handle) updateConfig(config map[string]backendconfig.ConfigT) {
+	uploadEnabledDestinationIDs := make(map[string]bool)
 	var uploadEnabledDestinationIdsList []string
 	for _, wConfig := range config {
 		for _, source := range wConfig.Sources {
@@ -130,22 +182,56 @@ func updateConfig(config map[string]backendconfig.ConfigT) {
 			}
 		}
 	}
-	recordHistoricEventsDelivery(uploadEnabledDestinationIdsList)
-	configSubscriberLock.Unlock()
+	h.uploadEnabledDestinationIDsMu.Lock()
+	h.uploadEnabledDestinationIDs = uploadEnabledDestinationIDs
+	h.uploadEnabledDestinationIDsMu.Unlock()
+
+	h.recordHistoricEventsDelivery(uploadEnabledDestinationIdsList)
 }
 
-func backendConfigSubscriber(backendConfig backendconfig.BackendConfig) {
-	configChannel := backendConfig.Subscribe(context.TODO(), "backendConfig")
+func (h *Handle) backendConfigSubscriber(backendConfig backendconfig.BackendConfig) {
+	configChannel := backendConfig.Subscribe(h.ctx, "backendConfig")
 	for c := range configChannel {
-		updateConfig(c.Data.(map[string]backendconfig.ConfigT))
-	}
-}
-
-func recordHistoricEventsDelivery(destinationIDs []string) {
-	for _, destinationID := range destinationIDs {
-		historicEventsDelivery := eventsDeliveryCache.ReadAndPopData(destinationID)
-		for _, event := range historicEventsDelivery {
-			uploader.RecordEvent(event)
+		h.updateConfig(c.Data.(map[string]backendconfig.ConfigT))
+		select {
+		case <-h.initialized:
+		default:
+			close(h.initialized)
 		}
 	}
+	close(h.done)
+}
+
+func (h *Handle) recordHistoricEventsDelivery(destinationIDs []string) {
+	h.uploadEnabledDestinationIDsMu.RLock()
+	defer h.uploadEnabledDestinationIDsMu.RUnlock()
+	for _, destinationID := range destinationIDs {
+		historicEventsDelivery, err := h.eventsDeliveryCache.Read(destinationID)
+		if err != nil {
+			continue
+		}
+		for _, event := range historicEventsDelivery {
+			h.uploader.RecordEvent(event)
+		}
+	}
+}
+
+func NewNoOpService() DestinationDebugger {
+	return &noopService{}
+}
+
+type noopService struct{}
+
+func (*noopService) RecordEventDeliveryStatus(_ string, _ *DeliveryStatusT) bool {
+	return false
+}
+
+func (*noopService) HasUploadEnabled(_ string) bool {
+	return false
+}
+
+func (*noopService) Start(_ backendconfig.BackendConfig) {
+}
+
+func (*noopService) Stop() {
 }
