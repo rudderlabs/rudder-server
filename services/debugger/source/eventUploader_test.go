@@ -57,7 +57,7 @@ var _ = Describe("eventUploader", func() {
 	var (
 		c              *eventUploaderContext
 		recordingEvent string
-		h              *sourcedebugger.Handle
+		h              sourcedebugger.SourceDebugger
 	)
 
 	BeforeEach(func() {
@@ -82,10 +82,11 @@ var _ = Describe("eventUploader", func() {
 
 	Context("Source Debugger Test Badger", func() {
 		BeforeEach(func() {
+			var err error
 			config.Reset()
 			config.Set("RUDDER_TMPDIR", path.Join(GinkgoT().TempDir(), rand.String(10)))
 			config.Set("LiveEvent.cache.GCTime", "1s")
-			h, err := sourcedebugger.NewHandle(sourcedebugger.WithDisableEventUploads(false))
+			h, err = sourcedebugger.NewHandle(sourcedebugger.WithDisableEventUploads(false))
 			Expect(err).To(BeNil())
 			h.Start(c.mockBackendConfig)
 		})
@@ -139,11 +140,12 @@ var _ = Describe("eventUploader", func() {
 
 	Context("Source Debugger Test Memory", func() {
 		BeforeEach(func() {
+			var err error
 			config.Reset()
 			config.Set("SourceDebugger.cacheType", 0)
 			config.Set("RUDDER_TMPDIR", path.Join(GinkgoT().TempDir(), rand.String(10)))
 			config.Set("LiveEvent.cache.GCTime", "1s")
-			h, err := sourcedebugger.NewHandle(sourcedebugger.WithDisableEventUploads(false))
+			h, err = sourcedebugger.NewHandle(sourcedebugger.WithDisableEventUploads(false))
 			Expect(err).To(BeNil())
 			h.Start(c.mockBackendConfig)
 		})

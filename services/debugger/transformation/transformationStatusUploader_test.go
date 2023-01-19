@@ -183,7 +183,7 @@ var _ = Describe("eventDeliveryStatusUploader", func() {
 
 	var (
 		c              *eventDeliveryStatusUploaderContext
-		h              *transformationdebugger.Handle
+		h              transformationdebugger.TransformationDebugger
 		deliveryStatus transformationdebugger.TransformStatusT
 	)
 
@@ -223,9 +223,10 @@ var _ = Describe("eventDeliveryStatusUploader", func() {
 
 	Context("Transformation Debugger Badger", func() {
 		BeforeEach(func() {
+			var err error
 			config.Reset()
 			config.Set("RUDDER_TMPDIR", path.Join(GinkgoT().TempDir(), rand.String(10)))
-			h, err := transformationdebugger.NewHandle(transformationdebugger.WithDisableTransformationStatusUploads(false))
+			h, err = transformationdebugger.NewHandle(transformationdebugger.WithDisableTransformationStatusUploads(false))
 			Expect(err).To(BeNil())
 			h.Start(c.mockBackendConfig)
 		})
@@ -270,10 +271,11 @@ var _ = Describe("eventDeliveryStatusUploader", func() {
 
 	Context("Transformation Debugger Memory", func() {
 		BeforeEach(func() {
+			var err error
 			config.Reset()
 			config.Set("RUDDER_TMPDIR", path.Join(GinkgoT().TempDir(), rand.String(10)))
 			config.Set("TransformationDebugger.cacheType", 0)
-			h, err := transformationdebugger.NewHandle(transformationdebugger.WithDisableTransformationStatusUploads(false))
+			h, err = transformationdebugger.NewHandle(transformationdebugger.WithDisableTransformationStatusUploads(false))
 			Expect(err).To(BeNil())
 			h.Start(c.mockBackendConfig)
 		})

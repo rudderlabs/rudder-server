@@ -184,7 +184,7 @@ var _ = Describe("eventDeliveryStatusUploader", func() {
 	var (
 		c              *eventDeliveryStatusUploaderContext
 		deliveryStatus destinationdebugger.DeliveryStatusT
-		h              *destinationdebugger.Handle
+		h              destinationdebugger.DestinationDebugger
 	)
 
 	BeforeEach(func() {
@@ -223,10 +223,11 @@ var _ = Describe("eventDeliveryStatusUploader", func() {
 
 	Context("RecordEventDeliveryStatus Badger", func() {
 		BeforeEach(func() {
+			var err error
 			config.Reset()
 			config.Set("RUDDER_TMPDIR", path.Join(GinkgoT().TempDir(), rand.String(10)))
 			config.Set("LiveEvent.cache.GCTime", "1s")
-			h, err := destinationdebugger.NewHandle(destinationdebugger.WithDisableEventUploads(false))
+			h, err = destinationdebugger.NewHandle(destinationdebugger.WithDisableEventUploads(false))
 			Expect(err).To(BeNil())
 			h.Start(c.mockBackendConfig)
 		})
@@ -274,11 +275,12 @@ var _ = Describe("eventDeliveryStatusUploader", func() {
 
 	Context("RecordEventDeliveryStatus Memory", func() {
 		BeforeEach(func() {
+			var err error
 			config.Reset()
 			config.Set("DestinationDebugger.cacheType", 0)
 			config.Set("RUDDER_TMPDIR", path.Join(GinkgoT().TempDir(), rand.String(10)))
 			config.Set("LiveEvent.cache.GCTime", "1s")
-			h, err := destinationdebugger.NewHandle(destinationdebugger.WithDisableEventUploads(false))
+			h, err = destinationdebugger.NewHandle(destinationdebugger.WithDisableEventUploads(false))
 			Expect(err).To(BeNil())
 			h.Start(c.mockBackendConfig)
 		})
