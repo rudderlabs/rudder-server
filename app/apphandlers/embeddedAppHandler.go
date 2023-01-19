@@ -112,9 +112,21 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 
 	a.log.Info("Clearing DB ", options.ClearDB)
 
-	transformationdebugger.Setup()
-	destinationdebugger.Setup(backendconfig.DefaultBackendConfig)
-	sourcedebugger.Setup(backendconfig.DefaultBackendConfig)
+	transformationhandle, err := transformationdebugger.NewHandle(backendconfig.DefaultBackendConfig)
+	if err != nil {
+		return err
+	}
+	defer transformationhandle.Stop()
+	destinationHandle, err := destinationdebugger.NewHandle(backendconfig.DefaultBackendConfig)
+	if err != nil {
+		return err
+	}
+	defer destinationHandle.Stop()
+	sourceHandle, err := sourcedebugger.NewHandle(backendconfig.DefaultBackendConfig)
+	if err != nil {
+		return err
+	}
+	defer sourceHandle.Stop()
 
 	reportingI := a.app.Features().Reporting.GetReportingInstance()
 	transientSources := transientsource.NewService(ctx, backendconfig.DefaultBackendConfig)
@@ -201,7 +213,7 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 		return fmt.Errorf("unsupported deployment type: %q", deploymentType)
 	}
 
-	proc := processor.New(ctx, &options.ClearDB, gwDBForProcessor, routerDB, batchRouterDB, errDB, multitenantStats, reportingI, transientSources, fileUploaderProvider, rsourcesService)
+	proc := processor.New(ctx, &options.ClearDB, gwDBForProcessor, routerDB, batchRouterDB, errDB, multitenantStats, reportingI, transientSources, fileUploaderProvider, rsourcesService, destinationHandle, transformationhandle)
 	throttlerFactory, err := throttler.New(stats.Default)
 	if err != nil {
 		return fmt.Errorf("failed to create throttler factory: %w", err)
@@ -215,6 +227,7 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 		TransientSources: transientSources,
 		RsourcesService:  rsourcesService,
 		ThrottlerFactory: throttlerFactory,
+		Debugger:         destinationHandle,
 	}
 	brtFactory := &batchrouter.Factory{
 		Reporting:        reportingI,
@@ -224,6 +237,7 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 		ProcErrorDB:      errDB,
 		TransientSources: transientSources,
 		RsourcesService:  rsourcesService,
+		Debugger:         destinationHandle,
 	}
 	rt := routerManager.New(rtFactory, brtFactory, backendconfig.DefaultBackendConfig)
 
@@ -259,7 +273,7 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 	err = gw.Setup(
 		ctx,
 		a.app, backendconfig.DefaultBackendConfig, gatewayDB,
-		&rateLimiter, a.versionHandler, rsourcesService,
+		&rateLimiter, a.versionHandler, rsourcesService, sourceHandle,
 	)
 	if err != nil {
 		return fmt.Errorf("could not setup gateway: %w", err)

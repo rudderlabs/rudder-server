@@ -138,6 +138,7 @@ type HandleT struct {
 	payloadLimit     int64
 	transientSources transientsource.Service
 	rsourcesService  rsources.JobService
+	debugger         destinationdebugger.DestinationDebugger
 }
 
 type jobResponseT struct {
@@ -1109,7 +1110,7 @@ func (worker *workerT) sendEventDeliveryStat(destinationJobMetadata *types.JobMe
 	}
 }
 
-func (*workerT) sendDestinationResponseToConfigBackend(payload json.RawMessage, destinationJobMetadata *types.JobMetadataT, status *jobsdb.JobStatusT, sourceIDs []string) {
+func (w *workerT) sendDestinationResponseToConfigBackend(payload json.RawMessage, destinationJobMetadata *types.JobMetadataT, status *jobsdb.JobStatusT, sourceIDs []string) {
 	// Sending destination response to config backend
 	if status.ErrorCode != fmt.Sprint(types.RouterUnMarshalErrorCode) && status.ErrorCode != fmt.Sprint(types.RouterTimedOutStatusCode) {
 		deliveryStatus := destinationdebugger.DeliveryStatusT{
@@ -1124,7 +1125,7 @@ func (*workerT) sendDestinationResponseToConfigBackend(payload json.RawMessage, 
 			EventName:     gjson.GetBytes(destinationJobMetadata.JobT.Parameters, "event_name").String(),
 			EventType:     gjson.GetBytes(destinationJobMetadata.JobT.Parameters, "event_type").String(),
 		}
-		destinationdebugger.RecordEventDeliveryStatus(destinationJobMetadata.DestinationID, &deliveryStatus)
+		w.rt.debugger.RecordEventDeliveryStatus(destinationJobMetadata.DestinationID, &deliveryStatus)
 	}
 }
 
@@ -1783,9 +1784,10 @@ func Init() {
 }
 
 // Setup initializes this module
-func (rt *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB jobsdb.MultiTenantJobsDB, errorDB jobsdb.JobsDB, destinationConfig destinationConfig, transientSources transientsource.Service, rsourcesService rsources.JobService) {
+func (rt *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB jobsdb.MultiTenantJobsDB, errorDB jobsdb.JobsDB, destinationConfig destinationConfig, transientSources transientsource.Service, rsourcesService rsources.JobService, debugger destinationdebugger.DestinationDebugger) {
 	rt.backendConfig = backendConfig
 	rt.workspaceSet = make(map[string]struct{})
+	rt.debugger = debugger
 
 	destName := destinationConfig.name
 	rt.logger = pkgLogger.Child(destName)
