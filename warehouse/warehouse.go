@@ -16,6 +16,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/deltalake"
+
 	"github.com/bugsnag/bugsnag-go/v2"
 	"github.com/cenkalti/backoff/v4"
 	"github.com/lib/pq"
@@ -43,7 +45,6 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/types"
 	"github.com/rudderlabs/rudder-server/warehouse/archive"
 	cpclient "github.com/rudderlabs/rudder-server/warehouse/client/controlplane"
-	"github.com/rudderlabs/rudder-server/warehouse/deltalake"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/api"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/loadfiles"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"

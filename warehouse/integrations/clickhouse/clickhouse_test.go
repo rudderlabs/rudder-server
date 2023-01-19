@@ -11,6 +11,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/testhelper"
+
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/clickhouse"
+
 	"github.com/ory/dockertest/v3"
 	dc "github.com/ory/dockertest/v3/docker"
 	"github.com/rudderlabs/rudder-server/services/filemanager"
@@ -23,9 +27,7 @@ import (
 	"github.com/rudderlabs/rudder-server/warehouse/validations"
 
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
-	"github.com/rudderlabs/rudder-server/warehouse/clickhouse"
 	"github.com/rudderlabs/rudder-server/warehouse/client"
-	"github.com/rudderlabs/rudder-server/warehouse/testhelper"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 	"github.com/stretchr/testify/require"
 )

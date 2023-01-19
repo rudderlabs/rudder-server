@@ -4,14 +4,16 @@ import (
 	"os"
 	"testing"
 
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/testhelper"
+
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/datalake"
+
 	"github.com/rudderlabs/rudder-server/utils/misc"
-	"github.com/rudderlabs/rudder-server/warehouse/datalake"
 	"github.com/rudderlabs/rudder-server/warehouse/validations"
 
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/stretchr/testify/require"
 
-	"github.com/rudderlabs/rudder-server/warehouse/testhelper"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
