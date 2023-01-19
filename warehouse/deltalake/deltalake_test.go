@@ -856,6 +856,7 @@ func TestDeltalake_LoadTable(t *testing.T) {
 				"useSTSTokens":    true,
 				"bucketName":      minioResource.BucketName,
 				"accessKeyID":     minioResource.AccessKey,
+				"accessKey":       minioResource.SecretKey,
 				"secretAccessKey": minioResource.SecretKey,
 				"endPoint":        minioResource.Endpoint,
 				"forcePathStyle":  true,
@@ -873,6 +874,7 @@ func TestDeltalake_LoadTable(t *testing.T) {
 				"useSTSTokens":    true,
 				"bucketName":      minioResource.BucketName,
 				"accessKeyID":     minioResource.AccessKey,
+				"accessKey":       minioResource.SecretKey,
 				"secretAccessKey": minioResource.SecretKey,
 				"endPoint":        minioResource.Endpoint,
 				"forcePathStyle":  true,
@@ -901,6 +903,7 @@ func TestDeltalake_LoadTable(t *testing.T) {
 				"useSTSTokens":    true,
 				"bucketName":      minioResource.BucketName,
 				"accessKeyID":     minioResource.AccessKey,
+				"accessKey":       minioResource.SecretKey,
 				"secretAccessKey": minioResource.SecretKey,
 				"endPoint":        minioResource.Endpoint,
 				"forcePathStyle":  true,
@@ -929,6 +932,7 @@ func TestDeltalake_LoadTable(t *testing.T) {
 				"useSTSTokens":    true,
 				"bucketName":      minioResource.BucketName,
 				"accessKeyID":     minioResource.AccessKey,
+				"accessKey":       minioResource.SecretKey,
 				"secretAccessKey": minioResource.SecretKey,
 				"endPoint":        minioResource.Endpoint,
 				"forcePathStyle":  true,
@@ -975,7 +979,7 @@ func TestDeltalake_LoadTable(t *testing.T) {
 
 			dl.Namespace = namespace
 			dl.Logger = logger.NOP
-			dl.ObjectStorage = warehouseutils.S3
+			dl.ObjectStorage = warehouseutils.MINIO
 			dl.Warehouse = warehouseutils.Warehouse{
 				Namespace:   namespace,
 				WorkspaceID: workspaceID,
