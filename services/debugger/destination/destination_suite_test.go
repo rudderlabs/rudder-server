@@ -7,7 +7,7 @@ import (
 	. "github.com/onsi/gomega"
 )
 
-func TestDestinationDebugger(t *testing.T) {
+func TestDestination(t *testing.T) {
 	RegisterFailHandler(Fail)
-	RunSpecs(t, "DestinationDebugger Suite")
+	RunSpecs(t, "Destination Suite")
 }

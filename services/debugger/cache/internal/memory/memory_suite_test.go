@@ -1,4 +1,4 @@
-package sourcedebugger_test
+package memory_test
 
 import (
 	"testing"
@@ -7,7 +7,7 @@ import (
 	. "github.com/onsi/gomega"
 )
 
-func TestSourceDebugger(t *testing.T) {
+func TestMemcache(t *testing.T) {
 	RegisterFailHandler(Fail)
-	RunSpecs(t, "SourceDebugger Suite")
+	RunSpecs(t, "memory Suite")
 }

@@ -92,7 +92,7 @@ func (b *Repository) GetToken() ([]byte, error) {
 			return fmt.Errorf("could not get token: %w", err)
 		}
 		if err = item.Value(func(val []byte) error {
-			token = val
+			token = append([]byte{}, val...)
 			return nil
 		}); err != nil {
 			return fmt.Errorf("could not get token value: %w", err)

@@ -4,6 +4,10 @@ import (
 	"context"
 	"sync"
 
+	transformationdebugger "github.com/rudderlabs/rudder-server/services/debugger/transformation"
+
+	destinationdebugger "github.com/rudderlabs/rudder-server/services/debugger/destination"
+
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/processor/transformer"
@@ -31,6 +35,8 @@ type LifecycleManager struct {
 	transientSources transientsource.Service
 	fileuploader     fileuploader.Provider
 	rsourcesService  rsources.JobService
+	destDebugger     destinationdebugger.DestinationDebugger
+	transDebugger    transformationdebugger.TransformationDebugger
 }
 
 // Start starts a processor, this is not a blocking call.
@@ -43,7 +49,7 @@ func (proc *LifecycleManager) Start() error {
 
 	proc.HandleT.Setup(
 		proc.BackendConfig, proc.gatewayDB, proc.routerDB, proc.batchRouterDB, proc.errDB,
-		proc.clearDB, proc.ReportingI, proc.MultitenantStats, proc.transientSources, proc.fileuploader, proc.rsourcesService,
+		proc.clearDB, proc.ReportingI, proc.MultitenantStats, proc.transientSources, proc.fileuploader, proc.rsourcesService, proc.destDebugger, proc.transDebugger,
 	)
 
 	currentCtx, cancel := context.WithCancel(context.Background())
@@ -72,7 +78,7 @@ func (proc *LifecycleManager) Stop() {
 // New creates a new Processor instance
 func New(ctx context.Context, clearDb *bool, gwDb, rtDb, brtDb, errDb *jobsdb.HandleT,
 	tenantDB multitenant.MultiTenantI, reporting types.ReportingI, transientSources transientsource.Service, fileuploader fileuploader.Provider,
-	rsourcesService rsources.JobService,
+	rsourcesService rsources.JobService, destDebugger destinationdebugger.DestinationDebugger, transDebugger transformationdebugger.TransformationDebugger,
 ) *LifecycleManager {
 	proc := &LifecycleManager{
 		HandleT:          &HandleT{transformer: transformer.NewTransformer()},
@@ -88,6 +94,8 @@ func New(ctx context.Context, clearDb *bool, gwDb, rtDb, brtDb, errDb *jobsdb.Ha
 		transientSources: transientSources,
 		fileuploader:     fileuploader,
 		rsourcesService:  rsourcesService,
+		destDebugger:     destDebugger,
+		transDebugger:    transDebugger,
 	}
 	return proc
 }
