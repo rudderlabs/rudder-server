@@ -102,6 +102,30 @@ type Redshift struct {
 	EnableDeleteByJobs            bool
 }
 
+type S3ManifestEntryMetadata struct {
+	ContentLength int64 `json:"content_length"`
+}
+
+type S3ManifestEntry struct {
+	Url       string                  `json:"url"`
+	Mandatory bool                    `json:"mandatory"`
+	Metadata  S3ManifestEntryMetadata `json:"meta"`
+}
+
+type S3Manifest struct {
+	Entries []S3ManifestEntry `json:"entries"`
+}
+
+type RedshiftCredentials struct {
+	Host       string
+	Port       string
+	DbName     string
+	Username   string
+	Password   string
+	timeout    time.Duration
+	TunnelInfo *tunnelling.TunnelInfo
+}
+
 func NewRedshift() *Redshift {
 	return &Redshift{
 		logger: pkgLogger,
@@ -242,26 +266,12 @@ func (rs *Redshift) createSchema() (err error) {
 	return
 }
 
-type S3ManifestEntryMetadataT struct {
-	ContentLength int64 `json:"content_length"`
-}
-
-type S3ManifestEntryT struct {
-	Url       string                   `json:"url"`
-	Mandatory bool                     `json:"mandatory"`
-	Metadata  S3ManifestEntryMetadataT `json:"meta"`
-}
-
-type S3ManifestT struct {
-	Entries []S3ManifestEntryT `json:"entries"`
-}
-
 func (rs *Redshift) generateManifest(tableName string, _ map[string]string) (string, error) {
-	loadFiles := rs.Uploader.GetLoadFilesMetadata(warehouseutils.GetLoadFilesOptionsT{Table: tableName})
+	loadFiles := rs.Uploader.GetLoadFilesMetadata(warehouseutils.GetLoadFilesOptions{Table: tableName})
 	loadFiles = warehouseutils.GetS3Locations(loadFiles)
-	var manifest S3ManifestT
+	var manifest S3Manifest
 	for idx, loadFile := range loadFiles {
-		manifestEntry := S3ManifestEntryT{Url: loadFile.Location, Mandatory: true}
+		manifestEntry := S3ManifestEntry{Url: loadFile.Location, Mandatory: true}
 		// add contentLength to manifest entry if it exists
 		contentLength := gjson.Get(string(loadFiles[idx].Metadata), "content_length")
 		if contentLength.Exists() {
@@ -579,17 +589,7 @@ func (rs *Redshift) loadUserTables() (errorMap map[string]error) {
 	return
 }
 
-type RedshiftCredentialsT struct {
-	Host       string
-	Port       string
-	DbName     string
-	Username   string
-	Password   string
-	timeout    time.Duration
-	TunnelInfo *tunnelling.TunnelInfo
-}
-
-func Connect(cred RedshiftCredentialsT) (*sql.DB, error) {
+func Connect(cred RedshiftCredentials) (*sql.DB, error) {
 	dsn := url.URL{
 		Scheme: "postgres",
 		User:   url.UserPassword(cred.Username, cred.Password),
@@ -696,8 +696,8 @@ func (rs *Redshift) AlterColumn(tableName, columnName, columnType string) (err e
 	return
 }
 
-func (rs *Redshift) getConnectionCredentials() RedshiftCredentialsT {
-	creds := RedshiftCredentialsT{
+func (rs *Redshift) getConnectionCredentials() RedshiftCredentials {
+	creds := RedshiftCredentials{
 		Host:       warehouseutils.GetConfigValue(RSHost, rs.Warehouse),
 		Port:       warehouseutils.GetConfigValue(RSPort, rs.Warehouse),
 		DbName:     warehouseutils.GetConfigValue(RSDbName, rs.Warehouse),

@@ -116,7 +116,7 @@ func (*CTUploadJob) GetTableSchemaInUpload(_ string) warehouseutils.TableSchemaT
 	return warehouseutils.TableSchemaT{}
 }
 
-func (*CTUploadJob) GetLoadFilesMetadata(_ warehouseutils.GetLoadFilesOptionsT) []warehouseutils.LoadFileT {
+func (*CTUploadJob) GetLoadFilesMetadata(_ warehouseutils.GetLoadFilesOptions) []warehouseutils.LoadFileT {
 	return []warehouseutils.LoadFileT{}
 }
 
