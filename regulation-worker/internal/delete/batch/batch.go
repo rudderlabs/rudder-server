@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/cenkalti/backoff"
+	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/delete/batch/filehandler"
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/model"
 	"github.com/rudderlabs/rudder-server/services/filemanager"
@@ -308,7 +309,10 @@ type BatchManager struct {
 }
 
 func (*BatchManager) GetSupportedDestinations() []string {
-	return supportedDestinations
+	if config.Default.GetBool("REGULATION_WORKER_BATCH_DESTINATIONS_ENABLED", false) {
+		return supportedDestinations
+	}
+	return nil
 }
 
 // Delete users corresponding to input userAttributes from a given batch destination
