@@ -9,6 +9,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ory/dockertest/v3"
+	"github.com/rudderlabs/rudder-server/testhelper/destination"
+	"golang.org/x/sync/errgroup"
+
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/warehouse/deltalake/deltalakeclient"
@@ -745,6 +749,25 @@ func TestDeltalake_LoadTable(t *testing.T) {
 	warehouseutils.Init()
 	misc.Init()
 
+	pool, err := dockertest.NewPool("")
+	require.NoError(t, err)
+
+	var (
+		minioResource *destination.MINIOResource
+		workspaceID   = "test_workspace_id"
+		namespace     = "test-namespace"
+		testTable     = "test-table"
+	)
+
+	g := errgroup.Group{}
+	g.Go(func() error {
+		minioResource, err = destination.SetupMINIO(pool, t)
+		require.NoError(t, err)
+
+		return nil
+	})
+	require.NoError(t, g.Wait())
+
 	testCases := []struct {
 		name              string
 		mockClientError   error
@@ -829,9 +852,14 @@ func TestDeltalake_LoadTable(t *testing.T) {
 			useSTSTokens:      true,
 			config: map[string]interface{}{
 				"useSTSTokens":    true,
-				"region":          "region",
-				"accessKeyID":     "accessKeyID",
-				"secretAccessKey": "secretAccessKey",
+				"bucketName":      minioResource.BucketName,
+				"accessKeyID":     minioResource.AccessKey,
+				"secretAccessKey": minioResource.SecretKey,
+				"endPoint":        minioResource.Endpoint,
+				"forcePathStyle":  true,
+				"disableSSL":      true,
+				"region":          minioResource.SiteRegion,
+				"enableSSE":       false,
 			},
 		},
 		{
@@ -841,9 +869,14 @@ func TestDeltalake_LoadTable(t *testing.T) {
 			useSTSTokens:      true,
 			config: map[string]interface{}{
 				"useSTSTokens":    true,
-				"region":          "region",
-				"accessKeyID":     "accessKeyID",
-				"secretAccessKey": "secretAccessKey",
+				"bucketName":      minioResource.BucketName,
+				"accessKeyID":     minioResource.AccessKey,
+				"secretAccessKey": minioResource.SecretKey,
+				"endPoint":        minioResource.Endpoint,
+				"forcePathStyle":  true,
+				"disableSSL":      true,
+				"region":          minioResource.SiteRegion,
+				"enableSSE":       false,
 			},
 			namespace: "test-namespace-copy-error",
 			wantError: errors.New(`executing: copy error`),
@@ -864,9 +897,14 @@ func TestDeltalake_LoadTable(t *testing.T) {
 			useSTSTokens:      true,
 			config: map[string]interface{}{
 				"useSTSTokens":    true,
-				"region":          "region",
-				"accessKeyID":     "accessKeyID",
-				"secretAccessKey": "secretAccessKey",
+				"bucketName":      minioResource.BucketName,
+				"accessKeyID":     minioResource.AccessKey,
+				"secretAccessKey": minioResource.SecretKey,
+				"endPoint":        minioResource.Endpoint,
+				"forcePathStyle":  true,
+				"disableSSL":      true,
+				"region":          minioResource.SiteRegion,
+				"enableSSE":       false,
 			},
 			namespace: "test-namespace-load-merge-error",
 			executeSQLRegex: func(query string) (bool, error) {
@@ -887,9 +925,14 @@ func TestDeltalake_LoadTable(t *testing.T) {
 			useSTSTokens:      true,
 			config: map[string]interface{}{
 				"useSTSTokens":    true,
-				"region":          "region",
-				"accessKeyID":     "accessKeyID",
-				"secretAccessKey": "secretAccessKey",
+				"bucketName":      minioResource.BucketName,
+				"accessKeyID":     minioResource.AccessKey,
+				"secretAccessKey": minioResource.SecretKey,
+				"endPoint":        minioResource.Endpoint,
+				"forcePathStyle":  true,
+				"disableSSL":      true,
+				"region":          minioResource.SiteRegion,
+				"enableSSE":       false,
 			},
 			namespace: "test-namespace-load-append-error",
 			executeSQLRegex: func(query string) (bool, error) {
@@ -902,12 +945,6 @@ func TestDeltalake_LoadTable(t *testing.T) {
 			wantError: errors.New(`executing: load append error`),
 		},
 	}
-
-	var (
-		namespace   = "test-namespace"
-		workspaceID = "test-workspace-id"
-		testTable   = "test-table"
-	)
 
 	for _, tc := range testCases {
 		tc := tc
