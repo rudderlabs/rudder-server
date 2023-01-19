@@ -51,6 +51,8 @@ func TestIntegrationDeltalake(t *testing.T) {
 	require.NoError(t, err)
 
 	dl := deltalake.NewDeltalake()
+	deltalake.WithConfig(dl, config.Default)
+
 	db, err := dl.NewDeltalakeClient(&credentials, 0)
 	require.NoError(t, err)
 
