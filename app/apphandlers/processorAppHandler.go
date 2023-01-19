@@ -54,6 +54,7 @@ type processorApp struct {
 		routerDSLimit      int
 		batchRouterDSLimit int
 		gatewayDSLimit     int
+		forceStaticMode    bool
 		http               struct {
 			ReadTimeout       time.Duration
 			ReadHeaderTimeout time.Duration
@@ -75,6 +76,7 @@ func (a *processorApp) loadConfiguration() {
 	config.RegisterDurationConfigVariable(720, &a.config.http.IdleTimeout, false, time.Second, []string{"IdleTimeout", "IdleTimeoutInSec"}...)
 	config.RegisterIntConfigVariable(8086, &a.config.http.webPort, false, 1, "Processor.webPort")
 	config.RegisterIntConfigVariable(524288, &a.config.http.MaxHeaderBytes, false, 1, "MaxHeaderBytes")
+	config.RegisterBoolConfigVariable(false, &a.config.forceStaticMode, false, "forceStaticModeProvider")
 	config.RegisterIntConfigVariable(0, &a.config.processorDSLimit, true, 1, "Processor.jobsDB.dsLimit", "JobsDB.dsLimit")
 	config.RegisterIntConfigVariable(0, &a.config.gatewayDSLimit, true, 1, "Gateway.jobsDB.dsLimit", "JobsDB.dsLimit")
 	config.RegisterIntConfigVariable(0, &a.config.routerDSLimit, true, 1, "Router.jobsDB.dsLimit", "JobsDB.dsLimit")
@@ -202,20 +204,28 @@ func (a *processorApp) StartRudderCore(ctx context.Context, options *app.Options
 
 	var modeProvider cluster.ChangeEventProvider
 
-	switch deploymentType {
-	case deployment.MultiTenantType:
-		a.log.Info("using ETCD Based Dynamic Cluster Manager")
-		modeProvider = state.NewETCDDynamicProvider()
-	case deployment.DedicatedType:
-		// FIXME: hacky way to determine servermode
-		a.log.Info("using Static Cluster Manager")
+	staticModeProvider := func() cluster.ChangeEventProvider {
 		if a.config.enableProcessor && a.config.enableRouter {
-			modeProvider = state.NewStaticProvider(servermode.NormalMode)
-		} else {
-			modeProvider = state.NewStaticProvider(servermode.DegradedMode)
+			return state.NewStaticProvider(servermode.NormalMode)
 		}
-	default:
-		return fmt.Errorf("unsupported deployment type: %q", deploymentType)
+		return state.NewStaticProvider(servermode.DegradedMode)
+	}
+
+	if a.config.forceStaticMode {
+		a.log.Info("forcing the use of Static Cluster Manager")
+		modeProvider = staticModeProvider()
+	} else {
+		switch deploymentType {
+		case deployment.MultiTenantType:
+			a.log.Info("using ETCD Based Dynamic Cluster Manager")
+			modeProvider = state.NewETCDDynamicProvider()
+		case deployment.DedicatedType:
+			// FIXME: hacky way to determine servermode
+			a.log.Info("using Static Cluster Manager")
+			modeProvider = staticModeProvider()
+		default:
+			return fmt.Errorf("unsupported deployment type: %q", deploymentType)
+		}
 	}
 
 	adaptiveLimit := payload.SetupAdaptiveLimiter(ctx, g)

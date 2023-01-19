@@ -34,6 +34,7 @@ type gatewayApp struct {
 		enableProcessor bool
 		enableRouter    bool
 		gatewayDSLimit  int
+		forceStaticMode bool
 	}
 }
 
@@ -41,6 +42,7 @@ func (a *gatewayApp) loadConfiguration() {
 	config.RegisterBoolConfigVariable(true, &a.config.enableProcessor, false, "enableProcessor")
 	config.RegisterBoolConfigVariable(true, &a.config.enableRouter, false, "enableRouter")
 	config.RegisterIntConfigVariable(0, &a.config.gatewayDSLimit, true, 1, "Gateway.jobsDB.dsLimit", "JobsDB.dsLimit")
+	config.RegisterBoolConfigVariable(false, &a.config.forceStaticMode, false, "forceStaticModeProvider")
 }
 
 func (a *gatewayApp) Setup(options *app.Options) error {
@@ -102,19 +104,27 @@ func (a *gatewayApp) StartRudderCore(ctx context.Context, options *app.Options) 
 
 	var modeProvider cluster.ChangeEventProvider
 
-	switch deploymentType {
-	case deployment.MultiTenantType:
-		a.log.Info("using ETCD Based Dynamic Cluster Manager")
-		modeProvider = state.NewETCDDynamicProvider()
-	case deployment.DedicatedType:
-		a.log.Info("using Static Cluster Manager")
+	staticModeProvider := func() cluster.ChangeEventProvider {
 		if a.config.enableProcessor && a.config.enableRouter {
-			modeProvider = state.NewStaticProvider(servermode.NormalMode)
-		} else {
-			modeProvider = state.NewStaticProvider(servermode.DegradedMode)
+			return state.NewStaticProvider(servermode.NormalMode)
 		}
-	default:
-		return fmt.Errorf("unsupported deployment type: %q", deploymentType)
+		return state.NewStaticProvider(servermode.DegradedMode)
+	}
+
+	if a.config.forceStaticMode {
+		a.log.Info("forcing the use of Static Cluster Manager")
+		modeProvider = staticModeProvider()
+	} else {
+		switch deploymentType {
+		case deployment.MultiTenantType:
+			a.log.Info("using ETCD Based Dynamic Cluster Manager")
+			modeProvider = state.NewETCDDynamicProvider()
+		case deployment.DedicatedType:
+			a.log.Info("using Static Cluster Manager")
+			modeProvider = staticModeProvider()
+		default:
+			return fmt.Errorf("unsupported deployment type: %q", deploymentType)
+		}
 	}
 
 	dm := cluster.Dynamic{

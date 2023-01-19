@@ -52,6 +52,7 @@ type embeddedApp struct {
 		routerDSLimit      int
 		batchRouterDSLimit int
 		gatewayDSLimit     int
+		forceStaticMode    bool
 	}
 }
 
@@ -63,6 +64,7 @@ func (a *embeddedApp) loadConfiguration() {
 	config.RegisterIntConfigVariable(0, &a.config.gatewayDSLimit, true, 1, "Gateway.jobsDB.dsLimit", "JobsDB.dsLimit")
 	config.RegisterIntConfigVariable(0, &a.config.routerDSLimit, true, 1, "Router.jobsDB.dsLimit", "JobsDB.dsLimit")
 	config.RegisterIntConfigVariable(0, &a.config.batchRouterDSLimit, true, 1, "BatchRouter.jobsDB.dsLimit", "JobsDB.dsLimit")
+	config.RegisterBoolConfigVariable(false, &a.config.forceStaticMode, false, "forceStaticModeProvider")
 }
 
 func (a *embeddedApp) Setup(options *app.Options) error {
@@ -198,20 +200,28 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 
 	var modeProvider cluster.ChangeEventProvider
 
-	switch deploymentType {
-	case deployment.MultiTenantType:
-		a.log.Info("using ETCD Based Dynamic Cluster Manager")
-		modeProvider = state.NewETCDDynamicProvider()
-	case deployment.DedicatedType:
+	staticModeProvider := func() cluster.ChangeEventProvider {
 		// FIXME: hacky way to determine server mode
-		a.log.Info("using Static Cluster Manager")
 		if a.config.enableProcessor && a.config.enableRouter {
-			modeProvider = state.NewStaticProvider(servermode.NormalMode)
-		} else {
-			modeProvider = state.NewStaticProvider(servermode.DegradedMode)
+			return state.NewStaticProvider(servermode.NormalMode)
 		}
-	default:
-		return fmt.Errorf("unsupported deployment type: %q", deploymentType)
+		return state.NewStaticProvider(servermode.DegradedMode)
+	}
+
+	if a.config.forceStaticMode {
+		a.log.Info("forcing the use of Static Cluster Manager")
+		modeProvider = staticModeProvider()
+	} else {
+		switch deploymentType {
+		case deployment.MultiTenantType:
+			a.log.Info("using ETCD Based Dynamic Cluster Manager")
+			modeProvider = state.NewETCDDynamicProvider()
+		case deployment.DedicatedType:
+			a.log.Info("using Static Cluster Manager")
+			modeProvider = staticModeProvider()
+		default:
+			return fmt.Errorf("unsupported deployment type: %q", deploymentType)
+		}
 	}
 
 	adaptiveLimit := payload.SetupAdaptiveLimiter(ctx, g)

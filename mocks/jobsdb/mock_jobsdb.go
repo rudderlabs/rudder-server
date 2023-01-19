@@ -61,6 +61,21 @@ func (mr *MockJobsDBMockRecorder) FailExecuting() *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "FailExecuting", reflect.TypeOf((*MockJobsDB)(nil).FailExecuting))
 }
 
+// GetActiveWorkspaces mocks base method.
+func (m *MockJobsDB) GetActiveWorkspaces(arg0 context.Context) ([]string, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetActiveWorkspaces", arg0)
+	ret0, _ := ret[0].([]string)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetActiveWorkspaces indicates an expected call of GetActiveWorkspaces.
+func (mr *MockJobsDBMockRecorder) GetActiveWorkspaces(arg0 interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetActiveWorkspaces", reflect.TypeOf((*MockJobsDB)(nil).GetActiveWorkspaces), arg0)
+}
+
 // GetExecuting mocks base method.
 func (m *MockJobsDB) GetExecuting(arg0 context.Context, arg1 jobsdb.GetQueryParamsT) (jobsdb.JobsResult, error) {
 	m.ctrl.T.Helper()
