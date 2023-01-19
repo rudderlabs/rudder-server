@@ -13,6 +13,10 @@ import (
 	"testing"
 	"time"
 
+	transformationdebugger "github.com/rudderlabs/rudder-server/services/debugger/transformation"
+
+	destinationdebugger "github.com/rudderlabs/rudder-server/services/debugger/destination"
+
 	"github.com/golang/mock/gomock"
 	"github.com/google/uuid"
 	. "github.com/onsi/gomega"
@@ -201,7 +205,7 @@ func TestProcessorManager(t *testing.T) {
 			"batch_rt": &jobsdb.MultiTenantLegacy{HandleT: brtDB},
 		},
 	}
-	processor := New(ctx, &clearDb, gwDB, rtDB, brtDB, errDB, mtStat, &reporting.NOOP{}, transientsource.NewEmptyService(), fileuploader.NewDefaultProvider(), mockRsourcesService)
+	processor := New(ctx, &clearDb, gwDB, rtDB, brtDB, errDB, mtStat, &reporting.NOOP{}, transientsource.NewEmptyService(), fileuploader.NewDefaultProvider(), mockRsourcesService, destinationdebugger.NewNoOpService(), transformationdebugger.NewNoOpService())
 
 	t.Run("jobs are already there in GW DB before processor starts", func(t *testing.T) {
 		require.NoError(t, gwDB.Start())

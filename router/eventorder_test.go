@@ -115,7 +115,7 @@ func TestEventOrderGuarantee(t *testing.T) {
 			config.Set("BackendConfig.configJSONPath", configJsonPath)
 
 			t.Logf("Starting rudder-server")
-			config.Set("DEPLOYMENT_TYPE", string(deployment.DedicatedType))
+			config.Set("DEPLOYMENT_TYPE", deployment.DedicatedType)
 			config.Set("recovery.storagePath", path.Join(t.TempDir(), "/recovery_data.json"))
 
 			config.Set("DB.port", postgresContainer.Port)
@@ -144,8 +144,6 @@ func TestEventOrderGuarantee(t *testing.T) {
 			// statusInsertLoop
 			config.Set("Router.updateStatusBatchSize", 100)
 			config.Set("Router.maxStatusUpdateWait", "10ms")
-
-			defer config.Reset()
 
 			// find free port for gateway http server to listen on
 			httpPortInt, err := testhelper.GetFreePort()

@@ -28,7 +28,6 @@ import (
 	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/services/controlplane"
 	"github.com/rudderlabs/rudder-server/services/db"
-	destinationdebugger "github.com/rudderlabs/rudder-server/services/debugger/destination"
 	"github.com/rudderlabs/rudder-server/services/filemanager"
 	"github.com/rudderlabs/rudder-server/services/pgnotifier"
 	migrator "github.com/rudderlabs/rudder-server/services/sql-migrator"
@@ -1212,7 +1211,7 @@ func setConfigHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "can't read body", http.StatusBadRequest)
 		return
 	}
-	defer r.Body.Close()
+	defer func() { _ = r.Body.Close() }()
 
 	var kvs []warehouseutils.KeyValue
 	err = json.Unmarshal(body, &kvs)
@@ -1246,7 +1245,7 @@ func pendingEventsHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "can't read body", http.StatusBadRequest)
 		return
 	}
-	defer r.Body.Close()
+	defer func() { _ = r.Body.Close() }()
 
 	// unmarshall body
 	var pendingEventsReq warehouseutils.PendingEventsRequestT
@@ -1411,7 +1410,7 @@ func triggerUploadHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "can't read body", http.StatusBadRequest)
 		return
 	}
-	defer r.Body.Close()
+	defer func() { _ = r.Body.Close() }()
 
 	// unmarshall body
 	var triggerUploadReq warehouseutils.TriggerUploadRequestT
@@ -1588,8 +1587,9 @@ func startWebHandler(ctx context.Context) error {
 	}
 
 	srv := &http.Server{
-		Addr:    fmt.Sprintf(":%d", webPort),
-		Handler: bugsnag.Handler(mux),
+		Addr:              fmt.Sprintf(":%d", webPort),
+		Handler:           bugsnag.Handler(mux),
+		ReadHeaderTimeout: 3 * time.Second,
 	}
 
 	return httputil.ListenAndServe(ctx, srv)
@@ -1723,8 +1723,6 @@ func Start(ctx context.Context, app app.App) error {
 	}
 
 	if isStandAlone() && isMaster() {
-		destinationdebugger.Setup(backendconfig.DefaultBackendConfig)
-
 		// Report warehouse features
 		g.Go(func() error {
 			backendconfig.DefaultBackendConfig.WaitForConfig(ctx)
