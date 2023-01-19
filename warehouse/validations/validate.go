@@ -9,10 +9,11 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/manager"
+
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/services/filemanager"
 	"github.com/rudderlabs/rudder-server/utils/misc"
-	"github.com/rudderlabs/rudder-server/warehouse/manager"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
