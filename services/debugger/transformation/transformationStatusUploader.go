@@ -85,21 +85,20 @@ type Handle struct {
 	done                           chan struct{}
 }
 
-var WithDisableTransformationStatusUploads = func(disableTransformationStatusUploads bool) func(h *Handle) {
+func WithDisableTransformationStatusUploads(disableTransformationStatusUploads bool) func(h *Handle) {
 	return func(h *Handle) {
 		h.disableTransformationUploads = disableTransformationStatusUploads
 	}
 }
 
 type TransformationDebugger interface {
-	Start(backendConfig backendconfig.BackendConfig)
 	IsUploadEnabled(id string) bool
 	RecordTransformationStatus(transformStatus *TransformStatusT)
 	UploadTransformationStatus(tStatus *TransformationStatusT) bool
 	Stop()
 }
 
-func NewHandle(opts ...Opt) (TransformationDebugger, error) {
+func NewHandle(backendConfig backendconfig.BackendConfig, opts ...Opt) (TransformationDebugger, error) {
 	h := &Handle{
 		configBackendURL: config.GetString("CONFIG_BACKEND_URL", "https://api.rudderstack.com"),
 		log:              logger.NewLogger().Child("debugger").Child("transformation"),
@@ -109,8 +108,6 @@ func NewHandle(opts ...Opt) (TransformationDebugger, error) {
 	config.RegisterIntConfigVariable(1, &h.limitEventsInMemory, true, 1, "TransformationDebugger.limitEventsInMemory")
 	url := fmt.Sprintf("%s/dataplane/eventTransformStatus", h.configBackendURL)
 	transformationStatusUploader := &TransformationStatusUploader{}
-	h.uploader = debugger.New[*TransformStatusT](url, transformationStatusUploader)
-	h.uploader.Start()
 
 	cacheType := cache.CacheType(config.GetInt("TransformationDebugger.cacheType", int(cache.BadgerCacheType)))
 	h.transformationCacheMap, err = cache.New[TransformationStatusT](cacheType, "transformation", h.log)
@@ -118,9 +115,13 @@ func NewHandle(opts ...Opt) (TransformationDebugger, error) {
 		return nil, err
 	}
 
+	h.uploader = debugger.New[*TransformStatusT](url, transformationStatusUploader)
+	h.uploader.Start()
+
 	for _, opt := range opts {
 		opt(h)
 	}
+	h.start(backendConfig)
 	return h, nil
 }
 
@@ -129,6 +130,7 @@ type TransformationStatusUploader struct {
 }
 
 func (h *Handle) IsUploadEnabled(id string) bool {
+	<-h.initialized
 	h.uploadEnabledTransformationsMu.RLock()
 	defer h.uploadEnabledTransformationsMu.RUnlock()
 	_, ok := h.uploadEnabledTransformations[id]
@@ -136,7 +138,7 @@ func (h *Handle) IsUploadEnabled(id string) bool {
 }
 
 // Start initializes this module
-func (h *Handle) Start(backendConfig backendconfig.BackendConfig) {
+func (h *Handle) start(backendConfig backendconfig.BackendConfig) {
 	ctx, cancel := context.WithCancel(context.Background())
 	h.ctx = ctx
 	h.cancel = cancel
@@ -158,6 +160,7 @@ func (h *Handle) Stop() {
 	if h.transformationCacheMap != nil {
 		_ = h.transformationCacheMap.Stop()
 	}
+	h.uploader.Stop()
 	h.started = false
 }
 
@@ -168,6 +171,7 @@ func (h *Handle) RecordTransformationStatus(transformStatus *TransformStatusT) {
 	if !h.started || h.disableTransformationUploads {
 		return
 	}
+	<-h.initialized
 
 	h.uploader.RecordEvent(transformStatus)
 }
@@ -232,6 +236,7 @@ func (h *Handle) UploadTransformationStatus(tStatus *TransformationStatusT) bool
 	if h.disableTransformationUploads {
 		return false
 	}
+	<-h.initialized
 
 	for _, transformation := range tStatus.Destination.Transformations {
 		if h.IsUploadEnabled(transformation.ID) {

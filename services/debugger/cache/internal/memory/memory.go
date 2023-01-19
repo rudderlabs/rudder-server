@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/rudderlabs/rudder-server/config"
+	"github.com/rudderlabs/rudder-server/rruntime"
 )
 
 type cacheItem[E any] struct {
@@ -39,7 +40,9 @@ type Cache[E any] struct {
 	cleanupFreq time.Duration // This is the time at which a cleaner goroutines  checks whether the data is expired in cache
 	size        int           // This is the size upto which this cache can store a value corresponding to any key
 	cacheMap    map[string]*cacheItem[E]
-	Origin      string
+
+	done   chan struct{}
+	closed chan struct{}
 }
 
 /*
@@ -47,24 +50,33 @@ New method initiates the cache object. To initiate, this sets certain properties
 cleanupFreq, size, empty cacheMap
 */
 func New[E any]() (*Cache[E], error) {
-	c := Cache[E]{}
+	c := Cache[E]{
+		done:   make(chan struct{}),
+		closed: make(chan struct{}),
+	}
+
 	c.loadCacheConfig()
 	c.cacheMap = make(map[string]*cacheItem[E], c.size)
 
-	go func() {
+	rruntime.Go(func() {
 		for {
-			time.Sleep(c.cleanupFreq)
-			now := time.Now()
-			expThreshold := now.Add(-c.keyTTL)
-			c.lock.Lock()
-			for k, v := range c.cacheMap {
-				if v.lastAccess.Before(expThreshold) {
-					delete(c.cacheMap, k)
+			select {
+			case <-c.done:
+				close(c.closed)
+				return
+			case <-time.After(c.cleanupFreq):
+				now := time.Now()
+				expThreshold := now.Add(-c.keyTTL)
+				c.lock.Lock()
+				for k, v := range c.cacheMap {
+					if v.lastAccess.Before(expThreshold) {
+						delete(c.cacheMap, k)
+					}
 				}
+				c.lock.Unlock()
 			}
-			c.lock.Unlock()
 		}
-	}()
+	})
 
 	return &c, nil
 }
@@ -106,7 +118,8 @@ func (c *Cache[E]) Read(key string) ([]E, error) {
 	return historicEventsDelivery, nil
 }
 
-func (*Cache[E]) Stop() error {
-	// NO-OP
+func (c *Cache[E]) Stop() error {
+	close(c.done)
+	<-c.closed
 	return nil
 }

@@ -31,7 +31,6 @@ type DeliveryStatusT struct {
 type Opt func(*Handle)
 
 type DestinationDebugger interface {
-	Start(backendConfig backendconfig.BackendConfig)
 	RecordEventDeliveryStatus(destinationID string, deliveryStatus *DeliveryStatusT) bool
 	HasUploadEnabled(destID string) bool
 	Stop()
@@ -58,7 +57,7 @@ var WithDisableEventUploads = func(disableEventDeliveryStatusUploads bool) func(
 	}
 }
 
-func NewHandle(opts ...Opt) (DestinationDebugger, error) {
+func NewHandle(backendConfig backendconfig.BackendConfig, opts ...Opt) (DestinationDebugger, error) {
 	h := &Handle{
 		configBackendURL: config.GetString("CONFIG_BACKEND_URL", "https://api.rudderstack.com"),
 		log:              logger.NewLogger().Child("debugger").Child("destination"),
@@ -78,10 +77,11 @@ func NewHandle(opts ...Opt) (DestinationDebugger, error) {
 	for _, opt := range opts {
 		opt(h)
 	}
+	h.start(backendConfig)
 	return h, nil
 }
 
-func (h *Handle) Start(backendConfig backendconfig.BackendConfig) {
+func (h *Handle) start(backendConfig backendconfig.BackendConfig) {
 	ctx, cancel := context.WithCancel(context.Background())
 	h.ctx = ctx
 	h.cancel = cancel
@@ -103,6 +103,7 @@ func (h *Handle) Stop() {
 	if h.eventsDeliveryCache != nil {
 		_ = h.eventsDeliveryCache.Stop()
 	}
+	h.uploader.Stop()
 	h.started = false
 }
 
@@ -138,6 +139,7 @@ func (h *Handle) RecordEventDeliveryStatus(destinationID string, deliveryStatus 
 }
 
 func (h *Handle) HasUploadEnabled(destID string) bool {
+	<-h.initialized
 	h.uploadEnabledDestinationIDsMu.RLock()
 	defer h.uploadEnabledDestinationIDsMu.RUnlock()
 	_, ok := h.uploadEnabledDestinationIDs[destID]

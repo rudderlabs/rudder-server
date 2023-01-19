@@ -61,5 +61,21 @@ var _ = Describe("cache", func() {
 				return len(val)
 			}, 6*time.Second).Should(Equal(0))
 		})
+
+		It("should only keep the last x values for the same key", func() {
+			var values [][]byte
+			for i := 0; i < e.limiter; i++ {
+				Expect(e.Update(testKey, testValue1)).To(BeNil())
+				values = append(values, testValue1)
+			}
+			Expect(e.Update(testKey, testValue2)).To(BeNil())
+			values = append(values, testValue2)
+
+			v, err := e.Read(testKey)
+			Expect(err).To(BeNil())
+			Expect(len(v)).To(Equal(e.limiter))
+
+			assert.ElementsMatch(GinkgoT(), v, values[1:])
+		})
 	})
 })

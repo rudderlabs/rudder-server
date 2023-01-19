@@ -33,7 +33,6 @@ type EventUploadBatchT struct {
 }
 
 type SourceDebugger interface {
-	Start(backendConfig backendconfig.BackendConfig)
 	RecordEvent(writeKey string, eventBatch []byte) bool
 	Stop()
 }
@@ -63,7 +62,7 @@ type Handle struct {
 	done        chan struct{}
 }
 
-func NewHandle(opts ...Opt) (SourceDebugger, error) {
+func NewHandle(backendConfig backendconfig.BackendConfig, opts ...Opt) (SourceDebugger, error) {
 	h := &Handle{
 		configBackendURL: config.GetString("CONFIG_BACKEND_URL", "https://api.rudderstack.com"),
 		log:              logger.NewLogger().Child("debugger").Child("source"),
@@ -83,11 +82,12 @@ func NewHandle(opts ...Opt) (SourceDebugger, error) {
 	for _, opt := range opts {
 		opt(h)
 	}
+	h.start(backendConfig)
 	return h, nil
 }
 
 // Start initializes this module
-func (h *Handle) Start(backendConfig backendconfig.BackendConfig) {
+func (h *Handle) start(backendConfig backendconfig.BackendConfig) {
 	ctx, cancel := context.WithCancel(context.Background())
 	h.ctx = ctx
 	h.cancel = cancel
@@ -108,6 +108,7 @@ func (h *Handle) Stop() {
 	if h.eventsCache != nil {
 		_ = h.eventsCache.Stop()
 	}
+	h.uploader.Stop()
 	h.started = false
 }
 

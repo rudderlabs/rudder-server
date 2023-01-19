@@ -1,14 +1,13 @@
 package badger
 
 import (
-	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path"
 	"time"
 
-	"github.com/cenkalti/backoff"
 	"github.com/dgraph-io/badger/v3"
 	"github.com/dgraph-io/badger/v3/options"
 	"github.com/rudderlabs/rudder-server/config"
@@ -61,70 +60,40 @@ func (badgerLogger) Warningf(format string, a ...interface{}) {
 
 // Update writes the entries into badger db with a TTL
 func (e *Cache[E]) Update(key string, value E) error {
-	var errorReturn error
-	updateFunc := func(txn *badger.Txn) error {
-		res, err := txn.Get([]byte(key))
-		if err != nil && err != badger.ErrKeyNotFound {
-			return err
-		}
-		var valCopy []byte
-		var values []E
-		if res != nil {
-			err = res.Value(func(val []byte) error {
-				valCopy = append([]byte{}, val...)
-				return nil
-			})
-			if err != nil {
-				return err
-			}
-			err = json.Unmarshal(valCopy, &values)
-			if err != nil {
-				return err
-			}
-		}
-
-		if len(values) >= e.limiter {
-			values = values[len(values)-e.limiter+1:]
-		}
-		values = append(values, value)
-		data, err := json.Marshal(values)
-		if err != nil {
-			return err
-		}
-		entry := badger.NewEntry([]byte(key), data).WithTTL(e.cleanupFreq)
-		if err := txn.SetEntry(entry); err != nil {
-			return err
-		}
-
-		return nil
-	}
-
-	commit := func(txn *badger.Txn) error {
-		err := txn.Commit()
-		if err != nil && err == badger.ErrConflict {
-			return err
-		}
-		return nil
-	}
-
 	operation := func() error {
-		txn := e.db.NewTransaction(true)
-		err := updateFunc(txn)
-		if err != nil {
-			errorReturn = err
-			return nil
+		return e.db.Update(func(txn *badger.Txn) error {
+			res, err := txn.Get([]byte(key))
+			if err != nil && err != badger.ErrKeyNotFound {
+				return err
+			}
+			var values []E
+			if res != nil {
+				if err = res.Value(func(val []byte) error {
+					return json.Unmarshal(val, &values)
+				}); err != nil {
+					return err
+				}
+			}
+			if len(values) >= e.limiter {
+				values = values[len(values)-e.limiter+1:]
+			}
+			values = append(values, value)
+			data, err := json.Marshal(values)
+			if err != nil {
+				return err
+			}
+			entry := badger.NewEntry([]byte(key), data).WithTTL(e.cleanupFreq)
+			return txn.SetEntry(entry)
+		})
+	}
+	var err error
+	for i := 0; i < e.retries; i++ {
+		if err = operation(); !errors.Is(err, badger.ErrConflict) {
+			return err
 		}
-		err = commit(txn)
-		return err
+		e.logger.Warnf("Retrying update func because of ErrConflict %d", i+1)
 	}
-	backoffWithMaxRetry := backoff.WithContext(backoff.WithMaxRetries(backoff.NewExponentialBackOff(), uint64(e.retries)), context.TODO())
-	err := backoff.RetryNotify(operation, backoffWithMaxRetry, func(err error, t time.Duration) {
-		e.logger.Warnf("Retrying update func because of ErrConflict")
-	})
-	if err != nil {
-		errorReturn = err
-	}
-	return errorReturn
+	return err
 }
 
 // Read fetches all the entries for a given key from badgerDB
@@ -135,27 +104,17 @@ func (e *Cache[E]) Read(key string) ([]E, error) {
 		if err != nil {
 			return err
 		}
-		var valCopy []byte
-		err = item.Value(func(val []byte) error {
-			valCopy = append([]byte{}, val...)
-			return nil
+		return item.Value(func(val []byte) error {
+			return json.Unmarshal(val, &values)
 		})
-		if err != nil {
-			return err
-		}
-		err = json.Unmarshal(valCopy, &values)
-		if err != nil {
-			return err
-		}
-		return nil
 	})
-	if err != nil && err != badger.ErrKeyNotFound {
-		return nil, err
+	if errors.Is(err, badger.ErrKeyNotFound) {
+		return nil, nil
 	}
-	return values, nil
+	return values, err
 }
 
-func New[E any](origin string, logger logger.Logger) (*Cache[E], error) {
+func New[E any](origin string, logger logger.Logger, opts ...func(Cache[E])) (*Cache[E], error) {
 	e := Cache[E]{}
 	e.origin = origin
 	e.logger = logger
@@ -164,13 +123,17 @@ func New[E any](origin string, logger logger.Logger) (*Cache[E], error) {
 	tmpDirPath, err := misc.CreateTMPDIR()
 	if err != nil {
 		e.logger.Errorf("Unable to create tmp directory: %v", err)
-		return &Cache[E]{}, err
+		return nil, err
 	}
 	storagePath := path.Join(tmpDirPath, badgerPathName)
 	e.path = storagePath
 	e.done = make(chan struct{})
 	e.closed = make(chan struct{})
-	opts := badger.
+
+	for _, opt := range opts {
+		opt(e)
+	}
+	badgerOpts := badger.
 		DefaultOptions(storagePath).
 		WithLogger(badgerLogger{e.logger}).
 		WithCompression(options.None).
@@ -179,10 +142,10 @@ func New[E any](origin string, logger logger.Logger) (*Cache[E], error) {
 		WithNumMemtables(0).
 		WithBlockCacheSize(0)
 
-	e.db, err = badger.Open(opts)
+	e.db, err = badger.Open(badgerOpts)
 	if err != nil {
 		e.logger.Errorf("Error while opening badgerDB: %v", err)
-		return &Cache[E]{}, err
+		return nil, err
 	}
 	rruntime.Go(func() {
 		e.gcBadgerDB()

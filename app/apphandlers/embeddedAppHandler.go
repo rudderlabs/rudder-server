@@ -112,20 +112,17 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 
 	a.log.Info("Clearing DB ", options.ClearDB)
 
-	transformationhandle, err := transformationdebugger.NewHandle()
+	transformationhandle, err := transformationdebugger.NewHandle(backendconfig.DefaultBackendConfig)
 	if err != nil {
 		return err
 	}
-	transformationhandle.Start(backendconfig.DefaultBackendConfig)
 	defer transformationhandle.Stop()
-	destinationHandle, err := destinationdebugger.NewHandle()
+	destinationHandle, err := destinationdebugger.NewHandle(backendconfig.DefaultBackendConfig)
 	if err != nil {
 		return err
 	}
-	destinationHandle.Start(backendconfig.DefaultBackendConfig)
 	defer destinationHandle.Stop()
-	sourceHandle, err := sourcedebugger.NewHandle()
-	sourceHandle.Start(backendconfig.DefaultBackendConfig)
+	sourceHandle, err := sourcedebugger.NewHandle(backendconfig.DefaultBackendConfig)
 	if err != nil {
 		return err
 	}

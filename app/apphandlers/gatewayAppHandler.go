@@ -77,8 +77,7 @@ func (a *gatewayApp) StartRudderCore(ctx context.Context, options *app.Options) 
 	a.log.Infof("Configured deployment type: %q", deploymentType)
 	a.log.Info("Clearing DB ", options.ClearDB)
 
-	sourceHandle, err := sourcedebugger.NewHandle()
-	sourceHandle.Start(backendconfig.DefaultBackendConfig)
+	sourceHandle, err := sourcedebugger.NewHandle(backendconfig.DefaultBackendConfig)
 	if err != nil {
 		return err
 	}

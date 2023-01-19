@@ -16,20 +16,24 @@ var _ = Describe("cache", func() {
 		It("Cache init", func() {
 			var c *Cache[[]byte]
 			c, err := New[[]byte]()
+
 			Expect(err).To(BeNil())
 			Expect(c.size).NotTo(Equal(0))
 			Expect(c.keyTTL).NotTo(Equal(0))
 			Expect(c.cacheMap).NotTo(BeNil())
+			Expect(c.Stop()).To(BeNil())
 		})
 
 		It("Cache update", func() {
 			var c *Cache[[]byte]
 			c, err := New[[]byte]()
 			Expect(err).To(BeNil())
+
 			Expect(c.Update(testKey, testValue)).To(BeNil())
 			Expect(len(c.cacheMap)).To(Equal(1))
 			Expect(len(c.cacheMap[testKey].data)).To(Equal(1))
 			Expect(c.cacheMap[testKey].data[0]).To(Equal(testValue))
+			Expect(c.Stop()).To(BeNil())
 		})
 
 		It("Cache timeout", func() {
@@ -44,6 +48,7 @@ var _ = Describe("cache", func() {
 			Expect(c.cacheMap[testKey].data[0]).To(Equal(testValue))
 			Eventually(func() int { return len(c.cacheMap) }).Should(Equal(0))
 			config.Reset()
+			Expect(c.Stop()).To(BeNil())
 		})
 
 		It("Cache readAndPopData", func() {
@@ -55,6 +60,7 @@ var _ = Describe("cache", func() {
 			Expect(v).To(Equal([][]byte{testValue}))
 			Expect(err).To(BeNil())
 			Expect(len(c.cacheMap)).To(Equal(0))
+			Expect(c.Stop()).To(BeNil())
 		})
 
 		It("Cache data store limit", func() {
@@ -71,6 +77,7 @@ var _ = Describe("cache", func() {
 			Expect(len(c.cacheMap[testKey].data)).To(Equal(3))
 			Expect(c.cacheMap[testKey].data[0]).To(Equal(testValue2))
 			Expect(c.cacheMap[testKey].data[1]).To(Equal(testValue3))
+			Expect(c.Stop()).To(BeNil())
 		})
 	})
 })

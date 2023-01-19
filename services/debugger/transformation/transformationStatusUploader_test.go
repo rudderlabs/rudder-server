@@ -226,9 +226,8 @@ var _ = Describe("eventDeliveryStatusUploader", func() {
 			var err error
 			config.Reset()
 			config.Set("RUDDER_TMPDIR", path.Join(GinkgoT().TempDir(), rand.String(10)))
-			h, err = transformationdebugger.NewHandle(transformationdebugger.WithDisableTransformationStatusUploads(false))
+			h, err = transformationdebugger.NewHandle(c.mockBackendConfig, transformationdebugger.WithDisableTransformationStatusUploads(false))
 			Expect(err).To(BeNil())
-			h.Start(c.mockBackendConfig)
 		})
 
 		AfterEach(func() {
@@ -237,9 +236,8 @@ var _ = Describe("eventDeliveryStatusUploader", func() {
 
 		It("returns false if disableEventDeliveryStatusUploads is true", func() {
 			h.Stop()
-			h, err := transformationdebugger.NewHandle(transformationdebugger.WithDisableTransformationStatusUploads(true))
+			h, err := transformationdebugger.NewHandle(c.mockBackendConfig, transformationdebugger.WithDisableTransformationStatusUploads(true))
 			Expect(err).To(BeNil())
-			h.Start(c.mockBackendConfig)
 			Expect(h.UploadTransformationStatus(&transformationdebugger.TransformationStatusT{})).To(BeFalse())
 		})
 
@@ -275,9 +273,8 @@ var _ = Describe("eventDeliveryStatusUploader", func() {
 			config.Reset()
 			config.Set("RUDDER_TMPDIR", path.Join(GinkgoT().TempDir(), rand.String(10)))
 			config.Set("TransformationDebugger.cacheType", 0)
-			h, err = transformationdebugger.NewHandle(transformationdebugger.WithDisableTransformationStatusUploads(false))
+			h, err = transformationdebugger.NewHandle(c.mockBackendConfig, transformationdebugger.WithDisableTransformationStatusUploads(false))
 			Expect(err).To(BeNil())
-			h.Start(c.mockBackendConfig)
 		})
 
 		AfterEach(func() {
@@ -286,9 +283,8 @@ var _ = Describe("eventDeliveryStatusUploader", func() {
 
 		It("returns false if disableEventDeliveryStatusUploads is true", func() {
 			h.Stop()
-			h, err := transformationdebugger.NewHandle(transformationdebugger.WithDisableTransformationStatusUploads(true))
+			h, err := transformationdebugger.NewHandle(c.mockBackendConfig, transformationdebugger.WithDisableTransformationStatusUploads(true))
 			Expect(err).To(BeNil())
-			h.Start(c.mockBackendConfig)
 			Expect(h.UploadTransformationStatus(&transformationdebugger.TransformationStatusT{})).To(BeFalse())
 		})
 
