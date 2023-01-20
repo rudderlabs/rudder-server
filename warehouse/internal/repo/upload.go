@@ -107,16 +107,17 @@ func (uploads *Uploads) CreateWithStagingFiles(ctx context.Context, upload model
 		lastEventAt = files[len(files)-1].LastEventAt
 	}
 
-	metadataMap := map[string]interface{}{
-		"use_rudder_storage": files[0].UseRudderStorage, // TODO: Since the use_rudder_storage is now being populated for both the staging and load files. Let's try to leverage it instead of hard coding it from the first staging file.
-		"source_batch_id":    files[0].SourceBatchID,
-		"source_task_id":     files[0].SourceTaskID,
-		"source_task_run_id": files[0].SourceTaskRunID,
-		"source_job_id":      files[0].SourceJobID,
-		"source_job_run_id":  files[0].SourceJobRunID,
-		"load_file_type":     warehouseutils.GetLoadFileType(upload.DestinationType),
-		"nextRetryTime":      upload.NextRetryTime,
-		"priority":           upload.Priority,
+	metadataMap := UploadMetadata{
+		UseRudderStorage: files[0].UseRudderStorage,
+		SourceBatchID:    files[0].SourceBatchID,
+		SourceTaskID:     files[0].SourceTaskID,
+		SourceTaskRunID:  files[0].SourceTaskRunID,
+		SourceJobID:      files[0].SourceJobID,
+		SourceJobRunID:   files[0].SourceJobRunID,
+		LoadFileType:     warehouseutils.GetLoadFileType(upload.DestinationType),
+		Retried:          upload.Retried,
+		Priority:         upload.Priority,
+		NextRetryTime:    upload.NextRetryTime,
 	}
 
 	metadata, err := json.Marshal(metadataMap)
@@ -200,7 +201,7 @@ func (uploads *Uploads) GetToProcess(ctx context.Context, destType string, limit
 
 	if opts.AllowMultipleSourcesForJobsPickup {
 		if len(opts.SkipIdentifiers) > 0 {
-			skipIdentifiersSQL = `AND ((source_id || '_' || destination_id || '_' || namespace)) != ALL($2)`
+			skipIdentifiersSQL = `AND ((source_id || '_' || destination_id || '_' || namespace)) != ALL($5)`
 		}
 		partitionIdentifierSQL = fmt.Sprintf(`%s, %s`, "source_id", partitionIdentifierSQL)
 	}

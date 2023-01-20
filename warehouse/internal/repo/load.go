@@ -28,16 +28,18 @@ const (
 `
 )
 
-type LoadFiles struct {
-	DB  *sql.DB
-	Now func() time.Time
-}
+type LoadFiles repo
 
-func NewLoadFiles(db *sql.DB) *LoadFiles {
-	return &LoadFiles{
-		DB:  db,
-		Now: time.Now,
+func NewLoadFiles(db *sql.DB, opts ...Opt) *LoadFiles {
+	r := &LoadFiles{
+		db:  db,
+		now: time.Now,
 	}
+
+	for _, opt := range opts {
+		opt((*repo)(r))
+	}
+	return r
 }
 
 // DeleteByStagingFiles deletes load files associated with stagingFileIDs.
@@ -48,7 +50,7 @@ func (repo *LoadFiles) DeleteByStagingFiles(ctx context.Context, stagingFileIDs 
 		WHERE
 		  staging_file_id = ANY($1);`
 
-	_, err := repo.DB.ExecContext(ctx, sqlStatement, pq.Array(stagingFileIDs))
+	_, err := repo.db.ExecContext(ctx, sqlStatement, pq.Array(stagingFileIDs))
 	if err != nil {
 		return fmt.Errorf(`deleting load files: %w`, err)
 	}
@@ -59,7 +61,7 @@ func (repo *LoadFiles) DeleteByStagingFiles(ctx context.Context, stagingFileIDs 
 // Insert loadFiles into the database.
 func (repo *LoadFiles) Insert(ctx context.Context, loadFiles []model.LoadFile) (err error) {
 	// Using transactions for bulk copying
-	txn, err := repo.DB.Begin()
+	txn, err := repo.db.Begin()
 	if err != nil {
 		return
 	}
@@ -119,7 +121,7 @@ func (repo *LoadFiles) GetByStagingFiles(ctx context.Context, stagingFileIDs []i
 		ORDER BY id ASC
 	`
 
-	rows, err := repo.DB.QueryContext(ctx, sqlStatement, pq.Array(stagingFileIDs))
+	rows, err := repo.db.QueryContext(ctx, sqlStatement, pq.Array(stagingFileIDs))
 	if err != nil {
 		return nil, fmt.Errorf("query staging ids: %w", err)
 	}
