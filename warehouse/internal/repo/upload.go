@@ -214,7 +214,7 @@ func (uploads *Uploads) GetToProcess(ctx context.Context, destType string, limit
 					ROW_NUMBER() OVER (PARTITION BY %s ORDER BY COALESCE(metadata->>'priority', '100')::int ASC, id ASC) AS row_number,
 					t.*
 				FROM
-					`+warehouseutils.WarehouseUploadsTable+` t
+					`+uploadsTableName+` t
 				WHERE
 					t.destination_type = $1 AND
 					t.in_progress=false AND

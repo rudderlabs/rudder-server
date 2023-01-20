@@ -237,9 +237,7 @@ func TestUploads_Processing(t *testing.T) {
 		})
 		require.NoError(t, err)
 		require.Equal(t, []model.Upload{uploads[0], uploads[1], uploads[2]}, s)
-
 	})
-
 }
 
 func TestUploads_UploadMetadata(t *testing.T) {
