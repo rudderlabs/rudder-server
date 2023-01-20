@@ -648,16 +648,12 @@ func (wh *HandleT) createJobs(ctx context.Context, warehouse warehouseutils.Ware
 	})
 	defer uploadJobCreationStat.RecordDuration()()
 
-	creationStart := time.Now()
-
 	uploadStartAfter := getUploadStartAfterTime()
 	err = wh.createUploadJobsFromStagingFiles(ctx, warehouse, stagingFilesList, priority, uploadStartAfter)
 	if err != nil {
 		return err
 	}
 	setLastProcessedMarker(warehouse, uploadStartAfter)
-
-	uploadJobCreationStat.SendTiming(time.Since(creationStart))
 
 	return nil
 }
@@ -710,7 +706,7 @@ func (wh *HandleT) mainLoop(ctx context.Context) {
 	}
 }
 
-func (wh *HandleT) processingStats(ctx context.Context, availableWorkers int, jobStats model.UploadJobsStats) {
+func (wh *HandleT) processingStats(availableWorkers int, jobStats model.UploadJobsStats) {
 	// Get pending jobs
 	pendingJobsStat := wh.stats.NewTaggedStat("wh_processing_pending_jobs", stats.CountType, stats.Tags{
 		"module":   moduleName,
@@ -770,7 +766,7 @@ func (wh *HandleT) getUploadsToProcess(ctx context.Context, availableWorkers int
 
 		if !ok {
 			uploadJob := wh.uploadJobFactory.NewUploadJob(&model.UploadJob{
-				Upload: model.Upload(upload),
+				Upload: upload,
 			}, nil)
 			err := fmt.Errorf("unable to find source : %s or destination : %s, both or the connection between them", upload.SourceID, upload.DestinationID)
 			_, _ = uploadJob.setUploadError(err, model.Aborted)
@@ -794,7 +790,7 @@ func (wh *HandleT) getUploadsToProcess(ctx context.Context, availableWorkers int
 		}
 		uploadJob := wh.uploadJobFactory.NewUploadJob(&model.UploadJob{
 			Warehouse:    warehouse,
-			Upload:       model.Upload(upload),
+			Upload:       upload,
 			StagingFiles: stagingFileListPtr,
 		}, whManager)
 
@@ -809,7 +805,7 @@ func (wh *HandleT) getUploadsToProcess(ctx context.Context, availableWorkers int
 		return nil, fmt.Errorf("processing stats: %w", err)
 	}
 
-	wh.processingStats(ctx, availableWorkers, jobsStats)
+	wh.processingStats(availableWorkers, jobsStats)
 
 	return uploadJobs, nil
 }

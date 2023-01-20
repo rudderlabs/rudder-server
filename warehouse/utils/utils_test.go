@@ -1216,10 +1216,10 @@ var _ = Describe("Utils", func() {
 		Entry(nil, TableSchemaT{"k2": "v1", "k1": "v2"}, []string{"k2", "k1"}),
 	)
 
-	DescribeTable("JSON schema to Map", func(rawMsg json.RawMessage, expected map[string]map[string]string) {
+	DescribeTable("JSON schema to Map", func(rawMsg json.RawMessage, expected SchemaT) {
 		Expect(JSONSchemaToMap(rawMsg)).To(Equal(expected))
 	},
-		Entry(nil, json.RawMessage(`{"k1": { "k2": "v2" }}`), map[string]map[string]string{"k1": {"k2": "v2"}}),
+		Entry(nil, json.RawMessage(`{"k1": { "k2": "v2" }}`), SchemaT{"k1": {"k2": "v2"}}),
 	)
 
 	DescribeTable("Get date range list", func(start, end time.Time, format string, expected []string) {

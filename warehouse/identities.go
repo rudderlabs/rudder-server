@@ -419,7 +419,7 @@ func (wh *HandleT) populateHistoricIdentities(warehouse warehouseutils.Warehouse
 		}
 
 		job := wh.uploadJobFactory.NewUploadJob(&model.UploadJob{
-			Upload:    model.Upload(upload),
+			Upload:    upload,
 			Warehouse: warehouse,
 		}, whManager)
 

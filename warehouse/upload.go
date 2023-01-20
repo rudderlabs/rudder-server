@@ -357,7 +357,7 @@ func (job *UploadJobT) run() (err error) {
 		pkgLogger.Infof("[WH] Remote schema changed for Warehouse: %s", job.warehouse.Identifier)
 	}
 	schemaHandle := job.schemaHandle
-	schemaHandle.uploadSchema = warehouseutils.SchemaT(job.upload.UploadSchema)
+	schemaHandle.uploadSchema = job.upload.UploadSchema
 
 	userTables := []string{job.identifiesTableName(), job.usersTableName()}
 	identityTables := []string{job.identityMergeRulesTableName(), job.identityMappingsTableName()}

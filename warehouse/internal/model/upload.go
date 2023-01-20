@@ -15,6 +15,7 @@ const (
 	Waiting                   = "waiting"
 	GeneratedUploadSchema     = "generated_upload_schema"
 	CreatedTableUploads       = "created_table_uploads"
+	GeneratingLoadFiles       = "generating_load_files"
 	GeneratedLoadFiles        = "generated_load_files"
 	UpdatedTableUploadsCounts = "updated_table_uploads_counts"
 	CreatedRemoteSchema       = "created_remote_schema"
@@ -22,6 +23,7 @@ const (
 	ExportedData              = "exported_data"
 	ExportedIdentities        = "exported_identities"
 	Aborted                   = "aborted"
+	Failed                    = "failed"
 )
 
 var ErrUploadNotFound = errors.New("upload not found")
@@ -86,7 +88,7 @@ func GetLastFailedStatus(timingsMap Timings) (status string) {
 	if len(timingsMap) > 0 {
 		for index := len(timingsMap) - 1; index >= 0; index-- {
 			for s := range timingsMap[index] {
-				if strings.Contains(s, "failed") {
+				if strings.Contains(s, Failed) {
 					return s
 				}
 			}
@@ -99,7 +101,7 @@ func GetLoadFileGenTime(timingsMap Timings) (t time.Time) {
 	if len(timingsMap) > 0 {
 		for index := len(timingsMap) - 1; index >= 0; index-- {
 			for s, t := range timingsMap[index] {
-				if strings.Contains(s, "generating_load_files") {
+				if strings.Contains(s, GeneratingLoadFiles) {
 					return t
 				}
 			}

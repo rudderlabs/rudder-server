@@ -427,9 +427,8 @@ func TestStagingFileRepo_Pending(t *testing.T) {
 
 func TestStagingFileRepo_Status(t *testing.T) {
 	ctx := context.Background()
-	now := time.Now()
+	now := time.Now().Truncate(time.Second).UTC()
 	db := setupDB(t)
-
 	r := repo.NewStagingFiles(db, repo.WithNow(func() time.Time {
 		return now
 	}))

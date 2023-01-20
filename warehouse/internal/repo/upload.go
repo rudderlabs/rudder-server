@@ -242,10 +242,6 @@ func (uploads *Uploads) GetToProcess(ctx context.Context, destType string, limit
 		opts.SkipWorkspaces = []string{}
 	}
 
-	if opts.SkipWorkspaces == nil {
-		opts.SkipWorkspaces = []string{}
-	}
-
 	args := []interface{}{
 		destType,
 		model.ExportedData,

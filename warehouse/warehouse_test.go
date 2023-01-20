@@ -159,7 +159,7 @@ func TestUploadJob_ProcessingStats(t *testing.T) {
 			}
 			require.NoError(t, err)
 
-			wh.processingStats(ctx, availableWorkers, jobStats)
+			wh.processingStats(availableWorkers, jobStats)
 
 			m1 := store.Get("wh_processing_pending_jobs", stats.Tags{
 				"module":   moduleName,
