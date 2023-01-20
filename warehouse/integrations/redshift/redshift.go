@@ -44,7 +44,7 @@ var dataTypesMap = map[string]string{
 	"int":      "bigint",
 	"bigint":   "bigint",
 	"float":    "double precision",
-	"string":   "varchar(512)",
+	"string":   "varchar(max)",
 	"text":     "varchar(max)",
 	"datetime": "timestamp",
 	"json":     "super",
@@ -95,7 +95,6 @@ type Redshift struct {
 	Uploader                      warehouseutils.UploaderI
 	ConnectTimeout                time.Duration
 	logger                        logger.Logger
-	SetVarCharMax                 bool
 	DedupWindow                   bool
 	DedupWindowInHours            time.Duration
 	SkipComputingUserLatestTraits bool
@@ -137,7 +136,6 @@ func Init() {
 }
 
 func WithConfig(h *Redshift, config *config.Config) {
-	h.SetVarCharMax = config.GetBool("Warehouse.redshift.setVarCharMax", true)
 	h.DedupWindow = config.GetBool("Warehouse.redshift.dedupWindow", true)
 	h.DedupWindowInHours = config.GetDuration("Warehouse.redshift.dedupWindowInHours", 720, time.Hour)
 	h.SkipComputingUserLatestTraits = config.GetBool("Warehouse.redshift.skipComputingUserLatestTraits", false)
@@ -252,11 +250,110 @@ func (rs *Redshift) DeleteBy(tableNames []string, params warehouseutils.DeleteBy
 }
 
 // alterStringToText alters column data type string(varchar(512)) to text which is varchar(max) in redshift
-func (rs *Redshift) alterStringToText(tableName, columnName string) (err error) {
-	sqlStatement := fmt.Sprintf(`ALTER TABLE %v ALTER COLUMN %q TYPE %s`, tableName, columnName, getRSDataType("text"))
-	rs.logger.Infof("Altering column type in redshift from string to text(varchar(max)) RS:%s : %v", rs.Warehouse.Destination.ID, sqlStatement)
-	_, err = rs.DB.Exec(sqlStatement)
-	return
+func (rs *Redshift) alterStringToText(tableName, columnName, columnType string) error {
+	var (
+		query                string
+		stagingColumnName    string
+		stagingColumnType    string
+		deprecatedColumnName string
+		tx                   *sql.Tx
+		err                  error
+	)
+
+	// Begin a transaction
+	if tx, err = rs.DB.Begin(); err != nil {
+		return fmt.Errorf("begin transaction: %w", err)
+	}
+
+	// creating staging column
+	stagingColumnType = getRSDataType(columnType)
+	stagingColumnName = fmt.Sprintf(`%s-staging-%s`, columnName, misc.FastUUID().String())
+	query = fmt.Sprintf(`
+		ALTER TABLE
+		  %q.%q
+		ADD
+		  COLUMN %q %s;
+	`,
+		rs.Namespace,
+		tableName,
+		stagingColumnName,
+		stagingColumnType,
+	)
+	if _, err = tx.Exec(query); err != nil {
+		_ = tx.Rollback()
+		return fmt.Errorf("add staging column: %w", err)
+	}
+
+	// populating staging column
+	query = fmt.Sprintf(`
+		UPDATE
+		  %[1]q.%[2]q
+		SET
+		  %[3]q = CAST (%[4]q AS %[5]s)
+		WHERE
+		  %[4]q IS NOT NULL;
+	`,
+		rs.Namespace,
+		tableName,
+		stagingColumnName,
+		columnName,
+		stagingColumnType,
+	)
+	if _, err = tx.Exec(query); err != nil {
+		_ = tx.Rollback()
+		return fmt.Errorf("populate staging column: %w", err)
+	}
+
+	// renaming original column to deprecated column
+	query = fmt.Sprintf(`
+		ALTER TABLE
+		  %[1]q.%[2]q
+		RENAME COLUMN
+		  %[3]q = %[4]q;
+	`,
+		rs.Namespace,
+		tableName,
+		columnName,
+		deprecatedColumnName,
+	)
+	if _, err = tx.Exec(query); err != nil {
+		_ = tx.Rollback()
+		return fmt.Errorf("rename original column: %w", err)
+	}
+
+	// renaming staging column to original column
+	query = fmt.Sprintf(`
+		ALTER TABLE
+		  %[1]q.%[2]q
+		RENAME COLUMN
+		  %[3]q = %[4]q;
+	`,
+		rs.Namespace,
+		tableName,
+		stagingColumnName,
+		columnName,
+	)
+	if _, err = tx.Exec(query); err != nil {
+		_ = tx.Rollback()
+		return fmt.Errorf("rename staging column: %w", err)
+	}
+
+	// dropping deprecated column
+	query = fmt.Sprintf(`
+		ALTER TABLE
+		  %[1]q.%[2]q
+		DROP COLUMN
+		  %[3]q;
+	`,
+		rs.Namespace,
+		tableName,
+		deprecatedColumnName,
+	)
+	if _, err = tx.Exec(query); err != nil {
+		return fmt.Errorf("drop deprecated column: %w", err)
+	}
+
+	return nil
 }
 
 func (rs *Redshift) createSchema() (err error) {
@@ -690,8 +787,8 @@ func (rs *Redshift) CreateSchema() (err error) {
 }
 
 func (rs *Redshift) AlterColumn(tableName, columnName, columnType string) (err error) {
-	if rs.SetVarCharMax && columnType == "text" {
-		err = rs.alterStringToText(fmt.Sprintf(`%q.%q`, rs.Namespace, tableName), columnName)
+	if columnType == "text" {
+		err = rs.alterStringToText(fmt.Sprintf(`%q.%q`, rs.Namespace, tableName), columnName, columnType)
 	}
 	return
 }

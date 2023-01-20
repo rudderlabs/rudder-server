@@ -162,7 +162,6 @@ Warehouse:
   enableJitterForSyncs: false
   redshift:
     maxParallelLoads: 3
-    setVarCharMax: false
   snowflake:
     maxParallelLoads: 3
   bigquery:
