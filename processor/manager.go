@@ -19,7 +19,7 @@ import (
 )
 
 type LifecycleManager struct {
-	HandleT          *HandleT
+	Handle           *Handle
 	mainCtx          context.Context
 	currentCancel    context.CancelFunc
 	waitGroup        interface{ Wait() }
@@ -44,10 +44,10 @@ type LifecycleManager struct {
 // are assuming that the DBs will be up.
 func (proc *LifecycleManager) Start() error {
 	if proc.Transformer != nil {
-		proc.HandleT.transformer = proc.Transformer
+		proc.Handle.transformer = proc.Transformer
 	}
 
-	proc.HandleT.Setup(
+	proc.Handle.Setup(
 		proc.BackendConfig, proc.gatewayDB, proc.routerDB, proc.batchRouterDB, proc.errDB,
 		proc.clearDB, proc.ReportingI, proc.MultitenantStats, proc.transientSources, proc.fileuploader, proc.rsourcesService, proc.destDebugger, proc.transDebugger,
 	)
@@ -61,8 +61,8 @@ func (proc *LifecycleManager) Start() error {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		if err := proc.HandleT.Start(currentCtx); err != nil {
-			proc.HandleT.logger.Errorf("Error starting processor: %v", err)
+		if err := proc.Handle.Start(currentCtx); err != nil {
+			proc.Handle.logger.Errorf("Error starting processor: %v", err)
 		}
 	}()
 	return nil
@@ -71,17 +71,24 @@ func (proc *LifecycleManager) Start() error {
 // Stop stops the processor, this is a blocking call.
 func (proc *LifecycleManager) Stop() {
 	proc.currentCancel()
-	proc.HandleT.Shutdown()
+	proc.Handle.Shutdown()
 	proc.waitGroup.Wait()
+}
+
+func WithFeaturesRetryMaxAttempts(maxAttempts int) func(l *LifecycleManager) {
+	return func(l *LifecycleManager) {
+		l.Handle.config.featuresRetryMaxAttempts = maxAttempts
+	}
 }
 
 // New creates a new Processor instance
 func New(ctx context.Context, clearDb *bool, gwDb, rtDb, brtDb, errDb *jobsdb.HandleT,
 	tenantDB multitenant.MultiTenantI, reporting types.ReportingI, transientSources transientsource.Service, fileuploader fileuploader.Provider,
 	rsourcesService rsources.JobService, destDebugger destinationdebugger.DestinationDebugger, transDebugger transformationdebugger.TransformationDebugger,
+	opts ...func(l *LifecycleManager),
 ) *LifecycleManager {
 	proc := &LifecycleManager{
-		HandleT:          &HandleT{transformer: transformer.NewTransformer()},
+		Handle:           NewHandle(transformer.NewTransformer()),
 		mainCtx:          ctx,
 		gatewayDB:        gwDb,
 		routerDB:         rtDb,
@@ -96,6 +103,9 @@ func New(ctx context.Context, clearDb *bool, gwDb, rtDb, brtDb, errDb *jobsdb.Ha
 		rsourcesService:  rsourcesService,
 		destDebugger:     destDebugger,
 		transDebugger:    transDebugger,
+	}
+	for _, opt := range opts {
+		opt(proc)
 	}
 	return proc
 }
