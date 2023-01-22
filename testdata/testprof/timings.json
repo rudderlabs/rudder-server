@@ -1,0 +1,398 @@
+[
+  {
+    "Package": "github.com/rudderlabs/rudder-server/app/apphandlers",
+    "Duration": 6955000000
+  },
+  {
+    "Package": "github.com/rudderlabs/rudder-server/app/cluster",
+    "Duration": 3582000000
+  },
+  {
+    "Package": "github.com/rudderlabs/rudder-server/app/cluster/state",
+    "Duration": 2157000000
+  },
+  {
+    "Package": "github.com/rudderlabs/rudder-server/config",
+    "Duration": 643000000
+  },
+  {
+    "Package": "github.com/rudderlabs/rudder-server/config/backend-config",
+    "Duration": 14977000000
+  },
+  {
+    "Package": "github.com/rudderlabs/rudder-server/enterprise/reporting",
+    "Duration": 654000000
+  },
+  {
+    "Package": "github.com/rudderlabs/rudder-server/enterprise/suppress-user",
+    "Duration": 11114000000
+  },
+  {
+    "Package": "github.com/rudderlabs/rudder-server/enterprise/suppress-user/internal/badgerdb",
+    "Duration": 723000000
+  },
+  {
+    "Package": "github.com/rudderlabs/rudder-server/enterprise/suppress-user/internal/memory",
+    "Duration": 654000000
+  },
+  {
+    "Package": "github.com/rudderlabs/rudder-server/event-schema",
+    "Duration": 3778000000
+  },
+  {
+    "Package": "github.com/rudderlabs/rudder-server/gateway",
+    "Duration": 2077000000
+  },
+  {
+    "Package": "github.com/rudderlabs/rudder-server/gateway/internal/stats",
+    "Duration": 653000000
+  },
+  {
+    "Package": "github.com/rudderlabs/rudder-server/gateway/webhook",
+    "Duration": 790000000
+  },
+  {
+    "Package": "github.com/rudderlabs/rudder-server/integration_test/docker_test",
+    "Duration": 782000000
+  },
+  {
+    "Package": "github.com/rudderlabs/rudder-server/integration_test/multi_tentant_test",
+    "Duration": 66861000000
+  },
+  {
+    "Package": "github.com/rudderlabs/rudder-server/internal/throttling/cachettl",
+    "Duration": 657000000
+  },
+  {
+    "Package": "github.com/rudderlabs/rudder-server/jobsdb",
+    "Duration": 77649000000
+  },
+  {
+    "Package": "github.com/rudderlabs/rudder-server/jobsdb/internal/dsindex",
+    "Duration": 643000000
+  },
+  {
+    "Package": "github.com/rudderlabs/rudder-server/jobsdb/internal/lock",
+    "Duration": 760000000
+  },
+  {
+    "Package": "github.com/rudderlabs/rudder-server/jobsdb/prebackup",
+    "Duration": 642000000
+  },
+  {
+    "Package": "github.com/rudderlabs/rudder-server/middleware",
+    "Duration": 3666000000
+  },
+  {
+    "Package": "github.com/rudderlabs/rudder-server/processor",
+    "Duration": 9857000000
+  },
+  {
+    "Package": "github.com/rudderlabs/rudder-server/processor/stash",
+    "Duration": 8254000000
+  },
+  {
+    "Package": "github.com/rudderlabs/rudder-server/processor/transformer",
+    "Duration": 2690000000
+  },
+  {
+    "Package": "github.com/rudderlabs/rudder-server/regulation-worker/cmd",
+    "Duration": 3772000000
+  },
+  {
+    "Package": "github.com/rudderlabs/rudder-server/regulation-worker/internal/client",
+    "Duration": 653000000
+  },
+  {
+    "Package": "github.com/rudderlabs/rudder-server/regulation-worker/internal/delete",
+    "Duration": 644000000
+  },
+  {
+    "Package": "github.com/rudderlabs/rudder-server/regulation-worker/internal/delete/api",
+    "Duration": 2661000000
+  },
+  {
+    "Package": "github.com/rudderlabs/rudder-server/regulation-worker/internal/delete/batch",
+    "Duration": 701000000
+  },
+  {
+    "Package": "github.com/rudderlabs/rudder-server/regulation-worker/internal/delete/batch/filehandler",
+    "Duration": 714000000
+  },
+  {
+    "Package": "github.com/rudderlabs/rudder-server/regulation-worker/internal/delete/kvstore",
+    "Duration": 1112000000
+  },
+  {
+    "Package": "github.com/rudderlabs/rudder-server/regulation-worker/internal/destination",
+    "Duration": 667000000
+  },
+  {
+    "Package": "github.com/rudderlabs/rudder-server/regulation-worker/internal/service",
+    "Duration": 644000000
+  },
+  {
+    "Package": "github.com/rudderlabs/rudder-server/router",
+    "Duration": 164727000000
+  },
+  {
+    "Package": "github.com/rudderlabs/rudder-server/router/batchrouter",
+    "Duration": 679000000
+  },
+  {
+    "Package": "github.com/rudderlabs/rudder-server/router/customdestinationmanager",
+    "Duration": 1736000000
+  },
+  {
+    "Package": "github.com/rudderlabs/rudder-server/router/internal/eventorder",
+    "Duration": 17645000000
+  },
+  {
+    "Package": "github.com/rudderlabs/rudder-server/router/internal/jobiterator",
+    "Duration": 663000000
+  },
+  {
+    "Package": "github.com/rudderlabs/rudder-server/router/manager",
+    "Duration": 8603000000
+  },
+  {
+    "Package": "github.com/rudderlabs/rudder-server/router/transformer",
+    "Duration": 1868000000
+  },
+  {
+    "Package": "github.com/rudderlabs/rudder-server/services/controlplane",
+    "Duration": 4146000000
+  },
+  {
+    "Package": "github.com/rudderlabs/rudder-server/services/debugger",
+    "Duration": 885000000
+  },
+  {
+    "Package": "github.com/rudderlabs/rudder-server/services/debugger/cache/internal/badger",
+    "Duration": 2223000000
+  },
+  {
+    "Package": "github.com/rudderlabs/rudder-server/services/debugger/cache/internal/memory",
+    "Duration": 671000000
+  },
+  {
+    "Package": "github.com/rudderlabs/rudder-server/services/debugger/destination",
+    "Duration": 1639000000
+  },
+  {
+    "Package": "github.com/rudderlabs/rudder-server/services/debugger/source",
+    "Duration": 1565999999
+  },
+  {
+    "Package": "github.com/rudderlabs/rudder-server/services/debugger/transformation",
+    "Duration": 753000000
+  },
+  {
+    "Package": "github.com/rudderlabs/rudder-server/services/dedup",
+    "Duration": 1246000000
+  },
+  {
+    "Package": "github.com/rudderlabs/rudder-server/services/destination-connection-tester",
+    "Duration": 660000000
+  },
+  {
+    "Package": "github.com/rudderlabs/rudder-server/services/filemanager",
+    "Duration": 8625000000
+  },
+  {
+    "Package": "github.com/rudderlabs/rudder-server/services/fileuploader",
+    "Duration": 659000000
+  },
+  {
+    "Package": "github.com/rudderlabs/rudder-server/services/metric",
+    "Duration": 649000000
+  },
+  {
+    "Package": "github.com/rudderlabs/rudder-server/services/multitenant",
+    "Duration": 656000000
+  },
+  {
+    "Package": "github.com/rudderlabs/rudder-server/services/rsources",
+    "Duration": 33366999999
+  },
+  {
+    "Package": "github.com/rudderlabs/rudder-server/services/rsources/http",
+    "Duration": 653000000
+  },
+  {
+    "Package": "github.com/rudderlabs/rudder-server/services/sql-migrator",
+    "Duration": 2844000000
+  },
+  {
+    "Package": "github.com/rudderlabs/rudder-server/services/stats",
+    "Duration": 2772000000
+  },
+  {
+    "Package": "github.com/rudderlabs/rudder-server/services/stats/memstats",
+    "Duration": 653000000
+  },
+  {
+    "Package": "github.com/rudderlabs/rudder-server/services/streammanager",
+    "Duration": 780000000
+  },
+  {
+    "Package": "github.com/rudderlabs/rudder-server/services/streammanager/bqstream",
+    "Duration": 656000000
+  },
+  {
+    "Package": "github.com/rudderlabs/rudder-server/services/streammanager/eventbridge",
+    "Duration": 669000000
+  },
+  {
+    "Package": "github.com/rudderlabs/rudder-server/services/streammanager/firehose",
+    "Duration": 662000000
+  },
+  {
+    "Package": "github.com/rudderlabs/rudder-server/services/streammanager/googlepubsub",
+    "Duration": 10766000000
+  },
+  {
+    "Package": "github.com/rudderlabs/rudder-server/services/streammanager/googlesheets",
+    "Duration": 8096000000
+  },
+  {
+    "Package": "github.com/rudderlabs/rudder-server/services/streammanager/kafka",
+    "Duration": 3742000000
+  },
+  {
+    "Package": "github.com/rudderlabs/rudder-server/services/streammanager/kafka/client",
+    "Duration": 82386000000
+  },
+  {
+    "Package": "github.com/rudderlabs/rudder-server/services/streammanager/kinesis",
+    "Duration": 670000000
+  },
+  {
+    "Package": "github.com/rudderlabs/rudder-server/services/streammanager/lambda",
+    "Duration": 648000000
+  },
+  {
+    "Package": "github.com/rudderlabs/rudder-server/services/streammanager/personalize",
+    "Duration": 671000000
+  },
+  {
+    "Package": "github.com/rudderlabs/rudder-server/services/transientsource",
+    "Duration": 674000000
+  },
+  {
+    "Package": "github.com/rudderlabs/rudder-server/sql/migrations",
+    "Duration": 668000000
+  },
+  {
+    "Package": "github.com/rudderlabs/rudder-server/utils/awsutils",
+    "Duration": 661000000
+  },
+  {
+    "Package": "github.com/rudderlabs/rudder-server/utils/httputil",
+    "Duration": 686000000
+  },
+  {
+    "Package": "github.com/rudderlabs/rudder-server/utils/logger",
+    "Duration": 653000000
+  },
+  {
+    "Package": "github.com/rudderlabs/rudder-server/utils/maputil",
+    "Duration": 644000000
+  },
+  {
+    "Package": "github.com/rudderlabs/rudder-server/utils/misc",
+    "Duration": 676000000
+  },
+  {
+    "Package": "github.com/rudderlabs/rudder-server/utils/pubsub",
+    "Duration": 658000000
+  },
+  {
+    "Package": "github.com/rudderlabs/rudder-server/utils/types/deployment",
+    "Duration": 647000000
+  },
+  {
+    "Package": "github.com/rudderlabs/rudder-server/warehouse",
+    "Duration": 22975000000
+  },
+  {
+    "Package": "github.com/rudderlabs/rudder-server/warehouse/archive",
+    "Duration": 9839000000
+  },
+  {
+    "Package": "github.com/rudderlabs/rudder-server/warehouse/azure-synapse",
+    "Duration": 675000000
+  },
+  {
+    "Package": "github.com/rudderlabs/rudder-server/warehouse/bigquery",
+    "Duration": 697000000
+  },
+  {
+    "Package": "github.com/rudderlabs/rudder-server/warehouse/clickhouse",
+    "Duration": 48857000000
+  },
+  {
+    "Package": "github.com/rudderlabs/rudder-server/warehouse/client",
+    "Duration": 675000000
+  },
+  {
+    "Package": "github.com/rudderlabs/rudder-server/warehouse/client/controlplane",
+    "Duration": 656000000
+  },
+  {
+    "Package": "github.com/rudderlabs/rudder-server/warehouse/datalake",
+    "Duration": 677000000
+  },
+  {
+    "Package": "github.com/rudderlabs/rudder-server/warehouse/deltalake",
+    "Duration": 711000000
+  },
+  {
+    "Package": "github.com/rudderlabs/rudder-server/warehouse/internal/api",
+    "Duration": 703000000
+  },
+  {
+    "Package": "github.com/rudderlabs/rudder-server/warehouse/internal/loadfiles",
+    "Duration": 655000000
+  },
+  {
+    "Package": "github.com/rudderlabs/rudder-server/warehouse/internal/model",
+    "Duration": 660000000
+  },
+  {
+    "Package": "github.com/rudderlabs/rudder-server/warehouse/internal/repo",
+    "Duration": 15413000000
+  },
+  {
+    "Package": "github.com/rudderlabs/rudder-server/warehouse/jobs",
+    "Duration": 646000000
+  },
+  {
+    "Package": "github.com/rudderlabs/rudder-server/warehouse/mssql",
+    "Duration": 708000000
+  },
+  {
+    "Package": "github.com/rudderlabs/rudder-server/warehouse/multitenant",
+    "Duration": 655000000
+  },
+  {
+    "Package": "github.com/rudderlabs/rudder-server/warehouse/postgres",
+    "Duration": 691000000
+  },
+  {
+    "Package": "github.com/rudderlabs/rudder-server/warehouse/redshift",
+    "Duration": 697000000
+  },
+  {
+    "Package": "github.com/rudderlabs/rudder-server/warehouse/snowflake",
+    "Duration": 700000000
+  },
+  {
+    "Package": "github.com/rudderlabs/rudder-server/warehouse/utils",
+    "Duration": 678000000
+  },
+  {
+    "Package": "github.com/rudderlabs/rudder-server/warehouse/validations",
+    "Duration": 719000000
+  }
+]

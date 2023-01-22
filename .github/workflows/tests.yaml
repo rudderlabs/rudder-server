@@ -64,6 +64,9 @@ jobs:
   unit:
     name: Unit
     runs-on: 'ubuntu-20.04'
+    strategy:
+      matrix:
+        PORTION: ['1/4' , '2/4', '3/4', '4/4']
     steps:
     - uses: actions/checkout@v2
     - uses: actions/setup-go@v3
@@ -75,6 +78,7 @@ jobs:
     - run: go version
     - run: go mod download # Not required, used to segregate module download vs test times
     - env:
+        TEST_PORTION: ${{ matrix.PORTION }}
         TEST_KAFKA_CONFLUENT_CLOUD_HOST: ${{ secrets.TEST_KAFKA_CONFLUENT_CLOUD_HOST }}
         TEST_KAFKA_CONFLUENT_CLOUD_KEY: ${{ secrets.TEST_KAFKA_CONFLUENT_CLOUD_KEY }}
         TEST_KAFKA_CONFLUENT_CLOUD_SECRET: ${{ secrets.TEST_KAFKA_CONFLUENT_CLOUD_SECRET }}

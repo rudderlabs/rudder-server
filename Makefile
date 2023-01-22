@@ -19,10 +19,12 @@ else
 	$(eval TEST_CMD = SLOW=0 go test)
 	$(eval TEST_OPTIONS = -p=1 -v -failfast -shuffle=on -coverprofile=profile.out -covermode=count -coverpkg=./... -vet=all --timeout=15m)
 endif
+
+
 ifdef package
 	$(TEST_CMD) $(TEST_OPTIONS) $(package) && touch $(TESTFILE) || true
 else
-	$(TEST_CMD) -count=1 $(TEST_OPTIONS) ./... && touch $(TESTFILE) || true
+	$(TEST_CMD) -count=1 $(TEST_OPTIONS) `testprof list` && touch $(TESTFILE) || true
 endif
 
 test-teardown:
@@ -69,6 +71,7 @@ install-tools:
 	go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.28.1
 	go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.2.0
 	go install gotest.tools/gotestsum@v1.8.2
+	go install github.com/lvrach/testprof@latest
 
 .PHONY: lint
 lint: fmt ## Run linters on all go files
