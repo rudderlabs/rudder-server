@@ -46,8 +46,8 @@ var dataTypesMap = map[string]string{
 	"int":      "bigint",
 	"bigint":   "bigint",
 	"float":    "double precision",
-	"string":   "varchar(max)",
-	"text":     "varchar(max)",
+	"string":   "varchar(65535)",
+	"text":     "varchar(65535)",
 	"datetime": "timestamp",
 	"json":     "super",
 }
@@ -743,11 +743,12 @@ func (rs *Redshift) AlterColumn(tableName, columnName, columnType string) (model
 	}
 
 	// renaming original column to deprecated column
+	deprecatedColumnName = fmt.Sprintf(`%s-deprecated-%s`, columnName, misc.FastUUID().String())
 	query = fmt.Sprintf(`
 		ALTER TABLE
 		  %[1]q.%[2]q
 		RENAME COLUMN
-		  %[3]q = %[4]q;
+		  %[3]q TO %[4]q;
 	`,
 		rs.Namespace,
 		tableName,
@@ -763,7 +764,7 @@ func (rs *Redshift) AlterColumn(tableName, columnName, columnType string) (model
 		ALTER TABLE
 		  %[1]q.%[2]q
 		RENAME COLUMN
-		  %[3]q = %[4]q;
+		  %[3]q TO %[4]q;
 	`,
 		rs.Namespace,
 		tableName,
@@ -774,7 +775,15 @@ func (rs *Redshift) AlterColumn(tableName, columnName, columnType string) (model
 		return model.AlterTableResponse{}, fmt.Errorf("rename staging column: %w", err)
 	}
 
+	// Commit the transaction
+	if err = tx.Commit(); err != nil {
+		return model.AlterTableResponse{}, fmt.Errorf("commit transaction: %w", err)
+	}
+
 	// dropping deprecated column
+	// Since dropping the column can fail, we need to do it outside the transaction
+	// Because if will fail durint the commit of the transaction
+	// https://github.com/lib/pq/blob/d5affd5073b06f745459768de35356df2e5fd91d/conn.go#L600
 	query = fmt.Sprintf(`
 		ALTER TABLE
 		  %[1]q.%[2]q
@@ -785,18 +794,15 @@ func (rs *Redshift) AlterColumn(tableName, columnName, columnType string) (model
 		tableName,
 		deprecatedColumnName,
 	)
-	if _, err = tx.ExecContext(ctx, query); err != nil {
-		if err.Error() != "cannot alter type of a column used by a view or rule" {
+	if _, err = rs.DB.ExecContext(ctx, query); err != nil {
+		// ERROR:  cannot drop column <column> of table <table> because other objects depend on it
+		// ERROR:  cannot drop table <table> column <column> because other objects depend on it
+		if !strings.Contains(err.Error(), "depend on") {
 			return model.AlterTableResponse{}, fmt.Errorf("drop deprecated column: %w", err)
 		}
 
 		isDependent = true
 		err = nil
-	}
-
-	// Commit the transaction
-	if err = tx.Commit(); err != nil {
-		return model.AlterTableResponse{}, fmt.Errorf("commit transaction: %w", err)
 	}
 
 	res := model.AlterTableResponse{

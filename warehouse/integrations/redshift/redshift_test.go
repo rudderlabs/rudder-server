@@ -1,11 +1,15 @@
 package redshift_test
 
 import (
+	"errors"
 	"fmt"
-	"os"
-	"testing"
-
+	"github.com/ory/dockertest/v3"
+	"github.com/rudderlabs/rudder-server/config"
+	"github.com/rudderlabs/rudder-server/testhelper/destination"
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/testhelper"
+	"os"
+	"strings"
+	"testing"
 
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/redshift"
 
@@ -177,4 +181,154 @@ func TestConfigurationValidationRedshift(t *testing.T) {
 		RevisionID: "29HgOWobrn0RYZLpaSwPIbN2987",
 	}
 	testhelper.VerifyConfigurationTest(t, destination)
+}
+
+func TestRedshift_AlterColumn(t *testing.T) {
+	var (
+		bigString      = strings.Repeat("a", 1024)
+		smallString    = strings.Repeat("a", 510)
+		testNamespace  = "test_namespace"
+		testTable      = "test_table"
+		testColumn     = "test_column"
+		testColumnType = "text"
+	)
+
+	pool, err := dockertest.NewPool("")
+	require.NoError(t, err)
+
+	pgResource, err := destination.SetupPostgres(pool, t)
+	require.NoError(t, err)
+
+	t.Run("success", func(t *testing.T) {
+		t.Parallel()
+
+		rs := redshift.NewRedshift()
+		redshift.WithConfig(rs, config.Default)
+
+		namespace := fmt.Sprintf("%s_success", testNamespace)
+
+		rs.DB = pgResource.DB
+		rs.Namespace = namespace
+
+		_, err = rs.DB.Exec(
+			fmt.Sprintf("CREATE SCHEMA %s;",
+				namespace,
+			),
+		)
+		require.NoError(t, err)
+
+		_, err = rs.DB.Exec(
+			fmt.Sprintf("CREATE TABLE %q.%q (%s VARCHAR(512));",
+				namespace,
+				testTable,
+				testColumn,
+			),
+		)
+		require.NoError(t, err)
+
+		_, err = rs.DB.Exec(
+			fmt.Sprintf("INSERT INTO %q.%q (%s) VALUES ('%s');",
+				namespace,
+				testTable,
+				testColumn,
+				smallString,
+			),
+		)
+		require.NoError(t, err)
+
+		_, err = rs.DB.Exec(
+			fmt.Sprintf("INSERT INTO %q.%q (%s) VALUES ('%s');",
+				namespace,
+				testTable,
+				testColumn,
+				bigString,
+			),
+		)
+		require.Error(t, errors.New("pq: value too long for type character varying(512)"))
+
+		_, err = rs.AlterColumn(testTable, testColumn, testColumnType)
+		require.NoError(t, err)
+
+		_, err = rs.DB.Exec(
+			fmt.Sprintf("INSERT INTO %q.%q (%s) VALUES ('%s');",
+				namespace,
+				testTable,
+				testColumn,
+				bigString,
+			),
+		)
+		require.NoError(t, err)
+	})
+
+	t.Run("view/rule", func(t *testing.T) {
+		t.Parallel()
+
+		rs := redshift.NewRedshift()
+		redshift.WithConfig(rs, config.Default)
+
+		namespace := fmt.Sprintf("%s_view_or_rule", testNamespace)
+
+		rs.DB = pgResource.DB
+		rs.Namespace = namespace
+
+		_, err = rs.DB.Exec(
+			fmt.Sprintf("CREATE SCHEMA %s;",
+				namespace,
+			),
+		)
+		require.NoError(t, err)
+
+		_, err = rs.DB.Exec(
+			fmt.Sprintf("CREATE TABLE %q.%q (%s VARCHAR(512));",
+				namespace,
+				testTable,
+				testColumn,
+			),
+		)
+		require.NoError(t, err)
+
+		_, err = rs.DB.Exec(
+			fmt.Sprintf("CREATE VIEW %[1]q.%[2]q AS SELECT * FROM %[1]q.%[3]q;",
+				namespace,
+				fmt.Sprintf("%s_view", testTable),
+				testTable,
+			),
+		)
+		require.NoError(t, err)
+
+		_, err = rs.DB.Exec(
+			fmt.Sprintf("INSERT INTO %q.%q (%s) VALUES ('%s');",
+				namespace,
+				testTable,
+				testColumn,
+				smallString,
+			),
+		)
+		require.NoError(t, err)
+
+		_, err = rs.DB.Exec(
+			fmt.Sprintf("INSERT INTO %q.%q (%s) VALUES ('%s');",
+				namespace,
+				testTable,
+				testColumn,
+				bigString,
+			),
+		)
+		require.Error(t, errors.New("pq: value too long for type character varying(512)"))
+
+		res, err := rs.AlterColumn(testTable, testColumn, testColumnType)
+		require.NoError(t, err)
+		require.True(t, res.IsDependent)
+		require.NotEmpty(t, res.Query)
+
+		_, err = rs.DB.Exec(
+			fmt.Sprintf("INSERT INTO %q.%q (%s) VALUES ('%s');",
+				namespace,
+				testTable,
+				testColumn,
+				bigString,
+			),
+		)
+		require.NoError(t, err)
+	})
 }
