@@ -298,7 +298,7 @@ func (bq *HandleT) loadTable(tableName string, _, getLoadFileLocFromTableUploads
 		}
 		loadFiles = append(loadFiles, loadFile)
 	} else {
-		loadFiles = bq.uploader.GetLoadFilesMetadata(warehouseutils.GetLoadFilesOptions{Table: tableName})
+		loadFiles = bq.uploader.GetLoadFilesMetadata(warehouseutils.GetLoadFilesOptionsT{Table: tableName})
 	}
 	gcsLocations := warehouseutils.GetGCSLocations(loadFiles, warehouseutils.GCSLocationOptionsT{})
 	pkgLogger.Infof("BQ: Loading data into table: %s in bigquery dataset: %s in project: %s", tableName, bq.namespace, bq.projectID)

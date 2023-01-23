@@ -190,7 +190,7 @@ func (*HandleT) IsEmpty(_ warehouseutils.Warehouse) (empty bool, err error) {
 }
 
 func (ms *HandleT) DownloadLoadFiles(tableName string) ([]string, error) {
-	objects := ms.Uploader.GetLoadFilesMetadata(warehouseutils.GetLoadFilesOptions{Table: tableName})
+	objects := ms.Uploader.GetLoadFilesMetadata(warehouseutils.GetLoadFilesOptionsT{Table: tableName})
 	storageProvider := warehouseutils.ObjectStorageType(ms.Warehouse.Destination.DestinationDefinition.Name, ms.Warehouse.Destination.Config, ms.Uploader.UseRudderStorage())
 	downloader, err := filemanager.DefaultFileManagerFactory.New(&filemanager.SettingsT{
 		Provider: storageProvider,

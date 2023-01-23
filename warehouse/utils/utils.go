@@ -269,7 +269,7 @@ type UploaderI interface {
 	UpdateLocalSchema(schema SchemaT) error
 	GetTableSchemaInWarehouse(tableName string) TableSchemaT
 	GetTableSchemaInUpload(tableName string) TableSchemaT
-	GetLoadFilesMetadata(options GetLoadFilesOptions) []LoadFileT
+	GetLoadFilesMetadata(options GetLoadFilesOptionsT) []LoadFileT
 	GetSampleLoadFileLocation(tableName string) (string, error)
 	GetSingleLoadFile(tableName string) (LoadFileT, error)
 	ShouldOnDedupUseNewRecord() bool
@@ -279,7 +279,7 @@ type UploaderI interface {
 	GetFirstLastEvent() (time.Time, time.Time)
 }
 
-type GetLoadFilesOptions struct {
+type GetLoadFilesOptionsT struct {
 	Table   string
 	StartID int64
 	EndID   int64

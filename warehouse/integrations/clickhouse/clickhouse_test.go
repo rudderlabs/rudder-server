@@ -332,7 +332,7 @@ func (m *mockUploader) GetTableSchemaInUpload(string) warehouseutils.TableSchema
 	return m.tableSchema
 }
 
-func (m *mockUploader) GetLoadFilesMetadata(warehouseutils.GetLoadFilesOptions) []warehouseutils.LoadFileT {
+func (m *mockUploader) GetLoadFilesMetadata(warehouseutils.GetLoadFilesOptionsT) []warehouseutils.LoadFileT {
 	return m.metadata
 }
 

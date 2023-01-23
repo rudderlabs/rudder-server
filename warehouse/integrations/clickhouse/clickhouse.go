@@ -357,7 +357,7 @@ func (ch *Clickhouse) getClickHouseColumnTypeForSpecificTable(tableName, columnN
 func (ch *Clickhouse) DownloadLoadFiles(tableName string) ([]string, error) {
 	ch.Logger.Infof("%s DownloadLoadFiles Started", ch.GetLogIdentifier(tableName))
 	defer ch.Logger.Infof("%s DownloadLoadFiles Completed", ch.GetLogIdentifier(tableName))
-	objects := ch.Uploader.GetLoadFilesMetadata(warehouseutils.GetLoadFilesOptions{Table: tableName})
+	objects := ch.Uploader.GetLoadFilesMetadata(warehouseutils.GetLoadFilesOptionsT{Table: tableName})
 	storageProvider := warehouseutils.ObjectStorageType(ch.Warehouse.Destination.DestinationDefinition.Name, ch.Warehouse.Destination.Config, ch.Uploader.UseRudderStorage())
 	downloader, err := filemanager.DefaultFileManagerFactory.New(&filemanager.SettingsT{
 		Provider: storageProvider,

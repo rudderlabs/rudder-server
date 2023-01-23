@@ -259,7 +259,7 @@ func (rs *Redshift) createSchema() (err error) {
 }
 
 func (rs *Redshift) generateManifest(tableName string, _ map[string]string) (string, error) {
-	loadFiles := rs.Uploader.GetLoadFilesMetadata(warehouseutils.GetLoadFilesOptions{Table: tableName})
+	loadFiles := rs.Uploader.GetLoadFilesMetadata(warehouseutils.GetLoadFilesOptionsT{Table: tableName})
 	loadFiles = warehouseutils.GetS3Locations(loadFiles)
 	var manifest S3Manifest
 	for idx, loadFile := range loadFiles {

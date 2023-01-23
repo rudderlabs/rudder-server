@@ -193,142 +193,101 @@ func TestRedshift_AlterColumn(t *testing.T) {
 		testColumnType = "text"
 	)
 
-	pool, err := dockertest.NewPool("")
-	require.NoError(t, err)
+	testCases := []struct {
+		name       string
+		createView bool
+	}{
+		{
+			name: "success",
+		},
+		{
+			name:       "view/rule",
+			createView: true,
+		},
+	}
 
-	pgResource, err := destination.SetupPostgres(pool, t)
-	require.NoError(t, err)
+	for _, tc := range testCases {
+		tc := tc
 
-	t.Run("success", func(t *testing.T) {
-		t.Parallel()
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 
-		rs := redshift.NewRedshift()
-		redshift.WithConfig(rs, config.Default)
+			pool, err := dockertest.NewPool("")
+			require.NoError(t, err)
 
-		namespace := fmt.Sprintf("%s_success", testNamespace)
+			pgResource, err := destination.SetupPostgres(pool, t)
+			require.NoError(t, err)
 
-		rs.DB = pgResource.DB
-		rs.Namespace = namespace
+			rs := redshift.NewRedshift()
+			redshift.WithConfig(rs, config.Default)
 
-		_, err = rs.DB.Exec(
-			fmt.Sprintf("CREATE SCHEMA %s;",
-				namespace,
-			),
-		)
-		require.NoError(t, err)
+			rs.DB = pgResource.DB
+			rs.Namespace = testNamespace
 
-		_, err = rs.DB.Exec(
-			fmt.Sprintf("CREATE TABLE %q.%q (%s VARCHAR(512));",
-				namespace,
-				testTable,
-				testColumn,
-			),
-		)
-		require.NoError(t, err)
+			_, err = rs.DB.Exec(
+				fmt.Sprintf("CREATE SCHEMA %s;",
+					testNamespace,
+				),
+			)
+			require.NoError(t, err)
 
-		_, err = rs.DB.Exec(
-			fmt.Sprintf("INSERT INTO %q.%q (%s) VALUES ('%s');",
-				namespace,
-				testTable,
-				testColumn,
-				smallString,
-			),
-		)
-		require.NoError(t, err)
+			_, err = rs.DB.Exec(
+				fmt.Sprintf("CREATE TABLE %q.%q (%s VARCHAR(512));",
+					testNamespace,
+					testTable,
+					testColumn,
+				),
+			)
+			require.NoError(t, err)
 
-		_, err = rs.DB.Exec(
-			fmt.Sprintf("INSERT INTO %q.%q (%s) VALUES ('%s');",
-				namespace,
-				testTable,
-				testColumn,
-				bigString,
-			),
-		)
-		require.Error(t, errors.New("pq: value too long for type character varying(512)"))
+			if tc.createView {
+				_, err = rs.DB.Exec(
+					fmt.Sprintf("CREATE VIEW %[1]q.%[2]q AS SELECT * FROM %[1]q.%[3]q;",
+						testNamespace,
+						fmt.Sprintf("%s_view", testTable),
+						testTable,
+					),
+				)
+				require.NoError(t, err)
+			}
 
-		_, err = rs.AlterColumn(testTable, testColumn, testColumnType)
-		require.NoError(t, err)
+			_, err = rs.DB.Exec(
+				fmt.Sprintf("INSERT INTO %q.%q (%s) VALUES ('%s');",
+					testNamespace,
+					testTable,
+					testColumn,
+					smallString,
+				),
+			)
+			require.NoError(t, err)
 
-		_, err = rs.DB.Exec(
-			fmt.Sprintf("INSERT INTO %q.%q (%s) VALUES ('%s');",
-				namespace,
-				testTable,
-				testColumn,
-				bigString,
-			),
-		)
-		require.NoError(t, err)
-	})
+			_, err = rs.DB.Exec(
+				fmt.Sprintf("INSERT INTO %q.%q (%s) VALUES ('%s');",
+					testNamespace,
+					testTable,
+					testColumn,
+					bigString,
+				),
+			)
+			require.Error(t, errors.New("pq: value too long for type character varying(512)"))
 
-	t.Run("view/rule", func(t *testing.T) {
-		t.Parallel()
+			res, err := rs.AlterColumn(testTable, testColumn, testColumnType)
+			require.NoError(t, err)
 
-		rs := redshift.NewRedshift()
-		redshift.WithConfig(rs, config.Default)
+			if tc.createView {
+				require.True(t, res.IsDependent)
+				require.NotEmpty(t, res.Query)
+			}
 
-		namespace := fmt.Sprintf("%s_view_or_rule", testNamespace)
-
-		rs.DB = pgResource.DB
-		rs.Namespace = namespace
-
-		_, err = rs.DB.Exec(
-			fmt.Sprintf("CREATE SCHEMA %s;",
-				namespace,
-			),
-		)
-		require.NoError(t, err)
-
-		_, err = rs.DB.Exec(
-			fmt.Sprintf("CREATE TABLE %q.%q (%s VARCHAR(512));",
-				namespace,
-				testTable,
-				testColumn,
-			),
-		)
-		require.NoError(t, err)
-
-		_, err = rs.DB.Exec(
-			fmt.Sprintf("CREATE VIEW %[1]q.%[2]q AS SELECT * FROM %[1]q.%[3]q;",
-				namespace,
-				fmt.Sprintf("%s_view", testTable),
-				testTable,
-			),
-		)
-		require.NoError(t, err)
-
-		_, err = rs.DB.Exec(
-			fmt.Sprintf("INSERT INTO %q.%q (%s) VALUES ('%s');",
-				namespace,
-				testTable,
-				testColumn,
-				smallString,
-			),
-		)
-		require.NoError(t, err)
-
-		_, err = rs.DB.Exec(
-			fmt.Sprintf("INSERT INTO %q.%q (%s) VALUES ('%s');",
-				namespace,
-				testTable,
-				testColumn,
-				bigString,
-			),
-		)
-		require.Error(t, errors.New("pq: value too long for type character varying(512)"))
-
-		res, err := rs.AlterColumn(testTable, testColumn, testColumnType)
-		require.NoError(t, err)
-		require.True(t, res.IsDependent)
-		require.NotEmpty(t, res.Query)
-
-		_, err = rs.DB.Exec(
-			fmt.Sprintf("INSERT INTO %q.%q (%s) VALUES ('%s');",
-				namespace,
-				testTable,
-				testColumn,
-				bigString,
-			),
-		)
-		require.NoError(t, err)
-	})
+			_, err = rs.DB.Exec(
+				fmt.Sprintf("INSERT INTO %q.%q (%s) VALUES ('%s');",
+					testNamespace,
+					testTable,
+					testColumn,
+					bigString,
+				),
+			)
+			require.NoError(t, err)
+		})
+	}
 }

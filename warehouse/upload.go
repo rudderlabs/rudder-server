@@ -866,7 +866,7 @@ func (job *UploadJobT) resolveIdentities(populateHistoricIdentities bool) (err e
 	return idr.Resolve()
 }
 
-func (job *UploadJobT) updateTableSchema(tName string, tableSchemaDiff warehouseutils.TableSchemaDiffT) (err error) {
+func (job *UploadJobT) UpdateTableSchema(tName string, tableSchemaDiff warehouseutils.TableSchemaDiffT) (err error) {
 	pkgLogger.Infof(`[WH]: Starting schema update for table %s in namespace %s of destination %s:%s`, tName, job.warehouse.Namespace, job.warehouse.Type, job.warehouse.Destination.ID)
 
 	if tableSchemaDiff.TableToBeCreated {
@@ -1075,7 +1075,7 @@ func (job *UploadJobT) loadAllTablesExcept(skipLoadForTables []string, loadFiles
 func (job *UploadJobT) updateSchema(tName string) (alteredSchema bool, err error) {
 	tableSchemaDiff := getTableSchemaDiff(tName, job.schemaHandle.schemaInWarehouse, job.upload.UploadSchema)
 	if tableSchemaDiff.Exists {
-		err = job.updateTableSchema(tName, tableSchemaDiff)
+		err = job.UpdateTableSchema(tName, tableSchemaDiff)
 		if err != nil {
 			return
 		}
@@ -1294,7 +1294,7 @@ func (job *UploadJobT) loadIdentityTables(populateHistoricIdentities bool) (load
 
 		tableSchemaDiff := getTableSchemaDiff(tableName, job.schemaHandle.schemaInWarehouse, job.upload.UploadSchema)
 		if tableSchemaDiff.Exists {
-			err := job.updateTableSchema(tableName, tableSchemaDiff)
+			err := job.UpdateTableSchema(tableName, tableSchemaDiff)
 			if err != nil {
 				tableUpload.setError(TableUploadUpdatingSchemaFailed, err)
 				errorMap := map[string]error{tableName: err}
@@ -1895,7 +1895,7 @@ func (job *UploadJobT) areIdentityTablesLoadFilesGenerated() (generated bool, er
 	return
 }
 
-func (job *UploadJobT) GetLoadFilesMetadata(options warehouseutils.GetLoadFilesOptions) (loadFiles []warehouseutils.LoadFileT) {
+func (job *UploadJobT) GetLoadFilesMetadata(options warehouseutils.GetLoadFilesOptionsT) (loadFiles []warehouseutils.LoadFileT) {
 	var tableFilterSQL string
 	if options.Table != "" {
 		tableFilterSQL = fmt.Sprintf(` AND table_name='%s'`, options.Table)
@@ -1960,7 +1960,7 @@ func (job *UploadJobT) GetLoadFilesMetadata(options warehouseutils.GetLoadFilesO
 }
 
 func (job *UploadJobT) GetSampleLoadFileLocation(tableName string) (location string, err error) {
-	locations := job.GetLoadFilesMetadata(warehouseutils.GetLoadFilesOptions{Table: tableName, Limit: 1})
+	locations := job.GetLoadFilesMetadata(warehouseutils.GetLoadFilesOptionsT{Table: tableName, Limit: 1})
 	if len(locations) == 0 {
 		return "", fmt.Errorf(`no load file found for table:%s`, tableName)
 	}
