@@ -3,6 +3,8 @@ package schemarepository
 import (
 	"fmt"
 
+	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
+
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/glue"
 	"github.com/rudderlabs/rudder-server/utils/awsutils"
@@ -167,8 +169,8 @@ func (gl *GlueSchemaRepository) AddColumns(tableName string, columnsInfo []wareh
 	return
 }
 
-func (gl *GlueSchemaRepository) AlterColumn(tableName, columnName, columnType string) (err error) {
-	return gl.AddColumns(tableName, []warehouseutils.ColumnInfo{{Name: columnName, Type: columnType}})
+func (gl *GlueSchemaRepository) AlterColumn(tableName, columnName, columnType string) (model.AlterTableResponse, error) {
+	return model.AlterTableResponse{}, gl.AddColumns(tableName, []warehouseutils.ColumnInfo{{Name: columnName, Type: columnType}})
 }
 
 func getGlueClient(wh warehouseutils.Warehouse) (*glue.Glue, error) {

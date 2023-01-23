@@ -63,3 +63,8 @@ type Upload struct {
 	SourceJobRunID  string
 	LoadFileType    string
 }
+
+type AlterTableResponse struct {
+	IsDependent bool // true if the column is dependent on another view or rules, false otherwise
+	Query       string
+}

@@ -6,6 +6,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
+
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/deltalake/deltalakeclient"
 
 	"github.com/iancoleman/strcase"
@@ -919,8 +921,8 @@ func (dl *Deltalake) CreateSchema() (err error) {
 }
 
 // AlterColumn alter table with column name and type
-func (*Deltalake) AlterColumn(_, _, _ string) (err error) {
-	return
+func (*Deltalake) AlterColumn(_, _, _ string) (model.AlterTableResponse, error) {
+	return model.AlterTableResponse{}, nil
 }
 
 // FetchSchema queries delta lake and returns the schema associated with provided namespace

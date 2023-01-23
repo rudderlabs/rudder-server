@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
+
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/datalake/schema-repository"
 
 	"github.com/rudderlabs/rudder-server/utils/logger"
@@ -61,7 +63,7 @@ func (wh *HandleT) AddColumns(tableName string, columnsInfo []warehouseutils.Col
 	return wh.SchemaRepository.AddColumns(tableName, columnsInfo)
 }
 
-func (wh *HandleT) AlterColumn(tableName, columnName, columnType string) (err error) {
+func (wh *HandleT) AlterColumn(tableName, columnName, columnType string) (model.AlterTableResponse, error) {
 	return wh.SchemaRepository.AlterColumn(tableName, columnName, columnType)
 }
 

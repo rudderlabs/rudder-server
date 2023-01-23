@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
+
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/azure-synapse"
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/bigquery"
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/clickhouse"
@@ -28,7 +30,7 @@ type ManagerI interface {
 	CreateSchema() (err error)
 	CreateTable(tableName string, columnMap map[string]string) (err error)
 	AddColumns(tableName string, columnsInfo []warehouseutils.ColumnInfo) (err error)
-	AlterColumn(tableName, columnName, columnType string) (err error)
+	AlterColumn(tableName, columnName, columnType string) (model.AlterTableResponse, error)
 	LoadTable(tableName string) error
 	LoadUserTables() map[string]error
 	LoadIdentityMergeRulesTable() error

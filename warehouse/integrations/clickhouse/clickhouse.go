@@ -21,6 +21,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
+
 	"golang.org/x/exp/slices"
 
 	"github.com/cenkalti/backoff/v4"
@@ -998,8 +1000,8 @@ func (ch *Clickhouse) CreateSchema() (err error) {
 	return err
 }
 
-func (*Clickhouse) AlterColumn(_, _, _ string) (err error) {
-	return
+func (*Clickhouse) AlterColumn(_, _, _ string) (model.AlterTableResponse, error) {
+	return model.AlterTableResponse{}, nil
 }
 
 // TestConnection is used destination connection tester to test the clickhouse connection

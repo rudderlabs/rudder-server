@@ -17,6 +17,8 @@ import (
 	"unicode/utf16"
 	"unicode/utf8"
 
+	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
+
 	mssql "github.com/denisenkom/go-mssqldb"
 	"github.com/rudderlabs/rudder-server/services/filemanager"
 	"github.com/rudderlabs/rudder-server/utils/logger"
@@ -689,8 +691,8 @@ func (as *HandleT) AddColumns(tableName string, columnsInfo []warehouseutils.Col
 	return
 }
 
-func (*HandleT) AlterColumn(_, _, _ string) (err error) {
-	return
+func (*HandleT) AlterColumn(_, _, _ string) (model.AlterTableResponse, error) {
+	return model.AlterTableResponse{}, nil
 }
 
 func (as *HandleT) TestConnection(warehouse warehouseutils.Warehouse) (err error) {

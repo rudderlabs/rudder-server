@@ -11,6 +11,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/services/alerta"
+
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/manager"
 
 	"golang.org/x/exp/slices"
@@ -133,6 +135,7 @@ type UploadJobT struct {
 	uploadLock          sync.Mutex
 	hasAllTablesSkipped bool
 	tableUploadStatuses []*TableUploadStatusT
+	AlertaURL           string
 }
 
 type UploadColumnT struct {
@@ -207,6 +210,7 @@ func (f *UploadJobFactory) NewUploadJob(dto *model.UploadJob, whManager manager.
 
 		hasAllTablesSkipped: false,
 		tableUploadStatuses: []*TableUploadStatusT{},
+		AlertaURL:           config.GetString("alerta.url", "https://alerta.rudderstack.com/api/"),
 	}
 }
 
@@ -875,19 +879,59 @@ func (job *UploadJobT) updateTableSchema(tName string, tableSchemaDiff warehouse
 		return nil
 	}
 
-	if err := job.addColumnsToWarehouse(tName, tableSchemaDiff.ColumnMap); err != nil {
-		return err
+	if err = job.addColumnsToWarehouse(tName, tableSchemaDiff.ColumnMap); err != nil {
+		return fmt.Errorf("adding columns to warehouse: %w", err)
 	}
 
-	for _, columnName := range tableSchemaDiff.StringColumnsToBeAlteredToText {
-		err = job.whManager.AlterColumn(tName, columnName, "text")
+	if err = job.alterColumnsToWarehouse(tName, tableSchemaDiff.ColumnMap); err != nil {
+		return fmt.Errorf("altering columns to warehouse: %w", err)
+	}
+
+	return nil
+}
+
+func (job *UploadJobT) alterColumnsToWarehouse(tName string, columnsMap map[string]string) error {
+	var responseToAlerta []model.AlterTableResponse
+	var errs []error
+
+	for columnName, columnType := range columnsMap {
+		res, err := job.whManager.AlterColumn(tName, columnName, columnType)
 		if err != nil {
-			pkgLogger.Errorf("Altering column %s in table: %s.%s failed. Error: %v", columnName, job.warehouse.Namespace, tName, err)
-			break
+			errs = append(errs, err)
+		}
+
+		if res.IsDependent {
+			responseToAlerta = append(responseToAlerta, res)
 		}
 	}
 
-	return err
+	if len(responseToAlerta) > 0 {
+		queries := make([]string, len(responseToAlerta))
+		for i, res := range responseToAlerta {
+			queries[i] = res.Query
+		}
+
+		query := strings.Join(queries, "\n")
+		return alerta.NewClient(
+			job.AlertaURL,
+			alerta.WithSeverity(alerta.SeverityCritical),
+			alerta.WithPriority(alerta.PriorityP1),
+			alerta.WithTeam(warehouseutils.WAREHOUSE),
+			alerta.WithTags(alerta.Tags{
+				fmt.Sprintf("destID=%s", job.upload.DestinationID),
+				fmt.Sprintf("destType=%s", job.upload.DestinationType),
+				fmt.Sprintf("query=%s", query),
+			}),
+		).SendAlert(context.TODO(), "warehouse-upload-warnings", alerta.Service{
+			"upload_warnings",
+		})
+	}
+
+	if len(errs) > 0 {
+		return misc.ConcatErrors(errs)
+	}
+
+	return nil
 }
 
 func (job *UploadJobT) addColumnsToWarehouse(tName string, columnsMap map[string]string) (err error) {
