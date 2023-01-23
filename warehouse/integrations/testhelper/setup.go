@@ -71,7 +71,7 @@ const (
 
 const (
 	WorkspaceConfigPath   = "/etc/rudderstack/workspaceConfig.json"
-	WorkspaceTemplatePath = "warehouse/testdata/workspaceConfig/template.json"
+	WorkspaceTemplatePath = "warehouse/integrations/testdata/workspaceConfig/template.json"
 )
 
 type EventsCountMap map[string]int
