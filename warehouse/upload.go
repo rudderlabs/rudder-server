@@ -898,11 +898,24 @@ func (job *UploadJobT) alterColumnsToWarehouse(tName string, columnsMap map[stri
 		res, err := job.whManager.AlterColumn(tName, columnName, columnType)
 		if err != nil {
 			errs = append(errs, err)
+			continue
 		}
 
 		if res.IsDependent {
 			responseToAlerta = append(responseToAlerta, res)
+			continue
 		}
+
+		pkgLogger.Infof(`
+			[WH]: Altered column %s of type %s in table %s in namespace %s of destination %s:%s
+		`,
+			columnName,
+			columnType,
+			tName,
+			job.warehouse.Namespace,
+			job.warehouse.Type,
+			job.warehouse.Destination.ID,
+		)
 	}
 
 	if len(responseToAlerta) > 0 {
@@ -912,7 +925,7 @@ func (job *UploadJobT) alterColumnsToWarehouse(tName string, columnsMap map[stri
 		}
 
 		query := strings.Join(queries, "\n")
-		return alerta.NewClient(
+		err := alerta.NewClient(
 			job.AlertaURL,
 			alerta.WithSeverity(alerta.SeverityCritical),
 			alerta.WithPriority(alerta.PriorityP1),
@@ -925,6 +938,9 @@ func (job *UploadJobT) alterColumnsToWarehouse(tName string, columnsMap map[stri
 		).SendAlert(context.TODO(), "warehouse-upload-warnings", alerta.Service{
 			"upload_warnings",
 		})
+		if err != nil {
+			errs = append(errs, err)
+		}
 	}
 
 	if len(errs) > 0 {

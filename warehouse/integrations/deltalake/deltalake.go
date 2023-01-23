@@ -9,7 +9,6 @@ import (
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/deltalake/client"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 
-
 	"github.com/iancoleman/strcase"
 
 	"github.com/rudderlabs/rudder-server/config"
