@@ -16,15 +16,7 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/httputil"
 )
 
-var (
-	defaultTimeout    = 30 * time.Second
-	defaultMaxRetries = 3
-	defaultSeverity   = "CRITICAL"
-	defaultPriority   = "P1"
-	defaultTeam       = "No Team"
-)
-
-type OptFn func(c *Client)
+type OptFn func(c *ClientImpl)
 
 type Tags []string
 
@@ -42,69 +34,97 @@ type Alert struct {
 	Tags        Tags    `json:"tags"`        // {sendToNotificationService=true,notificationServiceMode=CARBONCOPY,team=warehouse,priority=P1,destID=27CHciD6leAhurSyFAeN4dp14qZ,destType=RS,namespace=hosted,cluster=rudder}
 }
 
-type Client struct {
-	client      *http.Client
-	retries     int
-	url         string
-	environment string
-	timeout     int
-	severity    string
-	text        string
-	tags        Tags
-	priority    string
-	team        string
+type Priority string
+
+type Severity string
+
+const (
+	SeverityCritical Severity = "critical"
+	SeverityWarning  Severity = "warning"
+	SeverityNormal   Severity = "normal"
+	SeverityOk       Severity = "ok"
+)
+
+const (
+	PriorityP1 Priority = "P1"
+	PriorityP2 Priority = "P2"
+	PriorityP3 Priority = "P3"
+)
+
+var (
+	defaultTimeout    = 30 * time.Second
+	defaultMaxRetries = 3
+	defaultSeverity   = SeverityCritical
+	defaultPriority   = PriorityP1
+	defaultTeam       = "No Team"
+)
+
+type Client interface {
+	SendAlert(ctx context.Context, resource string, service Service) error
+}
+
+type ClientImpl struct {
+	client   *http.Client
+	severity Severity
+	priority Priority
+	retries  int
+	url      string
+	text     string
+	tags     Tags
+	team     string
 }
 
 func WithHTTPClient(httpClient *http.Client) OptFn {
-	return func(c *Client) {
+	return func(c *ClientImpl) {
 		c.client = httpClient
 	}
 }
 
 func WithTimeout(timeout time.Duration) OptFn {
-	return func(c *Client) {
+	return func(c *ClientImpl) {
 		c.client.Timeout = timeout
 	}
 }
 
 func WithMaxRetries(retries int) OptFn {
-	return func(c *Client) {
+	return func(c *ClientImpl) {
 		c.retries = retries
 	}
 }
 
-func WithSeverity(severity string) OptFn {
-	return func(c *Client) {
-		c.severity = strings.ToUpper(severity)
+func WithSeverity(severity Severity) OptFn {
+	return func(c *ClientImpl) {
+		c.severity = severity
 	}
 }
 
 func WithText(text string) OptFn {
-	return func(c *Client) {
+	return func(c *ClientImpl) {
 		c.text = text
 	}
 }
 
 func WithTags(tags Tags) OptFn {
-	return func(c *Client) {
+	return func(c *ClientImpl) {
 		c.tags = tags
 	}
 }
 
-func WithPriority(priority string) OptFn {
-	return func(c *Client) {
+func WithPriority(priority Priority) OptFn {
+	return func(c *ClientImpl) {
 		c.priority = priority
 	}
 }
 
 func WithTeam(team string) OptFn {
-	return func(c *Client) {
+	return func(c *ClientImpl) {
 		c.team = team
 	}
 }
 
-func NewClient(config *config.Config, fns ...OptFn) *Client {
-	c := &Client{
+func NewClient(baseURL string, fns ...OptFn) *ClientImpl {
+	c := &ClientImpl{
+		url: baseURL,
 		client: &http.Client{
 			Timeout: defaultTimeout,
 		},
@@ -113,10 +133,6 @@ func NewClient(config *config.Config, fns ...OptFn) *Client {
 		severity: defaultSeverity,
 		priority: defaultPriority,
 		team:     defaultTeam,
-
-		url:         config.GetString("alerta.url", "https://alerta.rudderstack.com/api/"),
-		environment: config.GetString("alerta.environment", "PRODUCTION"),
-		timeout:     config.GetInt("alerta.timeout", 86400),
 	}
 
 	for _, fn := range fns {
@@ -126,7 +142,7 @@ func NewClient(config *config.Config, fns ...OptFn) *Client {
 	return c
 }
 
-func (c *Client) retry(ctx context.Context, fn func() error) error {
+func (c *ClientImpl) retry(ctx context.Context, fn func() error) error {
 	var opts backoff.BackOff
 
 	opts = backoff.NewExponentialBackOff()
@@ -136,14 +152,19 @@ func (c *Client) retry(ctx context.Context, fn func() error) error {
 	return backoff.Retry(fn, opts)
 }
 
-func (c *Client) SendAlert(ctx context.Context, resource string, service Service) error {
-	var url string
+func (c *ClientImpl) SendAlert(ctx context.Context, resource string, service Service) error {
+	environment := config.GetString("alerta.environment", "PRODUCTION")
+	timeout := config.GetInt("alerta.timeout", 86400)
 
-	// Default tags
+	// Adding default tags
 	c.tags = append(c.tags, fmt.Sprintf("sendToNotificationService=%t", true))
-	c.tags = append(c.tags, fmt.Sprintf("notificationServiceMode=%s", c.environment))
-	c.tags = append(c.tags, fmt.Sprintf("priority=%s", c.priority))
+	c.tags = append(c.tags, fmt.Sprintf("notificationServiceMode=%s", environment))
+	c.tags = append(c.tags, fmt.Sprintf("priority=%s", string(c.priority)))
 	c.tags = append(c.tags, fmt.Sprintf("team=%s", c.team))
+	if len(config.GetKubeNamespace()) > 0 {
+		c.tags = append(c.tags, fmt.Sprintf("namespace=%s", config.GetKubeNamespace()))
+	}
+
 	sort.Strings(c.tags)
 
 	group := strings.Join(c.tags, ",")
@@ -152,14 +173,14 @@ func (c *Client) SendAlert(ctx context.Context, resource string, service Service
 
 	payload := Alert{
 		Resource:    resource,
-		Environment: c.environment,
-		Timeout:     c.timeout,
-		Tags:        c.tags,
-		Severity:    c.severity,
+		Environment: environment,
+		Timeout:     timeout,
 		Group:       group,
 		Service:     service,
 		Event:       event,
 		Text:        text,
+		Tags:        c.tags,
+		Severity:    string(c.severity),
 	}
 
 	body, err := json.Marshal(payload)
@@ -168,6 +189,8 @@ func (c *Client) SendAlert(ctx context.Context, resource string, service Service
 	}
 
 	return c.retry(ctx, func() error {
+		url := fmt.Sprintf("%s/alert", c.url)
+
 		req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
 		if err != nil {
 			return fmt.Errorf("creating http request: %w", err)
@@ -183,7 +206,12 @@ func (c *Client) SendAlert(ctx context.Context, resource string, service Service
 
 		if resp.StatusCode != http.StatusOK {
 			body, _ := io.ReadAll(resp.Body)
-			return fmt.Errorf("unexpected status code %q on %s: %v", resp.Status, c.url, string(body))
+
+			err = fmt.Errorf("unexpected status code %d: %s", resp.StatusCode, string(body))
+			if !httputil.RetriableStatus(resp.StatusCode) {
+				return backoff.Permanent(fmt.Errorf("non retriable: %w", err))
+			}
+			return err
 		}
 		return err
 	})
