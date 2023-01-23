@@ -8,21 +8,21 @@ import (
 	proto "github.com/rudderlabs/rudder-server/proto/databricks"
 
 	"cloud.google.com/go/bigquery"
-	"github.com/rudderlabs/rudder-server/warehouse/deltalake/deltalakeclient"
+	deltalakeclient "github.com/rudderlabs/rudder-server/warehouse/deltalake/client"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 	"google.golang.org/api/iterator"
 )
 
 const (
-	SQLClient = "SQLClient"
-	BQClient  = "BigQueryClient"
-	DBClient  = "DBClient"
+	SQLClient       = "SQLClient"
+	BQClient        = "BigQueryClient"
+	DeltalakeClient = "DeltalakeClient"
 )
 
 type Client struct {
 	SQL             *sql.DB
 	BQ              *bigquery.Client
-	DeltalakeClient *deltalakeclient.DeltalakeClient
+	DeltalakeClient *deltalakeclient.Client
 	Type            string
 }
 
@@ -119,7 +119,7 @@ func (cl *Client) Query(statement string) (result warehouseutils.QueryResult, er
 	switch cl.Type {
 	case BQClient:
 		return cl.bqQuery(statement)
-	case DBClient:
+	case DeltalakeClient:
 		return cl.dbQuery(statement)
 	default:
 		return cl.sqlQuery(statement)
@@ -130,7 +130,7 @@ func (cl *Client) Close() {
 	switch cl.Type {
 	case BQClient:
 		cl.BQ.Close()
-	case DBClient:
+	case DeltalakeClient:
 		cl.DeltalakeClient.Close()
 	default:
 		cl.SQL.Close()

@@ -22,7 +22,7 @@ import (
 	"github.com/minio/minio-go/v6"
 
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
-	"github.com/rudderlabs/rudder-server/warehouse/deltalake/deltalakeclient"
+	"github.com/rudderlabs/rudder-server/warehouse/deltalake/client"
 	"github.com/rudderlabs/rudder-server/warehouse/validations"
 
 	"github.com/rudderlabs/rudder-server/utils/httputil"
@@ -38,7 +38,7 @@ import (
 	"github.com/rudderlabs/rudder-server/warehouse/snowflake"
 
 	_ "github.com/lib/pq"
-	"github.com/rudderlabs/rudder-server/warehouse/client"
+	warehouseclient "github.com/rudderlabs/rudder-server/warehouse/client"
 	"github.com/stretchr/testify/require"
 )
 
@@ -76,7 +76,7 @@ const (
 type EventsCountMap map[string]int
 
 type WareHouseTest struct {
-	Client                       *client.Client
+	Client                       *warehouseclient.Client
 	WriteKey                     string
 	Schema                       string
 	UserID                       string
@@ -675,7 +675,7 @@ func prometheusStats(t testing.TB) map[string]*promCLient.MetricFamily {
 	return mf
 }
 
-func queryCount(cl *client.Client, statement string) (int64, error) {
+func queryCount(cl *warehouseclient.Client, statement string) (int64, error) {
 	result, err := cl.Query(statement)
 	if err != nil || result.Values == nil {
 		return 0, err
@@ -1020,7 +1020,7 @@ func BigqueryCredentials() (credentials bigquery.BQCredentialsT, err error) {
 	return
 }
 
-func DatabricksCredentials() (credentials deltalakeclient.Credentials, err error) {
+func DatabricksCredentials() (credentials client.Credentials, err error) {
 	cred, exists := os.LookupEnv(DeltalakeIntegrationTestCredentials)
 	if !exists {
 		err = fmt.Errorf("following %s does not exists while running the Deltalake test", DeltalakeIntegrationTestCredentials)
