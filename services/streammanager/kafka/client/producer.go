@@ -124,8 +124,6 @@ func (p *Producer) Publish(ctx context.Context, msgs ...Message) error {
 	return p.writer.WriteMessages(ctx, messages...)
 }
 
-var tempError interface{ Temporary() bool }
-
 func headers(msg Message) (headers []kafka.Header) {
 	if l := len(msg.Headers); l > 0 {
 		headers = make([]kafka.Header, l)
@@ -143,25 +141,41 @@ func isErrTemporary(err error) bool {
 	isTransientNetworkError := errors.Is(err, io.ErrUnexpectedEOF) ||
 		errors.Is(err, syscall.ECONNREFUSED) ||
 		errors.Is(err, syscall.ECONNRESET) ||
-		errors.Is(err, syscall.EPIPE)
+		errors.Is(err, syscall.EPIPE) ||
+		errors.Is(err, context.DeadlineExceeded)
 	if isTransientNetworkError {
 		return true
 	}
+	var tempError interface{ Temporary() bool }
 	if errors.As(err, &tempError) {
 		return tempError.Temporary()
+	}
+	var timeoutError interface{ Timeout() bool }
+	if errors.As(err, &timeoutError) {
+		return timeoutError.Timeout()
 	}
 	return false
 }
 
 func IsProducerErrTemporary(err error) bool {
-	if we, ok := err.(kafka.WriteErrors); ok {
-		for _, err := range we {
-			// if at least one was temporary then we treat the whole batch as such
-			if isErrTemporary(err) {
-				return true
-			}
+	f := func(err error) bool {
+		if err == nil {
+			return false
 		}
-		return false
+		if we, ok := err.(kafka.WriteErrors); ok {
+			for _, err := range we {
+				// if at least one was temporary then we treat the whole batch as such
+				if isErrTemporary(err) {
+					return true
+				}
+			}
+			return false
+		}
+		return isErrTemporary(err)
 	}
-	return isErrTemporary(err)
+	var isUnwrappedErrorTemporary bool
+	if ue := errors.Unwrap(err); ue != nil {
+		isUnwrappedErrorTemporary = IsProducerErrTemporary(ue)
+	}
+	return f(err) || isUnwrappedErrorTemporary
 }
