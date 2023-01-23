@@ -143,6 +143,7 @@ func (p *ProducerManager) getCodecs() map[string]*goavro.Codec {
 type logger interface {
 	Error(args ...interface{})
 	Errorf(format string, args ...interface{})
+	Infof(format string, args ...interface{})
 }
 
 type managerStats struct {
@@ -315,6 +316,8 @@ func NewProducer(destination *backendconfig.DestinationT, o common.Opts) (*Produ
 	p, err := c.NewProducer(client.ProducerConfig{
 		ReadTimeout:  kafkaReadTimeout,
 		WriteTimeout: kafkaWriteTimeout,
+		Logger:       &client.KafkaLogger{Logger: pkgLogger},
+		ErrorLogger:  &client.KafkaLogger{Logger: pkgLogger, IsErrorLogger: true},
 	})
 	if err != nil {
 		return nil, err
@@ -366,6 +369,8 @@ func NewProducerForAzureEventHubs(destination *backendconfig.DestinationT, o com
 	p, err := c.NewProducer(client.ProducerConfig{
 		ReadTimeout:  kafkaReadTimeout,
 		WriteTimeout: kafkaWriteTimeout,
+		Logger:       &client.KafkaLogger{Logger: pkgLogger},
+		ErrorLogger:  &client.KafkaLogger{Logger: pkgLogger, IsErrorLogger: true},
 	})
 	if err != nil {
 		return nil, err
@@ -418,6 +423,8 @@ func NewProducerForConfluentCloud(destination *backendconfig.DestinationT, o com
 	p, err := c.NewProducer(client.ProducerConfig{
 		ReadTimeout:  kafkaReadTimeout,
 		WriteTimeout: kafkaWriteTimeout,
+		Logger:       &client.KafkaLogger{Logger: pkgLogger},
+		ErrorLogger:  &client.KafkaLogger{Logger: pkgLogger, IsErrorLogger: true},
 	})
 	if err != nil {
 		return nil, err
@@ -628,7 +635,6 @@ func sendMessage(ctx context.Context, jsonData json.RawMessage, p producerManage
 	if err = publish(ctx, p, message); err != nil {
 		return makeErrorResponse(fmt.Errorf("could not publish to %q: %w", topic, err))
 	}
-
 	returnMessage := fmt.Sprintf("Message delivered to topic: %s", topic)
 	return 200, returnMessage, returnMessage
 }

@@ -22,8 +22,7 @@ import (
 )
 
 var (
-	overrideArm64Check bool
-	sinceDuration      = time.Second
+	sinceDuration = time.Second
 )
 
 func TestMain(m *testing.M) {
@@ -38,9 +37,6 @@ func TestMain(m *testing.M) {
 		return sinceDuration
 	}
 
-	if os.Getenv("OVERRIDE_ARM64_CHECK") == "1" {
-		overrideArm64Check = true
-	}
 	pkgLogger = &nopLogger{}
 	os.Exit(m.Run())
 }
@@ -884,6 +880,7 @@ func (p *pMockErr) Publish(_ context.Context, msgs ...client.Message) error {
 type nopLogger struct{}
 
 func (*nopLogger) Error(...interface{})          {}
+func (*nopLogger) Infof(string, ...interface{})  {}
 func (*nopLogger) Errorf(string, ...interface{}) {}
 
 type testCleanup struct{ *testing.T }
