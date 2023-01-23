@@ -1,4 +1,4 @@
-package deltalakeclient
+package client
 
 import (
 	"context"
@@ -16,7 +16,7 @@ type Credentials struct {
 	Token string
 }
 
-type DeltalakeClient struct {
+type Client struct {
 	Logger         logger.Logger
 	CredConfig     *proto.ConnectionConfig
 	CredIdentifier string
@@ -27,7 +27,7 @@ type DeltalakeClient struct {
 }
 
 // Close closes sql connection as well as closes grpc connection
-func (client *DeltalakeClient) Close() {
+func (client *Client) Close() {
 	defer client.CloseStats.RecordDuration()()
 
 	closeConnectionResponse, err := client.Client.Close(client.Context, &proto.CloseRequest{
