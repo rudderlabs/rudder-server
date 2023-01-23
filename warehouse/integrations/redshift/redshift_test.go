@@ -3,13 +3,14 @@ package redshift_test
 import (
 	"errors"
 	"fmt"
+	"os"
+	"strings"
+	"testing"
+
 	"github.com/ory/dockertest/v3"
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/testhelper/destination"
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/testhelper"
-	"os"
-	"strings"
-	"testing"
 
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/redshift"
 

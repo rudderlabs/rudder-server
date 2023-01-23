@@ -2,10 +2,19 @@ package warehouse
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
+	"io"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"testing"
 
+	"github.com/rudderlabs/rudder-server/services/alerta"
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/redshift"
+
+	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/services/stats/memstats"
 	"github.com/stretchr/testify/require"
@@ -334,3 +343,224 @@ var _ = Describe("Upload", Ordered, func() {
 		})
 	})
 })
+
+func TestUploadJobT_UpdateTableSchema(t *testing.T) {
+	Init()
+	Init4()
+
+	var (
+		testNamespace       = "test_namespace"
+		testTable           = "test_table"
+		testColumn          = "test_column"
+		testColumnType      = "text"
+		testDestinationID   = "test_destination_id"
+		testDestinationType = "test_destination_type"
+	)
+
+	t.Run("alter column", func(t *testing.T) {
+		t.Parallel()
+
+		testCases := []struct {
+			name       string
+			createView bool
+		}{
+			{
+				name: "success",
+			},
+			{
+				name:       "view/rule",
+				createView: true,
+			},
+		}
+
+		for _, tc := range testCases {
+			tc := tc
+
+			t.Run(tc.name, func(t *testing.T) {
+				t.Parallel()
+
+				pool, err := dockertest.NewPool("")
+				require.NoError(t, err)
+
+				pgResource, err := destination.SetupPostgres(pool, t)
+				require.NoError(t, err)
+
+				rs := redshift.NewRedshift()
+				redshift.WithConfig(rs, config.Default)
+
+				s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					body, err := io.ReadAll(r.Body)
+					require.NoError(t, err)
+
+					var a alerta.Alert
+
+					err = json.Unmarshal(body, &a)
+					require.NoError(t, err)
+
+					require.Equal(t, a.Resource, "warehouse-upload-warnings")
+					require.Equal(t, a.Environment, "PRODUCTION")
+					require.Equal(t, a.Severity, alerta.SeverityCritical)
+					require.Equal(t, a.Service, alerta.Service{"upload_warnings"})
+					require.Equal(t, a.Timeout, 86400)
+
+					require.Subset(t, a.Tags, alerta.Tags{
+						"destID=test_destination_id",
+						"destType=test_destination_type",
+						"notificationServiceMode=PRODUCTION",
+						"priority=P1",
+						"sendToNotificationService=true",
+						"team=warehouse",
+					})
+
+					w.WriteHeader(http.StatusOK)
+				}))
+				defer s.Close()
+
+				rs.DB = pgResource.DB
+				rs.Namespace = testNamespace
+
+				job := &UploadJobT{
+					whManager: rs,
+					upload: &Upload{
+						DestinationID:   testDestinationID,
+						DestinationType: testDestinationType,
+					},
+					AlertaURL: s.URL,
+				}
+
+				_, err = rs.DB.Exec(
+					fmt.Sprintf("CREATE SCHEMA %s;",
+						testNamespace,
+					),
+				)
+				require.NoError(t, err)
+
+				_, err = rs.DB.Exec(
+					fmt.Sprintf("CREATE TABLE %q.%q (%s VARCHAR(512));",
+						testNamespace,
+						testTable,
+						testColumn,
+					),
+				)
+				require.NoError(t, err)
+
+				if tc.createView {
+					_, err = rs.DB.Exec(
+						fmt.Sprintf("CREATE VIEW %[1]q.%[2]q AS SELECT * FROM %[1]q.%[3]q;",
+							testNamespace,
+							fmt.Sprintf("%s_view", testTable),
+							testTable,
+						),
+					)
+					require.NoError(t, err)
+				}
+
+				err = job.UpdateTableSchema(testTable, warehouseutils.TableSchemaDiffT{
+					AlteredColumnMap: map[string]string{
+						testColumn: testColumnType,
+					},
+				})
+				require.NoError(t, err)
+			})
+		}
+	})
+
+	t.Run("skip errors", func(t *testing.T) {
+		t.Parallel()
+
+		pool, err := dockertest.NewPool("")
+		require.NoError(t, err)
+
+		pgResource, err := destination.SetupPostgres(pool, t)
+		require.NoError(t, err)
+
+		rs := redshift.NewRedshift()
+		redshift.WithConfig(rs, config.Default)
+
+		s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			body, err := io.ReadAll(r.Body)
+			require.NoError(t, err)
+
+			var a alerta.Alert
+
+			err = json.Unmarshal(body, &a)
+			require.NoError(t, err)
+
+			for i := range [10]int{} {
+				column := fmt.Sprintf("test_column_%d", i)
+
+				if i%3 == 0 {
+					require.NotContains(t, a.Event, column)
+				} else {
+					require.Contains(t, a.Event, column)
+				}
+			}
+
+			w.WriteHeader(http.StatusOK)
+		}))
+		defer s.Close()
+
+		rs.DB = pgResource.DB
+		rs.Namespace = testNamespace
+
+		job := &UploadJobT{
+			whManager: rs,
+			upload: &Upload{
+				DestinationID:   testDestinationID,
+				DestinationType: testDestinationType,
+			},
+			AlertaURL: s.URL,
+		}
+
+		_, err = rs.DB.Exec(
+			fmt.Sprintf("CREATE SCHEMA %s;",
+				testNamespace,
+			),
+		)
+		require.NoError(t, err)
+
+		_, err = rs.DB.Exec(
+			fmt.Sprintf("CREATE TABLE %q.%q (%s VARCHAR(512));",
+				testNamespace,
+				testTable,
+				testColumn,
+			),
+		)
+		require.NoError(t, err)
+
+		for i := range [10]int{} {
+			if i%3 == 0 {
+				continue
+			}
+
+			_, err = rs.DB.Exec(
+				fmt.Sprintf("ALTER TABLE %q.%q ADD COLUMN %s_%d VARCHAR(512);",
+					testNamespace,
+					testTable,
+					testColumn,
+					i,
+				),
+			)
+			require.NoError(t, err)
+		}
+
+		_, err = rs.DB.Exec(
+			fmt.Sprintf("CREATE VIEW %[1]q.%[2]q AS SELECT * FROM %[1]q.%[3]q;",
+				testNamespace,
+				fmt.Sprintf("%s_view", testTable),
+				testTable,
+			),
+		)
+		require.NoError(t, err)
+
+		alteredColumnsMap := map[string]string{}
+		for i := range [10]int{} {
+			alteredColumnsMap[fmt.Sprintf("%s_%d", testColumn, i)] = testColumnType
+		}
+
+		err = job.UpdateTableSchema(testTable, warehouseutils.TableSchemaDiffT{
+			AlteredColumnMap: alteredColumnsMap,
+		})
+		require.Error(t, err)
+	})
+}

@@ -883,7 +883,7 @@ func (job *UploadJobT) UpdateTableSchema(tName string, tableSchemaDiff warehouse
 		return fmt.Errorf("adding columns to warehouse: %w", err)
 	}
 
-	if err = job.alterColumnsToWarehouse(tName, tableSchemaDiff.ColumnMap); err != nil {
+	if err = job.alterColumnsToWarehouse(tName, tableSchemaDiff.AlteredColumnMap); err != nil {
 		return fmt.Errorf("altering columns to warehouse: %w", err)
 	}
 

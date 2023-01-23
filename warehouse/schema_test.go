@@ -272,11 +272,12 @@ func TestHandleSchemaChange(t *testing.T) {
 
 var _ = Describe("Schema", func() {
 	DescribeTable("Get table schema diff", func(tableName string, currentSchema, uploadSchema warehouseutils.SchemaT, expected warehouseutils.TableSchemaDiffT) {
-		Expect(getTableSchemaDiff(tableName, currentSchema, uploadSchema)).To(Equal(expected))
+		Expect(getTableSchemaDiff(tableName, currentSchema, uploadSchema)).To(BeEquivalentTo(expected))
 	},
 		Entry(nil, "test-table", warehouseutils.SchemaT{}, warehouseutils.SchemaT{}, warehouseutils.TableSchemaDiffT{
-			ColumnMap:     map[string]string{},
-			UpdatedSchema: map[string]string{},
+			ColumnMap:        map[string]string{},
+			UpdatedSchema:    map[string]string{},
+			AlteredColumnMap: map[string]string{},
 		}),
 
 		Entry(nil, "test-table", warehouseutils.SchemaT{}, warehouseutils.SchemaT{
@@ -292,6 +293,7 @@ var _ = Describe("Schema", func() {
 			UpdatedSchema: map[string]string{
 				"test-column": "test-value",
 			},
+			AlteredColumnMap: map[string]string{},
 		}),
 
 		Entry(nil, "test-table", warehouseutils.SchemaT{
@@ -309,6 +311,7 @@ var _ = Describe("Schema", func() {
 			UpdatedSchema: map[string]string{
 				"test-column": "test-value-1",
 			},
+			AlteredColumnMap: map[string]string{},
 		}),
 
 		Entry(nil, "test-table", warehouseutils.SchemaT{
@@ -331,6 +334,7 @@ var _ = Describe("Schema", func() {
 				"test-column-2": "test-value-2",
 				"test-column":   "test-value-2",
 			},
+			AlteredColumnMap: map[string]string{},
 		}),
 
 		Entry(nil, "test-table", warehouseutils.SchemaT{
@@ -350,7 +354,9 @@ var _ = Describe("Schema", func() {
 				"test-column-2": "test-value-2",
 				"test-column":   "text",
 			},
-			StringColumnsToBeAlteredToText: []string{"test-column"},
+			AlteredColumnMap: map[string]string{
+				"test-column": "text",
+			},
 		}),
 	)
 

@@ -23,15 +23,15 @@ type Tags []string
 type Service []string
 
 type Alert struct {
-	Resource    string  `json:"resource"`    // warehouse-upload-aborted
-	Event       string  `json:"event"`       // CRITICAL/rudder/<resource>:<group>
-	Environment string  `json:"environment"` // PRODUCTION,DEVELOPMENT,PROXYMODE,CARBONCOPY
-	Severity    string  `json:"severity"`    // warning,critical,normal // Get the full list from https://docs.alerta.io/api/alert.html#severity-table
-	Group       string  `json:"group"`       // cluster=rudder,destID=27CHciD6leAhurSyFAeN4dp14qZ,destType=RS,namespace=hosted,notificationServiceMode=CARBONCOPY,priority=P1,sendToNotificationService=true,team=warehouse
-	Text        string  `json:"text"`        // <event> is CRITICAL warehouse-upload-aborted-count: 1
-	Service     Service `json:"service"`     // {upload_aborted}
-	Timeout     int     `json:"timeout"`     // 86400
-	Tags        Tags    `json:"tags"`        // {sendToNotificationService=true,notificationServiceMode=CARBONCOPY,team=warehouse,priority=P1,destID=27CHciD6leAhurSyFAeN4dp14qZ,destType=RS,namespace=hosted,cluster=rudder}
+	Resource    string   `json:"resource"`    // warehouse-upload-aborted
+	Event       string   `json:"event"`       // CRITICAL/rudder/<resource>:<group>
+	Environment string   `json:"environment"` // PRODUCTION,DEVELOPMENT,PROXYMODE,CARBONCOPY
+	Severity    Severity `json:"severity"`    // warning,critical,normal // Get the full list from https://docs.alerta.io/api/alert.html#severity-table
+	Group       string   `json:"group"`       // cluster=rudder,destID=27CHciD6leAhurSyFAeN4dp14qZ,destType=RS,namespace=hosted,notificationServiceMode=CARBONCOPY,priority=P1,sendToNotificationService=true,team=warehouse
+	Text        string   `json:"text"`        // <event> is CRITICAL warehouse-upload-aborted-count: 1
+	Service     Service  `json:"service"`     // {upload_aborted}
+	Timeout     int      `json:"timeout"`     // 86400
+	Tags        Tags     `json:"tags"`        // {sendToNotificationService=true,notificationServiceMode=CARBONCOPY,team=warehouse,priority=P1,destID=27CHciD6leAhurSyFAeN4dp14qZ,destType=RS,namespace=hosted,cluster=rudder}
 }
 
 type Priority string
@@ -180,7 +180,7 @@ func (c *ClientImpl) SendAlert(ctx context.Context, resource string, service Ser
 		Event:       event,
 		Text:        text,
 		Tags:        c.tags,
-		Severity:    string(c.severity),
+		Severity:    c.severity,
 	}
 
 	body, err := json.Marshal(payload)
