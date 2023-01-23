@@ -13,12 +13,13 @@ import (
 
 func getSourceStat(statMap map[string]*SourceStat, sourceTag string) {
 	statMap[sourceTag] = &SourceStat{
-		Source:      trand.String(10),
+		Source:      sourceTag,
 		SourceID:    trand.String(10),
 		WorkspaceID: trand.String(10),
 		WriteKey:    trand.String(10),
 		ReqType:     trand.String(10),
 		SourceType:  trand.String(10),
+		Version:     trand.String(10),
 	}
 }
 
@@ -38,41 +39,48 @@ func TestReport(t *testing.T) {
 	rand.Seed(time.Now().UnixNano())
 	for i := 0; i < 10; i++ {
 		sourceTag := fmt.Sprint(i)
+		sourceStat := statMap[sourceTag]
+
 		randInt := rand.Int() % 10 // skipcq: GSC-G404
 		for j := 0; j < randInt; j++ {
-			statMap[sourceTag].RequestSucceeded()
+			sourceStat.RequestSucceeded()
 		}
 		counterMap[sourceTag].succeeded += randInt
 		counterMap[sourceTag].total += randInt
+
 		randInt = rand.Int() % 10 // skipcq: GSC-G404
 		for j := 0; j < randInt; j++ {
-			statMap[sourceTag].RequestDropped()
+			sourceStat.RequestDropped()
 		}
 		counterMap[sourceTag].dropped += randInt
 		counterMap[sourceTag].total += randInt
+
 		randInt = rand.Int() % 10 // skipcq: GSC-G404
 		for j := 0; j < randInt; j++ {
-			statMap[sourceTag].RequestSuppressed()
+			sourceStat.RequestSuppressed()
 		}
 		counterMap[sourceTag].suppressed += randInt
 		counterMap[sourceTag].total += randInt
+
 		randInt = rand.Int() % 10 // skipcq: GSC-G404
 		for j := 0; j < randInt; j++ {
-			statMap[sourceTag].RequestFailed("reason")
+			sourceStat.RequestFailed("reason")
 		}
 		counterMap[sourceTag].failed += randInt
 		counterMap[sourceTag].total += randInt
+
 		randInt = rand.Int() % 10 // skipcq: GSC-G404
 		for j := 0; j < randInt; j++ {
-			statMap[sourceTag].RequestEventsSucceeded(10)
+			sourceStat.RequestEventsSucceeded(10)
 		}
 		counterMap[sourceTag].eventsSucceeded += randInt * 10
 		counterMap[sourceTag].eventsTotal += randInt * 10
 		counterMap[sourceTag].total += randInt
 		counterMap[sourceTag].succeeded += randInt
+
 		randInt = rand.Int() % 10 // skipcq: GSC-G404
 		for j := 0; j < randInt; j++ {
-			statMap[sourceTag].RequestEventsFailed(10, "reason")
+			sourceStat.RequestEventsFailed(10, "reason")
 		}
 		counterMap[sourceTag].eventsFailed += randInt * 10
 		counterMap[sourceTag].eventsTotal += randInt * 10
@@ -96,6 +104,7 @@ func TestReport(t *testing.T) {
 			"writeKey":    statMap[sourceTag].WriteKey,
 			"reqType":     statMap[sourceTag].ReqType,
 			"sourceType":  statMap[sourceTag].SourceType,
+			"sdkVersion":  statMap[sourceTag].Version,
 		}
 		failedTags := map[string]string{
 			"source":      statMap[sourceTag].Source,
@@ -103,8 +112,9 @@ func TestReport(t *testing.T) {
 			"workspaceId": statMap[sourceTag].WorkspaceID,
 			"writeKey":    statMap[sourceTag].WriteKey,
 			"reqType":     statMap[sourceTag].ReqType,
-			"reason":      "reason",
 			"sourceType":  statMap[sourceTag].SourceType,
+			"sdkVersion":  statMap[sourceTag].Version,
+			"reason":      "reason",
 		}
 		require.Equal(t,
 			float64(counterMap[sourceTag].total),

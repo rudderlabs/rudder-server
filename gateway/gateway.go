@@ -418,7 +418,7 @@ func (gateway *HandleT) NewSourceStat(writeKey, reqType string) *gwstats.SourceS
 		WriteKey:    writeKey,
 		ReqType:     reqType,
 		WorkspaceID: gateway.getWorkspaceForWriteKey(writeKey),
-		SourceType:  gateway.getSourceDefForWriteKey(writeKey),
+		SourceType:  gateway.getSourceCategoryForWriteKey(writeKey),
 	}
 }
 
@@ -441,13 +441,13 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 		for _, req := range breq.batchRequest {
 			writeKey := req.writeKey
 			sourceTag := gateway.getSourceTagFromWriteKey(writeKey)
-			if _, ok := sourceStats[sourceTag]; !ok {
-				sourceStats[sourceTag] = gateway.NewSourceStat(
-					writeKey,
-					req.reqType,
-				)
+			var sourceStat *gwstats.SourceStat
+			var ok bool
+			if sourceStat, ok = sourceStats[sourceTag]; !ok {
+				sourceStat = gateway.NewSourceStat(writeKey, req.reqType)
+				sourceStats[sourceTag] = sourceStat
 			}
-			job, numEvents, err := gateway.getJobFromRequest(req)
+			jobData, err := gateway.getJobDataFromRequest(req)
 			if err != nil {
 				switch {
 				case err == errRequestDropped:
@@ -458,14 +458,15 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 					sourceStats[sourceTag].RequestSuppressed()
 				default:
 					req.done <- err.Error()
-					sourceStats[sourceTag].RequestEventsFailed(numEvents, err.Error())
+					sourceStats[sourceTag].RequestEventsFailed(jobData.numEvents, err.Error())
 				}
 				continue
 			}
-			jobList = append(jobList, job)
-			jobIDReqMap[job.UUID] = req
-			jobSourceTagMap[job.UUID] = sourceTag
-			eventBatchesToRecord = append(eventBatchesToRecord, sourceDebugger{data: job.EventPayload, writeKey: writeKey})
+			sourceStat.Version = jobData.version
+			jobList = append(jobList, jobData.job)
+			jobIDReqMap[jobData.job.UUID] = req
+			jobSourceTagMap[jobData.job.UUID] = sourceTag
+			eventBatchesToRecord = append(eventBatchesToRecord, sourceDebugger{data: jobData.job.EventPayload, writeKey: writeKey})
 		}
 
 		errorMessagesMap := make(map[uuid.UUID]string)
@@ -506,15 +507,24 @@ var (
 	errRequestSuppressed = errors.New("request suppressed")
 )
 
-func (gateway *HandleT) getJobFromRequest(req *webRequestT) (job *jobsdb.JobT, numEvents int, err error) {
-	writeKey := req.writeKey
-	sourceID := gateway.getSourceIDForWriteKey(writeKey)
-	// Should be function of body
-	workspaceId := gateway.getWorkspaceForWriteKey(writeKey)
-	userIDHeader := req.userIDHeader
+type jobFromReq struct {
+	job       *jobsdb.JobT
+	numEvents int
+	version   string
+}
 
-	ipAddr := req.ipAddr
-	body := req.requestPayload
+func (gateway *HandleT) getJobDataFromRequest(req *webRequestT) (jobData *jobFromReq, err error) {
+	var (
+		writeKey = req.writeKey
+		sourceID = gateway.getSourceIDForWriteKey(writeKey)
+		// Should be function of body
+		workspaceId  = gateway.getWorkspaceForWriteKey(writeKey)
+		userIDHeader = req.userIDHeader
+		ipAddr       = req.ipAddr
+		body         = req.requestPayload
+	)
+
+	jobData = &jobFromReq{}
 	if !gjson.ValidBytes(body) {
 		err = errors.New(response.InvalidJSON)
 		return
@@ -533,7 +543,7 @@ func (gateway *HandleT) getJobFromRequest(req *webRequestT) (job *jobsdb.JobT, n
 			return
 		}
 	}
-	numEvents = len(gjson.GetBytes(body, "batch").Array())
+	jobData.numEvents = len(gjson.GetBytes(body, "batch").Array())
 
 	if !gateway.isValidWriteKey(writeKey) {
 		err = errors.New(response.InvalidWriteKey)
@@ -650,6 +660,15 @@ func (gateway *HandleT) getJobFromRequest(req *webRequestT) (job *jobsdb.JobT, n
 		"batch.0.context.sources.task_run_id",
 	).Str
 
+	jobData.version = gjson.GetBytes(
+		body,
+		"batch.0.context.library.name",
+	).Str + "/" +
+		gjson.GetBytes(
+			body,
+			"batch.0.context.library.version",
+		).Str
+
 	id := uuid.New()
 
 	params := map[string]interface{}{
@@ -668,26 +687,30 @@ func (gateway *HandleT) getJobFromRequest(req *webRequestT) (job *jobsdb.JobT, n
 		)
 	}
 	err = nil
-	job = &jobsdb.JobT{
+	job := &jobsdb.JobT{
 		UUID:         id,
 		UserID:       builtUserID,
 		Parameters:   marshalledParams,
 		CustomVal:    CustomVal,
 		EventPayload: body,
-		EventCount:   numEvents,
+		EventCount:   jobData.numEvents,
 		WorkspaceId:  workspaceId,
 	}
+	jobData.job = job
 	return
 }
 
-func (*HandleT) getSourceDefForWriteKey(writeKey string) string {
+func (*HandleT) getSourceCategoryForWriteKey(writeKey string) (category string) {
 	configSubscriberLock.RLock()
 	defer configSubscriberLock.RUnlock()
 
 	if _, ok := writeKeysSourceMap[writeKey]; ok {
-		return writeKeysSourceMap[writeKey].SourceDefinition.Name
+		category = writeKeysSourceMap[writeKey].SourceDefinition.Category
+		if category == "" {
+			category = "eventStream"
+		}
 	}
-	return ""
+	return
 }
 
 func (*HandleT) getWorkspaceForWriteKey(writeKey string) string {
@@ -902,7 +925,7 @@ func (gateway *HandleT) getPayloadAndWriteKey(_ http.ResponseWriter, r *http.Req
 			ReqType:     reqType,
 			SourceID:    sourceID,
 			WorkspaceID: gateway.getWorkspaceForWriteKey(writeKey),
-			SourceType:  gateway.getSourceDefForWriteKey(writeKey),
+			SourceType:  gateway.getSourceCategoryForWriteKey(writeKey),
 		}
 		stat.RequestFailed("requestBodyReadFailed")
 		stat.Report(gateway.stats)
