@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"reflect"
 	"sort"
 	"strings"
@@ -45,13 +47,9 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/types"
 )
 
-var testTimeout = 20 * time.Second
-
 type testContext struct {
-	asyncHelper       testutils.AsyncTestHelper
-	configInitialised bool
-	dbReadBatchSize   int
-	processEventSize  int
+	dbReadBatchSize  int
+	processEventSize int
 
 	mockCtrl              *gomock.Controller
 	mockBackendConfig     *mocksBackendConfig.MockBackendConfig
@@ -74,20 +72,11 @@ func (c *testContext) Setup() {
 	c.mockProcErrorsDB = mocksJobsDB.NewMockJobsDB(c.mockCtrl)
 	c.MockRsourcesService = rsources.NewMockJobService(c.mockCtrl)
 
-	c.configInitialised = false
-	tFunc := c.asyncHelper.ExpectAndNotifyCallback()
-
 	c.mockBackendConfig.EXPECT().Subscribe(gomock.Any(), backendconfig.TopicProcessConfig).
 		DoAndReturn(func(ctx context.Context, topic backendconfig.Topic) pubsub.DataChannel {
-			tFunc()
 			ch := make(chan pubsub.DataEvent, 1)
 			ch <- pubsub.DataEvent{Data: map[string]backendconfig.ConfigT{sampleWorkspaceID: sampleBackendConfig}, Topic: string(topic)}
-			c.configInitialised = true
-
-			go func() {
-				<-ctx.Done()
-				close(ch)
-			}()
+			close(ch)
 			return ch
 		})
 	c.dbReadBatchSize = 10000
@@ -98,7 +87,6 @@ func (c *testContext) Setup() {
 }
 
 func (c *testContext) Finish() {
-	c.asyncHelper.WaitWithTimeout(testTimeout)
 	c.mockCtrl.Finish()
 }
 
@@ -124,21 +112,21 @@ var (
 )
 
 // setEnableEventSchemasFeature overrides enableEventSchemasFeature configuration and returns previous value
-func setEnableEventSchemasFeature(b bool) bool {
-	prev := enableEventSchemasFeature
-	enableEventSchemasFeature = b
+func setEnableEventSchemasFeature(proc *Handle, b bool) bool {
+	prev := proc.config.enableEventSchemasFeature
+	proc.config.enableEventSchemasFeature = b
 	return prev
 }
 
 // SetDisableDedupFeature overrides SetDisableDedupFeature configuration and returns previous value
-func setDisableDedupFeature(b bool) bool {
-	prev := enableDedup
-	enableDedup = b
+func setDisableDedupFeature(proc *Handle, b bool) bool {
+	prev := proc.config.enableDedup
+	proc.config.enableDedup = b
 	return prev
 }
 
-func setMainLoopTimeout(timeout time.Duration) {
-	mainLoopTimeout = timeout
+func setMainLoopTimeout(proc *Handle, timeout time.Duration) {
+	proc.config.mainLoopTimeout = timeout
 }
 
 var sampleWorkspaceID = "some-workspace-id"
@@ -317,25 +305,33 @@ func initProcessor() {
 	dedup.Init()
 	misc.Init()
 	integrations.Init()
-	Init()
 }
 
-var _ = Describe("Processor", func() {
+var _ = Describe("Processor", Ordered, func() {
 	initProcessor()
 
 	var c *testContext
+	transformerServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"routerTransform": {}}`))
+		w.WriteHeader(http.StatusOK)
+	}))
 
+	prepareHandle := func(proc *Handle) *Handle {
+		proc.config.transformerURL = transformerServer.URL
+		setEnableEventSchemasFeature(proc, false)
+		return proc
+	}
 	BeforeEach(func() {
-		transformerURL = "http://test"
-
 		c = &testContext{}
 		c.Setup()
-
-		setEnableEventSchemasFeature(false)
 	})
 
 	AfterEach(func() {
 		c.Finish()
+	})
+
+	AfterAll(func() {
+		transformerServer.Close()
 	})
 
 	Context("Initialization", func() {
@@ -344,27 +340,29 @@ var _ = Describe("Processor", func() {
 			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
 			mockTransformer.EXPECT().Setup().Times(1)
 
-			processor := &HandleT{
-				transformer: mockTransformer,
-			}
+			processor := prepareHandle(NewHandle(mockTransformer))
 
 			// crash recover returns empty list
 			c.mockGatewayJobsDB.EXPECT().DeleteExecuting().Times(1)
 
 			processor.Setup(c.mockBackendConfig, c.mockGatewayJobsDB, c.mockRouterJobsDB, c.mockBatchRouterJobsDB, c.mockProcErrorsDB, &clearDB, nil, c.MockMultitenantHandle, transientsource.NewEmptyService(), fileuploader.NewDefaultProvider(), c.MockRsourcesService, destinationdebugger.NewNoOpService(), transformationdebugger.NewNoOpService())
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
+			Expect(processor.config.asyncInit.WaitContext(ctx)).To(BeNil())
 		})
 
 		It("should recover after crash", func() {
 			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
 			mockTransformer.EXPECT().Setup().Times(1)
 
-			processor := &HandleT{
-				transformer: mockTransformer,
-			}
+			processor := prepareHandle(NewHandle(mockTransformer))
 
 			c.mockGatewayJobsDB.EXPECT().DeleteExecuting().Times(1)
 
 			processor.Setup(c.mockBackendConfig, c.mockGatewayJobsDB, c.mockRouterJobsDB, c.mockBatchRouterJobsDB, c.mockProcErrorsDB, &clearDB, nil, c.MockMultitenantHandle, transientsource.NewEmptyService(), fileuploader.NewDefaultProvider(), c.MockRsourcesService, destinationdebugger.NewNoOpService(), transformationdebugger.NewNoOpService())
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
+			Expect(processor.config.asyncInit.WaitContext(ctx)).To(BeNil())
 		})
 	})
 
@@ -379,11 +377,12 @@ var _ = Describe("Processor", func() {
 			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
 			mockTransformer.EXPECT().Setup().Times(1)
 
-			processor := &HandleT{
-				transformer: mockTransformer,
-			}
+			processor := prepareHandle(NewHandle(mockTransformer))
 
 			processor.Setup(c.mockBackendConfig, c.mockGatewayJobsDB, c.mockRouterJobsDB, c.mockBatchRouterJobsDB, c.mockProcErrorsDB, &clearDB, c.MockReportingI, c.MockMultitenantHandle, transientsource.NewEmptyService(), fileuploader.NewDefaultProvider(), c.MockRsourcesService, destinationdebugger.NewNoOpService(), transformationdebugger.NewNoOpService())
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
+			Expect(processor.config.asyncInit.WaitContext(ctx)).To(BeNil())
 
 			payloadLimit := processor.payloadLimit
 			c.mockGatewayJobsDB.EXPECT().GetUnprocessed(gomock.Any(), jobsdb.GetQueryParamsT{CustomValFilters: gatewayCustomVal, JobsLimit: c.dbReadBatchSize, EventsLimit: c.processEventSize, PayloadSizeLimit: payloadLimit}).Return(jobsdb.JobsResult{Jobs: emptyJobsList}, nil).Times(1)
@@ -563,9 +562,7 @@ var _ = Describe("Processor", func() {
 						assertJobStatus(unprocessedJobsList[i], statuses[i], jobsdb.Succeeded.State)
 					}
 				})
-			processor := &HandleT{
-				transformer: mockTransformer,
-			}
+			processor := prepareHandle(NewHandle(mockTransformer))
 
 			processorSetupAndAssertJobHandling(processor, c)
 		})
@@ -760,9 +757,7 @@ var _ = Describe("Processor", func() {
 					}
 				})
 
-			processor := &HandleT{
-				transformer: mockTransformer,
-			}
+			processor := prepareHandle(NewHandle(mockTransformer))
 
 			processorSetupAndAssertJobHandling(processor, c)
 		})
@@ -851,11 +846,14 @@ var _ = Describe("Processor", func() {
 				_ = f(jobsdb.EmptyUpdateSafeTx())
 			}).Return(nil).Times(1)
 			c.mockGatewayJobsDB.EXPECT().UpdateJobStatusInTx(gomock.Any(), gomock.Any(), gomock.Len(len(unprocessedJobsList)), gatewayCustomVal, nil).Times(1).After(callStoreRouter)
-			processor := &HandleT{
-				transformer: mockTransformer,
-			}
+			processor := prepareHandle(NewHandle(mockTransformer))
 
 			Setup(processor, c, true, false)
+
+			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer cancel()
+			Expect(processor.config.asyncInit.WaitContext(ctx)).To(BeNil())
+
 			processor.dedupHandler = c.MockDedup
 			processor.multitenantI = c.MockMultitenantHandle
 			handlePendingGatewayJobs(processor)
@@ -989,9 +987,7 @@ var _ = Describe("Processor", func() {
 					}
 				})
 
-			processor := &HandleT{
-				transformer: mockTransformer,
-			}
+			processor := prepareHandle(NewHandle(mockTransformer))
 
 			processorSetupAndAssertJobHandling(processor, c)
 		})
@@ -1121,9 +1117,7 @@ var _ = Describe("Processor", func() {
 					}
 				})
 
-			processor := &HandleT{
-				transformer: mockTransformer,
-			}
+			processor := prepareHandle(NewHandle(mockTransformer))
 
 			processorSetupAndAssertJobHandling(processor, c)
 		})
@@ -1194,9 +1188,7 @@ var _ = Describe("Processor", func() {
 			c.mockProcErrorsDB.EXPECT().Store(gomock.Any(), gomock.Any()).Times(0).
 				Do(func(ctx context.Context, jobs []*jobsdb.JobT) {})
 
-			processor := &HandleT{
-				transformer: mockTransformer,
-			}
+			processor := prepareHandle(NewHandle(mockTransformer))
 
 			processorSetupAndAssertJobHandling(processor, c)
 		})
@@ -1208,22 +1200,27 @@ var _ = Describe("Processor", func() {
 			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
 			mockTransformer.EXPECT().Setup().Times(1)
 
-			processor := &HandleT{
-				transformer: mockTransformer,
-			}
+			processor := prepareHandle(NewHandle(mockTransformer))
 
 			// crash recover returns empty list
 			c.mockGatewayJobsDB.EXPECT().DeleteExecuting().Times(1)
-			SetFeaturesRetryAttempts(0)
+			processor.config.featuresRetryMaxAttempts = 0
 			processor.Setup(c.mockBackendConfig, c.mockGatewayJobsDB, c.mockRouterJobsDB, c.mockBatchRouterJobsDB, c.mockProcErrorsDB, &clearDB, nil, c.MockMultitenantHandle, transientsource.NewEmptyService(), fileuploader.NewDefaultProvider(), c.MockRsourcesService, destinationdebugger.NewNoOpService(), transformationdebugger.NewNoOpService())
 
-			setMainLoopTimeout(1 * time.Second)
+			setMainLoopTimeout(processor, 1*time.Second)
 
 			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 			defer cancel()
 
 			go processor.mainLoop(ctx)
-			Eventually(func() bool { return isUnLocked }, 30*time.Second, 10*time.Millisecond).Should(BeFalse())
+			Consistently(func() bool {
+				select {
+				case <-processor.config.asyncInit.Wait():
+					return true
+				default:
+					return false
+				}
+			}, 5*time.Second, 10*time.Millisecond).Should(BeFalse())
 		})
 	})
 
@@ -1233,18 +1230,16 @@ var _ = Describe("Processor", func() {
 			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
 			mockTransformer.EXPECT().Setup().Times(1)
 
-			processor := &HandleT{
-				transformer: mockTransformer,
-			}
+			processor := prepareHandle(NewHandle(mockTransformer))
 
 			// crash recover returns empty list
 			c.mockGatewayJobsDB.EXPECT().DeleteExecuting().Times(1)
-			SetFeaturesRetryAttempts(0)
+			processor.config.featuresRetryMaxAttempts = 0
 			processor.Setup(c.mockBackendConfig, c.mockGatewayJobsDB, c.mockRouterJobsDB, c.mockBatchRouterJobsDB, c.mockProcErrorsDB, &clearDB, c.MockReportingI, c.MockMultitenantHandle, transientsource.NewEmptyService(), fileuploader.NewDefaultProvider(), c.MockRsourcesService, destinationdebugger.NewNoOpService(), transformationdebugger.NewNoOpService())
 			defer processor.Shutdown()
 			c.MockReportingI.EXPECT().WaitForSetup(gomock.Any(), gomock.Any()).Times(1)
 
-			processor.readLoopSleep = time.Millisecond
+			processor.config.readLoopSleep = time.Millisecond
 
 			c.mockProcErrorsDB.EXPECT().FailExecuting()
 			c.mockProcErrorsDB.EXPECT().GetToRetry(gomock.Any(), gomock.Any()).Return(jobsdb.JobsResult{}, nil).AnyTimes()
@@ -2019,27 +2014,24 @@ func assertDestinationTransform(messages map[string]mockEventData, sourceId, des
 	}
 }
 
-func processorSetupAndAssertJobHandling(processor *HandleT, c *testContext) {
+func processorSetupAndAssertJobHandling(processor *Handle, c *testContext) {
 	Setup(processor, c, false, false)
 	processor.multitenantI = c.MockMultitenantHandle
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	Expect(processor.config.asyncInit.WaitContext(ctx)).To(BeNil())
+	GinkgoT().Log("Processor setup and init done")
 	handlePendingGatewayJobs(processor)
 }
 
-func Setup(processor *HandleT, c *testContext, enableDedup, enableReporting bool) {
+func Setup(processor *Handle, c *testContext, enableDedup, enableReporting bool) {
 	clearDB := false
-	setDisableDedupFeature(enableDedup)
+	setDisableDedupFeature(processor, enableDedup)
 	processor.Setup(c.mockBackendConfig, c.mockGatewayJobsDB, c.mockRouterJobsDB, c.mockBatchRouterJobsDB, c.mockProcErrorsDB, &clearDB, c.MockReportingI, c.MockMultitenantHandle, transientsource.NewEmptyService(), fileuploader.NewDefaultProvider(), c.MockRsourcesService, destinationdebugger.NewNoOpService(), transformationdebugger.NewNoOpService())
 	processor.reportingEnabled = enableReporting
-	// make sure the mock backend config has sent the configuration
-	testutils.RunTestWithTimeout(func() {
-		for !c.configInitialised {
-			// a minimal sleep is required, to free this thread and allow scheduler to run other goroutines.
-			time.Sleep(time.Nanosecond)
-		}
-	}, time.Second)
 }
 
-func handlePendingGatewayJobs(processor *HandleT) {
+func handlePendingGatewayJobs(processor *Handle) {
 	didWork := processor.handlePendingGatewayJobs()
 	Expect(didWork).To(Equal(true))
 }
@@ -2064,8 +2056,7 @@ var _ = Describe("TestJobSplitter", func() {
 	}
 	Context("testing jobs splitter, which split jobs into some sub-jobs", func() {
 		It("default subJobSize: 2k", func() {
-			loadConfig()
-
+			proc := NewHandle(nil)
 			expectedSubJobs := []subJob{
 				{
 					subJobs: []*jobsdb.JobT{
@@ -2088,12 +2079,12 @@ var _ = Describe("TestJobSplitter", func() {
 					hasMore: false,
 				},
 			}
-			Expect(len(jobSplitter(jobs, nil))).To(Equal(len(expectedSubJobs)))
-			Expect(jobSplitter(jobs, nil)).To(Equal(expectedSubJobs))
+			Expect(len(proc.jobSplitter(jobs, nil))).To(Equal(len(expectedSubJobs)))
+			Expect(proc.jobSplitter(jobs, nil)).To(Equal(expectedSubJobs))
 		})
 		It("subJobSize: 1, i.e. dividing read jobs into batch of 1", func() {
-			loadConfig()
-			subJobSize = 1
+			proc := NewHandle(nil)
+			proc.config.subJobSize = 1
 			expectedSubJobs := []subJob{
 				{
 					subJobs: []*jobsdb.JobT{
@@ -2136,11 +2127,11 @@ var _ = Describe("TestJobSplitter", func() {
 					hasMore: false,
 				},
 			}
-			Expect(jobSplitter(jobs, nil)).To(Equal(expectedSubJobs))
+			Expect(proc.jobSplitter(jobs, nil)).To(Equal(expectedSubJobs))
 		})
 		It("subJobSize: 2, i.e. dividing read jobs into batch of 2", func() {
-			loadConfig()
-			subJobSize = 2
+			proc := NewHandle(nil)
+			proc.config.subJobSize = 2
 			expectedSubJobs := []subJob{
 				{
 					subJobs: []*jobsdb.JobT{
@@ -2173,13 +2164,12 @@ var _ = Describe("TestJobSplitter", func() {
 					hasMore: false,
 				},
 			}
-			Expect(jobSplitter(jobs, nil)).To(Equal(expectedSubJobs))
+			Expect(proc.jobSplitter(jobs, nil)).To(Equal(expectedSubJobs))
 		})
 	})
 })
 
 var _ = Describe("TestSubJobMerger", func() {
-	subJobSize = 1
 	expectedMergedJob := storeMessage{
 		statusList: []*jobsdb.JobStatusT{
 			{

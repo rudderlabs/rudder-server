@@ -9,17 +9,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rudderlabs/rudder-server/warehouse/integrations/testhelper"
-
-	"github.com/rudderlabs/rudder-server/warehouse/integrations/deltalake"
-	"github.com/rudderlabs/rudder-server/warehouse/integrations/deltalake/deltalakeclient"
-
 	"github.com/ory/dockertest/v3"
 	"github.com/rudderlabs/rudder-server/testhelper/destination"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/utils/logger"
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/deltalake/client"
 	"google.golang.org/grpc"
 
 	proto "github.com/rudderlabs/rudder-server/proto/databricks"
@@ -30,9 +26,12 @@ import (
 
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 
-	"github.com/rudderlabs/rudder-server/warehouse/client"
+	warehouseclient "github.com/rudderlabs/rudder-server/warehouse/client"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 	"github.com/stretchr/testify/require"
+
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/deltalake"
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/testhelper"
 )
 
 func TestIntegrationDeltalake(t *testing.T) {
@@ -53,7 +52,7 @@ func TestIntegrationDeltalake(t *testing.T) {
 	dl := deltalake.NewDeltalake()
 	deltalake.WithConfig(dl, config.Default)
 
-	db, err := dl.NewDeltalakeClient(&credentials, 0)
+	db, err := dl.NewClient(&credentials, 0)
 	require.NoError(t, err)
 
 	var (
@@ -152,9 +151,9 @@ func TestIntegrationDeltalake(t *testing.T) {
 					"aliases":       1,
 					"groups":        1,
 				},
-				Client: &client.Client{
+				Client: &warehouseclient.Client{
 					DeltalakeClient: db,
-					Type:            client.DBClient,
+					Type:            warehouseclient.DeltalakeClient,
 				},
 				StatsToVerify: []string{
 					"warehouse_deltalake_grpcExecTime",
@@ -369,7 +368,7 @@ func TestDeltalake_CreateTable(t *testing.T) {
 					Config: tc.config,
 				},
 			}
-			dl.DeltalakeClient = &deltalakeclient.DeltalakeClient{
+			dl.Client = &client.Client{
 				Client: mockClient,
 			}
 
@@ -456,7 +455,7 @@ func TestDeltalake_CreateSchema(t *testing.T) {
 					ID: "test-destination-id",
 				},
 			}
-			dl.DeltalakeClient = &deltalakeclient.DeltalakeClient{
+			dl.Client = &client.Client{
 				Client: mockClient,
 			}
 
@@ -536,7 +535,7 @@ func TestDeltalake_DropTable(t *testing.T) {
 				},
 			}
 			dl.Logger = logger.NOP
-			dl.DeltalakeClient = &deltalakeclient.DeltalakeClient{
+			dl.Client = &client.Client{
 				Client: mockClient,
 			}
 
@@ -618,7 +617,7 @@ func TestDeltalake_AddColumns(t *testing.T) {
 					ID: "test-destination-id",
 				},
 			}
-			dl.DeltalakeClient = &deltalakeclient.DeltalakeClient{
+			dl.Client = &client.Client{
 				Client: mockClient,
 			}
 
@@ -687,7 +686,7 @@ func TestDeltalake_GetTotalCountInTable(t *testing.T) {
 				Namespace:   namespace,
 				WorkspaceID: workspaceID,
 			}
-			dl.DeltalakeClient = &deltalakeclient.DeltalakeClient{
+			dl.Client = &client.Client{
 				Client: mockClient,
 			}
 
@@ -987,7 +986,7 @@ func TestDeltalake_LoadTable(t *testing.T) {
 					Config: tc.config,
 				},
 			}
-			dl.DeltalakeClient = &deltalakeclient.DeltalakeClient{
+			dl.Client = &client.Client{
 				Client: mockClient,
 			}
 			dl.Uploader = &mockUploader{
@@ -1069,7 +1068,7 @@ func TestDeltalake_LoadUserTables(t *testing.T) {
 				Namespace:   namespace,
 				WorkspaceID: workspaceID,
 			}
-			dl.DeltalakeClient = &deltalakeclient.DeltalakeClient{
+			dl.Client = &client.Client{
 				Client: mockClient,
 			}
 			dl.Uploader = &mockUploader{
@@ -1152,7 +1151,7 @@ func TestDeltalake_LoadTestTable(t *testing.T) {
 				Namespace:   namespace,
 				WorkspaceID: workspaceID,
 			}
-			dl.DeltalakeClient = &deltalakeclient.DeltalakeClient{
+			dl.Client = &client.Client{
 				Client: mockClient,
 			}
 			dl.Uploader = &mockUploader{

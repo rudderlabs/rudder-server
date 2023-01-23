@@ -171,14 +171,11 @@ func initJobsDB() {
 	router.InitRouterAdmin()
 	batchrouter.Init()
 	batchrouter.Init2()
-	processor.Init()
 	Init()
 }
 
 func TestDynamicClusterManager(t *testing.T) {
 	initJobsDB()
-
-	processor.SetFeaturesRetryAttempts(0)
 
 	mockCtrl := gomock.NewController(t)
 	mockMTI := mock_tenantstats.NewMockMultiTenantI(mockCtrl)
@@ -202,7 +199,8 @@ func TestDynamicClusterManager(t *testing.T) {
 		"batch_rt": &jobsdb.MultiTenantLegacy{HandleT: brtDB},
 	})
 
-	processor := processor.New(ctx, &clearDb, gwDB, rtDB, brtDB, errDB, mockMTI, &reporting.NOOP{}, transientsource.NewEmptyService(), fileuploader.NewDefaultProvider(), rsources.NewNoOpService(), destinationdebugger.NewNoOpService(), transformationdebugger.NewNoOpService())
+	processor := processor.New(ctx, &clearDb, gwDB, rtDB, brtDB, errDB, mockMTI, &reporting.NOOP{}, transientsource.NewEmptyService(), fileuploader.NewDefaultProvider(), rsources.NewNoOpService(), destinationdebugger.NewNoOpService(), transformationdebugger.NewNoOpService(),
+		processor.WithFeaturesRetryMaxAttempts(0))
 	processor.BackendConfig = mockBackendConfig
 	processor.Transformer = mockTransformer
 	mockBackendConfig.EXPECT().WaitForConfig(gomock.Any()).Times(1)

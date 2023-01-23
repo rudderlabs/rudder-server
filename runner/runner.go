@@ -38,7 +38,6 @@ import (
 	"github.com/rudderlabs/rudder-server/gateway"
 	"github.com/rudderlabs/rudder-server/gateway/webhook"
 	"github.com/rudderlabs/rudder-server/jobsdb"
-	"github.com/rudderlabs/rudder-server/processor"
 	"github.com/rudderlabs/rudder-server/processor/integrations"
 	"github.com/rudderlabs/rudder-server/processor/stash"
 	"github.com/rudderlabs/rudder-server/processor/transformer"
@@ -359,7 +358,6 @@ func runAllInit() {
 	eventschema.Init()
 	eventschema.Init2()
 	stash.Init()
-	processor.Init()
 	kafka.Init()
 	customdestinationmanager.Init()
 	routertransformer.Init()
