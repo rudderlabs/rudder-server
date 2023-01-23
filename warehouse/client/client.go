@@ -8,22 +8,22 @@ import (
 	proto "github.com/rudderlabs/rudder-server/proto/databricks"
 
 	"cloud.google.com/go/bigquery"
-	"github.com/rudderlabs/rudder-server/warehouse/deltalake/databricks"
+	deltalakeclient "github.com/rudderlabs/rudder-server/warehouse/deltalake/client"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 	"google.golang.org/api/iterator"
 )
 
 const (
-	SQLClient = "SQLClient"
-	BQClient  = "BigQueryClient"
-	DBClient  = "DBClient"
+	SQLClient       = "SQLClient"
+	BQClient        = "BigQueryClient"
+	DeltalakeClient = "DeltalakeClient"
 )
 
 type Client struct {
-	SQL       *sql.DB
-	BQ        *bigquery.Client
-	DBHandleT *databricks.DBHandleT
-	Type      string
+	SQL             *sql.DB
+	BQ              *bigquery.Client
+	DeltalakeClient *deltalakeclient.Client
+	Type            string
 }
 
 func (cl *Client) sqlQuery(statement string) (result warehouseutils.QueryResult, err error) {
@@ -100,10 +100,10 @@ func (cl *Client) bqQuery(statement string) (result warehouseutils.QueryResult, 
 }
 
 func (cl *Client) dbQuery(statement string) (result warehouseutils.QueryResult, err error) {
-	executeResponse, err := cl.DBHandleT.Client.ExecuteQuery(cl.DBHandleT.Context, &proto.ExecuteQueryRequest{
-		Config:       cl.DBHandleT.CredConfig,
+	executeResponse, err := cl.DeltalakeClient.Client.ExecuteQuery(cl.DeltalakeClient.Context, &proto.ExecuteQueryRequest{
+		Config:       cl.DeltalakeClient.CredConfig,
 		SqlStatement: statement,
-		Identifier:   cl.DBHandleT.CredIdentifier,
+		Identifier:   cl.DeltalakeClient.CredIdentifier,
 	})
 	if err != nil {
 		return
@@ -119,7 +119,7 @@ func (cl *Client) Query(statement string) (result warehouseutils.QueryResult, er
 	switch cl.Type {
 	case BQClient:
 		return cl.bqQuery(statement)
-	case DBClient:
+	case DeltalakeClient:
 		return cl.dbQuery(statement)
 	default:
 		return cl.sqlQuery(statement)
@@ -130,8 +130,8 @@ func (cl *Client) Close() {
 	switch cl.Type {
 	case BQClient:
 		cl.BQ.Close()
-	case DBClient:
-		cl.DBHandleT.Close()
+	case DeltalakeClient:
+		cl.DeltalakeClient.Close()
 	default:
 		cl.SQL.Close()
 	}
