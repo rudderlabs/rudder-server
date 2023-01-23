@@ -173,9 +173,8 @@ func IsProducerErrTemporary(err error) bool {
 		}
 		return isErrTemporary(err)
 	}
-	var isUnwrappedErrorTemporary bool
 	if ue := errors.Unwrap(err); ue != nil {
-		isUnwrappedErrorTemporary = IsProducerErrTemporary(ue)
+		return f(err) || IsProducerErrTemporary(ue)
 	}
-	return f(err) || isUnwrappedErrorTemporary
+	return f(err)
 }
