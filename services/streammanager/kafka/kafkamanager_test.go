@@ -21,9 +21,7 @@ import (
 	"github.com/rudderlabs/rudder-server/testhelper/destination"
 )
 
-var (
-	sinceDuration = time.Second
-)
+var sinceDuration = time.Second
 
 func TestMain(m *testing.M) {
 	kafkaStats = managerStats{}
