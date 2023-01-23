@@ -11,6 +11,7 @@ type SourceStat struct {
 	ReqType     string
 	SourceID    string
 	WorkspaceID string
+	SourceType  string
 
 	reason string
 
@@ -80,6 +81,7 @@ func (ss *SourceStat) Report(s stats.Stats) {
 		"reqType":     ss.ReqType,
 		"workspaceId": ss.WorkspaceID,
 		"sourceID":    ss.SourceID,
+		"sourceType":  ss.SourceType,
 	}
 
 	failedTags := map[string]string{
@@ -88,6 +90,7 @@ func (ss *SourceStat) Report(s stats.Stats) {
 		"reqType":     ss.ReqType,
 		"workspaceId": ss.WorkspaceID,
 		"sourceID":    ss.SourceID,
+		"sourceType":  ss.SourceType,
 	}
 	if ss.reason != "" {
 		failedTags["reason"] = ss.reason

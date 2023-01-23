@@ -412,17 +412,13 @@ func (gateway *HandleT) getSourceTagFromWriteKey(writeKey string) string {
 }
 
 func (gateway *HandleT) NewSourceStat(writeKey, reqType string) *gwstats.SourceStat {
-	sourceTag := gateway.getSourceTagFromWriteKey(writeKey)
-	sourceID := gateway.getSourceIDForWriteKey(writeKey)
-	configSubscriberLock.RLock()
-	workspaceId := enabledWriteKeyWorkspaceMap[writeKey]
-	configSubscriberLock.RUnlock()
 	return &gwstats.SourceStat{
-		Source:      sourceTag,
-		SourceID:    sourceID,
+		Source:      gateway.getSourceTagFromWriteKey(writeKey),
+		SourceID:    gateway.getSourceIDForWriteKey(writeKey),
 		WriteKey:    writeKey,
 		ReqType:     reqType,
-		WorkspaceID: workspaceId,
+		WorkspaceID: gateway.getWorkspaceForWriteKey(writeKey),
+		SourceType:  gateway.getSourceDefForWriteKey(writeKey),
 	}
 }
 
@@ -514,9 +510,7 @@ func (gateway *HandleT) getJobFromRequest(req *webRequestT) (job *jobsdb.JobT, n
 	writeKey := req.writeKey
 	sourceID := gateway.getSourceIDForWriteKey(writeKey)
 	// Should be function of body
-	configSubscriberLock.RLock()
-	workspaceId := enabledWriteKeyWorkspaceMap[writeKey]
-	configSubscriberLock.RUnlock()
+	workspaceId := gateway.getWorkspaceForWriteKey(writeKey)
 	userIDHeader := req.userIDHeader
 
 	ipAddr := req.ipAddr
@@ -684,6 +678,26 @@ func (gateway *HandleT) getJobFromRequest(req *webRequestT) (job *jobsdb.JobT, n
 		WorkspaceId:  workspaceId,
 	}
 	return
+}
+
+func (*HandleT) getSourceDefForWriteKey(writeKey string) string {
+	configSubscriberLock.RLock()
+	defer configSubscriberLock.RUnlock()
+
+	if _, ok := writeKeysSourceMap[writeKey]; ok {
+		return writeKeysSourceMap[writeKey].SourceDefinition.Name
+	}
+	return ""
+}
+
+func (*HandleT) getWorkspaceForWriteKey(writeKey string) string {
+	configSubscriberLock.RLock()
+	defer configSubscriberLock.RUnlock()
+
+	if _, ok := enabledWriteKeyWorkspaceMap[writeKey]; ok {
+		return enabledWriteKeyWorkspaceMap[writeKey]
+	}
+	return ""
 }
 
 func (*HandleT) isValidWriteKey(writeKey string) bool {
@@ -882,16 +896,13 @@ func (gateway *HandleT) getPayloadAndWriteKey(_ http.ResponseWriter, r *http.Req
 	}
 	payload, err := gateway.getPayloadFromRequest(r)
 	if err != nil {
-		sourceTag := gateway.getSourceTagFromWriteKey(writeKey)
-		configSubscriberLock.RLock()
-		workspaceId := enabledWriteKeyWorkspaceMap[writeKey]
-		configSubscriberLock.RUnlock()
 		stat := gwstats.SourceStat{
-			Source:      sourceTag,
+			Source:      gateway.getSourceTagFromWriteKey(writeKey),
 			WriteKey:    writeKey,
 			ReqType:     reqType,
 			SourceID:    sourceID,
-			WorkspaceID: workspaceId,
+			WorkspaceID: gateway.getWorkspaceForWriteKey(writeKey),
+			SourceType:  gateway.getSourceDefForWriteKey(writeKey),
 		}
 		stat.RequestFailed("requestBodyReadFailed")
 		stat.Report(gateway.stats)

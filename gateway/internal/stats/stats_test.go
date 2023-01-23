@@ -18,6 +18,7 @@ func getSourceStat(statMap map[string]*SourceStat, sourceTag string) {
 		WorkspaceID: trand.String(10),
 		WriteKey:    trand.String(10),
 		ReqType:     trand.String(10),
+		SourceType:  trand.String(10),
 	}
 }
 
@@ -94,6 +95,7 @@ func TestReport(t *testing.T) {
 			"workspaceId": statMap[sourceTag].WorkspaceID,
 			"writeKey":    statMap[sourceTag].WriteKey,
 			"reqType":     statMap[sourceTag].ReqType,
+			"sourceType":  statMap[sourceTag].SourceType,
 		}
 		failedTags := map[string]string{
 			"source":      statMap[sourceTag].Source,
@@ -102,6 +104,7 @@ func TestReport(t *testing.T) {
 			"writeKey":    statMap[sourceTag].WriteKey,
 			"reqType":     statMap[sourceTag].ReqType,
 			"reason":      "reason",
+			"sourceType":  statMap[sourceTag].SourceType,
 		}
 		require.Equal(t,
 			float64(counterMap[sourceTag].total),

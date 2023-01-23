@@ -55,6 +55,8 @@ const (
 	SuppressedUserID = "suppressed-user-2"
 	NormalUserID     = "normal-user-1"
 	WorkspaceID      = "workspace"
+	sourceType1      = "sourceType1"
+	sourceType2      = "sourceType2"
 )
 
 var testTimeout = 15 * time.Second
@@ -67,11 +69,17 @@ var sampleBackendConfig = backendconfig.ConfigT{
 			ID:       SourceIDDisabled,
 			WriteKey: WriteKeyDisabled,
 			Enabled:  false,
+			SourceDefinition: backendconfig.SourceDefinitionT{
+				Name: sourceType1,
+			},
 		},
 		{
 			ID:       SourceIDEnabled,
 			WriteKey: WriteKeyEnabled,
 			Enabled:  true,
+			SourceDefinition: backendconfig.SourceDefinitionT{
+				Name: sourceType2,
+			},
 		},
 	},
 }
@@ -228,6 +236,7 @@ var _ = Describe("Gateway Enterprise", func() {
 							"workspaceId": getWorkspaceID(WriteKeyEnabled),
 							"writeKey":    WriteKeyEnabled,
 							"reqType":     "batch",
+							"sourceType":  sourceType2,
 						},
 					)
 					return stat != nil && stat.LastValue() == float64(1)
@@ -273,6 +282,7 @@ var _ = Describe("Gateway Enterprise", func() {
 							"workspaceId": getWorkspaceID(WriteKeyEnabled),
 							"writeKey":    WriteKeyEnabled,
 							"reqType":     "batch",
+							"sourceType":  sourceType2,
 						},
 					)
 					return stat != nil && stat.LastValue() == float64(1)
@@ -445,6 +455,7 @@ var _ = Describe("Gateway", func() {
 									"workspaceId": workspaceID,
 									"writeKey":    WriteKeyEnabled,
 									"reqType":     handlerType,
+									"sourceType":  sourceType2,
 								},
 							)
 							return stat != nil && stat.LastValue() == float64(1)
@@ -499,6 +510,7 @@ var _ = Describe("Gateway", func() {
 							"workspaceId": getWorkspaceID(WriteKeyEnabled),
 							"writeKey":    WriteKeyEnabled,
 							"reqType":     "alias",
+							"sourceType":  sourceType2,
 						},
 					)
 					return stat != nil && stat.LastValue() == float64(1)
@@ -525,6 +537,7 @@ var _ = Describe("Gateway", func() {
 							"workspaceId": getWorkspaceID(WriteKeyEnabled),
 							"writeKey":    WriteKeyEnabled,
 							"reqType":     "alias",
+							"sourceType":  sourceType2,
 						},
 					)
 					return stat != nil && stat.LastValue() == float64(1)
@@ -580,6 +593,7 @@ var _ = Describe("Gateway", func() {
 								"writeKey":    "noWriteKey",
 								"reqType":     reqType,
 								"reason":      "noWriteKeyInBasicAuth",
+								"sourceType":  "",
 							},
 						)
 						return stat != nil && stat.LastValue() == float64(1)
@@ -608,6 +622,7 @@ var _ = Describe("Gateway", func() {
 								"writeKey":    "noWriteKey",
 								"reqType":     reqType,
 								"reason":      "noWriteKeyInBasicAuth",
+								"sourceType":  "",
 							},
 						)
 						// .LastValue() == float64(1)
@@ -646,6 +661,7 @@ var _ = Describe("Gateway", func() {
 								"writeKey":    WriteKeyEnabled,
 								"reqType":     reqType,
 								"reason":      response.NotRudderEvent,
+								"sourceType":  sourceType2,
 							},
 						)
 						return stat != nil && stat.LastValue() == float64(1)
@@ -683,6 +699,7 @@ var _ = Describe("Gateway", func() {
 								"writeKey":    WriteKeyEnabled,
 								"reqType":     reqType,
 								"reason":      response.NonIdentifiableRequest,
+								"sourceType":  sourceType2,
 							},
 						)
 						return stat != nil && stat.LastValue() == float64(1)
@@ -768,6 +785,7 @@ var _ = Describe("Gateway", func() {
 									"writeKey":    WriteKeyEnabled,
 									"reqType":     handlerType,
 									"reason":      "storeFailed",
+									"sourceType":  sourceType2,
 								},
 							)
 							return stat != nil && stat.LastValue() == float64(1)
