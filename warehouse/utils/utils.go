@@ -89,6 +89,7 @@ const (
 	BQLoadedAtFormat         = "2006-01-02 15:04:05.999999 Z"
 	BQUuidTSFormat           = "2006-01-02 15:04:05 Z"
 	DatalakeTimeWindowFormat = "2006/01/02/15"
+	GlueTimeWindowFormat     = "dt=2006-01-02"
 )
 
 const (

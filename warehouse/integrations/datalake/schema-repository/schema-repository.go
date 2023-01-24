@@ -2,7 +2,6 @@ package schemarepository
 
 import (
 	"fmt"
-
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
@@ -42,10 +41,17 @@ type SchemaRepository interface {
 	CreateTable(tableName string, columnMap map[string]string) (err error)
 	AddColumns(tableName string, columnsInfo []warehouseutils.ColumnInfo) (err error)
 	AlterColumn(tableName, columnName, columnType string) (err error)
+	RefreshPartitions(tableName string, loadFiles []warehouseutils.LoadFileT) error
+}
+
+func UseGlue(w *warehouseutils.Warehouse) bool {
+	glueConfig := warehouseutils.GetConfigValueBoolString(UseGlueConfig, *w)
+	hasAWSRegion := misc.HasAWSRegionInConfig(w.Destination.Config)
+	return glueConfig == "true" && hasAWSRegion
 }
 
 func NewSchemaRepository(wh warehouseutils.Warehouse, uploader warehouseutils.UploaderI) (SchemaRepository, error) {
-	if warehouseutils.GetConfigValueBoolString(UseGlueConfig, wh) == "true" && misc.HasAWSRegionInConfig(wh.Destination.Config) {
+	if UseGlue(&wh) {
 		return NewGlueSchemaRepository(wh)
 	}
 	return NewLocalSchemaRepository(wh, uploader)

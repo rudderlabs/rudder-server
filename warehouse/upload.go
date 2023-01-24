@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	schemarepository "github.com/rudderlabs/rudder-server/warehouse/integrations/datalake/schema-repository"
 	"strconv"
 	"strings"
 	"sync"
@@ -481,6 +482,10 @@ func (job *UploadJobT) run() (err error) {
 
 			job.matchRowsInStagingAndLoadFiles()
 			job.recordLoadFileGenerationTimeStat(startLoadFileID, endLoadFileID)
+
+			if err = job.refreshPartitions(startLoadFileID, endLoadFileID); err != nil {
+				break
+			}
 
 			newStatus = nextUploadState.completed
 
@@ -2076,4 +2081,43 @@ func (job *UploadJobT) GetLocalSchema() warehouseutils.SchemaT {
 
 func (job *UploadJobT) UpdateLocalSchema(schema warehouseutils.SchemaT) error {
 	return job.schemaHandle.updateLocalSchema(schema)
+}
+
+func (job *UploadJobT) refreshPartitions(loadFileStartID, loadFileEndID int64) error {
+	if slices.Contains(warehouseutils.TimeWindowDestinations, job.upload.DestinationType) {
+		return nil
+	}
+
+	var (
+		repository schemarepository.SchemaRepository
+		err        error
+	)
+
+	if repository, err = schemarepository.NewSchemaRepository(job.warehouse, job); err != nil {
+		return fmt.Errorf("create schema repository: %w", err)
+	}
+
+	// Refresh partitions if exists
+	for tableName := range job.upload.UploadSchema {
+		loadFiles := job.GetLoadFilesMetadata(warehouseutils.GetLoadFilesOptionsT{
+			Table:   tableName,
+			StartID: loadFileStartID,
+			EndID:   loadFileEndID,
+		})
+
+		// This is best done every 100 files, since it's a batch request for updates in Glue
+		partitionBatchSize := 99
+		for i := 0; i < len(loadFiles); i += partitionBatchSize {
+			end := i + partitionBatchSize
+			if end > len(loadFiles) {
+				end = len(loadFiles)
+			}
+
+			if err = repository.RefreshPartitions(tableName, loadFiles[i:end]); err != nil {
+				return fmt.Errorf("refresh partitions: %w", err)
+			}
+		}
+	}
+
+	return nil
 }

@@ -3,6 +3,7 @@ package loadfiles
 import (
 	"context"
 	"fmt"
+	schemarepository "github.com/rudderlabs/rudder-server/warehouse/integrations/datalake/schema-repository"
 	"strings"
 
 	jsoniter "github.com/json-iterator/go"
@@ -207,7 +208,11 @@ func (lf *LoadFileGenerator) createFromStaging(ctx context.Context, job model.Up
 				payload.StagingDestinationConfig = revisionConfig.Config
 			}
 			if slices.Contains(warehouseutils.TimeWindowDestinations, job.Warehouse.Type) {
-				payload.LoadFilePrefix = warehouseutils.GetLoadFilePrefix(stagingFile.TimeWindow, job.Warehouse)
+				if job.Upload.DestinationType == warehouseutils.S3_DATALAKE && schemarepository.UseGlue(&job.Warehouse) {
+					payload.LoadFilePrefix = stagingFile.TimeWindow.Format(warehouseutils.GlueTimeWindowFormat)
+				} else {
+					payload.LoadFilePrefix = warehouseutils.GetLoadFilePrefix(stagingFile.TimeWindow, job.Warehouse)
+				}
 			}
 
 			payloadJSON, err := json.Marshal(payload)

@@ -2,6 +2,8 @@ package schemarepository
 
 import (
 	"fmt"
+	"net/url"
+	"strings"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/glue"
@@ -113,12 +115,15 @@ func (gl *GlueSchemaRepository) CreateSchema() (err error) {
 }
 
 func (gl *GlueSchemaRepository) CreateTable(tableName string, columnMap map[string]string) (err error) {
+	tableInput := &glue.TableInput{
+		Name: aws.String(tableName),
+	}
+	tableInput.PartitionKeys = gl.getPartitionKeys()
+
 	// create table request
 	input := glue.CreateTableInput{
 		DatabaseName: aws.String(gl.Namespace),
-		TableInput: &glue.TableInput{
-			Name: aws.String(tableName),
-		},
+		TableInput:   tableInput,
 	}
 
 	// add storage descriptor to create table request
@@ -161,6 +166,7 @@ func (gl *GlueSchemaRepository) AddColumns(tableName string, columnsInfo []wareh
 
 	// add storage descriptor to update table request
 	updateTableInput.TableInput.StorageDescriptor = gl.getStorageDescriptor(tableName, tableSchema)
+	updateTableInput.TableInput.PartitionKeys = gl.getPartitionKeys()
 
 	// update table
 	_, err = gl.glueClient.UpdateTable(&updateTableInput)
@@ -214,4 +220,74 @@ func (gl *GlueSchemaRepository) getS3LocationForTable(tableName string) string {
 	}
 	filePath += warehouseutils.GetTablePathInObjectStorage(gl.Namespace, tableName)
 	return fmt.Sprintf("%s/%s", bucketPath, filePath)
+}
+
+// RefreshPartitions takes a tableName and a list of loadFiles and refreshes all the
+// partitions that are modified by the path in those loadFiles. It returns any error
+// reported by Glue
+func (gl *GlueSchemaRepository) RefreshPartitions(tableName string, loadFiles []warehouseutils.LoadFileT) (err error) {
+	pkgLogger.Infof("Refreshing partitions for table %s with a batch of %d files", tableName, len(loadFiles))
+	locationToPartition := make(map[string]glue.PartitionInput)
+	for _, loadFile := range loadFiles {
+		locationFolder, _ := url.QueryUnescape(warehouseutils.GetS3LocationFolder(loadFile.Location))
+		if _, ok := locationToPartition[locationFolder]; ok {
+			// Go to next file if we are already going to process this locationFolder
+			continue
+		}
+		storageDescriptor := glue.StorageDescriptor{
+			Location: aws.String(locationFolder),
+			SerdeInfo: &glue.SerDeInfo{
+				Name:                 aws.String(glueSerdeName),
+				SerializationLibrary: aws.String(glueSerdeSerializationLib),
+			},
+			InputFormat:  aws.String(glueParquetInputFormat),
+			OutputFormat: aws.String(glueParquetOutputFormat),
+		}
+		pathParts := strings.Split(locationFolder, "/")
+		partitioning := strings.Split(pathParts[len(pathParts)-1], "=")
+		if len(partitioning) < 2 {
+			pkgLogger.Infof("Can not refresh partitions, timeWindowFormat setting has no = sign")
+			return
+		}
+		partition := partitioning[1]
+		partitionInput := glue.PartitionInput{StorageDescriptor: &storageDescriptor, Values: []*string{aws.String(partition)}}
+		locationToPartition[locationFolder] = partitionInput
+	}
+	partitionInputs := make([]*glue.PartitionInput, 0, len(locationToPartition))
+
+	// Check for existing partitions. We do not want to generate unnecessary (for already existing
+	// partitions) changes in Glue tables (since the number of versions of a Glue table
+	// is limited)
+	for key, partition := range locationToPartition {
+		getPartitionInput := glue.GetPartitionInput{
+			DatabaseName:    aws.String(gl.Namespace),
+			PartitionValues: partition.Values,
+			TableName:       aws.String(tableName),
+		}
+		_, err := gl.glueClient.GetPartition(&getPartitionInput)
+		if err != nil {
+			_partition := locationToPartition[key]
+			partitionInputs = append(partitionInputs, &_partition)
+		} else {
+			pkgLogger.Debugf("Skipping: %s", partition)
+		}
+	}
+	if len(partitionInputs) == 0 {
+		pkgLogger.Infof("No new partitions to refresh")
+		return
+	}
+	pkgLogger.Infof("Refreshing %d partitions", len(partitionInputs))
+	pkgLogger.Debugf("PartitionInputs: %s", partitionInputs)
+	batchCreatePartitionInput := glue.BatchCreatePartitionInput{
+		DatabaseName:       aws.String(gl.Namespace),
+		PartitionInputList: partitionInputs,
+		TableName:          aws.String(tableName),
+	}
+	_, err = gl.glueClient.BatchCreatePartition(&batchCreatePartitionInput)
+	return
+}
+
+func (_ *GlueSchemaRepository) getPartitionKeys() []*glue.Column {
+	columnName := strings.Split(warehouseutils.GlueTimeWindowFormat, "=")[0]
+	return []*glue.Column{{Name: aws.String(columnName), Type: aws.String("date")}}
 }
