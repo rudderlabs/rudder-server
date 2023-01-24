@@ -6,15 +6,15 @@ import (
 	"fmt"
 	"sync"
 
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/manager"
+
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
-	"github.com/rudderlabs/rudder-server/warehouse/validations"
 
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
-	"github.com/rudderlabs/rudder-server/warehouse/manager"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
@@ -420,15 +420,10 @@ func (wh *HandleT) populateHistoricIdentities(warehouse warehouseutils.Warehouse
 			panic(err)
 		}
 
-		job := UploadJobT{
-			upload:               &upload,
-			warehouse:            warehouse,
-			whManager:            whManager,
-			dbHandle:             wh.dbHandle,
-			pgNotifier:           &wh.notifier,
-			destinationValidator: validations.NewDestinationValidator(),
-			stats:                stats.Default,
-		}
+		job := wh.uploadJobFactory.NewUploadJob(&model.UploadJob{
+			Upload:    model.Upload(upload),
+			Warehouse: warehouse,
+		}, whManager)
 
 		tableUploadsCreated := areTableUploadsCreated(job.upload.ID)
 		if !tableUploadsCreated {
@@ -439,7 +434,7 @@ func (wh *HandleT) populateHistoricIdentities(warehouse warehouseutils.Warehouse
 			}
 		}
 
-		err = whManager.Setup(job.warehouse, &job)
+		err = whManager.Setup(job.warehouse, job)
 		if err != nil {
 			job.setUploadError(err, model.Aborted)
 			return

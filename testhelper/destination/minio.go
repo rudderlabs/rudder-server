@@ -16,13 +16,14 @@ import (
 )
 
 type MINIOResource struct {
-	Endpoint   string
-	BucketName string
-	Port       string
-	AccessKey  string
-	SecretKey  string
-	SiteRegion string
-	Client     *minio.Client
+	Endpoint     string
+	BucketName   string
+	Port         string
+	AccessKey    string
+	SecretKey    string
+	SiteRegion   string
+	ResourceName string
+	Client       *minio.Client
 }
 
 func SetupMINIO(pool *dockertest.Pool, d cleaner) (*MINIOResource, error) {
@@ -36,6 +37,7 @@ func SetupMINIO(pool *dockertest.Pool, d cleaner) (*MINIOResource, error) {
 	var minioClient *minio.Client
 
 	options := &dockertest.RunOptions{
+		Hostname:   "minio",
 		Repository: "minio/minio",
 		Tag:        "latest",
 		Cmd:        []string{"server", "/data"},
@@ -90,12 +92,13 @@ func SetupMINIO(pool *dockertest.Pool, d cleaner) (*MINIOResource, error) {
 		return nil, err
 	}
 	return &MINIOResource{
-		Endpoint:   minioEndpoint,
-		BucketName: minioBucketName,
-		Port:       minioContainer.GetPort("9000/tcp"),
-		AccessKey:  "MYACCESSKEY",
-		SecretKey:  "MYSECRETKEY",
-		SiteRegion: "us-east-1",
-		Client:     minioClient,
+		Endpoint:     minioEndpoint,
+		BucketName:   minioBucketName,
+		Port:         minioContainer.GetPort("9000/tcp"),
+		AccessKey:    "MYACCESSKEY",
+		SecretKey:    "MYSECRETKEY",
+		SiteRegion:   "us-east-1",
+		Client:       minioClient,
+		ResourceName: minioContainer.Container.Name,
 	}, nil
 }

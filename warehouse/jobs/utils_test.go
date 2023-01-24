@@ -22,6 +22,7 @@ func TestValidatePayload(t *testing.T) {
 				TaskRunID:     "bbc",
 				SourceID:      "cbc",
 				DestinationID: "dbc",
+				WorkspaceID:   "ebc",
 			},
 			true,
 		},

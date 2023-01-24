@@ -20,6 +20,7 @@ type StartJobReqPayload struct {
 	JobRunID      string `json:"job_run_id"`
 	TaskRunID     string `json:"task_run_id"`
 	AsyncJobType  string `json:"async_job_type"`
+	WorkspaceID   string `json:"workspace_id"`
 }
 
 type AsyncJobWhT struct {
@@ -50,6 +51,7 @@ type AsyncJobPayloadT struct {
 	DestinationID string          `json:"destination_id"`
 	TableName     string          `json:"tablename"`
 	AsyncJobType  string          `json:"async_job_type"`
+	WorkspaceID   string          `json:"workspace_id"`
 	MetaData      json.RawMessage `json:"metadata"`
 }
 
