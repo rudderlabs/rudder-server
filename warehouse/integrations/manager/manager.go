@@ -5,19 +5,19 @@ import (
 	"fmt"
 	"time"
 
-	azuresynapse "github.com/rudderlabs/rudder-server/warehouse/azure-synapse"
-	"github.com/rudderlabs/rudder-server/warehouse/bigquery"
-	"github.com/rudderlabs/rudder-server/warehouse/clickhouse"
-	"github.com/rudderlabs/rudder-server/warehouse/client"
-	"github.com/rudderlabs/rudder-server/warehouse/datalake"
-	"github.com/rudderlabs/rudder-server/warehouse/deltalake"
-	"github.com/rudderlabs/rudder-server/warehouse/mssql"
-	"github.com/rudderlabs/rudder-server/warehouse/postgres"
-	"github.com/rudderlabs/rudder-server/warehouse/redshift"
-	"github.com/rudderlabs/rudder-server/warehouse/snowflake"
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/azure-synapse"
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/bigquery"
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/clickhouse"
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/datalake"
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/deltalake"
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/mssql"
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/postgres"
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/redshift"
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/snowflake"
 
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/utils/misc"
+	"github.com/rudderlabs/rudder-server/warehouse/client"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
@@ -83,8 +83,9 @@ func New(destType string) (ManagerI, error) {
 		var dl datalake.HandleT
 		return &dl, nil
 	case warehouseutils.DELTALAKE:
-		var dl deltalake.HandleT
-		return &dl, nil
+		dl := deltalake.NewDeltalake()
+		deltalake.WithConfig(dl, config.Default)
+		return dl, nil
 	}
 	return nil, fmt.Errorf("provider of type %s is not configured for WarehouseManager", destType)
 }
@@ -119,8 +120,9 @@ func NewWarehouseOperations(destType string) (WarehouseOperations, error) {
 		var dl datalake.HandleT
 		return &dl, nil
 	case warehouseutils.DELTALAKE:
-		var dl deltalake.HandleT
-		return &dl, nil
+		dl := deltalake.NewDeltalake()
+		deltalake.WithConfig(dl, config.Default)
+		return dl, nil
 	}
 	return nil, fmt.Errorf("provider of type %s is not configured for WarehouseManager", destType)
 }

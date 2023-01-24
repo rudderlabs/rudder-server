@@ -1874,7 +1874,8 @@ func (proc *Handle) transformSrcDest(
 
 	// Filtering events based on the supported message types - START
 	s := time.Now()
-	proc.logger.Debug("Supported messages filtering input size", len(eventsToTransform))
+	eventFilterInCount := len(eventsToTransform)
+	proc.logger.Debug("Supported messages filtering input size", eventFilterInCount)
 	response = ConvertToFilteredTransformerResponse(eventsToTransform, transformAt != "none")
 	var successMetrics []*types.PUReportedMetric
 	var successCountMap map[string]int64
@@ -1908,7 +1909,7 @@ func (proc *Handle) transformSrcDest(
 	}
 	// REPORTING - END
 	eventFilterStat := proc.newEventFilterStat(sourceID, workspaceID, destination)
-	eventFilterStat.numEvents.Count(len(eventsToTransform))
+	eventFilterStat.numEvents.Count(eventFilterInCount)
 	eventFilterStat.numOutputSuccessEvents.Count(len(response.Events))
 	eventFilterStat.numOutputFailedEvents.Count(len(failedJobs))
 	eventFilterStat.transformTime.Since(s)
