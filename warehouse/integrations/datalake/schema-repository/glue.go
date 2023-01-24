@@ -22,7 +22,7 @@ var (
 )
 
 type GlueSchemaRepository struct {
-	glueClient *glue.Glue
+	GlueClient *glue.Glue
 	s3bucket   string
 	s3prefix   string
 	Warehouse  warehouseutils.Warehouse
@@ -41,7 +41,7 @@ func NewGlueSchemaRepository(wh warehouseutils.Warehouse) (*GlueSchemaRepository
 	if err != nil {
 		return nil, err
 	}
-	gl.glueClient = glueClient
+	gl.GlueClient = glueClient
 
 	return &gl, nil
 }
@@ -61,7 +61,7 @@ func (gl *GlueSchemaRepository) FetchSchema(warehouse warehouseutils.Warehouse) 
 			getTablesInput.NextToken = getTablesOutput.NextToken
 		}
 
-		getTablesOutput, err = gl.glueClient.GetTables(getTablesInput)
+		getTablesOutput, err = gl.GlueClient.GetTables(getTablesInput)
 		if err != nil {
 			if _, ok := err.(*glue.EntityNotFoundException); ok {
 				pkgLogger.Debugf("FetchSchema: database %s not found in glue. returning empty schema", warehouse.Namespace)
@@ -102,7 +102,7 @@ func (gl *GlueSchemaRepository) FetchSchema(warehouse warehouseutils.Warehouse) 
 }
 
 func (gl *GlueSchemaRepository) CreateSchema() (err error) {
-	_, err = gl.glueClient.CreateDatabase(&glue.CreateDatabaseInput{
+	_, err = gl.GlueClient.CreateDatabase(&glue.CreateDatabaseInput{
 		DatabaseInput: &glue.DatabaseInput{
 			Name: &gl.Namespace,
 		},
@@ -129,7 +129,7 @@ func (gl *GlueSchemaRepository) CreateTable(tableName string, columnMap map[stri
 	// add storage descriptor to create table request
 	input.TableInput.StorageDescriptor = gl.getStorageDescriptor(tableName, columnMap)
 
-	_, err = gl.glueClient.CreateTable(&input)
+	_, err = gl.GlueClient.CreateTable(&input)
 	if err != nil {
 		_, ok := err.(*glue.AlreadyExistsException)
 		if ok {
@@ -169,7 +169,7 @@ func (gl *GlueSchemaRepository) AddColumns(tableName string, columnsInfo []wareh
 	updateTableInput.TableInput.PartitionKeys = gl.getPartitionKeys()
 
 	// update table
-	_, err = gl.glueClient.UpdateTable(&updateTableInput)
+	_, err = gl.GlueClient.UpdateTable(&updateTableInput)
 	return
 }
 
@@ -264,7 +264,7 @@ func (gl *GlueSchemaRepository) RefreshPartitions(tableName string, loadFiles []
 			PartitionValues: partition.Values,
 			TableName:       aws.String(tableName),
 		}
-		_, err := gl.glueClient.GetPartition(&getPartitionInput)
+		_, err := gl.GlueClient.GetPartition(&getPartitionInput)
 		if err != nil {
 			_partition := locationToPartition[key]
 			partitionInputs = append(partitionInputs, &_partition)
@@ -283,7 +283,7 @@ func (gl *GlueSchemaRepository) RefreshPartitions(tableName string, loadFiles []
 		PartitionInputList: partitionInputs,
 		TableName:          aws.String(tableName),
 	}
-	_, err = gl.glueClient.BatchCreatePartition(&batchCreatePartitionInput)
+	_, err = gl.GlueClient.BatchCreatePartition(&batchCreatePartitionInput)
 	return
 }
 

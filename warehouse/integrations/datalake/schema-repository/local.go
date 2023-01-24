@@ -34,10 +34,7 @@ func (*LocalSchemaRepository) CreateSchema() (err error) {
 
 func (ls *LocalSchemaRepository) CreateTable(tableName string, columnMap map[string]string) (err error) {
 	// fetch schema from local db
-	schema, _, err := ls.FetchSchema(ls.warehouse)
-	if err != nil {
-		return err
-	}
+	schema, _, _ := ls.FetchSchema(ls.warehouse)
 
 	if _, ok := schema[tableName]; ok {
 		return fmt.Errorf("failed to create table: table %s already exists", tableName)
@@ -52,10 +49,7 @@ func (ls *LocalSchemaRepository) CreateTable(tableName string, columnMap map[str
 
 func (ls *LocalSchemaRepository) AddColumns(tableName string, columnsInfo []warehouseutils.ColumnInfo) (err error) {
 	// fetch schema from local db
-	schema, _, err := ls.FetchSchema(ls.warehouse)
-	if err != nil {
-		return err
-	}
+	schema, _, _ := ls.FetchSchema(ls.warehouse)
 
 	// check if table exists
 	if _, ok := schema[tableName]; !ok {
@@ -72,10 +66,7 @@ func (ls *LocalSchemaRepository) AddColumns(tableName string, columnsInfo []ware
 
 func (ls *LocalSchemaRepository) AlterColumn(tableName, columnName, columnType string) (err error) {
 	// fetch schema from local db
-	schema, _, err := ls.FetchSchema(ls.warehouse)
-	if err != nil {
-		return err
-	}
+	schema, _, _ := ls.FetchSchema(ls.warehouse)
 
 	// check if table exists
 	if _, ok := schema[tableName]; !ok {
