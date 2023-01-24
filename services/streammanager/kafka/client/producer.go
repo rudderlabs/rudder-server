@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"os"
 	"syscall"
 	"time"
 
@@ -152,9 +153,8 @@ func isErrTemporary(err error) bool {
 	if errors.As(err, &tempError) {
 		return tempError.Temporary()
 	}
-	var timeoutError interface{ Timeout() bool }
-	if errors.As(err, &timeoutError) {
-		return timeoutError.Timeout()
+	if os.IsTimeout(err) {
+		return true
 	}
 	return false
 }
