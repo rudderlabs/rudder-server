@@ -139,9 +139,6 @@ func headers(msg Message) (headers []kafka.Header) {
 }
 
 func isErrTemporary(err error) bool {
-	if errors.Is(err, context.DeadlineExceeded) {
-		return true
-	}
 	isTransientNetworkError := errors.Is(err, io.ErrUnexpectedEOF) ||
 		errors.Is(err, syscall.ECONNREFUSED) ||
 		errors.Is(err, syscall.ECONNRESET) ||
