@@ -55,9 +55,25 @@ const (
 	SuppressedUserID = "suppressed-user-2"
 	NormalUserID     = "normal-user-1"
 	WorkspaceID      = "workspace"
+	sourceType1      = "sourceType1"
+	sourceType2      = "sourceType2"
+	sdkLibrary       = "sdkLibrary"
+	sdkVersion       = "v1.2.3"
 )
 
-var testTimeout = 15 * time.Second
+var (
+	testTimeout = 15 * time.Second
+	sdkContext  = fmt.Sprintf(
+		`"context":{"library":{"name": %[1]q, "version":%[2]q}}`,
+		sdkLibrary,
+		sdkVersion,
+	)
+	sdkStatTag = fmt.Sprintf(
+		`%[1]s/%[2]s`,
+		sdkLibrary,
+		sdkVersion,
+	)
+)
 
 // This configuration is assumed by all gateway tests and, is returned on Subscribe of mocked backend config
 var sampleBackendConfig = backendconfig.ConfigT{
@@ -67,11 +83,17 @@ var sampleBackendConfig = backendconfig.ConfigT{
 			ID:       SourceIDDisabled,
 			WriteKey: WriteKeyDisabled,
 			Enabled:  false,
+			SourceDefinition: backendconfig.SourceDefinitionT{
+				Category: sourceType1,
+			},
 		},
 		{
 			ID:       SourceIDEnabled,
 			WriteKey: WriteKeyEnabled,
 			Enabled:  true,
+			SourceDefinition: backendconfig.SourceDefinitionT{
+				Category: sourceType2,
+			},
 		},
 	},
 }
@@ -228,6 +250,8 @@ var _ = Describe("Gateway Enterprise", func() {
 							"workspaceId": getWorkspaceID(WriteKeyEnabled),
 							"writeKey":    WriteKeyEnabled,
 							"reqType":     "batch",
+							"sourceType":  sourceType2,
+							"sdkVersion":  "",
 						},
 					)
 					return stat != nil && stat.LastValue() == float64(1)
@@ -237,8 +261,11 @@ var _ = Describe("Gateway Enterprise", func() {
 		})
 
 		It("should accept events from normal users", func() {
-			allowedUserEventData := fmt.Sprintf(`{"batch":[{"userId":%q}]}`, NormalUserID)
-
+			allowedUserEventData := fmt.Sprintf(
+				`{"batch":[{"userId":%[1]q,%[2]s}]}`,
+				NormalUserID,
+				sdkContext,
+			)
 			c.mockJobsDB.EXPECT().WithStoreSafeTx(
 				gomock.Any(),
 				gomock.Any(),
@@ -273,6 +300,8 @@ var _ = Describe("Gateway Enterprise", func() {
 							"workspaceId": getWorkspaceID(WriteKeyEnabled),
 							"writeKey":    WriteKeyEnabled,
 							"reqType":     "batch",
+							"sourceType":  sourceType2,
+							"sdkVersion":  sdkStatTag,
 						},
 					)
 					return stat != nil && stat.LastValue() == float64(1)
@@ -356,7 +385,10 @@ var _ = Describe("Gateway", func() {
 		}
 
 		createValidBody := func(customProperty, customValue string) []byte {
-			validData := `{"userId":"dummyId","data":{"string":"valid-json","nested":{"child":1}}}`
+			validData := fmt.Sprintf(
+				`{"userId":"dummyId","data":{"string":"valid-json","nested":{"child":1}},%s}`,
+				sdkContext,
+			)
 			validDataWithProperty, _ := sjson.SetBytes([]byte(validData), customProperty, customValue)
 
 			return validDataWithProperty
@@ -445,6 +477,8 @@ var _ = Describe("Gateway", func() {
 									"workspaceId": workspaceID,
 									"writeKey":    WriteKeyEnabled,
 									"reqType":     handlerType,
+									"sourceType":  sourceType2,
+									"sdkVersion":  sdkStatTag,
 								},
 							)
 							return stat != nil && stat.LastValue() == float64(1)
@@ -488,7 +522,17 @@ var _ = Describe("Gateway", func() {
 			tFunc = c.asyncHelper.ExpectAndNotifyCallbackWithName("")
 			mockCall.Do(func(context.Context, interface{}, interface{}) { tFunc() })
 
-			expectHandlerResponse(gateway.webAliasHandler, authorizedRequest(WriteKeyEnabled, bytes.NewBufferString(`{"userId":"dummyId"}`)), 200, "OK")
+			expectHandlerResponse(
+				gateway.webAliasHandler,
+				authorizedRequest(
+					WriteKeyEnabled,
+					bytes.NewBufferString(
+						fmt.Sprintf(`{"userId":"dummyId",%s}`, sdkContext),
+					),
+				),
+				200,
+				"OK",
+			)
 			Eventually(
 				func() bool {
 					stat := statsStore.Get(
@@ -499,6 +543,8 @@ var _ = Describe("Gateway", func() {
 							"workspaceId": getWorkspaceID(WriteKeyEnabled),
 							"writeKey":    WriteKeyEnabled,
 							"reqType":     "alias",
+							"sourceType":  sourceType2,
+							"sdkVersion":  sdkStatTag,
 						},
 					)
 					return stat != nil && stat.LastValue() == float64(1)
@@ -525,6 +571,8 @@ var _ = Describe("Gateway", func() {
 							"workspaceId": getWorkspaceID(WriteKeyEnabled),
 							"writeKey":    WriteKeyEnabled,
 							"reqType":     "alias",
+							"sourceType":  sourceType2,
+							"sdkVersion":  "",
 						},
 					)
 					return stat != nil && stat.LastValue() == float64(1)
@@ -554,7 +602,10 @@ var _ = Describe("Gateway", func() {
 		})
 
 		createJSONBody := func(customProperty, customValue string) []byte {
-			validData := `{"userId":"dummyId","data":{"string":"valid-json","nested":{"child":1}}}`
+			validData := fmt.Sprintf(
+				`{"userId":"dummyId","data":{"string":"valid-json","nested":{"child":1}},%s}`,
+				sdkContext,
+			)
 			validDataWithProperty, _ := sjson.SetBytes([]byte(validData), customProperty, customValue)
 
 			return validDataWithProperty
@@ -580,6 +631,8 @@ var _ = Describe("Gateway", func() {
 								"writeKey":    "noWriteKey",
 								"reqType":     reqType,
 								"reason":      "noWriteKeyInBasicAuth",
+								"sourceType":  "",
+								"sdkVersion":  "",
 							},
 						)
 						return stat != nil && stat.LastValue() == float64(1)
@@ -608,9 +661,10 @@ var _ = Describe("Gateway", func() {
 								"writeKey":    "noWriteKey",
 								"reqType":     reqType,
 								"reason":      "noWriteKeyInBasicAuth",
+								"sourceType":  "",
+								"sdkVersion":  "",
 							},
 						)
-						// .LastValue() == float64(1)
 						return stat != nil && stat.LastValue() == float64(1)
 					},
 				).Should(BeTrue())
@@ -646,6 +700,8 @@ var _ = Describe("Gateway", func() {
 								"writeKey":    WriteKeyEnabled,
 								"reqType":     reqType,
 								"reason":      response.NotRudderEvent,
+								"sourceType":  sourceType2,
+								"sdkVersion":  "",
 							},
 						)
 						return stat != nil && stat.LastValue() == float64(1)
@@ -683,6 +739,8 @@ var _ = Describe("Gateway", func() {
 								"writeKey":    WriteKeyEnabled,
 								"reqType":     reqType,
 								"reason":      response.NonIdentifiableRequest,
+								"sourceType":  sourceType2,
+								"sdkVersion":  "",
 							},
 						)
 						return stat != nil && stat.LastValue() == float64(1)
@@ -745,7 +803,7 @@ var _ = Describe("Gateway", func() {
 
 		It("should reject requests with 500 if jobsdb store returns an error", func() {
 			for handlerType, handler := range allHandlers(gateway) {
-				if handlerType != "import" {
+				if !(handlerType == "batch" || handlerType == "import") {
 					validBody := createJSONBody("custom-property", "custom-value")
 
 					c.mockJobsDB.EXPECT().WithStoreSafeTx(gomock.Any(), gomock.Any()).Times(1).Do(func(ctx context.Context, f func(tx jobsdb.StoreSafeTx) error) {
@@ -756,7 +814,15 @@ var _ = Describe("Gateway", func() {
 						DoAndReturn(jobsToJobsdbErrors).
 						Times(1)
 
-					expectHandlerResponse(handler, authorizedRequest(WriteKeyEnabled, bytes.NewBuffer(validBody)), 500, "tx error"+"\n")
+					expectHandlerResponse(
+						handler,
+						authorizedRequest(
+							WriteKeyEnabled,
+							bytes.NewBuffer(validBody),
+						),
+						500,
+						"tx error"+"\n",
+					)
 					Eventually(
 						func() bool {
 							stat := statsStore.Get(
@@ -768,6 +834,8 @@ var _ = Describe("Gateway", func() {
 									"writeKey":    WriteKeyEnabled,
 									"reqType":     handlerType,
 									"reason":      "storeFailed",
+									"sourceType":  sourceType2,
+									"sdkVersion":  sdkStatTag,
 								},
 							)
 							return stat != nil && stat.LastValue() == float64(1)
