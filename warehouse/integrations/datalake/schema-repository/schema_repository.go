@@ -51,6 +51,17 @@ func UseGlue(w *warehouseutils.Warehouse) bool {
 	return glueConfig == "true" && hasAWSRegion
 }
 
+func TimeWindowFormat(w *warehouseutils.Warehouse) string {
+	if !UseGlue(w) {
+		return warehouseutils.DatalakeTimeWindowFormat
+	}
+
+	if layout := warehouseutils.GetConfigValue("timeWindowLayout", *w); layout != "" {
+		return layout
+	}
+	return warehouseutils.GlueTimeWindowFormat
+}
+
 func NewSchemaRepository(wh warehouseutils.Warehouse, uploader warehouseutils.UploaderI) (SchemaRepository, error) {
 	if UseGlue(&wh) {
 		return NewGlueSchemaRepository(wh)

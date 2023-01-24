@@ -2,11 +2,12 @@ package schemarepository_test
 
 import (
 	"fmt"
+	"testing"
+	"time"
+
 	schemarepository "github.com/rudderlabs/rudder-server/warehouse/integrations/datalake/schema-repository"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 	"github.com/stretchr/testify/require"
-	"testing"
-	"time"
 )
 
 type mockUploader struct {
@@ -25,15 +26,19 @@ func (*mockUploader) GetSampleLoadFileLocation(string) (string, error)          
 func (*mockUploader) GetLoadFilesMetadata(warehouseutils.GetLoadFilesOptionsT) []warehouseutils.LoadFileT {
 	return nil
 }
+
 func (*mockUploader) GetTableSchemaInWarehouse(string) warehouseutils.TableSchemaT {
 	return warehouseutils.TableSchemaT{}
 }
+
 func (*mockUploader) GetSingleLoadFile(string) (warehouseutils.LoadFileT, error) {
 	return warehouseutils.LoadFileT{}, nil
 }
+
 func (m *mockUploader) GetLocalSchema() warehouseutils.SchemaT {
 	return m.localSchema
 }
+
 func (m *mockUploader) UpdateLocalSchema(warehouseutils.SchemaT) error {
 	return m.mockError
 }

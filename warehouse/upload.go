@@ -484,7 +484,7 @@ func (job *UploadJobT) run() (err error) {
 			job.matchRowsInStagingAndLoadFiles()
 			job.recordLoadFileGenerationTimeStat(startLoadFileID, endLoadFileID)
 
-			if err = job.refreshPartitions(startLoadFileID, endLoadFileID); err != nil {
+			if err = job.RefreshPartitions(startLoadFileID, endLoadFileID); err != nil {
 				break
 			}
 
@@ -2084,8 +2084,8 @@ func (job *UploadJobT) UpdateLocalSchema(schema warehouseutils.SchemaT) error {
 	return job.schemaHandle.updateLocalSchema(schema)
 }
 
-func (job *UploadJobT) refreshPartitions(loadFileStartID, loadFileEndID int64) error {
-	if slices.Contains(warehouseutils.TimeWindowDestinations, job.upload.DestinationType) {
+func (job *UploadJobT) RefreshPartitions(loadFileStartID, loadFileEndID int64) error {
+	if !slices.Contains(warehouseutils.TimeWindowDestinations, job.upload.DestinationType) {
 		return nil
 	}
 
@@ -2107,7 +2107,7 @@ func (job *UploadJobT) refreshPartitions(loadFileStartID, loadFileEndID int64) e
 		})
 
 		// This is best done every 100 files, since it's a batch request for updates in Glue
-		partitionBatchSize := 99
+		partitionBatchSize := config.GetInt("Warehouse.refreshPartitionBatchSize", 99)
 		for i := 0; i < len(loadFiles); i += partitionBatchSize {
 			end := i + partitionBatchSize
 			if end > len(loadFiles) {

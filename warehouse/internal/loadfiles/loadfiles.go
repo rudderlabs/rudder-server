@@ -368,10 +368,8 @@ func GetLoadFilePrefix(timeWindow time.Time, warehouse warehouseutils.Warehouse)
 			timeWindowFormat = fmt.Sprintf("%v/%v", tableSuffixPath, timeWindowFormat)
 		}
 	case warehouseutils.S3_DATALAKE:
-		timeWindowFormat = timeWindow.Format(warehouseutils.DatalakeTimeWindowFormat)
-		if schemarepository.UseGlue(&warehouse) {
-			timeWindowFormat = timeWindow.Format(warehouseutils.GlueTimeWindowFormat)
-		}
+		windowLayout := schemarepository.TimeWindowFormat(&warehouse)
+		timeWindowFormat = timeWindow.Format(windowLayout)
 	default:
 		timeWindowFormat = timeWindow.Format(warehouseutils.DatalakeTimeWindowFormat)
 	}
