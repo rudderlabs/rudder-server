@@ -160,23 +160,18 @@ func isErrTemporary(err error) bool {
 }
 
 func IsProducerErrTemporary(err error) bool {
-	f := func(err error) bool {
-		if err == nil {
-			return false
-		}
-		if we, ok := err.(kafka.WriteErrors); ok {
-			for _, err := range we {
-				// if at least one was temporary then we treat the whole batch as such
-				if isErrTemporary(err) {
-					return true
-				}
+	if err == nil {
+		return false
+	}
+	var we kafka.WriteErrors
+	if errors.As(err, &we) {
+		for _, err := range we {
+			// if at least one was temporary then we treat the whole batch as such
+			if isErrTemporary(err) {
+				return true
 			}
-			return false
 		}
-		return isErrTemporary(err)
+		return false
 	}
-	if ue := errors.Unwrap(err); ue != nil {
-		return f(err) || IsProducerErrTemporary(ue)
-	}
-	return f(err)
+	return isErrTemporary(err)
 }
