@@ -160,9 +160,6 @@ func isErrTemporary(err error) bool {
 }
 
 func IsProducerErrTemporary(err error) bool {
-	if err == nil {
-		return false
-	}
 	var we kafka.WriteErrors
 	if errors.As(err, &we) {
 		for _, err := range we {
