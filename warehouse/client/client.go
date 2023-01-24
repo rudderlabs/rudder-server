@@ -5,10 +5,11 @@ import (
 	"database/sql"
 	"fmt"
 
+	deltalakeclient "github.com/rudderlabs/rudder-server/warehouse/integrations/deltalake/client"
+
 	proto "github.com/rudderlabs/rudder-server/proto/databricks"
 
 	"cloud.google.com/go/bigquery"
-	deltalakeclient "github.com/rudderlabs/rudder-server/warehouse/deltalake/client"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 	"google.golang.org/api/iterator"
 )

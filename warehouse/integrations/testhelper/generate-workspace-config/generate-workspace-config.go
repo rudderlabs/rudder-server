@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"text/template"
 
-	"github.com/rudderlabs/rudder-server/warehouse/testhelper"
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/testhelper"
 )
 
 func main() {
