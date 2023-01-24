@@ -111,7 +111,8 @@ var BatchEvent = []byte(`
 `)
 
 const (
-	DELIMITER = string("<<>>")
+	DELIMITER                 = string("<<>>")
+	eventStreamSourceCategory = "eventStream"
 )
 
 func Init() {
@@ -441,11 +442,8 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 		for _, req := range breq.batchRequest {
 			writeKey := req.writeKey
 			sourceTag := gateway.getSourceTagFromWriteKey(writeKey)
-			var sourceStat *gwstats.SourceStat
-			var ok bool
-			if sourceStat, ok = sourceStats[sourceTag]; !ok {
-				sourceStat = gateway.NewSourceStat(writeKey, req.reqType)
-				sourceStats[sourceTag] = sourceStat
+			if _, ok := sourceStats[sourceTag]; !ok {
+				sourceStats[sourceTag] = gateway.NewSourceStat(writeKey, req.reqType)
 			}
 			jobData, err := gateway.getJobDataFromRequest(req)
 			if err != nil {
@@ -462,7 +460,7 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 				}
 				continue
 			}
-			sourceStat.Version = jobData.version
+			sourceStats[sourceTag].Version = jobData.version
 			jobList = append(jobList, jobData.job)
 			jobIDReqMap[jobData.job.UUID] = req
 			jobSourceTagMap[jobData.job.UUID] = sourceTag
@@ -660,14 +658,8 @@ func (gateway *HandleT) getJobDataFromRequest(req *webRequestT) (jobData *jobFro
 		"batch.0.context.sources.task_run_id",
 	).Str
 
-	jobData.version = gjson.GetBytes(
-		body,
-		"batch.0.context.library.name",
-	).Str + "/" +
-		gjson.GetBytes(
-			body,
-			"batch.0.context.library.version",
-		).Str
+	lib := gjson.GetBytes(body, "batch.0.context.library")
+	jobData.version = lib.Get("name").String() + "/" + lib.Get("version").String()
 
 	id := uuid.New()
 
@@ -707,7 +699,7 @@ func (*HandleT) getSourceCategoryForWriteKey(writeKey string) (category string) 
 	if _, ok := writeKeysSourceMap[writeKey]; ok {
 		category = writeKeysSourceMap[writeKey].SourceDefinition.Category
 		if category == "" {
-			category = "eventStream"
+			category = eventStreamSourceCategory
 		}
 	}
 	return
