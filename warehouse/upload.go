@@ -6,11 +6,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	schemarepository "github.com/rudderlabs/rudder-server/warehouse/integrations/datalake/schema-repository"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
+
+	schemarepository "github.com/rudderlabs/rudder-server/warehouse/integrations/datalake/schema-repository"
 
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/manager"
 

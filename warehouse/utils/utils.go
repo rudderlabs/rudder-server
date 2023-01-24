@@ -981,26 +981,6 @@ func GetLoadFileFormat(whType string) string {
 	}
 }
 
-func GetLoadFilePrefix(timeWindow time.Time, warehouse Warehouse) (timeWindowFormat string) {
-	whType := warehouse.Type
-	switch whType {
-	case GCS_DATALAKE:
-		timeWindowLayout := GetConfigValue("timeWindowLayout", warehouse)
-		if timeWindowLayout == "" {
-			timeWindowLayout = DatalakeTimeWindowFormat
-		}
-
-		timeWindowFormat = timeWindow.Format(timeWindowLayout)
-		tableSuffixPath := GetConfigValue("tableSuffix", warehouse)
-		if tableSuffixPath != "" {
-			timeWindowFormat = fmt.Sprintf("%v/%v", tableSuffixPath, timeWindowFormat)
-		}
-	default:
-		timeWindowFormat = timeWindow.Format(DatalakeTimeWindowFormat)
-	}
-	return timeWindowFormat
-}
-
 func GetRequestWithTimeout(ctx context.Context, url string, timeout time.Duration) ([]byte, error) {
 	req, err := http.NewRequestWithContext(ctx, "GET", url, http.NoBody)
 	if err != nil {

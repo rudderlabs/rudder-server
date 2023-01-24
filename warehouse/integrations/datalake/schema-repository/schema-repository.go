@@ -2,6 +2,7 @@ package schemarepository
 
 import (
 	"fmt"
+
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"

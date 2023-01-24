@@ -3,8 +3,10 @@ package loadfiles
 import (
 	"context"
 	"fmt"
-	schemarepository "github.com/rudderlabs/rudder-server/warehouse/integrations/datalake/schema-repository"
 	"strings"
+	"time"
+
+	schemarepository "github.com/rudderlabs/rudder-server/warehouse/integrations/datalake/schema-repository"
 
 	jsoniter "github.com/json-iterator/go"
 	"github.com/rudderlabs/rudder-server/config"
@@ -208,11 +210,7 @@ func (lf *LoadFileGenerator) createFromStaging(ctx context.Context, job model.Up
 				payload.StagingDestinationConfig = revisionConfig.Config
 			}
 			if slices.Contains(warehouseutils.TimeWindowDestinations, job.Warehouse.Type) {
-				if job.Upload.DestinationType == warehouseutils.S3_DATALAKE && schemarepository.UseGlue(&job.Warehouse) {
-					payload.LoadFilePrefix = stagingFile.TimeWindow.Format(warehouseutils.GlueTimeWindowFormat)
-				} else {
-					payload.LoadFilePrefix = warehouseutils.GetLoadFilePrefix(stagingFile.TimeWindow, job.Warehouse)
-				}
+				payload.LoadFilePrefix = GetLoadFilePrefix(stagingFile.TimeWindow, job.Warehouse)
 			}
 
 			payloadJSON, err := json.Marshal(payload)
@@ -350,4 +348,32 @@ func (lf *LoadFileGenerator) destinationRevisionIDMap(ctx context.Context, job m
 		revisionIDMap[revisionID] = destination
 	}
 	return
+}
+
+func GetLoadFilePrefix(timeWindow time.Time, warehouse warehouseutils.Warehouse) (timeWindowFormat string) {
+	switch warehouse.Type {
+	case warehouseutils.GCS_DATALAKE:
+		var (
+			timeWindowLayout = warehouseutils.GetConfigValue("timeWindowLayout", warehouse)
+			tableSuffixPath  = warehouseutils.GetConfigValue("tableSuffix", warehouse)
+		)
+
+		if timeWindowLayout == "" {
+			timeWindowLayout = warehouseutils.DatalakeTimeWindowFormat
+		}
+
+		timeWindowFormat = timeWindow.Format(timeWindowLayout)
+
+		if tableSuffixPath != "" {
+			timeWindowFormat = fmt.Sprintf("%v/%v", tableSuffixPath, timeWindowFormat)
+		}
+	case warehouseutils.S3_DATALAKE:
+		timeWindowFormat = timeWindow.Format(warehouseutils.DatalakeTimeWindowFormat)
+		if schemarepository.UseGlue(&warehouse) {
+			timeWindowFormat = timeWindow.Format(warehouseutils.GlueTimeWindowFormat)
+		}
+	default:
+		timeWindowFormat = timeWindow.Format(warehouseutils.DatalakeTimeWindowFormat)
+	}
+	return timeWindowFormat
 }

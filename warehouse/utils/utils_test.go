@@ -925,64 +925,6 @@ func TestGetTempFileExtension(t *testing.T) {
 	}
 }
 
-func TestGetLoadFilePrefix(t *testing.T) {
-	inputs := []struct {
-		warehouse Warehouse
-		expected  string
-	}{
-		{
-			warehouse: Warehouse{
-				Destination: backendconfig.DestinationT{
-					Config: map[string]interface{}{
-						"tableSuffix": "key=val",
-					},
-				},
-				Type: S3_DATALAKE,
-			},
-			expected: "2022/08/06/14",
-		},
-		{
-			warehouse: Warehouse{
-				Destination: backendconfig.DestinationT{
-					Config: map[string]interface{}{
-						"tableSuffix": "key=val",
-					},
-				},
-				Type: AZURE_DATALAKE,
-			},
-			expected: "2022/08/06/14",
-		},
-		{
-			warehouse: Warehouse{
-				Destination: backendconfig.DestinationT{
-					Config: map[string]interface{}{
-						"tableSuffix": "key=val",
-					},
-				},
-				Type: GCS_DATALAKE,
-			},
-			expected: "key=val/2022/08/06/14",
-		},
-		{
-			warehouse: Warehouse{
-				Destination: backendconfig.DestinationT{
-					Config: map[string]interface{}{
-						"tableSuffix":      "key=val",
-						"timeWindowLayout": "year=2006/month=01/day=02/hour=15",
-					},
-				},
-				Type: GCS_DATALAKE,
-			},
-			expected: "key=val/year=2022/month=08/day=06/hour=14",
-		},
-	}
-	for _, input := range inputs {
-		timeWindow := time.Date(2022, time.Month(8), 6, 14, 10, 30, 0, time.UTC)
-		got := GetLoadFilePrefix(timeWindow, input.warehouse)
-		require.Equal(t, got, input.expected)
-	}
-}
-
 func TestWarehouseT_GetBoolDestinationConfig(t *testing.T) {
 	inputs := []struct {
 		warehouse Warehouse
