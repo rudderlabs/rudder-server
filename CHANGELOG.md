@@ -1,5 +1,23 @@
 # Changelog
 
+## [1.6.0](https://github.com/rudderlabs/rudder-server/compare/v1.5.0...v1.6.0) (2023-01-24)
+
+
+### Features
+
+* **warehouse:** clickhouse s3 table engine for load tables ([#2739](https://github.com/rudderlabs/rudder-server/issues/2739)) ([074e789](https://github.com/rudderlabs/rudder-server/commit/074e7897fbc0f6a43e8f5b1cddb14f2bd544ea32))
+* **warehouse:** databricks unity catalog ([#2878](https://github.com/rudderlabs/rudder-server/issues/2878)) ([074e789](https://github.com/rudderlabs/rudder-server/commit/074e7897fbc0f6a43e8f5b1cddb14f2bd544ea32))
+
+
+### Miscellaneous
+
+* add workspace id in wh_async_jobs table ([#2848](https://github.com/rudderlabs/rudder-server/issues/2848)) ([074e789](https://github.com/rudderlabs/rudder-server/commit/074e7897fbc0f6a43e8f5b1cddb14f2bd544ea32))
+* decouple loadfile logic and repo ([#2753](https://github.com/rudderlabs/rudder-server/issues/2753)) ([074e789](https://github.com/rudderlabs/rudder-server/commit/074e7897fbc0f6a43e8f5b1cddb14f2bd544ea32))
+* **processor:** stop using global variables ([#2881](https://github.com/rudderlabs/rudder-server/issues/2881)) ([074e789](https://github.com/rudderlabs/rudder-server/commit/074e7897fbc0f6a43e8f5b1cddb14f2bd544ea32))
+* replace readme v1 announcement header ([#2893](https://github.com/rudderlabs/rudder-server/issues/2893)) ([074e789](https://github.com/rudderlabs/rudder-server/commit/074e7897fbc0f6a43e8f5b1cddb14f2bd544ea32))
+* use badgerdb for live events cache ([#2833](https://github.com/rudderlabs/rudder-server/issues/2833)) ([074e789](https://github.com/rudderlabs/rudder-server/commit/074e7897fbc0f6a43e8f5b1cddb14f2bd544ea32))
+* **warehouse:** move warehouse destinations to integrations package ([#2885](https://github.com/rudderlabs/rudder-server/issues/2885)) ([074e789](https://github.com/rudderlabs/rudder-server/commit/074e7897fbc0f6a43e8f5b1cddb14f2bd544ea32))
+
 ## [1.5.0](https://github.com/rudderlabs/rudder-server/compare/v1.4.5...v1.5.0) (2023-01-24)
 
 
