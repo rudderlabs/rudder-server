@@ -612,6 +612,22 @@ func TestIsProducerErrTemporary(t *testing.T) {
 	pubCancel()
 }
 
+func TestIsProducerWrappedErrTemporary(t *testing.T) {
+	err := kafka.WriteErrors{
+		fmt.Errorf("some error: %w", kafka.LeaderNotAvailable),
+		fmt.Errorf("some error: %w", kafka.RequestTimedOut),
+		fmt.Errorf("some error: %w", kafka.OffsetOutOfRange),
+		fmt.Errorf("some error: %w", kafka.Unknown),
+	}
+	require.True(t, IsProducerErrTemporary(err))
+
+	wrappedErr := fmt.Errorf("could not publish to %q: %w", "some topic", err)
+	require.True(t, IsProducerErrTemporary(wrappedErr))
+
+	wrappedErr = fmt.Errorf("wrapping again: %w", wrappedErr)
+	require.True(t, IsProducerErrTemporary(wrappedErr))
+}
+
 func TestWriteErrors(t *testing.T) {
 	err := make(kafka.WriteErrors, 0)
 	err = append(err, kafka.PolicyViolation)
