@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"net/url"
 	"regexp"
-	"strings"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/glue"
@@ -22,7 +21,10 @@ var (
 	glueParquetOutputFormat   = "org.apache.hadoop.hive.ql.io.parquet.MapredParquetOutputFormat"
 )
 
-var PartitionRegex = regexp.MustCompile(`.*/(?P<name>.*)=(?P<value>.*)`)
+var (
+	PartitionFolderRegex = regexp.MustCompile(`.*/(?P<name>.*)=(?P<value>.*)`)
+	PartitionWindowRegex = regexp.MustCompile(`(?P<name>.*)=(?P<value>.*)`)
+)
 
 type GlueSchemaRepository struct {
 	GlueClient *glue.Glue
@@ -118,9 +120,14 @@ func (gl *GlueSchemaRepository) CreateSchema() (err error) {
 }
 
 func (gl *GlueSchemaRepository) CreateTable(tableName string, columnMap map[string]string) (err error) {
+	partitionKeys, err := gl.partitionKeys()
+	if err != nil {
+		return fmt.Errorf("partition keys: %w", err)
+	}
+
 	tableInput := &glue.TableInput{
 		Name:          aws.String(tableName),
-		PartitionKeys: gl.partitionKeys(),
+		PartitionKeys: partitionKeys,
 	}
 
 	// create table request
@@ -167,9 +174,14 @@ func (gl *GlueSchemaRepository) AddColumns(tableName string, columnsInfo []wareh
 		tableSchema[columnInfo.Name] = columnInfo.Type
 	}
 
+	partitionKeys, err := gl.partitionKeys()
+	if err != nil {
+		return fmt.Errorf("partition keys: %w", err)
+	}
+
 	// add storage descriptor to update table request
 	updateTableInput.TableInput.StorageDescriptor = gl.getStorageDescriptor(tableName, tableSchema)
-	updateTableInput.TableInput.PartitionKeys = gl.partitionKeys()
+	updateTableInput.TableInput.PartitionKeys = partitionKeys
 
 	// update table
 	_, err = gl.GlueClient.UpdateTable(&updateTableInput)
@@ -231,6 +243,11 @@ func (gl *GlueSchemaRepository) getS3LocationForTable(tableName string) string {
 func (gl *GlueSchemaRepository) RefreshPartitions(tableName string, loadFiles []warehouseutils.LoadFileT) error {
 	pkgLogger.Infof("Refreshing partitions for table %s with batch of %d files", tableName, len(loadFiles))
 
+	// Skip if time window layout is not defined
+	if layout := warehouseutils.GetConfigValue("timeWindowLayout", gl.Warehouse); layout == "" {
+		return nil
+	}
+
 	var (
 		locationsToPartition = make(map[string]*glue.PartitionInput)
 		locationFolder       string
@@ -249,8 +266,8 @@ func (gl *GlueSchemaRepository) RefreshPartitions(tableName string, loadFiles []
 			continue
 		}
 
-		if partitionGroups, err = warehouseutils.CaptureRegexGroup(PartitionRegex, locationFolder); err != nil {
-			return fmt.Errorf("capture partition regex group: %w", err)
+		if partitionGroups, err = warehouseutils.CaptureRegexGroup(PartitionFolderRegex, locationFolder); err != nil {
+			return fmt.Errorf("capture partition folder regex: %w", err)
 		}
 
 		locationsToPartition[locationFolder] = &glue.PartitionInput{
@@ -305,8 +322,20 @@ func (gl *GlueSchemaRepository) RefreshPartitions(tableName string, loadFiles []
 	return nil
 }
 
-func (gl *GlueSchemaRepository) partitionKeys() []*glue.Column {
-	windowLayout := TimeWindowFormat(&gl.Warehouse)
-	columnName := strings.Split(windowLayout, "=")[0]
-	return []*glue.Column{{Name: aws.String(columnName), Type: aws.String("date")}}
+func (gl *GlueSchemaRepository) partitionKeys() (columns []*glue.Column, err error) {
+	var (
+		layout          string
+		partitionGroups map[string]string
+	)
+
+	if layout = warehouseutils.GetConfigValue("timeWindowLayout", gl.Warehouse); layout == "" {
+		return
+	}
+
+	if partitionGroups, err = warehouseutils.CaptureRegexGroup(PartitionWindowRegex, layout); err != nil {
+		return columns, fmt.Errorf("capture partition window regex: %w", err)
+	}
+
+	columns = append(columns, &glue.Column{Name: aws.String(partitionGroups["name"]), Type: aws.String("date")})
+	return
 }

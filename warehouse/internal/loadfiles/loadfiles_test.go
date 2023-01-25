@@ -371,9 +371,7 @@ func TestGetLoadFilePrefix(t *testing.T) {
 			name: "s3 datalake",
 			warehouse: warehouseutils.Warehouse{
 				Destination: backendconfig.DestinationT{
-					Config: map[string]interface{}{
-						"tableSuffix": "key=val",
-					},
+					Config: map[string]interface{}{},
 				},
 				Type: warehouseutils.S3_DATALAKE,
 			},
@@ -384,9 +382,22 @@ func TestGetLoadFilePrefix(t *testing.T) {
 			warehouse: warehouseutils.Warehouse{
 				Destination: backendconfig.DestinationT{
 					Config: map[string]interface{}{
-						"tableSuffix": "key=val",
-						"region":      "test-region",
-						"useGlue":     true,
+						"region":  "test-region",
+						"useGlue": true,
+					},
+				},
+				Type: warehouseutils.S3_DATALAKE,
+			},
+			expected: "2022/08/06/14",
+		},
+		{
+			name: "s3 datalake with glue and layout",
+			warehouse: warehouseutils.Warehouse{
+				Destination: backendconfig.DestinationT{
+					Config: map[string]interface{}{
+						"region":           "test-region",
+						"useGlue":          true,
+						"timeWindowLayout": "dt=2006-01-02",
 					},
 				},
 				Type: warehouseutils.S3_DATALAKE,
@@ -409,6 +420,16 @@ func TestGetLoadFilePrefix(t *testing.T) {
 			name: "gcs datalake",
 			warehouse: warehouseutils.Warehouse{
 				Destination: backendconfig.DestinationT{
+					Config: map[string]interface{}{},
+				},
+				Type: warehouseutils.GCS_DATALAKE,
+			},
+			expected: "2022/08/06/14",
+		},
+		{
+			name: "gcs datalake with suffix",
+			warehouse: warehouseutils.Warehouse{
+				Destination: backendconfig.DestinationT{
 					Config: map[string]interface{}{
 						"tableSuffix": "key=val",
 					},
@@ -416,6 +437,18 @@ func TestGetLoadFilePrefix(t *testing.T) {
 				Type: warehouseutils.GCS_DATALAKE,
 			},
 			expected: "key=val/2022/08/06/14",
+		},
+		{
+			name: "gcs datalake with layout",
+			warehouse: warehouseutils.Warehouse{
+				Destination: backendconfig.DestinationT{
+					Config: map[string]interface{}{
+						"timeWindowLayout": "year=2006/month=01/day=02/hour=15",
+					},
+				},
+				Type: warehouseutils.GCS_DATALAKE,
+			},
+			expected: "year=2022/month=08/day=06/hour=14",
 		},
 		{
 			name: "gcs datalake with suffix and layout",

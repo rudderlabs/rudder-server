@@ -350,28 +350,25 @@ func (lf *LoadFileGenerator) destinationRevisionIDMap(ctx context.Context, job m
 	return
 }
 
-func GetLoadFilePrefix(timeWindow time.Time, warehouse warehouseutils.Warehouse) (timeWindowFormat string) {
+func GetLoadFilePrefix(timeWindow time.Time, warehouse warehouseutils.Warehouse) string {
 	switch warehouse.Type {
 	case warehouseutils.GCS_DATALAKE:
-		var (
-			timeWindowLayout = warehouseutils.GetConfigValue("timeWindowLayout", warehouse)
-			tableSuffixPath  = warehouseutils.GetConfigValue("tableSuffix", warehouse)
-		)
+		windowFormat := timeWindow.Format(warehouseutils.DatalakeTimeWindowFormat)
 
-		if timeWindowLayout == "" {
-			timeWindowLayout = warehouseutils.DatalakeTimeWindowFormat
+		if windowLayout := warehouseutils.GetConfigValue("timeWindowLayout", warehouse); windowLayout != "" {
+			windowFormat = timeWindow.Format(windowLayout)
 		}
-
-		timeWindowFormat = timeWindow.Format(timeWindowLayout)
-
-		if tableSuffixPath != "" {
-			timeWindowFormat = fmt.Sprintf("%v/%v", tableSuffixPath, timeWindowFormat)
+		if suffix := warehouseutils.GetConfigValue("tableSuffix", warehouse); suffix != "" {
+			windowFormat = fmt.Sprintf("%v/%v", suffix, windowFormat)
 		}
+		return windowFormat
 	case warehouseutils.S3_DATALAKE:
-		windowLayout := schemarepository.TimeWindowFormat(&warehouse)
-		timeWindowFormat = timeWindow.Format(windowLayout)
-	default:
-		timeWindowFormat = timeWindow.Format(warehouseutils.DatalakeTimeWindowFormat)
+		if !schemarepository.UseGlue(&warehouse) {
+			return timeWindow.Format(warehouseutils.DatalakeTimeWindowFormat)
+		}
+		if windowLayout := warehouseutils.GetConfigValue("timeWindowLayout", warehouse); windowLayout != "" {
+			return timeWindow.Format(windowLayout)
+		}
 	}
-	return timeWindowFormat
+	return timeWindow.Format(warehouseutils.DatalakeTimeWindowFormat)
 }
