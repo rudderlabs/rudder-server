@@ -15,15 +15,12 @@ import (
 
 func Test_LoadFiles(t *testing.T) {
 	ctx := context.Background()
-
 	now := time.Now().Truncate(time.Second).UTC()
+	db := setupDB(t)
 
-	r := repo.LoadFiles{
-		DB: setupDB(t),
-		Now: func() time.Time {
-			return now
-		},
-	}
+	r := repo.NewLoadFiles(db, repo.WithNow(func() time.Time {
+		return now
+	}))
 
 	var expectedLoadFiles []model.LoadFile
 	var stagingIDs []int64

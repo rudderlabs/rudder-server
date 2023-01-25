@@ -35,14 +35,7 @@ type Payload struct {
 	LoadFileType                 string
 }
 
-type ProcessStagingFilesJobT struct {
-	Upload    Upload
-	List      []*model.StagingFile
-	Warehouse warehouseutils.Warehouse
-}
-
 type LoadFileJobT struct {
-	Upload                     Upload
 	StagingFile                *model.StagingFile
 	Schema                     map[string]map[string]string
 	Warehouse                  warehouseutils.Warehouse
