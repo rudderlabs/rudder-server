@@ -94,5 +94,4 @@ func TestStorage(t *testing.T) {
 	require.Equal(t, ogData, dlData)
 
 	require.NoError(t, os.Remove(dlFile.Name()))
-
 }
