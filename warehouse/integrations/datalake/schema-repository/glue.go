@@ -153,7 +153,7 @@ func (gl *GlueSchemaRepository) CreateTable(tableName string, columnMap map[stri
 	return
 }
 
-func (gl *GlueSchemaRepository) AddColumns(tableName string, columnsInfo []warehouseutils.ColumnInfo) (err error) {
+func (gl *GlueSchemaRepository) updateTable(tableName string, columnsInfo []warehouseutils.ColumnInfo) (err error) {
 	updateTableInput := glue.UpdateTableInput{
 		DatabaseName: aws.String(gl.Namespace),
 		TableInput: &glue.TableInput{
@@ -192,8 +192,12 @@ func (gl *GlueSchemaRepository) AddColumns(tableName string, columnsInfo []wareh
 	return
 }
 
+func (gl *GlueSchemaRepository) AddColumns(tableName string, columnsInfo []warehouseutils.ColumnInfo) (err error) {
+	return gl.updateTable(tableName, columnsInfo)
+}
+
 func (gl *GlueSchemaRepository) AlterColumn(tableName, columnName, columnType string) (err error) {
-	return gl.AddColumns(tableName, []warehouseutils.ColumnInfo{{Name: columnName, Type: columnType}})
+	return gl.updateTable(tableName, []warehouseutils.ColumnInfo{{Name: columnName, Type: columnType}})
 }
 
 func getGlueClient(wh warehouseutils.Warehouse) (*glue.Glue, error) {
@@ -312,6 +316,11 @@ func (gl *GlueSchemaRepository) RefreshPartitions(tableName string, loadFiles []
 	}
 	if len(partitionInputs) == 0 {
 		return nil
+	}
+
+	// Updating table partitions with empty columns to create partition keys
+	if err = gl.updateTable(tableName, []warehouseutils.ColumnInfo{}); err != nil {
+		return fmt.Errorf("update table: %w", err)
 	}
 
 	gl.Logger.Infof("Refreshing %d partitions", len(partitionInputs))
