@@ -267,7 +267,8 @@ func (gl *GlueSchemaRepository) RefreshPartitions(tableName string, loadFiles []
 		}
 
 		if partitionGroups, err = warehouseutils.CaptureRegexGroup(PartitionFolderRegex, locationFolder); err != nil {
-			return fmt.Errorf("capture partition folder regex: %w", err)
+			pkgLogger.Warnf("Skipping refresh partitions for table %s with location %s: %v", tableName, locationFolder, err)
+			continue
 		}
 
 		locationsToPartition[locationFolder] = &glue.PartitionInput{

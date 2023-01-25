@@ -80,6 +80,18 @@ func TestGlueSchemaRepositoryRoundTrip(t *testing.T) {
 			},
 			windowLayout: "dt=2006-01-02",
 		},
+		{
+			name: "invalid window layout",
+			config: map[string]interface{}{
+				"region":           credentials.Region,
+				"bucketName":       credentials.Bucket,
+				"accessKeyID":      credentials.AccessKeyID,
+				"accessKey":        credentials.AccessKey,
+				"useGlue":          true,
+				"timeWindowLayout": "dt=2006-01-02",
+			},
+			windowLayout: warehouseutils.DatalakeTimeWindowFormat,
+		},
 	}
 
 	for _, tc := range testCases {
