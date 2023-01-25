@@ -7,6 +7,8 @@ import (
 	"os"
 	"testing"
 
+	"github.com/rudderlabs/rudder-server/utils/logger"
+
 	"github.com/aws/aws-sdk-go/service/glue"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/services/filemanager"
@@ -117,6 +119,7 @@ func TestGlueSchemaRepositoryRoundTrip(t *testing.T) {
 			warehouseutils.Init()
 
 			g, err := NewGlueSchemaRepository(warehouse)
+			g.Logger = logger.NOP
 			require.NoError(t, err)
 
 			t.Logf("Creating schema %s", testNamespace)
