@@ -317,10 +317,18 @@ func (repo *StagingFiles) GetAfterID(ctx context.Context, sourceID, destinationI
 }
 
 func (repo *StagingFiles) Pending(ctx context.Context, sourceID, destinationID string) ([]model.StagingFile, error) {
-	var lastStagingFileID int64
+	var (
+		uploadID               int64
+		lastStartStagingFileID int64
+		lastEndStagingFileID   int64
+		useUploadID            sql.NullBool
+	)
 	err := repo.db.QueryRowContext(ctx, `
 		SELECT
-			end_staging_file_id
+			id,
+			start_staging_file_id,
+			end_staging_file_id,
+			metadata->>'use_upload_id' AS use_upload_id
 		FROM
 		`+uploadsTableName+`
 		WHERE
@@ -329,24 +337,53 @@ func (repo *StagingFiles) Pending(ctx context.Context, sourceID, destinationID s
 			id DESC
 		LIMIT 1;
 	`, sourceID, destinationID,
-	).Scan(&lastStagingFileID)
+	).Scan(
+		&uploadID,
+		&lastStartStagingFileID,
+		&lastEndStagingFileID,
+		&useUploadID,
+	)
+
 	if err == sql.ErrNoRows {
-		lastStagingFileID = 0
+		lastEndStagingFileID = 0
 	} else if err != nil {
 		return nil, fmt.Errorf("querying uploads: %w", err)
 	}
 
-	stagingFilesList, err := repo.GetAfterID(
-		ctx,
-		sourceID,
-		destinationID,
-		lastStagingFileID,
-	)
-	if err != nil {
-		return nil, err
+	// Legacy path:
+	// staging files are not associated with uploads, 
+	// so we need to get them by range. 
+	if !useUploadID.Bool {
+		stagingFilesList, err := repo.GetAfterID(
+			ctx,
+			sourceID,
+			destinationID,
+			lastEndStagingFileID,
+		)
+		if err != nil {
+			return nil, err
+		}
+
+		return stagingFilesList, nil
 	}
 
-	return stagingFilesList, nil
+	// lastStartStagingFileID is used as an optimization to avoid scanning the whole table.
+	query := `SELECT ` + stagingTableColumns + ` FROM ` + stagingTableName + `
+	WHERE
+		id > $1
+		AND source_id = $2
+		AND destination_id = $3
+		AND upload_id IS NULL
+	ORDER BY
+		id ASC;`
+
+	rows, err := repo.db.QueryContext(ctx, query, lastStartStagingFileID, sourceID, destinationID)
+	if err != nil {
+		return nil, fmt.Errorf("querying staging files: %w", err)
+	}
+
+	return repo.parseRows(rows)
+
 }
 
 func (repo *StagingFiles) CountPendingForSource(ctx context.Context, sourceID string) (int64, error) {
