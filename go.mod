@@ -16,8 +16,8 @@ replace (
 )
 
 require (
-	cloud.google.com/go/bigquery v1.43.0
-	cloud.google.com/go/pubsub v1.27.0
+	cloud.google.com/go/bigquery v1.44.0
+	cloud.google.com/go/pubsub v1.28.0
 	cloud.google.com/go/storage v1.27.0
 	github.com/Azure/azure-storage-blob-go v0.14.0
 	github.com/ClickHouse/clickhouse-go v1.5.4
@@ -89,7 +89,7 @@ require (
 
 require (
 	cloud.google.com/go v0.105.0 // indirect
-	cloud.google.com/go/compute v1.12.1 // indirect
+	cloud.google.com/go/compute v1.13.0 // indirect
 	cloud.google.com/go/compute/metadata v0.2.1 // indirect
 	cloud.google.com/go/iam v0.7.0 // indirect
 	github.com/Azure/azure-pipeline-go v0.2.3 // indirect
@@ -213,7 +213,7 @@ require (
 	golang.org/x/text v0.4.0 // indirect
 	golang.org/x/xerrors v0.0.0-20220907171357-04be3eba64a2 // indirect
 	google.golang.org/appengine v1.6.7 // indirect
-	google.golang.org/genproto v0.0.0-20221118155620-16455021b5e6
+	google.golang.org/genproto v0.0.0-20221202195650-67e5cbc046fd
 	gopkg.in/ini.v1 v1.67.0 // indirect
 	gopkg.in/linkedin/goavro.v1 v1.0.5 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
