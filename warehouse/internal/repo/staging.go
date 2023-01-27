@@ -351,8 +351,8 @@ func (repo *StagingFiles) Pending(ctx context.Context, sourceID, destinationID s
 	}
 
 	// Legacy path:
-	// staging files are not associated with uploads, 
-	// so we need to get them by range. 
+	// staging files are not associated with uploads,
+	// so we need to get them by range.
 	if !useUploadID.Bool {
 		stagingFilesList, err := repo.GetAfterID(
 			ctx,
@@ -383,7 +383,6 @@ func (repo *StagingFiles) Pending(ctx context.Context, sourceID, destinationID s
 	}
 
 	return repo.parseRows(rows)
-
 }
 
 func (repo *StagingFiles) CountPendingForSource(ctx context.Context, sourceID string) (int64, error) {
