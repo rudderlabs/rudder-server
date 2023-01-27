@@ -388,7 +388,6 @@ func (uploads *Uploads) DeleteWaiting(ctx context.Context, uploadID int64) error
 		`DELETE FROM `+uploadsTableName+` WHERE id = $1 AND status = $2`,
 		uploadID, model.Waiting,
 	)
-
 	if err != nil {
 		return fmt.Errorf("delete waiting upload: %w", err)
 	}
