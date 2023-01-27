@@ -20,6 +20,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/ory/dockertest/v3"
+	"github.com/samber/lo"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sync/errgroup"
 
@@ -928,6 +929,61 @@ func TestCacheScenarios(t *testing.T) {
 		res, err = jobsDB.getUnprocessed(context.Background(), GetQueryParamsT{CustomValFilters: []string{customVal}, ParameterFilters: []ParameterFilterT{{Name: "destination_id", Value: destinationID}}, JobsLimit: 100})
 		require.NoError(t, err)
 		require.Equal(t, 2, len(res.Jobs), "jobsDB should report 2 unprocessed jobs when using destination_id as filter, after we added 2 jobs")
+	})
+
+	generateWorkspaceJobs := func(count int, workspaceID, destinationID string) []*JobT {
+		jobs := generateJobs(count, destinationID)
+		lo.ForEach(jobs, func(job *JobT, _ int) {
+			job.WorkspaceId = workspaceID
+		})
+		return jobs
+	}
+
+	t.Run("supports with and without workspace query filters at the same time", func(t *testing.T) {
+		jobDB := NewForReadWrite("workspace_query_filters")
+		require.NoError(t, jobDB.Start())
+		defer jobDB.TearDown()
+
+		workspaceID := "workspaceID"
+		require.NoError(
+			t,
+			jobDB.Store(
+				context.Background(),
+				generateWorkspaceJobs(2, workspaceID, "someDestinationID"),
+			), "no error storing jobs",
+		)
+
+		res, err := jobDB.GetUnprocessed(
+			context.Background(),
+			GetQueryParamsT{
+				CustomValFilters: []string{customVal},
+				WorkspaceID:      workspaceID,
+				JobsLimit:        100,
+			},
+		)
+		require.NoError(t, err)
+		require.Equal(
+			t,
+			2,
+			len(res.Jobs),
+			"jobsDB should report 2 unprocessed jobs when using workspace_id as filter",
+		)
+
+		res, err = jobDB.GetUnprocessed(
+			context.Background(),
+			GetQueryParamsT{
+				CustomValFilters: []string{customVal},
+				ParameterFilters: []ParameterFilterT{{Name: "destination_id", Value: "someDestinationID"}},
+				JobsLimit:        100,
+			},
+		)
+		require.NoError(t, err)
+		require.Equal(
+			t,
+			2,
+			len(res.Jobs),
+			"jobsDB should report 2 unprocessed jobs without a workspace filter as well",
+		)
 	})
 }
 
