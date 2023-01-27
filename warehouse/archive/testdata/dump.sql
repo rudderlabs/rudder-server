@@ -36,32 +36,32 @@ INSERT INTO wh_staging_files (
   id, location, schema, source_id, destination_id,
   status, total_events, total_bytes, first_event_at,
   last_event_at, created_at, updated_at,
-  metadata
+  metadata, upload_id
 )
 VALUES
   (
     1, 'rudder/rudder-warehouse-staging-logs/2EUralUySYUs7hgsdU1lFXRSm/2022-09-20/1663650685.2EUralsdsDyZjOKU1lFXRSm.eeadsb4-a066-42f4-a90b-460161378e1b.json.gz',
     '{}', 'test-sourceID', 'test-destinationID',
     'succeeded', 1, 231, NOW(), NOW(), NOW(),
-    NOW(), '{}'
+    NOW(), '{}', NULL
   ),
   (
     2, 'rudder/rudder-warehouse-staging-logs/2EUralUySYUs7hgsdU1lFXRSm/2022-09-20/1663650685.2EUralsdsDyZjOKU1lFXRSm.eeadsb4-a066-42f4-a90b-460161378e1b.json.gz',
     '{}', 'test-sourceID', 'test-destinationID',
     'succeeded', 1, 231, NOW(), NOW(), NOW(),
-    NOW(), '{}'
+    NOW(), '{}', NULL
   ),
   (
     3, 'rudder/rudder-warehouse-staging-logs/2EUralUySYUs7hgsdU1lFXRSm/2022-09-20/1663650685.2EUralsdsDyZjOKU1lFXRSm.eeadsb4-a066-42f4-a90b-460161378e1b.json.gz',
     '{}', 'test-sourceID', 'test-destinationID',
     'succeeded', 1, 231, NOW(), NOW(), NOW(),
-    NOW(), '{}'
+    NOW(), '{}', 3
   ),
   (
     4, 'rudder/rudder-warehouse-staging-logs/2EUralUySYUs7hgsdU1lFXRSm/2022-09-20/1663650685.2EUralsdsDyZjOKU1lFXRSm.eeadsb4-a066-42f4-a90b-460161378e1b.json.gz',
     '{}', 'test-sourceID', 'test-destinationID',
     'succeeded', 1, 231, NOW(), NOW(), NOW(),
-    NOW(), '{}'
+    NOW(), '{}', 4
   );
 INSERT INTO wh_load_files (
   id, staging_file_id, location, source_id,
