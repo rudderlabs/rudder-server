@@ -7,10 +7,11 @@ import (
 
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/repo"
+	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 	"github.com/stretchr/testify/require"
 )
 
-func TestUploads_CRUD(t *testing.T) {
+func TestUploads_Get(t *testing.T) {
 	ctx := context.Background()
 
 	db := setupDB(t)
@@ -308,4 +309,55 @@ func TestUploads_UploadMetadata(t *testing.T) {
 		Priority:         40,
 		NextRetryTime:    time.Date(2021, 1, 1, 0, 0, 1, 0, time.UTC),
 	}, metadata)
+}
+
+func TestUploads_Delete(t *testing.T) {
+	ctx := context.Background()
+	db := setupDB(t)
+
+	now := time.Date(2021, 1, 1, 0, 0, 3, 0, time.UTC)
+	repoUpload := repo.NewUploads(db, repo.WithNow(func() time.Time {
+		return now
+	}))
+	repoStaging := repo.NewStagingFiles(db, repo.WithNow(func() time.Time {
+		return now
+	}))
+
+	file := model.StagingFile{
+		WorkspaceID:   "workspace_id",
+		Location:      "s3://bucket/path/to/file",
+		SourceID:      "source_id",
+		DestinationID: "destination_id",
+		Status:        warehouseutils.StagingFileWaitingState,
+		Error:         nil,
+		FirstEventAt:  time.Now(),
+		LastEventAt:   time.Now(),
+	}.WithSchema([]byte(`{"type": "object"}`))
+
+	stagingID, err := repoStaging.Insert(ctx, &file)
+	require.NoError(t, err)
+
+	uploadID, err := repoUpload.CreateWithStagingFiles(ctx, model.Upload{
+		SourceID:      "source_id",
+		DestinationID: "destination_id",
+		Status:        model.Waiting,
+	}, []model.StagingFile{
+		{
+			ID:            stagingID,
+			SourceID:      "source_id",
+			DestinationID: "destination_id",
+		},
+	})
+	require.NoError(t, err)
+
+	files, err := repoStaging.Pending(ctx, "source_id", "destination_id")
+	require.NoError(t, err)
+	require.Len(t, files, 0)
+
+	err = repoUpload.DeleteWaiting(ctx, uploadID)
+	require.NoError(t, err)
+
+	files, err = repoStaging.Pending(ctx, "source_id", "destination_id")
+	require.NoError(t, err)
+	require.Len(t, files, 1)
 }

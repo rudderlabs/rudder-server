@@ -383,6 +383,19 @@ func (uploads *Uploads) UploadJobsStats(ctx context.Context, destType string, op
 	return stats, nil
 }
 
+func (uploads *Uploads) DeleteWaiting(ctx context.Context, uploadID int64) error {
+	_, err := uploads.db.ExecContext(ctx,
+		`DELETE FROM `+uploadsTableName+` WHERE id = $1 AND status = $2`,
+		uploadID, model.Waiting,
+	)
+
+	if err != nil {
+		return fmt.Errorf("delete waiting upload: %w", err)
+	}
+
+	return nil
+}
+
 func scanUpload(scan scanFn, upload *model.Upload) error {
 	var (
 		schema                    []byte
