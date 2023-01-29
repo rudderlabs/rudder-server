@@ -297,7 +297,7 @@ func (gl *GlueSchemaRepository) RefreshPartitions(tableName string, loadFiles []
 	// partitions) changes in Glue tables (since the number of versions of a Glue table
 	// is limited)
 	for location, partition := range locationsToPartition {
-		_, err = gl.GlueClient.GetPartition(&glue.GetPartitionInput{
+		_, err := gl.GlueClient.GetPartition(&glue.GetPartitionInput{
 			DatabaseName:    aws.String(gl.Namespace),
 			PartitionValues: partition.Values,
 			TableName:       aws.String(tableName),
@@ -308,7 +308,6 @@ func (gl *GlueSchemaRepository) RefreshPartitions(tableName string, loadFiles []
 				return fmt.Errorf("get partition: %w", err)
 			}
 
-			err = nil
 			partitionInputs = append(partitionInputs, locationsToPartition[location])
 		} else {
 			gl.Logger.Debugf("Partition %s already exists in table %s", location, tableName)
