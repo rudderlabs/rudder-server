@@ -433,11 +433,6 @@ func (job *UploadJobT) run() (err error) {
 
 			job.recordLoadFileGenerationTimeStat(startLoadFileID, endLoadFileID)
 
-			if err = job.RefreshPartitions(startLoadFileID, endLoadFileID); err != nil {
-				pkgLogger.Warnf("[WH] Error refreshing partitions for upload: %d, error: %v", job.upload.ID, err)
-				break
-			}
-
 			newStatus = nextUploadState.completed
 
 		case model.UpdatedTableUploadsCounts:
@@ -535,6 +530,11 @@ func (job *UploadJobT) run() (err error) {
 			})
 
 			wg.Wait()
+
+			if err = job.RefreshPartitions(job.upload.LoadFileStartID, job.upload.LoadFileEndID); err != nil {
+				loadErrors = append(loadErrors, fmt.Errorf("refresh partitions: %w", err))
+			}
+
 			if len(loadErrors) > 0 {
 				err = misc.ConcatErrors(loadErrors)
 				break

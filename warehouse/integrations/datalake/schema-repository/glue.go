@@ -124,7 +124,7 @@ func (gl *GlueSchemaRepository) CreateSchema() (err error) {
 }
 
 func (gl *GlueSchemaRepository) CreateTable(tableName string, columnMap map[string]string) (err error) {
-	partitionKeys, err := gl.partitionKeys()
+	partitionKeys, err := gl.partitionColumns()
 	if err != nil {
 		return fmt.Errorf("partition keys: %w", err)
 	}
@@ -178,7 +178,7 @@ func (gl *GlueSchemaRepository) updateTable(tableName string, columnsInfo []ware
 		tableSchema[columnInfo.Name] = columnInfo.Type
 	}
 
-	partitionKeys, err := gl.partitionKeys()
+	partitionKeys, err := gl.partitionColumns()
 	if err != nil {
 		return fmt.Errorf("partition keys: %w", err)
 	}
@@ -335,7 +335,7 @@ func (gl *GlueSchemaRepository) RefreshPartitions(tableName string, loadFiles []
 	return nil
 }
 
-func (gl *GlueSchemaRepository) partitionKeys() (columns []*glue.Column, err error) {
+func (gl *GlueSchemaRepository) partitionColumns() (columns []*glue.Column, err error) {
 	var (
 		layout          string
 		partitionGroups map[string]string
