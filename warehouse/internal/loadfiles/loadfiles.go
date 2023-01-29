@@ -141,7 +141,7 @@ func (lf *LoadFileGenerator) createFromStaging(ctx context.Context, job model.Up
 
 	lf.Logger.Infof("[WH]: Starting batch processing %v stage files for %s:%s", publishBatchSize, destType, destID)
 
-	job.Upload.LoadFileGenStartTime = timeutil.Now()
+	job.LoadFileGenStartTime = timeutil.Now()
 
 	// Getting distinct destination revision ID from staging files metadata
 	destinationRevisionIDMap, err := lf.destinationRevisionIDMap(ctx, job)
@@ -227,6 +227,7 @@ func (lf *LoadFileGenerator) createFromStaging(ctx context.Context, job model.Up
 			Jobs:    messages,
 			JobType: "upload",
 		}
+
 		ch, err := lf.Notifier.Publish(messagePayload, schema, job.Upload.Priority)
 		if err != nil {
 			return 0, 0, fmt.Errorf("error publishing to PgNotifier: %w", err)

@@ -41,13 +41,13 @@ func TestThrottling(t *testing.T) {
 			},
 			{
 				name:        "gcra",
-				limiter:     newLimiter(t, WithInMemoryGCRA(1)),
-				concurrency: 2, additionalErrorMargin: 0.06,
+				limiter:     newLimiter(t, WithInMemoryGCRA(0)),
+				concurrency: 100,
 			},
 			{
 				name:        "gcra redis",
-				limiter:     newLimiter(t, WithRedisGCRA(rc, 1)),
-				concurrency: 2, additionalErrorMargin: 0.06,
+				limiter:     newLimiter(t, WithRedisGCRA(rc, 100)), // TODO: this should work properly with burst = 0 as well (i.e. burst = rate)
+				concurrency: 100,
 			},
 			{
 				name:        "sorted sets redis",
@@ -95,7 +95,25 @@ func testLimiter(
 		timeMutex   sync.Mutex
 		stop        = make(chan struct{}, 1)
 	)
+
+	run := func() (err error, allowed bool, redisTime time.Duration) {
+		switch {
+		case l.redisSpeaker != nil && l.useGCRA:
+			redisTime, allowed, _, err = l.redisGCRA(ctx, cost, rate, window, key)
+		case l.redisSpeaker != nil && !l.useGCRA:
+			redisTime, allowed, _, err = l.redisSortedSet(ctx, cost, rate, window, key)
+		default:
+			allowed, _, err = l.Allow(ctx, cost, rate, window, key)
+		}
+		return
+	}
+	if l.useGCRA { // warm up the GCRA algorithms
+		for i := 0; i < int(rate); i++ {
+			_, _, _ = run()
+		}
+	}
 loop:
+
 	for {
 		select {
 		case <-stop:
@@ -112,20 +130,9 @@ loop:
 				defer wg.Done()
 				defer func() { <-maxRoutines }()
 
-				var (
-					err       error
-					allowed   bool
-					redisTime time.Duration
-				)
-				switch {
-				case l.redisSpeaker != nil && l.useGCRA:
-					redisTime, allowed, _, err = l.redisGCRA(ctx, cost, rate, window, key)
-				case l.redisSpeaker != nil && !l.useGCRA:
-					redisTime, allowed, _, err = l.redisSortedSet(ctx, cost, rate, window, key)
-				default:
-					allowed, _, err = l.Allow(ctx, cost, rate, window, key)
-				}
+				err, allowed, redisTime := run()
 				require.NoError(t, err)
+				now := time.Now().UnixNano()
 
 				timeMutex.Lock()
 				defer timeMutex.Unlock()
@@ -133,13 +140,13 @@ loop:
 					if redisTime > time.Duration(currentTime) {
 						currentTime = int64(redisTime)
 					}
-				} else if now := time.Now().UnixNano(); now > currentTime { // in-memory algorithm, let's use time.Now()
+				} else if now > currentTime { // in-memory algorithm, let's use time.Now()
 					currentTime = now
 				}
 				if startTime == 0 {
 					startTime = currentTime
 				}
-				if currentTime-startTime >= window*int64(time.Second) {
+				if currentTime-startTime > window*int64(time.Second) {
 					select {
 					case stop <- struct{}{}:
 					default: // one signal to stop is enough, don't block

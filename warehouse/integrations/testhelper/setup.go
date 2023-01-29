@@ -965,7 +965,11 @@ func Schema(provider, schemaKey string) string {
 func credentialsFromKey(key string) (credentials map[string]string) {
 	cred, exists := os.LookupEnv(key)
 	if !exists {
-		log.Print(fmt.Errorf("env %s does not exists while setting up the workspace config", key))
+		log.Print(fmt.Errorf("while setting up the workspace config: env %s does not exists", key))
+		return
+	}
+	if len(cred) == 0 {
+		log.Print(fmt.Errorf("while setting up the workspace config: env %s is empty", key))
 		return
 	}
 
