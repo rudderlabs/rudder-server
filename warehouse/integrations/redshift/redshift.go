@@ -12,6 +12,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/lib/pq"
+
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 
 	"github.com/rudderlabs/rudder-server/config"
@@ -782,7 +784,7 @@ func (rs *Redshift) AlterColumn(tableName, columnName, columnType string) (model
 
 	// dropping deprecated column
 	// Since dropping the column can fail, we need to do it outside the transaction
-	// Because if will fail durint the commit of the transaction
+	// Because if will fail during the commit of the transaction
 	// https://github.com/lib/pq/blob/d5affd5073b06f745459768de35356df2e5fd91d/conn.go#L600
 	query = fmt.Sprintf(`
 		ALTER TABLE
@@ -795,9 +797,7 @@ func (rs *Redshift) AlterColumn(tableName, columnName, columnType string) (model
 		deprecatedColumnName,
 	)
 	if _, err = rs.DB.ExecContext(ctx, query); err != nil {
-		// ERROR:  cannot drop column <column> of table <table> because other objects depend on it
-		// ERROR:  cannot drop table <table> column <column> because other objects depend on it
-		if !strings.Contains(err.Error(), "depend on") {
+		if pqError, ok := err.(*pq.Error); !ok || pqError.Code != "2BP01" {
 			return model.AlterTableResponse{}, fmt.Errorf("drop deprecated column: %w", err)
 		}
 

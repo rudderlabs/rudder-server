@@ -14,22 +14,20 @@ import (
 )
 
 func TestSendFeatures(t *testing.T) {
-	const (
+	var (
 		testTeam     = "test-team"
 		testResource = "test-resource"
-		testService  = "test-service"
+		testService  = alerta.Service{"test-service"}
 		testSeverity = alerta.SeverityOk
 		testPriority = alerta.PriorityP3
 	)
 
-	wantBody := `{"resource":"test-resource","event":"ok/rudder/test-resource:notificationServiceMode=PRODUCTION,priority=P3,sendToNotificationService=true,tag1=value1,tag2=value2,team=test-team","environment":"PRODUCTION","severity":"ok","group":"notificationServiceMode=PRODUCTION,priority=P3,sendToNotificationService=true,tag1=value1,tag2=value2,team=test-team","text":"ok/rudder/test-resource:notificationServiceMode=PRODUCTION,priority=P3,sendToNotificationService=true,tag1=value1,tag2=value2,team=test-team is ok temp-text","service":["test-service"],"timeout":86400,"tags":["notificationServiceMode=PRODUCTION","priority=P3","sendToNotificationService=true","tag1=value1","tag2=value2","team=test-team"]}`
+	wantBody := `{"resource":"test-resource","event":"ok/rudder/test-resource:notificationServiceMode=PRODUCTION,priority=P3,sendToNotificationService=true,tag1=value1,tag2=value2,team=test-team","environment":"PRODUCTION","severity":"ok","group":"notificationServiceMode=PRODUCTION,priority=P3,sendToNotificationService=true,tag1=value1,tag2=value2,team=test-team","text":"temp-text","service":["test-service"],"timeout":86400,"tags":["notificationServiceMode=PRODUCTION","priority=P3","sendToNotificationService=true","tag1=value1","tag2=value2","team=test-team"]}`
 
-	alertaClient := func(s *httptest.Server, o ...alerta.OptFn) alerta.Client {
+	alertaClient := func(s *httptest.Server, o ...alerta.OptFn) alerta.AlertSender {
 		var op []alerta.OptFn
 		op = append(op, o...)
 		op = append(op, alerta.WithHTTPClient(s.Client()))
-		op = append(op, alerta.WithSeverity(testSeverity))
-		op = append(op, alerta.WithPriority(testPriority))
 		op = append(op, alerta.WithTeam(testTeam))
 		op = append(op, alerta.WithTags(alerta.Tags{
 			"tag1=value1",
@@ -63,9 +61,13 @@ func TestSendFeatures(t *testing.T) {
 		err := alertaClient(s,
 			alerta.WithHTTPClient(s.Client()),
 			alerta.WithText("temp-text"),
-		).SendAlert(ctx, testResource, alerta.Service{
+		).SendAlert(
+			ctx,
+			testResource,
 			testService,
-		})
+			testSeverity,
+			testPriority,
+		)
 		require.NoError(t, err)
 	})
 
@@ -83,9 +85,13 @@ func TestSendFeatures(t *testing.T) {
 
 		ctx := context.Background()
 
-		err := alertaClient(s, alerta.WithMaxRetries(maxRetries)).SendAlert(ctx, testResource, alerta.Service{
+		err := alertaClient(s, alerta.WithMaxRetries(maxRetries)).SendAlert(
+			ctx,
+			testResource,
 			testService,
-		})
+			testSeverity,
+			testPriority,
+		)
 		require.EqualError(t, err, "unexpected status code 500: ")
 
 		require.Equalf(t, int64(maxRetries+1), atomic.LoadInt64(&count), "retry %d times", maxRetries)
@@ -105,9 +111,13 @@ func TestSendFeatures(t *testing.T) {
 
 		ctx := context.Background()
 
-		err := alertaClient(s, alerta.WithMaxRetries(maxRetries)).SendAlert(ctx, testResource, alerta.Service{
+		err := alertaClient(s, alerta.WithMaxRetries(maxRetries)).SendAlert(
+			ctx,
+			testResource,
 			testService,
-		})
+			testSeverity,
+			testPriority,
+		)
 		require.EqualError(t, err, "non retriable: unexpected status code 400: ")
 
 		require.Equalf(t, int64(1), atomic.LoadInt64(&count), "retry %d times", maxRetries)
@@ -131,9 +141,13 @@ func TestSendFeatures(t *testing.T) {
 			alerta.WithHTTPClient(s.Client()),
 			alerta.WithMaxRetries(maxRetries),
 			alerta.WithTimeout(time.Millisecond),
-		).SendAlert(ctx, testResource, alerta.Service{
+		).SendAlert(
+			ctx,
+			testResource,
 			testService,
-		})
+			testSeverity,
+			testPriority,
+		)
 
 		require.Error(t, err, "deadline exceeded ")
 	})
@@ -156,9 +170,13 @@ func TestSendFeatures(t *testing.T) {
 		err := alertaClient(s,
 			alerta.WithHTTPClient(s.Client()),
 			alerta.WithMaxRetries(maxRetries),
-		).SendAlert(ctx, testResource, alerta.Service{
+		).SendAlert(
+			ctx,
+			testResource,
 			testService,
-		})
+			testSeverity,
+			testPriority,
+		)
 
 		require.Error(t, err, "deadline exceeded ")
 	})
