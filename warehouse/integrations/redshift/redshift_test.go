@@ -270,7 +270,7 @@ func TestRedshift_AlterColumn(t *testing.T) {
 					bigString,
 				),
 			)
-			require.Error(t, errors.New("pq: value too long for type character varying(512)"))
+			require.ErrorContains(t, err, errors.New("pq: value too long for type character varying(512)").Error())
 
 			res, err := rs.AlterColumn(testTable, testColumn, testColumnType)
 			require.NoError(t, err)
