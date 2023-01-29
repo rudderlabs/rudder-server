@@ -1,6 +1,7 @@
 package warehouse
 
 import (
+	"context"
 	"fmt"
 	"strconv"
 	"strings"
@@ -9,8 +10,8 @@ import (
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/misc"
+	"github.com/rudderlabs/rudder-server/warehouse/internal/repo"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
-	"github.com/tidwall/gjson"
 )
 
 const moduleName = "warehouse"
@@ -70,7 +71,7 @@ func (job *UploadJobT) guageStat(name string, extraTags ...tag) stats.Measuremen
 		"workspaceId":    job.upload.WorkspaceID,
 		"destID":         job.upload.DestinationID,
 		"sourceID":       job.upload.SourceID,
-		"sourceCategory": job.upload.SourceCategory,
+		"sourceCategory": job.warehouse.Source.SourceDefinition.Category,
 	}
 	for _, extraTag := range extraTags {
 		tags[extraTag.name] = extraTag.value
@@ -118,7 +119,7 @@ func (job *UploadJobT) generateUploadSuccessMetrics() {
 	job.counterStat("total_rows_synced").Count(int(numUploadedEvents))
 
 	// Total staged events in the upload
-	numStagedEvents, err := getTotalEventsStaged(job.upload.StartStagingFileID, job.upload.EndStagingFileID)
+	numStagedEvents, err := repo.NewStagingFiles(dbHandle).TotalEventsForUpload(context.TODO(), job.upload)
 	if err != nil {
 		pkgLogger.Errorf("[WH]: Failed to generate stage metrics: %s, Err: %v", job.warehouse.Identifier, err)
 		return
@@ -141,7 +142,7 @@ func (job *UploadJobT) generateUploadAbortedMetrics() {
 	job.counterStat("total_rows_synced").Count(int(numUploadedEvents))
 
 	// Total staged events in the upload
-	numStagedEvents, err := getTotalEventsStaged(job.upload.StartStagingFileID, job.upload.EndStagingFileID)
+	numStagedEvents, err := repo.NewStagingFiles(dbHandle).TotalEventsForUpload(context.TODO(), job.upload)
 	if err != nil {
 		pkgLogger.Errorf("[WH]: Failed to generate stage metrics: %s, Err: %v", job.warehouse.Identifier, err)
 		return
@@ -185,14 +186,13 @@ func (job *UploadJobT) recordTableLoad(tableName string, numEvents int64) {
 		value: strings.ToLower(tableName),
 	}).Count(int(numEvents))
 	// Delay for the oldest event in the batch
-	firstEventAt, err := getFirstStagedEventAt(job.upload.StartStagingFileID)
+	firstEventAt, err := repo.NewStagingFiles(dbHandle).FirstEventForUpload(context.TODO(), job.upload)
 	if err != nil {
 		pkgLogger.Errorf("[WH]: Failed to generate delay metrics: %s, Err: %v", job.warehouse.Identifier, err)
 		return
 	}
 
-	retried := gjson.GetBytes(job.upload.Metadata, "retried").Bool()
-	if !retried {
+	if !job.upload.Retried {
 		config := job.warehouse.Destination.Config
 		syncFrequency := "1440"
 		if config[warehouseutils.SyncFrequency] != nil {

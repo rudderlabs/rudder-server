@@ -13,7 +13,7 @@ VALUES
     1, 'test-sourceID', 'test-namespace',
     'test-destinationID', 'POSTGRES',
     1, 1, 1, 1, 'waiting', '{}', '{}', '{}',
-    now(), now(), now(), now(), '[{ "exporting_data": "2020-04-21 15:16:19.687716", "exported_data": "2020-04-21 15:26:34.344356"}]'
+    now(), now(), now(), now(), '[{ "exporting_data": "2020-04-21T15:16:19.687716Z", "exported_data": "2020-04-21T15:26:34.344356Z"}]'
   ),
   (
     2, 'test-sourceID', 'test-namespace',
