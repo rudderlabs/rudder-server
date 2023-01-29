@@ -418,7 +418,7 @@ func TestUploadJobT_UpdateTableSchema(t *testing.T) {
 						"team=warehouse",
 					})
 
-					w.WriteHeader(http.StatusOK)
+					w.WriteHeader(http.StatusCreated)
 				}))
 				defer s.Close()
 

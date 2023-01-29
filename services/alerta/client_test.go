@@ -22,7 +22,7 @@ func TestSendFeatures(t *testing.T) {
 		testPriority = alerta.PriorityP3
 	)
 
-	wantBody := `{"resource":"test-resource","event":"ok/rudder/test-resource:notificationServiceMode=PRODUCTION,priority=P3,sendToNotificationService=true,tag1=value1,tag2=value2,team=test-team","environment":"PRODUCTION","severity":"ok","group":"notificationServiceMode=PRODUCTION,priority=P3,sendToNotificationService=true,tag1=value1,tag2=value2,team=test-team","text":"temp-text","service":["test-service"],"timeout":86400,"tags":["notificationServiceMode=PRODUCTION","priority=P3","sendToNotificationService=true","tag1=value1","tag2=value2","team=test-team"]}`
+	wantBody := `{"resource":"test-resource","event":"rudder/test-resource:notificationServiceMode=PRODUCTION,priority=P3,sendToNotificationService=true,tag1=value1,tag2=value2,team=test-team","environment":"PRODUCTION","severity":"ok","group":"notificationServiceMode=PRODUCTION,priority=P3,sendToNotificationService=true,tag1=value1,tag2=value2,team=test-team","text":"temp-text","service":["test-service"],"timeout":86400,"tags":["notificationServiceMode=PRODUCTION","priority=P3","sendToNotificationService=true","tag1=value1","tag2=value2","team=test-team"]}`
 
 	alertaClient := func(s *httptest.Server, o ...alerta.OptFn) alerta.AlertSender {
 		var op []alerta.OptFn
@@ -52,7 +52,7 @@ func TestSendFeatures(t *testing.T) {
 			require.NoError(t, err)
 			require.Equal(t, wantBody, string(body))
 
-			w.WriteHeader(http.StatusOK)
+			w.WriteHeader(http.StatusCreated)
 		}))
 		defer s.Close()
 
