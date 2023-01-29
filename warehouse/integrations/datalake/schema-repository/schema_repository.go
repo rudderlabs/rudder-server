@@ -2,6 +2,7 @@ package schemarepository
 
 import (
 	"fmt"
+	"math"
 
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
@@ -56,4 +57,17 @@ func NewSchemaRepository(wh warehouseutils.Warehouse, uploader warehouseutils.Up
 		return NewGlueSchemaRepository(wh)
 	}
 	return NewLocalSchemaRepository(wh, uploader)
+}
+
+// LoadFileBatching batches load files for refresh partitions
+func LoadFileBatching(files []warehouseutils.LoadFileT, batchSize int) [][]warehouseutils.LoadFileT {
+	fileBatches := make([][]warehouseutils.LoadFileT, 0, len(files)/batchSize+1)
+
+	for len(files) > 0 {
+		cut := int(math.Min(float64(len(files)), float64(batchSize)))
+		fileBatches = append(fileBatches, files[0:cut])
+		files = files[cut:]
+	}
+
+	return fileBatches
 }

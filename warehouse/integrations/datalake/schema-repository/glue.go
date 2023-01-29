@@ -24,8 +24,8 @@ var (
 )
 
 var (
-	PartitionFolderRegex = regexp.MustCompile(`.*/(?P<name>.*)=(?P<value>.*)`)
-	PartitionWindowRegex = regexp.MustCompile(`(?P<name>.*)=(?P<value>.*)`)
+	PartitionFolderRegex = regexp.MustCompile(`.*/(?P<name>.*)=(?P<value>.*)$`)
+	PartitionWindowRegex = regexp.MustCompile(`^(?P<name>.*)=(?P<value>.*)$`)
 )
 
 type GlueSchemaRepository struct {
@@ -249,7 +249,7 @@ func (gl *GlueSchemaRepository) getS3LocationForTable(tableName string) string {
 // partitions that are modified by the path in those loadFiles. It returns any error
 // reported by Glue
 func (gl *GlueSchemaRepository) RefreshPartitions(tableName string, loadFiles []warehouseutils.LoadFileT) error {
-	gl.Logger.Infof("Refreshing partitions for table %s with batch of %d files", tableName, len(loadFiles))
+	gl.Logger.Infof("Refreshing partitions for table: %s", tableName)
 
 	// Skip if time window layout is not defined
 	if layout := warehouseutils.GetConfigValue("timeWindowLayout", gl.Warehouse); layout == "" {
@@ -318,12 +318,12 @@ func (gl *GlueSchemaRepository) RefreshPartitions(tableName string, loadFiles []
 		return nil
 	}
 
-	// Updating table partitions with empty columns to create partition keys
+	// Updating table partitions with empty columns to create partition keys if not created
 	if err = gl.updateTable(tableName, []warehouseutils.ColumnInfo{}); err != nil {
 		return fmt.Errorf("update table: %w", err)
 	}
 
-	gl.Logger.Infof("Refreshing %d partitions", len(partitionInputs))
+	gl.Logger.Debugf("Refreshing %d partitions", len(partitionInputs))
 
 	if _, err = gl.GlueClient.BatchCreatePartition(&glue.BatchCreatePartitionInput{
 		DatabaseName:       aws.String(gl.Namespace),

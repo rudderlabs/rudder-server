@@ -6,6 +6,7 @@ import (
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	schemarepository "github.com/rudderlabs/rudder-server/warehouse/integrations/datalake/schema-repository"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
+	"github.com/stretchr/testify/require"
 )
 
 func TestUseGlue(t *testing.T) {
@@ -54,4 +55,26 @@ func TestUseGlue(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestLoadFileBatching(t *testing.T) {
+	batchSize := 10
+
+	var loadFiles []warehouseutils.LoadFileT
+	for i := 1; i <= 83; i += 1 {
+		loadFiles = append(loadFiles, warehouseutils.LoadFileT{
+			Location: "s3://test_bucket/test_path",
+		})
+	}
+
+	batches := schemarepository.LoadFileBatching(loadFiles, batchSize)
+	require.Equal(t, 1+(len(loadFiles)/batchSize), len(batches))
+
+	var reconstruct []warehouseutils.LoadFileT
+	for i := range batches {
+		require.LessOrEqual(t, len(batches[i]), batchSize)
+		reconstruct = append(reconstruct, batches[i]...)
+	}
+
+	require.Equal(t, loadFiles, reconstruct)
 }

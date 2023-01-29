@@ -91,14 +91,15 @@ type UploadJobT struct {
 	stats                stats.Stats
 	LoadFileGenStartTime time.Time
 
-	upload              model.Upload
-	warehouse           warehouseutils.Warehouse
-	stagingFiles        []*model.StagingFile
-	stagingFileIDs      []int64
-	schemaLock          sync.Mutex
-	uploadLock          sync.Mutex
-	hasAllTablesSkipped bool
-	tableUploadStatuses []*TableUploadStatusT
+	upload                    model.Upload
+	warehouse                 warehouseutils.Warehouse
+	stagingFiles              []*model.StagingFile
+	stagingFileIDs            []int64
+	schemaLock                sync.Mutex
+	uploadLock                sync.Mutex
+	hasAllTablesSkipped       bool
+	tableUploadStatuses       []*TableUploadStatusT
+	RefreshPartitionBatchSize int
 }
 
 type UploadColumnT struct {
@@ -173,6 +174,8 @@ func (f *UploadJobFactory) NewUploadJob(dto *model.UploadJob, whManager manager.
 
 		hasAllTablesSkipped: false,
 		tableUploadStatuses: []*TableUploadStatusT{},
+
+		RefreshPartitionBatchSize: config.GetInt("Warehouse.refreshPartitionBatchSize", 100),
 	}
 }
 
@@ -431,6 +434,7 @@ func (job *UploadJobT) run() (err error) {
 			job.recordLoadFileGenerationTimeStat(startLoadFileID, endLoadFileID)
 
 			if err = job.RefreshPartitions(startLoadFileID, endLoadFileID); err != nil {
+				pkgLogger.Warnf("[WH] Error refreshing partitions for upload: %d, error: %v", job.upload.ID, err)
 				break
 			}
 
@@ -2060,16 +2064,10 @@ func (job *UploadJobT) RefreshPartitions(loadFileStartID, loadFileEndID int64) e
 			StartID: loadFileStartID,
 			EndID:   loadFileEndID,
 		})
+		batches := schemarepository.LoadFileBatching(loadFiles, job.RefreshPartitionBatchSize)
 
-		// This is best done every 100 files, since it's a batch request for updates in Glue
-		partitionBatchSize := config.GetInt("Warehouse.refreshPartitionBatchSize", 99)
-		for i := 0; i < len(loadFiles); i += partitionBatchSize {
-			end := i + partitionBatchSize
-			if end > len(loadFiles) {
-				end = len(loadFiles)
-			}
-
-			if err = repository.RefreshPartitions(tableName, loadFiles[i:end]); err != nil {
+		for _, batch := range batches {
+			if err = repository.RefreshPartitions(tableName, batch); err != nil {
 				return fmt.Errorf("refresh partitions: %w", err)
 			}
 		}

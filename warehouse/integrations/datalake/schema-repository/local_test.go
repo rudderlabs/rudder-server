@@ -55,7 +55,7 @@ func TestLocalSchemaRepository_CreateTable(t *testing.T) {
 		},
 		{
 			name: "table already exists",
-			localSchema: map[string]map[string]string{
+			localSchema: warehouseutils.SchemaT{
 				"test_table": {
 					"test_column_1": "test_type_1",
 				},
@@ -105,7 +105,7 @@ func TestLocalSchemaRepository_AddColumns(t *testing.T) {
 	}{
 		{
 			name: "success",
-			localSchema: map[string]map[string]string{
+			localSchema: warehouseutils.SchemaT{
 				"test_table": {
 					"test_column_1": "test_type_1",
 				},
@@ -117,7 +117,7 @@ func TestLocalSchemaRepository_AddColumns(t *testing.T) {
 		},
 		{
 			name: "error updating local schema",
-			localSchema: map[string]map[string]string{
+			localSchema: warehouseutils.SchemaT{
 				"test_table": {
 					"test_column_1": "test_type_1",
 				},
@@ -166,7 +166,7 @@ func TestLocalSchemaRepository_AlterColumn(t *testing.T) {
 	}{
 		{
 			name: "success",
-			localSchema: map[string]map[string]string{
+			localSchema: warehouseutils.SchemaT{
 				"test_table": {
 					"test_column_1": "test_type_1",
 				},
@@ -178,7 +178,7 @@ func TestLocalSchemaRepository_AlterColumn(t *testing.T) {
 		},
 		{
 			name: "column does not exists",
-			localSchema: map[string]map[string]string{
+			localSchema: warehouseutils.SchemaT{
 				"test_table": {
 					"test_column_2": "test_type_2",
 				},
@@ -187,7 +187,7 @@ func TestLocalSchemaRepository_AlterColumn(t *testing.T) {
 		},
 		{
 			name: "error updating local schema",
-			localSchema: map[string]map[string]string{
+			localSchema: warehouseutils.SchemaT{
 				"test_table": {
 					"test_column_1": "test_type_1",
 				},
