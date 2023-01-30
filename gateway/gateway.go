@@ -22,6 +22,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/gorilla/mux"
 	"github.com/rs/cors"
+	"github.com/samber/lo"
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
 	"golang.org/x/sync/errgroup"
@@ -531,18 +532,15 @@ func (gateway *HandleT) getJobDataFromRequest(req *webRequestT) (jobData *jobFro
 
 	gateway.requestSizeStat.Observe(float64(len(body)))
 	if req.reqType != "batch" {
-		body, err = sjson.SetBytes(body, "type", req.reqType)
-		if err != nil {
-			err = errors.New(response.NotRudderEvent)
-			return
-		}
-		body, err = sjson.SetRawBytes(BatchEvent, "batch.0", body)
+		body, err = setBatch(body, req.reqType)
 		if err != nil {
 			err = errors.New(response.NotRudderEvent)
 			return
 		}
 	}
-	jobData.numEvents = len(gjson.GetBytes(body, "batch").Array())
+
+	eventsBatch := gjson.GetBytes(body, "batch").Array()
+	jobData.numEvents = len(eventsBatch)
 
 	if !gateway.isValidWriteKey(writeKey) {
 		err = errors.New(response.InvalidWriteKey)
@@ -563,51 +561,85 @@ func (gateway *HandleT) getJobDataFromRequest(req *webRequestT) (jobData *jobFro
 	}
 
 	// set anonymousId if not set in payload
-	result := gjson.GetBytes(body, "batch")
-	var out []map[string]interface{}
-	var builtUserID string
-	var notIdentifiable, nonRudderEvent, containsAudienceList bool
-	result.ForEach(func(_, vjson gjson.Result) bool {
+	var (
+		out                                                   []map[string]interface{}
+		builtUserID, userIDFromReq                            string
+		sourcesJobRunID, sourcesTaskRunID                     string
+		sdkName, sdkVersion                                   string
+		notIdentifiable, nonRudderEvent, containsAudienceList bool
+	)
+
+	lo.ForEach(eventsBatch, func(vjson gjson.Result, _ int) {
 		anonIDFromReq := strings.TrimSpace(vjson.Get("anonymousId").String())
-		userIDFromReq := strings.TrimSpace(vjson.Get("userId").String())
+		userIDFromReq = strings.TrimSpace(vjson.Get("userId").String())
+
+		if isNonIdentifiable(anonIDFromReq, userIDFromReq) {
+			notIdentifiable = true
+			return
+		}
+
 		if builtUserID == "" {
-			if anonIDFromReq != "" {
-				builtUserID = userIDHeader + DELIMITER + anonIDFromReq + DELIMITER + userIDFromReq
-			} else {
-				// Proxy gets the userID from body if there is no anonymousId in body/header
-				builtUserID = userIDHeader + DELIMITER + userIDFromReq + DELIMITER + userIDFromReq
-			}
+			builtUserID = buildUserID(userIDHeader, anonIDFromReq, userIDFromReq)
 		}
 
-		eventTypeFromReq := strings.TrimSpace(vjson.Get("type").String())
-
-		if anonIDFromReq == "" {
-			if userIDFromReq == "" && !allowReqsWithoutUserIDAndAnonymousID {
-				notIdentifiable = true
-				return false
-			}
-		}
-		if eventTypeFromReq == "audiencelist" {
-			containsAudienceList = true
-		}
 		// hashing combination of userIDFromReq + anonIDFromReq, using colon as a delimiter
 		rudderId, err := misc.GetMD5UUID(userIDFromReq + ":" + anonIDFromReq)
 		if err != nil {
 			notIdentifiable = true
-			return false
+			return
 		}
 
 		toSet, ok := vjson.Value().(map[string]interface{})
 		if !ok {
 			nonRudderEvent = true
-			return false
+			return
 		}
+		// pick the job_run_id, task_run_id from the first event of batch.
+		// We are assuming job_run_id will be same for all events in a batch
+		// and the batch is coming from rudder-sources
+		if sourcesJobRunID == "" {
+			sourcesJobRunID, _ = misc.MapLookup(
+				toSet,
+				"context",
+				"sources",
+				"job_run_id",
+			).(string)
+		}
+		if sourcesTaskRunID == "" {
+			sourcesTaskRunID, _ = misc.MapLookup(
+				toSet,
+				"context",
+				"sources",
+				"task_run_id",
+			).(string)
+		}
+		if sdkName == "" {
+			sdkName, _ = misc.MapLookup(
+				toSet,
+				"context",
+				"library",
+				"name",
+			).(string)
+		}
+		if sdkVersion == "" {
+			sdkVersion, _ = misc.MapLookup(
+				toSet,
+				"context",
+				"library",
+				"version",
+			).(string)
+		}
+		if eventTypeFromReq, _ := misc.MapLookup(
+			toSet,
+			"type",
+		).(string); eventTypeFromReq == "audiencelist" {
+			containsAudienceList = true
+		}
+
 		toSet["rudderId"] = rudderId
-		if messageId := strings.TrimSpace(vjson.Get("messageId").String()); messageId == "" {
-			toSet["messageId"] = uuid.New().String()
-		}
+		checkMessageID(toSet)
+
 		out = append(out, toSet)
-		return true // keep iterating
 	})
 
 	if len(body) > maxReqSize && !containsAudienceList {
@@ -627,40 +659,16 @@ func (gateway *HandleT) getJobDataFromRequest(req *webRequestT) (jobData *jobFro
 		return
 	}
 
-	if enableSuppressUserFeature && gateway.suppressUserHandler != nil {
-		userID := gjson.GetBytes(body, "batch.0.userId").String()
-		if gateway.suppressUserHandler.IsSuppressedUser(
-			workspaceId,
-			userID,
-			sourceID,
-		) {
-			err = errRequestSuppressed
-			return
-		}
+	if gateway.isUserSuppressed(workspaceId, userIDFromReq, sourceID) {
+		err = errRequestSuppressed
+		return
 	}
 
 	body, _ = sjson.SetBytes(body, "requestIP", ipAddr)
 	body, _ = sjson.SetBytes(body, "writeKey", writeKey)
 	body, _ = sjson.SetBytes(body, "receivedAt", time.Now().Format(misc.RFC3339Milli))
 
-	// pick the job_run_id from the first event of batch.
-	// We are assuming job_run_id will be same for all events in a batch
-	// and the batch is coming from rudder-sources
-	sourcesJobRunID := gjson.GetBytes(
-		body,
-		"batch.0.context.sources.job_run_id",
-	).Str
-
-	// pick the task_run_id from the first event of batch.
-	// We are assuming task_run_id will be same for all events in a batch
-	// and the batch is coming from rudder-sources
-	sourcesTaskRunID := gjson.GetBytes(
-		body,
-		"batch.0.context.sources.task_run_id",
-	).Str
-
-	lib := gjson.GetBytes(body, "batch.0.context.library")
-	jobData.version = lib.Get("name").String() + "/" + lib.Get("version").String()
+	jobData.version = sdkName + "/" + sdkVersion
 
 	id := uuid.New()
 
@@ -691,6 +699,66 @@ func (gateway *HandleT) getJobDataFromRequest(req *webRequestT) (jobData *jobFro
 	}
 	jobData.job = job
 	return
+}
+
+func setBatch(body []byte, reqType string) (batch []byte, err error) {
+	body, err = sjson.SetBytes(body, "type", reqType)
+	if err != nil {
+		err = errors.New(response.NotRudderEvent)
+		return
+	}
+	batch, err = sjson.SetRawBytes(BatchEvent, "batch.0", body)
+	if err != nil {
+		err = errors.New(response.NotRudderEvent)
+		return
+	}
+	return
+}
+
+func isNonIdentifiable(anonIDFromReq, userIDFromReq string) bool {
+	if anonIDFromReq == "" && userIDFromReq == "" {
+		return !allowReqsWithoutUserIDAndAnonymousID
+	}
+	return false
+}
+
+func buildUserID(userIDHeader, anonIDFromReq, userIDFromReq string) string {
+	if anonIDFromReq != "" {
+		return userIDHeader + DELIMITER + anonIDFromReq + DELIMITER + userIDFromReq
+	}
+	return userIDHeader + DELIMITER + userIDFromReq + DELIMITER + userIDFromReq
+}
+
+func (gateway *HandleT) isUserSuppressed(workspaceID, userID, sourceID string) bool {
+	if !enableSuppressUserFeature || gateway.suppressUserHandler == nil {
+		return false
+	}
+	return gateway.suppressUserHandler.IsSuppressedUser(
+		workspaceID,
+		userID,
+		sourceID,
+	)
+}
+
+// checks for the presence of messageId in the event
+//
+// sets to a new uuid if not present
+func checkMessageID(event map[string]interface{}) {
+	messageID := misc.MapLookup(event, "messageId")
+	if isEmptyString(messageID) {
+		event["messageId"] = uuid.New().String()
+	}
+}
+
+func isEmptyString(value interface{}) bool {
+	if value == nil {
+		return true
+	}
+	str, ok := value.(string)
+	if !ok {
+		return true
+	}
+	return strings.TrimSpace(str) == ""
 }
 
 func (*HandleT) getSourceCategoryForWriteKey(writeKey string) (category string) {

@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -983,4 +984,63 @@ func getWorkspaceID(writeKey string) string {
 	configSubscriberLock.RLock()
 	defer configSubscriberLock.RUnlock()
 	return enabledWriteKeyWorkspaceMap[writeKey]
+}
+
+func Test_setBatch(t *testing.T) {
+	t.Run("sets batch properly for valid payloads", func(t *testing.T) {
+		event := map[string]interface{}{
+			"key":  "value",
+			"key2": []string{"value1", "value2"},
+		}
+		payload, _ := json.Marshal(event)
+		batch, err := setBatch(
+			payload,
+			"someReqType",
+		)
+		require.NoError(t, err)
+		buffer := new(bytes.Buffer)
+		if err := json.Compact(buffer, batch); err != nil {
+			t.Error(err)
+		}
+		expected := map[string]interface{}{
+			"batch": []map[string]interface{}{
+				{
+					"key":  "value",
+					"key2": []string{"value1", "value2"},
+					"type": "someReqType",
+				},
+			},
+		}
+		expectedPayload, _ := json.Marshal(expected)
+		require.Equal(
+			t,
+			expectedPayload,
+			buffer.Bytes(),
+		)
+	})
+}
+
+func Test_getJobDataFromRequest(t *testing.T) {
+	var (
+		someWriteKey = "someWriteKey"
+		userIDHeader = "userIDHeader"
+	)
+	t.Run("returns job from request", func(t *testing.T) {
+		req := &webRequestT{
+			reqType:        "batch",
+			writeKey:       someWriteKey,
+			done:           make(chan<- string),
+			userIDHeader:   userIDHeader,
+			requestPayload: []byte(``),
+		}
+		gw := &HandleT{}
+		jobData, err := gw.getJobDataFromRequest(req)
+		require.Equal(
+			t,
+			errors.New(response.InvalidJSON),
+			err,
+			"invalid JSON error",
+		)
+		require.Nil(t, jobData.job, "job should be nil")
+	})
 }
