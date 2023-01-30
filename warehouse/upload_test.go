@@ -403,10 +403,10 @@ func TestUploadJobT_UpdateTableSchema(t *testing.T) {
 					err = json.Unmarshal(body, &a)
 					require.NoError(t, err)
 
-					require.Equal(t, a.Resource, "warehouse-upload-warnings")
+					require.Equal(t, a.Resource, "warehouse-alter-columns")
 					require.Equal(t, a.Environment, "PRODUCTION")
 					require.Equal(t, a.Severity, alerta.SeverityCritical)
-					require.Equal(t, a.Service, alerta.Service{"upload_warnings"})
+					require.Equal(t, a.Service, alerta.Service{"upload_alter_columns"})
 					require.Equal(t, a.Timeout, 86400)
 
 					require.Subset(t, a.Tags, alerta.Tags{

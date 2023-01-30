@@ -882,8 +882,8 @@ func (job *UploadJobT) alterColumnsToWarehouse(tName string, columnsMap map[stri
 				fmt.Sprintf("destType=%s", job.upload.DestinationType),
 				fmt.Sprintf("query=%s", query),
 			}),
-		).SendAlert(context.TODO(), "warehouse-upload-warnings", alerta.Service{
-			"upload_warnings",
+		).SendAlert(context.TODO(), "warehouse-alter-columns", alerta.Service{
+			"upload_alter_columns",
 		},
 			alerta.SeverityCritical,
 			alerta.PriorityP1,
