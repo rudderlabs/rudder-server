@@ -121,6 +121,7 @@ func WithAdaptiveLimit(adaptiveLimitFunction func(int64) int64) Opts {
 		l.Handle.adaptiveLimit = adaptiveLimitFunction
 	}
 }
+
 func (proc *Handle) cleanUpRetiredJobs(ctx context.Context) {
 	ch := proc.backendConfig.Subscribe(ctx, backendconfig.TopicProcessConfig)
 	for data := range ch {

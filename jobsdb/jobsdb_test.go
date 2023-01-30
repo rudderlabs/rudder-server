@@ -20,6 +20,9 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/ory/dockertest/v3"
+	"github.com/rudderlabs/rudder-go-kit/stats/metric"
+	"github.com/rudderlabs/rudder-server/services/rmetrics"
+
 	"github.com/samber/lo"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sync/errgroup"
@@ -1307,6 +1310,7 @@ func TestGetActiveWorkspaces(t *testing.T) {
 	require.Len(t, activeWorkspaces, 2)
 	require.ElementsMatch(t, []string{"ws-1", "ws-2"}, activeWorkspaces)
 }
+
 func TestCleanUpRetiredJobs(t *testing.T) {
 	_ = startPostgres(t)
 	defaultWorkspaceID := "workspaceId"
@@ -1346,12 +1350,43 @@ func TestCleanUpRetiredJobs(t *testing.T) {
 			[]*JobT{&sampleTestJob},
 		),
 	)
+	rmetrics.IncreasePendingEvents(
+		prefix,
+		defaultWorkspaceID,
+		customVal,
+		1,
+	)
+	randomPendingEvents := rand.Int()
+	rmetrics.IncreasePendingEvents(
+		prefix,
+		"someOtherWorkspaceID",
+		"someOtherCustomVal",
+		float64(randomPendingEvents),
+	)
+	require.Equal(
+		t,
+		5,
+		len(
+			metric.Instance.
+				GetRegistry(metric.PublishedMetrics).
+				GetMetricsByName(fmt.Sprintf(rmetrics.JobsdbPendingEventsCount, prefix)),
+		),
+	)
 
 	require.NoError(
 		t,
 		jobDB.CleanUpRetiredJobs(
 			context.Background(),
 			[]string{defaultWorkspaceID},
+		),
+	)
+
+	require.Equal(t,
+		4,
+		len(
+			metric.Instance.
+				GetRegistry(metric.PublishedMetrics).
+				GetMetricsByName(fmt.Sprintf(rmetrics.JobsdbPendingEventsCount, prefix)),
 		),
 	)
 

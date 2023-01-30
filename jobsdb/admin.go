@@ -2,6 +2,7 @@ package jobsdb
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"time"
 
@@ -148,33 +149,62 @@ func (jd *HandleT) failExecutingDSInTx(txHandler transactionHandler, ds dataSetT
 }
 
 func (jd *HandleT) CleanUpRetiredJobs(ctx context.Context, retiredWorkspaces []string) error {
-	var totalAbortedCount int64
-	defer func() {
-		jd.logger.Infof(
-			"Aborted %d jobs due to workspace retirement",
-			totalAbortedCount,
-		)
-	}()
+	totalAbortedCountMap := map[string]map[string]int64{}
 	return jd.WithUpdateSafeTx(ctx, func(tx UpdateSafeTx) error {
 		for _, ds := range jd.getDSList() {
-			var dsCount int64
-			if err := tx.Tx().QueryRowContext(
+			rows, err := tx.Tx().QueryContext(
 				ctx,
 				fmt.Sprintf(
 					`with retired_jobs as (
-						select job_id from %[1]q where workspace_id = ANY($1)
-				),
-				abortedJobs as (
-					insert into %[2]q (job_id, job_state, error_response)
-					(select job_id, 'aborted', '{"reason" : "Job aborted due to workspace retirement"}' from retired_jobs)
-					returning job_id
-				)
-				select count(*) from abortedJobs;`, ds.JobTable, ds.JobStatusTable),
+						select job_id, workspace_id, custom_val from %[1]q where workspace_id = ANY($1)
+					),
+					abortedJobs as (
+						insert into %[2]q (job_id, job_state, error_response)
+						(select job_id, 'aborted', '{"reason" : "Job aborted due to workspace retirement"}' from retired_jobs)
+						returning job_id
+					)
+					select count(*), workspace_id, custom_val from retired_jobs group by workspace_id, custom_val;`, ds.JobTable, ds.JobStatusTable),
 				pq.Array(retiredWorkspaces),
-			).Scan(&dsCount); err != nil {
+			)
+			if err != nil {
 				return err
 			}
-			totalAbortedCount += dsCount
+			for rows.Next() {
+				var (
+					dsCount   sql.NullInt64
+					workspace string
+					customVal string
+				)
+				err := rows.Scan(&dsCount, &workspace, &customVal)
+				if err != nil {
+					return err
+				}
+				if _, ok := totalAbortedCountMap[workspace]; !ok {
+					totalAbortedCountMap[workspace] = make(map[string]int64)
+				}
+				if !dsCount.Valid {
+					continue
+				}
+				totalAbortedCountMap[workspace][customVal] += dsCount.Int64
+			}
+			_ = rows.Close()
+
+			for workspace := range totalAbortedCountMap {
+				for customVal, count := range totalAbortedCountMap[workspace] {
+					tx.Tx().AddSuccessListener(func() {
+						jd.logger.Infof(
+							"Aborted %d %s-%s jobs due to workspace retirement",
+							count, workspace, customVal,
+						)
+						metric.DeletePendingEvents(
+							jd.tablePrefix,
+							workspace,
+							customVal,
+							float64(count),
+						)
+					})
+				}
+			}
 		}
 		return nil
 	})
