@@ -1205,6 +1205,10 @@ func (proc *Handle) processJobsForDest(subJobs subJob, parsedEventList [][]types
 			// Iterate through all the events in the batch
 			for eventIndex, singularEvent := range singularEvents {
 				messageId := misc.GetStringifiedData(singularEvent["messageId"])
+				sampleEvent, err := jsonfast.Marshal(singularEvent)
+				if err != nil {
+					sampleEvent = []byte(`{}`)
+				}
 				if proc.config.enableDedup && misc.Contains(duplicateIndexes, eventIndex) {
 					proc.logger.Debugf("Dropping event with duplicate messageId: %s", messageId)
 					misc.IncrementMapByKey(sourceDupStats, writeKey, 1)
@@ -1239,7 +1243,7 @@ func (proc *Handle) processJobsForDest(subJobs subJob, parsedEventList [][]types
 				event := &transformer.TransformerResponseT{}
 				if proc.isReportingEnabled() {
 					event.Metadata = *commonMetadataFromSingularEvent
-					proc.updateMetricMaps(inCountMetadataMap, inCountMap, connectionDetailsMap, statusDetailsMap, event, jobsdb.Succeeded.State, []byte(`{}`))
+					proc.updateMetricMaps(inCountMetadataMap, inCountMap, connectionDetailsMap, statusDetailsMap, event, jobsdb.Succeeded.State, sampleEvent)
 				}
 				// REPORTING - GATEWAY metrics - END
 
