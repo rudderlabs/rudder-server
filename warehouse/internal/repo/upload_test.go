@@ -55,8 +55,6 @@ func TestUploads_CRUD(t *testing.T) {
 			FirstEventAt: time.Date(2021, 1, 1, 0, 0, 0, 0, time.UTC),
 
 			UseRudderStorage: true,
-			SourceBatchID:    "source_batch_id",
-			SourceTaskID:     "source_task_id",
 			SourceTaskRunID:  "source_task_run_id",
 			SourceJobID:      "source_job_id",
 			SourceJobRunID:   "source_job_run_id",
@@ -76,8 +74,6 @@ func TestUploads_CRUD(t *testing.T) {
 	ogUpload.LoadFileType = "csv"
 
 	ogUpload.UseRudderStorage = true
-	ogUpload.SourceBatchID = "source_batch_id"
-	ogUpload.SourceTaskID = "source_task_id"
 	ogUpload.SourceTaskRunID = "source_task_run_id"
 	ogUpload.SourceJobID = "source_job_id"
 	ogUpload.SourceJobRunID = "source_job_run_id"
@@ -253,8 +249,6 @@ func TestUploads_UploadMetadata(t *testing.T) {
 		FirstEventAt:       time.Time{},
 		LastEventAt:        time.Time{},
 		UseRudderStorage:   true,
-		SourceBatchID:      "source_batch_id",
-		SourceTaskID:       "source_task_id",
 		SourceTaskRunID:    "source_task_run_id",
 		SourceJobID:        "source_job_id",
 		SourceJobRunID:     "source_job_run_id",
@@ -277,8 +271,6 @@ func TestUploads_UploadMetadata(t *testing.T) {
 
 	require.Equal(t, repo.UploadMetadata{
 		UseRudderStorage: true,
-		SourceBatchID:    "source_batch_id",
-		SourceTaskID:     "source_task_id",
 		SourceTaskRunID:  "source_task_run_id",
 		SourceJobID:      "source_job_id",
 		SourceJobRunID:   "source_job_run_id",

@@ -42,8 +42,6 @@ type Upload struct {
 	LastEventAt     time.Time
 
 	UseRudderStorage bool
-	SourceBatchID    string
-	SourceTaskID     string
 	SourceTaskRunID  string
 	SourceJobID      string
 	SourceJobRunID   string
