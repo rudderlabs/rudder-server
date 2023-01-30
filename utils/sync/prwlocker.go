@@ -4,47 +4,33 @@ import "sync"
 
 // PartitionRWLocker is a read-write lock that can be used to lock different partitions at the same time.
 type PartitionRWLocker struct {
-	c *sync.Cond
-	l sync.Locker
-	s map[string]*lockInfo
+	l sync.Mutex // protects s
+	s map[string]*rwLockInfo
 }
 
 // NewPartitionRWLocker returns a new PartitionRWLocker.
 func NewPartitionRWLocker() *PartitionRWLocker {
-	l := &sync.Mutex{}
 	return &PartitionRWLocker{
-		c: sync.NewCond(l),
-		l: l,
-		s: make(map[string]*lockInfo),
+		s: make(map[string]*rwLockInfo),
 	}
-}
-
-// lockInfo returns the lockInfo for the given id. If the lockInfo does not exist, it is created.
-func (p *PartitionRWLocker) lockInfo(id string) *lockInfo {
-	li, ok := p.s[id]
-	if !ok {
-		li = &lockInfo{}
-		p.s[id] = li
-	}
-	return li
 }
 
 // Lock locks the lock for writing. If the lock is locked for reading or writing, it waits until the lock is unlocked.
 func (p *PartitionRWLocker) Lock(id string) {
 	p.l.Lock()
-	defer p.l.Unlock()
-	for !p.lockInfo(id).TryLock() {
-		p.c.Wait()
-	}
+	li := p.lockInfo(id)
+	li.refs++
+	p.l.Unlock() // unlock before locking mu to avoid unnecessary blocking
+	li.mu.Lock()
 }
 
 // RLock locks the lock for reading. If the lock is locked for writing, it waits until the lock is unlocked.
 func (p *PartitionRWLocker) RLock(id string) {
 	p.l.Lock()
-	defer p.l.Unlock()
-	for !p.lockInfo(id).TryRLock() {
-		p.c.Wait()
-	}
+	li := p.lockInfo(id)
+	li.refs++
+	p.l.Unlock() // unlock before locking mu to avoid unnecessary blocking
+	li.mu.RLock()
 }
 
 // Unlock unlocks the lock for writing. If the lock is locked for reading or not locked for writing, it panics.
@@ -52,15 +38,11 @@ func (p *PartitionRWLocker) Unlock(id string) {
 	p.l.Lock()
 	defer p.l.Unlock()
 	li := p.lockInfo(id)
-	if li.readers > 0 {
-		panic("unlock of a rlocked lock")
+	li.mu.Unlock()
+	li.refs--
+	if li.refs == 0 {
+		delete(p.s, id)
 	}
-	if !li.locked {
-		panic("unlock of a non-locked lock")
-	}
-
-	delete(p.s, id)
-	p.c.Broadcast()
 }
 
 // RUnlock unlocks the lock for reading. If the lock is locked for writing or not locked for reading, it panics.
@@ -68,19 +50,14 @@ func (p *PartitionRWLocker) RUnlock(id string) {
 	p.l.Lock()
 	defer p.l.Unlock()
 	li := p.lockInfo(id)
-	if li.locked {
-		panic("runlock of a locked lock")
-	}
-	if li.readers == 0 {
-		panic("runlock of a non-rlocked lock")
-	}
-	li.readers--
-	if li.readers == 0 {
+	li.mu.RUnlock()
+	li.refs--
+	if li.refs == 0 {
 		delete(p.s, id)
 	}
-	p.c.Broadcast()
 }
 
+// RWMutexFor returns a new RWMutex scoped to the given id.
 func (p *PartitionRWLocker) RWMutexFor(id string) *RWMutex {
 	return &RWMutex{
 		plock: p,
@@ -88,45 +65,43 @@ func (p *PartitionRWLocker) RWMutexFor(id string) *RWMutex {
 	}
 }
 
-type lockInfo struct {
-	locked  bool // true if locked for writing
-	readers int  // number of readers
-}
-
-// TryLock tries to lock the lock for writing. It returns true if the lock was successfully acquired.
-func (l *lockInfo) TryLock() bool {
-	if l.locked || l.readers > 0 {
-		return false
+// lockInfo returns the lockInfo for the given id. If the lockInfo does not exist, it is created.
+func (p *PartitionRWLocker) lockInfo(id string) *rwLockInfo {
+	li, ok := p.s[id]
+	if !ok {
+		li = &rwLockInfo{}
+		p.s[id] = li
 	}
-	l.locked = true
-	return true
+	return li
 }
 
-// TryLock tries to lock the lock for reading. It returns true if the read lock was successfully acquired.
-func (l *lockInfo) TryRLock() bool {
-	if l.locked {
-		return false
-	}
-	l.readers++
-	return true
+type rwLockInfo struct {
+	mu   sync.RWMutex // the partition lock
+	refs int          // number of references to this lock
 }
 
+// RWMutex is a read-write lock
 type RWMutex struct {
 	plock *PartitionRWLocker
 	id    string
 }
 
+// Lock locks the lock for writing. If the lock is locked for reading or writing, it waits until the lock is unlocked.
 func (m *RWMutex) Lock() {
 	m.plock.Lock(m.id)
 }
 
+// Unlock unlocks the lock for writing. If the lock is locked for reading or not locked for writing, it panics.
 func (m *RWMutex) Unlock() {
 	m.plock.Unlock(m.id)
 }
 
+// RLock locks the lock for reading. If the lock is locked for writing, it waits until the lock is unlocked.
 func (m *RWMutex) RLock() {
 	m.plock.RLock(m.id)
 }
+
+// RUnlock unlocks the lock for reading. If the lock is locked for writing or not locked for reading, it panics.
 
 func (m *RWMutex) RUnlock() {
 	m.plock.RUnlock(m.id)

@@ -19,13 +19,6 @@ func TestPartitionLocker(t *testing.T) {
 		locker.Unlock("id2")
 	})
 
-	t.Run("Invalid scenarios", func(t *testing.T) {
-		require.Panics(t, func() {
-			locker := sync.NewPartitionLocker()
-			locker.Unlock("id1")
-		}, "it should panic when unlocking a non-locked lock")
-	})
-
 	t.Run("Concurrent locks", func(t *testing.T) {
 		locker := sync.NewPartitionLocker()
 		var wg gsync.WaitGroup

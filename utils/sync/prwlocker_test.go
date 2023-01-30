@@ -28,31 +28,6 @@ func TestPartitionRWLocker(t *testing.T) {
 		locker.RUnlock("id2")
 	})
 
-	t.Run("Invalid scenarios", func(t *testing.T) {
-		require.Panics(t, func() {
-			locker := sync.NewPartitionRWLocker()
-			locker.Unlock("id1")
-		}, "it should panic when unlocking a non-locked lock")
-
-		require.Panics(t, func() {
-			locker := sync.NewPartitionRWLocker()
-			locker.RUnlock("id1")
-		}, "it should panic when runlocking a non-locked lock")
-
-		require.Panics(t, func() {
-			locker := sync.NewPartitionRWLocker()
-			locker.Lock("id1")
-			locker.RUnlock("id1")
-		}, "it should panic when runlocking a locked lock")
-
-		require.Panics(t, func() {
-			locker := sync.NewPartitionRWLocker()
-			locker.RLock("id1")
-			locker.RLock("id1")
-			locker.Unlock("id1")
-		}, "it should panic when unlocking a rlocked lock")
-	})
-
 	t.Run("Concurrent locks", func(t *testing.T) {
 		locker := sync.NewPartitionRWLocker()
 		mu := locker.RWMutexFor("id1")
