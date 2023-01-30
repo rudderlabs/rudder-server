@@ -29,7 +29,7 @@ func TestGlueSchemaRepositoryRoundTrip(t *testing.T) {
 		credentialsStr string
 		credentials    S3Credentials
 		err            error
-		credentialsEnv = "S3_DATALAKE_TEST_CREDENTIALS"
+		credentialsEnv = "TEST_S3_DATALAKE_CREDENTIALS"
 		testFile       = "testdata/load.parquet"
 		testColumns    = map[string]string{
 			"id":                  "string",
