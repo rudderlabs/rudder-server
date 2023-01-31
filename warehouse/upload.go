@@ -176,7 +176,7 @@ func (f *UploadJobFactory) NewUploadJob(dto *model.UploadJob, whManager manager.
 		tableUploadStatuses: []*TableUploadStatusT{},
 
 		AlertSender: alerta.NewClient(
-			config.GetString("alerta.url", "https://alerta.rudderstack.com/api/"),
+			config.GetString("ALERTA_URL", "https://alerta.rudderstack.com/api/"),
 			alerta.WithTeam(warehouseutils.WAREHOUSE),
 		),
 	}
