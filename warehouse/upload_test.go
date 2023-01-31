@@ -431,7 +431,10 @@ func TestUploadJobT_UpdateTableSchema(t *testing.T) {
 						DestinationID:   testDestinationID,
 						DestinationType: testDestinationType,
 					},
-					AlertaURL: s.URL,
+					AlertSender: alerta.NewClient(
+						s.URL,
+						alerta.WithTeam(warehouseutils.WAREHOUSE),
+					),
 				}
 
 				_, err = rs.DB.Exec(
@@ -515,7 +518,10 @@ func TestUploadJobT_UpdateTableSchema(t *testing.T) {
 				DestinationID:   testDestinationID,
 				DestinationType: testDestinationType,
 			},
-			AlertaURL: s.URL,
+			AlertSender: alerta.NewClient(
+				s.URL,
+				alerta.WithTeam(warehouseutils.WAREHOUSE),
+			),
 		}
 
 		_, err = rs.DB.Exec(

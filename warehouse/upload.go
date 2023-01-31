@@ -99,7 +99,7 @@ type UploadJobT struct {
 	uploadLock          sync.Mutex
 	hasAllTablesSkipped bool
 	tableUploadStatuses []*TableUploadStatusT
-	AlertaURL           string
+	AlertSender         alerta.AlertSender
 }
 
 type UploadColumnT struct {
@@ -174,7 +174,11 @@ func (f *UploadJobFactory) NewUploadJob(dto *model.UploadJob, whManager manager.
 
 		hasAllTablesSkipped: false,
 		tableUploadStatuses: []*TableUploadStatusT{},
-		AlertaURL:           config.GetString("alerta.url", "https://alerta.rudderstack.com/api/"),
+
+		AlertSender: alerta.NewClient(
+			config.GetString("alerta.url", "https://alerta.rudderstack.com/api/"),
+			alerta.WithTeam(warehouseutils.WAREHOUSE),
+		),
 	}
 }
 
@@ -874,10 +878,7 @@ func (job *UploadJobT) alterColumnsToWarehouse(tName string, columnsMap map[stri
 		}
 
 		query := strings.Join(queries, "\n")
-		err := alerta.NewClient(
-			job.AlertaURL,
-			alerta.WithTeam(warehouseutils.WAREHOUSE),
-		).SendAlert(context.TODO(), "warehouse-alter-columns",
+		err := job.AlertSender.SendAlert(context.TODO(), "warehouse-alter-columns",
 			alerta.SendAlertOpts{
 				Severity: alerta.SeverityCritical,
 				Priority: alerta.PriorityP1,
