@@ -21,17 +21,26 @@ type (
 	MeterProviderOption func(providerConfig *meterProviderConfig)
 )
 
-// WithGRPCDialOption allows to set a GRPC dial option
-func WithGRPCDialOption(opt grpc.DialOption) Option {
+// WithLogger allows to set a logger to print debug information
+func WithLogger(l logger) Option {
 	return func(c *config) {
-		c.dialOpts = append(c.dialOpts, opt)
+		c.logger = l
+	}
+}
+
+// WithGRPCConnectParams allows to set GRPC connection parameters
+func WithGRPCConnectParams(cp grpc.ConnectParams) Option {
+	return func(c *config) {
+		c.grpcConnectParams = &cp
 	}
 }
 
 // WithInsecureGRPC allows to set the GRPC connection to be insecure
 func WithInsecureGRPC() Option {
-	// Note the use of insecure transport here. TLS is recommended in production.
-	return WithGRPCDialOption(grpc.WithTransportCredentials(insecure.NewCredentials()))
+	return func(c *config) {
+		// Note the use of insecure transport here. TLS is recommended in production.
+		c.dialOpts = append(c.dialOpts, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	}
 }
 
 // WithTextMapPropagator allows to set the text map propagator

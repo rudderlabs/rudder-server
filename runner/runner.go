@@ -15,7 +15,6 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	_ "go.uber.org/automaxprocs"
 	"golang.org/x/sync/errgroup"
-	"google.golang.org/grpc"
 
 	"github.com/rudderlabs/rudder-server/admin"
 	"github.com/rudderlabs/rudder-server/admin/profiler"
@@ -172,10 +171,8 @@ func (r *Runner) Run(ctx context.Context, args []string) int {
 		}
 		_, _, err = otelManager.Setup(ctx, res, otelEndpoint,
 			otel.WithInsecureGRPC(),
-			otel.WithGRPCDialOption(
-				grpc.WithConnectParams(otel.DefaultConnectParams),
-			),
 			otel.WithMeterProvider(meterProviderOptions...),
+			otel.WithLogger(r.logger.Child("otel")),
 		)
 		if err != nil {
 			r.logger.Errorf("OpenTelemetry setup failed: %v", err)

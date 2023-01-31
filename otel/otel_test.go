@@ -75,6 +75,7 @@ func TestCollector(t *testing.T) {
 	var om Manager
 	tp, mp, err := om.Setup(ctx, res,
 		fmt.Sprintf("localhost:%d", grpcPort), WithInsecureGRPC(),
+		WithLogger(testLogger{t}),
 		WithTracerProvider(),
 		WithMeterProvider(
 			WithMeterProviderExportsInterval(100*time.Millisecond),
@@ -233,3 +234,7 @@ func getHostPort(t *testing.T, port string, container *docker.Container) int {
 func ptr[T any](v T) *T {
 	return &v
 }
+
+type testLogger struct{ *testing.T }
+
+func (l testLogger) Infof(format string, args ...interface{}) { l.Logf(format, args...) }

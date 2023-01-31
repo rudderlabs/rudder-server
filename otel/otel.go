@@ -3,6 +3,7 @@ package otel
 import (
 	"context"
 	"fmt"
+	"net"
 	"time"
 
 	"go.opentelemetry.io/contrib/instrumentation/runtime"
@@ -47,9 +48,20 @@ func (m *Manager) Setup(
 	for _, opt := range opts {
 		opt(&c)
 	}
+	if c.grpcConnectParams == nil {
+		c.grpcConnectParams = &DefaultConnectParams
+	}
 
 	if !c.tracerProviderConfig.enabled && !c.meterProviderConfig.enabled {
 		return nil, nil, fmt.Errorf("no trace provider or meter provider to initialize")
+	}
+
+	if c.logger != nil {
+		c.dialOpts = append(c.dialOpts, grpc.WithContextDialer(func(ctx context.Context, a string) (net.Conn, error) {
+			network := "tcp"
+			c.logger.Infof("OTel setup dialing %s/%s", network, a)
+			return net.DialTimeout(network, a, c.grpcConnectParams.MinConnectTimeout)
+		}))
 	}
 
 	m.conn, err = grpc.DialContext(ctx, target, append(c.dialOpts,
@@ -147,13 +159,20 @@ func NewResource(svcName, instanceID, svcVersion string, attrs ...attribute.KeyV
 	)
 }
 
+type logger interface {
+	Infof(format string, v ...interface{})
+}
+
 type config struct {
-	dialOpts []grpc.DialOption
+	dialOpts          []grpc.DialOption
+	grpcConnectParams *grpc.ConnectParams
 
 	tracerProviderConfig tracerProviderConfig
 	meterProviderConfig  meterProviderConfig
 
 	textMapPropagator propagation.TextMapPropagator
+
+	logger logger
 }
 
 type tracerProviderConfig struct {

@@ -13,7 +13,6 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/sdk/resource"
 	semconv "go.opentelemetry.io/otel/semconv/v1.12.0"
-	"google.golang.org/grpc"
 
 	"github.com/rudderlabs/rudder-server/admin"
 	"github.com/rudderlabs/rudder-server/config"
@@ -88,10 +87,8 @@ func Run(ctx context.Context) error {
 		}
 		_, _, err = otelManager.Setup(ctx, otelResource, otelEndpoint,
 			otel.WithInsecureGRPC(),
-			otel.WithGRPCDialOption(
-				grpc.WithConnectParams(otel.DefaultConnectParams),
-			),
 			otel.WithMeterProvider(meterProviderOptions...),
+			otel.WithLogger(pkgLogger.Child("otel")),
 		)
 		if err != nil {
 			return fmt.Errorf("OpenTelemetry setup failed: %w", err)
