@@ -61,7 +61,13 @@ func (handle *Handler) generatorLoop(ctx context.Context) {
 
 		if len(combinedList) == 0 {
 			if breakLoop {
-				executingList, err := handle.db.GetExecuting(context.TODO(), jobsdb.GetQueryParamsT{CustomValFilters: []string{"replay"}, JobsLimit: handle.dbReadSize})
+				executingList, err := handle.db.GetExecuting(
+					context.TODO(),
+					jobsdb.GetQueryParamsT{
+						CustomValFilters: []string{"replay"},
+						JobsLimit:        handle.dbReadSize,
+					},
+				)
 				if err != nil {
 					handle.log.Errorf("Error getting executing jobs: %v", err)
 					panic(err)
