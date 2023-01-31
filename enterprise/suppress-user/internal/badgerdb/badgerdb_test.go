@@ -146,7 +146,7 @@ func TestBadgerRepository(t *testing.T) {
 	// 	require.Equal(t, repo.Restore(nil), badger.ErrDBClosed)
 	// })
 
-	t.Run("trying to use a closed repository", func(t *testing.T) {
+	t.Run("test if backup & restore is working properly", func(t *testing.T) {
 		repo, err := badgerdb.NewRepository(basePath, logger.NOP)
 		require.NoError(t, err)
 
