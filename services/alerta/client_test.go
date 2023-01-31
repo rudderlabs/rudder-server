@@ -9,30 +9,41 @@ import (
 	"testing"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/services/alerta"
 	"github.com/stretchr/testify/require"
 )
 
 func TestSendFeatures(t *testing.T) {
 	var (
-		testTeam     = "test-team"
-		testResource = "test-resource"
-		testService  = alerta.Service{"test-service"}
-		testSeverity = alerta.SeverityOk
-		testPriority = alerta.PriorityP3
+		testTeam         = "test-team"
+		testResource     = "test-resource"
+		testText         = "test-text"
+		testNamespace    = "test-namespce"
+		testAlertTimeout = 10
+		testEnvironment  = "DEVELOPMENT"
+		testService      = alerta.Service{"test-service"}
+		testSeverity     = alerta.SeverityOk
+		testPriority     = alerta.PriorityP3
+		testTags         = alerta.Tags{
+			"tag1=value1",
+			"tag2=value2",
+		}
 	)
 
-	wantBody := `{"resource":"test-resource","event":"rudder/test-resource:notificationServiceMode=PRODUCTION,priority=P3,sendToNotificationService=true,tag1=value1,tag2=value2,team=test-team","environment":"PRODUCTION","severity":"ok","group":"notificationServiceMode=PRODUCTION,priority=P3,sendToNotificationService=true,tag1=value1,tag2=value2,team=test-team","text":"temp-text","service":["test-service"],"timeout":86400,"tags":["notificationServiceMode=PRODUCTION","priority=P3","sendToNotificationService=true","tag1=value1","tag2=value2","team=test-team"]}`
+	wantBody := `{"resource":"test-resource","event":"rudder/test-resource:namespace=test-namespce,notificationServiceMode=DEVELOPMENT,priority=P3,sendToNotificationService=true,tag1=value1,tag2=value2,team=test-team","environment":"DEVELOPMENT","severity":"ok","group":"namespace=test-namespce,notificationServiceMode=DEVELOPMENT,priority=P3,sendToNotificationService=true,tag1=value1,tag2=value2,team=test-team","text":"test-text","service":["test-service"],"timeout":10,"tags":["namespace=test-namespce","notificationServiceMode=DEVELOPMENT","priority=P3","sendToNotificationService=true","tag1=value1","tag2=value2","team=test-team"]}`
+
+	c := config.New()
 
 	alertaClient := func(s *httptest.Server, o ...alerta.OptFn) alerta.AlertSender {
 		var op []alerta.OptFn
 		op = append(op, o...)
 		op = append(op, alerta.WithHTTPClient(s.Client()))
 		op = append(op, alerta.WithTeam(testTeam))
-		op = append(op, alerta.WithTags(alerta.Tags{
-			"tag1=value1",
-			"tag2=value2",
-		}))
+		op = append(op, alerta.WithKubeNamespace(testNamespace))
+		op = append(op, alerta.WithAlertTimeout(testAlertTimeout))
+		op = append(op, alerta.WithEnvironment(testEnvironment))
+		op = append(op, alerta.WithConfig(c))
 
 		return alerta.NewClient(
 			s.URL,
@@ -60,13 +71,16 @@ func TestSendFeatures(t *testing.T) {
 
 		err := alertaClient(s,
 			alerta.WithHTTPClient(s.Client()),
-			alerta.WithText("temp-text"),
 		).SendAlert(
 			ctx,
 			testResource,
-			testService,
-			testSeverity,
-			testPriority,
+			alerta.SendAlertOpts{
+				Severity: testSeverity,
+				Priority: testPriority,
+				Service:  testService,
+				Text:     testText,
+				Tags:     testTags,
+			},
 		)
 		require.NoError(t, err)
 	})
@@ -88,9 +102,13 @@ func TestSendFeatures(t *testing.T) {
 		err := alertaClient(s, alerta.WithMaxRetries(maxRetries)).SendAlert(
 			ctx,
 			testResource,
-			testService,
-			testSeverity,
-			testPriority,
+			alerta.SendAlertOpts{
+				Severity: testSeverity,
+				Priority: testPriority,
+				Service:  testService,
+				Text:     testText,
+				Tags:     testTags,
+			},
 		)
 		require.EqualError(t, err, "unexpected status code 500: ")
 
@@ -114,9 +132,13 @@ func TestSendFeatures(t *testing.T) {
 		err := alertaClient(s, alerta.WithMaxRetries(maxRetries)).SendAlert(
 			ctx,
 			testResource,
-			testService,
-			testSeverity,
-			testPriority,
+			alerta.SendAlertOpts{
+				Severity: testSeverity,
+				Priority: testPriority,
+				Service:  testService,
+				Text:     testText,
+				Tags:     testTags,
+			},
 		)
 		require.EqualError(t, err, "non retriable: unexpected status code 400: ")
 
@@ -144,9 +166,13 @@ func TestSendFeatures(t *testing.T) {
 		).SendAlert(
 			ctx,
 			testResource,
-			testService,
-			testSeverity,
-			testPriority,
+			alerta.SendAlertOpts{
+				Severity: testSeverity,
+				Priority: testPriority,
+				Service:  testService,
+				Text:     testText,
+				Tags:     testTags,
+			},
 		)
 
 		require.Error(t, err, "deadline exceeded ")
@@ -173,9 +199,13 @@ func TestSendFeatures(t *testing.T) {
 		).SendAlert(
 			ctx,
 			testResource,
-			testService,
-			testSeverity,
-			testPriority,
+			alerta.SendAlertOpts{
+				Severity: testSeverity,
+				Priority: testPriority,
+				Service:  testService,
+				Text:     testText,
+				Tags:     testTags,
+			},
 		)
 
 		require.Error(t, err, "deadline exceeded ")

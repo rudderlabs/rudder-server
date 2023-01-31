@@ -877,16 +877,21 @@ func (job *UploadJobT) alterColumnsToWarehouse(tName string, columnsMap map[stri
 		err := alerta.NewClient(
 			job.AlertaURL,
 			alerta.WithTeam(warehouseutils.WAREHOUSE),
-			alerta.WithTags(alerta.Tags{
-				fmt.Sprintf("destID=%s", job.upload.DestinationID),
-				fmt.Sprintf("destType=%s", job.upload.DestinationType),
-				fmt.Sprintf("query=%s", query),
-			}),
-		).SendAlert(context.TODO(), "warehouse-alter-columns", alerta.Service{
-			"upload_alter_columns",
-		},
-			alerta.SeverityCritical,
-			alerta.PriorityP1,
+		).SendAlert(context.TODO(), "warehouse-alter-columns",
+			alerta.SendAlertOpts{
+				Severity: alerta.SeverityCritical,
+				Priority: alerta.PriorityP1,
+				Service: alerta.Service{
+					"upload_alter_columns",
+				},
+				Tags: alerta.Tags{
+					fmt.Sprintf("destID=%s", job.upload.DestinationID),
+					fmt.Sprintf("destType=%s", job.upload.DestinationType),
+					fmt.Sprintf("query=%s", query),
+					fmt.Sprintf("workspaceId=%s", job.upload.WorkspaceID),
+					fmt.Sprintf("sourceID=%s", job.upload.SourceID),
+				},
+			},
 		)
 		if err != nil {
 			errs = append(errs, err)

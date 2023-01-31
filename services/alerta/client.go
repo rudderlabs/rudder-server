@@ -22,6 +22,10 @@ type Tags []string
 
 type Service []string
 
+type Priority string
+
+type Severity string
+
 type Alert struct {
 	Resource    string   `json:"resource"`    // warehouse-upload-aborted
 	Event       string   `json:"event"`       // rudder/<resource>:<group>
@@ -34,9 +38,13 @@ type Alert struct {
 	Tags        Tags     `json:"tags"`        // {sendToNotificationService=true,notificationServiceMode=CARBONCOPY,team=warehouse,priority=P1,destID=27CHciD6leAhurSyFAeN4dp14qZ,destType=RS,namespace=hosted,cluster=rudder}
 }
 
-type Priority string
-
-type Severity string
+type SendAlertOpts struct {
+	Tags     Tags
+	Text     string
+	Service  Service
+	Severity Severity
+	Priority Priority
+}
 
 const (
 	SeverityCritical Severity = "critical"
@@ -55,19 +63,27 @@ var (
 	defaultTimeout    = 30 * time.Second
 	defaultMaxRetries = 3
 	defaultTeam       = "No Team"
+	defaultPriority   = PriorityP1
+	defaultSeverity   = SeverityCritical
 )
 
 type AlertSender interface {
-	SendAlert(ctx context.Context, resource string, service Service, severity Severity, priority Priority) error
+	SendAlert(
+		ctx context.Context,
+		resource string,
+		opts SendAlertOpts,
+	) error
 }
 
 type Client struct {
-	client  *http.Client
-	retries int
-	url     string
-	text    string
-	tags    Tags
-	team    string
+	client              *http.Client
+	retries             int
+	url                 string
+	team                string
+	config              *config.Config
+	environment         string
+	alertTimeout        int
+	kubernatesNamespace string
 }
 
 func WithHTTPClient(httpClient *http.Client) OptFn {
@@ -88,21 +104,33 @@ func WithMaxRetries(retries int) OptFn {
 	}
 }
 
-func WithText(text string) OptFn {
-	return func(c *Client) {
-		c.text = text
-	}
-}
-
-func WithTags(tags Tags) OptFn {
-	return func(c *Client) {
-		c.tags = tags
-	}
-}
-
 func WithTeam(team string) OptFn {
 	return func(c *Client) {
 		c.team = team
+	}
+}
+
+func WithConfig(config *config.Config) OptFn {
+	return func(c *Client) {
+		c.config = config
+	}
+}
+
+func WithEnvironment(environment string) OptFn {
+	return func(c *Client) {
+		c.environment = environment
+	}
+}
+
+func WithAlertTimeout(timeout int) OptFn {
+	return func(c *Client) {
+		c.alertTimeout = timeout
+	}
+}
+
+func WithKubeNamespace(namespace string) OptFn {
+	return func(c *Client) {
+		c.kubernatesNamespace = namespace
 	}
 }
 
@@ -115,6 +143,7 @@ func NewClient(baseURL string, fns ...OptFn) *Client {
 
 		retries: defaultMaxRetries,
 		team:    defaultTeam,
+		config:  config.Default,
 	}
 
 	for _, fn := range fns {
@@ -134,38 +163,73 @@ func (c *Client) retry(ctx context.Context, fn func() error) error {
 	return backoff.Retry(fn, opts)
 }
 
-func (c *Client) SendAlert(ctx context.Context, resource string, service Service, severity Severity, priority Priority) error {
-	environment := config.GetString("alerta.environment", "PRODUCTION")
-	timeout := config.GetInt("alerta.timeout", 86400)
+func (c *Client) defaultTags(opts *SendAlertOpts) Tags {
+	var (
+		tags        Tags
+		environment = c.environment
+		namespace   = c.kubernatesNamespace
+	)
 
-	// Adding default tags
-	c.tags = append(c.tags, fmt.Sprintf("sendToNotificationService=%t", true))
-	c.tags = append(c.tags, fmt.Sprintf("notificationServiceMode=%s", environment))
-	c.tags = append(c.tags, fmt.Sprintf("priority=%s", string(priority)))
-	c.tags = append(c.tags, fmt.Sprintf("team=%s", c.team))
-	if len(config.GetKubeNamespace()) > 0 {
-		c.tags = append(c.tags, fmt.Sprintf("namespace=%s", config.GetKubeNamespace()))
+	if namespace == "" {
+		namespace = config.GetKubeNamespace()
+	}
+	if environment == "" {
+		environment = c.config.GetString("alerta.environment", "PRODUCTION")
 	}
 
-	sort.Strings(c.tags)
+	tags = append(tags, fmt.Sprintf("namespace=%s", namespace))
+	tags = append(tags, fmt.Sprintf("sendToNotificationService=%t", true))
+	tags = append(tags, fmt.Sprintf("notificationServiceMode=%s", environment))
+	tags = append(tags, fmt.Sprintf("priority=%s", string(opts.Priority)))
+	tags = append(tags, fmt.Sprintf("team=%s", c.team))
 
-	group := strings.Join(c.tags, ",")
-	event := fmt.Sprintf("rudder/%s:%s", resource, group)
+	return tags
+}
 
-	if len(c.text) == 0 {
-		c.text = fmt.Sprintf("%s is %s", event, severity)
+func (c *Client) SendAlert(
+	ctx context.Context,
+	resource string,
+	opts SendAlertOpts,
+) error {
+	if opts.Priority == "" {
+		opts.Priority = defaultPriority
+	}
+	if opts.Severity == "" {
+		opts.Severity = defaultSeverity
+	}
+	if opts.Text == "" {
+		opts.Text = fmt.Sprintf("%s is %s", resource, opts.Severity)
+	}
+
+	// default tags
+	tags := c.defaultTags(&opts)
+	tags = append(tags, opts.Tags...)
+	sort.Strings(tags)
+
+	var (
+		group        = strings.Join(tags, ",")
+		event        = fmt.Sprintf("rudder/%s:%s", resource, group)
+		alertTimeout = c.alertTimeout
+		environment  = c.environment
+	)
+
+	if alertTimeout == 0 {
+		alertTimeout = c.config.GetInt("alerta.timeout", 86400)
+	}
+	if environment == "" {
+		environment = c.config.GetString("alerta.environment", "PRODUCTION")
 	}
 
 	payload := Alert{
 		Resource:    resource,
 		Environment: environment,
-		Timeout:     timeout,
+		Timeout:     alertTimeout,
 		Group:       group,
-		Service:     service,
-		Severity:    severity,
 		Event:       event,
-		Text:        c.text,
-		Tags:        c.tags,
+		Tags:        tags,
+		Service:     opts.Service,
+		Severity:    opts.Severity,
+		Text:        opts.Text,
 	}
 
 	body, err := json.Marshal(payload)
