@@ -347,14 +347,10 @@ var _ = Describe("Upload", Ordered, func() {
 })
 
 type mockAlertSender struct {
-	process   func(resource string, opts alerta.SendAlertOpts)
 	mockError error
 }
 
-func (m *mockAlertSender) SendAlert(ctx context.Context, resource string, opts alerta.SendAlertOpts) error {
-	if m.process != nil {
-		m.process(resource, opts)
-	}
+func (m *mockAlertSender) SendAlert(context.Context, string, alerta.SendAlertOpts) error {
 	return m.mockError
 }
 
@@ -493,19 +489,7 @@ func TestUploadJobT_UpdateTableSchema(t *testing.T) {
 					DestinationID:   testDestinationID,
 					DestinationType: testDestinationType,
 				},
-				AlertSender: &mockAlertSender{
-					process: func(resource string, opts alerta.SendAlertOpts) {
-						//var alteredColumns alerta.Tags
-						//for i := range [10]int{} {
-						//	if i%3 == 0 {
-						//		continue
-						//	}
-						//	alteredColumns = append(alteredColumns, fmt.Sprintf("test_column_%d", i))
-						//}
-						//
-						//require.Equal(t, opts.Tags, alteredColumns)
-					},
-				},
+				AlertSender: &mockAlertSender{},
 			}
 
 			_, err = rs.DB.Exec(
