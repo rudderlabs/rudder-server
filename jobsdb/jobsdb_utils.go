@@ -208,26 +208,48 @@ func (*JobsdbUtilsHandler) RunSQLQuery(argString string, reply *string) (err err
 	return err
 }
 
+// statTags is a struct to hold tags for stats
+type statTags struct {
+	CustomValFilters []string
+	ParameterFilters []ParameterFilterT
+	StateFilters     []string
+	WorkspaceID      string
+}
+
 func (jd *HandleT) getTimerStat(stat string, tags *statTags) stats.Measurement {
-	timingTags := map[string]string{
-		"tablePrefix": jd.tablePrefix,
+	return stats.Default.NewTaggedStat(
+		stat,
+		stats.TimerType,
+		tags.getStatsTags(jd.tablePrefix),
+	)
+}
+
+func (tags *statTags) getStatsTags(tablePrefix string) stats.Tags {
+	statTagsMap := map[string]string{
+		"tablePrefix": tablePrefix,
 	}
 	if tags != nil {
 		customValTag := strings.Join(tags.CustomValFilters, "_")
 		stateFiltersTag := strings.Join(tags.StateFilters, "_")
 
 		if customValTag != "" {
-			timingTags["customVal"] = customValTag
+			statTagsMap["customVal"] = customValTag
 		}
 
 		if stateFiltersTag != "" {
-			timingTags["stateFilters"] = stateFiltersTag
+			statTagsMap["stateFilters"] = stateFiltersTag
+		}
+
+		if tags.WorkspaceID != "" {
+			statTagsMap["workspaceId"] = tags.WorkspaceID
+		} else {
+			statTagsMap["workspaceId"] = allWorkspaces
 		}
 
 		for _, paramTag := range tags.ParameterFilters {
-			timingTags[paramTag.Name] = paramTag.Value
+			statTagsMap[paramTag.Name] = paramTag.Value
 		}
 	}
 
-	return stats.Default.NewTaggedStat(stat, stats.TimerType, timingTags)
+	return statTagsMap
 }
