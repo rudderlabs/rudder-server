@@ -5,13 +5,6 @@ import "github.com/go-redis/redis/v8"
 // Option is a functional option for the limiter, see With* functions for reference
 type Option func(*Limiter)
 
-// WithInMemoryGoRate allows to setup a limiter with golang.org/x/time/rate (supports returning tokens)
-func WithInMemoryGoRate() Option {
-	return func(l *Limiter) {
-		l.useGoRate = true
-	}
-}
-
 // WithInMemoryGCRA allows to use the GCRA algorithm (in-memory) with the specified burst or with the
 // burst as rate if the provided burst is <= 0
 func WithInMemoryGCRA(burst int64) Option {
@@ -38,6 +31,7 @@ func WithRedisGCRA(rc *redis.Client, burst int64) Option {
 // WithRedisSortedSet allows to use the Redis SortedSet algorithm for rate limiting
 func WithRedisSortedSet(rc *redis.Client) Option {
 	return func(l *Limiter) {
+		l.useGCRA = false
 		l.redisSpeaker = rc
 	}
 }
