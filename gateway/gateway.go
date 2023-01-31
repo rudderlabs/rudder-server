@@ -637,7 +637,7 @@ func (gateway *HandleT) getJobDataFromRequest(req *webRequestT) (jobData *jobFro
 		}
 
 		toSet["rudderId"] = rudderId
-		checkMessageID(toSet)
+		setRandomMessageIDWhenEmpty(toSet)
 
 		out = append(out, toSet)
 	})
@@ -743,16 +743,11 @@ func (gateway *HandleT) isUserSuppressed(workspaceID, userID, sourceID string) b
 // checks for the presence of messageId in the event
 //
 // sets to a new uuid if not present
-func checkMessageID(event map[string]interface{}) {
-	messageID := misc.MapLookup(event, "messageId")
-	if isEmptyString(messageID) {
+func setRandomMessageIDWhenEmpty(event map[string]interface{}) {
+	messageID, _ := event["messageId"].(string)
+	if strings.TrimSpace(messageID) == "" {
 		event["messageId"] = uuid.New().String()
 	}
-}
-
-func isEmptyString(value interface{}) bool {
-	str, ok := value.(string)
-	return !ok || strings.TrimSpace(str) == ""
 }
 
 func (*HandleT) getSourceCategoryForWriteKey(writeKey string) (category string) {
