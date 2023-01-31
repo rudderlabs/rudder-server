@@ -68,11 +68,7 @@ var (
 )
 
 type AlertSender interface {
-	SendAlert(
-		ctx context.Context,
-		resource string,
-		opts SendAlertOpts,
-	) error
+	SendAlert(ctx context.Context, resource string, opts SendAlertOpts) error
 }
 
 type Client struct {

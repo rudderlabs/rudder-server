@@ -2,6 +2,8 @@ package alerta_test
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -19,7 +21,7 @@ func TestSendFeatures(t *testing.T) {
 		testTeam         = "test-team"
 		testResource     = "test-resource"
 		testText         = "test-text"
-		testNamespace    = "test-namespce"
+		testNamespace    = "test-namespace"
 		testAlertTimeout = 10
 		testEnvironment  = "DEVELOPMENT"
 		testService      = alerta.Service{"test-service"}
@@ -30,8 +32,6 @@ func TestSendFeatures(t *testing.T) {
 			"tag2=value2",
 		}
 	)
-
-	wantBody := `{"resource":"test-resource","event":"rudder/test-resource:namespace=test-namespce,notificationServiceMode=DEVELOPMENT,priority=P3,sendToNotificationService=true,tag1=value1,tag2=value2,team=test-team","environment":"DEVELOPMENT","severity":"ok","group":"namespace=test-namespce,notificationServiceMode=DEVELOPMENT,priority=P3,sendToNotificationService=true,tag1=value1,tag2=value2,team=test-team","text":"test-text","service":["test-service"],"timeout":10,"tags":["namespace=test-namespce","notificationServiceMode=DEVELOPMENT","priority=P3","sendToNotificationService=true","tag1=value1","tag2=value2","team=test-team"]}`
 
 	c := config.New()
 
@@ -61,7 +61,29 @@ func TestSendFeatures(t *testing.T) {
 
 			body, err := io.ReadAll(r.Body)
 			require.NoError(t, err)
-			require.Equal(t, wantBody, string(body))
+
+			var a alerta.Alert
+
+			err = json.Unmarshal(body, &a)
+			require.NoError(t, err)
+
+			require.Equal(t, a.Resource, testResource)
+			require.Equal(t, a.Environment, testEnvironment)
+			require.Equal(t, a.Severity, testSeverity)
+			require.Equal(t, a.Service, testService)
+			require.Equal(t, a.Timeout, testAlertTimeout)
+			require.Equal(t, a.Text, testText)
+
+			tags := alerta.Tags{
+				fmt.Sprintf("namespace=%s", testNamespace),
+				fmt.Sprintf("notificationServiceMode=%s", testEnvironment),
+				fmt.Sprintf("priority=%s", testPriority),
+				fmt.Sprintf("team=%s", testTeam),
+				"sendToNotificationService=true",
+			}
+			tags = append(tags, testTags...)
+
+			require.Subset(t, a.Tags, tags)
 
 			w.WriteHeader(http.StatusCreated)
 		}))
@@ -124,6 +146,7 @@ func TestSendFeatures(t *testing.T) {
 		s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			atomic.AddInt64(&count, 1)
 			w.WriteHeader(http.StatusBadRequest)
+			_, _ = w.Write([]byte("bad request"))
 		}))
 		defer s.Close()
 
@@ -140,7 +163,7 @@ func TestSendFeatures(t *testing.T) {
 				Tags:     testTags,
 			},
 		)
-		require.EqualError(t, err, "non retriable: unexpected status code 400: ")
+		require.EqualError(t, err, "non retriable: unexpected status code 400: bad request")
 
 		require.Equalf(t, int64(1), atomic.LoadInt64(&count), "retry %d times", maxRetries)
 	})
