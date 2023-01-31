@@ -563,15 +563,24 @@ func (gateway *HandleT) getJobDataFromRequest(req *webRequestT) (jobData *jobFro
 	// set anonymousId if not set in payload
 	var (
 		out                                                   []map[string]interface{}
-		builtUserID, userIDFromReq                            string
+		builtUserID, userIDFromReq, userID                    string
 		sourcesJobRunID, sourcesTaskRunID                     string
 		sdkName, sdkVersion                                   string
 		notIdentifiable, nonRudderEvent, containsAudienceList bool
 	)
 
 	lo.ForEach(eventsBatch, func(vjson gjson.Result, _ int) {
-		anonIDFromReq := strings.TrimSpace(vjson.Get("anonymousId").String())
-		userIDFromReq = strings.TrimSpace(vjson.Get("userId").String())
+		toSet, ok := vjson.Value().(map[string]interface{})
+		if !ok {
+			nonRudderEvent = true
+			return
+		}
+
+		anonIDFromReq, _ := toSet["anonymousId"].(string)
+		userIDFromReq, _ = toSet["userId"].(string)
+		if userID == "" {
+			userID, _ = toSet["userId"].(string)
+		}
 
 		if isNonIdentifiable(anonIDFromReq, userIDFromReq) {
 			notIdentifiable = true
@@ -586,12 +595,6 @@ func (gateway *HandleT) getJobDataFromRequest(req *webRequestT) (jobData *jobFro
 		rudderId, err := misc.GetMD5UUID(userIDFromReq + ":" + anonIDFromReq)
 		if err != nil {
 			notIdentifiable = true
-			return
-		}
-
-		toSet, ok := vjson.Value().(map[string]interface{})
-		if !ok {
-			nonRudderEvent = true
 			return
 		}
 		// pick the job_run_id, task_run_id from the first event of batch.
@@ -659,7 +662,7 @@ func (gateway *HandleT) getJobDataFromRequest(req *webRequestT) (jobData *jobFro
 		return
 	}
 
-	if gateway.isUserSuppressed(workspaceId, userIDFromReq, sourceID) {
+	if gateway.isUserSuppressed(workspaceId, userID, sourceID) {
 		err = errRequestSuppressed
 		return
 	}

@@ -898,6 +898,50 @@ var _ = Describe("Gateway", func() {
 			Entry("request with query parameters", "/v1/warehouse/pending-events?triggerUpload=true", http.StatusOK, `{"source_id": "5", "task_run_id":"6"}`),
 		)
 	})
+
+	Context("jobDataFromRequest", func() {
+		var (
+			gateway      *HandleT
+			someWriteKey = "someWriteKey"
+			userIDHeader = "userIDHeader"
+		)
+		BeforeEach(func() {
+			gateway = &HandleT{}
+			err := gateway.Setup(context.Background(), c.mockApp, c.mockBackendConfig, c.mockJobsDB, nil, c.mockVersionHandler, rsources.NewNoOpService(), sourcedebugger.NewNoOpService())
+			Expect(err).To(BeNil())
+		})
+
+		AfterEach(func() {
+			err := gateway.Shutdown()
+			Expect(err).To(BeNil())
+		})
+
+		It("returns invalid JSON in case of invalid JSON payload", func() {
+			req := &webRequestT{
+				reqType:        "batch",
+				writeKey:       someWriteKey,
+				done:           make(chan<- string),
+				userIDHeader:   userIDHeader,
+				requestPayload: []byte(``),
+			}
+			jobData, err := gateway.getJobDataFromRequest(req)
+			Expect(errors.New(response.InvalidJSON)).To(Equal(err))
+			Expect(jobData.job).To(BeNil())
+		})
+
+		It("drops non-identifiable requests if userID and anonID are not present in the request payload", func() {
+			req := &webRequestT{
+				reqType:        "batch",
+				writeKey:       WriteKeyEnabled,
+				done:           make(chan<- string),
+				userIDHeader:   userIDHeader,
+				requestPayload: []byte(`{"batch": [{"type": "track"}]}`),
+			}
+			jobData, err := gateway.getJobDataFromRequest(req)
+			Expect(err).To(Equal(errors.New(response.NonIdentifiableRequest)))
+			Expect(jobData.job).To(BeNil())
+		})
+	})
 })
 
 func unauthorizedRequest(body io.Reader) *http.Request {
@@ -1017,30 +1061,5 @@ func Test_setBatch(t *testing.T) {
 			expectedPayload,
 			buffer.Bytes(),
 		)
-	})
-}
-
-func Test_getJobDataFromRequest(t *testing.T) {
-	var (
-		someWriteKey = "someWriteKey"
-		userIDHeader = "userIDHeader"
-	)
-	t.Run("returns job from request", func(t *testing.T) {
-		req := &webRequestT{
-			reqType:        "batch",
-			writeKey:       someWriteKey,
-			done:           make(chan<- string),
-			userIDHeader:   userIDHeader,
-			requestPayload: []byte(``),
-		}
-		gw := &HandleT{}
-		jobData, err := gw.getJobDataFromRequest(req)
-		require.Equal(
-			t,
-			errors.New(response.InvalidJSON),
-			err,
-			"invalid JSON error",
-		)
-		require.Nil(t, jobData.job, "job should be nil")
 	})
 }
