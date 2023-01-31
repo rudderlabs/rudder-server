@@ -751,14 +751,8 @@ func checkMessageID(event map[string]interface{}) {
 }
 
 func isEmptyString(value interface{}) bool {
-	if value == nil {
-		return true
-	}
 	str, ok := value.(string)
-	if !ok {
-		return true
-	}
-	return strings.TrimSpace(str) == ""
+	return !ok || strings.TrimSpace(str) == ""
 }
 
 func (*HandleT) getSourceCategoryForWriteKey(writeKey string) (category string) {
