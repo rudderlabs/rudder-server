@@ -371,6 +371,8 @@ func TestUploadJobT_UpdateTableSchema(t *testing.T) {
 		t.Parallel()
 
 		t.Run("basic", func(t *testing.T) {
+			t.Parallel()
+
 			testCases := []struct {
 				name           string
 				createView     bool
