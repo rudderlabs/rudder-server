@@ -18,7 +18,7 @@ import (
 
 type OptFn func(*Client)
 
-type Tags []string
+type Tags map[string]string
 
 type Service []string
 
@@ -27,15 +27,16 @@ type Priority string
 type Severity string
 
 type Alert struct {
-	Resource    string   `json:"resource"`    // warehouse-upload-aborted
-	Event       string   `json:"event"`       // rudder/<resource>:<group>
-	Environment string   `json:"environment"` // PRODUCTION,DEVELOPMENT,PROXYMODE,CARBONCOPY
-	Severity    Severity `json:"severity"`    // warning,critical,normal // Get the full list from https://docs.alerta.io/api/alert.html#severity-table
-	Group       string   `json:"group"`       // cluster=rudder,destID=27CHciD6leAhurSyFAeN4dp14qZ,destType=RS,namespace=hosted,notificationServiceMode=CARBONCOPY,priority=P1,sendToNotificationService=true,team=warehouse
-	Text        string   `json:"text"`        // <event> is CRITICAL warehouse-upload-aborted-count: 1
-	Service     Service  `json:"service"`     // {upload_aborted}
-	Timeout     int      `json:"timeout"`     // 86400
-	Tags        Tags     `json:"tags"`        // {sendToNotificationService=true,notificationServiceMode=CARBONCOPY,team=warehouse,priority=P1,destID=27CHciD6leAhurSyFAeN4dp14qZ,destType=RS,namespace=hosted,cluster=rudder}
+	Resource    string          `json:"resource"`    // warehouse-upload-aborted
+	Event       string          `json:"event"`       // rudder/<resource>:<group>
+	Environment string          `json:"environment"` // PRODUCTION,DEVELOPMENT,PROXYMODE,CARBONCOPY
+	Severity    Severity        `json:"severity"`    // warning,critical,normal // Get the full list from https://docs.alerta.io/api/alert.html#severity-table
+	Group       string          `json:"group"`       // cluster=rudder,destID=27CHciD6leAhurSyFAeN4dp14qZ,destType=RS,namespace=hosted,notificationServiceMode=CARBONCOPY,priority=P1,sendToNotificationService=true,team=warehouse
+	Text        string          `json:"text"`        // <event> is CRITICAL warehouse-upload-aborted-count: 1
+	Service     Service         `json:"service"`     // {upload_aborted}
+	Timeout     int             `json:"timeout"`     // 86400
+	TagList     []string        `json:"tags"`        // {sendToNotificationService=true,notificationServiceMode=CARBONCOPY,team=warehouse,priority=P1,destID=27CHciD6leAhurSyFAeN4dp14qZ,destType=RS,namespace=hosted,cluster=rudder}
+	RawData     json.RawMessage `json:"rawData"`     // { "series": [ { "tags": { "sendToNotificationService": "true", "notificationServiceMode": "CARBONCOPY", "priority": "P1", "team": "warehouse" } } ] }
 }
 
 type SendAlertOpts struct {
@@ -72,14 +73,14 @@ type AlertSender interface {
 }
 
 type Client struct {
-	client              *http.Client
-	retries             int
-	url                 string
-	team                string
-	config              *config.Config
-	environment         string
-	alertTimeout        int
-	kubernatesNamespace string
+	client         *http.Client
+	retries        int
+	url            string
+	team           string
+	config         *config.Config
+	environment    string
+	alertTimeout   int
+	kuberNamespace string
 }
 
 func WithHTTPClient(httpClient *http.Client) OptFn {
@@ -126,7 +127,7 @@ func WithAlertTimeout(timeout int) OptFn {
 
 func WithKubeNamespace(namespace string) OptFn {
 	return func(c *Client) {
-		c.kubernatesNamespace = namespace
+		c.kuberNamespace = namespace
 	}
 }
 
@@ -161,25 +162,34 @@ func (c *Client) retry(ctx context.Context, fn func() error) error {
 
 func (c *Client) defaultTags(opts *SendAlertOpts) Tags {
 	var (
-		tags        Tags
+		tags        = make(Tags)
 		environment = c.environment
-		namespace   = c.kubernatesNamespace
+		namespace   = c.kuberNamespace
 	)
 
 	if namespace == "" {
-		namespace = config.GetKubeNamespace()
+		namespace = config.GetNamespaceIdentifier()
 	}
 	if environment == "" {
 		environment = c.config.GetString("alerta.environment", "PRODUCTION")
 	}
 
-	tags = append(tags, fmt.Sprintf("namespace=%s", namespace))
-	tags = append(tags, fmt.Sprintf("sendToNotificationService=%t", true))
-	tags = append(tags, fmt.Sprintf("notificationServiceMode=%s", environment))
-	tags = append(tags, fmt.Sprintf("priority=%s", string(opts.Priority)))
-	tags = append(tags, fmt.Sprintf("team=%s", c.team))
+	tags["namespace"] = namespace
+	tags["sendToNotificationService"] = "true"
+	tags["notificationServiceMode"] = environment
+	tags["priority"] = string(opts.Priority)
+	tags["team"] = c.team
 
 	return tags
+}
+
+func (c *Client) rawData(tags Tags) ([]byte, error) {
+	tagsJson, err := json.Marshal(tags)
+	if err != nil {
+		return nil, fmt.Errorf("marshal tags: %w", err)
+	}
+
+	return []byte(fmt.Sprintf(`{ "series": [ { "tags": %s } ] }`, tagsJson)), nil
 }
 
 func (c *Client) SendAlert(
@@ -199,11 +209,25 @@ func (c *Client) SendAlert(
 
 	// default tags
 	tags := c.defaultTags(&opts)
-	tags = append(tags, opts.Tags...)
-	sort.Strings(tags)
+	for k, v := range opts.Tags {
+		tags[k] = v
+	}
+
+	var tagList []string
+	for k, v := range tags {
+		tagList = append(tagList, fmt.Sprintf("%s=%s", k, v))
+	}
+	sort.Strings(tagList)
+
+	rawData, err := c.rawData(tags)
+	if err != nil {
+		return fmt.Errorf("raw data: %w", err)
+	}
+
+	sort.Strings(tagList)
 
 	var (
-		group        = strings.Join(tags, ",")
+		group        = strings.Join(tagList, ",")
 		event        = fmt.Sprintf("rudder/%s:%s", resource, group)
 		alertTimeout = c.alertTimeout
 		environment  = c.environment
@@ -222,7 +246,8 @@ func (c *Client) SendAlert(
 		Timeout:     alertTimeout,
 		Group:       group,
 		Event:       event,
-		Tags:        tags,
+		TagList:     tagList,
+		RawData:     rawData,
 		Service:     opts.Service,
 		Severity:    opts.Severity,
 		Text:        opts.Text,

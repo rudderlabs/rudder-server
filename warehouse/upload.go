@@ -886,11 +886,11 @@ func (job *UploadJobT) alterColumnsToWarehouse(tName string, columnsMap map[stri
 					"upload_alter_columns",
 				},
 				Tags: alerta.Tags{
-					fmt.Sprintf("destID=%s", job.upload.DestinationID),
-					fmt.Sprintf("destType=%s", job.upload.DestinationType),
-					fmt.Sprintf("query=%s", query),
-					fmt.Sprintf("workspaceId=%s", job.upload.WorkspaceID),
-					fmt.Sprintf("sourceID=%s", job.upload.SourceID),
+					"destID":      job.upload.DestinationID,
+					"destType":    job.upload.DestinationType,
+					"query":       query,
+					"workspaceID": job.upload.WorkspaceID,
+					"sourceID":    job.upload.SourceID,
 				},
 			},
 		)

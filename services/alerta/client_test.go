@@ -28,8 +28,8 @@ func TestSendFeatures(t *testing.T) {
 		testSeverity     = alerta.SeverityOk
 		testPriority     = alerta.PriorityP3
 		testTags         = alerta.Tags{
-			"tag1=value1",
-			"tag2=value2",
+			"tag1": "value1",
+			"tag2": "value2",
 		}
 	)
 
@@ -74,16 +74,15 @@ func TestSendFeatures(t *testing.T) {
 			require.Equal(t, a.Timeout, testAlertTimeout)
 			require.Equal(t, a.Text, testText)
 
-			tags := alerta.Tags{
+			require.Subset(t, a.TagList, []string{
 				fmt.Sprintf("namespace=%s", testNamespace),
 				fmt.Sprintf("notificationServiceMode=%s", testEnvironment),
 				fmt.Sprintf("priority=%s", testPriority),
 				fmt.Sprintf("team=%s", testTeam),
 				"sendToNotificationService=true",
-			}
-			tags = append(tags, testTags...)
-
-			require.Subset(t, a.Tags, tags)
+				"tag1=value1",
+				"tag2=value2",
+			})
 
 			w.WriteHeader(http.StatusCreated)
 		}))
