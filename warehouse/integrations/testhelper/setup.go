@@ -89,6 +89,7 @@ type WareHouseTest struct {
 	Provider                     string
 	SourceID                     string
 	DestinationID                string
+	WorkspaceID                  string
 	TimestampBeforeSendingEvents time.Time
 	EventsMap                    EventsCountMap
 	StagingFilesEventsMap        EventsCountMap
@@ -488,7 +489,6 @@ func verifyAsyncJob(t testing.TB, wareHouseTest *WareHouseTest) {
 	t.Helper()
 	t.Logf("Started verifying async job")
 
-	workspaceID := "BpLnfgDsc2WD8F2qNfHK5a84jjJ"
 	asyncPayload := strings.NewReader(
 		fmt.Sprintf(
 			AsyncWhPayload,
@@ -497,7 +497,7 @@ func verifyAsyncJob(t testing.TB, wareHouseTest *WareHouseTest) {
 			wareHouseTest.TaskRunID,
 			wareHouseTest.DestinationID,
 			time.Now().UTC().Format("2006-01-02 15:04:05"),
-			workspaceID,
+			wareHouseTest.WorkspaceID,
 		),
 	)
 	t.Logf("Run async job for sourceID: %s, DestinationID: %s, jobRunID: %s, taskRunID: %s",
@@ -515,7 +515,7 @@ func verifyAsyncJob(t testing.TB, wareHouseTest *WareHouseTest) {
 			wareHouseTest.TaskRunID,
 			wareHouseTest.SourceID,
 			wareHouseTest.DestinationID,
-			workspaceID,
+			wareHouseTest.WorkspaceID,
 		)
 		url        = fmt.Sprintf("http://localhost:%s/v1/%s", "8080", path)
 		method     = "GET"
@@ -560,11 +560,12 @@ func verifyAsyncJob(t testing.TB, wareHouseTest *WareHouseTest) {
 		operation,
 		WaitFor10Minute,
 		AsyncJOBQueryFrequency,
-		fmt.Sprintf("Failed to get async job status for job_run_id: %s, task_run_id: %s, source_id: %s, destination_id: %s",
+		fmt.Sprintf("Failed to get async job status for job_run_id: %s, task_run_id: %s, source_id: %s, destination_id: %s, woekspace_id: %s",
 			wareHouseTest.JobRunID,
 			wareHouseTest.TaskRunID,
 			wareHouseTest.SourceID,
 			wareHouseTest.DestinationID,
+			wareHouseTest.WorkspaceID,
 		),
 	)
 

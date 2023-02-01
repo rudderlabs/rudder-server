@@ -66,6 +66,7 @@ func TestIntegrationBigQuery(t *testing.T) {
 		writeKey                      string
 		sourceID                      string
 		destinationID                 string
+		workspaceID                   string
 		messageID                     string
 		eventsMap                     testhelper.EventsCountMap
 		stagingFilesEventsMap         testhelper.EventsCountMap
@@ -109,6 +110,7 @@ func TestIntegrationBigQuery(t *testing.T) {
 			writeKey:      "J77aeABtLFJ84qYU6UrN8ctewZt",
 			sourceID:      "2DkCpUr0xgjfBNasIwqyqfyHdq4",
 			destinationID: "26Bgm9FrQDZjvadBnalpd35atwn",
+			workspaceID:   "BpLnfgDsc2WD8F2qNfHK5a84jjJ",
 			schema:        sourcesSchema,
 			tables:        []string{"tracks", "google_sheet"},
 			eventsMap:     testhelper.SourcesSendEventsMap(),

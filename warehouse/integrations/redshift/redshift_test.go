@@ -45,6 +45,7 @@ func TestIntegrationRedshift(t *testing.T) {
 		writeKey              string
 		sourceID              string
 		destinationID         string
+		workspaceID           string
 		eventsMap             testhelper.EventsCountMap
 		stagingFilesEventsMap testhelper.EventsCountMap
 		loadFilesEventsMap    testhelper.EventsCountMap
@@ -68,6 +69,7 @@ func TestIntegrationRedshift(t *testing.T) {
 			writeKey:              "BNAwdCxmM8BIabKERsUhPNmMmdf",
 			sourceID:              "2DkCpUr0xgjfsdJxIwqyqfyHdq4",
 			destinationID:         "27Sthahyhhsdas4HT4NTtNPl06V",
+			workspaceID:           "BpLnfgDsc2WD8F2qNfHK5a84jjJ",
 			eventsMap:             testhelper.SourcesSendEventsMap(),
 			stagingFilesEventsMap: testhelper.SourcesStagingFilesEventsMap(),
 			loadFilesEventsMap:    testhelper.SourcesLoadFilesEventsMap(),
@@ -105,6 +107,7 @@ func TestIntegrationRedshift(t *testing.T) {
 				WriteKey:              tc.writeKey,
 				SourceID:              tc.sourceID,
 				DestinationID:         tc.destinationID,
+				WorkspaceID:           tc.workspaceID,
 				Tables:                tc.tables,
 				EventsMap:             tc.eventsMap,
 				StagingFilesEventsMap: tc.stagingFilesEventsMap,

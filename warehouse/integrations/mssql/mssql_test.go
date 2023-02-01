@@ -52,6 +52,7 @@ func TestIntegrationMSSQL(t *testing.T) {
 		schema                string
 		sourceID              string
 		destinationID         string
+		workspaceID           string
 		eventsMap             testhelper.EventsCountMap
 		stagingFilesEventsMap testhelper.EventsCountMap
 		loadFilesEventsMap    testhelper.EventsCountMap
@@ -75,6 +76,7 @@ func TestIntegrationMSSQL(t *testing.T) {
 			tables:                []string{"tracks", "google_sheet"},
 			sourceID:              "2DkCpUr0xfiINRJxIwqyqfyHdq4",
 			destinationID:         "21Ezdq58kMNMj07VJB0VJmxLvgu",
+			workspaceID:           "BpLnfgDsc2WD8F2qNfHK5a84jjJ",
 			eventsMap:             testhelper.SourcesSendEventsMap(),
 			stagingFilesEventsMap: testhelper.SourcesStagingFilesEventsMap(),
 			loadFilesEventsMap:    testhelper.SourcesLoadFilesEventsMap(),
@@ -95,6 +97,7 @@ func TestIntegrationMSSQL(t *testing.T) {
 				WriteKey:              tc.writeKey,
 				SourceID:              tc.sourceID,
 				DestinationID:         tc.destinationID,
+				WorkspaceID:           tc.workspaceID,
 				Tables:                tc.tables,
 				EventsMap:             tc.eventsMap,
 				StagingFilesEventsMap: tc.stagingFilesEventsMap,
