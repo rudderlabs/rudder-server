@@ -3,7 +3,6 @@ package throttling
 import (
 	"context"
 	"fmt"
-	"math"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -26,19 +25,12 @@ func TestThrottling(t *testing.T) {
 		// when the concurrency is too high. Until we fix it or come up with a guard to limit the amount of concurrent
 		// requests, we're limiting the concurrency to X in the tests (to avoid test flakiness).
 		concurrency int
-		// GCRA algorithms (both in-memory and Redis) are not as precise, so we add more error margin for them.
-		additionalErrorMargin float64
 	}
 
 	var (
 		ctx      = context.Background()
 		rc       = bootstrapRedis(ctx, t, pool)
 		limiters = []limiterSettings{
-			{
-				name:        "go rate",
-				limiter:     newLimiter(t, WithInMemoryGoRate()),
-				concurrency: 100,
-			},
 			{
 				name:        "gcra",
 				limiter:     newLimiter(t, WithInMemoryGCRA(0)),
@@ -69,9 +61,7 @@ func TestThrottling(t *testing.T) {
 				l := l
 				t.Run(testName(l.name, tc.rate, tc.window), func(t *testing.T) {
 					expected := tc.rate
-					testLimiter(
-						ctx, t, l.limiter, tc.rate, tc.window, expected, l.concurrency, l.additionalErrorMargin,
-					)
+					testLimiter(ctx, t, l.limiter, tc.rate, tc.window, expected, l.concurrency)
 				})
 			}
 		}
@@ -80,7 +70,6 @@ func TestThrottling(t *testing.T) {
 
 func testLimiter(
 	ctx context.Context, t *testing.T, l *Limiter, rate, window, expected int64, concurrency int,
-	additionalErrorMargin float64,
 ) {
 	t.Helper()
 	var (
@@ -163,7 +152,7 @@ loop:
 	wg.Wait()
 
 	diff := expected - passed
-	errorMargin := int64(math.Ceil((0.05+additionalErrorMargin)*float64(rate))) + 1 // ~5% error margin
+	errorMargin := int64(0.05*float64(rate)) + 1 // ~5% error margin
 	if passed < 1 || diff < -errorMargin || diff > errorMargin {
 		t.Errorf("Expected %d, got %d (diff: %d, error margin: %d)", expected, passed, diff, errorMargin)
 	}
@@ -207,9 +196,8 @@ func TestReturn(t *testing.T) {
 	require.NoError(t, err)
 
 	type testCase struct {
-		name         string
-		limiter      *Limiter
-		minDeletions int
+		name    string
+		limiter *Limiter
 	}
 
 	var (
@@ -220,14 +208,8 @@ func TestReturn(t *testing.T) {
 		rc              = bootstrapRedis(ctx, t, pool)
 		testCases       = []testCase{
 			{
-				name:         "go rate",
-				limiter:      newLimiter(t, WithInMemoryGoRate()),
-				minDeletions: 2,
-			},
-			{
-				name:         "sorted sets redis",
-				limiter:      newLimiter(t, WithRedisSortedSet(rc)),
-				minDeletions: 1,
+				name:    "sorted sets redis",
+				limiter: newLimiter(t, WithRedisSortedSet(rc)),
 			},
 		}
 	)
@@ -254,16 +236,8 @@ func TestReturn(t *testing.T) {
 			require.NoError(t, err)
 			require.False(t, allowed)
 
-			// Return as many tokens as minDeletions.
-			// This is because returning a single token very quickly does not always have an effect with go rate.
-			// The reason why is that the go rate algorithm calculates the number of tokens to be restored
-			// based on a few criteria:
-			// 1. https://cs.opensource.google/go/x/time/+/refs/tags/v0.1.0:rate/rate.go;l=175
-			// 2. https://cs.opensource.google/go/x/time/+/refs/tags/v0.1.0:rate/rate.go;l=183
-			for i := 0; i < tc.minDeletions; i++ {
-				require.NoError(t, tokens[i](ctx))
-			}
-
+			// return one token and try again
+			require.NoError(t, tokens[0](ctx))
 			require.Eventually(t, func() bool {
 				allowed, returner, err := tc.limiter.Allow(ctx, 1, rate, window, key)
 				return allowed && err == nil && returner != nil
@@ -280,7 +254,6 @@ func TestBadData(t *testing.T) {
 		ctx      = context.Background()
 		rc       = bootstrapRedis(ctx, t, pool)
 		limiters = map[string]*Limiter{
-			"go rate":           newLimiter(t, WithInMemoryGoRate()),
 			"gcra":              newLimiter(t, WithInMemoryGCRA(0)),
 			"gcra redis":        newLimiter(t, WithRedisGCRA(rc, 0)),
 			"sorted sets redis": newLimiter(t, WithRedisSortedSet(rc)),
