@@ -38,8 +38,6 @@ type StagingFiles repo
 
 type metadataSchema struct {
 	UseRudderStorage      bool   `json:"use_rudder_storage"`
-	SourceBatchID         string `json:"source_batch_id"`
-	SourceTaskID          string `json:"source_task_id"`
 	SourceTaskRunID       string `json:"source_task_run_id"`
 	SourceJobID           string `json:"source_job_id"`
 	SourceJobRunID        string `json:"source_job_run_id"`
@@ -61,8 +59,6 @@ func StagingFileIDs(stagingFiles []*model.StagingFile) []int64 {
 func metadataFromStagingFile(stagingFile *model.StagingFile) metadataSchema {
 	return metadataSchema{
 		UseRudderStorage:      stagingFile.UseRudderStorage,
-		SourceBatchID:         stagingFile.SourceBatchID,
-		SourceTaskID:          stagingFile.SourceTaskID,
 		SourceTaskRunID:       stagingFile.SourceTaskRunID,
 		SourceJobID:           stagingFile.SourceJobID,
 		SourceJobRunID:        stagingFile.SourceJobRunID,
@@ -87,8 +83,6 @@ func NewStagingFiles(db *sql.DB, opts ...Opt) *StagingFiles {
 
 func (m *metadataSchema) SetStagingFile(stagingFile *model.StagingFile) {
 	stagingFile.UseRudderStorage = m.UseRudderStorage
-	stagingFile.SourceBatchID = m.SourceBatchID
-	stagingFile.SourceTaskID = m.SourceTaskID
 	stagingFile.SourceTaskRunID = m.SourceTaskRunID
 	stagingFile.SourceJobID = m.SourceJobID
 	stagingFile.SourceJobRunID = m.SourceJobRunID
@@ -148,7 +142,7 @@ func (repo *StagingFiles) Insert(ctx context.Context, stagingFile *model.Staging
 			metadata
 		)
 		VALUES
-		 ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13) 
+		 ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
 		RETURNING id`,
 
 		stagingFile.Location,
@@ -387,12 +381,12 @@ func (repo *StagingFiles) TotalEventsForUpload(ctx context.Context, upload model
 	var total sql.NullInt64
 
 	err := repo.db.QueryRowContext(ctx, `
-		SELECT 
-			sum(total_events) 
-		FROM 
+		SELECT
+			sum(total_events)
+		FROM
 			`+stagingTableName+`
-		WHERE 
-			id >= $1 
+		WHERE
+			id >= $1
 			AND id <= $2
 			AND source_id = $3
 			AND destination_id = $4;
@@ -412,11 +406,11 @@ func (repo *StagingFiles) TotalEventsForUpload(ctx context.Context, upload model
 func (repo *StagingFiles) FirstEventForUpload(ctx context.Context, upload model.Upload) (time.Time, error) {
 	var firstEvent sql.NullTime
 	err := repo.db.QueryRowContext(ctx, `
-		SELECT 
-			first_event_at 
-		FROM 
+		SELECT
+			first_event_at
+		FROM
 			`+stagingTableName+`
-		WHERE 
+		WHERE
 			id = $1;`,
 		upload.StagingFileStartID,
 	).Scan(&firstEvent)
@@ -429,15 +423,15 @@ func (repo *StagingFiles) FirstEventForUpload(ctx context.Context, upload model.
 
 func (repo *StagingFiles) DestinationRevisionIDs(ctx context.Context, upload model.Upload) ([]string, error) {
 	sqlStatement := `
-		SELECT 
-		  DISTINCT metadata ->> 'destination_revision_id' AS destination_revision_id 
-		FROM 
-		  ` + stagingTableName + ` 
-		WHERE 
-		  id >= $1 
-		  AND id <= $2 
-		  AND source_id = $3 
-		  AND destination_id = $4 
+		SELECT
+		  DISTINCT metadata ->> 'destination_revision_id' AS destination_revision_id
+		FROM
+		  ` + stagingTableName + `
+		WHERE
+		  id >= $1
+		  AND id <= $2
+		  AND source_id = $3
+		  AND destination_id = $4
 		  AND metadata ->> 'destination_revision_id' <> '';
 	`
 	rows, err := repo.db.QueryContext(ctx, sqlStatement,
@@ -452,7 +446,7 @@ func (repo *StagingFiles) DestinationRevisionIDs(ctx context.Context, upload mod
 	if err != nil {
 		return nil, fmt.Errorf("query destination revisionID: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var revisionIDs []string
 	for rows.Next() {

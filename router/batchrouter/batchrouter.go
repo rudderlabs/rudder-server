@@ -159,8 +159,6 @@ type JobParametersT struct {
 	DestinationID           string `json:"destination_id"`
 	ReceivedAt              string `json:"received_at"`
 	TransformAt             string `json:"transform_at"`
-	SourceBatchID           string `json:"source_batch_id"`
-	SourceTaskID            string `json:"source_task_id"`
 	SourceTaskRunID         string `json:"source_task_run_id"`
 	SourceJobID             string `json:"source_job_id"`
 	SourceJobRunID          string `json:"source_job_run_id"`
@@ -1115,8 +1113,6 @@ func (brt *HandleT) postToWarehouse(batchJobs *BatchJobsT, output StorageUploadO
 		TotalEvents:           output.TotalEvents,
 		TotalBytes:            output.TotalBytes,
 		UseRudderStorage:      output.UseRudderStorage,
-		SourceBatchID:         sampleParameters.SourceBatchID,
-		SourceTaskID:          sampleParameters.SourceTaskID,
 		SourceTaskRunID:       sampleParameters.SourceTaskRunID,
 		SourceJobID:           sampleParameters.SourceJobID,
 		SourceJobRunID:        sampleParameters.SourceJobRunID,
@@ -1266,9 +1262,9 @@ func (brt *HandleT) setJobStatus(batchJobs *BatchJobsT, isWarehouse bool, errOcc
 			errorCode := getBRTErrorCode(jobState)
 			var cd *types.ConnectionDetails
 			workspaceID := job.WorkspaceId
-			key := fmt.Sprintf("%s:%s:%s:%s:%s:%s:%s", parameters.SourceID, parameters.DestinationID, parameters.SourceBatchID, jobState, strconv.Itoa(errorCode), parameters.EventName, parameters.EventType)
+			key := fmt.Sprintf("%s:%s:%s:%s:%s:%s:%s", parameters.SourceID, parameters.DestinationID, parameters.SourceJobRunID, jobState, strconv.Itoa(errorCode), parameters.EventName, parameters.EventType)
 			if _, ok := connectionDetailsMap[key]; !ok {
-				cd = types.CreateConnectionDetail(parameters.SourceID, parameters.DestinationID, parameters.SourceBatchID, parameters.SourceTaskID, parameters.SourceTaskRunID, parameters.SourceJobID, parameters.SourceJobRunID, parameters.SourceDefinitionID, parameters.DestinationDefinitionID, parameters.SourceCategory)
+				cd = types.CreateConnectionDetail(parameters.SourceID, parameters.DestinationID, parameters.SourceTaskRunID, parameters.SourceJobID, parameters.SourceJobRunID, parameters.SourceDefinitionID, parameters.DestinationDefinitionID, parameters.SourceCategory)
 				connectionDetailsMap[key] = cd
 				transformedAtMap[key] = parameters.TransformAt
 			}

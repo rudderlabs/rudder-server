@@ -13,6 +13,8 @@ import (
 
 	"github.com/rudderlabs/rudder-server/services/alerta"
 
+	schemarepository "github.com/rudderlabs/rudder-server/warehouse/integrations/datalake/schema-repository"
+
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/manager"
 
 	"golang.org/x/exp/slices"
@@ -91,15 +93,16 @@ type UploadJobT struct {
 	stats                stats.Stats
 	LoadFileGenStartTime time.Time
 
-	upload              model.Upload
-	warehouse           warehouseutils.Warehouse
-	stagingFiles        []*model.StagingFile
-	stagingFileIDs      []int64
-	schemaLock          sync.Mutex
-	uploadLock          sync.Mutex
-	hasAllTablesSkipped bool
-	tableUploadStatuses []*TableUploadStatusT
-	AlertSender         alerta.AlertSender
+	upload                    model.Upload
+	warehouse                 warehouseutils.Warehouse
+	stagingFiles              []*model.StagingFile
+	stagingFileIDs            []int64
+	schemaLock                sync.Mutex
+	uploadLock                sync.Mutex
+	hasAllTablesSkipped       bool
+	tableUploadStatuses       []*TableUploadStatusT
+	RefreshPartitionBatchSize int
+	AlertSender               alerta.AlertSender
 }
 
 type UploadColumnT struct {
@@ -174,6 +177,8 @@ func (f *UploadJobFactory) NewUploadJob(dto *model.UploadJob, whManager manager.
 
 		hasAllTablesSkipped: false,
 		tableUploadStatuses: []*TableUploadStatusT{},
+
+		RefreshPartitionBatchSize: config.GetInt("Warehouse.refreshPartitionBatchSize", 100),
 
 		AlertSender: alerta.NewClient(
 			config.GetString("ALERTA_URL", "https://alerta.rudderstack.com/api/"),
@@ -534,6 +539,11 @@ func (job *UploadJobT) run() (err error) {
 			})
 
 			wg.Wait()
+
+			if err = job.RefreshPartitions(job.upload.LoadFileStartID, job.upload.LoadFileEndID); err != nil {
+				loadErrors = append(loadErrors, fmt.Errorf("refresh partitions: %w", err))
+			}
+
 			if len(loadErrors) > 0 {
 				err = misc.ConcatErrors(loadErrors)
 				break
@@ -567,8 +577,6 @@ func (job *UploadJobT) run() (err error) {
 				ConnectionDetails: types.ConnectionDetails{
 					SourceID:        job.upload.SourceID,
 					DestinationID:   job.upload.DestinationID,
-					SourceBatchID:   job.upload.SourceBatchID,
-					SourceTaskID:    job.upload.SourceTaskID,
 					SourceTaskRunID: job.upload.SourceTaskRunID,
 					SourceJobID:     job.upload.SourceJobID,
 					SourceJobRunID:  job.upload.SourceJobRunID,
@@ -1658,8 +1666,6 @@ func (job *UploadJobT) setUploadError(statusError error, state string) (string, 
 		ConnectionDetails: types.ConnectionDetails{
 			SourceID:        job.upload.SourceID,
 			DestinationID:   job.upload.DestinationID,
-			SourceBatchID:   job.upload.SourceBatchID,
-			SourceTaskID:    job.upload.SourceTaskID,
 			SourceTaskRunID: job.upload.SourceTaskRunID,
 			SourceJobID:     job.upload.SourceJobID,
 			SourceJobRunID:  job.upload.SourceJobRunID,
@@ -1682,8 +1688,6 @@ func (job *UploadJobT) setUploadError(statusError error, state string) (string, 
 			ConnectionDetails: types.ConnectionDetails{
 				SourceID:        job.upload.SourceID,
 				DestinationID:   job.upload.DestinationID,
-				SourceBatchID:   job.upload.SourceBatchID,
-				SourceTaskID:    job.upload.SourceTaskID,
 				SourceTaskRunID: job.upload.SourceTaskRunID,
 				SourceJobID:     job.upload.SourceJobID,
 				SourceJobRunID:  job.upload.SourceJobRunID,
@@ -2101,4 +2105,37 @@ func (job *UploadJobT) GetLocalSchema() warehouseutils.SchemaT {
 
 func (job *UploadJobT) UpdateLocalSchema(schema warehouseutils.SchemaT) error {
 	return job.schemaHandle.updateLocalSchema(schema)
+}
+
+func (job *UploadJobT) RefreshPartitions(loadFileStartID, loadFileEndID int64) error {
+	if !slices.Contains(warehouseutils.TimeWindowDestinations, job.upload.DestinationType) {
+		return nil
+	}
+
+	var (
+		repository schemarepository.SchemaRepository
+		err        error
+	)
+
+	if repository, err = schemarepository.NewSchemaRepository(job.warehouse, job); err != nil {
+		return fmt.Errorf("create schema repository: %w", err)
+	}
+
+	// Refresh partitions if exists
+	for tableName := range job.upload.UploadSchema {
+		loadFiles := job.GetLoadFilesMetadata(warehouseutils.GetLoadFilesOptionsT{
+			Table:   tableName,
+			StartID: loadFileStartID,
+			EndID:   loadFileEndID,
+		})
+		batches := schemarepository.LoadFileBatching(loadFiles, job.RefreshPartitionBatchSize)
+
+		for _, batch := range batches {
+			if err = repository.RefreshPartitions(tableName, batch); err != nil {
+				return fmt.Errorf("refresh partitions: %w", err)
+			}
+		}
+	}
+
+	return nil
 }
