@@ -873,7 +873,7 @@ func (proc *Handle) updateMetricMaps(countMetadataMap map[string]MetricMetadata,
 		countKey := strings.Join([]string{
 			event.Metadata.SourceID,
 			event.Metadata.DestinationID,
-			event.Metadata.JobRunID,
+			event.Metadata.SourceJobRunID,
 			eventName,
 			eventType,
 		}, MetricKeyDelimiter)
@@ -901,7 +901,7 @@ func (proc *Handle) updateMetricMaps(countMetadataMap map[string]MetricMetadata,
 		key := fmt.Sprintf("%s:%s:%s:%s:%d:%s:%s",
 			event.Metadata.SourceID,
 			event.Metadata.DestinationID,
-			event.Metadata.JobRunID,
+			event.Metadata.SourceJobRunID,
 			status, event.StatusCode,
 			eventName, eventType,
 		)
@@ -1191,8 +1191,13 @@ func (proc *Handle) processJobsForDest(subJobs subJob, parsedEventList [][]types
 			// Iterate through all the events in the batch
 			for eventIndex, singularEvent := range singularEvents {
 				messageId := misc.GetStringifiedData(singularEvent["messageId"])
+				source, sourceError := proc.getSourceByWriteKey(writeKey)
+				if sourceError != nil {
+					proc.logger.Error("Dropping Job since Source not found for writeKey : ", writeKey)
+					continue
+				}
 				sampleEvent, err := jsonfast.Marshal(singularEvent)
-				if err != nil {
+				if err != nil || proc.transientSources.Apply(source.ID) {
 					sampleEvent = []byte(`{}`)
 				}
 				if proc.config.enableDedup && misc.Contains(duplicateIndexes, eventIndex) {
@@ -1211,17 +1216,11 @@ func (proc *Handle) processJobsForDest(subJobs subJob, parsedEventList [][]types
 					ReceivedAt:    receivedAt,
 				}
 
-				sourceForSingularEvent, sourceIdError := proc.getSourceByWriteKey(writeKey)
-				if sourceIdError != nil {
-					proc.logger.Error("Dropping Job since Source not found for writeKey : ", writeKey)
-					continue
-				}
-
 				commonMetadataFromSingularEvent := makeCommonMetadataFromSingularEvent(
 					singularEvent,
 					batchEvent,
 					receivedAt,
-					sourceForSingularEvent,
+					source,
 				)
 
 				// REPORTING - GATEWAY metrics - START
@@ -1252,16 +1251,11 @@ func (proc *Handle) processJobsForDest(subJobs subJob, parsedEventList [][]types
 				enhanceWithTimeFields(&shallowEventCopy, singularEvent, receivedAt)
 				enhanceWithMetadata(commonMetadataFromSingularEvent, &shallowEventCopy, &backendconfig.DestinationT{})
 
-				source, sourceError := proc.getSourceByWriteKey(writeKey)
-				if sourceError != nil {
-					proc.logger.Error("Source not found for writeKey : ", writeKey)
-				} else {
-					// TODO: TP ID preference 1.event.context set by rudderTyper   2.From WorkSpaceConfig (currently being used)
-					shallowEventCopy.Metadata.TrackingPlanId = source.DgSourceTrackingPlanConfig.TrackingPlan.Id
-					shallowEventCopy.Metadata.TrackingPlanVersion = source.DgSourceTrackingPlanConfig.TrackingPlan.Version
-					shallowEventCopy.Metadata.SourceTpConfig = source.DgSourceTrackingPlanConfig.Config
-					shallowEventCopy.Metadata.MergedTpConfig = source.DgSourceTrackingPlanConfig.GetMergedConfig(commonMetadataFromSingularEvent.EventType)
-				}
+				// TODO: TP ID preference 1.event.context set by rudderTyper   2.From WorkSpaceConfig (currently being used)
+				shallowEventCopy.Metadata.TrackingPlanId = source.DgSourceTrackingPlanConfig.TrackingPlan.Id
+				shallowEventCopy.Metadata.TrackingPlanVersion = source.DgSourceTrackingPlanConfig.TrackingPlan.Version
+				shallowEventCopy.Metadata.SourceTpConfig = source.DgSourceTrackingPlanConfig.Config
+				shallowEventCopy.Metadata.MergedTpConfig = source.DgSourceTrackingPlanConfig.GetMergedConfig(commonMetadataFromSingularEvent.EventType)
 
 				groupedEventsByWriteKey[WriteKeyT(writeKey)] = append(groupedEventsByWriteKey[WriteKeyT(writeKey)], shallowEventCopy)
 
@@ -1764,7 +1758,7 @@ func (proc *Handle) transformSrcDest(
 			key := strings.Join([]string{
 				event.Metadata.SourceID,
 				event.Metadata.DestinationID,
-				event.Metadata.JobRunID,
+				event.Metadata.SourceJobRunID,
 				event.Metadata.EventName,
 				event.Metadata.EventType,
 			}, MetricKeyDelimiter)

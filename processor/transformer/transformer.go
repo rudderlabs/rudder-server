@@ -51,7 +51,6 @@ type MetadataT struct {
 	SourceTpConfig      map[string]map[string]interface{} `json:"sourceTpConfig"`
 	MergedTpConfig      map[string]interface{}            `json:"mergedTpConfig"`
 	DestinationID       string                            `json:"destinationId"`
-	JobRunID            string                            `json:"jobRunId"`
 	JobID               int64                             `json:"jobId"`
 	SourceJobID         string                            `json:"sourceJobId"`
 	SourceJobRunID      string                            `json:"sourceJobRunId"`
