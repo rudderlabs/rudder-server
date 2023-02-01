@@ -105,6 +105,8 @@ type HandleT struct {
 	routerTransformOutputCountStat          stats.Measurement
 	batchInputOutputDiffCountStat           stats.Measurement
 	routerResponseTransformStat             stats.Measurement
+	throttlingErrorStat                     stats.Measurement
+	throttledStat                           stats.Measurement
 	noOfWorkers                             int
 	allowAbortedUserJobsCountForProcessing  int
 	isBackendConfigInitialized              bool
@@ -1282,11 +1284,13 @@ func (rt *HandleT) shouldThrottle(job *jobsdb.JobT, parameters JobParametersT, t
 	limited, err := throttler.CheckLimitReached(parameters.DestinationID, throttlingCost)
 	if err != nil {
 		// we can't throttle, let's hit the destination, worst case we get a 429
+		rt.throttlingErrorStat.Count(1)
 		rt.logger.Errorf(`[%v Router] :: Throttler error: %v`, rt.destName, err)
 		return false
 	}
 	if limited {
 		throttledUserMap[job.UserID] = struct{}{}
+		rt.throttledStat.Count(1)
 		rt.logger.Debugf(
 			"[%v Router] :: Skipping processing of job:%d of user:%s as throttled limits exceeded",
 			rt.destName, job.JobID, job.UserID,
@@ -1863,25 +1867,15 @@ func (rt *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB jobsd
 	// END: Alert configuration
 	rt.allowAbortedUserJobsCountForProcessing = getRouterConfigInt("allowAbortedUserJobsCountForProcessing", destName, 1)
 
-	rt.batchInputCountStat = stats.Default.NewTaggedStat("router_batch_num_input_jobs", stats.CountType, stats.Tags{
-		"destType": rt.destName,
-	})
-	rt.batchOutputCountStat = stats.Default.NewTaggedStat("router_batch_num_output_jobs", stats.CountType, stats.Tags{
-		"destType": rt.destName,
-	})
-
-	rt.routerTransformInputCountStat = stats.Default.NewTaggedStat("router_transform_num_input_jobs", stats.CountType, stats.Tags{
-		"destType": rt.destName,
-	})
-	rt.routerTransformOutputCountStat = stats.Default.NewTaggedStat("router_transform_num_output_jobs", stats.CountType, stats.Tags{
-		"destType": rt.destName,
-	})
-
-	rt.batchInputOutputDiffCountStat = stats.Default.NewTaggedStat("router_batch_input_output_diff_jobs", stats.CountType, stats.Tags{
-		"destType": rt.destName,
-	})
-
-	rt.routerResponseTransformStat = stats.Default.NewTaggedStat("response_transform_latency", stats.TimerType, stats.Tags{"destType": rt.destName})
+	statTags := stats.Tags{"destType": rt.destName}
+	rt.batchInputCountStat = stats.Default.NewTaggedStat("router_batch_num_input_jobs", stats.CountType, statTags)
+	rt.batchOutputCountStat = stats.Default.NewTaggedStat("router_batch_num_output_jobs", stats.CountType, statTags)
+	rt.routerTransformInputCountStat = stats.Default.NewTaggedStat("router_transform_num_input_jobs", stats.CountType, statTags)
+	rt.routerTransformOutputCountStat = stats.Default.NewTaggedStat("router_transform_num_output_jobs", stats.CountType, statTags)
+	rt.batchInputOutputDiffCountStat = stats.Default.NewTaggedStat("router_batch_input_output_diff_jobs", stats.CountType, statTags)
+	rt.routerResponseTransformStat = stats.Default.NewTaggedStat("response_transform_latency", stats.TimerType, statTags)
+	rt.throttlingErrorStat = stats.Default.NewTaggedStat("throttling_error", stats.CountType, statTags)
+	rt.throttledStat = stats.Default.NewTaggedStat("throttled", stats.CountType, statTags)
 
 	rt.transformer = transformer.NewTransformer(rt.netClientTimeout, rt.backendProxyTimeout)
 
