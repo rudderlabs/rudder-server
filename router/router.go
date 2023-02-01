@@ -1874,8 +1874,8 @@ func (rt *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB jobsd
 	rt.routerTransformOutputCountStat = stats.Default.NewTaggedStat("router_transform_num_output_jobs", stats.CountType, statTags)
 	rt.batchInputOutputDiffCountStat = stats.Default.NewTaggedStat("router_batch_input_output_diff_jobs", stats.CountType, statTags)
 	rt.routerResponseTransformStat = stats.Default.NewTaggedStat("response_transform_latency", stats.TimerType, statTags)
-	rt.throttlingErrorStat = stats.Default.NewTaggedStat("throttling_error", stats.CountType, statTags)
-	rt.throttledStat = stats.Default.NewTaggedStat("throttled", stats.CountType, statTags)
+	rt.throttlingErrorStat = stats.Default.NewTaggedStat("router_throttling_error", stats.CountType, statTags)
+	rt.throttledStat = stats.Default.NewTaggedStat("router_throttled", stats.CountType, statTags)
 
 	rt.transformer = transformer.NewTransformer(rt.netClientTimeout, rt.backendProxyTimeout)
 
