@@ -71,8 +71,6 @@ func TestAPI_Process(t *testing.T) {
 			DestinationRevisionID: "2H1cLBvL3v0prRBNzpe8D34XTzU",
 			TotalEvents:           2,
 			TotalBytes:            2000,
-			SourceBatchID:         "<source-batch-id>",
-			SourceTaskID:          "<source-task-id>",
 			SourceTaskRunID:       "<source-task-run-id>",
 			SourceJobID:           "<source-job-id>",
 			SourceJobRunID:        "<source-job-run-id>",

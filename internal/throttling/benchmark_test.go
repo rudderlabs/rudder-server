@@ -17,7 +17,6 @@ goos: linux, goarch: amd64
 cpu: 12th Gen Intel(R) Core(TM) i9-12900K
 BenchmarkLimiters/gcra_redis-24					58465			20173 ns/op
 BenchmarkLimiters/sorted_sets_redis-24			60723			19385 ns/op
-BenchmarkLimiters/go_rate-24					5850807			201.8 ns/op
 BenchmarkLimiters/gcra-24						9005494			129.9 ns/op
 */
 func BenchmarkLimiters(b *testing.B) {
@@ -30,7 +29,6 @@ func BenchmarkLimiters(b *testing.B) {
 		ctx            = context.Background()
 		rc             = bootstrapRedis(ctx, b, pool)
 		limiters       = map[string]*Limiter{
-			"go rate":           newLimiter(b, WithInMemoryGoRate()),
 			"gcra":              newLimiter(b, WithInMemoryGCRA(0)),
 			"gcra redis":        newLimiter(b, WithRedisGCRA(rc, 0)),
 			"sorted sets redis": newLimiter(b, WithRedisSortedSet(rc)),

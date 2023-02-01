@@ -535,8 +535,6 @@ func (wh *HandleT) createUploadJobsFromStagingFiles(ctx context.Context, warehou
 			// FirstEventAt:     0,
 			// LastEventAt:      0,
 			// UseRudderStorage: false,
-			// SourceBatchID:    "",
-			// SourceTaskID:     "",
 			// SourceTaskRunID:  "",
 			// SourceJobID:      "",
 			// SourceJobRunID:   "",

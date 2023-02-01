@@ -48,13 +48,11 @@ type Limiter struct {
 	redisSpeaker redisSpeaker
 
 	// for in-memory configurations
-	gcra   *gcra
-	goRate *goRate
+	gcra *gcra
 
 	// other flags
 	useGCRA   bool
 	gcraBurst int64
-	useGoRate bool
 
 	// metrics
 	statsCollector statsCollector
@@ -65,24 +63,15 @@ func New(options ...Option) (*Limiter, error) {
 	for i := range options {
 		options[i](rl)
 	}
-
 	if rl.statsCollector == nil {
 		rl.statsCollector = stats.Default
 	}
-
 	if rl.redisSpeaker != nil {
-		if rl.useGoRate {
-			return nil, fmt.Errorf("redis and go-rate are mutually exclusive")
-		}
 		return rl, nil
 	}
-
-	switch {
-	case rl.useGCRA:
-		rl.gcra = &gcra{}
-	default:
-		rl.goRate = &goRate{}
-	}
+	// Default to in-memory GCRA
+	rl.gcra = &gcra{}
+	rl.useGCRA = true
 	return rl, nil
 }
 
@@ -102,23 +91,21 @@ func (l *Limiter) Allow(ctx context.Context, cost, rate, window int64, key strin
 	if key == "" {
 		return false, nil, fmt.Errorf("key must not be empty")
 	}
-	switch {
-	case l.useGCRA:
-		if l.redisSpeaker != nil {
+
+	if l.redisSpeaker != nil {
+		if l.useGCRA {
 			defer l.getTimer(key, "redis-gcra", rate, window)()
 			_, allowed, tr, err := l.redisGCRA(ctx, cost, rate, window, key)
 			return allowed, tr, err
 		}
-		defer l.getTimer(key, "gcra", rate, window)()
-		return l.gcraLimit(ctx, cost, rate, window, key)
-	case l.redisSpeaker != nil:
+
 		defer l.getTimer(key, "redis-sorted-set", rate, window)()
 		_, allowed, tr, err := l.redisSortedSet(ctx, cost, rate, window, key)
 		return allowed, tr, err
-	default:
-		defer l.getTimer(key, "go-rate", rate, window)()
-		return l.goRateLimit(ctx, cost, rate, window, key)
 	}
+
+	defer l.getTimer(key, "gcra", rate, window)()
+	return l.gcraLimit(ctx, cost, rate, window, key)
 }
 
 func (l *Limiter) redisSortedSet(ctx context.Context, cost, rate, window int64, key string) (
@@ -212,18 +199,6 @@ func (l *Limiter) gcraLimit(_ context.Context, cost, rate, window int64, key str
 		return false, nil, nil // limit exceeded
 	}
 	r := &unsupportedReturn{}
-	return true, r.Return, nil
-}
-
-func (l *Limiter) goRateLimit(_ context.Context, cost, rate, window int64, key string) (
-	bool, func(context.Context) error, error,
-) {
-	res := l.goRate.limit(key, cost, rate, window)
-	if !res.Allowed() {
-		res.CancelFuture()
-		return false, nil, nil // limit exceeded
-	}
-	r := &goRateReturn{reservation: res}
 	return true, r.Return, nil
 }
 

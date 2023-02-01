@@ -56,8 +56,6 @@ type ProcessOptions struct {
 
 type UploadMetadata struct {
 	UseRudderStorage bool      `json:"use_rudder_storage"`
-	SourceBatchID    string    `json:"source_batch_id"`
-	SourceTaskID     string    `json:"source_task_id"`
 	SourceTaskRunID  string    `json:"source_task_run_id"`
 	SourceJobID      string    `json:"source_job_id"`
 	SourceJobRunID   string    `json:"source_job_run_id"`
@@ -84,8 +82,6 @@ func NewUploads(db *sql.DB, opts ...Opt) *Uploads {
 func ExtractUploadMetadata(upload model.Upload) UploadMetadata {
 	return UploadMetadata{
 		UseRudderStorage: upload.UseRudderStorage,
-		SourceBatchID:    upload.SourceBatchID,
-		SourceTaskID:     upload.SourceTaskID,
 		SourceTaskRunID:  upload.SourceTaskRunID,
 		SourceJobID:      upload.SourceJobID,
 		SourceJobRunID:   upload.SourceJobRunID,
@@ -115,8 +111,6 @@ func (uploads *Uploads) CreateWithStagingFiles(ctx context.Context, upload model
 
 	metadataMap := UploadMetadata{
 		UseRudderStorage: files[0].UseRudderStorage,
-		SourceBatchID:    files[0].SourceBatchID,
-		SourceTaskID:     files[0].SourceTaskID,
 		SourceTaskRunID:  files[0].SourceTaskRunID,
 		SourceJobID:      files[0].SourceJobID,
 		SourceJobRunID:   files[0].SourceJobRunID,
@@ -308,7 +302,7 @@ func (uploads *Uploads) GetToProcess(ctx context.Context, destType string, limit
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var uploadJobs []model.Upload
 	for rows.Next() {
@@ -451,9 +445,6 @@ func scanUpload(scan scanFn, upload *model.Upload) error {
 			return fmt.Errorf("unmarshal timings: %w", err)
 		}
 	}
-
-	upload.SourceBatchID = metadata.SourceBatchID
-	upload.SourceTaskID = metadata.SourceTaskID
 	upload.SourceTaskRunID = metadata.SourceTaskRunID
 	upload.SourceJobID = metadata.SourceJobID
 	upload.SourceJobRunID = metadata.SourceJobRunID

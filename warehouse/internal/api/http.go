@@ -47,8 +47,6 @@ type stagingFileSchema struct {
 	UseRudderStorage      bool
 	DestinationRevisionID string
 	// cloud sources specific info
-	SourceBatchID   string
-	SourceTaskID    string
 	SourceTaskRunID string
 	SourceJobID     string
 	SourceJobRunID  string
@@ -92,8 +90,6 @@ func mapStagingFile(payload *stagingFileSchema) (model.StagingFileWithSchema, er
 		DestinationRevisionID: payload.DestinationRevisionID,
 		TotalEvents:           payload.TotalEvents,
 		TotalBytes:            payload.TotalBytes,
-		SourceBatchID:         payload.SourceBatchID,
-		SourceTaskID:          payload.SourceTaskID,
 		SourceTaskRunID:       payload.SourceTaskRunID,
 		SourceJobID:           payload.SourceJobID,
 		SourceJobRunID:        payload.SourceJobRunID,

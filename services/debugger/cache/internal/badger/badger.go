@@ -14,6 +14,7 @@ import (
 	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
+	rsync "github.com/rudderlabs/rudder-server/utils/sync"
 )
 
 /*
@@ -33,6 +34,7 @@ Cache is an in-memory cache. Each key-value pair stored in this cache have a TTL
 key-value pair form the cache which is older than TTL time.
 */
 type Cache[E any] struct {
+	plocker      *rsync.PartitionLocker
 	limiter      int
 	retries      int
 	path         string
@@ -60,6 +62,8 @@ func (badgerLogger) Warningf(format string, a ...interface{}) {
 
 // Update writes the entries into badger db with a TTL
 func (e *Cache[E]) Update(key string, value E) error {
+	e.plocker.Lock(key)
+	defer e.plocker.Unlock(key)
 	operation := func() error {
 		return e.db.Update(func(txn *badger.Txn) error {
 			res, err := txn.Get([]byte(key))
@@ -115,9 +119,11 @@ func (e *Cache[E]) Read(key string) ([]E, error) {
 }
 
 func New[E any](origin string, logger logger.Logger, opts ...func(Cache[E])) (*Cache[E], error) {
-	e := Cache[E]{}
-	e.origin = origin
-	e.logger = logger
+	e := Cache[E]{
+		plocker: rsync.NewPartitionLocker(),
+		origin:  origin,
+		logger:  logger,
+	}
 	e.loadCacheConfig()
 	badgerPathName := e.origin + "/cache/badgerdbv3"
 	tmpDirPath, err := misc.CreateTMPDIR()

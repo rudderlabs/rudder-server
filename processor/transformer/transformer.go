@@ -53,10 +53,8 @@ type MetadataT struct {
 	DestinationID       string                            `json:"destinationId"`
 	JobRunID            string                            `json:"jobRunId"`
 	JobID               int64                             `json:"jobId"`
-	SourceBatchID       string                            `json:"sourceBatchId"`
 	SourceJobID         string                            `json:"sourceJobId"`
 	SourceJobRunID      string                            `json:"sourceJobRunId"`
-	SourceTaskID        string                            `json:"sourceTaskId"`
 	SourceTaskRunID     string                            `json:"sourceTaskRunId"`
 	RecordID            interface{}                       `json:"recordId"`
 	DestinationType     string                            `json:"destinationType"`
