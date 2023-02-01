@@ -60,8 +60,6 @@
     "TotalBytes": 2000,
     "UseRudderStorage": false,
     "DestinationRevisionID": "2H1cLBvL3v0prRBNzpe8D34XTzU",
-    "SourceBatchID": "<source-batch-id>",
-    "SourceTaskID": "<source-task-id>",
     "SourceTaskRunID": "<source-task-run-id>",
     "SourceJobID": "<source-job-id>",
     "SourceJobRunID": "<source-job-run-id>",

@@ -25,8 +25,6 @@ type StagingFile struct {
 	TotalEvents           int
 	TotalBytes            int
 	// cloud sources specific info
-	SourceBatchID   string
-	SourceTaskID    string
 	SourceTaskRunID string
 	SourceJobID     string
 	SourceJobRunID  string

@@ -79,8 +79,6 @@ type Metric struct {
 type ConnectionDetails struct {
 	SourceID                string `json:"sourceId"`
 	DestinationID           string `json:"destinationId"`
-	SourceBatchID           string `json:"sourceBatchId"`
-	SourceTaskID            string `json:"sourceTaskId"`
 	SourceTaskRunID         string `json:"sourceTaskRunId"`
 	SourceJobID             string `json:"sourceJobId"`
 	SourceJobRunID          string `json:"sourceJobRunId"`
@@ -101,12 +99,10 @@ type PUReportedMetric struct {
 	StatusDetail *StatusDetail
 }
 
-func CreateConnectionDetail(sid, did, sbid, stid, strid, sjid, sjrid, sdid, ddid, sc string) *ConnectionDetails {
+func CreateConnectionDetail(sid, did, strid, sjid, sjrid, sdid, ddid, sc string) *ConnectionDetails {
 	return &ConnectionDetails{
 		SourceID:                sid,
 		DestinationID:           did,
-		SourceBatchID:           sbid,
-		SourceTaskID:            stid,
 		SourceTaskRunID:         strid,
 		SourceJobID:             sjid,
 		SourceJobRunID:          sjrid,

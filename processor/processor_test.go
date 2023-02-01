@@ -535,7 +535,7 @@ var _ = Describe("Processor", Ordered, func() {
 				Expect(job.ExpireAt).To(BeTemporally("~", time.Now(), 200*time.Millisecond))
 				Expect(string(job.EventPayload)).To(Equal(fmt.Sprintf(`{"int-value":%d,"string-value":%q}`, i, destination)))
 				Expect(len(job.LastJobStatus.JobState)).To(Equal(0))
-				Expect(string(job.Parameters)).To(Equal(`{"source_id":"source-from-transformer","destination_id":"destination-from-transformer","received_at":"","transform_at":"processor","message_id":"","gateway_job_id":0,"source_batch_id":"","source_task_id":"","source_task_run_id":"","source_job_id":"","source_job_run_id":"","event_name":"","event_type":"","source_definition_id":"","destination_definition_id":"","source_category":"","record_id":null,"workspaceId":""}`))
+				Expect(string(job.Parameters)).To(Equal(`{"source_id":"source-from-transformer","destination_id":"destination-from-transformer","received_at":"","transform_at":"processor","message_id":"","gateway_job_id":0,"source_task_run_id":"","source_job_id":"","source_job_run_id":"","event_name":"","event_type":"","source_definition_id":"","destination_definition_id":"","source_category":"","record_id":null,"workspaceId":""}`))
 			}
 			// One Store call is expected for all events
 			c.mockRouterJobsDB.EXPECT().WithStoreSafeTx(gomock.Any(), gomock.Any()).Times(1).Do(func(ctx context.Context, f func(tx jobsdb.StoreSafeTx) error) {
@@ -731,7 +731,7 @@ var _ = Describe("Processor", Ordered, func() {
 				// Expect(job.CustomVal).To(Equal("destination-definition-name-a"))
 				Expect(string(job.EventPayload)).To(Equal(fmt.Sprintf(`{"int-value":%d,"string-value":%q}`, i, destination)))
 				Expect(len(job.LastJobStatus.JobState)).To(Equal(0))
-				Expect(string(job.Parameters)).To(Equal(`{"source_id":"source-from-transformer","destination_id":"destination-from-transformer","received_at":"","transform_at":"processor","message_id":"","gateway_job_id":0,"source_batch_id":"","source_task_id":"","source_task_run_id":"","source_job_id":"","source_job_run_id":"","event_name":"","event_type":"","source_definition_id":"","destination_definition_id":"","source_category":"","record_id":null,"workspaceId":""}`))
+				Expect(string(job.Parameters)).To(Equal(`{"source_id":"source-from-transformer","destination_id":"destination-from-transformer","received_at":"","transform_at":"processor","message_id":"","gateway_job_id":0,"source_task_run_id":"","source_job_id":"","source_job_run_id":"","event_name":"","event_type":"","source_definition_id":"","destination_definition_id":"","source_category":"","record_id":null,"workspaceId":""}`))
 			}
 
 			c.mockBatchRouterJobsDB.EXPECT().WithStoreSafeTx(gomock.Any(), gomock.Any()).Times(1).Do(func(ctx context.Context, f func(tx jobsdb.StoreSafeTx) error) {
@@ -1323,18 +1323,14 @@ var _ = Describe("Static Function Tests", func() {
 					destinationID:   "some-destination-id-1",
 					sourceJobRunID:  "some-source-job-run-id-1",
 					sourceJobID:     "some-source-job-id-1",
-					sourceTaskID:    "some-source-task-id-1",
 					sourceTaskRunID: "some-source-task-run-id-1",
-					sourceBatchID:   "some-source-batch-id-1",
 				},
 				"some-key-2": {
 					sourceID:        "some-source-id-2",
 					destinationID:   "some-destination-id-2",
 					sourceJobRunID:  "some-source-job-run-id-2",
 					sourceJobID:     "some-source-job-id-2",
-					sourceTaskID:    "some-source-task-id-2",
 					sourceTaskRunID: "some-source-task-run-id-2",
-					sourceBatchID:   "some-source-batch-id-2",
 				},
 			}
 
@@ -1356,8 +1352,6 @@ var _ = Describe("Static Function Tests", func() {
 					ConnectionDetails: types.ConnectionDetails{
 						SourceID:        "some-source-id-1",
 						DestinationID:   "some-destination-id-1",
-						SourceBatchID:   "some-source-batch-id-1",
-						SourceTaskID:    "some-source-task-id-1",
 						SourceTaskRunID: "some-source-task-run-id-1",
 						SourceJobID:     "some-source-job-id-1",
 						SourceJobRunID:  "some-source-job-run-id-1",
@@ -1380,8 +1374,6 @@ var _ = Describe("Static Function Tests", func() {
 					ConnectionDetails: types.ConnectionDetails{
 						SourceID:        "some-source-id-2",
 						DestinationID:   "some-destination-id-2",
-						SourceBatchID:   "some-source-batch-id-2",
-						SourceTaskID:    "some-source-task-id-2",
 						SourceTaskRunID: "some-source-task-run-id-2",
 						SourceJobID:     "some-source-job-id-2",
 						SourceJobRunID:  "some-source-job-run-id-2",
@@ -1880,12 +1872,10 @@ func assertReportMetric(expectedMetric, actualMetric []*types.PUReportedMetric) 
 	Expect(len(expectedMetric)).To(Equal(len(actualMetric)))
 	for index, value := range expectedMetric {
 		Expect(value.ConnectionDetails.SourceID).To(Equal(actualMetric[index].ConnectionDetails.SourceID))
-		Expect(value.ConnectionDetails.SourceBatchID).To(Equal(actualMetric[index].ConnectionDetails.SourceBatchID))
 		Expect(value.ConnectionDetails.DestinationID).To(Equal(actualMetric[index].ConnectionDetails.DestinationID))
 		Expect(value.ConnectionDetails.SourceJobID).To(Equal(actualMetric[index].ConnectionDetails.SourceJobID))
 		Expect(value.ConnectionDetails.SourceJobRunID).To(Equal(actualMetric[index].ConnectionDetails.SourceJobRunID))
 		Expect(value.ConnectionDetails.SourceTaskRunID).To(Equal(actualMetric[index].ConnectionDetails.SourceTaskRunID))
-		Expect(value.ConnectionDetails.SourceTaskID).To(Equal(actualMetric[index].ConnectionDetails.SourceTaskID))
 		Expect(value.PUDetails.InPU).To(Equal(actualMetric[index].PUDetails.InPU))
 		Expect(value.PUDetails.PU).To(Equal(actualMetric[index].PUDetails.PU))
 		Expect(value.PUDetails.TerminalPU).To(Equal(actualMetric[index].PUDetails.TerminalPU))
@@ -1936,14 +1926,10 @@ func assertDestinationTransform(messages map[string]mockEventData, sourceId, des
 				Expect(err).ToNot(HaveOccurred())
 				recordID := gjson.GetBytes(rawEvent, "message.recordId").Value()
 				Expect(event.Metadata.RecordID).To(Equal(recordID))
-				batchID := gjson.GetBytes(rawEvent, "message.context.sources.batch_id").String()
-				Expect(event.Metadata.SourceBatchID).To(Equal(batchID))
 				jobRunID := gjson.GetBytes(rawEvent, "message.context.sources.job_run_id").String()
 				Expect(event.Metadata.SourceJobRunID).To(Equal(jobRunID))
 				taskRunID := gjson.GetBytes(rawEvent, "message.context.sources.task_run_id").String()
 				Expect(event.Metadata.SourceTaskRunID).To(Equal(taskRunID))
-				taskID := gjson.GetBytes(rawEvent, "message.context.sources.task_id").String()
-				Expect(event.Metadata.SourceTaskID).To(Equal(taskID))
 				sourcesJobID := gjson.GetBytes(rawEvent, "message.context.sources.job_id").String()
 				Expect(event.Metadata.SourceJobID).To(Equal(sourcesJobID))
 			} else {
