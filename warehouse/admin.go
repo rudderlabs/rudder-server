@@ -5,10 +5,11 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/manager"
+
 	"github.com/rudderlabs/rudder-server/warehouse/validations"
 
 	"github.com/rudderlabs/rudder-server/admin"
-	"github.com/rudderlabs/rudder-server/warehouse/manager"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 

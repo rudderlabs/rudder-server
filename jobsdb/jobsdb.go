@@ -77,6 +77,7 @@ type GetQueryParamsT struct {
 
 	// if IgnoreCustomValFiltersInQuery is true, CustomValFilters is not going to be used
 	IgnoreCustomValFiltersInQuery bool
+	WorkspaceID                   string
 	CustomValFilters              []string
 	ParameterFilters              []ParameterFilterT
 	StateFilters                  []string
@@ -95,13 +96,6 @@ type GetQueryParamsT struct {
 	// A value less than or equal to zero will disable this limit (no limit),
 	// only values greater than zero are considered as valid limits.
 	PayloadSizeLimit int64
-}
-
-// statTags is a struct to hold tags for stats
-type statTags struct {
-	CustomValFilters []string
-	ParameterFilters []ParameterFilterT
-	StateFilters     []string
 }
 
 var getTimeNowFunc = time.Now
@@ -2085,8 +2079,7 @@ func (jd *HandleT) dropDSFromCache(ds dataSetT) {
 func (jd *HandleT) markClearEmptyResult(ds dataSetT, workspace string, stateFilters, customValFilters []string, parameterFilters []ParameterFilterT, value cacheValue, checkAndSet *cacheValue) {
 	// Safe check. Every status must have a valid workspace id for the cache to work efficiently.
 	if workspace == "" {
-		jd.logger.Debugf("[%s] Empty workspace key provided while looking into jobsdb cachemap", jd.tablePrefix)
-		jd.invalidCacheKeyStat.Increment()
+		workspace = allWorkspaces
 	}
 
 	// Safe Check , All parameter filters must be provided explicitly
@@ -2171,6 +2164,9 @@ func (jd *HandleT) markClearEmptyResult(ds dataSetT, workspace string, stateFilt
 //	 * The entry is noJobs
 //	 * The entry is not expired (entry time + cache expiration > now)
 func (jd *HandleT) isEmptyResult(ds dataSetT, workspace string, stateFilters, customValFilters []string, parameterFilters []ParameterFilterT) bool {
+	if workspace != "" {
+		workspace = allWorkspaces
+	}
 	defer jd.getTimerStat(
 		"isEmptyCheck",
 		&statTags{CustomValFilters: []string{jd.tablePrefix}},
@@ -2257,21 +2253,27 @@ func (jd *HandleT) getProcessedJobsDS(ctx context.Context, ds dataSetT, params G
 	stateFilters := params.StateFilters
 	customValFilters := params.CustomValFilters
 	parameterFilters := params.ParameterFilters
+	workspaceID := params.WorkspaceID
 	checkValidJobState(jd, stateFilters)
 
-	if jd.isEmptyResult(ds, allWorkspaces, stateFilters, customValFilters, parameterFilters) {
+	if jd.isEmptyResult(ds, workspaceID, stateFilters, customValFilters, parameterFilters) {
 		jd.logger.Debugf("[getProcessedJobsDS] Empty cache hit for ds: %v, stateFilters: %v, customValFilters: %v, parameterFilters: %v", ds, stateFilters, customValFilters, parameterFilters)
 		return JobsResult{}, false, nil
 	}
 
-	tags := statTags{CustomValFilters: params.CustomValFilters, StateFilters: params.StateFilters, ParameterFilters: params.ParameterFilters}
-	start := time.Now()
-	defer jd.getTimerStat("processed_ds_time", &tags).Since(start)
+	tags := statTags{
+		CustomValFilters: params.CustomValFilters,
+		StateFilters:     params.StateFilters,
+		ParameterFilters: params.ParameterFilters,
+		WorkspaceID:      workspaceID,
+	}
+
+	defer jd.getTimerStat("processed_ds_time", &tags).RecordDuration()()
 
 	skipCacheResult := params.AfterJobID != nil
 	if !skipCacheResult {
 		// We don't reset this in case of error for now, as any error in this function causes panic
-		jd.markClearEmptyResult(ds, allWorkspaces, stateFilters, customValFilters, parameterFilters, willTryToSet, nil)
+		jd.markClearEmptyResult(ds, workspaceID, stateFilters, customValFilters, parameterFilters, willTryToSet, nil)
 	}
 
 	var stateQuery string
@@ -2290,6 +2292,10 @@ func (jd *HandleT) getProcessedJobsDS(ctx context.Context, ds dataSetT, params G
 
 	if len(parameterFilters) > 0 {
 		filterConditions = append(filterConditions, constructParameterJSONQuery("jobs", parameterFilters))
+	}
+
+	if workspaceID != "" {
+		filterConditions = append(filterConditions, fmt.Sprintf("jobs.workspace_id = '%s'", workspaceID))
 	}
 
 	filterQuery := strings.Join(filterConditions, " AND ")
@@ -2403,7 +2409,7 @@ func (jd *HandleT) getProcessedJobsDS(ctx context.Context, ds dataSetT, params G
 			result = noJobs
 		}
 		_willTryToSet := willTryToSet
-		jd.markClearEmptyResult(ds, allWorkspaces, stateFilters, customValFilters, parameterFilters, result, &_willTryToSet)
+		jd.markClearEmptyResult(ds, workspaceID, stateFilters, customValFilters, parameterFilters, result, &_willTryToSet)
 	}
 
 	return JobsResult{
@@ -2423,20 +2429,32 @@ A JobsLimit less than or equal to zero indicates no limit.
 func (jd *HandleT) getUnprocessedJobsDS(ctx context.Context, ds dataSetT, params GetQueryParamsT) (JobsResult, bool, error) { // skipcq: CRT-P0003
 	customValFilters := params.CustomValFilters
 	parameterFilters := params.ParameterFilters
+	workspaceID := params.WorkspaceID
 
-	if jd.isEmptyResult(ds, allWorkspaces, []string{NotProcessed.State}, customValFilters, parameterFilters) {
+	if jd.isEmptyResult(ds, workspaceID, []string{NotProcessed.State}, customValFilters, parameterFilters) {
 		jd.logger.Debugf("[getUnprocessedJobsDS] Empty cache hit for ds: %v, stateFilters: NP, customValFilters: %v, parameterFilters: %v", ds, customValFilters, parameterFilters)
 		return JobsResult{}, false, nil
 	}
 
-	tags := statTags{CustomValFilters: params.CustomValFilters, ParameterFilters: params.ParameterFilters}
-	start := time.Now()
-	defer jd.getTimerStat("unprocessed_ds_time", &tags).Since(start)
+	tags := statTags{
+		CustomValFilters: params.CustomValFilters,
+		ParameterFilters: params.ParameterFilters,
+		WorkspaceID:      workspaceID,
+	}
+	defer jd.getTimerStat("unprocessed_ds_time", &tags).RecordDuration()()
 
 	skipCacheResult := params.AfterJobID != nil
 	if !skipCacheResult {
 		// We don't reset this in case of error for now, as any error in this function causes panic
-		jd.markClearEmptyResult(ds, allWorkspaces, []string{NotProcessed.State}, customValFilters, parameterFilters, willTryToSet, nil)
+		jd.markClearEmptyResult(
+			ds,
+			workspaceID,
+			[]string{NotProcessed.State},
+			customValFilters,
+			parameterFilters,
+			willTryToSet,
+			nil,
+		)
 	}
 
 	var rows *sql.Rows
@@ -2462,6 +2480,9 @@ func (jd *HandleT) getUnprocessedJobsDS(ctx context.Context, ds dataSetT, params
 	}
 	if len(parameterFilters) > 0 {
 		sqlStatement += " AND " + constructParameterJSONQuery("jobs", parameterFilters)
+	}
+	if workspaceID != "" {
+		sqlStatement += fmt.Sprintf(" AND jobs.workspace_id = '%s'", workspaceID)
 	}
 	sqlStatement += " ORDER BY jobs.job_id"
 	if params.JobsLimit > 0 {
@@ -2545,7 +2566,7 @@ func (jd *HandleT) getUnprocessedJobsDS(ctx context.Context, ds dataSetT, params
 			result = noJobs
 		}
 		_willTryToSet := willTryToSet
-		jd.markClearEmptyResult(ds, allWorkspaces, []string{NotProcessed.State}, customValFilters, parameterFilters, result, &_willTryToSet)
+		jd.markClearEmptyResult(ds, workspaceID, []string{NotProcessed.State}, customValFilters, parameterFilters, result, &_willTryToSet)
 	}
 	return JobsResult{
 		Jobs:          jobList,
@@ -3221,7 +3242,11 @@ func (jd *HandleT) GetUnprocessed(ctx context.Context, params GetQueryParamsT) (
 		return JobsResult{}, nil
 	}
 
-	tags := statTags{CustomValFilters: params.CustomValFilters, ParameterFilters: params.ParameterFilters}
+	tags := statTags{
+		CustomValFilters: params.CustomValFilters,
+		ParameterFilters: params.ParameterFilters,
+		WorkspaceID:      params.WorkspaceID,
+	}
 	command := func() interface{} {
 		return queryResultWrapper(jd.getUnprocessed(ctx, params))
 	}
@@ -3241,6 +3266,7 @@ func (jd *HandleT) getUnprocessed(ctx context.Context, params GetQueryParamsT) (
 	tags := statTags{
 		CustomValFilters: params.CustomValFilters,
 		ParameterFilters: params.ParameterFilters,
+		WorkspaceID:      params.WorkspaceID,
 	}
 	defer jd.getTimerStat(
 		"unprocessed_jobs_time",
@@ -3322,7 +3348,12 @@ func (jd *HandleT) GetImporting(ctx context.Context, params GetQueryParamsT) (Jo
 		return JobsResult{}, nil
 	}
 	params.StateFilters = []string{Importing.State}
-	tags := statTags{CustomValFilters: params.CustomValFilters, StateFilters: params.StateFilters, ParameterFilters: params.ParameterFilters}
+	tags := statTags{
+		CustomValFilters: params.CustomValFilters,
+		StateFilters:     params.StateFilters,
+		ParameterFilters: params.ParameterFilters,
+		WorkspaceID:      params.WorkspaceID,
+	}
 	command := func() interface{} {
 		return queryResultWrapper(jd.getImportingList(ctx, params))
 	}
@@ -3355,6 +3386,7 @@ func (jd *HandleT) GetProcessed(ctx context.Context, params GetQueryParamsT) (Jo
 			CustomValFilters: params.CustomValFilters,
 			StateFilters:     params.StateFilters,
 			ParameterFilters: params.ParameterFilters,
+			WorkspaceID:      params.WorkspaceID,
 		},
 	).RecordDuration()()
 
@@ -3450,7 +3482,12 @@ func (jd *HandleT) GetToRetry(ctx context.Context, params GetQueryParamsT) (Jobs
 		return JobsResult{}, nil
 	}
 	params.StateFilters = []string{Failed.State}
-	tags := statTags{CustomValFilters: params.CustomValFilters, StateFilters: params.StateFilters, ParameterFilters: params.ParameterFilters}
+	tags := statTags{
+		CustomValFilters: params.CustomValFilters,
+		StateFilters:     params.StateFilters,
+		ParameterFilters: params.ParameterFilters,
+		WorkspaceID:      params.WorkspaceID,
+	}
 	command := func() interface{} {
 		return queryResultWrapper(jd.getToRetry(ctx, params))
 	}
@@ -3475,7 +3512,12 @@ func (jd *HandleT) GetWaiting(ctx context.Context, params GetQueryParamsT) (Jobs
 		return JobsResult{}, nil
 	}
 	params.StateFilters = []string{Waiting.State}
-	tags := statTags{CustomValFilters: params.CustomValFilters, StateFilters: params.StateFilters, ParameterFilters: params.ParameterFilters}
+	tags := statTags{
+		CustomValFilters: params.CustomValFilters,
+		StateFilters:     params.StateFilters,
+		ParameterFilters: params.ParameterFilters,
+		WorkspaceID:      params.WorkspaceID,
+	}
 	command := func() interface{} {
 		return queryResultWrapper(jd.getWaiting(ctx, params))
 	}
@@ -3496,7 +3538,12 @@ func (jd *HandleT) GetExecuting(ctx context.Context, params GetQueryParamsT) (Jo
 		return JobsResult{}, nil
 	}
 	params.StateFilters = []string{Executing.State}
-	tags := statTags{CustomValFilters: params.CustomValFilters, StateFilters: params.StateFilters, ParameterFilters: params.ParameterFilters}
+	tags := statTags{
+		CustomValFilters: params.CustomValFilters,
+		StateFilters:     params.StateFilters,
+		ParameterFilters: params.ParameterFilters,
+		WorkspaceID:      params.WorkspaceID,
+	}
 	command := func() interface{} {
 		return queryResultWrapper(jd.getExecuting(ctx, params))
 	}

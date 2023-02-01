@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"sync"
 
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/manager"
+
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 
 	"github.com/rudderlabs/rudder-server/config"
@@ -13,7 +15,6 @@ import (
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
-	"github.com/rudderlabs/rudder-server/warehouse/manager"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
@@ -71,7 +72,7 @@ func isDestHistoricIdentitiesPopulateInProgress(warehouse warehouseutils.Warehou
 	return false
 }
 
-func (wh *HandleT) getPendingPopulateIdentitiesLoad(warehouse warehouseutils.Warehouse) (upload Upload, found bool) {
+func (wh *HandleT) getPendingPopulateIdentitiesLoad(warehouse warehouseutils.Warehouse) (upload model.Upload, found bool) {
 	sqlStatement := fmt.Sprintf(`
 		SELECT
 			id,
@@ -115,10 +116,10 @@ func (wh *HandleT) getPendingPopulateIdentitiesLoad(warehouse warehouseutils.War
 		&upload.SourceID,
 		&upload.DestinationID,
 		&upload.DestinationType,
-		&upload.StartStagingFileID,
-		&upload.EndStagingFileID,
-		&upload.StartLoadFileID,
-		&upload.EndLoadFileID,
+		&upload.StagingFileStartID,
+		&upload.StagingFileEndID,
+		&upload.LoadFileStartID,
+		&upload.LoadFileEndID,
 		&upload.Error,
 	)
 	if err == sql.ErrNoRows {
@@ -284,8 +285,8 @@ func (wh *HandleT) setupIdentityTables(warehouse warehouseutils.Warehouse) {
 	}
 }
 
-func (wh *HandleT) initPrePopulateDestIdentitiesUpload(warehouse warehouseutils.Warehouse) Upload {
-	schema := make(map[string]map[string]string)
+func (wh *HandleT) initPrePopulateDestIdentitiesUpload(warehouse warehouseutils.Warehouse) model.Upload {
+	schema := make(warehouseutils.SchemaT)
 	// TODO: DRY this code
 	identityRules := map[string]string{
 		warehouseutils.ToProviderCase(wh.destType, "merge_property_1_type"):  "string",
@@ -350,7 +351,7 @@ func (wh *HandleT) initPrePopulateDestIdentitiesUpload(warehouse warehouseutils.
 		panic(err)
 	}
 
-	upload := Upload{
+	upload := model.Upload{
 		ID:              uploadID,
 		Namespace:       warehouse.Namespace,
 		WorkspaceID:     warehouse.WorkspaceID,
@@ -360,7 +361,6 @@ func (wh *HandleT) initPrePopulateDestIdentitiesUpload(warehouse warehouseutils.
 		Status:          model.Waiting,
 		UploadSchema:    schema,
 	}
-
 	return upload
 }
 
@@ -387,7 +387,7 @@ func (wh *HandleT) populateHistoricIdentities(warehouse warehouseutils.Warehouse
 		// check for pending loads (populateHistoricIdentities)
 		var (
 			hasPendingLoad bool
-			upload         Upload
+			upload         model.Upload
 		)
 
 		upload, hasPendingLoad = wh.getPendingPopulateIdentitiesLoad(warehouse)
@@ -420,7 +420,7 @@ func (wh *HandleT) populateHistoricIdentities(warehouse warehouseutils.Warehouse
 		}
 
 		job := wh.uploadJobFactory.NewUploadJob(&model.UploadJob{
-			Upload:    model.Upload(upload),
+			Upload:    upload,
 			Warehouse: warehouse,
 		}, whManager)
 

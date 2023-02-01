@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"os"
 	"syscall"
 	"time"
 
@@ -124,8 +125,6 @@ func (p *Producer) Publish(ctx context.Context, msgs ...Message) error {
 	return p.writer.WriteMessages(ctx, messages...)
 }
 
-var tempError interface{ Temporary() bool }
-
 func headers(msg Message) (headers []kafka.Header) {
 	if l := len(msg.Headers); l > 0 {
 		headers = make([]kafka.Header, l)
@@ -147,14 +146,19 @@ func isErrTemporary(err error) bool {
 	if isTransientNetworkError {
 		return true
 	}
+	var tempError interface{ Temporary() bool }
 	if errors.As(err, &tempError) {
 		return tempError.Temporary()
+	}
+	if os.IsTimeout(err) {
+		return true
 	}
 	return false
 }
 
 func IsProducerErrTemporary(err error) bool {
-	if we, ok := err.(kafka.WriteErrors); ok {
+	var we kafka.WriteErrors
+	if errors.As(err, &we) {
 		for _, err := range we {
 			// if at least one was temporary then we treat the whole batch as such
 			if isErrTemporary(err) {

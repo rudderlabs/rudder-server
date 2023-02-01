@@ -88,7 +88,7 @@ proto: install-tools ## Generate protobuf files
 	protoc --go-grpc_out=paths=source_relative:. proto/**/*.proto
 
 cleanup-warehouse-integration:
-	docker-compose -f warehouse/docker-compose.test.yml down --remove-orphans --volumes
+	docker-compose -f warehouse/integrations/docker-compose.test.yml down --remove-orphans --volumes
 
 define generate_namespace
 $(shell echo wh-$(shell shuf -i 1-1000000 -n 1)-$(shell date +%s))
@@ -96,7 +96,7 @@ endef
 
 setup-warehouse-integration: cleanup-warehouse-integration
 	$(eval TEST_ENV = BIGQUERY_INTEGRATION_TEST_SCHEMA=$(call generate_namespace) REDSHIFT_INTEGRATION_TEST_SCHEMA=$(call generate_namespace) SNOWFLAKE_INTEGRATION_TEST_SCHEMA=$(call generate_namespace) DATABRICKS_INTEGRATION_TEST_SCHEMA=$(call generate_namespace))\
-	$(eval TEST_CMD = $(TEST_ENV) docker-compose -f warehouse/docker-compose.test.yml up --build start_warehouse_integration)\
+	$(eval TEST_CMD = $(TEST_ENV) docker-compose -f warehouse/integrations/docker-compose.test.yml up --build start_warehouse_integration)\
  	if $(TEST_CMD); then\
 		echo "Warehouse integration setup successful"; \
 	else \
@@ -109,7 +109,7 @@ setup-warehouse-integration: cleanup-warehouse-integration
 run-warehouse-integration: setup-warehouse-integration
 	$(eval TEST_PATTERN = '^TestIntegration' '^TestConfigurationValidation')
 	$(eval TEST_CMD = go test -v ./warehouse/... -p 8 -timeout 30m -count 1 -run $(TEST_PATTERN))
-	if docker-compose -f warehouse/docker-compose.test.yml exec -T -e SLOW=1 wh-backend $(TEST_CMD); then \
+	if docker-compose -f warehouse/integrations/docker-compose.test.yml exec -T -e SLOW=1 wh-backend $(TEST_CMD); then \
       	echo "Successfully ran Warehouse Integration Test. Getting backend container logs only."; \
       	docker logs wh-backend; \
       	make cleanup-warehouse-integration; \

@@ -254,7 +254,7 @@ type DestinationT struct {
 }
 
 type (
-	SchemaT      map[string]map[string]string
+	SchemaT      map[string]TableSchemaT
 	TableSchemaT map[string]string
 )
 
@@ -336,34 +336,6 @@ func TimingFromJSONString(str sql.NullString) (status string, recordedTime time.
 	timingsMap := gjson.Parse(str.String).Map()
 	for s, t := range timingsMap {
 		return s, t.Time()
-	}
-	return // zero values
-}
-
-func GetLastFailedStatus(str sql.NullString) (status string) {
-	timingsMap := gjson.Parse(str.String).Array()
-	if len(timingsMap) > 0 {
-		for index := len(timingsMap) - 1; index >= 0; index-- {
-			for s := range timingsMap[index].Map() {
-				if strings.Contains(s, "failed") {
-					return s
-				}
-			}
-		}
-	}
-	return // zero values
-}
-
-func GetLoadFileGenTime(str sql.NullString) (t time.Time) {
-	timingsMap := gjson.Parse(str.String).Array()
-	if len(timingsMap) > 0 {
-		for index := len(timingsMap) - 1; index >= 0; index-- {
-			for s, t := range timingsMap[index].Map() {
-				if strings.Contains(s, "generating_load_files") {
-					return t.Time()
-				}
-			}
-		}
 	}
 	return // zero values
 }
@@ -565,8 +537,8 @@ func GetS3Locations(loadFiles []LoadFileT) []LoadFileT {
 	return loadFiles
 }
 
-func JSONSchemaToMap(rawMsg json.RawMessage) map[string]map[string]string {
-	schema := make(map[string]map[string]string)
+func JSONSchemaToMap(rawMsg json.RawMessage) SchemaT {
+	schema := make(SchemaT)
 	err := json.Unmarshal(rawMsg, &schema)
 	if err != nil {
 		panic(fmt.Errorf("unmarshalling: %s failed with Error : %w", string(rawMsg), err))
@@ -978,26 +950,6 @@ func GetLoadFileFormat(whType string) string {
 	default:
 		return "csv.gz"
 	}
-}
-
-func GetLoadFilePrefix(timeWindow time.Time, warehouse Warehouse) (timeWindowFormat string) {
-	whType := warehouse.Type
-	switch whType {
-	case GCS_DATALAKE:
-		timeWindowLayout := GetConfigValue("timeWindowLayout", warehouse)
-		if timeWindowLayout == "" {
-			timeWindowLayout = DatalakeTimeWindowFormat
-		}
-
-		timeWindowFormat = timeWindow.Format(timeWindowLayout)
-		tableSuffixPath := GetConfigValue("tableSuffix", warehouse)
-		if tableSuffixPath != "" {
-			timeWindowFormat = fmt.Sprintf("%v/%v", tableSuffixPath, timeWindowFormat)
-		}
-	default:
-		timeWindowFormat = timeWindow.Format(DatalakeTimeWindowFormat)
-	}
-	return timeWindowFormat
 }
 
 func GetRequestWithTimeout(ctx context.Context, url string, timeout time.Duration) ([]byte, error) {

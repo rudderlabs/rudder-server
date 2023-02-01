@@ -32,8 +32,6 @@ type StagingFile struct {
 	UseRudderStorage      bool
 	DestinationRevisionID string
 	// cloud sources specific info
-	SourceBatchID   string
-	SourceTaskID    string
 	SourceTaskRunID string
 	SourceJobID     string
 	SourceJobRunID  string
@@ -54,8 +52,6 @@ type legacyPayload struct {
 	UseRudderStorage      bool
 	DestinationRevisionID string
 	// cloud sources specific info
-	SourceBatchID   string
-	SourceTaskID    string
 	SourceTaskRunID string
 	SourceJobID     string
 	SourceJobRunID  string
@@ -108,8 +104,6 @@ func (warehouse *Warehouse) Process(ctx context.Context, stagingFile StagingFile
 		TotalBytes:            stagingFile.TotalBytes,
 		UseRudderStorage:      stagingFile.UseRudderStorage,
 		DestinationRevisionID: stagingFile.DestinationRevisionID,
-		SourceBatchID:         stagingFile.SourceBatchID,
-		SourceTaskID:          stagingFile.SourceTaskID,
 		SourceTaskRunID:       stagingFile.SourceTaskRunID,
 		SourceJobID:           stagingFile.SourceJobID,
 		SourceJobRunID:        stagingFile.SourceJobRunID,
