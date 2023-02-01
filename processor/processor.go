@@ -23,7 +23,7 @@ import (
 	"github.com/rudderlabs/rudder-server/admin"
 	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
-	event_schema "github.com/rudderlabs/rudder-server/event-schema"
+	eventschema "github.com/rudderlabs/rudder-server/event-schema"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/processor/eventfilter"
 	"github.com/rudderlabs/rudder-server/processor/integrations"
@@ -408,7 +408,7 @@ func (proc *Handle) Setup(
 	proc.stats.DBWriteThroughput = proc.statsFactory.NewStat("processor.db_write_throughput", stats.CountType)
 	admin.RegisterStatusHandler("processor", proc)
 	if proc.config.enableEventSchemasFeature {
-		proc.eventSchemaHandler = event_schema.GetInstance()
+		proc.eventSchemaHandler = eventschema.GetInstance()
 	}
 	if proc.config.enableDedup {
 		proc.dedupHandler = dedup.GetInstance(clearDB)
