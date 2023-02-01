@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.5.1](https://github.com/rudderlabs/rudder-server/compare/v1.5.0...v1.5.1) (2023-02-01)
+
+
+### Miscellaneous
+
+* adding throttling stats in router ([67ad1fb](https://github.com/rudderlabs/rudder-server/commit/67ad1fbabae558b7c7208a857151d88eff7a510a))
+* change default algo in config.yaml example ([7fd6778](https://github.com/rudderlabs/rudder-server/commit/7fd67781838d077b6961ff88dff3bcd8c089dae2))
+
 ## [1.5.0](https://github.com/rudderlabs/rudder-server/compare/v1.4.5...v1.5.0) (2023-01-24)
 
 
