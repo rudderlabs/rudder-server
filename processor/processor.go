@@ -796,7 +796,7 @@ func (proc *Handle) getDestTransformerEvents(response transformer.ResponseT, com
 	for i := range response.Events {
 		// Update metrics maps
 		userTransformedEvent := &response.Events[i]
-		proc.updateMetricMaps(successCountMetadataMap, successCountMap, connectionDetailsMap, statusDetailsMap, userTransformedEvent, jobsdb.Succeeded.State, []byte(`{}`))
+		proc.updateMetricMaps(successCountMetadataMap, successCountMap, connectionDetailsMap, statusDetailsMap, userTransformedEvent, jobsdb.Succeeded.State, func() json.RawMessage { return []byte(`{}`) })
 
 		eventMetadata := commonMetaData
 		eventMetadata.MessageIDs = userTransformedEvent.Metadata.MessageIDs
@@ -863,7 +863,7 @@ func (proc *Handle) getDestTransformerEvents(response transformer.ResponseT, com
 	return eventsToTransform, successMetrics, successCountMap, successCountMetadataMap
 }
 
-func (proc *Handle) updateMetricMaps(countMetadataMap map[string]MetricMetadata, countMap map[string]int64, connectionDetailsMap map[string]*types.ConnectionDetails, statusDetailsMap map[string]*types.StatusDetail, event *transformer.TransformerResponseT, status string, payload json.RawMessage) {
+func (proc *Handle) updateMetricMaps(countMetadataMap map[string]MetricMetadata, countMap map[string]int64, connectionDetailsMap map[string]*types.ConnectionDetails, statusDetailsMap map[string]*types.StatusDetail, event *transformer.TransformerResponseT, status string, payload func() json.RawMessage) {
 	if proc.isReportingEnabled() {
 		var eventName string
 		var eventType string
@@ -922,7 +922,7 @@ func (proc *Handle) updateMetricMaps(countMetadataMap map[string]MetricMetadata,
 		}
 		sd, ok := statusDetailsMap[key]
 		if !ok {
-			sd = types.CreateStatusDetail(status, 0, event.StatusCode, event.Error, payload, eventName, eventType)
+			sd = types.CreateStatusDetail(status, 0, event.StatusCode, event.Error, payload(), eventName, eventType)
 			statusDetailsMap[key] = sd
 		}
 		sd.Count++
@@ -953,14 +953,16 @@ func (proc *Handle) getFailedEventJobs(response transformer.ResponseT, commonMet
 		}
 
 		for _, message := range messages {
-			sampleEvent, err := jsonfast.Marshal(message)
-			if err != nil {
-				proc.logger.Errorf(`[Processor: getFailedEventJobs] Failed to unmarshal first element in failed events: %v`, err)
-			}
-			if err != nil || proc.transientSources.Apply(commonMetaData.SourceID) {
-				sampleEvent = []byte(`{}`)
-			}
-			proc.updateMetricMaps(nil, failedCountMap, connectionDetailsMap, statusDetailsMap, failedEvent, jobsdb.Aborted.State, sampleEvent)
+			proc.updateMetricMaps(nil, failedCountMap, connectionDetailsMap, statusDetailsMap, failedEvent, jobsdb.Aborted.State, func() json.RawMessage {
+				sampleEvent, err := jsonfast.Marshal(message)
+				if err != nil {
+					proc.logger.Errorf(`[Processor: getFailedEventJobs] Failed to unmarshal first element in failed events: %v`, err)
+				}
+				if err != nil || proc.transientSources.Apply(commonMetaData.SourceID) {
+					sampleEvent = []byte(`{}`)
+				}
+				return sampleEvent
+			})
 		}
 
 		proc.logger.Debugf(
@@ -1196,10 +1198,7 @@ func (proc *Handle) processJobsForDest(subJobs subJob, parsedEventList [][]types
 					proc.logger.Error("Dropping Job since Source not found for writeKey : ", writeKey)
 					continue
 				}
-				sampleEvent, err := jsonfast.Marshal(singularEvent)
-				if err != nil || proc.transientSources.Apply(source.ID) {
-					sampleEvent = []byte(`{}`)
-				}
+
 				if proc.config.enableDedup && misc.Contains(duplicateIndexes, eventIndex) {
 					proc.logger.Debugf("Dropping event with duplicate messageId: %s", messageId)
 					misc.IncrementMapByKey(sourceDupStats, writeKey, 1)
@@ -1228,7 +1227,13 @@ func (proc *Handle) processJobsForDest(subJobs subJob, parsedEventList [][]types
 				event := &transformer.TransformerResponseT{}
 				if proc.isReportingEnabled() {
 					event.Metadata = *commonMetadataFromSingularEvent
-					proc.updateMetricMaps(inCountMetadataMap, inCountMap, connectionDetailsMap, statusDetailsMap, event, jobsdb.Succeeded.State, sampleEvent)
+					proc.updateMetricMaps(inCountMetadataMap, inCountMap, connectionDetailsMap, statusDetailsMap, event, jobsdb.Succeeded.State, func() json.RawMessage {
+						sampleEvent, err := jsonfast.Marshal(singularEvent)
+						if err != nil || proc.transientSources.Apply(source.ID) {
+							sampleEvent = []byte(`{}`)
+						}
+						return sampleEvent
+					})
 				}
 				// REPORTING - GATEWAY metrics - END
 
@@ -1260,7 +1265,7 @@ func (proc *Handle) processJobsForDest(subJobs subJob, parsedEventList [][]types
 				groupedEventsByWriteKey[WriteKeyT(writeKey)] = append(groupedEventsByWriteKey[WriteKeyT(writeKey)], shallowEventCopy)
 
 				if proc.isReportingEnabled() {
-					proc.updateMetricMaps(inCountMetadataMap, outCountMap, connectionDetailsMap, destFilterStatusDetailMap, event, jobsdb.Succeeded.State, []byte(`{}`))
+					proc.updateMetricMaps(inCountMetadataMap, outCountMap, connectionDetailsMap, destFilterStatusDetailMap, event, jobsdb.Succeeded.State, func() json.RawMessage { return []byte(`{}`) })
 				}
 			}
 		}
@@ -1961,7 +1966,7 @@ func (proc *Handle) transformSrcDest(
 				successCountMap := make(map[string]int64)
 				for i := range response.Events {
 					// Update metrics maps
-					proc.updateMetricMaps(nil, successCountMap, connectionDetailsMap, statusDetailsMap, &response.Events[i], jobsdb.Succeeded.State, []byte(`{}`))
+					proc.updateMetricMaps(nil, successCountMap, connectionDetailsMap, statusDetailsMap, &response.Events[i], jobsdb.Succeeded.State, func() json.RawMessage { return []byte(`{}`) })
 				}
 				types.AssertSameKeys(connectionDetailsMap, statusDetailsMap)
 
