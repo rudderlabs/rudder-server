@@ -175,7 +175,7 @@ func (sh *SchemaHandleT) fetchSchemaFromWarehouse(whManager manager.ManagerI) (s
 	return schemaInWarehouse, unrecognizedSchemaInWarehouse, nil
 }
 
-func mergeSchema(currentSchema warehouseutils.SchemaT, schemaList []warehouseutils.SchemaT, currentMergedSchema warehouseutils.SchemaT, warehouseType string) warehouseutils.SchemaT {
+func (sh *SchemaHandleT) mergeSchema(currentSchema warehouseutils.SchemaT, schemaList []warehouseutils.SchemaT, currentMergedSchema warehouseutils.SchemaT, warehouseType string) warehouseutils.SchemaT {
 	if len(currentMergedSchema) == 0 {
 		currentMergedSchema = warehouseutils.SchemaT{}
 	}
@@ -213,8 +213,11 @@ func mergeSchema(currentSchema warehouseutils.SchemaT, schemaList []warehouseuti
 				}
 			}
 			for columnName, columnType := range columnMap {
-				if warehouseutils.ExclusionColumnsRegex.MatchString(columnName) {
-					continue
+				// Filtering out specific sources, destinations columns based on exclusion regex
+				if sh.warehouse.Source.ID == "1vvlWYyZnOz4TiLHuEA7RW5z9rZ" && (sh.warehouse.Destination.ID == "1yZEVh6tbzOQpYO2ZRHDm3WRnt9" || sh.warehouse.Destination.ID == "2CcGIXjtjsP30awX7SiI24NPEYZ") {
+					if warehouseutils.ExclusionColumnsRegex.MatchString(columnName) {
+						continue
+					}
 				}
 				// if column already has a type in db, use that
 				// check for data type in identifies for users table before check in users table
@@ -332,7 +335,7 @@ func (sh *SchemaHandleT) consolidateStagingFilesSchemaUsingWarehouseSchema() war
 		}
 		_ = rows.Close()
 
-		consolidatedSchema = mergeSchema(schemaInLocalDB, schemas, consolidatedSchema, sh.warehouse.Type)
+		consolidatedSchema = sh.mergeSchema(schemaInLocalDB, schemas, consolidatedSchema, sh.warehouse.Type)
 
 		count += stagingFilesSchemaPaginationSize
 		if count >= len(sh.stagingFiles) {

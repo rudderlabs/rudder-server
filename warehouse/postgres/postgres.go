@@ -831,10 +831,6 @@ func (pg *HandleT) FetchSchema(warehouse warehouseutils.Warehouse) (schema, unre
 			schema[tName.String] = make(map[string]string)
 		}
 		if cName.Valid && cType.Valid {
-			if warehouseutils.ExclusionColumnsRegex.MatchString(cName.String) {
-				continue
-			}
-
 			if datatype, ok := postgresDataTypesMapToRudder[cType.String]; ok {
 				schema[tName.String][cName.String] = datatype
 			} else {

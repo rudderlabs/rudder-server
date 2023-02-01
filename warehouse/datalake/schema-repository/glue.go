@@ -76,10 +76,6 @@ func (gl *GlueSchemaRepository) FetchSchema(warehouse warehouseutils.Warehouse) 
 				}
 
 				for _, col := range table.StorageDescriptor.Columns {
-					if warehouseutils.ExclusionColumnsRegex.MatchString(*col.Name) {
-						continue
-					}
-
 					if _, ok := dataTypesMapToRudder[*col.Type]; ok {
 						schema[tableName][*col.Name] = dataTypesMapToRudder[*col.Type]
 					} else {
