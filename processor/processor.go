@@ -191,8 +191,6 @@ type ParametersT struct {
 	TransformAt             string      `json:"transform_at"`
 	MessageID               string      `json:"message_id"`
 	GatewayJobID            int64       `json:"gateway_job_id"`
-	SourceBatchID           string      `json:"source_batch_id"`
-	SourceTaskID            string      `json:"source_task_id"`
 	SourceTaskRunID         string      `json:"source_task_run_id"`
 	SourceJobID             string      `json:"source_job_id"`
 	SourceJobRunID          string      `json:"source_job_run_id"`
@@ -208,8 +206,6 @@ type ParametersT struct {
 type MetricMetadata struct {
 	sourceID                string
 	destinationID           string
-	sourceBatchID           string
-	sourceTaskID            string
 	sourceTaskRunID         string
 	sourceJobID             string
 	sourceJobRunID          string
@@ -690,8 +686,6 @@ func makeCommonMetadataFromSingularEvent(singularEvent types.SingularEventT, bat
 	commonMetadata.SourceType = source.SourceDefinition.Name
 	commonMetadata.SourceCategory = source.SourceDefinition.Category
 
-	commonMetadata.SourceBatchID, _ = misc.MapLookup(singularEvent, "context", "sources", "batch_id").(string)
-	commonMetadata.SourceTaskID, _ = misc.MapLookup(singularEvent, "context", "sources", "task_id").(string)
 	commonMetadata.SourceJobRunID, _ = misc.MapLookup(singularEvent, "context", "sources", "job_run_id").(string)
 	commonMetadata.SourceJobID, _ = misc.MapLookup(singularEvent, "context", "sources", "job_id").(string)
 	commonMetadata.SourceTaskRunID, _ = misc.MapLookup(singularEvent, "context", "sources", "task_run_id").(string)
@@ -717,8 +711,6 @@ func enhanceWithMetadata(commonMetadata *transformer.MetadataT, event *transform
 	metadata.JobID = commonMetadata.JobID
 	metadata.MessageID = commonMetadata.MessageID
 	metadata.ReceivedAt = commonMetadata.ReceivedAt
-	metadata.SourceBatchID = commonMetadata.SourceBatchID
-	metadata.SourceTaskID = commonMetadata.SourceTaskID
 	metadata.SourceTaskRunID = commonMetadata.SourceTaskRunID
 	metadata.RecordID = commonMetadata.RecordID
 	metadata.SourceJobID = commonMetadata.SourceJobID
@@ -810,8 +802,6 @@ func (proc *Handle) getDestTransformerEvents(response transformer.ResponseT, com
 		eventMetadata.MessageIDs = userTransformedEvent.Metadata.MessageIDs
 		eventMetadata.MessageID = userTransformedEvent.Metadata.MessageID
 		eventMetadata.JobID = userTransformedEvent.Metadata.JobID
-		eventMetadata.SourceBatchID = userTransformedEvent.Metadata.SourceBatchID
-		eventMetadata.SourceTaskID = userTransformedEvent.Metadata.SourceTaskID
 		eventMetadata.SourceTaskRunID = userTransformedEvent.Metadata.SourceTaskRunID
 		eventMetadata.SourceJobID = userTransformedEvent.Metadata.SourceJobID
 		eventMetadata.SourceJobRunID = userTransformedEvent.Metadata.SourceJobRunID
@@ -883,7 +873,7 @@ func (proc *Handle) updateMetricMaps(countMetadataMap map[string]MetricMetadata,
 		countKey := strings.Join([]string{
 			event.Metadata.SourceID,
 			event.Metadata.DestinationID,
-			event.Metadata.SourceBatchID,
+			event.Metadata.JobRunID,
 			eventName,
 			eventType,
 		}, MetricKeyDelimiter)
@@ -898,8 +888,6 @@ func (proc *Handle) updateMetricMaps(countMetadataMap map[string]MetricMetadata,
 				countMetadataMap[countKey] = MetricMetadata{
 					sourceID:                event.Metadata.SourceID,
 					destinationID:           event.Metadata.DestinationID,
-					sourceBatchID:           event.Metadata.SourceBatchID,
-					sourceTaskID:            event.Metadata.SourceTaskID,
 					sourceTaskRunID:         event.Metadata.SourceTaskRunID,
 					sourceJobID:             event.Metadata.SourceJobID,
 					sourceJobRunID:          event.Metadata.SourceJobRunID,
@@ -913,7 +901,7 @@ func (proc *Handle) updateMetricMaps(countMetadataMap map[string]MetricMetadata,
 		key := fmt.Sprintf("%s:%s:%s:%s:%d:%s:%s",
 			event.Metadata.SourceID,
 			event.Metadata.DestinationID,
-			event.Metadata.SourceBatchID,
+			event.Metadata.JobRunID,
 			status, event.StatusCode,
 			eventName, eventType,
 		)
@@ -923,8 +911,6 @@ func (proc *Handle) updateMetricMaps(countMetadataMap map[string]MetricMetadata,
 			cd := types.CreateConnectionDetail(
 				event.Metadata.SourceID,
 				event.Metadata.DestinationID,
-				event.Metadata.SourceBatchID,
-				event.Metadata.SourceTaskID,
 				event.Metadata.SourceTaskRunID,
 				event.Metadata.SourceJobID,
 				event.Metadata.SourceJobRunID,
@@ -1126,7 +1112,7 @@ func getDiffMetrics(inPU, pu string, inCountMetadataMap map[string]MetricMetadat
 		if diff != 0 {
 			metricMetadata := inCountMetadataMap[key]
 			metric := &types.PUReportedMetric{
-				ConnectionDetails: *types.CreateConnectionDetail(metricMetadata.sourceID, metricMetadata.destinationID, metricMetadata.sourceBatchID, metricMetadata.sourceTaskID, metricMetadata.sourceTaskRunID, metricMetadata.sourceJobID, metricMetadata.sourceJobRunID, metricMetadata.sourceDefinitionID, metricMetadata.destinationDefinitionID, metricMetadata.sourceCategory),
+				ConnectionDetails: *types.CreateConnectionDetail(metricMetadata.sourceID, metricMetadata.destinationID, metricMetadata.sourceTaskRunID, metricMetadata.sourceJobID, metricMetadata.sourceJobRunID, metricMetadata.sourceDefinitionID, metricMetadata.destinationDefinitionID, metricMetadata.sourceCategory),
 				PUDetails:         *types.CreatePUDetails(inPU, pu, false, false),
 				StatusDetail:      types.CreateStatusDetail(types.DiffStatus, diff, 0, "", []byte(`{}`), eventName, eventType),
 			}
@@ -1205,6 +1191,10 @@ func (proc *Handle) processJobsForDest(subJobs subJob, parsedEventList [][]types
 			// Iterate through all the events in the batch
 			for eventIndex, singularEvent := range singularEvents {
 				messageId := misc.GetStringifiedData(singularEvent["messageId"])
+				sampleEvent, err := jsonfast.Marshal(singularEvent)
+				if err != nil {
+					sampleEvent = []byte(`{}`)
+				}
 				if proc.config.enableDedup && misc.Contains(duplicateIndexes, eventIndex) {
 					proc.logger.Debugf("Dropping event with duplicate messageId: %s", messageId)
 					misc.IncrementMapByKey(sourceDupStats, writeKey, 1)
@@ -1239,7 +1229,7 @@ func (proc *Handle) processJobsForDest(subJobs subJob, parsedEventList [][]types
 				event := &transformer.TransformerResponseT{}
 				if proc.isReportingEnabled() {
 					event.Metadata = *commonMetadataFromSingularEvent
-					proc.updateMetricMaps(inCountMetadataMap, inCountMap, connectionDetailsMap, statusDetailsMap, event, jobsdb.Succeeded.State, []byte(`{}`))
+					proc.updateMetricMaps(inCountMetadataMap, inCountMap, connectionDetailsMap, statusDetailsMap, event, jobsdb.Succeeded.State, sampleEvent)
 				}
 				// REPORTING - GATEWAY metrics - END
 
@@ -1766,7 +1756,7 @@ func (proc *Handle) transformSrcDest(
 
 	// REPORTING - START
 	if proc.isReportingEnabled() {
-		// Grouping events by sourceid + destinationid + sourcebatchid + eventName + eventType to find the count
+		// Grouping events by sourceid + destinationid + jobruniD + eventName + eventType to find the count
 		inCountMap = make(map[string]int64)
 		inCountMetadataMap = make(map[string]MetricMetadata)
 		for i := range eventList {
@@ -1774,7 +1764,7 @@ func (proc *Handle) transformSrcDest(
 			key := strings.Join([]string{
 				event.Metadata.SourceID,
 				event.Metadata.DestinationID,
-				event.Metadata.SourceBatchID,
+				event.Metadata.JobRunID,
 				event.Metadata.EventName,
 				event.Metadata.EventType,
 			}, MetricKeyDelimiter)
@@ -1782,7 +1772,7 @@ func (proc *Handle) transformSrcDest(
 				inCountMap[key] = 0
 			}
 			if _, ok := inCountMetadataMap[key]; !ok {
-				inCountMetadataMap[key] = MetricMetadata{sourceID: event.Metadata.SourceID, destinationID: event.Metadata.DestinationID, sourceBatchID: event.Metadata.SourceBatchID, sourceTaskID: event.Metadata.SourceTaskID, sourceTaskRunID: event.Metadata.SourceTaskRunID, sourceJobID: event.Metadata.SourceJobID, sourceJobRunID: event.Metadata.SourceJobRunID, sourceDefinitionID: event.Metadata.SourceDefinitionID, destinationDefinitionID: event.Metadata.DestinationDefinitionID, sourceCategory: event.Metadata.SourceCategory}
+				inCountMetadataMap[key] = MetricMetadata{sourceID: event.Metadata.SourceID, destinationID: event.Metadata.DestinationID, sourceTaskRunID: event.Metadata.SourceTaskRunID, sourceJobID: event.Metadata.SourceJobID, sourceJobRunID: event.Metadata.SourceJobRunID, sourceDefinitionID: event.Metadata.SourceDefinitionID, destinationDefinitionID: event.Metadata.DestinationDefinitionID, sourceCategory: event.Metadata.SourceCategory}
 			}
 			inCountMap[key] = inCountMap[key] + 1
 		}
@@ -2022,8 +2012,6 @@ func (proc *Handle) transformSrcDest(
 			receivedAt := metadata.ReceivedAt
 			messageId := metadata.MessageID
 			jobId := metadata.JobID
-			sourceBatchId := metadata.SourceBatchID
-			sourceTaskId := metadata.SourceTaskID
 			sourceTaskRunId := metadata.SourceTaskRunID
 			recordId := metadata.RecordID
 			sourceJobId := metadata.SourceJobID
@@ -2047,8 +2035,6 @@ func (proc *Handle) transformSrcDest(
 				TransformAt:             transformAt,
 				MessageID:               messageId,
 				GatewayJobID:            jobId,
-				SourceBatchID:           sourceBatchId,
-				SourceTaskID:            sourceTaskId,
 				SourceTaskRunID:         sourceTaskRunId,
 				SourceJobID:             sourceJobId,
 				SourceJobRunID:          sourceJobRunId,
