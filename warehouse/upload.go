@@ -879,6 +879,8 @@ func (job *UploadJobT) alterColumnsToWarehouse(tName string, columnsMap map[stri
 		}
 
 		query := strings.Join(queries, "\n")
+		pkgLogger.Infof("altering dependent columns: %s", query)
+
 		err := job.AlertSender.SendAlert(context.TODO(), "warehouse-alter-columns",
 			alerta.SendAlertOpts{
 				Severity: alerta.SeverityCritical,
