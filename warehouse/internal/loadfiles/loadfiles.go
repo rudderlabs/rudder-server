@@ -4,6 +4,9 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
+
+	schemarepository "github.com/rudderlabs/rudder-server/warehouse/integrations/datalake/schema-repository"
 
 	jsoniter "github.com/json-iterator/go"
 	"github.com/rudderlabs/rudder-server/config"
@@ -207,7 +210,7 @@ func (lf *LoadFileGenerator) createFromStaging(ctx context.Context, job model.Up
 				payload.StagingDestinationConfig = revisionConfig.Config
 			}
 			if slices.Contains(warehouseutils.TimeWindowDestinations, job.Warehouse.Type) {
-				payload.LoadFilePrefix = warehouseutils.GetLoadFilePrefix(stagingFile.TimeWindow, job.Warehouse)
+				payload.LoadFilePrefix = GetLoadFilePrefix(stagingFile.TimeWindow, job.Warehouse)
 			}
 
 			payloadJSON, err := json.Marshal(payload)
@@ -346,4 +349,27 @@ func (lf *LoadFileGenerator) destinationRevisionIDMap(ctx context.Context, job m
 		revisionIDMap[revisionID] = destination
 	}
 	return
+}
+
+func GetLoadFilePrefix(timeWindow time.Time, warehouse warehouseutils.Warehouse) string {
+	switch warehouse.Type {
+	case warehouseutils.GCS_DATALAKE:
+		windowFormat := timeWindow.Format(warehouseutils.DatalakeTimeWindowFormat)
+
+		if windowLayout := warehouseutils.GetConfigValue("timeWindowLayout", warehouse); windowLayout != "" {
+			windowFormat = timeWindow.Format(windowLayout)
+		}
+		if suffix := warehouseutils.GetConfigValue("tableSuffix", warehouse); suffix != "" {
+			windowFormat = fmt.Sprintf("%v/%v", suffix, windowFormat)
+		}
+		return windowFormat
+	case warehouseutils.S3_DATALAKE:
+		if !schemarepository.UseGlue(&warehouse) {
+			return timeWindow.Format(warehouseutils.DatalakeTimeWindowFormat)
+		}
+		if windowLayout := warehouseutils.GetConfigValue("timeWindowLayout", warehouse); windowLayout != "" {
+			return timeWindow.Format(windowLayout)
+		}
+	}
+	return timeWindow.Format(warehouseutils.DatalakeTimeWindowFormat)
 }
