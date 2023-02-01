@@ -34,9 +34,7 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/misc"
 )
 
-var (
-	ExclusionColumnsRegex = regexp.MustCompile(`(^.*_com$)|(^.*_in$)|(^.*_org$)|(^.*_[0-9]{10,10}$)`)
-)
+var ExclusionColumnsRegex = regexp.MustCompile(`(^.*_com$)|(^.*_in$)|(^.*_org$)|(^.*_[0-9]{10,10}$)`)
 
 const (
 	RS             = "RS"
