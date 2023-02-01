@@ -14,7 +14,6 @@ import (
 )
 
 const (
-	throttlingAlgoTypeGoRate         = "gorate"
 	throttlingAlgoTypeGCRA           = "gcra"
 	throttlingAlgoTypeRedisGCRA      = "redis-gcra"
 	throttlingAlgoTypeRedisSortedSet = "redis-sorted-set"
@@ -70,7 +69,7 @@ func (f *Factory) initThrottlerFactory() error {
 		})
 	}
 
-	throttlingAlgorithm := config.GetString("Router.throttler.algorithm", throttlingAlgoTypeGoRate)
+	throttlingAlgorithm := config.GetString("Router.throttler.algorithm", throttlingAlgoTypeGCRA)
 	if throttlingAlgorithm == throttlingAlgoTypeRedisGCRA || throttlingAlgorithm == throttlingAlgoTypeRedisSortedSet {
 		if redisClient == nil {
 			return fmt.Errorf("redis client is nil with algorithm %s", throttlingAlgorithm)
@@ -86,8 +85,6 @@ func (f *Factory) initThrottlerFactory() error {
 		opts = append(opts, throttling.WithStatsCollector(f.Stats))
 	}
 	switch throttlingAlgorithm {
-	case throttlingAlgoTypeGoRate:
-		l, err = throttling.New(append(opts, throttling.WithInMemoryGoRate())...)
 	case throttlingAlgoTypeGCRA:
 		l, err = throttling.New(append(opts, throttling.WithInMemoryGCRA(0))...)
 	case throttlingAlgoTypeRedisGCRA:
