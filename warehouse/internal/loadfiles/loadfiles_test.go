@@ -360,3 +360,119 @@ func TestCreateLoadFiles_DestinationHistory(t *testing.T) {
 		require.Zero(t, endID)
 	})
 }
+
+func TestGetLoadFilePrefix(t *testing.T) {
+	testCases := []struct {
+		name      string
+		warehouse warehouseutils.Warehouse
+		expected  string
+	}{
+		{
+			name: "s3 datalake",
+			warehouse: warehouseutils.Warehouse{
+				Destination: backendconfig.DestinationT{
+					Config: map[string]interface{}{},
+				},
+				Type: warehouseutils.S3_DATALAKE,
+			},
+			expected: "2022/08/06/14",
+		},
+		{
+			name: "s3 datalake with glue",
+			warehouse: warehouseutils.Warehouse{
+				Destination: backendconfig.DestinationT{
+					Config: map[string]interface{}{
+						"region":  "test-region",
+						"useGlue": true,
+					},
+				},
+				Type: warehouseutils.S3_DATALAKE,
+			},
+			expected: "2022/08/06/14",
+		},
+		{
+			name: "s3 datalake with glue and layout",
+			warehouse: warehouseutils.Warehouse{
+				Destination: backendconfig.DestinationT{
+					Config: map[string]interface{}{
+						"region":           "test-region",
+						"useGlue":          true,
+						"timeWindowLayout": "dt=2006-01-02",
+					},
+				},
+				Type: warehouseutils.S3_DATALAKE,
+			},
+			expected: "dt=2022-08-06",
+		},
+		{
+			name: "azure datalake",
+			warehouse: warehouseutils.Warehouse{
+				Destination: backendconfig.DestinationT{
+					Config: map[string]interface{}{
+						"tableSuffix": "key=val",
+					},
+				},
+				Type: warehouseutils.AZURE_DATALAKE,
+			},
+			expected: "2022/08/06/14",
+		},
+		{
+			name: "gcs datalake",
+			warehouse: warehouseutils.Warehouse{
+				Destination: backendconfig.DestinationT{
+					Config: map[string]interface{}{},
+				},
+				Type: warehouseutils.GCS_DATALAKE,
+			},
+			expected: "2022/08/06/14",
+		},
+		{
+			name: "gcs datalake with suffix",
+			warehouse: warehouseutils.Warehouse{
+				Destination: backendconfig.DestinationT{
+					Config: map[string]interface{}{
+						"tableSuffix": "key=val",
+					},
+				},
+				Type: warehouseutils.GCS_DATALAKE,
+			},
+			expected: "key=val/2022/08/06/14",
+		},
+		{
+			name: "gcs datalake with layout",
+			warehouse: warehouseutils.Warehouse{
+				Destination: backendconfig.DestinationT{
+					Config: map[string]interface{}{
+						"timeWindowLayout": "year=2006/month=01/day=02/hour=15",
+					},
+				},
+				Type: warehouseutils.GCS_DATALAKE,
+			},
+			expected: "year=2022/month=08/day=06/hour=14",
+		},
+		{
+			name: "gcs datalake with suffix and layout",
+			warehouse: warehouseutils.Warehouse{
+				Destination: backendconfig.DestinationT{
+					Config: map[string]interface{}{
+						"tableSuffix":      "key=val",
+						"timeWindowLayout": "year=2006/month=01/day=02/hour=15",
+					},
+				},
+				Type: warehouseutils.GCS_DATALAKE,
+			},
+			expected: "key=val/year=2022/month=08/day=06/hour=14",
+		},
+	}
+	for _, tc := range testCases {
+		tc := tc
+
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			timeWindow := time.Date(2022, time.Month(8), 6, 14, 10, 30, 0, time.UTC)
+			got := loadfiles.GetLoadFilePrefix(timeWindow, tc.warehouse)
+			require.Equal(t, got, tc.expected)
+		})
+	}
+}
