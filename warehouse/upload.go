@@ -178,6 +178,7 @@ func (f *UploadJobFactory) NewUploadJob(dto *model.UploadJob, whManager manager.
 		AlertSender: alerta.NewClient(
 			config.GetString("ALERTA_URL", "https://alerta.rudderstack.com/api/"),
 			alerta.WithTeam(warehouseutils.WAREHOUSE),
+			alerta.WithEnvironment(alerta.PROXYMODE),
 		),
 	}
 }

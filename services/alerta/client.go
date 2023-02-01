@@ -60,6 +60,13 @@ const (
 	PriorityP3 Priority = "P3"
 )
 
+const (
+	PRODUCTION  = "PRODUCTION"
+	DEVELOPMENT = "DEVELOPMENT"
+	PROXYMODE   = "PROXYMODE"
+	CARBONCOPY  = "CARBONCOPY"
+)
+
 var (
 	defaultTimeout    = 30 * time.Second
 	defaultMaxRetries = 3
@@ -171,7 +178,7 @@ func (c *Client) defaultTags(opts *SendAlertOpts) Tags {
 		namespace = config.GetNamespaceIdentifier()
 	}
 	if environment == "" {
-		environment = c.config.GetString("alerta.environment", "PRODUCTION")
+		environment = c.config.GetString("alerta.environment", PRODUCTION)
 	}
 
 	tags["namespace"] = namespace
@@ -237,7 +244,7 @@ func (c *Client) SendAlert(
 		alertTimeout = c.config.GetInt("alerta.timeout", 86400)
 	}
 	if environment == "" {
-		environment = c.config.GetString("alerta.environment", "PRODUCTION")
+		environment = c.config.GetString("alerta.environment", PRODUCTION)
 	}
 
 	payload := Alert{
