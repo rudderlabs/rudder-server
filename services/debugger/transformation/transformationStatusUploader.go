@@ -243,10 +243,30 @@ func (h *Handle) UploadTransformationStatus(tStatus *TransformationStatusT) bool
 			h.processRecordTransformationStatus(tStatus, transformation.ID)
 		} else {
 			tStatusUpdated := *tStatus
-			lo.Slice(tStatusUpdated.UserTransformedEvents, 0, h.limitEventsInMemory+1)
 			tStatusUpdated.Destination.Transformations = []backendconfig.TransformationT{transformation}
 			tStatusUpdated.UserTransformedEvents = lo.Slice(tStatusUpdated.UserTransformedEvents, 0, h.limitEventsInMemory+1)
 			tStatusUpdated.FailedEvents = lo.Slice(tStatusUpdated.FailedEvents, 0, h.limitEventsInMemory+1)
+			// while caching, we may only store the messageIDs of the events in the cache
+			// done to avoid displaying events as dropped
+			tStatusUpdated.UniqueMessageIds = lo.SliceToMap(
+				append(
+					lo.Map(
+						tStatusUpdated.UserTransformedEvents,
+						func(event transformer.TransformerEventT, _ int) string {
+							return event.Metadata.MessageID
+						},
+					),
+					lo.Map(
+						tStatusUpdated.FailedEvents,
+						func(event transformer.TransformerResponseT, _ int) string {
+							return event.Metadata.MessageID
+						},
+					)...,
+				),
+				func(messageID string) (string, struct{}) {
+					return messageID, struct{}{}
+				},
+			)
 			err := h.transformationCacheMap.Update(transformation.ID, tStatusUpdated)
 			if err != nil {
 				h.log.Errorf("Error while updating transformation cache: %v", err)
