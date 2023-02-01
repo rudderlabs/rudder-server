@@ -35,7 +35,7 @@ import (
 )
 
 var (
-	ExclusionColumnsRegex = regexp.MustCompile(`(^.*_com$)|(^.*_in$)|(^.*_[0-9]{10,10}$)`)
+	ExclusionColumnsRegex = regexp.MustCompile(`(^.*_com$)|(^.*_in$)|(^.*_org$)|(^.*_[0-9]{10,10}$)`)
 )
 
 const (

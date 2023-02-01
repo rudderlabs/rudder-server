@@ -27,6 +27,32 @@ import (
 	. "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
+func TestExclusionColumnsRegex(t *testing.T) {
+	testCases := []struct {
+		columnName string
+		expected   bool
+	}{
+		{columnName: "test_com", expected: true},
+		{columnName: "test_in", expected: true},
+		{columnName: "test_1234567890", expected: true},
+		{columnName: "test_com_1234567890", expected: true},
+		{columnName: "test_in_1234567890", expected: true},
+		{columnName: "test_1234567890_com", expected: true},
+		{columnName: "test_1234567890_in", expected: true},
+		{columnName: "test_1234567890_1234567890", expected: true},
+
+		{columnName: "test_com_", expected: false},
+		{columnName: "test_in_", expected: false},
+		{columnName: "test_1234567890_", expected: false},
+		{columnName: "test_123456789", expected: false},
+		{columnName: "test", expected: false},
+	}
+
+	for _, tc := range testCases {
+		require.Equal(t, tc.expected, ExclusionColumnsRegex.MatchString(tc.columnName))
+	}
+}
+
 func TestDestinationConfigKeys(t *testing.T) {
 	for _, whType := range WarehouseDestinations {
 		t.Run(whType, func(t *testing.T) {
