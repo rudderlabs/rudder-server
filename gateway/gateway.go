@@ -579,7 +579,7 @@ func (gateway *HandleT) getJobDataFromRequest(req *webRequestT) (jobData *jobFro
 		anonIDFromReq, _ := toSet["anonymousId"].(string)
 		userIDFromReq, _ = toSet["userId"].(string)
 		if userID == "" {
-			userID, _ = toSet["userId"].(string)
+			userID = userIDFromReq
 		}
 
 		if isNonIdentifiable(anonIDFromReq, userIDFromReq) {
