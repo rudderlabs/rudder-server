@@ -213,6 +213,9 @@ func mergeSchema(currentSchema warehouseutils.SchemaT, schemaList []warehouseuti
 				}
 			}
 			for columnName, columnType := range columnMap {
+				if warehouseutils.ExclusionColumnsRegex.MatchString(columnName) {
+					continue
+				}
 				// if column already has a type in db, use that
 				// check for data type in identifies for users table before check in users table
 				// to ensure same data type is set for the same column in both users and identifies
