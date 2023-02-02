@@ -1029,37 +1029,3 @@ func getWorkspaceID(writeKey string) string {
 	defer configSubscriberLock.RUnlock()
 	return enabledWriteKeyWorkspaceMap[writeKey]
 }
-
-func Test_setBatch(t *testing.T) {
-	t.Run("sets batch properly for valid payloads", func(t *testing.T) {
-		event := map[string]interface{}{
-			"key":  "value",
-			"key2": []string{"value1", "value2"},
-		}
-		payload, _ := json.Marshal(event)
-		batch, err := setBatch(
-			payload,
-			"someReqType",
-		)
-		require.NoError(t, err)
-		buffer := new(bytes.Buffer)
-		if err := json.Compact(buffer, batch); err != nil {
-			t.Error(err)
-		}
-		expected := map[string]interface{}{
-			"batch": []map[string]interface{}{
-				{
-					"key":  "value",
-					"key2": []string{"value1", "value2"},
-					"type": "someReqType",
-				},
-			},
-		}
-		expectedPayload, _ := json.Marshal(expected)
-		require.Equal(
-			t,
-			expectedPayload,
-			buffer.Bytes(),
-		)
-	})
-}

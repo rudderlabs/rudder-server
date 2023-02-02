@@ -22,7 +22,6 @@ import (
 	"github.com/google/uuid"
 	"github.com/gorilla/mux"
 	"github.com/rs/cors"
-	"github.com/samber/lo"
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
 	"golang.org/x/sync/errgroup"
@@ -532,11 +531,12 @@ func (gateway *HandleT) getJobDataFromRequest(req *webRequestT) (jobData *jobFro
 
 	gateway.requestSizeStat.Observe(float64(len(body)))
 	if req.reqType != "batch" {
-		body, err = setBatch(body, req.reqType)
+		body, err = sjson.SetBytes(body, "type", req.reqType)
 		if err != nil {
 			err = errors.New(response.NotRudderEvent)
 			return
 		}
+		body, _ = sjson.SetRawBytes(BatchEvent, "batch.0", body)
 	}
 
 	eventsBatch := gjson.GetBytes(body, "batch").Array()
@@ -562,69 +562,52 @@ func (gateway *HandleT) getJobDataFromRequest(req *webRequestT) (jobData *jobFro
 
 	// set anonymousId if not set in payload
 	var (
-		out                                                   []map[string]interface{}
-		builtUserID, userIDFromReq, userID                    string
-		sourcesJobRunID, sourcesTaskRunID                     string
-		sdkName, sdkVersion                                   string
-		notIdentifiable, nonRudderEvent, containsAudienceList bool
+		out                               []map[string]interface{}
+		builtUserID                       string
+		sourcesJobRunID, sourcesTaskRunID string
+		sdkName, sdkVersion               string
+		containsAudienceList              bool
 	)
 
-	lo.ForEach(eventsBatch, func(vjson gjson.Result, _ int) {
-		toSet, ok := vjson.Value().(map[string]interface{})
+	for idx, v := range eventsBatch {
+		toSet, ok := v.Value().(map[string]interface{})
 		if !ok {
-			nonRudderEvent = true
+			err = errors.New(response.NotRudderEvent)
 			return
 		}
 
 		anonIDFromReq, _ := toSet["anonymousId"].(string)
-		userIDFromReq, _ = toSet["userId"].(string)
-		if userID == "" {
-			userID = userIDFromReq
-		}
-
+		userIDFromReq, _ := toSet["userId"].(string)
 		if isNonIdentifiable(anonIDFromReq, userIDFromReq) {
-			notIdentifiable = true
+			err = errors.New(response.NonIdentifiableRequest)
 			return
 		}
 
-		if builtUserID == "" {
+		if idx == 0 {
+			userID := userIDFromReq
+			if gateway.isUserSuppressed(workspaceId, userID, sourceID) {
+				err = errRequestSuppressed
+				return
+			}
 			builtUserID = buildUserID(userIDHeader, anonIDFromReq, userIDFromReq)
-		}
-
-		// hashing combination of userIDFromReq + anonIDFromReq, using colon as a delimiter
-		rudderId, err := misc.GetMD5UUID(userIDFromReq + ":" + anonIDFromReq)
-		if err != nil {
-			notIdentifiable = true
-			return
-		}
-		// pick the job_run_id, task_run_id from the first event of batch.
-		// We are assuming job_run_id will be same for all events in a batch
-		// and the batch is coming from rudder-sources
-		if sourcesJobRunID == "" {
 			sourcesJobRunID, _ = misc.MapLookup(
 				toSet,
 				"context",
 				"sources",
 				"job_run_id",
 			).(string)
-		}
-		if sourcesTaskRunID == "" {
 			sourcesTaskRunID, _ = misc.MapLookup(
 				toSet,
 				"context",
 				"sources",
 				"task_run_id",
 			).(string)
-		}
-		if sdkName == "" {
 			sdkName, _ = misc.MapLookup(
 				toSet,
 				"context",
 				"library",
 				"name",
 			).(string)
-		}
-		if sdkVersion == "" {
 			sdkVersion, _ = misc.MapLookup(
 				toSet,
 				"context",
@@ -632,18 +615,24 @@ func (gateway *HandleT) getJobDataFromRequest(req *webRequestT) (jobData *jobFro
 				"version",
 			).(string)
 		}
+
+		// hashing combination of userIDFromReq + anonIDFromReq, using colon as a delimiter
+		var rudderId uuid.UUID
+		rudderId, err = misc.GetMD5UUID(userIDFromReq + ":" + anonIDFromReq)
+		if err != nil {
+			err = errors.New(response.NonIdentifiableRequest)
+			return
+		}
+		toSet["rudderId"] = rudderId
+		setRandomMessageIDWhenEmpty(toSet)
 		if eventTypeFromReq, _ := misc.MapLookup(
 			toSet,
 			"type",
 		).(string); eventTypeFromReq == "audiencelist" {
 			containsAudienceList = true
 		}
-
-		toSet["rudderId"] = rudderId
-		setRandomMessageIDWhenEmpty(toSet)
-
 		out = append(out, toSet)
-	})
+	}
 
 	if len(body) > maxReqSize && !containsAudienceList {
 		err = errors.New(response.RequestBodyTooLarge)
@@ -651,22 +640,6 @@ func (gateway *HandleT) getJobDataFromRequest(req *webRequestT) (jobData *jobFro
 	}
 
 	body, _ = sjson.SetBytes(body, "batch", out)
-
-	if notIdentifiable {
-		err = errors.New(response.NonIdentifiableRequest)
-		return
-	}
-
-	if nonRudderEvent {
-		err = errors.New(response.NotRudderEvent)
-		return
-	}
-
-	if gateway.isUserSuppressed(workspaceId, userID, sourceID) {
-		err = errRequestSuppressed
-		return
-	}
-
 	body, _ = sjson.SetBytes(body, "requestIP", ipAddr)
 	body, _ = sjson.SetBytes(body, "writeKey", writeKey)
 	body, _ = sjson.SetBytes(body, "receivedAt", time.Now().Format(misc.RFC3339Milli))
@@ -701,20 +674,6 @@ func (gateway *HandleT) getJobDataFromRequest(req *webRequestT) (jobData *jobFro
 		WorkspaceId:  workspaceId,
 	}
 	jobData.job = job
-	return
-}
-
-func setBatch(body []byte, reqType string) (batch []byte, err error) {
-	body, err = sjson.SetBytes(body, "type", reqType)
-	if err != nil {
-		err = errors.New(response.NotRudderEvent)
-		return
-	}
-	batch, err = sjson.SetRawBytes(BatchEvent, "batch.0", body)
-	if err != nil {
-		err = errors.New(response.NotRudderEvent)
-		return
-	}
 	return
 }
 
