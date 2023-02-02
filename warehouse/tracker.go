@@ -159,9 +159,8 @@ func (wh *HandleT) Track(ctx context.Context, warehouse *warehouseutils.Warehous
 		wh.Logger.Warn("upload is not picked for ",
 			warehouseutils.SourceID, source.ID,
 			warehouseutils.DestinationID, destination.ID,
-			warehouseutils.DestinationID, warehouse.WorkspaceID,
+			warehouseutils.WorkspaceID, warehouse.WorkspaceID,
 		)
-		wh.Logger.Info("upload is not picked for source: ", source.ID, " and destination: ", destination.ID)
 	}
 
 	tags := stats.Tags{
