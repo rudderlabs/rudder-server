@@ -11,6 +11,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/utils/logger"
+
 	"github.com/cenkalti/backoff"
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/utils/httputil"
@@ -138,7 +140,13 @@ func WithKubeNamespace(namespace string) OptFn {
 	}
 }
 
-func NewClient(baseURL string, fns ...OptFn) *Client {
+var pkgLogger logger.Logger
+
+func init() {
+	pkgLogger = logger.NewLogger().Child("alerta")
+}
+
+func NewClient(baseURL string, fns ...OptFn) AlertSender {
 	c := &Client{
 		url: baseURL,
 		client: &http.Client{
@@ -152,6 +160,11 @@ func NewClient(baseURL string, fns ...OptFn) *Client {
 
 	for _, fn := range fns {
 		fn(c)
+	}
+
+	if !c.isEnabled() {
+		pkgLogger.Info("Alerta client is disabled")
+		return &NOOP{}
 	}
 
 	return c
@@ -199,15 +212,15 @@ func (c *Client) rawData(tags Tags) ([]byte, error) {
 	return []byte(fmt.Sprintf(`{ "series": [ { "tags": %s } ] }`, tagsJson)), nil
 }
 
+func (c *Client) isEnabled() bool {
+	return c.config.GetBool("alerta.enabled", true)
+}
+
 func (c *Client) SendAlert(
 	ctx context.Context,
 	resource string,
 	opts SendAlertOpts,
 ) error {
-	if !c.config.GetBool("alerta.enabled", true) {
-		return nil
-	}
-
 	if opts.Priority == "" {
 		opts.Priority = defaultPriority
 	}
