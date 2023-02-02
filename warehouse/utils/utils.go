@@ -37,6 +37,12 @@ import (
 )
 
 const (
+	SourceID      = "sourceID"
+	DestinationID = "destinationID"
+	WorkspaceID   = "workspaceID"
+)
+
+const (
 	RS             = "RS"
 	BQ             = "BQ"
 	SNOWFLAKE      = "SNOWFLAKE"

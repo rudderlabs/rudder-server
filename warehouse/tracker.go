@@ -156,6 +156,11 @@ func (wh *HandleT) Track(ctx context.Context, warehouse *warehouseutils.Warehous
 	}
 
 	if !exists {
+		wh.Logger.Warn("upload is not picked for ",
+			warehouseutils.SourceID, source.ID,
+			warehouseutils.DestinationID, destination.ID,
+			warehouseutils.DestinationID, warehouse.WorkspaceID,
+		)
 		wh.Logger.Info("upload is not picked for source: ", source.ID, " and destination: ", destination.ID)
 	}
 
