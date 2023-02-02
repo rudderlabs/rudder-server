@@ -175,7 +175,7 @@ func TestIntegrationPostgres(t *testing.T) {
 			tables:                []string{"tracks", "google_sheet"},
 			sourceID:              "2DkCpUr0xfiGBPJxIwqyqfyHdq4",
 			destinationID:         "308ZvbavR21Um6eGKQCagZHqLGZ",
-			workspaceID:           "BpLnfgDsc2WD8F2qNfHK5a84jjJ",
+			workspaceID:           "BpLnfgDsc2WD8F2qNfHK5a84jjL",
 			eventsMap:             testhelper.SourcesSendEventsMap(),
 			stagingFilesEventsMap: testhelper.SourcesStagingFilesEventsMap(),
 			loadFilesEventsMap:    testhelper.SourcesLoadFilesEventsMap(),

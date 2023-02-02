@@ -69,7 +69,7 @@ func TestIntegrationRedshift(t *testing.T) {
 			writeKey:              "BNAwdCxmM8BIabKERsUhPNmMmdf",
 			sourceID:              "2DkCpUr0xgjfsdJxIwqyqfyHdq4",
 			destinationID:         "27Sthahyhhsdas4HT4NTtNPl06V",
-			workspaceID:           "BpLnfgDsc2WD8F2qNfHK5a84jjJ",
+			workspaceID:           "BpLnfgDsc2WD8F2qNfHK5a84jjM",
 			eventsMap:             testhelper.SourcesSendEventsMap(),
 			stagingFilesEventsMap: testhelper.SourcesStagingFilesEventsMap(),
 			loadFilesEventsMap:    testhelper.SourcesLoadFilesEventsMap(),

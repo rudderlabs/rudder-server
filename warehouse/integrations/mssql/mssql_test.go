@@ -76,7 +76,7 @@ func TestIntegrationMSSQL(t *testing.T) {
 			tables:                []string{"tracks", "google_sheet"},
 			sourceID:              "2DkCpUr0xfiINRJxIwqyqfyHdq4",
 			destinationID:         "21Ezdq58kMNMj07VJB0VJmxLvgu",
-			workspaceID:           "BpLnfgDsc2WD8F2qNfHK5a84jjJ",
+			workspaceID:           "BpLnfgDsc2WD8F2qNfHK5a84jjk",
 			eventsMap:             testhelper.SourcesSendEventsMap(),
 			stagingFilesEventsMap: testhelper.SourcesStagingFilesEventsMap(),
 			loadFilesEventsMap:    testhelper.SourcesLoadFilesEventsMap(),
