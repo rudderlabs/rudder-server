@@ -204,6 +204,10 @@ func (c *Client) SendAlert(
 	resource string,
 	opts SendAlertOpts,
 ) error {
+	if !c.config.GetBool("alerta.enabled", true) {
+		return nil
+	}
+
 	if opts.Priority == "" {
 		opts.Priority = defaultPriority
 	}
