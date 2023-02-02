@@ -38,16 +38,3 @@ func (r *sortedSetRedisReturn) Return(ctx context.Context) error {
 	}
 	return nil
 }
-
-type goRateRemover interface {
-	Cancel()
-}
-
-type goRateReturn struct {
-	reservation goRateRemover
-}
-
-func (r *goRateReturn) Return(_ context.Context) error {
-	r.reservation.Cancel()
-	return nil
-}

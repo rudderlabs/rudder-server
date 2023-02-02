@@ -128,6 +128,7 @@ type HandleT struct {
 	payloadLimit              int64
 	transientSources          transientsource.Service
 	rsourcesService           rsources.JobService
+	debugger                  destinationdebugger.DestinationDebugger
 	jobsDBCommandTimeout      time.Duration
 	jobdDBQueryRequestTimeout time.Duration
 	jobdDBMaxRetries          int
@@ -158,8 +159,6 @@ type JobParametersT struct {
 	DestinationID           string `json:"destination_id"`
 	ReceivedAt              string `json:"received_at"`
 	TransformAt             string `json:"transform_at"`
-	SourceBatchID           string `json:"source_batch_id"`
-	SourceTaskID            string `json:"source_task_id"`
 	SourceTaskRunID         string `json:"source_task_run_id"`
 	SourceJobID             string `json:"source_job_id"`
 	SourceJobRunID          string `json:"source_job_run_id"`
@@ -1114,8 +1113,6 @@ func (brt *HandleT) postToWarehouse(batchJobs *BatchJobsT, output StorageUploadO
 		TotalEvents:           output.TotalEvents,
 		TotalBytes:            output.TotalBytes,
 		UseRudderStorage:      output.UseRudderStorage,
-		SourceBatchID:         sampleParameters.SourceBatchID,
-		SourceTaskID:          sampleParameters.SourceTaskID,
 		SourceTaskRunID:       sampleParameters.SourceTaskRunID,
 		SourceJobID:           sampleParameters.SourceJobID,
 		SourceJobRunID:        sampleParameters.SourceJobRunID,
@@ -1265,9 +1262,9 @@ func (brt *HandleT) setJobStatus(batchJobs *BatchJobsT, isWarehouse bool, errOcc
 			errorCode := getBRTErrorCode(jobState)
 			var cd *types.ConnectionDetails
 			workspaceID := job.WorkspaceId
-			key := fmt.Sprintf("%s:%s:%s:%s:%s:%s:%s", parameters.SourceID, parameters.DestinationID, parameters.SourceBatchID, jobState, strconv.Itoa(errorCode), parameters.EventName, parameters.EventType)
+			key := fmt.Sprintf("%s:%s:%s:%s:%s:%s:%s", parameters.SourceID, parameters.DestinationID, parameters.SourceJobRunID, jobState, strconv.Itoa(errorCode), parameters.EventName, parameters.EventType)
 			if _, ok := connectionDetailsMap[key]; !ok {
-				cd = types.CreateConnectionDetail(parameters.SourceID, parameters.DestinationID, parameters.SourceBatchID, parameters.SourceTaskID, parameters.SourceTaskRunID, parameters.SourceJobID, parameters.SourceJobRunID, parameters.SourceDefinitionID, parameters.DestinationDefinitionID, parameters.SourceCategory)
+				cd = types.CreateConnectionDetail(parameters.SourceID, parameters.DestinationID, parameters.SourceTaskRunID, parameters.SourceJobID, parameters.SourceJobRunID, parameters.SourceDefinitionID, parameters.DestinationDefinitionID, parameters.SourceCategory)
 				connectionDetailsMap[key] = cd
 				transformedAtMap[key] = parameters.TransformAt
 			}
@@ -1513,7 +1510,7 @@ func (brt *HandleT) trackRequestMetrics(batchReqDiagnostics batchRequestMetric) 
 	}
 }
 
-func (*HandleT) recordDeliveryStatus(batchDestination DestinationT, output StorageUploadOutput, isWarehouse bool) {
+func (brt *HandleT) recordDeliveryStatus(batchDestination DestinationT, output StorageUploadOutput, isWarehouse bool) {
 	var (
 		errorCode string
 		jobState  string
@@ -1555,7 +1552,7 @@ func (*HandleT) recordDeliveryStatus(batchDestination DestinationT, output Stora
 		ErrorCode:     errorCode,
 		ErrorResponse: errorResp,
 	}
-	destinationdebugger.RecordEventDeliveryStatus(batchDestination.Destination.ID, &deliveryStatus)
+	brt.debugger.RecordEventDeliveryStatus(batchDestination.Destination.ID, &deliveryStatus)
 }
 
 func (brt *HandleT) recordUploadStats(destination DestinationT, output StorageUploadOutput) {
@@ -2125,7 +2122,7 @@ func (brt *HandleT) dedupRawDataDestJobsOnCrash() {
 			}
 			brt.uploadedRawDataJobsCache[object.DestinationID][eventID] = true
 		}
-		reader.Close()
+		_ = reader.Close()
 		brt.jobsDB.JournalDeleteEntry(entry.OpID)
 	}
 }
@@ -2270,12 +2267,13 @@ func Init() {
 }
 
 // Setup initializes this module
-func (brt *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB, errorDB jobsdb.JobsDB, destType string, reporting types.ReportingI, multitenantStat multitenant.MultiTenantI, transientSources transientsource.Service, rsourcesService rsources.JobService) {
+func (brt *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB, errorDB jobsdb.JobsDB, destType string, reporting types.ReportingI, multitenantStat multitenant.MultiTenantI, transientSources transientsource.Service, rsourcesService rsources.JobService, debugger destinationdebugger.DestinationDebugger) {
 	brt.isBackendConfigInitialized = false
 	brt.backendConfigInitialized = make(chan bool)
 	brt.fileManagerFactory = filemanager.DefaultFileManagerFactory
 	brt.backendConfig = backendConfig
 	brt.reporting = reporting
+	brt.debugger = debugger
 	config.RegisterBoolConfigVariable(types.DefaultReportingEnabled, &brt.reportingEnabled, false, "Reporting.enabled")
 	brt.logger = pkgLogger.Child(destType)
 	brt.logger.Infof("BRT: Batch Router started: %s", destType)

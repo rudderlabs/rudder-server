@@ -3,6 +3,7 @@ package warehouse
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -15,6 +16,7 @@ import (
 	"google.golang.org/grpc/status"
 
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
+	"github.com/rudderlabs/rudder-server/warehouse/internal/repo"
 	"github.com/rudderlabs/rudder-server/warehouse/validations"
 
 	"github.com/rudderlabs/rudder-server/config"
@@ -241,7 +243,7 @@ func (uploadsReq *UploadsReqT) TriggerWhUploads() (response *proto.TriggerWhUplo
 		return
 	}
 	if pendingUploadCount == int64(0) {
-		pendingStagingFileCount, err = getPendingStagingFileCount(uploadsReq.DestinationID, false)
+		pendingStagingFileCount, err = repo.NewStagingFiles(dbHandle).CountPendingForDestination(context.TODO(), uploadsReq.DestinationID)
 		if err != nil {
 			return
 		}
@@ -325,7 +327,10 @@ func (uploadReq UploadReqT) GetWHUpload() (*proto.WHUploadResponse, error) {
 	})
 	// do not return error on successful upload
 	if upload.Status != model.ExportedData {
-		lastFailedStatus := warehouseutils.GetLastFailedStatus(timingsObject)
+		var timings model.Timings
+		_ = json.Unmarshal([]byte(timingsObject.String), &timings)
+
+		lastFailedStatus := model.GetLastFailedStatus(timings)
 		errorPath := fmt.Sprintf("%s.errors", lastFailedStatus)
 		errs := gjson.Get(uploadError, errorPath).Array()
 		if len(errs) > 0 {
@@ -373,22 +378,10 @@ func (uploadReq UploadReqT) TriggerWHUpload() (response *proto.TriggerWhUploadsR
 		return
 	}
 
-	var (
-		uploadJobT UploadJobT
-		upload     Upload
-	)
+	var uploadJobT UploadJobT
 
-	query := uploadReq.generateQuery(`id, source_id, destination_id, metadata`)
-	uploadReq.API.log.Debug(query)
-
-	row := uploadReq.API.dbHandle.QueryRow(query)
-	err = row.Scan(
-		&upload.ID,
-		&upload.SourceID,
-		&upload.DestinationID,
-		&upload.Metadata,
-	)
-	if err == sql.ErrNoRows {
+	upload, err := repo.NewUploads(uploadReq.API.dbHandle).Get(context.TODO(), uploadReq.UploadId)
+	if err == model.ErrUploadNotFound {
 		return &proto.TriggerWhUploadsResponse{
 			Message:    NoSuchSync,
 			StatusCode: http.StatusOK,
@@ -405,7 +398,7 @@ func (uploadReq UploadReqT) TriggerWHUpload() (response *proto.TriggerWhUploadsR
 		return
 	}
 
-	uploadJobT.upload = &upload
+	uploadJobT.upload = upload
 	uploadJobT.dbHandle = uploadReq.API.dbHandle
 	err = uploadJobT.triggerUploadNow()
 	if err != nil {
@@ -623,7 +616,12 @@ func (uploadsReq *UploadsReqT) getUploadsFromDB(isMultiWorkspace bool, query str
 		})
 		// set error only for failed uploads. skip for retried and then successful uploads
 		if upload.Status != model.ExportedData {
-			lastFailedStatus := warehouseutils.GetLastFailedStatus(timingsObject)
+
+			// TODO: remove this once we use repository to get upload
+			var timings model.Timings
+			_ = json.Unmarshal([]byte(timingsObject.String), &timings)
+
+			lastFailedStatus := model.GetLastFailedStatus(timings)
 			errorPath := fmt.Sprintf("%s.errors", lastFailedStatus)
 			errs := gjson.Get(uploadError, errorPath).Array()
 			if len(errs) > 0 {

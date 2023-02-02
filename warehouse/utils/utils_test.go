@@ -504,69 +504,6 @@ func TestSortColumnKeysFromColumnMap(t *testing.T) {
 	}
 }
 
-func TestGetLoadFileGenTime(t *testing.T) {
-	inputs := []struct {
-		timingsMap        sql.NullString
-		loadFilesEpochStr string
-	}{
-		{
-			timingsMap: sql.NullString{
-				String: "[{\"generating_upload_schema\":\"2022-07-04T16:09:03.001Z\"},{\"generated_upload_schema\":\"2022-07-04T16:09:04.141Z\"},{\"creating_table_uploads\":\"2022-07-04T16:09:04.144Z\"},{\"created_table_uploads\":\"2022-07-04T16:09:04.164Z\"},{\"generating_load_files\":\"2022-07-04T16:09:04.169Z\"},{\"generated_load_files\":\"2022-07-04T16:09:40.957Z\"},{\"updating_table_uploads_counts\":\"2022-07-04T16:09:40.959Z\"},{\"updated_table_uploads_counts\":\"2022-07-04T16:09:41.916Z\"},{\"creating_remote_schema\":\"2022-07-04T16:09:41.918Z\"},{\"created_remote_schema\":\"2022-07-04T16:09:41.920Z\"},{\"exporting_data\":\"2022-07-04T16:09:41.922Z\"},{\"exporting_data_failed\":\"2022-07-04T17:14:24.424Z\"}]",
-			},
-			loadFilesEpochStr: "2022-07-04T16:09:04.169Z",
-		},
-		{
-			timingsMap: sql.NullString{
-				String: "[]",
-			},
-			loadFilesEpochStr: "0001-01-01T00:00:00.000Z",
-		},
-		{
-			timingsMap: sql.NullString{
-				String: "[{\"generating_upload_schema\":\"2022-07-04T16:09:03.001Z\"},{\"generated_upload_schema\":\"2022-07-04T16:09:04.141Z\"},{\"creating_table_uploads\":\"2022-07-04T16:09:04.144Z\"},{\"created_table_uploads\":\"2022-07-04T16:09:04.164Z\"}]",
-			},
-			loadFilesEpochStr: "0001-01-01T00:00:00.000Z",
-		},
-	}
-	for _, input := range inputs {
-		loadFilesEpochTime, err := time.Parse(misc.RFC3339Milli, input.loadFilesEpochStr)
-		require.NoError(t, err)
-
-		loadFileGenTime := GetLoadFileGenTime(input.timingsMap)
-		require.Equal(t, loadFilesEpochTime, loadFileGenTime)
-	}
-}
-
-func TestGetLastFailedStatus(t *testing.T) {
-	inputs := []struct {
-		timingsMap sql.NullString
-		status     string
-	}{
-		{
-			timingsMap: sql.NullString{
-				String: "[{\"generating_upload_schema\":\"2022-07-04T16:09:03.001Z\"},{\"generated_upload_schema\":\"2022-07-04T16:09:04.141Z\"},{\"creating_table_uploads\":\"2022-07-04T16:09:04.144Z\"},{\"created_table_uploads\":\"2022-07-04T16:09:04.164Z\"},{\"generating_load_files\":\"2022-07-04T16:09:04.169Z\"},{\"generated_load_files\":\"2022-07-04T16:09:40.957Z\"},{\"updating_table_uploads_counts\":\"2022-07-04T16:09:40.959Z\"},{\"updated_table_uploads_counts\":\"2022-07-04T16:09:41.916Z\"},{\"creating_remote_schema\":\"2022-07-04T16:09:41.918Z\"},{\"created_remote_schema\":\"2022-07-04T16:09:41.920Z\"},{\"exporting_data\":\"2022-07-04T16:09:41.922Z\"},{\"exporting_data_failed\":\"2022-07-04T17:14:24.424Z\"}]",
-			},
-			status: "exporting_data_failed",
-		},
-		{
-			timingsMap: sql.NullString{
-				String: "[]",
-			},
-			status: "",
-		},
-		{
-			timingsMap: sql.NullString{
-				String: "[{\"generating_upload_schema\":\"2022-07-04T16:09:03.001Z\"},{\"generated_upload_schema\":\"2022-07-04T16:09:04.141Z\"},{\"creating_table_uploads\":\"2022-07-04T16:09:04.144Z\"},{\"created_table_uploads\":\"2022-07-04T16:09:04.164Z\"}]",
-			},
-			status: "",
-		},
-	}
-	for _, input := range inputs {
-		status := GetLastFailedStatus(input.timingsMap)
-		require.Equal(t, status, input.status)
-	}
-}
-
 func TestTimingFromJSONString(t *testing.T) {
 	inputs := []struct {
 		timingsMap        sql.NullString
@@ -925,64 +862,6 @@ func TestGetTempFileExtension(t *testing.T) {
 	}
 }
 
-func TestGetLoadFilePrefix(t *testing.T) {
-	inputs := []struct {
-		warehouse Warehouse
-		expected  string
-	}{
-		{
-			warehouse: Warehouse{
-				Destination: backendconfig.DestinationT{
-					Config: map[string]interface{}{
-						"tableSuffix": "key=val",
-					},
-				},
-				Type: S3_DATALAKE,
-			},
-			expected: "2022/08/06/14",
-		},
-		{
-			warehouse: Warehouse{
-				Destination: backendconfig.DestinationT{
-					Config: map[string]interface{}{
-						"tableSuffix": "key=val",
-					},
-				},
-				Type: AZURE_DATALAKE,
-			},
-			expected: "2022/08/06/14",
-		},
-		{
-			warehouse: Warehouse{
-				Destination: backendconfig.DestinationT{
-					Config: map[string]interface{}{
-						"tableSuffix": "key=val",
-					},
-				},
-				Type: GCS_DATALAKE,
-			},
-			expected: "key=val/2022/08/06/14",
-		},
-		{
-			warehouse: Warehouse{
-				Destination: backendconfig.DestinationT{
-					Config: map[string]interface{}{
-						"tableSuffix":      "key=val",
-						"timeWindowLayout": "year=2006/month=01/day=02/hour=15",
-					},
-				},
-				Type: GCS_DATALAKE,
-			},
-			expected: "key=val/year=2022/month=08/day=06/hour=14",
-		},
-	}
-	for _, input := range inputs {
-		timeWindow := time.Date(2022, time.Month(8), 6, 14, 10, 30, 0, time.UTC)
-		got := GetLoadFilePrefix(timeWindow, input.warehouse)
-		require.Equal(t, got, input.expected)
-	}
-}
-
 func TestWarehouseT_GetBoolDestinationConfig(t *testing.T) {
 	inputs := []struct {
 		warehouse Warehouse
@@ -1279,10 +1158,10 @@ var _ = Describe("Utils", func() {
 		Entry(nil, TableSchemaT{"k2": "v1", "k1": "v2"}, []string{"k2", "k1"}),
 	)
 
-	DescribeTable("JSON schema to Map", func(rawMsg json.RawMessage, expected map[string]map[string]string) {
+	DescribeTable("JSON schema to Map", func(rawMsg json.RawMessage, expected SchemaT) {
 		Expect(JSONSchemaToMap(rawMsg)).To(Equal(expected))
 	},
-		Entry(nil, json.RawMessage(`{"k1": { "k2": "v2" }}`), map[string]map[string]string{"k1": {"k2": "v2"}}),
+		Entry(nil, json.RawMessage(`{"k1": { "k2": "v2" }}`), SchemaT{"k1": {"k2": "v2"}}),
 	)
 
 	DescribeTable("Get date range list", func(start, end time.Time, format string, expected []string) {
