@@ -447,6 +447,7 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 				sourceStats[sourceTag] = gateway.NewSourceStat(writeKey, req.reqType)
 			}
 			jobData, err := gateway.getJobDataFromRequest(req)
+			sourceStats[sourceTag].Version = jobData.version
 			if err != nil {
 				switch {
 				case err == errRequestDropped:
@@ -461,7 +462,6 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 				}
 				continue
 			}
-			sourceStats[sourceTag].Version = jobData.version
 			jobList = append(jobList, jobData.job)
 			jobIDReqMap[jobData.job.UUID] = req
 			jobSourceTagMap[jobData.job.UUID] = sourceTag
@@ -584,8 +584,7 @@ func (gateway *HandleT) getJobDataFromRequest(req *webRequestT) (jobData *jobFro
 		}
 
 		if idx == 0 {
-			userID := userIDFromReq
-			if gateway.isUserSuppressed(workspaceId, userID, sourceID) {
+			if gateway.isUserSuppressed(workspaceId, userIDFromReq, sourceID) {
 				err = errRequestSuppressed
 				return
 			}
@@ -614,6 +613,7 @@ func (gateway *HandleT) getJobDataFromRequest(req *webRequestT) (jobData *jobFro
 				"library",
 				"version",
 			).(string)
+			jobData.version = sdkName + "/" + sdkVersion
 		}
 
 		// hashing combination of userIDFromReq + anonIDFromReq, using colon as a delimiter
@@ -643,8 +643,6 @@ func (gateway *HandleT) getJobDataFromRequest(req *webRequestT) (jobData *jobFro
 	body, _ = sjson.SetBytes(body, "requestIP", ipAddr)
 	body, _ = sjson.SetBytes(body, "writeKey", writeKey)
 	body, _ = sjson.SetBytes(body, "receivedAt", time.Now().Format(misc.RFC3339Milli))
-
-	jobData.version = sdkName + "/" + sdkVersion
 
 	id := uuid.New()
 
