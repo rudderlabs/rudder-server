@@ -6,8 +6,12 @@ import (
 	"bytes"
 	"context"
 	"net/http"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
+
+	"github.com/samber/lo"
 
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/rruntime"
@@ -111,10 +115,11 @@ func (uploader *uploaderImpl[E]) uploadEvents(eventBuffer []E) {
 	url := uploader.url
 
 	retryCount := 1
+	defer uploader.timingStat.RecordDuration()()
 	// Sending live events to Config Backend
 	for {
 		var resp *http.Response
-		startTime := time.Now()
+
 		req, err := Http.NewRequest("POST", url, bytes.NewBuffer(rawJSON))
 		if err != nil {
 			pkgLogger.Errorf("[Uploader] Failed to create new http request. Err: %v", err)
@@ -129,7 +134,6 @@ func (uploader *uploaderImpl[E]) uploadEvents(eventBuffer []E) {
 		req.SetBasicAuth(config.GetWorkspaceToken(), "")
 
 		resp, err = uploader.Client.Do(req)
-		uploader.timingStat.SendTiming(time.Since(startTime))
 		if err != nil {
 			pkgLogger.Error("Config Backend connection error", err)
 			if retryCount >= uploader.maxRetry {
@@ -141,6 +145,16 @@ func (uploader *uploaderImpl[E]) uploadEvents(eventBuffer []E) {
 			// Refresh the connection
 			continue
 		}
+
+		urlSplit, err := lo.Last[string](strings.Split(url, "/"))
+		if err != nil {
+			urlSplit = ""
+		}
+		stats.Default.NewTaggedStat("debugger_response_counts", stats.CountType, stats.Tags{
+			"responseCode": strconv.Itoa(resp.StatusCode),
+			"endpoint":     urlSplit,
+		}).Increment()
+
 		func() { httputil.CloseResponse(resp) }()
 		if resp.StatusCode != http.StatusOK {
 			pkgLogger.Errorf("[Uploader] Response Error from Config Backend: Status: %v, Body: %v ", resp.StatusCode, resp.Body)
