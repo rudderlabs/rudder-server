@@ -156,9 +156,11 @@ func (wh *HandleT) Track(ctx context.Context, warehouse *warehouseutils.Warehous
 	}
 
 	if !exists {
-		wh.Logger.Errorw("pending staging files not picked",
+		wh.Logger.Warnw("pending staging files not picked",
 			warehouseutils.SourceID, source.ID,
+			warehouseutils.SourceType, source.SourceDefinition.Name,
 			warehouseutils.DestinationID, destination.ID,
+			warehouseutils.DestinationType, destination.DestinationDefinition.Name,
 			warehouseutils.WorkspaceID, warehouse.WorkspaceID,
 		)
 	}

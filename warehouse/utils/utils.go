@@ -37,9 +37,11 @@ import (
 )
 
 const (
-	SourceID      = "sourceID"
-	DestinationID = "destinationID"
-	WorkspaceID   = "workspaceID"
+	SourceID        = "sourceID"
+	SourceType      = "sourceType"
+	DestinationID   = "destinationID"
+	DestinationType = "destinationType"
+	WorkspaceID     = "workspaceID"
 )
 
 const (
