@@ -569,6 +569,26 @@ func verifyAsyncJob(t testing.TB, wareHouseTest *WareHouseTest) {
 		),
 	)
 
+	sqlStatement := `
+	SELECT status
+	FROM wh_async_jobs 
+	WHERE source_id=$1
+	AND destination_id=$2
+	AND woekspace_id=$3
+	AND metadata->>'job_run_id'=$4 
+	AND metadata->>'task_run_id'=$5; 
+	`
+	var status string
+	err = wareHouseTest.JobsDB.QueryRow(
+		sqlStatement,
+		wareHouseTest.SourceID,
+		wareHouseTest.DestinationID,
+		wareHouseTest.WorkspaceID,
+		wareHouseTest.JobRunID,
+		wareHouseTest.TaskRunID,
+	).Scan(&status)
+	require.NoError(t, err)
+	require.Equal(t, "succeeded", status)
 	t.Logf("Completed verifying async job")
 }
 
