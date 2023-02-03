@@ -42,7 +42,6 @@ func TestSendFeatures(t *testing.T) {
 		op = append(op, alerta.WithTeam(testTeam))
 		op = append(op, alerta.WithKubeNamespace(testNamespace))
 		op = append(op, alerta.WithAlertTimeout(testAlertTimeout))
-		op = append(op, alerta.WithEnvironment(testEnvironment))
 		op = append(op, alerta.WithConfig(c))
 
 		return alerta.NewClient(
@@ -96,11 +95,12 @@ func TestSendFeatures(t *testing.T) {
 			ctx,
 			testResource,
 			alerta.SendAlertOpts{
-				Severity: testSeverity,
-				Priority: testPriority,
-				Service:  testService,
-				Text:     testText,
-				Tags:     testTags,
+				Severity:    testSeverity,
+				Priority:    testPriority,
+				Service:     testService,
+				Text:        testText,
+				Tags:        testTags,
+				Environment: testEnvironment,
 			},
 		)
 		require.NoError(t, err)
@@ -124,11 +124,12 @@ func TestSendFeatures(t *testing.T) {
 			ctx,
 			testResource,
 			alerta.SendAlertOpts{
-				Severity: testSeverity,
-				Priority: testPriority,
-				Service:  testService,
-				Text:     testText,
-				Tags:     testTags,
+				Severity:    testSeverity,
+				Priority:    testPriority,
+				Service:     testService,
+				Text:        testText,
+				Tags:        testTags,
+				Environment: testEnvironment,
 			},
 		)
 		require.EqualError(t, err, "unexpected status code 500: ")
@@ -155,11 +156,12 @@ func TestSendFeatures(t *testing.T) {
 			ctx,
 			testResource,
 			alerta.SendAlertOpts{
-				Severity: testSeverity,
-				Priority: testPriority,
-				Service:  testService,
-				Text:     testText,
-				Tags:     testTags,
+				Severity:    testSeverity,
+				Priority:    testPriority,
+				Service:     testService,
+				Text:        testText,
+				Tags:        testTags,
+				Environment: testEnvironment,
 			},
 		)
 		require.EqualError(t, err, "non retriable: unexpected status code 400: bad request")
@@ -189,11 +191,12 @@ func TestSendFeatures(t *testing.T) {
 			ctx,
 			testResource,
 			alerta.SendAlertOpts{
-				Severity: testSeverity,
-				Priority: testPriority,
-				Service:  testService,
-				Text:     testText,
-				Tags:     testTags,
+				Severity:    testSeverity,
+				Priority:    testPriority,
+				Service:     testService,
+				Text:        testText,
+				Tags:        testTags,
+				Environment: testEnvironment,
 			},
 		)
 
@@ -222,11 +225,12 @@ func TestSendFeatures(t *testing.T) {
 			ctx,
 			testResource,
 			alerta.SendAlertOpts{
-				Severity: testSeverity,
-				Priority: testPriority,
-				Service:  testService,
-				Text:     testText,
-				Tags:     testTags,
+				Severity:    testSeverity,
+				Priority:    testPriority,
+				Service:     testService,
+				Text:        testText,
+				Tags:        testTags,
+				Environment: testEnvironment,
 			},
 		)
 

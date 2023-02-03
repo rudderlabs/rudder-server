@@ -42,11 +42,12 @@ type Alert struct {
 }
 
 type SendAlertOpts struct {
-	Tags     Tags
-	Text     string
-	Service  Service
-	Severity Severity
-	Priority Priority
+	Tags        Tags
+	Text        string
+	Service     Service
+	Severity    Severity
+	Priority    Priority
+	Environment string
 }
 
 const (
@@ -87,7 +88,6 @@ type Client struct {
 	url            string
 	team           string
 	config         *config.Config
-	environment    string
 	alertTimeout   int
 	kuberNamespace string
 }
@@ -119,12 +119,6 @@ func WithTeam(team string) OptFn {
 func WithConfig(config *config.Config) OptFn {
 	return func(c *Client) {
 		c.config = config
-	}
-}
-
-func WithEnvironment(environment string) OptFn {
-	return func(c *Client) {
-		c.environment = environment
 	}
 }
 
@@ -182,21 +176,17 @@ func (c *Client) retry(ctx context.Context, fn func() error) error {
 
 func (c *Client) defaultTags(opts *SendAlertOpts) Tags {
 	var (
-		tags        = make(Tags)
-		environment = c.environment
-		namespace   = c.kuberNamespace
+		tags      = make(Tags)
+		namespace = c.kuberNamespace
 	)
 
 	if namespace == "" {
 		namespace = config.GetNamespaceIdentifier()
 	}
-	if environment == "" {
-		environment = c.config.GetString("alerta.environment", PRODUCTION)
-	}
 
 	tags["namespace"] = namespace
 	tags["sendToNotificationService"] = "true"
-	tags["notificationServiceMode"] = environment
+	tags["notificationServiceMode"] = opts.Environment
 	tags["priority"] = string(opts.Priority)
 	tags["team"] = c.team
 
@@ -216,11 +206,7 @@ func (c *Client) isEnabled() bool {
 	return c.config.GetBool("alerta.enabled", true)
 }
 
-func (c *Client) SendAlert(
-	ctx context.Context,
-	resource string,
-	opts SendAlertOpts,
-) error {
+func (c *Client) setDefaults(resource string, opts *SendAlertOpts) {
 	if opts.Priority == "" {
 		opts.Priority = defaultPriority
 	}
@@ -230,6 +216,13 @@ func (c *Client) SendAlert(
 	if opts.Text == "" {
 		opts.Text = fmt.Sprintf("%s is %s", resource, opts.Severity)
 	}
+	if opts.Environment == "" {
+		opts.Environment = c.config.GetString("alerta.environment", PRODUCTION)
+	}
+}
+
+func (c *Client) SendAlert(ctx context.Context, resource string, opts SendAlertOpts) error {
+	c.setDefaults(resource, &opts)
 
 	// default tags
 	tags := c.defaultTags(&opts)
@@ -254,24 +247,20 @@ func (c *Client) SendAlert(
 		group        = strings.Join(tagList, ",")
 		event        = fmt.Sprintf("rudder/%s:%s", resource, group)
 		alertTimeout = c.alertTimeout
-		environment  = c.environment
 	)
 
 	if alertTimeout == 0 {
 		alertTimeout = c.config.GetInt("alerta.timeout", 86400)
 	}
-	if environment == "" {
-		environment = c.config.GetString("alerta.environment", PRODUCTION)
-	}
 
 	payload := Alert{
 		Resource:    resource,
-		Environment: environment,
 		Timeout:     alertTimeout,
 		Group:       group,
 		Event:       event,
 		TagList:     tagList,
 		RawData:     rawData,
+		Environment: opts.Environment,
 		Service:     opts.Service,
 		Severity:    opts.Severity,
 		Text:        opts.Text,
