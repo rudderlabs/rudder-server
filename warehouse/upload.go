@@ -182,7 +182,6 @@ func (f *UploadJobFactory) NewUploadJob(dto *model.UploadJob, whManager manager.
 
 		AlertSender: alerta.NewClient(
 			config.GetString("ALERTA_URL", "https://alerta.rudderstack.com/api/"),
-			alerta.WithTeam(warehouseutils.WAREHOUSE),
 		),
 	}
 }
@@ -893,9 +892,6 @@ func (job *UploadJobT) alterColumnsToWarehouse(tName string, columnsMap map[stri
 				Severity:    alerta.SeverityCritical,
 				Priority:    alerta.PriorityP1,
 				Environment: alerta.PROXYMODE,
-				Service: alerta.Service{
-					"upload_alter_columns",
-				},
 				Tags: alerta.Tags{
 					"destID":      job.upload.DestinationID,
 					"destType":    job.upload.DestinationType,

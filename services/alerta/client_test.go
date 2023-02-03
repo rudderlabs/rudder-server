@@ -18,13 +18,11 @@ import (
 
 func TestSendFeatures(t *testing.T) {
 	var (
-		testTeam         = "test-team"
 		testResource     = "test-resource"
 		testText         = "test-text"
 		testNamespace    = "test-namespace"
 		testAlertTimeout = 10
-		testEnvironment  = "DEVELOPMENT"
-		testService      = alerta.Service{"test-service"}
+		testEnvironment  = alerta.DEVELOPMENT
 		testSeverity     = alerta.SeverityOk
 		testPriority     = alerta.PriorityP3
 		testTags         = alerta.Tags{
@@ -33,13 +31,12 @@ func TestSendFeatures(t *testing.T) {
 		}
 	)
 
-	c := config.New()
-
 	alertaClient := func(s *httptest.Server, o ...alerta.OptFn) alerta.AlertSender {
+		c := config.New()
+
 		var op []alerta.OptFn
 		op = append(op, o...)
 		op = append(op, alerta.WithHTTPClient(s.Client()))
-		op = append(op, alerta.WithTeam(testTeam))
 		op = append(op, alerta.WithKubeNamespace(testNamespace))
 		op = append(op, alerta.WithAlertTimeout(testAlertTimeout))
 		op = append(op, alerta.WithConfig(c))
@@ -69,16 +66,12 @@ func TestSendFeatures(t *testing.T) {
 			require.Equal(t, a.Resource, testResource)
 			require.Equal(t, a.Environment, testEnvironment)
 			require.Equal(t, a.Severity, testSeverity)
-			require.Equal(t, a.Service, testService)
 			require.Equal(t, a.Timeout, testAlertTimeout)
 			require.Equal(t, a.Text, testText)
 
 			require.Subset(t, a.TagList, []string{
 				fmt.Sprintf("namespace=%s", testNamespace),
-				fmt.Sprintf("notificationServiceMode=%s", testEnvironment),
 				fmt.Sprintf("priority=%s", testPriority),
-				fmt.Sprintf("team=%s", testTeam),
-				"sendToNotificationService=true",
 				"tag1=value1",
 				"tag2=value2",
 			})
@@ -97,7 +90,6 @@ func TestSendFeatures(t *testing.T) {
 			alerta.SendAlertOpts{
 				Severity:    testSeverity,
 				Priority:    testPriority,
-				Service:     testService,
 				Text:        testText,
 				Tags:        testTags,
 				Environment: testEnvironment,
@@ -126,7 +118,6 @@ func TestSendFeatures(t *testing.T) {
 			alerta.SendAlertOpts{
 				Severity:    testSeverity,
 				Priority:    testPriority,
-				Service:     testService,
 				Text:        testText,
 				Tags:        testTags,
 				Environment: testEnvironment,
@@ -158,7 +149,6 @@ func TestSendFeatures(t *testing.T) {
 			alerta.SendAlertOpts{
 				Severity:    testSeverity,
 				Priority:    testPriority,
-				Service:     testService,
 				Text:        testText,
 				Tags:        testTags,
 				Environment: testEnvironment,
@@ -193,7 +183,6 @@ func TestSendFeatures(t *testing.T) {
 			alerta.SendAlertOpts{
 				Severity:    testSeverity,
 				Priority:    testPriority,
-				Service:     testService,
 				Text:        testText,
 				Tags:        testTags,
 				Environment: testEnvironment,
@@ -227,7 +216,6 @@ func TestSendFeatures(t *testing.T) {
 			alerta.SendAlertOpts{
 				Severity:    testSeverity,
 				Priority:    testPriority,
-				Service:     testService,
 				Text:        testText,
 				Tags:        testTags,
 				Environment: testEnvironment,
@@ -235,5 +223,35 @@ func TestSendFeatures(t *testing.T) {
 		)
 
 		require.Error(t, err, "deadline exceeded ")
+	})
+
+	t.Run("noop", func(t *testing.T) {
+		t.Parallel()
+
+		ctx := context.Background()
+
+		c := config.New()
+		c.Set("alerta.enabled", false)
+
+		s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusInternalServerError)
+		}))
+		defer s.Close()
+
+		err := alerta.NewClient(
+			s.URL,
+			[]alerta.OptFn{alerta.WithConfig(c)}...,
+		).SendAlert(
+			ctx,
+			testResource,
+			alerta.SendAlertOpts{
+				Severity:    testSeverity,
+				Priority:    testPriority,
+				Text:        testText,
+				Tags:        testTags,
+				Environment: testEnvironment,
+			},
+		)
+		require.NoError(t, err)
 	})
 }
