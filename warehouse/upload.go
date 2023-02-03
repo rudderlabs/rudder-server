@@ -56,7 +56,8 @@ const (
 )
 
 const (
-	CloudSourceCateogry = "cloud"
+	CloudSourceCategory          = "cloud"
+	SingerProtocolSourceCategory = "singer-protocol"
 )
 
 var stateTransitions map[string]*uploadStateT
@@ -2260,7 +2261,8 @@ func (job *UploadJobT) GetSingleLoadFile(tableName string) (warehouseutils.LoadF
 }
 
 func (job *UploadJobT) ShouldOnDedupUseNewRecord() bool {
-	return job.upload.SourceCategory == CloudSourceCateogry
+	category := job.upload.SourceCategory
+	return category == SingerProtocolSourceCategory || category == CloudSourceCategory
 }
 
 func (job *UploadJobT) UseRudderStorage() bool {
