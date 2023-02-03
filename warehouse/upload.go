@@ -895,7 +895,6 @@ func (job *UploadJobT) alterColumnsToWarehouse(tName string, columnsMap map[stri
 				Tags: alerta.Tags{
 					"destID":      job.upload.DestinationID,
 					"destType":    job.upload.DestinationType,
-					"query":       query,
 					"workspaceID": job.upload.WorkspaceID,
 					"sourceID":    job.upload.SourceID,
 				},
