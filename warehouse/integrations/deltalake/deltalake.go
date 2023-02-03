@@ -495,17 +495,17 @@ func (dl *Deltalake) sortedColumnNames(tableSchemaInUpload warehouseutils.TableS
 
 // credentialsStr return authentication for AWS STS and SSE-C encryption
 // STS authentication is only supported with S3A client.
-func (dl *Deltalake) credentialsStr() (auth string, err error) {
+func (dl *Deltalake) credentialsStr() (string, error) {
 	if dl.ObjectStorage == warehouseutils.S3 {
-		useSTSTokens := warehouseutils.GetConfigValueBoolString(UseSTSTokens, dl.Warehouse)
-		if useSTSTokens == "true" {
+		canUseRudderStorage := misc.IsConfiguredToUseRudderObjectStorage(dl.Warehouse.Destination.Config)
+		canUseSTSTokens := warehouseutils.GetConfigValueBoolString(UseSTSTokens, dl.Warehouse) == "true"
+		if canUseRudderStorage || canUseSTSTokens {
 			tempAccessKeyId, tempSecretAccessKey, token, err := warehouseutils.GetTemporaryS3Cred(&dl.Warehouse.Destination)
 			if err != nil {
-				return "", err
+				return "", fmt.Errorf("temporary s3 credentials: %w", err)
 			}
 			auth := fmt.Sprintf(`CREDENTIALS ( 'awsKeyId' = '%s', 'awsSecretKey' = '%s', 'awsSessionToken' = '%s' )`, tempAccessKeyId, tempSecretAccessKey, token)
 			return auth, nil
-
 		}
 	}
 	return "", nil
