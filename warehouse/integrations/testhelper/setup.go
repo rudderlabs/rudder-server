@@ -570,13 +570,17 @@ func verifyAsyncJob(t testing.TB, wareHouseTest *WareHouseTest) {
 	)
 
 	sqlStatement := `
-	SELECT status, workspace_id
-	FROM wh_async_jobs 
-	WHERE source_id=$1
-	AND destination_id=$2
-	AND workspace_id=$3
-	AND metadata->>'job_run_id'=$4 
-	AND metadata->>'task_run_id'=$5; 
+		SELECT 
+			status, 
+			workspace_id
+		FROM 
+			wh_async_jobs 
+		WHERE 
+			source_id=$1 AND
+			destination_id=$2 AND
+			workspace_id=$3 AND
+			metadata->>'job_run_id'=$4 AND
+			metadata->>'task_run_id'=$5; 
 	`
 	var actualStatus string
 	var actualWorkspaceID string
