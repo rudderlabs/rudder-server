@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.5.2](https://github.com/rudderlabs/rudder-server/compare/v1.5.1...v1.5.2) (2023-02-02)
+
+
+### Bug Fixes
+
+* runtime error: slice bounds out of range [:-1] ([#2932](https://github.com/rudderlabs/rudder-server/issues/2932)) ([07dd59e](https://github.com/rudderlabs/rudder-server/commit/07dd59e1769578eb6fc2cc8f72015819b3f3e705))
+
+## [1.5.1](https://github.com/rudderlabs/rudder-server/compare/v1.5.0...v1.5.1) (2023-02-01)
+
+
+### Bug Fixes
+
+* adding throttling stats in router ([#2923](https://github.com/rudderlabs/rudder-server/issues/2923)) ([6de8862](https://github.com/rudderlabs/rudder-server/commit/6de88627060376dd7544f027a8f46c98fcfe8ef3))
+
 ## [1.5.0](https://github.com/rudderlabs/rudder-server/compare/v1.4.5...v1.5.0) (2023-01-24)
 
 
