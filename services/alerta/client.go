@@ -67,10 +67,11 @@ const (
 )
 
 var (
-	defaultTimeout    = 30 * time.Second
-	defaultMaxRetries = 3
-	defaultPriority   = PriorityP1
-	defaultSeverity   = SeverityCritical
+	defaultTimeout     = 30 * time.Second
+	defaultMaxRetries  = 3
+	defaultPriority    = PriorityP1
+	defaultSeverity    = SeverityCritical
+	defaultEnvironment = DEVELOPMENT
 )
 
 type AlertSender interface {
@@ -178,7 +179,7 @@ func (c *Client) defaultTags(opts *SendAlertOpts) Tags {
 }
 
 func (c *Client) isEnabled() bool {
-	return c.config.GetBool("alerta.enabled", true)
+	return c.config.GetBool("ALERTA_ENABLED", true)
 }
 
 func (c *Client) setDefaults(resource string, opts *SendAlertOpts) {
@@ -192,7 +193,7 @@ func (c *Client) setDefaults(resource string, opts *SendAlertOpts) {
 		opts.Text = fmt.Sprintf("%s is %s", resource, opts.Severity)
 	}
 	if opts.Environment == "" {
-		opts.Environment = Environment(c.config.GetString("alerta.environment", string(PRODUCTION)))
+		opts.Environment = defaultEnvironment
 	}
 }
 
@@ -244,6 +245,7 @@ func (c *Client) SendAlert(ctx context.Context, resource string, opts SendAlertO
 		}
 
 		req.Header.Set("Content-Type", "application/json; charset=utf-8")
+		req.Header.Set("Authorization", c.config.GetString("ALERTA_AUTH_TOKEN", ""))
 
 		resp, err := c.client.Do(req)
 		if err != nil {

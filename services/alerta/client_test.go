@@ -19,6 +19,7 @@ import (
 func TestSendFeatures(t *testing.T) {
 	var (
 		testResource     = "test-resource"
+		testToken        = "test-token"
 		testText         = "test-text"
 		testNamespace    = "test-namespace"
 		testAlertTimeout = 10
@@ -33,6 +34,7 @@ func TestSendFeatures(t *testing.T) {
 
 	alertaClient := func(s *httptest.Server, o ...alerta.OptFn) alerta.AlertSender {
 		c := config.New()
+		c.Set("ALERTA_AUTH_TOKEN", testToken)
 
 		var op []alerta.OptFn
 		op = append(op, o...)
@@ -51,6 +53,7 @@ func TestSendFeatures(t *testing.T) {
 		t.Parallel()
 
 		s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			require.Equal(t, testToken, r.Header.Get("Authorization"))
 			require.Equal(t, "application/json; charset=utf-8", r.Header.Get("Content-Type"))
 			require.Equal(t, http.MethodPost, r.Method)
 			require.Equal(t, "/alert", r.URL.Path)
@@ -231,7 +234,8 @@ func TestSendFeatures(t *testing.T) {
 		ctx := context.Background()
 
 		c := config.New()
-		c.Set("alerta.enabled", false)
+		c.Set("ALERTA_ENABLED", false)
+		c.Set("ALERTA_AUTH_TOKEN", testToken)
 
 		s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusInternalServerError)
