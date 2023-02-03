@@ -98,6 +98,7 @@ var (
 	gwAllowPartialWriteWithErrors                                                     bool
 	pkgLogger                                                                         logger.Logger
 	Diagnostics                                                                       diagnostics.DiagnosticsI
+	semverRegexp                                                                      *regexp.Regexp = regexp.MustCompile(`^v?([0-9]+)(\.[0-9]+)?(\.[0-9]+)?(-([0-9A-Za-z\-]+(\.[0-9A-Za-z\-]+)*))?(\+([0-9A-Za-z\-]+(\.[0-9A-Za-z\-]+)*))?$`)
 )
 
 // CustomVal is used as a key in the jobsDB customval column
@@ -560,15 +561,19 @@ func (gateway *HandleT) getJobDataFromRequest(req *webRequestT) (jobData *jobFro
 		}
 	}
 
-	// set anonymousId if not set in payload
 	var (
-		out                               []map[string]interface{}
-		builtUserID                       string
-		sourcesJobRunID, sourcesTaskRunID string
-		sdkName, sdkVersion               string
-		containsAudienceList              bool
+		// map to hold modified/filtered events of the batch
+		out []map[string]interface{}
+
+		// values retrieved from first event in batch
+		firstUserID                                 string
+		firstSourcesJobRunID, firstSourcesTaskRunID string
+
+		// facts about the batch populated as we iterate over events
+		containsAudienceList, suppressed bool
 	)
 
+	isUserSuppressed := gateway.memoizedIsUserSuppressed()
 	for idx, v := range eventsBatch {
 		toSet, ok := v.Value().(map[string]interface{})
 		if !ok {
@@ -584,36 +589,44 @@ func (gateway *HandleT) getJobDataFromRequest(req *webRequestT) (jobData *jobFro
 		}
 
 		if idx == 0 {
-			if gateway.isUserSuppressed(workspaceId, userIDFromReq, sourceID) {
-				err = errRequestSuppressed
-				return
-			}
-			builtUserID = buildUserID(userIDHeader, anonIDFromReq, userIDFromReq)
-			sourcesJobRunID, _ = misc.MapLookup(
+			firstUserID = buildUserID(userIDHeader, anonIDFromReq, userIDFromReq)
+			firstSourcesJobRunID, _ = misc.MapLookup(
 				toSet,
 				"context",
 				"sources",
 				"job_run_id",
 			).(string)
-			sourcesTaskRunID, _ = misc.MapLookup(
+			firstSourcesTaskRunID, _ = misc.MapLookup(
 				toSet,
 				"context",
 				"sources",
 				"task_run_id",
 			).(string)
-			sdkName, _ = misc.MapLookup(
+
+			// calculate version
+			firstSDKName, _ := misc.MapLookup(
 				toSet,
 				"context",
 				"library",
 				"name",
 			).(string)
-			sdkVersion, _ = misc.MapLookup(
+			firstSDKVersion, _ := misc.MapLookup(
 				toSet,
 				"context",
 				"library",
 				"version",
 			).(string)
-			jobData.version = sdkName + "/" + sdkVersion
+			if firstSDKVersion != "" && !semverRegexp.Match([]byte(firstSDKVersion)) {
+				firstSDKVersion = "invalid"
+			}
+			if firstSDKName != "" || firstSDKVersion != "" {
+				jobData.version = firstSDKName + "/" + firstSDKVersion
+			}
+		}
+
+		if isUserSuppressed(workspaceId, userIDFromReq, sourceID) {
+			suppressed = true
+			continue
 		}
 
 		// hashing combination of userIDFromReq + anonIDFromReq, using colon as a delimiter
@@ -631,7 +644,13 @@ func (gateway *HandleT) getJobDataFromRequest(req *webRequestT) (jobData *jobFro
 		).(string); eventTypeFromReq == "audiencelist" {
 			containsAudienceList = true
 		}
+
 		out = append(out, toSet)
+	}
+
+	if len(out) == 0 && suppressed {
+		err = errRequestSuppressed
+		return
 	}
 
 	if len(body) > maxReqSize && !containsAudienceList {
@@ -648,8 +667,8 @@ func (gateway *HandleT) getJobDataFromRequest(req *webRequestT) (jobData *jobFro
 
 	params := map[string]interface{}{
 		"source_id":          sourceID,
-		"source_job_run_id":  sourcesJobRunID,
-		"source_task_run_id": sourcesTaskRunID,
+		"source_job_run_id":  firstSourcesJobRunID,
+		"source_task_run_id": firstSourcesTaskRunID,
 	}
 	marshalledParams, err := json.Marshal(params)
 	if err != nil {
@@ -664,7 +683,7 @@ func (gateway *HandleT) getJobDataFromRequest(req *webRequestT) (jobData *jobFro
 	err = nil
 	job := &jobsdb.JobT{
 		UUID:         id,
-		UserID:       builtUserID,
+		UserID:       firstUserID,
 		Parameters:   marshalledParams,
 		CustomVal:    CustomVal,
 		EventPayload: body,
@@ -687,6 +706,20 @@ func buildUserID(userIDHeader, anonIDFromReq, userIDFromReq string) string {
 		return userIDHeader + DELIMITER + anonIDFromReq + DELIMITER + userIDFromReq
 	}
 	return userIDHeader + DELIMITER + userIDFromReq + DELIMITER + userIDFromReq
+}
+
+// memoizedIsUserSuppressed is a memoized version of isUserSuppressed
+func (gateway *HandleT) memoizedIsUserSuppressed() func(workspaceID, userID, sourceID string) bool {
+	cache := map[string]bool{}
+	return func(workspaceID, userID, sourceID string) bool {
+		key := workspaceID + ":" + userID + ":" + sourceID
+		if val, ok := cache[key]; ok {
+			return val
+		}
+		val := gateway.isUserSuppressed(workspaceID, userID, sourceID)
+		cache[key] = val
+		return val
+	}
 }
 
 func (gateway *HandleT) isUserSuppressed(workspaceID, userID, sourceID string) bool {
