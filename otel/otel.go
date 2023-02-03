@@ -17,6 +17,7 @@ import (
 	"go.opentelemetry.io/otel/sdk/resource"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	semconv "go.opentelemetry.io/otel/semconv/v1.12.0"
+	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/backoff"
 )
@@ -33,12 +34,13 @@ var DefaultConnectParams = grpc.ConnectParams{
 }
 
 type Manager struct {
-	conn *grpc.ClientConn
+	tracesConn  *grpc.ClientConn
+	metricsConn *grpc.ClientConn
 }
 
 // Setup simplifies the creation of tracer and meter providers with GRPC
 func (m *Manager) Setup(
-	ctx context.Context, res *resource.Resource, target string, opts ...Option,
+	ctx context.Context, res *resource.Resource, opts ...Option,
 ) (
 	tp *sdktrace.TracerProvider,
 	mp *sdkmetric.MeterProvider,
@@ -56,6 +58,7 @@ func (m *Manager) Setup(
 		return nil, nil, fmt.Errorf("no trace provider or meter provider to initialize")
 	}
 
+	c.dialOpts = append(c.dialOpts, grpc.WithBlock(), grpc.WithReturnConnectionError())
 	if c.logger != nil {
 		c.dialOpts = append(c.dialOpts, grpc.WithContextDialer(func(ctx context.Context, a string) (net.Conn, error) {
 			network := "tcp"
@@ -64,16 +67,15 @@ func (m *Manager) Setup(
 		}))
 	}
 
-	m.conn, err = grpc.DialContext(ctx, target, append(c.dialOpts,
-		grpc.WithBlock(),
-		grpc.WithReturnConnectionError(),
-	)...)
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to create gRPC connection to collector: %w", err)
-	}
-
 	if c.tracerProviderConfig.enabled {
-		traceExporter, err := otlptracegrpc.New(ctx, otlptracegrpc.WithGRPCConn(m.conn))
+		m.tracesConn, err = grpc.DialContext(ctx, c.tracesEndpoint, c.dialOpts...)
+		if err != nil {
+			return nil, nil, fmt.Errorf(
+				"failed to create gRPC connection to traces backend on %q: %w", c.tracesEndpoint, err,
+			)
+		}
+
+		traceExporter, err := otlptracegrpc.New(ctx, otlptracegrpc.WithGRPCConn(m.tracesConn))
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to create trace exporter: %w", err)
 		}
@@ -91,7 +93,14 @@ func (m *Manager) Setup(
 	}
 
 	if c.meterProviderConfig.enabled {
-		exp, err := otlpmetricgrpc.New(ctx, otlpmetricgrpc.WithGRPCConn(m.conn))
+		m.metricsConn, err = grpc.DialContext(ctx, c.metricsEndpoint, c.dialOpts...)
+		if err != nil {
+			return nil, nil, fmt.Errorf(
+				"failed to create gRPC connection to metrics backend on %q: %w", c.metricsEndpoint, err,
+			)
+		}
+
+		exp, err := otlpmetricgrpc.New(ctx, otlpmetricgrpc.WithGRPCConn(m.metricsConn))
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to create metric exporter: %w", err)
 		}
@@ -128,21 +137,31 @@ func (m *Manager) Setup(
 }
 
 // Shutdown allows you to gracefully clean up after the OTel manager (e.g. close underlying gRPC connection)
-func (m *Manager) Shutdown(ctx context.Context) (err error) {
-	if m.conn != nil {
-		done := make(chan struct{})
-		go func() {
-			err = m.conn.Close()
-			close(done)
-		}()
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-done:
-			return err
-		}
+func (m *Manager) Shutdown(ctx context.Context) error {
+	var g errgroup.Group
+	if m.tracesConn != nil {
+		g.Go(func() error {
+			return m.tracesConn.Close()
+		})
 	}
-	return ctx.Err()
+	if m.metricsConn != nil {
+		g.Go(func() error {
+			return m.metricsConn.Close()
+		})
+	}
+
+	done := make(chan error)
+	go func() {
+		done <- g.Wait()
+		close(done)
+	}()
+
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case err := <-done:
+		return err
+	}
 }
 
 // NewResource allows the creation of an OpenTelemetry resource
@@ -167,7 +186,9 @@ type config struct {
 	dialOpts          []grpc.DialOption
 	grpcConnectParams *grpc.ConnectParams
 
+	tracesEndpoint       string
 	tracerProviderConfig tracerProviderConfig
+	metricsEndpoint      string
 	meterProviderConfig  meterProviderConfig
 
 	textMapPropagator propagation.TextMapPropagator

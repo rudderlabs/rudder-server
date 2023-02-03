@@ -70,14 +70,15 @@ func TestCollector(t *testing.T) {
 	}, 5*time.Second, 100*time.Millisecond, "Collector was not ready on health port")
 
 	ctx := context.Background()
+	endpoint := fmt.Sprintf("localhost:%d", grpcPort)
 	res, err := NewResource(t.Name(), "my-instance-id", "1.0.0")
 	require.NoError(t, err)
 	var om Manager
 	tp, mp, err := om.Setup(ctx, res,
-		fmt.Sprintf("localhost:%d", grpcPort), WithInsecureGRPC(),
+		WithInsecureGRPC(),
 		WithLogger(testLogger{t}),
-		WithTracerProvider(),
-		WithMeterProvider(
+		WithTracerProvider(endpoint),
+		WithMeterProvider(endpoint,
 			WithMeterProviderExportsInterval(100*time.Millisecond),
 			WithHistogramBucketBoundaries("baz", "some-test", []float64{10, 20, 30}),
 		),
@@ -193,15 +194,16 @@ func TestCollectorGlobals(t *testing.T) {
 	})
 
 	var (
-		om  Manager
-		ctx = context.Background()
+		om       Manager
+		ctx      = context.Background()
+		endpoint = fmt.Sprintf("localhost:%d", grpcPort)
 	)
 	res, err := NewResource(t.Name(), "my-instance-id", "1.0.0")
 	require.NoError(t, err)
 	tp, mp, err := om.Setup(ctx, res,
-		fmt.Sprintf("localhost:%d", grpcPort), WithInsecureGRPC(),
-		WithTracerProvider(WithGlobalTracerProvider()),
-		WithMeterProvider(WithGlobalMeterProvider()),
+		WithInsecureGRPC(),
+		WithTracerProvider(endpoint, WithGlobalTracerProvider()),
+		WithMeterProvider(endpoint, WithGlobalMeterProvider()),
 	)
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, om.Shutdown(context.Background())) })

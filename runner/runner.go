@@ -141,26 +141,12 @@ func (r *Runner) Run(ctx context.Context, args []string) int {
 	r.application.Setup()
 
 	// START - OpenTelemetry setup
-	otelEndpoint := config.GetString("OpenTelemetry.Endpoint", "")
-	if otelEndpoint == "" {
-		r.logger.Warnf("OpenTelemetry endpoint not provided")
+	otelTracesEndpoint := config.GetString("OpenTelemetry.Traces.Endpoint", "")
+	otelMetricsEndpoint := config.GetString("OpenTelemetry.Metrics.Endpoint", "")
+	if otelTracesEndpoint == "" && otelMetricsEndpoint == "" {
+		r.logger.Warnf("No OpenTelemetry endpoints provided")
 	} else {
-		var (
-			otelManager          otel.Manager
-			meterProviderOptions = []otel.MeterProviderOption{
-				otel.WithGlobalMeterProvider(),
-				otel.WithMeterProviderExportsInterval(
-					config.GetDuration("OpenTelemetry.MetricsExportInterval", 5, time.Second),
-				),
-			}
-		)
-		if config.GetBool("RuntimeStats.enabled", true) {
-			meterProviderOptions = append(meterProviderOptions, otel.WithRuntimeStats(
-				time.Duration(config.GetInt64("RuntimeStats.statsCollectionInterval", 10))*time.Second),
-			)
-		}
 		instanceID := config.GetString("INSTANCE_ID", "")
-		r.logger.Infof("Creating OpenTelemetry resource with: %q, %q, %q", r.appType, instanceID, r.releaseInfo.Version)
 		res, err := otel.NewResource(r.appType, instanceID, r.releaseInfo.Version,
 			attribute.String("instanceName", instanceID),
 			attribute.String("namespace", config.GetNamespaceIdentifier()),
@@ -169,12 +155,30 @@ func (r *Runner) Run(ctx context.Context, args []string) int {
 			r.logger.Errorf("OpenTelemetry resource creation failed: %v", err)
 			return 1
 		}
-		_, _, err = otelManager.Setup(ctx, res, otelEndpoint,
-			otel.WithInsecureGRPC(),
-			otel.WithMeterProvider(meterProviderOptions...),
-			otel.WithLogger(r.logger.Child("otel")),
+
+		var (
+			otelManager otel.Manager
+			otelOpts    = []otel.Option{otel.WithInsecureGRPC(), otel.WithLogger(r.logger.Child("otel"))}
 		)
-		if err != nil {
+		if otelTracesEndpoint != "" {
+			otelOpts = append(otelOpts, otel.WithTracerProvider(otelTracesEndpoint, otel.WithGlobalTracerProvider()))
+		}
+		if otelMetricsEndpoint != "" {
+			meterProviderOptions := []otel.MeterProviderOption{
+				otel.WithGlobalMeterProvider(),
+				otel.WithMeterProviderExportsInterval(
+					config.GetDuration("OpenTelemetry.Metrics.ExportInterval", 5, time.Second),
+				),
+			}
+			if config.GetBool("RuntimeStats.enabled", true) {
+				meterProviderOptions = append(meterProviderOptions, otel.WithRuntimeStats(
+					time.Duration(config.GetInt64("RuntimeStats.statsCollectionInterval", 10))*time.Second),
+				)
+			}
+			otelOpts = append(otelOpts, otel.WithMeterProvider(otelMetricsEndpoint, meterProviderOptions...))
+		}
+
+		if _, _, err = otelManager.Setup(ctx, res, otelOpts...); err != nil {
 			r.logger.Errorf("OpenTelemetry setup failed: %v", err)
 			return 1
 		}

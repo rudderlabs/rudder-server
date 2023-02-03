@@ -52,8 +52,9 @@ func WithTextMapPropagator(tmp propagation.TextMapPropagator) Option {
 }
 
 // WithTracerProvider allows to set the tracer provider and specify if it should be the global one
-func WithTracerProvider(opts ...TracerProviderOption) Option {
+func WithTracerProvider(endpoint string, opts ...TracerProviderOption) Option {
 	return func(c *config) {
+		c.tracesEndpoint = endpoint
 		c.tracerProviderConfig.enabled = true
 		for _, opt := range opts {
 			opt(&c.tracerProviderConfig)
@@ -69,8 +70,9 @@ func WithGlobalTracerProvider() TracerProviderOption {
 }
 
 // WithMeterProvider allows to set the meter provider and specify if it should be the global one plus other options.
-func WithMeterProvider(opts ...MeterProviderOption) Option {
+func WithMeterProvider(endpoint string, opts ...MeterProviderOption) Option {
 	return func(c *config) {
+		c.metricsEndpoint = endpoint
 		c.meterProviderConfig.enabled = true
 		for _, opt := range opts {
 			opt(&c.meterProviderConfig)
