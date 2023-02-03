@@ -119,7 +119,7 @@ Router:
   MARKETO:
     noOfWorkers: 4
   throttler:
-    algorithm: gorate
+    algorithm: gcra
 #    redis:
 #      addr: localhost:6379
 #      username: ""
