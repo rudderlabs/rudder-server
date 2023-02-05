@@ -6,8 +6,11 @@ import (
 	"errors"
 	"fmt"
 
+	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	proto "github.com/rudderlabs/rudder-server/proto/warehouse"
 	"github.com/rudderlabs/rudder-server/warehouse/client/controlplane"
+	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
+	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 	"github.com/rudderlabs/rudder-server/warehouse/validations"
 	"google.golang.org/genproto/googleapis/rpc/code"
 	"google.golang.org/grpc/codes"
@@ -94,12 +97,49 @@ func (*warehouseGRPC) TriggerWHUpload(_ context.Context, request *proto.WHUpload
 	return res, err
 }
 
-func (grpc *warehouseGRPC) Validate(_ context.Context, req *proto.WHValidationRequest) (*proto.WHValidationResponse, error) {
-	handleT := validations.CTHandleT{
-		EnableTunnelling: grpc.EnableTunnelling,
-		CPClient:         grpc.CPClient,
+func (grpc *warehouseGRPC) Validate(ctx context.Context, req *proto.WHValidationRequest) (*proto.WHValidationResponse, error) {
+	var (
+		err      error
+		resModel struct {
+			Destination backendconfig.DestinationT `json:"destination"`
+		}
+	)
+
+	err = json.Unmarshal(json.RawMessage(req.Body), &resModel)
+	if err != nil {
+		return &proto.WHValidationResponse{}, fmt.Errorf("unmarshal request body: %w", err)
 	}
-	return handleT.Validating(req)
+
+	destination := resModel.Destination
+	if len(destination.Config) == 0 {
+		return &proto.WHValidationResponse{}, errors.New("destination config is empty")
+	}
+
+	// adding ssh tunnelling info, given we have
+	// useSSH enabled from upstream
+	if grpc.EnableTunnelling {
+		if warehouseutils.ReadAsBool("useSSH", destination.Config) {
+			keys, err := grpc.CPClient.GetDestinationSSHKeys(ctx, destination.ID)
+			if err != nil {
+				return &proto.WHValidationResponse{}, fmt.Errorf("fetching destination ssh keys: %w", err)
+			}
+			destination.Config["sshPrivateKey"] = keys.PrivateKey
+		}
+	}
+
+	res, err := validations.Validate(&model.ValidationRequest{
+		Path:        req.Path,
+		Step:        req.Step,
+		Destination: &destination,
+	})
+	if err != nil {
+		return &proto.WHValidationResponse{}, fmt.Errorf("validate: %w", err)
+	}
+
+	return &proto.WHValidationResponse{
+		Error: res.Error,
+		Data:  res.Data,
+	}, nil
 }
 
 func (*warehouseGRPC) RetryWHUploads(ctx context.Context, req *proto.RetryWHUploadsRequest) (response *proto.RetryWHUploadsResponse, err error) {

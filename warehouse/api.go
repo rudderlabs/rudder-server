@@ -827,10 +827,8 @@ func validateObjectStorage(ctx context.Context, request *ObjectStorageValidation
 		return fmt.Errorf("unable to create file manager: \n%s", err.Error())
 	}
 
-	req := validations.DestinationValidationRequest{
-		Destination: backendconfig.DestinationT{
-			DestinationDefinition: backendconfig.DestinationDefinitionT{Name: request.Type},
-		},
+	req := backendconfig.DestinationT{
+		DestinationDefinition: backendconfig.DestinationDefinitionT{Name: request.Type},
 	}
 
 	filePath, err := validations.CreateTempLoadFile(&req)
