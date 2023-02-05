@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"github.com/lib/pq"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -182,13 +183,32 @@ func (rs *HandleT) AddColumns(tableName string, columnsInfo []warehouseutils.Col
 			columnInfo.Name,
 			getRSDataType(columnInfo.Type),
 		)
-		pkgLogger.Infof("AZ: Adding column for destinationID: %s, tableName: %s with query: %v", rs.Warehouse.Destination.ID, tableName, query)
+		pkgLogger.Infof("RS: Adding column for destinationID: %s, tableName: %s with query: %v", rs.Warehouse.Destination.ID, tableName, query)
 
 		if _, err := rs.Db.Exec(query); err != nil {
+			if CheckAndIgnoreColumnAlreadyExistError(err) {
+				pkgLogger.Infof("RS: Column already exists for destinationID: %s, tableName: %s with query: %v", rs.Warehouse.Destination.ID, tableName, query)
+
+				err = nil
+				continue
+			}
+
 			return err
 		}
 	}
 	return nil
+}
+
+func CheckAndIgnoreColumnAlreadyExistError(err error) bool {
+	if err != nil {
+		if e, ok := err.(*pq.Error); ok {
+			if e.Code == "42701" {
+				return true
+			}
+		}
+		return false
+	}
+	return true
 }
 
 func (rs *HandleT) DeleteBy(tableNames []string, params warehouseutils.DeleteByParams) (err error) {
