@@ -271,9 +271,7 @@ func (os *objectStorage) Validate() error {
 func (c *connections) Validate() error {
 	defer c.manager.Cleanup()
 
-	return c.manager.TestConnection(warehouseutils.Warehouse{
-		Destination: *c.destination,
-	})
+	return c.manager.TestConnection(createDummyWarehouse(c.destination))
 }
 
 func (cs *createSchema) Validate() error {
@@ -306,9 +304,7 @@ func (cat *createAlterTable) Validate() error {
 func (fs *fetchSchema) Validate() error {
 	defer fs.manager.Cleanup()
 
-	if _, _, err := fs.manager.FetchSchema(warehouseutils.Warehouse{
-		Destination: *fs.destination,
-	}); err != nil {
+	if _, _, err := fs.manager.FetchSchema(createDummyWarehouse(fs.destination)); err != nil {
 		return fmt.Errorf("fetch schema: %w", err)
 	}
 	return nil

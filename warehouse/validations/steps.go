@@ -29,9 +29,8 @@ func StepsToValidate(dest *backendconfig.DestinationT) *model.StepsResponse {
 	case warehouseutils.GCS_DATALAKE, warehouseutils.AZURE_DATALAKE:
 		break
 	case warehouseutils.S3_DATALAKE:
-		if canUseGlue := schemarepository.UseGlue(&warehouseutils.Warehouse{
-			Destination: *dest,
-		}); !canUseGlue {
+		wh := createDummyWarehouse(dest)
+		if canUseGlue := schemarepository.UseGlue(&wh); !canUseGlue {
 			break
 		}
 

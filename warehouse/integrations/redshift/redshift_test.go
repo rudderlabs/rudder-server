@@ -1,9 +1,12 @@
 package redshift_test
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"testing"
+
+	"github.com/lib/pq"
 
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/testhelper"
 
@@ -177,4 +180,39 @@ func TestConfigurationValidationRedshift(t *testing.T) {
 		RevisionID: "29HgOWobrn0RYZLpaSwPIbN2987",
 	}
 	testhelper.VerifyConfigurationTest(t, destination)
+}
+
+func TestCheckAndIgnoreColumnAlreadyExistError(t *testing.T) {
+	testCases := []struct {
+		name     string
+		err      error
+		expected bool
+	}{
+		{
+			name:     "nil error",
+			expected: true,
+		},
+		{
+			name: "column already exists error",
+			err: &pq.Error{
+				Code: "42701",
+			},
+			expected: true,
+		},
+		{
+			name:     "other error",
+			err:      errors.New("other error"),
+			expected: false,
+		},
+	}
+
+	for _, tc := range testCases {
+		tc := tc
+
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			require.Equal(t, tc.expected, redshift.CheckAndIgnoreColumnAlreadyExistError(tc.err))
+		})
+	}
 }

@@ -5,13 +5,14 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
-	"github.com/lib/pq"
 	"net/url"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/lib/pq"
 
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/services/filemanager"
@@ -188,8 +189,6 @@ func (rs *HandleT) AddColumns(tableName string, columnsInfo []warehouseutils.Col
 		if _, err := rs.Db.Exec(query); err != nil {
 			if CheckAndIgnoreColumnAlreadyExistError(err) {
 				pkgLogger.Infof("RS: Column already exists for destinationID: %s, tableName: %s with query: %v", rs.Warehouse.Destination.ID, tableName, query)
-
-				err = nil
 				continue
 			}
 

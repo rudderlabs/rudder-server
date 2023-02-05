@@ -92,7 +92,6 @@ const (
 )
 
 const (
-	CTInvalidStep        = "Invalid step"
 	CTStagingTablePrefix = "setup_test_staging"
 )
 
