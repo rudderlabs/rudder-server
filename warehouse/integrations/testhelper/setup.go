@@ -569,13 +569,13 @@ func verifyAsyncJob(t testing.TB, wareHouseTest *WareHouseTest) {
 		),
 	)
 
-	// verify async job status in wh_async_jobs table. Check all fields match the expected values.
+	// verify async job status in wh_async_jobs table. Check all fields in the database match the expected values.
 	sqlStatement := `
 		SELECT 
 			status, 
 			source_id,
 			destination_id,
-			workspace_id,
+			workspace_id
 		FROM 
 			wh_async_jobs 
 		WHERE 
