@@ -7,6 +7,6 @@ import (
 // NOOP alerta implementation that does nothing
 type NOOP struct{}
 
-func (*NOOP) SendAlert(ctx context.Context, resource string, opts SendAlertOpts) error {
+func (*NOOP) SendAlert(context.Context, string, SendAlertOpts) error {
 	return nil
 }
