@@ -152,11 +152,10 @@ func validateDestination(dest *backendconfig.DestinationT, stepToValidate string
 
 	// Iterate over all selected steps and validate
 	for _, step := range stepsToValidate {
-		validator, err = NewValidator(step.Name, dest)
-		if err != nil {
-			return &model.DestinationValidationResponse{
-				Error: fmt.Sprintf("Error creating validator: %v", err),
-			}
+		if validator, err = NewValidator(step.Name, dest); err != nil {
+			err = fmt.Errorf("creating validator: %v", err)
+			step.Error = err.Error()
+			break
 		}
 
 		if stepError := validator.Validate(); stepError != nil {
