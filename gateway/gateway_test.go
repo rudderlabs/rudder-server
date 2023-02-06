@@ -14,6 +14,8 @@ import (
 	"testing"
 	"time"
 
+	sourcedebugger "github.com/rudderlabs/rudder-server/services/debugger/source"
+
 	"github.com/golang/mock/gomock"
 	"github.com/google/uuid"
 	. "github.com/onsi/ginkgo/v2"
@@ -138,12 +140,8 @@ func (c *testContext) Setup() {
 	c.mockApp = mocksApp.NewMockApp(c.mockCtrl)
 	c.mockRateLimiter = mocksRateLimiter.NewMockRateLimiter(c.mockCtrl)
 
-	tFunc := c.asyncHelper.ExpectAndNotifyCallbackWithName("process_config")
-
 	c.mockBackendConfig.EXPECT().Subscribe(gomock.Any(), backendconfig.TopicProcessConfig).
 		DoAndReturn(func(ctx context.Context, topic backendconfig.Topic) pubsub.DataChannel {
-			tFunc()
-
 			ch := make(chan pubsub.DataEvent, 1)
 			ch <- pubsub.DataEvent{Data: map[string]backendconfig.ConfigT{WorkspaceID: sampleBackendConfig}, Topic: string(topic)}
 			// on Subscribe, emulate a backend configuration event
@@ -213,13 +211,10 @@ var _ = Describe("Gateway Enterprise", func() {
 		c.mockSuppressUserFeature.EXPECT().Setup(gomock.Any(), gomock.Any()).AnyTimes().Return(c.mockSuppressUser, nil)
 		c.mockSuppressUser.EXPECT().IsSuppressedUser(WorkspaceID, NormalUserID, SourceIDEnabled).Return(false).AnyTimes()
 		c.mockSuppressUser.EXPECT().IsSuppressedUser(WorkspaceID, SuppressedUserID, SourceIDEnabled).Return(true).AnyTimes()
-
 		// setup common environment, override in BeforeEach when required
 		SetEnableRateLimit(false)
 		SetEnableSuppressUserFeature(true)
 		SetEnableEventSchemasFeature(false)
-		// SetUserWebRequestBatchTimeout(time.Second)
-		// SetMaxDBBatchSize(1)
 	})
 
 	AfterEach(func() {
@@ -230,7 +225,7 @@ var _ = Describe("Gateway Enterprise", func() {
 		gateway = &HandleT{}
 
 		BeforeEach(func() {
-			err := gateway.Setup(context.Background(), c.mockApp, c.mockBackendConfig, c.mockJobsDB, nil, c.mockVersionHandler, rsources.NewNoOpService())
+			err := gateway.Setup(context.Background(), c.mockApp, c.mockBackendConfig, c.mockJobsDB, nil, c.mockVersionHandler, rsources.NewNoOpService(), sourcedebugger.NewNoOpService())
 			Expect(err).To(BeNil())
 			statsStore = memstats.New()
 			gateway.stats = statsStore
@@ -321,7 +316,6 @@ var _ = Describe("Gateway", func() {
 		c = &testContext{}
 		c.Setup()
 		c.initializeAppFeatures()
-
 		// setup common environment, override in BeforeEach when required
 		SetEnableRateLimit(false)
 		SetEnableEventSchemasFeature(false)
@@ -334,7 +328,7 @@ var _ = Describe("Gateway", func() {
 	Context("Initialization", func() {
 		It("should wait for backend config", func() {
 			gateway := &HandleT{}
-			err := gateway.Setup(context.Background(), c.mockApp, c.mockBackendConfig, c.mockJobsDB, nil, c.mockVersionHandler, rsources.NewNoOpService())
+			err := gateway.Setup(context.Background(), c.mockApp, c.mockBackendConfig, c.mockJobsDB, nil, c.mockVersionHandler, rsources.NewNoOpService(), sourcedebugger.NewNoOpService())
 			Expect(err).To(BeNil())
 			err = gateway.Shutdown()
 			Expect(err).To(BeNil())
@@ -349,7 +343,7 @@ var _ = Describe("Gateway", func() {
 
 		BeforeEach(func() {
 			gateway = &HandleT{}
-			err := gateway.Setup(context.Background(), c.mockApp, c.mockBackendConfig, c.mockJobsDB, nil, c.mockVersionHandler, rsources.NewNoOpService())
+			err := gateway.Setup(context.Background(), c.mockApp, c.mockBackendConfig, c.mockJobsDB, nil, c.mockVersionHandler, rsources.NewNoOpService(), sourcedebugger.NewNoOpService())
 			Expect(err).To(BeNil())
 			statsStore = memstats.New()
 			gateway.stats = statsStore
@@ -499,7 +493,7 @@ var _ = Describe("Gateway", func() {
 		BeforeEach(func() {
 			gateway = &HandleT{}
 			SetEnableRateLimit(true)
-			err := gateway.Setup(context.Background(), c.mockApp, c.mockBackendConfig, c.mockJobsDB, c.mockRateLimiter, c.mockVersionHandler, rsources.NewNoOpService())
+			err := gateway.Setup(context.Background(), c.mockApp, c.mockBackendConfig, c.mockJobsDB, c.mockRateLimiter, c.mockVersionHandler, rsources.NewNoOpService(), sourcedebugger.NewNoOpService())
 			Expect(err).To(BeNil())
 			statsStore = memstats.New()
 			gateway.stats = statsStore
@@ -590,7 +584,7 @@ var _ = Describe("Gateway", func() {
 
 		BeforeEach(func() {
 			gateway = &HandleT{}
-			err := gateway.Setup(context.Background(), c.mockApp, c.mockBackendConfig, c.mockJobsDB, nil, c.mockVersionHandler, rsources.NewNoOpService())
+			err := gateway.Setup(context.Background(), c.mockApp, c.mockBackendConfig, c.mockJobsDB, nil, c.mockVersionHandler, rsources.NewNoOpService(), sourcedebugger.NewNoOpService())
 			Expect(err).To(BeNil())
 			statsStore = memstats.New()
 			gateway.stats = statsStore
@@ -851,7 +845,7 @@ var _ = Describe("Gateway", func() {
 
 		BeforeEach(func() {
 			gateway = &HandleT{}
-			err := gateway.Setup(context.Background(), c.mockApp, c.mockBackendConfig, c.mockJobsDB, nil, c.mockVersionHandler, rsources.NewNoOpService())
+			err := gateway.Setup(context.Background(), c.mockApp, c.mockBackendConfig, c.mockJobsDB, nil, c.mockVersionHandler, rsources.NewNoOpService(), sourcedebugger.NewNoOpService())
 			Expect(err).To(BeNil())
 		})
 
@@ -883,7 +877,7 @@ var _ = Describe("Gateway", func() {
 				Expect(err).To(BeNil())
 				err = os.Setenv("RSERVER_WAREHOUSE_MODE", config.OffMode)
 				Expect(err).To(BeNil())
-				err = gateway.Setup(context.Background(), c.mockApp, c.mockBackendConfig, c.mockJobsDB, nil, c.mockVersionHandler, rsources.NewNoOpService())
+				err = gateway.Setup(context.Background(), c.mockApp, c.mockBackendConfig, c.mockJobsDB, nil, c.mockVersionHandler, rsources.NewNoOpService(), sourcedebugger.NewNoOpService())
 				Expect(err).To(BeNil())
 
 				defer func() {

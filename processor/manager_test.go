@@ -13,12 +13,17 @@ import (
 	"testing"
 	"time"
 
+	transformationdebugger "github.com/rudderlabs/rudder-server/services/debugger/transformation"
+
+	destinationdebugger "github.com/rudderlabs/rudder-server/services/debugger/destination"
+
 	"github.com/golang/mock/gomock"
 	"github.com/google/uuid"
 	. "github.com/onsi/gomega"
 	"github.com/ory/dockertest/v3"
 	"github.com/stretchr/testify/require"
 
+	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/enterprise/reporting"
 	"github.com/rudderlabs/rudder-server/jobsdb/prebackup"
 	"github.com/rudderlabs/rudder-server/services/fileuploader"
@@ -34,6 +39,7 @@ import (
 	"github.com/rudderlabs/rudder-server/services/archiver"
 	"github.com/rudderlabs/rudder-server/services/multitenant"
 	"github.com/rudderlabs/rudder-server/utils/logger"
+	"github.com/rudderlabs/rudder-server/utils/pubsub"
 )
 
 var (
@@ -126,7 +132,6 @@ func initJobsDB() {
 	jobsdb.Init2()
 	jobsdb.Init3()
 	archiver.Init()
-	Init()
 }
 
 func genJobs(customVal string, jobCount, eventsPerJob int) []*jobsdb.JobT {
@@ -145,16 +150,12 @@ func genJobs(customVal string, jobCount, eventsPerJob int) []*jobsdb.JobT {
 }
 
 func TestProcessorManager(t *testing.T) {
-	temp := isUnLocked
-	defer func() { isUnLocked = temp }()
 	initJobsDB()
 	mockCtrl := gomock.NewController(t)
 	mockBackendConfig := mocksBackendConfig.NewMockBackendConfig(mockCtrl)
 	mockTransformer := mocksTransformer.NewMockTransformer(mockCtrl)
 	mockRsourcesService := rsources.NewMockJobService(mockCtrl)
 
-	SetFeaturesRetryAttempts(0)
-	enablePipelining = false
 	RegisterTestingT(t)
 	triggerAddNewDS := make(chan time.Time)
 	maxDSSize := 10
@@ -201,7 +202,11 @@ func TestProcessorManager(t *testing.T) {
 			"batch_rt": &jobsdb.MultiTenantLegacy{HandleT: brtDB},
 		},
 	}
-	processor := New(ctx, &clearDb, gwDB, rtDB, brtDB, errDB, mtStat, &reporting.NOOP{}, transientsource.NewEmptyService(), fileuploader.NewDefaultProvider(), mockRsourcesService)
+	processor := New(ctx, &clearDb, gwDB, rtDB, brtDB, errDB, mtStat, &reporting.NOOP{}, transientsource.NewEmptyService(), fileuploader.NewDefaultProvider(), mockRsourcesService, destinationdebugger.NewNoOpService(), transformationdebugger.NewNoOpService(),
+		func(m *LifecycleManager) {
+			m.Handle.config.enablePipelining = false
+			m.Handle.config.featuresRetryMaxAttempts = 0
+		})
 
 	t.Run("jobs are already there in GW DB before processor starts", func(t *testing.T) {
 		require.NoError(t, gwDB.Start())
@@ -212,14 +217,21 @@ func TestProcessorManager(t *testing.T) {
 		defer brtDB.Stop()
 		require.NoError(t, errDB.Start())
 		defer errDB.Stop()
-		mockBackendConfig.EXPECT().Subscribe(gomock.Any(), gomock.Any()).Times(1)
+		mockBackendConfig.EXPECT().Subscribe(gomock.Any(), gomock.Any()).Times(1).DoAndReturn(
+			func(ctx context.Context, topic backendconfig.Topic) pubsub.DataChannel {
+				ch := make(chan pubsub.DataEvent, 1)
+				ch <- pubsub.DataEvent{Data: map[string]backendconfig.ConfigT{sampleWorkspaceID: sampleBackendConfig}, Topic: string(topic)}
+				close(ch)
+				return ch
+			},
+		)
 		mockBackendConfig.EXPECT().WaitForConfig(gomock.Any()).Times(1)
 		mockTransformer.EXPECT().Setup().Times(1).Do(func() {
-			processor.HandleT.transformerFeatures = json.RawMessage(defaultTransformerFeatures)
+			processor.Handle.transformerFeatures = json.RawMessage(defaultTransformerFeatures)
 		})
 		mockRsourcesService.EXPECT().IncrementStats(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), rsources.Stats{Out: 10}).Times(1)
 		processor.BackendConfig = mockBackendConfig
-		processor.HandleT.transformer = mockTransformer
+		processor.Handle.transformer = mockTransformer
 		require.NoError(t, processor.Start())
 		defer processor.Stop()
 		Eventually(func() int {
@@ -242,10 +254,18 @@ func TestProcessorManager(t *testing.T) {
 		defer brtDB.Stop()
 		require.NoError(t, errDB.Start())
 		defer errDB.Stop()
-		mockBackendConfig.EXPECT().Subscribe(gomock.Any(), gomock.Any()).Times(1)
+		mockBackendConfig.EXPECT().Subscribe(gomock.Any(), gomock.Any()).Times(1).DoAndReturn(
+			func(ctx context.Context, topic backendconfig.Topic) pubsub.DataChannel {
+				ch := make(chan pubsub.DataEvent, 1)
+				ch <- pubsub.DataEvent{Data: map[string]backendconfig.ConfigT{sampleWorkspaceID: sampleBackendConfig}, Topic: string(topic)}
+				close(ch)
+				return ch
+			},
+		)
+
 		mockBackendConfig.EXPECT().WaitForConfig(gomock.Any()).Times(1)
 		mockTransformer.EXPECT().Setup().Times(1).Do(func() {
-			processor.HandleT.transformerFeatures = json.RawMessage(defaultTransformerFeatures)
+			processor.Handle.transformerFeatures = json.RawMessage(defaultTransformerFeatures)
 		})
 		mockRsourcesService.EXPECT().IncrementStats(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), rsources.Stats{Out: 10}).Times(1)
 

@@ -5,10 +5,11 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/manager"
+
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/warehouse/client/controlplane"
-	"github.com/rudderlabs/rudder-server/warehouse/manager"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 

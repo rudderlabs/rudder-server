@@ -11,12 +11,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/stretchr/testify/require"
+	destinationdebugger "github.com/rudderlabs/rudder-server/services/debugger/destination"
 
 	"github.com/golang/mock/gomock"
 	"github.com/google/uuid"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"github.com/stretchr/testify/require"
 
 	"github.com/rudderlabs/rudder-server/admin"
 	"github.com/rudderlabs/rudder-server/config"
@@ -39,13 +40,7 @@ import (
 
 const (
 	WriteKeyEnabled           = "enabled-write-key"
-	WriteKeyDisabled          = "disabled-write-key"
-	WriteKeyInvalid           = "invalid-write-key"
-	WriteKeyEmpty             = ""
 	SourceIDEnabled           = "enabled-source"
-	SourceIDDisabled          = "disabled-source"
-	TestRemoteAddressWithPort = "test.com:80"
-	TestRemoteAddress         = "test.com"
 	S3DestinationDefinitionID = "s3id1"
 	S3DestinationID           = "did1"
 )
@@ -170,7 +165,7 @@ var _ = Describe("BatchRouter", func() {
 
 			c.mockBatchRouterJobsDB.EXPECT().GetJournalEntries(gomock.Any()).Times(1).Return(emptyJournalEntries)
 
-			batchrouter.Setup(c.mockBackendConfig, c.mockBatchRouterJobsDB, c.mockProcErrorsDB, s3DestinationDefinition.Name, nil, c.mockMultitenantI, transientsource.NewEmptyService(), rsources.NewNoOpService())
+			batchrouter.Setup(c.mockBackendConfig, c.mockBatchRouterJobsDB, c.mockProcErrorsDB, s3DestinationDefinition.Name, nil, c.mockMultitenantI, transientsource.NewEmptyService(), rsources.NewNoOpService(), destinationdebugger.NewNoOpService())
 		})
 	})
 
@@ -183,7 +178,7 @@ var _ = Describe("BatchRouter", func() {
 		It("should send failed, unprocessed jobs to s3 destination", func() {
 			batchrouter := &HandleT{}
 
-			batchrouter.Setup(c.mockBackendConfig, c.mockBatchRouterJobsDB, c.mockProcErrorsDB, s3DestinationDefinition.Name, nil, c.mockMultitenantI, transientsource.NewEmptyService(), rsources.NewNoOpService())
+			batchrouter.Setup(c.mockBackendConfig, c.mockBatchRouterJobsDB, c.mockProcErrorsDB, s3DestinationDefinition.Name, nil, c.mockMultitenantI, transientsource.NewEmptyService(), rsources.NewNoOpService(), destinationdebugger.NewNoOpService())
 			readPerDestination = false
 			batchrouter.fileManagerFactory = c.mockFileManagerFactory
 
@@ -267,35 +262,6 @@ var _ = Describe("BatchRouter", func() {
 			<-batchrouter.backendConfigInitialized
 			batchrouter.readAndProcess()
 		})
-
-		// It("should split batchJobs based on timeWindow for s3 datalake destination", func() {
-
-		// 	batchJobs := BatchJobsT{
-		// 		Jobs: []*jobsdb.JobT{
-		// 			{
-		// 				EventPayload: json.RawMessage(`{"receivedAt": "2019-10-12T07:20:50.52Z"}`),
-		// 			},
-		// 			{
-		// 				EventPayload: json.RawMessage(`{"receivedAt": "2019-10-12T07:20:59.52Z"}`),
-		// 			},
-		// 			{
-		// 				EventPayload: json.RawMessage(`{"receivedAt": "2019-10-12T07:30:50.52Z"}`),
-		// 			},
-		// 			{
-		// 				EventPayload: json.RawMessage(`{"receivedAt": "2019-10-12T07:30:59.52Z"}`),
-		// 			},
-		// 			{
-		// 				EventPayload: json.RawMessage(`{"receivedAt": "2019-10-12T08:00:01.52Z"}`),
-		// 			},
-		// 		},
-		// 	}
-
-		// 	brt := &HandleT{destType: "S3_DATALAKE"}
-		// 	splitBatchJobs := brt.splitBatchJobsOnTimeWindow(batchJobs)
-		// 	for timeWindow, batchJob := range splitBatchJobs {
-		// 		fmt.Println(timeWindow, len(batchJob.Jobs))
-		// 	}
-		// })
 	})
 })
 
@@ -327,7 +293,7 @@ func TestPostToWarehouse(t *testing.T) {
 			responseBody: "OK",
 			responseCode: http.StatusOK,
 
-			expectedPayload: `{"WorkspaceID":"test-workspace","Schema":{"tracks":{"id":"string"}},"BatchDestination":{"Source":{"ID":""},"Destination":{"ID":""}},"Location":"","FirstEventAt":"","LastEventAt":"","TotalEvents":1,"TotalBytes":200,"UseRudderStorage":false,"DestinationRevisionID":"","SourceBatchID":"","SourceTaskID":"","SourceTaskRunID":"","SourceJobID":"","SourceJobRunID":"","TimeWindow":"0001-01-01T00:00:00Z"}`,
+			expectedPayload: `{"WorkspaceID":"test-workspace","Schema":{"tracks":{"id":"string"}},"BatchDestination":{"Source":{"ID":""},"Destination":{"ID":""}},"Location":"","FirstEventAt":"","LastEventAt":"","TotalEvents":1,"TotalBytes":200,"UseRudderStorage":false,"DestinationRevisionID":"","SourceTaskRunID":"","SourceJobID":"","SourceJobRunID":"","TimeWindow":"0001-01-01T00:00:00Z"}`,
 		},
 		{
 			name: "should fail to post to warehouse",

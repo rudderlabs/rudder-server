@@ -55,7 +55,7 @@ func enhanceWithViolation(response transformer.ResponseT, trackingPlanId string,
 // The ResponseT will contain both the Events and FailedEvents
 // 1. eventsToTransform gets added to validatedEventsByWriteKey
 // 2. failedJobs gets added to validatedErrorJobs
-func (proc *HandleT) validateEvents(groupedEventsByWriteKey map[WriteKeyT][]transformer.TransformerEventT, eventsByMessageID map[string]types.SingularEventWithReceivedAt) (map[WriteKeyT][]transformer.TransformerEventT, []*types.PUReportedMetric, []*jobsdb.JobT, map[SourceIDT]bool) {
+func (proc *Handle) validateEvents(groupedEventsByWriteKey map[WriteKeyT][]transformer.TransformerEventT, eventsByMessageID map[string]types.SingularEventWithReceivedAt) (map[WriteKeyT][]transformer.TransformerEventT, []*types.PUReportedMetric, []*jobsdb.JobT, map[SourceIDT]bool) {
 	validatedEventsByWriteKey := make(map[WriteKeyT][]transformer.TransformerEventT)
 	validatedReportMetrics := make([]*types.PUReportedMetric, 0)
 	validatedErrorJobs := make([]*jobsdb.JobT, 0)
@@ -77,7 +77,7 @@ func (proc *HandleT) validateEvents(groupedEventsByWriteKey map[WriteKeyT][]tran
 		}
 
 		validationStart := time.Now()
-		response := proc.transformer.Validate(eventList, integrations.GetTrackingPlanValidationURL(), userTransformBatchSize)
+		response := proc.transformer.Validate(eventList, integrations.GetTrackingPlanValidationURL(), proc.config.userTransformBatchSize)
 		validationStat.tpValidationTime.Since(validationStart)
 
 		// If transformerInput does not match with transformerOutput then we do not consider transformerOutput
@@ -144,7 +144,7 @@ func makeCommonMetadataFromTransformerEvent(transformerEvent *transformer.Transf
 }
 
 // newValidationStat Creates a new TrackingPlanStatT instance
-func (proc *HandleT) newValidationStat(metadata *transformer.MetadataT) *TrackingPlanStatT {
+func (proc *Handle) newValidationStat(metadata *transformer.MetadataT) *TrackingPlanStatT {
 	tags := map[string]string{
 		"destination":         metadata.DestinationID,
 		"destType":            metadata.DestinationType,
