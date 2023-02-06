@@ -63,7 +63,7 @@ func NewHandle(backendConfig backendconfig.BackendConfig, opts ...Opt) (Destinat
 		log:              logger.NewLogger().Child("debugger").Child("destination"),
 	}
 	var err error
-	url := fmt.Sprintf("%s/dataplane/v2/eventUploads", h.configBackendURL)
+	url := fmt.Sprintf("%s/dataplane/v2/eventDeliveryStatus", h.configBackendURL)
 	eventUploader := NewEventDeliveryStatusUploader(h.log)
 	h.uploader = debugger.New[*DeliveryStatusT](url, eventUploader)
 	h.uploader.Start()
