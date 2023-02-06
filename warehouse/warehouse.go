@@ -574,19 +574,6 @@ func (wh *HandleT) getLatestUploadStatus(warehouse *warehouseutils.Warehouse) (i
 	return uploadID, status, priority
 }
 
-func (wh *HandleT) deleteWaitingUploadJob(jobID int64) {
-	sqlStatement := fmt.Sprintf(`
-		DELETE FROM %s WHERE id = %d AND status = '%s'`,
-		warehouseutils.WarehouseUploadsTable,
-		jobID,
-		model.Waiting,
-	)
-	_, err := wh.dbHandle.Exec(sqlStatement)
-	if err != nil {
-		wh.Logger.Errorf(`Error deleting upload job: %d in waiting state: %v`, jobID, err)
-	}
-}
-
 func (wh *HandleT) createJobs(ctx context.Context, warehouse warehouseutils.Warehouse) (err error) {
 	whManager, err := manager.New(wh.destType)
 	if err != nil {
@@ -617,7 +604,10 @@ func (wh *HandleT) createJobs(ctx context.Context, warehouse warehouseutils.Ware
 	if uploadStatus == model.Waiting {
 		// If it is present do nothing else delete it
 		if _, inProgress := wh.isUploadJobInProgress(warehouse, uploadID); !inProgress {
-			wh.deleteWaitingUploadJob(uploadID)
+			err := wh.uploadRepo.DeleteWaiting(ctx, uploadID)
+			if err != nil {
+				wh.Logger.Error(err, "uploadID", uploadID, "warehouse", warehouse.Identifier)
+			}
 			priority = uploadPriority // copy the priority from the latest upload job.
 		}
 	}
