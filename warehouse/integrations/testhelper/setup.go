@@ -575,6 +575,7 @@ func verifyAsyncJob(t testing.TB, wareHouseTest *WareHouseTest) {
 			status, 
 			source_id,
 			destination_id,
+			metadata->>'job_run_id',
 			workspace_id
 		FROM 
 			wh_async_jobs 
@@ -585,10 +586,12 @@ func verifyAsyncJob(t testing.TB, wareHouseTest *WareHouseTest) {
 			metadata->>'job_run_id'=$4 AND
 			metadata->>'task_run_id'=$5; 
 	`
+
 	var actualStatus string
 	var actualWorkspaceID string
 	var actualSourceID string
 	var actualDestinationID string
+	var actualJobRunID string
 	err = wareHouseTest.JobsDB.QueryRow(
 		sqlStatement,
 		wareHouseTest.SourceID,
@@ -596,12 +599,14 @@ func verifyAsyncJob(t testing.TB, wareHouseTest *WareHouseTest) {
 		wareHouseTest.WorkspaceID,
 		wareHouseTest.JobRunID,
 		wareHouseTest.TaskRunID,
-	).Scan(&actualStatus, &actualSourceID, &actualDestinationID, &actualWorkspaceID)
+	).Scan(&actualStatus, &actualSourceID, &actualDestinationID, &actualJobRunID, &actualWorkspaceID)
+
 	require.NoError(t, err)
 	require.Equal(t, "succeeded", actualStatus)
 	require.Equal(t, wareHouseTest.SourceID, actualSourceID)
 	require.Equal(t, wareHouseTest.DestinationID, actualDestinationID)
 	require.Equal(t, wareHouseTest.WorkspaceID, actualWorkspaceID)
+	require.Equal(t, wareHouseTest.JobRunID, actualJobRunID)
 	t.Logf("Completed verifying async job")
 }
 
