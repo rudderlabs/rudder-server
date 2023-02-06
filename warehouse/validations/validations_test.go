@@ -107,7 +107,7 @@ func TestValidate(t *testing.T) {
 			})
 			require.NoError(t, err)
 			require.Empty(t, res.Error)
-			require.JSONEq(t, res.Data, `{"success":false,"error":"Error creating validator: create manager: getting manager: provider of type invalid is not configured for WarehouseManager","steps":null}`)
+			require.JSONEq(t, res.Data, `{"success":false,"error":"creating validator: create manager: getting manager: provider of type invalid is not configured for WarehouseManager","steps":[{"id":2,"name":"Verifying Connections","success":false,"error":"creating validator: create manager: getting manager: provider of type invalid is not configured for WarehouseManager"}]}`)
 		})
 
 		t.Run("step error", func(t *testing.T) {
@@ -140,7 +140,7 @@ func TestValidate(t *testing.T) {
 			})
 			require.NoError(t, err)
 			require.Empty(t, res.Error)
-			require.JSONEq(t, res.Data, `{"success":false,"error":"Error creating validator: create manager: getting manager: provider of type invalid is not configured for WarehouseManager","steps":null}`)
+			require.JSONEq(t, res.Data, `{"success":false,"error":"creating validator: create manager: getting manager: provider of type invalid is not configured for WarehouseManager","steps":[{"id":2,"name":"Verifying Connections","success":false,"error":"creating validator: create manager: getting manager: provider of type invalid is not configured for WarehouseManager"}]}`)
 		})
 
 		t.Run("empty step", func(t *testing.T) {

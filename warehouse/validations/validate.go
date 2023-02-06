@@ -361,10 +361,11 @@ func CreateTempLoadFile(dest *backendconfig.DestinationT) (string, error) {
 		return "", fmt.Errorf("create tmp dir: %w", err)
 	}
 
-	filePath = fmt.Sprintf("%v/%v/%v.%v.%v",
+	filePath = fmt.Sprintf("%v/%v/%v.%v.%v.%v",
 		tmpDirPath,
 		connectionTestingFolder,
 		destinationType,
+		warehouseutils.RandHex(),
 		time.Now().Unix(),
 		warehouseutils.GetLoadFileFormat(destinationType),
 	)

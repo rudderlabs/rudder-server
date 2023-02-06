@@ -1,6 +1,7 @@
 package validations_test
 
 import (
+	"errors"
 	"fmt"
 	"testing"
 
@@ -195,31 +196,108 @@ func TestValidator(t *testing.T) {
 		tr := setup(t, pool)
 		pgResource, minioResource := tr.pgResource, tr.minioResource
 
-		v, err := validations.NewValidator(model.VerifyingCreateAndAlterTable, &backendconfig.DestinationT{
-			DestinationDefinition: backendconfig.DestinationDefinitionT{
-				Name: warehouseutils.POSTGRES,
-			},
-			Config: map[string]interface{}{
-				"host":            pgResource.Host,
-				"port":            pgResource.Port,
-				"database":        pgResource.Database,
-				"user":            pgResource.User,
-				"password":        pgResource.Password,
-				"sslMode":         sslmode,
-				"namespace":       namespace,
-				"bucketProvider":  provider,
-				"bucketName":      minioResource.BucketName,
-				"accessKeyID":     minioResource.AccessKey,
-				"secretAccessKey": minioResource.SecretKey,
-				"endPoint":        minioResource.Endpoint,
-			},
-		})
-		require.NoError(t, err)
+		var (
+			password                     = "test_password"
+			userWithNoPrivilege          = "test_user_with_no_privilege"
+			userWithCreateTablePrivilege = "test_user_with_create_table_privilege"
+			userWithAlterPrivilege       = "test_user_with_alter_privilege"
+		)
 
 		_, err = pgResource.DB.Exec(fmt.Sprintf("CREATE SCHEMA IF NOT EXISTS %s", namespace))
 		require.NoError(t, err)
 
-		require.NoError(t, v.Validate())
+		t.Log("Creating users with no privileges")
+		for _, user := range []string{userWithNoPrivilege, userWithCreateTablePrivilege, userWithAlterPrivilege} {
+			_, err = pgResource.DB.Exec(fmt.Sprintf("CREATE USER %s WITH PASSWORD '%s';", user, password))
+			require.NoError(t, err)
+		}
+
+		t.Log("Granting create table privilege to users")
+		for _, user := range []string{userWithCreateTablePrivilege, userWithAlterPrivilege} {
+			_, err = pgResource.DB.Exec(fmt.Sprintf("GRANT CREATE ON SCHEMA %s TO %s;", namespace, user))
+			require.NoError(t, err)
+		}
+
+		t.Log("Granting insert privilege to users")
+		for _, user := range []string{userWithAlterPrivilege} {
+			_, err = pgResource.DB.Exec(fmt.Sprintf("GRANT USAGE ON SCHEMA %s TO %s;", namespace, user))
+			require.NoError(t, err)
+		}
+
+		testCases := []struct {
+			name      string
+			config    map[string]interface{}
+			wantError error
+		}{
+			{
+				name: "no privilege",
+				config: map[string]interface{}{
+					"user":     userWithNoPrivilege,
+					"password": password,
+				},
+				wantError: errors.New("create table: pq: permission denied for schema test_namespace"),
+			},
+			{
+				name: "create table privilege",
+				config: map[string]interface{}{
+					"user":     userWithCreateTablePrivilege,
+					"password": password,
+				},
+				wantError: errors.New("alter table: pq: permission denied for schema test_namespace"),
+			},
+			{
+				name: "alter privilege",
+				config: map[string]interface{}{
+					"user":     userWithAlterPrivilege,
+					"password": password,
+				},
+			},
+			{
+				name: "all privileges",
+			},
+		}
+
+		for _, tc := range testCases {
+			tc := tc
+
+			t.Run(tc.name, func(t *testing.T) {
+				conf := map[string]interface{}{
+					"host":            pgResource.Host,
+					"port":            pgResource.Port,
+					"database":        pgResource.Database,
+					"user":            pgResource.User,
+					"password":        pgResource.Password,
+					"sslMode":         sslmode,
+					"namespace":       namespace,
+					"bucketProvider":  provider,
+					"bucketName":      minioResource.BucketName,
+					"accessKeyID":     minioResource.AccessKey,
+					"secretAccessKey": minioResource.SecretKey,
+					"endPoint":        minioResource.Endpoint,
+				}
+
+				for k, v := range tc.config {
+					conf[k] = v
+				}
+
+				v, err := validations.NewValidator(model.VerifyingCreateAndAlterTable, &backendconfig.DestinationT{
+					DestinationDefinition: backendconfig.DestinationDefinitionT{
+						Name: warehouseutils.POSTGRES,
+					},
+					Config: conf,
+				})
+				require.NoError(t, err)
+
+				if tc.wantError != nil {
+					require.EqualError(t, v.Validate(), tc.wantError.Error())
+				} else {
+					require.NoError(t, v.Validate())
+				}
+
+				_, err = pgResource.DB.Exec(fmt.Sprintf("DROP TABLE IF EXISTS %s.setup_test_staging", namespace))
+				require.NoError(t, err)
+			})
+		}
 	})
 
 	t.Run("Fetch schema", func(t *testing.T) {
@@ -264,30 +342,119 @@ func TestValidator(t *testing.T) {
 		tr := setup(t, pool)
 		pgResource, minioResource := tr.pgResource, tr.minioResource
 
-		v, err := validations.NewValidator(model.VerifyingLoadTable, &backendconfig.DestinationT{
-			DestinationDefinition: backendconfig.DestinationDefinitionT{
-				Name: warehouseutils.POSTGRES,
-			},
-			Config: map[string]interface{}{
-				"host":            pgResource.Host,
-				"port":            pgResource.Port,
-				"database":        pgResource.Database,
-				"user":            pgResource.User,
-				"password":        pgResource.Password,
-				"sslMode":         sslmode,
-				"namespace":       namespace,
-				"bucketProvider":  provider,
-				"bucketName":      minioResource.BucketName,
-				"accessKeyID":     minioResource.AccessKey,
-				"secretAccessKey": minioResource.SecretKey,
-				"endPoint":        minioResource.Endpoint,
-			},
-		})
-		require.NoError(t, err)
+		var (
+			password                     = "test_password"
+			userWithNoPrivilege          = "test_user_with_no_privilege"
+			userWithCreateTablePrivilege = "test_user_with_create_table_privilege"
+			userWithInsertPrivilege      = "test_user_with_insert_privilege"
+		)
 
 		_, err = pgResource.DB.Exec(fmt.Sprintf("CREATE SCHEMA IF NOT EXISTS %s", namespace))
 		require.NoError(t, err)
 
-		require.NoError(t, v.Validate())
+		t.Log("Creating users with no privileges")
+		for _, user := range []string{userWithNoPrivilege, userWithCreateTablePrivilege, userWithInsertPrivilege} {
+			_, err = pgResource.DB.Exec(fmt.Sprintf("CREATE USER %s WITH PASSWORD '%s';", user, password))
+			require.NoError(t, err)
+		}
+
+		t.Log("Granting create table privilege to users")
+		for _, user := range []string{userWithCreateTablePrivilege, userWithInsertPrivilege} {
+			_, err = pgResource.DB.Exec(fmt.Sprintf("GRANT CREATE ON SCHEMA %s TO %s;", namespace, user))
+			require.NoError(t, err)
+		}
+
+		t.Log("Granting insert privilege to users")
+		for _, user := range []string{userWithInsertPrivilege} {
+			_, err = pgResource.DB.Exec(fmt.Sprintf("GRANT USAGE ON SCHEMA %s TO %s;", namespace, user))
+			require.NoError(t, err)
+
+			_, err = pgResource.DB.Exec(fmt.Sprintf("GRANT INSERT ON ALL TABLES IN SCHEMA %s TO %s;", namespace, user))
+			require.NoError(t, err)
+		}
+
+		testCases := []struct {
+			name      string
+			config    map[string]interface{}
+			wantError error
+		}{
+			{
+				name: "invalid object storage",
+				config: map[string]interface{}{
+					"bucketName":      "temp-bucket",
+					"accessKeyID":     "temp-access-key",
+					"secretAccessKey": "test-secret-key",
+				},
+				wantError: errors.New("upload file: uploading file: The Access Key Id you provided does not exist in our records."),
+			},
+			{
+				name: "no privilege",
+				config: map[string]interface{}{
+					"user":     userWithNoPrivilege,
+					"password": password,
+				},
+				wantError: errors.New("create table: pq: permission denied for schema test_namespace"),
+			},
+			{
+				name: "create table privilege",
+				config: map[string]interface{}{
+					"user":     userWithCreateTablePrivilege,
+					"password": password,
+				},
+				wantError: errors.New("load test table: pq: permission denied for schema test_namespace"),
+			},
+			{
+				name: "insert privilege",
+				config: map[string]interface{}{
+					"user":     userWithInsertPrivilege,
+					"password": password,
+				},
+			},
+			{
+				name: "all privileges",
+			},
+		}
+
+		for _, tc := range testCases {
+			tc := tc
+
+			t.Run(tc.name, func(t *testing.T) {
+				conf := map[string]interface{}{
+					"host":            pgResource.Host,
+					"port":            pgResource.Port,
+					"database":        pgResource.Database,
+					"user":            pgResource.User,
+					"password":        pgResource.Password,
+					"sslMode":         sslmode,
+					"namespace":       namespace,
+					"bucketProvider":  provider,
+					"bucketName":      minioResource.BucketName,
+					"accessKeyID":     minioResource.AccessKey,
+					"secretAccessKey": minioResource.SecretKey,
+					"endPoint":        minioResource.Endpoint,
+				}
+
+				for k, v := range tc.config {
+					conf[k] = v
+				}
+
+				v, err := validations.NewValidator(model.VerifyingLoadTable, &backendconfig.DestinationT{
+					DestinationDefinition: backendconfig.DestinationDefinitionT{
+						Name: warehouseutils.POSTGRES,
+					},
+					Config: conf,
+				})
+				require.NoError(t, err)
+
+				if tc.wantError != nil {
+					require.EqualError(t, v.Validate(), tc.wantError.Error())
+				} else {
+					require.NoError(t, v.Validate())
+				}
+
+				_, err = pgResource.DB.Exec(fmt.Sprintf("DROP TABLE IF EXISTS %s.setup_test_staging", namespace))
+				require.NoError(t, err)
+			})
+		}
 	})
 }
