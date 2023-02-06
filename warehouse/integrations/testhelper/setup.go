@@ -569,10 +569,12 @@ func verifyAsyncJob(t testing.TB, wareHouseTest *WareHouseTest) {
 		),
 	)
 
+	// verify async job status in wh_async_jobs table. Check all fields match the expected values.
 	sqlStatement := `
 		SELECT 
 			status, 
 			source_id,
+			destination_id,
 			workspace_id,
 		FROM 
 			wh_async_jobs 
@@ -586,6 +588,7 @@ func verifyAsyncJob(t testing.TB, wareHouseTest *WareHouseTest) {
 	var actualStatus string
 	var actualWorkspaceID string
 	var actualSourceID string
+	var actualDestinationID string
 	err = wareHouseTest.JobsDB.QueryRow(
 		sqlStatement,
 		wareHouseTest.SourceID,
@@ -593,10 +596,11 @@ func verifyAsyncJob(t testing.TB, wareHouseTest *WareHouseTest) {
 		wareHouseTest.WorkspaceID,
 		wareHouseTest.JobRunID,
 		wareHouseTest.TaskRunID,
-	).Scan(&actualStatus, &actualSourceID, &actualWorkspaceID)
+	).Scan(&actualStatus, &actualSourceID, &actualDestinationID, &actualWorkspaceID)
 	require.NoError(t, err)
 	require.Equal(t, "succeeded", actualStatus)
 	require.Equal(t, wareHouseTest.SourceID, actualSourceID)
+	require.Equal(t, wareHouseTest.DestinationID, actualDestinationID)
 	require.Equal(t, wareHouseTest.WorkspaceID, actualWorkspaceID)
 	t.Logf("Completed verifying async job")
 }
