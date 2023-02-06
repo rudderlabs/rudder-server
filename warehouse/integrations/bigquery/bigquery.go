@@ -113,7 +113,7 @@ func (bq *HandleT) DeleteTable(tableName string) (err error) {
 	return
 }
 
-func (bq *HandleT) CreateTable(tableName string, columnMap map[string]string) (err error) {
+func (bq *HandleT) CreateTable(tableName string, columnMap map[string]string) error {
 	pkgLogger.Infof("BQ: Creating table: %s in bigquery dataset: %s in project: %s", tableName, bq.namespace, bq.projectID)
 	sampleSchema := getTableSchema(columnMap)
 	metaData := &bigquery.TableMetadata{
@@ -121,15 +121,17 @@ func (bq *HandleT) CreateTable(tableName string, columnMap map[string]string) (e
 		TimePartitioning: &bigquery.TimePartitioning{},
 	}
 	tableRef := bq.db.Dataset(bq.namespace).Table(tableName)
-	err = tableRef.Create(bq.backgroundContext, metaData)
+	err := tableRef.Create(bq.backgroundContext, metaData)
 	if !checkAndIgnoreAlreadyExistError(err) {
-		return
+		return fmt.Errorf("create table: %w", err)
 	}
 
 	if !dedupEnabled() {
-		err = bq.createTableView(tableName, columnMap)
+		if err = bq.createTableView(tableName, columnMap); err != nil {
+			return fmt.Errorf("create view: %w", err)
+		}
 	}
-	return
+	return nil
 }
 
 func (bq *HandleT) DropTable(tableName string) (err error) {
