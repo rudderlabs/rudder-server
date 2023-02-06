@@ -995,7 +995,7 @@ func SnowflakeCredentials() (credentials snowflake.SnowflakeCredentialsT, err er
 	return
 }
 
-func RedshiftCredentials() (credentials redshift.RedshiftCredentialsT, err error) {
+func RedshiftCredentials() (credentials redshift.RedshiftCredentials, err error) {
 	cred, exists := os.LookupEnv(RedshiftIntegrationTestCredentials)
 	if !exists {
 		err = fmt.Errorf("following %s does not exists while running the Redshift test", RedshiftIntegrationTestCredentials)

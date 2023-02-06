@@ -212,7 +212,7 @@ func TestLocalSchemaRepository_AlterColumn(t *testing.T) {
 			s, err := schemarepository.NewLocalSchemaRepository(warehouse, uploader)
 			require.NoError(t, err)
 
-			err = s.AlterColumn("test_table", "test_column_1", "test_type_2")
+			_, err = s.AlterColumn("test_table", "test_column_1", "test_type_2")
 			if tc.wantError != nil {
 				require.EqualError(t, err, tc.wantError.Error())
 			} else {

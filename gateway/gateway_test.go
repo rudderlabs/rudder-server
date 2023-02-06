@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -896,6 +897,50 @@ var _ = Describe("Gateway", func() {
 			Entry("failed request", "/v1/warehouse/pending-events", http.StatusBadRequest, `{"source_id": "3", "task_run_id":"4"}`),
 			Entry("request with query parameters", "/v1/warehouse/pending-events?triggerUpload=true", http.StatusOK, `{"source_id": "5", "task_run_id":"6"}`),
 		)
+	})
+
+	Context("jobDataFromRequest", func() {
+		var (
+			gateway      *HandleT
+			someWriteKey = "someWriteKey"
+			userIDHeader = "userIDHeader"
+		)
+		BeforeEach(func() {
+			gateway = &HandleT{}
+			err := gateway.Setup(context.Background(), c.mockApp, c.mockBackendConfig, c.mockJobsDB, nil, c.mockVersionHandler, rsources.NewNoOpService(), sourcedebugger.NewNoOpService())
+			Expect(err).To(BeNil())
+		})
+
+		AfterEach(func() {
+			err := gateway.Shutdown()
+			Expect(err).To(BeNil())
+		})
+
+		It("returns invalid JSON in case of invalid JSON payload", func() {
+			req := &webRequestT{
+				reqType:        "batch",
+				writeKey:       someWriteKey,
+				done:           make(chan<- string),
+				userIDHeader:   userIDHeader,
+				requestPayload: []byte(``),
+			}
+			jobData, err := gateway.getJobDataFromRequest(req)
+			Expect(errors.New(response.InvalidJSON)).To(Equal(err))
+			Expect(jobData.job).To(BeNil())
+		})
+
+		It("drops non-identifiable requests if userID and anonID are not present in the request payload", func() {
+			req := &webRequestT{
+				reqType:        "batch",
+				writeKey:       WriteKeyEnabled,
+				done:           make(chan<- string),
+				userIDHeader:   userIDHeader,
+				requestPayload: []byte(`{"batch": [{"type": "track"}]}`),
+			}
+			jobData, err := gateway.getJobDataFromRequest(req)
+			Expect(err).To(Equal(errors.New(response.NonIdentifiableRequest)))
+			Expect(jobData.job).To(BeNil())
+		})
 	})
 })
 

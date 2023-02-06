@@ -170,8 +170,7 @@ func GetDestinationURL(destType string) string {
 	if misc.Contains(warehouseutils.WarehouseDestinations, destType) {
 		whSchemaVersionQueryParam := fmt.Sprintf("whSchemaVersion=%s&whIDResolve=%v", config.GetString("Warehouse.schemaVersion", "v1"), warehouseutils.IDResolutionEnabled())
 		if destType == "RS" {
-			rsAlterStringToTextQueryParam := fmt.Sprintf("rsAlterStringToText=%s", fmt.Sprintf("%v", config.GetBool("Warehouse.redshift.setVarCharMax", false)))
-			return destinationEndPoint + "?" + whSchemaVersionQueryParam + "&" + rsAlterStringToTextQueryParam
+			return destinationEndPoint + "?" + whSchemaVersionQueryParam
 		}
 		if destType == "CLICKHOUSE" {
 			enableArraySupport := fmt.Sprintf("chEnableArraySupport=%s", fmt.Sprintf("%v", config.GetBool("Warehouse.clickhouse.enableArraySupport", false)))
