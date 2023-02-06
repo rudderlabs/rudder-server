@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.5.3](https://github.com/rudderlabs/rudder-server/compare/v1.5.2...v1.5.3) (2023-02-03)
+
+
+### Bug Fixes
+
+* **warehouse:** use single protocol source category while doing dedup for new record ([#2937](https://github.com/rudderlabs/rudder-server/issues/2937)) ([8087e46](https://github.com/rudderlabs/rudder-server/commit/8087e46c5dd430075e878ca55df065ff04e6daea))
+* **warehouse:** warehouse successful upload exists ([#2931](https://github.com/rudderlabs/rudder-server/issues/2931)) ([bcb2bb2](https://github.com/rudderlabs/rudder-server/commit/bcb2bb2a76cc479110dae22d28a1acef6977a1b6))
+
 ## [1.5.2](https://github.com/rudderlabs/rudder-server/compare/v1.5.1...v1.5.2) (2023-02-02)
 
 

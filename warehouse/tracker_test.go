@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"os"
+	"strconv"
 	"testing"
 	"time"
 
@@ -36,9 +37,9 @@ func TestHandleT_Track(t *testing.T) {
 		name             string
 		destID           string
 		destDisabled     bool
-		uploaded         int
 		wantErr          error
 		wantStats        bool
+		ok               bool
 		NowSQL           string
 		exclusionWindow  map[string]any
 		uploadBufferTime string
@@ -56,13 +57,13 @@ func TestHandleT_Track(t *testing.T) {
 			name:      "successful upload exists",
 			destID:    destID,
 			wantStats: true,
-			uploaded:  1,
+			ok:        true,
 		},
 		{
 			name:             "successful upload exists with upload buffer time",
 			destID:           destID,
 			wantStats:        true,
-			uploaded:         1,
+			ok:               true,
 			uploadBufferTime: "0m",
 		},
 		{
@@ -169,6 +170,7 @@ func TestHandleT_Track(t *testing.T) {
 				"module":      moduleName,
 				"workspaceId": warehouse.WorkspaceID,
 				"destType":    handle.destType,
+				"ok":          strconv.FormatBool(tc.ok),
 				"warehouseID": misc.GetTagName(
 					warehouse.Destination.ID,
 					warehouse.Source.Name,
@@ -177,7 +179,7 @@ func TestHandleT_Track(t *testing.T) {
 			})
 
 			if tc.wantStats {
-				require.EqualValues(t, m.LastValue(), tc.uploaded)
+				require.EqualValues(t, m.LastValue(), 1)
 			} else {
 				require.Nil(t, m)
 			}
