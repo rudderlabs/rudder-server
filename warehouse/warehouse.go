@@ -795,6 +795,9 @@ func (wh *HandleT) mainLoop(ctx context.Context) {
 		wg := sync.WaitGroup{}
 		wg.Add(len(wh.warehouses))
 
+		wh.stats.NewTaggedStat("wh_scheduler.warehouse_length", stats.GaugeType, stats.Tags{
+			warehouseutils.DestinationType: wh.destType,
+		}).Gauge(len(wh.warehouses)) // Correlation between number of warehouses and scheduling time.
 		whTotalSchedulingStats := wh.stats.NewTaggedStat("wh_scheduler.total_scheduling_time", stats.TimerType, stats.Tags{
 			warehouseutils.DestinationType: wh.destType,
 		})
@@ -820,9 +823,6 @@ func (wh *HandleT) mainLoop(ctx context.Context) {
 		wg.Wait()
 
 		whTotalSchedulingStats.Since(whTotalSchedulingStart)
-		wh.stats.NewTaggedStat("wh_scheduler.warehouse_length", stats.GaugeType, stats.Tags{
-			warehouseutils.DestinationType: wh.destType,
-		}).Gauge(len(wh.warehouses)) // Correlation between number of warehouses and scheduling time.
 		select {
 		case <-ctx.Done():
 			return
