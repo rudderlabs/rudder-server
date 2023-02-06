@@ -182,7 +182,7 @@ func (c *Client) isEnabled() bool {
 	return c.config.GetBool("ALERTA_ENABLED", true)
 }
 
-func (c *Client) setDefaults(resource string, opts *SendAlertOpts) {
+func (c *Client) setDefaultsOpts(resource string, opts *SendAlertOpts) {
 	if opts.Priority == "" {
 		opts.Priority = defaultPriority
 	}
@@ -198,7 +198,7 @@ func (c *Client) setDefaults(resource string, opts *SendAlertOpts) {
 }
 
 func (c *Client) SendAlert(ctx context.Context, resource string, opts SendAlertOpts) error {
-	c.setDefaults(resource, &opts)
+	c.setDefaultsOpts(resource, &opts)
 
 	// default tags
 	tags := c.defaultTags(&opts)

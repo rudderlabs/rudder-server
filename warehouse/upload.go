@@ -896,7 +896,6 @@ func (job *UploadJobT) alterColumnsToWarehouse(tName string, columnsMap map[stri
 					"destID":      job.upload.DestinationID,
 					"destType":    job.upload.DestinationType,
 					"workspaceID": job.upload.WorkspaceID,
-					"sourceID":    job.upload.SourceID,
 				},
 			},
 		)
