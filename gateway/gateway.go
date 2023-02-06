@@ -98,6 +98,7 @@ var (
 	gwAllowPartialWriteWithErrors                                                     bool
 	pkgLogger                                                                         logger.Logger
 	Diagnostics                                                                       diagnostics.DiagnosticsI
+	semverRegexp                                                                      *regexp.Regexp = regexp.MustCompile(`^v?([0-9]+)(\.[0-9]+)?(\.[0-9]+)?(-([0-9A-Za-z\-]+(\.[0-9A-Za-z\-]+)*))?(\+([0-9A-Za-z\-]+(\.[0-9A-Za-z\-]+)*))?$`)
 )
 
 // CustomVal is used as a key in the jobsDB customval column
@@ -447,6 +448,7 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 				sourceStats[sourceTag] = gateway.NewSourceStat(writeKey, req.reqType)
 			}
 			jobData, err := gateway.getJobDataFromRequest(req)
+			sourceStats[sourceTag].Version = jobData.version
 			if err != nil {
 				switch {
 				case err == errRequestDropped:
@@ -461,7 +463,6 @@ func (gateway *HandleT) userWebRequestWorkerProcess(userWebRequestWorker *userWe
 				}
 				continue
 			}
-			sourceStats[sourceTag].Version = jobData.version
 			jobList = append(jobList, jobData.job)
 			jobIDReqMap[jobData.job.UUID] = req
 			jobSourceTagMap[jobData.job.UUID] = sourceTag
@@ -536,13 +537,11 @@ func (gateway *HandleT) getJobDataFromRequest(req *webRequestT) (jobData *jobFro
 			err = errors.New(response.NotRudderEvent)
 			return
 		}
-		body, err = sjson.SetRawBytes(BatchEvent, "batch.0", body)
-		if err != nil {
-			err = errors.New(response.NotRudderEvent)
-			return
-		}
+		body, _ = sjson.SetRawBytes(BatchEvent, "batch.0", body)
 	}
-	jobData.numEvents = len(gjson.GetBytes(body, "batch").Array())
+
+	eventsBatch := gjson.GetBytes(body, "batch").Array()
+	jobData.numEvents = len(eventsBatch)
 
 	if !gateway.isValidWriteKey(writeKey) {
 		err = errors.New(response.InvalidWriteKey)
@@ -562,53 +561,97 @@ func (gateway *HandleT) getJobDataFromRequest(req *webRequestT) (jobData *jobFro
 		}
 	}
 
-	// set anonymousId if not set in payload
-	result := gjson.GetBytes(body, "batch")
-	var out []map[string]interface{}
-	var builtUserID string
-	var notIdentifiable, nonRudderEvent, containsAudienceList bool
-	result.ForEach(func(_, vjson gjson.Result) bool {
-		anonIDFromReq := strings.TrimSpace(vjson.Get("anonymousId").String())
-		userIDFromReq := strings.TrimSpace(vjson.Get("userId").String())
-		if builtUserID == "" {
-			if anonIDFromReq != "" {
-				builtUserID = userIDHeader + DELIMITER + anonIDFromReq + DELIMITER + userIDFromReq
-			} else {
-				// Proxy gets the userID from body if there is no anonymousId in body/header
-				builtUserID = userIDHeader + DELIMITER + userIDFromReq + DELIMITER + userIDFromReq
-			}
-		}
+	var (
+		// map to hold modified/filtered events of the batch
+		out []map[string]interface{}
 
-		eventTypeFromReq := strings.TrimSpace(vjson.Get("type").String())
+		// values retrieved from first event in batch
+		firstUserID                                 string
+		firstSourcesJobRunID, firstSourcesTaskRunID string
 
-		if anonIDFromReq == "" {
-			if userIDFromReq == "" && !allowReqsWithoutUserIDAndAnonymousID {
-				notIdentifiable = true
-				return false
-			}
-		}
-		if eventTypeFromReq == "audiencelist" {
-			containsAudienceList = true
-		}
-		// hashing combination of userIDFromReq + anonIDFromReq, using colon as a delimiter
-		rudderId, err := misc.GetMD5UUID(userIDFromReq + ":" + anonIDFromReq)
-		if err != nil {
-			notIdentifiable = true
-			return false
-		}
+		// facts about the batch populated as we iterate over events
+		containsAudienceList, suppressed bool
+	)
 
-		toSet, ok := vjson.Value().(map[string]interface{})
+	isUserSuppressed := gateway.memoizedIsUserSuppressed()
+	for idx, v := range eventsBatch {
+		toSet, ok := v.Value().(map[string]interface{})
 		if !ok {
-			nonRudderEvent = true
-			return false
+			err = errors.New(response.NotRudderEvent)
+			return
+		}
+
+		anonIDFromReq, _ := toSet["anonymousId"].(string)
+		userIDFromReq, _ := toSet["userId"].(string)
+		if isNonIdentifiable(anonIDFromReq, userIDFromReq) {
+			err = errors.New(response.NonIdentifiableRequest)
+			return
+		}
+
+		if idx == 0 {
+			firstUserID = buildUserID(userIDHeader, anonIDFromReq, userIDFromReq)
+			firstSourcesJobRunID, _ = misc.MapLookup(
+				toSet,
+				"context",
+				"sources",
+				"job_run_id",
+			).(string)
+			firstSourcesTaskRunID, _ = misc.MapLookup(
+				toSet,
+				"context",
+				"sources",
+				"task_run_id",
+			).(string)
+
+			// calculate version
+			firstSDKName, _ := misc.MapLookup(
+				toSet,
+				"context",
+				"library",
+				"name",
+			).(string)
+			firstSDKVersion, _ := misc.MapLookup(
+				toSet,
+				"context",
+				"library",
+				"version",
+			).(string)
+			if firstSDKVersion != "" && !semverRegexp.Match([]byte(firstSDKVersion)) {
+				firstSDKVersion = "invalid"
+			}
+			if firstSDKName != "" || firstSDKVersion != "" {
+				jobData.version = firstSDKName + "/" + firstSDKVersion
+			}
+		}
+
+		if isUserSuppressed(workspaceId, userIDFromReq, sourceID) {
+			suppressed = true
+			continue
+		}
+
+		// hashing combination of userIDFromReq + anonIDFromReq, using colon as a delimiter
+		var rudderId uuid.UUID
+		rudderId, err = misc.GetMD5UUID(userIDFromReq + ":" + anonIDFromReq)
+		if err != nil {
+			err = errors.New(response.NonIdentifiableRequest)
+			return
 		}
 		toSet["rudderId"] = rudderId
-		if messageId := strings.TrimSpace(vjson.Get("messageId").String()); messageId == "" {
-			toSet["messageId"] = uuid.New().String()
+		setRandomMessageIDWhenEmpty(toSet)
+		if eventTypeFromReq, _ := misc.MapLookup(
+			toSet,
+			"type",
+		).(string); eventTypeFromReq == "audiencelist" {
+			containsAudienceList = true
 		}
+
 		out = append(out, toSet)
-		return true // keep iterating
-	})
+	}
+
+	if len(out) == 0 && suppressed {
+		err = errRequestSuppressed
+		return
+	}
 
 	if len(body) > maxReqSize && !containsAudienceList {
 		err = errors.New(response.RequestBodyTooLarge)
@@ -616,58 +659,16 @@ func (gateway *HandleT) getJobDataFromRequest(req *webRequestT) (jobData *jobFro
 	}
 
 	body, _ = sjson.SetBytes(body, "batch", out)
-
-	if notIdentifiable {
-		err = errors.New(response.NonIdentifiableRequest)
-		return
-	}
-
-	if nonRudderEvent {
-		err = errors.New(response.NotRudderEvent)
-		return
-	}
-
-	if enableSuppressUserFeature && gateway.suppressUserHandler != nil {
-		userID := gjson.GetBytes(body, "batch.0.userId").String()
-		if gateway.suppressUserHandler.IsSuppressedUser(
-			workspaceId,
-			userID,
-			sourceID,
-		) {
-			err = errRequestSuppressed
-			return
-		}
-	}
-
 	body, _ = sjson.SetBytes(body, "requestIP", ipAddr)
 	body, _ = sjson.SetBytes(body, "writeKey", writeKey)
 	body, _ = sjson.SetBytes(body, "receivedAt", time.Now().Format(misc.RFC3339Milli))
-
-	// pick the job_run_id from the first event of batch.
-	// We are assuming job_run_id will be same for all events in a batch
-	// and the batch is coming from rudder-sources
-	sourcesJobRunID := gjson.GetBytes(
-		body,
-		"batch.0.context.sources.job_run_id",
-	).Str
-
-	// pick the task_run_id from the first event of batch.
-	// We are assuming task_run_id will be same for all events in a batch
-	// and the batch is coming from rudder-sources
-	sourcesTaskRunID := gjson.GetBytes(
-		body,
-		"batch.0.context.sources.task_run_id",
-	).Str
-
-	lib := gjson.GetBytes(body, "batch.0.context.library")
-	jobData.version = lib.Get("name").String() + "/" + lib.Get("version").String()
 
 	id := uuid.New()
 
 	params := map[string]interface{}{
 		"source_id":          sourceID,
-		"source_job_run_id":  sourcesJobRunID,
-		"source_task_run_id": sourcesTaskRunID,
+		"source_job_run_id":  firstSourcesJobRunID,
+		"source_task_run_id": firstSourcesTaskRunID,
 	}
 	marshalledParams, err := json.Marshal(params)
 	if err != nil {
@@ -682,7 +683,7 @@ func (gateway *HandleT) getJobDataFromRequest(req *webRequestT) (jobData *jobFro
 	err = nil
 	job := &jobsdb.JobT{
 		UUID:         id,
-		UserID:       builtUserID,
+		UserID:       firstUserID,
 		Parameters:   marshalledParams,
 		CustomVal:    CustomVal,
 		EventPayload: body,
@@ -691,6 +692,55 @@ func (gateway *HandleT) getJobDataFromRequest(req *webRequestT) (jobData *jobFro
 	}
 	jobData.job = job
 	return
+}
+
+func isNonIdentifiable(anonIDFromReq, userIDFromReq string) bool {
+	if anonIDFromReq == "" && userIDFromReq == "" {
+		return !allowReqsWithoutUserIDAndAnonymousID
+	}
+	return false
+}
+
+func buildUserID(userIDHeader, anonIDFromReq, userIDFromReq string) string {
+	if anonIDFromReq != "" {
+		return userIDHeader + DELIMITER + anonIDFromReq + DELIMITER + userIDFromReq
+	}
+	return userIDHeader + DELIMITER + userIDFromReq + DELIMITER + userIDFromReq
+}
+
+// memoizedIsUserSuppressed is a memoized version of isUserSuppressed
+func (gateway *HandleT) memoizedIsUserSuppressed() func(workspaceID, userID, sourceID string) bool {
+	cache := map[string]bool{}
+	return func(workspaceID, userID, sourceID string) bool {
+		key := workspaceID + ":" + userID + ":" + sourceID
+		if val, ok := cache[key]; ok {
+			return val
+		}
+		val := gateway.isUserSuppressed(workspaceID, userID, sourceID)
+		cache[key] = val
+		return val
+	}
+}
+
+func (gateway *HandleT) isUserSuppressed(workspaceID, userID, sourceID string) bool {
+	if !enableSuppressUserFeature || gateway.suppressUserHandler == nil {
+		return false
+	}
+	return gateway.suppressUserHandler.IsSuppressedUser(
+		workspaceID,
+		userID,
+		sourceID,
+	)
+}
+
+// checks for the presence of messageId in the event
+//
+// sets to a new uuid if not present
+func setRandomMessageIDWhenEmpty(event map[string]interface{}) {
+	messageID, _ := event["messageId"].(string)
+	if strings.TrimSpace(messageID) == "" {
+		event["messageId"] = uuid.New().String()
+	}
 }
 
 func (*HandleT) getSourceCategoryForWriteKey(writeKey string) (category string) {
