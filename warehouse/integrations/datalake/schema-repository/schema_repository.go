@@ -3,6 +3,8 @@ package schemarepository
 import (
 	"fmt"
 
+	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
+
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
@@ -41,7 +43,7 @@ type SchemaRepository interface {
 	CreateSchema() (err error)
 	CreateTable(tableName string, columnMap map[string]string) (err error)
 	AddColumns(tableName string, columnsInfo []warehouseutils.ColumnInfo) (err error)
-	AlterColumn(tableName, columnName, columnType string) (err error)
+	AlterColumn(tableName, columnName, columnType string) (model.AlterTableResponse, error)
 	RefreshPartitions(tableName string, loadFiles []warehouseutils.LoadFileT) error
 }
 

@@ -3,6 +3,8 @@ package schemarepository
 import (
 	"fmt"
 
+	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
+
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
@@ -67,24 +69,24 @@ func (ls *LocalSchemaRepository) AddColumns(tableName string, columnsInfo []ware
 	return ls.uploader.UpdateLocalSchema(schema)
 }
 
-func (ls *LocalSchemaRepository) AlterColumn(tableName, columnName, columnType string) (err error) {
+func (ls *LocalSchemaRepository) AlterColumn(tableName, columnName, columnType string) (model.AlterTableResponse, error) {
 	// fetch schema from local db
 	schema := ls.localFetchSchema()
 
 	// check if table exists
 	if _, ok := schema[tableName]; !ok {
-		return fmt.Errorf("failed to add column: table %s does not exist", tableName)
+		return model.AlterTableResponse{}, fmt.Errorf("failed to add column: table %s does not exist", tableName)
 	}
 
 	// check if column exists
 	if _, ok := schema[tableName][columnName]; !ok {
-		return fmt.Errorf("failed to alter column: column %s does not exist in table %s", columnName, tableName)
+		return model.AlterTableResponse{}, fmt.Errorf("failed to alter column: column %s does not exist in table %s", columnName, tableName)
 	}
 
 	schema[tableName][columnName] = columnType
 
 	// update schema
-	return ls.uploader.UpdateLocalSchema(schema)
+	return model.AlterTableResponse{}, ls.uploader.UpdateLocalSchema(schema)
 }
 
 func (*LocalSchemaRepository) RefreshPartitions(_ string, _ []warehouseutils.LoadFileT) error {
