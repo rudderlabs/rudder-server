@@ -70,7 +70,7 @@ var (
 	crashRecoverWarehouses              []string
 	inRecoveryMap                       map[string]bool
 	lastProcessedMarkerMap              map[string]int64
-	lastProcessedMarkerExp              *expvar.Map
+	lastProcessedMarkerExp              = expvar.NewMap("lastProcessedMarkerMap")
 	lastProcessedMarkerMapLock          sync.RWMutex
 	warehouseMode                       string
 	warehouseSyncPreFetchCount          int
@@ -180,7 +180,6 @@ func loadConfig() {
 	crashRecoverWarehouses = []string{warehouseutils.RS, warehouseutils.POSTGRES, warehouseutils.MSSQL, warehouseutils.AZURE_SYNAPSE, warehouseutils.DELTALAKE}
 	inRecoveryMap = map[string]bool{}
 	lastProcessedMarkerMap = map[string]int64{}
-	lastProcessedMarkerExp = expvar.NewMap("lastProcessedMarkerMap")
 	config.RegisterStringConfigVariable("embedded", &warehouseMode, false, "Warehouse.mode")
 	host = config.GetString("WAREHOUSE_JOBS_DB_HOST", "localhost")
 	user = config.GetString("WAREHOUSE_JOBS_DB_USER", "ubuntu")
