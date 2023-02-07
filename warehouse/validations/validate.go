@@ -117,7 +117,6 @@ func (ct *CTHandleT) verifyingObjectStorage() (err error) {
 }
 
 func (ct *CTHandleT) manageTunnellingSecrets(config map[string]interface{}) error {
-
 	if !warehouseutils.ReadAsBool("useSSH", config) {
 		return nil
 	}
