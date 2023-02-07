@@ -1,10 +1,15 @@
 package redshift_test
 
 import (
+	"errors"
 	"fmt"
 	"os"
+	"strings"
 	"testing"
 
+	"github.com/ory/dockertest/v3"
+	"github.com/rudderlabs/rudder-server/config"
+	"github.com/rudderlabs/rudder-server/testhelper/destination"
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/testhelper"
 
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/redshift"
@@ -180,4 +185,113 @@ func TestConfigurationValidationRedshift(t *testing.T) {
 		RevisionID: "29HgOWobrn0RYZLpaSwPIbN2987",
 	}
 	testhelper.VerifyConfigurationTest(t, destination)
+}
+
+func TestRedshift_AlterColumn(t *testing.T) {
+	var (
+		bigString      = strings.Repeat("a", 1024)
+		smallString    = strings.Repeat("a", 510)
+		testNamespace  = "test_namespace"
+		testTable      = "test_table"
+		testColumn     = "test_column"
+		testColumnType = "text"
+	)
+
+	testCases := []struct {
+		name       string
+		createView bool
+	}{
+		{
+			name: "success",
+		},
+		{
+			name:       "view/rule",
+			createView: true,
+		},
+	}
+
+	for _, tc := range testCases {
+		tc := tc
+
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			pool, err := dockertest.NewPool("")
+			require.NoError(t, err)
+
+			pgResource, err := destination.SetupPostgres(pool, t)
+			require.NoError(t, err)
+
+			rs := redshift.NewRedshift()
+			redshift.WithConfig(rs, config.Default)
+
+			rs.DB = pgResource.DB
+			rs.Namespace = testNamespace
+
+			_, err = rs.DB.Exec(
+				fmt.Sprintf("CREATE SCHEMA %s;",
+					testNamespace,
+				),
+			)
+			require.NoError(t, err)
+
+			_, err = rs.DB.Exec(
+				fmt.Sprintf("CREATE TABLE %q.%q (%s VARCHAR(512));",
+					testNamespace,
+					testTable,
+					testColumn,
+				),
+			)
+			require.NoError(t, err)
+
+			if tc.createView {
+				_, err = rs.DB.Exec(
+					fmt.Sprintf("CREATE VIEW %[1]q.%[2]q AS SELECT * FROM %[1]q.%[3]q;",
+						testNamespace,
+						fmt.Sprintf("%s_view", testTable),
+						testTable,
+					),
+				)
+				require.NoError(t, err)
+			}
+
+			_, err = rs.DB.Exec(
+				fmt.Sprintf("INSERT INTO %q.%q (%s) VALUES ('%s');",
+					testNamespace,
+					testTable,
+					testColumn,
+					smallString,
+				),
+			)
+			require.NoError(t, err)
+
+			_, err = rs.DB.Exec(
+				fmt.Sprintf("INSERT INTO %q.%q (%s) VALUES ('%s');",
+					testNamespace,
+					testTable,
+					testColumn,
+					bigString,
+				),
+			)
+			require.ErrorContains(t, err, errors.New("pq: value too long for type character varying(512)").Error())
+
+			res, err := rs.AlterColumn(testTable, testColumn, testColumnType)
+			require.NoError(t, err)
+
+			if tc.createView {
+				require.True(t, res.IsDependent)
+				require.NotEmpty(t, res.Query)
+			}
+
+			_, err = rs.DB.Exec(
+				fmt.Sprintf("INSERT INTO %q.%q (%s) VALUES ('%s');",
+					testNamespace,
+					testTable,
+					testColumn,
+					bigString,
+				),
+			)
+			require.NoError(t, err)
+		})
+	}
 }

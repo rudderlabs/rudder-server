@@ -107,3 +107,8 @@ func GetLoadFileGenTime(timingsMap Timings) (t time.Time) {
 	}
 	return // zero values
 }
+
+type AlterTableResponse struct {
+	IsDependent bool // true if the column is dependent on another view or rules, false otherwise
+	Query       string
+}

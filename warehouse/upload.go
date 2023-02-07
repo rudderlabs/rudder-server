@@ -11,6 +11,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/services/alerta"
+
 	schemarepository "github.com/rudderlabs/rudder-server/warehouse/integrations/datalake/schema-repository"
 
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/manager"
@@ -101,6 +103,7 @@ type UploadJobT struct {
 	hasAllTablesSkipped       bool
 	tableUploadStatuses       []*TableUploadStatusT
 	RefreshPartitionBatchSize int
+	AlertSender               alerta.AlertSender
 }
 
 type UploadColumnT struct {
@@ -177,6 +180,10 @@ func (f *UploadJobFactory) NewUploadJob(dto *model.UploadJob, whManager manager.
 		tableUploadStatuses: []*TableUploadStatusT{},
 
 		RefreshPartitionBatchSize: config.GetInt("Warehouse.refreshPartitionBatchSize", 100),
+
+		AlertSender: alerta.NewClient(
+			config.GetString("ALERTA_URL", "https://alerta.rudderstack.com/api/"),
+		),
 	}
 }
 
@@ -820,7 +827,7 @@ func (job *UploadJobT) resolveIdentities(populateHistoricIdentities bool) (err e
 	return idr.Resolve()
 }
 
-func (job *UploadJobT) updateTableSchema(tName string, tableSchemaDiff warehouseutils.TableSchemaDiffT) (err error) {
+func (job *UploadJobT) UpdateTableSchema(tName string, tableSchemaDiff warehouseutils.TableSchemaDiffT) (err error) {
 	pkgLogger.Infof(`[WH]: Starting schema update for table %s in namespace %s of destination %s:%s`, tName, job.warehouse.Namespace, job.warehouse.Type, job.warehouse.Destination.ID)
 
 	if tableSchemaDiff.TableToBeCreated {
@@ -833,19 +840,77 @@ func (job *UploadJobT) updateTableSchema(tName string, tableSchemaDiff warehouse
 		return nil
 	}
 
-	if err := job.addColumnsToWarehouse(tName, tableSchemaDiff.ColumnMap); err != nil {
-		return err
+	if err = job.addColumnsToWarehouse(tName, tableSchemaDiff.ColumnMap); err != nil {
+		return fmt.Errorf("adding columns to warehouse: %w", err)
 	}
 
-	for _, columnName := range tableSchemaDiff.StringColumnsToBeAlteredToText {
-		err = job.whManager.AlterColumn(tName, columnName, "text")
+	if err = job.alterColumnsToWarehouse(tName, tableSchemaDiff.AlteredColumnMap); err != nil {
+		return fmt.Errorf("altering columns to warehouse: %w", err)
+	}
+
+	return nil
+}
+
+func (job *UploadJobT) alterColumnsToWarehouse(tName string, columnsMap map[string]string) error {
+	var responseToAlerta []model.AlterTableResponse
+	var errs []error
+
+	for columnName, columnType := range columnsMap {
+		res, err := job.whManager.AlterColumn(tName, columnName, columnType)
 		if err != nil {
-			pkgLogger.Errorf("Altering column %s in table: %s.%s failed. Error: %v", columnName, job.warehouse.Namespace, tName, err)
-			break
+			errs = append(errs, err)
+			continue
+		}
+
+		if res.IsDependent {
+			responseToAlerta = append(responseToAlerta, res)
+			continue
+		}
+
+		pkgLogger.Infof(`
+			[WH]: Altered column %s of type %s in table %s in namespace %s of destination %s:%s
+		`,
+			columnName,
+			columnType,
+			tName,
+			job.warehouse.Namespace,
+			job.warehouse.Type,
+			job.warehouse.Destination.ID,
+		)
+	}
+
+	if len(responseToAlerta) > 0 {
+		queries := make([]string, len(responseToAlerta))
+		for i, res := range responseToAlerta {
+			queries[i] = res.Query
+		}
+
+		query := strings.Join(queries, "\n")
+		pkgLogger.Infof("altering dependent columns: %s", query)
+
+		err := job.AlertSender.SendAlert(context.TODO(), "warehouse-column-changes",
+			alerta.SendAlertOpts{
+				Severity:    alerta.SeverityCritical,
+				Priority:    alerta.PriorityP1,
+				Environment: alerta.PROXYMODE,
+				Tags: alerta.Tags{
+					"destID":      job.upload.DestinationID,
+					"destType":    job.upload.DestinationType,
+					"workspaceID": job.upload.WorkspaceID,
+					"query":       query,
+				},
+			},
+		)
+		if err != nil {
+			errs = append(errs, err)
 		}
 	}
 
-	return err
+	if len(errs) > 0 {
+		return misc.ConcatErrors(errs)
+	}
+
+	return nil
 }
 
 func (job *UploadJobT) addColumnsToWarehouse(tName string, columnsMap map[string]string) (err error) {
@@ -973,7 +1038,7 @@ func (job *UploadJobT) loadAllTablesExcept(skipLoadForTables []string, loadFiles
 func (job *UploadJobT) updateSchema(tName string) (alteredSchema bool, err error) {
 	tableSchemaDiff := getTableSchemaDiff(tName, job.schemaHandle.schemaInWarehouse, job.upload.UploadSchema)
 	if tableSchemaDiff.Exists {
-		err = job.updateTableSchema(tName, tableSchemaDiff)
+		err = job.UpdateTableSchema(tName, tableSchemaDiff)
 		if err != nil {
 			return
 		}
@@ -1192,7 +1257,7 @@ func (job *UploadJobT) loadIdentityTables(populateHistoricIdentities bool) (load
 
 		tableSchemaDiff := getTableSchemaDiff(tableName, job.schemaHandle.schemaInWarehouse, job.upload.UploadSchema)
 		if tableSchemaDiff.Exists {
-			err := job.updateTableSchema(tableName, tableSchemaDiff)
+			err := job.UpdateTableSchema(tableName, tableSchemaDiff)
 			if err != nil {
 				tableUpload.setError(TableUploadUpdatingSchemaFailed, err)
 				errorMap := map[string]error{tableName: err}
