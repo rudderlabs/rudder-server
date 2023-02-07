@@ -42,6 +42,8 @@ const (
 	DestinationID   = "destinationID"
 	DestinationType = "destinationType"
 	WorkspaceID     = "workspaceID"
+	ERROR           = "error"
+	TABLE_NAME      = "tableName"
 )
 
 const (

@@ -1096,11 +1096,13 @@ func (job *UploadJobT) loadTable(tName string) (alteredSchema bool, err error) {
 		var errTotalCount error
 		totalBeforeLoad, errTotalCount = job.getTotalCount(tName)
 		if errTotalCount != nil {
-			pkgLogger.Warnw(fmt.Sprintf("total count in table: %s before loading with err: %s", tName, errTotalCount),
+			pkgLogger.Warnw("total count in table before loading",
 				warehouseutils.SourceID, job.upload.SourceID,
 				warehouseutils.DestinationID, job.upload.DestinationID,
 				warehouseutils.DestinationType, job.upload.DestinationType,
 				warehouseutils.WorkspaceID, job.upload.WorkspaceID,
+				warehouseutils.ERROR, errTotalCount,
+				warehouseutils.TABLE_NAME, tName,
 			)
 		}
 	}
@@ -1118,11 +1120,13 @@ func (job *UploadJobT) loadTable(tName string) (alteredSchema bool, err error) {
 		var errTotalCount error
 		totalAfterLoad, errTotalCount = job.getTotalCount(tName)
 		if errTotalCount != nil {
-			pkgLogger.Warnw(fmt.Sprintf("total count in table: %s after loading with err: %s", tName, errTotalCount),
+			pkgLogger.Warnw("total count in table after loading",
 				warehouseutils.SourceID, job.upload.SourceID,
 				warehouseutils.DestinationID, job.upload.DestinationID,
 				warehouseutils.DestinationType, job.upload.DestinationType,
 				warehouseutils.WorkspaceID, job.upload.WorkspaceID,
+				warehouseutils.ERROR, errTotalCount,
+				warehouseutils.TABLE_NAME, tName,
 			)
 			return
 		}
