@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"expvar"
 	"fmt"
 	"io"
 	"math/rand"
@@ -70,6 +71,7 @@ var (
 	crashRecoverWarehouses              []string
 	inRecoveryMap                       map[string]bool
 	lastProcessedMarkerMap              map[string]int64
+	lastProcessedMarkerExp              = expvar.NewMap("lastProcessedMarkerMap")
 	lastProcessedMarkerMapLock          sync.RWMutex
 	warehouseMode                       string
 	warehouseSyncPreFetchCount          int
@@ -505,6 +507,7 @@ func setLastProcessedMarker(warehouse warehouseutils.Warehouse, lastProcessedTim
 	lastProcessedMarkerMapLock.Lock()
 	defer lastProcessedMarkerMapLock.Unlock()
 	lastProcessedMarkerMap[warehouse.Identifier] = lastProcessedTime.Unix()
+	lastProcessedMarkerExp.Set(warehouse.Identifier, lastProcessedTime)
 }
 
 func (wh *HandleT) createUploadJobsFromStagingFiles(ctx context.Context, warehouse warehouseutils.Warehouse, stagingFiles []model.StagingFile, priority int, uploadStartAfter time.Time) error {
@@ -592,8 +595,14 @@ func (wh *HandleT) createJobs(ctx context.Context, warehouse warehouseutils.Ware
 		delete(inRecoveryMap, warehouse.Destination.ID)
 	}
 
-	if !wh.canCreateUpload(warehouse) {
-		wh.Logger.Debugf("[WH]: Skipping upload loop since %s upload freq not exceeded", warehouse.Identifier)
+	if ok, err := wh.canCreateUpload(warehouse); !ok {
+		wh.stats.NewTaggedStat("wh_scheduler.upload_sync_skipped", stats.CountType, stats.Tags{
+			"workspaceId":   warehouse.WorkspaceID,
+			"destinationID": warehouse.Destination.ID,
+			"destType":      warehouse.Destination.DestinationDefinition.Name,
+			"reason":        err.Error(),
+		}).Count(1)
+		wh.Logger.Debugf("[WH]: Skipping upload loop since %s upload freq not exceeded: %v", warehouse.Identifier, err)
 		return nil
 	}
 
@@ -664,7 +673,12 @@ func (wh *HandleT) mainLoop(ctx context.Context) {
 		wg := sync.WaitGroup{}
 		wg.Add(len(wh.warehouses))
 
-		whTotalSchedulingStats := wh.stats.NewStat("wh_scheduler.total_scheduling_time", stats.TimerType)
+		wh.stats.NewTaggedStat("wh_scheduler.warehouse_length", stats.GaugeType, stats.Tags{
+			warehouseutils.DestinationType: wh.destType,
+		}).Gauge(len(wh.warehouses)) // Correlation between number of warehouses and scheduling time.
+		whTotalSchedulingStats := wh.stats.NewTaggedStat("wh_scheduler.total_scheduling_time", stats.TimerType, stats.Tags{
+			warehouseutils.DestinationType: wh.destType,
+		})
 		whTotalSchedulingStart := time.Now()
 
 		for _, warehouse := range wh.warehouses {
@@ -687,7 +701,6 @@ func (wh *HandleT) mainLoop(ctx context.Context) {
 		wg.Wait()
 
 		whTotalSchedulingStats.Since(whTotalSchedulingStart)
-		wh.stats.NewStat("wh_scheduler.warehouse_length", stats.CountType).Count(len(wh.warehouses)) // Correlation between number of warehouses and scheduling time.
 		select {
 		case <-ctx.Done():
 			return
