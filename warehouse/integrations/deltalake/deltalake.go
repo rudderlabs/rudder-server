@@ -914,6 +914,10 @@ func (dl *Deltalake) AddColumns(tableName string, columnsInfo []warehouseutils.C
 			return fmt.Errorf("add columns: %s", executeResponse.GetErrorMessage())
 		}
 	}
+
+	if executeResponse.GetErrorCode() != "" {
+		return fmt.Errorf("add columns: %s", executeResponse.GetErrorMessage())
+	}
 	return nil
 }
 

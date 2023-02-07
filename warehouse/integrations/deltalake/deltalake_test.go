@@ -572,7 +572,7 @@ func TestDeltalake_AddColumns(t *testing.T) {
 				ErrorCode:    "42xxx",
 				ErrorMessage: "permission error",
 			},
-			wantError: errors.New("executing with response: permission error"),
+			wantError: errors.New("add columns: permission error"),
 		},
 	}
 

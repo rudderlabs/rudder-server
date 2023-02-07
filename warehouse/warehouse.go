@@ -1133,9 +1133,9 @@ func onConfigDataEvent(config map[string]backendconfig.ConfigT, dstToWhRouter ma
 			}
 		}
 	}
-	if _, ok := connectionFlags.Services["warehouse"]; ok {
+	if val, ok := connectionFlags.Services["warehouse"]; ok {
 		if UploadAPI.connectionManager != nil {
-			UploadAPI.connectionManager.Apply(connectionFlags.URL, true)
+			UploadAPI.connectionManager.Apply(connectionFlags.URL, val)
 		}
 	}
 
