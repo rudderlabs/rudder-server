@@ -4,8 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"regexp"
 	"strings"
 	"time"
+
+	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 
 	"cloud.google.com/go/bigquery"
 
@@ -97,6 +100,17 @@ var partitionKeyMap = map[string]string{
 	warehouseutils.DiscardsTable:           "row_id, column_name, table_name",
 	warehouseutils.IdentityMappingsTable:   "merge_property_type, merge_property_value",
 	warehouseutils.IdentityMergeRulesTable: "merge_property_1_type, merge_property_1_value, merge_property_2_type, merge_property_2_value",
+}
+
+var errorsMappings = []model.JobError{
+	{
+		Type:   model.PermissionError,
+		Format: regexp.MustCompile(`googleapi: Error 403: Access Denied`),
+	},
+	{
+		Type:   model.ResourceNotFoundError,
+		Format: regexp.MustCompile(`googleapi: Error 404: Not found: Dataset .*, notFound`),
+	},
 }
 
 func getTableSchema(columns map[string]string) []*bigquery.FieldSchema {
@@ -1172,4 +1186,8 @@ func (bq *HandleT) LoadTestTable(location, tableName string, _ map[string]interf
 }
 
 func (*HandleT) SetConnectionTimeout(_ time.Duration) {
+}
+
+func (bq *HandleT) ErrorMappings() []model.JobError {
+	return errorsMappings
 }

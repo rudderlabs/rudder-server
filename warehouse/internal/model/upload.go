@@ -3,6 +3,7 @@ package model
 import (
 	"encoding/json"
 	"errors"
+	"regexp"
 	"strings"
 	"time"
 
@@ -24,6 +25,17 @@ const (
 	ExportedIdentities        = "exported_identities"
 	Aborted                   = "aborted"
 	Failed                    = "failed"
+)
+
+const (
+	PermissionError           JobErrorType = "permission_error"
+	AlterColumnError          JobErrorType = "alter_column_error"
+	ResourceNotFoundError     JobErrorType = "resource_not_found_error"
+	ColumnCountError          JobErrorType = "column_count_error"
+	ColumnSizeError           JobErrorType = "column_size_error"
+	InsufficientResourceError JobErrorType = "insufficient_resource_error"
+	ConcurrentQueriesError    JobErrorType = "concurrent_queries_error"
+	UnknownError              JobErrorType = "unknown_error"
 )
 
 var ErrUploadNotFound = errors.New("upload not found")
@@ -82,6 +94,13 @@ type UploadJob struct {
 	Upload               Upload
 	StagingFiles         []*StagingFile
 	LoadFileGenStartTime time.Time
+}
+
+type JobErrorType string
+
+type JobError struct {
+	Type   JobErrorType
+	Format *regexp.Regexp
 }
 
 func GetLastFailedStatus(timingsMap Timings) (status string) {

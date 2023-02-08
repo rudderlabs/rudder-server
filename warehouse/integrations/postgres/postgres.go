@@ -10,8 +10,11 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
+
+	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 
 	"golang.org/x/exp/slices"
 
@@ -57,6 +60,45 @@ const (
 	insertDedup              = "dedup_insertion"
 	dedupStage               = "dedup_stage"
 )
+
+var errorsMappings = []model.JobError{
+	{
+		Type:   model.ResourceNotFoundError,
+		Format: regexp.MustCompile(`dial tcp: lookup .* on .*: no such host`),
+	},
+	{
+		Type:   model.ResourceNotFoundError,
+		Format: regexp.MustCompile(`dial tcp .* connect: connection refused`),
+	},
+	{
+		Type:   model.ResourceNotFoundError,
+		Format: regexp.MustCompile(`pq: database .* does not exist`),
+	},
+	{
+		Type:   model.ResourceNotFoundError,
+		Format: regexp.MustCompile(`pq: the database system is starting up`),
+	},
+	{
+		Type:   model.ResourceNotFoundError,
+		Format: regexp.MustCompile(`pq: the database system is shutting down`),
+	},
+	{
+		Type:   model.ResourceNotFoundError,
+		Format: regexp.MustCompile(`pq: relation .* does not exist`),
+	},
+	{
+		Type:   model.ResourceNotFoundError,
+		Format: regexp.MustCompile(`pq: cannot set transaction read-write mode during recovery`),
+	},
+	{
+		Type:   model.ColumnCountError,
+		Format: regexp.MustCompile(`pq: tables can have at most 1600 columns`),
+	},
+	{
+		Type:   model.PermissionError,
+		Format: regexp.MustCompile(`pq: password authentication failed for user`),
+	},
+}
 
 var rudderDataTypesMapToPostgres = map[string]string{
 	"int":      "bigint",
@@ -1037,4 +1079,8 @@ func (pg *Handle) handleExec(e *QueryParams) (err error) {
 		_, err = e.db.Exec(sqlStatement)
 	}
 	return
+}
+
+func (pq *Handle) ErrorMappings() []model.JobError {
+	return errorsMappings
 }

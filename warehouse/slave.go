@@ -393,9 +393,9 @@ func processStagingFile(job Payload, workerIndex int) (loadFileUploadOutputs []l
 		stats:        stats.Default,
 	}
 
-	defer jobRun.counterStat("staging_files_processed", tag{name: "worker_id", value: strconv.Itoa(workerIndex)}).Count(1)
+	defer jobRun.counterStat("staging_files_processed", Tag{name: "worker_id", value: strconv.Itoa(workerIndex)}).Count(1)
 	defer func() {
-		jobRun.timerStat("staging_files_total_processing_time", tag{name: "worker_id", value: strconv.Itoa(workerIndex)}).Since(processStartTime)
+		jobRun.timerStat("staging_files_total_processing_time", Tag{name: "worker_id", value: strconv.Itoa(workerIndex)}).Since(processStartTime)
 	}()
 	defer jobRun.cleanup()
 

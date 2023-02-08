@@ -83,7 +83,7 @@ type UploadJobT struct {
 	dbHandle             *sql.DB
 	destinationValidator validations.DestinationValidator
 	loadfile             *loadfiles.LoadFileGenerator
-	whManager            manager.ManagerI
+	whManager            manager.Manager
 	pgNotifier           *pgnotifier.PgNotifierT
 	schemaHandle         *SchemaHandleT
 	stats                stats.Stats
@@ -97,6 +97,7 @@ type UploadJobT struct {
 	uploadLock          sync.Mutex
 	hasAllTablesSkipped bool
 	tableUploadStatuses []*TableUploadStatusT
+	ErrorMapping        ErrorHandler
 }
 
 type UploadColumnT struct {
@@ -155,7 +156,7 @@ func setMaxParallelLoads() {
 	}
 }
 
-func (f *UploadJobFactory) NewUploadJob(dto *model.UploadJob, whManager manager.ManagerI) *UploadJobT {
+func (f *UploadJobFactory) NewUploadJob(dto *model.UploadJob, whManager manager.Manager) *UploadJobT {
 	return &UploadJobT{
 		dbHandle:             f.dbHandle,
 		loadfile:             f.loadFile,
@@ -171,6 +172,8 @@ func (f *UploadJobFactory) NewUploadJob(dto *model.UploadJob, whManager manager.
 
 		hasAllTablesSkipped: false,
 		tableUploadStatuses: []*TableUploadStatusT{},
+
+		ErrorMapping: ErrorHandler{whManager},
 	}
 }
 
@@ -1050,9 +1053,9 @@ func (job *UploadJobT) loadTable(tName string) (alteredSchema bool, err error) {
 		}
 
 		// TODO : Perform the comparison here in the codebase
-		job.guageStat(`pre_load_table_rows`, tag{name: "tableName", value: strings.ToLower(tName)}).Gauge(int(totalBeforeLoad))
-		job.guageStat(`post_load_table_rows_estimate`, tag{name: "tableName", value: strings.ToLower(tName)}).Gauge(int(totalBeforeLoad + eventsInTableUpload))
-		job.guageStat(`post_load_table_rows`, tag{name: "tableName", value: strings.ToLower(tName)}).Gauge(int(totalAfterLoad))
+		job.guageStat(`pre_load_table_rows`, Tag{name: "tableName", value: strings.ToLower(tName)}).Gauge(int(totalBeforeLoad))
+		job.guageStat(`post_load_table_rows_estimate`, Tag{name: "tableName", value: strings.ToLower(tName)}).Gauge(int(totalBeforeLoad + eventsInTableUpload))
+		job.guageStat(`post_load_table_rows`, Tag{name: "tableName", value: strings.ToLower(tName)}).Gauge(int(totalAfterLoad))
 	}()
 
 	tableUpload.setStatus(TableUploadExported)
@@ -1083,7 +1086,7 @@ func (job *UploadJobT) columnCountStat(tableName string) {
 		return
 	}
 
-	tags := []tag{
+	tags := []Tag{
 		{name: "tableName", value: strings.ToLower(tableName)},
 	}
 	currentColumnsCount := len(job.schemaHandle.schemaInWarehouse[tableName])
@@ -1643,7 +1646,7 @@ func (job *UploadJobT) setUploadError(statusError error, state string) (string, 
 	attempts := job.getAttemptNumber()
 
 	if !job.hasAllTablesSkipped {
-		job.counterStat("warehouse_failed_uploads", tag{name: "attempt_number", value: strconv.Itoa(attempts)}).Count(1)
+		job.counterStat("warehouse_failed_uploads", Tag{name: "attempt_number", value: strconv.Itoa(attempts)}).Count(1)
 	}
 
 	// On aborted state, validate credentials to allow
@@ -1651,10 +1654,14 @@ func (job *UploadJobT) setUploadError(statusError error, state string) (string, 
 	if state == model.Aborted {
 		// base tag to be sent as stat
 
-		tags := []tag{{name: "attempt_number", value: strconv.Itoa(attempts)}}
+		errorTags := job.ErrorMapping.MatchErrorMappings(statusError)
+
+		tags := []Tag{{name: "attempt_number", value: strconv.Itoa(attempts)}}
+		tags = append(tags, errorTags)
+
 		valid, err := job.validateDestinationCredentials()
 		if err == nil {
-			tags = append(tags, tag{name: "destination_creds_valid", value: strconv.FormatBool(valid)})
+			tags = append(tags, Tag{name: "destination_creds_valid", value: strconv.FormatBool(valid)})
 		}
 
 		job.counterStat("upload_aborted", tags...).Count(1)

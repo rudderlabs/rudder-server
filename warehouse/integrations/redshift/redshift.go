@@ -8,9 +8,12 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/services/filemanager"
@@ -30,6 +33,49 @@ var (
 	skipComputingUserLatestTraits bool
 	enableDeleteByJobs            bool
 )
+
+var errorsMappings = []model.JobError{
+	{
+		Type:   model.AlterColumnError,
+		Format: regexp.MustCompile(`pq: cannot alter type of a column used by a view or rule`),
+	},
+	{
+		Type:   model.InsufficientResourceError,
+		Format: regexp.MustCompile(`pq: Disk Full`),
+	},
+	{
+		Type:   model.PermissionError,
+		Format: regexp.MustCompile(`redshift set query_group error : EOF`),
+	},
+	{
+		Type:   model.ConcurrentQueriesError,
+		Format: regexp.MustCompile(`pq: 1023`),
+	},
+	{
+		Type:   model.ColumnSizeError,
+		Format: regexp.MustCompile(`pq: Value too long for character type`),
+	},
+	{
+		Type:   model.PermissionError,
+		Format: regexp.MustCompile(`pq: permission denied for database`),
+	},
+	{
+		Type:   model.PermissionError,
+		Format: regexp.MustCompile(`pq: must be owner of relation`),
+	},
+	{
+		Type:   model.ResourceNotFoundError,
+		Format: regexp.MustCompile(`pq: Cannot execute write query because system is in resize mode`),
+	},
+	{
+		Type:   model.PermissionError,
+		Format: regexp.MustCompile(`pq: SSL is not enabled on the server`),
+	},
+	{
+		Type:   model.ResourceNotFoundError,
+		Format: regexp.MustCompile(`Bucket .* not found`),
+	},
+}
 
 func Init() {
 	loadConfig()
@@ -920,4 +966,8 @@ func (rs *HandleT) LoadTestTable(location, tableName string, _ map[string]interf
 
 func (rs *HandleT) SetConnectionTimeout(timeout time.Duration) {
 	rs.ConnectTimeout = timeout
+}
+
+func (rs *HandleT) ErrorMappings() []model.JobError {
+	return errorsMappings
 }

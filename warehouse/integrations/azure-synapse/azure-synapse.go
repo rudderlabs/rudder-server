@@ -17,6 +17,8 @@ import (
 	"unicode/utf16"
 	"unicode/utf8"
 
+	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
+
 	mssql "github.com/denisenkom/go-mssqldb"
 	"github.com/rudderlabs/rudder-server/services/filemanager"
 	"github.com/rudderlabs/rudder-server/utils/logger"
@@ -41,6 +43,8 @@ const (
 	provider               = warehouseutils.AZURE_SYNAPSE
 	tableNameLimit         = 127
 )
+
+var errorsMappings []model.JobError
 
 var rudderDataTypesMapToMssql = map[string]string{
 	"int":      "bigint",
@@ -902,4 +906,8 @@ func (as *HandleT) LoadTestTable(_, tableName string, payloadMap map[string]inte
 
 func (as *HandleT) SetConnectionTimeout(timeout time.Duration) {
 	as.ConnectTimeout = timeout
+}
+
+func (as *HandleT) ErrorMappings() []model.JobError {
+	return errorsMappings
 }

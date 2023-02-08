@@ -3,8 +3,11 @@ package deltalake
 import (
 	"context"
 	"fmt"
+	"regexp"
 	"strings"
 	"time"
+
+	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/deltalake/client"
 
@@ -96,6 +99,17 @@ var primaryKeyMap = map[string]string{
 	warehouseutils.UsersTable:      "id",
 	warehouseutils.IdentifiesTable: "id",
 	warehouseutils.DiscardsTable:   "row_id",
+}
+
+var errorsMappings = []model.JobError{
+	{
+		Type:   model.PermissionError,
+		Format: regexp.MustCompile(`UnauthorizedAccessException: PERMISSION_DENIED: User does not have READ FILES on External Location`),
+	},
+	{
+		Type:   model.PermissionError,
+		Format: regexp.MustCompile(`SecurityException: User does not have permission CREATE on CATALOG`),
+	},
 }
 
 type Deltalake struct {
@@ -1291,4 +1305,8 @@ func appendableLTSQLStatement(namespace, tableName, stagingTableName string, col
 		stagingTableSqlStatement,
 	)
 	return sqlStatement
+}
+
+func (dl *Deltalake) ErrorMappings() []model.JobError {
+	return errorsMappings
 }
