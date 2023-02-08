@@ -168,34 +168,46 @@ func CheckCurrentTimeExistsInExcludeWindow(currentTime time.Time, windowStartTim
 }
 
 // canCreateUpload indicates if an upload can be started now for the warehouse based on its configured schedule
-func (wh *HandleT) canCreateUpload(warehouse warehouseutils.Warehouse) bool {
+func (wh *HandleT) canCreateUpload(warehouse warehouseutils.Warehouse) (bool, error) {
 	// can be set from rudder-cli to force uploads always
 	if startUploadAlways {
-		return true
+		return true, nil
 	}
 	// return true if the upload was triggered
 	if isUploadTriggered(warehouse) {
-		return true
+		return true, nil
 	}
 	if warehouseSyncFreqIgnore {
-		return !uploadFrequencyExceeded(warehouse, "")
+		if uploadFrequencyExceeded(warehouse, "") {
+			return false, fmt.Errorf("ignore sync freq: upload frequency exceeded")
+		} else {
+			return true, nil
+		}
 	}
 	// gets exclude window start time and end time
 	excludeWindow := warehouseutils.GetConfigValueAsMap(warehouseutils.ExcludeWindow, warehouse.Destination.Config)
 	excludeWindowStartTime, excludeWindowEndTime := GetExcludeWindowStartEndTimes(excludeWindow)
 	if CheckCurrentTimeExistsInExcludeWindow(timeutil.Now(), excludeWindowStartTime, excludeWindowEndTime) {
-		return false
+		return false, fmt.Errorf("exclude window: current time exists in exclude window")
 	}
 	syncFrequency := warehouseutils.GetConfigValue(warehouseutils.SyncFrequency, warehouse)
 	syncStartAt := warehouseutils.GetConfigValue(warehouseutils.SyncStartAt, warehouse)
 	if syncFrequency == "" || syncStartAt == "" {
-		return !uploadFrequencyExceeded(warehouse, syncFrequency)
+		if uploadFrequencyExceeded(warehouse, syncFrequency) {
+			return false, fmt.Errorf("upload frequency exceeded")
+		} else {
+			return true, nil
+		}
 	}
 	prevScheduledTime := GetPrevScheduledTime(syncFrequency, syncStartAt, time.Now())
 	lastUploadCreatedAt := wh.getLastUploadCreatedAt(warehouse)
 	// start upload only if no upload has started in current window
 	// e.g. with prev scheduled time 14:00 and current time 15:00, start only if prev upload hasn't started after 14:00
-	return lastUploadCreatedAt.Before(prevScheduledTime)
+	if lastUploadCreatedAt.Before(prevScheduledTime) {
+		return true, nil
+	} else {
+		return false, fmt.Errorf("before scheduled time")
+	}
 }
 
 func DurationBeforeNextAttempt(attempt int64) time.Duration { // Add state(retryable/non-retryable) as an argument to decide backoff etc.)

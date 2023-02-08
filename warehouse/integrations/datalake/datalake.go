@@ -24,7 +24,7 @@ var (
 var errorsMappings = []model.JobError{
 	{
 		Type:   model.PermissionError,
-		Format: regexp.MustCompile(`AccessDeniedException: Insufficient Lake Formation permission(s): Required Create Database on Catalog`),
+		Format: regexp.MustCompile(`AccessDeniedException: Insufficient Lake Formation permission.*: Required Create Database on Catalog`),
 	},
 }
 
@@ -71,7 +71,7 @@ func (wh *HandleT) AddColumns(tableName string, columnsInfo []warehouseutils.Col
 	return wh.SchemaRepository.AddColumns(tableName, columnsInfo)
 }
 
-func (wh *HandleT) AlterColumn(tableName, columnName, columnType string) (err error) {
+func (wh *HandleT) AlterColumn(tableName, columnName, columnType string) (model.AlterTableResponse, error) {
 	return wh.SchemaRepository.AlterColumn(tableName, columnName, columnType)
 }
 

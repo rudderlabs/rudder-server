@@ -18,7 +18,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func setupDB(t *testing.T) *sql.DB {
+func setupDB(t testing.TB) *sql.DB {
 	pool, err := dockertest.NewPool("")
 	require.NoError(t, err)
 
@@ -65,8 +65,6 @@ func TestStagingFileRepo(t *testing.T) {
 				UseRudderStorage:      true,
 				DestinationRevisionID: "destination_revision_id",
 				TotalEvents:           100,
-				SourceBatchID:         "source_batch_id",
-				SourceTaskID:          "source_task_id",
 				SourceTaskRunID:       "source_task_run_id",
 				SourceJobID:           "source_job_id",
 				SourceJobRunID:        "source_job_run_id",
@@ -86,8 +84,6 @@ func TestStagingFileRepo(t *testing.T) {
 				UseRudderStorage:      true,
 				DestinationRevisionID: "destination_revision_id",
 				TotalEvents:           100,
-				SourceBatchID:         "source_batch_id",
-				SourceTaskID:          "source_task_id",
 				SourceTaskRunID:       "source_task_run_id",
 				SourceJobID:           "source_job_id",
 				SourceJobRunID:        "source_job_run_id",
@@ -107,8 +103,6 @@ func TestStagingFileRepo(t *testing.T) {
 				UseRudderStorage:      true,
 				DestinationRevisionID: "destination_revision_id",
 				TotalEvents:           100,
-				SourceBatchID:         "source_batch_id",
-				SourceTaskID:          "source_task_id",
 				SourceTaskRunID:       "source_task_run_id",
 				SourceJobID:           "source_job_id",
 				SourceJobRunID:        "source_job_run_id",
@@ -162,8 +156,6 @@ func manyStagingFiles(size int, now time.Time) []model.StagingFile {
 			UseRudderStorage:      true,
 			DestinationRevisionID: "destination_revision_id",
 			TotalEvents:           100,
-			SourceBatchID:         "source_batch_id",
-			SourceTaskID:          "source_task_id",
 			SourceTaskRunID:       "source_task_run_id",
 			SourceJobID:           "source_job_id",
 			SourceJobRunID:        "source_job_run_id",
@@ -533,4 +525,56 @@ func TestStagingFileIDs(t *testing.T) {
 
 	ids := repo.StagingFileIDs(sfs)
 	require.Equal(t, []int64{1, 2, 3}, ids)
+}
+
+func BenchmarkFiles(b *testing.B) {
+	ctx := context.Background()
+	db := setupDB(b)
+	stagingRepo := repo.NewStagingFiles(db)
+	uploadRepo := repo.NewUploads(db)
+
+	size := 100000
+	pending := 2
+
+	for i := 0; i < size; i++ {
+		file := model.StagingFile{
+			WorkspaceID:   "workspace_id",
+			Location:      fmt.Sprintf("s3://bucket/path/to/file-%d", i),
+			SourceID:      "source_id",
+			DestinationID: "destination_id",
+			Status:        warehouseutils.StagingFileWaitingState,
+			Error:         nil,
+			FirstEventAt:  time.Now(),
+			LastEventAt:   time.Now(),
+		}.WithSchema([]byte(`{"type": "object"}`))
+
+		id, err := stagingRepo.Insert(ctx, &file)
+		require.NoError(b, err)
+
+		if i >= (size - pending) {
+			continue
+		}
+
+		_, err = uploadRepo.CreateWithStagingFiles(ctx, model.Upload{
+			SourceID:      "source_id",
+			DestinationID: "destination_id",
+		}, []model.StagingFile{
+			{
+				ID:            id,
+				SourceID:      "source_id",
+				DestinationID: "destination_id",
+			},
+		})
+		require.NoError(b, err)
+	}
+
+	b.ResetTimer()
+
+	b.Run("GetStagingFiles", func(b *testing.B) {
+		for i := 0; i < b.N; i++ {
+			ff, err := stagingRepo.Pending(ctx, "source_id", "destination_id")
+			require.NoError(b, err)
+			require.Equal(b, pending, len(ff))
+		}
+	})
 }

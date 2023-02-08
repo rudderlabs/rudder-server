@@ -56,8 +56,6 @@ type ProcessOptions struct {
 
 type UploadMetadata struct {
 	UseRudderStorage bool      `json:"use_rudder_storage"`
-	SourceBatchID    string    `json:"source_batch_id"`
-	SourceTaskID     string    `json:"source_task_id"`
 	SourceTaskRunID  string    `json:"source_task_run_id"`
 	SourceJobID      string    `json:"source_job_id"`
 	SourceJobRunID   string    `json:"source_job_run_id"`
@@ -65,6 +63,7 @@ type UploadMetadata struct {
 	Retried          bool      `json:"retried"`
 	Priority         int       `json:"priority"`
 	NextRetryTime    time.Time `json:"nextRetryTime"`
+	UseUploadID      bool      `json:"use_upload_id"`
 }
 
 func NewUploads(db *sql.DB, opts ...Opt) *Uploads {
@@ -83,8 +82,6 @@ func NewUploads(db *sql.DB, opts ...Opt) *Uploads {
 func ExtractUploadMetadata(upload model.Upload) UploadMetadata {
 	return UploadMetadata{
 		UseRudderStorage: upload.UseRudderStorage,
-		SourceBatchID:    upload.SourceBatchID,
-		SourceTaskID:     upload.SourceTaskID,
 		SourceTaskRunID:  upload.SourceTaskRunID,
 		SourceJobID:      upload.SourceJobID,
 		SourceJobRunID:   upload.SourceJobRunID,
@@ -99,6 +96,11 @@ func (uploads *Uploads) CreateWithStagingFiles(ctx context.Context, upload model
 	startJSONID := files[0].ID
 	endJSONID := files[len(files)-1].ID
 
+	stagingFileIDs := make([]int64, len(files))
+	for i, file := range files {
+		stagingFileIDs[i] = file.ID
+	}
+
 	var firstEventAt, lastEventAt time.Time
 	if ok := files[0].FirstEventAt.IsZero(); !ok {
 		firstEventAt = files[0].FirstEventAt
@@ -109,8 +111,6 @@ func (uploads *Uploads) CreateWithStagingFiles(ctx context.Context, upload model
 
 	metadataMap := UploadMetadata{
 		UseRudderStorage: files[0].UseRudderStorage,
-		SourceBatchID:    files[0].SourceBatchID,
-		SourceTaskID:     files[0].SourceTaskID,
 		SourceTaskRunID:  files[0].SourceTaskRunID,
 		SourceJobID:      files[0].SourceJobID,
 		SourceJobRunID:   files[0].SourceJobRunID,
@@ -118,13 +118,26 @@ func (uploads *Uploads) CreateWithStagingFiles(ctx context.Context, upload model
 		Retried:          upload.Retried,
 		Priority:         upload.Priority,
 		NextRetryTime:    upload.NextRetryTime,
+		UseUploadID:      true,
 	}
 
 	metadata, err := json.Marshal(metadataMap)
 	if err != nil {
 		return 0, err
 	}
-	row := uploads.db.QueryRowContext(
+
+	tx, err := uploads.db.BeginTx(ctx, &sql.TxOptions{})
+	if err != nil {
+		return 0, err
+	}
+	rollback := true
+	defer func() {
+		if rollback {
+			_ = tx.Rollback()
+		}
+	}()
+
+	row := tx.QueryRowContext(
 		ctx,
 
 		`INSERT INTO `+uploadsTableName+` (
@@ -162,6 +175,29 @@ func (uploads *Uploads) CreateWithStagingFiles(ctx context.Context, upload model
 
 	var uploadID int64
 	err = row.Scan(&uploadID)
+	if err != nil {
+		return 0, err
+	}
+
+	result, err := tx.ExecContext(ctx,
+		`UPDATE `+stagingTableName+` SET upload_id = $1 WHERE id = ANY($2)`,
+		uploadID, pq.Array(stagingFileIDs),
+	)
+	if err != nil {
+		return 0, err
+	}
+
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return 0, err
+	}
+
+	if affected != int64(len(stagingFileIDs)) {
+		return 0, fmt.Errorf("failed to update staging files %d != %d", affected, len(stagingFileIDs))
+	}
+
+	rollback = false
+	err = tx.Commit()
 	if err != nil {
 		return 0, err
 	}
@@ -266,7 +302,7 @@ func (uploads *Uploads) GetToProcess(ctx context.Context, destType string, limit
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var uploadJobs []model.Upload
 	for rows.Next() {
@@ -341,6 +377,18 @@ func (uploads *Uploads) UploadJobsStats(ctx context.Context, destType string, op
 	return stats, nil
 }
 
+func (uploads *Uploads) DeleteWaiting(ctx context.Context, uploadID int64) error {
+	_, err := uploads.db.ExecContext(ctx,
+		`DELETE FROM `+uploadsTableName+` WHERE id = $1 AND status = $2`,
+		uploadID, model.Waiting,
+	)
+	if err != nil {
+		return fmt.Errorf("delete waiting upload: %w", err)
+	}
+
+	return nil
+}
+
 func scanUpload(scan scanFn, upload *model.Upload) error {
 	var (
 		schema                    []byte
@@ -397,9 +445,6 @@ func scanUpload(scan scanFn, upload *model.Upload) error {
 			return fmt.Errorf("unmarshal timings: %w", err)
 		}
 	}
-
-	upload.SourceBatchID = metadata.SourceBatchID
-	upload.SourceTaskID = metadata.SourceTaskID
 	upload.SourceTaskRunID = metadata.SourceTaskRunID
 	upload.SourceJobID = metadata.SourceJobID
 	upload.SourceJobRunID = metadata.SourceJobRunID

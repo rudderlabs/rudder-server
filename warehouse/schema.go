@@ -385,8 +385,9 @@ func hasSchemaChanged(localSchema, schemaInWarehouse warehouseutils.SchemaT) boo
 
 func getTableSchemaDiff(tableName string, currentSchema, uploadSchema warehouseutils.SchemaT) (diff warehouseutils.TableSchemaDiffT) {
 	diff = warehouseutils.TableSchemaDiffT{
-		ColumnMap:     make(map[string]string),
-		UpdatedSchema: make(map[string]string),
+		ColumnMap:        make(map[string]string),
+		UpdatedSchema:    make(map[string]string),
+		AlteredColumnMap: make(map[string]string),
 	}
 
 	var currentTableSchema map[string]string
@@ -413,7 +414,7 @@ func getTableSchemaDiff(tableName string, currentSchema, uploadSchema warehouseu
 			diff.UpdatedSchema[columnName] = columnType
 			diff.Exists = true
 		} else if columnType == "text" && currentTableSchema[columnName] == "string" {
-			diff.StringColumnsToBeAlteredToText = append(diff.StringColumnsToBeAlteredToText, columnName)
+			diff.AlteredColumnMap[columnName] = columnType
 			diff.UpdatedSchema[columnName] = columnType
 			diff.Exists = true
 		}

@@ -782,8 +782,8 @@ func (pg *Handle) AddColumns(tableName string, columnsInfo []warehouseutils.Colu
 	return
 }
 
-func (*Handle) AlterColumn(_, _, _ string) (err error) {
-	return
+func (*Handle) AlterColumn(_, _, _ string) (model.AlterTableResponse, error) {
+	return model.AlterTableResponse{}, nil
 }
 
 func (pg *Handle) TestConnection(warehouse warehouseutils.Warehouse) (err error) {

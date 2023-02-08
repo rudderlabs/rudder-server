@@ -652,3 +652,25 @@ func FileExists(path string) (bool, error) {
 
 	return !fileInfo.IsDir(), nil
 }
+
+func TestMapLookup(t *testing.T) {
+	m := map[string]interface{}{
+		"foo": "bar",
+		"baz": "qux",
+	}
+	require.Nil(t, MapLookup(m, "foo", "baz"))
+
+	m = map[string]interface{}{
+		"foo": map[string]interface{}{
+			"baz": "qux",
+		},
+	}
+	require.Equal(t, "qux", MapLookup(m, "foo", "baz"))
+
+	m = map[string]interface{}{
+		"hello": map[string]interface{}{
+			"foo": "bar",
+		},
+	}
+	require.Nil(t, MapLookup(m, "foo"))
+}

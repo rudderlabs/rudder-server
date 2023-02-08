@@ -1343,7 +1343,9 @@ func UseFairPickup() bool {
 	return config.GetBool("JobsDB.fairPickup", false) || config.GetBool("EnableMultitenancy", false)
 }
 
-// lookup map recursively and return value
+// MapLookup returns the value of the key in the map, or nil if the key is not present.
+//
+// If multiple keys are provided then it looks for nested maps recursively.
 func MapLookup(mapToLookup map[string]interface{}, keys ...string) interface{} {
 	if len(keys) == 0 {
 		return nil

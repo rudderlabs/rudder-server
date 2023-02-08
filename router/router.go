@@ -105,6 +105,8 @@ type HandleT struct {
 	routerTransformOutputCountStat          stats.Measurement
 	batchInputOutputDiffCountStat           stats.Measurement
 	routerResponseTransformStat             stats.Measurement
+	throttlingErrorStat                     stats.Measurement
+	throttledStat                           stats.Measurement
 	noOfWorkers                             int
 	allowAbortedUserJobsCountForProcessing  int
 	isBackendConfigInitialized              bool
@@ -154,8 +156,6 @@ type JobParametersT struct {
 	DestinationID           string      `json:"destination_id"`
 	ReceivedAt              string      `json:"received_at"`
 	TransformAt             string      `json:"transform_at"`
-	SourceBatchID           string      `json:"source_batch_id"`
-	SourceTaskID            string      `json:"source_task_id"`
 	SourceTaskRunID         string      `json:"source_task_run_id"`
 	SourceJobID             string      `json:"source_job_id"`
 	SourceJobRunID          string      `json:"source_job_run_id"`
@@ -838,10 +838,10 @@ func (worker *workerT) processDestinationJobs() {
 		}
 
 		status.AttemptNum++
-		status.ErrorResponse = routerutils.EmptyPayload
+		status.ErrorResponse = routerutils.EnhanceJSON(routerutils.EmptyPayload, "response", routerJobResponse.respBody)
 		status.ErrorCode = strconv.Itoa(respStatusCode)
 
-		worker.postStatusOnResponseQ(respStatusCode, routerJobResponse.respBody, destinationJob.Message, respContentType, destinationJobMetadata, &status, routerJobResponse.errorAt)
+		worker.postStatusOnResponseQ(respStatusCode, destinationJob.Message, respContentType, destinationJobMetadata, &status, routerJobResponse.errorAt)
 
 		worker.sendEventDeliveryStat(destinationJobMetadata, &status, &destinationJob.Destination)
 
@@ -971,7 +971,7 @@ func (worker *workerT) updateAbortedMetrics(destinationID, workspaceId, statusCo
 	eventsAbortedStat.Increment()
 }
 
-func (worker *workerT) postStatusOnResponseQ(respStatusCode int, respBody string, payload json.RawMessage,
+func (worker *workerT) postStatusOnResponseQ(respStatusCode int, payload json.RawMessage,
 	respContentType string, destinationJobMetadata *types.JobMetadataT, status *jobsdb.JobStatusT,
 	errorAt string,
 ) {
@@ -985,7 +985,6 @@ func (worker *workerT) postStatusOnResponseQ(respStatusCode int, respBody string
 	}
 
 	status.ErrorResponse = routerutils.EnhanceJSON(status.ErrorResponse, "firstAttemptedAt", firstAttemptedAtTime.Format(misc.RFC3339Milli))
-	status.ErrorResponse = routerutils.EnhanceJSON(status.ErrorResponse, "response", respBody)
 	status.ErrorResponse = routerutils.EnhanceJSON(status.ErrorResponse, "content-type", respContentType)
 
 	if isSuccessStatus(respStatusCode) {
@@ -1283,11 +1282,13 @@ func (rt *HandleT) shouldThrottle(job *jobsdb.JobT, parameters JobParametersT, t
 	limited, err := throttler.CheckLimitReached(parameters.DestinationID, throttlingCost)
 	if err != nil {
 		// we can't throttle, let's hit the destination, worst case we get a 429
+		rt.throttlingErrorStat.Count(1)
 		rt.logger.Errorf(`[%v Router] :: Throttler error: %v`, rt.destName, err)
 		return false
 	}
 	if limited {
 		throttledUserMap[job.UserID] = struct{}{}
+		rt.throttledStat.Count(1)
 		rt.logger.Debugf(
 			"[%v Router] :: Skipping processing of job:%d of user:%s as throttled limits exceeded",
 			rt.destName, job.JobID, job.UserID,
@@ -1317,10 +1318,10 @@ func (rt *HandleT) commitStatusList(responseList *[]jobResponseT) {
 		workspaceID := resp.status.WorkspaceId
 		eventName := gjson.GetBytes(resp.JobT.Parameters, "event_name").String()
 		eventType := gjson.GetBytes(resp.JobT.Parameters, "event_type").String()
-		key := fmt.Sprintf("%s:%s:%s:%s:%s:%s:%s", parameters.SourceID, parameters.DestinationID, parameters.SourceBatchID, resp.status.JobState, resp.status.ErrorCode, eventName, eventType)
+		key := fmt.Sprintf("%s:%s:%s:%s:%s:%s:%s", parameters.SourceID, parameters.DestinationID, parameters.SourceJobRunID, resp.status.JobState, resp.status.ErrorCode, eventName, eventType)
 		_, ok := connectionDetailsMap[key]
 		if !ok {
-			cd := utilTypes.CreateConnectionDetail(parameters.SourceID, parameters.DestinationID, parameters.SourceBatchID, parameters.SourceTaskID, parameters.SourceTaskRunID, parameters.SourceJobID, parameters.SourceJobRunID, parameters.SourceDefinitionID, parameters.DestinationDefinitionID, parameters.SourceCategory)
+			cd := utilTypes.CreateConnectionDetail(parameters.SourceID, parameters.DestinationID, parameters.SourceTaskRunID, parameters.SourceJobID, parameters.SourceJobRunID, parameters.SourceDefinitionID, parameters.DestinationDefinitionID, parameters.SourceCategory)
 			connectionDetailsMap[key] = cd
 			transformedAtMap[key] = parameters.TransformAt
 		}
@@ -1865,25 +1866,15 @@ func (rt *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB jobsd
 	// END: Alert configuration
 	rt.allowAbortedUserJobsCountForProcessing = getRouterConfigInt("allowAbortedUserJobsCountForProcessing", destName, 1)
 
-	rt.batchInputCountStat = stats.Default.NewTaggedStat("router_batch_num_input_jobs", stats.CountType, stats.Tags{
-		"destType": rt.destName,
-	})
-	rt.batchOutputCountStat = stats.Default.NewTaggedStat("router_batch_num_output_jobs", stats.CountType, stats.Tags{
-		"destType": rt.destName,
-	})
-
-	rt.routerTransformInputCountStat = stats.Default.NewTaggedStat("router_transform_num_input_jobs", stats.CountType, stats.Tags{
-		"destType": rt.destName,
-	})
-	rt.routerTransformOutputCountStat = stats.Default.NewTaggedStat("router_transform_num_output_jobs", stats.CountType, stats.Tags{
-		"destType": rt.destName,
-	})
-
-	rt.batchInputOutputDiffCountStat = stats.Default.NewTaggedStat("router_batch_input_output_diff_jobs", stats.CountType, stats.Tags{
-		"destType": rt.destName,
-	})
-
-	rt.routerResponseTransformStat = stats.Default.NewTaggedStat("response_transform_latency", stats.TimerType, stats.Tags{"destType": rt.destName})
+	statTags := stats.Tags{"destType": rt.destName}
+	rt.batchInputCountStat = stats.Default.NewTaggedStat("router_batch_num_input_jobs", stats.CountType, statTags)
+	rt.batchOutputCountStat = stats.Default.NewTaggedStat("router_batch_num_output_jobs", stats.CountType, statTags)
+	rt.routerTransformInputCountStat = stats.Default.NewTaggedStat("router_transform_num_input_jobs", stats.CountType, statTags)
+	rt.routerTransformOutputCountStat = stats.Default.NewTaggedStat("router_transform_num_output_jobs", stats.CountType, statTags)
+	rt.batchInputOutputDiffCountStat = stats.Default.NewTaggedStat("router_batch_input_output_diff_jobs", stats.CountType, statTags)
+	rt.routerResponseTransformStat = stats.Default.NewTaggedStat("response_transform_latency", stats.TimerType, statTags)
+	rt.throttlingErrorStat = stats.Default.NewTaggedStat("router_throttling_error", stats.CountType, statTags)
+	rt.throttledStat = stats.Default.NewTaggedStat("router_throttled", stats.CountType, statTags)
 
 	rt.transformer = transformer.NewTransformer(rt.netClientTimeout, rt.backendProxyTimeout)
 

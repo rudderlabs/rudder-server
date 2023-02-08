@@ -743,8 +743,8 @@ func (ms *HandleT) AddColumns(tableName string, columnsInfo []warehouseutils.Col
 	return
 }
 
-func (*HandleT) AlterColumn(_, _, _ string) (err error) {
-	return
+func (*HandleT) AlterColumn(_, _, _ string) (model.AlterTableResponse, error) {
+	return model.AlterTableResponse{}, nil
 }
 
 func (ms *HandleT) TestConnection(warehouse warehouseutils.Warehouse) (err error) {

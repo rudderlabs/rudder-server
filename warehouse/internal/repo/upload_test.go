@@ -7,16 +7,20 @@ import (
 
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/repo"
+	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 	"github.com/stretchr/testify/require"
 )
 
-func TestUploads_CRUD(t *testing.T) {
+func TestUploads_Get(t *testing.T) {
 	ctx := context.Background()
 
 	db := setupDB(t)
 
 	now := time.Date(2021, 1, 1, 0, 0, 3, 0, time.UTC)
-	r := repo.NewUploads(db, repo.WithNow(func() time.Time {
+	repoUpload := repo.NewUploads(db, repo.WithNow(func() time.Time {
+		return now
+	}))
+	repoStaging := repo.NewStagingFiles(db, repo.WithNow(func() time.Time {
 		return now
 	}))
 
@@ -49,14 +53,12 @@ func TestUploads_CRUD(t *testing.T) {
 		MergedSchema:       model.Schema{},
 	}
 
-	id, err := r.CreateWithStagingFiles(ctx, ogUpload, []model.StagingFile{
+	files := []model.StagingFile{
 		{
 			ID:           1,
 			FirstEventAt: time.Date(2021, 1, 1, 0, 0, 0, 0, time.UTC),
 
 			UseRudderStorage: true,
-			SourceBatchID:    "source_batch_id",
-			SourceTaskID:     "source_task_id",
 			SourceTaskRunID:  "source_task_run_id",
 			SourceJobID:      "source_job_id",
 			SourceJobRunID:   "source_job_run_id",
@@ -65,7 +67,14 @@ func TestUploads_CRUD(t *testing.T) {
 			ID:          2,
 			LastEventAt: time.Date(2021, 1, 1, 0, 0, 1, 0, time.UTC),
 		},
-	})
+	}
+	for _, file := range files {
+		s := file.WithSchema(nil)
+		_, err := repoStaging.Insert(ctx, &s)
+		require.NoError(t, err)
+	}
+
+	id, err := repoUpload.CreateWithStagingFiles(ctx, ogUpload, files)
 	require.NoError(t, err)
 	ogUpload.ID = id
 	ogUpload.Error = []byte("{}")
@@ -76,27 +85,25 @@ func TestUploads_CRUD(t *testing.T) {
 	ogUpload.LoadFileType = "csv"
 
 	ogUpload.UseRudderStorage = true
-	ogUpload.SourceBatchID = "source_batch_id"
-	ogUpload.SourceTaskID = "source_task_id"
 	ogUpload.SourceTaskRunID = "source_task_run_id"
 	ogUpload.SourceJobID = "source_job_id"
 	ogUpload.SourceJobRunID = "source_job_run_id"
 
 	t.Run("Get", func(t *testing.T) {
-		upload, err := r.Get(ctx, id)
+		upload, err := repoUpload.Get(ctx, id)
 		require.NoError(t, err)
 
 		require.Equal(t, ogUpload, upload)
 	})
 	t.Run("GetToProcess", func(t *testing.T) {
-		uploads, err := r.GetToProcess(ctx, destType, 10, repo.ProcessOptions{})
+		uploads, err := repoUpload.GetToProcess(ctx, destType, 10, repo.ProcessOptions{})
 		require.NoError(t, err)
 
 		require.Equal(t, []model.Upload{ogUpload}, uploads)
 	})
 
 	t.Run("UploadJobsStats", func(t *testing.T) {
-		uploadStats, err := r.UploadJobsStats(ctx, destType, repo.ProcessOptions{})
+		uploadStats, err := repoUpload.UploadJobsStats(ctx, destType, repo.ProcessOptions{})
 		require.NoError(t, err)
 
 		require.Equal(t, model.UploadJobsStats{
@@ -115,7 +122,10 @@ func TestUploads_Processing(t *testing.T) {
 	db := setupDB(t)
 
 	now := time.Date(2021, 1, 1, 0, 0, 3, 0, time.UTC)
-	r := repo.NewUploads(db, repo.WithNow(func() time.Time {
+	repoUpload := repo.NewUploads(db, repo.WithNow(func() time.Time {
+		return now
+	}))
+	repoStaging := repo.NewStagingFiles(db, repo.WithNow(func() time.Time {
 		return now
 	}))
 
@@ -160,9 +170,17 @@ func TestUploads_Processing(t *testing.T) {
 	}
 
 	for i := range uploads {
-		id, err := r.CreateWithStagingFiles(ctx, uploads[i], []model.StagingFile{{
-			ID: int64(i + 1),
+
+		stagingID, err := repoStaging.Insert(ctx, &model.StagingFileWithSchema{})
+		require.NoError(t, err)
+
+		id, err := repoUpload.CreateWithStagingFiles(ctx, uploads[i], []model.StagingFile{{
+			ID:            stagingID,
+			SourceID:      uploads[i].SourceID,
+			DestinationID: uploads[i].DestinationID,
 		}})
+		require.NoError(t, err)
+
 		uploads[i].ID = id
 		uploads[i].Error = []byte("{}")
 		uploads[i].UploadSchema = model.Schema{}
@@ -176,13 +194,13 @@ func TestUploads_Processing(t *testing.T) {
 	t.Run("select destination type", func(t *testing.T) {
 		t.Parallel()
 
-		s, err := r.GetToProcess(ctx, destType, 10, repo.ProcessOptions{})
+		s, err := repoUpload.GetToProcess(ctx, destType, 10, repo.ProcessOptions{})
 		require.NoError(t, err)
 
 		t.Log("should get all uploads for destType")
 		require.Equal(t, []model.Upload{uploads[0], uploads[4]}, s)
 
-		s, err = r.GetToProcess(ctx, "OTHER", 10, repo.ProcessOptions{})
+		s, err = repoUpload.GetToProcess(ctx, "OTHER", 10, repo.ProcessOptions{})
 		require.NoError(t, err)
 		t.Log("should get all uploads for OTHER")
 		require.Equal(t, []model.Upload{uploads[3]}, s)
@@ -191,13 +209,13 @@ func TestUploads_Processing(t *testing.T) {
 	t.Run("skip workspaces", func(t *testing.T) {
 		t.Parallel()
 
-		s, err := r.GetToProcess(ctx, destType, 10, repo.ProcessOptions{
+		s, err := repoUpload.GetToProcess(ctx, destType, 10, repo.ProcessOptions{
 			SkipWorkspaces: []string{"workspace_id", "workspace_id_2"},
 		})
 		require.NoError(t, err)
 		require.Empty(t, s)
 
-		s, err = r.GetToProcess(ctx, destType, 10, repo.ProcessOptions{
+		s, err = repoUpload.GetToProcess(ctx, destType, 10, repo.ProcessOptions{
 			SkipWorkspaces: []string{"workspace_id"},
 		})
 		require.NoError(t, err)
@@ -207,7 +225,7 @@ func TestUploads_Processing(t *testing.T) {
 	t.Run("multiple sources", func(t *testing.T) {
 		t.Parallel()
 
-		s, err := r.GetToProcess(ctx, destType, 10, repo.ProcessOptions{
+		s, err := repoUpload.GetToProcess(ctx, destType, 10, repo.ProcessOptions{
 			AllowMultipleSourcesForJobsPickup: true,
 		})
 		require.NoError(t, err)
@@ -215,7 +233,7 @@ func TestUploads_Processing(t *testing.T) {
 		t.Log("should get all uploads for destType")
 		require.Equal(t, []model.Upload{uploads[0], uploads[1], uploads[2], uploads[4]}, s)
 
-		s, err = r.GetToProcess(ctx, destType, 10, repo.ProcessOptions{
+		s, err = repoUpload.GetToProcess(ctx, destType, 10, repo.ProcessOptions{
 			AllowMultipleSourcesForJobsPickup: false,
 		})
 		require.NoError(t, err)
@@ -224,14 +242,14 @@ func TestUploads_Processing(t *testing.T) {
 	})
 
 	t.Run("skip identifiers", func(t *testing.T) {
-		s, err := r.GetToProcess(ctx, destType, 10, repo.ProcessOptions{
+		s, err := repoUpload.GetToProcess(ctx, destType, 10, repo.ProcessOptions{
 			AllowMultipleSourcesForJobsPickup: false,
 			SkipIdentifiers:                   []string{"destination_id_4_namespace"},
 		})
 		require.NoError(t, err)
 		require.Equal(t, []model.Upload{uploads[0]}, s)
 
-		s, err = r.GetToProcess(ctx, destType, 10, repo.ProcessOptions{
+		s, err = repoUpload.GetToProcess(ctx, destType, 10, repo.ProcessOptions{
 			AllowMultipleSourcesForJobsPickup: true,
 			SkipIdentifiers:                   []string{"source_id_3_destination_id_4_namespace"},
 		})
@@ -253,8 +271,6 @@ func TestUploads_UploadMetadata(t *testing.T) {
 		FirstEventAt:       time.Time{},
 		LastEventAt:        time.Time{},
 		UseRudderStorage:   true,
-		SourceBatchID:      "source_batch_id",
-		SourceTaskID:       "source_task_id",
 		SourceTaskRunID:    "source_task_run_id",
 		SourceJobID:        "source_job_id",
 		SourceJobRunID:     "source_job_run_id",
@@ -277,8 +293,6 @@ func TestUploads_UploadMetadata(t *testing.T) {
 
 	require.Equal(t, repo.UploadMetadata{
 		UseRudderStorage: true,
-		SourceBatchID:    "source_batch_id",
-		SourceTaskID:     "source_task_id",
 		SourceTaskRunID:  "source_task_run_id",
 		SourceJobID:      "source_job_id",
 		SourceJobRunID:   "source_job_run_id",
@@ -287,4 +301,55 @@ func TestUploads_UploadMetadata(t *testing.T) {
 		Priority:         40,
 		NextRetryTime:    time.Date(2021, 1, 1, 0, 0, 1, 0, time.UTC),
 	}, metadata)
+}
+
+func TestUploads_Delete(t *testing.T) {
+	ctx := context.Background()
+	db := setupDB(t)
+
+	now := time.Date(2021, 1, 1, 0, 0, 3, 0, time.UTC)
+	repoUpload := repo.NewUploads(db, repo.WithNow(func() time.Time {
+		return now
+	}))
+	repoStaging := repo.NewStagingFiles(db, repo.WithNow(func() time.Time {
+		return now
+	}))
+
+	file := model.StagingFile{
+		WorkspaceID:   "workspace_id",
+		Location:      "s3://bucket/path/to/file",
+		SourceID:      "source_id",
+		DestinationID: "destination_id",
+		Status:        warehouseutils.StagingFileWaitingState,
+		Error:         nil,
+		FirstEventAt:  time.Now(),
+		LastEventAt:   time.Now(),
+	}.WithSchema([]byte(`{"type": "object"}`))
+
+	stagingID, err := repoStaging.Insert(ctx, &file)
+	require.NoError(t, err)
+
+	uploadID, err := repoUpload.CreateWithStagingFiles(ctx, model.Upload{
+		SourceID:      "source_id",
+		DestinationID: "destination_id",
+		Status:        model.Waiting,
+	}, []model.StagingFile{
+		{
+			ID:            stagingID,
+			SourceID:      "source_id",
+			DestinationID: "destination_id",
+		},
+	})
+	require.NoError(t, err)
+
+	files, err := repoStaging.Pending(ctx, "source_id", "destination_id")
+	require.NoError(t, err)
+	require.Len(t, files, 0)
+
+	err = repoUpload.DeleteWaiting(ctx, uploadID)
+	require.NoError(t, err)
+
+	files, err = repoStaging.Pending(ctx, "source_id", "destination_id")
+	require.NoError(t, err)
+	require.Len(t, files, 1)
 }

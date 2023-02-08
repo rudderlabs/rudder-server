@@ -9,9 +9,8 @@ import (
 
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 
-	"github.com/rudderlabs/rudder-server/warehouse/integrations/deltalake/client"
-
 	"github.com/iancoleman/strcase"
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/deltalake/client"
 
 	"github.com/rudderlabs/rudder-server/config"
 	proto "github.com/rudderlabs/rudder-server/proto/databricks"
@@ -509,17 +508,17 @@ func (dl *Deltalake) sortedColumnNames(tableSchemaInUpload warehouseutils.TableS
 
 // credentialsStr return authentication for AWS STS and SSE-C encryption
 // STS authentication is only supported with S3A client.
-func (dl *Deltalake) credentialsStr() (auth string, err error) {
+func (dl *Deltalake) credentialsStr() (string, error) {
 	if dl.ObjectStorage == warehouseutils.S3 {
-		useSTSTokens := warehouseutils.GetConfigValueBoolString(UseSTSTokens, dl.Warehouse)
-		if useSTSTokens == "true" {
+		canUseRudderStorage := misc.IsConfiguredToUseRudderObjectStorage(dl.Warehouse.Destination.Config)
+		canUseSTSTokens := warehouseutils.GetConfigValueBoolString(UseSTSTokens, dl.Warehouse) == "true"
+		if canUseRudderStorage || canUseSTSTokens {
 			tempAccessKeyId, tempSecretAccessKey, token, err := warehouseutils.GetTemporaryS3Cred(&dl.Warehouse.Destination)
 			if err != nil {
-				return "", err
+				return "", fmt.Errorf("temporary s3 credentials: %w", err)
 			}
 			auth := fmt.Sprintf(`CREDENTIALS ( 'awsKeyId' = '%s', 'awsSecretKey' = '%s', 'awsSessionToken' = '%s' )`, tempAccessKeyId, tempSecretAccessKey, token)
 			return auth, nil
-
 		}
 	}
 	return "", nil
@@ -933,8 +932,8 @@ func (dl *Deltalake) CreateSchema() (err error) {
 }
 
 // AlterColumn alter table with column name and type
-func (*Deltalake) AlterColumn(_, _, _ string) (err error) {
-	return
+func (*Deltalake) AlterColumn(_, _, _ string) (model.AlterTableResponse, error) {
+	return model.AlterTableResponse{}, nil
 }
 
 // FetchSchema queries delta lake and returns the schema associated with provided namespace

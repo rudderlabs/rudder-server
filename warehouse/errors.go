@@ -40,7 +40,7 @@ func (e *ErrorHandler) MatchErrorMappings(err error) Tag {
 	}
 
 	if len(errMappings) > 0 {
-		return Tag{name: "errors_mapping", value: strings.Join(errMappings, ",")}
+		return Tag{Name: "errors_mapping", Value: strings.Join(errMappings, ",")}
 	}
-	return Tag{name: "errors_mapping", value: string(model.UnknownError)}
+	return Tag{Name: "errors_mapping", Value: string(model.UnknownError)}
 }

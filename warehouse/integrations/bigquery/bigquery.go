@@ -111,6 +111,10 @@ var errorsMappings = []model.JobError{
 		Type:   model.ResourceNotFoundError,
 		Format: regexp.MustCompile(`googleapi: Error 404: Not found: Dataset .*, notFound`),
 	},
+	{
+		Type:   model.InsufficientResourceError,
+		Format: regexp.MustCompile(`googleapi: Error 400: Job exceeded rate limits: Your project_and_region exceeded quota for concurrent queries.`),
+	},
 }
 
 func getTableSchema(columns map[string]string) []*bigquery.FieldSchema {
@@ -877,8 +881,8 @@ func (bq *HandleT) AddColumns(tableName string, columnsInfo []warehouseutils.Col
 	return
 }
 
-func (*HandleT) AlterColumn(_, _, _ string) (err error) {
-	return
+func (*HandleT) AlterColumn(_, _, _ string) (model.AlterTableResponse, error) {
+	return model.AlterTableResponse{}, nil
 }
 
 // FetchSchema queries bigquery and returns the schema associated with provided namespace

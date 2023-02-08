@@ -739,8 +739,8 @@ func (sf *HandleT) AddColumns(tableName string, columnsInfo []warehouseutils.Col
 	return
 }
 
-func (*HandleT) AlterColumn(_, _, _ string) (err error) {
-	return
+func (*HandleT) AlterColumn(_, _, _ string) (model.AlterTableResponse, error) {
+	return model.AlterTableResponse{}, nil
 }
 
 // DownloadIdentityRules gets distinct combinations of anonymous_id, user_id from tables in warehouse

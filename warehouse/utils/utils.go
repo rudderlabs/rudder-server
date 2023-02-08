@@ -37,6 +37,14 @@ import (
 )
 
 const (
+	SourceID        = "sourceID"
+	SourceType      = "sourceType"
+	DestinationID   = "destinationID"
+	DestinationType = "destinationType"
+	WorkspaceID     = "workspaceID"
+)
+
+const (
 	RS             = "RS"
 	BQ             = "BQ"
 	SNOWFLAKE      = "SNOWFLAKE"
@@ -296,11 +304,11 @@ func IDResolutionEnabled() bool {
 }
 
 type TableSchemaDiffT struct {
-	Exists                         bool
-	TableToBeCreated               bool
-	ColumnMap                      map[string]string
-	UpdatedSchema                  map[string]string
-	StringColumnsToBeAlteredToText []string
+	Exists           bool
+	TableToBeCreated bool
+	ColumnMap        map[string]string
+	UpdatedSchema    map[string]string
+	AlteredColumnMap map[string]string
 }
 
 type QueryResult struct {
@@ -950,26 +958,6 @@ func GetLoadFileFormat(whType string) string {
 	default:
 		return "csv.gz"
 	}
-}
-
-func GetLoadFilePrefix(timeWindow time.Time, warehouse Warehouse) (timeWindowFormat string) {
-	whType := warehouse.Type
-	switch whType {
-	case GCS_DATALAKE:
-		timeWindowLayout := GetConfigValue("timeWindowLayout", warehouse)
-		if timeWindowLayout == "" {
-			timeWindowLayout = DatalakeTimeWindowFormat
-		}
-
-		timeWindowFormat = timeWindow.Format(timeWindowLayout)
-		tableSuffixPath := GetConfigValue("tableSuffix", warehouse)
-		if tableSuffixPath != "" {
-			timeWindowFormat = fmt.Sprintf("%v/%v", tableSuffixPath, timeWindowFormat)
-		}
-	default:
-		timeWindowFormat = timeWindow.Format(DatalakeTimeWindowFormat)
-	}
-	return timeWindowFormat
 }
 
 func GetRequestWithTimeout(ctx context.Context, url string, timeout time.Duration) ([]byte, error) {

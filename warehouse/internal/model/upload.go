@@ -54,8 +54,6 @@ type Upload struct {
 	LastEventAt     time.Time
 
 	UseRudderStorage bool
-	SourceBatchID    string
-	SourceTaskID     string
 	SourceTaskRunID  string
 	SourceJobID      string
 	SourceJobRunID   string
@@ -127,4 +125,9 @@ func GetLoadFileGenTime(timingsMap Timings) (t time.Time) {
 		}
 	}
 	return // zero values
+}
+
+type AlterTableResponse struct {
+	IsDependent bool // true if the column is dependent on another view or rules, false otherwise
+	Query       string
 }

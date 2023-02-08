@@ -134,7 +134,7 @@ var errorsMappings = []model.JobError{
 	},
 	{
 		Type:   model.InsufficientResourceError,
-		Format: regexp.MustCompile(`code: 241, message: Memory limit (total) exceeded: would use .*, maximum: .*`),
+		Format: regexp.MustCompile(`code: 241, message: Memory limit .* exceeded: would use .*, maximum: .*`),
 	},
 }
 
@@ -1012,8 +1012,8 @@ func (ch *Clickhouse) CreateSchema() (err error) {
 	return err
 }
 
-func (*Clickhouse) AlterColumn(_, _, _ string) (err error) {
-	return
+func (*Clickhouse) AlterColumn(_, _, _ string) (model.AlterTableResponse, error) {
+	return model.AlterTableResponse{}, nil
 }
 
 // TestConnection is used destination connection tester to test the clickhouse connection

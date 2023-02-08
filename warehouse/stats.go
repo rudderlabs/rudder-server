@@ -17,8 +17,8 @@ import (
 const moduleName = "warehouse"
 
 type Tag struct {
-	name  string
-	value string
+	Name  string
+	Value string
 }
 
 func getWarehouseTagName(destID, sourceName, destName, sourceID string) string {
@@ -43,7 +43,7 @@ func (job *UploadJobT) timerStat(name string, extraTags ...Tag) stats.Measuremen
 		"sourceID":    job.upload.SourceID,
 	}
 	for _, extraTag := range extraTags {
-		tags[extraTag.name] = extraTag.value
+		tags[extraTag.Name] = extraTag.Value
 	}
 	return job.stats.NewTaggedStat(name, stats.TimerType, tags)
 }
@@ -58,7 +58,7 @@ func (job *UploadJobT) counterStat(name string, extraTags ...Tag) stats.Measurem
 		"sourceID":    job.upload.SourceID,
 	}
 	for _, extraTag := range extraTags {
-		tags[extraTag.name] = extraTag.value
+		tags[extraTag.Name] = extraTag.Value
 	}
 	return job.stats.NewTaggedStat(name, stats.CountType, tags)
 }
@@ -74,7 +74,7 @@ func (job *UploadJobT) guageStat(name string, extraTags ...Tag) stats.Measuremen
 		"sourceCategory": job.warehouse.Source.SourceDefinition.Category,
 	}
 	for _, extraTag := range extraTags {
-		tags[extraTag.name] = extraTag.value
+		tags[extraTag.Name] = extraTag.Value
 	}
 	return job.stats.NewTaggedStat(name, stats.GaugeType, tags)
 }
@@ -89,7 +89,7 @@ func (jobRun *JobRunT) timerStat(name string, extraTags ...Tag) stats.Measuremen
 		"sourceID":    jobRun.job.SourceID,
 	}
 	for _, extraTag := range extraTags {
-		tags[extraTag.name] = extraTag.value
+		tags[extraTag.Name] = extraTag.Value
 	}
 	return jobRun.stats.NewTaggedStat(name, stats.TimerType, tags)
 }
@@ -104,7 +104,7 @@ func (jobRun *JobRunT) counterStat(name string, extraTags ...Tag) stats.Measurem
 		"sourceID":    jobRun.job.SourceID,
 	}
 	for _, extraTag := range extraTags {
-		tags[extraTag.name] = extraTag.value
+		tags[extraTag.Name] = extraTag.Value
 	}
 	return jobRun.stats.NewTaggedStat(name, stats.CountType, tags)
 }
@@ -127,8 +127,8 @@ func (job *UploadJobT) generateUploadSuccessMetrics() {
 	job.counterStat("num_staged_events").Count(int(numStagedEvents))
 	attempts := job.getAttemptNumber()
 	job.counterStat("upload_success", Tag{
-		name:  "attempt_number",
-		value: strconv.Itoa(attempts),
+		Name:  "attempt_number",
+		Value: strconv.Itoa(attempts),
 	}).Count(1)
 }
 
@@ -152,12 +152,12 @@ func (job *UploadJobT) generateUploadAbortedMetrics() {
 
 	// Set the upload_aborted stat
 	attempts := job.getAttemptNumber()
-	tags := []Tag{{name: "attempt_number", value: strconv.Itoa(attempts)}}
+	tags := []Tag{{Name: "attempt_number", Value: strconv.Itoa(attempts)}}
 	valid, err := job.validateDestinationCredentials()
 	if err == nil {
 		// Only if error is nil, meaning we were able to
 		// successfully validate the creds, we set this tag
-		tags = append(tags, Tag{name: "destination_creds_valid", value: strconv.FormatBool(valid)})
+		tags = append(tags, Tag{Name: "destination_creds_valid", Value: strconv.FormatBool(valid)})
 	}
 	job.counterStat("upload_aborted", tags...).Count(1)
 }
@@ -167,8 +167,8 @@ func (job *UploadJobT) recordTableLoad(tableName string, numEvents int64) {
 	if misc.Contains(rudderAPISupportedEventTypes, strings.ToLower(tableName)) {
 		// record total events synced (ignoring additional row synced to the event table for e.g.track call)
 		job.counterStat(`event_delivery`, Tag{
-			name:  "tableName",
-			value: strings.ToLower(tableName),
+			Name:  "tableName",
+			Value: strings.ToLower(tableName),
 		}).Count(int(numEvents))
 	}
 
@@ -182,8 +182,8 @@ func (job *UploadJobT) recordTableLoad(tableName string, numEvents int64) {
 	}
 
 	job.counterStat(`rows_synced`, Tag{
-		name:  "tableName",
-		value: strings.ToLower(tableName),
+		Name:  "tableName",
+		Value: strings.ToLower(tableName),
 	}).Count(int(numEvents))
 	// Delay for the oldest event in the batch
 	firstEventAt, err := repo.NewStagingFiles(dbHandle).FirstEventForUpload(context.TODO(), job.upload)
@@ -199,8 +199,8 @@ func (job *UploadJobT) recordTableLoad(tableName string, numEvents int64) {
 			syncFrequency, _ = config[warehouseutils.SyncFrequency].(string)
 		}
 		job.timerStat("event_delivery_time",
-			Tag{name: "tableName", value: strings.ToLower(tableName)},
-			Tag{name: "syncFrequency", value: syncFrequency},
+			Tag{Name: "tableName", Value: strings.ToLower(tableName)},
+			Tag{Name: "syncFrequency", Value: syncFrequency},
 		).Since(firstEventAt)
 	}
 }

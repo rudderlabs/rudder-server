@@ -36,9 +36,8 @@ func TestHandleT_Track(t *testing.T) {
 		name             string
 		destID           string
 		destDisabled     bool
-		uploaded         int
 		wantErr          error
-		wantStats        bool
+		missing          bool
 		NowSQL           string
 		exclusionWindow  map[string]any
 		uploadBufferTime string
@@ -53,35 +52,34 @@ func TestHandleT_Track(t *testing.T) {
 			destDisabled: true,
 		},
 		{
-			name:      "successful upload exists",
-			destID:    destID,
-			wantStats: true,
-			uploaded:  1,
+			name:    "successful upload exists",
+			destID:  destID,
+			missing: false,
 		},
 		{
 			name:             "successful upload exists with upload buffer time",
 			destID:           destID,
-			wantStats:        true,
-			uploaded:         1,
+			missing:          false,
 			uploadBufferTime: "0m",
 		},
 		{
-			name:      "exclusion window",
-			destID:    destID,
-			wantStats: false,
+			name:    "exclusion window",
+			destID:  destID,
+			missing: false,
 			exclusionWindow: map[string]any{
 				"excludeWindowStartTime": "05:09",
 				"excludeWindowEndTime":   "09:07",
 			},
 		},
 		{
-			name:      "no successful upload exists",
-			destID:    "test-destinationID-1",
-			wantStats: true,
+			name:    "no successful upload exists",
+			destID:  "test-destinationID-1",
+			missing: true,
 		},
 		{
 			name:    "throw error while fetching last upload time",
 			destID:  destID,
+			missing: false,
 			NowSQL:  "ABC",
 			wantErr: errors.New("fetching last upload time for source: test-sourceID and destination: test-destinationID: pq: column \"abc\" does not exist"),
 		},
@@ -165,7 +163,7 @@ func TestHandleT_Track(t *testing.T) {
 			}
 			require.NoError(t, err)
 
-			m := store.Get("warehouse_successful_upload_exists", stats.Tags{
+			m := store.Get("warehouse_track_upload_missing", stats.Tags{
 				"module":      moduleName,
 				"workspaceId": warehouse.WorkspaceID,
 				"destType":    handle.destType,
@@ -176,10 +174,10 @@ func TestHandleT_Track(t *testing.T) {
 					misc.TailTruncateStr(warehouse.Source.ID, 6)),
 			})
 
-			if tc.wantStats {
-				require.EqualValues(t, m.LastValue(), tc.uploaded)
+			if tc.missing {
+				require.EqualValues(t, m.LastValue(), 1)
 			} else {
-				require.Nil(t, m)
+				require.EqualValues(t, m.LastValue(), 0)
 			}
 		})
 	}
