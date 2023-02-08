@@ -17,14 +17,18 @@ import (
 
 func TestErrorHandler_MatchErrorMappings(t *testing.T) {
 	readLines := func(f *os.File) ([]string, error) {
-		var lines []string
-		scanner := bufio.NewScanner(f)
+		var (
+			lines []string
+
+			scanner = bufio.NewScanner(f)
+		)
+
 		for scanner.Scan() {
 			line := scanner.Text()
 			if line == "" {
 				continue
 			}
-			lines = append(lines, scanner.Text())
+			lines = append(lines, line)
 		}
 		return lines, scanner.Err()
 	}
@@ -59,7 +63,7 @@ func TestErrorHandler_MatchErrorMappings(t *testing.T) {
 
 			for _, uploadError := range uploadsErrors {
 				tag := er.MatchErrorMappings(errors.New(uploadError))
-				require.Equal(t, tag.Name, "errors_mapping")
+				require.Equal(t, tag.Name, "error_mapping")
 				require.NotEqual(t, tag.Value, string(model.UnknownError))
 			}
 		})
@@ -72,7 +76,7 @@ func TestErrorHandler_MatchErrorMappings(t *testing.T) {
 
 			er := &warehouse.ErrorHandler{Manager: m}
 			tag := er.MatchErrorMappings(errors.New("unknown error"))
-			require.Equal(t, tag.Name, "errors_mapping")
+			require.Equal(t, tag.Name, "error_mapping")
 			require.Equal(t, tag.Value, string(model.UnknownError))
 		})
 	}
