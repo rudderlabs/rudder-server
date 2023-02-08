@@ -27,6 +27,9 @@ type ErrorHandler struct {
 	Manager manager.Manager
 }
 
+// MatchErrorMappings matches the error with the error mappings defined in the integrations
+// and returns the corresponding joins of the matched error type
+// else returns UnknownError
 func (e *ErrorHandler) MatchErrorMappings(err error) Tag {
 	var (
 		errMappings []string
