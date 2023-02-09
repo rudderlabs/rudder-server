@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.5.6](https://github.com/rudderlabs/rudder-server/compare/v1.5.5...v1.5.6) (2023-02-09)
+
+
+### Bug Fixes
+
+* setting default throttling algorithm to gcra ([#2965](https://github.com/rudderlabs/rudder-server/issues/2965)) ([2620001](https://github.com/rudderlabs/rudder-server/commit/262000170f50cbe65d43c473a62bcdd1ce6c6aba))
+
 ## [1.5.5](https://github.com/rudderlabs/rudder-server/compare/v1.5.4...v1.5.5) (2023-02-07)
 
 
