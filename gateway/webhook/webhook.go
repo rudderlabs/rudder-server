@@ -353,6 +353,7 @@ func (bt *batchWebhookTransformerT) batchTransformLoop() {
 			if batchResponse.statusCode != 0 {
 				statusCode = batchResponse.statusCode
 			}
+			pkgLogger.Errorf("webhook %s source transformation failed with error: %w and status code: %s", breq.sourceType, batchResponse.batchError, statusCode)
 			countWebhookErrors(breq.sourceType, statusCode, len(breq.batchRequest))
 			for _, req := range breq.batchRequest {
 				req.done <- transformerResponse{StatusCode: statusCode, Err: batchResponse.batchError.Error()}
@@ -373,11 +374,13 @@ func (bt *batchWebhookTransformerT) batchTransformLoop() {
 					errMessage = bt.webhook.enqueueInGateway(webRequest, outputPayload)
 				}
 				if errMessage != "" {
+					pkgLogger.Errorf("webhook %s source transformation failed: %s", breq.sourceType, errMessage)
 					countWebhookErrors(breq.sourceType, response.GetErrorStatusCode(errMessage), 1)
 					webRequest.done <- bt.markResponseFail(errMessage)
 					continue
 				}
 			} else if resp.StatusCode != http.StatusOK {
+				pkgLogger.Errorf("webhook %s source transformation failed with error: %s and status code: %s", breq.sourceType, resp.Err, resp.StatusCode)
 				countWebhookErrors(breq.sourceType, resp.StatusCode, 1)
 			}
 
