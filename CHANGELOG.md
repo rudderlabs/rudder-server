@@ -1,5 +1,34 @@
 # Changelog
 
+## [1.5.5](https://github.com/rudderlabs/rudder-server/compare/v1.5.4...v1.5.5) (2023-02-07)
+
+
+### Bug Fixes
+
+* upload missing metric ([#2947](https://github.com/rudderlabs/rudder-server/issues/2947)) ([cbb4b1a](https://github.com/rudderlabs/rudder-server/commit/cbb4b1a046a1a9d68ca8131ac1e56bbd65c6b726))
+
+## [1.5.4](https://github.com/rudderlabs/rudder-server/compare/v1.5.3...v1.5.4) (2023-02-06)
+
+
+### Miscellaneous
+
+* introduce stat for skip upload syncs ([#2938](https://github.com/rudderlabs/rudder-server/issues/2938)) ([9ac5006](https://github.com/rudderlabs/rudder-server/commit/9ac5006831f8711a3d5d6af7a4c0f881d3940324))
+
+## [1.5.3](https://github.com/rudderlabs/rudder-server/compare/v1.5.2...v1.5.3) (2023-02-03)
+
+
+### Bug Fixes
+
+* **warehouse:** use single protocol source category while doing dedup for new record ([#2937](https://github.com/rudderlabs/rudder-server/issues/2937)) ([8087e46](https://github.com/rudderlabs/rudder-server/commit/8087e46c5dd430075e878ca55df065ff04e6daea))
+* **warehouse:** warehouse successful upload exists ([#2931](https://github.com/rudderlabs/rudder-server/issues/2931)) ([bcb2bb2](https://github.com/rudderlabs/rudder-server/commit/bcb2bb2a76cc479110dae22d28a1acef6977a1b6))
+
+## [1.5.2](https://github.com/rudderlabs/rudder-server/compare/v1.5.1...v1.5.2) (2023-02-02)
+
+
+### Bug Fixes
+
+* runtime error: slice bounds out of range [:-1] ([#2932](https://github.com/rudderlabs/rudder-server/issues/2932)) ([07dd59e](https://github.com/rudderlabs/rudder-server/commit/07dd59e1769578eb6fc2cc8f72015819b3f3e705))
+
 ## [1.5.1](https://github.com/rudderlabs/rudder-server/compare/v1.5.0...v1.5.1) (2023-02-01)
 
 

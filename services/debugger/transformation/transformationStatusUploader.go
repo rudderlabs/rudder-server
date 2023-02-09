@@ -224,6 +224,41 @@ func (h *Handle) backendConfigSubscriber(backendConfig backendconfig.BackendConf
 	close(h.done)
 }
 
+// limit the number of stored events
+func (ts *TransformationStatusT) Limit(
+	limit int,
+	transformation backendconfig.TransformationT,
+) *TransformationStatusT {
+	ts.Destination.Transformations = []backendconfig.TransformationT{transformation}
+	ts.UserTransformedEvents = lo.Slice(ts.UserTransformedEvents, 0, limit)
+	ts.FailedEvents = lo.Slice(ts.FailedEvents, 0, limit)
+	messageIDs := lo.SliceToMap(
+		append(
+			lo.Map(
+				ts.UserTransformedEvents,
+				func(event transformer.TransformerEventT, _ int) string {
+					return event.Metadata.MessageID
+				},
+			),
+			lo.Map(
+				ts.FailedEvents,
+				func(event transformer.TransformerResponseT, _ int) string {
+					return event.Metadata.MessageID
+				},
+			)...,
+		),
+		func(messageID string) (string, struct{}) {
+			return messageID, struct{}{}
+		},
+	)
+	ts.UniqueMessageIds = messageIDs
+	ts.EventsByMessageID = lo.PickByKeys(
+		ts.EventsByMessageID,
+		lo.Keys(messageIDs),
+	)
+	return ts
+}
+
 func (h *Handle) UploadTransformationStatus(tStatus *TransformationStatusT) bool {
 	defer func() {
 		if r := recover(); r != nil {
@@ -242,12 +277,10 @@ func (h *Handle) UploadTransformationStatus(tStatus *TransformationStatusT) bool
 		if h.IsUploadEnabled(transformation.ID) {
 			h.processRecordTransformationStatus(tStatus, transformation.ID)
 		} else {
-			tStatusUpdated := *tStatus
-			lo.Slice(tStatusUpdated.UserTransformedEvents, 0, h.limitEventsInMemory+1)
-			tStatusUpdated.Destination.Transformations = []backendconfig.TransformationT{transformation}
-			tStatusUpdated.UserTransformedEvents = lo.Slice(tStatusUpdated.UserTransformedEvents, 0, h.limitEventsInMemory+1)
-			tStatusUpdated.FailedEvents = lo.Slice(tStatusUpdated.FailedEvents, 0, h.limitEventsInMemory+1)
-			err := h.transformationCacheMap.Update(transformation.ID, tStatusUpdated)
+			err := h.transformationCacheMap.Update(
+				transformation.ID,
+				*(tStatus.Limit(h.limitEventsInMemory+1, transformation)),
+			)
 			if err != nil {
 				h.log.Errorf("Error while updating transformation cache: %v", err)
 				return false

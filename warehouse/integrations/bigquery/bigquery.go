@@ -7,6 +7,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
+
 	"cloud.google.com/go/bigquery"
 
 	"github.com/rudderlabs/rudder-server/config"
@@ -863,8 +865,8 @@ func (bq *HandleT) AddColumns(tableName string, columnsInfo []warehouseutils.Col
 	return
 }
 
-func (*HandleT) AlterColumn(_, _, _ string) (err error) {
-	return
+func (*HandleT) AlterColumn(_, _, _ string) (model.AlterTableResponse, error) {
+	return model.AlterTableResponse{}, nil
 }
 
 // FetchSchema queries bigquery and returns the schema associated with provided namespace

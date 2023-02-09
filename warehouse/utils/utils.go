@@ -37,6 +37,14 @@ import (
 )
 
 const (
+	SourceID        = "sourceID"
+	SourceType      = "sourceType"
+	DestinationID   = "destinationID"
+	DestinationType = "destinationType"
+	WorkspaceID     = "workspaceID"
+)
+
+const (
 	RS             = "RS"
 	BQ             = "BQ"
 	SNOWFLAKE      = "SNOWFLAKE"
@@ -296,11 +304,11 @@ func IDResolutionEnabled() bool {
 }
 
 type TableSchemaDiffT struct {
-	Exists                         bool
-	TableToBeCreated               bool
-	ColumnMap                      map[string]string
-	UpdatedSchema                  map[string]string
-	StringColumnsToBeAlteredToText []string
+	Exists           bool
+	TableToBeCreated bool
+	ColumnMap        map[string]string
+	UpdatedSchema    map[string]string
+	AlteredColumnMap map[string]string
 }
 
 type QueryResult struct {
