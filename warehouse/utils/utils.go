@@ -37,6 +37,10 @@ import (
 )
 
 const (
+	DestinationType = "destinationType"
+)
+
+const (
 	RS             = "RS"
 	BQ             = "BQ"
 	SNOWFLAKE      = "SNOWFLAKE"
