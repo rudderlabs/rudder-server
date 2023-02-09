@@ -711,11 +711,11 @@ func (wh *HandleT) mainLoop(ctx context.Context) {
 
 func (wh *HandleT) processingStats(availableWorkers int, jobStats model.UploadJobsStats) {
 	// Get pending jobs
-	pendingJobsStat := wh.stats.NewTaggedStat("wh_processing_pending_jobs", stats.CountType, stats.Tags{
+	pendingJobsStat := wh.stats.NewTaggedStat("wh_processing_pending_jobs", stats.GaugeType, stats.Tags{
 		"module":   moduleName,
 		"destType": wh.destType,
 	})
-	pendingJobsStat.Count(int(jobStats.PendingJobs))
+	pendingJobsStat.Gauge(int(jobStats.PendingJobs))
 
 	availableWorkersStat := wh.stats.NewTaggedStat("wh_processing_available_workers", stats.GaugeType, stats.Tags{
 		"module":   moduleName,
