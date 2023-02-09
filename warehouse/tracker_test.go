@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"os"
-	"strconv"
 	"testing"
 	"time"
 
@@ -38,8 +37,7 @@ func TestHandleT_Track(t *testing.T) {
 		destID           string
 		destDisabled     bool
 		wantErr          error
-		wantStats        bool
-		ok               bool
+		missing          bool
 		NowSQL           string
 		exclusionWindow  map[string]any
 		uploadBufferTime string
@@ -54,35 +52,34 @@ func TestHandleT_Track(t *testing.T) {
 			destDisabled: true,
 		},
 		{
-			name:      "successful upload exists",
-			destID:    destID,
-			wantStats: true,
-			ok:        true,
+			name:    "successful upload exists",
+			destID:  destID,
+			missing: false,
 		},
 		{
 			name:             "successful upload exists with upload buffer time",
 			destID:           destID,
-			wantStats:        true,
-			ok:               true,
+			missing:          false,
 			uploadBufferTime: "0m",
 		},
 		{
-			name:      "exclusion window",
-			destID:    destID,
-			wantStats: false,
+			name:    "exclusion window",
+			destID:  destID,
+			missing: false,
 			exclusionWindow: map[string]any{
 				"excludeWindowStartTime": "05:09",
 				"excludeWindowEndTime":   "09:07",
 			},
 		},
 		{
-			name:      "no successful upload exists",
-			destID:    "test-destinationID-1",
-			wantStats: true,
+			name:    "no successful upload exists",
+			destID:  "test-destinationID-1",
+			missing: true,
 		},
 		{
 			name:    "throw error while fetching last upload time",
 			destID:  destID,
+			missing: false,
 			NowSQL:  "ABC",
 			wantErr: errors.New("fetching last upload time for source: test-sourceID and destination: test-destinationID: pq: column \"abc\" does not exist"),
 		},
@@ -166,11 +163,10 @@ func TestHandleT_Track(t *testing.T) {
 			}
 			require.NoError(t, err)
 
-			m := store.Get("warehouse_successful_upload_exists", stats.Tags{
+			m := store.Get("warehouse_track_upload_missing", stats.Tags{
 				"module":      moduleName,
 				"workspaceId": warehouse.WorkspaceID,
 				"destType":    handle.destType,
-				"ok":          strconv.FormatBool(tc.ok),
 				"warehouseID": misc.GetTagName(
 					warehouse.Destination.ID,
 					warehouse.Source.Name,
@@ -178,10 +174,10 @@ func TestHandleT_Track(t *testing.T) {
 					misc.TailTruncateStr(warehouse.Source.ID, 6)),
 			})
 
-			if tc.wantStats {
+			if tc.missing {
 				require.EqualValues(t, m.LastValue(), 1)
 			} else {
-				require.Nil(t, m)
+				require.EqualValues(t, m.LastValue(), 0)
 			}
 		})
 	}

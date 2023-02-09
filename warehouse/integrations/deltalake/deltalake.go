@@ -817,23 +817,7 @@ func (dl *Deltalake) connectToWarehouse() (Client *client.Client, err error) {
 	})
 	defer connStat.RecordDuration()()
 
-	closeConnStat := dl.Stats.NewTaggedStat("warehouse.deltalake.grpcExecTime", stats.TimerType, stats.Tags{
-		"workspaceId": dl.Warehouse.WorkspaceID,
-		"destination": dl.Warehouse.Destination.ID,
-		"destType":    dl.Warehouse.Type,
-		"source":      dl.Warehouse.Source.ID,
-		"namespace":   dl.Warehouse.Namespace,
-		"identifier":  dl.Warehouse.Identifier,
-		"queryType":   "Close",
-	})
-
-	Client, err = dl.NewClient(credT, dl.ConnectTimeout)
-	if err != nil {
-		return
-	}
-
-	Client.CloseStats = closeConnStat
-	return
+	return dl.NewClient(credT, dl.ConnectTimeout)
 }
 
 // CreateTable creates tables with table name and columns

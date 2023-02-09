@@ -214,6 +214,22 @@ func Test_Measurement_Operations(t *testing.T) {
 			return false
 		}, 2*time.Second, time.Millisecond)
 	})
+
+	t.Run("measurement with empty name", func(t *testing.T) {
+		s.NewStat("", stats.CountType).Increment()
+
+		require.Eventually(t, func() bool {
+			return lastReceived == "novalue,instanceName=test:1|c"
+		}, 2*time.Second, time.Millisecond)
+	})
+
+	t.Run("measurement with empty name and empty tag key", func(t *testing.T) {
+		s.NewTaggedStat(" ", stats.GaugeType, stats.Tags{"key": "value", "": "value2"}).Gauge(22)
+
+		require.Eventually(t, func() bool {
+			return lastReceived == "novalue,instanceName=test,key=value:22|g"
+		}, 2*time.Second, time.Millisecond)
+	})
 }
 
 func Test_Periodic_stats(t *testing.T) {

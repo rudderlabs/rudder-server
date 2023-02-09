@@ -71,6 +71,19 @@ func (wh *HandleT) Track(ctx context.Context, warehouse *warehouseutils.Warehous
 		Now = wh.Now
 	}
 
+	tags := stats.Tags{
+		"workspaceId": warehouse.WorkspaceID,
+		"module":      moduleName,
+		"destType":    wh.destType,
+		"warehouseID": misc.GetTagName(
+			destination.ID,
+			source.Name,
+			destination.Name,
+			misc.TailTruncateStr(source.ID, 6)),
+	}
+	statKey := "warehouse_track_upload_missing"
+	wh.stats.NewTaggedStat(statKey, stats.GaugeType, tags).Gauge(0)
+
 	if !source.Enabled || !destination.Enabled {
 		return nil
 	}
@@ -165,19 +178,8 @@ func (wh *HandleT) Track(ctx context.Context, warehouse *warehouseutils.Warehous
 			logfield.DestinationType, destination.DestinationDefinition.Name,
 			logfield.WorkspaceID, warehouse.WorkspaceID,
 		)
+		wh.stats.NewTaggedStat(statKey, stats.GaugeType, tags).Gauge(1)
 	}
 
-	tags := stats.Tags{
-		"workspaceId": warehouse.WorkspaceID,
-		"module":      moduleName,
-		"destType":    wh.destType,
-		"ok":          strconv.FormatBool(exists),
-		"warehouseID": misc.GetTagName(
-			destination.ID,
-			source.Name,
-			destination.Name,
-			misc.TailTruncateStr(source.ID, 6)),
-	}
-	wh.stats.NewTaggedStat("warehouse_successful_upload_exists", stats.GaugeType, tags).Gauge(1)
 	return nil
 }

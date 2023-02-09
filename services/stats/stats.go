@@ -215,7 +215,7 @@ func (s *statsdStats) Stop() {
 
 // NewStat creates a new Measurement with provided Name and Type
 func (s *statsdStats) NewStat(name, statType string) (m Measurement) {
-	return newStatsdMeasurement(s.conf, name, statType, s.state.client)
+	return newStatsdMeasurement(s.conf, s.log, name, statType, s.state.client)
 }
 
 func (s *statsdStats) NewTaggedStat(Name, StatType string, tags Tags) (m Measurement) {
@@ -229,7 +229,7 @@ func (s *statsdStats) NewSampledTaggedStat(Name, StatType string, tags Tags) (m 
 func (s *statsdStats) internalNewTaggedStat(name, statType string, tags Tags, samplingRate float32) (m Measurement) {
 	// If stats is not enabled, returning a dummy struct
 	if !s.conf.enabled {
-		return newStatsdMeasurement(s.conf, name, statType, &statsdClient{})
+		return newStatsdMeasurement(s.conf, s.log, name, statType, &statsdClient{})
 	}
 
 	// Clean up tags based on deployment type. No need to send workspace id tag for free tier customers.
@@ -238,6 +238,10 @@ func (s *statsdStats) internalNewTaggedStat(name, statType string, tags Tags, sa
 	}
 	if tags == nil {
 		tags = make(Tags)
+	}
+	if v, ok := tags[""]; ok {
+		s.log.Warnf("removing empty tag key with value %s for measurement %s", v, name)
+		delete(tags, "")
 	}
 	// key comprises of the measurement type plus all tag-value pairs
 	taggedClientKey := tags.String() + fmt.Sprintf("%f", samplingRate)
@@ -262,5 +266,5 @@ func (s *statsdStats) internalNewTaggedStat(name, statType string, tags Tags, sa
 		s.state.clientsLock.Unlock()
 	}
 
-	return newStatsdMeasurement(s.conf, name, statType, taggedClient)
+	return newStatsdMeasurement(s.conf, s.log, name, statType, taggedClient)
 }
