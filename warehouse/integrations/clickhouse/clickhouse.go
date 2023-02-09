@@ -14,12 +14,12 @@ import (
 	"net/url"
 	"os"
 	"path"
-	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
+
+	"github.com/rudderlabs/rudder-server/warehouse/utils/load_file_downloader"
 
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 
@@ -32,7 +32,6 @@ import (
 	"github.com/ClickHouse/clickhouse-go"
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/rruntime"
-	"github.com/rudderlabs/rudder-server/services/filemanager"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/warehouse/client"
@@ -147,6 +146,7 @@ type Clickhouse struct {
 	LoadTableFailureRetries     int
 	NumWorkersDownloadLoadFiles int
 	S3EngineEnabledWorkspaceIDs []string
+	LoadFileDownloader          load_file_downloader.LoadFileDownloader
 }
 
 type Credentials struct {
@@ -353,100 +353,8 @@ func (ch *Clickhouse) getClickHouseColumnTypeForSpecificTable(tableName, columnN
 	return getClickhouseColumnTypeForSpecificColumn(columnName, columnType, true)
 }
 
-// DownloadLoadFiles downloads load files for the tableName and gives file names
-func (ch *Clickhouse) DownloadLoadFiles(tableName string) ([]string, error) {
-	ch.Logger.Infof("%s DownloadLoadFiles Started", ch.GetLogIdentifier(tableName))
-	defer ch.Logger.Infof("%s DownloadLoadFiles Completed", ch.GetLogIdentifier(tableName))
-	objects := ch.Uploader.GetLoadFilesMetadata(warehouseutils.GetLoadFilesOptionsT{Table: tableName})
-	storageProvider := warehouseutils.ObjectStorageType(ch.Warehouse.Destination.DestinationDefinition.Name, ch.Warehouse.Destination.Config, ch.Uploader.UseRudderStorage())
-	downloader, err := filemanager.DefaultFileManagerFactory.New(&filemanager.SettingsT{
-		Provider: storageProvider,
-		Config: misc.GetObjectStorageConfig(misc.ObjectStorageOptsT{
-			Provider:         storageProvider,
-			Config:           ch.Warehouse.Destination.Config,
-			UseRudderStorage: ch.Uploader.UseRudderStorage(),
-			WorkspaceID:      ch.Warehouse.Destination.WorkspaceID,
-		}),
-	})
-	if err != nil {
-		ch.Logger.Errorf("%s Error in setting up a downloader with Error: %v", ch.GetLogIdentifier(tableName, storageProvider), err)
-		return nil, err
-	}
-	var (
-		fileNames     []string
-		dErr          error
-		fileNamesLock sync.RWMutex
-	)
-
-	jobs := make([]misc.RWCJob, 0)
-	for _, object := range objects {
-		jobs = append(jobs, object)
-	}
-
-	misc.RunWithConcurrency(&misc.RWCConfig{
-		Factor: ch.NumWorkersDownloadLoadFiles,
-		Jobs:   &jobs,
-		Run: func(job interface{}) {
-			loadFile := job.(warehouseutils.LoadFileT)
-			fileName, err := ch.downloadLoadFile(&loadFile, tableName, downloader, storageProvider)
-			if err != nil {
-				ch.Logger.Errorf("%s Error occurred while downloading fileName: %s, Error: %v", ch.GetLogIdentifier(tableName), fileName, err)
-				dErr = err
-				return
-			}
-			fileNamesLock.Lock()
-			fileNames = append(fileNames, fileName)
-			fileNamesLock.Unlock()
-		},
-	})
-	return fileNames, dErr
-}
-
 func (*Clickhouse) DeleteBy([]string, warehouseutils.DeleteByParams) error {
 	return fmt.Errorf(warehouseutils.NotImplementedErrorCode)
-}
-
-func (ch *Clickhouse) downloadLoadFile(object *warehouseutils.LoadFileT, tableName string, downloader filemanager.FileManager, storageProvider string) (fileName string, err error) {
-	ch.Logger.Debugf("%s DownloadLoadFile Started", ch.GetLogIdentifier(tableName, storageProvider))
-	defer ch.Logger.Debugf("%s DownloadLoadFile Completed", ch.GetLogIdentifier(tableName, storageProvider))
-
-	objectName, err := warehouseutils.GetObjectName(object.Location, ch.Warehouse.Destination.Config, ch.ObjectStorage)
-	if err != nil {
-		ch.Logger.Errorf("%s Error in converting object location to object key for location: %s, error: %v", ch.GetLogIdentifier(tableName, storageProvider), object.Location, err)
-		return
-	}
-
-	dirName := fmt.Sprintf(`/%s/`, misc.RudderWarehouseLoadUploadsTmp)
-	tmpDirPath, err := misc.CreateTMPDIR()
-	if err != nil {
-		ch.Logger.Errorf("%s Error in getting tmp directory for downloading load file for Location: %s, error: %v", ch.GetLogIdentifier(tableName, storageProvider), object.Location, err)
-		return
-	}
-
-	ObjectPath := tmpDirPath + dirName + fmt.Sprintf(`%s_%s_%d/`, ch.Warehouse.Destination.DestinationDefinition.Name, ch.Warehouse.Destination.ID, time.Now().Unix()) + objectName
-	err = os.MkdirAll(filepath.Dir(ObjectPath), os.ModePerm)
-	if err != nil {
-		ch.Logger.Errorf("%s Error in making tmp directory for downloading load file for Location: %s, error: %v", ch.GetLogIdentifier(tableName, storageProvider), object.Location, err)
-		return
-	}
-
-	objectFile, err := os.Create(ObjectPath)
-	if err != nil {
-		ch.Logger.Errorf("%s Error in creating file in tmp directory for downloading load file for Location: %s, error: %v", ch.GetLogIdentifier(tableName, storageProvider), tableName, object.Location, err)
-		return
-	}
-
-	err = downloader.Download(context.TODO(), objectFile, objectName)
-	if err != nil {
-		ch.Logger.Errorf("%s Error in downloading file in tmp directory for downloading load file for Location: %s, error: %v", ch.GetLogIdentifier(tableName, storageProvider), tableName, object.Location, err)
-		return
-	}
-	fileName = objectFile.Name()
-	if err = objectFile.Close(); err != nil {
-		ch.Logger.Errorf("%s Error in closing downloaded file in tmp directory for downloading load file for Location: %s, error: %v", ch.GetLogIdentifier(tableName, storageProvider), tableName, object.Location, err)
-		return
-	}
-	return fileName, err
 }
 
 func generateArgumentString(length int) string {
@@ -577,7 +485,7 @@ func (ch *Clickhouse) loadByDownloadingLoadFiles(tableName string, tableSchemaIn
 	chStats := ch.newClickHouseStat(tableName)
 
 	downloadStart := time.Now()
-	fileNames, err := ch.DownloadLoadFiles(tableName)
+	fileNames, err := ch.LoadFileDownloader.Download(context.TODO(), tableName)
 	chStats.downloadLoadFilesTime.Since(downloadStart)
 	if err != nil {
 		return
@@ -1033,6 +941,7 @@ func (ch *Clickhouse) Setup(warehouse warehouseutils.Warehouse, uploader warehou
 	ch.Uploader = uploader
 	ch.stats = stats.Default
 	ch.ObjectStorage = warehouseutils.ObjectStorageType(warehouseutils.CLICKHOUSE, warehouse.Destination.Config, ch.Uploader.UseRudderStorage())
+	ch.LoadFileDownloader = load_file_downloader.NewLoadFileDownloader(&warehouse, uploader, ch.NumWorkersDownloadLoadFiles)
 
 	ch.DB, err = ch.ConnectToClickhouse(ch.getConnectionCredentials(), true)
 	return err

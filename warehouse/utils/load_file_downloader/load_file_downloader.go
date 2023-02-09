@@ -1,0 +1,149 @@
+package load_file_downloader
+
+import (
+	"context"
+	"fmt"
+	"os"
+	"path/filepath"
+	"sync"
+	"time"
+
+	"github.com/rudderlabs/rudder-server/services/filemanager"
+	"github.com/rudderlabs/rudder-server/utils/misc"
+	"github.com/rudderlabs/rudder-server/warehouse/utils"
+	"golang.org/x/sync/errgroup"
+)
+
+type LoadFileDownloader interface {
+	Download(ctx context.Context, tableName string) ([]string, error)
+}
+
+type loadFileDownloaderImpl struct {
+	warehouse  *warehouseutils.Warehouse
+	uploader   warehouseutils.UploaderI
+	numWorkers int
+}
+
+func NewLoadFileDownloader(
+	warehouse *warehouseutils.Warehouse,
+	uploader warehouseutils.UploaderI,
+	numWorkers int,
+) LoadFileDownloader {
+	return &loadFileDownloaderImpl{
+		warehouse:  warehouse,
+		uploader:   uploader,
+		numWorkers: numWorkers,
+	}
+}
+
+func (l *loadFileDownloaderImpl) Download(ctx context.Context, tableName string) ([]string, error) {
+	var (
+		fileNames     []string
+		objectName    string
+		err           error
+		fileNamesLock sync.RWMutex
+	)
+
+	objects := l.uploader.GetLoadFilesMetadata(warehouseutils.GetLoadFilesOptionsT{Table: tableName})
+	storageProvider := warehouseutils.ObjectStorageType(
+		l.warehouse.Destination.DestinationDefinition.Name,
+		l.warehouse.Destination.Config,
+		l.uploader.UseRudderStorage(),
+	)
+
+	fileManager, err := filemanager.DefaultFileManagerFactory.New(&filemanager.SettingsT{
+		Provider: storageProvider,
+		Config: misc.GetObjectStorageConfig(misc.ObjectStorageOptsT{
+			Provider:         storageProvider,
+			Config:           l.warehouse.Destination.Config,
+			UseRudderStorage: l.uploader.UseRudderStorage(),
+			WorkspaceID:      l.warehouse.Destination.WorkspaceID,
+		}),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("creating filemanager for destination: %w", err)
+	}
+
+	batches := l.batch(objects)
+	for _, batch := range batches {
+		g := errgroup.Group{}
+
+		for _, object := range batch {
+			object := object
+
+			g.Go(func() error {
+				if objectName, err = l.downloadSingleObject(ctx, fileManager, object); err != nil {
+					return fmt.Errorf("downloading object: %w", err)
+				}
+
+				fileNamesLock.Lock()
+				fileNames = append(fileNames, objectName)
+				fileNamesLock.Unlock()
+				return nil
+			})
+		}
+		if err = g.Wait(); err != nil {
+			return nil, fmt.Errorf("downloading batch: %w", err)
+		}
+	}
+	return fileNames, nil
+}
+
+func (l *loadFileDownloaderImpl) batch(objects []warehouseutils.LoadFileT) [][]warehouseutils.LoadFileT {
+	fileBatches := make([][]warehouseutils.LoadFileT, 0, len(objects)/l.numWorkers+1)
+
+	for len(objects) > 0 {
+		cut := l.numWorkers
+		if len(objects) < cut {
+			cut = len(objects)
+		}
+
+		fileBatches = append(fileBatches, objects[0:cut])
+		objects = objects[cut:]
+	}
+
+	return fileBatches
+}
+
+func (l *loadFileDownloaderImpl) downloadSingleObject(ctx context.Context, fileManager filemanager.FileManager, object warehouseutils.LoadFileT) (string, error) {
+	var (
+		objectName string
+		tmpDirPath string
+		err        error
+		objectFile *os.File
+	)
+
+	ObjectStorage := warehouseutils.ObjectStorageType(
+		l.warehouse.Destination.DestinationDefinition.Name,
+		l.warehouse.Destination.Config,
+		l.uploader.UseRudderStorage(),
+	)
+
+	if objectName, err = warehouseutils.GetObjectName(object.Location, l.warehouse.Destination.Config, ObjectStorage); err != nil {
+		return "", fmt.Errorf("object name for location: %s, %w", object.Location, err)
+	}
+
+	dirName := fmt.Sprintf(`/%s/`, misc.RudderWarehouseLoadUploadsTmp)
+	if tmpDirPath, err = misc.CreateTMPDIR(); err != nil {
+		return "", fmt.Errorf("creating tmp dir: %w", err)
+	}
+
+	ObjectPath := tmpDirPath + dirName + fmt.Sprintf(`%s_%s_%d/`, l.warehouse.Destination.DestinationDefinition.Name, l.warehouse.Destination.ID, time.Now().Unix()) + objectName
+	if err = os.MkdirAll(filepath.Dir(ObjectPath), os.ModePerm); err != nil {
+		return "", fmt.Errorf("making tmp dir: %w", err)
+	}
+
+	if objectFile, err = os.Create(ObjectPath); err != nil {
+		return "", fmt.Errorf("creating file in tmp dir: %w", err)
+	}
+
+	if err = fileManager.Download(ctx, objectFile, objectName); err != nil {
+		return "", fmt.Errorf("downloading file from object storage: %w", err)
+	}
+
+	if err = objectFile.Close(); err != nil {
+		return "", fmt.Errorf("closing downloaded file in tmp directory: %w", err)
+	}
+
+	return objectFile.Name(), nil
+}

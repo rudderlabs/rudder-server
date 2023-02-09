@@ -11,6 +11,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/warehouse/utils/load_file_downloader"
+
 	"github.com/rudderlabs/rudder-server/services/alerta"
 
 	schemarepository "github.com/rudderlabs/rudder-server/warehouse/integrations/datalake/schema-repository"
@@ -815,11 +817,12 @@ func (job *UploadJobT) getTablesToSkip() (map[string]*TableUploadIDInfoT, map[st
 
 func (job *UploadJobT) resolveIdentities(populateHistoricIdentities bool) (err error) {
 	idr := identity.HandleT{
-		Warehouse:        job.warehouse,
-		DbHandle:         job.dbHandle,
-		UploadID:         job.upload.ID,
-		Uploader:         job,
-		WarehouseManager: job.whManager,
+		Warehouse:          job.warehouse,
+		DbHandle:           job.dbHandle,
+		UploadID:           job.upload.ID,
+		Uploader:           job,
+		WarehouseManager:   job.whManager,
+		LoadFileDownloader: load_file_downloader.NewLoadFileDownloader(&job.warehouse, job, 8),
 	}
 	if populateHistoricIdentities {
 		return idr.ResolveHistoricIdentities()

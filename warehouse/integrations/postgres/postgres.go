@@ -9,9 +9,10 @@ import (
 	"io"
 	"net/url"
 	"os"
-	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/rudderlabs/rudder-server/warehouse/utils/load_file_downloader"
 
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 
@@ -19,7 +20,6 @@ import (
 
 	"github.com/lib/pq"
 	"github.com/rudderlabs/rudder-server/config"
-	"github.com/rudderlabs/rudder-server/services/filemanager"
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
@@ -100,6 +100,8 @@ type Handle struct {
 	EnableDeleteByJobs                          bool
 	SkipComputingUserLatestTraitsWorkspaceIDs   []string
 	EnableSQLStatementExecutionPlanWorkspaceIDs []string
+	NumWorkersDownloadLoadFiles                 int
+	LoadFileDownloader                          load_file_downloader.LoadFileDownloader
 }
 
 type CredentialsT struct {
@@ -139,6 +141,7 @@ func WithConfig(h *Handle, config *config.Config) {
 	h.EnableDeleteByJobs = config.GetBool("Warehouse.postgres.enableDeleteByJobs", false)
 	h.SkipComputingUserLatestTraitsWorkspaceIDs = config.GetStringSlice("Warehouse.postgres.SkipComputingUserLatestTraitsWorkspaceIDs", nil)
 	h.EnableSQLStatementExecutionPlanWorkspaceIDs = config.GetStringSlice("Warehouse.postgres.EnableSQLStatementExecutionPlanWorkspaceIDs", nil)
+	h.NumWorkersDownloadLoadFiles = config.GetInt("Warehouse.postgres.numWorkersDownloadLoadFiles", 8)
 }
 
 func Connect(cred CredentialsT) (*sql.DB, error) {
@@ -220,61 +223,6 @@ func (*Handle) IsEmpty(_ warehouseutils.Warehouse) (empty bool, err error) {
 	return
 }
 
-func (pg *Handle) DownloadLoadFiles(tableName string) ([]string, error) {
-	objects := pg.Uploader.GetLoadFilesMetadata(warehouseutils.GetLoadFilesOptionsT{Table: tableName})
-	storageProvider := warehouseutils.ObjectStorageType(pg.Warehouse.Destination.DestinationDefinition.Name, pg.Warehouse.Destination.Config, pg.Uploader.UseRudderStorage())
-	downloader, err := filemanager.DefaultFileManagerFactory.New(&filemanager.SettingsT{
-		Provider: storageProvider,
-		Config: misc.GetObjectStorageConfig(misc.ObjectStorageOptsT{
-			Provider:         storageProvider,
-			Config:           pg.Warehouse.Destination.Config,
-			UseRudderStorage: pg.Uploader.UseRudderStorage(),
-			WorkspaceID:      pg.Warehouse.Destination.WorkspaceID,
-		}),
-	})
-	if err != nil {
-		pg.logger.Errorf("PG: Error in setting up a downloader for destinationID : %s Error : %v", pg.Warehouse.Destination.ID, err)
-		return nil, err
-	}
-	var fileNames []string
-	for _, object := range objects {
-		objectName, err := warehouseutils.GetObjectName(object.Location, pg.Warehouse.Destination.Config, pg.ObjectStorage)
-		if err != nil {
-			pg.logger.Errorf("PG: Error in converting object location to object key for table:%s: %s,%v", tableName, object.Location, err)
-			return nil, err
-		}
-		dirName := fmt.Sprintf(`/%s/`, misc.RudderWarehouseLoadUploadsTmp)
-		tmpDirPath, err := misc.CreateTMPDIR()
-		if err != nil {
-			pg.logger.Errorf("PG: Error in creating tmp directory for downloading load file for table:%s: %s, %v", tableName, object.Location, err)
-			return nil, err
-		}
-		ObjectPath := tmpDirPath + dirName + fmt.Sprintf(`%s_%s_%d/`, pg.Warehouse.Destination.DestinationDefinition.Name, pg.Warehouse.Destination.ID, time.Now().Unix()) + objectName
-		err = os.MkdirAll(filepath.Dir(ObjectPath), os.ModePerm)
-		if err != nil {
-			pg.logger.Errorf("PG: Error in making tmp directory for downloading load file for table:%s: %s, %s %v", tableName, object.Location, err)
-			return nil, err
-		}
-		objectFile, err := os.Create(ObjectPath)
-		if err != nil {
-			pg.logger.Errorf("PG: Error in creating file in tmp directory for downloading load file for table:%s: %s, %v", tableName, object.Location, err)
-			return nil, err
-		}
-		err = downloader.Download(context.TODO(), objectFile, objectName)
-		if err != nil {
-			pg.logger.Errorf("PG: Error in downloading file in tmp directory for downloading load file for table:%s: %s, %v", tableName, object.Location, err)
-			return nil, err
-		}
-		fileName := objectFile.Name()
-		if err = objectFile.Close(); err != nil {
-			pg.logger.Errorf("PG: Error in closing downloaded file in tmp directory for downloading load file for table:%s: %s, %v", tableName, object.Location, err)
-			return nil, err
-		}
-		fileNames = append(fileNames, fileName)
-	}
-	return fileNames, nil
-}
-
 func handleRollbackTimeout(tags stats.Tags) {
 	stats.Default.NewTaggedStat("pg_rollback_timeout", stats.CountType, tags).Count(1)
 }
@@ -316,7 +264,7 @@ func (pg *Handle) loadTable(tableName string, tableSchemaInUpload warehouseutils
 	// sort column names
 	sortedColumnKeys := warehouseutils.SortColumnKeysFromColumnMap(tableSchemaInUpload)
 
-	fileNames, err := pg.DownloadLoadFiles(tableName)
+	fileNames, err := pg.LoadFileDownloader.Download(context.TODO(), tableName)
 	defer misc.RemoveFilePaths(fileNames...)
 	if err != nil {
 		return
@@ -783,6 +731,7 @@ func (pg *Handle) Setup(
 	pg.Namespace = warehouse.Namespace
 	pg.Uploader = uploader
 	pg.ObjectStorage = warehouseutils.ObjectStorageType(warehouseutils.POSTGRES, warehouse.Destination.Config, pg.Uploader.UseRudderStorage())
+	pg.LoadFileDownloader = load_file_downloader.NewLoadFileDownloader(&warehouse, uploader, pg.NumWorkersDownloadLoadFiles)
 
 	pg.DB, err = Connect(pg.getConnectionCredentials())
 	return err

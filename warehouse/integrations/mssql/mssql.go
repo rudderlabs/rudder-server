@@ -10,18 +10,18 @@ import (
 	"net"
 	"net/url"
 	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
 	"unicode/utf16"
 	"unicode/utf8"
 
+	"github.com/rudderlabs/rudder-server/warehouse/utils/load_file_downloader"
+
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 
 	mssql "github.com/denisenkom/go-mssqldb"
 	"github.com/rudderlabs/rudder-server/config"
-	"github.com/rudderlabs/rudder-server/services/filemanager"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/warehouse/client"
@@ -30,8 +30,9 @@ import (
 )
 
 var (
-	pkgLogger          logger.Logger
-	enableDeleteByJobs bool
+	pkgLogger                   logger.Logger
+	enableDeleteByJobs          bool
+	numWorkersDownloadLoadFiles int
 )
 
 const (
@@ -84,12 +85,14 @@ var mssqlDataTypesMapToRudder = map[string]string{
 }
 
 type HandleT struct {
-	Db             *sql.DB
-	Namespace      string
-	ObjectStorage  string
-	Warehouse      warehouseutils.Warehouse
-	Uploader       warehouseutils.UploaderI
-	ConnectTimeout time.Duration
+	Db                          *sql.DB
+	Namespace                   string
+	ObjectStorage               string
+	Warehouse                   warehouseutils.Warehouse
+	Uploader                    warehouseutils.UploaderI
+	ConnectTimeout              time.Duration
+	NumWorkersDownloadLoadFiles int
+	LoadFileDownLoader          load_file_downloader.LoadFileDownloader
 }
 
 type CredentialsT struct {
@@ -161,6 +164,7 @@ func Init() {
 
 func loadConfig() {
 	config.RegisterBoolConfigVariable(false, &enableDeleteByJobs, true, "Warehouse.mssql.enableDeleteByJobs")
+	config.RegisterIntConfigVariable(8, &numWorkersDownloadLoadFiles, true, 1, "Warehouse.mssql.numWorkersDownloadLoadFiles")
 }
 
 func (ms *HandleT) getConnectionCredentials() CredentialsT {
@@ -187,61 +191,6 @@ func ColumnsWithDataTypes(columns map[string]string, prefix string) string {
 
 func (*HandleT) IsEmpty(_ warehouseutils.Warehouse) (empty bool, err error) {
 	return
-}
-
-func (ms *HandleT) DownloadLoadFiles(tableName string) ([]string, error) {
-	objects := ms.Uploader.GetLoadFilesMetadata(warehouseutils.GetLoadFilesOptionsT{Table: tableName})
-	storageProvider := warehouseutils.ObjectStorageType(ms.Warehouse.Destination.DestinationDefinition.Name, ms.Warehouse.Destination.Config, ms.Uploader.UseRudderStorage())
-	downloader, err := filemanager.DefaultFileManagerFactory.New(&filemanager.SettingsT{
-		Provider: storageProvider,
-		Config: misc.GetObjectStorageConfig(misc.ObjectStorageOptsT{
-			Provider:         storageProvider,
-			Config:           ms.Warehouse.Destination.Config,
-			UseRudderStorage: ms.Uploader.UseRudderStorage(),
-			WorkspaceID:      ms.Warehouse.Destination.WorkspaceID,
-		}),
-	})
-	if err != nil {
-		pkgLogger.Errorf("MS: Error in setting up a downloader for destinationID : %s Error : %v", ms.Warehouse.Destination.ID, err)
-		return nil, err
-	}
-	var fileNames []string
-	for _, object := range objects {
-		objectName, err := warehouseutils.GetObjectName(object.Location, ms.Warehouse.Destination.Config, ms.ObjectStorage)
-		if err != nil {
-			pkgLogger.Errorf("MS: Error in converting object location to object key for table:%s: %s,%v", tableName, object.Location, err)
-			return nil, err
-		}
-		dirName := fmt.Sprintf(`/%s/`, misc.RudderWarehouseLoadUploadsTmp)
-		tmpDirPath, err := misc.CreateTMPDIR()
-		if err != nil {
-			pkgLogger.Errorf("MS: Error in creating tmp directory for downloading load file for table:%s: %s, %v", tableName, object.Location, err)
-			return nil, err
-		}
-		ObjectPath := tmpDirPath + dirName + fmt.Sprintf(`%s_%s_%d/`, ms.Warehouse.Destination.DestinationDefinition.Name, ms.Warehouse.Destination.ID, time.Now().Unix()) + objectName
-		err = os.MkdirAll(filepath.Dir(ObjectPath), os.ModePerm)
-		if err != nil {
-			pkgLogger.Errorf("MS: Error in making tmp directory for downloading load file for table:%s: %s, %s %v", tableName, object.Location, err)
-			return nil, err
-		}
-		objectFile, err := os.Create(ObjectPath)
-		if err != nil {
-			pkgLogger.Errorf("MS: Error in creating file in tmp directory for downloading load file for table:%s: %s, %v", tableName, object.Location, err)
-			return nil, err
-		}
-		err = downloader.Download(context.TODO(), objectFile, objectName)
-		if err != nil {
-			pkgLogger.Errorf("MS: Error in downloading file in tmp directory for downloading load file for table:%s: %s, %v", tableName, object.Location, err)
-			return nil, err
-		}
-		fileName := objectFile.Name()
-		if err = objectFile.Close(); err != nil {
-			pkgLogger.Errorf("MS: Error in closing downloaded file in tmp directory for downloading load file for table:%s: %s, %v", tableName, object.Location, err)
-			return nil, err
-		}
-		fileNames = append(fileNames, fileName)
-	}
-	return fileNames, nil
 }
 
 func (ms *HandleT) DeleteBy(tableNames []string, params warehouseutils.DeleteByParams) (err error) {
@@ -282,7 +231,7 @@ func (ms *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 	// sort column names
 	sortedColumnKeys := warehouseutils.SortColumnKeysFromColumnMap(tableSchemaInUpload)
 
-	fileNames, err := ms.DownloadLoadFiles(tableName)
+	fileNames, err := ms.LoadFileDownLoader.Download(context.TODO(), tableName)
 	defer misc.RemoveFilePaths(fileNames...)
 	if err != nil {
 		return
@@ -772,6 +721,7 @@ func (ms *HandleT) Setup(warehouse warehouseutils.Warehouse, uploader warehouseu
 	ms.Namespace = warehouse.Namespace
 	ms.Uploader = uploader
 	ms.ObjectStorage = warehouseutils.ObjectStorageType(warehouseutils.MSSQL, warehouse.Destination.Config, ms.Uploader.UseRudderStorage())
+	ms.LoadFileDownLoader = load_file_downloader.NewLoadFileDownloader(&warehouse, uploader, numWorkersDownloadLoadFiles)
 
 	ms.Db, err = Connect(ms.getConnectionCredentials())
 	return err
