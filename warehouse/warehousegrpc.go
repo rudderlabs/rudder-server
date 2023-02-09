@@ -97,6 +97,25 @@ func (*warehouseGRPC) TriggerWHUpload(_ context.Context, request *proto.WHUpload
 	return res, err
 }
 
+func (grpc *warehouseGRPC) manageTunnellingSecrets(ctx context.Context, config map[string]interface{}) error {
+	if !warehouseutils.ReadAsBool("useSSH", config) {
+		return nil
+	}
+
+	sshKeyId, ok := config["sshKeyId"]
+	if !ok {
+		return fmt.Errorf("missing sshKeyId in validation payload")
+	}
+
+	keys, err := grpc.CPClient.GetSSHKeys(ctx, sshKeyId.(string))
+	if err != nil {
+		return fmt.Errorf("fetching destination ssh keys: %w", err)
+	}
+
+	config["sshPrivateKey"] = keys.PrivateKey
+	return nil
+}
+
 func (grpc *warehouseGRPC) Validate(ctx context.Context, req *proto.WHValidationRequest) (*proto.WHValidationResponse, error) {
 	var (
 		err      error
@@ -118,12 +137,9 @@ func (grpc *warehouseGRPC) Validate(ctx context.Context, req *proto.WHValidation
 	// adding ssh tunnelling info, given we have
 	// useSSH enabled from upstream
 	if grpc.EnableTunnelling {
-		if warehouseutils.ReadAsBool("useSSH", destination.Config) {
-			keys, err := grpc.CPClient.GetDestinationSSHKeys(ctx, destination.ID)
-			if err != nil {
-				return &proto.WHValidationResponse{}, fmt.Errorf("fetching destination ssh keys: %w", err)
-			}
-			destination.Config["sshPrivateKey"] = keys.PrivateKey
+		err = grpc.manageTunnellingSecrets(ctx, destination.Config)
+		if err != nil {
+			return &proto.WHValidationResponse{}, fmt.Errorf("fetching destination ssh keys: %w", err)
 		}
 	}
 
