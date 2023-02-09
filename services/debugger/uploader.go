@@ -117,10 +117,7 @@ func (uploader *uploaderImpl[E]) uploadEvents(eventBuffer []E) {
 	for {
 		var resp *http.Response
 		startTime := time.Now()
-		urlSplit, err := lo.Last[string](strings.Split(url, "/"))
-		if err != nil {
-			urlSplit = ""
-		}
+		resource := path.Base(url)
 		req, err := Http.NewRequest("POST", url, bytes.NewBuffer(rawJSON))
 		if err != nil {
 			pkgLogger.Errorf("[Uploader] Failed to create new http request. Err: %v", err)
@@ -138,7 +135,7 @@ func (uploader *uploaderImpl[E]) uploadEvents(eventBuffer []E) {
 		if err != nil {
 			pkgLogger.Error("Config Backend connection error", err)
 			stats.Default.NewTaggedStat("debugger_http_errors", stats.CountType, map[string]string{
-				"endPoint": urlSplit,
+				"resource": resource,
 			}).Increment()
 			if retryCount >= uploader.maxRetry {
 				pkgLogger.Errorf("Max retries exceeded trying to connect to config backend")
@@ -150,9 +147,9 @@ func (uploader *uploaderImpl[E]) uploadEvents(eventBuffer []E) {
 			continue
 		}
 
-		stats.Default.NewTaggedStat("debugger_response_counts", stats.TimerType, stats.Tags{
+		stats.Default.NewTaggedStat("debugger_http_requests", stats.TimerType, stats.Tags{
 			"responseCode": strconv.Itoa(resp.StatusCode),
-			"endpoint":     urlSplit,
+			"resource":     resource,
 		}).Since(startTime)
 
 		func() { httputil.CloseResponse(resp) }()
