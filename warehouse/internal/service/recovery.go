@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/rudderlabs/rudder-server/warehouse/integrations/manager"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 	"golang.org/x/exp/slices"
 )
@@ -22,19 +21,28 @@ type repo interface {
 	InterruptedDestinations(ctx context.Context, destinationType string) ([]string, error)
 }
 
+type destination interface {
+	CrashRecover(warehouse warehouseutils.Warehouse) (err error)
+}
+
+type onceErr struct {
+	sync.Once
+	err error
+}
+
 type Recovery struct {
 	detectOnce      sync.Once
 	detectErr       error
 	destinationType string
 	repo            repo
-	inRecovery      map[string]sync.Once
+	inRecovery      map[string]*onceErr
 }
 
 func NewRecovery(destinationType string, repo repo) *Recovery {
 	return &Recovery{
 		destinationType: destinationType,
 		repo:            repo,
-		inRecovery:      make(map[string]sync.Once),
+		inRecovery:      make(map[string]*onceErr),
 	}
 }
 
@@ -44,20 +52,20 @@ func (r *Recovery) detect(ctx context.Context) error {
 		return nil
 	}
 
-	destIDs, err := r.repo.InterruptedDestinations(context.Background(), r.destinationType)
+	destIDs, err := r.repo.InterruptedDestinations(ctx, r.destinationType)
 	if err != nil {
 		return fmt.Errorf("repo interrupted destinations: %w", err)
 	}
 
 	for _, destID := range destIDs {
-		r.inRecovery[destID] = sync.Once{}
+		r.inRecovery[destID] = &onceErr{}
 	}
 
 	return nil
 }
 
 // Recover recovers a warehouse, for a non-graceful shutdown.
-func (r *Recovery) Recover(ctx context.Context, whManager manager.ManagerI, wh warehouseutils.Warehouse) error {
+func (r *Recovery) Recover(ctx context.Context, whManager destination, wh warehouseutils.Warehouse) error {
 	r.detectOnce.Do(func() {
 		r.detectErr = r.detect(ctx)
 	})
@@ -70,10 +78,9 @@ func (r *Recovery) Recover(ctx context.Context, whManager manager.ManagerI, wh w
 		return nil
 	}
 
-	var err error
 	once.Do(func() {
-		err = whManager.CrashRecover(wh)
+		once.err = whManager.CrashRecover(wh)
 	})
 
-	return err
+	return once.err
 }
