@@ -6,12 +6,10 @@ import (
 	"bytes"
 	"context"
 	"net/http"
+	"path"
 	"strconv"
-	"strings"
 	"sync"
 	"time"
-
-	"github.com/samber/lo"
 
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/rruntime"
