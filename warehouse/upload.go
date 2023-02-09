@@ -34,6 +34,7 @@ import (
 	"github.com/rudderlabs/rudder-server/warehouse/internal/loadfiles"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/repo"
+	"github.com/rudderlabs/rudder-server/warehouse/internal/service"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 	"github.com/rudderlabs/rudder-server/warehouse/validations"
 )
@@ -80,6 +81,7 @@ type UploadJobFactory struct {
 	dbHandle             *sql.DB
 	destinationValidator validations.DestinationValidator
 	loadFile             *loadfiles.LoadFileGenerator
+	recovery             *service.Recovery
 	pgNotifier           *pgnotifier.PgNotifierT
 	stats                stats.Stats
 }
@@ -88,6 +90,7 @@ type UploadJobT struct {
 	dbHandle             *sql.DB
 	destinationValidator validations.DestinationValidator
 	loadfile             *loadfiles.LoadFileGenerator
+	recovery             *service.Recovery
 	whManager            manager.ManagerI
 	pgNotifier           *pgnotifier.PgNotifierT
 	schemaHandle         *SchemaHandleT
@@ -166,6 +169,7 @@ func (f *UploadJobFactory) NewUploadJob(dto *model.UploadJob, whManager manager.
 	return &UploadJobT{
 		dbHandle:             f.dbHandle,
 		loadfile:             f.loadFile,
+		recovery:             f.recovery,
 		pgNotifier:           f.pgNotifier,
 		whManager:            whManager,
 		destinationValidator: validations.NewDestinationValidator(),
@@ -361,6 +365,12 @@ func (job *UploadJobT) run() (err error) {
 		return err
 	}
 	defer whManager.Cleanup()
+
+	err = job.recovery.Recover(context.TODO(), whManager, job.warehouse)
+	if err != nil {
+		job.setUploadError(err, InternalProcessingFailed)
+		return err
+	}
 
 	hasSchemaChanged, err := job.syncRemoteSchema()
 	if err != nil {

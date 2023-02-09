@@ -69,7 +69,6 @@ var (
 	mainLoopSleep                       time.Duration
 	stagingFilesBatchSize               int
 	crashRecoverWarehouses              []string
-	inRecoveryMap                       map[string]bool
 	lastProcessedMarkerMap              map[string]int64
 	lastProcessedMarkerExp              = expvar.NewMap("lastProcessedMarkerMap")
 	lastProcessedMarkerMapLock          sync.RWMutex
@@ -180,8 +179,6 @@ func loadConfig() {
 	config.RegisterIntConfigVariable(960, &stagingFilesBatchSize, true, 1, "Warehouse.stagingFilesBatchSize")
 	config.RegisterInt64ConfigVariable(1800, &uploadFreqInS, true, 1, "Warehouse.uploadFreqInS")
 	config.RegisterDurationConfigVariable(5, &mainLoopSleep, true, time.Second, []string{"Warehouse.mainLoopSleep", "Warehouse.mainLoopSleepInS"}...)
-	crashRecoverWarehouses = []string{warehouseutils.RS, warehouseutils.POSTGRES, warehouseutils.MSSQL, warehouseutils.AZURE_SYNAPSE, warehouseutils.DELTALAKE}
-	inRecoveryMap = map[string]bool{}
 	lastProcessedMarkerMap = map[string]int64{}
 	config.RegisterStringConfigVariable("embedded", &warehouseMode, false, "Warehouse.mode")
 	host = config.GetString("WAREHOUSE_JOBS_DB_HOST", "localhost")
@@ -578,23 +575,6 @@ func (wh *HandleT) getLatestUploadStatus(warehouse *warehouseutils.Warehouse) (i
 }
 
 func (wh *HandleT) createJobs(ctx context.Context, warehouse warehouseutils.Warehouse) (err error) {
-	whManager, err := manager.New(wh.destType)
-	if err != nil {
-		return err
-	}
-
-	// Step 1: Crash recovery after restart
-	// Remove pending temp tables in Redshift etc.
-	_, ok := inRecoveryMap[warehouse.Destination.ID]
-	if ok {
-		wh.Logger.Infof("[WH]: Crash recovering for %s:%s", wh.destType, warehouse.Destination.ID)
-		err = whManager.CrashRecover(warehouse)
-		if err != nil {
-			return err
-		}
-		delete(inRecoveryMap, warehouse.Destination.ID)
-	}
-
 	if ok, err := wh.canCreateUpload(warehouse); !ok {
 		wh.stats.NewTaggedStat("wh_scheduler.upload_sync_skipped", stats.CountType, stats.Tags{
 			"workspaceId":   warehouse.WorkspaceID,
@@ -897,45 +877,6 @@ func (wh *HandleT) Disable() {
 	wh.isEnabled = false
 }
 
-func (wh *HandleT) setInterruptedDestinations() {
-	if !misc.Contains(crashRecoverWarehouses, wh.destType) {
-		return
-	}
-	sqlStatement := fmt.Sprintf(`
-		SELECT
-		  destination_id
-		FROM
-		  %s
-		WHERE
-		  destination_type = '%s'
-		  AND (
-			status = '%s'
-			OR status = '%s'
-		  )
-		  and in_progress = %t;
-`,
-		warehouseutils.WarehouseUploadsTable,
-		wh.destType,
-		getInProgressState(model.ExportedData),
-		getFailedState(model.ExportedData),
-		true,
-	)
-	rows, err := wh.dbHandle.Query(sqlStatement)
-	if err != nil {
-		panic(fmt.Errorf("query: %s failed with Error : %w", sqlStatement, err))
-	}
-	defer rows.Close()
-
-	for rows.Next() {
-		var destID string
-		err := rows.Scan(&destID)
-		if err != nil {
-			panic(fmt.Errorf("failed to scan result from query: %s\nwith error : %w", sqlStatement, err))
-		}
-		inRecoveryMap[destID] = true
-	}
-}
-
 func (wh *HandleT) Setup(whType string) error {
 	pkgLogger.Infof("WH: Warehouse Router started: %s", whType)
 	wh.Logger = pkgLogger
@@ -948,7 +889,6 @@ func (wh *HandleT) Setup(whType string) error {
 
 	wh.notifier = notifier
 	wh.destType = whType
-	wh.setInterruptedDestinations()
 	wh.resetInProgressJobs()
 	wh.Enable()
 	wh.workerChannelMap = make(map[string]chan *UploadJobT)
@@ -970,6 +910,7 @@ func (wh *HandleT) Setup(whType string) error {
 			LoadRepo:           repo.NewLoadFiles(dbHandle),
 			ControlPlaneClient: controlPlaneClient,
 		},
+		recovery: service.NewRecovery(whType, repo.NewUploads(dbHandle)),
 	}
 	loadfiles.WithConfig(wh.uploadJobFactory.loadFile, config.Default)
 
