@@ -69,7 +69,7 @@ func New(destType string) (ManagerI, error) {
 		var sf snowflake.HandleT
 		return &sf, nil
 	case warehouseutils.POSTGRES:
-		pg := postgres.NewHandle()
+		pg := postgres.NewPostgres()
 		postgres.WithConfig(pg, config.Default)
 		return pg, nil
 	case warehouseutils.CLICKHOUSE:
@@ -77,11 +77,13 @@ func New(destType string) (ManagerI, error) {
 		clickhouse.WithConfig(ch, config.Default)
 		return ch, nil
 	case warehouseutils.MSSQL:
-		var ms mssql.HandleT
-		return &ms, nil
+		ms := mssql.NewMSSQL()
+		mssql.WithConfig(ms, config.Default)
+		return ms, nil
 	case warehouseutils.AZURE_SYNAPSE:
-		var as azuresynapse.HandleT
-		return &as, nil
+		az := azuresynapse.NewAzureSynapse()
+		azuresynapse.WithConfig(az, config.Default)
+		return az, nil
 	case warehouseutils.S3_DATALAKE, warehouseutils.GCS_DATALAKE, warehouseutils.AZURE_DATALAKE:
 		var dl datalake.HandleT
 		return &dl, nil
@@ -107,7 +109,7 @@ func NewWarehouseOperations(destType string) (WarehouseOperations, error) {
 		var sf snowflake.HandleT
 		return &sf, nil
 	case warehouseutils.POSTGRES:
-		pg := postgres.NewHandle()
+		pg := postgres.NewPostgres()
 		postgres.WithConfig(pg, config.Default)
 		return pg, nil
 	case warehouseutils.CLICKHOUSE:
@@ -115,11 +117,13 @@ func NewWarehouseOperations(destType string) (WarehouseOperations, error) {
 		clickhouse.WithConfig(ch, config.Default)
 		return ch, nil
 	case warehouseutils.MSSQL:
-		var ms mssql.HandleT
-		return &ms, nil
+		ms := mssql.NewMSSQL()
+		mssql.WithConfig(ms, config.Default)
+		return ms, nil
 	case warehouseutils.AZURE_SYNAPSE:
-		var as azuresynapse.HandleT
-		return &as, nil
+		az := azuresynapse.NewAzureSynapse()
+		azuresynapse.WithConfig(az, config.Default)
+		return az, nil
 	case warehouseutils.S3_DATALAKE, warehouseutils.GCS_DATALAKE, warehouseutils.AZURE_DATALAKE:
 		var dl datalake.HandleT
 		return &dl, nil

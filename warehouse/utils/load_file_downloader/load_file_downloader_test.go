@@ -30,7 +30,7 @@ func (*mockUploader) GetLoadFileGenStartTIme() time.Time                 { retur
 func (*mockUploader) GetLoadFileType() string                            { return "JSON" }
 func (*mockUploader) GetFirstLastEvent() (time.Time, time.Time)          { return time.Time{}, time.Time{} }
 func (*mockUploader) GetSampleLoadFileLocation(_ string) (string, error) { return "", nil }
-func (*mockUploader) UseRudderStorage() bool                           { return false }
+func (*mockUploader) UseRudderStorage() bool                             { return false }
 func (*mockUploader) GetTableSchemaInWarehouse(_ string) warehouseutils.TableSchemaT {
 	return warehouseutils.TableSchemaT{}
 }
