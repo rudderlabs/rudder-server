@@ -14,6 +14,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/manager"
+
 	"github.com/rudderlabs/rudder-server/services/stats"
 
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
@@ -24,7 +26,6 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
 	"github.com/rudderlabs/rudder-server/warehouse/jobs"
-	"github.com/rudderlabs/rudder-server/warehouse/manager"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 	"golang.org/x/sync/errgroup"
 )
@@ -144,8 +145,7 @@ func (jobRun *JobRunT) downloadStagingFile() error {
 			return err
 		}
 
-		timer := jobRun.timerStat("download_staging_file_time")
-		timer.Start()
+		downloadStart := time.Now()
 
 		err = downloader.Download(context.TODO(), file, job.StagingFileLocation)
 		if err != nil {
@@ -153,7 +153,7 @@ func (jobRun *JobRunT) downloadStagingFile() error {
 			return err
 		}
 		file.Close()
-		timer.End()
+		jobRun.timerStat("download_staging_file_time").Since(downloadStart)
 
 		fi, err := os.Stat(filePath)
 		if err != nil {
@@ -432,8 +432,7 @@ func processStagingFile(job Payload, workerIndex int) (loadFileUploadOutputs []l
 	discardsTable := job.getDiscardsTable()
 	jobRun.tableEventCountMap[discardsTable] = 0
 
-	timer := jobRun.timerStat("process_staging_file_time")
-	timer.Start()
+	processingStart := time.Now()
 
 	lineBytesCounter := 0
 	var interfaceSliceSample []interface{}
@@ -484,6 +483,33 @@ func processStagingFile(job Payload, workerIndex int) (loadFileUploadOutputs []l
 			}
 			columnType := columnInfo.Type
 			columnVal := columnInfo.Value
+
+			if job.DestinationType == warehouseutils.CLICKHOUSE {
+				switch columnType {
+				case "boolean":
+					newColumnVal := 0
+					if k, ok := columnVal.(bool); ok {
+						if k {
+							newColumnVal = 1
+						}
+					}
+					columnVal = newColumnVal
+				case "array(boolean)":
+					if boolValue, ok := columnVal.([]interface{}); ok {
+						newColumnVal := make([]interface{}, len(boolValue))
+
+						for i, value := range boolValue {
+							if k, v := value.(bool); k && v {
+								newColumnVal[i] = 1
+							} else {
+								newColumnVal[i] = 0
+							}
+						}
+
+						columnVal = newColumnVal
+					}
+				}
+			}
 
 			if model.SchemaType(columnType) == model.IntDataType || model.SchemaType(columnType) == model.BigIntDataType {
 				floatVal, ok := columnVal.(float64)
@@ -550,7 +576,7 @@ func processStagingFile(job Payload, workerIndex int) (loadFileUploadOutputs []l
 		}
 		jobRun.tableEventCountMap[tableName]++
 	}
-	timer.End()
+	jobRun.timerStat("process_staging_file_time").Since(processingStart)
 
 	pkgLogger.Debugf("[WH]: Process %v bytes from downloaded staging file: %s", lineBytesCounter, job.StagingFileLocation)
 	jobRun.counterStat("bytes_processed_in_staging_file").Count(lineBytesCounter)

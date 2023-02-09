@@ -9,10 +9,11 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/manager"
+
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/services/filemanager"
 	"github.com/rudderlabs/rudder-server/utils/misc"
-	"github.com/rudderlabs/rudder-server/warehouse/manager"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
@@ -115,18 +116,34 @@ func (ct *CTHandleT) verifyingObjectStorage() (err error) {
 	return
 }
 
+func (ct *CTHandleT) manageTunnellingSecrets(config map[string]interface{}) error {
+	if !warehouseutils.ReadAsBool("useSSH", config) {
+		return nil
+	}
+
+	sshKeyId, ok := ct.warehouse.Destination.Config["sshKeyId"]
+	if !ok {
+		return fmt.Errorf("missing sshKeyId in validation payload")
+	}
+
+	keys, err := ct.CPClient.GetSSHKeys(context.TODO(), sshKeyId.(string))
+	if err != nil {
+		return fmt.Errorf("fetching destination ssh keys: %w", err)
+	}
+
+	ct.warehouse.Destination.Config["sshPrivateKey"] = keys.PrivateKey
+	return nil
+}
+
 func (ct *CTHandleT) initManager() (err error) {
 	ct.warehouse = warehouse(ct.infoRequest)
 
 	// adding ssh tunnelling info, given we have
 	// useSSH enabled from upstream
 	if ct.EnableTunnelling {
-		if warehouseutils.ReadAsBool("useSSH", ct.warehouse.Destination.Config) {
-			keys, err := ct.CPClient.GetDestinationSSHKeys(context.TODO(), ct.warehouse.Destination.ID)
-			if err != nil {
-				return fmt.Errorf("fetching destination ssh keys: %w", err)
-			}
-			ct.warehouse.Destination.Config["sshPrivateKey"] = keys.PrivateKey
+		err = ct.manageTunnellingSecrets(ct.warehouse.Destination.Config)
+		if err != nil {
+			return fmt.Errorf("handling secrets for tunnelling: %w", err)
 		}
 	}
 

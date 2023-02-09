@@ -24,8 +24,6 @@ func TestStagingFile_Builder(t *testing.T) {
 		UseRudderStorage:      false,
 		DestinationRevisionID: "",
 		TotalEvents:           0,
-		SourceBatchID:         "",
-		SourceTaskID:          "",
 		SourceTaskRunID:       "",
 		SourceJobID:           "",
 		SourceJobRunID:        "",

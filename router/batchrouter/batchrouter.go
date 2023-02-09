@@ -2,13 +2,11 @@ package batchrouter
 
 import (
 	"bufio"
-	"bytes"
 	"compress/gzip"
 	"context"
 	stdjson "encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"net/url"
 	"os"
@@ -46,10 +44,10 @@ import (
 	"github.com/rudderlabs/rudder-server/services/filemanager"
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/bytesize"
-	"github.com/rudderlabs/rudder-server/utils/httputil"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/types"
+	"github.com/rudderlabs/rudder-server/warehouse/client"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
@@ -120,7 +118,7 @@ type HandleT struct {
 	successfulJobCount          stats.Measurement
 	failedJobCount              stats.Measurement
 	abortedJobCount             stats.Measurement
-	warehouseURL                string
+	warehouseClient             *client.Warehouse
 
 	backgroundGroup  *errgroup.Group
 	backgroundCtx    context.Context
@@ -130,6 +128,7 @@ type HandleT struct {
 	payloadLimit              int64
 	transientSources          transientsource.Service
 	rsourcesService           rsources.JobService
+	debugger                  destinationdebugger.DestinationDebugger
 	jobsDBCommandTimeout      time.Duration
 	jobdDBQueryRequestTimeout time.Duration
 	jobdDBMaxRetries          int
@@ -160,8 +159,6 @@ type JobParametersT struct {
 	DestinationID           string `json:"destination_id"`
 	ReceivedAt              string `json:"received_at"`
 	TransformAt             string `json:"transform_at"`
-	SourceBatchID           string `json:"source_batch_id"`
-	SourceTaskID            string `json:"source_task_id"`
 	SourceTaskRunID         string `json:"source_task_run_id"`
 	SourceJobID             string `json:"source_job_id"`
 	SourceJobRunID          string `json:"source_job_run_id"`
@@ -241,6 +238,7 @@ type StorageUploadOutput struct {
 	FirstEventAt     string
 	LastEventAt      string
 	TotalEvents      int
+	TotalBytes       int
 	UseRudderStorage bool
 }
 
@@ -647,6 +645,7 @@ func (brt *HandleT) copyJobsToStorage(provider string, batchJobs *BatchJobsT, is
 	eventsFound := false
 	connIdentifier := connectionIdentifier(*batchJobs.BatchDestination)
 	warehouseConnIdentifier := brt.connectionWHNamespaceMap[connIdentifier]
+	var totalBytes int
 	for _, job := range batchJobs.Jobs {
 		// do not add to staging file if the event is a rudder_identity_merge_rules record
 		// and has been previously added to it
@@ -673,11 +672,15 @@ func (brt *HandleT) copyJobsToStorage(provider string, batchJobs *BatchJobsT, is
 		if isDestInterrupted {
 			if _, ok = interruptedEventsMap[eventID]; !ok {
 				eventsFound = true
-				_ = gzWriter.WriteGZ(string(job.EventPayload) + "\n")
+				line := string(job.EventPayload) + "\n"
+				totalBytes += len(line)
+				_ = gzWriter.WriteGZ(line)
 			}
 		} else {
 			eventsFound = true
-			_ = gzWriter.WriteGZ(string(job.EventPayload) + "\n")
+			line := string(job.EventPayload) + "\n"
+			totalBytes += len(line)
+			_ = gzWriter.WriteGZ(line)
 		}
 	}
 	_ = gzWriter.CloseGZ()
@@ -804,6 +807,7 @@ func (brt *HandleT) copyJobsToStorage(provider string, batchJobs *BatchJobsT, is
 		FirstEventAt:     firstEventAt,
 		LastEventAt:      lastEventAt,
 		TotalEvents:      len(batchJobs.Jobs) - dedupedIDMergeRuleJobs,
+		TotalBytes:       totalBytes,
 		UseRudderStorage: useRudderStorage,
 	}
 }
@@ -1097,20 +1101,18 @@ func (brt *HandleT) postToWarehouse(batchJobs *BatchJobsT, output StorageUploadO
 	if err != nil {
 		brt.logger.Error("Unmarshal of job parameters failed in postToWarehouse function. ", string(batchJobs.Jobs[0].Parameters))
 	}
-	payload := warehouseutils.StagingFile{
-		WorkspaceID: batchJobs.Jobs[0].WorkspaceId,
-		Schema:      schemaMap,
-		BatchDestination: warehouseutils.DestinationT{
-			Source:      batchJobs.BatchDestination.Source,
-			Destination: batchJobs.BatchDestination.Destination,
-		},
+
+	payload := client.StagingFile{
+		WorkspaceID:           batchJobs.Jobs[0].WorkspaceId,
+		Schema:                schemaMap,
+		SourceID:              batchJobs.BatchDestination.Source.ID,
+		DestinationID:         batchJobs.BatchDestination.Destination.ID,
 		Location:              output.Key,
 		FirstEventAt:          output.FirstEventAt,
 		LastEventAt:           output.LastEventAt,
 		TotalEvents:           output.TotalEvents,
+		TotalBytes:            output.TotalBytes,
 		UseRudderStorage:      output.UseRudderStorage,
-		SourceBatchID:         sampleParameters.SourceBatchID,
-		SourceTaskID:          sampleParameters.SourceTaskID,
 		SourceTaskRunID:       sampleParameters.SourceTaskRunID,
 		SourceJobID:           sampleParameters.SourceJobID,
 		SourceJobRunID:        sampleParameters.SourceJobRunID,
@@ -1121,26 +1123,12 @@ func (brt *HandleT) postToWarehouse(batchJobs *BatchJobsT, output StorageUploadO
 		payload.TimeWindow = batchJobs.TimeWindow
 	}
 
-	jsonPayload, err := json.Marshal(&payload)
+	err = brt.warehouseClient.Process(context.TODO(), payload)
 	if err != nil {
-		brt.logger.Errorf("BRT: Failed to marshal WH staging file payload error:%v", err)
-	}
-	uri := fmt.Sprintf(`%s/v1/process`, brt.warehouseURL)
-	resp, err := brt.netHandle.Post(uri, "application/json; charset=utf-8",
-		bytes.NewBuffer(jsonPayload))
-	if err != nil {
-		brt.logger.Errorf("BRT: Failed to route staging file URL to warehouse service@%v, error:%v", uri, err)
+		brt.logger.Errorf("BRT: Failed to route staging file: %v", err)
 		return
 	}
-	defer func() { httputil.CloseResponse(resp) }()
-
-	if resp.StatusCode == http.StatusOK {
-		brt.logger.Infof("BRT: Routed successfully staging file URL to warehouse service@%v", uri)
-	} else {
-		body, _ := io.ReadAll(resp.Body)
-		err = fmt.Errorf("BRT: Failed to route staging file URL to warehouse service@%v, status: %v, body: %v", uri, resp.Status, string(body))
-		brt.logger.Error(err)
-	}
+	brt.logger.Infof("BRT: Routed successfully staging file URL to warehouse service")
 	return
 }
 
@@ -1274,9 +1262,9 @@ func (brt *HandleT) setJobStatus(batchJobs *BatchJobsT, isWarehouse bool, errOcc
 			errorCode := getBRTErrorCode(jobState)
 			var cd *types.ConnectionDetails
 			workspaceID := job.WorkspaceId
-			key := fmt.Sprintf("%s:%s:%s:%s:%s:%s:%s", parameters.SourceID, parameters.DestinationID, parameters.SourceBatchID, jobState, strconv.Itoa(errorCode), parameters.EventName, parameters.EventType)
+			key := fmt.Sprintf("%s:%s:%s:%s:%s:%s:%s", parameters.SourceID, parameters.DestinationID, parameters.SourceJobRunID, jobState, strconv.Itoa(errorCode), parameters.EventName, parameters.EventType)
 			if _, ok := connectionDetailsMap[key]; !ok {
-				cd = types.CreateConnectionDetail(parameters.SourceID, parameters.DestinationID, parameters.SourceBatchID, parameters.SourceTaskID, parameters.SourceTaskRunID, parameters.SourceJobID, parameters.SourceJobRunID, parameters.SourceDefinitionID, parameters.DestinationDefinitionID, parameters.SourceCategory)
+				cd = types.CreateConnectionDetail(parameters.SourceID, parameters.DestinationID, parameters.SourceTaskRunID, parameters.SourceJobID, parameters.SourceJobRunID, parameters.SourceDefinitionID, parameters.DestinationDefinitionID, parameters.SourceCategory)
 				connectionDetailsMap[key] = cd
 				transformedAtMap[key] = parameters.TransformAt
 			}
@@ -1522,7 +1510,7 @@ func (brt *HandleT) trackRequestMetrics(batchReqDiagnostics batchRequestMetric) 
 	}
 }
 
-func (*HandleT) recordDeliveryStatus(batchDestination DestinationT, output StorageUploadOutput, isWarehouse bool) {
+func (brt *HandleT) recordDeliveryStatus(batchDestination DestinationT, output StorageUploadOutput, isWarehouse bool) {
 	var (
 		errorCode string
 		jobState  string
@@ -1564,7 +1552,7 @@ func (*HandleT) recordDeliveryStatus(batchDestination DestinationT, output Stora
 		ErrorCode:     errorCode,
 		ErrorResponse: errorResp,
 	}
-	destinationdebugger.RecordEventDeliveryStatus(batchDestination.Destination.ID, &deliveryStatus)
+	brt.debugger.RecordEventDeliveryStatus(batchDestination.Destination.ID, &deliveryStatus)
 }
 
 func (brt *HandleT) recordUploadStats(destination DestinationT, output StorageUploadOutput) {
@@ -1623,7 +1611,7 @@ func (worker *workerT) workerProcess() {
 			toQuery := worker.brt.jobQueryBatchSize
 			if !brt.holdFetchingJobs(parameterFilters) {
 				brtQueryStat := stats.Default.NewTaggedStat("batch_router.jobsdb_query_time", stats.TimerType, stats.Tags{"function": "workerProcess", "destType": brt.destType})
-				brtQueryStat.Start()
+				queryStart := time.Now()
 				brt.logger.Debugf("BRT: %s: DB about to read for parameter Filters: %v ", brt.destType, parameterFilters)
 				queryParams := jobsdb.GetQueryParamsT{
 					CustomValFilters:              []string{brt.destType},
@@ -1655,7 +1643,7 @@ func (worker *workerT) workerProcess() {
 					}
 					combinedList = append(combinedList, unprocessed.Jobs...)
 				}
-				brtQueryStat.End()
+				brtQueryStat.Since(queryStart)
 				brt.logger.Debugf("BRT: %s: DB Read Complete for parameter Filters: %v retryList: %v, unprocessedList: %v, total: %v", brt.destType, parameterFilters, len(toRetry.Jobs), len(combinedList)-len(toRetry.Jobs), len(combinedList))
 			}
 		} else {
@@ -1806,7 +1794,7 @@ func (worker *workerT) workerProcess() {
 				switch {
 				case misc.Contains(objectStorageDestinations, brt.destType):
 					destUploadStat := stats.Default.NewStat(fmt.Sprintf(`batch_router.%s_dest_upload_time`, brt.destType), stats.TimerType)
-					destUploadStat.Start()
+					destUploadStart := time.Now()
 					output := brt.copyJobsToStorage(brt.destType, &batchJobs, false)
 					brt.recordDeliveryStatus(*batchJobs.BatchDestination, output, false)
 					brt.setJobStatus(&batchJobs, false, output.Error, false)
@@ -1818,12 +1806,12 @@ func (worker *workerT) workerProcess() {
 						brt.recordUploadStats(*batchJobs.BatchDestination, output)
 					}
 
-					destUploadStat.End()
+					destUploadStat.Since(destUploadStart)
 				case misc.Contains(warehouseutils.WarehouseDestinations, brt.destType):
 					useRudderStorage := misc.IsConfiguredToUseRudderObjectStorage(batchJobs.BatchDestination.Destination.Config)
 					objectStorageType := warehouseutils.ObjectStorageType(brt.destType, batchJobs.BatchDestination.Destination.Config, useRudderStorage)
 					destUploadStat := stats.Default.NewStat(fmt.Sprintf(`batch_router.%s_%s_dest_upload_time`, brt.destType, objectStorageType), stats.TimerType)
-					destUploadStat.Start()
+					destUploadStart := time.Now()
 					splitBatchJobs := brt.splitBatchJobsOnTimeWindow(batchJobs)
 					for _, batchJob := range splitBatchJobs {
 						output := brt.copyJobsToStorage(objectStorageType, batchJob, true)
@@ -1840,12 +1828,12 @@ func (worker *workerT) workerProcess() {
 						brt.setJobStatus(batchJob, true, output.Error, postToWarehouseErr)
 						misc.RemoveFilePaths(output.LocalFilePaths...)
 					}
-					destUploadStat.End()
+					destUploadStat.Since(destUploadStart)
 				case misc.Contains(asyncDestinations, brt.destType):
 					destUploadStat := stats.Default.NewStat(fmt.Sprintf(`batch_router.%s_dest_upload_time`, brt.destType), stats.TimerType)
-					destUploadStat.Start()
+					destUploadStart := time.Now()
 					brt.sendJobsToStorage(batchJobs)
-					destUploadStat.End()
+					destUploadStat.Since(destUploadStart)
 				}
 				wg.Done()
 			})
@@ -1975,7 +1963,7 @@ func (brt *HandleT) readAndProcess() {
 
 		brt.logger.Debugf("BRT: %s: Reading in mainLoop", brt.destType)
 		brtQueryStat := stats.Default.NewTaggedStat("batch_router.jobsdb_query_time", stats.TimerType, stats.Tags{"function": "mainLoop", "destType": brt.destType})
-		brtQueryStat.Start()
+		queryStart := time.Now()
 
 		if !brt.holdFetchingJobs([]jobsdb.ParameterFilterT{}) {
 			queryParams := jobsdb.GetQueryParamsT{
@@ -2009,7 +1997,7 @@ func (brt *HandleT) readAndProcess() {
 				jobs = append(jobs, unprocessed.Jobs...)
 			}
 
-			brtQueryStat.End()
+			brtQueryStat.Since(queryStart)
 			brt.logger.Debugf("BRT: %s: Length of jobs received: %d", brt.destType, len(jobs))
 
 			jobsByDesID := lo.GroupBy(jobs, func(job *jobsdb.JobT) string {
@@ -2134,7 +2122,7 @@ func (brt *HandleT) dedupRawDataDestJobsOnCrash() {
 			}
 			brt.uploadedRawDataJobsCache[object.DestinationID][eventID] = true
 		}
-		reader.Close()
+		_ = reader.Close()
 		brt.jobsDB.JournalDeleteEntry(entry.OpID)
 	}
 }
@@ -2279,12 +2267,13 @@ func Init() {
 }
 
 // Setup initializes this module
-func (brt *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB, errorDB jobsdb.JobsDB, destType string, reporting types.ReportingI, multitenantStat multitenant.MultiTenantI, transientSources transientsource.Service, rsourcesService rsources.JobService) {
+func (brt *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB, errorDB jobsdb.JobsDB, destType string, reporting types.ReportingI, multitenantStat multitenant.MultiTenantI, transientSources transientsource.Service, rsourcesService rsources.JobService, debugger destinationdebugger.DestinationDebugger) {
 	brt.isBackendConfigInitialized = false
 	brt.backendConfigInitialized = make(chan bool)
 	brt.fileManagerFactory = filemanager.DefaultFileManagerFactory
 	brt.backendConfig = backendConfig
 	brt.reporting = reporting
+	brt.debugger = debugger
 	config.RegisterBoolConfigVariable(types.DefaultReportingEnabled, &brt.reportingEnabled, false, "Reporting.enabled")
 	brt.logger = pkgLogger.Child(destType)
 	brt.logger.Infof("BRT: Batch Router started: %s", destType)
@@ -2297,8 +2286,10 @@ func (brt *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB, err
 		// error is ignored as context.TODO() is passed, err is not expected.
 		_ = brt.reporting.WaitForSetup(context.TODO(), types.CoreReportingClient)
 	}
-	if brt.warehouseURL == "" {
-		brt.warehouseURL = misc.GetWarehouseURL()
+	if brt.warehouseClient == nil {
+		brt.warehouseClient = client.NewWarehouse(misc.GetWarehouseURL(), client.WithTimeout(
+			config.GetDuration("WarehouseClient.timeout", 30, time.Second),
+		))
 	}
 
 	brt.inProgressMap = map[string]bool{}

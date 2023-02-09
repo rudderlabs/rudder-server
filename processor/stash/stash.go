@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"sync"
 	"time"
 
 	"golang.org/x/sync/errgroup"
@@ -123,13 +124,13 @@ func (st *HandleT) runErrWorkers(ctx context.Context) {
 	for i := 0; i < noOfErrStashWorkers; i++ {
 		g.Go(misc.WithBugsnag(func() error {
 			for jobs := range st.errProcessQ {
+				uploadStart := time.Now()
 				uploadStat := stats.Default.NewStat("Processor.err_upload_time", stats.TimerType)
-				uploadStat.Start()
 				errorJobs := st.storeErrorsToObjectStorage(jobs)
 				for _, errorJob := range errorJobs {
 					st.setErrJobStatus(errorJob.jobs, errorJob.errorOutput)
 				}
-				uploadStat.End()
+				uploadStat.Since(uploadStart)
 			}
 
 			return nil
@@ -208,12 +209,14 @@ func (st *HandleT) storeErrorsToObjectStorage(jobs []*jobsdb.JobT) (errorJob []E
 
 	g, _ := errgroup.WithContext(context.Background())
 	g.SetLimit(config.GetInt("Processor.errorBackupWorkers", 100))
+	var mu sync.Mutex
 	for workspaceID, filePath := range dumps {
 		wrkId := workspaceID
 		path := filePath
 		errFileUploader, err := st.fileuploader.GetFileManager(wrkId)
 		if err != nil {
 			st.logger.Errorf("Skipping Storing errors for workspace: %s since no file manager is found", workspaceID)
+			mu.Lock()
 			errorJobs = append(errorJobs, ErrorJob{
 				jobs: jobsPerWorkspace[workspaceID],
 				errorOutput: StoreErrorOutputT{
@@ -221,6 +224,7 @@ func (st *HandleT) storeErrorsToObjectStorage(jobs []*jobsdb.JobT) (errorJob []E
 					Error:    err,
 				},
 			})
+			mu.Unlock()
 			continue
 		}
 		g.Go(misc.WithBugsnag(func() error {
@@ -230,6 +234,8 @@ func (st *HandleT) storeErrorsToObjectStorage(jobs []*jobsdb.JobT) (errorJob []E
 			}
 			prefixes := []string{"rudder-proc-err-logs", time.Now().Format("01-02-2006")}
 			uploadOutput, err := errFileUploader.Upload(context.TODO(), outputFile, prefixes...)
+			st.logger.Infof("Uploaded error logs to %s for workspaceId %s", uploadOutput.Location, wrkId)
+			mu.Lock()
 			errorJobs = append(errorJobs, ErrorJob{
 				jobs: jobsPerWorkspace[wrkId],
 				errorOutput: StoreErrorOutputT{
@@ -237,6 +243,7 @@ func (st *HandleT) storeErrorsToObjectStorage(jobs []*jobsdb.JobT) (errorJob []E
 					Error:    err,
 				},
 			})
+			mu.Unlock()
 			return nil
 		}))
 	}
@@ -294,7 +301,7 @@ func (st *HandleT) readErrJobsLoop(ctx context.Context) {
 			close(st.errProcessQ)
 			return
 		case <-time.After(errReadLoopSleep):
-			st.statErrDBR.Start()
+			start := time.Now()
 
 			// NOTE: sending custom val filters array of size 1 to take advantage of cache in jobsdb.
 			queryParams := jobsdb.GetQueryParamsT{
@@ -327,7 +334,7 @@ func (st *HandleT) readErrJobsLoop(ctx context.Context) {
 				combinedList = append(combinedList, unprocessed.Jobs...)
 			}
 
-			st.statErrDBR.End()
+			st.statErrDBR.Since(start)
 
 			if len(combinedList) == 0 {
 				st.logger.Debug("[Processor: readErrJobsLoop]: DB Read Complete. No proc_err Jobs to process")

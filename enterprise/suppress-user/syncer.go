@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"github.com/cenkalti/backoff"
-	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/enterprise/suppress-user/model"
 	"github.com/rudderlabs/rudder-server/services/controlplane/identity"
 	"github.com/rudderlabs/rudder-server/utils/httputil"
@@ -75,6 +74,7 @@ func NewSyncer(baseURL string, identifier identity.Identifier, r Repository, opt
 
 	s := &Syncer{
 		url:                url,
+		id:                 identifier,
 		r:                  r,
 		log:                logger.NOP,
 		client:             &http.Client{},
@@ -91,6 +91,7 @@ func NewSyncer(baseURL string, identifier identity.Identifier, r Repository, opt
 // Syncer is responsible for syncing suppressions from the backend to the repository
 type Syncer struct {
 	url string
+	id  identity.Identifier
 	r   Repository
 
 	client             *http.Client
@@ -168,8 +169,7 @@ func (s *Syncer) sync(token []byte) ([]model.Suppression, []byte, error) {
 		if err != nil {
 			return err
 		}
-		workspaceToken := config.GetWorkspaceToken()
-		req.SetBasicAuth(workspaceToken, "")
+		req.SetBasicAuth(s.id.BasicAuth())
 		req.Header.Set("Content-Type", "application/json")
 
 		resp, err = s.client.Do(req)

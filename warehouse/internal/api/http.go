@@ -43,11 +43,10 @@ type stagingFileSchema struct {
 	FirstEventAt          time.Time
 	LastEventAt           time.Time
 	TotalEvents           int
+	TotalBytes            int
 	UseRudderStorage      bool
 	DestinationRevisionID string
 	// cloud sources specific info
-	SourceBatchID   string
-	SourceTaskID    string
 	SourceTaskRunID string
 	SourceJobID     string
 	SourceJobRunID  string
@@ -90,8 +89,7 @@ func mapStagingFile(payload *stagingFileSchema) (model.StagingFileWithSchema, er
 		UseRudderStorage:      payload.UseRudderStorage,
 		DestinationRevisionID: payload.DestinationRevisionID,
 		TotalEvents:           payload.TotalEvents,
-		SourceBatchID:         payload.SourceBatchID,
-		SourceTaskID:          payload.SourceTaskID,
+		TotalBytes:            payload.TotalBytes,
 		SourceTaskRunID:       payload.SourceTaskRunID,
 		SourceJobID:           payload.SourceJobID,
 		SourceJobRunID:        payload.SourceJobRunID,

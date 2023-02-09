@@ -137,18 +137,6 @@ func (mr *MockMeasurementMockRecorder) Count(arg0 interface{}) *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Count", reflect.TypeOf((*MockMeasurement)(nil).Count), arg0)
 }
 
-// End mocks base method.
-func (m *MockMeasurement) End() {
-	m.ctrl.T.Helper()
-	m.ctrl.Call(m, "End")
-}
-
-// End indicates an expected call of End.
-func (mr *MockMeasurementMockRecorder) End() *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "End", reflect.TypeOf((*MockMeasurement)(nil).End))
-}
-
 // Gauge mocks base method.
 func (m *MockMeasurement) Gauge(arg0 interface{}) {
 	m.ctrl.T.Helper()
@@ -185,6 +173,20 @@ func (mr *MockMeasurementMockRecorder) Observe(arg0 interface{}) *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Observe", reflect.TypeOf((*MockMeasurement)(nil).Observe), arg0)
 }
 
+// RecordDuration mocks base method.
+func (m *MockMeasurement) RecordDuration() func() {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "RecordDuration")
+	ret0, _ := ret[0].(func())
+	return ret0
+}
+
+// RecordDuration indicates an expected call of RecordDuration.
+func (mr *MockMeasurementMockRecorder) RecordDuration() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RecordDuration", reflect.TypeOf((*MockMeasurement)(nil).RecordDuration))
+}
+
 // SendTiming mocks base method.
 func (m *MockMeasurement) SendTiming(arg0 time.Duration) {
 	m.ctrl.T.Helper()
@@ -207,16 +209,4 @@ func (m *MockMeasurement) Since(arg0 time.Time) {
 func (mr *MockMeasurementMockRecorder) Since(arg0 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Since", reflect.TypeOf((*MockMeasurement)(nil).Since), arg0)
-}
-
-// Start mocks base method.
-func (m *MockMeasurement) Start() {
-	m.ctrl.T.Helper()
-	m.ctrl.Call(m, "Start")
-}
-
-// Start indicates an expected call of Start.
-func (mr *MockMeasurementMockRecorder) Start() *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Start", reflect.TypeOf((*MockMeasurement)(nil).Start))
 }

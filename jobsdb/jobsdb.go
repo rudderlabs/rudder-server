@@ -77,6 +77,7 @@ type GetQueryParamsT struct {
 
 	// if IgnoreCustomValFiltersInQuery is true, CustomValFilters is not going to be used
 	IgnoreCustomValFiltersInQuery bool
+	WorkspaceID                   string
 	CustomValFilters              []string
 	ParameterFilters              []ParameterFilterT
 	StateFilters                  []string
@@ -95,13 +96,6 @@ type GetQueryParamsT struct {
 	// A value less than or equal to zero will disable this limit (no limit),
 	// only values greater than zero are considered as valid limits.
 	PayloadSizeLimit int64
-}
-
-// statTags is a struct to hold tags for stats
-type statTags struct {
-	CustomValFilters []string
-	ParameterFilters []ParameterFilterT
-	StateFilters     []string
 }
 
 var getTimeNowFunc = time.Now
@@ -427,9 +421,11 @@ type HandleT struct {
 	statPreDropTableCount         stats.Measurement
 	statDSCount                   stats.Measurement
 	statNewDSPeriod               stats.Measurement
+	newDSCreationTime             time.Time
 	invalidCacheKeyStat           stats.Measurement
 	isStatNewDSPeriodInitialized  bool
 	statDropDSPeriod              stats.Measurement
+	dsDropTime                    time.Time
 	unionQueryTime                stats.Measurement
 	isStatDropDSPeriodInitialized bool
 	logger                        logger.Logger
@@ -1211,13 +1207,14 @@ func (jd *HandleT) addNewDS(l lock.LockToken, ds dataSetT) {
 
 // NOTE: If addNewDSInTx is directly called, make sure to explicitly call refreshDSRangeList(l) to update the DS list in cache, once transaction has completed.
 func (jd *HandleT) addNewDSInTx(tx *Tx, l lock.LockToken, dsList []dataSetT, ds dataSetT) error {
+	defer jd.getTimerStat(
+		"add_new_ds",
+		&statTags{CustomValFilters: []string{jd.tablePrefix}},
+	).RecordDuration()()
 	if l == nil {
 		return errors.New("nil ds list lock token provided")
 	}
 	jd.logger.Infof("Creating new DS %+v", ds)
-	queryStat := stats.Default.NewTaggedStat("add_new_ds", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix})
-	queryStat.Start()
-	defer queryStat.End()
 	err := jd.createDSInTx(tx, ds)
 	if err != nil {
 		return err
@@ -1228,19 +1225,20 @@ func (jd *HandleT) addNewDSInTx(tx *Tx, l lock.LockToken, dsList []dataSetT, ds 
 	}
 	// Tracking time interval between new ds creations. Hence calling end before start
 	if jd.isStatNewDSPeriodInitialized {
-		jd.statNewDSPeriod.End()
+		jd.statNewDSPeriod.Since(jd.newDSCreationTime)
 	}
-	jd.statNewDSPeriod.Start()
+	jd.newDSCreationTime = time.Now()
 	jd.isStatNewDSPeriodInitialized = true
 
 	return nil
 }
 
 func (jd *HandleT) addDSInTx(tx *Tx, ds dataSetT) error {
+	defer jd.getTimerStat(
+		"add_new_ds",
+		&statTags{CustomValFilters: []string{jd.tablePrefix}},
+	).RecordDuration()()
 	jd.logger.Infof("Creating DS %+v", ds)
-	queryStat := stats.Default.NewTaggedStat("add_new_ds", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix})
-	queryStat.Start()
-	defer queryStat.End()
 	return jd.createDSInTx(tx, ds)
 }
 
@@ -1478,9 +1476,9 @@ func (jd *HandleT) postDropDs(ds dataSetT) {
 
 	// Tracking time interval between drop ds operations. Hence calling end before start
 	if jd.isStatDropDSPeriodInitialized {
-		jd.statDropDSPeriod.End()
+		jd.statDropDSPeriod.Since(jd.dsDropTime)
 	}
-	jd.statDropDSPeriod.Start()
+	jd.dsDropTime = time.Now()
 	jd.isStatDropDSPeriodInitialized = true
 }
 
@@ -1630,9 +1628,10 @@ func (jd *HandleT) dropAllDS(l lock.LockToken) error {
 }
 
 func (jd *HandleT) internalStoreJobsInTx(ctx context.Context, tx *Tx, ds dataSetT, jobList []*JobT) error {
-	queryStat := jd.getTimerStat("store_jobs", nil)
-	queryStat.Start()
-	defer queryStat.End()
+	defer jd.getTimerStat(
+		"store_jobs",
+		&statTags{CustomValFilters: []string{jd.tablePrefix}},
+	).RecordDuration()()
 
 	tx.AddSuccessListener(func() {
 		jd.clearCache(ds, jobList)
@@ -1646,9 +1645,10 @@ Next set of functions are for reading/writing jobs and job_status for
 a given dataset. The names should be self explainatory
 */
 func (jd *HandleT) copyJobsDS(tx *Tx, ds dataSetT, jobList []*JobT) error { // When fixing callers make sure error is handled with assertError
-	queryStat := jd.getTimerStat("copy_jobs", nil)
-	queryStat.Start()
-	defer queryStat.End()
+	defer jd.getTimerStat(
+		"copy_jobs",
+		&statTags{CustomValFilters: []string{jd.tablePrefix}},
+	).RecordDuration()()
 
 	tx.AddSuccessListener(func() {
 		jd.clearCache(ds, jobList)
@@ -1748,9 +1748,10 @@ func (jd *HandleT) internalStoreWithRetryEachInTx(ctx context.Context, tx *Tx, d
 		}
 		return errorMessagesMap
 	}
-	queryStat := jd.getTimerStat("store_jobs_retry_each", nil)
-	queryStat.Start()
-	defer queryStat.End()
+	defer jd.getTimerStat(
+		"store_jobs_retry_each",
+		nil,
+	).RecordDuration()()
 
 	_, err := tx.ExecContext(ctx, savepointSql)
 	if err != nil {
@@ -2078,8 +2079,7 @@ func (jd *HandleT) dropDSFromCache(ds dataSetT) {
 func (jd *HandleT) markClearEmptyResult(ds dataSetT, workspace string, stateFilters, customValFilters []string, parameterFilters []ParameterFilterT, value cacheValue, checkAndSet *cacheValue) {
 	// Safe check. Every status must have a valid workspace id for the cache to work efficiently.
 	if workspace == "" {
-		jd.logger.Debugf("[%s] Empty workspace key provided while looking into jobsdb cachemap", jd.tablePrefix)
-		jd.invalidCacheKeyStat.Increment()
+		workspace = allWorkspaces
 	}
 
 	// Safe Check , All parameter filters must be provided explicitly
@@ -2164,9 +2164,13 @@ func (jd *HandleT) markClearEmptyResult(ds dataSetT, workspace string, stateFilt
 //	 * The entry is noJobs
 //	 * The entry is not expired (entry time + cache expiration > now)
 func (jd *HandleT) isEmptyResult(ds dataSetT, workspace string, stateFilters, customValFilters []string, parameterFilters []ParameterFilterT) bool {
-	queryStat := stats.Default.NewTaggedStat("isEmptyCheck", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix})
-	queryStat.Start()
-	defer queryStat.End()
+	if workspace != "" {
+		workspace = allWorkspaces
+	}
+	defer jd.getTimerStat(
+		"isEmptyCheck",
+		&statTags{CustomValFilters: []string{jd.tablePrefix}},
+	).RecordDuration()()
 	jd.dsCacheLock.Lock()
 	defer jd.dsCacheLock.Unlock()
 
@@ -2249,21 +2253,27 @@ func (jd *HandleT) getProcessedJobsDS(ctx context.Context, ds dataSetT, params G
 	stateFilters := params.StateFilters
 	customValFilters := params.CustomValFilters
 	parameterFilters := params.ParameterFilters
+	workspaceID := params.WorkspaceID
 	checkValidJobState(jd, stateFilters)
 
-	if jd.isEmptyResult(ds, allWorkspaces, stateFilters, customValFilters, parameterFilters) {
+	if jd.isEmptyResult(ds, workspaceID, stateFilters, customValFilters, parameterFilters) {
 		jd.logger.Debugf("[getProcessedJobsDS] Empty cache hit for ds: %v, stateFilters: %v, customValFilters: %v, parameterFilters: %v", ds, stateFilters, customValFilters, parameterFilters)
 		return JobsResult{}, false, nil
 	}
 
-	tags := statTags{CustomValFilters: params.CustomValFilters, StateFilters: params.StateFilters, ParameterFilters: params.ParameterFilters}
-	start := time.Now()
-	defer jd.getTimerStat("processed_ds_time", &tags).Since(start)
+	tags := statTags{
+		CustomValFilters: params.CustomValFilters,
+		StateFilters:     params.StateFilters,
+		ParameterFilters: params.ParameterFilters,
+		WorkspaceID:      workspaceID,
+	}
+
+	defer jd.getTimerStat("processed_ds_time", &tags).RecordDuration()()
 
 	skipCacheResult := params.AfterJobID != nil
 	if !skipCacheResult {
 		// We don't reset this in case of error for now, as any error in this function causes panic
-		jd.markClearEmptyResult(ds, allWorkspaces, stateFilters, customValFilters, parameterFilters, willTryToSet, nil)
+		jd.markClearEmptyResult(ds, workspaceID, stateFilters, customValFilters, parameterFilters, willTryToSet, nil)
 	}
 
 	var stateQuery string
@@ -2282,6 +2292,10 @@ func (jd *HandleT) getProcessedJobsDS(ctx context.Context, ds dataSetT, params G
 
 	if len(parameterFilters) > 0 {
 		filterConditions = append(filterConditions, constructParameterJSONQuery("jobs", parameterFilters))
+	}
+
+	if workspaceID != "" {
+		filterConditions = append(filterConditions, fmt.Sprintf("jobs.workspace_id = '%s'", workspaceID))
 	}
 
 	filterQuery := strings.Join(filterConditions, " AND ")
@@ -2395,7 +2409,7 @@ func (jd *HandleT) getProcessedJobsDS(ctx context.Context, ds dataSetT, params G
 			result = noJobs
 		}
 		_willTryToSet := willTryToSet
-		jd.markClearEmptyResult(ds, allWorkspaces, stateFilters, customValFilters, parameterFilters, result, &_willTryToSet)
+		jd.markClearEmptyResult(ds, workspaceID, stateFilters, customValFilters, parameterFilters, result, &_willTryToSet)
 	}
 
 	return JobsResult{
@@ -2415,20 +2429,32 @@ A JobsLimit less than or equal to zero indicates no limit.
 func (jd *HandleT) getUnprocessedJobsDS(ctx context.Context, ds dataSetT, params GetQueryParamsT) (JobsResult, bool, error) { // skipcq: CRT-P0003
 	customValFilters := params.CustomValFilters
 	parameterFilters := params.ParameterFilters
+	workspaceID := params.WorkspaceID
 
-	if jd.isEmptyResult(ds, allWorkspaces, []string{NotProcessed.State}, customValFilters, parameterFilters) {
+	if jd.isEmptyResult(ds, workspaceID, []string{NotProcessed.State}, customValFilters, parameterFilters) {
 		jd.logger.Debugf("[getUnprocessedJobsDS] Empty cache hit for ds: %v, stateFilters: NP, customValFilters: %v, parameterFilters: %v", ds, customValFilters, parameterFilters)
 		return JobsResult{}, false, nil
 	}
 
-	tags := statTags{CustomValFilters: params.CustomValFilters, ParameterFilters: params.ParameterFilters}
-	start := time.Now()
-	defer jd.getTimerStat("unprocessed_ds_time", &tags).Since(start)
+	tags := statTags{
+		CustomValFilters: params.CustomValFilters,
+		ParameterFilters: params.ParameterFilters,
+		WorkspaceID:      workspaceID,
+	}
+	defer jd.getTimerStat("unprocessed_ds_time", &tags).RecordDuration()()
 
 	skipCacheResult := params.AfterJobID != nil
 	if !skipCacheResult {
 		// We don't reset this in case of error for now, as any error in this function causes panic
-		jd.markClearEmptyResult(ds, allWorkspaces, []string{NotProcessed.State}, customValFilters, parameterFilters, willTryToSet, nil)
+		jd.markClearEmptyResult(
+			ds,
+			workspaceID,
+			[]string{NotProcessed.State},
+			customValFilters,
+			parameterFilters,
+			willTryToSet,
+			nil,
+		)
 	}
 
 	var rows *sql.Rows
@@ -2454,6 +2480,9 @@ func (jd *HandleT) getUnprocessedJobsDS(ctx context.Context, ds dataSetT, params
 	}
 	if len(parameterFilters) > 0 {
 		sqlStatement += " AND " + constructParameterJSONQuery("jobs", parameterFilters)
+	}
+	if workspaceID != "" {
+		sqlStatement += fmt.Sprintf(" AND jobs.workspace_id = '%s'", workspaceID)
 	}
 	sqlStatement += " ORDER BY jobs.job_id"
 	if params.JobsLimit > 0 {
@@ -2537,7 +2566,7 @@ func (jd *HandleT) getUnprocessedJobsDS(ctx context.Context, ds dataSetT, params
 			result = noJobs
 		}
 		_willTryToSet := willTryToSet
-		jd.markClearEmptyResult(ds, allWorkspaces, []string{NotProcessed.State}, customValFilters, parameterFilters, result, &_willTryToSet)
+		jd.markClearEmptyResult(ds, workspaceID, []string{NotProcessed.State}, customValFilters, parameterFilters, result, &_willTryToSet)
 	}
 	return JobsResult{
 		Jobs:          jobList,
@@ -2586,9 +2615,10 @@ func (jd *HandleT) updateJobStatusDSInTx(ctx context.Context, tx *Tx, ds dataSet
 		return
 	}
 
-	queryStat := jd.getTimerStat("update_job_status_ds_time", &tags)
-	queryStat.Start()
-	defer queryStat.End()
+	defer jd.getTimerStat(
+		"update_job_status_ds_time",
+		&tags,
+	).RecordDuration()()
 	updatedStatesMap := map[string]map[string]bool{}
 	store := func() error {
 		stmt, err := tx.PrepareContext(ctx, pq.CopyIn(ds.JobStatusTable, "job_id", "job_state", "attempt", "exec_time",
@@ -3014,10 +3044,14 @@ Later we can move this to query
 */
 func (jd *HandleT) internalUpdateJobStatusInTx(ctx context.Context, tx *Tx, statusList []*JobStatusT, customValFilters []string, parameterFilters []ParameterFilterT) error {
 	// capture stats
-	tags := statTags{CustomValFilters: customValFilters, ParameterFilters: parameterFilters}
-	queryStat := jd.getTimerStat("update_job_status_time", &tags)
-	queryStat.Start()
-	defer queryStat.End()
+	tags := statTags{
+		CustomValFilters: customValFilters,
+		ParameterFilters: parameterFilters,
+	}
+	defer jd.getTimerStat(
+		"update_job_status_time",
+		&tags,
+	).RecordDuration()()
 
 	// do update
 	updatedStatesByDS, err := jd.doUpdateJobStatusInTx(ctx, tx, statusList, tags)
@@ -3208,7 +3242,11 @@ func (jd *HandleT) GetUnprocessed(ctx context.Context, params GetQueryParamsT) (
 		return JobsResult{}, nil
 	}
 
-	tags := statTags{CustomValFilters: params.CustomValFilters, ParameterFilters: params.ParameterFilters}
+	tags := statTags{
+		CustomValFilters: params.CustomValFilters,
+		ParameterFilters: params.ParameterFilters,
+		WorkspaceID:      params.WorkspaceID,
+	}
 	command := func() interface{} {
 		return queryResultWrapper(jd.getUnprocessed(ctx, params))
 	}
@@ -3225,10 +3263,15 @@ func (jd *HandleT) getUnprocessed(ctx context.Context, params GetQueryParamsT) (
 		return JobsResult{}, nil
 	}
 
-	tags := statTags{CustomValFilters: params.CustomValFilters, ParameterFilters: params.ParameterFilters}
-	queryStat := jd.getTimerStat("unprocessed_jobs_time", &tags)
-	queryStat.Start()
-	defer queryStat.End()
+	tags := statTags{
+		CustomValFilters: params.CustomValFilters,
+		ParameterFilters: params.ParameterFilters,
+		WorkspaceID:      params.WorkspaceID,
+	}
+	defer jd.getTimerStat(
+		"unprocessed_jobs_time",
+		&tags,
+	).RecordDuration()()
 
 	// The order of lock is very important. The migrateDSLoop
 	// takes lock in this order so reversing this will cause
@@ -3305,7 +3348,12 @@ func (jd *HandleT) GetImporting(ctx context.Context, params GetQueryParamsT) (Jo
 		return JobsResult{}, nil
 	}
 	params.StateFilters = []string{Importing.State}
-	tags := statTags{CustomValFilters: params.CustomValFilters, StateFilters: params.StateFilters, ParameterFilters: params.ParameterFilters}
+	tags := statTags{
+		CustomValFilters: params.CustomValFilters,
+		StateFilters:     params.StateFilters,
+		ParameterFilters: params.ParameterFilters,
+		WorkspaceID:      params.WorkspaceID,
+	}
 	command := func() interface{} {
 		return queryResultWrapper(jd.getImportingList(ctx, params))
 	}
@@ -3332,10 +3380,15 @@ func (jd *HandleT) GetProcessed(ctx context.Context, params GetQueryParamsT) (Jo
 		return JobsResult{}, nil
 	}
 
-	tags := statTags{CustomValFilters: params.CustomValFilters, StateFilters: params.StateFilters, ParameterFilters: params.ParameterFilters}
-	queryStat := jd.getTimerStat("processed_jobs_time", &tags)
-	queryStat.Start()
-	defer queryStat.End()
+	defer jd.getTimerStat(
+		"processed_jobs_time",
+		&statTags{
+			CustomValFilters: params.CustomValFilters,
+			StateFilters:     params.StateFilters,
+			ParameterFilters: params.ParameterFilters,
+			WorkspaceID:      params.WorkspaceID,
+		},
+	).RecordDuration()()
 
 	// The order of lock is very important. The migrateDSLoop
 	// takes lock in this order so reversing this will cause
@@ -3429,7 +3482,12 @@ func (jd *HandleT) GetToRetry(ctx context.Context, params GetQueryParamsT) (Jobs
 		return JobsResult{}, nil
 	}
 	params.StateFilters = []string{Failed.State}
-	tags := statTags{CustomValFilters: params.CustomValFilters, StateFilters: params.StateFilters, ParameterFilters: params.ParameterFilters}
+	tags := statTags{
+		CustomValFilters: params.CustomValFilters,
+		StateFilters:     params.StateFilters,
+		ParameterFilters: params.ParameterFilters,
+		WorkspaceID:      params.WorkspaceID,
+	}
 	command := func() interface{} {
 		return queryResultWrapper(jd.getToRetry(ctx, params))
 	}
@@ -3454,7 +3512,12 @@ func (jd *HandleT) GetWaiting(ctx context.Context, params GetQueryParamsT) (Jobs
 		return JobsResult{}, nil
 	}
 	params.StateFilters = []string{Waiting.State}
-	tags := statTags{CustomValFilters: params.CustomValFilters, StateFilters: params.StateFilters, ParameterFilters: params.ParameterFilters}
+	tags := statTags{
+		CustomValFilters: params.CustomValFilters,
+		StateFilters:     params.StateFilters,
+		ParameterFilters: params.ParameterFilters,
+		WorkspaceID:      params.WorkspaceID,
+	}
 	command := func() interface{} {
 		return queryResultWrapper(jd.getWaiting(ctx, params))
 	}
@@ -3475,7 +3538,12 @@ func (jd *HandleT) GetExecuting(ctx context.Context, params GetQueryParamsT) (Jo
 		return JobsResult{}, nil
 	}
 	params.StateFilters = []string{Executing.State}
-	tags := statTags{CustomValFilters: params.CustomValFilters, StateFilters: params.StateFilters, ParameterFilters: params.ParameterFilters}
+	tags := statTags{
+		CustomValFilters: params.CustomValFilters,
+		StateFilters:     params.StateFilters,
+		ParameterFilters: params.ParameterFilters,
+		WorkspaceID:      params.WorkspaceID,
+	}
 	command := func() interface{} {
 		return queryResultWrapper(jd.getExecuting(ctx, params))
 	}

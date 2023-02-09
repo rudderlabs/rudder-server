@@ -2,6 +2,7 @@ package config
 
 import (
 	"os"
+	"strconv"
 	"strings"
 )
 
@@ -32,11 +33,23 @@ func GetKubeNamespace() string {
 
 func GetInstanceID() string {
 	instance := GetString("INSTANCE_ID", "")
-	if instance == "" {
-		return ""
-	}
 	instanceArr := strings.Split(instance, "-")
-	return instanceArr[len(instanceArr)-1]
+	len := len(instanceArr)
+	// This handles 2 kinds of server instances
+	// a. Processor OR Gateway running in non HA mod where the instance name ends with the index
+	// b. Gateway running in HA mode, where the instance name is of the form *-gw-ha-<index>-<statefulset-id>-<pod-id>
+	potentialServerIndexIndicees := []int{len - 1, len - 3}
+	for _, i := range potentialServerIndexIndicees {
+		if i < 0 {
+			continue
+		}
+		serverIndex := instanceArr[i]
+		_, err := strconv.Atoi(serverIndex)
+		if err == nil {
+			return serverIndex
+		}
+	}
+	return ""
 }
 
 func GetReleaseName() string {

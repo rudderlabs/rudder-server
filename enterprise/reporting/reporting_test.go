@@ -21,8 +21,6 @@ var _ = Describe("Reporting", func() {
 				ConnectionDetails: types.ConnectionDetails{
 					SourceID:        "some-source-id",
 					DestinationID:   "some-destination-id",
-					SourceBatchID:   "some-source-batch-id",
-					SourceTaskID:    "some-source-task-id",
 					SourceTaskRunID: "some-source-task-run-id",
 					SourceJobID:     "some-source-job-id",
 					SourceJobRunID:  "some-source-job-run-id",
@@ -48,8 +46,6 @@ var _ = Describe("Reporting", func() {
 				ConnectionDetails: types.ConnectionDetails{
 					SourceID:        "some-source-id",
 					DestinationID:   "some-destination-id",
-					SourceBatchID:   "some-source-batch-id",
-					SourceTaskID:    "some-source-task-id",
 					SourceTaskRunID: "some-source-task-run-id",
 					SourceJobID:     "some-source-job-id",
 					SourceJobRunID:  "some-source-job-run-id",
@@ -80,12 +76,10 @@ var _ = Describe("Reporting", func() {
 
 func assertReportMetric(expectedMetric, actualMetric types.PUReportedMetric) {
 	Expect(expectedMetric.ConnectionDetails.SourceID).To(Equal(actualMetric.ConnectionDetails.SourceID))
-	Expect(expectedMetric.ConnectionDetails.SourceBatchID).To(Equal(actualMetric.ConnectionDetails.SourceBatchID))
 	Expect(expectedMetric.ConnectionDetails.DestinationID).To(Equal(actualMetric.ConnectionDetails.DestinationID))
 	Expect(expectedMetric.ConnectionDetails.SourceJobID).To(Equal(actualMetric.ConnectionDetails.SourceJobID))
 	Expect(expectedMetric.ConnectionDetails.SourceJobRunID).To(Equal(actualMetric.ConnectionDetails.SourceJobRunID))
 	Expect(expectedMetric.ConnectionDetails.SourceTaskRunID).To(Equal(actualMetric.ConnectionDetails.SourceTaskRunID))
-	Expect(expectedMetric.ConnectionDetails.SourceTaskID).To(Equal(actualMetric.ConnectionDetails.SourceTaskID))
 	Expect(expectedMetric.PUDetails.InPU).To(Equal(actualMetric.PUDetails.InPU))
 	Expect(expectedMetric.PUDetails.PU).To(Equal(actualMetric.PUDetails.PU))
 	Expect(expectedMetric.PUDetails.TerminalPU).To(Equal(actualMetric.PUDetails.TerminalPU))
