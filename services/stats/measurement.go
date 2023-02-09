@@ -2,8 +2,11 @@ package stats
 
 import (
 	"fmt"
+	"runtime"
+	"strings"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/utils/logger"
 	"gopkg.in/alexcesaro/statsd.v2"
 )
 
@@ -191,7 +194,14 @@ func (h *statsdHistogram) Observe(value float64) {
 }
 
 // newStatsdMeasurement creates a new measurement of the specific type
-func newStatsdMeasurement(conf *statsdConfig, name, statType string, client *statsdClient) Measurement {
+func newStatsdMeasurement(conf *statsdConfig, log logger.Logger, name, statType string, client *statsdClient) Measurement {
+	if strings.Trim(name, " ") == "" {
+		byteArr := make([]byte, 2048)
+		n := runtime.Stack(byteArr, false)
+		stackTrace := string(byteArr[:n])
+		log.Warnf("detected missing stat measurement name, using 'novalue':\n%v", stackTrace)
+		name = "novalue"
+	}
 	baseMeasurement := &statsdMeasurement{
 		conf:     conf,
 		name:     name,

@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.5.5](https://github.com/rudderlabs/rudder-server/compare/v1.5.4...v1.5.5) (2023-02-07)
+
+
+### Bug Fixes
+
+* upload missing metric ([#2947](https://github.com/rudderlabs/rudder-server/issues/2947)) ([cbb4b1a](https://github.com/rudderlabs/rudder-server/commit/cbb4b1a046a1a9d68ca8131ac1e56bbd65c6b726))
+
+## [1.5.4](https://github.com/rudderlabs/rudder-server/compare/v1.5.3...v1.5.4) (2023-02-06)
+
+
+### Miscellaneous
+
+* introduce stat for skip upload syncs ([#2938](https://github.com/rudderlabs/rudder-server/issues/2938)) ([9ac5006](https://github.com/rudderlabs/rudder-server/commit/9ac5006831f8711a3d5d6af7a4c0f881d3940324))
+
 ## [1.5.3](https://github.com/rudderlabs/rudder-server/compare/v1.5.2...v1.5.3) (2023-02-03)
 
 
