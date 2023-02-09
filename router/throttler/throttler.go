@@ -70,7 +70,7 @@ func (f *Factory) initThrottlerFactory() error {
 		})
 	}
 
-	throttlingAlgorithm := config.GetString("Router.throttler.algorithm", throttlingAlgoTypeGoRate)
+	throttlingAlgorithm := config.GetString("Router.throttler.algorithm", throttlingAlgoTypeGCRA)
 	if throttlingAlgorithm == throttlingAlgoTypeRedisGCRA || throttlingAlgorithm == throttlingAlgoTypeRedisSortedSet {
 		if redisClient == nil {
 			return fmt.Errorf("redis client is nil with algorithm %s", throttlingAlgorithm)
