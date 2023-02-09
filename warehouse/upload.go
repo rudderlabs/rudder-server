@@ -11,6 +11,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/warehouse/logfield"
+
 	"github.com/rudderlabs/rudder-server/services/alerta"
 
 	schemarepository "github.com/rudderlabs/rudder-server/warehouse/integrations/datalake/schema-repository"
@@ -1097,12 +1099,12 @@ func (job *UploadJobT) loadTable(tName string) (alteredSchema bool, err error) {
 		totalBeforeLoad, errTotalCount = job.getTotalCount(tName)
 		if errTotalCount != nil {
 			pkgLogger.Warnw("total count in table before loading",
-				warehouseutils.SourceID, job.upload.SourceID,
-				warehouseutils.DestinationID, job.upload.DestinationID,
-				warehouseutils.DestinationType, job.upload.DestinationType,
-				warehouseutils.WorkspaceID, job.upload.WorkspaceID,
-				warehouseutils.ERROR, errTotalCount,
-				warehouseutils.TABLE_NAME, tName,
+				logfield.SourceID, job.upload.SourceID,
+				logfield.DestinationID, job.upload.DestinationID,
+				logfield.DestinationType, job.upload.DestinationType,
+				logfield.WorkspaceID, job.upload.WorkspaceID,
+				logfield.Error, errTotalCount,
+				logfield.TableName, tName,
 			)
 		}
 	}
@@ -1121,12 +1123,12 @@ func (job *UploadJobT) loadTable(tName string) (alteredSchema bool, err error) {
 		totalAfterLoad, errTotalCount = job.getTotalCount(tName)
 		if errTotalCount != nil {
 			pkgLogger.Warnw("total count in table after loading",
-				warehouseutils.SourceID, job.upload.SourceID,
-				warehouseutils.DestinationID, job.upload.DestinationID,
-				warehouseutils.DestinationType, job.upload.DestinationType,
-				warehouseutils.WorkspaceID, job.upload.WorkspaceID,
-				warehouseutils.ERROR, errTotalCount,
-				warehouseutils.TABLE_NAME, tName,
+				logfield.SourceID, job.upload.SourceID,
+				logfield.DestinationID, job.upload.DestinationID,
+				logfield.DestinationType, job.upload.DestinationType,
+				logfield.WorkspaceID, job.upload.WorkspaceID,
+				logfield.Error, errTotalCount,
+				logfield.TableName, tName,
 			)
 			return
 		}

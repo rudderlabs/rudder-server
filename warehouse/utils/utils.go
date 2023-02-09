@@ -37,16 +37,6 @@ import (
 )
 
 const (
-	SourceID        = "sourceID"
-	SourceType      = "sourceType"
-	DestinationID   = "destinationID"
-	DestinationType = "destinationType"
-	WorkspaceID     = "workspaceID"
-	ERROR           = "error"
-	TABLE_NAME      = "tableName"
-)
-
-const (
 	RS             = "RS"
 	BQ             = "BQ"
 	SNOWFLAKE      = "SNOWFLAKE"
