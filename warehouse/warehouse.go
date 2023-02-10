@@ -68,7 +68,6 @@ var (
 	stagingFilesSchemaPaginationSize    int
 	mainLoopSleep                       time.Duration
 	stagingFilesBatchSize               int
-	crashRecoverWarehouses              []string
 	lastProcessedMarkerMap              map[string]int64
 	lastProcessedMarkerExp              = expvar.NewMap("lastProcessedMarkerMap")
 	lastProcessedMarkerMapLock          sync.RWMutex
