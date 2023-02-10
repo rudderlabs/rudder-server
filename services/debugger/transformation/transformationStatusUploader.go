@@ -163,6 +163,41 @@ func backendConfigSubscriber() {
 	}
 }
 
+// limit the number of stored events
+func (ts *TransformationStatusT) Limit(
+	limit int,
+	transformation backendconfig.TransformationT,
+) *TransformationStatusT {
+	ts.Destination.Transformations = []backendconfig.TransformationT{transformation}
+	ts.UserTransformedEvents = lo.Slice(ts.UserTransformedEvents, 0, limit)
+	ts.FailedEvents = lo.Slice(ts.FailedEvents, 0, limit)
+	messageIDs := lo.SliceToMap(
+		append(
+			lo.Map(
+				ts.UserTransformedEvents,
+				func(event transformer.TransformerEventT, _ int) string {
+					return event.Metadata.MessageID
+				},
+			),
+			lo.Map(
+				ts.FailedEvents,
+				func(event transformer.TransformerResponseT, _ int) string {
+					return event.Metadata.MessageID
+				},
+			)...,
+		),
+		func(messageID string) (string, struct{}) {
+			return messageID, struct{}{}
+		},
+	)
+	ts.UniqueMessageIds = messageIDs
+	ts.EventsByMessageID = lo.PickByKeys(
+		ts.EventsByMessageID,
+		lo.Keys(messageIDs),
+	)
+	return ts
+}
+
 func UploadTransformationStatus(tStatus *TransformationStatusT) {
 	defer func() {
 		if r := recover(); r != nil {
@@ -180,12 +215,7 @@ func UploadTransformationStatus(tStatus *TransformationStatusT) {
 		if IsUploadEnabled(transformation.ID) {
 			processRecordTransformationStatus(tStatus, transformation.ID)
 		} else {
-			tStatusUpdated := *tStatus
-			lo.Slice(tStatusUpdated.UserTransformedEvents, 0, limitEventsInMemory+1)
-			tStatusUpdated.Destination.Transformations = []backendconfig.TransformationT{transformation}
-			tStatusUpdated.UserTransformedEvents = lo.Slice(tStatusUpdated.UserTransformedEvents, 0, limitEventsInMemory+1)
-			tStatusUpdated.FailedEvents = lo.Slice(tStatusUpdated.FailedEvents, 0, limitEventsInMemory+1)
-			transformationCacheMap.Update(transformation.ID, tStatusUpdated)
+			transformationCacheMap.Update(transformation.ID, *(tStatus.Limit(limitEventsInMemory+1, transformation)))
 		}
 	}
 }
