@@ -143,9 +143,7 @@ func TestNewLoadFileDownloader(t *testing.T) {
 					Location: uploadOutput.Location,
 				})
 			}
-			for _, loadFile := range tc.loadFiles {
-				loadFiles = append(loadFiles, loadFile)
-			}
+			loadFiles = append(loadFiles, tc.loadFiles...)
 
 			d := load_file_downloader.NewLoadFileDownloader(
 				&warehouseutils.Warehouse{
