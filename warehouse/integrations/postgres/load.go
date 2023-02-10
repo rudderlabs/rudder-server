@@ -167,7 +167,8 @@ func (lt *LoadTable) Load(ctx context.Context, tableName string, tableSchemaInUp
 			if len(sortedColumnKeys) != len(record) {
 				stage = csvColumnCountMismatch
 				return "", fmt.Errorf(
-					"mismatch in number of columns in csv file: %d, number of columns in upload schema: %d, processed rows until now: %d",
+					"mismatch in number of columns in csv file: %s, number of columns in files: %d, upload schema: %d, processed rows until now: %d",
+					objectFileName,
 					len(record),
 					len(sortedColumnKeys),
 					csvRowsProcessedCount,

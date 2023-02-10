@@ -23,7 +23,7 @@ type mockLoadFileUploader struct {
 	mockError error
 }
 
-func (m *mockLoadFileUploader) Download(ctx context.Context, tableName string) ([]string, error) {
+func (m *mockLoadFileUploader) Download(context.Context, string) ([]string, error) {
 	return m.mockFiles, m.mockError
 }
 
@@ -46,12 +46,13 @@ func TestLoadTable_Load(t *testing.T) {
 	)
 
 	testCases := []struct {
-		name               string
-		wantError          error
-		mockFiles          []string
-		mockError          error
-		skipSchemaCreation bool
-		skipTableCreation  bool
+		name                         string
+		wantError                    error
+		mockError                    error
+		skipSchemaCreation           bool
+		skipTableCreation            bool
+		mockFiles                    []string
+		queryExecEnabledWorkspaceIDs []string
 	}{
 		{
 			name:               "schema not present",
@@ -79,11 +80,21 @@ func TestLoadTable_Load(t *testing.T) {
 		{
 			name:      "less records than expected",
 			mockFiles: []string{"testdata/less-records.csv.gz"},
-			wantError: errors.New("mismatch in number of columns in csv file: 12, number of columns in upload schema: 7, processed rows until now: 0"),
+			wantError: errors.New("mismatch in number of columns in csv file: testdata/less-records.csv.gz, number of columns in files: 12, upload schema: 7, processed rows until now: 0"),
+		},
+		{
+			name:      "bad records",
+			mockFiles: []string{"testdata/bad.csv.gz"},
+			wantError: errors.New("exec statement: pq: invalid input syntax for type timestamp: \"1\""),
 		},
 		{
 			name:      "success",
 			mockFiles: []string{"testdata/load.csv.gz"},
+		},
+		{
+			name:                         "enable query execution",
+			mockFiles:                    []string{"testdata/load.csv.gz"},
+			queryExecEnabledWorkspaceIDs: []string{workspaceID},
 		},
 	}
 
@@ -96,6 +107,7 @@ func TestLoadTable_Load(t *testing.T) {
 
 			store := memstats.New()
 			c := config.New()
+			c.Set("Warehouse.postgres.EnableSQLStatementExecutionPlanWorkspaceIDs", tc.queryExecEnabledWorkspaceIDs)
 			ctx := context.Background()
 
 			if !tc.skipSchemaCreation {
@@ -182,16 +194,26 @@ func TestLoadUsersTable_Load(t *testing.T) {
 	)
 
 	testCases := []struct {
-		name               string
-		wantError          error
-		mockFiles          []string
-		mockError          error
-		skipSchemaCreation bool
-		skipTableCreation  bool
+		name                       string
+		wantError                  error
+		mockFiles                  []string
+		mockError                  error
+		skipSchemaCreation         bool
+		skipTableCreation          bool
+		skipUserTraitsWorkspaceIDs []string
 	}{
 		{
 			name:      "success",
 			mockFiles: []string{"testdata/users.csv.gz"},
+		},
+		{
+			name:      "no users schema",
+			mockFiles: []string{"testdata/users.csv.gz"},
+		},
+		{
+			name:                       "skip computing users traits",
+			mockFiles:                  []string{"testdata/users.csv.gz"},
+			skipUserTraitsWorkspaceIDs: []string{workspaceID},
 		},
 	}
 
@@ -204,6 +226,7 @@ func TestLoadUsersTable_Load(t *testing.T) {
 
 			store := memstats.New()
 			c := config.New()
+			c.Set("Warehouse.postgres.SkipComputingUserLatestTraitsWorkspaceIDs", tc.skipUserTraitsWorkspaceIDs)
 			ctx := context.Background()
 
 			if !tc.skipSchemaCreation {
