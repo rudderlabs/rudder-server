@@ -33,7 +33,7 @@ type WarehouseManager interface {
 
 type HandleT struct {
 	Warehouse          warehouseutils.Warehouse
-	DbHandle           *sql.DB
+	Db                 *sql.DB
 	Uploader           warehouseutils.UploaderI
 	UploadID           int64
 	WarehouseManager   WarehouseManager
@@ -404,7 +404,7 @@ func (idr *HandleT) createTempGzFile(dirName string) (gzWriter misc.GZipWriter, 
 }
 
 func (idr *HandleT) processMergeRules(fileNames []string) (err error) {
-	txn, err := idr.DbHandle.Begin()
+	txn, err := idr.Db.Begin()
 	if err != nil {
 		panic(err)
 	}

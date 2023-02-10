@@ -818,7 +818,7 @@ func (job *UploadJobT) getTablesToSkip() (map[string]*TableUploadIDInfoT, map[st
 func (job *UploadJobT) resolveIdentities(populateHistoricIdentities bool) (err error) {
 	idr := identity.HandleT{
 		Warehouse:          job.warehouse,
-		DbHandle:           job.dbHandle,
+		Db:                 job.dbHandle,
 		UploadID:           job.upload.ID,
 		Uploader:           job,
 		WarehouseManager:   job.whManager,

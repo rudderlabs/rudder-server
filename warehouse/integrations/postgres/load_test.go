@@ -60,7 +60,7 @@ func TestLoadTable_Load(t *testing.T) {
 			wantError:          errors.New("creating temporary table: pq: schema \"test_namespace\" does not exist"),
 		},
 		{
-			name:              "source table not present",
+			name:              "table not present",
 			skipTableCreation: true,
 			mockFiles:         []string{"testdata/load.csv.gz"},
 			wantError:         errors.New("creating temporary table: pq: relation \"test_namespace.test_table\" does not exist"),
