@@ -78,6 +78,7 @@ func newStats(config *config.Config, loggerFactory *logger.Factory, metricManage
 		logger:                   loggerFactory.NewLogger().Child("stats"),
 		metricManager:            metricManager,
 		stopBackgroundCollection: func() {},
+		meter:                    global.MeterProvider().Meter(""),
 	}
 }
 
@@ -92,7 +93,6 @@ type otelStats struct {
 	excludedTags            map[string]struct{}
 
 	meter        metric.Meter
-	meterOnce    sync.Once
 	counters     map[string]syncint64.Counter
 	countersMu   sync.Mutex
 	gauges       map[string]*gaugeWithTags
@@ -175,12 +175,6 @@ func (s *otelStats) getMeasurement(name, statType string, tags Tags) Measurement
 	if !s.statsEnabled {
 		return s.getNoOpMeasurement(statType)
 	}
-
-	s.meterOnce.Do(func() {
-		if s.meter == nil {
-			s.meter = global.MeterProvider().Meter("")
-		}
-	})
 
 	if strings.Trim(name, " ") == "" {
 		byteArr := make([]byte, 2048)
