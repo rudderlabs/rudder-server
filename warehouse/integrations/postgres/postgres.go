@@ -351,17 +351,6 @@ func (pg *Postgres) Setup(
 	return err
 }
 
-func (pg *Postgres) CrashRecover(warehouse warehouseutils.Warehouse) (err error) {
-	pg.Warehouse = warehouse
-	pg.Namespace = warehouse.Namespace
-	pg.DB, err = Connect(pg.getConnectionCredentials())
-	if err != nil {
-		return err
-	}
-	defer pg.DB.Close()
-	return
-}
-
 // FetchSchema queries postgres and returns the schema associated with provided namespace
 func (pg *Postgres) FetchSchema(warehouse warehouseutils.Warehouse) (schema, unrecognizedSchema warehouseutils.SchemaT, err error) {
 	pg.Warehouse = warehouse

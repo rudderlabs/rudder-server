@@ -469,7 +469,7 @@ func (lut *LoadUsersTable) Load(ctx context.Context, identifiesSchema, usersSche
 			  SELECT
 				"%[1]s"
 			  FROM
-				"%[3]s"."%[2]s" AS staging_table
+				"%[2]s" AS staging_table
 			  WHERE
 				x.id = staging_table.id AND
 				"%[1]s" IS NOT NULL
@@ -481,13 +481,12 @@ func (lut *LoadUsersTable) Load(ctx context.Context, identifiesSchema, usersSche
 `,
 			colName,
 			unionStagingTableName,
-			lut.Namespace,
 		)
 		firstValProps = append(firstValProps, caseSubQuery)
 	}
 
 	sqlStatement = fmt.Sprintf(`
-		CREATE TABLE "%[1]s".%[5]s as (
+		CREATE TEMPORARY TABLE %[5]s as (
 		  (
 			SELECT
 			  id,
@@ -499,7 +498,7 @@ func (lut *LoadUsersTable) Load(ctx context.Context, identifiesSchema, usersSche
 				SELECT
 				  user_id
 				FROM
-				  "%[1]s"."%[3]s"
+				  "%[3]s"
 				WHERE
 				  user_id IS NOT NULL
 			  )
@@ -510,7 +509,7 @@ func (lut *LoadUsersTable) Load(ctx context.Context, identifiesSchema, usersSche
 				user_id,
 				%[4]s
 			  FROM
-				"%[1]s"."%[3]s"
+				"%[3]s"
 			  WHERE
 				user_id IS NOT NULL
 			)
@@ -541,7 +540,7 @@ func (lut *LoadUsersTable) Load(ctx context.Context, identifiesSchema, usersSche
 	}
 
 	sqlStatement = fmt.Sprintf(`
-		CREATE TABLE %[4]s.%[1]s AS (
+		CREATE TEMPORARY TABLE %[1]s AS (
 		  SELECT
 			DISTINCT *
 		  FROM
@@ -550,14 +549,13 @@ func (lut *LoadUsersTable) Load(ctx context.Context, identifiesSchema, usersSche
 				x.id,
 				%[2]s
 			  FROM
-				%[4]s.%[3]s as x
+				%[3]s as x
 			) as xyz
 		);
 `,
 		usersStagingTableName,
 		strings.Join(firstValProps, ","),
 		unionStagingTableName,
-		lut.Namespace,
 	)
 
 	lt.Logger.Debugw("creating temporary users table",
@@ -601,7 +599,7 @@ func (lut *LoadUsersTable) Load(ctx context.Context, identifiesSchema, usersSche
 	// Delete from users table if the id is present in the staging table
 	sqlStatement = fmt.Sprintf(`
 		DELETE FROM
-		  "%[1]s"."%[2]s" using "%[1]s"."%[3]s" _source
+		  "%[1]s"."%[2]s" using "%[3]s" _source
 		where
 		  (
 			_source.%[4]s = %[1]s.%[2]s.%[4]s
@@ -638,7 +636,7 @@ func (lut *LoadUsersTable) Load(ctx context.Context, identifiesSchema, usersSche
 		SELECT
 		  %[4]s
 		FROM
-		  "%[1]s"."%[3]s";
+		  "%[3]s";
 `,
 		lut.Namespace,
 		warehouseutils.UsersTable,
