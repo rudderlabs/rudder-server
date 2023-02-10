@@ -15,7 +15,6 @@ import (
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/logger"
-	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/warehouse/logfield"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 	"github.com/rudderlabs/rudder-server/warehouse/utils/load_file_downloader"
@@ -42,7 +41,7 @@ type LoadTable struct {
 	Namespace          string
 	Warehouse          *warehouseutils.Warehouse
 	Stats              stats.Stats
-	config             *config.Config
+	Config             *config.Config
 	LoadFileDownloader load_file_downloader.LoadFileDownloader
 }
 
@@ -52,11 +51,11 @@ type LoadUsersTable struct {
 	Namespace          string
 	Warehouse          *warehouseutils.Warehouse
 	Stats              stats.Stats
-	config             *config.Config
+	Config             *config.Config
 	LoadFileDownloader load_file_downloader.LoadFileDownloader
 }
 
-func (lt *LoadTable) Load(ctx context.Context, tableName string, tableSchemaInUpload warehouseutils.TableSchemaT) error {
+func (lt *LoadTable) Load(ctx context.Context, tableName string, tableSchemaInUpload warehouseutils.TableSchemaT) (string, error) {
 	var (
 		err                   error
 		sqlStatement          string
@@ -72,7 +71,7 @@ func (lt *LoadTable) Load(ctx context.Context, tableName string, tableSchemaInUp
 
 	sqlStatement = fmt.Sprintf(`SET search_path to %q`, lt.Namespace)
 	if _, err = lt.DB.Exec(sqlStatement); err != nil {
-		return fmt.Errorf("setting search path: %w", err)
+		return "", fmt.Errorf("setting search path: %w", err)
 	}
 
 	lt.Logger.Infow("started loading",
@@ -85,10 +84,9 @@ func (lt *LoadTable) Load(ctx context.Context, tableName string, tableSchemaInUp
 	)
 
 	fileNames, err := lt.LoadFileDownloader.Download(ctx, tableName)
-	defer misc.RemoveFilePaths(fileNames...)
-
+	// defer misc.RemoveFilePaths(fileNames...) // TODO: Till testing
 	if err != nil {
-		return fmt.Errorf("downloading files: %w", err)
+		return "", fmt.Errorf("downloading files: %w", err)
 	}
 
 	// Creating staging table
@@ -112,12 +110,12 @@ func (lt *LoadTable) Load(ctx context.Context, tableName string, tableSchemaInUp
 	)
 
 	if _, err = lt.DB.Exec(sqlStatement); err != nil {
-		return fmt.Errorf("creating temporary table: %w", err)
+		return "", fmt.Errorf("creating temporary table: %w", err)
 	}
 
 	txn, err = lt.DB.Begin()
 	if err != nil {
-		return fmt.Errorf("beginning transaction: %w", err)
+		return "", fmt.Errorf("beginning transaction: %w", err)
 	}
 
 	defer func() {
@@ -130,14 +128,14 @@ func (lt *LoadTable) Load(ctx context.Context, tableName string, tableSchemaInUp
 	stmt, err = txn.Prepare(pq.CopyIn(stagingTableName, sortedColumnKeys...))
 	if err != nil {
 		stage = copyInSchemaStagingTable
-		return fmt.Errorf("preparing statement for copy in: %w", err)
+		return "", fmt.Errorf("preparing statement for copy in: %w", err)
 	}
 
 	for _, objectFileName := range fileNames {
 		gzFile, err = os.Open(objectFileName)
 		if err != nil {
 			stage = openLoadFiles
-			return fmt.Errorf("opening load file: %w", err)
+			return "", fmt.Errorf("opening load file: %w", err)
 		}
 
 		gzReader, err = gzip.NewReader(gzFile)
@@ -145,7 +143,7 @@ func (lt *LoadTable) Load(ctx context.Context, tableName string, tableSchemaInUp
 			_ = gzFile.Close()
 
 			stage = readGzipLoadFiles
-			return fmt.Errorf("reading gzip load file: %w", err)
+			return "", fmt.Errorf("reading gzip load file: %w", err)
 		}
 
 		csvReader = csv.NewReader(gzReader)
@@ -163,12 +161,12 @@ func (lt *LoadTable) Load(ctx context.Context, tableName string, tableSchemaInUp
 				}
 
 				stage = readCsvLoadFiles
-				return fmt.Errorf("reading csv file: %w", err)
+				return "", fmt.Errorf("reading csv file: %w", err)
 			}
 
 			if len(sortedColumnKeys) != len(record) {
 				stage = csvColumnCountMismatch
-				return fmt.Errorf(
+				return "", fmt.Errorf(
 					"mismatch in number of columns in csv file: %d, number of columns in upload schema: %d, processed rows until now: %d",
 					len(record),
 					len(sortedColumnKeys),
@@ -187,7 +185,7 @@ func (lt *LoadTable) Load(ctx context.Context, tableName string, tableSchemaInUp
 			_, err = stmt.Exec(recordInterface...)
 			if err != nil {
 				stage = loadStagingTable
-				return fmt.Errorf("exec statement: %w", err)
+				return "", fmt.Errorf("exec statement: %w", err)
 			}
 
 			csvRowsProcessedCount++
@@ -199,7 +197,7 @@ func (lt *LoadTable) Load(ctx context.Context, tableName string, tableSchemaInUp
 
 	if _, err = stmt.Exec(); err != nil {
 		stage = stagingTableLoadStage
-		return fmt.Errorf("exec statement: %w", err)
+		return "", fmt.Errorf("exec statement: %w", err)
 	}
 
 	var (
@@ -254,7 +252,7 @@ func (lt *LoadTable) Load(ctx context.Context, tableName string, tableSchemaInUp
 	err = lt.handleExec(txn, tableName, sqlStatement)
 	if err != nil {
 		stage = deleteDedup
-		return fmt.Errorf("deleting from original table for dedup: %w", err)
+		return "", fmt.Errorf("deleting from original table for dedup: %w", err)
 	}
 
 	// Deduplication
@@ -298,11 +296,11 @@ func (lt *LoadTable) Load(ctx context.Context, tableName string, tableSchemaInUp
 	err = lt.handleExec(txn, tableName, sqlStatement)
 	if err != nil {
 		stage = insertDedup
-		return fmt.Errorf("inserting into original table: %w", err)
+		return "", fmt.Errorf("inserting into original table: %w", err)
 	}
 	if err = txn.Commit(); err != nil {
 		stage = dedupStage
-		return fmt.Errorf("commit transaction: %w", err)
+		return "", fmt.Errorf("commit transaction: %w", err)
 	}
 
 	lt.Logger.Infow("completed loading",
@@ -313,7 +311,7 @@ func (lt *LoadTable) Load(ctx context.Context, tableName string, tableSchemaInUp
 		logfield.WorkspaceID, lt.Warehouse.WorkspaceID,
 		logfield.TableName, tableName,
 	)
-	return nil
+	return stagingTableName, nil
 }
 
 func (lt *LoadTable) onTxnRollback(txn *sql.Tx, tableName, stage string) {
@@ -326,7 +324,7 @@ func (lt *LoadTable) onTxnRollback(txn *sql.Tx, tableName, stage string) {
 		}
 	}()
 
-	txnRollbackTimeout := lt.config.GetDuration("Warehouse.postgres.txnRollbackTimeout", 30, time.Second)
+	txnRollbackTimeout := lt.Config.GetDuration("Warehouse.postgres.txnRollbackTimeout", 30, time.Second)
 
 	select {
 	case <-c:
@@ -347,13 +345,15 @@ func (lt *LoadTable) onTxnRollback(txn *sql.Tx, tableName, stage string) {
 // Currently, these statements are supported by EXPLAIN
 // Any INSERT, UPDATE, DELETE whose execution plan you wish to see.
 func (lt *LoadTable) handleExec(txn *sql.Tx, tableName, query string) error {
-	enableSQLStatementExecutionPlanWorkspaceIDs := lt.config.GetStringSlice("Warehouse.postgres.EnableSQLStatementExecutionPlanWorkspaceIDs", nil)
-	enableSQLStatementExecutionPlan := lt.config.GetBool("Warehouse.postgres.enableSQLStatementExecutionPlan", false)
+	enableSQLStatementExecutionPlanWorkspaceIDs := lt.Config.GetStringSlice("Warehouse.postgres.EnableSQLStatementExecutionPlanWorkspaceIDs", nil)
+	enableSQLStatementExecutionPlan := lt.Config.GetBool("Warehouse.postgres.enableSQLStatementExecutionPlan", false)
 
 	canUseQueryPlanner := enableSQLStatementExecutionPlan || slices.Contains(enableSQLStatementExecutionPlanWorkspaceIDs, lt.Warehouse.WorkspaceID)
 	if !canUseQueryPlanner {
-		_, err := txn.Exec(query)
-		return fmt.Errorf("executing query: %w", err)
+		if _, err := txn.Exec(query); err != nil {
+			return fmt.Errorf("executing query: %w", err)
+		}
+		return nil
 	}
 
 	var (
@@ -387,15 +387,18 @@ func (lt *LoadTable) handleExec(txn *sql.Tx, tableName, query string) error {
 		logfield.QueryPlanner, strings.Join(response, "\n"),
 	)
 
-	_, err = txn.Exec(query)
-	return fmt.Errorf("executing query: %w", err)
+	if _, err := txn.Exec(query); err != nil {
+		return fmt.Errorf("executing query: %w", err)
+	}
+	return nil
 }
 
 func (lut *LoadUsersTable) Load(ctx context.Context, identifiesSchema, usersSchema warehouseutils.TableSchemaT) map[string]error {
 	var (
-		err          error
-		sqlStatement string
-		txn          *sql.Tx
+		err                        error
+		sqlStatement               string
+		identifiesStagingTableName string
+		txn                        *sql.Tx
 	)
 
 	sqlStatement = fmt.Sprintf(`SET search_path to %q`, lut.Namespace)
@@ -419,11 +422,11 @@ func (lut *LoadUsersTable) Load(ctx context.Context, identifiesSchema, usersSche
 		Namespace:          lut.Namespace,
 		Warehouse:          lut.Warehouse,
 		Stats:              lut.Stats,
-		config:             lut.config,
+		Config:             lut.Config,
 		LoadFileDownloader: lut.LoadFileDownloader,
 	}
 
-	if err = lt.Load(ctx, warehouseutils.IdentifiesTable, identifiesSchema); err != nil {
+	if identifiesStagingTableName, err = lt.Load(ctx, warehouseutils.IdentifiesTable, identifiesSchema); err != nil {
 		return map[string]error{
 			warehouseutils.IdentifiesTable: fmt.Errorf("loading identifies table: %w", err),
 		}
@@ -435,12 +438,12 @@ func (lut *LoadUsersTable) Load(ctx context.Context, identifiesSchema, usersSche
 		}
 	}
 
-	skipComputingUserLatestTraits := lt.config.GetBool("Warehouse.postgres.skipComputingUserLatestTraits", false)
-	skipComputingUserLatestTraitsWorkspaceIDs := lt.config.GetStringSlice("Warehouse.postgres.SkipComputingUserLatestTraitsWorkspaceIDs", nil)
+	skipComputingUserLatestTraits := lt.Config.GetBool("Warehouse.postgres.skipComputingUserLatestTraits", false)
+	skipComputingUserLatestTraitsWorkspaceIDs := lt.Config.GetStringSlice("Warehouse.postgres.SkipComputingUserLatestTraitsWorkspaceIDs", nil)
 	canSkipComputingLatestUserTraits := skipComputingUserLatestTraits || slices.Contains(skipComputingUserLatestTraitsWorkspaceIDs, lut.Warehouse.WorkspaceID)
 
 	if canSkipComputingLatestUserTraits {
-		if err = lt.Load(ctx, warehouseutils.UsersTable, usersSchema); err != nil {
+		if _, err = lt.Load(ctx, warehouseutils.UsersTable, usersSchema); err != nil {
 			return map[string]error{
 				warehouseutils.IdentifiesTable: nil,
 				warehouseutils.UsersTable:      fmt.Errorf("loading users table: %w", err),
@@ -449,9 +452,8 @@ func (lut *LoadUsersTable) Load(ctx context.Context, identifiesSchema, usersSche
 	}
 
 	var (
-		unionStagingTableName      = warehouseutils.StagingTableName(provider, "users_identifies_union", tableNameLimit)
-		identifiesStagingTableName = warehouseutils.StagingTableName(provider, warehouseutils.IdentifiesTable, tableNameLimit)
-		usersStagingTableName      = warehouseutils.StagingTableName(provider, warehouseutils.UsersTable, tableNameLimit)
+		unionStagingTableName = warehouseutils.StagingTableName(provider, "users_identifies_union", tableNameLimit)
+		usersStagingTableName = warehouseutils.StagingTableName(provider, warehouseutils.UsersTable, tableNameLimit)
 
 		userColNames, firstValProps []string
 	)

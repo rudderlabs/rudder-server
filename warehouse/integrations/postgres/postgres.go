@@ -426,7 +426,7 @@ func (pg *Postgres) LoadUserTables() map[string]error {
 		Namespace:          pg.Namespace,
 		Warehouse:          &pg.Warehouse,
 		Stats:              stats.Default,
-		config:             config.Default,
+		Config:             config.Default,
 		LoadFileDownloader: pg.LoadFileDownloader,
 	}
 	identifiesSchema := pg.Uploader.GetTableSchemaInUpload(warehouseutils.IdentifiesTable)
@@ -456,11 +456,11 @@ func (pg *Postgres) LoadTable(tableName string) error {
 		Namespace:          pg.Namespace,
 		Warehouse:          &pg.Warehouse,
 		Stats:              stats.Default,
-		config:             config.Default,
+		Config:             config.Default,
 		LoadFileDownloader: pg.LoadFileDownloader,
 	}
 	tableSchemaInUpload := pg.Uploader.GetTableSchemaInUpload(tableName)
-	err := lt.Load(context.TODO(), tableName, tableSchemaInUpload)
+	_, err := lt.Load(context.TODO(), tableName, tableSchemaInUpload)
 	if err != nil {
 		lt.Logger.Errorw("loading table",
 			logfield.SourceID, lt.Warehouse.Source.ID,
