@@ -377,6 +377,7 @@ func (uploads *Uploads) UploadJobsStats(ctx context.Context, destType string, op
 	return stats, nil
 }
 
+// UploadTimings returns the timings for an upload.
 func (uploads *Uploads) UploadTimings(ctx context.Context, uploadID int64) (model.Timings, error) {
 	var (
 		rawJSON jsoniter.RawMessage

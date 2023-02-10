@@ -1371,6 +1371,7 @@ type UploadStatusOpts struct {
 
 func (job *UploadJobT) setUploadStatus(statusOpts UploadStatusOpts) (err error) {
 	pkgLogger.Debugf("[WH]: Setting status of %s for wh_upload:%v", statusOpts.Status, job.upload.ID)
+	// TODO: fetch upload model instead of just timings
 	marshalledTimings, timings := job.getNewTimings(statusOpts.Status)
 	opts := []UploadColumnT{
 		{Column: UploadStatusField, Value: statusOpts.Status},
