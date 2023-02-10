@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.5.7](https://github.com/rudderlabs/rudder-server/compare/v1.5.6...v1.5.7) (2023-02-10)
+
+
+### Bug Fixes
+
+* backporting limit entire transformationStatus struct when caching them ([#2968](https://github.com/rudderlabs/rudder-server/issues/2968)) ([324dd5f](https://github.com/rudderlabs/rudder-server/commit/324dd5fce33b9a0e6dfbab8ebaff454e03c6dcf3))
+
 ## [1.5.6](https://github.com/rudderlabs/rudder-server/compare/v1.5.5...v1.5.6) (2023-02-09)
 
 
