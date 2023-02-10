@@ -317,12 +317,13 @@ var _ = Describe("Upload", Ordered, func() {
 	It("Get uploads timings", func() {
 		exportedData, _ := time.ParseDateTime("2020-04-21T15:26:34.344356")
 		exportingData, _ := time.ParseDateTime("2020-04-21T15:16:19.687716")
-		Expect(job.getUploadTimings()).To(BeEquivalentTo(model.Timings{
-			{
-				"exported_data":  exportedData,
-				"exporting_data": exportingData,
-			},
-		}))
+		Expect(repo.NewUploads(job.dbHandle).UploadTimings(context.TODO(), job.upload.ID)).
+			To(BeEquivalentTo(model.Timings{
+				{
+					"exported_data":  exportedData,
+					"exporting_data": exportingData,
+				},
+			}))
 	})
 
 	Describe("Staging files and load files events match", func() {
