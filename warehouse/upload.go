@@ -2033,14 +2033,6 @@ func getInProgressState(state string) string {
 	return uploadState.inProgress
 }
 
-func getFailedState(state string) string {
-	uploadState, ok := stateTransitions[state]
-	if !ok {
-		panic(fmt.Errorf("invalid Upload state : %s", state))
-	}
-	return uploadState.failed
-}
-
 func initializeStateMachine() {
 	stateTransitions = make(map[string]*uploadStateT)
 
