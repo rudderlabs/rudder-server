@@ -107,7 +107,7 @@ func (c *otelCounter) Increment() {
 // otelGauge represents a gauge stat
 type otelGauge struct {
 	*otelMeasurement
-	values  []interface{}
+	value   interface{}
 	valueMu sync.Mutex
 }
 
@@ -117,17 +117,17 @@ func (g *otelGauge) Gauge(value interface{}) {
 		return
 	}
 	g.valueMu.Lock()
-	g.values = append(g.values, value)
+	g.value = value
 	g.valueMu.Unlock()
 }
 
-func (g *otelGauge) getValues() []interface{} {
+func (g *otelGauge) getValue() interface{} {
 	if g.disabled {
 		return nil
 	}
 	g.valueMu.Lock()
-	v := g.values
-	g.values = nil
+	v := g.value
+	g.value = nil
 	g.valueMu.Unlock()
 	return v
 }

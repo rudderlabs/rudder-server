@@ -16,7 +16,6 @@ import (
 	"go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/metric/global"
 	"go.opentelemetry.io/otel/metric/instrument"
-	"go.opentelemetry.io/otel/metric/instrument/asyncfloat64"
 	"go.opentelemetry.io/otel/metric/instrument/syncfloat64"
 	"go.opentelemetry.io/otel/metric/instrument/syncint64"
 	"go.opentelemetry.io/otel/metric/unit"
@@ -109,7 +108,7 @@ type otelStats struct {
 	meter        metric.Meter
 	counters     map[string]syncint64.Counter
 	countersMu   sync.Mutex
-	gauges       map[string]*gaugeWithTags
+	gauges       map[string]*otelGauge
 	gaugesMu     sync.Mutex
 	timers       map[string]syncint64.Histogram
 	timersMu     sync.Mutex
@@ -292,60 +291,41 @@ func (s *otelStats) getMeasurement(name, statType string, tags Tags) Measurement
 
 func (s *otelStats) getGauge(meter metric.Meter, name string, attributes []attribute.KeyValue, tagsKey string) *otelGauge {
 	var (
-		ok  bool
-		gwt *gaugeWithTags
+		ok     bool
+		og     *otelGauge
+		mapKey = name + "|" + tagsKey
 	)
 
 	s.gaugesMu.Lock()
+	defer s.gaugesMu.Unlock()
+
 	if s.gauges == nil {
-		s.gauges = make(map[string]*gaugeWithTags)
+		s.gauges = make(map[string]*otelGauge)
 	} else {
-		gwt, ok = s.gauges[name]
+		og, ok = s.gauges[mapKey]
 	}
+
 	if !ok {
 		g, err := meter.AsyncFloat64().Gauge(name)
 		if err != nil {
 			panic(fmt.Errorf("failed to create gauge %s: %w", name, err))
 		}
-		gwt = &gaugeWithTags{
-			instrument:   g,
-			tagsToValues: make(map[string]*otelGauge),
-		}
+		og = &otelGauge{otelMeasurement: &otelMeasurement{
+			statType:   GaugeType,
+			attributes: attributes,
+		}}
 		err = meter.RegisterCallback([]instrument.Asynchronous{g}, func(ctx context.Context) {
-			var wg sync.WaitGroup
-			defer wg.Wait()
-
-			gwt.tagsToValuesMu.Lock() // hold the lock only for the time necessary to spawn the goroutines
-			for _, measurement := range gwt.tagsToValues {
-				if values := measurement.getValues(); len(values) > 0 {
-					wg.Add(len(values))
-					for _, v := range values {
-						go func(v interface{}, attributes []attribute.KeyValue) {
-							defer wg.Done()
-							gwt.instrument.Observe(ctx, cast.ToFloat64(v), attributes...)
-						}(v, measurement.attributes)
-					}
-				}
+			if value := og.getValue(); value != nil {
+				g.Observe(ctx, cast.ToFloat64(value), og.attributes...)
 			}
-			gwt.tagsToValuesMu.Unlock()
 		})
 		if err != nil {
 			panic(fmt.Errorf("failed to register callback for gauge %s: %w", name, err))
 		}
-		s.gauges[name] = gwt
+		s.gauges[mapKey] = og
 	}
-	s.gaugesMu.Unlock()
 
-	gwt.tagsToValuesMu.Lock()
-	defer gwt.tagsToValuesMu.Unlock()
-
-	tagsToValueKey := name + "@" + tagsKey
-	if _, ok = gwt.tagsToValues[tagsToValueKey]; !ok {
-		gwt.tagsToValues[tagsToValueKey] = &otelGauge{
-			otelMeasurement: &otelMeasurement{statType: GaugeType, attributes: attributes},
-		}
-	}
-	return gwt.tagsToValues[tagsToValueKey]
+	return og
 }
 
 func buildInstrument[T any](
@@ -386,10 +366,4 @@ func buildInstrument[T any](
 	}
 
 	return instr
-}
-
-type gaugeWithTags struct {
-	instrument     asyncfloat64.Gauge
-	tagsToValues   map[string]*otelGauge
-	tagsToValuesMu sync.Mutex
 }
