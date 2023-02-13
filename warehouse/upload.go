@@ -11,6 +11,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/warehouse/logfield"
+
 	"github.com/rudderlabs/rudder-server/services/alerta"
 
 	schemarepository "github.com/rudderlabs/rudder-server/warehouse/integrations/datalake/schema-repository"
@@ -1069,9 +1071,7 @@ func (job *UploadJobT) getTotalCount(tName string) (int64, error) {
 	expBackoff.Reset()
 
 	backoffWithMaxRetry := backoff.WithMaxRetries(expBackoff, 5)
-	err := backoff.RetryNotify(operation, backoffWithMaxRetry, func(err error, t time.Duration) {
-		pkgLogger.Errorf(`Error getting total count in table:%s error: %v`, tName, err)
-	})
+	err := backoff.Retry(operation, backoffWithMaxRetry)
 	return total, err
 }
 
@@ -1098,7 +1098,14 @@ func (job *UploadJobT) loadTable(tName string) (alteredSchema bool, err error) {
 		var errTotalCount error
 		totalBeforeLoad, errTotalCount = job.getTotalCount(tName)
 		if errTotalCount != nil {
-			pkgLogger.Errorf(`Error getting total count in table:%s before load: %v`, tName, errTotalCount)
+			pkgLogger.Warnw("total count in table before loading",
+				logfield.SourceID, job.upload.SourceID,
+				logfield.DestinationID, job.upload.DestinationID,
+				logfield.DestinationType, job.upload.DestinationType,
+				logfield.WorkspaceID, job.upload.WorkspaceID,
+				logfield.Error, errTotalCount,
+				logfield.TableName, tName,
+			)
 		}
 	}
 
@@ -1115,7 +1122,14 @@ func (job *UploadJobT) loadTable(tName string) (alteredSchema bool, err error) {
 		var errTotalCount error
 		totalAfterLoad, errTotalCount = job.getTotalCount(tName)
 		if errTotalCount != nil {
-			pkgLogger.Errorf(`Error getting total count in table:%s after load: %v`, tName, errTotalCount)
+			pkgLogger.Warnw("total count in table after loading",
+				logfield.SourceID, job.upload.SourceID,
+				logfield.DestinationID, job.upload.DestinationID,
+				logfield.DestinationType, job.upload.DestinationType,
+				logfield.WorkspaceID, job.upload.WorkspaceID,
+				logfield.Error, errTotalCount,
+				logfield.TableName, tName,
+			)
 			return
 		}
 		eventsInTableUpload, errEventCount := tableUpload.getTotalEvents()
