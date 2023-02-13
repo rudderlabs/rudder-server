@@ -93,7 +93,7 @@ type UploadJobT struct {
 	destinationValidator validations.DestinationValidator
 	loadfile             *loadfiles.LoadFileGenerator
 	recovery             *service.Recovery
-	whManager            manager.ManagerI
+	whManager            manager.Manager
 	pgNotifier           *pgnotifier.PgNotifierT
 	schemaHandle         *SchemaHandleT
 	stats                stats.Stats
@@ -109,6 +109,8 @@ type UploadJobT struct {
 	tableUploadStatuses       []*TableUploadStatusT
 	RefreshPartitionBatchSize int
 	AlertSender               alerta.AlertSender
+
+	ErrorHandler ErrorHandler
 }
 
 type UploadColumnT struct {
@@ -167,7 +169,7 @@ func setMaxParallelLoads() {
 	}
 }
 
-func (f *UploadJobFactory) NewUploadJob(dto *model.UploadJob, whManager manager.ManagerI) *UploadJobT {
+func (f *UploadJobFactory) NewUploadJob(dto *model.UploadJob, whManager manager.Manager) *UploadJobT {
 	return &UploadJobT{
 		dbHandle:             f.dbHandle,
 		loadfile:             f.loadFile,
@@ -190,6 +192,8 @@ func (f *UploadJobFactory) NewUploadJob(dto *model.UploadJob, whManager manager.
 		AlertSender: alerta.NewClient(
 			config.GetString("ALERTA_URL", "https://alerta.rudderstack.com/api/"),
 		),
+
+		ErrorHandler: ErrorHandler{whManager},
 	}
 }
 
@@ -1148,9 +1152,9 @@ func (job *UploadJobT) loadTable(tName string) (alteredSchema bool, err error) {
 		}
 
 		// TODO : Perform the comparison here in the codebase
-		job.guageStat(`pre_load_table_rows`, tag{name: "tableName", value: strings.ToLower(tName)}).Gauge(int(totalBeforeLoad))
-		job.guageStat(`post_load_table_rows_estimate`, tag{name: "tableName", value: strings.ToLower(tName)}).Gauge(int(totalBeforeLoad + eventsInTableUpload))
-		job.guageStat(`post_load_table_rows`, tag{name: "tableName", value: strings.ToLower(tName)}).Gauge(int(totalAfterLoad))
+		job.guageStat(`pre_load_table_rows`, Tag{Name: "tableName", Value: strings.ToLower(tName)}).Gauge(int(totalBeforeLoad))
+		job.guageStat(`post_load_table_rows_estimate`, Tag{Name: "tableName", Value: strings.ToLower(tName)}).Gauge(int(totalBeforeLoad + eventsInTableUpload))
+		job.guageStat(`post_load_table_rows`, Tag{Name: "tableName", Value: strings.ToLower(tName)}).Gauge(int(totalAfterLoad))
 	}()
 
 	tableUpload.setStatus(TableUploadExported)
@@ -1181,8 +1185,8 @@ func (job *UploadJobT) columnCountStat(tableName string) {
 		return
 	}
 
-	tags := []tag{
-		{name: "tableName", value: strings.ToLower(tableName)},
+	tags := []Tag{
+		{Name: "tableName", Value: strings.ToLower(tableName)},
 	}
 	currentColumnsCount := len(job.schemaHandle.schemaInWarehouse[tableName])
 
@@ -1611,7 +1615,7 @@ func (job *UploadJobT) setUploadError(statusError error, state string) (string, 
 
 	// Reset the state as aborted if max retries
 	// exceeded.
-	uploadErrorAttempts := uploadErrors[state]["attempt"].(int)
+	uploadErrorAttempts := 5
 
 	if job.Aborted(uploadErrorAttempts, job.getUploadFirstAttemptTime()) {
 		state = model.Aborted
@@ -1707,18 +1711,23 @@ func (job *UploadJobT) setUploadError(statusError error, state string) (string, 
 	attempts := job.getAttemptNumber()
 
 	if !job.hasAllTablesSkipped {
-		job.counterStat("warehouse_failed_uploads", tag{name: "attempt_number", value: strconv.Itoa(attempts)}).Count(1)
+		job.counterStat("warehouse_failed_uploads", Tag{Name: "attempt_number", Value: strconv.Itoa(attempts)}).Count(1)
 	}
 
 	// On aborted state, validate credentials to allow
 	// us to differentiate between user caused abort vs platform issue.
+	state = model.Aborted
 	if state == model.Aborted {
 		// base tag to be sent as stat
 
-		tags := []tag{{name: "attempt_number", value: strconv.Itoa(attempts)}}
+		errorTags := job.ErrorHandler.MatchErrorMappings(statusError)
+
+		tags := []Tag{{Name: "attempt_number", Value: strconv.Itoa(attempts)}}
+		tags = append(tags, errorTags)
+
 		valid, err := job.validateDestinationCredentials()
 		if err == nil {
-			tags = append(tags, tag{name: "destination_creds_valid", value: strconv.FormatBool(valid)})
+			tags = append(tags, Tag{Name: "destination_creds_valid", Value: strconv.FormatBool(valid)})
 		}
 
 		job.counterStat("upload_aborted", tags...).Count(1)
