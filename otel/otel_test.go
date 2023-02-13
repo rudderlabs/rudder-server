@@ -3,7 +3,6 @@ package otel
 import (
 	"context"
 	"fmt"
-	"io"
 	"math"
 	"net/http"
 	"os"
@@ -15,18 +14,18 @@ import (
 	"github.com/ory/dockertest/v3"
 	"github.com/ory/dockertest/v3/docker"
 	promClient "github.com/prometheus/client_model/go"
-	promParser "github.com/prometheus/common/expfmt"
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric/global"
 
 	"github.com/rudderlabs/rudder-server/testhelper"
+	dt "github.com/rudderlabs/rudder-server/testhelper/docker"
+	otelTest "github.com/rudderlabs/rudder-server/testhelper/stats"
 	"github.com/rudderlabs/rudder-server/utils/httputil"
 )
 
 const (
-	healthPort  = "13133"
 	metricsPort = "8889"
 )
 
@@ -35,49 +34,18 @@ func TestCollector(t *testing.T) {
 	cwd, err := os.Getwd()
 	require.NoError(t, err)
 
-	grpcPort, err := testhelper.GetFreePort()
-	require.NoError(t, err)
-
-	pool, err := dockertest.NewPool("")
-	require.NoError(t, err)
-
-	collector, err := pool.RunWithOptions(&dockertest.RunOptions{
-		Repository:   "otel/opentelemetry-collector",
-		Tag:          "0.67.0",
-		ExposedPorts: []string{healthPort, metricsPort},
-		PortBindings: map[docker.Port][]docker.PortBinding{
-			"4317/tcp": {{HostPort: strconv.Itoa(grpcPort)}},
-		},
-		Mounts: []string{
-			filepath.Join(cwd, "testdata", "otel-collector-config.yaml") + ":/etc/otelcol/config.yaml",
-		},
-	})
-	require.NoError(t, err)
-	t.Cleanup(func() {
-		if err := pool.Purge(collector); err != nil {
-			t.Logf("Could not purge resource: %v", err)
-		}
-	})
-
-	healthEndpoint := fmt.Sprintf("http://localhost:%d", getHostPort(t, healthPort, collector.Container))
-	require.Eventually(t, func() bool {
-		resp, err := http.Get(healthEndpoint)
-		if err != nil {
-			return false
-		}
-		defer func() { httputil.CloseResponse(resp) }()
-		return resp.StatusCode == http.StatusOK
-	}, 5*time.Second, 100*time.Millisecond, "Collector was not ready on health port")
+	container, grpcEndpoint := otelTest.StartOTelCollector(t, metricsPort,
+		filepath.Join(cwd, "testdata", "otel-collector-config.yaml"),
+	)
 
 	ctx := context.Background()
-	endpoint := fmt.Sprintf("localhost:%d", grpcPort)
 	res, err := NewResource(t.Name(), "my-instance-id", "1.0.0")
 	require.NoError(t, err)
 	var om Manager
 	tp, mp, err := om.Setup(ctx, res,
 		WithInsecure(),
-		WithTracerProvider(endpoint, 1.0),
-		WithMeterProvider(endpoint,
+		WithTracerProvider(grpcEndpoint, 1.0),
+		WithMeterProvider(grpcEndpoint,
 			WithMeterProviderExportsInterval(100*time.Millisecond),
 			WithHistogramBucketBoundaries("baz", "some-test", []float64{10, 20, 30}),
 		),
@@ -104,7 +72,7 @@ func TestCollector(t *testing.T) {
 	var (
 		resp            *http.Response
 		metrics         map[string]*promClient.MetricFamily
-		metricsEndpoint = fmt.Sprintf("http://localhost:%d/metrics", getHostPort(t, metricsPort, collector.Container))
+		metricsEndpoint = fmt.Sprintf("http://localhost:%d/metrics", dt.GetHostPort(t, metricsPort, container))
 	)
 	require.Eventuallyf(t, func() bool {
 		resp, err = http.Get(metricsEndpoint)
@@ -112,7 +80,7 @@ func TestCollector(t *testing.T) {
 			return false
 		}
 		defer func() { httputil.CloseResponse(resp) }()
-		metrics, err = parseMetrics(resp.Body)
+		metrics, err = otelTest.ParsePrometheusMetrics(resp.Body)
 		if err != nil {
 			return false
 		}
@@ -249,44 +217,16 @@ func TestNonBlockingConnection(t *testing.T) {
 	cwd, err := os.Getwd()
 	require.NoError(t, err)
 
-	pool, err := dockertest.NewPool("")
-	require.NoError(t, err)
-
-	collector, err := pool.RunWithOptions(&dockertest.RunOptions{
-		Repository:   "otel/opentelemetry-collector",
-		Tag:          "0.67.0",
-		ExposedPorts: []string{healthPort, metricsPort},
-		PortBindings: map[docker.Port][]docker.PortBinding{
-			"4317/tcp": {{HostPort: strconv.Itoa(grpcPort)}},
-		},
-		Mounts: []string{
-			filepath.Join(cwd, "testdata", "otel-collector-config.yaml") + ":/etc/otelcol/config.yaml",
-		},
-	})
-	require.NoError(t, err)
-	t.Cleanup(func() {
-		if err := pool.Purge(collector); err != nil {
-			t.Logf("Could not purge resource: %v", err)
-		}
-	})
-
-	healthEndpoint := fmt.Sprintf("http://localhost:%d", getHostPort(t, healthPort, collector.Container))
-	require.Eventually(t, func() bool {
-		resp, err := http.Get(healthEndpoint)
-		if err != nil {
-			return false
-		}
-		defer func() { httputil.CloseResponse(resp) }()
-		return resp.StatusCode == http.StatusOK
-	}, 10*time.Second, 100*time.Millisecond, "Collector was not ready on health port")
-
-	t.Log("Container is healthy")
+	container, _ := otelTest.StartOTelCollector(t, metricsPort,
+		filepath.Join(cwd, "testdata", "otel-collector-config.yaml"),
+		otelTest.WithStartCollectorPort(grpcPort),
+	)
 	barCounter.Add(ctx, 456) // this should be recorded
 
 	var (
 		resp            *http.Response
 		metrics         map[string]*promClient.MetricFamily
-		metricsEndpoint = fmt.Sprintf("http://localhost:%d/metrics", getHostPort(t, metricsPort, collector.Container))
+		metricsEndpoint = fmt.Sprintf("http://localhost:%d/metrics", dt.GetHostPort(t, metricsPort, container))
 	)
 
 	require.Eventuallyf(t, func() bool {
@@ -295,7 +235,7 @@ func TestNonBlockingConnection(t *testing.T) {
 			return false
 		}
 		defer func() { httputil.CloseResponse(resp) }()
-		metrics, err = parseMetrics(resp.Body)
+		metrics, err = otelTest.ParsePrometheusMetrics(resp.Body)
 		if err != nil {
 			return false
 		}
@@ -330,28 +270,6 @@ func TestNonBlockingConnection(t *testing.T) {
 		{Name: ptr("job"), Value: ptr("TestNonBlockingConnection")},
 		{Name: ptr("instance"), Value: ptr("my-instance-id")},
 	}, metrics["bar"].Metric[0].Label)
-}
-
-func parseMetrics(rdr io.Reader) (map[string]*promClient.MetricFamily, error) {
-	var parser promParser.TextParser
-	mf, err := parser.TextToMetricFamilies(rdr)
-	if err != nil {
-		return nil, err
-	}
-	return mf, nil
-}
-
-// for some reason the port binding (i.e. RunWithOptions -> PortBindings) is not working for Prometheus/Health ports
-func getHostPort(t *testing.T, port string, container *docker.Container) int {
-	t.Helper()
-	for p, bindings := range container.NetworkSettings.Ports {
-		if p.Port() == port {
-			pi, err := strconv.Atoi(bindings[0].HostPort)
-			require.NoError(t, err)
-			return pi
-		}
-	}
-	return 0
 }
 
 func ptr[T any](v T) *T {

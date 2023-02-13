@@ -2,10 +2,16 @@ package stats
 
 import (
 	"context"
+	"fmt"
+	"net/http"
+	"os"
+	"path/filepath"
 	"sort"
+	"strings"
 	"testing"
 	"time"
 
+	promClient "github.com/prometheus/client_model/go"
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/otel/attribute"
 	otelMetric "go.opentelemetry.io/otel/metric"
@@ -17,7 +23,14 @@ import (
 
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/services/metric"
+	"github.com/rudderlabs/rudder-server/testhelper/docker"
+	otelTest "github.com/rudderlabs/rudder-server/testhelper/stats"
+	"github.com/rudderlabs/rudder-server/utils/httputil"
 	"github.com/rudderlabs/rudder-server/utils/logger"
+)
+
+const (
+	metricsPort = "8889"
 )
 
 func Test_Measurement_Invalid_Operations(t *testing.T) {
@@ -268,17 +281,25 @@ func TestTaggedGauges(t *testing.T) {
 func Test_Periodic_stats(t *testing.T) {
 	type expectation struct {
 		name string
-		tags *attribute.Set
+		tags []*promClient.LabelPair
 	}
 
+	cwd, err := os.Getwd()
+	require.NoError(t, err)
+
 	runTest := func(t *testing.T, prepareFunc func(c *config.Config, m metric.Manager), expected []expectation) {
+		container, grpcEndpoint := otelTest.StartOTelCollector(t, metricsPort,
+			filepath.Join(cwd, "testdata", "otel-collector-config.yaml"),
+		)
+
 		c := config.New()
-		c.Set("OpenTelemetry.Metrics.Endpoint", "endpoint")
+		c.Set("OpenTelemetry.Metrics.Endpoint", grpcEndpoint)
+		c.Set("OpenTelemetry.Metrics.ExportInterval", time.Millisecond)
 		m := metric.NewManager()
 		prepareFunc(c, m)
 
 		l := logger.NewFactory(c)
-		s := NewStats(c, l, m)
+		s := NewStats(c, l, m, WithServiceName("Test_Periodic_stats"), WithInstanceName("my-instance-id"))
 
 		// start stats
 		ctx, cancel := context.WithCancel(context.Background())
@@ -286,35 +307,50 @@ func Test_Periodic_stats(t *testing.T) {
 		require.NoError(t, s.Start(ctx))
 		defer s.Stop()
 
-		rdr, meter := newReaderWithMeter(t)
-		s.(*otelStats).meter = meter
+		var (
+			resp            *http.Response
+			metrics         map[string]*promClient.MetricFamily
+			metricsEndpoint = fmt.Sprintf("http://localhost:%d/metrics", docker.GetHostPort(t, metricsPort, container))
+		)
 
-		require.Eventually(t, func() bool {
-			rm, err := rdr.Collect(ctx)
-			require.NoError(t, err) // this should never fail, so it's OK to fail the test right away
-
-			data := getMapFromScopeMetrics(rm.ScopeMetrics)
+		require.Eventuallyf(t, func() bool {
+			resp, err = http.Get(metricsEndpoint)
+			if err != nil {
+				return false
+			}
+			defer func() { httputil.CloseResponse(resp) }()
+			metrics, err = otelTest.ParsePrometheusMetrics(resp.Body)
+			if err != nil {
+				return false
+			}
 			for _, exp := range expected {
-				if _, ok := data[exp.name]; !ok {
-					t.Logf("No data for %q", exp.name)
+				expectedMetricName := strings.ReplaceAll(exp.name, ".", "_")
+				if _, ok := metrics[expectedMetricName]; !ok {
 					return false
-				}
-				if v, ok := data[exp.name].Data.(metricdata.Gauge[float64]); !ok {
-					t.Logf("No gauge data for %q", exp.name)
-					return false
-				} else {
-					if len(v.DataPoints) < 1 {
-						t.Logf("No data points for %q", exp.name)
-						return false
-					}
-					if exp.tags != nil && !exp.tags.Equals(&v.DataPoints[0].Attributes) {
-						t.Logf("Unexpected tags for %q: %v", exp.name, v.DataPoints[0].Attributes)
-						return false
-					}
 				}
 			}
 			return true
-		}, time.Second, time.Millisecond)
+		}, 10*time.Second, 100*time.Millisecond, "err: %v, metrics: %+v", err, metrics)
+
+		for _, exp := range expected {
+			metricName := strings.ReplaceAll(exp.name, ".", "_")
+			require.EqualValues(t, &metricName, metrics[metricName].Name)
+			require.EqualValues(t, ptr(promClient.MetricType_GAUGE), metrics[metricName].Type)
+			require.Len(t, metrics[metricName].Metric, 1)
+
+			expectedLabels := []*promClient.LabelPair{
+				// the label1=value1 is coming from the otel-collector-config.yaml (see const_labels)
+				{Name: ptr("label1"), Value: ptr("value1")},
+				{Name: ptr("job"), Value: ptr("Test_Periodic_stats")},
+				{Name: ptr("instance"), Value: ptr("my-instance-id")},
+			}
+			if exp.tags != nil {
+				expectedLabels = append(expectedLabels, exp.tags...)
+			}
+			require.ElementsMatchf(t, expectedLabels, metrics[metricName].Metric[0].Label,
+				"Got %+v", metrics[metricName].Metric[0].Label,
+			)
+		}
 	}
 
 	t.Run("CPU stats", func(t *testing.T) {
@@ -398,11 +434,11 @@ func Test_Periodic_stats(t *testing.T) {
 			c.Set("RuntimeStats.enableGCStats", false)
 			m.GetRegistry(metric.PublishedMetrics).MustGetGauge(metric.PendingEventsMeasurement("table", "myWorkspace", "myDestType")).Set(1.0)
 		}, []expectation{
-			{name: "jobsdb_table_pending_events_count", tags: newAttributesSet(t,
-				attribute.String("destType", "myDestType"),
-				attribute.String("workspace", "myWorkspace"),
-				attribute.String("workspaceId", "myWorkspace"),
-			)},
+			{name: "jobsdb_table_pending_events_count", tags: []*promClient.LabelPair{
+				{Name: ptr("destType"), Value: ptr("myDestType")},
+				{Name: ptr("workspace"), Value: ptr("myWorkspace")},
+				{Name: ptr("workspaceId"), Value: ptr("myWorkspace")},
+			}},
 		})
 	})
 }
@@ -439,12 +475,20 @@ func Test_Tags_Type(t *testing.T) {
 }
 
 func TestExcludedTags(t *testing.T) {
+	cwd, err := os.Getwd()
+	require.NoError(t, err)
+	container, grpcEndpoint := otelTest.StartOTelCollector(t, metricsPort,
+		filepath.Join(cwd, "testdata", "otel-collector-config.yaml"),
+	)
+
 	c := config.New()
-	c.Set("OpenTelemetry.Metrics.Endpoint", "endpoint")
+	c.Set("OpenTelemetry.Metrics.Endpoint", grpcEndpoint)
+	c.Set("OpenTelemetry.Metrics.ExportInterval", time.Millisecond)
+	c.Set("RuntimeStats.enabled", false)
 	c.Set("statsExcludedTags", []string{"workspaceId"})
 	l := logger.NewFactory(c)
 	m := metric.NewManager()
-	s := NewStats(c, l, m)
+	s := NewStats(c, l, m, WithServiceName(t.Name()), WithInstanceName("my-instance-id"))
 
 	// start stats
 	ctx, cancel := context.WithCancel(context.Background())
@@ -452,26 +496,45 @@ func TestExcludedTags(t *testing.T) {
 	require.NoError(t, s.Start(ctx))
 	defer s.Stop()
 
-	rdr, meter := newReaderWithMeter(t)
-	s.(*otelStats).meter = meter
-
-	metricName := "test-workspaceId"
+	metricName := "test_workspaceId"
 	s.NewTaggedStat(metricName, CountType, Tags{
 		"workspaceId":            "nice-value",
-		"should-not-be-filtered": "fancy-value",
+		"should_not_be_filtered": "fancy-value",
 	}).Increment()
-	rm, err := rdr.Collect(ctx)
-	require.NoError(t, err)
 
-	data := getMapFromScopeMetrics(rm.ScopeMetrics)
-	require.Contains(t, data, metricName)
+	var (
+		resp            *http.Response
+		metrics         map[string]*promClient.MetricFamily
+		metricsEndpoint = fmt.Sprintf("http://localhost:%d/metrics", docker.GetHostPort(t, metricsPort, container))
+	)
 
-	md, ok := data[metricName].Data.(metricdata.Sum[int64])
-	require.True(t, ok)
-	require.Len(t, md.DataPoints, 1)
-	require.True(t, md.DataPoints[0].Attributes.Equals(
-		newAttributesSet(t, attribute.String("should-not-be-filtered", "fancy-value")),
-	))
+	require.Eventuallyf(t, func() bool {
+		resp, err = http.Get(metricsEndpoint)
+		if err != nil {
+			return false
+		}
+		defer func() { httputil.CloseResponse(resp) }()
+		metrics, err = otelTest.ParsePrometheusMetrics(resp.Body)
+		if err != nil {
+			return false
+		}
+		if _, ok := metrics[metricName]; !ok {
+			return false
+		}
+		return true
+	}, 10*time.Second, 100*time.Millisecond, "err: %v, metrics: %+v", err, metrics)
+
+	require.EqualValues(t, &metricName, metrics[metricName].Name)
+	require.EqualValues(t, ptr(promClient.MetricType_COUNTER), metrics[metricName].Type)
+	require.Len(t, metrics[metricName].Metric, 1)
+	require.EqualValues(t, &promClient.Counter{Value: ptr(1.0)}, metrics[metricName].Metric[0].Counter)
+	require.ElementsMatchf(t, []*promClient.LabelPair{
+		// the label1=value1 is coming from the otel-collector-config.yaml (see const_labels)
+		{Name: ptr("label1"), Value: ptr("value1")},
+		{Name: ptr("should_not_be_filtered"), Value: ptr("fancy-value")},
+		{Name: ptr("job"), Value: ptr("TestExcludedTags")},
+		{Name: ptr("instance"), Value: ptr("my-instance-id")},
+	}, metrics[metricName].Metric[0].Label, "Got %+v", metrics[metricName].Metric[0].Label)
 }
 
 func TestStartStop(t *testing.T) {
@@ -494,16 +557,6 @@ func TestStartStop(t *testing.T) {
 	case <-time.After(1 * time.Second):
 		t.Fatal("timeout waiting for Stop()")
 	}
-}
-
-func getMapFromScopeMetrics(sm []metricdata.ScopeMetrics) map[string]metricdata.Metrics {
-	data := make(map[string]metricdata.Metrics)
-	for _, scopeMetric := range sm {
-		for _, m := range scopeMetric.Metrics {
-			data[m.Name] = m
-		}
-	}
-	return data
 }
 
 func getDataPoint[T any](ctx context.Context, t *testing.T, rdr sdkmetric.Reader, name string, idx int) (zero T) {
@@ -541,4 +594,8 @@ func newReaderWithMeter(t *testing.T) (sdkmetric.Reader, otelMetric.Meter) {
 		_ = meterProvider.Shutdown(context.Background())
 	})
 	return manualRdr, meterProvider.Meter(t.Name())
+}
+
+func ptr[T any](v T) *T {
+	return &v
 }
