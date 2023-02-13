@@ -83,10 +83,10 @@ func NewStats(
 			meter:                    global.MeterProvider().Meter(""),
 			logger:                   loggerFactory.NewLogger().Child("stats"),
 			otelConfig: otelStatsConfig{
-				tracesEndpoint:        config.GetString("OpenTelemetry.Traces.Endpoint", ""),
-				tracingSamplingRate:   config.GetFloat64("OpenTelemetry.Traces.SamplingRate", 0.1),
-				metricsEndpoint:       config.GetString("OpenTelemetry.Metrics.Endpoint", ""),
-				metricsExportInterval: config.GetDuration("OpenTelemetry.Metrics.ExportInterval", 5, time.Second),
+				tracesEndpoint:        config.GetString("OpenTelemetry.traces.endpoint", ""),
+				tracingSamplingRate:   config.GetFloat64("OpenTelemetry.traces.samplingRate", 0.1),
+				metricsEndpoint:       config.GetString("OpenTelemetry.metrics.endpoint", ""),
+				metricsExportInterval: config.GetDuration("OpenTelemetry.metrics.exportInterval", 5, time.Second),
 			},
 		}
 	}

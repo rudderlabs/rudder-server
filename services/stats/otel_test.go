@@ -294,8 +294,8 @@ func TestOTelPeriodicStats(t *testing.T) {
 
 		c := config.New()
 		c.Set("OpenTelemetry.enabled", true)
-		c.Set("OpenTelemetry.Metrics.Endpoint", grpcEndpoint)
-		c.Set("OpenTelemetry.Metrics.ExportInterval", time.Millisecond)
+		c.Set("OpenTelemetry.metrics.endpoint", grpcEndpoint)
+		c.Set("OpenTelemetry.metrics.exportInterval", time.Millisecond)
 		m := metric.NewManager()
 		prepareFunc(c, m)
 
@@ -453,8 +453,8 @@ func TestOTelExcludedTags(t *testing.T) {
 
 	c := config.New()
 	c.Set("OpenTelemetry.enabled", true)
-	c.Set("OpenTelemetry.Metrics.Endpoint", grpcEndpoint)
-	c.Set("OpenTelemetry.Metrics.ExportInterval", time.Millisecond)
+	c.Set("OpenTelemetry.metrics.endpoint", grpcEndpoint)
+	c.Set("OpenTelemetry.metrics.exportInterval", time.Millisecond)
 	c.Set("RuntimeStats.enabled", false)
 	c.Set("statsExcludedTags", []string{"workspaceId"})
 	l := logger.NewFactory(c)
