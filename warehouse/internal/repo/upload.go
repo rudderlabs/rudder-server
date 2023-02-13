@@ -491,3 +491,47 @@ func scanUpload(scan scanFn, upload *model.Upload) error {
 
 	return nil
 }
+
+// InterruptedDestinations returns a list of destination IDs, which have uploads was interrupted.
+//
+//	Interrupted upload might require cleanup of intermediate upload tables.
+func (uploads *Uploads) InterruptedDestinations(ctx context.Context, destinationType string) ([]string, error) {
+	destinationIDs := make([]string, 0)
+	rows, err := uploads.db.QueryContext(ctx, `
+		SELECT
+			destination_id
+		FROM
+			`+uploadsTableName+`
+		WHERE
+			in_progress = TRUE
+			AND destination_type = $1
+			AND (
+				status = $2
+				OR status = $3
+			);
+	`,
+		destinationType,
+		model.ExportingData,
+		model.ExportingDataFailed,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("query for interrupted destinations: %w", err)
+	}
+
+	defer rows.Close()
+
+	for rows.Next() {
+		var destID string
+		err := rows.Scan(&destID)
+		if err != nil {
+			return nil, fmt.Errorf("scanning: %w", err)
+		}
+		destinationIDs = append(destinationIDs, destID)
+	}
+
+	if rows.Err() != nil {
+		return nil, fmt.Errorf("iterating rows: %w", rows.Err())
+	}
+
+	return destinationIDs, nil
+}
