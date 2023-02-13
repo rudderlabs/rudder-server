@@ -1615,7 +1615,7 @@ func (job *UploadJobT) setUploadError(statusError error, state string) (string, 
 
 	// Reset the state as aborted if max retries
 	// exceeded.
-	uploadErrorAttempts := uploadErrors[state]["attempt"].(int)
+	uploadErrorAttempts := 5
 
 	if job.Aborted(uploadErrorAttempts, job.getUploadFirstAttemptTime()) {
 		state = model.Aborted
@@ -1716,6 +1716,7 @@ func (job *UploadJobT) setUploadError(statusError error, state string) (string, 
 
 	// On aborted state, validate credentials to allow
 	// us to differentiate between user caused abort vs platform issue.
+	state = model.Aborted
 	if state == model.Aborted {
 		// base tag to be sent as stat
 

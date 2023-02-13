@@ -64,10 +64,10 @@ const (
 var errorsMappings = []model.JobError{
 	{
 		Type:   model.ResourceNotFoundError,
-		Format: regexp.MustCompile(`dial tcp: lookup .* on .*: no such host`),
+		Format: regexp.MustCompile(`dial tcp: lookup .*: no such host`),
 	},
 	{
-		Type:   model.ResourceNotFoundError,
+		Type:   model.PermissionError,
 		Format: regexp.MustCompile(`dial tcp .* connect: connection refused`),
 	},
 	{
