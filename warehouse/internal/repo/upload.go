@@ -377,6 +377,36 @@ func (uploads *Uploads) UploadJobsStats(ctx context.Context, destType string, op
 	return stats, nil
 }
 
+// UploadTimings returns the timings for an upload.
+func (uploads *Uploads) UploadTimings(ctx context.Context, uploadID int64) (model.Timings, error) {
+	var (
+		rawJSON jsoniter.RawMessage
+		timings model.Timings
+	)
+
+	err := uploads.db.QueryRowContext(ctx, `
+		SELECT
+			COALESCE(timings, '[]')::JSONB
+		FROM
+			`+uploadsTableName+`
+		WHERE
+			id = $1;
+	`, uploadID).Scan(&rawJSON)
+	if err == sql.ErrNoRows {
+		return timings, model.ErrUploadNotFound
+	}
+	if err != nil {
+		return timings, err
+	}
+
+	err = json.Unmarshal(rawJSON, &timings)
+	if err != nil {
+		return timings, err
+	}
+
+	return timings, nil
+}
+
 func (uploads *Uploads) DeleteWaiting(ctx context.Context, uploadID int64) error {
 	_, err := uploads.db.ExecContext(ctx,
 		`DELETE FROM `+uploadsTableName+` WHERE id = $1 AND status = $2`,

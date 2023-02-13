@@ -4,7 +4,6 @@ import (
 	"context"
 
 	proto "github.com/rudderlabs/rudder-server/proto/databricks"
-	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"google.golang.org/grpc"
 )
@@ -23,13 +22,10 @@ type Client struct {
 	Context        context.Context
 	Conn           *grpc.ClientConn
 	Client         proto.DatabricksClient
-	CloseStats     stats.Measurement
 }
 
 // Close closes sql connection as well as closes grpc connection
 func (client *Client) Close() {
-	defer client.CloseStats.RecordDuration()()
-
 	closeConnectionResponse, err := client.Client.Close(client.Context, &proto.CloseRequest{
 		Config:     client.CredConfig,
 		Identifier: client.CredIdentifier,

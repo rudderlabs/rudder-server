@@ -2,6 +2,7 @@ package repo_test
 
 import (
 	"context"
+	"encoding/json"
 	"testing"
 	"time"
 
@@ -111,6 +112,31 @@ func TestUploads_Get(t *testing.T) {
 			PickupLag:      0,
 			PickupWaitTime: 0,
 		}, uploadStats)
+	})
+	t.Run("UploadTimings", func(t *testing.T) {
+		timings, err := repoUpload.UploadTimings(ctx, id)
+		require.NoError(t, err)
+		require.Equal(t, model.Timings{}, timings)
+
+		expected := model.Timings{{
+			"download": time.Date(2021, 1, 1, 0, 0, 0, 0, time.UTC),
+		}, {
+			"upload": time.Date(2021, 1, 1, 0, 0, 1, 0, time.UTC),
+		}}
+
+		r, err := json.Marshal(expected)
+		require.NoError(t, err)
+
+		// TODO: implement and use repo method
+		_, err = db.Exec("UPDATE wh_uploads SET timings = $1 WHERE id = $2", r, id)
+		require.NoError(t, err)
+
+		timings, err = repoUpload.UploadTimings(ctx, id)
+		require.NoError(t, err)
+		require.Equal(t, expected, timings)
+
+		_, err = repoUpload.UploadTimings(ctx, -1)
+		require.Equal(t, err, model.ErrUploadNotFound)
 	})
 }
 
