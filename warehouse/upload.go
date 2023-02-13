@@ -11,6 +11,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/warehouse/logfield"
+
 	"github.com/rudderlabs/rudder-server/services/alerta"
 
 	schemarepository "github.com/rudderlabs/rudder-server/warehouse/integrations/datalake/schema-repository"
@@ -34,6 +36,7 @@ import (
 	"github.com/rudderlabs/rudder-server/warehouse/internal/loadfiles"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/repo"
+	"github.com/rudderlabs/rudder-server/warehouse/internal/service"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 	"github.com/rudderlabs/rudder-server/warehouse/validations"
 )
@@ -80,6 +83,7 @@ type UploadJobFactory struct {
 	dbHandle             *sql.DB
 	destinationValidator validations.DestinationValidator
 	loadFile             *loadfiles.LoadFileGenerator
+	recovery             *service.Recovery
 	pgNotifier           *pgnotifier.PgNotifierT
 	stats                stats.Stats
 }
@@ -88,6 +92,7 @@ type UploadJobT struct {
 	dbHandle             *sql.DB
 	destinationValidator validations.DestinationValidator
 	loadfile             *loadfiles.LoadFileGenerator
+	recovery             *service.Recovery
 	whManager            manager.Manager
 	pgNotifier           *pgnotifier.PgNotifierT
 	schemaHandle         *SchemaHandleT
@@ -168,6 +173,7 @@ func (f *UploadJobFactory) NewUploadJob(dto *model.UploadJob, whManager manager.
 	return &UploadJobT{
 		dbHandle:             f.dbHandle,
 		loadfile:             f.loadFile,
+		recovery:             f.recovery,
 		pgNotifier:           f.pgNotifier,
 		whManager:            whManager,
 		destinationValidator: validations.NewDestinationValidator(),
@@ -365,6 +371,12 @@ func (job *UploadJobT) run() (err error) {
 		return err
 	}
 	defer whManager.Cleanup()
+
+	err = job.recovery.Recover(context.TODO(), whManager, job.warehouse)
+	if err != nil {
+		job.setUploadError(err, InternalProcessingFailed)
+		return err
+	}
 
 	hasSchemaChanged, err := job.syncRemoteSchema()
 	if err != nil {
@@ -1073,9 +1085,7 @@ func (job *UploadJobT) getTotalCount(tName string) (int64, error) {
 	expBackoff.Reset()
 
 	backoffWithMaxRetry := backoff.WithMaxRetries(expBackoff, 5)
-	err := backoff.RetryNotify(operation, backoffWithMaxRetry, func(err error, t time.Duration) {
-		pkgLogger.Errorf(`Error getting total count in table:%s error: %v`, tName, err)
-	})
+	err := backoff.Retry(operation, backoffWithMaxRetry)
 	return total, err
 }
 
@@ -1102,7 +1112,14 @@ func (job *UploadJobT) loadTable(tName string) (alteredSchema bool, err error) {
 		var errTotalCount error
 		totalBeforeLoad, errTotalCount = job.getTotalCount(tName)
 		if errTotalCount != nil {
-			pkgLogger.Errorf(`Error getting total count in table:%s before load: %v`, tName, errTotalCount)
+			pkgLogger.Warnw("total count in table before loading",
+				logfield.SourceID, job.upload.SourceID,
+				logfield.DestinationID, job.upload.DestinationID,
+				logfield.DestinationType, job.upload.DestinationType,
+				logfield.WorkspaceID, job.upload.WorkspaceID,
+				logfield.Error, errTotalCount,
+				logfield.TableName, tName,
+			)
 		}
 	}
 
@@ -1119,7 +1136,14 @@ func (job *UploadJobT) loadTable(tName string) (alteredSchema bool, err error) {
 		var errTotalCount error
 		totalAfterLoad, errTotalCount = job.getTotalCount(tName)
 		if errTotalCount != nil {
-			pkgLogger.Errorf(`Error getting total count in table:%s after load: %v`, tName, errTotalCount)
+			pkgLogger.Warnw("total count in table after loading",
+				logfield.SourceID, job.upload.SourceID,
+				logfield.DestinationID, job.upload.DestinationID,
+				logfield.DestinationType, job.upload.DestinationType,
+				logfield.WorkspaceID, job.upload.WorkspaceID,
+				logfield.Error, errTotalCount,
+				logfield.TableName, tName,
+			)
 			return
 		}
 		eventsInTableUpload, errEventCount := tableUpload.getTotalEvents()
@@ -1330,41 +1354,10 @@ func (job *UploadJobT) processLoadTableResponse(errorMap map[string]error) (erro
 	return errors, tableUploadErr
 }
 
-// getUploadTimings returns timings json column
-// e.g. timings: [{exporting_data: 2020-04-21 15:16:19.687716, exported_data: 2020-04-21 15:26:34.344356}]
-func (job *UploadJobT) getUploadTimings() (model.Timings, error) {
-	var (
-		rawJSON json.RawMessage
-		timings model.Timings
-	)
-	sqlStatement := fmt.Sprintf(`
-		SELECT
-		  timings
-		FROM
-		  %s
-		WHERE
-		  id = %d;
-`,
-		warehouseutils.WarehouseUploadsTable,
-		job.upload.ID,
-	)
-	err := job.dbHandle.QueryRow(sqlStatement).Scan(&rawJSON)
-	if err != nil {
-		return timings, err
-	}
-
-	err = json.Unmarshal(rawJSON, &timings)
-	if err != nil {
-		return timings, err
-	}
-
-	return timings, nil
-}
-
 // getNewTimings appends current status with current time to timings column
 // e.g. status: exported_data, timings: [{exporting_data: 2020-04-21 15:16:19.687716] -> [{exporting_data: 2020-04-21 15:16:19.687716, exported_data: 2020-04-21 15:26:34.344356}]
 func (job *UploadJobT) getNewTimings(status string) ([]byte, model.Timings) {
-	timings, err := job.getUploadTimings()
+	timings, err := repo.NewUploads(job.dbHandle).UploadTimings(context.TODO(), job.upload.ID)
 	if err != nil {
 		pkgLogger.Error("error getting timing, scrapping them", err)
 	}
@@ -1406,6 +1399,7 @@ type UploadStatusOpts struct {
 
 func (job *UploadJobT) setUploadStatus(statusOpts UploadStatusOpts) (err error) {
 	pkgLogger.Debugf("[WH]: Setting status of %s for wh_upload:%v", statusOpts.Status, job.upload.ID)
+	// TODO: fetch upload model instead of just timings
 	marshalledTimings, timings := job.getNewTimings(statusOpts.Status)
 	opts := []UploadColumnT{
 		{Column: UploadStatusField, Value: statusOpts.Status},
@@ -2029,14 +2023,6 @@ func getInProgressState(state string) string {
 		panic(fmt.Errorf("invalid Upload state: %s", state))
 	}
 	return uploadState.inProgress
-}
-
-func getFailedState(state string) string {
-	uploadState, ok := stateTransitions[state]
-	if !ok {
-		panic(fmt.Errorf("invalid Upload state : %s", state))
-	}
-	return uploadState.failed
 }
 
 func initializeStateMachine() {
