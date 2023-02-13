@@ -37,7 +37,7 @@ func (e *ErrorHandler) MatchErrorMappings(err error) Tag {
 	)
 
 	for _, em := range e.Manager.ErrorMappings() {
-		if em.Format.Match([]byte(errString)) {
+		if em.Format.MatchString(errString) {
 			errMappings = append(errMappings, string(em.Type))
 		}
 	}

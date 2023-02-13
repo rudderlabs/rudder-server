@@ -3,7 +3,6 @@ package model
 import (
 	"encoding/json"
 	"errors"
-	"regexp"
 	"strings"
 	"time"
 
@@ -96,11 +95,15 @@ type UploadJob struct {
 	LoadFileGenStartTime time.Time
 }
 
+type Matcher interface {
+	MatchString(string) bool
+}
+
 type JobErrorType string
 
 type JobError struct {
 	Type   JobErrorType
-	Format *regexp.Regexp
+	Format Matcher
 }
 
 func GetLastFailedStatus(timingsMap Timings) (status string) {
