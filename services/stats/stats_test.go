@@ -284,7 +284,7 @@ func Test_Periodic_stats(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
 		require.NoError(t, s.Start(ctx))
-		defer s.Stop(context.Background())
+		defer s.Stop()
 
 		rdr, meter := newReaderWithMeter(t)
 		s.(*otelStats).meter = meter
@@ -450,7 +450,7 @@ func TestExcludedTags(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	require.NoError(t, s.Start(ctx))
-	defer s.Stop(context.Background())
+	defer s.Stop()
 
 	rdr, meter := newReaderWithMeter(t)
 	s.(*otelStats).meter = meter
@@ -485,7 +485,7 @@ func TestStartStop(t *testing.T) {
 
 	done := make(chan struct{})
 	go func() {
-		s.Stop(ctx) // this should not panic/block even if we couldn't start
+		s.Stop() // this should not panic/block even if we couldn't start
 		close(done)
 	}()
 

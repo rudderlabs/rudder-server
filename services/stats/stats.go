@@ -225,13 +225,13 @@ func (s *otelStats) NewSampledTaggedStat(name, statType string, tags Tags) (m Me
 func (*otelStats) getNoOpMeasurement(statType string) Measurement {
 	switch statType {
 	case CountType:
-		return &otelCounter{otelMeasurement: &otelMeasurement{disabled: true}}
+		return &otelCounter{otelMeasurement: &otelMeasurement{statType: CountType, disabled: true}}
 	case GaugeType:
-		return &otelGauge{otelMeasurement: &otelMeasurement{disabled: true}}
+		return &otelGauge{otelMeasurement: &otelMeasurement{statType: GaugeType, disabled: true}}
 	case TimerType:
-		return &otelTimer{otelMeasurement: &otelMeasurement{disabled: true}}
+		return &otelTimer{otelMeasurement: &otelMeasurement{statType: TimerType, disabled: true}}
 	case HistogramType:
-		return &otelHistogram{otelMeasurement: &otelMeasurement{disabled: true}}
+		return &otelHistogram{otelMeasurement: &otelMeasurement{statType: HistogramType, disabled: true}}
 	}
 	panic(fmt.Errorf("unsupported measurement type %s", statType))
 }
@@ -269,7 +269,7 @@ func (s *otelStats) getMeasurement(name, statType string, tags Tags) Measurement
 		instr := buildInstrument(s.meter, name, s.counters, &s.countersMu)
 		return &otelCounter{
 			counter:         instr,
-			otelMeasurement: &otelMeasurement{attributes: attributes},
+			otelMeasurement: &otelMeasurement{statType: CountType, attributes: attributes},
 		}
 	case GaugeType:
 		return s.getGauge(s.meter, name, attributes, tags.String())
@@ -277,13 +277,13 @@ func (s *otelStats) getMeasurement(name, statType string, tags Tags) Measurement
 		instr := buildInstrument(s.meter, name, s.timers, &s.timersMu, instrument.WithUnit(unit.Milliseconds))
 		return &otelTimer{
 			timer:           instr,
-			otelMeasurement: &otelMeasurement{attributes: attributes},
+			otelMeasurement: &otelMeasurement{statType: TimerType, attributes: attributes},
 		}
 	case HistogramType:
 		instr := buildInstrument(s.meter, name, s.histograms, &s.histogramsMu)
 		return &otelHistogram{
 			histogram:       instr,
-			otelMeasurement: &otelMeasurement{attributes: attributes},
+			otelMeasurement: &otelMeasurement{statType: HistogramType, attributes: attributes},
 		}
 	default:
 		panic(fmt.Errorf("unsupported measurement type %s", statType))
@@ -342,7 +342,7 @@ func (s *otelStats) getGauge(meter metric.Meter, name string, attributes []attri
 	tagsToValueKey := name + "@" + tagsKey
 	if _, ok = gwt.tagsToValues[tagsToValueKey]; !ok {
 		gwt.tagsToValues[tagsToValueKey] = &otelGauge{
-			otelMeasurement: &otelMeasurement{attributes: attributes},
+			otelMeasurement: &otelMeasurement{statType: GaugeType, attributes: attributes},
 		}
 	}
 	return gwt.tagsToValues[tagsToValueKey]
