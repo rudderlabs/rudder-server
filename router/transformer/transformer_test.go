@@ -339,6 +339,7 @@ func mockProxyHandler(timeout time.Duration, code int, response string) *mux.Rou
 		_, err := w.Write([]byte(response))
 		if err != nil {
 			http.Error(w, fmt.Sprintf("Provided response is faulty, please check it. Err: %v", err.Error()), http.StatusInternalServerError)
+			return
 		}
 	})
 	return srvMux
@@ -412,7 +413,7 @@ func TestTransformValidationInOutMismatchError(t *testing.T) {
 	initMocks(t)
 	config.Reset()
 	pkgLogger = logger.NOP
-	expectedErrorTxt := "Transformer returned invalid output size: 4 for input size: 3"
+	expectedErrorTxt := "Transformer returned invalid output size: 2 for input size: 3"
 	expectedTransformerResponse := []types.DestinationJobT{
 		{JobMetadataArray: []types.JobMetadataT{{JobID: 1}}, StatusCode: http.StatusInternalServerError, Error: expectedErrorTxt},
 		{JobMetadataArray: []types.JobMetadataT{{JobID: 2}}, StatusCode: http.StatusInternalServerError, Error: expectedErrorTxt},
@@ -421,8 +422,6 @@ func TestTransformValidationInOutMismatchError(t *testing.T) {
 	serverResponse := []types.DestinationJobT{
 		{JobMetadataArray: []types.JobMetadataT{{JobID: 1}}},
 		{JobMetadataArray: []types.JobMetadataT{{JobID: 2}}},
-		{JobMetadataArray: []types.JobMetadataT{{JobID: 3}}},
-		{JobMetadataArray: []types.JobMetadataT{{JobID: 3}}},
 	}
 	svr := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Add(apiVersionHeader, strconv.Itoa(utilTypes.SupportedTransformerApiVersion))
@@ -485,6 +484,77 @@ func TestTransformValidationJobIDMismatchError(t *testing.T) {
 	normalizeErrors(transformerResponse, expectedErrorTxt)
 	require.NotNil(t, transformerResponse)
 	require.Equal(t, expectedTransformerResponse, transformerResponse)
+}
+
+func TestTransformValidationJobIDDuplicateError(t *testing.T) {
+	t.Run("duplicate job ids in same JobMetadataArray", func(t *testing.T) {
+		initMocks(t)
+		config.Reset()
+		pkgLogger = logger.NOP
+		expectedErrorTxt := "Transformer returned duplicate jobIDs: [1]"
+		expectedTransformerResponse := []types.DestinationJobT{
+			{JobMetadataArray: []types.JobMetadataT{{JobID: 1}}, StatusCode: http.StatusInternalServerError, Error: expectedErrorTxt},
+		}
+		serverResponse := map[string]any{"output": []types.DestinationJobT{
+			{JobMetadataArray: []types.JobMetadataT{{JobID: 1}, {JobID: 1}}},
+		}}
+		svr := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Add(apiVersionHeader, strconv.Itoa(utilTypes.SupportedTransformerApiVersion))
+			b, err := json.Marshal(serverResponse)
+			require.NoError(t, err)
+			_, err = w.Write(b)
+			require.NoError(t, err)
+		}))
+		defer svr.Close()
+		t.Setenv("DEST_TRANSFORM_URL", svr.URL)
+		tr := NewTransformer(time.Minute, time.Minute)
+
+		transformMessage := types.TransformMessageT{
+			Data: []types.RouterJobT{
+				{JobMetadata: types.JobMetadataT{JobID: 1}},
+			},
+		}
+		transformerResponse := tr.Transform(ROUTER_TRANSFORM, &transformMessage)
+		normalizeErrors(transformerResponse, expectedErrorTxt)
+		require.NotNil(t, transformerResponse)
+		require.Equal(t, expectedTransformerResponse, transformerResponse)
+	})
+
+	t.Run("duplicate job ids in different JobMetadataArray", func(t *testing.T) {
+		initMocks(t)
+		config.Reset()
+		pkgLogger = logger.NOP
+		expectedErrorTxt := "Transformer returned duplicate jobIDs: [1]"
+		expectedTransformerResponse := []types.DestinationJobT{
+			{JobMetadataArray: []types.JobMetadataT{{JobID: 1}}, StatusCode: http.StatusInternalServerError, Error: expectedErrorTxt},
+			{JobMetadataArray: []types.JobMetadataT{{JobID: 2}}, StatusCode: http.StatusInternalServerError, Error: expectedErrorTxt},
+		}
+		serverResponse := map[string]any{"output": []types.DestinationJobT{
+			{JobMetadataArray: []types.JobMetadataT{{JobID: 1}}},
+			{JobMetadataArray: []types.JobMetadataT{{JobID: 1}}},
+		}}
+		svr := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Add(apiVersionHeader, strconv.Itoa(utilTypes.SupportedTransformerApiVersion))
+			b, err := json.Marshal(serverResponse)
+			require.NoError(t, err)
+			_, err = w.Write(b)
+			require.NoError(t, err)
+		}))
+		defer svr.Close()
+		t.Setenv("DEST_TRANSFORM_URL", svr.URL)
+		tr := NewTransformer(time.Minute, time.Minute)
+
+		transformMessage := types.TransformMessageT{
+			Data: []types.RouterJobT{
+				{JobMetadata: types.JobMetadataT{JobID: 1}},
+				{JobMetadata: types.JobMetadataT{JobID: 2}},
+			},
+		}
+		transformerResponse := tr.Transform(ROUTER_TRANSFORM, &transformMessage)
+		normalizeErrors(transformerResponse, expectedErrorTxt)
+		require.NotNil(t, transformerResponse)
+		require.Equal(t, expectedTransformerResponse, transformerResponse)
+	})
 }
 
 func initMocks(t *testing.T) {

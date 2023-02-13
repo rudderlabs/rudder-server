@@ -16,7 +16,6 @@ import (
 	"time"
 
 	jsoniter "github.com/json-iterator/go"
-	"github.com/samber/lo"
 	"github.com/tidwall/gjson"
 	"golang.org/x/sync/errgroup"
 
@@ -780,11 +779,7 @@ func (worker *workerT) processDestinationJobs() {
 		// elements in routerJobResponses have pointer to the right job.
 		_destinationJob := destinationJob
 
-		// TODO: remove this once we enforce the necessary validations in the transformer's response
-		dedupedJobMetadata := lo.UniqBy(_destinationJob.JobMetadataArray, func(jobMetadata types.JobMetadataT) int64 {
-			return jobMetadata.JobID
-		})
-		for _, destinationJobMetadata := range dedupedJobMetadata {
+		for _, destinationJobMetadata := range _destinationJob.JobMetadataArray {
 			_destinationJobMetadata := destinationJobMetadata
 			// assigning the destinationJobMetadata to a local variable (_destinationJobMetadata), so that
 			// elements in routerJobResponses have pointer to the right destinationJobMetadata.

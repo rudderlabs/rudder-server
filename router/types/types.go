@@ -47,6 +47,12 @@ func (dj *DestinationJobT) JobIDs() map[int64]struct{} {
 	return jobIDs
 }
 
+func (dj *DestinationJobT) DuplicateJobIDs() []int64 {
+	return lo.FindDuplicates(lo.Map(dj.JobMetadataArray, func(m JobMetadataT, _ int) int64 {
+		return m.JobID
+	}))
+}
+
 // JobMetadataT holds the job metadata
 type JobMetadataT struct {
 	UserID             string          `json:"userId"`

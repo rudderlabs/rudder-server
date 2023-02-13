@@ -185,11 +185,17 @@ func (trans *handle) Transform(transformType string, transformMessage *types.Tra
 
 		// Validate the response received from the transformer
 		in := transformMessage.JobIDs()
-		var out []int64
+		out := make(map[int64]struct{})
+		var duplicates []int64
 		invalid := make(map[int64]struct{}) // invalid jobIDs are the ones that are in the response but were not included in the request
 		for i := range destinationJobs {
+			duplicates = append(duplicates, destinationJobs[i].DuplicateJobIDs()...)
 			for k, v := range destinationJobs[i].JobIDs() {
-				out = append(out, k)
+				if _, ok := out[k]; ok {
+					duplicates = append(duplicates, k)
+				} else {
+					out[k] = v
+				}
 				if _, ok := in[k]; !ok {
 					invalid[k] = v
 				}
@@ -199,9 +205,9 @@ func (trans *handle) Transform(transformType string, transformMessage *types.Tra
 		if err != nil {
 			invalidResponseReason = "unmarshal error"
 			invalidResponseError = fmt.Sprintf("Transformer returned invalid response: %s for input: %s", string(respData), string(rawJSON))
-		} else if len(in) != len(out) {
-			invalidResponseReason = "in out mismatch"
-			invalidResponseError = fmt.Sprintf("Transformer returned invalid output size: %d for input size: %d", len(out), len(in))
+		} else if len(duplicates) > 0 {
+			invalidResponseReason = "duplicate jobIDs"
+			invalidResponseError = fmt.Sprintf("Transformer returned duplicate jobIDs: %v", duplicates)
 		} else if len(invalid) > 0 {
 			var invalidSlice []int64
 			for k := range invalid {
@@ -209,6 +215,9 @@ func (trans *handle) Transform(transformType string, transformMessage *types.Tra
 			}
 			invalidResponseReason = "invalid jobIDs"
 			invalidResponseError = fmt.Sprintf("Transformer returned invalid jobIDs: %v", invalidSlice)
+		} else if len(in) != len(out) {
+			invalidResponseReason = "in out mismatch"
+			invalidResponseError = fmt.Sprintf("Transformer returned invalid output size: %d for input size: %d", len(out), len(in))
 		}
 
 		if invalidResponseReason != "" {
