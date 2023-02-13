@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"encoding/csv"
 	"fmt"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -120,6 +121,61 @@ var (
 	identityMergeRulesTable = warehouseutils.ToProviderCase(warehouseutils.SNOWFLAKE, warehouseutils.IdentityMergeRulesTable)
 	identityMappingsTable   = warehouseutils.ToProviderCase(warehouseutils.SNOWFLAKE, warehouseutils.IdentityMappingsTable)
 )
+
+var errorsMappings = []model.JobError{
+	{
+		Type:   model.PermissionError,
+		Format: regexp.MustCompile(`The requested warehouse does not exist or not authorized`),
+	},
+	{
+		Type:   model.PermissionError,
+		Format: regexp.MustCompile(`The requested database does not exist or not authorized`),
+	},
+	{
+		Type:   model.PermissionError,
+		Format: regexp.MustCompile(`failed to connect to db. verify account name is correct`),
+	},
+	{
+		Type:   model.PermissionError,
+		Format: regexp.MustCompile(`Incorrect username or password was specified`),
+	},
+	{
+		Type:   model.PermissionError,
+		Format: regexp.MustCompile(`Insufficient privileges to operate on table`),
+	},
+	{
+		Type:   model.PermissionError,
+		Format: regexp.MustCompile(`IP .* is not allowed to access Snowflake. Contact your local security administrator or please create a case with Snowflake Support or reach us on our support line`),
+	},
+	{
+		Type:   model.PermissionError,
+		Format: regexp.MustCompile(`User temporarily locked`),
+	},
+	{
+		Type:   model.PermissionError,
+		Format: regexp.MustCompile(`Schema .* already exists, but current role has no privileges on it`),
+	},
+	{
+		Type:   model.PermissionError,
+		Format: regexp.MustCompile(`The AWS Access Key Id you provided is not valid`),
+	},
+	{
+		Type:   model.PermissionError,
+		Format: regexp.MustCompile(`Location .* is not allowed by integration .*. Please use DESC INTEGRATION to check out allowed and blocked locations.`),
+	},
+	{
+		Type:   model.InsufficientResourceError,
+		Format: regexp.MustCompile(`Warehouse .* cannot be resumed because resource monitor .* has exceeded its quota`),
+	},
+	{
+		Type:   model.InsufficientResourceError,
+		Format: regexp.MustCompile(`Your free trial has ended and all of your virtual warehouses have been suspended. Add billing information in the Snowflake web UI to continue using the full set of Snowflake features.`),
+	},
+	{
+		Type:   model.ResourceNotFoundError,
+		Format: regexp.MustCompile(`Table .* does not exist`),
+	},
+}
 
 type tableLoadRespT struct {
 	dbHandle     *sql.DB
@@ -990,4 +1046,8 @@ func (sf *HandleT) LoadTestTable(location, tableName string, _ map[string]interf
 
 func (sf *HandleT) SetConnectionTimeout(timeout time.Duration) {
 	sf.ConnectTimeout = timeout
+}
+
+func (sf *HandleT) ErrorMappings() []model.JobError {
+	return errorsMappings
 }

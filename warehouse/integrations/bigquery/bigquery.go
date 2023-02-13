@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"regexp"
 	"strings"
 	"time"
 
@@ -99,6 +100,21 @@ var partitionKeyMap = map[string]string{
 	warehouseutils.DiscardsTable:           "row_id, column_name, table_name",
 	warehouseutils.IdentityMappingsTable:   "merge_property_type, merge_property_value",
 	warehouseutils.IdentityMergeRulesTable: "merge_property_1_type, merge_property_1_value, merge_property_2_type, merge_property_2_value",
+}
+
+var errorsMappings = []model.JobError{
+	{
+		Type:   model.PermissionError,
+		Format: regexp.MustCompile(`googleapi: Error 403: Access Denied`),
+	},
+	{
+		Type:   model.ResourceNotFoundError,
+		Format: regexp.MustCompile(`googleapi: Error 404: Not found: Dataset .*, notFound`),
+	},
+	{
+		Type:   model.InsufficientResourceError,
+		Format: regexp.MustCompile(`googleapi: Error 400: Job exceeded rate limits: Your project_and_region exceeded quota for concurrent queries.`),
+	},
 }
 
 func getTableSchema(columns map[string]string) []*bigquery.FieldSchema {
@@ -1176,4 +1192,8 @@ func (bq *HandleT) LoadTestTable(location, tableName string, _ map[string]interf
 }
 
 func (*HandleT) SetConnectionTimeout(_ time.Duration) {
+}
+
+func (bq *HandleT) ErrorMappings() []model.JobError {
+	return errorsMappings
 }

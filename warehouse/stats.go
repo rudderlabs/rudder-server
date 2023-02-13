@@ -16,9 +16,9 @@ import (
 
 const moduleName = "warehouse"
 
-type tag struct {
-	name  string
-	value string
+type Tag struct {
+	Name  string
+	Value string
 }
 
 func getWarehouseTagName(destID, sourceName, destName, sourceID string) string {
@@ -33,7 +33,7 @@ func (jobRun *JobRunT) warehouseID() string {
 	return getWarehouseTagName(jobRun.job.DestinationID, jobRun.job.SourceName, jobRun.job.DestinationName, jobRun.job.SourceID)
 }
 
-func (job *UploadJobT) timerStat(name string, extraTags ...tag) stats.Measurement {
+func (job *UploadJobT) timerStat(name string, extraTags ...Tag) stats.Measurement {
 	tags := stats.Tags{
 		"module":      moduleName,
 		"destType":    job.warehouse.Type,
@@ -43,12 +43,12 @@ func (job *UploadJobT) timerStat(name string, extraTags ...tag) stats.Measuremen
 		"sourceID":    job.upload.SourceID,
 	}
 	for _, extraTag := range extraTags {
-		tags[extraTag.name] = extraTag.value
+		tags[extraTag.Name] = extraTag.Value
 	}
 	return job.stats.NewTaggedStat(name, stats.TimerType, tags)
 }
 
-func (job *UploadJobT) counterStat(name string, extraTags ...tag) stats.Measurement {
+func (job *UploadJobT) counterStat(name string, extraTags ...Tag) stats.Measurement {
 	tags := stats.Tags{
 		"module":      moduleName,
 		"destType":    job.warehouse.Type,
@@ -58,12 +58,12 @@ func (job *UploadJobT) counterStat(name string, extraTags ...tag) stats.Measurem
 		"sourceID":    job.upload.SourceID,
 	}
 	for _, extraTag := range extraTags {
-		tags[extraTag.name] = extraTag.value
+		tags[extraTag.Name] = extraTag.Value
 	}
 	return job.stats.NewTaggedStat(name, stats.CountType, tags)
 }
 
-func (job *UploadJobT) guageStat(name string, extraTags ...tag) stats.Measurement {
+func (job *UploadJobT) guageStat(name string, extraTags ...Tag) stats.Measurement {
 	tags := stats.Tags{
 		"module":         moduleName,
 		"destType":       job.warehouse.Type,
@@ -74,12 +74,12 @@ func (job *UploadJobT) guageStat(name string, extraTags ...tag) stats.Measuremen
 		"sourceCategory": job.warehouse.Source.SourceDefinition.Category,
 	}
 	for _, extraTag := range extraTags {
-		tags[extraTag.name] = extraTag.value
+		tags[extraTag.Name] = extraTag.Value
 	}
 	return job.stats.NewTaggedStat(name, stats.GaugeType, tags)
 }
 
-func (jobRun *JobRunT) timerStat(name string, extraTags ...tag) stats.Measurement {
+func (jobRun *JobRunT) timerStat(name string, extraTags ...Tag) stats.Measurement {
 	tags := stats.Tags{
 		"module":      moduleName,
 		"destType":    jobRun.job.DestinationType,
@@ -89,12 +89,12 @@ func (jobRun *JobRunT) timerStat(name string, extraTags ...tag) stats.Measuremen
 		"sourceID":    jobRun.job.SourceID,
 	}
 	for _, extraTag := range extraTags {
-		tags[extraTag.name] = extraTag.value
+		tags[extraTag.Name] = extraTag.Value
 	}
 	return jobRun.stats.NewTaggedStat(name, stats.TimerType, tags)
 }
 
-func (jobRun *JobRunT) counterStat(name string, extraTags ...tag) stats.Measurement {
+func (jobRun *JobRunT) counterStat(name string, extraTags ...Tag) stats.Measurement {
 	tags := stats.Tags{
 		"module":      moduleName,
 		"destType":    jobRun.job.DestinationType,
@@ -104,7 +104,7 @@ func (jobRun *JobRunT) counterStat(name string, extraTags ...tag) stats.Measurem
 		"sourceID":    jobRun.job.SourceID,
 	}
 	for _, extraTag := range extraTags {
-		tags[extraTag.name] = extraTag.value
+		tags[extraTag.Name] = extraTag.Value
 	}
 	return jobRun.stats.NewTaggedStat(name, stats.CountType, tags)
 }
@@ -126,9 +126,9 @@ func (job *UploadJobT) generateUploadSuccessMetrics() {
 	}
 	job.counterStat("num_staged_events").Count(int(numStagedEvents))
 	attempts := job.getAttemptNumber()
-	job.counterStat("upload_success", tag{
-		name:  "attempt_number",
-		value: strconv.Itoa(attempts),
+	job.counterStat("upload_success", Tag{
+		Name:  "attempt_number",
+		Value: strconv.Itoa(attempts),
 	}).Count(1)
 }
 
@@ -152,12 +152,12 @@ func (job *UploadJobT) generateUploadAbortedMetrics() {
 
 	// Set the upload_aborted stat
 	attempts := job.getAttemptNumber()
-	tags := []tag{{name: "attempt_number", value: strconv.Itoa(attempts)}}
+	tags := []Tag{{Name: "attempt_number", Value: strconv.Itoa(attempts)}}
 	valid, err := job.validateDestinationCredentials()
 	if err == nil {
 		// Only if error is nil, meaning we were able to
 		// successfully validate the creds, we set this tag
-		tags = append(tags, tag{name: "destination_creds_valid", value: strconv.FormatBool(valid)})
+		tags = append(tags, Tag{Name: "destination_creds_valid", Value: strconv.FormatBool(valid)})
 	}
 	job.counterStat("upload_aborted", tags...).Count(1)
 }
@@ -166,9 +166,9 @@ func (job *UploadJobT) recordTableLoad(tableName string, numEvents int64) {
 	rudderAPISupportedEventTypes := []string{"tracks", "identifies", "pages", "screens", "aliases", "groups"}
 	if misc.Contains(rudderAPISupportedEventTypes, strings.ToLower(tableName)) {
 		// record total events synced (ignoring additional row synced to the event table for e.g.track call)
-		job.counterStat(`event_delivery`, tag{
-			name:  "tableName",
-			value: strings.ToLower(tableName),
+		job.counterStat(`event_delivery`, Tag{
+			Name:  "tableName",
+			Value: strings.ToLower(tableName),
 		}).Count(int(numEvents))
 	}
 
@@ -181,9 +181,9 @@ func (job *UploadJobT) recordTableLoad(tableName string, numEvents int64) {
 		}
 	}
 
-	job.counterStat(`rows_synced`, tag{
-		name:  "tableName",
-		value: strings.ToLower(tableName),
+	job.counterStat(`rows_synced`, Tag{
+		Name:  "tableName",
+		Value: strings.ToLower(tableName),
 	}).Count(int(numEvents))
 	// Delay for the oldest event in the batch
 	firstEventAt, err := repo.NewStagingFiles(dbHandle).FirstEventForUpload(context.TODO(), job.upload)
@@ -199,8 +199,8 @@ func (job *UploadJobT) recordTableLoad(tableName string, numEvents int64) {
 			syncFrequency, _ = config[warehouseutils.SyncFrequency].(string)
 		}
 		job.timerStat("event_delivery_time",
-			tag{name: "tableName", value: strings.ToLower(tableName)},
-			tag{name: "syncFrequency", value: syncFrequency},
+			Tag{Name: "tableName", Value: strings.ToLower(tableName)},
+			Tag{Name: "syncFrequency", Value: syncFrequency},
 		).Since(firstEventAt)
 	}
 }
