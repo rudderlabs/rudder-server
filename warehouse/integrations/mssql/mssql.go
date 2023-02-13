@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -113,6 +114,13 @@ var partitionKeyMap = map[string]string{
 	warehouseutils.UsersTable:      "id",
 	warehouseutils.IdentifiesTable: "id",
 	warehouseutils.DiscardsTable:   "row_id, column_name, table_name",
+}
+
+var errorsMappings = []model.JobError{
+	{
+		Type:   model.PermissionError,
+		Format: regexp.MustCompile(`unable to open tcp connection with host .*: dial tcp .*: i/o timeout`),
+	},
 }
 
 func Connect(cred CredentialsT) (*sql.DB, error) {
@@ -958,4 +966,8 @@ func (ms *HandleT) LoadTestTable(_, tableName string, payloadMap map[string]inte
 
 func (ms *HandleT) SetConnectionTimeout(timeout time.Duration) {
 	ms.ConnectTimeout = timeout
+}
+
+func (ms *HandleT) ErrorMappings() []model.JobError {
+	return errorsMappings
 }
