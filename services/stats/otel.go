@@ -101,6 +101,10 @@ func (s *otelStats) Start(ctx context.Context) error {
 		})
 	}
 
+	s.logger.Infof("Stats started successfully in mode %q with metrics endpoint %q and traces endpoint %q",
+		"OpenTelemetry", s.otelConfig.metricsEndpoint, s.otelConfig.tracesEndpoint,
+	)
+
 	return nil
 }
 

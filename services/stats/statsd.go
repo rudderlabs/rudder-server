@@ -24,13 +24,14 @@ type statsdStats struct {
 	logger       logger.Logger
 }
 
-func (s *statsdStats) Start(ctx context.Context) error {
+func (s *statsdStats) Start(ctx context.Context) (err error) {
 	if !s.config.enabled {
 		return nil
 	}
+
 	s.state.conn = statsd.Address(s.statsdConfig.statsdServerURL)
 	// since, we don't want setup to be a blocking call, creating a separate `go routine` for retry to get statsd client.
-	var err error
+
 	// NOTE: this is to get at least a dummy client, even if there is a failure.
 	// So, that nil pointer error is not received when client is called.
 	s.state.client.statsd, err = statsd.New(s.state.conn, s.statsdConfig.statsdTagsFormat(), s.statsdConfig.statsdDefaultTags())
@@ -39,6 +40,7 @@ func (s *statsdStats) Start(ctx context.Context) error {
 		s.state.connEstablished = true
 		s.state.clientsLock.Unlock()
 	}
+
 	rruntime.Go(func() {
 		if err != nil {
 			s.state.client.statsd, err = s.getNewStatsdClientWithExpoBackoff(ctx, s.state.conn, s.statsdConfig.statsdTagsFormat(), s.statsdConfig.statsdDefaultTags())
@@ -61,6 +63,8 @@ func (s *statsdStats) Start(ctx context.Context) error {
 			s.collectPeriodicStats()
 		}
 	})
+
+	s.logger.Infof("Stats started successfully in mode %q with address %q", "StatsD", s.statsdConfig.statsdServerURL)
 
 	return nil
 }
