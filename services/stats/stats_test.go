@@ -104,7 +104,7 @@ func Test_Measurement_Operations(t *testing.T) {
 
 	t.Run("counter increment", func(t *testing.T) {
 		r, m := newReaderWithMeter(t)
-		s := &otelStats{meter: m, statsEnabled: true}
+		s := &otelStats{meter: m, config: statsConfig{enabled: true}}
 		s.NewStat("test-counter", CountType).Increment()
 		md := getDataPoint[metricdata.Sum[int64]](ctx, t, r, "test-counter", 0)
 		require.Len(t, md.DataPoints, 1)
@@ -113,7 +113,7 @@ func Test_Measurement_Operations(t *testing.T) {
 
 	t.Run("counter count", func(t *testing.T) {
 		r, m := newReaderWithMeter(t)
-		s := &otelStats{meter: m, statsEnabled: true}
+		s := &otelStats{meter: m, config: statsConfig{enabled: true}}
 		s.NewStat("test-counter", CountType).Count(10)
 		md := getDataPoint[metricdata.Sum[int64]](ctx, t, r, "test-counter", 0)
 		require.Len(t, md.DataPoints, 1)
@@ -122,7 +122,7 @@ func Test_Measurement_Operations(t *testing.T) {
 
 	t.Run("gauge", func(t *testing.T) {
 		r, m := newReaderWithMeter(t)
-		s := &otelStats{meter: m, statsEnabled: true}
+		s := &otelStats{meter: m, config: statsConfig{enabled: true}}
 		s.NewStat("test-gauge", GaugeType).Gauge(1234)
 		md := getDataPoint[metricdata.Gauge[float64]](ctx, t, r, "test-gauge", 0)
 		require.Len(t, md.DataPoints, 1)
@@ -131,7 +131,7 @@ func Test_Measurement_Operations(t *testing.T) {
 
 	t.Run("tagged gauges", func(t *testing.T) {
 		r, m := newReaderWithMeter(t)
-		s := &otelStats{meter: m, statsEnabled: true}
+		s := &otelStats{meter: m, config: statsConfig{enabled: true}}
 		s.NewTaggedStat("test-tagged-gauge", GaugeType, Tags{"a": "b"}).Gauge(111)
 		s.NewTaggedStat("test-tagged-gauge", GaugeType, Tags{"c": "d"}).Gauge(222)
 		md := getDataPoint[metricdata.Gauge[float64]](ctx, t, r, "test-tagged-gauge", 0)
@@ -148,7 +148,7 @@ func Test_Measurement_Operations(t *testing.T) {
 
 	t.Run("timer send timing", func(t *testing.T) {
 		r, m := newReaderWithMeter(t)
-		s := &otelStats{meter: m, statsEnabled: true}
+		s := &otelStats{meter: m, config: statsConfig{enabled: true}}
 		s.NewStat("test-timer-1", TimerType).SendTiming(10 * time.Second)
 		md := getDataPoint[metricdata.Histogram](ctx, t, r, "test-timer-1", 0)
 		require.Len(t, md.DataPoints, 1)
@@ -158,7 +158,7 @@ func Test_Measurement_Operations(t *testing.T) {
 
 	t.Run("timer since", func(t *testing.T) {
 		r, m := newReaderWithMeter(t)
-		s := &otelStats{meter: m, statsEnabled: true}
+		s := &otelStats{meter: m, config: statsConfig{enabled: true}}
 		s.NewStat("test-timer-2", TimerType).Since(time.Now().Add(-time.Second))
 		md := getDataPoint[metricdata.Histogram](ctx, t, r, "test-timer-2", 0)
 		require.Len(t, md.DataPoints, 1)
@@ -168,7 +168,7 @@ func Test_Measurement_Operations(t *testing.T) {
 
 	t.Run("timer RecordDuration", func(t *testing.T) {
 		r, m := newReaderWithMeter(t)
-		s := &otelStats{meter: m, statsEnabled: true}
+		s := &otelStats{meter: m, config: statsConfig{enabled: true}}
 		ot := s.NewStat("test-timer-3", TimerType)
 		ot.(*otelTimer).now = func() time.Time {
 			return time.Now().Add(-time.Second)
@@ -182,7 +182,7 @@ func Test_Measurement_Operations(t *testing.T) {
 
 	t.Run("histogram", func(t *testing.T) {
 		r, m := newReaderWithMeter(t)
-		s := &otelStats{meter: m, statsEnabled: true}
+		s := &otelStats{meter: m, config: statsConfig{enabled: true}}
 		s.NewStat("test-hist-1", HistogramType).Observe(1.2)
 		md := getDataPoint[metricdata.Histogram](ctx, t, r, "test-hist-1", 0)
 		require.Len(t, md.DataPoints, 1)
@@ -192,7 +192,7 @@ func Test_Measurement_Operations(t *testing.T) {
 
 	t.Run("tagged stats", func(t *testing.T) {
 		r, m := newReaderWithMeter(t)
-		s := &otelStats{meter: m, statsEnabled: true}
+		s := &otelStats{meter: m, config: statsConfig{enabled: true}}
 		s.NewTaggedStat("test-tagged", CountType, Tags{"key": "value"}).Increment()
 		md1 := getDataPoint[metricdata.Sum[int64]](ctx, t, r, "test-tagged", 0)
 		require.Len(t, md1.DataPoints, 1)
@@ -210,7 +210,7 @@ func Test_Measurement_Operations(t *testing.T) {
 
 	t.Run("measurement with empty name", func(t *testing.T) {
 		r, m := newReaderWithMeter(t)
-		s := &otelStats{meter: m, statsEnabled: true, logger: logger.NOP}
+		s := &otelStats{meter: m, logger: logger.NOP, config: statsConfig{enabled: true}}
 		s.NewStat("", CountType).Increment()
 		md := getDataPoint[metricdata.Sum[int64]](ctx, t, r, "novalue", 0)
 		require.Len(t, md.DataPoints, 1)
@@ -220,7 +220,7 @@ func Test_Measurement_Operations(t *testing.T) {
 
 	t.Run("measurement with empty name and empty tag key", func(t *testing.T) {
 		r, m := newReaderWithMeter(t)
-		s := &otelStats{meter: m, statsEnabled: true, logger: logger.NOP}
+		s := &otelStats{meter: m, logger: logger.NOP, config: statsConfig{enabled: true}}
 		s.NewTaggedStat(" ", GaugeType, Tags{"key": "value", "": "value2", " ": "value3"}).Gauge(22)
 		md := getDataPoint[metricdata.Gauge[float64]](ctx, t, r, "novalue", 0)
 		require.Len(t, md.DataPoints, 1)
@@ -234,7 +234,7 @@ func Test_Measurement_Operations(t *testing.T) {
 func TestTaggedGauges(t *testing.T) {
 	ctx := context.Background()
 	r, m := newReaderWithMeter(t)
-	s := &otelStats{meter: m, statsEnabled: true}
+	s := &otelStats{meter: m, config: statsConfig{enabled: true}}
 	s.NewTaggedStat("test-gauge", GaugeType, Tags{"a": "b"}).Gauge(1)
 	s.NewStat("test-gauge", GaugeType).Gauge(2)
 	s.NewTaggedStat("test-gauge", GaugeType, Tags{"c": "d"}).Gauge(3)
@@ -273,21 +273,21 @@ func Test_Periodic_stats(t *testing.T) {
 
 	runTest := func(t *testing.T, prepareFunc func(c *config.Config, m metric.Manager), expected []expectation) {
 		c := config.New()
+		c.Set("OpenTelemetry.Metrics.Endpoint", "endpoint")
 		m := metric.NewManager()
 		prepareFunc(c, m)
 
 		l := logger.NewFactory(c)
-		s := newStats(c, l, m)
+		s := NewStats(c, l, m)
+
+		// start stats
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		require.NoError(t, s.Start(ctx))
+		defer s.Stop(context.Background())
 
 		rdr, meter := newReaderWithMeter(t)
 		s.(*otelStats).meter = meter
-
-		ctx, cancel := context.WithCancel(context.Background())
-		defer cancel()
-
-		// start stats
-		s.Start(ctx)
-		defer s.Stop()
 
 		require.Eventually(t, func() bool {
 			rm, err := rdr.Collect(ctx)
@@ -440,20 +440,20 @@ func Test_Tags_Type(t *testing.T) {
 
 func TestExcludedTags(t *testing.T) {
 	c := config.New()
+	c.Set("OpenTelemetry.Metrics.Endpoint", "endpoint")
 	c.Set("statsExcludedTags", []string{"workspaceId"})
 	l := logger.NewFactory(c)
 	m := metric.NewManager()
-	s := newStats(c, l, m)
+	s := NewStats(c, l, m)
+
+	// start stats
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	require.NoError(t, s.Start(ctx))
+	defer s.Stop(context.Background())
 
 	rdr, meter := newReaderWithMeter(t)
 	s.(*otelStats).meter = meter
-
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	// start stats
-	s.Start(ctx)
-	defer s.Stop()
 
 	metricName := "test-workspaceId"
 	s.NewTaggedStat(metricName, CountType, Tags{
@@ -478,13 +478,14 @@ func TestStartStop(t *testing.T) {
 	c := config.New()
 	l := logger.NewFactory(c)
 	m := metric.NewManager()
-	s := newStats(c, l, m)
+	s := NewStats(c, l, m)
 
-	s.Start(context.Background())
+	ctx := context.Background()
+	require.Error(t, s.Start(ctx), "we should error if no endpoint is provided but stats are enabled")
 
 	done := make(chan struct{})
 	go func() {
-		s.Stop()
+		s.Stop(ctx) // this should not panic/block even if we couldn't start
 		close(done)
 	}()
 

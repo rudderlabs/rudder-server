@@ -127,7 +127,7 @@ func TestStats(t *testing.T) {
 	})
 
 	t.Run("no op", func(t *testing.T) {
-		store.Start(context.Background())
+		require.NoError(t, store.Start(context.Background()))
 		store.Stop()
 	})
 

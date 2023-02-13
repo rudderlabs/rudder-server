@@ -5,6 +5,7 @@ package stats
 import (
 	"context"
 	"fmt"
+	"os"
 	"runtime"
 	"strings"
 	"sync"
@@ -21,6 +22,7 @@ import (
 	"go.opentelemetry.io/otel/metric/unit"
 
 	"github.com/rudderlabs/rudder-server/config"
+	"github.com/rudderlabs/rudder-server/otel"
 	"github.com/rudderlabs/rudder-server/rruntime"
 	svcMetric "github.com/rudderlabs/rudder-server/services/metric"
 	"github.com/rudderlabs/rudder-server/utils/logger"
@@ -34,7 +36,9 @@ const (
 )
 
 func init() {
-	Default = newStats(config.Default, logger.Default, svcMetric.Instance)
+	Default = &otelStats{config: statsConfig{
+		enabled: false,
+	}}
 }
 
 // Default is the default (singleton) Stats instance
@@ -53,44 +57,54 @@ type Stats interface {
 	NewSampledTaggedStat(name, statType string, tags Tags) Measurement
 
 	// Start starts the stats service and the collection of periodic stats.
-	Start(ctx context.Context)
+	Start(ctx context.Context) error
 
 	// Stop stops the service and the collection of periodic stats.
 	Stop()
 }
 
-// newStats create a new Stats instance using the provided config, logger factory and metric manager as dependencies
-func newStats(config *config.Config, loggerFactory *logger.Factory, metricManager svcMetric.Manager) Stats {
+// NewStats create a new Stats instance using the provided config, logger factory and metric manager as dependencies
+func NewStats(
+	config *config.Config, loggerFactory *logger.Factory, metricManager svcMetric.Manager, opts ...Option,
+) Stats {
 	excludedTags := make(map[string]struct{})
 	excludedTagsSlice := config.GetStringSlice("statsExcludedTags", nil)
 	for _, tag := range excludedTagsSlice {
 		excludedTags[tag] = struct{}{}
 	}
 
+	statsConfig := statsConfig{
+		excludedTags:            excludedTags,
+		enabled:                 config.GetBool("enableStats", true),
+		runtimeEnabled:          config.GetBool("RuntimeStats.enabled", true),
+		statsCollectionInterval: config.GetInt64("RuntimeStats.statsCollectionInterval", 10),
+		enableCPUStats:          config.GetBool("RuntimeStats.enableCPUStats", true),
+		enableMemStats:          config.GetBool("RuntimeStats.enabledMemStats", true),
+		enableGCStats:           config.GetBool("RuntimeStats.enableGCStats", true),
+		instanceName:            config.GetString("INSTANCE_ID", ""),
+		namespaceIdentifier:     os.Getenv("KUBE_NAMESPACE"),
+		otelConfig: otelStatsConfig{
+			tracesEndpoint:        config.GetString("OpenTelemetry.Traces.Endpoint", ""),
+			tracingSamplingRate:   config.GetFloat64("OpenTelemetry.Traces.SamplingRate", 0.1),
+			metricsEndpoint:       config.GetString("OpenTelemetry.Metrics.Endpoint", ""),
+			metricsExportInterval: config.GetDuration("OpenTelemetry.Metrics.ExportInterval", 5, time.Second),
+		},
+	}
+	for _, opt := range opts {
+		opt(&statsConfig)
+	}
 	return &otelStats{
-		statsEnabled:             config.GetBool("enableStats", true),
-		runtimeEnabled:           config.GetBool("RuntimeStats.enabled", true),
-		statsCollectionInterval:  config.GetInt64("RuntimeStats.statsCollectionInterval", 10),
-		enableCPUStats:           config.GetBool("RuntimeStats.enableCPUStats", true),
-		enableMemStats:           config.GetBool("RuntimeStats.enabledMemStats", true),
-		enableGCStats:            config.GetBool("RuntimeStats.enableGCStats", true),
-		excludedTags:             excludedTags,
-		logger:                   loggerFactory.NewLogger().Child("stats"),
-		metricManager:            metricManager,
+		config:                   statsConfig,
 		stopBackgroundCollection: func() {},
+		metricManager:            metricManager,
 		meter:                    global.MeterProvider().Meter(""),
+		logger:                   loggerFactory.NewLogger().Child("stats"),
 	}
 }
 
 // otelStats is an OTel-specific adapter that follows the Stats contract
 type otelStats struct {
-	statsEnabled            bool
-	runtimeEnabled          bool
-	statsCollectionInterval int64
-	enableCPUStats          bool
-	enableMemStats          bool
-	enableGCStats           bool
-	excludedTags            map[string]struct{}
+	config statsConfig
 
 	meter        metric.Meter
 	counters     map[string]syncint64.Counter
@@ -102,6 +116,7 @@ type otelStats struct {
 	histograms   map[string]syncfloat64.Histogram
 	histogramsMu sync.Mutex
 
+	otelManager              otel.Manager
 	runtimeStatsCollector    runtimeStatsCollector
 	metricsStatsCollector    metricStatsCollector
 	stopBackgroundCollection func()
@@ -109,7 +124,42 @@ type otelStats struct {
 	logger                   logger.Logger
 }
 
-func (s *otelStats) Start(_ context.Context) {
+func (s *otelStats) Start(ctx context.Context) error {
+	if !s.config.enabled {
+		return nil
+	}
+
+	// Starting OpenTelemetry setup
+	attrs := []attribute.KeyValue{attribute.String("instanceName", s.config.instanceName)}
+	if s.config.namespaceIdentifier != "" {
+		attrs = append(attrs, attribute.String("namespace", s.config.namespaceIdentifier))
+	}
+	res, err := otel.NewResource(s.config.serviceName, s.config.instanceName, s.config.serviceVersion, attrs...)
+	if err != nil {
+		return fmt.Errorf("failed to create open telemetry resource: %w", err)
+	}
+
+	options := []otel.Option{otel.WithInsecure()} // @TODO: could make this configurable
+	if s.config.otelConfig.tracesEndpoint != "" {
+		options = append(options, otel.WithTracerProvider(
+			s.config.otelConfig.tracesEndpoint,
+			s.config.otelConfig.tracingSamplingRate,
+		))
+	}
+	if s.config.otelConfig.metricsEndpoint != "" {
+		options = append(options, otel.WithMeterProvider(
+			s.config.otelConfig.metricsEndpoint,
+			otel.WithMeterProviderExportsInterval(s.config.otelConfig.metricsExportInterval),
+		))
+	}
+	_, mp, err := s.otelManager.Setup(ctx, res, options...)
+	if err != nil {
+		return fmt.Errorf("failed to setup open telemetry: %w", err)
+	}
+
+	s.meter = mp.Meter("")
+
+	// Starting background collection
 	var backgroundCollectionCtx context.Context
 	backgroundCollectionCtx, s.stopBackgroundCollection = context.WithCancel(context.Background())
 
@@ -121,22 +171,37 @@ func (s *otelStats) Start(_ context.Context) {
 		s.metricsStatsCollector.run(backgroundCollectionCtx)
 	})
 
-	if s.runtimeEnabled {
+	if s.config.runtimeEnabled {
 		s.runtimeStatsCollector = newRuntimeStatsCollector(gaugeFunc)
-		s.runtimeStatsCollector.PauseDur = time.Duration(s.statsCollectionInterval) * time.Second
-		s.runtimeStatsCollector.EnableCPU = s.enableCPUStats
-		s.runtimeStatsCollector.EnableMem = s.enableMemStats
-		s.runtimeStatsCollector.EnableGC = s.enableGCStats
+		s.runtimeStatsCollector.PauseDur = time.Duration(s.config.statsCollectionInterval) * time.Second
+		s.runtimeStatsCollector.EnableCPU = s.config.enableCPUStats
+		s.runtimeStatsCollector.EnableMem = s.config.enableMemStats
+		s.runtimeStatsCollector.EnableGC = s.config.enableGCStats
 		rruntime.Go(func() {
 			s.runtimeStatsCollector.run(backgroundCollectionCtx)
 		})
 	}
+
+	return nil
 }
 
 func (s *otelStats) Stop() {
+	if !s.config.enabled {
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(context.TODO(), 10*time.Second)
+	defer cancel()
+
+	if err := s.otelManager.Shutdown(ctx); err != nil {
+		s.logger.Errorf("failed to shutdown open telemetry: %v", err)
+	}
+
 	s.stopBackgroundCollection()
-	<-s.metricsStatsCollector.done
-	if s.runtimeEnabled {
+	if s.metricsStatsCollector.done != nil {
+		<-s.metricsStatsCollector.done
+	}
+	if s.config.runtimeEnabled && s.runtimeStatsCollector.done != nil {
 		<-s.runtimeStatsCollector.done
 	}
 }
@@ -172,7 +237,7 @@ func (*otelStats) getNoOpMeasurement(statType string) Measurement {
 }
 
 func (s *otelStats) getMeasurement(name, statType string, tags Tags) Measurement {
-	if !s.statsEnabled {
+	if !s.config.enabled {
 		return s.getNoOpMeasurement(statType)
 	}
 
@@ -190,7 +255,7 @@ func (s *otelStats) getMeasurement(name, statType string, tags Tags) Measurement
 			s.logger.Warnf("removing empty tag key with value %s for measurement %s", v, name)
 			delete(tags, k)
 		}
-		if _, ok := s.excludedTags[k]; ok {
+		if _, ok := s.config.excludedTags[k]; ok {
 			delete(tags, k)
 		}
 	}

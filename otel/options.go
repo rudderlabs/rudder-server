@@ -3,13 +3,10 @@ package otel
 import (
 	"time"
 
-	"go.opentelemetry.io/contrib/instrumentation/runtime"
 	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/sdk/instrumentation"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	"go.opentelemetry.io/otel/sdk/metric/aggregation"
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials/insecure"
 )
 
 type (
@@ -21,25 +18,18 @@ type (
 	MeterProviderOption func(providerConfig *meterProviderConfig)
 )
 
-// WithLogger allows to set a logger to print debug information
-func WithLogger(l logger) Option {
+// WithRetryConfig allows to set the retry configuration
+func WithRetryConfig(rc RetryConfig) Option {
 	return func(c *config) {
-		c.logger = l
+		c.retryConfig = &rc
 	}
 }
 
-// WithGRPCConnectParams allows to set GRPC connection parameters
-func WithGRPCConnectParams(cp grpc.ConnectParams) Option {
-	return func(c *config) {
-		c.grpcConnectParams = &cp
-	}
-}
-
-// WithInsecureGRPC allows to set the GRPC connection to be insecure
-func WithInsecureGRPC() Option {
+// WithInsecure allows to set the GRPC connection to be insecure
+func WithInsecure() Option {
 	return func(c *config) {
 		// Note the use of insecure transport here. TLS is recommended in production.
-		c.dialOpts = append(c.dialOpts, grpc.WithTransportCredentials(insecure.NewCredentials()))
+		c.withInsecure = true
 	}
 }
 
@@ -52,10 +42,14 @@ func WithTextMapPropagator(tmp propagation.TextMapPropagator) Option {
 }
 
 // WithTracerProvider allows to set the tracer provider and specify if it should be the global one
-func WithTracerProvider(endpoint string, opts ...TracerProviderOption) Option {
+// It is also possible to configure the sampling rate:
+// samplingRate >= 1 will always sample.
+// samplingRate < 0 is treated as zero.
+func WithTracerProvider(endpoint string, samplingRate float64, opts ...TracerProviderOption) Option {
 	return func(c *config) {
 		c.tracesEndpoint = endpoint
 		c.tracerProviderConfig.enabled = true
+		c.tracerProviderConfig.samplingRate = samplingRate
 		for _, opt := range opts {
 			opt(&c.tracerProviderConfig)
 		}
@@ -115,16 +109,5 @@ func WithHistogramBucketBoundaries(instrumentName, meterName string, boundaries 
 	)
 	return func(c *meterProviderConfig) {
 		c.views = append(c.views, newView)
-	}
-}
-
-// WithRuntimeStats lets you enable the runtime stats
-func WithRuntimeStats(collectionInterval time.Duration) MeterProviderOption {
-	return func(c *meterProviderConfig) {
-		c.runtimeStats = true
-		c.runtimeStatsCollectionInterval = runtime.DefaultMinimumReadMemStatsInterval
-		if collectionInterval > 0 {
-			c.runtimeStatsCollectionInterval = collectionInterval
-		}
 	}
 }

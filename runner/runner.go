@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"github.com/bugsnag/bugsnag-go/v2"
-	"go.opentelemetry.io/otel/attribute"
 	_ "go.uber.org/automaxprocs"
 	"golang.org/x/sync/errgroup"
 
@@ -27,7 +26,6 @@ import (
 	"github.com/rudderlabs/rudder-server/gateway/webhook"
 	"github.com/rudderlabs/rudder-server/info"
 	"github.com/rudderlabs/rudder-server/jobsdb"
-	"github.com/rudderlabs/rudder-server/otel"
 	"github.com/rudderlabs/rudder-server/processor/integrations"
 	"github.com/rudderlabs/rudder-server/processor/stash"
 	"github.com/rudderlabs/rudder-server/processor/transformer"
@@ -45,6 +43,7 @@ import (
 	"github.com/rudderlabs/rudder-server/services/dedup"
 	destinationconnectiontester "github.com/rudderlabs/rudder-server/services/destination-connection-tester"
 	"github.com/rudderlabs/rudder-server/services/diagnostics"
+	svcMetric "github.com/rudderlabs/rudder-server/services/metric"
 	"github.com/rudderlabs/rudder-server/services/multitenant"
 	"github.com/rudderlabs/rudder-server/services/oauth"
 	"github.com/rudderlabs/rudder-server/services/pgnotifier"
@@ -140,56 +139,6 @@ func (r *Runner) Run(ctx context.Context, args []string) int {
 	// application & backend setup should be done before starting any new goroutines.
 	r.application.Setup()
 
-	// START - OpenTelemetry setup
-	var (
-		statsEnabled        = config.GetBool("enableStats", true)
-		otelTracesEndpoint  = config.GetString("OpenTelemetry.Traces.Endpoint", "")
-		otelMetricsEndpoint = config.GetString("OpenTelemetry.Metrics.Endpoint", "")
-	)
-	if statsEnabled && otelTracesEndpoint == "" && otelMetricsEndpoint == "" {
-		r.logger.Warnf("No OpenTelemetry endpoints provided")
-	} else if statsEnabled {
-		instanceID := config.GetString("INSTANCE_ID", "")
-		res, err := otel.NewResource(r.appType, instanceID, r.releaseInfo.Version,
-			attribute.String("instanceName", instanceID),
-			attribute.String("namespace", config.GetNamespaceIdentifier()),
-		)
-		if err != nil {
-			r.logger.Errorf("OpenTelemetry resource creation failed: %v", err)
-			return 1
-		}
-
-		var (
-			otelManager otel.Manager
-			otelOpts    = []otel.Option{otel.WithInsecureGRPC(), otel.WithLogger(r.logger.Child("otel"))}
-		)
-		if otelTracesEndpoint != "" {
-			otelOpts = append(otelOpts, otel.WithTracerProvider(otelTracesEndpoint, otel.WithGlobalTracerProvider()))
-		}
-		if otelMetricsEndpoint != "" {
-			otelOpts = append(otelOpts, otel.WithMeterProvider(otelMetricsEndpoint,
-				otel.WithGlobalMeterProvider(),
-				otel.WithMeterProviderExportsInterval(
-					config.GetDuration("OpenTelemetry.Metrics.ExportInterval", 5, time.Second),
-				),
-			))
-		}
-		if _, _, err = otelManager.Setup(ctx, res, otelOpts...); err != nil {
-			r.logger.Errorf("OpenTelemetry setup failed: %v", err)
-			return 1
-		}
-		defer func() {
-			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-			defer cancel()
-			if err := otelManager.Shutdown(ctx); err != nil {
-				r.logger.Warnf("OpenTelemetry shutdown failed: %v", err)
-			}
-		}()
-	} else {
-		r.logger.Warnf("Stats are disabled")
-	}
-	// END - OpenTelemetry setup
-
 	var err error
 	r.appHandler, err = apphandlers.GetAppHandler(r.application, r.appType, r.versionHandler)
 	if err != nil {
@@ -219,10 +168,19 @@ func (r *Runner) Run(ctx context.Context, args []string) int {
 
 	// Start stats
 	// TODO: remove as soon as we update the configuration with statsExcludedTags where necessary
-	if !config.IsSet("statsExcludedTags") && deploymentType == deployment.MultiTenantType && (!config.IsSet("WORKSPACE_NAMESPACE") || strings.Contains(config.GetString("WORKSPACE_NAMESPACE", ""), "free")) {
+	if !config.IsSet("statsExcludedTags") && deploymentType == deployment.MultiTenantType &&
+		(!config.IsSet("WORKSPACE_NAMESPACE") || strings.Contains(config.GetString("WORKSPACE_NAMESPACE", ""), "free")) {
 		config.Set("statsExcludedTags", []string{"workspaceId", "sourceID", "destId"})
 	}
-	stats.Default.Start(ctx)
+	stats.Default = stats.NewStats(config.Default, logger.Default, svcMetric.Instance,
+		stats.WithServiceName(r.appType),
+		stats.WithServiceVersion(r.releaseInfo.Version),
+		stats.WithNamespace(config.GetNamespaceIdentifier()),
+		stats.WithInstanceName(config.GetString("INSTANCE_ID", "")),
+	)
+	if err := stats.Default.Start(ctx); err != nil {
+		r.logger.Errorf("Failed to start stats: %v", err)
+	}
 	stats.Default.NewTaggedStat("rudder_server_config",
 		stats.GaugeType,
 		stats.Tags{
