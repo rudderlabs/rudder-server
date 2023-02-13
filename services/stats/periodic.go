@@ -14,6 +14,16 @@ import (
 // "mem.heap.alloc")
 type gaugeFunc func(key string, val uint64)
 
+// periodicStatsConfig is the configuration for the periodic stats collection
+type periodicStatsConfig struct {
+	enabled                 bool
+	statsCollectionInterval int64
+	enableCPUStats          bool
+	enableMemStats          bool
+	enableGCStats           bool
+	metricManager           metric.Manager
+}
+
 // runtimeStatsCollector implements the periodic grabbing of informational data from the
 // runtime package and outputting the values to a GaugeFunc.
 type runtimeStatsCollector struct {

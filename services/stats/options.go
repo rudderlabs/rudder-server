@@ -1,31 +1,14 @@
 package stats
 
-import (
-	"time"
-)
-
 type statsConfig struct {
-	enabled        bool
-	serviceName    string
-	serviceVersion string
-	instanceName   string
-	excludedTags   map[string]struct{}
+	enabled             bool
+	serviceName         string
+	serviceVersion      string
+	instanceName        string
+	namespaceIdentifier string
+	excludedTags        map[string]struct{}
 
-	namespaceIdentifier     string
-	runtimeEnabled          bool
-	statsCollectionInterval int64
-	enableCPUStats          bool
-	enableMemStats          bool
-	enableGCStats           bool
-
-	otelConfig otelStatsConfig
-}
-
-type otelStatsConfig struct {
-	tracesEndpoint        string
-	tracingSamplingRate   float64
-	metricsEndpoint       string
-	metricsExportInterval time.Duration
+	periodicStatsConfig periodicStatsConfig
 }
 
 type Option func(*statsConfig)
