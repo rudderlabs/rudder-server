@@ -95,10 +95,11 @@ func NewStats(
 		config: statsConfig,
 		logger: loggerFactory.NewLogger().Child("stats"),
 		statsdConfig: statsdConfig{
-			tagsFormat:      config.GetString("statsTagsFormat", "influxdb"),
-			statsdServerURL: config.GetString("STATSD_SERVER_URL", "localhost:8125"),
-			samplingRate:    float32(config.GetFloat64("statsSamplingRate", 1)),
-			instanceID:      statsConfig.instanceName,
+			tagsFormat:          config.GetString("statsTagsFormat", "influxdb"),
+			statsdServerURL:     config.GetString("STATSD_SERVER_URL", "localhost:8125"),
+			samplingRate:        float32(config.GetFloat64("statsSamplingRate", 1)),
+			instanceName:        statsConfig.instanceName,
+			namespaceIdentifier: statsConfig.namespaceIdentifier,
 		},
 		state: &statsdState{
 			client:         &statsdClient{},

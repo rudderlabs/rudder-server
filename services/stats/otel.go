@@ -49,7 +49,10 @@ func (s *otelStats) Start(ctx context.Context) error {
 	}
 
 	// Starting OpenTelemetry setup
-	attrs := []attribute.KeyValue{attribute.String("instanceName", s.config.instanceName)}
+	var attrs []attribute.KeyValue
+	if s.config.instanceName != "" {
+		attrs = append(attrs, attribute.String("instanceName", s.config.instanceName))
+	}
 	if s.config.namespaceIdentifier != "" {
 		attrs = append(attrs, attribute.String("namespace", s.config.namespaceIdentifier))
 	}

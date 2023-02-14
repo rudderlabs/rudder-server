@@ -11,7 +11,6 @@ import (
 	"github.com/cenkalti/backoff"
 	"gopkg.in/alexcesaro/statsd.v2"
 
-	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/rruntime"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 )
@@ -215,17 +214,21 @@ func (s *statsdStats) newStatsdMeasurement(name, statType string, client *statsd
 }
 
 type statsdConfig struct {
-	tagsFormat      string
-	statsdServerURL string
-	samplingRate    float32
-	instanceID      string
+	tagsFormat          string
+	statsdServerURL     string
+	samplingRate        float32
+	instanceName        string
+	namespaceIdentifier string
 }
 
 // statsdDefaultTags returns the default tags to use for statsd
 func (c *statsdConfig) statsdDefaultTags() statsd.Option {
-	tags := []string{"instanceName", c.instanceID}
-	if len(config.GetKubeNamespace()) > 0 {
-		tags = append(tags, "namespace", config.GetKubeNamespace())
+	var tags []string
+	if c.instanceName != "" {
+		tags = append(tags, "instanceName", c.instanceName)
+	}
+	if c.namespaceIdentifier != "" {
+		tags = append(tags, "namespace", c.namespaceIdentifier)
 	}
 	return statsd.Tags(tags...)
 }

@@ -26,17 +26,3 @@ func WithServiceVersion(version string) Option {
 		c.serviceVersion = version
 	}
 }
-
-// WithInstanceName sets the instance name for the stats service.
-func WithInstanceName(name string) Option {
-	return func(c *statsConfig) {
-		c.instanceName = name
-	}
-}
-
-// WithNamespace sets the namespace identifier for the stats service.
-func WithNamespace(namespace string) Option {
-	return func(c *statsConfig) {
-		c.namespaceIdentifier = namespace
-	}
-}

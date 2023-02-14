@@ -246,6 +246,7 @@ func TestStatsdPeriodicStats(t *testing.T) {
 
 		c := config.New()
 		m := metric.NewManager()
+		t.Setenv("KUBE_NAMESPACE", "my-namespace")
 		c.Set("STATSD_SERVER_URL", server.addr)
 		c.Set("INSTANCE_ID", "test")
 		c.Set("RuntimeStats.enabled", true)
@@ -276,8 +277,8 @@ func TestStatsdPeriodicStats(t *testing.T) {
 			c.Set("RuntimeStats.enabledMemStats", false)
 			c.Set("RuntimeStats.enableGCStats", false)
 		}, []string{
-			"runtime_cpu.goroutines,instanceName=test",
-			"runtime_cpu.cgo_calls,instanceName=test",
+			"runtime_cpu.goroutines,instanceName=test,namespace=my-namespace",
+			"runtime_cpu.cgo_calls,instanceName=test,namespace=my-namespace",
 		})
 	})
 
@@ -287,25 +288,25 @@ func TestStatsdPeriodicStats(t *testing.T) {
 			c.Set("RuntimeStats.enabledMemStats", true)
 			c.Set("RuntimeStats.enableGCStats", false)
 		}, []string{
-			"runtime_mem.alloc,instanceName=test",
-			"runtime_mem.total,instanceName=test",
-			"runtime_mem.sys,instanceName=test",
-			"runtime_mem.lookups,instanceName=test",
-			"runtime_mem.malloc,instanceName=test",
-			"runtime_mem.frees,instanceName=test",
-			"runtime_mem.heap.alloc,instanceName=test",
-			"runtime_mem.heap.sys,instanceName=test",
-			"runtime_mem.heap.idle,instanceName=test",
-			"runtime_mem.heap.inuse,instanceName=test",
-			"runtime_mem.heap.released,instanceName=test",
-			"runtime_mem.heap.objects,instanceName=test",
-			"runtime_mem.stack.inuse,instanceName=test",
-			"runtime_mem.stack.sys,instanceName=test",
-			"runtime_mem.stack.mspan_inuse,instanceName=test",
-			"runtime_mem.stack.mspan_sys,instanceName=test",
-			"runtime_mem.stack.mcache_inuse,instanceName=test",
-			"runtime_mem.stack.mcache_sys,instanceName=test",
-			"runtime_mem.othersys,instanceName=test",
+			"runtime_mem.alloc,instanceName=test,namespace=my-namespace",
+			"runtime_mem.total,instanceName=test,namespace=my-namespace",
+			"runtime_mem.sys,instanceName=test,namespace=my-namespace",
+			"runtime_mem.lookups,instanceName=test,namespace=my-namespace",
+			"runtime_mem.malloc,instanceName=test,namespace=my-namespace",
+			"runtime_mem.frees,instanceName=test,namespace=my-namespace",
+			"runtime_mem.heap.alloc,instanceName=test,namespace=my-namespace",
+			"runtime_mem.heap.sys,instanceName=test,namespace=my-namespace",
+			"runtime_mem.heap.idle,instanceName=test,namespace=my-namespace",
+			"runtime_mem.heap.inuse,instanceName=test,namespace=my-namespace",
+			"runtime_mem.heap.released,instanceName=test,namespace=my-namespace",
+			"runtime_mem.heap.objects,instanceName=test,namespace=my-namespace",
+			"runtime_mem.stack.inuse,instanceName=test,namespace=my-namespace",
+			"runtime_mem.stack.sys,instanceName=test,namespace=my-namespace",
+			"runtime_mem.stack.mspan_inuse,instanceName=test,namespace=my-namespace",
+			"runtime_mem.stack.mspan_sys,instanceName=test,namespace=my-namespace",
+			"runtime_mem.stack.mcache_inuse,instanceName=test,namespace=my-namespace",
+			"runtime_mem.stack.mcache_sys,instanceName=test,namespace=my-namespace",
+			"runtime_mem.othersys,instanceName=test,namespace=my-namespace",
 		})
 	})
 
@@ -315,32 +316,32 @@ func TestStatsdPeriodicStats(t *testing.T) {
 			c.Set("RuntimeStats.enabledMemStats", true)
 			c.Set("RuntimeStats.enableGCStats", true)
 		}, []string{
-			"runtime_mem.alloc,instanceName=test",
-			"runtime_mem.total,instanceName=test",
-			"runtime_mem.sys,instanceName=test",
-			"runtime_mem.lookups,instanceName=test",
-			"runtime_mem.malloc,instanceName=test",
-			"runtime_mem.frees,instanceName=test",
-			"runtime_mem.heap.alloc,instanceName=test",
-			"runtime_mem.heap.sys,instanceName=test",
-			"runtime_mem.heap.idle,instanceName=test",
-			"runtime_mem.heap.inuse,instanceName=test",
-			"runtime_mem.heap.released,instanceName=test",
-			"runtime_mem.heap.objects,instanceName=test",
-			"runtime_mem.stack.inuse,instanceName=test",
-			"runtime_mem.stack.sys,instanceName=test",
-			"runtime_mem.stack.mspan_inuse,instanceName=test",
-			"runtime_mem.stack.mspan_sys,instanceName=test",
-			"runtime_mem.stack.mcache_inuse,instanceName=test",
-			"runtime_mem.stack.mcache_sys,instanceName=test",
-			"runtime_mem.othersys,instanceName=test",
-			"runtime_mem.gc.sys,instanceName=test",
-			"runtime_mem.gc.next,instanceName=test",
-			"runtime_mem.gc.last,instanceName=test",
-			"runtime_mem.gc.pause_total,instanceName=test",
-			"runtime_mem.gc.pause,instanceName=test",
-			"runtime_mem.gc.count,instanceName=test",
-			"runtime_mem.gc.cpu_percent,instanceName=test",
+			"runtime_mem.alloc,instanceName=test,namespace=my-namespace",
+			"runtime_mem.total,instanceName=test,namespace=my-namespace",
+			"runtime_mem.sys,instanceName=test,namespace=my-namespace",
+			"runtime_mem.lookups,instanceName=test,namespace=my-namespace",
+			"runtime_mem.malloc,instanceName=test,namespace=my-namespace",
+			"runtime_mem.frees,instanceName=test,namespace=my-namespace",
+			"runtime_mem.heap.alloc,instanceName=test,namespace=my-namespace",
+			"runtime_mem.heap.sys,instanceName=test,namespace=my-namespace",
+			"runtime_mem.heap.idle,instanceName=test,namespace=my-namespace",
+			"runtime_mem.heap.inuse,instanceName=test,namespace=my-namespace",
+			"runtime_mem.heap.released,instanceName=test,namespace=my-namespace",
+			"runtime_mem.heap.objects,instanceName=test,namespace=my-namespace",
+			"runtime_mem.stack.inuse,instanceName=test,namespace=my-namespace",
+			"runtime_mem.stack.sys,instanceName=test,namespace=my-namespace",
+			"runtime_mem.stack.mspan_inuse,instanceName=test,namespace=my-namespace",
+			"runtime_mem.stack.mspan_sys,instanceName=test,namespace=my-namespace",
+			"runtime_mem.stack.mcache_inuse,instanceName=test,namespace=my-namespace",
+			"runtime_mem.stack.mcache_sys,instanceName=test,namespace=my-namespace",
+			"runtime_mem.othersys,instanceName=test,namespace=my-namespace",
+			"runtime_mem.gc.sys,instanceName=test,namespace=my-namespace",
+			"runtime_mem.gc.next,instanceName=test,namespace=my-namespace",
+			"runtime_mem.gc.last,instanceName=test,namespace=my-namespace",
+			"runtime_mem.gc.pause_total,instanceName=test,namespace=my-namespace",
+			"runtime_mem.gc.pause,instanceName=test,namespace=my-namespace",
+			"runtime_mem.gc.count,instanceName=test,namespace=my-namespace",
+			"runtime_mem.gc.cpu_percent,instanceName=test,namespace=my-namespace",
 		})
 	})
 
@@ -351,7 +352,7 @@ func TestStatsdPeriodicStats(t *testing.T) {
 			c.Set("RuntimeStats.enableGCStats", false)
 			m.GetRegistry(metric.PublishedMetrics).MustGetGauge(metric.PendingEventsMeasurement("table", "workspace", "destType")).Set(1.0)
 		}, []string{
-			"jobsdb_table_pending_events_count,instanceName=test,destType=destType,workspace=workspace,workspaceId=workspace",
+			"jobsdb_table_pending_events_count,instanceName=test,namespace=my-namespace,destType=destType,workspace=workspace,workspaceId=workspace",
 		})
 	})
 }
