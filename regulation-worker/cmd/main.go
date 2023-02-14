@@ -57,7 +57,7 @@ func Run(ctx context.Context) error {
 		stats.WithServiceName("regulation-worker"),
 	)
 	if err := stats.Default.Start(ctx); err != nil {
-		pkgLogger.Errorf("Failed to start stats: %v", err)
+		return fmt.Errorf("failed to start stats: %w", err)
 	}
 	defer stats.Default.Stop()
 

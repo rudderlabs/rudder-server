@@ -178,6 +178,7 @@ func (r *Runner) Run(ctx context.Context, args []string) int {
 	)
 	if err := stats.Default.Start(ctx); err != nil {
 		r.logger.Errorf("Failed to start stats: %v", err)
+		return 1
 	}
 	stats.Default.NewTaggedStat("rudder_server_config",
 		stats.GaugeType,
