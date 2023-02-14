@@ -110,20 +110,35 @@ var rudderDataTypesMapToPostgres = map[string]string{
 }
 
 var postgresDataTypesMapToRudder = map[string]string{
+	"int":                      "int",
 	"integer":                  "int",
 	"smallint":                 "int",
 	"bigint":                   "int",
+	"tinyint":                  "int",
 	"double precision":         "float",
 	"numeric":                  "float",
+	"decimal":                  "float",
 	"real":                     "float",
+	"float":                    "float",
 	"text":                     "string",
 	"varchar":                  "string",
+	"nvarchar":                 "string",
+	"ntext":                    "string",
+	"binary":                   "string",
+	"image":                    "string",
+	"varbinary":                "string",
+	"nchar":                    "string",
 	"char":                     "string",
-	"timestamptz":              "datetime",
+	"uniqueidentifier":         "string",
+	"datetimeoffset":           "datetime",
+	"date":                     "datetime",
+	"datetime":                 "datetime",
+	"datetime2":                "datetime",
+	"smalldatetime":            "datetime",
 	"timestamp with time zone": "datetime",
 	"timestamp":                "datetime",
-	"boolean":                  "boolean",
 	"jsonb":                    "json",
+	"bit":                      "boolean",
 }
 
 type Handle struct {

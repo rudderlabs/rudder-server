@@ -60,6 +60,7 @@ var rudderDataTypesMapToMssql = map[string]string{
 }
 
 var mssqlDataTypesMapToRudder = map[string]string{
+	"int":                      "int",
 	"integer":                  "int",
 	"smallint":                 "int",
 	"bigint":                   "int",
@@ -73,11 +74,17 @@ var mssqlDataTypesMapToRudder = map[string]string{
 	"varchar":                  "string",
 	"nvarchar":                 "string",
 	"ntext":                    "string",
+	"binary":                   "string",
+	"image":                    "string",
+	"varbinary":                "string",
 	"nchar":                    "string",
 	"char":                     "string",
+	"uniqueidentifier":         "string",
 	"datetimeoffset":           "datetime",
 	"date":                     "datetime",
+	"datetime":                 "datetime",
 	"datetime2":                "datetime",
+	"smalldatetime":            "datetime",
 	"timestamp with time zone": "datetime",
 	"timestamp":                "datetime",
 	"jsonb":                    "json",

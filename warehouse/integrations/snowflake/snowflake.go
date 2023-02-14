@@ -78,6 +78,8 @@ var dataTypesMapToRudder = map[string]string{
 	"INTEGER":          "int",
 	"BIGINT":           "int",
 	"SMALLINT":         "int",
+	"TINYINT":          "int",
+	"BYTEINT":          "int",
 	"FLOAT":            "float",
 	"FLOAT4":           "float",
 	"FLOAT8":           "float",
@@ -89,7 +91,12 @@ var dataTypesMapToRudder = map[string]string{
 	"VARCHAR":          "string",
 	"CHAR":             "string",
 	"CHARACTER":        "string",
+	"NCHAR":            "string",
 	"STRING":           "string",
+	"NVARCHAR":         "string",
+	"NVARCHAR2":        "string",
+	"CHAR VARYING":     "string",
+	"NCHAR VARYING":    "string",
 	"BINARY":           "string",
 	"VARBINARY":        "string",
 	"TIMESTAMP_NTZ":    "datetime",
@@ -100,6 +107,8 @@ var dataTypesMapToRudder = map[string]string{
 	"TIMESTAMP_LTZ":    "datetime",
 	"TIMESTAMP_TZ":     "datetime",
 	"VARIANT":          "json",
+	"ARRAY":            "json",
+	"OBJECT":           "json",
 }
 
 var primaryKeyMap = map[string]string{

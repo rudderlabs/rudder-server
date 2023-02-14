@@ -30,7 +30,9 @@ var (
 	dataTypesMapToRudder = map[string]string{
 		"boolean":      "boolean",
 		"bigint":       "int",
+		"int":          "int",
 		"double":       "float",
+		"decimal":      "float",
 		"varchar(512)": "string",
 		VARCHAR_TYPE:   "string",
 		"timestamp":    "datetime",
