@@ -131,7 +131,7 @@ func (s *statsdStats) Stop() {
 
 // NewStat creates a new Measurement with provided Name and Type
 func (s *statsdStats) NewStat(name, statType string) (m Measurement) {
-	return s.newStatsdMeasurement(s.logger, name, statType, s.state.client)
+	return s.newStatsdMeasurement(name, statType, s.state.client)
 }
 
 func (s *statsdStats) NewTaggedStat(Name, StatType string, tags Tags) (m Measurement) {
@@ -145,7 +145,7 @@ func (s *statsdStats) NewSampledTaggedStat(Name, StatType string, tags Tags) (m 
 func (s *statsdStats) internalNewTaggedStat(name, statType string, tags Tags, samplingRate float32) (m Measurement) {
 	// If stats is not enabled, returning a dummy struct
 	if !s.config.enabled {
-		return s.newStatsdMeasurement(s.logger, name, statType, &statsdClient{})
+		return s.newStatsdMeasurement(name, statType, &statsdClient{})
 	}
 
 	// Clean up tags based on deployment type. No need to send workspace id tag for free tier customers.
@@ -182,16 +182,16 @@ func (s *statsdStats) internalNewTaggedStat(name, statType string, tags Tags, sa
 		s.state.clientsLock.Unlock()
 	}
 
-	return s.newStatsdMeasurement(s.logger, name, statType, taggedClient)
+	return s.newStatsdMeasurement(name, statType, taggedClient)
 }
 
 // newStatsdMeasurement creates a new measurement of the specific type
-func (s *statsdStats) newStatsdMeasurement(log logger.Logger, name, statType string, client *statsdClient) Measurement {
+func (s *statsdStats) newStatsdMeasurement(name, statType string, client *statsdClient) Measurement {
 	if strings.Trim(name, " ") == "" {
 		byteArr := make([]byte, 2048)
 		n := runtime.Stack(byteArr, false)
 		stackTrace := string(byteArr[:n])
-		log.Warnf("detected missing stat measurement name, using 'novalue':\n%v", stackTrace)
+		s.logger.Warnf("detected missing stat measurement name, using 'novalue':\n%v", stackTrace)
 		name = "novalue"
 	}
 	baseMeasurement := &statsdMeasurement{
