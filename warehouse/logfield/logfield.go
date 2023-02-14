@@ -1,8 +1,8 @@
 package logfield
 
 const (
-	JobID            = "jobID"
-	Status           = "status"
+	UploadJobID      = "uploadJobID"
+	UploadStatus     = "uploadStatus"
 	UseRudderStorage = "useRudderStorage"
 	SourceID         = "sourceID"
 	SourceType       = "sourceType"

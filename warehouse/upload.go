@@ -1595,9 +1595,9 @@ func (job *UploadJobT) Aborted(attempts int, startTime time.Time) bool {
 
 func (job *UploadJobT) setUploadError(statusError error, state string) (string, error) {
 	defer func() {
-		pkgLogger.Errorw("upload error",
-			logfield.JobID, job.upload.ID,
-			logfield.Status, state,
+		pkgLogger.Warnw("upload error",
+			logfield.UploadJobID, job.upload.ID,
+			logfield.UploadStatus, state,
 			logfield.SourceID, job.upload.SourceID,
 			logfield.DestinationID, job.upload.DestinationID,
 			logfield.DestinationType, job.upload.DestinationType,
