@@ -1070,35 +1070,28 @@ func (*Deltalake) DownloadIdentityRules(*misc.GZipWriter) (err error) {
 	return
 }
 
-// GetTotalCountInTable returns total count in tables.
-func (dl *Deltalake) GetTotalCountInTable(ctx context.Context, tableName string) (total int64, err error) {
-	fetchTotalCountExecTime := dl.Stats.NewTaggedStat("warehouse.deltalake.grpcExecTime", stats.TimerType, stats.Tags{
-		"workspaceId": dl.Warehouse.WorkspaceID,
-		"destination": dl.Warehouse.Destination.ID,
-		"destType":    dl.Warehouse.Type,
-		"source":      dl.Warehouse.Source.ID,
-		"namespace":   dl.Warehouse.Namespace,
-		"identifier":  dl.Warehouse.Identifier,
-		"queryType":   "FetchTotalCountInTable",
-	})
-	defer fetchTotalCountExecTime.RecordDuration()()
-
-	sqlStatement := fmt.Sprintf(`SELECT COUNT(*) FROM %[1]s.%[2]s;`, dl.Namespace, tableName)
+// GetTotalCountInTable returns the total count in the table
+func (dl *Deltalake) GetTotalCountInTable(ctx context.Context, tableName string) (int64, error) {
+	var (
+		err          error
+		sqlStatement string
+	)
+	sqlStatement = fmt.Sprintf(`
+		SELECT COUNT(*) FROM %[1]s.%[2]s;
+	`,
+		dl.Namespace,
+		tableName,
+	)
 	response, err := dl.Client.Client.FetchTotalCountInTable(ctx, &proto.FetchTotalCountInTableRequest{
 		Config:       dl.Client.CredConfig,
 		Identifier:   dl.Client.CredIdentifier,
 		SqlStatement: sqlStatement,
 	})
 	if err != nil {
-		err = fmt.Errorf("%s Error while fetching table count: %v", dl.GetLogIdentifier(), err)
-		return
+		return 0, fmt.Errorf("fetching table count: %w", err)
 	}
-	if !checkAndIgnoreAlreadyExistError(response.GetErrorCode(), tableOrViewNotFound) {
-		err = fmt.Errorf("%s Error while fetching table count with response: %v", dl.GetLogIdentifier(), response.GetErrorMessage())
-		return
-	}
-	total = response.GetCount()
-	return
+
+	return response.GetCount(), nil
 }
 
 // Connect returns Client
