@@ -34,7 +34,7 @@ func (t Tags) String() string {
 	return strings.Join(t.Strings(), ",")
 }
 
-// otelAttributes returns all key value pairs as an ordered list of OpenTelemetry attributes
+// otelAttributes returns all key value pairs as a list of OpenTelemetry attributes
 func (t Tags) otelAttributes() []attribute.KeyValue {
 	attrs := make([]attribute.KeyValue, 0, len(t))
 	for k, v := range t {
