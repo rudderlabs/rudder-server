@@ -55,8 +55,6 @@ func Run(ctx context.Context) error {
 
 	stats.Default = stats.NewStats(config.Default, logger.Default, svcMetric.Instance,
 		stats.WithServiceName("regulation-worker"),
-		stats.WithNamespace(config.GetNamespaceIdentifier()),
-		stats.WithInstanceName(config.GetString("INSTANCE_ID", "")),
 	)
 	if err := stats.Default.Start(ctx); err != nil {
 		pkgLogger.Errorf("Failed to start stats: %v", err)

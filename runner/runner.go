@@ -175,8 +175,6 @@ func (r *Runner) Run(ctx context.Context, args []string) int {
 	stats.Default = stats.NewStats(config.Default, logger.Default, svcMetric.Instance,
 		stats.WithServiceName(r.appType),
 		stats.WithServiceVersion(r.releaseInfo.Version),
-		stats.WithNamespace(config.GetNamespaceIdentifier()),
-		stats.WithInstanceName(config.GetString("INSTANCE_ID", "")),
 	)
 	if err := stats.Default.Start(ctx); err != nil {
 		r.logger.Errorf("Failed to start stats: %v", err)
