@@ -1158,11 +1158,10 @@ func pendingEventsHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	sourceID := pendingEventsReq.SourceID
-
+	sourceID, taskRunID := pendingEventsReq.SourceID, pendingEventsReq.TaskRunID
 	// return error if source id is empty
-	if sourceID == "" {
-		pkgLogger.Errorf("[WH]: pending-events:  Empty source id")
+	if sourceID == "" || taskRunID == "" {
+		pkgLogger.Errorf("[WH]: pending-events:  Empty source_id or task_run_id ")
 		http.Error(w, "empty source id", http.StatusBadRequest)
 		return
 	}
@@ -1196,14 +1195,31 @@ func pendingEventsHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	filterBy := []warehouseutils.FilterBy{{Key: "source_id", Value: sourceID}}
-	if pendingEventsReq.TaskRunID != "" {
-		filterBy = append(filterBy, warehouseutils.FilterBy{Key: "metadata->>'source_task_run_id'", Value: pendingEventsReq.TaskRunID})
+	filters := []repo.FilterBy{
+		{Key: "source_id", Value: sourceID},
+		{Key: "metadata->>'source_task_run_id'", Value: taskRunID},
+		{Key: "status", NotEquals: true, Value: model.ExportedData},
+		{Key: "status", NotEquals: true, Value: model.Aborted},
 	}
 
-	pendingUploadCount, err = getPendingUploadCount(filterBy...)
+	pendingUploadCount, err = getFilteredCount(ctx, filters...)
+
 	if err != nil {
-		err := fmt.Errorf("error getting pending uploads : %v", err)
+		err := fmt.Errorf("getting pending uploads count: %v", err)
+		pkgLogger.Errorf("[WH]: %v", err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	filters = []repo.FilterBy{
+		{Key: "source_id", Value: sourceID},
+		{Key: "metadata->>'source_task_run_id'", Value: pendingEventsReq.TaskRunID},
+		{Key: "status", Value: "aborted"},
+	}
+
+	abortedUploadCount, err := getFilteredCount(ctx, filters...)
+	if err != nil {
+		err := fmt.Errorf("getting aborted uploads count : %v", err)
 		pkgLogger.Errorf("[WH]: %v", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -1255,6 +1271,7 @@ func pendingEventsHandler(w http.ResponseWriter, r *http.Request) {
 		PendingEvents:            pendingEvents,
 		PendingStagingFilesCount: pendingStagingFileCount,
 		PendingUploadCount:       pendingUploadCount,
+		AbortedEvents:            abortedUploadCount > 0,
 	}
 
 	resBody, err := json.Marshal(res)
@@ -1266,6 +1283,11 @@ func pendingEventsHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	_, _ = w.Write(resBody)
+}
+
+func getFilteredCount(ctx context.Context, filters ...repo.FilterBy) (int64, error) {
+	pkgLogger.Debugf("fetching filtered count")
+	return repo.NewUploads(dbHandle).Count(ctx, filters...)
 }
 
 func getPendingUploadCount(filters ...warehouseutils.FilterBy) (uploadCount int64, err error) {
