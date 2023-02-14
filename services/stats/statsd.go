@@ -17,10 +17,12 @@ import (
 
 // statsdStats is the statsd-specific implementation of Stats
 type statsdStats struct {
-	config       statsConfig
-	statsdConfig statsdConfig
-	state        *statsdState
-	logger       logger.Logger
+	config                     statsConfig
+	statsdConfig               statsdConfig
+	state                      *statsdState
+	logger                     logger.Logger
+	backgroundCollectionCtx    context.Context
+	backgroundCollectionCancel func()
 }
 
 func (s *statsdStats) Start(ctx context.Context) (err error) {
@@ -103,11 +105,11 @@ func (s *statsdStats) collectPeriodicStats() {
 		wg.Add(2)
 		go func() {
 			defer wg.Done()
-			s.state.rc.run(context.TODO())
+			s.state.rc.run(s.backgroundCollectionCtx)
 		}()
 		go func() {
 			defer wg.Done()
-			s.state.mc.run(context.TODO())
+			s.state.mc.run(s.backgroundCollectionCtx)
 		}()
 		wg.Wait()
 	}
@@ -117,14 +119,21 @@ func (s *statsdStats) collectPeriodicStats() {
 func (s *statsdStats) Stop() {
 	s.state.clientsLock.RLock()
 	defer s.state.clientsLock.RUnlock()
+
 	if !s.config.enabled || !s.state.connEstablished {
 		return
 	}
+
+	s.backgroundCollectionCancel()
+	if !s.config.periodicStatsConfig.enabled {
+		return
+	}
+
 	if s.state.rc.done != nil {
-		close(s.state.rc.done)
+		<-s.state.rc.done
 	}
 	if s.state.mc.done != nil {
-		close(s.state.mc.done)
+		<-s.state.mc.done
 	}
 }
 

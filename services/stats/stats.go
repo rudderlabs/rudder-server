@@ -91,9 +91,13 @@ func NewStats(
 		}
 	}
 
+	backgroundCollectionCtx, backgroundCollectionCancel := context.WithCancel(context.Background())
+
 	return &statsdStats{
-		config: statsConfig,
-		logger: loggerFactory.NewLogger().Child("stats"),
+		config:                     statsConfig,
+		logger:                     loggerFactory.NewLogger().Child("stats"),
+		backgroundCollectionCtx:    backgroundCollectionCtx,
+		backgroundCollectionCancel: backgroundCollectionCancel,
 		statsdConfig: statsdConfig{
 			tagsFormat:          config.GetString("statsTagsFormat", "influxdb"),
 			statsdServerURL:     config.GetString("STATSD_SERVER_URL", "localhost:8125"),
