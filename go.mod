@@ -59,7 +59,7 @@ require (
 	github.com/rs/cors v1.7.0
 	github.com/rudderlabs/analytics-go v3.3.1+incompatible
 	github.com/rudderlabs/sql-tunnels v0.1.2
-	github.com/samber/lo v1.35.0
+	github.com/samber/lo v1.37.0
 	github.com/segmentio/kafka-go v0.4.35
 	github.com/shirou/gopsutil/v3 v3.23.1
 	github.com/snowflakedb/gosnowflake v1.6.13
