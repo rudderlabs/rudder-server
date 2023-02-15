@@ -124,7 +124,6 @@ func TestUploads_Count(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, int64(2), count)
 	})
-
 }
 
 func TestUploads_Get(t *testing.T) {

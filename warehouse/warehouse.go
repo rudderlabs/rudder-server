@@ -1161,8 +1161,8 @@ func pendingEventsHandler(w http.ResponseWriter, r *http.Request) {
 	sourceID, taskRunID := pendingEventsReq.SourceID, pendingEventsReq.TaskRunID
 	// return error if source id is empty
 	if sourceID == "" || taskRunID == "" {
-		pkgLogger.Errorf("[WH]: pending-events:  Empty source_id or task_run_id ")
-		http.Error(w, "empty source id", http.StatusBadRequest)
+		pkgLogger.Errorf("empty source_id or task_run_id in the pending events request")
+		http.Error(w, "empty source_id or task_run_id", http.StatusBadRequest)
 		return
 	}
 
@@ -1205,9 +1205,10 @@ func pendingEventsHandler(w http.ResponseWriter, r *http.Request) {
 	pendingUploadCount, err = getFilteredCount(ctx, filters...)
 
 	if err != nil {
-		err := fmt.Errorf("getting pending uploads count: %v", err)
-		pkgLogger.Errorf("[WH]: %v", err)
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		pkgLogger.Errorf("getting pending uploads count", "error", err)
+		http.Error(w, fmt.Sprintf(
+			"getting pending uploads count: %s", err.Error()),
+			http.StatusInternalServerError)
 		return
 	}
 
@@ -1219,9 +1220,8 @@ func pendingEventsHandler(w http.ResponseWriter, r *http.Request) {
 
 	abortedUploadCount, err := getFilteredCount(ctx, filters...)
 	if err != nil {
-		err := fmt.Errorf("getting aborted uploads count : %v", err)
-		pkgLogger.Errorf("[WH]: %v", err)
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		pkgLogger.Errorf("getting aborted uploads count", "error", err.Error())
+		http.Error(w, fmt.Sprintf("getting aborted uploads count: %s", err), http.StatusInternalServerError)
 		return
 	}
 
