@@ -7,6 +7,8 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/warehouse/logfield"
+
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
 
 	"github.com/rudderlabs/rudder-server/config"
@@ -170,11 +172,11 @@ func (wh *HandleT) Track(ctx context.Context, warehouse *warehouseutils.Warehous
 
 	if !exists {
 		wh.Logger.Warnw("pending staging files not picked",
-			warehouseutils.SourceID, source.ID,
-			warehouseutils.SourceType, source.SourceDefinition.Name,
-			warehouseutils.DestinationID, destination.ID,
-			warehouseutils.DestinationType, destination.DestinationDefinition.Name,
-			warehouseutils.WorkspaceID, warehouse.WorkspaceID,
+			logfield.SourceID, source.ID,
+			logfield.SourceType, source.SourceDefinition.Name,
+			logfield.DestinationID, destination.ID,
+			logfield.DestinationType, destination.DestinationDefinition.Name,
+			logfield.WorkspaceID, warehouse.WorkspaceID,
 		)
 		wh.stats.NewTaggedStat(statKey, stats.GaugeType, tags).Gauge(1)
 	}

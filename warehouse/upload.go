@@ -11,6 +11,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/warehouse/logfield"
+
 	"github.com/rudderlabs/rudder-server/services/alerta"
 
 	schemarepository "github.com/rudderlabs/rudder-server/warehouse/integrations/datalake/schema-repository"
@@ -34,6 +36,7 @@ import (
 	"github.com/rudderlabs/rudder-server/warehouse/internal/loadfiles"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/repo"
+	"github.com/rudderlabs/rudder-server/warehouse/internal/service"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 	"github.com/rudderlabs/rudder-server/warehouse/validations"
 )
@@ -80,6 +83,7 @@ type UploadJobFactory struct {
 	dbHandle             *sql.DB
 	destinationValidator validations.DestinationValidator
 	loadFile             *loadfiles.LoadFileGenerator
+	recovery             *service.Recovery
 	pgNotifier           *pgnotifier.PgNotifierT
 	stats                stats.Stats
 }
@@ -88,7 +92,8 @@ type UploadJobT struct {
 	dbHandle             *sql.DB
 	destinationValidator validations.DestinationValidator
 	loadfile             *loadfiles.LoadFileGenerator
-	whManager            manager.ManagerI
+	recovery             *service.Recovery
+	whManager            manager.Manager
 	pgNotifier           *pgnotifier.PgNotifierT
 	schemaHandle         *SchemaHandleT
 	stats                stats.Stats
@@ -104,6 +109,8 @@ type UploadJobT struct {
 	tableUploadStatuses       []*TableUploadStatusT
 	RefreshPartitionBatchSize int
 	AlertSender               alerta.AlertSender
+
+	ErrorHandler ErrorHandler
 }
 
 type UploadColumnT struct {
@@ -162,10 +169,11 @@ func setMaxParallelLoads() {
 	}
 }
 
-func (f *UploadJobFactory) NewUploadJob(dto *model.UploadJob, whManager manager.ManagerI) *UploadJobT {
+func (f *UploadJobFactory) NewUploadJob(dto *model.UploadJob, whManager manager.Manager) *UploadJobT {
 	return &UploadJobT{
 		dbHandle:             f.dbHandle,
 		loadfile:             f.loadFile,
+		recovery:             f.recovery,
 		pgNotifier:           f.pgNotifier,
 		whManager:            whManager,
 		destinationValidator: validations.NewDestinationValidator(),
@@ -184,6 +192,8 @@ func (f *UploadJobFactory) NewUploadJob(dto *model.UploadJob, whManager manager.
 		AlertSender: alerta.NewClient(
 			config.GetString("ALERTA_URL", "https://alerta.rudderstack.com/api/"),
 		),
+
+		ErrorHandler: ErrorHandler{whManager},
 	}
 }
 
@@ -361,6 +371,12 @@ func (job *UploadJobT) run() (err error) {
 		return err
 	}
 	defer whManager.Cleanup()
+
+	err = job.recovery.Recover(context.TODO(), whManager, job.warehouse)
+	if err != nil {
+		job.setUploadError(err, InternalProcessingFailed)
+		return err
+	}
 
 	hasSchemaChanged, err := job.syncRemoteSchema()
 	if err != nil {
@@ -557,7 +573,6 @@ func (job *UploadJobT) run() (err error) {
 		}
 
 		if err != nil {
-			pkgLogger.Errorf("[WH] Upload: %d, TargetState: %s, NewState: %s, Error: %v", job.upload.ID, targetStatus, newStatus, err.Error())
 			state, err := job.setUploadError(err, newStatus)
 			if err == nil && state == model.Aborted {
 				job.generateUploadAbortedMetrics()
@@ -1069,9 +1084,7 @@ func (job *UploadJobT) getTotalCount(tName string) (int64, error) {
 	expBackoff.Reset()
 
 	backoffWithMaxRetry := backoff.WithMaxRetries(expBackoff, 5)
-	err := backoff.RetryNotify(operation, backoffWithMaxRetry, func(err error, t time.Duration) {
-		pkgLogger.Errorf(`Error getting total count in table:%s error: %v`, tName, err)
-	})
+	err := backoff.Retry(operation, backoffWithMaxRetry)
 	return total, err
 }
 
@@ -1098,7 +1111,14 @@ func (job *UploadJobT) loadTable(tName string) (alteredSchema bool, err error) {
 		var errTotalCount error
 		totalBeforeLoad, errTotalCount = job.getTotalCount(tName)
 		if errTotalCount != nil {
-			pkgLogger.Errorf(`Error getting total count in table:%s before load: %v`, tName, errTotalCount)
+			pkgLogger.Warnw("total count in table before loading",
+				logfield.SourceID, job.upload.SourceID,
+				logfield.DestinationID, job.upload.DestinationID,
+				logfield.DestinationType, job.upload.DestinationType,
+				logfield.WorkspaceID, job.upload.WorkspaceID,
+				logfield.Error, errTotalCount,
+				logfield.TableName, tName,
+			)
 		}
 	}
 
@@ -1115,7 +1135,14 @@ func (job *UploadJobT) loadTable(tName string) (alteredSchema bool, err error) {
 		var errTotalCount error
 		totalAfterLoad, errTotalCount = job.getTotalCount(tName)
 		if errTotalCount != nil {
-			pkgLogger.Errorf(`Error getting total count in table:%s after load: %v`, tName, errTotalCount)
+			pkgLogger.Warnw("total count in table after loading",
+				logfield.SourceID, job.upload.SourceID,
+				logfield.DestinationID, job.upload.DestinationID,
+				logfield.DestinationType, job.upload.DestinationType,
+				logfield.WorkspaceID, job.upload.WorkspaceID,
+				logfield.Error, errTotalCount,
+				logfield.TableName, tName,
+			)
 			return
 		}
 		eventsInTableUpload, errEventCount := tableUpload.getTotalEvents()
@@ -1124,9 +1151,9 @@ func (job *UploadJobT) loadTable(tName string) (alteredSchema bool, err error) {
 		}
 
 		// TODO : Perform the comparison here in the codebase
-		job.guageStat(`pre_load_table_rows`, tag{name: "tableName", value: strings.ToLower(tName)}).Gauge(int(totalBeforeLoad))
-		job.guageStat(`post_load_table_rows_estimate`, tag{name: "tableName", value: strings.ToLower(tName)}).Gauge(int(totalBeforeLoad + eventsInTableUpload))
-		job.guageStat(`post_load_table_rows`, tag{name: "tableName", value: strings.ToLower(tName)}).Gauge(int(totalAfterLoad))
+		job.guageStat(`pre_load_table_rows`, Tag{Name: "tableName", Value: strings.ToLower(tName)}).Gauge(int(totalBeforeLoad))
+		job.guageStat(`post_load_table_rows_estimate`, Tag{Name: "tableName", Value: strings.ToLower(tName)}).Gauge(int(totalBeforeLoad + eventsInTableUpload))
+		job.guageStat(`post_load_table_rows`, Tag{Name: "tableName", Value: strings.ToLower(tName)}).Gauge(int(totalAfterLoad))
 	}()
 
 	tableUpload.setStatus(TableUploadExported)
@@ -1157,8 +1184,8 @@ func (job *UploadJobT) columnCountStat(tableName string) {
 		return
 	}
 
-	tags := []tag{
-		{name: "tableName", value: strings.ToLower(tableName)},
+	tags := []Tag{
+		{Name: "tableName", Value: strings.ToLower(tableName)},
 	}
 	currentColumnsCount := len(job.schemaHandle.schemaInWarehouse[tableName])
 
@@ -1326,41 +1353,10 @@ func (job *UploadJobT) processLoadTableResponse(errorMap map[string]error) (erro
 	return errors, tableUploadErr
 }
 
-// getUploadTimings returns timings json column
-// e.g. timings: [{exporting_data: 2020-04-21 15:16:19.687716, exported_data: 2020-04-21 15:26:34.344356}]
-func (job *UploadJobT) getUploadTimings() (model.Timings, error) {
-	var (
-		rawJSON json.RawMessage
-		timings model.Timings
-	)
-	sqlStatement := fmt.Sprintf(`
-		SELECT
-		  timings
-		FROM
-		  %s
-		WHERE
-		  id = %d;
-`,
-		warehouseutils.WarehouseUploadsTable,
-		job.upload.ID,
-	)
-	err := job.dbHandle.QueryRow(sqlStatement).Scan(&rawJSON)
-	if err != nil {
-		return timings, err
-	}
-
-	err = json.Unmarshal(rawJSON, &timings)
-	if err != nil {
-		return timings, err
-	}
-
-	return timings, nil
-}
-
 // getNewTimings appends current status with current time to timings column
 // e.g. status: exported_data, timings: [{exporting_data: 2020-04-21 15:16:19.687716] -> [{exporting_data: 2020-04-21 15:16:19.687716, exported_data: 2020-04-21 15:26:34.344356}]
 func (job *UploadJobT) getNewTimings(status string) ([]byte, model.Timings) {
-	timings, err := job.getUploadTimings()
+	timings, err := repo.NewUploads(job.dbHandle).UploadTimings(context.TODO(), job.upload.ID)
 	if err != nil {
 		pkgLogger.Error("error getting timing, scrapping them", err)
 	}
@@ -1402,6 +1398,7 @@ type UploadStatusOpts struct {
 
 func (job *UploadJobT) setUploadStatus(statusOpts UploadStatusOpts) (err error) {
 	pkgLogger.Debugf("[WH]: Setting status of %s for wh_upload:%v", statusOpts.Status, job.upload.ID)
+	// TODO: fetch upload model instead of just timings
 	marshalledTimings, timings := job.getNewTimings(statusOpts.Status)
 	opts := []UploadColumnT{
 		{Column: UploadStatusField, Value: statusOpts.Status},
@@ -1597,7 +1594,23 @@ func (job *UploadJobT) Aborted(attempts int, startTime time.Time) bool {
 }
 
 func (job *UploadJobT) setUploadError(statusError error, state string) (string, error) {
-	pkgLogger.Errorf("[WH]: Failed during %s stage: %v\n", state, statusError.Error())
+	defer func() {
+		pkgLogger.Warnw("upload error",
+			logfield.UploadJobID, job.upload.ID,
+			logfield.UploadStatus, state,
+			logfield.SourceID, job.upload.SourceID,
+			logfield.DestinationID, job.upload.DestinationID,
+			logfield.DestinationType, job.upload.DestinationType,
+			logfield.WorkspaceID, job.upload.WorkspaceID,
+			logfield.Namespace, job.upload.Namespace,
+			logfield.Error, statusError,
+			logfield.UseRudderStorage, job.upload.UseRudderStorage,
+			logfield.Priority, job.upload.Priority,
+			logfield.Retried, job.upload.Retried,
+			logfield.Attempt, job.upload.Attempts,
+			logfield.LoadFileType, job.upload.LoadFileType,
+		)
+	}()
 
 	job.counterStat(fmt.Sprintf("error_%s", state)).Count(1)
 	upload := job.upload
@@ -1713,7 +1726,7 @@ func (job *UploadJobT) setUploadError(statusError error, state string) (string, 
 	attempts := job.getAttemptNumber()
 
 	if !job.hasAllTablesSkipped {
-		job.counterStat("warehouse_failed_uploads", tag{name: "attempt_number", value: strconv.Itoa(attempts)}).Count(1)
+		job.counterStat("warehouse_failed_uploads", Tag{Name: "attempt_number", Value: strconv.Itoa(attempts)}).Count(1)
 	}
 
 	// On aborted state, validate credentials to allow
@@ -1721,10 +1734,14 @@ func (job *UploadJobT) setUploadError(statusError error, state string) (string, 
 	if state == model.Aborted {
 		// base tag to be sent as stat
 
-		tags := []tag{{name: "attempt_number", value: strconv.Itoa(attempts)}}
+		errorTags := job.ErrorHandler.MatchErrorMappings(statusError)
+
+		tags := []Tag{{Name: "attempt_number", Value: strconv.Itoa(attempts)}}
+		tags = append(tags, errorTags)
+
 		valid, err := job.validateDestinationCredentials()
 		if err == nil {
-			tags = append(tags, tag{name: "destination_creds_valid", value: strconv.FormatBool(valid)})
+			tags = append(tags, Tag{Name: "destination_creds_valid", Value: strconv.FormatBool(valid)})
 		}
 
 		job.counterStat("upload_aborted", tags...).Count(1)
@@ -2021,14 +2038,6 @@ func getInProgressState(state string) string {
 		panic(fmt.Errorf("invalid Upload state: %s", state))
 	}
 	return uploadState.inProgress
-}
-
-func getFailedState(state string) string {
-	uploadState, ok := stateTransitions[state]
-	if !ok {
-		panic(fmt.Errorf("invalid Upload state : %s", state))
-	}
-	return uploadState.failed
 }
 
 func initializeStateMachine() {

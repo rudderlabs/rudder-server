@@ -21,9 +21,22 @@ const (
 	CreatedRemoteSchema       = "created_remote_schema"
 	ExportedUserTables        = "exported_user_tables"
 	ExportedData              = "exported_data"
+	ExportingData             = "exporting_data"
+	ExportingDataFailed       = "exporting_data_failed"
 	ExportedIdentities        = "exported_identities"
 	Aborted                   = "aborted"
 	Failed                    = "failed"
+)
+
+const (
+	PermissionError           JobErrorType = "permission_error"
+	AlterColumnError          JobErrorType = "alter_column_error"
+	ResourceNotFoundError     JobErrorType = "resource_not_found_error"
+	ColumnCountError          JobErrorType = "column_count_error"
+	ColumnSizeError           JobErrorType = "column_size_error"
+	InsufficientResourceError JobErrorType = "insufficient_resource_error"
+	ConcurrentQueriesError    JobErrorType = "concurrent_queries_error"
+	UnknownError              JobErrorType = "unknown_error"
 )
 
 var ErrUploadNotFound = errors.New("upload not found")
@@ -80,6 +93,17 @@ type UploadJob struct {
 	Upload               Upload
 	StagingFiles         []*StagingFile
 	LoadFileGenStartTime time.Time
+}
+
+type Matcher interface {
+	MatchString(string) bool
+}
+
+type JobErrorType string
+
+type JobError struct {
+	Type   JobErrorType
+	Format Matcher
 }
 
 func GetLastFailedStatus(timingsMap Timings) (status string) {

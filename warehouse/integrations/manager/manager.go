@@ -23,7 +23,7 @@ import (
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
-type ManagerI interface {
+type Manager interface {
 	Setup(warehouse warehouseutils.Warehouse, uploader warehouseutils.UploaderI) error
 	CrashRecover(warehouse warehouseutils.Warehouse) (err error)
 	FetchSchema(warehouse warehouseutils.Warehouse) (warehouseutils.SchemaT, warehouseutils.SchemaT, error)
@@ -43,6 +43,7 @@ type ManagerI interface {
 	Connect(warehouse warehouseutils.Warehouse) (client.Client, error)
 	LoadTestTable(location, stagingTableName string, payloadMap map[string]interface{}, loadFileFormat string) error
 	SetConnectionTimeout(timeout time.Duration)
+	ErrorMappings() []model.JobError
 }
 
 type WarehouseDelete interface {
@@ -51,12 +52,12 @@ type WarehouseDelete interface {
 }
 
 type WarehouseOperations interface {
-	ManagerI
+	Manager
 	WarehouseDelete
 }
 
-// New is a Factory function that returns a ManagerI of a given destination-type
-func New(destType string) (ManagerI, error) {
+// New is a Factory function that returns a Manager of a given destination-type
+func New(destType string) (Manager, error) {
 	switch destType {
 	case warehouseutils.RS:
 		rs := redshift.NewRedshift()
