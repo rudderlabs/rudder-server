@@ -451,6 +451,10 @@ func (lut *LoadUsersTable) Load(ctx context.Context, identifiesSchema, usersSche
 				warehouseutils.UsersTable:      fmt.Errorf("loading users table: %w", err),
 			}
 		}
+		return map[string]error{
+			warehouseutils.IdentifiesTable: nil,
+			warehouseutils.UsersTable:      nil,
+		}
 	}
 
 	var (
