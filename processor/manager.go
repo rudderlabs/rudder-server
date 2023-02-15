@@ -85,7 +85,7 @@ func WithFeaturesRetryMaxAttempts(maxAttempts int) func(l *LifecycleManager) {
 func New(ctx context.Context, clearDb *bool, gwDb, rtDb, brtDb, errDb *jobsdb.HandleT,
 	tenantDB multitenant.MultiTenantI, reporting types.ReportingI, transientSources transientsource.Service, fileuploader fileuploader.Provider,
 	rsourcesService rsources.JobService, destDebugger destinationdebugger.DestinationDebugger, transDebugger transformationdebugger.TransformationDebugger,
-	opts ...func(l *LifecycleManager),
+	opts ...Opts,
 ) *LifecycleManager {
 	proc := &LifecycleManager{
 		Handle:           NewHandle(transformer.NewTransformer()),
@@ -108,4 +108,12 @@ func New(ctx context.Context, clearDb *bool, gwDb, rtDb, brtDb, errDb *jobsdb.Ha
 		opt(proc)
 	}
 	return proc
+}
+
+type Opts func(l *LifecycleManager)
+
+func WithAdaptiveLimit(adaptiveLimitFunction func(int64) int64) Opts {
+	return func(l *LifecycleManager) {
+		l.Handle.adaptiveLimit = adaptiveLimitFunction
+	}
 }

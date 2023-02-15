@@ -125,6 +125,8 @@ type Handle struct {
 		GWCustomVal               string
 		asyncInit                 *misc.AsyncInit
 	}
+
+	adaptiveLimit func(int64) int64
 }
 
 type processorStats struct {
@@ -348,6 +350,10 @@ func (proc *Handle) Setup(
 	proc.fileuploader = fileuploader
 	proc.rsourcesService = rsourcesService
 
+	if proc.adaptiveLimit == nil {
+		proc.adaptiveLimit = func(limit int64) int64 { return limit }
+	}
+
 	// Stats
 	proc.statsFactory = stats.Default
 	proc.stats.userTransformEventsByTimeTaken = make([]*TransformRequestT, 0, proc.config.transformTimesPQLength)
@@ -450,7 +456,12 @@ func (proc *Handle) Start(ctx context.Context) error {
 
 	g.Go(misc.WithBugsnag(func() error {
 		st := stash.New()
-		st.Setup(proc.errorDB, proc.transientSources, proc.fileuploader)
+		st.Setup(
+			proc.errorDB,
+			proc.transientSources,
+			proc.fileuploader,
+			proc.adaptiveLimit,
+		)
 		st.Start(ctx)
 		return nil
 	}))
@@ -2184,7 +2195,7 @@ func (proc *Handle) getJobs() jobsdb.JobsResult {
 			CustomValFilters: []string{proc.config.GWCustomVal},
 			JobsLimit:        proc.config.maxEventsToProcess,
 			EventsLimit:      eventCount,
-			PayloadSizeLimit: proc.payloadLimit,
+			PayloadSizeLimit: proc.adaptiveLimit(proc.payloadLimit),
 		})
 	}, proc.sendQueryRetryStats)
 	if err != nil {

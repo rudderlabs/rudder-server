@@ -66,18 +66,25 @@ type HandleT struct {
 	jobsDBCommandTimeout      time.Duration
 	jobdDBQueryRequestTimeout time.Duration
 	jobdDBMaxRetries          int
+	adaptiveLimit             func(int64) int64
 }
 
 func New() *HandleT {
 	return &HandleT{}
 }
 
-func (st *HandleT) Setup(errorDB jobsdb.JobsDB, transientSource transientsource.Service, fileuploader fileuploader.Provider) {
+func (st *HandleT) Setup(
+	errorDB jobsdb.JobsDB,
+	transientSource transientsource.Service,
+	fileuploader fileuploader.Provider,
+	adaptiveLimitFunc func(int64) int64,
+) {
 	st.logger = pkgLogger
 	st.errorDB = errorDB
 	st.statErrDBR = stats.Default.NewStat("processor.err_db_read_time", stats.TimerType)
 	st.transientSource = transientSource
 	st.fileuploader = fileuploader
+	st.adaptiveLimit = adaptiveLimitFunc
 	config.RegisterIntConfigVariable(3, &st.jobdDBMaxRetries, true, 1, []string{"JobsDB.Processor.MaxRetries", "JobsDB.MaxRetries"}...)
 	config.RegisterDurationConfigVariable(60, &st.jobdDBQueryRequestTimeout, true, time.Second, []string{"JobsDB.Processor.QueryRequestTimeout", "JobsDB.QueryRequestTimeout"}...)
 	config.RegisterDurationConfigVariable(90, &st.jobsDBCommandTimeout, true, time.Second, []string{"JobsDB.Processor.CommandRequestTimeout", "JobsDB.CommandRequestTimeout"}...)
@@ -308,7 +315,7 @@ func (st *HandleT) readErrJobsLoop(ctx context.Context) {
 				CustomValFilters:              []string{""},
 				IgnoreCustomValFiltersInQuery: true,
 				JobsLimit:                     errDBReadBatchSize,
-				PayloadSizeLimit:              payloadLimit,
+				PayloadSizeLimit:              st.adaptiveLimit(payloadLimit),
 			}
 			toRetry, err := misc.QueryWithRetriesAndNotify(ctx, st.jobdDBQueryRequestTimeout, st.jobdDBMaxRetries, func(ctx context.Context) (jobsdb.JobsResult, error) {
 				return st.errorDB.GetToRetry(ctx, queryParams)

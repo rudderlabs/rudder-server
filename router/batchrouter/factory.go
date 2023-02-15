@@ -19,11 +19,24 @@ type Factory struct {
 	TransientSources transientsource.Service
 	RsourcesService  rsources.JobService
 	Debugger         destinationdebugger.DestinationDebugger
+	AdaptiveLimit    func(int64) int64
 }
 
 func (f *Factory) New(destType string) *HandleT {
-	r := &HandleT{}
+	r := &HandleT{
+		adaptiveLimit: f.AdaptiveLimit,
+	}
 
-	r.Setup(f.BackendConfig, f.RouterDB, f.ProcErrorDB, destType, f.Reporting, f.Multitenant, f.TransientSources, f.RsourcesService, f.Debugger)
+	r.Setup(
+		f.BackendConfig,
+		f.RouterDB,
+		f.ProcErrorDB,
+		destType,
+		f.Reporting,
+		f.Multitenant,
+		f.TransientSources,
+		f.RsourcesService,
+		f.Debugger,
+	)
 	return r
 }
