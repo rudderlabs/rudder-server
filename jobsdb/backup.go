@@ -495,9 +495,11 @@ func getStatusBackupQueryFn(backupDSRange *dataSetRangeT) func(int64) string {
 }
 
 func (jd *HandleT) createTableDumps(queryFunc func(int64) string, pathFunc func(string) (string, error), totalCount int64) (map[string]string, error) {
+	defer jd.getTimerStat(
+		"table_FileDump_TimeStat",
+		&statTags{CustomValFilters: []string{jd.tablePrefix}},
+	).RecordDuration()()
 	filesWriter := fileuploader.NewGzMultiFileWriter()
-	tableFileDumpTimeStat := stats.Default.NewTaggedStat("table_FileDump_TimeStat", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix})
-	tableFileDumpTimeStat.Start()
 
 	var offset int64
 	dumps := make(map[string]string)
@@ -522,6 +524,7 @@ func (jd *HandleT) createTableDumps(queryFunc func(int64) string, pathFunc func(
 			}
 			if !preferences.Backup(jd.tablePrefix) {
 				offset++
+				jd.logger.Infof("Skipping backup for workspace: %s. Preferences: %v and tablePrefix: %s", workspaceID, preferences, jd.tablePrefix)
 				continue
 			}
 			rawJSONRows = append(rawJSONRows, '\n') // appending '\n'
@@ -557,13 +560,14 @@ func (jd *HandleT) createTableDumps(queryFunc func(int64) string, pathFunc func(
 	if err != nil {
 		return dumps, err
 	}
-	tableFileDumpTimeStat.End()
 	return dumps, nil
 }
 
 func (jd *HandleT) uploadTableDump(ctx context.Context, workspaceID, path string) error {
-	fileUploadTimeStat := stats.Default.NewTaggedStat("fileUpload_TimeStat", stats.TimerType, stats.Tags{"customVal": jd.tablePrefix})
-	fileUploadTimeStat.Start()
+	defer jd.getTimerStat(
+		"fileUpload_TimeStat",
+		&statTags{CustomValFilters: []string{jd.tablePrefix}},
+	).RecordDuration()()
 
 	file, err := os.Open(path)
 	if err != nil {
@@ -585,8 +589,7 @@ func (jd *HandleT) uploadTableDump(ctx context.Context, workspaceID, path string
 		jd.logger.Errorf("[JobsDB] :: Failed to upload table dump for workspaceId %s. Error: %s", workspaceID, err.Error())
 		return err
 	}
-	jd.logger.Infof("[JobsDB] :: Backed up table at %v", output.Location)
-	fileUploadTimeStat.End()
+	jd.logger.Infof("[JobsDB] :: Backed up table at %s for workspaceId %s", output.Location, workspaceID)
 	return nil
 }
 

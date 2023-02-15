@@ -7,6 +7,8 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/warehouse/logfield"
+
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
 
 	"github.com/rudderlabs/rudder-server/config"
@@ -53,7 +55,6 @@ func (wh *HandleT) Track(ctx context.Context, warehouse *warehouseutils.Warehous
 		queryArgs         []interface{}
 		createdAt         sql.NullTime
 		exists            bool
-		uploaded          int
 		syncFrequency     = "1440"
 		Now               = timeutil.Now
 		NowSQL            = "NOW()"
@@ -69,6 +70,19 @@ func (wh *HandleT) Track(ctx context.Context, warehouse *warehouseutils.Warehous
 	if wh.Now != nil {
 		Now = wh.Now
 	}
+
+	tags := stats.Tags{
+		"workspaceId": warehouse.WorkspaceID,
+		"module":      moduleName,
+		"destType":    wh.destType,
+		"warehouseID": misc.GetTagName(
+			destination.ID,
+			source.Name,
+			destination.Name,
+			misc.TailTruncateStr(source.ID, 6)),
+	}
+	statKey := "warehouse_track_upload_missing"
+	wh.stats.NewTaggedStat(statKey, stats.GaugeType, tags).Gauge(0)
 
 	if !source.Enabled || !destination.Enabled {
 		return nil
@@ -156,20 +170,16 @@ func (wh *HandleT) Track(ctx context.Context, warehouse *warehouseutils.Warehous
 		return fmt.Errorf("fetching last upload status for source: %s and destination: %s: %w", source.ID, destination.ID, err)
 	}
 
-	if exists {
-		uploaded = 1
+	if !exists {
+		wh.Logger.Warnw("pending staging files not picked",
+			logfield.SourceID, source.ID,
+			logfield.SourceType, source.SourceDefinition.Name,
+			logfield.DestinationID, destination.ID,
+			logfield.DestinationType, destination.DestinationDefinition.Name,
+			logfield.WorkspaceID, warehouse.WorkspaceID,
+		)
+		wh.stats.NewTaggedStat(statKey, stats.GaugeType, tags).Gauge(1)
 	}
 
-	tags := stats.Tags{
-		"workspaceId": warehouse.WorkspaceID,
-		"module":      moduleName,
-		"destType":    wh.destType,
-		"warehouseID": misc.GetTagName(
-			destination.ID,
-			source.Name,
-			destination.Name,
-			misc.TailTruncateStr(source.ID, 6)),
-	}
-	wh.stats.NewTaggedStat("warehouse_successful_upload_exists", stats.CountType, tags).Count(uploaded)
 	return nil
 }

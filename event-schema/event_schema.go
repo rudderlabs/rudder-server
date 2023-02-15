@@ -313,8 +313,7 @@ func (manager *EventSchemaManagerT) handleEvent(writeKey string, event EventT) {
 	}
 
 	processingTimer := stats.Default.NewTaggedStat("archive_event_model", stats.TimerType, stats.Tags{"module": "event_schemas", "writeKey": writeKey, "eventIdentifier": eventIdentifier})
-	processingTimer.Start()
-	defer processingTimer.End()
+	defer processingTimer.RecordDuration()()
 
 	// TODO: Create locks on every event_model to improve scaling this
 	manager.eventModelLock.Lock()
@@ -1147,8 +1146,7 @@ func (manager *EventSchemaManagerT) Setup() {
 			defer setEventSchemasPopulated(true)
 
 			populateESTimer := stats.Default.NewTaggedStat("populate_event_schemas", stats.TimerType, stats.Tags{"module": "event_schemas"})
-			populateESTimer.Start()
-			defer populateESTimer.End()
+			defer populateESTimer.RecordDuration()()
 
 			manager.populateEventSchemas()
 		})

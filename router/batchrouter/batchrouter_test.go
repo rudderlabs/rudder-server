@@ -5,17 +5,19 @@ import (
 	jsonb "encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 	"time"
 
-	"github.com/stretchr/testify/require"
+	destinationdebugger "github.com/rudderlabs/rudder-server/services/debugger/destination"
 
 	"github.com/golang/mock/gomock"
 	"github.com/google/uuid"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"github.com/stretchr/testify/require"
 
 	"github.com/rudderlabs/rudder-server/admin"
 	"github.com/rudderlabs/rudder-server/config"
@@ -33,17 +35,12 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/pubsub"
 	testutils "github.com/rudderlabs/rudder-server/utils/tests"
+	"github.com/rudderlabs/rudder-server/warehouse/client"
 )
 
 const (
 	WriteKeyEnabled           = "enabled-write-key"
-	WriteKeyDisabled          = "disabled-write-key"
-	WriteKeyInvalid           = "invalid-write-key"
-	WriteKeyEmpty             = ""
 	SourceIDEnabled           = "enabled-source"
-	SourceIDDisabled          = "disabled-source"
-	TestRemoteAddressWithPort = "test.com:80"
-	TestRemoteAddress         = "test.com"
 	S3DestinationDefinitionID = "s3id1"
 	S3DestinationID           = "did1"
 )
@@ -168,7 +165,7 @@ var _ = Describe("BatchRouter", func() {
 
 			c.mockBatchRouterJobsDB.EXPECT().GetJournalEntries(gomock.Any()).Times(1).Return(emptyJournalEntries)
 
-			batchrouter.Setup(c.mockBackendConfig, c.mockBatchRouterJobsDB, c.mockProcErrorsDB, s3DestinationDefinition.Name, nil, c.mockMultitenantI, transientsource.NewEmptyService(), rsources.NewNoOpService())
+			batchrouter.Setup(c.mockBackendConfig, c.mockBatchRouterJobsDB, c.mockProcErrorsDB, s3DestinationDefinition.Name, nil, c.mockMultitenantI, transientsource.NewEmptyService(), rsources.NewNoOpService(), destinationdebugger.NewNoOpService())
 		})
 	})
 
@@ -181,7 +178,7 @@ var _ = Describe("BatchRouter", func() {
 		It("should send failed, unprocessed jobs to s3 destination", func() {
 			batchrouter := &HandleT{}
 
-			batchrouter.Setup(c.mockBackendConfig, c.mockBatchRouterJobsDB, c.mockProcErrorsDB, s3DestinationDefinition.Name, nil, c.mockMultitenantI, transientsource.NewEmptyService(), rsources.NewNoOpService())
+			batchrouter.Setup(c.mockBackendConfig, c.mockBatchRouterJobsDB, c.mockProcErrorsDB, s3DestinationDefinition.Name, nil, c.mockMultitenantI, transientsource.NewEmptyService(), rsources.NewNoOpService(), destinationdebugger.NewNoOpService())
 			readPerDestination = false
 			batchrouter.fileManagerFactory = c.mockFileManagerFactory
 
@@ -265,35 +262,6 @@ var _ = Describe("BatchRouter", func() {
 			<-batchrouter.backendConfigInitialized
 			batchrouter.readAndProcess()
 		})
-
-		// It("should split batchJobs based on timeWindow for s3 datalake destination", func() {
-
-		// 	batchJobs := BatchJobsT{
-		// 		Jobs: []*jobsdb.JobT{
-		// 			{
-		// 				EventPayload: json.RawMessage(`{"receivedAt": "2019-10-12T07:20:50.52Z"}`),
-		// 			},
-		// 			{
-		// 				EventPayload: json.RawMessage(`{"receivedAt": "2019-10-12T07:20:59.52Z"}`),
-		// 			},
-		// 			{
-		// 				EventPayload: json.RawMessage(`{"receivedAt": "2019-10-12T07:30:50.52Z"}`),
-		// 			},
-		// 			{
-		// 				EventPayload: json.RawMessage(`{"receivedAt": "2019-10-12T07:30:59.52Z"}`),
-		// 			},
-		// 			{
-		// 				EventPayload: json.RawMessage(`{"receivedAt": "2019-10-12T08:00:01.52Z"}`),
-		// 			},
-		// 		},
-		// 	}
-
-		// 	brt := &HandleT{destType: "S3_DATALAKE"}
-		// 	splitBatchJobs := brt.splitBatchJobsOnTimeWindow(batchJobs)
-		// 	for timeWindow, batchJob := range splitBatchJobs {
-		// 		fmt.Println(timeWindow, len(batchJob.Jobs))
-		// 	}
-		// })
 	})
 })
 
@@ -311,35 +279,49 @@ func assertJobStatus(job *jobsdb.JobT, status *jobsdb.JobStatusT, expectedState,
 func TestPostToWarehouse(t *testing.T) {
 	// TOT: Decouple this test from the actual warehouse
 	inputs := []struct {
-		name          string
-		responseCode  int
-		responseBody  string
-		expectedError error
+		name string
+
+		responseCode int
+		responseBody string
+
+		expectedPayload string
+		expectedError   error
 	}{
 		{
-			name:         "should successfully post to warehouse",
+			name: "should successfully post to warehouse",
+
 			responseBody: "OK",
 			responseCode: http.StatusOK,
+
+			expectedPayload: `{"WorkspaceID":"test-workspace","Schema":{"tracks":{"id":"string"}},"BatchDestination":{"Source":{"ID":""},"Destination":{"ID":""}},"Location":"","FirstEventAt":"","LastEventAt":"","TotalEvents":1,"TotalBytes":200,"UseRudderStorage":false,"DestinationRevisionID":"","SourceTaskRunID":"","SourceJobID":"","SourceJobRunID":"","TimeWindow":"0001-01-01T00:00:00Z"}`,
 		},
 		{
-			name:          "should fail to post to warehouse",
-			responseCode:  http.StatusNotFound,
-			responseBody:  "Not Found",
-			expectedError: errors.New("BRT: Failed to route staging file URL to warehouse service@%s/v1/process, status: 404 Not Found, body: Not Found"),
+			name: "should fail to post to warehouse",
+
+			responseCode: http.StatusNotFound,
+			responseBody: "Not Found",
+
+			expectedError: errors.New("unexpected status code \"404 Not Found\" on %s: Not Found"),
 		},
 	}
 	for _, input := range inputs {
 		t.Run(input.name, func(t *testing.T) {
 			ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				b, err := io.ReadAll(r.Body)
+				require.NoError(t, err)
+				if input.expectedPayload != "" {
+					require.JSONEq(t, input.expectedPayload, string(b))
+				}
+
 				w.WriteHeader(input.responseCode)
 				_, _ = w.Write([]byte(input.responseBody))
 			}))
 			t.Cleanup(ts.Close)
 
 			job := HandleT{
-				netHandle:    ts.Client(),
-				logger:       logger.NOP,
-				warehouseURL: ts.URL,
+				netHandle:       ts.Client(),
+				logger:          logger.NOP,
+				warehouseClient: client.NewWarehouse(ts.URL),
 			}
 			batchJobs := BatchJobsT{
 				Jobs: []*jobsdb.JobT{
@@ -361,7 +343,10 @@ func TestPostToWarehouse(t *testing.T) {
 				},
 				BatchDestination: &DestinationT{},
 			}
-			err := job.postToWarehouse(&batchJobs, StorageUploadOutput{})
+			err := job.postToWarehouse(&batchJobs, StorageUploadOutput{
+				TotalEvents: 1,
+				TotalBytes:  200,
+			})
 			if input.expectedError != nil {
 				require.Equal(t, fmt.Sprintf(input.expectedError.Error(), ts.URL), err.Error())
 			} else {

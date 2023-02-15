@@ -13,6 +13,7 @@ import (
 	"github.com/rudderlabs/rudder-server/testhelper/destination"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 
+	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
@@ -59,10 +60,12 @@ var _ = Describe("Stats", Ordered, func() {
 			mockMeasurement.EXPECT().Count(1).Times(1)
 
 			job = &UploadJobT{
-				upload: &Upload{
+				upload: model.Upload{
 					ID:                 uploadID,
-					StartStagingFileID: 1,
-					EndStagingFileID:   4,
+					StagingFileStartID: 1,
+					StagingFileEndID:   4,
+					SourceID:           "test-sourceID",
+					DestinationID:      "test-destinationID",
 				},
 				warehouse: warehouseutils.Warehouse{
 					Type: "POSTGRES",
@@ -87,11 +90,11 @@ var _ = Describe("Stats", Ordered, func() {
 		mockMeasurement.EXPECT().Since(gomock.Any()).Times(1)
 
 		job := &UploadJobT{
-			upload: &Upload{
+			upload: model.Upload{
 				WorkspaceID:        "workspaceID",
 				ID:                 uploadID,
-				StartStagingFileID: 1,
-				EndStagingFileID:   4,
+				StagingFileStartID: 1,
+				StagingFileEndID:   4,
 			},
 			warehouse: warehouseutils.Warehouse{
 				Type: "POSTGRES",
@@ -107,10 +110,10 @@ var _ = Describe("Stats", Ordered, func() {
 		mockMeasurement.EXPECT().SendTiming(gomock.Any()).Times(1)
 
 		job := &UploadJobT{
-			upload: &Upload{
+			upload: model.Upload{
 				ID:                 uploadID,
-				StartStagingFileID: 1,
-				EndStagingFileID:   4,
+				StagingFileStartID: 1,
+				StagingFileEndID:   4,
 			},
 			warehouse: warehouseutils.Warehouse{
 				Type: "POSTGRES",

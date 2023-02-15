@@ -33,10 +33,7 @@ func Test_Measurement_Invalid_Operations(t *testing.T) {
 			s.NewStat("test", stats.CountType).Observe(1.2)
 		})
 		require.Panics(t, func() {
-			s.NewStat("test", stats.CountType).Start()
-		})
-		require.Panics(t, func() {
-			s.NewStat("test", stats.CountType).End()
+			s.NewStat("test", stats.CountType).RecordDuration()
 		})
 		require.Panics(t, func() {
 			s.NewStat("test", stats.CountType).SendTiming(1)
@@ -57,10 +54,7 @@ func Test_Measurement_Invalid_Operations(t *testing.T) {
 			s.NewStat("test", stats.GaugeType).Observe(1.2)
 		})
 		require.Panics(t, func() {
-			s.NewStat("test", stats.GaugeType).Start()
-		})
-		require.Panics(t, func() {
-			s.NewStat("test", stats.GaugeType).End()
+			s.NewStat("test", stats.GaugeType).RecordDuration()
 		})
 		require.Panics(t, func() {
 			s.NewStat("test", stats.GaugeType).SendTiming(1)
@@ -81,10 +75,7 @@ func Test_Measurement_Invalid_Operations(t *testing.T) {
 			s.NewStat("test", stats.HistogramType).Gauge(1)
 		})
 		require.Panics(t, func() {
-			s.NewStat("test", stats.HistogramType).Start()
-		})
-		require.Panics(t, func() {
-			s.NewStat("test", stats.HistogramType).End()
+			s.NewStat("test", stats.HistogramType).RecordDuration()
 		})
 		require.Panics(t, func() {
 			s.NewStat("test", stats.HistogramType).SendTiming(1)
@@ -172,12 +163,13 @@ func Test_Measurement_Operations(t *testing.T) {
 		}, 2*time.Second, time.Millisecond)
 	})
 
-	t.Run("timer start end", func(t *testing.T) {
-		timer := s.NewStat("test-timer-3", stats.TimerType)
-		timer.Start()
-		timer.End()
+	t.Run("timer RecordDuration", func(t *testing.T) {
+		func() {
+			defer s.NewStat("test-timer-4", stats.TimerType).RecordDuration()()
+		}()
+
 		require.Eventually(t, func() bool {
-			return lastReceived == "test-timer-3,instanceName=test:0|ms"
+			return lastReceived == "test-timer-4,instanceName=test:0|ms"
 		}, 2*time.Second, time.Millisecond)
 	})
 
@@ -220,6 +212,22 @@ func Test_Measurement_Operations(t *testing.T) {
 			// playing with probabilities, we might or might not get the sample (0.5 -> 50% chance)
 			counterSampled.Increment()
 			return false
+		}, 2*time.Second, time.Millisecond)
+	})
+
+	t.Run("measurement with empty name", func(t *testing.T) {
+		s.NewStat("", stats.CountType).Increment()
+
+		require.Eventually(t, func() bool {
+			return lastReceived == "novalue,instanceName=test:1|c"
+		}, 2*time.Second, time.Millisecond)
+	})
+
+	t.Run("measurement with empty name and empty tag key", func(t *testing.T) {
+		s.NewTaggedStat(" ", stats.GaugeType, stats.Tags{"key": "value", "": "value2"}).Gauge(22)
+
+		require.Eventually(t, func() bool {
+			return lastReceived == "novalue,instanceName=test,key=value:22|g"
 		}, 2*time.Second, time.Millisecond)
 	})
 }

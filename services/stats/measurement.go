@@ -2,8 +2,11 @@ package stats
 
 import (
 	"fmt"
+	"runtime"
+	"strings"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/utils/logger"
 	"gopkg.in/alexcesaro/statsd.v2"
 )
 
@@ -25,10 +28,9 @@ type Histogram interface {
 
 // Timer represents a timer metric
 type Timer interface {
-	Start()
-	End()
 	SendTiming(duration time.Duration)
 	Since(start time.Time)
+	RecordDuration() func()
 }
 
 // Measurement provides all stat measurement functions
@@ -92,6 +94,11 @@ func (m *statsdMeasurement) Since(_ time.Time) {
 	panic(fmt.Errorf("operation Since not supported for measurement type:%s", m.statType))
 }
 
+// RecordDuration default behavior is to panic as not supported operation
+func (m *statsdMeasurement) RecordDuration() func() {
+	panic(fmt.Errorf("operation RecordDuration not supported for measurement type:%s", m.statType))
+}
+
 // statsdCounter represents a counter stat
 type statsdCounter struct {
 	*statsdMeasurement
@@ -128,7 +135,7 @@ func (g *statsdGauge) Gauge(value interface{}) {
 // statsdTimer represents a timer stat
 type statsdTimer struct {
 	*statsdMeasurement
-	timing statsd.Timing
+	timing *statsd.Timing
 }
 
 // Start starts a new timing for this stat. Only applies to TimerType stats
@@ -137,13 +144,14 @@ func (t *statsdTimer) Start() {
 	if t.skip() {
 		return
 	}
-	t.timing = t.client.statsd.NewTiming()
+	timing := t.client.statsd.NewTiming()
+	t.timing = &timing
 }
 
 // End send the time elapsed since the Start()  call of this stat. Only applies to TimerType stats
 // Deprecated: Use concurrent safe SendTiming() instead
 func (t *statsdTimer) End() {
-	if t.skip() {
+	if t.skip() || t.timing == nil {
 		return
 	}
 	t.timing.Send(t.name)
@@ -162,6 +170,16 @@ func (t *statsdTimer) SendTiming(duration time.Duration) {
 	t.client.statsd.Timing(t.name, int(duration/time.Millisecond))
 }
 
+// RecordDuration records the duration of time between
+// the call to this function and the execution of the function it returns.
+// Only applies to TimerType stats
+func (t *statsdTimer) RecordDuration() func() {
+	start := time.Now()
+	return func() {
+		t.Since(start)
+	}
+}
+
 // statsdHistogram represents a histogram stat
 type statsdHistogram struct {
 	*statsdMeasurement
@@ -176,7 +194,14 @@ func (h *statsdHistogram) Observe(value float64) {
 }
 
 // newStatsdMeasurement creates a new measurement of the specific type
-func newStatsdMeasurement(conf *statsdConfig, name, statType string, client *statsdClient) Measurement {
+func newStatsdMeasurement(conf *statsdConfig, log logger.Logger, name, statType string, client *statsdClient) Measurement {
+	if strings.Trim(name, " ") == "" {
+		byteArr := make([]byte, 2048)
+		n := runtime.Stack(byteArr, false)
+		stackTrace := string(byteArr[:n])
+		log.Warnf("detected missing stat measurement name, using 'novalue':\n%v", stackTrace)
+		name = "novalue"
+	}
 	baseMeasurement := &statsdMeasurement{
 		conf:     conf,
 		name:     name,

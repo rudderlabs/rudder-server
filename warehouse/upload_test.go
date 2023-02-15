@@ -3,9 +3,15 @@ package warehouse
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"testing"
 
+	"github.com/aws/smithy-go/time"
+	"github.com/rudderlabs/rudder-server/services/alerta"
+	"github.com/rudderlabs/rudder-server/warehouse/integrations/redshift"
+
+	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/services/stats/memstats"
 	"github.com/stretchr/testify/require"
@@ -17,6 +23,8 @@ import (
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/testhelper/destination"
 	"github.com/rudderlabs/rudder-server/utils/logger"
+	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
+	"github.com/rudderlabs/rudder-server/warehouse/internal/repo"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
@@ -129,7 +137,7 @@ func TestColumnCountStat(t *testing.T) {
 			}
 
 			j := UploadJobT{
-				upload: &Upload{
+				upload: model.Upload{
 					WorkspaceID:   workspaceID,
 					DestinationID: destinationID,
 					SourceID:      sourceID,
@@ -231,12 +239,12 @@ var _ = Describe("Upload", Ordered, func() {
 					Name: destinationName,
 				},
 			},
-			upload: &Upload{
+			upload: model.Upload{
 				ID:                 1,
 				DestinationID:      destinationID,
 				SourceID:           sourceID,
-				StartStagingFileID: 1,
-				EndStagingFileID:   5,
+				StagingFileStartID: 1,
+				StagingFileEndID:   5,
 				Namespace:          namespace,
 			},
 			stagingFileIDs: []int64{1, 2, 3, 4, 5},
@@ -250,7 +258,8 @@ var _ = Describe("Upload", Ordered, func() {
 	})
 
 	It("Total rows in staging files", func() {
-		count := job.getTotalRowsInStagingFiles()
+		count, err := repo.NewStagingFiles(pgResource.DB).TotalEventsForUpload(context.TODO(), job.upload)
+		Expect(err).To(BeNil())
 		Expect(count).To(BeEquivalentTo(5))
 	})
 
@@ -306,18 +315,21 @@ var _ = Describe("Upload", Ordered, func() {
 	})
 
 	It("Get uploads timings", func() {
-		Expect(job.getUploadTimings()).To(BeEquivalentTo([]map[string]string{
-			{
-				"exported_data":  "2020-04-21 15:26:34.344356",
-				"exporting_data": "2020-04-21 15:16:19.687716",
-			},
-		}))
+		exportedData, _ := time.ParseDateTime("2020-04-21T15:26:34.344356")
+		exportingData, _ := time.ParseDateTime("2020-04-21T15:16:19.687716")
+		Expect(repo.NewUploads(job.dbHandle).UploadTimings(context.TODO(), job.upload.ID)).
+			To(BeEquivalentTo(model.Timings{
+				{
+					"exported_data":  exportedData,
+					"exporting_data": exportingData,
+				},
+			}))
 	})
 
 	Describe("Staging files and load files events match", func() {
 		When("Matched", func() {
 			It("Should not send stats", func() {
-				job.matchRowsInStagingAndLoadFiles()
+				job.matchRowsInStagingAndLoadFiles(context.TODO())
 			})
 		})
 
@@ -329,8 +341,220 @@ var _ = Describe("Upload", Ordered, func() {
 
 				job.stats = mockStats
 				job.stagingFileIDs = []int64{1, 2}
-				job.matchRowsInStagingAndLoadFiles()
+				job.matchRowsInStagingAndLoadFiles(context.TODO())
 			})
 		})
 	})
 })
+
+type mockAlertSender struct {
+	mockError error
+}
+
+func (m *mockAlertSender) SendAlert(context.Context, string, alerta.SendAlertOpts) error {
+	return m.mockError
+}
+
+func TestUploadJobT_UpdateTableSchema(t *testing.T) {
+	Init()
+	Init4()
+
+	var (
+		testNamespace       = "test_namespace"
+		testTable           = "test_table"
+		testColumn          = "test_column"
+		testColumnType      = "text"
+		testDestinationID   = "test_destination_id"
+		testDestinationType = "test_destination_type"
+	)
+
+	t.Run("alter column", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("basic", func(t *testing.T) {
+			t.Parallel()
+
+			testCases := []struct {
+				name           string
+				createView     bool
+				mockAlertError error
+				wantError      error
+			}{
+				{
+					name: "success",
+				},
+				{
+					name:       "with view attached to table",
+					createView: true,
+				},
+				{
+					name:           "with alert error",
+					createView:     true,
+					mockAlertError: errors.New("alert error"),
+					wantError:      errors.New("alert error"),
+				},
+				{
+					name:           "skipping columns",
+					createView:     true,
+					mockAlertError: errors.New("alert error"),
+					wantError:      errors.New("alert error"),
+				},
+			}
+
+			for _, tc := range testCases {
+				tc := tc
+
+				t.Run(tc.name, func(t *testing.T) {
+					t.Parallel()
+
+					pool, err := dockertest.NewPool("")
+					require.NoError(t, err)
+
+					pgResource, err := destination.SetupPostgres(pool, t)
+					require.NoError(t, err)
+
+					rs := redshift.NewRedshift()
+					redshift.WithConfig(rs, config.Default)
+
+					rs.DB = pgResource.DB
+					rs.Namespace = testNamespace
+
+					job := &UploadJobT{
+						whManager: rs,
+						upload: model.Upload{
+							DestinationID:   testDestinationID,
+							DestinationType: testDestinationType,
+						},
+						AlertSender: &mockAlertSender{
+							mockError: tc.mockAlertError,
+						},
+					}
+
+					_, err = rs.DB.Exec(
+						fmt.Sprintf("CREATE SCHEMA %s;",
+							testNamespace,
+						),
+					)
+					require.NoError(t, err)
+
+					_, err = rs.DB.Exec(
+						fmt.Sprintf("CREATE TABLE %q.%q (%s VARCHAR(512));",
+							testNamespace,
+							testTable,
+							testColumn,
+						),
+					)
+					require.NoError(t, err)
+
+					if tc.createView {
+						_, err = rs.DB.Exec(
+							fmt.Sprintf("CREATE VIEW %[1]q.%[2]q AS SELECT * FROM %[1]q.%[3]q;",
+								testNamespace,
+								fmt.Sprintf("%s_view", testTable),
+								testTable,
+							),
+						)
+						require.NoError(t, err)
+					}
+
+					err = job.UpdateTableSchema(testTable, warehouseutils.TableSchemaDiffT{
+						AlteredColumnMap: map[string]string{
+							testColumn: testColumnType,
+						},
+					})
+					if tc.wantError != nil {
+						require.ErrorContains(t, err, tc.wantError.Error())
+					} else {
+						require.NoError(t, err)
+					}
+				})
+			}
+		})
+
+		t.Run("process all columns", func(t *testing.T) {
+			t.Parallel()
+
+			pool, err := dockertest.NewPool("")
+			require.NoError(t, err)
+
+			pgResource, err := destination.SetupPostgres(pool, t)
+			require.NoError(t, err)
+
+			rs := redshift.NewRedshift()
+			redshift.WithConfig(rs, config.Default)
+
+			rs.DB = pgResource.DB
+			rs.Namespace = testNamespace
+
+			job := &UploadJobT{
+				whManager: rs,
+				upload: model.Upload{
+					DestinationID:   testDestinationID,
+					DestinationType: testDestinationType,
+				},
+				AlertSender: &mockAlertSender{},
+			}
+
+			_, err = rs.DB.Exec(
+				fmt.Sprintf("CREATE SCHEMA %s;",
+					testNamespace,
+				),
+			)
+			require.NoError(t, err)
+
+			_, err = rs.DB.Exec(
+				fmt.Sprintf("CREATE TABLE %q.%q (%s VARCHAR(512));",
+					testNamespace,
+					testTable,
+					testColumn,
+				),
+			)
+			require.NoError(t, err)
+
+			for i := range [10]int{} {
+				if i%3 == 0 {
+					continue
+				}
+
+				_, err = rs.DB.Exec(
+					fmt.Sprintf("ALTER TABLE %q.%q ADD COLUMN %s_%d VARCHAR(512);",
+						testNamespace,
+						testTable,
+						testColumn,
+						i,
+					),
+				)
+				require.NoError(t, err)
+			}
+
+			_, err = rs.DB.Exec(
+				fmt.Sprintf("CREATE VIEW %[1]q.%[2]q AS SELECT * FROM %[1]q.%[3]q;",
+					testNamespace,
+					fmt.Sprintf("%s_view", testTable),
+					testTable,
+				),
+			)
+			require.NoError(t, err)
+
+			alteredColumnsMap := map[string]string{}
+			for i := range [10]int{} {
+				alteredColumnsMap[fmt.Sprintf("%s_%d", testColumn, i)] = testColumnType
+			}
+
+			err = job.UpdateTableSchema(testTable, warehouseutils.TableSchemaDiffT{
+				AlteredColumnMap: alteredColumnsMap,
+			})
+			require.Error(t, err)
+
+			for i := range [10]int{} {
+				column := fmt.Sprintf("test_column_%d", i)
+
+				if i%3 == 0 {
+					require.Contains(t, err.Error(), column)
+				} else {
+					require.NotContains(t, err.Error(), column)
+				}
+			}
+		})
+	})
+}

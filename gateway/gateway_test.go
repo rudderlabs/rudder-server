@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -13,6 +14,8 @@ import (
 	"reflect"
 	"testing"
 	"time"
+
+	sourcedebugger "github.com/rudderlabs/rudder-server/services/debugger/source"
 
 	"github.com/golang/mock/gomock"
 	"github.com/google/uuid"
@@ -34,6 +37,8 @@ import (
 	mocksRateLimiter "github.com/rudderlabs/rudder-server/mocks/rate-limiter"
 	mocksTypes "github.com/rudderlabs/rudder-server/mocks/utils/types"
 	"github.com/rudderlabs/rudder-server/services/rsources"
+	"github.com/rudderlabs/rudder-server/services/stats"
+	"github.com/rudderlabs/rudder-server/services/stats/memstats"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/pubsub"
@@ -53,9 +58,25 @@ const (
 	SuppressedUserID = "suppressed-user-2"
 	NormalUserID     = "normal-user-1"
 	WorkspaceID      = "workspace"
+	sourceType1      = "sourceType1"
+	sourceType2      = "sourceType2"
+	sdkLibrary       = "sdkLibrary"
+	sdkVersion       = "v1.2.3"
 )
 
-var testTimeout = 15 * time.Second
+var (
+	testTimeout = 15 * time.Second
+	sdkContext  = fmt.Sprintf(
+		`"context":{"library":{"name": %[1]q, "version":%[2]q}}`,
+		sdkLibrary,
+		sdkVersion,
+	)
+	sdkStatTag = fmt.Sprintf(
+		`%[1]s/%[2]s`,
+		sdkLibrary,
+		sdkVersion,
+	)
+)
 
 // This configuration is assumed by all gateway tests and, is returned on Subscribe of mocked backend config
 var sampleBackendConfig = backendconfig.ConfigT{
@@ -65,11 +86,17 @@ var sampleBackendConfig = backendconfig.ConfigT{
 			ID:       SourceIDDisabled,
 			WriteKey: WriteKeyDisabled,
 			Enabled:  false,
+			SourceDefinition: backendconfig.SourceDefinitionT{
+				Category: sourceType1,
+			},
 		},
 		{
 			ID:       SourceIDEnabled,
 			WriteKey: WriteKeyEnabled,
 			Enabled:  true,
+			SourceDefinition: backendconfig.SourceDefinitionT{
+				Category: sourceType2,
+			},
 		},
 	},
 }
@@ -114,12 +141,8 @@ func (c *testContext) Setup() {
 	c.mockApp = mocksApp.NewMockApp(c.mockCtrl)
 	c.mockRateLimiter = mocksRateLimiter.NewMockRateLimiter(c.mockCtrl)
 
-	tFunc := c.asyncHelper.ExpectAndNotifyCallbackWithName("process_config")
-
 	c.mockBackendConfig.EXPECT().Subscribe(gomock.Any(), backendconfig.TopicProcessConfig).
 		DoAndReturn(func(ctx context.Context, topic backendconfig.Topic) pubsub.DataChannel {
-			tFunc()
-
 			ch := make(chan pubsub.DataEvent, 1)
 			ch <- pubsub.DataEvent{Data: map[string]backendconfig.ConfigT{WorkspaceID: sampleBackendConfig}, Topic: string(topic)}
 			// on Subscribe, emulate a backend configuration event
@@ -172,7 +195,11 @@ func initGW() {
 var _ = Describe("Gateway Enterprise", func() {
 	initGW()
 
-	var c *testContext
+	var (
+		c          *testContext
+		gateway    *HandleT
+		statsStore *memstats.Store
+	)
 
 	BeforeEach(func() {
 		c = &testContext{}
@@ -185,13 +212,10 @@ var _ = Describe("Gateway Enterprise", func() {
 		c.mockSuppressUserFeature.EXPECT().Setup(gomock.Any(), gomock.Any()).AnyTimes().Return(c.mockSuppressUser, nil)
 		c.mockSuppressUser.EXPECT().IsSuppressedUser(WorkspaceID, NormalUserID, SourceIDEnabled).Return(false).AnyTimes()
 		c.mockSuppressUser.EXPECT().IsSuppressedUser(WorkspaceID, SuppressedUserID, SourceIDEnabled).Return(true).AnyTimes()
-
 		// setup common environment, override in BeforeEach when required
 		SetEnableRateLimit(false)
 		SetEnableSuppressUserFeature(true)
 		SetEnableEventSchemasFeature(false)
-		// SetUserWebRequestBatchTimeout(time.Second)
-		// SetMaxDBBatchSize(1)
 	})
 
 	AfterEach(func() {
@@ -199,31 +223,87 @@ var _ = Describe("Gateway Enterprise", func() {
 	})
 
 	Context("Suppress users", func() {
-		gateway := &HandleT{}
+		gateway = &HandleT{}
 
 		BeforeEach(func() {
-			err := gateway.Setup(context.Background(), c.mockApp, c.mockBackendConfig, c.mockJobsDB, nil, c.mockVersionHandler, rsources.NewNoOpService())
+			err := gateway.Setup(context.Background(), c.mockApp, c.mockBackendConfig, c.mockJobsDB, nil, c.mockVersionHandler, rsources.NewNoOpService(), sourcedebugger.NewNoOpService())
 			Expect(err).To(BeNil())
+			statsStore = memstats.New()
+			gateway.stats = statsStore
 		})
 
 		It("should not accept events from suppress users", func() {
 			suppressedUserEventData := fmt.Sprintf(`{"batch":[{"userId":%q}]}`, SuppressedUserID)
 			// Why GET
 			expectHandlerResponse(gateway.webBatchHandler, authorizedRequest(WriteKeyEnabled, bytes.NewBufferString(suppressedUserEventData)), 200, "OK")
+			Eventually(
+				func() bool {
+					stat := statsStore.Get(
+						"gateway.write_key_suppressed_requests",
+						map[string]string{
+							"source":      gateway.getSourceTagFromWriteKey(WriteKeyEnabled),
+							"sourceID":    gateway.getSourceIDForWriteKey(WriteKeyEnabled),
+							"workspaceId": getWorkspaceID(WriteKeyEnabled),
+							"writeKey":    WriteKeyEnabled,
+							"reqType":     "batch",
+							"sourceType":  sourceType2,
+							"sdkVersion":  "",
+						},
+					)
+					return stat != nil && stat.LastValue() == float64(1)
+				},
+				1*time.Second,
+			).Should(BeTrue())
 		})
 
 		It("should accept events from normal users", func() {
-			allowedUserEventData := fmt.Sprintf(`{"batch":[{"userId":%q}]}`, NormalUserID)
-
-			c.mockJobsDB.EXPECT().WithStoreSafeTx(gomock.Any(), gomock.Any()).Times(1).Do(func(ctx context.Context, f func(tx jobsdb.StoreSafeTx) error) {
+			allowedUserEventData := fmt.Sprintf(
+				`{"batch":[{"userId":%[1]q,%[2]s}]}`,
+				NormalUserID,
+				sdkContext,
+			)
+			c.mockJobsDB.EXPECT().WithStoreSafeTx(
+				gomock.Any(),
+				gomock.Any(),
+			).Times(1).Do(func(ctx context.Context, f func(tx jobsdb.StoreSafeTx) error) {
 				_ = f(jobsdb.EmptyStoreSafeTx())
 			}).Return(nil)
-			mockCall := c.mockJobsDB.EXPECT().StoreWithRetryEachInTx(gomock.Any(), gomock.Any(), gomock.Any()).DoAndReturn(jobsToEmptyErrors).Times(1)
+			mockCall := c.mockJobsDB.EXPECT().StoreWithRetryEachInTx(
+				gomock.Any(),
+				gomock.Any(),
+				gomock.Any(),
+			).DoAndReturn(jobsToEmptyErrors).Times(1)
 			tFunc := c.asyncHelper.ExpectAndNotifyCallbackWithName("store-job")
 			mockCall.Do(func(context.Context, interface{}, interface{}) { tFunc() })
 
 			// Why GET
-			expectHandlerResponse(gateway.webBatchHandler, authorizedRequest(WriteKeyEnabled, bytes.NewBufferString(allowedUserEventData)), 200, "OK")
+			expectHandlerResponse(
+				gateway.webBatchHandler,
+				authorizedRequest(
+					WriteKeyEnabled,
+					bytes.NewBufferString(allowedUserEventData),
+				),
+				200,
+				"OK",
+			)
+			Eventually(
+				func() bool {
+					stat := statsStore.Get(
+						"gateway.write_key_successful_requests",
+						map[string]string{
+							"source":      gateway.getSourceTagFromWriteKey(WriteKeyEnabled),
+							"sourceID":    gateway.getSourceIDForWriteKey(WriteKeyEnabled),
+							"workspaceId": getWorkspaceID(WriteKeyEnabled),
+							"writeKey":    WriteKeyEnabled,
+							"reqType":     "batch",
+							"sourceType":  sourceType2,
+							"sdkVersion":  sdkStatTag,
+						},
+					)
+					return stat != nil && stat.LastValue() == float64(1)
+				},
+				1*time.Second,
+			).Should(BeTrue())
 		})
 	})
 })
@@ -237,7 +317,6 @@ var _ = Describe("Gateway", func() {
 		c = &testContext{}
 		c.Setup()
 		c.initializeAppFeatures()
-
 		// setup common environment, override in BeforeEach when required
 		SetEnableRateLimit(false)
 		SetEnableEventSchemasFeature(false)
@@ -250,7 +329,7 @@ var _ = Describe("Gateway", func() {
 	Context("Initialization", func() {
 		It("should wait for backend config", func() {
 			gateway := &HandleT{}
-			err := gateway.Setup(context.Background(), c.mockApp, c.mockBackendConfig, c.mockJobsDB, nil, c.mockVersionHandler, rsources.NewNoOpService())
+			err := gateway.Setup(context.Background(), c.mockApp, c.mockBackendConfig, c.mockJobsDB, nil, c.mockVersionHandler, rsources.NewNoOpService(), sourcedebugger.NewNoOpService())
 			Expect(err).To(BeNil())
 			err = gateway.Shutdown()
 			Expect(err).To(BeNil())
@@ -259,21 +338,16 @@ var _ = Describe("Gateway", func() {
 
 	Context("Valid requests", func() {
 		var (
-			gateway           *HandleT
-			gatewayBatchCalls = 1
+			gateway    *HandleT
+			statsStore *memstats.Store
 		)
-
-		// tracks expected batch_id
-		nextBatchID := func() (batchID int) {
-			batchID = gatewayBatchCalls
-			gatewayBatchCalls++
-			return
-		}
 
 		BeforeEach(func() {
 			gateway = &HandleT{}
-			err := gateway.Setup(context.Background(), c.mockApp, c.mockBackendConfig, c.mockJobsDB, nil, c.mockVersionHandler, rsources.NewNoOpService())
+			err := gateway.Setup(context.Background(), c.mockApp, c.mockBackendConfig, c.mockJobsDB, nil, c.mockVersionHandler, rsources.NewNoOpService(), sourcedebugger.NewNoOpService())
 			Expect(err).To(BeNil())
+			statsStore = memstats.New()
+			gateway.stats = statsStore
 		})
 
 		AfterEach(func() {
@@ -281,12 +355,12 @@ var _ = Describe("Gateway", func() {
 			Expect(err).To(BeNil())
 		})
 
-		assertJobMetadata := func(job *jobsdb.JobT, batchLength, batchId int) {
+		assertJobMetadata := func(job *jobsdb.JobT, batchLength int) {
 			Expect(misc.IsValidUUID(job.UUID.String())).To(Equal(true))
 
 			var paramsMap, expectedParamsMap map[string]interface{}
 			_ = json.Unmarshal(job.Parameters, &paramsMap)
-			expectedStr := []byte(fmt.Sprintf(`{"source_id": "%v", "batch_id": %d, "source_job_run_id": "", "source_task_run_id": ""}`, SourceIDEnabled, batchId))
+			expectedStr := []byte(fmt.Sprintf(`{"source_id": "%v", "source_job_run_id": "", "source_task_run_id": ""}`, SourceIDEnabled))
 			_ = json.Unmarshal(expectedStr, &expectedParamsMap)
 			equals := reflect.DeepEqual(paramsMap, expectedParamsMap)
 			Expect(equals).To(Equal(true))
@@ -306,7 +380,10 @@ var _ = Describe("Gateway", func() {
 		}
 
 		createValidBody := func(customProperty, customValue string) []byte {
-			validData := `{"userId":"dummyId","data":{"string":"valid-json","nested":{"child":1}}}`
+			validData := fmt.Sprintf(
+				`{"userId":"dummyId","data":{"string":"valid-json","nested":{"child":1}},%s}`,
+				sdkContext,
+			)
 			validDataWithProperty, _ := sjson.SetBytes([]byte(validData), customProperty, customValue)
 
 			return validDataWithProperty
@@ -332,51 +409,95 @@ var _ = Describe("Gateway", func() {
 
 		// common tests for all web handlers
 		It("should accept valid requests on a single endpoint (except batch), and store to jobsdb", func() {
+			workspaceID := getWorkspaceID(WriteKeyEnabled)
 			for handlerType, handler := range allHandlers(gateway) {
 				if !(handlerType == "batch" || handlerType == "import") {
 
 					validBody := createValidBody("custom-property", "custom-value")
 
-					c.mockJobsDB.EXPECT().WithStoreSafeTx(gomock.Any(), gomock.Any()).Times(1).Do(func(ctx context.Context, f func(tx jobsdb.StoreSafeTx) error) {
+					c.mockJobsDB.EXPECT().WithStoreSafeTx(
+						gomock.Any(),
+						gomock.Any()).Times(1).Do(func(
+						ctx context.Context,
+						f func(tx jobsdb.StoreSafeTx) error,
+					) {
 						_ = f(jobsdb.EmptyStoreSafeTx())
 					}).Return(nil)
 					c.mockJobsDB.
-						EXPECT().StoreWithRetryEachInTx(gomock.Any(), gomock.Any(), gomock.Any()).
-						DoAndReturn(func(ctx context.Context, tx jobsdb.StoreSafeTx, jobs []*jobsdb.JobT) (map[uuid.UUID]string, error) {
-							for _, job := range jobs {
-								// each call should be included in a separate batch, with a separate batch_id
-								expectedBatchID := nextBatchID()
-								assertJobMetadata(job, 1, expectedBatchID)
+						EXPECT().StoreWithRetryEachInTx(
+						gomock.Any(),
+						gomock.Any(),
+						gomock.Any(),
+					).
+						DoAndReturn(
+							func(
+								ctx context.Context,
+								tx jobsdb.StoreSafeTx,
+								jobs []*jobsdb.JobT,
+							) (map[uuid.UUID]string, error) {
+								for _, job := range jobs {
+									// each call should be included in a separate batch, with a separate batch_id
+									assertJobMetadata(job, 1)
 
-								responseData := []byte(job.EventPayload)
-								payload := gjson.GetBytes(responseData, "batch.0")
+									responseData := []byte(job.EventPayload)
+									payload := gjson.GetBytes(responseData, "batch.0")
 
-								assertJobBatchItem(payload)
+									assertJobBatchItem(payload)
 
-								messageType := payload.Get("type")
-								Expect(messageType.String()).To(Equal(handlerType))
-								Expect(stripJobPayload(payload)).To(MatchJSON(validBody))
-							}
-							c.asyncHelper.ExpectAndNotifyCallbackWithName("jobsdb_store")()
+									messageType := payload.Get("type")
+									Expect(messageType.String()).To(Equal(handlerType))
+									Expect(stripJobPayload(payload)).To(MatchJSON(validBody))
+								}
+								c.asyncHelper.ExpectAndNotifyCallbackWithName("jobsdb_store")()
 
-							return jobsToEmptyErrors(ctx, tx, jobs)
-						}).
+								return jobsToEmptyErrors(ctx, tx, jobs)
+							}).
 						Times(1)
 
-					expectHandlerResponse(handler, authorizedRequest(WriteKeyEnabled, bytes.NewBuffer(validBody)), 200, "OK")
+					expectHandlerResponse(
+						handler,
+						authorizedRequest(
+							WriteKeyEnabled,
+							bytes.NewBuffer(validBody)),
+						200,
+						"OK",
+					)
+					Eventually(
+						func() bool {
+							stat := statsStore.Get(
+								"gateway.write_key_successful_requests",
+								map[string]string{
+									"source":      gateway.getSourceTagFromWriteKey(WriteKeyEnabled),
+									"sourceID":    gateway.getSourceIDForWriteKey(WriteKeyEnabled),
+									"workspaceId": workspaceID,
+									"writeKey":    WriteKeyEnabled,
+									"reqType":     handlerType,
+									"sourceType":  sourceType2,
+									"sdkVersion":  sdkStatTag,
+								},
+							)
+							return stat != nil && stat.LastValue() == float64(1)
+						},
+						1*time.Second,
+					).Should(BeTrue())
 				}
 			}
 		})
 	})
 
 	Context("Rate limits", func() {
-		var gateway *HandleT
+		var (
+			gateway    *HandleT
+			statsStore *memstats.Store
+		)
 
 		BeforeEach(func() {
 			gateway = &HandleT{}
 			SetEnableRateLimit(true)
-			err := gateway.Setup(context.Background(), c.mockApp, c.mockBackendConfig, c.mockJobsDB, c.mockRateLimiter, c.mockVersionHandler, rsources.NewNoOpService())
+			err := gateway.Setup(context.Background(), c.mockApp, c.mockBackendConfig, c.mockJobsDB, c.mockRateLimiter, c.mockVersionHandler, rsources.NewNoOpService(), sourcedebugger.NewNoOpService())
 			Expect(err).To(BeNil())
+			statsStore = memstats.New()
+			gateway.stats = statsStore
 		})
 
 		AfterEach(func() {
@@ -396,23 +517,78 @@ var _ = Describe("Gateway", func() {
 			tFunc = c.asyncHelper.ExpectAndNotifyCallbackWithName("")
 			mockCall.Do(func(context.Context, interface{}, interface{}) { tFunc() })
 
-			expectHandlerResponse(gateway.webAliasHandler, authorizedRequest(WriteKeyEnabled, bytes.NewBufferString(`{"userId":"dummyId"}`)), 200, "OK")
+			expectHandlerResponse(
+				gateway.webAliasHandler,
+				authorizedRequest(
+					WriteKeyEnabled,
+					bytes.NewBufferString(
+						fmt.Sprintf(`{"userId":"dummyId",%s}`, sdkContext),
+					),
+				),
+				200,
+				"OK",
+			)
+			Eventually(
+				func() bool {
+					stat := statsStore.Get(
+						"gateway.write_key_successful_requests",
+						map[string]string{
+							"source":      gateway.getSourceTagFromWriteKey(WriteKeyEnabled),
+							"sourceID":    gateway.getSourceIDForWriteKey(WriteKeyEnabled),
+							"workspaceId": getWorkspaceID(WriteKeyEnabled),
+							"writeKey":    WriteKeyEnabled,
+							"reqType":     "alias",
+							"sourceType":  sourceType2,
+							"sdkVersion":  sdkStatTag,
+						},
+					)
+					return stat != nil && stat.LastValue() == float64(1)
+				},
+			).Should(BeTrue())
 		})
 
 		It("should reject messages if rate limit is reached for workspace", func() {
 			c.mockRateLimiter.EXPECT().LimitReached(WorkspaceID).Return(true).Times(1)
 
-			expectHandlerResponse(gateway.webAliasHandler, authorizedRequest(WriteKeyEnabled, bytes.NewBufferString("{}")), 429, response.TooManyRequests+"\n")
+			expectHandlerResponse(
+				gateway.webAliasHandler,
+				authorizedRequest(WriteKeyEnabled, bytes.NewBufferString("{}")),
+				429,
+				response.TooManyRequests+"\n",
+			)
+			Eventually(
+				func() bool {
+					stat := statsStore.Get(
+						"gateway.write_key_dropped_requests",
+						map[string]string{
+							"source":      gateway.getSourceTagFromWriteKey(WriteKeyEnabled),
+							"sourceID":    gateway.getSourceIDForWriteKey(WriteKeyEnabled),
+							"workspaceId": getWorkspaceID(WriteKeyEnabled),
+							"writeKey":    WriteKeyEnabled,
+							"reqType":     "alias",
+							"sourceType":  sourceType2,
+							"sdkVersion":  "",
+						},
+					)
+					return stat != nil && stat.LastValue() == float64(1)
+				},
+				1*time.Second,
+			).Should(BeTrue())
 		})
 	})
 
 	Context("Invalid requests", func() {
-		var gateway *HandleT
+		var (
+			gateway    *HandleT
+			statsStore *memstats.Store
+		)
 
 		BeforeEach(func() {
 			gateway = &HandleT{}
-			err := gateway.Setup(context.Background(), c.mockApp, c.mockBackendConfig, c.mockJobsDB, nil, c.mockVersionHandler, rsources.NewNoOpService())
+			err := gateway.Setup(context.Background(), c.mockApp, c.mockBackendConfig, c.mockJobsDB, nil, c.mockVersionHandler, rsources.NewNoOpService(), sourcedebugger.NewNoOpService())
 			Expect(err).To(BeNil())
+			statsStore = memstats.New()
+			gateway.stats = statsStore
 		})
 
 		AfterEach(func() {
@@ -421,7 +597,10 @@ var _ = Describe("Gateway", func() {
 		})
 
 		createJSONBody := func(customProperty, customValue string) []byte {
-			validData := `{"userId":"dummyId","data":{"string":"valid-json","nested":{"child":1}}}`
+			validData := fmt.Sprintf(
+				`{"userId":"dummyId","data":{"string":"valid-json","nested":{"child":1}},%s}`,
+				sdkContext,
+			)
 			validDataWithProperty, _ := sjson.SetBytes([]byte(validData), customProperty, customValue)
 
 			return validDataWithProperty
@@ -429,36 +608,139 @@ var _ = Describe("Gateway", func() {
 
 		// common tests for all web handlers
 		It("should reject requests without Authorization header", func() {
-			for _, handler := range allHandlers(gateway) {
-				expectHandlerResponse(handler, unauthorizedRequest(nil), 401, response.NoWriteKeyInBasicAuth+"\n")
+			for reqType, handler := range allHandlers(gateway) {
+				expectHandlerResponse(
+					handler,
+					unauthorizedRequest(nil),
+					401,
+					response.NoWriteKeyInBasicAuth+"\n",
+				)
+				Eventually(
+					func() bool {
+						stat := statsStore.Get(
+							"gateway.write_key_failed_requests",
+							map[string]string{
+								"source":      "noWriteKey",
+								"sourceID":    gateway.getSourceIDForWriteKey(""),
+								"workspaceId": "",
+								"writeKey":    "noWriteKey",
+								"reqType":     reqType,
+								"reason":      "noWriteKeyInBasicAuth",
+								"sourceType":  "",
+								"sdkVersion":  "",
+							},
+						)
+						return stat != nil && stat.LastValue() == float64(1)
+					},
+				).Should(BeTrue())
 			}
+			gateway.stats = stats.Default
 		})
 
 		It("should reject requests without username in Authorization header", func() {
-			for _, handler := range allHandlers(gateway) {
-				expectHandlerResponse(handler, authorizedRequest(WriteKeyEmpty, nil), 401, response.NoWriteKeyInBasicAuth+"\n")
+			for reqType, handler := range allHandlers(gateway) {
+				expectHandlerResponse(
+					handler,
+					authorizedRequest(WriteKeyEmpty, nil),
+					401,
+					response.NoWriteKeyInBasicAuth+"\n",
+				)
+				Eventually(
+					func() bool {
+						stat := statsStore.Get(
+							"gateway.write_key_failed_requests",
+							map[string]string{
+								"source":      "noWriteKey",
+								"sourceID":    gateway.getSourceIDForWriteKey(""),
+								"workspaceId": getWorkspaceID(""),
+								"writeKey":    "noWriteKey",
+								"reqType":     reqType,
+								"reason":      "noWriteKeyInBasicAuth",
+								"sourceType":  "",
+								"sdkVersion":  "",
+							},
+						)
+						return stat != nil && stat.LastValue() == float64(1)
+					},
+				).Should(BeTrue())
 			}
 		})
 
 		It("should reject requests without valid rudder event in request body", func() {
 			for handlerType, handler := range allHandlers(gateway) {
+				reqType := handlerType
 				notRudderEvent := `[{"data": "valid-json","foo":"bar"}]`
 				if handlerType == "batch" || handlerType == "import" {
 					notRudderEvent = `{"batch": [[{"data": "valid-json","foo":"bar"}]]}`
+					reqType = "batch"
 				}
 				setAllowReqsWithoutUserIDAndAnonymousID(true)
-				expectHandlerResponse(handler, authorizedRequest(WriteKeyEnabled, bytes.NewBufferString(notRudderEvent)), 400, response.NotRudderEvent+"\n")
+				expectHandlerResponse(
+					handler,
+					authorizedRequest(
+						WriteKeyEnabled,
+						bytes.NewBufferString(notRudderEvent),
+					),
+					400,
+					response.NotRudderEvent+"\n",
+				)
+				Eventually(
+					func() bool {
+						stat := statsStore.Get(
+							"gateway.write_key_failed_requests",
+							map[string]string{
+								"source":      gateway.getSourceTagFromWriteKey(WriteKeyEnabled),
+								"sourceID":    gateway.getSourceIDForWriteKey(WriteKeyEnabled),
+								"workspaceId": getWorkspaceID(WriteKeyEnabled),
+								"writeKey":    WriteKeyEnabled,
+								"reqType":     reqType,
+								"reason":      response.NotRudderEvent,
+								"sourceType":  sourceType2,
+								"sdkVersion":  "",
+							},
+						)
+						return stat != nil && stat.LastValue() == float64(1)
+					},
+				).Should(BeTrue())
 				setAllowReqsWithoutUserIDAndAnonymousID(false)
 			}
 		})
 
 		It("should reject requests with both userId and anonymousId not present", func() {
 			for handlerType, handler := range allHandlers(gateway) {
+				reqType := handlerType
 				validBody := `{"data": "valid-json"}`
 				if handlerType == "batch" || handlerType == "import" {
 					validBody = `{"batch": [{"data": "valid-json"}]}`
+					reqType = "batch"
 				}
-				expectHandlerResponse(handler, authorizedRequest(WriteKeyEnabled, bytes.NewBufferString(validBody)), 400, response.NonIdentifiableRequest+"\n")
+				expectHandlerResponse(
+					handler,
+					authorizedRequest(
+						WriteKeyEnabled,
+						bytes.NewBufferString(validBody),
+					),
+					400,
+					response.NonIdentifiableRequest+"\n",
+				)
+				Eventually(
+					func() bool {
+						stat := statsStore.Get(
+							"gateway.write_key_failed_requests",
+							map[string]string{
+								"source":      gateway.getSourceTagFromWriteKey(WriteKeyEnabled),
+								"sourceID":    gateway.getSourceIDForWriteKey(WriteKeyEnabled),
+								"workspaceId": getWorkspaceID(WriteKeyEnabled),
+								"writeKey":    WriteKeyEnabled,
+								"reqType":     reqType,
+								"reason":      response.NonIdentifiableRequest,
+								"sourceType":  sourceType2,
+								"sdkVersion":  "",
+							},
+						)
+						return stat != nil && stat.LastValue() == float64(1)
+					},
+				).Should(BeTrue())
 			}
 		})
 
@@ -482,8 +764,8 @@ var _ = Describe("Gateway", func() {
 					data[i] = 'a'
 				}
 				body := `{
-                    "anonymousId": "anon_id"
-                  }`
+	                "anonymousId": "anon_id"
+	              }`
 				body, _ = sjson.Set(body, "properties", data)
 				if handlerType == "batch" || handlerType == "import" {
 					body = fmt.Sprintf(`{"batch":[%s]}`, body)
@@ -516,7 +798,7 @@ var _ = Describe("Gateway", func() {
 
 		It("should reject requests with 500 if jobsdb store returns an error", func() {
 			for handlerType, handler := range allHandlers(gateway) {
-				if handlerType != "import" {
+				if !(handlerType == "batch" || handlerType == "import") {
 					validBody := createJSONBody("custom-property", "custom-value")
 
 					c.mockJobsDB.EXPECT().WithStoreSafeTx(gomock.Any(), gomock.Any()).Times(1).Do(func(ctx context.Context, f func(tx jobsdb.StoreSafeTx) error) {
@@ -527,7 +809,33 @@ var _ = Describe("Gateway", func() {
 						DoAndReturn(jobsToJobsdbErrors).
 						Times(1)
 
-					expectHandlerResponse(handler, authorizedRequest(WriteKeyEnabled, bytes.NewBuffer(validBody)), 500, "tx error"+"\n")
+					expectHandlerResponse(
+						handler,
+						authorizedRequest(
+							WriteKeyEnabled,
+							bytes.NewBuffer(validBody),
+						),
+						500,
+						"tx error"+"\n",
+					)
+					Eventually(
+						func() bool {
+							stat := statsStore.Get(
+								"gateway.write_key_failed_requests",
+								map[string]string{
+									"source":      gateway.getSourceTagFromWriteKey(WriteKeyEnabled),
+									"sourceID":    gateway.getSourceIDForWriteKey(WriteKeyEnabled),
+									"workspaceId": getWorkspaceID(WriteKeyEnabled),
+									"writeKey":    WriteKeyEnabled,
+									"reqType":     handlerType,
+									"reason":      "storeFailed",
+									"sourceType":  sourceType2,
+									"sdkVersion":  sdkStatTag,
+								},
+							)
+							return stat != nil && stat.LastValue() == float64(1)
+						},
+					).Should(BeTrue())
 				}
 			}
 		})
@@ -538,7 +846,7 @@ var _ = Describe("Gateway", func() {
 
 		BeforeEach(func() {
 			gateway = &HandleT{}
-			err := gateway.Setup(context.Background(), c.mockApp, c.mockBackendConfig, c.mockJobsDB, nil, c.mockVersionHandler, rsources.NewNoOpService())
+			err := gateway.Setup(context.Background(), c.mockApp, c.mockBackendConfig, c.mockJobsDB, nil, c.mockVersionHandler, rsources.NewNoOpService(), sourcedebugger.NewNoOpService())
 			Expect(err).To(BeNil())
 		})
 
@@ -560,7 +868,7 @@ var _ = Describe("Gateway", func() {
 					Expect(r.URL.String()).To(Equal(url))
 					Expect(r.Body)
 					Expect(r.Body).To(Not(BeNil()))
-					defer r.Body.Close()
+					defer func() { _ = r.Body.Close() }()
 					reqBody, err := io.ReadAll(r.Body)
 					Expect(err).To(BeNil())
 					Expect(string(reqBody)).To(Equal(payload))
@@ -570,7 +878,7 @@ var _ = Describe("Gateway", func() {
 				Expect(err).To(BeNil())
 				err = os.Setenv("RSERVER_WAREHOUSE_MODE", config.OffMode)
 				Expect(err).To(BeNil())
-				err = gateway.Setup(context.Background(), c.mockApp, c.mockBackendConfig, c.mockJobsDB, nil, c.mockVersionHandler, rsources.NewNoOpService())
+				err = gateway.Setup(context.Background(), c.mockApp, c.mockBackendConfig, c.mockJobsDB, nil, c.mockVersionHandler, rsources.NewNoOpService(), sourcedebugger.NewNoOpService())
 				Expect(err).To(BeNil())
 
 				defer func() {
@@ -589,6 +897,50 @@ var _ = Describe("Gateway", func() {
 			Entry("failed request", "/v1/warehouse/pending-events", http.StatusBadRequest, `{"source_id": "3", "task_run_id":"4"}`),
 			Entry("request with query parameters", "/v1/warehouse/pending-events?triggerUpload=true", http.StatusOK, `{"source_id": "5", "task_run_id":"6"}`),
 		)
+	})
+
+	Context("jobDataFromRequest", func() {
+		var (
+			gateway      *HandleT
+			someWriteKey = "someWriteKey"
+			userIDHeader = "userIDHeader"
+		)
+		BeforeEach(func() {
+			gateway = &HandleT{}
+			err := gateway.Setup(context.Background(), c.mockApp, c.mockBackendConfig, c.mockJobsDB, nil, c.mockVersionHandler, rsources.NewNoOpService(), sourcedebugger.NewNoOpService())
+			Expect(err).To(BeNil())
+		})
+
+		AfterEach(func() {
+			err := gateway.Shutdown()
+			Expect(err).To(BeNil())
+		})
+
+		It("returns invalid JSON in case of invalid JSON payload", func() {
+			req := &webRequestT{
+				reqType:        "batch",
+				writeKey:       someWriteKey,
+				done:           make(chan<- string),
+				userIDHeader:   userIDHeader,
+				requestPayload: []byte(``),
+			}
+			jobData, err := gateway.getJobDataFromRequest(req)
+			Expect(errors.New(response.InvalidJSON)).To(Equal(err))
+			Expect(jobData.job).To(BeNil())
+		})
+
+		It("drops non-identifiable requests if userID and anonID are not present in the request payload", func() {
+			req := &webRequestT{
+				reqType:        "batch",
+				writeKey:       WriteKeyEnabled,
+				done:           make(chan<- string),
+				userIDHeader:   userIDHeader,
+				requestPayload: []byte(`{"batch": [{"type": "track"}]}`),
+			}
+			jobData, err := gateway.getJobDataFromRequest(req)
+			Expect(err).To(Equal(errors.New(response.NonIdentifiableRequest)))
+			Expect(jobData.job).To(BeNil())
+		})
 	})
 })
 
@@ -670,4 +1022,10 @@ func TestContentTypeFunction(t *testing.T) {
 	receivedContentType := respRecorder.Header()["Content-Type"][0]
 	require.Equal(t, expectedContentType, receivedContentType, "actual content type different than expected.")
 	require.Equal(t, expectedStatus, respRecorder.Code, "actual response code different than expected.")
+}
+
+func getWorkspaceID(writeKey string) string {
+	configSubscriberLock.RLock()
+	defer configSubscriberLock.RUnlock()
+	return enabledWriteKeyWorkspaceMap[writeKey]
 }

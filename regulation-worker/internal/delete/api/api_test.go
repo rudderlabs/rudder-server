@@ -14,7 +14,6 @@ import (
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	mocksBackendConfig "github.com/rudderlabs/rudder-server/mocks/config/backend-config"
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/delete/api"
-	"github.com/rudderlabs/rudder-server/regulation-worker/internal/initialize"
 	"github.com/rudderlabs/rudder-server/regulation-worker/internal/model"
 	"github.com/rudderlabs/rudder-server/services/oauth"
 
@@ -30,7 +29,6 @@ func (d *deleteAPI) handler() http.Handler {
 }
 
 func TestDelete(t *testing.T) {
-	initialize.Init()
 	tests := []struct {
 		name                 string
 		job                  model.Job
@@ -201,8 +199,6 @@ func (d *deleteAPI) deleteMockServer(w http.ResponseWriter, r *http.Request) {
 }
 
 func TestOAuth(t *testing.T) {
-	initialize.Init()
-
 	mockCtrl := gomock.NewController(t)
 	mockBackendConfig := mocksBackendConfig.NewMockBackendConfig(mockCtrl)
 	mockBackendConfig.EXPECT().AccessToken().AnyTimes()

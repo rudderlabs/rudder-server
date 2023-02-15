@@ -4,6 +4,7 @@ import (
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/router/throttler"
+	destinationdebugger "github.com/rudderlabs/rudder-server/services/debugger/destination"
 	"github.com/rudderlabs/rudder-server/services/rsources"
 	"github.com/rudderlabs/rudder-server/services/transientsource"
 )
@@ -17,6 +18,8 @@ type Factory struct {
 	TransientSources transientsource.Service
 	RsourcesService  rsources.JobService
 	ThrottlerFactory *throttler.Factory
+	Debugger         destinationdebugger.DestinationDebugger
+	AdaptiveLimit    func(int64) int64
 }
 
 func (f *Factory) New(destination *backendconfig.DestinationT, identifier string) *HandleT {
@@ -24,9 +27,18 @@ func (f *Factory) New(destination *backendconfig.DestinationT, identifier string
 		Reporting:        f.Reporting,
 		MultitenantI:     f.Multitenant,
 		throttlerFactory: f.ThrottlerFactory,
+		adaptiveLimit:    f.AdaptiveLimit,
 	}
 	destConfig := getRouterConfig(destination, identifier)
-	r.Setup(f.BackendConfig, f.RouterDB, f.ProcErrorDB, destConfig, f.TransientSources, f.RsourcesService)
+	r.Setup(
+		f.BackendConfig,
+		f.RouterDB,
+		f.ProcErrorDB,
+		destConfig,
+		f.TransientSources,
+		f.RsourcesService,
+		f.Debugger,
+	)
 	return r
 }
 

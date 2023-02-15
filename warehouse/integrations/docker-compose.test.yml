@@ -1,0 +1,262 @@
+version: "3.9"
+
+services:
+  wh-ssh-server:
+    image: lscr.io/linuxserver/openssh-server:latest
+    environment:
+      - PUBLIC_KEY_FILE=/test_key.pub
+      - USER_NAME=rudderstack #optional
+      - DOCKER_MODS=linuxserver/mods:openssh-server-ssh-tunnel # https://github.com/linuxserver/docker-mods/tree/openssh-server-ssh-tunnel
+    ports:
+      - "2222"
+    volumes:
+      - type: bind
+        source: ./testdata/ssh-server/test_key.pub
+        target: /test_key.pub
+        read_only: true
+    healthcheck:
+      test: ["CMD", "grep", "Server listening on :: port 2222", "/config/logs/openssh/current"]
+      interval: 1s
+      timeout: 1s
+      retries: 60
+    depends_on:
+      - db-private-postgres
+  db-private-postgres:
+    image: postgres:14.1-alpine
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+    healthcheck:
+      test: [ "CMD", "pg_isready" ]
+      interval: 1s
+      timeout: 5s
+      retries: 30
+  wh-jobsDb:
+    container_name: wh-jobsDb
+    image: postgres:15-alpine
+    environment:
+      - POSTGRES_DB=jobsdb
+      - POSTGRES_PASSWORD=password
+      - POSTGRES_USER=rudder
+    ports:
+      - "5432"
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready" ]
+      interval: 1s
+      retries: 25
+  wh-transformer:
+    container_name: wh-transformer
+    image: rudderlabs/develop-rudder-transformer:master
+    ports:
+      - "9090"
+  wh-databricks-connector:
+    image: rudderstack/rudder-databricks-connector:v1.3.0
+    container_name: wh-databricks-connector
+    ports:
+      - "50051"
+    healthcheck:
+      test: /bin/grpc_health_probe -addr=localhost:50051
+      interval: 1s
+      retries: 25
+  wh-minio:
+    image: minio/minio:latest
+    container_name: wh-minio
+    ports:
+      - "9000/tcp"
+    environment:
+      - MINIO_ACCESS_KEY=MYACCESSKEY
+      - MINIO_SECRET_KEY=MYSECRETKEY
+      - MINIO_SITE_REGION=us-east-1
+    command: server /data
+    healthcheck:
+      test: curl --fail http://localhost:9000/minio/health/live || exit 1
+      interval: 1s
+      retries: 25
+  wh-azure:
+    image: mcr.microsoft.com/azure-storage/azurite:latest
+    container_name: wh-azure
+    ports:
+      - "10000"
+    environment:
+      - AZURITE_ACCOUNTS=MYACCESSKEY:TVlTRUNSRVRLRVk=
+      - DefaultEndpointsProtocol=http
+    healthcheck:
+      test: nc -z localhost 10000 || exit 1
+      interval: 1s
+      retries: 25
+  wh-postgres:
+    container_name: wh-postgres
+    image: postgres:15-alpine
+    environment:
+      - POSTGRES_DB=rudderdb
+      - POSTGRES_PASSWORD=rudder-password
+      - POSTGRES_USER=rudder
+    ports:
+      - "5432"
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready" ]
+      interval: 1s
+      retries: 25
+  wh-clickhouse:
+    container_name: wh-clickhouse
+    image: yandex/clickhouse-server:21-alpine
+    environment:
+      - CLICKHOUSE_DB=rudderdb
+      - CLICKHOUSE_PASSWORD=rudder-password
+      - CLICKHOUSE_USER=rudder
+    ports:
+      - "9000"
+    healthcheck:
+      test: wget --no-verbose --tries=1 --spider http://localhost:8123/ping || exit 1
+      interval: 1s
+      retries: 25
+  wh-mssql:
+    container_name: wh-mssql
+    image: rudderstack/azure-sql-edge:1.0.6
+    environment:
+      - ACCEPT_EULA=Y
+      - SA_PASSWORD=reallyStrongPwd123
+      - SA_DB=master
+      - SA_USER=SA
+    ports:
+      - "1433"
+  wh-zookeeper:
+    image: zookeeper:3.5
+    container_name: wh-clickhouse-zookeeper
+    hostname: wh-clickhouse-zookeeper
+    healthcheck:
+      test: nc -z localhost 2181 || exit 1
+      interval: 1s
+      retries: 25
+  wh-clickhouse01:
+    image: yandex/clickhouse-server:21-alpine
+    container_name: wh-clickhouse01
+    ports:
+      - "9000"
+    volumes:
+      - ./testdata/clickhouse/cluster/clickhouse01:/etc/clickhouse-server
+    depends_on:
+      - wh-zookeeper
+    healthcheck:
+      test: wget --no-verbose --tries=1 --spider http://localhost:8123/ping || exit 1
+      interval: 1s
+      retries: 25
+  wh-clickhouse02:
+    image: yandex/clickhouse-server:21-alpine
+    container_name: wh-clickhouse02
+    hostname: wh-clickhouse02
+    ports:
+      - "9000"
+    volumes:
+      - ./testdata/clickhouse/cluster/clickhouse02:/etc/clickhouse-server
+    depends_on:
+      - wh-zookeeper
+    healthcheck:
+      test: wget --no-verbose --tries=1 --spider http://localhost:8123/ping || exit 1
+      interval: 1s
+      retries: 25
+  wh-clickhouse03:
+    image: yandex/clickhouse-server:21-alpine
+    container_name: wh-clickhouse03
+    hostname: wh-clickhouse03
+    ports:
+      - "9000"
+    volumes:
+      - ./testdata/clickhouse/cluster/clickhouse03:/etc/clickhouse-server
+    depends_on:
+      - wh-zookeeper
+    healthcheck:
+      test: wget --no-verbose --tries=1 --spider http://localhost:8123/ping || exit 1
+      interval: 1s
+      retries: 25
+  wh-clickhouse04:
+    image: yandex/clickhouse-server:21-alpine
+    container_name: wh-clickhouse04
+    hostname: wh-clickhouse04
+    ports:
+      - "9000"
+    volumes:
+      - ./testdata/clickhouse/cluster/clickhouse04:/etc/clickhouse-server
+    depends_on:
+      - wh-zookeeper
+    healthcheck:
+      test: wget --no-verbose --tries=1 --spider http://localhost:8123/ping || exit 1
+      interval: 1s
+      retries: 25
+  statsd-exporter:
+    image: prom/statsd-exporter:latest
+    container_name: statsd-exporter
+    ports:
+      - "9102"
+      - "8125"
+      - "8125/udp"
+    command:
+      - --statsd.listen-udp=:8125
+      - --statsd.listen-tcp=:8125
+      - --web.listen-address=:9102
+  wh-backend:
+    container_name: wh-backend
+    depends_on:
+      wh-jobsDb:
+        condition: service_healthy
+      wh-transformer:
+        condition: service_healthy
+      wh-databricks-connector:
+        condition: service_healthy
+      wh-minio:
+        condition: service_healthy
+      statsd-exporter:
+        condition: service_healthy
+      wh-postgres:
+        condition: service_healthy
+      wh-ssh-server:
+        condition: service_healthy
+      wh-clickhouse:
+        condition: service_healthy
+      wh-mssql:
+        condition: service_healthy
+      wh-zookeeper:
+        condition: service_healthy
+      wh-clickhouse01:
+        condition: service_healthy
+      wh-clickhouse02:
+        condition: service_healthy
+      wh-clickhouse03:
+        condition: service_healthy
+      wh-clickhouse04:
+        condition: service_healthy
+      wh-azure:
+        condition: service_healthy
+    links:
+      - wh-clickhouse01
+      - wh-clickhouse02
+      - wh-clickhouse03
+      - wh-clickhouse04
+    build:
+      context: ../..
+      dockerfile: build/Dockerfile-warehouse-integration
+    ports:
+      - "8080"
+    env_file: testhelper/.env
+    environment:
+      - BIGQUERY_INTEGRATION_TEST_CREDENTIALS
+      - REDSHIFT_INTEGRATION_TEST_CREDENTIALS
+      - SNOWFLAKE_INTEGRATION_TEST_CREDENTIALS
+      - DATABRICKS_INTEGRATION_TEST_CREDENTIALS
+      - BIGQUERY_INTEGRATION_TEST_SCHEMA
+      - REDSHIFT_INTEGRATION_TEST_SCHEMA
+      - SNOWFLAKE_INTEGRATION_TEST_SCHEMA
+      - DATABRICKS_INTEGRATION_TEST_SCHEMA
+    entrypoint: sh -c 'go run warehouse/integrations/testhelper/generate-workspace-config/generate-workspace-config.go && go run main.go'
+    volumes:
+      - ../..:/app
+      - /.env
+    healthcheck:
+      test: wget --no-verbose --tries=1 --spider http://localhost:8080/health || exit 1
+      interval: 5s
+      retries: 50
+  start_warehouse_integration:
+    image: alpine:latest
+    depends_on:
+      wh-backend:
+        condition: service_healthy
