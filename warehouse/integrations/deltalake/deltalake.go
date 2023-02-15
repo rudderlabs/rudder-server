@@ -1090,7 +1090,9 @@ func (dl *Deltalake) GetTotalCountInTable(ctx context.Context, tableName string)
 	if err != nil {
 		return 0, fmt.Errorf("fetching table count: %w", err)
 	}
-
+	if response.GetErrorCode() != "" {
+		return 0, fmt.Errorf("fetching table count: %s", response.GetErrorMessage())
+	}
 	return response.GetCount(), nil
 }
 

@@ -142,7 +142,7 @@ type Handle struct {
 	EnableSQLStatementExecutionPlanWorkspaceIDs []string
 }
 
-type CredentialsT struct {
+type Credentials struct {
 	Host       string
 	DBName     string
 	User       string
@@ -181,7 +181,7 @@ func WithConfig(h *Handle, config *config.Config) {
 	h.EnableSQLStatementExecutionPlanWorkspaceIDs = config.GetStringSlice("Warehouse.postgres.EnableSQLStatementExecutionPlanWorkspaceIDs", nil)
 }
 
-func Connect(cred CredentialsT) (*sql.DB, error) {
+func Connect(cred Credentials) (*sql.DB, error) {
 	dsn := url.URL{
 		Scheme: "postgres",
 		Host:   fmt.Sprintf("%s:%s", cred.Host, cred.Port),
@@ -229,9 +229,9 @@ func Init() {
 	pkgLogger = logger.NewLogger().Child("warehouse").Child("postgres")
 }
 
-func (pg *Handle) getConnectionCredentials() CredentialsT {
+func (pg *Handle) getConnectionCredentials() Credentials {
 	sslMode := warehouseutils.GetConfigValue(sslMode, pg.Warehouse)
-	creds := CredentialsT{
+	creds := Credentials{
 		Host:     warehouseutils.GetConfigValue(host, pg.Warehouse),
 		DBName:   warehouseutils.GetConfigValue(dbName, pg.Warehouse),
 		User:     warehouseutils.GetConfigValue(user, pg.Warehouse),
