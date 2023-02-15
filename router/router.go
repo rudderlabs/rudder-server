@@ -141,6 +141,7 @@ type HandleT struct {
 	transientSources transientsource.Service
 	rsourcesService  rsources.JobService
 	debugger         destinationdebugger.DestinationDebugger
+	adaptiveLimit    func(int64) int64
 }
 
 type jobResponseT struct {
@@ -1647,13 +1648,13 @@ func (rt *HandleT) getQueryParams(pickUpCount int) jobsdb.GetQueryParamsT {
 				Optional: false,
 			}},
 			IgnoreCustomValFiltersInQuery: true,
-			PayloadSizeLimit:              rt.payloadLimit,
+			PayloadSizeLimit:              rt.adaptiveLimit(rt.payloadLimit),
 			JobsLimit:                     pickUpCount,
 		}
 	}
 	return jobsdb.GetQueryParamsT{
 		CustomValFilters: []string{rt.destName},
-		PayloadSizeLimit: rt.payloadLimit,
+		PayloadSizeLimit: rt.adaptiveLimit(rt.payloadLimit),
 		JobsLimit:        pickUpCount,
 	}
 }
@@ -1785,7 +1786,15 @@ func Init() {
 }
 
 // Setup initializes this module
-func (rt *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB jobsdb.MultiTenantJobsDB, errorDB jobsdb.JobsDB, destinationConfig destinationConfig, transientSources transientsource.Service, rsourcesService rsources.JobService, debugger destinationdebugger.DestinationDebugger) {
+func (rt *HandleT) Setup(
+	backendConfig backendconfig.BackendConfig,
+	jobsDB jobsdb.MultiTenantJobsDB,
+	errorDB jobsdb.JobsDB,
+	destinationConfig destinationConfig,
+	transientSources transientsource.Service,
+	rsourcesService rsources.JobService,
+	debugger destinationdebugger.DestinationDebugger,
+) {
 	rt.backendConfig = backendConfig
 	rt.workspaceSet = make(map[string]struct{})
 	rt.debugger = debugger
@@ -1901,6 +1910,10 @@ func (rt *HandleT) Setup(backendConfig backendconfig.BackendConfig, jobsDB jobsd
 		rt.statusInsertLoop()
 		return nil
 	}))
+
+	if rt.adaptiveLimit == nil {
+		rt.adaptiveLimit = func(limit int64) int64 { return limit }
+	}
 
 	rruntime.Go(func() {
 		rt.backendConfigSubscriber()
