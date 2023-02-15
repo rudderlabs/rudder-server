@@ -573,7 +573,6 @@ func (job *UploadJobT) run() (err error) {
 		}
 
 		if err != nil {
-			pkgLogger.Errorf("[WH] Upload: %d, TargetState: %s, NewState: %s, Error: %v", job.upload.ID, targetStatus, newStatus, err.Error())
 			state, err := job.setUploadError(err, newStatus)
 			if err == nil && state == model.Aborted {
 				job.generateUploadAbortedMetrics()
@@ -1595,7 +1594,23 @@ func (job *UploadJobT) Aborted(attempts int, startTime time.Time) bool {
 }
 
 func (job *UploadJobT) setUploadError(statusError error, state string) (string, error) {
-	pkgLogger.Errorf("[WH]: Failed during %s stage: %v\n", state, statusError.Error())
+	defer func() {
+		pkgLogger.Warnw("upload error",
+			logfield.UploadJobID, job.upload.ID,
+			logfield.UploadStatus, state,
+			logfield.SourceID, job.upload.SourceID,
+			logfield.DestinationID, job.upload.DestinationID,
+			logfield.DestinationType, job.upload.DestinationType,
+			logfield.WorkspaceID, job.upload.WorkspaceID,
+			logfield.Namespace, job.upload.Namespace,
+			logfield.Error, statusError,
+			logfield.UseRudderStorage, job.upload.UseRudderStorage,
+			logfield.Priority, job.upload.Priority,
+			logfield.Retried, job.upload.Retried,
+			logfield.Attempt, job.upload.Attempts,
+			logfield.LoadFileType, job.upload.LoadFileType,
+		)
+	}()
 
 	job.counterStat(fmt.Sprintf("error_%s", state)).Count(1)
 	upload := job.upload
@@ -1615,7 +1630,7 @@ func (job *UploadJobT) setUploadError(statusError error, state string) (string, 
 
 	// Reset the state as aborted if max retries
 	// exceeded.
-	uploadErrorAttempts := 5
+	uploadErrorAttempts := uploadErrors[state]["attempt"].(int)
 
 	if job.Aborted(uploadErrorAttempts, job.getUploadFirstAttemptTime()) {
 		state = model.Aborted
@@ -1716,7 +1731,6 @@ func (job *UploadJobT) setUploadError(statusError error, state string) (string, 
 
 	// On aborted state, validate credentials to allow
 	// us to differentiate between user caused abort vs platform issue.
-	state = model.Aborted
 	if state == model.Aborted {
 		// base tag to be sent as stat
 

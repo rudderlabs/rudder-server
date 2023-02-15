@@ -1,0 +1,6 @@
+11:pids:pid0
+10:cpuset:pid0
+9:perf_event:pid0
+8:memory:pid1
+7:blkio:pid10
+6:freezer:pid0
