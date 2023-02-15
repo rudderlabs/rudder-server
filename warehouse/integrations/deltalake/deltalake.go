@@ -909,6 +909,7 @@ func (dl *Deltalake) AddColumns(tableName string, columnsInfo []warehouseutils.C
 		if !checkAndIgnoreAlreadyExistError(executeResponse.GetErrorCode(), columnNotFound) {
 			return fmt.Errorf("add columns: %s", executeResponse.GetErrorMessage())
 		}
+		return nil
 	}
 
 	if executeResponse.GetErrorCode() != "" {
