@@ -10,7 +10,6 @@ import (
 	"net"
 	"net/url"
 	"os"
-	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
@@ -18,7 +17,7 @@ import (
 	"unicode/utf16"
 	"unicode/utf8"
 
-	"github.com/rudderlabs/rudder-server/warehouse/utils/load_file_downloader"
+	"github.com/rudderlabs/rudder-server/warehouse/internal/service/load_file_downloader"
 
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 
@@ -124,7 +123,6 @@ var errorsMappings = []model.JobError{
 		Format: regexp.MustCompile(`unable to open tcp connection with host .*: dial tcp .*: i/o timeout`),
 	},
 }
-
 
 func NewMSSQL() *MSSQL {
 	return &MSSQL{
@@ -922,6 +920,6 @@ func (ms *MSSQL) SetConnectionTimeout(timeout time.Duration) {
 	ms.ConnectTimeout = timeout
 }
 
-func (ms *HandleT) ErrorMappings() []model.JobError {
+func (ms *MSSQL) ErrorMappings() []model.JobError {
 	return errorsMappings
 }

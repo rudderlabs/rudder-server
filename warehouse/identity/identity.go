@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/rudderlabs/rudder-server/warehouse/utils/load_file_downloader"
+	"github.com/rudderlabs/rudder-server/warehouse/internal/service/load_file_downloader"
 
 	"github.com/lib/pq"
 	"github.com/rudderlabs/rudder-server/config"
@@ -33,7 +33,7 @@ type WarehouseManager interface {
 
 type HandleT struct {
 	Warehouse          warehouseutils.Warehouse
-	Db                 *sql.DB
+	DB                 *sql.DB
 	Uploader           warehouseutils.UploaderI
 	UploadID           int64
 	WarehouseManager   WarehouseManager
@@ -404,7 +404,7 @@ func (idr *HandleT) createTempGzFile(dirName string) (gzWriter misc.GZipWriter, 
 }
 
 func (idr *HandleT) processMergeRules(fileNames []string) (err error) {
-	txn, err := idr.Db.Begin()
+	txn, err := idr.DB.Begin()
 	if err != nil {
 		panic(err)
 	}

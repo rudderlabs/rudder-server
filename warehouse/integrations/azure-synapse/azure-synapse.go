@@ -16,7 +16,7 @@ import (
 	"unicode/utf16"
 	"unicode/utf8"
 
-	"github.com/rudderlabs/rudder-server/warehouse/utils/load_file_downloader"
+	"github.com/rudderlabs/rudder-server/warehouse/internal/service/load_file_downloader"
 
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
@@ -868,6 +868,6 @@ func (as *AzureSynapse) SetConnectionTimeout(timeout time.Duration) {
 	as.ConnectTimeout = timeout
 }
 
-func (as *HandleT) ErrorMappings() []model.JobError {
+func (as *AzureSynapse) ErrorMappings() []model.JobError {
 	return errorsMappings
 }

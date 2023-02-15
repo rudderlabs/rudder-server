@@ -5,15 +5,13 @@ import (
 	"database/sql"
 	"fmt"
 	"net/url"
-	"os"
-	"path/filepath"
 	"regexp"
 	"strings"
 	"time"
 
-	"github.com/rudderlabs/rudder-server/warehouse/logfield"
+	"github.com/rudderlabs/rudder-server/warehouse/internal/service/load_file_downloader"
 
-	"github.com/rudderlabs/rudder-server/warehouse/utils/load_file_downloader"
+	"github.com/rudderlabs/rudder-server/warehouse/logfield"
 
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 
@@ -584,6 +582,6 @@ func (pg *Postgres) SetConnectionTimeout(timeout time.Duration) {
 	pg.ConnectTimeout = timeout
 }
 
-func (pq *Handle) ErrorMappings() []model.JobError {
+func (pq *Postgres) ErrorMappings() []model.JobError {
 	return errorsMappings
 }

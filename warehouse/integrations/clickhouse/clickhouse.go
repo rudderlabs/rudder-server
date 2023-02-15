@@ -14,14 +14,13 @@ import (
 	"net/url"
 	"os"
 	"path"
-	"path/filepath"
 	"regexp"
 	"sort"
 	"strconv"
 	"strings"
 	"time"
 
-	"github.com/rudderlabs/rudder-server/warehouse/utils/load_file_downloader"
+	"github.com/rudderlabs/rudder-server/warehouse/internal/service/load_file_downloader"
 
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 

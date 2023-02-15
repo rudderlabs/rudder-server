@@ -11,7 +11,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/rudderlabs/rudder-server/warehouse/utils/load_file_downloader"
+	"github.com/rudderlabs/rudder-server/warehouse/internal/service/load_file_downloader"
 
 	"github.com/rudderlabs/rudder-server/warehouse/logfield"
 
@@ -833,7 +833,7 @@ func (job *UploadJobT) getTablesToSkip() (map[string]*TableUploadIDInfoT, map[st
 func (job *UploadJobT) resolveIdentities(populateHistoricIdentities bool) (err error) {
 	idr := identity.HandleT{
 		Warehouse:          job.warehouse,
-		Db:                 job.dbHandle,
+		DB:                 job.dbHandle,
 		UploadID:           job.upload.ID,
 		Uploader:           job,
 		WarehouseManager:   job.whManager,

@@ -7,6 +7,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/warehouse/internal/service/load_file_downloader"
+
 	"github.com/google/uuid"
 	"github.com/ory/dockertest/v3"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
@@ -14,12 +16,11 @@ import (
 	"github.com/rudderlabs/rudder-server/testhelper/destination"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
-	"github.com/rudderlabs/rudder-server/warehouse/utils/load_file_downloader"
 	"github.com/stretchr/testify/require"
 )
 
 type mockUploader struct {
-	metadata []warehouseutils.LoadFileT
+	loadFiles []warehouseutils.LoadFileT
 }
 
 func (*mockUploader) GetSchemaInWarehouse() warehouseutils.SchemaT       { return warehouseutils.SchemaT{} }
@@ -44,7 +45,7 @@ func (m *mockUploader) GetTableSchemaInUpload(string) warehouseutils.TableSchema
 }
 
 func (m *mockUploader) GetLoadFilesMetadata(warehouseutils.GetLoadFilesOptionsT) []warehouseutils.LoadFileT {
-	return m.metadata
+	return m.loadFiles
 }
 
 func TestNewLoadFileDownloader(t *testing.T) {
@@ -61,8 +62,10 @@ func TestNewLoadFileDownloader(t *testing.T) {
 		workspaceID   = "test-workspace-id"
 		destinationID = "test-destination-id"
 		table         = "test-table"
-		ctx           = context.Background()
 	)
+
+	ctxCancel, cancel := context.WithCancel(context.Background())
+	cancel()
 
 	testCases := []struct {
 		name         string
@@ -70,9 +73,10 @@ func TestNewLoadFileDownloader(t *testing.T) {
 		numLoadFiles int
 		wantError    error
 		loadFiles    []warehouseutils.LoadFileT
+		ctx          context.Context
 	}{
 		{
-			name:         "happy path",
+			name:         "many load files",
 			numLoadFiles: 51,
 		},
 		{
@@ -92,6 +96,12 @@ func TestNewLoadFileDownloader(t *testing.T) {
 				},
 			},
 			wantError: errors.New("downloading batch: downloading object: downloading file from object storage: The specified key does not exist."),
+		},
+		{
+			name:         "context cancelled",
+			numLoadFiles: 11,
+			ctx:          ctxCancel,
+			wantError:    errors.New("downloading batch: downloading object: downloading file from object storage: context canceled"),
 		},
 	}
 
@@ -133,10 +143,19 @@ func TestNewLoadFileDownloader(t *testing.T) {
 
 			defer func() { _ = f.Close() }()
 
-			var loadFiles []warehouseutils.LoadFileT
+			var (
+				loadFiles []warehouseutils.LoadFileT
+				ctx       context.Context
+			)
+
+			if tc.ctx != nil {
+				ctx = tc.ctx
+			} else {
+				ctx = context.Background()
+			}
 
 			for i := 0; i < tc.numLoadFiles; i++ {
-				uploadOutput, err := fm.Upload(context.TODO(), f, uuid.New().String())
+				uploadOutput, err := fm.Upload(context.Background(), f, uuid.New().String())
 				require.NoError(t, err)
 
 				loadFiles = append(loadFiles, warehouseutils.LoadFileT{
@@ -145,7 +164,7 @@ func TestNewLoadFileDownloader(t *testing.T) {
 			}
 			loadFiles = append(loadFiles, tc.loadFiles...)
 
-			d := load_file_downloader.NewLoadFileDownloader(
+			lfd := load_file_downloader.NewLoadFileDownloader(
 				&warehouseutils.Warehouse{
 					Destination: backendconfig.DestinationT{
 						ID:     destinationID,
@@ -157,12 +176,12 @@ func TestNewLoadFileDownloader(t *testing.T) {
 					},
 				},
 				&mockUploader{
-					metadata: loadFiles,
+					loadFiles: loadFiles,
 				},
 				workers,
 			)
 
-			fileNames, err := d.Download(ctx, table)
+			fileNames, err := lfd.Download(ctx, table)
 
 			misc.RemoveFilePaths(fileNames...)
 
