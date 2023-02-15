@@ -10,6 +10,8 @@ import (
 	"net"
 	"net/url"
 	"os"
+	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -115,6 +117,14 @@ var partitionKeyMap = map[string]string{
 	warehouseutils.IdentifiesTable: "id",
 	warehouseutils.DiscardsTable:   "row_id, column_name, table_name",
 }
+
+var errorsMappings = []model.JobError{
+	{
+		Type:   model.PermissionError,
+		Format: regexp.MustCompile(`unable to open tcp connection with host .*: dial tcp .*: i/o timeout`),
+	},
+}
+
 
 func NewMSSQL() *MSSQL {
 	return &MSSQL{
@@ -910,4 +920,8 @@ func (ms *MSSQL) LoadTestTable(_, tableName string, payloadMap map[string]interf
 
 func (ms *MSSQL) SetConnectionTimeout(timeout time.Duration) {
 	ms.ConnectTimeout = timeout
+}
+
+func (ms *HandleT) ErrorMappings() []model.JobError {
+	return errorsMappings
 }

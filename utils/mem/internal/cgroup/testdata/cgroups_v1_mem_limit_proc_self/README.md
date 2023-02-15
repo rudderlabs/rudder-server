@@ -1,0 +1,1 @@
+Using cgroup v1 with current memory usage at 9456156672, where a memory limit is set at 26843545600 but cgroup information is retrievable through a /proc/self/cgroup file

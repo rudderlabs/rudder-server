@@ -2,6 +2,7 @@ package repo_test
 
 import (
 	"context"
+	"encoding/json"
 	"testing"
 	"time"
 
@@ -111,6 +112,31 @@ func TestUploads_Get(t *testing.T) {
 			PickupLag:      0,
 			PickupWaitTime: 0,
 		}, uploadStats)
+	})
+	t.Run("UploadTimings", func(t *testing.T) {
+		timings, err := repoUpload.UploadTimings(ctx, id)
+		require.NoError(t, err)
+		require.Equal(t, model.Timings{}, timings)
+
+		expected := model.Timings{{
+			"download": time.Date(2021, 1, 1, 0, 0, 0, 0, time.UTC),
+		}, {
+			"upload": time.Date(2021, 1, 1, 0, 0, 1, 0, time.UTC),
+		}}
+
+		r, err := json.Marshal(expected)
+		require.NoError(t, err)
+
+		// TODO: implement and use repo method
+		_, err = db.Exec("UPDATE wh_uploads SET timings = $1 WHERE id = $2", r, id)
+		require.NoError(t, err)
+
+		timings, err = repoUpload.UploadTimings(ctx, id)
+		require.NoError(t, err)
+		require.Equal(t, expected, timings)
+
+		_, err = repoUpload.UploadTimings(ctx, -1)
+		require.Equal(t, err, model.ErrUploadNotFound)
 	})
 }
 
@@ -352,4 +378,28 @@ func TestUploads_Delete(t *testing.T) {
 	files, err = repoStaging.Pending(ctx, "source_id", "destination_id")
 	require.NoError(t, err)
 	require.Len(t, files, 1)
+}
+
+func TestUploads_InterruptedDestinations(t *testing.T) {
+	t.Parallel()
+	db := setupDB(t)
+
+	_, err := db.Exec(`INSERT INTO wh_uploads (destination_id, source_id, in_progress, destination_type, status, namespace, schema, created_at, updated_at)
+		VALUES
+		(1, 1, true, 'RS', 'exporting_data', '', '{}', NOW(), NOW()),
+		(2, 1, true, 'RS', 'exporting_data_failed', '', '{}', NOW(), NOW()),
+		(3, 1, true, 'RS', 'exporting_data_failed', '', '{}', NOW(), NOW()),
+
+		(4, 1, true, 'RS', 'exported_data', '', '{}', NOW(), NOW()),
+		(5, 1, true, 'RS', 'aborted', '', '{}', NOW(), NOW()),
+		(6, 1, true, 'RS', 'failed', '', '{}', NOW(), NOW()),
+		(7, 1, true, 'SNOWFLAKE', 'exporting_data', '', '{}', NOW(), NOW())
+	`)
+	require.NoError(t, err)
+
+	repoUpload := repo.NewUploads(db)
+	ids, err := repoUpload.InterruptedDestinations(context.Background(), "RS")
+	require.NoError(t, err)
+
+	require.Equal(t, []string{"1", "2", "3"}, ids)
 }

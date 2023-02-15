@@ -3,6 +3,7 @@ package datalake
 import (
 	"context"
 	"fmt"
+	"regexp"
 	"time"
 
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
@@ -19,6 +20,13 @@ import (
 var (
 	pkgLogger logger.Logger
 )
+
+var errorsMappings = []model.JobError{
+	{
+		Type:   model.PermissionError,
+		Format: regexp.MustCompile(`AccessDeniedException: Insufficient Lake Formation permission.*: Required Create Database on Catalog`),
+	},
+}
 
 func Init() {
 	pkgLogger = logger.NewLogger().Child("warehouse").Child("datalake")
@@ -125,4 +133,8 @@ func (*HandleT) LoadTestTable(_, _ string, _ map[string]interface{}, _ string) e
 }
 
 func (*HandleT) SetConnectionTimeout(_ time.Duration) {
+}
+
+func (wh *HandleT) ErrorMappings() []model.JobError {
+	return errorsMappings
 }

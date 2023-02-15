@@ -14,6 +14,8 @@ import (
 	"net/url"
 	"os"
 	"path"
+	"path/filepath"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -123,6 +125,17 @@ var clickhouseDataTypesMapToRudder = map[string]string{
 	"SimpleAggregateFunction(anyLast, Nullable(String))":   "string",
 	"SimpleAggregateFunction(anyLast, Nullable(DateTime))": "datetime",
 	"SimpleAggregateFunction(anyLast, Nullable(UInt8))":    "boolean",
+}
+
+var errorsMappings = []model.JobError{
+	{
+		Type:   model.PermissionError,
+		Format: regexp.MustCompile(`code: 516, message: .*: Authentication failed: password is incorrect, or there is no user with such name`),
+	},
+	{
+		Type:   model.InsufficientResourceError,
+		Format: regexp.MustCompile(`code: 241, message: Memory limit .* exceeded: would use .*, maximum: .*`),
+	},
 }
 
 type Clickhouse struct {
@@ -1134,4 +1147,8 @@ func (ch *Clickhouse) LoadTestTable(_, tableName string, payloadMap map[string]i
 
 func (ch *Clickhouse) SetConnectionTimeout(timeout time.Duration) {
 	ch.ConnectTimeout = timeout
+}
+
+func (ch *Clickhouse) ErrorMappings() []model.JobError {
+	return errorsMappings
 }

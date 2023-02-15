@@ -45,6 +45,8 @@ const (
 	tableNameLimit         = 127
 )
 
+var errorsMappings []model.JobError
+
 var rudderDataTypesMapToMssql = map[string]string{
 	"int":      "bigint",
 	"float":    "decimal(28,10)",
@@ -864,4 +866,8 @@ func (as *AzureSynapse) LoadTestTable(_, tableName string, payloadMap map[string
 
 func (as *AzureSynapse) SetConnectionTimeout(timeout time.Duration) {
 	as.ConnectTimeout = timeout
+}
+
+func (as *HandleT) ErrorMappings() []model.JobError {
+	return errorsMappings
 }

@@ -377,6 +377,36 @@ func (uploads *Uploads) UploadJobsStats(ctx context.Context, destType string, op
 	return stats, nil
 }
 
+// UploadTimings returns the timings for an upload.
+func (uploads *Uploads) UploadTimings(ctx context.Context, uploadID int64) (model.Timings, error) {
+	var (
+		rawJSON jsoniter.RawMessage
+		timings model.Timings
+	)
+
+	err := uploads.db.QueryRowContext(ctx, `
+		SELECT
+			COALESCE(timings, '[]')::JSONB
+		FROM
+			`+uploadsTableName+`
+		WHERE
+			id = $1;
+	`, uploadID).Scan(&rawJSON)
+	if err == sql.ErrNoRows {
+		return timings, model.ErrUploadNotFound
+	}
+	if err != nil {
+		return timings, err
+	}
+
+	err = json.Unmarshal(rawJSON, &timings)
+	if err != nil {
+		return timings, err
+	}
+
+	return timings, nil
+}
+
 func (uploads *Uploads) DeleteWaiting(ctx context.Context, uploadID int64) error {
 	_, err := uploads.db.ExecContext(ctx,
 		`DELETE FROM `+uploadsTableName+` WHERE id = $1 AND status = $2`,
@@ -460,4 +490,48 @@ func scanUpload(scan scanFn, upload *model.Upload) error {
 	upload.Attempts = gjson.Get(string(upload.Error), fmt.Sprintf(`%s.attempt`, lastStatus)).Int()
 
 	return nil
+}
+
+// InterruptedDestinations returns a list of destination IDs, which have uploads was interrupted.
+//
+//	Interrupted upload might require cleanup of intermediate upload tables.
+func (uploads *Uploads) InterruptedDestinations(ctx context.Context, destinationType string) ([]string, error) {
+	destinationIDs := make([]string, 0)
+	rows, err := uploads.db.QueryContext(ctx, `
+		SELECT
+			destination_id
+		FROM
+			`+uploadsTableName+`
+		WHERE
+			in_progress = TRUE
+			AND destination_type = $1
+			AND (
+				status = $2
+				OR status = $3
+			);
+	`,
+		destinationType,
+		model.ExportingData,
+		model.ExportingDataFailed,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("query for interrupted destinations: %w", err)
+	}
+
+	defer rows.Close()
+
+	for rows.Next() {
+		var destID string
+		err := rows.Scan(&destID)
+		if err != nil {
+			return nil, fmt.Errorf("scanning: %w", err)
+		}
+		destinationIDs = append(destinationIDs, destID)
+	}
+
+	if rows.Err() != nil {
+		return nil, fmt.Errorf("iterating rows: %w", rows.Err())
+	}
+
+	return destinationIDs, nil
 }
