@@ -1594,6 +1594,11 @@ func (job *UploadJobT) Aborted(attempts int, startTime time.Time) bool {
 }
 
 func (job *UploadJobT) setUploadError(statusError error, state string) (string, error) {
+	var (
+		errorTags                  = job.ErrorHandler.MatchErrorMappings(statusError)
+		destCredentialsValidations *bool
+	)
+
 	defer func() {
 		pkgLogger.Warnw("upload error",
 			logfield.UploadJobID, job.upload.ID,
@@ -1609,6 +1614,8 @@ func (job *UploadJobT) setUploadError(statusError error, state string) (string, 
 			logfield.Retried, job.upload.Retried,
 			logfield.Attempt, job.upload.Attempts,
 			logfield.LoadFileType, job.upload.LoadFileType,
+			logfield.ErrorMapping, errorTags.Value,
+			logfield.DestinationCredsValid, destCredentialsValidations,
 		)
 	}()
 
@@ -1734,14 +1741,13 @@ func (job *UploadJobT) setUploadError(statusError error, state string) (string, 
 	if state == model.Aborted {
 		// base tag to be sent as stat
 
-		errorTags := job.ErrorHandler.MatchErrorMappings(statusError)
-
 		tags := []Tag{{Name: "attempt_number", Value: strconv.Itoa(attempts)}}
 		tags = append(tags, errorTags)
 
 		valid, err := job.validateDestinationCredentials()
 		if err == nil {
 			tags = append(tags, Tag{Name: "destination_creds_valid", Value: strconv.FormatBool(valid)})
+			destCredentialsValidations = &valid
 		}
 
 		job.counterStat("upload_aborted", tags...).Count(1)
