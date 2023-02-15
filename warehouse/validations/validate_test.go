@@ -101,8 +101,8 @@ func TestValidator(t *testing.T) {
 		t.Run("Datalakes", func(t *testing.T) {
 			t.Parallel()
 
-			tr := setup(t, pool)
-			_, minioResource := tr.pgResource, tr.minioResource
+			minioResource, err = destination.SetupMINIO(pool, t)
+			require.NoError(t, err)
 
 			var (
 				bucket = "s3-datalake-test"
@@ -139,26 +139,62 @@ func TestValidator(t *testing.T) {
 		tr := setup(t, pool)
 		pgResource, minioResource := tr.pgResource, tr.minioResource
 
-		v, err := validations.NewValidator(model.VerifyingConnections, &backendconfig.DestinationT{
-			DestinationDefinition: backendconfig.DestinationDefinitionT{
-				Name: warehouseutils.POSTGRES,
+		testCases := []struct {
+			name      string
+			config    map[string]interface{}
+			wantError error
+		}{
+			{
+				name: "invalid credentials",
+				config: map[string]interface{}{
+					"database": "invalid_database",
+				},
+				wantError: errors.New("pq: database \"invalid_database\" does not exist"),
 			},
-			Config: map[string]interface{}{
-				"host":            pgResource.Host,
-				"port":            pgResource.Port,
-				"database":        pgResource.Database,
-				"user":            pgResource.User,
-				"password":        pgResource.Password,
-				"sslMode":         sslmode,
-				"bucketProvider":  provider,
-				"bucketName":      minioResource.BucketName,
-				"accessKeyID":     minioResource.AccessKey,
-				"secretAccessKey": minioResource.SecretKey,
-				"endPoint":        minioResource.Endpoint,
+			{
+				name: "valid credentials",
 			},
-		})
-		require.NoError(t, err)
-		require.NoError(t, v.Validate())
+		}
+
+		for _, tc := range testCases {
+			tc := tc
+
+			t.Run(tc.name, func(t *testing.T) {
+				t.Parallel()
+
+				conf := map[string]interface{}{
+					"host":            pgResource.Host,
+					"port":            pgResource.Port,
+					"database":        pgResource.Database,
+					"user":            pgResource.User,
+					"password":        pgResource.Password,
+					"sslMode":         sslmode,
+					"bucketProvider":  provider,
+					"bucketName":      minioResource.BucketName,
+					"accessKeyID":     minioResource.AccessKey,
+					"secretAccessKey": minioResource.SecretKey,
+					"endPoint":        minioResource.Endpoint,
+				}
+
+				for k, v := range tc.config {
+					conf[k] = v
+				}
+
+				v, err := validations.NewValidator(model.VerifyingConnections, &backendconfig.DestinationT{
+					DestinationDefinition: backendconfig.DestinationDefinitionT{
+						Name: warehouseutils.POSTGRES,
+					},
+					Config: conf,
+				})
+				require.NoError(t, err)
+
+				if tc.wantError != nil {
+					require.EqualError(t, v.Validate(), tc.wantError.Error())
+				} else {
+					require.NoError(t, v.Validate())
+				}
+			})
+		}
 	})
 
 	t.Run("Create Schema", func(t *testing.T) {
@@ -167,27 +203,76 @@ func TestValidator(t *testing.T) {
 		tr := setup(t, pool)
 		pgResource, minioResource := tr.pgResource, tr.minioResource
 
-		v, err := validations.NewValidator(model.VerifyingCreateSchema, &backendconfig.DestinationT{
-			DestinationDefinition: backendconfig.DestinationDefinitionT{
-				Name: warehouseutils.POSTGRES,
+		var (
+			password            = "test_password"
+			userWithNoPrivilege = "test_user_with_no_privilege"
+		)
+
+		testCases := []struct {
+			name      string
+			config    map[string]interface{}
+			wantError error
+		}{
+			{
+				name: "with no privilege",
+				config: map[string]interface{}{
+					"user":      userWithNoPrivilege,
+					"password":  password,
+					"namespace": "test_namespace_with_no_privilege",
+				},
+				wantError: errors.New("pq: permission denied for database jobsdb"),
 			},
-			Config: map[string]interface{}{
-				"host":            pgResource.Host,
-				"port":            pgResource.Port,
-				"database":        pgResource.Database,
-				"user":            pgResource.User,
-				"password":        pgResource.Password,
-				"sslMode":         sslmode,
-				"namespace":       namespace,
-				"bucketProvider":  provider,
-				"bucketName":      minioResource.BucketName,
-				"accessKeyID":     minioResource.AccessKey,
-				"secretAccessKey": minioResource.SecretKey,
-				"endPoint":        minioResource.Endpoint,
+			{
+				name: "with privilege",
 			},
-		})
-		require.NoError(t, err)
-		require.NoError(t, v.Validate())
+		}
+
+		t.Log("Creating users with no privileges")
+		for _, user := range []string{userWithNoPrivilege} {
+			_, err = pgResource.DB.Exec(fmt.Sprintf("CREATE USER %s WITH PASSWORD '%s';", user, password))
+			require.NoError(t, err)
+		}
+
+		for _, tc := range testCases {
+			tc := tc
+
+			t.Run(tc.name, func(t *testing.T) {
+				t.Parallel()
+
+				conf := map[string]interface{}{
+					"host":            pgResource.Host,
+					"port":            pgResource.Port,
+					"database":        pgResource.Database,
+					"user":            pgResource.User,
+					"password":        pgResource.Password,
+					"sslMode":         sslmode,
+					"namespace":       namespace,
+					"bucketProvider":  provider,
+					"bucketName":      minioResource.BucketName,
+					"accessKeyID":     minioResource.AccessKey,
+					"secretAccessKey": minioResource.SecretKey,
+					"endPoint":        minioResource.Endpoint,
+				}
+
+				for k, v := range tc.config {
+					conf[k] = v
+				}
+
+				v, err := validations.NewValidator(model.VerifyingCreateSchema, &backendconfig.DestinationT{
+					DestinationDefinition: backendconfig.DestinationDefinitionT{
+						Name: warehouseutils.POSTGRES,
+					},
+					Config: conf,
+				})
+				require.NoError(t, err)
+
+				if tc.wantError != nil {
+					require.EqualError(t, v.Validate(), tc.wantError.Error())
+				} else {
+					require.NoError(t, v.Validate())
+				}
+			})
+		}
 	})
 
 	t.Run("Create And Alter Table", func(t *testing.T) {
