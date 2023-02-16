@@ -7,14 +7,14 @@ import (
 	"strings"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/services/stats"
+
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 
-	"github.com/iancoleman/strcase"
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/deltalake/client"
 
 	"github.com/rudderlabs/rudder-server/config"
 	proto "github.com/rudderlabs/rudder-server/proto/databricks"
-	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	warehouseclient "github.com/rudderlabs/rudder-server/warehouse/client"
@@ -292,17 +292,6 @@ func (*Deltalake) DeleteBy([]string, warehouseutils.DeleteByParams) error {
 
 // fetchTables fetch tables with tableNames
 func (dl *Deltalake) fetchTables(dbT *client.Client, schema string) (tableNames []string, err error) {
-	fetchTablesExecTime := dl.Stats.NewTaggedStat("warehouse.deltalake.grpcExecTime", stats.TimerType, stats.Tags{
-		"workspaceId": dl.Warehouse.WorkspaceID,
-		"destination": dl.Warehouse.Destination.ID,
-		"destType":    dl.Warehouse.Type,
-		"source":      dl.Warehouse.Source.ID,
-		"namespace":   dl.Warehouse.Namespace,
-		"identifier":  dl.Warehouse.Identifier,
-		"queryType":   "FetchTables",
-	})
-	defer fetchTablesExecTime.RecordDuration()()
-
 	fetchTableResponse, err := dbT.Client.FetchTables(dbT.Context, &proto.FetchTablesRequest{
 		Config:     dbT.CredConfig,
 		Identifier: dbT.CredIdentifier,
@@ -374,23 +363,6 @@ func (dl *Deltalake) partitionQuery(tableName string) (string, error) {
 	return query, nil
 }
 
-// ExecuteSQL executes sql using grpc Client
-func (dl *Deltalake) ExecuteSQL(sqlStatement, queryType string) (err error) {
-	execSqlStatTime := dl.Stats.NewTaggedStat("warehouse.deltalake.grpcExecTime", stats.TimerType, stats.Tags{
-		"workspaceId": dl.Warehouse.WorkspaceID,
-		"destination": dl.Warehouse.Destination.ID,
-		"destType":    dl.Warehouse.Type,
-		"source":      dl.Warehouse.Source.ID,
-		"namespace":   dl.Warehouse.Namespace,
-		"identifier":  dl.Warehouse.Identifier,
-		"queryType":   queryType,
-	})
-	defer execSqlStatTime.RecordDuration()()
-
-	err = dl.ExecuteSQLClient(dl.Client, sqlStatement)
-	return
-}
-
 // ExecuteSQLClient executes sql client using grpc Client
 func (*Deltalake) ExecuteSQLClient(client *client.Client, sqlStatement string) (err error) {
 	executeResponse, err := client.Client.Execute(client.Context, &proto.ExecuteRequest{
@@ -410,17 +382,6 @@ func (*Deltalake) ExecuteSQLClient(client *client.Client, sqlStatement string) (
 
 // schemaExists checks it schema exists or not.
 func (dl *Deltalake) schemaExists(schemaName string) (exists bool, err error) {
-	fetchSchemasExecTime := dl.Stats.NewTaggedStat("warehouse.deltalake.grpcExecTime", stats.TimerType, stats.Tags{
-		"workspaceId": dl.Warehouse.WorkspaceID,
-		"destination": dl.Warehouse.Destination.ID,
-		"destType":    dl.Warehouse.Type,
-		"source":      dl.Warehouse.Source.ID,
-		"namespace":   dl.Warehouse.Namespace,
-		"identifier":  dl.Warehouse.Identifier,
-		"queryType":   "FetchSchemas",
-	})
-	defer fetchSchemasExecTime.RecordDuration()()
-
 	sqlStatement := fmt.Sprintf(`SHOW SCHEMAS LIKE '%s';`, schemaName)
 	fetchSchemasResponse, err := dl.Client.Client.FetchSchemas(dl.Client.Context, &proto.FetchSchemasRequest{
 		Config:       dl.Client.CredConfig,
@@ -442,23 +403,12 @@ func (dl *Deltalake) schemaExists(schemaName string) (exists bool, err error) {
 func (dl *Deltalake) createSchema() (err error) {
 	sqlStatement := fmt.Sprintf(`CREATE SCHEMA IF NOT EXISTS %s;`, dl.Namespace)
 	dl.Logger.Infof("%s Creating schema in delta lake with SQL:%v", dl.GetLogIdentifier(), sqlStatement)
-	err = dl.ExecuteSQL(sqlStatement, "CreateSchema")
+	err = dl.ExecuteSQLClient(dl.Client, sqlStatement)
 	return
 }
 
 // dropStagingTables drops staging tables
 func (dl *Deltalake) dropStagingTables(tableNames []string) {
-	dropTablesExecTime := dl.Stats.NewTaggedStat("warehouse.deltalake.grpcExecTime", stats.TimerType, stats.Tags{
-		"workspaceId": dl.Warehouse.WorkspaceID,
-		"destination": dl.Warehouse.Destination.ID,
-		"destType":    dl.Warehouse.Type,
-		"source":      dl.Warehouse.Source.ID,
-		"namespace":   dl.Warehouse.Namespace,
-		"identifier":  dl.Warehouse.Identifier,
-		"queryType":   "DropStagingTables",
-	})
-	defer dropTablesExecTime.RecordDuration()()
-
 	for _, stagingTableName := range tableNames {
 		dl.Logger.Infof("%s Dropping table %+v\n", dl.GetLogIdentifier(), stagingTableName)
 		sqlStatement := fmt.Sprintf(`DROP TABLE %[1]s.%[2]s;`, dl.Namespace, stagingTableName)
@@ -613,7 +563,7 @@ func (dl *Deltalake) loadTable(tableName string, tableSchemaInUpload, tableSchem
 	}
 
 	// Executing copy sql statement
-	err = dl.ExecuteSQL(sqlStatement, "LT::Copy")
+	err = dl.ExecuteSQLClient(dl.Client, sqlStatement)
 	if err != nil {
 		dl.Logger.Errorf("%s Error running COPY command with SQL: %s\n error: %v", dl.GetLogIdentifier(tableName), sqlStatement, err)
 		return
@@ -646,7 +596,7 @@ func (dl *Deltalake) loadTable(tableName string, tableSchemaInUpload, tableSchem
 	dl.Logger.Infof("%v Inserting records using staging table with SQL: %s\n", dl.GetLogIdentifier(tableName), sqlStatement)
 
 	// Executing load table sql statement
-	err = dl.ExecuteSQL(sqlStatement, fmt.Sprintf("LT::%s", strcase.ToCamel(dl.LoadTableStrategy)))
+	err = dl.ExecuteSQLClient(dl.Client, sqlStatement)
 	if err != nil {
 		dl.Logger.Errorf("%v Error inserting into original table: %v\n", dl.GetLogIdentifier(tableName), err)
 		return
@@ -718,7 +668,7 @@ func (dl *Deltalake) loadUserTables() (errorMap map[string]error) {
 	)
 
 	// Executing create sql statement
-	err = dl.ExecuteSQL(sqlStatement, "LUT::Create")
+	err = dl.ExecuteSQLClient(dl.Client, sqlStatement)
 	if err != nil {
 		dl.Logger.Errorf("%s Creating staging table for users failed with SQL: %s\n", dl.GetLogIdentifier(), sqlStatement)
 		dl.Logger.Errorf("%s Error creating users staging table from original table and identifies staging table: %v\n", dl.GetLogIdentifier(), err)
@@ -760,7 +710,7 @@ func (dl *Deltalake) loadUserTables() (errorMap map[string]error) {
 	dl.Logger.Infof("%s Inserting records using staging table with SQL: %s\n", dl.GetLogIdentifier(warehouseutils.UsersTable), sqlStatement)
 
 	// Executing the load users table sql statement
-	err = dl.ExecuteSQL(sqlStatement, fmt.Sprintf("LUT::%s", strcase.ToCamel(dl.LoadTableStrategy)))
+	err = dl.ExecuteSQLClient(dl.Client, sqlStatement)
 	if err != nil {
 		dl.Logger.Errorf("%s Error inserting into users table from staging table: %v\n", err)
 		errorMap[warehouseutils.UsersTable] = err
@@ -818,17 +768,6 @@ func (dl *Deltalake) connectToWarehouse() (Client *client.Client, err error) {
 		Path:  warehouseutils.GetConfigValue(Path, dl.Warehouse),
 		Token: warehouseutils.GetConfigValue(Token, dl.Warehouse),
 	}
-	connStat := dl.Stats.NewTaggedStat("warehouse.deltalake.grpcExecTime", stats.TimerType, stats.Tags{
-		"workspaceId": dl.Warehouse.WorkspaceID,
-		"destination": dl.Warehouse.Destination.ID,
-		"destType":    dl.Warehouse.Type,
-		"source":      dl.Warehouse.Source.ID,
-		"namespace":   dl.Warehouse.Namespace,
-		"identifier":  dl.Warehouse.Identifier,
-		"queryType":   "Connect",
-	})
-	defer connStat.RecordDuration()()
-
 	return dl.NewClient(credT, dl.ConnectTimeout)
 }
 
@@ -849,7 +788,7 @@ func (dl *Deltalake) CreateTable(tableName string, columns map[string]string) (e
 
 	sqlStatement := fmt.Sprintf(`%s %s ( %v ) USING DELTA %s %s;`, createTableClauseSql, name, ColumnsWithDataTypes(columns, ""), tableLocationSql, partitionedSql)
 	dl.Logger.Infof("%s Creating table in delta lake with SQL: %v", dl.GetLogIdentifier(tableName), sqlStatement)
-	err = dl.ExecuteSQL(sqlStatement, "CreateTable")
+	err = dl.ExecuteSQLClient(dl.Client, sqlStatement)
 	return
 }
 
@@ -893,7 +832,7 @@ func (dl *Deltalake) AddColumns(tableName string, columnsInfo []warehouseutils.C
 	query += ");"
 
 	dl.Logger.Infof("DL: Adding columns for destinationID: %s, tableName: %s with query: %v", dl.Warehouse.Destination.ID, tableName, query)
-	err = dl.ExecuteSQL(query, "AddColumn")
+	err = dl.ExecuteSQLClient(dl.Client, query)
 	return
 }
 
@@ -949,17 +888,6 @@ func (dl *Deltalake) FetchSchema(warehouse warehouseutils.Warehouse) (schema, un
 		}
 		filteredTablesNames = append(filteredTablesNames, tableName)
 	}
-
-	fetchTablesAttributesExecTime := dl.Stats.NewTaggedStat("warehouse.deltalake.grpcExecTime", stats.TimerType, stats.Tags{
-		"workspaceId": dl.Warehouse.WorkspaceID,
-		"destination": dl.Warehouse.Destination.ID,
-		"destType":    dl.Warehouse.Type,
-		"source":      dl.Warehouse.Source.ID,
-		"namespace":   dl.Warehouse.Namespace,
-		"identifier":  dl.Warehouse.Identifier,
-		"queryType":   "FetchTableAttributes",
-	})
-	defer fetchTablesAttributesExecTime.RecordDuration()()
 
 	// For each table we are generating schema
 	for _, tableName := range filteredTablesNames {
