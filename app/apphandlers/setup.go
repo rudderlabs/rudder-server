@@ -7,6 +7,8 @@ import (
 	"time"
 
 	"github.com/rudderlabs/rudder-server/app"
+	"github.com/rudderlabs/rudder-server/app/cluster"
+	"github.com/rudderlabs/rudder-server/app/cluster/state"
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/processor"
@@ -17,6 +19,7 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/types/deployment"
+	"github.com/rudderlabs/rudder-server/utils/types/servermode"
 )
 
 // AppHandler starts the app
@@ -100,4 +103,37 @@ func NewRsourcesService(deploymentType deployment.Type) (rsources.JobService, er
 	}
 
 	return rsources.NewJobService(rsourcesConfig)
+}
+
+func resolveModeProvider(log logger.Logger, deploymentType deployment.Type) (cluster.ChangeEventProvider, error) {
+	enableProcessor := config.GetBool("enableProcessor", true)
+	enableRouter := config.GetBool("enableRouter", true)
+	forceStaticMode := config.GetBool("forceStaticModeProvider", false)
+
+	var modeProvider cluster.ChangeEventProvider
+
+	staticModeProvider := func() cluster.ChangeEventProvider {
+		// FIXME: hacky way to determine server mode
+		if enableProcessor && enableRouter {
+			return state.NewStaticProvider(servermode.NormalMode)
+		}
+		return state.NewStaticProvider(servermode.DegradedMode)
+	}
+
+	if forceStaticMode {
+		log.Info("forcing the use of Static Cluster Manager")
+		modeProvider = staticModeProvider()
+	} else {
+		switch deploymentType {
+		case deployment.MultiTenantType:
+			log.Info("using ETCD Based Dynamic Cluster Manager")
+			modeProvider = state.NewETCDDynamicProvider()
+		case deployment.DedicatedType:
+			log.Info("using Static Cluster Manager")
+			modeProvider = staticModeProvider()
+		default:
+			return modeProvider, fmt.Errorf("unsupported deployment type: %q", deploymentType)
+		}
+	}
+	return modeProvider, nil
 }

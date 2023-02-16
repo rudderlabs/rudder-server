@@ -458,7 +458,7 @@ func (proc *Handle) Start(ctx context.Context) error {
 	}
 
 	// limiters
-	s := stats.Default
+	s := proc.statsFactory
 	var limiterGroup sync.WaitGroup
 	proc.limiter.read = miscsync.NewLimiter(ctx, &limiterGroup, "proc_read",
 		config.GetInt("Processor.Limiter.read.limit", 50),
