@@ -8,6 +8,7 @@ const (
 	SourceType            = "sourceType"
 	DestinationID         = "destinationID"
 	DestinationType       = "destinationType"
+	DestinationRevisionID = "destinationRevisionID"
 	WorkspaceID           = "workspaceID"
 	Namespace             = "namespace"
 	Error                 = "error"
@@ -18,4 +19,5 @@ const (
 	LoadFileType          = "loadFileType"
 	ErrorMapping          = "errorMapping"
 	DestinationCredsValid = "destinationCredsValid"
+	Provider              = "provider"
 )
