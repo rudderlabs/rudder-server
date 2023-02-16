@@ -1,5 +1,68 @@
 # Changelog
 
+## [1.6.0-preview.4](https://github.com/rudderlabs/rudder-server/compare/v1.5.0...v1.6.0-preview.4) (2023-02-16)
+
+
+### Features
+
+* adaptive payload size limits ([#2949](https://github.com/rudderlabs/rudder-server/issues/2949)) ([fbfd845](https://github.com/rudderlabs/rudder-server/commit/fbfd845c68f8a131fd031e7bead17b40bdeeec00))
+* add webhook source error logging ([#2958](https://github.com/rudderlabs/rudder-server/issues/2958)) ([042d9b3](https://github.com/rudderlabs/rudder-server/commit/042d9b3285edfc97ed3bc1da02ceb01aff22b2c3))
+* introduce upload id to associate staging files to uploads ([#2908](https://github.com/rudderlabs/rudder-server/issues/2908)) ([d127a82](https://github.com/rudderlabs/rudder-server/commit/d127a82b04452777a070c5bc8b93c834c0ae99b6))
+* **warehouse:** added use rudder storage option to deltalake ([#2929](https://github.com/rudderlabs/rudder-server/issues/2929)) ([6885ba1](https://github.com/rudderlabs/rudder-server/commit/6885ba1ec22e8a40b0161f42c51d8291ab0768ec))
+* **warehouse:** clickhouse s3 table engine for load tables ([#2739](https://github.com/rudderlabs/rudder-server/issues/2739)) ([074e789](https://github.com/rudderlabs/rudder-server/commit/074e7897fbc0f6a43e8f5b1cddb14f2bd544ea32))
+* **warehouse:** databricks unity catalog ([#2878](https://github.com/rudderlabs/rudder-server/issues/2878)) ([074e789](https://github.com/rudderlabs/rudder-server/commit/074e7897fbc0f6a43e8f5b1cddb14f2bd544ea32))
+* **warehouse:** error tagging ([#2956](https://github.com/rudderlabs/rudder-server/issues/2956)) ([3131b96](https://github.com/rudderlabs/rudder-server/commit/3131b96c284840939bc9fe9ed7e0e48f5df0a9fa))
+* **warehouse:** glue partitions ([#2899](https://github.com/rudderlabs/rudder-server/issues/2899)) ([9a928d4](https://github.com/rudderlabs/rudder-server/commit/9a928d46009c86d2390d5415981edfbdf37ef19f))
+
+
+### Bug Fixes
+
+* adding throttling stats in router ([#2923](https://github.com/rudderlabs/rudder-server/issues/2923)) ([61109e2](https://github.com/rudderlabs/rudder-server/commit/61109e2b99ae43e066b8c1a1041ec7f04fc007d2))
+* adding throttling stats in router ([#2923](https://github.com/rudderlabs/rudder-server/issues/2923)) ([5a36692](https://github.com/rudderlabs/rudder-server/commit/5a366926ecbcad2a02e9a86c04ddd2497f3e7e41))
+* handle NULL on upload timings ([#2967](https://github.com/rudderlabs/rudder-server/issues/2967)) ([58381db](https://github.com/rudderlabs/rudder-server/commit/58381dbc49eacdfde7b35fcb1a49d26200a2a94e))
+* limit entire transformationStatus struct when caching them ([#2928](https://github.com/rudderlabs/rudder-server/issues/2928)) ([2283aef](https://github.com/rudderlabs/rudder-server/commit/2283aefadcbb3ac7596d2e027ee67075f44ff04e))
+* move recovery from scheduler to upload ([#2959](https://github.com/rudderlabs/rudder-server/issues/2959)) ([df7a491](https://github.com/rudderlabs/rudder-server/commit/df7a4918fa9ee6e221a6f8b9a557ca124ac9d4c8))
+* suppression syncer using wrong credentials in multi-tenant mode ([#2936](https://github.com/rudderlabs/rudder-server/issues/2936)) ([0eb3abb](https://github.com/rudderlabs/rudder-server/commit/0eb3abbc6abf2e0ae4abfec489a84395a01a2581))
+* upload missing metric ([#2947](https://github.com/rudderlabs/rudder-server/issues/2947)) ([b1fc5ee](https://github.com/rudderlabs/rudder-server/commit/b1fc5eec439f70b7f53a74220cc37782b2bb0dae))
+* **warehouse:** added check for nil warehouse manager during error mapping ([#2981](https://github.com/rudderlabs/rudder-server/issues/2981)) ([a258f74](https://github.com/rudderlabs/rudder-server/commit/a258f7412f589b3010265ac3fa45857112954ece))
+* **warehouse:** consolidaiton for merged schema to give preference for text datatype ([#2983](https://github.com/rudderlabs/rudder-server/issues/2983)) ([b262f1d](https://github.com/rudderlabs/rudder-server/commit/b262f1d2356b94ceee4eae64401aa022931d411a))
+* **warehouse:** deltalake client crashing when failing on connectionstep ([#2961](https://github.com/rudderlabs/rudder-server/issues/2961)) ([3373144](https://github.com/rudderlabs/rudder-server/commit/337314489329ae5fd1d82d7c2cb40ddd7f12208b))
+* **warehouse:** fix db migration to add upload_id to wh_staging_files… ([#2948](https://github.com/rudderlabs/rudder-server/issues/2948)) ([7fa1c9e](https://github.com/rudderlabs/rudder-server/commit/7fa1c9ef9168f17322d85b92b105bf7cd15efd0b))
+* **warehouse:** fix upload error and add additional logs ([#2972](https://github.com/rudderlabs/rudder-server/issues/2972)) ([d1d2338](https://github.com/rudderlabs/rudder-server/commit/d1d2338811eec9ce2af7ad871e5a08f61215068b))
+* **warehouse:** use single protocol source category while doing dedup for new record ([#2937](https://github.com/rudderlabs/rudder-server/issues/2937)) ([c46ba75](https://github.com/rudderlabs/rudder-server/commit/c46ba75385d1d8f4a1e00a477a670b4c14da549c))
+* **warehouse:** warehouse successful upload exists ([#2931](https://github.com/rudderlabs/rudder-server/issues/2931)) ([c46ba75](https://github.com/rudderlabs/rudder-server/commit/c46ba75385d1d8f4a1e00a477a670b4c14da549c))
+* **warehouse:** warehouse validations fixed to lookup secrets using sshKeyId ([#2950](https://github.com/rudderlabs/rudder-server/issues/2950)) ([017d8ba](https://github.com/rudderlabs/rudder-server/commit/017d8ba028bbfc108bf65e9e612a95160aeffc7c))
+
+
+### Miscellaneous
+
+* add workspace id in wh_async_jobs table ([#2848](https://github.com/rudderlabs/rudder-server/issues/2848)) ([074e789](https://github.com/rudderlabs/rudder-server/commit/074e7897fbc0f6a43e8f5b1cddb14f2bd544ea32))
+* capture cgroup-aware memory stats ([#2945](https://github.com/rudderlabs/rudder-server/issues/2945)) ([4e6cf3b](https://github.com/rudderlabs/rudder-server/commit/4e6cf3b9683a1fa643a9304a4c8c344b33e40690))
+* decouple loadfile logic and repo ([#2753](https://github.com/rudderlabs/rudder-server/issues/2753)) ([074e789](https://github.com/rudderlabs/rudder-server/commit/074e7897fbc0f6a43e8f5b1cddb14f2bd544ea32))
+* dedup destination metadata in router based on job id ([#2982](https://github.com/rudderlabs/rudder-server/issues/2982)) ([dfc2273](https://github.com/rudderlabs/rudder-server/commit/dfc227302b23bf8ceb3cdc72601f1bbd94435178))
+* **deps:** bump github.com/gofrs/uuid from 4.2.0+incompatible to 4.4.0+incompatible ([#2906](https://github.com/rudderlabs/rudder-server/issues/2906)) ([e8ecf32](https://github.com/rudderlabs/rudder-server/commit/e8ecf325f6d7a91e32c166d8fb4a92a0c4179350))
+* **deps:** bump github.com/samber/lo from 1.35.0 to 1.37.0 ([#2913](https://github.com/rudderlabs/rudder-server/issues/2913)) ([6718048](https://github.com/rudderlabs/rudder-server/commit/6718048682a080e6249fdbb2ad416370ad615deb))
+* drop column only if exists ([#2979](https://github.com/rudderlabs/rudder-server/issues/2979)) ([03e7390](https://github.com/rudderlabs/rudder-server/commit/03e73906991d7ee7fe15cfaf7858415a4a89811c))
+* enhance data sent to reporting ([#2914](https://github.com/rudderlabs/rudder-server/issues/2914)) ([c58100c](https://github.com/rudderlabs/rudder-server/commit/c58100c8b3f1abd7cf78f6397e130c4a4b99697e))
+* introduce stat for skip upload syncs ([#2938](https://github.com/rudderlabs/rudder-server/issues/2938)) ([b1fc5ee](https://github.com/rudderlabs/rudder-server/commit/b1fc5eec439f70b7f53a74220cc37782b2bb0dae))
+* **jobsdb:** support query filtering by workspaceID ([#2911](https://github.com/rudderlabs/rudder-server/issues/2911)) ([d049f2b](https://github.com/rudderlabs/rudder-server/commit/d049f2b20806f56bdda747e6fdeb6bc04f7eb339))
+* **processor:** stop using global variables ([#2881](https://github.com/rudderlabs/rudder-server/issues/2881)) ([074e789](https://github.com/rudderlabs/rudder-server/commit/074e7897fbc0f6a43e8f5b1cddb14f2bd544ea32))
+* protect measurement & tag names from empty strings ([#2946](https://github.com/rudderlabs/rudder-server/issues/2946)) ([f20a6f3](https://github.com/rudderlabs/rudder-server/commit/f20a6f3bf758de6226f16e230318a27fd2ee7b86))
+* refactored gateway marshalling ([#2915](https://github.com/rudderlabs/rudder-server/issues/2915)) ([2625f1a](https://github.com/rudderlabs/rudder-server/commit/2625f1ad2d1e036f6fd1d159810fdf1c84e4b799))
+* remove gorate throttling algorithm ([#2918](https://github.com/rudderlabs/rudder-server/issues/2918)) ([772187a](https://github.com/rudderlabs/rudder-server/commit/772187ad336d99a517540a33e51770a10f3b9f1c))
+* remove reports down migrations ([#2920](https://github.com/rudderlabs/rudder-server/issues/2920)) ([2fa72d6](https://github.com/rudderlabs/rudder-server/commit/2fa72d62995b2ba92cf683fba4388afd707fcb4a))
+* replace readme v1 announcement header ([#2893](https://github.com/rudderlabs/rudder-server/issues/2893)) ([074e789](https://github.com/rudderlabs/rudder-server/commit/074e7897fbc0f6a43e8f5b1cddb14f2bd544ea32))
+* staging files to uploads ([#2863](https://github.com/rudderlabs/rudder-server/issues/2863)) ([692f55c](https://github.com/rudderlabs/rudder-server/commit/692f55c41e6ce84edbdbc64ac078eb36d15b49ab))
+* use a partition lock when updating badger live events cache ([#2902](https://github.com/rudderlabs/rudder-server/issues/2902)) ([a4d1a71](https://github.com/rudderlabs/rudder-server/commit/a4d1a714db24dfabeb35948e95d1e2aba9bf8de5))
+* use badgerdb for live events cache ([#2833](https://github.com/rudderlabs/rudder-server/issues/2833)) ([074e789](https://github.com/rudderlabs/rudder-server/commit/074e7897fbc0f6a43e8f5b1cddb14f2bd544ea32))
+* use gauge for capturing pending events ([#2960](https://github.com/rudderlabs/rudder-server/issues/2960)) ([169ab96](https://github.com/rudderlabs/rudder-server/commit/169ab96cebe7656c2d8f1f0585deacf1007cd48b))
+* **warehouse:** alter handling for redshift ([#2888](https://github.com/rudderlabs/rudder-server/issues/2888)) ([e1918c1](https://github.com/rudderlabs/rudder-server/commit/e1918c103fe3b41353054684d94ae5e568c0bc07))
+* **warehouse:** log improvements for total count in warehouse integrations ([#2976](https://github.com/rudderlabs/rudder-server/issues/2976)) ([994c89b](https://github.com/rudderlabs/rudder-server/commit/994c89b71623fd17140f60797655c40900e3d80b))
+* **warehouse:** move warehouse destinations to integrations package ([#2885](https://github.com/rudderlabs/rudder-server/issues/2885)) ([074e789](https://github.com/rudderlabs/rudder-server/commit/074e7897fbc0f6a43e8f5b1cddb14f2bd544ea32))
+* **warehouse:** remove unused stats from deltalake integration ([#2977](https://github.com/rudderlabs/rudder-server/issues/2977)) ([d8639ee](https://github.com/rudderlabs/rudder-server/commit/d8639eede967b91d4a34497f3a83349b088d49b8))
+* **warehouse:** use warn while getting total count in warehouse ([#2944](https://github.com/rudderlabs/rudder-server/issues/2944)) ([4f225f5](https://github.com/rudderlabs/rudder-server/commit/4f225f5bae61e8d556f39a104045b6d5872753f5))
+* warmup gcra algorithms in throttling test ([#2909](https://github.com/rudderlabs/rudder-server/issues/2909)) ([2754027](https://github.com/rudderlabs/rudder-server/commit/27540272b5d5cee6a569dcb091cb755d91bc2594))
+
 ## [1.5.5](https://github.com/rudderlabs/rudder-server/compare/v1.5.4...v1.5.5) (2023-02-07)
 
 
