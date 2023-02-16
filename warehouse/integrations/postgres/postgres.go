@@ -142,7 +142,7 @@ type Handle struct {
 	EnableSQLStatementExecutionPlanWorkspaceIDs []string
 }
 
-type CredentialsT struct {
+type Credentials struct {
 	Host       string
 	DBName     string
 	User       string
@@ -181,7 +181,7 @@ func WithConfig(h *Handle, config *config.Config) {
 	h.EnableSQLStatementExecutionPlanWorkspaceIDs = config.GetStringSlice("Warehouse.postgres.EnableSQLStatementExecutionPlanWorkspaceIDs", nil)
 }
 
-func Connect(cred CredentialsT) (*sql.DB, error) {
+func Connect(cred Credentials) (*sql.DB, error) {
 	dsn := url.URL{
 		Scheme: "postgres",
 		Host:   fmt.Sprintf("%s:%s", cred.Host, cred.Port),
@@ -229,9 +229,9 @@ func Init() {
 	pkgLogger = logger.NewLogger().Child("warehouse").Child("postgres")
 }
 
-func (pg *Handle) getConnectionCredentials() CredentialsT {
+func (pg *Handle) getConnectionCredentials() Credentials {
 	sslMode := warehouseutils.GetConfigValue(sslMode, pg.Warehouse)
-	creds := CredentialsT{
+	creds := Credentials{
 		Host:     warehouseutils.GetConfigValue(host, pg.Warehouse),
 		DBName:   warehouseutils.GetConfigValue(dbName, pg.Warehouse),
 		User:     warehouseutils.GetConfigValue(user, pg.Warehouse),
@@ -974,13 +974,20 @@ func (*Handle) DownloadIdentityRules(*misc.GZipWriter) (err error) {
 	return
 }
 
-func (pg *Handle) GetTotalCountInTable(ctx context.Context, tableName string) (total int64, err error) {
-	sqlStatement := fmt.Sprintf(`SELECT count(*) FROM "%[1]s"."%[2]s"`, pg.Namespace, tableName)
+func (pg *Handle) GetTotalCountInTable(ctx context.Context, tableName string) (int64, error) {
+	var (
+		total        int64
+		err          error
+		sqlStatement string
+	)
+	sqlStatement = fmt.Sprintf(`
+		SELECT count(*) FROM "%[1]s"."%[2]s";
+	`,
+		pg.Namespace,
+		tableName,
+	)
 	err = pg.DB.QueryRowContext(ctx, sqlStatement).Scan(&total)
-	if err != nil {
-		pg.logger.Errorf(`PG: Error getting total count in table %s:%s`, pg.Namespace, tableName)
-	}
-	return
+	return total, err
 }
 
 func (pg *Handle) Connect(warehouse warehouseutils.Warehouse) (client.Client, error) {
