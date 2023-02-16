@@ -37,6 +37,7 @@ const (
 	InsufficientResourceError JobErrorType = "insufficient_resource_error"
 	ConcurrentQueriesError    JobErrorType = "concurrent_queries_error"
 	UnknownError              JobErrorType = "unknown_error"
+	Noop                      JobErrorType = "noop"
 )
 
 var ErrUploadNotFound = errors.New("upload not found")

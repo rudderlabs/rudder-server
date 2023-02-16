@@ -998,24 +998,30 @@ func (*Deltalake) DownloadIdentityRules(*misc.GZipWriter) (err error) {
 	return
 }
 
-// GetTotalCountInTable returns total count in tables.
-func (dl *Deltalake) GetTotalCountInTable(ctx context.Context, tableName string) (total int64, err error) {
-	sqlStatement := fmt.Sprintf(`SELECT COUNT(*) FROM %[1]s.%[2]s;`, dl.Namespace, tableName)
+// GetTotalCountInTable returns the total count in the table
+func (dl *Deltalake) GetTotalCountInTable(ctx context.Context, tableName string) (int64, error) {
+	var (
+		err          error
+		sqlStatement string
+	)
+	sqlStatement = fmt.Sprintf(`
+		SELECT COUNT(*) FROM %[1]s.%[2]s;
+	`,
+		dl.Namespace,
+		tableName,
+	)
 	response, err := dl.Client.Client.FetchTotalCountInTable(ctx, &proto.FetchTotalCountInTableRequest{
 		Config:       dl.Client.CredConfig,
 		Identifier:   dl.Client.CredIdentifier,
 		SqlStatement: sqlStatement,
 	})
 	if err != nil {
-		err = fmt.Errorf("%s Error while fetching table count: %v", dl.GetLogIdentifier(), err)
-		return
+		return 0, fmt.Errorf("fetching table count: %w", err)
 	}
-	if !checkAndIgnoreAlreadyExistError(response.GetErrorCode(), tableOrViewNotFound) {
-		err = fmt.Errorf("%s Error while fetching table count with response: %v", dl.GetLogIdentifier(), response.GetErrorMessage())
-		return
+	if response.GetErrorCode() != "" {
+		return 0, fmt.Errorf("fetching table count: %s", response.GetErrorMessage())
 	}
-	total = response.GetCount()
-	return
+	return response.GetCount(), nil
 }
 
 // Connect returns Client
