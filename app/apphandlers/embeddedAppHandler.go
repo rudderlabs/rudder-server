@@ -8,6 +8,7 @@ import (
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/router/throttler"
 	"github.com/rudderlabs/rudder-server/utils/logger"
+	"github.com/rudderlabs/rudder-server/utils/payload"
 	"github.com/rudderlabs/rudder-server/utils/types/deployment"
 
 	"golang.org/x/sync/errgroup"
@@ -213,7 +214,24 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 		return fmt.Errorf("unsupported deployment type: %q", deploymentType)
 	}
 
-	proc := processor.New(ctx, &options.ClearDB, gwDBForProcessor, routerDB, batchRouterDB, errDB, multitenantStats, reportingI, transientSources, fileUploaderProvider, rsourcesService, destinationHandle, transformationhandle)
+	adaptiveLimit := payload.SetupAdaptiveLimiter(ctx, g)
+
+	proc := processor.New(
+		ctx,
+		&options.ClearDB,
+		gwDBForProcessor,
+		routerDB,
+		batchRouterDB,
+		errDB,
+		multitenantStats,
+		reportingI,
+		transientSources,
+		fileUploaderProvider,
+		rsourcesService,
+		destinationHandle,
+		transformationhandle,
+		processor.WithAdaptiveLimit(adaptiveLimit),
+	)
 	throttlerFactory, err := throttler.New(stats.Default)
 	if err != nil {
 		return fmt.Errorf("failed to create throttler factory: %w", err)
@@ -228,6 +246,7 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 		RsourcesService:  rsourcesService,
 		ThrottlerFactory: throttlerFactory,
 		Debugger:         destinationHandle,
+		AdaptiveLimit:    adaptiveLimit,
 	}
 	brtFactory := &batchrouter.Factory{
 		Reporting:        reportingI,
@@ -238,6 +257,7 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 		TransientSources: transientSources,
 		RsourcesService:  rsourcesService,
 		Debugger:         destinationHandle,
+		AdaptiveLimit:    adaptiveLimit,
 	}
 	rt := routerManager.New(rtFactory, brtFactory, backendconfig.DefaultBackendConfig)
 
