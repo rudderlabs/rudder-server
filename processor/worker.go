@@ -22,7 +22,7 @@ func newWorker(ctx context.Context, partition string, h workerHandle) *worker {
 	}
 	w.lifecycle.ctx, w.lifecycle.cancel = context.WithCancel(ctx)
 	w.channel.ping = make(chan struct{}, 1)
-	w.channel.preproccess = make(chan subJob, w.handle.config().pipelineBufferedItems)
+	w.channel.preprocess = make(chan subJob, w.handle.config().pipelineBufferedItems)
 	w.channel.transform = make(chan *transformationMessage, w.handle.config().pipelineBufferedItems)
 	w.channel.store = make(chan *storeMessage, (w.handle.config().pipelineBufferedItems+1)*(w.handle.config().maxEventsToProcess/w.handle.config().subJobSize+1))
 	w.start()
@@ -31,7 +31,7 @@ func newWorker(ctx context.Context, partition string, h workerHandle) *worker {
 }
 
 // worker picks jobs from jobsdb for the appropriate partition and performs all processing steps for them
-//  1. preproccess
+//  1. preprocess
 //  2. transform
 //  3. store
 type worker struct {
@@ -49,10 +49,10 @@ type worker struct {
 	}
 
 	channel struct { // worker channels
-		ping        chan struct{}               // ping channel triggers the worker to start working
-		preproccess chan subJob                 // preproccess channel is used to send jobs to preproccess asynchronously when pipelining is enabled
-		transform   chan *transformationMessage // transform channel is used to send jobs to transform asynchronously when pipelining is enabled
-		store       chan *storeMessage          // store channel is used to send jobs to store asynchronously when pipelining is enabled
+		ping       chan struct{}               // ping channel triggers the worker to start working
+		preprocess chan subJob                 // preprocess channel is used to send jobs to preprocess asynchronously when pipelining is enabled
+		transform  chan *transformationMessage // transform channel is used to send jobs to transform asynchronously when pipelining is enabled
+		store      chan *storeMessage          // store channel is used to send jobs to store asynchronously when pipelining is enabled
 	}
 }
 
@@ -63,7 +63,7 @@ func (w *worker) start() {
 	rruntime.Go(func() {
 		var exponentialSleep misc.ExponentialNumber[time.Duration]
 		defer w.lifecycle.wg.Done()
-		defer close(w.channel.preproccess)
+		defer close(w.channel.preprocess)
 		defer close(w.channel.ping)
 		defer w.logger.Debugf("ping loop stopped for worker: %s", w.partition)
 		for {
@@ -90,13 +90,13 @@ func (w *worker) start() {
 		return
 	}
 
-	// preproccess jobs
+	// preprocess jobs
 	w.lifecycle.wg.Add(1)
 	rruntime.Go(func() {
 		defer w.lifecycle.wg.Done()
 		defer close(w.channel.transform)
-		defer w.logger.Debugf("preproccessing routine stopped for worker: %s", w.partition)
-		for jobs := range w.channel.preproccess {
+		defer w.logger.Debugf("preprocessing routine stopped for worker: %s", w.partition)
+		for jobs := range w.channel.preprocess {
 			w.channel.transform <- w.handle.processJobsForDest(w.partition, jobs, nil)
 		}
 	})
@@ -168,7 +168,7 @@ func (w *worker) pickJobs() (picked bool) {
 		rsourcesStats.BeginProcessing(jobs.Jobs)
 		subJobs := w.handle.jobSplitter(jobs.Jobs, rsourcesStats)
 		for _, subJob := range subJobs {
-			w.channel.preproccess <- subJob
+			w.channel.preprocess <- subJob
 		}
 
 		// sleepRatio is dependent on the number of events read in this loop

@@ -32,4 +32,15 @@ func TestExponentialNumber(t *testing.T) {
 		exp.Reset()
 		require.Equal(t, 1*time.Second, exp.Next(time.Second, 10*time.Second))
 	})
+
+	t.Run("exponential float", func(t *testing.T) {
+		var exp misc.ExponentialNumber[float64]
+		require.EqualValues(t, 0.9, exp.Next(0.9, 5))
+		require.EqualValues(t, 1.8, exp.Next(0.9, 5))
+		require.EqualValues(t, 3.6, exp.Next(0.9, 5))
+		require.EqualValues(t, 5, exp.Next(0.9, 5))
+		require.EqualValues(t, 5, exp.Next(0.9, 5))
+		exp.Reset()
+		require.EqualValues(t, 0.9, exp.Next(0.9, 5))
+	})
 }

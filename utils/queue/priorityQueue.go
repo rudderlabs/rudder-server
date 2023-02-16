@@ -13,7 +13,8 @@ type Item[T any] struct {
 	index     int
 }
 
-// PriorityQueue ....
+// PriorityQueue provides a heap.Interface compatible priority queue for the Item type.
+// The actual Item.index in the queue is controlled by the Item.Priority and Item.timeStamp.
 type PriorityQueue[T any] []*Item[T]
 
 // Len: Size of the priority queue . Used to satisfy the heap interface...

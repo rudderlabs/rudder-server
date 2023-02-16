@@ -172,6 +172,7 @@ func (l *limiter) wait(priority LimiterPriorityValue) {
 
 	// dynamic priority (increment priority every dynamicPeriod)
 	ticker := time.NewTicker(l.dynamicPeriod)
+	defer ticker.Stop()
 	for {
 		select {
 		case <-w.Value:
