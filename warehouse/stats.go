@@ -7,8 +7,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
-
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/misc"
@@ -151,20 +149,6 @@ func (job *UploadJobT) generateUploadAbortedMetrics() {
 	}
 
 	job.counterStat("num_staged_events").Count(int(numStagedEvents))
-
-	// Set the upload_aborted stat
-	attempts := job.getAttemptNumber()
-	tags := []Tag{
-		{Name: "attempt_number", Value: strconv.Itoa(attempts)},
-		{Name: "error_mapping", Value: string(model.Noop)},
-	}
-	valid, err := job.validateDestinationCredentials()
-	if err == nil {
-		// Only if error is nil, meaning we were able to
-		// successfully validate the creds, we set this tag
-		tags = append(tags, Tag{Name: "destination_creds_valid", Value: strconv.FormatBool(valid)})
-	}
-	job.counterStat("upload_aborted", tags...).Count(1)
 }
 
 func (job *UploadJobT) recordTableLoad(tableName string, numEvents int64) {
