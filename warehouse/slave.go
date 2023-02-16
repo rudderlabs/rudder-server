@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/rudderlabs/rudder-server/warehouse/schema"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -393,9 +394,9 @@ func processStagingFile(job Payload, workerIndex int) (loadFileUploadOutputs []l
 		stats:        stats.Default,
 	}
 
-	defer jobRun.counterStat("staging_files_processed", Tag{Name: "worker_id", Value: strconv.Itoa(workerIndex)}).Count(1)
+	defer jobRun.counterStat("staging_files_processed", warehouseutils.Tag{Name: "worker_id", Value: strconv.Itoa(workerIndex)}).Count(1)
 	defer func() {
-		jobRun.timerStat("staging_files_total_processing_time", Tag{Name: "worker_id", Value: strconv.Itoa(workerIndex)}).Since(processStartTime)
+		jobRun.timerStat("staging_files_total_processing_time", warehouseutils.Tag{Name: "worker_id", Value: strconv.Itoa(workerIndex)}).Since(processStartTime)
 	}()
 	defer jobRun.cleanup()
 
@@ -523,7 +524,7 @@ func processStagingFile(job Payload, workerIndex int) (loadFileUploadOutputs []l
 			dataTypeInSchema, ok := job.UploadSchema[tableName][columnName]
 			violatedConstraints := ViolatedConstraints(job.DestinationType, &batchRouterEvent, columnName)
 			if ok && ((columnType != dataTypeInSchema) || (violatedConstraints.IsViolated)) {
-				newColumnVal, convError := HandleSchemaChange(
+				newColumnVal, convError := schema.HandleSchemaChange(
 					model.SchemaType(dataTypeInSchema),
 					model.SchemaType(columnType),
 					columnVal,

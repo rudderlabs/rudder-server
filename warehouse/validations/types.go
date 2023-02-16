@@ -96,24 +96,24 @@ type CTUploadJob struct {
 	infoRequest *DestinationValidationRequest
 }
 
-func (*CTUploadJob) GetSchemaInWarehouse() warehouseutils.SchemaT {
-	return warehouseutils.SchemaT{}
+func (*CTUploadJob) GetSchemaInWarehouse() warehouseutils.Schema {
+	return warehouseutils.Schema{}
 }
 
-func (*CTUploadJob) GetLocalSchema() warehouseutils.SchemaT {
-	return warehouseutils.SchemaT{}
+func (*CTUploadJob) GetLocalSchema() warehouseutils.Schema {
+	return warehouseutils.Schema{}
 }
 
-func (*CTUploadJob) UpdateLocalSchema(_ warehouseutils.SchemaT) error {
+func (*CTUploadJob) UpdateLocalSchema(_ warehouseutils.Schema) error {
 	return nil
 }
 
-func (*CTUploadJob) GetTableSchemaInWarehouse(_ string) warehouseutils.TableSchemaT {
-	return warehouseutils.TableSchemaT{}
+func (*CTUploadJob) GetTableSchemaInWarehouse(_ string) warehouseutils.TableSchema {
+	return warehouseutils.TableSchema{}
 }
 
-func (*CTUploadJob) GetTableSchemaInUpload(_ string) warehouseutils.TableSchemaT {
-	return warehouseutils.TableSchemaT{}
+func (*CTUploadJob) GetTableSchemaInUpload(_ string) warehouseutils.TableSchema {
+	return warehouseutils.TableSchema{}
 }
 
 func (*CTUploadJob) GetLoadFilesMetadata(_ warehouseutils.GetLoadFilesOptionsT) []warehouseutils.LoadFileT {

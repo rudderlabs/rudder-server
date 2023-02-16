@@ -1,8 +1,9 @@
-package warehouse
+package errors
 
 import (
 	"errors"
 	"fmt"
+	"github.com/rudderlabs/rudder-server/warehouse/utils"
 	"strings"
 
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/manager"
@@ -30,7 +31,7 @@ type ErrorHandler struct {
 // MatchErrorMappings matches the error with the error mappings defined in the integrations
 // and returns the corresponding joins of the matched error type
 // else returns UnknownError
-func (e *ErrorHandler) MatchErrorMappings(err error) Tag {
+func (e *ErrorHandler) MatchErrorMappings(err error) warehouseutils.Tag {
 	var (
 		errMappings []string
 		errString   = err.Error()
@@ -43,7 +44,7 @@ func (e *ErrorHandler) MatchErrorMappings(err error) Tag {
 	}
 
 	if len(errMappings) > 0 {
-		return Tag{Name: "error_mapping", Value: strings.Join(errMappings, ",")}
+		return warehouseutils.Tag{Name: "error_mapping", Value: strings.Join(errMappings, ",")}
 	}
-	return Tag{Name: "error_mapping", Value: string(model.UnknownError)}
+	return warehouseutils.Tag{Name: "error_mapping", Value: string(model.UnknownError)}
 }

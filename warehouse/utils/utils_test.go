@@ -1148,20 +1148,20 @@ func TestCreateAWSSessionConfig(t *testing.T) {
 }
 
 var _ = Describe("Utils", func() {
-	DescribeTable("Get columns from table schema", func(schema TableSchemaT, expected []string) {
+	DescribeTable("Get columns from table schema", func(schema TableSchema, expected []string) {
 		columns := GetColumnsFromTableSchema(schema)
 		sort.Strings(columns)
 		sort.Strings(expected)
 		Expect(columns).To(Equal(expected))
 	},
-		Entry(nil, TableSchemaT{"k1": "v1", "k2": "v2"}, []string{"k1", "k2"}),
-		Entry(nil, TableSchemaT{"k2": "v1", "k1": "v2"}, []string{"k2", "k1"}),
+		Entry(nil, TableSchema{"k1": "v1", "k2": "v2"}, []string{"k1", "k2"}),
+		Entry(nil, TableSchema{"k2": "v1", "k1": "v2"}, []string{"k2", "k1"}),
 	)
 
-	DescribeTable("JSON schema to Map", func(rawMsg json.RawMessage, expected SchemaT) {
+	DescribeTable("JSON schema to Map", func(rawMsg json.RawMessage, expected Schema) {
 		Expect(JSONSchemaToMap(rawMsg)).To(Equal(expected))
 	},
-		Entry(nil, json.RawMessage(`{"k1": { "k2": "v2" }}`), SchemaT{"k1": {"k2": "v2"}}),
+		Entry(nil, json.RawMessage(`{"k1": { "k2": "v2" }}`), Schema{"k1": {"k2": "v2"}}),
 	)
 
 	DescribeTable("Get date range list", func(start, end time.Time, format string, expected []string) {

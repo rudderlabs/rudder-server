@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/rudderlabs/rudder-server/warehouse/schema"
 	"os"
 	"testing"
 
@@ -154,8 +155,8 @@ func TestColumnCountStat(t *testing.T) {
 					},
 				},
 				stats: store,
-				schemaHandle: &SchemaHandleT{
-					schemaInWarehouse: warehouseutils.SchemaT{
+				schemaHandle: &schema.Handler{
+					schemaInWarehouse: warehouseutils.Schema{
 						tableName: map[string]string{
 							"test-column-1": "string",
 							"test-column-2": "string",

@@ -705,18 +705,18 @@ type mockUploader struct {
 	mockError       error
 	fileType        string
 	fileLocation    string
-	uploadSchema    warehouseutils.TableSchemaT
-	warehouseSchema warehouseutils.TableSchemaT
+	uploadSchema    warehouseutils.TableSchema
+	warehouseSchema warehouseutils.TableSchema
 	firstEventAt    time.Time
 	lastEventAt     time.Time
 }
 
-func (*mockUploader) GetSchemaInWarehouse() warehouseutils.SchemaT     { return warehouseutils.SchemaT{} }
-func (*mockUploader) GetLocalSchema() warehouseutils.SchemaT           { return warehouseutils.SchemaT{} }
-func (*mockUploader) UpdateLocalSchema(_ warehouseutils.SchemaT) error { return nil }
-func (*mockUploader) ShouldOnDedupUseNewRecord() bool                  { return false }
-func (*mockUploader) UseRudderStorage() bool                           { return false }
-func (*mockUploader) GetLoadFileGenStartTIme() time.Time               { return time.Time{} }
+func (*mockUploader) GetSchemaInWarehouse() warehouseutils.Schema     { return warehouseutils.Schema{} }
+func (*mockUploader) GetLocalSchema() warehouseutils.Schema           { return warehouseutils.Schema{} }
+func (*mockUploader) UpdateLocalSchema(_ warehouseutils.Schema) error { return nil }
+func (*mockUploader) ShouldOnDedupUseNewRecord() bool                 { return false }
+func (*mockUploader) UseRudderStorage() bool                          { return false }
+func (*mockUploader) GetLoadFileGenStartTIme() time.Time              { return time.Time{} }
 func (*mockUploader) GetLoadFilesMetadata(warehouseutils.GetLoadFilesOptionsT) []warehouseutils.LoadFileT {
 	return nil
 }
@@ -729,11 +729,11 @@ func (m *mockUploader) GetFirstLastEvent() (time.Time, time.Time) {
 	return m.firstEventAt, m.lastEventAt
 }
 
-func (m *mockUploader) GetTableSchemaInUpload(string) warehouseutils.TableSchemaT {
+func (m *mockUploader) GetTableSchemaInUpload(string) warehouseutils.TableSchema {
 	return m.uploadSchema
 }
 
-func (m *mockUploader) GetTableSchemaInWarehouse(_ string) warehouseutils.TableSchemaT {
+func (m *mockUploader) GetTableSchemaInWarehouse(_ string) warehouseutils.TableSchema {
 	return m.warehouseSchema
 }
 
@@ -993,7 +993,7 @@ func TestDeltalake_LoadTable(t *testing.T) {
 				fileType:     tc.loadFileType,
 				mockError:    tc.mockUploaderError,
 				fileLocation: "https://test-bucket.s3.amazonaws.com/myfolder/test-object.csv",
-				uploadSchema: warehouseutils.TableSchemaT{
+				uploadSchema: warehouseutils.TableSchema{
 					"id":            "string",
 					"received_at":   "datetime",
 					"test_bool":     "boolean",
@@ -1002,7 +1002,7 @@ func TestDeltalake_LoadTable(t *testing.T) {
 					"test_int":      "int",
 					"test_string":   "string",
 				},
-				warehouseSchema: warehouseutils.TableSchemaT{
+				warehouseSchema: warehouseutils.TableSchema{
 					"id":                  "string",
 					"received_at":         "datetime",
 					"test_array_bool":     "array(boolean)",
@@ -1074,7 +1074,7 @@ func TestDeltalake_LoadUserTables(t *testing.T) {
 			dl.Uploader = &mockUploader{
 				fileType:     tc.loadFileType,
 				fileLocation: "http://test-location",
-				uploadSchema: warehouseutils.TableSchemaT{
+				uploadSchema: warehouseutils.TableSchema{
 					"id":            "string",
 					"received_at":   "datetime",
 					"test_bool":     "boolean",
@@ -1083,7 +1083,7 @@ func TestDeltalake_LoadUserTables(t *testing.T) {
 					"test_int":      "int",
 					"test_string":   "string",
 				},
-				warehouseSchema: warehouseutils.TableSchemaT{
+				warehouseSchema: warehouseutils.TableSchema{
 					"id":                  "string",
 					"received_at":         "datetime",
 					"test_array_bool":     "array(boolean)",

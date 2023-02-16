@@ -4,6 +4,8 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"github.com/rudderlabs/rudder-server/warehouse/internal/repo"
+	"github.com/rudderlabs/rudder-server/warehouse/schema"
 	"sync"
 
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/manager"
@@ -286,7 +288,7 @@ func (wh *HandleT) setupIdentityTables(warehouse warehouseutils.Warehouse) {
 }
 
 func (wh *HandleT) initPrePopulateDestIdentitiesUpload(warehouse warehouseutils.Warehouse) model.Upload {
-	schema := make(warehouseutils.SchemaT)
+	schema := make(warehouseutils.Schema)
 	// TODO: DRY this code
 	identityRules := map[string]string{
 		warehouseutils.ToProviderCase(wh.destType, "merge_property_1_type"):  "string",
@@ -440,14 +442,15 @@ func (wh *HandleT) populateHistoricIdentities(warehouse warehouseutils.Warehouse
 		}
 		defer whManager.Cleanup()
 
-		schemaHandle := SchemaHandleT{
-			warehouse:    job.warehouse,
-			stagingFiles: job.stagingFiles,
-			dbHandle:     job.dbHandle,
+		schemaHandle := schema.Handler{
+			Warehouse:    job.warehouse,
+			StagingFiles: job.stagingFiles,
+			DB:           job.dbHandle,
+			StagingRepo:  repo.NewStagingFiles(job.dbHandle),
 		}
 		job.schemaHandle = &schemaHandle
 
-		job.schemaHandle.schemaInWarehouse, job.schemaHandle.unrecognizedSchemaInWarehouse, err = whManager.FetchSchema(job.warehouse)
+		job.schemaHandle.SchemaInWarehouse, job.schemaHandle.UnrecognizedSchemaInWarehouse, err = whManager.FetchSchema(job.warehouse)
 		if err != nil {
 			pkgLogger.Errorf(`[WH]: Failed fetching schema from warehouse: %v`, err)
 			job.setUploadError(err, model.Aborted)

@@ -303,7 +303,7 @@ func (sf *HandleT) DeleteBy(tableNames []string, params warehouseutils.DeleteByP
 	return nil
 }
 
-func (sf *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutils.TableSchemaT, dbHandle *sql.DB, skipClosingDBSession bool) (tableLoadResp tableLoadRespT, err error) {
+func (sf *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutils.TableSchema, dbHandle *sql.DB, skipClosingDBSession bool) (tableLoadResp tableLoadRespT, err error) {
 	pkgLogger.Infof("SF: Starting load for table:%s\n", tableName)
 
 	if dbHandle == nil {
@@ -928,7 +928,7 @@ func (sf *HandleT) TestConnection(warehouse warehouseutils.Warehouse) (err error
 }
 
 // FetchSchema queries snowflake and returns the schema associated with provided namespace
-func (sf *HandleT) FetchSchema(warehouse warehouseutils.Warehouse) (schema, unrecognizedSchema warehouseutils.SchemaT, err error) {
+func (sf *HandleT) FetchSchema(warehouse warehouseutils.Warehouse) (schema, unrecognizedSchema warehouseutils.Schema, err error) {
 	sf.Warehouse = warehouse
 	sf.Namespace = warehouse.Namespace
 	dbHandle, err := Connect(sf.getConnectionCredentials(OptionalCredsT{}))
@@ -937,8 +937,8 @@ func (sf *HandleT) FetchSchema(warehouse warehouseutils.Warehouse) (schema, unre
 	}
 	defer dbHandle.Close()
 
-	schema = make(warehouseutils.SchemaT)
-	unrecognizedSchema = make(warehouseutils.SchemaT)
+	schema = make(warehouseutils.Schema)
+	unrecognizedSchema = make(warehouseutils.Schema)
 
 	sqlStatement := fmt.Sprintf(`
 		SELECT

@@ -501,7 +501,7 @@ func (notifier *PgNotifierT) claim(workerID string) (claim ClaimT, err error) {
 	return claim, nil
 }
 
-func (notifier *PgNotifierT) Publish(payload MessagePayload, schema *whUtils.SchemaT, priority int) (ch chan []ResponseT, err error) {
+func (notifier *PgNotifierT) Publish(payload MessagePayload, schema *whUtils.Schema, priority int) (ch chan []ResponseT, err error) {
 	publishStartTime := time.Now()
 	jobs := payload.Jobs
 	defer func() {
@@ -550,7 +550,7 @@ func (notifier *PgNotifierT) Publish(payload MessagePayload, schema *whUtils.Sch
 	}
 
 	uploadSchemaJSON, err := json.Marshal(struct {
-		UploadSchema whUtils.SchemaT
+		UploadSchema whUtils.Schema
 	}{
 		UploadSchema: *schema,
 	})

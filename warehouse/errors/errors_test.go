@@ -1,8 +1,9 @@
-package warehouse_test
+package errors_test
 
 import (
 	"bufio"
 	"errors"
+	errors2 "github.com/rudderlabs/rudder-server/warehouse/errors"
 	"os"
 	"path"
 	"path/filepath"
@@ -10,7 +11,6 @@ import (
 
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 
-	"github.com/rudderlabs/rudder-server/warehouse"
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/manager"
 	"github.com/stretchr/testify/require"
 )
@@ -51,7 +51,7 @@ func TestErrorHandler_MatchErrorMappings(t *testing.T) {
 			m, err := manager.New(destType)
 			require.NoError(t, err)
 
-			er := &warehouse.ErrorHandler{Manager: m}
+			er := &errors2.ErrorHandler{Manager: m}
 
 			f, err := os.Open(file)
 			require.NoError(t, err)
@@ -74,7 +74,7 @@ func TestErrorHandler_MatchErrorMappings(t *testing.T) {
 			m, err := manager.New(destType)
 			require.NoError(t, err)
 
-			er := &warehouse.ErrorHandler{Manager: m}
+			er := &errors2.ErrorHandler{Manager: m}
 			tag := er.MatchErrorMappings(errors.New("unknown error"))
 			require.Equal(t, tag.Name, "error_mapping")
 			require.Contains(t, tag.Value, string(model.UnknownError))

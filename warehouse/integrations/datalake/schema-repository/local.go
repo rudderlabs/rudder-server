@@ -22,15 +22,15 @@ func NewLocalSchemaRepository(wh warehouseutils.Warehouse, uploader warehouseuti
 	return &ls, nil
 }
 
-func (ls *LocalSchemaRepository) localFetchSchema() warehouseutils.SchemaT {
+func (ls *LocalSchemaRepository) localFetchSchema() warehouseutils.Schema {
 	if schema := ls.uploader.GetLocalSchema(); schema != nil {
 		return schema
 	}
-	return warehouseutils.SchemaT{}
+	return warehouseutils.Schema{}
 }
 
-func (ls *LocalSchemaRepository) FetchSchema(_ warehouseutils.Warehouse) (warehouseutils.SchemaT, warehouseutils.SchemaT, error) {
-	return ls.localFetchSchema(), warehouseutils.SchemaT{}, nil
+func (ls *LocalSchemaRepository) FetchSchema(_ warehouseutils.Warehouse) (warehouseutils.Schema, warehouseutils.Schema, error) {
+	return ls.localFetchSchema(), warehouseutils.Schema{}, nil
 }
 
 func (*LocalSchemaRepository) CreateSchema() (err error) {

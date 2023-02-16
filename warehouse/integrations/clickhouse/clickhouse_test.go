@@ -300,20 +300,20 @@ func TestHandle_UseS3CopyEngineForLoading(t *testing.T) {
 
 type mockUploader struct {
 	minioPort   string
-	tableSchema warehouseutils.TableSchemaT
+	tableSchema warehouseutils.TableSchema
 	metadata    []warehouseutils.LoadFileT
 }
 
-func (*mockUploader) GetSchemaInWarehouse() warehouseutils.SchemaT     { return warehouseutils.SchemaT{} }
-func (*mockUploader) GetLocalSchema() warehouseutils.SchemaT           { return warehouseutils.SchemaT{} }
-func (*mockUploader) UpdateLocalSchema(_ warehouseutils.SchemaT) error { return nil }
-func (*mockUploader) ShouldOnDedupUseNewRecord() bool                  { return false }
-func (*mockUploader) UseRudderStorage() bool                           { return false }
-func (*mockUploader) GetLoadFileGenStartTIme() time.Time               { return time.Time{} }
-func (*mockUploader) GetLoadFileType() string                          { return "JSON" }
-func (*mockUploader) GetFirstLastEvent() (time.Time, time.Time)        { return time.Time{}, time.Time{} }
-func (*mockUploader) GetTableSchemaInWarehouse(_ string) warehouseutils.TableSchemaT {
-	return warehouseutils.TableSchemaT{}
+func (*mockUploader) GetSchemaInWarehouse() warehouseutils.Schema     { return warehouseutils.Schema{} }
+func (*mockUploader) GetLocalSchema() warehouseutils.Schema           { return warehouseutils.Schema{} }
+func (*mockUploader) UpdateLocalSchema(_ warehouseutils.Schema) error { return nil }
+func (*mockUploader) ShouldOnDedupUseNewRecord() bool                 { return false }
+func (*mockUploader) UseRudderStorage() bool                          { return false }
+func (*mockUploader) GetLoadFileGenStartTIme() time.Time              { return time.Time{} }
+func (*mockUploader) GetLoadFileType() string                         { return "JSON" }
+func (*mockUploader) GetFirstLastEvent() (time.Time, time.Time)       { return time.Time{}, time.Time{} }
+func (*mockUploader) GetTableSchemaInWarehouse(_ string) warehouseutils.TableSchema {
+	return warehouseutils.TableSchema{}
 }
 
 func (*mockUploader) GetSingleLoadFile(_ string) (warehouseutils.LoadFileT, error) {
@@ -328,7 +328,7 @@ func (m *mockUploader) GetSampleLoadFileLocation(_ string) (string, error) {
 	return sampleLocation, nil
 }
 
-func (m *mockUploader) GetTableSchemaInUpload(string) warehouseutils.TableSchemaT {
+func (m *mockUploader) GetTableSchemaInUpload(string) warehouseutils.TableSchema {
 	return m.tableSchema
 }
 
@@ -450,7 +450,7 @@ func TestHandle_LoadTableRoundTrip(t *testing.T) {
 				},
 			}
 			mockUploader := &mockUploader{
-				tableSchema: warehouseutils.TableSchemaT{
+				tableSchema: warehouseutils.TableSchema{
 					"alter_test_bool":     "boolean",
 					"alter_test_datetime": "datetime",
 					"alter_test_float":    "float",
@@ -1010,7 +1010,7 @@ func TestHandle_FetchSchema(t *testing.T) {
 		require.NotEmpty(t, schema)
 		require.NotEmpty(t, unrecognizedSchema)
 
-		require.Equal(t, unrecognizedSchema, warehouseutils.SchemaT{
+		require.Equal(t, unrecognizedSchema, warehouseutils.Schema{
 			table: {
 				"x": "<missing_datatype>",
 			},

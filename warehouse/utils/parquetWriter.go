@@ -59,7 +59,7 @@ type ParquetWriter struct {
 	schema     []string
 }
 
-func CreateParquetWriter(schema TableSchemaT, outputFilePath, destType string) (*ParquetWriter, error) {
+func CreateParquetWriter(schema TableSchema, outputFilePath, destType string) (*ParquetWriter, error) {
 	bufWriter, err := misc.CreateBufferedWriter(outputFilePath)
 	if err != nil {
 		return nil, err
@@ -105,7 +105,7 @@ func (p *ParquetWriter) GetLoadFile() *os.File {
 	return p.fileWriter.GetFile()
 }
 
-func getSortedTableColumns(schema TableSchemaT) []string {
+func getSortedTableColumns(schema TableSchema) []string {
 	var sortedColumns []string
 	for col := range schema {
 		sortedColumns = append(sortedColumns, col)
@@ -114,7 +114,7 @@ func getSortedTableColumns(schema TableSchemaT) []string {
 	return sortedColumns
 }
 
-func getParquetSchema(schema TableSchemaT, destType string) ([]string, error) {
+func getParquetSchema(schema TableSchema, destType string) ([]string, error) {
 	whTypeMap, ok := rudderDataTypeToParquetDataType[destType]
 	if !ok {
 		return nil, errors.New("unsupported warehouse for parquet load files")

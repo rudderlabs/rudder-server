@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	errors2 "github.com/rudderlabs/rudder-server/warehouse/errors"
 	"net/http"
 	"os"
 	"strings"
@@ -846,7 +847,7 @@ func validateObjectStorage(ctx context.Context, request *ObjectStorageValidation
 
 	uploadOutput, err := fileManager.Upload(ctx, f)
 	if err != nil {
-		return InvalidDestinationCredErr{Base: err, Operation: "upload"}
+		return errors2.InvalidDestinationCredErr{Base: err, Operation: "upload"}
 	}
 	_ = f.Close()
 
@@ -865,7 +866,7 @@ func validateObjectStorage(ctx context.Context, request *ObjectStorageValidation
 
 	err = fileManager.Download(ctx, f, key)
 	if err != nil {
-		return InvalidDestinationCredErr{Base: err, Operation: "download"}
+		return errors2.InvalidDestinationCredErr{Base: err, Operation: "download"}
 	}
 	_ = f.Close()
 

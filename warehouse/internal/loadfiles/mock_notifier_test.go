@@ -17,7 +17,7 @@ type mockNotifier struct {
 	tables   []string
 }
 
-func (n *mockNotifier) Publish(payload pgnotifier.MessagePayload, schema *warehouseutils.SchemaT, priority int) (chan []pgnotifier.ResponseT, error) {
+func (n *mockNotifier) Publish(payload pgnotifier.MessagePayload, schema *warehouseutils.Schema, priority int) (chan []pgnotifier.ResponseT, error) {
 	var responses []pgnotifier.ResponseT
 	for _, p := range payload.Jobs {
 		var req loadfiles.WorkerJobRequest

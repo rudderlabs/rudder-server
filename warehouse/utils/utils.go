@@ -258,8 +258,8 @@ type DestinationT struct {
 }
 
 type (
-	SchemaT      map[string]TableSchemaT
-	TableSchemaT map[string]string
+	Schema      map[string]TableSchema
+	TableSchema map[string]string
 )
 
 type KeyValue struct {
@@ -268,11 +268,11 @@ type KeyValue struct {
 }
 
 type UploaderI interface {
-	GetSchemaInWarehouse() SchemaT
-	GetLocalSchema() SchemaT
-	UpdateLocalSchema(schema SchemaT) error
-	GetTableSchemaInWarehouse(tableName string) TableSchemaT
-	GetTableSchemaInUpload(tableName string) TableSchemaT
+	GetSchemaInWarehouse() Schema
+	GetLocalSchema() Schema
+	UpdateLocalSchema(schema Schema) error
+	GetTableSchemaInWarehouse(tableName string) TableSchema
+	GetTableSchemaInUpload(tableName string) TableSchema
 	GetLoadFilesMetadata(options GetLoadFilesOptionsT) []LoadFileT
 	GetSampleLoadFileLocation(tableName string) (string, error)
 	GetSingleLoadFile(tableName string) (LoadFileT, error)
@@ -402,7 +402,7 @@ func GetObjectFolderForDeltalake(provider, location string) (folder string) {
 	return
 }
 
-func GetColumnsFromTableSchema(schema TableSchemaT) []string {
+func GetColumnsFromTableSchema(schema TableSchema) []string {
 	keys := reflect.ValueOf(schema).MapKeys()
 	strKeys := make([]string, len(keys))
 	for i := 0; i < len(keys); i++ {
@@ -541,8 +541,8 @@ func GetS3Locations(loadFiles []LoadFileT) []LoadFileT {
 	return loadFiles
 }
 
-func JSONSchemaToMap(rawMsg json.RawMessage) SchemaT {
-	schema := make(SchemaT)
+func JSONSchemaToMap(rawMsg json.RawMessage) Schema {
+	schema := make(Schema)
 	err := json.Unmarshal(rawMsg, &schema)
 	if err != nil {
 		panic(fmt.Errorf("unmarshalling: %s failed with Error : %w", string(rawMsg), err))

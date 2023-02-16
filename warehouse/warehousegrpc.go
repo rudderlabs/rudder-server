@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	errors2 "github.com/rudderlabs/rudder-server/warehouse/errors"
 
 	proto "github.com/rudderlabs/rudder-server/proto/warehouse"
 	"github.com/rudderlabs/rudder-server/warehouse/client/controlplane"
@@ -180,7 +181,7 @@ func (*warehouseGRPC) ValidateObjectStorageDestination(ctx context.Context, requ
 	err = validateObjectStorage(ctx, r)
 	if err != nil {
 
-		if errors.As(err, &InvalidDestinationCredErr{}) {
+		if errors.As(err, &errors2.InvalidDestinationCredErr{}) {
 			return &proto.ValidateObjectStorageResponse{
 				IsValid: false,
 				Error:   err.Error(),

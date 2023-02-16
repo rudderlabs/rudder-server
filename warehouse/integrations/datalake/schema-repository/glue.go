@@ -57,9 +57,9 @@ func NewGlueSchemaRepository(wh warehouseutils.Warehouse) (*GlueSchemaRepository
 	return &gl, nil
 }
 
-func (gl *GlueSchemaRepository) FetchSchema(warehouse warehouseutils.Warehouse) (warehouseutils.SchemaT, warehouseutils.SchemaT, error) {
-	schema := warehouseutils.SchemaT{}
-	unrecognizedSchema := warehouseutils.SchemaT{}
+func (gl *GlueSchemaRepository) FetchSchema(warehouse warehouseutils.Warehouse) (warehouseutils.Schema, warehouseutils.Schema, error) {
+	schema := warehouseutils.Schema{}
+	unrecognizedSchema := warehouseutils.Schema{}
 	var err error
 
 	var getTablesOutput *glue.GetTablesOutput

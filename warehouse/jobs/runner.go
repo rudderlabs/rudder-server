@@ -45,17 +45,17 @@ func (a *AsyncJobWhT) getTableNamesBy(sourceID, destinationID, jobRunID, taskRun
 	a.logger.Infof("[WH-Jobs]: Extracting table names for the job run id %s", jobRunID)
 	var tableNames []string
 	var err error
-	query := `SELECT id 
-		FROM 
+	query := `SELECT id
+		FROM
 		` + warehouseutils.WarehouseUploadsTable + `
-		WHERE metadata->>'source_job_run_id'=$1 
-			AND metadata->>'source_task_run_id'=$2 
+		WHERE metadata->>'source_job_run_id'=$1
+			AND metadata->>'source_task_run_id'=$2
 			AND metadata in (
-				SELECT 
-					metadata 
-				FROM 
-				` + warehouseutils.WarehouseUploadsTable + ` 
-				WHERE source_id=$3 
+				SELECT
+					metadata
+				FROM
+				` + warehouseutils.WarehouseUploadsTable + `
+				WHERE source_id=$3
 				AND destination_id=$4
 			)`
 	a.logger.Debugf("[WH-Jobs]: Query is %s\n", query)
@@ -103,11 +103,11 @@ func (a *AsyncJobWhT) addJobsToDB(ctx context.Context, payload *AsyncJobPayloadT
 	a.logger.Infof("[WH-Jobs]: Adding job to the wh_async_jobs %s for tableName: %s", payload.MetaData, payload.TableName)
 
 	sqlStatement := `INSERT INTO ` + warehouseutils.WarehouseAsyncJobTable + ` (
-		source_id, destination_id, tablename, 
-		status, created_at, updated_at, async_job_type, 
+		source_id, destination_id, tablename,
+		status, created_at, updated_at, async_job_type,
 		workspace_id, metadata
 	)
-	VALUES 
+	VALUES
 		($1, $2, $3, $4, $5, $6 ,$7, $8, $9 ) RETURNING id`
 
 	stmt, err := a.dbHandle.Prepare(sqlStatement)
@@ -219,7 +219,7 @@ func (a *AsyncJobWhT) startAsyncJobRunner(ctx context.Context) error {
 				Jobs:    notifierClaims,
 				JobType: AsyncJobType,
 			}
-			var schema warehouseutils.SchemaT
+			var schema warehouseutils.Schema
 			ch, err := a.pgnotifier.Publish(messagePayload, &schema, 100)
 			if err != nil {
 				a.logger.Errorf("[WH-Jobs]: unable to get publish async jobs to pgnotifier. Task failed with error %s", err.Error())

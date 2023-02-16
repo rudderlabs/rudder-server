@@ -16,11 +16,6 @@ import (
 
 const moduleName = "warehouse"
 
-type Tag struct {
-	Name  string
-	Value string
-}
-
 func getWarehouseTagName(destID, sourceName, destName, sourceID string) string {
 	return misc.GetTagName(destID, sourceName, destName, misc.TailTruncateStr(sourceID, 6))
 }
@@ -33,7 +28,7 @@ func (jobRun *JobRunT) warehouseID() string {
 	return getWarehouseTagName(jobRun.job.DestinationID, jobRun.job.SourceName, jobRun.job.DestinationName, jobRun.job.SourceID)
 }
 
-func (job *UploadJobT) timerStat(name string, extraTags ...Tag) stats.Measurement {
+func (job *UploadJobT) timerStat(name string, extraTags ...warehouseutils.Tag) stats.Measurement {
 	tags := stats.Tags{
 		"module":      moduleName,
 		"destType":    job.warehouse.Type,
@@ -48,7 +43,7 @@ func (job *UploadJobT) timerStat(name string, extraTags ...Tag) stats.Measuremen
 	return job.stats.NewTaggedStat(name, stats.TimerType, tags)
 }
 
-func (job *UploadJobT) counterStat(name string, extraTags ...Tag) stats.Measurement {
+func (job *UploadJobT) counterStat(name string, extraTags ...warehouseutils.Tag) stats.Measurement {
 	tags := stats.Tags{
 		"module":      moduleName,
 		"destType":    job.warehouse.Type,
@@ -63,7 +58,7 @@ func (job *UploadJobT) counterStat(name string, extraTags ...Tag) stats.Measurem
 	return job.stats.NewTaggedStat(name, stats.CountType, tags)
 }
 
-func (job *UploadJobT) guageStat(name string, extraTags ...Tag) stats.Measurement {
+func (job *UploadJobT) guageStat(name string, extraTags ...warehouseutils.Tag) stats.Measurement {
 	tags := stats.Tags{
 		"module":         moduleName,
 		"destType":       job.warehouse.Type,
@@ -79,7 +74,7 @@ func (job *UploadJobT) guageStat(name string, extraTags ...Tag) stats.Measuremen
 	return job.stats.NewTaggedStat(name, stats.GaugeType, tags)
 }
 
-func (jobRun *JobRunT) timerStat(name string, extraTags ...Tag) stats.Measurement {
+func (jobRun *JobRunT) timerStat(name string, extraTags ...warehouseutils.Tag) stats.Measurement {
 	tags := stats.Tags{
 		"module":      moduleName,
 		"destType":    jobRun.job.DestinationType,
@@ -94,7 +89,7 @@ func (jobRun *JobRunT) timerStat(name string, extraTags ...Tag) stats.Measuremen
 	return jobRun.stats.NewTaggedStat(name, stats.TimerType, tags)
 }
 
-func (jobRun *JobRunT) counterStat(name string, extraTags ...Tag) stats.Measurement {
+func (jobRun *JobRunT) counterStat(name string, extraTags ...warehouseutils.Tag) stats.Measurement {
 	tags := stats.Tags{
 		"module":      moduleName,
 		"destType":    jobRun.job.DestinationType,
@@ -126,7 +121,7 @@ func (job *UploadJobT) generateUploadSuccessMetrics() {
 	}
 	job.counterStat("num_staged_events").Count(int(numStagedEvents))
 	attempts := job.getAttemptNumber()
-	job.counterStat("upload_success", Tag{
+	job.counterStat("upload_success", warehouseutils.Tag{
 		Name:  "attempt_number",
 		Value: strconv.Itoa(attempts),
 	}).Count(1)
@@ -152,12 +147,12 @@ func (job *UploadJobT) generateUploadAbortedMetrics() {
 
 	// Set the upload_aborted stat
 	attempts := job.getAttemptNumber()
-	tags := []Tag{{Name: "attempt_number", Value: strconv.Itoa(attempts)}}
+	tags := []warehouseutils.Tag{{Name: "attempt_number", Value: strconv.Itoa(attempts)}}
 	valid, err := job.validateDestinationCredentials()
 	if err == nil {
 		// Only if error is nil, meaning we were able to
 		// successfully validate the creds, we set this tag
-		tags = append(tags, Tag{Name: "destination_creds_valid", Value: strconv.FormatBool(valid)})
+		tags = append(tags, warehouseutils.Tag{Name: "destination_creds_valid", Value: strconv.FormatBool(valid)})
 	}
 	job.counterStat("upload_aborted", tags...).Count(1)
 }
@@ -166,7 +161,7 @@ func (job *UploadJobT) recordTableLoad(tableName string, numEvents int64) {
 	rudderAPISupportedEventTypes := []string{"tracks", "identifies", "pages", "screens", "aliases", "groups"}
 	if misc.Contains(rudderAPISupportedEventTypes, strings.ToLower(tableName)) {
 		// record total events synced (ignoring additional row synced to the event table for e.g.track call)
-		job.counterStat(`event_delivery`, Tag{
+		job.counterStat(`event_delivery`, warehouseutils.Tag{
 			Name:  "tableName",
 			Value: strings.ToLower(tableName),
 		}).Count(int(numEvents))
@@ -181,7 +176,7 @@ func (job *UploadJobT) recordTableLoad(tableName string, numEvents int64) {
 		}
 	}
 
-	job.counterStat(`rows_synced`, Tag{
+	job.counterStat(`rows_synced`, warehouseutils.Tag{
 		Name:  "tableName",
 		Value: strings.ToLower(tableName),
 	}).Count(int(numEvents))
@@ -199,8 +194,8 @@ func (job *UploadJobT) recordTableLoad(tableName string, numEvents int64) {
 			syncFrequency, _ = config[warehouseutils.SyncFrequency].(string)
 		}
 		job.timerStat("event_delivery_time",
-			Tag{Name: "tableName", Value: strings.ToLower(tableName)},
-			Tag{Name: "syncFrequency", Value: syncFrequency},
+			warehouseutils.Tag{Name: "tableName", Value: strings.ToLower(tableName)},
+			warehouseutils.Tag{Name: "syncFrequency", Value: syncFrequency},
 		).Since(firstEventAt)
 	}
 }

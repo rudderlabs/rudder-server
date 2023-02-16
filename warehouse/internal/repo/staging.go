@@ -270,6 +270,36 @@ func (repo *StagingFiles) GetSchemaByID(ctx context.Context, ID int64) (jsonstd.
 	return schema, err
 }
 
+// GetSchemaByIDs returns staging file schema field the given IDs.
+func (repo *StagingFiles) GetSchemaByIDs(ctx context.Context, ids []int64) ([]jsonstd.RawMessage, error) {
+	query := `SELECT schema FROM ` + stagingTableName + ` WHERE id IN ($1);`
+
+	rows, err := repo.db.QueryContext(ctx, query, ids)
+	if err != nil {
+		return nil, fmt.Errorf("querying schemas: %w", err)
+	}
+
+	var schemas []jsonstd.RawMessage
+
+	defer func() { _ = rows.Close() }()
+
+	for rows.Next() {
+		var schema jsonstd.RawMessage
+		err := rows.Scan(&schema)
+		if err != nil {
+			return nil, fmt.Errorf("scanning row: %w", err)
+		}
+
+		schemas = append(schemas, schema)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterating rows: %w", err)
+	}
+
+	return schemas, err
+}
+
 // GetInRange returns staging files in [startID, endID] range inclusive.
 func (repo *StagingFiles) GetInRange(ctx context.Context, sourceID, destinationID string, startID, endID int64) ([]model.StagingFile, error) {
 	query := `SELECT ` + stagingTableColumns + ` FROM ` + stagingTableName + ` ST

@@ -80,7 +80,7 @@ type Upload struct {
 
 type Timings []map[string]time.Time
 
-type Schema = warehouseutils.SchemaT
+type Schema = warehouseutils.Schema
 
 type UploadJobsStats struct {
 	PendingJobs    int64
