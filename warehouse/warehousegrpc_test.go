@@ -5,9 +5,6 @@ import (
 	"fmt"
 	"net/http"
 	"os"
-	"testing"
-
-	"github.com/stretchr/testify/require"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -23,19 +20,6 @@ import (
 	"google.golang.org/protobuf/types/known/emptypb"
 	"google.golang.org/protobuf/types/known/structpb"
 )
-
-func TestMap(t *testing.T) {
-	m := map[string]string{
-		"key1": "value1",
-	}
-	populate(m)
-	require.Equal(t, m, map[string]string{"key1": "value1", "key2": "value2"})
-}
-
-func populate(m map[string]string) {
-	m["key2"] = "value2"
-	fmt.Println(m)
-}
 
 var _ = Describe("WarehouseGrpc", func() {
 	var (
