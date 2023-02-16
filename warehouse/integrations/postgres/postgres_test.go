@@ -32,7 +32,7 @@ func TestIntegrationPostgresThroughTunnelling(t *testing.T) {
 	postgres.Init()
 
 	configurations := testhelper.PopulateTemplateConfigurations()
-	db, err := postgres.Connect(postgres.CredentialsT{
+	db, err := postgres.Connect(postgres.Credentials{
 		DBName:   configurations["privatePostgresDatabase"],
 		Password: configurations["privatePostgresPassword"],
 		User:     configurations["privatePostgresUser"],
@@ -127,7 +127,7 @@ func TestIntegrationPostgres(t *testing.T) {
 
 	postgres.Init()
 
-	db, err := postgres.Connect(postgres.CredentialsT{
+	db, err := postgres.Connect(postgres.Credentials{
 		DBName:   "rudderdb",
 		Password: "rudder-password",
 		User:     "rudder",

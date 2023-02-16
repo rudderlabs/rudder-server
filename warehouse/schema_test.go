@@ -579,7 +579,7 @@ var _ = Describe("Schema", func() {
 	)
 
 	DescribeTable("Merge schema", func(currentSchema warehouseutils.SchemaT, schemaList []warehouseutils.SchemaT, currentMergedSchema warehouseutils.SchemaT, warehouseType string, expected warehouseutils.SchemaT) {
-		Expect(mergeSchema(currentSchema, schemaList, currentMergedSchema, warehouseType)).To(Equal(expected))
+		Expect(MergeSchema(currentSchema, schemaList, currentMergedSchema, warehouseType)).To(Equal(expected))
 	},
 		Entry(nil, warehouseutils.SchemaT{}, []warehouseutils.SchemaT{}, warehouseutils.SchemaT{}, "BQ", warehouseutils.SchemaT{}),
 		Entry(nil, warehouseutils.SchemaT{}, []warehouseutils.SchemaT{
@@ -653,3 +653,102 @@ var _ = Describe("Schema", func() {
 		}),
 	)
 })
+
+func TestMergeSchema(t *testing.T) {
+	testCases := []struct {
+		name           string
+		schemaList     []warehouseutils.SchemaT
+		localSchema    warehouseutils.SchemaT
+		expectedSchema warehouseutils.SchemaT
+	}{
+		{
+			name: "local schema contains the property and schema list contains data types in text-string order",
+			schemaList: []warehouseutils.SchemaT{
+				{
+					"test-table": map[string]string{
+						"test-column": "text",
+					},
+				},
+				{
+					"test-table": map[string]string{
+						"test-column": "string",
+					},
+				},
+			},
+			localSchema: warehouseutils.SchemaT{
+				"test-table": map[string]string{
+					"test-column": "string",
+				},
+			},
+			expectedSchema: warehouseutils.SchemaT{
+				"test-table": map[string]string{
+					"test-column": "text",
+				},
+			},
+		},
+		{
+			name: "local schema contains the property and schema list contains data types in string-text order",
+			schemaList: []warehouseutils.SchemaT{
+				{
+					"test-table": map[string]string{
+						"test-column": "string",
+					},
+				},
+				{
+					"test-table": map[string]string{
+						"test-column": "text",
+					},
+				},
+			},
+
+			localSchema: warehouseutils.SchemaT{
+				"test-table": map[string]string{
+					"test-column": "string",
+				},
+			},
+			expectedSchema: warehouseutils.SchemaT{
+				"test-table": map[string]string{
+					"test-column": "text",
+				},
+			},
+		},
+		{
+			name: "local schema does not contain the property",
+			schemaList: []warehouseutils.SchemaT{
+				{
+					"test-table": map[string]string{
+						"test-column": "int",
+					},
+				},
+				{
+					"test-table": map[string]string{
+						"test-column": "text",
+					},
+				},
+			},
+			localSchema: warehouseutils.SchemaT{
+				"test-table": map[string]string{
+					"test-column-1": "string",
+				},
+			},
+			expectedSchema: warehouseutils.SchemaT{
+				"test-table": map[string]string{
+					"test-column": "int",
+				},
+			},
+		},
+	}
+
+	destType := "RS"
+
+	for _, tc := range testCases {
+		tc := tc
+
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			actualSchema := MergeSchema(tc.localSchema, tc.schemaList, warehouseutils.SchemaT{}, destType)
+			require.Equal(t, actualSchema, tc.expectedSchema)
+		})
+	}
+}

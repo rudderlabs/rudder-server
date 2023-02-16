@@ -85,7 +85,7 @@ var mssqlDataTypesMapToRudder = map[string]string{
 }
 
 type HandleT struct {
-	Db             *sql.DB
+	DB             *sql.DB
 	Namespace      string
 	ObjectStorage  string
 	Warehouse      warehouseutils.Warehouse
@@ -268,7 +268,7 @@ func (ms *HandleT) DeleteBy(tableNames []string, params warehouseutils.DeleteByP
 		pkgLogger.Debugf("MSSQL: Executing the statement %v", sqlStatement)
 
 		if enableDeleteByJobs {
-			_, err = ms.Db.Exec(sqlStatement,
+			_, err = ms.DB.Exec(sqlStatement,
 				sql.Named("jobrunid", params.JobRunId),
 				sql.Named("taskrunid", params.TaskRunId),
 				sql.Named("sourceid", params.SourceId),
@@ -296,7 +296,7 @@ func (ms *HandleT) loadTable(tableName string, tableSchemaInUpload warehouseutil
 		return
 	}
 
-	txn, err := ms.Db.Begin()
+	txn, err := ms.DB.Begin()
 	if err != nil {
 		pkgLogger.Errorf("MS: Error while beginning a transaction in db for loading in table:%s: %v", tableName, err)
 		return
@@ -592,7 +592,7 @@ func (ms *HandleT) loadUserTables() (errorMap map[string]error) {
 											`, ms.Namespace, ms.Namespace+"."+warehouseutils.UsersTable, ms.Namespace+"."+identifyStagingTable, strings.Join(userColNames, ","), ms.Namespace+"."+unionStagingTableName)
 
 	pkgLogger.Debugf("MS: Creating staging table for union of users table with identify staging table: %s\n", sqlStatement)
-	_, err = ms.Db.Exec(sqlStatement)
+	_, err = ms.DB.Exec(sqlStatement)
 	if err != nil {
 		errorMap[warehouseutils.UsersTable] = err
 		return
@@ -611,7 +611,7 @@ func (ms *HandleT) loadUserTables() (errorMap map[string]error) {
 	)
 
 	pkgLogger.Debugf("MS: Creating staging table for users: %s\n", sqlStatement)
-	_, err = ms.Db.Exec(sqlStatement)
+	_, err = ms.DB.Exec(sqlStatement)
 	if err != nil {
 		pkgLogger.Errorf("MS: Error Creating staging table for users: %s\n", sqlStatement)
 		errorMap[warehouseutils.UsersTable] = err
@@ -619,7 +619,7 @@ func (ms *HandleT) loadUserTables() (errorMap map[string]error) {
 	}
 
 	// BEGIN TRANSACTION
-	tx, err := ms.Db.Begin()
+	tx, err := ms.DB.Begin()
 	if err != nil {
 		errorMap[warehouseutils.UsersTable] = err
 		return
@@ -662,7 +662,7 @@ func (ms *HandleT) CreateSchema() (err error) {
     EXEC('CREATE SCHEMA [%s]');
 `, ms.Namespace, ms.Namespace)
 	pkgLogger.Infof("MSSQL: Creating schema name in mssql for MS:%s : %v", ms.Warehouse.Destination.ID, sqlStatement)
-	_, err = ms.Db.Exec(sqlStatement)
+	_, err = ms.DB.Exec(sqlStatement)
 	if err == io.EOF {
 		return nil
 	}
@@ -671,7 +671,7 @@ func (ms *HandleT) CreateSchema() (err error) {
 
 func (ms *HandleT) dropStagingTable(stagingTableName string) {
 	pkgLogger.Infof("MS: dropping table %+v\n", stagingTableName)
-	_, err := ms.Db.Exec(fmt.Sprintf(`DROP TABLE IF EXISTS %s`, ms.Namespace+"."+stagingTableName))
+	_, err := ms.DB.Exec(fmt.Sprintf(`DROP TABLE IF EXISTS %s`, ms.Namespace+"."+stagingTableName))
 	if err != nil {
 		pkgLogger.Errorf("MS:  Error dropping staging table %s in mssql: %v", ms.Namespace+"."+stagingTableName, err)
 	}
@@ -682,7 +682,7 @@ func (ms *HandleT) createTable(name string, columns map[string]string) (err erro
 	CREATE TABLE %[1]s ( %v )`, name, ColumnsWithDataTypes(columns, ""))
 
 	pkgLogger.Infof("MS: Creating table in mssql for MS:%s : %v", ms.Warehouse.Destination.ID, sqlStatement)
-	_, err = ms.Db.Exec(sqlStatement)
+	_, err = ms.DB.Exec(sqlStatement)
 	return
 }
 
@@ -695,7 +695,7 @@ func (ms *HandleT) CreateTable(tableName string, columnMap map[string]string) (e
 func (ms *HandleT) DropTable(tableName string) (err error) {
 	sqlStatement := `DROP TABLE "%[1]s"."%[2]s"`
 	pkgLogger.Infof("AZ: Dropping table in synapse for AZ:%s : %v", ms.Warehouse.Destination.ID, sqlStatement)
-	_, err = ms.Db.Exec(fmt.Sprintf(sqlStatement, ms.Namespace, tableName))
+	_, err = ms.DB.Exec(fmt.Sprintf(sqlStatement, ms.Namespace, tableName))
 	return
 }
 
@@ -739,7 +739,7 @@ func (ms *HandleT) AddColumns(tableName string, columnsInfo []warehouseutils.Col
 	query += ";"
 
 	pkgLogger.Infof("MS: Adding columns for destinationID: %s, tableName: %s with query: %v", ms.Warehouse.Destination.ID, tableName, query)
-	_, err = ms.Db.Exec(query)
+	_, err = ms.DB.Exec(query)
 	return
 }
 
@@ -755,16 +755,16 @@ func (ms *HandleT) TestConnection(warehouse warehouseutils.Warehouse) (err error
 		warehouse.Destination.Config,
 		misc.IsConfiguredToUseRudderObjectStorage(ms.Warehouse.Destination.Config),
 	)
-	ms.Db, err = Connect(ms.getConnectionCredentials())
+	ms.DB, err = Connect(ms.getConnectionCredentials())
 	if err != nil {
 		return
 	}
-	defer ms.Db.Close()
+	defer ms.DB.Close()
 
 	ctx, cancel := context.WithTimeout(context.TODO(), ms.ConnectTimeout)
 	defer cancel()
 
-	err = ms.Db.PingContext(ctx)
+	err = ms.DB.PingContext(ctx)
 	if err == context.DeadlineExceeded {
 		return fmt.Errorf("connection testing timed out after %d sec", ms.ConnectTimeout/time.Second)
 	}
@@ -781,18 +781,18 @@ func (ms *HandleT) Setup(warehouse warehouseutils.Warehouse, uploader warehouseu
 	ms.Uploader = uploader
 	ms.ObjectStorage = warehouseutils.ObjectStorageType(warehouseutils.MSSQL, warehouse.Destination.Config, ms.Uploader.UseRudderStorage())
 
-	ms.Db, err = Connect(ms.getConnectionCredentials())
+	ms.DB, err = Connect(ms.getConnectionCredentials())
 	return err
 }
 
 func (ms *HandleT) CrashRecover(warehouse warehouseutils.Warehouse) (err error) {
 	ms.Warehouse = warehouse
 	ms.Namespace = warehouse.Namespace
-	ms.Db, err = Connect(ms.getConnectionCredentials())
+	ms.DB, err = Connect(ms.getConnectionCredentials())
 	if err != nil {
 		return err
 	}
-	defer ms.Db.Close()
+	defer ms.DB.Close()
 	ms.dropDanglingStagingTables()
 	return
 }
@@ -810,7 +810,7 @@ func (ms *HandleT) dropDanglingStagingTables() bool {
 		ms.Namespace,
 		fmt.Sprintf(`%s%%`, warehouseutils.StagingTablePrefix(provider)),
 	)
-	rows, err := ms.Db.Query(sqlStatement)
+	rows, err := ms.DB.Query(sqlStatement)
 	if err != nil {
 		pkgLogger.Errorf("WH: MSSQL: Error dropping dangling staging tables in MSSQL: %v\nQuery: %s\n", err, sqlStatement)
 		return false
@@ -829,7 +829,7 @@ func (ms *HandleT) dropDanglingStagingTables() bool {
 	pkgLogger.Infof("WH: MSSQL: Dropping dangling staging tables: %+v  %+v\n", len(stagingTableNames), stagingTableNames)
 	delSuccess := true
 	for _, stagingTableName := range stagingTableNames {
-		_, err := ms.Db.Exec(fmt.Sprintf(`DROP TABLE "%[1]s"."%[2]s"`, ms.Namespace, stagingTableName))
+		_, err := ms.DB.Exec(fmt.Sprintf(`DROP TABLE "%[1]s"."%[2]s"`, ms.Namespace, stagingTableName))
 		if err != nil {
 			pkgLogger.Errorf("WH: MSSQL:  Error dropping dangling staging table: %s in redshift: %v\n", stagingTableName, err)
 			delSuccess = false
@@ -909,10 +909,10 @@ func (ms *HandleT) LoadTable(tableName string) error {
 }
 
 func (ms *HandleT) Cleanup() {
-	if ms.Db != nil {
+	if ms.DB != nil {
 		// extra check aside dropStagingTable(table)
 		ms.dropDanglingStagingTables()
-		ms.Db.Close()
+		ms.DB.Close()
 	}
 }
 
@@ -928,13 +928,20 @@ func (*HandleT) DownloadIdentityRules(*misc.GZipWriter) (err error) {
 	return
 }
 
-func (ms *HandleT) GetTotalCountInTable(ctx context.Context, tableName string) (total int64, err error) {
-	sqlStatement := fmt.Sprintf(`SELECT count(*) FROM "%[1]s"."%[2]s"`, ms.Namespace, tableName)
-	err = ms.Db.QueryRowContext(ctx, sqlStatement).Scan(&total)
-	if err != nil {
-		pkgLogger.Errorf(`MS: Error getting total count in table %s:%s`, ms.Namespace, tableName)
-	}
-	return
+func (ms *HandleT) GetTotalCountInTable(ctx context.Context, tableName string) (int64, error) {
+	var (
+		total        int64
+		err          error
+		sqlStatement string
+	)
+	sqlStatement = fmt.Sprintf(`
+		SELECT count(*) FROM "%[1]s"."%[2]s";
+	`,
+		ms.Namespace,
+		tableName,
+	)
+	err = ms.DB.QueryRowContext(ctx, sqlStatement).Scan(&total)
+	return total, err
 }
 
 func (ms *HandleT) Connect(warehouse warehouseutils.Warehouse) (client.Client, error) {
@@ -960,7 +967,7 @@ func (ms *HandleT) LoadTestTable(_, tableName string, payloadMap map[string]inte
 		fmt.Sprintf(`"%s", "%s"`, "id", "val"),
 		fmt.Sprintf(`'%d', '%s'`, payloadMap["id"], payloadMap["val"]),
 	)
-	_, err = ms.Db.Exec(sqlStatement)
+	_, err = ms.DB.Exec(sqlStatement)
 	return
 }
 
