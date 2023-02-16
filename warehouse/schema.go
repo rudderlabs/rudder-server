@@ -176,7 +176,7 @@ func (sh *SchemaHandleT) fetchSchemaFromWarehouse(whManager manager.Manager) (sc
 	return schemaInWarehouse, unrecognizedSchemaInWarehouse, nil
 }
 
-func mergeSchema(currentSchema warehouseutils.SchemaT, schemaList []warehouseutils.SchemaT, currentMergedSchema warehouseutils.SchemaT, warehouseType string) warehouseutils.SchemaT {
+func MergeSchema(currentSchema warehouseutils.SchemaT, schemaList []warehouseutils.SchemaT, currentMergedSchema warehouseutils.SchemaT, warehouseType string) warehouseutils.SchemaT {
 	if len(currentMergedSchema) == 0 {
 		currentMergedSchema = warehouseutils.SchemaT{}
 	}
@@ -188,6 +188,10 @@ func mergeSchema(currentSchema warehouseutils.SchemaT, schemaList []warehouseuti
 		}
 		if columnTypeInDB == "string" && columnType == "text" {
 			currentMergedSchema[tableName][columnName] = columnType
+			return true
+		}
+		// if columnTypeInDB is text, then we should not change it to string
+		if currentMergedSchema[tableName][columnName] == "text" {
 			return true
 		}
 		currentMergedSchema[tableName][columnName] = columnTypeInDB
@@ -330,7 +334,7 @@ func (sh *SchemaHandleT) consolidateStagingFilesSchemaUsingWarehouseSchema() war
 		}
 		_ = rows.Close()
 
-		consolidatedSchema = mergeSchema(schemaInLocalDB, schemas, consolidatedSchema, sh.warehouse.Type)
+		consolidatedSchema = MergeSchema(schemaInLocalDB, schemas, consolidatedSchema, sh.warehouse.Type)
 
 		count += stagingFilesSchemaPaginationSize
 		if count >= len(sh.stagingFiles) {
