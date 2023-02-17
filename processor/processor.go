@@ -122,6 +122,7 @@ type Handle struct {
 		writeKeySourceMap         map[string]backendconfig.SourceT
 		workspaceLibrariesMap     map[string]backendconfig.LibrariesT
 		destinationIDtoTypeMap    map[string]string
+		destConsentCategories     map[string][]string
 		batchDestinations         []string
 		configSubscriberLock      sync.RWMutex
 		enableEventSchemasFeature bool
@@ -680,36 +681,69 @@ func (proc *Handle) makeFeaturesFetchCall() bool {
 	return false
 }
 
+func getConsentCategories(dest *backendconfig.DestinationT) []string {
+	config := dest.Config
+	cookieCategories, _ := misc.MapLookup(
+		config,
+		"oneTrustCookieCategories",
+	).([]map[string]interface{})
+	if len(cookieCategories) == 0 {
+		return nil
+	}
+	return lo.FilterMap(
+		cookieCategories,
+		func(cookieCategory map[string]interface{}, _ int) (string, bool) {
+			category, ok := cookieCategory["oneTrustCookieCategory"].(string)
+			return category, ok && category != ""
+		},
+	)
+}
+
 func (proc *Handle) backendConfigSubscriber(ctx context.Context) {
 	var initDone bool
 	ch := proc.backendConfig.Subscribe(ctx, backendconfig.TopicProcessConfig)
 	for data := range ch {
 		config := data.Data.(map[string]backendconfig.ConfigT)
-		proc.config.configSubscriberLock.Lock()
-		proc.config.workspaceLibrariesMap = make(map[string]backendconfig.LibrariesT, len(config))
-		proc.config.writeKeyDestinationMap = make(map[string][]backendconfig.DestinationT)
-		proc.config.writeKeySourceMap = map[string]backendconfig.SourceT{}
-		proc.config.destinationIDtoTypeMap = make(map[string]string)
+		var (
+			destConsentCategories  = make(map[string][]string)
+			workspaceLibrariesMap  = make(map[string]backendconfig.LibrariesT, len(config))
+			writeKeyDestinationMap = make(map[string][]backendconfig.DestinationT)
+			writeKeySourceMap      = map[string]backendconfig.SourceT{}
+			destinationIDtoTypeMap = make(map[string]string)
+		)
 		for workspaceID, wConfig := range config {
 			for i := range wConfig.Sources {
 				source := &wConfig.Sources[i]
-				proc.config.writeKeySourceMap[source.WriteKey] = *source
+				writeKeySourceMap[source.WriteKey] = *source
 				if source.Enabled {
-					proc.config.writeKeyDestinationMap[source.WriteKey] = source.Destinations
+					writeKeyDestinationMap[source.WriteKey] = source.Destinations
 					for j := range source.Destinations {
 						destination := &source.Destinations[j]
-						proc.config.destinationIDtoTypeMap[destination.ID] = destination.DestinationDefinition.Name
+						destinationIDtoTypeMap[destination.ID] = destination.DestinationDefinition.Name
+						destConsentCategories[destination.ID] = getConsentCategories(destination)
 					}
 				}
 			}
-			proc.config.workspaceLibrariesMap[workspaceID] = wConfig.Libraries
+			workspaceLibrariesMap[workspaceID] = wConfig.Libraries
 		}
+		proc.config.configSubscriberLock.Lock()
+		proc.config.destConsentCategories = destConsentCategories
+		proc.config.workspaceLibrariesMap = workspaceLibrariesMap
+		proc.config.writeKeyDestinationMap = writeKeyDestinationMap
+		proc.config.writeKeySourceMap = writeKeySourceMap
+		proc.config.destinationIDtoTypeMap = destinationIDtoTypeMap
 		proc.config.configSubscriberLock.Unlock()
 		if !initDone {
 			initDone = true
 			proc.config.asyncInit.Done()
 		}
 	}
+}
+
+func (proc *Handle) getConsentCategories(destinationID string) []string {
+	proc.config.configSubscriberLock.RLock()
+	defer proc.config.configSubscriberLock.RUnlock()
+	return proc.config.destConsentCategories[destinationID]
 }
 
 func (proc *Handle) getWorkspaceLibraries(workspaceID string) backendconfig.LibrariesT {
@@ -1356,10 +1390,7 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob, parsedE
 
 				// Getting all the destinations which are enabled for this
 				// event
-				backendEnabledDestTypes := proc.getBackendEnabledDestinationTypes(writeKey)
-				enabledDestTypes := integrations.FilterClientIntegrations(singularEvent, backendEnabledDestTypes)
-				if len(enabledDestTypes) == 0 {
-					proc.logger.Debug("No enabled destinations")
+				if !proc.isDestinationAvailable(singularEvent, writeKey) {
 					continue
 				}
 
@@ -1470,7 +1501,10 @@ func (proc *Handle) processJobsForDest(partition string, subJobs subJob, parsedE
 
 			for i := range enabledDestTypes {
 				destType := &enabledDestTypes[i]
-				enabledDestinationsList := proc.getEnabledDestinations(writeKey, *destType)
+				enabledDestinationsList := proc.filterDestinations(
+					singularEvent,
+					proc.getEnabledDestinations(writeKey, *destType),
+				)
 				// Adding a singular event multiple times if there are multiple destinations of same type
 				for idx := range enabledDestinationsList {
 					destination := &enabledDestinationsList[idx]
@@ -2527,4 +2561,64 @@ func filterConfig(eventCopy *transformer.TransformerEventT) {
 
 func (proc *Handle) getLimiterPriority(partition string) miscsync.LimiterPriorityValue {
 	return miscsync.LimiterPriorityValue(config.GetInt(fmt.Sprintf("Processor.Limiter.%s.Priority", partition), 1))
+}
+
+func (proc *Handle) filterDestinations(
+	event types.SingularEventT,
+	dests []backendconfig.DestinationT,
+) []backendconfig.DestinationT {
+	deniedCategories := deniedConsentCategories(event)
+	if len(deniedCategories) == 0 {
+		return dests
+	}
+	return lo.Filter(dests, func(dest backendconfig.DestinationT, _ int) bool {
+		if consentCategories := proc.getConsentCategories(dest.ID); len(consentCategories) > 0 {
+			return len(lo.Intersect(consentCategories, deniedCategories)) == 0
+		}
+		return true
+	})
+}
+
+// check if event has eligible destinations to send to
+//
+// event will be dropped if no destination is found
+func (proc *Handle) isDestinationAvailable(event types.SingularEventT, writeKey string) bool {
+	enabledDestTypes := integrations.FilterClientIntegrations(
+		event,
+		proc.getBackendEnabledDestinationTypes(writeKey),
+	)
+	if len(enabledDestTypes) == 0 {
+		proc.logger.Debug("No enabled destination types")
+		return false
+	}
+
+	if enabledDestinationsList := proc.filterDestinations(
+		event,
+		lo.Flatten(
+			lo.Map(
+				enabledDestTypes,
+				func(destType string, _ int) []backendconfig.DestinationT {
+					return proc.getEnabledDestinations(writeKey, destType)
+				},
+			),
+		),
+	); len(enabledDestinationsList) == 0 {
+		proc.logger.Debug("No destination to route this event to")
+		return false
+	}
+
+	return true
+}
+
+func deniedConsentCategories(se types.SingularEventT) []string {
+	if deniedConsents, _ := misc.MapLookup(se, "context", "consentManagement", "deniedConsentIds").([]interface{}); len(deniedConsents) > 0 {
+		return lo.FilterMap(
+			deniedConsents,
+			func(consent interface{}, _ int) (string, bool) {
+				consentStr, ok := consent.(string)
+				return consentStr, ok && consentStr != ""
+			},
+		)
+	}
+	return nil
 }
