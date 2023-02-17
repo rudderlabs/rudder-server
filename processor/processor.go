@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"math"
 	"net/http"
 	"runtime/trace"
 	"strconv"
@@ -16,6 +15,7 @@ import (
 	"time"
 
 	jsoniter "github.com/json-iterator/go"
+	miscsync "github.com/rudderlabs/rudder-server/utils/sync"
 	"github.com/samber/lo"
 	"github.com/tidwall/gjson"
 	"golang.org/x/sync/errgroup"
@@ -27,6 +27,7 @@ import (
 	"github.com/rudderlabs/rudder-server/jobsdb"
 	"github.com/rudderlabs/rudder-server/processor/eventfilter"
 	"github.com/rudderlabs/rudder-server/processor/integrations"
+	"github.com/rudderlabs/rudder-server/processor/isolation"
 	"github.com/rudderlabs/rudder-server/processor/stash"
 	"github.com/rudderlabs/rudder-server/processor/transformer"
 	"github.com/rudderlabs/rudder-server/router/batchrouter"
@@ -94,12 +95,21 @@ type Handle struct {
 	rsourcesService           rsources.JobService
 	destDebugger              destinationdebugger.DestinationDebugger
 	transDebugger             transformationdebugger.TransformationDebugger
-	config                    struct {
+	isolationStrategy         isolation.Strategy
+	limiter                   struct {
+		read       miscsync.Limiter
+		preprocess miscsync.Limiter
+		transform  miscsync.Limiter
+		store      miscsync.Limiter
+	}
+	config struct {
+		isolationMode             isolation.Mode
 		mainLoopTimeout           time.Duration
 		featuresRetryMaxAttempts  int
 		enablePipelining          bool
 		pipelineBufferedItems     int
 		subJobSize                int
+		pingerSleep               time.Duration
 		readLoopSleep             time.Duration
 		maxLoopSleep              time.Duration
 		storeTimeout              time.Duration
@@ -128,7 +138,6 @@ type Handle struct {
 
 	adaptiveLimit func(int64) int64
 }
-
 type processorStats struct {
 	transformEventsByTimeMutex     sync.RWMutex
 	destTransformEventsByTimeTaken transformRequestPQ
@@ -333,7 +342,6 @@ func (proc *Handle) Setup(
 	proc.destDebugger = destDebugger
 	proc.transDebugger = transDebugger
 	config.RegisterBoolConfigVariable(types.DefaultReportingEnabled, &proc.reportingEnabled, false, "Reporting.enabled")
-	config.RegisterInt64ConfigVariable(100*bytesize.MB, &proc.payloadLimit, true, 1, "Processor.payloadLimit")
 	config.RegisterDurationConfigVariable(60, &proc.jobdDBQueryRequestTimeout, true, time.Second, []string{"JobsDB.Processor.QueryRequestTimeout", "JobsDB.QueryRequestTimeout"}...)
 	config.RegisterDurationConfigVariable(90, &proc.jobsDBCommandTimeout, true, time.Second, []string{"JobsDB.Processor.CommandRequestTimeout", "JobsDB.CommandRequestTimeout"}...)
 	config.RegisterIntConfigVariable(3, &proc.jobdDBMaxRetries, true, 1, []string{"JobsDB.Processor.MaxRetries", "JobsDB.MaxRetries"}...)
@@ -443,17 +451,74 @@ func (proc *Handle) Setup(
 // Start starts this processor's main loops.
 func (proc *Handle) Start(ctx context.Context) error {
 	g, ctx := errgroup.WithContext(ctx)
+	var err error
+	proc.logger.Infof("Starting processor in isolation mode: %s", proc.config.isolationMode)
+	if proc.isolationStrategy, err = isolation.GetStrategy(proc.config.isolationMode); err != nil {
+		return fmt.Errorf("resolving isolation strategy for mode %q: %w", proc.config.isolationMode, err)
+	}
 
-	g.Go(misc.WithBugsnag(func() error {
-		proc.backendConfig.WaitForConfig(ctx)
-		if proc.config.enablePipelining {
-			proc.mainPipeline(ctx)
-		} else {
-			proc.mainLoop(ctx)
-		}
+	// limiters
+	s := proc.statsFactory
+	var limiterGroup sync.WaitGroup
+	proc.limiter.read = miscsync.NewLimiter(ctx, &limiterGroup, "proc_read",
+		config.GetInt("Processor.Limiter.read.limit", 50),
+		s,
+		miscsync.WithLimiterDynamicPeriod(config.GetDuration("Processor.Limiter.read.dynamicPeriod", 1, time.Second)))
+	proc.limiter.preprocess = miscsync.NewLimiter(ctx, &limiterGroup, "proc_preprocess",
+		config.GetInt("Processor.Limiter.preprocess.limit", 50),
+		s,
+		miscsync.WithLimiterDynamicPeriod(config.GetDuration("Processor.Limiter.preprocess.dynamicPeriod", 1, time.Second)))
+	proc.limiter.transform = miscsync.NewLimiter(ctx, &limiterGroup, "proc_transform",
+		config.GetInt("Processor.Limiter.transform.limit", 50),
+		s,
+		miscsync.WithLimiterDynamicPeriod(config.GetDuration("Processor.Limiter.transform.dynamicPeriod", 1, time.Second)))
+	proc.limiter.store = miscsync.NewLimiter(ctx, &limiterGroup, "proc_store",
+		config.GetInt("Processor.Limiter.store.limit", 50),
+		s,
+		miscsync.WithLimiterDynamicPeriod(config.GetDuration("Processor.Limiter.store.dynamicPeriod", 1, time.Second)))
+	g.Go(func() error {
+		limiterGroup.Wait()
 		return nil
+	})
+
+	// pinger loop
+	g.Go(misc.WithBugsnag(func() error {
+		proc.logger.Info("Starting pinger loop")
+		proc.backendConfig.WaitForConfig(ctx)
+		proc.logger.Info("Backend config received")
+		// waiting for reporting client setup
+		if proc.reporting != nil && proc.reportingEnabled {
+			if err := proc.reporting.WaitForSetup(ctx, types.CoreReportingClient); err != nil {
+				return err
+			}
+		}
+
+		// waiting for init group
+		proc.logger.Info("Waiting for async init group")
+		select {
+		case <-ctx.Done():
+			return nil
+		case <-proc.config.asyncInit.Wait():
+			// proceed
+		}
+		proc.logger.Info("Async init group done")
+
+		h := &workerHandleAdapter{proc}
+		pool := newWorkerPool(ctx, h)
+		defer pool.Shutdown()
+		for {
+			select {
+			case <-ctx.Done():
+				return nil
+			case <-time.After(proc.config.pingerSleep):
+			}
+			for _, partition := range proc.activePartitions(ctx) {
+				pool.PingWorker(partition)
+			}
+		}
 	}))
 
+	// stash loop
 	g.Go(misc.WithBugsnag(func() error {
 		st := stash.New()
 		st.Setup(
@@ -469,6 +534,17 @@ func (proc *Handle) Start(ctx context.Context) error {
 	return g.Wait()
 }
 
+func (proc *Handle) activePartitions(ctx context.Context) []string {
+	defer proc.statsFactory.NewStat("proc_active_partitions_time", stats.TimerType).RecordDuration()()
+	keys, err := proc.isolationStrategy.ActivePartitions(ctx, proc.gatewayDB)
+	if err != nil && ctx.Err() == nil {
+		// TODO: retry?
+		panic(err)
+	}
+	proc.statsFactory.NewStat("proc_active_partitions", stats.GaugeType).Gauge(len(keys))
+	return keys
+}
+
 func (proc *Handle) Shutdown() {
 	proc.backgroundCancel()
 	_ = proc.backgroundWait()
@@ -477,13 +553,36 @@ func (proc *Handle) Shutdown() {
 func (proc *Handle) loadConfig() {
 	proc.config.mainLoopTimeout = 200 * time.Millisecond
 	proc.config.featuresRetryMaxAttempts = 10
+
+	defaultSubJobSize := 2000
+	defaultMaxEventsToProcess := 10000
+	defaultPayloadLimit := 100 * bytesize.MB
+	defaultReadLoopSleepMs := int64(200)
+	defaultMaxLoopSleeppMs := int64(5000)
+
+	defaultIsolationMode := isolation.ModeNone
+	if config.IsSet("WORKSPACE_NAMESPACE") {
+		defaultIsolationMode = isolation.ModeWorkspace
+	}
+	proc.config.isolationMode = isolation.Mode(config.GetString("Processor.isolationMode", string(defaultIsolationMode)))
+	// If isolation mode is not none, we need to reduce the values for some of the config variables to more sensible defaults
+	if proc.config.isolationMode != isolation.ModeNone {
+		defaultSubJobSize = 400
+		defaultMaxEventsToProcess = 2000
+		defaultPayloadLimit = 20 * bytesize.MB
+		defaultReadLoopSleepMs = 10
+		defaultMaxLoopSleeppMs = 2000
+	}
+
+	config.RegisterInt64ConfigVariable(defaultPayloadLimit, &proc.payloadLimit, true, 1, "Processor.payloadLimit")
 	config.RegisterBoolConfigVariable(true, &proc.config.enablePipelining, false, "Processor.enablePipelining")
 	config.RegisterIntConfigVariable(0, &proc.config.pipelineBufferedItems, false, 1, "Processor.pipelineBufferedItems")
-	config.RegisterIntConfigVariable(2000, &proc.config.subJobSize, false, 1, "Processor.subJobSize")
-	config.RegisterDurationConfigVariable(5000, &proc.config.maxLoopSleep, true, time.Millisecond, []string{"Processor.maxLoopSleep", "Processor.maxLoopSleepInMS"}...)
+	config.RegisterIntConfigVariable(defaultSubJobSize, &proc.config.subJobSize, false, 1, "Processor.subJobSize")
+	config.RegisterDurationConfigVariable(defaultMaxLoopSleeppMs, &proc.config.maxLoopSleep, true, time.Millisecond, []string{"Processor.maxLoopSleep", "Processor.maxLoopSleepInMS"}...)
 	config.RegisterDurationConfigVariable(5, &proc.config.storeTimeout, true, time.Minute, "Processor.storeTimeout")
 
-	config.RegisterDurationConfigVariable(200, &proc.config.readLoopSleep, true, time.Millisecond, "Processor.readLoopSleep")
+	config.RegisterDurationConfigVariable(1000, &proc.config.pingerSleep, true, time.Millisecond, "Processor.pingerSleep")
+	config.RegisterDurationConfigVariable(defaultReadLoopSleepMs, &proc.config.readLoopSleep, true, time.Millisecond, "Processor.readLoopSleep")
 	// DEPRECATED: used only on the old mainLoop:
 	config.RegisterDurationConfigVariable(10, &proc.config.loopSleep, true, time.Millisecond, []string{"Processor.loopSleep", "Processor.loopSleepInMS"}...)
 	// DEPRECATED: used only on the old mainLoop:
@@ -496,7 +595,7 @@ func (proc *Handle) loadConfig() {
 	// EventSchemas feature. false by default
 	config.RegisterBoolConfigVariable(false, &proc.config.enableEventSchemasFeature, false, "EventSchemas.enableEventSchemasFeature")
 	config.RegisterBoolConfigVariable(false, &proc.config.enableEventSchemasAPIOnly, true, "EventSchemas.enableEventSchemasAPIOnly")
-	config.RegisterIntConfigVariable(10000, &proc.config.maxEventsToProcess, true, 1, "Processor.maxLoopProcessEvents")
+	config.RegisterIntConfigVariable(defaultMaxEventsToProcess, &proc.config.maxEventsToProcess, true, 1, "Processor.maxLoopProcessEvents")
 
 	proc.config.batchDestinations = misc.BatchDestinations()
 	config.RegisterIntConfigVariable(5, &proc.config.transformTimesPQLength, false, 1, "Processor.transformTimesPQLength")
@@ -515,15 +614,18 @@ func (proc *Handle) loadConfig() {
 // It will set isUnLocked to true if it successfully fetches the transformer feature json at least once.
 func (proc *Handle) syncTransformerFeatureJson(ctx context.Context) {
 	var initDone bool
+	proc.logger.Infof("Fetching transformer features from %s", proc.config.transformerURL)
 	for {
 		for i := 0; i < proc.config.featuresRetryMaxAttempts; i++ {
-			proc.logger.Infof("Fetching transformer features from %s", proc.config.transformerURL)
+
 			if ctx.Err() != nil {
 				return
 			}
 
 			retry := proc.makeFeaturesFetchCall()
-			proc.logger.Infof("Fetched transformer features from %s (retry: %v)", proc.config.transformerURL, retry)
+			if retry {
+				proc.logger.Infof("Fetched transformer features from %s (retry: %v)", proc.config.transformerURL, retry)
+			}
 			if retry {
 				select {
 				case <-ctx.Done():
@@ -1136,7 +1238,11 @@ func getDiffMetrics(inPU, pu string, inCountMetadataMap map[string]MetricMetadat
 	return diffMetrics
 }
 
-func (proc *Handle) processJobsForDest(subJobs subJob, parsedEventList [][]types.SingularEventT) *transformationMessage {
+func (proc *Handle) processJobsForDest(partition string, subJobs subJob, parsedEventList [][]types.SingularEventT) *transformationMessage {
+	if proc.limiter.preprocess != nil {
+		defer proc.limiter.preprocess.BeginWithPriority(partition, proc.getLimiterPriority(partition))()
+	}
+
 	jobList := subJobs.subJobs
 	start := time.Now()
 
@@ -1442,7 +1548,10 @@ type transformationMessage struct {
 	rsourcesStats rsources.StatsCollector
 }
 
-func (proc *Handle) transformations(in *transformationMessage) *storeMessage {
+func (proc *Handle) transformations(partition string, in *transformationMessage) *storeMessage {
+	if proc.limiter.transform != nil {
+		defer proc.limiter.transform.BeginWithPriority(partition, proc.getLimiterPriority(partition))()
+	}
 	// Now do the actual transformation. We call it in batches, once
 	// for each destination ID
 
@@ -1532,6 +1641,26 @@ type storeMessage struct {
 	rsourcesStats rsources.StatsCollector
 }
 
+func (sm *storeMessage) merge(subJob *storeMessage) {
+	sm.statusList = append(sm.statusList, subJob.statusList...)
+	sm.destJobs = append(sm.destJobs, subJob.destJobs...)
+	sm.batchDestJobs = append(sm.batchDestJobs, subJob.batchDestJobs...)
+
+	sm.procErrorJobs = append(sm.procErrorJobs, subJob.procErrorJobs...)
+	for id, job := range subJob.procErrorJobsByDestID {
+		sm.procErrorJobsByDestID[id] = append(sm.procErrorJobsByDestID[id], job...)
+	}
+
+	sm.reportMetrics = append(sm.reportMetrics, subJob.reportMetrics...)
+	for tag, count := range subJob.sourceDupStats {
+		sm.sourceDupStats[tag] += count
+	}
+	for id := range subJob.uniqueMessageIds {
+		sm.uniqueMessageIds[id] = struct{}{}
+	}
+	sm.totalEvents += subJob.totalEvents
+}
+
 func (proc *Handle) sendRetryStoreStats(attempt int) {
 	proc.logger.Warnf("Timeout during store jobs in processor module, attempt %d", attempt)
 	stats.Default.NewTaggedStat("jobsdb_store_timeout", stats.CountType, stats.Tags{"attempt": fmt.Sprint(attempt), "module": "processor"}).Count(1)
@@ -1547,7 +1676,10 @@ func (proc *Handle) sendQueryRetryStats(attempt int) {
 	stats.Default.NewTaggedStat("jobsdb_query_timeout", stats.CountType, stats.Tags{"attempt": fmt.Sprint(attempt), "module": "processor"}).Count(1)
 }
 
-func (proc *Handle) Store(in *storeMessage) {
+func (proc *Handle) Store(partition string, in *storeMessage) {
+	if proc.limiter.store != nil {
+		defer proc.limiter.store.BeginWithPriority(partition, proc.getLimiterPriority(partition))()
+	}
 	statusList, destJobs, batchDestJobs := in.statusList, in.destJobs, in.batchDestJobs
 	beforeStoreStatus := time.Now()
 	// XX: Need to do this in a transaction
@@ -2177,11 +2309,14 @@ func (proc *Handle) addToTransformEventByTimePQ(event *TransformRequestT, pq *tr
 	if pq.Top().ProcessingTime < event.ProcessingTime {
 		pq.RemoveTop()
 		pq.Add(event)
-
 	}
 }
 
-func (proc *Handle) getJobs() jobsdb.JobsResult {
+func (proc *Handle) getJobs(partition string) jobsdb.JobsResult {
+	if proc.limiter.read != nil {
+		defer proc.limiter.read.BeginWithPriority(partition, proc.getLimiterPriority(partition))()
+	}
+
 	s := time.Now()
 
 	proc.logger.Debugf("Processor DB Read size: %d", proc.config.maxEventsToProcess)
@@ -2190,13 +2325,16 @@ func (proc *Handle) getJobs() jobsdb.JobsResult {
 	if !proc.config.enableEventCount {
 		eventCount = 0
 	}
+	queryParams := jobsdb.GetQueryParamsT{
+		CustomValFilters: []string{proc.config.GWCustomVal},
+		JobsLimit:        proc.config.maxEventsToProcess,
+		EventsLimit:      eventCount,
+		PayloadSizeLimit: proc.adaptiveLimit(proc.payloadLimit),
+	}
+	proc.isolationStrategy.AugmentQueryParams(partition, &queryParams)
+
 	unprocessedList, err := misc.QueryWithRetriesAndNotify(context.Background(), proc.jobdDBQueryRequestTimeout, proc.jobdDBMaxRetries, func(ctx context.Context) (jobsdb.JobsResult, error) {
-		return proc.gatewayDB.GetUnprocessed(ctx, jobsdb.GetQueryParamsT{
-			CustomValFilters: []string{proc.config.GWCustomVal},
-			JobsLimit:        proc.config.maxEventsToProcess,
-			EventsLimit:      eventCount,
-			PayloadSizeLimit: proc.adaptiveLimit(proc.payloadLimit),
-		})
+		return proc.gatewayDB.GetUnprocessed(ctx, queryParams)
 	}, proc.sendQueryRetryStats)
 	if err != nil {
 		proc.logger.Errorf("Failed to get unprocessed jobs from DB. Error: %v", err)
@@ -2276,10 +2414,10 @@ func (proc *Handle) markExecuting(jobs []*jobsdb.JobT) error {
 
 // handlePendingGatewayJobs is checking for any pending gateway jobs (failed and unprocessed), and routes them appropriately
 // Returns true if any job is handled, otherwise returns false.
-func (proc *Handle) handlePendingGatewayJobs() bool {
+func (proc *Handle) handlePendingGatewayJobs(partition string) bool {
 	s := time.Now()
 
-	unprocessedList := proc.getJobs()
+	unprocessedList := proc.getJobs(partition)
 
 	if len(unprocessedList.Jobs) == 0 {
 		return false
@@ -2288,9 +2426,9 @@ func (proc *Handle) handlePendingGatewayJobs() bool {
 	rsourcesStats := rsources.NewStatsCollector(proc.rsourcesService)
 	rsourcesStats.BeginProcessing(unprocessedList.Jobs)
 
-	proc.Store(
-		proc.transformations(
-			proc.processJobsForDest(subJob{
+	proc.Store(partition,
+		proc.transformations(partition,
+			proc.processJobsForDest(partition, subJob{
 				subJobs:       unprocessedList.Jobs,
 				hasMore:       false,
 				rsourcesStats: rsourcesStats,
@@ -2300,58 +2438,6 @@ func (proc *Handle) handlePendingGatewayJobs() bool {
 	proc.stats.statLoopTime.Since(s)
 
 	return true
-}
-
-// mainLoop: legacy way of handling jobs
-func (proc *Handle) mainLoop(ctx context.Context) {
-	// waiting for reporting client setup
-	if proc.reporting != nil && proc.reportingEnabled {
-		if err := proc.reporting.WaitForSetup(ctx, types.CoreReportingClient); err != nil {
-			return
-		}
-	}
-
-	// waiting for init group
-	select {
-	case <-ctx.Done():
-		return
-	case <-proc.config.asyncInit.Wait():
-		// proceed
-	}
-
-	proc.logger.Info("Processor loop started")
-	var currLoopSleep time.Duration
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-time.After(proc.config.mainLoopTimeout):
-			found := proc.handlePendingGatewayJobs()
-			if found {
-				currLoopSleep = 0
-			} else {
-				currLoopSleep = 2*currLoopSleep + proc.config.loopSleep
-				if currLoopSleep > proc.config.maxLoopSleep {
-					currLoopSleep = proc.config.maxLoopSleep
-				}
-				if sleepTrueOnDone(ctx, currLoopSleep) {
-					return
-				}
-			}
-			if sleepTrueOnDone(ctx, proc.config.fixedLoopSleep) { // adding sleep here to reduce cpu load on postgres when we have less rps
-				return
-			}
-		}
-	}
-}
-
-func sleepTrueOnDone(ctx context.Context, duration time.Duration) bool {
-	select {
-	case <-ctx.Done():
-		return true
-	case <-time.After(duration):
-		return false
-	}
 }
 
 // `jobSplitter` func Splits the read Jobs into sub-batches after reading from DB to process.
@@ -2364,161 +2450,15 @@ type subJob struct {
 	rsourcesStats rsources.StatsCollector
 }
 
-func (proc *Handle) jobSplitter(jobs []*jobsdb.JobT, rsourcesStats rsources.StatsCollector) []subJob {
-	subJobCount := 1
-	if len(jobs)/proc.config.subJobSize > 1 {
-		subJobCount = len(jobs) / proc.config.subJobSize
-		if len(jobs)%proc.config.subJobSize != 0 {
-			subJobCount++
-		}
-	}
-	var subJobs []subJob
-	for i := 0; i < subJobCount; i++ {
-		if i == subJobCount-1 {
-			// all the remaining jobs are sent in last sub-job batch.
-			subJobs = append(subJobs, subJob{
-				subJobs:       jobs,
-				hasMore:       false,
-				rsourcesStats: rsourcesStats,
-			})
-			continue
-		}
-		subJobs = append(subJobs, subJob{
-			subJobs:       jobs[:proc.config.subJobSize],
-			hasMore:       true,
+func (proc *Handle) jobSplitter(jobs []*jobsdb.JobT, rsourcesStats rsources.StatsCollector) []subJob { //nolint:unparam
+	chunks := lo.Chunk(jobs, proc.config.subJobSize)
+	return lo.Map(chunks, func(subJobs []*jobsdb.JobT, index int) subJob {
+		return subJob{
+			subJobs:       subJobs,
+			hasMore:       index+1 < len(chunks),
 			rsourcesStats: rsourcesStats,
-		})
-		jobs = jobs[proc.config.subJobSize:]
-	}
-
-	return subJobs
-}
-
-// mainPipeline: new way of handling jobs
-//
-// [getJobs] -chProc-> [processJobsForDest] -chTrans-> [transformations] -chStore-> [Store]
-func (proc *Handle) mainPipeline(ctx context.Context) {
-	// waiting for reporting client setup
-	proc.logger.Infof("Processor mainPipeline started, subJobSize=%d pipelineBufferedItems=%d", proc.config.subJobSize, proc.config.pipelineBufferedItems)
-
-	if proc.reporting != nil && proc.reportingEnabled {
-		if err := proc.reporting.WaitForSetup(ctx, types.CoreReportingClient); err != nil {
-			return
-		}
-	}
-	wg := sync.WaitGroup{}
-	bufferSize := proc.config.pipelineBufferedItems
-
-	chProc := make(chan subJob, bufferSize)
-	wg.Add(1)
-	rruntime.Go(func() {
-		defer wg.Done()
-		defer close(chProc)
-		nextSleepTime := time.Duration(0)
-		// waiting for init group
-		select {
-		case <-ctx.Done():
-			return
-		case <-proc.config.asyncInit.Wait():
-			// proceed
-		}
-
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-time.After(nextSleepTime):
-				dbReadStart := time.Now()
-				jobs := proc.getJobs()
-				rsourcesStats := rsources.NewStatsCollector(proc.rsourcesService)
-				rsourcesStats.BeginProcessing(jobs.Jobs)
-				if len(jobs.Jobs) == 0 {
-					// no jobs found, double sleep time until maxLoopSleep
-					nextSleepTime = 2 * nextSleepTime
-					if nextSleepTime > proc.config.maxLoopSleep {
-						nextSleepTime = proc.config.maxLoopSleep
-					} else if nextSleepTime == 0 {
-						nextSleepTime = proc.config.readLoopSleep
-					}
-					continue
-				}
-
-				err := proc.markExecuting(jobs.Jobs)
-				if err != nil {
-					proc.logger.Error(err)
-					panic(err)
-				}
-				dbReadTime := time.Since(dbReadStart)
-				events := jobs.EventsCount
-				dbReadThroughput := throughputPerSecond(events, dbReadTime)
-				// DB read throughput per second.
-				proc.stats.DBReadThroughput.Count(dbReadThroughput)
-
-				// nextSleepTime is dependent on the number of events read in this loop
-				emptyRatio := 1.0 - math.Min(1, float64(events)/float64(proc.config.maxEventsToProcess))
-				nextSleepTime = time.Duration(emptyRatio * float64(proc.config.readLoopSleep))
-
-				subJobs := proc.jobSplitter(jobs.Jobs, rsourcesStats)
-				for _, subJob := range subJobs {
-					chProc <- subJob
-				}
-			}
 		}
 	})
-
-	chTrans := make(chan *transformationMessage, bufferSize)
-	wg.Add(1)
-	rruntime.Go(func() {
-		defer wg.Done()
-		defer close(chTrans)
-		for jobs := range chProc {
-			chTrans <- proc.processJobsForDest(jobs, nil)
-		}
-	})
-
-	// we need the below buffer size to ensure that `proc.Store(*mergedJob)` is not blocking rest of the Go routines.
-	chStore := make(chan *storeMessage, (bufferSize+1)*(proc.config.maxEventsToProcess/proc.config.subJobSize+1))
-	wg.Add(1)
-	rruntime.Go(func() {
-		defer wg.Done()
-		defer close(chStore)
-		for msg := range chTrans {
-			chStore <- proc.transformations(msg)
-		}
-	})
-
-	wg.Add(1)
-	rruntime.Go(func() {
-		var mergedJob storeMessage
-		firstSubJob := true
-		defer wg.Done()
-		for subJob := range chStore {
-
-			if firstSubJob && !subJob.hasMore {
-				proc.Store(subJob)
-				continue
-			}
-
-			if firstSubJob {
-				mergedJob = storeMessage{}
-				mergedJob.rsourcesStats = subJob.rsourcesStats
-				mergedJob.uniqueMessageIds = make(map[string]struct{})
-				mergedJob.procErrorJobsByDestID = make(map[string][]*jobsdb.JobT)
-				mergedJob.sourceDupStats = make(map[string]int)
-
-				mergedJob.start = subJob.start
-				firstSubJob = false
-			}
-			mergedJob := subJobMerger(&mergedJob, subJob)
-
-			if !subJob.hasMore {
-				proc.Store(mergedJob)
-				firstSubJob = true
-			}
-		}
-	})
-
-	wg.Wait()
 }
 
 func subJobMerger(mergedJob, subJob *storeMessage) *storeMessage {
@@ -2583,4 +2523,8 @@ func filterConfig(eventCopy *transformer.TransformerEventT) {
 			eventCopy.Destination.Config = lo.OmitByKeys(eventCopy.Destination.Config, omitKeys)
 		}
 	}
+}
+
+func (proc *Handle) getLimiterPriority(partition string) miscsync.LimiterPriorityValue {
+	return miscsync.LimiterPriorityValue(config.GetInt(fmt.Sprintf("Processor.Limiter.%s.Priority", partition), 1))
 }
