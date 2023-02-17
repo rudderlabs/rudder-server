@@ -212,7 +212,7 @@ func (ms *Store) Get(name string, tags stats.Tags) *Measurement {
 }
 
 // Start implements stats.Stats
-func (*Store) Start(_ context.Context) error { return nil }
+func (*Store) Start(_ context.Context) {}
 
 // Stop implements stats.Stats
 func (*Store) Stop() {}

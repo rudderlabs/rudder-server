@@ -17,7 +17,7 @@ func GetWorkspaceToken() string {
 	return GetString("CONFIG_BACKEND_TOKEN", "")
 }
 
-// GetNamespaceIdentifier returns value stored in KUBE_NAMESPACE env var or "none" if empty
+// GetNamespaceIdentifier
 func GetNamespaceIdentifier() string {
 	k8sNamespace := GetKubeNamespace()
 	if k8sNamespace != "" {
@@ -34,12 +34,12 @@ func GetKubeNamespace() string {
 func GetInstanceID() string {
 	instance := GetString("INSTANCE_ID", "")
 	instanceArr := strings.Split(instance, "-")
-	length := len(instanceArr)
+	len := len(instanceArr)
 	// This handles 2 kinds of server instances
-	// a) Processor OR Gateway running in non HA mod where the instance name ends with the index
-	// b) Gateway running in HA mode, where the instance name is of the form *-gw-ha-<index>-<statefulset-id>-<pod-id>
-	potentialServerIndexIndices := []int{length - 1, length - 3}
-	for _, i := range potentialServerIndexIndices {
+	// a. Processor OR Gateway running in non HA mod where the instance name ends with the index
+	// b. Gateway running in HA mode, where the instance name is of the form *-gw-ha-<index>-<statefulset-id>-<pod-id>
+	potentialServerIndexIndicees := []int{len - 1, len - 3}
+	for _, i := range potentialServerIndexIndicees {
 		if i < 0 {
 			continue
 		}

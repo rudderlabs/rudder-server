@@ -47,22 +47,22 @@ type Registry interface {
 	// e.g. a Counter, it panics
 	MustGetGauge(Measurement) Gauge
 
-	// GetSimpleMovingAvg gets a moving average by key. If a value for this key
+	// GetMovingAverage gets a moving average by key. If a value for this key
 	// already exists but corresponds to another measurement
 	// type, e.g. a Counter, an error is returned
 	GetSimpleMovingAvg(Measurement) (MovingAverage, error)
 
-	// MustGetSimpleMovingAvg gets a moving average by key. If a value for this key
+	// MustGetMovingAverage gets a moving average by key. If a value for this key
 	// already exists but corresponds to another measurement type,
 	// e.g. a Counter, it panics
 	MustGetSimpleMovingAvg(Measurement) MovingAverage
 
-	// GetVarMovingAvg gets a moving average by key. If a value for this key
+	// GetMovingAverage gets a moving average by key. If a value for this key
 	// already exists but corresponds to another measurement
 	// type, e.g. a Counter, an error is returned
 	GetVarMovingAvg(m Measurement, age float64) (MovingAverage, error)
 
-	// MustGetVarMovingAvg gets a moving average by key. If a value for this key
+	// MustGetMovingAverage gets a moving average by key. If a value for this key
 	// already exists but corresponds to another measurement type,
 	// e.g. a Counter, it panics
 	MustGetVarMovingAvg(m Measurement, age float64) MovingAverage
@@ -207,10 +207,10 @@ func (r *registry) Range(f func(key, value interface{}) bool) {
 func (r *registry) GetMetricsByName(name string) []TagsWithValue {
 	metricsSet, ok := r.nameIndex.Load(name)
 	if !ok {
-		return nil
+		return []TagsWithValue{}
 	}
+	values := []TagsWithValue{}
 
-	var values []TagsWithValue
 	lock := metricsSet.(*mutexWithMap).lock
 	lock.RLock()
 	for _, value := range metricsSet.(*mutexWithMap).value {

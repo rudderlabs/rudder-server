@@ -15,6 +15,8 @@ import (
 	"testing"
 	"time"
 
+	sourcedebugger "github.com/rudderlabs/rudder-server/services/debugger/source"
+
 	"github.com/golang/mock/gomock"
 	"github.com/google/uuid"
 	. "github.com/onsi/ginkgo/v2"
@@ -34,7 +36,6 @@ import (
 	mocksJobsDB "github.com/rudderlabs/rudder-server/mocks/jobsdb"
 	mocksRateLimiter "github.com/rudderlabs/rudder-server/mocks/rate-limiter"
 	mocksTypes "github.com/rudderlabs/rudder-server/mocks/utils/types"
-	sourcedebugger "github.com/rudderlabs/rudder-server/services/debugger/source"
 	"github.com/rudderlabs/rudder-server/services/rsources"
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/services/stats/memstats"

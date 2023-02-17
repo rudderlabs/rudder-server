@@ -8,12 +8,11 @@ import (
 	"time"
 
 	"github.com/hashicorp/go-retryablehttp"
-	"golang.org/x/sync/errgroup"
-
 	"github.com/rudderlabs/rudder-server/config"
 	gwstats "github.com/rudderlabs/rudder-server/gateway/internal/stats"
 	"github.com/rudderlabs/rudder-server/services/stats"
 	"github.com/rudderlabs/rudder-server/utils/misc"
+	"golang.org/x/sync/errgroup"
 )
 
 type GatewayI interface {
@@ -42,7 +41,7 @@ func newWebhookStats() *webhookStatsT {
 
 func Setup(gwHandle GatewayI, stat stats.Stats, opts ...batchTransformerOption) *HandleT {
 	webhook := &HandleT{gwHandle: gwHandle, stats: stat}
-	webhook.requestQ = make(map[string]chan *webhookT)
+	webhook.requestQ = make(map[string](chan *webhookT))
 	webhook.batchRequestQ = make(chan *batchWebhookT)
 	webhook.netClient = retryablehttp.NewClient()
 	webhook.netClient.HTTPClient.Timeout = config.GetDuration("HttpClient.webhook.timeout", 30, time.Second)

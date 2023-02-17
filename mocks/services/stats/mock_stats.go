@@ -79,11 +79,9 @@ func (mr *MockStatsMockRecorder) NewTaggedStat(arg0, arg1, arg2 interface{}) *go
 }
 
 // Start mocks base method.
-func (m *MockStats) Start(arg0 context.Context) error {
+func (m *MockStats) Start(arg0 context.Context) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "Start", arg0)
-	ret0, _ := ret[0].(error)
-	return ret0
+	m.ctrl.Call(m, "Start", arg0)
 }
 
 // Start indicates an expected call of Start.
