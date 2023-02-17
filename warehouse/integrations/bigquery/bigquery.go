@@ -8,6 +8,8 @@ import (
 	"strings"
 	"time"
 
+	warehouse2 "github.com/rudderlabs/rudder-server/warehouse/uploader"
+
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 
 	"cloud.google.com/go/bigquery"
@@ -40,7 +42,7 @@ type HandleT struct {
 	namespace         string
 	warehouse         warehouseutils.Warehouse
 	projectID         string
-	uploader          warehouseutils.UploaderI
+	uploader          warehouse2.Uploader
 }
 
 type StagingLoadTableT struct {
@@ -810,7 +812,7 @@ func (bq *HandleT) IsEmpty(warehouse warehouseutils.Warehouse) (empty bool, err 
 	return
 }
 
-func (bq *HandleT) Setup(warehouse warehouseutils.Warehouse, uploader warehouseutils.UploaderI) (err error) {
+func (bq *HandleT) Setup(warehouse warehouseutils.Warehouse, uploader warehouse2.Uploader) (err error) {
 	bq.warehouse = warehouse
 	bq.namespace = warehouse.Namespace
 	bq.uploader = uploader

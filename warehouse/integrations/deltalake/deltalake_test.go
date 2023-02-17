@@ -9,6 +9,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/rudderlabs/rudder-server/warehouse/uploader"
+
 	"github.com/ory/dockertest/v3"
 	"github.com/rudderlabs/rudder-server/testhelper/destination"
 	"golang.org/x/sync/errgroup"
@@ -702,6 +704,7 @@ func TestDeltalake_GetTotalCountInTable(t *testing.T) {
 }
 
 type mockUploader struct {
+	uploader.Uploader
 	mockError       error
 	fileType        string
 	fileLocation    string
@@ -709,20 +712,6 @@ type mockUploader struct {
 	warehouseSchema warehouseutils.TableSchemaT
 	firstEventAt    time.Time
 	lastEventAt     time.Time
-}
-
-func (*mockUploader) GetSchemaInWarehouse() warehouseutils.SchemaT     { return warehouseutils.SchemaT{} }
-func (*mockUploader) GetLocalSchema() warehouseutils.SchemaT           { return warehouseutils.SchemaT{} }
-func (*mockUploader) UpdateLocalSchema(_ warehouseutils.SchemaT) error { return nil }
-func (*mockUploader) ShouldOnDedupUseNewRecord() bool                  { return false }
-func (*mockUploader) UseRudderStorage() bool                           { return false }
-func (*mockUploader) GetLoadFileGenStartTIme() time.Time               { return time.Time{} }
-func (*mockUploader) GetLoadFilesMetadata(warehouseutils.GetLoadFilesOptionsT) []warehouseutils.LoadFileT {
-	return nil
-}
-
-func (*mockUploader) GetSingleLoadFile(_ string) (warehouseutils.LoadFileT, error) {
-	return warehouseutils.LoadFileT{}, nil
 }
 
 func (m *mockUploader) GetFirstLastEvent() (time.Time, time.Time) {

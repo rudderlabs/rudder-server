@@ -3,45 +3,22 @@ package schemarepository_test
 import (
 	"fmt"
 	"testing"
-	"time"
 
 	schemarepository "github.com/rudderlabs/rudder-server/warehouse/integrations/datalake/schema-repository"
+	"github.com/rudderlabs/rudder-server/warehouse/uploader"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 	"github.com/stretchr/testify/require"
 )
 
 type mockUploader struct {
+	uploader.Uploader
 	mockError   error
 	localSchema warehouseutils.SchemaT
 }
 
-func (*mockUploader) GetSchemaInWarehouse() warehouseutils.SchemaT              { return warehouseutils.SchemaT{} }
-func (*mockUploader) ShouldOnDedupUseNewRecord() bool                           { return false }
-func (*mockUploader) UseRudderStorage() bool                                    { return false }
-func (*mockUploader) GetLoadFileGenStartTIme() time.Time                        { return time.Time{} }
-func (*mockUploader) GetLoadFileType() string                                   { return "JSON" }
-func (*mockUploader) GetFirstLastEvent() (time.Time, time.Time)                 { return time.Time{}, time.Time{} }
-func (*mockUploader) GetTableSchemaInUpload(string) warehouseutils.TableSchemaT { return nil }
-func (*mockUploader) GetSampleLoadFileLocation(string) (string, error)          { return "", nil }
-func (*mockUploader) GetLoadFilesMetadata(warehouseutils.GetLoadFilesOptionsT) []warehouseutils.LoadFileT {
-	return nil
-}
-
-func (*mockUploader) GetTableSchemaInWarehouse(string) warehouseutils.TableSchemaT {
-	return warehouseutils.TableSchemaT{}
-}
-
-func (*mockUploader) GetSingleLoadFile(string) (warehouseutils.LoadFileT, error) {
-	return warehouseutils.LoadFileT{}, nil
-}
-
-func (m *mockUploader) GetLocalSchema() warehouseutils.SchemaT {
-	return m.localSchema
-}
-
-func (m *mockUploader) UpdateLocalSchema(warehouseutils.SchemaT) error {
-	return m.mockError
-}
+func (*mockUploader) GetLoadFileType() string                          { return "JSON" }
+func (m *mockUploader) GetLocalSchema() warehouseutils.SchemaT         { return m.localSchema }
+func (m *mockUploader) UpdateLocalSchema(warehouseutils.SchemaT) error { return m.mockError }
 
 func TestLocalSchemaRepository_CreateTable(t *testing.T) {
 	testCases := []struct {
