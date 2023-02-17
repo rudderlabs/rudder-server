@@ -19,6 +19,7 @@ type Factory struct {
 	RsourcesService  rsources.JobService
 	ThrottlerFactory *throttler.Factory
 	Debugger         destinationdebugger.DestinationDebugger
+	AdaptiveLimit    func(int64) int64
 }
 
 func (f *Factory) New(destination *backendconfig.DestinationT, identifier string) *HandleT {
@@ -26,9 +27,18 @@ func (f *Factory) New(destination *backendconfig.DestinationT, identifier string
 		Reporting:        f.Reporting,
 		MultitenantI:     f.Multitenant,
 		throttlerFactory: f.ThrottlerFactory,
+		adaptiveLimit:    f.AdaptiveLimit,
 	}
 	destConfig := getRouterConfig(destination, identifier)
-	r.Setup(f.BackendConfig, f.RouterDB, f.ProcErrorDB, destConfig, f.TransientSources, f.RsourcesService, f.Debugger)
+	r.Setup(
+		f.BackendConfig,
+		f.RouterDB,
+		f.ProcErrorDB,
+		destConfig,
+		f.TransientSources,
+		f.RsourcesService,
+		f.Debugger,
+	)
 	return r
 }
 

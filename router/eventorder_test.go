@@ -104,7 +104,7 @@ func TestEventOrderGuarantee(t *testing.T) {
 			writeKey := trand.String(27)
 			workspaceID := trand.String(27)
 			destinationID := trand.String(27)
-			templateCtx := map[string]string{
+			templateCtx := map[string]any{
 				"webhookUrl":    webhook.Server.URL,
 				"writeKey":      writeKey,
 				"workspaceId":   workspaceID,

@@ -50,7 +50,7 @@ var _ = Describe("Stats", Ordered, func() {
 		cleanup.Run()
 	})
 
-	Describe("Generate upload success/aborted metrics", func() {
+	Describe("Generate upload success metrics", func() {
 		var job *UploadJobT
 
 		BeforeEach(func() {
@@ -76,6 +76,30 @@ var _ = Describe("Stats", Ordered, func() {
 
 		It("Success metrics", func() {
 			job.generateUploadSuccessMetrics()
+		})
+	})
+
+	Describe("Generate upload aborted metrics", func() {
+		var job *UploadJobT
+
+		BeforeEach(func() {
+			mockStats, mockMeasurement := getMockStats(g)
+			mockStats.EXPECT().NewTaggedStat(gomock.Any(), gomock.Any(), gomock.Any()).Times(2).Return(mockMeasurement)
+			mockMeasurement.EXPECT().Count(4).Times(2)
+
+			job = &UploadJobT{
+				upload: model.Upload{
+					ID:                 uploadID,
+					StagingFileStartID: 1,
+					StagingFileEndID:   4,
+					SourceID:           "test-sourceID",
+					DestinationID:      "test-destinationID",
+				},
+				warehouse: warehouseutils.Warehouse{
+					Type: "POSTGRES",
+				},
+				stats: mockStats,
+			}
 		})
 
 		It("Aborted metrics", func() {

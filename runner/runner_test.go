@@ -14,7 +14,7 @@ import (
 
 func TestRunner(t *testing.T) {
 	config.Set("BackendConfig.configFromFile", true)
-	configJsonPath := workspaceConfig.CreateTempFile(t, "testdata/config.json", map[string]string{})
+	configJsonPath := workspaceConfig.CreateTempFile(t, "testdata/config.json", map[string]any{})
 	config.Set("BackendConfig.configJSONPath", configJsonPath)
 
 	ctx, cancel := context.WithCancel(context.Background())

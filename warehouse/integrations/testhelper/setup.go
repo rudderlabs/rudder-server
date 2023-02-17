@@ -189,7 +189,7 @@ func (w *WareHouseTest) VerifyModifiedEvents(t testing.TB) {
 func SetUpJobsDB(t testing.TB) *sql.DB {
 	t.Helper()
 
-	pgCredentials := &postgres.CredentialsT{
+	pgCredentials := &postgres.Credentials{
 		DBName:   "jobsdb",
 		Password: "password",
 		User:     "rudder",

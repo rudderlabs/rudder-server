@@ -9,6 +9,7 @@ import (
 	"reflect"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	transformationdebugger "github.com/rudderlabs/rudder-server/services/debugger/transformation"
@@ -33,6 +34,7 @@ import (
 	mocksMultitenant "github.com/rudderlabs/rudder-server/mocks/services/multitenant"
 	mockReportingTypes "github.com/rudderlabs/rudder-server/mocks/utils/types"
 	"github.com/rudderlabs/rudder-server/processor/integrations"
+	"github.com/rudderlabs/rudder-server/processor/isolation"
 	"github.com/rudderlabs/rudder-server/processor/stash"
 	"github.com/rudderlabs/rudder-server/processor/transformer"
 	"github.com/rudderlabs/rudder-server/services/dedup"
@@ -319,6 +321,9 @@ var _ = Describe("Processor", Ordered, func() {
 	prepareHandle := func(proc *Handle) *Handle {
 		proc.config.transformerURL = transformerServer.URL
 		setEnableEventSchemasFeature(proc, false)
+		isolationStrategy, err := isolation.GetStrategy(isolation.ModeNone)
+		Expect(err).To(BeNil())
+		proc.isolationStrategy = isolationStrategy
 		return proc
 	}
 	BeforeEach(func() {
@@ -387,7 +392,7 @@ var _ = Describe("Processor", Ordered, func() {
 			payloadLimit := processor.payloadLimit
 			c.mockGatewayJobsDB.EXPECT().GetUnprocessed(gomock.Any(), jobsdb.GetQueryParamsT{CustomValFilters: gatewayCustomVal, JobsLimit: c.dbReadBatchSize, EventsLimit: c.processEventSize, PayloadSizeLimit: payloadLimit}).Return(jobsdb.JobsResult{Jobs: emptyJobsList}, nil).Times(1)
 
-			didWork := processor.handlePendingGatewayJobs()
+			didWork := processor.handlePendingGatewayJobs("")
 			Expect(didWork).To(Equal(false))
 		})
 
@@ -1212,7 +1217,17 @@ var _ = Describe("Processor", Ordered, func() {
 			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 			defer cancel()
 
-			go processor.mainLoop(ctx)
+			c.mockBackendConfig.EXPECT().WaitForConfig(gomock.Any()).Times(1)
+			c.mockProcErrorsDB.EXPECT().FailExecuting().Times(1)
+
+			var wg sync.WaitGroup
+			wg.Add(1)
+			go func() {
+				err := processor.Start(ctx)
+				Expect(err).To(BeNil())
+				wg.Done()
+			}()
+
 			Consistently(func() bool {
 				select {
 				case <-processor.config.asyncInit.Wait():
@@ -1220,7 +1235,8 @@ var _ = Describe("Processor", Ordered, func() {
 				default:
 					return false
 				}
-			}, 5*time.Second, 10*time.Millisecond).Should(BeFalse())
+			}, 2*time.Second, 10*time.Millisecond).Should(BeFalse())
+			wg.Wait()
 		})
 	})
 
@@ -2018,7 +2034,7 @@ func Setup(processor *Handle, c *testContext, enableDedup, enableReporting bool)
 }
 
 func handlePendingGatewayJobs(processor *Handle) {
-	didWork := processor.handlePendingGatewayJobs()
+	didWork := processor.handlePendingGatewayJobs("")
 	Expect(didWork).To(Equal(true))
 }
 

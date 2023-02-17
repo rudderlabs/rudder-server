@@ -10,7 +10,7 @@ import (
 )
 
 func WaitUntilReady(
-	ctx context.Context, t *testing.T, endpoint string, atMost, interval time.Duration, caller string,
+	ctx context.Context, t testing.TB, endpoint string, atMost, interval time.Duration, caller string,
 ) {
 	t.Helper()
 	probe := time.NewTicker(interval)
