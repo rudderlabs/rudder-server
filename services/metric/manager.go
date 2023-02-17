@@ -4,13 +4,13 @@ Package metric implements an abstraction for safely managing metrics in concurre
 package metric
 
 const (
-	PublishedMetrics string = "published_metrics"
+	PUBLISHED_METRICS string = "published_metrics"
 )
 
 func NewManager() Manager {
 	return &manager{
 		registries: map[string]Registry{
-			PublishedMetrics: NewRegistry(),
+			PUBLISHED_METRICS: NewRegistry(),
 		},
 	}
 }

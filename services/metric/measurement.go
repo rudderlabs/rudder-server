@@ -33,7 +33,7 @@ func DecreasePendingEvents(tablePrefix, workspace, destType string, value float6
 
 // PendingEvents gets the measurement for pending events metric
 func PendingEvents(tablePrefix, workspace, destType string) Gauge {
-	return Instance.GetRegistry(PublishedMetrics).MustGetGauge(PendingEventsMeasurement(tablePrefix, workspace, destType))
+	return Instance.GetRegistry(PUBLISHED_METRICS).MustGetGauge(PendingEventsMeasurement(tablePrefix, workspace, destType))
 }
 
 func PendingEventsMeasurement(tablePrefix, workspace, destType string) Measurement {
