@@ -307,10 +307,6 @@ type mockUploader struct {
 	metadata    []warehouseutils.LoadFileT
 }
 
-func (*mockUploader) GetLoadFileType() string {
-	return "JSON"
-}
-
 func (m *mockUploader) GetSampleLoadFileLocation(_ string) (string, error) {
 	minioHostPort := fmt.Sprintf("localhost:%s", m.minioPort)
 

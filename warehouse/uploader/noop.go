@@ -8,54 +8,54 @@ import (
 
 type Noop struct{}
 
-func (n *Noop) GetSchemaInWarehouse() warehouseutils.SchemaT {
+func (*Noop) GetSchemaInWarehouse() warehouseutils.SchemaT {
 	return warehouseutils.SchemaT{}
 }
 
-func (n *Noop) GetLocalSchema() warehouseutils.SchemaT {
+func (*Noop) GetLocalSchema() warehouseutils.SchemaT {
 	return warehouseutils.SchemaT{}
 }
 
-func (n *Noop) UpdateLocalSchema(schema warehouseutils.SchemaT) error {
+func (*Noop) UpdateLocalSchema(warehouseutils.SchemaT) error {
 	return nil
 }
 
-func (n *Noop) GetTableSchemaInWarehouse(tableName string) warehouseutils.TableSchemaT {
+func (*Noop) GetTableSchemaInWarehouse(string) warehouseutils.TableSchemaT {
 	return warehouseutils.TableSchemaT{}
 }
 
-func (n *Noop) GetTableSchemaInUpload(tableName string) warehouseutils.TableSchemaT {
+func (*Noop) GetTableSchemaInUpload(string) warehouseutils.TableSchemaT {
 	return warehouseutils.TableSchemaT{}
 }
 
-func (n *Noop) GetLoadFilesMetadata(options warehouseutils.GetLoadFilesOptionsT) []warehouseutils.LoadFileT {
+func (*Noop) GetLoadFilesMetadata(warehouseutils.GetLoadFilesOptionsT) []warehouseutils.LoadFileT {
 	return []warehouseutils.LoadFileT{}
 }
 
-func (n *Noop) GetSampleLoadFileLocation(tableName string) (string, error) {
+func (*Noop) GetSampleLoadFileLocation(string) (string, error) {
 	return "", nil
 }
 
-func (n *Noop) GetSingleLoadFile(tableName string) (warehouseutils.LoadFileT, error) {
+func (*Noop) GetSingleLoadFile(string) (warehouseutils.LoadFileT, error) {
 	return warehouseutils.LoadFileT{}, nil
 }
 
-func (n *Noop) ShouldOnDedupUseNewRecord() bool {
+func (*Noop) ShouldOnDedupUseNewRecord() bool {
 	return false
 }
 
-func (n *Noop) UseRudderStorage() bool {
+func (*Noop) UseRudderStorage() bool {
 	return false
 }
 
-func (n *Noop) GetLoadFileGenStartTIme() time.Time {
+func (*Noop) GetLoadFileGenStartTIme() time.Time {
 	return time.Time{}
 }
 
-func (n *Noop) GetLoadFileType() string {
+func (*Noop) GetLoadFileType() string {
 	return ""
 }
 
-func (n *Noop) GetFirstLastEvent() (time.Time, time.Time) {
+func (*Noop) GetFirstLastEvent() (time.Time, time.Time) {
 	return time.Time{}, time.Time{}
 }

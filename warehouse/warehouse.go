@@ -136,7 +136,7 @@ type HandleT struct {
 	notifier                          pgnotifier.PgNotifierT
 	isEnabled                         bool
 	configSubscriberLock              sync.RWMutex
-	workerChannelMap                  map[string]chan *UploadJobT
+	workerChannelMap                  map[string]chan *UploadJob
 	workerChannelMapLock              sync.RWMutex
 	initialConfigFetched              bool
 	inProgressMap                     map[WorkerIdentifierT][]JobIDT
@@ -261,8 +261,8 @@ func (wh *HandleT) incrementActiveWorkers() {
 	wh.activeWorkerCountLock.Unlock()
 }
 
-func (wh *HandleT) initWorker() chan *UploadJobT {
-	workerChan := make(chan *UploadJobT, 1000)
+func (wh *HandleT) initWorker() chan *UploadJob {
+	workerChan := make(chan *UploadJob, 1000)
 	for i := 0; i < wh.maxConcurrentUploadJobs; i++ {
 		wh.backgroundGroup.Go(func() error {
 			for uploadJob := range workerChan {
@@ -280,7 +280,7 @@ func (wh *HandleT) initWorker() chan *UploadJobT {
 	return workerChan
 }
 
-func (*HandleT) handleUploadJob(uploadJob *UploadJobT) (err error) {
+func (*HandleT) handleUploadJob(uploadJob *UploadJob) (err error) {
 	// Process the upload job
 	err = uploadJob.run()
 	return
@@ -715,7 +715,7 @@ func (wh *HandleT) processingStats(availableWorkers int, jobStats model.UploadJo
 	pickupWaitTimeStat.SendTiming(jobStats.PickupWaitTime)
 }
 
-func (wh *HandleT) getUploadsToProcess(ctx context.Context, availableWorkers int, skipIdentifiers []string) ([]*UploadJobT, error) {
+func (wh *HandleT) getUploadsToProcess(ctx context.Context, availableWorkers int, skipIdentifiers []string) ([]*UploadJob, error) {
 	uploads, err := wh.uploadRepo.GetToProcess(ctx, wh.destType, availableWorkers, repo.ProcessOptions{
 		SkipIdentifiers:                   skipIdentifiers,
 		SkipWorkspaces:                    tenantManager.DegradedWorkspaces(),
@@ -725,7 +725,7 @@ func (wh *HandleT) getUploadsToProcess(ctx context.Context, availableWorkers int
 		return nil, err
 	}
 
-	var uploadJobs []*UploadJobT
+	var uploadJobs []*UploadJob
 	for _, upload := range uploads {
 		if upload.WorkspaceID == "" {
 			var ok bool
@@ -890,7 +890,7 @@ func (wh *HandleT) Setup(whType string) error {
 	wh.destType = whType
 	wh.resetInProgressJobs()
 	wh.Enable()
-	wh.workerChannelMap = make(map[string]chan *UploadJobT)
+	wh.workerChannelMap = make(map[string]chan *UploadJob)
 	wh.inProgressMap = make(map[WorkerIdentifierT][]JobIDT)
 	wh.tenantManager = multitenant.Manager{
 		BackendConfig: backendconfig.DefaultBackendConfig,

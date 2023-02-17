@@ -106,6 +106,13 @@ const (
 	DestinationIDEnabledB = "enabled-destination-b" // test destination batch router
 	DestinationIDEnabledC = "enabled-destination-c"
 	DestinationIDDisabled = "disabled-destination"
+
+	SourceID3 = "source-id-3"
+	WriteKey3 = "write-key-3"
+	DestID1   = "dest-id-1"
+	DestID2   = "dest-id-2"
+	DestID3   = "dest-id-3"
+	DestID4   = "dest-id-4"
 )
 
 var (
@@ -291,6 +298,84 @@ var sampleBackendConfig = backendconfig.ConfigT{
 						ID:          "destination-definition-disabled",
 						Name:        "destination-definition-name-disabled",
 						DisplayName: "destination-definition-display-name-disabled",
+						Config:      map[string]interface{}{},
+					},
+				},
+			},
+		},
+		{
+			ID:          SourceID3,
+			WriteKey:    WriteKey3,
+			WorkspaceID: sampleWorkspaceID,
+			Enabled:     true,
+			Destinations: []backendconfig.DestinationT{
+				{
+					ID:                 DestID1,
+					Name:               "D1",
+					Enabled:            true,
+					IsProcessorEnabled: true,
+					Config: map[string]interface{}{
+						"oneTrustCookieCategories": []map[string]interface{}{
+							{"oneTrustCookieCategory": "category1"},
+							{"oneTrustCookieCategory": "category2"},
+						},
+						"enableServerSideIdentify": false,
+					},
+					DestinationDefinition: backendconfig.DestinationDefinitionT{
+						ID:          "destination-definition-enabled",
+						Name:        "destination-definition-name-enabled",
+						DisplayName: "destination-definition-display-name-enabled",
+						Config:      map[string]interface{}{},
+					},
+				},
+				{
+					ID:                 DestID2,
+					Name:               "D2",
+					Enabled:            true,
+					IsProcessorEnabled: true,
+					Config: map[string]interface{}{
+						"oneTrustCookieCategories": []map[string]interface{}{
+							{"oneTrustCookieCategory": ""},
+						},
+						"enableServerSideIdentify": false,
+					},
+					DestinationDefinition: backendconfig.DestinationDefinitionT{
+						ID:          "destination-definition-enabled",
+						Name:        "destination-definition-name-enabled",
+						DisplayName: "destination-definition-display-name-enabled",
+						Config:      map[string]interface{}{},
+					},
+				},
+				{
+					ID:                 DestID3,
+					Name:               "D3",
+					Enabled:            true,
+					IsProcessorEnabled: true,
+					Config: map[string]interface{}{
+						"enableServerSideIdentify": false,
+					},
+					DestinationDefinition: backendconfig.DestinationDefinitionT{
+						ID:          "destination-definition-enabled",
+						Name:        "destination-definition-name-enabled",
+						DisplayName: "destination-definition-display-name-enabled",
+						Config:      map[string]interface{}{},
+					},
+				},
+				{
+					ID:                 DestID4,
+					Name:               "D4",
+					Enabled:            true,
+					IsProcessorEnabled: true,
+					Config: map[string]interface{}{
+						"oneTrustCookieCategories": []map[string]interface{}{
+							{"oneTrustCookieCategory": "category2"},
+						},
+						"enableServerSideIdentify": false,
+					},
+					DestinationDefinition: backendconfig.DestinationDefinitionT{
+						ID:          "destination-definition-enabled",
+						Name:        "destination-definition-name-enabled",
+						DisplayName: "destination-definition-display-name-enabled",
 						Config:      map[string]interface{}{},
 					},
 				},
@@ -1267,6 +1352,60 @@ var _ = Describe("Processor", Ordered, func() {
 			defer cancel()
 
 			Expect(processor.Start(ctx)).To(BeNil())
+		})
+	})
+	Context("isDestinationEnabled", func() {
+		It("should filter based on consent management preferences", func() {
+			event := types.SingularEventT{
+				"originalTimestamp": "2019-03-10T10:10:10.10Z",
+				"event":             "Demo Track",
+				"sentAt":            "2019-03-10T10:10:10.10Z",
+				"context": map[string]interface{}{
+					"consentManagement": map[string]interface{}{
+						"deniedConsentIds": []interface{}{"category1", "someOtherCategory"},
+					},
+				},
+				"type":      "track",
+				"channel":   "android-srk",
+				"rudderId":  "90ca6da0-292e-4e79-9880-f8009e0ae4a3",
+				"messageId": "f9b9b8f0-c8e9-4f7b-b8e8-f8f8f8f8f8f8",
+				"properties": map[string]interface{}{
+					"lbael":    "",
+					"value":    float64(1),
+					"testMap":  nil,
+					"category": "",
+					"floatVal": float64(4.51),
+				},
+				"integrations": map[string]interface{}{
+					"All": true,
+				},
+			}
+			_, err := json.Marshal(event)
+			Expect(err).To(BeNil())
+
+			c.mockGatewayJobsDB.EXPECT().DeleteExecuting().Times(1)
+
+			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
+			mockTransformer.EXPECT().Setup().Times(1)
+
+			processor := prepareHandle(NewHandle(mockTransformer))
+
+			Setup(processor, c, false, false)
+			processor.multitenantI = c.MockMultitenantHandle
+			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer cancel()
+			Expect(processor.config.asyncInit.WaitContext(ctx)).To(BeNil())
+
+			Expect(
+				len(processor.filterDestinations(
+					event,
+					processor.getEnabledDestinations(
+						WriteKey3,
+						"destination-definition-name-enabled",
+					),
+				)),
+			).To(Equal(3)) // all except dest-1
+			Expect(processor.isDestinationAvailable(event, WriteKey3)).To(BeTrue())
 		})
 	})
 })

@@ -16,7 +16,6 @@ type mockUploader struct {
 	localSchema warehouseutils.SchemaT
 }
 
-func (*mockUploader) GetLoadFileType() string                          { return "JSON" }
 func (m *mockUploader) GetLocalSchema() warehouseutils.SchemaT         { return m.localSchema }
 func (m *mockUploader) UpdateLocalSchema(warehouseutils.SchemaT) error { return m.mockError }
 
