@@ -1,6 +1,6 @@
 module github.com/rudderlabs/rudder-server
 
-go 1.19
+go 1.20
 
 replace (
 	// FIXME: this is a hacky way to address vulnerabilities in indirect dependencies
