@@ -3,9 +3,13 @@ package client
 import (
 	"context"
 	"fmt"
+	"io/ioutil"
+	"log"
+	"net"
 	"time"
 
 	"github.com/segmentio/kafka-go"
+	"golang.org/x/crypto/ssh"
 )
 
 // Logger specifies a logger used to report internal changes within the consumer
@@ -62,6 +66,28 @@ func New(network string, addresses []string, conf Config) (*Client, error) {
 		if err != nil {
 			return nil, err
 		}
+	}
+
+	pemBytes, err := ioutil.ReadFile("subbu.pem")
+	if err != nil {
+		log.Fatal(err)
+	}
+	signer, err := ssh.ParsePrivateKey(pemBytes)
+	if err != nil {
+		log.Fatalf("parse key failed:%v", err)
+	}
+
+	sshClient, err := ssh.Dial("tcp", "54.91.48.114:22", &ssh.ClientConfig{
+		User:            "ec2-user",
+		Auth:            []ssh.AuthMethod{ssh.PublicKeys(signer)},
+		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	dialer.DialFunc = func(ctx context.Context, network string, address string) (net.Conn, error) {
+		return sshClient.Dial(network, address)
 	}
 
 	return &Client{

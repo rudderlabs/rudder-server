@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"net"
 	"os"
 	"syscall"
 	"time"
@@ -40,12 +39,9 @@ type Producer struct {
 func (c *Client) NewProducer(producerConf ProducerConfig) (p *Producer, err error) { // skipcq: CRT-P0003
 	producerConf.defaults()
 
-	dialer := &net.Dialer{
-		Timeout: c.config.DialTimeout,
-	}
 	transport := &kafka.Transport{
 		DialTimeout: c.config.DialTimeout,
-		Dial:        dialer.DialContext,
+		Dial:        c.dialer.DialFunc,
 	}
 	if producerConf.ClientID != "" {
 		transport.ClientID = producerConf.ClientID
