@@ -996,6 +996,9 @@ func GetNodeID() string {
 func MakeRetryablePostRequest(url, endpoint string, data interface{}) (response []byte, statusCode int, err error) {
 	backendURL := fmt.Sprintf("%s%s", url, endpoint)
 	dataJSON, err := json.Marshal(data)
+	if err != nil {
+		return nil, -1, err
+	}
 
 	resp, err := retryablehttp.Post(backendURL, "application/json", dataJSON)
 	if err != nil {
@@ -1024,7 +1027,7 @@ func GetMD5UUID(str string) (uuid.UUID, error) {
 	// so we are doing it manually, using gofrs/uuid library implementation.
 	md5Sum := md5.Sum([]byte(str))
 	// SetVariant: VariantRFC4122
-	md5Sum[8] = (md5Sum[8]&(0xff>>2) | (0x02 << 6))
+	md5Sum[8] = md5Sum[8]&(0xff>>2) | (0x02 << 6)
 	// SetVersion: Version 4
 	version := byte(4)
 	md5Sum[6] = (md5Sum[6] & 0x0f) | (version << 4)
