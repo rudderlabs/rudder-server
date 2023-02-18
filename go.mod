@@ -2,6 +2,19 @@ module github.com/rudderlabs/rudder-server
 
 go 1.19
 
+replace (
+	// FIXME: this is a hacky way to address vulnerabilities in indirect dependencies
+	// 	We should frequently review this section to remove or update the replace directives
+	github.com/aws/aws-sdk-go => github.com/aws/aws-sdk-go v1.44.123 // xitongsys/parquet-go-source uses a vulnerable version
+	github.com/dhui/dktest => github.com/dhui/dktest v0.3.13 // many dependencies require this for testing
+	github.com/prometheus/client_golang => github.com/prometheus/client_golang v1.13.0 // many dependencies a vulnerable version of this package
+	golang.org/x/crypto => golang.org/x/crypto v0.0.0-20221010152910-d6f0a8c073c2 // many dependencies a vulnerable version of this package
+	golang.org/x/net => golang.org/x/net v0.0.0-20221004154528-8021a29435af // many dependencies a vulnerable version of this package
+	golang.org/x/text => golang.org/x/text v0.3.8 // many dependencies a vulnerable version of this package
+	gopkg.in/yaml.v2 => gopkg.in/yaml.v2 v2.4.0 // github.com/spf13/viper uses a vulnerable version
+	gopkg.in/yaml.v3 => gopkg.in/yaml.v3 v3.0.1 // github.com/spf13/viper uses a vulnerable version
+)
+
 require (
 	cloud.google.com/go/bigquery v1.46.0
 	cloud.google.com/go/pubsub v1.28.0
