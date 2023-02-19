@@ -84,7 +84,7 @@ type HandleT struct {
 	netHandle                               NetHandleI
 	MultitenantI                            tenantStats
 	destName                                string
-	destinationId                           string
+	destinationID                           string
 	workers                                 []*workerT
 	telemetry                               *DiagnosticT
 	customDestinationManager                customDestinationManager.DestinationManager
@@ -146,10 +146,11 @@ type HandleT struct {
 }
 
 type jobResponseT struct {
-	status *jobsdb.JobStatusT
-	worker *workerT
-	userID string
-	JobT   *jobsdb.JobT
+	status        *jobsdb.JobStatusT
+	worker        *workerT
+	userID        string
+	destinationID string
+	JobT          *jobsdb.JobT
 }
 
 // JobParametersT struct holds source id and destination id of a job
@@ -374,7 +375,7 @@ func (worker *workerT) workerProcess() {
 				// Enhancing job parameter with the drain reason.
 				job.Parameters = routerutils.EnhanceJSON(job.Parameters, "stage", "router")
 				job.Parameters = routerutils.EnhanceJSON(job.Parameters, "reason", drainReason)
-				worker.rt.responseQ <- jobResponseT{status: &status, worker: worker, userID: userID, JobT: job}
+				worker.rt.responseQ <- jobResponseT{status: &status, worker: worker, userID: userID, destinationID: parameters.DestinationID, JobT: job}
 				stats.Default.NewTaggedStat(`drained_events`, stats.CountType, stats.Tags{
 					"destType":    worker.rt.destName,
 					"destId":      parameters.DestinationID,
@@ -413,7 +414,7 @@ func (worker *workerT) workerProcess() {
 						Parameters:    routerutils.EmptyPayload,
 						WorkspaceId:   job.WorkspaceId,
 					}
-					worker.rt.responseQ <- jobResponseT{status: &status, worker: worker, userID: userID, JobT: job}
+					worker.rt.responseQ <- jobResponseT{status: &status, worker: worker, userID: userID, destinationID: parameters.DestinationID, JobT: job}
 					continue
 				}
 			}
@@ -455,7 +456,7 @@ func (worker *workerT) workerProcess() {
 						panic(err)
 					}
 				}
-				worker.rt.responseQ <- jobResponseT{status: &status, worker: worker, userID: userID, JobT: job}
+				worker.rt.responseQ <- jobResponseT{status: &status, worker: worker, userID: userID, destinationID: parameters.DestinationID, JobT: job}
 				continue
 			}
 			destination := batchDestination.Destination
@@ -580,7 +581,7 @@ func (worker *workerT) processDestinationJobs() {
 	routerJobResponses := make([]*JobResponse, 0)
 
 	sort.Slice(worker.destinationJobs, func(i, j int) bool {
-		return worker.destinationJobs[i].JobMetadataArray[0].JobID < worker.destinationJobs[j].JobMetadataArray[0].JobID
+		return worker.destinationJobs[i].MinJobID() < worker.destinationJobs[j].MinJobID()
 	})
 
 	for _, destinationJob := range worker.destinationJobs {
@@ -835,7 +836,7 @@ func (worker *workerT) processDestinationJobs() {
 
 				status.JobState = jobsdb.Waiting.State
 				status.ErrorResponse = resp
-				worker.rt.responseQ <- jobResponseT{status: &status, worker: worker, userID: destinationJobMetadata.UserID, JobT: destinationJobMetadata.JobT}
+				worker.rt.responseQ <- jobResponseT{status: &status, worker: worker, userID: destinationJobMetadata.UserID, destinationID: destinationJobMetadata.DestinationID, JobT: destinationJobMetadata.JobT}
 				continue
 			}
 			userToJobIDMap[destinationJobMetadata.UserID] = destinationJobMetadata.JobID
@@ -994,7 +995,7 @@ func (worker *workerT) postStatusOnResponseQ(respStatusCode int, payload json.Ra
 	if isSuccessStatus(respStatusCode) {
 		status.JobState = jobsdb.Succeeded.State
 		worker.rt.logger.Debugf("[%v Router] :: sending success status to response", worker.rt.destName)
-		worker.rt.responseQ <- jobResponseT{status: status, worker: worker, userID: destinationJobMetadata.UserID, JobT: destinationJobMetadata.JobT}
+		worker.rt.responseQ <- jobResponseT{status: status, worker: worker, userID: destinationJobMetadata.UserID, destinationID: destinationJobMetadata.DestinationID, JobT: destinationJobMetadata.JobT}
 	} else {
 		// Saving payload to DB only
 		// 1. if job failed and
@@ -1037,7 +1038,7 @@ func (worker *workerT) postStatusOnResponseQ(respStatusCode int, payload json.Ra
 			}
 		}
 		worker.rt.logger.Debugf("[%v Router] :: sending failed/aborted state as response", worker.rt.destName)
-		worker.rt.responseQ <- jobResponseT{status: status, worker: worker, userID: destinationJobMetadata.UserID, JobT: destinationJobMetadata.JobT}
+		worker.rt.responseQ <- jobResponseT{status: status, worker: worker, userID: destinationJobMetadata.UserID, destinationID: destinationJobMetadata.DestinationID, JobT: destinationJobMetadata.JobT}
 	}
 }
 
@@ -1141,6 +1142,7 @@ func (rt *HandleT) initWorkers() {
 				eventorder.WithConcurrencyLimit(rt.allowAbortedUserJobsCountForProcessing),
 				eventorder.WithMetadata(map[string]string{
 					"destType":         rt.destName,
+					"destinationID":    rt.destinationID,
 					"batching":         strconv.FormatBool(rt.enableBatching),
 					"transformerProxy": strconv.FormatBool(rt.transformerProxy),
 				})),
@@ -1178,31 +1180,29 @@ func (rt *HandleT) stopWorkers() {
 	}
 }
 
-func (rt *HandleT) findWorker(job *jobsdb.JobT, throttledUserMap map[string]struct{}) (toSendWorker *workerT) {
+func (rt *HandleT) findWorker(job *jobsdb.JobT, throttledOrderKeyMap map[string]struct{}) (toSendWorker *workerT) {
 	if rt.backgroundCtx.Err() != nil {
 		return
 	}
 
-	// checking if this job can be throttled
 	var parameters JobParametersT
-	userID := job.UserID
-
-	// checking if the user is in throttledMap. If yes, returning nil.
-	// this check is done to maintain order.
-	if _, ok := throttledUserMap[userID]; ok && rt.guaranteeUserEventOrder {
-		rt.logger.Debugf(`[%v Router] :: Skipping processing of job:%d of user:%s as user has earlier jobs in throttled map`, rt.destName, job.JobID, userID)
-		return nil
-	}
-
 	err := json.Unmarshal(job.Parameters, &parameters)
 	if err != nil {
 		rt.logger.Errorf(`[%v Router] :: Unmarshalling parameters failed with the error %v . Returning nil worker`, err)
 		return
 	}
+	orderKey := fmt.Sprintf(`%s:%s`, job.UserID, parameters.DestinationID)
+
+	// checking if the user is in throttledMap. If yes, returning nil.
+	// this check is done to maintain order.
+	if _, ok := throttledOrderKeyMap[orderKey]; ok {
+		rt.logger.Debugf(`[%v Router] :: Skipping processing of job:%d of orderKey:%s as orderKey has earlier jobs in throttled map`, rt.destName, job.JobID, orderKey)
+		return nil
+	}
 
 	if !rt.guaranteeUserEventOrder {
 		// if guaranteeUserEventOrder is false, assigning worker randomly and returning here.
-		if rt.shouldThrottle(job, parameters, throttledUserMap) {
+		if rt.shouldThrottle(job, parameters) {
 			return
 		}
 		toSendWorker = rt.workers[rand.Intn(rt.noOfWorkers)] // skipcq: GSC-G404
@@ -1210,16 +1210,16 @@ func (rt *HandleT) findWorker(job *jobsdb.JobT, throttledUserMap map[string]stru
 	}
 
 	//#JobOrder (see other #JobOrder comment)
-	index := rt.getWorkerPartition(userID)
+	index := rt.getWorkerPartition(orderKey)
 	worker := rt.workers[index]
 	if time.Until(job.LastJobStatus.RetryTime) > 0 { // backoff
 		return
 	}
-	orderKey := fmt.Sprintf(`%s:%s`, userID, parameters.DestinationID)
 	enter, previousFailedJobID := worker.barrier.Enter(orderKey, job.JobID)
 	if enter {
-		rt.logger.Debugf("EventOrder: job %d of user %s is allowed to be processed", job.JobID, userID)
-		if rt.shouldThrottle(job, parameters, throttledUserMap) {
+		rt.logger.Debugf("EventOrder: job %d of order key %s is allowed to be processed", job.JobID, orderKey)
+		if rt.shouldThrottle(job, parameters) {
+			throttledOrderKeyMap[orderKey] = struct{}{}
 			worker.barrier.Leave(orderKey, job.JobID)
 			return
 		}
@@ -1230,16 +1230,16 @@ func (rt *HandleT) findWorker(job *jobsdb.JobT, throttledUserMap map[string]stru
 	if previousFailedJobID != nil {
 		previousFailedJobIDStr = strconv.FormatInt(*previousFailedJobID, 10)
 	}
-	rt.logger.Debugf("EventOrder: job %d of user %s is blocked (previousFailedJobID: %s)", job.JobID, userID, previousFailedJobIDStr)
+	rt.logger.Debugf("EventOrder: job %d of order key %s is blocked (previousFailedJobID: %s)", job.JobID, orderKey, previousFailedJobIDStr)
 	return nil
 	//#EndJobOrder
 }
 
-func (rt *HandleT) getWorkerPartition(userID string) int {
-	return misc.GetHash(userID) % rt.noOfWorkers
+func (rt *HandleT) getWorkerPartition(key string) int {
+	return misc.GetHash(key) % rt.noOfWorkers
 }
 
-func (rt *HandleT) shouldThrottle(job *jobsdb.JobT, parameters JobParametersT, throttledUserMap map[string]struct{}) (
+func (rt *HandleT) shouldThrottle(job *jobsdb.JobT, parameters JobParametersT) (
 	limited bool,
 ) {
 	if rt.throttlerFactory == nil {
@@ -1262,7 +1262,6 @@ func (rt *HandleT) shouldThrottle(job *jobsdb.JobT, parameters JobParametersT, t
 		return false
 	}
 	if limited {
-		throttledUserMap[job.UserID] = struct{}{}
 		rt.throttledStat.Count(1)
 		rt.logger.Debugf(
 			"[%v Router] :: Skipping processing of job:%d of user:%s as throttled limits exceeded",
@@ -1273,7 +1272,7 @@ func (rt *HandleT) shouldThrottle(job *jobsdb.JobT, parameters JobParametersT, t
 	return limited
 }
 
-func (rt *HandleT) commitStatusList(responseList *[]jobResponseT) {
+func (rt *HandleT) commitStatusList(responseList []jobResponseT) {
 	reportMetrics := make([]*utilTypes.PUReportedMetric, 0)
 	connectionDetailsMap := make(map[string]*utilTypes.ConnectionDetails)
 	transformedAtMap := make(map[string]string)
@@ -1282,7 +1281,16 @@ func (rt *HandleT) commitStatusList(responseList *[]jobResponseT) {
 	var completedJobsList []*jobsdb.JobT
 	var statusList []*jobsdb.JobStatusT
 	var routerAbortedJobs []*jobsdb.JobT
-	for _, resp := range *responseList {
+
+	if len(responseList) == 0 {
+		return
+	}
+	// Sort responseList by jobID ascending
+	sort.Slice(responseList, func(i, j int) bool {
+		return responseList[i].status.JobID < responseList[j].status.JobID
+	})
+
+	for _, resp := range responseList {
 		var parameters JobParametersT
 		err := json.Unmarshal(resp.JobT.Parameters, &parameters)
 		if err != nil {
@@ -1379,60 +1387,62 @@ func (rt *HandleT) commitStatusList(responseList *[]jobResponseT) {
 	}
 	// REPORTING - ROUTER - END
 
-	if len(statusList) > 0 {
-		rt.logger.Debugf("[%v Router] :: flushing batch of %v status", rt.destName, updateStatusBatchSize)
+	rt.logger.Debugf("[%v Router] :: flushing batch of %v status", rt.destName, updateStatusBatchSize)
 
-		sort.Slice(statusList, func(i, j int) bool {
-			return statusList[i].JobID < statusList[j].JobID
-		})
-		// Store the aborted jobs to errorDB
-		if routerAbortedJobs != nil {
-			err := misc.RetryWithNotify(context.Background(), rt.jobsDBCommandTimeout, rt.jobdDBMaxRetries, func(ctx context.Context) error {
-				return rt.errorDB.Store(ctx, routerAbortedJobs)
-			}, sendRetryStoreStats)
-			if err != nil {
-				panic(fmt.Errorf("storing jobs into ErrorDB: %w", err))
-			}
-		}
-		// Update the status
+	// Store the aborted jobs to errorDB
+	if len(routerAbortedJobs) > 0 {
 		err := misc.RetryWithNotify(context.Background(), rt.jobsDBCommandTimeout, rt.jobdDBMaxRetries, func(ctx context.Context) error {
-			return rt.jobsDB.WithUpdateSafeTx(ctx, func(tx jobsdb.UpdateSafeTx) error {
-				err := rt.jobsDB.UpdateJobStatusInTx(ctx, tx, statusList, []string{rt.destName}, nil)
-				if err != nil {
-					return fmt.Errorf("updating %s jobs statuses: %w", rt.destName, err)
-				}
-
-				// rsources stats
-				err = rt.updateRudderSourcesStats(ctx, tx, completedJobsList, statusList)
-				if err != nil {
-					return err
-				}
-				rt.Reporting.Report(reportMetrics, tx.SqlTx())
-				return nil
-			})
+			return rt.errorDB.Store(ctx, routerAbortedJobs)
 		}, sendRetryStoreStats)
 		if err != nil {
-			panic(err)
-		}
-		rt.updateProcessedEventsMetrics(statusList)
-		for workspace, jobCount := range routerWorkspaceJobStatusCount {
-			metric.DecreasePendingEvents(
-				"rt",
-				workspace,
-				rt.destName,
-				float64(jobCount),
-			)
+			panic(fmt.Errorf("storing jobs into ErrorDB: %w", err))
 		}
 	}
 
+	// Update the status
+	err := misc.RetryWithNotify(context.Background(), rt.jobsDBCommandTimeout, rt.jobdDBMaxRetries, func(ctx context.Context) error {
+		var parameterFilters []jobsdb.ParameterFilterT
+		if rt.destinationID != rt.destName {
+			parameterFilters = []jobsdb.ParameterFilterT{{
+				Name:  "destination_id",
+				Value: rt.destinationID,
+			}}
+		}
+
+		return rt.jobsDB.WithUpdateSafeTx(ctx, func(tx jobsdb.UpdateSafeTx) error {
+			err := rt.jobsDB.UpdateJobStatusInTx(ctx, tx, statusList, []string{rt.destName}, parameterFilters)
+			if err != nil {
+				return fmt.Errorf("updating %s jobs statuses: %w", rt.destName, err)
+			}
+
+			// rsources stats
+			err = rt.updateRudderSourcesStats(ctx, tx, completedJobsList, statusList)
+			if err != nil {
+				return err
+			}
+			rt.Reporting.Report(reportMetrics, tx.SqlTx())
+			return nil
+		})
+	}, sendRetryStoreStats)
+	if err != nil {
+		panic(err)
+	}
+	rt.updateProcessedEventsMetrics(statusList)
+	for workspace, jobCount := range routerWorkspaceJobStatusCount {
+		metric.DecreasePendingEvents(
+			"rt",
+			workspace,
+			rt.destName,
+			float64(jobCount),
+		)
+	}
 	if rt.guaranteeUserEventOrder {
 		//#JobOrder (see other #JobOrder comment)
-		for _, resp := range *responseList {
+		for _, resp := range responseList {
 			status := resp.status.JobState
-			userID := resp.userID
 			worker := resp.worker
 			if status != jobsdb.Failed.State {
-				orderKey := fmt.Sprintf(`%s:%s`, userID, gjson.GetBytes(resp.JobT.Parameters, "destination_id").String())
+				orderKey := fmt.Sprintf(`%s:%s`, resp.userID, resp.destinationID)
 				rt.logger.Debugf("EventOrder: [%d] job %d for key %s %s", worker.workerID, resp.status.JobID, orderKey, status)
 				if err := worker.barrier.StateChanged(orderKey, resp.status.JobID, status); err != nil {
 					panic(err)
@@ -1457,7 +1467,7 @@ func (rt *HandleT) statusInsertLoop() {
 		)
 		if numJobResponses > 0 {
 			start := time.Now()
-			rt.commitStatusList(&jobResponseBuffer)
+			rt.commitStatusList(jobResponseBuffer)
 			countStat.Count(numJobResponses)
 			statusStat.Since(start)
 		}
@@ -1558,7 +1568,7 @@ func (rt *HandleT) collectMetrics(ctx context.Context) {
 // C. Finally, we want for generatorLoop buffer to be fully processed.
 
 func (rt *HandleT) generatorLoop(ctx context.Context) {
-	rt.logger.Infof("Generator started for %s and destinationID %s", rt.destName, rt.destinationId)
+	rt.logger.Infof("Generator started for %s and destinationID %s", rt.destName, rt.destinationID)
 
 	timeout := time.After(10 * time.Millisecond)
 	for {
@@ -1584,13 +1594,12 @@ func (rt *HandleT) generatorLoop(ctx context.Context) {
 }
 
 func (rt *HandleT) getQueryParams(pickUpCount int) jobsdb.GetQueryParamsT {
-	if rt.destinationId != rt.destName {
+	if rt.destinationID != rt.destName {
 		return jobsdb.GetQueryParamsT{
 			CustomValFilters: []string{rt.destName},
 			ParameterFilters: []jobsdb.ParameterFilterT{{
-				Name:     "destination_id",
-				Value:    rt.destinationId,
-				Optional: false,
+				Name:  "destination_id",
+				Value: rt.destinationID,
 			}},
 			IgnoreCustomValFiltersInQuery: true,
 			PayloadSizeLimit:              rt.adaptiveLimit(rt.payloadLimit),
@@ -1651,12 +1660,12 @@ func (rt *HandleT) readAndProcess() int {
 
 	var statusList []*jobsdb.JobStatusT
 	var toProcess []workerJobT
-	throttledUserMap := make(map[string]struct{})
+	throttledOrderKeyMap := make(map[string]struct{})
 
 	// Identify jobs which can be processed
 	for iterator.HasNext() {
 		job := iterator.Next()
-		w := rt.findWorker(job, throttledUserMap)
+		w := rt.findWorker(job, throttledOrderKeyMap)
 		if w != nil {
 			status := jobsdb.JobStatusT{
 				JobID:         job.JobID,
@@ -1760,7 +1769,7 @@ func (rt *HandleT) Setup(
 	rt.jobsDB = jobsDB
 	rt.errorDB = errorDB
 	rt.destName = destName
-	rt.destinationId = destinationConfig.destinationID
+	rt.destinationID = destinationConfig.destinationID
 	netClientTimeoutKeys := []string{"Router." + rt.destName + "." + "httpTimeout", "Router." + rt.destName + "." + "httpTimeoutInS", "Router." + "httpTimeout", "Router." + "httpTimeoutInS"}
 	config.RegisterDurationConfigVariable(10, &rt.netClientTimeout, false, time.Second, netClientTimeoutKeys...)
 	config.RegisterDurationConfigVariable(30, &rt.backendProxyTimeout, false, time.Second, "HttpClient.backendProxy.timeout")
@@ -1899,7 +1908,7 @@ func (rt *HandleT) Shutdown() {
 		// router is not started
 		return
 	}
-	rt.logger.Infof("Shutting down router: %s destinationId: %s", rt.destName, rt.destinationId)
+	rt.logger.Infof("Shutting down router: %s destinationID: %s", rt.destName, rt.destinationID)
 	rt.backgroundCancel()
 
 	<-rt.startEnded

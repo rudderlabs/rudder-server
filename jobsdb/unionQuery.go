@@ -182,12 +182,14 @@ func (mj *MultiTenantHandleT) getUnionDS(ctx context.Context, ds dataSetT, picku
 	if len(workspacesToQuery) == 0 {
 		return jobList, nil
 	}
+	mj.dsCacheLock.Lock()
 	for _, workspace := range workspacesToQuery {
 		if _, ok := skipCache[workspace]; !ok {
 			mj.markClearEmptyResult(ds, workspace, conditions.StateFilters, conditions.CustomValFilters, conditions.ParameterFilters,
 				willTryToSet, nil)
 		}
 	}
+	mj.dsCacheLock.Unlock()
 
 	cacheUpdateByWorkspace := make(map[string]string)
 	for _, workspace := range workspacesToQuery {
@@ -269,12 +271,14 @@ func (mj *MultiTenantHandleT) getUnionDS(ctx context.Context, ds dataSetT, picku
 
 	// do cache stuff here
 	_willTryToSet := willTryToSet
+	mj.dsCacheLock.Lock()
 	for workspace, cacheUpdate := range cacheUpdateByWorkspace {
 		if _, ok := skipCache[workspace]; !ok {
 			mj.markClearEmptyResult(ds, workspace, conditions.StateFilters, conditions.CustomValFilters, conditions.ParameterFilters,
 				cacheValue(cacheUpdate), &_willTryToSet)
 		}
 	}
+	mj.dsCacheLock.Unlock()
 
 	return jobList, err
 }

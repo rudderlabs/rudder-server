@@ -474,9 +474,8 @@ type journalOpPayloadT struct {
 }
 
 type ParameterFilterT struct {
-	Name     string
-	Value    string
-	Optional bool
+	Name  string
+	Value string
 }
 
 var dbInvalidJsonErrors = map[string]struct{}{
@@ -1838,6 +1837,8 @@ func (*HandleT) populateCustomValParamMap(CVPMap map[string]map[string]map[strin
 
 // mark cache empty after going over ds->workspace->customvals->params and for all stateFilters
 func (jd *HandleT) doClearCache(ds dataSetT, CVPMap map[string]map[string]map[string]struct{}) {
+	jd.dsCacheLock.Lock()
+	defer jd.dsCacheLock.Unlock()
 	// NOTE: Along with clearing cache for a particular workspace key, we also have to clear for allWorkspaces key
 	for workspace, workspaceCVPMap := range CVPMap {
 		for cv, cVal := range workspaceCVPMap {
@@ -2075,6 +2076,8 @@ func (jd *HandleT) storeJob(ctx context.Context, tx *Tx, ds dataSetT, job *JobT)
 	_, err = stmt.ExecContext(ctx, job.UUID, job.UserID, job.CustomVal, string(job.Parameters), string(job.EventPayload), job.WorkspaceId)
 	if err == nil {
 		tx.AddSuccessListener(func() {
+			jd.dsCacheLock.Lock()
+			defer jd.dsCacheLock.Unlock()
 			// Empty customValFilters means we want to clear for all
 			jd.markClearEmptyResult(ds, allWorkspaces, []string{}, []string{}, nil, hasJobs, nil)
 			jd.markClearEmptyResult(ds, job.WorkspaceId, []string{}, []string{}, nil, hasJobs, nil)
@@ -2150,9 +2153,6 @@ func (jd *HandleT) markClearEmptyResult(ds dataSetT, workspace string, stateFilt
 			return
 		}
 	}
-
-	jd.dsCacheLock.Lock()
-	defer jd.dsCacheLock.Unlock()
 
 	// This means we want to mark/clear all customVals and stateFilters
 	// When clearing, we remove the entire dataset entry. Not a big issue
@@ -2330,7 +2330,9 @@ func (jd *HandleT) getProcessedJobsDS(ctx context.Context, ds dataSetT, params G
 	skipCacheResult := params.AfterJobID != nil
 	if !skipCacheResult {
 		// We don't reset this in case of error for now, as any error in this function causes panic
+		jd.dsCacheLock.Lock()
 		jd.markClearEmptyResult(ds, workspaceID, stateFilters, customValFilters, parameterFilters, willTryToSet, nil)
+		jd.dsCacheLock.Unlock()
 	}
 
 	var stateQuery string
@@ -2466,7 +2468,9 @@ func (jd *HandleT) getProcessedJobsDS(ctx context.Context, ds dataSetT, params G
 			result = noJobs
 		}
 		_willTryToSet := willTryToSet
+		jd.dsCacheLock.Lock()
 		jd.markClearEmptyResult(ds, workspaceID, stateFilters, customValFilters, parameterFilters, result, &_willTryToSet)
+		jd.dsCacheLock.Unlock()
 	}
 
 	return JobsResult{
@@ -2502,6 +2506,7 @@ func (jd *HandleT) getUnprocessedJobsDS(ctx context.Context, ds dataSetT, params
 
 	skipCacheResult := params.AfterJobID != nil
 	if !skipCacheResult {
+		jd.dsCacheLock.Lock()
 		// We don't reset this in case of error for now, as any error in this function causes panic
 		jd.markClearEmptyResult(
 			ds,
@@ -2512,6 +2517,7 @@ func (jd *HandleT) getUnprocessedJobsDS(ctx context.Context, ds dataSetT, params
 			willTryToSet,
 			nil,
 		)
+		jd.dsCacheLock.Unlock()
 	}
 
 	var rows *sql.Rows
@@ -2623,7 +2629,9 @@ func (jd *HandleT) getUnprocessedJobsDS(ctx context.Context, ds dataSetT, params
 			result = noJobs
 		}
 		_willTryToSet := willTryToSet
+		jd.dsCacheLock.Lock()
 		jd.markClearEmptyResult(ds, workspaceID, []string{NotProcessed.State}, customValFilters, parameterFilters, result, &_willTryToSet)
+		jd.dsCacheLock.Unlock()
 	}
 	return JobsResult{
 		Jobs:          jobList,
@@ -2656,6 +2664,8 @@ func (jd *HandleT) copyJobStatusDS(ctx context.Context, tx *Tx, ds dataSetT, sta
 	}
 
 	tx.AddSuccessListener(func() {
+		jd.dsCacheLock.Lock()
+		defer jd.dsCacheLock.Unlock()
 		var allUpdatedStates []string
 		for workspaceID, stateFilters := range stateFiltersByWorkspace {
 			jd.markClearEmptyResult(ds, workspaceID, stateFilters, customValFilters, parameterFilters, hasJobs, nil)
@@ -3118,6 +3128,8 @@ func (jd *HandleT) internalUpdateJobStatusInTx(ctx context.Context, tx *Tx, stat
 	}
 
 	tx.AddSuccessListener(func() {
+		jd.dsCacheLock.Lock()
+		defer jd.dsCacheLock.Unlock()
 		// clear cache
 		for ds, stateListByWorkspace := range updatedStatesByDS {
 			var allUpdatedStates []string
