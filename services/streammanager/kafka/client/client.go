@@ -3,9 +3,11 @@ package client
 import (
 	"context"
 	"fmt"
+	"net"
 	"time"
 
 	"github.com/segmentio/kafka-go"
+	"golang.org/x/crypto/ssh"
 )
 
 // Logger specifies a logger used to report internal changes within the consumer
@@ -61,6 +63,37 @@ func New(network string, addresses []string, conf Config) (*Client, error) {
 		dialer.SASLMechanism, err = conf.SASL.build()
 		if err != nil {
 			return nil, err
+		}
+	}
+
+	if conf.SSHConfig != nil {
+		signer, err := ssh.ParsePrivateKey([]byte(conf.SSHConfig.PrivateKey))
+		if err != nil {
+			return nil, fmt.Errorf("cannot parse SSH private key: %w", err)
+		}
+
+		sshConfig := &ssh.ClientConfig{
+			User:    conf.SSHConfig.User,
+			Auth:    []ssh.AuthMethod{ssh.PublicKeys(signer)},
+			Timeout: conf.DialTimeout,
+		}
+		if conf.SSHConfig.AcceptAnyHostKey {
+			sshConfig.HostKeyCallback = ssh.InsecureIgnoreHostKey() // skipcq: GSC-G106
+		}
+
+		dialer.DialFunc = func(ctx context.Context, network, address string) (net.Conn, error) {
+			sshClient, err := ssh.Dial("tcp", conf.SSHConfig.Host, sshConfig)
+			if err != nil {
+				return nil, fmt.Errorf("cannot dial SSH host %q: %w", conf.SSHConfig.Host, err)
+			}
+
+			conn, err := sshClient.Dial(network, address)
+			if err != nil {
+				return nil, fmt.Errorf(
+					"cannot dial address %q over SSH (host %q): %w", address, conf.SSHConfig.Host, err,
+				)
+			}
+			return conn, nil
 		}
 	}
 

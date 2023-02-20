@@ -35,7 +35,7 @@ type redisConfig struct {
 	cmdArgs []string
 }
 
-func SetupRedis(ctx context.Context, pool *dockertest.Pool, d cleaner, opts ...RedisOption) (*RedisResource, error) {
+func SetupRedis(ctx context.Context, pool *dockertest.Pool, d Cleaner, opts ...RedisOption) (*RedisResource, error) {
 	conf := redisConfig{}
 	for _, opt := range opts {
 		opt(&conf)

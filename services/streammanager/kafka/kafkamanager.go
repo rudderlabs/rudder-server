@@ -272,6 +272,7 @@ func NewProducer(destination *backendconfig.DestinationT, o common.Opts) (*Produ
 
 	clientConf := client.Config{
 		DialTimeout: kafkaDialTimeout,
+		SSHConfig:   getSSHConfig(config.Default),
 	}
 	if destConfig.SslEnabled {
 		if destConfig.CACertificate != "" {
@@ -658,4 +659,16 @@ func getStatusCodeFromError(err error) int {
 		return 500
 	}
 	return 400
+}
+
+func getSSHConfig(c *config.Config) *client.SSHConfig {
+	if !c.GetBool("ROUTER_KAFKA_SSH_ENABLED", false) {
+		return nil
+	}
+	return &client.SSHConfig{
+		User:             c.GetString("ROUTER_KAFKA_SSH_USER", ""),
+		Host:             c.GetString("ROUTER_KAFKA_SSH_HOST", ""),
+		PrivateKey:       c.GetString("ROUTER_KAFKA_SSH_PRIVATE_KEY", ""),
+		AcceptAnyHostKey: c.GetBool("ROUTER_KAFKA_SSH_ACCEPT_ANY_HOST_KEY", false),
+	}
 }
