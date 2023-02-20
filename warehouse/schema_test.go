@@ -7,6 +7,8 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
+
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 	"github.com/stretchr/testify/require"
 )
@@ -579,7 +581,7 @@ var _ = Describe("Schema", func() {
 	)
 
 	DescribeTable("Merge schema", func(currentSchema warehouseutils.SchemaT, schemaList []warehouseutils.SchemaT, currentMergedSchema warehouseutils.SchemaT, warehouseType string, expected warehouseutils.SchemaT) {
-		Expect(mergeSchema(currentSchema, schemaList, currentMergedSchema, warehouseType)).To(Equal(expected))
+		Expect(MergeSchema(currentSchema, schemaList, currentMergedSchema, warehouseType)).To(Equal(expected))
 	},
 		Entry(nil, warehouseutils.SchemaT{}, []warehouseutils.SchemaT{}, warehouseutils.SchemaT{}, "BQ", warehouseutils.SchemaT{}),
 		Entry(nil, warehouseutils.SchemaT{}, []warehouseutils.SchemaT{
@@ -653,3 +655,239 @@ var _ = Describe("Schema", func() {
 		}),
 	)
 })
+
+func TestMergeSchema(t *testing.T) {
+	testCases := []struct {
+		name           string
+		schemaList     []warehouseutils.SchemaT
+		localSchema    warehouseutils.SchemaT
+		expectedSchema warehouseutils.SchemaT
+	}{
+		{
+			name: "local schema contains the property and schema list contains data types in text-string order",
+			schemaList: []warehouseutils.SchemaT{
+				{
+					"test-table": map[string]string{
+						"test-column": "text",
+					},
+				},
+				{
+					"test-table": map[string]string{
+						"test-column": "string",
+					},
+				},
+			},
+			localSchema: warehouseutils.SchemaT{
+				"test-table": map[string]string{
+					"test-column": "string",
+				},
+			},
+			expectedSchema: warehouseutils.SchemaT{
+				"test-table": map[string]string{
+					"test-column": "text",
+				},
+			},
+		},
+		{
+			name: "local schema contains the property and schema list contains data types in string-text order",
+			schemaList: []warehouseutils.SchemaT{
+				{
+					"test-table": map[string]string{
+						"test-column": "string",
+					},
+				},
+				{
+					"test-table": map[string]string{
+						"test-column": "text",
+					},
+				},
+			},
+
+			localSchema: warehouseutils.SchemaT{
+				"test-table": map[string]string{
+					"test-column": "string",
+				},
+			},
+			expectedSchema: warehouseutils.SchemaT{
+				"test-table": map[string]string{
+					"test-column": "text",
+				},
+			},
+		},
+		{
+			name: "local schema does not contain the property",
+			schemaList: []warehouseutils.SchemaT{
+				{
+					"test-table": map[string]string{
+						"test-column": "int",
+					},
+				},
+				{
+					"test-table": map[string]string{
+						"test-column": "text",
+					},
+				},
+			},
+			localSchema: warehouseutils.SchemaT{
+				"test-table": map[string]string{
+					"test-column-1": "string",
+				},
+			},
+			expectedSchema: warehouseutils.SchemaT{
+				"test-table": map[string]string{
+					"test-column": "int",
+				},
+			},
+		},
+	}
+
+	destType := "RS"
+
+	for _, tc := range testCases {
+		tc := tc
+
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			actualSchema := MergeSchema(tc.localSchema, tc.schemaList, warehouseutils.SchemaT{}, destType)
+			require.Equal(t, actualSchema, tc.expectedSchema)
+		})
+	}
+}
+
+func TestSchemaHandleT_SkipDeprecatedColumns(t *testing.T) {
+	Init4()
+
+	testCases := []struct {
+		name           string
+		schema         warehouseutils.SchemaT
+		expectedSchema warehouseutils.SchemaT
+	}{
+		{
+			name: "no deprecated columns",
+			schema: warehouseutils.SchemaT{
+				"test-table": map[string]string{
+					"test_int":       "int",
+					"test_str":       "string",
+					"test_bool":      "boolean",
+					"test_float":     "float",
+					"test_timestamp": "timestamp",
+					"test_date":      "date",
+					"test_datetime":  "datetime",
+				},
+			},
+			expectedSchema: warehouseutils.SchemaT{
+				"test-table": map[string]string{
+					"test_int":       "int",
+					"test_str":       "string",
+					"test_bool":      "boolean",
+					"test_float":     "float",
+					"test_timestamp": "timestamp",
+					"test_date":      "date",
+					"test_datetime":  "datetime",
+				},
+			},
+		},
+		{
+			name: "invalid deprecated column format",
+			schema: warehouseutils.SchemaT{
+				"test-table": map[string]string{
+					"test_int":                 "int",
+					"test_str":                 "string",
+					"test_bool":                "boolean",
+					"test_float":               "float",
+					"test_timestamp":           "timestamp",
+					"test_date":                "date",
+					"test_datetime":            "datetime",
+					"test-deprecated-column":   "int",
+					"test-deprecated-column-1": "string",
+					"test-deprecated-column-2": "boolean",
+				},
+			},
+			expectedSchema: warehouseutils.SchemaT{
+				"test-table": map[string]string{
+					"test_int":                 "int",
+					"test_str":                 "string",
+					"test_bool":                "boolean",
+					"test_float":               "float",
+					"test_timestamp":           "timestamp",
+					"test_date":                "date",
+					"test_datetime":            "datetime",
+					"test-deprecated-column":   "int",
+					"test-deprecated-column-1": "string",
+					"test-deprecated-column-2": "boolean",
+				},
+			},
+		},
+		{
+			name: "valid deprecated column format",
+			schema: warehouseutils.SchemaT{
+				"test-table": map[string]string{
+					"test_int":                 "int",
+					"test_str":                 "string",
+					"test_bool":                "boolean",
+					"test_float":               "float",
+					"test_timestamp":           "timestamp",
+					"test_date":                "date",
+					"test_datetime":            "datetime",
+					"test-deprecated-column":   "int",
+					"test-deprecated-column-1": "string",
+					"test-deprecated-column-2": "boolean",
+					"test-deprecated-546a4f59-c303-474e-b2c7-cf37361b5c2f": "int",
+					"test-deprecated-c60bf1e9-7cbd-42d4-8a7d-af01f5ff7d8b": "string",
+					"test-deprecated-bc3bbc6d-42c9-4d2c-b0e6-bf5820914b09": "boolean",
+				},
+			},
+			expectedSchema: warehouseutils.SchemaT{
+				"test-table": map[string]string{
+					"test_int":                 "int",
+					"test_str":                 "string",
+					"test_bool":                "boolean",
+					"test_float":               "float",
+					"test_timestamp":           "timestamp",
+					"test_date":                "date",
+					"test_datetime":            "datetime",
+					"test-deprecated-column":   "int",
+					"test-deprecated-column-1": "string",
+					"test-deprecated-column-2": "boolean",
+				},
+			},
+		},
+	}
+
+	const (
+		sourceID    = "test-source-id"
+		destID      = "test-dest-id"
+		destType    = "RS"
+		workspaceID = "test-workspace-id"
+		namespace   = "test-namespace"
+	)
+
+	for _, tc := range testCases {
+		tc := tc
+
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			sh := &SchemaHandleT{
+				warehouse: warehouseutils.Warehouse{
+					Source: backendconfig.SourceT{
+						ID: sourceID,
+					},
+					Destination: backendconfig.DestinationT{
+						ID: destID,
+						DestinationDefinition: backendconfig.DestinationDefinitionT{
+							Name: destType,
+						},
+					},
+					WorkspaceID: workspaceID,
+					Namespace:   namespace,
+				},
+			}
+
+			sh.SkipDeprecatedColumns(tc.schema)
+
+			require.Equal(t, tc.schema, tc.expectedSchema)
+		})
+	}
+}

@@ -36,40 +36,40 @@ func TestReport(t *testing.T) {
 	for i := 0; i < 10; i++ {
 		counterMap[fmt.Sprint(i)] = &counter{}
 	}
-	rand.Seed(time.Now().UnixNano())
+	newRand := rand.New(rand.NewSource(time.Now().UnixNano())) // skipcq: GSC-G404
 	for i := 0; i < 10; i++ {
 		sourceTag := fmt.Sprint(i)
 		sourceStat := statMap[sourceTag]
 
-		randInt := rand.Int() % 10 // skipcq: GSC-G404
+		randInt := 1 + newRand.Int()%9 // skipcq: GSC-G404
 		for j := 0; j < randInt; j++ {
 			sourceStat.RequestSucceeded()
 		}
 		counterMap[sourceTag].succeeded += randInt
 		counterMap[sourceTag].total += randInt
 
-		randInt = rand.Int() % 10 // skipcq: GSC-G404
+		randInt = 1 + newRand.Int()%9 // skipcq: GSC-G404
 		for j := 0; j < randInt; j++ {
 			sourceStat.RequestDropped()
 		}
 		counterMap[sourceTag].dropped += randInt
 		counterMap[sourceTag].total += randInt
 
-		randInt = rand.Int() % 10 // skipcq: GSC-G404
+		randInt = 1 + newRand.Int()%9 // skipcq: GSC-G404
 		for j := 0; j < randInt; j++ {
 			sourceStat.RequestSuppressed()
 		}
 		counterMap[sourceTag].suppressed += randInt
 		counterMap[sourceTag].total += randInt
 
-		randInt = rand.Int() % 10 // skipcq: GSC-G404
+		randInt = 1 + newRand.Int()%9 // skipcq: GSC-G404
 		for j := 0; j < randInt; j++ {
 			sourceStat.RequestFailed("reason")
 		}
 		counterMap[sourceTag].failed += randInt
 		counterMap[sourceTag].total += randInt
 
-		randInt = rand.Int() % 10 // skipcq: GSC-G404
+		randInt = 1 + newRand.Int()%9 // skipcq: GSC-G404
 		for j := 0; j < randInt; j++ {
 			sourceStat.RequestEventsSucceeded(10)
 		}
@@ -78,7 +78,7 @@ func TestReport(t *testing.T) {
 		counterMap[sourceTag].total += randInt
 		counterMap[sourceTag].succeeded += randInt
 
-		randInt = rand.Int() % 10 // skipcq: GSC-G404
+		randInt = 1 + newRand.Int()%9 // skipcq: GSC-G404
 		for j := 0; j < randInt; j++ {
 			sourceStat.RequestEventsFailed(10, "reason")
 		}

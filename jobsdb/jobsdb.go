@@ -275,6 +275,9 @@ type JobsDB interface {
 	// grouped by workspaceId and destination type
 	GetPileUpCounts(ctx context.Context) (statMap map[string]map[string]int, err error)
 
+	// GetActiveWorkspaces returns a list of active workspace ids
+	GetActiveWorkspaces(ctx context.Context) (workspaces []string, err error)
+
 	/* Admin */
 
 	Status() interface{}
@@ -434,6 +437,7 @@ type HandleT struct {
 	registerStatusHandler         bool
 	enableWriterQueue             bool
 	enableReaderQueue             bool
+	preciseActiveWsQuery          bool
 	clearAll                      bool
 	dsLimit                       *int
 	maxReaders                    int
@@ -878,6 +882,8 @@ func (jd *HandleT) workersAndAuxSetup() {
 	config.RegisterDurationConfigVariable(0, &jd.MinDSRetentionPeriod, true, time.Minute, minDSRetentionPeriodKeys...)
 	maxDSRetentionPeriodKeys := []string{"JobsDB." + jd.tablePrefix + "." + "maxDSRetention", "JobsDB." + "maxDSRetention"}
 	config.RegisterDurationConfigVariable(90, &jd.MaxDSRetentionPeriod, true, time.Minute, maxDSRetentionPeriodKeys...)
+
+	config.RegisterBoolConfigVariable(false, &jd.preciseActiveWsQuery, true, "JobsDB.preciseActiveWsQuery")
 }
 
 // Start starts the jobsdb worker and housekeeping (migration, archive) threads.
@@ -1302,6 +1308,12 @@ func (jd *HandleT) createDSInTx(tx *Tx, newDS dataSetT) error {
                                       created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
                                       expire_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW());`, newDS.JobTable)
 
+	_, err = tx.ExecContext(context.TODO(), sqlStatement)
+	if err != nil {
+		return err
+	}
+
+	sqlStatement = fmt.Sprintf(`CREATE INDEX "idx_%[1]s_ws" ON %[1]q (workspace_id)`, newDS.JobTable)
 	_, err = tx.ExecContext(context.TODO(), sqlStatement)
 	if err != nil {
 		return err
@@ -1909,6 +1921,53 @@ func (jd *HandleT) GetPileUpCounts(ctx context.Context) (map[string]map[string]i
 		}
 	}
 	return statMap, nil
+}
+
+func (jd *HandleT) GetActiveWorkspaces(ctx context.Context) ([]string, error) {
+	if !jd.dsMigrationLock.RTryLockWithCtx(ctx) {
+		return nil, fmt.Errorf("could not acquire a migration read lock: %w", ctx.Err())
+	}
+	defer jd.dsMigrationLock.RUnlock()
+	if !jd.dsListLock.RTryLockWithCtx(ctx) {
+		return nil, fmt.Errorf("could not acquire a dslist read lock: %w", ctx.Err())
+	}
+	defer jd.dsListLock.RUnlock()
+	dsList := jd.getDSList()
+
+	var workspaceIds []string
+	var queries []string
+	preciseActiveWsQuery := jd.preciseActiveWsQuery
+	for _, ds := range dsList {
+		if !preciseActiveWsQuery {
+			queries = append(queries, fmt.Sprintf(`SELECT * FROM (WITH RECURSIVE t AS (
+			(SELECT workspace_id FROM %[1]q ORDER BY workspace_id LIMIT 1)
+			UNION ALL
+			(SELECT s.* FROM t, LATERAL(
+			  SELECT workspace_id FROM %[1]q f
+			  WHERE f.workspace_id > t.workspace_id
+			  ORDER BY workspace_id LIMIT 1) s)
+		  )
+		  SELECT * FROM t) a`, ds.JobTable))
+		} else {
+			queries = append(queries, fmt.Sprintf(`SELECT DISTINCT workspace_id from %[1]q j LEFT JOIN "v_last_%[2]s" js ON js.job_id = j.job_id
+			WHERE js.job_state is NULL or js.job_state not in ('aborted', 'succeeded', 'migrated')`, ds.JobTable, ds.JobStatusTable))
+		}
+	}
+	query := strings.Join(queries, " UNION ")
+	rows, err := jd.dbHandle.QueryContext(ctx, query)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+	for rows.Next() {
+		var workspaceId string
+		err := rows.Scan(&workspaceId)
+		if err != nil {
+			return nil, err
+		}
+		workspaceIds = append(workspaceIds, workspaceId)
+	}
+	return workspaceIds, nil
 }
 
 func (*HandleT) copyJobsDSInTx(txHandler transactionHandler, ds dataSetT, jobList []*JobT) error {

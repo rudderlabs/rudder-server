@@ -446,7 +446,7 @@ func setupMainFlow(svcCtx context.Context, t *testing.T) <-chan struct{} {
 
 	writeKey = rand.String(27)
 	workspaceID = rand.String(27)
-	mapWorkspaceConfig := map[string]string{
+	mapWorkspaceConfig := map[string]any{
 		"webhookUrl":                   webhookURL,
 		"disableDestinationwebhookUrl": disableDestinationWebhookURL,
 		"writeKey":                     writeKey,

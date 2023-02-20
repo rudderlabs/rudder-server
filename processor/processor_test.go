@@ -9,6 +9,7 @@ import (
 	"reflect"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	transformationdebugger "github.com/rudderlabs/rudder-server/services/debugger/transformation"
@@ -33,6 +34,7 @@ import (
 	mocksMultitenant "github.com/rudderlabs/rudder-server/mocks/services/multitenant"
 	mockReportingTypes "github.com/rudderlabs/rudder-server/mocks/utils/types"
 	"github.com/rudderlabs/rudder-server/processor/integrations"
+	"github.com/rudderlabs/rudder-server/processor/isolation"
 	"github.com/rudderlabs/rudder-server/processor/stash"
 	"github.com/rudderlabs/rudder-server/processor/transformer"
 	"github.com/rudderlabs/rudder-server/services/dedup"
@@ -104,6 +106,13 @@ const (
 	DestinationIDEnabledB = "enabled-destination-b" // test destination batch router
 	DestinationIDEnabledC = "enabled-destination-c"
 	DestinationIDDisabled = "disabled-destination"
+
+	SourceID3 = "source-id-3"
+	WriteKey3 = "write-key-3"
+	DestID1   = "dest-id-1"
+	DestID2   = "dest-id-2"
+	DestID3   = "dest-id-3"
+	DestID4   = "dest-id-4"
 )
 
 var (
@@ -294,6 +303,84 @@ var sampleBackendConfig = backendconfig.ConfigT{
 				},
 			},
 		},
+		{
+			ID:          SourceID3,
+			WriteKey:    WriteKey3,
+			WorkspaceID: sampleWorkspaceID,
+			Enabled:     true,
+			Destinations: []backendconfig.DestinationT{
+				{
+					ID:                 DestID1,
+					Name:               "D1",
+					Enabled:            true,
+					IsProcessorEnabled: true,
+					Config: map[string]interface{}{
+						"oneTrustCookieCategories": []map[string]interface{}{
+							{"oneTrustCookieCategory": "category1"},
+							{"oneTrustCookieCategory": "category2"},
+						},
+						"enableServerSideIdentify": false,
+					},
+					DestinationDefinition: backendconfig.DestinationDefinitionT{
+						ID:          "destination-definition-enabled",
+						Name:        "destination-definition-name-enabled",
+						DisplayName: "destination-definition-display-name-enabled",
+						Config:      map[string]interface{}{},
+					},
+				},
+				{
+					ID:                 DestID2,
+					Name:               "D2",
+					Enabled:            true,
+					IsProcessorEnabled: true,
+					Config: map[string]interface{}{
+						"oneTrustCookieCategories": []map[string]interface{}{
+							{"oneTrustCookieCategory": ""},
+						},
+						"enableServerSideIdentify": false,
+					},
+					DestinationDefinition: backendconfig.DestinationDefinitionT{
+						ID:          "destination-definition-enabled",
+						Name:        "destination-definition-name-enabled",
+						DisplayName: "destination-definition-display-name-enabled",
+						Config:      map[string]interface{}{},
+					},
+				},
+				{
+					ID:                 DestID3,
+					Name:               "D3",
+					Enabled:            true,
+					IsProcessorEnabled: true,
+					Config: map[string]interface{}{
+						"enableServerSideIdentify": false,
+					},
+					DestinationDefinition: backendconfig.DestinationDefinitionT{
+						ID:          "destination-definition-enabled",
+						Name:        "destination-definition-name-enabled",
+						DisplayName: "destination-definition-display-name-enabled",
+						Config:      map[string]interface{}{},
+					},
+				},
+				{
+					ID:                 DestID4,
+					Name:               "D4",
+					Enabled:            true,
+					IsProcessorEnabled: true,
+					Config: map[string]interface{}{
+						"oneTrustCookieCategories": []map[string]interface{}{
+							{"oneTrustCookieCategory": "category2"},
+						},
+						"enableServerSideIdentify": false,
+					},
+					DestinationDefinition: backendconfig.DestinationDefinitionT{
+						ID:          "destination-definition-enabled",
+						Name:        "destination-definition-name-enabled",
+						DisplayName: "destination-definition-display-name-enabled",
+						Config:      map[string]interface{}{},
+					},
+				},
+			},
+		},
 	},
 }
 
@@ -319,6 +406,9 @@ var _ = Describe("Processor", Ordered, func() {
 	prepareHandle := func(proc *Handle) *Handle {
 		proc.config.transformerURL = transformerServer.URL
 		setEnableEventSchemasFeature(proc, false)
+		isolationStrategy, err := isolation.GetStrategy(isolation.ModeNone)
+		Expect(err).To(BeNil())
+		proc.isolationStrategy = isolationStrategy
 		return proc
 	}
 	BeforeEach(func() {
@@ -387,7 +477,7 @@ var _ = Describe("Processor", Ordered, func() {
 			payloadLimit := processor.payloadLimit
 			c.mockGatewayJobsDB.EXPECT().GetUnprocessed(gomock.Any(), jobsdb.GetQueryParamsT{CustomValFilters: gatewayCustomVal, JobsLimit: c.dbReadBatchSize, EventsLimit: c.processEventSize, PayloadSizeLimit: payloadLimit}).Return(jobsdb.JobsResult{Jobs: emptyJobsList}, nil).Times(1)
 
-			didWork := processor.handlePendingGatewayJobs()
+			didWork := processor.handlePendingGatewayJobs("")
 			Expect(didWork).To(Equal(false))
 		})
 
@@ -1212,7 +1302,17 @@ var _ = Describe("Processor", Ordered, func() {
 			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 			defer cancel()
 
-			go processor.mainLoop(ctx)
+			c.mockBackendConfig.EXPECT().WaitForConfig(gomock.Any()).Times(1)
+			c.mockProcErrorsDB.EXPECT().FailExecuting().Times(1)
+
+			var wg sync.WaitGroup
+			wg.Add(1)
+			go func() {
+				err := processor.Start(ctx)
+				Expect(err).To(BeNil())
+				wg.Done()
+			}()
+
 			Consistently(func() bool {
 				select {
 				case <-processor.config.asyncInit.Wait():
@@ -1220,7 +1320,8 @@ var _ = Describe("Processor", Ordered, func() {
 				default:
 					return false
 				}
-			}, 5*time.Second, 10*time.Millisecond).Should(BeFalse())
+			}, 2*time.Second, 10*time.Millisecond).Should(BeFalse())
+			wg.Wait()
 		})
 	})
 
@@ -1251,6 +1352,60 @@ var _ = Describe("Processor", Ordered, func() {
 			defer cancel()
 
 			Expect(processor.Start(ctx)).To(BeNil())
+		})
+	})
+	Context("isDestinationEnabled", func() {
+		It("should filter based on consent management preferences", func() {
+			event := types.SingularEventT{
+				"originalTimestamp": "2019-03-10T10:10:10.10Z",
+				"event":             "Demo Track",
+				"sentAt":            "2019-03-10T10:10:10.10Z",
+				"context": map[string]interface{}{
+					"consentManagement": map[string]interface{}{
+						"deniedConsentIds": []interface{}{"category1", "someOtherCategory"},
+					},
+				},
+				"type":      "track",
+				"channel":   "android-srk",
+				"rudderId":  "90ca6da0-292e-4e79-9880-f8009e0ae4a3",
+				"messageId": "f9b9b8f0-c8e9-4f7b-b8e8-f8f8f8f8f8f8",
+				"properties": map[string]interface{}{
+					"lbael":    "",
+					"value":    float64(1),
+					"testMap":  nil,
+					"category": "",
+					"floatVal": float64(4.51),
+				},
+				"integrations": map[string]interface{}{
+					"All": true,
+				},
+			}
+			_, err := json.Marshal(event)
+			Expect(err).To(BeNil())
+
+			c.mockGatewayJobsDB.EXPECT().DeleteExecuting().Times(1)
+
+			mockTransformer := mocksTransformer.NewMockTransformer(c.mockCtrl)
+			mockTransformer.EXPECT().Setup().Times(1)
+
+			processor := prepareHandle(NewHandle(mockTransformer))
+
+			Setup(processor, c, false, false)
+			processor.multitenantI = c.MockMultitenantHandle
+			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer cancel()
+			Expect(processor.config.asyncInit.WaitContext(ctx)).To(BeNil())
+
+			Expect(
+				len(processor.filterDestinations(
+					event,
+					processor.getEnabledDestinations(
+						WriteKey3,
+						"destination-definition-name-enabled",
+					),
+				)),
+			).To(Equal(3)) // all except dest-1
+			Expect(processor.isDestinationAvailable(event, WriteKey3)).To(BeTrue())
 		})
 	})
 })
@@ -2018,7 +2173,7 @@ func Setup(processor *Handle, c *testContext, enableDedup, enableReporting bool)
 }
 
 func handlePendingGatewayJobs(processor *Handle) {
-	didWork := processor.handlePendingGatewayJobs()
+	didWork := processor.handlePendingGatewayJobs("")
 	Expect(didWork).To(Equal(true))
 }
 
