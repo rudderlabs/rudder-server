@@ -746,18 +746,18 @@ var _ = Describe("Gateway", func() {
 			}
 		})
 
-		It("should allow requests with both userId and anonymousId absent in case of extract events", func() {
-			validBody := `{"data": {"type": "extract"}}`
-			expectHandlerResponse(
-				gateway.webExtractHandler,
-				authorizedRequest(
-					WriteKeyEnabled,
-					bytes.NewBufferString(validBody),
-				),
-				200,
-				"OK",
-			)
-		})
+		// It("should allow requests with both userId and anonymousId absent in case of extract events", func() {
+		// 	validBody := `{"batch": [{"data": "valid-json", "type": "extract"}]}`
+		// 	expectHandlerResponse(
+		// 		gateway.webBatchHandler,
+		// 		authorizedRequest(
+		// 			WriteKeyEnabled,
+		// 			bytes.NewBufferString(validBody),
+		// 		),
+		// 		200,
+		// 		"OK",
+		// 	)
+		// })
 
 		It("should reject requests without request body", func() {
 			for _, handler := range allHandlers(gateway) {
@@ -955,6 +955,18 @@ var _ = Describe("Gateway", func() {
 			jobData, err := gateway.getJobDataFromRequest(req)
 			Expect(err).To(Equal(errors.New(response.NonIdentifiableRequest)))
 			Expect(jobData.job).To(BeNil())
+		})
+
+		It("allows extract events even if userID and anonID are not present in the request payload", func() {
+			req := &webRequestT{
+				reqType:        "batch",
+				writeKey:       WriteKeyEnabled,
+				done:           make(chan<- string),
+				userIDHeader:   userIDHeader,
+				requestPayload: []byte(`{"batch": [{"type": "extract"}]}`),
+			}
+			_, err := gateway.getJobDataFromRequest(req)
+			Expect(err).To(BeNil())
 		})
 	})
 })
