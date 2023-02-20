@@ -181,8 +181,6 @@ type workerT struct {
 	workerID                  int                 // identifies the worker
 	failedJobs                int                 // counts the failed jobs of a worker till it gets reset by external channel
 	barrier                   *eventorder.Barrier
-	retryForJobMap            map[int64]time.Time     // jobID to next retry time map
-	retryForJobMapMutex       sync.RWMutex            // lock to protect structure above
 	routerJobs                []types.RouterJobT      // slice to hold router jobs to send to destination transformer
 	destinationJobs           []types.DestinationJobT // slice to hold destination jobs
 	rt                        *HandleT                // handle to router
@@ -997,12 +995,6 @@ func (worker *workerT) postStatusOnResponseQ(respStatusCode int, payload json.Ra
 		status.JobState = jobsdb.Succeeded.State
 		worker.rt.logger.Debugf("[%v Router] :: sending success status to response", worker.rt.destName)
 		worker.rt.responseQ <- jobResponseT{status: status, worker: worker, userID: destinationJobMetadata.UserID, JobT: destinationJobMetadata.JobT}
-
-		// Deleting jobID from retryForJobMap. jobID goes into retryForJobMap if it is failed with 5xx or 429.
-		// It's safe to delete from the map, even if jobID is not present.
-		worker.retryForJobMapMutex.Lock()
-		delete(worker.retryForJobMap, destinationJobMetadata.JobID)
-		worker.retryForJobMapMutex.Unlock()
 	} else {
 		// Saving payload to DB only
 		// 1. if job failed and
@@ -1023,19 +1015,12 @@ func (worker *workerT) postStatusOnResponseQ(respStatusCode int, payload json.Ra
 			if respStatusCode != types.RouterTimedOutStatusCode && respStatusCode != types.RouterUnMarshalErrorCode {
 				if timeElapsed > worker.rt.retryTimeWindow && status.AttemptNum >= worker.rt.maxFailedCountForJob {
 					status.JobState = jobsdb.Aborted.State
-					worker.retryForJobMapMutex.Lock()
-					delete(worker.retryForJobMap, destinationJobMetadata.JobID)
-					worker.retryForJobMapMutex.Unlock()
 				} else {
-					worker.retryForJobMapMutex.Lock()
-					worker.retryForJobMap[destinationJobMetadata.JobID] = time.Now().Add(durationBeforeNextAttempt(status.AttemptNum))
-					worker.retryForJobMapMutex.Unlock()
+					status.RetryTime = time.Now().Add(durationBeforeNextAttempt(status.AttemptNum))
 				}
 			}
 		} else if respStatusCode == 429 {
-			worker.retryForJobMapMutex.Lock()
-			worker.retryForJobMap[destinationJobMetadata.JobID] = time.Now().Add(durationBeforeNextAttempt(status.AttemptNum))
-			worker.retryForJobMapMutex.Unlock()
+			status.RetryTime = time.Now().Add(durationBeforeNextAttempt(status.AttemptNum))
 		} else {
 			status.JobState = jobsdb.Aborted.State
 		}
@@ -1163,7 +1148,6 @@ func (rt *HandleT) initWorkers() {
 					"batching":         strconv.FormatBool(rt.enableBatching),
 					"transformerProxy": strconv.FormatBool(rt.transformerProxy),
 				})),
-			retryForJobMap:            make(map[int64]time.Time),
 			workerID:                  i,
 			failedJobs:                0,
 			routerJobs:                make([]types.RouterJobT, 0),
@@ -1256,14 +1240,7 @@ func (rt *HandleT) findWorker(job *jobsdb.JobT, throttledUserMap map[string]stru
 }
 
 func (worker *workerT) canBackoff(job *jobsdb.JobT) (shouldBackoff bool) {
-	// if the same job has failed before, check for next retry time
-	worker.retryForJobMapMutex.RLock()
-	defer worker.retryForJobMapMutex.RUnlock()
-	if nextRetryTime, ok := worker.retryForJobMap[job.JobID]; ok && time.Until(nextRetryTime) > 0 {
-		worker.rt.logger.Debugf("[%v Router] :: Less than next retry time: %v", worker.rt.destName, nextRetryTime)
-		return true
-	}
-	return false
+	return time.Until(job.LastJobStatus.RetryTime) > 0
 }
 
 func (rt *HandleT) getWorkerPartition(userID string) int {
