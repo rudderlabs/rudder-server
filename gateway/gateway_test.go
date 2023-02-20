@@ -714,17 +714,7 @@ var _ = Describe("Gateway", func() {
 					validBody = `{"batch": [{"data": "valid-json"}]}`
 					reqType = "batch"
 				}
-				if misc.Contains(IdentifiableEventTypes, handlerType) {
-					expectHandlerResponse(
-						gateway.webBatchHandler,
-						authorizedRequest(
-							WriteKeyEnabled,
-							bytes.NewBufferString(validBody),
-						),
-						200,
-						"OK",
-					)
-				} else {
+				if !misc.Contains(EventTypesSkipUserCheck, handlerType) {
 					expectHandlerResponse(
 						handler,
 						authorizedRequest(
@@ -754,6 +744,19 @@ var _ = Describe("Gateway", func() {
 					).Should(BeTrue())
 				}
 			}
+		})
+
+		It("should allow requests with both userId and anonymousId absent in case of extract events", func() {
+			validBody := `{"data": {"type": "extract"}}`
+			expectHandlerResponse(
+				gateway.webExtractHandler,
+				authorizedRequest(
+					WriteKeyEnabled,
+					bytes.NewBufferString(validBody),
+				),
+				200,
+				"OK",
+			)
 		})
 
 		It("should reject requests without request body", func() {

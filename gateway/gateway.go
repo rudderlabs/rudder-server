@@ -117,9 +117,9 @@ const (
 	extractEvent              = "extract"
 )
 
-// identifiableEvents is a list of events types which are identified
-// without the need of a user id or an anonymous id
-var IdentifiableEventTypes = []string{extractEvent}
+// EventTypesSkipUserCheck is a list of event types that
+// do not require an user id or anonymous id
+var EventTypesSkipUserCheck = []string{extractEvent}
 
 func Init() {
 	loadConfig()
@@ -588,7 +588,11 @@ func (gateway *HandleT) getJobDataFromRequest(req *webRequestT) (jobData *jobFro
 
 		anonIDFromReq, _ := toSet["anonymousId"].(string)
 		userIDFromReq, _ := toSet["userId"].(string)
-		eventTypeFromReq, _ := toSet["type"].(string)
+		eventTypeFromReq, _ := misc.MapLookup(
+			toSet,
+			"type",
+		).(string)
+
 		if isNonIdentifiable(anonIDFromReq, userIDFromReq, eventTypeFromReq) {
 			err = errors.New(response.NonIdentifiableRequest)
 			return
@@ -644,10 +648,7 @@ func (gateway *HandleT) getJobDataFromRequest(req *webRequestT) (jobData *jobFro
 		}
 		toSet["rudderId"] = rudderId
 		setRandomMessageIDWhenEmpty(toSet)
-		if eventTypeFromReq, _ := misc.MapLookup(
-			toSet,
-			"type",
-		).(string); eventTypeFromReq == "audiencelist" {
+		if eventTypeFromReq == "audiencelist" {
 			containsAudienceList = true
 		}
 
@@ -701,7 +702,7 @@ func (gateway *HandleT) getJobDataFromRequest(req *webRequestT) (jobData *jobFro
 }
 
 func isNonIdentifiable(anonIDFromReq, userIDFromReq, eventType string) bool {
-	if misc.Contains(IdentifiableEventTypes, eventType) {
+	if misc.Contains(EventTypesSkipUserCheck, eventType) {
 		return false
 	}
 	if anonIDFromReq == "" && userIDFromReq == "" {
