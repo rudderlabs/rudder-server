@@ -1170,13 +1170,20 @@ func (*Clickhouse) IsEmpty(_ warehouseutils.Warehouse) (empty bool, err error) {
 	return
 }
 
-func (ch *Clickhouse) GetTotalCountInTable(ctx context.Context, tableName string) (total int64, err error) {
-	sqlStatement := fmt.Sprintf(`SELECT count(*) FROM "%[1]s"."%[2]s"`, ch.Namespace, tableName)
+func (ch *Clickhouse) GetTotalCountInTable(ctx context.Context, tableName string) (int64, error) {
+	var (
+		total        int64
+		err          error
+		sqlStatement string
+	)
+	sqlStatement = fmt.Sprintf(`
+		SELECT count(*) FROM "%[1]s"."%[2]s";
+	`,
+		ch.Namespace,
+		tableName,
+	)
 	err = ch.DB.QueryRowContext(ctx, sqlStatement).Scan(&total)
-	if err != nil {
-		ch.Logger.Errorf(`CH: Error getting total count in table %s:%s`, ch.Namespace, tableName)
-	}
-	return
+	return total, err
 }
 
 func (ch *Clickhouse) Connect(warehouse warehouseutils.Warehouse) (client.Client, error) {

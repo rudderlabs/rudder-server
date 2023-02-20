@@ -8,13 +8,13 @@ import (
 	"github.com/rudderlabs/rudder-server/config"
 	"github.com/rudderlabs/rudder-server/router/throttler"
 	"github.com/rudderlabs/rudder-server/utils/logger"
+	"github.com/rudderlabs/rudder-server/utils/payload"
 	"github.com/rudderlabs/rudder-server/utils/types/deployment"
 
 	"golang.org/x/sync/errgroup"
 
 	"github.com/rudderlabs/rudder-server/app"
 	"github.com/rudderlabs/rudder-server/app/cluster"
-	"github.com/rudderlabs/rudder-server/app/cluster/state"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/gateway"
 	"github.com/rudderlabs/rudder-server/jobsdb"
@@ -34,7 +34,6 @@ import (
 	"github.com/rudderlabs/rudder-server/services/transientsource"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/types"
-	"github.com/rudderlabs/rudder-server/utils/types/servermode"
 )
 
 // embeddedApp is the type for embedded type implementation
@@ -44,8 +43,6 @@ type embeddedApp struct {
 	versionHandler func(w http.ResponseWriter, r *http.Request)
 	log            logger.Logger
 	config         struct {
-		enableProcessor    bool
-		enableRouter       bool
 		enableReplay       bool
 		processorDSLimit   int
 		routerDSLimit      int
@@ -55,9 +52,7 @@ type embeddedApp struct {
 }
 
 func (a *embeddedApp) loadConfiguration() {
-	config.RegisterBoolConfigVariable(true, &a.config.enableProcessor, false, "enableProcessor")
 	config.RegisterBoolConfigVariable(types.DefaultReplayEnabled, &a.config.enableReplay, false, "Replay.enabled")
-	config.RegisterBoolConfigVariable(true, &a.config.enableRouter, false, "enableRouter")
 	config.RegisterIntConfigVariable(0, &a.config.processorDSLimit, true, 1, "Processor.jobsDB.dsLimit", "JobsDB.dsLimit")
 	config.RegisterIntConfigVariable(0, &a.config.gatewayDSLimit, true, 1, "Gateway.jobsDB.dsLimit", "JobsDB.dsLimit")
 	config.RegisterIntConfigVariable(0, &a.config.routerDSLimit, true, 1, "Router.jobsDB.dsLimit", "JobsDB.dsLimit")
@@ -195,25 +190,29 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 		}))
 	}
 
-	var modeProvider cluster.ChangeEventProvider
-
-	switch deploymentType {
-	case deployment.MultiTenantType:
-		a.log.Info("using ETCD Based Dynamic Cluster Manager")
-		modeProvider = state.NewETCDDynamicProvider()
-	case deployment.DedicatedType:
-		// FIXME: hacky way to determine server mode
-		a.log.Info("using Static Cluster Manager")
-		if a.config.enableProcessor && a.config.enableRouter {
-			modeProvider = state.NewStaticProvider(servermode.NormalMode)
-		} else {
-			modeProvider = state.NewStaticProvider(servermode.DegradedMode)
-		}
-	default:
-		return fmt.Errorf("unsupported deployment type: %q", deploymentType)
+	modeProvider, err := resolveModeProvider(a.log, deploymentType)
+	if err != nil {
+		return err
 	}
 
-	proc := processor.New(ctx, &options.ClearDB, gwDBForProcessor, routerDB, batchRouterDB, errDB, multitenantStats, reportingI, transientSources, fileUploaderProvider, rsourcesService, destinationHandle, transformationhandle)
+	adaptiveLimit := payload.SetupAdaptiveLimiter(ctx, g)
+
+	proc := processor.New(
+		ctx,
+		&options.ClearDB,
+		gwDBForProcessor,
+		routerDB,
+		batchRouterDB,
+		errDB,
+		multitenantStats,
+		reportingI,
+		transientSources,
+		fileUploaderProvider,
+		rsourcesService,
+		destinationHandle,
+		transformationhandle,
+		processor.WithAdaptiveLimit(adaptiveLimit),
+	)
 	throttlerFactory, err := throttler.New(stats.Default)
 	if err != nil {
 		return fmt.Errorf("failed to create throttler factory: %w", err)
@@ -228,6 +227,7 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 		RsourcesService:  rsourcesService,
 		ThrottlerFactory: throttlerFactory,
 		Debugger:         destinationHandle,
+		AdaptiveLimit:    adaptiveLimit,
 	}
 	brtFactory := &batchrouter.Factory{
 		Reporting:        reportingI,
@@ -238,6 +238,7 @@ func (a *embeddedApp) StartRudderCore(ctx context.Context, options *app.Options)
 		TransientSources: transientSources,
 		RsourcesService:  rsourcesService,
 		Debugger:         destinationHandle,
+		AdaptiveLimit:    adaptiveLimit,
 	}
 	rt := routerManager.New(rtFactory, brtFactory, backendconfig.DefaultBackendConfig)
 

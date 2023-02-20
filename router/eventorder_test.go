@@ -23,6 +23,8 @@ import (
 	"github.com/rudderlabs/rudder-server/runner"
 	"github.com/rudderlabs/rudder-server/testhelper/health"
 
+	"golang.org/x/sync/errgroup"
+
 	"github.com/ory/dockertest/v3"
 	"github.com/rudderlabs/rudder-server/testhelper"
 	"github.com/rudderlabs/rudder-server/testhelper/destination"
@@ -32,7 +34,6 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/types/deployment"
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
-	"golang.org/x/sync/errgroup"
 )
 
 // TestEventOrderGuarantee tests that order delivery guarantees are honoured by the server
@@ -104,7 +105,7 @@ func TestEventOrderGuarantee(t *testing.T) {
 			writeKey := trand.String(27)
 			workspaceID := trand.String(27)
 			destinationID := trand.String(27)
-			templateCtx := map[string]string{
+			templateCtx := map[string]any{
 				"webhookUrl":    webhook.Server.URL,
 				"writeKey":      writeKey,
 				"workspaceId":   workspaceID,
@@ -285,7 +286,6 @@ func TestEventOrderGuarantee(t *testing.T) {
 type eventOrderMethods struct{}
 
 func (m eventOrderMethods) newTestSpec(users, jobsPerUser int) *eventOrderSpec {
-	rand.Seed(time.Now().UnixNano())
 	var s eventOrderSpec
 	s.jobsOrdered = make([]*eventOrderJobSpec, jobsPerUser*users)
 	s.jobs = map[int]*eventOrderJobSpec{}
@@ -321,12 +321,13 @@ func (m eventOrderMethods) newTestSpec(users, jobsPerUser int) *eventOrderSpec {
 
 func (eventOrderMethods) randomStatus() (status int, terminal bool) {
 	// playing with probabilities: 50% HTTP 500, 40% HTTP 200, 10% HTTP 400
+	newRand := rand.New(rand.NewSource(time.Now().UnixNano())) // skipcq: GSC-G404
 	statuses := []int{
 		http.StatusBadRequest, http.StatusBadRequest, http.StatusBadRequest, http.StatusBadRequest,
 		http.StatusOK, http.StatusOK, http.StatusOK, http.StatusOK,
 		http.StatusInternalServerError,
 	}
-	status = statuses[rand.Intn(len(statuses))] // skipcq: GSC-G404
+	status = statuses[newRand.Intn(len(statuses))] // skipcq: GSC-G404
 	terminal = status != http.StatusInternalServerError
 	return status, terminal
 }
@@ -336,6 +337,7 @@ func (eventOrderMethods) newWebhook(t *testing.T, spec *eventOrderSpec) *eventOr
 	wh.spec = spec
 
 	wh.Server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		newRand := rand.New(rand.NewSource(time.Now().UnixNano())) // skipcq: GSC-G404
 		body, err := io.ReadAll(r.Body)
 		require.NoError(t, err, "should be able to read the request body")
 		testJobId := gjson.GetBytes(body, "testJobId")
@@ -373,10 +375,10 @@ func (eventOrderMethods) newWebhook(t *testing.T, spec *eventOrderSpec) *eventOr
 			// t.Logf("job %d done", jobID)
 		}
 		if spec.responseDelay > 0 {
-			time.Sleep(time.Duration(rand.Intn(int(spec.responseDelay.Milliseconds()))) * time.Millisecond) // skipcq: GSC-G404
+			time.Sleep(time.Duration(newRand.Intn(int(spec.responseDelay.Milliseconds()))) * time.Millisecond) // skipcq: GSC-G404
 		}
 		w.WriteHeader(responseCode)
-		_, err = w.Write([]byte(fmt.Sprintf("%d", responseCode)))
+		_, err = fmt.Fprintf(w, "%d", responseCode)
 		require.NoError(t, err, "should be able to write the response code to the response")
 	}))
 	return &wh

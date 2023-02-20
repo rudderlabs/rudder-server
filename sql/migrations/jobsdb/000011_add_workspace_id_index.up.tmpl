@@ -1,0 +1,3 @@
+{{range .Datasets}}
+    CREATE INDEX IF NOT EXISTS "idx_{{$.Prefix}}_jobs_{{.}}_ws" ON "{{$.Prefix}}_jobs_{{.}}" (workspace_id);
+{{end}}
