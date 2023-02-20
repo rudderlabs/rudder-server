@@ -704,7 +704,7 @@ func TestDeltalake_GetTotalCountInTable(t *testing.T) {
 }
 
 type mockUploader struct {
-	uploader.Uploader
+	uploader.Noop
 	mockError       error
 	fileType        string
 	fileLocation    string

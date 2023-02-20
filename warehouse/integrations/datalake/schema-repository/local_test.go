@@ -11,7 +11,7 @@ import (
 )
 
 type mockUploader struct {
-	uploader.Uploader
+	uploader.Noop
 	mockError   error
 	localSchema warehouseutils.SchemaT
 }
