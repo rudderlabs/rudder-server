@@ -71,16 +71,28 @@ var dataTypesMap = map[string]bigquery.FieldType{
 
 // maps datatype in bigquery to datatype stored in rudder
 var dataTypesMapToRudder = map[bigquery.FieldType]string{
-	"BOOLEAN":   "boolean",
-	"BOOL":      "boolean",
-	"INTEGER":   "int",
-	"INT64":     "int",
-	"NUMERIC":   "float",
-	"FLOAT":     "float",
-	"FLOAT64":   "float",
-	"STRING":    "string",
-	"JSON":      "string",
-	"BYTES":     "string",
+	"BOOLEAN": "boolean",
+	"BOOL":    "boolean",
+
+	"INTEGER":  "int",
+	"INT64":    "int",
+	"INT":      "int",
+	"SMALLINT": "int",
+	"BIGINT":   "int",
+	"TINYINT":  "int",
+	"BYTEINT":  "int",
+
+	"NUMERIC":    "float",
+	"DECIMAL":    "float",
+	"BIGNUMERIC": "float",
+	"BIGDECIMAL": "float",
+	"FLOAT":      "float",
+	"FLOAT64":    "float",
+
+	"STRING": "string",
+	"JSON":   "string",
+	"BYTES":  "string",
+
 	"DATE":      "datetime",
 	"DATETIME":  "datetime",
 	"TIME":      "datetime",

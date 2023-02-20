@@ -1,8 +1,6 @@
 package schemarepository
 
 import (
-	"fmt"
-
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 
 	"github.com/rudderlabs/rudder-server/utils/logger"
@@ -14,29 +12,31 @@ func init() {
 	pkgLogger = logger.NewLogger().Child("warehouse").Child("datalake").Child("schema-repository")
 }
 
-const MAX_CHARACTER_LIMIT = 65535
-
 var (
 	pkgLogger    logger.Logger
-	VARCHAR_TYPE = fmt.Sprintf("varchar(%d)", MAX_CHARACTER_LIMIT)
 	dataTypesMap = map[string]string{
 		"boolean":  "boolean",
 		"int":      "bigint",
 		"bigint":   "bigint",
 		"float":    "double",
-		"string":   VARCHAR_TYPE,
+		"string":   "varchar(65535)",
 		"datetime": "timestamp",
 	}
 	dataTypesMapToRudder = map[string]string{
-		"boolean":      "boolean",
-		"bigint":       "int",
-		"int":          "int",
-		"double":       "float",
-		"decimal":      "float",
-		"varchar(512)": "string",
-		VARCHAR_TYPE:   "string",
-		"timestamp":    "datetime",
-		"string":       "string",
+		"boolean": "boolean",
+
+		"bigint": "int",
+		"int":    "int",
+
+		"double":  "float",
+		"float":   "float",
+		"decimal": "float",
+
+		"varchar(512)":   "string",
+		"varchar(65535)": "string",
+		"string":         "string",
+
+		"timestamp": "datetime",
 	}
 )
 
