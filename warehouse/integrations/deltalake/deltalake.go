@@ -13,14 +13,15 @@ import (
 
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/deltalake/client"
 
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
+
 	"github.com/rudderlabs/rudder-server/config"
 	proto "github.com/rudderlabs/rudder-server/proto/databricks"
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	warehouseclient "github.com/rudderlabs/rudder-server/warehouse/client"
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials/insecure"
 )
 
 // Database configuration
@@ -395,7 +396,7 @@ func (dl *Deltalake) schemaExists(schemaName string) (exists bool, err error) {
 		err = fmt.Errorf("%s Error while fetching schemas with response: %v", dl.GetLogIdentifier(), fetchSchemasResponse.GetErrorMessage())
 		return
 	}
-	exists = len(fetchSchemasResponse.GetDatabases()) == 1 && strings.Compare(fetchSchemasResponse.GetDatabases()[0], schemaName) == 0
+	exists = len(fetchSchemasResponse.GetDatabases()) == 1 && fetchSchemasResponse.GetDatabases()[0] == schemaName
 	return
 }
 
@@ -1051,8 +1052,6 @@ func (dl *Deltalake) GetLogIdentifier(args ...string) string {
 
 // GetDatabricksVersion Gets the databricks version by making a grpc call to Version stub.
 func GetDatabricksVersion() (databricksBuildVersion string) {
-	databricksBuildVersion = "Not an official release. Get the latest release from dockerhub."
-
 	ctx := context.Background()
 	connectorURL := config.GetString("DATABRICKS_CONNECTOR_URL", "localhost:50051")
 

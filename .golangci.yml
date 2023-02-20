@@ -1,6 +1,6 @@
 run:
   timeout: 5m
-  go: '1.19'
+  go: '1.20'
   skip-dirs:
     - enterprise
     - event-schema
@@ -36,17 +36,17 @@ issues:
   max-issues-per-linter: 50
   max-same-issues: 10
   new: false
-  exclude-rules: 
+  exclude-rules:
     # False positive httptest.NewRecorder
     - path: 'gateway/webhook/webhook_test.go'
       linters:
         - bodyclose
-  
+
     # False positive .Close behind if
     - path: 'processor/transformer/transformer.go'
       linters:
         - bodyclose
-    
+
     # False positive httptest.NewRecorder
     - path: 'gateway/gateway_test.go'
       linters:
