@@ -9,7 +9,6 @@ import (
 
 	"github.com/rudderlabs/rudder-server/app"
 	"github.com/rudderlabs/rudder-server/app/cluster"
-	"github.com/rudderlabs/rudder-server/app/cluster/state"
 	"github.com/rudderlabs/rudder-server/config"
 	backendconfig "github.com/rudderlabs/rudder-server/config/backend-config"
 	"github.com/rudderlabs/rudder-server/gateway"
@@ -21,7 +20,6 @@ import (
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/types/deployment"
-	"github.com/rudderlabs/rudder-server/utils/types/servermode"
 )
 
 // gatewayApp is the type for Gateway type implementation
@@ -31,15 +29,11 @@ type gatewayApp struct {
 	versionHandler func(w http.ResponseWriter, r *http.Request)
 	log            logger.Logger
 	config         struct {
-		enableProcessor bool
-		enableRouter    bool
-		gatewayDSLimit  int
+		gatewayDSLimit int
 	}
 }
 
 func (a *gatewayApp) loadConfiguration() {
-	config.RegisterBoolConfigVariable(true, &a.config.enableProcessor, false, "enableProcessor")
-	config.RegisterBoolConfigVariable(true, &a.config.enableRouter, false, "enableRouter")
 	config.RegisterIntConfigVariable(0, &a.config.gatewayDSLimit, true, 1, "Gateway.jobsDB.dsLimit", "JobsDB.dsLimit")
 }
 
@@ -100,21 +94,9 @@ func (a *gatewayApp) StartRudderCore(ctx context.Context, options *app.Options) 
 
 	g, ctx := errgroup.WithContext(ctx)
 
-	var modeProvider cluster.ChangeEventProvider
-
-	switch deploymentType {
-	case deployment.MultiTenantType:
-		a.log.Info("using ETCD Based Dynamic Cluster Manager")
-		modeProvider = state.NewETCDDynamicProvider()
-	case deployment.DedicatedType:
-		a.log.Info("using Static Cluster Manager")
-		if a.config.enableProcessor && a.config.enableRouter {
-			modeProvider = state.NewStaticProvider(servermode.NormalMode)
-		} else {
-			modeProvider = state.NewStaticProvider(servermode.DegradedMode)
-		}
-	default:
-		return fmt.Errorf("unsupported deployment type: %q", deploymentType)
+	modeProvider, err := resolveModeProvider(a.log, deploymentType)
+	if err != nil {
+		return err
 	}
 
 	dm := cluster.Dynamic{
