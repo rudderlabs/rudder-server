@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+
 	errors2 "github.com/rudderlabs/rudder-server/warehouse/errors"
 
 	proto "github.com/rudderlabs/rudder-server/proto/warehouse"

@@ -7,11 +7,11 @@ import (
 )
 
 type Uploader interface {
-	GetSchemaInWarehouse() warehouseutils.SchemaT
-	GetLocalSchema() warehouseutils.SchemaT
-	UpdateLocalSchema(schema warehouseutils.SchemaT) error
-	GetTableSchemaInWarehouse(tableName string) warehouseutils.TableSchemaT
-	GetTableSchemaInUpload(tableName string) warehouseutils.TableSchemaT
+	GetSchemaInWarehouse() warehouseutils.Schema
+	GetLocalSchema() warehouseutils.Schema
+	UpdateLocalSchema(schema warehouseutils.Schema) error
+	GetTableSchemaInWarehouse(tableName string) warehouseutils.TableSchema
+	GetTableSchemaInUpload(tableName string) warehouseutils.TableSchema
 	GetLoadFilesMetadata(options warehouseutils.GetLoadFilesOptionsT) []warehouseutils.LoadFileT
 	GetSampleLoadFileLocation(tableName string) (string, error)
 	GetSingleLoadFile(tableName string) (warehouseutils.LoadFileT, error)

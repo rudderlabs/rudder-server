@@ -3,11 +3,12 @@ package errors_test
 import (
 	"bufio"
 	"errors"
-	errors2 "github.com/rudderlabs/rudder-server/warehouse/errors"
 	"os"
 	"path"
 	"path/filepath"
 	"testing"
+
+	errors2 "github.com/rudderlabs/rudder-server/warehouse/errors"
 
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 

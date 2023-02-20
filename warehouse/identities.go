@@ -4,9 +4,10 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"sync"
+
 	"github.com/rudderlabs/rudder-server/warehouse/internal/repo"
 	"github.com/rudderlabs/rudder-server/warehouse/schema"
-	"sync"
 
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/manager"
 

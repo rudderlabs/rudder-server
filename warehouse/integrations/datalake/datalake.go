@@ -61,7 +61,7 @@ func (wh *HandleT) CreateSchema() (err error) {
 	return wh.SchemaRepository.CreateSchema()
 }
 
-func (wh *HandleT) CreateTable(tableName string, columnMap map[string]string) (err error) {
+func (wh *HandleT) CreateTable(tableName string, columnMap warehouseutils.TableSchema) (err error) {
 	return wh.SchemaRepository.CreateTable(tableName, columnMap)
 }
 

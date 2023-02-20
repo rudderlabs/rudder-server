@@ -321,7 +321,7 @@ func (ch *Clickhouse) getConnectionCredentials() Credentials {
 }
 
 // ColumnsWithDataTypes creates columns and its datatype into sql format for creating table
-func (ch *Clickhouse) ColumnsWithDataTypes(tableName string, columns map[string]string, notNullableColumns []string) string {
+func (ch *Clickhouse) ColumnsWithDataTypes(tableName string, columns warehouseutils.TableSchema, notNullableColumns []string) string {
 	var arr []string
 	for columnName, dataType := range columns {
 		codec := ch.getClickHouseCodecForColumnType(dataType, tableName)
@@ -918,7 +918,7 @@ func getSortKeyTuple(sortKeyFields []string) string {
 
 // CreateTable creates table with engine ReplacingMergeTree(), this is used for dedupe event data and replace it will the latest data if duplicate data found. This logic is handled by clickhouse
 // The engine differs from MergeTree in that it removes duplicate entries with the same sorting key value.
-func (ch *Clickhouse) CreateTable(tableName string, columns map[string]string) (err error) {
+func (ch *Clickhouse) CreateTable(tableName string, columns warehouseutils.TableSchema) (err error) {
 	sortKeyFields := []string{"received_at", "id"}
 	if tableName == warehouseutils.DiscardsTable {
 		sortKeyFields = []string{"received_at"}

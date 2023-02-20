@@ -119,7 +119,7 @@ var errorsMappings = []model.JobError{
 	},
 }
 
-func getTableSchema(columns map[string]string) []*bigquery.FieldSchema {
+func getTableSchema(columns warehouseutils.TableSchema) []*bigquery.FieldSchema {
 	var schema []*bigquery.FieldSchema
 	for columnName, columnType := range columns {
 		schema = append(schema, &bigquery.FieldSchema{Name: columnName, Type: dataTypesMap[columnType]})
@@ -133,7 +133,7 @@ func (bq *HandleT) DeleteTable(tableName string) (err error) {
 	return
 }
 
-func (bq *HandleT) CreateTable(tableName string, columnMap map[string]string) (err error) {
+func (bq *HandleT) CreateTable(tableName string, columnMap warehouseutils.TableSchema) (err error) {
 	pkgLogger.Infof("BQ: Creating table: %s in bigquery dataset: %s in project: %s", tableName, bq.namespace, bq.projectID)
 	sampleSchema := getTableSchema(columnMap)
 	metaData := &bigquery.TableMetadata{
@@ -163,7 +163,7 @@ func (bq *HandleT) DropTable(tableName string) (err error) {
 	return
 }
 
-func (bq *HandleT) createTableView(tableName string, columnMap map[string]string) (err error) {
+func (bq *HandleT) createTableView(tableName string, columnMap warehouseutils.TableSchema) (err error) {
 	partitionKey := "id"
 	if column, ok := partitionKeyMap[tableName]; ok {
 		partitionKey = column
@@ -951,7 +951,7 @@ func (bq *HandleT) FetchSchema(warehouse warehouseutils.Warehouse) (schema, unre
 		var tName, cName, cType string
 		tName, _ = values[0].(string)
 		if _, ok := schema[tName]; !ok {
-			schema[tName] = make(map[string]string)
+			schema[tName] = make(warehouseutils.TableSchema)
 		}
 		cName, _ = values[1].(string)
 		cType, _ = values[2].(string)
@@ -960,7 +960,7 @@ func (bq *HandleT) FetchSchema(warehouse warehouseutils.Warehouse) (schema, unre
 			schema[tName][strings.ToLower(cName)] = datatype
 		} else {
 			if _, ok := unrecognizedSchema[tName]; !ok {
-				unrecognizedSchema[tName] = make(map[string]string)
+				unrecognizedSchema[tName] = make(warehouseutils.TableSchema)
 			}
 			unrecognizedSchema[tName][strings.ToLower(cName)] = warehouseutils.MISSING_DATATYPE
 

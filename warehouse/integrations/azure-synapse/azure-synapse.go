@@ -629,7 +629,7 @@ func (as *HandleT) dropStagingTable(stagingTableName string) {
 	}
 }
 
-func (as *HandleT) createTable(name string, columns map[string]string) (err error) {
+func (as *HandleT) createTable(name string, columns warehouseutils.TableSchema) (err error) {
 	sqlStatement := fmt.Sprintf(`IF  NOT EXISTS (SELECT 1 FROM sys.objects WHERE object_id = OBJECT_ID(N'%[1]s') AND type = N'U')
 	CREATE TABLE %[1]s ( %v )`, name, columnsWithDataTypes(columns, ""))
 
@@ -638,7 +638,7 @@ func (as *HandleT) createTable(name string, columns map[string]string) (err erro
 	return
 }
 
-func (as *HandleT) CreateTable(tableName string, columnMap map[string]string) (err error) {
+func (as *HandleT) CreateTable(tableName string, columnMap warehouseutils.TableSchema) (err error) {
 	// Search paths doesn't exist unlike Postgres, default is dbo. Hence, use namespace wherever possible
 	err = as.createTable(as.Namespace+"."+tableName, columnMap)
 	return err

@@ -16,8 +16,8 @@ type mockUploader struct {
 	localSchema warehouseutils.Schema
 }
 
-func (m *mockUploader) GetLocalSchema() warehouseutils.SchemaT         { return m.localSchema }
-func (m *mockUploader) UpdateLocalSchema(warehouseutils.SchemaT) error { return m.mockError }
+func (m *mockUploader) GetLocalSchema() warehouseutils.Schema                { return m.localSchema }
+func (m *mockUploader) UpdateLocalSchema(schema warehouseutils.Schema) error { return m.mockError }
 
 func TestLocalSchemaRepository_CreateTable(t *testing.T) {
 	testCases := []struct {

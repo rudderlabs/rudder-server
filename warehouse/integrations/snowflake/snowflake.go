@@ -199,7 +199,7 @@ func (sf *HandleT) schemaIdentifier() string {
 	)
 }
 
-func (sf *HandleT) createTable(tableName string, columns map[string]string) (err error) {
+func (sf *HandleT) createTable(tableName string, columns warehouseutils.TableSchema) (err error) {
 	schemaIdentifier := sf.schemaIdentifier()
 	sqlStatement := fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s."%s" ( %v )`, schemaIdentifier, tableName, ColumnsWithDataTypes(columns, ""))
 	pkgLogger.Infof("Creating table in snowflake for SF:%s : %v", sf.Warehouse.Destination.ID, sqlStatement)
@@ -690,7 +690,7 @@ func (sf *HandleT) CreateSchema() (err error) {
 	return sf.createSchema()
 }
 
-func (sf *HandleT) CreateTable(tableName string, columnMap map[string]string) (err error) {
+func (sf *HandleT) CreateTable(tableName string, columnMap warehouseutils.TableSchema) (err error) {
 	return sf.createTable(tableName, columnMap)
 }
 

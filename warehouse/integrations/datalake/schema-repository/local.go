@@ -39,7 +39,7 @@ func (*LocalSchemaRepository) CreateSchema() (err error) {
 	return nil
 }
 
-func (ls *LocalSchemaRepository) CreateTable(tableName string, columnMap map[string]string) (err error) {
+func (ls *LocalSchemaRepository) CreateTable(tableName string, columnMap warehouseutils.TableSchema) (err error) {
 	// fetch schema from local db
 	schema := ls.localFetchSchema()
 

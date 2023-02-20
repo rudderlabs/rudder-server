@@ -1,10 +1,13 @@
 package schema_test
 
 import (
+	"testing"
+
+	"github.com/rudderlabs/rudder-server/utils/logger"
+
 	"github.com/rudderlabs/rudder-server/warehouse"
 	"github.com/rudderlabs/rudder-server/warehouse/errors"
 	"github.com/rudderlabs/rudder-server/warehouse/schema"
-	"testing"
 
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"
 
@@ -432,86 +435,86 @@ var _ = Describe("Schema", func() {
 		Expect(schema.GetTableSchemaDiff(tableName, currentSchema, uploadSchema)).To(BeEquivalentTo(expected))
 	},
 		Entry(nil, "test-table", warehouseutils.Schema{}, warehouseutils.Schema{}, warehouseutils.TableSchemaDiffT{
-			ColumnMap:        map[string]string{},
-			UpdatedSchema:    map[string]string{},
-			AlteredColumnMap: map[string]string{},
+			ColumnMap:        warehouseutils.TableSchema{},
+			UpdatedSchema:    warehouseutils.TableSchema{},
+			AlteredColumnMap: warehouseutils.TableSchema{},
 		}),
 
 		Entry(nil, "test-table", warehouseutils.Schema{}, warehouseutils.Schema{
-			"test-table": map[string]string{
+			"test-table": warehouseutils.TableSchema{
 				"test-column": "test-value",
 			},
 		}, warehouseutils.TableSchemaDiffT{
 			Exists:           true,
 			TableToBeCreated: true,
-			ColumnMap: map[string]string{
+			ColumnMap: warehouseutils.TableSchema{
 				"test-column": "test-value",
 			},
-			UpdatedSchema: map[string]string{
+			UpdatedSchema: warehouseutils.TableSchema{
 				"test-column": "test-value",
 			},
-			AlteredColumnMap: map[string]string{},
+			AlteredColumnMap: warehouseutils.TableSchema{},
 		}),
 
 		Entry(nil, "test-table", warehouseutils.Schema{
-			"test-table": map[string]string{
+			"test-table": warehouseutils.TableSchema{
 				"test-column": "test-value-1",
 			},
 		}, warehouseutils.Schema{
-			"test-table": map[string]string{
+			"test-table": warehouseutils.TableSchema{
 				"test-column": "test-value-2",
 			},
 		}, warehouseutils.TableSchemaDiffT{
 			Exists:           false,
 			TableToBeCreated: false,
-			ColumnMap:        map[string]string{},
-			UpdatedSchema: map[string]string{
+			ColumnMap:        warehouseutils.TableSchema{},
+			UpdatedSchema: warehouseutils.TableSchema{
 				"test-column": "test-value-1",
 			},
-			AlteredColumnMap: map[string]string{},
+			AlteredColumnMap: warehouseutils.TableSchema{},
 		}),
 
 		Entry(nil, "test-table", warehouseutils.Schema{
-			"test-table": map[string]string{
+			"test-table": warehouseutils.TableSchema{
 				"test-column-1": "test-value-1",
 				"test-column-2": "test-value-2",
 			},
 		}, warehouseutils.Schema{
-			"test-table": map[string]string{
+			"test-table": warehouseutils.TableSchema{
 				"test-column": "test-value-2",
 			},
 		}, warehouseutils.TableSchemaDiffT{
 			Exists:           true,
 			TableToBeCreated: false,
-			ColumnMap: map[string]string{
+			ColumnMap: warehouseutils.TableSchema{
 				"test-column": "test-value-2",
 			},
-			UpdatedSchema: map[string]string{
+			UpdatedSchema: warehouseutils.TableSchema{
 				"test-column-1": "test-value-1",
 				"test-column-2": "test-value-2",
 				"test-column":   "test-value-2",
 			},
-			AlteredColumnMap: map[string]string{},
+			AlteredColumnMap: warehouseutils.TableSchema{},
 		}),
 
 		Entry(nil, "test-table", warehouseutils.Schema{
-			"test-table": map[string]string{
+			"test-table": warehouseutils.TableSchema{
 				"test-column":   "string",
 				"test-column-2": "test-value-2",
 			},
 		}, warehouseutils.Schema{
-			"test-table": map[string]string{
+			"test-table": warehouseutils.TableSchema{
 				"test-column": "text",
 			},
 		}, warehouseutils.TableSchemaDiffT{
 			Exists:           true,
 			TableToBeCreated: false,
-			ColumnMap:        map[string]string{},
-			UpdatedSchema: map[string]string{
+			ColumnMap:        warehouseutils.TableSchema{},
+			UpdatedSchema: warehouseutils.TableSchema{
 				"test-column-2": "test-value-2",
 				"test-column":   "text",
 			},
-			AlteredColumnMap: map[string]string{
+			AlteredColumnMap: warehouseutils.TableSchema{
 				"test-column": "text",
 			},
 		}),
@@ -524,36 +527,36 @@ var _ = Describe("Schema", func() {
 		Entry(nil, warehouseutils.Schema{}, warehouseutils.Schema{}, warehouseutils.Schema{}),
 
 		Entry(nil, warehouseutils.Schema{}, warehouseutils.Schema{
-			"test-table": map[string]string{
+			"test-table": warehouseutils.TableSchema{
 				"test-column": "test-value",
 			},
 		}, warehouseutils.Schema{}),
 
 		Entry(nil, warehouseutils.Schema{
-			"test-table": map[string]string{
+			"test-table": warehouseutils.TableSchema{
 				"test-column": "test-value-1",
 			},
 		}, warehouseutils.Schema{
-			"test-table": map[string]string{
+			"test-table": warehouseutils.TableSchema{
 				"test-column": "test-value-2",
 			},
 		}, warehouseutils.Schema{
-			"test-table": {
+			"test-table": warehouseutils.TableSchema{
 				"test-column": "test-value-2",
 			},
 		}),
 
 		Entry(nil, warehouseutils.Schema{
-			"test-table": map[string]string{
+			"test-table": warehouseutils.TableSchema{
 				"test-column-1": "test-value-1",
 				"test-column-2": "test-value-2",
 			},
 		}, warehouseutils.Schema{
-			"test-table": map[string]string{
+			"test-table": warehouseutils.TableSchema{
 				"test-column": "test-value-2",
 			},
 		}, warehouseutils.Schema{
-			"test-table": {
+			"test-table": warehouseutils.TableSchema{
 				"test-column":   "test-value-2",
 				"test-column-1": "test-value-1",
 				"test-column-2": "test-value-2",
@@ -561,16 +564,16 @@ var _ = Describe("Schema", func() {
 		}),
 
 		Entry(nil, warehouseutils.Schema{
-			"test-table": map[string]string{
+			"test-table": warehouseutils.TableSchema{
 				"test-column":   "string",
 				"test-column-2": "test-value-2",
 			},
 		}, warehouseutils.Schema{
-			"test-table": map[string]string{
+			"test-table": warehouseutils.TableSchema{
 				"test-column": "text",
 			},
 		}, warehouseutils.Schema{
-			"test-table": {
+			"test-table": warehouseutils.TableSchema{
 				"test-column-2": "test-value-2",
 				"test-column":   "text",
 			},
@@ -682,142 +685,18 @@ var _ = Describe("Schema", func() {
 			"MERGE_PROPERTY_2_VALUE": "string",
 		}),
 	)
-
-	DescribeTable("Identities Mappings schema", func(warehouseType string, expected map[string]string) {
-		handle := SchemaHandleT{
-			warehouse: warehouseutils.Warehouse{
-				Type: warehouseType,
-			},
-		}
-		Expect(handle.getIdentitiesMappingsSchema()).To(Equal(expected))
-	},
-		Entry(nil, "BQ", map[string]string{
-			"merge_property_type":  "string",
-			"merge_property_value": "string",
-			"rudder_id":            "string",
-			"updated_at":           "datetime",
-		}),
-		Entry(nil, "SNOWFLAKE", map[string]string{
-			"MERGE_PROPERTY_TYPE":  "string",
-			"MERGE_PROPERTY_VALUE": "string",
-			"RUDDER_ID":            "string",
-			"UPDATED_AT":           "datetime",
-		}),
-	)
-
-	DescribeTable("Discards schema", func(warehouseType string, expected map[string]string) {
-		handle := SchemaHandleT{
-			warehouse: warehouseutils.Warehouse{
-				Type: warehouseType,
-			},
-		}
-		Expect(handle.getDiscardsSchema()).To(Equal(expected))
-	},
-		Entry(nil, "BQ", map[string]string{
-			"table_name":   "string",
-			"row_id":       "string",
-			"column_name":  "string",
-			"column_value": "string",
-			"received_at":  "datetime",
-			"uuid_ts":      "datetime",
-			"loaded_at":    "datetime",
-		}),
-		Entry(nil, "SNOWFLAKE", map[string]string{
-			"TABLE_NAME":   "string",
-			"ROW_ID":       "string",
-			"COLUMN_NAME":  "string",
-			"COLUMN_VALUE": "string",
-			"RECEIVED_AT":  "datetime",
-			"UUID_TS":      "datetime",
-		}),
-	)
-
-	DescribeTable("Merge schema", func(currentSchema warehouseutils.SchemaT, schemaList []warehouseutils.SchemaT, currentMergedSchema warehouseutils.SchemaT, warehouseType string, expected warehouseutils.SchemaT) {
-		Expect(MergeSchema(currentSchema, schemaList, currentMergedSchema, warehouseType)).To(Equal(expected))
-	},
-		Entry(nil, warehouseutils.SchemaT{}, []warehouseutils.SchemaT{}, warehouseutils.SchemaT{}, "BQ", warehouseutils.SchemaT{}),
-		Entry(nil, warehouseutils.SchemaT{}, []warehouseutils.SchemaT{
-			{
-				"test-table": map[string]string{
-					"test-column": "test-value",
-				},
-			},
-		}, warehouseutils.Schema{}, "BQ", warehouseutils.Schema{
-			"test-table": map[string]string{
-				"test-column": "test-value",
-			},
-		}),
-		Entry(nil, warehouseutils.Schema{}, []warehouseutils.Schema{
-			{
-				"users": map[string]string{
-					"test-column": "test-value",
-				},
-				"identifies": map[string]string{
-					"test-column": "test-value",
-				},
-			},
-		}, warehouseutils.Schema{}, "BQ", warehouseutils.Schema{
-			"users": map[string]string{
-				"test-column": "test-value",
-			},
-			"identifies": map[string]string{
-				"test-column": "test-value",
-			},
-		}),
-		Entry(nil, warehouseutils.Schema{
-			"users": map[string]string{
-				"test-column": "test-value",
-			},
-			"identifies": map[string]string{
-				"test-column": "test-value",
-			},
-		}, []warehouseutils.Schema{
-			{
-				"users": map[string]string{
-					"test-column": "test-value",
-				},
-				"identifies": map[string]string{
-					"test-column": "test-value",
-				},
-			},
-		}, warehouseutils.Schema{}, "BQ", warehouseutils.Schema{
-			"users": map[string]string{
-				"test-column": "test-value",
-			},
-			"identifies": map[string]string{
-				"test-column": "test-value",
-			},
-		}),
-		Entry(nil, warehouseutils.Schema{}, []warehouseutils.Schema{
-			{
-				"test-table": map[string]string{
-					"test-column":   "string",
-					"test-column-2": "test-value-2",
-				},
-			},
-		}, warehouseutils.Schema{
-			"test-table": map[string]string{
-				"test-column": "text",
-			},
-		}, "BQ", warehouseutils.Schema{
-			"test-table": {
-				"test-column":   "text",
-				"test-column-2": "test-value-2",
-			},
-		}),
-	)
 })
 
 func TestMergeSchema(t *testing.T) {
 	testCases := []struct {
 		name           string
-		schemaList     []warehouseutils.SchemaT
-		localSchema    warehouseutils.SchemaT
-		expectedSchema warehouseutils.SchemaT
+		schemaList     []warehouseutils.Schema
+		localSchema    warehouseutils.Schema
+		expectedSchema warehouseutils.Schema
 	}{
 		{
 			name: "local schema contains the property and schema list contains data types in text-string order",
-			schemaList: []warehouseutils.SchemaT{
+			schemaList: []warehouseutils.Schema{
 				{
 					"test-table": map[string]string{
 						"test-column": "text",
@@ -829,12 +708,12 @@ func TestMergeSchema(t *testing.T) {
 					},
 				},
 			},
-			localSchema: warehouseutils.SchemaT{
+			localSchema: warehouseutils.Schema{
 				"test-table": map[string]string{
 					"test-column": "string",
 				},
 			},
-			expectedSchema: warehouseutils.SchemaT{
+			expectedSchema: warehouseutils.Schema{
 				"test-table": map[string]string{
 					"test-column": "text",
 				},
@@ -842,7 +721,7 @@ func TestMergeSchema(t *testing.T) {
 		},
 		{
 			name: "local schema contains the property and schema list contains data types in string-text order",
-			schemaList: []warehouseutils.SchemaT{
+			schemaList: []warehouseutils.Schema{
 				{
 					"test-table": map[string]string{
 						"test-column": "string",
@@ -855,12 +734,12 @@ func TestMergeSchema(t *testing.T) {
 				},
 			},
 
-			localSchema: warehouseutils.SchemaT{
+			localSchema: warehouseutils.Schema{
 				"test-table": map[string]string{
 					"test-column": "string",
 				},
 			},
-			expectedSchema: warehouseutils.SchemaT{
+			expectedSchema: warehouseutils.Schema{
 				"test-table": map[string]string{
 					"test-column": "text",
 				},
@@ -868,7 +747,7 @@ func TestMergeSchema(t *testing.T) {
 		},
 		{
 			name: "local schema does not contain the property",
-			schemaList: []warehouseutils.SchemaT{
+			schemaList: []warehouseutils.Schema{
 				{
 					"test-table": map[string]string{
 						"test-column": "int",
@@ -880,12 +759,12 @@ func TestMergeSchema(t *testing.T) {
 					},
 				},
 			},
-			localSchema: warehouseutils.SchemaT{
+			localSchema: warehouseutils.Schema{
 				"test-table": map[string]string{
 					"test-column-1": "string",
 				},
 			},
-			expectedSchema: warehouseutils.SchemaT{
+			expectedSchema: warehouseutils.Schema{
 				"test-table": map[string]string{
 					"test-column": "int",
 				},
@@ -901,23 +780,21 @@ func TestMergeSchema(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
-			actualSchema := MergeSchema(tc.localSchema, tc.schemaList, warehouseutils.SchemaT{}, destType)
+			actualSchema := schema.MergeSchema(tc.localSchema, tc.schemaList, warehouseutils.Schema{}, destType)
 			require.Equal(t, actualSchema, tc.expectedSchema)
 		})
 	}
 }
 
 func TestSchemaHandleT_SkipDeprecatedColumns(t *testing.T) {
-	Init4()
-
 	testCases := []struct {
 		name           string
-		schema         warehouseutils.SchemaT
-		expectedSchema warehouseutils.SchemaT
+		schema         warehouseutils.Schema
+		expectedSchema warehouseutils.Schema
 	}{
 		{
 			name: "no deprecated columns",
-			schema: warehouseutils.SchemaT{
+			schema: warehouseutils.Schema{
 				"test-table": map[string]string{
 					"test_int":       "int",
 					"test_str":       "string",
@@ -928,7 +805,7 @@ func TestSchemaHandleT_SkipDeprecatedColumns(t *testing.T) {
 					"test_datetime":  "datetime",
 				},
 			},
-			expectedSchema: warehouseutils.SchemaT{
+			expectedSchema: warehouseutils.Schema{
 				"test-table": map[string]string{
 					"test_int":       "int",
 					"test_str":       "string",
@@ -942,7 +819,7 @@ func TestSchemaHandleT_SkipDeprecatedColumns(t *testing.T) {
 		},
 		{
 			name: "invalid deprecated column format",
-			schema: warehouseutils.SchemaT{
+			schema: warehouseutils.Schema{
 				"test-table": map[string]string{
 					"test_int":                 "int",
 					"test_str":                 "string",
@@ -956,7 +833,7 @@ func TestSchemaHandleT_SkipDeprecatedColumns(t *testing.T) {
 					"test-deprecated-column-2": "boolean",
 				},
 			},
-			expectedSchema: warehouseutils.SchemaT{
+			expectedSchema: warehouseutils.Schema{
 				"test-table": map[string]string{
 					"test_int":                 "int",
 					"test_str":                 "string",
@@ -973,7 +850,7 @@ func TestSchemaHandleT_SkipDeprecatedColumns(t *testing.T) {
 		},
 		{
 			name: "valid deprecated column format",
-			schema: warehouseutils.SchemaT{
+			schema: warehouseutils.Schema{
 				"test-table": map[string]string{
 					"test_int":                 "int",
 					"test_str":                 "string",
@@ -990,7 +867,7 @@ func TestSchemaHandleT_SkipDeprecatedColumns(t *testing.T) {
 					"test-deprecated-bc3bbc6d-42c9-4d2c-b0e6-bf5820914b09": "boolean",
 				},
 			},
-			expectedSchema: warehouseutils.SchemaT{
+			expectedSchema: warehouseutils.Schema{
 				"test-table": map[string]string{
 					"test_int":                 "int",
 					"test_str":                 "string",
@@ -1021,8 +898,8 @@ func TestSchemaHandleT_SkipDeprecatedColumns(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
-			sh := &SchemaHandleT{
-				warehouse: warehouseutils.Warehouse{
+			sh := &schema.Handler{
+				Warehouse: warehouseutils.Warehouse{
 					Source: backendconfig.SourceT{
 						ID: sourceID,
 					},
@@ -1035,6 +912,7 @@ func TestSchemaHandleT_SkipDeprecatedColumns(t *testing.T) {
 					WorkspaceID: workspaceID,
 					Namespace:   namespace,
 				},
+				Logger: logger.NOP,
 			}
 
 			sh.SkipDeprecatedColumns(tc.schema)

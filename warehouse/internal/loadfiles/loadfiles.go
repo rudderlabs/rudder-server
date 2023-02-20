@@ -77,7 +77,7 @@ type WorkerJobRequest struct {
 	UploadID                     int64
 	StagingFileID                int64
 	StagingFileLocation          string
-	UploadSchema                 map[string]map[string]string
+	UploadSchema                 warehouseutils.Schema
 	WorkspaceID                  string
 	SourceID                     string
 	SourceName                   string

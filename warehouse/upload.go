@@ -6,12 +6,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	errors2 "github.com/rudderlabs/rudder-server/warehouse/errors"
-	"github.com/rudderlabs/rudder-server/warehouse/schema"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
+
+	errors2 "github.com/rudderlabs/rudder-server/warehouse/errors"
+	"github.com/rudderlabs/rudder-server/warehouse/schema"
 
 	"github.com/rudderlabs/rudder-server/warehouse/logfield"
 
@@ -869,7 +870,7 @@ func (job *UploadJob) UpdateTableSchema(tName string, tableSchemaDiff warehouseu
 	return nil
 }
 
-func (job *UploadJob) alterColumnsToWarehouse(tName string, columnsMap map[string]string) error {
+func (job *UploadJob) alterColumnsToWarehouse(tName string, columnsMap warehouseutils.TableSchema) error {
 	var responseToAlerta []model.AlterTableResponse
 	var errs []error
 
@@ -931,7 +932,7 @@ func (job *UploadJob) alterColumnsToWarehouse(tName string, columnsMap map[strin
 	return nil
 }
 
-func (job *UploadJob) addColumnsToWarehouse(tName string, columnsMap map[string]string) (err error) {
+func (job *UploadJob) addColumnsToWarehouse(tName string, columnsMap warehouseutils.TableSchema) (err error) {
 	pkgLogger.Infof(`[WH]: Adding columns for table %s in namespace %s of destination %s:%s`, tName, job.warehouse.Namespace, job.warehouse.Type, job.warehouse.Destination.ID)
 
 	destType := job.upload.DestinationType
@@ -1324,7 +1325,7 @@ func (job *UploadJob) loadIdentityTables(populateHistoricIdentities bool) (loadE
 	return job.processLoadTableResponse(errorMap)
 }
 
-func (job *UploadJob) setUpdatedTableSchema(tableName string, updatedSchema map[string]string) {
+func (job *UploadJob) setUpdatedTableSchema(tableName string, updatedSchema warehouseutils.TableSchema) {
 	job.schemaLock.Lock()
 	job.schemaHandle.SchemaInWarehouse[tableName] = updatedSchema
 	job.schemaLock.Unlock()
@@ -2115,11 +2116,11 @@ func initializeStateMachine() {
 }
 
 func (job *UploadJob) GetLocalSchema() warehouseutils.Schema {
-	return job.schemaHandle.getLocalSchema()
+	return job.schemaHandle.GetLocalSchema()
 }
 
 func (job *UploadJob) UpdateLocalSchema(schema warehouseutils.Schema) error {
-	return job.schemaHandle.updateLocalSchema(schema)
+	return job.schemaHandle.UpdateLocalSchema(schema)
 }
 
 func (job *UploadJob) RefreshPartitions(loadFileStartID, loadFileEndID int64) error {

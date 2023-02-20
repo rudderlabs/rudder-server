@@ -5,11 +5,12 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"reflect"
+
 	"github.com/rudderlabs/rudder-server/utils/logger"
 	"github.com/rudderlabs/rudder-server/warehouse/errors"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/repo"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/service"
-	"reflect"
 
 	"github.com/rudderlabs/rudder-server/utils/misc"
 	"github.com/rudderlabs/rudder-server/utils/timeutil"
@@ -121,7 +122,7 @@ func (sh *Handler) GetLocalSchema() (currentSchema warehouseutils.Schema) {
 	}
 	currentSchema = warehouseutils.Schema{}
 	for tableName, columnMapInterface := range schemaMapInterface {
-		columnMap := make(map[string]string)
+		columnMap := make(warehouseutils.TableSchema)
 		columns := columnMapInterface.(map[string]interface{})
 		for cName, cTypeInterface := range columns {
 			columnMap[cName] = cTypeInterface.(string)

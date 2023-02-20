@@ -3,8 +3,9 @@ package errors
 import (
 	"errors"
 	"fmt"
-	"github.com/rudderlabs/rudder-server/warehouse/utils"
 	"strings"
+
+	"github.com/rudderlabs/rudder-server/warehouse/utils"
 
 	"github.com/rudderlabs/rudder-server/warehouse/integrations/manager"
 	"github.com/rudderlabs/rudder-server/warehouse/internal/model"

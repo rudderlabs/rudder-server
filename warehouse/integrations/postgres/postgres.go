@@ -254,7 +254,7 @@ func (pg *Handle) getConnectionCredentials() Credentials {
 	return creds
 }
 
-func ColumnsWithDataTypes(columns map[string]string, prefix string) string {
+func ColumnsWithDataTypes(columns warehouseutils.TableSchema, prefix string) string {
 	var arr []string
 	for name, dataType := range columns {
 		arr = append(arr, fmt.Sprintf(`"%s%s" %s`, prefix, name, rudderDataTypesMapToPostgres[dataType]))
@@ -730,14 +730,14 @@ func (pg *Handle) dropStagingTable(stagingTableName string) {
 	}
 }
 
-func (pg *Handle) createTable(name string, columns map[string]string) (err error) {
+func (pg *Handle) createTable(name string, columns warehouseutils.TableSchema) (err error) {
 	sqlStatement := fmt.Sprintf(`CREATE TABLE IF NOT EXISTS "%[1]s"."%[2]s" ( %v )`, pg.Namespace, name, ColumnsWithDataTypes(columns, ""))
 	pg.logger.Infof("PG: Creating table in postgres for PG:%s : %v", pg.Warehouse.Destination.ID, sqlStatement)
 	_, err = pg.DB.Exec(sqlStatement)
 	return
 }
 
-func (pg *Handle) CreateTable(tableName string, columnMap map[string]string) (err error) {
+func (pg *Handle) CreateTable(tableName string, columnMap warehouseutils.TableSchema) (err error) {
 	// set the schema in search path. so that we can query table with unqualified name which is just the table name rather than using schema.table in queries
 	sqlStatement := fmt.Sprintf(`SET search_path to %q`, pg.Namespace)
 	_, err = pg.DB.Exec(sqlStatement)

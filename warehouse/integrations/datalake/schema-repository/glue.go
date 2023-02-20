@@ -125,7 +125,7 @@ func (gl *GlueSchemaRepository) CreateSchema() (err error) {
 	return
 }
 
-func (gl *GlueSchemaRepository) CreateTable(tableName string, columnMap map[string]string) (err error) {
+func (gl *GlueSchemaRepository) CreateTable(tableName string, columnMap warehouseutils.TableSchema) (err error) {
 	partitionKeys, err := gl.partitionColumns()
 	if err != nil {
 		return fmt.Errorf("partition keys: %w", err)

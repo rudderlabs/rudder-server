@@ -187,7 +187,7 @@ func (ms *HandleT) getConnectionCredentials() CredentialsT {
 	return creds
 }
 
-func ColumnsWithDataTypes(columns map[string]string, prefix string) string {
+func ColumnsWithDataTypes(columns warehouseutils.TableSchema, prefix string) string {
 	var arr []string
 	for name, dataType := range columns {
 		arr = append(arr, fmt.Sprintf(`"%s%s" %s`, prefix, name, rudderDataTypesMapToMssql[dataType]))
@@ -679,7 +679,7 @@ func (ms *HandleT) dropStagingTable(stagingTableName string) {
 	}
 }
 
-func (ms *HandleT) createTable(name string, columns map[string]string) (err error) {
+func (ms *HandleT) createTable(name string, columns warehouseutils.TableSchema) (err error) {
 	sqlStatement := fmt.Sprintf(`IF  NOT EXISTS (SELECT 1 FROM sys.objects WHERE object_id = OBJECT_ID(N'%[1]s') AND type = N'U')
 	CREATE TABLE %[1]s ( %v )`, name, ColumnsWithDataTypes(columns, ""))
 
@@ -688,7 +688,7 @@ func (ms *HandleT) createTable(name string, columns map[string]string) (err erro
 	return
 }
 
-func (ms *HandleT) CreateTable(tableName string, columnMap map[string]string) (err error) {
+func (ms *HandleT) CreateTable(tableName string, columnMap warehouseutils.TableSchema) (err error) {
 	// Search paths doesn't exist unlike Postgres, default is dbo. Hence, use namespace wherever possible
 	err = ms.createTable(ms.Namespace+"."+tableName, columnMap)
 	return err
@@ -885,13 +885,13 @@ func (ms *HandleT) FetchSchema(warehouse warehouseutils.Warehouse) (schema, unre
 			return
 		}
 		if _, ok := schema[tName]; !ok {
-			schema[tName] = make(map[string]string)
+			schema[tName] = make(warehouseutils.TableSchema)
 		}
 		if datatype, ok := mssqlDataTypesMapToRudder[cType]; ok {
 			schema[tName][cName] = datatype
 		} else {
 			if _, ok := unrecognizedSchema[tName]; !ok {
-				unrecognizedSchema[tName] = make(map[string]string)
+				unrecognizedSchema[tName] = make(warehouseutils.TableSchema)
 			}
 			unrecognizedSchema[tName][cName] = warehouseutils.MISSING_DATATYPE
 

@@ -4,9 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/rudderlabs/rudder-server/warehouse/schema"
 	"os"
 	"testing"
+
+	"github.com/rudderlabs/rudder-server/warehouse/schema"
 
 	"github.com/aws/smithy-go/time"
 	"github.com/rudderlabs/rudder-server/services/alerta"
@@ -156,7 +157,7 @@ func TestColumnCountStat(t *testing.T) {
 				},
 				stats: store,
 				schemaHandle: &schema.Handler{
-					schemaInWarehouse: warehouseutils.Schema{
+					SchemaInWarehouse: warehouseutils.Schema{
 						tableName: map[string]string{
 							"test-column-1": "string",
 							"test-column-2": "string",
@@ -182,7 +183,7 @@ func TestColumnCountStat(t *testing.T) {
 			m2 := store.Get("warehouse_load_table_column_limit", tags)
 
 			if tc.statExpected {
-				require.EqualValues(t, m1.LastValue(), len(j.schemaHandle.schemaInWarehouse[tableName]))
+				require.EqualValues(t, m1.LastValue(), len(j.schemaHandle.SchemaInWarehouse[tableName]))
 				require.EqualValues(t, m2.LastValue(), tc.columnCountLimit)
 			} else {
 				require.Nil(t, m1)

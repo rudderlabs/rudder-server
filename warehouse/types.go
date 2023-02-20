@@ -14,7 +14,7 @@ type Payload struct {
 	UploadID                     int64
 	StagingFileID                int64
 	StagingFileLocation          string
-	UploadSchema                 map[string]map[string]string
+	UploadSchema                 warehouseutils.Schema
 	WorkspaceID                  string
 	SourceID                     string
 	SourceName                   string
@@ -37,7 +37,7 @@ type Payload struct {
 
 type LoadFileJobT struct {
 	StagingFile                *model.StagingFile
-	Schema                     map[string]map[string]string
+	Schema                     warehouseutils.Schema
 	Warehouse                  warehouseutils.Warehouse
 	Wg                         *misc.WaitGroup
 	LoadFileIDsChan            chan []int64

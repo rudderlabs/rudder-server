@@ -8,24 +8,24 @@ import (
 
 type Noop struct{}
 
-func (*Noop) GetSchemaInWarehouse() warehouseutils.SchemaT {
-	return warehouseutils.SchemaT{}
+func (*Noop) GetSchemaInWarehouse() warehouseutils.Schema {
+	return warehouseutils.Schema{}
 }
 
-func (*Noop) GetLocalSchema() warehouseutils.SchemaT {
-	return warehouseutils.SchemaT{}
+func (*Noop) GetLocalSchema() warehouseutils.Schema {
+	return warehouseutils.Schema{}
 }
 
-func (*Noop) UpdateLocalSchema(warehouseutils.SchemaT) error {
+func (*Noop) UpdateLocalSchema(warehouseutils.Schema) error {
 	return nil
 }
 
-func (*Noop) GetTableSchemaInWarehouse(string) warehouseutils.TableSchemaT {
-	return warehouseutils.TableSchemaT{}
+func (*Noop) GetTableSchemaInWarehouse(string) warehouseutils.TableSchema {
+	return warehouseutils.TableSchema{}
 }
 
-func (*Noop) GetTableSchemaInUpload(string) warehouseutils.TableSchemaT {
-	return warehouseutils.TableSchemaT{}
+func (*Noop) GetTableSchemaInUpload(string) warehouseutils.TableSchema {
+	return warehouseutils.TableSchema{}
 }
 
 func (*Noop) GetLoadFilesMetadata(warehouseutils.GetLoadFilesOptionsT) []warehouseutils.LoadFileT {

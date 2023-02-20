@@ -774,7 +774,7 @@ func (dl *Deltalake) connectToWarehouse() (Client *client.Client, err error) {
 }
 
 // CreateTable creates tables with table name and columns
-func (dl *Deltalake) CreateTable(tableName string, columns map[string]string) (err error) {
+func (dl *Deltalake) CreateTable(tableName string, columns warehouseutils.TableSchema) (err error) {
 	name := fmt.Sprintf(`%s.%s`, dl.Namespace, tableName)
 
 	tableLocationSql := dl.getTableLocationSql(tableName)

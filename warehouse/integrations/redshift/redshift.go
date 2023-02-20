@@ -197,7 +197,7 @@ func getRSDataType(columnType string) string {
 	return dataTypesMap[columnType]
 }
 
-func ColumnsWithDataTypes(columns map[string]string, prefix string) string {
+func ColumnsWithDataTypes(columns warehouseutils.TableSchema, prefix string) string {
 	// TODO: do we need sorted order here?
 	var keys []string
 	for colName := range columns {
@@ -212,7 +212,7 @@ func ColumnsWithDataTypes(columns map[string]string, prefix string) string {
 	return strings.Join(arr, ",")
 }
 
-func (rs *Redshift) CreateTable(tableName string, columns map[string]string) (err error) {
+func (rs *Redshift) CreateTable(tableName string, columns warehouseutils.TableSchema) (err error) {
 	name := fmt.Sprintf(`%q.%q`, rs.Namespace, tableName)
 	sortKeyField := "received_at"
 	if _, ok := columns["received_at"]; !ok {
@@ -306,7 +306,7 @@ func (rs *Redshift) createSchema() (err error) {
 	return
 }
 
-func (rs *Redshift) generateManifest(tableName string, _ map[string]string) (string, error) {
+func (rs *Redshift) generateManifest(tableName string, _ warehouseutils.TableSchema) (string, error) {
 	loadFiles := rs.Uploader.GetLoadFilesMetadata(warehouseutils.GetLoadFilesOptionsT{Table: tableName})
 	loadFiles = warehouseutils.GetS3Locations(loadFiles)
 	var manifest S3Manifest
