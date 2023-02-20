@@ -396,7 +396,7 @@ func (dl *Deltalake) schemaExists(schemaName string) (exists bool, err error) {
 		err = fmt.Errorf("%s Error while fetching schemas with response: %v", dl.GetLogIdentifier(), fetchSchemasResponse.GetErrorMessage())
 		return
 	}
-	exists = len(fetchSchemasResponse.GetDatabases()) == 1 && strings.Compare(fetchSchemasResponse.GetDatabases()[0], schemaName) == 0
+	exists = len(fetchSchemasResponse.GetDatabases()) == 1 && fetchSchemasResponse.GetDatabases()[0] == schemaName
 	return
 }
 

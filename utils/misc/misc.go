@@ -59,9 +59,8 @@ var (
 
 const (
 	// RFC3339Milli with milli sec precision
-	RFC3339Milli            = "2006-01-02T15:04:05.000Z07:00"
-	POSTGRESTIMEFORMATPARSE = "2006-01-02T15:04:05Z"
-	NOTIMEZONEFORMATPARSE   = "2006-01-02T15:04:05"
+	RFC3339Milli          = "2006-01-02T15:04:05.000Z07:00"
+	NOTIMEZONEFORMATPARSE = "2006-01-02T15:04:05"
 )
 
 const (
@@ -206,7 +205,7 @@ func RecordAppError(err error) {
 
 func GetHash(s string) int {
 	h := fnv.New32a()
-	h.Write([]byte(s))
+	_, _ = h.Write([]byte(s))
 	return int(h.Sum32())
 }
 
@@ -261,7 +260,7 @@ func ZipFiles(filename string, files []string) error {
 	defer func() { _ = newZipFile.Close() }()
 
 	zipWriter := zip.NewWriter(newZipFile)
-	defer zipWriter.Close()
+	defer func() { _ = zipWriter.Close() }()
 
 	// Add files to zip
 	for _, file := range files {
@@ -870,7 +869,7 @@ func RunWithConcurrency(config *RWCConfig) {
 IsValidUUID will check if provided string is a valid UUID
 */
 func IsValidUUID(uuid string) bool {
-	r := regexp.MustCompile("^[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-4[a-fA-F0-9]{3}-[8|9|aA|bB][a-fA-F0-9]{3}-[a-fA-F0-9]{12}$")
+	r := regexp.MustCompile("^[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-4[a-fA-F0-9]{3}-[89aAbB][a-fA-F0-9]{3}-[a-fA-F0-9]{12}$")
 	return r.MatchString(uuid)
 }
 
