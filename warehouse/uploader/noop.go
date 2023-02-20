@@ -6,56 +6,56 @@ import (
 	warehouseutils "github.com/rudderlabs/rudder-server/warehouse/utils"
 )
 
-type Noop struct{}
+type NOOP struct{}
 
-func (*Noop) GetSchemaInWarehouse() warehouseutils.SchemaT {
+func (*NOOP) GetSchemaInWarehouse() warehouseutils.SchemaT {
 	return warehouseutils.SchemaT{}
 }
 
-func (*Noop) GetLocalSchema() warehouseutils.SchemaT {
+func (*NOOP) GetLocalSchema() warehouseutils.SchemaT {
 	return warehouseutils.SchemaT{}
 }
 
-func (*Noop) UpdateLocalSchema(warehouseutils.SchemaT) error {
+func (*NOOP) UpdateLocalSchema(warehouseutils.SchemaT) error {
 	return nil
 }
 
-func (*Noop) GetTableSchemaInWarehouse(string) warehouseutils.TableSchemaT {
+func (*NOOP) GetTableSchemaInWarehouse(string) warehouseutils.TableSchemaT {
 	return warehouseutils.TableSchemaT{}
 }
 
-func (*Noop) GetTableSchemaInUpload(string) warehouseutils.TableSchemaT {
+func (*NOOP) GetTableSchemaInUpload(string) warehouseutils.TableSchemaT {
 	return warehouseutils.TableSchemaT{}
 }
 
-func (*Noop) GetLoadFilesMetadata(warehouseutils.GetLoadFilesOptionsT) []warehouseutils.LoadFileT {
+func (*NOOP) GetLoadFilesMetadata(warehouseutils.GetLoadFilesOptionsT) []warehouseutils.LoadFileT {
 	return []warehouseutils.LoadFileT{}
 }
 
-func (*Noop) GetSampleLoadFileLocation(string) (string, error) {
+func (*NOOP) GetSampleLoadFileLocation(string) (string, error) {
 	return "", nil
 }
 
-func (*Noop) GetSingleLoadFile(string) (warehouseutils.LoadFileT, error) {
+func (*NOOP) GetSingleLoadFile(string) (warehouseutils.LoadFileT, error) {
 	return warehouseutils.LoadFileT{}, nil
 }
 
-func (*Noop) ShouldOnDedupUseNewRecord() bool {
+func (*NOOP) ShouldOnDedupUseNewRecord() bool {
 	return false
 }
 
-func (*Noop) UseRudderStorage() bool {
+func (*NOOP) UseRudderStorage() bool {
 	return false
 }
 
-func (*Noop) GetLoadFileGenStartTIme() time.Time {
+func (*NOOP) GetLoadFileGenStartTIme() time.Time {
 	return time.Time{}
 }
 
-func (*Noop) GetLoadFileType() string {
+func (*NOOP) GetLoadFileType() string {
 	return ""
 }
 
-func (*Noop) GetFirstLastEvent() (time.Time, time.Time) {
+func (*NOOP) GetFirstLastEvent() (time.Time, time.Time) {
 	return time.Time{}, time.Time{}
 }
